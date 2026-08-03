@@ -6,6 +6,7 @@ import streamlit as st
 from capa_simulation.io.excel_reader import load_reference_tables
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
+    DemandBasis,
     build_monthly_volume,
     plan_from_edit_table,
     plan_to_edit_table,
@@ -84,9 +85,10 @@ except ValueError as exc:
     st.stop()
 
 with monthly_volume_tab:
+    demand_basis_options: tuple[DemandBasis, ...] = ("PKG", "Chip", "Wafer")
     demand_basis = st.selectbox(
         "소요기준",
-        options=["PKG", "Chip", "Wafer"],
+        options=demand_basis_options,
         key="monthly_volume_basis",
     )
     show_detail = st.toggle("상세", key="monthly_volume_detail")

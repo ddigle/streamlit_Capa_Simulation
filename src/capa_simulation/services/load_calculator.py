@@ -269,7 +269,7 @@ def _pivot_monthly(data: pd.DataFrame, detailed: bool) -> pd.DataFrame:
         classification_columns.append("WF 구분")
     grouped = (
         data.groupby(["생산계획년월", *classification_columns], as_index=False, dropna=False)[
-            "물량"
+            ["물량"]
         ]
         .sum()
         .sort_values([*classification_columns, "생산계획년월"])
