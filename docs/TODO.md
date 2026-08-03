@@ -175,8 +175,9 @@
 
 - [x] `C:\Dev\Streamlit_Project` 프로젝트 기본 폴더 구조를 구성했다.
 - [x] `.gitignore`, `pyproject.toml`, requirements 파일, Streamlit 설정을 구성했다.
-- [x] Python 3.13 기반 `.venv`를 생성하고 활성화했다.
-- [x] Python 3.13에 맞게 프로젝트 Python/Ruff/mypy 대상 버전을 조정하기로 했다.
+- [x] 초기 개발 환경으로 Python 3.13 기반 `.venv`를 생성하고 활성화했다.
+- [x] 사내 실행환경에 맞춰 Python 3.10.11 기반 `.venv`로 전환하고 프로젝트 Python/Ruff/mypy 대상 버전을 3.10으로 조정했다.
+- [x] Python 3.10.11 환경에서 mypy, Ruff, pytest 3개 및 실제 XLSB Streamlit 실행 검증을 완료했다.
 - [x] 개발 패키지를 설치했다.
 - [x] `pytest` 스모크 테스트가 통과했다.
 - [x] Streamlit 로컬 웹 실행에 성공했다.

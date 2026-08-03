@@ -7,13 +7,14 @@ Excel 2021 `.xlsb` 기준정보를 `xlwings`로 읽고, HBM PKG 라인의 월별
 
 - Windows 10/11
 - Microsoft Excel 2021 또는 Microsoft 365 Desktop
-- Python 3.11 64-bit
+- Python 3.10.11 64-bit
 - Git for Windows
 
 ## 초기 설정
 
 ```powershell
-py -3.11 -m venv .venv
+py -3.10 --version
+py -3.10 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements-dev.txt
@@ -43,4 +44,3 @@ ruff format --check .
 - 구조 공유가 필요하면 민감정보를 제거한 샘플 파일이나 CSV 스키마를
   `data/sample/`에 추가합니다.
 - `.streamlit/secrets.toml`과 `.env`는 로컬 전용입니다.
-
