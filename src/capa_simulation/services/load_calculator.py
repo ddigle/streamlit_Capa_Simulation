@@ -4,7 +4,7 @@ from typing import Literal
 
 import pandas as pd
 
-DemandBasis = Literal["PKG", "Chip", "Wafer"]
+DemandBasis = Literal["PKG", "Chip", "Wafer", "Density"]
 
 CLASSIFICATION_COLUMNS = ["양산구분", "제품정보", "Stack"]
 PLAN_EDITOR_DIMENSIONS = [
@@ -22,8 +22,12 @@ PLAN_REQUIRED_COLUMNS = [
 ]
 YIELD_KEYS = ["생산계획년월", "제품정보", "Stack", "WF 구분"]
 YIELD_REQUIRED_COLUMNS = [*YIELD_KEYS, "EDS_수율", "BE_수율"]
+YIELD_EDITOR_DIMENSIONS = ["제품정보", "Stack", "WF 구분", "수율 구분"]
+YIELD_VALUE_COLUMNS = ["EDS_수율", "BE_수율"]
 CHIP_KEYS = ["제품정보", "Stack", "WF 구분"]
 CHIP_REQUIRED_COLUMNS = [*CHIP_KEYS, "구분_Chip", "Net Die"]
+DENSITY_KEYS = ["제품정보", "Stack", "WF 구분"]
+DENSITY_REQUIRED_COLUMNS = [*DENSITY_KEYS, "구분_Chip", "구분_EQ"]
 
 
 def plan_to_edit_table(plan: pd.DataFrame) -> pd.DataFrame:
@@ -35,11 +39,10 @@ def plan_to_edit_table(plan: pd.DataFrame) -> pd.DataFrame:
         prepared["생산계획년월"], errors="coerce"
     ).astype("Int64")
     prepared = _to_numeric(prepared, ["생산수량"], "RQ_PKG_PLAN")
+    prepared["생산수량"] = prepared["생산수량"].fillna(0.0)
 
     if prepared[["생산계획년월", *PLAN_EDITOR_DIMENSIONS]].isna().any(axis=None):
         raise ValueError("RQ_PKG_PLAN의 편집 테이블 식별 컬럼에 누락값이 있습니다.")
-    if prepared["생산수량"].isna().any():
-        raise ValueError("RQ_PKG_PLAN.생산수량에 누락값이 있습니다.")
 
     duplicate_keys = [*PLAN_EDITOR_DIMENSIONS, "생산계획년월"]
     duplicated = prepared.duplicated(duplicate_keys, keep=False)
@@ -61,6 +64,7 @@ def plan_to_edit_table(plan: pd.DataFrame) -> pd.DataFrame:
     raw_month_columns = [
         column for column in result.columns if column not in PLAN_EDITOR_DIMENSIONS
     ]
+    result[raw_month_columns] = result[raw_month_columns].fillna(0.0)
     result = result.rename(columns={column: str(int(column)) for column in raw_month_columns})
     month_columns = sorted(
         [column for column in result.columns if column not in PLAN_EDITOR_DIMENSIONS]
@@ -92,13 +96,103 @@ def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
         long_plan["생산계획년월"], errors="raise"
     ).astype("Int64")
     long_plan = _to_numeric(long_plan, ["생산수량"], "PKG PLAN 편집값")
-    if long_plan["생산수량"].isna().any():
-        raise ValueError("PKG PLAN에 비어 있는 생산수량이 있습니다.")
+    long_plan["생산수량"] = long_plan["생산수량"].fillna(0.0)
     if long_plan["생산수량"].lt(0).any():
         raise ValueError("PKG PLAN 생산수량은 0 이상이어야 합니다.")
+    long_plan = long_plan.loc[long_plan["생산수량"].gt(0)]
     return long_plan.sort_values(["생산계획년월", *PLAN_EDITOR_DIMENSIONS]).reset_index(
         drop=True
     )
+
+
+def yield_to_edit_table(yield_data: pd.DataFrame) -> pd.DataFrame:
+    """Pivot Long yield data into editable EDS/BE rows with month columns."""
+    _require_columns(yield_data, YIELD_REQUIRED_COLUMNS, "RQ_YLD")
+    prepared = _normalize_text(yield_data[YIELD_REQUIRED_COLUMNS], YIELD_KEYS[1:])
+    prepared["생산계획년월"] = pd.to_numeric(
+        prepared["생산계획년월"], errors="coerce"
+    ).astype("Int64")
+    prepared = _to_numeric(prepared, YIELD_VALUE_COLUMNS, "RQ_YLD")
+
+    if prepared[YIELD_KEYS].isna().any(axis=None):
+        raise ValueError("RQ_YLD의 연결 키에 누락값이 있습니다.")
+    if prepared[YIELD_VALUE_COLUMNS].isna().any(axis=None):
+        raise ValueError("RQ_YLD의 EDS_수율 또는 BE_수율에 누락값이 있습니다.")
+    _assert_unique(prepared, YIELD_KEYS, "RQ_YLD")
+    _validate_yield_range(prepared, "RQ_YLD")
+
+    long_yield = prepared.melt(
+        id_vars=YIELD_KEYS,
+        value_vars=YIELD_VALUE_COLUMNS,
+        var_name="수율 구분",
+        value_name="수율",
+    )
+    result = long_yield.pivot(
+        index=YIELD_EDITOR_DIMENSIONS,
+        columns="생산계획년월",
+        values="수율",
+    ).reset_index()
+    result.columns.name = None
+    raw_month_columns = [
+        column for column in result.columns if column not in YIELD_EDITOR_DIMENSIONS
+    ]
+    result = result.rename(columns={column: str(int(column)) for column in raw_month_columns})
+    month_columns = sorted(
+        [column for column in result.columns if column not in YIELD_EDITOR_DIMENSIONS]
+    )
+    return result[[*YIELD_EDITOR_DIMENSIONS, *month_columns]]
+
+
+def yield_from_edit_table(yield_table: pd.DataFrame) -> pd.DataFrame:
+    """Convert edited month-column yields back to the RQ_YLD Long format."""
+    _require_columns(yield_table, YIELD_EDITOR_DIMENSIONS, "수율 편집값")
+    month_columns = [
+        column for column in yield_table.columns if column not in YIELD_EDITOR_DIMENSIONS
+    ]
+    invalid_months = [
+        column
+        for column in month_columns
+        if not str(column).isdigit() or len(str(column)) != 6
+    ]
+    if invalid_months:
+        raise ValueError(f"수율의 월 컬럼은 YYYYMM 형식이어야 합니다: {invalid_months}")
+
+    prepared = _normalize_text(yield_table, YIELD_EDITOR_DIMENSIONS)
+    invalid_types = sorted(
+        set(prepared["수율 구분"].dropna()) - set(YIELD_VALUE_COLUMNS)
+    )
+    if invalid_types:
+        raise ValueError(f"지원하지 않는 수율 구분이 있습니다: {invalid_types}")
+
+    long_yield = prepared.melt(
+        id_vars=YIELD_EDITOR_DIMENSIONS,
+        value_vars=month_columns,
+        var_name="생산계획년월",
+        value_name="수율",
+    )
+    long_yield["생산계획년월"] = pd.to_numeric(
+        long_yield["생산계획년월"], errors="raise"
+    ).astype("Int64")
+    long_yield = _to_numeric(long_yield, ["수율"], "수율 편집값")
+    long_yield = long_yield.dropna(subset=["수율"])
+
+    duplicated = long_yield.duplicated(
+        ["생산계획년월", *YIELD_EDITOR_DIMENSIONS], keep=False
+    )
+    if duplicated.any():
+        raise ValueError("수율 편집값의 월별 연결 키가 중복되었습니다.")
+
+    result = long_yield.pivot(
+        index=YIELD_KEYS,
+        columns="수율 구분",
+        values="수율",
+    ).reset_index()
+    result.columns.name = None
+    _require_columns(result, YIELD_REQUIRED_COLUMNS, "수율 편집값")
+    if result[YIELD_VALUE_COLUMNS].isna().any(axis=None):
+        raise ValueError("동일한 기준에는 EDS_수율과 BE_수율이 모두 필요합니다.")
+    _validate_yield_range(result, "수율 편집값")
+    return result[YIELD_REQUIRED_COLUMNS].sort_values(YIELD_KEYS).reset_index(drop=True)
 
 
 def _require_columns(data: pd.DataFrame, required: list[str], table_name: str) -> None:
@@ -130,6 +224,17 @@ def _assert_unique(data: pd.DataFrame, keys: list[str], table_name: str) -> None
     if duplicated.any():
         example = data.loc[duplicated, keys].drop_duplicates().head(5).to_dict("records")
         raise ValueError(f"{table_name} 연결 키가 중복되었습니다: {example}")
+
+
+def _validate_yield_range(data: pd.DataFrame, table_name: str) -> None:
+    invalid_rate = (
+        data["EDS_수율"].le(0)
+        | data["EDS_수율"].gt(1)
+        | data["BE_수율"].le(0)
+        | data["BE_수율"].gt(1)
+    )
+    if invalid_rate.any():
+        raise ValueError(f"{table_name}의 수율은 0 초과 100% 이하여야 합니다.")
 
 
 def _prepare_plan(plan: pd.DataFrame) -> pd.DataFrame:
@@ -206,14 +311,7 @@ def _prepare_load_base(
         raise ValueError(f"RQ_YLD가 연결되지 않는 기준이 있습니다: {missing}")
     calculation = calculation.drop(columns="_yield_merge")
 
-    invalid_rate = (
-        calculation["EDS_수율"].le(0)
-        | calculation["EDS_수율"].gt(1)
-        | calculation["BE_수율"].le(0)
-        | calculation["BE_수율"].gt(1)
-    )
-    if invalid_rate.any():
-        raise ValueError("EDS_수율 또는 BE_수율이 0 초과 1 이하 범위를 벗어났습니다.")
+    _validate_yield_range(calculation, "RQ_YLD")
     if calculation["Net Die"].le(0).any():
         raise ValueError("Net Die는 0보다 커야 합니다.")
     if calculation["구분_Chip"].lt(0).any():
@@ -263,6 +361,56 @@ def calculate_wafer_load(
     return calculation
 
 
+def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd.DataFrame:
+    """Calculate product density by capacity-bearing WF type in 100M Gb."""
+    prepared_plan = _prepare_plan(plan)
+    _require_columns(density_data, DENSITY_REQUIRED_COLUMNS, "RQ_CHIP_EQ")
+
+    prepared_density = _normalize_text(
+        density_data[DENSITY_REQUIRED_COLUMNS], DENSITY_KEYS
+    )
+    prepared_density = _to_numeric(
+        prepared_density, ["구분_Chip", "구분_EQ"], "RQ_CHIP_EQ"
+    )
+
+    if prepared_density[DENSITY_KEYS].isna().any(axis=None):
+        raise ValueError("RQ_CHIP_EQ의 연결 키에 누락값이 있습니다.")
+    if prepared_density[["구분_Chip", "구분_EQ"]].isna().any(axis=None):
+        raise ValueError("RQ_CHIP_EQ의 구분_Chip 또는 구분_EQ에 누락값이 있습니다.")
+    _assert_unique(prepared_density, DENSITY_KEYS, "RQ_CHIP_EQ")
+
+    if prepared_density["구분_Chip"].le(0).any():
+        raise ValueError("RQ_CHIP_EQ.구분_Chip은 0보다 커야 합니다.")
+    if prepared_density["구분_EQ"].le(0).any():
+        raise ValueError("RQ_CHIP_EQ.구분_EQ는 0보다 커야 합니다.")
+
+    calculation = prepared_plan.merge(
+        prepared_density,
+        on=["제품정보", "Stack"],
+        how="left",
+        validate="many_to_many",
+        indicator="_density_merge",
+    )
+    if (calculation["_density_merge"] != "both").any():
+        missing = (
+            calculation.loc[
+                calculation["_density_merge"] != "both", ["제품정보", "Stack"]
+            ]
+            .drop_duplicates()
+            .head(5)
+            .to_dict("records")
+        )
+        raise ValueError(f"RQ_CHIP_EQ가 연결되지 않는 제품이 있습니다: {missing}")
+    calculation = calculation.drop(columns="_density_merge")
+    calculation["물량"] = (
+        calculation["생산수량"]
+        * calculation["구분_Chip"]
+        * calculation["구분_EQ"]
+        / 100_000
+    )
+    return calculation
+
+
 def _pivot_monthly(data: pd.DataFrame, detailed: bool) -> pd.DataFrame:
     classification_columns = [*CLASSIFICATION_COLUMNS]
     if detailed:
@@ -289,6 +437,7 @@ def build_monthly_volume(
     chip_qty: pd.DataFrame,
     demand_basis: DemandBasis,
     detailed: bool = False,
+    density_data: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Return a monthly matrix grouped by production class, product, and stack."""
     prepared_plan = _prepare_plan(plan)
@@ -304,5 +453,11 @@ def build_monthly_volume(
     if demand_basis == "Wafer":
         return _pivot_monthly(
             calculate_wafer_load(prepared_plan, yield_data, chip_qty), detailed
+        )
+    if demand_basis == "Density":
+        if density_data is None:
+            raise ValueError("Density 계산에 RQ_CHIP_EQ 기준정보가 필요합니다.")
+        return _pivot_monthly(
+            calculate_density_load(prepared_plan, density_data), detailed
         )
     raise ValueError(f"지원하지 않는 소요기준입니다: {demand_basis}")

@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import xlwings as xw
 
-REFERENCE_TABLES = ("RQ_PKG_PLAN", "RQ_YLD", "RQ_CHIP_QTY")
+REFERENCE_TABLES = ("RQ_PKG_PLAN", "RQ_YLD", "RQ_CHIP_QTY", "RQ_CHIP_EQ")
 
 
 def _read_table(workbook: xw.Book, table_name: str) -> pd.DataFrame:
