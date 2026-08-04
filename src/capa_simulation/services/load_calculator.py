@@ -4,16 +4,18 @@ from typing import Literal
 
 import pandas as pd
 
+from capa_simulation.services.display_order import apply_display_order
+
 DemandBasis = Literal["PKG", "Chip", "Wafer", "Density"]
 
 CLASSIFICATION_COLUMNS = ["양산구분", "제품정보", "Stack"]
 PLAN_EDITOR_DIMENSIONS = [
     "양산구분",
-    "CS",
     "제품정보",
     "Stack",
     "Capa Code",
     "Customer",
+    "CS",
 ]
 PLAN_REQUIRED_COLUMNS = [
     "생산계획년월",
@@ -22,15 +24,19 @@ PLAN_REQUIRED_COLUMNS = [
 ]
 YIELD_KEYS = ["생산계획년월", "제품정보", "Stack", "WF 구분"]
 YIELD_REQUIRED_COLUMNS = [*YIELD_KEYS, "EDS_수율", "BE_수율"]
-YIELD_EDITOR_DIMENSIONS = ["제품정보", "Stack", "WF 구분", "수율 구분"]
+YIELD_EDITOR_DIMENSIONS = ["수율 구분", "제품정보", "Stack", "WF 구분"]
 YIELD_VALUE_COLUMNS = ["EDS_수율", "BE_수율"]
+YIELD_DISPLAY_NAMES = {"EDS_수율": "EDS", "BE_수율": "BE"}
+YIELD_INTERNAL_NAMES = {display: internal for internal, display in YIELD_DISPLAY_NAMES.items()}
 CHIP_KEYS = ["제품정보", "Stack", "WF 구분"]
 CHIP_REQUIRED_COLUMNS = [*CHIP_KEYS, "구분_Chip", "Net Die"]
 DENSITY_KEYS = ["제품정보", "Stack", "WF 구분"]
 DENSITY_REQUIRED_COLUMNS = [*DENSITY_KEYS, "구분_Chip", "구분_EQ"]
 
 
-def plan_to_edit_table(plan: pd.DataFrame) -> pd.DataFrame:
+def plan_to_edit_table(
+    plan: pd.DataFrame, display_order: pd.DataFrame | None = None
+) -> pd.DataFrame:
     """Pivot the default Long PKG plan into an editable month-column table."""
     required = ["생산계획년월", *PLAN_EDITOR_DIMENSIONS, "생산수량"]
     _require_columns(plan, required, "RQ_PKG_PLAN")
@@ -69,7 +75,8 @@ def plan_to_edit_table(plan: pd.DataFrame) -> pd.DataFrame:
     month_columns = sorted(
         [column for column in result.columns if column not in PLAN_EDITOR_DIMENSIONS]
     )
-    return result[[*PLAN_EDITOR_DIMENSIONS, *month_columns]]
+    result = result[[*PLAN_EDITOR_DIMENSIONS, *month_columns]]
+    return apply_display_order(result, display_order, "PKG PLAN")
 
 
 def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
@@ -105,7 +112,9 @@ def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def yield_to_edit_table(yield_data: pd.DataFrame) -> pd.DataFrame:
+def yield_to_edit_table(
+    yield_data: pd.DataFrame, display_order: pd.DataFrame | None = None
+) -> pd.DataFrame:
     """Pivot Long yield data into editable EDS/BE rows with month columns."""
     _require_columns(yield_data, YIELD_REQUIRED_COLUMNS, "RQ_YLD")
     prepared = _normalize_text(yield_data[YIELD_REQUIRED_COLUMNS], YIELD_KEYS[1:])
@@ -127,6 +136,7 @@ def yield_to_edit_table(yield_data: pd.DataFrame) -> pd.DataFrame:
         var_name="수율 구분",
         value_name="수율",
     )
+    long_yield["수율 구분"] = long_yield["수율 구분"].replace(YIELD_DISPLAY_NAMES)
     result = long_yield.pivot(
         index=YIELD_EDITOR_DIMENSIONS,
         columns="생산계획년월",
@@ -140,7 +150,13 @@ def yield_to_edit_table(yield_data: pd.DataFrame) -> pd.DataFrame:
     month_columns = sorted(
         [column for column in result.columns if column not in YIELD_EDITOR_DIMENSIONS]
     )
-    return result[[*YIELD_EDITOR_DIMENSIONS, *month_columns]]
+    result = result[[*YIELD_EDITOR_DIMENSIONS, *month_columns]]
+    return apply_display_order(
+        result,
+        display_order,
+        "수율",
+        value_aliases={"수율 구분": YIELD_DISPLAY_NAMES},
+    )
 
 
 def yield_from_edit_table(yield_table: pd.DataFrame) -> pd.DataFrame:
@@ -158,9 +174,7 @@ def yield_from_edit_table(yield_table: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"수율의 월 컬럼은 YYYYMM 형식이어야 합니다: {invalid_months}")
 
     prepared = _normalize_text(yield_table, YIELD_EDITOR_DIMENSIONS)
-    invalid_types = sorted(
-        set(prepared["수율 구분"].dropna()) - set(YIELD_VALUE_COLUMNS)
-    )
+    invalid_types = sorted(set(prepared["수율 구분"].dropna()) - set(YIELD_INTERNAL_NAMES))
     if invalid_types:
         raise ValueError(f"지원하지 않는 수율 구분이 있습니다: {invalid_types}")
 
@@ -170,6 +184,7 @@ def yield_from_edit_table(yield_table: pd.DataFrame) -> pd.DataFrame:
         var_name="생산계획년월",
         value_name="수율",
     )
+    long_yield["수율 구분"] = long_yield["수율 구분"].replace(YIELD_INTERNAL_NAMES)
     long_yield["생산계획년월"] = pd.to_numeric(
         long_yield["생산계획년월"], errors="raise"
     ).astype("Int64")
@@ -411,7 +426,11 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
     return calculation
 
 
-def _pivot_monthly(data: pd.DataFrame, detailed: bool) -> pd.DataFrame:
+def _pivot_monthly(
+    data: pd.DataFrame,
+    detailed: bool,
+    display_order: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     classification_columns = [*CLASSIFICATION_COLUMNS]
     if detailed:
         classification_columns.append("WF 구분")
@@ -428,7 +447,7 @@ def _pivot_monthly(data: pd.DataFrame, detailed: bool) -> pd.DataFrame:
         values="물량",
     ).fillna(0)
     pivoted.columns = [str(int(month)) for month in pivoted.columns]
-    return pivoted.reset_index()
+    return apply_display_order(pivoted.reset_index(), display_order, "환산")
 
 
 def build_monthly_volume(
@@ -438,6 +457,7 @@ def build_monthly_volume(
     demand_basis: DemandBasis,
     detailed: bool = False,
     density_data: pd.DataFrame | None = None,
+    display_order: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Return a monthly matrix grouped by production class, product, and stack."""
     prepared_plan = _prepare_plan(plan)
@@ -445,19 +465,25 @@ def build_monthly_volume(
         volume = prepared_plan.rename(columns={"생산수량": "물량"})
         if detailed:
             volume["WF 구분"] = "PKG"
-        return _pivot_monthly(volume, detailed)
+        return _pivot_monthly(volume, detailed, display_order)
     if demand_basis == "Chip":
         return _pivot_monthly(
-            calculate_chip_load(prepared_plan, yield_data, chip_qty), detailed
+            calculate_chip_load(prepared_plan, yield_data, chip_qty),
+            detailed,
+            display_order,
         )
     if demand_basis == "Wafer":
         return _pivot_monthly(
-            calculate_wafer_load(prepared_plan, yield_data, chip_qty), detailed
+            calculate_wafer_load(prepared_plan, yield_data, chip_qty),
+            detailed,
+            display_order,
         )
     if demand_basis == "Density":
         if density_data is None:
             raise ValueError("Density 계산에 RQ_CHIP_EQ 기준정보가 필요합니다.")
         return _pivot_monthly(
-            calculate_density_load(prepared_plan, density_data), detailed
+            calculate_density_load(prepared_plan, density_data),
+            detailed,
+            display_order,
         )
     raise ValueError(f"지원하지 않는 소요기준입니다: {demand_basis}")

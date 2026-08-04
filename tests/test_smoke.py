@@ -1,7 +1,10 @@
 import pandas as pd
 import pytest
 
+from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.load_calculator import (
+    PLAN_EDITOR_DIMENSIONS,
+    YIELD_EDITOR_DIMENSIONS,
     build_monthly_volume,
     plan_from_edit_table,
     plan_to_edit_table,
@@ -79,7 +82,15 @@ def test_edited_pkg_plan_recalculates_monthly_volume() -> None:
         }
     )
     wide_plan = plan_to_edit_table(plan)
-    wide_plan.loc[0, "202609"] = 250.0
+    assert list(wide_plan.columns[: len(PLAN_EDITOR_DIMENSIONS)]) == [
+        "양산구분",
+        "제품정보",
+        "Stack",
+        "Capa Code",
+        "Customer",
+        "CS",
+    ]
+    wide_plan.loc[0, "202609"] = 250.25
     edited_plan = plan_from_edit_table(wide_plan)
 
     result = build_monthly_volume(
@@ -90,7 +101,7 @@ def test_edited_pkg_plan_recalculates_monthly_volume() -> None:
     )
 
     assert result.loc[0, "202608"] == pytest.approx(100.0)
-    assert result.loc[0, "202609"] == pytest.approx(250.0)
+    assert result.loc[0, "202609"] == pytest.approx(250.25)
 
 
 def test_sparse_pkg_plan_treats_missing_months_as_zero_demand() -> None:
@@ -203,7 +214,14 @@ def test_edited_yield_recalculates_chip_volume() -> None:
     )
 
     wide_yield = yield_to_edit_table(yield_data)
-    be_row = wide_yield["수율 구분"].eq("BE_수율")
+    assert list(wide_yield.columns[: len(YIELD_EDITOR_DIMENSIONS)]) == [
+        "수율 구분",
+        "제품정보",
+        "Stack",
+        "WF 구분",
+    ]
+    assert set(wide_yield["수율 구분"]) == {"BE", "EDS"}
+    be_row = wide_yield["수율 구분"].eq("BE")
     wide_yield.loc[be_row, "202609"] = 0.5
     edited_yield = yield_from_edit_table(wide_yield)
 
@@ -216,3 +234,33 @@ def test_edited_yield_recalculates_chip_volume() -> None:
 
     assert result.loc[0, "202608"] == pytest.approx(100 * 11 / 0.9)
     assert result.loc[0, "202609"] == pytest.approx(100 * 11 / 0.5)
+
+
+def test_workbook_display_order_supports_custom_and_ascending_rules() -> None:
+    data = pd.DataFrame(
+        {
+            "양산구분": ["ER", "양산", "양산", "양산"],
+            "제품정보": ["제품B", "제품B", "제품A", "제품A"],
+            "Capa Code": ["Z", "B", "C", "A"],
+        }
+    )
+    display_order = pd.DataFrame(
+        {
+            "적용화면": ["PKG PLAN", "PKG PLAN", "PKG PLAN", "PKG PLAN", "PKG PLAN"],
+            "컬럼순서": [1, 1, 2, 2, 3],
+            "분류컬럼": ["양산구분", "양산구분", "제품정보", "제품정보", "Capa Code"],
+            "정렬방식": ["사용자지정", "사용자지정", "사용자지정", "사용자지정", "오름차순"],
+            "분류값": ["양산", "ER", "제품A", "제품B", None],
+            "정렬순서": [1, 2, 1, 2, None],
+            "활성여부": ["Y", "Y", "Y", "Y", "Y"],
+        }
+    )
+
+    result = apply_display_order(data, display_order, "PKG PLAN")
+
+    assert result[["양산구분", "제품정보", "Capa Code"]].to_dict("records") == [
+        {"양산구분": "양산", "제품정보": "제품A", "Capa Code": "A"},
+        {"양산구분": "양산", "제품정보": "제품A", "Capa Code": "C"},
+        {"양산구분": "양산", "제품정보": "제품B", "Capa Code": "B"},
+        {"양산구분": "ER", "제품정보": "제품B", "Capa Code": "Z"},
+    ]

@@ -37,6 +37,7 @@
 - [x] `RQ_CHIP_QTY`: 제품별 Chip 수와 Net Die Long Data를 생성하고 동일 이름의 시트·Excel Table로 로드했다.
 - [x] `RQ_YLD`: 생산계획년월·제품·Chip 속성별 수율 Long Data를 생성하고 동일 이름의 시트·Excel Table로 로드했다.
 - [x] `RQ_CHIP_EQ`: `제품정보 + Stack + WF 구분`별 용량 발생 Chip 수 `구분_Chip`과 Chip당 용량 `구분_EQ`를 구성했다.
+- [x] `RQ_DISPLAY_ORDER`: 화면·컬럼별 사용자지정/오름차순/내림차순 정렬 규칙을 수동 설정 테이블에서 생성하고 동일 이름의 Excel Table로 로드했다.
 - [x] Net Die는 별도 쿼리로 분리하지 않고 `RQ_CHIP_QTY`에 포함하기로 했다.
 - [x] `RQ_PRODUCT_MASTER`는 불필요한 것으로 결정했다. 현재 참조 쿼리 구조에서 PKG Part No만으로 제품정보를 별도 조회하지 않는다.
 
@@ -166,6 +167,8 @@
 - [x] 기존 부하량 기능을 `부하량` 페이지로 분리하고 탭 순서를 `PKG PLAN → 수율 → 환산`으로 구성했다. PKG/Chip/Wafer 소요기준 드롭다운과 `양산구분 + 제품정보 + Stack`별 월 물량 표를 제공한다.
 - [x] `월별 물량` 소요기준에 Density를 추가하고 기본·`WF 구분` 상세 결과를 억Gb 단위로 표시한다.
 - [x] 월별 물량 표 위에 `상세` 토글을 추가했다. 활성화 시 분류에 `WF 구분`을 추가하며 PKG는 `PKG`, Chip·Wafer·Density는 원본 WF 구분으로 표시한다.
+- [x] 부하량 페이지의 분류 컬럼 표시 순서를 조정하고 화면 라벨을 `양산`, `제품`, `PKG Code`, `거래선`, `구분`, `속성`으로 통일했다. 쿼리와 계산에 사용하는 원본 컬럼명은 변경하지 않는다.
+- [x] `RQ_DISPLAY_ORDER`의 활성 규칙을 PKG PLAN·수율·환산 표에 가변 적용한다. 사용자지정 값은 지정 순서, 일반 컬럼은 오름차순·내림차순으로 정렬하며 미등록 값은 마지막에 유지한다.
 - [ ] 월별·공정별 확보율 요약표와 B/N 결과를 구현한다.
 - [ ] 확보율 히트맵과 공정별 월 추이 차트를 구현한다.
 - [ ] 제품·Stack·PKG Part No·Chip 속성별 부하 기여도 상세 화면을 구현한다.
@@ -198,6 +201,7 @@
 - [x] 제품 분류별로 수요가 없는 월의 PKG PLAN 빈 셀을 0으로 표시하고 계산 Long Data에서는 제외하도록 구현했다. 희소 월 계획 테스트를 추가해 pytest 4개가 통과했다.
 - [x] `RQ_CHIP_EQ` 기반 Density 기본·상세 집계 테스트를 추가해 pytest 5개가 통과했다.
 - [x] 수율 Wide 편집·Long 복원·Chip 부하량 재계산 테스트를 추가해 pytest 6개가 통과했다. 실제 XLSB 기반 Streamlit 테스트 세션에서 탭 순서와 실행 예외 없음도 검증했다.
+- [x] 사용자지정·오름차순 정렬 테스트를 추가해 pytest 7개가 통과했다. 실제 XLSB의 `RQ_DISPLAY_ORDER` 93행을 로드해 PKG PLAN·수율·환산 정렬과 페이지 실행을 검증했다.
 - [x] 로컬 `templates/structure_template.xlsb`에 `RQ_CHIP_EQ` Excel Table을 반영하고 Density 통합 계산을 검증했다. `RQ_CHIP_EQ` 8행을 읽어 월별 Density 5행을 생성했으며 합계는 202608 `11.5724832억Gb`, 202609 `14.3973696억Gb`이다.
 - [x] 실제 XLSB 계획 한 셀을 100 Kea 증가시켜 PKG·Chip·Wafer 합계가 모두 재산출됨을 검증했다.
 - [x] 프로그램 입력은 PivotTable보다 기준정보별 Long Excel Table을 우선 사용하기로 했다.

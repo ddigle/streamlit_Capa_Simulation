@@ -17,6 +17,14 @@ from capa_simulation.services.load_calculator import (
 from capa_simulation.settings import PROJECT_ROOT
 
 CLASSIFICATION_BACKGROUND_COLOR = "#F0F2F6"
+DISPLAY_COLUMN_LABELS = {
+    "양산구분": "양산",
+    "제품정보": "제품",
+    "Capa Code": "PKG Code",
+    "Customer": "거래선",
+    "수율 구분": "구분",
+    "WF 구분": "속성",
+}
 
 st.title("부하량")
 
@@ -40,8 +48,12 @@ except Exception as exc:
     st.stop()
 
 try:
-    default_plan_table = plan_to_edit_table(reference_tables["RQ_PKG_PLAN"])
-    default_yield_table = yield_to_edit_table(reference_tables["RQ_YLD"])
+    default_plan_table = plan_to_edit_table(
+        reference_tables["RQ_PKG_PLAN"], reference_tables["RQ_DISPLAY_ORDER"]
+    )
+    default_yield_table = yield_to_edit_table(
+        reference_tables["RQ_YLD"], reference_tables["RQ_DISPLAY_ORDER"]
+    )
 except ValueError as exc:
     st.error(str(exc))
     st.stop()
@@ -73,12 +85,15 @@ with pkg_plan_tab:
         styled_plan_table,
         key=plan_editor_key,
         hide_index=True,
-        width="stretch",
+        width="content",
+        height=500,
+        row_height=25,
         num_rows="fixed",
         disabled=PLAN_EDITOR_DIMENSIONS,
         column_config={
             **{
                 column: st.column_config.TextColumn(
+                    DISPLAY_COLUMN_LABELS.get(column, column),
                     width=None,
                     alignment="center",
                     pinned=True,
@@ -88,9 +103,10 @@ with pkg_plan_tab:
             **{
                 month: st.column_config.NumberColumn(
                     month,
-                    width=None,
+                    width=80,
                     min_value=0.0,
-                    format="%,.2f",
+                    step=0.01,
+                    format="%,.0f",
                     alignment="center",
                 )
                 for month in plan_month_columns
@@ -122,12 +138,15 @@ with yield_tab:
         styled_yield_table,
         key=yield_editor_key,
         hide_index=True,
-        width="stretch",
+        width="content",
+        height=500,
+        row_height=25,
         num_rows="fixed",
         disabled=YIELD_EDITOR_DIMENSIONS,
         column_config={
             **{
                 column: st.column_config.TextColumn(
+                    DISPLAY_COLUMN_LABELS.get(column, column),
                     width=None,
                     alignment="center",
                     pinned=True,
@@ -137,7 +156,7 @@ with yield_tab:
             **{
                 month: st.column_config.NumberColumn(
                     month,
-                    width=None,
+                    width=80,
                     min_value=0.0,
                     max_value=1.0,
                     step=0.001,
@@ -157,12 +176,17 @@ except ValueError as exc:
 
 with conversion_tab:
     demand_basis_options: tuple[DemandBasis, ...] = ("PKG", "Chip", "Wafer", "Density")
-    demand_basis = st.selectbox(
-        "소요기준",
-        options=demand_basis_options,
-        key="monthly_volume_basis",
-    )
-    show_detail = st.toggle("상세", key="monthly_volume_detail")
+    with st.container(border=True):
+        st.subheader("설정")
+        basis_column, detail_column, _ = st.columns([2, 1, 5], vertical_alignment="bottom")
+        with basis_column:
+            demand_basis = st.selectbox(
+                "소요기준",
+                options=demand_basis_options,
+                key="monthly_volume_basis",
+            )
+        with detail_column:
+            show_detail = st.toggle("상세", key="monthly_volume_detail")
 
     try:
         monthly_volume = build_monthly_volume(
@@ -172,6 +196,7 @@ with conversion_tab:
             demand_basis=demand_basis,
             detailed=show_detail,
             density_data=reference_tables["RQ_CHIP_EQ"],
+            display_order=reference_tables["RQ_DISPLAY_ORDER"],
         )
     except ValueError as exc:
         st.error(str(exc))
@@ -183,42 +208,49 @@ with conversion_tab:
         "Wafer": "매",
         "Density": "억Gb",
     }[demand_basis]
-    st.caption(f"단위: {unit}")
+    conversion_number_format = "%,.2f" if demand_basis == "Density" else "%,.0f"
 
-    classification_columns = {"양산구분", "제품정보", "Stack"}
-    if show_detail:
-        classification_columns.add("WF 구분")
-    month_columns = [
-        column for column in monthly_volume.columns if column not in classification_columns
-    ]
-    displayed_classification_columns = [
-        column for column in monthly_volume.columns if column in classification_columns
-    ]
-    styled_monthly_volume = monthly_volume.style.set_properties(
-        subset=pd.Index(displayed_classification_columns),
-        **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
-    )
-    st.dataframe(
-        styled_monthly_volume,
-        hide_index=True,
-        width="stretch",
-        column_config={
-            **{
-                column: st.column_config.TextColumn(
-                    width=None,
-                    alignment="center",
-                    pinned=True,
-                )
-                for column in classification_columns
+    with st.container(border=True):
+        st.subheader("환산")
+        st.caption(f"단위: {unit}")
+
+        classification_columns = {"양산구분", "제품정보", "Stack"}
+        if show_detail:
+            classification_columns.add("WF 구분")
+        month_columns = [
+            column for column in monthly_volume.columns if column not in classification_columns
+        ]
+        displayed_classification_columns = [
+            column for column in monthly_volume.columns if column in classification_columns
+        ]
+        styled_monthly_volume = monthly_volume.style.set_properties(
+            subset=pd.Index(displayed_classification_columns),
+            **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
+        )
+        st.dataframe(
+            styled_monthly_volume,
+            hide_index=True,
+            width="content",
+            height=500,
+            row_height=25,
+            column_config={
+                **{
+                    column: st.column_config.TextColumn(
+                        DISPLAY_COLUMN_LABELS.get(column, column),
+                        width=None,
+                        alignment="center",
+                        pinned=True,
+                    )
+                    for column in classification_columns
+                },
+                **{
+                    month: st.column_config.NumberColumn(
+                        month,
+                        width=80,
+                        format=conversion_number_format,
+                        alignment="center",
+                    )
+                    for month in month_columns
+                },
             },
-            **{
-                month: st.column_config.NumberColumn(
-                    month,
-                    width=None,
-                    format="%,.2f",
-                    alignment="center",
-                )
-                for month in month_columns
-            },
-        },
-    )
+        )

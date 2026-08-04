@@ -7,4 +7,7 @@ gatherUsageStats = false
 [theme]
 base = "light"
 primaryColor = "#2563EB"
+backgroundColor = "#E9ECEF"
 
+[theme.sidebar]
+backgroundColor = "#DDF3E4"
