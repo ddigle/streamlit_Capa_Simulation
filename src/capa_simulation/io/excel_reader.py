@@ -11,6 +11,16 @@ REFERENCE_TABLES = (
     "RQ_CHIP_QTY",
     "RQ_CHIP_EQ",
     "RQ_DISPLAY_ORDER",
+    "RQ_EQP_OWN",
+    "RQ_EQP_LENT",
+    "RQ_EQP_AVBL",
+    "RQ_UPEH",
+    "RQ_RUN_RATE",
+    "RQ_VITAL",
+    "RQ_MODULE",
+    "RQ_RUN_DAY",
+    "RQ_LOT_RATIO",
+    "RQ_WF_RATIO",
 )
 
 

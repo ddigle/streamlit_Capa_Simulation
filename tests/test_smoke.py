@@ -11,6 +11,11 @@ from capa_simulation.services.load_calculator import (
     yield_from_edit_table,
     yield_to_edit_table,
 )
+from capa_simulation.services.month_filter import (
+    available_month_range,
+    filter_month_range,
+)
+from capa_simulation.services.unit_capacity import calculate_unit_capacity
 from capa_simulation.settings import APP_NAME
 
 
@@ -246,7 +251,8 @@ def test_workbook_display_order_supports_custom_and_ascending_rules() -> None:
     )
     display_order = pd.DataFrame(
         {
-            "적용화면": ["PKG PLAN", "PKG PLAN", "PKG PLAN", "PKG PLAN", "PKG PLAN"],
+            "페이지 구분": ["부하량"] * 5,
+            "탭 구분": ["PKG PLAN"] * 5,
             "컬럼순서": [1, 1, 2, 2, 3],
             "분류컬럼": ["양산구분", "양산구분", "제품정보", "제품정보", "Capa Code"],
             "정렬방식": ["사용자지정", "사용자지정", "사용자지정", "사용자지정", "오름차순"],
@@ -256,7 +262,7 @@ def test_workbook_display_order_supports_custom_and_ascending_rules() -> None:
         }
     )
 
-    result = apply_display_order(data, display_order, "PKG PLAN")
+    result = apply_display_order(data, display_order, "부하량", "PKG PLAN")
 
     assert result[["양산구분", "제품정보", "Capa Code"]].to_dict("records") == [
         {"양산구분": "양산", "제품정보": "제품A", "Capa Code": "A"},
@@ -264,3 +270,53 @@ def test_workbook_display_order_supports_custom_and_ascending_rules() -> None:
         {"양산구분": "양산", "제품정보": "제품B", "Capa Code": "B"},
         {"양산구분": "ER", "제품정보": "제품B", "Capa Code": "Z"},
     ]
+
+
+def test_month_range_uses_only_the_intersection_with_source_data() -> None:
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202607, 202608, 202701, 202712],
+            "생산수량": [10.0, 20.0, 30.0, 40.0],
+        }
+    )
+
+    assert available_month_range(plan, "RQ_PKG_PLAN") == (202607, 202712)
+    narrow = filter_month_range(plan, 202607, 202612, "RQ_PKG_PLAN")
+    wide = filter_month_range(plan, 202605, 202812, "RQ_PKG_PLAN")
+
+    assert narrow["생산계획년월"].tolist() == [202607, 202608]
+    assert wide["생산계획년월"].tolist() == [202607, 202608, 202701, 202712]
+
+
+def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
+    upeh = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "Area_Name": ["Main", "MI"],
+            "소요기준": ["CHIP", "PKG"],
+            "공정": ["Process-A", "Process-B"],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["Product-A", "Product-A"],
+            "Stack": ["12H", "12H"],
+            "WF 구분": ["Core", "Core"],
+            "UPEH": [100.0, None],
+            "ST": [None, 36.0],
+        }
+    )
+    detail_keys = ["생산계획년월", "공정", "양산구분", "제품정보", "Stack", "WF 구분"]
+    shared_detail = upeh[detail_keys]
+    run_rate = shared_detail[["생산계획년월", "공정", "양산구분"]].assign(CAPA_RUN_RATE=0.8)
+    vital = shared_detail[["생산계획년월", "공정", "양산구분"]].assign(편중률=1.0)
+    module = pd.DataFrame({"공정": ["Process-A", "Process-B"], "모듈수": [2.0, 2.0]})
+    run_day = shared_detail[["생산계획년월", "공정"]].assign(RUN_DAY=30.0)
+    lot_ratio = shared_detail.assign(**{"Lot 측정률": 1.0})
+    wf_ratio = shared_detail.assign(WF측정률=1.0)
+
+    result = calculate_unit_capacity(upeh, run_rate, vital, module, run_day, lot_ratio, wf_ratio)
+
+    assert result.loc[result["Area_Name"].eq("Main"), "대당 Capa"].iloc[0] == pytest.approx(
+        (100 / 1000) * 24 * 0.8 * 2 * 30
+    )
+    assert result.loc[result["Area_Name"].eq("MI"), "대당 Capa"].iloc[0] == pytest.approx(
+        ((3600 / 36) / 1000) * 24 * 0.8 * 2 * 30
+    )

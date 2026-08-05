@@ -2,8 +2,7 @@
 
 import pandas as pd
 
-DISPLAY_ORDER_REQUIRED_COLUMNS = [
-    "적용화면",
+DISPLAY_ORDER_RULE_COLUMNS = [
     "컬럼순서",
     "분류컬럼",
     "정렬방식",
@@ -11,28 +10,49 @@ DISPLAY_ORDER_REQUIRED_COLUMNS = [
     "정렬순서",
     "활성여부",
 ]
+DISPLAY_ORDER_SCOPE_COLUMNS = ["페이지 구분", "탭 구분"]
+LEGACY_SCOPE_COLUMN = "적용화면"
 DISPLAY_ORDER_MODES = {"사용자지정", "오름차순", "내림차순"}
 
 
 def _prepare_display_order(display_order: pd.DataFrame) -> pd.DataFrame:
     missing = [
-        column
-        for column in DISPLAY_ORDER_REQUIRED_COLUMNS
-        if column not in display_order.columns
+        column for column in DISPLAY_ORDER_RULE_COLUMNS if column not in display_order.columns
     ]
     if missing:
         raise ValueError(f"RQ_DISPLAY_ORDER 필수 컬럼이 없습니다: {', '.join(missing)}")
 
-    prepared = display_order[DISPLAY_ORDER_REQUIRED_COLUMNS].copy()
-    text_columns = ["적용화면", "분류컬럼", "정렬방식", "분류값", "활성여부"]
+    if all(column in display_order.columns for column in DISPLAY_ORDER_SCOPE_COLUMNS):
+        prepared = display_order[[*DISPLAY_ORDER_SCOPE_COLUMNS, *DISPLAY_ORDER_RULE_COLUMNS]].copy()
+        required_scope_columns = DISPLAY_ORDER_SCOPE_COLUMNS
+    elif LEGACY_SCOPE_COLUMN in display_order.columns:
+        prepared = display_order[[LEGACY_SCOPE_COLUMN, *DISPLAY_ORDER_RULE_COLUMNS]].copy()
+        prepared = prepared.rename(columns={LEGACY_SCOPE_COLUMN: "탭 구분"})
+        prepared.insert(0, "페이지 구분", "")
+        required_scope_columns = ["탭 구분"]
+    else:
+        raise ValueError(
+            "RQ_DISPLAY_ORDER에 페이지 구분·탭 구분 또는 기존 적용화면 컬럼이 필요합니다."
+        )
+
+    text_columns = [
+        "페이지 구분",
+        "탭 구분",
+        "분류컬럼",
+        "정렬방식",
+        "분류값",
+        "활성여부",
+    ]
     for column in text_columns:
         prepared[column] = prepared[column].astype("string").str.strip()
     prepared["활성여부"] = prepared["활성여부"].str.upper()
     prepared["컬럼순서"] = pd.to_numeric(prepared["컬럼순서"], errors="coerce")
     prepared["정렬순서"] = pd.to_numeric(prepared["정렬순서"], errors="coerce")
 
-    required_values = prepared[["적용화면", "컬럼순서", "분류컬럼", "정렬방식", "활성여부"]]
-    if required_values.isna().any(axis=None):
+    required_values = prepared[
+        [*required_scope_columns, "컬럼순서", "분류컬럼", "정렬방식", "활성여부"]
+    ]
+    if required_values.isna().any(axis=None) or required_values.eq("").any(axis=None):
         raise ValueError("RQ_DISPLAY_ORDER의 필수 설정값에 누락이 있습니다.")
     invalid_modes = sorted(set(prepared["정렬방식"].dropna()) - DISPLAY_ORDER_MODES)
     if invalid_modes:
@@ -46,16 +66,20 @@ def _prepare_display_order(display_order: pd.DataFrame) -> pd.DataFrame:
 def apply_display_order(
     data: pd.DataFrame,
     display_order: pd.DataFrame | None,
-    screen: str,
+    page: str,
+    tab: str | None = None,
     value_aliases: dict[str, dict[str, str]] | None = None,
 ) -> pd.DataFrame:
-    """Sort data using active rules for a screen; unmapped custom values sort last."""
+    """Sort data using active rules for a page and tab."""
     if display_order is None:
         return data
 
     prepared = _prepare_display_order(display_order)
+    tab_name = tab or page
     rules = prepared.loc[
-        prepared["활성여부"].eq("Y") & prepared["적용화면"].eq(screen)
+        prepared["활성여부"].eq("Y")
+        & prepared["탭 구분"].eq(tab_name)
+        & (prepared["페이지 구분"].eq("") | prepared["페이지 구분"].eq(page))
     ].copy()
     if rules.empty:
         return data
@@ -91,13 +115,15 @@ def apply_display_order(
             custom = column_rules[["분류값", "정렬순서"]]
             if custom.isna().any(axis=None):
                 raise ValueError(
-                    f"RQ_DISPLAY_ORDER의 사용자지정 규칙에 값이 누락되었습니다: {screen}.{column}"
+                    "RQ_DISPLAY_ORDER의 사용자지정 규칙에 값이 누락되었습니다: "
+                    f"{page}.{tab_name}.{column}"
                 )
             duplicated = custom["분류값"].duplicated(keep=False)
             if duplicated.any():
                 values = custom.loc[duplicated, "분류값"].drop_duplicates().tolist()
                 raise ValueError(
-                    f"RQ_DISPLAY_ORDER의 사용자지정 값이 중복되었습니다: {screen}.{column} {values}"
+                    "RQ_DISPLAY_ORDER의 사용자지정 값이 중복되었습니다: "
+                    f"{page}.{tab_name}.{column} {values}"
                 )
             mapping = dict(zip(custom["분류값"], custom["정렬순서"], strict=True))
             result[helper] = result[column].astype("string").map(mapping).fillna(float("inf"))
@@ -117,6 +143,6 @@ def apply_display_order(
         kind="stable",
         na_position="last",
     )
-    return sorted_result.drop(
-        columns=[*helper_columns, "__display_original_order"]
-    ).reset_index(drop=True)
+    return sorted_result.drop(columns=[*helper_columns, "__display_original_order"]).reset_index(
+        drop=True
+    )

@@ -1,0 +1,226 @@
+import pandas as pd
+
+PERFORMANCE_KEYS = ["생산계획년월", "공정", "양산구분", "제품정보", "Stack", "WF 구분"]
+UNIT_CAPACITY_DIMENSIONS = [
+    "공정",
+    "소요기준",
+    "양산구분",
+    "제품정보",
+    "Stack",
+    "WF 구분",
+    "Area_Name",
+]
+
+
+def calculate_unit_capacity(
+    upeh: pd.DataFrame,
+    run_rate: pd.DataFrame,
+    vital: pd.DataFrame,
+    module: pd.DataFrame,
+    run_day: pd.DataFrame,
+    lot_ratio: pd.DataFrame,
+    wf_ratio: pd.DataFrame,
+) -> pd.DataFrame:
+    """Calculate monthly per-equipment capacity for Main and MI process rows."""
+    performance = _prepare_performance(upeh)
+    if performance.empty:
+        raise ValueError("RQ_UPEH에 대당 Capa를 산출할 데이터가 없습니다.")
+
+    result = performance
+    result = _join_reference(
+        result,
+        run_rate,
+        ["생산계획년월", "공정", "양산구분"],
+        "CAPA_RUN_RATE",
+        "RQ_RUN_RATE",
+    )
+    result = _join_reference(
+        result,
+        vital,
+        ["생산계획년월", "공정", "양산구분"],
+        "편중률",
+        "RQ_VITAL",
+    )
+    result = _join_reference(result, module, ["공정"], "모듈수", "RQ_MODULE")
+    result = _join_reference(
+        result,
+        run_day,
+        ["생산계획년월", "공정"],
+        "RUN_DAY",
+        "RQ_RUN_DAY",
+    )
+    result = _join_reference(
+        result,
+        lot_ratio,
+        PERFORMANCE_KEYS,
+        "Lot 측정률",
+        "RQ_LOT_RATIO",
+    )
+    result = _join_reference(
+        result,
+        wf_ratio,
+        PERFORMANCE_KEYS,
+        "WF측정률",
+        "RQ_WF_RATIO",
+    )
+
+    _assert_non_negative(result, "환산_UPEH", "RQ_UPEH")
+    _assert_non_negative(result, "CAPA_RUN_RATE", "RQ_RUN_RATE")
+    for column, table_name in (
+        ("편중률", "RQ_VITAL"),
+        ("모듈수", "RQ_MODULE"),
+        ("RUN_DAY", "RQ_RUN_DAY"),
+        ("Lot 측정률", "RQ_LOT_RATIO"),
+        ("WF측정률", "RQ_WF_RATIO"),
+    ):
+        _assert_positive(result, column, table_name)
+
+    result["대당 Capa"] = (
+        result["환산_UPEH"]
+        * 24.0
+        * result["CAPA_RUN_RATE"]
+        / result["편중률"]
+        * result["모듈수"]
+        * result["RUN_DAY"]
+        / result["Lot 측정률"]
+        / result["WF측정률"]
+    )
+    columns = ["생산계획년월", *UNIT_CAPACITY_DIMENSIONS, "환산_UPEH", "대당 Capa"]
+    return (
+        result[columns]
+        .sort_values(["생산계획년월", *UNIT_CAPACITY_DIMENSIONS])
+        .reset_index(drop=True)
+    )
+
+
+def unit_capacity_to_month_table(unit_capacity: pd.DataFrame) -> pd.DataFrame:
+    """Pivot calculated unit capacity into month columns for display."""
+    required = ["생산계획년월", *UNIT_CAPACITY_DIMENSIONS, "대당 Capa"]
+    _require_columns(unit_capacity, required, "대당 Capa")
+    result = unit_capacity.pivot(
+        index=UNIT_CAPACITY_DIMENSIONS,
+        columns="생산계획년월",
+        values="대당 Capa",
+    ).reset_index()
+    result.columns.name = None
+    raw_month_columns = [
+        column for column in result.columns if column not in UNIT_CAPACITY_DIMENSIONS
+    ]
+    result = result.rename(columns={column: str(int(column)) for column in raw_month_columns})
+    month_columns = sorted(
+        [column for column in result.columns if column not in UNIT_CAPACITY_DIMENSIONS]
+    )
+    return result[[*UNIT_CAPACITY_DIMENSIONS, *month_columns]]
+
+
+def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
+    table_name = "RQ_UPEH"
+    required = [*PERFORMANCE_KEYS, "Area_Name", "소요기준", "UPEH", "ST"]
+    _require_columns(data, required, table_name)
+    result = data[required].copy()
+    if result.empty:
+        result["환산_UPEH"] = pd.Series(dtype="float64")
+        return result.drop(columns=["UPEH", "ST"])
+    _normalize_month(result, table_name)
+    _normalize_keys(result, [key for key in PERFORMANCE_KEYS if key != "생산계획년월"])
+    result["Area_Name"] = result["Area_Name"].astype("string").str.strip()
+    result["소요기준"] = result["소요기준"].astype("string").str.strip().str.upper()
+    _assert_complete_keys(result, [*PERFORMANCE_KEYS, "Area_Name", "소요기준"], table_name)
+    area_names = result["Area_Name"].str.casefold()
+    invalid_area = ~area_names.isin(["main", "mi"])
+    if invalid_area.any():
+        examples = result.loc[invalid_area, "Area_Name"].drop_duplicates().head(5).tolist()
+        raise ValueError(f"RQ_UPEH의 Area_Name은 Main 또는 MI여야 합니다: {examples}")
+    result["Area_Name"] = area_names.map({"main": "Main", "mi": "MI"})
+    _assert_unique(result, [*PERFORMANCE_KEYS, "Area_Name", "소요기준"], table_name)
+
+    upeh_values = pd.to_numeric(result["UPEH"], errors="coerce")
+    st_values = pd.to_numeric(result["ST"], errors="coerce")
+    main_rows = result["Area_Name"].eq("Main")
+    mi_rows = result["Area_Name"].eq("MI")
+    if upeh_values.loc[main_rows].isna().any():
+        raise ValueError("RQ_UPEH의 Main 행에 UPEH 누락값 또는 숫자가 아닌 값이 있습니다.")
+    if st_values.loc[mi_rows].isna().any():
+        raise ValueError("RQ_UPEH의 MI 행에 ST 누락값 또는 숫자가 아닌 값이 있습니다.")
+    if st_values.loc[mi_rows].le(0).any():
+        raise ValueError("RQ_UPEH의 MI 행 ST 값은 0보다 커야 합니다.")
+
+    result["환산_UPEH"] = upeh_values
+    result.loc[mi_rows, "환산_UPEH"] = 3600.0 / st_values.loc[mi_rows]
+    kea_rows = result["소요기준"].isin(["CHIP", "PKG"])
+    result.loc[kea_rows, "환산_UPEH"] = result.loc[kea_rows, "환산_UPEH"] / 1000.0
+    return result.drop(columns=["UPEH", "ST"])
+
+
+def _join_reference(
+    base: pd.DataFrame,
+    reference: pd.DataFrame,
+    keys: list[str],
+    value_column: str,
+    table_name: str,
+) -> pd.DataFrame:
+    _require_columns(reference, [*keys, value_column], table_name)
+    prepared = reference[[*keys, value_column]].copy()
+    if "생산계획년월" in keys:
+        _normalize_month(prepared, table_name)
+    _normalize_keys(prepared, [key for key in keys if key != "생산계획년월"])
+    _assert_complete_keys(prepared, keys, table_name)
+    _assert_unique(prepared, keys, table_name)
+    prepared[value_column] = _numeric_column(prepared, value_column, table_name)
+    result = base.merge(prepared, on=keys, how="left", validate="many_to_one")
+    missing = result[value_column].isna()
+    if missing.any():
+        examples = result.loc[missing, keys].drop_duplicates().head(5).to_dict("records")
+        raise ValueError(f"{table_name} 연결값이 없는 대당 Capa 기준이 있습니다: {examples}")
+    return result
+
+
+def _normalize_keys(data: pd.DataFrame, keys: list[str]) -> None:
+    for key in keys:
+        data[key] = data[key].astype("string").str.strip()
+
+
+def _normalize_month(data: pd.DataFrame, table_name: str) -> None:
+    numeric = pd.to_numeric(data["생산계획년월"], errors="coerce")
+    valid = numeric.notna() & numeric.mod(1).eq(0)
+    if not valid.all():
+        raise ValueError(f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다.")
+    integer_month = numeric.astype("int64")
+    if not integer_month.mod(100).between(1, 12).all():
+        raise ValueError(f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다.")
+    data["생산계획년월"] = integer_month
+
+
+def _assert_complete_keys(data: pd.DataFrame, keys: list[str], table_name: str) -> None:
+    if data[keys].isna().any(axis=None) or data[keys].eq("").any(axis=None):
+        raise ValueError(f"{table_name}의 연결 키에 누락값이 있습니다.")
+
+
+def _assert_unique(data: pd.DataFrame, keys: list[str], table_name: str) -> None:
+    duplicated = data.duplicated(keys, keep=False)
+    if duplicated.any():
+        examples = data.loc[duplicated, keys].drop_duplicates().head(5).to_dict("records")
+        raise ValueError(f"{table_name}의 연결 키가 중복되었습니다: {examples}")
+
+
+def _numeric_column(data: pd.DataFrame, column: str, table_name: str) -> pd.Series:
+    numeric = pd.to_numeric(data[column], errors="coerce")
+    if numeric.isna().any():
+        raise ValueError(f"{table_name}의 {column} 컬럼에 숫자가 아닌 값이 있습니다.")
+    return numeric.astype("float64")
+
+
+def _assert_positive(data: pd.DataFrame, column: str, table_name: str) -> None:
+    if data[column].le(0).any():
+        raise ValueError(f"{table_name}의 {column} 값은 0보다 커야 합니다.")
+
+
+def _assert_non_negative(data: pd.DataFrame, column: str, table_name: str) -> None:
+    if data[column].lt(0).any():
+        raise ValueError(f"{table_name}의 {column} 값은 0 이상이어야 합니다.")
+
+
+def _require_columns(data: pd.DataFrame, required: list[str], table_name: str) -> None:
+    missing = [column for column in required if column not in data.columns]
+    if missing:
+        raise ValueError(f"{table_name} 필수 컬럼이 없습니다: {', '.join(missing)}")

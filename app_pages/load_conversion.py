@@ -14,7 +14,12 @@ from capa_simulation.services.load_calculator import (
     yield_from_edit_table,
     yield_to_edit_table,
 )
+from capa_simulation.services.month_filter import (
+    available_month_range,
+    filter_month_range,
+)
 from capa_simulation.settings import PROJECT_ROOT
+from capa_simulation.sidebar_status import show_applied_month_range
 
 CLASSIFICATION_BACKGROUND_COLOR = "#F0F2F6"
 DISPLAY_COLUMN_LABELS = {
@@ -48,11 +53,39 @@ except Exception as exc:
     st.stop()
 
 try:
+    source_start_month, source_end_month = available_month_range(
+        reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN"
+    )
+    selected_start_label, selected_end_label = st.session_state[
+        "production_month_range_v2"
+    ]
+    selected_start_month = int(selected_start_label.replace("-", ""))
+    selected_end_month = int(selected_end_label.replace("-", ""))
+    effective_start_month = max(selected_start_month, source_start_month)
+    effective_end_month = min(selected_end_month, source_end_month)
+    if effective_start_month > effective_end_month:
+        with st.sidebar:
+            st.warning("선택 범위에 PKG PLAN 데이터가 없습니다.")
+        st.stop()
+
+    show_applied_month_range(effective_start_month, effective_end_month)
+    filtered_plan = filter_month_range(
+        reference_tables["RQ_PKG_PLAN"],
+        effective_start_month,
+        effective_end_month,
+        "RQ_PKG_PLAN",
+    )
+    filtered_yield = filter_month_range(
+        reference_tables["RQ_YLD"],
+        effective_start_month,
+        effective_end_month,
+        "RQ_YLD",
+    )
     default_plan_table = plan_to_edit_table(
-        reference_tables["RQ_PKG_PLAN"], reference_tables["RQ_DISPLAY_ORDER"]
+        filtered_plan, reference_tables["RQ_DISPLAY_ORDER"]
     )
     default_yield_table = yield_to_edit_table(
-        reference_tables["RQ_YLD"], reference_tables["RQ_DISPLAY_ORDER"]
+        filtered_yield, reference_tables["RQ_DISPLAY_ORDER"]
     )
 except ValueError as exc:
     st.error(str(exc))
@@ -61,13 +94,16 @@ except ValueError as exc:
 plan_editor_key = "pkg_plan_editor"
 yield_editor_key = "yield_editor"
 source_token_key = "load_conversion_source_token"
-source_token = f"{workbook.resolve()}:{workbook.stat().st_mtime_ns}"
+source_token = (
+    f"{workbook.resolve()}:{workbook.stat().st_mtime_ns}:"
+    f"{effective_start_month}:{effective_end_month}"
+)
 if st.session_state.get(source_token_key) != source_token:
     st.session_state.pop(plan_editor_key, None)
     st.session_state.pop(yield_editor_key, None)
     st.session_state[source_token_key] = source_token
 
-pkg_plan_tab, yield_tab, conversion_tab = st.tabs(["PKG PLAN", "수율", "환산"])
+conversion_tab, pkg_plan_tab, yield_tab = st.tabs(["📊 환산", "PKG PLAN", "수율"])
 
 with pkg_plan_tab:
     st.caption(
@@ -77,7 +113,11 @@ with pkg_plan_tab:
     plan_month_columns = [
         column for column in default_plan_table.columns if column not in PLAN_EDITOR_DIMENSIONS
     ]
-    styled_plan_table = default_plan_table.style.set_properties(
+    displayed_plan_table = default_plan_table.copy()
+    displayed_plan_table[plan_month_columns] = displayed_plan_table[
+        plan_month_columns
+    ].mask(displayed_plan_table[plan_month_columns].eq(0))
+    styled_plan_table = displayed_plan_table.style.set_properties(
         subset=pd.Index(PLAN_EDITOR_DIMENSIONS),
         **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
     )
@@ -178,15 +218,14 @@ with conversion_tab:
     demand_basis_options: tuple[DemandBasis, ...] = ("PKG", "Chip", "Wafer", "Density")
     with st.container(border=True):
         st.subheader("설정")
-        basis_column, detail_column, _ = st.columns([2, 1, 5], vertical_alignment="bottom")
-        with basis_column:
+        with st.container(horizontal=True, vertical_alignment="bottom", gap="medium"):
             demand_basis = st.selectbox(
                 "소요기준",
                 options=demand_basis_options,
                 key="monthly_volume_basis",
+                width=180,
             )
-        with detail_column:
-            show_detail = st.toggle("상세", key="monthly_volume_detail")
+            show_detail = st.toggle("상세", key="monthly_volume_detail", width=90)
 
     try:
         monthly_volume = build_monthly_volume(
@@ -223,7 +262,11 @@ with conversion_tab:
         displayed_classification_columns = [
             column for column in monthly_volume.columns if column in classification_columns
         ]
-        styled_monthly_volume = monthly_volume.style.set_properties(
+        displayed_monthly_volume = monthly_volume.copy()
+        displayed_monthly_volume[month_columns] = displayed_monthly_volume[
+            month_columns
+        ].mask(displayed_monthly_volume[month_columns].eq(0))
+        styled_monthly_volume = displayed_monthly_volume.style.set_properties(
             subset=pd.Index(displayed_classification_columns),
             **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
         )

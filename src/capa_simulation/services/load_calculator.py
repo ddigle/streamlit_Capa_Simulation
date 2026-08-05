@@ -76,7 +76,7 @@ def plan_to_edit_table(
         [column for column in result.columns if column not in PLAN_EDITOR_DIMENSIONS]
     )
     result = result[[*PLAN_EDITOR_DIMENSIONS, *month_columns]]
-    return apply_display_order(result, display_order, "PKG PLAN")
+    return apply_display_order(result, display_order, "부하량", "PKG PLAN")
 
 
 def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
@@ -154,6 +154,7 @@ def yield_to_edit_table(
     return apply_display_order(
         result,
         display_order,
+        "부하량",
         "수율",
         value_aliases={"수율 구분": YIELD_DISPLAY_NAMES},
     )
@@ -447,7 +448,7 @@ def _pivot_monthly(
         values="물량",
     ).fillna(0)
     pivoted.columns = [str(int(month)) for month in pivoted.columns]
-    return apply_display_order(pivoted.reset_index(), display_order, "환산")
+    return apply_display_order(pivoted.reset_index(), display_order, "부하량", "환산")
 
 
 def build_monthly_volume(
