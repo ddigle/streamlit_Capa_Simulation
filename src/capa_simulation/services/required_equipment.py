@@ -43,6 +43,7 @@ RESULT_DIMENSIONS = [
 ]
 REQB_TEXT_COLUMNS = [column for column in REQB_COLUMNS if column != "생산계획년월"]
 REQB_REQUIRED_KEYS = list(dict.fromkeys([*LOAD_KEYS, *CAPACITY_KEYS]))
+UNIMPLEMENTED_BASES = {"BOX", "PCB"}
 
 
 def calculate_required_equipment(
@@ -57,6 +58,14 @@ def calculate_required_equipment(
     prepared_reqb = reqb[REQB_COLUMNS].copy()
     _normalize_month(prepared_reqb, "RQ_REQB")
     _normalize_text(prepared_reqb, REQB_TEXT_COLUMNS)
+    prepared_reqb["소요기준"] = prepared_reqb["소요기준"].str.upper()
+    prepared_reqb = prepared_reqb.loc[
+        ~prepared_reqb["소요기준"].isin(UNIMPLEMENTED_BASES)
+    ].copy()
+    if prepared_reqb.empty:
+        return pd.DataFrame(
+            columns=[*REQB_COLUMNS, "부하량", "대당 Capa", "소요대수"]
+        )
     _normalize_basis(prepared_reqb, "RQ_REQB")
     _assert_complete(prepared_reqb, REQB_REQUIRED_KEYS, "RQ_REQB")
 
@@ -96,6 +105,8 @@ def required_equipment_to_month_table(data: pd.DataFrame) -> pd.DataFrame:
     """Aggregate RQ_REQB results by output dimensions and pivot month columns."""
     required = [*REQB_COLUMNS, "소요대수"]
     _require_columns(data, required, "소요대수")
+    if data.empty:
+        return pd.DataFrame(columns=RESULT_DIMENSIONS)
     pivot_input = (
         data.groupby(
             ["생산계획년월", *RESULT_DIMENSIONS],

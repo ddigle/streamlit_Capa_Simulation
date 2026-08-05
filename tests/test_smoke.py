@@ -2,6 +2,10 @@ import pandas as pd
 import pytest
 
 from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.dashboard import (
+    build_monthly_bottlenecks,
+    build_production_dashboard,
+)
 from capa_simulation.services.equipment_count import build_equipment_count_table
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
@@ -17,6 +21,7 @@ from capa_simulation.services.month_filter import (
     filter_month_range,
 )
 from capa_simulation.services.required_equipment import (
+    RESULT_DIMENSIONS,
     calculate_required_equipment,
     required_equipment_to_month_table,
 )
@@ -220,6 +225,56 @@ def test_monthly_density_uses_capacity_bearing_chip_types() -> None:
     assert density.loc[0, "202608"] == pytest.approx(expected_density)
     assert set(detailed_density["WF 구분"]) == {"Core", "Top"}
     assert detailed_density["202608"].sum() == pytest.approx(expected_density)
+
+
+def test_production_dashboard_groups_density_by_product_and_stack() -> None:
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608, 202609],
+            "양산구분": ["양산", "ER", "양산"],
+            "제품정보": ["HBM다E", "HBM다E", "HBM다E"],
+            "Stack": ["12H", "12H", "12H"],
+            "생산수량": [100.0, 50.0, 200.0],
+        }
+    )
+    density_data = pd.DataFrame(
+        {
+            "제품정보": ["HBM다E"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "구분_Chip": [11.0],
+            "구분_EQ": [24.0],
+        }
+    )
+
+    monthly, detail = build_production_dashboard(plan, density_data)
+
+    assert monthly["년월"].tolist() == ["26.08", "26.09"]
+    assert monthly["부하량"].tolist() == pytest.approx(
+        [150 * 11 * 24 / 100_000, 200 * 11 * 24 / 100_000]
+    )
+    assert list(detail.columns) == ["제품정보", "Stack", "26.08", "26.09"]
+    assert detail.loc[0, "26.08"] == pytest.approx(150 * 11 * 24 / 100_000)
+
+
+def test_dashboard_selects_lowest_monthly_securement_process() -> None:
+    securement = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608, 202609, 202609],
+            "공정": ["Process-B", "Process-A", "Process-C", "Process-D"],
+            "확보율": [0.8, 0.8, 1.2, 0.9],
+        }
+    )
+
+    result = build_monthly_bottlenecks(securement)
+
+    assert result["년월"].tolist() == ["26.08", "26.09"]
+    assert result["공정"].tolist() == ["Process-A", "Process-D"]
+    assert result["확보율"].tolist() == pytest.approx([0.8, 0.9])
+    assert result["축레이블"].tolist() == [
+        "26.08<br>Process-A",
+        "26.09<br>Process-D",
+    ]
 
 
 def test_edited_yield_recalculates_chip_volume() -> None:
@@ -482,6 +537,38 @@ def test_required_equipment_uses_zero_when_load_is_missing() -> None:
 
     assert result.loc[0, "부하량"] == 0
     assert result.loc[0, "소요대수"] == 0
+
+
+def test_required_equipment_excludes_unimplemented_box_and_pcb_bases() -> None:
+    reqb = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "Area_Name": ["Main", "Main"],
+            "공정": ["Process-A", "Process-B"],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["Product-A", "Product-A"],
+            "Stack": ["12H", "12H"],
+            "Capa Code": ["CAPA-A", "CAPA-A"],
+            "Customer": ["Customer-A", "Customer-A"],
+            "CS": ["MP", "MP"],
+            "WF 구분": ["Core", "Core"],
+            "STEP_SEQ": [10, 20],
+            "MCP_SEQ": [1, 1],
+            "소요기준": ["BOX", "pcb"],
+        }
+    )
+
+    result = calculate_required_equipment(
+        reqb,
+        pd.DataFrame(),
+        pd.DataFrame(),
+        pd.DataFrame(),
+        pd.DataFrame(),
+    )
+    table = required_equipment_to_month_table(result)
+
+    assert result.empty
+    assert list(table.columns) == RESULT_DIMENSIONS
 
 
 def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
