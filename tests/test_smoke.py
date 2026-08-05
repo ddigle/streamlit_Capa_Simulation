@@ -29,7 +29,11 @@ from capa_simulation.services.securement_rate import (
     calculate_securement_rate,
     securement_rate_to_month_table,
 )
-from capa_simulation.services.unit_capacity import calculate_unit_capacity
+from capa_simulation.services.unit_capacity import (
+    UNIT_CAPACITY_DIMENSIONS,
+    calculate_unit_capacity,
+    unit_capacity_to_month_table,
+)
 from capa_simulation.settings import APP_NAME
 
 
@@ -409,6 +413,37 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
     assert result.loc[result["Area_Name"].eq("MI"), "대당 Capa"].iloc[0] == pytest.approx(
         ((3600 / 36) / 1000) * 24 * 0.8 * 2 * 30
     )
+
+
+def test_unit_capacity_excludes_unimplemented_box_and_pcb_bases() -> None:
+    upeh = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "Area_Name": ["Main", "MI"],
+            "소요기준": ["BOX", "pcb"],
+            "공정": ["Process-A", "Process-B"],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["Product-A", "Product-A"],
+            "Stack": ["12H", "12H"],
+            "WF 구분": ["Core", "Core"],
+            "UPEH": [100.0, None],
+            "ST": [None, 36.0],
+        }
+    )
+
+    result = calculate_unit_capacity(
+        upeh,
+        pd.DataFrame(),
+        pd.DataFrame(),
+        pd.DataFrame(),
+        pd.DataFrame(),
+        pd.DataFrame(),
+        pd.DataFrame(),
+    )
+    table = unit_capacity_to_month_table(result)
+
+    assert result.empty
+    assert list(table.columns) == UNIT_CAPACITY_DIMENSIONS
 
 
 def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:

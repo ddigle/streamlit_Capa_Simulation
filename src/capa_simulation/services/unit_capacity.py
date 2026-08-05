@@ -10,6 +10,7 @@ UNIT_CAPACITY_DIMENSIONS = [
     "WF 구분",
     "Area_Name",
 ]
+UNIMPLEMENTED_BASES = {"BOX", "PCB"}
 
 
 def calculate_unit_capacity(
@@ -24,7 +25,14 @@ def calculate_unit_capacity(
     """Calculate monthly per-equipment capacity for Main and MI process rows."""
     performance = _prepare_performance(upeh)
     if performance.empty:
-        raise ValueError("RQ_UPEH에 대당 Capa를 산출할 데이터가 없습니다.")
+        return pd.DataFrame(
+            columns=[
+                "생산계획년월",
+                *UNIT_CAPACITY_DIMENSIONS,
+                "환산_UPEH",
+                "대당 Capa",
+            ]
+        )
 
     result = performance
     result = _join_reference(
@@ -97,6 +105,8 @@ def unit_capacity_to_month_table(unit_capacity: pd.DataFrame) -> pd.DataFrame:
     """Pivot calculated unit capacity into month columns for display."""
     required = ["생산계획년월", *UNIT_CAPACITY_DIMENSIONS, "대당 Capa"]
     _require_columns(unit_capacity, required, "대당 Capa")
+    if unit_capacity.empty:
+        return pd.DataFrame(columns=UNIT_CAPACITY_DIMENSIONS)
     result = unit_capacity.pivot(
         index=UNIT_CAPACITY_DIMENSIONS,
         columns="생산계획년월",
@@ -125,6 +135,10 @@ def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
     _normalize_keys(result, [key for key in PERFORMANCE_KEYS if key != "생산계획년월"])
     result["Area_Name"] = result["Area_Name"].astype("string").str.strip()
     result["소요기준"] = result["소요기준"].astype("string").str.strip().str.upper()
+    result = result.loc[~result["소요기준"].isin(UNIMPLEMENTED_BASES)].copy()
+    if result.empty:
+        result["환산_UPEH"] = pd.Series(dtype="float64")
+        return result.drop(columns=["UPEH", "ST"])
     _assert_complete_keys(result, [*PERFORMANCE_KEYS, "Area_Name", "소요기준"], table_name)
     area_names = result["Area_Name"].str.casefold()
     invalid_area = ~area_names.isin(["main", "mi"])
