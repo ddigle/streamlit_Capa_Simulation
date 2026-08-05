@@ -21,6 +21,7 @@ REFERENCE_TABLES = (
     "RQ_RUN_DAY",
     "RQ_LOT_RATIO",
     "RQ_WF_RATIO",
+    "RQ_REQB",
 )
 
 

@@ -300,6 +300,12 @@ try:
         wf_ratio=simulation_wf_ratio,
     )
     unit_capacity_table = unit_capacity_to_month_table(unit_capacity)
+    st.session_state["unit_capacity_result"] = {
+        "workbook_mtime_ns": workbook.stat().st_mtime_ns,
+        "start_month": effective_start_month,
+        "end_month": effective_end_month,
+        "data": unit_capacity,
+    }
     unit_capacity_table = apply_display_order(
         unit_capacity_table,
         reference_tables["RQ_DISPLAY_ORDER"],

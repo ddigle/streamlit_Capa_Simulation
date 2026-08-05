@@ -9,6 +9,7 @@ from capa_simulation.services.display_order import apply_display_order
 DemandBasis = Literal["PKG", "Chip", "Wafer", "Density"]
 
 CLASSIFICATION_COLUMNS = ["양산구분", "제품정보", "Stack"]
+LOAD_DETAIL_COLUMNS = ["Capa Code", "Customer", "CS"]
 PLAN_EDITOR_DIMENSIONS = [
     "양산구분",
     "제품정보",
@@ -255,7 +256,14 @@ def _validate_yield_range(data: pd.DataFrame, table_name: str) -> None:
 
 def _prepare_plan(plan: pd.DataFrame) -> pd.DataFrame:
     _require_columns(plan, PLAN_REQUIRED_COLUMNS, "RQ_PKG_PLAN")
-    prepared = _normalize_text(plan[PLAN_REQUIRED_COLUMNS], CLASSIFICATION_COLUMNS)
+    available_detail_columns = [
+        column for column in LOAD_DETAIL_COLUMNS if column in plan.columns
+    ]
+    prepared_columns = [*PLAN_REQUIRED_COLUMNS, *available_detail_columns]
+    prepared = _normalize_text(
+        plan[prepared_columns],
+        [*CLASSIFICATION_COLUMNS, *available_detail_columns],
+    )
     prepared["생산계획년월"] = pd.to_numeric(
         prepared["생산계획년월"], errors="coerce"
     ).astype("Int64")

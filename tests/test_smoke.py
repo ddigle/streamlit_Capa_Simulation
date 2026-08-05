@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.equipment_count import build_equipment_count_table
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
     YIELD_EDITOR_DIMENSIONS,
@@ -14,6 +15,14 @@ from capa_simulation.services.load_calculator import (
 from capa_simulation.services.month_filter import (
     available_month_range,
     filter_month_range,
+)
+from capa_simulation.services.required_equipment import (
+    calculate_required_equipment,
+    required_equipment_to_month_table,
+)
+from capa_simulation.services.securement_rate import (
+    calculate_securement_rate,
+    securement_rate_to_month_table,
 )
 from capa_simulation.services.unit_capacity import calculate_unit_capacity
 from capa_simulation.settings import APP_NAME
@@ -107,6 +116,31 @@ def test_edited_pkg_plan_recalculates_monthly_volume() -> None:
 
     assert result.loc[0, "202608"] == pytest.approx(100.0)
     assert result.loc[0, "202609"] == pytest.approx(250.25)
+
+
+def test_load_display_aggregates_internal_plan_detail_columns() -> None:
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["HBM라", "HBM라"],
+            "Stack": ["12H", "12H"],
+            "Capa Code": ["CAPA-A", "CAPA-B"],
+            "Customer": ["Customer-A", "Customer-B"],
+            "CS": ["MP", "MP"],
+            "생산수량": [60.0, 40.0],
+        }
+    )
+
+    result = build_monthly_volume(
+        plan,
+        yield_data=pd.DataFrame(),
+        chip_qty=pd.DataFrame(),
+        demand_basis="PKG",
+    )
+
+    assert list(result.columns) == ["양산구분", "제품정보", "Stack", "202608"]
+    assert result.loc[0, "202608"] == pytest.approx(100.0)
 
 
 def test_sparse_pkg_plan_treats_missing_months_as_zero_demand() -> None:
@@ -253,11 +287,11 @@ def test_workbook_display_order_supports_custom_and_ascending_rules() -> None:
         {
             "페이지 구분": ["부하량"] * 5,
             "탭 구분": ["PKG PLAN"] * 5,
-            "컬럼순서": [1, 1, 2, 2, 3],
+            "정렬우선순위": [1, 1, 2, 2, 3],
             "분류컬럼": ["양산구분", "양산구분", "제품정보", "제품정보", "Capa Code"],
             "정렬방식": ["사용자지정", "사용자지정", "사용자지정", "사용자지정", "오름차순"],
             "분류값": ["양산", "ER", "제품A", "제품B", None],
-            "정렬순서": [1, 2, 1, 2, None],
+            "값표시순서": [1, 2, 1, 2, None],
             "활성여부": ["Y", "Y", "Y", "Y", "Y"],
         }
     )
@@ -320,3 +354,269 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
     assert result.loc[result["Area_Name"].eq("MI"), "대당 Capa"].iloc[0] == pytest.approx(
         ((3600 / 36) / 1000) * 24 * 0.8 * 2 * 30
     )
+
+
+def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
+    reqb = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "Area_Name": ["Main", "Main"],
+            "공정": ["Process-A", "Process-A"],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["Product-A", "Product-A"],
+            "Stack": ["12H", "12H"],
+            "Capa Code": ["CAPA-A", "CAPA-B"],
+            "Customer": ["Customer-A", "Customer-A"],
+            "CS": ["MP", "MP"],
+            "WF 구분": ["Core", "Core"],
+            "STEP_SEQ": [10, 20],
+            "MCP_SEQ": [1, 1],
+            "소요기준": ["chip", "CHIP"],
+        }
+    )
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["Product-A", "Product-A"],
+            "Stack": ["12H", "12H"],
+            "Capa Code": ["CAPA-A", "CAPA-B"],
+            "Customer": ["Customer-A", "Customer-A"],
+            "CS": ["MP", "MP"],
+            "생산수량": [60.0, 40.0],
+        }
+    )
+    yield_data = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "EDS_수율": [0.8],
+            "BE_수율": [0.5],
+        }
+    )
+    chip_qty = pd.DataFrame(
+        {
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "구분_Chip": [2.0],
+            "Net Die": [500.0],
+        }
+    )
+    unit_capacity = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "공정": ["Process-A"],
+            "소요기준": ["Chip"],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "대당 Capa": [200.0],
+        }
+    )
+
+    result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
+    table = required_equipment_to_month_table(result)
+
+    assert len(result) == 2
+    assert result["부하량"].tolist() == pytest.approx([240.0, 160.0])
+    assert result["소요대수"].tolist() == pytest.approx([1.2, 0.8])
+    assert len(table) == 1
+    assert "Capa Code" not in table.columns
+    assert "Customer" not in table.columns
+    assert "CS" not in table.columns
+    assert "STEP_SEQ" not in table.columns
+    assert "MCP_SEQ" not in table.columns
+    assert table.loc[0, "202608"] == pytest.approx(2.0)
+
+
+def test_required_equipment_uses_zero_when_load_is_missing() -> None:
+    reqb = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "Area_Name": ["Main"],
+            "공정": ["Process-A"],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-B"],
+            "Stack": ["12H"],
+            "Capa Code": ["CAPA-A"],
+            "Customer": ["Customer-A"],
+            "CS": ["MP"],
+            "WF 구분": ["PKG"],
+            "STEP_SEQ": [10],
+            "MCP_SEQ": [1],
+            "소요기준": ["PKG"],
+        }
+    )
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "Capa Code": ["CAPA-A"],
+            "Customer": ["Customer-A"],
+            "CS": ["MP"],
+            "생산수량": [100.0],
+        }
+    )
+    unit_capacity = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "공정": ["Process-A"],
+            "소요기준": ["PKG"],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-B"],
+            "Stack": ["12H"],
+            "WF 구분": ["PKG"],
+            "대당 Capa": [10.0],
+        }
+    )
+
+    result = calculate_required_equipment(
+        reqb, plan, pd.DataFrame(), pd.DataFrame(), unit_capacity
+    )
+
+    assert result.loc[0, "부하량"] == 0
+    assert result.loc[0, "소요대수"] == 0
+
+
+def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
+    reqb = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "Area_Name": ["Main"],
+            "공정": ["Process-A"],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "Capa Code": ["CAPA-A"],
+            "Customer": ["Customer-A"],
+            "CS": ["MP"],
+            "WF 구분": ["Core"],
+            "STEP_SEQ": [10],
+            "MCP_SEQ": [1],
+            "소요기준": ["WF"],
+        }
+    )
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "Capa Code": ["CAPA-A"],
+            "Customer": ["Customer-A"],
+            "CS": ["MP"],
+            "생산수량": [100.0],
+        }
+    )
+    yield_data = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "EDS_수율": [0.8],
+            "BE_수율": [1.0],
+        }
+    )
+    chip_qty = pd.DataFrame(
+        {
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "구분_Chip": [2.0],
+            "Net Die": [500.0],
+        }
+    )
+    unit_capacity = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "공정": ["Process-A"],
+            "소요기준": ["Wafer"],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "대당 Capa": [25.0],
+        }
+    )
+
+    result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
+
+    assert result.loc[0, "소요기준"] == "WF"
+    assert result.loc[0, "부하량"] == pytest.approx(500.0)
+    assert result.loc[0, "소요대수"] == pytest.approx(20.0)
+
+
+def test_equipment_count_supports_available_summary_and_detailed_rows() -> None:
+    own = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202609],
+            "공정": ["Pre B/D", "Pre B/D"],
+            "설비보유": [10.0, 11.0],
+        }
+    )
+    lent = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202609],
+            "공정": ["Pre B/D", "Pre B/D"],
+            "설비대여평가": [2.0, 3.0],
+        }
+    )
+    available = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202609],
+            "공정": ["Pre B/D", "Pre B/D"],
+            "가용대수": [12.0, 14.0],
+        }
+    )
+
+    summary = build_equipment_count_table(own, lent, available, detailed=False)
+    detailed = build_equipment_count_table(own, lent, available, detailed=True)
+
+    assert list(summary.columns) == ["공정", "202608", "202609"]
+    assert summary.loc[0, "202608"] == pytest.approx(12.0)
+    assert detailed["구분"].tolist() == ["보유", "대여", "가용"]
+    assert detailed["202609"].tolist() == pytest.approx([11.0, 3.0, 14.0])
+
+
+def test_securement_rate_uses_process_required_sum_and_available_equipment() -> None:
+    available = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202609],
+            "공정": ["Pre B/D", "Pre B/D"],
+            "가용대수": [10.0, 12.0],
+        }
+    )
+    required = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608, 202609],
+            "공정": ["Pre B/D", "Pre B/D", "Pre B/D"],
+            "소요대수": [3.0, 2.0, 4.0],
+        }
+    )
+
+    result = calculate_securement_rate(available, required)
+    table = securement_rate_to_month_table(result)
+
+    assert result["소요대수"].tolist() == pytest.approx([5.0, 4.0])
+    assert table.loc[0, "202608"] == pytest.approx(2.0)
+    assert table.loc[0, "202609"] == pytest.approx(3.0)
+
+
+def test_securement_rate_is_blank_when_required_equipment_is_zero() -> None:
+    available = pd.DataFrame(
+        {"생산계획년월": [202608], "공정": ["Pre B/D"], "가용대수": [10.0]}
+    )
+    required = pd.DataFrame(
+        {"생산계획년월": [202608], "공정": ["Pre B/D"], "소요대수": [0.0]}
+    )
+
+    result = calculate_securement_rate(available, required)
+
+    assert pd.isna(result.loc[0, "확보율"])

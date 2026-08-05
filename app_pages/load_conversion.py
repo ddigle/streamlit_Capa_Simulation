@@ -214,6 +214,14 @@ except ValueError as exc:
     st.error(str(exc))
     st.stop()
 
+st.session_state["load_conversion_inputs"] = {
+    "workbook_mtime_ns": workbook.stat().st_mtime_ns,
+    "start_month": effective_start_month,
+    "end_month": effective_end_month,
+    "plan": simulation_plan,
+    "yield": simulation_yield,
+}
+
 with conversion_tab:
     demand_basis_options: tuple[DemandBasis, ...] = ("PKG", "Chip", "Wafer", "Density")
     with st.container(border=True):

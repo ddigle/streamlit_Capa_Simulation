@@ -3,11 +3,11 @@
 import pandas as pd
 
 DISPLAY_ORDER_RULE_COLUMNS = [
-    "컬럼순서",
+    "정렬우선순위",
     "분류컬럼",
     "정렬방식",
     "분류값",
-    "정렬순서",
+    "값표시순서",
     "활성여부",
 ]
 DISPLAY_ORDER_SCOPE_COLUMNS = ["페이지 구분", "탭 구분"]
@@ -46,11 +46,13 @@ def _prepare_display_order(display_order: pd.DataFrame) -> pd.DataFrame:
     for column in text_columns:
         prepared[column] = prepared[column].astype("string").str.strip()
     prepared["활성여부"] = prepared["활성여부"].str.upper()
-    prepared["컬럼순서"] = pd.to_numeric(prepared["컬럼순서"], errors="coerce")
-    prepared["정렬순서"] = pd.to_numeric(prepared["정렬순서"], errors="coerce")
+    prepared["정렬우선순위"] = pd.to_numeric(
+        prepared["정렬우선순위"], errors="coerce"
+    )
+    prepared["값표시순서"] = pd.to_numeric(prepared["값표시순서"], errors="coerce")
 
     required_values = prepared[
-        [*required_scope_columns, "컬럼순서", "분류컬럼", "정렬방식", "활성여부"]
+        [*required_scope_columns, "정렬우선순위", "분류컬럼", "정렬방식", "활성여부"]
     ]
     if required_values.isna().any(axis=None) or required_values.eq("").any(axis=None):
         raise ValueError("RQ_DISPLAY_ORDER의 필수 설정값에 누락이 있습니다.")
@@ -89,16 +91,16 @@ def apply_display_order(
         mask = rules["분류컬럼"].eq(column)
         rules.loc[mask, "분류값"] = rules.loc[mask, "분류값"].replace(mapping)
 
-    rule_summary = rules[["컬럼순서", "분류컬럼", "정렬방식"]].drop_duplicates()
+    rule_summary = rules[["정렬우선순위", "분류컬럼", "정렬방식"]].drop_duplicates()
     conflicts = rule_summary.groupby("분류컬럼").agg(
-        컬럼순서수=("컬럼순서", "nunique"),
+        정렬우선순위수=("정렬우선순위", "nunique"),
         정렬방식수=("정렬방식", "nunique"),
     )
     if conflicts.gt(1).any(axis=None):
         invalid_columns = conflicts.loc[conflicts.gt(1).any(axis=1)].index.tolist()
         raise ValueError(f"RQ_DISPLAY_ORDER의 컬럼 정렬 규칙이 충돌합니다: {invalid_columns}")
 
-    rule_summary = rule_summary.sort_values("컬럼순서", kind="stable")
+    rule_summary = rule_summary.sort_values("정렬우선순위", kind="stable")
     result = data.copy()
     helper_columns: list[str] = []
     ascending: list[bool] = []
@@ -112,7 +114,7 @@ def apply_display_order(
         helper = f"__display_order_{position}"
         column_rules = rules.loc[rules["분류컬럼"].eq(column)]
         if mode == "사용자지정":
-            custom = column_rules[["분류값", "정렬순서"]]
+            custom = column_rules[["분류값", "값표시순서"]]
             if custom.isna().any(axis=None):
                 raise ValueError(
                     "RQ_DISPLAY_ORDER의 사용자지정 규칙에 값이 누락되었습니다: "
@@ -125,7 +127,7 @@ def apply_display_order(
                     "RQ_DISPLAY_ORDER의 사용자지정 값이 중복되었습니다: "
                     f"{page}.{tab_name}.{column} {values}"
                 )
-            mapping = dict(zip(custom["분류값"], custom["정렬순서"], strict=True))
+            mapping = dict(zip(custom["분류값"], custom["값표시순서"], strict=True))
             result[helper] = result[column].astype("string").map(mapping).fillna(float("inf"))
             ascending.append(True)
         else:
