@@ -236,8 +236,8 @@ with st.container(border=True):
         cols=1,
         specs=[[{"type": "table"}], [{"type": "xy"}], [{"type": "xy"}]],
         shared_xaxes=False,
-        vertical_spacing=0.09,
-        row_heights=[0.27, 0.45, 0.28],
+        vertical_spacing=0.10,
+        row_heights=[0.34, 0.34, 0.32],
     )
     title_column_width = 1.30
     month_column_width = 1.0
@@ -326,7 +326,7 @@ with st.container(border=True):
             text=monthly_density["부하량"],
             texttemplate="%{text:,.2f}",
             textposition="top center",
-            textfont={"size": 24, "family": "Calibri"},
+            textfont={"size": 24, "color": "#000000", "family": "Calibri"},
             line={"color": "#4A4A4A", "width": 3},
             marker={"color": "#4A4A4A", "size": 8},
             cliponaxis=False,
@@ -354,7 +354,7 @@ with st.container(border=True):
                 texttemplate="<b>%{text:.1%}</b>",
                 textposition="outside",
                 textangle=270,
-                textfont={"size": 22, "color": "#222222", "family": "Calibri"},
+                textfont={"size": 44, "color": "#222222", "family": "Calibri"},
                 cliponaxis=False,
                 marker={
                     "color": [capacity_color(rate) for rate in monthly_top5["확보율"]],
@@ -382,13 +382,13 @@ with st.container(border=True):
                 yanchor="top",
                 yshift=-18,
                 showarrow=False,
-                font={"size": 24, "color": "#333333", "family": "Calibri"},
+                font={"size": 16, "color": "#333333", "family": "Calibri"},
                 row=3,
                 col=1,
             )
     figure.update_layout(
-        height=880,
-        margin={"l": 20, "r": 20, "t": 55, "b": 220},
+        height=1_060,
+        margin={"l": 20, "r": 20, "t": 70, "b": 240},
         barmode="overlay",
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.08},
         plot_bgcolor="rgba(0,0,0,0)",
@@ -418,6 +418,11 @@ with st.container(border=True):
         row=3,
         col=1,
     )
+    top5_axis_max = (
+        float(monthly_top5["B/N Capa"].max()) * 1.45
+        if not monthly_top5.empty
+        else 1.0
+    )
     figure.update_yaxes(
         title=None,
         showticklabels=False,
@@ -432,8 +437,7 @@ with st.container(border=True):
         showticklabels=False,
         showgrid=False,
         zeroline=False,
-        rangemode="tozero",
-        autorange=True,
+        range=[0, top5_axis_max],
         row=3,
         col=1,
     )
@@ -442,7 +446,7 @@ with st.container(border=True):
         chart_domain_start + month_area_width * index / len(month_labels)
         for index in range(len(month_labels) + 1)
     ]
-    panel_bottom = -0.22
+    panel_bottom = -0.30
     lob_y_domain = figure.layout.yaxis.domain
     top5_y_domain = figure.layout.yaxis2.domain
     table_y_domain = figure.data[0].domain.y

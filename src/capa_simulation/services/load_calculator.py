@@ -496,3 +496,12 @@ def build_monthly_volume(
             display_order,
         )
     raise ValueError(f"지원하지 않는 소요기준입니다: {demand_basis}")
+
+
+def filter_edp_plan(plan: pd.DataFrame, include_edp: bool) -> pd.DataFrame:
+    """Exclude DDR products from conversion input while EDP is disabled."""
+    if include_edp:
+        return plan.copy()
+    _require_columns(plan, ["제품정보"], "RQ_PKG_PLAN")
+    product = plan["제품정보"].astype("string").str.strip()
+    return plan.loc[~product.str.contains("DDR", case=False, na=False)].copy()

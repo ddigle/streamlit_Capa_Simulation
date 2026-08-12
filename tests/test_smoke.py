@@ -15,6 +15,7 @@ from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
     YIELD_EDITOR_DIMENSIONS,
     build_monthly_volume,
+    filter_edp_plan,
     plan_from_edit_table,
     plan_to_edit_table,
     yield_from_edit_table,
@@ -44,6 +45,21 @@ from capa_simulation.settings import APP_NAME
 
 def test_app_name() -> None:
     assert APP_NAME == "🏭S.PKG Capa Simulation"
+
+
+def test_edp_filter_excludes_ddr_products_only_when_disabled() -> None:
+    plan = pd.DataFrame(
+        {
+            "제품정보": ["HBM다E", "DDR5", "Mobile ddr", None],
+            "생산수량": [100.0, 200.0, 300.0, 400.0],
+        }
+    )
+
+    excluded = filter_edp_plan(plan, include_edp=False)
+    included = filter_edp_plan(plan, include_edp=True)
+
+    assert excluded["제품정보"].fillna("").tolist() == ["HBM다E", ""]
+    assert included.equals(plan)
 
 
 def test_monthly_pkg_and_wafer_volume() -> None:

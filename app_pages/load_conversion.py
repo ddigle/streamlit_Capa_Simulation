@@ -9,6 +9,7 @@ from capa_simulation.services.load_calculator import (
     YIELD_EDITOR_DIMENSIONS,
     DemandBasis,
     build_monthly_volume,
+    filter_edp_plan,
     plan_from_edit_table,
     plan_to_edit_table,
     yield_from_edit_table,
@@ -234,10 +235,12 @@ with conversion_tab:
                 width=180,
             )
             show_detail = st.toggle("상세", key="monthly_volume_detail", width=90)
+            include_edp = st.toggle("EDP", key="monthly_volume_edp", width=90)
 
     try:
+        conversion_plan = filter_edp_plan(simulation_plan, include_edp)
         monthly_volume = build_monthly_volume(
-            plan=simulation_plan,
+            plan=conversion_plan,
             yield_data=simulation_yield,
             chip_qty=reference_tables["RQ_CHIP_QTY"],
             demand_basis=demand_basis,
