@@ -1,6 +1,9 @@
 import pandas as pd
 
-from capa_simulation.services.load_calculator import calculate_density_load
+from capa_simulation.services.load_calculator import (
+    calculate_density_load,
+    calculate_wafer_load,
+)
 
 PRODUCTION_DETAIL_DIMENSIONS = ["제품정보", "Stack"]
 
@@ -44,6 +47,48 @@ def build_production_dashboard(
     detail = detail.rename(columns={month: _month_label(int(month)) for month in raw_month_columns})
     month_columns = [_month_label(int(month)) for month in sorted(raw_month_columns)]
     return monthly, detail[[*PRODUCTION_DETAIL_DIMENSIONS, *month_columns]]
+
+
+def build_monthly_wafer_load(
+    plan: pd.DataFrame,
+    yield_data: pd.DataFrame,
+    chip_qty: pd.DataFrame,
+) -> pd.DataFrame:
+    """Build monthly Wafer load in sheets for the complete production plan."""
+    if plan.empty:
+        return pd.DataFrame(columns=["생산계획년월", "Wafer 부하량", "년월"])
+    wafer = calculate_wafer_load(plan, yield_data, chip_qty)
+    monthly = (
+        wafer.groupby("생산계획년월", as_index=False, dropna=False)["물량"]
+        .sum()
+        .rename(columns={"물량": "Wafer 부하량"})
+        .sort_values("생산계획년월")
+        .reset_index(drop=True)
+    )
+    monthly["년월"] = monthly["생산계획년월"].map(_month_label)
+    return monthly
+
+
+def build_production_lob_summary(
+    monthly_density: pd.DataFrame,
+    monthly_wafer: pd.DataFrame,
+    monthly_bottlenecks: pd.DataFrame,
+) -> pd.DataFrame:
+    """Combine Density, Wafer load, and bottleneck-adjusted Wafer capacity."""
+    result = monthly_density[["생산계획년월", "년월", "부하량"]].merge(
+        monthly_wafer[["생산계획년월", "Wafer 부하량"]],
+        on="생산계획년월",
+        how="left",
+        validate="one_to_one",
+    )
+    result = result.merge(
+        monthly_bottlenecks[["생산계획년월", "확보율"]],
+        on="생산계획년월",
+        how="left",
+        validate="one_to_one",
+    )
+    result["Wafer Capa"] = result["Wafer 부하량"] * result["확보율"]
+    return result
 
 
 def build_monthly_bottlenecks(
@@ -93,6 +138,40 @@ def build_bottleneck_capacity(
     )
     result["B/N Capa"] = result["부하량"] * result["확보율"]
     return result
+
+
+def build_monthly_bottleneck_top5(
+    securement_rate: pd.DataFrame,
+    monthly_density: pd.DataFrame,
+    included_processes: list[str] | None = None,
+) -> pd.DataFrame:
+    """Return each month's five lowest-rate processes and Density capacity."""
+    required = ["생산계획년월", "공정", "확보율"]
+    missing = [column for column in required if column not in securement_rate.columns]
+    if missing:
+        raise ValueError(f"확보율 필수 컬럼이 없습니다: {', '.join(missing)}")
+
+    prepared = securement_rate[required].copy()
+    prepared["확보율"] = pd.to_numeric(prepared["확보율"], errors="coerce")
+    prepared["공정"] = prepared["공정"].astype("string").str.strip()
+    prepared = prepared.dropna(subset=["확보율", "공정"])
+    if included_processes is not None:
+        prepared = prepared.loc[prepared["공정"].isin(included_processes)]
+    prepared = prepared.sort_values(
+        ["생산계획년월", "확보율", "공정"], kind="stable"
+    )
+    prepared = prepared.groupby("생산계획년월", as_index=False).head(5).copy()
+    prepared["순위"] = prepared.groupby("생산계획년월").cumcount() + 1
+    density = monthly_density[["생산계획년월", "부하량"]].copy()
+    result = prepared.merge(
+        density,
+        on="생산계획년월",
+        how="inner",
+        validate="many_to_one",
+    )
+    result["B/N Capa"] = result["부하량"] * result["확보율"]
+    result["년월"] = result["생산계획년월"].map(_month_label)
+    return result.reset_index(drop=True)
 
 
 def _month_label(month: int | float) -> str:
