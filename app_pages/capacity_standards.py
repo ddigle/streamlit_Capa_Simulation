@@ -15,6 +15,7 @@ from capa_simulation.services.capacity_reference_editor import (
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.month_filter import available_month_range, filter_month_range
 from capa_simulation.services.unit_capacity import (
+    CAPACITY_EXCLUSIONS_ATTR,
     UNIT_CAPACITY_DIMENSIONS,
     calculate_unit_capacity,
     unit_capacity_to_month_table,
@@ -300,6 +301,9 @@ try:
         wf_ratio=simulation_wf_ratio,
     )
     unit_capacity_table = unit_capacity_to_month_table(unit_capacity)
+    excluded_capacity_rows = unit_capacity.attrs.get(
+        CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame()
+    )
     st.session_state["unit_capacity_result"] = {
         "workbook_mtime_ns": workbook.stat().st_mtime_ns,
         "start_month": effective_start_month,
@@ -317,6 +321,12 @@ except ValueError as exc:
         st.error(str(exc))
 else:
     with unit_capacity_tab:
+        if not excluded_capacity_rows.empty:
+            st.warning(
+                f"대당 Capa 산출에서 {len(excluded_capacity_rows):,}개 기준을 제외했습니다."
+            )
+            with st.expander("제외 기준정보 확인", expanded=False):
+                st.dataframe(excluded_capacity_rows, hide_index=True, width="stretch")
         st.caption("공정·제품 분류별 월간 대당 Capa")
         month_columns = [
             column

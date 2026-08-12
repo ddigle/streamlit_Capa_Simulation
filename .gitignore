@@ -37,6 +37,9 @@ data/output/*
 !data/output/.gitkeep
 data/temp/*
 !data/temp/.gitkeep
+data/*.db
+data/*.db-*
+data/*.db.*.bak
 *.xls
 *.xlsx
 *.xlsm
@@ -54,4 +57,3 @@ logs/*
 .DS_Store
 Thumbs.db
 desktop.ini
-

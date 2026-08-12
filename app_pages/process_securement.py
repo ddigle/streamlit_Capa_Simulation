@@ -15,6 +15,7 @@ from capa_simulation.services.month_filter import (
     filter_month_range,
 )
 from capa_simulation.services.required_equipment import (
+    REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
     calculate_required_equipment,
     required_equipment_to_month_table,
@@ -24,7 +25,10 @@ from capa_simulation.services.securement_rate import (
     calculate_securement_rate,
     securement_rate_to_month_table,
 )
-from capa_simulation.services.unit_capacity import calculate_unit_capacity
+from capa_simulation.services.unit_capacity import (
+    CAPACITY_EXCLUSIONS_ATTR,
+    calculate_unit_capacity,
+)
 from capa_simulation.settings import PROJECT_ROOT
 from capa_simulation.sidebar_status import show_applied_month_range
 
@@ -125,6 +129,12 @@ try:
         yield_data=simulation_yield,
         chip_qty=reference_tables["RQ_CHIP_QTY"],
         unit_capacity=unit_capacity,
+    )
+    capacity_exclusions = unit_capacity.attrs.get(
+        CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame()
+    )
+    required_exclusions = required_equipment.attrs.get(
+        REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR, pd.DataFrame()
     )
     required_table = required_equipment_to_month_table(required_equipment)
     required_table = apply_display_order(
@@ -240,6 +250,23 @@ else:
         )
 
     with required_tab:
+        if not capacity_exclusions.empty:
+            st.warning(
+                f"0 이하 기준값으로 대당 Capa {len(capacity_exclusions):,}건을 제외했습니다."
+            )
+            with st.expander("제외된 대당 Capa 기준정보", expanded=False):
+                st.dataframe(capacity_exclusions, hide_index=True, width="stretch")
+        if not required_exclusions.empty:
+            positive_load_exclusions = required_exclusions.loc[
+                required_exclusions["부하량"].gt(0)
+            ]
+            st.warning(
+                "대당 Capa가 없어 소요대수 산출에서 "
+                f"{len(required_exclusions):,}건을 제외했습니다"
+                f" (부하량 발생 {len(positive_load_exclusions):,}건)."
+            )
+            with st.expander("소요대수 제외 기준정보", expanded=False):
+                st.dataframe(required_exclusions, hide_index=True, width="stretch")
         st.caption("월간 소요대수 (부하량 ÷ 대당 Capa)")
         show_detail = st.toggle(
             "상세",

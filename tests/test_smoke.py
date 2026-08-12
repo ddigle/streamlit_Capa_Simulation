@@ -1,11 +1,11 @@
 import pandas as pd
 import pytest
 
-from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.dashboard import (
     build_monthly_bottlenecks,
     build_production_dashboard,
 )
+from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.equipment_count import build_equipment_count_table
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
@@ -21,6 +21,7 @@ from capa_simulation.services.month_filter import (
     filter_month_range,
 )
 from capa_simulation.services.required_equipment import (
+    CAPACITY_KEYS,
     RESULT_DIMENSIONS,
     calculate_required_equipment,
     required_equipment_to_month_table,
@@ -415,6 +416,47 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
     )
 
 
+def test_unit_capacity_excludes_nonpositive_wf_ratio_and_capacity() -> None:
+    upeh = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608, 202608],
+            "Area_Name": ["Main", "Main", "Main"],
+            "소요기준": ["WF", "WF", "WF"],
+            "공정": ["Process-A", "Process-B", "Process-C"],
+            "양산구분": ["양산", "양산", "양산"],
+            "제품정보": ["Product-A", "Product-A", "Product-A"],
+            "Stack": ["12H", "12H", "12H"],
+            "WF 구분": ["Core", "Core", "Core"],
+            "UPEH": [100.0, 100.0, 100.0],
+            "ST": [None, None, None],
+        }
+    )
+    detail_keys = ["생산계획년월", "공정", "양산구분", "제품정보", "Stack", "WF 구분"]
+    shared_detail = upeh[detail_keys]
+    run_rate = shared_detail[["생산계획년월", "공정", "양산구분"]].assign(
+        CAPA_RUN_RATE=[0.8, 0.8, 0.0]
+    )
+    vital = shared_detail[["생산계획년월", "공정", "양산구분"]].assign(편중률=1.0)
+    module = pd.DataFrame(
+        {"공정": ["Process-A", "Process-B", "Process-C"], "모듈수": 2.0}
+    )
+    run_day = shared_detail[["생산계획년월", "공정"]].assign(RUN_DAY=30.0)
+    lot_ratio = shared_detail.assign(**{"Lot 측정률": 1.0})
+    wf_ratio = shared_detail.assign(WF측정률=[1.0, 0.0, 1.0])
+
+    result = calculate_unit_capacity(
+        upeh, run_rate, vital, module, run_day, lot_ratio, wf_ratio
+    )
+    excluded = result.attrs["excluded_capacity_rows"]
+
+    assert result["공정"].tolist() == ["Process-A"]
+    assert excluded[["공정", "제외사유"]].to_dict("records") == [
+        {"공정": "Process-B", "제외사유": "WF측정률 0 이하"},
+        {"공정": "Process-C", "제외사유": "대당 Capa 0 이하"},
+    ]
+    assert {"UPEH", "ST", "CAPA_RUN_RATE", "WF측정률"}.issubset(excluded.columns)
+
+
 def test_unit_capacity_excludes_unimplemented_box_and_pcb_bases() -> None:
     upeh = pd.DataFrame(
         {
@@ -572,6 +614,48 @@ def test_required_equipment_uses_zero_when_load_is_missing() -> None:
 
     assert result.loc[0, "부하량"] == 0
     assert result.loc[0, "소요대수"] == 0
+
+
+def test_required_equipment_excludes_rows_without_unit_capacity() -> None:
+    reqb = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "Area_Name": ["Main"],
+            "공정": ["Process-A"],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "Capa Code": ["CAPA-A"],
+            "Customer": ["Customer-A"],
+            "CS": ["MP"],
+            "WF 구분": ["PKG"],
+            "STEP_SEQ": [10],
+            "MCP_SEQ": [1],
+            "소요기준": ["PKG"],
+        }
+    )
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "Capa Code": ["CAPA-A"],
+            "Customer": ["Customer-A"],
+            "CS": ["MP"],
+            "생산수량": [100.0],
+        }
+    )
+
+    empty_capacity = pd.DataFrame(columns=[*CAPACITY_KEYS, "대당 Capa"])
+    result = calculate_required_equipment(
+        reqb, plan, pd.DataFrame(), pd.DataFrame(), empty_capacity
+    )
+    excluded = result.attrs["excluded_required_equipment_rows"]
+
+    assert result.empty
+    assert excluded.loc[0, "부하량"] == pytest.approx(100.0)
+    assert excluded.loc[0, "제외사유"] == "대당 Capa 없음"
 
 
 def test_required_equipment_excludes_unimplemented_box_and_pcb_bases() -> None:

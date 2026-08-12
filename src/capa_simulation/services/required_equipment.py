@@ -44,6 +44,7 @@ RESULT_DIMENSIONS = [
 REQB_TEXT_COLUMNS = [column for column in REQB_COLUMNS if column != "생산계획년월"]
 REQB_REQUIRED_KEYS = list(dict.fromkeys([*LOAD_KEYS, *CAPACITY_KEYS]))
 UNIMPLEMENTED_BASES = {"BOX", "PCB"}
+REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR = "excluded_required_equipment_rows"
 
 
 def calculate_required_equipment(
@@ -63,9 +64,11 @@ def calculate_required_equipment(
         ~prepared_reqb["소요기준"].isin(UNIMPLEMENTED_BASES)
     ].copy()
     if prepared_reqb.empty:
-        return pd.DataFrame(
+        empty_result = pd.DataFrame(
             columns=[*REQB_COLUMNS, "부하량", "대당 Capa", "소요대수"]
         )
+        empty_result.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR] = pd.DataFrame()
+        return empty_result
     _normalize_basis(prepared_reqb, "RQ_REQB")
     _assert_complete(prepared_reqb, REQB_REQUIRED_KEYS, "RQ_REQB")
 
@@ -87,18 +90,19 @@ def calculate_required_equipment(
         indicator="_capacity_merge",
     )
     missing_capacity = result["_capacity_merge"].ne("both")
-    if missing_capacity.any():
-        examples = result.loc[missing_capacity, CAPACITY_KEYS].drop_duplicates().head(5)
-        raise ValueError(
-            "대당 Capa가 연결되지 않는 RQ_REQB 기준이 있습니다: "
-            f"{examples.to_dict('records')}"
-        )
     result = result.drop(columns="_capacity_merge")
-    if result["대당 Capa"].le(0).any():
-        examples = result.loc[result["대당 Capa"].le(0), CAPACITY_KEYS].drop_duplicates().head(5)
-        raise ValueError(f"대당 Capa는 0보다 커야 합니다: {examples.to_dict('records')}")
+    nonpositive_capacity = result["대당 Capa"].le(0).fillna(False)
+    excluded_capacity = missing_capacity | nonpositive_capacity
+    excluded_rows = result.loc[excluded_capacity, [*REQB_COLUMNS, "부하량", "대당 Capa"]].copy()
+    excluded_rows["제외사유"] = "대당 Capa 없음"
+    excluded_rows.loc[nonpositive_capacity.loc[excluded_capacity], "제외사유"] = (
+        "대당 Capa 0 이하"
+    )
+    result = result.loc[~excluded_capacity].copy()
     result["소요대수"] = result["부하량"] / result["대당 Capa"]
-    return result[[*REQB_COLUMNS, "부하량", "대당 Capa", "소요대수"]]
+    output = result[[*REQB_COLUMNS, "부하량", "대당 Capa", "소요대수"]]
+    output.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR] = excluded_rows.reset_index(drop=True)
+    return output
 
 
 def required_equipment_to_month_table(data: pd.DataFrame) -> pd.DataFrame:
@@ -181,7 +185,10 @@ def _prepare_capacities(data: pd.DataFrame) -> pd.DataFrame:
     _require_columns(data, [*CAPACITY_KEYS, "대당 Capa"], "대당 Capa")
     result = data[[*CAPACITY_KEYS, "대당 Capa"]].copy()
     _normalize_month(result, "대당 Capa")
-    _normalize_text(result, [key for key in CAPACITY_KEYS if key not in {"생산계획년월", "소요기준"}])
+    _normalize_text(
+        result,
+        [key for key in CAPACITY_KEYS if key not in {"생산계획년월", "소요기준"}],
+    )
     _normalize_basis(result, "대당 Capa")
     result["대당 Capa"] = _numeric(result["대당 Capa"], "대당 Capa")
     duplicated = result.duplicated(CAPACITY_KEYS, keep=False)

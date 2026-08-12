@@ -118,6 +118,7 @@
 - [ ] `config/excel_sources.yaml`을 추가해 파일·시트·Excel Table명을 설정으로 관리한다.
 - [x] `src/capa_simulation/io/excel_reader.py`에 부하량·Capa·설비·경로·정렬용 `RQ_*` 테이블의 xlwings 기반 XLSB 로더를 구현했다.
 - [x] Workbook을 숨김·읽기 전용으로 열고 예외 발생 시에도 Workbook과 Excel 프로세스를 종료하도록 구현했다.
+- [~] 기존 Excel 앱을 유지한 채 병행 검증용 `data/capa_simulation.db`를 생성했다. 현재 16개 RQ 테이블 884행을 이관하고 SQLite 무결성·행 수·열 수를 검증했으며, 다음 단계에서 Excel/SQLite 계산 결과를 비교한다.
 - [ ] Power Query 및 PivotTable 새로고침 여부를 선택 가능하게 할지 설계한다.
 - [ ] Excel 컬럼명을 Python 내부 표준 컬럼명으로 변환하는 매핑을 구현한다.
 

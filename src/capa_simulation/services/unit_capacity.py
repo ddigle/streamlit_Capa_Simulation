@@ -11,6 +11,7 @@ UNIT_CAPACITY_DIMENSIONS = [
     "Area_Name",
 ]
 UNIMPLEMENTED_BASES = {"BOX", "PCB"}
+CAPACITY_EXCLUSIONS_ATTR = "excluded_capacity_rows"
 
 
 def calculate_unit_capacity(
@@ -25,7 +26,7 @@ def calculate_unit_capacity(
     """Calculate monthly per-equipment capacity for Main and MI process rows."""
     performance = _prepare_performance(upeh)
     if performance.empty:
-        return pd.DataFrame(
+        empty_result = pd.DataFrame(
             columns=[
                 "생산계획년월",
                 *UNIT_CAPACITY_DIMENSIONS,
@@ -33,6 +34,8 @@ def calculate_unit_capacity(
                 "대당 Capa",
             ]
         )
+        empty_result.attrs[CAPACITY_EXCLUSIONS_ATTR] = pd.DataFrame()
+        return empty_result
 
     result = performance
     result = _join_reference(
@@ -72,16 +75,19 @@ def calculate_unit_capacity(
         "RQ_WF_RATIO",
     )
 
-    _assert_non_negative(result, "환산_UPEH", "RQ_UPEH")
-    _assert_non_negative(result, "CAPA_RUN_RATE", "RQ_RUN_RATE")
     for column, table_name in (
         ("편중률", "RQ_VITAL"),
         ("모듈수", "RQ_MODULE"),
         ("RUN_DAY", "RQ_RUN_DAY"),
         ("Lot 측정률", "RQ_LOT_RATIO"),
-        ("WF측정률", "RQ_WF_RATIO"),
     ):
         _assert_positive(result, column, table_name)
+
+    nonpositive_wf_ratio = result["WF측정률"].le(0)
+    excluded_frames = [
+        _exclusion_rows(result, nonpositive_wf_ratio, "WF측정률 0 이하")
+    ]
+    result = result.loc[~nonpositive_wf_ratio].copy()
 
     result["대당 Capa"] = (
         result["환산_UPEH"]
@@ -93,12 +99,21 @@ def calculate_unit_capacity(
         / result["Lot 측정률"]
         / result["WF측정률"]
     )
+    nonpositive_capacity = result["대당 Capa"].le(0)
+    excluded_frames.append(
+        _exclusion_rows(result, nonpositive_capacity, "대당 Capa 0 이하")
+    )
+    result = result.loc[~nonpositive_capacity].copy()
     columns = ["생산계획년월", *UNIT_CAPACITY_DIMENSIONS, "환산_UPEH", "대당 Capa"]
-    return (
+    output = (
         result[columns]
         .sort_values(["생산계획년월", *UNIT_CAPACITY_DIMENSIONS])
         .reset_index(drop=True)
     )
+    output.attrs[CAPACITY_EXCLUSIONS_ATTR] = pd.concat(
+        excluded_frames, ignore_index=True
+    )
+    return output
 
 
 def unit_capacity_to_month_table(unit_capacity: pd.DataFrame) -> pd.DataFrame:
@@ -130,7 +145,7 @@ def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
     result = data[required].copy()
     if result.empty:
         result["환산_UPEH"] = pd.Series(dtype="float64")
-        return result.drop(columns=["UPEH", "ST"])
+        return result
     _normalize_month(result, table_name)
     _normalize_keys(result, [key for key in PERFORMANCE_KEYS if key != "생산계획년월"])
     result["Area_Name"] = result["Area_Name"].astype("string").str.strip()
@@ -138,7 +153,7 @@ def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
     result = result.loc[~result["소요기준"].isin(UNIMPLEMENTED_BASES)].copy()
     if result.empty:
         result["환산_UPEH"] = pd.Series(dtype="float64")
-        return result.drop(columns=["UPEH", "ST"])
+        return result
     _assert_complete_keys(result, [*PERFORMANCE_KEYS, "Area_Name", "소요기준"], table_name)
     area_names = result["Area_Name"].str.casefold()
     invalid_area = ~area_names.isin(["main", "mi"])
@@ -163,7 +178,7 @@ def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
     result.loc[mi_rows, "환산_UPEH"] = 3600.0 / st_values.loc[mi_rows]
     kea_rows = result["소요기준"].isin(["CHIP", "PKG"])
     result.loc[kea_rows, "환산_UPEH"] = result.loc[kea_rows, "환산_UPEH"] / 1000.0
-    return result.drop(columns=["UPEH", "ST"])
+    return result
 
 
 def _join_reference(
@@ -229,9 +244,11 @@ def _assert_positive(data: pd.DataFrame, column: str, table_name: str) -> None:
         raise ValueError(f"{table_name}의 {column} 값은 0보다 커야 합니다.")
 
 
-def _assert_non_negative(data: pd.DataFrame, column: str, table_name: str) -> None:
-    if data[column].lt(0).any():
-        raise ValueError(f"{table_name}의 {column} 값은 0 이상이어야 합니다.")
+def _exclusion_rows(data: pd.DataFrame, mask: pd.Series, reason: str) -> pd.DataFrame:
+    """Keep the joined reference values used by an excluded capacity row."""
+    excluded = data.loc[mask].copy()
+    excluded["제외사유"] = reason
+    return excluded
 
 
 def _require_columns(data: pd.DataFrame, required: list[str], table_name: str) -> None:
