@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.services.dashboard import (
+    build_bottleneck_capacity,
     build_monthly_bottlenecks,
     build_production_dashboard,
 )
@@ -256,10 +257,10 @@ def test_production_dashboard_groups_density_by_product_and_stack() -> None:
 
     assert monthly["년월"].tolist() == ["26.08", "26.09"]
     assert monthly["부하량"].tolist() == pytest.approx(
-        [150 * 11 * 24 / 100_000, 200 * 11 * 24 / 100_000]
+        [100 * 11 * 24 / 100_000, 200 * 11 * 24 / 100_000]
     )
     assert list(detail.columns) == ["제품정보", "Stack", "26.08", "26.09"]
-    assert detail.loc[0, "26.08"] == pytest.approx(150 * 11 * 24 / 100_000)
+    assert detail.loc[0, "26.08"] == pytest.approx(100 * 11 * 24 / 100_000)
 
 
 def test_dashboard_selects_lowest_monthly_securement_process() -> None:
@@ -280,6 +281,32 @@ def test_dashboard_selects_lowest_monthly_securement_process() -> None:
         "26.08<br>Process-A",
         "26.09<br>Process-D",
     ]
+
+    filtered = build_monthly_bottlenecks(
+        securement, included_processes=["Process-B", "Process-C"]
+    )
+    assert filtered["공정"].tolist() == ["Process-B", "Process-C"]
+
+
+def test_dashboard_converts_bottleneck_rate_to_density_capacity() -> None:
+    monthly_density = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202609],
+            "부하량": [10.0, 20.0],
+            "년월": ["26.08", "26.09"],
+        }
+    )
+    bottlenecks = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202609],
+            "공정": ["Process-A", "Process-B"],
+            "확보율": [1.1, 0.8],
+        }
+    )
+
+    result = build_bottleneck_capacity(monthly_density, bottlenecks)
+
+    assert result["B/N Capa"].tolist() == pytest.approx([11.0, 16.0])
 
 
 def test_edited_yield_recalculates_chip_volume() -> None:

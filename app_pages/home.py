@@ -7,6 +7,7 @@ import streamlit as st
 from capa_simulation.io.excel_reader import load_reference_tables
 from capa_simulation.services.dashboard import (
     PRODUCTION_DETAIL_DIMENSIONS,
+    build_bottleneck_capacity,
     build_monthly_bottlenecks,
     build_production_dashboard,
 )
@@ -146,15 +147,61 @@ try:
         ),
         required_equipment,
     )
-    monthly_bottlenecks = build_monthly_bottlenecks(securement_rate)
 except (KeyError, OSError, ValueError) as exc:
     st.error(str(exc))
     st.stop()
 
+process_options = sorted(
+    securement_rate["공정"].astype("string").str.strip().dropna().unique().tolist()
+)
+included_processes = []
+with st.sidebar.container(border=True):
+    st.markdown("#### :material/filter_alt: B/N 집계 공정")
+    st.caption("끄면 대시보드의 B/N 후보에서 제외됩니다.")
+    if not process_options:
+        st.caption("집계 가능한 공정이 없습니다.")
+    else:
+        for process in process_options:
+            if st.toggle(
+                process,
+                value=True,
+                key=f"dashboard_bottleneck_process_{process}",
+                persist_state="session",
+            ):
+                included_processes.append(process)
+
+monthly_bottlenecks = build_monthly_bottlenecks(
+    securement_rate,
+    included_processes=included_processes,
+)
+bottleneck_capacity = build_bottleneck_capacity(monthly_density, monthly_bottlenecks)
+
 with st.container(border=True):
     st.subheader("생산계획 현황")
-    figure = go.Figure(
+    figure = go.Figure()
+    if bottleneck_capacity["B/N Capa"].notna().any():
+        figure.add_trace(
+            go.Bar(
+                name="B/N 공정 Capa",
+                x=bottleneck_capacity["년월"],
+                y=bottleneck_capacity["B/N Capa"],
+                customdata=bottleneck_capacity[["확보율", "공정"]],
+                text=bottleneck_capacity["확보율"],
+                texttemplate="%{text:.1%}",
+                textposition="inside",
+                insidetextanchor="start",
+                textfont={"color": "white"},
+                marker={"color": "#90CAF9"},
+                hovertemplate=(
+                    "%{x}<br>B/N %{customdata[1]}"
+                    "<br>Capa %{y:,.2f} 억Gb"
+                    "<br>확보율 %{customdata[0]:.1%}<extra></extra>"
+                ),
+            )
+        )
+    figure.add_trace(
         go.Scatter(
+            name="양산 부하량",
             x=monthly_density["년월"],
             y=monthly_density["부하량"],
             mode="lines+markers+text",
@@ -171,8 +218,9 @@ with st.container(border=True):
         height=330,
         margin={"l": 20, "r": 20, "t": 35, "b": 20},
         xaxis={"title": "생산계획년월", "type": "category"},
-        yaxis={"title": "부하량 (억Gb)", "rangemode": "tozero"},
-        showlegend=False,
+        yaxis={"title": "부하량 / B/N Capa (억Gb)", "rangemode": "tozero"},
+        barmode="overlay",
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
     )
