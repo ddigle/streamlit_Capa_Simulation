@@ -1,14 +1,20 @@
-from pathlib import Path
-
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.io.excel_reader import load_reference_tables
+from capa_simulation.io.reference_cache import (
+    get_reference_cache_version,
+    get_reference_tables,
+)
+from capa_simulation.scenario_state import (
+    apply_month_updates,
+    ensure_active_scenario,
+    reset_active_scenario,
+    scenario_table,
+)
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
     YIELD_EDITOR_DIMENSIONS,
     DemandBasis,
-    build_monthly_volume,
     filter_edp_plan,
     plan_from_edit_table,
     plan_to_edit_table,
@@ -19,6 +25,7 @@ from capa_simulation.services.month_filter import (
     available_month_range,
     filter_month_range,
 )
+from capa_simulation.services.simulation_cache import get_monthly_volume
 from capa_simulation.settings import PROJECT_ROOT
 from capa_simulation.sidebar_status import show_applied_month_range
 
@@ -35,20 +42,15 @@ DISPLAY_COLUMN_LABELS = {
 st.title("부하량")
 
 
-@st.cache_data(show_spinner="Excel 기준정보를 불러오는 중입니다.")
-def load_data(workbook_path: str, modified_time_ns: int) -> dict[str, pd.DataFrame]:
-    """Load saved Excel tables; modified time invalidates the cache after an update."""
-    del modified_time_ns
-    return load_reference_tables(Path(workbook_path))
-
-
 workbook = PROJECT_ROOT / "templates" / "structure_template.xlsb"
 if not workbook.is_file():
     st.error(f"기준정보 파일을 찾을 수 없습니다: {workbook}")
     st.stop()
 
 try:
-    reference_tables = load_data(str(workbook.resolve()), workbook.stat().st_mtime_ns)
+    reference_version = get_reference_cache_version()
+    reference_tables = get_reference_tables(str(workbook.resolve()))
+    active_scenario = ensure_active_scenario(reference_tables, reference_version)
 except Exception as exc:
     st.error(f"기준정보를 불러오지 못했습니다: {exc}")
     st.stop()
@@ -57,9 +59,7 @@ try:
     source_start_month, source_end_month = available_month_range(
         reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN"
     )
-    selected_start_label, selected_end_label = st.session_state[
-        "production_month_range_v2"
-    ]
+    selected_start_label, selected_end_label = st.session_state["production_month_range_v2"]
     selected_start_month = int(selected_start_label.replace("-", ""))
     selected_end_month = int(selected_end_label.replace("-", ""))
     effective_start_month = max(selected_start_month, source_start_month)
@@ -71,23 +71,19 @@ try:
 
     show_applied_month_range(effective_start_month, effective_end_month)
     filtered_plan = filter_month_range(
-        reference_tables["RQ_PKG_PLAN"],
+        scenario_table(active_scenario, "RQ_PKG_PLAN"),
         effective_start_month,
         effective_end_month,
         "RQ_PKG_PLAN",
     )
     filtered_yield = filter_month_range(
-        reference_tables["RQ_YLD"],
+        scenario_table(active_scenario, "RQ_YLD"),
         effective_start_month,
         effective_end_month,
         "RQ_YLD",
     )
-    default_plan_table = plan_to_edit_table(
-        filtered_plan, reference_tables["RQ_DISPLAY_ORDER"]
-    )
-    default_yield_table = yield_to_edit_table(
-        filtered_yield, reference_tables["RQ_DISPLAY_ORDER"]
-    )
+    default_plan_table = plan_to_edit_table(filtered_plan, reference_tables["RQ_DISPLAY_ORDER"])
+    default_yield_table = yield_to_edit_table(filtered_yield, reference_tables["RQ_DISPLAY_ORDER"])
 except ValueError as exc:
     st.error(str(exc))
     st.stop()
@@ -96,7 +92,8 @@ plan_editor_key = "pkg_plan_editor"
 yield_editor_key = "yield_editor"
 source_token_key = "load_conversion_source_token"
 source_token = (
-    f"{workbook.resolve()}:{workbook.stat().st_mtime_ns}:"
+    f"{workbook.resolve()}:{reference_version}:"
+    f"{active_scenario['revision']}:"
     f"{effective_start_month}:{effective_end_month}"
 )
 if st.session_state.get(source_token_key) != source_token:
@@ -104,20 +101,30 @@ if st.session_state.get(source_token_key) != source_token:
     st.session_state.pop(yield_editor_key, None)
     st.session_state[source_token_key] = source_token
 
+with st.container(horizontal=True, vertical_alignment="center"):
+    st.caption(f"활성 시나리오 · 수정본 {active_scenario['revision']}")
+    if st.button(
+        ":material/restart_alt: 전체 입력 원본으로 초기화",
+        key="reset_load_active_scenario",
+    ):
+        reset_active_scenario(reference_tables, reference_version)
+        st.session_state.pop(source_token_key, None)
+        st.rerun()
+
 conversion_tab, pkg_plan_tab, yield_tab = st.tabs(["📊 환산", "PKG PLAN", "수율"])
 
 with pkg_plan_tab:
     st.caption(
-        "Excel 계획을 기본값으로 불러왔습니다. "
-        "월별 생산수량만 수정할 수 있습니다. 단위: Kea"
+        "활성 시나리오의 월별 생산수량을 수정합니다. "
+        "수정 후 적용 버튼을 눌러야 다른 페이지의 산출값에 반영됩니다. 단위: Kea"
     )
     plan_month_columns = [
         column for column in default_plan_table.columns if column not in PLAN_EDITOR_DIMENSIONS
     ]
     displayed_plan_table = default_plan_table.copy()
-    displayed_plan_table[plan_month_columns] = displayed_plan_table[
-        plan_month_columns
-    ].mask(displayed_plan_table[plan_month_columns].eq(0))
+    displayed_plan_table[plan_month_columns] = displayed_plan_table[plan_month_columns].mask(
+        displayed_plan_table[plan_month_columns].eq(0)
+    )
     styled_plan_table = displayed_plan_table.style.set_properties(
         subset=pd.Index(PLAN_EDITOR_DIMENSIONS),
         **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
@@ -154,22 +161,36 @@ with pkg_plan_tab:
             },
         },
     )
+    apply_plan = st.button(
+        ":material/check: PKG PLAN 변경사항 적용",
+        key="apply_pkg_plan_changes",
+        type="primary",
+    )
 
-try:
-    simulation_plan = plan_from_edit_table(edited_plan_table)
-except ValueError as exc:
-    st.error(str(exc))
-    st.stop()
+simulation_plan = filtered_plan
+if apply_plan:
+    try:
+        updated_plan = plan_from_edit_table(edited_plan_table)
+        apply_month_updates(
+            active_scenario,
+            {"RQ_PKG_PLAN": updated_plan},
+            effective_start_month,
+            effective_end_month,
+        )
+    except ValueError as exc:
+        with pkg_plan_tab:
+            st.error(str(exc))
+    else:
+        st.session_state.pop(source_token_key, None)
+        st.rerun()
 
 with yield_tab:
     st.caption(
-        "Excel 수율을 기본값으로 불러왔습니다. "
-        "EDS·BE 수율의 월별 값만 수정할 수 있으며 환산수량에 즉시 반영됩니다."
+        "활성 시나리오의 EDS·BE 수율을 수정합니다. "
+        "수정 후 적용 버튼을 눌러야 환산수량과 다른 페이지에 반영됩니다."
     )
     yield_month_columns = [
-        column
-        for column in default_yield_table.columns
-        if column not in YIELD_EDITOR_DIMENSIONS
+        column for column in default_yield_table.columns if column not in YIELD_EDITOR_DIMENSIONS
     ]
     styled_yield_table = default_yield_table.style.set_properties(
         subset=pd.Index(YIELD_EDITOR_DIMENSIONS),
@@ -208,20 +229,28 @@ with yield_tab:
             },
         },
     )
+    apply_yield = st.button(
+        ":material/check: 수율 변경사항 적용",
+        key="apply_yield_changes",
+        type="primary",
+    )
 
-try:
-    simulation_yield = yield_from_edit_table(edited_yield_table)
-except ValueError as exc:
-    st.error(str(exc))
-    st.stop()
-
-st.session_state["load_conversion_inputs"] = {
-    "workbook_mtime_ns": workbook.stat().st_mtime_ns,
-    "start_month": effective_start_month,
-    "end_month": effective_end_month,
-    "plan": simulation_plan,
-    "yield": simulation_yield,
-}
+simulation_yield = filtered_yield
+if apply_yield:
+    try:
+        updated_yield = yield_from_edit_table(edited_yield_table)
+        apply_month_updates(
+            active_scenario,
+            {"RQ_YLD": updated_yield},
+            effective_start_month,
+            effective_end_month,
+        )
+    except ValueError as exc:
+        with yield_tab:
+            st.error(str(exc))
+    else:
+        st.session_state.pop(source_token_key, None)
+        st.rerun()
 
 with conversion_tab:
     demand_basis_options: tuple[DemandBasis, ...] = ("PKG", "Chip", "Wafer", "Density")
@@ -239,7 +268,7 @@ with conversion_tab:
 
     try:
         conversion_plan = filter_edp_plan(simulation_plan, include_edp)
-        monthly_volume = build_monthly_volume(
+        monthly_volume = get_monthly_volume(
             plan=conversion_plan,
             yield_data=simulation_yield,
             chip_qty=reference_tables["RQ_CHIP_QTY"],
@@ -274,9 +303,9 @@ with conversion_tab:
             column for column in monthly_volume.columns if column in classification_columns
         ]
         displayed_monthly_volume = monthly_volume.copy()
-        displayed_monthly_volume[month_columns] = displayed_monthly_volume[
-            month_columns
-        ].mask(displayed_monthly_volume[month_columns].eq(0))
+        displayed_monthly_volume[month_columns] = displayed_monthly_volume[month_columns].mask(
+            displayed_monthly_volume[month_columns].eq(0)
+        )
         styled_monthly_volume = displayed_monthly_volume.style.set_properties(
             subset=pd.Index(displayed_classification_columns),
             **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},

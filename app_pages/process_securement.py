@@ -1,9 +1,11 @@
-from pathlib import Path
-
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.io.excel_reader import load_reference_tables
+from capa_simulation.io.reference_cache import (
+    get_reference_cache_version,
+    get_reference_tables,
+)
+from capa_simulation.scenario_state import ensure_active_scenario, scenario_table
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.equipment_count import (
     DETAILED_EQUIPMENT_DIMENSIONS,
@@ -17,17 +19,19 @@ from capa_simulation.services.month_filter import (
 from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
-    calculate_required_equipment,
     required_equipment_to_month_table,
 )
 from capa_simulation.services.securement_rate import (
     SECUREMENT_DIMENSIONS,
-    calculate_securement_rate,
     securement_rate_to_month_table,
+)
+from capa_simulation.services.simulation_cache import (
+    get_required_equipment,
+    get_securement_rate,
+    get_unit_capacity,
 )
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
-    calculate_unit_capacity,
 )
 from capa_simulation.settings import PROJECT_ROOT
 from capa_simulation.sidebar_status import show_applied_month_range
@@ -41,12 +45,6 @@ DISPLAY_COLUMN_LABELS = {
     "Capa Code": "PKG Code",
     "WF 구분": "속성",
 }
-
-
-@st.cache_data(show_spinner="공정별 확보율 기준정보를 불러오는 중입니다.")
-def load_data(workbook_path: str, modified_time_ns: int) -> dict[str, pd.DataFrame]:
-    del modified_time_ns
-    return load_reference_tables(Path(workbook_path))
 
 
 def selected_month_range() -> tuple[int, int]:
@@ -63,7 +61,9 @@ if not workbook.is_file():
     st.stop()
 
 try:
-    reference_tables = load_data(str(workbook.resolve()), workbook.stat().st_mtime_ns)
+    reference_version = get_reference_cache_version()
+    reference_tables = get_reference_tables(str(workbook.resolve()))
+    active_scenario = ensure_active_scenario(reference_tables, reference_version)
     selected_start, selected_end = selected_month_range()
     source_start, source_end = available_month_range(reference_tables["RQ_REQB"], "RQ_REQB")
     effective_start = max(selected_start, source_start)
@@ -88,51 +88,35 @@ try:
     )
     filtered = {
         table_name: filter_month_range(
-            reference_tables[table_name], effective_start, effective_end, table_name
+            scenario_table(active_scenario, table_name)
+            if table_name in active_scenario["tables"]
+            else reference_tables[table_name],
+            effective_start,
+            effective_end,
+            table_name,
         )
         for table_name in monthly_table_names
     }
-    load_inputs = st.session_state.get("load_conversion_inputs", {})
-    load_inputs_are_current = (
-        load_inputs.get("workbook_mtime_ns") == workbook.stat().st_mtime_ns
-        and load_inputs.get("start_month") == effective_start
-        and load_inputs.get("end_month") == effective_end
-    )
-    simulation_plan = (
-        load_inputs["plan"] if load_inputs_are_current else filtered["RQ_PKG_PLAN"]
-    )
-    simulation_yield = (
-        load_inputs["yield"] if load_inputs_are_current else filtered["RQ_YLD"]
-    )
+    simulation_plan = filtered["RQ_PKG_PLAN"]
+    simulation_yield = filtered["RQ_YLD"]
 
-    capacity_result = st.session_state.get("unit_capacity_result", {})
-    capacity_result_is_current = (
-        capacity_result.get("workbook_mtime_ns") == workbook.stat().st_mtime_ns
-        and capacity_result.get("start_month") == effective_start
-        and capacity_result.get("end_month") == effective_end
+    unit_capacity = get_unit_capacity(
+        upeh=filtered["RQ_UPEH"],
+        run_rate=filtered["RQ_RUN_RATE"],
+        vital=filtered["RQ_VITAL"],
+        module=reference_tables["RQ_MODULE"],
+        run_day=filtered["RQ_RUN_DAY"],
+        lot_ratio=filtered["RQ_LOT_RATIO"],
+        wf_ratio=filtered["RQ_WF_RATIO"],
     )
-    if capacity_result_is_current:
-        unit_capacity = capacity_result["data"]
-    else:
-        unit_capacity = calculate_unit_capacity(
-            upeh=filtered["RQ_UPEH"],
-            run_rate=filtered["RQ_RUN_RATE"],
-            vital=filtered["RQ_VITAL"],
-            module=reference_tables["RQ_MODULE"],
-            run_day=filtered["RQ_RUN_DAY"],
-            lot_ratio=filtered["RQ_LOT_RATIO"],
-            wf_ratio=filtered["RQ_WF_RATIO"],
-        )
-    required_equipment = calculate_required_equipment(
+    required_equipment = get_required_equipment(
         reqb=filtered["RQ_REQB"],
         plan=simulation_plan,
         yield_data=simulation_yield,
         chip_qty=reference_tables["RQ_CHIP_QTY"],
         unit_capacity=unit_capacity,
     )
-    capacity_exclusions = unit_capacity.attrs.get(
-        CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame()
-    )
+    capacity_exclusions = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
     required_exclusions = required_equipment.attrs.get(
         REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR, pd.DataFrame()
     )
@@ -167,7 +151,7 @@ try:
         "공정별 확보율",
         "설비대수",
     )
-    securement_rate = calculate_securement_rate(
+    securement_rate = get_securement_rate(
         filtered["RQ_EQP_AVBL"],
         required_equipment,
     )
@@ -188,9 +172,7 @@ except (KeyError, OSError, ValueError) as exc:
 else:
     with availability_tab:
         st.caption("월간 공정별 확보율 (가용대수 ÷ 소요대수)")
-        securement_filter_keys = [
-            f"securement_filter_{column}" for column in SECUREMENT_DIMENSIONS
-        ]
+        securement_filter_keys = [f"securement_filter_{column}" for column in SECUREMENT_DIMENSIONS]
         with st.expander("필터", expanded=False):
             if st.button("필터 초기화", key="securement_filter_reset"):
                 for filter_key in securement_filter_keys:
@@ -257,9 +239,7 @@ else:
             with st.expander("제외된 대당 Capa 기준정보", expanded=False):
                 st.dataframe(capacity_exclusions, hide_index=True, width="stretch")
         if not required_exclusions.empty:
-            positive_load_exclusions = required_exclusions.loc[
-                required_exclusions["부하량"].gt(0)
-            ]
+            positive_load_exclusions = required_exclusions.loc[required_exclusions["부하량"].gt(0)]
             st.warning(
                 "대당 Capa가 없어 소요대수 산출에서 "
                 f"{len(required_exclusions):,}건을 제외했습니다"
@@ -281,16 +261,11 @@ else:
             view_table = required_table.copy()
         else:
             table_dimensions = ["Area_Name", "공정"]
-            view_table = (
-                required_table.groupby(table_dimensions, as_index=False, sort=False)[
-                    all_month_columns
-                ]
-                .sum(min_count=1)
-            )
+            view_table = required_table.groupby(table_dimensions, as_index=False, sort=False)[
+                all_month_columns
+            ].sum(min_count=1)
 
-        filter_keys = [
-            f"required_equipment_filter_{column}" for column in table_dimensions
-        ]
+        filter_keys = [f"required_equipment_filter_{column}" for column in table_dimensions]
         with st.expander("필터", expanded=False):
             if st.button("필터 초기화", key="required_equipment_filter_reset"):
                 for filter_key in filter_keys:
@@ -314,9 +289,7 @@ else:
                     filtered_required_table[column].isin(selected_values)
                 ]
         month_columns = [
-            column
-            for column in filtered_required_table.columns
-            if column not in table_dimensions
+            column for column in filtered_required_table.columns if column not in table_dimensions
         ]
         displayed_table = filtered_required_table.copy()
         displayed_table[month_columns] = displayed_table[month_columns].mask(
@@ -388,9 +361,7 @@ else:
 
         for column, selected_values in equipment_filters.items():
             if selected_values:
-                equipment_table = equipment_table.loc[
-                    equipment_table[column].isin(selected_values)
-                ]
+                equipment_table = equipment_table.loc[equipment_table[column].isin(selected_values)]
         equipment_month_columns = [
             column for column in equipment_table.columns if column not in equipment_dimensions
         ]

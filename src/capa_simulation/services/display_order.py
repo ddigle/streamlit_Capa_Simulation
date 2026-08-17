@@ -46,15 +46,15 @@ def _prepare_display_order(display_order: pd.DataFrame) -> pd.DataFrame:
     for column in text_columns:
         prepared[column] = prepared[column].astype("string").str.strip()
     prepared["활성여부"] = prepared["활성여부"].str.upper()
-    prepared["정렬우선순위"] = pd.to_numeric(
-        prepared["정렬우선순위"], errors="coerce"
-    )
+    prepared["정렬우선순위"] = pd.to_numeric(prepared["정렬우선순위"], errors="coerce")
     prepared["값표시순서"] = pd.to_numeric(prepared["값표시순서"], errors="coerce")
 
     required_values = prepared[
         [*required_scope_columns, "정렬우선순위", "분류컬럼", "정렬방식", "활성여부"]
     ]
-    if required_values.isna().any(axis=None) or required_values.eq("").any(axis=None):
+    has_missing = any(required_values[column].isna().any() for column in required_values)
+    has_blank = any(required_values[column].eq("").any() for column in required_values)
+    if has_missing or has_blank:
         raise ValueError("RQ_DISPLAY_ORDER의 필수 설정값에 누락이 있습니다.")
     invalid_modes = sorted(set(prepared["정렬방식"].dropna()) - DISPLAY_ORDER_MODES)
     if invalid_modes:

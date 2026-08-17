@@ -84,9 +84,7 @@ def calculate_unit_capacity(
         _assert_positive(result, column, table_name)
 
     nonpositive_wf_ratio = result["WF측정률"].le(0)
-    excluded_frames = [
-        _exclusion_rows(result, nonpositive_wf_ratio, "WF측정률 0 이하")
-    ]
+    excluded_frames = [_exclusion_rows(result, nonpositive_wf_ratio, "WF측정률 0 이하")]
     result = result.loc[~nonpositive_wf_ratio].copy()
 
     result["대당 Capa"] = (
@@ -100,9 +98,7 @@ def calculate_unit_capacity(
         / result["WF측정률"]
     )
     nonpositive_capacity = result["대당 Capa"].le(0)
-    excluded_frames.append(
-        _exclusion_rows(result, nonpositive_capacity, "대당 Capa 0 이하")
-    )
+    excluded_frames.append(_exclusion_rows(result, nonpositive_capacity, "대당 Capa 0 이하"))
     result = result.loc[~nonpositive_capacity].copy()
     columns = ["생산계획년월", *UNIT_CAPACITY_DIMENSIONS, "환산_UPEH", "대당 Capa"]
     output = (
@@ -110,9 +106,7 @@ def calculate_unit_capacity(
         .sort_values(["생산계획년월", *UNIT_CAPACITY_DIMENSIONS])
         .reset_index(drop=True)
     )
-    output.attrs[CAPACITY_EXCLUSIONS_ATTR] = pd.concat(
-        excluded_frames, ignore_index=True
-    )
+    output.attrs[CAPACITY_EXCLUSIONS_ATTR] = pd.concat(excluded_frames, ignore_index=True)
     return output
 
 
@@ -221,7 +215,9 @@ def _normalize_month(data: pd.DataFrame, table_name: str) -> None:
 
 
 def _assert_complete_keys(data: pd.DataFrame, keys: list[str], table_name: str) -> None:
-    if data[keys].isna().any(axis=None) or data[keys].eq("").any(axis=None):
+    has_missing = any(data[key].isna().any() for key in keys)
+    has_blank = any(data[key].eq("").any() for key in keys)
+    if has_missing or has_blank:
         raise ValueError(f"{table_name}의 연결 키에 누락값이 있습니다.")
 
 

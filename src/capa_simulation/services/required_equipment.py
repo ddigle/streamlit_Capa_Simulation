@@ -60,13 +60,9 @@ def calculate_required_equipment(
     _normalize_month(prepared_reqb, "RQ_REQB")
     _normalize_text(prepared_reqb, REQB_TEXT_COLUMNS)
     prepared_reqb["소요기준"] = prepared_reqb["소요기준"].str.upper()
-    prepared_reqb = prepared_reqb.loc[
-        ~prepared_reqb["소요기준"].isin(UNIMPLEMENTED_BASES)
-    ].copy()
+    prepared_reqb = prepared_reqb.loc[~prepared_reqb["소요기준"].isin(UNIMPLEMENTED_BASES)].copy()
     if prepared_reqb.empty:
-        empty_result = pd.DataFrame(
-            columns=[*REQB_COLUMNS, "부하량", "대당 Capa", "소요대수"]
-        )
+        empty_result = pd.DataFrame(columns=[*REQB_COLUMNS, "부하량", "대당 Capa", "소요대수"])
         empty_result.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR] = pd.DataFrame()
         return empty_result
     _normalize_basis(prepared_reqb, "RQ_REQB")
@@ -95,9 +91,7 @@ def calculate_required_equipment(
     excluded_capacity = missing_capacity | nonpositive_capacity
     excluded_rows = result.loc[excluded_capacity, [*REQB_COLUMNS, "부하량", "대당 Capa"]].copy()
     excluded_rows["제외사유"] = "대당 Capa 없음"
-    excluded_rows.loc[nonpositive_capacity.loc[excluded_capacity], "제외사유"] = (
-        "대당 Capa 0 이하"
-    )
+    excluded_rows.loc[nonpositive_capacity.loc[excluded_capacity], "제외사유"] = "대당 Capa 0 이하"
     result = result.loc[~excluded_capacity].copy()
     result["소요대수"] = result["부하량"] / result["대당 Capa"]
     output = result[[*REQB_COLUMNS, "부하량", "대당 Capa", "소요대수"]]
@@ -111,16 +105,13 @@ def required_equipment_to_month_table(data: pd.DataFrame) -> pd.DataFrame:
     _require_columns(data, required, "소요대수")
     if data.empty:
         return pd.DataFrame(columns=RESULT_DIMENSIONS)
-    pivot_input = (
-        data.groupby(
-            ["생산계획년월", *RESULT_DIMENSIONS],
-            as_index=False,
-            dropna=False,
-        )["소요대수"]
-        .sum()
-    )
+    pivot_input = data.groupby(
+        ["생산계획년월", *RESULT_DIMENSIONS],
+        as_index=False,
+        dropna=False,
+    )["소요대수"].sum()
     pivot_input[RESULT_DIMENSIONS] = pivot_input[RESULT_DIMENSIONS].fillna("")
-    result = pivot_input.pivot(
+    result: pd.DataFrame = pivot_input.pivot(
         index=RESULT_DIMENSIONS,
         columns="생산계획년월",
         values="소요대수",
@@ -128,7 +119,8 @@ def required_equipment_to_month_table(data: pd.DataFrame) -> pd.DataFrame:
     result.columns.name = None
     month_columns = sorted(column for column in result.columns if column not in RESULT_DIMENSIONS)
     result = result.rename(columns={month: str(int(month)) for month in month_columns})
-    return result[[*RESULT_DIMENSIONS, *[str(int(month)) for month in month_columns]]]
+    ordered_columns = [*RESULT_DIMENSIONS, *[str(int(month)) for month in month_columns]]
+    return result.reindex(columns=ordered_columns)
 
 
 def _build_loads(
@@ -178,7 +170,7 @@ def _build_loads(
     loads = pd.concat(load_frames, ignore_index=True)[[*LOAD_KEYS, "부하량"]]
     _normalize_text(loads, [key for key in LOAD_KEYS if key not in {"생산계획년월", "소요기준"}])
     _normalize_basis(loads, "부하량")
-    return loads.groupby(LOAD_KEYS, as_index=False, dropna=False)["부하량"].sum()
+    return loads.groupby(LOAD_KEYS, as_index=False, dropna=False)[["부하량"]].sum()
 
 
 def _prepare_capacities(data: pd.DataFrame) -> pd.DataFrame:
@@ -223,7 +215,9 @@ def _normalize_month(data: pd.DataFrame, table_name: str) -> None:
 
 
 def _assert_complete(data: pd.DataFrame, columns: list[str], table_name: str) -> None:
-    if data[columns].isna().any(axis=None) or data[columns].eq("").any(axis=None):
+    has_missing = any(data[column].isna().any() for column in columns)
+    has_blank = any(data[column].eq("").any() for column in columns)
+    if has_missing or has_blank:
         raise ValueError(f"{table_name}의 필수 컬럼에 누락값이 있습니다.")
 
 

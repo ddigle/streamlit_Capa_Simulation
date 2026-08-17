@@ -1,5 +1,11 @@
 import streamlit as st
 
+from capa_simulation.io.reference_cache import (
+    clear_reference_tables,
+    get_reference_cache_version,
+)
+from capa_simulation.scenario_state import clear_active_scenario
+from capa_simulation.services.simulation_cache import clear_simulation_caches
 from capa_simulation.settings import (
     APP_NAME,
     MONTH_SELECTION_END,
@@ -14,11 +20,26 @@ from capa_simulation.sidebar_status import (
 
 st.set_page_config(page_title=APP_NAME, page_icon=":material/factory:", layout="wide")
 
+
+def refresh_reference_data() -> None:
+    clear_reference_tables()
+    clear_simulation_caches()
+    clear_active_scenario()
+    for key in (
+        "load_conversion_inputs",
+        "unit_capacity_result",
+        "capacity_standards_inputs",
+        "load_conversion_source_token",
+        "capacity_standards_source_token",
+        "home_dashboard_figure_cache",
+    ):
+        st.session_state.pop(key, None)
+
+
 pages = [
     st.Page(
         "app_pages/home.py",
-        title="Home",
-        icon=":material/home:",
+        title="HOME",
         default=True,
     ),
     st.Page(
@@ -53,10 +74,22 @@ navigation = st.navigation(pages, position="hidden")
 st.html(
     """
     <style>
+    [data-testid="stMainBlockContainer"] {
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
+        padding-top: 3rem !important;
+    }
+
     .st-key-home_navigation a,
     .st-key-home_navigation a p {
-        font-size: 1.15rem;
+        font-size: 1.5rem;
         font-weight: 700;
+    }
+    .st-key-home_navigation a {
+        justify-content: center;
+    }
+    .st-key-home_navigation a p {
+        text-align: center;
     }
     </style>
     """
@@ -82,5 +115,16 @@ with st.sidebar.container(border=True):
         int(selected_start_label.replace("-", "")),
         int(selected_end_label.replace("-", "")),
     )
+
+with st.sidebar.container(border=True):
+    st.markdown("#### :material/database: 기준정보 캐시")
+    st.caption("서버 시작 후 Excel은 최초 한 번만 읽습니다.")
+    st.button(
+        ":material/refresh: 기준정보 새로고침",
+        key="refresh_reference_data",
+        on_click=refresh_reference_data,
+        width="stretch",
+    )
+    st.caption(f"캐시 버전 {get_reference_cache_version()}")
 
 navigation.run()

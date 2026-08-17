@@ -30,11 +30,11 @@ $tableNames = @(
     "RQ_REQB"
 )
 
-function Quote-Identifier([string]$Value) {
+function ConvertTo-Identifier([string]$Value) {
     return '"' + $Value.Replace('"', '""') + '"'
 }
 
-function Quote-SqlText([string]$Value) {
+function ConvertTo-SqlText([string]$Value) {
     return "'" + $Value.Replace("'", "''") + "'"
 }
 

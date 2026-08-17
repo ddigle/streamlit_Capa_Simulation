@@ -1,2 +1,1 @@
 """Input and output adapters."""
-

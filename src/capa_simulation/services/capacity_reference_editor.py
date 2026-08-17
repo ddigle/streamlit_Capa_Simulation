@@ -127,7 +127,9 @@ def _normalize_dimensions(data: pd.DataFrame, dimensions: list[str]) -> None:
 
 
 def _assert_complete(data: pd.DataFrame, columns: list[str], table_name: str) -> None:
-    if data[columns].isna().any(axis=None) or data[columns].eq("").any(axis=None):
+    has_missing = any(data[column].isna().any() for column in columns)
+    has_blank = any(data[column].eq("").any() for column in columns)
+    if has_missing or has_blank:
         raise ValueError(f"{table_name}의 편집 테이블 식별 컬럼에 누락값이 있습니다.")
 
 

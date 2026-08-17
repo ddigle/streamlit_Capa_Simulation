@@ -18,12 +18,12 @@ def calculate_securement_rate(
     _prepare_keys_and_value(available, "가용대수", "RQ_EQP_AVBL")
     _prepare_keys_and_value(required, "소요대수", "소요대수")
 
-    available = available.groupby(
-        ["생산계획년월", "공정"], as_index=False, dropna=False
-    )["가용대수"].sum()
-    required = required.groupby(
-        ["생산계획년월", "공정"], as_index=False, dropna=False
-    )["소요대수"].sum()
+    available = available.groupby(["생산계획년월", "공정"], as_index=False, dropna=False)[
+        ["가용대수"]
+    ].sum()
+    required = required.groupby(["생산계획년월", "공정"], as_index=False, dropna=False)[
+        ["소요대수"]
+    ].sum()
 
     positive_required = required.loc[required["소요대수"].gt(0)]
     availability_check = positive_required.merge(
@@ -49,9 +49,7 @@ def calculate_securement_rate(
         validate="one_to_one",
     )
     result["소요대수"] = result["소요대수"].fillna(0.0)
-    result["확보율"] = result["가용대수"] / result["소요대수"].where(
-        result["소요대수"].gt(0)
-    )
+    result["확보율"] = result["가용대수"] / result["소요대수"].where(result["소요대수"].gt(0))
     return result
 
 
@@ -65,17 +63,13 @@ def securement_rate_to_month_table(data: pd.DataFrame) -> pd.DataFrame:
         values="확보율",
     ).reset_index()
     result.columns.name = None
-    raw_month_columns = [
-        column for column in result.columns if column not in SECUREMENT_DIMENSIONS
-    ]
+    raw_month_columns = [column for column in result.columns if column not in SECUREMENT_DIMENSIONS]
     result = result.rename(columns={month: str(int(month)) for month in raw_month_columns})
     month_columns = sorted(str(int(month)) for month in raw_month_columns)
     return result[[*SECUREMENT_DIMENSIONS, *month_columns]]
 
 
-def _prepare_keys_and_value(
-    data: pd.DataFrame, value_column: str, table_name: str
-) -> None:
+def _prepare_keys_and_value(data: pd.DataFrame, value_column: str, table_name: str) -> None:
     months = pd.to_numeric(data["생산계획년월"], errors="coerce")
     valid_months = months.notna() & months.mod(1).eq(0)
     integer_months = months.fillna(0).astype("int64")

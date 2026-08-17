@@ -42,9 +42,9 @@ def plan_to_edit_table(
     required = ["생산계획년월", *PLAN_EDITOR_DIMENSIONS, "생산수량"]
     _require_columns(plan, required, "RQ_PKG_PLAN")
     prepared = _normalize_text(plan[required], PLAN_EDITOR_DIMENSIONS)
-    prepared["생산계획년월"] = pd.to_numeric(
-        prepared["생산계획년월"], errors="coerce"
-    ).astype("Int64")
+    prepared["생산계획년월"] = pd.to_numeric(prepared["생산계획년월"], errors="coerce").astype(
+        "Int64"
+    )
     prepared = _to_numeric(prepared, ["생산수량"], "RQ_PKG_PLAN")
     prepared["생산수량"] = prepared["생산수량"].fillna(0.0)
 
@@ -55,10 +55,7 @@ def plan_to_edit_table(
     duplicated = prepared.duplicated(duplicate_keys, keep=False)
     if duplicated.any():
         example = (
-            prepared.loc[duplicated, duplicate_keys]
-            .drop_duplicates()
-            .head(5)
-            .to_dict("records")
+            prepared.loc[duplicated, duplicate_keys].drop_duplicates().head(5).to_dict("records")
         )
         raise ValueError(f"RQ_PKG_PLAN의 월별 계획 키가 중복되었습니다: {example}")
 
@@ -87,9 +84,7 @@ def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
         column for column in plan_table.columns if column not in PLAN_EDITOR_DIMENSIONS
     ]
     invalid_months = [
-        column
-        for column in month_columns
-        if not str(column).isdigit() or len(str(column)) != 6
+        column for column in month_columns if not str(column).isdigit() or len(str(column)) != 6
     ]
     if invalid_months:
         raise ValueError(f"PKG PLAN의 월 컬럼은 YYYYMM 형식이어야 합니다: {invalid_months}")
@@ -100,17 +95,15 @@ def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
         var_name="생산계획년월",
         value_name="생산수량",
     )
-    long_plan["생산계획년월"] = pd.to_numeric(
-        long_plan["생산계획년월"], errors="raise"
-    ).astype("Int64")
+    long_plan["생산계획년월"] = pd.to_numeric(long_plan["생산계획년월"], errors="raise").astype(
+        "Int64"
+    )
     long_plan = _to_numeric(long_plan, ["생산수량"], "PKG PLAN 편집값")
     long_plan["생산수량"] = long_plan["생산수량"].fillna(0.0)
     if long_plan["생산수량"].lt(0).any():
         raise ValueError("PKG PLAN 생산수량은 0 이상이어야 합니다.")
     long_plan = long_plan.loc[long_plan["생산수량"].gt(0)]
-    return long_plan.sort_values(["생산계획년월", *PLAN_EDITOR_DIMENSIONS]).reset_index(
-        drop=True
-    )
+    return long_plan.sort_values(["생산계획년월", *PLAN_EDITOR_DIMENSIONS]).reset_index(drop=True)
 
 
 def yield_to_edit_table(
@@ -119,9 +112,9 @@ def yield_to_edit_table(
     """Pivot Long yield data into editable EDS/BE rows with month columns."""
     _require_columns(yield_data, YIELD_REQUIRED_COLUMNS, "RQ_YLD")
     prepared = _normalize_text(yield_data[YIELD_REQUIRED_COLUMNS], YIELD_KEYS[1:])
-    prepared["생산계획년월"] = pd.to_numeric(
-        prepared["생산계획년월"], errors="coerce"
-    ).astype("Int64")
+    prepared["생산계획년월"] = pd.to_numeric(prepared["생산계획년월"], errors="coerce").astype(
+        "Int64"
+    )
     prepared = _to_numeric(prepared, YIELD_VALUE_COLUMNS, "RQ_YLD")
 
     if prepared[YIELD_KEYS].isna().any(axis=None):
@@ -168,9 +161,7 @@ def yield_from_edit_table(yield_table: pd.DataFrame) -> pd.DataFrame:
         column for column in yield_table.columns if column not in YIELD_EDITOR_DIMENSIONS
     ]
     invalid_months = [
-        column
-        for column in month_columns
-        if not str(column).isdigit() or len(str(column)) != 6
+        column for column in month_columns if not str(column).isdigit() or len(str(column)) != 6
     ]
     if invalid_months:
         raise ValueError(f"수율의 월 컬럼은 YYYYMM 형식이어야 합니다: {invalid_months}")
@@ -187,15 +178,13 @@ def yield_from_edit_table(yield_table: pd.DataFrame) -> pd.DataFrame:
         value_name="수율",
     )
     long_yield["수율 구분"] = long_yield["수율 구분"].replace(YIELD_INTERNAL_NAMES)
-    long_yield["생산계획년월"] = pd.to_numeric(
-        long_yield["생산계획년월"], errors="raise"
-    ).astype("Int64")
+    long_yield["생산계획년월"] = pd.to_numeric(long_yield["생산계획년월"], errors="raise").astype(
+        "Int64"
+    )
     long_yield = _to_numeric(long_yield, ["수율"], "수율 편집값")
     long_yield = long_yield.dropna(subset=["수율"])
 
-    duplicated = long_yield.duplicated(
-        ["생산계획년월", *YIELD_EDITOR_DIMENSIONS], keep=False
-    )
+    duplicated = long_yield.duplicated(["생산계획년월", *YIELD_EDITOR_DIMENSIONS], keep=False)
     if duplicated.any():
         raise ValueError("수율 편집값의 월별 연결 키가 중복되었습니다.")
 
@@ -256,17 +245,15 @@ def _validate_yield_range(data: pd.DataFrame, table_name: str) -> None:
 
 def _prepare_plan(plan: pd.DataFrame) -> pd.DataFrame:
     _require_columns(plan, PLAN_REQUIRED_COLUMNS, "RQ_PKG_PLAN")
-    available_detail_columns = [
-        column for column in LOAD_DETAIL_COLUMNS if column in plan.columns
-    ]
+    available_detail_columns = [column for column in LOAD_DETAIL_COLUMNS if column in plan.columns]
     prepared_columns = [*PLAN_REQUIRED_COLUMNS, *available_detail_columns]
     prepared = _normalize_text(
         plan[prepared_columns],
         [*CLASSIFICATION_COLUMNS, *available_detail_columns],
     )
-    prepared["생산계획년월"] = pd.to_numeric(
-        prepared["생산계획년월"], errors="coerce"
-    ).astype("Int64")
+    prepared["생산계획년월"] = pd.to_numeric(prepared["생산계획년월"], errors="coerce").astype(
+        "Int64"
+    )
     prepared = _to_numeric(prepared, ["생산수량"], "RQ_PKG_PLAN")
 
     missing_keys = prepared[["생산계획년월", *CLASSIFICATION_COLUMNS]].isna().any(axis=1)
@@ -289,14 +276,10 @@ def _prepare_load_base(
     prepared_yield["생산계획년월"] = pd.to_numeric(
         prepared_yield["생산계획년월"], errors="coerce"
     ).astype("Int64")
-    prepared_yield = _to_numeric(
-        prepared_yield, ["EDS_수율", "BE_수율"], "RQ_YLD"
-    )
+    prepared_yield = _to_numeric(prepared_yield, ["EDS_수율", "BE_수율"], "RQ_YLD")
 
     prepared_chip = _normalize_text(chip_qty[CHIP_REQUIRED_COLUMNS], CHIP_KEYS)
-    prepared_chip = _to_numeric(
-        prepared_chip, ["구분_Chip", "Net Die"], "RQ_CHIP_QTY"
-    )
+    prepared_chip = _to_numeric(prepared_chip, ["구분_Chip", "Net Die"], "RQ_CHIP_QTY")
 
     _assert_unique(prepared_yield, YIELD_KEYS, "RQ_YLD")
     _assert_unique(prepared_chip, CHIP_KEYS, "RQ_CHIP_QTY")
@@ -390,12 +373,8 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
     prepared_plan = _prepare_plan(plan)
     _require_columns(density_data, DENSITY_REQUIRED_COLUMNS, "RQ_CHIP_EQ")
 
-    prepared_density = _normalize_text(
-        density_data[DENSITY_REQUIRED_COLUMNS], DENSITY_KEYS
-    )
-    prepared_density = _to_numeric(
-        prepared_density, ["구분_Chip", "구분_EQ"], "RQ_CHIP_EQ"
-    )
+    prepared_density = _normalize_text(density_data[DENSITY_REQUIRED_COLUMNS], DENSITY_KEYS)
+    prepared_density = _to_numeric(prepared_density, ["구분_Chip", "구분_EQ"], "RQ_CHIP_EQ")
 
     if prepared_density[DENSITY_KEYS].isna().any(axis=None):
         raise ValueError("RQ_CHIP_EQ의 연결 키에 누락값이 있습니다.")
@@ -417,9 +396,7 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
     )
     if (calculation["_density_merge"] != "both").any():
         missing = (
-            calculation.loc[
-                calculation["_density_merge"] != "both", ["제품정보", "Stack"]
-            ]
+            calculation.loc[calculation["_density_merge"] != "both", ["제품정보", "Stack"]]
             .drop_duplicates()
             .head(5)
             .to_dict("records")
@@ -427,10 +404,7 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
         raise ValueError(f"RQ_CHIP_EQ가 연결되지 않는 제품이 있습니다: {missing}")
     calculation = calculation.drop(columns="_density_merge")
     calculation["물량"] = (
-        calculation["생산수량"]
-        * calculation["구분_Chip"]
-        * calculation["구분_EQ"]
-        / 100_000
+        calculation["생산수량"] * calculation["구분_Chip"] * calculation["구분_EQ"] / 100_000
     )
     return calculation
 

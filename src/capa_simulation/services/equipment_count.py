@@ -19,8 +19,7 @@ def build_equipment_count_table(
     """Build a monthly equipment-count table from the three equipment queries."""
     sources = zip((own, lent, available), EQUIPMENT_SOURCES, strict=True)
     prepared = [
-        _prepare_source(data, category, value_column)
-        for data, (category, value_column) in sources
+        _prepare_source(data, category, value_column) for data, (category, value_column) in sources
     ]
     if detailed:
         long_table = pd.concat(prepared, ignore_index=True)
@@ -29,10 +28,10 @@ def build_equipment_count_table(
         long_table = prepared[2].drop(columns="구분")
         dimensions = EQUIPMENT_DIMENSIONS
 
-    grouped = long_table.groupby(
-        ["생산계획년월", *dimensions], as_index=False, dropna=False
-    )["대수"].sum()
-    result = grouped.pivot(
+    grouped = long_table.groupby(["생산계획년월", *dimensions], as_index=False, dropna=False)[
+        "대수"
+    ].sum()
+    result: pd.DataFrame = grouped.pivot(
         index=dimensions,
         columns="생산계획년월",
         values="대수",
@@ -41,7 +40,7 @@ def build_equipment_count_table(
     raw_month_columns = [column for column in result.columns if column not in dimensions]
     result = result.rename(columns={month: str(int(month)) for month in raw_month_columns})
     month_columns = sorted(str(int(month)) for month in raw_month_columns)
-    result = result[[*dimensions, *month_columns]]
+    result = result.reindex(columns=[*dimensions, *month_columns])
     if detailed:
         category_order = {category: index for index, (category, _) in enumerate(EQUIPMENT_SOURCES)}
         result["_category_order"] = result["구분"].map(category_order)
@@ -53,9 +52,7 @@ def build_equipment_count_table(
     return result
 
 
-def _prepare_source(
-    data: pd.DataFrame, category: str, value_column: str
-) -> pd.DataFrame:
+def _prepare_source(data: pd.DataFrame, category: str, value_column: str) -> pd.DataFrame:
     required = ["생산계획년월", "공정", value_column]
     missing = [column for column in required if column not in data.columns]
     if missing:
