@@ -3,9 +3,13 @@ import pytest
 
 from capa_simulation.services.dashboard import (
     build_bottleneck_capacity,
+    build_monthly_bottleneck_ranking,
     build_monthly_bottleneck_top5,
+    build_monthly_bottleneck_top5_from_ranking,
     build_monthly_bottleneck_top10_details,
+    build_monthly_bottleneck_top10_details_from_ranking,
     build_monthly_bottlenecks,
+    build_monthly_bottlenecks_from_ranking,
     build_monthly_wafer_load,
     build_production_dashboard,
     build_production_lob_summary,
@@ -16,6 +20,7 @@ from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
     YIELD_EDITOR_DIMENSIONS,
     build_monthly_volume,
+    calculate_chip_and_wafer_loads,
     filter_edp_plan,
     plan_from_edit_table,
     plan_to_edit_table,
@@ -109,6 +114,59 @@ def test_monthly_pkg_and_wafer_volume() -> None:
     assert set(detailed_chip["WF 구분"]) == {"Core", "Dummy"}
     assert detailed_chip["202608"].sum() == pytest.approx(chip.loc[0, "202608"])
     assert detailed_pkg.loc[0, "WF 구분"] == "PKG"
+
+
+def test_chip_and_wafer_bundle_prepares_shared_base_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from capa_simulation.services import load_calculator
+
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "양산구분": ["양산"],
+            "제품정보": ["HBM라"],
+            "Stack": ["12H"],
+            "생산수량": [100.0],
+        }
+    )
+    yield_data = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "제품정보": ["HBM라"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "EDS_수율": [0.8],
+            "BE_수율": [0.9],
+        }
+    )
+    chip_qty = pd.DataFrame(
+        {
+            "제품정보": ["HBM라"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "구분_Chip": [11],
+            "Net Die": [500],
+        }
+    )
+    original_prepare = load_calculator._prepare_load_base
+    call_count = 0
+
+    def counted_prepare(
+        plan_data: pd.DataFrame,
+        yield_frame: pd.DataFrame,
+        chip_frame: pd.DataFrame,
+    ) -> pd.DataFrame:
+        nonlocal call_count
+        call_count += 1
+        return original_prepare(plan_data, yield_frame, chip_frame)
+
+    monkeypatch.setattr(load_calculator, "_prepare_load_base", counted_prepare)
+    chip, wafer = calculate_chip_and_wafer_loads(plan, yield_data, chip_qty)
+
+    assert call_count == 1
+    assert chip["물량"].sum() == pytest.approx(100 * 11 / 0.9)
+    assert wafer["물량"].sum() == pytest.approx(100 * 1_000 * 11 / 0.8 / 0.9 / 500)
 
 
 def test_edited_pkg_plan_recalculates_monthly_volume() -> None:
@@ -344,6 +402,66 @@ def test_dashboard_selects_lowest_monthly_securement_process() -> None:
 
     filtered = build_monthly_bottlenecks(securement, included_processes=["Process-B", "Process-C"])
     assert filtered["공정"].tolist() == ["Process-B", "Process-C"]
+
+    excluded = build_monthly_bottlenecks(securement, included_processes=[])
+    assert excluded.empty
+    assert excluded.columns.tolist() == ["생산계획년월", "공정", "확보율", "년월", "축레이블"]
+
+    monthly_density = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202609],
+            "년월": ["26.08", "26.09"],
+            "부하량": [10.0, 20.0],
+        }
+    )
+    monthly_wafer = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202609],
+            "Wafer 부하량": [1_000.0, 2_000.0],
+        }
+    )
+    summary = build_production_lob_summary(monthly_density, monthly_wafer, excluded)
+    assert summary["부하량"].tolist() == [10.0, 20.0]
+    assert summary["Wafer 부하량"].tolist() == [1_000.0, 2_000.0]
+    assert summary["Wafer Capa"].isna().all()
+
+
+def test_dashboard_reuses_one_monthly_bottleneck_ranking() -> None:
+    securement = pd.DataFrame(
+        {
+            "생산계획년월": [202608] * 6,
+            "공정": [f"Process-{index}" for index in range(6)],
+            "가용대수": [10.0] * 6,
+            "소요대수": [20.0] * 6,
+            "확보율": [1.2, 0.8, 1.1, 0.9, 1.0, 0.7],
+        }
+    )
+    monthly_density = pd.DataFrame({"생산계획년월": [202608], "부하량": [10.0], "년월": ["26.08"]})
+    monthly_wafer = pd.DataFrame(
+        {"생산계획년월": [202608], "Wafer 부하량": [1_000.0], "년월": ["26.08"]}
+    )
+
+    ranking = build_monthly_bottleneck_ranking(securement)
+    top1 = build_monthly_bottlenecks_from_ranking(ranking)
+    top5 = build_monthly_bottleneck_top5_from_ranking(
+        ranking,
+        monthly_density,
+        monthly_wafer,
+    )
+    top10 = build_monthly_bottleneck_top10_details_from_ranking(ranking, monthly_wafer)
+
+    assert ranking["공정"].tolist() == [
+        "Process-5",
+        "Process-1",
+        "Process-3",
+        "Process-4",
+        "Process-2",
+        "Process-0",
+    ]
+    assert ranking["순위"].tolist() == [1, 2, 3, 4, 5, 6]
+    assert top1["공정"].tolist() == ["Process-5"]
+    assert top5["공정"].tolist() == ranking["공정"].head(5).tolist()
+    assert top10["공정"].tolist() == ranking["공정"].tolist()
 
 
 def test_dashboard_converts_bottleneck_rate_to_density_capacity() -> None:

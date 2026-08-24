@@ -1,6 +1,10 @@
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.grouped_monthly_table import (
+    build_grouped_monthly_export,
+    render_grouped_monthly_table,
+)
 from capa_simulation.io.reference_cache import (
     get_reference_cache_version,
     get_reference_tables,
@@ -30,6 +34,7 @@ from capa_simulation.settings import PROJECT_ROOT
 from capa_simulation.sidebar_status import show_applied_month_range
 
 CLASSIFICATION_BACKGROUND_COLOR = "#F0F2F6"
+PRODUCT_COLUMN_WIDTH_PX = 100
 DISPLAY_COLUMN_LABELS = {
     "양산구분": "양산",
     "제품정보": "제품",
@@ -142,7 +147,7 @@ with pkg_plan_tab:
             **{
                 column: st.column_config.TextColumn(
                     DISPLAY_COLUMN_LABELS.get(column, column),
-                    width=None,
+                    width=(PRODUCT_COLUMN_WIDTH_PX if column == "제품정보" else None),
                     alignment="center",
                     pinned=True,
                 )
@@ -209,7 +214,7 @@ with yield_tab:
             **{
                 column: st.column_config.TextColumn(
                     DISPLAY_COLUMN_LABELS.get(column, column),
-                    width=None,
+                    width=(PRODUCT_COLUMN_WIDTH_PX if column == "제품정보" else None),
                     alignment="center",
                     pinned=True,
                 )
@@ -287,53 +292,43 @@ with conversion_tab:
         "Wafer": "매",
         "Density": "억Gb",
     }[demand_basis]
-    conversion_number_format = "%,.2f" if demand_basis == "Density" else "%,.0f"
+    conversion_decimal_places = 2 if demand_basis == "Density" else 0
 
     with st.container(border=True):
-        st.subheader("환산")
-        st.caption(f"단위: {unit}")
-
         classification_columns = {"양산구분", "제품정보", "Stack"}
         if show_detail:
             classification_columns.add("WF 구분")
-        month_columns = [
-            column for column in monthly_volume.columns if column not in classification_columns
-        ]
         displayed_classification_columns = [
             column for column in monthly_volume.columns if column in classification_columns
         ]
-        displayed_monthly_volume = monthly_volume.copy()
-        displayed_monthly_volume[month_columns] = displayed_monthly_volume[month_columns].mask(
-            displayed_monthly_volume[month_columns].eq(0)
+        conversion_export = build_grouped_monthly_export(
+            monthly_volume,
+            classification_columns=displayed_classification_columns,
+            column_labels=DISPLAY_COLUMN_LABELS,
         )
-        styled_monthly_volume = displayed_monthly_volume.style.set_properties(
-            subset=pd.Index(displayed_classification_columns),
-            **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
-        )
-        st.dataframe(
-            styled_monthly_volume,
-            hide_index=True,
-            width="content",
-            height=500,
-            row_height=25,
-            column_config={
-                **{
-                    column: st.column_config.TextColumn(
-                        DISPLAY_COLUMN_LABELS.get(column, column),
-                        width=None,
-                        alignment="center",
-                        pinned=True,
-                    )
-                    for column in classification_columns
-                },
-                **{
-                    month: st.column_config.NumberColumn(
-                        month,
-                        width=80,
-                        format=conversion_number_format,
-                        alignment="center",
-                    )
-                    for month in month_columns
-                },
-            },
+        conversion_csv = conversion_export.to_csv(
+            index=False,
+            float_format=f"%.{conversion_decimal_places}f",
+        ).encode("utf-8-sig")
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.subheader("환산", width="content")
+            st.caption(f"단위: {unit}", width="content")
+            st.download_button(
+                ":material/download: CSV 다운로드",
+                data=conversion_csv,
+                file_name=(
+                    "Capa_Conversion_"
+                    f"{demand_basis}_{effective_start_month}_{effective_end_month}.csv"
+                ),
+                mime="text/csv;charset=utf-8",
+                key="download_conversion_csv",
+                on_click="ignore",
+                width="content",
+            )
+        render_grouped_monthly_table(
+            monthly_volume,
+            classification_columns=displayed_classification_columns,
+            column_labels=DISPLAY_COLUMN_LABELS,
+            decimal_places=conversion_decimal_places,
+            key="conversion_volume_table",
         )

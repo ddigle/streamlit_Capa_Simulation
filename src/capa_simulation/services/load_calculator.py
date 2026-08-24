@@ -333,7 +333,24 @@ def calculate_chip_load(
     chip_qty: pd.DataFrame,
 ) -> pd.DataFrame:
     """Calculate Top/Core/Buffer/Slave/Master and Dummy chip volume in Kea."""
+    return _calculate_chip_load_from_base(_prepare_load_base(plan, yield_data, chip_qty))
+
+
+def calculate_chip_and_wafer_loads(
+    plan: pd.DataFrame,
+    yield_data: pd.DataFrame,
+    chip_qty: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Calculate Chip and Wafer loads from one shared validated join result."""
     calculation = _prepare_load_base(plan, yield_data, chip_qty)
+    return (
+        _calculate_chip_load_from_base(calculation),
+        _calculate_wafer_load_from_base(calculation),
+    )
+
+
+def _calculate_chip_load_from_base(load_base: pd.DataFrame) -> pd.DataFrame:
+    calculation = load_base.copy()
     calculation["물량"] = (
         calculation["생산수량"] * calculation["구분_Chip"] / calculation["BE_수율"]
     )
@@ -354,7 +371,11 @@ def calculate_wafer_load(
     chip_qty: pd.DataFrame,
 ) -> pd.DataFrame:
     """Calculate regular and Dummy wafer volume in sheets."""
-    calculation = _prepare_load_base(plan, yield_data, chip_qty)
+    return _calculate_wafer_load_from_base(_prepare_load_base(plan, yield_data, chip_qty))
+
+
+def _calculate_wafer_load_from_base(load_base: pd.DataFrame) -> pd.DataFrame:
+    calculation = load_base.copy()
     calculation["물량"] = (
         calculation["생산수량"]
         * 1_000

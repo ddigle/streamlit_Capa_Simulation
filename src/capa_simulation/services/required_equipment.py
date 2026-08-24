@@ -1,6 +1,7 @@
 import pandas as pd
 
 from capa_simulation.services.load_calculator import (
+    calculate_chip_and_wafer_loads,
     calculate_chip_load,
     calculate_wafer_load,
 )
@@ -55,18 +56,9 @@ def calculate_required_equipment(
     unit_capacity: pd.DataFrame,
 ) -> pd.DataFrame:
     """Calculate required equipment for every RQ_REQB row."""
-    _require_columns(reqb, REQB_COLUMNS, "RQ_REQB")
-    prepared_reqb = reqb[REQB_COLUMNS].copy()
-    _normalize_month(prepared_reqb, "RQ_REQB")
-    _normalize_text(prepared_reqb, REQB_TEXT_COLUMNS)
-    prepared_reqb["소요기준"] = prepared_reqb["소요기준"].str.upper()
-    prepared_reqb = prepared_reqb.loc[~prepared_reqb["소요기준"].isin(UNIMPLEMENTED_BASES)].copy()
+    prepared_reqb = _prepare_reqb(reqb)
     if prepared_reqb.empty:
-        empty_result = pd.DataFrame(columns=[*REQB_COLUMNS, "부하량", "대당 Capa", "소요대수"])
-        empty_result.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR] = pd.DataFrame()
-        return empty_result
-    _normalize_basis(prepared_reqb, "RQ_REQB")
-    _assert_complete(prepared_reqb, REQB_REQUIRED_KEYS, "RQ_REQB")
+        return _empty_required_equipment_result()
 
     loads = _build_loads(
         plan,
@@ -74,6 +66,64 @@ def calculate_required_equipment(
         chip_qty,
         set(prepared_reqb["소요기준"].unique()),
     )
+    return _calculate_required_equipment_from_prepared(
+        prepared_reqb,
+        loads,
+        unit_capacity,
+    )
+
+
+def calculate_required_equipment_from_loads(
+    reqb: pd.DataFrame,
+    plan: pd.DataFrame,
+    unit_capacity: pd.DataFrame,
+    chip_load: pd.DataFrame,
+    wafer_load: pd.DataFrame,
+) -> pd.DataFrame:
+    """Calculate required equipment from already prepared Chip and Wafer loads."""
+    prepared_reqb = _prepare_reqb(reqb)
+    if prepared_reqb.empty:
+        return _empty_required_equipment_result()
+    loads = _build_loads(
+        plan,
+        None,
+        None,
+        set(prepared_reqb["소요기준"].unique()),
+        chip_load=chip_load,
+        wafer_load=wafer_load,
+    )
+    return _calculate_required_equipment_from_prepared(
+        prepared_reqb,
+        loads,
+        unit_capacity,
+    )
+
+
+def _prepare_reqb(reqb: pd.DataFrame) -> pd.DataFrame:
+    _require_columns(reqb, REQB_COLUMNS, "RQ_REQB")
+    prepared_reqb = reqb[REQB_COLUMNS].copy()
+    _normalize_month(prepared_reqb, "RQ_REQB")
+    _normalize_text(prepared_reqb, REQB_TEXT_COLUMNS)
+    prepared_reqb["소요기준"] = prepared_reqb["소요기준"].str.upper()
+    prepared_reqb = prepared_reqb.loc[~prepared_reqb["소요기준"].isin(UNIMPLEMENTED_BASES)].copy()
+    if prepared_reqb.empty:
+        return prepared_reqb
+    _normalize_basis(prepared_reqb, "RQ_REQB")
+    _assert_complete(prepared_reqb, REQB_REQUIRED_KEYS, "RQ_REQB")
+    return prepared_reqb
+
+
+def _empty_required_equipment_result() -> pd.DataFrame:
+    empty_result = pd.DataFrame(columns=[*REQB_COLUMNS, "부하량", "대당 Capa", "소요대수"])
+    empty_result.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR] = pd.DataFrame()
+    return empty_result
+
+
+def _calculate_required_equipment_from_prepared(
+    prepared_reqb: pd.DataFrame,
+    loads: pd.DataFrame,
+    unit_capacity: pd.DataFrame,
+) -> pd.DataFrame:
     capacities = _prepare_capacities(unit_capacity)
 
     result = prepared_reqb.merge(loads, on=LOAD_KEYS, how="left", validate="many_to_one")
@@ -125,9 +175,12 @@ def required_equipment_to_month_table(data: pd.DataFrame) -> pd.DataFrame:
 
 def _build_loads(
     plan: pd.DataFrame,
-    yield_data: pd.DataFrame,
-    chip_qty: pd.DataFrame,
+    yield_data: pd.DataFrame | None,
+    chip_qty: pd.DataFrame | None,
     required_bases: set[str],
+    *,
+    chip_load: pd.DataFrame | None = None,
+    wafer_load: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     plan_columns = [
         "생산계획년월",
@@ -154,16 +207,30 @@ def _build_loads(
         pkg["WF 구분"] = "PKG"
         pkg["소요기준"] = "PKG"
         load_frames.append(pkg)
-    if "CHIP" in required_bases:
-        chip = calculate_chip_load(prepared_plan, yield_data, chip_qty).rename(
-            columns={"물량": "부하량"}
+    needs_chip = "CHIP" in required_bases
+    needs_wafer = "WF" in required_bases
+    if needs_chip and chip_load is None and needs_wafer and wafer_load is None:
+        if yield_data is None or chip_qty is None:
+            raise ValueError("Chip·Wafer 부하량 또는 수율·Chip 기준정보가 필요합니다.")
+        chip_load, wafer_load = calculate_chip_and_wafer_loads(
+            prepared_plan,
+            yield_data,
+            chip_qty,
         )
+    if needs_chip:
+        if chip_load is None:
+            if yield_data is None or chip_qty is None:
+                raise ValueError("Chip 부하량 또는 수율·Chip 기준정보가 필요합니다.")
+            chip_load = calculate_chip_load(prepared_plan, yield_data, chip_qty)
+        chip = chip_load.rename(columns={"물량": "부하량"})
         chip["소요기준"] = "CHIP"
         load_frames.append(chip)
-    if "WF" in required_bases:
-        wafer = calculate_wafer_load(prepared_plan, yield_data, chip_qty).rename(
-            columns={"물량": "부하량"}
-        )
+    if needs_wafer:
+        if wafer_load is None:
+            if yield_data is None or chip_qty is None:
+                raise ValueError("Wafer 부하량 또는 수율·Chip 기준정보가 필요합니다.")
+            wafer_load = calculate_wafer_load(prepared_plan, yield_data, chip_qty)
+        wafer = wafer_load.rename(columns={"물량": "부하량"})
         wafer["소요기준"] = "WF"
         load_frames.append(wafer)
 

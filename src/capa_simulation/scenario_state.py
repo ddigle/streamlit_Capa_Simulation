@@ -69,6 +69,25 @@ def scenario_table(scenario: ActiveScenario, table_name: str) -> pd.DataFrame:
     return scenario["tables"][table_name].copy(deep=True)
 
 
+def scenario_month_table(
+    scenario: ActiveScenario,
+    table_name: str,
+    start_month: int,
+    end_month: int,
+) -> pd.DataFrame:
+    """Filter an active table first and copy only rows in the selected month range."""
+    if table_name not in scenario["tables"]:
+        raise KeyError(f"활성 시나리오 테이블이 없습니다: {table_name}")
+    from capa_simulation.services.month_filter import filter_month_range
+
+    return filter_month_range(
+        scenario["tables"][table_name],
+        start_month,
+        end_month,
+        table_name,
+    )
+
+
 def apply_month_updates(
     scenario: ActiveScenario,
     replacements: dict[str, pd.DataFrame],

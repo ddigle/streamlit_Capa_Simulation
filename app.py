@@ -1,5 +1,6 @@
 import streamlit as st
 
+from capa_simulation.components.month_range_picker import render_month_range_picker
 from capa_simulation.io.reference_cache import (
     clear_reference_tables,
     get_reference_cache_version,
@@ -9,7 +10,6 @@ from capa_simulation.services.simulation_cache import clear_simulation_caches
 from capa_simulation.settings import (
     APP_NAME,
     MONTH_SELECTION_END,
-    MONTH_SELECTION_OPTIONS,
     MONTH_SELECTION_START,
     format_month,
 )
@@ -103,12 +103,24 @@ with st.sidebar.container(border=True):
 
 with st.sidebar.container(border=True):
     st.markdown("#### 📅 조회 기간")
-    st.caption("월 단위로 분석할 생산계획 범위를 선택하세요.")
-    selected_start_label, selected_end_label = st.select_slider(
-        "분석 년월",
-        options=MONTH_SELECTION_OPTIONS,
-        value=(format_month(MONTH_SELECTION_START), format_month(MONTH_SELECTION_END)),
-        key="production_month_range_v2",
+    st.caption("시작 월과 종료 월을 각각 선택하세요.")
+    default_month_range = (
+        format_month(MONTH_SELECTION_START),
+        format_month(MONTH_SELECTION_END),
+    )
+    current_month_range = st.session_state.get("production_month_range_v2", default_month_range)
+    if not isinstance(current_month_range, (list, tuple)) or len(current_month_range) != 2:
+        current_month_range = default_month_range
+    selected_start_label, selected_end_label = render_month_range_picker(
+        start=str(current_month_range[0]),
+        end=str(current_month_range[1]),
+        min_month=default_month_range[0],
+        max_month=default_month_range[1],
+        key="production_month_picker",
+    )
+    st.session_state["production_month_range_v2"] = (
+        selected_start_label,
+        selected_end_label,
     )
     register_month_range_placeholder(st.empty())
     show_applied_month_range(

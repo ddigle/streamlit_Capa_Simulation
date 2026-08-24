@@ -15,7 +15,7 @@ Excel 2021 `.xlsb` 기준정보를 읽어 HBM PKG 라인의 월별 부하량, �
 - `RQ_REQB` 공정 경로별 소요대수 산출
 - 보유·대여·가용 설비대수 조회
 - 공정별 확보율 및 월별 B/N 공정 산출
-- Density·Wafer Capa·B/N Top 5·10 HOME 대시보드
+- Density·Wafer Capa 요약과 선택형 계획·B/N 상세 HOME 대시보드
 - Excel 기준정보 공통 캐시와 사용자별 활성 시나리오
 
 `B/N 분석`과 `시나리오 및 결과` 페이지는 현재 확장용 빈 페이지입니다.
@@ -39,16 +39,26 @@ Streamlit 페이지 및 HOME 대시보드
 ```text
 app.py                         Streamlit 실행 진입점과 공통 사이드바
 app_pages/                     페이지별 UI
+src/capa_simulation/components/ Streamlit 커스텀 UI 컴포넌트
 src/capa_simulation/io/        Excel 로더와 기준정보 캐시
 src/capa_simulation/services/  계산·정렬·표 변환 로직
 src/capa_simulation/scenario_state.py
                                사용자별 활성 시나리오
+src/capa_simulation/performance.py
+                               HOME 단계별 성능 계측
 templates/                     로컬 XLSB 입력 파일 위치
-scripts/                       샘플 생성 및 SQLite 이관 도구
+scripts/                       샘플 생성·SQLite 이관·HOME 벤치마크 도구
 tests/                         계산·캐시·시나리오 테스트
 docs/TODO.md                   결정 이력과 작업 목록
 AGENTS.md                      개발 에이전트용 구조·규칙 문서
 ```
+
+공통 사이드바의 조회기간은 시작 월과 종료 월을 각각 선택하는 월 캘린더로 제공되며,
+선택한 범위는 모든 페이지의 월별 조회와 계산에 동일하게 적용됩니다.
+부하량 페이지의 환산 결과는 고정된 분류 영역과 가로 스크롤되는 월별 영역으로 나누어
+표시하며, 동일 분류값은 정렬 결과에 따라 계층적으로 그룹화됩니다. 각 제품 아래에는
+`Total`, 각 양산구분 아래에는 양산구분 Total이 배치되고 전체 합계는 헤더 바로 아래 2행에 표시됩니다.
+현재 소요기준·상세 여부·조회기간이 반영된 환산 결과는 UTF-8 CSV로 내려받을 수 있습니다.
 
 자세한 개발 구조와 변경 규칙은 [AGENTS.md](AGENTS.md), 확정사항과 향후 계획은
 [docs/TODO.md](docs/TODO.md)를 참고합니다.
@@ -84,7 +94,12 @@ XLSB 및 SQLite 파일은 로컬 데이터이므로 Git에 포함되지 않습�
 ## 캐시와 시나리오
 
 - Excel 기준정보는 서버 프로세스에서 공통으로 캐시됩니다.
-- 동일 입력의 부하량·Capa·소요대수·확보율 계산 결과도 재사용됩니다.
+- 동일 입력의 부하량·Capa·소요대수·확보율과 HOME 전체 계산 그래프를 재사용합니다.
+- HOME은 기본 진입 시 요약 Figure만 만들고, `계획·B/N 상세표 표시`를 켰을 때 상세
+  Figure를 별도 생성·캐시합니다.
+- B/N 임계값과 포함 공정은 폼의 `조건 적용`을 누를 때 한 번에 반영됩니다.
+- `HOME 성능 진단`을 켜면 데이터 노출 없이 단계별 소요시간과 Figure 캐시 적중 여부를
+  확인할 수 있습니다.
 - 웹 편집값은 브라우저 세션별 활성 시나리오에만 저장됩니다.
 - 페이지를 이동해도 편집값은 유지되고 다른 산출 페이지에 반영됩니다.
 - 브라우저 세션 종료 또는 서버 재시작 후에는 편집값이 유지되지 않습니다.
@@ -126,6 +141,7 @@ PowerShell에서 가상환경 활성화 스크립트가 차단되면 조직 보�
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m ruff format --check .
 .\.venv\Scripts\python.exe -m mypy
+.\.venv\Scripts\python.exe scripts\benchmark_home.py
 ```
 
 ## 현재 주요 미구현 항목

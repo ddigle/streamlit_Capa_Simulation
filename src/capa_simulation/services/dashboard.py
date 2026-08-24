@@ -72,7 +72,17 @@ def build_monthly_wafer_load(
     """Build monthly Wafer load in sheets for the complete production plan."""
     if plan.empty:
         return pd.DataFrame(columns=["생산계획년월", "Wafer 부하량", "년월"])
-    wafer = calculate_wafer_load(plan, yield_data, chip_qty)
+    return build_monthly_wafer_load_from_load(calculate_wafer_load(plan, yield_data, chip_qty))
+
+
+def build_monthly_wafer_load_from_load(wafer: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate a precomputed detailed Wafer load by month."""
+    required = ["생산계획년월", "물량"]
+    missing = [column for column in required if column not in wafer.columns]
+    if missing:
+        raise ValueError(f"Wafer 부하량 필수 컬럼이 없습니다: {', '.join(missing)}")
+    if wafer.empty:
+        return pd.DataFrame(columns=["생산계획년월", "Wafer 부하량", "년월"])
     monthly = (
         wafer.groupby("생산계획년월", as_index=False, dropna=False)[["물량"]]
         .sum()
@@ -111,22 +121,45 @@ def build_monthly_bottlenecks(
     included_processes: list[str] | None = None,
 ) -> pd.DataFrame:
     """Select the lowest valid securement-rate process for every month."""
+    ranking = build_monthly_bottleneck_ranking(securement_rate, included_processes)
+    return build_monthly_bottlenecks_from_ranking(ranking)
+
+
+def build_monthly_bottleneck_ranking(
+    securement_rate: pd.DataFrame,
+    included_processes: list[str] | None = None,
+) -> pd.DataFrame:
+    """Normalize and rank each month's valid processes once for all HOME views."""
     required = ["생산계획년월", "공정", "확보율"]
     missing = [column for column in required if column not in securement_rate.columns]
     if missing:
         raise ValueError(f"확보율 필수 컬럼이 없습니다: {', '.join(missing)}")
-    prepared = securement_rate[required].copy()
-    prepared["확보율"] = pd.to_numeric(prepared["확보율"], errors="coerce")
-    prepared = prepared.dropna(subset=["확보율"])
+    detail_columns = [
+        column for column in ("가용대수", "소요대수") if column in securement_rate.columns
+    ]
+    prepared = securement_rate[[*required, *detail_columns]].copy()
+    for column in ["확보율", *detail_columns]:
+        prepared[column] = pd.to_numeric(prepared[column], errors="coerce")
     prepared["공정"] = prepared["공정"].astype("string").str.strip()
+    prepared = prepared.dropna(subset=["생산계획년월", "공정", "확보율"])
     if included_processes is not None:
         prepared = prepared.loc[prepared["공정"].isin(included_processes)]
-    prepared = prepared.sort_values(
-        ["생산계획년월", "확보율", "공정"], kind="stable"
-    ).drop_duplicates("생산계획년월", keep="first")
-    prepared = prepared.reset_index(drop=True)
-    prepared["년월"] = prepared["생산계획년월"].map(_month_label)
-    prepared["축레이블"] = prepared["년월"] + "<br>" + prepared["공정"]
+    prepared = prepared.sort_values(["생산계획년월", "확보율", "공정"], kind="stable").reset_index(
+        drop=True
+    )
+    prepared["순위"] = prepared.groupby("생산계획년월").cumcount() + 1
+    return prepared
+
+
+def build_monthly_bottlenecks_from_ranking(ranking: pd.DataFrame) -> pd.DataFrame:
+    """Select monthly Top 1 from an already normalized bottleneck ranking."""
+    required = ["생산계획년월", "공정", "확보율", "순위"]
+    missing = [column for column in required if column not in ranking.columns]
+    if missing:
+        raise ValueError(f"B/N 순위 필수 컬럼이 없습니다: {', '.join(missing)}")
+    prepared = ranking.loc[ranking["순위"].eq(1), required[:-1]].copy().reset_index(drop=True)
+    prepared["년월"] = prepared["생산계획년월"].map(_month_label).astype("string")
+    prepared["축레이블"] = prepared["년월"].str.cat(prepared["공정"], sep="<br>")
     return prepared
 
 
@@ -162,20 +195,25 @@ def build_monthly_bottleneck_top5(
     monthly_wafer: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Return each month's five lowest-rate processes and converted capacity."""
-    required = ["생산계획년월", "공정", "확보율"]
-    missing = [column for column in required if column not in securement_rate.columns]
-    if missing:
-        raise ValueError(f"확보율 필수 컬럼이 없습니다: {', '.join(missing)}")
+    ranking = build_monthly_bottleneck_ranking(securement_rate, included_processes)
+    return build_monthly_bottleneck_top5_from_ranking(
+        ranking,
+        monthly_density,
+        monthly_wafer=monthly_wafer,
+    )
 
-    prepared = securement_rate[required].copy()
-    prepared["확보율"] = pd.to_numeric(prepared["확보율"], errors="coerce")
-    prepared["공정"] = prepared["공정"].astype("string").str.strip()
-    prepared = prepared.dropna(subset=["확보율", "공정"])
-    if included_processes is not None:
-        prepared = prepared.loc[prepared["공정"].isin(included_processes)]
-    prepared = prepared.sort_values(["생산계획년월", "확보율", "공정"], kind="stable")
-    prepared = prepared.groupby("생산계획년월", as_index=False).head(5).copy()
-    prepared["순위"] = prepared.groupby("생산계획년월").cumcount() + 1
+
+def build_monthly_bottleneck_top5_from_ranking(
+    ranking: pd.DataFrame,
+    monthly_density: pd.DataFrame,
+    monthly_wafer: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Build Top 5 capacity output from one shared monthly ranking."""
+    required = ["생산계획년월", "공정", "확보율", "순위"]
+    missing = [column for column in required if column not in ranking.columns]
+    if missing:
+        raise ValueError(f"B/N 순위 필수 컬럼이 없습니다: {', '.join(missing)}")
+    prepared = ranking.loc[ranking["순위"].le(5), required].copy()
     density = monthly_density[["생산계획년월", "부하량"]].copy()
     result = prepared.merge(
         density,
@@ -210,17 +248,20 @@ def build_monthly_bottleneck_top10_details(
     missing = [column for column in required if column not in securement_rate.columns]
     if missing:
         raise ValueError(f"확보율 필수 컬럼이 없습니다: {', '.join(missing)}")
+    ranking = build_monthly_bottleneck_ranking(securement_rate, included_processes)
+    return build_monthly_bottleneck_top10_details_from_ranking(ranking, monthly_wafer)
 
-    prepared = securement_rate[required].copy()
-    for column in ("가용대수", "소요대수", "확보율"):
-        prepared[column] = pd.to_numeric(prepared[column], errors="coerce")
-    prepared["공정"] = prepared["공정"].astype("string").str.strip()
-    prepared = prepared.dropna(subset=["생산계획년월", "공정", "확보율"])
-    if included_processes is not None:
-        prepared = prepared.loc[prepared["공정"].isin(included_processes)]
-    prepared = prepared.sort_values(["생산계획년월", "확보율", "공정"], kind="stable")
-    prepared = prepared.groupby("생산계획년월", as_index=False).head(10).copy()
-    prepared["순위"] = prepared.groupby("생산계획년월").cumcount() + 1
+
+def build_monthly_bottleneck_top10_details_from_ranking(
+    ranking: pd.DataFrame,
+    monthly_wafer: pd.DataFrame,
+) -> pd.DataFrame:
+    """Build Top 10 equipment details from one shared monthly ranking."""
+    required = ["생산계획년월", "공정", "가용대수", "소요대수", "확보율", "순위"]
+    missing = [column for column in required if column not in ranking.columns]
+    if missing:
+        raise ValueError(f"B/N 순위 필수 컬럼이 없습니다: {', '.join(missing)}")
+    prepared = ranking.loc[ranking["순위"].le(10), required].copy()
 
     wafer_required = ["생산계획년월", "Wafer 부하량"]
     wafer_missing = [column for column in wafer_required if column not in monthly_wafer.columns]

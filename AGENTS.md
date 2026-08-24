@@ -56,6 +56,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/home.py`
   - 전체 계산 결과를 조합하는 HOME 대시보드다.
   - Plotly Figure 묶음을 사용자 세션에 캐시하고 렌더링은 fragment로 분리한다.
+  - 기본 진입은 Density·Wafer Capa 요약만 만들며 계획·B/N 상세표는 사용자 선택 시 지연 생성한다.
+  - B/N 임계값과 포함 공정은 사이드바 form 제출 시 한 번에 적용하고, 성능 진단 토글은
+    단계별 시간과 Figure 캐시 적중 여부만 표시한다.
 - `app_pages/load_conversion.py`
   - `환산`, `PKG PLAN`, `수율` 탭을 제공한다.
   - 계획과 수율 편집값을 활성 시나리오에 반영한다.
@@ -65,6 +68,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `확보율`, `소요대수`, `설비대수` 탭을 제공한다.
 - `app_pages/bottleneck_analysis.py`, `app_pages/scenarios.py`
   - 현재 제목만 있는 확장용 페이지다.
+- `src/capa_simulation/components/horizontal_scrollbar.py`
+  - HOME 월별 영역과 동기화되는 픽셀 단위 커스텀 가로 스크롤바를 제공한다.
+  - 네이티브 스크롤바가 아닌 Streamlit Custom Components v2로 구현한다.
+- `src/capa_simulation/components/month_range_picker.py`
+  - 공통 사이드바의 시작·종료 월 선택기를 제공한다.
+  - 브라우저 네이티브 `input[type="month"]`를 Streamlit Custom Components v2로 연결한다.
+  - 출력은 기존 전역 상태 계약인 `production_month_range_v2 = (YYYY-MM, YYYY-MM)`에 반영한다.
+- `src/capa_simulation/components/grouped_monthly_table.py`
+  - 환산 결과처럼 편집하지 않는 월별 표를 Plotly의 고정 분류 영역과 스크롤 월 영역으로 렌더링한다.
+  - 정렬된 분류 컬럼을 계층적으로 그룹화하고 제품·양산구분별 Total을 그룹 하단에, 전체 합계를 첫 데이터 행에 삽입한다.
+  - 제품·양산구분 그룹의 음영과 경계는 계산 원본을 변경하지 않고 동적으로 계산한다.
+  - 화면과 같은 분류·부분합 구조를 유지하는 CSV 다운로드용 DataFrame을 생성한다.
 
 페이지 파일은 직접 실행되는 Streamlit 스크립트 형태를 유지한다. 복잡한 계산을 페이지에
 추가하지 말고 `src/capa_simulation/services/`로 옮긴다.
@@ -80,17 +95,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/scenario_state.py`
   - 사용자 세션별 활성 시나리오와 `revision`을 관리한다.
   - 선택한 월 범위만 원자적으로 교체한다.
+  - HOME처럼 계산용 월 범위만 필요한 경로는 전체 시나리오 복사 없이 선택 행만 복사한다.
+- `src/capa_simulation/performance.py`
+  - HOME 단계별 소요시간을 측정하며 업무 데이터는 기록하지 않는다.
 - `src/capa_simulation/services/simulation_cache.py`
   - 주요 계산 함수의 content-addressed `st.cache_data` 래퍼다.
+  - HOME 전체 계산 그래프를 상위 캐시로 감싸 warm rerun의 중복 DataFrame 해싱을 줄이고,
+    하위 계산 캐시는 다른 페이지와 계속 공유한다.
 
 ### 계산 서비스
 
-- `load_calculator.py`: 계획/수율 편집 변환과 PKG·Chip·Wafer·Density 부하량
+- `load_calculator.py`: 계획/수율 편집 변환과 PKG·Chip·Wafer·Density 부하량. HOME의
+  Chip·Wafer 부하량은 공통 전처리를 한 번만 수행한다.
 - `unit_capacity.py`: Main/MI 환산 UPEH와 대당 Capa
 - `required_equipment.py`: RQ_REQB 경로 연결과 소요대수
 - `securement_rate.py`: 공정별 확보율
 - `equipment_count.py`: 보유·대여·가용 설비대수 표
-- `dashboard.py`: HOME 월별 집계, B/N Top 1·5·10, Wafer Capa
+- `dashboard.py`: HOME 월별 집계, B/N 단일 월별 순위에서 파생하는 Top 1·5·10, Wafer Capa
 - `display_order.py`: `RQ_DISPLAY_ORDER` 기반 동적 행 정렬
 - `month_filter.py`: YYYYMM 검증과 조회기간 필터
 - `capacity_reference_editor.py`: Capa 기준정보 Long/Wide 편집 변환
@@ -240,13 +261,15 @@ Dummy Chip/Wafer는 `(1 - EDS_수율)`을 추가 적용한다. 정확한 현재 
   `persist_state="session"` 패턴을 따른다.
 - 비싼 계산을 탭 내부에서 직접 반복하지 않는다. 먼저 캐시된 결과를 만들고 탭은 표시만
   담당하게 한다.
+- HOME 기본 경로에는 요약 Figure만 두고 큰 계획·B/N 표는 명시적 상세 토글 뒤에서 생성한다.
+- 여러 필터가 같은 결과를 바꾸면 `st.form`으로 묶어 중간 입력마다 전체 재실행하지 않는다.
 - `use_container_width`를 새로 사용하지 말고 `width="stretch"` 또는
   `width="content"`를 사용한다.
 - 단순 UI 그룹은 네이티브 `st.container(border=True)`를 우선한다.
 - 복잡한 Plotly UI를 변경할 때는 월별 고정 열 너비, 좌측 라벨 Figure, 공통 가로
   스크롤 정렬을 함께 검증한다.
-- HOME Plotly annotation을 반복해서 `add_annotation()`하지 않는다. 레이아웃에 일괄
-  주입해 Figure 생성 시간이 선형에 가깝게 유지되도록 한다.
+- HOME Plotly shape·annotation을 반복해서 추가하지 않는다. 레이아웃에 일괄 주입해
+  Figure 생성 시간이 선형에 가깝게 유지되도록 한다.
 
 ## 10. 로컬 파일과 보안
 
