@@ -6,8 +6,9 @@ from capa_simulation.components.grouped_monthly_table import (
     render_grouped_monthly_table,
 )
 from capa_simulation.io.reference_cache import (
-    get_reference_cache_version,
-    get_reference_tables,
+    get_effective_reference_tables,
+    get_effective_reference_version,
+    has_persisted_reference_tables,
 )
 from capa_simulation.scenario_state import (
     apply_month_updates,
@@ -48,13 +49,13 @@ st.title("부하량")
 
 
 workbook = PROJECT_ROOT / "templates" / "structure_template.xlsb"
-if not workbook.is_file():
+if not workbook.is_file() and not has_persisted_reference_tables():
     st.error(f"기준정보 파일을 찾을 수 없습니다: {workbook}")
     st.stop()
 
 try:
-    reference_version = get_reference_cache_version()
-    reference_tables = get_reference_tables(str(workbook.resolve()))
+    reference_version = get_effective_reference_version()
+    reference_tables = get_effective_reference_tables(str(workbook.resolve()))
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
 except Exception as exc:
     st.error(f"기준정보를 불러오지 못했습니다: {exc}")

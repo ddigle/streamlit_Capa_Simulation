@@ -40,6 +40,8 @@ data/temp/*
 data/*.db
 data/*.db-*
 data/*.db.*.bak
+data/*.duckdb
+data/*.duckdb.*
 *.xls
 *.xlsx
 *.xlsm

@@ -1,11 +1,13 @@
 import streamlit as st
 
 from capa_simulation.components.month_range_picker import render_month_range_picker
+from capa_simulation.components.scenario_selector_demo import render_scenario_selector_demo
 from capa_simulation.io.reference_cache import (
     clear_reference_tables,
     get_reference_cache_version,
 )
-from capa_simulation.scenario_state import clear_active_scenario
+from capa_simulation.scenario_activation import clear_persisted_scenario_activation
+from capa_simulation.scenario_preset_state import apply_pending_scenario_preset
 from capa_simulation.services.simulation_cache import clear_simulation_caches
 from capa_simulation.settings import (
     APP_NAME,
@@ -19,12 +21,13 @@ from capa_simulation.sidebar_status import (
 )
 
 st.set_page_config(page_title=APP_NAME, page_icon=":material/factory:", layout="wide")
+apply_pending_scenario_preset()
 
 
 def refresh_reference_data() -> None:
     clear_reference_tables()
     clear_simulation_caches()
-    clear_active_scenario()
+    clear_persisted_scenario_activation()
     for key in (
         "load_conversion_inputs",
         "unit_capacity_result",
@@ -41,7 +44,17 @@ home_page = st.Page(
     title="HOME",
     default=True,
 )
-main_pages = [
+capa_chatbot_page = st.Page(
+    "app_pages/capa_chatbot.py",
+    title="Capa Chatbot",
+    icon=":material/chat:",
+)
+static_capa_page = st.Page(
+    "app_pages/static_capa.py",
+    title="Static Capa",
+    icon=":material/factory:",
+)
+static_capa_pages = [
     st.Page(
         "app_pages/load_conversion.py",
         title="부하량",
@@ -68,12 +81,12 @@ main_pages = [
         icon=":material/science:",
     ),
 ]
-reference_integrity_page = st.Page(
+dynamic_capa_page = st.Page(
     "app_pages/reference_integrity.py",
-    title="기준정보 정합성 관리",
-    icon=":material/fact_check:",
+    title="Dynamic Capa",
+    icon=":material/sync_alt:",
 )
-reference_integrity_pages = [
+dynamic_capa_pages = [
     st.Page(
         "app_pages/available_equipment_status.py",
         title="가용설비 현황",
@@ -89,12 +102,19 @@ reference_integrity_pages = [
         title="UPEH 실적",
         icon=":material/timer:",
     ),
+    st.Page(
+        "app_pages/space_status.py",
+        title="Space 현황",
+        icon=":material/grid_view:",
+    ),
 ]
 pages = [
     home_page,
-    *main_pages,
-    reference_integrity_page,
-    *reference_integrity_pages,
+    capa_chatbot_page,
+    static_capa_page,
+    *static_capa_pages,
+    dynamic_capa_page,
+    *dynamic_capa_pages,
 ]
 
 navigation = st.navigation(pages, position="hidden")
@@ -120,9 +140,10 @@ st.html(
         text-align: center;
     }
 
-    .st-key-reference_integrity_subpages [data-testid="stPageLink-NavLink"] {
-        margin-left: 0.75rem;
-        width: calc(100% - 0.75rem);
+    .st-key-static_capa_subpages [data-testid="stPageLink-NavLink"],
+    .st-key-dynamic_capa_subpages [data-testid="stPageLink-NavLink"] {
+        margin-left: 1rem;
+        width: calc(100% - 1rem);
     }
     </style>
     """
@@ -131,14 +152,21 @@ with st.sidebar.container(key="home_navigation"):
     st.page_link(home_page, width="stretch")
 
 with st.sidebar.container(border=True):
-    for page in main_pages:
-        st.page_link(page, width="stretch")
+    st.page_link(capa_chatbot_page, width="stretch")
 
 with st.sidebar.container(border=True):
-    st.page_link(reference_integrity_page, width="stretch")
-    with st.container(key="reference_integrity_subpages"):
-        for page in reference_integrity_pages:
+    st.page_link(static_capa_page, width="stretch")
+    with st.container(key="static_capa_subpages"):
+        for page in static_capa_pages:
             st.page_link(page, width="stretch")
+
+with st.sidebar.container(border=True):
+    st.page_link(dynamic_capa_page, width="stretch")
+    with st.container(key="dynamic_capa_subpages"):
+        for page in dynamic_capa_pages:
+            st.page_link(page, width="stretch")
+
+render_scenario_selector_demo()
 
 with st.sidebar.container(border=True):
     st.markdown("#### 📅 조회 기간")
@@ -169,7 +197,7 @@ with st.sidebar.container(border=True):
 
 with st.sidebar.container(border=True):
     st.markdown("#### :material/database: 기준정보 캐시")
-    st.caption("서버 시작 후 Excel은 최초 한 번만 읽습니다.")
+    st.caption("XLSB는 서버 공통 캐시, 저장 시나리오는 DuckDB 스냅샷을 사용합니다.")
     st.button(
         ":material/refresh: 기준정보 새로고침",
         key="refresh_reference_data",

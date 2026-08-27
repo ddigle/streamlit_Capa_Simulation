@@ -62,6 +62,26 @@ def clear_active_scenario() -> None:
     st.session_state.pop(ACTIVE_SCENARIO_KEY, None)
 
 
+def activate_scenario_tables(
+    reference_tables: dict[str, pd.DataFrame],
+    reference_version: int,
+    revision: int,
+) -> ActiveScenario:
+    """Replace the active calculation tables with one loaded persistent revision."""
+    missing = [name for name in EDITABLE_SCENARIO_TABLES if name not in reference_tables]
+    if missing:
+        raise KeyError(f"불러온 리비전에 기준정보가 없습니다: {', '.join(missing)}")
+    scenario: ActiveScenario = {
+        "reference_version": reference_version,
+        "revision": revision,
+        "tables": {
+            name: reference_tables[name].copy(deep=True) for name in EDITABLE_SCENARIO_TABLES
+        },
+    }
+    st.session_state[ACTIVE_SCENARIO_KEY] = scenario
+    return scenario
+
+
 def scenario_table(scenario: ActiveScenario, table_name: str) -> pd.DataFrame:
     """Return an isolated copy of one active scenario table."""
     if table_name not in scenario["tables"]:

@@ -9,8 +9,9 @@ from plotly.subplots import make_subplots
 
 from capa_simulation.components.horizontal_scrollbar import render_horizontal_scrollbar
 from capa_simulation.io.reference_cache import (
-    get_reference_cache_version,
-    get_reference_tables,
+    get_effective_reference_tables,
+    get_effective_reference_version,
+    has_persisted_reference_tables,
 )
 from capa_simulation.performance import PerformanceTrace
 from capa_simulation.scenario_state import ensure_active_scenario, scenario_month_table
@@ -447,13 +448,13 @@ show_home_performance = st.sidebar.toggle(
 home_trace = PerformanceTrace()
 
 workbook = PROJECT_ROOT / "templates" / "structure_template.xlsb"
-if not workbook.is_file():
+if not workbook.is_file() and not has_persisted_reference_tables():
     st.error(f"기준정보 파일을 찾을 수 없습니다: {workbook}")
     st.stop()
 
 try:
-    reference_version = get_reference_cache_version()
-    reference_tables = get_reference_tables(str(workbook.resolve()))
+    reference_version = get_effective_reference_version()
+    reference_tables = get_effective_reference_tables(str(workbook.resolve()))
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
     selected_start, selected_end = selected_month_range()
     source_start, source_end = available_month_range(reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN")
@@ -555,6 +556,8 @@ process_options = sorted(
     securement_rate["공정"].astype("string").str.strip().dropna().unique().tolist()
 )
 process_selection_key = "dashboard_bottleneck_process_selection"
+process_dialog_draft_key = "dashboard_bottleneck_process_dialog_draft"
+process_dialog_editor_key = "dashboard_bottleneck_process_dialog_editor"
 if process_selection_key not in st.session_state:
     st.session_state[process_selection_key] = [
         process
@@ -567,6 +570,93 @@ else:
         st.session_state[process_selection_key] = [
             process for process in saved_processes if process in process_options
         ]
+
+
+def set_process_dialog_selection(processes: list[str]) -> None:
+    st.session_state[process_dialog_draft_key] = list(processes)
+    st.session_state.pop(process_dialog_editor_key, None)
+
+
+@st.dialog(
+    "B/N 집계 공정 선택",
+    width="large",
+    icon=":material/filter_alt:",
+    on_dismiss="rerun",
+)
+def show_process_filter_dialog(options: list[str]) -> None:
+    draft_selection = st.session_state.get(process_dialog_draft_key, [])
+    if not isinstance(draft_selection, list):
+        draft_selection = []
+    selected_set = {str(process) for process in draft_selection if process in options}
+
+    st.caption(
+        "B/N 공정과 Capa 집계에 포함할 공정을 선택합니다. 표의 검색 기능으로 공정명을 "
+        "찾을 수 있으며, 적용 전까지 기존 대시보드 조건은 유지됩니다."
+    )
+    with st.container(horizontal=True, gap="small"):
+        st.button(
+            "전체 ON",
+            icon=":material/select_all:",
+            on_click=set_process_dialog_selection,
+            args=(options,),
+            key="dashboard_bottleneck_process_all_on",
+        )
+        st.button(
+            "전체 OFF",
+            icon=":material/deselect:",
+            on_click=set_process_dialog_selection,
+            args=([],),
+            key="dashboard_bottleneck_process_all_off",
+        )
+        st.button(
+            "적용값 복원",
+            icon=":material/undo:",
+            on_click=set_process_dialog_selection,
+            args=(list(st.session_state[process_selection_key]),),
+            key="dashboard_bottleneck_process_restore",
+        )
+
+    selection_frame = pd.DataFrame(
+        {
+            "포함": [process in selected_set for process in options],
+            "공정": options,
+        }
+    )
+    with st.form("dashboard_bottleneck_process_dialog_form", border=False):
+        edited_selection = st.data_editor(
+            selection_frame,
+            key=process_dialog_editor_key,
+            hide_index=True,
+            disabled=["공정"],
+            num_rows="fixed",
+            width="stretch",
+            height=520,
+            row_height=34,
+            column_config={
+                "포함": st.column_config.CheckboxColumn(
+                    "포함",
+                    help="B/N 집계에 포함하려면 선택합니다.",
+                    width="small",
+                ),
+                "공정": st.column_config.TextColumn("공정", width="large"),
+            },
+        )
+        apply_selection = st.form_submit_button(
+            "선택 공정 적용",
+            type="primary",
+            icon=":material/check:",
+            width="stretch",
+        )
+    if apply_selection:
+        included_mask = edited_selection["포함"].fillna(False).astype(bool)
+        st.session_state[process_selection_key] = (
+            edited_selection.loc[included_mask, "공정"].astype(str).tolist()
+        )
+        st.session_state.pop(process_dialog_draft_key, None)
+        st.rerun()
+
+
+included_processes = list(st.session_state[process_selection_key])
 with st.sidebar.container(border=True):
     st.markdown("#### :material/filter_alt: B/N 집계 공정")
     with st.form("dashboard_bottleneck_filter_form", border=False):
@@ -587,13 +677,17 @@ with st.sidebar.container(border=True):
             key="dashboard_warning_threshold_percent",
             persist_state="session",
         )
-        included_processes = st.multiselect(
-            "포함 공정",
-            options=process_options,
-            key=process_selection_key,
-            persist_state="session",
-        )
-        st.form_submit_button("조건 적용", width="stretch")
+        st.form_submit_button("판정 기준 적용", width="stretch")
+    st.caption(f"공정 선택 · {len(included_processes)} / {len(process_options)}개 포함")
+    if st.button(
+        "공정 선택창 열기",
+        icon=":material/filter_list:",
+        width="stretch",
+        disabled=not process_options,
+        key="dashboard_bottleneck_process_dialog_open",
+    ):
+        set_process_dialog_selection(included_processes)
+        show_process_filter_dialog(process_options)
     if warning_threshold_percent > secure_threshold_percent:
         st.warning("경고 기준은 확보 기준보다 클 수 없습니다.")
     if not process_options:

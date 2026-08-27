@@ -8,6 +8,9 @@ DATA_DIR = PROJECT_ROOT / "data"
 INPUT_DIR = DATA_DIR / "input"
 OUTPUT_DIR = DATA_DIR / "output"
 TEMP_DIR = DATA_DIR / "temp"
+DUCKDB_PATH = DATA_DIR / "capa_simulation.duckdb"
+EQUIPMENT_DUCKDB_PATH = DATA_DIR / "equipment_availability.duckdb"
+CORE_DATA_CSV_PATH = INPUT_DIR / "Core_Data.csv"
 
 
 def format_month(month: int) -> str:

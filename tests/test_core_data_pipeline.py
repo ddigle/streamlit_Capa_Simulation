@@ -1,0 +1,139 @@
+import csv
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+from capa_simulation.io.core_data_source import (
+    CoreDataBatch,
+    CsvCoreDataProvider,
+    build_source_column_profile,
+    core_data_hash,
+    load_core_data_contract,
+    normalize_core_data,
+)
+from capa_simulation.services.core_data_pipeline import prepare_core_data_dataset
+from capa_simulation.services.reference_transformer import build_reference_tables
+
+
+def _core_data_row() -> pd.DataFrame:
+    contract = load_core_data_contract()
+    values: dict[str, object] = {
+        column.name: (
+            "기준값" if column.dtype == "string" else 1 if column.dtype == "integer" else 1.0
+        )
+        for column in contract.columns
+    }
+    values.update(
+        {
+            "시뮬레이션 ID": "SIM-001",
+            "PLAN ID": "PLAN-001",
+            "생산계획년월": 202608,
+            "제품정보": "Product-A",
+            "생산수량": 100.0,
+            "Stack": "8H",
+            "Customer": "Customer-A",
+            "CS": "MP",
+            "WF 구분": "Core",
+            "Capa Code": "C1",
+            "계획기초정보여부": "Y",
+            "Area_Name": "Main",
+            "공정": "Process-A",
+            "소요기준": "CHIP",
+            "STEP_SEQ": "P100",
+            "MCP_SEQ": "1A",
+        }
+    )
+    return pd.DataFrame([values], columns=[column.name for column in contract.columns])
+
+
+def _display_order() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "페이지 구분": ["HOME"],
+            "탭 구분": ["계획"],
+            "정렬우선순위": [1],
+            "분류컬럼": ["제품정보"],
+            "정렬방식": ["사용자지정"],
+            "분류값": ["Product-A"],
+            "값표시순서": [1],
+            "활성여부": ["Y"],
+        }
+    )
+
+
+def test_normalize_core_data_applies_exact_nullable_contract() -> None:
+    contract = load_core_data_contract()
+
+    normalized = normalize_core_data(_core_data_row(), contract)
+    profile = build_source_column_profile(normalized)
+
+    assert list(normalized.columns) == [column.name for column in contract.columns]
+    assert len(normalized.columns) == 78
+    assert str(normalized["시뮬레이션 ID"].dtype) == "string"
+    assert str(normalized["생산계획년월"].dtype) == "Int64"
+    assert str(normalized["생산수량"].dtype) == "Float64"
+    assert len(profile) == 78
+    assert profile["null_count"].sum() == 0
+
+
+def test_csv_adapter_and_dataframe_adapter_share_the_same_pipeline(tmp_path: Path) -> None:
+    csv_path = tmp_path / "Core_Data.csv"
+    _core_data_row().to_csv(
+        csv_path,
+        index=False,
+        encoding="cp949",
+        quoting=csv.QUOTE_NONE,
+        escapechar="\\",
+    )
+    provider = CsvCoreDataProvider(csv_path, "테스트 시뮬레이션")
+
+    prepared = prepare_core_data_dataset(provider.fetch("SIM-001"), _display_order())
+
+    assert prepared.batch.source_type == "CSV_CORE_DATA"
+    assert len(prepared.source_data) == 1
+    assert len(prepared.reference_tables) == 16
+    assert all(len(frame) == 1 for frame in prepared.reference_tables.values())
+    assert prepared.reference_tables["RQ_EQP_AVBL"].loc[0, "가용대수"] == pytest.approx(0.0)
+
+
+def test_dataframe_batch_does_not_depend_on_csv() -> None:
+    batch = CoreDataBatch(
+        simulation_code="SIM-001",
+        simulation_name="사내 조회 결과",
+        source_type="BIGDATAQUERY",
+        frame=_core_data_row(),
+    )
+
+    prepared = prepare_core_data_dataset(batch, _display_order())
+
+    assert prepared.batch.source_type == "BIGDATAQUERY"
+    assert prepared.reference_tables["RQ_PKG_PLAN"].loc[0, "생산수량"] == pytest.approx(100.0)
+
+
+def test_conflicting_duplicate_business_key_is_rejected() -> None:
+    source = pd.concat([_core_data_row(), _core_data_row()], ignore_index=True)
+    source.loc[1, "생산수량"] = 200.0
+
+    with pytest.raises(ValueError, match="RQ_PKG_PLAN.*서로 다른 값"):
+        build_reference_tables(source, _display_order())
+
+
+def test_invalid_month_is_rejected_at_source_boundary() -> None:
+    source = _core_data_row()
+    source.loc[0, "생산계획년월"] = 202613
+
+    with pytest.raises(ValueError, match="YYYYMM"):
+        normalize_core_data(source)
+
+
+def test_source_hash_ignores_query_row_order_but_preserves_row_multiplicity() -> None:
+    first = _core_data_row()
+    second = _core_data_row()
+    second.loc[0, "시뮬레이션 ID"] = "SIM-002"
+    source = normalize_core_data(pd.concat([first, second], ignore_index=True))
+    reordered = source.iloc[::-1].reset_index(drop=True)
+    duplicated = pd.concat([source, source.iloc[[0]]], ignore_index=True)
+
+    assert core_data_hash(source) == core_data_hash(reordered)
+    assert core_data_hash(source) != core_data_hash(duplicated)

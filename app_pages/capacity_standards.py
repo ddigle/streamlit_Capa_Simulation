@@ -7,8 +7,9 @@ from capa_simulation.components.hierarchical_monthly_table import (
     render_hierarchical_monthly_table,
 )
 from capa_simulation.io.reference_cache import (
-    get_reference_cache_version,
-    get_reference_tables,
+    get_effective_reference_tables,
+    get_effective_reference_version,
+    has_persisted_reference_tables,
 )
 from capa_simulation.scenario_state import (
     apply_month_updates,
@@ -141,13 +142,13 @@ tabs = st.tabs(TAB_NAMES)
 unit_capacity_tab = tabs[0]
 
 workbook = PROJECT_ROOT / "templates" / "structure_template.xlsb"
-if not workbook.is_file():
+if not workbook.is_file() and not has_persisted_reference_tables():
     st.error(f"기준정보 파일을 찾을 수 없습니다: {workbook}")
     st.stop()
 
 try:
-    reference_version = get_reference_cache_version()
-    reference_tables = get_reference_tables(str(workbook.resolve()))
+    reference_version = get_effective_reference_version()
+    reference_tables = get_effective_reference_tables(str(workbook.resolve()))
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
     start_month, end_month = selected_month_range()
     source_start_month, source_end_month = available_month_range(

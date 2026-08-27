@@ -1,0 +1,84 @@
+"""Atomically activate a persisted scenario revision in the current browser session."""
+
+from __future__ import annotations
+
+from typing import cast
+
+import streamlit as st
+
+from capa_simulation.io.reference_cache import (
+    activate_persisted_reference_tables,
+    clear_persisted_reference_tables,
+)
+from capa_simulation.persistence.models import ScenarioSnapshot
+from capa_simulation.scenario_preset_state import queue_scenario_preset
+from capa_simulation.scenario_state import (
+    ACTIVE_SCENARIO_KEY,
+    ActiveScenario,
+    activate_scenario_tables,
+    clear_active_scenario,
+)
+
+ACTIVE_PERSISTED_SCENARIO_ID_KEY = "active_persisted_scenario_id"
+ACTIVE_PERSISTED_REVISION_ID_KEY = "active_persisted_revision_id"
+ACTIVE_PERSISTED_SESSION_REVISION_KEY = "active_persisted_session_revision"
+
+_STALE_UI_KEYS = (
+    "load_conversion_inputs",
+    "unit_capacity_result",
+    "capacity_standards_inputs",
+    "load_conversion_source_token",
+    "capacity_standards_source_token",
+    "home_dashboard_figure_cache",
+)
+
+
+def activate_persisted_snapshot(snapshot: ScenarioSnapshot) -> ActiveScenario:
+    """Publish tables and queue the preset before the next app-level widget render."""
+    version = activate_persisted_reference_tables(
+        snapshot.tables,
+        snapshot.revision.revision_id,
+    )
+    active = activate_scenario_tables(
+        snapshot.tables,
+        reference_version=version,
+        revision=snapshot.revision.revision_no,
+    )
+    st.session_state[ACTIVE_PERSISTED_SCENARIO_ID_KEY] = snapshot.scenario.scenario_id
+    st.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] = snapshot.revision.revision_id
+    st.session_state[ACTIVE_PERSISTED_SESSION_REVISION_KEY] = active["revision"]
+    for key in _STALE_UI_KEYS:
+        st.session_state.pop(key, None)
+    queue_scenario_preset(snapshot.preset)
+    return active
+
+
+def clear_persisted_scenario_activation() -> None:
+    clear_persisted_reference_tables()
+    clear_active_scenario()
+    for key in (
+        ACTIVE_PERSISTED_SCENARIO_ID_KEY,
+        ACTIVE_PERSISTED_REVISION_ID_KEY,
+        ACTIVE_PERSISTED_SESSION_REVISION_KEY,
+        *_STALE_UI_KEYS,
+    ):
+        st.session_state.pop(key, None)
+
+
+def active_persisted_scenario_id() -> str | None:
+    value = st.session_state.get(ACTIVE_PERSISTED_SCENARIO_ID_KEY)
+    return value if isinstance(value, str) else None
+
+
+def active_persisted_revision_id() -> str | None:
+    value = st.session_state.get(ACTIVE_PERSISTED_REVISION_ID_KEY)
+    return value if isinstance(value, str) else None
+
+
+def has_unsaved_scenario_changes() -> bool:
+    saved_revision = st.session_state.get(ACTIVE_PERSISTED_SESSION_REVISION_KEY)
+    current = st.session_state.get(ACTIVE_SCENARIO_KEY)
+    if not isinstance(saved_revision, int) or not isinstance(current, dict):
+        return False
+    scenario = cast(ActiveScenario, current)
+    return scenario["revision"] != saved_revision
