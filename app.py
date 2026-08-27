@@ -36,12 +36,12 @@ def refresh_reference_data() -> None:
         st.session_state.pop(key, None)
 
 
-pages = [
-    st.Page(
-        "app_pages/home.py",
-        title="HOME",
-        default=True,
-    ),
+home_page = st.Page(
+    "app_pages/home.py",
+    title="HOME",
+    default=True,
+)
+main_pages = [
     st.Page(
         "app_pages/load_conversion.py",
         title="부하량",
@@ -68,6 +68,34 @@ pages = [
         icon=":material/science:",
     ),
 ]
+reference_integrity_page = st.Page(
+    "app_pages/reference_integrity.py",
+    title="기준정보 정합성 관리",
+    icon=":material/fact_check:",
+)
+reference_integrity_pages = [
+    st.Page(
+        "app_pages/available_equipment_status.py",
+        title="가용설비 현황",
+        icon=":material/precision_manufacturing:",
+    ),
+    st.Page(
+        "app_pages/actual_efficiency.py",
+        title="실적 효율",
+        icon=":material/speed:",
+    ),
+    st.Page(
+        "app_pages/actual_upeh.py",
+        title="UPEH 실적",
+        icon=":material/timer:",
+    ),
+]
+pages = [
+    home_page,
+    *main_pages,
+    reference_integrity_page,
+    *reference_integrity_pages,
+]
 
 navigation = st.navigation(pages, position="hidden")
 
@@ -91,15 +119,26 @@ st.html(
     .st-key-home_navigation a p {
         text-align: center;
     }
+
+    .st-key-reference_integrity_subpages [data-testid="stPageLink-NavLink"] {
+        margin-left: 0.75rem;
+        width: calc(100% - 0.75rem);
+    }
     </style>
     """
 )
 with st.sidebar.container(key="home_navigation"):
-    st.page_link(pages[0], width="stretch")
+    st.page_link(home_page, width="stretch")
 
 with st.sidebar.container(border=True):
-    for page in pages[1:]:
+    for page in main_pages:
         st.page_link(page, width="stretch")
+
+with st.sidebar.container(border=True):
+    st.page_link(reference_integrity_page, width="stretch")
+    with st.container(key="reference_integrity_subpages"):
+        for page in reference_integrity_pages:
+            st.page_link(page, width="stretch")
 
 with st.sidebar.container(border=True):
     st.markdown("#### 📅 조회 기간")

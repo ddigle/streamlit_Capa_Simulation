@@ -1,6 +1,10 @@
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.hierarchical_monthly_table import (
+    build_hierarchical_monthly_export,
+    render_hierarchical_monthly_table,
+)
 from capa_simulation.io.reference_cache import (
     get_reference_cache_version,
     get_reference_tables,
@@ -195,40 +199,32 @@ else:
                 displayed_securement_table = displayed_securement_table.loc[
                     displayed_securement_table[column].isin(selected_values)
                 ]
-        securement_month_columns = [
-            column
-            for column in displayed_securement_table.columns
-            if column not in SECUREMENT_DIMENSIONS
-        ]
-        styled_securement_table = displayed_securement_table.style.set_properties(
-            subset=pd.Index(SECUREMENT_DIMENSIONS),
-            **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
+        securement_export = build_hierarchical_monthly_export(
+            displayed_securement_table,
+            classification_columns=SECUREMENT_DIMENSIONS,
+            column_labels=DISPLAY_COLUMN_LABELS,
+            decimal_places=2,
+            value_format="percent",
         )
-        st.dataframe(
-            styled_securement_table,
-            hide_index=True,
-            width="content",
-            height=500,
-            row_height=25,
-            column_config={
-                **{
-                    column: st.column_config.TextColumn(
-                        column,
-                        alignment="center",
-                        pinned=True,
-                    )
-                    for column in SECUREMENT_DIMENSIONS
-                },
-                **{
-                    month: st.column_config.NumberColumn(
-                        month,
-                        width=80,
-                        format="percent",
-                        alignment="center",
-                    )
-                    for month in securement_month_columns
-                },
-            },
+        securement_csv = securement_export.to_csv(index=False).encode("utf-8-sig")
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.subheader("확보율", width="content")
+            st.download_button(
+                ":material/download: CSV 다운로드",
+                data=securement_csv,
+                file_name=f"Capa_Securement_Rate_{effective_start}_{effective_end}.csv",
+                mime="text/csv;charset=utf-8",
+                key="download_securement_rate_csv",
+                on_click="ignore",
+                width="content",
+            )
+        render_hierarchical_monthly_table(
+            displayed_securement_table,
+            classification_columns=SECUREMENT_DIMENSIONS,
+            column_labels=DISPLAY_COLUMN_LABELS,
+            decimal_places=2,
+            value_format="percent",
+            key="securement_rate_monthly_table",
         )
 
     with required_tab:
@@ -288,42 +284,43 @@ else:
                 filtered_required_table = filtered_required_table.loc[
                     filtered_required_table[column].isin(selected_values)
                 ]
-        month_columns = [
-            column for column in filtered_required_table.columns if column not in table_dimensions
-        ]
-        displayed_table = filtered_required_table.copy()
-        displayed_table[month_columns] = displayed_table[month_columns].mask(
-            displayed_table[month_columns].eq(0)
+        required_export = build_hierarchical_monthly_export(
+            filtered_required_table,
+            classification_columns=table_dimensions,
+            column_labels=DISPLAY_COLUMN_LABELS,
+            decimal_places=2,
         )
-        styled_table = displayed_table.style.set_properties(
-            subset=pd.Index(table_dimensions),
-            **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
-        )
-        st.dataframe(
-            styled_table,
-            hide_index=True,
-            width="content",
-            height=500,
-            row_height=25,
-            column_config={
-                **{
-                    column: st.column_config.TextColumn(
-                        DISPLAY_COLUMN_LABELS.get(column, column),
-                        alignment="center",
-                        pinned=True,
-                    )
-                    for column in table_dimensions
-                },
-                **{
-                    month: st.column_config.NumberColumn(
-                        month,
-                        width=80,
-                        format="%,.2f",
-                        alignment="center",
-                    )
-                    for month in month_columns
-                },
-            },
+        required_csv = required_export.to_csv(index=False, float_format="%.2f").encode("utf-8-sig")
+        required_view_name = "Detail" if show_detail else "Summary"
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.subheader("소요대수", width="content")
+            st.download_button(
+                ":material/download: CSV 다운로드",
+                data=required_csv,
+                file_name=(
+                    "Capa_Required_Equipment_"
+                    f"{required_view_name}_{effective_start}_{effective_end}.csv"
+                ),
+                mime="text/csv;charset=utf-8",
+                key=(
+                    "download_required_equipment_detail_csv"
+                    if show_detail
+                    else "download_required_equipment_summary_csv"
+                ),
+                on_click="ignore",
+                width="content",
+            )
+        render_hierarchical_monthly_table(
+            filtered_required_table,
+            classification_columns=table_dimensions,
+            column_labels=DISPLAY_COLUMN_LABELS,
+            decimal_places=2,
+            key=(
+                "required_equipment_detail_table"
+                if show_detail
+                else "required_equipment_summary_table"
+            ),
+            page_size=60 if show_detail else None,
         )
 
     with equipment_tab:

@@ -1189,7 +1189,7 @@ if cached_figures is None:
         SURFACE_COLOR if group_number % 2 == 0 else GROUP_SURFACE_COLOR
         for group_number in detail_group_indices
     ]
-    detail_row_height = 25
+    detail_row_height = 27
     detail_header_height = 36
     detail_figure_height = (
         DASHBOARD_TITLE_HEIGHT_PX

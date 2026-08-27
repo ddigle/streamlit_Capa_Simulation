@@ -42,6 +42,12 @@ PKG PLAN
 .\.venv\Scripts\python.exe -m pytest
 ```
 
+Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는
+사용자 프로필의 Python 3.10 실행 파일 접근이 차단되어 `Unable to create process` 또는
+`Access is denied`가 발생할 수 있다. 이는 가상환경 손상이 아니므로 `.venv`를 재생성하지
+말고 동일한 명령을 `require_escalated`로 다시 실행한다. Streamlit 버전별 스킬 탐색기도
+프로젝트 `.venv`와 탐색기 스크립트의 정확한 조합으로 승인된 샌드박스 외 실행을 사용한다.
+
 Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 또는 실제 브라우저로
 해당 페이지 진입, 수정, 페이지 왕복과 예외 여부를 추가 검증한다.
 
@@ -63,9 +69,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `환산`, `PKG PLAN`, `수율` 탭을 제공한다.
   - 계획과 수율 편집값을 활성 시나리오에 반영한다.
 - `app_pages/capacity_standards.py`
-  - `대당 Capa` 결과와 UPEH·효율·여유율·측정률·일수 편집 탭을 제공한다.
+  - `대당 Capa` 탭은 공정별 소요기준 부하량으로 가중평균한 화면용 결과와 공정 필터를 제공한다.
+  - 확보율 계산용 상세 대당 Capa는 변경하지 않고 UPEH·효율·여유율·측정률·일수 편집 탭을 제공한다.
 - `app_pages/process_securement.py`
   - `확보율`, `소요대수`, `설비대수` 탭을 제공한다.
+- `app_pages/reference_integrity.py`
+  - `기준정보 정합성 관리` 상위 페이지이며 가용설비 현황·실적 효율·UPEH 실적 하위 페이지로 연결한다.
+- `app_pages/available_equipment_status.py`, `app_pages/actual_efficiency.py`, `app_pages/actual_upeh.py`
+  - 기준정보 정합성 관리의 확장용 하위 페이지다. 현재 제목만 있으며 데이터 연결은 미구현이다.
 - `app_pages/bottleneck_analysis.py`, `app_pages/scenarios.py`
   - 현재 제목만 있는 확장용 페이지다.
 - `src/capa_simulation/components/horizontal_scrollbar.py`
@@ -80,6 +91,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 정렬된 분류 컬럼을 계층적으로 그룹화하고 제품·양산구분별 Total을 그룹 하단에, 전체 합계를 첫 데이터 행에 삽입한다.
   - 제품·양산구분 그룹의 음영과 경계는 계산 원본을 변경하지 않고 동적으로 계산한다.
   - 화면과 같은 분류·부분합 구조를 유지하는 CSV 다운로드용 DataFrame을 생성한다.
+- `src/capa_simulation/components/hierarchical_monthly_table.py`
+  - 대당 Capa·확보율·소요대수처럼 합계행이 없는 월별 결과를 고정 분류 영역과 스크롤 월 영역으로 렌더링한다.
+  - 반복 분류값 생략, 계층별 행 경계, 월·분기별 열 경계와 외곽 테두리를 동적으로 적용한다.
+  - 숫자와 퍼센트 표시 모드를 지원하되 계산 원본 값은 변경하지 않는다.
+  - 대용량 상세표는 페이지 단위 렌더링으로 브라우저 부하를 제한한다.
+  - 화면과 같은 반복값 생략·표시 라벨·월 표기를 유지하는 CSV 다운로드용 DataFrame을 생성한다.
 
 페이지 파일은 직접 실행되는 Streamlit 스크립트 형태를 유지한다. 복잡한 계산을 페이지에
 추가하지 말고 `src/capa_simulation/services/`로 옮긴다.
@@ -108,6 +125,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `load_calculator.py`: 계획/수율 편집 변환과 PKG·Chip·Wafer·Density 부하량. HOME의
   Chip·Wafer 부하량은 공통 전처리를 한 번만 수행한다.
 - `unit_capacity.py`: Main/MI 환산 UPEH와 대당 Capa
+- `weighted_unit_capacity.py`: RQ_REQB 경로별 부하량을 사용하는 화면용 대당 Capa 가중평균
 - `required_equipment.py`: RQ_REQB 경로 연결과 소요대수
 - `securement_rate.py`: 공정별 확보율
 - `equipment_count.py`: 보유·대여·가용 설비대수 표
@@ -206,6 +224,10 @@ Dummy Chip/Wafer는 `(1 - EDS_수율)`을 추가 적용한다. 정확한 현재 
 - `소요기준 = PKG 또는 CHIP`: UPEH를 Kea 기준으로 `/ 1000`
 - WF측정률 0 이하 및 대당 Capa 0 이하는 제외 행으로 남기고 계산에서 제외
 - BOX·PCB는 산식 구현 전까지 제외
+- 화면용 대당 Capa는 `RQ_REQB`에 연결된 공정별 부하량을 가중치로 사용해
+  `Σ(부하량 × 상세 대당 Capa) ÷ Σ(부하량)`으로 집계한다.
+- 화면 집계 수준은 `공정 → 양산구분 → 제품정보 → Stack → WF 구분`이며 소요기준은
+  공정별 `RQ_REQB` 값을 따른다. 이 화면용 집계값을 소요대수·확보율 계산에 재사용하지 않는다.
 
 ### 소요대수와 확보율
 

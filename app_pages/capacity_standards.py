@@ -2,6 +2,10 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation.components.hierarchical_monthly_table import (
+    build_hierarchical_monthly_export,
+    render_hierarchical_monthly_table,
+)
 from capa_simulation.io.reference_cache import (
     get_reference_cache_version,
     get_reference_tables,
@@ -21,11 +25,11 @@ from capa_simulation.services.capacity_reference_editor import (
 )
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.month_filter import available_month_range, filter_month_range
-from capa_simulation.services.simulation_cache import get_unit_capacity
-from capa_simulation.services.unit_capacity import (
-    CAPACITY_EXCLUSIONS_ATTR,
-    UNIT_CAPACITY_DIMENSIONS,
-    unit_capacity_to_month_table,
+from capa_simulation.services.simulation_cache import get_required_equipment, get_unit_capacity
+from capa_simulation.services.unit_capacity import CAPACITY_EXCLUSIONS_ATTR
+from capa_simulation.services.weighted_unit_capacity import (
+    WEIGHTED_CAPACITY_HIERARCHY,
+    weighted_unit_capacity_to_month_table,
 )
 from capa_simulation.settings import PROJECT_ROOT
 from capa_simulation.sidebar_status import show_applied_month_range
@@ -51,6 +55,13 @@ RUN_RATE_DIMENSIONS = ["공정", "양산구분"]
 VITAL_DIMENSIONS = ["공정", "양산구분"]
 RUN_DAY_DIMENSIONS = ["공정"]
 RATIO_DIMENSIONS = ["공정", "양산구분", "제품정보", "Stack", "WF 구분"]
+CAPACITY_LEVEL_LABELS = {
+    "공정": "공정",
+    "양산구분": "양산",
+    "제품정보": "제품",
+    "Stack": "Stack",
+    "WF 구분": "WF 속성",
+}
 
 
 def selected_month_range() -> tuple[int, int]:
@@ -176,6 +187,24 @@ try:
         start_month,
         end_month,
         "RQ_WF_RATIO",
+    )
+    filtered_plan = filter_monthly_table(
+        scenario_table(active_scenario, "RQ_PKG_PLAN"),
+        start_month,
+        end_month,
+        "RQ_PKG_PLAN",
+    )
+    filtered_yield = filter_monthly_table(
+        scenario_table(active_scenario, "RQ_YLD"),
+        start_month,
+        end_month,
+        "RQ_YLD",
+    )
+    filtered_reqb = filter_monthly_table(
+        reference_tables["RQ_REQB"],
+        start_month,
+        end_month,
+        "RQ_REQB",
     )
 
     default_upeh_table = performance_to_edit_table(filtered_upeh)
@@ -362,6 +391,8 @@ simulation_vital = filtered_vital
 simulation_lot_ratio = filtered_lot_ratio
 simulation_wf_ratio = filtered_wf_ratio
 simulation_run_day = filtered_run_day
+simulation_plan = filtered_plan
+simulation_yield = filtered_yield
 
 try:
     unit_capacity = get_unit_capacity(
@@ -373,14 +404,14 @@ try:
         lot_ratio=simulation_lot_ratio,
         wf_ratio=simulation_wf_ratio,
     )
-    unit_capacity_table = unit_capacity_to_month_table(unit_capacity)
-    excluded_capacity_rows = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
-    unit_capacity_table = apply_display_order(
-        unit_capacity_table,
-        reference_tables["RQ_DISPLAY_ORDER"],
-        "공정별 Capa",
-        "대당 Capa",
+    required_equipment_for_display = get_required_equipment(
+        reqb=filtered_reqb,
+        plan=simulation_plan,
+        yield_data=simulation_yield,
+        chip_qty=reference_tables["RQ_CHIP_QTY"],
+        unit_capacity=unit_capacity,
     )
+    excluded_capacity_rows = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
 except ValueError as exc:
     with unit_capacity_tab:
         st.error(str(exc))
@@ -390,39 +421,90 @@ else:
             st.warning(f"대당 Capa 산출에서 {len(excluded_capacity_rows):,}개 기준을 제외했습니다.")
             with st.expander("제외 기준정보 확인", expanded=False):
                 st.dataframe(excluded_capacity_rows, hide_index=True, width="stretch")
-        st.caption("공정·제품 분류별 월간 대당 Capa")
-        month_columns = [
-            column
-            for column in unit_capacity_table.columns
-            if column not in UNIT_CAPACITY_DIMENSIONS
-        ]
-        styled_table = unit_capacity_table.style.set_properties(
-            subset=pd.Index(UNIT_CAPACITY_DIMENSIONS),
-            **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
+
+        process_order = required_equipment_for_display[["공정"]].drop_duplicates()
+        process_order = apply_display_order(
+            process_order,
+            reference_tables["RQ_DISPLAY_ORDER"],
+            "공정별 Capa",
+            "대당 Capa",
         )
-        st.dataframe(
-            styled_table,
-            hide_index=True,
-            width="content",
-            height=500,
-            row_height=25,
-            column_config={
-                **{
-                    column: st.column_config.TextColumn(
-                        DISPLAY_COLUMN_LABELS.get(column, column),
-                        alignment="center",
-                        pinned=True,
-                    )
-                    for column in UNIT_CAPACITY_DIMENSIONS
-                },
-                **{
-                    month: st.column_config.NumberColumn(
-                        month,
-                        width=80,
-                        format="%,.0f",
-                        alignment="center",
-                    )
-                    for month in month_columns
-                },
-            },
+        process_options = process_order["공정"].astype(str).tolist()
+        process_filter_key = "unit_capacity_process_filter"
+        saved_processes = st.session_state.get(process_filter_key, [])
+        if isinstance(saved_processes, list):
+            st.session_state[process_filter_key] = [
+                process for process in saved_processes if process in process_options
+            ]
+        with st.container(border=True):
+            level_column, process_column = st.columns([1, 2])
+            with level_column:
+                selected_level_label = st.selectbox(
+                    "집계 수준",
+                    options=list(CAPACITY_LEVEL_LABELS.values()),
+                    index=0,
+                    key="unit_capacity_detail_level",
+                )
+            with process_column:
+                selected_processes = st.multiselect(
+                    "공정 필터",
+                    options=process_options,
+                    placeholder="미선택 시 전체 공정",
+                    key=process_filter_key,
+                )
+
+        selected_level = next(
+            level for level, label in CAPACITY_LEVEL_LABELS.items() if label == selected_level_label
+        )
+        unit_capacity_table = weighted_unit_capacity_to_month_table(
+            required_equipment_for_display,
+            selected_level,
+        )
+        unit_capacity_table = apply_display_order(
+            unit_capacity_table,
+            reference_tables["RQ_DISPLAY_ORDER"],
+            "공정별 Capa",
+            "대당 Capa",
+        )
+        if selected_processes:
+            unit_capacity_table = unit_capacity_table.loc[
+                unit_capacity_table["공정"].isin(selected_processes)
+            ].reset_index(drop=True)
+
+        classification_columns = [
+            column
+            for column in ["공정", "소요기준", *WEIGHTED_CAPACITY_HIERARCHY[1:]]
+            if column in unit_capacity_table.columns
+        ]
+        capacity_export = build_hierarchical_monthly_export(
+            unit_capacity_table,
+            classification_columns=classification_columns,
+            column_labels=DISPLAY_COLUMN_LABELS,
+            decimal_places=0,
+        )
+        capacity_csv = capacity_export.to_csv(index=False, float_format="%.0f").encode("utf-8-sig")
+        st.caption(
+            "공정별 소요기준 부하량으로 가중평균한 화면용 대당 Capa입니다. "
+            "소요대수·확보율은 기존 상세 대당 Capa로 계산합니다."
+        )
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.subheader("대당 Capa", width="content")
+            st.download_button(
+                ":material/download: CSV 다운로드",
+                data=capacity_csv,
+                file_name=(
+                    "Capa_Unit_Capacity_"
+                    f"{selected_level}_{effective_start_month}_{effective_end_month}.csv"
+                ),
+                mime="text/csv;charset=utf-8",
+                key="download_unit_capacity_csv",
+                on_click="ignore",
+                width="content",
+            )
+        render_hierarchical_monthly_table(
+            unit_capacity_table,
+            classification_columns=classification_columns,
+            column_labels=DISPLAY_COLUMN_LABELS,
+            decimal_places=0,
+            key="unit_capacity_monthly_table",
         )
