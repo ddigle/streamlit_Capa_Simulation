@@ -15,7 +15,7 @@ def get_scenario_repository(database_path: str) -> DuckDBScenarioRepository:
     return repository
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def load_scenario_snapshot(database_path: str, revision_id: str) -> ScenarioSnapshot:
     """Share one immutable revision snapshot across browser sessions."""
     return get_scenario_repository(database_path).load_revision(revision_id)

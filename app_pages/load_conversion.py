@@ -8,7 +8,6 @@ from capa_simulation.components.grouped_monthly_table import (
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
-    has_persisted_reference_tables,
 )
 from capa_simulation.scenario_state import (
     apply_month_updates,
@@ -31,7 +30,6 @@ from capa_simulation.services.month_filter import (
     filter_month_range,
 )
 from capa_simulation.services.simulation_cache import get_monthly_volume
-from capa_simulation.settings import PROJECT_ROOT
 from capa_simulation.sidebar_status import show_applied_month_range
 
 CLASSIFICATION_BACKGROUND_COLOR = "#F0F2F6"
@@ -48,14 +46,9 @@ DISPLAY_COLUMN_LABELS = {
 st.title("부하량")
 
 
-workbook = PROJECT_ROOT / "templates" / "structure_template.xlsb"
-if not workbook.is_file() and not has_persisted_reference_tables():
-    st.error(f"기준정보 파일을 찾을 수 없습니다: {workbook}")
-    st.stop()
-
 try:
     reference_version = get_effective_reference_version()
-    reference_tables = get_effective_reference_tables(str(workbook.resolve()))
+    reference_tables = get_effective_reference_tables()
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
 except Exception as exc:
     st.error(f"기준정보를 불러오지 못했습니다: {exc}")
@@ -98,8 +91,7 @@ plan_editor_key = "pkg_plan_editor"
 yield_editor_key = "yield_editor"
 source_token_key = "load_conversion_source_token"
 source_token = (
-    f"{workbook.resolve()}:{reference_version}:"
-    f"{active_scenario['revision']}:"
+    f"duckdb:{reference_version}:{active_scenario['revision']}:"
     f"{effective_start_month}:{effective_end_month}"
 )
 if st.session_state.get(source_token_key) != source_token:

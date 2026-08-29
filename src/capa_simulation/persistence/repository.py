@@ -23,6 +23,7 @@ from capa_simulation.io.core_data_source import (
 )
 from capa_simulation.persistence.migration_runner import apply_migrations
 from capa_simulation.persistence.models import (
+    OfficialReleaseSummary,
     RevisionSummary,
     ScenarioCreate,
     ScenarioPreset,
@@ -369,6 +370,104 @@ class DuckDBScenarioRepository:
             ).fetchall()
         return [_revision_summary(row) for row in rows]
 
+    def rename_scenario(self, scenario_id: str, scenario_name: str) -> ScenarioSummary:
+        """Rename mutable scenario metadata without changing immutable revisions."""
+        label = _required_text(scenario_name, "시나리오명")
+        with self._write_transaction() as connection:
+            changed = connection.execute(
+                """
+                UPDATE app_meta.scenario
+                SET scenario_name = ?, updated_at = current_timestamp
+                WHERE scenario_id = ? AND status = 'ACTIVE'
+                RETURNING scenario_id
+                """,
+                [label, scenario_id],
+            ).fetchone()
+            if changed is None:
+                raise KeyError(f"활성 시나리오를 찾을 수 없습니다: {scenario_id}")
+        for scenario in self.list_scenarios():
+            if scenario.scenario_id == scenario_id:
+                return scenario
+        raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
+
+    def publish_official_revision(
+        self,
+        scenario_id: str,
+        revision_id: str,
+        *,
+        release_name: str,
+        note: str | None = None,
+    ) -> OfficialReleaseSummary:
+        """Append an official release pointer to one immutable revision."""
+        release_label = _required_text(release_name, "공식버전명")
+        official_release_id = str(uuid4())
+        with self._write_transaction() as connection:
+            owner = connection.execute(
+                """
+                SELECT s.status
+                FROM app_meta.scenario_revision r
+                JOIN app_meta.scenario s ON s.scenario_id = r.scenario_id
+                WHERE r.revision_id = ? AND r.scenario_id = ?
+                """,
+                [revision_id, scenario_id],
+            ).fetchone()
+            if owner is None:
+                raise ValueError("공식 지정할 리비전이 선택한 시나리오에 속하지 않습니다.")
+            if str(owner[0]) != "ACTIVE":
+                raise ValueError("보관된 시나리오는 공식버전으로 지정할 수 없습니다.")
+            release_no_row = connection.execute(
+                "SELECT COALESCE(MAX(release_no), 0) + 1 FROM app_meta.official_release"
+            ).fetchone()
+            if release_no_row is None:
+                raise RuntimeError("다음 공식버전 번호를 계산하지 못했습니다.")
+            release_no = int(release_no_row[0])
+            connection.execute(
+                """
+                INSERT INTO app_meta.official_release (
+                    official_release_id, release_no, scenario_id, revision_id,
+                    release_name, note
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    official_release_id,
+                    release_no,
+                    scenario_id,
+                    revision_id,
+                    release_label,
+                    note.strip() if isinstance(note, str) and note.strip() else None,
+                ],
+            )
+        release = self._official_release(official_release_id)
+        if release is None:
+            raise RuntimeError("저장한 공식버전을 다시 불러오지 못했습니다.")
+        return release
+
+    def latest_official_release(self) -> OfficialReleaseSummary | None:
+        """Return the latest append-only official release pointer."""
+        releases = self.list_official_releases(limit=1)
+        return releases[0] if releases else None
+
+    def list_official_releases(self, *, limit: int | None = None) -> list[OfficialReleaseSummary]:
+        if limit is not None and limit <= 0:
+            raise ValueError("공식버전 조회 건수는 1 이상이어야 합니다.")
+        limit_clause = "" if limit is None else " LIMIT ?"
+        parameters: list[object] = [] if limit is None else [limit]
+        with self._connect(read_only=True) as connection:
+            rows = connection.execute(
+                _OFFICIAL_RELEASE_SELECT + " ORDER BY o.release_no DESC" + limit_clause,
+                parameters,
+            ).fetchall()
+        return [_official_release_summary(row) for row in rows]
+
+    def _official_release(self, official_release_id: str) -> OfficialReleaseSummary | None:
+        with self._connect(read_only=True) as connection:
+            row = connection.execute(
+                _OFFICIAL_RELEASE_SELECT + " WHERE o.official_release_id = ?",
+                [official_release_id],
+            ).fetchone()
+        return _official_release_summary(row) if row is not None else None
+
     def load_revision(self, revision_id: str) -> ScenarioSnapshot:
         with self._connect(read_only=True) as connection:
             scenario_row = connection.execute(
@@ -431,6 +530,19 @@ class DuckDBScenarioRepository:
 
     def archive_scenario(self, scenario_id: str) -> None:
         with self._write_transaction() as connection:
+            latest_official = connection.execute(
+                """
+                SELECT scenario_id
+                FROM app_meta.official_release
+                ORDER BY release_no DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            if latest_official is not None and str(latest_official[0]) == scenario_id:
+                raise ValueError(
+                    "현재 최신 공식버전의 시나리오는 보관할 수 없습니다. "
+                    "다른 공식버전을 먼저 지정하세요."
+                )
             changed = connection.execute(
                 """
                 UPDATE app_meta.scenario
@@ -819,6 +931,32 @@ def _scenario_summary(row: Sequence[object]) -> ScenarioSummary:
         active_revision_no=_as_int(row[8], "활성 리비전 번호"),
         created_at=_as_datetime(row[9]),
         updated_at=_as_datetime(row[10]),
+    )
+
+
+_OFFICIAL_RELEASE_SELECT = """
+    SELECT o.official_release_id, o.release_no, o.scenario_id, o.revision_id,
+           o.release_name, o.note, s.scenario_name, s.source_simulation_code,
+           r.revision_no, r.revision_name, o.published_at
+    FROM app_meta.official_release o
+    JOIN app_meta.scenario s ON s.scenario_id = o.scenario_id
+    JOIN app_meta.scenario_revision r ON r.revision_id = o.revision_id
+"""
+
+
+def _official_release_summary(row: Sequence[object]) -> OfficialReleaseSummary:
+    return OfficialReleaseSummary(
+        official_release_id=str(row[0]),
+        release_no=_as_int(row[1], "공식버전 번호"),
+        scenario_id=str(row[2]),
+        revision_id=str(row[3]),
+        release_name=str(row[4]),
+        note=str(row[5]) if row[5] is not None else None,
+        scenario_name=str(row[6]),
+        source_simulation_code=str(row[7]),
+        revision_no=_as_int(row[8], "리비전 번호"),
+        revision_name=str(row[9]),
+        published_at=_as_datetime(row[10]),
     )
 
 

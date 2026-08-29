@@ -8,7 +8,6 @@ from capa_simulation.components.hierarchical_monthly_table import (
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
-    has_persisted_reference_tables,
 )
 from capa_simulation.scenario_state import ensure_active_scenario, scenario_table
 from capa_simulation.services.display_order import apply_display_order
@@ -38,7 +37,6 @@ from capa_simulation.services.simulation_cache import (
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
 )
-from capa_simulation.settings import PROJECT_ROOT
 from capa_simulation.sidebar_status import show_applied_month_range
 
 TAB_NAMES = ("📊 확보율", "📊 소요대수", "설비대수")
@@ -60,14 +58,9 @@ def selected_month_range() -> tuple[int, int]:
 st.title("공정별 확보율")
 availability_tab, required_tab, equipment_tab = st.tabs(TAB_NAMES)
 
-workbook = PROJECT_ROOT / "templates" / "structure_template.xlsb"
-if not workbook.is_file() and not has_persisted_reference_tables():
-    st.error(f"기준정보 파일을 찾을 수 없습니다: {workbook}")
-    st.stop()
-
 try:
     reference_version = get_effective_reference_version()
-    reference_tables = get_effective_reference_tables(str(workbook.resolve()))
+    reference_tables = get_effective_reference_tables()
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
     selected_start, selected_end = selected_month_range()
     source_start, source_end = available_month_range(reference_tables["RQ_REQB"], "RQ_REQB")

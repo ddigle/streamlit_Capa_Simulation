@@ -11,7 +11,6 @@ from capa_simulation.components.horizontal_scrollbar import render_horizontal_sc
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
-    has_persisted_reference_tables,
 )
 from capa_simulation.performance import PerformanceTrace
 from capa_simulation.scenario_state import ensure_active_scenario, scenario_month_table
@@ -28,7 +27,7 @@ from capa_simulation.services.month_filter import available_month_range, filter_
 from capa_simulation.services.simulation_cache import (
     get_home_simulation,
 )
-from capa_simulation.settings import APP_NAME, PROJECT_ROOT
+from capa_simulation.settings import APP_NAME
 from capa_simulation.sidebar_status import show_applied_month_range
 
 CLASSIFICATION_BACKGROUND_COLOR = "#F4F4F5"
@@ -447,14 +446,9 @@ show_home_performance = st.sidebar.toggle(
 )
 home_trace = PerformanceTrace()
 
-workbook = PROJECT_ROOT / "templates" / "structure_template.xlsb"
-if not workbook.is_file() and not has_persisted_reference_tables():
-    st.error(f"기준정보 파일을 찾을 수 없습니다: {workbook}")
-    st.stop()
-
 try:
     reference_version = get_effective_reference_version()
-    reference_tables = get_effective_reference_tables(str(workbook.resolve()))
+    reference_tables = get_effective_reference_tables()
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
     selected_start, selected_end = selected_month_range()
     source_start, source_end = available_month_range(reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN")
@@ -657,6 +651,12 @@ def show_process_filter_dialog(options: list[str]) -> None:
 
 
 included_processes = list(st.session_state[process_selection_key])
+secure_threshold_key = "dashboard_secure_threshold_percent"
+warning_threshold_key = "dashboard_warning_threshold_percent"
+if secure_threshold_key not in st.session_state:
+    st.session_state[secure_threshold_key] = 109.5
+if warning_threshold_key not in st.session_state:
+    st.session_state[warning_threshold_key] = 99.5
 with st.sidebar.container(border=True):
     st.markdown("#### :material/filter_alt: B/N 집계 공정")
     with st.form("dashboard_bottleneck_filter_form", border=False):
@@ -664,17 +664,15 @@ with st.sidebar.container(border=True):
         secure_threshold_percent = st.number_input(
             "확보 기준 (%)",
             min_value=0.0,
-            value=109.5,
             step=0.1,
-            key="dashboard_secure_threshold_percent",
+            key=secure_threshold_key,
             persist_state="session",
         )
         warning_threshold_percent = st.number_input(
             "경고 기준 (%)",
             min_value=0.0,
-            value=99.5,
             step=0.1,
-            key="dashboard_warning_threshold_percent",
+            key=warning_threshold_key,
             persist_state="session",
         )
         st.form_submit_button("판정 기준 적용", width="stretch")

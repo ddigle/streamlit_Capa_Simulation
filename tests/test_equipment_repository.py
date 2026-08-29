@@ -4,36 +4,12 @@ import duckdb
 import pandas as pd
 
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-
-
-def _baseline(count: int = 2) -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "공정": ["Process-A"],
-            "분류": ["기존 보유"],
-            "기존보유대수": [count],
-            "비고": [None],
-        }
-    )
-
-
-def _schedule(complete_date: str = "2026-08-15") -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "호기": ["EQ-01"],
-            "공정": ["Process-A"],
-            "분류": ["신규 도입"],
-            "입고일": ["2026-08-01"],
-            "셋업시작일": ["2026-08-03"],
-            "셋업완료일": [complete_date],
-            "비고": ["신규"],
-        }
-    )
+from tests.test_equipment_availability import _baseline, _downtime, _equipment
 
 
 def _repository(path: Path) -> DuckDBEquipmentRepository:
     repository = DuckDBEquipmentRepository(path)
-    assert repository.initialize() == (1,)
+    assert repository.initialize() == (1, 2)
     assert repository.initialize() == ()
     return repository
 
@@ -41,34 +17,35 @@ def _repository(path: Path) -> DuckDBEquipmentRepository:
 def test_equipment_snapshots_are_immutable_revisions(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "equipment.duckdb")
 
-    first = repository.save_snapshot(_baseline(), _schedule(), note="최초 저장")
-    second = repository.save_snapshot(
-        _baseline(3),
-        _schedule("2026-08-20"),
-        note="일정 변경",
-    )
+    first = repository.save_snapshot(_baseline(), _equipment(), _downtime(), note="최초 저장")
+    changed = _equipment()
+    changed.loc[1, "양산전환일"] = "2026-08-21"
+    second = repository.save_snapshot(_baseline(), changed, _downtime(), note="일정 변경")
 
     assert first.revision.revision_no == 1
     assert second.revision.revision_no == 2
     latest = repository.load_latest_snapshot()
     assert latest is not None
     assert latest.revision == second.revision
-    pd.testing.assert_frame_equal(latest.baseline, second.baseline)
-    pd.testing.assert_frame_equal(latest.schedule, second.schedule)
+    pd.testing.assert_frame_equal(latest.equipment, second.equipment)
+    pd.testing.assert_frame_equal(latest.downtime, second.downtime)
     loaded_first = repository.load_snapshot(first.revision.revision_id)
-    assert loaded_first.baseline.loc[0, "기존보유대수"] == 2
-    assert loaded_first.schedule.loc[0, "셋업완료일"] == pd.Timestamp("2026-08-15")
+    assert pd.isna(loaded_first.equipment.loc[1, "양산전환일"])
     assert [revision.revision_no for revision in repository.list_revisions()] == [2, 1]
 
 
-def test_equipment_snapshot_allows_an_empty_schedule(tmp_path: Path) -> None:
+def test_equipment_snapshot_allows_empty_unit_inputs(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "equipment.duckdb")
-    empty_schedule = _schedule().iloc[0:0]
 
-    snapshot = repository.save_snapshot(_baseline(), empty_schedule)
+    snapshot = repository.save_snapshot(
+        _baseline(),
+        _equipment().iloc[0:0],
+        _downtime().iloc[0:0],
+    )
 
-    assert snapshot.schedule.empty
-    assert snapshot.revision.schedule_row_count == 0
+    assert snapshot.equipment.empty
+    assert snapshot.downtime.empty
+    assert snapshot.revision.equipment_row_count == 0
 
 
 def test_equipment_database_has_no_simulation_schemas(tmp_path: Path) -> None:

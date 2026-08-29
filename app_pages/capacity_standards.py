@@ -9,7 +9,6 @@ from capa_simulation.components.hierarchical_monthly_table import (
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
-    has_persisted_reference_tables,
 )
 from capa_simulation.scenario_state import (
     apply_month_updates,
@@ -32,7 +31,6 @@ from capa_simulation.services.weighted_unit_capacity import (
     WEIGHTED_CAPACITY_HIERARCHY,
     weighted_unit_capacity_to_month_table,
 )
-from capa_simulation.settings import PROJECT_ROOT
 from capa_simulation.sidebar_status import show_applied_month_range
 
 TAB_NAMES = (
@@ -141,14 +139,9 @@ st.title("공정별 Capa")
 tabs = st.tabs(TAB_NAMES)
 unit_capacity_tab = tabs[0]
 
-workbook = PROJECT_ROOT / "templates" / "structure_template.xlsb"
-if not workbook.is_file() and not has_persisted_reference_tables():
-    st.error(f"기준정보 파일을 찾을 수 없습니다: {workbook}")
-    st.stop()
-
 try:
     reference_version = get_effective_reference_version()
-    reference_tables = get_effective_reference_tables(str(workbook.resolve()))
+    reference_tables = get_effective_reference_tables()
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
     start_month, end_month = selected_month_range()
     source_start_month, source_end_month = available_month_range(
@@ -261,10 +254,7 @@ editor_keys = (
     "capa_run_day_editor",
 )
 source_token_key = "capacity_standards_source_token"
-source_token = (
-    f"{workbook.resolve()}:{reference_version}:{active_scenario['revision']}:"
-    f"{start_month}:{end_month}"
-)
+source_token = f"duckdb:{reference_version}:{active_scenario['revision']}:{start_month}:{end_month}"
 if st.session_state.get(source_token_key) != source_token:
     for editor_key in editor_keys:
         st.session_state.pop(editor_key, None)

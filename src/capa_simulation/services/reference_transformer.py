@@ -78,6 +78,10 @@ def build_q_core_data(
     """Apply Q_Core_Data types, active columns, and derived columns."""
     normalized = normalize_core_data(source, contract)
     core = normalized.loc[:, list(ACTIVE_CORE_COLUMNS)].copy()
+    # BigDataQuery represents an embedded blank in product names as the literal
+    # marker "*_".  Normalize it before any RQ key is derived so every table
+    # receives the same product key.
+    core["제품정보"] = core["제품정보"].str.replace("*_", " ", regex=False)
     core["양산구분"] = pd.Series(pd.NA, index=core.index, dtype="string")
     core.loc[core["CS"].isin(["MP", "CS"]), "양산구분"] = "양산"
     core.loc[core["CS"].eq("ER"), "양산구분"] = "ER"

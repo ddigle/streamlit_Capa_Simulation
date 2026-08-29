@@ -1,16 +1,12 @@
 import streamlit as st
 
 from capa_simulation.components.month_range_picker import render_month_range_picker
-from capa_simulation.components.scenario_selector_demo import render_scenario_selector_demo
-from capa_simulation.io.reference_cache import (
-    clear_reference_tables,
-    get_reference_cache_version,
-)
-from capa_simulation.scenario_activation import clear_persisted_scenario_activation
+from capa_simulation.components.scenario_status import render_scenario_status
+from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
 from capa_simulation.scenario_preset_state import apply_pending_scenario_preset
-from capa_simulation.services.simulation_cache import clear_simulation_caches
 from capa_simulation.settings import (
     APP_NAME,
+    DUCKDB_PATH,
     MONTH_SELECTION_END,
     MONTH_SELECTION_START,
     format_month,
@@ -21,22 +17,8 @@ from capa_simulation.sidebar_status import (
 )
 
 st.set_page_config(page_title=APP_NAME, page_icon=":material/factory:", layout="wide")
+bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
 apply_pending_scenario_preset()
-
-
-def refresh_reference_data() -> None:
-    clear_reference_tables()
-    clear_simulation_caches()
-    clear_persisted_scenario_activation()
-    for key in (
-        "load_conversion_inputs",
-        "unit_capacity_result",
-        "capacity_standards_inputs",
-        "load_conversion_source_token",
-        "capacity_standards_source_token",
-        "home_dashboard_figure_cache",
-    ):
-        st.session_state.pop(key, None)
 
 
 home_page = st.Page(
@@ -48,6 +30,11 @@ capa_chatbot_page = st.Page(
     "app_pages/capa_chatbot.py",
     title="Capa Chatbot",
     icon=":material/chat:",
+)
+scenario_management_page = st.Page(
+    "app_pages/scenario_management.py",
+    title="시나리오 관리",
+    icon=":material/database:",
 )
 static_capa_page = st.Page(
     "app_pages/static_capa.py",
@@ -71,14 +58,9 @@ static_capa_pages = [
         icon=":material/monitoring:",
     ),
     st.Page(
-        "app_pages/bottleneck_analysis.py",
-        title="B/N 분석",
-        icon=":material/analytics:",
-    ),
-    st.Page(
-        "app_pages/scenarios.py",
-        title="시나리오 및 결과",
-        icon=":material/science:",
+        "app_pages/standard_target_capa.py",
+        title="표준 목표 Capa",
+        icon=":material/track_changes:",
     ),
 ]
 dynamic_capa_page = st.Page(
@@ -94,7 +76,7 @@ dynamic_capa_pages = [
     ),
     st.Page(
         "app_pages/actual_efficiency.py",
-        title="실적 효율",
+        title="효율 실적",
         icon=":material/speed:",
     ),
     st.Page(
@@ -111,6 +93,7 @@ dynamic_capa_pages = [
 pages = [
     home_page,
     capa_chatbot_page,
+    scenario_management_page,
     static_capa_page,
     *static_capa_pages,
     dynamic_capa_page,
@@ -140,6 +123,14 @@ st.html(
         text-align: center;
     }
 
+    .st-key-capa_chatbot_navigation a p,
+    .st-key-scenario_management_navigation a p,
+    .st-key-static_capa_navigation a p,
+    .st-key-dynamic_capa_navigation a p {
+        font-size: 1.15rem;
+        font-weight: 700;
+    }
+
     .st-key-static_capa_subpages [data-testid="stPageLink-NavLink"],
     .st-key-dynamic_capa_subpages [data-testid="stPageLink-NavLink"] {
         margin-left: 1rem;
@@ -152,21 +143,28 @@ with st.sidebar.container(key="home_navigation"):
     st.page_link(home_page, width="stretch")
 
 with st.sidebar.container(border=True):
-    st.page_link(capa_chatbot_page, width="stretch")
+    with st.container(key="capa_chatbot_navigation"):
+        st.page_link(capa_chatbot_page, width="stretch")
 
 with st.sidebar.container(border=True):
-    st.page_link(static_capa_page, width="stretch")
+    with st.container(key="scenario_management_navigation"):
+        st.page_link(scenario_management_page, width="stretch")
+
+with st.sidebar.container(border=True):
+    with st.container(key="static_capa_navigation"):
+        st.page_link(static_capa_page, width="stretch")
     with st.container(key="static_capa_subpages"):
         for page in static_capa_pages:
             st.page_link(page, width="stretch")
 
 with st.sidebar.container(border=True):
-    st.page_link(dynamic_capa_page, width="stretch")
+    with st.container(key="dynamic_capa_navigation"):
+        st.page_link(dynamic_capa_page, width="stretch")
     with st.container(key="dynamic_capa_subpages"):
         for page in dynamic_capa_pages:
             st.page_link(page, width="stretch")
 
-render_scenario_selector_demo()
+render_scenario_status()
 
 with st.sidebar.container(border=True):
     st.markdown("#### 📅 조회 기간")
@@ -194,16 +192,5 @@ with st.sidebar.container(border=True):
         int(selected_start_label.replace("-", "")),
         int(selected_end_label.replace("-", "")),
     )
-
-with st.sidebar.container(border=True):
-    st.markdown("#### :material/database: 기준정보 캐시")
-    st.caption("XLSB는 서버 공통 캐시, 저장 시나리오는 DuckDB 스냅샷을 사용합니다.")
-    st.button(
-        ":material/refresh: 기준정보 새로고침",
-        key="refresh_reference_data",
-        on_click=refresh_reference_data,
-        width="stretch",
-    )
-    st.caption(f"캐시 버전 {get_reference_cache_version()}")
 
 navigation.run()

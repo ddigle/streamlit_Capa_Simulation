@@ -121,6 +121,21 @@ class RevisionSummary:
 
 
 @dataclass(frozen=True)
+class OfficialReleaseSummary:
+    official_release_id: str
+    release_no: int
+    scenario_id: str
+    revision_id: str
+    release_name: str
+    note: str | None
+    scenario_name: str
+    source_simulation_code: str
+    revision_no: int
+    revision_name: str
+    published_at: datetime
+
+
+@dataclass(frozen=True)
 class ScenarioSnapshot:
     scenario: ScenarioSummary
     revision: RevisionSummary

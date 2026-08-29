@@ -345,6 +345,83 @@ def test_archive_hides_scenario_without_deleting_it(tmp_path: Path) -> None:
     assert archived[0].status == "ARCHIVED"
 
 
+def test_scenario_can_be_renamed_without_changing_revision(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "scenario.duckdb")
+    snapshot = repository.create_scenario(
+        _metadata(),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+
+    renamed = repository.rename_scenario(snapshot.scenario.scenario_id, "Renamed scenario")
+
+    assert renamed.scenario_name == "Renamed scenario"
+    assert renamed.active_revision_id == snapshot.revision.revision_id
+
+
+def test_latest_official_release_is_append_only_and_loadable(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "scenario.duckdb")
+    first = repository.create_scenario(
+        _metadata("First"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+    second = repository.create_scenario(
+        _metadata("Second"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+
+    release_one = repository.publish_official_revision(
+        first.scenario.scenario_id,
+        first.revision.revision_id,
+        release_name="Official 1",
+    )
+    release_two = repository.publish_official_revision(
+        second.scenario.scenario_id,
+        second.revision.revision_id,
+        release_name="Official 2",
+        note="Approved",
+    )
+
+    assert release_one.release_no == 1
+    assert release_two.release_no == 2
+    assert repository.latest_official_release() == release_two
+    assert repository.list_official_releases() == [release_two, release_one]
+    assert repository.load_revision(release_two.revision_id).scenario.scenario_name == "Second"
+
+
+def test_official_release_rejects_foreign_revision_and_latest_cannot_be_archived(
+    tmp_path: Path,
+) -> None:
+    repository = _repository(tmp_path / "scenario.duckdb")
+    first = repository.create_scenario(
+        _metadata("First"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+    second = repository.create_scenario(
+        _metadata("Second"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+
+    with pytest.raises(ValueError, match="선택한 시나리오"):
+        repository.publish_official_revision(
+            first.scenario.scenario_id,
+            second.revision.revision_id,
+            release_name="Invalid",
+        )
+
+    repository.publish_official_revision(
+        first.scenario.scenario_id,
+        first.revision.revision_id,
+        release_name="Official",
+    )
+    with pytest.raises(ValueError, match="최신 공식버전"):
+        repository.archive_scenario(first.scenario.scenario_id)
+
+
 def test_typed_core_data_and_profile_round_trip(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "scenario.duckdb")
     raw = _core_data_source()

@@ -1,6 +1,20 @@
+from math import ceil
+
 import pandas as pd
 
 SECUREMENT_DIMENSIONS = ["공정"]
+SHORTFALL_COLUMNS = [
+    "생산계획년월",
+    "공정",
+    "가용대수",
+    "소요대수",
+    "확보율",
+    "경고기준",
+    "확보기준",
+    "경고기준 필요대수",
+    "확보기준 추가대수",
+    "확보목표 총 필요대수",
+]
 
 
 def calculate_securement_rate(
@@ -69,6 +83,52 @@ def securement_rate_to_month_table(data: pd.DataFrame) -> pd.DataFrame:
     return result[[*SECUREMENT_DIMENSIONS, *month_columns]]
 
 
+def build_securement_shortfall_tables(
+    securement_rate: pd.DataFrame,
+    *,
+    warning_threshold: float,
+    secure_threshold: float,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split monthly equipment gaps into warning and secure-threshold steps.
+
+    The first result contains processes below the warning threshold. Its two
+    incremental columns partition the minimum whole equipment count needed to
+    reach the secure threshold. The second result contains processes that meet
+    the warning threshold but remain below the secure threshold.
+    """
+    if warning_threshold < 0 or secure_threshold < 0:
+        raise ValueError("확보 기준과 경고 기준은 0 이상이어야 합니다.")
+    if warning_threshold > secure_threshold:
+        raise ValueError("경고 기준은 확보 기준보다 클 수 없습니다.")
+
+    required = ["생산계획년월", "공정", "가용대수", "소요대수", "확보율"]
+    _require_columns(securement_rate, required, "확보율")
+    result = securement_rate[required].copy()
+    _prepare_shortfall_input(result)
+    result = result.loc[result["소요대수"].gt(0)].copy()
+    result["확보율"] = result["가용대수"] / result["소요대수"]
+    result["경고기준"] = warning_threshold
+    result["확보기준"] = secure_threshold
+
+    warning_gap = result["소요대수"].mul(warning_threshold).sub(result["가용대수"])
+    secure_gap = result["소요대수"].mul(secure_threshold).sub(result["가용대수"])
+    result["경고기준 필요대수"] = warning_gap.map(_ceil_positive).astype("int64")
+    result["확보목표 총 필요대수"] = secure_gap.map(_ceil_positive).astype("int64")
+    result["확보기준 추가대수"] = result["확보목표 총 필요대수"] - result["경고기준 필요대수"]
+
+    sort_columns = ["생산계획년월", "확보율", "공정"]
+    warning_shortfalls = result.loc[result["확보율"].lt(warning_threshold)]
+    warning_shortfalls = warning_shortfalls.sort_values(sort_columns, kind="stable")
+    secure_shortfalls = result.loc[
+        result["확보율"].ge(warning_threshold) & result["확보율"].lt(secure_threshold)
+    ]
+    secure_shortfalls = secure_shortfalls.sort_values(sort_columns, kind="stable")
+    return (
+        warning_shortfalls[SHORTFALL_COLUMNS].reset_index(drop=True),
+        secure_shortfalls[SHORTFALL_COLUMNS].reset_index(drop=True),
+    )
+
+
 def _prepare_keys_and_value(data: pd.DataFrame, value_column: str, table_name: str) -> None:
     months = pd.to_numeric(data["생산계획년월"], errors="coerce")
     valid_months = months.notna() & months.mod(1).eq(0)
@@ -85,6 +145,31 @@ def _prepare_keys_and_value(data: pd.DataFrame, value_column: str, table_name: s
         raise ValueError(f"{table_name}.{value_column}에 숫자가 아닌 값이 있습니다.")
     if data[value_column].lt(0).any():
         raise ValueError(f"{table_name}.{value_column}은 0 이상이어야 합니다.")
+
+
+def _prepare_shortfall_input(data: pd.DataFrame) -> None:
+    months = pd.to_numeric(data["생산계획년월"], errors="coerce")
+    valid_months = months.notna() & months.mod(1).eq(0)
+    integer_months = months.fillna(0).astype("int64")
+    valid_months &= integer_months.mod(100).between(1, 12)
+    if not valid_months.all():
+        raise ValueError("확보율의 생산계획년월은 YYYYMM 형식이어야 합니다.")
+    data["생산계획년월"] = integer_months
+
+    data["공정"] = data["공정"].astype("string").str.strip()
+    if data["공정"].isna().any() or data["공정"].eq("").any():
+        raise ValueError("확보율의 공정에 누락값이 있습니다.")
+
+    for column in ("가용대수", "소요대수"):
+        data[column] = pd.to_numeric(data[column], errors="coerce")
+        if data[column].isna().any():
+            raise ValueError(f"확보율.{column}에 숫자가 아닌 값이 있습니다.")
+        if data[column].lt(0).any():
+            raise ValueError(f"확보율.{column}은 0 이상이어야 합니다.")
+
+
+def _ceil_positive(value: float) -> int:
+    return max(0, ceil(float(value)))
 
 
 def _require_columns(data: pd.DataFrame, required: list[str], table_name: str) -> None:

@@ -10,6 +10,10 @@ from capa_simulation.io.reference_cache import (
     activate_persisted_reference_tables,
     clear_persisted_reference_tables,
 )
+from capa_simulation.persistence.cache import (
+    get_scenario_repository,
+    load_scenario_snapshot,
+)
 from capa_simulation.persistence.models import ScenarioSnapshot
 from capa_simulation.scenario_preset_state import queue_scenario_preset
 from capa_simulation.scenario_state import (
@@ -22,6 +26,7 @@ from capa_simulation.scenario_state import (
 ACTIVE_PERSISTED_SCENARIO_ID_KEY = "active_persisted_scenario_id"
 ACTIVE_PERSISTED_REVISION_ID_KEY = "active_persisted_revision_id"
 ACTIVE_PERSISTED_SESSION_REVISION_KEY = "active_persisted_session_revision"
+OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY = "official_scenario_bootstrap_attempted"
 
 _STALE_UI_KEYS = (
     "load_conversion_inputs",
@@ -53,6 +58,23 @@ def activate_persisted_snapshot(snapshot: ScenarioSnapshot) -> ActiveScenario:
     return active
 
 
+def bootstrap_latest_official_scenario(database_path: str) -> bool:
+    """Activate the latest official revision once for a new browser session."""
+    if active_persisted_revision_id() is not None:
+        return False
+    if st.session_state.get(OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY) is True:
+        return False
+    repository = get_scenario_repository(database_path)
+    release = repository.latest_official_release()
+    if release is None:
+        st.session_state[OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY] = True
+        return False
+    snapshot = load_scenario_snapshot(database_path, release.revision_id)
+    activate_persisted_snapshot(snapshot)
+    st.session_state[OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY] = True
+    return True
+
+
 def clear_persisted_scenario_activation() -> None:
     clear_persisted_reference_tables()
     clear_active_scenario()
@@ -60,6 +82,7 @@ def clear_persisted_scenario_activation() -> None:
         ACTIVE_PERSISTED_SCENARIO_ID_KEY,
         ACTIVE_PERSISTED_REVISION_ID_KEY,
         ACTIVE_PERSISTED_SESSION_REVISION_KEY,
+        OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY,
         *_STALE_UI_KEYS,
     ):
         st.session_state.pop(key, None)

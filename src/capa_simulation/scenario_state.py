@@ -28,7 +28,7 @@ def ensure_active_scenario(
     reference_tables: dict[str, pd.DataFrame],
     reference_version: int,
 ) -> ActiveScenario:
-    """Return the current session scenario, initializing it from Excel if needed."""
+    """Return the current session scenario, initializing it from DuckDB if needed."""
     saved = st.session_state.get(ACTIVE_SCENARIO_KEY)
     if _is_current_scenario(saved, reference_version):
         return cast(ActiveScenario, saved)

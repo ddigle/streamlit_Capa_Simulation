@@ -111,6 +111,25 @@ def test_dataframe_batch_does_not_depend_on_csv() -> None:
     assert prepared.reference_tables["RQ_PKG_PLAN"].loc[0, "생산수량"] == pytest.approx(100.0)
 
 
+def test_product_information_marker_is_normalized_before_rq_derivation() -> None:
+    source = _core_data_row()
+    source.loc[0, "제품정보"] = "Product*_A"
+
+    prepared = prepare_core_data_dataset(
+        CoreDataBatch(
+            simulation_code="SIM-001",
+            simulation_name="사내 조회 결과",
+            source_type="BIGDATAQUERY",
+            frame=source,
+        ),
+        _display_order(),
+    )
+
+    assert prepared.source_data.loc[0, "제품정보"] == "Product*_A"
+    assert prepared.reference_tables["RQ_PKG_PLAN"].loc[0, "제품정보"] == "Product A"
+    assert prepared.reference_tables["RQ_REQB"].loc[0, "제품정보"] == "Product A"
+
+
 def test_conflicting_duplicate_business_key_is_rejected() -> None:
     source = pd.concat([_core_data_row(), _core_data_row()], ignore_index=True)
     source.loc[1, "생산수량"] = 200.0
