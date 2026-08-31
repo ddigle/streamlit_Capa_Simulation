@@ -1,5 +1,5 @@
 {
-  "contract_version": 1,
+  "contract_version": 2,
   "source": {
     "name": "Core_Data",
     "encoding": "cp949",
@@ -96,12 +96,12 @@
     "RQ_EQP_OWN": ["생산계획년월", "공정"],
     "RQ_EQP_LENT": ["생산계획년월", "공정"],
     "RQ_EQP_AVBL": ["생산계획년월", "공정"],
-    "RQ_UPEH": ["생산계획년월", "Area_Name", "공정", "양산구분", "제품정보", "Stack", "WF 구분"],
+    "RQ_UPEH": ["생산계획년월", "Area_Name", "공정", "STEP_SEQ", "MCP_SEQ", "양산구분", "제품정보", "Stack", "WF 구분"],
     "RQ_RUN_RATE": ["생산계획년월", "공정", "양산구분"],
     "RQ_VITAL": ["생산계획년월", "공정", "양산구분"],
     "RQ_MODULE": ["공정"],
     "RQ_RUN_DAY": ["생산계획년월", "공정"],
-    "RQ_LOT_RATIO": ["생산계획년월", "공정", "양산구분", "제품정보", "Stack", "WF 구분"],
-    "RQ_WF_RATIO": ["생산계획년월", "공정", "양산구분", "제품정보", "Stack", "WF 구분"]
+    "RQ_LOT_RATIO": ["생산계획년월", "Area_Name", "공정", "STEP_SEQ", "MCP_SEQ", "양산구분", "제품정보", "Stack", "WF 구분"],
+    "RQ_WF_RATIO": ["생산계획년월", "Area_Name", "공정", "STEP_SEQ", "MCP_SEQ", "양산구분", "제품정보", "Stack", "WF 구분"]
   }
 }

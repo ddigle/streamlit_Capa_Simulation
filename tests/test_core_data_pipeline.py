@@ -138,6 +138,24 @@ def test_conflicting_duplicate_business_key_is_rejected() -> None:
         build_reference_tables(source, _display_order())
 
 
+def test_route_sequences_distinguish_step_specific_capacity_references() -> None:
+    source = pd.concat([_core_data_row(), _core_data_row()], ignore_index=True)
+    source.loc[1, "STEP_SEQ"] = "P200"
+    source.loc[1, "MCP_SEQ"] = "2A"
+    source.loc[1, "UPEH"] = 2.0
+    source.loc[1, "Lot 측정률"] = 0.8
+    source.loc[1, "WF측정률"] = 0.9
+
+    tables = build_reference_tables(source, _display_order())
+
+    assert tables["RQ_UPEH"][["STEP_SEQ", "MCP_SEQ", "UPEH"]].to_dict("records") == [
+        {"STEP_SEQ": "P100", "MCP_SEQ": "1A", "UPEH": 1.0},
+        {"STEP_SEQ": "P200", "MCP_SEQ": "2A", "UPEH": 2.0},
+    ]
+    assert len(tables["RQ_LOT_RATIO"]) == 2
+    assert len(tables["RQ_WF_RATIO"]) == 2
+
+
 def test_invalid_month_is_rejected_at_source_boundary() -> None:
     source = _core_data_row()
     source.loc[0, "생산계획년월"] = 202613

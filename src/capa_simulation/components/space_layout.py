@@ -31,27 +31,18 @@ BUILDINGS: Final[tuple[BuildingSpec, ...]] = (
 )
 FLOORS: Final[tuple[FloorSpec, ...]] = tuple(
     FloorSpec(building, floor)
-    for building, floors in (
-        ("C5", ("3F", "2F", "1F")),
-        ("C1", ("4F", "3F", "2F", "1F")),
-        ("C2", ("5F", "4F", "3F", "2F", "1F")),
-        ("C3", ("4F", "3F", "2F", "1F")),
-        ("C4", ("3F", "2F", "1F")),
-    )
-    for floor in floors
+    for building in ("C5", "C1", "C2", "C3", "C4")
+    for floor in ("6F", "5F", "4F", "3F", "2F", "1F")
 )
 STAGE_COLORS: Final[dict[str, str]] = {
-    "예정": "#E5E7EB",
-    "사전 인프라": "#C4B5FD",
-    "입고": "#93C5FD",
-    "Hookup": "#67E8F9",
-    "H/W 셋업": "#FDBA74",
-    "Qual": "#FDE68A",
-    "TTTM": "#F0ABFC",
-    "양산": "#86EFAC",
-    "비가동": "#FCA5A5",
+    "입고 예정": "#93C5FD",
+    "셋업 진행중": "#FDBA74",
+    "가용": "#86EFAC",
+    "반출 예정": "#FDE68A",
+    "이설 예정": "#C4B5FD",
+    "보관 설비": "#CBD5E1",
+    "운영 비가동": "#FCA5A5",
 }
-FIXED_EQUIPMENT_HEIGHT: Final = 7.0
 BUILDING_COLORS: Final[tuple[str, ...]] = (
     "#E7EDF2",
     "#F3F5F7",
@@ -71,8 +62,8 @@ def floors_for(building: str) -> list[FloorSpec]:
 def equipment_counts(equipment: pd.DataFrame) -> tuple[int, int, int]:
     if equipment.empty or "상태" not in equipment.columns:
         return 0, 0, 0
-    production = int(equipment["상태"].eq("양산").sum())
-    inactive = int(equipment["상태"].eq("비가동").sum())
+    production = int(equipment["가용여부"].fillna(False).sum())
+    inactive = int(equipment["상태"].isin(["보관 설비", "운영 비가동"]).sum())
     progress = len(equipment) - production - inactive
     return production, progress, inactive
 
@@ -107,7 +98,7 @@ def build_fab_figure(equipment: pd.DataFrame) -> go.Figure:
             x=building.x + building.width / 2,
             y=0.5 + building.height / 2,
             text=(
-                f"<b>{building.name}</b><br>양산 {production}대<br>진행 {progress}대<br>"
+                f"<b>{building.name}</b><br>가용 {production}대<br>진행 {progress}대<br>"
                 f"비가동 {inactive}대<br><span style='font-size:10px'>클릭하여 상세 보기</span>"
             ),
             showarrow=False,
@@ -178,7 +169,7 @@ def build_floor_figure(equipment: pd.DataFrame, building: str) -> go.Figure:
             x=5.0,
             y=(y0 + y1) / 2,
             text=(
-                f"<b>{building} {floor.floor}</b>　양산 {production}대　"
+                f"<b>{building} {floor.floor}</b>　가용 {production}대　"
                 f"진행 {progress}대　비가동 {inactive}대"
             ),
             showarrow=False,
@@ -242,34 +233,35 @@ def build_floor_layout_figure(
     records = cast(list[dict[str, object]], equipment.to_dict(orient="records"))
     for record in records:
         equipment_id = str(record.get("호기", ""))
-        process = str(record.get("공정", ""))
-        stage = str(record.get("단계", "예정"))
+        process = str(record.get("공정소분류", ""))
+        stage = str(record.get("단계", "입고 예정"))
         status = str(record.get("상태", stage))
         downtime_type = record.get("비가동유형")
-        x = _to_float(record.get("X"))
-        y = _to_float(record.get("Y"))
-        width = max(_to_float(record.get("너비")), 0.1)
-        fill_color = STAGE_COLORS.get(status, STAGE_COLORS["예정"])
+        x = _to_float(record.get("X좌표"))
+        y = _to_float(record.get("Y좌표"))
+        width = max(_to_float(record.get("Xsize")), 0.1)
+        height = max(_to_float(record.get("Ysize")), 0.1)
+        fill_color = STAGE_COLORS.get(status, "#E5E7EB")
         figure.add_shape(
             type="rect",
             x0=x,
             x1=x + width,
             y0=y,
-            y1=y + FIXED_EQUIPMENT_HEIGHT,
+            y1=y + height,
             fillcolor=fill_color,
             line={"color": BORDER_COLOR, "width": 1.2},
             layer="above",
         )
         figure.add_annotation(
             x=x + width / 2,
-            y=y + FIXED_EQUIPMENT_HEIGHT / 2,
+            y=y + height / 2,
             text=f"<b>{equipment_id}</b><br>{stage}",
             showarrow=False,
             font={"size": 9, "color": TEXT_COLOR},
             align="center",
         )
         hover_x.append(x + width / 2)
-        hover_y.append(y + FIXED_EQUIPMENT_HEIGHT / 2)
+        hover_y.append(y + height / 2)
         downtime_text = (
             f"<br>비가동: {downtime_type}"
             if isinstance(downtime_type, str) and downtime_type
@@ -277,7 +269,7 @@ def build_floor_layout_figure(
         )
         hover_text.append(
             f"{equipment_id}<br>{process}<br>단계: {stage}{downtime_text}<br>"
-            f"X {x:g} · Y {y:g} · 너비 {width:g}"
+            f"X {x:g} · Y {y:g} · 크기 {width:g}×{height:g}"
         )
 
     figure.add_trace(
@@ -334,17 +326,20 @@ def first_selected_customdata(event: object) -> str | None:
 
 
 def invalid_equipment_rows(equipment: pd.DataFrame) -> list[int]:
-    required = {"X", "Y", "너비"}
+    required = {"X좌표", "Y좌표", "Xsize", "Ysize"}
     if not required.issubset(equipment.columns):
         return list(range(1, len(equipment) + 1))
-    numeric = equipment.loc[:, ["X", "Y", "너비"]].apply(pd.to_numeric, errors="coerce")
+    numeric = equipment.loc[:, ["X좌표", "Y좌표", "Xsize", "Ysize"]].apply(
+        pd.to_numeric, errors="coerce"
+    )
     invalid = (
         numeric.isna().any(axis=1)
-        | numeric["X"].lt(0)
-        | numeric["Y"].lt(0)
-        | numeric["너비"].le(0)
-        | numeric["X"].add(numeric["너비"]).gt(100)
-        | numeric["Y"].add(FIXED_EQUIPMENT_HEIGHT).gt(60)
+        | numeric["X좌표"].lt(0)
+        | numeric["Y좌표"].lt(0)
+        | numeric["Xsize"].le(0)
+        | numeric["Ysize"].le(0)
+        | numeric["X좌표"].add(numeric["Xsize"]).gt(100)
+        | numeric["Y좌표"].add(numeric["Ysize"]).gt(60)
     )
     return [int(index) + 1 for index in numeric.index[invalid].tolist()]
 

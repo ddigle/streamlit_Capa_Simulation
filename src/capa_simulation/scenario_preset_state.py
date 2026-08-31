@@ -16,6 +16,8 @@ MONTH_PICKER_KEY = "production_month_picker"
 PROCESS_SELECTION_KEY = "dashboard_bottleneck_process_selection"
 SECURE_THRESHOLD_KEY = "dashboard_secure_threshold_percent"
 WARNING_THRESHOLD_KEY = "dashboard_warning_threshold_percent"
+STANDARD_TARGET_PROCESS_SELECTION_KEY = "standard_target_process_filter"
+STANDARD_TARGET_PROCESS_DEFAULT_KEY = "standard_target_process_default"
 
 
 def capture_scenario_preset(reference_tables: Mapping[str, pd.DataFrame]) -> ScenarioPreset:
@@ -33,12 +35,19 @@ def capture_scenario_preset(reference_tables: Mapping[str, pd.DataFrame]) -> Sce
     )
     secure_percent = _session_number(SECURE_THRESHOLD_KEY, 109.5)
     warning_percent = _session_number(WARNING_THRESHOLD_KEY, 99.5)
+    standard_target_saved = st.session_state.get(STANDARD_TARGET_PROCESS_SELECTION_KEY)
+    standard_target_processes = (
+        tuple(str(process) for process in standard_target_saved)
+        if isinstance(standard_target_saved, list)
+        else ()
+    )
     return ScenarioPreset(
         start_month=start_month,
         end_month=end_month,
         included_processes=included_processes,
         secure_threshold=secure_percent / 100.0,
         warning_threshold=warning_percent / 100.0,
+        standard_target_processes=standard_target_processes,
     )
 
 
@@ -60,6 +69,9 @@ def apply_pending_scenario_preset() -> bool:
     st.session_state[PROCESS_SELECTION_KEY] = list(value.included_processes)
     st.session_state[SECURE_THRESHOLD_KEY] = value.secure_threshold * 100.0
     st.session_state[WARNING_THRESHOLD_KEY] = value.warning_threshold * 100.0
+    standard_target_processes = list(value.standard_target_processes)
+    st.session_state[STANDARD_TARGET_PROCESS_DEFAULT_KEY] = standard_target_processes
+    st.session_state[STANDARD_TARGET_PROCESS_SELECTION_KEY] = standard_target_processes.copy()
     return True
 
 

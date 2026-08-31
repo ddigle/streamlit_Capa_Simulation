@@ -708,6 +708,8 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
             "Area_Name": ["Main", "MI"],
             "소요기준": ["CHIP", "PKG"],
             "공정": ["Process-A", "Process-B"],
+            "STEP_SEQ": ["P100", "P200"],
+            "MCP_SEQ": ["1A", "1B"],
             "양산구분": ["양산", "양산"],
             "제품정보": ["Product-A", "Product-A"],
             "Stack": ["12H", "12H"],
@@ -716,7 +718,17 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
             "ST": [None, 36.0],
         }
     )
-    detail_keys = ["생산계획년월", "공정", "양산구분", "제품정보", "Stack", "WF 구분"]
+    detail_keys = [
+        "생산계획년월",
+        "Area_Name",
+        "공정",
+        "STEP_SEQ",
+        "MCP_SEQ",
+        "양산구분",
+        "제품정보",
+        "Stack",
+        "WF 구분",
+    ]
     shared_detail = upeh[detail_keys]
     run_rate = shared_detail[["생산계획년월", "공정", "양산구분"]].assign(CAPA_RUN_RATE=0.8)
     vital = shared_detail[["생산계획년월", "공정", "양산구분"]].assign(편중률=1.0)
@@ -742,6 +754,8 @@ def test_unit_capacity_excludes_nonpositive_wf_ratio_and_capacity() -> None:
             "Area_Name": ["Main", "Main", "Main"],
             "소요기준": ["WF", "WF", "WF"],
             "공정": ["Process-A", "Process-B", "Process-C"],
+            "STEP_SEQ": ["P100", "P200", "P300"],
+            "MCP_SEQ": ["1A", "1B", "1C"],
             "양산구분": ["양산", "양산", "양산"],
             "제품정보": ["Product-A", "Product-A", "Product-A"],
             "Stack": ["12H", "12H", "12H"],
@@ -750,7 +764,17 @@ def test_unit_capacity_excludes_nonpositive_wf_ratio_and_capacity() -> None:
             "ST": [None, None, None],
         }
     )
-    detail_keys = ["생산계획년월", "공정", "양산구분", "제품정보", "Stack", "WF 구분"]
+    detail_keys = [
+        "생산계획년월",
+        "Area_Name",
+        "공정",
+        "STEP_SEQ",
+        "MCP_SEQ",
+        "양산구분",
+        "제품정보",
+        "Stack",
+        "WF 구분",
+    ]
     shared_detail = upeh[detail_keys]
     run_rate = shared_detail[["생산계획년월", "공정", "양산구분"]].assign(
         CAPA_RUN_RATE=[0.8, 0.8, 0.0]
@@ -779,6 +803,8 @@ def test_unit_capacity_excludes_unimplemented_box_and_pcb_bases() -> None:
             "Area_Name": ["Main", "MI"],
             "소요기준": ["BOX", "pcb"],
             "공정": ["Process-A", "Process-B"],
+            "STEP_SEQ": ["P100", "P200"],
+            "MCP_SEQ": ["1A", "1B"],
             "양산구분": ["양산", "양산"],
             "제품정보": ["Product-A", "Product-A"],
             "Stack": ["12H", "12H"],
@@ -865,7 +891,7 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
             "Customer": ["Customer-A", "Customer-A"],
             "CS": ["MP", "MP"],
             "WF 구분": ["Core", "Core"],
-            "STEP_SEQ": [10, 20],
+            "STEP_SEQ": [10, 10],
             "MCP_SEQ": [1, 1],
             "소요기준": ["chip", "CHIP"],
         }
@@ -904,7 +930,10 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
+            "Area_Name": ["Main"],
             "공정": ["Process-A"],
+            "STEP_SEQ": [10],
+            "MCP_SEQ": [1],
             "소요기준": ["Chip"],
             "양산구분": ["양산"],
             "제품정보": ["Product-A"],
@@ -924,9 +953,69 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
     assert "Capa Code" not in table.columns
     assert "Customer" not in table.columns
     assert "CS" not in table.columns
-    assert "STEP_SEQ" not in table.columns
-    assert "MCP_SEQ" not in table.columns
+    assert table["STEP_SEQ"].tolist() == ["10"]
+    assert table["MCP_SEQ"].tolist() == ["1"]
     assert table.loc[0, "202608"] == pytest.approx(2.0)
+
+
+def test_required_equipment_increases_when_a_process_route_has_more_steps() -> None:
+    reqb = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "Area_Name": ["Main", "Main"],
+            "공정": ["Process-A", "Process-A"],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["Product-A", "Product-A"],
+            "Stack": ["12H", "12H"],
+            "Capa Code": ["CAPA-A", "CAPA-A"],
+            "Customer": ["Customer-A", "Customer-A"],
+            "CS": ["MP", "MP"],
+            "WF 구분": ["PKG", "PKG"],
+            "STEP_SEQ": [10, 20],
+            "MCP_SEQ": [1, 1],
+            "소요기준": ["PKG", "PKG"],
+        }
+    )
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "Capa Code": ["CAPA-A"],
+            "Customer": ["Customer-A"],
+            "CS": ["MP"],
+            "생산수량": [100.0],
+        }
+    )
+    unit_capacity = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "Area_Name": ["Main", "Main"],
+            "공정": ["Process-A", "Process-A"],
+            "STEP_SEQ": [10, 20],
+            "MCP_SEQ": [1, 1],
+            "소요기준": ["PKG", "PKG"],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["Product-A", "Product-A"],
+            "Stack": ["12H", "12H"],
+            "WF 구분": ["PKG", "PKG"],
+            "대당 Capa": [50.0, 50.0],
+        }
+    )
+
+    result = calculate_required_equipment(
+        reqb,
+        plan,
+        pd.DataFrame(),
+        pd.DataFrame(),
+        unit_capacity,
+    )
+
+    assert result["STEP_SEQ"].tolist() == ["10", "20"]
+    assert result["부하량"].tolist() == pytest.approx([100.0, 100.0])
+    assert result["소요대수"].tolist() == pytest.approx([2.0, 2.0])
+    assert result["소요대수"].sum() == pytest.approx(4.0)
 
 
 def test_required_equipment_uses_zero_when_load_is_missing() -> None:
@@ -962,7 +1051,10 @@ def test_required_equipment_uses_zero_when_load_is_missing() -> None:
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
+            "Area_Name": ["Main"],
             "공정": ["Process-A"],
+            "STEP_SEQ": [10],
+            "MCP_SEQ": [1],
             "소요기준": ["PKG"],
             "양산구분": ["양산"],
             "제품정보": ["Product-B"],
@@ -1104,7 +1196,10 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
     unit_capacity = pd.DataFrame(
         {
             "생산계획년월": [202608],
+            "Area_Name": ["Main"],
             "공정": ["Process-A"],
+            "STEP_SEQ": [10],
+            "MCP_SEQ": [1],
             "소요기준": ["Wafer"],
             "양산구분": ["양산"],
             "제품정보": ["Product-A"],

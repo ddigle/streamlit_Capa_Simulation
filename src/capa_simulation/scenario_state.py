@@ -15,6 +15,10 @@ EDITABLE_SCENARIO_TABLES = (
     "RQ_RUN_DAY",
     "RQ_LOT_RATIO",
     "RQ_WF_RATIO",
+    "RQ_REQB",
+    "RQ_EQP_OWN",
+    "RQ_EQP_LENT",
+    "RQ_EQP_AVBL",
 )
 
 

@@ -13,7 +13,7 @@ from capa_simulation.scenario_preset_state import (
     WARNING_THRESHOLD_KEY,
 )
 from capa_simulation.scenario_state import ensure_active_scenario, scenario_month_table
-from capa_simulation.services.month_filter import available_month_range, filter_month_range
+from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.securement_rate import build_securement_shortfall_tables
 from capa_simulation.services.simulation_cache import (
     get_required_equipment,
@@ -165,7 +165,13 @@ try:
     reference_tables = get_effective_reference_tables()
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
     selected_start, selected_end = _selected_month_range()
-    source_start, source_end = available_month_range(reference_tables["RQ_REQB"], "RQ_REQB")
+    active_reqb = scenario_month_table(
+        active_scenario,
+        "RQ_REQB",
+        selected_start,
+        selected_end,
+    )
+    source_start, source_end = available_month_range(active_reqb, "RQ_REQB")
     effective_start = max(selected_start, source_start)
     effective_end = min(selected_end, source_end)
     if effective_start > effective_end:
@@ -202,11 +208,11 @@ try:
         ),
     )
     required_equipment = get_required_equipment(
-        reqb=filter_month_range(
-            reference_tables["RQ_REQB"],
+        reqb=scenario_month_table(
+            active_scenario,
+            "RQ_REQB",
             effective_start,
             effective_end,
-            "RQ_REQB",
         ),
         plan=scenario_month_table(
             active_scenario,
@@ -224,11 +230,11 @@ try:
         unit_capacity=unit_capacity,
     )
     securement_rate = get_securement_rate(
-        filter_month_range(
-            reference_tables["RQ_EQP_AVBL"],
+        scenario_month_table(
+            active_scenario,
+            "RQ_EQP_AVBL",
             effective_start,
             effective_end,
-            "RQ_EQP_AVBL",
         ),
         required_equipment,
     )

@@ -27,11 +27,12 @@ from capa_simulation.scenario_activation import (
 )
 from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.scenario_state import ActiveScenario, ensure_active_scenario
+from capa_simulation.services.builtin_seed import BUILTIN_SEED_SOURCE_CODE
 from capa_simulation.services.core_data_pipeline import fetch_core_data_dataset
 from capa_simulation.settings import CORE_DATA_CSV_PATH
 
-CLONE_PIPELINE_VERSION = "duckdb-rq-snapshot-v2"
-CORE_DATA_PIPELINE_VERSION = "core-data-pandas-v2"
+CLONE_PIPELINE_VERSION = "duckdb-rq-snapshot-v3"
+CORE_DATA_PIPELINE_VERSION = "core-data-pandas-v3"
 FLASH_KEY = "scenario_management_flash"
 
 
@@ -77,6 +78,12 @@ def _render_store_status(repository: DuckDBScenarioRepository) -> None:
                 f"최신 공식 v{official.release_no} · {official.scenario_name} "
                 f"r{official.revision_no} · {official.release_name}"
             )
+            if official.source_simulation_code == BUILTIN_SEED_SOURCE_CODE:
+                st.info(
+                    "현재 공식버전은 GitHub 독립 실행용 합성 DEMO 데이터입니다. "
+                    "운영 전 Core Data CSV 또는 BigDataQuery 시나리오를 등록해 새 공식버전으로 "
+                    "지정하세요."
+                )
 
 
 def _render_load(
@@ -280,7 +287,8 @@ def _render_create(repository: DuckDBScenarioRepository, database_path: str) -> 
             source_type = "DUCKDB_SCENARIO_CLONE"
             pipeline_version = CLONE_PIPELINE_VERSION
             source_registered_at = None
-        preset = _compatible_preset(capture_scenario_preset(scenario_tables), scenario_tables)
+        preset_tables = revision_source if revision_source is not None else scenario_tables
+        preset = _compatible_preset(capture_scenario_preset(preset_tables), preset_tables)
         snapshot = repository.create_scenario(
             ScenarioCreate(
                 scenario_name=scenario_name,
@@ -327,10 +335,13 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
     if not revision_submitted:
         return
     try:
-        preset = capture_scenario_preset(reference_tables)
+        revision_tables = revision_tables_for_save(active_scenario, reference_tables)
+        preset = capture_scenario_preset(
+            {**reference_tables, "RQ_REQB": revision_tables["RQ_REQB"]}
+        )
         snapshot = repository.save_revision(
             scenario_id,
-            revision_tables_for_save(active_scenario, reference_tables),
+            revision_tables,
             preset,
             revision_name=revision_name,
             parent_revision_id=active_persisted_revision_id(),

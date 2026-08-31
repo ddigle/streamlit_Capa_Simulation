@@ -5,11 +5,11 @@ import pytest
 
 from capa_simulation.components.space_layout import (
     BUILDINGS,
-    FIXED_EQUIPMENT_HEIGHT,
     STAGE_COLORS,
     build_fab_figure,
     build_floor_layout_figure,
     equipment_counts,
+    floors_for,
     invalid_equipment_rows,
 )
 
@@ -19,38 +19,47 @@ def _space_equipment() -> pd.DataFrame:
         [
             {
                 "호기": "EQ-01",
-                "공정": "A",
+                "공정소분류": "A",
                 "동": "C1",
                 "층": "1F",
-                "X": 10,
-                "Y": 10,
-                "너비": 15,
-                "단계": "양산",
-                "상태": "양산",
+                "X좌표": 10,
+                "Y좌표": 10,
+                "Xsize": 15,
+                "Ysize": 8,
+                "단계": "가용",
+                "상태": "가용",
+                "보유여부": True,
+                "가용여부": True,
                 "비가동유형": None,
             },
             {
                 "호기": "EQ-02",
-                "공정": "A",
+                "공정소분류": "A",
                 "동": "C1",
                 "층": "1F",
-                "X": 30,
-                "Y": 10,
-                "너비": 15,
-                "단계": "Qual",
-                "상태": "Qual",
+                "X좌표": 30,
+                "Y좌표": 10,
+                "Xsize": 15,
+                "Ysize": 6,
+                "단계": "셋업 진행중",
+                "상태": "셋업 진행중",
+                "보유여부": True,
+                "가용여부": False,
                 "비가동유형": None,
             },
             {
                 "호기": "EQ-03",
-                "공정": "B",
+                "공정소분류": "B",
                 "동": "C2",
                 "층": "2F",
-                "X": 10,
-                "Y": 20,
-                "너비": 12,
-                "단계": "양산",
-                "상태": "비가동",
+                "X좌표": 10,
+                "Y좌표": 20,
+                "Xsize": 12,
+                "Ysize": 7,
+                "단계": "운영 비가동",
+                "상태": "운영 비가동",
+                "보유여부": True,
+                "가용여부": False,
                 "비가동유형": "고장",
             },
         ]
@@ -60,13 +69,21 @@ def _space_equipment() -> pd.DataFrame:
 def test_fab_buildings_keep_c5_separate_and_c1_to_c4_connected() -> None:
     assert [building.name for building in BUILDINGS] == ["C5", "C1", "C2", "C3", "C4"]
     assert BUILDINGS[0].x + BUILDINGS[0].width < BUILDINGS[1].x
+    assert [floor.floor for floor in floors_for("C1")] == [
+        "6F",
+        "5F",
+        "4F",
+        "3F",
+        "2F",
+        "1F",
+    ]
 
     connected_buildings = BUILDINGS[1:]
     for left, right in zip(connected_buildings, connected_buildings[1:], strict=False):
         assert left.x + left.width == pytest.approx(right.x)
 
 
-def test_space_counts_use_production_progress_and_downtime() -> None:
+def test_space_counts_use_available_progress_and_inactive() -> None:
     assert equipment_counts(_space_equipment()) == (1, 1, 1)
 
 
@@ -76,24 +93,23 @@ def test_fab_figure_has_one_building_shape_per_building() -> None:
     assert len(figure.layout.shapes) == len(BUILDINGS)
 
 
-def test_floor_layout_uses_stage_colors_and_fixed_height() -> None:
+def test_floor_layout_uses_status_colors_and_input_sizes() -> None:
     equipment = _space_equipment().loc[lambda frame: frame["동"].eq("C1")]
     figure = build_floor_layout_figure(equipment, "C1", "1F")
 
     equipment_shapes = list(figure.layout.shapes)[1:]
-    assert equipment_shapes[0].fillcolor == STAGE_COLORS["양산"]
-    assert equipment_shapes[1].fillcolor == STAGE_COLORS["Qual"]
-    assert float(equipment_shapes[0].y1) - float(equipment_shapes[0].y0) == pytest.approx(
-        FIXED_EQUIPMENT_HEIGHT
-    )
+    assert equipment_shapes[0].fillcolor == STAGE_COLORS["가용"]
+    assert equipment_shapes[1].fillcolor == STAGE_COLORS["셋업 진행중"]
+    assert float(equipment_shapes[0].y1) - float(equipment_shapes[0].y0) == pytest.approx(8)
+    assert float(equipment_shapes[1].y1) - float(equipment_shapes[1].y0) == pytest.approx(6)
 
 
 def test_invalid_equipment_rows_detects_out_of_canvas_equipment() -> None:
     equipment = pd.DataFrame(
         [
-            {"X": 10, "Y": 10, "너비": 20},
-            {"X": 95, "Y": 10, "너비": 10},
-            {"X": 10, "Y": 55, "너비": 20},
+            {"X좌표": 10, "Y좌표": 10, "Xsize": 20, "Ysize": 10},
+            {"X좌표": 95, "Y좌표": 10, "Xsize": 10, "Ysize": 10},
+            {"X좌표": 10, "Y좌표": 55, "Xsize": 20, "Ysize": 10},
         ]
     )
 

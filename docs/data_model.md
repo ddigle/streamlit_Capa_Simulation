@@ -1,6 +1,6 @@
 # DuckDB 데이터 모델
 
-마지막 갱신일: 2026-08-29
+마지막 갱신일: 2026-09-01
 
 ## 운영 원칙
 
@@ -9,14 +9,18 @@
 - `시나리오 1개 = 데이터셋 1개`다. 새 시나리오는 RQ 16개를 물리 복제하고 기존
   데이터셋을 덮어쓰지 않는다.
 - 데이터셋의 읽기 전용 기준정보를 바꾸려면 새 시나리오를 만든다.
-- 계획·수율·Capa 입력 8개와 표시순서 변경은 불변 전체 리비전으로 저장한다.
-- 리비전은 조회기간, B/N 포함 공정, 확보·경고 기준 프리셋을 함께 소유한다.
+- 계획·수율·Capa·설비대수 입력 12개와 표시순서 변경은 불변 전체 리비전으로 저장한다.
+- 리비전은 조회기간, B/N 포함 공정, 표준 목표 Capa 공정 기본값, 확보·경고 기준
+  프리셋을 함께 소유한다.
 - 공식버전은 특정 불변 리비전을 가리키는 append-only 발행 이력이며 최신 발행을 새 웹
   세션의 기본값으로 사용한다.
 - 저장과 보관 상태 변경은 Repository의 쓰기 잠금과 DuckDB 트랜잭션 안에서 실행한다.
 - 기존 보유대수, 호기 마스터와 운영 비가동 일정은 시뮬레이션 DB·시나리오·`RQ_*`와
   독립된 불변 전체 스냅샷 리비전으로 저장한다.
 - 앱은 단일 Streamlit 서버 프로세스와 서로 독립된 로컬 DuckDB 두 개를 전제로 한다.
+- 시나리오 DB가 완전히 비어 있으면 Git에 포함된 비민감 표시순서와 합성 78컬럼 Core
+  Data로 초기 데이터셋·리비전·공식버전을 만든다. 공식버전이나 사용자 시나리오가 있으면
+  자동 부트스트랩은 상태를 변경하지 않는다.
 
 ## 스키마 관계
 
@@ -30,9 +34,10 @@ app_meta.scenario 1 ── 1 app_meta.dataset
        │
        └── N app_meta.scenario_revision
                     │
-                    ├── N rev_data.rq_* (편집 8개 + 표시순서)
+                    ├── N rev_data.rq_* (편집 12개 + 표시순서)
                     ├── 1 app_meta.scenario_preset
-                    └── N app_meta.scenario_preset_process
+                    ├── N app_meta.scenario_preset_process
+                    └── N app_meta.scenario_preset_standard_target_process
 
 app_meta.official_release N ── 1 app_meta.scenario_revision
         └── 전역 증가 release_no의 공식 발행 이력
@@ -40,8 +45,11 @@ app_meta.official_release N ── 1 app_meta.scenario_revision
 # data/equipment_availability.duckdb
 equipment_ops.revision
        ├── N equipment_ops.baseline_snapshot
-       ├── N equipment_ops.equipment_snapshot
-       └── N equipment_ops.downtime_snapshot
+       ├── N equipment_ops.equipment_master_snapshot
+       └── N equipment_ops.downtime_schedule_snapshot
+
+equipment_ops.standard_target_weekly_availability
+       └── 공정·Weeknum별 비버전 최신 가용대수
 ```
 
 DuckDB 1.5.5는 서로 다른 스키마 사이의 외래 키를 만들 수 없으므로 스키마 간 FK는
@@ -58,6 +66,8 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
 - `scenario_revision`: 증가하는 리비전 번호, 부모 리비전, 입력 해시와 변경 메모
 - `scenario_preset`: 조회 시작·종료월, 내부 비율의 확보·경고 기준, 프리셋 해시
 - `scenario_preset_process`: 리비전별 B/N 집계 포함 공정과 저장 순서
+- `scenario_preset_standard_target_process`: 리비전별 표준 목표 Capa 공정 공용 기본값과
+  저장 순서. 행이 없으면 전체 공정으로 해석한다.
 - `official_release`: 전역 공식버전 번호, 대상 시나리오·리비전, 공식버전명·메모·발행시각
 
 `scenario_revision.parent_revision_id`는 과거 리비전에서 새 리비전을 저장하는 분기 이력을
@@ -84,19 +94,24 @@ RQ_EQP_AVBL
 기술 키는 `(dataset_id, source_row_no)`다. `source_row_no`는 DataFrame의 현재 행 순서를
 1부터 부여하며, 원본 컬럼명과 순서를 유지한다. 업무 고유 키는
 `config/data_contract.yaml`의 `derived_keys`에 테이블별로 정의한다.
+`RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO`는 생산계획년월·Area·공정·`STEP_SEQ`·
+`MCP_SEQ`·양산구분·제품정보·Stack·WF 구분을 경로 키로 사용한다. `RQ_REQB`와 대당
+Capa를 연결할 때도 Area·STEP·MCP를 포함해 정확히 일치시킨다.
 
 ### `rev_data`
 
-리비전마다 다음 9개 테이블의 전체 스냅샷을 저장한다.
+리비전마다 다음 13개 테이블의 전체 스냅샷을 저장한다.
 
 ```text
 RQ_PKG_PLAN  RQ_YLD       RQ_UPEH      RQ_RUN_RATE
 RQ_VITAL     RQ_RUN_DAY   RQ_LOT_RATIO RQ_WF_RATIO
+RQ_REQB      RQ_EQP_OWN   RQ_EQP_LENT   RQ_EQP_AVBL
 RQ_DISPLAY_ORDER
 ```
 
-기술 키는 `(revision_id, source_row_no)`다. 리비전을 읽을 때 이 9개는 `ref_data`의 같은
-이름 테이블을 대체하고, 나머지 7개 읽기 전용 테이블은 데이터셋 기본 스냅샷을 사용한다.
+기술 키는 `(revision_id, source_row_no)`다. 리비전을 읽을 때 이 13개는 `ref_data`의 같은
+이름 테이블을 대체하고, 나머지 3개 읽기 전용 테이블은 데이터셋 기본 스냅샷을 사용한다.
+`RQ_REQB`는 STEP 구성 변경을 리비전별로 재현하기 위해 데이터셋 기본본과 별도로 저장한다.
 
 ### `raw_data`
 
@@ -119,16 +134,24 @@ RQ_DISPLAY_ORDER
 - `equipment_meta.schema_migration`: 설비 DB에만 적용하는 SQL 버전과 체크섬
 - `revision`: 설비 운영 입력의 증가 리비전 번호, 변경 메모, 입력 해시와 저장 시각
 - `baseline_snapshot`: 공정·분류별 기존 보유대수와 비고의 전체 스냅샷
-- `equipment_snapshot`: 호기별 공정·분류, 동·층, Space X·Y·너비, 사전 인프라·입고·
-  Hookup·H/W 셋업·Qual·TTTM·양산전환 완료일과 비고의 전체 스냅샷
-- `downtime_snapshot`: 비가동 ID·호기·유형·시작일·종료일·상세사유·비고의 전체 스냅샷
+- `equipment_master_snapshot`: 호기를 키로 공정대/소분류, 참고 속성, 분류1~3, 동·층,
+  Space X/Y 좌표와 X/Y 크기, 제진대·물류·입고·Qual·반출·이설 일정, Qual 실행관리용
+  확정상태, 장기보관·기존설비·
+  레이아웃 표시 여부, 호기이력과 비고를 저장하는 전체 스냅샷
+- `downtime_schedule_snapshot`: 호기·유형·시작일 자연키와 종료일·상세사유·비고의
+  전체 스냅샷
+- `standard_target_weekly_availability`: 표준 목표 Capa 수동 입력용 공정·Weeknum별
+  가용대수 최신값. 리비전을 만들지 않고 같은 키를 갱신하며 명시적 초기화 시 전체 삭제한다.
 - `schedule_snapshot`: 마이그레이션 1에서 생성한 기존 입고·셋업 일정 보존용 레거시 테이블.
-  신규 저장은 `equipment_snapshot`과 `downtime_snapshot`을 사용한다.
+- `equipment_snapshot`, `downtime_snapshot`: 마이그레이션 2 계약의 과거 리비전
+  보존용 레거시 테이블. 신규 저장은 마이그레이션 3의 두 스냅샷 테이블을 사용한다.
 
 현재 화면은 가장 최근 리비전을 편집 원본, 가용설비 대시보드와 Space 현황의 공통 원천으로
 사용한다. 일정 수정, 신규 호기·비가동 추가 또는 행 삭제 후 저장하면 기존 리비전을 갱신하지
 않고 세 입력의 새 전체 스냅샷을 추가한다. 기존 보유대수는 즉시 가용, 신규 호기는 입고일부터
-총대수, 양산전환일부터 가용대수로 계산하고 활성 운영 비가동은 가용대수에서 제외한다.
+총대수, Qual일부터 가용대수로 계산한다. 장기보관과 활성 운영 비가동은 가용에서 제외하고,
+반출·이설 실행일부터 보유·가용·레이아웃에서 제외한다.
+확정상태는 Qual 일정의 계획·확정·완료·지연 모니터링 용도이며 가용 산식에는 사용하지 않는다.
 집계형 기존 보유대수는 호기·좌표가 없어 Space 배치에는 포함하지 않는다. 시뮬레이션 DB의
 공정·설비 테이블은 읽지 않으며, 공정명은 향후 Dynamic Capa 연결 계층의 호환 키로만 보존한다.
 
@@ -167,4 +190,6 @@ Dynamic Capa의 표준과 실적은 수명주기가 다르므로 같은 리비�
   커밋한다. 중간 오류는 전체 롤백한다.
 - 설비 운영 저장도 리비전 메타데이터와 세 입력 스냅샷을 단일 트랜잭션으로 커밋한다.
 - 시나리오 보관은 `ACTIVE → ARCHIVED` 논리 변경이며 물리 삭제하지 않는다.
+- STEP·MCP 경로 키 도입 전 첫 행 유지 방식으로 저장한 사내 검증 시나리오는 의미를
+  추정해 보정하지 않는다. 기존 시나리오를 제거하고 원천 Query로 신규 등록한다.
 - 두 DuckDB 파일은 서로 독립적으로 백업·복원하며 정책은 운영 배포 절차에서 확정한다.

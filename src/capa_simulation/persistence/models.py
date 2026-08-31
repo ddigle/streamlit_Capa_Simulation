@@ -26,7 +26,8 @@ class ScenarioPreset:
     included_processes: tuple[str, ...]
     secure_threshold: float = 1.095
     warning_threshold: float = 0.995
-    schema_version: int = 1
+    schema_version: int = 2
+    standard_target_processes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for value, label in ((self.start_month, "조회 시작월"), (self.end_month, "조회 종료월")):
@@ -41,12 +42,16 @@ class ScenarioPreset:
         if self.schema_version <= 0:
             raise ValueError("프리셋 스키마 버전은 1 이상이어야 합니다.")
 
-        normalized = tuple(process.strip() for process in self.included_processes)
-        if any(not process for process in normalized):
-            raise ValueError("포함 공정에는 빈 이름을 저장할 수 없습니다.")
-        if len(set(normalized)) != len(normalized):
-            raise ValueError("포함 공정에는 중복값을 저장할 수 없습니다.")
-        object.__setattr__(self, "included_processes", normalized)
+        for field_name, label in (
+            ("included_processes", "B/N 포함 공정"),
+            ("standard_target_processes", "표준 목표 Capa 공정"),
+        ):
+            normalized = tuple(process.strip() for process in getattr(self, field_name))
+            if any(not process for process in normalized):
+                raise ValueError(f"{label}에는 빈 이름을 저장할 수 없습니다.")
+            if len(set(normalized)) != len(normalized):
+                raise ValueError(f"{label}에는 중복값을 저장할 수 없습니다.")
+            object.__setattr__(self, field_name, normalized)
 
     def digest(self) -> str:
         payload = {
@@ -54,6 +59,7 @@ class ScenarioPreset:
             "included_processes": self.included_processes,
             "schema_version": self.schema_version,
             "secure_threshold": self.secure_threshold,
+            "standard_target_processes": self.standard_target_processes,
             "start_month": self.start_month,
             "warning_threshold": self.warning_threshold,
         }

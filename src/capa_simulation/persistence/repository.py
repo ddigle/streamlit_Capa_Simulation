@@ -60,6 +60,10 @@ REVISION_TABLES: dict[str, str] = {
         "RQ_RUN_DAY",
         "RQ_LOT_RATIO",
         "RQ_WF_RATIO",
+        "RQ_REQB",
+        "RQ_EQP_OWN",
+        "RQ_EQP_LENT",
+        "RQ_EQP_AVBL",
         "RQ_DISPLAY_ORDER",
     )
 }
@@ -98,7 +102,7 @@ class DuckDBScenarioRepository:
         if revision_tables is not None:
             revision_source.update(revision_tables)
         _require_tables(revision_source, tuple(REVISION_TABLES), "리비전")
-        _validate_preset_processes(preset, reference_tables["RQ_REQB"])
+        _validate_preset_processes(preset, revision_source["RQ_REQB"])
 
         scenario_id = str(uuid4())
         dataset_id = str(uuid4())
@@ -275,20 +279,19 @@ class DuckDBScenarioRepository:
         with self._write_transaction() as connection:
             row = connection.execute(
                 """
-                SELECT d.dataset_id, s.active_revision_id,
+                SELECT s.active_revision_id,
                        COALESCE(MAX(r.revision_no), 0) AS latest_revision_no,
                        s.status
                 FROM app_meta.scenario s
-                JOIN app_meta.dataset d ON d.scenario_id = s.scenario_id
                 LEFT JOIN app_meta.scenario_revision r ON r.scenario_id = s.scenario_id
                 WHERE s.scenario_id = ?
-                GROUP BY d.dataset_id, s.active_revision_id, s.status
+                GROUP BY s.active_revision_id, s.status
                 """,
                 [scenario_id],
             ).fetchone()
             if row is None:
                 raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
-            dataset_id, active_revision_id, latest_revision_no, status = row
+            active_revision_id, latest_revision_no, status = row
             if str(status) != "ACTIVE":
                 raise ValueError("보관된 시나리오에는 새 리비전을 저장할 수 없습니다.")
             selected_parent_id = parent_revision_id or (
@@ -307,14 +310,7 @@ class DuckDBScenarioRepository:
                     raise ValueError(
                         f"상위 리비전이 현재 시나리오에 속하지 않습니다: {selected_parent_id}"
                     )
-            reqb = _load_frame(
-                connection,
-                schema="ref_data",
-                table_name=REFERENCE_TABLES["RQ_REQB"],
-                owner_column="dataset_id",
-                owner_id=str(dataset_id),
-            )
-            _validate_preset_processes(preset, reqb)
+            _validate_preset_processes(preset, revision_tables["RQ_REQB"])
             self._insert_revision(
                 connection,
                 revision_id=revision_id,
@@ -754,6 +750,24 @@ def _insert_preset(
             )
         finally:
             connection.unregister("_incoming_preset_process")
+    if preset.standard_target_processes:
+        standard_target_rows = pd.DataFrame(
+            {
+                "revision_id": revision_id,
+                "process_name": preset.standard_target_processes,
+                "display_order": range(1, len(preset.standard_target_processes) + 1),
+            }
+        )
+        connection.register("_incoming_standard_target_process", standard_target_rows)
+        try:
+            connection.execute(
+                """
+                INSERT INTO app_meta.scenario_preset_standard_target_process BY NAME
+                SELECT * FROM _incoming_standard_target_process
+                """
+            )
+        finally:
+            connection.unregister("_incoming_standard_target_process")
 
 
 def _load_preset(
@@ -780,6 +794,15 @@ def _load_preset(
         """,
         [revision_id],
     ).fetchall()
+    standard_target_rows = connection.execute(
+        """
+        SELECT process_name
+        FROM app_meta.scenario_preset_standard_target_process
+        WHERE revision_id = ?
+        ORDER BY display_order
+        """,
+        [revision_id],
+    ).fetchall()
     return ScenarioPreset(
         start_month=int(row[0]),
         end_month=int(row[1]),
@@ -787,6 +810,7 @@ def _load_preset(
         warning_threshold=float(row[3]),
         schema_version=int(row[4]),
         included_processes=tuple(str(process[0]) for process in process_rows),
+        standard_target_processes=tuple(str(process[0]) for process in standard_target_rows),
     )
 
 
@@ -888,9 +912,23 @@ def _validate_preset_processes(preset: ScenarioPreset, reqb: pd.DataFrame) -> No
     if "공정" not in reqb.columns:
         raise ValueError("RQ_REQB에 공정 컬럼이 없습니다.")
     available = set(reqb["공정"].astype("string").str.strip().dropna().tolist())
-    missing = [process for process in preset.included_processes if process not in available]
-    if missing:
-        raise ValueError(f"프리셋 포함 공정이 RQ_REQB에 없습니다: {', '.join(missing[:5])}")
+    if "양산구분" not in reqb.columns:
+        raise ValueError("RQ_REQB에 양산구분 컬럼이 없습니다.")
+    production_rows = reqb.loc[~reqb["양산구분"].astype("string").str.strip().str.upper().eq("ER")]
+    production_available = set(
+        production_rows["공정"].astype("string").str.strip().dropna().tolist()
+    )
+    for processes, allowed, label in (
+        (preset.included_processes, available, "B/N 포함 공정"),
+        (
+            preset.standard_target_processes,
+            production_available,
+            "표준 목표 Capa 공정",
+        ),
+    ):
+        missing = [process for process in processes if process not in allowed]
+        if missing:
+            raise ValueError(f"프리셋 {label}이 RQ_REQB에 없습니다: {', '.join(missing[:5])}")
 
 
 def _hash_tables(tables: Mapping[str, pd.DataFrame], names: Sequence[str]) -> str:

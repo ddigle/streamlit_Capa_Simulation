@@ -1,4 +1,4 @@
-"""Equipment input validation, weekly availability, and space-stage status."""
+"""Equipment input validation, weekly availability, and space status."""
 
 from __future__ import annotations
 
@@ -9,49 +9,89 @@ import pandas as pd
 BASELINE_COLUMNS = ("공정", "분류", "기존보유대수", "비고")
 EQUIPMENT_COLUMNS = (
     "호기",
-    "공정",
-    "분류",
+    "공정대분류",
+    "공정소분류",
+    "라인구분",
+    "활용구분",
+    "사업부",
+    "투자기준",
+    "Maker",
+    "모델",
+    "분류1",
+    "분류2",
+    "분류3",
     "동",
     "층",
-    "X",
-    "Y",
-    "너비",
-    "사전인프라완료일",
-    "입고일",
-    "Hookup완료일",
-    "하드웨어셋업완료일",
-    "Qual완료일",
-    "TTTM완료일",
-    "양산전환일",
+    "X좌표",
+    "Y좌표",
+    "Xsize",
+    "Ysize",
+    "제진대일정",
+    "물류일정",
+    "입고일정",
+    "Qual일정",
+    "확정상태",
+    "반출일정",
+    "이설일",
+    "장기보관여부",
+    "기존설비여부",
+    "호기이력",
     "비고",
+    "레이아웃표시",
 )
-DOWNTIME_COLUMNS = (
-    "비가동ID",
-    "호기",
-    "비가동유형",
-    "시작일",
-    "종료일",
-    "상세사유",
-    "비고",
+DOWNTIME_COLUMNS = ("호기", "비가동유형", "시작일", "종료일", "상세사유", "비고")
+DOWNTIME_KEY_COLUMNS = ("호기", "비가동유형", "시작일")
+DATE_COLUMNS = (
+    "제진대일정",
+    "물류일정",
+    "입고일정",
+    "Qual일정",
+    "반출일정",
+    "이설일",
 )
-MILESTONES = (
-    ("사전인프라완료일", "사전 인프라"),
-    ("입고일", "입고"),
-    ("Hookup완료일", "Hookup"),
-    ("하드웨어셋업완료일", "H/W 셋업"),
-    ("Qual완료일", "Qual"),
-    ("TTTM완료일", "TTTM"),
-    ("양산전환일", "양산"),
+SCHEDULE_STAGES = (
+    ("제진대일정", "제진대"),
+    ("물류일정", "물류"),
+    ("입고일정", "입고"),
+    ("Qual일정", "Qual"),
+    ("반출일정", "반출"),
+    ("이설일", "이설"),
 )
+QUAL_CONFIRMATION_STATUSES = ("계획", "확정", "완료", "지연")
+# Backward-compatible public name used by the Space page.
+MILESTONES = SCHEDULE_STAGES
+EQUIPMENT_STATUSES = (
+    "입고 예정",
+    "셋업 진행중",
+    "가용",
+    "반출 예정",
+    "이설 예정",
+    "보관 설비",
+    "운영 비가동",
+    "반출 완료",
+    "이설 완료",
+)
+STATUS_COUNT_COLUMNS = {
+    "입고 예정": "입고예정대수",
+    "셋업 진행중": "셋업중대수",
+    "가용": "가용호기대수",
+    "반출 예정": "반출예정대수",
+    "이설 예정": "이설예정대수",
+    "보관 설비": "보관설비대수",
+    "운영 비가동": "운영비가동대수",
+    "반출 완료": "반출완료대수",
+    "이설 완료": "이설완료대수",
+}
 TRANSITION_EVENT_COLUMNS = (
     "호기",
-    "공정",
-    "분류",
+    "공정대분류",
+    "공정소분류",
     "동",
     "층",
     "이전단계",
     "전환단계",
     "전환일",
+    "확정상태",
     "일정상태",
     "기준일대비",
 )
@@ -60,17 +100,32 @@ WEEKLY_COLUMNS = (
     "Weeknum",
     "주차시작일",
     "주차종료일",
-    "공정",
-    "분류",
+    "공정소분류",
     "기존보유대수",
     "추가설비대수",
     "총대수",
-    "양산전환대수",
-    "셋업중대수",
-    "운영비가동대수",
     "가용대수",
     "비가동대수",
+    *STATUS_COUNT_COLUMNS.values(),
 )
+REFERENCE_TEXT_COLUMNS = (
+    "공정대분류",
+    "라인구분",
+    "활용구분",
+    "사업부",
+    "투자기준",
+    "Maker",
+    "모델",
+    "분류1",
+    "분류2",
+    "분류3",
+    "호기이력",
+    "비고",
+)
+COORDINATE_COLUMNS = ("X좌표", "Y좌표", "Xsize", "Ysize")
+FLAG_COLUMNS = ("장기보관여부", "기존설비여부", "레이아웃표시")
+VALID_BUILDINGS = tuple(f"C{index}" for index in range(1, 6))
+VALID_FLOORS = tuple(f"{index}F" for index in range(1, 7))
 SAMPLE_BASELINE_COUNTS = (
     ("Pre B/D", 46.0),
     ("Wafer_Sorter", 18.0),
@@ -117,15 +172,14 @@ def empty_equipment_baseline() -> pd.DataFrame:
 
 
 def empty_equipment_master() -> pd.DataFrame:
-    date_columns = {column for column, _ in MILESTONES}
     return pd.DataFrame(
         {
             column: pd.Series(
                 dtype=(
                     "datetime64[ns]"
-                    if column in date_columns
+                    if column in DATE_COLUMNS
                     else "float64"
-                    if column in {"X", "Y", "너비"}
+                    if column in COORDINATE_COLUMNS
                     else "string"
                 )
             )
@@ -149,31 +203,197 @@ def sample_equipment_baseline() -> pd.DataFrame:
     """Return a detached baseline copied from the development Core Data sample."""
     return pd.DataFrame(
         {
-            "공정": pd.Series(
-                [process for process, _ in SAMPLE_BASELINE_COUNTS],
-                dtype="string",
-            ),
+            "공정": pd.Series([process for process, _ in SAMPLE_BASELINE_COUNTS], dtype="string"),
             "분류": pd.Series(["전체"] * len(SAMPLE_BASELINE_COUNTS), dtype="string"),
             "기존보유대수": pd.Series(
-                [count for _, count in SAMPLE_BASELINE_COUNTS],
-                dtype="float64",
+                [count for _, count in SAMPLE_BASELINE_COUNTS], dtype="float64"
             ),
             "비고": pd.Series(
-                ["Core Data 개발 샘플"] * len(SAMPLE_BASELINE_COUNTS),
-                dtype="string",
+                ["Core Data 개발 샘플"] * len(SAMPLE_BASELINE_COUNTS), dtype="string"
             ),
         }
     )
 
 
+def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
+    """Return unsaved sample units spanning every active lifecycle status."""
+    anchor = pd.Timestamp(anchor_date or date.today()).normalize()
+    common = {
+        "공정대분류": "B/N",
+        "라인구분": "Line-A",
+        "활용구분": "양산",
+        "사업부": "PKG",
+        "투자기준": "샘플",
+        "Maker": "Sample Maker",
+        "모델": "Sample Model",
+        "분류1": "임시 샘플",
+        "분류2": None,
+        "분류3": None,
+        "호기이력": "화면 검토용 샘플",
+        "비고": "화면 검토용 샘플 · DB 미저장",
+        "레이아웃표시": "Y",
+    }
+    specifications = (
+        # 호기, 공정, 동, 층, X, Y, 제진, 물류, 입고, Qual, 반출, 이설, 보관, 기존
+        ("SAMPLE-IN-01", "TC Bonding", "C1", "1F", 5.0, 6.0, 5, 9, 14, 25, None, None, "N", "N"),
+        (
+            "SAMPLE-SETUP-01",
+            "TC Bonding",
+            "C1",
+            "1F",
+            22.0,
+            6.0,
+            -18,
+            -14,
+            -8,
+            8,
+            None,
+            None,
+            "N",
+            "N",
+        ),
+        (
+            "SAMPLE-AVBL-01",
+            "Underfill",
+            "C2",
+            "2F",
+            5.0,
+            18.0,
+            -40,
+            -35,
+            -30,
+            -20,
+            None,
+            None,
+            "N",
+            "N",
+        ),
+        (
+            "SAMPLE-OUT-01",
+            "Underfill",
+            "C2",
+            "2F",
+            22.0,
+            18.0,
+            -50,
+            -45,
+            -40,
+            -30,
+            12,
+            None,
+            "N",
+            "N",
+        ),
+        ("SAMPLE-MOVE-01", "Mold", "C3", "1F", 5.0, 30.0, -50, -45, -40, -30, None, 18, "N", "N"),
+        (
+            "SAMPLE-STORE-01",
+            "Mold",
+            "C3",
+            "1F",
+            22.0,
+            30.0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            "Y",
+            "N",
+        ),
+        (
+            "SAMPLE-DOWN-01",
+            "Mold",
+            "C3",
+            "1F",
+            39.0,
+            30.0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            "N",
+            "Y",
+        ),
+    )
+    confirmation_by_equipment = {
+        "SAMPLE-IN-01": "계획",
+        "SAMPLE-SETUP-01": "확정",
+        "SAMPLE-AVBL-01": "완료",
+        "SAMPLE-OUT-01": "완료",
+        "SAMPLE-MOVE-01": "지연",
+    }
+    records: list[dict[str, object]] = []
+    for (
+        equipment_id,
+        process,
+        building,
+        floor,
+        x,
+        y,
+        vibration,
+        logistics,
+        arrival,
+        qual,
+        removal,
+        relocation,
+        storage,
+        existing,
+    ) in specifications:
+        records.append(
+            {
+                "호기": equipment_id,
+                **common,
+                "공정소분류": process,
+                "동": building,
+                "층": floor,
+                "X좌표": x,
+                "Y좌표": y,
+                "Xsize": 12.0,
+                "Ysize": 7.0,
+                "제진대일정": _offset_date(anchor, vibration),
+                "물류일정": _offset_date(anchor, logistics),
+                "입고일정": _offset_date(anchor, arrival),
+                "Qual일정": _offset_date(anchor, qual),
+                "확정상태": confirmation_by_equipment.get(equipment_id),
+                "반출일정": _offset_date(anchor, removal),
+                "이설일": _offset_date(anchor, relocation),
+                "장기보관여부": storage,
+                "기존설비여부": existing,
+            }
+        )
+    return prepare_equipment_master(pd.DataFrame(records, columns=EQUIPMENT_COLUMNS))
+
+
+def sample_downtime_schedule(*, anchor_date: date | None = None) -> pd.DataFrame:
+    """Return an unsaved active downtime event for the sample equipment master."""
+    anchor = pd.Timestamp(anchor_date or date.today()).normalize()
+    return prepare_downtime_schedule(
+        pd.DataFrame(
+            [
+                {
+                    "호기": "SAMPLE-DOWN-01",
+                    "비가동유형": "고장",
+                    "시작일": anchor - pd.Timedelta(days=2),
+                    "종료일": anchor + pd.Timedelta(days=5),
+                    "상세사유": "화면 검토용 샘플 비가동",
+                    "비고": "DB 미저장",
+                }
+            ],
+            columns=DOWNTIME_COLUMNS,
+        )
+    )
+
+
 def prepare_equipment_baseline(data: pd.DataFrame) -> pd.DataFrame:
-    """Normalize and validate aggregate counts for unidentified legacy equipment."""
+    """Normalize aggregate counts for unidentified legacy equipment."""
     _require_columns(data, BASELINE_COLUMNS, "기존 보유대수")
     result = data.loc[:, BASELINE_COLUMNS].copy()
     result = _drop_blank_rows(result, ("공정", "분류", "기존보유대수"))
     if result.empty:
         return empty_equipment_baseline()
-
     _normalize_required_text(result, ("공정", "분류"), "기존 보유대수")
     counts = pd.to_numeric(result["기존보유대수"], errors="coerce")
     if not (counts.notna() & counts.ge(0)).all():
@@ -188,47 +408,74 @@ def prepare_equipment_baseline(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def prepare_equipment_master(data: pd.DataFrame) -> pd.DataFrame:
-    """Normalize and validate equipment milestones and space coordinates."""
+    """Normalize and validate the 29-column equipment master contract."""
     _require_columns(data, EQUIPMENT_COLUMNS, "호기 마스터")
     result = data.loc[:, EQUIPMENT_COLUMNS].copy()
     result = _drop_blank_rows(result, ("호기",))
     if result.empty:
         return empty_equipment_master()
 
-    _normalize_required_text(result, ("호기", "공정", "분류"), "호기 마스터")
-    for column in ("동", "층", "비고"):
+    _normalize_required_text(result, ("호기", "공정소분류"), "호기 마스터")
+    for column in REFERENCE_TEXT_COLUMNS + ("동", "층"):
         result[column] = _optional_text(result[column])
+    result["확정상태"] = _optional_text(result["확정상태"])
     duplicated = result["호기"].duplicated(keep=False)
     if duplicated.any():
         examples = result.loc[duplicated, "호기"].drop_duplicates().head(5).tolist()
         raise ValueError(f"호기는 중복될 수 없습니다: {examples}")
 
-    for column in ("X", "Y", "너비"):
-        result[column] = pd.to_numeric(result[column], errors="coerce")
-    coordinate_present = result.loc[:, ["X", "Y", "너비"]].notna()
-    incomplete_coordinates = coordinate_present.any(axis=1) & ~coordinate_present.all(axis=1)
-    if incomplete_coordinates.any():
-        examples = result.loc[incomplete_coordinates, "호기"].head(5).tolist()
-        raise ValueError(f"Space 좌표 X·Y·너비는 함께 입력해야 합니다: {examples}")
-    invalid_coordinates = coordinate_present.all(axis=1) & (
-        result["X"].lt(0)
-        | result["X"].gt(100)
-        | result["Y"].lt(0)
-        | result["Y"].gt(60)
-        | result["너비"].le(0)
-        | result["X"].add(result["너비"]).gt(100)
-    )
-    if invalid_coordinates.any():
-        examples = result.loc[invalid_coordinates, "호기"].head(5).tolist()
-        raise ValueError(f"Space 좌표는 X 0~100, Y 0~60 범위 안에 있어야 합니다: {examples}")
+    for column in FLAG_COLUMNS:
+        result[column] = result[column].astype("string").str.strip().str.upper()
+        invalid = ~result[column].isin(["Y", "N"])
+        if invalid.any():
+            examples = result.loc[invalid, "호기"].head(5).tolist()
+            raise ValueError(f"{column}는 Y 또는 N이어야 합니다: {examples}")
 
-    milestone_columns = tuple(column for column, _ in MILESTONES)
-    for column in milestone_columns:
+    for column in COORDINATE_COLUMNS:
+        result[column] = pd.to_numeric(result[column], errors="coerce")
+    _validate_locations_and_coordinates(result)
+
+    for column in DATE_COLUMNS:
         result[column] = _normalize_date(result[column], column)
-    invalid_order = _invalid_milestone_order(result, milestone_columns)
-    if invalid_order.any():
-        examples = result.loc[invalid_order, "호기"].head(5).tolist()
-        raise ValueError(f"설비 단계 완료일의 순서가 올바르지 않습니다: {examples}")
+    ordinary = result["장기보관여부"].eq("N") & result["기존설비여부"].eq("N")
+    missing_required_dates = ordinary & (result["입고일정"].isna() | result["Qual일정"].isna())
+    if missing_required_dates.any():
+        examples = result.loc[missing_required_dates, "호기"].head(5).tolist()
+        raise ValueError(
+            f"장기보관·기존설비가 아닌 호기는 입고일정과 Qual일정이 필수입니다: {examples}"
+        )
+    missing_confirmation = ordinary & result["확정상태"].isna()
+    if missing_confirmation.any():
+        examples = result.loc[missing_confirmation, "호기"].head(5).tolist()
+        raise ValueError(f"장기보관·기존설비가 아닌 호기는 Qual 확정상태가 필수입니다: {examples}")
+    invalid_confirmation = result["확정상태"].notna() & ~result["확정상태"].isin(
+        QUAL_CONFIRMATION_STATUSES
+    )
+    if invalid_confirmation.any():
+        examples = result.loc[invalid_confirmation, "호기"].head(5).tolist()
+        raise ValueError(f"확정상태는 계획·확정·완료·지연 중 하나여야 합니다: {examples}")
+    invalid_setup_order = (
+        result["입고일정"].notna()
+        & result["Qual일정"].notna()
+        & result["Qual일정"].lt(result["입고일정"])
+    )
+    invalid_pre_arrival = _invalid_optional_order(result, ("제진대일정", "물류일정", "입고일정"))
+    if (invalid_setup_order | invalid_pre_arrival).any():
+        examples = result.loc[invalid_setup_order | invalid_pre_arrival, "호기"].head(5).tolist()
+        raise ValueError(f"제진대·물류·입고·Qual 일정 순서가 올바르지 않습니다: {examples}")
+    both_exit_dates = result["반출일정"].notna() & result["이설일"].notna()
+    if both_exit_dates.any():
+        examples = result.loc[both_exit_dates, "호기"].head(5).tolist()
+        raise ValueError(f"반출일정과 이설일은 동시에 입력할 수 없습니다: {examples}")
+    for exit_column in ("반출일정", "이설일"):
+        before_arrival = (
+            result[exit_column].notna()
+            & result["입고일정"].notna()
+            & result[exit_column].lt(result["입고일정"])
+        )
+        if before_arrival.any():
+            examples = result.loc[before_arrival, "호기"].head(5).tolist()
+            raise ValueError(f"{exit_column}은 입고일정보다 빠를 수 없습니다: {examples}")
     return result.reset_index(drop=True)
 
 
@@ -237,27 +484,26 @@ def prepare_downtime_schedule(
     *,
     equipment: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Normalize and validate equipment downtime intervals."""
+    """Normalize downtime intervals keyed by equipment, type, and start date."""
     _require_columns(data, DOWNTIME_COLUMNS, "비가동 일정")
     result = data.loc[:, DOWNTIME_COLUMNS].copy()
-    result = _drop_blank_rows(result, ("비가동ID", "호기", "비가동유형", "시작일"))
+    result = _drop_blank_rows(result, DOWNTIME_KEY_COLUMNS)
     if result.empty:
         return empty_downtime_schedule()
-
-    _normalize_required_text(result, ("비가동ID", "호기", "비가동유형"), "비가동 일정")
+    _normalize_required_text(result, ("호기", "비가동유형"), "비가동 일정")
     for column in ("상세사유", "비고"):
         result[column] = _optional_text(result[column])
-    duplicated = result["비가동ID"].duplicated(keep=False)
-    if duplicated.any():
-        examples = result.loc[duplicated, "비가동ID"].drop_duplicates().head(5).tolist()
-        raise ValueError(f"비가동ID는 중복될 수 없습니다: {examples}")
     result["시작일"] = _normalize_date(result["시작일"], "시작일")
     result["종료일"] = _normalize_date(result["종료일"], "종료일")
     if result["시작일"].isna().any():
         raise ValueError("모든 비가동 일정에 시작일을 입력해야 합니다.")
+    duplicated = result.duplicated(list(DOWNTIME_KEY_COLUMNS), keep=False)
+    if duplicated.any():
+        examples = _key_examples(result.loc[duplicated], DOWNTIME_KEY_COLUMNS)
+        raise ValueError(f"호기·비가동유형·시작일이 중복되었습니다: {examples}")
     invalid_end = result["종료일"].notna() & result["종료일"].lt(result["시작일"])
     if invalid_end.any():
-        examples = result.loc[invalid_end, "비가동ID"].head(5).tolist()
+        examples = _key_examples(result.loc[invalid_end], DOWNTIME_KEY_COLUMNS)
         raise ValueError(f"비가동 종료일은 시작일보다 빠를 수 없습니다: {examples}")
     if equipment is not None:
         prepared_equipment = prepare_equipment_master(equipment)
@@ -265,6 +511,59 @@ def prepare_downtime_schedule(
         if not unknown.empty:
             examples = unknown.drop_duplicates().head(5).tolist()
             raise ValueError(f"호기 마스터에 없는 설비의 비가동 일정이 있습니다: {examples}")
+    return result.reset_index(drop=True)
+
+
+def build_equipment_status_as_of(
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    *,
+    as_of: date,
+) -> pd.DataFrame:
+    """Return exclusive lifecycle status plus independent owned/available flags."""
+    prepared = prepare_equipment_master(equipment)
+    prepared_downtime = prepare_downtime_schedule(downtime, equipment=prepared)
+    result = prepared.copy()
+    if result.empty:
+        for column, dtype in (
+            ("상태", "string"),
+            ("보유여부", "boolean"),
+            ("가용여부", "boolean"),
+            ("레이아웃반영여부", "boolean"),
+            ("비가동유형", "string"),
+        ):
+            result[column] = pd.Series(dtype=dtype)
+        return result
+
+    timestamp = pd.Timestamp(as_of)
+    existing = result["기존설비여부"].eq("Y")
+    storage = result["장기보관여부"].eq("Y")
+    arrived = existing | storage | (result["입고일정"].notna() & result["입고일정"].le(timestamp))
+    removal_complete = result["반출일정"].notna() & result["반출일정"].le(timestamp)
+    relocation_complete = result["이설일"].notna() & result["이설일"].le(timestamp)
+    exited = removal_complete | relocation_complete
+    owned = arrived & ~exited
+    qualified = existing | (result["Qual일정"].notna() & result["Qual일정"].le(timestamp))
+
+    active_downtime = _active_downtime(prepared_downtime, timestamp)
+    reason_by_equipment = active_downtime.groupby("호기")["비가동유형"].agg(_joined_unique)
+    result["비가동유형"] = result["호기"].map(reason_by_equipment).astype("string")
+    offline = result["비가동유형"].notna() & owned
+    available = owned & qualified & ~storage & ~offline
+
+    status = pd.Series("입고 예정", index=result.index, dtype="string")
+    status.loc[owned & ~qualified & ~storage] = "셋업 진행중"
+    status.loc[available] = "가용"
+    status.loc[storage & owned] = "보관 설비"
+    status.loc[result["반출일정"].notna() & ~removal_complete] = "반출 예정"
+    status.loc[result["이설일"].notna() & ~relocation_complete] = "이설 예정"
+    status.loc[offline] = "운영 비가동"
+    status.loc[removal_complete] = "반출 완료"
+    status.loc[relocation_complete] = "이설 완료"
+    result["상태"] = status
+    result["보유여부"] = owned.astype("boolean")
+    result["가용여부"] = available.astype("boolean")
+    result["레이아웃반영여부"] = (result["레이아웃표시"].eq("Y") & ~exited).astype("boolean")
     return result.reset_index(drop=True)
 
 
@@ -276,68 +575,52 @@ def build_weekly_equipment_availability(
     start_date: date,
     end_date: date,
 ) -> pd.DataFrame:
-    """Aggregate week-end equipment status by ISO Weeknum."""
+    """Aggregate owned, available, and lifecycle counts by ISO week and small process."""
     if start_date > end_date:
         raise ValueError("주차별 조회 시작일은 종료일보다 늦을 수 없습니다.")
     prepared_baseline = prepare_equipment_baseline(baseline)
     prepared_equipment = prepare_equipment_master(equipment)
     prepared_downtime = prepare_downtime_schedule(downtime, equipment=prepared_equipment)
-    groups = pd.concat(
-        [
-            prepared_baseline.loc[:, ["공정", "분류"]],
-            prepared_equipment.loc[:, ["공정", "분류"]],
-        ],
-        ignore_index=True,
-    ).drop_duplicates()
-    if groups.empty:
+    processes = (
+        pd.concat([prepared_baseline["공정"], prepared_equipment["공정소분류"]], ignore_index=True)
+        .dropna()
+        .drop_duplicates()
+    )
+    if processes.empty:
         return pd.DataFrame(columns=WEEKLY_COLUMNS)
 
+    baseline_counts = prepared_baseline.groupby("공정", observed=True)["기존보유대수"].sum()
     start = pd.Timestamp(start_date)
     end = pd.Timestamp(end_date)
     first_monday = start - pd.Timedelta(days=start.weekday())
     last_monday = end - pd.Timedelta(days=end.weekday())
-    week_starts = pd.date_range(first_monday, last_monday, freq="7D")
-    baseline_counts = prepared_baseline.set_index(["공정", "분류"])["기존보유대수"]
     rows: list[dict[str, object]] = []
-    for week_start in week_starts:
+    for week_start in pd.date_range(first_monday, last_monday, freq="7D"):
         week_end = week_start + pd.Timedelta(days=6)
         iso_calendar = week_start.isocalendar()
         weeknum = f"{iso_calendar.year % 100:02d}-W{iso_calendar.week:02d}"
-        ownership_date = prepared_equipment["입고일"].fillna(prepared_equipment["양산전환일"])
-        arrived = prepared_equipment.loc[ownership_date.notna() & ownership_date.le(week_end)]
-        production = arrived.loc[arrived["양산전환일"].notna() & arrived["양산전환일"].le(week_end)]
-        offline_ids = set(_active_downtime(prepared_downtime, week_end)["호기"].tolist())
-        for process, classification in groups.itertuples(index=False, name=None):
-            key = (process, classification)
-            base_count = float(baseline_counts.get(key, 0.0))
-            group_arrived = arrived.loc[
-                arrived["공정"].eq(process) & arrived["분류"].eq(classification)
-            ]
-            group_production = production.loc[
-                production["공정"].eq(process) & production["분류"].eq(classification)
-            ]
-            arrived_count = len(group_arrived)
-            production_count = len(group_production)
-            offline_count = int(group_production["호기"].isin(offline_ids).sum())
-            setup_count = arrived_count - production_count
-            available_count = base_count + production_count - offline_count
-            rows.append(
-                {
-                    "Weeknum": weeknum,
-                    "주차시작일": week_start.date(),
-                    "주차종료일": week_end.date(),
-                    "공정": str(process),
-                    "분류": str(classification),
-                    "기존보유대수": base_count,
-                    "추가설비대수": arrived_count,
-                    "총대수": base_count + arrived_count,
-                    "양산전환대수": production_count,
-                    "셋업중대수": setup_count,
-                    "운영비가동대수": offline_count,
-                    "가용대수": available_count,
-                    "비가동대수": setup_count + offline_count,
-                }
-            )
+        status = build_equipment_status_as_of(
+            prepared_equipment, prepared_downtime, as_of=week_end.date()
+        )
+        for process in processes.tolist():
+            group = status.loc[status["공정소분류"].eq(process)]
+            base_count = float(baseline_counts.get(process, 0.0))
+            owned_count = int(group["보유여부"].sum())
+            available_units = int(group["가용여부"].sum())
+            row: dict[str, object] = {
+                "Weeknum": weeknum,
+                "주차시작일": week_start.date(),
+                "주차종료일": week_end.date(),
+                "공정소분류": str(process),
+                "기존보유대수": base_count,
+                "추가설비대수": owned_count,
+                "총대수": base_count + owned_count,
+                "가용대수": base_count + available_units,
+                "비가동대수": owned_count - available_units,
+            }
+            for status_name, column in STATUS_COUNT_COLUMNS.items():
+                row[column] = int(group["상태"].eq(status_name).sum())
+            rows.append(row)
     return pd.DataFrame(rows, columns=WEEKLY_COLUMNS)
 
 
@@ -347,42 +630,17 @@ def build_inactive_equipment(
     *,
     as_of: date,
 ) -> pd.DataFrame:
-    """Return arrived equipment that is preparing for production or offline."""
-    prepared_equipment = prepare_equipment_master(equipment)
-    prepared_downtime = prepare_downtime_schedule(downtime, equipment=prepared_equipment)
-    if prepared_equipment.empty:
-        return pd.DataFrame(columns=("호기", "공정", "분류", "상태", "현재단계", "비가동유형"))
-    timestamp = pd.Timestamp(as_of)
-    ownership_date = prepared_equipment["입고일"].fillna(prepared_equipment["양산전환일"])
-    arrived = (
-        prepared_equipment.loc[ownership_date.notna() & ownership_date.le(timestamp)]
-        .copy()
-        .reset_index(drop=True)
-    )
-    arrived["현재단계"] = equipment_stages_as_of(arrived, as_of=as_of)
-    active_downtime = _active_downtime(prepared_downtime, timestamp)
-    reason_by_equipment = active_downtime.groupby("호기")["비가동유형"].agg(_joined_unique)
-    arrived["비가동유형"] = arrived["호기"].map(reason_by_equipment)
-    preparing = arrived["현재단계"].ne("양산")
-    offline = arrived["비가동유형"].notna()
-    result = arrived.loc[preparing | offline].copy()
-    result.insert(
-        3,
-        "상태",
-        result["비가동유형"].notna().map({True: "운영 비가동", False: "양산 준비 중"}),
-    )
-    return result.reset_index(drop=True)
+    """Return owned unit-level equipment that is not currently available."""
+    status = build_equipment_status_as_of(equipment, downtime, as_of=as_of)
+    if status.empty:
+        return status
+    return status.loc[status["보유여부"] & ~status["가용여부"]].reset_index(drop=True)
 
 
 def equipment_stages_as_of(equipment: pd.DataFrame, *, as_of: date) -> pd.Series:
-    """Return the latest completed milestone for every equipment row."""
+    """Return the lifecycle status without operational downtime input."""
     prepared = prepare_equipment_master(equipment)
-    stages = pd.Series("예정", index=prepared.index, dtype="string")
-    timestamp = pd.Timestamp(as_of)
-    for column, label in MILESTONES:
-        completed = prepared[column].notna() & prepared[column].le(timestamp)
-        stages.loc[completed] = label
-    return stages
+    return build_equipment_status_as_of(prepared, empty_downtime_schedule(), as_of=as_of)["상태"]
 
 
 def build_space_equipment_status(
@@ -391,21 +649,9 @@ def build_space_equipment_status(
     *,
     as_of: date,
 ) -> pd.DataFrame:
-    """Build the shared unit-level source used by the Space dashboard."""
-    prepared_equipment = prepare_equipment_master(equipment)
-    prepared_downtime = prepare_downtime_schedule(downtime, equipment=prepared_equipment)
-    result = prepared_equipment.copy()
-    if result.empty:
-        result["단계"] = pd.Series(dtype="string")
-        result["상태"] = pd.Series(dtype="string")
-        result["비가동유형"] = pd.Series(dtype="string")
-        return result
-    result["단계"] = equipment_stages_as_of(prepared_equipment, as_of=as_of)
-    active_downtime = _active_downtime(prepared_downtime, pd.Timestamp(as_of))
-    reason_by_equipment = active_downtime.groupby("호기")["비가동유형"].agg(_joined_unique)
-    result["비가동유형"] = result["호기"].map(reason_by_equipment).astype("string")
-    result["상태"] = result["단계"]
-    result.loc[result["비가동유형"].notna(), "상태"] = "비가동"
+    """Build the unit-level source used by the Space dashboard."""
+    result = build_equipment_status_as_of(equipment, downtime, as_of=as_of)
+    result["단계"] = result["상태"]
     return result.reset_index(drop=True)
 
 
@@ -416,46 +662,85 @@ def build_milestone_transition_events(
     end_date: date,
     as_of: date,
 ) -> pd.DataFrame:
-    """Return milestone transitions scheduled inside a selected date range."""
+    """Return equipment schedule events inside the selected date range."""
     if start_date > end_date:
         raise ValueError("단계 전환 조회 시작일은 종료일보다 늦을 수 없습니다.")
     prepared = prepare_equipment_master(equipment)
     if prepared.empty:
         return pd.DataFrame(columns=TRANSITION_EVENT_COLUMNS)
-
-    milestone_columns = [column for column, _ in MILESTONES]
-    identity_columns = ["호기", "공정", "분류", "동", "층"]
+    identity_columns = ["호기", "공정대분류", "공정소분류", "동", "층", "확정상태"]
+    date_columns = [column for column, _ in SCHEDULE_STAGES]
     events = prepared.melt(
         id_vars=identity_columns,
-        value_vars=milestone_columns,
+        value_vars=date_columns,
         var_name="단계컬럼",
         value_name="전환일",
     ).dropna(subset=["전환일"])
     if events.empty:
         return pd.DataFrame(columns=TRANSITION_EVENT_COLUMNS)
-
-    stage_by_column = dict(MILESTONES)
-    stage_order = {column: index for index, (column, _) in enumerate(MILESTONES)}
+    stage_by_column = dict(SCHEDULE_STAGES)
     previous_stage = {
-        column: "착수 전" if index == 0 else MILESTONES[index - 1][1]
-        for index, (column, _) in enumerate(MILESTONES)
+        "제진대일정": "착수 전",
+        "물류일정": "제진대",
+        "입고일정": "물류",
+        "Qual일정": "입고",
+        "반출일정": "가용/보관",
+        "이설일": "가용/보관",
     }
-    events["단계순서"] = events["단계컬럼"].map(stage_order).astype("int64")
+    order = {column: index for index, column in enumerate(date_columns)}
+    events["단계순서"] = events["단계컬럼"].map(order).astype("int64")
     events["이전단계"] = events["단계컬럼"].map(previous_stage).astype("string")
     events["전환단계"] = events["단계컬럼"].map(stage_by_column).astype("string")
     events["전환일"] = pd.to_datetime(events["전환일"], errors="raise")
-    start = pd.Timestamp(start_date)
-    end = pd.Timestamp(end_date)
-    events = events.loc[events["전환일"].between(start, end, inclusive="both")].copy()
+    events["확정상태"] = events["확정상태"].where(events["단계컬럼"].eq("Qual일정"))
+    events = events.loc[
+        events["전환일"].between(pd.Timestamp(start_date), pd.Timestamp(end_date), inclusive="both")
+    ].copy()
     if events.empty:
         return pd.DataFrame(columns=TRANSITION_EVENT_COLUMNS)
-
     as_of_timestamp = pd.Timestamp(as_of)
     events["일정상태"] = events["전환일"].le(as_of_timestamp).map({True: "완료", False: "예정"})
-    day_differences = events["전환일"].sub(as_of_timestamp).dt.days
-    events["기준일대비"] = day_differences.map(_format_day_difference).astype("string")
-    events = events.sort_values(["전환일", "단계순서", "공정", "호기"], kind="stable")
+    events["기준일대비"] = (
+        events["전환일"].sub(as_of_timestamp).dt.days.map(_format_day_difference).astype("string")
+    )
+    events = events.sort_values(["전환일", "단계순서", "공정소분류", "호기"], kind="stable")
     return events.loc[:, TRANSITION_EVENT_COLUMNS].reset_index(drop=True)
+
+
+def _validate_locations_and_coordinates(result: pd.DataFrame) -> None:
+    layout = result["레이아웃표시"].eq("Y")
+    missing_location = layout & (
+        result["동"].isna()
+        | result["층"].isna()
+        | result.loc[:, COORDINATE_COLUMNS].isna().any(axis=1)
+    )
+    if missing_location.any():
+        examples = result.loc[missing_location, "호기"].head(5).tolist()
+        raise ValueError(
+            f"레이아웃표시 Y 호기는 동·층·좌표·크기를 모두 입력해야 합니다: {examples}"
+        )
+    invalid_building = result["동"].notna() & ~result["동"].isin(VALID_BUILDINGS)
+    invalid_floor = result["층"].notna() & ~result["층"].isin(VALID_FLOORS)
+    if (invalid_building | invalid_floor).any():
+        examples = result.loc[invalid_building | invalid_floor, "호기"].head(5).tolist()
+        raise ValueError(f"동은 C1~C5, 층은 1F~6F 범위여야 합니다: {examples}")
+    coordinate_present = result.loc[:, COORDINATE_COLUMNS].notna()
+    incomplete = coordinate_present.any(axis=1) & ~coordinate_present.all(axis=1)
+    if incomplete.any():
+        examples = result.loc[incomplete, "호기"].head(5).tolist()
+        raise ValueError(f"Space 좌표와 Xsize·Ysize는 함께 입력해야 합니다: {examples}")
+    complete = coordinate_present.all(axis=1)
+    invalid = complete & (
+        result["X좌표"].lt(0)
+        | result["Y좌표"].lt(0)
+        | result["Xsize"].le(0)
+        | result["Ysize"].le(0)
+        | result["X좌표"].add(result["Xsize"]).gt(100)
+        | result["Y좌표"].add(result["Ysize"]).gt(60)
+    )
+    if invalid.any():
+        examples = result.loc[invalid, "호기"].head(5).tolist()
+        raise ValueError(f"Space 블럭은 X 0~100, Y 0~60 범위 안에 있어야 합니다: {examples}")
 
 
 def _active_downtime(downtime: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFrame:
@@ -467,14 +752,15 @@ def _active_downtime(downtime: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFram
     return downtime.loc[active].copy()
 
 
-def _invalid_milestone_order(data: pd.DataFrame, columns: tuple[str, ...]) -> pd.Series:
+def _invalid_optional_order(data: pd.DataFrame, columns: tuple[str, ...]) -> pd.Series:
     invalid = pd.Series(False, index=data.index)
-    previous = pd.Series(pd.NaT, index=data.index, dtype="datetime64[ns]")
-    for column in columns:
-        current = data[column]
-        invalid |= current.notna() & previous.notna() & current.lt(previous)
-        previous = previous.where(current.isna(), current)
+    for left, right in zip(columns, columns[1:], strict=False):
+        invalid |= data[left].notna() & data[right].notna() & data[right].lt(data[left])
     return invalid
+
+
+def _offset_date(anchor: pd.Timestamp, offset: int | None) -> pd.Timestamp | None:
+    return None if offset is None else anchor + pd.Timedelta(days=offset)
 
 
 def _joined_unique(values: pd.Series) -> str:

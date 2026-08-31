@@ -26,6 +26,11 @@ XLSB를 읽지 않는다. `templates/structure_template.xlsb`는 초기 표시�
 적재와 pandas 기반 16개 RQ 변환은 구현되었고, DataLake·BigDataQuery 실제 조회
 어댑터만 사내 환경에서 연결해야 한다.
 
+GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json`과 코드로 생성한
+비민감 `DEMO_*` Core Data를 공통 변환 파이프라인에 넣어 초기 시나리오·리비전·공식버전을
+자동 생성한다. 기존 시나리오나 공식버전은 자동 시드가 변경하지 않으며 내장 시드는 운영
+기준정보가 아니다.
+
 ## 2. 실행환경과 검증 기준
 
 - 운영 호환 Python: **3.10.11 64-bit**
@@ -65,8 +70,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `Dynamic Capa` 상위 영역으로 구분하고 공통 사이드바와 조회기간을 관리한다.
   - `시나리오 관리`는 Capa Chatbot과 Static Capa 사이의 독립 사이드바 그룹에 배치한다.
   - 모든 페이지에 필요한 전역 위젯은 `navigation.run()`보다 앞에 둔다.
-  - 새 세션은 최신 공식 리비전을 전역 위젯 생성 전에 활성화하고, 사이드바에는 현재 활성
-    시나리오·리비전·공식 여부·미저장 상태만 읽기 전용으로 표시한다.
+  - 새 세션은 최신 공식 리비전을 전역 위젯 생성 전에 활성화하고, 사이드바에는 시나리오·
+    리비전 선택, 명시적 불러오기, 현재 편집본의 신규 리비전 저장과 활성·공식·미저장 상태를
+    제공한다. 이름 변경·공식 발행·보관·신규 시나리오 생성은 독립 관리 페이지에 둔다.
+  - 시나리오 저장소가 완전히 비어 있으면 최신 공식 리비전 활성화 전에 내장 합성 시드를
+    생성·공식 발행한다.
 - `app_pages/home.py`
   - 전체 계산 결과를 조합하는 HOME 대시보드다.
   - Plotly Figure 묶음을 사용자 세션에 캐시하고 렌더링은 fragment로 분리한다.
@@ -76,11 +84,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/load_conversion.py`
   - `환산`, `PKG PLAN`, `수율` 탭을 제공한다.
   - 계획과 수율 편집값을 활성 시나리오에 반영한다.
+  - PKG PLAN과 수율의 현재 월별 Wide 표를 CSV로 내려받아 값만 일괄 수정·적용한다.
 - `app_pages/capacity_standards.py`
-  - `대당 Capa` 탭은 공정별 소요기준 부하량으로 가중평균한 화면용 결과와 공정 필터를 제공한다.
+  - 기본 `공정 유효 Capa`는 중복되지 않은 원수요 부하량을 STEP별 소요대수 합계로 나눈
+    화면용 결과이며, STEP별 상세 대당 Capa와 공정 필터도 제공한다.
+  - `STEP 구성`은 선택한 경로를 실제 MCP·STEP 식별값으로 복제하거나 삭제하고 연결된
+    모든 Capa Code·Customer·CS 변형을 `RQ_REQB`·UPEH·Lot/WF 측정률에 함께 반영한다.
   - 확보율 계산용 상세 대당 Capa는 변경하지 않고 UPEH·효율·여유율·측정률·일수 편집 탭을 제공한다.
 - `app_pages/process_securement.py`
   - `확보율`, `소요대수`, `설비대수` 탭을 제공한다.
+  - 설비대수 탭에서 보유·대여·가용 RQ를 각각 월별 Wide CSV로 내려받고 활성 시나리오에
+    일괄 적용한다.
 - `app_pages/capa_chatbot.py`
   - 활성 시나리오의 Capa 데이터 조회와 부족 공정 분석을 위한 대화형 화면 초안이다.
   - LLM API·업무 데이터·권한·대화 이력은 연결하지 않고 추천 질문, 채팅 입력, 답변 범위와
@@ -104,9 +118,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     바로가기를 두지 않고 사이드바의 `Dynamic Capa` 하위 페이지로만 제공한다.
 - `app_pages/available_equipment_status.py`
   - `대시보드`, `설비 데이터·이력 관리` 탭을 제공한다.
-  - 기존 보유대수, 호기별 설치·양산전환 일정과 운영 비가동 일정을 DuckDB 불변 리비전으로
-    저장하고 공정·분류별 주차 단위 총대수·가용대수·비가동대수를 집계한다.
-  - 호기 마스터·비가동 일정 CSV 양식 다운로드와 ID 기준 Import, 리비전별 필터 조회를 제공한다.
+  - 기존 보유대수, Qual 확정상태를 포함한 30컬럼 호기 마스터와 운영 비가동 일정을 DuckDB 불변 리비전으로
+    저장하고 공정소분류별 주차 단위 총대수·가용대수·비가동대수와 상태를 집계한다.
+  - 대시보드 조회 조건은 라인구분·활용구분·공정대분류·공정소분류 순으로 제공하며,
+    집계형 기존 보유대수에는 공정소분류 조건만 적용한다.
+  - 호기 마스터는 호기, 비가동 일정은 호기·유형·시작일 자연키로 Import하며
+    신규·대체·변경 컬럼 미리보기와 편집본 적용 확인 후 별도로 리비전을 저장한다.
+  - 데이터·이력 관리 탭의 접힌 운영 지침에서 기존 보유대수·호기 마스터·비가동 일정의
+    역할 구분, Import부터 리비전 저장까지의 절차와 적용 제한을 안내한다.
   - 시뮬레이션 DB, 활성 시나리오, `RQ_*` 기준정보와 공통 시뮬레이션 조회기간을 읽지 않는다.
 - `app_pages/actual_efficiency.py`, `app_pages/actual_upeh.py`
   - Dynamic Capa의 실적 비교·개선관리 하위 페이지다.
@@ -115,8 +134,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/space_status.py`
   - Dynamic Capa의 Space 현황 페이지다.
   - `FAB 전체(C5 독립, C1~C4 연결) → 동별 층 → 층 상세 배치`의 3단계 Plotly 클릭 탐색을 제공한다.
-  - 가용설비 현황의 최신 호기 리비전을 사용하고 설비별 X·Y·너비와 고정 높이로 배치한다.
-  - 기준일의 설치·양산전환 단계와 운영 비가동을 색으로 구분한다. 실제 층 이미지와 Space
+  - 가용설비 현황의 최신 호기 리비전을 사용하고 설비별 X/Y 좌표와 X/Y 크기로 배치한다.
+  - 기준일의 생애주기 상태와 운영 비가동을 색으로 구분한다. 실제 층 이미지와 Space
     Capa 연결은 미구현이다.
   - 지정 기간의 단계 완료일을 호기별 전환 이벤트로 펼쳐 완료·예정 건수, 이전·전환 단계,
     전환일과 기준일 대비 일수를 조회하는 실행관리 현황을 제공한다.
@@ -125,10 +144,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - DuckDB 시나리오·리비전 선택, 이름 수정, 공식버전 발행, 불러오기와 논리 보관을 제공한다.
   - 신규 시나리오는 개발용 Core Data CSV를 pandas 변환해 typed raw와 RQ 16개를 함께
     저장하거나 현재 RQ 16개를 독립 데이터셋으로 복제한다.
-  - 새 리비전은 편집 가능한 8개 RQ와 `RQ_DISPLAY_ORDER` 및 사이드바 프리셋의 전체
+  - 새 리비전은 편집 가능한 12개 RQ와 `RQ_DISPLAY_ORDER` 및 사이드바 프리셋의 전체
     스냅샷을 저장한다. 표시순서는 페이지·탭 범위별 웹 편집과 충돌 검증을 제공한다.
 - `app_pages/standard_target_capa.py`
-  - Static Capa 하위의 `표준 목표 Capa` 확장용 페이지이며 현재 제목만 제공한다.
+  - Static Capa 하위에서 월간 공정 유효 Capa를 일 단위로 환산하고 주차별 가용대수를
+    적용한 일 표준 가능량을 제공한다.
+  - 조회일·공정 필터·상세 토글, 수동 가용대수 CSV Import·양식 다운로드와
+    `일 표준 가능량`·`대당 일 Capa`·`가용대수` 전환 Plotly 표를 제공한다. ER은 항상
+    제외하고 상세 OFF는 제품 Mix를 반영한 공정 단일값, ON은 선택한 제품 분류를 표시한다.
+  - 공정 필터는 리비전에 공용 기본값으로 저장하되 페이지 변경은 사용자 세션에만 적용한다.
+    현재 선택을 신규 리비전으로 저장하면 다음 공용 기본값이 되며 빈 목록은 전체 공정이다.
+  - 수동 가용대수는 설비 DuckDB에 공정·Weeknum 최신값으로 즉시 저장하되 리비전을
+    만들지 않으며, 향후 가용설비 현황 DuckDB 산출 조회로 입력 경계를 교체한다.
+- `src/capa_simulation/components/reference_csv_tools.py`
+  - 입력 RQ 월별 Wide 표의 UTF-8 CSV 다운로드·업로드 폼과 적용 결과 알림을 공통 제공한다.
 - `src/capa_simulation/components/horizontal_scrollbar.py`
   - HOME 월별 영역과 동기화되는 픽셀 단위 커스텀 가로 스크롤바를 제공한다.
   - 네이티브 스크롤바가 아닌 Streamlit Custom Components v2로 구현한다.
@@ -137,12 +166,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 브라우저 네이티브 `input[type="month"]`를 Streamlit Custom Components v2로 연결한다.
   - 출력은 기존 전역 상태 계약인 `production_month_range_v2 = (YYYY-MM, YYYY-MM)`에 반영한다.
 - `src/capa_simulation/components/scenario_status.py`
-  - 사이드바에 현재 활성 시나리오명·원천 코드·리비전·공식 여부·미저장 상태를 읽기 전용으로
-    표시한다. 시나리오와 리비전 선택·전환은 독립 `시나리오 관리` 페이지에서만 수행한다.
+  - 모든 페이지에 공통인 사이드바 시나리오·리비전 선택, 명시적 불러오기와 현재 활성
+    편집본의 신규 리비전 저장을 제공한다. 드롭다운 선택만으로 계산 상태를 바꾸지 않으며,
+    미저장 편집을 버리는 불러오기는 확인 입력을 요구한다. 이름 변경·공식 발행·보관·신규
+    시나리오 생성은 독립 `시나리오 관리` 페이지에서 수행한다.
 - `src/capa_simulation/components/space_layout.py`
   - FAB 동·층 정의, 설치 단계·양산·운영 비가동 집계와 3단계 Plotly Figure를 생성한다.
   - 층 상세를 100×60 논리 좌표계로 렌더링하며, 향후 실제 레이아웃 이미지를 배경으로
-    주입할 수 있는 `background_image` 경계를 제공한다. 설비 높이는 고정값이다.
+    주입할 수 있는 `background_image` 경계를 제공한다.
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py`
   - Dynamic Capa 전체 공정 비교, Capa 손실 Waterfall과 일별 표준·실효·실적 추이 Figure를
     생성한다. 공정 간 단위가 다르면 수량을 합산하지 않고 비율만 비교한다.
@@ -162,6 +193,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 추가하지 말고 `src/capa_simulation/services/`로 옮긴다.
 
 ### 입력과 상태
+
+- `src/capa_simulation/application_bootstrap.py`
+  - 공식버전이 있으면 그대로 사용하고, 완전히 빈 시나리오 저장소에만 내장 시드를 생성한다.
+  - 내장 시나리오 생성 뒤 공식 발행 전에 중단된 상태는 다음 시작에서 발행만 복구하며,
+    공식버전 없는 사용자 시나리오는 임의 발행하지 않는다.
+- `src/capa_simulation/services/builtin_seed.py`, `config/bootstrap_display_order.json`
+  - GitHub 독립 실행용 78컬럼 합성 Core Data와 비민감 기본 표시순서를 제공한다.
+  - CSV·BigDataQuery와 같은 정규화·RQ 16개 변환·typed raw 저장 경로를 사용하며 모든
+    업무 식별값은 `DEMO_*`로 명확히 구분한다.
 
 - `src/capa_simulation/io/excel_reader.py`
   - 초기 이관·병행 검증 도구에서 16개 `RQ_*` Excel Table을 DataFrame으로 읽는다.
@@ -186,15 +226,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     변경 가능한 메타데이터는 캐시하지 않는다.
   - 시나리오 생성 시 typed Core Data raw, 컬럼 프로파일, RQ 16개, 초기 리비전과
     프리셋을 한 트랜잭션으로 저장한다.
+  - 프리셋은 조회기간·B/N 포함 공정·표준 목표 Capa 공정 기본값·확보/경고 기준을 소유한다.
   - 공식버전은 불변 리비전을 가리키는 append-only 발행 이력이며 최신 발행이 새 세션의
     기본 리비전이 된다.
+  - 표준 목표 Capa의 수동 주차별 가용대수만 설비 DB의 비버전 최신값 테이블에
+    공정·Weeknum 기준으로 갱신한다.
 - `src/capa_simulation/scenario_state.py`
   - 사용자 세션별 활성 시나리오와 `revision`을 관리한다.
   - 선택한 월 범위만 원자적으로 교체한다.
   - HOME처럼 계산용 월 범위만 필요한 경로는 전체 시나리오 복사 없이 선택 행만 복사한다.
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py`
   - 저장된 리비전의 16개 테이블과 편집 상태를 현재 세션에 원자적으로 활성화한다.
-  - 조회기간·B/N 포함 공정·확보/경고 기준은 공통 위젯 생성 전에 대기 프리셋으로 복원한다.
+  - 조회기간·B/N 포함 공정·표준 목표 Capa 공정 기본값·확보/경고 기준은 공통 위젯 생성
+    전에 대기 프리셋으로 복원한다.
   - 새 세션에서는 최신 공식 리비전을 한 번 자동 활성화한다.
 - `src/capa_simulation/performance.py`
   - HOME 단계별 소요시간을 측정하며 업무 데이터는 기록하지 않는다.
@@ -208,21 +252,28 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `load_calculator.py`: 계획/수율 편집 변환과 PKG·Chip·Wafer·Density 부하량. HOME의
   Chip·Wafer 부하량은 공통 전처리를 한 번만 수행한다.
 - `unit_capacity.py`: Main/MI 환산 UPEH와 대당 Capa
-- `weighted_unit_capacity.py`: RQ_REQB 경로별 부하량을 사용하는 화면용 대당 Capa 가중평균
+- `weighted_unit_capacity.py`: 중복되지 않은 원수요 부하량과 STEP별 소요대수 합으로
+  공정 유효 Capa를 만들며 기존 부하량 가중평균 조회 함수도 호환용으로 유지
+- `standard_target_capacity.py`: ER 제외 월간 공정 유효 Capa의 일 환산, ISO 주차 캘린더,
+  수동 가용대수 CSV 계약과 주차별 일 표준 가능량
+- `route_step_editor.py`: MCP·STEP 고유 조합 수와 네 경로 테이블의 일괄 복제·삭제
 - `required_equipment.py`: RQ_REQB 경로 연결과 소요대수
 - `securement_rate.py`: 공정별 확보율과 경고·확보 기준별 최소 정수 추가 필요대수
 - `equipment_count.py`: 보유·대여·가용 설비대수 표
-- `equipment_availability.py`: 기존 보유대수, 호기 설치·양산전환 일정과 운영 비가동 검증,
+- `equipment_availability.py`: 기존 보유대수, 30컬럼 호기 일정과 운영 비가동 검증,
   월요일 시작 주차별 총대수·가용대수·비가동대수, 비가동 호기, Space 단계와 기간별 단계
   전환 이벤트 원천. 설비 DB가 비어 있을 때 사용하는 개발용 Core Data 기반 30개 공정
-  보유대수 샘플도 제공한다.
-- `equipment_csv.py`: 호기 마스터와 비가동 일정의 UTF-8/CP949 CSV 파싱·검증·ID 기준 병합.
+  보유대수 샘플과 호기 마스터가 비었을 때만 대시보드에 표시하는 단계별 임시 호기 샘플을
+  제공한다. 임시 호기와 비가동 샘플은 DB에 저장하지 않는다.
+- `equipment_csv.py`: 호기 마스터와 비가동 일정의 UTF-8/CP949 CSV 파싱·검증·자연키 기준 병합.
+  다운로드 양식은 2행에 서로 연결되는 입력 예시를 포함하고 비고에 샘플 행 삭제 안내를 둔다.
 - `dashboard.py`: HOME 월별 집계, B/N 단일 월별 순위에서 파생하는 Top 1·5·10, Wafer Capa
 - `dynamic_capacity.py`: 표준 Capa에 실적 효율·UPEH·Rundown·생산실적을 순차 반영하는
   Dynamic Capa 손실 분석, 시간 가중 집계, 필터와 미연결 화면용 결정론적 데모 데이터
 - `display_order.py`: `RQ_DISPLAY_ORDER` 기반 동적 행 정렬
 - `month_filter.py`: YYYYMM 검증과 조회기간 필터
 - `capacity_reference_editor.py`: Capa 기준정보 Long/Wide 편집 변환
+- `reference_csv.py`: 입력 RQ Wide CSV 인코딩·파싱과 컬럼·분류행 동일성 검증
 - `reference_transformer.py`: XLSB의 `Q_Core_Data`와 15개 Core 파생 Power Query를
   pandas로 대체하고, 수동 입력 `RQ_DISPLAY_ORDER`를 검증한다.
 - `core_data_pipeline.py`: CSV·BigDataQuery 공급자 결과를 동일한 정규화·RQ 변환
@@ -243,6 +294,10 @@ RQ_VITAL
 RQ_RUN_DAY
 RQ_LOT_RATIO
 RQ_WF_RATIO
+RQ_REQB
+RQ_EQP_OWN
+RQ_EQP_LENT
+RQ_EQP_AVBL
 ```
 
 웹 수정은 반드시 `apply_month_updates()`를 통해 반영한다. 페이지 전용 DataFrame만
@@ -255,10 +310,6 @@ RQ_CHIP_QTY
 RQ_CHIP_EQ
 RQ_DISPLAY_ORDER
 RQ_MODULE
-RQ_REQB
-RQ_EQP_OWN
-RQ_EQP_LENT
-RQ_EQP_AVBL
 ```
 
 이 테이블을 웹에서 수정할 필요가 생기면 단순히 session state에 별도 복사하지 말고,
@@ -289,6 +340,12 @@ RQ_EQP_AVBL
 10. **실적 이력을 시나리오에 복제하지 않는다.** 표준 Capa는 시나리오·리비전별로 보존하고,
     실적 효율과 생산실적은 원천 갱신 주기별 배치와 등록시각을 가진 누적 이력으로 관리한다.
     분석 시 선택한 표준 리비전과 조회 시점의 실적 이력을 연결한다.
+11. **내장 시드는 빈 저장소에만 쓴다.** 공식버전 또는 사용자 시나리오가 있으면 자동
+    부트스트랩이 새 시나리오를 만들거나 기존 상태를 변경하지 않는다. 내장 시드는 합성
+    데모이며 운영 시나리오로 간주하지 않는다.
+12. **공용 필터 기본값과 개인 조회를 분리한다.** 표준 목표 Capa 공정 기본값은 불변
+    리비전 프리셋에 저장하고, 페이지에서 바꾼 값은 현재 세션에만 둔다. 신규 리비전 저장
+    시점에만 현재 세션 선택을 다음 공용 기본값으로 캡처한다.
 
 ## 6. 핵심 계산 규칙
 
@@ -326,10 +383,37 @@ Dummy Chip/Wafer는 `(1 - EDS_수율)`을 추가 적용한다. 정확한 현재 
 - `소요기준 = PKG 또는 CHIP`: UPEH를 Kea 기준으로 `/ 1000`
 - WF측정률 0 이하 및 대당 Capa 0 이하는 제외 행으로 남기고 계산에서 제외
 - BOX·PCB는 산식 구현 전까지 제외
-- 화면용 대당 Capa는 `RQ_REQB`에 연결된 공정별 부하량을 가중치로 사용해
-  `Σ(부하량 × 상세 대당 Capa) ÷ Σ(부하량)`으로 집계한다.
+- 기본 화면용 공정 유효 Capa는 STEP으로 중복된 수요를 한 번만 센 원수요 부하량을
+  STEP별 소요대수 합계로 나눠 `원수요 부하량 ÷ Σ(STEP별 부하량 ÷ STEP별 대당 Capa)`로
+  집계한다. 동일한 대당 Capa의 STEP이 늘면 공정 유효 Capa는 그 수에 반비례해 감소한다.
 - 화면 집계 수준은 `공정 → 양산구분 → 제품정보 → Stack → WF 구분`이며 소요기준은
-  공정별 `RQ_REQB` 값을 따른다. 이 화면용 집계값을 소요대수·확보율 계산에 재사용하지 않는다.
+  공정별 `RQ_REQB` 값을 따른다. STEP별 상세 대당 Capa를 별도로 제공하며 화면용 유효
+  Capa를 소요대수·확보율 계산에 재사용하지 않는다.
+- `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO`의 경로 식별 키는 생산계획년월·Area·공정·
+  `STEP_SEQ`·`MCP_SEQ`·양산구분·제품정보·Stack·WF 구분이다. 세 기준정보와
+  `RQ_REQB`는 Area·STEP·MCP를 포함해 정확히 일치하는 경로끼리 연결한다.
+- STEP 수는 생산계획년월·Area·공정·양산·제품·Stack·WF·소요기준 안의
+  `(MCP_SEQ, STEP_SEQ)` 고유 조합 수로 계산하며 Capa Code·Customer·CS 행 수는 중복
+  계수하지 않는다. STEP 추가는 선택한 원본 경로의 모든 수요 변형에 기본 일괄 적용한다.
+
+### 표준 목표 Capa
+
+```text
+대당 일 Capa = 월간 공정 유효 Capa ÷ RUN_DAY
+주차별 일 표준 가능량 = 대당 일 Capa × 주차별 가용대수
+```
+
+- 제품 Mix 가중은 공정 유효 Capa와 동일하게 중복되지 않은 원수요 부하량을 분자로,
+  STEP별 소요대수 합을 분모로 사용한다.
+- 양산구분 `ER`은 제품 Mix 분자·분모를 만들기 전에 항상 제외한다. 상세 OFF는 공정별
+  단일 유효 Capa, 상세 ON은 사용자가 선택한 제품·Stack·WF 속성 수준으로 표시한다.
+- 주차는 월요일 시작 ISO Weeknum(`YY-W##`)이며 월 경계 주차에는 월요일이 속한 달의
+  월간 Capa와 `RUN_DAY`를 적용한다.
+- 현재 수동 CSV 계약은 `공정 + Weeknum + 가용대수`이고 공정·Weeknum은 유일해야 하며
+  가용대수는 0 이상이어야 한다.
+- 수동 CSV는 설비 DuckDB의 비버전 최신값으로 공정·Weeknum 단위 갱신한다. 일부 공정
+  업로드는 다른 공정 값을 보존하고 명시적 초기화만 전체를 삭제한다. 가용설비 운영 DB
+  연결 전환 시 계산 서비스는 유지하고 입력 공급자만 교체한다.
 
 ### 소요대수와 확보율
 
@@ -340,6 +424,9 @@ Dummy Chip/Wafer는 `(1 - EDS_수율)`을 추가 적용한다. 정확한 현재 
 
 소요대수 계산 전에는 Capa Code, Customer, CS를 포함한 상세 부하량으로 `RQ_REQB`에
 연결한다. 화면용 그룹 합산 데이터를 조인 원본으로 재사용하면 안 된다.
+동일 공정·제품에 STEP 행이 여러 개면 같은 부하량을 각 STEP의 대당 Capa로 각각 나누고
+STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를 식별 컬럼으로 유지하되
+확보율과 HOME은 공정 수준으로 합산한다.
 
 소요기준은 대소문자를 정규화하며 `WAFER`는 `WF`로 통일한다. 현재 지원 값은 `PKG`,
 `CHIP`, `WF`다.
@@ -389,20 +476,29 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 ### 설비 운영 주차 집계
 
 - 기존 보유대수는 모든 주차에서 총대수와 가용대수에 포함한다.
-- 신규 호기는 입고일이 속한 주부터 총대수에 포함한다.
-- 신규 호기는 양산전환일이 속한 주부터 가용대수에 포함한다.
-- 입고 후 양산전환 전인 호기는 셋업중대수와 비가동 호기 목록에 포함한다.
-- 양산전환 설비에 활성화된 개발대여·공사·고장·이설 등의 운영 비가동 일정이 있으면
+- 신규 호기는 입고일정이 속한 주부터 총대수에 포함한다.
+- 신규 호기는 Qual일정이 속한 주부터 가용대수에 포함한다.
+- 단일 확정상태는 Qual 일정의 계획·확정·완료·지연 실행관리 용도이며 가용대수 산식에는
+  사용하지 않는다. 장기보관·기존설비처럼 Qual일정이 없으면 비워 둘 수 있다.
+- 입고 후 Qual 전인 호기는 셋업중대수와 비가동 호기 목록에 포함한다.
+- Qual 완료 또는 기존설비에 활성화된 개발대여·공사·고장·이설 등의 운영 비가동 일정이 있으면
   가용대수에서 제외한다. 같은 호기의 중복 비가동 일정은 한 대로 집계한다.
+- 장기보관 Y는 전 기간 보유대수에는 포함하되 가용대수에서는 제외하고, 기존설비 Y는
+  입고·Qual 일정 없이 전 기간 보유·가용대수에 포함한다.
+- 반출·이설 예정은 실행일 전까지 계획 상태로 표시하되 기존 보유·가용 판정을 유지하고,
+  실행일부터 보유·가용·레이아웃에서 제외한다.
 - 주차는 월요일 시작·일요일 종료의 ISO Weeknum(`YY-W##`) 기준이며, 조회기간은
   가용설비 현황 페이지 상단에서 시뮬레이션과 독립적으로 설정한다.
-- Space 단계는 사전 인프라·입고·Hookup·H/W 셋업·Qual·TTTM·양산의 최근 완료 단계로
-  판정하고 운영 비가동이 활성 상태이면 비가동 색상을 우선한다. X·Y·너비만 입력하고
-  높이는 렌더링 고정값을 사용한다.
+- Space는 입고 예정·셋업 진행중·가용·반출 예정·이설 예정·보관 설비·운영 비가동
+  상태를 색으로 구분하며 레이아웃표시 Y이고 반출·이설 실행 전인 호기만
+  X좌표·Y좌표·Xsize·Ysize로 배치한다.
 - 운영 가용대수는 별도 확정 전까지 `RQ_EQP_AVBL` 기반 Capa·확보율 계산을 대체하지 않는다.
 - 설비 DB가 비어 있을 때만 개발용 Core Data 샘플의 공정별 보유대수를 편집 초기값으로
   표시한다. 원본에 2차 분류가 없으므로 `분류=전체`로 두며, 사용자가 저장하기 전에는
   설비 DB에 쓰지 않는다.
+- 호기 마스터가 비어 있으면 현재 날짜 기준의 생애주기·가용·운영 비가동 상태별 임시
+  호기 7대를 가용설비와 Space 대시보드에만 표시한다. 편집 원본과 DuckDB에는 넣지 않고
+  실제 호기가 하나라도 저장되면 샘플을 사용하지 않는다.
 
 ## 7. 조인과 데이터 검증 규칙
 
@@ -462,6 +558,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 `templates/structure_template.xlsb`, `data/capa_simulation.db`,
 `data/capa_simulation.duckdb`, `data/equipment_availability.duckdb`는 로컬 실행 자산이다.
 테스트나 문서에서 실제 사내 데이터 값을 노출하지 않는다.
+`config/bootstrap_display_order.json`과 `builtin_seed.py`에는 합성 `DEMO_*` 값만 두며 실제
+제품·고객·공정·설비 식별값을 시드로 추가하지 않는다.
 
 ## 11. 현재 미구현 및 주의 사항
 

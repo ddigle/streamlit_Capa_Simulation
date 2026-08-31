@@ -24,6 +24,7 @@ from capa_simulation.services.equipment_availability import (
     prepare_equipment_baseline,
     prepare_equipment_master,
 )
+from capa_simulation.services.standard_target_capacity import prepare_weekly_availability
 
 _WRITE_LOCK = threading.RLock()
 
@@ -92,8 +93,8 @@ class DuckDBEquipmentRepository:
                 """
                 INSERT INTO equipment_ops.revision (
                     revision_id, revision_no, note, baseline_hash, schedule_hash,
-                    equipment_hash, downtime_hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    equipment_hash, downtime_hash, equipment_contract_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 3)
                 """,
                 [
                     revision_id,
@@ -127,6 +128,9 @@ class DuckDBEquipmentRepository:
                        (SELECT COUNT(*) FROM equipment_ops.baseline_snapshot b
                         WHERE b.revision_id = r.revision_id),
                        CASE
+                           WHEN r.equipment_contract_version = 3
+                           THEN (SELECT COUNT(*) FROM equipment_ops.equipment_master_snapshot e
+                                 WHERE e.revision_id = r.revision_id)
                            WHEN (SELECT COUNT(*) FROM equipment_ops.equipment_snapshot e
                                  WHERE e.revision_id = r.revision_id) > 0
                            THEN (SELECT COUNT(*) FROM equipment_ops.equipment_snapshot e
@@ -134,9 +138,14 @@ class DuckDBEquipmentRepository:
                            ELSE (SELECT COUNT(*) FROM equipment_ops.schedule_snapshot s
                                  WHERE s.revision_id = r.revision_id)
                        END,
-                       (SELECT COUNT(*) FROM equipment_ops.downtime_snapshot d
-                        WHERE d.revision_id = r.revision_id),
-                       r.created_at
+                       CASE
+                           WHEN r.equipment_contract_version = 3
+                           THEN (SELECT COUNT(*) FROM equipment_ops.downtime_schedule_snapshot d
+                                 WHERE d.revision_id = r.revision_id)
+                           ELSE (SELECT COUNT(*) FROM equipment_ops.downtime_snapshot d
+                                 WHERE d.revision_id = r.revision_id)
+                       END,
+                       r.created_at, r.equipment_contract_version
                 FROM equipment_ops.revision r
                 WHERE r.revision_id = ?
                 """,
@@ -145,10 +154,15 @@ class DuckDBEquipmentRepository:
             if revision_row is None:
                 raise KeyError(f"설비 이력을 찾을 수 없습니다: {revision_id}")
             baseline = _load_baseline(connection, revision_id)
-            equipment = _load_equipment(connection, revision_id)
-            if equipment.empty:
-                equipment = _load_legacy_schedule(connection, revision_id)
-            downtime = _load_downtime(connection, revision_id)
+            contract_version = int(revision_row[7])
+            if contract_version == 3:
+                equipment = _load_equipment_master(connection, revision_id)
+                downtime = _load_downtime_schedule(connection, revision_id)
+            else:
+                equipment = _load_legacy_equipment(connection, revision_id)
+                if equipment.empty:
+                    equipment = _load_legacy_schedule(connection, revision_id)
+                downtime = _load_legacy_downtime(connection, revision_id)
         prepared_equipment = prepare_equipment_master(equipment.reindex(columns=EQUIPMENT_COLUMNS))
         return EquipmentSnapshot(
             revision=_revision_summary(revision_row),
@@ -170,6 +184,9 @@ class DuckDBEquipmentRepository:
                        (SELECT COUNT(*) FROM equipment_ops.baseline_snapshot b
                         WHERE b.revision_id = r.revision_id),
                        CASE
+                           WHEN r.equipment_contract_version = 3
+                           THEN (SELECT COUNT(*) FROM equipment_ops.equipment_master_snapshot e
+                                 WHERE e.revision_id = r.revision_id)
                            WHEN (SELECT COUNT(*) FROM equipment_ops.equipment_snapshot e
                                  WHERE e.revision_id = r.revision_id) > 0
                            THEN (SELECT COUNT(*) FROM equipment_ops.equipment_snapshot e
@@ -177,8 +194,13 @@ class DuckDBEquipmentRepository:
                            ELSE (SELECT COUNT(*) FROM equipment_ops.schedule_snapshot s
                                  WHERE s.revision_id = r.revision_id)
                        END,
-                       (SELECT COUNT(*) FROM equipment_ops.downtime_snapshot d
-                        WHERE d.revision_id = r.revision_id),
+                       CASE
+                           WHEN r.equipment_contract_version = 3
+                           THEN (SELECT COUNT(*) FROM equipment_ops.downtime_schedule_snapshot d
+                                 WHERE d.revision_id = r.revision_id)
+                           ELSE (SELECT COUNT(*) FROM equipment_ops.downtime_snapshot d
+                                 WHERE d.revision_id = r.revision_id)
+                       END,
                        r.created_at
                 FROM equipment_ops.revision r
                 ORDER BY r.revision_no DESC LIMIT ?
@@ -186,6 +208,61 @@ class DuckDBEquipmentRepository:
                 [limit],
             ).fetchall()
         return [_revision_summary(row) for row in rows]
+
+    def save_standard_target_availability(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Upsert the unversioned current weekly availability used by target Capa."""
+        prepared = prepare_weekly_availability(data)
+        incoming = prepared.rename(
+            columns={
+                "공정": "process_name",
+                "Weeknum": "weeknum",
+                "가용대수": "available_count",
+            }
+        )
+        view_name = f"_incoming_{uuid4().hex}"
+        with self._write_transaction() as connection:
+            connection.register(view_name, incoming)
+            try:
+                connection.execute(
+                    f"""
+                    DELETE FROM equipment_ops.standard_target_weekly_availability AS target
+                    USING {view_name} AS incoming
+                    WHERE target.process_name = incoming.process_name
+                      AND target.weeknum = incoming.weeknum
+                    """
+                )
+                connection.execute(
+                    f"""
+                    INSERT INTO equipment_ops.standard_target_weekly_availability (
+                        process_name, weeknum, available_count
+                    )
+                    SELECT process_name, weeknum, available_count
+                    FROM {view_name}
+                    """
+                )
+            finally:
+                connection.unregister(view_name)
+        return self.load_standard_target_availability()
+
+    def load_standard_target_availability(self) -> pd.DataFrame:
+        """Load the current non-versioned process-week availability."""
+        with self._connect(read_only=True) as connection:
+            result = connection.execute(
+                """
+                SELECT process_name AS "공정", weeknum AS "Weeknum",
+                       available_count AS "가용대수"
+                FROM equipment_ops.standard_target_weekly_availability
+                ORDER BY process_name, weeknum
+                """
+            ).fetchdf()
+        if result.empty:
+            return pd.DataFrame(columns=["공정", "Weeknum", "가용대수"])
+        return prepare_weekly_availability(result)
+
+    def clear_standard_target_availability(self) -> None:
+        """Delete the current weekly availability without creating a revision."""
+        with self._write_transaction() as connection:
+            connection.execute("DELETE FROM equipment_ops.standard_target_weekly_availability")
 
     @contextmanager
     def _write_transaction(self) -> Iterator[duckdb.DuckDBPyConnection]:
@@ -214,8 +291,43 @@ def _load_baseline(connection: duckdb.DuckDBPyConnection, revision_id: str) -> p
     ).fetchdf()
 
 
-def _load_equipment(connection: duckdb.DuckDBPyConnection, revision_id: str) -> pd.DataFrame:
+def _load_equipment_master(
+    connection: duckdb.DuckDBPyConnection,
+    revision_id: str,
+) -> pd.DataFrame:
     return connection.execute(
+        """
+        SELECT equipment_id AS "호기", process_large AS "공정대분류",
+               process_small AS "공정소분류", line_type AS "라인구분",
+               utilization_type AS "활용구분", business_unit AS "사업부",
+               investment_basis AS "투자기준", maker AS "Maker",
+               model_name AS "모델", classification_1 AS "분류1",
+               classification_2 AS "분류2", classification_3 AS "분류3",
+               building AS "동", floor_name AS "층",
+               x_coordinate AS "X좌표", y_coordinate AS "Y좌표",
+               x_size AS "Xsize", y_size AS "Ysize",
+               vibration_table_date AS "제진대일정",
+               logistics_date AS "물류일정", arrival_date AS "입고일정",
+               qual_date AS "Qual일정",
+               qual_confirmation_status AS "확정상태",
+               removal_date AS "반출일정",
+               relocation_date AS "이설일",
+               long_term_storage_flag AS "장기보관여부",
+               existing_equipment_flag AS "기존설비여부",
+               equipment_history AS "호기이력", note AS "비고",
+               layout_display_flag AS "레이아웃표시"
+        FROM equipment_ops.equipment_master_snapshot
+        WHERE revision_id = ? ORDER BY source_row_no
+        """,
+        [revision_id],
+    ).fetchdf()
+
+
+def _load_legacy_equipment(
+    connection: duckdb.DuckDBPyConnection,
+    revision_id: str,
+) -> pd.DataFrame:
+    legacy = connection.execute(
         """
         SELECT equipment_id AS "호기", process_name AS "공정",
                classification AS "분류", building AS "동", floor_name AS "층",
@@ -230,6 +342,9 @@ def _load_equipment(connection: duckdb.DuckDBPyConnection, revision_id: str) -> 
         """,
         [revision_id],
     ).fetchdf()
+    if legacy.empty:
+        return empty_equipment_master()
+    return _convert_legacy_equipment(legacy)
 
 
 def _load_legacy_schedule(
@@ -249,20 +364,71 @@ def _load_legacy_schedule(
     ).fetchdf()
     if legacy.empty:
         return empty_equipment_master()
-    return legacy.reindex(columns=EQUIPMENT_COLUMNS)
+    return _convert_legacy_equipment(legacy)
 
 
-def _load_downtime(connection: duckdb.DuckDBPyConnection, revision_id: str) -> pd.DataFrame:
+def _load_downtime_schedule(
+    connection: duckdb.DuckDBPyConnection,
+    revision_id: str,
+) -> pd.DataFrame:
     return connection.execute(
         """
-        SELECT downtime_id AS "비가동ID", equipment_id AS "호기",
-               downtime_type AS "비가동유형", start_date AS "시작일",
+        SELECT equipment_id AS "호기", downtime_type AS "비가동유형",
+               start_date AS "시작일", end_date AS "종료일",
+               detail AS "상세사유", note AS "비고"
+        FROM equipment_ops.downtime_schedule_snapshot
+        WHERE revision_id = ? ORDER BY source_row_no
+        """,
+        [revision_id],
+    ).fetchdf()
+
+
+def _load_legacy_downtime(
+    connection: duckdb.DuckDBPyConnection,
+    revision_id: str,
+) -> pd.DataFrame:
+    legacy = connection.execute(
+        """
+        SELECT equipment_id AS "호기", downtime_type AS "비가동유형", start_date AS "시작일",
                end_date AS "종료일", detail AS "상세사유", note AS "비고"
         FROM equipment_ops.downtime_snapshot
         WHERE revision_id = ? ORDER BY source_row_no
         """,
         [revision_id],
     ).fetchdf()
+    return legacy.drop_duplicates(["호기", "비가동유형", "시작일"], keep="last")
+
+
+def _convert_legacy_equipment(legacy: pd.DataFrame) -> pd.DataFrame:
+    result = pd.DataFrame(index=legacy.index, columns=EQUIPMENT_COLUMNS)
+    result["호기"] = legacy["호기"]
+    result["공정대분류"] = legacy["공정"]
+    result["공정소분류"] = legacy["공정"]
+    result["분류1"] = legacy["분류"]
+    result["동"] = legacy.get("동")
+    result["층"] = legacy.get("층")
+    result["X좌표"] = legacy.get("X")
+    result["Y좌표"] = legacy.get("Y")
+    result["Xsize"] = legacy.get("너비")
+    has_coordinates = result[["X좌표", "Y좌표", "Xsize"]].notna().all(axis=1)
+    result["Ysize"] = has_coordinates.map({True: 7.0, False: None})
+    legacy_qual = legacy.get("양산전환일")
+    legacy_arrival = legacy.get("입고일")
+    if isinstance(legacy_arrival, pd.Series) and isinstance(legacy_qual, pd.Series):
+        result["입고일정"] = legacy_arrival.fillna(legacy_qual)
+    else:
+        result["입고일정"] = legacy_arrival
+    if isinstance(legacy_qual, pd.Series):
+        result["Qual일정"] = legacy_qual.fillna(pd.Timestamp("2262-04-11"))
+    else:
+        result["Qual일정"] = pd.Timestamp("2262-04-11")
+    result["장기보관여부"] = "N"
+    has_legacy_schedule = result["입고일정"].notna()
+    result["기존설비여부"] = has_legacy_schedule.map({True: "N", False: "Y"})
+    result["확정상태"] = has_legacy_schedule.map({True: "계획", False: None})
+    result["비고"] = legacy.get("비고")
+    result["레이아웃표시"] = has_coordinates.map({True: "Y", False: "N"})
+    return result
 
 
 def _insert_baseline(
@@ -289,24 +455,43 @@ def _insert_equipment(
     incoming = frame.rename(
         columns={
             "호기": "equipment_id",
-            "공정": "process_name",
-            "분류": "classification",
+            "공정대분류": "process_large",
+            "공정소분류": "process_small",
+            "라인구분": "line_type",
+            "활용구분": "utilization_type",
+            "사업부": "business_unit",
+            "투자기준": "investment_basis",
+            "Maker": "maker",
+            "모델": "model_name",
+            "분류1": "classification_1",
+            "분류2": "classification_2",
+            "분류3": "classification_3",
             "동": "building",
             "층": "floor_name",
-            "X": "x_coordinate",
-            "Y": "y_coordinate",
-            "너비": "width_value",
-            "사전인프라완료일": "infrastructure_complete_date",
-            "입고일": "arrival_date",
-            "Hookup완료일": "hookup_complete_date",
-            "하드웨어셋업완료일": "hardware_setup_complete_date",
-            "Qual완료일": "qual_complete_date",
-            "TTTM완료일": "tttm_complete_date",
-            "양산전환일": "production_transition_date",
+            "X좌표": "x_coordinate",
+            "Y좌표": "y_coordinate",
+            "Xsize": "x_size",
+            "Ysize": "y_size",
+            "제진대일정": "vibration_table_date",
+            "물류일정": "logistics_date",
+            "입고일정": "arrival_date",
+            "Qual일정": "qual_date",
+            "확정상태": "qual_confirmation_status",
+            "반출일정": "removal_date",
+            "이설일": "relocation_date",
+            "장기보관여부": "long_term_storage_flag",
+            "기존설비여부": "existing_equipment_flag",
+            "호기이력": "equipment_history",
             "비고": "note",
+            "레이아웃표시": "layout_display_flag",
         }
     )
-    _insert_snapshot(connection, "equipment_ops.equipment_snapshot", revision_id, incoming)
+    _insert_snapshot(
+        connection,
+        "equipment_ops.equipment_master_snapshot",
+        revision_id,
+        incoming,
+    )
 
 
 def _insert_downtime(
@@ -316,7 +501,6 @@ def _insert_downtime(
 ) -> None:
     incoming = frame.rename(
         columns={
-            "비가동ID": "downtime_id",
             "호기": "equipment_id",
             "비가동유형": "downtime_type",
             "시작일": "start_date",
@@ -325,7 +509,12 @@ def _insert_downtime(
             "비고": "note",
         }
     )
-    _insert_snapshot(connection, "equipment_ops.downtime_snapshot", revision_id, incoming)
+    _insert_snapshot(
+        connection,
+        "equipment_ops.downtime_schedule_snapshot",
+        revision_id,
+        incoming,
+    )
 
 
 def _insert_snapshot(

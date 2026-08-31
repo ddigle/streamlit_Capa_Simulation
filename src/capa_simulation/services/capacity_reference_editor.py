@@ -2,6 +2,8 @@ import pandas as pd
 
 PERFORMANCE_EDITOR_DIMENSIONS = [
     "공정",
+    "STEP_SEQ",
+    "MCP_SEQ",
     "Area_Name",
     "소요기준",
     "양산구분",

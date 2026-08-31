@@ -21,10 +21,11 @@ from capa_simulation.components.space_layout import (
 from capa_simulation.persistence.equipment_cache import get_equipment_repository
 from capa_simulation.services.equipment_availability import (
     MILESTONES,
+    QUAL_CONFIRMATION_STATUSES,
     build_milestone_transition_events,
     build_space_equipment_status,
-    empty_downtime_schedule,
-    empty_equipment_master,
+    sample_downtime_schedule,
+    sample_equipment_master,
 )
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
@@ -42,15 +43,18 @@ def _show_building(building: str) -> None:
     st.session_state.pop(SELECTED_FLOOR_KEY, None)
 
 
+today = date.today()
 try:
     repository = get_equipment_repository(str(EQUIPMENT_DUCKDB_PATH.resolve()))
     latest_snapshot = repository.load_latest_snapshot()
-    if latest_snapshot is None:
-        equipment = empty_equipment_master()
-        downtime = empty_downtime_schedule()
+    if latest_snapshot is None or latest_snapshot.equipment.empty:
+        equipment = sample_equipment_master(anchor_date=today)
+        downtime = sample_downtime_schedule(anchor_date=today)
+        using_sample_equipment = True
     else:
         equipment = latest_snapshot.equipment
         downtime = latest_snapshot.downtime
+        using_sample_equipment = False
 except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
     st.error(f"Space 설비 데이터를 준비하지 못했습니다: {exc}")
     st.stop()
@@ -74,16 +78,17 @@ if not isinstance(selected_floor, str) or selected_floor not in valid_floor_name
 
 st.title("Space 현황")
 st.caption(
-    "가용설비 현황과 동일한 설비 전용 DuckDB 리비전에서 호기·설치 단계·비가동 상태와 "
+    "가용설비 현황과 동일한 설비 전용 DuckDB 리비전에서 호기 생애주기·비가동 상태와 "
     "Space 좌표를 조회합니다."
 )
-if latest_snapshot is None:
+if using_sample_equipment:
     st.info(
-        "저장된 호기 마스터가 없습니다. 가용설비 현황의 설비 데이터 관리 탭에서 "
-        "호기와 동·층·X·Y·너비를 입력하세요.",
-        icon=":material/info:",
+        "호기 마스터가 비어 있어 생애주기·가용·운영 비가동 상태를 포함한 "
+        "임시 샘플 7대를 표시합니다. 샘플은 DuckDB에 저장되지 않으며 실제 호기 리비전이 "
+        "저장되면 자동으로 대체됩니다.",
+        icon=":material/science:",
     )
-else:
+elif latest_snapshot is not None:
     st.caption(
         f"적용 이력 r{latest_snapshot.revision.revision_no} · "
         f"{latest_snapshot.revision.created_at:%Y-%m-%d %H:%M}"
@@ -94,15 +99,15 @@ with st.container(border=True):
     with st.container(horizontal=True, gap="small"):
         as_of = st.date_input(
             "기준일",
-            value=date.today(),
+            value=today,
             key="space_status_as_of",
             persist_state="session",
             width=180,
         )
         all_status = build_space_equipment_status(equipment, downtime, as_of=as_of)
         selected_processes = st.multiselect(
-            "공정",
-            options=all_status["공정"].dropna().drop_duplicates().tolist(),
+            "공정소분류",
+            options=all_status["공정소분류"].dropna().drop_duplicates().tolist(),
             placeholder="전체",
             key="space_status_process_filter",
             persist_state="session",
@@ -119,7 +124,7 @@ with st.container(border=True):
 
 space_equipment = all_status.copy()
 if selected_processes:
-    space_equipment = space_equipment.loc[space_equipment["공정"].isin(selected_processes)]
+    space_equipment = space_equipment.loc[space_equipment["공정소분류"].isin(selected_processes)]
 if selected_stages:
     space_equipment = space_equipment.loc[space_equipment["상태"].isin(selected_stages)]
 has_supported_location = pd.Series(
@@ -130,9 +135,10 @@ has_supported_location = pd.Series(
     index=space_equipment.index,
 )
 located_equipment = space_equipment.loc[
-    space_equipment["동"].notna()
+    space_equipment["레이아웃반영여부"].fillna(False)
+    & space_equipment["동"].notna()
     & space_equipment["층"].notna()
-    & space_equipment[["X", "Y", "너비"]].notna().all(axis=1)
+    & space_equipment[["X좌표", "Y좌표", "Xsize", "Ysize"]].notna().all(axis=1)
     & has_supported_location
 ].copy()
 unlocated_count = len(space_equipment) - len(located_equipment)
@@ -140,10 +146,10 @@ unlocated_count = len(space_equipment) - len(located_equipment)
 with st.container(border=True):
     st.markdown("#### :material/event_available: 기간 내 설비 단계 전환 현황")
     st.caption(
-        "선택 기간에 사전 인프라부터 양산까지 완료일이 등록된 호기를 취합합니다. "
+        "선택 기간에 제진대·물류·입고·Qual·반출·이설 일정이 등록된 호기를 취합합니다. "
         "Space 기준일 이전 일정은 데이터상 완료, 이후 일정은 예정으로 구분합니다."
     )
-    transition_process_options = equipment["공정"].dropna().drop_duplicates().tolist()
+    transition_process_options = equipment["공정소분류"].dropna().drop_duplicates().tolist()
     transition_stage_options = [label for _, label in MILESTONES]
     with st.form("space_transition_event_filter_form", border=False):
         with st.container(horizontal=True, gap="small"):
@@ -155,7 +161,7 @@ with st.container(border=True):
                 width=260,
             )
             transition_processes = st.multiselect(
-                "공정",
+                "공정소분류",
                 options=transition_process_options,
                 placeholder="전체",
                 key="space_transition_process_filter",
@@ -176,6 +182,14 @@ with st.container(border=True):
                 key="space_transition_status_filter",
                 persist_state="session",
                 width=150,
+            )
+            transition_confirmation_statuses = st.multiselect(
+                "Qual 확정상태",
+                options=list(QUAL_CONFIRMATION_STATUSES),
+                placeholder="전체",
+                key="space_transition_confirmation_filter",
+                persist_state="session",
+                width=210,
             )
             st.form_submit_button("조회", icon=":material/search:", type="primary")
 
@@ -202,7 +216,7 @@ with st.container(border=True):
 
     if transition_processes and not transition_events.empty:
         transition_events = transition_events.loc[
-            transition_events["공정"].isin(transition_processes)
+            transition_events["공정소분류"].isin(transition_processes)
         ]
     if transition_stages and not transition_events.empty:
         transition_events = transition_events.loc[
@@ -211,6 +225,11 @@ with st.container(border=True):
     if transition_schedule_status != "전체" and not transition_events.empty:
         transition_events = transition_events.loc[
             transition_events["일정상태"].eq(transition_schedule_status)
+        ]
+    if transition_confirmation_statuses and not transition_events.empty:
+        transition_events = transition_events.loc[
+            transition_events["전환단계"].eq("Qual")
+            & transition_events["확정상태"].isin(transition_confirmation_statuses)
         ]
 
     if transition_events.empty:
@@ -224,8 +243,8 @@ with st.container(border=True):
             st.metric("완료", f"{completed_count:,}건", border=True)
             st.metric("예정", f"{planned_count:,}건", border=True)
             st.metric(
-                "양산전환",
-                f"{int(transition_events['전환단계'].eq('양산').sum()):,}건",
+                "Qual 확정·완료",
+                (f"{int(transition_events['확정상태'].isin(['확정', '완료']).sum()):,}건"),
                 border=True,
             )
 
@@ -303,10 +322,10 @@ if selected_building is None:
     production_count, progress_count, inactive_count = fab_counts(located_equipment)
     with st.container(horizontal=True):
         st.metric("배치 호기", f"{len(located_equipment)}대", border=True)
-        st.metric("양산", f"{production_count}대", border=True)
+        st.metric("가용", f"{production_count}대", border=True)
         st.metric("설치·전환 진행", f"{progress_count}대", border=True)
         st.metric("비가동", f"{inactive_count}대", border=True)
-        st.metric("위치 미지정", f"{unlocated_count}대", border=True)
+        st.metric("레이아웃 제외·미지정", f"{unlocated_count}대", border=True)
 
     with st.container(border=True):
         st.markdown("#### :material/domain: S.PKG FAB 전체 배치")
@@ -330,7 +349,7 @@ if selected_building is None:
             {
                 "동": building.name,
                 "층수": len(floors_for(building.name)),
-                "양산대수": production,
+                "가용대수": production,
                 "진행대수": progress,
                 "비가동대수": inactive,
             }
@@ -343,7 +362,7 @@ elif selected_floor is None:
     building_floors = floors_for(selected_building)
     with st.container(horizontal=True):
         st.metric("선택 동", selected_building, border=True)
-        st.metric("양산", f"{production_count}대", border=True)
+        st.metric("가용", f"{production_count}대", border=True)
         st.metric("설치·전환 진행", f"{progress_count}대", border=True)
         st.metric("비가동", f"{inactive_count}대", border=True)
 
@@ -369,7 +388,7 @@ elif selected_floor is None:
         floor_rows.append(
             {
                 "층": floor.floor,
-                "양산대수": production,
+                "가용대수": production,
                 "진행대수": progress,
                 "비가동대수": inactive,
             }
@@ -392,15 +411,15 @@ else:
     production_count, progress_count, inactive_count = equipment_counts(floor_equipment)
     with st.container(horizontal=True):
         st.metric("선택 Space", f"{selected_building} {selected_floor}", border=True)
-        st.metric("양산", f"{production_count}대", border=True)
+        st.metric("가용", f"{production_count}대", border=True)
         st.metric("설치·전환 진행", f"{progress_count}대", border=True)
         st.metric("비가동", f"{inactive_count}대", border=True)
 
     with st.container(border=True):
         st.markdown(f"#### :material/map: {selected_building} {selected_floor} 상세 레이아웃")
         st.caption(
-            "높이는 고정값이며 사전 인프라부터 양산전환까지의 현재 단계와 운영 비가동을 "
-            "색상으로 구분합니다."
+            "Xsize·Ysize로 블럭 크기를 반영하고 호기의 입고·셋업·가용·반출·이설·보관·"
+            "운영 비가동 상태를 색상으로 구분합니다."
         )
         st.plotly_chart(
             build_floor_layout_figure(floor_equipment, selected_building, selected_floor),
@@ -415,13 +434,12 @@ else:
         column_config={
             column: st.column_config.DateColumn(column, format="YYYY-MM-DD")
             for column in (
-                "사전인프라완료일",
-                "입고일",
-                "Hookup완료일",
-                "하드웨어셋업완료일",
-                "Qual완료일",
-                "TTTM완료일",
-                "양산전환일",
+                "제진대일정",
+                "물류일정",
+                "입고일정",
+                "Qual일정",
+                "반출일정",
+                "이설일",
             )
         },
     )

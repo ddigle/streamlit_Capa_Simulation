@@ -269,6 +269,8 @@ def _rq_upeh(core: pd.DataFrame, contract: CoreDataContract) -> pd.DataFrame:
         "생산계획년월",
         "Area_Name",
         "공정",
+        "STEP_SEQ",
+        "MCP_SEQ",
         "양산구분",
         "제품정보",
         "Stack",
@@ -294,7 +296,10 @@ def _measurement_ratio_table(
 ) -> pd.DataFrame:
     columns = [
         "생산계획년월",
+        "Area_Name",
         "공정",
+        "STEP_SEQ",
+        "MCP_SEQ",
         "양산구분",
         "제품정보",
         "Stack",

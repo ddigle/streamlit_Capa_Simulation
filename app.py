@@ -1,7 +1,7 @@
 import streamlit as st
 
 from capa_simulation.components.month_range_picker import render_month_range_picker
-from capa_simulation.components.scenario_status import render_scenario_status
+from capa_simulation.components.scenario_status import render_scenario_controls
 from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
 from capa_simulation.scenario_preset_state import apply_pending_scenario_preset
 from capa_simulation.settings import (
@@ -164,7 +164,7 @@ with st.sidebar.container(border=True):
         for page in dynamic_capa_pages:
             st.page_link(page, width="stretch")
 
-render_scenario_status()
+render_scenario_controls()
 
 with st.sidebar.container(border=True):
     st.markdown("#### 📅 조회 기간")

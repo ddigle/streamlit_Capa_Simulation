@@ -5,16 +5,26 @@ from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
 )
+from capa_simulation.components.reference_csv_tools import (
+    queue_reference_csv_flash,
+    render_reference_csv_tools,
+)
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
 )
-from capa_simulation.scenario_state import ensure_active_scenario, scenario_table
+from capa_simulation.scenario_state import (
+    apply_month_updates,
+    ensure_active_scenario,
+    scenario_table,
+)
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.equipment_count import (
     DETAILED_EQUIPMENT_DIMENSIONS,
     EQUIPMENT_DIMENSIONS,
     build_equipment_count_table,
+    equipment_count_from_edit_table,
+    equipment_count_to_edit_table,
 )
 from capa_simulation.services.month_filter import (
     available_month_range,
@@ -47,6 +57,8 @@ DISPLAY_COLUMN_LABELS = {
     "제품정보": "제품",
     "Capa Code": "PKG Code",
     "WF 구분": "속성",
+    "STEP_SEQ": "Step",
+    "MCP_SEQ": "MCP",
 }
 
 
@@ -63,7 +75,8 @@ try:
     reference_tables = get_effective_reference_tables()
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
     selected_start, selected_end = selected_month_range()
-    source_start, source_end = available_month_range(reference_tables["RQ_REQB"], "RQ_REQB")
+    active_reqb = scenario_table(active_scenario, "RQ_REQB")
+    source_start, source_end = available_month_range(active_reqb, "RQ_REQB")
     effective_start = max(selected_start, source_start)
     effective_end = min(selected_end, source_end)
     if effective_start > effective_end:
@@ -149,6 +162,14 @@ try:
         "공정별 확보율",
         "설비대수",
     )
+    equipment_edit_tables = {
+        table_name: equipment_count_to_edit_table(filtered[table_name], category, value_column)
+        for table_name, category, value_column in (
+            ("RQ_EQP_OWN", "보유", "설비보유"),
+            ("RQ_EQP_LENT", "대여", "설비대여평가"),
+            ("RQ_EQP_AVBL", "가용", "가용대수"),
+        )
+    }
     securement_rate = get_securement_rate(
         filtered["RQ_EQP_AVBL"],
         required_equipment,
@@ -319,6 +340,52 @@ else:
 
     with equipment_tab:
         st.caption("월간 설비대수")
+        with st.container(border=True):
+            st.markdown("#### 설비대수 RQ CSV 일괄 수정")
+            st.caption(
+                "보유·대여·가용 RQ는 각각 내려받아 값을 수정한 뒤 적용합니다. "
+                "적용값은 활성 시나리오의 다른 계산 페이지에 즉시 반영됩니다."
+            )
+            imported_equipment: dict[str, pd.DataFrame] = {}
+            for table_name, category, value_column in (
+                ("RQ_EQP_OWN", "보유", "설비보유"),
+                ("RQ_EQP_LENT", "대여", "설비대여평가"),
+                ("RQ_EQP_AVBL", "가용", "가용대수"),
+            ):
+                imported = render_reference_csv_tools(
+                    equipment_edit_tables[table_name],
+                    table_name=table_name,
+                    key_columns=EQUIPMENT_DIMENSIONS,
+                    file_name=f"{table_name}_{effective_start}_{effective_end}.csv",
+                    key=f"{table_name.lower()}_csv",
+                    expander_label=f"{category}설비 - CSV 일괄 수정",
+                )
+                if imported is not None:
+                    try:
+                        imported_equipment[table_name] = equipment_count_from_edit_table(
+                            imported,
+                            category,
+                            value_column,
+                        )
+                    except ValueError as exc:
+                        st.error(str(exc))
+            if imported_equipment:
+                try:
+                    apply_month_updates(
+                        active_scenario,
+                        imported_equipment,
+                        effective_start,
+                        effective_end,
+                    )
+                except (KeyError, ValueError) as exc:
+                    st.error(str(exc))
+                else:
+                    applied_table = next(iter(imported_equipment))
+                    queue_reference_csv_flash(
+                        f"{applied_table.lower()}_csv",
+                        f"{applied_table} CSV를 활성 시나리오에 일괄 적용했습니다.",
+                    )
+                    st.rerun()
         show_equipment_detail = st.toggle(
             "상세",
             key="equipment_count_detail",

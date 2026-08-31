@@ -23,7 +23,7 @@ from capa_simulation.services.dashboard import (
     build_monthly_bottlenecks_from_ranking,
     build_production_lob_summary,
 )
-from capa_simulation.services.month_filter import available_month_range, filter_month_range
+from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.simulation_cache import (
     get_home_simulation,
 )
@@ -507,17 +507,17 @@ try:
         effective_start,
         effective_end,
     )
-    simulation_reqb = filter_month_range(
-        reference_tables["RQ_REQB"],
-        effective_start,
-        effective_end,
+    simulation_reqb = scenario_month_table(
+        active_scenario,
         "RQ_REQB",
-    )
-    simulation_available = filter_month_range(
-        reference_tables["RQ_EQP_AVBL"],
         effective_start,
         effective_end,
+    )
+    simulation_available = scenario_month_table(
+        active_scenario,
         "RQ_EQP_AVBL",
+        effective_start,
+        effective_end,
     )
     home_trace.mark("월 범위 데이터 준비")
     (

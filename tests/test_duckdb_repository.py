@@ -86,6 +86,8 @@ def _reference_tables() -> dict[str, pd.DataFrame]:
                 "생산계획년월": [202608],
                 "Area_Name": ["Main"],
                 "공정": ["Process-A"],
+                "STEP_SEQ": ["P100"],
+                "MCP_SEQ": ["1A"],
                 "양산구분": ["양산"],
                 "제품정보": ["Product-A"],
                 "Stack": ["8H"],
@@ -118,7 +120,10 @@ def _reference_tables() -> dict[str, pd.DataFrame]:
         "RQ_LOT_RATIO": pd.DataFrame(
             {
                 "생산계획년월": [202608],
+                "Area_Name": ["Main"],
                 "공정": ["Process-A"],
+                "STEP_SEQ": ["P100"],
+                "MCP_SEQ": ["1A"],
                 "양산구분": ["양산"],
                 "제품정보": ["Product-A"],
                 "Stack": ["8H"],
@@ -129,7 +134,10 @@ def _reference_tables() -> dict[str, pd.DataFrame]:
         "RQ_WF_RATIO": pd.DataFrame(
             {
                 "생산계획년월": [202608],
+                "Area_Name": ["Main"],
                 "공정": ["Process-A"],
+                "STEP_SEQ": ["P100"],
+                "MCP_SEQ": ["1A"],
                 "양산구분": ["양산"],
                 "제품정보": ["Product-A"],
                 "Stack": ["8H"],
@@ -215,12 +223,14 @@ def test_create_and_load_scenario_snapshot(tmp_path: Path) -> None:
         start_month=202608,
         end_month=202608,
         included_processes=("Process-A",),
+        standard_target_processes=("Process-A",),
     )
 
     snapshot = repository.create_scenario(_metadata(), source, preset)
 
     assert snapshot.scenario.active_revision_no == 1
     assert snapshot.preset == preset
+    assert snapshot.preset.standard_target_processes == ("Process-A",)
     assert set(snapshot.tables) == set(REFERENCE_TABLES)
     pd.testing.assert_frame_equal(
         snapshot.tables["RQ_PKG_PLAN"],
@@ -250,8 +260,15 @@ def test_new_revision_replaces_only_revision_owned_tables(tmp_path: Path) -> Non
     )
     revised_tables = {name: frame.copy(deep=True) for name, frame in initial.tables.items()}
     revised_tables["RQ_PKG_PLAN"].loc[0, "생산수량"] = 250.0
+    revised_tables["RQ_REQB"].loc[0, "STEP_SEQ"] = "P200"
+    revised_tables["RQ_EQP_AVBL"].loc[0, "가용대수"] = 12.0
     revised_tables["RQ_CHIP_QTY"].loc[0, "Net Die"] = 9999.0
-    revised_preset = ScenarioPreset(202608, 202608, ())
+    revised_preset = ScenarioPreset(
+        202608,
+        202608,
+        (),
+        standard_target_processes=("Process-A",),
+    )
 
     revised = repository.save_revision(
         initial.scenario.scenario_id,
@@ -262,10 +279,15 @@ def test_new_revision_replaces_only_revision_owned_tables(tmp_path: Path) -> Non
 
     assert revised.revision.revision_no == 2
     assert revised.preset.included_processes == ()
+    assert revised.preset.standard_target_processes == ("Process-A",)
     assert revised.tables["RQ_PKG_PLAN"].loc[0, "생산수량"] == pytest.approx(250.0)
+    assert revised.tables["RQ_REQB"].loc[0, "STEP_SEQ"] == "P200"
+    assert revised.tables["RQ_EQP_AVBL"].loc[0, "가용대수"] == pytest.approx(12.0)
     assert revised.tables["RQ_CHIP_QTY"].loc[0, "Net Die"] == pytest.approx(1000.0)
     loaded_initial = repository.load_revision(initial.revision.revision_id)
     assert loaded_initial.tables["RQ_PKG_PLAN"].loc[0, "생산수량"] == pytest.approx(100.0)
+    assert loaded_initial.tables["RQ_REQB"].loc[0, "STEP_SEQ"] == "P100"
+    assert loaded_initial.tables["RQ_EQP_AVBL"].loc[0, "가용대수"] == pytest.approx(9.0)
 
 
 def test_failed_registration_rolls_back_all_metadata(tmp_path: Path) -> None:

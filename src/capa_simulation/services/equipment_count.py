@@ -1,5 +1,10 @@
 import pandas as pd
 
+from capa_simulation.services.capacity_reference_editor import (
+    reference_from_edit_table,
+    reference_to_edit_table,
+)
+
 EQUIPMENT_DIMENSIONS = ["공정"]
 DETAILED_EQUIPMENT_DIMENSIONS = ["공정", "구분"]
 EQUIPMENT_SOURCES = (
@@ -7,6 +12,45 @@ EQUIPMENT_SOURCES = (
     ("대여", "설비대여평가"),
     ("가용", "가용대수"),
 )
+
+
+def equipment_count_to_edit_table(
+    data: pd.DataFrame,
+    category: str,
+    value_column: str,
+) -> pd.DataFrame:
+    """Pivot one validated equipment-count RQ into editable month columns."""
+    prepared = _prepare_source(data, category, value_column).rename(columns={"대수": value_column})
+    return reference_to_edit_table(
+        prepared,
+        EQUIPMENT_DIMENSIONS,
+        value_column,
+        f"{category} 설비대수",
+    )
+
+
+def equipment_count_from_edit_table(
+    edit_table: pd.DataFrame,
+    category: str,
+    value_column: str,
+) -> pd.DataFrame:
+    """Restore and validate one equipment-count CSV/editor table."""
+    month_columns = [column for column in edit_table.columns if column not in EQUIPMENT_DIMENSIONS]
+    numeric = edit_table[month_columns].apply(pd.to_numeric, errors="coerce")
+    if numeric.isna().any(axis=None):
+        raise ValueError(f"{category} 설비대수의 월별 값에는 숫자를 입력해야 합니다.")
+    if numeric.lt(0).any(axis=None):
+        raise ValueError(f"{category} 설비대수는 0 이상이어야 합니다.")
+    prepared = edit_table.copy()
+    prepared[month_columns] = numeric
+    restored = reference_from_edit_table(
+        prepared,
+        EQUIPMENT_DIMENSIONS,
+        value_column,
+        f"{category} 설비대수 편집값",
+    )
+    validated = _prepare_source(restored, category, value_column)
+    return validated.rename(columns={"대수": value_column})[["생산계획년월", "공정", value_column]]
 
 
 def build_equipment_count_table(

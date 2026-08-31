@@ -6,6 +6,7 @@ from typing import cast
 
 import streamlit as st
 
+from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.reference_cache import (
     activate_persisted_reference_tables,
     clear_persisted_reference_tables,
@@ -65,7 +66,8 @@ def bootstrap_latest_official_scenario(database_path: str) -> bool:
     if st.session_state.get(OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY) is True:
         return False
     repository = get_scenario_repository(database_path)
-    release = repository.latest_official_release()
+    bootstrap = ensure_initial_scenario(repository)
+    release = bootstrap.release
     if release is None:
         st.session_state[OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY] = True
         return False

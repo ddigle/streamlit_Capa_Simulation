@@ -18,7 +18,7 @@ from capa_simulation.scenario_activation import activate_persisted_snapshot
 from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.services.core_data_pipeline import fetch_core_data_dataset
 
-PIPELINE_VERSION = "bigdataquery-core-data-v1"
+PIPELINE_VERSION = "bigdataquery-core-data-v2"
 
 
 def render_bigdataquery_registration(

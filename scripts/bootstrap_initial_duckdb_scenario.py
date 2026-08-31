@@ -1,4 +1,4 @@
-"""One-time bootstrap from the development Core Data CSV and XLSB display order."""
+"""Bootstrap or safely replace the development Core Data initial scenario."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from capa_simulation.services.reference_transformer import build_reference_table
 from capa_simulation.settings import CORE_DATA_CSV_PATH, DUCKDB_PATH, PROJECT_ROOT
 
 DEFAULT_SOURCE_CODE = "LOCAL-CORE-DATA-INITIAL"
+PIPELINE_VERSION = "core-data-pandas-v3"
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,6 +35,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-name", default="Core_Data.csv 개발 원천")
     parser.add_argument("--revision-name", default="초기 이관 리비전")
     parser.add_argument("--release-name", default="초기 공식버전")
+    parser.add_argument(
+        "--replace-existing",
+        action="store_true",
+        help=(
+            "현재 변환 계약으로 대체 시나리오를 생성·공식 발행한 뒤 "
+            "같은 원천 코드의 기존 활성 시나리오를 보관"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -49,8 +58,9 @@ def main() -> None:
         for scenario in repository.list_scenarios(include_archived=True)
         if scenario.source_simulation_code == args.source_code
     ]
-    if existing:
-        scenario = existing[0]
+    if existing and not args.replace_existing:
+        active = [scenario for scenario in existing if scenario.status == "ACTIVE"]
+        scenario = active[0] if active else existing[0]
         if scenario.status != "ACTIVE":
             raise RuntimeError("초기 이관 시나리오가 이미 보관 상태입니다.")
         latest = repository.latest_official_release()
@@ -70,7 +80,16 @@ def main() -> None:
         return
 
     core_data = read_core_data_csv(args.core_data.resolve())
-    display_order = load_reference_tables(args.workbook.resolve())["RQ_DISPLAY_ORDER"]
+    if existing:
+        display_source = next(
+            (scenario for scenario in existing if scenario.status == "ACTIVE"),
+            existing[0],
+        )
+        display_order = repository.load_revision(display_source.active_revision_id).tables[
+            "RQ_DISPLAY_ORDER"
+        ]
+    else:
+        display_order = load_reference_tables(args.workbook.resolve())["RQ_DISPLAY_ORDER"]
     reference_tables = build_reference_tables(core_data, display_order)
     start_month, end_month = available_month_range(
         reference_tables["RQ_PKG_PLAN"],
@@ -91,25 +110,41 @@ def main() -> None:
             scenario_name=args.scenario_name,
             source_simulation_code=args.source_code,
             source_simulation_name=args.source_name,
-            source_type="CSV_CORE_DATA_INITIAL_BOOTSTRAP",
-            pipeline_version="core-data-pandas-v2",
+            source_type=(
+                "CSV_CORE_DATA_INITIAL_REFRESH" if existing else "CSV_CORE_DATA_INITIAL_BOOTSTRAP"
+            ),
+            pipeline_version=PIPELINE_VERSION,
         ),
         reference_tables,
         ScenarioPreset(start_month, end_month, processes),
         source_data=core_data,
         revision_name=args.revision_name,
-        note="Core_Data.csv와 XLSB 표시순서의 일회성 DuckDB 초기 이관",
+        note=(
+            "Core_Data.csv를 현재 RQ 경로 키 계약으로 재생성"
+            if existing
+            else "Core_Data.csv와 XLSB 표시순서의 일회성 DuckDB 초기 이관"
+        ),
     )
     release = repository.publish_official_revision(
         snapshot.scenario.scenario_id,
         snapshot.revision.revision_id,
         release_name=args.release_name,
-        note="DuckDB 전용 런타임 전환을 위한 초기 공식버전",
+        note=(
+            "Area·STEP·MCP 경로 키 계약을 적용한 초기 공식버전"
+            if existing
+            else "DuckDB 전용 런타임 전환을 위한 초기 공식버전"
+        ),
     )
+    archived_count = 0
+    for previous in existing:
+        if previous.status == "ACTIVE" and previous.scenario_id != snapshot.scenario.scenario_id:
+            repository.archive_scenario(previous.scenario_id)
+            archived_count += 1
     print(
         f"Created {snapshot.scenario.scenario_name}: "
         f"{len(core_data):,} raw rows, {len(reference_tables['RQ_DISPLAY_ORDER']):,} "
-        f"display-order rows, official v{release.release_no}"
+        f"display-order rows, official v{release.release_no}, "
+        f"archived {archived_count} previous scenario(s)"
     )
 
 

@@ -5,6 +5,10 @@ from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
     render_grouped_monthly_table,
 )
+from capa_simulation.components.reference_csv_tools import (
+    queue_reference_csv_flash,
+    render_reference_csv_tools,
+)
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -164,11 +168,19 @@ with pkg_plan_tab:
         key="apply_pkg_plan_changes",
         type="primary",
     )
+    imported_plan_table = render_reference_csv_tools(
+        default_plan_table,
+        table_name="RQ_PKG_PLAN",
+        key_columns=PLAN_EDITOR_DIMENSIONS,
+        file_name=f"RQ_PKG_PLAN_{effective_start_month}_{effective_end_month}.csv",
+        key="rq_pkg_plan_csv",
+    )
 
 simulation_plan = filtered_plan
-if apply_plan:
+if apply_plan or imported_plan_table is not None:
     try:
-        updated_plan = plan_from_edit_table(edited_plan_table)
+        plan_source = imported_plan_table if imported_plan_table is not None else edited_plan_table
+        updated_plan = plan_from_edit_table(plan_source)
         apply_month_updates(
             active_scenario,
             {"RQ_PKG_PLAN": updated_plan},
@@ -179,6 +191,11 @@ if apply_plan:
         with pkg_plan_tab:
             st.error(str(exc))
     else:
+        if imported_plan_table is not None:
+            queue_reference_csv_flash(
+                "rq_pkg_plan_csv",
+                "RQ_PKG_PLAN CSV를 활성 시나리오에 일괄 적용했습니다.",
+            )
         st.session_state.pop(source_token_key, None)
         st.rerun()
 
@@ -232,11 +249,21 @@ with yield_tab:
         key="apply_yield_changes",
         type="primary",
     )
+    imported_yield_table = render_reference_csv_tools(
+        default_yield_table,
+        table_name="RQ_YLD",
+        key_columns=YIELD_EDITOR_DIMENSIONS,
+        file_name=f"RQ_YLD_{effective_start_month}_{effective_end_month}.csv",
+        key="rq_yield_csv",
+    )
 
 simulation_yield = filtered_yield
-if apply_yield:
+if apply_yield or imported_yield_table is not None:
     try:
-        updated_yield = yield_from_edit_table(edited_yield_table)
+        yield_source = (
+            imported_yield_table if imported_yield_table is not None else edited_yield_table
+        )
+        updated_yield = yield_from_edit_table(yield_source)
         apply_month_updates(
             active_scenario,
             {"RQ_YLD": updated_yield},
@@ -247,6 +274,11 @@ if apply_yield:
         with yield_tab:
             st.error(str(exc))
     else:
+        if imported_yield_table is not None:
+            queue_reference_csv_flash(
+                "rq_yield_csv",
+                "RQ_YLD CSV를 활성 시나리오에 일괄 적용했습니다.",
+            )
         st.session_state.pop(source_token_key, None)
         st.rerun()
 

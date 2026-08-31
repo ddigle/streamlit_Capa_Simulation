@@ -32,10 +32,23 @@ LOAD_KEYS = [
     "WF 구분",
     "소요기준",
 ]
-CAPACITY_KEYS = ["생산계획년월", "공정", "소요기준", "양산구분", "제품정보", "Stack", "WF 구분"]
-RESULT_DIMENSIONS = [
+CAPACITY_KEYS = [
+    "생산계획년월",
     "Area_Name",
     "공정",
+    "STEP_SEQ",
+    "MCP_SEQ",
+    "소요기준",
+    "양산구분",
+    "제품정보",
+    "Stack",
+    "WF 구분",
+]
+RESULT_DIMENSIONS = [
+    "공정",
+    "STEP_SEQ",
+    "MCP_SEQ",
+    "Area_Name",
     "양산구분",
     "제품정보",
     "Stack",

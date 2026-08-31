@@ -1,14 +1,26 @@
 import pandas as pd
 
-PERFORMANCE_KEYS = ["생산계획년월", "공정", "양산구분", "제품정보", "Stack", "WF 구분"]
+PERFORMANCE_KEYS = [
+    "생산계획년월",
+    "Area_Name",
+    "공정",
+    "STEP_SEQ",
+    "MCP_SEQ",
+    "양산구분",
+    "제품정보",
+    "Stack",
+    "WF 구분",
+]
 UNIT_CAPACITY_DIMENSIONS = [
     "공정",
+    "STEP_SEQ",
+    "MCP_SEQ",
+    "Area_Name",
     "소요기준",
     "양산구분",
     "제품정보",
     "Stack",
     "WF 구분",
-    "Area_Name",
 ]
 UNIMPLEMENTED_BASES = {"BOX", "PCB"}
 CAPACITY_EXCLUSIONS_ATTR = "excluded_capacity_rows"
@@ -134,7 +146,7 @@ def unit_capacity_to_month_table(unit_capacity: pd.DataFrame) -> pd.DataFrame:
 
 def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
     table_name = "RQ_UPEH"
-    required = [*PERFORMANCE_KEYS, "Area_Name", "소요기준", "UPEH", "ST"]
+    required = [*PERFORMANCE_KEYS, "소요기준", "UPEH", "ST"]
     _require_columns(data, required, table_name)
     result = data[required].copy()
     if result.empty:
@@ -148,14 +160,14 @@ def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
     if result.empty:
         result["환산_UPEH"] = pd.Series(dtype="float64")
         return result
-    _assert_complete_keys(result, [*PERFORMANCE_KEYS, "Area_Name", "소요기준"], table_name)
+    _assert_complete_keys(result, [*PERFORMANCE_KEYS, "소요기준"], table_name)
     area_names = result["Area_Name"].str.casefold()
     invalid_area = ~area_names.isin(["main", "mi"])
     if invalid_area.any():
         examples = result.loc[invalid_area, "Area_Name"].drop_duplicates().head(5).tolist()
         raise ValueError(f"RQ_UPEH의 Area_Name은 Main 또는 MI여야 합니다: {examples}")
     result["Area_Name"] = area_names.map({"main": "Main", "mi": "MI"})
-    _assert_unique(result, [*PERFORMANCE_KEYS, "Area_Name", "소요기준"], table_name)
+    _assert_unique(result, [*PERFORMANCE_KEYS, "소요기준"], table_name)
 
     upeh_values = pd.to_numeric(result["UPEH"], errors="coerce")
     st_values = pd.to_numeric(result["ST"], errors="coerce")

@@ -1,5 +1,7 @@
 """Shared content-addressed caches for simulation calculations."""
 
+from datetime import date
+
 import pandas as pd
 import streamlit as st
 
@@ -18,6 +20,9 @@ from capa_simulation.services.required_equipment import (
     calculate_required_equipment_from_loads,
 )
 from capa_simulation.services.securement_rate import calculate_securement_rate
+from capa_simulation.services.standard_target_capacity import (
+    build_weekly_standard_target_capacity,
+)
 from capa_simulation.services.unit_capacity import calculate_unit_capacity
 
 
@@ -65,6 +70,26 @@ def get_securement_rate(
     required_equipment: pd.DataFrame,
 ) -> pd.DataFrame:
     return calculate_securement_rate(available_equipment, required_equipment)
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
+def get_weekly_standard_target_capacity(
+    required_equipment: pd.DataFrame,
+    run_day: pd.DataFrame,
+    weekly_availability: pd.DataFrame,
+    start_date: date,
+    end_date: date,
+    detail_level: str,
+) -> pd.DataFrame:
+    """Cache the weekly standard target Capa for one active scenario and CSV input."""
+    return build_weekly_standard_target_capacity(
+        required_equipment=required_equipment,
+        run_day=run_day,
+        weekly_availability=weekly_availability,
+        start_date=start_date,
+        end_date=end_date,
+        detail_level=detail_level,
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -180,3 +205,4 @@ def clear_simulation_caches() -> None:
     get_production_dashboard.clear()
     get_monthly_wafer_load.clear()
     get_home_equipment_demand.clear()
+    get_weekly_standard_target_capacity.clear()
