@@ -382,9 +382,10 @@ Dummy Chip/Wafer는 `(1 - EDS_수율)`을 추가 적용한다. 정확한 현재 
 
 - `Area_Name = Main`: `UPEH`
 - `Area_Name = MI`: `3600 / ST`
-- UPEH·Lot/WF 측정률의 `Area_Name`은 대소문자와 앞뒤 공백을 정규화해 `Main`·`MI`로
-  연결한다. Lot/WF 측정률의 빈 값은 측정 대상이 아닌 경로로 보고 `1.0`을 적용하되,
-  숫자가 아닌 값은 오류로 처리한다.
+- UPEH·Lot/WF 측정률과 `RQ_REQB`의 `Area_Name`은 Core Data 변환 및 기존 리비전의
+  런타임 소요대수 연결에서 대소문자와 앞뒤 공백을 정규화해 `Main`·`MI`로 통일한다.
+  Lot/WF 측정률의 빈 값은 측정 대상이 아닌 경로로 보고 `1.0`을 적용하되, 숫자가 아닌
+  값은 오류로 처리한다.
 - `소요기준 = PKG 또는 CHIP`: UPEH를 Kea 기준으로 `/ 1000`
 - WF측정률 0 이하 및 대당 Capa 0 이하는 제외 행으로 남기고 계산에서 제외
 - BOX·PCB는 산식 구현 전까지 제외

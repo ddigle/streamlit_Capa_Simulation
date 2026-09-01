@@ -134,6 +134,24 @@ def test_product_information_marker_is_normalized_before_rq_derivation() -> None
     assert prepared.reference_tables["RQ_REQB"].loc[0, "제품정보"] == "Product A"
 
 
+def test_area_name_is_normalized_before_rq_derivation() -> None:
+    source = _core_data_row()
+    source.loc[0, "Area_Name"] = " MAIN "
+
+    prepared = prepare_core_data_dataset(
+        CoreDataBatch(
+            simulation_code="SIM-001",
+            simulation_name="사내 조회 결과",
+            source_type="BIGDATAQUERY",
+            frame=source,
+        ),
+        _display_order(),
+    )
+
+    for table_name in ("RQ_UPEH", "RQ_LOT_RATIO", "RQ_WF_RATIO", "RQ_REQB"):
+        assert prepared.reference_tables[table_name].loc[0, "Area_Name"] == "Main"
+
+
 def test_conflicting_business_keys_keep_first_values_and_report_all_tables() -> None:
     source = pd.concat([_core_data_row(), _core_data_row()], ignore_index=True)
     source.loc[1, "생산수량"] = 200.0

@@ -123,6 +123,7 @@ def _prepare_reqb(reqb: pd.DataFrame) -> pd.DataFrame:
         return prepared_reqb
     _normalize_basis(prepared_reqb, "RQ_REQB")
     _assert_complete(prepared_reqb, REQB_REQUIRED_KEYS, "RQ_REQB")
+    _normalize_area_name(prepared_reqb, "RQ_REQB")
     return prepared_reqb
 
 
@@ -261,6 +262,7 @@ def _prepare_capacities(data: pd.DataFrame) -> pd.DataFrame:
         result,
         [key for key in CAPACITY_KEYS if key not in {"생산계획년월", "소요기준"}],
     )
+    _normalize_area_name(result, "대당 Capa")
     _normalize_basis(result, "대당 Capa")
     result["대당 Capa"] = _numeric(result["대당 Capa"], "대당 Capa")
     duplicated = result.duplicated(CAPACITY_KEYS, keep=False)
@@ -277,6 +279,15 @@ def _normalize_basis(data: pd.DataFrame, table_name: str) -> None:
     if invalid.any():
         values = data.loc[invalid, "소요기준"].drop_duplicates().head(5).tolist()
         raise ValueError(f"{table_name}에 지원하지 않는 소요기준이 있습니다: {values}")
+
+
+def _normalize_area_name(data: pd.DataFrame, table_name: str) -> None:
+    area_names = data["Area_Name"].astype("string").str.strip().str.casefold()
+    invalid = area_names.isna() | ~area_names.isin(["main", "mi"])
+    if invalid.any():
+        values = data.loc[invalid, "Area_Name"].drop_duplicates().head(5).tolist()
+        raise ValueError(f"{table_name}의 Area_Name은 Main 또는 MI여야 합니다: {values}")
+    data["Area_Name"] = area_names.map({"main": "Main", "mi": "MI"})
 
 
 def _normalize_text(data: pd.DataFrame, columns: list[str]) -> None:

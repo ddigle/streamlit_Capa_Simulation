@@ -189,7 +189,8 @@ RQ 16개·초기 리비전·화면 프리셋을 하나의 DuckDB 트랜잭션으
 공백으로 정규화합니다. `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO`는
 `Area_Name + STEP_SEQ + MCP_SEQ`까지 포함한 경로 키로 생성하며 `RQ_REQB`와 정확히
 일치하는 경로끼리만 대당 Capa와 소요대수를 연결합니다. UPEH·Lot/WF 측정률의
-`Area_Name`은 입력 대소문자와 앞뒤 공백을 정규화해 `Main`·`MI`로 연결하며,
+`Area_Name`은 Core Data 변환과 기존 리비전의 `RQ_REQB ↔ 대당 Capa` 런타임 연결에서
+입력 대소문자와 앞뒤 공백을 정규화해 `Main`·`MI`로 통일하며,
 Lot/WF 측정률의 빈 값은 측정 대상이 아닌 경로의 기본값 `1.0`으로 계산합니다.
 Core Data에서 같은 RQ 업무 키에 서로 다른 값이 발견되면 전체 변환을 중단하지 않고
 원천 행 순서상 첫 값을 임시 적용합니다. BigDataQuery 등록 화면에는 테이블별 충돌 건수와

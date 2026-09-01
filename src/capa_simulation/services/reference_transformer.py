@@ -108,6 +108,11 @@ def build_q_core_data(
     # marker "*_".  Normalize it before any RQ key is derived so every table
     # receives the same product key.
     core["제품정보"] = core["제품정보"].str.replace("*_", " ", regex=False)
+    area_names = core["Area_Name"].astype("string").str.strip()
+    normalized_areas = area_names.str.casefold()
+    core["Area_Name"] = area_names
+    core.loc[normalized_areas.eq("main").fillna(False), "Area_Name"] = "Main"
+    core.loc[normalized_areas.eq("mi").fillna(False), "Area_Name"] = "MI"
     core["양산구분"] = pd.Series(pd.NA, index=core.index, dtype="string")
     core.loc[core["CS"].isin(["MP", "CS"]), "양산구분"] = "양산"
     core.loc[core["CS"].eq("ER"), "양산구분"] = "ER"

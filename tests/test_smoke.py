@@ -974,6 +974,76 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
     assert table.loc[0, "202608"] == pytest.approx(2.0)
 
 
+def test_required_equipment_normalizes_area_name_before_capacity_join() -> None:
+    reqb = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "Area_Name": [" MAIN "],
+            "공정": ["Process-A"],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "Capa Code": ["CAPA-A"],
+            "Customer": ["Customer-A"],
+            "CS": ["MP"],
+            "WF 구분": ["PKG"],
+            "STEP_SEQ": [10],
+            "MCP_SEQ": [1],
+            "소요기준": ["PKG"],
+        }
+    )
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "Capa Code": ["CAPA-A"],
+            "Customer": ["Customer-A"],
+            "CS": ["MP"],
+            "생산수량": [100.0],
+        }
+    )
+    unit_capacity = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "Area_Name": ["Main"],
+            "공정": ["Process-A"],
+            "STEP_SEQ": [10],
+            "MCP_SEQ": [1],
+            "소요기준": ["PKG"],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["PKG"],
+            "대당 Capa": [50.0],
+        }
+    )
+
+    result = calculate_required_equipment(
+        reqb,
+        plan,
+        pd.DataFrame(),
+        pd.DataFrame(),
+        unit_capacity,
+    )
+
+    assert result["Area_Name"].tolist() == ["Main"]
+    assert result["소요대수"].tolist() == pytest.approx([2.0])
+    assert result.attrs["excluded_required_equipment_rows"].empty
+    securement = calculate_securement_rate(
+        pd.DataFrame(
+            {
+                "생산계획년월": [202608],
+                "공정": ["Process-A"],
+                "가용대수": [4.0],
+            }
+        ),
+        result,
+    )
+    assert securement["확보율"].tolist() == pytest.approx([2.0])
+
+
 def test_required_equipment_increases_when_a_process_route_has_more_steps() -> None:
     reqb = pd.DataFrame(
         {
