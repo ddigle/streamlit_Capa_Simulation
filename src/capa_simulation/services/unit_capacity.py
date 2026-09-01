@@ -78,6 +78,7 @@ def calculate_unit_capacity(
         PERFORMANCE_KEYS,
         "Lot 측정률",
         "RQ_LOT_RATIO",
+        missing_value_default=1.0,
     )
     result = _join_reference(
         result,
@@ -85,6 +86,7 @@ def calculate_unit_capacity(
         PERFORMANCE_KEYS,
         "WF측정률",
         "RQ_WF_RATIO",
+        missing_value_default=1.0,
     )
 
     for column, table_name in (
@@ -161,12 +163,7 @@ def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
         result["환산_UPEH"] = pd.Series(dtype="float64")
         return result
     _assert_complete_keys(result, [*PERFORMANCE_KEYS, "소요기준"], table_name)
-    area_names = result["Area_Name"].str.casefold()
-    invalid_area = ~area_names.isin(["main", "mi"])
-    if invalid_area.any():
-        examples = result.loc[invalid_area, "Area_Name"].drop_duplicates().head(5).tolist()
-        raise ValueError(f"RQ_UPEH의 Area_Name은 Main 또는 MI여야 합니다: {examples}")
-    result["Area_Name"] = area_names.map({"main": "Main", "mi": "MI"})
+    _normalize_area_name(result, table_name)
     _assert_unique(result, [*PERFORMANCE_KEYS, "소요기준"], table_name)
 
     upeh_values = pd.to_numeric(result["UPEH"], errors="coerce")
@@ -193,6 +190,8 @@ def _join_reference(
     keys: list[str],
     value_column: str,
     table_name: str,
+    *,
+    missing_value_default: float | None = None,
 ) -> pd.DataFrame:
     _require_columns(reference, [*keys, value_column], table_name)
     prepared = reference[[*keys, value_column]].copy()
@@ -200,8 +199,15 @@ def _join_reference(
         _normalize_month(prepared, table_name)
     _normalize_keys(prepared, [key for key in keys if key != "생산계획년월"])
     _assert_complete_keys(prepared, keys, table_name)
+    if "Area_Name" in keys:
+        _normalize_area_name(prepared, table_name)
     _assert_unique(prepared, keys, table_name)
-    prepared[value_column] = _numeric_column(prepared, value_column, table_name)
+    prepared[value_column] = _numeric_column(
+        prepared,
+        value_column,
+        table_name,
+        missing_value_default=missing_value_default,
+    )
     result = base.merge(prepared, on=keys, how="left", validate="many_to_one")
     missing = result[value_column].isna()
     if missing.any():
@@ -213,6 +219,15 @@ def _join_reference(
 def _normalize_keys(data: pd.DataFrame, keys: list[str]) -> None:
     for key in keys:
         data[key] = data[key].astype("string").str.strip()
+
+
+def _normalize_area_name(data: pd.DataFrame, table_name: str) -> None:
+    area_names = data["Area_Name"].astype("string").str.strip().str.casefold()
+    invalid_area = ~area_names.isin(["main", "mi"])
+    if invalid_area.any():
+        examples = data.loc[invalid_area, "Area_Name"].drop_duplicates().head(5).tolist()
+        raise ValueError(f"{table_name}의 Area_Name은 Main 또는 MI여야 합니다: {examples}")
+    data["Area_Name"] = area_names.map({"main": "Main", "mi": "MI"})
 
 
 def _normalize_month(data: pd.DataFrame, table_name: str) -> None:
@@ -240,8 +255,18 @@ def _assert_unique(data: pd.DataFrame, keys: list[str], table_name: str) -> None
         raise ValueError(f"{table_name}의 연결 키가 중복되었습니다: {examples}")
 
 
-def _numeric_column(data: pd.DataFrame, column: str, table_name: str) -> pd.Series:
-    numeric = pd.to_numeric(data[column], errors="coerce")
+def _numeric_column(
+    data: pd.DataFrame,
+    column: str,
+    table_name: str,
+    *,
+    missing_value_default: float | None = None,
+) -> pd.Series:
+    values = data[column]
+    if missing_value_default is not None:
+        blank = values.isna() | values.astype("string").str.strip().eq("").fillna(False)
+        values = values.mask(blank, missing_value_default)
+    numeric = pd.to_numeric(values, errors="coerce")
     if numeric.isna().any():
         raise ValueError(f"{table_name}의 {column} 컬럼에 숫자가 아닌 값이 있습니다.")
     return numeric.astype("float64")

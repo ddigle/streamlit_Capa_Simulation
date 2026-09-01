@@ -705,7 +705,7 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
     upeh = pd.DataFrame(
         {
             "생산계획년월": [202608, 202608],
-            "Area_Name": ["Main", "MI"],
+            "Area_Name": ["MAIN", "mi"],
             "소요기준": ["CHIP", "PKG"],
             "공정": ["Process-A", "Process-B"],
             "STEP_SEQ": ["P100", "P200"],
@@ -734,8 +734,11 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
     vital = shared_detail[["생산계획년월", "공정", "양산구분"]].assign(편중률=1.0)
     module = pd.DataFrame({"공정": ["Process-A", "Process-B"], "모듈수": [2.0, 2.0]})
     run_day = shared_detail[["생산계획년월", "공정"]].assign(RUN_DAY=30.0)
-    lot_ratio = shared_detail.assign(**{"Lot 측정률": 1.0})
-    wf_ratio = shared_detail.assign(WF측정률=1.0)
+    lot_ratio = shared_detail.assign(
+        Area_Name=["main", "MI"],
+        **{"Lot 측정률": [pd.NA, ""]},
+    )
+    wf_ratio = shared_detail.assign(Area_Name=["Main", "MI"], WF측정률=[None, pd.NA])
 
     result = calculate_unit_capacity(upeh, run_rate, vital, module, run_day, lot_ratio, wf_ratio)
 
@@ -745,6 +748,19 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
     assert result.loc[result["Area_Name"].eq("MI"), "대당 Capa"].iloc[0] == pytest.approx(
         ((3600 / 36) / 1000) * 24 * 0.8 * 2 * 30
     )
+
+    invalid_lot_ratio = lot_ratio.copy()
+    invalid_lot_ratio.loc[0, "Lot 측정률"] = "invalid"
+    with pytest.raises(ValueError, match="RQ_LOT_RATIO의 Lot 측정률 컬럼에 숫자가 아닌 값"):
+        calculate_unit_capacity(
+            upeh,
+            run_rate,
+            vital,
+            module,
+            run_day,
+            invalid_lot_ratio,
+            wf_ratio,
+        )
 
 
 def test_unit_capacity_excludes_nonpositive_wf_ratio_and_capacity() -> None:
