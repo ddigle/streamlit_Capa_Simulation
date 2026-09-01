@@ -12,7 +12,11 @@ from capa_simulation.io.core_data_source import (
     load_core_data_contract,
     normalize_core_data,
 )
-from capa_simulation.services.core_data_pipeline import prepare_core_data_dataset
+from capa_simulation.services.core_data_pipeline import (
+    prepare_core_data_dataset,
+    reference_conflicts_to_csv,
+    summarize_reference_conflicts,
+)
 from capa_simulation.services.reference_transformer import build_reference_tables
 
 
@@ -130,12 +134,53 @@ def test_product_information_marker_is_normalized_before_rq_derivation() -> None
     assert prepared.reference_tables["RQ_REQB"].loc[0, "제품정보"] == "Product A"
 
 
-def test_conflicting_duplicate_business_key_is_rejected() -> None:
+def test_conflicting_business_keys_keep_first_values_and_report_all_tables() -> None:
     source = pd.concat([_core_data_row(), _core_data_row()], ignore_index=True)
     source.loc[1, "생산수량"] = 200.0
+    source.loc[1, "EDS_수율"] = 0.8
 
-    with pytest.raises(ValueError, match="RQ_PKG_PLAN.*서로 다른 값"):
-        build_reference_tables(source, _display_order())
+    prepared = prepare_core_data_dataset(
+        CoreDataBatch(
+            simulation_code="SIM-001",
+            simulation_name="사내 조회 결과",
+            source_type="BIGDATAQUERY",
+            frame=source,
+        ),
+        _display_order(),
+    )
+    conflicts = prepared.reference_conflicts
+    summary = summarize_reference_conflicts(conflicts)
+
+    assert prepared.reference_tables["RQ_PKG_PLAN"].loc[0, "생산수량"] == pytest.approx(100.0)
+    assert prepared.reference_tables["RQ_YLD"].loc[0, "EDS_수율"] == pytest.approx(1.0)
+    assert conflicts["RQ테이블"].tolist() == ["RQ_PKG_PLAN", "RQ_YLD"]
+    assert conflicts["선택원천행번호"].tolist() == [1, 1]
+    assert conflicts["후보원천행번호"].tolist() == ["1 | 2", "1 | 2"]
+    assert conflicts["임시제외행수"].tolist() == [1, 1]
+    assert summary[["RQ테이블", "충돌 업무키 그룹수"]].to_dict("records") == [
+        {"RQ테이블": "RQ_PKG_PLAN", "충돌 업무키 그룹수": 1},
+        {"RQ테이블": "RQ_YLD", "충돌 업무키 그룹수": 1},
+    ]
+    csv_bytes = reference_conflicts_to_csv(conflicts)
+    assert csv_bytes.startswith(b"\xef\xbb\xbf")
+    assert "RQ_PKG_PLAN" in csv_bytes.decode("utf-8-sig")
+
+
+def test_exact_duplicate_business_keys_are_removed_without_conflict_report() -> None:
+    source = pd.concat([_core_data_row(), _core_data_row()], ignore_index=True)
+
+    prepared = prepare_core_data_dataset(
+        CoreDataBatch(
+            simulation_code="SIM-001",
+            simulation_name="사내 조회 결과",
+            source_type="BIGDATAQUERY",
+            frame=source,
+        ),
+        _display_order(),
+    )
+
+    assert len(prepared.reference_tables["RQ_PKG_PLAN"]) == 1
+    assert prepared.reference_conflicts.empty
 
 
 def test_route_sequences_distinguish_step_specific_capacity_references() -> None:

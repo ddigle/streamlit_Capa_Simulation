@@ -275,7 +275,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `capacity_reference_editor.py`: Capa 기준정보 Long/Wide 편집 변환
 - `reference_csv.py`: 입력 RQ Wide CSV 인코딩·파싱과 컬럼·분류행 동일성 검증
 - `reference_transformer.py`: XLSB의 `Q_Core_Data`와 15개 Core 파생 Power Query를
-  pandas로 대체하고, 수동 입력 `RQ_DISPLAY_ORDER`를 검증한다.
+  pandas로 대체하고, 수동 입력 `RQ_DISPLAY_ORDER`를 검증한다. Core 파생 RQ의 동일
+  업무 키 값 충돌은 원천 첫 행을 임시 적용해 전체 변환을 계속하며 테이블·업무 키·후보값·
+  선택값·원천행 번호가 포함된 충돌 보고서를 함께 반환한다.
 - `core_data_pipeline.py`: CSV·BigDataQuery 공급자 결과를 동일한 정규화·RQ 변환
   파이프라인으로 연결한다.
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from datetime import datetime
 
+import pandas as pd
 import streamlit as st
 
 from capa_simulation.io.company_bigdataquery_adapter import (
@@ -16,9 +18,15 @@ from capa_simulation.persistence.models import ScenarioCreate
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import activate_persisted_snapshot
 from capa_simulation.scenario_preset_state import capture_scenario_preset
-from capa_simulation.services.core_data_pipeline import fetch_core_data_dataset
+from capa_simulation.services.core_data_pipeline import (
+    fetch_core_data_dataset,
+    reference_conflicts_to_csv,
+    summarize_reference_conflicts,
+)
 
-PIPELINE_VERSION = "bigdataquery-core-data-v2"
+PIPELINE_VERSION = "bigdataquery-core-data-v3"
+CONFLICT_REPORT_STATE_KEY = "bigdataquery_reference_conflict_report"
+REGISTRATION_FLASH_KEY = "bigdataquery_registration_flash"
 
 
 def render_bigdataquery_registration(
@@ -30,6 +38,9 @@ def render_bigdataquery_registration(
         "시뮬레이션 코드를 조회해 반환된 pandas DataFrame을 검증한 뒤, CSV 파일 없이 "
         "typed raw와 RQ 16개를 한 트랜잭션으로 저장합니다."
     )
+    flash = st.session_state.pop(REGISTRATION_FLASH_KEY, None)
+    if isinstance(flash, str) and flash:
+        st.success(flash)
     configured = is_bigdataquery_adapter_configured()
     if configured:
         st.success("사내 BigDataQuery SQL 설정이 준비되었습니다.")
@@ -60,7 +71,9 @@ def render_bigdataquery_registration(
             disabled=not configured,
         )
     if not submitted:
+        _render_reference_conflict_report()
         return
+    st.session_state.pop(CONFLICT_REPORT_STATE_KEY, None)
     try:
         registered_at = _optional_datetime(source_registered_text)
         display_order = load_scenario_snapshot(
@@ -73,6 +86,10 @@ def render_bigdataquery_registration(
         )
         with st.spinner("사내 DB에서 Core Data를 조회하고 검증하는 중입니다..."):
             prepared = fetch_core_data_dataset(provider, simulation_code, display_order)
+            _store_reference_conflict_report(
+                prepared.reference_conflicts,
+                prepared.batch.simulation_code,
+            )
             preset = capture_scenario_preset(prepared.reference_tables)
             available = set(
                 prepared.reference_tables["RQ_REQB"]["공정"]
@@ -104,13 +121,52 @@ def render_bigdataquery_registration(
             )
     except (KeyError, RuntimeError, TypeError, ValueError) as exc:
         st.error(str(exc))
+        _render_reference_conflict_report()
     else:
         activate_persisted_snapshot(snapshot)
-        st.success(
+        st.session_state[REGISTRATION_FLASH_KEY] = (
             f"{snapshot.scenario.scenario_name}을 저장하고 r{snapshot.revision.revision_no}을 "
             "활성화했습니다."
         )
         st.rerun()
+
+
+def _store_reference_conflict_report(conflicts: pd.DataFrame, simulation_code: str) -> None:
+    if conflicts.empty:
+        return
+    safe_code = re.sub(r"[^0-9A-Za-z가-힣._-]+", "_", simulation_code).strip("._")
+    timestamp = datetime.now().strftime("%Y%m%d%H%M")
+    st.session_state[CONFLICT_REPORT_STATE_KEY] = {
+        "report": conflicts.copy(),
+        "file_name": f"RQ_업무키_충돌_{safe_code or 'query'}_{timestamp}.csv",
+    }
+
+
+def _render_reference_conflict_report() -> None:
+    payload = st.session_state.get(CONFLICT_REPORT_STATE_KEY)
+    if not isinstance(payload, dict):
+        return
+    report = payload.get("report")
+    file_name = payload.get("file_name")
+    if not isinstance(report, pd.DataFrame) or report.empty or not isinstance(file_name, str):
+        return
+    summary = summarize_reference_conflicts(report)
+    st.warning(
+        f"{len(report):,}개 업무 키 그룹에서 값 충돌을 확인했습니다. "
+        "등록은 중단하지 않고 각 그룹의 원천 첫 행을 임시 적용했습니다."
+    )
+    st.dataframe(summary, hide_index=True, width="stretch")
+    st.download_button(
+        "RQ 업무 키 충돌 CSV 다운로드",
+        data=reference_conflicts_to_csv(report),
+        file_name=file_name,
+        mime="text/csv",
+        icon=":material/download:",
+        width="content",
+        on_click="ignore",
+    )
+    with st.expander("충돌 상세 미리보기"):
+        st.dataframe(report, hide_index=True, width="stretch")
 
 
 def _optional_datetime(value: str) -> datetime | None:
