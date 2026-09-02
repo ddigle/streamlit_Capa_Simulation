@@ -62,6 +62,8 @@
 - [x] 제품타입이 `EDP-TSV`이면 원본 WF 구분 `Master`를 계산상 `Buffer`, `Slave`를 계산상 `Core`로 매핑한다. 산출 공식은 HBM의 Buffer·Core와 동일하게 적용한다.
 - [x] 제품타입 분류 명칭은 `일반`이 아니라 `HBM`을 사용한다. HBM은 원본 WF 구분 Buffer·Core·Top을 그대로 사용한다.
 - [x] Dummy Wafer 공식은 `생산수량(Kea) × 1,000 ÷ EDS_수율 ÷ BE_수율 × (1 - EDS_수율) ÷ Net Die × 구분_Chip`으로 적용한다.
+- [x] Dummy Chip·Wafer 판별은 `WF 구분`의 대소문자와 앞뒤 공백을 정규화해 BigDataQuery의
+  `DUMMY` 값과 기존 `Dummy` 값을 동일하게 처리하고, 기존 계산 캐시도 무효화한다.
 - [x] 앞서 확정한 Dummy 발생 규칙에 따라 Dummy의 수율은 Buffer 수율을 사용하며, `EDP-TSV`에서는 Buffer에 해당하는 Master 수율을 사용한다.
 - [x] 제품별 Buffer·Core·Top Chip 수는 `RQ_CHIP_QTY`로 제공한다.
 - [x] Dummy 구성 수는 1로 적용하기로 결정했다.
@@ -164,8 +166,9 @@
 - [x] 외부 개발 환경에서는 사내 DB 조회 결과를 직접 받을 수 없으므로 `Core_Data.csv`를 읽어 만든 pandas DataFrame을 원천 어댑터로 사용한다. CSV 읽기까지만 임시 경계로 격리하고, 이후 스키마 정규화·검증·DuckDB 적재·`RQ_*` 변환은 사내 DB DataFrame과 동일한 공통 파이프라인을 사용한다.
 - [x] 원천 DB의 등록시각 `source_registered_at`과 Streamlit 프로젝트의 적재시각 `imported_at`은 별도 계보 정보로 저장하기로 확정했다.
 - [x] 동일한 시뮬레이션 코드의 원천 데이터는 변경되지 않고 조회 시 전체 약 3만 행을 반환한다. 동일 코드의 내용이 다른 경우 등록을 거부하며, 사용자 편집은 기존 raw를 유지한 리비전 1·2·3으로 저장한다.
-- [x] DB 직접 조회의 `제품정보`에 포함될 수 있는 리터럴 `*_`는 raw에는 그대로 보존하고,
-  RQ 변환 공통 경계에서 공백으로 치환해 모든 파생 조인 키에 동일하게 적용한다.
+- [x] DB 직접 조회의 `제품정보` 원천값은 raw에 그대로 보존하고, RQ 변환 공통 경계에서
+  리터럴 `*_`를 포함한 모든 언더바를 공백으로 치환한 뒤 연속 공백을 하나로 축약해 모든
+  파생 조인 키에 동일하게 적용한다.
 - [x] 개발용 `Core_Data.csv` 23,250행과 기존 XLSB 표시순서 648행을 초기 독립
   데이터셋·리비전으로 `data/capa_simulation.duckdb`에 적재하고 공식 v1로 지정했다.
 - [x] 개발용 `Core Data 초기 시나리오`를 `core-data-pandas-v3`로 재생성해 UPEH·Lot/WF

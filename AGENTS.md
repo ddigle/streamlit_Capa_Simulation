@@ -290,6 +290,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   pandas로 대체하고, 수동 입력 `RQ_DISPLAY_ORDER`를 검증한다. Core 파생 RQ의 동일
   업무 키 값 충돌은 원천 첫 행을 임시 적용해 전체 변환을 계속하며 테이블·업무 키·후보값·
   선택값·원천행 번호가 포함된 충돌 보고서를 함께 반환한다.
+  `제품정보`의 원천값은 raw에 보존하고 RQ 파생 전 모든 언더바를 공백으로 바꾼 뒤 연속
+  공백을 하나로 축약하여 BigDataQuery와 기존 화면 분류 키를 통일한다.
 - `core_data_pipeline.py`: CSV·BigDataQuery 공급자 결과를 동일한 정규화·RQ 변환
   파이프라인으로 연결한다.
 
@@ -386,8 +388,9 @@ Wafer = 생산수량 × 1,000 × 구분_Chip
 Density = 생산수량 × 구분_Chip × 구분_EQ ÷ 100,000
 ```
 
-Dummy Chip/Wafer는 `(1 - EDS_수율)`을 추가 적용한다. 정확한 현재 구현은
-`load_calculator.py`와 `docs/TODO.md`를 기준으로 한다.
+Dummy Chip/Wafer는 `(1 - EDS_수율)`을 추가 적용한다. `WF 구분`의 Dummy 판별은 기존
+리비전과 BigDataQuery의 표기 차이를 흡수하도록 대소문자와 앞뒤 공백에 의존하지 않는다.
+정확한 현재 구현은 `load_calculator.py`와 `docs/TODO.md`를 기준으로 한다.
 
 ### 대당 Capa
 

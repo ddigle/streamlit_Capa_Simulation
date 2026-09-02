@@ -134,6 +134,25 @@ def test_product_information_marker_is_normalized_before_rq_derivation() -> None
     assert prepared.reference_tables["RQ_REQB"].loc[0, "제품정보"] == "Product A"
 
 
+def test_product_information_underscores_are_normalized_before_rq_derivation() -> None:
+    source = _core_data_row()
+    source.loc[0, "제품정보"] = "Product_A__SE"
+
+    prepared = prepare_core_data_dataset(
+        CoreDataBatch(
+            simulation_code="SIM-001",
+            simulation_name="사내 조회 결과",
+            source_type="BIGDATAQUERY",
+            frame=source,
+        ),
+        _display_order(),
+    )
+
+    assert prepared.source_data.loc[0, "제품정보"] == "Product_A__SE"
+    assert prepared.reference_tables["RQ_PKG_PLAN"].loc[0, "제품정보"] == "Product A SE"
+    assert prepared.reference_tables["RQ_REQB"].loc[0, "제품정보"] == "Product A SE"
+
+
 def test_area_name_is_normalized_before_rq_derivation() -> None:
     source = _core_data_row()
     source.loc[0, "Area_Name"] = " MAIN "

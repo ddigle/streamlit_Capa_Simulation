@@ -55,6 +55,7 @@ def get_required_equipment(
     chip_qty: pd.DataFrame,
     unit_capacity: pd.DataFrame,
 ) -> pd.DataFrame:
+    # Load-calculation cache schema v2: normalize WF type before Dummy detection.
     return calculate_required_equipment(
         reqb=reqb,
         plan=plan,
@@ -102,6 +103,7 @@ def get_monthly_volume(
     density_data: pd.DataFrame,
     display_order: pd.DataFrame,
 ) -> pd.DataFrame:
+    # Load-calculation cache schema v2: normalize WF type before Dummy detection.
     return build_monthly_volume(
         plan=plan,
         yield_data=yield_data,
@@ -128,6 +130,7 @@ def get_monthly_wafer_load(
     yield_data: pd.DataFrame,
     chip_qty: pd.DataFrame,
 ) -> pd.DataFrame:
+    # Load-calculation cache schema v2: normalize WF type before Dummy detection.
     return build_monthly_wafer_load(plan, yield_data, chip_qty)
 
 
@@ -140,6 +143,7 @@ def get_home_equipment_demand(
     unit_capacity: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build HOME Wafer totals and required equipment from one shared load join."""
+    # Load-calculation cache schema v2: normalize WF type before Dummy detection.
     chip_load, wafer_load = calculate_chip_and_wafer_loads(plan, yield_data, chip_qty)
     monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
     required_equipment = calculate_required_equipment_from_loads(
@@ -170,6 +174,7 @@ def get_home_simulation(
     available_equipment: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Reuse the complete HOME calculation graph with one top-level cache lookup."""
+    # Load-calculation cache schema v2: normalize WF type before Dummy detection.
     monthly_density, production_detail = get_production_dashboard(
         plan,
         density_data,

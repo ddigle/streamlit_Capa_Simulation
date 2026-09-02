@@ -119,6 +119,44 @@ def test_monthly_pkg_and_wafer_volume() -> None:
     assert detailed_pkg.loc[0, "WF 구분"] == "PKG"
 
 
+def test_dummy_load_recognizes_uppercase_wf_type_with_outer_whitespace() -> None:
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "양산구분": ["양산"],
+            "제품정보": ["HBM4"],
+            "Stack": ["12H"],
+            "생산수량": [1831.6],
+        }
+    )
+    yield_data = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "제품정보": ["HBM4"],
+            "Stack": ["12H"],
+            "WF 구분": [" DUMMY "],
+            "EDS_수율": [0.78],
+            "BE_수율": [0.879],
+        }
+    )
+    chip_qty = pd.DataFrame(
+        {
+            "제품정보": ["HBM4"],
+            "Stack": ["12H"],
+            "WF 구분": ["DUMMY"],
+            "구분_Chip": [1.0],
+            "Net Die": [100.0],
+        }
+    )
+
+    chip_load, wafer_load = calculate_chip_and_wafer_loads(plan, yield_data, chip_qty)
+
+    expected_chip_load = 1831.6 / 0.78 / 0.879 * (1 - 0.78)
+    expected_wafer_load = expected_chip_load * 1_000 / 100.0
+    assert chip_load.loc[0, "물량"] == pytest.approx(expected_chip_load)
+    assert wafer_load.loc[0, "물량"] == pytest.approx(expected_wafer_load)
+
+
 def test_chip_and_wafer_bundle_prepares_shared_base_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -973,6 +1011,78 @@ def test_required_equipment_aggregates_reqb_rows_after_calculation() -> None:
     assert table["STEP_SEQ"].tolist() == ["10"]
     assert table["MCP_SEQ"].tolist() == ["1"]
     assert table.loc[0, "202608"] == pytest.approx(2.0)
+
+
+def test_required_equipment_applies_dummy_loss_to_uppercase_wf_type() -> None:
+    reqb = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "Area_Name": ["Main"],
+            "공정": ["Pre Bonder"],
+            "양산구분": ["양산"],
+            "제품정보": ["HBM4"],
+            "Stack": ["12H"],
+            "Capa Code": ["CAPA-A"],
+            "Customer": ["Customer-A"],
+            "CS": ["MP"],
+            "WF 구분": ["DUMMY"],
+            "STEP_SEQ": ["P456"],
+            "MCP_SEQ": ["1A"],
+            "소요기준": ["CHIP"],
+        }
+    )
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "양산구분": ["양산"],
+            "제품정보": ["HBM4"],
+            "Stack": ["12H"],
+            "Capa Code": ["CAPA-A"],
+            "Customer": ["Customer-A"],
+            "CS": ["MP"],
+            "생산수량": [1831.6],
+        }
+    )
+    yield_data = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "제품정보": ["HBM4"],
+            "Stack": ["12H"],
+            "WF 구분": ["DUMMY"],
+            "EDS_수율": [0.78],
+            "BE_수율": [0.879],
+        }
+    )
+    chip_qty = pd.DataFrame(
+        {
+            "제품정보": ["HBM4"],
+            "Stack": ["12H"],
+            "WF 구분": ["DUMMY"],
+            "구분_Chip": [1.0],
+            "Net Die": [100.0],
+        }
+    )
+    unit_capacity = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "Area_Name": ["Main"],
+            "공정": ["Pre Bonder"],
+            "STEP_SEQ": ["P456"],
+            "MCP_SEQ": ["1A"],
+            "소요기준": ["CHIP"],
+            "양산구분": ["양산"],
+            "제품정보": ["HBM4"],
+            "Stack": ["12H"],
+            "WF 구분": ["DUMMY"],
+            "대당 Capa": [484.0],
+        }
+    )
+
+    result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
+
+    expected_load = 1831.6 / 0.78 / 0.879 * (1 - 0.78)
+    assert result["부하량"].tolist() == pytest.approx([expected_load])
+    assert result["소요대수"].tolist() == pytest.approx([expected_load / 484.0])
 
 
 def test_required_equipment_normalizes_area_name_before_capacity_join() -> None:

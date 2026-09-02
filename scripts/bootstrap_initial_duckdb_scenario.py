@@ -17,7 +17,7 @@ from capa_simulation.services.reference_transformer import build_reference_table
 from capa_simulation.settings import CORE_DATA_CSV_PATH, DUCKDB_PATH, PROJECT_ROOT
 
 DEFAULT_SOURCE_CODE = "LOCAL-CORE-DATA-INITIAL"
-PIPELINE_VERSION = "core-data-pandas-v4"
+PIPELINE_VERSION = "core-data-pandas-v5"
 
 
 def parse_args() -> argparse.Namespace:

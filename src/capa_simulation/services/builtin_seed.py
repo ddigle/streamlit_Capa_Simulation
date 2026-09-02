@@ -21,7 +21,7 @@ from capa_simulation.settings import PROJECT_ROOT
 BUILTIN_DISPLAY_ORDER_PATH = PROJECT_ROOT / "config" / "bootstrap_display_order.json"
 LOCAL_DISPLAY_ORDER_CSV_PATH = PROJECT_ROOT / "data" / "input" / "RQ_DISPLAY_ORDER.csv"
 BUILTIN_SEED_SCHEMA_VERSION = 1
-BUILTIN_SEED_PIPELINE_VERSION = "builtin-synthetic-core-data-v1"
+BUILTIN_SEED_PIPELINE_VERSION = "builtin-synthetic-core-data-v2"
 BUILTIN_SEED_SOURCE_CODE = "BUILTIN-GITHUB-SEED-V1"
 BUILTIN_SEED_SOURCE_NAME = "GitHub 독립 실행용 합성 Core Data"
 BUILTIN_SEED_SCENARIO_NAME = "GitHub 독립 실행 데모"

@@ -23,7 +23,7 @@ from capa_simulation.services.core_data_pipeline import (
     summarize_reference_conflicts,
 )
 
-PIPELINE_VERSION = "bigdataquery-core-data-v3"
+PIPELINE_VERSION = "bigdataquery-core-data-v4"
 CONFLICT_REPORT_STATE_KEY = "bigdataquery_reference_conflict_report"
 REGISTRATION_FLASH_KEY = "bigdataquery_registration_flash"
 

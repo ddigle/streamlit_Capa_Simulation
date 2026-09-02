@@ -214,6 +214,11 @@ def _normalize_text(data: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     return normalized
 
 
+def _matches_text(values: pd.Series, expected: str) -> pd.Series:
+    """Compare classification text without depending on case or outer whitespace."""
+    return values.astype("string").str.strip().str.casefold().eq(expected.casefold()).fillna(False)
+
+
 def _to_numeric(data: pd.DataFrame, columns: list[str], table_name: str) -> pd.DataFrame:
     converted = data.copy()
     for column in columns:
@@ -354,7 +359,7 @@ def _calculate_chip_load_from_base(load_base: pd.DataFrame) -> pd.DataFrame:
     calculation["물량"] = (
         calculation["생산수량"] * calculation["구분_Chip"] / calculation["BE_수율"]
     )
-    is_dummy = calculation["WF 구분"].eq("Dummy")
+    is_dummy = _matches_text(calculation["WF 구분"], "Dummy")
     calculation.loc[is_dummy, "물량"] = (
         calculation.loc[is_dummy, "생산수량"]
         * calculation.loc[is_dummy, "구분_Chip"]
@@ -384,7 +389,7 @@ def _calculate_wafer_load_from_base(load_base: pd.DataFrame) -> pd.DataFrame:
         / calculation["BE_수율"]
         / calculation["Net Die"]
     )
-    is_dummy = calculation["WF 구분"].eq("Dummy")
+    is_dummy = _matches_text(calculation["WF 구분"], "Dummy")
     calculation.loc[is_dummy, "물량"] *= 1 - calculation.loc[is_dummy, "EDS_수율"]
     return calculation
 

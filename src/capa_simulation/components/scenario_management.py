@@ -35,7 +35,7 @@ from capa_simulation.services.core_data_pipeline import fetch_core_data_dataset
 from capa_simulation.settings import CORE_DATA_CSV_PATH
 
 CLONE_PIPELINE_VERSION = "duckdb-rq-snapshot-v3"
-CORE_DATA_PIPELINE_VERSION = "core-data-pandas-v4"
+CORE_DATA_PIPELINE_VERSION = "core-data-pandas-v5"
 FLASH_KEY = "scenario_management_flash"
 
 

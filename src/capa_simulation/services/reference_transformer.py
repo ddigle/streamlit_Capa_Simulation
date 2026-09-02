@@ -104,10 +104,16 @@ def build_q_core_data(
     """Apply Q_Core_Data types, active columns, and derived columns."""
     normalized = normalize_core_data(source, contract)
     core = normalized.loc[:, list(ACTIVE_CORE_COLUMNS)].copy()
-    # BigDataQuery represents an embedded blank in product names as the literal
-    # marker "*_".  Normalize it before any RQ key is derived so every table
-    # receives the same product key.
-    core["제품정보"] = core["제품정보"].str.replace("*_", " ", regex=False)
+    # BigDataQuery can represent blanks in product names with underscores. Keep
+    # the typed raw snapshot unchanged, but normalize the RQ business key before
+    # any table is derived so every downstream join receives the same value.
+    core["제품정보"] = (
+        core["제품정보"]
+        .str.replace("*_", " ", regex=False)
+        .str.replace("_", " ", regex=False)
+        .str.replace(r"\s+", " ", regex=True)
+        .str.strip()
+    )
     area_names = core["Area_Name"].astype("string").str.strip()
     normalized_areas = area_names.str.casefold()
     core["Area_Name"] = area_names
