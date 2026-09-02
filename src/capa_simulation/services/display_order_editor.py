@@ -17,6 +17,14 @@ DISPLAY_ORDER_COLUMNS = (
     "활성여부",
 )
 DISPLAY_ORDER_RULE_COLUMNS = DISPLAY_ORDER_COLUMNS[2:]
+ROUTE_SEQUENCE_COLUMNS = ("STEP_SEQ", "MCP_SEQ")
+ROUTE_SEQUENCE_SCOPES = (
+    ("공정별 Capa", "대당 Capa"),
+    ("공정별 Capa", "UPEH"),
+    ("공정별 Capa", "Lot측정률"),
+    ("공정별 Capa", "WF측정률"),
+    ("공정별 확보율", "소요대수"),
+)
 
 
 def validate_display_order(source: pd.DataFrame) -> pd.DataFrame:
@@ -92,6 +100,50 @@ def replace_display_order_scope(
     )
     merged = pd.concat([normalized_current.loc[~mask], rules], ignore_index=True)
     return validate_display_order(merged)
+
+
+def ensure_route_sequence_rules(source: pd.DataFrame) -> pd.DataFrame:
+    """Keep STEP and MCP as the final configured hierarchy in route-aware scopes."""
+    normalized = validate_display_order(source)
+    result = normalized.copy()
+    for page, tab in ROUTE_SEQUENCE_SCOPES:
+        scope = result["페이지 구분"].eq(page) & result["탭 구분"].eq(tab)
+        if not scope.any():
+            continue
+        route_rows = scope & result["분류컬럼"].isin(ROUTE_SEQUENCE_COLUMNS)
+        preserved_route_rules = {
+            column: result.loc[scope & result["분류컬럼"].eq(column)].copy()
+            for column in ROUTE_SEQUENCE_COLUMNS
+        }
+        non_route = result.loc[scope & ~route_rows]
+        maximum_priority = int(non_route["정렬우선순위"].max()) if not non_route.empty else 0
+        result = result.loc[~route_rows].copy()
+        additions: list[dict[str, object]] = []
+        for offset, column in enumerate(ROUTE_SEQUENCE_COLUMNS, start=1):
+            rules = preserved_route_rules[column]
+            if rules.empty:
+                additions.append(
+                    {
+                        "페이지 구분": page,
+                        "탭 구분": tab,
+                        "정렬우선순위": maximum_priority + offset,
+                        "분류컬럼": column,
+                        "정렬방식": "오름차순",
+                        "분류값": pd.NA,
+                        "값표시순서": pd.NA,
+                        "활성여부": "Y",
+                    }
+                )
+            else:
+                rules.loc[:, "정렬우선순위"] = maximum_priority + offset
+                rules.loc[:, "활성여부"] = "Y"
+                for row in rules.itertuples(index=False, name=None):
+                    additions.append(dict(zip(DISPLAY_ORDER_COLUMNS, row, strict=True)))
+        result = pd.DataFrame(
+            [*result.to_dict("records"), *additions],
+            columns=DISPLAY_ORDER_COLUMNS,
+        )
+    return validate_display_order(result)
 
 
 def _required_text(value: str, label: str) -> str:

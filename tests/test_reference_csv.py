@@ -6,6 +6,7 @@ from capa_simulation.services.equipment_count import (
     equipment_count_to_edit_table,
 )
 from capa_simulation.services.reference_csv import (
+    parse_reference_edit_clipboard,
     parse_reference_edit_csv,
     reference_edit_csv_bytes,
 )
@@ -29,6 +30,22 @@ def test_reference_csv_round_trip_preserves_template_row_order() -> None:
 
     result = parse_reference_edit_csv(
         reference_edit_csv_bytes(modified),
+        template,
+        ["공정", "양산구분"],
+        "RQ_RUN_RATE",
+    )
+
+    assert result["공정"].tolist() == ["Process-B", "Process-A"]
+    assert float(result.loc[1, "202608"]) == pytest.approx(0.75)
+
+
+def test_reference_clipboard_round_trip_preserves_template_row_order() -> None:
+    template = _template()
+    modified = template.iloc[::-1].reset_index(drop=True)
+    modified.loc[modified["공정"].eq("Process-A"), "202608"] = 0.75
+
+    result = parse_reference_edit_clipboard(
+        modified.to_csv(index=False, sep="\t"),
         template,
         ["공정", "양산구분"],
         "RQ_RUN_RATE",

@@ -1,4 +1,4 @@
-"""Web editor and CSV import for the global RQ_DISPLAY_ORDER profile."""
+"""Web editor and Excel clipboard import for the global display-order profile."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from capa_simulation.persistence.cache import (
 )
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.display_order_csv import (
-    display_order_from_csv,
+    display_order_from_clipboard,
     display_order_to_csv,
 )
 from capa_simulation.services.display_order_editor import (
@@ -50,50 +50,52 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
             width="content",
         )
 
-    _render_csv_import(repository, display_order)
+    _render_clipboard_import(repository, display_order)
     _render_direct_editor(repository, display_order)
 
 
-def _render_csv_import(
+def _render_clipboard_import(
     repository: DuckDBScenarioRepository,
     current: pd.DataFrame,
 ) -> None:
-    with st.expander("CSV 일괄 적용"):
+    with st.expander("Excel 붙여넣기 일괄 적용", icon=":material/content_paste:"):
         st.caption(
-            "다운로드한 양식의 컬럼을 유지한 채 수정해 업로드하세요. 적용하면 현재 공용 "
-            "표시순서 전체가 교체되며 시나리오 리비전은 생성하지 않습니다."
+            "다운로드한 양식을 Excel에서 수정한 뒤 헤더를 포함한 전체 표를 복사해 "
+            "붙여넣으세요. 적용하면 현재 공용 표시순서 전체가 교체되며 시나리오 "
+            "리비전은 생성하지 않습니다."
         )
-        with st.form("global_display_order_csv_form", border=False):
-            uploaded = st.file_uploader(
-                "표시순서 CSV",
-                type=["csv"],
-                key="global_display_order_csv_upload",
+        with st.form("global_display_order_clipboard_form", border=False):
+            clipboard_text = st.text_area(
+                "표시순서 표 붙여넣기",
+                key="global_display_order_clipboard",
+                height=220,
+                placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
             )
             confirmed = st.checkbox("현재 공용 표시순서 전체 교체를 확인했습니다.")
             submitted = st.form_submit_button(
-                "CSV 표시순서 적용",
-                icon=":material/upload_file:",
+                "붙여넣기 표시순서 적용",
+                icon=":material/content_paste:",
                 type="primary",
                 width="stretch",
             )
         if not submitted:
             return
-        if uploaded is None:
-            st.error("적용할 표시순서 CSV를 선택하세요.")
+        if not clipboard_text.strip():
+            st.error("적용할 표시순서 표를 Excel에서 복사해 붙여넣으세요.")
             return
         if not confirmed:
             st.error("전체 교체 확인을 선택하세요.")
             return
         try:
-            imported = display_order_from_csv(uploaded.getvalue())
+            imported = display_order_from_clipboard(clipboard_text)
             if imported.equals(current):
-                st.info("업로드한 표시순서가 현재 공용 설정과 동일합니다.")
+                st.info("붙여넣은 표시순서가 현재 공용 설정과 동일합니다.")
                 return
-            _save_global_display_order(repository, imported, source="CSV Import")
+            _save_global_display_order(repository, imported, source="Excel 붙여넣기")
         except (KeyError, RuntimeError, TypeError, ValueError) as exc:
             st.error(str(exc))
         else:
-            st.success("CSV 표시순서를 모든 시나리오의 공용 설정으로 적용했습니다.")
+            st.success("붙여넣은 표시순서를 모든 시나리오의 공용 설정으로 적용했습니다.")
             st.rerun()
 
 
@@ -127,8 +129,10 @@ def _render_direct_editor(
         drop=True
     )
     st.caption(
+        "정렬우선순위는 행 그룹 정렬과 왼쪽 분류컬럼 배치 순서에 함께 적용됩니다. "
         "사용자지정은 분류값마다 값표시순서를 입력하고, 오름차순·내림차순은 한 행만 "
-        "유지하세요. 행 추가·삭제가 가능합니다."
+        "유지하세요. 경로 상세가 있는 탭의 STEP_SEQ·MCP_SEQ는 항상 마지막 계층으로 "
+        "유지됩니다."
     )
     with st.form("display_order_edit_form"):
         edited = st.data_editor(

@@ -8,6 +8,7 @@ from io import BytesIO
 
 import pandas as pd
 
+from capa_simulation.services.clipboard_table import parse_clipboard_table
 from capa_simulation.services.weighted_unit_capacity import (
     WEIGHTED_CAPACITY_HIERARCHY,
     effective_process_capacity_long,
@@ -79,23 +80,28 @@ def parse_weekly_availability_csv(content: bytes) -> pd.DataFrame:
     return prepare_weekly_availability(source)
 
 
+def parse_weekly_availability_clipboard(content: str) -> pd.DataFrame:
+    """Parse header-inclusive weekly availability copied from Excel."""
+    return prepare_weekly_availability(parse_clipboard_table(content, "가용설비"))
+
+
 def prepare_weekly_availability(data: pd.DataFrame) -> pd.DataFrame:
     """Normalize and validate the manual process-week availability contract."""
     missing = [column for column in WEEKLY_AVAILABILITY_COLUMNS if column not in data.columns]
     if missing:
-        raise ValueError(f"가용설비 CSV 필수 컬럼이 없습니다: {', '.join(missing)}")
+        raise ValueError(f"가용설비 입력 표 필수 컬럼이 없습니다: {', '.join(missing)}")
 
     result = data[WEEKLY_AVAILABILITY_COLUMNS].copy()
     result = result.dropna(how="all").reset_index(drop=True)
     if result.empty:
-        raise ValueError("가용설비 CSV에 입력된 행이 없습니다.")
+        raise ValueError("가용설비 입력 표에 행이 없습니다.")
 
     result["공정"] = result["공정"].astype("string").str.strip()
     result["Weeknum"] = result["Weeknum"].astype("string").str.strip().str.upper()
     if result["공정"].isna().any() or result["공정"].eq("").any():
-        raise ValueError("가용설비 CSV의 공정에는 누락값을 입력할 수 없습니다.")
+        raise ValueError("가용설비 입력 표의 공정에는 누락값을 입력할 수 없습니다.")
     if result["Weeknum"].isna().any() or result["Weeknum"].eq("").any():
-        raise ValueError("가용설비 CSV의 Weeknum에는 누락값을 입력할 수 없습니다.")
+        raise ValueError("가용설비 입력 표의 Weeknum에는 누락값을 입력할 수 없습니다.")
 
     invalid_weeks = [
         weeknum for weeknum in result["Weeknum"].drop_duplicates() if not _valid_weeknum(weeknum)
@@ -105,16 +111,16 @@ def prepare_weekly_availability(data: pd.DataFrame) -> pd.DataFrame:
 
     available = pd.to_numeric(result["가용대수"], errors="coerce")
     if available.isna().any():
-        raise ValueError("가용설비 CSV의 가용대수에 숫자가 아닌 값 또는 누락값이 있습니다.")
+        raise ValueError("가용설비 입력 표의 가용대수에 숫자가 아닌 값 또는 누락값이 있습니다.")
     if available.lt(0).any():
-        raise ValueError("가용설비 CSV의 가용대수는 0 이상이어야 합니다.")
+        raise ValueError("가용설비 입력 표의 가용대수는 0 이상이어야 합니다.")
     result["가용대수"] = available.astype("float64")
 
     duplicated = result.duplicated(["공정", "Weeknum"], keep=False)
     if duplicated.any():
         examples = result.loc[duplicated, ["공정", "Weeknum"]].drop_duplicates().head(5)
         raise ValueError(
-            f"가용설비 CSV의 공정·Weeknum이 중복되었습니다: {examples.to_dict('records')}"
+            f"가용설비 입력 표의 공정·Weeknum이 중복되었습니다: {examples.to_dict('records')}"
         )
     return result.sort_values(["공정", "Weeknum"], ignore_index=True)
 

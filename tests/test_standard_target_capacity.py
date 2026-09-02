@@ -7,6 +7,7 @@ from capa_simulation.services.standard_target_capacity import (
     build_iso_week_calendar,
     build_weekly_availability_template,
     build_weekly_standard_target_capacity,
+    parse_weekly_availability_clipboard,
     prepare_weekly_availability,
     weekly_standard_target_to_wide,
 )
@@ -62,6 +63,14 @@ def test_availability_template_preserves_process_order() -> None:
     assert result["공정"].tolist() == ["Process-B", "Process-A"]
     assert result["Weeknum"].tolist() == ["26-W32", "26-W32"]
     assert result["가용대수"].tolist() == [0.0, 0.0]
+
+
+def test_weekly_availability_clipboard_is_validated() -> None:
+    result = parse_weekly_availability_clipboard("공정\tWeeknum\t가용대수\nProcess-A\t26-W32\t2.5")
+
+    assert result.to_dict("records") == [
+        {"공정": "Process-A", "Weeknum": "26-W32", "가용대수": 2.5}
+    ]
 
 
 def test_weekly_target_uses_daily_effective_capacity_and_availability() -> None:

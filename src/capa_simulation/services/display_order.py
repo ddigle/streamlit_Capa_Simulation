@@ -13,6 +13,7 @@ DISPLAY_ORDER_RULE_COLUMNS = [
 DISPLAY_ORDER_SCOPE_COLUMNS = ["페이지 구분", "탭 구분"]
 LEGACY_SCOPE_COLUMN = "적용화면"
 DISPLAY_ORDER_MODES = {"사용자지정", "오름차순", "내림차순"}
+ROUTE_SEQUENCE_COLUMNS = ("STEP_SEQ", "MCP_SEQ")
 
 
 def _prepare_display_order(display_order: pd.DataFrame) -> pd.DataFrame:
@@ -148,3 +149,63 @@ def apply_display_order(
     return sorted_result.drop(columns=[*helper_columns, "__display_original_order"]).reset_index(
         drop=True
     )
+
+
+def classification_columns_in_display_order(
+    columns: list[str],
+    display_order: pd.DataFrame | None,
+    page: str,
+    tab: str | None = None,
+) -> list[str]:
+    """Resolve the visible hierarchy while keeping route identifiers at the bottom."""
+    available = list(dict.fromkeys(columns))
+    route_columns = [column for column in ROUTE_SEQUENCE_COLUMNS if column in available]
+    non_route_columns = [column for column in available if column not in route_columns]
+    if display_order is None:
+        return [*non_route_columns, *route_columns]
+
+    prepared = _prepare_display_order(display_order)
+    tab_name = tab or page
+    rules = prepared.loc[
+        prepared["활성여부"].eq("Y")
+        & prepared["탭 구분"].eq(tab_name)
+        & (prepared["페이지 구분"].eq("") | prepared["페이지 구분"].eq(page))
+    ]
+    configured = (
+        rules[["정렬우선순위", "분류컬럼"]]
+        .drop_duplicates()
+        .sort_values("정렬우선순위", kind="stable")["분류컬럼"]
+        .astype(str)
+        .tolist()
+    )
+    configured_non_route = [column for column in configured if column in non_route_columns]
+    unconfigured_non_route = [
+        column for column in non_route_columns if column not in configured_non_route
+    ]
+    configured_route = [column for column in configured if column in route_columns]
+    unconfigured_route = [column for column in route_columns if column not in configured_route]
+    return [
+        *configured_non_route,
+        *unconfigured_non_route,
+        *configured_route,
+        *unconfigured_route,
+    ]
+
+
+def reorder_display_columns(
+    data: pd.DataFrame,
+    classification_columns: list[str],
+    display_order: pd.DataFrame | None,
+    page: str,
+    tab: str | None = None,
+) -> tuple[pd.DataFrame, list[str]]:
+    """Place configured classifications before value columns and return their order."""
+    ordered = classification_columns_in_display_order(
+        classification_columns,
+        display_order,
+        page,
+        tab,
+    )
+    classification_set = set(classification_columns)
+    remaining = [column for column in data.columns if column not in classification_set]
+    return data.reindex(columns=[*ordered, *remaining]), ordered

@@ -843,6 +843,7 @@ def test_unit_capacity_excludes_unimplemented_box_and_pcb_bases() -> None:
 
     assert result.empty
     assert list(table.columns) == UNIT_CAPACITY_DIMENSIONS
+    assert UNIT_CAPACITY_DIMENSIONS[-2:] == ["STEP_SEQ", "MCP_SEQ"]
 
 
 def test_weighted_unit_capacity_uses_process_load_at_selected_detail_level() -> None:
@@ -1228,6 +1229,7 @@ def test_required_equipment_excludes_unimplemented_box_and_pcb_bases() -> None:
 
     assert result.empty
     assert list(table.columns) == RESULT_DIMENSIONS
+    assert RESULT_DIMENSIONS[-2:] == ["STEP_SEQ", "MCP_SEQ"]
 
 
 def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:

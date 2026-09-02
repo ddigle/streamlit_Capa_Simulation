@@ -13,14 +13,14 @@ PERFORMANCE_KEYS = [
 ]
 UNIT_CAPACITY_DIMENSIONS = [
     "공정",
-    "STEP_SEQ",
-    "MCP_SEQ",
     "Area_Name",
     "소요기준",
     "양산구분",
     "제품정보",
     "Stack",
     "WF 구분",
+    "STEP_SEQ",
+    "MCP_SEQ",
 ]
 UNIMPLEMENTED_BASES = {"BOX", "PCB"}
 CAPACITY_EXCLUSIONS_ATTR = "excluded_capacity_rows"

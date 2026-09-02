@@ -30,7 +30,7 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
 비민감 `DEMO_*` Core Data를 공통 변환 파이프라인에 넣어 초기 시나리오·리비전·공식버전을
 자동 생성한다. 기존 시나리오나 공식버전은 자동 시드가 변경하지 않으며 내장 시드는 운영
 기준정보가 아니다. 실제 표시순서는 시나리오와 분리된 공용 DB 프로필이며, 선택적 로컬
-`data/input/RQ_DISPLAY_ORDER.csv` 또는 웹 CSV Import로 초기화할 수 있다.
+`data/input/RQ_DISPLAY_ORDER.csv` 또는 웹 Excel 표 붙여넣기로 초기화할 수 있다.
 
 ## 2. 실행환경과 검증 기준
 
@@ -149,12 +149,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     생산계획년월, 전체 B/N 공정과 전체 표준 목표 Capa 공정을 기본 조회 범위로 사용한다.
     현재 활성 화면의 축소 조회기간이나 공정 제외 상태를 새 원천에 복사하지 않는다.
   - 새 리비전은 편집 가능한 12개 RQ와 사이드바 프리셋의 전체 스냅샷을 저장한다.
-  - 표시순서는 시나리오와 분리된 공용 DB 프로필로 저장하며 전체 CSV 다운로드·Import와
-    페이지·탭 범위별 직접 편집·충돌 검증을 제공한다.
+  - 표시순서는 시나리오와 분리된 공용 DB 프로필로 저장하며 전체 CSV 양식 다운로드·
+    Excel 표 붙여넣기와 페이지·탭 범위별 직접 편집·충돌 검증을 제공한다.
 - `app_pages/standard_target_capa.py`
   - Static Capa 하위에서 월간 공정 유효 Capa를 일 단위로 환산하고 주차별 가용대수를
     적용한 일 표준 가능량을 제공한다.
-  - 조회일·공정 필터·상세 토글, 수동 가용대수 CSV Import·양식 다운로드와
+  - 조회일·공정 필터·상세 토글, 수동 가용대수 CSV 양식 다운로드·Excel 표 붙여넣기와
     `일 표준 가능량`·`대당 일 Capa`·`가용대수` 전환 Plotly 표를 제공한다. ER은 항상
     제외하고 상세 OFF는 제품 Mix를 반영한 공정 단일값, ON은 선택한 제품 분류를 표시한다.
   - 공정 필터는 리비전에 공용 기본값으로 저장하되 페이지 변경은 사용자 세션에만 적용한다.
@@ -162,7 +162,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 수동 가용대수는 설비 DuckDB에 공정·Weeknum 최신값으로 즉시 저장하되 리비전을
     만들지 않으며, 향후 가용설비 현황 DuckDB 산출 조회로 입력 경계를 교체한다.
 - `src/capa_simulation/components/reference_csv_tools.py`
-  - 입력 RQ 월별 Wide 표의 UTF-8 CSV 다운로드·업로드 폼과 적용 결과 알림을 공통 제공한다.
+  - 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 다운로드·Excel 표 붙여넣기 폼과 적용 결과
+    알림을 공통 제공한다.
 - `src/capa_simulation/components/horizontal_scrollbar.py`
   - HOME 월별 영역과 동기화되는 픽셀 단위 커스텀 가로 스크롤바를 제공한다.
   - 네이티브 스크롤바가 아닌 Streamlit Custom Components v2로 구현한다.
@@ -264,7 +265,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `weighted_unit_capacity.py`: 중복되지 않은 원수요 부하량과 STEP별 소요대수 합으로
   공정 유효 Capa를 만들며 기존 부하량 가중평균 조회 함수도 호환용으로 유지
 - `standard_target_capacity.py`: ER 제외 월간 공정 유효 Capa의 일 환산, ISO 주차 캘린더,
-  수동 가용대수 CSV 계약과 주차별 일 표준 가능량
+  수동 가용대수 표 계약과 주차별 일 표준 가능량
 - `route_step_editor.py`: MCP·STEP 고유 조합 수와 네 경로 테이블의 일괄 복제·삭제
 - `required_equipment.py`: RQ_REQB 경로 연결과 소요대수
 - `securement_rate.py`: 공정별 확보율과 경고·확보 기준별 최소 정수 추가 필요대수
@@ -274,15 +275,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   전환 이벤트 원천. 설비 DB가 비어 있을 때 사용하는 개발용 Core Data 기반 30개 공정
   보유대수 샘플과 호기 마스터가 비었을 때만 대시보드에 표시하는 단계별 임시 호기 샘플을
   제공한다. 임시 호기와 비가동 샘플은 DB에 저장하지 않는다.
-- `equipment_csv.py`: 호기 마스터와 비가동 일정의 UTF-8/CP949 CSV 파싱·검증·자연키 기준 병합.
-  다운로드 양식은 2행에 서로 연결되는 입력 예시를 포함하고 비고에 샘플 행 삭제 안내를 둔다.
+- `equipment_csv.py`: 호기 마스터와 비가동 일정의 CSV 양식 생성, Excel 붙여넣기 표
+  검증·자연키 기준 병합. 다운로드 양식은 2행에 서로 연결되는 입력 예시를 포함하고
+  비고에 샘플 행 삭제 안내를 둔다.
 - `dashboard.py`: HOME 월별 집계, B/N 단일 월별 순위에서 파생하는 Top 1·5·10, Wafer Capa
 - `dynamic_capacity.py`: 표준 Capa에 실적 효율·UPEH·Rundown·생산실적을 순차 반영하는
   Dynamic Capa 손실 분석, 시간 가중 집계, 필터와 미연결 화면용 결정론적 데모 데이터
 - `display_order.py`: `RQ_DISPLAY_ORDER` 기반 동적 행 정렬
 - `month_filter.py`: YYYYMM 검증과 조회기간 필터
 - `capacity_reference_editor.py`: Capa 기준정보 Long/Wide 편집 변환
-- `reference_csv.py`: 입력 RQ Wide CSV 인코딩·파싱과 컬럼·분류행 동일성 검증
+- `clipboard_table.py`, `reference_csv.py`: Excel에서 복사한 헤더 포함 TSV 표 파싱과
+  입력 RQ Wide 표의 컬럼·분류행 동일성 검증. 다운로드 양식은 UTF-8 CSV로 유지한다.
 - `reference_transformer.py`: XLSB의 `Q_Core_Data`와 15개 Core 파생 Power Query를
   pandas로 대체하고, 수동 입력 `RQ_DISPLAY_ORDER`를 검증한다. Core 파생 RQ의 동일
   업무 키 값 충돌은 원천 첫 행을 임시 적용해 전체 변환을 계속하며 테이블·업무 키·후보값·
@@ -360,7 +363,7 @@ session state에 별도 복사하지 말고 활성 시나리오의 editable tabl
     리비전 프리셋에 저장하고, 페이지에서 바꾼 값은 현재 세션에만 둔다. 신규 리비전 저장
     시점에만 현재 세션 선택을 다음 공용 기본값으로 캡처한다.
 13. **표시순서는 시나리오에 종속시키지 않는다.** 공용 표시순서는 별도 DB 프로필에서
-    읽고 CSV Import 또는 직접 편집으로 원자 교체한다. 시나리오 전환·신규 생성 시에는
+    읽고 Excel 표 붙여넣기 또는 직접 편집으로 원자 교체한다. 시나리오 전환·신규 생성 시에는
     항상 현재 공용 프로필을 적용하며 표시순서 변경만으로 리비전을 만들지 않는다.
 
 ## 6. 핵심 계산 규칙
@@ -429,10 +432,10 @@ Dummy Chip/Wafer는 `(1 - EDS_수율)`을 추가 적용한다. 정확한 현재 
   단일 유효 Capa, 상세 ON은 사용자가 선택한 제품·Stack·WF 속성 수준으로 표시한다.
 - 주차는 월요일 시작 ISO Weeknum(`YY-W##`)이며 월 경계 주차에는 월요일이 속한 달의
   월간 Capa와 `RUN_DAY`를 적용한다.
-- 현재 수동 CSV 계약은 `공정 + Weeknum + 가용대수`이고 공정·Weeknum은 유일해야 하며
+- 현재 수동 입력 표 계약은 `공정 + Weeknum + 가용대수`이고 공정·Weeknum은 유일해야 하며
   가용대수는 0 이상이어야 한다.
-- 수동 CSV는 설비 DuckDB의 비버전 최신값으로 공정·Weeknum 단위 갱신한다. 일부 공정
-  업로드는 다른 공정 값을 보존하고 명시적 초기화만 전체를 삭제한다. 가용설비 운영 DB
+- 붙여넣은 수동 입력 표는 설비 DuckDB의 비버전 최신값으로 공정·Weeknum 단위 갱신한다.
+  일부 공정 입력은 다른 공정 값을 보존하고 명시적 초기화만 전체를 삭제한다. 가용설비 운영 DB
   연결 전환 시 계산 서비스는 유지하고 입력 공급자만 교체한다.
 
 ### 소요대수와 확보율
@@ -543,7 +546,11 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - 런타임 `RQ_DISPLAY_ORDER`는 `app_meta.global_display_order*`의 공용 프로필이며
   시나리오 리비전에 저장된 과거 복사본보다 우선한다.
 - 적용 범위는 `페이지 구분 + 탭 구분`이다.
-- `정렬우선순위`는 정렬 컬럼의 우선순위, `값표시순서`는 사용자 지정 값 순서다.
+- `정렬우선순위`는 행 정렬 키와 화면의 왼쪽 분류컬럼 배치 순서에 함께 적용하고,
+  `값표시순서`는 사용자 지정 값 순서다.
+- 경로 상세가 있는 대당 Capa·UPEH·Lot/WF측정률·소요대수 표는 `STEP_SEQ → MCP_SEQ`를
+  항상 마지막 분류 계층으로 둔다. 기존 공용 프로필에 두 규칙이 없으면 Repository가
+  해당 페이지·탭 범위의 마지막 우선순위로 자동 보강한다.
 - 지원 정렬방식은 `사용자지정`, `오름차순`, `내림차순`이다.
 - 월별 컬럼은 선택한 유효 조회기간만 전개한다.
 - 주요 표의 분류 컬럼은 고정하고 월 컬럼은 필요할 때 가로 스크롤한다.

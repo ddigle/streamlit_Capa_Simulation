@@ -33,7 +33,7 @@ from capa_simulation.services.simulation_cache import (
 from capa_simulation.services.standard_target_capacity import (
     build_weekly_availability_template,
     exclude_er_required_equipment,
-    parse_weekly_availability_csv,
+    parse_weekly_availability_clipboard,
     weekly_standard_target_to_wide,
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
@@ -269,10 +269,11 @@ template_csv = template.to_csv(index=False).encode("utf-8-sig")
 weekly_output_container = st.container(border=True)
 
 with st.container(border=True):
-    st.subheader("주차별 가용설비 CSV")
+    st.subheader("주차별 가용설비 입력")
     st.caption(
-        "필수 입력은 `공정`, `Weeknum`, `가용대수`입니다. 템플릿의 가용대수를 입력한 뒤 "
-        "업로드하세요. 적용한 최신본은 설비 DuckDB에 저장되며 별도 버전은 생성하지 않습니다."
+        "CSV 양식을 내려받아 Excel에서 `공정`, `Weeknum`, `가용대수`를 수정하세요. "
+        "헤더를 포함한 전체 표를 복사해 아래에 붙여넣으면 파일 업로드 없이 적용합니다. "
+        "적용값은 설비 DuckDB에 저장되며 별도 버전은 생성하지 않습니다."
     )
     action_row = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
     with action_row:
@@ -293,23 +294,24 @@ with st.container(border=True):
             equipment_repository.clear_standard_target_availability()
             st.rerun()
 
-    with st.form("standard_target_availability_import", border=False):
-        uploaded_file = st.file_uploader(
-            "가용설비 CSV 선택",
-            type=["csv"],
-            key="standard_target_availability_file",
+    with st.form("standard_target_availability_clipboard", border=False):
+        clipboard_text = st.text_area(
+            "가용설비 표 붙여넣기",
+            key="standard_target_availability_clipboard_text",
+            height=180,
+            placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
         )
         import_submitted = st.form_submit_button(
-            ":material/upload: CSV 적용",
+            ":material/content_paste: 붙여넣기 적용",
             type="primary",
         )
     if import_submitted:
-        if uploaded_file is None:
-            st.error("적용할 가용설비 CSV 파일을 선택하세요.")
+        if not clipboard_text.strip():
+            st.error("적용할 가용설비 표를 Excel에서 복사해 붙여넣으세요.")
         else:
             try:
                 availability = equipment_repository.save_standard_target_availability(
-                    parse_weekly_availability_csv(uploaded_file.getvalue())
+                    parse_weekly_availability_clipboard(clipboard_text)
                 )
             except ValueError as exc:
                 st.error(str(exc))
@@ -319,7 +321,7 @@ with st.container(border=True):
 if availability.empty:
     with weekly_output_container:
         st.subheader("주차별 일 표준 가능량")
-        st.info("주차별 일 표준 가능량을 보려면 가용설비 CSV 최신본을 적용하세요.")
+        st.info("주차별 일 표준 가능량을 보려면 가용설비 입력값을 적용하세요.")
     st.stop()
 
 filtered_required_equipment = required_equipment

@@ -46,14 +46,14 @@ CAPACITY_KEYS = [
 ]
 RESULT_DIMENSIONS = [
     "공정",
-    "STEP_SEQ",
-    "MCP_SEQ",
     "Area_Name",
     "양산구분",
     "제품정보",
     "Stack",
     "WF 구분",
     "소요기준",
+    "STEP_SEQ",
+    "MCP_SEQ",
 ]
 REQB_TEXT_COLUMNS = [column for column in REQB_COLUMNS if column != "생산계획년월"]
 REQB_REQUIRED_KEYS = list(dict.fromkeys([*LOAD_KEYS, *CAPACITY_KEYS]))

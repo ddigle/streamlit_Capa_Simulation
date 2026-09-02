@@ -6,6 +6,8 @@ from io import BytesIO
 
 import pandas as pd
 
+from capa_simulation.services.clipboard_table import parse_clipboard_table
+
 
 def reference_edit_csv_bytes(data: pd.DataFrame) -> bytes:
     """Encode an editable table as an Excel-friendly UTF-8 CSV."""
@@ -32,6 +34,27 @@ def parse_reference_edit_csv(
     if source is None:
         raise ValueError(f"{table_name} CSV는 UTF-8 또는 CP949 인코딩이어야 합니다.")
 
+    return validate_reference_edit_table(source, template, key_columns, table_name)
+
+
+def parse_reference_edit_clipboard(
+    content: str,
+    template: pd.DataFrame,
+    key_columns: list[str],
+    table_name: str,
+) -> pd.DataFrame:
+    """Read a header-inclusive Excel clipboard block using the existing table contract."""
+    source = parse_clipboard_table(content, table_name)
+    return validate_reference_edit_table(source, template, key_columns, table_name)
+
+
+def validate_reference_edit_table(
+    source: pd.DataFrame,
+    template: pd.DataFrame,
+    key_columns: list[str],
+    table_name: str,
+) -> pd.DataFrame:
+    """Require the same columns and classification rows as the current edit template."""
     source = source.dropna(how="all").reset_index(drop=True)
     expected_columns = [str(column) for column in template.columns]
     source.columns = [str(column).strip() for column in source.columns]
@@ -43,19 +66,21 @@ def parse_reference_edit_csv(
             details.append(f"누락 {missing_columns}")
         if extra_columns:
             details.append(f"추가 {extra_columns}")
-        raise ValueError(f"{table_name} CSV 컬럼이 다운로드 양식과 다릅니다: {'; '.join(details)}")
+        raise ValueError(
+            f"{table_name} 입력 표 컬럼이 다운로드 양식과 다릅니다: {'; '.join(details)}"
+        )
     result = source.reindex(columns=expected_columns).copy()
 
     missing_keys = [column for column in key_columns if column not in result.columns]
     if missing_keys:
-        raise ValueError(f"{table_name} CSV 식별 컬럼이 없습니다: {', '.join(missing_keys)}")
+        raise ValueError(f"{table_name} 입력 표 식별 컬럼이 없습니다: {', '.join(missing_keys)}")
     expected_keys = _normalized_keys(template, key_columns, table_name, "다운로드 양식")
     uploaded_keys = _normalized_keys(result, key_columns, table_name, "업로드 파일")
     duplicated = uploaded_keys.duplicated(key_columns, keep=False)
     if duplicated.any():
         examples = uploaded_keys.loc[duplicated, key_columns].drop_duplicates().head(5)
         raise ValueError(
-            f"{table_name} CSV 식별 행이 중복되었습니다: {examples.to_dict('records')}"
+            f"{table_name} 입력 표 식별 행이 중복되었습니다: {examples.to_dict('records')}"
         )
 
     expected_index = pd.MultiIndex.from_frame(expected_keys[key_columns])
@@ -64,7 +89,7 @@ def parse_reference_edit_csv(
     extra_rows = uploaded_index.difference(expected_index)
     if len(missing_rows) or len(extra_rows):
         raise ValueError(
-            f"{table_name} CSV의 분류 행은 다운로드 양식과 같아야 합니다: "
+            f"{table_name} 입력 표의 분류 행은 다운로드 양식과 같아야 합니다: "
             f"누락 {len(missing_rows):,}행, 추가 {len(extra_rows):,}행"
         )
 

@@ -6,8 +6,8 @@ from capa_simulation.components.grouped_monthly_table import (
     render_grouped_monthly_table,
 )
 from capa_simulation.components.reference_csv_tools import (
-    queue_reference_csv_flash,
-    render_reference_csv_tools,
+    queue_reference_import_flash,
+    render_reference_clipboard_tools,
 )
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
@@ -168,7 +168,7 @@ with pkg_plan_tab:
         key="apply_pkg_plan_changes",
         type="primary",
     )
-    imported_plan_table = render_reference_csv_tools(
+    imported_plan_table = render_reference_clipboard_tools(
         default_plan_table,
         table_name="RQ_PKG_PLAN",
         key_columns=PLAN_EDITOR_DIMENSIONS,
@@ -192,9 +192,9 @@ if apply_plan or imported_plan_table is not None:
             st.error(str(exc))
     else:
         if imported_plan_table is not None:
-            queue_reference_csv_flash(
+            queue_reference_import_flash(
                 "rq_pkg_plan_csv",
-                "RQ_PKG_PLAN CSV를 활성 시나리오에 일괄 적용했습니다.",
+                "RQ_PKG_PLAN 붙여넣기 데이터를 활성 시나리오에 일괄 적용했습니다.",
             )
         st.session_state.pop(source_token_key, None)
         st.rerun()
@@ -249,7 +249,7 @@ with yield_tab:
         key="apply_yield_changes",
         type="primary",
     )
-    imported_yield_table = render_reference_csv_tools(
+    imported_yield_table = render_reference_clipboard_tools(
         default_yield_table,
         table_name="RQ_YLD",
         key_columns=YIELD_EDITOR_DIMENSIONS,
@@ -275,9 +275,9 @@ if apply_yield or imported_yield_table is not None:
             st.error(str(exc))
     else:
         if imported_yield_table is not None:
-            queue_reference_csv_flash(
+            queue_reference_import_flash(
                 "rq_yield_csv",
-                "RQ_YLD CSV를 활성 시나리오에 일괄 적용했습니다.",
+                "RQ_YLD 붙여넣기 데이터를 활성 시나리오에 일괄 적용했습니다.",
             )
         st.session_state.pop(source_token_key, None)
         st.rerun()

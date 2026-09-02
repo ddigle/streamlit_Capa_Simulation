@@ -44,6 +44,7 @@ def test_performance_editor_keeps_route_sequence_identity() -> None:
     assert list(edit_table.columns[: len(PERFORMANCE_EDITOR_DIMENSIONS)]) == (
         PERFORMANCE_EDITOR_DIMENSIONS
     )
+    assert PERFORMANCE_EDITOR_DIMENSIONS[-2:] == ["STEP_SEQ", "MCP_SEQ"]
     assert edit_table[["STEP_SEQ", "MCP_SEQ"]].to_dict("records") == [
         {"STEP_SEQ": "P100", "MCP_SEQ": "1A"},
         {"STEP_SEQ": "P200", "MCP_SEQ": "2A"},

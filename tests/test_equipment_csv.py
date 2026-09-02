@@ -1,3 +1,7 @@
+from io import BytesIO
+
+import pandas as pd
+
 from capa_simulation.services.equipment_csv import (
     SAMPLE_EQUIPMENT_ID,
     SAMPLE_NOTE,
@@ -7,7 +11,9 @@ from capa_simulation.services.equipment_csv import (
     equipment_csv_template,
     merge_downtime_rows,
     merge_equipment_rows,
+    read_downtime_clipboard,
     read_downtime_csv,
+    read_equipment_clipboard,
     read_equipment_csv,
 )
 from tests.test_equipment_availability import _downtime, _equipment
@@ -33,6 +39,22 @@ def test_downtime_csv_template_has_no_id_and_round_trips() -> None:
     assert "비가동ID" not in result.columns
     assert result.loc[0, "호기"] == SAMPLE_EQUIPMENT_ID
     assert result.loc[0, "비고"] == SAMPLE_NOTE
+
+
+def test_equipment_templates_round_trip_through_excel_clipboard() -> None:
+    equipment_text = pd.read_csv(BytesIO(equipment_csv_template())).to_csv(
+        index=False,
+        sep="\t",
+    )
+    equipment = read_equipment_clipboard(equipment_text)
+    downtime_text = pd.read_csv(BytesIO(downtime_csv_template())).to_csv(
+        index=False,
+        sep="\t",
+    )
+    downtime = read_downtime_clipboard(downtime_text, equipment=equipment)
+
+    assert equipment.loc[0, "호기"] == SAMPLE_EQUIPMENT_ID
+    assert downtime.loc[0, "호기"] == SAMPLE_EQUIPMENT_ID
 
 
 def test_equipment_csv_merge_and_preview_replace_by_equipment_id() -> None:

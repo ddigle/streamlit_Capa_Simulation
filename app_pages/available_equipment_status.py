@@ -32,8 +32,8 @@ from capa_simulation.services.equipment_csv import (
     equipment_csv_template,
     merge_downtime_rows,
     merge_equipment_rows,
-    read_downtime_csv,
-    read_equipment_csv,
+    read_downtime_clipboard,
+    read_equipment_clipboard,
 )
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
@@ -461,7 +461,7 @@ with management_tab:
     if latest_snapshot is None:
         st.info(
             "기존 보유대수 샘플은 유지하고 호기 마스터·비가동 일정은 빈 상태입니다. "
-            "웹에서 행을 추가하거나 CSV를 가져온 뒤 첫 리비전을 저장하세요."
+            "웹에서 행을 추가하거나 Excel 표를 붙여넣은 뒤 첫 리비전을 저장하세요."
         )
     else:
         st.caption(
@@ -484,8 +484,8 @@ with management_tab:
 
 #### 운영 절차
 
-1. 웹에서 직접 행을 편집하거나 호기 마스터·비가동 일정 CSV를 가져옵니다.
-2. CSV Import 시 신규·대체 행과 변경 컬럼을 미리 확인합니다.
+1. 웹에서 직접 행을 편집하거나 호기 마스터·비가동 일정 Excel 표를 붙여넣습니다.
+2. 붙여넣기 Import 시 신규·대체 행과 변경 컬럼을 미리 확인합니다.
 3. `확인 후 편집본에 적용`으로 현재 편집본에 반영합니다.
 4. 하단의 `설비 데이터 저장`을 눌러야 DuckDB에 새 불변 리비전으로 영구 저장됩니다.
 
@@ -514,16 +514,20 @@ with management_tab:
         )
 
     with st.container(border=True):
-        st.markdown("#### :material/upload_file: CSV Import 미리보기")
+        st.markdown("#### :material/content_paste: Excel 붙여넣기 Import 미리보기")
         st.caption(
             "호기 마스터는 호기, 비가동 일정은 호기 + 비가동유형 + 시작일을 "
-            "중복 구분자로 사용합니다. 신규/대체 행과 변경 컬럼을 확인한 뒤 편집본에 "
+            "중복 구분자로 사용합니다. CSV 양식을 Excel에서 열어 수정한 뒤 헤더를 포함한 "
+            "전체 표를 복사해 붙여넣으세요. 신규/대체 행과 변경 컬럼을 확인한 뒤 편집본에 "
             "적용하며, 실제 DuckDB 저장은 아래 저장 버튼에서 한 번 더 수행합니다."
         )
         equipment_import_col, downtime_import_col = st.columns(2)
         with equipment_import_col:
-            equipment_upload = st.file_uploader(
-                "호기 마스터 CSV", type="csv", key="equipment_master_csv_upload_v3"
+            equipment_clipboard = st.text_area(
+                "호기 마스터 표 붙여넣기",
+                key="equipment_master_clipboard_v4",
+                height=220,
+                placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
             )
             with st.container(horizontal=True):
                 st.download_button(
@@ -534,15 +538,18 @@ with management_tab:
                     icon=":material/download:",
                     key="equipment_master_template_download_v3",
                 )
-                preview_equipment_csv = st.button(
+                preview_equipment_import = st.button(
                     "미리보기",
                     icon=":material/preview:",
-                    disabled=equipment_upload is None,
-                    key="equipment_master_csv_preview_v3",
+                    disabled=not equipment_clipboard.strip(),
+                    key="equipment_master_clipboard_preview_v4",
                 )
         with downtime_import_col:
-            downtime_upload = st.file_uploader(
-                "비가동 일정 CSV", type="csv", key="equipment_downtime_csv_upload_v3"
+            downtime_clipboard = st.text_area(
+                "비가동 일정 표 붙여넣기",
+                key="equipment_downtime_clipboard_v4",
+                height=220,
+                placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
             )
             with st.container(horizontal=True):
                 st.download_button(
@@ -553,16 +560,16 @@ with management_tab:
                     icon=":material/download:",
                     key="equipment_downtime_template_download_v3",
                 )
-                preview_downtime_csv = st.button(
+                preview_downtime_import = st.button(
                     "미리보기",
                     icon=":material/preview:",
-                    disabled=downtime_upload is None,
-                    key="equipment_downtime_csv_preview_v3",
+                    disabled=not downtime_clipboard.strip(),
+                    key="equipment_downtime_clipboard_preview_v4",
                 )
 
-        if preview_equipment_csv and equipment_upload is not None:
+        if preview_equipment_import:
             try:
-                incoming = read_equipment_csv(equipment_upload.getvalue())
+                incoming = read_equipment_clipboard(equipment_clipboard)
                 merged = merge_equipment_rows(equipment, incoming)
                 merge_downtime_rows(downtime, empty_downtime_schedule(), equipment=merged)
             except ValueError as exc:
@@ -571,9 +578,9 @@ with management_tab:
                 st.session_state[EQUIPMENT_IMPORT_KEY] = incoming
                 st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
                 st.rerun()
-        if preview_downtime_csv and downtime_upload is not None:
+        if preview_downtime_import:
             try:
-                incoming = read_downtime_csv(downtime_upload.getvalue(), equipment=equipment)
+                incoming = read_downtime_clipboard(downtime_clipboard, equipment=equipment)
             except ValueError as exc:
                 st.error(str(exc))
             else:
@@ -614,7 +621,7 @@ with management_tab:
                     st.session_state.pop(DOWNTIME_EDITOR_KEY, None)
                     st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
                     st.session_state[FLASH_KEY] = (
-                        f"호기 마스터 CSV {len(incoming_equipment):,}행을 편집본에 "
+                        f"호기 마스터 붙여넣기 데이터 {len(incoming_equipment):,}행을 편집본에 "
                         "적용했습니다. 아직 DuckDB에는 저장되지 않았습니다."
                     )
                     st.rerun()
@@ -648,7 +655,7 @@ with management_tab:
                     st.session_state.pop(DOWNTIME_EDITOR_KEY, None)
                     st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
                     st.session_state[FLASH_KEY] = (
-                        f"비가동 일정 CSV {len(incoming_downtime):,}행을 편집본에 "
+                        f"비가동 일정 붙여넣기 데이터 {len(incoming_downtime):,}행을 편집본에 "
                         "적용했습니다. 아직 DuckDB에는 저장되지 않았습니다."
                     )
                     st.rerun()

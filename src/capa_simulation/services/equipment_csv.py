@@ -7,6 +7,7 @@ from io import BytesIO
 
 import pandas as pd
 
+from capa_simulation.services.clipboard_table import parse_clipboard_table
 from capa_simulation.services.equipment_availability import (
     DOWNTIME_COLUMNS,
     DOWNTIME_KEY_COLUMNS,
@@ -90,6 +91,25 @@ def read_downtime_csv(payload: bytes, *, equipment: pd.DataFrame) -> pd.DataFram
     )
 
 
+def read_equipment_clipboard(content: str) -> pd.DataFrame:
+    return prepare_equipment_master(
+        _select_columns(
+            parse_clipboard_table(content, "호기 마스터"), EQUIPMENT_COLUMNS, "호기 마스터"
+        )
+    )
+
+
+def read_downtime_clipboard(content: str, *, equipment: pd.DataFrame) -> pd.DataFrame:
+    return prepare_downtime_schedule(
+        _select_columns(
+            parse_clipboard_table(content, "비가동 일정"),
+            DOWNTIME_COLUMNS,
+            "비가동 일정",
+        ),
+        equipment=equipment,
+    )
+
+
 def merge_equipment_rows(current: pd.DataFrame, incoming: pd.DataFrame) -> pd.DataFrame:
     return prepare_equipment_master(_merge_by_keys(current, incoming, ("호기",)))
 
@@ -130,9 +150,17 @@ def _read_csv(payload: bytes, columns: tuple[str, ...], label: str) -> pd.DataFr
             last_error = exc
     else:
         raise ValueError(f"{label} CSV 인코딩은 UTF-8 또는 CP949여야 합니다.") from last_error
+    return _select_columns(frame, columns, label)
+
+
+def _select_columns(
+    frame: pd.DataFrame,
+    columns: tuple[str, ...],
+    label: str,
+) -> pd.DataFrame:
     missing = [column for column in columns if column not in frame.columns]
     if missing:
-        raise ValueError(f"{label} CSV 필수 컬럼이 없습니다: {', '.join(missing)}")
+        raise ValueError(f"{label} 필수 컬럼이 없습니다: {', '.join(missing)}")
     return frame.loc[:, columns]
 
 

@@ -7,8 +7,8 @@ from capa_simulation.components.hierarchical_monthly_table import (
     render_hierarchical_monthly_table,
 )
 from capa_simulation.components.reference_csv_tools import (
-    queue_reference_csv_flash,
-    render_reference_csv_tools,
+    queue_reference_import_flash,
+    render_reference_clipboard_tools,
 )
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
@@ -27,7 +27,7 @@ from capa_simulation.services.capacity_reference_editor import (
     reference_from_edit_table,
     reference_to_edit_table,
 )
-from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.display_order import apply_display_order, reorder_display_columns
 from capa_simulation.services.month_filter import available_month_range, filter_month_range
 from capa_simulation.services.route_step_editor import (
     ROUTE_GROUP_COLUMNS,
@@ -73,13 +73,13 @@ VITAL_DIMENSIONS = ["공정", "양산구분"]
 RUN_DAY_DIMENSIONS = ["공정"]
 RATIO_DIMENSIONS = [
     "공정",
-    "STEP_SEQ",
-    "MCP_SEQ",
     "Area_Name",
     "양산구분",
     "제품정보",
     "Stack",
     "WF 구분",
+    "STEP_SEQ",
+    "MCP_SEQ",
 ]
 CAPACITY_LEVEL_LABELS = {
     "공정": "공정",
@@ -161,7 +161,7 @@ def render_month_editor(
             key=f"{editor_key}_apply",
             type="primary",
         )
-        imported = render_reference_csv_tools(
+        imported = render_reference_clipboard_tools(
             default_table,
             table_name=table_name,
             key_columns=dimensions,
@@ -242,11 +242,25 @@ try:
     default_upeh_table = apply_display_order(
         default_upeh_table, reference_tables["RQ_DISPLAY_ORDER"], "공정별 Capa", "UPEH"
     )
+    default_upeh_table, _ = reorder_display_columns(
+        default_upeh_table,
+        PERFORMANCE_EDITOR_DIMENSIONS,
+        reference_tables["RQ_DISPLAY_ORDER"],
+        "공정별 Capa",
+        "UPEH",
+    )
     default_run_rate_table = reference_to_edit_table(
         filtered_run_rate, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "RQ_RUN_RATE"
     )
     default_run_rate_table = apply_display_order(
         default_run_rate_table, reference_tables["RQ_DISPLAY_ORDER"], "공정별 Capa", "효율"
+    )
+    default_run_rate_table, _ = reorder_display_columns(
+        default_run_rate_table,
+        RUN_RATE_DIMENSIONS,
+        reference_tables["RQ_DISPLAY_ORDER"],
+        "공정별 Capa",
+        "효율",
     )
     default_vital_table = reference_to_edit_table(
         filtered_vital, VITAL_DIMENSIONS, "편중률", "RQ_VITAL"
@@ -254,11 +268,25 @@ try:
     default_vital_table = apply_display_order(
         default_vital_table, reference_tables["RQ_DISPLAY_ORDER"], "공정별 Capa", "여유율"
     )
+    default_vital_table, _ = reorder_display_columns(
+        default_vital_table,
+        VITAL_DIMENSIONS,
+        reference_tables["RQ_DISPLAY_ORDER"],
+        "공정별 Capa",
+        "여유율",
+    )
     default_run_day_table = reference_to_edit_table(
         filtered_run_day, RUN_DAY_DIMENSIONS, "RUN_DAY", "RQ_RUN_DAY"
     )
     default_run_day_table = apply_display_order(
         default_run_day_table, reference_tables["RQ_DISPLAY_ORDER"], "공정별 Capa", "일수"
+    )
+    default_run_day_table, _ = reorder_display_columns(
+        default_run_day_table,
+        RUN_DAY_DIMENSIONS,
+        reference_tables["RQ_DISPLAY_ORDER"],
+        "공정별 Capa",
+        "일수",
     )
     default_lot_ratio_table = reference_to_edit_table(
         filtered_lot_ratio, RATIO_DIMENSIONS, "Lot 측정률", "RQ_LOT_RATIO"
@@ -269,11 +297,25 @@ try:
         "공정별 Capa",
         "Lot측정률",
     )
+    default_lot_ratio_table, _ = reorder_display_columns(
+        default_lot_ratio_table,
+        RATIO_DIMENSIONS,
+        reference_tables["RQ_DISPLAY_ORDER"],
+        "공정별 Capa",
+        "Lot측정률",
+    )
     default_wf_ratio_table = reference_to_edit_table(
         filtered_wf_ratio, RATIO_DIMENSIONS, "WF측정률", "RQ_WF_RATIO"
     )
     default_wf_ratio_table = apply_display_order(
         default_wf_ratio_table,
+        reference_tables["RQ_DISPLAY_ORDER"],
+        "공정별 Capa",
+        "WF측정률",
+    )
+    default_wf_ratio_table, _ = reorder_display_columns(
+        default_wf_ratio_table,
+        RATIO_DIMENSIONS,
         reference_tables["RQ_DISPLAY_ORDER"],
         "공정별 Capa",
         "WF측정률",
@@ -530,14 +572,14 @@ edited_run_day_table, apply_run_day, imported_run_day_table = render_month_edito
 
 pending_updates: dict[str, pd.DataFrame] = {}
 update_error_tab = unit_capacity_tab
-csv_flash: tuple[str, str] | None = None
+import_flash: tuple[str, str] | None = None
 try:
     if apply_upeh or imported_upeh_table is not None:
         update_error_tab = tabs[2]
         source = imported_upeh_table if imported_upeh_table is not None else edited_upeh_table
         pending_updates["RQ_UPEH"] = performance_from_edit_table(source)
         if imported_upeh_table is not None:
-            csv_flash = ("upeh_editor_csv", "RQ_UPEH CSV를 일괄 적용했습니다.")
+            import_flash = ("upeh_editor_csv", "RQ_UPEH 붙여넣기 데이터를 일괄 적용했습니다.")
     if apply_run_rate or imported_run_rate_table is not None:
         update_error_tab = tabs[3]
         source = (
@@ -549,7 +591,10 @@ try:
             source, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "효율 편집값"
         )
         if imported_run_rate_table is not None:
-            csv_flash = ("run_rate_editor_csv", "RQ_RUN_RATE CSV를 일괄 적용했습니다.")
+            import_flash = (
+                "run_rate_editor_csv",
+                "RQ_RUN_RATE 붙여넣기 데이터를 일괄 적용했습니다.",
+            )
     if apply_vital or imported_vital_table is not None:
         update_error_tab = tabs[4]
         source = imported_vital_table if imported_vital_table is not None else edited_vital_table
@@ -557,7 +602,10 @@ try:
             source, VITAL_DIMENSIONS, "편중률", "여유율 편집값"
         )
         if imported_vital_table is not None:
-            csv_flash = ("vital_editor_csv", "RQ_VITAL CSV를 일괄 적용했습니다.")
+            import_flash = (
+                "vital_editor_csv",
+                "RQ_VITAL 붙여넣기 데이터를 일괄 적용했습니다.",
+            )
     if apply_lot_ratio or imported_lot_ratio_table is not None:
         update_error_tab = tabs[5]
         source = (
@@ -572,7 +620,10 @@ try:
             "Lot측정률 편집값",
         )
         if imported_lot_ratio_table is not None:
-            csv_flash = ("lot_ratio_editor_csv", "RQ_LOT_RATIO CSV를 일괄 적용했습니다.")
+            import_flash = (
+                "lot_ratio_editor_csv",
+                "RQ_LOT_RATIO 붙여넣기 데이터를 일괄 적용했습니다.",
+            )
     if apply_wf_ratio or imported_wf_ratio_table is not None:
         update_error_tab = tabs[6]
         source = (
@@ -584,7 +635,10 @@ try:
             source, RATIO_DIMENSIONS, "WF측정률", "WF측정률 편집값"
         )
         if imported_wf_ratio_table is not None:
-            csv_flash = ("wf_ratio_editor_csv", "RQ_WF_RATIO CSV를 일괄 적용했습니다.")
+            import_flash = (
+                "wf_ratio_editor_csv",
+                "RQ_WF_RATIO 붙여넣기 데이터를 일괄 적용했습니다.",
+            )
     if apply_run_day or imported_run_day_table is not None:
         update_error_tab = tabs[7]
         source = (
@@ -594,7 +648,10 @@ try:
             source, RUN_DAY_DIMENSIONS, "RUN_DAY", "일수 편집값"
         )
         if imported_run_day_table is not None:
-            csv_flash = ("run_day_editor_csv", "RQ_RUN_DAY CSV를 일괄 적용했습니다.")
+            import_flash = (
+                "run_day_editor_csv",
+                "RQ_RUN_DAY 붙여넣기 데이터를 일괄 적용했습니다.",
+            )
     if pending_updates:
         apply_month_updates(
             active_scenario,
@@ -602,8 +659,8 @@ try:
             effective_start_month,
             effective_end_month,
         )
-        if csv_flash is not None:
-            queue_reference_csv_flash(*csv_flash)
+        if import_flash is not None:
+            queue_reference_import_flash(*import_flash)
         st.session_state.pop(source_token_key, None)
         st.rerun()
 except (KeyError, ValueError) as exc:
@@ -646,7 +703,18 @@ else:
         if not excluded_capacity_rows.empty:
             st.warning(f"대당 Capa 산출에서 {len(excluded_capacity_rows):,}개 기준을 제외했습니다.")
             with st.expander("제외 기준정보 확인", expanded=False):
-                st.dataframe(excluded_capacity_rows, hide_index=True, width="stretch")
+                displayed_exclusions, _ = reorder_display_columns(
+                    excluded_capacity_rows,
+                    [
+                        column
+                        for column in UNIT_CAPACITY_DIMENSIONS
+                        if column in excluded_capacity_rows.columns
+                    ],
+                    reference_tables["RQ_DISPLAY_ORDER"],
+                    "공정별 Capa",
+                    "대당 Capa",
+                )
+                st.dataframe(displayed_exclusions, hide_index=True, width="stretch")
 
         process_order = required_equipment_for_display[["공정"]].drop_duplicates()
         process_order = apply_display_order(
@@ -718,6 +786,13 @@ else:
             file_prefix = "Capa_Effective_Process_Capacity"
         unit_capacity_table = apply_display_order(
             unit_capacity_table,
+            reference_tables["RQ_DISPLAY_ORDER"],
+            "공정별 Capa",
+            "대당 Capa",
+        )
+        unit_capacity_table, classification_columns = reorder_display_columns(
+            unit_capacity_table,
+            classification_columns,
             reference_tables["RQ_DISPLAY_ORDER"],
             "공정별 Capa",
             "대당 Capa",

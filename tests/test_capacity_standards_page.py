@@ -179,7 +179,17 @@ def capture_month_updates(_scenario, replacements, _start, _end):
 
 
 scenario_state.apply_month_updates = capture_month_updates
-hierarchical_table.render_hierarchical_monthly_table = lambda *_args, **_kwargs: None
+
+
+def capture_hierarchical_table(*_args, **kwargs):
+    key = kwargs.get("key")
+    if key:
+        st.session_state[f"captured_dimensions::{key}"] = kwargs.get(
+            "classification_columns"
+        )
+
+
+hierarchical_table.render_hierarchical_monthly_table = capture_hierarchical_table
 grouped_table.render_grouped_monthly_table = lambda *_args, **_kwargs: None
 
 simulation_cache.get_unit_capacity = lambda **_kwargs: pd.DataFrame()
@@ -248,39 +258,39 @@ def test_capacity_editors_show_route_keys_without_exceptions() -> None:
     upeh_columns = list(app.dataframe[1].value.columns)
     lot_ratio_columns = list(app.dataframe[4].value.columns)
     wf_ratio_columns = list(app.dataframe[5].value.columns)
-    assert upeh_columns[:4] == ["공정", "STEP_SEQ", "MCP_SEQ", "Area_Name"]
-    assert lot_ratio_columns[:4] == ["공정", "STEP_SEQ", "MCP_SEQ", "Area_Name"]
-    assert wf_ratio_columns[:4] == ["공정", "STEP_SEQ", "MCP_SEQ", "Area_Name"]
-    assert {uploader.label for uploader in app.file_uploader}.issuperset(
+    assert upeh_columns[-3:-1] == ["STEP_SEQ", "MCP_SEQ"]
+    assert lot_ratio_columns[-3:-1] == ["STEP_SEQ", "MCP_SEQ"]
+    assert wf_ratio_columns[-3:-1] == ["STEP_SEQ", "MCP_SEQ"]
+    assert {text_area.label for text_area in app.text_area}.issuperset(
         {
-            "RQ_UPEH CSV 선택",
-            "RQ_RUN_RATE CSV 선택",
-            "RQ_VITAL CSV 선택",
-            "RQ_LOT_RATIO CSV 선택",
-            "RQ_WF_RATIO CSV 선택",
-            "RQ_RUN_DAY CSV 선택",
+            "RQ_UPEH 표 붙여넣기",
+            "RQ_RUN_RATE 표 붙여넣기",
+            "RQ_VITAL 표 붙여넣기",
+            "RQ_LOT_RATIO 표 붙여넣기",
+            "RQ_WF_RATIO 표 붙여넣기",
+            "RQ_RUN_DAY 표 붙여넣기",
         }
     )
 
 
-def test_load_input_tabs_expose_plan_and_yield_csv_round_trip() -> None:
+def test_load_input_tabs_expose_plan_and_yield_clipboard_round_trip() -> None:
     app = AppTest.from_string(LOAD_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert {uploader.label for uploader in app.file_uploader}.issuperset(
-        {"RQ_PKG_PLAN CSV 선택", "RQ_YLD CSV 선택"}
+    assert {text_area.label for text_area in app.text_area}.issuperset(
+        {"RQ_PKG_PLAN 표 붙여넣기", "RQ_YLD 표 붙여넣기"}
     )
 
 
-def test_equipment_tab_exposes_three_rq_csv_inputs() -> None:
+def test_equipment_tab_exposes_three_rq_clipboard_inputs() -> None:
     app = AppTest.from_string(PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert {uploader.label for uploader in app.file_uploader}.issuperset(
+    assert {text_area.label for text_area in app.text_area}.issuperset(
         {
-            "RQ_EQP_OWN CSV 선택",
-            "RQ_EQP_LENT CSV 선택",
-            "RQ_EQP_AVBL CSV 선택",
+            "RQ_EQP_OWN 표 붙여넣기",
+            "RQ_EQP_LENT 표 붙여넣기",
+            "RQ_EQP_AVBL 표 붙여넣기",
         }
     )
 
@@ -296,6 +306,11 @@ def test_required_equipment_detail_exposes_route_filters() -> None:
     filter_labels = [widget.label for widget in app.multiselect]
     assert "Step" in filter_labels
     assert "MCP" in filter_labels
+    assert filter_labels.index("MCP") == filter_labels.index("Step") + 1
+    assert app.session_state["captured_dimensions::required_equipment_detail_table"][-2:] == [
+        "STEP_SEQ",
+        "MCP_SEQ",
+    ]
 
 
 def test_step_editor_clones_the_selected_route_in_one_submit() -> None:

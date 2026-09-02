@@ -101,7 +101,7 @@ class DuckDBScenarioRepository:
         fallback: pd.DataFrame,
     ) -> GlobalDisplayOrder:
         """Create the shared profile once, preferring an existing revision's rules."""
-        _validate_global_display_order_frame(fallback)
+        prepared_fallback = _prepare_global_display_order_rules(fallback)
         with self._write_transaction() as connection:
             existing = connection.execute(
                 "SELECT profile_id FROM app_meta.global_display_order WHERE profile_id = 1"
@@ -109,13 +109,13 @@ class DuckDBScenarioRepository:
             if existing is None:
                 migrated = _load_existing_display_order(connection)
                 if migrated is None:
-                    initial = fallback
+                    initial = prepared_fallback
                     source = "초기 표시순서 시드"
                 else:
-                    initial = migrated
+                    initial = _prepare_global_display_order_rules(migrated)
                     source = "기존 시나리오 표시순서 이관"
-                    if len(initial) < len(fallback):
-                        initial = fallback
+                    if len(initial) < len(prepared_fallback):
+                        initial = prepared_fallback
                         source = "초기 표시순서 시드"
                 _insert_global_display_order(
                     connection,
@@ -123,7 +123,14 @@ class DuckDBScenarioRepository:
                     version=1,
                     source=source,
                 )
-        return self.load_global_display_order()
+        profile = self.load_global_display_order()
+        prepared = _prepare_global_display_order_rules(profile.rules)
+        if not _display_order_frames_equal(profile.rules, prepared):
+            return self.replace_global_display_order(
+                prepared,
+                source="경로 식별 컬럼 하위 배치 자동 보강",
+            )
+        return profile
 
     def load_global_display_order(self) -> GlobalDisplayOrder:
         """Load the scenario-independent display-order profile."""
@@ -152,7 +159,7 @@ class DuckDBScenarioRepository:
         source: str,
     ) -> GlobalDisplayOrder:
         """Atomically replace the shared profile without creating scenario revisions."""
-        _validate_global_display_order_frame(rules)
+        prepared_rules = _prepare_global_display_order_rules(rules)
         source_label = _required_text(source, "표시순서 변경 출처")
         with self._write_transaction() as connection:
             row = connection.execute(
@@ -165,7 +172,7 @@ class DuckDBScenarioRepository:
             connection.execute("DELETE FROM app_meta.global_display_order WHERE profile_id = 1")
             _insert_global_display_order(
                 connection,
-                rules,
+                prepared_rules,
                 version=version,
                 source=source_label,
             )
@@ -718,6 +725,29 @@ def _validate_global_display_order_frame(frame: pd.DataFrame) -> None:
         raise ValueError(f"공용 표시순서 컬럼 계약이 일치하지 않습니다 ({'; '.join(details)}).")
     if frame.empty:
         raise ValueError("공용 표시순서에는 한 개 이상의 규칙이 필요합니다.")
+
+
+def _prepare_global_display_order_rules(frame: pd.DataFrame) -> pd.DataFrame:
+    _validate_global_display_order_frame(frame)
+    from capa_simulation.services.display_order_editor import ensure_route_sequence_rules
+
+    return ensure_route_sequence_rules(frame)
+
+
+def _display_order_frames_equal(left: pd.DataFrame, right: pd.DataFrame) -> bool:
+    left_values = (
+        left.loc[:, list(GLOBAL_DISPLAY_ORDER_COLUMNS)]
+        .reset_index(drop=True)
+        .astype("string")
+        .fillna("<NULL>")
+    )
+    right_values = (
+        right.loc[:, list(GLOBAL_DISPLAY_ORDER_COLUMNS)]
+        .reset_index(drop=True)
+        .astype("string")
+        .fillna("<NULL>")
+    )
+    return left_values.equals(right_values)
 
 
 def _load_existing_display_order(

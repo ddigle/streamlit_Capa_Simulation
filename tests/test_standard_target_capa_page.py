@@ -146,9 +146,9 @@ def test_standard_target_page_renders_weeknum_plotly_table() -> None:
     ]
     assert app.session_state["captured_classification_columns"] == ["공정", "소요기준"]
     assert any(widget.label == "공정 필터" for widget in app.multiselect)
-    assert any(widget.label == "가용설비 CSV 선택" for widget in app.file_uploader)
+    assert any(widget.label == "가용설비 표 붙여넣기" for widget in app.text_area)
     subheaders = [element.value for element in app.subheader]
-    assert subheaders.index("주차별 일 표준 가능량") < subheaders.index("주차별 가용설비 CSV")
+    assert subheaders.index("주차별 일 표준 가능량") < subheaders.index("주차별 가용설비 입력")
 
     process_filter = next(widget for widget in app.multiselect if widget.label == "공정 필터")
     assert process_filter.value == []

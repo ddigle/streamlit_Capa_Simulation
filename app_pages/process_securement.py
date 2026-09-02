@@ -6,8 +6,8 @@ from capa_simulation.components.hierarchical_monthly_table import (
     render_hierarchical_monthly_table,
 )
 from capa_simulation.components.reference_csv_tools import (
-    queue_reference_csv_flash,
-    render_reference_csv_tools,
+    queue_reference_import_flash,
+    render_reference_clipboard_tools,
 )
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
@@ -18,7 +18,7 @@ from capa_simulation.scenario_state import (
     ensure_active_scenario,
     scenario_table,
 )
-from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.display_order import apply_display_order, reorder_display_columns
 from capa_simulation.services.equipment_count import (
     DETAILED_EQUIPMENT_DIMENSIONS,
     EQUIPMENT_DIMENSIONS,
@@ -138,6 +138,13 @@ try:
         "공정별 확보율",
         "소요대수",
     )
+    required_table, required_detail_dimensions = reorder_display_columns(
+        required_table,
+        RESULT_DIMENSIONS,
+        reference_tables["RQ_DISPLAY_ORDER"],
+        "공정별 확보율",
+        "소요대수",
+    )
     available_equipment_table = build_equipment_count_table(
         filtered["RQ_EQP_OWN"],
         filtered["RQ_EQP_LENT"],
@@ -248,7 +255,22 @@ else:
                 f"0 이하 기준값으로 대당 Capa {len(capacity_exclusions):,}건을 제외했습니다."
             )
             with st.expander("제외된 대당 Capa 기준정보", expanded=False):
-                st.dataframe(capacity_exclusions, hide_index=True, width="stretch")
+                displayed_capacity_exclusions, _ = reorder_display_columns(
+                    capacity_exclusions,
+                    [
+                        column
+                        for column in RESULT_DIMENSIONS
+                        if column in capacity_exclusions.columns
+                    ],
+                    reference_tables["RQ_DISPLAY_ORDER"],
+                    "공정별 확보율",
+                    "소요대수",
+                )
+                st.dataframe(
+                    displayed_capacity_exclusions,
+                    hide_index=True,
+                    width="stretch",
+                )
         if not required_exclusions.empty:
             positive_load_exclusions = required_exclusions.loc[required_exclusions["부하량"].gt(0)]
             st.warning(
@@ -257,7 +279,22 @@ else:
                 f" (부하량 발생 {len(positive_load_exclusions):,}건)."
             )
             with st.expander("소요대수 제외 기준정보", expanded=False):
-                st.dataframe(required_exclusions, hide_index=True, width="stretch")
+                displayed_required_exclusions, _ = reorder_display_columns(
+                    required_exclusions,
+                    [
+                        column
+                        for column in RESULT_DIMENSIONS
+                        if column in required_exclusions.columns
+                    ],
+                    reference_tables["RQ_DISPLAY_ORDER"],
+                    "공정별 확보율",
+                    "소요대수",
+                )
+                st.dataframe(
+                    displayed_required_exclusions,
+                    hide_index=True,
+                    width="stretch",
+                )
         st.caption("월간 소요대수 (부하량 ÷ 대당 Capa)")
         show_detail = st.toggle(
             "상세",
@@ -268,7 +305,7 @@ else:
             column for column in required_table.columns if column not in RESULT_DIMENSIONS
         ]
         if show_detail:
-            table_dimensions = RESULT_DIMENSIONS
+            table_dimensions = required_detail_dimensions
             view_table = required_table.copy()
         else:
             table_dimensions = ["Area_Name", "공정"]
@@ -341,7 +378,7 @@ else:
     with equipment_tab:
         st.caption("월간 설비대수")
         with st.container(border=True):
-            st.markdown("#### 설비대수 RQ CSV 일괄 수정")
+            st.markdown("#### 설비대수 RQ Excel 붙여넣기")
             st.caption(
                 "보유·대여·가용 RQ는 각각 내려받아 값을 수정한 뒤 적용합니다. "
                 "적용값은 활성 시나리오의 다른 계산 페이지에 즉시 반영됩니다."
@@ -352,13 +389,13 @@ else:
                 ("RQ_EQP_LENT", "대여", "설비대여평가"),
                 ("RQ_EQP_AVBL", "가용", "가용대수"),
             ):
-                imported = render_reference_csv_tools(
+                imported = render_reference_clipboard_tools(
                     equipment_edit_tables[table_name],
                     table_name=table_name,
                     key_columns=EQUIPMENT_DIMENSIONS,
                     file_name=f"{table_name}_{effective_start}_{effective_end}.csv",
                     key=f"{table_name.lower()}_csv",
-                    expander_label=f"{category}설비 - CSV 일괄 수정",
+                    expander_label=f"{category}설비 - Excel 붙여넣기",
                 )
                 if imported is not None:
                     try:
@@ -381,9 +418,9 @@ else:
                     st.error(str(exc))
                 else:
                     applied_table = next(iter(imported_equipment))
-                    queue_reference_csv_flash(
+                    queue_reference_import_flash(
                         f"{applied_table.lower()}_csv",
-                        f"{applied_table} CSV를 활성 시나리오에 일괄 적용했습니다.",
+                        f"{applied_table} 붙여넣기 데이터를 활성 시나리오에 일괄 적용했습니다.",
                     )
                     st.rerun()
         show_equipment_detail = st.toggle(
