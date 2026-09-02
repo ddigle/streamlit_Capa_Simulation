@@ -29,7 +29,8 @@ XLSB를 읽지 않는다. `templates/structure_template.xlsb`는 초기 표시�
 GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json`과 코드로 생성한
 비민감 `DEMO_*` Core Data를 공통 변환 파이프라인에 넣어 초기 시나리오·리비전·공식버전을
 자동 생성한다. 기존 시나리오나 공식버전은 자동 시드가 변경하지 않으며 내장 시드는 운영
-기준정보가 아니다.
+기준정보가 아니다. 실제 표시순서는 시나리오와 분리된 공용 DB 프로필이며, 선택적 로컬
+`data/input/RQ_DISPLAY_ORDER.csv` 또는 웹 CSV Import로 초기화할 수 있다.
 
 ## 2. 실행환경과 검증 기준
 
@@ -144,8 +145,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - DuckDB 시나리오·리비전 선택, 이름 수정, 공식버전 발행, 불러오기와 논리 보관을 제공한다.
   - 신규 시나리오는 개발용 Core Data CSV를 pandas 변환해 typed raw와 RQ 16개를 함께
     저장하거나 현재 RQ 16개를 독립 데이터셋으로 복제한다.
-  - 새 리비전은 편집 가능한 12개 RQ와 `RQ_DISPLAY_ORDER` 및 사이드바 프리셋의 전체
-    스냅샷을 저장한다. 표시순서는 페이지·탭 범위별 웹 편집과 충돌 검증을 제공한다.
+  - Core Data CSV·BigDataQuery로 새 원천 시나리오를 만들 때 초기 프리셋은 원천의 전체
+    생산계획년월, 전체 B/N 공정과 전체 표준 목표 Capa 공정을 기본 조회 범위로 사용한다.
+    현재 활성 화면의 축소 조회기간이나 공정 제외 상태를 새 원천에 복사하지 않는다.
+  - 새 리비전은 편집 가능한 12개 RQ와 사이드바 프리셋의 전체 스냅샷을 저장한다.
+  - 표시순서는 시나리오와 분리된 공용 DB 프로필로 저장하며 전체 CSV 다운로드·Import와
+    페이지·탭 범위별 직접 편집·충돌 검증을 제공한다.
 - `app_pages/standard_target_capa.py`
   - Static Capa 하위에서 월간 공정 유효 Capa를 일 단위로 환산하고 주차별 가용대수를
     적용한 일 표준 가능량을 제공한다.
@@ -199,7 +204,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 내장 시나리오 생성 뒤 공식 발행 전에 중단된 상태는 다음 시작에서 발행만 복구하며,
     공식버전 없는 사용자 시나리오는 임의 발행하지 않는다.
 - `src/capa_simulation/services/builtin_seed.py`, `config/bootstrap_display_order.json`
-  - GitHub 독립 실행용 78컬럼 합성 Core Data와 비민감 기본 표시순서를 제공한다.
+  - GitHub 독립 실행용 78컬럼 합성 Core Data와 비민감 최소 표시순서를 제공한다.
+  - `data/input/RQ_DISPLAY_ORDER.csv`가 있으면 최초 공용 표시순서 이관에 우선 사용하되
+    해당 로컬 CSV는 Git과 일반 배포 소스에 포함하지 않는다.
   - CSV·BigDataQuery와 같은 정규화·RQ 16개 변환·typed raw 저장 경로를 사용하며 모든
     업무 식별값은 `DEMO_*`로 명확히 구분한다.
 
@@ -214,7 +221,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 사내 SQL과 DB 컬럼 매핑을 넣는 전용 접속부다. `bigdataquery`를 지연 import하고 반환
     DataFrame을 CSV로 저장하지 않고 공통 78컬럼 파이프라인에 전달한다.
 - `src/capa_simulation/io/reference_cache.py`
-  - 현재 브라우저 세션에 활성화된 DuckDB 리비전의 16개 테이블만 반환한다.
+  - 현재 브라우저 세션에 활성화된 DuckDB 리비전의 테이블과 공용 표시순서를 반환한다.
   - 활성 리비전이 없으면 XLSB로 대체하지 않고 명확한 오류를 반환한다.
 - `src/capa_simulation/persistence/`
   - 시뮬레이션과 설비 운영의 DuckDB 마이그레이션·Repository·캐시를 서로 독립된 모듈과
@@ -226,6 +233,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     변경 가능한 메타데이터는 캐시하지 않는다.
   - 시나리오 생성 시 typed Core Data raw, 컬럼 프로파일, RQ 16개, 초기 리비전과
     프리셋을 한 트랜잭션으로 저장한다.
+  - `app_meta.global_display_order*`는 시나리오와 독립된 단일 공용 프로필이며 최초 생성 시
+    기존 리비전 또는 로컬 CSV/내장 시드에서 이관하고 이후 전체 교체 이력을 버전으로 관리한다.
   - 프리셋은 조회기간·B/N 포함 공정·표준 목표 Capa 공정 기본값·확보/경고 기준을 소유한다.
   - 공식버전은 불변 리비전을 가리키는 append-only 발행 이력이며 최신 발행이 새 세션의
     기본 리비전이 된다.
@@ -314,8 +323,10 @@ RQ_DISPLAY_ORDER
 RQ_MODULE
 ```
 
-이 테이블을 웹에서 수정할 필요가 생기면 단순히 session state에 별도 복사하지 말고,
-활성 시나리오의 editable table 계약과 새로고침/저장 정책을 함께 변경한다.
+`RQ_DISPLAY_ORDER`는 계산 페이지에서 읽기 전용이지만 `표시순서 관리`에서는 시나리오와
+분리된 공용 DB 프로필을 수정한다. 나머지 테이블을 웹에서 수정할 필요가 생기면 단순히
+session state에 별도 복사하지 말고 활성 시나리오의 editable table 계약과 저장 정책을
+함께 변경한다.
 
 ## 5. 상태와 캐시 불변조건
 
@@ -348,6 +359,9 @@ RQ_MODULE
 12. **공용 필터 기본값과 개인 조회를 분리한다.** 표준 목표 Capa 공정 기본값은 불변
     리비전 프리셋에 저장하고, 페이지에서 바꾼 값은 현재 세션에만 둔다. 신규 리비전 저장
     시점에만 현재 세션 선택을 다음 공용 기본값으로 캡처한다.
+13. **표시순서는 시나리오에 종속시키지 않는다.** 공용 표시순서는 별도 DB 프로필에서
+    읽고 CSV Import 또는 직접 편집으로 원자 교체한다. 시나리오 전환·신규 생성 시에는
+    항상 현재 공용 프로필을 적용하며 표시순서 변경만으로 리비전을 만들지 않는다.
 
 ## 6. 핵심 계산 규칙
 
@@ -526,6 +540,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - 내부 컬럼명은 Excel 계약과 일치시킨다. 화면 라벨 변경을 이유로 원본 컬럼명을
   바꾸지 않는다.
 - 화면 표의 행 정렬은 가능한 `RQ_DISPLAY_ORDER`를 사용한다.
+- 런타임 `RQ_DISPLAY_ORDER`는 `app_meta.global_display_order*`의 공용 프로필이며
+  시나리오 리비전에 저장된 과거 복사본보다 우선한다.
 - 적용 범위는 `페이지 구분 + 탭 구분`이다.
 - `정렬우선순위`는 정렬 컬럼의 우선순위, `값표시순서`는 사용자 지정 값 순서다.
 - 지원 정렬방식은 `사용자지정`, `오름차순`, `내림차순`이다.
@@ -565,7 +581,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 `data/capa_simulation.duckdb`, `data/equipment_availability.duckdb`는 로컬 실행 자산이다.
 테스트나 문서에서 실제 사내 데이터 값을 노출하지 않는다.
 `config/bootstrap_display_order.json`과 `builtin_seed.py`에는 합성 `DEMO_*` 값만 두며 실제
-제품·고객·공정·설비 식별값을 시드로 추가하지 않는다.
+제품·고객·공정·설비 식별값을 시드로 추가하지 않는다. 실제 표시순서 CSV는
+`data/input/RQ_DISPLAY_ORDER.csv`에 두고 Git에 커밋하지 않는다.
 
 ## 11. 현재 미구현 및 주의 사항
 

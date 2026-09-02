@@ -1,6 +1,10 @@
 import pandas as pd
 import pytest
 
+from capa_simulation.services.display_order_csv import (
+    display_order_from_csv,
+    display_order_to_csv,
+)
 from capa_simulation.services.display_order_editor import (
     replace_display_order_scope,
     validate_display_order,
@@ -47,3 +51,20 @@ def test_display_order_rejects_duplicate_custom_order() -> None:
 
     with pytest.raises(ValueError, match="값표시순서.*중복"):
         validate_display_order(source)
+
+
+def test_display_order_csv_round_trip_supports_utf8_and_cp949() -> None:
+    source = validate_display_order(_rules())
+
+    utf8 = display_order_from_csv(display_order_to_csv(source))
+    cp949 = display_order_from_csv(source.to_csv(index=False).encode("cp949"))
+
+    pd.testing.assert_frame_equal(utf8, source)
+    pd.testing.assert_frame_equal(cp949, source)
+
+
+def test_display_order_csv_rejects_changed_columns() -> None:
+    invalid = _rules().rename(columns={"분류컬럼": "잘못된 컬럼"})
+
+    with pytest.raises(ValueError, match="컬럼 계약"):
+        display_order_from_csv(invalid.to_csv(index=False).encode("utf-8-sig"))

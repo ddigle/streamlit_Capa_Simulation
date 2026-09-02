@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 
 import pandas as pd
 import streamlit as st
 
 from capa_simulation.persistence.models import ScenarioPreset
+from capa_simulation.services.month_filter import MONTH_COLUMN, available_month_range
 from capa_simulation.settings import MONTH_SELECTION_END, MONTH_SELECTION_START, format_month
 
 PENDING_PRESET_KEY = "pending_scenario_preset"
@@ -23,10 +25,7 @@ STANDARD_TARGET_PROCESS_DEFAULT_KEY = "standard_target_process_default"
 def capture_scenario_preset(reference_tables: Mapping[str, pd.DataFrame]) -> ScenarioPreset:
     """Build a validated persistent preset from the current user session."""
     start_month, end_month = _current_month_range()
-    reqb = reference_tables.get("RQ_REQB")
-    if not isinstance(reqb, pd.DataFrame) or "공정" not in reqb.columns:
-        raise ValueError("시나리오 프리셋을 저장할 RQ_REQB 공정 정보가 없습니다.")
-    process_options = sorted(reqb["공정"].astype("string").str.strip().dropna().unique().tolist())
+    process_options = _available_processes(reference_tables)
     saved_processes = st.session_state.get(PROCESS_SELECTION_KEY)
     included_processes = (
         tuple(str(process) for process in saved_processes)
@@ -48,6 +47,21 @@ def capture_scenario_preset(reference_tables: Mapping[str, pd.DataFrame]) -> Sce
         secure_threshold=secure_percent / 100.0,
         warning_threshold=warning_percent / 100.0,
         standard_target_processes=standard_target_processes,
+    )
+
+
+def capture_full_data_scenario_preset(
+    reference_tables: Mapping[str, pd.DataFrame],
+) -> ScenarioPreset:
+    """Use every available month and process for a newly downloaded dataset."""
+    preset = capture_scenario_preset(reference_tables)
+    start_month, end_month = _full_data_month_range(reference_tables)
+    return replace(
+        preset,
+        start_month=start_month,
+        end_month=end_month,
+        included_processes=tuple(_available_processes(reference_tables)),
+        standard_target_processes=(),
     )
 
 
@@ -93,3 +107,23 @@ def _session_number(key: str, default: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"시나리오 프리셋 숫자 설정이 잘못되었습니다: {key}")
     return float(value)
+
+
+def _available_processes(reference_tables: Mapping[str, pd.DataFrame]) -> list[str]:
+    reqb = reference_tables.get("RQ_REQB")
+    if not isinstance(reqb, pd.DataFrame) or "공정" not in reqb.columns:
+        raise ValueError("시나리오 프리셋을 저장할 RQ_REQB 공정 정보가 없습니다.")
+    return sorted(reqb["공정"].astype("string").str.strip().dropna().unique().tolist())
+
+
+def _full_data_month_range(
+    reference_tables: Mapping[str, pd.DataFrame],
+) -> tuple[int, int]:
+    ranges = [
+        available_month_range(table, table_name)
+        for table_name, table in reference_tables.items()
+        if isinstance(table, pd.DataFrame) and MONTH_COLUMN in table.columns and not table.empty
+    ]
+    if not ranges:
+        raise ValueError("신규 시나리오의 전체 조회기간을 정할 생산계획년월이 없습니다.")
+    return min(start for start, _ in ranges), max(end for _, end in ranges)

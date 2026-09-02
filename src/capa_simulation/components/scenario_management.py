@@ -12,7 +12,7 @@ from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
 )
-from capa_simulation.persistence.cache import load_scenario_snapshot
+from capa_simulation.persistence.cache import load_global_display_order, load_scenario_snapshot
 from capa_simulation.persistence.models import ScenarioCreate, ScenarioPreset, ScenarioSummary
 from capa_simulation.persistence.repository import (
     REVISION_TABLES,
@@ -25,7 +25,10 @@ from capa_simulation.scenario_activation import (
     clear_persisted_scenario_activation,
     has_unsaved_scenario_changes,
 )
-from capa_simulation.scenario_preset_state import capture_scenario_preset
+from capa_simulation.scenario_preset_state import (
+    capture_full_data_scenario_preset,
+    capture_scenario_preset,
+)
 from capa_simulation.scenario_state import ActiveScenario, ensure_active_scenario
 from capa_simulation.services.builtin_seed import BUILTIN_SEED_SOURCE_CODE
 from capa_simulation.services.core_data_pipeline import fetch_core_data_dataset
@@ -239,7 +242,8 @@ def _render_create(repository: DuckDBScenarioRepository, database_path: str) -> 
     if source_mode == "Core Data CSV":
         st.info(
             "개발용 Core_Data.csv를 pandas로 읽어 typed raw와 RQ 16개를 같은 독립 "
-            "데이터셋에 저장합니다. 표시순서는 현재 활성 공식 구조를 사용합니다."
+            "데이터셋에 저장합니다. 표시순서는 모든 시나리오가 공유하는 공용 설정을 사용하고, "
+            "전체 생산계획년월과 전체 B/N 공정을 기본 활성화합니다."
         )
         st.caption(f"개발 원천: {CORE_DATA_CSV_PATH}")
     else:
@@ -262,18 +266,12 @@ def _render_create(repository: DuckDBScenarioRepository, database_path: str) -> 
         source_data: pd.DataFrame | None = None
         revision_source: dict[str, pd.DataFrame] | None = None
         if source_mode == "Core Data CSV":
-            official = repository.latest_official_release()
-            if official is None:
-                raise ValueError("표시순서 기준으로 사용할 공식버전이 없습니다.")
-            official_display_order = load_scenario_snapshot(
-                database_path,
-                official.revision_id,
-            ).tables["RQ_DISPLAY_ORDER"]
+            shared_display_order = load_global_display_order(database_path).rules
             provider = CsvCoreDataProvider(CORE_DATA_CSV_PATH, source_name)
             prepared = fetch_core_data_dataset(
                 provider,
                 source_code,
-                official_display_order,
+                shared_display_order,
             )
             scenario_tables = prepared.reference_tables
             source_data = prepared.source_data
@@ -288,7 +286,13 @@ def _render_create(repository: DuckDBScenarioRepository, database_path: str) -> 
             pipeline_version = CLONE_PIPELINE_VERSION
             source_registered_at = None
         preset_tables = revision_source if revision_source is not None else scenario_tables
-        preset = _compatible_preset(capture_scenario_preset(preset_tables), preset_tables)
+        if source_mode == "Core Data CSV":
+            preset = capture_full_data_scenario_preset(preset_tables)
+        else:
+            preset = _compatible_preset(
+                capture_scenario_preset(preset_tables),
+                preset_tables,
+            )
         snapshot = repository.create_scenario(
             ScenarioCreate(
                 scenario_name=scenario_name,
@@ -357,20 +361,13 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
 
 def revision_tables_for_save(
     active_scenario: ActiveScenario,
-    reference_tables: dict[str, pd.DataFrame],
-    *,
-    display_order: pd.DataFrame | None = None,
+    _reference_tables: dict[str, pd.DataFrame],
 ) -> dict[str, pd.DataFrame]:
-    result = {
+    return {
         name: active_scenario["tables"][name].copy(deep=True)
         for name in REVISION_TABLES
         if name in active_scenario["tables"]
     }
-    selected_display_order = (
-        display_order if display_order is not None else reference_tables["RQ_DISPLAY_ORDER"]
-    )
-    result["RQ_DISPLAY_ORDER"] = selected_display_order.copy(deep=True)
-    return result
 
 
 def _current_reference_context() -> tuple[dict[str, pd.DataFrame], ActiveScenario]:

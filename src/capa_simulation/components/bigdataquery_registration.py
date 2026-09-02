@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from dataclasses import replace
 from datetime import datetime
 
 import pandas as pd
@@ -13,11 +12,11 @@ from capa_simulation.io.company_bigdataquery_adapter import (
     BigDataQueryCoreDataProvider,
     is_bigdataquery_adapter_configured,
 )
-from capa_simulation.persistence.cache import load_scenario_snapshot
+from capa_simulation.persistence.cache import load_global_display_order
 from capa_simulation.persistence.models import ScenarioCreate
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import activate_persisted_snapshot
-from capa_simulation.scenario_preset_state import capture_scenario_preset
+from capa_simulation.scenario_preset_state import capture_full_data_scenario_preset
 from capa_simulation.services.core_data_pipeline import (
     fetch_core_data_dataset,
     reference_conflicts_to_csv,
@@ -36,7 +35,8 @@ def render_bigdataquery_registration(
     st.subheader("BigDataQuery 시나리오 등록")
     st.caption(
         "시뮬레이션 코드를 조회해 반환된 pandas DataFrame을 검증한 뒤, CSV 파일 없이 "
-        "typed raw와 RQ 16개를 한 트랜잭션으로 저장합니다."
+        "typed raw와 RQ 16개를 한 트랜잭션으로 저장합니다. 등록 후에는 내려받은 전체 "
+        "생산계획년월과 전체 B/N 공정이 기본 활성화됩니다."
     )
     flash = st.session_state.pop(REGISTRATION_FLASH_KEY, None)
     if isinstance(flash, str) and flash:
@@ -49,10 +49,6 @@ def render_bigdataquery_registration(
             "사내 SQL과 DB→Core Data 컬럼 매핑이 아직 비어 있습니다. "
             "company_bigdataquery_adapter.py의 사내 환경 설정 영역을 먼저 채우세요."
         )
-    official = repository.latest_official_release()
-    if official is None:
-        st.error("표시순서 기준으로 사용할 공식버전이 없습니다. 공식버전을 먼저 지정하세요.")
-        return
     with st.form("bigdataquery_registration_form"):
         simulation_code = st.text_input("조회할 시뮬레이션 코드")
         source_name = st.text_input("원천 시뮬레이션명")
@@ -76,10 +72,7 @@ def render_bigdataquery_registration(
     st.session_state.pop(CONFLICT_REPORT_STATE_KEY, None)
     try:
         registered_at = _optional_datetime(source_registered_text)
-        display_order = load_scenario_snapshot(
-            database_path,
-            official.revision_id,
-        ).tables["RQ_DISPLAY_ORDER"]
+        display_order = load_global_display_order(database_path).rules
         provider = BigDataQueryCoreDataProvider(
             simulation_name=source_name,
             source_registered_at=registered_at,
@@ -90,20 +83,7 @@ def render_bigdataquery_registration(
                 prepared.reference_conflicts,
                 prepared.batch.simulation_code,
             )
-            preset = capture_scenario_preset(prepared.reference_tables)
-            available = set(
-                prepared.reference_tables["RQ_REQB"]["공정"]
-                .astype("string")
-                .str.strip()
-                .dropna()
-                .tolist()
-            )
-            preset = replace(
-                preset,
-                included_processes=tuple(
-                    process for process in preset.included_processes if process in available
-                ),
-            )
+            preset = capture_full_data_scenario_preset(prepared.reference_tables)
             snapshot = repository.create_scenario(
                 ScenarioCreate(
                     scenario_name=scenario_name,

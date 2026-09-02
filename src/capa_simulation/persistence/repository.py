@@ -23,6 +23,7 @@ from capa_simulation.io.core_data_source import (
 )
 from capa_simulation.persistence.migration_runner import apply_migrations
 from capa_simulation.persistence.models import (
+    GlobalDisplayOrder,
     OfficialReleaseSummary,
     RevisionSummary,
     ScenarioCreate,
@@ -64,9 +65,18 @@ REVISION_TABLES: dict[str, str] = {
         "RQ_EQP_OWN",
         "RQ_EQP_LENT",
         "RQ_EQP_AVBL",
-        "RQ_DISPLAY_ORDER",
     )
 }
+GLOBAL_DISPLAY_ORDER_COLUMNS = (
+    "페이지 구분",
+    "탭 구분",
+    "정렬우선순위",
+    "분류컬럼",
+    "정렬방식",
+    "분류값",
+    "값표시순서",
+    "활성여부",
+)
 
 _WRITE_LOCK = threading.RLock()
 
@@ -85,6 +95,81 @@ class DuckDBScenarioRepository:
         self._database_path.parent.mkdir(parents=True, exist_ok=True)
         with _WRITE_LOCK, self._connect() as connection:
             return apply_migrations(connection)
+
+    def initialize_global_display_order(
+        self,
+        fallback: pd.DataFrame,
+    ) -> GlobalDisplayOrder:
+        """Create the shared profile once, preferring an existing revision's rules."""
+        _validate_global_display_order_frame(fallback)
+        with self._write_transaction() as connection:
+            existing = connection.execute(
+                "SELECT profile_id FROM app_meta.global_display_order WHERE profile_id = 1"
+            ).fetchone()
+            if existing is None:
+                migrated = _load_existing_display_order(connection)
+                if migrated is None:
+                    initial = fallback
+                    source = "초기 표시순서 시드"
+                else:
+                    initial = migrated
+                    source = "기존 시나리오 표시순서 이관"
+                    if len(initial) < len(fallback):
+                        initial = fallback
+                        source = "초기 표시순서 시드"
+                _insert_global_display_order(
+                    connection,
+                    initial,
+                    version=1,
+                    source=source,
+                )
+        return self.load_global_display_order()
+
+    def load_global_display_order(self) -> GlobalDisplayOrder:
+        """Load the scenario-independent display-order profile."""
+        with self._connect(read_only=True) as connection:
+            metadata = connection.execute(
+                """
+                SELECT version, source, updated_at
+                FROM app_meta.global_display_order
+                WHERE profile_id = 1
+                """
+            ).fetchone()
+            if metadata is None:
+                raise RuntimeError("공용 표시순서가 초기화되지 않았습니다.")
+            rules = _load_global_display_order_rules(connection)
+        return GlobalDisplayOrder(
+            version=int(metadata[0]),
+            source=str(metadata[1]),
+            updated_at=metadata[2],
+            rules=rules,
+        )
+
+    def replace_global_display_order(
+        self,
+        rules: pd.DataFrame,
+        *,
+        source: str,
+    ) -> GlobalDisplayOrder:
+        """Atomically replace the shared profile without creating scenario revisions."""
+        _validate_global_display_order_frame(rules)
+        source_label = _required_text(source, "표시순서 변경 출처")
+        with self._write_transaction() as connection:
+            row = connection.execute(
+                "SELECT version FROM app_meta.global_display_order WHERE profile_id = 1"
+            ).fetchone()
+            version = 1 if row is None else int(row[0]) + 1
+            connection.execute(
+                "DELETE FROM app_meta.global_display_order_rule WHERE profile_id = 1"
+            )
+            connection.execute("DELETE FROM app_meta.global_display_order WHERE profile_id = 1")
+            _insert_global_display_order(
+                connection,
+                rules,
+                version=version,
+                source=source_label,
+            )
+        return self.load_global_display_order()
 
     def create_scenario(
         self,
@@ -517,6 +602,11 @@ class DuckDBScenarioRepository:
                         owner_column="dataset_id",
                         owner_id=scenario.dataset_id,
                     )
+            global_profile = connection.execute(
+                "SELECT profile_id FROM app_meta.global_display_order WHERE profile_id = 1"
+            ).fetchone()
+            if global_profile is not None:
+                tables["RQ_DISPLAY_ORDER"] = _load_global_display_order_rules(connection)
         return ScenarioSnapshot(
             scenario=scenario,
             revision=revision,
@@ -612,6 +702,139 @@ class DuckDBScenarioRepository:
 
     def _connect(self, *, read_only: bool = False) -> duckdb.DuckDBPyConnection:
         return duckdb.connect(str(self._database_path), read_only=read_only)
+
+
+def _validate_global_display_order_frame(frame: pd.DataFrame) -> None:
+    if not isinstance(frame, pd.DataFrame):
+        raise TypeError("공용 표시순서는 pandas DataFrame이어야 합니다.")
+    missing = [column for column in GLOBAL_DISPLAY_ORDER_COLUMNS if column not in frame.columns]
+    extra = [column for column in frame.columns if column not in GLOBAL_DISPLAY_ORDER_COLUMNS]
+    if missing or extra:
+        details: list[str] = []
+        if missing:
+            details.append(f"누락: {', '.join(missing)}")
+        if extra:
+            details.append(f"추가: {', '.join(str(column) for column in extra)}")
+        raise ValueError(f"공용 표시순서 컬럼 계약이 일치하지 않습니다 ({'; '.join(details)}).")
+    if frame.empty:
+        raise ValueError("공용 표시순서에는 한 개 이상의 규칙이 필요합니다.")
+
+
+def _load_existing_display_order(
+    connection: duckdb.DuckDBPyConnection,
+) -> pd.DataFrame | None:
+    candidates = (
+        (
+            """
+            SELECT o.revision_id
+            FROM app_meta.official_release o
+            WHERE EXISTS (
+                SELECT 1 FROM rev_data.rq_display_order d
+                WHERE d.revision_id = o.revision_id
+            )
+            ORDER BY o.release_no DESC LIMIT 1
+            """,
+            "rev_data",
+            "revision_id",
+        ),
+        (
+            """
+            SELECT ds.dataset_id
+            FROM app_meta.official_release o
+            JOIN app_meta.scenario_revision r ON r.revision_id = o.revision_id
+            JOIN app_meta.dataset ds ON ds.scenario_id = r.scenario_id
+            WHERE EXISTS (
+                SELECT 1 FROM ref_data.rq_display_order d
+                WHERE d.dataset_id = ds.dataset_id
+            )
+            ORDER BY o.release_no DESC LIMIT 1
+            """,
+            "ref_data",
+            "dataset_id",
+        ),
+        (
+            """
+            SELECT r.revision_id
+            FROM app_meta.scenario_revision r
+            WHERE EXISTS (
+                SELECT 1 FROM rev_data.rq_display_order d
+                WHERE d.revision_id = r.revision_id
+            )
+            ORDER BY r.created_at DESC, r.revision_no DESC LIMIT 1
+            """,
+            "rev_data",
+            "revision_id",
+        ),
+        (
+            """
+            SELECT ds.dataset_id
+            FROM app_meta.scenario s
+            JOIN app_meta.dataset ds ON ds.scenario_id = s.scenario_id
+            WHERE EXISTS (
+                SELECT 1 FROM ref_data.rq_display_order d
+                WHERE d.dataset_id = ds.dataset_id
+            )
+            ORDER BY s.updated_at DESC LIMIT 1
+            """,
+            "ref_data",
+            "dataset_id",
+        ),
+    )
+    for query, schema, owner_column in candidates:
+        owner = connection.execute(query).fetchone()
+        if owner is None:
+            continue
+        return _load_frame(
+            connection,
+            schema=schema,
+            table_name="rq_display_order",
+            owner_column=owner_column,
+            owner_id=str(owner[0]),
+        )
+    return None
+
+
+def _load_global_display_order_rules(
+    connection: duckdb.DuckDBPyConnection,
+) -> pd.DataFrame:
+    projection = ", ".join(_quote(column) for column in GLOBAL_DISPLAY_ORDER_COLUMNS)
+    return connection.execute(
+        f"""
+        SELECT {projection}
+        FROM app_meta.global_display_order_rule
+        WHERE profile_id = 1
+        ORDER BY source_row_no
+        """
+    ).fetchdf()
+
+
+def _insert_global_display_order(
+    connection: duckdb.DuckDBPyConnection,
+    rules: pd.DataFrame,
+    *,
+    version: int,
+    source: str,
+) -> None:
+    _validate_global_display_order_frame(rules)
+    connection.execute(
+        """
+        INSERT INTO app_meta.global_display_order (profile_id, version, source)
+        VALUES (1, ?, ?)
+        """,
+        [version, source],
+    )
+    prepared = rules.loc[:, list(GLOBAL_DISPLAY_ORDER_COLUMNS)].copy()
+    prepared.insert(0, "source_row_no", range(1, len(prepared) + 1))
+    prepared.insert(0, "profile_id", 1)
+    view_name = f"_incoming_global_display_order_{uuid4().hex}"
+    connection.register(view_name, prepared)
+    try:
+        connection.execute(
+            f"INSERT INTO app_meta.global_display_order_rule BY NAME "
+            f"SELECT * FROM {_quote(view_name)}"
+        )
+    finally:
+        connection.unregister(view_name)
 
 
 def _validate_declared_source_metadata(

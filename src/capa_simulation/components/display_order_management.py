@@ -1,23 +1,20 @@
-"""Web editor for revision-owned RQ_DISPLAY_ORDER rules."""
+"""Web editor and CSV import for the global RQ_DISPLAY_ORDER profile."""
 
 from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.components.scenario_management import revision_tables_for_save
-from capa_simulation.io.reference_cache import (
-    get_effective_reference_tables,
-    get_effective_reference_version,
+from capa_simulation.io.reference_cache import apply_global_display_order
+from capa_simulation.persistence.cache import (
+    clear_global_display_order_cache,
+    load_global_display_order,
 )
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
-from capa_simulation.scenario_activation import (
-    activate_persisted_snapshot,
-    active_persisted_revision_id,
-    active_persisted_scenario_id,
+from capa_simulation.services.display_order_csv import (
+    display_order_from_csv,
+    display_order_to_csv,
 )
-from capa_simulation.scenario_preset_state import capture_scenario_preset
-from capa_simulation.scenario_state import ensure_active_scenario
 from capa_simulation.services.display_order_editor import (
     DISPLAY_ORDER_RULE_COLUMNS,
     replace_display_order_scope,
@@ -28,24 +25,83 @@ from capa_simulation.services.display_order_editor import (
 def render_display_order_management(repository: DuckDBScenarioRepository) -> None:
     st.subheader("표시순서 관리")
     st.caption(
-        "페이지와 탭 범위를 선택해 정렬 규칙을 수정합니다. 저장할 때 현재 편집값과 "
-        "프리셋을 포함한 새 불변 리비전이 생성됩니다."
+        "표시순서는 시나리오와 분리된 공용 설정입니다. 여기서 저장한 규칙은 현재와 이후 "
+        "불러오는 모든 시나리오에 동일하게 적용됩니다."
     )
-    scenario_id = active_persisted_scenario_id()
-    if scenario_id is None:
-        st.info("먼저 저장된 시나리오 리비전을 불러오세요.")
-        return
+    database_path = str(repository.database_path)
     try:
-        reference_tables = get_effective_reference_tables()
-        reference_version = get_effective_reference_version()
-        active_scenario = ensure_active_scenario(reference_tables, reference_version)
-        display_order = validate_display_order(reference_tables["RQ_DISPLAY_ORDER"])
+        profile = load_global_display_order(database_path)
+        display_order = validate_display_order(profile.rules)
     except (KeyError, RuntimeError, TypeError, ValueError) as exc:
         st.error(str(exc))
         return
-    if display_order.empty:
-        st.warning("현재 리비전에 표시순서 규칙이 없습니다.")
-        return
+
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        st.caption(
+            f"공용 버전 v{profile.version} · {profile.source} · {profile.updated_at:%Y-%m-%d %H:%M}"
+        )
+        st.download_button(
+            "CSV 다운로드",
+            data=display_order_to_csv(display_order),
+            file_name=f"RQ_DISPLAY_ORDER_v{profile.version}.csv",
+            mime="text/csv;charset=utf-8",
+            icon=":material/download:",
+            on_click="ignore",
+            width="content",
+        )
+
+    _render_csv_import(repository, display_order)
+    _render_direct_editor(repository, display_order)
+
+
+def _render_csv_import(
+    repository: DuckDBScenarioRepository,
+    current: pd.DataFrame,
+) -> None:
+    with st.expander("CSV 일괄 적용"):
+        st.caption(
+            "다운로드한 양식의 컬럼을 유지한 채 수정해 업로드하세요. 적용하면 현재 공용 "
+            "표시순서 전체가 교체되며 시나리오 리비전은 생성하지 않습니다."
+        )
+        with st.form("global_display_order_csv_form", border=False):
+            uploaded = st.file_uploader(
+                "표시순서 CSV",
+                type=["csv"],
+                key="global_display_order_csv_upload",
+            )
+            confirmed = st.checkbox("현재 공용 표시순서 전체 교체를 확인했습니다.")
+            submitted = st.form_submit_button(
+                "CSV 표시순서 적용",
+                icon=":material/upload_file:",
+                type="primary",
+                width="stretch",
+            )
+        if not submitted:
+            return
+        if uploaded is None:
+            st.error("적용할 표시순서 CSV를 선택하세요.")
+            return
+        if not confirmed:
+            st.error("전체 교체 확인을 선택하세요.")
+            return
+        try:
+            imported = display_order_from_csv(uploaded.getvalue())
+            if imported.equals(current):
+                st.info("업로드한 표시순서가 현재 공용 설정과 동일합니다.")
+                return
+            _save_global_display_order(repository, imported, source="CSV Import")
+        except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+            st.error(str(exc))
+        else:
+            st.success("CSV 표시순서를 모든 시나리오의 공용 설정으로 적용했습니다.")
+            st.rerun()
+
+
+def _render_direct_editor(
+    repository: DuckDBScenarioRepository,
+    display_order: pd.DataFrame,
+) -> None:
+    st.markdown("#### 직접 편집")
     pages = display_order["페이지 구분"].drop_duplicates().tolist()
     selected_page = st.selectbox(
         "페이지 구분",
@@ -95,38 +151,41 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
             },
             key=f"display_order_editor::{selected_page}::{selected_tab}",
         )
-        revision_name = st.text_input("새 리비전명", value="표시순서 변경")
-        note = st.text_area("변경 메모", height=80)
+        note = st.text_input("변경 메모", placeholder="예: 환산 탭 제품 표시순서 변경")
         submitted = st.form_submit_button(
-            "표시순서 새 리비전 저장",
-            icon=":material/save_as:",
+            "공용 표시순서 저장",
+            icon=":material/save:",
             type="primary",
             width="stretch",
         )
     if not submitted:
         return
     try:
-        revised_display_order = replace_display_order_scope(
+        revised = replace_display_order_scope(
             display_order,
             str(selected_page),
             str(selected_tab),
             pd.DataFrame(edited),
         )
-        snapshot = repository.save_revision(
-            scenario_id,
-            revision_tables_for_save(
-                active_scenario,
-                reference_tables,
-                display_order=revised_display_order,
-            ),
-            capture_scenario_preset(reference_tables),
-            revision_name=revision_name,
-            parent_revision_id=active_persisted_revision_id(),
-            note=note.strip() or None,
-        )
-    except (KeyError, TypeError, ValueError) as exc:
+        source = note.strip() or f"웹 직접 편집 · {selected_page}/{selected_tab}"
+        _save_global_display_order(repository, revised, source=source)
+    except (KeyError, RuntimeError, TypeError, ValueError) as exc:
         st.error(str(exc))
     else:
-        activate_persisted_snapshot(snapshot)
-        st.success(f"표시순서를 새 리비전 r{snapshot.revision.revision_no}에 저장했습니다.")
+        st.success("표시순서를 모든 시나리오의 공용 설정으로 저장했습니다.")
         st.rerun()
+
+
+def _save_global_display_order(
+    repository: DuckDBScenarioRepository,
+    display_order: pd.DataFrame,
+    *,
+    source: str,
+) -> None:
+    validated = validate_display_order(display_order)
+    profile = repository.replace_global_display_order(validated, source=source)
+    clear_global_display_order_cache()
+    try:
+        apply_global_display_order(profile.rules, profile.version)
+    except RuntimeError:
+        pass

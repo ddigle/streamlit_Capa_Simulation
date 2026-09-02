@@ -10,6 +10,16 @@ from datetime import datetime
 import pandas as pd
 
 
+@dataclass(frozen=True)
+class GlobalDisplayOrder:
+    """Scenario-independent display-order profile shared by every revision."""
+
+    version: int
+    source: str
+    updated_at: datetime
+    rules: pd.DataFrame
+
+
 def _required_text(value: str, label: str) -> str:
     normalized = value.strip()
     if not normalized:

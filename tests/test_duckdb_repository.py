@@ -10,6 +10,10 @@ from capa_simulation.persistence import (
     ScenarioCreate,
     ScenarioPreset,
 )
+from capa_simulation.persistence.cache import (
+    clear_scenario_repository,
+    load_scenario_snapshot,
+)
 from capa_simulation.persistence.repository import REFERENCE_TABLES
 from capa_simulation.services.reference_transformer import build_reference_tables
 
@@ -248,6 +252,67 @@ def test_create_and_load_scenario_snapshot(tmp_path: Path) -> None:
         }
     assert "equipment_ops" not in schemas
     assert "equipment_meta" not in schemas
+
+
+def test_global_display_order_migrates_and_replaces_independently(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "scenario.duckdb")
+    source = _reference_tables()
+    snapshot = repository.create_scenario(
+        _metadata(),
+        source,
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+    fallback = source["RQ_DISPLAY_ORDER"].assign(분류값="Fallback")
+
+    initial = repository.initialize_global_display_order(fallback)
+
+    assert initial.version == 1
+    assert initial.source == "기존 시나리오 표시순서 이관"
+    assert initial.rules["분류값"].tolist() == ["Product-A"]
+
+    revised_rules = initial.rules.assign(분류값="Product-B")
+    revised = repository.replace_global_display_order(
+        revised_rules,
+        source="테스트 직접 편집",
+    )
+
+    assert revised.version == 2
+    assert revised.source == "테스트 직접 편집"
+    assert revised.rules["분류값"].tolist() == ["Product-B"]
+    assert repository.load_revision(snapshot.revision.revision_id).tables["RQ_DISPLAY_ORDER"][
+        "분류값"
+    ].tolist() == ["Product-B"]
+
+
+def test_cached_scenario_load_always_overlays_global_display_order(tmp_path: Path) -> None:
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    source = _reference_tables()
+    first = repository.create_scenario(
+        _metadata("First"),
+        source,
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+    second_source = dict(source)
+    second_source["RQ_DISPLAY_ORDER"] = source["RQ_DISPLAY_ORDER"].assign(분류값="Scenario-B")
+    second = repository.create_scenario(
+        _metadata("Second"),
+        second_source,
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+    repository.initialize_global_display_order(source["RQ_DISPLAY_ORDER"])
+    repository.replace_global_display_order(
+        source["RQ_DISPLAY_ORDER"].assign(분류값="Global"),
+        source="테스트 공용값",
+    )
+    clear_scenario_repository()
+
+    first_loaded = load_scenario_snapshot(str(database_path), first.revision.revision_id)
+    second_loaded = load_scenario_snapshot(str(database_path), second.revision.revision_id)
+
+    assert first_loaded.tables["RQ_DISPLAY_ORDER"]["분류값"].tolist() == ["Global"]
+    assert second_loaded.tables["RQ_DISPLAY_ORDER"]["분류값"].tolist() == ["Global"]
+    clear_scenario_repository()
 
 
 def test_new_revision_replaces_only_revision_owned_tables(tmp_path: Path) -> None:

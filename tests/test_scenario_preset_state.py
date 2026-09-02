@@ -67,3 +67,36 @@ st.session_state["captured_preset"] = capture_scenario_preset(
 
     assert not app.exception
     assert app.session_state["captured_preset"].standard_target_processes == ("Process-B",)
+
+
+def test_new_dataset_preset_activates_every_month_and_process() -> None:
+    test_script = """
+import pandas as pd
+import streamlit as st
+
+from capa_simulation.scenario_preset_state import capture_full_data_scenario_preset
+
+st.session_state["captured_preset"] = capture_full_data_scenario_preset(
+    {
+        "RQ_PKG_PLAN": pd.DataFrame({"생산계획년월": [202607, 202612]}),
+        "RQ_REQB": pd.DataFrame(
+            {
+                "생산계획년월": [202608, 202712, 202712],
+                "공정": ["Process-B", "Process-A", "Process-B"],
+            }
+        ),
+    }
+)
+"""
+    app = AppTest.from_string(test_script)
+    app.session_state[MONTH_RANGE_KEY] = ("2026-08", "2026-12")
+    app.session_state[PROCESS_SELECTION_KEY] = []
+    app.session_state[STANDARD_TARGET_PROCESS_SELECTION_KEY] = ["Process-B"]
+
+    app.run()
+
+    assert not app.exception
+    preset = app.session_state["captured_preset"]
+    assert (preset.start_month, preset.end_month) == (202607, 202712)
+    assert preset.included_processes == ("Process-A", "Process-B")
+    assert preset.standard_target_processes == ()

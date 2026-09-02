@@ -14,10 +14,12 @@ from capa_simulation.services.core_data_pipeline import (
     PreparedCoreDataset,
     prepare_core_data_dataset,
 )
+from capa_simulation.services.display_order_csv import display_order_from_csv
 from capa_simulation.services.display_order_editor import validate_display_order
 from capa_simulation.settings import PROJECT_ROOT
 
 BUILTIN_DISPLAY_ORDER_PATH = PROJECT_ROOT / "config" / "bootstrap_display_order.json"
+LOCAL_DISPLAY_ORDER_CSV_PATH = PROJECT_ROOT / "data" / "input" / "RQ_DISPLAY_ORDER.csv"
 BUILTIN_SEED_SCHEMA_VERSION = 1
 BUILTIN_SEED_PIPELINE_VERSION = "builtin-synthetic-core-data-v1"
 BUILTIN_SEED_SOURCE_CODE = "BUILTIN-GITHUB-SEED-V1"
@@ -147,6 +149,8 @@ _PROCESSES = (
 
 def load_builtin_display_order() -> pd.DataFrame:
     """Load and strictly validate the Git-tracked display-order seed."""
+    if LOCAL_DISPLAY_ORDER_CSV_PATH.is_file():
+        return display_order_from_csv(LOCAL_DISPLAY_ORDER_CSV_PATH.read_bytes())
     payload = cast(object, json.loads(BUILTIN_DISPLAY_ORDER_PATH.read_text(encoding="utf-8")))
     if not isinstance(payload, dict) or not all(isinstance(key, str) for key in payload):
         raise ValueError("내장 표시순서 시드의 최상위 값은 객체여야 합니다.")

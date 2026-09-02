@@ -1,6 +1,6 @@
 # DuckDB 데이터 모델
 
-마지막 갱신일: 2026-09-01
+마지막 갱신일: 2026-09-02
 
 ## 운영 원칙
 
@@ -9,7 +9,8 @@
 - `시나리오 1개 = 데이터셋 1개`다. 새 시나리오는 RQ 16개를 물리 복제하고 기존
   데이터셋을 덮어쓰지 않는다.
 - 데이터셋의 읽기 전용 기준정보를 바꾸려면 새 시나리오를 만든다.
-- 계획·수율·Capa·설비대수 입력 12개와 표시순서 변경은 불변 전체 리비전으로 저장한다.
+- 계획·수율·Capa·설비대수 입력 12개는 불변 전체 리비전으로 저장한다.
+- 표시순서는 시나리오와 분리된 단일 공용 프로필로 저장하고 모든 시나리오에 적용한다.
 - 리비전은 조회기간, B/N 포함 공정, 표준 목표 Capa 공정 기본값, 확보·경고 기준
   프리셋을 함께 소유한다.
 - 공식버전은 특정 불변 리비전을 가리키는 append-only 발행 이력이며 최신 발행을 새 웹
@@ -34,13 +35,16 @@ app_meta.scenario 1 ── 1 app_meta.dataset
        │
        └── N app_meta.scenario_revision
                     │
-                    ├── N rev_data.rq_* (편집 12개 + 표시순서)
+                    ├── N rev_data.rq_* (편집 12개)
                     ├── 1 app_meta.scenario_preset
                     ├── N app_meta.scenario_preset_process
                     └── N app_meta.scenario_preset_standard_target_process
 
 app_meta.official_release N ── 1 app_meta.scenario_revision
         └── 전역 증가 release_no의 공식 발행 이력
+
+app_meta.global_display_order 1 ── N app_meta.global_display_order_rule
+        └── 시나리오와 독립된 현재 공용 표시순서
 
 # data/equipment_availability.duckdb
 equipment_ops.revision
@@ -69,6 +73,8 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
 - `scenario_preset_standard_target_process`: 리비전별 표준 목표 Capa 공정 공용 기본값과
   저장 순서. 행이 없으면 전체 공정으로 해석한다.
 - `official_release`: 전역 공식버전 번호, 대상 시나리오·리비전, 공식버전명·메모·발행시각
+- `global_display_order`: 공용 표시순서 버전, 변경 출처와 갱신시각
+- `global_display_order_rule`: 페이지·탭·분류컬럼별 현재 정렬 규칙과 원본 행 순서
 
 `scenario_revision.parent_revision_id`는 과거 리비전에서 새 리비전을 저장하는 분기 이력을
 보존한다. `scenario.active_revision_id`는 가장 최근에 저장한 리비전을 가리키며, 사용자는
@@ -100,18 +106,19 @@ Capa를 연결할 때도 Area·STEP·MCP를 포함해 정확히 일치시킨다.
 
 ### `rev_data`
 
-리비전마다 다음 13개 테이블의 전체 스냅샷을 저장한다.
+리비전마다 다음 12개 테이블의 전체 스냅샷을 저장한다.
 
 ```text
 RQ_PKG_PLAN  RQ_YLD       RQ_UPEH      RQ_RUN_RATE
 RQ_VITAL     RQ_RUN_DAY   RQ_LOT_RATIO RQ_WF_RATIO
 RQ_REQB      RQ_EQP_OWN   RQ_EQP_LENT   RQ_EQP_AVBL
-RQ_DISPLAY_ORDER
 ```
 
-기술 키는 `(revision_id, source_row_no)`다. 리비전을 읽을 때 이 13개는 `ref_data`의 같은
-이름 테이블을 대체하고, 나머지 3개 읽기 전용 테이블은 데이터셋 기본 스냅샷을 사용한다.
+기술 키는 `(revision_id, source_row_no)`다. 리비전을 읽을 때 이 12개는 `ref_data`의 같은
+이름 테이블을 대체하고, 나머지 읽기 전용 테이블은 데이터셋 기본 스냅샷을 사용한다.
 `RQ_REQB`는 STEP 구성 변경을 리비전별로 재현하기 위해 데이터셋 기본본과 별도로 저장한다.
+`RQ_DISPLAY_ORDER`의 데이터셋 기본본과 과거 리비전 복사본은 호환용으로 남길 수 있지만,
+런타임 화면 정렬에는 `app_meta.global_display_order_rule`의 현재 공용 프로필을 우선한다.
 
 ### `raw_data`
 
