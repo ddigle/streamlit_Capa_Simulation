@@ -34,7 +34,7 @@ ACTION_COLUMNS = {
 }
 
 
-st.title("UPEH 실적")
+st.title("UPEH 실적 (구현중)")
 st.caption(
     "생산이력 DB의 공정·제품별 UPEH 실적을 Capa 기준정보와 비교하고, "
     "개선 필요항목과 조치 진행상태를 관리하는 화면입니다."

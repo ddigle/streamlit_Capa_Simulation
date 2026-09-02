@@ -147,6 +147,7 @@ def test_standard_target_page_renders_weeknum_plotly_table() -> None:
     assert app.session_state["captured_classification_columns"] == ["공정", "소요기준"]
     assert any(widget.label == "공정 필터" for widget in app.multiselect)
     assert any(widget.label == "가용설비 표 붙여넣기" for widget in app.text_area)
+    assert "예외 처리 공정" in [expandable.label for expandable in app.expander]
     subheaders = [element.value for element in app.subheader]
     assert subheaders.index("주차별 일 표준 가능량") < subheaders.index("주차별 가용설비 입력")
 
@@ -172,3 +173,33 @@ def test_standard_target_page_renders_weeknum_plotly_table() -> None:
         "양산구분",
         "제품정보",
     ]
+
+
+def test_standard_target_page_analyzes_one_selected_process_week() -> None:
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+
+    output_selector = app.segmented_control(key="standard_target_output_metric")
+    app = output_selector.set_value("로직 분석").run()
+
+    assert not app.exception
+    assert [widget.label for widget in app.selectbox] == [
+        "Weeknum",
+        "공정",
+        "소요기준",
+        "양산",
+        "제품",
+        "Stack",
+        "WF 속성",
+    ]
+    app = app.selectbox(key="standard_target_logic_weeknum").set_value("26-W32").run()
+    app = app.selectbox(key="standard_target_logic_process").set_value("Process-A").run()
+    app = app.selectbox(key="standard_target_logic_basis").set_value("WF").run()
+    app = app.selectbox(key="standard_target_logic_production_type").set_value("양산").run()
+    app = app.selectbox(key="standard_target_logic_product").set_value("Product-A").run()
+    app = app.selectbox(key="standard_target_logic_stack").set_value("8H").run()
+    app = app.selectbox(key="standard_target_logic_wf_type").set_value("Core").run()
+
+    assert not app.exception
+    assert "일 표준 가능량 로직 분석" in [element.value for element in app.subheader]
+    assert "일 표준 가능량 (매)" in [element.label for element in app.metric]
+    assert len(app.dataframe) == 2

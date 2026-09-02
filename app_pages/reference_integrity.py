@@ -26,7 +26,7 @@ def _clear_invalid_widget_value(key: str, options: list[str]) -> None:
         del st.session_state[key]
 
 
-st.title("Dynamic Capa")
+st.title("Dynamic Capa (구현중)")
 st.caption(
     "표준 Capa와 실적 효율·UPEH·생산실적을 연결해 Capa 손실 원인과 개선 우선순위를 분석합니다."
 )

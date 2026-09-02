@@ -5,6 +5,7 @@ import pytest
 
 from capa_simulation.services.standard_target_capacity import (
     build_iso_week_calendar,
+    build_standard_target_logic_analysis,
     build_weekly_availability_template,
     build_weekly_standard_target_capacity,
     parse_weekly_availability_clipboard,
@@ -174,6 +175,123 @@ def test_process_summary_uses_product_mix_and_always_excludes_er() -> None:
     assert result.loc[0, "STEP_소요대수"] == pytest.approx(3.0)
     assert result.loc[0, "공정 유효 Capa"] == pytest.approx(200.0 / 3.0)
     assert result.loc[0, "일 표준 가능량"] == pytest.approx(20.0)
+
+
+def test_logic_analysis_explains_one_process_week_with_product_wf_mix() -> None:
+    required_equipment = pd.DataFrame(
+        [
+            {
+                "생산계획년월": 202608,
+                "공정": "Process-A",
+                "소요기준": "WF",
+                "양산구분": "양산",
+                "제품정보": "Product-A",
+                "Stack": "8H",
+                "Capa Code": "C1",
+                "Customer": "Customer-A",
+                "CS": "MP",
+                "WF 구분": "Core",
+                "부하량": 100.0,
+                "소요대수": 1.0,
+            },
+            {
+                "생산계획년월": 202608,
+                "공정": "Process-A",
+                "소요기준": "WF",
+                "양산구분": "양산",
+                "제품정보": "Product-B",
+                "Stack": "12H",
+                "Capa Code": "C2",
+                "Customer": "Customer-B",
+                "CS": "MP",
+                "WF 구분": "Top",
+                "부하량": 300.0,
+                "소요대수": 6.0,
+            },
+        ]
+    )
+
+    target, contributions = build_standard_target_logic_analysis(
+        required_equipment=required_equipment,
+        run_day=pd.DataFrame({"생산계획년월": [202608], "공정": ["Process-A"], "RUN_DAY": [20.0]}),
+        weekly_availability=pd.DataFrame(
+            {"공정": ["Process-A"], "Weeknum": ["26-W32"], "가용대수": [4.0]}
+        ),
+        weeknum="26-W32",
+        process="Process-A",
+        demand_basis="wafer",
+    )
+
+    assert len(target) == 1
+    assert target.loc[0, "원수요_부하량"] == pytest.approx(400.0)
+    assert target.loc[0, "STEP_소요대수"] == pytest.approx(7.0)
+    assert target.loc[0, "공정 유효 Capa"] == pytest.approx(400.0 / 7.0)
+    assert target.loc[0, "대당 일 Capa"] == pytest.approx(20.0 / 7.0)
+    assert target.loc[0, "일 표준 가능량"] == pytest.approx(80.0 / 7.0)
+    assert contributions["부하량 비중"].tolist() == pytest.approx([0.25, 0.75])
+    assert contributions["소요대수 비중"].tolist() == pytest.approx([1.0 / 7.0, 6.0 / 7.0])
+    assert contributions["분류 유효 Capa"].tolist() == pytest.approx([100.0, 50.0])
+    assert contributions["Capa 역수 기여"].sum() == pytest.approx(7.0 / 400.0)
+
+
+def test_pre_bd_standard_target_excludes_dummy_from_product_mix() -> None:
+    required_equipment = pd.DataFrame(
+        [
+            {
+                "생산계획년월": 202608,
+                "공정": "Pre B/D",
+                "소요기준": "CHIP",
+                "양산구분": "양산",
+                "제품정보": "Product-A",
+                "Stack": "12H",
+                "Capa Code": "C1",
+                "Customer": "Customer-A",
+                "CS": "MP",
+                "WF 구분": "Core",
+                "부하량": 100.0,
+                "소요대수": 1.0,
+            },
+            {
+                "생산계획년월": 202608,
+                "공정": "Pre B/D",
+                "소요기준": "CHIP",
+                "양산구분": "양산",
+                "제품정보": "Product-A",
+                "Stack": "12H",
+                "Capa Code": "C1",
+                "Customer": "Customer-A",
+                "CS": "MP",
+                "WF 구분": " dummy ",
+                "부하량": 900.0,
+                "소요대수": 1.0,
+            },
+        ]
+    )
+    run_day = pd.DataFrame({"생산계획년월": [202608], "공정": ["Pre B/D"], "RUN_DAY": [10.0]})
+    availability = pd.DataFrame({"공정": ["Pre B/D"], "Weeknum": ["26-W32"], "가용대수": [2.0]})
+
+    result = build_weekly_standard_target_capacity(
+        required_equipment=required_equipment,
+        run_day=run_day,
+        weekly_availability=availability,
+        start_date=date(2026, 8, 3),
+        end_date=date(2026, 8, 9),
+        detail_level="공정",
+    )
+    target, contributions = build_standard_target_logic_analysis(
+        required_equipment=required_equipment,
+        run_day=run_day,
+        weekly_availability=availability,
+        weeknum="26-W32",
+        process="Pre B/D",
+        demand_basis="CHIP",
+    )
+
+    assert result.loc[0, "원수요_부하량"] == pytest.approx(100.0)
+    assert result.loc[0, "STEP_소요대수"] == pytest.approx(1.0)
+    assert result.loc[0, "일 표준 가능량"] == pytest.approx(20.0)
+    assert target.loc[0, "일 표준 가능량"] == pytest.approx(20.0)
+    assert contributions["WF 구분"].tolist() == ["Core"]
 
 
 def test_availability_rejects_duplicate_process_week() -> None:

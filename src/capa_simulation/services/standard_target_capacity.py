@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, timedelta
 from io import BytesIO
+from typing import cast
 
 import pandas as pd
 
@@ -16,6 +17,7 @@ from capa_simulation.services.weighted_unit_capacity import (
 
 WEEKLY_AVAILABILITY_COLUMNS = ["공정", "Weeknum", "가용대수"]
 WEEK_CALENDAR_COLUMNS = ["Weeknum", "주차시작일", "주차종료일", "생산계획년월"]
+STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES = ("Pre B/D",)
 _WEEK_PATTERN = re.compile(r"^(?P<year>\d{2})-W(?P<week>\d{2})$")
 
 
@@ -137,7 +139,7 @@ def build_weekly_standard_target_capacity(
     if detail_level not in WEIGHTED_CAPACITY_HIERARCHY:
         raise ValueError(f"지원하지 않는 표준 목표 Capa 집계 수준입니다: {detail_level}")
 
-    production_required_equipment = exclude_er_required_equipment(required_equipment)
+    production_required_equipment = prepare_standard_target_required_equipment(required_equipment)
     monthly_capacity = effective_process_capacity_long(
         production_required_equipment,
         detail_level,
@@ -199,6 +201,104 @@ def build_weekly_standard_target_capacity(
     )
 
 
+def build_standard_target_logic_analysis(
+    required_equipment: pd.DataFrame,
+    run_day: pd.DataFrame,
+    weekly_availability: pd.DataFrame,
+    weeknum: str,
+    process: str,
+    demand_basis: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Explain one process-week target through its product and WF mix."""
+    normalized_weeknum = str(weeknum).strip().upper()
+    if not _valid_weeknum(normalized_weeknum):
+        raise ValueError("로직 분석 Weeknum은 YY-W## 형식의 유효한 ISO 주차여야 합니다.")
+
+    normalized_process = str(process).strip()
+    if not normalized_process:
+        raise ValueError("로직 분석 공정을 선택해야 합니다.")
+    normalized_basis = str(demand_basis).strip().upper().replace("WAFER", "WF")
+    if not normalized_basis:
+        raise ValueError("로직 분석 소요기준을 선택해야 합니다.")
+
+    matched = _WEEK_PATTERN.fullmatch(normalized_weeknum)
+    if matched is None:  # pragma: no cover - guarded by _valid_weeknum
+        raise ValueError("로직 분석 Weeknum 형식을 확인하세요.")
+    week_start = date.fromisocalendar(
+        2000 + int(matched.group("year")),
+        int(matched.group("week")),
+        1,
+    )
+    production_month = week_start.year * 100 + week_start.month
+
+    required = ["생산계획년월", "공정", "소요기준", "양산구분"]
+    missing = [column for column in required if column not in required_equipment.columns]
+    if missing:
+        raise ValueError(f"소요대수 상세 필수 컬럼이 없습니다: {', '.join(missing)}")
+
+    source = required_equipment.copy()
+    month = pd.to_numeric(source["생산계획년월"], errors="coerce")
+    process_values = source["공정"].astype("string").str.strip()
+    basis_values = (
+        source["소요기준"].astype("string").str.strip().str.upper().replace({"WAFER": "WF"})
+    )
+    source = source.loc[
+        month.eq(production_month)
+        & process_values.eq(normalized_process)
+        & basis_values.eq(normalized_basis)
+    ].reset_index(drop=True)
+    source = prepare_standard_target_required_equipment(source)
+    if source.empty:
+        raise ValueError("선택한 주차·공정·소요기준에 해당하는 양산 소요대수 데이터가 없습니다.")
+
+    week_end = week_start + timedelta(days=6)
+    target = build_weekly_standard_target_capacity(
+        required_equipment=source,
+        run_day=run_day,
+        weekly_availability=weekly_availability,
+        start_date=week_start,
+        end_date=week_end,
+        detail_level="공정",
+    )
+    target = target.loc[
+        target["Weeknum"].eq(normalized_weeknum)
+        & target["공정"].eq(normalized_process)
+        & target["소요기준"].eq(normalized_basis)
+    ].reset_index(drop=True)
+    if len(target) != 1:
+        raise ValueError("선택한 조건의 공정 종합 표준 가능량을 하나로 확정할 수 없습니다.")
+
+    contributions = effective_process_capacity_long(source, "WF 구분")
+    total_load = float(cast(float, target.at[0, "원수요_부하량"]))
+    total_required = float(cast(float, target.at[0, "STEP_소요대수"]))
+    contributions = contributions.rename(columns={"공정 유효 Capa": "분류 유효 Capa"})
+    contributions["부하량 비중"] = contributions["원수요_부하량"].div(
+        total_load if total_load > 0 else float("nan")
+    )
+    contributions["소요대수 비중"] = contributions["STEP_소요대수"].div(
+        total_required if total_required > 0 else float("nan")
+    )
+    contributions["Capa 역수 기여"] = contributions["부하량 비중"].div(
+        contributions["분류 유효 Capa"].where(contributions["분류 유효 Capa"].gt(0))
+    )
+    contribution_columns = [
+        "생산계획년월",
+        "공정",
+        "소요기준",
+        "양산구분",
+        "제품정보",
+        "Stack",
+        "WF 구분",
+        "원수요_부하량",
+        "부하량 비중",
+        "STEP_소요대수",
+        "소요대수 비중",
+        "분류 유효 Capa",
+        "Capa 역수 기여",
+    ]
+    return target, contributions[contribution_columns].reset_index(drop=True)
+
+
 def weekly_standard_target_to_wide(
     data: pd.DataFrame,
     classification_columns: list[str],
@@ -242,6 +342,32 @@ def exclude_er_required_equipment(data: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("소요대수 상세 필수 컬럼이 없습니다: 양산구분")
     production_mask = ~data["양산구분"].astype("string").str.strip().str.upper().eq("ER")
     return data.loc[production_mask].reset_index(drop=True)
+
+
+def prepare_standard_target_required_equipment(data: pd.DataFrame) -> pd.DataFrame:
+    """Apply every demand exclusion used only by standard target Capa."""
+    production = exclude_er_required_equipment(data)
+    exception_mask = _standard_target_exception_mask(production)
+    return production.loc[~exception_mask].reset_index(drop=True)
+
+
+def standard_target_exception_row_count(data: pd.DataFrame) -> int:
+    """Count detailed rows omitted by process-specific standard target rules."""
+    production = exclude_er_required_equipment(data)
+    return int(_standard_target_exception_mask(production).sum())
+
+
+def _standard_target_exception_mask(data: pd.DataFrame) -> pd.Series:
+    required = ["공정", "WF 구분"]
+    missing = [column for column in required if column not in data.columns]
+    if missing:
+        raise ValueError(f"소요대수 상세 필수 컬럼이 없습니다: {', '.join(missing)}")
+    process = data["공정"].astype("string").str.strip().str.upper()
+    wf_type = data["WF 구분"].astype("string").str.strip().str.upper()
+    excluded_processes = {
+        value.strip().upper() for value in STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES
+    }
+    return process.isin(excluded_processes) & wf_type.eq("DUMMY")
 
 
 def _prepare_run_day(data: pd.DataFrame) -> pd.DataFrame:

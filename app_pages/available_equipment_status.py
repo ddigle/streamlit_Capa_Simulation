@@ -101,7 +101,7 @@ def _import_summary(preview: pd.DataFrame) -> None:
         )
 
 
-st.title("가용설비 현황")
+st.title("가용설비 현황 (구현중)")
 st.caption(
     "기존 보유대수와 30개 컬럼 호기 마스터, 운영 비가동 일정을 설비 전용 DuckDB "
     "불변 리비전으로 관리합니다."
