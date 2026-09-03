@@ -107,15 +107,18 @@ data/equipment_availability.duckdb
 ```text
 app.py                         Streamlit 실행 진입점과 공통 사이드바
 app_pages/                     페이지별 UI
-config/bootstrap_display_order.json
-                               GitHub 독립 실행용 비민감 최소 표시순서 시드
-data/input/RQ_DISPLAY_ORDER.csv
-                               선택적인 로컬 공용 표시순서 초기 이관 파일(Git 제외)
-src/capa_simulation/components/ Streamlit 커스텀 UI 컴포넌트
+src/capa_simulation/navigation.py
+                               사이드바 페이지 목록 선언
+src/capa_simulation/page_bootstrap.py
+                               계산 페이지 공통 진입 절차(활성 리비전·조회기간)
+src/capa_simulation/design/    색·서체·표 치수 토큰과 Plotly 공통 레이아웃
+src/capa_simulation/components/ Streamlit 커스텀 UI 컴포넌트와 Figure 생성기
 src/capa_simulation/io/        Core Data 어댑터와 DuckDB 활성 기준정보 경계
 src/capa_simulation/persistence/
                                DuckDB 마이그레이션·Repository·데이터 모델
 src/capa_simulation/services/  계산·정렬·표 변환 로직
+src/capa_simulation/services/frame_contracts.py
+                               서비스 공용 컬럼 계약과 업무 키 정규화
 src/capa_simulation/scenario_state.py
                                사용자별 활성 시나리오
 src/capa_simulation/scenario_activation.py
@@ -126,10 +129,15 @@ src/capa_simulation/services/builtin_seed.py
                                78컬럼 DEMO Core Data와 RQ 16개 생성 경계
 src/capa_simulation/performance.py
                                HOME 단계별 성능 계측
+config/bootstrap_display_order.json
+                               GitHub 독립 실행용 비민감 최소 표시순서 시드
+data/input/RQ_DISPLAY_ORDER.csv
+                               선택적인 로컬 공용 표시순서 초기 이관 파일(Git 제외)
 templates/                     일회성 초기 이관·병행 검증용 로컬 XLSB
 scripts/                       초기 이관·통합 검증·HOME 벤치마크 도구
-tests/                         계산·캐시·시나리오 테스트
+tests/                         계산·캐시·시나리오·화면 테스트
 docs/TODO.md                   결정 이력과 작업 목록
+docs/design_system.md          색·서체·표 밀도 규칙
 AGENTS.md                      개발 에이전트용 구조·규칙 문서
 ```
 

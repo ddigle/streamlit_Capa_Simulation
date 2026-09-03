@@ -301,22 +301,26 @@ def _render_logic_analysis(
     unit_label = "매" if selected_basis == "WF" else "Kea"
 
     st.markdown("#### 선택 결과")
-    metric_row = st.container(horizontal=True, vertical_alignment="center", gap="small")
-    with metric_row:
-        st.metric(
-            f"원수요 부하량 ({unit_label})",
-            _format_metric(target_row["원수요_부하량"]),
-            width=180,
-        )
-        st.metric("STEP 소요대수", _format_metric(target_row["STEP_소요대수"]), width=170)
-        st.metric("공정 유효 Capa", _format_metric(target_row["공정 유효 Capa"]), width=170)
-        st.metric("RUN_DAY", _format_metric(target_row["RUN_DAY"], 1), width=130)
-        st.metric("대당 일 Capa", _format_metric(target_row["대당 일 Capa"]), width=160)
-        st.metric("가용대수", _format_metric(target_row["가용대수"], 1), width=130)
+    # 고정 px 7개를 한 줄에 두면 1,130px 를 넘겨 좁은 화면에서 잘린다.
+    # st.columns 는 남는 폭을 나눠 갖고 화면이 줄면 함께 줄어든다.
+    first_row = st.columns(4, vertical_alignment="center")
+    with first_row[0]:
+        st.metric(f"원수요 부하량 ({unit_label})", _format_metric(target_row["원수요_부하량"]))
+    with first_row[1]:
+        st.metric("STEP 소요대수", _format_metric(target_row["STEP_소요대수"]))
+    with first_row[2]:
+        st.metric("공정 유효 Capa", _format_metric(target_row["공정 유효 Capa"]))
+    with first_row[3]:
+        st.metric("RUN_DAY", _format_metric(target_row["RUN_DAY"], 1))
+    second_row = st.columns(4, vertical_alignment="center")
+    with second_row[0]:
+        st.metric("대당 일 Capa", _format_metric(target_row["대당 일 Capa"]))
+    with second_row[1]:
+        st.metric("가용대수", _format_metric(target_row["가용대수"], 1))
+    with second_row[2]:
         st.metric(
             f"일 표준 가능량 ({unit_label})",
             _format_metric(target_row["일 표준 가능량"]),
-            width=190,
         )
 
     st.code(
@@ -344,17 +348,14 @@ def _render_logic_analysis(
         st.metric(
             "선택 분류 부하량 비중",
             f"{float(contribution_row['부하량 비중']):.2%}",
-            width=190,
         )
         st.metric(
             "선택 분류 소요대수 비중",
             f"{float(contribution_row['소요대수 비중']):.2%}",
-            width=210,
         )
         st.metric(
             "선택 분류 유효 Capa",
             _format_metric(contribution_row["분류 유효 Capa"]),
-            width=190,
         )
 
     st.markdown("#### 제품·WF 속성별 Mix 산출 근거")
