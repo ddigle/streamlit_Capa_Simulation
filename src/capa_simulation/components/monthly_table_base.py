@@ -20,7 +20,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from capa_simulation.components.horizontal_scrollbar import render_horizontal_scrollbar
+# 테스트가 스크롤바를 갈아끼울 수 있도록 이름이 아니라 모듈을 잡는다. 이름을 직접
+# import 하면 여기서 잡은 바인딩이 교체를 무시한다.
+import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.design import tokens
 
 # 색과 치수는 design/tokens.py 가 단일 근거다. 여기서는 표 문맥의 이름만 붙인다.
@@ -139,7 +141,7 @@ def render_split_scroll_table(
             """
         )
         with st.container(key=f"{key}_month_region", gap=None):
-            render_horizontal_scrollbar(
+            horizontal_scrollbar.render_horizontal_scrollbar(
                 target_selector=f".st-key-{key}_month_scroll",
                 height=SCROLLBAR_HEIGHT_PX,
                 key=f"{key}_scrollbar",

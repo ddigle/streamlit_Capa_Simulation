@@ -9,11 +9,12 @@ from typing import Any, cast
 import pandas as pd
 import streamlit as st
 
+# 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
+import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_SCROLLBAR_HEIGHT_PX,
     DASHBOARD_SECTION_GAP_PX,
 )
-from capa_simulation.components.horizontal_scrollbar import render_horizontal_scrollbar
 from capa_simulation.design import tokens
 from capa_simulation.performance import PerformanceTrace
 
@@ -132,7 +133,7 @@ def render_home_figures(
                 """
             )
             with st.container(key="production_lob_month_region", gap=None):
-                render_horizontal_scrollbar(
+                horizontal_scrollbar.render_horizontal_scrollbar(
                     target_selector=".st-key-production_lob_month_scroll",
                     height=DASHBOARD_SCROLLBAR_HEIGHT_PX,
                     key="production_lob_custom_scrollbar",
