@@ -22,6 +22,12 @@ from capa_simulation.io.reference_cache import (
     get_effective_reference_version,
 )
 from capa_simulation.performance import PerformanceTrace
+from capa_simulation.scenario_preset_state import (
+    DEFAULT_SECURE_THRESHOLD_PERCENT,
+    DEFAULT_WARNING_THRESHOLD_PERCENT,
+    SECURE_THRESHOLD_KEY,
+    WARNING_THRESHOLD_KEY,
+)
 from capa_simulation.scenario_state import ensure_active_scenario, scenario_month_table
 from capa_simulation.services.dashboard import (
     build_bottleneck_capacity,
@@ -275,12 +281,14 @@ def show_process_filter_dialog(options: list[str]) -> None:
 
 
 included_processes = list(st.session_state[process_selection_key])
-secure_threshold_key = "dashboard_secure_threshold_percent"
-warning_threshold_key = "dashboard_warning_threshold_percent"
+# 키와 기본값은 리비전 프리셋 소유다. Static Capa 본문의 같은 컨트롤과 세션 상태를
+# 공유하므로 여기서 문자열을 다시 적으면 조용히 끊어진다.
+secure_threshold_key = SECURE_THRESHOLD_KEY
+warning_threshold_key = WARNING_THRESHOLD_KEY
 if secure_threshold_key not in st.session_state:
-    st.session_state[secure_threshold_key] = 109.5
+    st.session_state[secure_threshold_key] = DEFAULT_SECURE_THRESHOLD_PERCENT
 if warning_threshold_key not in st.session_state:
-    st.session_state[warning_threshold_key] = 99.5
+    st.session_state[warning_threshold_key] = DEFAULT_WARNING_THRESHOLD_PERCENT
 with st.sidebar.container(border=True):
     st.markdown("#### :material/filter_alt: B/N 집계 공정")
     with st.form("dashboard_bottleneck_filter_form", border=False):

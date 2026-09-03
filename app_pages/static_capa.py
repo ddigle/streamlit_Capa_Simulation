@@ -11,6 +11,8 @@ from capa_simulation.page_bootstrap import (
     resolve_effective_months,
 )
 from capa_simulation.scenario_preset_state import (
+    DEFAULT_SECURE_THRESHOLD_PERCENT,
+    DEFAULT_WARNING_THRESHOLD_PERCENT,
     SECURE_THRESHOLD_KEY,
     WARNING_THRESHOLD_KEY,
 )
@@ -21,9 +23,6 @@ from capa_simulation.services.simulation_cache import (
     get_securement_rate,
     get_unit_capacity,
 )
-
-DEFAULT_SECURE_THRESHOLD_PERCENT = 109.5
-DEFAULT_WARNING_THRESHOLD_PERCENT = 99.5
 
 
 def _display_shortfalls(data: pd.DataFrame, *, warning_section: bool) -> pd.DataFrame:

@@ -102,3 +102,36 @@ st.session_state["captured_preset"] = capture_full_data_scenario_preset(
     assert (preset.start_month, preset.end_month) == (202607, 202712)
     assert preset.included_processes == ("Process-A", "Process-B")
     assert preset.standard_target_processes == ()
+
+
+def test_threshold_keys_and_defaults_have_one_definition() -> None:
+    """판정 기준 키와 기본값이 페이지마다 다시 선언되지 않는지 지킨다.
+
+    HOME 사이드바와 Static Capa 본문의 컨트롤은 같은 세션 키를 공유한다. 어느 한쪽이
+    문자열이나 기본값을 따로 적어 두면 상수를 바꿔도 그쪽만 조용히 옛 값에 남는다.
+    """
+    from pathlib import Path
+
+    from capa_simulation.scenario_preset_state import (
+        DEFAULT_SECURE_THRESHOLD_PERCENT,
+        DEFAULT_WARNING_THRESHOLD_PERCENT,
+        SECURE_THRESHOLD_KEY,
+        WARNING_THRESHOLD_KEY,
+    )
+
+    owner = Path(__file__).resolve().parents[1] / "src/capa_simulation/scenario_preset_state.py"
+    literals = (
+        f'"{SECURE_THRESHOLD_KEY}"',
+        f'"{WARNING_THRESHOLD_KEY}"',
+        str(DEFAULT_SECURE_THRESHOLD_PERCENT),
+        str(DEFAULT_WARNING_THRESHOLD_PERCENT),
+    )
+    pages = sorted((Path(__file__).resolve().parents[1] / "app_pages").glob("*.py"))
+    offenders = [
+        f"{page.name}: {literal}"
+        for page in pages
+        for literal in literals
+        if literal in page.read_text(encoding="utf-8")
+    ]
+
+    assert not offenders, f"{owner.name} 의 상수를 import 하세요: {offenders}"

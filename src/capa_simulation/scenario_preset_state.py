@@ -20,6 +20,10 @@ MONTH_PICKER_KEY = "production_month_picker"
 PROCESS_SELECTION_KEY = "dashboard_bottleneck_process_selection"
 SECURE_THRESHOLD_KEY = "dashboard_secure_threshold_percent"
 WARNING_THRESHOLD_KEY = "dashboard_warning_threshold_percent"
+# 판정 기준은 리비전 프리셋이 소유하므로 기본값도 키 옆에 둔다. HOME 과 Static Capa 가
+# 같은 세션 키를 쓰는데 기본값을 따로 적어 두면 한쪽만 바뀌어도 드러나지 않는다.
+DEFAULT_SECURE_THRESHOLD_PERCENT = 109.5
+DEFAULT_WARNING_THRESHOLD_PERCENT = 99.5
 STANDARD_TARGET_PROCESS_SELECTION_KEY = "standard_target_process_filter"
 STANDARD_TARGET_PROCESS_DEFAULT_KEY = "standard_target_process_default"
 
@@ -34,8 +38,8 @@ def capture_scenario_preset(reference_tables: Mapping[str, pd.DataFrame]) -> Sce
         if isinstance(saved_processes, list)
         else tuple(process_options)
     )
-    secure_percent = _session_number(SECURE_THRESHOLD_KEY, 109.5)
-    warning_percent = _session_number(WARNING_THRESHOLD_KEY, 99.5)
+    secure_percent = _session_number(SECURE_THRESHOLD_KEY, DEFAULT_SECURE_THRESHOLD_PERCENT)
+    warning_percent = _session_number(WARNING_THRESHOLD_KEY, DEFAULT_WARNING_THRESHOLD_PERCENT)
     standard_target_saved = st.session_state.get(STANDARD_TARGET_PROCESS_SELECTION_KEY)
     standard_target_processes = (
         tuple(str(process) for process in standard_target_saved)
