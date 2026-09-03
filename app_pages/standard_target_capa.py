@@ -14,9 +14,10 @@ from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
 )
-from capa_simulation.io.reference_cache import (
-    get_effective_reference_tables,
-    get_effective_reference_version,
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    load_page_context,
+    resolve_effective_months,
 )
 from capa_simulation.persistence.equipment_cache import get_equipment_repository
 from capa_simulation.scenario_preset_state import (
@@ -24,13 +25,11 @@ from capa_simulation.scenario_preset_state import (
     STANDARD_TARGET_PROCESS_SELECTION_KEY,
 )
 from capa_simulation.scenario_state import (
-    ensure_active_scenario,
     scenario_month_table,
 )
-from capa_simulation.services.display_order import apply_display_order, prepare_display_order
+from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
-from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.simulation_cache import (
     get_required_equipment,
     get_unit_capacity,
@@ -446,22 +445,22 @@ st.caption(
 )
 
 try:
-    reference_version = get_effective_reference_version()
-    reference_tables = get_effective_reference_tables()
-    display_order = prepare_display_order(reference_tables["RQ_DISPLAY_ORDER"])
-    active_scenario = ensure_active_scenario(reference_tables, reference_version)
-    selected_start_month, selected_end_month = _selected_month_range()
-    source_start_month, source_end_month = available_month_range(
+    context = load_page_context()
+    reference_version = context.reference_version
+    reference_tables = context.reference_tables
+    display_order = context.display_order
+    active_scenario = context.active_scenario
+    selected_start_month = context.selected_start_month
+    selected_end_month = context.selected_end_month
+    effective_start_month, effective_end_month = resolve_effective_months(
+        context,
         active_scenario["tables"]["RQ_UPEH"],
         "RQ_UPEH",
+        empty_message="선택 범위에 표준 목표 Capa 기준정보가 없습니다.",
     )
-    effective_start_month = max(selected_start_month, source_start_month)
-    effective_end_month = min(selected_end_month, source_end_month)
-    if effective_start_month > effective_end_month:
-        raise ValueError("선택 범위에 표준 목표 Capa 기준정보가 없습니다.")
     equipment_repository = get_equipment_repository(str(EQUIPMENT_DUCKDB_PATH.resolve()))
     availability = equipment_repository.load_standard_target_availability()
-except (KeyError, OSError, RuntimeError, ValueError) as exc:
+except BOOTSTRAP_ERRORS as exc:
     st.error(str(exc))
     st.stop()
 

@@ -12,17 +12,16 @@ from capa_simulation.components.reference_csv_tools import (
     render_reference_clipboard_tools,
 )
 from capa_simulation.design import tokens
-from capa_simulation.io.reference_cache import (
-    get_effective_reference_tables,
-    get_effective_reference_version,
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    load_page_context,
+    resolve_effective_months,
 )
 from capa_simulation.scenario_state import (
     apply_month_updates,
-    ensure_active_scenario,
     reset_active_scenario,
     scenario_month_table,
 )
-from capa_simulation.services.display_order import prepare_display_order
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
     YIELD_EDITOR_DIMENSIONS,
@@ -33,11 +32,7 @@ from capa_simulation.services.load_calculator import (
     yield_from_edit_table,
     yield_to_edit_table,
 )
-from capa_simulation.services.month_filter import (
-    available_month_range,
-)
 from capa_simulation.services.simulation_cache import get_monthly_volume
-from capa_simulation.sidebar_status import show_applied_month_range
 
 PRODUCT_COLUMN_WIDTH_PX = 100
 DISPLAY_COLUMN_LABELS = {
@@ -53,29 +48,24 @@ st.title("부하량")
 
 
 try:
-    reference_version = get_effective_reference_version()
-    reference_tables = get_effective_reference_tables()
-    active_scenario = ensure_active_scenario(reference_tables, reference_version)
-except Exception as exc:
+    context = load_page_context()
+    reference_version = context.reference_version
+    reference_tables = context.reference_tables
+    active_scenario = context.active_scenario
+    prepared_display_order = context.display_order
+    selected_start_month = context.selected_start_month
+    selected_end_month = context.selected_end_month
+except BOOTSTRAP_ERRORS as exc:
     st.error(f"기준정보를 불러오지 못했습니다: {exc}")
     st.stop()
 
 try:
-    source_start_month, source_end_month = available_month_range(
-        reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN"
+    effective_start_month, effective_end_month = resolve_effective_months(
+        context,
+        reference_tables["RQ_PKG_PLAN"],
+        "RQ_PKG_PLAN",
+        empty_message="선택 범위에 PKG PLAN 데이터가 없습니다.",
     )
-    selected_start_label, selected_end_label = st.session_state["production_month_range_v2"]
-    selected_start_month = int(selected_start_label.replace("-", ""))
-    selected_end_month = int(selected_end_label.replace("-", ""))
-    effective_start_month = max(selected_start_month, source_start_month)
-    effective_end_month = min(selected_end_month, source_end_month)
-    if effective_start_month > effective_end_month:
-        with st.sidebar:
-            st.warning("선택 범위에 PKG PLAN 데이터가 없습니다.")
-        st.stop()
-
-    show_applied_month_range(effective_start_month, effective_end_month)
-    prepared_display_order = prepare_display_order(reference_tables["RQ_DISPLAY_ORDER"])
     filtered_plan = scenario_month_table(
         active_scenario,
         "RQ_PKG_PLAN",

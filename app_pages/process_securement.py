@@ -12,18 +12,17 @@ from capa_simulation.components.reference_csv_tools import (
     render_reference_clipboard_tools,
 )
 from capa_simulation.design import tokens
-from capa_simulation.io.reference_cache import (
-    get_effective_reference_tables,
-    get_effective_reference_version,
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    load_page_context,
+    resolve_effective_months,
 )
 from capa_simulation.scenario_state import (
     apply_month_updates,
-    ensure_active_scenario,
     scenario_month_table,
 )
 from capa_simulation.services.display_order import (
     apply_display_order,
-    prepare_display_order,
     reorder_display_columns,
 )
 from capa_simulation.services.equipment_count import (
@@ -33,7 +32,6 @@ from capa_simulation.services.equipment_count import (
     equipment_count_from_edit_table,
     equipment_count_to_edit_table,
 )
-from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
@@ -51,7 +49,6 @@ from capa_simulation.services.simulation_cache import (
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
 )
-from capa_simulation.sidebar_status import show_applied_month_range
 
 TAB_NAMES = ("📊 확보율", "📊 소요대수", "설비대수")
 DISPLAY_COLUMN_LABELS = {
@@ -74,18 +71,17 @@ st.title("공정별 확보율")
 availability_tab, required_tab, equipment_tab = st.tabs(TAB_NAMES)
 
 try:
-    reference_version = get_effective_reference_version()
-    reference_tables = get_effective_reference_tables()
-    display_order = prepare_display_order(reference_tables["RQ_DISPLAY_ORDER"])
-    active_scenario = ensure_active_scenario(reference_tables, reference_version)
-    selected_start, selected_end = selected_month_range()
-    active_reqb = active_scenario["tables"]["RQ_REQB"]
-    source_start, source_end = available_month_range(active_reqb, "RQ_REQB")
-    effective_start = max(selected_start, source_start)
-    effective_end = min(selected_end, source_end)
-    if effective_start > effective_end:
-        raise ValueError("선택 범위에 소요대수 산출 기준이 없습니다.")
-    show_applied_month_range(effective_start, effective_end)
+    context = load_page_context()
+    reference_version = context.reference_version
+    reference_tables = context.reference_tables
+    display_order = context.display_order
+    active_scenario = context.active_scenario
+    effective_start, effective_end = resolve_effective_months(
+        context,
+        active_scenario["tables"]["RQ_REQB"],
+        "RQ_REQB",
+        empty_message="선택 범위에 소요대수 산출 기준이 없습니다.",
+    )
 
     monthly_table_names = (
         "RQ_REQB",
@@ -190,7 +186,7 @@ try:
         "공정별 확보율",
         "확보율",
     )
-except (KeyError, OSError, ValueError) as exc:
+except BOOTSTRAP_ERRORS as exc:
     with availability_tab:
         st.error(str(exc))
     with required_tab:

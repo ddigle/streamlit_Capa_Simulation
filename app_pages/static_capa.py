@@ -5,17 +5,17 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.io.reference_cache import (
-    get_effective_reference_tables,
-    get_effective_reference_version,
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    load_page_context,
+    resolve_effective_months,
 )
 from capa_simulation.scenario_preset_state import (
     MONTH_RANGE_KEY,
     SECURE_THRESHOLD_KEY,
     WARNING_THRESHOLD_KEY,
 )
-from capa_simulation.scenario_state import ensure_active_scenario, scenario_month_table
-from capa_simulation.services.month_filter import available_month_range
+from capa_simulation.scenario_state import scenario_month_table
 from capa_simulation.services.securement_rate import build_securement_shortfall_tables
 from capa_simulation.services.simulation_cache import (
     get_required_equipment,
@@ -27,7 +27,6 @@ from capa_simulation.settings import (
     MONTH_SELECTION_START,
     format_month,
 )
-from capa_simulation.sidebar_status import show_applied_month_range
 
 DEFAULT_SECURE_THRESHOLD_PERCENT = 109.5
 DEFAULT_WARNING_THRESHOLD_PERCENT = 99.5
@@ -163,22 +162,22 @@ if warning_threshold_percent > secure_threshold_percent:
     st.stop()
 
 try:
-    reference_version = get_effective_reference_version()
-    reference_tables = get_effective_reference_tables()
-    active_scenario = ensure_active_scenario(reference_tables, reference_version)
-    selected_start, selected_end = _selected_month_range()
+    context = load_page_context()
+    reference_version = context.reference_version
+    reference_tables = context.reference_tables
+    active_scenario = context.active_scenario
     active_reqb = scenario_month_table(
         active_scenario,
         "RQ_REQB",
-        selected_start,
-        selected_end,
+        context.selected_start_month,
+        context.selected_end_month,
     )
-    source_start, source_end = available_month_range(active_reqb, "RQ_REQB")
-    effective_start = max(selected_start, source_start)
-    effective_end = min(selected_end, source_end)
-    if effective_start > effective_end:
-        raise ValueError("선택 범위에 소요대수 산출 기준이 없습니다.")
-    show_applied_month_range(effective_start, effective_end)
+    effective_start, effective_end = resolve_effective_months(
+        context,
+        active_reqb,
+        "RQ_REQB",
+        empty_message="선택 범위에 소요대수 산출 기준이 없습니다.",
+    )
 
     unit_capacity = get_unit_capacity(
         upeh=scenario_month_table(active_scenario, "RQ_UPEH", effective_start, effective_end),
@@ -245,7 +244,7 @@ try:
         warning_threshold=float(warning_threshold_percent) / 100.0,
         secure_threshold=float(secure_threshold_percent) / 100.0,
     )
-except (KeyError, OSError, ValueError) as exc:
+except BOOTSTRAP_ERRORS as exc:
     st.error(str(exc))
 else:
     with st.container(border=True):

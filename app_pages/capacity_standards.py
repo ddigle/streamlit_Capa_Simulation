@@ -15,13 +15,13 @@ from capa_simulation.components.reference_csv_tools import (
     render_reference_clipboard_tools,
 )
 from capa_simulation.design import tokens
-from capa_simulation.io.reference_cache import (
-    get_effective_reference_tables,
-    get_effective_reference_version,
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    load_page_context,
+    resolve_effective_months,
 )
 from capa_simulation.scenario_state import (
     apply_month_updates,
-    ensure_active_scenario,
     reset_active_scenario,
     scenario_month_table,
 )
@@ -34,10 +34,8 @@ from capa_simulation.services.capacity_reference_editor import (
 )
 from capa_simulation.services.display_order import (
     apply_display_order,
-    prepare_display_order,
     reorder_display_columns,
 )
-from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.route_step_editor import (
     ROUTE_GROUP_COLUMNS,
     clone_route_step,
@@ -55,7 +53,6 @@ from capa_simulation.services.weighted_unit_capacity import (
     WEIGHTED_CAPACITY_HIERARCHY,
     effective_process_capacity_to_month_table,
 )
-from capa_simulation.sidebar_status import show_applied_month_range
 
 TAB_NAMES = (
     "📊 공정 유효 Capa",
@@ -197,19 +194,19 @@ tabs = st.tabs(
 unit_capacity_tab = tabs[0]
 
 try:
-    reference_version = get_effective_reference_version()
-    reference_tables = get_effective_reference_tables()
-    display_order = prepare_display_order(reference_tables["RQ_DISPLAY_ORDER"])
-    active_scenario = ensure_active_scenario(reference_tables, reference_version)
-    start_month, end_month = selected_month_range()
-    source_start_month, source_end_month = available_month_range(
-        reference_tables["RQ_UPEH"], "RQ_UPEH"
+    context = load_page_context()
+    reference_version = context.reference_version
+    reference_tables = context.reference_tables
+    display_order = context.display_order
+    active_scenario = context.active_scenario
+    start_month = context.selected_start_month
+    end_month = context.selected_end_month
+    effective_start_month, effective_end_month = resolve_effective_months(
+        context,
+        reference_tables["RQ_UPEH"],
+        "RQ_UPEH",
+        empty_message="선택 범위에 공정별 Capa 기준정보가 없습니다.",
     )
-    effective_start_month = max(start_month, source_start_month)
-    effective_end_month = min(end_month, source_end_month)
-    if effective_start_month > effective_end_month:
-        raise ValueError("선택 범위에 공정별 Capa 기준정보가 없습니다.")
-    show_applied_month_range(effective_start_month, effective_end_month)
     filtered_upeh = scenario_month_table(active_scenario, "RQ_UPEH", start_month, end_month)
     filtered_run_rate = scenario_month_table(active_scenario, "RQ_RUN_RATE", start_month, end_month)
     filtered_vital = scenario_month_table(active_scenario, "RQ_VITAL", start_month, end_month)
@@ -306,7 +303,7 @@ try:
     )
     step_summary = route_step_summary(filtered_reqb)
     step_catalog = route_step_catalog(filtered_upeh, filtered_reqb)
-except (OSError, ValueError) as exc:
+except BOOTSTRAP_ERRORS as exc:
     st.error(str(exc))
     st.stop()
 
