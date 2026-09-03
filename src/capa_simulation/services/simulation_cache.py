@@ -9,7 +9,6 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.services.dashboard import (
-    build_monthly_wafer_load,
     build_monthly_wafer_load_from_load,
     build_production_dashboard,
 )
@@ -156,16 +155,6 @@ def get_production_dashboard(
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
-def get_monthly_wafer_load(
-    plan: pd.DataFrame,
-    yield_data: pd.DataFrame,
-    chip_qty: pd.DataFrame,
-) -> pd.DataFrame:
-    # Load-calculation cache schema v2: normalize WF type before Dummy detection.
-    return build_monthly_wafer_load(plan, yield_data, chip_qty)
-
-
-@st.cache_data(show_spinner=False, max_entries=32)
 def get_home_equipment_demand(
     reqb: pd.DataFrame,
     plan: pd.DataFrame,
@@ -241,6 +230,5 @@ def clear_simulation_caches() -> None:
     get_securement_rate.clear()
     get_monthly_volume.clear()
     get_production_dashboard.clear()
-    get_monthly_wafer_load.clear()
     get_home_equipment_demand.clear()
     get_weekly_standard_target_capacity.clear()

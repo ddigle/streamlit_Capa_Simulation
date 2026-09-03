@@ -284,4 +284,3 @@ def _scenario_label(summary: ScenarioSummary) -> str:
 
 
 # Backward-compatible alias for callers that still use the old read-only name.
-render_scenario_status = render_scenario_controls

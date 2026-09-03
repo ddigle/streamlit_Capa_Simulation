@@ -49,6 +49,8 @@ def calculate_securement_rate(
         on=["생산계획년월", "공정"],
         how="left",
         indicator=True,
+        # 양쪽 다 groupby 결과라 월·공정이 유일하다. 상위에서 집계가 깨지면 조기에 실패한다.
+        validate="one_to_one",
     )
     missing_available = availability_check["_merge"].ne("both")
     if missing_available.any():
