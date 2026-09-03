@@ -13,8 +13,8 @@ from capa_simulation.io.core_data_source import (
     CoreDataProvider,
     normalize_core_data,
 )
+from capa_simulation.services.reference_conflicts import TEMPORARY_CONFLICT_RESOLUTION
 from capa_simulation.services.reference_transformer import (
-    TEMPORARY_CONFLICT_RESOLUTION,
     build_reference_tables_with_conflicts,
 )
 

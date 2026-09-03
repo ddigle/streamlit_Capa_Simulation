@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from capa_simulation.services.reference_transformer import transform_display_order
+from capa_simulation.services.frame_contracts import require_columns
 
 DISPLAY_ORDER_COLUMNS = (
     "페이지 구분",
@@ -153,3 +153,66 @@ def _required_text(value: str, label: str) -> str:
     if not result:
         raise ValueError(f"{label}은(는) 비어 있을 수 없습니다.")
     return result
+
+
+def transform_display_order(source: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "페이지 구분",
+        "탭 구분",
+        "정렬우선순위",
+        "분류컬럼",
+        "정렬방식",
+        "분류값",
+        "값표시순서",
+        "활성여부",
+    ]
+    require_columns(source, columns, "RQ_DISPLAY_ORDER")
+    result = source.loc[:, columns].copy()
+    text_columns = [
+        "페이지 구분",
+        "탭 구분",
+        "분류컬럼",
+        "정렬방식",
+        "분류값",
+        "활성여부",
+    ]
+    for column in text_columns:
+        result[column] = result[column].astype("string").str.strip()
+    result["활성여부"] = result["활성여부"].str.upper()
+    result["정렬우선순위"] = _nullable_integer(result["정렬우선순위"], "정렬우선순위")
+    result["값표시순서"] = _nullable_integer(result["값표시순서"], "값표시순서")
+
+    required_text_columns = [
+        "페이지 구분",
+        "탭 구분",
+        "분류컬럼",
+        "정렬방식",
+        "활성여부",
+    ]
+    required_text_valid = pd.Series(True, index=result.index, dtype=bool)
+    for column in required_text_columns:
+        required_text_valid &= result[column].notna() & result[column].ne("")
+    allowed_sort = result["정렬방식"].isin(["사용자지정", "오름차순", "내림차순"])
+    allowed_active = result["활성여부"].isin(["Y", "N"])
+    custom = result["정렬방식"].eq("사용자지정")
+    custom_valid = (~custom) | (
+        result["분류값"].notna() & result["분류값"].ne("") & result["값표시순서"].notna()
+    )
+    mask = (
+        required_text_valid
+        & result["정렬우선순위"].notna()
+        & allowed_sort
+        & allowed_active
+        & custom_valid
+    )
+    return result.loc[mask].reset_index(drop=True)
+
+
+def _nullable_integer(series: pd.Series, label: str) -> pd.Series:
+    numeric = pd.to_numeric(series, errors="coerce")
+    source_missing = series.isna() | series.astype("string").str.strip().eq("").fillna(False)
+    invalid = numeric.isna() & ~source_missing
+    fractional = numeric.notna() & numeric.mod(1).ne(0)
+    if invalid.any() or fractional.any():
+        raise ValueError(f"RQ_DISPLAY_ORDER {label}은 정수여야 합니다.")
+    return numeric.astype("Int64")
