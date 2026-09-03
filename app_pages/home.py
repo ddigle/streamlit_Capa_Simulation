@@ -1,21 +1,22 @@
 # Purpose: 생산계획·Wafer Capa·Bottleneck 요약과 상세표를 결합한 HOME 대시보드를 렌더링한다.
 
-from typing import Any, cast
 
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.components.home_dimensions import (
-    DASHBOARD_SCROLLBAR_HEIGHT_PX,
-    DASHBOARD_SECTION_GAP_PX,
-)
 from capa_simulation.components.home_figures import (
     build_bottleneck_detail_figures,
     build_lob_summary_figures,
     build_plan_detail_figures,
 )
-from capa_simulation.components.horizontal_scrollbar import render_horizontal_scrollbar
-from capa_simulation.design import tokens
+from capa_simulation.components.home_rendering import (
+    HOME_FIGURE_SCHEMA_VERSION,
+    HomeFigureCacheKey,
+    home_figure_cache,
+    render_home_figures,
+    render_home_performance,
+    store_home_figures,
+)
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -39,152 +40,11 @@ from capa_simulation.settings import APP_NAME
 from capa_simulation.sidebar_status import show_applied_month_range
 
 TRANSPARENT_COLOR = "rgba(0, 0, 0, 0)"
-HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
-HOME_FIGURE_CACHE_MAX_ENTRIES = 3
-HOME_FIGURE_SCHEMA_VERSION = 23
-
-HomeFigureSet = tuple[Any, ...]
-HomeFigureCacheKey = tuple[int, int, int, int, int, str, tuple[str, ...], float, float, bool]
 
 
 def selected_month_range() -> tuple[int, int]:
     start_label, end_label = st.session_state["production_month_range_v2"]
     return int(start_label.replace("-", "")), int(end_label.replace("-", ""))
-
-
-def home_figure_cache() -> dict[HomeFigureCacheKey, HomeFigureSet]:
-    cached = st.session_state.setdefault(HOME_FIGURE_CACHE_KEY, {})
-    return cast(dict[HomeFigureCacheKey, HomeFigureSet], cached)
-
-
-def store_home_figures(
-    cache_key: HomeFigureCacheKey,
-    figures: HomeFigureSet,
-) -> None:
-    cache = home_figure_cache()
-    cache.pop(cache_key, None)
-    cache[cache_key] = figures
-    while len(cache) > HOME_FIGURE_CACHE_MAX_ENTRIES:
-        cache.pop(next(iter(cache)))
-
-
-def render_home_performance(
-    trace: PerformanceTrace,
-    *,
-    cache_hit: bool,
-    enabled: bool,
-) -> None:
-    if not enabled:
-        return
-    with st.sidebar.expander("HOME 실행 시간", expanded=True):
-        st.caption(f"Figure 캐시: {'적중' if cache_hit else '생성'}")
-        st.dataframe(
-            pd.DataFrame(trace.rows()),
-            hide_index=True,
-            width="stretch",
-        )
-
-
-@st.fragment
-def render_home_figures(
-    figures: HomeFigureSet,
-    month_labels: list[str],
-    title_column_width: float,
-    month_column_width: float,
-) -> None:
-    if len(figures) not in {2, 6}:
-        raise ValueError("HOME Figure 묶음은 요약 2개 또는 상세 포함 6개여야 합니다.")
-    label_figure, month_figure = figures[:2]
-    detail_figures = figures[2:]
-    visible_month_count = min(max(len(month_labels), 1), tokens.DASHBOARD_MONTH_SCROLL_THRESHOLD)
-
-    with st.container(border=True):
-        label_column, month_column = st.columns(
-            [title_column_width, visible_month_count * month_column_width],
-            gap=None,
-        )
-        with label_column:
-            with st.container(
-                key="production_lob_label_canvas",
-                gap=DASHBOARD_SECTION_GAP_PX,
-            ):
-                st.plotly_chart(
-                    label_figure,
-                    width="stretch",
-                    key="production_lob_labels",
-                    config={"displayModeBar": False, "staticPlot": True},
-                )
-                if detail_figures:
-                    st.plotly_chart(
-                        detail_figures[0],
-                        width="stretch",
-                        key="production_detail_labels",
-                        config={"displayModeBar": False, "staticPlot": True},
-                    )
-                    st.plotly_chart(
-                        detail_figures[2],
-                        width="stretch",
-                        key="bottleneck_detail_labels",
-                        config={"displayModeBar": False, "staticPlot": True},
-                    )
-        with month_column:
-            month_chart_width = len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX
-            st.html(
-                f"""
-                <style>
-                .st-key-production_lob_label_canvas {{
-                    padding-top: calc({DASHBOARD_SCROLLBAR_HEIGHT_PX}px + 0.0rem);
-                }}
-                .st-key-production_lob_month_scroll {{
-                    overflow-x: auto;
-                    overflow-y: hidden;
-                    padding-bottom: 0.25rem;
-                    scrollbar-width: none !important;
-                    -ms-overflow-style: none;
-                }}
-                .st-key-production_lob_month_scroll::-webkit-scrollbar {{
-                    width: 0 !important;
-                    height: 0 !important;
-                    display: none !important;
-                }}
-                .st-key-production_lob_month_canvas {{
-                    width: {month_chart_width}px !important;
-                    min-width: {month_chart_width}px !important;
-                    max-width: none !important;
-                }}
-                </style>
-                """
-            )
-            with st.container(key="production_lob_month_region", gap=None):
-                render_horizontal_scrollbar(
-                    target_selector=".st-key-production_lob_month_scroll",
-                    height=DASHBOARD_SCROLLBAR_HEIGHT_PX,
-                    key="production_lob_custom_scrollbar",
-                )
-                with st.container(key="production_lob_month_scroll"):
-                    with st.container(
-                        key="production_lob_month_canvas",
-                        gap=DASHBOARD_SECTION_GAP_PX,
-                    ):
-                        st.plotly_chart(
-                            month_figure,
-                            width="stretch",
-                            key="production_lob_months",
-                            config={"displayModeBar": False, "responsive": True},
-                        )
-                        if detail_figures:
-                            st.plotly_chart(
-                                detail_figures[1],
-                                width="stretch",
-                                key="production_detail_months",
-                                config={"displayModeBar": False, "staticPlot": True},
-                            )
-                            st.plotly_chart(
-                                detail_figures[3],
-                                width="stretch",
-                                key="bottleneck_detail_months",
-                                config={"displayModeBar": False, "staticPlot": True},
-                            )
 
 
 st.title(APP_NAME)
