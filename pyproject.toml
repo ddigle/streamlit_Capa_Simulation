@@ -14,8 +14,6 @@ dependencies = [
     "plotly>=5.24,<7",
     # 코드가 아직 import 하지 않는다. docs/TODO.md 의 domain/schemas.py 구현에 쓴다.
     "pydantic>=2.9,<3",
-    # 코드가 아직 import 하지 않는다. .env.example 의 설정을 읽을 때 쓴다.
-    "python-dotenv>=1.0,<2",
     "streamlit>=1.60,<2",
     "xlwings>=0.33,<1",
 ]

@@ -101,7 +101,7 @@ RQ_EQP_AVBL
 
 기술 키는 `(dataset_id, source_row_no)`다. `source_row_no`는 DataFrame의 현재 행 순서를
 1부터 부여하며, 원본 컬럼명과 순서를 유지한다. 업무 고유 키는
-`config/data_contract.yaml`의 `derived_keys`에 테이블별로 정의한다.
+`config/data_contract.json`의 `derived_keys`에 테이블별로 정의한다.
 `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO`는 생산계획년월·Area·공정·`STEP_SEQ`·
 `MCP_SEQ`·양산구분·제품정보·Stack·WF 구분을 경로 키로 사용한다. `RQ_REQB`와 대당
 Capa를 연결할 때도 Area·STEP·MCP를 포함해 정확히 일치시킨다.
@@ -124,7 +124,7 @@ RQ_REQB      RQ_EQP_OWN   RQ_EQP_LENT   RQ_EQP_AVBL
 
 ### `raw_data`
 
-`core_data`는 `config/data_contract.yaml`에 정의한 원천 78개 컬럼을 VARCHAR·BIGINT·DOUBLE
+`core_data`는 `config/data_contract.json`에 정의한 원천 78개 컬럼을 VARCHAR·BIGINT·DOUBLE
 타입으로 저장한다. 원천 행은 `(dataset_id, source_row_no)` 기술 키와 `row_hash`로 보존하고,
 `source_column_profile`에는 원천/nullable dtype, null 수와 고유값 수를 컬럼 순서대로
 저장한다. 원천 null은 보존하며 RQ 변환 단계에서 업무 키의 null·빈값과 동일 키의 값

@@ -190,7 +190,7 @@
 - [x] 실제 `Core_Data.csv`의 78개 컬럼, pandas dtype, null 수와 고유값 수를 표본 값 없이 조사했다. 테스트 파일은 23,250행·78컬럼이며 운영 조회는 코드별 약 3만 행이다.
 - [x] 원천 Core Data는 `(dataset_id, source_row_no)` 기술 키와 필수 `row_hash`로 원본 행을 보존하고, 변환된 `RQ_*`는 테이블별 업무 고유 키를 별도로 정의했다.
 - [x] null 정책은 원천 보존 계층과 변환 계층을 구분했다. 원천 null은 nullable 타입으로 보존하고 RQ 업무 키의 null·빈값은 변환 시 거부한다.
-- [x] `config/data_contract.yaml`에 원천 78개 컬럼 순서·타입과 RQ별 업무 키를 정의했다. 단위·조건부 값 범위는 계산 계약과 함께 계속 보완한다.
+- [x] `config/data_contract.json`에 원천 78개 컬럼 순서·타입과 RQ별 업무 키를 정의했다. 단위·조건부 값 범위는 계산 계약과 함께 계속 보완한다.
 - [ ] `src/capa_simulation/domain/schemas.py`에 데이터 타입과 값 범위 검증을 구현한다.
 - [x] Power Query의 distinct 동작을 유지하되 테이블별 동일 업무 키에 값 충돌이 있으면 적재 전에 거부한다.
 - [~] 조인 시 `many-to-one` 관계를 검증하고 의도하지 않은 행 증가를 차단한다.

@@ -17,7 +17,8 @@ import pandas as pd
 
 from capa_simulation.settings import PROJECT_ROOT
 
-DATA_CONTRACT_PATH = PROJECT_ROOT / "config" / "data_contract.yaml"
+# 확장자만 YAML 이고 내용도 파서도 JSON 이었다. 실제 형식에 맞춰 이름을 바꿨다.
+DATA_CONTRACT_PATH = PROJECT_ROOT / "config" / "data_contract.json"
 ColumnType = Literal["string", "integer", "number"]
 
 

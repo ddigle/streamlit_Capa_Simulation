@@ -755,7 +755,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 
 ### 입력 테이블 또는 컬럼 변경
 
-1. `config/data_contract.yaml`과 사내 DB 컬럼 매핑 확인
+1. `config/data_contract.json`과 사내 DB 컬럼 매핑 확인
 2. 서비스 필수 컬럼과 키 갱신
 3. 활성 시나리오 editable 여부 결정
 4. 월 필터와 화면 편집 Long/Wide 변환 확인
