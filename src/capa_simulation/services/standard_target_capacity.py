@@ -11,6 +11,7 @@ import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
 from capa_simulation.services.weighted_unit_capacity import (
+    DEMAND_ID_COLUMNS,
     WEIGHTED_CAPACITY_HIERARCHY,
     effective_process_capacity_long,
 )
@@ -18,6 +19,16 @@ from capa_simulation.services.weighted_unit_capacity import (
 WEEKLY_AVAILABILITY_COLUMNS = ["공정", "Weeknum", "가용대수"]
 WEEK_CALENDAR_COLUMNS = ["Weeknum", "주차시작일", "주차종료일", "생산계획년월"]
 STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES = ("Pre B/D",)
+PKG_EQUIVALENT_COLUMN = "PKG 환산 일 표준 가능량"
+PKG_PLAN_KEYS = [
+    "생산계획년월",
+    "양산구분",
+    "제품정보",
+    "Stack",
+    "Capa Code",
+    "Customer",
+    "CS",
+]
 _WEEK_PATTERN = re.compile(r"^(?P<year>\d{2})-W(?P<week>\d{2})$")
 
 
@@ -199,6 +210,80 @@ def build_weekly_standard_target_capacity(
         ["주차시작일", *display_dimensions],
         ignore_index=True,
     )
+
+
+def add_pkg_equivalent_standard_target(
+    weekly_target: pd.DataFrame,
+    required_equipment: pd.DataFrame,
+    plan: pd.DataFrame,
+    detail_level: str,
+) -> pd.DataFrame:
+    """Add daily PKG Kea equivalent while preserving the calculated demand mix."""
+    if detail_level not in WEIGHTED_CAPACITY_HIERARCHY:
+        raise ValueError(f"지원하지 않는 표준 목표 Capa 집계 수준입니다: {detail_level}")
+
+    level_index = WEIGHTED_CAPACITY_HIERARCHY.index(detail_level)
+    hierarchy_dimensions = WEIGHTED_CAPACITY_HIERARCHY[: level_index + 1]
+    display_dimensions = ["공정", "소요기준", *hierarchy_dimensions[1:]]
+    group_keys = ["생산계획년월", *display_dimensions]
+    target_required = [*group_keys, "원수요_부하량", "일 표준 가능량"]
+    missing_target = [column for column in target_required if column not in weekly_target.columns]
+    if missing_target:
+        raise ValueError(f"표준 목표 Capa 필수 컬럼이 없습니다: {', '.join(missing_target)}")
+
+    result = weekly_target.copy()
+    if result.empty:
+        result[PKG_EQUIVALENT_COLUMN] = pd.Series(dtype="float64")
+        return result
+
+    source = prepare_standard_target_required_equipment(required_equipment)
+    source_required = [*DEMAND_ID_COLUMNS, "부하량"]
+    missing_source = [column for column in source_required if column not in source.columns]
+    if missing_source:
+        raise ValueError(f"소요대수 상세 필수 컬럼이 없습니다: {', '.join(missing_source)}")
+    source = source[source_required].copy()
+    _normalize_month_values(source, "소요대수 상세")
+    source_text_columns = [
+        column for column in DEMAND_ID_COLUMNS if column not in {"생산계획년월", "소요기준"}
+    ]
+    _normalize_text_values(source, source_text_columns, "소요대수 상세")
+    source["소요기준"] = (
+        source["소요기준"].astype("string").str.strip().str.upper().replace({"WAFER": "WF"})
+    )
+    _assert_complete_values(source, DEMAND_ID_COLUMNS, "소요대수 상세")
+    source["부하량"] = _numeric_values(source["부하량"], "소요대수 상세.부하량")
+    source = source.loc[source["부하량"].gt(0)].drop_duplicates(DEMAND_ID_COLUMNS)
+
+    prepared_plan = _prepare_pkg_plan_for_equivalent(plan)
+    link_columns = list(dict.fromkeys([*group_keys, *PKG_PLAN_KEYS]))
+    demand_links = source[link_columns].drop_duplicates()
+    demand_links = demand_links.merge(
+        prepared_plan,
+        on=PKG_PLAN_KEYS,
+        how="left",
+        validate="many_to_one",
+        indicator="_pkg_plan_merge",
+    )
+    missing_plan = demand_links["_pkg_plan_merge"].ne("both")
+    if missing_plan.any():
+        examples = demand_links.loc[missing_plan, PKG_PLAN_KEYS].head(5).to_dict("records")
+        raise ValueError(f"PKG 환산에 필요한 RQ_PKG_PLAN 연결값이 없습니다: {examples}")
+    demand_links = demand_links.drop(columns="_pkg_plan_merge")
+
+    pkg_plan_by_group = demand_links.groupby(group_keys, as_index=False, dropna=False).agg(
+        PKG_계획=("생산수량", "sum")
+    )
+    result = result.merge(
+        pkg_plan_by_group,
+        on=group_keys,
+        how="left",
+        validate="many_to_one",
+    )
+    original_load = pd.to_numeric(result["원수요_부하량"], errors="coerce")
+    daily_target = pd.to_numeric(result["일 표준 가능량"], errors="coerce")
+    conversion_ratio = result["PKG_계획"].div(original_load.where(original_load.gt(0)))
+    result[PKG_EQUIVALENT_COLUMN] = daily_target * conversion_ratio
+    return result.drop(columns="PKG_계획")
 
 
 def build_standard_target_logic_analysis(
@@ -400,6 +485,55 @@ def _prepare_run_day(data: pd.DataFrame) -> pd.DataFrame:
         )
         raise ValueError(f"RQ_RUN_DAY의 생산계획년월·공정이 중복되었습니다: {examples}")
     return result
+
+
+def _prepare_pkg_plan_for_equivalent(data: pd.DataFrame) -> pd.DataFrame:
+    required = [*PKG_PLAN_KEYS, "생산수량"]
+    missing = [column for column in required if column not in data.columns]
+    if missing:
+        raise ValueError(f"RQ_PKG_PLAN 필수 컬럼이 없습니다: {', '.join(missing)}")
+
+    result = data[required].copy()
+    _normalize_month_values(result, "RQ_PKG_PLAN")
+    text_columns = [column for column in PKG_PLAN_KEYS if column != "생산계획년월"]
+    _normalize_text_values(result, text_columns, "RQ_PKG_PLAN")
+    _assert_complete_values(result, PKG_PLAN_KEYS, "RQ_PKG_PLAN")
+    result["생산수량"] = _numeric_values(result["생산수량"], "RQ_PKG_PLAN.생산수량")
+    if result["생산수량"].lt(0).any():
+        raise ValueError("RQ_PKG_PLAN의 생산수량은 0 이상이어야 합니다.")
+    duplicated = result.duplicated(PKG_PLAN_KEYS, keep=False)
+    if duplicated.any():
+        examples = result.loc[duplicated, PKG_PLAN_KEYS].drop_duplicates().head(5)
+        raise ValueError(f"RQ_PKG_PLAN 업무 키가 중복되었습니다: {examples.to_dict('records')}")
+    return result
+
+
+def _normalize_month_values(data: pd.DataFrame, table_name: str) -> None:
+    numeric = pd.to_numeric(data["생산계획년월"], errors="coerce")
+    valid = numeric.notna() & numeric.mod(1).eq(0)
+    months = numeric.fillna(0).astype("int64")
+    valid &= months.mod(100).between(1, 12)
+    if not valid.all():
+        raise ValueError(f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다.")
+    data["생산계획년월"] = months
+
+
+def _normalize_text_values(data: pd.DataFrame, columns: list[str], table_name: str) -> None:
+    for column in columns:
+        data[column] = data[column].astype("string").str.strip()
+    _assert_complete_values(data, columns, table_name)
+
+
+def _assert_complete_values(data: pd.DataFrame, columns: list[str], table_name: str) -> None:
+    if any(data[column].isna().any() or data[column].eq("").any() for column in columns):
+        raise ValueError(f"{table_name}의 필수 연결 키에 누락값이 있습니다.")
+
+
+def _numeric_values(series: pd.Series, label: str) -> pd.Series:
+    numeric = pd.to_numeric(series, errors="coerce")
+    if numeric.isna().any():
+        raise ValueError(f"{label}에 숫자가 아닌 값 또는 누락값이 있습니다.")
+    return numeric.astype("float64")
 
 
 def _valid_weeknum(value: object) -> bool:

@@ -4,6 +4,8 @@ import pandas as pd
 import pytest
 
 from capa_simulation.services.standard_target_capacity import (
+    PKG_EQUIVALENT_COLUMN,
+    add_pkg_equivalent_standard_target,
     build_iso_week_calendar,
     build_standard_target_logic_analysis,
     build_weekly_availability_template,
@@ -110,6 +112,43 @@ def test_weekly_target_uses_daily_effective_capacity_and_availability() -> None:
     ]
     assert wide.loc[0, "26-W32"] == pytest.approx(2.0)
     assert wide.loc[0, "26-W33"] == pytest.approx(3.0)
+
+
+def test_pkg_equivalent_uses_unique_pkg_plan_over_original_demand_load() -> None:
+    required_equipment = _required_equipment()
+    weekly_target = build_weekly_standard_target_capacity(
+        required_equipment=required_equipment,
+        run_day=pd.DataFrame({"생산계획년월": [202608], "공정": ["Process-A"], "RUN_DAY": [10.0]}),
+        weekly_availability=pd.DataFrame(
+            {"공정": ["Process-A"], "Weeknum": ["26-W32"], "가용대수": [2.0]}
+        ),
+        start_date=date(2026, 8, 3),
+        end_date=date(2026, 8, 9),
+        detail_level="공정",
+    )
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["Product-A", "Product-A"],
+            "Stack": ["8H", "8H"],
+            "Capa Code": ["C1", "C2"],
+            "Customer": ["Customer-A", "Customer-B"],
+            "CS": ["MP", "ER"],
+            "생산수량": [30.0, 20.0],
+        }
+    )
+
+    result = add_pkg_equivalent_standard_target(
+        weekly_target=weekly_target,
+        required_equipment=required_equipment,
+        plan=plan,
+        detail_level="공정",
+    )
+
+    assert result.loc[0, "원수요_부하량"] == pytest.approx(100.0)
+    assert result.loc[0, "일 표준 가능량"] == pytest.approx(10.0)
+    assert result.loc[0, PKG_EQUIVALENT_COLUMN] == pytest.approx(5.0)
 
 
 def test_process_summary_uses_product_mix_and_always_excludes_er() -> None:

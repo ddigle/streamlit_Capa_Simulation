@@ -1,3 +1,4 @@
+import pytest
 from streamlit.testing.v1 import AppTest
 
 TEST_SCRIPT = r"""
@@ -40,6 +41,18 @@ scenario_tables = {
 scenario_tables["RQ_UPEH"] = pd.DataFrame({"생산계획년월": [202608]})
 scenario_tables["RQ_RUN_DAY"] = pd.DataFrame(
     {"생산계획년월": [202608], "공정": ["Process-A"], "RUN_DAY": [31.0]}
+)
+scenario_tables["RQ_PKG_PLAN"] = pd.DataFrame(
+    {
+        "생산계획년월": [202608],
+        "양산구분": ["양산"],
+        "제품정보": ["Product-A"],
+        "Stack": ["8H"],
+        "Capa Code": ["CAPA-A"],
+        "Customer": ["Customer-A"],
+        "CS": ["MP"],
+        "생산수량": [50.0],
+    }
 )
 scenario_tables["RQ_REQB"] = pd.DataFrame(
     {"공정": ["Process-A", "Process-B"], "양산구분": ["양산", "양산"]}
@@ -112,6 +125,9 @@ def capture_table(data, **kwargs):
         column for column in data.columns if str(column).startswith("26-W")
     ]
     st.session_state["captured_classification_columns"] = kwargs["classification_columns"]
+    week_columns = [column for column in data.columns if str(column).startswith("26-W")]
+    if week_columns and not data.empty:
+        st.session_state["captured_first_week_value"] = float(data.iloc[0][week_columns[0]])
 
 
 hierarchical_table.render_hierarchical_monthly_table = capture_table
@@ -147,6 +163,7 @@ def test_standard_target_page_renders_weeknum_plotly_table() -> None:
     assert app.session_state["captured_classification_columns"] == ["공정", "소요기준"]
     assert any(widget.label == "공정 필터" for widget in app.multiselect)
     assert any(widget.label == "가용설비 표 붙여넣기" for widget in app.text_area)
+    assert any(widget.label == "PKG 기준" for widget in app.toggle)
     assert "예외 처리 공정" in [expandable.label for expandable in app.expander]
     subheaders = [element.value for element in app.subheader]
     assert subheaders.index("주차별 일 표준 가능량") < subheaders.index("주차별 가용설비 입력")
@@ -173,6 +190,18 @@ def test_standard_target_page_renders_weeknum_plotly_table() -> None:
         "양산구분",
         "제품정보",
     ]
+
+
+def test_standard_target_page_toggles_pkg_equivalent_output() -> None:
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+
+    assert app.session_state["captured_first_week_value"] == pytest.approx(200.0 / 31.0)
+    pkg_toggle = next(widget for widget in app.toggle if widget.label == "PKG 기준")
+    app = pkg_toggle.set_value(True).run()
+
+    assert not app.exception
+    assert app.session_state["captured_first_week_value"] == pytest.approx(100.0 / 31.0)
+    assert "주차별 일 표준 가능량 (PKG Kea)" in [element.value for element in app.subheader]
 
 
 def test_standard_target_page_analyzes_one_selected_process_week() -> None:

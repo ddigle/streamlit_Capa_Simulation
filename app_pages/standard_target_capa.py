@@ -34,7 +34,9 @@ from capa_simulation.services.simulation_cache import (
     get_weekly_standard_target_capacity,
 )
 from capa_simulation.services.standard_target_capacity import (
+    PKG_EQUIVALENT_COLUMN,
     STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES,
+    add_pkg_equivalent_standard_target,
     build_iso_week_calendar,
     build_standard_target_logic_analysis,
     build_weekly_availability_template,
@@ -52,6 +54,7 @@ PROCESS_FILTER_KEY = STANDARD_TARGET_PROCESS_SELECTION_KEY
 SHOW_DETAIL_KEY = "standard_target_show_detail"
 DETAIL_LEVEL_KEY = "standard_target_detail_level"
 OUTPUT_METRIC_KEY = "standard_target_output_metric"
+PKG_BASIS_KEY = "standard_target_pkg_basis"
 
 DETAIL_LEVEL_LABELS = {
     "제품정보": "제품",
@@ -739,11 +742,34 @@ else:
         "소요기준",
         *WEIGHTED_CAPACITY_HIERARCHY[1 : WEIGHTED_CAPACITY_HIERARCHY.index(detail_level) + 1],
     ]
+    pkg_basis = output_metric == "일 표준 가능량" and bool(
+        st.session_state.get(PKG_BASIS_KEY, False)
+    )
+    output_value_column = output_metric
+    output_title = output_metric
+    decimal_places = OUTPUT_METRICS[output_metric]
+    output_file_metric = output_metric
+    if pkg_basis:
+        try:
+            weekly_target = add_pkg_equivalent_standard_target(
+                weekly_target=weekly_target,
+                required_equipment=filtered_required_equipment,
+                plan=filtered_tables["RQ_PKG_PLAN"],
+                detail_level=detail_level,
+            )
+        except ValueError as exc:
+            st.error(str(exc))
+            st.stop()
+        output_value_column = PKG_EQUIVALENT_COLUMN
+        output_title = "일 표준 가능량 (PKG Kea)"
+        decimal_places = 2
+        output_file_metric = "일_표준_가능량_PKG"
+
     with weekly_output_container:
         output_table = weekly_standard_target_to_wide(
             weekly_target,
             classification_columns,
-            value_column=output_metric,
+            value_column=output_value_column,
         )
         output_table = apply_display_order(
             output_table,
@@ -751,7 +777,6 @@ else:
             "표준 목표 Capa",
             "목표 Capa",
         )
-        decimal_places = OUTPUT_METRICS[output_metric]
         output_export = build_hierarchical_monthly_export(
             output_table,
             classification_columns=classification_columns,
@@ -762,12 +787,12 @@ else:
 
         metric_row = st.container(horizontal=True, vertical_alignment="center", gap="small")
         with metric_row:
-            st.subheader(f"주차별 {output_metric}", width="content")
+            st.subheader(f"주차별 {output_title}", width="content")
             st.download_button(
                 ":material/download: CSV 다운로드",
                 data=output_csv,
                 file_name=(
-                    f"Standard_Target_Capa_{output_metric}_"
+                    f"Standard_Target_Capa_{output_file_metric}_"
                     f"{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv"
                 ),
                 mime="text/csv;charset=utf-8",
@@ -775,12 +800,30 @@ else:
                 on_click="ignore",
                 width="content",
             )
-        st.caption(
+            if output_metric == "일 표준 가능량":
+                st.toggle(
+                    "PKG 기준",
+                    key=PKG_BASIS_KEY,
+                    help=(
+                        "현재 공정·제품 Mix의 PKG PLAN 대비 투입 Unit 부하량 비율로 "
+                        "일 표준 가능량을 PKG Kea로 역산합니다."
+                    ),
+                    persist_state="session",
+                    width=110,
+                )
+        calculation_caption = (
             "대당 일 Capa = 월간 공정 유효 Capa ÷ RUN_DAY · "
             "일 표준 가능량 = 대당 일 Capa × 주차별 가용대수 · "
+        )
+        if pkg_basis:
+            calculation_caption += (
+                "PKG 환산 = 일 표준 가능량 × 동일 Mix PKG PLAN ÷ 원수요 부하량 · "
+            )
+        calculation_caption += (
             "ER은 항상 제외하며 상세 OFF는 공정별 제품 Mix 가중 단일값을 표시합니다. · "
             "월 경계 주차는 월요일이 속한 달의 기준을 적용합니다."
         )
+        st.caption(calculation_caption)
         render_hierarchical_monthly_table(
             output_table,
             classification_columns=classification_columns,

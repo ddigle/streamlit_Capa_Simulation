@@ -132,6 +132,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - Dynamic Capa의 실적 비교·개선관리 하위 페이지다.
   - 분석 현황, 기준 대비 Gap, 공정·제품 개선 우선순위와 개선과제 관리 화면 초안을 제공한다.
   - 실제 생산이력 DB와 `RQ_RUN_RATE`·`RQ_UPEH` 기준정보 연결은 아직 구현하지 않는다.
+- `app_pages/wip_status.py`
+  - Dynamic Capa의 `표준 대비 재공 현황` 하위 페이지다.
+  - 오늘 기준 -7일~+3일의 공정·제품·STEP별 보유 재공·유입·Flow 샘플과 제품별 일 표준
+    가능량을 비교하며, 공정·제품 필터와 STEP 열·제품 행 Plotly 격자를 제공한다.
+  - 재공 값은 결정론적 데모이고 실제 재공 실적 DB 조회·원천 컬럼 매핑은 아직 구현하지 않는다.
 - `app_pages/space_status.py`
   - Dynamic Capa의 Space 현황 페이지다.
   - `FAB 전체(C5 독립, C1~C4 연결) → 동별 층 → 층 상세 배치`의 3단계 Plotly 클릭 탐색을 제공한다.
@@ -159,6 +164,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Weeknum·공정·소요기준·양산·제품·Stack·WF 속성을 모두 선택한 경우에만 공정·주차
     한 건을 계산하고 제품·WF 속성별 부하량 비중·소요대수 비중과 조화가중 근거를 표시한다. ER은 항상
     제외하고 상세 OFF는 제품 Mix를 반영한 공정 단일값, ON은 선택한 제품 분류를 표시한다.
+  - `일 표준 가능량`의 `PKG 기준` 토글은 동일 Mix의 중복 없는 PKG PLAN 합계와 원수요
+    투입 Unit 부하량 비율로 결과를 PKG Kea로 역산하며 화면 표와 CSV에 함께 적용한다.
   - 공정 필터는 리비전에 공용 기본값으로 저장하되 페이지 변경은 사용자 세션에만 적용한다.
     현재 선택을 신규 리비전으로 저장하면 다음 공용 기본값이 되며 빈 목록은 전체 공정이다.
   - 수동 가용대수는 설비 DuckDB에 공정·Weeknum 최신값으로 즉시 저장하되 리비전을
@@ -187,6 +194,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py`
   - Dynamic Capa 전체 공정 비교, Capa 손실 Waterfall과 일별 표준·실효·실적 추이 Figure를
     생성한다. 공정 간 단위가 다르면 수량을 합산하지 않고 비율만 비교한다.
+- `src/capa_simulation/components/wip_status_dashboard.py`
+  - 제품을 행, `P → T`와 숫자 구간 오름차순 STEP·공정을 열로 두는 고정 셀 크기의
+    Plotly 재공 격자를 생성한다. 보유 재공·유입·Flow 막대와 표준 가능량 기준선을 표시한다.
 - `src/capa_simulation/components/grouped_monthly_table.py`
   - 환산 결과처럼 편집하지 않는 월별 표를 Plotly의 고정 분류 영역과 스크롤 월 영역으로 렌더링한다.
   - 정렬된 분류 컬럼을 계층적으로 그룹화하고 제품·양산구분별 Total을 그룹 하단에, 전체 합계를 첫 데이터 행에 삽입한다.
@@ -285,6 +295,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `dashboard.py`: HOME 월별 집계, B/N 단일 월별 순위에서 파생하는 Top 1·5·10, Wafer Capa
 - `dynamic_capacity.py`: 표준 Capa에 실적 효율·UPEH·Rundown·생산실적을 순차 반영하는
   Dynamic Capa 손실 분석, 시간 가중 집계, 필터와 미연결 화면용 결정론적 데모 데이터
+- `wip_status.py`: 재공 DB 연결용 일자·공정·STEP·제품·보유재공·유입·Flow 계약,
+  STEP 코드 정렬, 제품별 표준 가능량 일 전개와 미연결 화면용 결정론적 재공 샘플
 - `display_order.py`: `RQ_DISPLAY_ORDER` 기반 동적 행 정렬
 - `month_filter.py`: YYYYMM 검증과 조회기간 필터
 - `capacity_reference_editor.py`: Capa 기준정보 Long/Wide 편집 변환
@@ -435,6 +447,9 @@ Dummy Chip/Wafer는 `(1 - EDS_수율)`을 추가 적용한다. `WF 구분`의 Du
 
 - 제품 Mix 가중은 공정 유효 Capa와 동일하게 중복되지 않은 원수요 부하량을 분자로,
   STEP별 소요대수 합을 분모로 사용한다.
+- PKG 기준 일 표준 가능량은 `일 표준 가능량 × 동일 Mix의 중복 없는 PKG PLAN ÷ 원수요
+  부하량`으로 역산한다. PKG 소요기준은 환산계수가 1이며 WF·CHIP은 현재 수율과 Chip 구성
+  기준이 반영된 원수요 부하량을 통해 PKG Kea로 변환한다.
 - 로직 분석의 제품·WF 속성별 분류 유효 Capa를 `C_i`, 부하량 비중을 `w_i`라 하면 공정
   유효 Capa는 `1 / Σ(w_i / C_i)`이며, 이는 `전체 원수요 부하량 / 전체 STEP 소요대수`와
   같다. 로직 분석은 필터로 확정된 공정·주차 한 건만 계산한다.
@@ -501,6 +516,20 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - Rundown·실가동·설비 Down의 실제 컬럼 정의는 실적효율 DB 연결 시 확정한다.
 - 데모 상태 판정은 Capa 실현률 90% 이상 정상, 80% 이상 관찰, 80% 미만 개선 필요이며
   실제 운영 임계값은 데이터 분포와 관리 정책을 확인한 뒤 확정한다.
+
+### 표준 대비 재공 현황 프로토타입
+
+- 차트 조회기간은 서버 오늘 날짜 기준 -7일~+3일의 11일이며, 미래 3일도 실제 DB 연결
+  전까지는 전망이 아닌 화면 검토용 샘플로 명시한다.
+- 각 공정·제품·STEP 차트는 보유 재공·유입·Flow 세로 막대와 제품별 일 표준 가능량
+  점선을 함께 표시한다. Flow가 표준 이상이면 충족, 미달이면 부족으로 색을 구분한다.
+- 제품별 표준 가능량은 기존 표준 목표 Capa와 동일하게 원수요 부하량 합을 STEP 소요대수
+  합으로 나눈 공정 유효 Capa에 RUN_DAY와 주차별 가용대수를 적용한다. 여러 양산구분은
+  원수요 부하량과 STEP 소요대수를 각각 합친 뒤 비율을 다시 계산한다.
+- 공정 소요기준에 따라 단위는 PKG·CHIP의 Kea 또는 WF의 매를 유지하고 서로 합산하지 않는다.
+- STEP 정렬은 코드 끝의 `P###`, `P###-###`, `T###`, `T###-###`를 인식해 P 전체 다음 T를
+  배치하고 각 숫자 구간을 오름차순으로 정렬한다. 인식할 수 없는 코드는 그 뒤에 둔다.
+- 주차별 가용대수가 없으면 기준선을 임의 생성하지 않고 `표준 미설정`으로 표시한다.
 
 ### B/N
 
@@ -611,6 +640,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - 설비 운영 이력의 등록자 식별·승인 및 Capa 계산 입력 전환은 미구현이다.
 - Dynamic Capa는 현재 데모 프로토타입이며 실적효율·생산실적 DB 조회, 원천 컬럼 매핑,
   누적 이력 저장소와 표준 Capa 리비전 연결은 미구현이다.
+- 표준 대비 재공 현황은 결정론적 샘플을 사용하며 실제 재공 DB의 보유 재공·유입·Flow
+  시점 정의, 공정·STEP·제품 매핑, 미래 3일의 계획/전망 데이터 공급 규칙은 미확정이다.
 - DuckDB 쓰기 직렬화는 단일 Streamlit 서버 프로세스 범위다. 다중 서버 프로세스로
   확장할 때는 별도 쓰기 서비스 또는 서버형 DB로 전환한다.
 - BOX·PCB 계산은 제외 상태다.

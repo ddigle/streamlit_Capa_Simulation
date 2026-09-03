@@ -65,28 +65,33 @@ static_capa_pages = [
 ]
 dynamic_capa_page = st.Page(
     "app_pages/reference_integrity.py",
-    title="Dynamic Capa",
+    title="Dynamic Capa (구현중)",
     icon=":material/sync_alt:",
 )
 dynamic_capa_pages = [
     st.Page(
+        "app_pages/wip_status.py",
+        title="표준 대비 재공 현황 (DB 셋팅중)",
+        icon=":material/inventory_2:",
+    ),
+    st.Page(
         "app_pages/available_equipment_status.py",
-        title="가용설비 현황",
+        title="가용설비 현황 (구현 중)",
         icon=":material/precision_manufacturing:",
     ),
     st.Page(
         "app_pages/actual_efficiency.py",
-        title="효율 실적",
+        title="효율 실적 (DB 셋팅중)",
         icon=":material/speed:",
     ),
     st.Page(
         "app_pages/actual_upeh.py",
-        title="UPEH 실적",
+        title="UPEH 실적 (DB 셋팅중)",
         icon=":material/timer:",
     ),
     st.Page(
         "app_pages/space_status.py",
-        title="Space 현황",
+        title="Space 현황 (구현 중)",
         icon=":material/grid_view:",
     ),
 ]
