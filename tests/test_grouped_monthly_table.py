@@ -5,18 +5,20 @@ import plotly.graph_objects as go
 import pytest
 
 from capa_simulation.components.grouped_monthly_table import (
-    _CLASSIFICATION_COLOR,
-    _CLASSIFICATION_GROUP_COLOR,
-    _HEADER_HEIGHT_PX,
-    _OUTER_BORDER_WIDTH_PX,
-    _PRODUCT_TOTAL_CLASSIFICATION_COLOR,
-    _ROW_HEIGHT_PX,
     _add_table_grid,
     _build_display_rows,
     _classification_fill_colors,
     _formatted_month_values,
     build_grouped_monthly_export,
 )
+from capa_simulation.components.monthly_table_base import (
+    CLASSIFICATION_COLOR,
+    CLASSIFICATION_GROUP_COLOR,
+    HEADER_HEIGHT_PX,
+    OUTER_BORDER_WIDTH_PX,
+    ROW_HEIGHT_PX,
+)
+from capa_simulation.design.tokens import CLASSIFICATION_PRODUCT_TOTAL
 
 
 def test_display_rows_insert_product_production_and_grand_totals() -> None:
@@ -81,9 +83,9 @@ def test_display_rows_insert_product_production_and_grand_totals() -> None:
         display,
         ["양산구분", "제품정보", "Stack"],
     )
-    assert fill_colors[0][3] == _CLASSIFICATION_COLOR
-    assert fill_colors[0][8] == _CLASSIFICATION_GROUP_COLOR
-    assert fill_colors[1][3] == _PRODUCT_TOTAL_CLASSIFICATION_COLOR
+    assert fill_colors[0][3] == CLASSIFICATION_COLOR
+    assert fill_colors[0][8] == CLASSIFICATION_GROUP_COLOR
+    assert fill_colors[1][3] == CLASSIFICATION_PRODUCT_TOTAL
 
 
 def test_group_boundaries_are_drawn_after_total_rows() -> None:
@@ -104,7 +106,7 @@ def test_group_boundaries_are_drawn_after_total_rows() -> None:
         row_count=row_count,
     )
 
-    table_height = _HEADER_HEIGHT_PX + row_count * _ROW_HEIGHT_PX
+    table_height = HEADER_HEIGHT_PX + row_count * ROW_HEIGHT_PX
     product_boundaries = [
         float(shape.y0)
         for shape in label_figure.layout.shapes
@@ -127,26 +129,26 @@ def test_group_boundaries_are_drawn_after_total_rows() -> None:
     ]
 
     assert label_figure.layout.shapes[0].type == "rect"
-    assert label_figure.layout.shapes[0].line.width == _OUTER_BORDER_WIDTH_PX
+    assert label_figure.layout.shapes[0].line.width == OUTER_BORDER_WIDTH_PX
     assert month_figure.layout.shapes[0].type == "line"
-    assert month_figure.layout.shapes[0].line.width == _OUTER_BORDER_WIDTH_PX * 2
+    assert month_figure.layout.shapes[0].line.width == OUTER_BORDER_WIDTH_PX * 2
 
     assert product_boundaries == pytest.approx(
         [
-            1 - (_HEADER_HEIGHT_PX + (row + 1) * _ROW_HEIGHT_PX) / table_height
+            1 - (HEADER_HEIGHT_PX + (row + 1) * ROW_HEIGHT_PX) / table_height
             for row in product_total_rows
         ]
     )
     assert production_boundaries == pytest.approx(
         [
-            1 - (_HEADER_HEIGHT_PX + (row + 1) * _ROW_HEIGHT_PX) / table_height
+            1 - (HEADER_HEIGHT_PX + (row + 1) * ROW_HEIGHT_PX) / table_height
             for row in production_total_rows
         ]
     )
     assert emphasized_boundaries == pytest.approx(
         [
-            1 - _HEADER_HEIGHT_PX / table_height,
-            1 - (_HEADER_HEIGHT_PX + _ROW_HEIGHT_PX) / table_height,
+            1 - HEADER_HEIGHT_PX / table_height,
+            1 - (HEADER_HEIGHT_PX + ROW_HEIGHT_PX) / table_height,
         ]
     )
     assert month_emphasized_boundaries == pytest.approx(emphasized_boundaries)

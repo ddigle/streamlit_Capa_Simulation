@@ -5,13 +5,15 @@ import plotly.graph_objects as go
 import pytest
 
 from capa_simulation.components.hierarchical_monthly_table import (
-    _HEADER_HEIGHT_PX,
-    _OUTER_BORDER_WIDTH_PX,
-    _ROW_HEIGHT_PX,
     _add_table_grid,
     _build_hierarchical_display,
     _formatted_month_values,
     build_hierarchical_monthly_export,
+)
+from capa_simulation.components.monthly_table_base import (
+    HEADER_HEIGHT_PX,
+    OUTER_BORDER_WIDTH_PX,
+    ROW_HEIGHT_PX,
 )
 
 
@@ -62,10 +64,9 @@ def test_hierarchical_grid_draws_group_and_quarter_boundaries() -> None:
         row_count=len(data),
     )
 
-    table_height = _HEADER_HEIGHT_PX + len(data) * _ROW_HEIGHT_PX
+    table_height = HEADER_HEIGHT_PX + len(data) * ROW_HEIGHT_PX
     group_y_values = [
-        1 - (_HEADER_HEIGHT_PX + row_index * _ROW_HEIGHT_PX) / table_height
-        for row_index in (1, 2, 3)
+        1 - (HEADER_HEIGHT_PX + row_index * ROW_HEIGHT_PX) / table_height for row_index in (1, 2, 3)
     ]
     label_group_shapes = [
         shape
@@ -86,7 +87,7 @@ def test_hierarchical_grid_draws_group_and_quarter_boundaries() -> None:
     ]
     assert [float(shape.x0) for shape in vertical_month_shapes] == pytest.approx([1 / 3, 2 / 3])
     assert [float(shape.line.width) for shape in vertical_month_shapes] == pytest.approx(
-        [_OUTER_BORDER_WIDTH_PX, 0.8]
+        [OUTER_BORDER_WIDTH_PX, 0.8]
     )
 
 

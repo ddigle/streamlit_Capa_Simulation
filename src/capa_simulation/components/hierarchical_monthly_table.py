@@ -2,37 +2,40 @@
 
 """Plotly table with grouped classifications and horizontally scrolling months."""
 
-import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import accumulate
-from typing import Any, Literal, cast
+from typing import Literal
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from capa_simulation.components.horizontal_scrollbar import render_horizontal_scrollbar
+from capa_simulation.components.monthly_table_base import (
+    BORDER_COLOR,
+    CLASSIFICATION_COLOR,
+    CLASSIFICATION_GROUP_COLOR,
+    CLASSIFICATION_HORIZONTAL_PADDING_PX,
+    CLASSIFICATION_MAX_WIDTH_PX,
+    CLASSIFICATION_MIN_WIDTH_PX,
+    CLASSIFICATION_TEXT_UNIT_PX,
+    GROUP_BORDER_COLOR,
+    GROUP_SURFACE_COLOR,
+    HEADER_COLOR,
+    HEADER_HEIGHT_PX,
+    MONTH_COLUMN_WIDTH_PX,
+    OUTER_BORDER_WIDTH_PX,
+    ROW_HEIGHT_PX,
+    SURFACE_COLOR,
+    TEXT_COLOR,
+    TRANSPARENT_COLOR,
+    display_text,
+    month_label,
+    quarter_key,
+    render_split_scroll_table,
+    text_width_units,
+)
 
-_HEADER_COLOR = "#E4E4E7"
-_CLASSIFICATION_COLOR = "#F4F4F5"
-_CLASSIFICATION_GROUP_COLOR = "#EAEBED"
-_SURFACE_COLOR = "#FFFFFF"
-_GROUP_SURFACE_COLOR = "#FAFAFA"
-_BORDER_COLOR = "#D4D4D8"
-_GROUP_BORDER_COLOR = "#A1A1AA"
-_OUTER_BORDER_WIDTH_PX = 1.8
-_TEXT_COLOR = "#27272A"
-_TRANSPARENT_COLOR = "rgba(0, 0, 0, 0)"
-_CLASSIFICATION_MIN_WIDTH_PX = 84
-_CLASSIFICATION_MAX_WIDTH_PX = 220
-_CLASSIFICATION_TEXT_UNIT_PX = 15
-_CLASSIFICATION_HORIZONTAL_PADDING_PX = 36
-_MONTH_COLUMN_WIDTH_PX = 100
-_MONTH_SCROLL_THRESHOLD = 8
-_SCROLLBAR_HEIGHT_PX = 10
-_HEADER_HEIGHT_PX = 36
-_ROW_HEIGHT_PX = 27
 _ValueFormat = Literal["number", "percent"]
 
 
@@ -43,16 +46,6 @@ class _HierarchicalDisplay:
     group_boundaries: list[tuple[int, int]]
 
 
-def _display_text(value: object) -> str:
-    return "" if bool(pd.isna(cast(Any, value))) else str(value)
-
-
-def _text_width_units(value: str) -> float:
-    return sum(
-        1.0 if unicodedata.east_asian_width(character) in {"F", "W"} else 0.6 for character in value
-    )
-
-
 def _classification_widths(
     values: list[list[str]],
     columns: list[str],
@@ -61,15 +54,15 @@ def _classification_widths(
     widths: list[int] = []
     for column_index, column in enumerate(columns):
         texts = [labels.get(column, column), *values[column_index]]
-        max_units = max((_text_width_units(text) for text in texts), default=4.0)
+        max_units = max((text_width_units(text) for text in texts), default=4.0)
         widths.append(
             max(
-                _CLASSIFICATION_MIN_WIDTH_PX,
+                CLASSIFICATION_MIN_WIDTH_PX,
                 min(
-                    _CLASSIFICATION_MAX_WIDTH_PX,
+                    CLASSIFICATION_MAX_WIDTH_PX,
                     round(
-                        max_units * _CLASSIFICATION_TEXT_UNIT_PX
-                        + _CLASSIFICATION_HORIZONTAL_PADDING_PX
+                        max_units * CLASSIFICATION_TEXT_UNIT_PX
+                        + CLASSIFICATION_HORIZONTAL_PADDING_PX
                     ),
                 ),
             )
@@ -82,7 +75,7 @@ def _build_hierarchical_display(
     classification_columns: list[str],
 ) -> _HierarchicalDisplay:
     raw_values = [
-        [_display_text(value).replace(" ", "\u00a0") for value in data[column]]
+        [display_text(value).replace(" ", "\u00a0") for value in data[column]]
         for column in classification_columns
     ]
     displayed_values = [values.copy() for values in raw_values]
@@ -124,24 +117,6 @@ def _build_hierarchical_display(
     )
 
 
-def _month_label(month: str) -> str:
-    normalized = str(month).strip()
-    if len(normalized) == 6 and normalized.isdigit():
-        return f"{normalized[2:4]}.{normalized[4:6]}"
-    return normalized
-
-
-def _quarter_key(month: str) -> tuple[str, int] | None:
-    year_month = _month_label(month).split(".")
-    if len(year_month) != 2 or not all(value.isdigit() for value in year_month):
-        return None
-    year, month_text = year_month
-    month_number = int(month_text)
-    if not 1 <= month_number <= 12:
-        return None
-    return year, (month_number - 1) // 3
-
-
 def _formatted_month_values(
     data: pd.DataFrame,
     month_columns: list[str],
@@ -171,7 +146,7 @@ def build_hierarchical_monthly_export(
     month_columns = [column for column in data.columns if column not in classification_columns]
     output_columns = [
         *[column_labels.get(column, column) for column in classification_columns],
-        *[_month_label(month) for month in month_columns],
+        *[month_label(month) for month in month_columns],
     ]
     if data.empty or not month_columns:
         return pd.DataFrame(columns=output_columns)
@@ -186,14 +161,14 @@ def build_hierarchical_monthly_export(
     numeric = data[month_columns].apply(pd.to_numeric, errors="coerce")
     for month in month_columns:
         if value_format == "percent":
-            output[_month_label(month)] = [
+            output[month_label(month)] = [
                 ""
                 if pd.isna(value) or float(value) == 0
                 else format(float(value), f".{decimal_places}%")
                 for value in numeric[month]
             ]
         else:
-            output[_month_label(month)] = [
+            output[month_label(month)] = [
                 float("nan") if pd.isna(value) or float(value) == 0 else float(value)
                 for value in numeric[month]
             ]
@@ -213,7 +188,7 @@ def _add_outer_border(figure: go.Figure, *, include_left: bool) -> None:
             y1=y1,
             xref="paper",
             yref="paper",
-            line={"color": _GROUP_BORDER_COLOR, "width": _OUTER_BORDER_WIDTH_PX * 2},
+            line={"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX * 2},
             layer="above",
         )
 
@@ -227,8 +202,8 @@ def _add_table_grid(
     month_columns: list[str],
     row_count: int,
 ) -> None:
-    table_height = _HEADER_HEIGHT_PX + max(row_count, 1) * _ROW_HEIGHT_PX
-    header_boundary_y = 1 - _HEADER_HEIGHT_PX / table_height
+    table_height = HEADER_HEIGHT_PX + max(row_count, 1) * ROW_HEIGHT_PX
+    header_boundary_y = 1 - HEADER_HEIGHT_PX / table_height
     _add_outer_border(label_figure, include_left=True)
     _add_outer_border(month_figure, include_left=False)
     for figure in (label_figure, month_figure):
@@ -240,7 +215,7 @@ def _add_table_grid(
             y1=header_boundary_y,
             xref="paper",
             yref="paper",
-            line={"color": _GROUP_BORDER_COLOR, "width": _OUTER_BORDER_WIDTH_PX},
+            line={"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
             layer="above",
         )
 
@@ -255,11 +230,11 @@ def _add_table_grid(
             y1=1,
             xref="paper",
             yref="paper",
-            line={"color": _BORDER_COLOR, "width": 0.8},
+            line={"color": BORDER_COLOR, "width": 0.8},
             layer="above",
         )
 
-    quarter_keys = [_quarter_key(month) for month in month_columns]
+    quarter_keys = [quarter_key(month) for month in month_columns]
     for month_index in range(1, len(month_columns)):
         is_quarter_boundary = (
             quarter_keys[month_index] is not None
@@ -275,15 +250,15 @@ def _add_table_grid(
             xref="paper",
             yref="paper",
             line={
-                "color": _GROUP_BORDER_COLOR if is_quarter_boundary else _BORDER_COLOR,
-                "width": _OUTER_BORDER_WIDTH_PX if is_quarter_boundary else 0.8,
+                "color": GROUP_BORDER_COLOR if is_quarter_boundary else BORDER_COLOR,
+                "width": OUTER_BORDER_WIDTH_PX if is_quarter_boundary else 0.8,
             },
             layer="above",
         )
 
     cumulative_widths = [0, *accumulate(classification_widths)]
     for row_index, changed_column in display.group_boundaries:
-        boundary_y = 1 - (_HEADER_HEIGHT_PX + row_index * _ROW_HEIGHT_PX) / table_height
+        boundary_y = 1 - (HEADER_HEIGHT_PX + row_index * ROW_HEIGHT_PX) / table_height
         label_start_x = cumulative_widths[changed_column] / total_classification_width
         boundary_width = max(1.0, 1.8 - changed_column * 0.16)
         label_figure.add_shape(
@@ -294,7 +269,7 @@ def _add_table_grid(
             y1=boundary_y,
             xref="paper",
             yref="paper",
-            line={"color": _GROUP_BORDER_COLOR, "width": boundary_width},
+            line={"color": GROUP_BORDER_COLOR, "width": boundary_width},
             layer="above",
         )
         month_figure.add_shape(
@@ -305,7 +280,7 @@ def _add_table_grid(
             y1=boundary_y,
             xref="paper",
             yref="paper",
-            line={"color": _GROUP_BORDER_COLOR, "width": boundary_width},
+            line={"color": GROUP_BORDER_COLOR, "width": boundary_width},
             layer="above",
         )
 
@@ -353,13 +328,13 @@ def render_hierarchical_monthly_table(
     )
     classification_colors = [
         [
-            _CLASSIFICATION_COLOR if group_index % 2 == 0 else _CLASSIFICATION_GROUP_COLOR
+            CLASSIFICATION_COLOR if group_index % 2 == 0 else CLASSIFICATION_GROUP_COLOR
             for group_index in display.top_group_indices
         ]
         for _column in classification_columns
     ]
     month_row_colors = [
-        _SURFACE_COLOR if group_index % 2 == 0 else _GROUP_SURFACE_COLOR
+        SURFACE_COLOR if group_index % 2 == 0 else GROUP_SURFACE_COLOR
         for group_index in display.top_group_indices
     ]
     month_values = _formatted_month_values(
@@ -368,12 +343,12 @@ def render_hierarchical_monthly_table(
         decimal_places,
         value_format,
     )
-    figure_height = _HEADER_HEIGHT_PX + max(len(data), 1) * _ROW_HEIGHT_PX
+    figure_height = HEADER_HEIGHT_PX + max(len(data), 1) * ROW_HEIGHT_PX
     common_layout = {
         "height": figure_height,
         "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
-        "paper_bgcolor": _SURFACE_COLOR,
-        "font": {"color": _TEXT_COLOR, "family": "Malgun Gothic"},
+        "paper_bgcolor": SURFACE_COLOR,
+        "font": {"color": TEXT_COLOR, "family": "Malgun Gothic"},
     }
     label_figure = go.Figure(
         go.Table(
@@ -384,18 +359,18 @@ def render_hierarchical_monthly_table(
                     for column in classification_columns
                 ],
                 "align": "center",
-                "fill_color": _HEADER_COLOR,
-                "line_color": _TRANSPARENT_COLOR,
-                "font": {"color": _TEXT_COLOR, "size": 14, "family": "Malgun Gothic"},
-                "height": _HEADER_HEIGHT_PX,
+                "fill_color": HEADER_COLOR,
+                "line_color": TRANSPARENT_COLOR,
+                "font": {"color": TEXT_COLOR, "size": 14, "family": "Malgun Gothic"},
+                "height": HEADER_HEIGHT_PX,
             },
             cells={
                 "values": display.classification_values,
                 "align": "center",
                 "fill_color": classification_colors,
-                "line_color": _TRANSPARENT_COLOR,
-                "font": {"color": _TEXT_COLOR, "size": 13, "family": "Malgun Gothic"},
-                "height": _ROW_HEIGHT_PX,
+                "line_color": TRANSPARENT_COLOR,
+                "font": {"color": TEXT_COLOR, "size": 13, "family": "Malgun Gothic"},
+                "height": ROW_HEIGHT_PX,
             },
         )
     )
@@ -403,25 +378,25 @@ def render_hierarchical_monthly_table(
         go.Table(
             columnwidth=[1.0] * len(month_columns),
             header={
-                "values": [f"<b>{_month_label(month)}</b>" for month in month_columns],
+                "values": [f"<b>{month_label(month)}</b>" for month in month_columns],
                 "align": "center",
-                "fill_color": _HEADER_COLOR,
-                "line_color": _TRANSPARENT_COLOR,
-                "font": {"color": _TEXT_COLOR, "size": 14, "family": "Malgun Gothic"},
-                "height": _HEADER_HEIGHT_PX,
+                "fill_color": HEADER_COLOR,
+                "line_color": TRANSPARENT_COLOR,
+                "font": {"color": TEXT_COLOR, "size": 14, "family": "Malgun Gothic"},
+                "height": HEADER_HEIGHT_PX,
             },
             cells={
                 "values": month_values,
                 "align": "center",
                 "fill_color": [month_row_colors for _month in month_columns],
-                "line_color": _TRANSPARENT_COLOR,
-                "font": {"color": _TEXT_COLOR, "size": 13, "family": "Malgun Gothic"},
-                "height": _ROW_HEIGHT_PX,
+                "line_color": TRANSPARENT_COLOR,
+                "font": {"color": TEXT_COLOR, "size": 13, "family": "Malgun Gothic"},
+                "height": ROW_HEIGHT_PX,
             },
         )
     )
     label_figure.update_layout(**common_layout)
-    month_figure_width = len(month_columns) * _MONTH_COLUMN_WIDTH_PX
+    month_figure_width = len(month_columns) * MONTH_COLUMN_WIDTH_PX
     month_figure.update_layout(**common_layout, width=month_figure_width, autosize=False)
     _add_table_grid(
         label_figure=label_figure,
@@ -432,63 +407,10 @@ def render_hierarchical_monthly_table(
         row_count=len(data),
     )
 
-    visible_month_count = min(max(len(month_columns), 1), _MONTH_SCROLL_THRESHOLD)
-    classification_width = sum(classification_widths)
-    label_column, month_column = st.columns(
-        [classification_width, visible_month_count * _MONTH_COLUMN_WIDTH_PX],
-        gap=None,
+    render_split_scroll_table(
+        key=key,
+        label_figure=label_figure,
+        month_figure=month_figure,
+        classification_widths=classification_widths,
+        month_count=len(month_columns),
     )
-    with label_column:
-        st.html(
-            f"""
-            <style>
-            .st-key-{key}_label_canvas {{
-                padding-top: {_SCROLLBAR_HEIGHT_PX}px;
-            }}
-            </style>
-            """
-        )
-        with st.container(key=f"{key}_label_canvas"):
-            st.plotly_chart(
-                label_figure,
-                key=f"{key}_labels",
-                width="stretch",
-                config={"displayModeBar": False, "staticPlot": True},
-            )
-    with month_column:
-        st.html(
-            f"""
-            <style>
-            .st-key-{key}_month_scroll {{
-                overflow-x: auto;
-                overflow-y: hidden;
-                scrollbar-width: none !important;
-                -ms-overflow-style: none;
-            }}
-            .st-key-{key}_month_scroll::-webkit-scrollbar {{
-                width: 0 !important;
-                height: 0 !important;
-                display: none !important;
-            }}
-            .st-key-{key}_month_canvas {{
-                width: {month_figure_width}px !important;
-                min-width: {month_figure_width}px !important;
-                max-width: none !important;
-            }}
-            </style>
-            """
-        )
-        with st.container(key=f"{key}_month_region", gap=None):
-            render_horizontal_scrollbar(
-                target_selector=f".st-key-{key}_month_scroll",
-                height=_SCROLLBAR_HEIGHT_PX,
-                key=f"{key}_scrollbar",
-            )
-            with st.container(key=f"{key}_month_scroll"):
-                with st.container(key=f"{key}_month_canvas"):
-                    st.plotly_chart(
-                        month_figure,
-                        key=f"{key}_months",
-                        width="stretch",
-                        config={"displayModeBar": False, "staticPlot": True},
-                    )
