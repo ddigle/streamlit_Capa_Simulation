@@ -76,6 +76,9 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
 .\.venv\Scripts\python.exe -m pytest
 ```
 
+`mypy`는 `pyproject.toml`의 `files` 설정에 따라 `app.py`·`app_pages/`·
+`src/capa_simulation/`만 검사한다. `tests/`와 `scripts/`는 타입 검사 범위 밖이다.
+
 Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는
 사용자 프로필의 Python 3.10 실행 파일 접근이 차단되어 `Unable to create process` 또는
 `Access is denied`가 발생할 수 있다. 이는 가상환경 손상이 아니므로 `.venv`를 재생성하지
@@ -342,6 +345,60 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   공백을 하나로 축약하여 BigDataQuery와 기존 화면 분류 키를 통일한다.
 - `core_data_pipeline.py`: CSV·BigDataQuery 공급자 결과를 동일한 정규화·RQ 변환
   파이프라인으로 연결한다.
+
+- `core_data_derivation.py`: 원천 78컬럼에서 RQ 파생에 쓰는 정규화된 작업 프레임을
+  만든다. 제품정보 언더바 정규화와 Area·소요기준 별칭 정리가 이 경계에서 끝난다.
+- `reference_conflicts.py`: 동일 업무 키의 값 충돌을 수집하고 테이블·키·후보값·선택값·
+  원천행 번호가 담긴 보고서를 만든다.
+- `frame_contracts.py`: 여러 서비스가 공유하는 필수 컬럼 검증과 업무 키 정규화를 단일
+  정의한다. 소요기준(`WAFER`→`WF`)·Area_Name(`Main`·`MI`)·월(`YYYYMM`) 규칙이 여기 있다.
+  계약이 서로 다른 것은 합치지 않는다.
+- `iso_week_calendar.py`: ISO 주차 캘린더와 `YY-W##` 주차 코드 파싱
+- `weekly_availability_input.py`: 표준 목표 Capa 수동 가용대수 입력 표 계약. 계산 서비스가
+  아니라 입력 계약이므로 설비 Repository 도 여기를 참조한다.
+- `standard_target_logic.py`: 단일 공정·주차를 제품·WF 속성 Mix 로 분해하는 로직 분석
+- `equipment_contract.py`: 설비 세 입력의 컬럼 계약과 허용값
+- `equipment_validation.py`: 설비 마스터·기존 보유대수·비가동 일정 입력 검증
+- `equipment_samples.py`: 설비 DB 가 비어 있을 때만 쓰는 비영속 화면 샘플. 실제 DB 연결이
+  끝나면 이 파일만 삭제한다.
+- `display_order_editor.py`, `display_order_csv.py`: 웹 편집 표시순서 규칙의 검증·범위
+  교체·CSV 직렬화와 수동 입력 `RQ_DISPLAY_ORDER` 변환
+
+### 화면 공통 계층
+
+- `src/capa_simulation/navigation.py`
+  - 사이드바 페이지 목록을 `PageSpec` 선언으로 관리하고 `st.Page` 묶음을 만든다.
+  - 페이지 추가·제목 변경은 여기서만 한다. 미구현 표기는 `IMPLEMENTING_SUFFIX` 하나를 쓴다.
+- `src/capa_simulation/page_bootstrap.py`
+  - 계산 페이지 공통 진입 절차다. 활성 리비전·표시순서·활성 시나리오·조회기간을 준비하고
+    원천과 겹치는 유효 구간을 확정한다. 페이지는 `BOOTSTRAP_ERRORS` 를 잡는다.
+- `src/capa_simulation/settings.py`, `sidebar_status.py`
+  - 앱 이름·경로·조회기간 상수와 사이드바의 적용 조회기간 표시.
+- `src/capa_simulation/design/tokens.py`, `design/plotly_theme.py`
+  - 색·서체·표 치수를 역할 이름으로 단일 정의하고 Plotly 공통 레이아웃을 만든다.
+    파이썬 코드에 색 리터럴을 쓰지 않는다. 규칙은 `docs/design_system.md` 를 따른다.
+- `src/capa_simulation/components/monthly_table_base.py`
+  - 두 월별 표가 공유하는 상수·텍스트 폭 계산과 고정 분류 + 스크롤 월 껍데기.
+- `src/capa_simulation/components/plotly_layout.py`
+  - 제목 주석·외곽 테두리·분기 경계·고정 행 등 Figure 그리기 공통 유틸리티.
+- `src/capa_simulation/components/home_figures.py`, `home_rendering.py`, `home_dimensions.py`
+  - HOME 의 Figure 생성기 3종, 세션 Figure 캐시와 렌더링, LOB 픽셀 치수.
+- `src/capa_simulation/components/scenario_management.py`,
+  `display_order_management.py`, `bigdataquery_registration.py`
+  - 시나리오 관리 페이지의 세 탭 UI.
+
+### 영속성 모듈
+
+- `persistence/repository.py`: `DuckDBScenarioRepository` 와 쓰기 잠금·트랜잭션 경계
+- `persistence/models.py`: Repository 가 주고받는 타입
+- `persistence/display_order_store.py`: 공용 표시순서 프로필의 검증·이관·저장
+- `persistence/preset_store.py`: 리비전 프리셋 저장·복원
+- `persistence/source_data_store.py`: 원천 Core Data raw 와 컬럼 프로파일
+- `persistence/summaries.py`: 조회 행을 요약 모델로 변환
+- `persistence/_sql_helpers.py`: 프레임 저장·조회와 값 변환 공용 헬퍼
+- `persistence/migration_runner.py`, `equipment_migration_runner.py`: 체크섬 기반 SQL 적용
+- `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷의 Streamlit 캐시 경계
+- `persistence/equipment_repository.py`: 설비 운영 입력의 불변 전체 스냅샷 저장소
 
 ## 4. 기준정보 테이블 계약
 
