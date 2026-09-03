@@ -7,25 +7,19 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 
+from capa_simulation.design import tokens
 from capa_simulation.services.dynamic_capacity import aggregate_dynamic_capacity
-
-_TEXT_COLOR = "#27272A"
-_MUTED_TEXT_COLOR = "#71717A"
-_GRID_COLOR = "#E4E4E7"
-_SURFACE_COLOR = "#FFFFFF"
-_STANDARD_COLOR = "#3F3F46"
-_EFFECTIVE_COLOR = "#A1A1AA"
-_ACTUAL_COLOR = "#52525B"
-_NORMAL_COLOR = "#D4D4D8"
-_WATCH_COLOR = "#FDE68A"
-_IMPROVEMENT_COLOR = "#FDA4AF"
 
 
 def build_process_comparison_figure(process_summary: pd.DataFrame) -> go.Figure:
     """Compare equipment performance and Capa realization for every process."""
     prepared = process_summary.sort_values("Capa 실현률", ascending=True, kind="stable")
     colors = prepared["상태"].map(
-        {"정상": _NORMAL_COLOR, "관찰": _WATCH_COLOR, "개선 필요": _IMPROVEMENT_COLOR}
+        {
+            "정상": tokens.STATUS_SECURE,
+            "관찰": tokens.STATUS_WARNING,
+            "개선 필요": tokens.STATUS_SHORTAGE,
+        }
     )
     figure = go.Figure()
     figure.add_trace(
@@ -34,7 +28,7 @@ def build_process_comparison_figure(process_summary: pd.DataFrame) -> go.Figure:
             y=prepared["공정"],
             x=prepared["설비 성능 실현률"],
             orientation="h",
-            marker={"color": _EFFECTIVE_COLOR},
+            marker={"color": tokens.SERIES_EFFECTIVE},
             text=prepared["설비 성능 실현률"],
             texttemplate="%{text:.1%}",
             textposition="outside",
@@ -48,7 +42,7 @@ def build_process_comparison_figure(process_summary: pd.DataFrame) -> go.Figure:
             y=prepared["공정"],
             x=prepared["Capa 실현률"],
             orientation="h",
-            marker={"color": colors, "line": {"color": _STANDARD_COLOR, "width": 1}},
+            marker={"color": colors, "line": {"color": tokens.SERIES_STANDARD, "width": 1}},
             text=prepared["Capa 실현률"],
             texttemplate="<b>%{text:.1%}</b>",
             textposition="outside",
@@ -87,10 +81,10 @@ def build_capacity_waterfall_figure(summary: pd.Series) -> go.Figure:
             measure=["absolute", "relative", "relative", "relative", "relative", "total"],
             text=[f"{value:,.0f}" for value in values],
             textposition="outside",
-            connector={"line": {"color": _GRID_COLOR, "width": 1}},
-            increasing={"marker": {"color": _NORMAL_COLOR}},
-            decreasing={"marker": {"color": _IMPROVEMENT_COLOR}},
-            totals={"marker": {"color": _ACTUAL_COLOR}},
+            connector={"line": {"color": tokens.HEADER_BACKGROUND, "width": 1}},
+            increasing={"marker": {"color": tokens.STATUS_SECURE}},
+            decreasing={"marker": {"color": tokens.STATUS_SHORTAGE}},
+            totals={"marker": {"color": tokens.SERIES_ACTUAL}},
             hovertemplate="%{x}<br>%{y:,.1f}<extra></extra>",
         )
     )
@@ -105,9 +99,9 @@ def build_capacity_trend_figure(detail: pd.DataFrame) -> go.Figure:
     daily = aggregate_dynamic_capacity(detail, ["일자"]).sort_values("일자", kind="stable")
     figure = go.Figure()
     for column, label, color, dash in (
-        ("표준 Capa", "표준 Capa", _STANDARD_COLOR, "dash"),
-        ("실효 Capa", "실효 Capa", _EFFECTIVE_COLOR, "solid"),
-        ("실적수량", "실제 실적", _ACTUAL_COLOR, "solid"),
+        ("표준 Capa", "표준 Capa", tokens.SERIES_STANDARD, "dash"),
+        ("실효 Capa", "실효 Capa", tokens.SERIES_EFFECTIVE, "solid"),
+        ("실적수량", "실제 실적", tokens.SERIES_ACTUAL, "solid"),
     ):
         figure.add_trace(
             go.Scatter(
@@ -134,10 +128,14 @@ def build_capacity_trend_figure(detail: pd.DataFrame) -> go.Figure:
 
 def _apply_common_layout(figure: go.Figure) -> None:
     figure.update_layout(
-        plot_bgcolor=_SURFACE_COLOR,
-        paper_bgcolor=_SURFACE_COLOR,
-        font={"family": "Malgun Gothic", "color": _TEXT_COLOR, "size": 13},
-        hoverlabel={"font": {"family": "Malgun Gothic"}},
+        plot_bgcolor=tokens.SURFACE,
+        paper_bgcolor=tokens.SURFACE,
+        font={"family": tokens.FONT_FAMILY, "color": tokens.TEXT, "size": 13},
+        hoverlabel={"font": {"family": tokens.FONT_FAMILY}},
     )
-    figure.update_xaxes(gridcolor=_GRID_COLOR, zeroline=False, linecolor=_GRID_COLOR)
-    figure.update_yaxes(gridcolor=_GRID_COLOR, zeroline=False, linecolor=_GRID_COLOR)
+    figure.update_xaxes(
+        gridcolor=tokens.HEADER_BACKGROUND, zeroline=False, linecolor=tokens.HEADER_BACKGROUND
+    )
+    figure.update_yaxes(
+        gridcolor=tokens.HEADER_BACKGROUND, zeroline=False, linecolor=tokens.HEADER_BACKGROUND
+    )

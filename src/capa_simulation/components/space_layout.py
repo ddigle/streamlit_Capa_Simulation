@@ -9,6 +9,8 @@ from typing import Final, cast
 import pandas as pd
 import plotly.graph_objects as go
 
+from capa_simulation.design import tokens
+
 
 @dataclass(frozen=True)
 class BuildingSpec:
@@ -36,25 +38,6 @@ FLOORS: Final[tuple[FloorSpec, ...]] = tuple(
     for building in ("C5", "C1", "C2", "C3", "C4")
     for floor in ("6F", "5F", "4F", "3F", "2F", "1F")
 )
-STAGE_COLORS: Final[dict[str, str]] = {
-    "입고 예정": "#93C5FD",
-    "셋업 진행중": "#FDBA74",
-    "가용": "#86EFAC",
-    "반출 예정": "#FDE68A",
-    "이설 예정": "#C4B5FD",
-    "보관 설비": "#CBD5E1",
-    "운영 비가동": "#FCA5A5",
-}
-BUILDING_COLORS: Final[tuple[str, ...]] = (
-    "#E7EDF2",
-    "#F3F5F7",
-    "#E9EDF1",
-    "#F3F5F7",
-    "#E9EDF1",
-)
-BORDER_COLOR: Final = "#59636E"
-TEXT_COLOR: Final = "#20262E"
-CANVAS_COLOR: Final = "#F7F8FA"
 
 
 def floors_for(building: str) -> list[FloorSpec]:
@@ -92,8 +75,8 @@ def build_fab_figure(equipment: pd.DataFrame) -> go.Figure:
             x1=building.x + building.width,
             y0=0.5,
             y1=0.5 + building.height,
-            fillcolor=BUILDING_COLORS[index],
-            line={"color": BORDER_COLOR, "width": 2.5},
+            fillcolor=tokens.SPACE_BUILDING_FILLS[index],
+            line={"color": tokens.SPACE_BORDER, "width": 2.5},
             layer="below",
         )
         figure.add_annotation(
@@ -104,7 +87,7 @@ def build_fab_figure(equipment: pd.DataFrame) -> go.Figure:
                 f"비가동 {inactive}대<br><span style='font-size:10px'>클릭하여 상세 보기</span>"
             ),
             showarrow=False,
-            font={"size": 14, "color": TEXT_COLOR},
+            font={"size": 14, "color": tokens.SPACE_TEXT},
             align="center",
         )
         for y_ratio in (0.25, 0.50, 0.75):
@@ -128,14 +111,14 @@ def build_fab_figure(equipment: pd.DataFrame) -> go.Figure:
         y=4.25,
         text="독립동",
         showarrow=False,
-        font={"size": 12, "color": "#69727C"},
+        font={"size": 12, "color": tokens.SPACE_LABEL_TEXT},
     )
     figure.add_annotation(
         x=6.35,
         y=5.25,
         text="C1 · C2 · C3 · C4 연결 구간",
         showarrow=False,
-        font={"size": 12, "color": "#69727C"},
+        font={"size": 12, "color": tokens.SPACE_LABEL_TEXT},
     )
     _apply_layout(figure, x_range=(0.0, 10.2), y_range=(0.0, 5.6), height=470)
     return figure
@@ -163,8 +146,8 @@ def build_floor_figure(equipment: pd.DataFrame, building: str) -> go.Figure:
             x1=9.2,
             y0=y0,
             y1=y1,
-            fillcolor=BUILDING_COLORS[index % len(BUILDING_COLORS)],
-            line={"color": BORDER_COLOR, "width": 2},
+            fillcolor=tokens.SPACE_BUILDING_FILLS[index % len(tokens.SPACE_BUILDING_FILLS)],
+            line={"color": tokens.SPACE_BORDER, "width": 2},
             layer="below",
         )
         figure.add_annotation(
@@ -175,7 +158,7 @@ def build_floor_figure(equipment: pd.DataFrame, building: str) -> go.Figure:
                 f"진행 {progress}대　비가동 {inactive}대"
             ),
             showarrow=False,
-            font={"size": 15, "color": TEXT_COLOR},
+            font={"size": 15, "color": tokens.SPACE_TEXT},
         )
         for x in (2.0, 4.0, 6.0, 8.0):
             clickable_x.append(x)
@@ -224,8 +207,8 @@ def build_floor_layout_figure(
         x1=100,
         y0=0,
         y1=60,
-        fillcolor="rgba(247,248,250,0.18)" if background_image else CANVAS_COLOR,
-        line={"color": BORDER_COLOR, "width": 2.5},
+        fillcolor="rgba(247,248,250,0.18)" if background_image else tokens.SPACE_CANVAS,
+        line={"color": tokens.SPACE_BORDER, "width": 2.5},
         layer="below",
     )
 
@@ -243,7 +226,7 @@ def build_floor_layout_figure(
         y = _to_float(record.get("Y좌표"))
         width = max(_to_float(record.get("Xsize")), 0.1)
         height = max(_to_float(record.get("Ysize")), 0.1)
-        fill_color = STAGE_COLORS.get(status, "#E5E7EB")
+        fill_color = tokens.EQUIPMENT_STAGE_COLORS.get(status, tokens.EQUIPMENT_STAGE_FALLBACK)
         figure.add_shape(
             type="rect",
             x0=x,
@@ -251,7 +234,7 @@ def build_floor_layout_figure(
             y0=y,
             y1=y + height,
             fillcolor=fill_color,
-            line={"color": BORDER_COLOR, "width": 1.2},
+            line={"color": tokens.SPACE_BORDER, "width": 1.2},
             layer="above",
         )
         figure.add_annotation(
@@ -259,7 +242,7 @@ def build_floor_layout_figure(
             y=y + height / 2,
             text=f"<b>{equipment_id}</b><br>{stage}",
             showarrow=False,
-            font={"size": 9, "color": TEXT_COLOR},
+            font={"size": 9, "color": tokens.SPACE_TEXT},
             align="center",
         )
         hover_x.append(x + width / 2)
@@ -285,7 +268,7 @@ def build_floor_layout_figure(
             showlegend=False,
         )
     )
-    for status, color in STAGE_COLORS.items():
+    for status, color in tokens.EQUIPMENT_STAGE_COLORS.items():
         figure.add_trace(
             go.Scatter(
                 x=[None],
@@ -302,8 +285,8 @@ def build_floor_layout_figure(
         legend={"orientation": "h", "x": 1, "xanchor": "right", "y": 1.14},
     )
     _apply_layout(figure, x_range=(0.0, 100.0), y_range=(0.0, 60.0), height=600)
-    figure.update_xaxes(showgrid=True, gridcolor="#E5E8EB", dtick=10)
-    figure.update_yaxes(showgrid=True, gridcolor="#E5E8EB", dtick=10)
+    figure.update_xaxes(showgrid=True, gridcolor=tokens.SPACE_GRID, dtick=10)
+    figure.update_yaxes(showgrid=True, gridcolor=tokens.SPACE_GRID, dtick=10)
     return figure
 
 
@@ -363,9 +346,9 @@ def _apply_layout(
     figure.update_layout(
         height=height,
         margin={"l": 16, "r": 16, "t": 42, "b": 16},
-        paper_bgcolor="#FFFFFF",
-        plot_bgcolor="#FFFFFF",
-        hoverlabel={"bgcolor": "#FFFFFF", "font": {"color": TEXT_COLOR}},
+        paper_bgcolor=tokens.SURFACE,
+        plot_bgcolor=tokens.SURFACE,
+        hoverlabel={"bgcolor": tokens.SURFACE, "font": {"color": tokens.SPACE_TEXT}},
         clickmode="event+select",
         dragmode=False,
     )

@@ -59,6 +59,58 @@ WIP_FLOW_MET: Final = "#34D399"
 WIP_FLOW_SHORT: Final = "#FB7185"
 WIP_FLOW_UNSET: Final = "#A78BFA"
 
+# ----------------------------------------------------------- 설비 생애주기 상태
+# `EQUIPMENT_STATUSES` 9종 전부에 색을 준다. 명시 scale 없이 Altair 에 넘기면
+# config.toml 의 chartCategoricalColors 4색을 순환해 5~9번째 상태가 앞의 것과 같은
+# 색으로 그려진다. 앞 7개는 기존 Space 배치도 색을 그대로 유지하고, 종료된 두 상태는
+# 무채색으로 눌러 진행 중인 상태와 구분한다.
+EQUIPMENT_STAGE_COLORS: Final[dict[str, str]] = {
+    "입고 예정": "#93C5FD",
+    "셋업 진행중": "#FDBA74",
+    "가용": "#86EFAC",
+    "반출 예정": "#FDE68A",
+    "이설 예정": "#C4B5FD",
+    "보관 설비": "#CBD5E1",
+    "운영 비가동": "#FCA5A5",
+    "반출 완료": "#A1A1AA",
+    "이설 완료": "#71717A",
+}
+EQUIPMENT_STAGE_FALLBACK: Final = "#E5E7EB"
+
+# Qual 실행관리 상태. 계획 → 확정 → 완료로 갈수록 짙어지고 지연만 경고색이다.
+QUAL_CONFIRMATION_COLORS: Final[dict[str, str]] = {
+    "계획": "#CBD5E1",
+    "확정": "#93C5FD",
+    "완료": "#86EFAC",
+    "지연": STATUS_WARNING,
+}
+
+# 실행관리 일정 상태. 재공 격자의 충족·유입색과 같은 값을 써서 시각 언어를 맞춘다.
+SCHEDULE_DONE: Final = WIP_FLOW_MET
+SCHEDULE_PLANNED: Final = WIP_INFLOW
+
+# ------------------------------------------------------------- Space 배치도 전용
+# FAB 도면은 zinc 계열이 아니라 자체 blue-grey 를 쓴다. 도면 관례에 맞춘 의도적인
+# 하위 팔레트이며 표·차트와 섞어 쓰지 않는다.
+SPACE_CANVAS: Final = "#F7F8FA"
+SPACE_BORDER: Final = "#59636E"
+SPACE_TEXT: Final = "#20262E"
+SPACE_LABEL_TEXT: Final = "#69727C"
+SPACE_GRID: Final = "#E5E8EB"
+SPACE_BUILDING_FILLS: Final[tuple[str, ...]] = (
+    "#E7EDF2",
+    "#F3F5F7",
+    "#E9EDF1",
+    "#F3F5F7",
+    "#E9EDF1",
+)
+
+# ------------------------------------------------------------------ 스크롤바 색
+SCROLLBAR_TRACK: Final = "#ECEEF1"
+SCROLLBAR_THUMB: Final = "#8F9399"
+SCROLLBAR_THUMB_HOVER: Final = "#686D73"
+SCROLLBAR_THUMB_ACTIVE: Final = "#52565C"
+
 # ----------------------------------------------------------------------- 서체
 # Windows 전용 서체 하나만 지정하면 비Windows 클라이언트에서 서체와 컬럼 폭이 함께
 # 깨진다. 폴백 스택을 반드시 함께 넘긴다.

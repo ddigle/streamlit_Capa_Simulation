@@ -7,13 +7,13 @@ import pytest
 
 from capa_simulation.components.space_layout import (
     BUILDINGS,
-    STAGE_COLORS,
     build_fab_figure,
     build_floor_layout_figure,
     equipment_counts,
     floors_for,
     invalid_equipment_rows,
 )
+from capa_simulation.design.tokens import EQUIPMENT_STAGE_COLORS
 
 
 def _space_equipment() -> pd.DataFrame:
@@ -100,8 +100,8 @@ def test_floor_layout_uses_status_colors_and_input_sizes() -> None:
     figure = build_floor_layout_figure(equipment, "C1", "1F")
 
     equipment_shapes = list(figure.layout.shapes)[1:]
-    assert equipment_shapes[0].fillcolor == STAGE_COLORS["가용"]
-    assert equipment_shapes[1].fillcolor == STAGE_COLORS["셋업 진행중"]
+    assert equipment_shapes[0].fillcolor == EQUIPMENT_STAGE_COLORS["가용"]
+    assert equipment_shapes[1].fillcolor == EQUIPMENT_STAGE_COLORS["셋업 진행중"]
     assert float(equipment_shapes[0].y1) - float(equipment_shapes[0].y0) == pytest.approx(8)
     assert float(equipment_shapes[1].y1) - float(equipment_shapes[1].y0) == pytest.approx(6)
 

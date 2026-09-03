@@ -11,6 +11,7 @@ from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
     render_reference_clipboard_tools,
 )
+from capa_simulation.design import tokens
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -53,7 +54,6 @@ from capa_simulation.services.unit_capacity import (
 from capa_simulation.sidebar_status import show_applied_month_range
 
 TAB_NAMES = ("📊 확보율", "📊 소요대수", "설비대수")
-CLASSIFICATION_BACKGROUND_COLOR = "#F0F2F6"
 DISPLAY_COLUMN_LABELS = {
     "Area_Name": "Area",
     "양산구분": "양산",
@@ -468,7 +468,7 @@ else:
         ].mask(displayed_equipment_table[equipment_month_columns].eq(0))
         styled_equipment_table = displayed_equipment_table.style.set_properties(
             subset=pd.Index(equipment_dimensions),
-            **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
+            **{"background-color": tokens.SURFACE_CLASSIFICATION},
         )
         st.dataframe(
             styled_equipment_table,

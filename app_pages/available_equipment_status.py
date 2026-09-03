@@ -9,6 +9,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.design import tokens
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_snapshot_cache,
     get_equipment_repository,
@@ -110,6 +111,26 @@ def _import_summary(preview: pd.DataFrame) -> None:
             f"{int(preview['Import구분'].eq('대체').sum()):,}건",
             border=True,
         )
+
+
+def _equipment_status_scale() -> alt.Scale:
+    """설비 상태 9종에 고정 색을 준다.
+
+    scale 을 생략하면 Altair 가 config.toml 의 chartCategoricalColors 4색을 순환해
+    5~9번째 상태가 앞의 것과 같은 색으로 그려진다.
+    """
+    return alt.Scale(
+        domain=list(tokens.EQUIPMENT_STAGE_COLORS),
+        range=list(tokens.EQUIPMENT_STAGE_COLORS.values()),
+    )
+
+
+def _qual_status_scale() -> alt.Scale:
+    """Qual 확정상태 4종에 고정 색을 준다."""
+    return alt.Scale(
+        domain=list(tokens.QUAL_CONFIRMATION_COLORS),
+        range=list(tokens.QUAL_CONFIRMATION_COLORS.values()),
+    )
 
 
 st.title("가용설비 현황 (구현중)")
@@ -317,7 +338,11 @@ with dashboard_tab:
                         stack="zero",
                         axis=alt.Axis(title=None, labelFontSize=14),
                     ),
-                    color=alt.Color("상태:N", legend=alt.Legend(title=None, labelFontSize=14)),
+                    color=alt.Color(
+                        "상태:N",
+                        scale=_equipment_status_scale(),
+                        legend=alt.Legend(title=None, labelFontSize=14),
+                    ),
                     tooltip=(
                         alt.Tooltip("Weeknum:N", title="Weeknum"),
                         alt.Tooltip("상태:N", title="상태"),
@@ -358,7 +383,7 @@ with dashboard_tab:
                         "호기대수:Q",
                         axis=alt.Axis(title=None, tickMinStep=1, labelFontSize=13),
                     ),
-                    color=alt.Color("상태:N", legend=None),
+                    color=alt.Color("상태:N", scale=_equipment_status_scale(), legend=None),
                     tooltip=("상태:N", "호기대수:Q"),
                 )
                 .properties(height=300)
@@ -404,7 +429,7 @@ with dashboard_tab:
                         "호기대수:Q",
                         axis=alt.Axis(title=None, tickMinStep=1, labelFontSize=13),
                     ),
-                    color=alt.Color("확정상태:N", legend=None),
+                    color=alt.Color("확정상태:N", scale=_qual_status_scale(), legend=None),
                     tooltip=("확정상태:N", "호기대수:Q"),
                 )
                 .properties(height=180)

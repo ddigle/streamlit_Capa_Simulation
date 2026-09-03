@@ -11,6 +11,7 @@ from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
     render_reference_clipboard_tools,
 )
+from capa_simulation.design import tokens
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -38,7 +39,6 @@ from capa_simulation.services.month_filter import (
 from capa_simulation.services.simulation_cache import get_monthly_volume
 from capa_simulation.sidebar_status import show_applied_month_range
 
-CLASSIFICATION_BACKGROUND_COLOR = "#F0F2F6"
 PRODUCT_COLUMN_WIDTH_PX = 100
 DISPLAY_COLUMN_LABELS = {
     "양산구분": "양산",
@@ -132,7 +132,7 @@ with pkg_plan_tab:
     )
     styled_plan_table = displayed_plan_table.style.set_properties(
         subset=pd.Index(PLAN_EDITOR_DIMENSIONS),
-        **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
+        **{"background-color": tokens.SURFACE_CLASSIFICATION},
     )
     edited_plan_table = st.data_editor(
         styled_plan_table,
@@ -212,7 +212,7 @@ with yield_tab:
     ]
     styled_yield_table = default_yield_table.style.set_properties(
         subset=pd.Index(YIELD_EDITOR_DIMENSIONS),
-        **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
+        **{"background-color": tokens.SURFACE_CLASSIFICATION},
     )
     edited_yield_table = st.data_editor(
         styled_yield_table,

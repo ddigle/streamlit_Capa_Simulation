@@ -560,7 +560,7 @@ def render_grouped_monthly_table(
         "height": figure_height,
         "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
         "paper_bgcolor": SURFACE_COLOR,
-        "font": {"color": TEXT_COLOR, "family": "Malgun Gothic"},
+        "font": {"color": TEXT_COLOR, "family": tokens.FONT_FAMILY},
     }
     label_figure = go.Figure(
         go.Table(
@@ -573,7 +573,7 @@ def render_grouped_monthly_table(
                 "align": "center",
                 "fill_color": HEADER_COLOR,
                 "line_color": TRANSPARENT_COLOR,
-                "font": {"color": TEXT_COLOR, "size": 14, "family": "Malgun Gothic"},
+                "font": {"color": TEXT_COLOR, "size": 14, "family": tokens.FONT_FAMILY},
                 "height": HEADER_HEIGHT_PX,
             },
             cells={
@@ -581,7 +581,7 @@ def render_grouped_monthly_table(
                 "align": "center",
                 "fill_color": classification_fill_colors,
                 "line_color": TRANSPARENT_COLOR,
-                "font": {"color": TEXT_COLOR, "size": 13, "family": "Malgun Gothic"},
+                "font": {"color": TEXT_COLOR, "size": 13, "family": tokens.FONT_FAMILY},
                 "height": ROW_HEIGHT_PX,
             },
         )
@@ -594,7 +594,7 @@ def render_grouped_monthly_table(
                 "align": "center",
                 "fill_color": HEADER_COLOR,
                 "line_color": TRANSPARENT_COLOR,
-                "font": {"color": TEXT_COLOR, "size": 14, "family": "Malgun Gothic"},
+                "font": {"color": TEXT_COLOR, "size": 14, "family": tokens.FONT_FAMILY},
                 "height": HEADER_HEIGHT_PX,
             },
             cells={
@@ -602,7 +602,7 @@ def render_grouped_monthly_table(
                 "align": "center",
                 "fill_color": [month_row_colors for _ in month_columns],
                 "line_color": TRANSPARENT_COLOR,
-                "font": {"color": TEXT_COLOR, "size": 13, "family": "Malgun Gothic"},
+                "font": {"color": TEXT_COLOR, "size": 13, "family": tokens.FONT_FAMILY},
                 "height": ROW_HEIGHT_PX,
             },
         )

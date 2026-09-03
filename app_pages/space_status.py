@@ -20,6 +20,7 @@ from capa_simulation.components.space_layout import (
     floors_for,
     invalid_equipment_rows,
 )
+from capa_simulation.design import tokens
 from capa_simulation.persistence.equipment_cache import load_latest_equipment_snapshot
 from capa_simulation.services.equipment_availability import (
     build_milestone_transition_events,
@@ -274,7 +275,7 @@ with st.container(border=True):
                     "일정상태:N",
                     scale=alt.Scale(
                         domain=["완료", "예정"],
-                        range=["#2E8B57", "#4C78A8"],
+                        range=[tokens.SCHEDULE_DONE, tokens.SCHEDULE_PLANNED],
                     ),
                     legend=alt.Legend(title=None, orient="top"),
                 ),

@@ -10,6 +10,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from capa_simulation.components.horizontal_scrollbar import render_horizontal_scrollbar
+from capa_simulation.design import tokens
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -33,24 +34,7 @@ from capa_simulation.services.simulation_cache import (
 from capa_simulation.settings import APP_NAME
 from capa_simulation.sidebar_status import show_applied_month_range
 
-CLASSIFICATION_BACKGROUND_COLOR = "#F4F4F5"
-CLASSIFICATION_GROUP_BACKGROUND_COLOR = "#EAEBED"
-SURFACE_COLOR = "#FFFFFF"
-GROUP_SURFACE_COLOR = "#FAFAFA"
-SUBTLE_SURFACE_COLOR = "#F4F4F5"
-HEADER_COLOR = "#E4E4E7"
-BORDER_COLOR = "#D4D4D8"
-GROUP_BORDER_COLOR = "#A1A1AA"
-OUTER_BORDER_WIDTH_PX = 1.8
 TRANSPARENT_COLOR = "rgba(0, 0, 0, 0)"
-TEXT_COLOR = "#27272A"
-MUTED_TEXT_COLOR = "#52525B"
-LINE_COLOR = "#3F3F46"
-SECURE_COLOR = "#D4D4D8"
-WARNING_COLOR = "#FDE68A"
-SHORTAGE_COLOR = "#FDA4AF"
-MONTH_COLUMN_WIDTH_PX = 100
-MONTH_SCROLL_THRESHOLD = 10
 DASHBOARD_SCROLLBAR_HEIGHT_PX = 15
 DASHBOARD_SECTION_GAP_PX = 16
 DASHBOARD_TITLE_HEIGHT_PX = 44
@@ -133,7 +117,7 @@ def dashboard_title_annotation(text: str) -> dict[str, Any]:
         "xanchor": "left",
         "yanchor": "bottom",
         "yshift": DASHBOARD_TITLE_GAP_PX,
-        "font": {"size": 20, "color": TEXT_COLOR, "family": "Malgun Gothic"},
+        "font": {"size": 20, "color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
 
 
@@ -173,7 +157,7 @@ def add_figure_outer_border(
                 "xref": "paper",
                 "yref": "paper",
                 "fillcolor": TRANSPARENT_COLOR,
-                "line": {"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
+                "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX},
                 "layer": "above",
             }
         )
@@ -187,7 +171,7 @@ def add_figure_outer_border(
                 "y1": 1,
                 "xref": "paper",
                 "yref": "paper",
-                "line": {"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
+                "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX},
                 "layer": "above",
             }
         )
@@ -202,8 +186,8 @@ def add_figure_outer_border(
                 "xref": "paper",
                 "yref": "paper",
                 "line": {
-                    "color": GROUP_BORDER_COLOR,
-                    "width": OUTER_BORDER_WIDTH_PX * 2,
+                    "color": tokens.BORDER_STRONG,
+                    "width": tokens.OUTER_BORDER_WIDTH_PX * 2,
                 },
                 "layer": "above",
             }
@@ -217,12 +201,12 @@ def add_figure_outer_border(
             "y1": 1,
             "xref": "paper",
             "yref": "paper",
-            "line": {"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX * 2},
+            "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX * 2},
             "layer": "above",
         }
     )
     if emphasize_bottom:
-        bottom_width = OUTER_BORDER_WIDTH_PX * (2 if compensate_bottom else 1)
+        bottom_width = tokens.OUTER_BORDER_WIDTH_PX * (2 if compensate_bottom else 1)
         shapes.append(
             {
                 "type": "line",
@@ -232,7 +216,7 @@ def add_figure_outer_border(
                 "y1": y0,
                 "xref": "paper",
                 "yref": "paper",
-                "line": {"color": GROUP_BORDER_COLOR, "width": bottom_width},
+                "line": {"color": tokens.BORDER_STRONG, "width": bottom_width},
                 "layer": "above",
             }
         )
@@ -257,7 +241,7 @@ def add_quarter_boundaries(
             "y1": 1,
             "xref": "paper",
             "yref": "paper",
-            "line": {"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
+            "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX},
             "layer": "above",
         }
         for month_index in range(1, len(quarter_keys))
@@ -306,9 +290,9 @@ def add_fixed_table_row(
                 "xanchor": "center",
                 "yanchor": "middle",
                 "font": {
-                    "color": TEXT_COLOR,
+                    "color": tokens.TEXT,
                     "size": font_size,
-                    "family": "Malgun Gothic",
+                    "family": tokens.FONT_FAMILY,
                 },
             }
         )
@@ -343,7 +327,7 @@ def render_home_figures(
         raise ValueError("HOME Figure 묶음은 요약 2개 또는 상세 포함 6개여야 합니다.")
     label_figure, month_figure = figures[:2]
     detail_figures = figures[2:]
-    visible_month_count = min(max(len(month_labels), 1), MONTH_SCROLL_THRESHOLD)
+    visible_month_count = min(max(len(month_labels), 1), tokens.DASHBOARD_MONTH_SCROLL_THRESHOLD)
 
     with st.container(border=True):
         label_column, month_column = st.columns(
@@ -375,7 +359,7 @@ def render_home_figures(
                         config={"displayModeBar": False, "staticPlot": True},
                     )
         with month_column:
-            month_chart_width = len(month_labels) * MONTH_COLUMN_WIDTH_PX
+            month_chart_width = len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX
             st.html(
                 f"""
                 <style>
@@ -762,10 +746,10 @@ home_trace.mark("B/N 단일 순위·파생")
 
 def capacity_color(rate: float) -> str:
     if rate > secure_threshold:
-        return SECURE_COLOR
+        return tokens.STATUS_SECURE
     if rate >= warning_threshold:
-        return WARNING_COLOR
-    return SHORTAGE_COLOR
+        return tokens.STATUS_WARNING
+    return tokens.STATUS_SHORTAGE
 
 
 if cached_figures is None:
@@ -788,22 +772,22 @@ if cached_figures is None:
     label_figure = make_subplots(**subplot_options)
     month_figure = make_subplots(**subplot_options)
     label_table_rows = (
-        ("구분", HEADER_COLOR, 21, True),
-        ("Density (억Gb)", SUBTLE_SURFACE_COLOR, 20, True),
-        ("Wafer 계획", SUBTLE_SURFACE_COLOR, 20, True),
-        ("Wafer Capa", SUBTLE_SURFACE_COLOR, 20, True),
+        ("구분", tokens.HEADER_BACKGROUND, 21, True),
+        ("Density (억Gb)", tokens.SURFACE_CLASSIFICATION, 20, True),
+        ("Wafer 계획", tokens.SURFACE_CLASSIFICATION, 20, True),
+        ("Wafer Capa", tokens.SURFACE_CLASSIFICATION, 20, True),
     )
     month_table_rows = (
-        ([f"{month}" for month in month_labels], HEADER_COLOR, 21, True),
+        ([f"{month}" for month in month_labels], tokens.HEADER_BACKGROUND, 21, True),
         (
             [f"{row['부하량']:,.2f}" for _, row in lob_summary.iterrows()],
-            SURFACE_COLOR,
+            tokens.SURFACE,
             20,
             False,
         ),
         (
             [f"{row['Wafer 부하량'] / 1_000:,.0f}K" for _, row in lob_summary.iterrows()],
-            SURFACE_COLOR,
+            tokens.SURFACE,
             20,
             False,
         ),
@@ -812,7 +796,7 @@ if cached_figures is None:
                 "" if pd.isna(row["Wafer Capa"]) else f"{row['Wafer Capa'] / 1_000:,.0f}K"
                 for _, row in lob_summary.iterrows()
             ],
-            SURFACE_COLOR,
+            tokens.SURFACE,
             20,
             False,
         ),
@@ -861,10 +845,10 @@ if cached_figures is None:
                 texttemplate="<b>%{text:.0%}</b>",
                 textposition="inside",
                 insidetextanchor="start",
-                textfont={"color": TEXT_COLOR, "size": 22, "family": "Calibri"},
+                textfont={"color": tokens.TEXT, "size": 22, "family": tokens.FONT_FAMILY_NUMERIC},
                 marker={
                     "color": [capacity_color(rate) for rate in bottleneck_capacity["확보율"]],
-                    "line": {"color": LINE_COLOR, "width": 1.2},
+                    "line": {"color": tokens.LINE, "width": 1.2},
                 },
                 hovertemplate=(
                     "%{customdata[0]} · B/N %{customdata[2]}"
@@ -885,12 +869,12 @@ if cached_figures is None:
             text=monthly_density["부하량"],
             texttemplate="<b>%{text:,.2f}</b>",
             textposition="top center",
-            textfont={"size": 20, "color": TEXT_COLOR, "family": "Calibri"},
-            line={"color": LINE_COLOR, "width": 3},
+            textfont={"size": 20, "color": tokens.TEXT, "family": tokens.FONT_FAMILY_NUMERIC},
+            line={"color": tokens.LINE, "width": 3},
             marker={
-                "color": SURFACE_COLOR,
+                "color": tokens.SURFACE,
                 "size": 8,
-                "line": {"color": LINE_COLOR, "width": 2.0},
+                "line": {"color": tokens.LINE, "width": 2.0},
             },
             cliponaxis=False,
             hovertemplate="%{customdata}<br>%{y:,.2f} 억Gb<extra></extra>",
@@ -916,7 +900,7 @@ if cached_figures is None:
                 customdata=monthly_top5[["년월", "공정", "확보율", "Wafer Capa"]],
                 marker={
                     "color": [capacity_color(rate) for rate in monthly_top5["확보율"]],
-                    "line": {"color": LINE_COLOR, "width": 0.8},
+                    "line": {"color": tokens.LINE, "width": 0.8},
                 },
                 hovertemplate=(
                     "%{customdata[0]} · %{customdata[1]}"
@@ -951,8 +935,8 @@ if cached_figures is None:
                     "showarrow": False,
                     "font": {
                         "size": 15,
-                        "color": TEXT_COLOR,
-                        "family": "Calibri",
+                        "color": tokens.TEXT,
+                        "family": tokens.FONT_FAMILY_NUMERIC,
                     },
                 }
             )
@@ -972,8 +956,8 @@ if cached_figures is None:
                     "showarrow": False,
                     "font": {
                         "size": 15,
-                        "color": TEXT_COLOR,
-                        "family": "Calibri",
+                        "color": tokens.TEXT,
+                        "family": tokens.FONT_FAMILY_NUMERIC,
                     },
                 }
             )
@@ -993,8 +977,8 @@ if cached_figures is None:
                     "showarrow": False,
                     "font": {
                         "size": 15,
-                        "color": MUTED_TEXT_COLOR,
-                        "family": "Calibri",
+                        "color": tokens.TEXT_MUTED,
+                        "family": tokens.FONT_FAMILY_NUMERIC,
                     },
                 }
             )
@@ -1008,14 +992,14 @@ if cached_figures is None:
         },
         "barmode": "overlay",
         "bargap": 0.16,
-        "plot_bgcolor": SURFACE_COLOR,
-        "paper_bgcolor": SURFACE_COLOR,
-        "font": {"color": TEXT_COLOR, "family": "Malgun Gothic"},
+        "plot_bgcolor": tokens.SURFACE,
+        "paper_bgcolor": tokens.SURFACE,
+        "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
     label_figure.update_layout(**common_layout, showlegend=False)
     month_figure.update_layout(
         **common_layout,
-        width=len(month_labels) * MONTH_COLUMN_WIDTH_PX,
+        width=len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX,
         autosize=False,
         legend={
             "orientation": "h",
@@ -1023,7 +1007,7 @@ if cached_figures is None:
             "y": 1.02,
             "xanchor": "right",
             "x": 1,
-            "font": {"color": MUTED_TEXT_COLOR, "size": 13},
+            "font": {"color": tokens.TEXT_MUTED, "size": 13},
         },
     )
     append_layout_items(month_figure, annotations=top5_annotations)
@@ -1100,8 +1084,8 @@ if cached_figures is None:
                 "showarrow": False,
                 "font": {
                     "size": 20,
-                    "color": MUTED_TEXT_COLOR,
-                    "family": "Malgun Gothic",
+                    "color": tokens.TEXT_MUTED,
+                    "family": tokens.FONT_FAMILY,
                 },
             },
             {
@@ -1113,8 +1097,8 @@ if cached_figures is None:
                 "showarrow": False,
                 "font": {
                     "size": 20,
-                    "color": MUTED_TEXT_COLOR,
-                    "family": "Malgun Gothic",
+                    "color": tokens.TEXT_MUTED,
+                    "family": tokens.FONT_FAMILY,
                 },
             },
         ],
@@ -1135,8 +1119,8 @@ if cached_figures is None:
             "xref": "paper",
             "yref": "paper",
             "line": {
-                "color": GROUP_BORDER_COLOR if boundary_index in {1, 2} else BORDER_COLOR,
-                "width": OUTER_BORDER_WIDTH_PX if boundary_index in {1, 2} else 0.8,
+                "color": tokens.BORDER_STRONG if boundary_index in {1, 2} else tokens.BORDER,
+                "width": tokens.OUTER_BORDER_WIDTH_PX if boundary_index in {1, 2} else 0.8,
             },
             "layer": "above" if boundary_index in {1, 2} else "below",
         }
@@ -1154,7 +1138,7 @@ if cached_figures is None:
                     "y1": y1,
                     "xref": "paper",
                     "yref": "paper",
-                    "fillcolor": SUBTLE_SURFACE_COLOR,
+                    "fillcolor": tokens.SURFACE_CLASSIFICATION,
                     "line": {"width": 0},
                     "layer": "below",
                 }
@@ -1172,7 +1156,7 @@ if cached_figures is None:
                     "y1": 1,
                     "xref": "paper",
                     "yref": "paper",
-                    "line": {"color": BORDER_COLOR, "width": 0.8},
+                    "line": {"color": tokens.BORDER, "width": 0.8},
                     "layer": "below",
                 }
                 for x_boundary in (0.0, 1.0)
@@ -1192,7 +1176,7 @@ if cached_figures is None:
                     "y1": 1,
                     "xref": "paper",
                     "yref": "paper",
-                    "line": {"color": BORDER_COLOR, "width": 0.8},
+                    "line": {"color": tokens.BORDER, "width": 0.8},
                     "layer": "below",
                 }
                 for index in range(1, len(month_labels))
@@ -1214,9 +1198,9 @@ if cached_figures is None:
         compensate_bottom=False,
     )
     lob_row_boundaries = (
-        (lob_table_domains[0][0], OUTER_BORDER_WIDTH_PX, GROUP_BORDER_COLOR),
-        (lob_table_domains[1][0], 0.8, BORDER_COLOR),
-        (lob_table_domains[2][0], 0.8, BORDER_COLOR),
+        (lob_table_domains[0][0], tokens.OUTER_BORDER_WIDTH_PX, tokens.BORDER_STRONG),
+        (lob_table_domains[1][0], 0.8, tokens.BORDER),
+        (lob_table_domains[2][0], 0.8, tokens.BORDER),
     )
     lob_row_shapes = [
         {
@@ -1284,13 +1268,13 @@ if cached_figures is None:
         previous_product = product
 
     detail_label_row_colors = [
-        CLASSIFICATION_BACKGROUND_COLOR
+        tokens.SURFACE_CLASSIFICATION
         if group_number % 2 == 0
-        else CLASSIFICATION_GROUP_BACKGROUND_COLOR
+        else tokens.SURFACE_CLASSIFICATION_GROUP
         for group_number in detail_group_indices
     ]
     detail_month_row_colors = [
-        SURFACE_COLOR if group_number % 2 == 0 else GROUP_SURFACE_COLOR
+        tokens.SURFACE if group_number % 2 == 0 else tokens.SURFACE_SUBTLE
         for group_number in detail_group_indices
     ]
     detail_row_height = 27
@@ -1306,12 +1290,12 @@ if cached_figures is None:
             header={
                 "values": ["<b>제품</b>", "<b>Stack</b>"],
                 "align": "center",
-                "fill_color": HEADER_COLOR,
+                "fill_color": tokens.HEADER_BACKGROUND,
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
-                    "color": TEXT_COLOR,
+                    "color": tokens.TEXT,
                     "size": 15,
-                    "family": "Malgun Gothic",
+                    "family": tokens.FONT_FAMILY,
                 },
                 "height": detail_header_height,
             },
@@ -1321,9 +1305,9 @@ if cached_figures is None:
                 "fill_color": [detail_label_row_colors for _ in PRODUCTION_DETAIL_DIMENSIONS],
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
-                    "color": TEXT_COLOR,
+                    "color": tokens.TEXT,
                     "size": 14,
-                    "family": "Malgun Gothic",
+                    "family": tokens.FONT_FAMILY,
                 },
                 "height": detail_row_height,
             },
@@ -1335,12 +1319,12 @@ if cached_figures is None:
             header={
                 "values": [f"<b>{month}</b>" for month in detail_month_columns],
                 "align": "center",
-                "fill_color": HEADER_COLOR,
+                "fill_color": tokens.HEADER_BACKGROUND,
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
-                    "color": TEXT_COLOR,
+                    "color": tokens.TEXT,
                     "size": 15,
-                    "family": "Malgun Gothic",
+                    "family": tokens.FONT_FAMILY,
                 },
                 "height": detail_header_height,
             },
@@ -1356,9 +1340,9 @@ if cached_figures is None:
                 "fill_color": [detail_month_row_colors for _ in detail_month_columns],
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
-                    "color": TEXT_COLOR,
+                    "color": tokens.TEXT,
                     "size": 14,
-                    "family": "Malgun Gothic",
+                    "family": tokens.FONT_FAMILY,
                 },
                 "height": detail_row_height,
             },
@@ -1367,8 +1351,8 @@ if cached_figures is None:
     detail_layout = {
         "height": detail_figure_height,
         "margin": {"l": 0, "r": 0, "t": DASHBOARD_TITLE_HEIGHT_PX, "b": 0},
-        "paper_bgcolor": SURFACE_COLOR,
-        "font": {"color": TEXT_COLOR, "family": "Malgun Gothic"},
+        "paper_bgcolor": tokens.SURFACE,
+        "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
     detail_label_figure.update_layout(**detail_layout)
     append_layout_items(
@@ -1377,7 +1361,7 @@ if cached_figures is None:
     )
     detail_month_figure.update_layout(
         **detail_layout,
-        width=len(month_labels) * MONTH_COLUMN_WIDTH_PX,
+        width=len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX,
         autosize=False,
     )
     detail_table_height = detail_header_height + max(len(displayed_detail), 1) * detail_row_height
@@ -1396,7 +1380,7 @@ if cached_figures is None:
         "y1": detail_header_boundary_y,
         "xref": "paper",
         "yref": "paper",
-        "line": {"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
+        "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX},
         "layer": "above",
     }
     append_layout_items(
@@ -1411,7 +1395,7 @@ if cached_figures is None:
                 "y1": 1,
                 "xref": "paper",
                 "yref": "paper",
-                "line": {"color": BORDER_COLOR, "width": 0.8},
+                "line": {"color": tokens.BORDER, "width": 0.8},
                 "layer": "above",
             },
         ],
@@ -1429,7 +1413,7 @@ if cached_figures is None:
                     "y1": 1,
                     "xref": "paper",
                     "yref": "paper",
-                    "line": {"color": BORDER_COLOR, "width": 0.8},
+                    "line": {"color": tokens.BORDER, "width": 0.8},
                     "layer": "above",
                 }
                 for month_index in range(1, len(detail_month_columns))
@@ -1448,7 +1432,7 @@ if cached_figures is None:
             - (detail_header_height + group_start * detail_row_height) / detail_table_height,
             "xref": "paper",
             "yref": "paper",
-            "line": {"color": GROUP_BORDER_COLOR, "width": 1.4},
+            "line": {"color": tokens.BORDER_STRONG, "width": 1.4},
             "layer": "above",
         }
         for group_start in detail_group_starts
@@ -1504,12 +1488,12 @@ if cached_figures is None:
             header={
                 "values": ["<b>B/N</b>", "<b>구분</b>"],
                 "align": "center",
-                "fill_color": HEADER_COLOR,
-                "line_color": BORDER_COLOR,
+                "fill_color": tokens.HEADER_BACKGROUND,
+                "line_color": tokens.BORDER,
                 "font": {
-                    "color": TEXT_COLOR,
+                    "color": tokens.TEXT,
                     "size": 15,
-                    "family": "Malgun Gothic",
+                    "family": tokens.FONT_FAMILY,
                 },
                 "height": bottleneck_detail_header_height,
             },
@@ -1519,12 +1503,12 @@ if cached_figures is None:
                     [bottleneck_detail_labels] * len(bottleneck_detail_ranks),
                 ],
                 "align": "center",
-                "fill_color": CLASSIFICATION_BACKGROUND_COLOR,
-                "line_color": BORDER_COLOR,
+                "fill_color": tokens.SURFACE_CLASSIFICATION,
+                "line_color": tokens.BORDER,
                 "font": {
-                    "color": TEXT_COLOR,
+                    "color": tokens.TEXT,
                     "size": [20, 13],
-                    "family": "Malgun Gothic",
+                    "family": tokens.FONT_FAMILY,
                 },
                 "height": bottleneck_detail_row_height,
             },
@@ -1536,12 +1520,12 @@ if cached_figures is None:
             header={
                 "values": [f"<b>{month}</b>" for month in month_labels],
                 "align": "center",
-                "fill_color": HEADER_COLOR,
-                "line_color": BORDER_COLOR,
+                "fill_color": tokens.HEADER_BACKGROUND,
+                "line_color": tokens.BORDER,
                 "font": {
-                    "color": TEXT_COLOR,
+                    "color": tokens.TEXT,
                     "size": 15,
-                    "family": "Malgun Gothic",
+                    "family": tokens.FONT_FAMILY,
                 },
                 "height": bottleneck_detail_header_height,
             },
@@ -1551,12 +1535,12 @@ if cached_figures is None:
                     for month in monthly_density["생산계획년월"]
                 ],
                 "align": "center",
-                "fill_color": SURFACE_COLOR,
-                "line_color": BORDER_COLOR,
+                "fill_color": tokens.SURFACE,
+                "line_color": tokens.BORDER,
                 "font": {
-                    "color": TEXT_COLOR,
+                    "color": tokens.TEXT,
                     "size": 13,
-                    "family": "Malgun Gothic",
+                    "family": tokens.FONT_FAMILY,
                 },
                 "height": bottleneck_detail_row_height,
             },
@@ -1570,8 +1554,8 @@ if cached_figures is None:
             "t": DASHBOARD_TITLE_HEIGHT_PX,
             "b": 0,
         },
-        "paper_bgcolor": SURFACE_COLOR,
-        "font": {"color": TEXT_COLOR, "family": "Malgun Gothic"},
+        "paper_bgcolor": tokens.SURFACE,
+        "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
     bottleneck_detail_label_figure.update_layout(**bottleneck_detail_layout)
     append_layout_items(
@@ -1580,7 +1564,7 @@ if cached_figures is None:
     )
     bottleneck_detail_month_figure.update_layout(
         **bottleneck_detail_layout,
-        width=len(month_labels) * MONTH_COLUMN_WIDTH_PX,
+        width=len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX,
         autosize=False,
     )
     bottleneck_detail_table_height = (
@@ -1614,7 +1598,7 @@ if cached_figures is None:
             "y1": boundary_y,
             "xref": "paper",
             "yref": "paper",
-            "line": {"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
+            "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX},
             "layer": "above",
         }
         for boundary_y in bottleneck_detail_boundaries

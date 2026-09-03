@@ -11,6 +11,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from capa_simulation.design import tokens
 from capa_simulation.services.wip_status import (
     WIP_HISTORY_COLUMNS,
     build_wip_route_scope,
@@ -18,17 +19,6 @@ from capa_simulation.services.wip_status import (
 
 WIP_GRID_CELL_WIDTH_PX = 340
 WIP_GRID_CELL_HEIGHT_PX = 330
-
-_TEXT_COLOR = "#27272A"
-_MUTED_TEXT_COLOR = "#71717A"
-_GRID_COLOR = "#E4E4E7"
-_SURFACE_COLOR = "#FFFFFF"
-_HELD_COLOR = "#A1A1AA"
-_INFLOW_COLOR = "#60A5FA"
-_FLOW_MET_COLOR = "#34D399"
-_FLOW_SHORT_COLOR = "#FB7185"
-_FLOW_UNSET_COLOR = "#A78BFA"
-_STANDARD_COLOR = "#18181B"
 
 
 def build_wip_status_grid_figure(
@@ -94,7 +84,7 @@ def build_wip_status_grid_figure(
                     xref="x domain",
                     yref="y domain",
                     showarrow=False,
-                    font={"color": _MUTED_TEXT_COLOR, "size": 12},
+                    font={"color": tokens.TEXT_MUTED, "size": 12},
                     row=row_index,
                     col=column_index,
                 )
@@ -118,21 +108,21 @@ def build_wip_status_grid_figure(
                 tickvals=all_dates,
                 ticktext=tick_text,
                 tickangle=-45,
-                tickfont={"size": 9, "color": _MUTED_TEXT_COLOR},
+                tickfont={"size": 9, "color": tokens.TEXT_MUTED},
                 title=None,
                 showgrid=False,
                 zeroline=False,
-                linecolor=_GRID_COLOR,
+                linecolor=tokens.HEADER_BACKGROUND,
             )
             figure.update_yaxes(
                 row=row_index,
                 col=column_index,
                 rangemode="tozero",
-                title={"text": unit, "font": {"size": 10, "color": _MUTED_TEXT_COLOR}},
-                tickfont={"size": 9, "color": _MUTED_TEXT_COLOR},
-                gridcolor=_GRID_COLOR,
+                title={"text": unit, "font": {"size": 10, "color": tokens.TEXT_MUTED}},
+                tickfont={"size": 9, "color": tokens.TEXT_MUTED},
+                gridcolor=tokens.HEADER_BACKGROUND,
                 zeroline=False,
-                linecolor=_GRID_COLOR,
+                linecolor=tokens.HEADER_BACKGROUND,
             )
 
     figure_width = max(430, cols * WIP_GRID_CELL_WIDTH_PX + 90)
@@ -143,10 +133,10 @@ def build_wip_status_grid_figure(
         barmode="group",
         bargap=0.18,
         bargroupgap=0.05,
-        plot_bgcolor=_SURFACE_COLOR,
-        paper_bgcolor=_SURFACE_COLOR,
-        font={"family": "Malgun Gothic", "color": _TEXT_COLOR, "size": 11},
-        hoverlabel={"font": {"family": "Malgun Gothic"}},
+        plot_bgcolor=tokens.SURFACE,
+        paper_bgcolor=tokens.SURFACE,
+        font={"family": tokens.FONT_FAMILY, "color": tokens.TEXT, "size": 11},
+        hoverlabel={"font": {"family": tokens.FONT_FAMILY}},
         hovermode="closest",
         margin={"l": 54, "r": 24, "t": 92, "b": 50},
         legend={
@@ -159,7 +149,7 @@ def build_wip_status_grid_figure(
         },
     )
     for annotation in figure.layout.annotations:
-        annotation.font = {"family": "Malgun Gothic", "size": 12, "color": _TEXT_COLOR}
+        annotation.font = {"family": tokens.FONT_FAMILY, "size": 12, "color": tokens.TEXT}
     return figure
 
 
@@ -179,7 +169,7 @@ def _add_cell_traces(
         x=x_values,
         y=cell["보유 재공"].tolist(),
         periods=periods,
-        color=_HELD_COLOR,
+        color=tokens.WIP_HELD,
         offsetgroup="held",
         row=row,
         col=col,
@@ -191,7 +181,7 @@ def _add_cell_traces(
         x=x_values,
         y=cell["유입량"].tolist(),
         periods=periods,
-        color=_INFLOW_COLOR,
+        color=tokens.WIP_INFLOW,
         offsetgroup="inflow",
         row=row,
         col=col,
@@ -199,9 +189,9 @@ def _add_cell_traces(
     )
 
     for status, name, color in (
-        ("충족", "Flow 충족", _FLOW_MET_COLOR),
-        ("부족", "Flow 부족", _FLOW_SHORT_COLOR),
-        ("표준 미설정", "Flow (표준 미설정)", _FLOW_UNSET_COLOR),
+        ("충족", "Flow 충족", tokens.WIP_FLOW_MET),
+        ("부족", "Flow 부족", tokens.WIP_FLOW_SHORT),
+        ("표준 미설정", "Flow (표준 미설정)", tokens.WIP_FLOW_UNSET),
     ):
         mask = cell["상태"].astype(str).eq(status)
         if not mask.any():
@@ -242,8 +232,8 @@ def _add_cell_traces(
                 x=cell["일자"],
                 y=standard,
                 mode="lines+markers",
-                line={"color": _STANDARD_COLOR, "width": 2, "dash": "dot"},
-                marker={"size": 5, "color": _STANDARD_COLOR},
+                line={"color": tokens.TEXT, "width": 2, "dash": "dot"},
+                marker={"size": 5, "color": tokens.TEXT},
                 hovertemplate="%{x|%m.%d}<br>표준 가능량 %{y:,.1f}<extra></extra>",
                 showlegend=showlegend,
             ),

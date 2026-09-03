@@ -14,6 +14,7 @@ from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
     render_reference_clipboard_tools,
 )
+from capa_simulation.design import tokens
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -75,7 +76,6 @@ DISPLAY_COLUMN_LABELS = {
     "STEP_SEQ": "Step",
     "MCP_SEQ": "MCP",
 }
-CLASSIFICATION_BACKGROUND_COLOR = "#F0F2F6"
 RUN_RATE_DIMENSIONS = ["공정", "양산구분"]
 VITAL_DIMENSIONS = ["공정", "양산구분"]
 RUN_DAY_DIMENSIONS = ["공정"]
@@ -136,7 +136,7 @@ def render_month_editor(
     month_columns = [column for column in default_table.columns if column not in dimensions]
     styled_table = default_table.style.set_properties(
         subset=pd.Index(dimensions),
-        **{"background-color": CLASSIFICATION_BACKGROUND_COLOR},
+        **{"background-color": tokens.SURFACE_CLASSIFICATION},
     )
     with tab:
         st.caption(caption)

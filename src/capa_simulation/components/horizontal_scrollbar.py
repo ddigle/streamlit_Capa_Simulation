@@ -2,6 +2,8 @@
 
 import streamlit as st
 
+from capa_simulation.design import tokens
+
 _SCROLLBAR_HTML = """
 <div
   class="capa-scrollbar-track"
@@ -17,7 +19,10 @@ _SCROLLBAR_HTML = """
 </div>
 """
 
-_SCROLLBAR_CSS = """
+# CSS 는 중괄호가 많아 f-string 으로 두면 전부 이스케이프해야 한다.
+# 색 자리에 센티넬을 두고 모듈 로드 시 한 번만 토큰으로 치환한다.
+_SCROLLBAR_CSS = (
+    """
 :host {
   display: block;
   width: 100%;
@@ -29,7 +34,7 @@ _SCROLLBAR_CSS = """
   width: 100%;
   overflow: hidden;
   border-radius: 999px;
-  background: #ECEEF1;
+  background: __SCROLLBAR_TRACK__;
   cursor: pointer;
   touch-action: none;
   user-select: none;
@@ -40,19 +45,19 @@ _SCROLLBAR_CSS = """
   inset-block: 0;
   inset-inline-start: 0;
   box-sizing: border-box;
-  border: 2px solid #ECEEF1;
+  border: 2px solid __SCROLLBAR_TRACK__;
   border-radius: 999px;
-  background: #8F9399;
+  background: __SCROLLBAR_THUMB__;
   cursor: grab;
   will-change: transform;
 }
 
 .capa-scrollbar-thumb:hover {
-  background: #686D73;
+  background: __SCROLLBAR_THUMB_HOVER__;
 }
 
 .capa-scrollbar-track.is-dragging .capa-scrollbar-thumb {
-  background: #52565C;
+  background: __SCROLLBAR_THUMB_ACTIVE__;
   cursor: grabbing;
 }
 
@@ -60,7 +65,11 @@ _SCROLLBAR_CSS = """
   outline: 2px solid var(--st-primary-color);
   outline-offset: 2px;
 }
-"""
+""".replace("__SCROLLBAR_TRACK__", tokens.SCROLLBAR_TRACK)
+    .replace("__SCROLLBAR_THUMB__", tokens.SCROLLBAR_THUMB)
+    .replace("__SCROLLBAR_THUMB_HOVER__", tokens.SCROLLBAR_THUMB_HOVER)
+    .replace("__SCROLLBAR_THUMB_ACTIVE__", tokens.SCROLLBAR_THUMB_ACTIVE)
+)
 
 _SCROLLBAR_JS = """
 export default function(component) {
