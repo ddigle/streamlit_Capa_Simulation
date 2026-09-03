@@ -1,10 +1,16 @@
+# Purpose: PKG and wafer monthly volume calculations.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 편집표·환산 결과가 준비된 표시순서 규칙을 재사용할 수 있도록 입력 계약을 확장함.
+
 """PKG and wafer monthly volume calculations."""
 
 from typing import Literal
 
 import pandas as pd
 
-from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
 
 DemandBasis = Literal["PKG", "Chip", "Wafer", "Density"]
 
@@ -35,9 +41,7 @@ DENSITY_KEYS = ["제품정보", "Stack", "WF 구분"]
 DENSITY_REQUIRED_COLUMNS = [*DENSITY_KEYS, "구분_Chip", "구분_EQ"]
 
 
-def plan_to_edit_table(
-    plan: pd.DataFrame, display_order: pd.DataFrame | None = None
-) -> pd.DataFrame:
+def plan_to_edit_table(plan: pd.DataFrame, display_order: DisplayOrderInput = None) -> pd.DataFrame:
     """Pivot the default Long PKG plan into an editable month-column table."""
     required = ["생산계획년월", *PLAN_EDITOR_DIMENSIONS, "생산수량"]
     _require_columns(plan, required, "RQ_PKG_PLAN")
@@ -107,7 +111,7 @@ def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
 
 
 def yield_to_edit_table(
-    yield_data: pd.DataFrame, display_order: pd.DataFrame | None = None
+    yield_data: pd.DataFrame, display_order: DisplayOrderInput = None
 ) -> pd.DataFrame:
     """Pivot Long yield data into editable EDS/BE rows with month columns."""
     _require_columns(yield_data, YIELD_REQUIRED_COLUMNS, "RQ_YLD")
@@ -438,7 +442,7 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
 def _pivot_monthly(
     data: pd.DataFrame,
     detailed: bool,
-    display_order: pd.DataFrame | None = None,
+    display_order: DisplayOrderInput = None,
 ) -> pd.DataFrame:
     classification_columns = [*CLASSIFICATION_COLUMNS]
     if detailed:
@@ -466,7 +470,7 @@ def build_monthly_volume(
     demand_basis: DemandBasis,
     detailed: bool = False,
     density_data: pd.DataFrame | None = None,
-    display_order: pd.DataFrame | None = None,
+    display_order: DisplayOrderInput = None,
 ) -> pd.DataFrame:
     """Return a monthly matrix grouped by production class, product, and stack."""
     prepared_plan = _prepare_plan(plan)

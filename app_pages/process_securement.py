@@ -1,3 +1,9 @@
+# Purpose: 공정별 확보율·소요대수 결과와 보유·대여·가용 설비대수 입력을 제공한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 월 범위 직접 복사와 준비된 표시순서 재사용으로 rerun 전처리 중복을 제거함.
+
 import pandas as pd
 import streamlit as st
 
@@ -16,9 +22,13 @@ from capa_simulation.io.reference_cache import (
 from capa_simulation.scenario_state import (
     apply_month_updates,
     ensure_active_scenario,
-    scenario_table,
+    scenario_month_table,
 )
-from capa_simulation.services.display_order import apply_display_order, reorder_display_columns
+from capa_simulation.services.display_order import (
+    apply_display_order,
+    prepare_display_order,
+    reorder_display_columns,
+)
 from capa_simulation.services.equipment_count import (
     DETAILED_EQUIPMENT_DIMENSIONS,
     EQUIPMENT_DIMENSIONS,
@@ -26,10 +36,7 @@ from capa_simulation.services.equipment_count import (
     equipment_count_from_edit_table,
     equipment_count_to_edit_table,
 )
-from capa_simulation.services.month_filter import (
-    available_month_range,
-    filter_month_range,
-)
+from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
@@ -73,9 +80,10 @@ availability_tab, required_tab, equipment_tab = st.tabs(TAB_NAMES)
 try:
     reference_version = get_effective_reference_version()
     reference_tables = get_effective_reference_tables()
+    display_order = prepare_display_order(reference_tables["RQ_DISPLAY_ORDER"])
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
     selected_start, selected_end = selected_month_range()
-    active_reqb = scenario_table(active_scenario, "RQ_REQB")
+    active_reqb = active_scenario["tables"]["RQ_REQB"]
     source_start, source_end = available_month_range(active_reqb, "RQ_REQB")
     effective_start = max(selected_start, source_start)
     effective_end = min(selected_end, source_end)
@@ -98,13 +106,11 @@ try:
         "RQ_EQP_AVBL",
     )
     filtered = {
-        table_name: filter_month_range(
-            scenario_table(active_scenario, table_name)
-            if table_name in active_scenario["tables"]
-            else reference_tables[table_name],
+        table_name: scenario_month_table(
+            active_scenario,
+            table_name,
             effective_start,
             effective_end,
-            table_name,
         )
         for table_name in monthly_table_names
     }
@@ -134,14 +140,14 @@ try:
     required_table = required_equipment_to_month_table(required_equipment)
     required_table = apply_display_order(
         required_table,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 확보율",
         "소요대수",
     )
     required_table, required_detail_dimensions = reorder_display_columns(
         required_table,
         RESULT_DIMENSIONS,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 확보율",
         "소요대수",
     )
@@ -153,7 +159,7 @@ try:
     )
     available_equipment_table = apply_display_order(
         available_equipment_table,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 확보율",
         "설비대수",
     )
@@ -165,7 +171,7 @@ try:
     )
     detailed_equipment_table = apply_display_order(
         detailed_equipment_table,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 확보율",
         "설비대수",
     )
@@ -184,7 +190,7 @@ try:
     securement_table = securement_rate_to_month_table(securement_rate)
     securement_table = apply_display_order(
         securement_table,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 확보율",
         "확보율",
     )
@@ -262,7 +268,7 @@ else:
                         for column in RESULT_DIMENSIONS
                         if column in capacity_exclusions.columns
                     ],
-                    reference_tables["RQ_DISPLAY_ORDER"],
+                    display_order,
                     "공정별 확보율",
                     "소요대수",
                 )
@@ -286,7 +292,7 @@ else:
                         for column in RESULT_DIMENSIONS
                         if column in required_exclusions.columns
                     ],
-                    reference_tables["RQ_DISPLAY_ORDER"],
+                    display_order,
                     "공정별 확보율",
                     "소요대수",
                 )

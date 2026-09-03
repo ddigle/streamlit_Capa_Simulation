@@ -1,3 +1,9 @@
+# Purpose: PKG PLAN과 수율을 편집하고 PKG·Chip·Wafer·Density 부하량 환산 결과를 제공한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 선택 월 직접 복사와 준비된 표시순서 재사용으로 편집 탭 전처리 중복을 제거함.
+
 import pandas as pd
 import streamlit as st
 
@@ -17,8 +23,9 @@ from capa_simulation.scenario_state import (
     apply_month_updates,
     ensure_active_scenario,
     reset_active_scenario,
-    scenario_table,
+    scenario_month_table,
 )
+from capa_simulation.services.display_order import prepare_display_order
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
     YIELD_EDITOR_DIMENSIONS,
@@ -31,7 +38,6 @@ from capa_simulation.services.load_calculator import (
 )
 from capa_simulation.services.month_filter import (
     available_month_range,
-    filter_month_range,
 )
 from capa_simulation.services.simulation_cache import get_monthly_volume
 from capa_simulation.sidebar_status import show_applied_month_range
@@ -73,20 +79,21 @@ try:
         st.stop()
 
     show_applied_month_range(effective_start_month, effective_end_month)
-    filtered_plan = filter_month_range(
-        scenario_table(active_scenario, "RQ_PKG_PLAN"),
-        effective_start_month,
-        effective_end_month,
+    prepared_display_order = prepare_display_order(reference_tables["RQ_DISPLAY_ORDER"])
+    filtered_plan = scenario_month_table(
+        active_scenario,
         "RQ_PKG_PLAN",
-    )
-    filtered_yield = filter_month_range(
-        scenario_table(active_scenario, "RQ_YLD"),
         effective_start_month,
         effective_end_month,
-        "RQ_YLD",
     )
-    default_plan_table = plan_to_edit_table(filtered_plan, reference_tables["RQ_DISPLAY_ORDER"])
-    default_yield_table = yield_to_edit_table(filtered_yield, reference_tables["RQ_DISPLAY_ORDER"])
+    filtered_yield = scenario_month_table(
+        active_scenario,
+        "RQ_YLD",
+        effective_start_month,
+        effective_end_month,
+    )
+    default_plan_table = plan_to_edit_table(filtered_plan, prepared_display_order)
+    default_yield_table = yield_to_edit_table(filtered_yield, prepared_display_order)
 except ValueError as exc:
     st.error(str(exc))
     st.stop()

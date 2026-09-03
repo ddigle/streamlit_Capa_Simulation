@@ -1,11 +1,75 @@
+# Purpose: Streamlit cache boundary for the shared DuckDB repository configuration.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 파일 목적 및 최신 변경 출처 헤더를 표준화함; 이전 이력은 Git 기록을 참조함.
+
 """Streamlit cache boundary for the shared DuckDB repository configuration."""
 
+from datetime import datetime
 from pathlib import Path
+from typing import TypedDict
 
+import pandas as pd
 import streamlit as st
 
-from capa_simulation.persistence.models import GlobalDisplayOrder, ScenarioSnapshot
+from capa_simulation.persistence.models import (
+    GlobalDisplayOrder,
+    RevisionSummary,
+    ScenarioPreset,
+    ScenarioSnapshot,
+    ScenarioSummary,
+)
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+
+class _ScenarioSummaryPayload(TypedDict):
+    scenario_id: str
+    dataset_id: str
+    scenario_name: str
+    source_simulation_code: str
+    source_simulation_name: str
+    source_type: str
+    status: str
+    active_revision_id: str
+    active_revision_no: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class _RevisionSummaryPayload(TypedDict):
+    revision_id: str
+    scenario_id: str
+    revision_no: int
+    revision_name: str
+    parent_revision_id: str | None
+    note: str | None
+    reference_hash: str
+    created_at: datetime
+
+
+class _ScenarioPresetPayload(TypedDict):
+    start_month: int
+    end_month: int
+    included_processes: tuple[str, ...]
+    secure_threshold: float
+    warning_threshold: float
+    schema_version: int
+    standard_target_processes: tuple[str, ...]
+
+
+class _ScenarioSnapshotPayload(TypedDict):
+    scenario: _ScenarioSummaryPayload
+    revision: _RevisionSummaryPayload
+    preset: _ScenarioPresetPayload
+    tables: dict[str, pd.DataFrame]
+
+
+class _GlobalDisplayOrderPayload(TypedDict):
+    version: int
+    source: str
+    updated_at: datetime
+    rules: pd.DataFrame
 
 
 @st.cache_resource
@@ -18,24 +82,99 @@ def get_scenario_repository(database_path: str) -> DuckDBScenarioRepository:
     return repository
 
 
+def _snapshot_to_payload(snapshot: ScenarioSnapshot) -> _ScenarioSnapshotPayload:
+    """Detach cache data from reload-sensitive application model instances."""
+    scenario = snapshot.scenario
+    revision = snapshot.revision
+    preset = snapshot.preset
+    return {
+        "scenario": {
+            "scenario_id": scenario.scenario_id,
+            "dataset_id": scenario.dataset_id,
+            "scenario_name": scenario.scenario_name,
+            "source_simulation_code": scenario.source_simulation_code,
+            "source_simulation_name": scenario.source_simulation_name,
+            "source_type": scenario.source_type,
+            "status": scenario.status,
+            "active_revision_id": scenario.active_revision_id,
+            "active_revision_no": scenario.active_revision_no,
+            "created_at": scenario.created_at,
+            "updated_at": scenario.updated_at,
+        },
+        "revision": {
+            "revision_id": revision.revision_id,
+            "scenario_id": revision.scenario_id,
+            "revision_no": revision.revision_no,
+            "revision_name": revision.revision_name,
+            "parent_revision_id": revision.parent_revision_id,
+            "note": revision.note,
+            "reference_hash": revision.reference_hash,
+            "created_at": revision.created_at,
+        },
+        "preset": {
+            "start_month": preset.start_month,
+            "end_month": preset.end_month,
+            "included_processes": preset.included_processes,
+            "secure_threshold": preset.secure_threshold,
+            "warning_threshold": preset.warning_threshold,
+            "schema_version": preset.schema_version,
+            "standard_target_processes": preset.standard_target_processes,
+        },
+        "tables": dict(snapshot.tables),
+    }
+
+
+def _snapshot_from_payload(payload: _ScenarioSnapshotPayload) -> ScenarioSnapshot:
+    return ScenarioSnapshot(
+        scenario=ScenarioSummary(**payload["scenario"]),
+        revision=RevisionSummary(**payload["revision"]),
+        preset=ScenarioPreset(**payload["preset"]),
+        tables=payload["tables"],
+    )
+
+
 @st.cache_data(show_spinner=False, max_entries=32)
+def _load_scenario_snapshot_payload(
+    database_path: str,
+    revision_id: str,
+) -> _ScenarioSnapshotPayload:
+    snapshot = get_scenario_repository(database_path).load_revision(revision_id)
+    return _snapshot_to_payload(snapshot)
+
+
 def load_scenario_snapshot(database_path: str, revision_id: str) -> ScenarioSnapshot:
-    """Share one immutable revision with the current global display-order profile."""
-    return get_scenario_repository(database_path).load_revision(revision_id)
+    """Share an immutable revision without caching its reload-sensitive model class."""
+    return _snapshot_from_payload(_load_scenario_snapshot_payload(database_path, revision_id))
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_display_order_payload(database_path: str) -> _GlobalDisplayOrderPayload:
+    profile = get_scenario_repository(database_path).load_global_display_order()
+    return {
+        "version": profile.version,
+        "source": profile.source,
+        "updated_at": profile.updated_at,
+        "rules": profile.rules,
+    }
+
+
 def load_global_display_order(database_path: str) -> GlobalDisplayOrder:
-    """Share the current global display-order profile across browser sessions."""
-    return get_scenario_repository(database_path).load_global_display_order()
+    """Share the display order without caching its reload-sensitive model class."""
+    payload = _load_global_display_order_payload(database_path)
+    return GlobalDisplayOrder(
+        version=payload["version"],
+        source=payload["source"],
+        updated_at=payload["updated_at"],
+        rules=payload["rules"],
+    )
 
 
 def clear_global_display_order_cache() -> None:
-    load_global_display_order.clear()
-    load_scenario_snapshot.clear()
+    _load_global_display_order_payload.clear()
+    _load_scenario_snapshot_payload.clear()
 
 
 def clear_scenario_repository() -> None:
-    load_global_display_order.clear()
-    load_scenario_snapshot.clear()
+    _load_global_display_order_payload.clear()
+    _load_scenario_snapshot_payload.clear()
     get_scenario_repository.clear()

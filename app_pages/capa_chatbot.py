@@ -1,3 +1,9 @@
+# Purpose: 활성 Capa 데이터를 대상으로 할 LLM 질의 서비스의 대화형 화면과 근거 표시 구조를 제공한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 파일 목적 및 최신 변경 출처 헤더를 표준화함; 이전 이력은 Git 기록을 참조함.
+
 import streamlit as st
 
 st.title("Capa Chatbot")

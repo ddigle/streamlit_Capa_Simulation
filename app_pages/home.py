@@ -1,3 +1,9 @@
+# Purpose: 생산계획·Wafer Capa·Bottleneck 요약과 상세표를 결합한 HOME 대시보드를 렌더링한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: HOME 계산 캐시를 리비전·기간·표시순서 경량 토큰으로 조회해 rerun 입력 해싱을 축소함.
+
 import html
 import unicodedata
 from typing import Any, cast
@@ -25,6 +31,7 @@ from capa_simulation.services.dashboard import (
 )
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.simulation_cache import (
+    build_home_simulation_cache_key,
     get_home_simulation,
 )
 from capa_simulation.settings import APP_NAME
@@ -78,7 +85,7 @@ HOME_FIGURE_CACHE_MAX_ENTRIES = 3
 HOME_FIGURE_SCHEMA_VERSION = 23
 
 HomeFigureSet = tuple[Any, ...]
-HomeFigureCacheKey = tuple[int, int, int, int, int, tuple[str, ...], float, float, bool]
+HomeFigureCacheKey = tuple[int, int, int, int, int, str, tuple[str, ...], float, float, bool]
 
 
 def selected_month_range() -> tuple[int, int]:
@@ -519,6 +526,13 @@ try:
         effective_start,
         effective_end,
     )
+    home_simulation_cache_key = build_home_simulation_cache_key(
+        reference_version=reference_version,
+        scenario_revision=active_scenario["revision"],
+        start_month=effective_start,
+        end_month=effective_end,
+        display_order=reference_tables["RQ_DISPLAY_ORDER"],
+    )
     home_trace.mark("월 범위 데이터 준비")
     (
         monthly_density,
@@ -526,20 +540,21 @@ try:
         monthly_wafer,
         securement_rate,
     ) = get_home_simulation(
-        plan=simulation_plan,
-        yield_data=simulation_yield,
-        density_data=reference_tables["RQ_CHIP_EQ"],
-        display_order=reference_tables["RQ_DISPLAY_ORDER"],
-        upeh=simulation_upeh,
-        run_rate=simulation_run_rate,
-        vital=simulation_vital,
-        module=reference_tables["RQ_MODULE"],
-        run_day=simulation_run_day,
-        lot_ratio=simulation_lot_ratio,
-        wf_ratio=simulation_wf_ratio,
-        reqb=simulation_reqb,
-        chip_qty=reference_tables["RQ_CHIP_QTY"],
-        available_equipment=simulation_available,
+        cache_key=home_simulation_cache_key,
+        _plan=simulation_plan,
+        _yield_data=simulation_yield,
+        _density_data=reference_tables["RQ_CHIP_EQ"],
+        _display_order=reference_tables["RQ_DISPLAY_ORDER"],
+        _upeh=simulation_upeh,
+        _run_rate=simulation_run_rate,
+        _vital=simulation_vital,
+        _module=reference_tables["RQ_MODULE"],
+        _run_day=simulation_run_day,
+        _lot_ratio=simulation_lot_ratio,
+        _wf_ratio=simulation_wf_ratio,
+        _reqb=simulation_reqb,
+        _chip_qty=reference_tables["RQ_CHIP_QTY"],
+        _available_equipment=simulation_available,
     )
     home_trace.mark("HOME 계산 파이프라인")
 except (KeyError, OSError, ValueError) as exc:
@@ -702,6 +717,7 @@ figure_cache_key: HomeFigureCacheKey = (
     active_scenario["revision"],
     effective_start,
     effective_end,
+    home_simulation_cache_key[-1],
     tuple(included_processes),
     float(secure_threshold_percent),
     float(warning_threshold_percent),

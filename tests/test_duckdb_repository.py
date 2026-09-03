@@ -1,9 +1,17 @@
+# Purpose: duckdb repository 관련 정상·예외·회귀 동작을 검증한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 파일 목적 및 최신 변경 출처 헤더를 표준화함; 이전 이력은 Git 기록을 참조함.
+
+import pickle
 from pathlib import Path
 
 import duckdb
 import pandas as pd
 import pytest
 
+import capa_simulation.persistence.cache as scenario_cache
 from capa_simulation.io.core_data_source import load_core_data_contract
 from capa_simulation.persistence import (
     DuckDBScenarioRepository,
@@ -313,6 +321,82 @@ def test_cached_scenario_load_always_overlays_global_display_order(tmp_path: Pat
     assert first_loaded.tables["RQ_DISPLAY_ORDER"]["분류값"].tolist() == ["Global"]
     assert second_loaded.tables["RQ_DISPLAY_ORDER"]["분류값"].tolist() == ["Global"]
     clear_scenario_repository()
+
+
+def test_snapshot_cache_serializes_plain_payload_after_model_reload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = _repository(tmp_path / "scenario.duckdb")
+    source = _reference_tables()
+    snapshot = repository.create_scenario(
+        _metadata("Reload-safe"),
+        source,
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+    display_order = repository.initialize_global_display_order(source["RQ_DISPLAY_ORDER"])
+
+    class StaleSnapshot:
+        def __init__(self) -> None:
+            self.scenario = snapshot.scenario
+            self.revision = snapshot.revision
+            self.preset = snapshot.preset
+            self.tables = snapshot.tables
+
+        def __reduce__(self) -> object:
+            raise pickle.PicklingError("stale ScenarioSnapshot class")
+
+    class StaleDisplayOrder:
+        def __init__(self) -> None:
+            self.version = display_order.version
+            self.source = display_order.source
+            self.updated_at = display_order.updated_at
+            self.rules = display_order.rules
+
+        def __reduce__(self) -> object:
+            raise pickle.PicklingError("stale GlobalDisplayOrder class")
+
+    stale_snapshot = StaleSnapshot()
+    stale_display_order = StaleDisplayOrder()
+
+    class FakeRepository:
+        def load_revision(self, _revision_id: str) -> StaleSnapshot:
+            return stale_snapshot
+
+        def load_global_display_order(self) -> StaleDisplayOrder:
+            return stale_display_order
+
+    with pytest.raises(pickle.PicklingError, match="stale ScenarioSnapshot"):
+        pickle.dumps(stale_snapshot)
+    with pytest.raises(pickle.PicklingError, match="stale GlobalDisplayOrder"):
+        pickle.dumps(stale_display_order)
+
+    monkeypatch.setattr(
+        scenario_cache,
+        "get_scenario_repository",
+        lambda _database_path: FakeRepository(),
+    )
+    scenario_cache._load_scenario_snapshot_payload.clear()
+    scenario_cache._load_global_display_order_payload.clear()
+
+    restored_snapshot = scenario_cache.load_scenario_snapshot(
+        str(tmp_path / "reload-safe.duckdb"),
+        snapshot.revision.revision_id,
+    )
+    restored_display_order = scenario_cache.load_global_display_order(
+        str(tmp_path / "reload-safe.duckdb")
+    )
+
+    assert restored_snapshot.scenario == snapshot.scenario
+    assert restored_snapshot.revision == snapshot.revision
+    assert restored_snapshot.preset == snapshot.preset
+    assert restored_snapshot.tables.keys() == snapshot.tables.keys()
+    for table_name, expected in snapshot.tables.items():
+        pd.testing.assert_frame_equal(restored_snapshot.tables[table_name], expected)
+    assert restored_display_order.version == display_order.version
+    pd.testing.assert_frame_equal(restored_display_order.rules, display_order.rules)
+    scenario_cache._load_scenario_snapshot_payload.clear()
+    scenario_cache._load_global_display_order_payload.clear()
 
 
 def test_new_revision_replaces_only_revision_owned_tables(tmp_path: Path) -> None:

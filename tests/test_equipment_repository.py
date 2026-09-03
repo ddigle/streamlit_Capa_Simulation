@@ -1,12 +1,29 @@
+# Purpose: equipment repository 관련 정상·예외·회귀 동작을 검증한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 불변 설비 스냅샷 캐시가 동일 리비전의 DB 본문을 한 번만 읽는지 검증함.
+
 from pathlib import Path
 
 import duckdb
 import pandas as pd
+import pytest
 
+from capa_simulation.persistence.equipment_cache import (
+    clear_equipment_repository,
+    clear_equipment_snapshot_cache,
+    get_equipment_repository,
+    load_equipment_snapshot,
+    load_latest_equipment_snapshot,
+)
 from capa_simulation.persistence.equipment_migration_runner import (
     load_equipment_migrations,
 )
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.persistence.equipment_repository import (
+    DuckDBEquipmentRepository,
+    EquipmentSnapshot,
+)
 from tests.test_equipment_availability import _baseline, _downtime, _equipment
 
 
@@ -50,6 +67,34 @@ def test_equipment_snapshot_allows_empty_unit_inputs(tmp_path: Path) -> None:
     assert snapshot.equipment.empty
     assert snapshot.downtime.empty
     assert snapshot.revision.equipment_row_count == 0
+
+
+def test_equipment_snapshot_cache_reuses_immutable_revision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = str((tmp_path / "cached-equipment.duckdb").resolve())
+    clear_equipment_repository()
+    repository = get_equipment_repository(database_path)
+    saved = repository.save_snapshot(_baseline(), _equipment(), _downtime())
+    clear_equipment_snapshot_cache()
+    original_load = DuckDBEquipmentRepository.load_snapshot
+    load_calls = 0
+
+    def counted_load(instance: DuckDBEquipmentRepository, revision_id: str) -> EquipmentSnapshot:
+        nonlocal load_calls
+        load_calls += 1
+        return original_load(instance, revision_id)
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, "load_snapshot", counted_load)
+
+    latest = load_latest_equipment_snapshot(database_path)
+    loaded_again = load_equipment_snapshot(database_path, saved.revision.revision_id)
+
+    assert latest is not None
+    assert latest.revision.revision_id == loaded_again.revision.revision_id
+    assert load_calls == 1
+    clear_equipment_repository()
 
 
 def test_equipment_database_has_no_simulation_schemas(tmp_path: Path) -> None:

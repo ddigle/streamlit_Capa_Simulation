@@ -4,6 +4,35 @@
 `README.md`, 이 문서, `docs/TODO.md`를 읽고 실제 코드와 함께 현재 상태를 확인한다.
 구조나 핵심 계산 규칙을 변경하면 이 문서와 README도 같은 변경에서 갱신한다.
 
+## 0. 소스 파일 목적·변경 출처 헤더 규칙
+
+여러 Agent가 같은 저장소를 수정하므로 Git으로 관리하는 Python·PowerShell 소스에는 파일
+최상단에 다음 다섯 줄의 주석 헤더를 유지한다. 적용 대상은 `app.py`, `app_pages/`,
+`src/`, `scripts/`, `tests/` 아래의 `.py`·`.ps1` 파일이며 `#`를 주석 기호로 사용한다.
+
+```text
+# Purpose: 이 파일이 담당하는 단일 책임을 구체적인 한 문장으로 기술
+# Applied: YYYY-MM-DD KST
+# Agent: 실제 변경을 수행한 Agent 또는 도구 이름
+# Model: 실제 사용 모델 식별자, 알 수 없으면 Unknown
+# Change: 이번 변경의 핵심을 한 문장으로 기술
+```
+
+- `Purpose`는 파일명 반복이 아니라 입력·처리·출력 또는 UI 책임을 알 수 있게 작성한다.
+- 기능, 데이터 계약, 스키마, 테스트 동작을 바꾼 Agent는 같은 변경에서 `Applied`, `Agent`,
+  `Model`, `Change`를 현재 작업 정보로 갱신한다. 단순 포맷만 바꾼 경우에는 갱신하지 않는다.
+- 정확한 모델 세부 식별자를 런타임에서 제공하지 않으면 추측하지 말고 확인 가능한 모델
+  계열과 `exact variant unavailable`을 기록한다. 과거 작성자·모델·작성일도 추정하지 않는다.
+- 헤더는 최신 변경 책임을 빠르게 확인하는 보조 정보다. 누적 변경 이력과 최종 근거는 Git
+  commit history를 기준으로 하며, 파일마다 과거 이력을 주석으로 계속 누적하지 않는다.
+- 기존 SQL 마이그레이션은 적용 체크섬이 달라지므로 주석 추가를 포함해 절대 수정하지
+  않는다. 목적과 문서화 출처는 `docs/migration_catalog.md`에서 관리한다. 신규 SQL은 최초
+  생성 시 `--` 형식의 동일 헤더와 카탈로그 항목을 함께 작성하며, 적용 후에는 헤더도
+  수정하지 않고 후속 번호의 마이그레이션을 추가한다.
+- 새 소스 파일도 같은 헤더를 포함해야 한다. `tests/test_source_metadata.py`가 Python·
+  PowerShell 헤더의 누락·날짜 형식·빈 항목과 모든 SQL의 카탈로그 등록을 검사하므로 기본
+  검증 명령에 포함된 pytest를 반드시 통과시킨다.
+
 ## 1. 프로젝트 목표와 현재 경계
 
 이 프로젝트는 월별 PKG 생산계획과 제품·공정 기준정보를 이용해 다음 순서로 Capa를
@@ -92,6 +121,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `STEP 구성`은 선택한 경로를 실제 MCP·STEP 식별값으로 복제하거나 삭제하고 연결된
     모든 Capa Code·Customer·CS 변형을 `RQ_REQB`·UPEH·Lot/WF 측정률에 함께 반영한다.
   - 확보율 계산용 상세 대당 Capa는 변경하지 않고 UPEH·효율·여유율·측정률·일수 편집 탭을 제공한다.
+  - 대형 월별 편집기는 상태 추적 탭으로 구성해 선택된 탭만 렌더링하며, 탭 전환 시 rerun한다.
 - `app_pages/process_securement.py`
   - `확보율`, `소요대수`, `설비대수` 탭을 제공한다.
   - 설비대수 탭에서 보유·대여·가용 RQ를 각각 월별 Wide CSV로 내려받고 활성 시나리오에
@@ -245,7 +275,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     스냅샷 리비전으로 보존한다.
   - 쓰기는 프로세스 잠금과 단일 트랜잭션으로 직렬화하고, 읽기는 작업별 연결을 사용한다.
   - 불변 `revision_id`의 전체 스냅샷만 `st.cache_data`로 여러 세션에 공유하며 목록과
-    변경 가능한 메타데이터는 캐시하지 않는다.
+    변경 가능한 메타데이터는 캐시하지 않는다. 사용자 정의 `ScenarioSnapshot`·
+    `GlobalDisplayOrder` 인스턴스는 코드 핫리로드 후 pickle 클래스 식별자가 달라질 수
+    있으므로 캐시에 직접 넣지 않고 기본형 메타데이터와 DataFrame payload를 캐시한 뒤
+    현재 모델 인스턴스로 재구성한다.
+  - 설비 운영 스냅샷도 revision ID별 기본형 메타데이터와 DataFrame payload를 캐시하고,
+    최신 ID와 변경 가능한 이력 목록은 매번 저장소에서 확인한다.
   - 시나리오 생성 시 typed Core Data raw, 컬럼 프로파일, RQ 16개, 초기 리비전과
     프리셋을 한 트랜잭션으로 저장한다.
   - `app_meta.global_display_order*`는 시나리오와 독립된 단일 공용 프로필이며 최초 생성 시
@@ -268,8 +303,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - HOME 단계별 소요시간을 측정하며 업무 데이터는 기록하지 않는다.
 - `src/capa_simulation/services/simulation_cache.py`
   - 주요 계산 함수의 content-addressed `st.cache_data` 래퍼다.
-  - HOME 전체 계산 그래프를 상위 캐시로 감싸 warm rerun의 중복 DataFrame 해싱을 줄이고,
-    하위 계산 캐시는 다른 페이지와 계속 공유한다.
+  - HOME 전체 계산 그래프는 리비전·조회기간·표시순서 해시의 명시적 경량 키로 조회해 warm
+    rerun의 대형 DataFrame 해싱을 피하고, 하위 계산 캐시는 다른 페이지와 계속 공유한다.
 
 ### 계산 서비스
 
@@ -289,6 +324,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   전환 이벤트 원천. 설비 DB가 비어 있을 때 사용하는 개발용 Core Data 기반 30개 공정
   보유대수 샘플과 호기 마스터가 비었을 때만 대시보드에 표시하는 단계별 임시 호기 샘플을
   제공한다. 임시 호기와 비가동 샘플은 DB에 저장하지 않는다.
+  주차 집계는 정규화한 설비·비가동 입력을 전체 기간에 재사용하고 주차별 공정 집계를
+  `groupby`·`crosstab`으로 한 번에 만든다.
 - `equipment_csv.py`: 호기 마스터와 비가동 일정의 CSV 양식 생성, Excel 붙여넣기 표
   검증·자연키 기준 병합. 다운로드 양식은 2행에 서로 연결되는 입력 예시를 포함하고
   비고에 샘플 행 삭제 안내를 둔다.

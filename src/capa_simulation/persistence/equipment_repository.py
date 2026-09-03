@@ -1,3 +1,9 @@
+# Purpose: Immutable DuckDB snapshots for unified equipment operations input.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 캐시용 최신 ID 조회를 분리하고 저장·로드 시 설비 마스터 이중 정규화를 제거함.
+
 """Immutable DuckDB snapshots for unified equipment operations input."""
 
 from __future__ import annotations
@@ -20,7 +26,7 @@ from capa_simulation.services.equipment_availability import (
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
     empty_equipment_master,
-    prepare_downtime_schedule,
+    prepare_downtime_for_prepared_equipment,
     prepare_equipment_baseline,
     prepare_equipment_master,
 )
@@ -73,10 +79,7 @@ class DuckDBEquipmentRepository:
     ) -> EquipmentSnapshot:
         prepared_baseline = prepare_equipment_baseline(baseline)
         prepared_equipment = prepare_equipment_master(equipment)
-        prepared_downtime = prepare_downtime_schedule(
-            downtime,
-            equipment=prepared_equipment,
-        )
+        prepared_downtime = prepare_downtime_for_prepared_equipment(downtime, prepared_equipment)
         normalized_note = note.strip() if note and note.strip() else None
         baseline_hash = _frame_hash(prepared_baseline)
         equipment_hash = _frame_hash(prepared_equipment)
@@ -112,13 +115,20 @@ class DuckDBEquipmentRepository:
         return self.load_snapshot(revision_id)
 
     def load_latest_snapshot(self) -> EquipmentSnapshot | None:
+        revision_id = self.latest_revision_id()
+        if revision_id is None:
+            return None
+        return self.load_snapshot(revision_id)
+
+    def latest_revision_id(self) -> str | None:
+        """Return the newest immutable revision id without loading its frames."""
         with self._connect(read_only=True) as connection:
             row = connection.execute(
                 "SELECT revision_id FROM equipment_ops.revision ORDER BY revision_no DESC LIMIT 1"
             ).fetchone()
         if row is None:
             return None
-        return self.load_snapshot(str(row[0]))
+        return str(row[0])
 
     def load_snapshot(self, revision_id: str) -> EquipmentSnapshot:
         with self._connect(read_only=True) as connection:
@@ -168,9 +178,8 @@ class DuckDBEquipmentRepository:
             revision=_revision_summary(revision_row),
             baseline=prepare_equipment_baseline(baseline.reindex(columns=BASELINE_COLUMNS)),
             equipment=prepared_equipment,
-            downtime=prepare_downtime_schedule(
-                downtime.reindex(columns=DOWNTIME_COLUMNS),
-                equipment=prepared_equipment,
+            downtime=prepare_downtime_for_prepared_equipment(
+                downtime.reindex(columns=DOWNTIME_COLUMNS), prepared_equipment
             ),
         )
 

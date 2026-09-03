@@ -1,3 +1,9 @@
+# Purpose: 설비 마스터·비가동 이력을 편집하고 주차별 가용설비 및 변경 리비전 대시보드를 제공한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 불변 설비 스냅샷 캐시를 사용해 페이지 재실행과 이력 조회의 DB 중복 로딩을 제거함.
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -7,7 +13,12 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.persistence.equipment_cache import get_equipment_repository
+from capa_simulation.persistence.equipment_cache import (
+    clear_equipment_snapshot_cache,
+    get_equipment_repository,
+    load_equipment_snapshot,
+    load_latest_equipment_snapshot,
+)
 from capa_simulation.services.equipment_availability import (
     DATE_COLUMNS,
     DOWNTIME_TYPES,
@@ -56,7 +67,7 @@ def _filter_equipment(
     large_processes: list[str],
     small_processes: list[str],
 ) -> pd.DataFrame:
-    filtered = data.copy()
+    filtered = data
     for column, selected_values in (
         ("라인구분", line_types),
         ("활용구분", utilization_types),
@@ -112,8 +123,9 @@ if isinstance(flash, str):
 
 today = date.today()
 try:
-    repository = get_equipment_repository(str(EQUIPMENT_DUCKDB_PATH.resolve()))
-    latest_snapshot = repository.load_latest_snapshot()
+    equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
+    repository = get_equipment_repository(equipment_database_path)
+    latest_snapshot = load_latest_equipment_snapshot(equipment_database_path)
     if latest_snapshot is None:
         baseline = sample_equipment_baseline()
         saved_equipment = empty_equipment_master()
@@ -765,6 +777,7 @@ with management_tab:
         except (RuntimeError, TypeError, ValueError) as exc:
             st.error(str(exc))
         else:
+            clear_equipment_snapshot_cache()
             _reset_drafts()
             st.session_state[FLASH_KEY] = (
                 f"설비 운영 데이터 r{saved.revision.revision_no}을 저장했습니다. "
@@ -809,7 +822,7 @@ with management_tab:
                 ),
                 key="equipment_history_revision_id_v3",
             )
-            historical = repository.load_snapshot(selected_revision_id)
+            historical = load_equipment_snapshot(equipment_database_path, selected_revision_id)
             historical_equipment = historical.equipment
             with st.container(horizontal=True, gap="small"):
                 history_processes = st.multiselect(

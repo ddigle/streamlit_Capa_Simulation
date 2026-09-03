@@ -1,8 +1,16 @@
+# Purpose: display order editor 관련 정상·예외·회귀 동작을 검증한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 준비된 표시순서가 여러 정렬 작업에서 재정규화되지 않는지 회귀 검증함.
+
 import pandas as pd
 import pytest
 
 from capa_simulation.services.display_order import (
+    apply_display_order,
     classification_columns_in_display_order,
+    prepare_display_order,
 )
 from capa_simulation.services.display_order_csv import (
     display_order_from_clipboard,
@@ -134,3 +142,28 @@ def test_classification_columns_follow_rules_but_keep_route_keys_last() -> None:
     )
 
     assert result == ["Area_Name", "공정", "제품정보", "STEP_SEQ", "MCP_SEQ"]
+
+
+def test_prepared_display_order_is_reused_across_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from capa_simulation.services import display_order
+
+    prepare_calls = 0
+    original_prepare = display_order._prepare_display_order
+
+    def counted_prepare(rules: pd.DataFrame) -> pd.DataFrame:
+        nonlocal prepare_calls
+        prepare_calls += 1
+        return original_prepare(rules)
+
+    monkeypatch.setattr(display_order, "_prepare_display_order", counted_prepare)
+    prepared = prepare_display_order(_rules())
+    data = pd.DataFrame({"제품정보": ["B", "A"], "값": [2, 1]})
+
+    sorted_data = apply_display_order(data, prepared, "HOME", "계획")
+    columns = classification_columns_in_display_order(["값", "제품정보"], prepared, "HOME", "계획")
+
+    assert prepare_calls == 1
+    assert sorted_data["제품정보"].tolist() == ["A", "B"]
+    assert columns == ["제품정보", "값"]

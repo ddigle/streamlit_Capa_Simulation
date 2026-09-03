@@ -1,3 +1,9 @@
+# Purpose: equipment availability 관련 정상·예외·회귀 동작을 검증한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 주차 집계가 설비 마스터를 한 번만 정규화하는 성능 회귀를 검증함.
+
 from datetime import date
 
 import pandas as pd
@@ -139,6 +145,30 @@ def test_weekly_counts_use_qual_and_downtime() -> None:
     assert result["셋업중대수"].tolist() == [0, 1]
     assert result["운영비가동대수"].tolist() == [0, 1]
     assert result["비가동대수"].tolist() == [0, 2]
+
+
+def test_weekly_counts_prepare_equipment_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    from capa_simulation.services import equipment_availability
+
+    prepare_calls = 0
+    original_prepare = equipment_availability.prepare_equipment_master
+
+    def counted_prepare(data: pd.DataFrame) -> pd.DataFrame:
+        nonlocal prepare_calls
+        prepare_calls += 1
+        return original_prepare(data)
+
+    monkeypatch.setattr(equipment_availability, "prepare_equipment_master", counted_prepare)
+
+    build_weekly_equipment_availability(
+        _baseline(),
+        _equipment(),
+        _downtime(),
+        start_date=date(2026, 8, 3),
+        end_date=date(2026, 9, 6),
+    )
+
+    assert prepare_calls == 1
 
 
 def test_status_shows_setup_and_downtime_override() -> None:

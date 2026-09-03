@@ -153,7 +153,7 @@
 - [x] 16개 `RQ_*` 기본 스냅샷, 편집 가능한 12개 테이블과 프리셋을 한 트랜잭션으로
   저장·복원하고 공용 표시순서는 별도 원자 교체하는 Repository를 구현했다.
 - [x] 실제 `structure_template.xlsb`의 16개 RQ를 임시 DuckDB에 저장·재조회해 행과 값을 비교했다. 최대 22,500행을 포함한 전체 테이블의 왕복 검증이 통과했다.
-- [x] 신규 시나리오 등록 시 사용자가 입력한 원천 시뮬레이션 코드를 조회 공급자에 전달하고, 반환된 pandas DataFrame을 CSV 중간 파일 없이 DuckDB에 전체 스냅샷으로 적재한다. 공통 공급자 계약, 개발용 CSV 등록, `BigDataQuery 등록` 탭과 지연 import 어댑터를 구현했으며, 사내 실제 SQL·DB 컬럼 매핑으로 약 3만 행 조회, 시나리오 저장과 저장 리비전 재조회·활성화를 확인했다. 검증 중 발생한 `ScenarioSnapshot` 캐시 직렬화 오류는 Streamlit 재실행 후 재발하지 않아 별도 캐시 구조 변경을 적용하지 않는다.
+- [x] 신규 시나리오 등록 시 사용자가 입력한 원천 시뮬레이션 코드를 조회 공급자에 전달하고, 반환된 pandas DataFrame을 CSV 중간 파일 없이 DuckDB에 전체 스냅샷으로 적재한다. 공통 공급자 계약, 개발용 CSV 등록, `BigDataQuery 등록` 탭과 지연 import 어댑터를 구현했으며, 사내 실제 SQL·DB 컬럼 매핑으로 약 3만 행 조회, 시나리오 저장과 저장 리비전 재조회·활성화를 확인했다. 시범 운영 중 재발한 `ScenarioSnapshot` 캐시 직렬화 장애는 사용자 정의 모델을 `st.cache_data`에 직접 넣지 않고 기본형 메타데이터와 DataFrame payload를 저장한 뒤 캐시 밖에서 재구성하도록 보완했다. 같은 위험이 있는 `GlobalDisplayOrder`에도 동일한 경계를 적용하고 코드 재로딩 상황의 회귀 테스트를 추가했다.
 - [x] Core Data CSV·BigDataQuery 신규 원천 시나리오는 현재 세션의 축소 필터를 상속하지
   않고, 변환된 RQ 전체 생산계획년월과 전체 B/N 공정을 초기 프리셋으로 저장·활성화한다.
   표준 목표 Capa의 빈 공정 기본값은 전체 공정을 의미한다.
@@ -385,6 +385,12 @@
 - [x] 계획 세부수량 아래에 `상세 B/N 공정` 시트를 월별 열에 맞춰 배치했다. `B/N` 열에는 확보율 하위 1~10 순번을 크게 표시하고, 각 월에 `확보율`, `공정명`, `가용대수`, `필요대수`, `Wafer Capa`를 순서대로 표시한다. 가용·필요대수는 `0.0대`, Wafer Capa는 `###K` 형식이며 긴 공정명은 월 열 너비에 맞춰 글자 크기를 자동 축소한다.
 - [x] 홈페이지의 별도 `주요공정 확보율 현황` 영역을 제거하고, 관련 정보는 Capa LOB의 B/N 차트와 월별 `상세 B/N 공정` Top 1~10 시트로 통합했다.
 - [x] HOME 계산 경로를 상위 캐시로 묶어 warm rerun의 중복 DataFrame 해싱을 줄이고, Chip·Wafer 공통 전처리와 월별 B/N 순위 계산을 각각 한 번만 수행하도록 통합했다.
+- [x] HOME 상위 캐시 키를 리비전·조회기간·표시순서 해시의 경량 토큰으로 바꾸고, 대형
+  DataFrame 인자는 캐시 키 해싱에서 제외했다. 공정별 Capa의 6개 편집 탭은 선택된 탭만
+  렌더링하며 표시순서 규칙은 페이지 rerun당 한 번 정규화해 재사용한다.
+- [x] 설비 불변 스냅샷을 revision ID 단위의 기본형 payload로 캐시해 가용설비·Space·이력
+  조회 간 DB 본문 재로딩을 제거했다. 주차 집계에서는 설비/비가동 정규화를 한 번만 수행하고
+  공정별 반복 필터를 groupby/crosstab 일괄 집계로 교체했다.
 - [x] HOME 기본 진입은 Density·Wafer Capa 요약 Figure만 생성하고 계획·B/N 상세표는 `계획·B/N 상세표 표시` 토글에서 지연 생성·별도 캐시하도록 변경했다.
 - [x] B/N 임계값과 포함 공정 입력을 form 제출로 일괄 적용하고, HOME Plotly shape·annotation을 레이아웃에 일괄 주입하도록 변경했다.
 - [x] 데이터 값을 기록하지 않는 HOME 단계별 성능 진단과 AppTest 기반 `scripts/benchmark_home.py`를 추가했다.
@@ -395,6 +401,10 @@
 
 ### 문서 및 테스트
 
+- [x] 모든 Python·PowerShell 파일에 목적·적용일·Agent·Model·변경요약 헤더를 반영하고,
+  `AGENTS.md`에 다중 Agent 공통 갱신 규칙을 명시했다. 체크섬이 불변인 기존 SQL은 직접
+  수정하지 않고 `docs/migration_catalog.md`에 목적과 문서화 출처를 기록했다. 과거 출처는
+  추정하지 않고 Git 이력을 기준으로 하며 헤더·SQL 카탈로그 누락은 pytest로 검증한다.
 - [x] `docs/data_model.md`에 DuckDB 스키마, 소유 관계, 기술 키, raw 78컬럼, RQ 업무 키, 리비전 병합과 마이그레이션 원칙을 기록했다.
 - [ ] `docs/calculation_rules.md`에 확정된 Chip/Wafer/Capa/Dummy 공식을 기록한다.
 - [ ] `docs/decisions.md`에 주요 설계 결정과 변경 이력을 기록한다.

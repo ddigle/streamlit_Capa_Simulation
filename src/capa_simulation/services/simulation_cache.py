@@ -1,5 +1,12 @@
+# Purpose: Shared content-addressed caches for simulation calculations.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: HOME 상위 캐시는 명시적 경량 토큰으로 조회해 warm rerun의 대형 DataFrame 해싱을 제거함.
+
 """Shared content-addressed caches for simulation calculations."""
 
+import hashlib
 from datetime import date
 
 import pandas as pd
@@ -24,6 +31,34 @@ from capa_simulation.services.standard_target_capacity import (
     build_weekly_standard_target_capacity,
 )
 from capa_simulation.services.unit_capacity import calculate_unit_capacity
+
+HomeSimulationCacheKey = tuple[int, int, int, int, str]
+
+
+def build_home_simulation_cache_key(
+    *,
+    reference_version: int,
+    scenario_revision: int,
+    start_month: int,
+    end_month: int,
+    display_order: pd.DataFrame,
+) -> HomeSimulationCacheKey:
+    """Build a small key covering every mutable HOME calculation input boundary."""
+    digest = hashlib.sha256()
+    digest.update("\x1f".join(map(str, display_order.columns)).encode("utf-8"))
+    digest.update("\x1f".join(map(str, display_order.dtypes)).encode("utf-8"))
+    digest.update(
+        pd.util.hash_pandas_object(display_order, index=True, categorize=True)
+        .to_numpy(dtype="uint64")
+        .tobytes()
+    )
+    return (
+        reference_version,
+        scenario_revision,
+        start_month,
+        end_month,
+        digest.hexdigest(),
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -158,45 +193,47 @@ def get_home_equipment_demand(
 
 @st.cache_data(show_spinner=False, max_entries=16)
 def get_home_simulation(
-    plan: pd.DataFrame,
-    yield_data: pd.DataFrame,
-    density_data: pd.DataFrame,
-    display_order: pd.DataFrame,
-    upeh: pd.DataFrame,
-    run_rate: pd.DataFrame,
-    vital: pd.DataFrame,
-    module: pd.DataFrame,
-    run_day: pd.DataFrame,
-    lot_ratio: pd.DataFrame,
-    wf_ratio: pd.DataFrame,
-    reqb: pd.DataFrame,
-    chip_qty: pd.DataFrame,
-    available_equipment: pd.DataFrame,
+    cache_key: HomeSimulationCacheKey,
+    _plan: pd.DataFrame,
+    _yield_data: pd.DataFrame,
+    _density_data: pd.DataFrame,
+    _display_order: pd.DataFrame,
+    _upeh: pd.DataFrame,
+    _run_rate: pd.DataFrame,
+    _vital: pd.DataFrame,
+    _module: pd.DataFrame,
+    _run_day: pd.DataFrame,
+    _lot_ratio: pd.DataFrame,
+    _wf_ratio: pd.DataFrame,
+    _reqb: pd.DataFrame,
+    _chip_qty: pd.DataFrame,
+    _available_equipment: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Reuse the complete HOME calculation graph with one top-level cache lookup."""
+    """Reuse HOME results while hashing only ``cache_key`` on warm reruns."""
+    del cache_key
     # Load-calculation cache schema v2: normalize WF type before Dummy detection.
     monthly_density, production_detail = get_production_dashboard(
-        plan,
-        density_data,
-        display_order,
+        _plan,
+        _density_data,
+        _display_order,
     )
     unit_capacity = get_unit_capacity(
-        upeh=upeh,
-        run_rate=run_rate,
-        vital=vital,
-        module=module,
-        run_day=run_day,
-        lot_ratio=lot_ratio,
-        wf_ratio=wf_ratio,
+        upeh=_upeh,
+        run_rate=_run_rate,
+        vital=_vital,
+        module=_module,
+        run_day=_run_day,
+        lot_ratio=_lot_ratio,
+        wf_ratio=_wf_ratio,
     )
     monthly_wafer, required_equipment = get_home_equipment_demand(
-        reqb=reqb,
-        plan=plan,
-        yield_data=yield_data,
-        chip_qty=chip_qty,
+        reqb=_reqb,
+        plan=_plan,
+        yield_data=_yield_data,
+        chip_qty=_chip_qty,
         unit_capacity=unit_capacity,
     )
-    securement_rate = get_securement_rate(available_equipment, required_equipment)
+    securement_rate = get_securement_rate(_available_equipment, required_equipment)
     return monthly_density, production_detail, monthly_wafer, securement_rate
 
 

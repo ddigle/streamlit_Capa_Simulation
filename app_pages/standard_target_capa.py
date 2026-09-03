@@ -1,3 +1,9 @@
+# Purpose: 공정 제품 Mix와 주차별 가용대수로 일 표준 가능량을 산출·분석·다운로드한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 읽기 전용 범위 조회의 전체 복사와 표시순서 반복 전처리를 제거함.
+
 from __future__ import annotations
 
 from calendar import monthrange
@@ -24,9 +30,8 @@ from capa_simulation.scenario_preset_state import (
 from capa_simulation.scenario_state import (
     ensure_active_scenario,
     scenario_month_table,
-    scenario_table,
 )
-from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.display_order import apply_display_order, prepare_display_order
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.simulation_cache import (
     get_required_equipment,
@@ -448,10 +453,11 @@ st.caption(
 try:
     reference_version = get_effective_reference_version()
     reference_tables = get_effective_reference_tables()
+    display_order = prepare_display_order(reference_tables["RQ_DISPLAY_ORDER"])
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
     selected_start_month, selected_end_month = _selected_month_range()
     source_start_month, source_end_month = available_month_range(
-        scenario_table(active_scenario, "RQ_UPEH"),
+        active_scenario["tables"]["RQ_UPEH"],
         "RQ_UPEH",
     )
     effective_start_month = max(selected_start_month, source_start_month)
@@ -551,7 +557,7 @@ try:
     )
     standard_target_exception_rows = standard_target_exception_row_count(required_equipment)
     required_equipment = prepare_standard_target_required_equipment(required_equipment)
-    full_reqb = scenario_table(active_scenario, "RQ_REQB")
+    full_reqb = active_scenario["tables"]["RQ_REQB"]
     if "양산구분" not in full_reqb.columns:
         raise ValueError("RQ_REQB에 양산구분 컬럼이 없습니다.")
     production_reqb = full_reqb.loc[
@@ -564,7 +570,7 @@ except (KeyError, ValueError) as exc:
 process_order = production_reqb[["공정"]].drop_duplicates()
 process_order = apply_display_order(
     process_order,
-    reference_tables["RQ_DISPLAY_ORDER"],
+    display_order,
     "표준 목표 Capa",
     "목표 Capa",
 )
@@ -773,7 +779,7 @@ else:
         )
         output_table = apply_display_order(
             output_table,
-            reference_tables["RQ_DISPLAY_ORDER"],
+            display_order,
             "표준 목표 Capa",
             "목표 Capa",
         )

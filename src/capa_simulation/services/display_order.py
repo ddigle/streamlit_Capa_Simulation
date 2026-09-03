@@ -1,4 +1,12 @@
+# Purpose: Apply workbook-managed display order rules to Streamlit tables.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 검증·정규화한 표시순서 프로필을 재사용해 페이지 내 반복 전처리를 제거함.
+
 """Apply workbook-managed display order rules to Streamlit tables."""
+
+from dataclasses import dataclass
 
 import pandas as pd
 
@@ -14,6 +22,16 @@ DISPLAY_ORDER_SCOPE_COLUMNS = ["페이지 구분", "탭 구분"]
 LEGACY_SCOPE_COLUMN = "적용화면"
 DISPLAY_ORDER_MODES = {"사용자지정", "오름차순", "내림차순"}
 ROUTE_SEQUENCE_COLUMNS = ("STEP_SEQ", "MCP_SEQ")
+
+
+@dataclass(frozen=True)
+class PreparedDisplayOrder:
+    """Validated display-order rules that can be reused within one rerun."""
+
+    rules: pd.DataFrame
+
+
+DisplayOrderInput = pd.DataFrame | PreparedDisplayOrder | None
 
 
 def _prepare_display_order(display_order: pd.DataFrame) -> pd.DataFrame:
@@ -66,18 +84,31 @@ def _prepare_display_order(display_order: pd.DataFrame) -> pd.DataFrame:
     return prepared
 
 
+def prepare_display_order(display_order: DisplayOrderInput) -> PreparedDisplayOrder | None:
+    """Validate a display-order profile once and make it reusable by sort helpers."""
+    if display_order is None:
+        return None
+    if isinstance(display_order, PreparedDisplayOrder):
+        return display_order
+    return PreparedDisplayOrder(_prepare_display_order(display_order))
+
+
+def _prepared_rules(display_order: DisplayOrderInput) -> pd.DataFrame | None:
+    prepared = prepare_display_order(display_order)
+    return None if prepared is None else prepared.rules
+
+
 def apply_display_order(
     data: pd.DataFrame,
-    display_order: pd.DataFrame | None,
+    display_order: DisplayOrderInput,
     page: str,
     tab: str | None = None,
     value_aliases: dict[str, dict[str, str]] | None = None,
 ) -> pd.DataFrame:
     """Sort data using active rules for a page and tab."""
-    if display_order is None:
+    prepared = _prepared_rules(display_order)
+    if prepared is None:
         return data
-
-    prepared = _prepare_display_order(display_order)
     tab_name = tab or page
     rules = prepared.loc[
         prepared["활성여부"].eq("Y")
@@ -153,7 +184,7 @@ def apply_display_order(
 
 def classification_columns_in_display_order(
     columns: list[str],
-    display_order: pd.DataFrame | None,
+    display_order: DisplayOrderInput,
     page: str,
     tab: str | None = None,
 ) -> list[str]:
@@ -161,10 +192,9 @@ def classification_columns_in_display_order(
     available = list(dict.fromkeys(columns))
     route_columns = [column for column in ROUTE_SEQUENCE_COLUMNS if column in available]
     non_route_columns = [column for column in available if column not in route_columns]
-    if display_order is None:
+    prepared = _prepared_rules(display_order)
+    if prepared is None:
         return [*non_route_columns, *route_columns]
-
-    prepared = _prepare_display_order(display_order)
     tab_name = tab or page
     rules = prepared.loc[
         prepared["활성여부"].eq("Y")
@@ -195,7 +225,7 @@ def classification_columns_in_display_order(
 def reorder_display_columns(
     data: pd.DataFrame,
     classification_columns: list[str],
-    display_order: pd.DataFrame | None,
+    display_order: DisplayOrderInput,
     page: str,
     tab: str | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:

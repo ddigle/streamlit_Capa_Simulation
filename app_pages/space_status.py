@@ -1,3 +1,9 @@
+# Purpose: FAB 전체에서 동·층·설비 배치로 이어지는 Space 현황 탐색 화면을 렌더링한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 가용설비 페이지와 불변 설비 스냅샷 캐시를 공유해 DB 재로딩을 제거함.
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -18,7 +24,7 @@ from capa_simulation.components.space_layout import (
     floors_for,
     invalid_equipment_rows,
 )
-from capa_simulation.persistence.equipment_cache import get_equipment_repository
+from capa_simulation.persistence.equipment_cache import load_latest_equipment_snapshot
 from capa_simulation.services.equipment_availability import (
     MILESTONES,
     QUAL_CONFIRMATION_STATUSES,
@@ -45,8 +51,8 @@ def _show_building(building: str) -> None:
 
 today = date.today()
 try:
-    repository = get_equipment_repository(str(EQUIPMENT_DUCKDB_PATH.resolve()))
-    latest_snapshot = repository.load_latest_snapshot()
+    equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
+    latest_snapshot = load_latest_equipment_snapshot(equipment_database_path)
     if latest_snapshot is None or latest_snapshot.equipment.empty:
         equipment = sample_equipment_master(anchor_date=today)
         downtime = sample_downtime_schedule(anchor_date=today)

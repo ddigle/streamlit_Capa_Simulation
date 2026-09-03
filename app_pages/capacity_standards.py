@@ -1,6 +1,14 @@
+# Purpose: 공정 유효 Capa와 STEP 상세를 표시하고 관련 기준정보 및 STEP 구성을 편집한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 월 범위·표시순서 중복 전처리를 줄이고 선택된 대형 편집 탭만 지연 렌더링함.
+
+from types import TracebackType
+from typing import Protocol
+
 import pandas as pd
 import streamlit as st
-from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
@@ -18,7 +26,7 @@ from capa_simulation.scenario_state import (
     apply_month_updates,
     ensure_active_scenario,
     reset_active_scenario,
-    scenario_table,
+    scenario_month_table,
 )
 from capa_simulation.services.capacity_reference_editor import (
     PERFORMANCE_EDITOR_DIMENSIONS,
@@ -27,8 +35,12 @@ from capa_simulation.services.capacity_reference_editor import (
     reference_from_edit_table,
     reference_to_edit_table,
 )
-from capa_simulation.services.display_order import apply_display_order, reorder_display_columns
-from capa_simulation.services.month_filter import available_month_range, filter_month_range
+from capa_simulation.services.display_order import (
+    apply_display_order,
+    prepare_display_order,
+    reorder_display_columns,
+)
+from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.route_step_editor import (
     ROUTE_GROUP_COLUMNS,
     clone_route_step,
@@ -90,21 +102,27 @@ CAPACITY_LEVEL_LABELS = {
 }
 
 
+class OpenTab(Protocol):
+    @property
+    def open(self) -> bool | None: ...
+
+    def __enter__(self) -> "OpenTab": ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None: ...
+
+
 def selected_month_range() -> tuple[int, int]:
     start_label, end_label = st.session_state["production_month_range_v2"]
     return int(start_label.replace("-", "")), int(end_label.replace("-", ""))
 
 
-def filter_monthly_table(
-    data: pd.DataFrame, start_month: int, end_month: int, table_name: str
-) -> pd.DataFrame:
-    if data.empty:
-        return data.copy()
-    return filter_month_range(data, start_month, end_month, table_name)
-
-
 def render_month_editor(
-    tab: DeltaGenerator,
+    tab: OpenTab,
     default_table: pd.DataFrame,
     dimensions: list[str],
     editor_key: str,
@@ -117,6 +135,8 @@ def render_month_editor(
     table_name: str,
     csv_file_name: str,
 ) -> tuple[pd.DataFrame, bool, pd.DataFrame | None]:
+    if tab.open is False:
+        return pd.DataFrame(), False, None
     month_columns = [column for column in default_table.columns if column not in dimensions]
     styled_table = default_table.style.set_properties(
         subset=pd.Index(dimensions),
@@ -173,12 +193,17 @@ def render_month_editor(
 
 st.title("공정별 Capa")
 
-tabs = st.tabs(TAB_NAMES)
+tabs = st.tabs(
+    TAB_NAMES,
+    key="capacity_standards_active_tab",
+    on_change="rerun",
+)
 unit_capacity_tab = tabs[0]
 
 try:
     reference_version = get_effective_reference_version()
     reference_tables = get_effective_reference_tables()
+    display_order = prepare_display_order(reference_tables["RQ_DISPLAY_ORDER"])
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
     start_month, end_month = selected_month_range()
     source_start_month, source_end_month = available_month_range(
@@ -189,63 +214,26 @@ try:
     if effective_start_month > effective_end_month:
         raise ValueError("선택 범위에 공정별 Capa 기준정보가 없습니다.")
     show_applied_month_range(effective_start_month, effective_end_month)
-    filtered_upeh = filter_monthly_table(
-        scenario_table(active_scenario, "RQ_UPEH"), start_month, end_month, "RQ_UPEH"
+    filtered_upeh = scenario_month_table(active_scenario, "RQ_UPEH", start_month, end_month)
+    filtered_run_rate = scenario_month_table(active_scenario, "RQ_RUN_RATE", start_month, end_month)
+    filtered_vital = scenario_month_table(active_scenario, "RQ_VITAL", start_month, end_month)
+    filtered_run_day = scenario_month_table(active_scenario, "RQ_RUN_DAY", start_month, end_month)
+    filtered_lot_ratio = scenario_month_table(
+        active_scenario, "RQ_LOT_RATIO", start_month, end_month
     )
-    filtered_run_rate = filter_monthly_table(
-        scenario_table(active_scenario, "RQ_RUN_RATE"),
-        start_month,
-        end_month,
-        "RQ_RUN_RATE",
-    )
-    filtered_vital = filter_monthly_table(
-        scenario_table(active_scenario, "RQ_VITAL"), start_month, end_month, "RQ_VITAL"
-    )
-    filtered_run_day = filter_monthly_table(
-        scenario_table(active_scenario, "RQ_RUN_DAY"),
-        start_month,
-        end_month,
-        "RQ_RUN_DAY",
-    )
-    filtered_lot_ratio = filter_monthly_table(
-        scenario_table(active_scenario, "RQ_LOT_RATIO"),
-        start_month,
-        end_month,
-        "RQ_LOT_RATIO",
-    )
-    filtered_wf_ratio = filter_monthly_table(
-        scenario_table(active_scenario, "RQ_WF_RATIO"),
-        start_month,
-        end_month,
-        "RQ_WF_RATIO",
-    )
-    filtered_plan = filter_monthly_table(
-        scenario_table(active_scenario, "RQ_PKG_PLAN"),
-        start_month,
-        end_month,
-        "RQ_PKG_PLAN",
-    )
-    filtered_yield = filter_monthly_table(
-        scenario_table(active_scenario, "RQ_YLD"),
-        start_month,
-        end_month,
-        "RQ_YLD",
-    )
-    filtered_reqb = filter_monthly_table(
-        scenario_table(active_scenario, "RQ_REQB"),
-        start_month,
-        end_month,
-        "RQ_REQB",
-    )
+    filtered_wf_ratio = scenario_month_table(active_scenario, "RQ_WF_RATIO", start_month, end_month)
+    filtered_plan = scenario_month_table(active_scenario, "RQ_PKG_PLAN", start_month, end_month)
+    filtered_yield = scenario_month_table(active_scenario, "RQ_YLD", start_month, end_month)
+    filtered_reqb = scenario_month_table(active_scenario, "RQ_REQB", start_month, end_month)
 
     default_upeh_table = performance_to_edit_table(filtered_upeh)
     default_upeh_table = apply_display_order(
-        default_upeh_table, reference_tables["RQ_DISPLAY_ORDER"], "공정별 Capa", "UPEH"
+        default_upeh_table, display_order, "공정별 Capa", "UPEH"
     )
     default_upeh_table, _ = reorder_display_columns(
         default_upeh_table,
         PERFORMANCE_EDITOR_DIMENSIONS,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 Capa",
         "UPEH",
     )
@@ -253,12 +241,12 @@ try:
         filtered_run_rate, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "RQ_RUN_RATE"
     )
     default_run_rate_table = apply_display_order(
-        default_run_rate_table, reference_tables["RQ_DISPLAY_ORDER"], "공정별 Capa", "효율"
+        default_run_rate_table, display_order, "공정별 Capa", "효율"
     )
     default_run_rate_table, _ = reorder_display_columns(
         default_run_rate_table,
         RUN_RATE_DIMENSIONS,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 Capa",
         "효율",
     )
@@ -266,12 +254,12 @@ try:
         filtered_vital, VITAL_DIMENSIONS, "편중률", "RQ_VITAL"
     )
     default_vital_table = apply_display_order(
-        default_vital_table, reference_tables["RQ_DISPLAY_ORDER"], "공정별 Capa", "여유율"
+        default_vital_table, display_order, "공정별 Capa", "여유율"
     )
     default_vital_table, _ = reorder_display_columns(
         default_vital_table,
         VITAL_DIMENSIONS,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 Capa",
         "여유율",
     )
@@ -279,12 +267,12 @@ try:
         filtered_run_day, RUN_DAY_DIMENSIONS, "RUN_DAY", "RQ_RUN_DAY"
     )
     default_run_day_table = apply_display_order(
-        default_run_day_table, reference_tables["RQ_DISPLAY_ORDER"], "공정별 Capa", "일수"
+        default_run_day_table, display_order, "공정별 Capa", "일수"
     )
     default_run_day_table, _ = reorder_display_columns(
         default_run_day_table,
         RUN_DAY_DIMENSIONS,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 Capa",
         "일수",
     )
@@ -293,14 +281,14 @@ try:
     )
     default_lot_ratio_table = apply_display_order(
         default_lot_ratio_table,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 Capa",
         "Lot측정률",
     )
     default_lot_ratio_table, _ = reorder_display_columns(
         default_lot_ratio_table,
         RATIO_DIMENSIONS,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 Capa",
         "Lot측정률",
     )
@@ -309,14 +297,14 @@ try:
     )
     default_wf_ratio_table = apply_display_order(
         default_wf_ratio_table,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 Capa",
         "WF측정률",
     )
     default_wf_ratio_table, _ = reorder_display_columns(
         default_wf_ratio_table,
         RATIO_DIMENSIONS,
-        reference_tables["RQ_DISPLAY_ORDER"],
+        display_order,
         "공정별 Capa",
         "WF측정률",
     )
@@ -668,6 +656,9 @@ except (KeyError, ValueError) as exc:
         st.error(str(exc))
     st.stop()
 
+if not unit_capacity_tab.open:
+    st.stop()
+
 simulation_upeh = filtered_upeh
 simulation_run_rate = filtered_run_rate
 simulation_vital = filtered_vital
@@ -710,7 +701,7 @@ else:
                         for column in UNIT_CAPACITY_DIMENSIONS
                         if column in excluded_capacity_rows.columns
                     ],
-                    reference_tables["RQ_DISPLAY_ORDER"],
+                    display_order,
                     "공정별 Capa",
                     "대당 Capa",
                 )
@@ -719,7 +710,7 @@ else:
         process_order = required_equipment_for_display[["공정"]].drop_duplicates()
         process_order = apply_display_order(
             process_order,
-            reference_tables["RQ_DISPLAY_ORDER"],
+            display_order,
             "공정별 Capa",
             "대당 Capa",
         )
@@ -786,14 +777,14 @@ else:
             file_prefix = "Capa_Effective_Process_Capacity"
         unit_capacity_table = apply_display_order(
             unit_capacity_table,
-            reference_tables["RQ_DISPLAY_ORDER"],
+            display_order,
             "공정별 Capa",
             "대당 Capa",
         )
         unit_capacity_table, classification_columns = reorder_display_columns(
             unit_capacity_table,
             classification_columns,
-            reference_tables["RQ_DISPLAY_ORDER"],
+            display_order,
             "공정별 Capa",
             "대당 Capa",
         )

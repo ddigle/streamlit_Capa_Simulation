@@ -1,3 +1,9 @@
+# Purpose: capacity standards page 관련 정상·예외·회귀 동작을 검증한다.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 선택된 Capa 편집 탭만 지연 렌더링하면서 모든 입력 계약이 유지되는지 검증함.
+
 from streamlit.testing.v1 import AppTest
 
 TEST_SCRIPT = r"""
@@ -254,23 +260,26 @@ def test_capacity_editors_show_route_keys_without_exceptions() -> None:
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert len(app.dataframe) == 7
-    upeh_columns = list(app.dataframe[1].value.columns)
-    lot_ratio_columns = list(app.dataframe[4].value.columns)
-    wf_ratio_columns = list(app.dataframe[5].value.columns)
-    assert upeh_columns[-3:-1] == ["STEP_SEQ", "MCP_SEQ"]
-    assert lot_ratio_columns[-3:-1] == ["STEP_SEQ", "MCP_SEQ"]
-    assert wf_ratio_columns[-3:-1] == ["STEP_SEQ", "MCP_SEQ"]
-    assert {text_area.label for text_area in app.text_area}.issuperset(
-        {
-            "RQ_UPEH 표 붙여넣기",
-            "RQ_RUN_RATE 표 붙여넣기",
-            "RQ_VITAL 표 붙여넣기",
-            "RQ_LOT_RATIO 표 붙여넣기",
-            "RQ_WF_RATIO 표 붙여넣기",
-            "RQ_RUN_DAY 표 붙여넣기",
-        }
-    )
+    expected_inputs = {
+        "UPEH": "RQ_UPEH 표 붙여넣기",
+        "효율": "RQ_RUN_RATE 표 붙여넣기",
+        "여유율": "RQ_VITAL 표 붙여넣기",
+        "Lot측정률": "RQ_LOT_RATIO 표 붙여넣기",
+        "WF측정률": "RQ_WF_RATIO 표 붙여넣기",
+        "일수": "RQ_RUN_DAY 표 붙여넣기",
+    }
+    route_editor_tabs = {"UPEH", "Lot측정률", "WF측정률"}
+    for tab_name, input_label in expected_inputs.items():
+        app.session_state["capacity_standards_active_tab"] = tab_name
+        app.run()
+
+        assert not app.exception
+        assert input_label in {text_area.label for text_area in app.text_area}
+        if tab_name in route_editor_tabs:
+            assert any(
+                list(frame.value.columns)[-3:-1] == ["STEP_SEQ", "MCP_SEQ"]
+                for frame in app.dataframe
+            )
 
 
 def test_load_input_tabs_expose_plan_and_yield_clipboard_round_trip() -> None:

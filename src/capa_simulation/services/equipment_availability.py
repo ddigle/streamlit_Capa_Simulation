@@ -1,8 +1,15 @@
+# Purpose: Equipment input validation, weekly availability, and space status.
+# Applied: 2026-09-03 KST
+# Agent: OpenAI Codex
+# Model: GPT-5 (exact runtime variant unavailable)
+# Change: 주차별 집계에서 설비 정규화와 공정별 전체 스캔을 반복하지 않도록 집계 경계를 분리함.
+
 """Equipment input validation, weekly availability, and space status."""
 
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 
 import pandas as pd
 
@@ -507,11 +514,30 @@ def prepare_downtime_schedule(
         raise ValueError(f"비가동 종료일은 시작일보다 빠를 수 없습니다: {examples}")
     if equipment is not None:
         prepared_equipment = prepare_equipment_master(equipment)
-        unknown = result.loc[~result["호기"].isin(prepared_equipment["호기"]), "호기"]
-        if not unknown.empty:
-            examples = unknown.drop_duplicates().head(5).tolist()
-            raise ValueError(f"호기 마스터에 없는 설비의 비가동 일정이 있습니다: {examples}")
+        _validate_downtime_equipment(result, prepared_equipment)
     return result.reset_index(drop=True)
+
+
+def _validate_downtime_equipment(
+    prepared_downtime: pd.DataFrame,
+    prepared_equipment: pd.DataFrame,
+) -> None:
+    unknown = prepared_downtime.loc[
+        ~prepared_downtime["호기"].isin(prepared_equipment["호기"]), "호기"
+    ]
+    if not unknown.empty:
+        examples = unknown.drop_duplicates().head(5).tolist()
+        raise ValueError(f"호기 마스터에 없는 설비의 비가동 일정이 있습니다: {examples}")
+
+
+def prepare_downtime_for_prepared_equipment(
+    downtime: pd.DataFrame,
+    prepared_equipment: pd.DataFrame,
+) -> pd.DataFrame:
+    """Validate downtime against an equipment frame normalized by this module."""
+    prepared_downtime = prepare_downtime_schedule(downtime)
+    _validate_downtime_equipment(prepared_downtime, prepared_equipment)
+    return prepared_downtime
 
 
 def build_equipment_status_as_of(
@@ -522,7 +548,21 @@ def build_equipment_status_as_of(
 ) -> pd.DataFrame:
     """Return exclusive lifecycle status plus independent owned/available flags."""
     prepared = prepare_equipment_master(equipment)
-    prepared_downtime = prepare_downtime_schedule(downtime, equipment=prepared)
+    prepared_downtime = prepare_downtime_for_prepared_equipment(downtime, prepared)
+    return _build_equipment_status_from_prepared(
+        prepared,
+        prepared_downtime,
+        as_of=pd.Timestamp(as_of),
+    )
+
+
+def _build_equipment_status_from_prepared(
+    prepared: pd.DataFrame,
+    prepared_downtime: pd.DataFrame,
+    *,
+    as_of: pd.Timestamp,
+) -> pd.DataFrame:
+    """Build one as-of snapshot from already validated equipment inputs."""
     result = prepared.copy()
     if result.empty:
         for column, dtype in (
@@ -535,7 +575,7 @@ def build_equipment_status_as_of(
             result[column] = pd.Series(dtype=dtype)
         return result
 
-    timestamp = pd.Timestamp(as_of)
+    timestamp = as_of
     existing = result["기존설비여부"].eq("Y")
     storage = result["장기보관여부"].eq("Y")
     arrived = existing | storage | (result["입고일정"].notna() & result["입고일정"].le(timestamp))
@@ -580,7 +620,7 @@ def build_weekly_equipment_availability(
         raise ValueError("주차별 조회 시작일은 종료일보다 늦을 수 없습니다.")
     prepared_baseline = prepare_equipment_baseline(baseline)
     prepared_equipment = prepare_equipment_master(equipment)
-    prepared_downtime = prepare_downtime_schedule(downtime, equipment=prepared_equipment)
+    prepared_downtime = prepare_downtime_for_prepared_equipment(downtime, prepared_equipment)
     processes = (
         pd.concat([prepared_baseline["공정"], prepared_equipment["공정소분류"]], ignore_index=True)
         .dropna()
@@ -599,14 +639,24 @@ def build_weekly_equipment_availability(
         week_end = week_start + pd.Timedelta(days=6)
         iso_calendar = week_start.isocalendar()
         weeknum = f"{iso_calendar.year % 100:02d}-W{iso_calendar.week:02d}"
-        status = build_equipment_status_as_of(
-            prepared_equipment, prepared_downtime, as_of=week_end.date()
+        status = _build_equipment_status_from_prepared(
+            prepared_equipment,
+            prepared_downtime,
+            as_of=week_end,
         )
+        status_summary = status.groupby("공정소분류", observed=True).agg(
+            보유호기=("보유여부", "sum"),
+            가용호기=("가용여부", "sum"),
+        )
+        status_counts = pd.crosstab(status["공정소분류"], status["상태"])
         for process in processes.tolist():
-            group = status.loc[status["공정소분류"].eq(process)]
             base_count = float(baseline_counts.get(process, 0.0))
-            owned_count = int(group["보유여부"].sum())
-            available_units = int(group["가용여부"].sum())
+            if process in status_summary.index:
+                owned_count = int(cast(float, status_summary.at[process, "보유호기"]))
+                available_units = int(cast(float, status_summary.at[process, "가용호기"]))
+            else:
+                owned_count = 0
+                available_units = 0
             row: dict[str, object] = {
                 "Weeknum": weeknum,
                 "주차시작일": week_start.date(),
@@ -619,7 +669,11 @@ def build_weekly_equipment_availability(
                 "비가동대수": owned_count - available_units,
             }
             for status_name, column in STATUS_COUNT_COLUMNS.items():
-                row[column] = int(group["상태"].eq(status_name).sum())
+                row[column] = (
+                    int(cast(float, status_counts.at[process, status_name]))
+                    if process in status_counts.index and status_name in status_counts.columns
+                    else 0
+                )
             rows.append(row)
     return pd.DataFrame(rows, columns=WEEKLY_COLUMNS)
 
