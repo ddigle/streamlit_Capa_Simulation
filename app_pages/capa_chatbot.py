@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-st.title("Capa Chatbot")
+st.title("Capa Chatbot (구현중)")
 st.caption(
     "활성 시나리오의 Capa 데이터와 계산 결과를 근거로 데이터 조회, 부족 공정 파악과 "
     "원인 탐색을 지원하는 대화형 분석 화면입니다."

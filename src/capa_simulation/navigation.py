@@ -37,7 +37,9 @@ class PageSpec:
 
 
 HOME = PageSpec("app_pages/home.py", "HOME", default=True)
-CAPA_CHATBOT = PageSpec("app_pages/capa_chatbot.py", "Capa Chatbot", ":material/chat:")
+CAPA_CHATBOT = PageSpec(
+    "app_pages/capa_chatbot.py", _implementing("Capa Chatbot"), ":material/chat:"
+)
 SCENARIO_MANAGEMENT = PageSpec(
     "app_pages/scenario_management.py", "시나리오 관리", ":material/database:"
 )

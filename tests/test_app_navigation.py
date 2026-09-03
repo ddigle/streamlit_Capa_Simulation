@@ -5,6 +5,7 @@ from pathlib import Path
 
 from capa_simulation.navigation import (
     ALL_SPECS,
+    CAPA_CHATBOT,
     DYNAMIC_CAPA,
     DYNAMIC_CAPA_SUBPAGES,
     HOME,
@@ -20,7 +21,7 @@ APP_PATH = PROJECT_ROOT / "app.py"
 # 의도적으로 바꿀 때는 함께 갱신한다.
 EXPECTED_PAGES = [
     ("app_pages/home.py", "HOME", None, True),
-    ("app_pages/capa_chatbot.py", "Capa Chatbot", ":material/chat:", False),
+    ("app_pages/capa_chatbot.py", "Capa Chatbot (구현중)", ":material/chat:", False),
     ("app_pages/scenario_management.py", "시나리오 관리", ":material/database:", False),
     ("app_pages/static_capa.py", "Static Capa", ":material/factory:", False),
     ("app_pages/load_conversion.py", "부하량", ":material/scale:", False),
@@ -70,8 +71,10 @@ def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:
     """사이드바 라벨과 페이지 본문 `st.title` 이 같은 표기를 써야 한다.
 
     이전에는 사이드바만 `(구현중)`·`(구현 중)`·`(DB 셋팅중)` 세 갈래였다.
+    `Capa Chatbot` 은 본문이 "화면 초안" 이라고 밝히는데도 사이드바에만 표기가 없어
+    가장 덜 된 화면이 완성된 것처럼 보였다.
     """
-    for spec in (DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES):
+    for spec in (CAPA_CHATBOT, DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES):
         assert spec.title.endswith(IMPLEMENTING_SUFFIX), spec.path
         body = (PROJECT_ROOT / spec.path).read_text(encoding="utf-8")
         assert f'st.title("{spec.title}")' in body, spec.path
