@@ -109,11 +109,6 @@ class OpenTab(Protocol):
     ) -> bool | None: ...
 
 
-def selected_month_range() -> tuple[int, int]:
-    start_label, end_label = st.session_state["production_month_range_v2"]
-    return int(start_label.replace("-", "")), int(end_label.replace("-", ""))
-
-
 def render_month_editor(
     tab: OpenTab,
     default_table: pd.DataFrame,

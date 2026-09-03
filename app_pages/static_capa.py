@@ -11,7 +11,6 @@ from capa_simulation.page_bootstrap import (
     resolve_effective_months,
 )
 from capa_simulation.scenario_preset_state import (
-    MONTH_RANGE_KEY,
     SECURE_THRESHOLD_KEY,
     WARNING_THRESHOLD_KEY,
 )
@@ -22,22 +21,9 @@ from capa_simulation.services.simulation_cache import (
     get_securement_rate,
     get_unit_capacity,
 )
-from capa_simulation.settings import (
-    MONTH_SELECTION_END,
-    MONTH_SELECTION_START,
-    format_month,
-)
 
 DEFAULT_SECURE_THRESHOLD_PERCENT = 109.5
 DEFAULT_WARNING_THRESHOLD_PERCENT = 99.5
-
-
-def _selected_month_range() -> tuple[int, int]:
-    default = (format_month(MONTH_SELECTION_START), format_month(MONTH_SELECTION_END))
-    value = st.session_state.get(MONTH_RANGE_KEY, default)
-    if not isinstance(value, (list, tuple)) or len(value) != 2:
-        value = default
-    return int(str(value[0]).replace("-", "")), int(str(value[1]).replace("-", ""))
 
 
 def _display_shortfalls(data: pd.DataFrame, *, warning_section: bool) -> pd.DataFrame:

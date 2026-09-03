@@ -88,11 +88,6 @@ LOGIC_FILTER_KEYS = {
 }
 
 
-def _selected_month_range() -> tuple[int, int]:
-    start_label, end_label = st.session_state["production_month_range_v2"]
-    return int(start_label.replace("-", "")), int(end_label.replace("-", ""))
-
-
 def _first_day(month: int) -> date:
     return date(month // 100, month % 100, 1)
 

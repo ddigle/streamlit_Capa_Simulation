@@ -62,11 +62,6 @@ DISPLAY_COLUMN_LABELS = {
 }
 
 
-def selected_month_range() -> tuple[int, int]:
-    start_label, end_label = st.session_state["production_month_range_v2"]
-    return int(start_label.replace("-", "")), int(end_label.replace("-", ""))
-
-
 st.title("공정별 확보율")
 availability_tab, required_tab, equipment_tab = st.tabs(TAB_NAMES)
 
