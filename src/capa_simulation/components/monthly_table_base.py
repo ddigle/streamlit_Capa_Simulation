@@ -6,10 +6,10 @@
 상세 결과)은 서로 다른 표지만 고정 분류 영역 + 가로 스크롤 월 영역이라는 껍데기와 텍스트
 폭 계산은 같다. 그 공통분만 여기 둔다.
 
-격자 그리기 중 바깥 테두리·헤더 밑줄·월 경계선은 두 표가 같은 도형을 그리므로 여기로
-합쳤다. 분류 컬럼 세로선과 행 그룹 가로선은 표 구조가 실제로 달라 각 모듈에 남긴다.
-`grouped` 는 부분합 3단(제품·생산·총계)을 고정 폭으로, `hierarchical` 은 계층 깊이에
-따라 폭을 줄여 가며 긋는다.
+격자 그리기 중 바깥 테두리·헤더 밑줄·월 경계선·분류 컬럼 세로선은 두 표가 같은 도형을
+그리므로 여기로 합쳤다. 행 그룹 가로선만 표 구조가 달라 각 모듈에 남긴다. `grouped` 는
+부분합 3단(제품·생산·총계)을 고정 폭으로, `hierarchical` 은 계층 깊이에 따라 폭을
+줄여 가며 긋는다.
 """
 
 from __future__ import annotations
@@ -129,6 +129,27 @@ def add_header_rule(figure: go.Figure, *, boundary_y: float) -> None:
         line={"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
         layer="above",
     )
+
+
+def add_classification_boundaries(
+    figure: go.Figure,
+    classification_widths: Sequence[float],
+) -> None:
+    """분류 컬럼 사이마다 세로 격자선을 긋는다."""
+    total_width = sum(classification_widths)
+    for column_index in range(1, len(classification_widths)):
+        boundary_x = sum(classification_widths[:column_index]) / total_width
+        figure.add_shape(
+            type="line",
+            x0=boundary_x,
+            x1=boundary_x,
+            y0=0,
+            y1=1,
+            xref="paper",
+            yref="paper",
+            line={"color": BORDER_COLOR, "width": GRID_LINE_WIDTH_PX},
+            layer="above",
+        )
 
 
 def add_month_boundaries(figure: go.Figure, month_columns: Sequence[str]) -> None:

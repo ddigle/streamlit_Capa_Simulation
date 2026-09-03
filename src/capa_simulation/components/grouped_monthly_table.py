@@ -9,14 +9,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from capa_simulation.components.monthly_table_base import (
-    BORDER_COLOR,
     CLASSIFICATION_COLOR,
     CLASSIFICATION_GROUP_COLOR,
     CLASSIFICATION_HORIZONTAL_PADDING_PX,
     CLASSIFICATION_MAX_WIDTH_PX,
     CLASSIFICATION_MIN_WIDTH_PX,
     CLASSIFICATION_TEXT_UNIT_PX,
-    GRID_LINE_WIDTH_PX,
     GROUP_BORDER_COLOR,
     GROUP_SURFACE_COLOR,
     HEADER_COLOR,
@@ -27,6 +25,7 @@ from capa_simulation.components.monthly_table_base import (
     SURFACE_COLOR,
     TEXT_COLOR,
     TRANSPARENT_COLOR,
+    add_classification_boundaries,
     add_header_rule,
     add_month_boundaries,
     add_outer_border,
@@ -253,19 +252,9 @@ def _add_table_grid(
         add_header_rule(target_figure, boundary_y=header_boundary_ratio(row_count))
 
     total_classification_width = sum(classification_widths)
+    # 생산 소계 가로선이 시작하는 지점이기도 하다. 아래에서 다시 쓴다.
     production_boundary_x = classification_widths[0] / total_classification_width
-    if len(classification_widths) > 1:
-        label_figure.add_shape(
-            type="line",
-            x0=production_boundary_x,
-            x1=production_boundary_x,
-            y0=0,
-            y1=1,
-            xref="paper",
-            yref="paper",
-            line={"color": BORDER_COLOR, "width": GRID_LINE_WIDTH_PX},
-            layer="above",
-        )
+    add_classification_boundaries(label_figure, classification_widths)
 
     add_month_boundaries(month_figure, month_columns)
 

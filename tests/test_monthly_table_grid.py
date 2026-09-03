@@ -5,9 +5,11 @@ import plotly.graph_objects as go
 from capa_simulation.components import grouped_monthly_table as grouped
 from capa_simulation.components import hierarchical_monthly_table as hierarchical
 from capa_simulation.components.monthly_table_base import (
+    BORDER_COLOR,
     GRID_LINE_WIDTH_PX,
     GROUP_BORDER_COLOR,
     OUTER_BORDER_WIDTH_PX,
+    add_classification_boundaries,
     add_month_boundaries,
     add_outer_border,
 )
@@ -112,3 +114,43 @@ def test_both_tables_share_outer_border_and_month_grid() -> None:
 
     assert month_grid(grouped_month) == month_grid(expected_month)
     assert month_grid(hier_month) == month_grid(expected_month)
+
+
+def test_classification_boundaries_cover_every_column_gap() -> None:
+    """분류 컬럼 사이마다 선을 긋는다.
+
+    `grouped` 는 전에 첫 경계 하나만 그어서, 분류 컬럼을 3~4개 넘기는 부하량 환산 표에서
+    제품과 Stack 사이에 구분선이 없었다.
+    """
+    figure = go.Figure()
+    add_classification_boundaries(figure, WIDTHS)
+
+    total = sum(WIDTHS)
+    assert [shape["x0"] for shape in _shapes(figure)] == [
+        WIDTHS[0] / total,
+        sum(WIDTHS[:2]) / total,
+        sum(WIDTHS[:3]) / total,
+    ]
+    for shape in _shapes(figure):
+        assert shape["x0"] == shape["x1"]
+        assert (shape["y0"], shape["y1"]) == (0, 1)
+        assert shape["line"] == {"color": BORDER_COLOR, "width": GRID_LINE_WIDTH_PX}
+
+
+def test_both_tables_draw_the_same_classification_boundaries() -> None:
+    (grouped_label, _), (hier_label, _) = _grid_pair()
+
+    expected = go.Figure()
+    add_classification_boundaries(expected, WIDTHS)
+
+    def dividers(figure: go.Figure) -> list[dict[str, object]]:
+        return [
+            shape
+            for shape in _shapes(figure)
+            if shape["x0"] == shape["x1"]
+            and shape["x0"] not in (0, 1)
+            and shape["line"]["color"] == BORDER_COLOR
+        ]
+
+    assert dividers(grouped_label) == _shapes(expected)
+    assert dividers(hier_label) == _shapes(expected)
