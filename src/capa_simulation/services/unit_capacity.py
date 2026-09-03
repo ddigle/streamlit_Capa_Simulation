@@ -2,6 +2,11 @@
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import (
+    normalize_area_name,
+    require_columns,
+)
+
 PERFORMANCE_KEYS = [
     "생산계획년월",
     "Area_Name",
@@ -129,7 +134,7 @@ def calculate_unit_capacity(
 def unit_capacity_to_month_table(unit_capacity: pd.DataFrame) -> pd.DataFrame:
     """Pivot calculated unit capacity into month columns for display."""
     required = ["생산계획년월", *UNIT_CAPACITY_DIMENSIONS, "대당 Capa"]
-    _require_columns(unit_capacity, required, "대당 Capa")
+    require_columns(unit_capacity, required, "대당 Capa")
     if unit_capacity.empty:
         return pd.DataFrame(columns=UNIT_CAPACITY_DIMENSIONS)
     result = unit_capacity.pivot(
@@ -151,7 +156,7 @@ def unit_capacity_to_month_table(unit_capacity: pd.DataFrame) -> pd.DataFrame:
 def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
     table_name = "RQ_UPEH"
     required = [*PERFORMANCE_KEYS, "소요기준", "UPEH", "ST"]
-    _require_columns(data, required, table_name)
+    require_columns(data, required, table_name)
     result = data[required].copy()
     if result.empty:
         result["환산_UPEH"] = pd.Series(dtype="float64")
@@ -165,7 +170,7 @@ def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
         result["환산_UPEH"] = pd.Series(dtype="float64")
         return result
     _assert_complete_keys(result, [*PERFORMANCE_KEYS, "소요기준"], table_name)
-    _normalize_area_name(result, table_name)
+    result["Area_Name"] = normalize_area_name(result["Area_Name"], table_name)
     _assert_unique(result, [*PERFORMANCE_KEYS, "소요기준"], table_name)
 
     upeh_values = pd.to_numeric(result["UPEH"], errors="coerce")
@@ -195,14 +200,14 @@ def _join_reference(
     *,
     missing_value_default: float | None = None,
 ) -> pd.DataFrame:
-    _require_columns(reference, [*keys, value_column], table_name)
+    require_columns(reference, [*keys, value_column], table_name)
     prepared = reference[[*keys, value_column]].copy()
     if "생산계획년월" in keys:
         _normalize_month(prepared, table_name)
     _normalize_keys(prepared, [key for key in keys if key != "생산계획년월"])
     _assert_complete_keys(prepared, keys, table_name)
     if "Area_Name" in keys:
-        _normalize_area_name(prepared, table_name)
+        prepared["Area_Name"] = normalize_area_name(prepared["Area_Name"], table_name)
     _assert_unique(prepared, keys, table_name)
     prepared[value_column] = _numeric_column(
         prepared,
@@ -221,15 +226,6 @@ def _join_reference(
 def _normalize_keys(data: pd.DataFrame, keys: list[str]) -> None:
     for key in keys:
         data[key] = data[key].astype("string").str.strip()
-
-
-def _normalize_area_name(data: pd.DataFrame, table_name: str) -> None:
-    area_names = data["Area_Name"].astype("string").str.strip().str.casefold()
-    invalid_area = ~area_names.isin(["main", "mi"])
-    if invalid_area.any():
-        examples = data.loc[invalid_area, "Area_Name"].drop_duplicates().head(5).tolist()
-        raise ValueError(f"{table_name}의 Area_Name은 Main 또는 MI여야 합니다: {examples}")
-    data["Area_Name"] = area_names.map({"main": "Main", "mi": "MI"})
 
 
 def _normalize_month(data: pd.DataFrame, table_name: str) -> None:
@@ -284,9 +280,3 @@ def _exclusion_rows(data: pd.DataFrame, mask: pd.Series, reason: str) -> pd.Data
     excluded = data.loc[mask].copy()
     excluded["제외사유"] = reason
     return excluded
-
-
-def _require_columns(data: pd.DataFrame, required: list[str], table_name: str) -> None:
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"{table_name} 필수 컬럼이 없습니다: {', '.join(missing)}")

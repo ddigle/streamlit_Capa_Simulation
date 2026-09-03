@@ -9,6 +9,8 @@ from typing import cast
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import require_columns
+
 BASELINE_COLUMNS = ("공정", "분류", "기존보유대수", "비고")
 EQUIPMENT_COLUMNS = (
     "호기",
@@ -392,7 +394,7 @@ def sample_downtime_schedule(*, anchor_date: date | None = None) -> pd.DataFrame
 
 def prepare_equipment_baseline(data: pd.DataFrame) -> pd.DataFrame:
     """Normalize aggregate counts for unidentified legacy equipment."""
-    _require_columns(data, BASELINE_COLUMNS, "기존 보유대수")
+    require_columns(data, BASELINE_COLUMNS, "기존 보유대수")
     result = data.loc[:, BASELINE_COLUMNS].copy()
     result = _drop_blank_rows(result, ("공정", "분류", "기존보유대수"))
     if result.empty:
@@ -412,7 +414,7 @@ def prepare_equipment_baseline(data: pd.DataFrame) -> pd.DataFrame:
 
 def prepare_equipment_master(data: pd.DataFrame) -> pd.DataFrame:
     """Normalize and validate the 29-column equipment master contract."""
-    _require_columns(data, EQUIPMENT_COLUMNS, "호기 마스터")
+    require_columns(data, EQUIPMENT_COLUMNS, "호기 마스터")
     result = data.loc[:, EQUIPMENT_COLUMNS].copy()
     result = _drop_blank_rows(result, ("호기",))
     if result.empty:
@@ -488,7 +490,7 @@ def prepare_downtime_schedule(
     equipment: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Normalize downtime intervals keyed by equipment, type, and start date."""
-    _require_columns(data, DOWNTIME_COLUMNS, "비가동 일정")
+    require_columns(data, DOWNTIME_COLUMNS, "비가동 일정")
     result = data.loc[:, DOWNTIME_COLUMNS].copy()
     result = _drop_blank_rows(result, DOWNTIME_KEY_COLUMNS)
     if result.empty:
@@ -823,12 +825,6 @@ def _format_day_difference(days: int) -> str:
     if days > 0:
         return f"D-{days}"
     return f"D+{-days}"
-
-
-def _require_columns(data: pd.DataFrame, columns: tuple[str, ...], label: str) -> None:
-    missing = [column for column in columns if column not in data.columns]
-    if missing:
-        raise ValueError(f"{label} 필수 컬럼이 없습니다: {', '.join(missing)}")
 
 
 def _drop_blank_rows(data: pd.DataFrame, columns: tuple[str, ...]) -> pd.DataFrame:

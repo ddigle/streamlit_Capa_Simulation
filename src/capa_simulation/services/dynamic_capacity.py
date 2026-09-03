@@ -10,6 +10,11 @@ from math import sin
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import (
+    normalize_demand_basis,
+    require_columns,
+)
+
 DYNAMIC_CAPACITY_KEYS = ["일자", "공정", "제품정보", "Stack", "WF 구분", "소요기준"]
 DYNAMIC_CAPACITY_INPUT_COLUMNS = [
     *DYNAMIC_CAPACITY_KEYS,
@@ -141,7 +146,7 @@ def build_dynamic_capacity_demo() -> pd.DataFrame:
 
 def calculate_dynamic_capacity(data: pd.DataFrame) -> pd.DataFrame:
     """Calculate the sequential capacity bridge for detailed actual-history rows."""
-    _require_columns(data, DYNAMIC_CAPACITY_INPUT_COLUMNS)
+    require_columns(data, DYNAMIC_CAPACITY_INPUT_COLUMNS, "Dynamic Capa")
     result = data[DYNAMIC_CAPACITY_INPUT_COLUMNS].copy()
     result["일자"] = pd.to_datetime(result["일자"], errors="coerce")
     if result["일자"].isna().any():
@@ -151,7 +156,7 @@ def calculate_dynamic_capacity(data: pd.DataFrame) -> pd.DataFrame:
         result[column] = result[column].astype("string").str.strip()
         if result[column].isna().any() or result[column].eq("").any():
             raise ValueError(f"Dynamic Capa의 {column} 연결 키에 누락값이 있습니다.")
-    result["소요기준"] = result["소요기준"].str.upper().replace({"WAFER": "WF"})
+    result["소요기준"] = normalize_demand_basis(result["소요기준"])
 
     for column in _NUMERIC_COLUMNS:
         result[column] = pd.to_numeric(result[column], errors="coerce")
@@ -221,7 +226,7 @@ def aggregate_dynamic_capacity(
 ) -> pd.DataFrame:
     """Aggregate capacities and calculate weighted standard/actual reference values."""
     required = [*_SUM_COLUMNS, "표준 효율", "실적 효율", "표준 UPEH", "실적 UPEH", "소요기준"]
-    _require_columns(data, [*group_columns, *required])
+    require_columns(data, [*group_columns, *required], "Dynamic Capa")
     if data.empty:
         return pd.DataFrame(columns=[*group_columns, *required])
 
@@ -284,9 +289,3 @@ def _status_label(rate: float) -> str:
 
 def _clip(value: float, lower: float, upper: float) -> float:
     return min(max(value, lower), upper)
-
-
-def _require_columns(data: pd.DataFrame, required: list[str]) -> None:
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"Dynamic Capa 필수 컬럼이 없습니다: {', '.join(missing)}")

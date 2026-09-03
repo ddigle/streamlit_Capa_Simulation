@@ -9,6 +9,11 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import (
+    normalize_demand_basis,
+    normalize_demand_basis_value,
+)
+
 ROUTE_GROUP_COLUMNS = (
     "Area_Name",
     "공정",
@@ -267,7 +272,7 @@ def _prepare(data: pd.DataFrame, required: tuple[str, ...], table_name: str) -> 
         if result[column].isna().any() or result[column].eq("").any():
             raise ValueError(f"{table_name}의 {column}에 누락값이 있습니다.")
     if "소요기준" in result.columns:
-        result["소요기준"] = result["소요기준"].str.upper().replace({"WAFER": "WF"})
+        result["소요기준"] = normalize_demand_basis(result["소요기준"])
     return result
 
 
@@ -280,9 +285,7 @@ def _normalize_route(route: Mapping[str, object]) -> dict[str, str]:
         value = str(route[column]).strip()
         if not value:
             raise ValueError(f"STEP 편집 경로의 {column} 값이 비어 있습니다.")
-        result[column] = value.upper() if column == "소요기준" else value
-    if result["소요기준"] == "WAFER":
-        result["소요기준"] = "WF"
+        result[column] = normalize_demand_basis_value(value) if column == "소요기준" else value
     return result
 
 

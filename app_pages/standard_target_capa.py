@@ -28,6 +28,7 @@ from capa_simulation.scenario_state import (
     scenario_month_table,
 )
 from capa_simulation.services.display_order import apply_display_order, prepare_display_order
+from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.simulation_cache import (
     get_required_equipment,
@@ -194,13 +195,7 @@ def _render_logic_analysis(
             process_source = month_source.loc[
                 month_source["공정"].astype("string").str.strip().eq(process)
             ].copy()
-        normalized_basis = (
-            process_source["소요기준"]
-            .astype("string")
-            .str.strip()
-            .str.upper()
-            .replace({"WAFER": "WF"})
-        )
+        normalized_basis = normalize_demand_basis(process_source["소요기준"])
         basis_options = _ordered_text_options(normalized_basis)
         demand_basis = _required_selectbox(
             "소요기준",

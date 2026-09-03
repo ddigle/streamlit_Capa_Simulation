@@ -2,6 +2,11 @@
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import (
+    normalize_area_name,
+    require_columns,
+)
+
 PERFORMANCE_EDITOR_DIMENSIONS = [
     "공정",
     "Area_Name",
@@ -23,7 +28,7 @@ def reference_to_edit_table(
 ) -> pd.DataFrame:
     """Pivot a monthly reference table into editable month columns."""
     required = ["생산계획년월", *dimensions, value_column]
-    _require_columns(data, required, table_name)
+    require_columns(data, required, table_name)
     prepared = data[required].copy()
     prepared["생산계획년월"] = _month_values(prepared["생산계획년월"], table_name)
     _normalize_dimensions(prepared, dimensions)
@@ -50,7 +55,7 @@ def reference_from_edit_table(
     table_name: str,
 ) -> pd.DataFrame:
     """Restore an edited month-column table to its monthly Long format."""
-    _require_columns(edit_table, dimensions, table_name)
+    require_columns(edit_table, dimensions, table_name)
     month_columns = [column for column in edit_table.columns if column not in dimensions]
     invalid_months = [
         column for column in month_columns if not str(column).isdigit() or len(str(column)) != 6
@@ -79,15 +84,9 @@ def performance_to_edit_table(data: pd.DataFrame) -> pd.DataFrame:
         "UPEH",
         "ST",
     ]
-    _require_columns(data, required, "RQ_UPEH")
+    require_columns(data, required, "RQ_UPEH")
     prepared = data[required].copy()
-    prepared["Area_Name"] = prepared["Area_Name"].astype("string").str.strip()
-    area_names = prepared["Area_Name"].str.casefold()
-    invalid = ~area_names.isin(["main", "mi"])
-    if invalid.any():
-        examples = prepared.loc[invalid, "Area_Name"].drop_duplicates().head(5).tolist()
-        raise ValueError(f"RQ_UPEH의 Area_Name은 Main 또는 MI여야 합니다: {examples}")
-    prepared["Area_Name"] = area_names.map({"main": "Main", "mi": "MI"})
+    prepared["Area_Name"] = normalize_area_name(prepared["Area_Name"], "RQ_UPEH")
     prepared["기준값"] = pd.to_numeric(prepared["UPEH"], errors="coerce")
     mi_rows = prepared["Area_Name"].eq("MI")
     prepared.loc[mi_rows, "기준값"] = pd.to_numeric(prepared.loc[mi_rows, "ST"], errors="coerce")
@@ -142,9 +141,3 @@ def _assert_unique(data: pd.DataFrame, keys: list[str], table_name: str) -> None
     if duplicated.any():
         examples = data.loc[duplicated, keys].drop_duplicates().head(5).to_dict("records")
         raise ValueError(f"{table_name}의 월별 연결 키가 중복되었습니다: {examples}")
-
-
-def _require_columns(data: pd.DataFrame, required: list[str], table_name: str) -> None:
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"{table_name} 필수 컬럼이 없습니다: {', '.join(missing)}")

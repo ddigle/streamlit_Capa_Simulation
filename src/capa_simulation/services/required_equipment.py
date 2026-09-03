@@ -2,6 +2,11 @@
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import (
+    normalize_area_name,
+    require_columns,
+    validate_demand_basis,
+)
 from capa_simulation.services.load_calculator import (
     calculate_chip_and_wafer_loads,
     calculate_chip_load,
@@ -115,7 +120,7 @@ def calculate_required_equipment_from_loads(
 
 
 def _prepare_reqb(reqb: pd.DataFrame) -> pd.DataFrame:
-    _require_columns(reqb, REQB_COLUMNS, "RQ_REQB")
+    require_columns(reqb, REQB_COLUMNS, "RQ_REQB")
     prepared_reqb = reqb[REQB_COLUMNS].copy()
     _normalize_month(prepared_reqb, "RQ_REQB")
     _normalize_text(prepared_reqb, REQB_TEXT_COLUMNS)
@@ -123,9 +128,9 @@ def _prepare_reqb(reqb: pd.DataFrame) -> pd.DataFrame:
     prepared_reqb = prepared_reqb.loc[~prepared_reqb["소요기준"].isin(UNIMPLEMENTED_BASES)].copy()
     if prepared_reqb.empty:
         return prepared_reqb
-    _normalize_basis(prepared_reqb, "RQ_REQB")
+    prepared_reqb["소요기준"] = validate_demand_basis(prepared_reqb["소요기준"], "RQ_REQB")
     _assert_complete(prepared_reqb, REQB_REQUIRED_KEYS, "RQ_REQB")
-    _normalize_area_name(prepared_reqb, "RQ_REQB")
+    prepared_reqb["Area_Name"] = normalize_area_name(prepared_reqb["Area_Name"], "RQ_REQB")
     return prepared_reqb
 
 
@@ -168,7 +173,7 @@ def _calculate_required_equipment_from_prepared(
 def required_equipment_to_month_table(data: pd.DataFrame) -> pd.DataFrame:
     """Aggregate RQ_REQB results by output dimensions and pivot month columns."""
     required = [*REQB_COLUMNS, "소요대수"]
-    _require_columns(data, required, "소요대수")
+    require_columns(data, required, "소요대수")
     if data.empty:
         return pd.DataFrame(columns=RESULT_DIMENSIONS)
     pivot_input = data.groupby(
@@ -208,7 +213,7 @@ def _build_loads(
         "CS",
         "생산수량",
     ]
-    _require_columns(plan, plan_columns, "RQ_PKG_PLAN")
+    require_columns(plan, plan_columns, "RQ_PKG_PLAN")
     prepared_plan = plan.copy()
     _normalize_month(prepared_plan, "RQ_PKG_PLAN")
     _normalize_text(
@@ -252,44 +257,26 @@ def _build_loads(
 
     loads = pd.concat(load_frames, ignore_index=True)[[*LOAD_KEYS, "부하량"]]
     _normalize_text(loads, [key for key in LOAD_KEYS if key not in {"생산계획년월", "소요기준"}])
-    _normalize_basis(loads, "부하량")
+    loads["소요기준"] = validate_demand_basis(loads["소요기준"], "부하량")
     return loads.groupby(LOAD_KEYS, as_index=False, dropna=False)[["부하량"]].sum()
 
 
 def _prepare_capacities(data: pd.DataFrame) -> pd.DataFrame:
-    _require_columns(data, [*CAPACITY_KEYS, "대당 Capa"], "대당 Capa")
+    require_columns(data, [*CAPACITY_KEYS, "대당 Capa"], "대당 Capa")
     result = data[[*CAPACITY_KEYS, "대당 Capa"]].copy()
     _normalize_month(result, "대당 Capa")
     _normalize_text(
         result,
         [key for key in CAPACITY_KEYS if key not in {"생산계획년월", "소요기준"}],
     )
-    _normalize_area_name(result, "대당 Capa")
-    _normalize_basis(result, "대당 Capa")
+    result["Area_Name"] = normalize_area_name(result["Area_Name"], "대당 Capa")
+    result["소요기준"] = validate_demand_basis(result["소요기준"], "대당 Capa")
     result["대당 Capa"] = _numeric(result["대당 Capa"], "대당 Capa")
     duplicated = result.duplicated(CAPACITY_KEYS, keep=False)
     if duplicated.any():
         examples = result.loc[duplicated, CAPACITY_KEYS].drop_duplicates().head(5)
         raise ValueError(f"대당 Capa 연결 키가 중복되었습니다: {examples.to_dict('records')}")
     return result
-
-
-def _normalize_basis(data: pd.DataFrame, table_name: str) -> None:
-    data["소요기준"] = data["소요기준"].astype("string").str.strip().str.upper()
-    data["소요기준"] = data["소요기준"].replace({"WAFER": "WF"})
-    invalid = ~data["소요기준"].isin(["PKG", "WF", "CHIP"])
-    if invalid.any():
-        values = data.loc[invalid, "소요기준"].drop_duplicates().head(5).tolist()
-        raise ValueError(f"{table_name}에 지원하지 않는 소요기준이 있습니다: {values}")
-
-
-def _normalize_area_name(data: pd.DataFrame, table_name: str) -> None:
-    area_names = data["Area_Name"].astype("string").str.strip().str.casefold()
-    invalid = area_names.isna() | ~area_names.isin(["main", "mi"])
-    if invalid.any():
-        values = data.loc[invalid, "Area_Name"].drop_duplicates().head(5).tolist()
-        raise ValueError(f"{table_name}의 Area_Name은 Main 또는 MI여야 합니다: {values}")
-    data["Area_Name"] = area_names.map({"main": "Main", "mi": "MI"})
 
 
 def _normalize_text(data: pd.DataFrame, columns: list[str]) -> None:
@@ -319,9 +306,3 @@ def _numeric(series: pd.Series, label: str) -> pd.Series:
     if result.isna().any():
         raise ValueError(f"{label}에 숫자가 아닌 값 또는 누락값이 있습니다.")
     return result.astype("float64")
-
-
-def _require_columns(data: pd.DataFrame, required: list[str], table_name: str) -> None:
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"{table_name} 필수 컬럼이 없습니다: {', '.join(missing)}")

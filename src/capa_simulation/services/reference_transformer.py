@@ -15,6 +15,7 @@ from capa_simulation.io.core_data_source import (
     load_core_data_contract,
     normalize_core_data,
 )
+from capa_simulation.services.frame_contracts import require_columns
 
 ACTIVE_CORE_COLUMNS = (
     "제품타입",
@@ -234,7 +235,7 @@ def transform_display_order(source: pd.DataFrame) -> pd.DataFrame:
         "값표시순서",
         "활성여부",
     ]
-    _require_columns(source, columns, "RQ_DISPLAY_ORDER")
+    require_columns(source, columns, "RQ_DISPLAY_ORDER")
     result = source.loc[:, columns].copy()
     text_columns = [
         "페이지 구분",
@@ -459,7 +460,7 @@ def _validated_distinct(
     keys = contract.derived_keys.get(table_name)
     if keys is None:
         raise KeyError(f"{table_name} 업무 키 계약이 없습니다.")
-    _require_columns(frame, list(keys), table_name)
+    require_columns(frame, list(keys), table_name)
     _require_non_null(frame, list(keys), table_name)
     duplicated = frame.duplicated(subset=list(keys), keep=False)
     if duplicated.any():
@@ -573,12 +574,6 @@ def _require_non_null(frame: pd.DataFrame, columns: list[str], table_name: str) 
     if invalid_columns:
         labels = ", ".join(dict.fromkeys(invalid_columns))
         raise ValueError(f"{table_name} 업무 키에 null 또는 빈값이 있습니다: {labels}")
-
-
-def _require_columns(frame: pd.DataFrame, columns: list[str], table_name: str) -> None:
-    missing = [column for column in columns if column not in frame.columns]
-    if missing:
-        raise ValueError(f"{table_name}에 필수 컬럼이 없습니다: {', '.join(missing)}")
 
 
 def _nullable_integer(series: pd.Series, label: str) -> pd.Series:

@@ -11,6 +11,8 @@ from typing import cast
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import normalize_demand_basis
+
 WIP_ROUTE_COLUMNS = ["공정", "STEP_SEQ", "제품정보", "소요기준"]
 WIP_HISTORY_COLUMNS = [
     "일자",
@@ -62,7 +64,7 @@ def build_wip_route_scope(required_equipment: pd.DataFrame) -> pd.DataFrame:
     result = required_equipment[WIP_ROUTE_COLUMNS].copy()
     for column in WIP_ROUTE_COLUMNS:
         result[column] = result[column].astype("string").str.strip()
-    result["소요기준"] = result["소요기준"].str.upper().replace({"WAFER": "WF"})
+    result["소요기준"] = normalize_demand_basis(result["소요기준"])
     if any(
         result[column].isna().any() or result[column].eq("").any() for column in WIP_ROUTE_COLUMNS
     ):
@@ -124,7 +126,7 @@ def aggregate_weekly_product_standard(weekly_target: pd.DataFrame) -> pd.DataFra
     result = weekly_target[required].copy()
     for column in ("Weeknum", "공정", "소요기준", "제품정보"):
         result[column] = result[column].astype("string").str.strip()
-    result["소요기준"] = result["소요기준"].str.upper().replace({"WAFER": "WF"})
+    result["소요기준"] = normalize_demand_basis(result["소요기준"])
     if any(
         result[column].isna().any() or result[column].eq("").any()
         for column in WEEKLY_TARGET_TEXT_KEYS
@@ -314,7 +316,7 @@ def _prepare_daily_standard(data: pd.DataFrame) -> pd.DataFrame:
     result["일자"] = parsed_dates.dt.date
     for column in ("공정", "소요기준", "제품정보"):
         result[column] = result[column].astype("string").str.strip()
-    result["소요기준"] = result["소요기준"].str.upper().replace({"WAFER": "WF"})
+    result["소요기준"] = normalize_demand_basis(result["소요기준"])
     if any(
         result[column].isna().any() or result[column].eq("").any()
         for column in DAILY_STANDARD_TEXT_KEYS

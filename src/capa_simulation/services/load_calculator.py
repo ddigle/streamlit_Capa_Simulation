@@ -7,6 +7,7 @@ from typing import Literal
 import pandas as pd
 
 from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
+from capa_simulation.services.frame_contracts import require_columns
 
 DemandBasis = Literal["PKG", "Chip", "Wafer", "Density"]
 
@@ -40,7 +41,7 @@ DENSITY_REQUIRED_COLUMNS = [*DENSITY_KEYS, "구분_Chip", "구분_EQ"]
 def plan_to_edit_table(plan: pd.DataFrame, display_order: DisplayOrderInput = None) -> pd.DataFrame:
     """Pivot the default Long PKG plan into an editable month-column table."""
     required = ["생산계획년월", *PLAN_EDITOR_DIMENSIONS, "생산수량"]
-    _require_columns(plan, required, "RQ_PKG_PLAN")
+    require_columns(plan, required, "RQ_PKG_PLAN")
     prepared = _normalize_text(plan[required], PLAN_EDITOR_DIMENSIONS)
     prepared["생산계획년월"] = pd.to_numeric(prepared["생산계획년월"], errors="coerce").astype(
         "Int64"
@@ -79,7 +80,7 @@ def plan_to_edit_table(plan: pd.DataFrame, display_order: DisplayOrderInput = No
 
 def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
     """Convert the edited month-column plan back to the calculation Long format."""
-    _require_columns(plan_table, PLAN_EDITOR_DIMENSIONS, "PKG PLAN 편집값")
+    require_columns(plan_table, PLAN_EDITOR_DIMENSIONS, "PKG PLAN 편집값")
     month_columns = [
         column for column in plan_table.columns if column not in PLAN_EDITOR_DIMENSIONS
     ]
@@ -110,7 +111,7 @@ def yield_to_edit_table(
     yield_data: pd.DataFrame, display_order: DisplayOrderInput = None
 ) -> pd.DataFrame:
     """Pivot Long yield data into editable EDS/BE rows with month columns."""
-    _require_columns(yield_data, YIELD_REQUIRED_COLUMNS, "RQ_YLD")
+    require_columns(yield_data, YIELD_REQUIRED_COLUMNS, "RQ_YLD")
     prepared = _normalize_text(yield_data[YIELD_REQUIRED_COLUMNS], YIELD_KEYS[1:])
     prepared["생산계획년월"] = pd.to_numeric(prepared["생산계획년월"], errors="coerce").astype(
         "Int64"
@@ -156,7 +157,7 @@ def yield_to_edit_table(
 
 def yield_from_edit_table(yield_table: pd.DataFrame) -> pd.DataFrame:
     """Convert edited month-column yields back to the RQ_YLD Long format."""
-    _require_columns(yield_table, YIELD_EDITOR_DIMENSIONS, "수율 편집값")
+    require_columns(yield_table, YIELD_EDITOR_DIMENSIONS, "수율 편집값")
     month_columns = [
         column for column in yield_table.columns if column not in YIELD_EDITOR_DIMENSIONS
     ]
@@ -194,17 +195,11 @@ def yield_from_edit_table(yield_table: pd.DataFrame) -> pd.DataFrame:
         values="수율",
     ).reset_index()
     result.columns.name = None
-    _require_columns(result, YIELD_REQUIRED_COLUMNS, "수율 편집값")
+    require_columns(result, YIELD_REQUIRED_COLUMNS, "수율 편집값")
     if result[YIELD_VALUE_COLUMNS].isna().any(axis=None):
         raise ValueError("동일한 기준에는 EDS_수율과 BE_수율이 모두 필요합니다.")
     _validate_yield_range(result, "수율 편집값")
     return result[YIELD_REQUIRED_COLUMNS].sort_values(YIELD_KEYS).reset_index(drop=True)
-
-
-def _require_columns(data: pd.DataFrame, required: list[str], table_name: str) -> None:
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"{table_name} 필수 컬럼이 없습니다: {', '.join(missing)}")
 
 
 def _normalize_text(data: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -249,7 +244,7 @@ def _validate_yield_range(data: pd.DataFrame, table_name: str) -> None:
 
 
 def _prepare_plan(plan: pd.DataFrame) -> pd.DataFrame:
-    _require_columns(plan, PLAN_REQUIRED_COLUMNS, "RQ_PKG_PLAN")
+    require_columns(plan, PLAN_REQUIRED_COLUMNS, "RQ_PKG_PLAN")
     available_detail_columns = [column for column in LOAD_DETAIL_COLUMNS if column in plan.columns]
     prepared_columns = [*PLAN_REQUIRED_COLUMNS, *available_detail_columns]
     prepared = _normalize_text(
@@ -274,8 +269,8 @@ def _prepare_load_base(
 ) -> pd.DataFrame:
     """Expand each plan by WF type and attach the matching yield and chip standards."""
     prepared_plan = _prepare_plan(plan)
-    _require_columns(yield_data, YIELD_REQUIRED_COLUMNS, "RQ_YLD")
-    _require_columns(chip_qty, CHIP_REQUIRED_COLUMNS, "RQ_CHIP_QTY")
+    require_columns(yield_data, YIELD_REQUIRED_COLUMNS, "RQ_YLD")
+    require_columns(chip_qty, CHIP_REQUIRED_COLUMNS, "RQ_CHIP_QTY")
 
     prepared_yield = _normalize_text(yield_data[YIELD_REQUIRED_COLUMNS], YIELD_KEYS[1:])
     prepared_yield["생산계획년월"] = pd.to_numeric(
@@ -397,7 +392,7 @@ def _calculate_wafer_load_from_base(load_base: pd.DataFrame) -> pd.DataFrame:
 def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd.DataFrame:
     """Calculate product density by capacity-bearing WF type in 100M Gb."""
     prepared_plan = _prepare_plan(plan)
-    _require_columns(density_data, DENSITY_REQUIRED_COLUMNS, "RQ_CHIP_EQ")
+    require_columns(density_data, DENSITY_REQUIRED_COLUMNS, "RQ_CHIP_EQ")
 
     prepared_density = _normalize_text(density_data[DENSITY_REQUIRED_COLUMNS], DENSITY_KEYS)
     prepared_density = _to_numeric(prepared_density, ["구분_Chip", "구분_EQ"], "RQ_CHIP_EQ")
@@ -502,6 +497,6 @@ def filter_edp_plan(plan: pd.DataFrame, include_edp: bool) -> pd.DataFrame:
     """Exclude DDR products from conversion input while EDP is disabled."""
     if include_edp:
         return plan.copy()
-    _require_columns(plan, ["제품정보"], "RQ_PKG_PLAN")
+    require_columns(plan, ["제품정보"], "RQ_PKG_PLAN")
     product = plan["제품정보"].astype("string").str.strip()
     return plan.loc[~product.str.contains("DDR", case=False, na=False)].copy()

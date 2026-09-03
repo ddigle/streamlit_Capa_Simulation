@@ -4,6 +4,11 @@
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import (
+    normalize_demand_basis,
+    require_columns,
+)
+
 WEIGHTED_CAPACITY_HIERARCHY = ["공정", "양산구분", "제품정보", "Stack", "WF 구분"]
 DEMAND_ID_COLUMNS = [
     "생산계획년월",
@@ -55,7 +60,7 @@ def effective_process_capacity_long(
     hierarchy_dimensions = WEIGHTED_CAPACITY_HIERARCHY[: level_index + 1]
     display_dimensions = ["공정", "소요기준", *hierarchy_dimensions[1:]]
     required = [*DEMAND_ID_COLUMNS, "부하량", "소요대수"]
-    _require_columns(required_equipment, required)
+    require_columns(required_equipment, required, "소요대수 상세")
     if required_equipment.empty:
         return pd.DataFrame(
             columns=[
@@ -73,9 +78,7 @@ def effective_process_capacity_long(
         column for column in DEMAND_ID_COLUMNS if column not in {"생산계획년월", "소요기준"}
     ]
     _normalize_text(result, text_columns)
-    result["소요기준"] = (
-        result["소요기준"].astype("string").str.strip().str.upper().replace({"WAFER": "WF"})
-    )
+    result["소요기준"] = normalize_demand_basis(result["소요기준"])
     _assert_complete_keys(result, DEMAND_ID_COLUMNS)
     _assert_one_basis_per_process(result)
 
@@ -134,16 +137,14 @@ def weighted_unit_capacity_to_month_table(
         "부하량",
         "대당 Capa",
     ]
-    _require_columns(required_equipment, required)
+    require_columns(required_equipment, required, "소요대수 상세")
     if required_equipment.empty:
         return pd.DataFrame(columns=display_dimensions)
 
     result = required_equipment[required].copy()
     _normalize_month(result)
     _normalize_text(result, WEIGHTED_CAPACITY_HIERARCHY)
-    result["소요기준"] = (
-        result["소요기준"].astype("string").str.strip().str.upper().replace({"WAFER": "WF"})
-    )
+    result["소요기준"] = normalize_demand_basis(result["소요기준"])
     _assert_complete_keys(
         result,
         ["생산계획년월", *WEIGHTED_CAPACITY_HIERARCHY, "소요기준"],
@@ -215,9 +216,3 @@ def _assert_one_basis_per_process(data: pd.DataFrame) -> None:
     multiple_basis_processes = process_basis_counts.loc[process_basis_counts.gt(1)].index.tolist()
     if multiple_basis_processes:
         raise ValueError(f"공정별 소요기준이 둘 이상입니다: {multiple_basis_processes[:5]}")
-
-
-def _require_columns(data: pd.DataFrame, required: list[str]) -> None:
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"소요대수 상세 필수 컬럼이 없습니다: {', '.join(missing)}")

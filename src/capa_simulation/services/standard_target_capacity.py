@@ -12,6 +12,10 @@ from typing import cast
 import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
+from capa_simulation.services.frame_contracts import (
+    normalize_demand_basis,
+    normalize_demand_basis_value,
+)
 from capa_simulation.services.weighted_unit_capacity import (
     DEMAND_ID_COLUMNS,
     WEIGHTED_CAPACITY_HIERARCHY,
@@ -249,9 +253,7 @@ def add_pkg_equivalent_standard_target(
         column for column in DEMAND_ID_COLUMNS if column not in {"생산계획년월", "소요기준"}
     ]
     _normalize_text_values(source, source_text_columns, "소요대수 상세")
-    source["소요기준"] = (
-        source["소요기준"].astype("string").str.strip().str.upper().replace({"WAFER": "WF"})
-    )
+    source["소요기준"] = normalize_demand_basis(source["소요기준"])
     _assert_complete_values(source, DEMAND_ID_COLUMNS, "소요대수 상세")
     source["부하량"] = _numeric_values(source["부하량"], "소요대수 상세.부하량")
     source = source.loc[source["부하량"].gt(0)].drop_duplicates(DEMAND_ID_COLUMNS)
@@ -304,7 +306,7 @@ def build_standard_target_logic_analysis(
     normalized_process = str(process).strip()
     if not normalized_process:
         raise ValueError("로직 분석 공정을 선택해야 합니다.")
-    normalized_basis = str(demand_basis).strip().upper().replace("WAFER", "WF")
+    normalized_basis = normalize_demand_basis_value(demand_basis)
     if not normalized_basis:
         raise ValueError("로직 분석 소요기준을 선택해야 합니다.")
 
@@ -326,9 +328,7 @@ def build_standard_target_logic_analysis(
     source = required_equipment.copy()
     month = pd.to_numeric(source["생산계획년월"], errors="coerce")
     process_values = source["공정"].astype("string").str.strip()
-    basis_values = (
-        source["소요기준"].astype("string").str.strip().str.upper().replace({"WAFER": "WF"})
-    )
+    basis_values = normalize_demand_basis(source["소요기준"])
     source = source.loc[
         month.eq(production_month)
         & process_values.eq(normalized_process)

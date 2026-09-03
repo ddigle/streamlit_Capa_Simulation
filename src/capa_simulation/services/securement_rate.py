@@ -4,6 +4,8 @@ from math import ceil
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import require_columns
+
 SECUREMENT_DIMENSIONS = ["공정"]
 SHORTFALL_COLUMNS = [
     "생산계획년월",
@@ -26,8 +28,8 @@ def calculate_securement_rate(
     """Calculate monthly process securement rate as available / required."""
     available_required = ["생산계획년월", "공정", "가용대수"]
     required_required = ["생산계획년월", "공정", "소요대수"]
-    _require_columns(available_equipment, available_required, "RQ_EQP_AVBL")
-    _require_columns(required_equipment, required_required, "소요대수")
+    require_columns(available_equipment, available_required, "RQ_EQP_AVBL")
+    require_columns(required_equipment, required_required, "소요대수")
 
     available = available_equipment[available_required].copy()
     required = required_equipment[required_required].copy()
@@ -72,7 +74,7 @@ def calculate_securement_rate(
 def securement_rate_to_month_table(data: pd.DataFrame) -> pd.DataFrame:
     """Pivot monthly process securement rates for display."""
     required = ["생산계획년월", "공정", "확보율"]
-    _require_columns(data, required, "확보율")
+    require_columns(data, required, "확보율")
     result = data.pivot(
         index=SECUREMENT_DIMENSIONS,
         columns="생산계획년월",
@@ -104,7 +106,7 @@ def build_securement_shortfall_tables(
         raise ValueError("경고 기준은 확보 기준보다 클 수 없습니다.")
 
     required = ["생산계획년월", "공정", "가용대수", "소요대수", "확보율"]
-    _require_columns(securement_rate, required, "확보율")
+    require_columns(securement_rate, required, "확보율")
     result = securement_rate[required].copy()
     _prepare_shortfall_input(result)
     result = result.loc[result["소요대수"].gt(0)].copy()
@@ -172,9 +174,3 @@ def _prepare_shortfall_input(data: pd.DataFrame) -> None:
 
 def _ceil_positive(value: float) -> int:
     return max(0, ceil(float(value)))
-
-
-def _require_columns(data: pd.DataFrame, required: list[str], table_name: str) -> None:
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"{table_name} 필수 컬럼이 없습니다: {', '.join(missing)}")
