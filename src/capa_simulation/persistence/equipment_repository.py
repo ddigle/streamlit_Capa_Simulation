@@ -118,7 +118,7 @@ class DuckDBEquipmentRepository:
 
     def latest_revision_id(self) -> str | None:
         """Return the newest immutable revision id without loading its frames."""
-        with self._connect(read_only=True) as connection:
+        with self._connect() as connection:
             row = connection.execute(
                 "SELECT revision_id FROM equipment_ops.revision ORDER BY revision_no DESC LIMIT 1"
             ).fetchone()
@@ -127,7 +127,7 @@ class DuckDBEquipmentRepository:
         return str(row[0])
 
     def load_snapshot(self, revision_id: str) -> EquipmentSnapshot:
-        with self._connect(read_only=True) as connection:
+        with self._connect() as connection:
             revision_row = connection.execute(
                 """
                 SELECT r.revision_id, r.revision_no, r.note,
@@ -182,7 +182,7 @@ class DuckDBEquipmentRepository:
     def list_revisions(self, *, limit: int = 50) -> list[EquipmentRevisionSummary]:
         if limit <= 0:
             raise ValueError("설비 이력 조회 건수는 1 이상이어야 합니다.")
-        with self._connect(read_only=True) as connection:
+        with self._connect() as connection:
             rows = connection.execute(
                 """
                 SELECT r.revision_id, r.revision_no, r.note,
@@ -251,7 +251,7 @@ class DuckDBEquipmentRepository:
 
     def load_standard_target_availability(self) -> pd.DataFrame:
         """Load the current non-versioned process-week availability."""
-        with self._connect(read_only=True) as connection:
+        with self._connect() as connection:
             result = connection.execute(
                 """
                 SELECT process_name AS "공정", weeknum AS "Weeknum",
@@ -280,8 +280,11 @@ class DuckDBEquipmentRepository:
                 connection.execute("ROLLBACK")
                 raise
 
-    def _connect(self, *, read_only: bool = False) -> duckdb.DuckDBPyConnection:
-        return duckdb.connect(str(self._database_path), read_only=read_only)
+    def _connect(self) -> duckdb.DuckDBPyConnection:
+        # 모든 연결은 동일한 configuration을 써야 한다. 읽기만 read_only=True로 열면
+        # 쓰기 연결과 겹치는 순간 DuckDB가 "Can't open a connection to same database
+        # file with a different configuration" 로 연결 자체를 거부한다.
+        return duckdb.connect(str(self._database_path))
 
 
 def _load_baseline(connection: duckdb.DuckDBPyConnection, revision_id: str) -> pd.DataFrame:

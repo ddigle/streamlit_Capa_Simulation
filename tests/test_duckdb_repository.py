@@ -223,6 +223,18 @@ def _repository(path: Path) -> DuckDBScenarioRepository:
     return repository
 
 
+def test_reads_succeed_while_another_connection_is_open(tmp_path: Path) -> None:
+    """읽기와 쓰기가 서로 다른 configuration으로 열리면 DuckDB가 연결을 거부한다."""
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+
+    # 다른 브라우저 세션이 저장 중인 상황을 흉내낸다. 읽기 경로가 read_only=True로
+    # 되돌아가면 이 지점에서 ConnectionException이 난다.
+    with duckdb.connect(str(database_path)):
+        assert repository.list_scenarios() == []
+        assert repository.latest_official_release() is None
+
+
 def test_create_and_load_scenario_snapshot(tmp_path: Path) -> None:
     database_path = tmp_path / "scenario.duckdb"
     repository = _repository(database_path)

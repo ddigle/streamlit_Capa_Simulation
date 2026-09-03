@@ -124,6 +124,51 @@ def test_wip_demo_is_deterministic_and_marks_flow_against_standard() -> None:
     assert first["시점"].tolist() == ["실적 샘플", "실적 샘플", "전망 샘플", "전망 샘플"]
 
 
+def test_weekly_standard_keeps_unset_availability_instead_of_raising() -> None:
+    weekly = pd.DataFrame(
+        {
+            "Weeknum": ["26-W36", "26-W37"],
+            "주차시작일": [date(2026, 8, 31), date(2026, 9, 7)],
+            "주차종료일": [date(2026, 9, 6), date(2026, 9, 13)],
+            "생산계획년월": [202608, 202609],
+            "공정": ["Process-A", "Process-A"],
+            "소요기준": ["WF", "WF"],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["Product-A", "Product-A"],
+            "원수요_부하량": [100.0, 100.0],
+            "STEP_소요대수": [2.0, 2.0],
+            "RUN_DAY": [30.0, 30.0],
+            # 26-W37은 아직 수동 가용대수를 입력하지 않은 주차다.
+            "가용대수": [3.0, None],
+        }
+    )
+
+    product_weekly = aggregate_weekly_product_standard(weekly)
+
+    assert product_weekly["Weeknum"].tolist() == ["26-W36", "26-W37"]
+    assert product_weekly.loc[0, "일 표준 가능량"] == pytest.approx(5.0)
+    assert pd.isna(product_weekly.loc[1, "일 표준 가능량"])
+
+    daily = expand_weekly_product_standard_to_daily(
+        product_weekly,
+        date(2026, 9, 6),
+        date(2026, 9, 7),
+    )
+    routes = pd.DataFrame(
+        {
+            "공정": ["Process-A"],
+            "STEP_SEQ": ["P100"],
+            "제품정보": ["Product-A"],
+            "소요기준": ["WF"],
+        }
+    )
+
+    history = build_wip_history_demo(routes, daily, date(2026, 9, 6), date(2026, 9, 7))
+
+    assert history.loc[0, "상태"] != "표준 미설정"
+    assert history.loc[1, "상태"] == "표준 미설정"
+
+
 def test_wip_demo_marks_missing_standard_without_inventing_a_target() -> None:
     routes = pd.DataFrame(
         {

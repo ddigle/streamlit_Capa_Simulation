@@ -136,7 +136,7 @@ class DuckDBScenarioRepository:
 
     def load_global_display_order(self) -> GlobalDisplayOrder:
         """Load the scenario-independent display-order profile."""
-        with self._connect(read_only=True) as connection:
+        with self._connect() as connection:
             metadata = connection.execute(
                 """
                 SELECT version, source, updated_at
@@ -315,7 +315,7 @@ class DuckDBScenarioRepository:
         return self.load_revision(revision_id)
 
     def load_source_data(self, scenario_id: str) -> pd.DataFrame:
-        with self._connect(read_only=True) as connection:
+        with self._connect() as connection:
             dataset = connection.execute(
                 """
                 SELECT d.dataset_id, d.source_row_count
@@ -337,7 +337,7 @@ class DuckDBScenarioRepository:
             ).fetchdf()
 
     def load_source_profile(self, scenario_id: str) -> pd.DataFrame:
-        with self._connect(read_only=True) as connection:
+        with self._connect() as connection:
             dataset = connection.execute(
                 "SELECT dataset_id FROM app_meta.dataset WHERE scenario_id = ?",
                 [scenario_id],
@@ -430,7 +430,7 @@ class DuckDBScenarioRepository:
 
     def list_scenarios(self, *, include_archived: bool = False) -> list[ScenarioSummary]:
         where_clause = "" if include_archived else "WHERE s.status = 'ACTIVE'"
-        with self._connect(read_only=True) as connection:
+        with self._connect() as connection:
             rows = connection.execute(
                 f"""
                 SELECT s.scenario_id, d.dataset_id, s.scenario_name,
@@ -447,7 +447,7 @@ class DuckDBScenarioRepository:
         return [_scenario_summary(row) for row in rows]
 
     def list_revisions(self, scenario_id: str) -> list[RevisionSummary]:
-        with self._connect(read_only=True) as connection:
+        with self._connect() as connection:
             rows = connection.execute(
                 """
                 SELECT revision_id, scenario_id, revision_no, revision_name,
@@ -543,7 +543,7 @@ class DuckDBScenarioRepository:
             raise ValueError("공식버전 조회 건수는 1 이상이어야 합니다.")
         limit_clause = "" if limit is None else " LIMIT ?"
         parameters: list[object] = [] if limit is None else [limit]
-        with self._connect(read_only=True) as connection:
+        with self._connect() as connection:
             rows = connection.execute(
                 _OFFICIAL_RELEASE_SELECT + " ORDER BY o.release_no DESC" + limit_clause,
                 parameters,
@@ -551,7 +551,7 @@ class DuckDBScenarioRepository:
         return [_official_release_summary(row) for row in rows]
 
     def _official_release(self, official_release_id: str) -> OfficialReleaseSummary | None:
-        with self._connect(read_only=True) as connection:
+        with self._connect() as connection:
             row = connection.execute(
                 _OFFICIAL_RELEASE_SELECT + " WHERE o.official_release_id = ?",
                 [official_release_id],
@@ -559,7 +559,7 @@ class DuckDBScenarioRepository:
         return _official_release_summary(row) if row is not None else None
 
     def load_revision(self, revision_id: str) -> ScenarioSnapshot:
-        with self._connect(read_only=True) as connection:
+        with self._connect() as connection:
             scenario_row = connection.execute(
                 """
                 SELECT s.scenario_id, d.dataset_id, s.scenario_name,
@@ -709,8 +709,11 @@ class DuckDBScenarioRepository:
                 connection.execute("ROLLBACK")
                 raise
 
-    def _connect(self, *, read_only: bool = False) -> duckdb.DuckDBPyConnection:
-        return duckdb.connect(str(self._database_path), read_only=read_only)
+    def _connect(self) -> duckdb.DuckDBPyConnection:
+        # 모든 연결은 동일한 configuration을 써야 한다. 읽기만 read_only=True로 열면
+        # 쓰기 연결과 겹치는 순간 DuckDB가 "Can't open a connection to same database
+        # file with a different configuration" 로 연결 자체를 거부한다.
+        return duckdb.connect(str(self._database_path))
 
 
 def _validate_global_display_order_frame(frame: pd.DataFrame) -> None:

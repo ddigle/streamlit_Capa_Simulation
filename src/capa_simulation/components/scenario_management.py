@@ -53,12 +53,15 @@ def render_scenario_management(
         default="불러오기",
         key="scenario_page_mode",
         persist_state="session",
+        # 선택 해제를 허용하면 mode가 None이 되어 아래 분기가 파괴적인
+        # `리비전 저장`으로 떨어진다.
+        required=True,
     )
     if mode == "불러오기":
         _render_load(repository, database_path, scenarios)
     elif mode == "신규 저장":
         _render_create(repository, database_path)
-    else:
+    elif mode == "리비전 저장":
         _render_revision_save(repository)
 
 

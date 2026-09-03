@@ -381,6 +381,9 @@ with tabs[1]:
             default="STEP 추가",
             key="capacity_step_mode",
             persist_state="page",
+            # 선택 해제를 허용하면 step_mode가 None이 되어 아래 분기가 `STEP 삭제`로
+            # 넘어간다.
+            required=True,
         )
         route_options = list(range(len(step_catalog)))
 

@@ -436,9 +436,19 @@ Wafer = 생산수량 × 1,000 × 구분_Chip
 Density = 생산수량 × 구분_Chip × 구분_EQ ÷ 100,000
 ```
 
-Dummy Chip/Wafer는 `(1 - EDS_수율)`을 추가 적용한다. `WF 구분`의 Dummy 판별은 기존
-리비전과 BigDataQuery의 표기 차이를 흡수하도록 대소문자와 앞뒤 공백에 의존하지 않는다.
-정확한 현재 구현은 `load_calculator.py`와 `docs/TODO.md`를 기준으로 한다.
+Dummy는 Chip과 Wafer의 추가 적용 항이 다르다. Wafer는 위 일반식에 `(1 - EDS_수율)`만
+곱하지만, Chip은 일반식에 없는 `÷ EDS_수율`까지 함께 적용한다.
+
+```text
+Dummy Chip  = 생산수량 × 구분_Chip ÷ EDS_수율 ÷ BE_수율 × (1 - EDS_수율)
+
+Dummy Wafer = 생산수량 × 1,000 × 구분_Chip
+              ÷ EDS_수율 ÷ BE_수율 ÷ Net Die × (1 - EDS_수율)
+```
+
+`WF 구분`의 Dummy 판별은 기존 리비전과 BigDataQuery의 표기 차이를 흡수하도록 대소문자와
+앞뒤 공백에 의존하지 않는다. 정확한 현재 구현은 `load_calculator.py`와 `docs/TODO.md`를
+기준으로 한다.
 
 ### 대당 Capa
 

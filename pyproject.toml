@@ -55,3 +55,4 @@ ignore_missing_imports = true
 
 [tool.setuptools.package-data]
 "capa_simulation.persistence.migrations" = ["*.sql"]
+"capa_simulation.persistence.equipment_migrations" = ["*.sql"]

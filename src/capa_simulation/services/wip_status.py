@@ -31,6 +31,10 @@ DAILY_STANDARD_COLUMNS = [
     "제품정보",
     "일 표준 가능량",
 ]
+# 누락 검사는 반드시 텍스트 연결 키에만 적용한다. 수치 컬럼까지 함께 검사하면
+# 가용대수·일 표준 가능량이 비어 있는 주차가 `표준 미설정`이 아니라 예외로 죽는다.
+WEEKLY_TARGET_TEXT_KEYS = ["Weeknum", "공정", "소요기준", "제품정보"]
+DAILY_STANDARD_TEXT_KEYS = ["공정", "소요기준", "제품정보"]
 
 _STEP_PATTERN = re.compile(r"(?:^|[^A-Z0-9])(?P<prefix>[PT])(?P<major>\d+)(?:-(?P<minor>\d+))?$")
 
@@ -59,7 +63,9 @@ def build_wip_route_scope(required_equipment: pd.DataFrame) -> pd.DataFrame:
     for column in WIP_ROUTE_COLUMNS:
         result[column] = result[column].astype("string").str.strip()
     result["소요기준"] = result["소요기준"].str.upper().replace({"WAFER": "WF"})
-    if any(result[column].isna().any() or result[column].eq("").any() for column in result):
+    if any(
+        result[column].isna().any() or result[column].eq("").any() for column in WIP_ROUTE_COLUMNS
+    ):
         raise ValueError("재공 경로의 공정·STEP·제품·소요기준에는 누락값이 없어야 합니다.")
 
     process_basis_count = result.groupby("공정", dropna=False)["소요기준"].nunique()
@@ -119,7 +125,10 @@ def aggregate_weekly_product_standard(weekly_target: pd.DataFrame) -> pd.DataFra
     for column in ("Weeknum", "공정", "소요기준", "제품정보"):
         result[column] = result[column].astype("string").str.strip()
     result["소요기준"] = result["소요기준"].str.upper().replace({"WAFER": "WF"})
-    if any(result[column].isna().any() or result[column].eq("").any() for column in result):
+    if any(
+        result[column].isna().any() or result[column].eq("").any()
+        for column in WEEKLY_TARGET_TEXT_KEYS
+    ):
         raise ValueError("표준 목표 Capa의 주차·공정·제품 연결 키에 누락값이 있습니다.")
 
     for column in ("원수요_부하량", "STEP_소요대수", "RUN_DAY"):
@@ -306,7 +315,10 @@ def _prepare_daily_standard(data: pd.DataFrame) -> pd.DataFrame:
     for column in ("공정", "소요기준", "제품정보"):
         result[column] = result[column].astype("string").str.strip()
     result["소요기준"] = result["소요기준"].str.upper().replace({"WAFER": "WF"})
-    if any(result[column].isna().any() or result[column].eq("").any() for column in result):
+    if any(
+        result[column].isna().any() or result[column].eq("").any()
+        for column in DAILY_STANDARD_TEXT_KEYS
+    ):
         raise ValueError("일 표준 가능량의 공정·제품·소요기준에는 누락값이 없어야 합니다.")
     raw_standard = result["일 표준 가능량"]
     numeric = pd.to_numeric(raw_standard, errors="coerce")
