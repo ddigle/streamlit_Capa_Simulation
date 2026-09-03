@@ -6,17 +6,21 @@ import pandas as pd
 import pytest
 
 from capa_simulation.services.equipment_availability import (
-    EQUIPMENT_COLUMNS,
     build_equipment_status_as_of,
     build_inactive_equipment,
     build_milestone_transition_events,
     build_space_equipment_status,
     build_weekly_equipment_availability,
-    prepare_downtime_schedule,
-    prepare_equipment_master,
+)
+from capa_simulation.services.equipment_contract import EQUIPMENT_COLUMNS
+from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_baseline,
     sample_equipment_master,
+)
+from capa_simulation.services.equipment_validation import (
+    prepare_downtime_schedule,
+    prepare_equipment_master,
 )
 
 

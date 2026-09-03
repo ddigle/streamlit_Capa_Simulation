@@ -16,6 +16,11 @@ from capa_simulation.persistence.equipment_cache import (
     load_latest_equipment_snapshot,
 )
 from capa_simulation.services.equipment_availability import (
+    build_equipment_status_as_of,
+    build_inactive_equipment,
+    build_weekly_equipment_availability,
+)
+from capa_simulation.services.equipment_contract import (
     DATE_COLUMNS,
     DOWNTIME_TYPES,
     EQUIPMENT_STATUSES,
@@ -23,14 +28,8 @@ from capa_simulation.services.equipment_availability import (
     STATUS_COUNT_COLUMNS,
     VALID_BUILDINGS,
     VALID_FLOORS,
-    build_equipment_status_as_of,
-    build_inactive_equipment,
-    build_weekly_equipment_availability,
     empty_downtime_schedule,
     empty_equipment_master,
-    sample_downtime_schedule,
-    sample_equipment_baseline,
-    sample_equipment_master,
 )
 from capa_simulation.services.equipment_csv import (
     build_downtime_import_preview,
@@ -41,6 +40,11 @@ from capa_simulation.services.equipment_csv import (
     merge_equipment_rows,
     read_downtime_clipboard,
     read_equipment_clipboard,
+)
+from capa_simulation.services.equipment_samples import (
+    sample_downtime_schedule,
+    sample_equipment_baseline,
+    sample_equipment_master,
 )
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 

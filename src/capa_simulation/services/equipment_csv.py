@@ -10,10 +10,12 @@ from io import BytesIO
 import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
-from capa_simulation.services.equipment_availability import (
+from capa_simulation.services.equipment_contract import (
     DOWNTIME_COLUMNS,
     DOWNTIME_KEY_COLUMNS,
     EQUIPMENT_COLUMNS,
+)
+from capa_simulation.services.equipment_validation import (
     prepare_downtime_schedule,
     prepare_equipment_master,
 )

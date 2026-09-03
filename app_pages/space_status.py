@@ -22,10 +22,14 @@ from capa_simulation.components.space_layout import (
 )
 from capa_simulation.persistence.equipment_cache import load_latest_equipment_snapshot
 from capa_simulation.services.equipment_availability import (
-    MILESTONES,
-    QUAL_CONFIRMATION_STATUSES,
     build_milestone_transition_events,
     build_space_equipment_status,
+)
+from capa_simulation.services.equipment_contract import (
+    MILESTONES,
+    QUAL_CONFIRMATION_STATUSES,
+)
+from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_master,
 )

@@ -17,11 +17,13 @@ import duckdb
 import pandas as pd
 
 from capa_simulation.persistence.equipment_migration_runner import apply_equipment_migrations
-from capa_simulation.services.equipment_availability import (
+from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
     empty_equipment_master,
+)
+from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_baseline,
     prepare_equipment_master,
