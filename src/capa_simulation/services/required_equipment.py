@@ -3,8 +3,11 @@
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import (
+    assert_complete,
     normalize_area_name,
+    normalize_month_column,
     require_columns,
+    to_numeric_strict,
     validate_demand_basis,
 )
 from capa_simulation.services.load_calculator import (
@@ -122,14 +125,14 @@ def calculate_required_equipment_from_loads(
 def _prepare_reqb(reqb: pd.DataFrame) -> pd.DataFrame:
     require_columns(reqb, REQB_COLUMNS, "RQ_REQB")
     prepared_reqb = reqb[REQB_COLUMNS].copy()
-    _normalize_month(prepared_reqb, "RQ_REQB")
+    normalize_month_column(prepared_reqb, "RQ_REQB")
     _normalize_text(prepared_reqb, REQB_TEXT_COLUMNS)
     prepared_reqb["소요기준"] = prepared_reqb["소요기준"].str.upper()
     prepared_reqb = prepared_reqb.loc[~prepared_reqb["소요기준"].isin(UNIMPLEMENTED_BASES)].copy()
     if prepared_reqb.empty:
         return prepared_reqb
     prepared_reqb["소요기준"] = validate_demand_basis(prepared_reqb["소요기준"], "RQ_REQB")
-    _assert_complete(prepared_reqb, REQB_REQUIRED_KEYS, "RQ_REQB")
+    assert_complete(prepared_reqb, REQB_REQUIRED_KEYS, "RQ_REQB")
     prepared_reqb["Area_Name"] = normalize_area_name(prepared_reqb["Area_Name"], "RQ_REQB")
     return prepared_reqb
 
@@ -215,12 +218,12 @@ def _build_loads(
     ]
     require_columns(plan, plan_columns, "RQ_PKG_PLAN")
     prepared_plan = plan.copy()
-    _normalize_month(prepared_plan, "RQ_PKG_PLAN")
+    normalize_month_column(prepared_plan, "RQ_PKG_PLAN")
     _normalize_text(
         prepared_plan,
         ["양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS"],
     )
-    prepared_plan["생산수량"] = _numeric(prepared_plan["생산수량"], "RQ_PKG_PLAN.생산수량")
+    prepared_plan["생산수량"] = to_numeric_strict(prepared_plan["생산수량"], "RQ_PKG_PLAN.생산수량")
 
     load_frames: list[pd.DataFrame] = []
     if "PKG" in required_bases:
@@ -264,14 +267,14 @@ def _build_loads(
 def _prepare_capacities(data: pd.DataFrame) -> pd.DataFrame:
     require_columns(data, [*CAPACITY_KEYS, "대당 Capa"], "대당 Capa")
     result = data[[*CAPACITY_KEYS, "대당 Capa"]].copy()
-    _normalize_month(result, "대당 Capa")
+    normalize_month_column(result, "대당 Capa")
     _normalize_text(
         result,
         [key for key in CAPACITY_KEYS if key not in {"생산계획년월", "소요기준"}],
     )
     result["Area_Name"] = normalize_area_name(result["Area_Name"], "대당 Capa")
     result["소요기준"] = validate_demand_basis(result["소요기준"], "대당 Capa")
-    result["대당 Capa"] = _numeric(result["대당 Capa"], "대당 Capa")
+    result["대당 Capa"] = to_numeric_strict(result["대당 Capa"], "대당 Capa")
     duplicated = result.duplicated(CAPACITY_KEYS, keep=False)
     if duplicated.any():
         examples = result.loc[duplicated, CAPACITY_KEYS].drop_duplicates().head(5)
@@ -282,27 +285,3 @@ def _prepare_capacities(data: pd.DataFrame) -> pd.DataFrame:
 def _normalize_text(data: pd.DataFrame, columns: list[str]) -> None:
     for column in columns:
         data[column] = data[column].astype("string").str.strip()
-
-
-def _normalize_month(data: pd.DataFrame, table_name: str) -> None:
-    numeric = pd.to_numeric(data["생산계획년월"], errors="coerce")
-    valid = numeric.notna() & numeric.mod(1).eq(0)
-    months = numeric.fillna(0).astype("int64")
-    valid &= months.mod(100).between(1, 12)
-    if not valid.all():
-        raise ValueError(f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다.")
-    data["생산계획년월"] = months
-
-
-def _assert_complete(data: pd.DataFrame, columns: list[str], table_name: str) -> None:
-    has_missing = any(data[column].isna().any() for column in columns)
-    has_blank = any(data[column].eq("").any() for column in columns)
-    if has_missing or has_blank:
-        raise ValueError(f"{table_name}의 필수 컬럼에 누락값이 있습니다.")
-
-
-def _numeric(series: pd.Series, label: str) -> pd.Series:
-    result = pd.to_numeric(series, errors="coerce")
-    if result.isna().any():
-        raise ValueError(f"{label}에 숫자가 아닌 값 또는 누락값이 있습니다.")
-    return result.astype("float64")

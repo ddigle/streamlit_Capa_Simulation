@@ -52,6 +52,38 @@ def validate_demand_basis(values: pd.Series, label: str) -> pd.Series:
     return normalized
 
 
+def normalize_month_column(data: pd.DataFrame, label: str, *, column: str = "생산계획년월") -> None:
+    """월 컬럼을 유효한 정수 `YYYYMM`으로 제자리 정규화한다."""
+    numeric = pd.to_numeric(data[column], errors="coerce")
+    valid = numeric.notna() & numeric.mod(1).eq(0)
+    months = numeric.fillna(0).astype("int64")
+    valid &= months.mod(100).between(1, 12)
+    if not valid.all():
+        raise ValueError(f"{label}의 {column}은 YYYYMM 형식이어야 합니다.")
+    data[column] = months
+
+
+def assert_complete(data: pd.DataFrame, columns: Sequence[str], label: str) -> None:
+    """연결 키로 쓸 컬럼에 null이나 빈 문자열이 없는지 확인한다.
+
+    수치 컬럼을 넘기지 않도록 주의한다. 비어 있는 것이 정상인 값까지 검사하면 정상
+    데이터가 예외로 죽는다.
+    """
+    if any(data[column].isna().any() or data[column].eq("").any() for column in columns):
+        raise ValueError(f"{label}의 필수 연결 키에 누락값이 있습니다.")
+
+
+def to_numeric_strict(values: pd.Series, label: str) -> pd.Series:
+    """숫자로 바꿀 수 없는 값과 누락값을 모두 거부한다.
+
+    빈값을 허용해야 하는 컬럼에는 쓰지 않는다.
+    """
+    numeric = pd.to_numeric(values, errors="coerce")
+    if numeric.isna().any():
+        raise ValueError(f"{label}에 숫자가 아닌 값 또는 누락값이 있습니다.")
+    return numeric.astype("float64")
+
+
 def normalize_area_name(values: pd.Series, label: str) -> pd.Series:
     """Area_Name의 대소문자·공백을 흡수해 `Main`·`MI`로 통일한다.
 

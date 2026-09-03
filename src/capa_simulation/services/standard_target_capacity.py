@@ -13,8 +13,11 @@ import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
 from capa_simulation.services.frame_contracts import (
+    assert_complete,
     normalize_demand_basis,
     normalize_demand_basis_value,
+    normalize_month_column,
+    to_numeric_strict,
 )
 from capa_simulation.services.weighted_unit_capacity import (
     DEMAND_ID_COLUMNS,
@@ -248,14 +251,14 @@ def add_pkg_equivalent_standard_target(
     if missing_source:
         raise ValueError(f"소요대수 상세 필수 컬럼이 없습니다: {', '.join(missing_source)}")
     source = source[source_required].copy()
-    _normalize_month_values(source, "소요대수 상세")
+    normalize_month_column(source, "소요대수 상세")
     source_text_columns = [
         column for column in DEMAND_ID_COLUMNS if column not in {"생산계획년월", "소요기준"}
     ]
     _normalize_text_values(source, source_text_columns, "소요대수 상세")
     source["소요기준"] = normalize_demand_basis(source["소요기준"])
-    _assert_complete_values(source, DEMAND_ID_COLUMNS, "소요대수 상세")
-    source["부하량"] = _numeric_values(source["부하량"], "소요대수 상세.부하량")
+    assert_complete(source, DEMAND_ID_COLUMNS, "소요대수 상세")
+    source["부하량"] = to_numeric_strict(source["부하량"], "소요대수 상세.부하량")
     source = source.loc[source["부하량"].gt(0)].drop_duplicates(DEMAND_ID_COLUMNS)
 
     prepared_plan = _prepare_pkg_plan_for_equivalent(plan)
@@ -496,11 +499,11 @@ def _prepare_pkg_plan_for_equivalent(data: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"RQ_PKG_PLAN 필수 컬럼이 없습니다: {', '.join(missing)}")
 
     result = data[required].copy()
-    _normalize_month_values(result, "RQ_PKG_PLAN")
+    normalize_month_column(result, "RQ_PKG_PLAN")
     text_columns = [column for column in PKG_PLAN_KEYS if column != "생산계획년월"]
     _normalize_text_values(result, text_columns, "RQ_PKG_PLAN")
-    _assert_complete_values(result, PKG_PLAN_KEYS, "RQ_PKG_PLAN")
-    result["생산수량"] = _numeric_values(result["생산수량"], "RQ_PKG_PLAN.생산수량")
+    assert_complete(result, PKG_PLAN_KEYS, "RQ_PKG_PLAN")
+    result["생산수량"] = to_numeric_strict(result["생산수량"], "RQ_PKG_PLAN.생산수량")
     if result["생산수량"].lt(0).any():
         raise ValueError("RQ_PKG_PLAN의 생산수량은 0 이상이어야 합니다.")
     duplicated = result.duplicated(PKG_PLAN_KEYS, keep=False)
@@ -510,32 +513,10 @@ def _prepare_pkg_plan_for_equivalent(data: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def _normalize_month_values(data: pd.DataFrame, table_name: str) -> None:
-    numeric = pd.to_numeric(data["생산계획년월"], errors="coerce")
-    valid = numeric.notna() & numeric.mod(1).eq(0)
-    months = numeric.fillna(0).astype("int64")
-    valid &= months.mod(100).between(1, 12)
-    if not valid.all():
-        raise ValueError(f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다.")
-    data["생산계획년월"] = months
-
-
 def _normalize_text_values(data: pd.DataFrame, columns: list[str], table_name: str) -> None:
     for column in columns:
         data[column] = data[column].astype("string").str.strip()
-    _assert_complete_values(data, columns, table_name)
-
-
-def _assert_complete_values(data: pd.DataFrame, columns: list[str], table_name: str) -> None:
-    if any(data[column].isna().any() or data[column].eq("").any() for column in columns):
-        raise ValueError(f"{table_name}의 필수 연결 키에 누락값이 있습니다.")
-
-
-def _numeric_values(series: pd.Series, label: str) -> pd.Series:
-    numeric = pd.to_numeric(series, errors="coerce")
-    if numeric.isna().any():
-        raise ValueError(f"{label}에 숫자가 아닌 값 또는 누락값이 있습니다.")
-    return numeric.astype("float64")
+    assert_complete(data, columns, table_name)
 
 
 def _valid_weeknum(value: object) -> bool:
