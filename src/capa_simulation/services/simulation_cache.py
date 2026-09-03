@@ -12,6 +12,9 @@ from capa_simulation.services.dashboard import (
     build_monthly_wafer_load_from_load,
     build_production_dashboard,
 )
+from capa_simulation.services.equipment_availability import (
+    build_weekly_equipment_availability,
+)
 from capa_simulation.services.load_calculator import (
     DemandBasis,
     build_monthly_volume,
@@ -222,6 +225,30 @@ def get_home_simulation(
     return monthly_density, production_detail, monthly_wafer, securement_rate
 
 
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_weekly_equipment_availability(
+    baseline: pd.DataFrame,
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    *,
+    start_date: date,
+    end_date: date,
+) -> pd.DataFrame:
+    """Reuse the weekly availability aggregation across reruns of the equipment page.
+
+    가용설비 현황 페이지에는 fragment 가 없어 위젯 하나를 건드릴 때마다 페이지 전체가
+    다시 실행된다. 이 집계는 조회기간 주차 수에 비례해 13주 300ms · 52주 1.5s 가 든다.
+    세 프레임은 이미 리비전과 4개 필터가 반영된 결과라서 내용 해시가 곧 올바른 키다.
+    """
+    return build_weekly_equipment_availability(
+        baseline,
+        equipment,
+        downtime,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
 def clear_simulation_caches() -> None:
     """Clear every shared calculation cache after an explicit source refresh."""
     get_home_simulation.clear()
@@ -232,3 +259,4 @@ def clear_simulation_caches() -> None:
     get_production_dashboard.clear()
     get_home_equipment_demand.clear()
     get_weekly_standard_target_capacity.clear()
+    get_weekly_equipment_availability.clear()

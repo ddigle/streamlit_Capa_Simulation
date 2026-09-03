@@ -19,7 +19,6 @@ from capa_simulation.persistence.equipment_cache import (
 from capa_simulation.services.equipment_availability import (
     build_equipment_status_as_of,
     build_inactive_equipment,
-    build_weekly_equipment_availability,
 )
 from capa_simulation.services.equipment_contract import (
     DATE_COLUMNS,
@@ -47,6 +46,7 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_baseline,
     sample_equipment_master,
 )
+from capa_simulation.services.simulation_cache import get_weekly_equipment_availability
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
 FLASH_KEY = "equipment_status_flash"
@@ -277,7 +277,7 @@ with dashboard_tab:
         weekly = pd.DataFrame()
     else:
         try:
-            weekly = build_weekly_equipment_availability(
+            weekly = get_weekly_equipment_availability(
                 filtered_baseline,
                 filtered_equipment,
                 filtered_downtime,

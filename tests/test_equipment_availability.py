@@ -305,3 +305,26 @@ def test_downtime_rejects_unknown_equipment() -> None:
 
     with pytest.raises(ValueError, match="없는 설비"):
         prepare_downtime_schedule(downtime, equipment=_equipment())
+
+
+def test_cached_weekly_availability_matches_direct_call() -> None:
+    """캐시 래퍼가 원 계산과 같은 값을 돌려주는지 고정한다.
+
+    `st.cache_data` 는 DataFrame 인자를 내용으로 해시하므로 리비전과 4개 화면 필터가
+    이미 반영된 프레임을 넘기면 키가 저절로 맞는다. 그 전제가 깨지면 여기서 걸린다.
+    """
+    from capa_simulation.services.simulation_cache import get_weekly_equipment_availability
+
+    baseline, equipment, downtime = _baseline(), _equipment(), _downtime()
+    window = {"start_date": date(2026, 9, 1), "end_date": date(2026, 10, 31)}
+
+    expected = build_weekly_equipment_availability(baseline, equipment, downtime, **window)
+    cached = get_weekly_equipment_availability(baseline, equipment, downtime, **window)
+
+    pd.testing.assert_frame_equal(cached, expected)
+
+    # 화면 필터가 바뀌면(= 프레임 내용이 바뀌면) 캐시가 아니라 새 결과가 나와야 한다.
+    narrowed = equipment.loc[equipment["호기"].eq("EQ-01")].copy()
+    assert not get_weekly_equipment_availability(baseline, narrowed, downtime, **window).equals(
+        cached
+    )
