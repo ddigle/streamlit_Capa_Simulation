@@ -4,6 +4,7 @@ import streamlit as st
 
 from capa_simulation.components.month_range_picker import render_month_range_picker
 from capa_simulation.components.scenario_status import render_scenario_controls
+from capa_simulation.navigation import build_navigation_pages
 from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
 from capa_simulation.scenario_preset_state import apply_pending_scenario_preset
 from capa_simulation.settings import (
@@ -23,91 +24,8 @@ bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
 apply_pending_scenario_preset()
 
 
-home_page = st.Page(
-    "app_pages/home.py",
-    title="HOME",
-    default=True,
-)
-capa_chatbot_page = st.Page(
-    "app_pages/capa_chatbot.py",
-    title="Capa Chatbot",
-    icon=":material/chat:",
-)
-scenario_management_page = st.Page(
-    "app_pages/scenario_management.py",
-    title="시나리오 관리",
-    icon=":material/database:",
-)
-static_capa_page = st.Page(
-    "app_pages/static_capa.py",
-    title="Static Capa",
-    icon=":material/factory:",
-)
-static_capa_pages = [
-    st.Page(
-        "app_pages/load_conversion.py",
-        title="부하량",
-        icon=":material/scale:",
-    ),
-    st.Page(
-        "app_pages/capacity_standards.py",
-        title="공정별 Capa",
-        icon=":material/settings:",
-    ),
-    st.Page(
-        "app_pages/process_securement.py",
-        title="공정별 확보율",
-        icon=":material/monitoring:",
-    ),
-    st.Page(
-        "app_pages/standard_target_capa.py",
-        title="표준 목표 Capa",
-        icon=":material/track_changes:",
-    ),
-]
-dynamic_capa_page = st.Page(
-    "app_pages/reference_integrity.py",
-    title="Dynamic Capa (구현중)",
-    icon=":material/sync_alt:",
-)
-dynamic_capa_pages = [
-    st.Page(
-        "app_pages/wip_status.py",
-        title="표준 대비 재공 현황 (DB 셋팅중)",
-        icon=":material/inventory_2:",
-    ),
-    st.Page(
-        "app_pages/available_equipment_status.py",
-        title="가용설비 현황 (구현 중)",
-        icon=":material/precision_manufacturing:",
-    ),
-    st.Page(
-        "app_pages/actual_efficiency.py",
-        title="효율 실적 (DB 셋팅중)",
-        icon=":material/speed:",
-    ),
-    st.Page(
-        "app_pages/actual_upeh.py",
-        title="UPEH 실적 (DB 셋팅중)",
-        icon=":material/timer:",
-    ),
-    st.Page(
-        "app_pages/space_status.py",
-        title="Space 현황 (구현 중)",
-        icon=":material/grid_view:",
-    ),
-]
-pages = [
-    home_page,
-    capa_chatbot_page,
-    scenario_management_page,
-    static_capa_page,
-    *static_capa_pages,
-    dynamic_capa_page,
-    *dynamic_capa_pages,
-]
-
-navigation = st.navigation(pages, position="hidden")
+pages = build_navigation_pages()
+navigation = st.navigation(pages.ordered, position="hidden")
 
 st.html(
     """
@@ -147,28 +65,28 @@ st.html(
     """
 )
 with st.sidebar.container(key="home_navigation"):
-    st.page_link(home_page, width="stretch")
+    st.page_link(pages.home, width="stretch")
 
 with st.sidebar.container(border=True):
     with st.container(key="capa_chatbot_navigation"):
-        st.page_link(capa_chatbot_page, width="stretch")
+        st.page_link(pages.capa_chatbot, width="stretch")
 
 with st.sidebar.container(border=True):
     with st.container(key="scenario_management_navigation"):
-        st.page_link(scenario_management_page, width="stretch")
+        st.page_link(pages.scenario_management, width="stretch")
 
 with st.sidebar.container(border=True):
     with st.container(key="static_capa_navigation"):
-        st.page_link(static_capa_page, width="stretch")
+        st.page_link(pages.static_capa, width="stretch")
     with st.container(key="static_capa_subpages"):
-        for page in static_capa_pages:
+        for page in pages.static_capa_subpages:
             st.page_link(page, width="stretch")
 
 with st.sidebar.container(border=True):
     with st.container(key="dynamic_capa_navigation"):
-        st.page_link(dynamic_capa_page, width="stretch")
+        st.page_link(pages.dynamic_capa, width="stretch")
     with st.container(key="dynamic_capa_subpages"):
-        for page in dynamic_capa_pages:
+        for page in pages.dynamic_capa_subpages:
             st.page_link(page, width="stretch")
 
 render_scenario_controls()
