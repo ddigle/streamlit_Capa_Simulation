@@ -16,6 +16,7 @@ from capa_simulation.components.monthly_table_base import (
     CLASSIFICATION_MAX_WIDTH_PX,
     CLASSIFICATION_MIN_WIDTH_PX,
     CLASSIFICATION_TEXT_UNIT_PX,
+    GRID_LINE_WIDTH_PX,
     GROUP_BORDER_COLOR,
     GROUP_SURFACE_COLOR,
     HEADER_COLOR,
@@ -26,10 +27,14 @@ from capa_simulation.components.monthly_table_base import (
     SURFACE_COLOR,
     TEXT_COLOR,
     TRANSPARENT_COLOR,
+    add_header_rule,
+    add_month_boundaries,
+    add_outer_border,
     display_text,
+    header_boundary_ratio,
     month_label,
-    quarter_key,
     render_split_scroll_table,
+    table_height_px,
     text_width_units,
 )
 from capa_simulation.design import tokens
@@ -230,82 +235,6 @@ def _build_display_rows(
     )
 
 
-def _add_outer_border(
-    figure: go.Figure,
-    *,
-    emphasize_left: bool,
-) -> None:
-    if emphasize_left:
-        figure.add_shape(
-            type="rect",
-            x0=0,
-            x1=1,
-            y0=0,
-            y1=1,
-            xref="paper",
-            yref="paper",
-            fillcolor=TRANSPARENT_COLOR,
-            line={"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
-            layer="above",
-        )
-        figure.add_shape(
-            type="line",
-            x0=0,
-            x1=0,
-            y0=0,
-            y1=1,
-            xref="paper",
-            yref="paper",
-            line={
-                "color": GROUP_BORDER_COLOR,
-                "width": OUTER_BORDER_WIDTH_PX * 2,
-            },
-            layer="above",
-        )
-    figure.add_shape(
-        type="line",
-        x0=0,
-        x1=1,
-        y0=1,
-        y1=1,
-        xref="paper",
-        yref="paper",
-        line={
-            "color": GROUP_BORDER_COLOR,
-            "width": OUTER_BORDER_WIDTH_PX * 2,
-        },
-        layer="above",
-    )
-    figure.add_shape(
-        type="line",
-        x0=1,
-        x1=1,
-        y0=0,
-        y1=1,
-        xref="paper",
-        yref="paper",
-        line={
-            "color": GROUP_BORDER_COLOR,
-            "width": OUTER_BORDER_WIDTH_PX * 2,
-        },
-        layer="above",
-    )
-    figure.add_shape(
-        type="line",
-        x0=0,
-        x1=1,
-        y0=0,
-        y1=0,
-        xref="paper",
-        yref="paper",
-        line={
-            "color": GROUP_BORDER_COLOR,
-            "width": OUTER_BORDER_WIDTH_PX * 2,
-        },
-        layer="above",
-    )
-
-
 def _add_table_grid(
     *,
     label_figure: go.Figure,
@@ -317,22 +246,11 @@ def _add_table_grid(
     grand_total_row: int,
     row_count: int,
 ) -> None:
-    table_height = HEADER_HEIGHT_PX + max(row_count, 1) * ROW_HEIGHT_PX
-    header_boundary_y = 1 - HEADER_HEIGHT_PX / table_height
-    _add_outer_border(label_figure, emphasize_left=True)
-    _add_outer_border(month_figure, emphasize_left=False)
+    table_height = table_height_px(row_count)
+    add_outer_border(label_figure, include_left=True)
+    add_outer_border(month_figure, include_left=False)
     for target_figure in (label_figure, month_figure):
-        target_figure.add_shape(
-            type="line",
-            x0=0,
-            x1=1,
-            y0=header_boundary_y,
-            y1=header_boundary_y,
-            xref="paper",
-            yref="paper",
-            line={"color": GROUP_BORDER_COLOR, "width": 1.8},
-            layer="above",
-        )
+        add_header_rule(target_figure, boundary_y=header_boundary_ratio(row_count))
 
     total_classification_width = sum(classification_widths)
     production_boundary_x = classification_widths[0] / total_classification_width
@@ -345,31 +263,11 @@ def _add_table_grid(
             y1=1,
             xref="paper",
             yref="paper",
-            line={"color": BORDER_COLOR, "width": 0.8},
+            line={"color": BORDER_COLOR, "width": GRID_LINE_WIDTH_PX},
             layer="above",
         )
 
-    quarter_keys = [quarter_key(month) for month in month_columns]
-    for month_index in range(1, len(month_columns)):
-        is_quarter_boundary = (
-            quarter_keys[month_index] is not None
-            and quarter_keys[month_index - 1] is not None
-            and quarter_keys[month_index] != quarter_keys[month_index - 1]
-        )
-        month_figure.add_shape(
-            type="line",
-            x0=month_index / len(month_columns),
-            x1=month_index / len(month_columns),
-            y0=0,
-            y1=1,
-            xref="paper",
-            yref="paper",
-            line={
-                "color": GROUP_BORDER_COLOR if is_quarter_boundary else BORDER_COLOR,
-                "width": OUTER_BORDER_WIDTH_PX if is_quarter_boundary else 0.8,
-            },
-            layer="above",
-        )
+    add_month_boundaries(month_figure, month_columns)
 
     for total_row in product_total_rows:
         group_boundary_y = 1 - (HEADER_HEIGHT_PX + (total_row + 1) * ROW_HEIGHT_PX) / table_height
@@ -423,7 +321,7 @@ def _add_table_grid(
             y1=grand_total_boundary_y,
             xref="paper",
             yref="paper",
-            line={"color": GROUP_BORDER_COLOR, "width": 1.8},
+            line={"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
             layer="above",
         )
 

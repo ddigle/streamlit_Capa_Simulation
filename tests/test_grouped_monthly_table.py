@@ -128,10 +128,13 @@ def test_group_boundaries_are_drawn_after_total_rows() -> None:
         if shape.type == "line" and shape.y0 == shape.y1 and shape.line.width == 1.8
     ]
 
-    assert label_figure.layout.shapes[0].type == "rect"
-    assert label_figure.layout.shapes[0].line.width == OUTER_BORDER_WIDTH_PX
-    assert month_figure.layout.shapes[0].type == "line"
-    assert month_figure.layout.shapes[0].line.width == OUTER_BORDER_WIDTH_PX * 2
+    # 바깥 테두리는 두 Figure 모두 폭 OUTER_BORDER_WIDTH_PX * 2 인 선이다. 분류 영역에만
+    # 있던 폭 1.8 rect 는 뒤이어 그리는 폭 3.6 선이 네 변을 모두 덮어 화면에 나타나지
+    # 않았으므로 제거했다. 상세 검증은 tests/test_monthly_table_grid.py 에 있다.
+    for figure in (label_figure, month_figure):
+        assert figure.layout.shapes[0].type == "line"
+        assert figure.layout.shapes[0].line.width == OUTER_BORDER_WIDTH_PX * 2
+    assert not [shape for shape in label_figure.layout.shapes if shape.type == "rect"]
 
     assert product_boundaries == pytest.approx(
         [

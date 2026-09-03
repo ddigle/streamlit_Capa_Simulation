@@ -6,8 +6,10 @@
 상세 결과)은 서로 다른 표지만 고정 분류 영역 + 가로 스크롤 월 영역이라는 껍데기와 텍스트
 폭 계산은 같다. 그 공통분만 여기 둔다.
 
-격자·테두리 그리기(`_add_table_grid`, `_add_outer_border`)는 두 모듈에서 이미 동작이
-갈라져 있어 합치지 않았다. 합치려면 어느 쪽 동작이 옳은지 먼저 정해야 한다.
+격자 그리기 중 바깥 테두리·헤더 밑줄·월 경계선은 두 표가 같은 도형을 그리므로 여기로
+합쳤다. 분류 컬럼 세로선과 행 그룹 가로선은 표 구조가 실제로 달라 각 모듈에 남긴다.
+`grouped` 는 부분합 3단(제품·생산·총계)을 고정 폭으로, `hierarchical` 은 계층 깊이에
+따라 폭을 줄여 가며 긋는다.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ TEXT_COLOR = tokens.TEXT
 TRANSPARENT_COLOR = "rgba(0, 0, 0, 0)"
 
 OUTER_BORDER_WIDTH_PX = tokens.OUTER_BORDER_WIDTH_PX
+GRID_LINE_WIDTH_PX = tokens.GRID_LINE_WIDTH_PX
 CLASSIFICATION_MIN_WIDTH_PX = tokens.CLASSIFICATION_MIN_WIDTH_PX
 CLASSIFICATION_MAX_WIDTH_PX = tokens.CLASSIFICATION_MAX_WIDTH_PX
 CLASSIFICATION_TEXT_UNIT_PX = tokens.CLASSIFICATION_TEXT_UNIT_PX
@@ -78,6 +81,79 @@ def quarter_key(month: str) -> tuple[str, int] | None:
     if not 1 <= month_number <= 12:
         return None
     return year, (month_number - 1) // 3
+
+
+def table_height_px(row_count: int) -> float:
+    """헤더 + 본문 행으로 Figure 전체 높이를 계산한다."""
+    return HEADER_HEIGHT_PX + max(row_count, 1) * ROW_HEIGHT_PX
+
+
+def header_boundary_ratio(row_count: int) -> float:
+    """헤더와 본문의 경계를 paper 좌표(0~1)로 돌려준다."""
+    return 1 - HEADER_HEIGHT_PX / table_height_px(row_count)
+
+
+def add_outer_border(figure: go.Figure, *, include_left: bool) -> None:
+    """표 바깥 테두리를 그린다. 좌변은 분류 영역 Figure 에만 넣는다.
+
+    월 영역 Figure 는 분류 영역 바로 오른쪽에 붙기 때문에 좌변을 그리면 경계가 두 겹으로
+    보인다. 그래서 상·우·하 세 변만 공통이고 좌변은 선택이다.
+    """
+    edges = [(0, 1, 1, 1), (1, 1, 0, 1), (0, 1, 0, 0)]
+    if include_left:
+        edges.append((0, 0, 0, 1))
+    for x0, x1, y0, y1 in edges:
+        figure.add_shape(
+            type="line",
+            x0=x0,
+            x1=x1,
+            y0=y0,
+            y1=y1,
+            xref="paper",
+            yref="paper",
+            line={"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX * 2},
+            layer="above",
+        )
+
+
+def add_header_rule(figure: go.Figure, *, boundary_y: float) -> None:
+    """헤더와 본문을 가르는 가로선을 긋는다."""
+    figure.add_shape(
+        type="line",
+        x0=0,
+        x1=1,
+        y0=boundary_y,
+        y1=boundary_y,
+        xref="paper",
+        yref="paper",
+        line={"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
+        layer="above",
+    )
+
+
+def add_month_boundaries(figure: go.Figure, month_columns: Sequence[str]) -> None:
+    """월 컬럼 사이에 세로 격자선을 긋고 분기가 바뀌는 자리는 굵게 강조한다."""
+    quarter_keys = [quarter_key(month) for month in month_columns]
+    for month_index in range(1, len(month_columns)):
+        is_quarter_boundary = (
+            quarter_keys[month_index] is not None
+            and quarter_keys[month_index - 1] is not None
+            and quarter_keys[month_index] != quarter_keys[month_index - 1]
+        )
+        figure.add_shape(
+            type="line",
+            x0=month_index / len(month_columns),
+            x1=month_index / len(month_columns),
+            y0=0,
+            y1=1,
+            xref="paper",
+            yref="paper",
+            line={
+                "color": GROUP_BORDER_COLOR if is_quarter_boundary else BORDER_COLOR,
+                "width": OUTER_BORDER_WIDTH_PX if is_quarter_boundary else GRID_LINE_WIDTH_PX,
+            },
+            layer="above",
+        )
 
 
 def render_split_scroll_table(

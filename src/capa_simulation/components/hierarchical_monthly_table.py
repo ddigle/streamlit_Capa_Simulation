@@ -19,6 +19,7 @@ from capa_simulation.components.monthly_table_base import (
     CLASSIFICATION_MAX_WIDTH_PX,
     CLASSIFICATION_MIN_WIDTH_PX,
     CLASSIFICATION_TEXT_UNIT_PX,
+    GRID_LINE_WIDTH_PX,
     GROUP_BORDER_COLOR,
     GROUP_SURFACE_COLOR,
     HEADER_COLOR,
@@ -29,10 +30,14 @@ from capa_simulation.components.monthly_table_base import (
     SURFACE_COLOR,
     TEXT_COLOR,
     TRANSPARENT_COLOR,
+    add_header_rule,
+    add_month_boundaries,
+    add_outer_border,
     display_text,
+    header_boundary_ratio,
     month_label,
-    quarter_key,
     render_split_scroll_table,
+    table_height_px,
     text_width_units,
 )
 from capa_simulation.design import tokens
@@ -176,24 +181,6 @@ def build_hierarchical_monthly_export(
     return pd.DataFrame(output, columns=output_columns)
 
 
-def _add_outer_border(figure: go.Figure, *, include_left: bool) -> None:
-    edges = [(0, 1, 1, 1), (1, 1, 0, 1), (0, 1, 0, 0)]
-    if include_left:
-        edges.append((0, 0, 0, 1))
-    for x0, x1, y0, y1 in edges:
-        figure.add_shape(
-            type="line",
-            x0=x0,
-            x1=x1,
-            y0=y0,
-            y1=y1,
-            xref="paper",
-            yref="paper",
-            line={"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX * 2},
-            layer="above",
-        )
-
-
 def _add_table_grid(
     *,
     label_figure: go.Figure,
@@ -203,22 +190,11 @@ def _add_table_grid(
     month_columns: list[str],
     row_count: int,
 ) -> None:
-    table_height = HEADER_HEIGHT_PX + max(row_count, 1) * ROW_HEIGHT_PX
-    header_boundary_y = 1 - HEADER_HEIGHT_PX / table_height
-    _add_outer_border(label_figure, include_left=True)
-    _add_outer_border(month_figure, include_left=False)
+    table_height = table_height_px(row_count)
+    add_outer_border(label_figure, include_left=True)
+    add_outer_border(month_figure, include_left=False)
     for figure in (label_figure, month_figure):
-        figure.add_shape(
-            type="line",
-            x0=0,
-            x1=1,
-            y0=header_boundary_y,
-            y1=header_boundary_y,
-            xref="paper",
-            yref="paper",
-            line={"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
-            layer="above",
-        )
+        add_header_rule(figure, boundary_y=header_boundary_ratio(row_count))
 
     total_classification_width = sum(classification_widths)
     for column_index in range(1, len(classification_widths)):
@@ -231,37 +207,18 @@ def _add_table_grid(
             y1=1,
             xref="paper",
             yref="paper",
-            line={"color": BORDER_COLOR, "width": 0.8},
+            line={"color": BORDER_COLOR, "width": GRID_LINE_WIDTH_PX},
             layer="above",
         )
 
-    quarter_keys = [quarter_key(month) for month in month_columns]
-    for month_index in range(1, len(month_columns)):
-        is_quarter_boundary = (
-            quarter_keys[month_index] is not None
-            and quarter_keys[month_index - 1] is not None
-            and quarter_keys[month_index] != quarter_keys[month_index - 1]
-        )
-        month_figure.add_shape(
-            type="line",
-            x0=month_index / len(month_columns),
-            x1=month_index / len(month_columns),
-            y0=0,
-            y1=1,
-            xref="paper",
-            yref="paper",
-            line={
-                "color": GROUP_BORDER_COLOR if is_quarter_boundary else BORDER_COLOR,
-                "width": OUTER_BORDER_WIDTH_PX if is_quarter_boundary else 0.8,
-            },
-            layer="above",
-        )
+    add_month_boundaries(month_figure, month_columns)
 
     cumulative_widths = [0, *accumulate(classification_widths)]
     for row_index, changed_column in display.group_boundaries:
         boundary_y = 1 - (HEADER_HEIGHT_PX + row_index * ROW_HEIGHT_PX) / table_height
         label_start_x = cumulative_widths[changed_column] / total_classification_width
-        boundary_width = max(1.0, 1.8 - changed_column * 0.16)
+        # 최상위 그룹선은 바깥 테두리와 같은 굵기로 시작해 계층이 깊어질수록 가늘어진다.
+        boundary_width = max(1.0, OUTER_BORDER_WIDTH_PX - changed_column * 0.16)
         label_figure.add_shape(
             type="line",
             x0=label_start_x,
