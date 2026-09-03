@@ -1,0 +1,179 @@
+# Purpose: 시나리오와 분리된 공용 표시순서 프로필의 검증·이관·저장을 담당한다.
+
+"""시나리오와 분리된 공용 표시순서 프로필의 검증·이관·저장을 담당한다."""
+
+from __future__ import annotations
+
+from uuid import uuid4
+
+import duckdb
+import pandas as pd
+
+from capa_simulation.persistence._sql_helpers import load_frame, quote
+
+GLOBAL_DISPLAY_ORDER_COLUMNS = (
+    "페이지 구분",
+    "탭 구분",
+    "정렬우선순위",
+    "분류컬럼",
+    "정렬방식",
+    "분류값",
+    "값표시순서",
+    "활성여부",
+)
+
+
+def validate_global_display_order_frame(frame: pd.DataFrame) -> None:
+    if not isinstance(frame, pd.DataFrame):
+        raise TypeError("공용 표시순서는 pandas DataFrame이어야 합니다.")
+    missing = [column for column in GLOBAL_DISPLAY_ORDER_COLUMNS if column not in frame.columns]
+    extra = [column for column in frame.columns if column not in GLOBAL_DISPLAY_ORDER_COLUMNS]
+    if missing or extra:
+        details: list[str] = []
+        if missing:
+            details.append(f"누락: {', '.join(missing)}")
+        if extra:
+            details.append(f"추가: {', '.join(str(column) for column in extra)}")
+        raise ValueError(f"공용 표시순서 컬럼 계약이 일치하지 않습니다 ({'; '.join(details)}).")
+    if frame.empty:
+        raise ValueError("공용 표시순서에는 한 개 이상의 규칙이 필요합니다.")
+
+
+def prepare_global_display_order_rules(frame: pd.DataFrame) -> pd.DataFrame:
+    validate_global_display_order_frame(frame)
+    from capa_simulation.services.display_order_editor import ensure_route_sequence_rules
+
+    return ensure_route_sequence_rules(frame)
+
+
+def display_order_frames_equal(left: pd.DataFrame, right: pd.DataFrame) -> bool:
+    left_values = (
+        left.loc[:, list(GLOBAL_DISPLAY_ORDER_COLUMNS)]
+        .reset_index(drop=True)
+        .astype("string")
+        .fillna("<NULL>")
+    )
+    right_values = (
+        right.loc[:, list(GLOBAL_DISPLAY_ORDER_COLUMNS)]
+        .reset_index(drop=True)
+        .astype("string")
+        .fillna("<NULL>")
+    )
+    return left_values.equals(right_values)
+
+
+def load_existing_display_order(
+    connection: duckdb.DuckDBPyConnection,
+) -> pd.DataFrame | None:
+    candidates = (
+        (
+            """
+            SELECT o.revision_id
+            FROM app_meta.official_release o
+            WHERE EXISTS (
+                SELECT 1 FROM rev_data.rq_display_order d
+                WHERE d.revision_id = o.revision_id
+            )
+            ORDER BY o.release_no DESC LIMIT 1
+            """,
+            "rev_data",
+            "revision_id",
+        ),
+        (
+            """
+            SELECT ds.dataset_id
+            FROM app_meta.official_release o
+            JOIN app_meta.scenario_revision r ON r.revision_id = o.revision_id
+            JOIN app_meta.dataset ds ON ds.scenario_id = r.scenario_id
+            WHERE EXISTS (
+                SELECT 1 FROM ref_data.rq_display_order d
+                WHERE d.dataset_id = ds.dataset_id
+            )
+            ORDER BY o.release_no DESC LIMIT 1
+            """,
+            "ref_data",
+            "dataset_id",
+        ),
+        (
+            """
+            SELECT r.revision_id
+            FROM app_meta.scenario_revision r
+            WHERE EXISTS (
+                SELECT 1 FROM rev_data.rq_display_order d
+                WHERE d.revision_id = r.revision_id
+            )
+            ORDER BY r.created_at DESC, r.revision_no DESC LIMIT 1
+            """,
+            "rev_data",
+            "revision_id",
+        ),
+        (
+            """
+            SELECT ds.dataset_id
+            FROM app_meta.scenario s
+            JOIN app_meta.dataset ds ON ds.scenario_id = s.scenario_id
+            WHERE EXISTS (
+                SELECT 1 FROM ref_data.rq_display_order d
+                WHERE d.dataset_id = ds.dataset_id
+            )
+            ORDER BY s.updated_at DESC LIMIT 1
+            """,
+            "ref_data",
+            "dataset_id",
+        ),
+    )
+    for query, schema, owner_column in candidates:
+        owner = connection.execute(query).fetchone()
+        if owner is None:
+            continue
+        return load_frame(
+            connection,
+            schema=schema,
+            table_name="rq_display_order",
+            owner_column=owner_column,
+            owner_id=str(owner[0]),
+        )
+    return None
+
+
+def load_global_display_order_rules(
+    connection: duckdb.DuckDBPyConnection,
+) -> pd.DataFrame:
+    projection = ", ".join(quote(column) for column in GLOBAL_DISPLAY_ORDER_COLUMNS)
+    return connection.execute(
+        f"""
+        SELECT {projection}
+        FROM app_meta.global_display_order_rule
+        WHERE profile_id = 1
+        ORDER BY source_row_no
+        """
+    ).fetchdf()
+
+
+def insert_global_display_order(
+    connection: duckdb.DuckDBPyConnection,
+    rules: pd.DataFrame,
+    *,
+    version: int,
+    source: str,
+) -> None:
+    validate_global_display_order_frame(rules)
+    connection.execute(
+        """
+        INSERT INTO app_meta.global_display_order (profile_id, version, source)
+        VALUES (1, ?, ?)
+        """,
+        [version, source],
+    )
+    prepared = rules.loc[:, list(GLOBAL_DISPLAY_ORDER_COLUMNS)].copy()
+    prepared.insert(0, "source_row_no", range(1, len(prepared) + 1))
+    prepared.insert(0, "profile_id", 1)
+    view_name = f"_incoming_global_display_order_{uuid4().hex}"
+    connection.register(view_name, prepared)
+    try:
+        connection.execute(
+            f"INSERT INTO app_meta.global_display_order_rule BY NAME "
+            f"SELECT * FROM {quote(view_name)}"
+        )
+    finally:
+        connection.unregister(view_name)
