@@ -1,8 +1,4 @@
 # Purpose: 생산계획·Wafer Capa·Bottleneck 요약과 상세표를 결합한 HOME 대시보드를 렌더링한다.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: HOME 계산 캐시를 리비전·기간·표시순서 경량 토큰으로 조회해 rerun 입력 해싱을 축소함.
 
 import html
 import unicodedata

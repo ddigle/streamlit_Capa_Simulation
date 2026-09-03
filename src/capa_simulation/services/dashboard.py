@@ -1,8 +1,4 @@
 # Purpose: HOME의 생산계획·Wafer 부하량·Bottleneck 순위와 Capa 요약 데이터를 집계한다.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 파일 목적 및 최신 변경 출처 헤더를 표준화함; 이전 이력은 Git 기록을 참조함.
 
 import pandas as pd
 

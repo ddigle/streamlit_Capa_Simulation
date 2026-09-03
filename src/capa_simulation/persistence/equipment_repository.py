@@ -1,8 +1,4 @@
 # Purpose: Immutable DuckDB snapshots for unified equipment operations input.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 캐시용 최신 ID 조회를 분리하고 저장·로드 시 설비 마스터 이중 정규화를 제거함.
 
 """Immutable DuckDB snapshots for unified equipment operations input."""
 

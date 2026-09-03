@@ -1,8 +1,4 @@
 # Purpose: FAB 전체에서 동·층·설비 배치로 이어지는 Space 현황 탐색 화면을 렌더링한다.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 가용설비 페이지와 불변 설비 스냅샷 캐시를 공유해 DB 재로딩을 제거함.
 
 from __future__ import annotations
 

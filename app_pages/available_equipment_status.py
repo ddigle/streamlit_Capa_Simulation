@@ -1,8 +1,4 @@
 # Purpose: 설비 마스터·비가동 이력을 편집하고 주차별 가용설비 및 변경 리비전 대시보드를 제공한다.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 불변 설비 스냅샷 캐시를 사용해 페이지 재실행과 이력 조회의 DB 중복 로딩을 제거함.
 
 from __future__ import annotations
 

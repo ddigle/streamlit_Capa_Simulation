@@ -1,8 +1,4 @@
 # Purpose: equipment availability 관련 정상·예외·회귀 동작을 검증한다.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 주차 집계가 설비 마스터를 한 번만 정규화하는 성능 회귀를 검증함.
 
 from datetime import date
 

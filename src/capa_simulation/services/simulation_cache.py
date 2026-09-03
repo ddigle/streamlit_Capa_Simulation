@@ -1,8 +1,4 @@
 # Purpose: Shared content-addressed caches for simulation calculations.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: HOME 상위 캐시는 명시적 경량 토큰으로 조회해 warm rerun의 대형 DataFrame 해싱을 제거함.
 
 """Shared content-addressed caches for simulation calculations."""
 

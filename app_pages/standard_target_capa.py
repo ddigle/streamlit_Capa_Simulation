@@ -1,8 +1,4 @@
 # Purpose: 공정 제품 Mix와 주차별 가용대수로 일 표준 가능량을 산출·분석·다운로드한다.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 읽기 전용 범위 조회의 전체 복사와 표시순서 반복 전처리를 제거함.
 
 from __future__ import annotations
 

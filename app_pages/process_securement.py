@@ -1,8 +1,4 @@
 # Purpose: 공정별 확보율·소요대수 결과와 보유·대여·가용 설비대수 입력을 제공한다.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 월 범위 직접 복사와 준비된 표시순서 재사용으로 rerun 전처리 중복을 제거함.
 
 import pandas as pd
 import streamlit as st

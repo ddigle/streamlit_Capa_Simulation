@@ -1,8 +1,4 @@
 # Purpose: Scenario load, create, revise, rename, archive, and official-release UI.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 리비전 저장 경계의 선행 전체 복사를 제거하고 저장소의 정규화 복사만 유지함.
 
 """Scenario load, create, revise, rename, archive, and official-release UI."""
 

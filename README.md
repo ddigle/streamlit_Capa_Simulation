@@ -188,12 +188,11 @@ STEP 소요대수, 공정 유효 Capa, RUN_DAY, 대당 일 Capa, 가용대수와
 자세한 개발 구조와 변경 규칙은 [AGENTS.md](AGENTS.md), 확정사항과 향후 계획은
 [docs/TODO.md](docs/TODO.md)를 참고합니다.
 
-여러 Agent가 병행 개발할 때는 모든 Python·PowerShell 파일 최상단의 `Purpose`,
-`Applied`, `Agent`, `Model`, `Change` 헤더를 현재 변경과 함께 갱신합니다. 이 헤더는 파일
-책임과 최신 변경 출처를 빠르게 확인하기 위한 것이며, 누적 이력은 Git commit history를
-기준으로 합니다. 적용 후 체크섬이 불변인 SQL 마이그레이션은 직접 수정하지 않고
-`docs/migration_catalog.md`에서 목적과 문서화 출처를 관리합니다. 정확한 작성 형식과 갱신
-조건은 `AGENTS.md`의 `소스 파일 목적·변경 출처 헤더 규칙`을 따릅니다.
+모든 Python·PowerShell 파일 최상단에는 그 파일의 단일 책임을 설명하는 `Purpose` 한 줄을
+유지하고, 책임이 달라지면 같은 변경에서 함께 고칩니다. 변경 출처와 이력은 주석이 아니라
+Git commit history를 단일 근거로 합니다. 적용 후 체크섬이 불변인 SQL 마이그레이션은 직접
+수정하지 않고 `docs/migration_catalog.md`에서 목적과 문서화 출처를 관리합니다. 정확한 작성
+형식은 `AGENTS.md`의 `소스 파일 Purpose 헤더 규칙`을 따릅니다.
 
 ## 입력 데이터
 

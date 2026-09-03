@@ -1,8 +1,4 @@
 # Purpose: PKG PLAN과 수율을 편집하고 PKG·Chip·Wafer·Density 부하량 환산 결과를 제공한다.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 선택 월 직접 복사와 준비된 표시순서 재사용으로 편집 탭 전처리 중복을 제거함.
 
 import pandas as pd
 import streamlit as st

@@ -1,8 +1,4 @@
 # Purpose: Equipment input validation, weekly availability, and space status.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 주차별 집계에서 설비 정규화와 공정별 전체 스캔을 반복하지 않도록 집계 경계를 분리함.
 
 """Equipment input validation, weekly availability, and space status."""
 

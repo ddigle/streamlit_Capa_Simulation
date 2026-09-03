@@ -1,8 +1,4 @@
 # Purpose: Streamlit cache boundary for the standalone equipment repository.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 불변 설비 스냅샷을 리비전별 기본형 payload로 캐시해 페이지 간 DB 재로딩을 제거함.
 
 """Streamlit cache boundary for the standalone equipment repository."""
 

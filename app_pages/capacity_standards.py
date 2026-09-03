@@ -1,8 +1,4 @@
 # Purpose: 공정 유효 Capa와 STEP 상세를 표시하고 관련 기준정보 및 STEP 구성을 편집한다.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 월 범위·표시순서 중복 전처리를 줄이고 선택된 대형 편집 탭만 지연 렌더링함.
 
 from types import TracebackType
 from typing import Protocol

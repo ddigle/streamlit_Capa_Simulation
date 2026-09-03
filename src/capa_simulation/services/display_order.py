@@ -1,8 +1,4 @@
 # Purpose: Apply workbook-managed display order rules to Streamlit tables.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 검증·정규화한 표시순서 프로필을 재사용해 페이지 내 반복 전처리를 제거함.
 
 """Apply workbook-managed display order rules to Streamlit tables."""
 

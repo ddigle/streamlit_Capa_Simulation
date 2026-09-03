@@ -1,8 +1,4 @@
 # Purpose: equipment repository 관련 정상·예외·회귀 동작을 검증한다.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 불변 설비 스냅샷 캐시가 동일 리비전의 DB 본문을 한 번만 읽는지 검증함.
 
 from pathlib import Path
 

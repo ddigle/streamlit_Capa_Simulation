@@ -1,8 +1,4 @@
 # Purpose: PKG and wafer monthly volume calculations.
-# Applied: 2026-09-03 KST
-# Agent: OpenAI Codex
-# Model: GPT-5 (exact runtime variant unavailable)
-# Change: 편집표·환산 결과가 준비된 표시순서 규칙을 재사용할 수 있도록 입력 계약을 확장함.
 
 """PKG and wafer monthly volume calculations."""
 
