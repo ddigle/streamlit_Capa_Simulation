@@ -26,7 +26,7 @@ from capa_simulation.services.equipment_availability import (
     prepare_equipment_baseline,
     prepare_equipment_master,
 )
-from capa_simulation.services.standard_target_capacity import prepare_weekly_availability
+from capa_simulation.services.weekly_availability_input import prepare_weekly_availability
 
 _WRITE_LOCK = threading.RLock()
 

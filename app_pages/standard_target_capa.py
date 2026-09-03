@@ -29,6 +29,7 @@ from capa_simulation.scenario_state import (
 )
 from capa_simulation.services.display_order import apply_display_order, prepare_display_order
 from capa_simulation.services.frame_contracts import normalize_demand_basis
+from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.simulation_cache import (
     get_required_equipment,
@@ -39,13 +40,16 @@ from capa_simulation.services.standard_target_capacity import (
     PKG_EQUIVALENT_COLUMN,
     STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES,
     add_pkg_equivalent_standard_target,
-    build_iso_week_calendar,
-    build_standard_target_logic_analysis,
-    build_weekly_availability_template,
-    parse_weekly_availability_clipboard,
     prepare_standard_target_required_equipment,
     standard_target_exception_row_count,
     weekly_standard_target_to_wide,
+)
+from capa_simulation.services.standard_target_logic import (
+    build_standard_target_logic_analysis,
+)
+from capa_simulation.services.weekly_availability_input import (
+    build_weekly_availability_template,
+    parse_weekly_availability_clipboard,
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH

@@ -15,7 +15,7 @@ import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
-from capa_simulation.services.standard_target_capacity import build_iso_week_calendar
+from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 
 
 today = date.today()

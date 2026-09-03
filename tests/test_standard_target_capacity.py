@@ -5,16 +5,20 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.standard_target_capacity import (
     PKG_EQUIVALENT_COLUMN,
     add_pkg_equivalent_standard_target,
-    build_iso_week_calendar,
-    build_standard_target_logic_analysis,
-    build_weekly_availability_template,
     build_weekly_standard_target_capacity,
+    weekly_standard_target_to_wide,
+)
+from capa_simulation.services.standard_target_logic import (
+    build_standard_target_logic_analysis,
+)
+from capa_simulation.services.weekly_availability_input import (
+    build_weekly_availability_template,
     parse_weekly_availability_clipboard,
     prepare_weekly_availability,
-    weekly_standard_target_to_wide,
 )
 
 

@@ -21,13 +21,13 @@ from capa_simulation.scenario_state import (
     scenario_month_table,
 )
 from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
     get_required_equipment,
     get_unit_capacity,
     get_weekly_standard_target_capacity,
 )
 from capa_simulation.services.standard_target_capacity import (
-    build_iso_week_calendar,
     prepare_standard_target_required_equipment,
 )
 from capa_simulation.services.wip_status import (
