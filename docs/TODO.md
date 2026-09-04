@@ -513,6 +513,39 @@ Codex 구축분에 대한 구조 리팩토링을 진행했다. 계산 결과와 
   `인터랙티브 프로토타입`·없음 세 갈래를 쓰지만 사이드바까지 나눌 필요는 없다고 확정했다.
   세부 상태는 각 페이지 본문 badge 로 확인한다.
 
+## 3-2. 2026-09-04 분석 문서 잔여 항목 정리
+
+3-1 에서 Track 을 완료로 표시할 때 각 Track 안의 세부 제안까지 대조하지 않아 8건이
+빠져 있었다. 원본 분석 문서와 코드를 다시 대조해 처리한 결과다.
+
+- [x] 가로 스크롤 셸 3벌을 `components/scroll_shell.py` 로 합쳤다. 월별 표 2종만 합치고
+  HOME 과 재공 현황은 남아 있었다. 재공 현황만 네이티브 스크롤바를 써서 화면에서도
+  달라 보였다. 변경 전 CSS 와 규칙 단위로 대조해 세 곳 모두 일치함을 확인했다.
+- [x] 다섯 페이지가 반복하던 `get_unit_capacity` → `get_required_equipment` 체인을
+  `get_capacity_and_demand` 로 합쳤다. RQ 이름 11개를 각자 적던 것이 사라졌다.
+  `static_capa` 는 51줄이 13줄이 됐다.
+- [x] 판정 기준 세션 키와 기본값을 `scenario_preset_state.py` 한 곳으로 모았다. HOME 이
+  키 문자열과 기본값을 다시 적어 두어 상수를 바꾸면 조용히 끊어지는 상태였다.
+- [x] `render_month_editor` 68줄과 `OpenTab` 을 `components/month_editor.py` 로 승격했다.
+  `app_pages/**` 는 직접 실행 스크립트를 유지한다는 규칙에 맞췄다.
+- [x] `config/data_contract.yaml` 을 `.json` 으로 바꿨다. 확장자만 YAML 이고 내용도
+  파서도 JSON 이었다.
+- [x] 미사용 의존성 `python-dotenv` 를 뺐다.
+- [결정] `render_page_header()` 는 만들지 않는다. 원 제안은 성숙도 3단계 도입과 묶여
+  있었는데 그 결정이 취소됐다. 남는 것은 `st.title` + `st.caption` 2줄 래퍼뿐이고,
+  지켜야 할 불변("사이드바 라벨 == 본문 제목")은 이미 테스트가 강제한다.
+- [결정] 주력 결과표의 `staticPlot: True` 는 그대로 둔다. 분석 문서가 제시한 단기 완화안
+  (`staticPlot: False` 로 hover 툴팁 살리기)이 실제로는 아무 효과가 없다. 앱을 띄워
+  두 설정으로 같은 `go.Table` 을 그려 비교하니 hover 레이어 0바이트, 드래그 핸들 0개,
+  렌더링 텍스트 동일이었다. Plotly Table 은 셀 hover 를 지원하지 않는다.
+  정렬·검색·복사·스크린리더를 얻으려면 분석 문서의 중기안대로 Components v2 안에서
+  실제 `<table>` 로 바꿔야 한다. 두 컴포넌트와 HOME 을 다시 만드는 큰 작업이다.
+
+- [ ] `DISPLAY_COLUMN_LABELS` 가 페이지 4곳에 따로 정의돼 있다. 겹치는 키의 값은 모두
+  같아 아직 갈라지지는 않았지만, 합치면 지금 매핑이 없던 페이지의 라벨이 바뀐다
+  (`capacity_standards` 의 `Capa Code` → `PKG Code` 등). 어느 라벨이 옳은지 정한 뒤
+  `month_editor.py` 의 것으로 합친다.
+
 ## 4. 현재 권장 진행 순서
 
 1. 사내 `company_bigdataquery_adapter.py`에 실제 SQL·DB→Core Data 78컬럼 매핑을 넣고

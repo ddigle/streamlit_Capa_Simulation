@@ -1,7 +1,5 @@
 # Purpose: 공정 유효 Capa와 STEP 상세를 표시하고 관련 기준정보 및 STEP 구성을 편집한다.
 
-from types import TracebackType
-from typing import Protocol
 
 import pandas as pd
 import streamlit as st
@@ -10,11 +8,13 @@ from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
 )
+from capa_simulation.components.month_editor import (
+    DISPLAY_COLUMN_LABELS,
+    render_month_editor,
+)
 from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
-    render_reference_clipboard_tools,
 )
-from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     load_page_context,
@@ -68,14 +68,6 @@ TAB_NAMES = (
     "일수",
 )
 
-DISPLAY_COLUMN_LABELS = {
-    "양산구분": "양산",
-    "제품정보": "제품",
-    "WF 구분": "속성",
-    "Area_Name": "Area",
-    "STEP_SEQ": "Step",
-    "MCP_SEQ": "MCP",
-}
 RUN_RATE_DIMENSIONS = ["공정", "양산구분"]
 VITAL_DIMENSIONS = ["공정", "양산구분"]
 RUN_DAY_DIMENSIONS = ["공정"]
@@ -96,90 +88,6 @@ CAPACITY_LEVEL_LABELS = {
     "Stack": "Stack",
     "WF 구분": "WF 속성",
 }
-
-
-class OpenTab(Protocol):
-    @property
-    def open(self) -> bool | None: ...
-
-    def __enter__(self) -> "OpenTab": ...
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> bool | None: ...
-
-
-def render_month_editor(
-    tab: OpenTab,
-    default_table: pd.DataFrame,
-    dimensions: list[str],
-    editor_key: str,
-    caption: str,
-    number_format: str,
-    step: float,
-    min_value: float = 0.0,
-    max_value: float | None = None,
-    *,
-    table_name: str,
-    csv_file_name: str,
-) -> tuple[pd.DataFrame, bool, pd.DataFrame | None]:
-    if tab.open is False:
-        return pd.DataFrame(), False, None
-    month_columns = [column for column in default_table.columns if column not in dimensions]
-    styled_table = default_table.style.set_properties(
-        subset=pd.Index(dimensions),
-        **{"background-color": tokens.SURFACE_CLASSIFICATION},
-    )
-    with tab:
-        st.caption(caption)
-        edited = st.data_editor(
-            styled_table,
-            key=editor_key,
-            hide_index=True,
-            width="content",
-            height=500,
-            row_height=25,
-            num_rows="fixed",
-            disabled=dimensions,
-            column_config={
-                **{
-                    column: st.column_config.TextColumn(
-                        DISPLAY_COLUMN_LABELS.get(column, column),
-                        alignment="center",
-                        pinned=True,
-                    )
-                    for column in dimensions
-                },
-                **{
-                    month: st.column_config.NumberColumn(
-                        month,
-                        width=80,
-                        min_value=min_value,
-                        max_value=max_value,
-                        step=step,
-                        format=number_format,
-                        alignment="center",
-                    )
-                    for month in month_columns
-                },
-            },
-        )
-        submitted = st.button(
-            ":material/check: 변경사항 적용",
-            key=f"{editor_key}_apply",
-            type="primary",
-        )
-        imported = render_reference_clipboard_tools(
-            default_table,
-            table_name=table_name,
-            key_columns=dimensions,
-            file_name=csv_file_name,
-            key=f"{editor_key}_csv",
-        )
-    return edited, submitted, imported
 
 
 st.title("공정별 Capa")

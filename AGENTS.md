@@ -379,6 +379,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     파이썬 코드에 색 리터럴을 쓰지 않는다. 규칙은 `docs/design_system.md` 를 따른다.
 - `src/capa_simulation/components/monthly_table_base.py`
   - 두 월별 표가 공유하는 상수·텍스트 폭 계산과 고정 분류 + 스크롤 월 껍데기.
+- `src/capa_simulation/components/scroll_shell.py`
+  - 가로 스크롤 상자와 그 안의 고정 폭 캔버스. 월별 표·HOME·재공 현황이 함께 쓴다.
+    컨테이너 key 가 `.st-key-<key>` 클래스가 되므로 이름을 바꾸면 CSS 가 끊어진다.
+- `src/capa_simulation/components/month_editor.py`
+  - 월별 Wide 기준정보를 탭 안에서 편집하는 `data_editor` 와 분류 컬럼 표시 라벨.
 - `src/capa_simulation/components/plotly_layout.py`
   - 제목 주석·외곽 테두리·분기 경계·고정 행 등 Figure 그리기 공통 유틸리티.
 - `src/capa_simulation/components/home_figures.py`, `home_rendering.py`, `home_dimensions.py`
