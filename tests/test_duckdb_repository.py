@@ -440,11 +440,15 @@ def test_new_revision_replaces_only_revision_owned_tables(tmp_path: Path) -> Non
     assert revised.tables["RQ_PKG_PLAN"].loc[0, "생산수량"] == pytest.approx(250.0)
     assert revised.tables["RQ_REQB"].loc[0, "STEP_SEQ"] == "P200"
     assert revised.tables["RQ_EQP_AVBL"].loc[0, "가용대수"] == pytest.approx(12.0)
-    assert revised.tables["RQ_CHIP_QTY"].loc[0, "Net Die"] == pytest.approx(1000.0)
+    # RQ_CHIP_QTY 는 가상 제품 복제 등록을 위해 리비전 소유로 승격됐다. 예전에는
+    # 데이터셋 소유라 저장해도 원본값이 돌아왔다.
+    assert revised.tables["RQ_CHIP_QTY"].loc[0, "Net Die"] == pytest.approx(9999.0)
     loaded_initial = repository.load_revision(initial.revision.revision_id)
     assert loaded_initial.tables["RQ_PKG_PLAN"].loc[0, "생산수량"] == pytest.approx(100.0)
     assert loaded_initial.tables["RQ_REQB"].loc[0, "STEP_SEQ"] == "P100"
     assert loaded_initial.tables["RQ_EQP_AVBL"].loc[0, "가용대수"] == pytest.approx(9.0)
+    # 이전 리비전은 승격 뒤에도 자기 스냅샷을 그대로 지킨다.
+    assert loaded_initial.tables["RQ_CHIP_QTY"].loc[0, "Net Die"] == pytest.approx(1000.0)
 
 
 def test_failed_registration_rolls_back_all_metadata(tmp_path: Path) -> None:

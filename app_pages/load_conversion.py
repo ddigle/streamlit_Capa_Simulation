@@ -22,6 +22,7 @@ from capa_simulation.scenario_state import (
     apply_month_updates,
     reset_active_scenario,
     scenario_month_table,
+    scenario_table,
 )
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
@@ -324,10 +325,10 @@ with conversion_tab:
         monthly_volume = get_monthly_volume(
             plan=conversion_plan,
             yield_data=simulation_yield,
-            chip_qty=reference_tables["RQ_CHIP_QTY"],
+            chip_qty=scenario_table(active_scenario, "RQ_CHIP_QTY"),
             demand_basis=demand_basis,
             detailed=show_detail,
-            density_data=reference_tables["RQ_CHIP_EQ"],
+            density_data=scenario_table(active_scenario, "RQ_CHIP_EQ"),
             display_order=reference_tables["RQ_DISPLAY_ORDER"],
         )
     except ValueError as exc:

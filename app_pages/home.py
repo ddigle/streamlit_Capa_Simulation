@@ -28,7 +28,11 @@ from capa_simulation.scenario_preset_state import (
     SECURE_THRESHOLD_KEY,
     WARNING_THRESHOLD_KEY,
 )
-from capa_simulation.scenario_state import ensure_active_scenario, scenario_month_table
+from capa_simulation.scenario_state import (
+    ensure_active_scenario,
+    scenario_month_table,
+    scenario_table,
+)
 from capa_simulation.services.dashboard import (
     build_bottleneck_capacity,
     build_monthly_bottleneck_ranking,
@@ -158,7 +162,7 @@ try:
         cache_key=home_simulation_cache_key,
         _plan=simulation_plan,
         _yield_data=simulation_yield,
-        _density_data=reference_tables["RQ_CHIP_EQ"],
+        _density_data=scenario_table(active_scenario, "RQ_CHIP_EQ"),
         _display_order=reference_tables["RQ_DISPLAY_ORDER"],
         _upeh=simulation_upeh,
         _run_rate=simulation_run_rate,
@@ -168,7 +172,7 @@ try:
         _lot_ratio=simulation_lot_ratio,
         _wf_ratio=simulation_wf_ratio,
         _reqb=simulation_reqb,
-        _chip_qty=reference_tables["RQ_CHIP_QTY"],
+        _chip_qty=scenario_table(active_scenario, "RQ_CHIP_QTY"),
         _available_equipment=simulation_available,
     )
     home_trace.mark("HOME 계산 파이프라인")

@@ -12,6 +12,10 @@ ACTIVE_SCENARIO_KEY = "active_scenario"
 EDITABLE_SCENARIO_TABLES = (
     "RQ_PKG_PLAN",
     "RQ_YLD",
+    # 가상 제품(기존 제품 복제 등록)이 행을 추가해야 하므로 편집 대상이다.
+    # 월 축이 없어 scenario_month_table 이 아니라 scenario_table 로 읽는다.
+    "RQ_CHIP_QTY",
+    "RQ_CHIP_EQ",
     "RQ_UPEH",
     "RQ_RUN_RATE",
     "RQ_VITAL",

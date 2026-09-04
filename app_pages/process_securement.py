@@ -21,6 +21,7 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.scenario_state import (
     apply_month_updates,
     scenario_month_table,
+    scenario_table,
 )
 from capa_simulation.services.display_order import (
     apply_display_order,
@@ -43,7 +44,8 @@ from capa_simulation.services.securement_rate import (
     securement_rate_to_month_table,
 )
 from capa_simulation.services.simulation_cache import (
-    MONTHLESS_INPUT_TABLES,
+    REFERENCE_INPUT_TABLES,
+    SCENARIO_MONTHLESS_TABLES,
     get_capacity_and_demand,
     get_securement_rate,
 )
@@ -99,7 +101,8 @@ try:
     unit_capacity, required_equipment = get_capacity_and_demand(
         {
             **filtered,
-            **{key: reference_tables[key] for key in MONTHLESS_INPUT_TABLES},
+            **{key: reference_tables[key] for key in REFERENCE_INPUT_TABLES},
+            **{key: scenario_table(active_scenario, key) for key in SCENARIO_MONTHLESS_TABLES},
             # 생산계획과 수율만 사용자 편집본을 쓴다.
             "RQ_PKG_PLAN": simulation_plan,
             "RQ_YLD": simulation_yield,

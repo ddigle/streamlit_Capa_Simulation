@@ -48,6 +48,9 @@ scenario_tables = {
         "RQ_PKG_PLAN",
         "RQ_YLD",
         "RQ_REQB",
+        # RQ_CHIP_QTY·RQ_CHIP_EQ 는 가상 제품 복제 등록을 위해 시나리오 소유로 승격됐다.
+        "RQ_CHIP_QTY",
+        "RQ_CHIP_EQ",
     )
 }
 scenario_tables["RQ_RUN_DAY"] = pd.DataFrame(

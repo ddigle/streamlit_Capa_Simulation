@@ -22,6 +22,7 @@ from capa_simulation.scenario_state import (
     apply_month_updates,
     reset_active_scenario,
     scenario_month_table,
+    scenario_table,
 )
 from capa_simulation.services.capacity_reference_editor import (
     PERFORMANCE_EDITOR_DIMENSIONS,
@@ -42,7 +43,8 @@ from capa_simulation.services.route_step_editor import (
     route_step_summary,
 )
 from capa_simulation.services.simulation_cache import (
-    MONTHLESS_INPUT_TABLES,
+    REFERENCE_INPUT_TABLES,
+    SCENARIO_MONTHLESS_TABLES,
     get_capacity_and_demand,
 )
 from capa_simulation.services.unit_capacity import (
@@ -581,7 +583,8 @@ try:
             "RQ_REQB": filtered_reqb,
             "RQ_PKG_PLAN": simulation_plan,
             "RQ_YLD": simulation_yield,
-            **{key: reference_tables[key] for key in MONTHLESS_INPUT_TABLES},
+            **{key: reference_tables[key] for key in REFERENCE_INPUT_TABLES},
+            **{key: scenario_table(active_scenario, key) for key in SCENARIO_MONTHLESS_TABLES},
         }
     )
     excluded_capacity_rows = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())

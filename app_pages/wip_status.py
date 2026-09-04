@@ -20,11 +20,13 @@ from capa_simulation.persistence.equipment_cache import get_equipment_repository
 from capa_simulation.scenario_state import (
     ensure_active_scenario,
     scenario_month_table,
+    scenario_table,
 )
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
-    MONTHLESS_INPUT_TABLES,
+    REFERENCE_INPUT_TABLES,
+    SCENARIO_MONTHLESS_TABLES,
     get_capacity_and_demand,
     get_weekly_standard_target_capacity,
 )
@@ -105,7 +107,8 @@ try:
     unit_capacity, required_equipment = get_capacity_and_demand(
         {
             **filtered_tables,
-            **{key: reference_tables[key] for key in MONTHLESS_INPUT_TABLES},
+            **{key: reference_tables[key] for key in REFERENCE_INPUT_TABLES},
+            **{key: scenario_table(active_scenario, key) for key in SCENARIO_MONTHLESS_TABLES},
         }
     )
     required_equipment = prepare_standard_target_required_equipment(required_equipment)

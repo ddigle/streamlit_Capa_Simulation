@@ -270,8 +270,13 @@ CAPACITY_INPUT_TABLES = (
 
 DEMAND_INPUT_TABLES = ("RQ_REQB", "RQ_PKG_PLAN", "RQ_YLD", "RQ_CHIP_QTY")
 
-# 월 축이 없어 시나리오 월 슬라이스가 아니라 활성 리비전 전체를 그대로 쓰는 기준정보다.
-MONTHLESS_INPUT_TABLES = ("RQ_MODULE", "RQ_CHIP_QTY")
+# 월 축이 없는 입력은 두 갈래다.
+# - REFERENCE_INPUT_TABLES: 시나리오가 소유하지 않아 활성 리비전에서 그대로 읽는다.
+# - SCENARIO_MONTHLESS_TABLES: 시나리오가 소유하지만 월 축이 없어 월 슬라이스를 하지
+#   않는다. 가상 제품 복제 등록이 여기에 행을 추가한다.
+REFERENCE_INPUT_TABLES = ("RQ_MODULE",)
+SCENARIO_MONTHLESS_TABLES = ("RQ_CHIP_QTY",)
+MONTHLESS_INPUT_TABLES = (*REFERENCE_INPUT_TABLES, *SCENARIO_MONTHLESS_TABLES)
 
 
 def get_capacity_and_demand(

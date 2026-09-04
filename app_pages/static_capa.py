@@ -16,12 +16,17 @@ from capa_simulation.scenario_preset_state import (
     SECURE_THRESHOLD_KEY,
     WARNING_THRESHOLD_KEY,
 )
-from capa_simulation.scenario_state import scenario_month_table
+from capa_simulation.scenario_state import (
+    scenario_month_table,
+    scenario_table,
+)
 from capa_simulation.services.securement_rate import build_securement_shortfall_tables
 from capa_simulation.services.simulation_cache import (
     CAPACITY_INPUT_TABLES,
     DEMAND_INPUT_TABLES,
     MONTHLESS_INPUT_TABLES,
+    REFERENCE_INPUT_TABLES,
+    SCENARIO_MONTHLESS_TABLES,
     get_capacity_and_demand,
     get_securement_rate,
 )
@@ -174,7 +179,8 @@ try:
                 for name in (*CAPACITY_INPUT_TABLES, *DEMAND_INPUT_TABLES)
                 if name not in MONTHLESS_INPUT_TABLES
             },
-            **{name: reference_tables[name] for name in MONTHLESS_INPUT_TABLES},
+            **{name: reference_tables[name] for name in REFERENCE_INPUT_TABLES},
+            **{name: scenario_table(active_scenario, name) for name in SCENARIO_MONTHLESS_TABLES},
         }
     )
     securement_rate = get_securement_rate(

@@ -86,6 +86,8 @@ REVISION_TABLES: dict[str, str] = {
     for name in (
         "RQ_PKG_PLAN",
         "RQ_YLD",
+        "RQ_CHIP_QTY",
+        "RQ_CHIP_EQ",
         "RQ_UPEH",
         "RQ_RUN_RATE",
         "RQ_VITAL",
