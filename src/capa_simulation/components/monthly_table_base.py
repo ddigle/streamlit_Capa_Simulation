@@ -25,7 +25,10 @@ import streamlit as st
 # 테스트가 스크롤바를 갈아끼울 수 있도록 이름이 아니라 모듈을 잡는다. 이름을 직접
 # import 하면 여기서 잡은 바인딩이 교체를 무시한다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
-from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
+from capa_simulation.components.scroll_shell import (
+    horizontal_scroll_canvas,
+    split_scroll_columns_style,
+)
 from capa_simulation.design import tokens
 
 # 색과 치수는 design/tokens.py 가 단일 근거다. 여기서는 표 문맥의 이름만 붙인다.
@@ -209,6 +212,15 @@ def render_split_scroll_table(
     """
     visible_month_count = min(max(month_count, 1), MONTH_SCROLL_THRESHOLD)
     classification_width = sum(classification_widths)
+    # 분류 폭은 px 로 계산한 값이다. 비율로만 넘기면 창이 좁을 때 함께 줄어 분류 이름이
+    # 잘리므로 CSS 로 px 를 못박는다. 비율은 CSS 가 적용되기 전 첫 그리기용이다.
+    st.html(
+        split_scroll_columns_style(
+            label_key=f"{key}_label_canvas",
+            month_key=f"{key}_month_region",
+            label_width_px=classification_width,
+        )
+    )
     label_column, month_column = st.columns(
         [classification_width, visible_month_count * MONTH_COLUMN_WIDTH_PX],
         gap=None,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from calendar import monthrange
+from collections.abc import Sequence
 from datetime import date
 from math import isfinite
 from typing import cast
@@ -16,6 +17,11 @@ from capa_simulation.components.hierarchical_monthly_table import (
 )
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.table_toolbar import (
+    CSV_TEMPLATE_LABEL,
+    render_csv_download,
+    table_heading_row,
+)
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     load_page_context,
@@ -59,6 +65,7 @@ from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import show_applied_month_range
 
 START_DATE_KEY = "standard_target_start_date"
+
 END_DATE_KEY = "standard_target_end_date"
 PROCESS_FILTER_KEY = STANDARD_TARGET_PROCESS_SELECTION_KEY
 SHOW_DETAIL_KEY = "standard_target_show_detail"
@@ -409,6 +416,31 @@ def _render_logic_analysis(
     )
 
 
+def _warn_about_processes_without_availability(
+    availability: pd.DataFrame,
+    target_processes: Sequence[str],
+) -> None:
+    """가용대수를 입력하지 않아 값이 비는 공정을 알린다.
+
+    일 표준 가능량은 주차별 가용대수를 곱해 구하므로 입력이 없는 공정은 행이 통째로
+    빈다. 화면에는 빈 칸만 남아 계산이 실패한 것인지 입력이 없는 것인지 구분되지 않았다.
+    """
+    if availability.empty or not target_processes:
+        return
+    entered = set(availability["공정"].astype(str))
+    missing = [process for process in target_processes if process not in entered]
+    if not missing:
+        return
+    preview = " · ".join(missing[:5])
+    if len(missing) > 5:
+        preview += f" 외 {len(missing) - 5}개"
+    st.info(
+        f"가용대수를 입력한 {len(target_processes) - len(missing)} / {len(target_processes)}개 "
+        f"공정만 값이 나옵니다. 비어 있는 공정: {preview}",
+        icon=":material/info:",
+    )
+
+
 def _render_standard_target_exceptions(excluded_row_count: int) -> None:
     with st.expander("예외 처리 공정", expanded=False):
         st.caption(
@@ -622,14 +654,11 @@ with st.container(border=True):
     )
     action_row = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
     with action_row:
-        st.download_button(
-            ":material/download: CSV 양식 다운로드",
+        render_csv_download(
             data=template_csv,
             file_name=f"Weekly_Available_Equipment_{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv",
-            mime="text/csv;charset=utf-8",
             key="download_standard_target_availability_template",
-            on_click="ignore",
-            width="content",
+            label=CSV_TEMPLATE_LABEL,
         )
         if st.button(
             ":material/delete: 입력 초기화",
@@ -775,21 +804,15 @@ else:
         )
         output_csv = output_export.to_csv(index=False).encode("utf-8-sig")
 
-        metric_row = st.container(horizontal=True, vertical_alignment="center", gap="small")
-        with metric_row:
-            st.subheader(f"주차별 {output_title}", width="content")
-            st.download_button(
-                ":material/download: CSV 다운로드",
-                data=output_csv,
-                file_name=(
-                    f"Standard_Target_Capa_{output_file_metric}_"
-                    f"{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv"
-                ),
-                mime="text/csv;charset=utf-8",
-                key="download_standard_target_result",
-                on_click="ignore",
-                width="content",
-            )
+        with table_heading_row(
+            f"주차별 {output_title}",
+            csv=output_csv,
+            file_name=(
+                f"Standard_Target_Capa_{output_file_metric}_"
+                f"{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv"
+            ),
+            key="download_standard_target_result",
+        ):
             if output_metric == "일 표준 가능량":
                 st.toggle(
                     "PKG 기준",
@@ -814,6 +837,7 @@ else:
             "월 경계 주차는 월요일이 속한 달의 기준을 적용합니다."
         )
         st.caption(calculation_caption)
+        _warn_about_processes_without_availability(availability, target_processes)
         render_hierarchical_monthly_table(
             output_table,
             classification_columns=classification_columns,

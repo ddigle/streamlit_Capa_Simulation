@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL, render_csv_download
 from capa_simulation.design import tokens
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_snapshot_cache,
@@ -51,6 +52,7 @@ from capa_simulation.services.simulation_cache import get_weekly_equipment_avail
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
 FLASH_KEY = "equipment_status_flash"
+
 BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
 EQUIPMENT_EDITOR_KEY = "equipment_master_editor_v3"
 DOWNTIME_EDITOR_KEY = "equipment_downtime_editor_v3"
@@ -570,13 +572,11 @@ with management_tab:
                 placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
             )
             with st.container(horizontal=True):
-                st.download_button(
-                    "양식 다운로드",
+                render_csv_download(
                     data=equipment_csv_template(),
                     file_name="equipment_master_template.csv",
-                    mime="text/csv",
-                    icon=":material/download:",
                     key="equipment_master_template_download_v3",
+                    label=CSV_TEMPLATE_LABEL,
                 )
                 preview_equipment_import = st.button(
                     "미리보기",
@@ -592,13 +592,11 @@ with management_tab:
                 placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
             )
             with st.container(horizontal=True):
-                st.download_button(
-                    "양식 다운로드",
+                render_csv_download(
                     data=downtime_csv_template(),
                     file_name="equipment_downtime_template.csv",
-                    mime="text/csv",
-                    icon=":material/download:",
                     key="equipment_downtime_template_download_v3",
+                    label=CSV_TEMPLATE_LABEL,
                 )
                 preview_downtime_import = st.button(
                     "미리보기",

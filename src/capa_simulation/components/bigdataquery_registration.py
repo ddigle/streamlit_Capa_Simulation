@@ -10,6 +10,7 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.io.company_bigdataquery_adapter import (
     BigDataQueryCoreDataProvider,
     is_bigdataquery_adapter_configured,
@@ -138,14 +139,11 @@ def _render_reference_conflict_report() -> None:
         "등록은 중단하지 않고 각 그룹의 원천 첫 행을 임시 적용했습니다."
     )
     st.dataframe(summary, hide_index=True, width="stretch")
-    st.download_button(
-        "RQ 업무 키 충돌 CSV 다운로드",
+    render_csv_download(
         data=reference_conflicts_to_csv(report),
         file_name=file_name,
-        mime="text/csv",
-        icon=":material/download:",
-        width="content",
-        on_click="ignore",
+        key="reference_conflicts_download",
+        label="RQ 업무 키 충돌 CSV 다운로드",
     )
     with st.expander("충돌 상세 미리보기"):
         st.dataframe(report, hide_index=True, width="stretch")

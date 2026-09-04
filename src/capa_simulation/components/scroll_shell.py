@@ -74,6 +74,41 @@ def scroll_shell_style(
     return f"<style>\n{box}\n{_canvas_rules(key, content_width_px)}\n</style>"
 
 
+def split_scroll_columns_style(
+    *,
+    label_key: str,
+    month_key: str,
+    label_width_px: float,
+) -> str:
+    """고정 라벨 컬럼과 남는 폭을 채우는 월 컬럼의 폭을 CSS 로 못박는다.
+
+    `st.columns` 의 인자는 **비율**이라 컨테이너 폭에 비례해 늘고 준다. 그런데 라벨 폭은
+    분류 컬럼 픽셀 폭의 합으로 계산한 **px** 값이어서, 창이 설계 폭보다 좁으면 라벨 컬럼도
+    함께 줄고 분류 이름과 구획 제목이 잘린다. 1280px 창의 HOME 에서 라벨 컬럼이 149px 로
+    줄어 "Capa LOB 현황" 이 잘리는 것이 그 예다. 반대로 조회 월이 두세 달뿐이면 비율이
+    커져 라벨 컬럼이 필요 이상으로 넓어진다.
+
+    라벨 컬럼을 px 로 고정하고 월 컬럼이 나머지를 가져가게 한다. 월 영역은 어차피 가로로
+    스크롤하므로 좁아져도 내용이 잘리지 않는다.
+    """
+    return "\n".join(
+        [
+            "<style>",
+            f'[data-testid="stColumn"]:has(.st-key-{label_key}) {{',
+            f"    flex: 0 0 {label_width_px}px !important;",
+            f"    width: {label_width_px}px !important;",
+            f"    min-width: {label_width_px}px !important;",
+            "}",
+            f'[data-testid="stColumn"]:has(.st-key-{month_key}) {{',
+            "    flex: 1 1 0 !important;",
+            "    width: auto !important;",
+            "    min-width: 0 !important;",
+            "}",
+            "</style>",
+        ]
+    )
+
+
 @contextmanager
 def horizontal_scroll_canvas(
     *,

@@ -7,6 +7,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.io.reference_cache import apply_global_display_order
 from capa_simulation.persistence.cache import (
     clear_global_display_order_cache,
@@ -42,14 +43,10 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
         st.caption(
             f"공용 버전 v{profile.version} · {profile.source} · {profile.updated_at:%Y-%m-%d %H:%M}"
         )
-        st.download_button(
-            "CSV 다운로드",
+        render_csv_download(
             data=display_order_to_csv(display_order),
             file_name=f"RQ_DISPLAY_ORDER_v{profile.version}.csv",
-            mime="text/csv;charset=utf-8",
-            icon=":material/download:",
-            on_click="ignore",
-            width="content",
+            key="display_order_download",
         )
 
     _render_clipboard_import(repository, display_order)

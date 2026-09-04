@@ -21,6 +21,7 @@ from capa_simulation.components.space_layout import (
     floors_for,
     invalid_equipment_rows,
 )
+from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
 from capa_simulation.persistence.equipment_cache import load_latest_equipment_snapshot
 from capa_simulation.services.equipment_availability import (
@@ -38,6 +39,7 @@ from capa_simulation.services.equipment_samples import (
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
 SELECTED_BUILDING_KEY = "space_status_selected_building"
+
 SELECTED_FLOOR_KEY = "space_status_selected_floor"
 
 
@@ -454,12 +456,8 @@ else:
         },
     )
     # 층별 호기 목록은 현장 배치 검토에 그대로 쓰인다.
-    st.download_button(
-        ":material/download: CSV 다운로드",
+    render_csv_download(
         data=floor_equipment.to_csv(index=False).encode("utf-8-sig"),
         file_name=f"space_{selected_building}_{selected_floor}.csv",
-        mime="text/csv;charset=utf-8",
         key=f"space_floor_download_{selected_building}_{selected_floor}",
-        on_click="ignore",
-        width="content",
     )

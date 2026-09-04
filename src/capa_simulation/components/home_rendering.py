@@ -12,10 +12,14 @@ import streamlit as st
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.components.home_dimensions import (
+    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     DASHBOARD_SCROLLBAR_HEIGHT_PX,
     DASHBOARD_SECTION_GAP_PX,
 )
-from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
+from capa_simulation.components.scroll_shell import (
+    horizontal_scroll_canvas,
+    split_scroll_columns_style,
+)
 from capa_simulation.design import tokens
 from capa_simulation.performance import PerformanceTrace
 
@@ -69,8 +73,6 @@ def render_home_performance(
 def render_home_figures(
     figures: HomeFigureSet,
     month_labels: list[str],
-    title_column_width: float,
-    month_column_width: float,
 ) -> None:
     if len(figures) not in {2, 6}:
         raise ValueError("HOME Figure 묶음은 요약 2개 또는 상세 포함 6개여야 합니다.")
@@ -79,8 +81,20 @@ def render_home_figures(
     visible_month_count = min(max(len(month_labels), 1), tokens.DASHBOARD_MONTH_SCROLL_THRESHOLD)
 
     with st.container(border=True):
+        # 구분 컬럼은 px 로 고정한다. 비율로 두면 창이 좁을 때 구획 제목이 잘리고, 조회
+        # 월이 적을 때는 반대로 필요 이상 넓어진다. 비율은 CSS 적용 전 첫 그리기용이다.
+        st.html(
+            split_scroll_columns_style(
+                label_key="production_lob_label_canvas",
+                month_key="production_lob_month_region",
+                label_width_px=DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+            )
+        )
         label_column, month_column = st.columns(
-            [title_column_width, visible_month_count * month_column_width],
+            [
+                DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+                visible_month_count * tokens.MONTH_COLUMN_WIDTH_PX,
+            ],
             gap=None,
         )
         with label_column:

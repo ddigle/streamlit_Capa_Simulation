@@ -16,6 +16,7 @@ from capa_simulation.components.reference_csv_tools import (
     render_reference_clipboard_tools,
 )
 from capa_simulation.components.scenario_edit_bar import render_scenario_edit_bar
+from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -466,21 +467,15 @@ with conversion_tab:
             index=False,
             float_format=f"%.{conversion_decimal_places}f",
         ).encode("utf-8-sig")
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.subheader("환산", width="content")
-            st.caption(f"단위: {unit}", width="content")
-            st.download_button(
-                ":material/download: CSV 다운로드",
-                data=conversion_csv,
-                file_name=(
-                    "Capa_Conversion_"
-                    f"{demand_basis}_{effective_start_month}_{effective_end_month}.csv"
-                ),
-                mime="text/csv;charset=utf-8",
-                key="download_conversion_csv",
-                on_click="ignore",
-                width="content",
-            )
+        render_table_heading(
+            "환산",
+            caption=f"단위: {unit}",
+            csv=conversion_csv,
+            file_name=(
+                f"Capa_Conversion_{demand_basis}_{effective_start_month}_{effective_end_month}.csv"
+            ),
+            key="download_conversion_csv",
+        )
         render_grouped_monthly_table(
             monthly_volume,
             classification_columns=displayed_classification_columns,

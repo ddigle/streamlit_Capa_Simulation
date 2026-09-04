@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-APP_NAME = "🏭S.PKG Capa Simulation"
+# 탭 아이콘은 `st.set_page_config(page_icon=...)` 가 맡는다. 이름에 이모지를 붙이면
+# 브라우저 탭에 아이콘이 두 번 나오고, 붙임표 없이 글자와 붙어 제목 줄이 지저분해진다.
+APP_NAME = "S.PKG Capa Simulation"
 MONTH_SELECTION_START = 202501
 MONTH_SELECTION_END = 203012
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

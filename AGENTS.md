@@ -391,11 +391,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/roadmap_panel.py`
   - 업무 활용 목적·담당 부서별 Action Item·로드맵 한 줄을 카드로 그린다.
     Static Capa 와 Dynamic Capa 가 공유한다.
+- `src/capa_simulation/components/table_toolbar.py`
+  - 표 제목·부가 설명·CSV 내보내기 한 줄. `st.download_button` 은 여기서만 부른다.
+    라벨에 아이콘을 섞지 않고 `label` 인자를 쓴다. 어기면 테스트가 잡는다.
 - `src/capa_simulation/components/monthly_table_base.py`
   - 두 월별 표가 공유하는 상수·텍스트 폭 계산과 고정 분류 + 스크롤 월 껍데기.
 - `src/capa_simulation/components/scroll_shell.py`
   - 가로 스크롤 상자와 그 안의 고정 폭 캔버스. 월별 표·HOME·재공 현황이 함께 쓴다.
     컨테이너 key 가 `.st-key-<key>` 클래스가 되므로 이름을 바꾸면 CSS 가 끊어진다.
+    분류 컬럼 폭을 px 로 못박는 `split_scroll_columns_style` 도 여기 있다. `st.columns`
+    인자는 비율이라 창이 좁으면 분류 이름이 잘렸다.
 - `src/capa_simulation/components/month_editor.py`
   - 월별 Wide 기준정보를 탭 안에서 편집하는 `data_editor` 와 분류 컬럼 표시 라벨.
 - `src/capa_simulation/components/plotly_layout.py`

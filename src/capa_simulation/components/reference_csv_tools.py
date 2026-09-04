@@ -7,6 +7,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL, render_csv_download
 from capa_simulation.services.reference_csv import (
     parse_reference_edit_clipboard,
     reference_edit_csv_bytes,
@@ -33,14 +34,11 @@ def render_reference_clipboard_tools(
             "헤더를 포함한 전체 표를 복사해 아래에 붙여넣으면 파일 업로드 없이 적용합니다. "
             "행·컬럼 구조는 변경할 수 없습니다."
         )
-        st.download_button(
-            ":material/download: CSV 다운로드",
+        render_csv_download(
             data=reference_edit_csv_bytes(data),
             file_name=file_name,
-            mime="text/csv;charset=utf-8",
             key=f"{key}_download",
-            on_click="ignore",
-            width="content",
+            label=CSV_TEMPLATE_LABEL,
         )
         with st.form(f"{key}_clipboard_form", border=False):
             clipboard_text = st.text_area(

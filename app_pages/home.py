@@ -338,8 +338,6 @@ with st.sidebar.container(border=True):
 secure_threshold = secure_threshold_percent / 100.0
 warning_threshold = warning_threshold_percent / 100.0
 month_labels = [str(value) for value in monthly_density["년월"].tolist()]
-title_column_width = 2.0
-month_column_width = 1.0
 figure_cache_key: HomeFigureCacheKey = (
     HOME_FIGURE_SCHEMA_VERSION,
     reference_version,
@@ -358,8 +356,6 @@ if cached_figures is not None:
     render_home_figures(
         cached_figures,
         month_labels,
-        title_column_width,
-        month_column_width,
     )
     home_trace.mark("Plotly 전달")
     render_home_performance(
@@ -410,8 +406,6 @@ if not show_home_details:
     render_home_figures(
         cached_figures,
         month_labels,
-        title_column_width,
-        month_column_width,
     )
     home_trace.mark("Plotly 전달")
     render_home_performance(
@@ -443,8 +437,6 @@ home_trace.mark("상세 Figure 생성")
 render_home_figures(
     cached_figures,
     month_labels,
-    title_column_width,
-    month_column_width,
 )
 home_trace.mark("Plotly 전달")
 render_home_performance(

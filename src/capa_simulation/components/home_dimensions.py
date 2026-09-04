@@ -6,6 +6,11 @@ from __future__ import annotations
 
 DASHBOARD_SCROLLBAR_HEIGHT_PX = 15
 
+# 왼쪽 구분·분류 컬럼의 폭. 구획 제목("Capa LOB 현황")과 가장 긴 행 이름
+# ("Density (억Gb)")이 함께 들어가는 값이다. 비율로 두면 창 폭과 조회 월 수에 따라
+# 149px~618px 사이를 오가며 제목이 잘리거나 빈 여백이 생겼다.
+DASHBOARD_LABEL_COLUMN_WIDTH_PX = 260
+
 DASHBOARD_SECTION_GAP_PX = 16
 
 DASHBOARD_TITLE_HEIGHT_PX = 44

@@ -15,6 +15,7 @@ from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
 )
 from capa_simulation.components.scenario_edit_bar import render_scenario_edit_bar
+from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     load_page_context,
@@ -709,20 +710,14 @@ else:
         )
         capacity_csv = capacity_export.to_csv(index=False, float_format="%.0f").encode("utf-8-sig")
         st.caption(output_caption)
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.subheader(output_title, width="content")
-            st.download_button(
-                ":material/download: CSV 다운로드",
-                data=capacity_csv,
-                file_name=(
-                    f"{file_prefix}_"
-                    f"{selected_level}_{effective_start_month}_{effective_end_month}.csv"
-                ),
-                mime="text/csv;charset=utf-8",
-                key="download_unit_capacity_csv",
-                on_click="ignore",
-                width="content",
-            )
+        render_table_heading(
+            output_title,
+            csv=capacity_csv,
+            file_name=(
+                f"{file_prefix}_{selected_level}_{effective_start_month}_{effective_end_month}.csv"
+            ),
+            key="download_unit_capacity_csv",
+        )
         render_hierarchical_monthly_table(
             unit_capacity_table,
             classification_columns=classification_columns,

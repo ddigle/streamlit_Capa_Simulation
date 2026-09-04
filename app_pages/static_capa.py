@@ -7,6 +7,7 @@ import streamlit as st
 
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.roadmap_panel import render_roadmap_panel
+from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     load_page_context,
@@ -97,14 +98,10 @@ def _render_shortfall_table(data: pd.DataFrame, *, warning_section: bool, key: s
         },
     )
     # 투자 검토와 A/Item 배분에 그대로 쓰는 표다. 화면에서 옮겨 적지 않도록 내보낸다.
-    st.download_button(
-        ":material/download: CSV 다운로드",
+    render_csv_download(
         data=displayed.to_csv(index=False).encode("utf-8-sig"),
         file_name=f"{key}.csv",
-        mime="text/csv;charset=utf-8",
         key=f"{key}_download",
-        on_click="ignore",
-        width="content",
     )
 
 

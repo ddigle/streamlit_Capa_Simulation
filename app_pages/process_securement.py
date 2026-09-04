@@ -14,6 +14,7 @@ from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
     render_reference_clipboard_tools,
 )
+from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -61,7 +62,6 @@ TAB_NAMES = (
     ":material/precision_manufacturing: 소요대수",
     "설비대수",
 )
-
 
 render_page_header(
     "공정별 확보율",
@@ -203,17 +203,12 @@ else:
             value_format="percent",
         )
         securement_csv = securement_export.to_csv(index=False).encode("utf-8-sig")
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.subheader("확보율", width="content")
-            st.download_button(
-                ":material/download: CSV 다운로드",
-                data=securement_csv,
-                file_name=f"Capa_Securement_Rate_{effective_start}_{effective_end}.csv",
-                mime="text/csv;charset=utf-8",
-                key="download_securement_rate_csv",
-                on_click="ignore",
-                width="content",
-            )
+        render_table_heading(
+            "확보율",
+            csv=securement_csv,
+            file_name=f"Capa_Securement_Rate_{effective_start}_{effective_end}.csv",
+            key="download_securement_rate_csv",
+        )
         render_hierarchical_monthly_table(
             displayed_securement_table,
             classification_columns=SECUREMENT_DIMENSIONS,
@@ -301,24 +296,19 @@ else:
         )
         required_csv = required_export.to_csv(index=False, float_format="%.2f").encode("utf-8-sig")
         required_view_name = "Detail" if show_detail else "Summary"
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.subheader("소요대수", width="content")
-            st.download_button(
-                ":material/download: CSV 다운로드",
-                data=required_csv,
-                file_name=(
-                    "Capa_Required_Equipment_"
-                    f"{required_view_name}_{effective_start}_{effective_end}.csv"
-                ),
-                mime="text/csv;charset=utf-8",
-                key=(
-                    "download_required_equipment_detail_csv"
-                    if show_detail
-                    else "download_required_equipment_summary_csv"
-                ),
-                on_click="ignore",
-                width="content",
-            )
+        render_table_heading(
+            "소요대수",
+            csv=required_csv,
+            file_name=(
+                "Capa_Required_Equipment_"
+                f"{required_view_name}_{effective_start}_{effective_end}.csv"
+            ),
+            key=(
+                "download_required_equipment_detail_csv"
+                if show_detail
+                else "download_required_equipment_summary_csv"
+            ),
+        )
         render_hierarchical_monthly_table(
             filtered_required_table,
             classification_columns=table_dimensions,
