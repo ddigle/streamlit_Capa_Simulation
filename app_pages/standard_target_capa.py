@@ -505,7 +505,7 @@ if st.session_state[START_DATE_KEY] > st.session_state[END_DATE_KEY]:
     st.session_state[END_DATE_KEY] = st.session_state[START_DATE_KEY]
 
 with st.container(border=True):
-    st.subheader("조회·집계 설정")
+    st.markdown("#### :material/tune: 조회·집계 설정")
     date_row = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
     with date_row:
         start_date = st.date_input(

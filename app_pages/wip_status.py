@@ -247,7 +247,7 @@ with st.container(horizontal=True):
     )
 
 with st.container(border=True):
-    st.subheader("일별 재공·Flow와 표준 가능 수준")
+    st.markdown("#### :material/insights: 일별 재공·Flow와 표준 가능 수준")
     st.caption(
         "Flow 막대는 표준 이상이면 초록색, 미달이면 빨간색입니다. 점선은 현재 `표준 목표 "
         "Capa`와 같은 산식(공정 유효 Capa ÷ RUN_DAY × 주차별 가용대수)의 제품별 가능 "

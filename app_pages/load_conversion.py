@@ -405,7 +405,7 @@ if apply_yield or imported_yield_table is not None:
 with conversion_tab:
     demand_basis_options: tuple[DemandBasis, ...] = ("PKG", "Chip", "Wafer", "Density")
     with st.container(border=True):
-        st.subheader("설정")
+        st.markdown("#### :material/tune: 설정")
         with st.container(horizontal=True, vertical_alignment="bottom", gap="medium"):
             demand_basis = st.selectbox(
                 "소요기준",
