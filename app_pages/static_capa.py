@@ -19,9 +19,11 @@ from capa_simulation.scenario_preset_state import (
 from capa_simulation.scenario_state import scenario_month_table
 from capa_simulation.services.securement_rate import build_securement_shortfall_tables
 from capa_simulation.services.simulation_cache import (
-    get_required_equipment,
+    CAPACITY_INPUT_TABLES,
+    DEMAND_INPUT_TABLES,
+    MONTHLESS_INPUT_TABLES,
+    get_capacity_and_demand,
     get_securement_rate,
-    get_unit_capacity,
 )
 
 
@@ -164,56 +166,16 @@ try:
         empty_message="선택 범위에 소요대수 산출 기준이 없습니다.",
     )
 
-    unit_capacity = get_unit_capacity(
-        upeh=scenario_month_table(active_scenario, "RQ_UPEH", effective_start, effective_end),
-        run_rate=scenario_month_table(
-            active_scenario,
-            "RQ_RUN_RATE",
-            effective_start,
-            effective_end,
-        ),
-        vital=scenario_month_table(active_scenario, "RQ_VITAL", effective_start, effective_end),
-        module=reference_tables["RQ_MODULE"],
-        run_day=scenario_month_table(
-            active_scenario,
-            "RQ_RUN_DAY",
-            effective_start,
-            effective_end,
-        ),
-        lot_ratio=scenario_month_table(
-            active_scenario,
-            "RQ_LOT_RATIO",
-            effective_start,
-            effective_end,
-        ),
-        wf_ratio=scenario_month_table(
-            active_scenario,
-            "RQ_WF_RATIO",
-            effective_start,
-            effective_end,
-        ),
-    )
-    required_equipment = get_required_equipment(
-        reqb=scenario_month_table(
-            active_scenario,
-            "RQ_REQB",
-            effective_start,
-            effective_end,
-        ),
-        plan=scenario_month_table(
-            active_scenario,
-            "RQ_PKG_PLAN",
-            effective_start,
-            effective_end,
-        ),
-        yield_data=scenario_month_table(
-            active_scenario,
-            "RQ_YLD",
-            effective_start,
-            effective_end,
-        ),
-        chip_qty=reference_tables["RQ_CHIP_QTY"],
-        unit_capacity=unit_capacity,
+    # 월 축이 있는 기준정보는 시나리오 월 슬라이스에서, 나머지는 활성 리비전에서 가져온다.
+    unit_capacity, required_equipment = get_capacity_and_demand(
+        {
+            **{
+                name: scenario_month_table(active_scenario, name, effective_start, effective_end)
+                for name in (*CAPACITY_INPUT_TABLES, *DEMAND_INPUT_TABLES)
+                if name not in MONTHLESS_INPUT_TABLES
+            },
+            **{name: reference_tables[name] for name in MONTHLESS_INPUT_TABLES},
+        }
     )
     securement_rate = get_securement_rate(
         scenario_month_table(

@@ -7,6 +7,7 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
 from capa_simulation.components.wip_status_dashboard import (
     WIP_GRID_CELL_WIDTH_PX,
     build_wip_status_grid_figure,
@@ -23,8 +24,8 @@ from capa_simulation.scenario_state import (
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
-    get_required_equipment,
-    get_unit_capacity,
+    MONTHLESS_INPUT_TABLES,
+    get_capacity_and_demand,
     get_weekly_standard_target_capacity,
 )
 from capa_simulation.services.standard_target_capacity import (
@@ -101,21 +102,11 @@ try:
             "RQ_REQB",
         )
     }
-    unit_capacity = get_unit_capacity(
-        upeh=filtered_tables["RQ_UPEH"],
-        run_rate=filtered_tables["RQ_RUN_RATE"],
-        vital=filtered_tables["RQ_VITAL"],
-        module=reference_tables["RQ_MODULE"],
-        run_day=filtered_tables["RQ_RUN_DAY"],
-        lot_ratio=filtered_tables["RQ_LOT_RATIO"],
-        wf_ratio=filtered_tables["RQ_WF_RATIO"],
-    )
-    required_equipment = get_required_equipment(
-        reqb=filtered_tables["RQ_REQB"],
-        plan=filtered_tables["RQ_PKG_PLAN"],
-        yield_data=filtered_tables["RQ_YLD"],
-        chip_qty=reference_tables["RQ_CHIP_QTY"],
-        unit_capacity=unit_capacity,
+    unit_capacity, required_equipment = get_capacity_and_demand(
+        {
+            **filtered_tables,
+            **{key: reference_tables[key] for key in MONTHLESS_INPUT_TABLES},
+        }
     )
     required_equipment = prepare_standard_target_required_equipment(required_equipment)
     route_scope = build_wip_route_scope(required_equipment)
@@ -248,32 +239,23 @@ with st.container(border=True):
 
     lane_count = len(selected_routes[["STEP_SEQ", "공정"]].drop_duplicates())
     grid_width = max(430, lane_count * WIP_GRID_CELL_WIDTH_PX + 90)
-    st.html(
-        f"""
-        <style>
-        .st-key-wip_status_grid_scroll {{
-            overflow-x: auto;
-            overflow-y: hidden;
-            padding-bottom: 0.5rem;
-        }}
-        .st-key-wip_status_grid_canvas {{
-            width: {grid_width}px !important;
-            min-width: {grid_width}px !important;
-            max-width: none !important;
-        }}
-        </style>
-        """
-    )
-    with st.container(key="wip_status_grid_scroll"):
-        with st.container(key="wip_status_grid_canvas", gap=None):
-            st.plotly_chart(
-                figure,
-                width="stretch",
-                height="content",
-                theme=None,
-                key="wip_status_grid",
-                config={"displayModeBar": False, "responsive": True},
-            )
+    # 이 화면만 네이티브 스크롤바를 그대로 쓴다. 표 컴포넌트·HOME 은 숨기고 커스텀
+    # 스크롤바를 표 위에 얹는다.
+    with horizontal_scroll_canvas(
+        key="wip_status_grid",
+        content_width_px=grid_width,
+        hide_native_scrollbar=False,
+        padding_bottom="0.5rem",
+        gap=None,
+    ):
+        st.plotly_chart(
+            figure,
+            width="stretch",
+            height="content",
+            theme=None,
+            key="wip_status_grid",
+            config={"displayModeBar": False, "responsive": True},
+        )
 
 with st.expander("데이터·계산 경계", expanded=False):
     st.markdown(

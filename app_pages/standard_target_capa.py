@@ -31,8 +31,8 @@ from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
-    get_required_equipment,
-    get_unit_capacity,
+    MONTHLESS_INPUT_TABLES,
+    get_capacity_and_demand,
     get_weekly_standard_target_capacity,
 )
 from capa_simulation.services.standard_target_capacity import (
@@ -529,21 +529,11 @@ try:
             "RQ_REQB",
         )
     }
-    unit_capacity = get_unit_capacity(
-        upeh=filtered_tables["RQ_UPEH"],
-        run_rate=filtered_tables["RQ_RUN_RATE"],
-        vital=filtered_tables["RQ_VITAL"],
-        module=reference_tables["RQ_MODULE"],
-        run_day=filtered_tables["RQ_RUN_DAY"],
-        lot_ratio=filtered_tables["RQ_LOT_RATIO"],
-        wf_ratio=filtered_tables["RQ_WF_RATIO"],
-    )
-    required_equipment = get_required_equipment(
-        reqb=filtered_tables["RQ_REQB"],
-        plan=filtered_tables["RQ_PKG_PLAN"],
-        yield_data=filtered_tables["RQ_YLD"],
-        chip_qty=reference_tables["RQ_CHIP_QTY"],
-        unit_capacity=unit_capacity,
+    unit_capacity, required_equipment = get_capacity_and_demand(
+        {
+            **filtered_tables,
+            **{key: reference_tables[key] for key in MONTHLESS_INPUT_TABLES},
+        }
     )
     standard_target_exception_rows = standard_target_exception_row_count(required_equipment)
     required_equipment = prepare_standard_target_required_equipment(required_equipment)

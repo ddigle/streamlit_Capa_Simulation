@@ -25,6 +25,7 @@ import streamlit as st
 # 테스트가 스크롤바를 갈아끼울 수 있도록 이름이 아니라 모듈을 잡는다. 이름을 직접
 # import 하면 여기서 잡은 바인딩이 교체를 무시한다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
 from capa_simulation.design import tokens
 
 # 색과 치수는 design/tokens.py 가 단일 근거다. 여기서는 표 문맥의 이름만 붙인다.
@@ -214,40 +215,20 @@ def render_split_scroll_table(
                 config={"displayModeBar": False, "staticPlot": True},
             )
     with month_column:
-        month_figure_width = month_count * MONTH_COLUMN_WIDTH_PX
-        st.html(
-            f"""
-            <style>
-            .st-key-{key}_month_scroll {{
-                overflow-x: auto;
-                overflow-y: hidden;
-                scrollbar-width: none !important;
-                -ms-overflow-style: none;
-            }}
-            .st-key-{key}_month_scroll::-webkit-scrollbar {{
-                width: 0 !important;
-                height: 0 !important;
-                display: none !important;
-            }}
-            .st-key-{key}_month_canvas {{
-                width: {month_figure_width}px !important;
-                min-width: {month_figure_width}px !important;
-                max-width: none !important;
-            }}
-            </style>
-            """
-        )
         with st.container(key=f"{key}_month_region", gap=None):
             horizontal_scrollbar.render_horizontal_scrollbar(
                 target_selector=f".st-key-{key}_month_scroll",
                 height=SCROLLBAR_HEIGHT_PX,
                 key=f"{key}_scrollbar",
             )
-            with st.container(key=f"{key}_month_scroll"):
-                with st.container(key=f"{key}_month_canvas"):
-                    st.plotly_chart(
-                        month_figure,
-                        key=f"{key}_months",
-                        width="stretch",
-                        config={"displayModeBar": False, "staticPlot": True},
-                    )
+            with horizontal_scroll_canvas(
+                key=f"{key}_month",
+                content_width_px=month_count * MONTH_COLUMN_WIDTH_PX,
+                hide_native_scrollbar=True,
+            ):
+                st.plotly_chart(
+                    month_figure,
+                    key=f"{key}_months",
+                    width="stretch",
+                    config={"displayModeBar": False, "staticPlot": True},
+                )

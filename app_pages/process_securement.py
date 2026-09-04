@@ -42,9 +42,9 @@ from capa_simulation.services.securement_rate import (
     securement_rate_to_month_table,
 )
 from capa_simulation.services.simulation_cache import (
-    get_required_equipment,
+    MONTHLESS_INPUT_TABLES,
+    get_capacity_and_demand,
     get_securement_rate,
-    get_unit_capacity,
 )
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
@@ -104,21 +104,14 @@ try:
     simulation_plan = filtered["RQ_PKG_PLAN"]
     simulation_yield = filtered["RQ_YLD"]
 
-    unit_capacity = get_unit_capacity(
-        upeh=filtered["RQ_UPEH"],
-        run_rate=filtered["RQ_RUN_RATE"],
-        vital=filtered["RQ_VITAL"],
-        module=reference_tables["RQ_MODULE"],
-        run_day=filtered["RQ_RUN_DAY"],
-        lot_ratio=filtered["RQ_LOT_RATIO"],
-        wf_ratio=filtered["RQ_WF_RATIO"],
-    )
-    required_equipment = get_required_equipment(
-        reqb=filtered["RQ_REQB"],
-        plan=simulation_plan,
-        yield_data=simulation_yield,
-        chip_qty=reference_tables["RQ_CHIP_QTY"],
-        unit_capacity=unit_capacity,
+    unit_capacity, required_equipment = get_capacity_and_demand(
+        {
+            **filtered,
+            **{key: reference_tables[key] for key in MONTHLESS_INPUT_TABLES},
+            # 생산계획과 수율만 사용자 편집본을 쓴다.
+            "RQ_PKG_PLAN": simulation_plan,
+            "RQ_YLD": simulation_yield,
+        }
     )
     capacity_exclusions = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
     required_exclusions = required_equipment.attrs.get(

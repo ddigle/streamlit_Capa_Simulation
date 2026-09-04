@@ -3,6 +3,7 @@
 """Shared content-addressed caches for simulation calculations."""
 
 import hashlib
+from collections.abc import Mapping
 from datetime import date
 
 import pandas as pd
@@ -247,6 +248,52 @@ def get_weekly_equipment_availability(
         start_date=start_date,
         end_date=end_date,
     )
+
+
+CAPACITY_INPUT_TABLES = (
+    "RQ_UPEH",
+    "RQ_RUN_RATE",
+    "RQ_VITAL",
+    "RQ_MODULE",
+    "RQ_RUN_DAY",
+    "RQ_LOT_RATIO",
+    "RQ_WF_RATIO",
+)
+
+DEMAND_INPUT_TABLES = ("RQ_REQB", "RQ_PKG_PLAN", "RQ_YLD", "RQ_CHIP_QTY")
+
+# 월 축이 없어 시나리오 월 슬라이스가 아니라 활성 리비전 전체를 그대로 쓰는 기준정보다.
+MONTHLESS_INPUT_TABLES = ("RQ_MODULE", "RQ_CHIP_QTY")
+
+
+def get_capacity_and_demand(
+    tables: Mapping[str, pd.DataFrame],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """대당 Capa 와 그에 따른 소요대수를 한 번에 만든다.
+
+    다섯 페이지가 같은 두 호출을 이어 붙이면서 RQ 이름 11개를 각자 손으로 적고 있었다.
+    프레임을 어디서 가져오는지는 페이지마다 다르므로(활성 시나리오 · 월 필터 결과 ·
+    사용자 편집본) 매핑만 받고 출처는 호출자에게 남긴다.
+
+    두 하위 함수가 이미 캐시되어 있어 여기에는 캐시를 걸지 않는다.
+    """
+    unit_capacity = get_unit_capacity(
+        upeh=tables["RQ_UPEH"],
+        run_rate=tables["RQ_RUN_RATE"],
+        vital=tables["RQ_VITAL"],
+        module=tables["RQ_MODULE"],
+        run_day=tables["RQ_RUN_DAY"],
+        lot_ratio=tables["RQ_LOT_RATIO"],
+        wf_ratio=tables["RQ_WF_RATIO"],
+    )
+    required_equipment = get_required_equipment(
+        reqb=tables["RQ_REQB"],
+        plan=tables["RQ_PKG_PLAN"],
+        yield_data=tables["RQ_YLD"],
+        chip_qty=tables["RQ_CHIP_QTY"],
+        unit_capacity=unit_capacity,
+    )
+    return unit_capacity, required_equipment
 
 
 def clear_simulation_caches() -> None:

@@ -43,7 +43,10 @@ from capa_simulation.services.route_step_editor import (
     route_step_catalog,
     route_step_summary,
 )
-from capa_simulation.services.simulation_cache import get_required_equipment, get_unit_capacity
+from capa_simulation.services.simulation_cache import (
+    MONTHLESS_INPUT_TABLES,
+    get_capacity_and_demand,
+)
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
     UNIT_CAPACITY_DIMENSIONS,
@@ -660,21 +663,20 @@ simulation_plan = filtered_plan
 simulation_yield = filtered_yield
 
 try:
-    unit_capacity = get_unit_capacity(
-        upeh=simulation_upeh,
-        run_rate=simulation_run_rate,
-        vital=simulation_vital,
-        module=reference_tables["RQ_MODULE"],
-        run_day=simulation_run_day,
-        lot_ratio=simulation_lot_ratio,
-        wf_ratio=simulation_wf_ratio,
-    )
-    required_equipment_for_display = get_required_equipment(
-        reqb=filtered_reqb,
-        plan=simulation_plan,
-        yield_data=simulation_yield,
-        chip_qty=reference_tables["RQ_CHIP_QTY"],
-        unit_capacity=unit_capacity,
+    # 이 화면은 편집 중인 기준정보로 계산한다. 이름만 맞춰 파이프라인에 넘긴다.
+    unit_capacity, required_equipment_for_display = get_capacity_and_demand(
+        {
+            "RQ_UPEH": simulation_upeh,
+            "RQ_RUN_RATE": simulation_run_rate,
+            "RQ_VITAL": simulation_vital,
+            "RQ_RUN_DAY": simulation_run_day,
+            "RQ_LOT_RATIO": simulation_lot_ratio,
+            "RQ_WF_RATIO": simulation_wf_ratio,
+            "RQ_REQB": filtered_reqb,
+            "RQ_PKG_PLAN": simulation_plan,
+            "RQ_YLD": simulation_yield,
+            **{key: reference_tables[key] for key in MONTHLESS_INPUT_TABLES},
+        }
     )
     excluded_capacity_rows = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
 except ValueError as exc:

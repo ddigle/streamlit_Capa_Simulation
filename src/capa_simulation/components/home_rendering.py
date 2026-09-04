@@ -15,6 +15,7 @@ from capa_simulation.components.home_dimensions import (
     DASHBOARD_SCROLLBAR_HEIGHT_PX,
     DASHBOARD_SECTION_GAP_PX,
 )
+from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
 from capa_simulation.design import tokens
 from capa_simulation.performance import PerformanceTrace
 
@@ -105,29 +106,12 @@ def render_home_figures(
                         config={"displayModeBar": False, "staticPlot": True},
                     )
         with month_column:
-            month_chart_width = len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX
+            # 라벨 영역은 월 영역 위에 얹힌 스크롤바 높이만큼 내려야 행이 맞는다.
             st.html(
                 f"""
                 <style>
                 .st-key-production_lob_label_canvas {{
                     padding-top: calc({DASHBOARD_SCROLLBAR_HEIGHT_PX}px + 0.0rem);
-                }}
-                .st-key-production_lob_month_scroll {{
-                    overflow-x: auto;
-                    overflow-y: hidden;
-                    padding-bottom: 0.25rem;
-                    scrollbar-width: none !important;
-                    -ms-overflow-style: none;
-                }}
-                .st-key-production_lob_month_scroll::-webkit-scrollbar {{
-                    width: 0 !important;
-                    height: 0 !important;
-                    display: none !important;
-                }}
-                .st-key-production_lob_month_canvas {{
-                    width: {month_chart_width}px !important;
-                    min-width: {month_chart_width}px !important;
-                    max-width: none !important;
                 }}
                 </style>
                 """
@@ -138,27 +122,29 @@ def render_home_figures(
                     height=DASHBOARD_SCROLLBAR_HEIGHT_PX,
                     key="production_lob_custom_scrollbar",
                 )
-                with st.container(key="production_lob_month_scroll"):
-                    with st.container(
-                        key="production_lob_month_canvas",
-                        gap=DASHBOARD_SECTION_GAP_PX,
-                    ):
+                with horizontal_scroll_canvas(
+                    key="production_lob_month",
+                    content_width_px=len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX,
+                    hide_native_scrollbar=True,
+                    padding_bottom="0.25rem",
+                    gap=DASHBOARD_SECTION_GAP_PX,
+                ):
+                    st.plotly_chart(
+                        month_figure,
+                        width="stretch",
+                        key="production_lob_months",
+                        config={"displayModeBar": False, "responsive": True},
+                    )
+                    if detail_figures:
                         st.plotly_chart(
-                            month_figure,
+                            detail_figures[1],
                             width="stretch",
-                            key="production_lob_months",
-                            config={"displayModeBar": False, "responsive": True},
+                            key="production_detail_months",
+                            config={"displayModeBar": False, "staticPlot": True},
                         )
-                        if detail_figures:
-                            st.plotly_chart(
-                                detail_figures[1],
-                                width="stretch",
-                                key="production_detail_months",
-                                config={"displayModeBar": False, "staticPlot": True},
-                            )
-                            st.plotly_chart(
-                                detail_figures[3],
-                                width="stretch",
-                                key="bottleneck_detail_months",
-                                config={"displayModeBar": False, "staticPlot": True},
-                            )
+                        st.plotly_chart(
+                            detail_figures[3],
+                            width="stretch",
+                            key="bottleneck_detail_months",
+                            config={"displayModeBar": False, "staticPlot": True},
+                        )
