@@ -2,7 +2,12 @@
 
 import streamlit as st
 
-from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.page_header import (
+    MATURITY_BADGES,
+    page_badges,
+    pending_badge,
+    render_page_header,
+)
 
 render_page_header(
     "Capa Chatbot (구현중)",
@@ -10,8 +15,8 @@ render_page_header(
         "활성 시나리오의 Capa 데이터와 계산 결과를 근거로 데이터 조회, 부족 공정 파악과 "
         "원인 탐색을 지원하는 대화형 분석 화면입니다."
     ),
+    badges=page_badges(MATURITY_BADGES["draft"], pending_badge("LLM·Capa 데이터")),
 )
-st.markdown(":gray-badge[화면 초안] :blue-badge[LLM·Capa 데이터 미연결]")
 
 with st.container(horizontal=True):
     st.metric("LLM API", "미연결", border=True)

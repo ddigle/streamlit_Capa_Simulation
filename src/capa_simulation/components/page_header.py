@@ -17,11 +17,27 @@ import streamlit as st
 from capa_simulation.navigation import IMPLEMENTING_SUFFIX
 
 # 화면이 어느 단계인지 알려주는 배지. 본문이 이미 쓰던 어휘를 그대로 쓴다.
+# 사이드바는 `(구현중)` 한 단계만 쓰고 성숙도는 여기서만 나눈다(docs/TODO.md 결정).
 MATURITY_BADGES = {
     "draft": ":gray-badge[화면 초안]",
     "prototype": ":green-badge[인터랙티브 프로토타입]",
     "connected": "",
 }
+
+
+def pending_badge(subject: str) -> str:
+    """아직 붙지 않은 원천을 알리는 배지.
+
+    같은 뜻인데 화면마다 색이 갈렸다. 세 화면은 파랑, 한 화면은 주황이었다. 미연결은
+    고장이 아니라 예정된 상태이므로 알림용 파랑으로 통일한다. 주황은 확보 상태색에서
+    "경고" 를 뜻하므로 여기에 쓰면 다른 화면의 주황과 뜻이 어긋난다.
+    """
+    return f":blue-badge[{subject} 미연결]"
+
+
+def page_badges(*marks: str) -> str:
+    """배지 몇 개를 헤더의 한 줄로 합친다. 빈 배지는 버린다."""
+    return " ".join(mark for mark in marks if mark)
 
 
 def render_page_header(

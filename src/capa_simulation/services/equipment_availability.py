@@ -224,7 +224,11 @@ def build_milestone_transition_events(
     events["이전단계"] = events["단계컬럼"].map(previous_stage).astype("string")
     events["전환단계"] = events["단계컬럼"].map(stage_by_column).astype("string")
     events["전환일"] = pd.to_datetime(events["전환일"], errors="raise")
-    events["확정상태"] = events["확정상태"].where(events["단계컬럼"].eq("Qual일정"))
+    # 확정상태는 Qual 단계에만 뜻이 있다. 다른 단계는 결측으로 두는데, 결측을 그대로
+    # 넘기면 표에 "None" 이라는 글자가 찍혀 값이 있는 것처럼 보인다. 빈 칸으로 만든다.
+    events["확정상태"] = (
+        events["확정상태"].astype("string").where(events["단계컬럼"].eq("Qual일정")).fillna("")
+    )
     events = events.loc[
         events["전환일"].between(pd.Timestamp(start_date), pd.Timestamp(end_date), inclusive="both")
     ].copy()

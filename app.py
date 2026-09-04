@@ -92,8 +92,8 @@ with st.sidebar.container(border=True):
 render_scenario_controls()
 
 with st.sidebar.container(border=True):
-    st.markdown("#### :material/date_range: 조회 기간")
-    st.caption("시작 월과 종료 월을 각각 선택하세요.")
+    # 다른 화면과 같은 낱말을 쓴다. 여기만 "조회 기간" 으로 띄어져 있었다.
+    st.markdown("#### :material/date_range: 조회기간")
     default_month_range = (
         format_month(MONTH_SELECTION_START),
         format_month(MONTH_SELECTION_END),

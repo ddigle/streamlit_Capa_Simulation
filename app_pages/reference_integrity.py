@@ -13,7 +13,12 @@ from capa_simulation.components.dynamic_capacity_dashboard import (
     build_capacity_waterfall_figure,
     build_process_comparison_figure,
 )
-from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.page_header import (
+    MATURITY_BADGES,
+    page_badges,
+    pending_badge,
+    render_page_header,
+)
 from capa_simulation.components.roadmap_panel import render_roadmap_panel
 from capa_simulation.components.status_metric import render_status_metric, shortage_tone
 from capa_simulation.services.dynamic_capacity import (
@@ -36,6 +41,7 @@ render_page_header(
     description=(
         "표준 Capa와 실적 효율·UPEH·생산실적을 연결해 Capa 손실 원인과 개선 우선순위를 분석합니다."
     ),
+    badges=page_badges(MATURITY_BADGES["prototype"], pending_badge("실적 DB")),
 )
 render_roadmap_panel(
     purpose=(
@@ -55,7 +61,6 @@ render_roadmap_panel(
     roadmap="실적 DB 연결 → 손실 원인 분해 → 부서별 A/Item → 개선 효과 이력 관리",
 )
 
-st.markdown(":green-badge[인터랙티브 프로토타입] :orange-badge[실적 DB 미연결]")
 st.info(
     "현재 화면의 수치는 구조 검토용 데모 데이터입니다. 실제 운영 연결 시 표준 Capa는 "
     "선택한 시나리오·리비전에서, 효율과 생산실적은 누적 이력 DB에서 읽습니다.",

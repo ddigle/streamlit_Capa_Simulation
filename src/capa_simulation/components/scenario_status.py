@@ -101,7 +101,17 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
             and selected_revision_id == active_revision_id
         )
         if selection_is_active:
-            st.caption("현재 불러온 시나리오·리비전입니다.")
+            # 선택과 활성이 같으면 위의 두 선택 상자가 이미 이름을 보여준다. 아래에서
+            # 이름을 한 번 더 적을 이유가 없어 배지만 같은 줄에 붙인다.
+            with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+                st.caption("현재 불러온 시나리오·리비전입니다.", width="content")
+                badge = _status_badge(
+                    active_revision_id=active_revision_id,
+                    official_revision_id=official.revision_id if official is not None else None,
+                    official_release_no=official.release_no if official is not None else None,
+                )
+                if badge:
+                    st.markdown(badge, width="content")
         else:
             st.caption("선택값은 아직 계산에 적용되지 않았습니다.")
 
@@ -141,13 +151,15 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
             active_scenario_id=active_scenario_id,
             active_revision_id=active_revision_id,
         )
-        _render_active_status(
-            scenario_by_id,
-            active_scenario_id=active_scenario_id,
-            active_revision_id=active_revision_id,
-            official_revision_id=official.revision_id if official is not None else None,
-            official_release_no=official.release_no if official is not None else None,
-        )
+        if not selection_is_active:
+            # 고른 것과 올라와 있는 것이 다를 때만 "지금 무엇이 올라와 있는지" 를 적는다.
+            _render_active_status(
+                scenario_by_id,
+                active_scenario_id=active_scenario_id,
+                active_revision_id=active_revision_id,
+                official_revision_id=official.revision_id if official is not None else None,
+                official_release_no=official.release_no if official is not None else None,
+            )
 
 
 def _render_revision_save(
@@ -216,6 +228,25 @@ def _render_revision_save(
             st.rerun()
 
 
+def _status_badge(
+    *,
+    active_revision_id: str | None,
+    official_revision_id: str | None,
+    official_release_no: int | None,
+) -> str:
+    """활성 리비전의 상태 배지를 고른다.
+
+    미저장 변경이 있으면 빈 문자열을 준다. 그 상태는 바로 아래 "변경을 버리고 불러오기"
+    체크박스 위에서 이미 같은 배지로 알리고 있어서, 여기서 또 적으면 같은 문구가 한 상자
+    안에 두 번 나온다.
+    """
+    if has_unsaved_scenario_changes():
+        return ""
+    if official_revision_id == active_revision_id and official_release_no is not None:
+        return f":green-badge[공식 v{official_release_no}]"
+    return ":gray-badge[저장된 리비전]"
+
+
 def _render_active_status(
     scenario_by_id: dict[str, ScenarioSummary],
     *,
@@ -233,12 +264,13 @@ def _render_active_status(
         return
     st.divider()
     st.caption(f"활성 · {scenario.scenario_name} · {scenario.source_simulation_code}")
-    if official_revision_id == active_revision_id and official_release_no is not None:
-        st.markdown(f":green-badge[공식 v{official_release_no}]")
-    elif has_unsaved_scenario_changes():
-        st.markdown(":orange-badge[저장하지 않은 변경 있음]")
-    else:
-        st.markdown(":gray-badge[저장된 리비전]")
+    badge = _status_badge(
+        active_revision_id=active_revision_id,
+        official_revision_id=official_revision_id,
+        official_release_no=official_release_no,
+    )
+    if badge:
+        st.markdown(badge)
 
 
 def _synchronize_active_selection(

@@ -3,7 +3,12 @@
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.page_header import (
+    MATURITY_BADGES,
+    page_badges,
+    pending_badge,
+    render_page_header,
+)
 
 PROCESS_PRIORITY_COLUMNS = {
     "우선순위": pd.Series(dtype="Int64"),
@@ -44,8 +49,8 @@ render_page_header(
         "생산이력 DB의 공정·제품별 UPEH 실적을 Capa 기준정보와 비교하고, "
         "개선 필요항목과 조치 진행상태를 관리하는 화면입니다."
     ),
+    badges=page_badges(MATURITY_BADGES["draft"], pending_badge("데이터")),
 )
-st.markdown(":gray-badge[화면 초안] :blue-badge[데이터 미연결]")
 st.info(
     "현재는 화면 구조만 구성되어 있습니다. 생산이력 DB와 Capa UPEH 기준정보를 "
     "연결하면 조회 조건, 지표, 순위와 개선과제가 활성화됩니다.",
