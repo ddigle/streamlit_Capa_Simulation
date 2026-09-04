@@ -21,6 +21,7 @@ from capa_simulation.io.core_data_source import (
     normalize_core_data,
 )
 from capa_simulation.persistence._sql_helpers import (
+    connect,
     hash_tables,
     insert_frame,
     load_frame,
@@ -766,7 +767,4 @@ class DuckDBScenarioRepository:
                 raise
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
-        # 모든 연결은 동일한 configuration을 써야 한다. 읽기만 read_only=True로 열면
-        # 쓰기 연결과 겹치는 순간 DuckDB가 "Can't open a connection to same database
-        # file with a different configuration" 로 연결 자체를 거부한다.
-        return duckdb.connect(str(self._database_path))
+        return connect(self._database_path)

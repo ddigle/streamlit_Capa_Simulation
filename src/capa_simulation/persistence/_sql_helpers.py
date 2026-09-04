@@ -7,10 +7,27 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from pathlib import Path
 from uuid import uuid4
 
 import duckdb
 import pandas as pd
+
+# DuckDB 기본 블록은 256 KiB 라서 행이 2,767개뿐인 첫 부팅 DB 도 24.5 MiB 를 차지한다.
+# 16 KiB 로 만들면 같은 내용이 4.2 MiB 가 되고, 리비전 저장당 증가분도 2.5~9.5 MB 에서
+# 0.6 MB 로 줄어든다. 값은 파일 생성 시점에 각인되며 기존 파일에서는 무시된다.
+DUCKDB_BLOCK_SIZE = 16384
+DUCKDB_CONNECT_CONFIG: dict[str, str | bool | int | float | list[str]] = {
+    "default_block_size": DUCKDB_BLOCK_SIZE
+}
+
+
+def connect(database_path: Path) -> duckdb.DuckDBPyConnection:
+    """같은 파일에 붙는 모든 연결이 동일한 configuration 을 쓰도록 한 곳에서 연다."""
+    # configuration 이 다른 연결이 하나라도 섞이면 DuckDB 가 "Can't open a connection to
+    # same database file with a different configuration" 로 연결 자체를 거부한다.
+    # 그래서 read_only 도 쓰지 않고, 설정도 여기서만 만든다.
+    return duckdb.connect(str(database_path), config=DUCKDB_CONNECT_CONFIG)
 
 
 def insert_frame(

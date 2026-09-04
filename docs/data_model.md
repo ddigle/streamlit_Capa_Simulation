@@ -202,3 +202,12 @@ Dynamic Capa의 표준과 실적은 수명주기가 다르므로 같은 리비�
 - STEP·MCP 경로 키 도입 전 첫 행 유지 방식으로 저장한 사내 검증 시나리오는 의미를
   추정해 보정하지 않는다. 기존 시나리오를 제거하고 원천 Query로 신규 등록한다.
 - 두 DuckDB 파일은 서로 독립적으로 백업·복원하며 정책은 운영 배포 절차에서 확정한다.
+- 새 DuckDB 파일은 `persistence/_sql_helpers.py`의 `DUCKDB_BLOCK_SIZE`(16 KiB)로 만든다.
+  DuckDB 기본 블록 256 KiB는 행이 2,767개뿐인 첫 부팅 DB도 24.5 MiB로 부풀리며, 16 KiB에서는
+  같은 내용이 4.2 MiB이고 리비전 저장당 증가분도 2.5~9.5 MB에서 0.6 MB로 줄어든다. 블록 크기는
+  파일 생성 시점에 각인되므로 기존 파일은 영향을 받지 않는다. 같은 파일에 configuration이 다른
+  연결이 하나라도 섞이면 DuckDB가 연결을 거부하므로 모든 연결은 `_sql_helpers.connect()`를 쓴다.
+- DuckDB는 삭제·재작성으로 생긴 free 블록을 파일 안쪽에 남기고 `CHECKPOINT`·`VACUUM`으로 파일을
+  줄이지 않는다. 공간 회수와 기존 파일의 블록 크기 전환은 `scripts/compact_duckdb.py`가 하는
+  `ATTACH` + `COPY FROM DATABASE` 재구축뿐이며, 교체 전에 표 목록과 행 수 일치를 검증한다.
+  WAL이 남아 있으면 실행을 중단하므로 앱을 정상 종료한 뒤 실행한다.

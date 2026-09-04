@@ -14,6 +14,7 @@ from capa_simulation.persistence import (
     ScenarioCreate,
     ScenarioPreset,
 )
+from capa_simulation.persistence._sql_helpers import connect
 from capa_simulation.persistence.cache import (
     clear_scenario_repository,
     load_scenario_snapshot,
@@ -229,8 +230,8 @@ def test_reads_succeed_while_another_connection_is_open(tmp_path: Path) -> None:
     repository = _repository(database_path)
 
     # 다른 브라우저 세션이 저장 중인 상황을 흉내낸다. 읽기 경로가 read_only=True로
-    # 되돌아가면 이 지점에서 ConnectionException이 난다.
-    with duckdb.connect(str(database_path)):
+    # 되돌아가거나 공용 connect() 를 우회해 직접 열면 이 지점에서 ConnectionException이 난다.
+    with connect(database_path):
         assert repository.list_scenarios() == []
         assert repository.latest_official_release() is None
 

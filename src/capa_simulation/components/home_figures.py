@@ -541,13 +541,26 @@ def build_lob_summary_figures(
     return label_figure, month_figure
 
 
+def _detail_month_cell_values(displayed_detail: pd.DataFrame, month: str) -> list[str]:
+    """한 달의 세부수량 셀 값을 만든다. 데이터에 없는 달은 빈 칸으로 채운다."""
+    if month not in displayed_detail.columns:
+        return [""] * len(displayed_detail)
+    return [
+        "" if pd.isna(value) or float(value) == 0 else f"{float(value):,.0f}K"
+        for value in displayed_detail[month]
+    ]
+
+
 def build_plan_detail_figures(
     *,
     production_detail: pd.DataFrame,
     month_labels: list[str],
 ) -> tuple[go.Figure, go.Figure]:
     """제품·Stack별 계획 세부수량 Figure 한 쌍을 만든다."""
-    detail_month_columns = [month for month in month_labels if month in production_detail.columns]
+    # 조회 범위의 모든 달을 컬럼으로 유지한다. 세부 데이터에 없는 달을 빼면 컬럼 수가
+    # 줄어드는데 Figure 폭은 `len(month_labels)` 로 잡으므로, 컬럼 폭이 100px 그리드보다
+    # 넓어져 헤더가 뒤로 갈수록 밀린다. 요약표와 월이 세로로 어긋나기도 한다.
+    detail_month_columns = list(month_labels)
     displayed_detail = production_detail.copy()
     detail_dimension_values = [
         ["" if pd.isna(value) else str(value) for value in displayed_detail[column]]
@@ -641,10 +654,7 @@ def build_plan_detail_figures(
             },
             cells={
                 "values": [
-                    [
-                        "" if pd.isna(value) or float(value) == 0 else f"{float(value):,.0f}K"
-                        for value in displayed_detail[month]
-                    ]
+                    _detail_month_cell_values(displayed_detail, month)
                     for month in detail_month_columns
                 ],
                 "align": "center",

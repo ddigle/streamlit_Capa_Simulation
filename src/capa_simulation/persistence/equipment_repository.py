@@ -16,6 +16,7 @@ from uuid import uuid4
 import duckdb
 import pandas as pd
 
+from capa_simulation.persistence._sql_helpers import connect
 from capa_simulation.persistence.equipment_migration_runner import apply_equipment_migrations
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
@@ -283,10 +284,7 @@ class DuckDBEquipmentRepository:
                 raise
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
-        # 모든 연결은 동일한 configuration을 써야 한다. 읽기만 read_only=True로 열면
-        # 쓰기 연결과 겹치는 순간 DuckDB가 "Can't open a connection to same database
-        # file with a different configuration" 로 연결 자체를 거부한다.
-        return duckdb.connect(str(self._database_path))
+        return connect(self._database_path)
 
 
 def _load_baseline(connection: duckdb.DuckDBPyConnection, revision_id: str) -> pd.DataFrame:
