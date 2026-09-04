@@ -112,3 +112,71 @@ def test_apply_button_publishes_the_staged_plan_globally(seeded_database: Path) 
     assert _plan_total(app) == pytest.approx(before_total * 0.5)
     assert app.session_state["active_scenario"]["content_token"] != before_token
     assert "pkg_plan_staged_paste" not in app.session_state
+
+
+def test_virtual_product_registration_adds_the_key_to_every_clone_table(
+    seeded_database: Path,
+) -> None:
+    """제품 등록 탭이 8개 기준정보에 새 제품 키를 넣고 계획은 0으로 시작해야 한다."""
+    from capa_simulation.services.virtual_product import (
+        available_source_products,
+        clone_table_names,
+    )
+
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    tables = app.session_state["active_scenario"]["tables"]
+    before_token = app.session_state["active_scenario"]["content_token"]
+    source = available_source_products(tables).iloc[0]
+    clone_tables = clone_table_names(tables)
+
+    app.text_input(key="virtual_product_name").set_value("DEMO_VIRTUAL_X")
+    app.text_input(key="virtual_product_stack").set_value(str(source["Stack"]))
+    for button in app.button:
+        if "가상 제품 등록" in str(button.label):
+            button.click().run()
+            break
+    assert not list(app.exception)
+
+    updated = app.session_state["active_scenario"]
+    assert updated["content_token"] != before_token
+    for name in clone_tables:
+        assert "DEMO_VIRTUAL_X" in set(updated["tables"][name]["제품정보"]), name
+
+    plan = updated["tables"]["RQ_PKG_PLAN"]
+    cloned_plan = plan.loc[plan["제품정보"].eq("DEMO_VIRTUAL_X")]
+    assert not cloned_plan.empty
+    assert cloned_plan["생산수량"].astype(float).sum() == 0.0
+
+
+def test_registered_virtual_product_appears_in_the_plan_editor(
+    seeded_database: Path,
+) -> None:
+    """계획 수량 0 행을 보존하므로 등록 직후 편집 격자에 바로 나타나야 한다."""
+    from capa_simulation.scenario_state import scenario_month_table
+    from capa_simulation.services.load_calculator import plan_to_edit_table
+    from capa_simulation.services.virtual_product import available_source_products
+
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    source = available_source_products(app.session_state["active_scenario"]["tables"]).iloc[0]
+
+    app.text_input(key="virtual_product_name").set_value("DEMO_VIRTUAL_Y")
+    app.text_input(key="virtual_product_stack").set_value(str(source["Stack"]))
+    for button in app.button:
+        if "가상 제품 등록" in str(button.label):
+            button.click().run()
+            break
+    assert not list(app.exception)
+
+    scenario = app.session_state["active_scenario"]
+    start_label, end_label = app.session_state["production_month_range_v2"]
+    grid = plan_to_edit_table(
+        scenario_month_table(
+            scenario,
+            "RQ_PKG_PLAN",
+            int(str(start_label).replace("-", "")),
+            int(str(end_label).replace("-", "")),
+        )
+    )
+
+    assert "DEMO_VIRTUAL_Y" in set(grid["제품정보"])

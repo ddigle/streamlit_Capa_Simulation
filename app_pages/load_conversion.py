@@ -20,6 +20,7 @@ from capa_simulation.page_bootstrap import (
 )
 from capa_simulation.scenario_state import (
     apply_month_updates,
+    apply_table_updates,
     reset_active_scenario,
     scenario_month_table,
     scenario_table,
@@ -36,6 +37,11 @@ from capa_simulation.services.load_calculator import (
     yield_to_edit_table,
 )
 from capa_simulation.services.simulation_cache import get_monthly_volume
+from capa_simulation.services.virtual_product import (
+    VirtualProductRequest,
+    available_source_products,
+    clone_product,
+)
 
 PRODUCT_COLUMN_WIDTH_PX = 100
 
@@ -86,6 +92,7 @@ source_token_key = "load_conversion_source_token"
 # 사용자가 "변경사항 적용" 을 눌러야 활성 시나리오로 넘어간다.
 plan_staged_key = "pkg_plan_staged_paste"
 plan_applied_flash_key = "pkg_plan_applied_flash"
+product_registered_flash_key = "virtual_product_registered_flash"
 source_token = (
     f"duckdb:{reference_version}:{active_scenario['revision']}:"
     f"{effective_start_month}:{effective_end_month}"
@@ -108,7 +115,9 @@ with st.container(horizontal=True, vertical_alignment="center"):
         st.session_state.pop(plan_staged_key, None)
         st.rerun()
 
-conversion_tab, pkg_plan_tab, yield_tab = st.tabs(["📊 환산", "PKG PLAN", "수율"])
+conversion_tab, pkg_plan_tab, yield_tab, product_tab = st.tabs(
+    ["📊 환산", "PKG PLAN", "수율", "제품 등록"]
+)
 
 with pkg_plan_tab:
     applied_flash = st.session_state.pop(plan_applied_flash_key, None)
@@ -222,6 +231,69 @@ if apply_plan:
         )
         st.session_state.pop(source_token_key, None)
         st.rerun()
+
+with product_tab:
+    registered_flash = st.session_state.pop(product_registered_flash_key, None)
+    if isinstance(registered_flash, str):
+        st.success(registered_flash, icon=":material/library_add:")
+    st.caption(
+        "기존 제품의 기준정보를 새 제품 키로 복제해 가상 제품을 만듭니다. "
+        "환산·소요대수가 참조할 수율·Chip·경로 기준이 함께 복제되므로 계산에서 빠지지 "
+        "않습니다. 계획 수량은 0으로 시작하니 PKG PLAN 탭에서 입력하세요."
+    )
+    source_candidates = available_source_products(active_scenario["tables"])
+    if source_candidates.empty:
+        st.info("복제할 수 있는 제품이 없습니다. 기준정보가 완결된 제품이 하나는 있어야 합니다.")
+    else:
+        source_labels = [
+            f"{row['제품정보']} · {row['Stack']}" for _, row in source_candidates.iterrows()
+        ]
+        with st.form("virtual_product_form", border=True):
+            st.markdown("**복제 원본**")
+            selected_source = st.selectbox(
+                "기준이 될 제품",
+                options=range(len(source_labels)),
+                format_func=lambda index: source_labels[index],
+                key="virtual_product_source",
+            )
+            st.markdown("**새 제품 키**")
+            with st.container(horizontal=True, gap="small"):
+                new_product = st.text_input("제품정보", key="virtual_product_name")
+                new_stack = st.text_input(
+                    "Stack",
+                    value=str(source_candidates.iloc[selected_source]["Stack"]),
+                    key="virtual_product_stack",
+                )
+            registered = st.form_submit_button(
+                ":material/library_add: 가상 제품 등록", type="primary"
+            )
+        if registered:
+            source_row = source_candidates.iloc[selected_source]
+            try:
+                request = VirtualProductRequest(
+                    source_product=str(source_row["제품정보"]),
+                    source_stack=str(source_row["Stack"]),
+                    product=new_product,
+                    stack=new_stack,
+                )
+                updates = clone_product(active_scenario["tables"], request)
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                apply_table_updates(active_scenario, updates)
+                st.session_state.pop(plan_staged_key, None)
+                st.session_state.pop(source_token_key, None)
+                st.session_state[product_registered_flash_key] = (
+                    f"가상 제품 {request.normalized().product} · "
+                    f"{request.normalized().stack} 을 등록했습니다. "
+                    f"기준정보 {len(updates)}종을 복제했습니다. "
+                    "PKG PLAN 탭에서 계획 수량을 입력하세요."
+                )
+                st.rerun()
+        st.caption(
+            "가상 제품은 실적과 대조할 수 없습니다. 리비전을 저장해 공식버전으로 발행할 "
+            "때 포함 여부를 확인하세요."
+        )
 
 with yield_tab:
     st.caption(

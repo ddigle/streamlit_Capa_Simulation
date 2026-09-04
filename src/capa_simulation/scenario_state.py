@@ -165,6 +165,32 @@ def apply_month_updates(
     return updated
 
 
+def apply_table_updates(
+    scenario: ActiveScenario,
+    replacements: dict[str, pd.DataFrame],
+) -> ActiveScenario:
+    """월 범위를 가리지 않고 테이블 전체를 원자적으로 교체하고 새 토큰을 발급한다.
+
+    `apply_month_updates` 는 선택 월 구간만 갈아끼우므로 `생산계획년월` 이 없는 테이블
+    (`RQ_CHIP_QTY`·`RQ_CHIP_EQ`)에는 쓸 수 없다. 가상 제품 복제처럼 완성된 테이블을
+    통째로 넘기는 경우를 위한 경로다.
+    """
+    tables = dict(scenario["tables"])
+    for table_name, replacement in replacements.items():
+        if table_name not in tables:
+            raise KeyError(f"활성 시나리오 테이블이 없습니다: {table_name}")
+        tables[table_name] = replacement.reset_index(drop=True)
+
+    updated: ActiveScenario = {
+        "reference_version": scenario["reference_version"],
+        "revision": scenario["revision"] + 1,
+        "content_token": _new_content_token(),
+        "tables": tables,
+    }
+    st.session_state[ACTIVE_SCENARIO_KEY] = updated
+    return updated
+
+
 def replace_month_range(
     current: pd.DataFrame,
     replacement: pd.DataFrame,
