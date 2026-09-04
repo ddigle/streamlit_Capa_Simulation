@@ -37,6 +37,15 @@ CHIP_REQUIRED_COLUMNS = [*CHIP_KEYS, "구분_Chip", "Net Die"]
 DENSITY_KEYS = ["제품정보", "Stack", "WF 구분"]
 DENSITY_REQUIRED_COLUMNS = [*DENSITY_KEYS, "구분_Chip", "구분_EQ"]
 
+# 기준정보가 없어 계산에서 뺀 계획 행을 결과 프레임에 붙여 화면이 목록으로 보여준다.
+# 예전에는 여기서 예외를 던져 계획 행 하나 때문에 페이지 전체가 멈췄다.
+#
+# 값은 DataFrame 이 아니라 레코드 튜플로 담는다. `attrs` 에 DataFrame 을 넣으면
+# `pd.concat` 이 attrs 를 동등 비교하다가 "truth value of a DataFrame is ambiguous" 로
+# 죽는다. 부하량 프레임들은 소요대수 계산에서 실제로 concat 된다.
+LOAD_EXCLUSIONS_ATTR = "excluded_load_rows"
+LOAD_EXCLUSION_COLUMNS = ["생산계획년월", "제품정보", "Stack", "WF 구분", "누락 기준정보"]
+
 
 def plan_to_edit_table(plan: pd.DataFrame, display_order: DisplayOrderInput = None) -> pd.DataFrame:
     """Pivot the default Long PKG plan into an editable month-column table."""
@@ -304,15 +313,9 @@ def _prepare_load_base(
         validate="many_to_many",
         indicator="_chip_merge",
     )
-    if (expanded["_chip_merge"] != "both").any():
-        missing = (
-            expanded.loc[expanded["_chip_merge"] != "both", ["제품정보", "Stack"]]
-            .drop_duplicates()
-            .head(5)
-            .to_dict("records")
-        )
-        raise ValueError(f"RQ_CHIP_QTY가 연결되지 않는 제품이 있습니다: {missing}")
-    expanded = expanded.drop(columns="_chip_merge")
+    chip_missing = expanded["_chip_merge"] != "both"
+    exclusions = [_load_exclusion_rows(expanded.loc[chip_missing], "RQ_CHIP_QTY")]
+    expanded = expanded.loc[~chip_missing].drop(columns="_chip_merge")
 
     calculation = expanded.merge(
         prepared_yield,
@@ -321,15 +324,9 @@ def _prepare_load_base(
         validate="many_to_one",
         indicator="_yield_merge",
     )
-    if (calculation["_yield_merge"] != "both").any():
-        missing = (
-            calculation.loc[calculation["_yield_merge"] != "both", YIELD_KEYS]
-            .drop_duplicates()
-            .head(5)
-            .to_dict("records")
-        )
-        raise ValueError(f"RQ_YLD가 연결되지 않는 기준이 있습니다: {missing}")
-    calculation = calculation.drop(columns="_yield_merge")
+    yield_missing = calculation["_yield_merge"] != "both"
+    exclusions.append(_load_exclusion_rows(calculation.loc[yield_missing], "RQ_YLD"))
+    calculation = calculation.loc[~yield_missing].drop(columns="_yield_merge")
 
     _validate_yield_range(calculation, "RQ_YLD")
     if calculation["Net Die"].le(0).any():
@@ -337,7 +334,33 @@ def _prepare_load_base(
     if calculation["구분_Chip"].lt(0).any():
         raise ValueError("구분_Chip은 0 이상이어야 합니다.")
 
+    calculation.attrs[LOAD_EXCLUSIONS_ATTR] = _merge_load_exclusions(exclusions)
     return calculation
+
+
+def _load_exclusion_rows(
+    unmatched: pd.DataFrame, table_name: str
+) -> tuple[tuple[object, ...], ...]:
+    """조인에 실패한 계획 행을 "무엇이 없어서 빠졌는지" 레코드로 정리한다."""
+    if unmatched.empty:
+        return ()
+    columns = [column for column in LOAD_EXCLUSION_COLUMNS[:-1] if column in unmatched.columns]
+    rows = unmatched[columns].drop_duplicates()
+    return tuple(
+        (*(record.get(column) for column in LOAD_EXCLUSION_COLUMNS[:-1]), table_name)
+        for record in rows.to_dict("records")
+    )
+
+
+def _merge_load_exclusions(
+    groups: list[tuple[tuple[object, ...], ...]],
+) -> tuple[tuple[object, ...], ...]:
+    merged: list[tuple[object, ...]] = []
+    for group in groups:
+        for row in group:
+            if row not in merged:
+                merged.append(row)
+    return tuple(merged)
 
 
 def calculate_chip_load(
@@ -362,6 +385,20 @@ def calculate_chip_and_wafer_loads(
     )
 
 
+def carry_load_exclusions(source: pd.DataFrame, target: pd.DataFrame) -> pd.DataFrame:
+    """제외 목록을 결과 프레임에 이어붙인다. pandas 연산에서 attrs 는 쉽게 사라진다."""
+    target.attrs[LOAD_EXCLUSIONS_ATTR] = source.attrs.get(LOAD_EXCLUSIONS_ATTR, ())
+    return target
+
+
+def load_exclusions(data: pd.DataFrame) -> pd.DataFrame:
+    """기준정보가 없어 계산에서 빠진 계획 행 목록을 표로 돌려준다."""
+    excluded = data.attrs.get(LOAD_EXCLUSIONS_ATTR)
+    if not excluded:
+        return pd.DataFrame(columns=LOAD_EXCLUSION_COLUMNS)
+    return pd.DataFrame(list(excluded), columns=LOAD_EXCLUSION_COLUMNS)
+
+
 def _calculate_chip_load_from_base(load_base: pd.DataFrame) -> pd.DataFrame:
     calculation = load_base.copy()
     calculation["물량"] = (
@@ -375,7 +412,7 @@ def _calculate_chip_load_from_base(load_base: pd.DataFrame) -> pd.DataFrame:
         / calculation.loc[is_dummy, "BE_수율"]
         * (1 - calculation.loc[is_dummy, "EDS_수율"])
     )
-    return calculation
+    return carry_load_exclusions(load_base, calculation)
 
 
 def calculate_wafer_load(
@@ -399,7 +436,7 @@ def _calculate_wafer_load_from_base(load_base: pd.DataFrame) -> pd.DataFrame:
     )
     is_dummy = _matches_text(calculation["WF 구분"], "Dummy")
     calculation.loc[is_dummy, "물량"] *= 1 - calculation.loc[is_dummy, "EDS_수율"]
-    return calculation
+    return carry_load_exclusions(load_base, calculation)
 
 
 def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd.DataFrame:
@@ -484,16 +521,12 @@ def build_monthly_volume(
             volume["WF 구분"] = "PKG"
         return _pivot_monthly(volume, detailed, display_order)
     if demand_basis == "Chip":
-        return _pivot_monthly(
-            calculate_chip_load(prepared_plan, yield_data, chip_qty),
-            detailed,
-            display_order,
-        )
+        chip_load = calculate_chip_load(prepared_plan, yield_data, chip_qty)
+        return carry_load_exclusions(chip_load, _pivot_monthly(chip_load, detailed, display_order))
     if demand_basis == "Wafer":
-        return _pivot_monthly(
-            calculate_wafer_load(prepared_plan, yield_data, chip_qty),
-            detailed,
-            display_order,
+        wafer_load = calculate_wafer_load(prepared_plan, yield_data, chip_qty)
+        return carry_load_exclusions(
+            wafer_load, _pivot_monthly(wafer_load, detailed, display_order)
         )
     if demand_basis == "Density":
         if density_data is None:

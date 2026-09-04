@@ -28,6 +28,7 @@ from capa_simulation.services.load_calculator import (
     YIELD_EDITOR_DIMENSIONS,
     DemandBasis,
     filter_edp_plan,
+    load_exclusions,
     plan_from_edit_table,
     plan_to_edit_table,
     yield_from_edit_table,
@@ -332,6 +333,18 @@ with conversion_tab:
     except ValueError as exc:
         st.error(str(exc))
         st.stop()
+
+    # 기준정보가 없어 계산에서 빠진 계획 행은 조용히 사라지면 안 된다. 예전에는 여기서
+    # 예외를 던져 페이지 전체가 멈췄고, 지금은 해당 제품만 빼고 목록으로 알린다.
+    excluded_load_rows = load_exclusions(monthly_volume)
+    if not excluded_load_rows.empty:
+        st.warning(
+            f"기준정보가 없어 계산에서 제외한 계획이 {len(excluded_load_rows):,}건 있습니다. "
+            "아래 목록의 기준정보를 채우면 환산과 소요대수에 반영됩니다.",
+            icon=":material/link_off:",
+        )
+        with st.expander("제외한 계획 확인", icon=":material/rule:"):
+            st.dataframe(excluded_load_rows, hide_index=True, width="stretch")
 
     unit = {
         "PKG": "Kea",
