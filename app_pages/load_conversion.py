@@ -170,14 +170,7 @@ with pkg_plan_tab:
             key="apply_pkg_plan_changes",
             type="primary",
         )
-        if isinstance(staged_plan_table, pd.DataFrame):
-            st.warning(
-                "붙여넣기 결과가 이 탭에만 반영되어 있습니다. "
-                "적용을 눌러야 환산·홈 대시보드 등 전역 계획값에 반영됩니다.",
-                icon=":material/pending_actions:",
-            )
-        else:
-            st.caption("적용을 누르면 환산·홈 대시보드 등 전역 계획값에 반영됩니다.")
+        st.caption("적용을 누르면 환산·홈 대시보드 등 전역 계획값에 반영됩니다.")
     imported_plan_table = render_reference_clipboard_tools(
         plan_editor_source,
         table_name="RQ_PKG_PLAN",
