@@ -52,6 +52,22 @@ HEADER_HEIGHT_PX = tokens.TABLE_HEADER_HEIGHT_PX
 ROW_HEIGHT_PX = tokens.TABLE_ROW_HEIGHT_PX
 
 
+# 표 머리글과 CSV 헤더에 쓰는 분류 컬럼 표시 이름이다. 폭을 아끼려고 줄여 쓴다.
+# 전에는 페이지 4곳에 따로 있었다. 겹치는 값은 모두 같았고 `Capa Code` 는 정의한 두
+# 페이지가 이미 `PKG Code` 를 쓰고 있어 그 이름으로 통일했다.
+COLUMN_LABELS = {
+    "양산구분": "양산",
+    "제품정보": "제품",
+    "WF 구분": "속성",
+    "Area_Name": "Area",
+    "STEP_SEQ": "Step",
+    "MCP_SEQ": "MCP",
+    "Capa Code": "PKG Code",
+    "Customer": "거래선",
+    "수율 구분": "구분",
+}
+
+
 def display_text(value: object) -> str:
     """Plotly 셀에 넣을 표시 문자열로 바꾼다. 결측은 빈 칸으로 둔다."""
     return "" if bool(pd.isna(cast(Any, value))) else str(value)

@@ -14,6 +14,7 @@ from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
 )
+from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     load_page_context,
@@ -72,11 +73,6 @@ OUTPUT_METRICS = {
     "가용대수": 1,
 }
 OUTPUT_OPTIONS = [*OUTPUT_METRICS, "로직 분석"]
-DISPLAY_COLUMN_LABELS = {
-    "양산구분": "양산",
-    "제품정보": "제품",
-    "WF 구분": "속성",
-}
 LOGIC_FILTER_KEYS = {
     "Weeknum": "standard_target_logic_weeknum",
     "공정": "standard_target_logic_process",
@@ -766,7 +762,7 @@ else:
         output_export = build_hierarchical_monthly_export(
             output_table,
             classification_columns=classification_columns,
-            column_labels=DISPLAY_COLUMN_LABELS,
+            column_labels=COLUMN_LABELS,
             decimal_places=decimal_places,
         )
         output_csv = output_export.to_csv(index=False).encode("utf-8-sig")
@@ -813,7 +809,7 @@ else:
         render_hierarchical_monthly_table(
             output_table,
             classification_columns=classification_columns,
-            column_labels=DISPLAY_COLUMN_LABELS,
+            column_labels=COLUMN_LABELS,
             decimal_places=decimal_places,
             key="standard_target_weekly_table",
             page_size=80,

@@ -7,6 +7,7 @@ from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
 )
+from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
     render_reference_clipboard_tools,
@@ -51,15 +52,6 @@ from capa_simulation.services.unit_capacity import (
 )
 
 TAB_NAMES = ("📊 확보율", "📊 소요대수", "설비대수")
-DISPLAY_COLUMN_LABELS = {
-    "Area_Name": "Area",
-    "양산구분": "양산",
-    "제품정보": "제품",
-    "Capa Code": "PKG Code",
-    "WF 구분": "속성",
-    "STEP_SEQ": "Step",
-    "MCP_SEQ": "MCP",
-}
 
 
 st.title("공정별 확보율")
@@ -210,7 +202,7 @@ else:
         securement_export = build_hierarchical_monthly_export(
             displayed_securement_table,
             classification_columns=SECUREMENT_DIMENSIONS,
-            column_labels=DISPLAY_COLUMN_LABELS,
+            column_labels=COLUMN_LABELS,
             decimal_places=2,
             value_format="percent",
         )
@@ -229,7 +221,7 @@ else:
         render_hierarchical_monthly_table(
             displayed_securement_table,
             classification_columns=SECUREMENT_DIMENSIONS,
-            column_labels=DISPLAY_COLUMN_LABELS,
+            column_labels=COLUMN_LABELS,
             decimal_places=2,
             value_format="percent",
             key="securement_rate_monthly_table",
@@ -309,7 +301,7 @@ else:
                 for index, column in enumerate(table_dimensions):
                     options = view_table[column].dropna().drop_duplicates().tolist()
                     selected_filters[column] = st.multiselect(
-                        DISPLAY_COLUMN_LABELS.get(column, column),
+                        COLUMN_LABELS.get(column, column),
                         options=options,
                         key=filter_keys[index],
                         placeholder="전체",
@@ -325,7 +317,7 @@ else:
         required_export = build_hierarchical_monthly_export(
             filtered_required_table,
             classification_columns=table_dimensions,
-            column_labels=DISPLAY_COLUMN_LABELS,
+            column_labels=COLUMN_LABELS,
             decimal_places=2,
         )
         required_csv = required_export.to_csv(index=False, float_format="%.2f").encode("utf-8-sig")
@@ -351,7 +343,7 @@ else:
         render_hierarchical_monthly_table(
             filtered_required_table,
             classification_columns=table_dimensions,
-            column_labels=DISPLAY_COLUMN_LABELS,
+            column_labels=COLUMN_LABELS,
             decimal_places=2,
             key=(
                 "required_equipment_detail_table"

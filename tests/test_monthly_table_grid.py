@@ -154,3 +154,23 @@ def test_both_tables_draw_the_same_classification_boundaries() -> None:
 
     assert dividers(grouped_label) == _shapes(expected)
     assert dividers(hier_label) == _shapes(expected)
+
+
+def test_column_labels_have_one_definition() -> None:
+    """분류 컬럼 표시 이름이 페이지마다 다시 선언되지 않는지 지킨다.
+
+    전에는 페이지 4곳에 따로 있었다. 겹치는 값이 우연히 같았을 뿐이고, 한쪽만 고치면
+    같은 컬럼이 화면과 CSV 에서 다른 이름으로 나온다.
+    """
+    from pathlib import Path
+
+    from capa_simulation.components.monthly_table_base import COLUMN_LABELS
+
+    assert COLUMN_LABELS["Capa Code"] == "PKG Code"
+
+    pages = sorted((Path(__file__).resolve().parents[1] / "app_pages").glob("*.py"))
+    offenders = [
+        page.name for page in pages if "COLUMN_LABELS = {" in page.read_text(encoding="utf-8")
+    ]
+
+    assert not offenders, f"monthly_table_base.COLUMN_LABELS 를 import 하세요: {offenders}"

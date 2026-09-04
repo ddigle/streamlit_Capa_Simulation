@@ -8,10 +8,8 @@ from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
 )
-from capa_simulation.components.month_editor import (
-    DISPLAY_COLUMN_LABELS,
-    render_month_editor,
-)
+from capa_simulation.components.month_editor import render_month_editor
+from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
 )
@@ -697,7 +695,7 @@ else:
         capacity_export = build_hierarchical_monthly_export(
             unit_capacity_table,
             classification_columns=classification_columns,
-            column_labels=DISPLAY_COLUMN_LABELS,
+            column_labels=COLUMN_LABELS,
             decimal_places=0,
         )
         capacity_csv = capacity_export.to_csv(index=False, float_format="%.0f").encode("utf-8-sig")
@@ -719,7 +717,7 @@ else:
         render_hierarchical_monthly_table(
             unit_capacity_table,
             classification_columns=classification_columns,
-            column_labels=DISPLAY_COLUMN_LABELS,
+            column_labels=COLUMN_LABELS,
             decimal_places=0,
             key="unit_capacity_monthly_table",
         )

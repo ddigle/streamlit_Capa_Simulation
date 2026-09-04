@@ -7,6 +7,7 @@ from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
     render_grouped_monthly_table,
 )
+from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
     render_reference_clipboard_tools,
@@ -35,14 +36,6 @@ from capa_simulation.services.load_calculator import (
 from capa_simulation.services.simulation_cache import get_monthly_volume
 
 PRODUCT_COLUMN_WIDTH_PX = 100
-DISPLAY_COLUMN_LABELS = {
-    "양산구분": "양산",
-    "제품정보": "제품",
-    "Capa Code": "PKG Code",
-    "Customer": "거래선",
-    "수율 구분": "구분",
-    "WF 구분": "속성",
-}
 
 st.title("부하량")
 
@@ -136,7 +129,7 @@ with pkg_plan_tab:
         column_config={
             **{
                 column: st.column_config.TextColumn(
-                    DISPLAY_COLUMN_LABELS.get(column, column),
+                    COLUMN_LABELS.get(column, column),
                     width=(PRODUCT_COLUMN_WIDTH_PX if column == "제품정보" else None),
                     alignment="center",
                     pinned=True,
@@ -216,7 +209,7 @@ with yield_tab:
         column_config={
             **{
                 column: st.column_config.TextColumn(
-                    DISPLAY_COLUMN_LABELS.get(column, column),
+                    COLUMN_LABELS.get(column, column),
                     width=(PRODUCT_COLUMN_WIDTH_PX if column == "제품정보" else None),
                     alignment="center",
                     pinned=True,
@@ -322,7 +315,7 @@ with conversion_tab:
         conversion_export = build_grouped_monthly_export(
             monthly_volume,
             classification_columns=displayed_classification_columns,
-            column_labels=DISPLAY_COLUMN_LABELS,
+            column_labels=COLUMN_LABELS,
         )
         conversion_csv = conversion_export.to_csv(
             index=False,
@@ -346,7 +339,7 @@ with conversion_tab:
         render_grouped_monthly_table(
             monthly_volume,
             classification_columns=displayed_classification_columns,
-            column_labels=DISPLAY_COLUMN_LABELS,
+            column_labels=COLUMN_LABELS,
             decimal_places=conversion_decimal_places,
             key="conversion_volume_table",
         )

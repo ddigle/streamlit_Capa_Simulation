@@ -15,18 +15,9 @@ from typing import Protocol
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_tools
 from capa_simulation.design import tokens
-
-# 편집 표에서 분류 컬럼 폭을 아끼려고 줄여 쓰는 이름이다.
-DISPLAY_COLUMN_LABELS = {
-    "양산구분": "양산",
-    "제품정보": "제품",
-    "WF 구분": "속성",
-    "Area_Name": "Area",
-    "STEP_SEQ": "Step",
-    "MCP_SEQ": "MCP",
-}
 
 
 class OpenTab(Protocol):
@@ -78,7 +69,7 @@ def render_month_editor(
             column_config={
                 **{
                     column: st.column_config.TextColumn(
-                        DISPLAY_COLUMN_LABELS.get(column, column),
+                        COLUMN_LABELS.get(column, column),
                         alignment="center",
                         pinned=True,
                     )
