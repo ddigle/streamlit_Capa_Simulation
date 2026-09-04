@@ -15,6 +15,7 @@ from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
     render_reference_clipboard_tools,
 )
+from capa_simulation.components.scenario_edit_bar import render_scenario_edit_bar
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -25,7 +26,6 @@ from capa_simulation.scenario_state import (
     apply_month_updates,
     apply_table_updates,
     remember_virtual_product,
-    reset_active_scenario,
     scenario_month_table,
     scenario_table,
     session_virtual_products,
@@ -117,16 +117,13 @@ if st.session_state.get(source_token_key) != source_token:
     st.session_state.pop(plan_staged_key, None)
     st.session_state[source_token_key] = source_token
 
-with st.container(horizontal=True, vertical_alignment="center"):
-    st.caption(f"활성 시나리오 · 수정본 {active_scenario['revision']}")
-    if st.button(
-        ":material/restart_alt: 전체 입력 원본으로 초기화",
-        key="reset_load_active_scenario",
-    ):
-        reset_active_scenario(reference_tables, reference_version)
-        st.session_state.pop(source_token_key, None)
-        st.session_state.pop(plan_staged_key, None)
-        st.rerun()
+render_scenario_edit_bar(
+    active_scenario,
+    reference_tables,
+    reference_version,
+    reset_key="reset_load_active_scenario",
+    clear_session_keys=(source_token_key, plan_staged_key),
+)
 
 conversion_tab, pkg_plan_tab, yield_tab, product_tab = st.tabs(
     [":material/insights: 환산", "PKG PLAN", "수율", "제품 등록"]

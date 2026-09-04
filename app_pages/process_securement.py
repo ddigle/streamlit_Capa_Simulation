@@ -3,6 +3,7 @@
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.column_filter import render_column_filters
 from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
@@ -187,29 +188,11 @@ except BOOTSTRAP_ERRORS as exc:
 else:
     with availability_tab:
         st.caption("월간 공정별 확보율 (가용대수 ÷ 소요대수)")
-        securement_filter_keys = [f"securement_filter_{column}" for column in SECUREMENT_DIMENSIONS]
-        with st.expander("필터", expanded=False):
-            if st.button("필터 초기화", key="securement_filter_reset"):
-                for filter_key in securement_filter_keys:
-                    st.session_state[filter_key] = []
-            securement_filters: dict[str, list[str]] = {}
-            with st.container(horizontal=True, gap="small"):
-                for index, column in enumerate(SECUREMENT_DIMENSIONS):
-                    options = securement_table[column].dropna().drop_duplicates().tolist()
-                    securement_filters[column] = st.multiselect(
-                        column,
-                        options=options,
-                        key=securement_filter_keys[index],
-                        placeholder="전체",
-                        width=180,
-                    )
-
-        displayed_securement_table = securement_table.copy()
-        for column, selected_values in securement_filters.items():
-            if selected_values:
-                displayed_securement_table = displayed_securement_table.loc[
-                    displayed_securement_table[column].isin(selected_values)
-                ]
+        displayed_securement_table = render_column_filters(
+            securement_table,
+            SECUREMENT_DIMENSIONS,
+            key_prefix="securement_filter",
+        )
         securement_export = build_hierarchical_monthly_export(
             displayed_securement_table,
             classification_columns=SECUREMENT_DIMENSIONS,
@@ -302,29 +285,12 @@ else:
                 all_month_columns
             ].sum(min_count=1)
 
-        filter_keys = [f"required_equipment_filter_{column}" for column in table_dimensions]
-        with st.expander("필터", expanded=False):
-            if st.button("필터 초기화", key="required_equipment_filter_reset"):
-                for filter_key in filter_keys:
-                    st.session_state[filter_key] = []
-            selected_filters: dict[str, list[str]] = {}
-            with st.container(horizontal=True, gap="small"):
-                for index, column in enumerate(table_dimensions):
-                    options = view_table[column].dropna().drop_duplicates().tolist()
-                    selected_filters[column] = st.multiselect(
-                        COLUMN_LABELS.get(column, column),
-                        options=options,
-                        key=filter_keys[index],
-                        placeholder="전체",
-                        width=180,
-                    )
-
-        filtered_required_table = view_table.copy()
-        for column, selected_values in selected_filters.items():
-            if selected_values:
-                filtered_required_table = filtered_required_table.loc[
-                    filtered_required_table[column].isin(selected_values)
-                ]
+        filtered_required_table = render_column_filters(
+            view_table,
+            table_dimensions,
+            key_prefix="required_equipment_filter",
+            column_labels=COLUMN_LABELS,
+        )
         required_export = build_hierarchical_monthly_export(
             filtered_required_table,
             classification_columns=table_dimensions,
@@ -424,28 +390,11 @@ else:
             equipment_table = available_equipment_table.copy()
             equipment_dimensions = EQUIPMENT_DIMENSIONS
 
-        equipment_filter_keys = [
-            f"equipment_count_filter_{column}" for column in equipment_dimensions
-        ]
-        with st.expander("필터", expanded=False):
-            if st.button("필터 초기화", key="equipment_count_filter_reset"):
-                for filter_key in equipment_filter_keys:
-                    st.session_state[filter_key] = []
-            equipment_filters: dict[str, list[str]] = {}
-            with st.container(horizontal=True, gap="small"):
-                for index, column in enumerate(equipment_dimensions):
-                    options = equipment_table[column].dropna().drop_duplicates().tolist()
-                    equipment_filters[column] = st.multiselect(
-                        column,
-                        options=options,
-                        key=equipment_filter_keys[index],
-                        placeholder="전체",
-                        width=180,
-                    )
-
-        for column, selected_values in equipment_filters.items():
-            if selected_values:
-                equipment_table = equipment_table.loc[equipment_table[column].isin(selected_values)]
+        equipment_table = render_column_filters(
+            equipment_table,
+            equipment_dimensions,
+            key_prefix="equipment_count_filter",
+        )
         equipment_month_columns = [
             column for column in equipment_table.columns if column not in equipment_dimensions
         ]

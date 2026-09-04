@@ -383,6 +383,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/page_header.py`
   - 모든 페이지의 제목·설명·상태 배지. `(구현중)` 은 제목에서 떼어 배지로 보여준다.
     사이드바 라벨과 같은 문자열을 써야 하며 어긋나면 테스트가 잡는다.
+- `src/capa_simulation/components/column_filter.py`
+  - 분류 컬럼별 다중선택 필터와 초기화 버튼. 선택값으로 거른 프레임을 돌려준다.
+- `src/capa_simulation/components/scenario_edit_bar.py`
+  - 편집 페이지 상단의 "활성 시나리오 · 수정본 N" 과 원본 초기화 버튼.
+    초기화할 때 함께 비울 세션 키는 페이지가 넘긴다.
 - `src/capa_simulation/components/roadmap_panel.py`
   - 업무 활용 목적·담당 부서별 Action Item·로드맵 한 줄을 카드로 그린다.
     Static Capa 와 Dynamic Capa 가 공유한다.

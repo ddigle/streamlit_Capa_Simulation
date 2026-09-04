@@ -136,7 +136,7 @@ _initialize_filter_state(PROCESS_FILTER_KEY, process_options, DEFAULT_PROCESS_CO
 _initialize_filter_state(PRODUCT_FILTER_KEY, product_options, DEFAULT_PRODUCT_COUNT)
 
 with st.container(border=True):
-    st.subheader("조회 조건")
+    st.markdown("#### :material/filter_alt: 조회 조건")
     st.caption(
         f"기준일 {today:%Y-%m-%d} · 조회기간 {start_date:%Y-%m-%d} ~ {end_date:%Y-%m-%d} "
         "(오늘 -7일 ~ +3일)"

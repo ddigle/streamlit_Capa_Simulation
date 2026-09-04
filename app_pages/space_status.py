@@ -453,3 +453,13 @@ else:
             )
         },
     )
+    # 층별 호기 목록은 현장 배치 검토에 그대로 쓰인다.
+    st.download_button(
+        ":material/download: CSV 다운로드",
+        data=floor_equipment.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"space_{selected_building}_{selected_floor}.csv",
+        mime="text/csv;charset=utf-8",
+        key=f"space_floor_download_{selected_building}_{selected_floor}",
+        on_click="ignore",
+        width="content",
+    )

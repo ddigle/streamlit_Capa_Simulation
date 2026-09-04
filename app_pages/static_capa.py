@@ -95,6 +95,16 @@ def _render_shortfall_table(data: pd.DataFrame, *, warning_section: bool, key: s
             ),
         },
     )
+    # 투자 검토와 A/Item 배분에 그대로 쓰는 표다. 화면에서 옮겨 적지 않도록 내보낸다.
+    st.download_button(
+        ":material/download: CSV 다운로드",
+        data=displayed.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"{key}.csv",
+        mime="text/csv;charset=utf-8",
+        key=f"{key}_download",
+        on_click="ignore",
+        width="content",
+    )
 
 
 render_page_header(
