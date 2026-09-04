@@ -312,22 +312,6 @@ with dashboard_tab:
         total_count = float(latest_week["총대수"].sum())
         available_count = float(latest_week["가용대수"].sum())
         inactive_count = float(latest_week["비가동대수"].sum())
-        st.caption(f"조회 마지막 주 기준 · {latest_week['Weeknum'].iloc[0]}")
-        with st.container(horizontal=True):
-            st.metric("총대수", _format_equipment_count(total_count), border=True)
-            st.metric("가용대수", _format_equipment_count(available_count), border=True)
-            render_status_metric(
-                "비가동대수",
-                _format_equipment_count(inactive_count),
-                key="equipment_inactive_count",
-                tone=shortage_tone(int(inactive_count > 0)),
-            )
-            st.metric(
-                "가용률",
-                f"{available_count / total_count if total_count else 0:.1%}",
-                border=True,
-            )
-
         trend = (
             filtered_weekly.groupby(["주차시작일", "Weeknum"], as_index=False)[
                 ["가용대수", "비가동대수"]
@@ -335,6 +319,41 @@ with dashboard_tab:
             .sum()
             .sort_values("주차시작일")
         )
+        # 카드마다 자기 주차 추이를 스파크라인으로 함께 보여준다. 마지막 주 값만으로는
+        # 늘고 있는지 줄고 있는지 알 수 없어 아래 차트를 열어야 했다. 네 장 모두에 넣어야
+        # 카드 높이가 어긋나지 않는다.
+        weekly_total = trend["가용대수"] + trend["비가동대수"]
+        weekly_rate = (trend["가용대수"] / weekly_total.where(weekly_total.ne(0))).fillna(0.0)
+        st.caption(f"조회 마지막 주 기준 · {latest_week['Weeknum'].iloc[0]}")
+        with st.container(horizontal=True):
+            st.metric(
+                "총대수",
+                _format_equipment_count(total_count),
+                chart_data=weekly_total,
+                chart_type="area",
+                border=True,
+            )
+            st.metric(
+                "가용대수",
+                _format_equipment_count(available_count),
+                chart_data=trend["가용대수"],
+                chart_type="area",
+                border=True,
+            )
+            render_status_metric(
+                "비가동대수",
+                _format_equipment_count(inactive_count),
+                key="equipment_inactive_count",
+                tone=shortage_tone(int(inactive_count > 0)),
+                chart_data=trend["비가동대수"],
+            )
+            st.metric(
+                "가용률",
+                f"{available_count / total_count if total_count else 0:.1%}",
+                chart_data=weekly_rate,
+                chart_type="area",
+                border=True,
+            )
         trend_long = trend.melt(
             id_vars=["주차시작일", "Weeknum"],
             value_vars=["가용대수", "비가동대수"],

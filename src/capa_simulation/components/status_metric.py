@@ -15,8 +15,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Literal
 
+import pandas as pd
 import streamlit as st
 
 from capa_simulation.design import tokens
@@ -45,15 +47,22 @@ def render_status_metric(
     key: str,
     tone: MetricTone = "neutral",
     help: str | None = None,
+    chart_data: Sequence[float] | pd.Series | None = None,
 ) -> None:
     """상태색 띠가 붙은 metric 카드 하나를 그린다.
 
     `tone="neutral"` 은 기존 카드와 완전히 같은 모양이다. 색을 붙일 이유가 없는 지표에
     굳이 색을 붙이지 않기 위해 기본값으로 둔다.
+
+    `chart_data` 를 넘기면 값 아래에 추이 스파크라인이 붙는다. 한 줄에 놓인 카드 중
+    일부에만 넣으면 높이가 어긋나므로 그 줄 전체에 넣거나 전부 빼야 한다.
     """
+    chart_kwargs: dict[str, object] = {}
+    if chart_data is not None:
+        chart_kwargs = {"chart_data": chart_data, "chart_type": "area"}
     color = TONE_COLORS.get(tone)
     if color is None:
-        st.metric(label, value, border=True, help=help)
+        st.metric(label, value, border=True, help=help, **chart_kwargs)  # type: ignore[arg-type]
         return
     st.html(
         "\n".join(
@@ -67,4 +76,4 @@ def render_status_metric(
         )
     )
     with st.container(key=key):
-        st.metric(label, value, border=True, help=help)
+        st.metric(label, value, border=True, help=help, **chart_kwargs)  # type: ignore[arg-type]
