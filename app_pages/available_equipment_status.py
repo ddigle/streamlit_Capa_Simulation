@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.status_metric import render_status_metric, shortage_tone
 from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL, render_csv_download
 from capa_simulation.design import tokens
 from capa_simulation.persistence.equipment_cache import (
@@ -134,6 +135,14 @@ def _qual_status_scale() -> alt.Scale:
         domain=list(tokens.QUAL_CONFIRMATION_COLORS),
         range=list(tokens.QUAL_CONFIRMATION_COLORS.values()),
     )
+
+
+def _format_equipment_count(value: float) -> str:
+    """대수를 적는다. 주중에 상태가 바뀌면 소수가 나오므로 정수일 때만 소수점을 뗀다.
+
+    설비 751대를 "751.0대" 로 적으면 계산이 어긋난 것처럼 읽힌다.
+    """
+    return f"{value:,.0f}대" if float(value).is_integer() else f"{value:,.1f}대"
 
 
 render_page_header(
@@ -305,9 +314,14 @@ with dashboard_tab:
         inactive_count = float(latest_week["비가동대수"].sum())
         st.caption(f"조회 마지막 주 기준 · {latest_week['Weeknum'].iloc[0]}")
         with st.container(horizontal=True):
-            st.metric("총대수", f"{total_count:,.1f}대", border=True)
-            st.metric("가용대수", f"{available_count:,.1f}대", border=True)
-            st.metric("비가동대수", f"{inactive_count:,.1f}대", border=True)
+            st.metric("총대수", _format_equipment_count(total_count), border=True)
+            st.metric("가용대수", _format_equipment_count(available_count), border=True)
+            render_status_metric(
+                "비가동대수",
+                _format_equipment_count(inactive_count),
+                key="equipment_inactive_count",
+                tone=shortage_tone(int(inactive_count > 0)),
+            )
             st.metric(
                 "가용률",
                 f"{available_count / total_count if total_count else 0:.1%}",

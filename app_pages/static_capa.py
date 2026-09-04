@@ -7,6 +7,7 @@ import streamlit as st
 
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.roadmap_panel import render_roadmap_panel
+from capa_simulation.components.status_metric import render_status_metric, shortage_tone
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -218,11 +219,17 @@ else:
         st.markdown("### :material/priority_high: 경고 기준 미달")
         st.markdown(":red-badge[집중 관리] 물리적 Capa가 계획을 받치지 못하는 공정·월입니다.")
         with st.container(horizontal=True, gap="small"):
-            st.metric("미달 공정·월", f"{len(warning_shortfalls):,}건", border=True)
-            st.metric(
+            render_status_metric(
+                "미달 공정·월",
+                f"{len(warning_shortfalls):,}건",
+                key="static_capa_warning_rows",
+                tone="critical" if len(warning_shortfalls) else "neutral",
+            )
+            render_status_metric(
                 "미달 공정",
                 f"{warning_shortfalls['공정'].nunique():,}개",
-                border=True,
+                key="static_capa_warning_processes",
+                tone=shortage_tone(int(warning_shortfalls["공정"].nunique())),
             )
             st.metric(
                 "월 최대 경고 필요",
@@ -254,11 +261,17 @@ else:
             "공정·월입니다."
         )
         with st.container(horizontal=True, gap="small"):
-            st.metric("추가 확보 공정·월", f"{len(secure_shortfalls):,}건", border=True)
-            st.metric(
+            render_status_metric(
+                "추가 확보 공정·월",
+                f"{len(secure_shortfalls):,}건",
+                key="static_capa_secure_rows",
+                tone=shortage_tone(len(secure_shortfalls)),
+            )
+            render_status_metric(
                 "추가 확보 공정",
                 f"{secure_shortfalls['공정'].nunique():,}개",
-                border=True,
+                key="static_capa_secure_processes",
+                tone=shortage_tone(int(secure_shortfalls["공정"].nunique())),
             )
             st.metric(
                 "월 최대 추가 필요",

@@ -15,6 +15,7 @@ from capa_simulation.components.dynamic_capacity_dashboard import (
 )
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.roadmap_panel import render_roadmap_panel
+from capa_simulation.components.status_metric import render_status_metric, shortage_tone
 from capa_simulation.services.dynamic_capacity import (
     aggregate_dynamic_capacity,
     build_dynamic_capacity_demo,
@@ -114,10 +115,11 @@ process_summary = aggregate_dynamic_capacity(demo, ["공정"]).sort_values(
 st.subheader("전체 공정 요약", divider="gray")
 with st.container(horizontal=True, gap="small"):
     st.metric("분석 공정", f"{process_summary['공정'].nunique():,}개", border=True)
-    st.metric(
+    render_status_metric(
         "개선 필요",
         f"{process_summary['상태'].eq('개선 필요').sum():,}개",
-        border=True,
+        key="reference_integrity_needs_action",
+        tone=shortage_tone(int(process_summary["상태"].eq("개선 필요").sum())),
     )
     st.metric(
         "중앙 Capa 실현률",

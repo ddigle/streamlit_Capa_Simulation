@@ -52,7 +52,7 @@ def render_scenario_management(
     database_path: str,
 ) -> None:
     scenarios = repository.list_scenarios()
-    _render_store_status(repository)
+    _render_store_status(repository, scenarios)
     mode = st.segmented_control(
         "시나리오 작업",
         ["불러오기", "신규 저장", "리비전 저장"],
@@ -71,7 +71,10 @@ def render_scenario_management(
         _render_revision_save(repository)
 
 
-def _render_store_status(repository: DuckDBScenarioRepository) -> None:
+def _render_store_status(
+    repository: DuckDBScenarioRepository,
+    scenarios: list[ScenarioSummary],
+) -> None:
     flash = st.session_state.pop(FLASH_KEY, None)
     if isinstance(flash, str):
         st.success(flash)
@@ -81,8 +84,12 @@ def _render_store_status(repository: DuckDBScenarioRepository) -> None:
         active_id = active_persisted_scenario_id()
         active_revision_id = active_persisted_revision_id()
         if active_id and active_revision_id:
-            dirty = " · 저장하지 않은 변경 있음" if has_unsaved_scenario_changes() else ""
-            st.write(f"활성 시나리오 `{active_id}` · 리비전 `{active_revision_id}`{dirty}")
+            st.write(_active_scenario_line(repository, scenarios, active_id, active_revision_id))
+            # UUID 는 사람이 읽을 것이 아니라 장애를 신고할 때 적어 보낼 값이다. 상태 줄에
+            # 그대로 두면 정작 어느 시나리오인지가 안 읽혀 접어 둔다.
+            with st.expander("식별자", icon=":material/tag:"):
+                st.caption(f"시나리오 ID `{active_id}`")
+                st.caption(f"리비전 ID `{active_revision_id}`")
         else:
             st.write("현재 활성화된 DuckDB 리비전이 없습니다.")
         if official is None:
@@ -98,6 +105,31 @@ def _render_store_status(repository: DuckDBScenarioRepository) -> None:
                     "운영 전 Core Data CSV 또는 BigDataQuery 시나리오를 등록해 새 공식버전으로 "
                     "지정하세요."
                 )
+
+
+def _active_scenario_line(
+    repository: DuckDBScenarioRepository,
+    scenarios: list[ScenarioSummary],
+    active_id: str,
+    active_revision_id: str,
+) -> str:
+    """활성 시나리오·리비전을 사람이 읽는 이름으로 적는다. 이름을 못 찾으면 ID 로 적는다."""
+    scenario = next((item for item in scenarios if item.scenario_id == active_id), None)
+    scenario_label = scenario.scenario_name if scenario is not None else active_id
+    revision_label = active_revision_id
+    if scenario is not None:
+        revision = next(
+            (
+                item
+                for item in repository.list_revisions(active_id)
+                if item.revision_id == active_revision_id
+            ),
+            None,
+        )
+        if revision is not None:
+            revision_label = f"r{revision.revision_no} · {revision.revision_name}"
+    dirty = " · :orange-badge[저장하지 않은 변경 있음]" if has_unsaved_scenario_changes() else ""
+    return f"**{scenario_label}** · {revision_label}{dirty}"
 
 
 def _render_load(

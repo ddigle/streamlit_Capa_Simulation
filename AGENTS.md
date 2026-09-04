@@ -391,6 +391,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/roadmap_panel.py`
   - 업무 활용 목적·담당 부서별 Action Item·로드맵 한 줄을 카드로 그린다.
     Static Capa 와 Dynamic Capa 가 공유한다.
+- `src/capa_simulation/components/status_metric.py`
+  - 조치가 필요한 지표에 상태색 왼쪽 띠를 붙인 metric 카드. 색은 확보 상태색 토큰을
+    그대로 쓴다. 색을 붙일 근거가 없으면 `tone="neutral"` 로 두어 기존 카드와 같게 둔다.
 - `src/capa_simulation/components/table_toolbar.py`
   - 표 제목·부가 설명·CSV 내보내기 한 줄. `st.download_button` 은 여기서만 부른다.
     라벨에 아이콘을 섞지 않고 `label` 인자를 쓴다. 어기면 테스트가 잡는다.

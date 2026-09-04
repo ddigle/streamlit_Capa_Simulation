@@ -9,6 +9,7 @@ import streamlit as st
 
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
+from capa_simulation.components.status_metric import render_status_metric, shortage_tone
 from capa_simulation.components.wip_status_dashboard import (
     WIP_GRID_CELL_WIDTH_PX,
     build_wip_status_grid_figure,
@@ -226,9 +227,24 @@ today_unset = int(today_rows["상태"].eq("표준 미설정").sum())
 route_count = len(selected_routes)
 with st.container(horizontal=True):
     st.metric("선택 경로", f"{route_count:,}개", border=True)
-    st.metric("오늘 표준 충족", f"{today_met:,}개", border=True)
-    st.metric("오늘 Flow 부족", f"{today_short:,}개", border=True)
-    st.metric("표준 미설정", f"{today_unset:,}개", border=True)
+    render_status_metric(
+        "오늘 표준 충족",
+        f"{today_met:,}개",
+        key="wip_metric_met",
+        tone="good" if today_met else "neutral",
+    )
+    render_status_metric(
+        "오늘 Flow 부족",
+        f"{today_short:,}개",
+        key="wip_metric_short",
+        tone="critical" if today_short else "neutral",
+    )
+    render_status_metric(
+        "표준 미설정",
+        f"{today_unset:,}개",
+        key="wip_metric_unset",
+        tone=shortage_tone(today_unset),
+    )
 
 with st.container(border=True):
     st.subheader("일별 재공·Flow와 표준 가능 수준")
