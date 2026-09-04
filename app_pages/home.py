@@ -18,6 +18,7 @@ from capa_simulation.components.home_rendering import (
     store_home_figures,
 )
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -65,13 +66,17 @@ render_page_header(
         "확보율이 가장 낮은 B/N 공정을 한 화면에서 봅니다."
     ),
 )
-show_home_details = st.toggle(
-    "계획·B/N 상세표 표시",
-    value=False,
-    key="dashboard_show_details",
-    persist_state="session",
-    help="제품·Stack별 계획 세부수량과 상세 B/N 공정 시트를 아래에 함께 펼칩니다.",
-)
+# 대시보드는 Plotly 그림이라 셀을 복사할 수 없다. 표 내용을 그대로 쓰려면 CSV 가 있어야
+# 하는데, 내보낼 데이터는 아래 계산이 끝나야 나온다. 줄만 먼저 잡고 뒤에서 채운다.
+detail_row = st.container(horizontal=True, vertical_alignment="center", gap="small")
+with detail_row:
+    show_home_details = st.toggle(
+        "계획·B/N 상세표 표시",
+        value=False,
+        key="dashboard_show_details",
+        persist_state="session",
+        help="제품·Stack별 계획 세부수량과 상세 B/N 공정 시트를 아래에 함께 펼칩니다.",
+    )
 show_home_performance = st.sidebar.toggle(
     "HOME 성능 진단",
     value=False,
@@ -187,6 +192,15 @@ try:
 except (KeyError, OSError, ValueError) as exc:
     st.error(str(exc))
     st.stop()
+
+with detail_row:
+    # 화면은 K 단위로 줄여 적지만 내보내기는 원래 수량을 그대로 준다.
+    render_csv_download(
+        data=production_detail.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"Home_Plan_Detail_{effective_start}_{effective_end}.csv",
+        key="download_home_plan_detail",
+        label="계획 세부수량 CSV",
+    )
 
 process_options = sorted(
     securement_rate["공정"].astype("string").str.strip().dropna().unique().tolist()
