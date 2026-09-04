@@ -58,12 +58,19 @@ def selected_month_range() -> tuple[int, int]:
     return int(start_label.replace("-", "")), int(end_label.replace("-", ""))
 
 
-render_page_header(APP_NAME)
+render_page_header(
+    APP_NAME,
+    description=(
+        "월별 생산계획을 부하량으로 환산해 Density·Wafer 현황과 "
+        "확보율이 가장 낮은 B/N 공정을 한 화면에서 봅니다."
+    ),
+)
 show_home_details = st.toggle(
     "계획·B/N 상세표 표시",
     value=False,
     key="dashboard_show_details",
     persist_state="session",
+    help="제품·Stack별 계획 세부수량과 상세 B/N 공정 시트를 아래에 함께 펼칩니다.",
 )
 show_home_performance = st.sidebar.toggle(
     "HOME 성능 진단",

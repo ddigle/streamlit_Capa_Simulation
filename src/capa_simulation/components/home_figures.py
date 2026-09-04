@@ -393,7 +393,7 @@ def build_lob_summary_figures(
     append_layout_items(
         label_figure,
         annotations=[
-            dashboard_title_annotation("☝️<b>Capa LOB 현황</b>"),
+            dashboard_title_annotation("<b>Capa LOB 현황</b>"),
             {
                 "x": 0.5,
                 "y": (lob_y_domain[0] + lob_y_domain[1]) / 2,
@@ -678,7 +678,7 @@ def build_plan_detail_figures(
     detail_label_figure.update_layout(**detail_layout)
     append_layout_items(
         detail_label_figure,
-        annotations=[dashboard_title_annotation("✌️<b>계획 세부수량</b>")],
+        annotations=[dashboard_title_annotation("<b>계획 세부수량</b>")],
     )
     detail_month_figure.update_layout(
         **detail_layout,
@@ -891,7 +891,7 @@ def build_bottleneck_detail_figures(
     bottleneck_detail_label_figure.update_layout(**bottleneck_detail_layout)
     append_layout_items(
         bottleneck_detail_label_figure,
-        annotations=[dashboard_title_annotation("👌<b>상세 B/N 공정</b>")],
+        annotations=[dashboard_title_annotation("<b>상세 B/N 공정</b>")],
     )
     bottleneck_detail_month_figure.update_layout(
         **bottleneck_detail_layout,

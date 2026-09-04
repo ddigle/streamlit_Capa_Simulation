@@ -54,7 +54,11 @@ from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
 )
 
-TAB_NAMES = ("📊 확보율", "📊 소요대수", "설비대수")
+TAB_NAMES = (
+    ":material/insights: 확보율",
+    ":material/precision_manufacturing: 소요대수",
+    "설비대수",
+)
 
 
 render_page_header(

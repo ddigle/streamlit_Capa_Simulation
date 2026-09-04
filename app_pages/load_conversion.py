@@ -129,7 +129,7 @@ with st.container(horizontal=True, vertical_alignment="center"):
         st.rerun()
 
 conversion_tab, pkg_plan_tab, yield_tab, product_tab = st.tabs(
-    ["📊 환산", "PKG PLAN", "수율", "제품 등록"]
+    [":material/insights: 환산", "PKG PLAN", "수율", "제품 등록"]
 )
 
 with pkg_plan_tab:

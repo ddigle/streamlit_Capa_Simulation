@@ -18,12 +18,17 @@ TRANSPARENT_COLOR = "rgba(0, 0, 0, 0)"
 
 
 def dashboard_title_annotation(text: str) -> dict[str, Any]:
+    """대시보드 구획 제목을 만든다. 앞의 강조색 막대가 구획의 시작을 알린다.
+
+    예전에는 손 이모지(☝️✌️👌)로 순서를 표시했다. 플랫폼마다 다르게 그려지고 화면
+    톤과도 맞지 않아 강조색 막대로 바꿨다.
+    """
     return {
         "x": 0,
         "y": 1,
         "xref": "paper",
         "yref": "paper",
-        "text": text,
+        "text": f'<span style="color:{tokens.ACCENT}">▍</span>{text}',
         "showarrow": False,
         "xanchor": "left",
         "yanchor": "bottom",

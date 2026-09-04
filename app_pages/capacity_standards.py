@@ -59,7 +59,7 @@ from capa_simulation.services.weighted_unit_capacity import (
 )
 
 TAB_NAMES = (
-    "📊 공정 유효 Capa",
+    ":material/insights: 공정 유효 Capa",
     "STEP 구성",
     "UPEH",
     "효율",

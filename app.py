@@ -92,7 +92,7 @@ with st.sidebar.container(border=True):
 render_scenario_controls()
 
 with st.sidebar.container(border=True):
-    st.markdown("#### 📅 조회 기간")
+    st.markdown("#### :material/date_range: 조회 기간")
     st.caption("시작 월과 종료 월을 각각 선택하세요.")
     default_month_range = (
         format_month(MONTH_SELECTION_START),

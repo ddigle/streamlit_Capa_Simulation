@@ -380,6 +380,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/design/tokens.py`, `design/plotly_theme.py`
   - 색·서체·표 치수를 역할 이름으로 단일 정의하고 Plotly 공통 레이아웃을 만든다.
     파이썬 코드에 색 리터럴을 쓰지 않는다. 규칙은 `docs/design_system.md` 를 따른다.
+- `src/capa_simulation/components/page_header.py`
+  - 모든 페이지의 제목·설명·상태 배지. `(구현중)` 은 제목에서 떼어 배지로 보여준다.
+    사이드바 라벨과 같은 문자열을 써야 하며 어긋나면 테스트가 잡는다.
+- `src/capa_simulation/components/roadmap_panel.py`
+  - 업무 활용 목적·담당 부서별 Action Item·로드맵 한 줄을 카드로 그린다.
+    Static Capa 와 Dynamic Capa 가 공유한다.
 - `src/capa_simulation/components/monthly_table_base.py`
   - 두 월별 표가 공유하는 상수·텍스트 폭 계산과 고정 분류 + 스크롤 월 껍데기.
 - `src/capa_simulation/components/scroll_shell.py`
