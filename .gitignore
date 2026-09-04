@@ -59,3 +59,6 @@ logs/*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 로컬 미리보기 설정. 포트가 사람마다 달라 공유하지 않는다.
+.claude/
