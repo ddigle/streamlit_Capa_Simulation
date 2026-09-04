@@ -80,6 +80,10 @@ except ValueError as exc:
 plan_editor_key = "pkg_plan_editor"
 yield_editor_key = "yield_editor"
 source_token_key = "load_conversion_source_token"
+# 붙여넣기 결과는 곧바로 전역에 반영하지 않고 이 키에 담아 PKG PLAN 탭에만 보여준다.
+# 사용자가 "변경사항 적용" 을 눌러야 활성 시나리오로 넘어간다.
+plan_staged_key = "pkg_plan_staged_paste"
+plan_applied_flash_key = "pkg_plan_applied_flash"
 source_token = (
     f"duckdb:{reference_version}:{active_scenario['revision']}:"
     f"{effective_start_month}:{effective_end_month}"
@@ -87,6 +91,8 @@ source_token = (
 if st.session_state.get(source_token_key) != source_token:
     st.session_state.pop(plan_editor_key, None)
     st.session_state.pop(yield_editor_key, None)
+    # 원본이 바뀌면 아직 적용하지 않은 붙여넣기는 행·월 구성이 맞지 않으므로 버린다.
+    st.session_state.pop(plan_staged_key, None)
     st.session_state[source_token_key] = source_token
 
 with st.container(horizontal=True, vertical_alignment="center"):
@@ -97,19 +103,28 @@ with st.container(horizontal=True, vertical_alignment="center"):
     ):
         reset_active_scenario(reference_tables, reference_version)
         st.session_state.pop(source_token_key, None)
+        st.session_state.pop(plan_staged_key, None)
         st.rerun()
 
 conversion_tab, pkg_plan_tab, yield_tab = st.tabs(["📊 환산", "PKG PLAN", "수율"])
 
 with pkg_plan_tab:
+    applied_flash = st.session_state.pop(plan_applied_flash_key, None)
+    if isinstance(applied_flash, str):
+        st.success(applied_flash, icon=":material/published_with_changes:")
     st.caption(
         "활성 시나리오의 월별 생산수량을 수정합니다. "
         "수정 후 적용 버튼을 눌러야 다른 페이지의 산출값에 반영됩니다. 단위: Kea"
     )
+    # 붙여넣기한 표가 있으면 그것을 편집 대상으로 보여준다. 아직 전역에는 반영되지 않았다.
+    staged_plan_table = st.session_state.get(plan_staged_key)
+    plan_editor_source = (
+        staged_plan_table if isinstance(staged_plan_table, pd.DataFrame) else default_plan_table
+    )
     plan_month_columns = [
-        column for column in default_plan_table.columns if column not in PLAN_EDITOR_DIMENSIONS
+        column for column in plan_editor_source.columns if column not in PLAN_EDITOR_DIMENSIONS
     ]
-    displayed_plan_table = default_plan_table.copy()
+    displayed_plan_table = plan_editor_source.copy()
     displayed_plan_table[plan_month_columns] = displayed_plan_table[plan_month_columns].mask(
         displayed_plan_table[plan_month_columns].eq(0)
     )
@@ -149,13 +164,22 @@ with pkg_plan_tab:
             },
         },
     )
-    apply_plan = st.button(
-        ":material/check: PKG PLAN 변경사항 적용",
-        key="apply_pkg_plan_changes",
-        type="primary",
-    )
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        apply_plan = st.button(
+            ":material/check: PKG PLAN 변경사항 적용",
+            key="apply_pkg_plan_changes",
+            type="primary",
+        )
+        if isinstance(staged_plan_table, pd.DataFrame):
+            st.warning(
+                "붙여넣기 결과가 이 탭에만 반영되어 있습니다. "
+                "적용을 눌러야 환산·홈 대시보드 등 전역 계획값에 반영됩니다.",
+                icon=":material/pending_actions:",
+            )
+        else:
+            st.caption("적용을 누르면 환산·홈 대시보드 등 전역 계획값에 반영됩니다.")
     imported_plan_table = render_reference_clipboard_tools(
-        default_plan_table,
+        plan_editor_source,
         table_name="RQ_PKG_PLAN",
         key_columns=PLAN_EDITOR_DIMENSIONS,
         file_name=f"RQ_PKG_PLAN_{effective_start_month}_{effective_end_month}.csv",
@@ -163,10 +187,28 @@ with pkg_plan_tab:
     )
 
 simulation_plan = filtered_plan
-if apply_plan or imported_plan_table is not None:
+
+# 붙여넣기는 PKG PLAN 탭에만 반영한다. 전역 계획값은 아래 "변경사항 적용" 에서만 바꾼다.
+if imported_plan_table is not None:
     try:
-        plan_source = imported_plan_table if imported_plan_table is not None else edited_plan_table
-        updated_plan = plan_from_edit_table(plan_source)
+        plan_from_edit_table(imported_plan_table)
+    except ValueError as exc:
+        with pkg_plan_tab:
+            st.error(str(exc))
+    else:
+        st.session_state[plan_staged_key] = imported_plan_table
+        # 편집기 위젯이 이전 표의 편집 상태를 덮어쓰지 않도록 초기화한다.
+        st.session_state.pop(plan_editor_key, None)
+        queue_reference_import_flash(
+            "rq_pkg_plan_csv",
+            "붙여넣기 표를 PKG PLAN 탭에 반영했습니다. "
+            "확인 후 'PKG PLAN 변경사항 적용'을 눌러야 전역 계획값에 반영됩니다.",
+        )
+        st.rerun()
+
+if apply_plan:
+    try:
+        updated_plan = plan_from_edit_table(edited_plan_table)
         apply_month_updates(
             active_scenario,
             {"RQ_PKG_PLAN": updated_plan},
@@ -177,11 +219,12 @@ if apply_plan or imported_plan_table is not None:
         with pkg_plan_tab:
             st.error(str(exc))
     else:
-        if imported_plan_table is not None:
-            queue_reference_import_flash(
-                "rq_pkg_plan_csv",
-                "RQ_PKG_PLAN 붙여넣기 데이터를 활성 시나리오에 일괄 적용했습니다.",
-            )
+        st.session_state.pop(plan_staged_key, None)
+        st.session_state[plan_applied_flash_key] = (
+            f"PKG PLAN을 전역 계획값에 반영했습니다. "
+            f"{effective_start_month}~{effective_end_month} 구간의 환산·소요대수·확보율과 "
+            f"홈 대시보드가 이 계획으로 다시 계산됩니다."
+        )
         st.session_state.pop(source_token_key, None)
         st.rerun()
 

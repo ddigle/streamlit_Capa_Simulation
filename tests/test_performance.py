@@ -22,14 +22,14 @@ def test_home_cache_key_is_small_and_tracks_display_order() -> None:
 
     first = build_home_simulation_cache_key(
         reference_version=11,
-        scenario_revision=3,
+        scenario_token="token-3",
         start_month=202608,
         end_month=202612,
         display_order=display_order,
     )
     same = build_home_simulation_cache_key(
         reference_version=11,
-        scenario_revision=3,
+        scenario_token="token-3",
         start_month=202608,
         end_month=202612,
         display_order=display_order.copy(),
@@ -37,7 +37,7 @@ def test_home_cache_key_is_small_and_tracks_display_order() -> None:
     changed_order = display_order.assign(값표시순서=2)
     changed = build_home_simulation_cache_key(
         reference_version=11,
-        scenario_revision=3,
+        scenario_token="token-3",
         start_month=202608,
         end_month=202612,
         display_order=changed_order,

@@ -8,6 +8,7 @@ from capa_simulation.services.load_calculator import (
     YIELD_EDITOR_DIMENSIONS,
     build_monthly_volume,
     calculate_chip_and_wafer_loads,
+    drop_unplanned_rows,
     filter_edp_plan,
     plan_from_edit_table,
     plan_to_edit_table,
@@ -254,9 +255,12 @@ def test_sparse_pkg_plan_treats_missing_months_as_zero_demand() -> None:
     assert hbm_ra["202607"] == pytest.approx(0.0)
     assert hbm_ra["202608"] == pytest.approx(200.0)
 
+    # 편집 격자는 계획이 없는 달도 0 으로 들고 있어야 사용자가 다시 물량을 넣을 수 있다.
+    # 계산에서 빼는 것은 drop_unplanned_rows 의 몫이다.
     edited_plan = plan_from_edit_table(wide_plan)
-    assert len(edited_plan) == 2
-    assert edited_plan["생산수량"].gt(0).all()
+    assert len(edited_plan) == 4
+    assert edited_plan["생산수량"].ge(0).all()
+    assert len(drop_unplanned_rows(edited_plan)) == 2
 
     result = build_monthly_volume(
         edited_plan,

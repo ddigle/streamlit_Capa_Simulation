@@ -103,7 +103,9 @@ def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
     long_plan["생산수량"] = long_plan["생산수량"].fillna(0.0)
     if long_plan["생산수량"].lt(0).any():
         raise ValueError("PKG PLAN 생산수량은 0 이상이어야 합니다.")
-    long_plan = long_plan.loc[long_plan["생산수량"].gt(0)]
+    # 수량 0 행을 여기서 버리면 그 제품이 편집 격자에서 사라져 다시 물량을 넣을 수 없고,
+    # 내려받은 CSV 와 행 수가 달라져 붙여넣기가 어긋난다. 0 은 "이 달 계획 없음" 이라는
+    # 사용자의 입력이므로 그대로 보존하고, 계산 경계(_prepare_plan)에서 제외한다.
     return long_plan.sort_values(["생산계획년월", *PLAN_EDITOR_DIMENSIONS]).reset_index(drop=True)
 
 
@@ -259,7 +261,18 @@ def _prepare_plan(plan: pd.DataFrame) -> pd.DataFrame:
     missing_keys = prepared[["생산계획년월", *CLASSIFICATION_COLUMNS]].isna().any(axis=1)
     if missing_keys.any():
         raise ValueError("RQ_PKG_PLAN에 월별 물량 분류 키가 누락된 행이 있습니다.")
-    return prepared
+    return drop_unplanned_rows(prepared)
+
+
+def drop_unplanned_rows(plan: pd.DataFrame) -> pd.DataFrame:
+    """계산에서 제외할 수량 0 행을 걷어낸다.
+
+    편집 격자는 계획이 없는 달도 행으로 들고 있어야 사용자가 다시 물량을 넣을 수 있다.
+    그러나 계산은 모든 계획 행에 대해 RQ_CHIP_QTY·RQ_YLD 매칭을 요구하므로, 계획이 없는
+    제품까지 기준정보를 갖출 것을 강요하게 된다. 그래서 계산 입구에서만 제외한다.
+    """
+    quantities = pd.to_numeric(plan["생산수량"], errors="coerce").fillna(0.0)
+    return plan.loc[quantities.gt(0)].copy()
 
 
 def _prepare_load_base(

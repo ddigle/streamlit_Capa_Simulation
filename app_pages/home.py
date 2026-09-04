@@ -143,7 +143,7 @@ try:
     )
     home_simulation_cache_key = build_home_simulation_cache_key(
         reference_version=reference_version,
-        scenario_revision=active_scenario["revision"],
+        scenario_token=active_scenario["content_token"],
         start_month=effective_start,
         end_month=effective_end,
         display_order=reference_tables["RQ_DISPLAY_ORDER"],
@@ -331,7 +331,7 @@ month_column_width = 1.0
 figure_cache_key: HomeFigureCacheKey = (
     HOME_FIGURE_SCHEMA_VERSION,
     reference_version,
-    active_scenario["revision"],
+    active_scenario["content_token"],
     effective_start,
     effective_end,
     home_simulation_cache_key[-1],

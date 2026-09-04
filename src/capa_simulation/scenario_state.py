@@ -3,6 +3,7 @@
 """Per-session active scenario built from editable reference tables."""
 
 from typing import TypedDict, cast
+from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
@@ -27,7 +28,16 @@ EDITABLE_SCENARIO_TABLES = (
 class ActiveScenario(TypedDict):
     reference_version: int
     revision: int
+    # 테이블 내용이 바뀔 때마다 새로 발급하는 식별자다. `revision` 은 저장본과 비교해
+    # 미저장 변경을 감지하는 카운터여서 서로 다른 내용이 같은 번호를 가질 수 있다.
+    # (세션 편집은 0,1,2... 로 올라가고 저장 리비전을 불러오면 그 번호가 그대로 들어온다.)
+    # 계산 캐시 키에는 반드시 이 토큰을 쓴다.
+    content_token: str
     tables: dict[str, pd.DataFrame]
+
+
+def _new_content_token() -> str:
+    return uuid4().hex
 
 
 def ensure_active_scenario(
@@ -37,7 +47,13 @@ def ensure_active_scenario(
     """Return the current session scenario, initializing it from DuckDB if needed."""
     saved = st.session_state.get(ACTIVE_SCENARIO_KEY)
     if _is_current_scenario(saved, reference_version):
-        return cast(ActiveScenario, saved)
+        scenario = cast(ActiveScenario, saved)
+        # 이 필드를 도입하기 전에 만들어진 세션 상태에는 토큰이 없다. 편집 중인 표를
+        # 버리지 않도록 폐기하지 않고 채워 넣는다.
+        if not isinstance(scenario.get("content_token"), str):
+            scenario["content_token"] = _new_content_token()
+            st.session_state[ACTIVE_SCENARIO_KEY] = scenario
+        return scenario
     return reset_active_scenario(reference_tables, reference_version)
 
 
@@ -55,6 +71,7 @@ def reset_active_scenario(
     scenario: ActiveScenario = {
         "reference_version": reference_version,
         "revision": previous_revision + 1,
+        "content_token": _new_content_token(),
         "tables": {
             name: reference_tables[name].copy(deep=True) for name in EDITABLE_SCENARIO_TABLES
         },
@@ -80,6 +97,7 @@ def activate_scenario_tables(
     scenario: ActiveScenario = {
         "reference_version": reference_version,
         "revision": revision,
+        "content_token": _new_content_token(),
         "tables": {
             name: reference_tables[name].copy(deep=True) for name in EDITABLE_SCENARIO_TABLES
         },
@@ -136,6 +154,7 @@ def apply_month_updates(
     updated: ActiveScenario = {
         "reference_version": scenario["reference_version"],
         "revision": scenario["revision"] + 1,
+        "content_token": _new_content_token(),
         "tables": tables,
     }
     st.session_state[ACTIVE_SCENARIO_KEY] = updated

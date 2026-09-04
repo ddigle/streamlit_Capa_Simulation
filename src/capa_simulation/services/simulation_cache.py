@@ -31,18 +31,26 @@ from capa_simulation.services.standard_target_capacity import (
 )
 from capa_simulation.services.unit_capacity import calculate_unit_capacity
 
-HomeSimulationCacheKey = tuple[int, int, int, int, str]
+HomeSimulationCacheKey = tuple[int, str, int, int, str]
 
 
 def build_home_simulation_cache_key(
     *,
     reference_version: int,
-    scenario_revision: int,
+    scenario_token: str,
     start_month: int,
     end_month: int,
     display_order: pd.DataFrame,
 ) -> HomeSimulationCacheKey:
-    """Build a small key covering every mutable HOME calculation input boundary."""
+    """Build a small key covering every mutable HOME calculation input boundary.
+
+    `get_home_simulation` 은 프레임 인자를 `_` 로 시작하게 두어 내용 해시를 건너뛴다.
+    따라서 이 키가 입력 동일성을 혼자 책임진다. 예전에는 시나리오 편집 카운터
+    (`revision`)를 넣었는데, 그 번호는 서로 다른 내용에서도 겹친다. 세션 편집은
+    0,1,2... 로 올라가고 저장 리비전을 불러오면 그 번호가 그대로 들어오기 때문이다.
+    `st.cache_data` 는 프로세스 전역이라 다른 브라우저 세션과도 겹쳤다.
+    시나리오 내용이 바뀔 때마다 새로 발급되는 `content_token` 을 쓴다.
+    """
     digest = hashlib.sha256()
     digest.update("\x1f".join(map(str, display_order.columns)).encode("utf-8"))
     digest.update("\x1f".join(map(str, display_order.dtypes)).encode("utf-8"))
@@ -53,7 +61,7 @@ def build_home_simulation_cache_key(
     )
     return (
         reference_version,
-        scenario_revision,
+        scenario_token,
         start_month,
         end_month,
         digest.hexdigest(),

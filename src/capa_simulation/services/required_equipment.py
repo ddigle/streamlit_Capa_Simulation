@@ -14,6 +14,7 @@ from capa_simulation.services.load_calculator import (
     calculate_chip_and_wafer_loads,
     calculate_chip_load,
     calculate_wafer_load,
+    drop_unplanned_rows,
 )
 
 REQB_COLUMNS = [
@@ -224,6 +225,8 @@ def _build_loads(
         ["양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS"],
     )
     prepared_plan["생산수량"] = to_numeric_strict(prepared_plan["생산수량"], "RQ_PKG_PLAN.생산수량")
+    # 이 경로는 load_calculator._prepare_plan 을 거치지 않으므로 여기서도 제외한다.
+    prepared_plan = drop_unplanned_rows(prepared_plan)
 
     load_frames: list[pd.DataFrame] = []
     if "PKG" in required_bases:

@@ -19,7 +19,9 @@ from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
 from capa_simulation.design import tokens
 from capa_simulation.performance import PerformanceTrace
 
-HomeFigureCacheKey = tuple[int, int, int, int, int, str, tuple[str, ...], float, float, bool]
+# 세 번째 요소는 시나리오 내용 토큰이다. 편집 카운터(`revision`)를 쓰면 내용이 달라도
+# 번호가 겹쳐 예전 Figure 가 그대로 나온다. 계산 캐시와 같은 근거로 토큰을 쓴다.
+HomeFigureCacheKey = tuple[int, int, str, int, int, str, tuple[str, ...], float, float, bool]
 
 HomeFigureSet = tuple[Any, ...]
 
