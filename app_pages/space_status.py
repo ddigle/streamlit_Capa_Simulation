@@ -39,7 +39,6 @@ from capa_simulation.services.equipment_samples import (
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
 SELECTED_BUILDING_KEY = "space_status_selected_building"
-
 SELECTED_FLOOR_KEY = "space_status_selected_floor"
 
 

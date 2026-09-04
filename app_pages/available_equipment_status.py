@@ -53,7 +53,6 @@ from capa_simulation.services.simulation_cache import get_weekly_equipment_avail
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
 FLASH_KEY = "equipment_status_flash"
-
 BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
 EQUIPMENT_EDITOR_KEY = "equipment_master_editor_v3"
 DOWNTIME_EDITOR_KEY = "equipment_downtime_editor_v3"

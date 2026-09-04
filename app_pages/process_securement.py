@@ -63,6 +63,7 @@ TAB_NAMES = (
     "설비대수",
 )
 
+
 render_page_header(
     "공정별 확보율",
     description=("월·공정별 가용대수를 소요대수로 나눠 확보율과 B/N 공정을 판정합니다."),

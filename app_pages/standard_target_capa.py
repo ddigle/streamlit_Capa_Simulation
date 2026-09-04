@@ -65,7 +65,6 @@ from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import show_applied_month_range
 
 START_DATE_KEY = "standard_target_start_date"
-
 END_DATE_KEY = "standard_target_end_date"
 PROCESS_FILTER_KEY = STANDARD_TARGET_PROCESS_SELECTION_KEY
 SHOW_DETAIL_KEY = "standard_target_show_detail"
