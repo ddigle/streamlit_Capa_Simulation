@@ -56,6 +56,7 @@ from capa_simulation.services.weekly_availability_input import (
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
+from capa_simulation.sidebar_status import show_applied_month_range
 
 START_DATE_KEY = "standard_target_start_date"
 END_DATE_KEY = "standard_target_end_date"
@@ -455,6 +456,7 @@ try:
         "RQ_UPEH",
         empty_message="선택 범위에 표준 목표 Capa 기준정보가 없습니다.",
     )
+    show_applied_month_range(effective_start_month, effective_end_month)
     equipment_repository = get_equipment_repository(str(EQUIPMENT_DUCKDB_PATH.resolve()))
     availability = equipment_repository.load_standard_target_availability()
 except BOOTSTRAP_ERRORS as exc:

@@ -54,6 +54,7 @@ from capa_simulation.services.simulation_cache import (
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
 )
+from capa_simulation.sidebar_status import show_applied_month_range
 
 TAB_NAMES = (
     ":material/insights: 확보율",
@@ -80,6 +81,7 @@ try:
         "RQ_REQB",
         empty_message="선택 범위에 소요대수 산출 기준이 없습니다.",
     )
+    show_applied_month_range(effective_start, effective_end)
 
     monthly_table_names = (
         "RQ_REQB",

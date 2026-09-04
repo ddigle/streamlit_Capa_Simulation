@@ -11,10 +11,16 @@ def register_month_range_placeholder(placeholder: DeltaGenerator) -> None:
 
 
 def show_applied_month_range(start_month: int, end_month: int) -> None:
+    """계산에 실제로 쓰인 월 범위를 사이드바에 알린다.
+
+    사용자가 고른 범위에 데이터가 없으면 `resolve_effective_months` 가 범위를 좁힌다.
+    좁혀졌다는 사실을 알리지 않으면 화면 숫자가 왜 다른지 알 수 없다.
+    """
     if _month_range_placeholder is None:
         return
     _month_range_placeholder.caption(
-        f"✅ 적용 · {_format_short_month(start_month)}–{_format_short_month(end_month)}"
+        f":material/check_circle: 적용 · "
+        f"{_format_short_month(start_month)}–{_format_short_month(end_month)}"
     )
 
 

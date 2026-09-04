@@ -32,6 +32,7 @@ from capa_simulation.services.simulation_cache import (
     get_capacity_and_demand,
     get_securement_rate,
 )
+from capa_simulation.sidebar_status import show_applied_month_range
 
 
 def _display_shortfalls(data: pd.DataFrame, *, warning_section: bool) -> pd.DataFrame:
@@ -185,6 +186,7 @@ try:
         "RQ_REQB",
         empty_message="선택 범위에 소요대수 산출 기준이 없습니다.",
     )
+    show_applied_month_range(effective_start, effective_end)
 
     # 월 축이 있는 기준정보는 시나리오 월 슬라이스에서, 나머지는 활성 리비전에서 가져온다.
     unit_capacity, required_equipment = get_capacity_and_demand(

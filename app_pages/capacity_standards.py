@@ -57,6 +57,7 @@ from capa_simulation.services.weighted_unit_capacity import (
     WEIGHTED_CAPACITY_HIERARCHY,
     effective_process_capacity_to_month_table,
 )
+from capa_simulation.sidebar_status import show_applied_month_range
 
 TAB_NAMES = (
     ":material/insights: 공정 유효 Capa",
@@ -119,6 +120,7 @@ try:
         "RQ_UPEH",
         empty_message="선택 범위에 공정별 Capa 기준정보가 없습니다.",
     )
+    show_applied_month_range(effective_start_month, effective_end_month)
     filtered_upeh = scenario_month_table(active_scenario, "RQ_UPEH", start_month, end_month)
     filtered_run_rate = scenario_month_table(active_scenario, "RQ_RUN_RATE", start_month, end_month)
     filtered_vital = scenario_month_table(active_scenario, "RQ_VITAL", start_month, end_month)
