@@ -1,6 +1,6 @@
 # 화면 디자인 규칙
 
-마지막 갱신일: 2026-09-04
+마지막 갱신일: 2026-09-05
 
 이 문서는 색·서체·표 밀도를 어디서 정하고 어떻게 쓰는지 규정한다. 규칙이 없으면 토큰을
 만들어도 다시 갈라진다. 실제로 갈라져 있었다 — 같은 "분류 컬럼 음영"이 HOME은
@@ -18,6 +18,11 @@ src/capa_simulation/design/tokens.py   파이썬이 그리는 Plotly·Altair·CS
 Streamlit 위젯은 `config.toml`을 직접 읽지만 Plotly Figure와 주입 CSS는 읽지 않는다.
 그래서 같은 값을 `tokens.py`에 한 번 더 선언하고, **화면 코드는 토큰만 참조한다.**
 두 파일 중 하나를 고치면 다른 하나도 같은 변경에서 맞춘다.
+
+한쪽만 고치는 실수는 `tests/test_design_tokens.py`가 잡는다. `[theme]`의 색 항목과
+대응 토큰을 1:1로 비교한다. 실제로 `dataframeHeaderBackgroundColor`가 `#E4E4E7`,
+`HEADER_BACKGROUND`가 `#E4E7EB`로 갈라져 있었다. `st.dataframe` 헤더와 Plotly 표
+헤더가 서로 다른 회색이었는데 두 표를 나란히 놓기 전에는 눈에 띄지 않았다.
 
 ## 2. 지켜야 할 규칙
 

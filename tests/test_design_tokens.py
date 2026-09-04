@@ -72,3 +72,61 @@ def test_every_equipment_status_has_its_own_color() -> None:
 
     assert tuple(tokens.EQUIPMENT_STAGE_COLORS) == EQUIPMENT_STATUSES
     assert len(set(tokens.EQUIPMENT_STAGE_COLORS.values())) == len(EQUIPMENT_STATUSES)
+
+
+# `[theme]` 가 선언한 색과 1:1 로 대응하는 토큰. 두 곳이 갈라지면 Streamlit 위젯과
+# Plotly 표가 서로 다른 회색을 쓰게 되는데, 나란히 놓기 전에는 눈에 띄지 않는다.
+CONFIG_COLOR_TOKENS = {
+    "primaryColor": "ACCENT",
+    "backgroundColor": "SURFACE_PAGE",
+    "secondaryBackgroundColor": "SURFACE",
+    "textColor": "TEXT",
+    "borderColor": "BORDER",
+    "grayColor": "TEXT_MUTED",
+    "dataframeBorderColor": "BORDER",
+    "dataframeHeaderBackgroundColor": "HEADER_BACKGROUND",
+}
+
+CONFIG_FILE = PROJECT_ROOT / ".streamlit" / "config.toml"
+
+
+def _theme_colors() -> dict[str, str]:
+    """`config.toml` 의 최상위 `[theme]` 블록에서 색 항목만 읽는다.
+
+    `tomllib` 은 3.11 부터라 이 저장소의 3.10 에서는 못 쓰고, `tomli` 는 requirements 에
+    없는 전이 의존이라 기대면 안 된다. 필요한 것은 `키 = "#RRGGBB"` 한 줄뿐이다.
+    """
+    colors: dict[str, str] = {}
+    in_theme = False
+    for line in CONFIG_FILE.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            # `[theme.sidebar]` 는 사이드바 전용 하위 팔레트라 본문 토큰과 다르다.
+            in_theme = stripped == "[theme]"
+            continue
+        if not in_theme or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        match = HEX_COLOR.fullmatch(value.strip().strip('"'))
+        if match:
+            colors[key.strip()] = match.group(0)
+    return colors
+
+
+def test_tokens_match_the_theme_declared_in_config() -> None:
+    """토큰 값의 근거는 `config.toml` 이다. 한쪽만 바꾸면 화면이 조용히 갈라진다."""
+    theme = _theme_colors()
+    mismatches = [
+        f"{key}={theme[key]} vs tokens.{name}={getattr(tokens, name)}"
+        for key, name in CONFIG_COLOR_TOKENS.items()
+        if key in theme and theme[key].upper() != getattr(tokens, name).upper()
+    ]
+
+    assert not mismatches, "config.toml 과 tokens.py 가 갈라졌습니다:\n" + "\n".join(mismatches)
+
+
+def test_every_mapped_theme_key_exists_in_config() -> None:
+    """대응표가 낡으면 검사가 조용히 통과한다. 키 자체가 남아 있는지도 본다."""
+    theme = _theme_colors()
+
+    assert not [key for key in CONFIG_COLOR_TOKENS if key not in theme]
