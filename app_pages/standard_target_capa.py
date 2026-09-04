@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from calendar import monthrange
-from collections.abc import Sequence
 from datetime import date
 from math import isfinite
 from typing import cast
@@ -83,6 +82,8 @@ OUTPUT_METRICS = {
     "가용대수": 1,
 }
 OUTPUT_OPTIONS = [*OUTPUT_METRICS, "로직 분석"]
+# 주차별 가용대수를 곱해 구하는 지표. 가용대수 입력이 없으면 이 둘만 빈칸이 된다.
+AVAILABILITY_BASED_METRICS = frozenset({"일 표준 가능량", "가용대수"})
 LOGIC_FILTER_KEYS = {
     "Weeknum": "standard_target_logic_weeknum",
     "공정": "standard_target_logic_process",
@@ -415,31 +416,6 @@ def _render_logic_analysis(
     )
 
 
-def _warn_about_processes_without_availability(
-    availability: pd.DataFrame,
-    target_processes: Sequence[str],
-) -> None:
-    """가용대수를 입력하지 않아 값이 비는 공정을 알린다.
-
-    일 표준 가능량은 주차별 가용대수를 곱해 구하므로 입력이 없는 공정은 행이 통째로
-    빈다. 화면에는 빈 칸만 남아 계산이 실패한 것인지 입력이 없는 것인지 구분되지 않았다.
-    """
-    if availability.empty or not target_processes:
-        return
-    entered = set(availability["공정"].astype(str))
-    missing = [process for process in target_processes if process not in entered]
-    if not missing:
-        return
-    preview = " · ".join(missing[:5])
-    if len(missing) > 5:
-        preview += f" 외 {len(missing) - 5}개"
-    st.info(
-        f"가용대수를 입력한 {len(target_processes) - len(missing)} / {len(target_processes)}개 "
-        f"공정만 값이 나옵니다. 비어 있는 공정: {preview}",
-        icon=":material/info:",
-    )
-
-
 def _render_standard_target_exceptions(excluded_row_count: int) -> None:
     with st.expander("예외 처리 공정", expanded=False):
         st.caption(
@@ -749,13 +725,17 @@ else:
         .drop_duplicates()
         .reset_index(drop=True)
     )
-    if not missing_availability.empty:
-        st.warning(
-            f"선택 범위의 공정·주차 중 {len(missing_availability):,}건에 가용대수가 없어 "
-            "결과를 빈칸으로 표시합니다."
-        )
-        with st.expander("누락 공정·주차 확인", expanded=False):
-            st.dataframe(missing_availability, hide_index=True, width="stretch")
+    # 가용대수를 곱해 구하는 지표에서만 뜻이 있다. 대당 일 Capa 는 가용대수 이전 단계라
+    # 입력이 없어도 값이 다 나오는데, 여기서 함께 경고하면 없는 문제를 알리는 셈이 된다.
+    # 표에서 멀리 떨어져 있으면 빈칸을 보고도 이 안내를 못 찾으므로 결과 상자 안에 넣는다.
+    if not missing_availability.empty and output_metric in AVAILABILITY_BASED_METRICS:
+        with weekly_output_container:
+            st.warning(
+                f"선택 범위의 공정·주차 중 {len(missing_availability):,}건에 가용대수가 없어 "
+                "결과를 빈칸으로 표시합니다."
+            )
+            with st.expander("누락 공정·주차 확인", expanded=False):
+                st.dataframe(missing_availability, hide_index=True, width="stretch")
 
     classification_columns = [
         "공정",
@@ -838,7 +818,6 @@ else:
             "월 경계 주차는 월요일이 속한 달의 기준을 적용합니다."
         )
         st.caption(calculation_caption)
-        _warn_about_processes_without_availability(availability, target_processes)
         render_hierarchical_monthly_table(
             output_table,
             classification_columns=classification_columns,
