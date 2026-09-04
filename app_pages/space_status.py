@@ -8,6 +8,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.space_layout import (
     BUILDINGS,
     build_fab_figure,
@@ -83,10 +84,12 @@ if not isinstance(selected_floor, str) or selected_floor not in valid_floor_name
     selected_floor = None
     st.session_state.pop(SELECTED_FLOOR_KEY, None)
 
-st.title("Space 현황 (구현중)")
-st.caption(
-    "가용설비 현황과 동일한 설비 전용 DuckDB 리비전에서 호기 생애주기·비가동 상태와 "
-    "Space 좌표를 조회합니다."
+render_page_header(
+    "Space 현황 (구현중)",
+    description=(
+        "가용설비 현황과 동일한 설비 전용 DuckDB 리비전에서 호기 생애주기·비가동 상태와 "
+        "Space 좌표를 조회합니다."
+    ),
 )
 if using_sample_equipment:
     st.info(

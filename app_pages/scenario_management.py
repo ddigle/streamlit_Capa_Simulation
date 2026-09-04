@@ -10,12 +10,15 @@ from capa_simulation.components.bigdataquery_registration import (
 from capa_simulation.components.display_order_management import (
     render_display_order_management,
 )
+from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.scenario_management import render_scenario_management
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.settings import DUCKDB_PATH
 
-st.title("시나리오 관리")
-st.caption("DuckDB 시나리오·리비전·공식버전과 웹 표시순서를 관리합니다.")
+render_page_header(
+    "시나리오 관리",
+    description="DuckDB 시나리오·리비전·공식버전과 웹 표시순서를 관리합니다.",
+)
 
 try:
     database_path = str(DUCKDB_PATH.resolve())

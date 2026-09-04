@@ -9,6 +9,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.page_header import render_page_header
 from capa_simulation.design import tokens
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_snapshot_cache,
@@ -133,10 +134,12 @@ def _qual_status_scale() -> alt.Scale:
     )
 
 
-st.title("가용설비 현황 (구현중)")
-st.caption(
-    "기존 보유대수와 30개 컬럼 호기 마스터, 운영 비가동 일정을 설비 전용 DuckDB "
-    "불변 리비전으로 관리합니다."
+render_page_header(
+    "가용설비 현황 (구현중)",
+    description=(
+        "기존 보유대수와 30개 컬럼 호기 마스터, 운영 비가동 일정을 설비 전용 DuckDB "
+        "불변 리비전으로 관리합니다."
+    ),
 )
 flash = st.session_state.pop(FLASH_KEY, None)
 if isinstance(flash, str):

@@ -5,6 +5,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.roadmap_panel import render_roadmap_panel
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     load_page_context,
@@ -95,25 +97,28 @@ def _render_shortfall_table(data: pd.DataFrame, *, warning_section: bool, key: s
     )
 
 
-st.title("Static Capa")
-st.caption("생산계획과 투자 기준정보를 기반으로 미래 구간의 Capa 과부족을 판단합니다.")
+render_page_header(
+    "Static Capa",
+    description="생산계획과 투자 기준정보를 기반으로 미래 구간의 Capa 과부족을 판단합니다.",
+)
 
-with st.container(border=True):
-    st.markdown("#### :material/route: 업무 활용 목적 및 로드맵")
-    st.caption(
+render_roadmap_panel(
+    purpose=(
         "Capa 기준정보(투자 기준)로 부족대수를 산출한 뒤 Total 대수와 가용 일정을 분리해 "
         "투자 또는 실행 Action Item으로 연결합니다."
-    )
-    with st.container(horizontal=True, gap="small"):
-        with st.container(border=True):
-            st.markdown("**GO팀 · 투자 판단**")
-            st.write("Total 설비가 부족한 공정은 산출 부족대수를 투자 검토 기준으로 활용")
-        with st.container(border=True):
-            st.markdown("**기술팀 · 실행 개선**")
-            st.write(
-                "투자는 완료됐지만 가용 일정이 부족하면 Setup 단축·생산성 향상 A/Item으로 전환"
-            )
-    st.caption("로드맵 · 부족대수 모니터링 → Total/가용 일정 분리 → 부서별 A/Item 및 이력 관리")
+    ),
+    owners=(
+        (
+            "GO팀 · 투자 판단",
+            "Total 설비가 부족한 공정은 산출 부족대수를 투자 검토 기준으로 활용",
+        ),
+        (
+            "기술팀 · 실행 개선",
+            "투자는 완료됐지만 가용 일정이 부족하면 Setup 단축·생산성 향상 A/Item으로 전환",
+        ),
+    ),
+    roadmap="부족대수 모니터링 → Total/가용 일정 분리 → 부서별 A/Item 및 이력 관리",
+)
 
 st.subheader("확보율 기준 설비 부족 현황", divider="gray")
 st.caption("월·공정별 가용대수 ÷ 소요대수를 기준으로 최소 추가 설비대수를 정수 올림합니다.")

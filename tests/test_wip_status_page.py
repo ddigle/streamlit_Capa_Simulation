@@ -159,7 +159,9 @@ def test_wip_status_page_renders_filtered_step_product_grid() -> None:
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert app.title[0].value == "표준 대비 재공 현황 (구현중)"
+    # 공통 헤더가 `(구현중)` 을 제목에서 떼어 배지로 보여준다.
+    assert app.title[0].value == "표준 대비 재공 현황"
+    assert any("구현중" in element.value for element in app.markdown)
     assert [widget.label for widget in app.multiselect] == ["공정", "제품"]
     assert app.multiselect[0].options == ["P-Process", "T-Process"]
     assert app.multiselect[1].options == ["Product-B", "Product-A"]

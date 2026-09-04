@@ -2,10 +2,14 @@
 
 import streamlit as st
 
-st.title("Capa Chatbot (구현중)")
-st.caption(
-    "활성 시나리오의 Capa 데이터와 계산 결과를 근거로 데이터 조회, 부족 공정 파악과 "
-    "원인 탐색을 지원하는 대화형 분석 화면입니다."
+from capa_simulation.components.page_header import render_page_header
+
+render_page_header(
+    "Capa Chatbot (구현중)",
+    description=(
+        "활성 시나리오의 Capa 데이터와 계산 결과를 근거로 데이터 조회, 부족 공정 파악과 "
+        "원인 탐색을 지원하는 대화형 분석 화면입니다."
+    ),
 )
 st.markdown(":gray-badge[화면 초안] :blue-badge[LLM·Capa 데이터 미연결]")
 

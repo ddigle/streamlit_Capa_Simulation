@@ -24,7 +24,9 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     ).run()
 
     assert not app.exception
-    assert app.title[0].value == "가용설비 현황 (구현중)"
+    # 공통 헤더가 `(구현중)` 을 제목에서 떼어 배지로 보여준다.
+    assert app.title[0].value == "가용설비 현황"
+    assert any("구현중" in element.value for element in app.markdown)
     assert [tab.label for tab in app.tabs] == ["대시보드", "설비 데이터·이력 관리"]
     assert [widget.label for widget in app.multiselect[:4]] == [
         "라인구분",
@@ -50,4 +52,5 @@ def test_space_page_opens_with_empty_database(tmp_path: Path) -> None:
     ).run()
 
     assert not app.exception
-    assert app.title[0].value == "Space 현황 (구현중)"
+    assert app.title[0].value == "Space 현황"
+    assert any("구현중" in element.value for element in app.markdown)

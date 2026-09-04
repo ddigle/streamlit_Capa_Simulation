@@ -3,6 +3,8 @@
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.page_header import render_page_header
+
 PROCESS_PRIORITY_COLUMNS = {
     "우선순위": pd.Series(dtype="Int64"),
     "공정": pd.Series(dtype="string"),
@@ -36,10 +38,12 @@ ACTION_COLUMNS = {
 }
 
 
-st.title("UPEH 실적 (구현중)")
-st.caption(
-    "생산이력 DB의 공정·제품별 UPEH 실적을 Capa 기준정보와 비교하고, "
-    "개선 필요항목과 조치 진행상태를 관리하는 화면입니다."
+render_page_header(
+    "UPEH 실적 (구현중)",
+    description=(
+        "생산이력 DB의 공정·제품별 UPEH 실적을 Capa 기준정보와 비교하고, "
+        "개선 필요항목과 조치 진행상태를 관리하는 화면입니다."
+    ),
 )
 st.markdown(":gray-badge[화면 초안] :blue-badge[데이터 미연결]")
 st.info(

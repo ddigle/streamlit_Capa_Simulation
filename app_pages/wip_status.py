@@ -7,6 +7,7 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
 from capa_simulation.components.wip_status_dashboard import (
     WIP_GRID_CELL_WIDTH_PX,
@@ -69,10 +70,12 @@ def _products_in_display_order(
     return ordered["제품정보"].astype(str).tolist()
 
 
-st.title("표준 대비 재공 현황 (구현중)")
-st.caption(
-    "공정·제품·STEP별 보유 재공, 유입과 Flow를 일 표준 가능량과 비교합니다. "
-    "가로는 STEP 순서, 세로는 제품 표시순서이며 각 셀은 동일한 11일 구간을 표시합니다."
+render_page_header(
+    "표준 대비 재공 현황 (구현중)",
+    description=(
+        "공정·제품·STEP별 보유 재공, 유입과 Flow를 일 표준 가능량과 비교합니다. "
+        "가로는 STEP 순서, 세로는 제품 표시순서이며 각 셀은 동일한 11일 구간을 표시합니다."
+    ),
 )
 st.info(
     "현재 재공 값은 화면·연결 계약 검토용 결정론적 샘플입니다. 실제 재공 실적 DB의 "

@@ -76,8 +76,23 @@ def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:
     """
     for spec in (CAPA_CHATBOT, DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES):
         assert spec.title.endswith(IMPLEMENTING_SUFFIX), spec.path
-        body = (PROJECT_ROOT / spec.path).read_text(encoding="utf-8")
-        assert f'st.title("{spec.title}")' in body, spec.path
+        # 본문은 공통 헤더가 그린다. 제목 문자열이 사이드바와 같아야 한다는 계약은 같다.
+        # 서식(한 줄/여러 줄)에 흔들리지 않도록 AST 로 첫 인자를 읽는다.
+        assert _page_header_title(PROJECT_ROOT / spec.path) == spec.title, spec.path
+
+
+def _page_header_title(page_path: Path) -> str | None:
+    tree = ast.parse(page_path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "render_page_header"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+        ):
+            return str(node.args[0].value)
+    return None
 
 
 def test_navigation_hides_the_builtin_sidebar_widget() -> None:

@@ -15,6 +15,7 @@ from capa_simulation.components.hierarchical_monthly_table import (
     render_hierarchical_monthly_table,
 )
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
+from capa_simulation.components.page_header import render_page_header
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     load_page_context,
@@ -432,10 +433,12 @@ def _render_standard_target_exceptions(excluded_row_count: int) -> None:
         )
 
 
-st.title("표준 목표 Capa")
-st.caption(
-    "공정·제품 분류별 월간 부하 Mix를 반영한 공정 유효 Capa를 일 단위로 환산하고, "
-    "주차별 가용설비를 곱해 투입 Unit 기준의 일 표준 가능량을 산출합니다."
+render_page_header(
+    "표준 목표 Capa",
+    description=(
+        "공정·제품 분류별 월간 부하 Mix를 반영한 공정 유효 Capa를 일 단위로 환산하고, "
+        "주차별 가용설비를 곱해 투입 Unit 기준의 일 표준 가능량을 산출합니다."
+    ),
 )
 
 try:

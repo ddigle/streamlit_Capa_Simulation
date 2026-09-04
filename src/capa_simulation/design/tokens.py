@@ -17,16 +17,21 @@ from typing import Final
 
 # ---------------------------------------------------------------- 면과 텍스트
 # config.toml [theme] 와 1:1 대응한다.
-SURFACE: Final = "#FFFFFF"  # backgroundColor
-SURFACE_SUBTLE: Final = "#FAFAFA"
-SURFACE_CLASSIFICATION: Final = "#F4F4F5"  # secondaryBackgroundColor
-SURFACE_CLASSIFICATION_GROUP: Final = "#EAEBED"
-HEADER_BACKGROUND: Final = "#E4E4E7"  # dataframeHeaderBackgroundColor
-BORDER: Final = "#D4D4D8"  # borderColor
-BORDER_STRONG: Final = "#A1A1AA"
+# 페이지 바탕을 살짝 눌러(`#F7F8FA`) 표와 카드의 흰 면이 떠 보이게 한다. 밀도 높은
+# 화면에서 어디까지가 한 덩어리인지 테두리에만 의존하지 않고 읽히게 하려는 것이다.
+SURFACE: Final = "#FFFFFF"  # 표·카드 면. secondaryBackgroundColor
+SURFACE_PAGE: Final = "#F7F8FA"  # backgroundColor. 카드가 뜨는 바탕
+SURFACE_SUBTLE: Final = "#FAFAFB"
+SURFACE_CLASSIFICATION: Final = "#F1F3F6"
+SURFACE_CLASSIFICATION_GROUP: Final = "#E5E8EC"
+HEADER_BACKGROUND: Final = "#E4E7EB"  # dataframeHeaderBackgroundColor
+BORDER: Final = "#DDE0E5"  # borderColor
+BORDER_STRONG: Final = "#A3A9B2"
 TEXT: Final = "#18181B"  # textColor
-TEXT_MUTED: Final = "#71717A"  # grayColor
-LINE: Final = "#3F3F46"  # primaryColor
+TEXT_MUTED: Final = "#646973"  # grayColor
+LINE: Final = "#3F3F46"  # 표 격자·계열선. 강조색과 역할이 다르다
+ACCENT: Final = "#0F766E"  # primaryColor. 버튼·포커스 등 상호작용 표시
+ACCENT_SUBTLE: Final = "#E6F2F0"
 
 # ------------------------------------------------------------------- 부분합 면
 # 환산 결과표의 제품 Total → 양산구분 Total → 전체 합계로 갈수록 짙어진다.

@@ -10,6 +10,7 @@ from capa_simulation.components.hierarchical_monthly_table import (
 )
 from capa_simulation.components.month_editor import render_month_editor
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
+from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
 )
@@ -90,7 +91,12 @@ CAPACITY_LEVEL_LABELS = {
 }
 
 
-st.title("공정별 Capa")
+render_page_header(
+    "공정별 Capa",
+    description=(
+        "경로별 대당 Capa와 공정 유효 Capa를 산출하고, 계산에 쓰는 기준정보를 월별로 편집합니다."
+    ),
+)
 
 tabs = st.tabs(
     TAB_NAMES,

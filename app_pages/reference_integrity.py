@@ -13,6 +13,8 @@ from capa_simulation.components.dynamic_capacity_dashboard import (
     build_capacity_waterfall_figure,
     build_process_comparison_figure,
 )
+from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.roadmap_panel import render_roadmap_panel
 from capa_simulation.services.dynamic_capacity import (
     aggregate_dynamic_capacity,
     build_dynamic_capacity_demo,
@@ -28,24 +30,29 @@ def _clear_invalid_widget_value(key: str, options: list[str]) -> None:
         del st.session_state[key]
 
 
-st.title("Dynamic Capa (구현중)")
-st.caption(
-    "표준 Capa와 실적 효율·UPEH·생산실적을 연결해 Capa 손실 원인과 개선 우선순위를 분석합니다."
+render_page_header(
+    "Dynamic Capa (구현중)",
+    description=(
+        "표준 Capa와 실적 효율·UPEH·생산실적을 연결해 Capa 손실 원인과 개선 우선순위를 분석합니다."
+    ),
 )
-with st.container(border=True):
-    st.markdown("#### :material/route: 업무 활용 목적 및 로드맵")
-    st.caption(
+render_roadmap_panel(
+    purpose=(
         "실적 DB를 표준 Capa와 연결해 가용 Capa 활용 손실과 설비 성능 손실을 분리하고 "
         "담당 부서별 Action Item으로 전환합니다."
-    )
-    with st.container(horizontal=True, gap="small"):
-        with st.container(border=True):
-            st.markdown("**제조팀 · Capa 활용 극대화**")
-            st.write("Rundown을 줄이기 위한 재공운영 A/Item으로 가용 Capa 활용률 개선")
-        with st.container(border=True):
-            st.markdown("**기술팀 · 설비성능 극대화**")
-            st.write("UPEH·효율 실적 Gap을 근거로 설비 성능 실현률 개선 항목을 우선 관리")
-    st.caption("로드맵 · 실적 DB 연결 → 손실 원인 분해 → 부서별 A/Item → 개선 효과 이력 관리")
+    ),
+    owners=(
+        (
+            "제조팀 · Capa 활용 극대화",
+            "Rundown을 줄이기 위한 재공운영 A/Item으로 가용 Capa 활용률 개선",
+        ),
+        (
+            "기술팀 · 설비성능 극대화",
+            "UPEH·효율 실적 Gap을 근거로 설비 성능 실현률 개선 항목을 우선 관리",
+        ),
+    ),
+    roadmap="실적 DB 연결 → 손실 원인 분해 → 부서별 A/Item → 개선 효과 이력 관리",
+)
 
 st.markdown(":green-badge[인터랙티브 프로토타입] :orange-badge[실적 DB 미연결]")
 st.info(

@@ -17,6 +17,7 @@ from capa_simulation.components.home_rendering import (
     render_home_performance,
     store_home_figures,
 )
+from capa_simulation.components.page_header import render_page_header
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -57,7 +58,7 @@ def selected_month_range() -> tuple[int, int]:
     return int(start_label.replace("-", "")), int(end_label.replace("-", ""))
 
 
-st.title(APP_NAME)
+render_page_header(APP_NAME)
 show_home_details = st.toggle(
     "계획·B/N 상세표 표시",
     value=False,

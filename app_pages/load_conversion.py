@@ -10,6 +10,7 @@ from capa_simulation.components.grouped_monthly_table import (
     render_grouped_monthly_table,
 )
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
+from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
     render_reference_clipboard_tools,
@@ -51,7 +52,13 @@ from capa_simulation.services.virtual_product import (
 
 PRODUCT_COLUMN_WIDTH_PX = 100
 
-st.title("부하량")
+render_page_header(
+    "부하량",
+    description=(
+        "월별 PKG 생산계획을 Chip·Wafer·Density 부하량으로 환산합니다. "
+        "계획과 수율을 편집하면 다른 페이지의 산출값이 함께 바뀝니다."
+    ),
+)
 
 
 try:

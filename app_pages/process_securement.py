@@ -8,6 +8,7 @@ from capa_simulation.components.hierarchical_monthly_table import (
     render_hierarchical_monthly_table,
 )
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
+from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
     render_reference_clipboard_tools,
@@ -56,7 +57,10 @@ from capa_simulation.services.unit_capacity import (
 TAB_NAMES = ("📊 확보율", "📊 소요대수", "설비대수")
 
 
-st.title("공정별 확보율")
+render_page_header(
+    "공정별 확보율",
+    description=("월·공정별 가용대수를 소요대수로 나눠 확보율과 B/N 공정을 판정합니다."),
+)
 availability_tab, required_tab, equipment_tab = st.tabs(TAB_NAMES)
 
 try:
