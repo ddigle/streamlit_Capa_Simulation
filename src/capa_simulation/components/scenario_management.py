@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import cast
 
 import pandas as pd
 import streamlit as st
@@ -31,9 +32,14 @@ from capa_simulation.scenario_preset_state import (
     capture_full_data_scenario_preset,
     capture_scenario_preset,
 )
-from capa_simulation.scenario_state import ActiveScenario, ensure_active_scenario
+from capa_simulation.scenario_state import (
+    ActiveScenario,
+    ensure_active_scenario,
+    session_virtual_products,
+)
 from capa_simulation.services.builtin_seed import BUILTIN_SEED_SOURCE_CODE
 from capa_simulation.services.core_data_pipeline import fetch_core_data_dataset
+from capa_simulation.services.virtual_product import VirtualProductRecord
 from capa_simulation.settings import CORE_DATA_CSV_PATH
 
 CLONE_PIPELINE_VERSION = "duckdb-rq-snapshot-v3"
@@ -355,12 +361,28 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
             revision_name=revision_name,
             parent_revision_id=active_persisted_revision_id(),
             note=note.strip() or None,
+            virtual_products=[
+                {
+                    "product": record.product,
+                    "stack": record.stack,
+                    "source_product": record.source_product,
+                    "source_stack": record.source_stack,
+                }
+                for record in cast(tuple[VirtualProductRecord, ...], session_virtual_products())
+            ],
         )
     except (KeyError, TypeError, ValueError) as exc:
         st.error(str(exc))
     else:
+        virtual_count = len(session_virtual_products())
         activate_persisted_snapshot(snapshot)
-        st.session_state[FLASH_KEY] = f"새 리비전 r{snapshot.revision.revision_no}을 저장했습니다."
+        message = f"새 리비전 r{snapshot.revision.revision_no}을 저장했습니다."
+        if virtual_count:
+            message += (
+                f" 가상 제품 {virtual_count}건이 포함되어 있습니다. "
+                "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
+            )
+        st.session_state[FLASH_KEY] = message
         st.rerun()
 
 

@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -385,6 +385,7 @@ class DuckDBScenarioRepository:
         revision_name: str,
         parent_revision_id: str | None = None,
         note: str | None = None,
+        virtual_products: Sequence[Mapping[str, str]] = (),
     ) -> ScenarioSnapshot:
         require_tables(revision_tables, tuple(REVISION_TABLES), "리비전")
         revision_label = required_text(revision_name, "리비전명")
@@ -437,6 +438,7 @@ class DuckDBScenarioRepository:
                 reference_hash=reference_hash,
                 revision_tables=revision_tables,
                 preset=preset,
+                virtual_products=virtual_products,
             )
             connection.execute(
                 """
@@ -688,6 +690,7 @@ class DuckDBScenarioRepository:
         reference_hash: str,
         revision_tables: Mapping[str, pd.DataFrame],
         preset: ScenarioPreset,
+        virtual_products: Sequence[Mapping[str, str]] = (),
     ) -> None:
         connection.execute(
             """
@@ -718,6 +721,38 @@ class DuckDBScenarioRepository:
                 logical_name=logical_name,
             )
         insert_preset(connection, revision_id, preset)
+        # 가상 제품은 실적과 대조할 수 없다. 어떤 제품이 어느 원본에서 복제됐는지
+        # 리비전에 남겨야 공식버전 발행 시 확인할 수 있다.
+        for record in virtual_products:
+            connection.execute(
+                """
+                INSERT INTO app_meta.revision_virtual_product (
+                    revision_id, "제품정보", "Stack", source_product, source_stack
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    revision_id,
+                    record["product"],
+                    record["stack"],
+                    record["source_product"],
+                    record["source_stack"],
+                ],
+            )
+
+    def list_virtual_products(self, revision_id: str) -> pd.DataFrame:
+        """리비전에 기록된 가상 제품 목록을 돌려준다. 공식버전 발행 전 확인용이다."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT "제품정보", "Stack", source_product, source_stack
+                FROM app_meta.revision_virtual_product
+                WHERE revision_id = ?
+                ORDER BY "제품정보", "Stack"
+                """,
+                [revision_id],
+            ).fetchall()
+        return pd.DataFrame(rows, columns=["제품정보", "Stack", "원본 제품정보", "원본 Stack"])
 
     @contextmanager
     def _write_transaction(self) -> Iterator[duckdb.DuckDBPyConnection]:

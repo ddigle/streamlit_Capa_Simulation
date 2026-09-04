@@ -149,3 +149,39 @@ def _existing_product_keys(tables: Mapping[str, pd.DataFrame]) -> set[tuple[str,
             for product, stack in zip(frame["제품정보"], frame["Stack"], strict=True)
         }
     return keys
+
+
+@dataclass(frozen=True)
+class VirtualProductRecord:
+    """리비전에 기록할 가상 제품 한 건."""
+
+    product: str
+    stack: str
+    source_product: str
+    source_stack: str
+
+    @classmethod
+    def from_request(cls, request: VirtualProductRequest) -> VirtualProductRecord:
+        normalized = request.normalized()
+        return cls(
+            product=normalized.product,
+            stack=normalized.stack,
+            source_product=normalized.source_product,
+            source_stack=normalized.source_stack,
+        )
+
+
+def records_to_frame(records: tuple[VirtualProductRecord, ...]) -> pd.DataFrame:
+    """가상 제품 목록을 화면과 저장에 쓸 표로 만든다."""
+    return pd.DataFrame(
+        [
+            {
+                "제품정보": record.product,
+                "Stack": record.stack,
+                "원본 제품정보": record.source_product,
+                "원본 Stack": record.source_stack,
+            }
+            for record in records
+        ],
+        columns=["제품정보", "Stack", "원본 제품정보", "원본 Stack"],
+    )

@@ -1,5 +1,7 @@
 # Purpose: PKG PLAN과 수율을 편집하고 PKG·Chip·Wafer·Density 부하량 환산 결과를 제공한다.
 
+from typing import cast
+
 import pandas as pd
 import streamlit as st
 
@@ -21,9 +23,11 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.scenario_state import (
     apply_month_updates,
     apply_table_updates,
+    remember_virtual_product,
     reset_active_scenario,
     scenario_month_table,
     scenario_table,
+    session_virtual_products,
 )
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
@@ -38,9 +42,11 @@ from capa_simulation.services.load_calculator import (
 )
 from capa_simulation.services.simulation_cache import get_monthly_volume
 from capa_simulation.services.virtual_product import (
+    VirtualProductRecord,
     VirtualProductRequest,
     available_source_products,
     clone_product,
+    records_to_frame,
 )
 
 PRODUCT_COLUMN_WIDTH_PX = 100
@@ -281,6 +287,7 @@ with product_tab:
                 st.error(str(exc))
             else:
                 apply_table_updates(active_scenario, updates)
+                remember_virtual_product(VirtualProductRecord.from_request(request))
                 st.session_state.pop(plan_staged_key, None)
                 st.session_state.pop(source_token_key, None)
                 st.session_state[product_registered_flash_key] = (
@@ -294,6 +301,16 @@ with product_tab:
             "가상 제품은 실적과 대조할 수 없습니다. 리비전을 저장해 공식버전으로 발행할 "
             "때 포함 여부를 확인하세요."
         )
+
+    registered_records = session_virtual_products()
+    if registered_records:
+        st.markdown("#### 이 세션에서 등록한 가상 제품")
+        st.dataframe(
+            records_to_frame(cast(tuple[VirtualProductRecord, ...], registered_records)),
+            hide_index=True,
+            width="content",
+        )
+        st.caption("리비전을 저장하면 이 목록이 함께 기록되어 공식버전 발행 시 확인할 수 있습니다.")
 
 with yield_tab:
     st.caption(

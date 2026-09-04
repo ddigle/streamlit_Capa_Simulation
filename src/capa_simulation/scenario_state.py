@@ -9,6 +9,9 @@ import pandas as pd
 import streamlit as st
 
 ACTIVE_SCENARIO_KEY = "active_scenario"
+# 이 세션에서 복제 등록한 가상 제품 목록. 리비전을 저장할 때 함께 기록해
+# 공식버전 발행 시 실적과 대조할 수 없는 데이터가 섞였는지 알 수 있게 한다.
+VIRTUAL_PRODUCTS_KEY = "session_virtual_products"
 EDITABLE_SCENARIO_TABLES = (
     "RQ_PKG_PLAN",
     "RQ_YLD",
@@ -81,7 +84,25 @@ def reset_active_scenario(
         },
     }
     st.session_state[ACTIVE_SCENARIO_KEY] = scenario
+    # 시나리오 자체가 바뀌므로 이 세션의 가상 제품 등록 이력도 함께 버린다.
+    clear_virtual_products()
     return scenario
+
+
+def session_virtual_products() -> tuple[object, ...]:
+    """이 세션이 복제 등록한 가상 제품 목록을 돌려준다."""
+    saved = st.session_state.get(VIRTUAL_PRODUCTS_KEY)
+    return tuple(saved) if isinstance(saved, tuple | list) else ()
+
+
+def remember_virtual_product(record: object) -> None:
+    """복제 등록 한 건을 세션 목록에 더한다."""
+    st.session_state[VIRTUAL_PRODUCTS_KEY] = (*session_virtual_products(), record)
+
+
+def clear_virtual_products() -> None:
+    """시나리오를 원본이나 저장 리비전으로 갈아끼울 때 목록을 비운다."""
+    st.session_state.pop(VIRTUAL_PRODUCTS_KEY, None)
 
 
 def clear_active_scenario() -> None:
@@ -107,6 +128,8 @@ def activate_scenario_tables(
         },
     }
     st.session_state[ACTIVE_SCENARIO_KEY] = scenario
+    # 시나리오 자체가 바뀌므로 이 세션의 가상 제품 등록 이력도 함께 버린다.
+    clear_virtual_products()
     return scenario
 
 

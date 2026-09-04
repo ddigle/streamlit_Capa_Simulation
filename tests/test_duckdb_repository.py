@@ -18,7 +18,7 @@ from capa_simulation.persistence.cache import (
     clear_scenario_repository,
     load_scenario_snapshot,
 )
-from capa_simulation.persistence.repository import REFERENCE_TABLES
+from capa_simulation.persistence.repository import REFERENCE_TABLES, REVISION_TABLES
 from capa_simulation.services.reference_transformer import build_reference_tables
 
 
@@ -673,3 +673,39 @@ def test_same_simulation_code_can_be_physically_copied_when_raw_is_identical(
 
     assert copied.scenario.scenario_name == "Second"
     assert len(repository.list_scenarios()) == 2
+
+
+def test_revision_records_virtual_products(tmp_path: Path) -> None:
+    """저장한 리비전이 가상 제품 목록을 그대로 돌려줘야 공식버전 발행 때 확인할 수 있다.
+
+    가상 제품은 기존 제품을 복제해 만든 것이라 실적과 대조할 수 없다. 어떤 제품이
+    어느 원본에서 나왔는지 리비전에 남겨야 발행 전에 걸러낼 수 있다.
+    """
+    repository = _repository(tmp_path / "scenario.duckdb")
+    preset = ScenarioPreset(
+        start_month=202608,
+        end_month=202608,
+        included_processes=("Process-A",),
+        standard_target_processes=("Process-A",),
+    )
+    created = repository.create_scenario(_metadata(), _reference_tables(), preset)
+
+    saved = repository.save_revision(
+        created.scenario.scenario_id,
+        {name: created.tables[name] for name in REVISION_TABLES},
+        preset,
+        revision_name="가상 제품 포함",
+        virtual_products=[
+            {
+                "product": "DEMO_NEW",
+                "stack": "8H",
+                "source_product": "Product-A",
+                "source_stack": "8H",
+            }
+        ],
+    )
+
+    recorded = repository.list_virtual_products(saved.revision.revision_id)
+    assert recorded["제품정보"].tolist() == ["DEMO_NEW"]
+    assert recorded["원본 제품정보"].tolist() == ["Product-A"]
+    assert repository.list_virtual_products(created.revision.revision_id).empty
