@@ -8,6 +8,7 @@
 `on_click="ignore"` 가 빠져 내려받을 때마다 페이지가 통째로 다시 계산됐다.
 """
 
+import re
 from pathlib import Path
 
 from capa_simulation.components.table_toolbar import CSV_MIME, DOWNLOAD_ICON
@@ -52,3 +53,25 @@ def test_download_icon_is_not_inlined_in_labels() -> None:
 def test_csv_mime_declares_the_charset() -> None:
     """내보내는 바이트는 전부 `utf-8-sig` 다. charset 을 빼면 Excel 밖에서 한글이 깨진다."""
     assert CSV_MIME == "text/csv;charset=utf-8"
+
+
+BUTTON_LABEL_ICON = re.compile(
+    r"st\.(?:button|form_submit_button)\(\s*\"?:material/",
+    re.MULTILINE,
+)
+
+
+def test_button_icons_use_the_icon_argument() -> None:
+    """버튼 라벨에 아이콘을 섞으면 `icon=` 을 쓴 버튼과 간격·크기가 달라진다.
+
+    라벨에 넣은 것은 본문 글자와 같은 흐름으로 그려지고, `icon=` 은 별도 아이콘 자리에
+    놓인다. 두 표기가 섞여 있어 같은 화면의 버튼끼리 아이콘 위치가 어긋났다.
+    `st.tabs` 처럼 `icon=` 이 없는 위젯은 라벨에 넣는 수밖에 없으므로 검사하지 않는다.
+    """
+    offenders = [
+        path.relative_to(PROJECT_ROOT).as_posix()
+        for path in [*_sources(), OWNER]
+        if BUTTON_LABEL_ICON.search(path.read_text(encoding="utf-8"))
+    ]
+
+    assert not offenders, f"라벨 대신 st.button(icon=...) 을 쓰세요: {offenders}"

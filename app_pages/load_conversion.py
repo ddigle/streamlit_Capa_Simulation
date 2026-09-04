@@ -190,7 +190,8 @@ with pkg_plan_tab:
     )
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         apply_plan = st.button(
-            ":material/check: PKG PLAN 변경사항 적용",
+            "PKG PLAN 변경사항 적용",
+            icon=":material/check:",
             key="apply_pkg_plan_changes",
             type="primary",
         )
@@ -278,7 +279,7 @@ with product_tab:
                     key="virtual_product_stack",
                 )
             registered = st.form_submit_button(
-                ":material/library_add: 가상 제품 등록", type="primary"
+                "가상 제품 등록", icon=":material/library_add:", type="primary"
             )
         if registered:
             source_row = source_candidates.iloc[selected_source]
@@ -365,7 +366,8 @@ with yield_tab:
         },
     )
     apply_yield = st.button(
-        ":material/check: 수율 변경사항 적용",
+        "수율 변경사항 적용",
+        icon=":material/check:",
         key="apply_yield_changes",
         type="primary",
     )

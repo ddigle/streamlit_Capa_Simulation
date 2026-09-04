@@ -48,7 +48,8 @@ def render_reference_clipboard_tools(
                 placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
             )
             submitted = st.form_submit_button(
-                ":material/content_paste: 붙여넣기 일괄 적용",
+                "붙여넣기 일괄 적용",
+                icon=":material/content_paste:",
                 type="primary",
             )
         if not submitted:

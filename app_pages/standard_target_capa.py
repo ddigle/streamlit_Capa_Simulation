@@ -661,7 +661,8 @@ with st.container(border=True):
             label=CSV_TEMPLATE_LABEL,
         )
         if st.button(
-            ":material/delete: 입력 초기화",
+            "입력 초기화",
+            icon=":material/delete:",
             key="clear_standard_target_availability",
             width="content",
         ):
@@ -676,7 +677,8 @@ with st.container(border=True):
             placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
         )
         import_submitted = st.form_submit_button(
-            ":material/content_paste: 붙여넣기 적용",
+            "붙여넣기 적용",
+            icon=":material/content_paste:",
             type="primary",
         )
     if import_submitted:

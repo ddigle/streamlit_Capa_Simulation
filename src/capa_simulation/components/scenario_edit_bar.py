@@ -32,7 +32,11 @@ def render_scenario_edit_bar(
     revision = active_scenario["revision"]
     with st.container(horizontal=True, vertical_alignment="center"):
         st.caption(f"활성 시나리오 · 수정본 {revision}")
-        if st.button(":material/restart_alt: 전체 입력 원본으로 초기화", key=reset_key):
+        if st.button(
+            "전체 입력 원본으로 초기화",
+            icon=":material/restart_alt:",
+            key=reset_key,
+        ):
             reset_active_scenario(reference_tables, reference_version)
             for key in clear_session_keys:
                 st.session_state.pop(key, None)

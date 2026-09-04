@@ -164,7 +164,8 @@ with st.container(border=True):
                 width=420,
             )
             st.form_submit_button(
-                ":material/filter_alt: 조건 적용",
+                "조건 적용",
+                icon=":material/filter_alt:",
                 type="primary",
                 width="content",
             )

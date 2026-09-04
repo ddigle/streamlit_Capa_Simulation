@@ -90,7 +90,8 @@ def render_month_editor(
             },
         )
         submitted = st.button(
-            ":material/check: 변경사항 적용",
+            "변경사항 적용",
+            icon=":material/check:",
             key=f"{editor_key}_apply",
             type="primary",
         )
