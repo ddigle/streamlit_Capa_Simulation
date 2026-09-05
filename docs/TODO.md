@@ -772,6 +772,18 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
   흐름에 대한 것인지 확인이 필요하다. 확인 전까지 코드는 그대로 둔다 — 사용자가 "특별히
   분류하거나 매핑하지 말라" 고 했고, 매핑은 산식이 아니라 `RQ_REQB` 기준정보 행이 정한다.
 
+### 타입 검사 범위 (부분 처리)
+
+- [x] `src/capa_simulation/py.typed` 를 추가했다. 이게 없어서 `tests`·`scripts` 에 mypy 를
+  돌리면 실제 오류 대신 "missing library stubs or py.typed marker" 만 42건 나왔다. 이제
+  진짜 오류가 보인다.
+- [ ] `pyproject.toml` 의 mypy `files` 에 `tests`·`scripts` 를 넣는다. 지금 넣으면
+  **44건이 걸린다**(실측, `--explicit-package-bases` 기준): arg-type 17 · operator 10 ·
+  no-untyped-def 5 · attr-defined 3 · typeddict-item 2 · override 2 · list-item 2 ·
+  index 2 · func-returns-value 1. 대부분 테스트 코드의 pandas 타입 마찰이지만
+  `test_page_bootstrap.py:15` 의 `ActiveScenario` 필수 키 누락처럼 실제 결손도 섞여 있다.
+  `tests/` 에 `conftest.py` 나 `__init__.py` 가 없어 모듈 경로 중복 경고도 함께 나온다.
+
 ### 예정된 후속
 
 - [ ] 제품·단수별 Process 흐름 순서와 TAT 를 DB 에서 조회해 기준 흐름에 따라 재공을

@@ -56,5 +56,8 @@ module = ["duckdb", "duckdb.*", "plotly", "plotly.*"]
 ignore_missing_imports = true
 
 [tool.setuptools.package-data]
+# 이게 없으면 tests·scripts 에서 mypy 를 돌릴 때 실제 타입 오류 대신
+# "missing library stubs or py.typed marker" 만 42건 나온다.
+"capa_simulation" = ["py.typed"]
 "capa_simulation.persistence.migrations" = ["*.sql"]
 "capa_simulation.persistence.equipment_migrations" = ["*.sql"]
