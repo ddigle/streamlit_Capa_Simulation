@@ -912,6 +912,85 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
 - [ ] 제품·단수별 Process 흐름 순서와 TAT 를 DB 에서 조회해 기준 흐름에 따라 재공을
   분류한다. 사용자가 곧 지시 예정. 현재 재공 현황은 결정론적 데모 데이터다.
 
+## 3-6. 2026-09-06 전역 리팩토링 검토
+
+사용자 지시: "디자인 개선점 및 데이터 구조 효율화 검토. 이미 효율적인 것은 굳이 바꾸지 말고
+명백히 문제나 비효율이 있는 부분만." 9개 축(영속성·적재·계산 흐름·세션/캐시·페이지·컴포넌트·
+시각 디자인·테스트·문서)으로 81건을 검출하고, 건마다 "바꿀 이유가 정말 있나"·"고치면 뭐가
+깨지나" 두 렌즈로 반증해 57건이 남았다(바로 고칠 것 43 · 결정 필요 14). 탈락 24건.
+
+**총평**: 계산 계층과 스키마는 건전하다. 고칠 것은 (1) 09-04 이후 뒤처진 문서 (2) 캐시 앞단·
+닫힌 탭·Plotly 루프에서 결과 없이 버려지는 rerun 비용 (3) 적재 경로의 파이썬 루프·재변환이
+대부분이었다.
+
+### 바로 고친 것 (8배치, 전부 커밋)
+
+- [x] **문서 드리프트** — 캐시 키는 `content_token`(revision 아님), 편집 가능 RQ 14개(12 아님),
+  HOME 토글 켜짐 시작, 표시순서는 명시 무효화 캐시·이력 없음, 부하량 탭 4개, 월 경계 주차
+  규칙, Pack Code "마이그레이션 필요" 모순(0013 이 이미 실음). `e6f859c`
+- [x] **테스트 위생** — `from tests.` import 2곳, cwd 상대경로 9곳, `settings.DUCKDB_PATH`
+  미복원 4파일(→ `tests/conftest.py` autouse 복원). `1d8e000`
+- [x] **예외 경계** — `duckdb.IOException` 은 OSError 가 아니다. `BOOTSTRAP_ERRORS` 에
+  `duckdb.Error`·`TypeError` 를 넣고 여덟 곳의 자체 튜플을 통일. HOME 이 활성 리비전 없이
+  혼자 트레이스백을 내던 것, 조회기간이 데이터 밖일 때 사이드바 "적용" 이 남던 것. `53c82db`
+- [x] **적재 경로** — 충돌 판정 벡터화(E4)·숫자 dtype 가드(E6)·파생 attrs 비우기(E5)·
+  PRAGMA table_info(E3)·RQ_REQB 중복 검사. **RQ 16표 생성 13.6s → 0.86s, 정규화 515 → 130ms,
+  리비전 적재 411 → 259ms.** 기존 결과 대조 출력 변경 전후 동일. `1c3e3ca`
+- [x] **Plotly 일괄 주입** — 행 루프 `add_shape` 제곱 증가. 최악 케이스 hierarchical 1,140행
+  **840s → 0.48s**, grouped 300행 201s → 0.31s, Space 200대 17s → 0.07s. 닫힌 탭의 표 준비도
+  위젯 직후 접음. `48576b2`
+- [x] **계산 페이지 rerun** — capacity_standards 편집표 6개 숨은 탭 생략(519~793ms), 공정 유효
+  Capa·PKG Kea 환산 캐시 래퍼, static_capa 이중 월 필터(E10), 중복 `show_applied_month_range`
+  5곳, process_securement 의 거짓 주석·무의미 덮어쓰기, 죽은 `clear_simulation_caches`. `ceb34a0`
+- [x] **HOME E9** — 월 슬라이스를 캐시 안으로(적중 시 27~36ms 낭비). `69970b7`
+- [x] **소소한 정리** — 환산 CSV 의 U+00A0(VLOOKUP 어긋남), 월 정규화 복제 5곳, 죽은 세션 키·
+  주석·rgba 리터럴. `080a631`
+
+### 결정 필요 (B1~B8) — 사용자 답변 대기
+
+- [ ] **B1 E1 DB 연결 상주** — rerun 마다 사이드바 3콜 156~186ms(HOME warm rerun 의 60~68%).
+  비용은 연결이 아니라 인스턴스 재생성이라, `cache_resource` 층에 유휴 앵커 연결 1개를 두면
+  코드 변경 없이 8.8~12.3ms. 받아들일 것: 앱이 켜진 동안 파일 잠금 상시화(두 번째 인스턴스·
+  DB 도구가 항상 못 엶), `_write_transaction` 끝 CHECKPOINT. 권장 (a) 앵커. (b) 목록
+  st.cache_data 는 AGENTS 규칙과 충돌 — 권하지 않음. 파생: 가용설비 `list_revisions` 는
+  `revision_token` 키 캐시.
+- [ ] **B2 E11 Static Capa 5페이지 계산 캐시 키** — 적중해도 11개 프레임 해시 82~110ms.
+  (reference_version, content_token, start, end) 튜플 키로. 권장: 래퍼가
+  `_tables=active_scenario["tables"]` 를 받아 안에서 슬라이스(배치 7 과 같은 꼴). 채택 시
+  AppTest 3개의 가짜 active 에 **파일마다 고유** `content_token` 필수.
+- [ ] **B3 E7 create_scenario 의 ref_data 편집 14표 이중 저장** — 전체 행의 33.7% 가 rev1 사본과
+  완전 동일, 읽는 코드 0. 재구축 34.09 → 24.92MB. E8(ATTACH 재구축) 결정과 묶는다. 권장 채택.
+  채택 시 `compare_legacy_results.py` 대조 기준을 rev1 로.
+- [ ] **B4 시나리오 관리 탭 본문 건너뛰기** — `if tab.open` 분기라 폼 7개 입력값이 다른 탭을
+  잠깐 열면 사라진다(persist_state 로 못 막음). 권장: `with tab:` 3개로 항상 그리고
+  `on_change="rerun"` 제거로 상쇄, 순수 함수 2개 캐시. **규칙 문장 확정 필요**:
+  "form·data_editor·persist_state 없는 위젯이 있는 탭은 본문을 항상 그린다(그림만 건너뜀)."
+- [ ] **B5 capacity_standards STEP 구성 탭 준비 계산** — 닫혀 있어도 721~963ms/rerun. 권장:
+  `tab_is_hidden(tabs[1])` 로 건너뛰고 form 안 text_input 2개에 `persist_state="page"`.
+  삭제 확인 checkbox 는 붙이지 않기를 권장. B4 와 같은 규칙 결정.
+- [ ] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없음, 순수 유지보수
+  비용. 권장: E 시리즈 뒤로.
+- [ ] **B7 rgba 색 리터럴 검사 확장** — 남은 5곳은 투명·히트 타깃 기술 상수. 권장 (b): tokens 에
+  `TRANSPARENT`·`HIT_TARGET` 추가, 검사에 `rgba?\(` 별도 패턴.
+- [ ] **B8 재공 현황의 빈 가용대수** — 설비 DB 가 비면 "가용설비 입력 표에 행이 없습니다" 가
+  입력 표 없는 페이지에 빨간 오류로 뜬다. 권장 (A): `st.info` + `st.stop()`. 테스트 Fake 가
+  빈 availability 로 이 결함을 가리고 있어 함께 손봐야 한다.
+
+### 검토했으나 바꾸지 않은 것 (대표)
+
+- `server.port` 부재(09-04 기준선 결함) — Windows + Streamlit 1.60 에서 재현 안 됨. 두 번째
+  인스턴스가 같은 8501 에 bind 되고 모든 접속이 첫 프로세스로 간다. 기준선 항목 **철회**.
+  Linux 에서는 성립하므로 WebIDE 이관 시 재검토.
+- 두 마이그레이션 러너 복제 — AGENTS 규칙 9 가 명시한 독립 설계. 로직 드리프트 0회. 취향.
+- `equipment_repository` contract_version<3 경로 106줄 — "도달 불가" 가 아니다. 08-28·08-31
+  배포 zip 으로 사내에 v1/v2 리비전이 있을 수 있다. **사내 PC 에서
+  `SELECT equipment_contract_version, COUNT(*) FROM equipment_ops.revision GROUP BY 1` 확인 전
+  손대지 않는다.**
+- 해시 4종 write-only — append-only 감사 기록으로 문서화돼 있고 저장 시간의 1.8%.
+- 스냅샷 캐시 `max_entries=32`(E12) — 실제 점유는 리비전 수로 정해져 20~25MB. 162MB 는 리비전
+  32개 동시 적재 상한. 낮추면 절감 ≤5MB, 대신 재적재 257~420ms.
+- `actual_efficiency`·`actual_upeh` 복제 — 2장 [결정] 이 "실 DB 연결 시 정리" 로 확정.
+
 ## 4. 현재 권장 진행 순서
 
 2026-09-05 에 TODO 전 항목을 코드와 대조해 다시 세웠다. 앞의 순서는 1순위가 외부 연결
