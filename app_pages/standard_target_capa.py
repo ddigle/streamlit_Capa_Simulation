@@ -815,7 +815,7 @@ else:
             )
         calculation_caption += (
             "ER은 항상 제외하며 상세 OFF는 공정별 제품 Mix 가중 단일값을 표시합니다. · "
-            "월 경계 주차는 월요일이 속한 달의 기준을 적용합니다."
+            "월 경계 주차는 그 주에 더 많은 날이 들어간 달의 기준을 적용합니다."
         )
         st.caption(calculation_caption)
         render_hierarchical_monthly_table(

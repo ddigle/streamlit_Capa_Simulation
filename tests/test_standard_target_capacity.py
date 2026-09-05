@@ -49,7 +49,12 @@ def _required_equipment() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def test_iso_week_calendar_uses_monday_month_at_month_boundary() -> None:
+def test_iso_week_calendar_gives_the_boundary_week_to_the_month_with_more_days() -> None:
+    """8월 31일 하루 대 9월 6일이므로 9월이 가져간다(2026-09-05 확정 규칙).
+
+    예전에는 월요일이 속한 8월로 보냈다. 규칙 자체의 검증은
+    `tests/test_iso_week_calendar.py` 가 전담한다.
+    """
     result = build_iso_week_calendar(date(2026, 8, 31), date(2026, 9, 6))
 
     assert result.to_dict("records") == [
@@ -57,7 +62,7 @@ def test_iso_week_calendar_uses_monday_month_at_month_boundary() -> None:
             "Weeknum": "26-W36",
             "주차시작일": date(2026, 8, 31),
             "주차종료일": date(2026, 9, 6),
-            "생산계획년월": 202608,
+            "생산계획년월": 202609,
         }
     ]
 

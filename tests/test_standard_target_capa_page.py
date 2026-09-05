@@ -158,12 +158,13 @@ def test_standard_target_page_renders_weeknum_plotly_table() -> None:
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
+    # 26-W36(8/31~9/6)은 9월 일수가 6일이라 202609 로 귀속된다. 이 시나리오에는 202608
+    # 데이터만 있어 그 주는 빠지는 것이 맞다(2026-09-05 월 경계 규칙 변경).
     assert app.session_state["captured_week_columns"] == [
         "26-W32",
         "26-W33",
         "26-W34",
         "26-W35",
-        "26-W36",
     ]
     assert app.session_state["captured_classification_columns"] == ["공정", "소요기준"]
     assert any(widget.label == "공정 필터" for widget in app.multiselect)
