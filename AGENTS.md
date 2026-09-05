@@ -392,9 +392,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 업무 활용 목적·담당 부서별 Action Item·로드맵 한 줄을 카드로 그린다.
     Static Capa 와 Dynamic Capa 가 공유한다.
 - `src/capa_simulation/services/legacy_comparison.py`
-  - 원천에 보존된 기존 결과와 신규 계산을 같은 키로 대조한다. 기존 컬럼은 경로 행마다
-    같은 값이 반복되므로 **기존은 대표값, 신규는 합계**로 집계한다. 양쪽 다 합산하면
-    경로 수만큼 뻥튀기된다. 실행은 `scripts/compare_legacy_results.py`.
+  - 원천에 보존된 기존 결과와 신규 계산을 같은 단위로 대조한다. 기존 컬럼은 **계획 한 줄
+    (`RQ_PKG_PLAN` 업무 키) × `WF 구분`** 안에서 경로 행마다 반복되므로, 그 단위에서 접은
+    뒤 대조 키로 **합산**한다. 접는 층을 대조 키에서 잡으면 서로 다른 계획 줄까지 뭉개져
+    대조가 조용히 절반으로 줄어든다 — 실제로 그렇게 만들었다가 270키 중 121키만 보고
+    "완전 일치" 라고 보고했다. 실행은 `scripts/compare_legacy_results.py`.
 - `src/capa_simulation/components/tab_state.py`
   - 열린 탭을 서버가 알게 하는 `stateful_tabs` 와 판정용 `tab_is_hidden`. 차트가 든 탭은
     반드시 이것으로 만든다. 숨겨진 탭 안에서 Plotly 표를 그리면 글자 폭 측정이 0 이라
@@ -767,6 +769,32 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 `config/bootstrap_display_order.json`과 `builtin_seed.py`에는 합성 `DEMO_*` 값만 두며 실제
 제품·고객·공정·설비 식별값을 시드로 추가하지 않는다. 실제 표시순서 CSV는
 `data/input/RQ_DISPLAY_ORDER.csv`에 두고 Git에 커밋하지 않는다.
+
+## 10-1. 로컬 데이터는 합성 표본이다 — 관측을 업무 사실로 적지 않는다
+
+`data/input/Core_Data.csv` 와 거기서 적재된 `data/capa_simulation.duckdb` 는 **실제 운영
+데이터가 아니라 합성 데모 표본**이다. 공정 목록·소요기준(WF/CHIP)·성능·수율은
+`scripts/generate_sample_core_data.py` 의 `PROCESS_SPECS` 리터럴에 사람이 써 넣은 값이고,
+행의 팬아웃(계획 1행 × 공정 30행)도 `process_rows()` 가 계획 행을 전 공정에 복제해서
+생기는 구조적 산물이다. `equipment_samples.py`, `dynamic_capacity.py` 의 `_DemoProfile`,
+`builtin_seed.py` 도 같다.
+
+따라서 다음을 지킨다.
+
+- **로컬 DB·CSV 를 쿼리해 나온 값으로 업무 구조를 판단하거나 설계를 바꾸지 않는다.**
+  쿼리는 코드 경로가 도는지 확인하는 용도다. 「데이터가 이러하니 업무가 이러할 것」은
+  표본 생성기 저자의 선택을 업무 사실로 착각하는 것이다.
+- **`실측` 이라는 말은 데이터와 무관한 측정에만 쓴다** — 브라우저 픽셀 폭, Streamlit
+  위젯 동작, 소요시간 같은 것. 데이터를 집계해 얻은 수치는 `샘플 관측` 이라고 적고
+  출처(어느 파일의 어느 리터럴에서 나온 값인지)를 함께 남긴다.
+- **표본 고유 수치를 계약처럼 적지 않는다.** 「키 하나에 31행」, 「WF 기준 공정 6개」,
+  「소요대수는 전부 NULL」 같은 문장은 공정 수와 생성기 설정이 바뀌면 전부 달라진다.
+  코드가 그런 수치에 의존하면 그것은 결함이다.
+- 근거가 사내 실데이터에서 온 것이면 **그렇다고 명시한다**. 예: `Pack Code` 충돌과
+  `MPGA TEST` 의 소수 `모듈수` 는 사내 BigDataQuery 관측이라 근거가 있다.
+
+실제로 이 규칙이 없어서, 표본의 `Mold` 소요기준이 `CHIP` 인 것을 근거로 사용자의 공정
+설명이 데이터와 충돌한다고 보고한 적이 있다. 충돌 상대는 실데이터가 아니라 생성기였다.
 
 ## 11. 현재 미구현 및 주의 사항
 
