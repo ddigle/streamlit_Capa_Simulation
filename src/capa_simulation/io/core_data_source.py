@@ -21,6 +21,15 @@ from capa_simulation.settings import PROJECT_ROOT
 DATA_CONTRACT_PATH = PROJECT_ROOT / "config" / "data_contract.json"
 ColumnType = Literal["string", "integer", "number"]
 
+# 계약의 `quote_style` 이 실제 파서 동작을 정한다. 예전에는 이 키가 적혀만 있고
+# `csv.QUOTE_NONE` 이 코드에 박혀 있어, 값에 쉼표가 든 표준 CSV 를 읽을 방법이 없었다.
+# 로컬 표본에 큰따옴표가 한 글자도 없어서 드러나지 않았을 뿐이다.
+# pandas 의 `quoting` 은 int 가 아니라 리터럴 넷만 받는다. 타입을 좁혀 둬야 통과한다.
+QUOTE_STYLES: dict[str, Literal[0, 1, 2, 3]] = {
+    "minimal": csv.QUOTE_MINIMAL,
+    "none": csv.QUOTE_NONE,
+}
+
 
 @dataclass(frozen=True)
 class CoreDataColumn:
@@ -33,6 +42,7 @@ class CoreDataContract:
     version: int
     encoding: str
     delimiter: str
+    quote_style: str
     columns: tuple[CoreDataColumn, ...]
     derived_keys: dict[str, tuple[str, ...]]
 
@@ -92,6 +102,12 @@ def load_core_data_contract(path: Path | None = None) -> CoreDataContract:
     delimiter = _text(source.get("delimiter"), "source.delimiter")
     if len(delimiter) != 1:
         raise ValueError("source.delimiter는 한 글자여야 합니다.")
+    quote_style = _text(source.get("quote_style"), "source.quote_style")
+    if quote_style not in QUOTE_STYLES:
+        raise ValueError(
+            f"지원하지 않는 source.quote_style 입니다: {quote_style} "
+            f"({', '.join(sorted(QUOTE_STYLES))} 중 하나)"
+        )
 
     raw_columns = source.get("columns")
     if not isinstance(raw_columns, list):
@@ -120,6 +136,7 @@ def load_core_data_contract(path: Path | None = None) -> CoreDataContract:
         version=version,
         encoding=encoding,
         delimiter=delimiter,
+        quote_style=quote_style,
         columns=tuple(columns),
         derived_keys=derived_keys,
     )
@@ -139,7 +156,7 @@ def read_core_data_csv(
         path,
         encoding=selected.encoding,
         delimiter=selected.delimiter,
-        quoting=csv.QUOTE_NONE,
+        quoting=QUOTE_STYLES[selected.quote_style],
         dtype=string_dtypes,
         low_memory=False,
     )

@@ -4,7 +4,7 @@
     "name": "Core_Data",
     "encoding": "cp949",
     "delimiter": ",",
-    "quote_style": "none",
+    "quote_style": "minimal",
     "null_policy": "preserve_raw_validate_derived",
     "columns": [
       {
@@ -265,11 +265,11 @@
       },
       {
         "name": "모듈수",
-        "dtype": "integer"
+        "dtype": "number"
       },
       {
         "name": "Side반영률",
-        "dtype": "integer"
+        "dtype": "number"
       },
       {
         "name": "편중률",
@@ -297,7 +297,7 @@
       },
       {
         "name": "MCP_Chip_Ratio",
-        "dtype": "integer"
+        "dtype": "number"
       },
       {
         "name": "소요대수",
@@ -309,7 +309,7 @@
       },
       {
         "name": "설비보유HCB",
-        "dtype": "integer"
+        "dtype": "number"
       },
       {
         "name": "CUSTOM",
