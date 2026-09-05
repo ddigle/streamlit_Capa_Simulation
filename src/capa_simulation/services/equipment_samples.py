@@ -17,6 +17,9 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_master,
 )
 
+# 샘플 행임을 표시하는 비고. 저장 직전에 이 표식으로 손대지 않은 행을 가려낸다.
+SAMPLE_BASELINE_NOTE = "Core Data 개발 샘플"
+
 SAMPLE_BASELINE_COUNTS = (
     ("Pre B/D", 46.0),
     ("Wafer_Sorter", 18.0),
@@ -60,9 +63,7 @@ def sample_equipment_baseline() -> pd.DataFrame:
             "기존보유대수": pd.Series(
                 [count for _, count in SAMPLE_BASELINE_COUNTS], dtype="float64"
             ),
-            "비고": pd.Series(
-                ["Core Data 개발 샘플"] * len(SAMPLE_BASELINE_COUNTS), dtype="string"
-            ),
+            "비고": pd.Series([SAMPLE_BASELINE_NOTE] * len(SAMPLE_BASELINE_COUNTS), dtype="string"),
         }
     )
 
@@ -241,3 +242,29 @@ def sample_downtime_schedule(*, anchor_date: date | None = None) -> pd.DataFrame
 
 def _offset_date(anchor: pd.Timestamp, offset: int | None) -> pd.Timestamp | None:
     return None if offset is None else anchor + pd.Timedelta(days=offset)
+
+
+def untouched_sample_baseline_rows(baseline: pd.DataFrame) -> pd.DataFrame:
+    """편집기에 채워 준 샘플 그대로인 행만 골라낸다.
+
+    `sample_equipment_baseline()` 은 설비 DB 가 비었을 때 **화면 표시용**으로만 채워 넣는
+    값인데, 그대로 저장하면 불변 리비전에 영구 기록된다. 그 숫자는
+    `scripts/generate_sample_core_data.py` 의 `PROCESS_SPECS` 에 손으로 적힌 `owned`
+    필드이고 공정명도 그 리터럴이 정한 30개다. 실제 공정명이 다르면 호기 마스터와 절대
+    붙지 않는 유령 공정이 총대수·가용대수·가용률에 영원히 섞인다.
+
+    값을 하나라도 고쳤으면 그 행은 사용자의 것이므로 걸러 내지 않는다. **네 컬럼이 모두
+    샘플과 같은 행만** 고른다.
+    """
+    if baseline.empty:
+        return baseline.iloc[0:0]
+    sample = sample_equipment_baseline()
+    columns = list(sample.columns)
+    if any(column not in baseline.columns for column in columns):
+        return baseline.iloc[0:0]
+    normalized = baseline.loc[:, columns].copy()
+    for column in ("공정", "분류", "비고"):
+        normalized[column] = normalized[column].astype("string").str.strip()
+    normalized["기존보유대수"] = pd.to_numeric(normalized["기존보유대수"], errors="coerce")
+    marker = normalized.merge(sample, on=columns, how="left", indicator=True)
+    return baseline.loc[(marker["_merge"] == "both").to_numpy()]

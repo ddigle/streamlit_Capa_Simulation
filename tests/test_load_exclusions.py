@@ -5,6 +5,7 @@ import pandas as pd
 from capa_simulation.services.load_calculator import (
     build_monthly_volume,
     calculate_chip_and_wafer_loads,
+    calculate_density_load,
     load_exclusions,
 )
 
@@ -89,3 +90,51 @@ def test_no_exclusions_yields_an_empty_frame() -> None:
     chip_load, _ = calculate_chip_and_wafer_loads(complete_plan, YIELD, CHIP)
 
     assert load_exclusions(chip_load).empty
+
+
+# Density 만 옛 방식(예외)으로 남아 있었다. 표본에서는 계획의 모든 제품+Stack 이
+# `구분_EQ` 를 가진 행을 하나씩 갖고 있어서 — 비는 것은 Buffer·Dummy 뿐이고 Top·Core·
+# Master 중 하나는 늘 채워져 있다 — 이 분기를 한 번도 밟지 않았다. 그래서 남아 있었다.
+DENSITY = pd.DataFrame(
+    {
+        "제품정보": ["DEMO_OK"],
+        "Stack": ["8H"],
+        "WF 구분": ["Core"],
+        "구분_Chip": [4.0],
+        "구분_EQ": [16.0],
+    }
+)
+
+
+def test_density_excludes_the_unmatched_product_instead_of_raising() -> None:
+    """용량이 없는 제품 한 줄 때문에 Density 환산과 HOME 이 통째로 멈추면 안 된다."""
+    density_load = calculate_density_load(PLAN, DENSITY)
+
+    assert sorted(set(density_load["제품정보"])) == ["DEMO_OK"]
+    assert dict(
+        zip(
+            load_exclusions(density_load)["제품정보"],
+            load_exclusions(density_load)["누락 기준정보"],
+            strict=True,
+        )
+    ) == {"DEMO_NO_CHIP": "RQ_CHIP_EQ", "DEMO_NO_YLD": "RQ_CHIP_EQ"}
+
+
+def test_density_monthly_volume_carries_the_exclusion_list() -> None:
+    """pivot 이 attrs 를 잃으므로 Density 경로도 이어붙여야 화면이 보여줄 수 있다."""
+    volume = build_monthly_volume(
+        PLAN, YIELD, CHIP, demand_basis="Density", density_data=DENSITY, display_order=None
+    )
+
+    assert sorted(set(load_exclusions(volume)["제품정보"])) == ["DEMO_NO_CHIP", "DEMO_NO_YLD"]
+
+
+def test_home_dashboard_survives_a_product_without_density() -> None:
+    """HOME 은 이 함수를 그대로 쓴다. 예외가 나면 헤더와 오류 배너만 남았다."""
+    from capa_simulation.services.dashboard import build_production_dashboard
+
+    monthly, detail = build_production_dashboard(PLAN, DENSITY)
+
+    # Density 합계는 붙는 제품만 반영한다. PKG Plan 상세는 계획 그대로라 세 제품이 남는다.
+    assert not monthly.empty
+    assert "DEMO_OK" in set(detail["제품정보"])

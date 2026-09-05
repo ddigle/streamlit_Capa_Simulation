@@ -465,18 +465,16 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
         validate="many_to_many",
         indicator="_density_merge",
     )
-    if (calculation["_density_merge"] != "both").any():
-        missing = (
-            calculation.loc[calculation["_density_merge"] != "both", ["제품정보", "Stack"]]
-            .drop_duplicates()
-            .head(5)
-            .to_dict("records")
-        )
-        raise ValueError(f"RQ_CHIP_EQ가 연결되지 않는 제품이 있습니다: {missing}")
-    calculation = calculation.drop(columns="_density_merge")
+    # Chip·Wafer 경로와 같은 처리다. 예전에는 여기서 예외를 던져 계획 행 하나 때문에
+    # Density 환산은 물론 HOME 대시보드까지 통째로 멈췄다. 용량이 발생하지 않는 제품이나
+    # `구분_EQ` 미등록 신규 제품이 계획에 한 줄만 들어와도 그렇게 된다.
+    density_missing = calculation["_density_merge"] != "both"
+    exclusions = _load_exclusion_rows(calculation.loc[density_missing], "RQ_CHIP_EQ")
+    calculation = calculation.loc[~density_missing].drop(columns="_density_merge")
     calculation["물량"] = (
         calculation["생산수량"] * calculation["구분_Chip"] * calculation["구분_EQ"] / 100_000
     )
+    calculation.attrs[LOAD_EXCLUSIONS_ATTR] = exclusions
     return calculation
 
 
@@ -531,10 +529,9 @@ def build_monthly_volume(
     if demand_basis == "Density":
         if density_data is None:
             raise ValueError("Density 계산에 RQ_CHIP_EQ 기준정보가 필요합니다.")
-        return _pivot_monthly(
-            calculate_density_load(prepared_plan, density_data),
-            detailed,
-            display_order,
+        density_load = calculate_density_load(prepared_plan, density_data)
+        return carry_load_exclusions(
+            density_load, _pivot_monthly(density_load, detailed, display_order)
         )
     raise ValueError(f"지원하지 않는 소요기준입니다: {demand_basis}")
 
