@@ -6,6 +6,12 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from capa_simulation.services.product_type import (
+    EDP_TOP_DIVISION,
+    SOURCE_TOP_DIVISION,
+    WF_DIVISION_COLUMN,
+)
+
 DISPLAY_ORDER_RULE_COLUMNS = [
     "정렬우선순위",
     "분류컬럼",
@@ -89,9 +95,63 @@ def prepare_display_order(display_order: DisplayOrderInput) -> PreparedDisplayOr
     return PreparedDisplayOrder(_prepare_display_order(display_order))
 
 
+def _with_edp_top_rule(rules: pd.DataFrame) -> pd.DataFrame:
+    """`WF 구분` 의 `Top` 규칙에서 `Top_e` 규칙을 파생해 바로 뒤에 끼운다.
+
+    표시순서는 **입력 데이터**다. 원천 어디에도 `Top_e` 가 없으므로 사용자가 관리하는
+    `RQ_DISPLAY_ORDER` 에도 없다. 규칙이 없으면 `apply_display_order` 가 그 값을 무한대로
+    보내 화면 맨 뒤로 밀어 버린다 — 오류는 안 나고 순서만 조용히 틀린다.
+
+    그래서 `WF 구분` 변환과 같은 원칙을 쓴다. 입력은 그대로 받고, 앱이 파생한다.
+    `Top` 바로 다음 자리에 넣기 위해 그 그룹의 `값표시순서` 를 다시 매긴다.
+    """
+    target = rules["분류컬럼"].eq(WF_DIVISION_COLUMN) & rules["정렬방식"].eq("사용자지정")
+    tops = rules.loc[target & rules["분류값"].eq(SOURCE_TOP_DIVISION)]
+    if tops.empty:
+        return rules
+
+    group_keys = ["페이지 구분", "탭 구분", "분류컬럼"]
+    derived = tops.copy()
+    derived["분류값"] = EDP_TOP_DIVISION
+    # 이미 사용자가 직접 넣어 둔 그룹에는 다시 넣지 않는다.
+    existing = set(
+        map(
+            tuple,
+            rules.loc[target & rules["분류값"].eq(EDP_TOP_DIVISION), group_keys]
+            .to_numpy()
+            .tolist(),
+        )
+    )
+    if existing:
+        keep = ~derived[group_keys].apply(lambda row: tuple(row) in existing, axis=1)
+        derived = derived.loc[keep]
+    if derived.empty:
+        return rules
+
+    combined = pd.concat([rules, derived], ignore_index=True)
+    # `Top` 과 같은 순서값을 갖게 되므로 동률이다. `Top` 다음에 오도록 보조 키를 둔 뒤
+    # 그룹 안에서 1부터 다시 매긴다 — 중복 검사를 통과해야 하기 때문이다.
+    tie = combined["분류값"].eq(EDP_TOP_DIVISION).astype(int)
+    renumber = combined["분류컬럼"].eq(WF_DIVISION_COLUMN) & combined["정렬방식"].eq("사용자지정")
+    ordered = (
+        combined.loc[renumber]
+        .assign(__tie=tie[renumber])
+        .sort_values([*group_keys, "값표시순서", "__tie"], kind="stable")
+    )
+    ordered["값표시순서"] = (
+        ordered.groupby(group_keys, dropna=False).cumcount().add(1).astype("Int64")
+    )
+    combined.loc[ordered.index, "값표시순서"] = ordered["값표시순서"]
+    return combined.sort_values(
+        ["페이지 구분", "탭 구분", "정렬우선순위", "분류컬럼", "값표시순서"],
+        kind="stable",
+        na_position="last",
+    ).reset_index(drop=True)
+
+
 def _prepared_rules(display_order: DisplayOrderInput) -> pd.DataFrame | None:
     prepared = prepare_display_order(display_order)
-    return None if prepared is None else prepared.rules
+    return None if prepared is None else _with_edp_top_rule(prepared.rules)
 
 
 def apply_display_order(

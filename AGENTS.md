@@ -391,6 +391,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/roadmap_panel.py`
   - 업무 활용 목적·담당 부서별 Action Item·로드맵 한 줄을 카드로 그린다.
     Static Capa 와 Dynamic Capa 가 공유한다.
+- `src/capa_simulation/services/product_type.py`
+  - 제품타입(HBM·EDP-TSV)이 가르는 규칙의 단일 근거. `WF 구분` 값 집합 두 개를 **일부러
+    따로** 선언하고(공통 부분을 뽑아 공유하지 않는다), EDP-TSV 의 `Top` 을 `Top_e` 로 가르는
+    `apply_edp_wf_division` 을 갖는다.
+  - **변환 지점은 `core_data_derivation.build_q_core_data` 한 곳이다.** 원천 78컬럼이 작업
+    프레임이 되는 경계이고, 거기서 한 번 바꾸면 16개 RQ 표·부하량·소요대수·화면이 전부 같은
+    값을 본다. 두 층에서 따로 바꾸면 조인 한쪽만 바뀌어 수율·Chip 이 조용히 안 붙는다.
+  - 입력은 그대로 받는다. Capa 기준정보 DB·실적 DB 어디에도 `Top_e` 는 없고
+    `raw_data.core_data` 도 `Top` 그대로다. 표시순서 규칙도 입력에는 `Top` 뿐이라
+    `display_order._with_edp_top_rule` 이 적용 시점에 `Top_e` 규칙을 파생한다 — 없으면
+    화면 맨 뒤로 조용히 밀린다.
 - `src/capa_simulation/services/legacy_comparison.py`
   - 원천에 보존된 기존 결과와 신규 계산을 같은 단위로 대조한다. 기존 컬럼은 **계획 한 줄
     (`RQ_PKG_PLAN` 업무 키) × `WF 구분`** 안에서 경로 행마다 반복되므로, 그 단위에서 접은

@@ -20,14 +20,15 @@
 
 import pandas as pd
 
-from capa_simulation.services.load_calculator import (
+from capa_simulation.services.load_calculator import calculate_chip_load
+from capa_simulation.services.product_type import (
     DUMMY_DIVISIONS_BY_PRODUCT_TYPE,
     EDP_PRODUCT_TYPE,
+    EDP_TOP_DIVISION,
     EDP_WF_DIVISIONS,
     HBM_PRODUCT_TYPE,
     HBM_WF_DIVISIONS,
     WF_DIVISIONS_BY_PRODUCT_TYPE,
-    calculate_chip_load,
 )
 
 PLAN = pd.DataFrame(
@@ -89,21 +90,22 @@ def test_the_hbm_dummy_rule_does_not_reach_an_edp_row() -> None:
     assert volumes["EDP-A"] == 100.0 * 4.0 / 0.95
 
 
-def test_a_shared_division_name_gives_both_types_the_same_general_rule() -> None:
-    """`Top` 은 두 제품군이 함께 쓰는 이름이다. 특별 규칙이 없으면 둘 다 일반 산식이다."""
-    volumes = _volume_by_product("Top")
+def test_the_two_tops_are_separate_names_after_derivation() -> None:
+    """HBM 은 `Top`, EDP 는 `Top_e` 다. 같은 산식이어도 이름이 갈려 있어야 한다."""
+    hbm = _volume_by_product("Top")
+    edp = _volume_by_product(EDP_TOP_DIVISION)
 
-    assert volumes["HBM-A"] == volumes["EDP-A"] == 100.0 * 4.0 / 0.95
+    assert hbm["HBM-A"] == 100.0 * 4.0 / 0.95
+    assert edp["EDP-A"] == 100.0 * 4.0 / 0.95
 
 
-def test_the_two_division_sets_are_declared_independently() -> None:
-    """한쪽을 고칠 때 다른 쪽이 따라 움직이면 안 된다. 공통 부분을 뽑아 공유하지 않는다."""
+def test_the_two_division_sets_no_longer_share_a_name() -> None:
+    """겹치는 이름을 없앤 것이 `Top_e` 의 목적이다. 다시 겹치면 격리가 무너진다."""
     assert HBM_WF_DIVISIONS == ("Buffer", "Core", "Top", "Dummy")
-    assert EDP_WF_DIVISIONS == ("Top", "Master", "Slave")
+    assert EDP_WF_DIVISIONS == (EDP_TOP_DIVISION, "Master", "Slave")
     assert WF_DIVISIONS_BY_PRODUCT_TYPE[HBM_PRODUCT_TYPE] is HBM_WF_DIVISIONS
     assert WF_DIVISIONS_BY_PRODUCT_TYPE[EDP_PRODUCT_TYPE] is EDP_WF_DIVISIONS
-    # 겹치는 이름이 실제로 있다는 것이 이 격리가 필요한 이유다.
-    assert set(HBM_WF_DIVISIONS) & set(EDP_WF_DIVISIONS) == {"Top"}
+    assert set(HBM_WF_DIVISIONS) & set(EDP_WF_DIVISIONS) == set()
 
 
 def test_edp_declares_no_dummy_division() -> None:

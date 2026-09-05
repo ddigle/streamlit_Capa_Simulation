@@ -8,36 +8,21 @@ import pandas as pd
 
 from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
 from capa_simulation.services.frame_contracts import require_columns
+from capa_simulation.services.product_type import (
+    DUMMY_DIVISIONS_BY_PRODUCT_TYPE,
+    EDP_PRODUCT_TYPE,
+    PRODUCT_TYPE_COLUMN,
+    product_type_of,
+)
 
 DemandBasis = Literal["PKG", "Chip", "Wafer", "Density"]
 
 CLASSIFICATION_COLUMNS = ["양산구분", "제품정보", "Stack"]
 LOAD_DETAIL_COLUMNS = ["Capa Code", "Customer", "CS"]
-# 제품군을 가르는 컬럼. EDP-TSV 는 HBM 과 다른 규칙을 갖는다고 확인됐으므로(2026-09-05)
-# 분류 키가 아니라 **계산이 참조하는 속성**으로 계획 프레임에 실어 나른다.
-PRODUCT_TYPE_COLUMN = "제품타입"
-EDP_PRODUCT_TYPE = "EDP-TSV"
-HBM_PRODUCT_TYPE = "HBM"
+# 제품타입별 `WF 구분` 규칙은 `services/product_type.py` 가 단일 근거다.
 # 계획에 딸려 다니지만 사용자가 격자에서 고칠 값이 아닌 속성들. 편집 왕복에서 떨어지므로
 # `attach_plan_attributes` 로 되붙인다.
 PLAN_ATTRIBUTE_COLUMNS = [PRODUCT_TYPE_COLUMN, "Pack Code"]
-
-# 제품타입별 `WF 구분` 값 집합 (2026-09-05 확인). **두 목록은 일부러 따로 적는다.**
-# 두 제품군이 `Top`·`Master` 라는 같은 이름을 공유하므로, `WF 구분` 만 보고 쓴 규칙은
-# 의도와 무관하게 양쪽에 다 걸린다. 한쪽 규칙이 다른 쪽을 건드리지 않게 하려면 규칙을
-# **(제품타입, WF 구분)** 으로 걸어야 한다. 한쪽을 고칠 때 다른 쪽이 따라 움직이면 안 되므로
-# 공통 부분을 뽑아 공유하지 않는다.
-HBM_WF_DIVISIONS = ("Buffer", "Core", "Top", "Dummy")
-EDP_WF_DIVISIONS = ("Top", "Master", "Slave")
-WF_DIVISIONS_BY_PRODUCT_TYPE = {
-    HBM_PRODUCT_TYPE: HBM_WF_DIVISIONS,
-    EDP_PRODUCT_TYPE: EDP_WF_DIVISIONS,
-}
-# Dummy 산식을 받는 `WF 구분`. EDP-TSV 에는 Dummy 가 없다.
-DUMMY_DIVISIONS_BY_PRODUCT_TYPE = {
-    HBM_PRODUCT_TYPE: ("Dummy",),
-    EDP_PRODUCT_TYPE: (),
-}
 PLAN_EDITOR_DIMENSIONS = [
     "양산구분",
     "제품정보",
@@ -459,7 +444,7 @@ def _dummy_mask(calculation: pd.DataFrame) -> pd.Series:
         }
         return division.isin(declared).fillna(False)
 
-    product_type = calculation[PRODUCT_TYPE_COLUMN].astype("string").str.strip()
+    product_type = product_type_of(calculation)
     mask = pd.Series(False, index=calculation.index)
     for declared_type, dummy_divisions in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.items():
         if not dummy_divisions:
@@ -621,7 +606,7 @@ def filter_edp_plan(plan: pd.DataFrame, include_edp: bool) -> pd.DataFrame:
     if include_edp:
         return plan.copy()
     require_columns(plan, [PRODUCT_TYPE_COLUMN], "RQ_PKG_PLAN")
-    product_type = plan[PRODUCT_TYPE_COLUMN].astype("string").str.strip()
+    product_type = product_type_of(plan)
     unknown = product_type.isna() | product_type.eq("")
     if unknown.any():
         examples = sorted(
@@ -633,13 +618,3 @@ def filter_edp_plan(plan: pd.DataFrame, include_edp: bool) -> pd.DataFrame:
             "기준정보를 다시 등록하거나 EDP 를 포함해 조회하세요."
         )
     return plan.loc[product_type.ne(EDP_PRODUCT_TYPE)].copy()
-
-
-def product_type_of(plan: pd.DataFrame) -> pd.Series:
-    """계획 행의 제품군을 정규화해 돌려준다.
-
-    EDP-TSV 와 HBM 은 앞으로 서로 다른 로직을 탄다. 판정을 한 곳에 모아 두어야 분기가
-    늘어도 갈라지지 않는다.
-    """
-    require_columns(plan, [PRODUCT_TYPE_COLUMN], "RQ_PKG_PLAN")
-    return plan[PRODUCT_TYPE_COLUMN].astype("string").str.strip()
