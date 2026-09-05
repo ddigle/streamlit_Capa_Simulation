@@ -4,6 +4,8 @@ from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 
 def _page_script(page_path: Path, database_path: Path) -> str:
     return f"""
@@ -17,7 +19,7 @@ exec(compile(page_source, {str(page_path)!r}, "exec"), {{"__name__": "__main__"}
 
 
 def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> None:
-    page_path = Path("app_pages/available_equipment_status.py").resolve()
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
     app = AppTest.from_string(
         _page_script(page_path, tmp_path / "availability.duckdb"),
         default_timeout=60,
@@ -45,7 +47,7 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
 
 
 def test_space_page_opens_with_empty_database(tmp_path: Path) -> None:
-    page_path = Path("app_pages/space_status.py").resolve()
+    page_path = PROJECT_ROOT / "app_pages" / "space_status.py"
     app = AppTest.from_string(
         _page_script(page_path, tmp_path / "space.duckdb"),
         default_timeout=60,

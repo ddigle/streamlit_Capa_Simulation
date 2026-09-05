@@ -99,7 +99,8 @@ def test_an_unknown_quote_style_is_rejected_at_load(tmp_path: Path) -> None:
     """오타 난 계약값이 조용히 기본값으로 떨어지면 안 된다."""
     import json
 
-    payload = json.loads(Path("config/data_contract.json").read_text(encoding="utf-8"))
+    contract_path = Path(__file__).resolve().parents[1] / "config" / "data_contract.json"
+    payload = json.loads(contract_path.read_text(encoding="utf-8"))
     payload["source"]["quote_style"] = "느슨하게"
     broken = tmp_path / "data_contract.json"
     broken.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")

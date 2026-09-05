@@ -5,6 +5,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
+from test_equipment_availability import _baseline, _downtime, _equipment
 
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
@@ -20,7 +21,6 @@ from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
     EquipmentSnapshot,
 )
-from tests.test_equipment_availability import _baseline, _downtime, _equipment
 
 
 def _repository(path: Path) -> DuckDBEquipmentRepository:

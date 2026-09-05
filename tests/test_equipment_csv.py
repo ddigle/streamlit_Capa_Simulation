@@ -3,6 +3,7 @@
 from io import BytesIO
 
 import pandas as pd
+from test_equipment_availability import _downtime, _equipment
 
 from capa_simulation.services.equipment_csv import (
     SAMPLE_EQUIPMENT_ID,
@@ -18,7 +19,6 @@ from capa_simulation.services.equipment_csv import (
     read_equipment_clipboard,
     read_equipment_csv,
 )
-from tests.test_equipment_availability import _downtime, _equipment
 
 
 def test_equipment_csv_template_round_trips_with_30_columns() -> None:

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-HOME_PAGE = Path("app_pages/home.py").resolve()
+HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
 
 # 사용자가 보고한 증상: 부하량에서 PKG PLAN 을 고쳐도 HOME 이 예전 계획의 숫자를 보여준다.
 # 원인은 HOME 계산 캐시 키가 시나리오 편집 카운터(`revision`)를 쓴 것이었다. 그 번호는

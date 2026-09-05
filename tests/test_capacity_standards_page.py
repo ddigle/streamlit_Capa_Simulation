@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+import capa_simulation
 import capa_simulation.components.grouped_monthly_table as grouped_table
 import capa_simulation.components.hierarchical_monthly_table as hierarchical_table
 import capa_simulation.io.reference_cache as reference_cache
@@ -227,7 +228,8 @@ simulation_cache.get_securement_rate = lambda *_args: pd.DataFrame(
 
 try:
     st.session_state["production_month_range_v2"] = ("2026-08", "2026-08")
-    page = Path("app_pages/capacity_standards.py")
+    PAGE_NAME = "capacity_standards.py"
+    page = Path(capa_simulation.__file__).resolve().parents[2] / "app_pages" / PAGE_NAME
     exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))
 finally:
     reference_cache.get_effective_reference_version = original_reference_version
@@ -243,12 +245,12 @@ finally:
 """
 
 PROCESS_TEST_SCRIPT = TEST_SCRIPT.replace(
-    "app_pages/capacity_standards.py",
-    "app_pages/process_securement.py",
+    'PAGE_NAME = "capacity_standards.py"',
+    'PAGE_NAME = "process_securement.py"',
 )
 LOAD_TEST_SCRIPT = TEST_SCRIPT.replace(
-    "app_pages/capacity_standards.py",
-    "app_pages/load_conversion.py",
+    'PAGE_NAME = "capacity_standards.py"',
+    'PAGE_NAME = "load_conversion.py"',
 )
 
 

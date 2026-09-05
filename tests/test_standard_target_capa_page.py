@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+import capa_simulation
 import capa_simulation.components.hierarchical_monthly_table as hierarchical_table
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
@@ -139,7 +140,8 @@ hierarchical_table.render_hierarchical_monthly_table = capture_table
 
 try:
     st.session_state["production_month_range_v2"] = ("2026-08", "2026-08")
-    page = Path("app_pages/standard_target_capa.py")
+    PAGE_NAME = "standard_target_capa.py"
+    page = Path(capa_simulation.__file__).resolve().parents[2] / "app_pages" / PAGE_NAME
     exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))
 finally:
     reference_cache.get_effective_reference_version = original_reference_version

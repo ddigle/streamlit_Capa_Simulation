@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-PAGE = Path("app_pages/load_conversion.py").resolve()
+PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "load_conversion.py"
 
 # 사용자 요청: 붙여넣기 일괄 적용 후 변경사항 적용을 또 눌러야 하는지 헷갈린다.
 # 붙여넣기는 PKG PLAN 탭에만 반영하고, 전역 반영은 변경사항 적용 버튼으로만 한다.

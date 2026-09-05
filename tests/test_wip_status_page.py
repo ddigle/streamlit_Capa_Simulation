@@ -10,6 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import capa_simulation
 import capa_simulation.components.wip_status_dashboard as dashboard
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
@@ -140,7 +141,8 @@ def capture_figure(data, routes, products, _start_date, _end_date):
 dashboard.build_wip_status_grid_figure = capture_figure
 
 try:
-    page = Path("app_pages/wip_status.py")
+    PAGE_NAME = "wip_status.py"
+    page = Path(capa_simulation.__file__).resolve().parents[2] / "app_pages" / PAGE_NAME
     exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))
 finally:
     reference_cache.get_effective_reference_version = original_reference_version
