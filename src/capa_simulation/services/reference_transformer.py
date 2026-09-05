@@ -131,6 +131,8 @@ def _rq_pkg_plan(
     contract: CoreDataContract,
     conflict_records: list[dict[str, object]],
 ) -> pd.DataFrame:
+    # 순서는 DDL 을 따른다. `제품타입`·`Pack Code` 는 0013 에서 ALTER 로 덧붙였으므로
+    # 테이블에서도 끝에 있다. 순서가 어긋나면 리비전 왕복 비교가 깨진다.
     columns = [
         "생산계획년월",
         "양산구분",
@@ -140,6 +142,8 @@ def _rq_pkg_plan(
         "Capa Code",
         "Customer",
         "생산수량",
+        "제품타입",
+        "Pack Code",
     ]
     result = core.loc[core["계획기초정보여부"].eq("Y"), columns].copy()
     return validated_distinct(result, "RQ_PKG_PLAN", contract, conflict_records)

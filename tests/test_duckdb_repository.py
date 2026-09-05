@@ -35,6 +35,8 @@ def _reference_tables() -> dict[str, pd.DataFrame]:
                 "Capa Code": ["C1"],
                 "Customer": ["Customer-A"],
                 "생산수량": [100.0],
+                "제품타입": ["HBM"],
+                "Pack Code": ["PK-1"],
             }
         ),
         "RQ_YLD": pd.DataFrame(

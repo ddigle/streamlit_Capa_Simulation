@@ -237,8 +237,14 @@ def aggregate_dynamic_capacity(
         record = dict(zip(group_columns, key_values, strict=True))
         requirement_bases = group["소요기준"].dropna().astype("string").unique().tolist()
         if len(requirement_bases) != 1:
+            # 한 공정은 소요기준을 하나만 갖는다(업무 규칙). 그래서 이 집계는 소요기준이
+            # 섞이지 않는다는 전제 위에 서 있다. 섞였다면 그룹 축이 공정을 넘었거나
+            # 기준정보가 어긋난 것이므로, 조용히 더하지 않고 어느 기준들이 섞였는지 말한다.
+            mixed = ", ".join(sorted(requirement_bases)) or "없음"
             raise ValueError(
-                "집계 그룹 안에 소요기준이 둘 이상이라 Capa 수량을 합산할 수 없습니다."
+                f"집계 그룹 안에 소요기준이 둘 이상이라 Capa 수량을 합산할 수 없습니다 "
+                f"({record}: {mixed}). 한 공정은 같은 형태의 유닛만 투입하므로 "
+                "기준정보에서 소요기준을 하나로 맞추세요."
             )
         record["소요기준"] = str(requirement_bases[0])
         for column in _SUM_COLUMNS:

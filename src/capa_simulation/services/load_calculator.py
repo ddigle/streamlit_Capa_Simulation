@@ -13,6 +13,14 @@ DemandBasis = Literal["PKG", "Chip", "Wafer", "Density"]
 
 CLASSIFICATION_COLUMNS = ["양산구분", "제품정보", "Stack"]
 LOAD_DETAIL_COLUMNS = ["Capa Code", "Customer", "CS"]
+# 제품군을 가르는 컬럼. EDP-TSV 는 HBM 과 다른 규칙을 갖는다고 확인됐으므로(2026-09-05)
+# 분류 키가 아니라 **계산이 참조하는 속성**으로 계획 프레임에 실어 나른다.
+PRODUCT_TYPE_COLUMN = "제품타입"
+EDP_PRODUCT_TYPE = "EDP-TSV"
+HBM_PRODUCT_TYPE = "HBM"
+# 계획에 딸려 다니지만 사용자가 격자에서 고칠 값이 아닌 속성들. 편집 왕복에서 떨어지므로
+# `attach_plan_attributes` 로 되붙인다.
+PLAN_ATTRIBUTE_COLUMNS = [PRODUCT_TYPE_COLUMN, "Pack Code"]
 PLAN_EDITOR_DIMENSIONS = [
     "양산구분",
     "제품정보",
@@ -116,6 +124,28 @@ def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
     # 내려받은 CSV 와 행 수가 달라져 붙여넣기가 어긋난다. 0 은 "이 달 계획 없음" 이라는
     # 사용자의 입력이므로 그대로 보존하고, 계산 경계(_prepare_plan)에서 제외한다.
     return long_plan.sort_values(["생산계획년월", *PLAN_EDITOR_DIMENSIONS]).reset_index(drop=True)
+
+
+def attach_plan_attributes(long_plan: pd.DataFrame, source_plan: pd.DataFrame) -> pd.DataFrame:
+    """편집 격자가 들고 있지 않은 계획 속성을 원래 계획에서 되붙인다.
+
+    격자는 `PLAN_EDITOR_DIMENSIONS` 와 월 컬럼만 보여 준다. `제품타입`·`Pack Code` 는
+    사용자가 고칠 값이 아니라 제품에 딸린 속성이라 격자에 두지 않았는데, 되붙이지 않으면
+    변경사항을 적용할 때마다 조용히 사라진다. 그러면 `replace_month_range` 가
+    "편집값에 원본 컬럼이 없습니다" 로 막고, 화면에는 오류만 뜬 채 적용이 안 된다.
+
+    격자에 없던 새 행은 붙일 원본이 없어 결측으로 남는다. 그 상태로 EDP 를 판별하려 하면
+    `filter_edp_plan` 이 어느 제품인지 짚어 알려 준다 — 조용히 넘어가지 않는다.
+    """
+    attributes = [column for column in PLAN_ATTRIBUTE_COLUMNS if column in source_plan.columns]
+    if not attributes:
+        return long_plan
+    keys = [column for column in PLAN_EDITOR_DIMENSIONS if column in source_plan.columns]
+    lookup = _normalize_text(source_plan[[*keys, *attributes]], keys).drop_duplicates(subset=keys)
+    merged = _normalize_text(long_plan, keys).merge(
+        lookup, on=keys, how="left", validate="many_to_one"
+    )
+    return merged
 
 
 def yield_to_edit_table(
@@ -257,10 +287,12 @@ def _validate_yield_range(data: pd.DataFrame, table_name: str) -> None:
 def _prepare_plan(plan: pd.DataFrame) -> pd.DataFrame:
     require_columns(plan, PLAN_REQUIRED_COLUMNS, "RQ_PKG_PLAN")
     available_detail_columns = [column for column in LOAD_DETAIL_COLUMNS if column in plan.columns]
-    prepared_columns = [*PLAN_REQUIRED_COLUMNS, *available_detail_columns]
+    # 제품타입은 분류 키가 아니지만 계산 분기가 참조하므로 있으면 그대로 들고 간다.
+    carried = [PRODUCT_TYPE_COLUMN] if PRODUCT_TYPE_COLUMN in plan.columns else []
+    prepared_columns = [*PLAN_REQUIRED_COLUMNS, *available_detail_columns, *carried]
     prepared = _normalize_text(
         plan[prepared_columns],
-        [*CLASSIFICATION_COLUMNS, *available_detail_columns],
+        [*CLASSIFICATION_COLUMNS, *available_detail_columns, *carried],
     )
     prepared["생산계획년월"] = pd.to_numeric(prepared["생산계획년월"], errors="coerce").astype(
         "Int64"
@@ -537,9 +569,39 @@ def build_monthly_volume(
 
 
 def filter_edp_plan(plan: pd.DataFrame, include_edp: bool) -> pd.DataFrame:
-    """Exclude DDR products from conversion input while EDP is disabled."""
+    """EDP 토글이 꺼져 있는 동안 `제품타입` 이 EDP-TSV 인 계획 행을 환산에서 뺀다.
+
+    **판별은 `제품타입` 이다** (2026-09-05 확인). 예전에는 `제품정보` 에 `DDR` 이 들어
+    있는지로 판별했는데, 그것은 개발 표본에서 EDP-TSV 제품이 `A1a-DDR5` 하나뿐이라
+    우연히 맞아떨어진 것이었다. 실제로 EDP-TSV 제품명에는 전부 DDR4 또는 DDR5 가
+    들어 있지만, 그 반대(이름에 DDR 이 든 비-EDP 제품)는 보장되지 않는다. 제품군을 정하는
+    것은 이름이 아니라 `제품타입` 컬럼이다.
+
+    토글이 켜져 있으면 아무것도 가리지 않으므로 판별 자체가 필요 없다. 그래서 컬럼 요구도
+    그때는 하지 않는다 — 판단이 필요한 순간에만 근거를 요구한다.
+    """
     if include_edp:
         return plan.copy()
-    require_columns(plan, ["제품정보"], "RQ_PKG_PLAN")
-    product = plan["제품정보"].astype("string").str.strip()
-    return plan.loc[~product.str.contains("DDR", case=False, na=False)].copy()
+    require_columns(plan, [PRODUCT_TYPE_COLUMN], "RQ_PKG_PLAN")
+    product_type = plan[PRODUCT_TYPE_COLUMN].astype("string").str.strip()
+    unknown = product_type.isna() | product_type.eq("")
+    if unknown.any():
+        examples = sorted(
+            {str(value) for value in plan.loc[unknown, "제품정보"].dropna().unique()[:5]}
+        )
+        raise ValueError(
+            "제품타입이 비어 있어 EDP 여부를 판단할 수 없습니다"
+            f"({unknown.sum()}행, 예: {', '.join(examples) or '제품정보 없음'}). "
+            "기준정보를 다시 등록하거나 EDP 를 포함해 조회하세요."
+        )
+    return plan.loc[product_type.ne(EDP_PRODUCT_TYPE)].copy()
+
+
+def product_type_of(plan: pd.DataFrame) -> pd.Series:
+    """계획 행의 제품군을 정규화해 돌려준다.
+
+    EDP-TSV 와 HBM 은 앞으로 서로 다른 로직을 탄다. 판정을 한 곳에 모아 두어야 분기가
+    늘어도 갈라지지 않는다.
+    """
+    require_columns(plan, [PRODUCT_TYPE_COLUMN], "RQ_PKG_PLAN")
+    return plan[PRODUCT_TYPE_COLUMN].astype("string").str.strip()

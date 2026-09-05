@@ -11,7 +11,10 @@ from typing import cast
 
 import pandas as pd
 
-from capa_simulation.services.frame_contracts import normalize_demand_basis
+from capa_simulation.services.frame_contracts import (
+    assert_one_demand_basis_per_process,
+    normalize_demand_basis,
+)
 
 WIP_ROUTE_COLUMNS = ["공정", "STEP_SEQ", "제품정보", "소요기준"]
 WIP_HISTORY_COLUMNS = [
@@ -70,12 +73,7 @@ def build_wip_route_scope(required_equipment: pd.DataFrame) -> pd.DataFrame:
     ):
         raise ValueError("재공 경로의 공정·STEP·제품·소요기준에는 누락값이 없어야 합니다.")
 
-    process_basis_count = result.groupby("공정", dropna=False)["소요기준"].nunique()
-    invalid_processes = (
-        process_basis_count.loc[process_basis_count.gt(1)].index.astype(str).tolist()
-    )
-    if invalid_processes:
-        raise ValueError(f"공정별 소요기준이 둘 이상입니다: {invalid_processes[:5]}")
+    assert_one_demand_basis_per_process(result, "재공 경로")
 
     result = result.drop_duplicates().reset_index(drop=True)
     result["__step_sort"] = result["STEP_SEQ"].map(step_sort_key)

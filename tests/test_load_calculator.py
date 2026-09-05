@@ -17,19 +17,48 @@ from capa_simulation.services.load_calculator import (
 )
 
 
-def test_edp_filter_excludes_ddr_products_only_when_disabled() -> None:
+def test_edp_filter_uses_the_product_type_not_the_name() -> None:
+    """EDP 판별은 `제품타입` 이다 (2026-09-05 확인).
+
+    예전에는 `제품정보` 에 `DDR` 이 들어 있는지로 판별했다. 개발 표본에서 EDP-TSV 제품이
+    `A1a-DDR5` 하나뿐이라 우연히 맞아떨어졌을 뿐이다. 실제 EDP-TSV 제품명에는 전부
+    DDR4·DDR5 가 들어 있지만 그 역은 보장되지 않는다 — 이름에 DDR 이 든 HBM 제품이 오면
+    옛 판별은 그것을 통째로 빼 버린다. 아래 `LPDDR5-HBM` 이 그 경우다.
+    """
     plan = pd.DataFrame(
         {
-            "제품정보": ["HBM다E", "DDR5", "Mobile ddr", None],
-            "생산수량": [100.0, 200.0, 300.0, 400.0],
+            "제품정보": ["HBM다E", "A1a-DDR5", "LPDDR5-HBM"],
+            "제품타입": ["HBM", "EDP-TSV", "HBM"],
+            "생산수량": [100.0, 200.0, 300.0],
         }
     )
 
     excluded = filter_edp_plan(plan, include_edp=False)
     included = filter_edp_plan(plan, include_edp=True)
 
-    assert excluded["제품정보"].fillna("").tolist() == ["HBM다E", ""]
+    assert excluded["제품정보"].tolist() == ["HBM다E", "LPDDR5-HBM"]
     assert included.equals(plan)
+
+
+def test_edp_filter_refuses_to_guess_when_the_product_type_is_blank() -> None:
+    """제품타입이 비면 판단 근거가 없다. 조용히 "EDP 아님" 으로 떨어뜨리면 안 된다."""
+    plan = pd.DataFrame(
+        {
+            "제품정보": ["HBM다E", "알 수 없음"],
+            "제품타입": ["HBM", None],
+            "생산수량": [100.0, 200.0],
+        }
+    )
+
+    with pytest.raises(ValueError, match="제품타입이 비어 있어"):
+        filter_edp_plan(plan, include_edp=False)
+
+
+def test_edp_filter_needs_no_product_type_when_nothing_is_filtered() -> None:
+    """토글이 켜져 있으면 판별 자체가 필요 없다. 근거를 요구하지 않는다."""
+    plan = pd.DataFrame({"제품정보": ["HBM다E"], "생산수량": [100.0]})
+
+    assert filter_edp_plan(plan, include_edp=True).equals(plan)
 
 
 def test_monthly_pkg_and_wafer_volume() -> None:

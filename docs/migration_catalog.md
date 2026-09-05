@@ -37,6 +37,7 @@ sidecar 카탈로그다.
 | `src/capa_simulation/persistence/migrations/0010_global_display_order.sql` | 시나리오와 독립된 공용 표시순서 프로필·규칙·버전 이력을 저장한다. |
 | `src/capa_simulation/persistence/migrations/0011_virtual_product_reference.sql` | `RQ_CHIP_QTY`·`RQ_CHIP_EQ`를 리비전 소유 편집 스냅샷으로 승격하고, 가상 제품(기존 제품 복제 등록) 목록을 리비전 메타에 기록한다. |
 | `src/capa_simulation/persistence/migrations/0012_fractional_core_columns.sql` | `모듈수`·`Side반영률`·`MCP_Chip_Ratio`·`설비보유HCB`를 DOUBLE로 넓혀 소수값을 받는다. |
+| `src/capa_simulation/persistence/migrations/0013_pkg_plan_product_type.sql` | `RQ_PKG_PLAN`에 `제품타입`·`Pack Code`를 추가하고 원천에서 되채운다. |
 | `src/capa_simulation/persistence/equipment_migrations/0001_initial.sql` | 가용설비 DB의 메타·운영 스키마와 초기 리비전·기준·일정 테이블을 생성한다. |
 | `src/capa_simulation/persistence/equipment_migrations/0002_unified_equipment_input.sql` | 설비 호기와 운영 비가동을 통합 입력하는 스냅샷 구조를 추가한다. |
 | `src/capa_simulation/persistence/equipment_migrations/0003_equipment_master_contract.sql` | 30컬럼 설비 마스터 계약과 계약 버전을 추가한다. |

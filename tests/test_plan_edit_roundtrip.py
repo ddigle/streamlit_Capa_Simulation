@@ -5,6 +5,7 @@ import pytest
 
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
+    attach_plan_attributes,
     drop_unplanned_rows,
     plan_from_edit_table,
     plan_to_edit_table,
@@ -109,3 +110,55 @@ def test_active_scenario_issues_a_new_token_on_every_change() -> None:
     tokens = {scenario_state._new_content_token() for _ in range(50)}
 
     assert len(tokens) == 50
+
+
+def test_plan_attributes_survive_the_apply_path() -> None:
+    """편집 격자에 없는 `제품타입`·`Pack Code` 가 적용에서 사라지면 안 된다.
+
+    사라지면 `replace_month_range` 가 "편집값에 원본 컬럼이 없습니다" 로 막고, 화면에는
+    오류만 뜬 채 계획 적용이 조용히 무산된다. 실제로 그 상태가 되어 붙여넣기 적용 테스트가
+    "총량이 안 바뀐다" 로 잡아냈다.
+    """
+    source = pd.DataFrame(
+        [
+            {**DIMENSIONS, "생산계획년월": 202601, "생산수량": 100.0},
+            {
+                **DIMENSIONS,
+                "제품정보": "DEMO_P2",
+                "생산계획년월": 202601,
+                "생산수량": 50.0,
+            },
+        ]
+    ).assign(제품타입=["HBM", "EDP-TSV"], **{"Pack Code": ["PK-1", "PK-2"]})
+    wide = _wide(
+        [
+            {"제품정보": "DEMO_P1", "202601": 120.0},
+            {"제품정보": "DEMO_P2", "202601": 60.0},
+        ]
+    )
+
+    applied = attach_plan_attributes(plan_from_edit_table(wide), source)
+
+    assert set(applied.columns) >= {*PLAN_EDITOR_DIMENSIONS, "제품타입", "Pack Code"}
+    by_product = dict(zip(applied["제품정보"], applied["제품타입"], strict=True))
+    assert by_product == {"DEMO_P1": "HBM", "DEMO_P2": "EDP-TSV"}
+
+
+def test_a_row_with_no_source_gets_no_invented_attributes() -> None:
+    """붙일 원본이 없는 새 행을 아무 값으로 채우면 EDP 판별이 조용히 틀린다."""
+    source = pd.DataFrame([{**DIMENSIONS, "생산계획년월": 202601, "생산수량": 100.0}]).assign(
+        제품타입=["HBM"], **{"Pack Code": ["PK-1"]}
+    )
+    wide = _wide([{"제품정보": "새 제품", "202601": 10.0}])
+
+    applied = attach_plan_attributes(plan_from_edit_table(wide), source)
+
+    assert applied["제품타입"].isna().all()
+
+
+def test_attaching_is_a_no_op_when_the_source_has_no_attributes() -> None:
+    """옛 스냅샷처럼 속성 컬럼이 아예 없는 계획도 그대로 통과해야 한다."""
+    source = pd.DataFrame([{**DIMENSIONS, "생산계획년월": 202601, "생산수량": 100.0}])
+    long_plan = plan_from_edit_table(_wide([{"제품정보": "DEMO_P1", "202601": 10.0}]))
+
+    assert attach_plan_attributes(long_plan, source).equals(long_plan)

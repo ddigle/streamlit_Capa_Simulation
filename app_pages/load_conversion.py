@@ -36,6 +36,7 @@ from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
     YIELD_EDITOR_DIMENSIONS,
     DemandBasis,
+    attach_plan_attributes,
     filter_edp_plan,
     load_exclusions,
     plan_from_edit_table,
@@ -228,7 +229,9 @@ if imported_plan_table is not None:
 
 if apply_plan:
     try:
-        updated_plan = plan_from_edit_table(edited_plan_table)
+        updated_plan = attach_plan_attributes(
+            plan_from_edit_table(edited_plan_table), simulation_plan
+        )
         apply_month_updates(
             active_scenario,
             {"RQ_PKG_PLAN": updated_plan},

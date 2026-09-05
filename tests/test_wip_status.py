@@ -191,3 +191,22 @@ def test_wip_demo_marks_missing_standard_without_inventing_a_target() -> None:
 
     assert pd.isna(result.loc[0, "일 표준 가능량"])
     assert result.loc[0, "상태"] == "표준 미설정"
+
+
+def test_wip_route_scope_rejects_a_process_with_two_bases() -> None:
+    """재공 경로에도 같은 업무 규칙이 걸려 있는데 검증이 없었다.
+
+    `_routes()` 픽스처는 공정마다 기준이 하나씩이라 규칙을 **우연히** 만족할 뿐이다.
+    위반 경로를 한 번도 넣어 보지 않아, 이 화면의 가드는 테스트 밖에 있었다.
+    """
+    # 0행은 T-Process/WF, 1행은 P-Process/CHIP 이다. 1행을 T-Process 로 옮기면
+    # 한 공정이 WF 와 CHIP 을 함께 갖게 된다.
+    routes = _routes()
+    routes.loc[1, "공정"] = "T-Process"
+
+    with pytest.raises(ValueError) as caught:
+        build_wip_route_scope(routes)
+
+    message = str(caught.value)
+    assert "T-Process" in message
+    assert "재공 경로" in message

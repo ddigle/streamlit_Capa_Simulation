@@ -5,6 +5,7 @@
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import (
+    assert_one_demand_basis_per_process,
     normalize_demand_basis,
     require_columns,
 )
@@ -212,7 +213,4 @@ def _numeric(series: pd.Series, label: str) -> pd.Series:
 
 
 def _assert_one_basis_per_process(data: pd.DataFrame) -> None:
-    process_basis_counts = data.groupby("공정", dropna=False)["소요기준"].nunique()
-    multiple_basis_processes = process_basis_counts.loc[process_basis_counts.gt(1)].index.tolist()
-    if multiple_basis_processes:
-        raise ValueError(f"공정별 소요기준이 둘 이상입니다: {multiple_basis_processes[:5]}")
+    assert_one_demand_basis_per_process(data, "소요대수 상세")

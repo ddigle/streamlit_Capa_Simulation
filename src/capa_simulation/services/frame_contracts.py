@@ -20,6 +20,50 @@ AREA_NAMES = ("Main", "MI")
 _AREA_BY_CASEFOLD = {name.casefold(): name for name in AREA_NAMES}
 
 
+def assert_one_demand_basis_per_process(
+    data: pd.DataFrame,
+    label: str,
+    *,
+    process_column: str = "공정",
+    basis_column: str = "소요기준",
+) -> None:
+    """한 공정이 소요기준을 둘 이상 갖지 못하게 막는다.
+
+    **업무 규칙이다** (2026-09-05 확인). 한 공정에 들어오는 유닛은 전부 같은 형태다.
+    환산으로 다른 소요기준의 유효 Capa 나 재공 값을 만들 수는 있어도, 공정 자체가 소요기준을
+    복수로 갖지는 않는다. 그러므로 이것이 감지되면 계산을 멈추고 알려야 한다 — 조용히
+    한쪽을 고르면 그 공정의 유효 Capa 와 소요대수가 통째로 틀린다.
+
+    메시지에 **충돌한 소요기준을 함께 적는다.** 공정 이름만 있으면 사용자가 기준정보의
+    어느 행을 고쳐야 하는지 알 수 없다.
+    """
+    require_columns(data, [process_column, basis_column], label)
+    if data.empty:
+        return
+    grouped = (
+        data.loc[:, [process_column, basis_column]]
+        .assign(**{basis_column: data[basis_column].astype("string").str.strip()})
+        .dropna(subset=[basis_column])
+        .drop_duplicates()
+        .groupby(process_column, dropna=False)[basis_column]
+    )
+    conflicts = {
+        str(process): sorted(str(value) for value in bases)
+        for process, bases in grouped.unique().items()
+        if len(bases) > 1
+    }
+    if not conflicts:
+        return
+    shown = list(conflicts)[:5]
+    detail = " / ".join(f"{process} → {', '.join(conflicts[process])}" for process in shown)
+    more = f" 외 {len(conflicts) - len(shown)}건" if len(conflicts) > len(shown) else ""
+    raise ValueError(
+        f"공정 하나에 소요기준이 둘 이상입니다 ({label}): {detail}{more}. "
+        "한 공정은 같은 형태의 유닛만 투입하므로 소요기준이 하나여야 합니다. "
+        "기준정보에서 해당 공정의 소요기준을 하나로 맞춘 뒤 다시 실행하세요."
+    )
+
+
 def require_columns(data: pd.DataFrame, columns: Sequence[str], label: str) -> None:
     """필수 컬럼 누락을 계산 전에 한국어 오류로 알린다."""
     missing = [column for column in columns if column not in data.columns]
