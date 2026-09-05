@@ -34,11 +34,13 @@ from capa_simulation.components.monthly_table_base import (
     add_outer_border,
     display_text,
     header_boundary_ratio,
+    header_label,
     month_label,
     render_split_scroll_table,
     table_height_px,
     text_width_units,
 )
+from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.design import tokens
 
 _ValueFormat = Literal["number", "percent"]
@@ -239,8 +241,13 @@ def render_hierarchical_monthly_table(
     key: str,
     value_format: _ValueFormat = "number",
     page_size: int | None = None,
+    owner_tab: OpenTab | None = None,
 ) -> None:
-    """Render a grouped fixed-label table with scrolling month columns."""
+    """Render a grouped fixed-label table with scrolling month columns.
+
+    `owner_tab` 은 이 표가 놓인 탭이다. 닫힌 탭에서는 그리지 않는다. 이유는
+    `render_split_scroll_table` 의 설명을 보라.
+    """
     if data.empty:
         st.info("표시할 월별 데이터가 없습니다.")
         return
@@ -300,7 +307,7 @@ def render_hierarchical_monthly_table(
             columnwidth=classification_widths,
             header={
                 "values": [
-                    f"<b>{column_labels.get(column, column)}</b>"
+                    header_label(column_labels.get(column, column))
                     for column in classification_columns
                 ],
                 "align": "center",
@@ -323,7 +330,7 @@ def render_hierarchical_monthly_table(
         go.Table(
             columnwidth=[1.0] * len(month_columns),
             header={
-                "values": [f"<b>{month_label(month)}</b>" for month in month_columns],
+                "values": [header_label(month_label(month)) for month in month_columns],
                 "align": "center",
                 "fill_color": HEADER_COLOR,
                 "line_color": TRANSPARENT_COLOR,
@@ -358,4 +365,5 @@ def render_hierarchical_monthly_table(
         month_figure=month_figure,
         classification_widths=classification_widths,
         month_count=len(month_columns),
+        owner_tab=owner_tab,
     )

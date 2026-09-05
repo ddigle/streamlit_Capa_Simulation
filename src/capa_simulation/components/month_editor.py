@@ -9,29 +9,13 @@
 
 from __future__ import annotations
 
-from types import TracebackType
-from typing import Protocol
-
 import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_tools
+from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
-
-
-class OpenTab(Protocol):
-    @property
-    def open(self) -> bool | None: ...
-
-    def __enter__(self) -> OpenTab: ...
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> bool | None: ...
 
 
 def render_month_editor(
@@ -48,7 +32,7 @@ def render_month_editor(
     table_name: str,
     csv_file_name: str,
 ) -> tuple[pd.DataFrame, bool, pd.DataFrame | None]:
-    if tab.open is False:
+    if tab_is_hidden(tab):
         return pd.DataFrame(), False, None
     month_columns = [column for column in default_table.columns if column not in dimensions]
     styled_table = default_table.style.set_properties(

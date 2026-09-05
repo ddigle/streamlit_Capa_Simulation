@@ -15,6 +15,7 @@ from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
 )
 from capa_simulation.components.scenario_edit_bar import render_scenario_edit_bar
+from capa_simulation.components.tab_state import stateful_tabs
 from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -100,11 +101,7 @@ render_page_header(
     ),
 )
 
-tabs = st.tabs(
-    TAB_NAMES,
-    key="capacity_standards_active_tab",
-    on_change="rerun",
-)
+tabs = stateful_tabs(TAB_NAMES, key="capacity_standards_active_tab")
 unit_capacity_tab = tabs[0]
 
 try:

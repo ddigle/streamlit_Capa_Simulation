@@ -16,6 +16,7 @@ from capa_simulation.components.reference_csv_tools import (
     render_reference_clipboard_tools,
 )
 from capa_simulation.components.scenario_edit_bar import render_scenario_edit_bar
+from capa_simulation.components.tab_state import stateful_tabs
 from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
@@ -128,8 +129,9 @@ render_scenario_edit_bar(
     clear_session_keys=(source_token_key, plan_staged_key),
 )
 
-conversion_tab, pkg_plan_tab, yield_tab, product_tab = st.tabs(
-    [":material/insights: 환산", "PKG PLAN", "수율", "제품 등록"]
+conversion_tab, pkg_plan_tab, yield_tab, product_tab = stateful_tabs(
+    [":material/insights: 환산", "PKG PLAN", "수율", "제품 등록"],
+    key="load_conversion_active_tab",
 )
 
 with pkg_plan_tab:
@@ -484,4 +486,5 @@ with conversion_tab:
             column_labels=COLUMN_LABELS,
             decimal_places=conversion_decimal_places,
             key="conversion_volume_table",
+            owner_tab=conversion_tab,
         )

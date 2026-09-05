@@ -15,7 +15,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from typing import Literal
 
 import pandas as pd
@@ -33,6 +34,34 @@ TONE_COLORS: dict[str, str] = {
 }
 
 STRIPE_WIDTH_PX = 4
+
+
+@contextmanager
+def metric_row(*, key: str) -> Iterator[None]:
+    """지표 카드를 **같은 폭으로** 늘어놓는 가로 줄.
+
+    `render_status_metric` 은 CSS 를 걸 자리를 만들려고 카드를 컨테이너로 한 번 감싼다.
+    그런데 Streamlit 은 맨 카드와 감싼 컨테이너에 서로 다른 flex-basis 를 준다. 실측하면
+    맨 `st.metric` 은 `1 1 fit-content`(스파크라인이 있으면 `1 1 210px`), 감싼 쪽은
+    `1 1 120px` 이다. 같은 줄에 섞이면 카드 하나만 90px 좁아진다.
+
+    줄 전체에 같은 flex 를 걸어 폭을 맞춘다. 감쌌든 아니든 결과가 같아진다.
+    """
+    st.html(
+        "\n".join(
+            [
+                "<style>",
+                f'.st-key-{key} [data-testid="stHorizontalBlock"] > * {{',
+                "    flex: 1 1 0 !important;",
+                "    min-width: 0 !important;",
+                "}",
+                "</style>",
+            ]
+        )
+    )
+    with st.container(key=key):
+        with st.container(horizontal=True, gap="small"):
+            yield
 
 
 def shortage_tone(count: int) -> MetricTone:

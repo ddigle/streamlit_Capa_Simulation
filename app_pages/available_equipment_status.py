@@ -10,7 +10,11 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.status_metric import render_status_metric, shortage_tone
+from capa_simulation.components.status_metric import (
+    metric_row,
+    render_status_metric,
+    shortage_tone,
+)
 from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL, render_csv_download
 from capa_simulation.design import tokens
 from capa_simulation.persistence.equipment_cache import (
@@ -324,7 +328,7 @@ with dashboard_tab:
         weekly_total = trend["가용대수"] + trend["비가동대수"]
         weekly_rate = (trend["가용대수"] / weekly_total.where(weekly_total.ne(0))).fillna(0.0)
         st.caption(f"조회 마지막 주 기준 · {latest_week['Weeknum'].iloc[0]}")
-        with st.container(horizontal=True):
+        with metric_row(key="equipment_weekly_metrics"):
             st.metric(
                 "총대수",
                 _format_equipment_count(total_count),

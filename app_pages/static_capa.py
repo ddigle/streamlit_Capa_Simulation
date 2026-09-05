@@ -7,7 +7,11 @@ import streamlit as st
 
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.roadmap_panel import render_roadmap_panel
-from capa_simulation.components.status_metric import render_status_metric, shortage_tone
+from capa_simulation.components.status_metric import (
+    metric_row,
+    render_status_metric,
+    shortage_tone,
+)
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -218,7 +222,7 @@ else:
     with st.container(border=True):
         st.markdown("### :material/priority_high: 경고 기준 미달")
         st.markdown(":red-badge[집중 관리] 물리적 Capa가 계획을 받치지 못하는 공정·월입니다.")
-        with st.container(horizontal=True, gap="small"):
+        with metric_row(key="static_capa_warning_metrics"):
             render_status_metric(
                 "미달 공정·월",
                 f"{len(warning_shortfalls):,}건",
@@ -260,7 +264,7 @@ else:
             ":orange-badge[계획 관리] 경고 기준은 충족했지만 확보 기준까지 여유 설비가 필요한 "
             "공정·월입니다."
         )
-        with st.container(horizontal=True, gap="small"):
+        with metric_row(key="static_capa_secure_metrics"):
             render_status_metric(
                 "추가 확보 공정·월",
                 f"{len(secure_shortfalls):,}건",

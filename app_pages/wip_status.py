@@ -9,7 +9,11 @@ import streamlit as st
 
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
-from capa_simulation.components.status_metric import render_status_metric, shortage_tone
+from capa_simulation.components.status_metric import (
+    metric_row,
+    render_status_metric,
+    shortage_tone,
+)
 from capa_simulation.components.wip_status_dashboard import (
     WIP_GRID_CELL_WIDTH_PX,
     build_wip_status_grid_figure,
@@ -226,7 +230,7 @@ today_met = int(today_rows["상태"].eq("충족").sum())
 today_short = int(today_rows["상태"].eq("부족").sum())
 today_unset = int(today_rows["상태"].eq("표준 미설정").sum())
 route_count = len(selected_routes)
-with st.container(horizontal=True):
+with metric_row(key="wip_status_metric_row"):
     st.metric("선택 경로", f"{route_count:,}개", border=True)
     render_status_metric(
         "오늘 표준 충족",

@@ -14,6 +14,7 @@ from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
     render_reference_clipboard_tools,
 )
+from capa_simulation.components.tab_state import stateful_tabs
 from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
@@ -68,7 +69,10 @@ render_page_header(
     "공정별 확보율",
     description=("월·공정별 가용대수를 소요대수로 나눠 확보율과 B/N 공정을 판정합니다."),
 )
-availability_tab, required_tab, equipment_tab = st.tabs(TAB_NAMES)
+availability_tab, required_tab, equipment_tab = stateful_tabs(
+    TAB_NAMES,
+    key="process_securement_active_tab",
+)
 
 try:
     context = load_page_context()
@@ -217,6 +221,7 @@ else:
             decimal_places=2,
             value_format="percent",
             key="securement_rate_monthly_table",
+            owner_tab=availability_tab,
         )
 
     with required_tab:
@@ -321,6 +326,7 @@ else:
                 else "required_equipment_summary_table"
             ),
             page_size=60 if show_detail else None,
+            owner_tab=required_tab,
         )
 
     with equipment_tab:

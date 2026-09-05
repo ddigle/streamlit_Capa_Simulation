@@ -29,6 +29,7 @@ from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
 )
+from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 
 # 색과 치수는 design/tokens.py 가 단일 근거다. 여기서는 표 문맥의 이름만 붙인다.
@@ -69,6 +70,25 @@ COLUMN_LABELS = {
     "Customer": "거래선",
     "수율 구분": "구분",
 }
+
+
+def header_label(value: str) -> str:
+    """표 머리글에 넣을 문자열을 만든다.
+
+    `<b>` 를 붙이면 plotly 의 table trace 가 "일단 그린 다음 DOM 을 재서 가운데로 옮기는"
+    경로(`needsConvertToTspans`)로 내려간다. 그 경로는 잰 폭으로만 가로 위치를 잡으므로
+    잴 수 없는 상황에서 폭이 0 이면 글자가 셀 중앙에서 글자 폭의 절반만큼 밀린다. 그런데
+    이 경로는 **세로로는 셀 높이에 맞춰 가운데** 놓는다. `<b>` 를 빼면 측정이 필요 없는
+    경로로 내려가 가로는 언제나 정확하지만, 세로가 셀 위쪽에 고정되어 36px 머리글 밴드에서
+    글자가 4.5px 위로 붙는다(실측). 밴드를 낮추지 않는 한 둘을 같이 얻을 수 없어, 보기에
+    나은 쪽인 `<b>` 를 유지하고 가로 어긋남은 **숨겨진 채로 그리지 않는 것**으로 막는다.
+    `components/tab_state.py` 가 그 규칙을 갖고 있다.
+
+    공백은 줄바꿈 없는 공백으로 바꾼다. 공백이 있으면 plotly 가 한 겹 더 나쁜 줄바꿈
+    경로로 내려가 숨겨진 상태에서 글자가 통째로 비기도 한다. 분류 셀 값은 이미 같은
+    치환을 하고 있어 머리글만 규칙이 달랐다. 화면에 보이는 모양은 같다.
+    """
+    return f"<b>{value.replace(' ', chr(0xA0))}</b>"
 
 
 def display_text(value: object) -> str:
@@ -204,12 +224,20 @@ def render_split_scroll_table(
     month_figure: go.Figure,
     classification_widths: Sequence[float],
     month_count: int,
+    owner_tab: OpenTab | None = None,
 ) -> None:
     """고정 분류 영역과 가로 스크롤 월 영역을 나란히 렌더링한다.
 
     월 영역의 네이티브 스크롤바는 숨기고 `horizontal_scrollbar` 컴포넌트로 대체한다.
     두 Figure 의 행 높이가 같아야 좌우가 어긋나지 않는다.
+
+    `owner_tab` 이 닫혀 있으면 아무것도 그리지 않는다. 숨겨진 요소 안에서는 SVG 글자 폭
+    측정이 0 이라 `go.Table` 이 헤더를 셀 가운데에 놓지 못하고, `staticPlot` 이라 나중에
+    보이게 되어도 다시 그리지 않아 어긋난 채로 남는다. 탭이 열리면 rerun 이 돌아 그때
+    보이는 상태로 그린다.
     """
+    if tab_is_hidden(owner_tab):
+        return
     visible_month_count = min(max(month_count, 1), MONTH_SCROLL_THRESHOLD)
     classification_width = sum(classification_widths)
     # 분류 폭은 px 로 계산한 값이다. 비율로만 넘기면 창이 좁을 때 함께 줄어 분류 이름이
