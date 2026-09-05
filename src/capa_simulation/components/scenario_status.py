@@ -14,6 +14,7 @@ from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
 )
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
     get_scenario_repository,
     load_scenario_snapshot,
@@ -219,8 +220,8 @@ def _render_revision_save(
                 note=note.strip() or None,
             )
             activate_persisted_snapshot(snapshot)
-        except (KeyError, RuntimeError, TypeError, ValueError) as exc:
-            st.error(f"신규 리비전을 저장하지 못했습니다: {exc}")
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(f"신규 리비전을 저장하지 못했습니다: {bootstrap_error_message(exc)}")
         else:
             st.session_state[SIDEBAR_FLASH_KEY] = (
                 f"신규 리비전 r{snapshot.revision.revision_no}을 저장했습니다."

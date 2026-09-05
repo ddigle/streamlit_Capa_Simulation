@@ -23,6 +23,7 @@ from capa_simulation.components.table_toolbar import (
 )
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
     load_page_context,
     resolve_effective_months,
 )
@@ -641,8 +642,12 @@ with st.container(border=True):
             key="clear_standard_target_availability",
             width="content",
         ):
-            equipment_repository.clear_standard_target_availability()
-            st.rerun()
+            try:
+                equipment_repository.clear_standard_target_availability()
+            except BOOTSTRAP_ERRORS as exc:
+                st.error(bootstrap_error_message(exc))
+            else:
+                st.rerun()
 
     with st.form("standard_target_availability_clipboard", border=False):
         clipboard_text = st.text_area(
@@ -664,8 +669,8 @@ with st.container(border=True):
                 availability = equipment_repository.save_standard_target_availability(
                     parse_weekly_availability_clipboard(clipboard_text)
                 )
-            except ValueError as exc:
-                st.error(str(exc))
+            except BOOTSTRAP_ERRORS as exc:
+                st.error(bootstrap_error_message(exc))
             else:
                 st.success("주차별 가용설비 최신본을 저장했습니다. 서버를 재시작해도 유지됩니다.")
 

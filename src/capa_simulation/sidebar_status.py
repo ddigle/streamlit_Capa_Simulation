@@ -20,9 +20,20 @@ def show_applied_month_range(start_month: int, end_month: int) -> None:
         return
     _month_range_placeholder.caption(
         f":material/check_circle: 적용 · "
-        f"{_format_short_month(start_month)}–{_format_short_month(end_month)}"
+        f"{format_short_month(start_month)}–{format_short_month(end_month)}"
     )
 
 
-def _format_short_month(month: int) -> str:
+def show_month_range_unavailable() -> None:
+    """선택 범위에 데이터가 없어 계산이 서지 않았음을 같은 자리에 알린다.
+
+    자리표시자는 rerun 을 넘어 남는다. 실패한 rerun 에서 아무것도 쓰지 않으면 직전에 성공한
+    범위가 "적용" 으로 계속 보여 본문 오류와 어긋난다.
+    """
+    if _month_range_placeholder is None:
+        return
+    _month_range_placeholder.caption(":material/block: 적용 안 됨 · 선택 범위에 데이터 없음")
+
+
+def format_short_month(month: int) -> str:
     return f"{month // 100 % 100:02d}.{month % 100:02d}"

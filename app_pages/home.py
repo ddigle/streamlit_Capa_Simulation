@@ -23,6 +23,11 @@ from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
 )
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
+    selected_month_range,
+)
 from capa_simulation.performance import PerformanceTrace
 from capa_simulation.scenario_preset_state import (
     DEFAULT_SECURE_THRESHOLD_PERCENT,
@@ -49,15 +54,11 @@ from capa_simulation.services.simulation_cache import (
     get_home_simulation,
 )
 from capa_simulation.settings import APP_NAME
-from capa_simulation.sidebar_status import show_applied_month_range
-
-TRANSPARENT_COLOR = "rgba(0, 0, 0, 0)"
-
-
-def selected_month_range() -> tuple[int, int]:
-    start_label, end_label = st.session_state["production_month_range_v2"]
-    return int(start_label.replace("-", "")), int(end_label.replace("-", ""))
-
+from capa_simulation.sidebar_status import (
+    format_short_month,
+    show_applied_month_range,
+    show_month_range_unavailable,
+)
 
 render_page_header(
     APP_NAME,
@@ -96,7 +97,11 @@ try:
     effective_start = max(selected_start, source_start)
     effective_end = min(selected_end, source_end)
     if effective_start > effective_end:
-        raise ValueError("선택 범위에 생산계획 데이터가 없습니다.")
+        show_month_range_unavailable()
+        raise ValueError(
+            "선택 범위에 생산계획 데이터가 없습니다 "
+            f"(데이터 범위 {format_short_month(source_start)}–{format_short_month(source_end)})"
+        )
     show_applied_month_range(effective_start, effective_end)
     home_trace.mark("기준정보·시나리오")
 
@@ -191,8 +196,8 @@ try:
         _available_equipment=simulation_available,
     )
     home_trace.mark("HOME 계산 파이프라인")
-except (KeyError, OSError, ValueError) as exc:
-    st.error(str(exc))
+except BOOTSTRAP_ERRORS as exc:
+    st.error(bootstrap_error_message(exc))
     st.stop()
 
 with detail_row:

@@ -15,6 +15,7 @@ from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
 )
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import load_global_display_order, load_scenario_snapshot
 from capa_simulation.persistence.models import ScenarioCreate, ScenarioPreset, ScenarioSummary
 from capa_simulation.persistence.repository import (
@@ -403,8 +404,8 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
                 for record in cast(tuple[VirtualProductRecord, ...], session_virtual_products())
             ],
         )
-    except (KeyError, TypeError, ValueError) as exc:
-        st.error(str(exc))
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
     else:
         virtual_count = len(session_virtual_products())
         activate_persisted_snapshot(snapshot)

@@ -23,6 +23,7 @@ from capa_simulation.components.space_layout import (
 )
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.equipment_cache import load_latest_equipment_snapshot
 from capa_simulation.services.equipment_availability import (
     build_milestone_transition_events,
@@ -64,8 +65,8 @@ try:
         equipment = latest_snapshot.equipment
         downtime = latest_snapshot.downtime
         using_sample_equipment = False
-except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
-    st.error(f"Space 설비 데이터를 준비하지 못했습니다: {exc}")
+except BOOTSTRAP_ERRORS as exc:
+    st.error(f"Space 설비 데이터를 준비하지 못했습니다: {bootstrap_error_message(exc)}")
     st.stop()
 
 building_names = {building.name for building in BUILDINGS}

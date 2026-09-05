@@ -22,6 +22,7 @@ from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
 )
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.equipment_cache import get_equipment_repository
 from capa_simulation.scenario_state import (
     ensure_active_scenario,
@@ -124,8 +125,8 @@ try:
     availability = get_equipment_repository(
         str(EQUIPMENT_DUCKDB_PATH.resolve())
     ).load_standard_target_availability()
-except (KeyError, OSError, RuntimeError, ValueError) as exc:
-    st.error(str(exc))
+except BOOTSTRAP_ERRORS as exc:
+    st.error(bootstrap_error_message(exc))
     st.stop()
 
 if route_scope.empty:

@@ -15,6 +15,7 @@ from capa_simulation.io.company_bigdataquery_adapter import (
     BigDataQueryCoreDataProvider,
     is_bigdataquery_adapter_configured,
 )
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import load_global_display_order
 from capa_simulation.persistence.models import ScenarioCreate
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -102,8 +103,8 @@ def render_bigdataquery_registration(
                 revision_name=revision_name,
                 note=note.strip() or None,
             )
-    except (KeyError, RuntimeError, TypeError, ValueError) as exc:
-        st.error(str(exc))
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
         _render_reference_conflict_report()
     else:
         activate_persisted_snapshot(snapshot)

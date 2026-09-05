@@ -52,8 +52,22 @@ def test_disjoint_ranges_raise_the_page_specific_message(monkeypatch) -> None:
 
 
 def test_bootstrap_errors_cover_every_failure_the_entry_sequence_can_raise() -> None:
-    """활성 리비전이 없으면 RuntimeError 다. 페이지마다 다른 조합을 잡으면 새어나간다."""
-    assert set(BOOTSTRAP_ERRORS) == {KeyError, OSError, RuntimeError, ValueError}
+    """활성 리비전이 없으면 RuntimeError 다. 페이지마다 다른 조합을 잡으면 새어나간다.
+
+    `duckdb.Error` 가 빠지면 파일 잠금이 원문 트레이스백으로 뜬다 — IOException 의 MRO 에
+    OSError 가 없다는 것을 09-04 기준선이 실측했다.
+    """
+    import duckdb
+
+    assert set(BOOTSTRAP_ERRORS) == {
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        duckdb.Error,
+    }
+    assert issubclass(duckdb.IOException, BOOTSTRAP_ERRORS)
 
 
 def test_month_range_falls_back_when_the_widget_state_is_missing_or_broken(monkeypatch) -> None:

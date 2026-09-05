@@ -154,3 +154,54 @@ def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -
     app.run()
 
     assert _cache_state(app) == "적중"
+
+
+def test_home_reports_a_missing_active_revision_instead_of_a_traceback(tmp_path: Path) -> None:
+    """공식버전이 없는 저장소로 열면 활성 리비전이 없어 RuntimeError 가 난다.
+
+    14개 페이지 중 HOME 만 이것을 잡지 않아 원문 트레이스백을 그대로 보여 줬다. 안내 한 줄과
+    멈춤이어야 한다.
+    """
+    from capa_simulation.persistence.models import ScenarioCreate, ScenarioPreset
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.builtin_seed import (
+        BUILTIN_SEED_MONTHS,
+        build_builtin_seed_dataset,
+        builtin_seed_processes,
+    )
+
+    database = tmp_path / "unpublished.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    prepared = build_builtin_seed_dataset()
+    repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="공식버전 없는 시나리오",
+            source_simulation_code="USER-SCENARIO-001",
+            source_simulation_name="사용자 원천",
+            source_type="TEST",
+            pipeline_version="test-v1",
+        ),
+        prepared.reference_tables,
+        ScenarioPreset(
+            min(BUILTIN_SEED_MONTHS), max(BUILTIN_SEED_MONTHS), builtin_seed_processes()
+        ),
+        source_data=prepared.source_data,
+    )
+
+    app = AppTest.from_string(_home_script(database), default_timeout=300).run()
+
+    assert not list(app.exception)
+    assert len(app.error) == 1
+
+
+def test_home_names_the_data_range_when_the_selection_is_outside_it(seeded_database: Path) -> None:
+    """ "데이터가 없습니다" 만으로는 어디로 옮겨야 하는지 알 수 없다. 있는 범위를 같이 말한다."""
+    app = _run(seeded_database)
+
+    app.session_state["production_month_range_v2"] = ("2029-01", "2029-03")
+    app.run()
+
+    assert not list(app.exception)
+    assert len(app.error) == 1
+    assert "데이터 범위" in app.error[0].value

@@ -17,6 +17,7 @@ from capa_simulation.components.status_metric import (
 )
 from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL, render_csv_download
 from capa_simulation.design import tokens
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_snapshot_cache,
     get_equipment_repository,
@@ -175,8 +176,8 @@ try:
         saved_equipment = latest_snapshot.equipment
         saved_downtime = latest_snapshot.downtime
         revision_token = latest_snapshot.revision.revision_id
-except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
-    st.error(f"설비 현황을 준비하지 못했습니다: {exc}")
+except BOOTSTRAP_ERRORS as exc:
+    st.error(f"설비 현황을 준비하지 못했습니다: {bootstrap_error_message(exc)}")
     st.stop()
 
 if st.session_state.get(DRAFT_REVISION_KEY) != revision_token:
@@ -847,8 +848,8 @@ with management_tab:
                 edited_downtime,
                 note=revision_note,
             )
-        except (RuntimeError, TypeError, ValueError) as exc:
-            st.error(str(exc))
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(bootstrap_error_message(exc))
         else:
             clear_equipment_snapshot_cache()
             _reset_drafts()
@@ -858,7 +859,11 @@ with management_tab:
             )
             st.rerun()
 
-    revisions = repository.list_revisions()
+    try:
+        revisions = repository.list_revisions()
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(f"저장 이력을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        st.stop()
     with st.expander("저장 이력 및 필터 조회", icon=":material/history:", expanded=False):
         if not revisions:
             st.caption("저장된 설비 운영 이력이 없습니다.")
@@ -895,7 +900,11 @@ with management_tab:
                 ),
                 key="equipment_history_revision_id_v3",
             )
-            historical = load_equipment_snapshot(equipment_database_path, selected_revision_id)
+            try:
+                historical = load_equipment_snapshot(equipment_database_path, selected_revision_id)
+            except BOOTSTRAP_ERRORS as exc:
+                st.error(f"선택한 이력을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+                st.stop()
             historical_equipment = historical.equipment
             with st.container(horizontal=True, gap="small"):
                 history_processes = st.multiselect(
