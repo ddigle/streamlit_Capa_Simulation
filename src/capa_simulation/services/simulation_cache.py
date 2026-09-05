@@ -21,6 +21,7 @@ from capa_simulation.services.load_calculator import (
     build_monthly_volume,
     calculate_chip_and_wafer_loads,
 )
+from capa_simulation.services.month_filter import filter_month_range
 from capa_simulation.services.required_equipment import (
     calculate_required_equipment,
     calculate_required_equipment_from_loads,
@@ -235,23 +236,34 @@ def get_home_equipment_demand(
 @st.cache_data(show_spinner=False, max_entries=16)
 def get_home_simulation(
     cache_key: HomeSimulationCacheKey,
-    _plan: pd.DataFrame,
-    _yield_data: pd.DataFrame,
-    _density_data: pd.DataFrame,
+    _tables: Mapping[str, pd.DataFrame],
     _display_order: pd.DataFrame,
-    _upeh: pd.DataFrame,
-    _run_rate: pd.DataFrame,
-    _vital: pd.DataFrame,
     _module: pd.DataFrame,
-    _run_day: pd.DataFrame,
-    _lot_ratio: pd.DataFrame,
-    _wf_ratio: pd.DataFrame,
-    _reqb: pd.DataFrame,
-    _chip_qty: pd.DataFrame,
-    _available_equipment: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Reuse HOME results while hashing only ``cache_key`` on warm reruns."""
-    del cache_key
+    """Reuse HOME results while hashing only ``cache_key`` on warm reruns.
+
+    월 슬라이스는 이 안에서 한다. 호출자가 미리 잘라서 넘기면 캐시가 적중해도 표 열 개를
+    자르고 복사한 뒤 버린다(warm rerun 27~36ms 중 93~98%). 키와 프레임을 한 객체에서
+    꺼내므로 apply_month_updates 직후 옛 슬라이스가 새 토큰에 묶이는 함정도 닫힌다.
+    """
+    _, _, start_month, end_month, _ = cache_key
+
+    def sliced(name: str) -> pd.DataFrame:
+        return filter_month_range(_tables[name], start_month, end_month, name)
+
+    _plan = sliced("RQ_PKG_PLAN")
+    _yield_data = sliced("RQ_YLD")
+    _upeh = sliced("RQ_UPEH")
+    _run_rate = sliced("RQ_RUN_RATE")
+    _vital = sliced("RQ_VITAL")
+    _run_day = sliced("RQ_RUN_DAY")
+    _lot_ratio = sliced("RQ_LOT_RATIO")
+    _wf_ratio = sliced("RQ_WF_RATIO")
+    _reqb = sliced("RQ_REQB")
+    _available_equipment = sliced("RQ_EQP_AVBL")
+    # 월 축이 없는 두 표는 그대로.
+    _density_data = _tables["RQ_CHIP_EQ"]
+    _chip_qty = _tables["RQ_CHIP_QTY"]
     # Load-calculation cache schema v2: normalize WF type before Dummy detection.
     monthly_density, production_detail = get_production_dashboard(
         _plan,

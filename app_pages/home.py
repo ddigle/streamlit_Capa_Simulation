@@ -37,8 +37,6 @@ from capa_simulation.scenario_preset_state import (
 )
 from capa_simulation.scenario_state import (
     ensure_active_scenario,
-    scenario_month_table,
-    scenario_table,
 )
 from capa_simulation.services.dashboard import (
     build_bottleneck_capacity,
@@ -105,66 +103,6 @@ try:
     show_applied_month_range(effective_start, effective_end)
     home_trace.mark("기준정보·시나리오")
 
-    simulation_plan = scenario_month_table(
-        active_scenario,
-        "RQ_PKG_PLAN",
-        effective_start,
-        effective_end,
-    )
-    simulation_yield = scenario_month_table(
-        active_scenario,
-        "RQ_YLD",
-        effective_start,
-        effective_end,
-    )
-    simulation_upeh = scenario_month_table(
-        active_scenario,
-        "RQ_UPEH",
-        effective_start,
-        effective_end,
-    )
-    simulation_run_rate = scenario_month_table(
-        active_scenario,
-        "RQ_RUN_RATE",
-        effective_start,
-        effective_end,
-    )
-    simulation_vital = scenario_month_table(
-        active_scenario,
-        "RQ_VITAL",
-        effective_start,
-        effective_end,
-    )
-    simulation_run_day = scenario_month_table(
-        active_scenario,
-        "RQ_RUN_DAY",
-        effective_start,
-        effective_end,
-    )
-    simulation_lot_ratio = scenario_month_table(
-        active_scenario,
-        "RQ_LOT_RATIO",
-        effective_start,
-        effective_end,
-    )
-    simulation_wf_ratio = scenario_month_table(
-        active_scenario,
-        "RQ_WF_RATIO",
-        effective_start,
-        effective_end,
-    )
-    simulation_reqb = scenario_month_table(
-        active_scenario,
-        "RQ_REQB",
-        effective_start,
-        effective_end,
-    )
-    simulation_available = scenario_month_table(
-        active_scenario,
-        "RQ_EQP_AVBL",
-        effective_start,
-        effective_end,
-    )
     home_simulation_cache_key = build_home_simulation_cache_key(
         reference_version=reference_version,
         scenario_token=active_scenario["content_token"],
@@ -172,7 +110,7 @@ try:
         end_month=effective_end,
         display_order=reference_tables["RQ_DISPLAY_ORDER"],
     )
-    home_trace.mark("월 범위 데이터 준비")
+    home_trace.mark("캐시 키 생성")
     (
         monthly_density,
         production_detail,
@@ -180,20 +118,9 @@ try:
         securement_rate,
     ) = get_home_simulation(
         cache_key=home_simulation_cache_key,
-        _plan=simulation_plan,
-        _yield_data=simulation_yield,
-        _density_data=scenario_table(active_scenario, "RQ_CHIP_EQ"),
+        _tables=active_scenario["tables"],
         _display_order=reference_tables["RQ_DISPLAY_ORDER"],
-        _upeh=simulation_upeh,
-        _run_rate=simulation_run_rate,
-        _vital=simulation_vital,
         _module=reference_tables["RQ_MODULE"],
-        _run_day=simulation_run_day,
-        _lot_ratio=simulation_lot_ratio,
-        _wf_ratio=simulation_wf_ratio,
-        _reqb=simulation_reqb,
-        _chip_qty=scenario_table(active_scenario, "RQ_CHIP_QTY"),
-        _available_equipment=simulation_available,
     )
     home_trace.mark("HOME 계산 파이프라인")
 except BOOTSTRAP_ERRORS as exc:
@@ -216,11 +143,9 @@ process_selection_key = "dashboard_bottleneck_process_selection"
 process_dialog_draft_key = "dashboard_bottleneck_process_dialog_draft"
 process_dialog_editor_key = "dashboard_bottleneck_process_dialog_editor"
 if process_selection_key not in st.session_state:
-    st.session_state[process_selection_key] = [
-        process
-        for process in process_options
-        if st.session_state.get(f"dashboard_bottleneck_process_{process}", True)
-    ]
+    # 예전 사이드바 토글 키(dashboard_bottleneck_process_{공정})를 읽던 이관 코드였다.
+    # 그 토글은 70ad6d0 에서 지워져 항상 기본값 True — 곧 전체 목록이다.
+    st.session_state[process_selection_key] = list(process_options)
 else:
     saved_processes = st.session_state[process_selection_key]
     if isinstance(saved_processes, list):
