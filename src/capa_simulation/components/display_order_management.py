@@ -189,6 +189,6 @@ def _save_global_display_order(
     profile = repository.replace_global_display_order(validated, source=source)
     clear_global_display_order_cache()
     try:
-        apply_global_display_order(profile.rules, profile.version)
+        apply_global_display_order(profile.rules)
     except RuntimeError:
         pass

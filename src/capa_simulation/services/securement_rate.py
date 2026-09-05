@@ -4,7 +4,7 @@ from math import ceil
 
 import pandas as pd
 
-from capa_simulation.services.frame_contracts import require_columns
+from capa_simulation.services.frame_contracts import normalize_month_column, require_columns
 
 SECUREMENT_DIMENSIONS = ["공정"]
 SHORTFALL_COLUMNS = [
@@ -136,13 +136,7 @@ def build_securement_shortfall_tables(
 
 
 def _prepare_keys_and_value(data: pd.DataFrame, value_column: str, table_name: str) -> None:
-    months = pd.to_numeric(data["생산계획년월"], errors="coerce")
-    valid_months = months.notna() & months.mod(1).eq(0)
-    integer_months = months.fillna(0).astype("int64")
-    valid_months &= integer_months.mod(100).between(1, 12)
-    if not valid_months.all():
-        raise ValueError(f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다.")
-    data["생산계획년월"] = integer_months
+    normalize_month_column(data, table_name)
     data["공정"] = data["공정"].astype("string").str.strip()
     if data["공정"].isna().any() or data["공정"].eq("").any():
         raise ValueError(f"{table_name}의 공정에 누락값이 있습니다.")
@@ -154,13 +148,7 @@ def _prepare_keys_and_value(data: pd.DataFrame, value_column: str, table_name: s
 
 
 def _prepare_shortfall_input(data: pd.DataFrame) -> None:
-    months = pd.to_numeric(data["생산계획년월"], errors="coerce")
-    valid_months = months.notna() & months.mod(1).eq(0)
-    integer_months = months.fillna(0).astype("int64")
-    valid_months &= integer_months.mod(100).between(1, 12)
-    if not valid_months.all():
-        raise ValueError("확보율의 생산계획년월은 YYYYMM 형식이어야 합니다.")
-    data["생산계획년월"] = integer_months
+    normalize_month_column(data, "확보율")
 
     data["공정"] = data["공정"].astype("string").str.strip()
     if data["공정"].isna().any() or data["공정"].eq("").any():

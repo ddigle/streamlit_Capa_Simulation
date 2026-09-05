@@ -258,13 +258,7 @@ def _prepare_run_day(data: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"RQ_RUN_DAY 필수 컬럼이 없습니다: {', '.join(missing)}")
     result = data[required].copy()
-    month = pd.to_numeric(result["생산계획년월"], errors="coerce")
-    valid_month = month.notna() & month.mod(1).eq(0)
-    month_integer = month.fillna(0).astype("int64")
-    valid_month &= month_integer.mod(100).between(1, 12)
-    if not valid_month.all():
-        raise ValueError("RQ_RUN_DAY의 생산계획년월은 YYYYMM 형식이어야 합니다.")
-    result["생산계획년월"] = month_integer
+    normalize_month_column(result, "RQ_RUN_DAY")
     result["공정"] = result["공정"].astype("string").str.strip()
     if result["공정"].isna().any() or result["공정"].eq("").any():
         raise ValueError("RQ_RUN_DAY의 공정에는 누락값이 없어야 합니다.")

@@ -208,7 +208,7 @@ def build_floor_layout_figure(
         x1=100,
         y0=0,
         y1=60,
-        fillcolor="rgba(247,248,250,0.18)" if background_image else tokens.SPACE_CANVAS,
+        fillcolor=tokens.SPACE_CANVAS_OVERLAY if background_image else tokens.SPACE_CANVAS,
         line={"color": tokens.SPACE_BORDER, "width": 2.5},
         layer="below",
     )

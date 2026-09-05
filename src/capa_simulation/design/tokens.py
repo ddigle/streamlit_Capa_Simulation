@@ -97,6 +97,16 @@ SCHEDULE_PLANNED: Final = WIP_INFLOW
 # FAB 도면은 zinc 계열이 아니라 자체 blue-grey 를 쓴다. 도면 관례에 맞춘 의도적인
 # 하위 팔레트이며 표·차트와 섞어 쓰지 않는다.
 SPACE_CANVAS: Final = "#F7F8FA"
+
+
+def _with_alpha(hex_color: str, alpha: float) -> str:
+    """`#RRGGBB` 토큰에서 반투명 rgba 를 만든다. 손으로 옮겨 적으면 원 토큰과 갈라진다."""
+    red, green, blue = (int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
+    return f"rgba({red},{green},{blue},{alpha})"
+
+
+# 배경 도면 위에 캔버스를 덮을 때. SPACE_CANVAS 를 바꾸면 함께 바뀐다.
+SPACE_CANVAS_OVERLAY: Final = _with_alpha(SPACE_CANVAS, 0.18)
 SPACE_BORDER: Final = "#59636E"
 SPACE_TEXT: Final = "#20262E"
 SPACE_LABEL_TEXT: Final = "#69727C"

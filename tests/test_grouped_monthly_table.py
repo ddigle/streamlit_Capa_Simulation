@@ -73,9 +73,9 @@ def test_display_rows_insert_product_production_and_grand_totals() -> None:
         column_labels={"양산구분": "양산", "제품정보": "제품"},
     )
     assert export.columns.tolist() == ["양산", "제품", "Stack", "26.08", "26.09"]
-    assert export.loc[0, "양산"] == "전체\u00a0합계"
+    assert export.loc[0, "양산"] == "전체 합계"
     assert export.loc[3, "제품"] == "Total"
-    assert export.loc[6, "양산"] == "양산\u00a0Total"
+    assert export.loc[6, "양산"] == "양산 Total"
     assert export.loc[0, "26.08"] == 47.0
     assert pd.isna(export.loc[5, "26.09"])
 

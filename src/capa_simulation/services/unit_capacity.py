@@ -4,6 +4,7 @@ import pandas as pd
 
 from capa_simulation.services.frame_contracts import (
     normalize_area_name,
+    normalize_month_column,
     require_columns,
 )
 
@@ -229,14 +230,7 @@ def _normalize_keys(data: pd.DataFrame, keys: list[str]) -> None:
 
 
 def _normalize_month(data: pd.DataFrame, table_name: str) -> None:
-    numeric = pd.to_numeric(data["생산계획년월"], errors="coerce")
-    valid = numeric.notna() & numeric.mod(1).eq(0)
-    if not valid.all():
-        raise ValueError(f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다.")
-    integer_month = numeric.astype("int64")
-    if not integer_month.mod(100).between(1, 12).all():
-        raise ValueError(f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다.")
-    data["생산계획년월"] = integer_month
+    normalize_month_column(data, table_name)
 
 
 def _assert_complete_keys(data: pd.DataFrame, keys: list[str], table_name: str) -> None:

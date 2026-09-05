@@ -7,7 +7,6 @@ import streamlit as st
 
 SESSION_REFERENCE_TABLES_KEY = "persisted_reference_tables"
 SESSION_REFERENCE_VERSION_KEY = "persisted_reference_version"
-SESSION_DISPLAY_ORDER_VERSION_KEY = "global_display_order_version"
 
 
 def get_effective_reference_tables() -> dict[str, pd.DataFrame]:
@@ -47,7 +46,7 @@ def activate_persisted_reference_tables(
     return version
 
 
-def apply_global_display_order(display_order: pd.DataFrame, version: int) -> None:
+def apply_global_display_order(display_order: pd.DataFrame) -> None:
     """Replace only the shared UI order in the current session without resetting edits."""
     saved = st.session_state.get(SESSION_REFERENCE_TABLES_KEY)
     if not isinstance(saved, dict) or not saved:
@@ -55,11 +54,9 @@ def apply_global_display_order(display_order: pd.DataFrame, version: int) -> Non
     revised = dict(saved)
     revised["RQ_DISPLAY_ORDER"] = display_order.copy(deep=True)
     st.session_state[SESSION_REFERENCE_TABLES_KEY] = revised
-    st.session_state[SESSION_DISPLAY_ORDER_VERSION_KEY] = int(version)
     st.session_state.pop("home_dashboard_figure_cache", None)
 
 
 def clear_persisted_reference_tables() -> None:
     st.session_state.pop(SESSION_REFERENCE_TABLES_KEY, None)
     st.session_state.pop(SESSION_REFERENCE_VERSION_KEY, None)
-    st.session_state.pop(SESSION_DISPLAY_ORDER_VERSION_KEY, None)

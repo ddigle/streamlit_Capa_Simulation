@@ -58,10 +58,6 @@ class _DisplayRows:
     grand_total_row: int
 
 
-def _plain_text(value: str) -> str:
-    return value.replace("<b>", "").replace("</b>", "").replace("\u00a0", " ")
-
-
 def _classification_widths(
     values: list[list[str]],
     columns: list[str],
@@ -71,7 +67,7 @@ def _classification_widths(
     for column_index, column in enumerate(columns):
         texts = [
             labels.get(column, column),
-            *[_plain_text(value) for value in values[column_index]],
+            *values[column_index],
         ]
         max_units = max((text_width_units(text) for text in texts), default=4.0)
         widths.append(
@@ -384,7 +380,11 @@ def build_grouped_monthly_export(
 
     display = _build_display_rows(data, classification_columns, month_columns)
     output: dict[str, list[object]] = {
-        column_labels.get(column, column): list(display.classification_values[column_index])
+        # 화면은 줄바꿈을 막으려고 U+00A0 을 쓰지만 CSV 는 진짜 공백이어야 한다. 그대로 두면
+        # PKG PLAN CSV 의 제품명과 글자가 달라 Excel VLOOKUP·필터가 조용히 어긋난다.
+        column_labels.get(column, column): [
+            value.replace("\u00a0", " ") for value in display.classification_values[column_index]
+        ]
         for column_index, column in enumerate(classification_columns)
     }
     for month_index, month in enumerate(month_columns):

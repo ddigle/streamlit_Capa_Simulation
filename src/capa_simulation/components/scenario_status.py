@@ -314,6 +314,3 @@ def _ensure_revision_selection(
 
 def _scenario_label(summary: ScenarioSummary) -> str:
     return f"{summary.scenario_name} · {summary.source_simulation_code}"
-
-
-# Backward-compatible alias for callers that still use the old read-only name.

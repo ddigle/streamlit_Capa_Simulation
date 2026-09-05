@@ -7,6 +7,7 @@ import pandas as pd
 from capa_simulation.services.frame_contracts import (
     assert_one_demand_basis_per_process,
     normalize_demand_basis,
+    normalize_month_column,
     require_columns,
 )
 
@@ -183,14 +184,7 @@ def weighted_unit_capacity_to_month_table(
 
 
 def _normalize_month(data: pd.DataFrame) -> None:
-    numeric = pd.to_numeric(data["생산계획년월"], errors="coerce")
-    valid = numeric.notna() & numeric.mod(1).eq(0)
-    if not valid.all():
-        raise ValueError("소요대수 상세의 생산계획년월은 YYYYMM 형식이어야 합니다.")
-    integer_month = numeric.astype("int64")
-    if not integer_month.mod(100).between(1, 12).all():
-        raise ValueError("소요대수 상세의 생산계획년월은 YYYYMM 형식이어야 합니다.")
-    data["생산계획년월"] = integer_month
+    normalize_month_column(data, "소요대수 상세")
 
 
 def _normalize_text(data: pd.DataFrame, columns: list[str]) -> None:

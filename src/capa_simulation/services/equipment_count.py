@@ -6,6 +6,7 @@ from capa_simulation.services.capacity_reference_editor import (
     reference_from_edit_table,
     reference_to_edit_table,
 )
+from capa_simulation.services.frame_contracts import normalize_month_column
 
 EQUIPMENT_DIMENSIONS = ["공정"]
 DETAILED_EQUIPMENT_DIMENSIONS = ["공정", "구분"]
@@ -104,13 +105,7 @@ def _prepare_source(data: pd.DataFrame, category: str, value_column: str) -> pd.
     if missing:
         raise ValueError(f"{category} 설비대수 필수 컬럼이 없습니다: {', '.join(missing)}")
     result = data[required].copy().rename(columns={value_column: "대수"})
-    months = pd.to_numeric(result["생산계획년월"], errors="coerce")
-    valid_months = months.notna() & months.mod(1).eq(0)
-    integer_months = months.fillna(0).astype("int64")
-    valid_months &= integer_months.mod(100).between(1, 12)
-    if not valid_months.all():
-        raise ValueError(f"{category} 설비대수의 생산계획년월은 YYYYMM 형식이어야 합니다.")
-    result["생산계획년월"] = integer_months
+    normalize_month_column(result, f"{category} 설비대수")
     result["공정"] = result["공정"].astype("string").str.strip()
     if result["공정"].isna().any() or result["공정"].eq("").any():
         raise ValueError(f"{category} 설비대수의 공정에 누락값이 있습니다.")
