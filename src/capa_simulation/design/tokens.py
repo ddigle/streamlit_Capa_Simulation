@@ -31,7 +31,6 @@ TEXT: Final = "#18181B"  # textColor
 TEXT_MUTED: Final = "#646973"  # grayColor
 LINE: Final = "#3F3F46"  # 표 격자·계열선. 강조색과 역할이 다르다
 ACCENT: Final = "#0F766E"  # primaryColor. 버튼·포커스 등 상호작용 표시
-ACCENT_SUBTLE: Final = "#E6F2F0"
 
 # ------------------------------------------------------------------- 부분합 면
 # 환산 결과표의 제품 Total → 양산구분 Total → 전체 합계로 갈수록 짙어진다.

@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from datetime import date
-from io import BytesIO
 
 import pandas as pd
 
@@ -32,23 +31,6 @@ def build_weekly_availability_template(
     template = process_frame.merge(calendar, how="cross")
     template["가용대수"] = 0.0
     return template[["공정", "Weeknum", "주차시작일", "주차종료일", "가용대수"]]
-
-
-def parse_weekly_availability_csv(content: bytes) -> pd.DataFrame:
-    """Parse UTF-8/CP949 manual weekly availability into a validated table."""
-    if not content:
-        raise ValueError("가용설비 CSV 파일이 비어 있습니다.")
-
-    source: pd.DataFrame | None = None
-    for encoding in ("utf-8-sig", "cp949"):
-        try:
-            source = pd.read_csv(BytesIO(content), encoding=encoding)
-            break
-        except UnicodeDecodeError:
-            continue
-    if source is None:
-        raise ValueError("가용설비 CSV는 UTF-8 또는 CP949 인코딩이어야 합니다.")
-    return prepare_weekly_availability(source)
 
 
 def parse_weekly_availability_clipboard(content: str) -> pd.DataFrame:

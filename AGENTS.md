@@ -377,7 +377,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     원천과 겹치는 유효 구간을 확정한다. 페이지는 `BOOTSTRAP_ERRORS` 를 잡는다.
 - `src/capa_simulation/settings.py`, `sidebar_status.py`
   - 앱 이름·경로·조회기간 상수와 사이드바의 적용 조회기간 표시.
-- `src/capa_simulation/design/tokens.py`, `design/plotly_theme.py`
+- `src/capa_simulation/design/tokens.py`
   - 색·서체·표 치수를 역할 이름으로 단일 정의하고 Plotly 공통 레이아웃을 만든다.
     파이썬 코드에 색 리터럴을 쓰지 않는다. 규칙은 `docs/design_system.md` 를 따른다.
 - `src/capa_simulation/components/page_header.py`

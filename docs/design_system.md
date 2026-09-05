@@ -34,8 +34,12 @@ Streamlit 위젯은 `config.toml`을 직접 읽지만 Plotly Figure와 주입 CS
 - **토큰 이름은 값이 아니라 역할이다.** `BORDER`와 `STATUS_SECURE`는 현재 둘 다 zinc-300
   이지만 확보 상태색을 조정할 때 표 테두리가 함께 바뀌면 안 되므로 따로 둔다. 값이 같다고
   합치지 않는다.
-- **Plotly 레이아웃은 `design/plotly_theme.py`의 `base_layout()`에서 시작한다.** Figure마다
-  배경과 서체를 다시 선언하지 않는다.
+- **Plotly Figure는 배경과 서체를 토큰에서 가져온다.** 예전에는 `design/plotly_theme.py`의
+  `base_layout()`을 거치라고 규정했지만 그 모듈을 부르는 곳이 한 곳도 없었고, Figure마다
+  여백과 높이가 실제로 달라 공통 레이아웃으로 묶이지 않았다. 규칙을 코드에 맞춰
+  다시 적는다 — 값은 `tokens`에서만 가져오면 되고, 그 이탈은
+  `tests/test_design_tokens.py`가 이미 검사한다. 공통 레이아웃 헬퍼가 다시 필요해지면
+  그때 실제 호출부와 함께 만든다.
 - **범주형 색은 항상 명시 scale로 넘긴다.** Altair에 `scale`을 주지 않으면 `config.toml`의
   `chartCategoricalColors` 4색을 순환한다. 설비 상태는 9종이라 5~9번째가 앞의 것과 같은
   색으로 그려졌다.
