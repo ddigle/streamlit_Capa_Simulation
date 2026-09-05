@@ -60,7 +60,7 @@
 - [x] Buffer·Core·Top Wafer는 동일한 일반 Wafer 공식을 사용한다: `생산수량(Kea) × 1,000 × 구분_Chip ÷ EDS_수율 ÷ BE_수율 ÷ Net Die`.
 - [x] Top·Core·Buffer·Slave·Master Chip 공식은 `생산수량(Kea) × 구분_Chip ÷ BE_수율`로 적용한다.
 - [x] Dummy Chip 공식은 `생산수량(Kea) × 구분_Chip ÷ EDS_수율 ÷ BE_수율 × (1 - EDS_수율)`로 적용한다.
-- [결정] **짝짓기(`Master`↔`Buffer`, `Slave`↔`Core`)로 구조화하지 않는다** (2026-09-05). 초기에 그런 개념으로 대응시켜 둔 것은 맞지만, 한쪽을 고칠 때 다른 쪽이 따라 움직이는 의존성이 생긴다. 제품타입별로 **별개 로직**으로 둔다. 산출 공식은 지금 두 제품군이 동일하므로 값은 그대로다. `services/load_calculator.py` 의 `WF_DIVISIONS_BY_PRODUCT_TYPE` 이 두 목록을 일부러 따로 선언하고, `tests/test_product_type_isolation.py` 가 격리를 고정한다.
+- [결정] **짝짓기(`Master`↔`Buffer`, `Slave`↔`Core`)로 구조화하지 않는다** (2026-09-05). 초기에 그런 개념으로 대응시켜 둔 것은 맞지만, 한쪽을 고칠 때 다른 쪽이 따라 움직이는 의존성이 생긴다. 제품타입별로 **별개 로직**으로 둔다. 산출 공식은 지금 두 제품군이 동일하므로 값은 그대로다. `services/product_type.py` 의 `WF_DIVISIONS_BY_PRODUCT_TYPE` 이 두 목록을 일부러 따로 선언하고, `tests/test_product_type_isolation.py` 가 격리를 고정한다.
 - [x] 제품타입 분류 명칭은 `일반`이 아니라 `HBM`을 사용한다. **제품타입별 `WF 구분`** (2026-09-05 확인): HBM 은 `Buffer`·`Core`·`Top`(과 Dummy), EDP-TSV 는 `Top`·`Master`·`Slave`. **`Top` 이 겹치므로** `WF 구분` 만 보고 규칙을 쓰면 한쪽 규칙이 다른 쪽에 걸린다. 규칙은 반드시 (제품타입, WF 구분) 으로 건다.
 - [x] Dummy Wafer 공식은 `생산수량(Kea) × 1,000 ÷ EDS_수율 ÷ BE_수율 × (1 - EDS_수율) ÷ Net Die × 구분_Chip`으로 적용한다.
 - [x] Dummy Chip·Wafer 판별은 `WF 구분`의 대소문자와 앞뒤 공백을 정규화해 BigDataQuery의
@@ -79,7 +79,7 @@
 
 ### 컬럼별 조사 항목
 
-- [결정] `Pack Code` 는 **생산수량을 가르는 업무 키**다(2026-09-05 확정). `RQ_PKG_PLAN` 업무 키에 추가한다. 현재 로컬 Core Data 로는 키 그룹 204개 모두 Pack Code 가 1종이라 행 수와 계산 결과가 바뀌지 않고, 사내 실데이터에서 관측된 Pack Code 충돌을 `임시 첫 행 선택` 없이 행 분리로 처리하게 된다. 구현은 스키마 변경이라 별도 마이그레이션이 필요하다 — 아래 3-5 절 참조.
+- [결정] `Pack Code` 는 **생산수량을 가르는 업무 키**다(2026-09-05 확정). `RQ_PKG_PLAN` 업무 키에 추가한다. 현재 로컬 Core Data 로는 키 그룹 204개 모두 Pack Code 가 1종이라 행 수와 계산 결과가 바뀌지 않고, 사내 실데이터에서 관측된 Pack Code 충돌을 `임시 첫 행 선택` 없이 행 분리로 처리하게 된다. 0013 이 컬럼을 이미 실었으므로 남은 것은 계약(`derived_keys`)·변환기·`PKG_PLAN_KEYS`·편집 탭 분류 컬럼·표시순서뿐이다 — 아래 3-5 절 참조.
 - [x] `생산수량`과 `계획(K개)`는 동일한 값으로 확인했다. `생산수량`을 사용하고 `계획(K개)`는 쿼리에서 비활성화했다.
 - [x] `Chip수`와 `CHIP`는 동일한 값으로 확인했다. `Chip수`는 쿼리에서 비활성화하고 부하량 산출에는 쿼리 결과 컬럼 `구분_Chip`을 사용한다.
 - [x] `메이커`, `모델명`은 두 컬럼 모두 데이터가 없어 쿼리에서 비활성화했다.
@@ -396,6 +396,7 @@
   조회 간 DB 본문 재로딩을 제거했다. 주차 집계에서는 설비/비가동 정규화를 한 번만 수행하고
   공정별 반복 필터를 groupby/crosstab 일괄 집계로 교체했다.
 - [x] HOME 기본 진입은 Density·Wafer Capa 요약 Figure만 생성하고 계획·B/N 상세표는 `계획·B/N 상세표 표시` 토글에서 지연 생성·별도 캐시하도록 변경했다.
+  - 2026-09-05 사용자 지시로 토글이 **켜진 상태로 시작**하도록 바꿨다(`fd20135`). 별도 캐시 구조는 그대로다.
 - [x] B/N 임계값과 포함 공정 입력을 form 제출로 일괄 적용하고, HOME Plotly shape·annotation을 레이아웃에 일괄 주입하도록 변경했다.
 - [x] 데이터 값을 기록하지 않는 HOME 단계별 성능 진단과 AppTest 기반 `scripts/benchmark_home.py`를 추가했다.
 - [ ] 확보율 히트맵과 공정별 월 추이 차트를 구현한다.
@@ -739,9 +740,9 @@ Codex 구축분에 대한 구조 리팩토링을 진행했다. 계산 결과와 
 
 ### Pack Code 를 업무 키로 승격 (구현 대기)
 
-- [ ] `RQ_PKG_PLAN` 업무 키에 `Pack Code` 를 추가한다. **스키마 변경이라 새 마이그레이션이
-  필요하다** — `ref_data.rq_pkg_plan` 과 `rev_data.rq_pkg_plan` 이 `0001_initial.sql` 에
-  고정 컬럼으로 선언돼 있다. 함께 손봐야 하는 곳: `config/data_contract.json` 의
+- [ ] `RQ_PKG_PLAN` 업무 키에 `Pack Code` 를 추가한다. **마이그레이션은 더 필요 없다** —
+  `0013_pkg_plan_product_type.sql` 이 `ref_data`·`rev_data` 양쪽에 컬럼을 실었고 값도 되채웠다.
+  남은 것은 계약·코드 변경뿐이다. 함께 손봐야 하는 곳: `config/data_contract.json` 의
   `derived_keys`, `services/reference_transformer.py` 의 `RQ_PKG_PLAN` 빌더,
   `services/standard_target_capacity.py` 의 `PKG_PLAN_KEYS`, 부하량 `PKG PLAN` 편집 탭의
   분류 컬럼, 표시순서, 리비전 스냅샷 저장·복원.
@@ -925,10 +926,8 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
    옳다는 근거가 아니라 샘플의 내부 일관성이다. `Plan_Chip(K개)`·`GOOD_DIE` 는 단위·정의가
    같다는 근거를 확인한 뒤 추가한다. `소요대수`·`PCB수` 는 샘플이 채우지 않을 뿐이므로
    실데이터에서 다시 본다.
-3. `RQ_REQB` 를 업무 키 계약에 넣는다. 16개 RQ 중 유일하게 빠져 있어 중복 검출·충돌
-   리포트를 받지 않는다. 부하량을 공정으로 흘리는 조인 척추라 실데이터 전환 시 가장 위험하다.
-4. 누락 기준정보·입력 검증 화면을 마무리한다(2장 두 항목이 사실상 같은 요구다).
-5. 결과 Excel 다운로드와 계산 실행 이력.
+3. 누락 기준정보·입력 검증 화면을 마무리한다(2장 두 항목이 사실상 같은 요구다).
+4. 결과 Excel 다운로드와 계산 실행 이력.
 
 **사용자·외부 대기**
 

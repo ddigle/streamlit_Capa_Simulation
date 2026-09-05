@@ -106,11 +106,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/home.py`
   - 전체 계산 결과를 조합하는 HOME 대시보드다.
   - Plotly Figure 묶음을 사용자 세션에 캐시하고 렌더링은 fragment로 분리한다.
-  - 기본 진입은 Density·Wafer Capa 요약만 만들며 계획·B/N 상세표는 사용자 선택 시 지연 생성한다.
+  - `계획·B/N 상세표 표시` 토글은 켜진 상태로 시작한다(2026-09-05 사용자 결정, `persist_state="session"`).
+    꺼져 있으면 상세 Figure 를 만들지 않고 요약만 만든 뒤 멈춘다. 토글 상태는 Figure 캐시 키에 들어간다.
   - B/N 임계값과 포함 공정은 사이드바 form 제출 시 한 번에 적용하고, 성능 진단 토글은
     단계별 시간과 Figure 캐시 적중 여부만 표시한다.
 - `app_pages/load_conversion.py`
-  - `환산`, `PKG PLAN`, `수율` 탭을 제공한다.
+  - `환산`, `PKG PLAN`, `수율`, `제품 등록` 탭을 제공한다. 제품 등록은 기존 제품의 기준정보 8표를
+    새 제품 키로 복제하는 가상 제품 등록이다(`services/virtual_product.py`).
   - 계획과 수율 편집값을 활성 시나리오에 반영한다.
   - PKG PLAN과 수율의 현재 월별 Wide 표를 CSV로 내려받아 값만 일괄 수정·적용한다.
 - `app_pages/capacity_standards.py`
@@ -181,7 +183,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - Core Data CSV·BigDataQuery로 새 원천 시나리오를 만들 때 초기 프리셋은 원천의 전체
     생산계획년월, 전체 B/N 공정과 전체 표준 목표 Capa 공정을 기본 조회 범위로 사용한다.
     현재 활성 화면의 축소 조회기간이나 공정 제외 상태를 새 원천에 복사하지 않는다.
-  - 새 리비전은 편집 가능한 12개 RQ와 사이드바 프리셋의 전체 스냅샷을 저장한다.
+  - 새 리비전은 편집 가능한 14개 RQ와 사이드바 프리셋의 전체 스냅샷을 저장한다.
   - 표시순서는 시나리오와 분리된 공용 DB 프로필로 저장하며 전체 CSV 양식 다운로드·
     Excel 표 붙여넣기와 페이지·탭 범위별 직접 편집·충돌 검증을 제공한다.
 - `app_pages/standard_target_capa.py`
@@ -272,8 +274,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 설비 운영 데이터는 전용 DB의 `equipment_meta`, `equipment_ops` 스키마에서 전체
     스냅샷 리비전으로 보존한다.
   - 쓰기는 프로세스 잠금과 단일 트랜잭션으로 직렬화하고, 읽기는 작업별 연결을 사용한다.
-  - 불변 `revision_id`의 전체 스냅샷만 `st.cache_data`로 여러 세션에 공유하며 목록과
-    변경 가능한 메타데이터는 캐시하지 않는다. 사용자 정의 `ScenarioSnapshot`·
+  - 불변 `revision_id`의 전체 스냅샷과 공용 표시순서 프로필을 `st.cache_data`로 여러 세션에
+    공유한다. 표시순서는 교체 시 `clear_global_display_order_cache()`로 명시 무효화한다
+    (스냅샷 payload 에 현재 표시순서가 `RQ_DISPLAY_ORDER`로 들어가므로 두 캐시를 함께 비운다).
+    시나리오·리비전 **목록**은 캐시하지 않는다. 사용자 정의 `ScenarioSnapshot`·
     `GlobalDisplayOrder` 인스턴스는 코드 핫리로드 후 pickle 클래스 식별자가 달라질 수
     있으므로 캐시에 직접 넣지 않고 기본형 메타데이터와 DataFrame payload를 캐시한 뒤
     현재 모델 인스턴스로 재구성한다.
@@ -282,14 +286,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 시나리오 생성 시 typed Core Data raw, 컬럼 프로파일, RQ 16개, 초기 리비전과
     프리셋을 한 트랜잭션으로 저장한다.
   - `app_meta.global_display_order*`는 시나리오와 독립된 단일 공용 프로필이며 최초 생성 시
-    기존 리비전 또는 로컬 CSV/내장 시드에서 이관하고 이후 전체 교체 이력을 버전으로 관리한다.
+    기존 리비전 또는 로컬 CSV/내장 시드에서 이관한다. 교체 시 현재본만 남기고 `version` 번호를
+    올리며 이전 규칙은 보존하지 않는다 — 교체 전 CSV 다운로드가 유일한 되돌리기다.
   - 프리셋은 조회기간·B/N 포함 공정·표준 목표 Capa 공정 기본값·확보/경고 기준을 소유한다.
   - 공식버전은 불변 리비전을 가리키는 append-only 발행 이력이며 최신 발행이 새 세션의
     기본 리비전이 된다.
   - 표준 목표 Capa의 수동 주차별 가용대수만 설비 DB의 비버전 최신값 테이블에
     공정·Weeknum 기준으로 갱신한다.
 - `src/capa_simulation/scenario_state.py`
-  - 사용자 세션별 활성 시나리오와 `revision`을 관리한다.
+  - 사용자 세션별 활성 시나리오와 `revision`(편집 카운터)·`content_token`(내용 토큰)을 관리한다.
+    편집을 적용할 때마다 둘 다 갱신되며, 캐시 키에는 `content_token`만 쓴다.
   - 선택한 월 범위만 원자적으로 교체한다.
   - HOME처럼 계산용 월 범위만 필요한 경로는 전체 시나리오 복사 없이 선택 행만 복사한다.
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py`
@@ -301,7 +307,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - HOME 단계별 소요시간을 측정하며 업무 데이터는 기록하지 않는다.
 - `src/capa_simulation/services/simulation_cache.py`
   - 주요 계산 함수의 content-addressed `st.cache_data` 래퍼다.
-  - HOME 전체 계산 그래프는 리비전·조회기간·표시순서 해시의 명시적 경량 키로 조회해 warm
+  - HOME 전체 계산 그래프는 reference version·`content_token`·조회기간·표시순서 해시의 명시적 경량 키로 조회해 warm
     rerun의 대형 DataFrame 해싱을 피하고, 하위 계산 캐시는 다른 페이지와 계속 공유한다.
 
 ### 계산 서비스
@@ -445,7 +451,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/summaries.py`: 조회 행을 요약 모델로 변환
 - `persistence/_sql_helpers.py`: 프레임 저장·조회와 값 변환 공용 헬퍼
 - `persistence/migration_runner.py`, `equipment_migration_runner.py`: 체크섬 기반 SQL 적용
-- `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷의 Streamlit 캐시 경계
+- `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷과 공용 표시순서의 Streamlit 캐시 경계
 - `persistence/equipment_repository.py`: 설비 운영 입력의 불변 전체 스냅샷 저장소
 
 ## 4. 기준정보 테이블 계약
@@ -467,16 +473,18 @@ RQ_REQB
 RQ_EQP_OWN
 RQ_EQP_LENT
 RQ_EQP_AVBL
+RQ_CHIP_QTY
+RQ_CHIP_EQ
 ```
 
 웹 수정은 반드시 `apply_month_updates()`를 통해 반영한다. 페이지 전용 DataFrame만
-수정하고 끝내면 다른 페이지와 계산 캐시에 변경이 전달되지 않는다.
+수정하고 끝내면 다른 페이지와 계산 캐시에 변경이 전달되지 않는다. 월 축(`생산계획년월`)이
+없는 `RQ_CHIP_QTY`·`RQ_CHIP_EQ`는 `apply_table_updates()`로 통째로 교체한다 —
+`apply_month_updates()`에 넘기면 `생산계획년월 컬럼이 없습니다`로 거부된다.
 
 ### 읽기 전용 참조 테이블
 
 ```text
-RQ_CHIP_QTY
-RQ_CHIP_EQ
 RQ_DISPLAY_ORDER
 RQ_MODULE
 ```
@@ -492,17 +500,18 @@ session state에 별도 복사하지 말고 활성 시나리오의 editable tabl
    `get_effective_reference_tables()`를 사용해 활성 DuckDB 리비전만 읽는다.
 2. **서버 공통 데이터와 사용자 데이터를 구분한다.** 불변 DuckDB 리비전과 동일 입력 계산
    결과는 서버 캐시, 웹 편집값은 `st.session_state`의 활성 시나리오다.
-3. **편집 적용마다 revision을 증가시킨다.** 다른 페이지는 revision 변경으로 편집 UI와
-   결과를 갱신한다.
+3. **편집 적용마다 `revision`을 올리고 `content_token`을 재발급한다.** 편집 UI(위젯 초기화·
+   미저장 감지)는 `revision`을, 계산·Figure 캐시 키는 `content_token`을 본다 — `revision`
+   번호는 내용이 달라도 겹칠 수 있다(세션 편집 0,1,2… 와 저장 리비전 번호).
 4. **계산 함수는 가능한 순수 함수로 유지한다.** Streamlit 캐시는 `simulation_cache.py`
    래퍼에 두고 서비스 함수 내부에 UI 상태 접근을 넣지 않는다.
 5. **공식버전은 append-only다.** 특정 시나리오·리비전을 새 공식버전으로 발행하며 과거
    공식 이력을 갱신하지 않는다. 최신 공식 시나리오는 다른 공식 발행 전 보관하지 않는다.
 6. **미저장 편집과 저장 리비전을 구분한다.** 미저장 편집은 세션 종료 후 사라지며,
    `시나리오 관리`에서 저장한 리비전만 DuckDB에 영구 보존된다.
-7. **완성 Figure 캐시 키에는 출력에 영향을 주는 모든 조건을 포함한다.** 시나리오
-   revision, reference version, 조회기간, B/N 공정 선택, 임계값과 Figure schema version을
-   누락하지 않는다.
+7. **완성 Figure 캐시 키에는 출력에 영향을 주는 모든 조건을 포함한다.**
+   `ActiveScenario.content_token`, reference version, 조회기간, B/N 공정 선택, 임계값, 상세
+   토글 상태와 Figure schema version을 누락하지 않는다.
 8. **과거 리비전을 갱신하지 않는다.** 변경은 새 전체 리비전으로만 저장하고, 과거
    리비전에서 저장하면 해당 리비전을 부모로 갖는 새 분기를 만든다.
 9. **설비 운영 이력은 시나리오와 물리적으로 분리한다.** 가용설비 현황은 전용 DuckDB,
@@ -753,7 +762,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   `persist_state="session"` 패턴을 따른다.
 - 비싼 계산을 탭 내부에서 직접 반복하지 않는다. 먼저 캐시된 결과를 만들고 탭은 표시만
   담당하게 한다.
-- HOME 기본 경로에는 요약 Figure만 두고 큰 계획·B/N 표는 명시적 상세 토글 뒤에서 생성한다.
+- HOME 상세표 토글은 켜진 상태로 시작한다. 토글을 끄면 상세 Figure 를 만들지 않으며, 상세
+  Figure 는 요약과 별도 캐시다.
 - 여러 필터가 같은 결과를 바꾸면 `st.form`으로 묶어 중간 입력마다 전체 재실행하지 않는다.
 - `use_container_width`를 새로 사용하지 말고 `width="stretch"` 또는
   `width="content"`를 사용한다.
@@ -850,7 +860,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 
 1. 편집 결과를 원본 Long Data로 복원
 2. `apply_month_updates()`로 활성 시나리오 갱신
-3. revision 증가 확인
+3. `revision` 증가와 `content_token` 재발급 확인
 4. 다른 페이지에서 수정값 반영 확인
 5. 페이지 왕복 후 입력값 유지 확인
 6. 서버 재시작 후 유지 여부를 사용자 기대와 구분해 설명

@@ -34,7 +34,7 @@ sidecar 카탈로그다.
 | `src/capa_simulation/persistence/migrations/0007_revision_reqb.sql` | `RQ_REQB`를 리비전 소유 편집 스냅샷으로 저장한다. |
 | `src/capa_simulation/persistence/migrations/0008_revision_equipment_counts.sql` | 보유·대여·가용 설비대수 RQ를 리비전별 편집 스냅샷으로 저장한다. |
 | `src/capa_simulation/persistence/migrations/0009_standard_target_preset_process.sql` | 표준 목표 Capa 공정 필터의 리비전별 공용 기본값을 저장한다. |
-| `src/capa_simulation/persistence/migrations/0010_global_display_order.sql` | 시나리오와 독립된 공용 표시순서 프로필·규칙·버전 이력을 저장한다. |
+| `src/capa_simulation/persistence/migrations/0010_global_display_order.sql` | 시나리오와 독립된 공용 표시순서 프로필·규칙과 버전 번호를 저장한다(단일 행 프로필, 이전 규칙은 보존하지 않는다). |
 | `src/capa_simulation/persistence/migrations/0011_virtual_product_reference.sql` | `RQ_CHIP_QTY`·`RQ_CHIP_EQ`를 리비전 소유 편집 스냅샷으로 승격하고, 가상 제품(기존 제품 복제 등록) 목록을 리비전 메타에 기록한다. |
 | `src/capa_simulation/persistence/migrations/0012_fractional_core_columns.sql` | `모듈수`·`Side반영률`·`MCP_Chip_Ratio`·`설비보유HCB`를 DOUBLE로 넓혀 소수값을 받는다. |
 | `src/capa_simulation/persistence/migrations/0013_pkg_plan_product_type.sql` | `RQ_PKG_PLAN`에 `제품타입`·`Pack Code`를 추가하고 원천에서 되채운다. |
