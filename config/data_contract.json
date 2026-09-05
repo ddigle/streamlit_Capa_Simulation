@@ -7,101 +7,429 @@
     "quote_style": "none",
     "null_policy": "preserve_raw_validate_derived",
     "columns": [
-      {"name": "시뮬레이션 ID", "dtype": "string"},
-      {"name": "PLAN ID", "dtype": "string"},
-      {"name": "기준정보년월", "dtype": "integer"},
-      {"name": "제품타입", "dtype": "string"},
-      {"name": "U/PKG", "dtype": "string"},
-      {"name": "UsreFamily3", "dtype": "string"},
-      {"name": "Family4", "dtype": "string"},
-      {"name": "U/6", "dtype": "string"},
-      {"name": "PKG1", "dtype": "string"},
-      {"name": "SITE", "dtype": "string"},
-      {"name": "Area Class", "dtype": "string"},
-      {"name": "Module/comp", "dtype": "string"},
-      {"name": "LOB Code", "dtype": "string"},
-      {"name": "PKG Part No", "dtype": "string"},
-      {"name": "Capa Code", "dtype": "string"},
-      {"name": "제품정보", "dtype": "string"},
-      {"name": "생산계획년월", "dtype": "integer"},
-      {"name": "생산수량", "dtype": "number"},
-      {"name": "Stack", "dtype": "string"},
-      {"name": "Customer", "dtype": "string"},
-      {"name": "Pack Code", "dtype": "string"},
-      {"name": "S/H", "dtype": "string"},
-      {"name": "CS", "dtype": "string"},
-      {"name": "D_EQ", "dtype": "integer"},
-      {"name": "WF 구분", "dtype": "string"},
-      {"name": "구분_Chip", "dtype": "integer"},
-      {"name": "구분_EQ", "dtype": "integer"},
-      {"name": "Chip수", "dtype": "integer"},
-      {"name": "Plan_Chip(K개)", "dtype": "number"},
-      {"name": "CHIP", "dtype": "integer"},
-      {"name": "Net Die", "dtype": "integer"},
-      {"name": "Month", "dtype": "integer"},
-      {"name": "계획(K개)", "dtype": "number"},
-      {"name": "8H 환산 계획(K개)", "dtype": "number"},
-      {"name": "WF수(매)", "dtype": "number"},
-      {"name": "PCB수(K매)", "dtype": "number"},
-      {"name": "EQ(억Gb)", "dtype": "number"},
-      {"name": "누락여부", "dtype": "string"},
-      {"name": "계획기초정보여부", "dtype": "string"},
-      {"name": "FAB", "dtype": "string"},
-      {"name": "Area_Name", "dtype": "string"},
-      {"name": "공정", "dtype": "string"},
-      {"name": "메이커", "dtype": "string"},
-      {"name": "STEP_SEQ", "dtype": "string"},
-      {"name": "MCP_SEQ", "dtype": "string"},
-      {"name": "모델명", "dtype": "string"},
-      {"name": "Para", "dtype": "string"},
-      {"name": "Step수", "dtype": "string"},
-      {"name": "CAPA_RUN_RATE", "dtype": "number"},
-      {"name": "소요기준", "dtype": "string"},
-      {"name": "RUN_DAY", "dtype": "integer"},
-      {"name": "일 필요", "dtype": "number"},
-      {"name": "UPEH", "dtype": "number"},
-      {"name": "ST", "dtype": "number"},
-      {"name": "Lot 측정률", "dtype": "number"},
-      {"name": "WF측정률", "dtype": "number"},
-      {"name": "EDS_수율", "dtype": "number"},
-      {"name": "BE_수율", "dtype": "number"},
-      {"name": "CUM_수율", "dtype": "number"},
-      {"name": "GOOD_DIE", "dtype": "number"},
-      {"name": "TEST WF수(매)", "dtype": "number"},
-      {"name": "Shot Time", "dtype": "string"},
-      {"name": "Shot수", "dtype": "string"},
-      {"name": "Index Time", "dtype": "string"},
-      {"name": "모듈수", "dtype": "integer"},
-      {"name": "Side반영률", "dtype": "integer"},
-      {"name": "편중률", "dtype": "number"},
-      {"name": "설비보유", "dtype": "number"},
-      {"name": "설비대수변화관리", "dtype": "string"},
-      {"name": "설비대여평가", "dtype": "number"},
-      {"name": "설비대여평가항목", "dtype": "string"},
-      {"name": "설비대여평가DESC", "dtype": "string"},
-      {"name": "MCP_Chip_Ratio", "dtype": "integer"},
-      {"name": "소요대수", "dtype": "number"},
-      {"name": "시뮬레이션 누락여부", "dtype": "string"},
-      {"name": "설비보유HCB", "dtype": "integer"},
-      {"name": "CUSTOM", "dtype": "string"},
-      {"name": "BONDING", "dtype": "string"}
+      {
+        "name": "시뮬레이션 ID",
+        "dtype": "string"
+      },
+      {
+        "name": "PLAN ID",
+        "dtype": "string"
+      },
+      {
+        "name": "기준정보년월",
+        "dtype": "integer"
+      },
+      {
+        "name": "제품타입",
+        "dtype": "string"
+      },
+      {
+        "name": "U/PKG",
+        "dtype": "string"
+      },
+      {
+        "name": "UsreFamily3",
+        "dtype": "string"
+      },
+      {
+        "name": "Family4",
+        "dtype": "string"
+      },
+      {
+        "name": "U/6",
+        "dtype": "string"
+      },
+      {
+        "name": "PKG1",
+        "dtype": "string"
+      },
+      {
+        "name": "SITE",
+        "dtype": "string"
+      },
+      {
+        "name": "Area Class",
+        "dtype": "string"
+      },
+      {
+        "name": "Module/comp",
+        "dtype": "string"
+      },
+      {
+        "name": "LOB Code",
+        "dtype": "string"
+      },
+      {
+        "name": "PKG Part No",
+        "dtype": "string"
+      },
+      {
+        "name": "Capa Code",
+        "dtype": "string"
+      },
+      {
+        "name": "제품정보",
+        "dtype": "string"
+      },
+      {
+        "name": "생산계획년월",
+        "dtype": "integer"
+      },
+      {
+        "name": "생산수량",
+        "dtype": "number"
+      },
+      {
+        "name": "Stack",
+        "dtype": "string"
+      },
+      {
+        "name": "Customer",
+        "dtype": "string"
+      },
+      {
+        "name": "Pack Code",
+        "dtype": "string"
+      },
+      {
+        "name": "S/H",
+        "dtype": "string"
+      },
+      {
+        "name": "CS",
+        "dtype": "string"
+      },
+      {
+        "name": "D_EQ",
+        "dtype": "integer"
+      },
+      {
+        "name": "WF 구분",
+        "dtype": "string"
+      },
+      {
+        "name": "구분_Chip",
+        "dtype": "integer"
+      },
+      {
+        "name": "구분_EQ",
+        "dtype": "integer"
+      },
+      {
+        "name": "Chip수",
+        "dtype": "integer"
+      },
+      {
+        "name": "Plan_Chip(K개)",
+        "dtype": "number"
+      },
+      {
+        "name": "CHIP",
+        "dtype": "integer"
+      },
+      {
+        "name": "Net Die",
+        "dtype": "integer"
+      },
+      {
+        "name": "Month",
+        "dtype": "integer"
+      },
+      {
+        "name": "계획(K개)",
+        "dtype": "number"
+      },
+      {
+        "name": "8H 환산 계획(K개)",
+        "dtype": "number"
+      },
+      {
+        "name": "WF수(매)",
+        "dtype": "number"
+      },
+      {
+        "name": "PCB수(K매)",
+        "dtype": "number"
+      },
+      {
+        "name": "EQ(억Gb)",
+        "dtype": "number"
+      },
+      {
+        "name": "누락여부",
+        "dtype": "string"
+      },
+      {
+        "name": "계획기초정보여부",
+        "dtype": "string"
+      },
+      {
+        "name": "FAB",
+        "dtype": "string"
+      },
+      {
+        "name": "Area_Name",
+        "dtype": "string"
+      },
+      {
+        "name": "공정",
+        "dtype": "string"
+      },
+      {
+        "name": "메이커",
+        "dtype": "string"
+      },
+      {
+        "name": "STEP_SEQ",
+        "dtype": "string"
+      },
+      {
+        "name": "MCP_SEQ",
+        "dtype": "string"
+      },
+      {
+        "name": "모델명",
+        "dtype": "string"
+      },
+      {
+        "name": "Para",
+        "dtype": "string"
+      },
+      {
+        "name": "Step수",
+        "dtype": "string"
+      },
+      {
+        "name": "CAPA_RUN_RATE",
+        "dtype": "number"
+      },
+      {
+        "name": "소요기준",
+        "dtype": "string"
+      },
+      {
+        "name": "RUN_DAY",
+        "dtype": "integer"
+      },
+      {
+        "name": "일 필요",
+        "dtype": "number"
+      },
+      {
+        "name": "UPEH",
+        "dtype": "number"
+      },
+      {
+        "name": "ST",
+        "dtype": "number"
+      },
+      {
+        "name": "Lot 측정률",
+        "dtype": "number"
+      },
+      {
+        "name": "WF측정률",
+        "dtype": "number"
+      },
+      {
+        "name": "EDS_수율",
+        "dtype": "number"
+      },
+      {
+        "name": "BE_수율",
+        "dtype": "number"
+      },
+      {
+        "name": "CUM_수율",
+        "dtype": "number"
+      },
+      {
+        "name": "GOOD_DIE",
+        "dtype": "number"
+      },
+      {
+        "name": "TEST WF수(매)",
+        "dtype": "number"
+      },
+      {
+        "name": "Shot Time",
+        "dtype": "string"
+      },
+      {
+        "name": "Shot수",
+        "dtype": "string"
+      },
+      {
+        "name": "Index Time",
+        "dtype": "string"
+      },
+      {
+        "name": "모듈수",
+        "dtype": "integer"
+      },
+      {
+        "name": "Side반영률",
+        "dtype": "integer"
+      },
+      {
+        "name": "편중률",
+        "dtype": "number"
+      },
+      {
+        "name": "설비보유",
+        "dtype": "number"
+      },
+      {
+        "name": "설비대수변화관리",
+        "dtype": "string"
+      },
+      {
+        "name": "설비대여평가",
+        "dtype": "number"
+      },
+      {
+        "name": "설비대여평가항목",
+        "dtype": "string"
+      },
+      {
+        "name": "설비대여평가DESC",
+        "dtype": "string"
+      },
+      {
+        "name": "MCP_Chip_Ratio",
+        "dtype": "integer"
+      },
+      {
+        "name": "소요대수",
+        "dtype": "number"
+      },
+      {
+        "name": "시뮬레이션 누락여부",
+        "dtype": "string"
+      },
+      {
+        "name": "설비보유HCB",
+        "dtype": "integer"
+      },
+      {
+        "name": "CUSTOM",
+        "dtype": "string"
+      },
+      {
+        "name": "BONDING",
+        "dtype": "string"
+      }
     ]
   },
   "derived_keys": {
-    "RQ_PKG_PLAN": ["생산계획년월", "양산구분", "CS", "제품정보", "Stack", "Capa Code", "Customer"],
-    "RQ_YLD": ["생산계획년월", "제품정보", "Stack", "WF 구분"],
-    "RQ_CHIP_QTY": ["제품정보", "Stack", "WF 구분"],
-    "RQ_CHIP_EQ": ["제품정보", "Stack", "WF 구분"],
-    "RQ_DISPLAY_ORDER": ["페이지 구분", "탭 구분", "정렬우선순위", "분류컬럼", "분류값"],
-    "RQ_EQP_OWN": ["생산계획년월", "공정"],
-    "RQ_EQP_LENT": ["생산계획년월", "공정"],
-    "RQ_EQP_AVBL": ["생산계획년월", "공정"],
-    "RQ_UPEH": ["생산계획년월", "Area_Name", "공정", "STEP_SEQ", "MCP_SEQ", "양산구분", "제품정보", "Stack", "WF 구분"],
-    "RQ_RUN_RATE": ["생산계획년월", "공정", "양산구분"],
-    "RQ_VITAL": ["생산계획년월", "공정", "양산구분"],
-    "RQ_MODULE": ["공정"],
-    "RQ_RUN_DAY": ["생산계획년월", "공정"],
-    "RQ_LOT_RATIO": ["생산계획년월", "Area_Name", "공정", "STEP_SEQ", "MCP_SEQ", "양산구분", "제품정보", "Stack", "WF 구분"],
-    "RQ_WF_RATIO": ["생산계획년월", "Area_Name", "공정", "STEP_SEQ", "MCP_SEQ", "양산구분", "제품정보", "Stack", "WF 구분"]
+    "RQ_PKG_PLAN": [
+      "생산계획년월",
+      "양산구분",
+      "CS",
+      "제품정보",
+      "Stack",
+      "Capa Code",
+      "Customer"
+    ],
+    "RQ_YLD": [
+      "생산계획년월",
+      "제품정보",
+      "Stack",
+      "WF 구분"
+    ],
+    "RQ_CHIP_QTY": [
+      "제품정보",
+      "Stack",
+      "WF 구분"
+    ],
+    "RQ_CHIP_EQ": [
+      "제품정보",
+      "Stack",
+      "WF 구분"
+    ],
+    "RQ_DISPLAY_ORDER": [
+      "페이지 구분",
+      "탭 구분",
+      "정렬우선순위",
+      "분류컬럼",
+      "분류값"
+    ],
+    "RQ_EQP_OWN": [
+      "생산계획년월",
+      "공정"
+    ],
+    "RQ_EQP_LENT": [
+      "생산계획년월",
+      "공정"
+    ],
+    "RQ_EQP_AVBL": [
+      "생산계획년월",
+      "공정"
+    ],
+    "RQ_UPEH": [
+      "생산계획년월",
+      "Area_Name",
+      "공정",
+      "STEP_SEQ",
+      "MCP_SEQ",
+      "양산구분",
+      "제품정보",
+      "Stack",
+      "WF 구분"
+    ],
+    "RQ_RUN_RATE": [
+      "생산계획년월",
+      "공정",
+      "양산구분"
+    ],
+    "RQ_VITAL": [
+      "생산계획년월",
+      "공정",
+      "양산구분"
+    ],
+    "RQ_MODULE": [
+      "공정"
+    ],
+    "RQ_RUN_DAY": [
+      "생산계획년월",
+      "공정"
+    ],
+    "RQ_LOT_RATIO": [
+      "생산계획년월",
+      "Area_Name",
+      "공정",
+      "STEP_SEQ",
+      "MCP_SEQ",
+      "양산구분",
+      "제품정보",
+      "Stack",
+      "WF 구분"
+    ],
+    "RQ_WF_RATIO": [
+      "생산계획년월",
+      "Area_Name",
+      "공정",
+      "STEP_SEQ",
+      "MCP_SEQ",
+      "양산구분",
+      "제품정보",
+      "Stack",
+      "WF 구분"
+    ],
+    "RQ_REQB": [
+      "생산계획년월",
+      "Area_Name",
+      "공정",
+      "양산구분",
+      "제품정보",
+      "Stack",
+      "Capa Code",
+      "Customer",
+      "CS",
+      "WF 구분",
+      "STEP_SEQ",
+      "MCP_SEQ",
+      "소요기준"
+    ]
   }
 }

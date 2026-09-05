@@ -113,7 +113,7 @@ def build_reference_tables_with_conflicts(
             selected_contract,
             conflict_records,
         ),
-        "RQ_REQB": _rq_reqb(core),
+        "RQ_REQB": _rq_reqb(core, selected_contract, conflict_records),
     }
     business_key_columns = list(
         dict.fromkeys(
@@ -264,7 +264,18 @@ def _measurement_ratio_table(
     return result
 
 
-def _rq_reqb(core: pd.DataFrame) -> pd.DataFrame:
+def _rq_reqb(
+    core: pd.DataFrame,
+    contract: CoreDataContract,
+    conflict_records: list[dict[str, object]],
+) -> pd.DataFrame:
+    """부하량을 공정으로 흘리는 경로 표를 만든다.
+
+    16개 RQ 중 이 표만 업무 키 계약 밖에 있어서 중복 검출도 `drop_duplicates` 도 받지
+    않았다. `required_equipment` 가 이 프레임을 왼쪽에 두고 `many_to_one` 으로 붙이므로
+    원천에 완전 중복 행이 하나 들어오면 그 경로의 소요대수가 조용히 두 배가 된다.
+    13개 컬럼 전부가 키인 경로 표라 값 충돌은 생길 수 없고, 중복은 그대로 접힌다.
+    """
     columns = [
         "생산계획년월",
         "Area_Name",
@@ -297,7 +308,7 @@ def _rq_reqb(core: pd.DataFrame) -> pd.DataFrame:
         "소요기준",
     ]
     require_non_null(result, required, "RQ_REQB")
-    return result.reset_index(drop=True)
+    return validated_distinct(result, "RQ_REQB", contract, conflict_records)
 
 
 def _nonblank_rows(frame: pd.DataFrame, column: str) -> pd.DataFrame:
