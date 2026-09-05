@@ -38,7 +38,6 @@ from capa_simulation.services.simulation_cache import (
     get_capacity_and_demand,
     get_securement_rate,
 )
-from capa_simulation.sidebar_status import show_applied_month_range
 
 
 def _display_shortfalls(data: pd.DataFrame, *, warning_section: bool) -> pd.DataFrame:
@@ -176,19 +175,15 @@ try:
     reference_version = context.reference_version
     reference_tables = context.reference_tables
     active_scenario = context.active_scenario
-    active_reqb = scenario_month_table(
-        active_scenario,
-        "RQ_REQB",
-        context.selected_start_month,
-        context.selected_end_month,
-    )
+    # 유효 기간은 활성 리비전의 RQ_REQB 전체에서 잡는다(process_securement 와 같다). 먼저 월로
+    # 거른 표를 넘기면 같은 필터를 두 번 걸고, 선택 범위 밖일 때 이 페이지의 안내문 대신
+    # month_filter 의 일반 오류가 먼저 났다.
     effective_start, effective_end = resolve_effective_months(
         context,
-        active_reqb,
+        active_scenario["tables"]["RQ_REQB"],
         "RQ_REQB",
         empty_message="선택 범위에 소요대수 산출 기준이 없습니다.",
     )
-    show_applied_month_range(effective_start, effective_end)
 
     # 월 축이 있는 기준정보는 시나리오 월 슬라이스에서, 나머지는 활성 리비전에서 가져온다.
     unit_capacity, required_equipment = get_capacity_and_demand(
@@ -220,7 +215,7 @@ except BOOTSTRAP_ERRORS as exc:
     st.error(str(exc))
 else:
     with st.container(border=True):
-        st.markdown("### :material/priority_high: 경고 기준 미달")
+        st.markdown("#### :material/priority_high: 경고 기준 미달")
         st.markdown(":red-badge[집중 관리] 물리적 Capa가 계획을 받치지 못하는 공정·월입니다.")
         with metric_row(key="static_capa_warning_metrics"):
             render_status_metric(
@@ -259,7 +254,7 @@ else:
             )
 
     with st.container(border=True):
-        st.markdown("### :material/trending_up: 확보 기준 추가 확보")
+        st.markdown("#### :material/trending_up: 확보 기준 추가 확보")
         st.markdown(
             ":orange-badge[계획 관리] 경고 기준은 충족했지만 확보 기준까지 여유 설비가 필요한 "
             "공정·월입니다."

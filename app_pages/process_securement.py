@@ -56,7 +56,6 @@ from capa_simulation.services.simulation_cache import (
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
 )
-from capa_simulation.sidebar_status import show_applied_month_range
 
 TAB_NAMES = (
     ":material/insights: 확보율",
@@ -86,7 +85,6 @@ try:
         "RQ_REQB",
         empty_message="선택 범위에 소요대수 산출 기준이 없습니다.",
     )
-    show_applied_month_range(effective_start, effective_end)
 
     monthly_table_names = (
         "RQ_REQB",
@@ -111,17 +109,12 @@ try:
         )
         for table_name in monthly_table_names
     }
-    simulation_plan = filtered["RQ_PKG_PLAN"]
-    simulation_yield = filtered["RQ_YLD"]
 
     unit_capacity, required_equipment = get_capacity_and_demand(
         {
             **filtered,
             **{key: reference_tables[key] for key in REFERENCE_INPUT_TABLES},
             **{key: scenario_table(active_scenario, key) for key in SCENARIO_MONTHLESS_TABLES},
-            # 생산계획과 수율만 사용자 편집본을 쓴다.
-            "RQ_PKG_PLAN": simulation_plan,
-            "RQ_YLD": simulation_yield,
         }
     )
     capacity_exclusions = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())

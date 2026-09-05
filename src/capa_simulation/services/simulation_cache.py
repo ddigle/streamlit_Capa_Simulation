@@ -27,9 +27,13 @@ from capa_simulation.services.required_equipment import (
 )
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.standard_target_capacity import (
+    add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
 )
 from capa_simulation.services.unit_capacity import calculate_unit_capacity
+from capa_simulation.services.weighted_unit_capacity import (
+    effective_process_capacity_to_month_table,
+)
 
 HomeSimulationCacheKey = tuple[int, str, int, int, str]
 
@@ -113,6 +117,46 @@ def get_securement_rate(
     required_equipment: pd.DataFrame,
 ) -> pd.DataFrame:
     return calculate_securement_rate(available_equipment, required_equipment)
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
+def get_effective_process_capacity_table(
+    required_equipment: pd.DataFrame,
+    detail_level: str,
+) -> pd.DataFrame:
+    """공정 유효 Capa 월 표. 공정 필터는 이 뒤에 걸리므로 필터마다 같은 계산을 반복하고 있었다."""
+    return effective_process_capacity_to_month_table(required_equipment, detail_level)
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_pkg_equivalent_standard_target(
+    required_equipment: pd.DataFrame,
+    run_day: pd.DataFrame,
+    weekly_availability: pd.DataFrame,
+    start_date: date,
+    end_date: date,
+    detail_level: str,
+    plan: pd.DataFrame,
+) -> pd.DataFrame:
+    """PKG Kea 환산 표준 목표 Capa.
+
+    키는 1차 입력이다. 파생 프레임(weekly_target)을 키로 쓰면 5만 행을 넘길 때 Streamlit 이
+    1만 행 표본만 해시해 가용대수 편집이 캐시에 묻힐 수 있다.
+    """
+    weekly_target = get_weekly_standard_target_capacity(
+        required_equipment=required_equipment,
+        run_day=run_day,
+        weekly_availability=weekly_availability,
+        start_date=start_date,
+        end_date=end_date,
+        detail_level=detail_level,
+    )
+    return add_pkg_equivalent_standard_target(
+        weekly_target=weekly_target,
+        required_equipment=required_equipment,
+        plan=plan,
+        detail_level=detail_level,
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -307,16 +351,3 @@ def get_capacity_and_demand(
         unit_capacity=unit_capacity,
     )
     return unit_capacity, required_equipment
-
-
-def clear_simulation_caches() -> None:
-    """Clear every shared calculation cache after an explicit source refresh."""
-    get_home_simulation.clear()
-    get_unit_capacity.clear()
-    get_required_equipment.clear()
-    get_securement_rate.clear()
-    get_monthly_volume.clear()
-    get_production_dashboard.clear()
-    get_home_equipment_demand.clear()
-    get_weekly_standard_target_capacity.clear()
-    get_weekly_equipment_availability.clear()

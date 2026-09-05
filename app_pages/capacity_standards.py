@@ -15,7 +15,7 @@ from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
 )
 from capa_simulation.components.scenario_edit_bar import render_scenario_edit_bar
-from capa_simulation.components.tab_state import stateful_tabs
+from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -49,17 +49,14 @@ from capa_simulation.services.simulation_cache import (
     REFERENCE_INPUT_TABLES,
     SCENARIO_MONTHLESS_TABLES,
     get_capacity_and_demand,
+    get_effective_process_capacity_table,
 )
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
     UNIT_CAPACITY_DIMENSIONS,
     unit_capacity_to_month_table,
 )
-from capa_simulation.services.weighted_unit_capacity import (
-    WEIGHTED_CAPACITY_HIERARCHY,
-    effective_process_capacity_to_month_table,
-)
-from capa_simulation.sidebar_status import show_applied_month_range
+from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
 
 TAB_NAMES = (
     ":material/insights: 공정 유효 Capa",
@@ -118,7 +115,6 @@ try:
         "RQ_UPEH",
         empty_message="선택 범위에 공정별 Capa 기준정보가 없습니다.",
     )
-    show_applied_month_range(effective_start_month, effective_end_month)
     filtered_upeh = scenario_month_table(active_scenario, "RQ_UPEH", start_month, end_month)
     filtered_run_rate = scenario_month_table(active_scenario, "RQ_RUN_RATE", start_month, end_month)
     filtered_vital = scenario_month_table(active_scenario, "RQ_VITAL", start_month, end_month)
@@ -131,88 +127,103 @@ try:
     filtered_yield = scenario_month_table(active_scenario, "RQ_YLD", start_month, end_month)
     filtered_reqb = scenario_month_table(active_scenario, "RQ_REQB", start_month, end_month)
 
-    default_upeh_table = performance_to_edit_table(filtered_upeh)
-    default_upeh_table = apply_display_order(
-        default_upeh_table, display_order, "공정별 Capa", "UPEH"
-    )
-    default_upeh_table, _ = reorder_display_columns(
-        default_upeh_table,
-        PERFORMANCE_EDITOR_DIMENSIONS,
-        display_order,
-        "공정별 Capa",
-        "UPEH",
-    )
-    default_run_rate_table = reference_to_edit_table(
-        filtered_run_rate, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "RQ_RUN_RATE"
-    )
-    default_run_rate_table = apply_display_order(
-        default_run_rate_table, display_order, "공정별 Capa", "효율"
-    )
-    default_run_rate_table, _ = reorder_display_columns(
-        default_run_rate_table,
-        RUN_RATE_DIMENSIONS,
-        display_order,
-        "공정별 Capa",
-        "효율",
-    )
-    default_vital_table = reference_to_edit_table(
-        filtered_vital, VITAL_DIMENSIONS, "편중률", "RQ_VITAL"
-    )
-    default_vital_table = apply_display_order(
-        default_vital_table, display_order, "공정별 Capa", "여유율"
-    )
-    default_vital_table, _ = reorder_display_columns(
-        default_vital_table,
-        VITAL_DIMENSIONS,
-        display_order,
-        "공정별 Capa",
-        "여유율",
-    )
-    default_run_day_table = reference_to_edit_table(
-        filtered_run_day, RUN_DAY_DIMENSIONS, "RUN_DAY", "RQ_RUN_DAY"
-    )
-    default_run_day_table = apply_display_order(
-        default_run_day_table, display_order, "공정별 Capa", "일수"
-    )
-    default_run_day_table, _ = reorder_display_columns(
-        default_run_day_table,
-        RUN_DAY_DIMENSIONS,
-        display_order,
-        "공정별 Capa",
-        "일수",
-    )
-    default_lot_ratio_table = reference_to_edit_table(
-        filtered_lot_ratio, RATIO_DIMENSIONS, "Lot 측정률", "RQ_LOT_RATIO"
-    )
-    default_lot_ratio_table = apply_display_order(
-        default_lot_ratio_table,
-        display_order,
-        "공정별 Capa",
-        "Lot측정률",
-    )
-    default_lot_ratio_table, _ = reorder_display_columns(
-        default_lot_ratio_table,
-        RATIO_DIMENSIONS,
-        display_order,
-        "공정별 Capa",
-        "Lot측정률",
-    )
-    default_wf_ratio_table = reference_to_edit_table(
-        filtered_wf_ratio, RATIO_DIMENSIONS, "WF측정률", "RQ_WF_RATIO"
-    )
-    default_wf_ratio_table = apply_display_order(
-        default_wf_ratio_table,
-        display_order,
-        "공정별 Capa",
-        "WF측정률",
-    )
-    default_wf_ratio_table, _ = reorder_display_columns(
-        default_wf_ratio_table,
-        RATIO_DIMENSIONS,
-        display_order,
-        "공정별 Capa",
-        "WF측정률",
-    )
+    # 편집표 여섯 개는 자기 탭이 열려 있을 때만 만든다. 숨은 탭에서는 month_editor 가
+    # default_table 을 읽기 전에 돌아가므로 만들어 봐야 버려진다 — 기본 탭에서 rerun 마다
+    # 519~793ms 를 피벗·정렬에 쓰고 있었다.
+    default_upeh_table = pd.DataFrame()
+    if not tab_is_hidden(tabs[2]):
+        default_upeh_table = performance_to_edit_table(filtered_upeh)
+        default_upeh_table = apply_display_order(
+            default_upeh_table, display_order, "공정별 Capa", "UPEH"
+        )
+        default_upeh_table, _ = reorder_display_columns(
+            default_upeh_table,
+            PERFORMANCE_EDITOR_DIMENSIONS,
+            display_order,
+            "공정별 Capa",
+            "UPEH",
+        )
+    default_run_rate_table = pd.DataFrame()
+    if not tab_is_hidden(tabs[3]):
+        default_run_rate_table = reference_to_edit_table(
+            filtered_run_rate, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "RQ_RUN_RATE"
+        )
+        default_run_rate_table = apply_display_order(
+            default_run_rate_table, display_order, "공정별 Capa", "효율"
+        )
+        default_run_rate_table, _ = reorder_display_columns(
+            default_run_rate_table,
+            RUN_RATE_DIMENSIONS,
+            display_order,
+            "공정별 Capa",
+            "효율",
+        )
+    default_vital_table = pd.DataFrame()
+    if not tab_is_hidden(tabs[4]):
+        default_vital_table = reference_to_edit_table(
+            filtered_vital, VITAL_DIMENSIONS, "편중률", "RQ_VITAL"
+        )
+        default_vital_table = apply_display_order(
+            default_vital_table, display_order, "공정별 Capa", "여유율"
+        )
+        default_vital_table, _ = reorder_display_columns(
+            default_vital_table,
+            VITAL_DIMENSIONS,
+            display_order,
+            "공정별 Capa",
+            "여유율",
+        )
+    default_run_day_table = pd.DataFrame()
+    if not tab_is_hidden(tabs[7]):
+        default_run_day_table = reference_to_edit_table(
+            filtered_run_day, RUN_DAY_DIMENSIONS, "RUN_DAY", "RQ_RUN_DAY"
+        )
+        default_run_day_table = apply_display_order(
+            default_run_day_table, display_order, "공정별 Capa", "일수"
+        )
+        default_run_day_table, _ = reorder_display_columns(
+            default_run_day_table,
+            RUN_DAY_DIMENSIONS,
+            display_order,
+            "공정별 Capa",
+            "일수",
+        )
+    default_lot_ratio_table = pd.DataFrame()
+    if not tab_is_hidden(tabs[5]):
+        default_lot_ratio_table = reference_to_edit_table(
+            filtered_lot_ratio, RATIO_DIMENSIONS, "Lot 측정률", "RQ_LOT_RATIO"
+        )
+        default_lot_ratio_table = apply_display_order(
+            default_lot_ratio_table,
+            display_order,
+            "공정별 Capa",
+            "Lot측정률",
+        )
+        default_lot_ratio_table, _ = reorder_display_columns(
+            default_lot_ratio_table,
+            RATIO_DIMENSIONS,
+            display_order,
+            "공정별 Capa",
+            "Lot측정률",
+        )
+    default_wf_ratio_table = pd.DataFrame()
+    if not tab_is_hidden(tabs[6]):
+        default_wf_ratio_table = reference_to_edit_table(
+            filtered_wf_ratio, RATIO_DIMENSIONS, "WF측정률", "RQ_WF_RATIO"
+        )
+        default_wf_ratio_table = apply_display_order(
+            default_wf_ratio_table,
+            display_order,
+            "공정별 Capa",
+            "WF측정률",
+        )
+        default_wf_ratio_table, _ = reorder_display_columns(
+            default_wf_ratio_table,
+            RATIO_DIMENSIONS,
+            display_order,
+            "공정별 Capa",
+            "WF측정률",
+        )
     step_summary = route_step_summary(filtered_reqb)
     step_catalog = route_step_catalog(filtered_upeh, filtered_reqb)
 except BOOTSTRAP_ERRORS as exc:
@@ -666,7 +677,7 @@ else:
             )
             file_prefix = "Capa_Step_Unit_Capacity"
         else:
-            unit_capacity_table = effective_process_capacity_to_month_table(
+            unit_capacity_table = get_effective_process_capacity_table(
                 required_equipment_for_display,
                 selected_level,
             )

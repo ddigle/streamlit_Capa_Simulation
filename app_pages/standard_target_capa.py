@@ -43,12 +43,12 @@ from capa_simulation.services.simulation_cache import (
     REFERENCE_INPUT_TABLES,
     SCENARIO_MONTHLESS_TABLES,
     get_capacity_and_demand,
+    get_pkg_equivalent_standard_target,
     get_weekly_standard_target_capacity,
 )
 from capa_simulation.services.standard_target_capacity import (
     PKG_EQUIVALENT_COLUMN,
     STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES,
-    add_pkg_equivalent_standard_target,
     prepare_standard_target_required_equipment,
     standard_target_exception_row_count,
     weekly_standard_target_to_wide,
@@ -62,7 +62,6 @@ from capa_simulation.services.weekly_availability_input import (
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
-from capa_simulation.sidebar_status import show_applied_month_range
 
 START_DATE_KEY = "standard_target_start_date"
 END_DATE_KEY = "standard_target_end_date"
@@ -464,7 +463,6 @@ try:
         "RQ_UPEH",
         empty_message="선택 범위에 표준 목표 Capa 기준정보가 없습니다.",
     )
-    show_applied_month_range(effective_start_month, effective_end_month)
     equipment_repository = get_equipment_repository(str(EQUIPMENT_DUCKDB_PATH.resolve()))
     availability = equipment_repository.load_standard_target_availability()
 except BOOTSTRAP_ERRORS as exc:
@@ -756,11 +754,14 @@ else:
     output_file_metric = output_metric
     if pkg_basis:
         try:
-            weekly_target = add_pkg_equivalent_standard_target(
-                weekly_target=weekly_target,
+            weekly_target = get_pkg_equivalent_standard_target(
                 required_equipment=filtered_required_equipment,
-                plan=filtered_tables["RQ_PKG_PLAN"],
+                run_day=filtered_tables["RQ_RUN_DAY"],
+                weekly_availability=availability,
+                start_date=start_date,
+                end_date=end_date,
                 detail_level=detail_level,
+                plan=filtered_tables["RQ_PKG_PLAN"],
             )
         except ValueError as exc:
             st.error(str(exc))

@@ -52,7 +52,6 @@ from capa_simulation.services.virtual_product import (
     clone_product,
     records_to_frame,
 )
-from capa_simulation.sidebar_status import show_applied_month_range
 
 PRODUCT_COLUMN_WIDTH_PX = 100
 
@@ -84,7 +83,6 @@ try:
         "RQ_PKG_PLAN",
         empty_message="선택 범위에 PKG PLAN 데이터가 없습니다.",
     )
-    show_applied_month_range(effective_start_month, effective_end_month)
     filtered_plan = scenario_month_table(
         active_scenario,
         "RQ_PKG_PLAN",
