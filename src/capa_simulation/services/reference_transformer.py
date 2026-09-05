@@ -18,7 +18,6 @@ from capa_simulation.services.core_data_derivation import (
 from capa_simulation.services.display_order_editor import transform_display_order
 from capa_simulation.services.reference_conflicts import (
     conflict_report,
-    require_non_null,
     validated_distinct,
 )
 
@@ -296,22 +295,7 @@ def _rq_reqb(
         "소요기준",
     ]
     result = _nonblank_rows(core.loc[:, columns].copy(), "Area_Name")
-    required = [
-        "생산계획년월",
-        "Area_Name",
-        "공정",
-        "양산구분",
-        "제품정보",
-        "Stack",
-        "Capa Code",
-        "Customer",
-        "CS",
-        "WF 구분",
-        "STEP_SEQ",
-        "MCP_SEQ",
-        "소요기준",
-    ]
-    require_non_null(result, required, "RQ_REQB")
+    # 13컬럼 전부가 업무 키라 `validated_distinct` 가 같은 null·빈값 검사를 같은 메시지로 한다.
     return validated_distinct(result, "RQ_REQB", contract, conflict_records)
 
 

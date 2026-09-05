@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import math
 
+import numpy as np
 import pandas as pd
 
 from capa_simulation.io.core_data_source import CoreDataContract
@@ -64,12 +65,19 @@ def _collect_conflicting_duplicates(
         return
     conflict_number = sum(1 for record in conflict_records if record.get("RQ테이블") == table_name)
     grouped = frame.groupby(keys, dropna=False, sort=False)
-    for _, group in grouped:
+    # 그룹마다 파이썬 루프를 돌며 nunique 를 부르면 그룹 수에 비례해 느려진다. 실측으로
+    # 적재 한 번(23,250행)에 21,796 그룹을 돌아 8~14초를 썼는데 실제 충돌은 0건이었다.
+    # 판정은 groupby 한 번으로 벡터화하고, 보고서를 만드는 루프는 충돌 그룹에만 돈다.
+    # `nunique()` 의 행 순서와 `ngroup()` 의 번호는 둘 다 첫 등장 순서라 서로 맞는다.
+    distinct_counts = grouped[value_columns].nunique(dropna=False)
+    conflicting_groups = np.flatnonzero(distinct_counts.gt(1).any(axis=1).to_numpy())
+    if conflicting_groups.size == 0:
+        return
+    conflicting_rows = grouped.ngroup().isin(conflicting_groups)
+    for _, group in frame.loc[conflicting_rows].groupby(keys, dropna=False, sort=False):
         conflicting_columns = [
             column for column in value_columns if group[column].nunique(dropna=False) > 1
         ]
-        if not conflicting_columns:
-            continue
         conflict_number += 1
         selected = group.iloc[0]
         candidate_rows = group.loc[:, conflicting_columns].drop_duplicates(keep="first")

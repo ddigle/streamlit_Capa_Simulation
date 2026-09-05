@@ -80,6 +80,10 @@ def build_q_core_data(
     """Apply Q_Core_Data types, active columns, and derived columns."""
     normalized = normalize_core_data(source, contract)
     core = normalized.loc[:, list(ACTIVE_CORE_COLUMNS)].copy()
+    # `normalize_core_data` 가 붙인 attrs(원천 dtype 78항목)는 컬럼 프로파일이 원본에서 읽는다.
+    # 파생 프레임까지 들고 가면 pandas 가 연산마다 `__finalize__` 에서 deepcopy 한다 —
+    # RQ 16표를 만드는 동안 5만 6천 회. 여기서 비운다. 원본(normalized)은 건드리지 않는다.
+    core.attrs = {}
     # BigDataQuery can represent blanks in product names with underscores. Keep
     # the typed raw snapshot unchanged, but normalize the RQ business key before
     # any table is derived so every downstream join receives the same value.

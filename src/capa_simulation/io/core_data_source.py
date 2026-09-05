@@ -246,10 +246,17 @@ def core_data_hash(frame: pd.DataFrame) -> str:
 
 
 def _numeric_series(series: pd.Series, column_name: str, *, integer: bool) -> pd.Series:
-    as_text = series.astype("string")
-    blank = as_text.str.strip().eq("").fillna(False)
-    missing = series.isna() | blank
-    numeric = pd.to_numeric(series.mask(blank), errors="coerce")
+    if pd.api.types.is_numeric_dtype(series.dtype) and not pd.api.types.is_bool_dtype(series.dtype):
+        # read_csv·DuckDB 가 이미 숫자로 읽은 컬럼에는 공백 문자열이 있을 수 없다. 그런데
+        # 공백을 찾으려고 매번 문자열로 바꾸는 것이 정규화 시간의 71% 였다(호출당 0.4s,
+        # 저장 한 번에 네 번). 문자열·object 컬럼만 옛 경로를 탄다.
+        missing = series.isna()
+        numeric = pd.to_numeric(series, errors="coerce")
+    else:
+        as_text = series.astype("string")
+        blank = as_text.str.strip().eq("").fillna(False)
+        missing = series.isna() | blank
+        numeric = pd.to_numeric(series.mask(blank), errors="coerce")
     invalid = numeric.isna() & ~missing
     if invalid.any():
         raise ValueError(
