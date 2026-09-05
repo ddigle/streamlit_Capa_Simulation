@@ -391,6 +391,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/roadmap_panel.py`
   - 업무 활용 목적·담당 부서별 Action Item·로드맵 한 줄을 카드로 그린다.
     Static Capa 와 Dynamic Capa 가 공유한다.
+- `src/capa_simulation/services/legacy_comparison.py`
+  - 원천에 보존된 기존 결과와 신규 계산을 같은 키로 대조한다. 기존 컬럼은 경로 행마다
+    같은 값이 반복되므로 **기존은 대표값, 신규는 합계**로 집계한다. 양쪽 다 합산하면
+    경로 수만큼 뻥튀기된다. 실행은 `scripts/compare_legacy_results.py`.
 - `src/capa_simulation/components/tab_state.py`
   - 열린 탭을 서버가 알게 하는 `stateful_tabs` 와 판정용 `tab_is_hidden`. 차트가 든 탭은
     반드시 이것으로 만든다. 숨겨진 탭 안에서 Plotly 표를 그리면 글자 폭 측정이 0 이라
