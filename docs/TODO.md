@@ -970,8 +970,9 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
   삭제 확인 checkbox 는 붙이지 않기를 권장. B4 와 같은 규칙 결정.
 - [ ] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없음, 순수 유지보수
   비용. 권장: E 시리즈 뒤로.
-- [ ] **B7 rgba 색 리터럴 검사 확장** — 남은 5곳은 투명·히트 타깃 기술 상수. 권장 (b): tokens 에
-  `TRANSPARENT`·`HIT_TARGET` 추가, 검사에 `rgba?\(` 별도 패턴.
+- [x] **B7 rgba 색 리터럴 검사 확장** — 남은 5곳(투명 선 2·Space 클릭·호버 표적 3)을
+  `tokens.TRANSPARENT`·`tokens.HIT_TARGET` 으로 모으고 검사에 `rgba?\(` 패턴을 더했다.
+  화면 값 변화 없음. `0272fa8`
 - [ ] **B8 재공 현황의 빈 가용대수** — 설비 DB 가 비면 "가용설비 입력 표에 행이 없습니다" 가
   입력 표 없는 페이지에 빨간 오류로 뜬다. 권장 (A): `st.info` + `st.stop()`. 테스트 Fake 가
   빈 availability 로 이 결함을 가리고 있어 함께 손봐야 한다.
