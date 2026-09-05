@@ -60,12 +60,12 @@
 - [x] Buffer·Core·Top Wafer는 동일한 일반 Wafer 공식을 사용한다: `생산수량(Kea) × 1,000 × 구분_Chip ÷ EDS_수율 ÷ BE_수율 ÷ Net Die`.
 - [x] Top·Core·Buffer·Slave·Master Chip 공식은 `생산수량(Kea) × 구분_Chip ÷ BE_수율`로 적용한다.
 - [x] Dummy Chip 공식은 `생산수량(Kea) × 구분_Chip ÷ EDS_수율 ÷ BE_수율 × (1 - EDS_수율)`로 적용한다.
-- [x] 제품타입이 `EDP-TSV`이면 원본 WF 구분 `Master`를 계산상 `Buffer`, `Slave`를 계산상 `Core`로 매핑한다. 산출 공식은 HBM의 Buffer·Core와 동일하게 적용한다.
-- [x] 제품타입 분류 명칭은 `일반`이 아니라 `HBM`을 사용한다. HBM은 원본 WF 구분 Buffer·Core·Top을 그대로 사용한다.
+- [결정] **짝짓기(`Master`↔`Buffer`, `Slave`↔`Core`)로 구조화하지 않는다** (2026-09-05). 초기에 그런 개념으로 대응시켜 둔 것은 맞지만, 한쪽을 고칠 때 다른 쪽이 따라 움직이는 의존성이 생긴다. 제품타입별로 **별개 로직**으로 둔다. 산출 공식은 지금 두 제품군이 동일하므로 값은 그대로다. `services/load_calculator.py` 의 `WF_DIVISIONS_BY_PRODUCT_TYPE` 이 두 목록을 일부러 따로 선언하고, `tests/test_product_type_isolation.py` 가 격리를 고정한다.
+- [x] 제품타입 분류 명칭은 `일반`이 아니라 `HBM`을 사용한다. **제품타입별 `WF 구분`** (2026-09-05 확인): HBM 은 `Buffer`·`Core`·`Top`(과 Dummy), EDP-TSV 는 `Top`·`Master`·`Slave`. **`Top` 이 겹치므로** `WF 구분` 만 보고 규칙을 쓰면 한쪽 규칙이 다른 쪽에 걸린다. 규칙은 반드시 (제품타입, WF 구분) 으로 건다.
 - [x] Dummy Wafer 공식은 `생산수량(Kea) × 1,000 ÷ EDS_수율 ÷ BE_수율 × (1 - EDS_수율) ÷ Net Die × 구분_Chip`으로 적용한다.
 - [x] Dummy Chip·Wafer 판별은 `WF 구분`의 대소문자와 앞뒤 공백을 정규화해 BigDataQuery의
   `DUMMY` 값과 기존 `Dummy` 값을 동일하게 처리하고, 기존 계산 캐시도 무효화한다.
-- [x] 앞서 확정한 Dummy 발생 규칙에 따라 Dummy의 수율은 Buffer 수율을 사용하며, `EDP-TSV`에서는 Buffer에 해당하는 Master 수율을 사용한다.
+- [결정] 위와 같은 이유로 **EDP-TSV 에 Dummy 수율 규칙을 두지 않는다** (2026-09-05). EDP-TSV 의 `WF 구분` 은 `Top`·`Master`·`Slave` 뿐이라 Dummy 가 없다. Dummy 산식은 HBM 에만 걸린다(`DUMMY_DIVISIONS_BY_PRODUCT_TYPE`). 수율 구조 자체는 바꿀 것이 없다 — `RQ_YLD` 는 `제품정보` 로 이미 제품별로 갈려 있다.
 - [x] 제품별 Buffer·Core·Top Chip 수는 `RQ_CHIP_QTY`로 제공한다.
 - [x] Dummy 구성 수는 1로 적용하기로 결정했다.
 - [x] Dummy Wafer 계산에 사용할 Dummy Net Die를 `RQ_CHIP_QTY`에서 연결하고 Dummy 환산 로직에 반영했다.
@@ -776,23 +776,17 @@ Codex 구축분에 대한 구조 리팩토링을 진행했다. 계산 결과와 
     기준정보의 어느 행을 고쳐야 하는지 알 수 없었다.
   - `wip_status.build_wip_route_scope` 의 같은 규칙에는 테스트가 아예 없었다. 픽스처가
     우연히 규칙을 만족할 뿐이었다. 위반 경로 테스트를 추가했다.
-- [~] **`EDP-TSV` 는 별개 로직으로 구현한다 (설계 질문 남음).** 사용자 지시: 초기에
-  `Master-Buffer`, `Slave-Core` 로 짝지어 둔 것은 맞지만 **그렇게 구조화하지 말고 별개
-  로직으로 구현**할 것. EDP-TSV 만의 수율 규칙이 있으면 추가 입력하고 **HBM 과 구분되어
-  관리**되도록 할 것.
-  - 준비된 것: `제품타입` 이 이제 `RQ_PKG_PLAN` 에 실려 계산 프레임(`_prepare_plan`)까지
-    따라온다. 판정은 `load_calculator.product_type_of` 한 곳에 모았다. 분기를 붙일 자리는
-    마련됐다.
-  - 아직 못 한 것: 실제 분기 내용. 아래 질문에 답이 있어야 정할 수 있다.
-    1. EDP-TSV 의 `WF 구분` 값 집합이 무엇인가(`Master`·`Slave` 를 쓰는가, 아니면 별도
-       명칭인가). 표본에는 `Slave` 행이 하나도 없어 로컬로 알 수 없다.
-    2. Chip·Wafer 산식이 HBM 과 지금도 다른가, 아니면 지금은 같고 앞으로 갈라질 수 있어
-       분리해 두라는 뜻인가.
-    3. 수율을 "HBM 과 구분되어 관리" 한다는 것이 무엇을 말하는가. `RQ_YLD` 키는
-       (생산계획년월·제품정보·Stack·WF 구분)이고 제품정보가 이미 제품을 식별하므로
-       **값은 이미 제품별로 분리**돼 있다. 필요한 것이 (가) 수율 편집 화면을 제품타입별로
-       나눠 보여 주는 것인지, (나) Dummy 수율을 어디서 가져오는지 같은 **규칙**이
-       제품타입별로 갈리는 것인지, (다) `RQ_YLD` 에 제품타입 차원을 새로 넣는 것인지.
+- [x] **`EDP-TSV` 를 별개 로직으로 분리했다.** 사용자 답변(2026-09-05):
+  - EDP-TSV 의 `WF 구분` 은 **`Top`·`Master`·`Slave`** 다.
+  - 산식은 **HBM 과 동일**하다.
+  - 수율 구조에 고칠 것은 없다. 목적은 **HBM-EDP 제품 간 로직의 의존성 제거**다.
+  - 그래서 한 일은 값이 아니라 **구조**다. 두 제품군이 `Top` 이라는 이름을 공유하므로
+    `WF 구분` 만 보고 쓴 규칙은 양쪽에 다 걸린다. 짝짓기를 만들지 않고 Dummy 산식을
+    `(제품타입, WF 구분)` 으로 걸었고, 두 값 집합을 **공통 부분 없이 따로** 선언했다.
+    한쪽을 고쳐도 다른 쪽이 따라 움직이지 않는다.
+  - 수치 무변화 확인: `scripts/compare_legacy_results.py` 출력이 변경 전후로 완전히 동일하다.
+  - 죽은 `_matches_text` 를 함께 걷어냈다(마지막 사용처가 이 규칙이었다).
+
 ### 표본 우연이 계약으로 굳었던 곳 (정리 완료)
 
 로컬 Core Data 가 합성 표본이라는 전제로 저장소를 훑어 58건을 검출하고 두 렌즈로 반증해

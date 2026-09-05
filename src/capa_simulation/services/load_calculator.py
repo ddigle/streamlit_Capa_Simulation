@@ -21,6 +21,23 @@ HBM_PRODUCT_TYPE = "HBM"
 # 계획에 딸려 다니지만 사용자가 격자에서 고칠 값이 아닌 속성들. 편집 왕복에서 떨어지므로
 # `attach_plan_attributes` 로 되붙인다.
 PLAN_ATTRIBUTE_COLUMNS = [PRODUCT_TYPE_COLUMN, "Pack Code"]
+
+# 제품타입별 `WF 구분` 값 집합 (2026-09-05 확인). **두 목록은 일부러 따로 적는다.**
+# 두 제품군이 `Top`·`Master` 라는 같은 이름을 공유하므로, `WF 구분` 만 보고 쓴 규칙은
+# 의도와 무관하게 양쪽에 다 걸린다. 한쪽 규칙이 다른 쪽을 건드리지 않게 하려면 규칙을
+# **(제품타입, WF 구분)** 으로 걸어야 한다. 한쪽을 고칠 때 다른 쪽이 따라 움직이면 안 되므로
+# 공통 부분을 뽑아 공유하지 않는다.
+HBM_WF_DIVISIONS = ("Buffer", "Core", "Top", "Dummy")
+EDP_WF_DIVISIONS = ("Top", "Master", "Slave")
+WF_DIVISIONS_BY_PRODUCT_TYPE = {
+    HBM_PRODUCT_TYPE: HBM_WF_DIVISIONS,
+    EDP_PRODUCT_TYPE: EDP_WF_DIVISIONS,
+}
+# Dummy 산식을 받는 `WF 구분`. EDP-TSV 에는 Dummy 가 없다.
+DUMMY_DIVISIONS_BY_PRODUCT_TYPE = {
+    HBM_PRODUCT_TYPE: ("Dummy",),
+    EDP_PRODUCT_TYPE: (),
+}
 PLAN_EDITOR_DIMENSIONS = [
     "양산구분",
     "제품정보",
@@ -250,11 +267,6 @@ def _normalize_text(data: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     return normalized
 
 
-def _matches_text(values: pd.Series, expected: str) -> pd.Series:
-    """Compare classification text without depending on case or outer whitespace."""
-    return values.astype("string").str.strip().str.casefold().eq(expected.casefold()).fillna(False)
-
-
 def _to_numeric(data: pd.DataFrame, columns: list[str], table_name: str) -> pd.DataFrame:
     converted = data.copy()
     for column in columns:
@@ -431,12 +443,38 @@ def load_exclusions(data: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(list(excluded), columns=LOAD_EXCLUSION_COLUMNS)
 
 
+def _dummy_mask(calculation: pd.DataFrame) -> pd.Series:
+    """Dummy 산식을 받을 행을 (제품타입, WF 구분) 으로 고른다.
+
+    `WF 구분` 만 보고 고르면 두 제품군이 공유하는 이름 때문에 한쪽 규칙이 다른 쪽에
+    적용된다. 지금은 Dummy 가 HBM 에만 있어 결과가 같지만, 규칙을 이름 하나에 걸어 두면
+    나중에 EDP 쪽 규칙을 넣을 때 HBM 이 조용히 따라 움직인다.
+
+    `제품타입` 이 없는 프레임(제품타입 도입 이전 경로)은 예전처럼 이름만 보고 고른다.
+    """
+    division = calculation["WF 구분"].astype("string").str.strip().str.casefold()
+    if PRODUCT_TYPE_COLUMN not in calculation.columns:
+        declared = {
+            name.casefold() for names in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.values() for name in names
+        }
+        return division.isin(declared).fillna(False)
+
+    product_type = calculation[PRODUCT_TYPE_COLUMN].astype("string").str.strip()
+    mask = pd.Series(False, index=calculation.index)
+    for declared_type, dummy_divisions in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.items():
+        if not dummy_divisions:
+            continue
+        names = {name.casefold() for name in dummy_divisions}
+        mask |= product_type.eq(declared_type) & division.isin(names).fillna(False)
+    return mask
+
+
 def _calculate_chip_load_from_base(load_base: pd.DataFrame) -> pd.DataFrame:
     calculation = load_base.copy()
     calculation["물량"] = (
         calculation["생산수량"] * calculation["구분_Chip"] / calculation["BE_수율"]
     )
-    is_dummy = _matches_text(calculation["WF 구분"], "Dummy")
+    is_dummy = _dummy_mask(calculation)
     calculation.loc[is_dummy, "물량"] = (
         calculation.loc[is_dummy, "생산수량"]
         * calculation.loc[is_dummy, "구분_Chip"]
@@ -466,7 +504,7 @@ def _calculate_wafer_load_from_base(load_base: pd.DataFrame) -> pd.DataFrame:
         / calculation["BE_수율"]
         / calculation["Net Die"]
     )
-    is_dummy = _matches_text(calculation["WF 구분"], "Dummy")
+    is_dummy = _dummy_mask(calculation)
     calculation.loc[is_dummy, "물량"] *= 1 - calculation.loc[is_dummy, "EDS_수율"]
     return carry_load_exclusions(load_base, calculation)
 
