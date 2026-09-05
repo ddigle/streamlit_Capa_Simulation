@@ -71,8 +71,10 @@ render_page_header(
 detail_row = st.container(horizontal=True, vertical_alignment="center", gap="small")
 with detail_row:
     show_home_details = st.toggle(
+        # 켠 상태로 시작한다. 계획 세부수량과 B/N 상세 시트를 매번 손으로 펼치던 것을
+        # 없앤다. 요약만 보려면 끄면 되고, 그 선택은 세션 동안 유지된다.
         "계획·B/N 상세표 표시",
-        value=False,
+        value=True,
         key="dashboard_show_details",
         persist_state="session",
         help="제품·Stack별 계획 세부수량과 상세 B/N 공정 시트를 아래에 함께 펼칩니다.",

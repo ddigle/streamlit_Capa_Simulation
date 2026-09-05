@@ -88,8 +88,9 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
         ("경고 기준 (%)", 99.5),
     ]
 
-    # 기본 진입은 요약 Figure만 만든다: 좌측 라벨(trace 0) + 월별 본문(trace 3)
-    assert app.session_state["spy_traces"] == [0, 3]
+    # 기본 진입은 상세표까지 펼친다: 요약(좌측 라벨 trace 0 + 월별 본문 trace 3)에
+    # 계획 세부수량과 B/N 상세 시트가 더해진다.
+    assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 1]
     assert app.session_state["spy_scrollbars"] == 1
 
     assert [widget.label for widget in app.main.toggle] == ["계획·B/N 상세표 표시"]
@@ -97,15 +98,22 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     assert [widget.label for widget in app.button] == ["판정 기준 적용", "공정 선택창 열기"]
 
 
-def test_home_detail_toggle_adds_plan_and_bottleneck_figures(seeded_database: Path) -> None:
-    app = _run(seeded_database)
-    assert app.session_state["spy_traces"] == [0, 3]
+def test_home_detail_toggle_starts_on_and_can_be_turned_off(seeded_database: Path) -> None:
+    """상세표는 켠 상태로 시작하고, 끄면 요약만 남는다.
 
-    app.main.toggle[0].set_value(True).run()
+    기본값을 켜짐으로 바꾼 뒤로는 "토글하면 늘어난다" 가 아니라 "기본이 켜져 있고 끄면
+    줄어든다" 가 계약이다. 기본값만 단언하면 끄는 경로가 덮이지 않는다.
+    """
+    app = _run(seeded_database)
+    assert app.main.toggle[0].value is True
+    # 계획 세부수량과 B/N 상세 시트가 요약에 더해져 있다.
+    assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 1]
+
+    app.main.toggle[0].set_value(False).run()
 
     assert not list(app.exception)
-    # 상세 토글은 계획 세부수량과 B/N 상세 시트를 추가로 만든다.
-    assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 1]
+    # 좌측 라벨(trace 0) + 월별 본문(trace 3) 만 남는다.
+    assert app.session_state["spy_traces"] == [0, 3]
 
 
 def test_home_reuses_cached_figures_on_an_unchanged_rerun(seeded_database: Path) -> None:
