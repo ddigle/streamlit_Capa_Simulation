@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, cast
+from typing import Any, Final, cast
 
 import pandas as pd
 import plotly.graph_objects as go
 
+from capa_simulation.components.plotly_layout import append_layout_items
 from capa_simulation.design import tokens
 
 
@@ -215,6 +216,11 @@ def build_floor_layout_figure(
     hover_x: list[float] = []
     hover_y: list[float] = []
     hover_text: list[str] = []
+    # 호기마다 add_shape·add_annotation 을 부르면 호기 수 제곱으로 는다(200대 13~18초). 지금은
+    # 호기 마스터가 비어 잠복해 있지만 들어오는 순간 클릭마다 멈춘다. 모아서 한 번에 넣는다.
+    # 바깥 캔버스 rect 는 위에서 먼저 넣었으므로 layout.shapes[0] 자리가 유지된다.
+    equipment_shapes: list[dict[str, Any]] = []
+    equipment_labels: list[dict[str, Any]] = []
     records = cast(list[dict[str, object]], equipment.to_dict(orient="records"))
     for record in records:
         equipment_id = str(record.get("호기", ""))
@@ -227,23 +233,27 @@ def build_floor_layout_figure(
         width = max(_to_float(record.get("Xsize")), 0.1)
         height = max(_to_float(record.get("Ysize")), 0.1)
         fill_color = tokens.EQUIPMENT_STAGE_COLORS.get(status, tokens.EQUIPMENT_STAGE_FALLBACK)
-        figure.add_shape(
-            type="rect",
-            x0=x,
-            x1=x + width,
-            y0=y,
-            y1=y + height,
-            fillcolor=fill_color,
-            line={"color": tokens.SPACE_BORDER, "width": 1.2},
-            layer="above",
+        equipment_shapes.append(
+            {
+                "type": "rect",
+                "x0": x,
+                "x1": x + width,
+                "y0": y,
+                "y1": y + height,
+                "fillcolor": fill_color,
+                "line": {"color": tokens.SPACE_BORDER, "width": 1.2},
+                "layer": "above",
+            }
         )
-        figure.add_annotation(
-            x=x + width / 2,
-            y=y + height / 2,
-            text=f"<b>{equipment_id}</b><br>{stage}",
-            showarrow=False,
-            font={"size": 9, "color": tokens.SPACE_TEXT},
-            align="center",
+        equipment_labels.append(
+            {
+                "x": x + width / 2,
+                "y": y + height / 2,
+                "text": f"<b>{equipment_id}</b><br>{stage}",
+                "showarrow": False,
+                "font": {"size": 9, "color": tokens.SPACE_TEXT},
+                "align": "center",
+            }
         )
         hover_x.append(x + width / 2)
         hover_y.append(y + height / 2)
@@ -257,6 +267,7 @@ def build_floor_layout_figure(
             f"X {x:g} · Y {y:g} · 크기 {width:g}×{height:g}"
         )
 
+    append_layout_items(figure, shapes=equipment_shapes, annotations=equipment_labels)
     figure.add_trace(
         go.Scatter(
             x=hover_x,

@@ -5,7 +5,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import accumulate
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -40,7 +40,8 @@ from capa_simulation.components.monthly_table_base import (
     table_height_px,
     text_width_units,
 )
-from capa_simulation.components.tab_state import OpenTab
+from capa_simulation.components.plotly_layout import append_layout_items
+from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 
 _ValueFormat = Literal["number", "percent"]
@@ -203,33 +204,45 @@ def _add_table_grid(
     add_month_boundaries(month_figure, month_columns)
 
     cumulative_widths = [0, *accumulate(classification_widths)]
+    # `add_shape` 는 부를 때마다 지금까지 쌓인 shape 전부를 다시 검증한다. 행마다 부르면
+    # 행 수 제곱으로 늘어 STEP 별 대당 Capa(1,140행)는 300초 안에 끝나지 않았다. 행 루프는
+    # dict 를 모아 두었다가 한 번에 주입한다. 순서는 그대로다(테두리·머리선·경계 → 행 경계).
+    label_shapes: list[dict[str, Any]] = []
+    month_shapes: list[dict[str, Any]] = []
     for row_index, changed_column in display.group_boundaries:
         boundary_y = 1 - (HEADER_HEIGHT_PX + row_index * ROW_HEIGHT_PX) / table_height
         label_start_x = cumulative_widths[changed_column] / total_classification_width
         # 최상위 그룹선은 바깥 테두리와 같은 굵기로 시작해 계층이 깊어질수록 가늘어진다.
         boundary_width = max(1.0, OUTER_BORDER_WIDTH_PX - changed_column * 0.16)
-        label_figure.add_shape(
-            type="line",
-            x0=label_start_x,
-            x1=1,
-            y0=boundary_y,
-            y1=boundary_y,
-            xref="paper",
-            yref="paper",
-            line={"color": GROUP_BORDER_COLOR, "width": boundary_width},
-            layer="above",
+        line = {"color": GROUP_BORDER_COLOR, "width": boundary_width}
+        label_shapes.append(
+            {
+                "type": "line",
+                "x0": label_start_x,
+                "x1": 1,
+                "y0": boundary_y,
+                "y1": boundary_y,
+                "xref": "paper",
+                "yref": "paper",
+                "line": line,
+                "layer": "above",
+            }
         )
-        month_figure.add_shape(
-            type="line",
-            x0=0,
-            x1=1,
-            y0=boundary_y,
-            y1=boundary_y,
-            xref="paper",
-            yref="paper",
-            line={"color": GROUP_BORDER_COLOR, "width": boundary_width},
-            layer="above",
+        month_shapes.append(
+            {
+                "type": "line",
+                "x0": 0,
+                "x1": 1,
+                "y0": boundary_y,
+                "y1": boundary_y,
+                "xref": "paper",
+                "yref": "paper",
+                "line": line,
+                "layer": "above",
+            }
         )
+    append_layout_items(label_figure, shapes=label_shapes)
+    append_layout_items(month_figure, shapes=month_shapes)
 
 
 def render_hierarchical_monthly_table(
@@ -272,6 +285,10 @@ def render_hierarchical_monthly_table(
         data = data.iloc[start_row : start_row + page_size].copy()
         st.caption(f"전체 {total_rows:,}행 · {page_index + 1:,}/{page_count:,} 페이지")
 
+    # 위젯(표시 범위)은 그렸으니 상태가 유지된다. 닫힌 탭이면 그림 준비는 여기서 접는다 —
+    # 아래 `render_split_scroll_table` 도 막지만 그 전에 격자 1~2초를 만들고 버리고 있었다.
+    if tab_is_hidden(owner_tab):
+        return
     display = _build_hierarchical_display(data, classification_columns)
     classification_widths = _classification_widths(
         display.classification_values,

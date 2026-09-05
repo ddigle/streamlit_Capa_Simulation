@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -37,7 +37,8 @@ from capa_simulation.components.monthly_table_base import (
     table_height_px,
     text_width_units,
 )
-from capa_simulation.components.tab_state import OpenTab
+from capa_simulation.components.plotly_layout import append_layout_items
+from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 
 # 기존 33px에서 약 1/8 축소한 데이터 행 높이다.
@@ -260,61 +261,37 @@ def _add_table_grid(
 
     add_month_boundaries(month_figure, month_columns)
 
+    # `add_shape` 는 부를 때마다 지금까지 쌓인 shape 전부를 다시 검증한다. 행마다 부르면
+    # 행 수 제곱으로 늘어 STEP 별 대당 Capa(1,140행)는 300초 안에 끝나지 않았다. 행 루프는
+    # dict 를 모아 두었다가 한 번에 주입한다. 순서는 그대로다(테두리·머리선·경계 → 행 경계).
+    def _rule(x0: float, y: float, width: float) -> dict[str, Any]:
+        return {
+            "type": "line",
+            "x0": x0,
+            "x1": 1,
+            "y0": y,
+            "y1": y,
+            "xref": "paper",
+            "yref": "paper",
+            "line": {"color": GROUP_BORDER_COLOR, "width": width},
+            "layer": "above",
+        }
+
+    def _boundary_y(total_row: int) -> float:
+        return 1 - (HEADER_HEIGHT_PX + (total_row + 1) * ROW_HEIGHT_PX) / table_height
+
+    label_shapes: list[dict[str, Any]] = []
+    month_shapes: list[dict[str, Any]] = []
     for total_row in product_total_rows:
-        group_boundary_y = 1 - (HEADER_HEIGHT_PX + (total_row + 1) * ROW_HEIGHT_PX) / table_height
-        label_figure.add_shape(
-            type="line",
-            x0=production_boundary_x,
-            x1=1,
-            y0=group_boundary_y,
-            y1=group_boundary_y,
-            xref="paper",
-            yref="paper",
-            line={"color": GROUP_BORDER_COLOR, "width": 1.0},
-            layer="above",
-        )
-        month_figure.add_shape(
-            type="line",
-            x0=0,
-            x1=1,
-            y0=group_boundary_y,
-            y1=group_boundary_y,
-            xref="paper",
-            yref="paper",
-            line={"color": GROUP_BORDER_COLOR, "width": 1.0},
-            layer="above",
-        )
-
+        label_shapes.append(_rule(production_boundary_x, _boundary_y(total_row), 1.0))
+        month_shapes.append(_rule(0, _boundary_y(total_row), 1.0))
     for total_row in production_total_rows:
-        group_boundary_y = 1 - (HEADER_HEIGHT_PX + (total_row + 1) * ROW_HEIGHT_PX) / table_height
-        for target_figure in (label_figure, month_figure):
-            target_figure.add_shape(
-                type="line",
-                x0=0,
-                x1=1,
-                y0=group_boundary_y,
-                y1=group_boundary_y,
-                xref="paper",
-                yref="paper",
-                line={"color": GROUP_BORDER_COLOR, "width": 1.4},
-                layer="above",
-            )
-
-    grand_total_boundary_y = (
-        1 - (HEADER_HEIGHT_PX + (grand_total_row + 1) * ROW_HEIGHT_PX) / table_height
-    )
-    for target_figure in (label_figure, month_figure):
-        target_figure.add_shape(
-            type="line",
-            x0=0,
-            x1=1,
-            y0=grand_total_boundary_y,
-            y1=grand_total_boundary_y,
-            xref="paper",
-            yref="paper",
-            line={"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
-            layer="above",
-        )
+        label_shapes.append(_rule(0, _boundary_y(total_row), 1.4))
+        month_shapes.append(_rule(0, _boundary_y(total_row), 1.4))
+    label_shapes.append(_rule(0, _boundary_y(grand_total_row), OUTER_BORDER_WIDTH_PX))
+    month_shapes.append(_rule(0, _boundary_y(grand_total_row), OUTER_BORDER_WIDTH_PX))
+    append_layout_items(label_figure, shapes=label_shapes)
+    append_layout_items(month_figure, shapes=month_shapes)
 
 
 def _classification_fill_colors(
@@ -440,6 +417,10 @@ def render_grouped_monthly_table(
         st.info("표시할 월별 환산 데이터가 없습니다.")
         return
 
+    # 닫힌 탭이면 그림 준비는 여기서 접는다. 아래 `render_split_scroll_table` 도 막지만 그 전에
+    # 소계·격자를 만들고 버리고 있었다. 이 함수는 앞에서 위젯을 그리지 않으므로 상태 유실이 없다.
+    if tab_is_hidden(owner_tab):
+        return
     display = _build_display_rows(data, classification_columns, month_columns)
     classification_widths = _classification_widths(
         display.classification_values,
