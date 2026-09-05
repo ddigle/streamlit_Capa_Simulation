@@ -9,6 +9,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TOKENS_FILE = PROJECT_ROOT / "src" / "capa_simulation" / "design" / "tokens.py"
 SCANNED_DIRECTORIES = ("app_pages", "src")
 HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{6}\b")
+# 투명·히트 타깃처럼 rgba 로만 적히는 값도 tokens 밖에 두면 같은 값이 여러 곳에 흩어진다.
+RGB_COLOR = re.compile(r"\brgba?\(")
+COLOR_LITERALS = (HEX_COLOR, RGB_COLOR)
 # Windows 전용 서체를 폴백 없이 단독 지정하면 다른 OS 에서 서체와 컬럼 폭이 함께 깨진다.
 BARE_WINDOWS_FONT = re.compile(r"""["']Malgun Gothic["']""")
 
@@ -29,13 +32,14 @@ def test_color_literals_live_only_in_the_token_module() -> None:
     offenders: list[str] = []
     for path in _scanned_files():
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            for match in HEX_COLOR.finditer(line):
-                relative = path.relative_to(PROJECT_ROOT).as_posix()
-                offenders.append(f"{relative}:{number}: {match.group(0)}")
+            for pattern in COLOR_LITERALS:
+                for match in pattern.finditer(line):
+                    relative = path.relative_to(PROJECT_ROOT).as_posix()
+                    offenders.append(f"{relative}:{number}: {match.group(0)}")
 
     assert not offenders, (
-        "색은 design/tokens.py 에만 둔다. 역할 이름의 토큰을 만들어 참조하라:\n"
-        + "\n".join(offenders)
+        "색은 design/tokens.py 에만 둔다. 역할 이름의 토큰을 만들어 참조하라"
+        "(투명·히트 타깃은 tokens.TRANSPARENT·tokens.HIT_TARGET):\n" + "\n".join(offenders)
     )
 
 

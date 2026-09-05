@@ -102,7 +102,7 @@ def build_fab_figure(equipment: pd.DataFrame) -> go.Figure:
             y=clickable_y,
             mode="markers",
             customdata=clickable_buildings,
-            marker={"size": 64, "color": "rgba(255,255,255,0.01)"},
+            marker={"size": 64, "color": tokens.HIT_TARGET},
             hovertemplate="%{customdata}동 상세 보기<extra></extra>",
             showlegend=False,
         )
@@ -172,7 +172,7 @@ def build_floor_figure(equipment: pd.DataFrame, building: str) -> go.Figure:
             y=clickable_y,
             mode="markers",
             customdata=clickable_floors,
-            marker={"size": 62, "color": "rgba(255,255,255,0.01)"},
+            marker={"size": 62, "color": tokens.HIT_TARGET},
             hovertemplate=f"{building} %{{customdata}} 상세 보기<extra></extra>",
             showlegend=False,
         )
@@ -273,7 +273,7 @@ def build_floor_layout_figure(
             x=hover_x,
             y=hover_y,
             mode="markers",
-            marker={"size": 28, "color": "rgba(255,255,255,0.01)"},
+            marker={"size": 28, "color": tokens.HIT_TARGET},
             text=hover_text,
             hovertemplate="%{text}<extra></extra>",
             showlegend=False,

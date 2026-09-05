@@ -14,7 +14,7 @@ from capa_simulation.components.home_dimensions import (
 )
 from capa_simulation.design import tokens
 
-TRANSPARENT_COLOR = "rgba(0, 0, 0, 0)"
+TRANSPARENT_COLOR = tokens.TRANSPARENT
 
 
 def dashboard_title_annotation(text: str) -> dict[str, Any]:

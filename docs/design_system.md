@@ -27,7 +27,9 @@ Streamlit 위젯은 `config.toml`을 직접 읽지만 Plotly Figure와 주입 CS
 ## 2. 지켜야 할 규칙
 
 - **파이썬 코드에 색 리터럴을 쓰지 않는다.** `tests/test_design_tokens.py`가
-  `app.py`·`app_pages/`·`src/` 전체를 검사해 `#RRGGBB`가 `tokens.py` 밖에 있으면 실패한다.
+  `app.py`·`app_pages/`·`src/` 전체를 검사해 `#RRGGBB`·`rgb()`·`rgba()`가 `tokens.py` 밖에
+  있으면 실패한다. 투명·히트 타깃 같은 기술 상수도 `tokens.TRANSPARENT`·`tokens.HIT_TARGET`
+  으로 참조한다.
 - **서체는 `tokens.FONT_FAMILY`를 쓴다.** `"Malgun Gothic"` 단독 지정은 금지다. Windows
   전용 서체라 다른 OS에서 서체와 함께 **컬럼 폭 계산까지** 어긋난다. 숫자를 정렬해 보여야
   하는 자리는 `FONT_FAMILY_NUMERIC`을 쓴다.
