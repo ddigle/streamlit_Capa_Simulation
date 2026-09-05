@@ -20,7 +20,23 @@ from capa_simulation.sidebar_status import (
 )
 
 st.set_page_config(page_title=APP_NAME, page_icon=":material/factory:", layout="wide")
-bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
+try:
+    bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
+except Exception as exc:  # noqa: BLE001 - 어떤 실패든 원인을 읽을 수 있게 바꿔야 한다
+    # DuckDB 파일은 프로세스 배타 잠금이다. 서버가 이미 떠 있는데 한 번 더 실행하면
+    # 화면이 한 줄도 그려지기 전에 예외가 그대로 노출되고, Windows 로캘 탓에 원본
+    # 메시지의 한글이 깨져 나온다. 사용자가 원인을 알 방법이 없어 안내로 바꾼다.
+    st.error(
+        "시나리오 데이터베이스를 열지 못했습니다.\n\n"
+        f"- 파일: `{DUCKDB_PATH}`\n"
+        "- 이 앱이 이미 다른 창에서 실행 중이면 그 창을 닫고 다시 시작하세요. "
+        "DuckDB 는 한 번에 한 프로세스만 파일을 엽니다.\n"
+        "- 그래도 같은 오류가 나면 파일 권한과 경로(네트워크 드라이브 여부)를 확인하세요.",
+        icon=":material/database_off:",
+    )
+    with st.expander("원본 오류"):
+        st.code(f"{type(exc).__name__}: {exc}")
+    st.stop()
 apply_pending_scenario_preset()
 
 

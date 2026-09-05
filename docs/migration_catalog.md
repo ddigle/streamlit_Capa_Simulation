@@ -11,6 +11,20 @@ sidecar 카탈로그다.
 포함하고 이 카탈로그에도 추가한다. 한 번이라도 적용한 SQL은 헤더를 포함해 절대 수정하지
 않고, 변경이 필요하면 다음 번호의 마이그레이션을 추가한다.
 
+## 재사용 금지 번호 (결번)
+
+시뮬레이션 DB의 **2·3번은 영구 결번이다.** 파일은 저장소에 없지만 개발 DuckDB의
+`app_meta.schema_migration` 에는 `0002_equipment_operations.sql` ·
+`0003_equipment_baseline_double.sql` 이 적용 완료로 남아 있다. 설비 운영을 별도 DuckDB로
+분리하면서 파일만 사라지고 적용 기록은 지워지지 않은 것이다. 그 흔적으로 시뮬레이션 DB에
+빈 `equipment_ops` 스키마가 남아 있다.
+
+러너는 파일명이 아니라 **버전 번호로 체크섬을 대조**한다(`migration_runner.py`). 그래서
+누구든 `0002_*.sql` 또는 `0003_*.sql` 을 새로 추가하면, 그 번호가 이미 적용된 개발 DB에서만
+"이미 적용된 DuckDB 마이그레이션이 변경되었습니다" 로 앱이 시작조차 못 한다. 신규 체크아웃
+에서는 재현되지 않아 원인을 찾기 어렵다. 새 마이그레이션은 항상 마지막 번호 다음을 쓴다.
+`tests/test_migration_numbering.py` 가 이 규칙을 강제한다.
+
 | 파일 | 목적 |
 |---|---|
 | `src/capa_simulation/persistence/migrations/0001_initial.sql` | 시나리오 DB의 메타·원천·기준·리비전·결과 스키마와 초기 테이블을 생성한다. |

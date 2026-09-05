@@ -37,6 +37,9 @@ data/output/*
 !data/output/.gitkeep
 data/temp/*
 !data/temp/.gitkeep
+# 다른 데이터 폴더와 같은 규칙을 준다. 여기만 빠져 있어 실데이터가 커밋될 수 있었다.
+data/sample/*
+!data/sample/.gitkeep
 data/*.db
 data/*.db-*
 data/*.db.*.bak
