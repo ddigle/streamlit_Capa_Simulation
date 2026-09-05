@@ -133,6 +133,15 @@ if route_scope.empty:
     st.warning("오늘 기준 조회 구간에 재공 현황을 구성할 공정·제품 경로가 없습니다.")
     st.stop()
 
+if availability.empty:
+    # 빈 표를 그대로 계산에 넣으면 prepare_weekly_availability 가 "가용설비 입력 표에 행이
+    # 없습니다" 를 던진다. 입력 표가 없는 이 화면에서는 오류가 아니라 안내여야 한다.
+    st.info(
+        "설비 DB에 주차별 가용대수가 없어 표준 가능량 기준선을 만들 수 없습니다. "
+        "`표준 목표 Capa`에서 주차별 가용설비를 입력하면 여기에 그대로 반영됩니다."
+    )
+    st.stop()
+
 process_options = processes_in_step_order(route_scope)
 product_options = _products_in_display_order(
     route_scope,

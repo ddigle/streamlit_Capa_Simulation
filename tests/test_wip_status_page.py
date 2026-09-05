@@ -110,9 +110,19 @@ original_weekly_standard = simulation_cache.get_weekly_standard_target_capacity
 original_figure_builder = dashboard.build_wip_status_grid_figure
 
 
+# 설비 DB 가 채워진 정상 경로. 빈 표는 EMPTY_AVAILABILITY_SCRIPT 가 따로 검사한다.
+availability = pd.DataFrame(
+    [
+        {"공정": process, "Weeknum": week["Weeknum"], "가용대수": 2.0}
+        for week in calendar.to_dict("records")
+        for process in ("P-Process", "T-Process")
+    ]
+)
+
+
 class FakeEquipmentRepository:
     def load_standard_target_availability(self):
-        return pd.DataFrame(columns=["공정", "Weeknum", "가용대수"])
+        return availability.copy()
 
 
 reference_cache.get_effective_reference_version = lambda: 1
@@ -156,6 +166,12 @@ finally:
     dashboard.build_wip_status_grid_figure = original_figure_builder
 """
 
+EMPTY_AVAILABILITY_SCRIPT = TEST_SCRIPT.replace(
+    "return availability.copy()",
+    'return pd.DataFrame(columns=["공정", "Weeknum", "가용대수"])',
+)
+assert EMPTY_AVAILABILITY_SCRIPT != TEST_SCRIPT
+
 
 def test_wip_status_page_renders_filtered_step_product_grid() -> None:
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
@@ -177,3 +193,15 @@ def test_wip_status_page_renders_filtered_step_product_grid() -> None:
         "오늘 Flow 부족",
         "표준 미설정",
     ]
+
+
+def test_wip_status_page_explains_an_empty_equipment_db_instead_of_erroring() -> None:
+    """설비 DB 가 비면 입력 표가 없는 이 화면에 "입력 표에 행이 없습니다" 오류가 떴다."""
+    app = AppTest.from_string(EMPTY_AVAILABILITY_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert not app.error
+    assert any("주차별 가용대수가 없어" in element.value for element in app.info)
+    # 안내 뒤에 멈추므로 조회 조건과 지표는 그리지 않는다.
+    assert not app.multiselect
+    assert not app.metric
