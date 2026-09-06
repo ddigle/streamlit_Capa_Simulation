@@ -274,6 +274,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 설비 운영 데이터는 전용 DB의 `equipment_meta`, `equipment_ops` 스키마에서 전체
     스냅샷 리비전으로 보존한다.
   - 쓰기는 프로세스 잠금과 단일 트랜잭션으로 직렬화하고, 읽기는 작업별 연결을 사용한다.
+    `app.py` 는 rerun 한 번을 `pinned_connections(DUCKDB_PATH)` 로 감싸 작업별 연결이
+    인스턴스를 다시 만들지 않게 한다(연결당 48ms → 0.2ms). rerun 이 끝나면 풀리는 핀이지
+    상시 앵커가 아니다 — 배치가 DB 파일을 갱신하는 환경을 위해 일부러 그렇게 둔다.
   - 불변 `revision_id`의 전체 스냅샷과 공용 표시순서 프로필을 `st.cache_data`로 여러 세션에
     공유한다. 표시순서는 교체 시 `clear_global_display_order_cache()`로 명시 무효화한다
     (스냅샷 payload 에 현재 표시순서가 `RQ_DISPLAY_ORDER`로 들어가므로 두 캐시를 함께 비운다).

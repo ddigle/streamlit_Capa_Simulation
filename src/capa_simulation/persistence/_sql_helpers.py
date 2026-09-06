@@ -5,7 +5,8 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -28,6 +29,35 @@ def connect(database_path: Path) -> duckdb.DuckDBPyConnection:
     # same database file with a different configuration" 로 연결 자체를 거부한다.
     # 그래서 read_only 도 쓰지 않고, 설정도 여기서만 만든다.
     return duckdb.connect(str(database_path), config=DUCKDB_CONNECT_CONFIG)
+
+
+@contextmanager
+def pinned_connections(*database_paths: Path) -> Iterator[None]:
+    """블록이 도는 동안 DB 파일마다 유휴 연결 하나를 잡아 둔다.
+
+    DuckDB 는 한 프로세스 안에서 같은 파일의 인스턴스를 공유한다. 연결이 하나라도 열려
+    있으면 다음 `connect()` 는 인스턴스를 새로 만들지 않아 0.2ms 로 끝나고, 없으면 48ms 다.
+    작업별 연결을 여닫는 설계는 그대로 두고, app.py 가 rerun 한 번을 이 블록으로 감싸
+    사이드바 3콜이 인스턴스를 세 번 만들던 것(161ms)을 한 번(핀 48ms + 10ms)으로 줄인다.
+
+    rerun 이 끝나면 풀린다. 상시 앵커를 두지 않는 이유: 배치가 같은 파일을 갱신하는
+    환경에서는 rerun 사이 틈이 있어야 하고(Windows 는 교체 실패, Linux 는 옛 inode 를 계속
+    읽는다), 핀이 닫히며 인스턴스가 내려갈 때 WAL 체크포인트가 돈다.
+
+    열지 못하는 파일(다른 프로세스의 잠금, 없는 폴더)은 건너뛴다. 뒤의 실제 연결이 같은
+    오류를 내고 그 자리의 안내가 처리하므로 여기서 판단하지 않는다.
+    """
+    pins: list[duckdb.DuckDBPyConnection] = []
+    for database_path in database_paths:
+        try:
+            pins.append(connect(database_path))
+        except duckdb.Error:
+            continue
+    try:
+        yield
+    finally:
+        for pin in reversed(pins):
+            pin.close()
 
 
 def insert_frame(
