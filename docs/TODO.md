@@ -965,9 +965,11 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
   잠깐 열면 사라진다(persist_state 로 못 막음). 권장: `with tab:` 3개로 항상 그리고
   `on_change="rerun"` 제거로 상쇄, 순수 함수 2개 캐시. **규칙 문장 확정 필요**:
   "form·data_editor·persist_state 없는 위젯이 있는 탭은 본문을 항상 그린다(그림만 건너뜀)."
-- [ ] **B5 capacity_standards STEP 구성 탭 준비 계산** — 닫혀 있어도 721~963ms/rerun. 권장:
-  `tab_is_hidden(tabs[1])` 로 건너뛰고 form 안 text_input 2개에 `persist_state="page"`.
-  삭제 확인 checkbox 는 붙이지 않기를 권장. B4 와 같은 규칙 결정.
+  → B5 에서 규칙 확정됨(위젯은 항상, 계산·표·차트만 건너뜀). 같은 기준으로 진행.
+- [x] **B5 capacity_standards STEP 구성 탭 준비 계산** — 규칙 확정: "숨은 탭에서도 입력
+  위젯은 항상 그리고, 계산·표·차트만 건너뛴다". 목록은 위젯 options 라 건너뛸 수 없어
+  `get_route_step_tables` 내용 토큰 캐시로 바꾸고 요약 표만 접었다. 기본 탭 warm rerun
+  **2,226 → 1,147ms**. persist_state 변경 없음(위젯이 계속 그려지므로). `efb98e1`
 - [ ] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없음, 순수 유지보수
   비용. 권장: E 시리즈 뒤로.
 - [x] **B7 rgba 색 리터럴 검사 확장** — 남은 5곳(투명 선 2·Space 클릭·호버 표적 3)을
