@@ -964,11 +964,11 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
 - [ ] **B3 E7 create_scenario 의 ref_data 편집 14표 이중 저장** — 전체 행의 33.7% 가 rev1 사본과
   완전 동일, 읽는 코드 0. 재구축 34.09 → 24.92MB. E8(ATTACH 재구축) 결정과 묶는다. 권장 채택.
   채택 시 `compare_legacy_results.py` 대조 기준을 rev1 로.
-- [ ] **B4 시나리오 관리 탭 본문 건너뛰기** — `if tab.open` 분기라 폼 7개 입력값이 다른 탭을
-  잠깐 열면 사라진다(persist_state 로 못 막음). 권장: `with tab:` 3개로 항상 그리고
-  `on_change="rerun"` 제거로 상쇄, 순수 함수 2개 캐시. **규칙 문장 확정 필요**:
-  "form·data_editor·persist_state 없는 위젯이 있는 탭은 본문을 항상 그린다(그림만 건너뜀)."
-  → B5 에서 규칙 확정됨(위젯은 항상, 계산·표·차트만 건너뜀). 같은 기준으로 진행.
+- [x] **B4 시나리오 관리 탭 본문 건너뛰기** — 세 탭을 `with tab:` 으로 항상 그리고
+  `on_change="rerun"` 을 뺐다(탭 전환 rerun 없음). 표시순서 탭의 검증 47ms + CSV 46ms 는
+  공용 버전 키 `_validated_display_order` 캐시로 상쇄. 기본 탭 warm rerun 508 → 508~521ms
+  (교차 측정, 항상 그리는데도 오차 안). 회귀 테스트: 한 rerun 에 세 탭 폼이 모두 있다.
+  규칙은 B5 와 같다. `8956419`
 - [x] **B5 capacity_standards STEP 구성 탭 준비 계산** — 규칙 확정: "숨은 탭에서도 입력
   위젯은 항상 그리고, 계산·표·차트만 건너뛴다". 목록은 위젯 options 라 건너뛸 수 없어
   `get_route_step_tables` 내용 토큰 캐시로 바꾸고 요약 표만 접었다. 기본 탭 warm rerun
