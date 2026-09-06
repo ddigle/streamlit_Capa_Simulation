@@ -948,12 +948,13 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
 
 ### 결정 필요 (B1~B8) — 사용자 답변 대기
 
-- [ ] **B1 E1 DB 연결 상주** — rerun 마다 사이드바 3콜 156~186ms(HOME warm rerun 의 60~68%).
-  비용은 연결이 아니라 인스턴스 재생성이라, `cache_resource` 층에 유휴 앵커 연결 1개를 두면
-  코드 변경 없이 8.8~12.3ms. 받아들일 것: 앱이 켜진 동안 파일 잠금 상시화(두 번째 인스턴스·
-  DB 도구가 항상 못 엶), `_write_transaction` 끝 CHECKPOINT. 권장 (a) 앵커. (b) 목록
-  st.cache_data 는 AGENTS 규칙과 충돌 — 권하지 않음. 파생: 가용설비 `list_revisions` 는
-  `revision_token` 키 캐시.
+- [x] **B1 E1 DB 연결 상주 → 축소판** — 상시 앵커는 보류. 클라우드 배치 전환 시 배치가 같은
+  파일을 갱신하는 구조면 불리하다(Windows 교체 실패, Linux 옛 inode). 대신
+  `pinned_connections` 가 rerun 한 번 동안만 시나리오 DB 인스턴스를 잡아 둔다(app.py).
+  사이드바 3콜 161 → 핀 48 + 10ms, 사이드바+HOME warm rerun **386 → 266ms**(교차 측정).
+  잠금 성질은 그대로. 앵커 재검토 조건: 배치가 같은 파일을 쓰는지 · 교체 방식(덮어쓰기/
+  rename) · 같은 머신인지. 파생 항목(가용설비 `list_revisions` 토큰 캐시)은 핀으로 연결
+  비용이 사라져 무의미. `299483c`
 - [x] **B2 E11 Static Capa 5페이지 계산 캐시 키** — `get_scenario_capacity_and_demand` 가
   (reference_version, content_token, start, end) 키만 해시하고 안에서 슬라이스한다. 내용 해시
   캐시 `get_unit_capacity`·`get_required_equipment` 는 제거, `get_securement_rate` 도 키 방식.
