@@ -25,7 +25,6 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.scenario_state import (
     apply_month_updates,
     scenario_month_table,
-    scenario_table,
 )
 from capa_simulation.services.display_order import (
     apply_display_order,
@@ -48,10 +47,9 @@ from capa_simulation.services.securement_rate import (
     securement_rate_to_month_table,
 )
 from capa_simulation.services.simulation_cache import (
-    REFERENCE_INPUT_TABLES,
-    SCENARIO_MONTHLESS_TABLES,
-    get_capacity_and_demand,
+    get_scenario_capacity_and_demand,
     get_securement_rate,
+    scenario_cache_key,
 )
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
@@ -86,20 +84,8 @@ try:
         empty_message="선택 범위에 소요대수 산출 기준이 없습니다.",
     )
 
-    monthly_table_names = (
-        "RQ_REQB",
-        "RQ_PKG_PLAN",
-        "RQ_YLD",
-        "RQ_UPEH",
-        "RQ_RUN_RATE",
-        "RQ_VITAL",
-        "RQ_RUN_DAY",
-        "RQ_LOT_RATIO",
-        "RQ_WF_RATIO",
-        "RQ_EQP_OWN",
-        "RQ_EQP_LENT",
-        "RQ_EQP_AVBL",
-    )
+    # 계산 입력의 월 슬라이스는 캐시 래퍼 안에서 한다. 여기서는 설비대수 표 세 개만 자른다.
+    monthly_table_names = ("RQ_EQP_OWN", "RQ_EQP_LENT", "RQ_EQP_AVBL")
     filtered = {
         table_name: scenario_month_table(
             active_scenario,
@@ -110,12 +96,13 @@ try:
         for table_name in monthly_table_names
     }
 
-    unit_capacity, required_equipment = get_capacity_and_demand(
-        {
-            **filtered,
-            **{key: reference_tables[key] for key in REFERENCE_INPUT_TABLES},
-            **{key: scenario_table(active_scenario, key) for key in SCENARIO_MONTHLESS_TABLES},
-        }
+    capacity_cache_key = scenario_cache_key(
+        reference_version, active_scenario, effective_start, effective_end
+    )
+    unit_capacity, required_equipment = get_scenario_capacity_and_demand(
+        capacity_cache_key,
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
     )
     capacity_exclusions = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
     required_exclusions = required_equipment.attrs.get(
@@ -168,6 +155,7 @@ try:
         )
     }
     securement_rate = get_securement_rate(
+        capacity_cache_key,
         filtered["RQ_EQP_AVBL"],
         required_equipment,
     )

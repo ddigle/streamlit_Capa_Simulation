@@ -27,15 +27,13 @@ from capa_simulation.persistence.equipment_cache import get_equipment_repository
 from capa_simulation.scenario_state import (
     ensure_active_scenario,
     scenario_month_table,
-    scenario_table,
 )
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
-    REFERENCE_INPUT_TABLES,
-    SCENARIO_MONTHLESS_TABLES,
-    get_capacity_and_demand,
+    get_scenario_capacity_and_demand,
     get_weekly_standard_target_capacity,
+    scenario_cache_key,
 )
 from capa_simulation.services.standard_target_capacity import (
     prepare_standard_target_required_equipment,
@@ -99,26 +97,14 @@ try:
     reference_version = get_effective_reference_version()
     reference_tables = get_effective_reference_tables()
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
+    # 계산 입력의 월 슬라이스는 캐시 래퍼 안에서 한다. 뒤의 주차 계산이 쓰는 RUN_DAY 만 자른다.
     filtered_tables = {
-        name: scenario_month_table(active_scenario, name, start_month, end_month)
-        for name in (
-            "RQ_UPEH",
-            "RQ_RUN_RATE",
-            "RQ_VITAL",
-            "RQ_RUN_DAY",
-            "RQ_LOT_RATIO",
-            "RQ_WF_RATIO",
-            "RQ_PKG_PLAN",
-            "RQ_YLD",
-            "RQ_REQB",
-        )
+        "RQ_RUN_DAY": scenario_month_table(active_scenario, "RQ_RUN_DAY", start_month, end_month)
     }
-    unit_capacity, required_equipment = get_capacity_and_demand(
-        {
-            **filtered_tables,
-            **{key: reference_tables[key] for key in REFERENCE_INPUT_TABLES},
-            **{key: scenario_table(active_scenario, key) for key in SCENARIO_MONTHLESS_TABLES},
-        }
+    unit_capacity, required_equipment = get_scenario_capacity_and_demand(
+        scenario_cache_key(reference_version, active_scenario, start_month, end_month),
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
     )
     required_equipment = prepare_standard_target_required_equipment(required_equipment)
     route_scope = build_wip_route_scope(required_equipment)

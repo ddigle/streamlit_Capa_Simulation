@@ -39,6 +39,23 @@ from capa_simulation.services.weighted_unit_capacity import (
 
 HomeSimulationCacheKey = tuple[int, str, int, int, str]
 
+# 활성 시나리오 내용과 월 범위를 대표하는 키. 아래 키 전용 캐시들이 공유한다.
+ScenarioCacheKey = tuple[int, str, int, int]
+
+
+def scenario_cache_key(
+    reference_version: int,
+    active_scenario: Mapping[str, object],
+    start_month: int,
+    end_month: int,
+) -> ScenarioCacheKey:
+    """(reference_version, content_token, start, end).
+
+    `revision` 이 아니라 `content_token` 이다. 세션 편집 번호는 다른 내용에서도 겹치고
+    `st.cache_data` 는 프로세스 전역이라 다른 브라우저 세션과도 겹친다.
+    """
+    return (reference_version, str(active_scenario["content_token"]), start_month, end_month)
+
 
 def build_home_simulation_cache_key(
     *,
@@ -74,51 +91,19 @@ def build_home_simulation_cache_key(
     )
 
 
-@st.cache_data(show_spinner=False, max_entries=32)
-def get_unit_capacity(
-    upeh: pd.DataFrame,
-    run_rate: pd.DataFrame,
-    vital: pd.DataFrame,
-    module: pd.DataFrame,
-    run_day: pd.DataFrame,
-    lot_ratio: pd.DataFrame,
-    wf_ratio: pd.DataFrame,
-) -> pd.DataFrame:
-    return calculate_unit_capacity(
-        upeh=upeh,
-        run_rate=run_rate,
-        vital=vital,
-        module=module,
-        run_day=run_day,
-        lot_ratio=lot_ratio,
-        wf_ratio=wf_ratio,
-    )
-
-
-@st.cache_data(show_spinner=False, max_entries=32)
-def get_required_equipment(
-    reqb: pd.DataFrame,
-    plan: pd.DataFrame,
-    yield_data: pd.DataFrame,
-    chip_qty: pd.DataFrame,
-    unit_capacity: pd.DataFrame,
-) -> pd.DataFrame:
-    # Load-calculation cache schema v2: normalize WF type before Dummy detection.
-    return calculate_required_equipment(
-        reqb=reqb,
-        plan=plan,
-        yield_data=yield_data,
-        chip_qty=chip_qty,
-        unit_capacity=unit_capacity,
-    )
-
-
-@st.cache_data(show_spinner=False, max_entries=32)
+@st.cache_data(show_spinner=False, max_entries=16)
 def get_securement_rate(
-    available_equipment: pd.DataFrame,
-    required_equipment: pd.DataFrame,
+    cache_key: ScenarioCacheKey,
+    _available_equipment: pd.DataFrame,
+    _required_equipment: pd.DataFrame,
 ) -> pd.DataFrame:
-    return calculate_securement_rate(available_equipment, required_equipment)
+    """확보율. 두 프레임은 키(시나리오 내용·월 범위)가 정하므로 해시하지 않는다.
+
+    required_equipment(3MB)를 해시하느라 적중에도 35ms 를 쓰고 있었다. 가용대수는 같은
+    시나리오·월 범위의 RQ_EQP_AVBL 슬라이스, 소요대수는 같은 키의 계산 결과여야 한다.
+    """
+    del cache_key
+    return calculate_securement_rate(_available_equipment, _required_equipment)
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -130,12 +115,9 @@ def get_effective_process_capacity_table(
     return effective_process_capacity_to_month_table(required_equipment, detail_level)
 
 
-RouteStepCacheKey = tuple[int, str, int, int]
-
-
 @st.cache_data(show_spinner=False, max_entries=16)
 def get_route_step_tables(
-    cache_key: RouteStepCacheKey,
+    cache_key: ScenarioCacheKey,
     _upeh: pd.DataFrame,
     _reqb: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -290,7 +272,7 @@ def get_home_simulation(
         _density_data,
         _display_order,
     )
-    unit_capacity = get_unit_capacity(
+    unit_capacity = calculate_unit_capacity(
         upeh=_upeh,
         run_rate=_run_rate,
         vital=_vital,
@@ -306,7 +288,7 @@ def get_home_simulation(
         chip_qty=_chip_qty,
         unit_capacity=unit_capacity,
     )
-    securement_rate = get_securement_rate(_available_equipment, required_equipment)
+    securement_rate = calculate_securement_rate(_available_equipment, required_equipment)
     return monthly_density, production_detail, monthly_wafer, securement_rate
 
 
@@ -364,9 +346,9 @@ def get_capacity_and_demand(
     프레임을 어디서 가져오는지는 페이지마다 다르므로(활성 시나리오 · 월 필터 결과 ·
     사용자 편집본) 매핑만 받고 출처는 호출자에게 남긴다.
 
-    두 하위 함수가 이미 캐시되어 있어 여기에는 캐시를 걸지 않는다.
+    캐시는 get_scenario_capacity_and_demand 가 키로 건다. 여기는 계산 순서만 정한다.
     """
-    unit_capacity = get_unit_capacity(
+    unit_capacity = calculate_unit_capacity(
         upeh=tables["RQ_UPEH"],
         run_rate=tables["RQ_RUN_RATE"],
         vital=tables["RQ_VITAL"],
@@ -375,7 +357,7 @@ def get_capacity_and_demand(
         lot_ratio=tables["RQ_LOT_RATIO"],
         wf_ratio=tables["RQ_WF_RATIO"],
     )
-    required_equipment = get_required_equipment(
+    required_equipment = calculate_required_equipment(
         reqb=tables["RQ_REQB"],
         plan=tables["RQ_PKG_PLAN"],
         yield_data=tables["RQ_YLD"],
@@ -383,3 +365,33 @@ def get_capacity_and_demand(
         unit_capacity=unit_capacity,
     )
     return unit_capacity, required_equipment
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_scenario_capacity_and_demand(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """활성 시나리오의 대당 Capa 와 소요대수. 키만 해시하고 월 슬라이스는 안에서 한다.
+
+    다섯 페이지가 get_capacity_and_demand 에 프레임 11개를 넘겨 st.cache_data 가 내용을
+    해시했다 — 적중해도 105ms(하위 두 캐시 66+95ms). 여기서는 (reference_version,
+    content_token, start, end) 만 해시해 결과 언피클 ~50ms 만 남는다. 슬라이스도 안에서
+    하므로 적중 시 페이지가 미리 자르던 표 9~12개(~50ms)도 사라진다.
+
+    `_scenario_tables` 는 키의 content_token 을 발급한 바로 그 active_scenario["tables"]
+    여야 한다. 다른 객체를 넘기면 옛 표가 새 토큰에 묶인다.
+    """
+    _, _, start_month, end_month = cache_key
+    tables = {
+        name: filter_month_range(_scenario_tables[name], start_month, end_month, name)
+        for name in (*CAPACITY_INPUT_TABLES, *DEMAND_INPUT_TABLES)
+        if name not in MONTHLESS_INPUT_TABLES
+    }
+    tables.update({name: _reference_tables[name] for name in REFERENCE_INPUT_TABLES})
+    # 월 축이 없는 시나리오 표는 슬라이스가 복사를 만들지 않으므로 여기서 복사한다.
+    tables.update(
+        {name: _scenario_tables[name].copy(deep=True) for name in SCENARIO_MONTHLESS_TABLES}
+    )
+    return get_capacity_and_demand(tables)

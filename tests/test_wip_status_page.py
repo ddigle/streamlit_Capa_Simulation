@@ -61,7 +61,13 @@ scenario_tables["RQ_RUN_DAY"] = pd.DataFrame(
         "RUN_DAY": [30.0] * (len(months) * 2),
     }
 )
-active = {"reference_version": 1, "revision": 1, "tables": scenario_tables}
+active = {
+    "reference_version": 1,
+    "revision": 1,
+    # 계산 캐시 키. 프로세스 전역 캐시라 다른 테스트 파일의 가짜 active 와 겹치면 안 된다.
+    "content_token": "test-wip-status-page",
+    "tables": scenario_tables,
+}
 reference_tables = {
     "RQ_MODULE": pd.DataFrame(),
     "RQ_CHIP_QTY": pd.DataFrame(),
@@ -104,8 +110,7 @@ original_reference_tables = reference_cache.get_effective_reference_tables
 original_equipment_repository = equipment_cache.get_equipment_repository
 original_ensure_active = scenario_state.ensure_active_scenario
 original_scenario_month_table = scenario_state.scenario_month_table
-original_unit_capacity = simulation_cache.get_unit_capacity
-original_required_equipment = simulation_cache.get_required_equipment
+original_capacity_and_demand = simulation_cache.get_scenario_capacity_and_demand
 original_weekly_standard = simulation_cache.get_weekly_standard_target_capacity
 original_figure_builder = dashboard.build_wip_status_grid_figure
 
@@ -132,8 +137,10 @@ scenario_state.ensure_active_scenario = lambda _tables, _version: active
 scenario_state.scenario_month_table = (
     lambda scenario, name, _start, _end: scenario["tables"][name].copy()
 )
-simulation_cache.get_unit_capacity = lambda **_kwargs: pd.DataFrame()
-simulation_cache.get_required_equipment = lambda **_kwargs: required_equipment.copy()
+simulation_cache.get_scenario_capacity_and_demand = lambda *_args, **_kwargs: (
+    pd.DataFrame(),
+    required_equipment.copy(),
+)
 simulation_cache.get_weekly_standard_target_capacity = (
     lambda **_kwargs: weekly_standard.copy()
 )
@@ -160,8 +167,7 @@ finally:
     equipment_cache.get_equipment_repository = original_equipment_repository
     scenario_state.ensure_active_scenario = original_ensure_active
     scenario_state.scenario_month_table = original_scenario_month_table
-    simulation_cache.get_unit_capacity = original_unit_capacity
-    simulation_cache.get_required_equipment = original_required_equipment
+    simulation_cache.get_scenario_capacity_and_demand = original_capacity_and_demand
     simulation_cache.get_weekly_standard_target_capacity = original_weekly_standard
     dashboard.build_wip_status_grid_figure = original_figure_builder
 """

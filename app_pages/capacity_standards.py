@@ -25,7 +25,6 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.scenario_state import (
     apply_month_updates,
     scenario_month_table,
-    scenario_table,
 )
 from capa_simulation.services.capacity_reference_editor import (
     PERFORMANCE_EDITOR_DIMENSIONS,
@@ -44,11 +43,10 @@ from capa_simulation.services.route_step_editor import (
     delete_route_step,
 )
 from capa_simulation.services.simulation_cache import (
-    REFERENCE_INPUT_TABLES,
-    SCENARIO_MONTHLESS_TABLES,
-    get_capacity_and_demand,
     get_effective_process_capacity_table,
     get_route_step_tables,
+    get_scenario_capacity_and_demand,
+    scenario_cache_key,
 )
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
@@ -226,7 +224,7 @@ try:
     # STEP 구성 탭의 요약·목록. 목록은 작업·경로 선택 위젯의 options 라 탭이 닫혀 있어도
     # 있어야 한다(숨은 탭에서는 그림만 건너뛴다). 그래서 건너뛰는 대신 내용 토큰으로 캐시한다.
     step_summary, step_catalog = get_route_step_tables(
-        (reference_version, active_scenario["content_token"], start_month, end_month),
+        scenario_cache_key(reference_version, active_scenario, start_month, end_month),
         _upeh=filtered_upeh,
         _reqb=filtered_reqb,
     )
@@ -583,31 +581,13 @@ except (KeyError, ValueError) as exc:
 if not unit_capacity_tab.open:
     st.stop()
 
-simulation_upeh = filtered_upeh
-simulation_run_rate = filtered_run_rate
-simulation_vital = filtered_vital
-simulation_lot_ratio = filtered_lot_ratio
-simulation_wf_ratio = filtered_wf_ratio
-simulation_run_day = filtered_run_day
-simulation_plan = filtered_plan
-simulation_yield = filtered_yield
-
 try:
-    # 이 화면은 편집 중인 기준정보로 계산한다. 이름만 맞춰 파이프라인에 넘긴다.
-    unit_capacity, required_equipment_for_display = get_capacity_and_demand(
-        {
-            "RQ_UPEH": simulation_upeh,
-            "RQ_RUN_RATE": simulation_run_rate,
-            "RQ_VITAL": simulation_vital,
-            "RQ_RUN_DAY": simulation_run_day,
-            "RQ_LOT_RATIO": simulation_lot_ratio,
-            "RQ_WF_RATIO": simulation_wf_ratio,
-            "RQ_REQB": filtered_reqb,
-            "RQ_PKG_PLAN": simulation_plan,
-            "RQ_YLD": simulation_yield,
-            **{key: reference_tables[key] for key in REFERENCE_INPUT_TABLES},
-            **{key: scenario_table(active_scenario, key) for key in SCENARIO_MONTHLESS_TABLES},
-        }
+    # 편집은 apply_month_updates 로 활성 시나리오에 반영되고 content_token 이 바뀐다. 그래서
+    # 활성 시나리오 표를 키로 캐시한 계산이 곧 "편집 중인 기준정보" 계산이다.
+    unit_capacity, required_equipment_for_display = get_scenario_capacity_and_demand(
+        scenario_cache_key(reference_version, active_scenario, start_month, end_month),
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
     )
     excluded_capacity_rows = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
 except ValueError as exc:

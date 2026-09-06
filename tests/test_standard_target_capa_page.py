@@ -63,7 +63,13 @@ scenario_tables["RQ_PKG_PLAN"] = pd.DataFrame(
 scenario_tables["RQ_REQB"] = pd.DataFrame(
     {"공정": ["Process-A", "Process-B"], "양산구분": ["양산", "양산"]}
 )
-active = {"reference_version": 1, "revision": 1, "tables": scenario_tables}
+active = {
+    "reference_version": 1,
+    "revision": 1,
+    # 계산 캐시 키. 프로세스 전역 캐시라 다른 테스트 파일의 가짜 active 와 겹치면 안 된다.
+    "content_token": "test-standard-target-capa-page",
+    "tables": scenario_tables,
+}
 reference_tables = {
     "RQ_MODULE": pd.DataFrame(),
     "RQ_CHIP_QTY": pd.DataFrame(),
@@ -99,8 +105,7 @@ original_equipment_repository = equipment_cache.get_equipment_repository
 original_ensure_active = scenario_state.ensure_active_scenario
 original_scenario_table = scenario_state.scenario_table
 original_scenario_month_table = scenario_state.scenario_month_table
-original_unit_capacity = simulation_cache.get_unit_capacity
-original_required_equipment = simulation_cache.get_required_equipment
+original_capacity_and_demand = simulation_cache.get_scenario_capacity_and_demand
 original_hierarchical_render = hierarchical_table.render_hierarchical_monthly_table
 
 
@@ -122,8 +127,10 @@ scenario_state.scenario_table = lambda scenario, name: scenario["tables"][name].
 scenario_state.scenario_month_table = (
     lambda scenario, name, _start, _end: scenario["tables"][name].copy()
 )
-simulation_cache.get_unit_capacity = lambda **_kwargs: pd.DataFrame()
-simulation_cache.get_required_equipment = lambda **_kwargs: required_equipment.copy()
+simulation_cache.get_scenario_capacity_and_demand = lambda *_args, **_kwargs: (
+    pd.DataFrame(),
+    required_equipment.copy(),
+)
 
 
 def capture_table(data, **kwargs):
@@ -150,8 +157,7 @@ finally:
     scenario_state.ensure_active_scenario = original_ensure_active
     scenario_state.scenario_table = original_scenario_table
     scenario_state.scenario_month_table = original_scenario_month_table
-    simulation_cache.get_unit_capacity = original_unit_capacity
-    simulation_cache.get_required_equipment = original_required_equipment
+    simulation_cache.get_scenario_capacity_and_demand = original_capacity_and_demand
     hierarchical_table.render_hierarchical_monthly_table = original_hierarchical_render
 """
 

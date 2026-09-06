@@ -168,8 +168,7 @@ original_scenario_table = scenario_state.scenario_table
 original_apply_month_updates = scenario_state.apply_month_updates
 original_hierarchical_render = hierarchical_table.render_hierarchical_monthly_table
 original_grouped_render = grouped_table.render_grouped_monthly_table
-original_unit_capacity = simulation_cache.get_unit_capacity
-original_required_equipment = simulation_cache.get_required_equipment
+original_capacity_and_demand = simulation_cache.get_scenario_capacity_and_demand
 original_securement_rate = simulation_cache.get_securement_rate
 
 reference_cache.get_effective_reference_version = lambda: 1
@@ -197,8 +196,7 @@ def capture_hierarchical_table(*_args, **kwargs):
 hierarchical_table.render_hierarchical_monthly_table = capture_hierarchical_table
 grouped_table.render_grouped_monthly_table = lambda *_args, **_kwargs: None
 
-simulation_cache.get_unit_capacity = lambda **_kwargs: pd.DataFrame()
-simulation_cache.get_required_equipment = lambda **_kwargs: pd.DataFrame(
+required_equipment_stub = pd.DataFrame(
     {
         "생산계획년월": [202608],
         "Area_Name": ["Main"],
@@ -217,6 +215,10 @@ simulation_cache.get_required_equipment = lambda **_kwargs: pd.DataFrame(
         "대당 Capa": [100.0],
         "소요대수": [1.0],
     }
+)
+simulation_cache.get_scenario_capacity_and_demand = lambda *_args, **_kwargs: (
+    pd.DataFrame(),
+    required_equipment_stub.copy(),
 )
 simulation_cache.get_securement_rate = lambda *_args: pd.DataFrame(
     {
@@ -241,8 +243,9 @@ finally:
     scenario_state.apply_month_updates = original_apply_month_updates
     hierarchical_table.render_hierarchical_monthly_table = original_hierarchical_render
     grouped_table.render_grouped_monthly_table = original_grouped_render
-    simulation_cache.get_unit_capacity = original_unit_capacity
-    simulation_cache.get_required_equipment = original_required_equipment
+    simulation_cache.get_scenario_capacity_and_demand = original_capacity_and_demand
+    # 갈아끼우고 되돌리지 않던 것. 같은 프로세스의 뒤 테스트가 가짜 확보율을 보고 있었다.
+    simulation_cache.get_securement_rate = original_securement_rate
     simulation_cache.get_securement_rate = original_securement_rate
 """
 

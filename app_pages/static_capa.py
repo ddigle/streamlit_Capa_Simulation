@@ -26,17 +26,12 @@ from capa_simulation.scenario_preset_state import (
 )
 from capa_simulation.scenario_state import (
     scenario_month_table,
-    scenario_table,
 )
 from capa_simulation.services.securement_rate import build_securement_shortfall_tables
 from capa_simulation.services.simulation_cache import (
-    CAPACITY_INPUT_TABLES,
-    DEMAND_INPUT_TABLES,
-    MONTHLESS_INPUT_TABLES,
-    REFERENCE_INPUT_TABLES,
-    SCENARIO_MONTHLESS_TABLES,
-    get_capacity_and_demand,
+    get_scenario_capacity_and_demand,
     get_securement_rate,
+    scenario_cache_key,
 )
 
 
@@ -185,19 +180,16 @@ try:
         empty_message="선택 범위에 소요대수 산출 기준이 없습니다.",
     )
 
-    # 월 축이 있는 기준정보는 시나리오 월 슬라이스에서, 나머지는 활성 리비전에서 가져온다.
-    unit_capacity, required_equipment = get_capacity_and_demand(
-        {
-            **{
-                name: scenario_month_table(active_scenario, name, effective_start, effective_end)
-                for name in (*CAPACITY_INPUT_TABLES, *DEMAND_INPUT_TABLES)
-                if name not in MONTHLESS_INPUT_TABLES
-            },
-            **{name: reference_tables[name] for name in REFERENCE_INPUT_TABLES},
-            **{name: scenario_table(active_scenario, name) for name in SCENARIO_MONTHLESS_TABLES},
-        }
+    capacity_cache_key = scenario_cache_key(
+        reference_version, active_scenario, effective_start, effective_end
+    )
+    unit_capacity, required_equipment = get_scenario_capacity_and_demand(
+        capacity_cache_key,
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
     )
     securement_rate = get_securement_rate(
+        capacity_cache_key,
         scenario_month_table(
             active_scenario,
             "RQ_EQP_AVBL",
