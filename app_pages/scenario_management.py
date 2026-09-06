@@ -27,17 +27,17 @@ except Exception as exc:
     st.error(f"시나리오 저장소를 준비하지 못했습니다: {exc}")
     st.stop()
 
+# 세 탭을 항상 그린다. 예전에는 열린 탭만 그렸는데(`if tab.open`), 그러면 다른 탭을 잠깐 여는
+# 순간 그 탭의 form 위젯이 사라져 입력 중이던 값(폼 7개)이 없어졌다. 숨은 탭에서 건너뛰어도
+# 되는 것은 계산·표·차트뿐인데 이 페이지에는 그런 것이 없다 — 표시순서 검증·CSV 는
+# 공용 버전 키로 캐시했다. 그래서 탭 전환에 rerun 을 걸 이유도 없다.
 management_tab, query_tab, display_order_tab = st.tabs(
-    ["시나리오 관리", "BigDataQuery 등록", "표시순서 관리"],
-    on_change="rerun",
+    ["시나리오 관리", "BigDataQuery 등록", "표시순서 관리"]
 )
 
-if management_tab.open:
-    with management_tab:
-        render_scenario_management(repository, database_path)
-elif query_tab.open:
-    with query_tab:
-        render_bigdataquery_registration(repository, database_path)
-elif display_order_tab.open:
-    with display_order_tab:
-        render_display_order_management(repository)
+with management_tab:
+    render_scenario_management(repository, database_path)
+with query_tab:
+    render_bigdataquery_registration(repository, database_path)
+with display_order_tab:
+    render_display_order_management(repository)

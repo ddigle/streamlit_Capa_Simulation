@@ -25,6 +25,23 @@ from capa_simulation.services.display_order_editor import (
 )
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def _validated_display_order(
+    database_path: str,
+    version: int,
+    _rules: pd.DataFrame,
+) -> tuple[pd.DataFrame, bytes]:
+    """검증한 규칙과 내려받기 CSV. 둘 다 순수 함수라 공용 버전이 같으면 결과도 같다.
+
+    검증 47ms + CSV 46ms(안에서 검증을 한 번 더 한다)를 rerun 마다 하고 있었다. 이 탭은
+    닫혀 있어도 항상 그리므로(폼 입력값 보존) 그 비용이 페이지의 모든 rerun 에 실린다.
+    규칙은 교체할 때마다 version 이 오르므로 키에 version 만 있으면 된다.
+    """
+    del database_path, version
+    validated = validate_display_order(_rules)
+    return validated, display_order_to_csv(validated)
+
+
 def render_display_order_management(repository: DuckDBScenarioRepository) -> None:
     st.subheader("표시순서 관리")
     st.caption(
@@ -34,7 +51,9 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
     database_path = str(repository.database_path)
     try:
         profile = load_global_display_order(database_path)
-        display_order = validate_display_order(profile.rules)
+        display_order, csv_bytes = _validated_display_order(
+            database_path, profile.version, profile.rules
+        )
     except (KeyError, RuntimeError, TypeError, ValueError) as exc:
         st.error(str(exc))
         return
@@ -44,7 +63,7 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
             f"공용 버전 v{profile.version} · {profile.source} · {profile.updated_at:%Y-%m-%d %H:%M}"
         )
         render_csv_download(
-            data=display_order_to_csv(display_order),
+            data=csv_bytes,
             file_name=f"RQ_DISPLAY_ORDER_v{profile.version}.csv",
             key="display_order_download",
         )
