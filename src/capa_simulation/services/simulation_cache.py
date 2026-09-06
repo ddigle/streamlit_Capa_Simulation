@@ -26,6 +26,7 @@ from capa_simulation.services.required_equipment import (
     calculate_required_equipment,
     calculate_required_equipment_from_loads,
 )
+from capa_simulation.services.route_step_editor import route_step_catalog, route_step_summary
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
@@ -127,6 +128,25 @@ def get_effective_process_capacity_table(
 ) -> pd.DataFrame:
     """공정 유효 Capa 월 표. 공정 필터는 이 뒤에 걸리므로 필터마다 같은 계산을 반복하고 있었다."""
     return effective_process_capacity_to_month_table(required_equipment, detail_level)
+
+
+RouteStepCacheKey = tuple[int, str, int, int]
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_route_step_tables(
+    cache_key: RouteStepCacheKey,
+    _upeh: pd.DataFrame,
+    _reqb: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """공정별 Capa STEP 구성 탭의 (요약, 선택 목록).
+
+    둘 다 순수 함수인데 rerun 마다 다시 만들고 있었다(721~963ms, 탭이 닫혀 있어도). 목록은
+    작업·경로 선택 위젯의 options 라 숨은 탭에서도 있어야 하므로 건너뛰지 않고 캐시한다.
+    키는 (reference_version, content_token, start_month, end_month) — 프레임은 해시하지 않는다.
+    """
+    del cache_key
+    return route_step_summary(_reqb), route_step_catalog(_upeh, _reqb)
 
 
 @st.cache_data(show_spinner=False, max_entries=16)

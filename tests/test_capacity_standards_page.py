@@ -152,6 +152,8 @@ tables = {
 active = {
     "reference_version": 1,
     "revision": 1,
+    # 계산 캐시 키. 프로세스 전역 캐시라 다른 테스트 파일의 가짜 active 와 겹치면 안 된다.
+    "content_token": "test-capacity-standards-page",
     "tables": {
         name: frame.copy()
         for name, frame in tables.items()
@@ -332,3 +334,12 @@ def test_step_editor_clones_the_selected_route_in_one_submit() -> None:
 
     assert not app.exception
     assert app.session_state["test_step_reqb_rows"] == 2
+
+
+def test_step_tab_widgets_render_while_the_tab_is_hidden() -> None:
+    """숨은 탭에서는 그림만 건너뛴다. 위젯까지 건너뛰면 탭을 오갈 때 선택값이 초기화된다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    # 기본 탭은 유효 Capa 다. STEP 구성 탭의 경로 선택은 닫혀 있어도 그려져야 한다.
+    assert app.selectbox(key="capacity_step_route").options

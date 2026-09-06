@@ -42,14 +42,13 @@ from capa_simulation.services.route_step_editor import (
     ROUTE_GROUP_COLUMNS,
     clone_route_step,
     delete_route_step,
-    route_step_catalog,
-    route_step_summary,
 )
 from capa_simulation.services.simulation_cache import (
     REFERENCE_INPUT_TABLES,
     SCENARIO_MONTHLESS_TABLES,
     get_capacity_and_demand,
     get_effective_process_capacity_table,
+    get_route_step_tables,
 )
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
@@ -224,8 +223,13 @@ try:
             "공정별 Capa",
             "WF측정률",
         )
-    step_summary = route_step_summary(filtered_reqb)
-    step_catalog = route_step_catalog(filtered_upeh, filtered_reqb)
+    # STEP 구성 탭의 요약·목록. 목록은 작업·경로 선택 위젯의 options 라 탭이 닫혀 있어도
+    # 있어야 한다(숨은 탭에서는 그림만 건너뛴다). 그래서 건너뛰는 대신 내용 토큰으로 캐시한다.
+    step_summary, step_catalog = get_route_step_tables(
+        (reference_version, active_scenario["content_token"], start_month, end_month),
+        _upeh=filtered_upeh,
+        _reqb=filtered_reqb,
+    )
 except BOOTSTRAP_ERRORS as exc:
     st.error(str(exc))
     st.stop()
@@ -270,25 +274,28 @@ with tabs[1]:
         "STEP 수는 같은 공정·제품 경로 안의 MCP_SEQ·STEP_SEQ 고유 조합 수입니다. "
         "추가·삭제는 조회기간 안에서 RQ_REQB·UPEH·Lot/WF 측정률에 함께 반영됩니다."
     )
-    st.dataframe(
-        step_summary.rename(
-            columns={
-                "생산계획년월": "월",
-                "Area_Name": "Area",
-                "양산구분": "양산",
-                "제품정보": "제품",
-                "WF 구분": "속성",
-            }
-        ),
-        hide_index=True,
-        width="stretch",
-        height=260,
-        column_config={
-            "STEP 수": st.column_config.NumberColumn(format="%d"),
-            "수요 변형 수": st.column_config.NumberColumn(format="%d"),
-        },
-        key="capacity_step_summary",
-    )
+    # 요약 표는 그림이라 숨은 탭에서는 건너뛴다. 아래 작업·경로 선택과 form 은 위젯이라
+    # 항상 그린다 — 본문을 통째로 건너뛰면 탭을 오갈 때 선택값이 초기화된다.
+    if not tab_is_hidden(tabs[1]):
+        st.dataframe(
+            step_summary.rename(
+                columns={
+                    "생산계획년월": "월",
+                    "Area_Name": "Area",
+                    "양산구분": "양산",
+                    "제품정보": "제품",
+                    "WF 구분": "속성",
+                }
+            ),
+            hide_index=True,
+            width="stretch",
+            height=260,
+            column_config={
+                "STEP 수": st.column_config.NumberColumn(format="%d"),
+                "수요 변형 수": st.column_config.NumberColumn(format="%d"),
+            },
+            key="capacity_step_summary",
+        )
 
     if step_catalog.empty:
         st.warning("선택한 조회기간에 편집할 공정 경로 STEP이 없습니다.")
