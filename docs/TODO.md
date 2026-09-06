@@ -954,10 +954,12 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
   DB 도구가 항상 못 엶), `_write_transaction` 끝 CHECKPOINT. 권장 (a) 앵커. (b) 목록
   st.cache_data 는 AGENTS 규칙과 충돌 — 권하지 않음. 파생: 가용설비 `list_revisions` 는
   `revision_token` 키 캐시.
-- [ ] **B2 E11 Static Capa 5페이지 계산 캐시 키** — 적중해도 11개 프레임 해시 82~110ms.
-  (reference_version, content_token, start, end) 튜플 키로. 권장: 래퍼가
-  `_tables=active_scenario["tables"]` 를 받아 안에서 슬라이스(배치 7 과 같은 꼴). 채택 시
-  AppTest 3개의 가짜 active 에 **파일마다 고유** `content_token` 필수.
+- [x] **B2 E11 Static Capa 5페이지 계산 캐시 키** — `get_scenario_capacity_and_demand` 가
+  (reference_version, content_token, start, end) 키만 해시하고 안에서 슬라이스한다. 내용 해시
+  캐시 `get_unit_capacity`·`get_required_equipment` 는 제거, `get_securement_rate` 도 키 방식.
+  구성 요소 실측 적중 161+50ms → 52ms. 페이지 교차 A/B(같은 기계 상태): process_securement
+  1,298~1,407 → 1,048~1,100ms, static_capa 331 → 122ms. 가짜 active 3개에 파일 고유 토큰.
+  `a34996c`
 - [ ] **B3 E7 create_scenario 의 ref_data 편집 14표 이중 저장** — 전체 행의 33.7% 가 rev1 사본과
   완전 동일, 읽는 코드 0. 재구축 34.09 → 24.92MB. E8(ATTACH 재구축) 결정과 묶는다. 권장 채택.
   채택 시 `compare_legacy_results.py` 대조 기준을 rev1 로.
