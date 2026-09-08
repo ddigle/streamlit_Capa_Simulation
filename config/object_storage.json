@@ -1,0 +1,9 @@
+{
+  "_설명": "오브젝트 스토리지 동기화 설정. mode 는 반드시 local 로 커밋한다 — 사내 값이 실수로 푸시되면 개발 PC 가 사내 스토리지를 건드린다. 사내 PC 에서는 CAPA_S3_SYNC_MODE=managed 환경변수로 켠다.",
+  "mode": "local",
+  "endpoint_url": "http://s3.dataplatform.samsungds.net:9020",
+  "bucket": "Capa_simulation_project",
+  "profile": "hoyeon.jeon-org-system_package_mfg_team",
+  "region": "us-east-1",
+  "_네임스페이스": "org-system_package_mfg_team (프로필에 매여 있어 명령 인자로 넘기지 않는다)"
+}

@@ -276,6 +276,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     여기 한 곳이다. 상세 창은 목록 창으로 **좁히지 않고**(`resolve_detail_window`) 기본
     90일 창과 합집합을 쓴다. 좁히면 그 코드의 원천 행이 잘린 시나리오가 조용히 저장된다.
   - 0행 결과는 `rename` 이전에 막는다. 뒤에 두면 MPGA TEST 예외가 `KeyError` 로 먼저 터진다.
+- `src/capa_simulation/io/object_storage.py`
+  - 사내 S3 호환 오브젝트 스토리지(Dell ECS 추정)에 `aws` CLI 로 붙는 유일한 경계다.
+    이 저장소에서 `subprocess` 를 쓰는 유일한 자리이고, 명령 실행기를 주입받아 `aws` 가 없는
+    개발 PC 에서도 조립된 인자 배열을 테스트한다.
+  - **모든 명령에 `--profile` 을 붙인다.** 네임스페이스가 프로필에 매여 있어 빠지면 다른
+    네임스페이스를 본다. 조립 자리는 `_argv()` 하나뿐이다. 경로 스타일 주소와 체크섬
+    옵트아웃(AWS CLI 2.23+ × ECS 비호환, Dell KB 000299507)을 환경변수로 강제한다.
+  - 프로필·버킷·엔드포인트는 `CAPA_S3_*` 환경변수 > `config/object_storage.json` > 모듈 상수
+    순으로 정한다. 커밋되는 설정의 `mode` 는 반드시 `local` 이다.
 - `src/capa_simulation/io/bigdataquery_catalog.py`
   - 기간 내 시뮬레이션 코드 목록만 조회한다. 상세 SQL 과 한 파일에 섞지 않는다 — 상세
     SQL 은 78별칭을 계약과 순서까지 대조받고 `build_query` 가 `{simulation_code}` 자리를
@@ -369,6 +378,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   공백을 하나로 축약하여 BigDataQuery와 기존 화면 분류 키를 통일한다.
 - `core_data_pipeline.py`: CSV·BigDataQuery 공급자 결과를 동일한 정규화·RQ 변환
   파이프라인으로 연결한다.
+
+- `object_storage_manifest.py`: 원격 스냅샷의 키 계약과 pull·push 판정을 담는 순수 계층.
+  가변 포인터(`current.json`)를 쓰지 않는다 — 그것이 유일한 read-modify-write 지점이고 앞사람
+  저장이 사라지는 경로가 거기서만 생긴다. 포인터를 내림차순 불변 키의 시퀀스로 두면 같은
+  seq 에 포인터가 둘인 것 자체가 분기의 물증이 된다. 판정을 `scripts/` 가 아니라 여기 두는
+  이유는 `scripts/` 가 mypy strict 검사 밖이기 때문이다.
 
 - `bigdataquery_catalog_view.py`: 시뮬레이션 코드 목록을 표시·검색용으로 정리하고 등록 폼
   기본값을 만든다. Streamlit 을 import 하지 않는 순수 계층이다. 코드·PLAN 조합당 한 행만
@@ -475,6 +490,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `StreamlitAPIException` 으로 페이지가 죽는다.
 
 ### 영속성 모듈
+
+- `src/capa_simulation/persistence/snapshot_export.py`
+  - 라이브 `.duckdb` 파일을 바이트로 읽지 않는다. 연결이 하나라도 열려 있으면 같은
+    프로세스에서도 `PermissionError` 이고, 핀이 열린 동안 COMMIT 은 `.wal` 에만 있어 그
+    파일을 올리면 방금 저장한 리비전이 빠진다. `ATTACH` + `COPY FROM DATABASE` 로 DuckDB
+    자신이 만든 스냅샷을 쓴다(실측 67.4 MB → 21.5 MB, 2.1초). 설치할 때는 고아 `.wal` 을
+    먼저 치우고 기존 파일을 백업으로 옮긴다.
+- `src/capa_simulation/persistence/sync_state.py`
+  - DB 파일 옆 `.sync.json` 사이드카에 원격 세대와 미반영 변경을 기록한다. 상태를 DuckDB
+    안에 두지 않는 이유는 그 파일 자체가 동기화 대상이라 순환이 되기 때문이고, 메모리에
+    두지 않는 이유는 프로세스가 죽으면 표시가 사라져 다음 pull 이 로컬 전용 리비전을 덮기
+    때문이다. `enable()` 전에는 파일을 하나도 만들지 않는다(개발 PC·CI 무영향). 읽지 못하는
+    사이드카는 "변경 있음" 으로 본다.
 
 - `persistence/repository.py`: `DuckDBScenarioRepository` 와 쓰기 잠금·트랜잭션 경계
 - `persistence/models.py`: Repository 가 주고받는 타입

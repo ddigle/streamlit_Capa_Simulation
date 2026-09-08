@@ -136,7 +136,7 @@ config/bootstrap_display_order.json
 data/input/RQ_DISPLAY_ORDER.csv
                                선택적인 로컬 공용 표시순서 초기 이관 파일(Git 제외)
 templates/                     일회성 초기 이관·병행 검증용 로컬 XLSB
-scripts/                       초기 이관·통합 검증·HOME 벤치마크 도구
+scripts/                       초기 이관·통합 검증·벤치마크·오브젝트 스토리지 동기화 도구
 tests/                         계산·캐시·시나리오·화면 테스트
 docs/TODO.md                   결정 이력과 작업 목록
 docs/design_system.md          색·서체·표 밀도 규칙

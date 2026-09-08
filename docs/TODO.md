@@ -1069,6 +1069,78 @@ create_scenario → 활성화 → flash`)는 손대지 않았다.
 코드에 UNIQUE 제약은 없고 해시 중복 거부 같은 동작도 이 저장소에 없다 — 화면은 같은 이름만
 저장 전에 막고, 같은 코드는 경고만 띄운다.
 
+## 3-9. 2026-09-08 DuckDB 를 사내 S3(ECS)로 분리
+
+WebIDE 로 이관하면서 DuckDB 파일을 WebIDE 밖에 두기로 했다. 저장소는 사내에 구축된 S3 호환
+오브젝트 스토리지다. 스크립트는 이 PC 에서 만들어 사내로 옮겨 심는다.
+
+### 확인된 환경 (사용자가 사내 PC 에서 직접 실행해 확인)
+
+| 항목 | 값 |
+|---|---|
+| CLI | `aws-cli/2.36.8` Windows exe 번들. 자체 Python 3.14 를 품고 있어 프로젝트 venv 와 무관 |
+| 고수준 명령 | `cp ls mb mv presign rb rm sync website` — 공식 AWS 문서와 정확히 일치. 사내 전용 명령 없음 |
+| 엔드포인트 | `http://s3.dataplatform.samsungds.net:9020` |
+| 제품 추정 | Dell ECS. 9020/9021 이 ECS 의 S3 API 기본 HTTP/HTTPS 포트다 |
+| 프로필 | `hoyeon.jeon-org-system_package_mfg_team` |
+| 네임스페이스 | `org-system_package_mfg_team` — **프로필(자격증명)에 매여 있고 명령 인자가 아니다** |
+| 버킷 | `Capa_simulation_project` |
+
+### 확정한 규칙
+
+- **모든 S3 명령에 `--profile` 을 붙인다.** WebIDE 로 옮기면 프로필명이 바뀔 수 있으므로,
+  프로필·버킷·엔드포인트는 각각 상수 하나로 두고 환경변수로 덮어쓸 수 있게 한다
+  (`CAPA_S3_PROFILE`·`CAPA_S3_BUCKET`·`CAPA_S3_ENDPOINT_URL`). 명령 조립은 한 곳에서만 한다.
+- **경로 스타일 주소를 강제한다.** 버킷명에 대문자와 언더바가 있어 가상 호스트 스타일로는
+  표현할 수 없다. 사내 PC 에 `aws configure set s3.addressing_style path` 가 필요하고
+  스크립트도 같은 설정을 명시적으로 넘긴다.
+- **앱은 `boto3` 가 아니라 `aws` CLI 를 `subprocess` 로 부른다.** 엔드포인트·자격증명·CA
+  인증서 설정이 이미 CLI 에 잡혀 있어 앱이 그것을 다시 짊어지지 않아도 되고, WebIDE 이관에서
+  걸림돌이던 파이썬 의존성 용량도 늘지 않는다([[capa-sim-webide-migration]] 참조).
+  명령 실행기를 주입 가능하게 만들어 `aws` 가 없는 개발 PC 에서도 인자 조립을 테스트한다.
+
+### 1단계 구현 완료 (2026-09-08)
+
+수동 왕복까지 되는 상태다. 앱은 아직 S3 를 모르고 기본 모드가 `local` 이라 어떤 명령도
+실행하지 않는다.
+
+- `services/object_storage_manifest.py` — 키 계약·세대·분기 판정(순수). 가변 포인터를 버리고
+  내림차순 불변 포인터 시퀀스를 쓴다.
+- `persistence/snapshot_export.py` — `COPY FROM DATABASE` 스냅샷. **실측 67,383,296 B →
+  21,573,632 B (32%), 2.11초.** 라이브 파일을 읽지 않는 이유(핀이 열린 동안 COMMIT 은
+  `.wal` 에만 있다)를 테스트가 고정한다.
+- `persistence/sync_state.py` — DB 옆 사이드카. `enable()` 전에는 파일을 만들지 않는다.
+- `io/object_storage.py` — `aws` CLI 경계. 모든 명령에 `--profile`, 경로 스타일·체크섬
+  옵트아웃 강제.
+- `scripts/sync_object_storage.py` — `profile`·`doctor`·`probe`·`init`·`status`·`pull`·
+  `push`·`resolve`·`adopt`·`prune`.
+- `config/object_storage.json`(`mode=local`)·`config/object_storage_capabilities.json`(전부
+  `false`)·`docs/objectstore_setup.md`.
+
+### 2단계 (앱 자동화) — 사내 확인 뒤에
+
+기동 시 pull, 저장 성공 직후 push, 사이드바 상태 표시. `docs/objectstore_setup.md` 의
+사내 확인 항목 1(체크섬 옵트아웃)·5(전송 시간)·8(WebIDE 안에서 `aws` 존재)이 먼저다.
+셋 중 하나라도 아니면 자동화를 붙일 이유가 없다.
+
+### 남은 것
+
+- [ ] **다중 사용자 동시 저장 정리.** 지금은 **단일 사용자 전제**로 만든다(2026-09-08 사용자
+  결정). 오브젝트 스토리지에는 파일 잠금이 없어서, 두 사람이 같은 DB 를 내려받아 각자 저장하면
+  나중에 올린 쪽이 앞사람 리비전을 통째로 덮는다. 리비전이 append-only 라 **사용자는 자기 저장이
+  사라진 것을 한참 뒤에야 안다.** 사람이 둘 이상이 되기 전에 반드시 처리한다.
+  후보 수단: ① 잠금 객체(LOCK)로 직렬화하고 못 잡으면 읽기 전용으로 열기, ② 내려받을 때의
+  원격 세대를 기억했다가 올리기 직전 비교해 어긋나면 거부하는 낙관적 동시성, ③ 스냅샷을
+  append-only 로 쌓고 포인터만 교체해 덮어쓰기를 없애기. ECS 가 조건부 쓰기(`If-Match`)와
+  객체 버전 관리를 지원하는지에 따라 ②의 실현 방법이 갈린다.
+- [ ] **HTTPS(9021) 전환 가능 여부 확인.** 현재 엔드포인트가 평문 HTTP 라 인증 서명 헤더와
+  DuckDB 파일 내용이 사내망에 그대로 흐른다. 파일에 생산계획이 들어 있다. 사내 인증서가 사설
+  CA 서명이면 `AWS_CA_BUNDLE` 로 CA 를 지정한다 — `--no-verify-ssl` 로 우회하지 않는다.
+- [ ] **사내에서만 확인 가능한 것.** 개발 PC 에는 `aws` CLI 도 `boto3` 도 없고 사내 엔드포인트에
+  접근할 수 없다. 옮겨 심은 뒤 확인한다 — 60~100MB 파일의 업로드·다운로드 소요 시간, 멀티파트
+  임계값, ETag 로 무결성을 확인할 수 있는지, `s3api` 가 열려 있는지, WebIDE 재시작 주기와
+  프로필이 어떻게 바뀌는지.
+
 ## 4. 현재 권장 진행 순서
 
 2026-09-05 에 TODO 전 항목을 코드와 대조해 다시 세웠다. 앞의 순서는 1순위가 외부 연결

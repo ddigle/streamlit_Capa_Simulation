@@ -1,0 +1,11 @@
+{
+  "_설명": "사내 스토리지가 실제로 무엇을 지원하는지 실측한 결과. 확인하지 못한 능력은 false 로 둔다 — 없는 능력을 있다고 가정하면 데이터가 조용히 갈라진다. sync_object_storage.py probe 가 사내 PC 에서 채운다.",
+  "_확인일": null,
+  "_확인자": null,
+  "conditional_put_if_none_match_star": false,
+  "conditional_put_if_match_etag": false,
+  "single_put_etag_is_md5": false,
+  "content_md5_rejects_mismatch": false,
+  "bucket_versioning": false,
+  "checksum_optout_required": null
+}
