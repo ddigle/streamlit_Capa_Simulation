@@ -1,0 +1,114 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## 문서 우선순위
+
+작업 전에 `README.md`, `AGENTS.md`, `docs/TODO.md`를 코드와 함께 확인한다. **`AGENTS.md`가
+이 저장소의 상세 개발 규칙 문서**이며(파일별 책임, 기준정보 테이블 계약, 핵심 계산 규칙,
+Streamlit 구현 규칙, 변경 체크리스트) 이 파일은 그 요약과 진입점이다. 계산식·테이블·화면을
+바꾸기 전에는 `AGENTS.md`의 해당 절을 반드시 읽는다. 구조나 계산 규칙을 바꾸면 같은 변경에서
+`AGENTS.md`·`README.md`·`docs/TODO.md`도 갱신한다.
+
+## 명령
+
+Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다(PowerShell 기준).
+
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run app.py     # 앱 실행
+.\.venv\Scripts\python.exe -m ruff format --check .
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m mypy                      # strict, app.py·app_pages·src 만
+.\.venv\Scripts\python.exe -m pytest
+```
+
+단일 테스트: `.\.venv\Scripts\python.exe -m pytest tests/test_home_page.py::test_home_renders_summary_dashboard_from_the_builtin_seed`
+
+보조 스크립트: `scripts\benchmark_home.py`(HOME 단계별 성능), `scripts\validate_duckdb_persistence.py`
+(영속성 통합 검증), `scripts\generate_sample_core_data.py`(합성 Core Data 생성).
+
+`mypy`는 `tests/`·`scripts/`를 검사하지 않는다. Streamlit 화면·상태를 바꿨으면
+`streamlit.testing.v1.AppTest` 또는 실제 브라우저로 페이지 진입·수정·왕복을 추가 검증한다.
+
+DuckDB 파일은 프로세스 배타 잠금이다. 앱 서버가 떠 있으면 같은 DB를 여는 스크립트·테스트가
+`duckdb.IOException`으로 실패한다 — 가상환경 손상이 아니다.
+
+## 아키텍처
+
+계산 파이프라인:
+
+```text
+Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
+  → 78컬럼 검증 + pandas RQ 16개 변환
+  → data/capa_simulation.duckdb (시나리오·리비전·공식버전·공용 표시순서)
+  → 활성 리비전 → 세션 활성 시나리오
+  → 부하량 → 대당 Capa → 소요대수 → 확보율 → B/N → HOME 대시보드
+```
+
+계층과 경계:
+
+- `app.py` — 진입점. `navigation.run()` 전에 공식 시나리오 부트스트랩, 공통 사이드바
+  (시나리오 컨트롤·조회기간)를 만든다. 페이지 간 공유 위젯은 여기서만 만든다.
+- `src/capa_simulation/navigation.py` — 사이드바 페이지 목록의 **선언 한 곳**. 페이지 추가·
+  제목 변경은 여기만 고친다.
+- `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·
+  조회기간)와 공용 예외 튜플 `BOOTSTRAP_ERRORS`. 페이지가 각자 예외 튜플을 만들지 않는다.
+- `app_pages/` — UI만. 계산 로직을 여기 넣지 않는다(`home.py`는 이미 크다).
+- `services/` — 순수 계산 함수. UI 상태에 접근하지 않는다.
+- `services/simulation_cache.py` — Streamlit 캐시는 **여기 래퍼에만** 둔다.
+- `services/frame_contracts.py` — 서비스 공용 컬럼 계약과 업무 키 정규화.
+- `io/reference_cache.py` — 활성 기준정보 경계. 계산 페이지는 기준정보를 직접 읽지 말고
+  `get_effective_reference_tables()`만 쓴다.
+- `persistence/` — DuckDB 마이그레이션·Repository·모델. `design/tokens.py` — 색·서체·표 치수.
+
+DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_simulation.duckdb`)과 가용설비
+운영(`data/equipment_availability.duckdb`). 설비 쪽은 전용 마이그레이션·Repository·캐시를 쓰고
+시뮬레이션 DB나 `RQ_*`를 읽지 않는다.
+
+### 상태·캐시 불변조건 (AGENTS.md 5장이 전문)
+
+- 편집 적용마다 `revision`을 올리고 `content_token`을 재발급한다. 편집 UI는 `revision`을,
+  **계산·Figure 캐시 키는 반드시 `content_token`**을 본다 — `revision` 번호는 내용이 달라도
+  겹칠 수 있다.
+- 리비전은 append-only다. 과거 리비전을 갱신하지 않고 새 전체 리비전으로만 저장한다.
+  공식버전 발행도 append-only.
+- 미저장 세션 편집과 저장 리비전을 구분한다. 미저장 편집은 세션 종료 시 사라진다.
+- 표시순서는 시나리오에 종속되지 않는 공용 DB 프로필(`app_meta.global_display_order*`)이다.
+- 내장 시드는 빈 저장소에만 쓰며 운영 시나리오가 아니다.
+
+### SQL 마이그레이션
+
+적용된 마이그레이션은 **버전 번호로 체크섬을 대조**하므로 주석 추가를 포함해 절대 수정하지
+않는다. 후속 번호를 새로 추가한다. **2·3번은 영구 결번**이고 재사용하면 기존 DB에서 앱이
+시작조차 못 한다(`tests/test_migration_numbering.py`가 막는다). 신규 SQL은 `--` 형식의
+`Purpose` 한 줄과 `docs/migration_catalog.md` 항목을 함께 작성한다.
+
+## 코드 규칙
+
+- **Purpose 헤더**: `app.py`·`app_pages/`·`src/`·`scripts/`·`tests/` 아래 모든 `.py`·`.ps1`
+  최상단에 `# Purpose: <단일 책임 한 문장>` 을 유지한다. 파일 책임이 바뀌면 같이 고친다.
+  `tests/test_source_metadata.py`가 누락과 SQL 카탈로그 등록을 검사한다.
+- 변경 이력·출처를 주석에 적지 않는다. Git commit history가 단일 근거다.
+- 내부 컬럼명은 Excel/`Core_Data` 계약과 일치시킨다. 화면 라벨 때문에 원본 컬럼명을 바꾸지
+  않는다.
+- Streamlit: `use_container_width` 대신 `width="stretch"` / `width="content"`. 페이지 전용
+  위젯에는 고유 `key`. 비싼 계산을 탭 안에서 반복하지 말고 캐시된 결과를 탭이 표시만 한다.
+- 주석·문서·커밋 메시지는 한국어로 쓴다(기존 코드가 그렇다).
+
+## 로컬 데이터는 합성 표본이다
+
+`data/input/Core_Data.csv`와 `data/capa_simulation.duckdb`, `equipment_samples.py`,
+`builtin_seed.py`, `dynamic_capacity.py`의 `_DemoProfile`은 **실제 운영 데이터가 아니라
+`scripts/generate_sample_core_data.py`의 리터럴에서 나온 합성 데모**다.
+
+- 로컬 DB·CSV 쿼리 결과로 업무 구조를 판단하거나 설계를 바꾸지 않는다. 쿼리는 코드 경로가
+  도는지 확인하는 용도다.
+- 데이터를 집계해 얻은 수치는 `실측`이 아니라 `샘플 관측`이라고 적고 출처 리터럴을 남긴다.
+- 표본 고유 수치(행 수, 공정 수 등)를 계약처럼 문서나 코드에 고정하지 않는다.
+
+## Git 제외 자산
+
+`*.xlsb`·`*.xlsx` 등 Excel, `data/*.duckdb`·`data/*.db`와 보조 파일, `.env`,
+`.streamlit/secrets.toml`, `data/input`·`data/output`·`data/temp`의 실제 데이터는 커밋하지
+않는다. `config/bootstrap_display_order.json`과 `builtin_seed.py`에는 합성 `DEMO_*` 값만 두고
+실제 제품·고객·공정·설비 식별값을 넣지 않는다.
