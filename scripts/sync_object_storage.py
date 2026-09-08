@@ -173,7 +173,9 @@ def command_doctor(args: argparse.Namespace) -> int:
     print(f"네임스페이스  : {object_storage.NAMESPACE_NOTE} (프로필에 매여 있음)")
     if settings.endpoint_url.startswith("http://"):
         print("[주의] 평문 HTTP 입니다. 파일 내용이 사내망에 그대로 흐릅니다.")
-    client = ObjectStorageClient(settings=settings)
+    # 클라이언트는 다른 명령과 똑같이 `build_client` 를 지난다. 여기서만 따로 만들면
+    # 실행기를 갈아끼운 테스트가 이 경로만 못 덮는다.
+    client = build_client(args)
     try:
         print(f"CLI           : {client.cli_version()}")
         print(f"주소 스타일   : {client.check_addressing_style()}")
@@ -492,13 +494,20 @@ def command_resolve(args: argparse.Namespace) -> int:
             print("[건너뜀] --dry-run 이라 승격하지 않습니다.")
             continue
         # 내 스냅샷은 이미 올라가 있다. 그것을 가리키는 새 세대 포인터만 만든다.
+        # 크기는 반드시 원격에서 다시 읽는다 — 0 으로 두면 나중에 pull 이 그 포인터를
+        # 크기 불일치로 거부해 복구한 세대를 못 받는다.
+        remote = client.head(state.unpublished_snapshot_key)
+        if remote is None:
+            print(f"[중단] {label} 미게시 스냅샷을 원격에서 찾지 못했습니다.")
+            failures += 1
+            continue
         pointer = manifest.next_pointer(
             head,
             dataset=dataset,  # type: ignore[arg-type]
             token=uuid.uuid4().hex[:8],
             sha256=state.unpublished_sha256 or "",
             md5_base64="",
-            size_bytes=0,
+            size_bytes=remote.size_bytes,
             source_db_bytes=0,
             migration_version=snapshot_export.code_migration_version(dataset),  # type: ignore[arg-type]
             app_version=APP_VERSION,
@@ -545,9 +554,7 @@ def command_adopt(args: argparse.Namespace) -> int:
             sha256=head.sha256,
             snapshot_key=head.snapshot_key,
         )
-        sync_state.enable({database_path: dataset})  # type: ignore[dict-item]
         sync_state.mark_dirty(database_path)
-        sync_state.clear_all()
         print(f"{label} : 로컬을 기준으로 잡았습니다. push 로 올리세요.")
     return 0
 
@@ -603,6 +610,10 @@ COMMANDS = {
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     handler = COMMANDS[args.command]
+    # 사이드카 기록은 등록된 경로에만 쓴다. 스크립트는 이 파일들의 주인이므로 여기서
+    # 등록한다 — 빼먹으면 `mark_unpublished`·`clear_unpublished` 가 조용히 아무 일도
+    # 하지 않아, 경합에서 진 스냅샷의 복구 정보가 사라진다.
+    sync_state.enable({DATASET_PATHS[name]: name for name in datasets(args)})
     try:
         return int(handler(args))
     except ObjectStorageError as exc:
