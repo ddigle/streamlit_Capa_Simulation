@@ -357,8 +357,8 @@ def _apply_layout(
     figure.update_layout(
         height=height,
         margin={"l": 16, "r": 16, "t": 42, "b": 16},
-        paper_bgcolor=tokens.SURFACE,
-        plot_bgcolor=tokens.SURFACE,
+        paper_bgcolor=tokens.CHART_CANVAS,
+        plot_bgcolor=tokens.CHART_CANVAS,
         hoverlabel={"bgcolor": tokens.SURFACE, "font": {"color": tokens.SPACE_TEXT}},
         clickmode="event+select",
         dragmode=False,

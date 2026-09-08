@@ -33,7 +33,7 @@ HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 
 HOME_FIGURE_CACHE_MAX_ENTRIES = 3
 
-HOME_FIGURE_SCHEMA_VERSION = 23
+HOME_FIGURE_SCHEMA_VERSION = 26
 
 
 def home_figure_cache() -> dict[HomeFigureCacheKey, HomeFigureSet]:

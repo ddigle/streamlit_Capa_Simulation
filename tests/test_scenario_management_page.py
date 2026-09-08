@@ -30,3 +30,6 @@ def test_every_tab_form_is_rendered_in_one_run(seeded_databases: tuple[Path, Pat
     # 시나리오 관리 탭의 이름 수정 폼 · BigDataQuery 등록 폼 · 표시순서 직접 편집 폼. 신규
     # 생성·리비전 저장 폼은 탭 안의 작업 선택(segmented control)에 따라 그려지므로 여기 없다.
     assert {"새 시나리오명", "조회할 시뮬레이션 코드", "변경 메모"} <= labels
+    # 1단계 조회 폼과 2단계 등록 폼이 한 rerun 에 함께 있어야 탭을 오갈 때 값이 남는다.
+    assert {"시작일", "종료일"} <= {widget.label for widget in app.date_input}
+    assert "시뮬레이션 코드 조회" in {button.label for button in app.button}

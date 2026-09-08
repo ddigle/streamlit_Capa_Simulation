@@ -2,6 +2,7 @@
 
 import streamlit as st
 
+from capa_simulation.components.app_header import render_app_header
 from capa_simulation.components.month_range_picker import render_month_range_picker
 from capa_simulation.components.scenario_status import render_scenario_controls
 from capa_simulation.navigation import build_navigation_pages
@@ -14,6 +15,9 @@ from capa_simulation.scenario_preset_state import (
     apply_pending_scenario_preset,
 )
 from capa_simulation.settings import (
+    APP_ABOUT,
+    APP_BUG_REPORT_URL,
+    APP_HELP_URL,
     APP_NAME,
     DUCKDB_PATH,
     MONTH_SELECTION_END,
@@ -25,7 +29,17 @@ from capa_simulation.sidebar_status import (
     show_applied_month_range,
 )
 
-st.set_page_config(page_title=APP_NAME, page_icon=":material/factory:", layout="wide")
+st.set_page_config(
+    page_title=APP_NAME,
+    page_icon=":material/factory:",
+    layout="wide",
+    # 헤더에 직접 글을 넣는 공식 API 는 없다. 개발자·인증 정보는 ⋮ 메뉴의 About 에 싣는다.
+    menu_items={
+        "Get help": APP_HELP_URL,
+        "Report a bug": APP_BUG_REPORT_URL,
+        "About": APP_ABOUT,
+    },
+)
 # rerun 한 번 동안 시나리오 DB 인스턴스를 잡아 둔다. 사이드바가 rerun 마다 여는 연결 3개가
 # 각자 인스턴스를 다시 만들지 않게 하는 것이 전부이고, rerun 이 끝나면 풀린다.
 with pinned_connections(DUCKDB_PATH):
@@ -81,6 +95,7 @@ with pinned_connections(DUCKDB_PATH):
         </style>
         """
     )
+    render_app_header()
     with st.sidebar.container(key="home_navigation"):
         st.page_link(pages.home, width="stretch")
 

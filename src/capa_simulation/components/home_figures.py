@@ -311,8 +311,8 @@ def build_lob_summary_figures(
         },
         "barmode": "overlay",
         "bargap": 0.16,
-        "plot_bgcolor": tokens.SURFACE,
-        "paper_bgcolor": tokens.SURFACE,
+        "plot_bgcolor": tokens.CHART_CANVAS,
+        "paper_bgcolor": tokens.CHART_CANVAS,
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
     label_figure.update_layout(**common_layout, showlegend=False)
@@ -672,7 +672,7 @@ def build_plan_detail_figures(
     detail_layout = {
         "height": detail_figure_height,
         "margin": {"l": 0, "r": 0, "t": DASHBOARD_TITLE_HEIGHT_PX, "b": 0},
-        "paper_bgcolor": tokens.SURFACE,
+        "paper_bgcolor": tokens.CHART_CANVAS,
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
     detail_label_figure.update_layout(**detail_layout)
@@ -885,7 +885,7 @@ def build_bottleneck_detail_figures(
             "t": DASHBOARD_TITLE_HEIGHT_PX,
             "b": 0,
         },
-        "paper_bgcolor": tokens.SURFACE,
+        "paper_bgcolor": tokens.CHART_CANVAS,
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
     bottleneck_detail_label_figure.update_layout(**bottleneck_detail_layout)

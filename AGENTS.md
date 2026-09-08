@@ -177,8 +177,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     전환일과 기준일 대비 일수를 조회하는 실행관리 현황을 제공한다.
 - `app_pages/scenario_management.py`
   - `시나리오 관리`, `BigDataQuery 등록`, `표시순서 관리` 탭을 제공한다. 세 탭은 항상
-    그린다(열린 탭만 그리면 다른 탭을 여는 순간 form 입력값이 사라진다). 건너뛸 계산·표·
-    차트가 없으므로 탭 전환에 rerun 을 걸지 않는다.
+    그린다(열린 탭만 그리면 다른 탭을 여는 순간 form 입력값이 사라진다). `BigDataQuery
+    등록` 탭에 시뮬레이션 코드 목록 표가 생겼지만 그 표는 세션에 담긴 조회 결과를 표시만
+    하고 사내 DB 조회는 버튼 제출로만 돈다 — 다시 드는 비용이 좁힌 뷰의 직렬화뿐이라
+    탭 전환에 rerun 을 걸지 않는다.
+  - `BigDataQuery 등록` 은 ① 기간으로 시뮬레이션 코드 목록 조회 → ② 목록에서 한 행 선택
+    → ③ 자동 입력된 등록 폼 확인·저장의 2단계다.
   - DuckDB 시나리오·리비전 선택, 이름 수정, 공식버전 발행, 불러오기와 논리 보관을 제공한다.
   - 신규 시나리오는 개발용 Core Data CSV를 pandas 변환해 typed raw와 RQ 16개를 함께
     저장하거나 현재 RQ 16개를 독립 데이터셋으로 복제한다.
@@ -267,6 +271,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/io/company_bigdataquery_adapter.py`
   - 사내 SQL과 DB 컬럼 매핑을 넣는 전용 접속부다. `bigdataquery`를 지연 import하고 반환
     DataFrame을 CSV로 저장하지 않고 공통 78컬럼 파이프라인에 전달한다.
+  - 조회 기간은 호출자가 `QueryWindow` 로 준다. 종료일은 화면 라벨과 같이 포함이며
+    `sql_bounds()` 가 배타 상한을 하루 밀어 흡수한다 — 포함/배타 차이를 다루는 자리는
+    여기 한 곳이다. 상세 창은 목록 창으로 **좁히지 않고**(`resolve_detail_window`) 기본
+    90일 창과 합집합을 쓴다. 좁히면 그 코드의 원천 행이 잘린 시나리오가 조용히 저장된다.
+  - 0행 결과는 `rename` 이전에 막는다. 뒤에 두면 MPGA TEST 예외가 `KeyError` 로 먼저 터진다.
+- `src/capa_simulation/io/bigdataquery_catalog.py`
+  - 기간 내 시뮬레이션 코드 목록만 조회한다. 상세 SQL 과 한 파일에 섞지 않는다 — 상세
+    SQL 은 78별칭을 계약과 순서까지 대조받고 `build_query` 가 `{simulation_code}` 자리를
+    필수로 요구한다. 결과 5컬럼을 `CoreDataBatch`·정규화 경로에 넣지 않는다.
 - `src/capa_simulation/io/reference_cache.py`
   - 현재 브라우저 세션에 활성화된 DuckDB 리비전의 테이블과 공용 표시순서를 반환한다.
   - 활성 리비전이 없으면 XLSB로 대체하지 않고 명확한 오류를 반환한다.
@@ -357,6 +370,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `core_data_pipeline.py`: CSV·BigDataQuery 공급자 결과를 동일한 정규화·RQ 변환
   파이프라인으로 연결한다.
 
+- `bigdataquery_catalog_view.py`: 시뮬레이션 코드 목록을 표시·검색용으로 정리하고 등록 폼
+  기본값을 만든다. Streamlit 을 import 하지 않는 순수 계층이다. 코드·PLAN 조합당 한 행만
+  남기고(적재시각이 행마다 다르면 코드 하나가 수천 행이 된다), 숫자형 등록시각은 버린다
+  (`pd.to_datetime` 이 정수를 나노초로 읽어 1970년이 조용히 저장된다).
+
 - `core_data_derivation.py`: 원천 78컬럼에서 RQ 파생에 쓰는 정규화된 작업 프레임을
   만든다. 제품정보 언더바 정규화와 Area·소요기준 별칭 정리가 이 경계에서 끝난다.
 - `reference_conflicts.py`: 동일 업무 키의 값 충돌을 수집하고 테이블·키·후보값·선택값·
@@ -394,6 +412,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/page_header.py`
   - 모든 페이지의 제목·설명·상태 배지. `(구현중)` 은 제목에서 떼어 배지로 보여준다.
     사이드바 라벨과 같은 문자열을 써야 하며 어긋나면 테스트가 잡는다.
+- `src/capa_simulation/components/app_header.py`
+  - 화면 맨 위 띠의 면을 칠하고 앱 이름·버전·개발자·인증 정보를 모든 페이지에 표시한다.
+    Streamlit 이 헤더에 위젯을 넣는 API 를 주지 않아 `stHeader`·`stSidebarHeader` 의
+    가상요소에 글을 얹는다(글자만 가능, 링크·버튼 불가). 값은 `settings.py` 가 단일 근거이고
+    ⋮ 메뉴의 About 과 같은 상수를 본다. `app.py` 에서 한 번만 부른다.
 - `src/capa_simulation/components/column_filter.py`
   - 분류 컬럼별 다중선택 필터와 초기화 버튼. 선택값으로 거른 프레임을 돌려준다.
 - `src/capa_simulation/components/scenario_edit_bar.py`
@@ -445,6 +468,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/scenario_management.py`,
   `display_order_management.py`, `bigdataquery_registration.py`
   - 시나리오 관리 페이지의 세 탭 UI.
+  - `bigdataquery_registration.py` 는 2단계다. 목록 위젯은 반드시 `st.form` 밖의
+    `st.dataframe(on_select="rerun", selection_mode="single-row")` 이고(폼 안에서는 제출
+    전까지 선택이 서버에 오지 않아 예외 없이 조용히 실패한다), 목록을 등록 폼보다 **위**에
+    그려 프리필의 세션 대입이 위젯 생성 전이 되게 한다. 순서를 바꾸면 행을 고를 때마다
+    `StreamlitAPIException` 으로 페이지가 죽는다.
 
 ### 영속성 모듈
 

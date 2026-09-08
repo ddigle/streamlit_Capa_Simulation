@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from capa_simulation.components.monthly_table_base import (
+    CANVAS_COLOR,
     CLASSIFICATION_COLOR,
     CLASSIFICATION_GROUP_COLOR,
     CLASSIFICATION_HORIZONTAL_PADDING_PX,
@@ -316,7 +317,7 @@ def render_hierarchical_monthly_table(
     common_layout = {
         "height": figure_height,
         "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
-        "paper_bgcolor": SURFACE_COLOR,
+        "paper_bgcolor": CANVAS_COLOR,
         "font": {"color": TEXT_COLOR, "family": tokens.FONT_FAMILY},
     }
     label_figure = go.Figure(

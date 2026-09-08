@@ -42,6 +42,10 @@ Streamlit 위젯은 `config.toml`을 직접 읽지만 Plotly Figure와 주입 CS
   다시 적는다 — 값은 `tokens`에서만 가져오면 되고, 그 이탈은
   `tests/test_design_tokens.py`가 이미 검사한다. 공통 레이아웃 헬퍼가 다시 필요해지면
   그때 실제 호출부와 함께 만든다.
+- **Figure 의 `paper_bgcolor`·`plot_bgcolor` 는 `CHART_CANVAS` 다.** 모든 Figure 는 배경이
+  투명한 `st.container(border=True)` 안에 놓여 페이지 바탕 위에 그려진다. 흰 면(`SURFACE`)
+  을 쓰면 Figure 만 흰 사각형으로 떠서 컨테이너 테두리 안이 두 색으로 갈린다. 표의 셀
+  채움색은 그대로 `SURFACE` 이고, 바뀌는 것은 셀 바깥의 캔버스뿐이다.
 - **범주형 색은 항상 명시 scale로 넘긴다.** Altair에 `scale`을 주지 않으면 `config.toml`의
   `chartCategoricalColors` 4색을 순환한다. 설비 상태는 9종이라 5~9번째가 앞의 것과 같은
   색으로 그려졌다.
@@ -56,9 +60,15 @@ Streamlit 위젯은 `config.toml`을 직접 읽지만 Plotly Figure와 주입 CS
 |---|---|---|
 | 페이지 바탕 | `SURFACE_PAGE` | `#F7F8FA` |
 | 표·카드 면 | `SURFACE` | `#FFFFFF` |
+| Plotly 캔버스 | `CHART_CANVAS` | `#F7F8FA` |
 | 분류 컬럼 음영 | `SURFACE_CLASSIFICATION` | `#F1F3F6` |
 | 표 머리글 | `HEADER_BACKGROUND` | `#E4E7EB` |
 | 테두리 | `BORDER` | `#DDE0E5` |
+| 상단 띠 | `HEADER_BAR` | `#EFF1F5` |
+
+상단 띠(화면 맨 위 `3.75rem`)는 본문 너비만 덮는 `stHeader` 와 사이드바 위쪽을 같은 색으로
+이어 붙여 만든다. 한쪽만 칠하면 색이 화면 중간에서 끊겨, 같은 줄에 놓인 앱 이름과 문의처가
+서로 다른 면 위에 앉는다. 칠하는 곳은 `components/app_header.py` 한 곳이다.
 
 ## 2-2. 강조색은 상호작용에만 쓴다
 

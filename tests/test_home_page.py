@@ -81,7 +81,7 @@ def _run(seeded_database: Path) -> AppTest:
 def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: Path) -> None:
     app = _run(seeded_database)
 
-    assert [element.value for element in app.title] == ["S.PKG Capa Simulation"]
+    assert [element.value for element in app.title] == ["Capa LOB Summary"]
     # 내장 시드 프리셋이 복원한 조회기간과 판정 기준
     assert app.session_state["production_month_range_v2"] == ("2026-01", "2026-12")
     assert [(widget.label, widget.value) for widget in app.sidebar.number_input] == [

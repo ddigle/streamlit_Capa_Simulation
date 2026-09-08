@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
+from datetime import date, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
 from capa_simulation.io import company_bigdataquery_adapter as adapter
+
+CONTRACT_PATH = Path(__file__).resolve().parents[1] / "config" / "data_contract.json"
 
 
 def test_unconfigured_query_is_rejected_before_package_import(monkeypatch) -> None:
@@ -19,7 +24,12 @@ def test_unconfigured_query_is_rejected_before_package_import(monkeypatch) -> No
         return object()
 
     monkeypatch.setattr(adapter.importlib, "import_module", fake_import)
-    provider = adapter.BigDataQueryCoreDataProvider("사내 조회")
+    # 모듈 기본 SQL 은 사내 조회문으로 채워져 있다. 미설정 경로를 보려면 표식이 남은
+    # 템플릿을 명시로 준다.
+    provider = adapter.BigDataQueryCoreDataProvider(
+        "사내 조회",
+        query_template=f"SELECT {adapter.UNCONFIGURED_MARKER} WHERE x = '{{simulation_code}}'",
+    )
 
     with pytest.raises(RuntimeError, match="SQL이 아직 설정되지 않았습니다"):
         provider.fetch("SIM-001")
@@ -36,7 +46,8 @@ def test_provider_returns_renamed_dataframe_without_csv(monkeypatch) -> None:
             convert_type=convert_type,
             verbose=verbose,
         )
-        return pd.DataFrame({"db_product": ["Product*_A"]})
+        # `fetch` 는 MPGA TEST 예외를 적용하므로 원천에 `공정`·`모듈수` 가 있어야 한다.
+        return pd.DataFrame({"db_product": ["Product*_A"], "공정": ["ASSY"], "모듈수": [2]})
 
     monkeypatch.setattr(
         adapter.importlib,
@@ -52,7 +63,7 @@ def test_provider_returns_renamed_dataframe_without_csv(monkeypatch) -> None:
     batch = provider.fetch("SIM-001")
 
     assert batch.source_type == "BIGDATAQUERY"
-    assert batch.frame.columns.tolist() == ["제품정보"]
+    assert batch.frame.columns.tolist() == ["제품정보", "공정", "모듈수"]
     assert captured == {
         "param": "SELECT * FROM source WHERE simulation_code = 'SIM-001'",
         "convert_type": True,
@@ -64,3 +75,202 @@ def test_provider_returns_renamed_dataframe_without_csv(monkeypatch) -> None:
 def test_provider_rejects_unsafe_simulation_code(code: str) -> None:
     with pytest.raises(ValueError, match="영문·숫자"):
         adapter.build_query("SELECT '{simulation_code}'", code)
+
+
+def test_mpga_test_module_count_exception_normalizes_to_one() -> None:
+    """MPGA TEST 의 0.95~0.96 모듈수는 1로 본다.
+
+    원천 산정 규칙이 확정될 때까지 두는 예외이므로(`docs/TODO.md` 3-7) 동작을 고정해
+    조용히 사라지지 않게 한다. 같은 값이라도 공정이 다르면 손대지 않는다.
+    """
+    frame = pd.DataFrame(
+        {
+            "공정": ["MPGA TEST", "MPGA TEST", "MPGA TEST", "ASSY"],
+            "모듈수": [0.955, 0.94, 2, 0.955],
+        }
+    )
+
+    provider = adapter.BigDataQueryCoreDataProvider(
+        "사내 조회",
+        query_template="SELECT '{simulation_code}'",
+        column_mapping={},
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            adapter.importlib,
+            "import_module",
+            lambda _: SimpleNamespace(getData=lambda **_kwargs: frame),
+        )
+        batch = provider.fetch("SIM-001")
+
+    assert batch.frame["모듈수"].tolist() == [1, 0.94, 2, 0.955]
+
+
+def _contract_columns() -> list[str]:
+    contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+    return [column["name"] for column in contract["source"]["columns"]]
+
+
+def _query_aliases() -> list[str]:
+    select_clause = adapter.QUERY_TEMPLATE.split("FROM", 1)[0]
+    aliases: list[str] = []
+    for line in select_clause.splitlines():
+        item = line.strip().rstrip(",")
+        if not item or item.upper() == "SELECT":
+            continue
+        assert " AS " in item, f"별칭이 없는 SELECT 항목: {item}"
+        aliases.append(item.rsplit(" AS ", 1)[1].strip().strip("`"))
+    return aliases
+
+
+def test_query_aliases_match_the_core_data_contract() -> None:
+    """SELECT 별칭이 78컬럼 계약과 한 글자라도 다르면 정규화에서 통째로 실패한다.
+
+    실제로 `Module/Comp`·`Plan_Chip(k개)`·`WF측정룰` 세 개가 대소문자·철자만 달라
+    사내 조회가 통째로 막혔었다. 눈으로는 걸러지지 않아 여기서 잡는다.
+    """
+    assert _query_aliases() == _contract_columns()
+
+
+def test_column_mapping_only_targets_contract_columns() -> None:
+    """대문자가 섞인 계약 컬럼은 소문자 키가 모두 있어야 한다.
+
+    드라이버가 컬럼명을 소문자로 돌려주는 경우를 위한 매핑이므로, 하나라도 빠지면 그
+    컬럼만 계약과 어긋난다.
+    """
+    expected = _contract_columns()
+    assert [
+        value for value in adapter.SOURCE_COLUMN_MAPPING.values() if value not in expected
+    ] == []
+    needs_key = [name for name in expected if name.lower() != name]
+    assert [name for name in needs_key if name.lower() not in adapter.SOURCE_COLUMN_MAPPING] == []
+
+
+def test_query_window_upper_bound_includes_the_end_date() -> None:
+    """종료일 당일 적재분이 빠지던 결함의 회귀선(docs/TODO.md 3-7).
+
+    화면 라벨이 '포함' 이므로 배타 상한(`<`)을 다음 날로 민다.
+    """
+    window = adapter.QueryWindow(start_date=date(2026, 6, 10), end_date=date(2026, 9, 8))
+
+    assert window.sql_bounds() == ("2026-06-10", "2026-09-09")
+    assert window.days == 91
+    assert window.label() == "2026-06-10 ~ 2026-09-08"
+
+
+def test_query_window_rejects_a_reversed_period() -> None:
+    with pytest.raises(ValueError, match="시작일은 종료일보다"):
+        adapter.QueryWindow(start_date=date(2026, 9, 9), end_date=date(2026, 9, 8))
+
+
+def test_build_query_uses_the_given_window() -> None:
+    window = adapter.QueryWindow(start_date=date(2026, 9, 1), end_date=date(2026, 9, 8))
+
+    query = adapter.build_query(adapter.QUERY_TEMPLATE, "SIM-001", window=window)
+
+    assert "'2026-09-01'" in query
+    assert "'2026-09-09'" in query
+    assert "{" not in query
+
+
+def test_build_query_without_a_window_keeps_the_default_window() -> None:
+    """기존 호출부(위치 인자 2개)가 그대로 돌아야 한다."""
+    today = date(2026, 9, 8)
+    expected = adapter.default_query_window(today=today).sql_bounds()
+
+    query = adapter.build_query(adapter.QUERY_TEMPLATE, "SIM-001")
+
+    assert adapter.DEFAULT_QUERY_WINDOW_DAYS == 90
+    assert len(expected[0]) == 10
+    assert "impala_insert_time" in query
+
+
+def test_resolve_detail_window_never_narrows_the_default_window() -> None:
+    """목록 기간으로 상세를 좁히면 그 코드의 원천 행이 잘린 채 저장된다."""
+    today = date(2026, 9, 8)
+    one_day = adapter.QueryWindow(start_date=today, end_date=today)
+
+    widened = adapter.resolve_detail_window(one_day, today=today)
+    default = adapter.default_query_window(today=today)
+
+    assert widened.start_date == default.start_date
+    assert widened.end_date == default.end_date
+
+    older = adapter.QueryWindow(
+        start_date=today - timedelta(days=200), end_date=today - timedelta(days=190)
+    )
+    stretched = adapter.resolve_detail_window(older, today=today)
+
+    assert stretched.start_date == older.start_date
+    assert stretched.end_date == default.end_date
+    assert adapter.resolve_detail_window(None, today=today).start_date == default.start_date
+
+
+def test_provider_passes_the_window_into_the_query(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_get_data(*, param: str, convert_type: bool, verbose: bool) -> pd.DataFrame:
+        captured["param"] = param
+        return pd.DataFrame({"제품정보": ["Product-A"], "공정": ["ASSY"], "모듈수": [2]})
+
+    monkeypatch.setattr(
+        adapter.importlib,
+        "import_module",
+        lambda _: SimpleNamespace(getData=fake_get_data),
+    )
+    provider = adapter.BigDataQueryCoreDataProvider(
+        "사내 조회",
+        query_template=(
+            "SELECT '{simulation_code}' WHERE t >= '{start_date}' AND t < '{end_date}'"
+        ),
+        column_mapping={},
+        window=adapter.QueryWindow(start_date=date(2026, 9, 1), end_date=date(2026, 9, 8)),
+    )
+
+    provider.fetch("SIM-001")
+
+    assert captured["param"] == "SELECT 'SIM-001' WHERE t >= '2026-09-01' AND t < '2026-09-09'"
+
+
+def test_empty_result_is_rejected_before_the_module_count_exception(monkeypatch) -> None:
+    """0행 가드가 rename 뒤에 있으면 `KeyError('모듈수')` 로 먼저 터진다."""
+    monkeypatch.setattr(
+        adapter.importlib,
+        "import_module",
+        lambda _: SimpleNamespace(getData=lambda **_kwargs: pd.DataFrame()),
+    )
+    provider = adapter.BigDataQueryCoreDataProvider(
+        "사내 조회",
+        query_template="SELECT '{simulation_code}'",
+        column_mapping={},
+    )
+
+    with pytest.raises(ValueError, match="0행"):
+        provider.fetch("SIM-001")
+
+
+def test_catalog_sql_is_not_mixed_into_the_detail_template() -> None:
+    """상세 SQL 은 78별칭 대조를 받는다. 목록 문장을 여기 합치면 그 검사가 깨진다."""
+    assert "{simulation_code}" in adapter.QUERY_TEMPLATE
+    assert "SELECT DISTINCT" not in adapter.QUERY_TEMPLATE
+
+
+def test_package_probe_does_not_import_the_module(monkeypatch) -> None:
+    imported = False
+
+    def fake_import(_: str) -> object:
+        nonlocal imported
+        imported = True
+        return object()
+
+    monkeypatch.setattr(adapter.importlib, "import_module", fake_import)
+
+    adapter.is_bigdataquery_package_available()
+
+    assert not imported
+
+
+def test_valid_simulation_code_predicate_matches_the_validator() -> None:
+    assert adapter.is_valid_simulation_code("DEMO-A_001.2") is True
+    assert adapter.is_valid_simulation_code("DEMO 공백") is False
+    assert adapter.is_valid_simulation_code("   ") is False

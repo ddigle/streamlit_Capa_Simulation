@@ -25,6 +25,13 @@ SURFACE_SUBTLE: Final = "#FAFAFB"
 SURFACE_CLASSIFICATION: Final = "#F1F3F6"
 SURFACE_CLASSIFICATION_GROUP: Final = "#E5E8EC"
 HEADER_BACKGROUND: Final = "#E4E7EB"  # dataframeHeaderBackgroundColor
+# 화면 맨 위 띠의 면. 페이지 바탕보다 한 단계만 눌러 앱 머리와 본문을 나눈다. 표 머리글
+# (HEADER_BACKGROUND)보다는 밝아야 표의 위계를 침범하지 않는다.
+HEADER_BAR: Final = "#EFF1F5"
+# Plotly Figure 의 paper·plot 바탕. 모든 Figure 는 배경이 투명한 `st.container(border=True)`
+# 안에 놓여 페이지 바탕 위에 그려지므로, 흰 면(SURFACE)을 쓰면 Figure 만 흰 사각형으로 뜬다.
+CHART_CANVAS: Final = SURFACE_PAGE
+
 BORDER: Final = "#DDE0E5"  # borderColor
 BORDER_STRONG: Final = "#A3A9B2"
 TEXT: Final = "#18181B"  # textColor
@@ -151,6 +158,13 @@ CLASSIFICATION_MIN_WIDTH_PX: Final = 84
 CLASSIFICATION_MAX_WIDTH_PX: Final = 220
 CLASSIFICATION_TEXT_UNIT_PX: Final = 15
 CLASSIFICATION_HORIZONTAL_PADDING_PX: Final = 36
+
+# BigDataQuery 시뮬레이션 코드 목록 전용 치수. 위의 월별표 치수를 재사용하지 않는다 —
+# 그쪽은 Plotly 표 밀도에 묶여 있어 월별표 행 높이를 조정하면 이 목록까지 함께 움직인다.
+# 고정 px 높이여야 표 '안에서' 세로 스크롤이 생긴다. 높이를 주지 않으면 행 수만큼
+# 페이지가 길어져 목록이 수천 행일 때 화면을 못 쓴다.
+CATALOG_LIST_ROW_HEIGHT_PX: Final = 30
+CATALOG_LIST_VISIBLE_ROWS: Final = 12
 
 # 가로 스크롤이 시작되는 월 수. 상세표와 HOME 대시보드가 서로 다른 값을 쓴다.
 # 두 화면의 밀도가 달라 지금은 유지하되, 같은 개념이므로 여기서 함께 보이게 둔다.

@@ -128,8 +128,8 @@ def build_capacity_trend_figure(detail: pd.DataFrame) -> go.Figure:
 
 def _apply_common_layout(figure: go.Figure) -> None:
     figure.update_layout(
-        plot_bgcolor=tokens.SURFACE,
-        paper_bgcolor=tokens.SURFACE,
+        plot_bgcolor=tokens.CHART_CANVAS,
+        paper_bgcolor=tokens.CHART_CANVAS,
         font={"family": tokens.FONT_FAMILY, "color": tokens.TEXT, "size": 13},
         hoverlabel={"font": {"family": tokens.FONT_FAMILY}},
     )

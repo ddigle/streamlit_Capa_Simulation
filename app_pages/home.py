@@ -51,7 +51,6 @@ from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
     get_home_simulation,
 )
-from capa_simulation.settings import APP_NAME
 from capa_simulation.sidebar_status import (
     format_short_month,
     show_applied_month_range,
@@ -59,7 +58,7 @@ from capa_simulation.sidebar_status import (
 )
 
 render_page_header(
-    APP_NAME,
+    "Capa LOB Summary",
     description=(
         "월별 생산계획을 부하량으로 환산해 Density·Wafer 현황과 "
         "확보율이 가장 낮은 B/N 공정을 한 화면에서 봅니다."

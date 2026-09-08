@@ -997,6 +997,78 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
   32개 동시 적재 상한. 낮추면 절감 ≤5MB, 대신 재적재 257~420ms.
 - `actual_efficiency`·`actual_upeh` 복제 — 2장 [결정] 이 "실 DB 연결 시 정리" 로 확정.
 
+## 3-7. 2026-09-08 사내 BigDataQuery 어댑터 검수
+
+사용자가 `io/company_bigdataquery_adapter.py` 에 사내 실제 조회문을 넣었고 그것을 검수했다.
+반영 시점의 파일은 파싱조차 되지 않아 앱이 기동하지 않는 상태였다.
+
+### 고친 것
+
+- `renamed.loc(...) = 1` → `renamed.loc[...] = 1`. SyntaxError 라 모듈 import 자체가 실패했고
+  `tests/test_company_bigdataquery_adapter.py` 도 수집 단계에서 깨졌다.
+- SQL 문법 4건: `plan_yyyymmAS` 붙음, `plan_base info_ynAS` → `plan_baseinfo_yn AS`,
+  `BONDING` 뒤 후행 콤마, `impala_insert)time` → `impala_insert_time`.
+- 별칭 3건을 `config/data_contract.json` 에 맞췄다: `Module/Comp` → `Module/comp`,
+  `Plan_Chip(k개)` → `Plan_Chip(K개)`, `WF측정룰` → `WF측정률`. `SOURCE_COLUMN_MAPPING` 의
+  값도 같은 오타여서 매핑으로도 복구되지 않는 상태였다.
+- `QUERY_TEMPLATE` 의 f 접두를 없애 `{{...}}` 이스케이프를 걷어냈고, `rename().copy()` 의
+  중복 복사를 지웠다.
+- 회귀 테스트 3개를 넣었다 — 별칭 78개가 계약과 순서까지 같은지, 매핑이 계약 컬럼만
+  가리키는지, MPGA TEST 예외가 살아 있는지.
+
+### 남은 것
+
+- [ ] **MPGA TEST 모듈수 예외를 걷어낸다.** `공정 = MPGA TEST` 이고 모듈수가 0.95~0.96 이면
+  1로 본다. 사용자 확인 결과 의도한 예외처리이며 지금은 그대로 둔다. 원천의 모듈수 산정
+  규칙이 확정되면 어댑터에서 제거한다. 부수 효과로 이 블록이 `공정`·`모듈수` 두 컬럼을
+  전제하므로, 조회 결과에 그 컬럼이 없으면 78컬럼 계약 오류 대신 `KeyError` 가 난다.
+- [x] **조회 창 상한이 오늘 적재분을 제외한다.** 화면 라벨이 「종료일(포함)」이므로 SQL
+  상한만 하루 밀기로 정했다. `QueryWindow.sql_bounds()` 한 곳이 포함/배타 차이를 흡수하고
+  목록·상세가 같은 메서드를 쓴다. 90일 하드코딩은 사라졌고 기간을 주지 않은 호출의
+  기본값으로만 남는다. 뒤집을 때 고칠 자리도 그 메서드 하나다.
+
+### 확인만 하고 그대로 둔 것 (사용자 답변, 2026-09-08)
+
+- `omitt_yn` 을 `누락여부` 와 `시뮬레이션 누락여부` 두 컬럼에 함께 쓰는 것은 의도다.
+- `'ST_HBM' AS CUSTOM` 하드코딩이 맞다.
+- `'' AS 설비대수변화관리` 는 항상 빈값이 맞다(계약상 string).
+
+## 3-8. 2026-09-08 BigDataQuery 등록 2단계화
+
+`BigDataQuery 등록` 탭을 「기간으로 코드 목록 조회 → 목록에서 선택 → 자동 입력된 등록 폼
+확인·저장」 2단계로 바꿨다. 저장 경로(`fetch_core_data_dataset → 충돌보고 → 프리셋 →
+create_scenario → 활성화 → flash`)는 손대지 않았다.
+
+### 만든 것
+
+- `io/bigdataquery_catalog.py` — 목록 조회 전용. 사용자가 준 `SELECT DISTINCT` 문장을 그대로
+  두고 `{start_date}`·`{end_date}` 만 채운다. 기간 상한 366일.
+- `services/bigdataquery_catalog_view.py` — 정리·검색·자동입력 기본값. Streamlit 을 모른다.
+- `io/company_bigdataquery_adapter.py` — `QueryWindow`·`default_query_window`·
+  `resolve_detail_window`·`is_bigdataquery_package_available`·`is_valid_simulation_code` 추가,
+  0행 가드를 `rename` 앞으로.
+- 목록 위젯은 `st.dataframe(on_select="rerun", selection_mode="single-row")` 에 고정 px 높이
+  (`tokens.CATALOG_LIST_*`)를 줘서 표 안에서 세로 스크롤이 생기게 했다.
+
+### 사내 PC 에서만 확인 가능한 것
+
+- [ ] 목록 조회가 실제로 성공하는지와 응답 시간.
+- [ ] `reg_date` 의 실제 타입(문자열/Timestamp/정수)과 단위. 숫자면 현재 구현은 빈 값으로
+  떨군다(정수를 나노초로 읽어 1970년이 저장되는 것을 막기 위해서다).
+- [ ] `catb_sim_info_id` 에 `^[A-Za-z0-9._-]+$` 를 벗어나는 값이 있는지. 있으면 목록에
+  `저장가능=불가` 로 표시되고 저장 버튼이 막힌다.
+- [ ] 기간별 DISTINCT 행 수 규모. 기본 30일·상한 366일·`저장가능` 안내 임계 3000행이
+  업무에 맞는지.
+- [ ] 한 시뮬레이션의 행이 여러 날에 나눠 적재되는지. 그렇다면 상세 창 합집합 규칙을 다시 본다.
+- [ ] 목록 CSV 내보내기가 필요한지(지금은 넣지 않았다 — 어댑터가 조회 결과를 파일로 쓰지
+  않는다는 계약을 지켰다).
+
+### 확인하고 그대로 둔 것
+
+`등록여부` 는 매 렌더 `list_scenarios(include_archived=True)` 로 계산한다. 시나리오명·원천
+코드에 UNIQUE 제약은 없고 해시 중복 거부 같은 동작도 이 저장소에 없다 — 화면은 같은 이름만
+저장 전에 막고, 같은 코드는 경고만 띄운다.
+
 ## 4. 현재 권장 진행 순서
 
 2026-09-05 에 TODO 전 항목을 코드와 대조해 다시 세웠다. 앞의 순서는 1순위가 외부 연결
