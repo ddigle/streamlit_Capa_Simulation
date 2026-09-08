@@ -102,10 +102,13 @@ _HEADER_CSS = (
   color: __TEXT_MUTED__;
 }
 
-/* 사이드바 머리칸. 기본이 `position: static` 이라 기준 상자로 삼으려면 지정해야 한다.
+/* 사이드바 머리칸. `relative` 로 두면 기준 상자는 되지만 사이드바 내용과 함께 스크롤돼
+   앱 이름이 위로 사라진다(실제로 그랬다). `sticky` 는 기준 상자 역할을 그대로 하면서
+   스크롤 영역 맨 위에 붙어 있는다 — 본문 헤더와 같이 고정으로 읽힌다.
    접기 버튼은 흐름 배치라 이 지정에 움직이지 않는다. */
 [data-testid="stSidebarHeader"] {
-  position: relative;
+  position: sticky;
+  top: 0;
   /* 띠 위로 올린다. 띠에 가리면 앱 이름도 접기 버튼도 묻힌다. */
   z-index: 11;
 }

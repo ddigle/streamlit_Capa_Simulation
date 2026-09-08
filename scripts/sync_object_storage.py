@@ -28,6 +28,10 @@ from capa_simulation.io.object_storage import (  # noqa: E402
     ObjectStorageError,
     StorageSettings,
 )
+from capa_simulation.page_bootstrap import (  # noqa: E402
+    BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
+)
 from capa_simulation.persistence import snapshot_export, sync_state  # noqa: E402
 from capa_simulation.services import object_storage_manifest as manifest  # noqa: E402
 from capa_simulation.services.object_storage_manifest import (  # noqa: E402
@@ -619,8 +623,10 @@ def main(argv: list[str] | None = None) -> int:
     except ObjectStorageError as exc:
         print(f"[중단] {exc}")
         return 1
-    except RuntimeError as exc:
-        print(f"[중단] {exc}")
+    except BOOTSTRAP_ERRORS as exc:
+        # `duckdb.Error` 는 RuntimeError 가 아니다. 이걸 잡지 않으면 앱을 켜 둔 채 돌렸을 때
+        # 원문 트레이스백이 나오고 Windows 로캘에서는 한글까지 깨진다.
+        print(f"[중단] {bootstrap_error_message(exc)}")
         return 1
 
 

@@ -403,3 +403,39 @@ def test_a_lost_race_records_the_orphan_snapshot_key(harness: SimpleNamespace) -
     assert state.unpublished_snapshot_key is not None
     # 스냅샷 자체는 원격에 남아 있어야 한다 — 유실 불가의 근거다.
     assert state.unpublished_snapshot_key in harness.store.objects
+
+
+def test_a_locked_database_is_explained_in_korean(
+    harness: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """앱을 켜 둔 채 돌리면 나올 첫 실패다. `duckdb.Error` 는 RuntimeError 가 아니라서
+    잡지 않으면 원문 트레이스백이 한글 깨진 채로 나온다."""
+    import duckdb
+
+    def locked(*_args: object, **_kwargs: object) -> None:
+        raise duckdb.IOException("Could not set lock on file")
+
+    # 손으로 되돌리면 안 된다. `harness.script.snapshot_export` 는 이 모듈과 같은 객체라
+    # 되돌릴 때 이미 갈아끼운 값을 다시 넣게 되고, 뒤따르는 테스트가 전부 깨진다.
+    monkeypatch.setattr(snapshot_export, "export_snapshot", locked)
+
+    assert _run(harness, "init") == 1
+
+
+def test_failure_messages_name_the_command_that_failed(harness: SimpleNamespace) -> None:
+    """사내에서 원격으로 진단할 때 실행한 명령 한 줄이 있고 없고가 크다."""
+    from capa_simulation.io import object_storage as boundary
+
+    result = boundary.CommandResult(
+        ("aws", "s3api", "put-object", "--bucket", "Capa_simulation_project"),
+        254,
+        "",
+        "An error occurred (AccessDenied)",
+        0.0,
+    )
+
+    message = boundary.explain_failure(result)
+
+    assert "실행한 명령" in message
+    assert "s3api put-object" in message
+    assert "Capa_simulation_project" in message

@@ -407,6 +407,10 @@ def explain_failure(result: CommandResult) -> str:
     detail = (result.stderr or result.stdout).strip().splitlines()
     head = detail[0] if detail else ""
     message = f"오브젝트 스토리지 명령이 실패했습니다({meaning}). {head}"
+    if result.argv:
+        # 사내에서 원격으로 진단할 때 이 한 줄이 있고 없고가 크다. 인자에 자격증명이
+        # 들어가지 않으므로 그대로 보여도 된다.
+        message += "\n  실행한 명령: " + command_line(result.argv)
     if "Content-MD5" in (result.stderr or ""):
         message += (
             " · AWS CLI 2.23.0 이상과 ECS 의 알려진 비호환일 수 있습니다(Dell KB 000299507). "
