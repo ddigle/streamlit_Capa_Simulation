@@ -192,3 +192,21 @@ def test_two_databases_are_marked_independently(tmp_path: Path) -> None:
     assert sync_state.treat_as_dirty(simulation) is True
     equipment_state = sync_state.read_state(equipment)
     assert equipment_state is None or equipment_state.dirty is False
+
+
+def test_registration_matches_the_same_file_through_a_different_path(tmp_path: Path) -> None:
+    """저장소는 `resolve()` 한 경로를, 부트는 설정에 적힌 경로를 넘긴다.
+
+    정규화하지 않으면 같은 파일인데 키가 달라 `_update` 가 조용히 아무 일도 하지 않는다.
+    그러면 앱이 아무리 저장해도 변경 표시가 서지 않아 push 가 "올릴 것 없음" 으로 끝난다.
+    """
+    nested = tmp_path / "data" / "sub" / ".." / "capa_simulation.duckdb"
+    nested.parent.parent.mkdir(parents=True, exist_ok=True)
+    resolved = nested.resolve()
+    resolved.write_bytes(b"x")
+
+    sync_state.enable({nested: "simulation"})
+
+    assert sync_state.is_enabled(resolved)
+    sync_state.mark_dirty(resolved)
+    assert sync_state.treat_as_dirty(resolved) is True

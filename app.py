@@ -28,6 +28,7 @@ from capa_simulation.sidebar_status import (
     register_month_range_placeholder,
     show_applied_month_range,
 )
+from capa_simulation.sync_boot import enable_sync_state_if_managed
 
 st.set_page_config(
     page_title=APP_NAME,
@@ -40,6 +41,10 @@ st.set_page_config(
         "About": APP_ABOUT,
     },
 )
+# managed 모드에서만 동기화 표시를 켠다. local 모드(개발 PC·기본값)에서는 아무 일도 하지
+# 않으므로 이 호출이 있어도 동작이 바뀌지 않는다.
+enable_sync_state_if_managed()
+
 # rerun 한 번 동안 시나리오 DB 인스턴스를 잡아 둔다. 사이드바가 rerun 마다 여는 연결 3개가
 # 각자 인스턴스를 다시 만들지 않게 하는 것이 전부이고, rerun 이 끝나면 풀린다.
 with pinned_connections(DUCKDB_PATH):

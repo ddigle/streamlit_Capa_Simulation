@@ -339,3 +339,18 @@ def test_decision_messages_are_korean_and_name_the_dataset() -> None:
     assert "시뮬레이션" in message
     assert "seq 1" in message
     assert "로컬 저장은 그대로" in message
+
+
+def test_push_and_pull_messages_do_not_collide_on_shared_enum_values() -> None:
+    """두 열거형은 `str` 을 섞은 Enum 이라 값이 같으면 사전 키가 충돌한다.
+
+    `up_to_date`·`remote_empty` 가 양쪽에 있어, 한 사전에 담으면 push 판정에 pull 문구가
+    나온다. `status` 는 push 판정을 찍으므로 사용자가 "받을 것이 없다"로 오해한다.
+    """
+    head = _pointer(1)
+
+    push = manifest.decision_message(PushDecision.UP_TO_DATE, "simulation", head=head)
+    pull = manifest.decision_message(PullDecision.UP_TO_DATE, "simulation", head=head)
+
+    assert push == "시뮬레이션 은 원격과 같습니다(원격 seq 1)."
+    assert pull == "시뮬레이션 은 이미 원격 seq 1 입니다."

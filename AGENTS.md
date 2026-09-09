@@ -330,6 +330,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 조회기간·B/N 포함 공정·표준 목표 Capa 공정 기본값·확보/경고 기준은 공통 위젯 생성
     전에 대기 프리셋으로 복원한다.
   - 새 세션에서는 최신 공식 리비전을 한 번 자동 활성화한다.
+- `src/capa_simulation/sync_boot.py`
+  - `mode` 가 managed 일 때만 `sync_state` 에 두 DB 경로를 등록한다. 설정을 읽지 못하면
+    조용히 끈다 — 동기화 표시 때문에 앱이 뜨지 못하는 일은 없어야 한다.
 - `src/capa_simulation/performance.py`
   - HOME 단계별 소요시간을 측정하며 업무 데이터는 기록하지 않는다.
 - `src/capa_simulation/services/simulation_cache.py`

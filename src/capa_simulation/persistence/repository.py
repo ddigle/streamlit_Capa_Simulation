@@ -20,6 +20,7 @@ from capa_simulation.io.core_data_source import (
     load_core_data_contract,
     normalize_core_data,
 )
+from capa_simulation.persistence import sync_state
 from capa_simulation.persistence._sql_helpers import (
     connect,
     hash_tables,
@@ -765,6 +766,9 @@ class DuckDBScenarioRepository:
             except Exception:
                 connection.execute("ROLLBACK")
                 raise
+        # COMMIT 이 끝나고 연결이 닫힌 뒤에만 표시한다. `sync_state` 는 등록되지 않은
+        # 환경에서 아무 파일도 만들지 않으므로 개발 PC·CI 동작은 그대로다.
+        sync_state.mark_dirty(self._database_path)
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
         return connect(self._database_path)

@@ -285,3 +285,20 @@ def test_committed_config_keeps_local_mode() -> None:
     payload = json.loads(object_storage.CONFIG_PATH.read_text(encoding="utf-8"))
 
     assert payload.get("mode") == "local"
+
+
+def test_transfer_timeout_grows_with_size_but_never_shrinks() -> None:
+    """고정 300초는 지금 스냅샷에는 넉넉하지만 DB 가 커지면 그대로 상한이 된다.
+
+    사내 실측(2026-09-09) 42.8 MiB 는 300초 안에 충분히 들어간다. 크기를 모르면 기본값을
+    쓴다 — 짐작으로 제한시간을 줄이지 않는다.
+    """
+    mib = 1024 * 1024
+
+    assert object_storage.transfer_timeout_seconds(None) == 300.0
+    assert object_storage.transfer_timeout_seconds(0) == 300.0
+    assert object_storage.transfer_timeout_seconds(43 * mib) == 300.0
+    assert object_storage.transfer_timeout_seconds(300 * mib) > 300.0
+    assert object_storage.transfer_timeout_seconds(
+        600 * mib
+    ) > object_storage.transfer_timeout_seconds(300 * mib)

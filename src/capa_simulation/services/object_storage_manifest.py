@@ -413,7 +413,7 @@ def decision_message(
     label = DATASET_LABELS[dataset]
     generation = "없음" if head is None else f"seq {head.seq}"
     details = dict(extra or {})
-    messages: Mapping[PushDecision | PullDecision, str] = {
+    push_messages: Mapping[PushDecision, str] = {
         PushDecision.PUBLISH: f"{label} 변경을 올립니다(원격 {generation}).",
         PushDecision.UP_TO_DATE: f"{label} 은 원격과 같습니다(원격 {generation}).",
         PushDecision.PARENT_MOVED: (
@@ -429,6 +429,10 @@ def decision_message(
         PushDecision.REMOTE_EMPTY: (
             f"{label} 원격이 비어 있습니다. 최초 이관은 sync 스크립트의 init 이 합니다."
         ),
+    }
+    # 두 열거형은 `str` 을 섞은 Enum 이고 `up_to_date`·`remote_empty` 값이 겹친다. 한 사전에
+    # 담으면 같은 값끼리 키가 충돌해 뒤에 적은 pull 문구가 push 문구를 덮어쓴다.
+    pull_messages: Mapping[PullDecision, str] = {
         PullDecision.DOWNLOAD: f"{label} 을 원격 {generation} 으로 내려받습니다.",
         PullDecision.UP_TO_DATE: f"{label} 은 이미 원격 {generation} 입니다.",
         PullDecision.AMBIGUOUS: (
@@ -446,7 +450,9 @@ def decision_message(
         ),
         PullDecision.LOCAL_MISSING: f"{label} 로컬 DB 가 없어 원격 {generation} 을 받습니다.",
     }
-    message = messages[decision]
+    message = (
+        push_messages[decision] if isinstance(decision, PushDecision) else pull_messages[decision]
+    )
     if details:
         message += " · " + " · ".join(f"{key} {value}" for key, value in sorted(details.items()))
     return message

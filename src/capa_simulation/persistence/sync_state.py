@@ -60,14 +60,27 @@ def sidecar_path(database_path: Path) -> Path:
     return database_path.with_name(database_path.name + SIDECAR_SUFFIX)
 
 
+def _registry_key(database_path: Path) -> Path:
+    """등록 대조에만 쓰는 정규화 경로.
+
+    저장소는 `database_path.resolve()` 를 들고 있고 부트는 설정에 적힌 경로를 그대로 넘긴다.
+    정규화하지 않으면 같은 파일인데 키가 달라 `_update` 가 조용히 아무 일도 하지 않는다 —
+    변경 표시가 사라지고 다음 push 가 "올릴 것 없음" 으로 끝난다.
+    """
+    try:
+        return Path(database_path).resolve()
+    except OSError:
+        return Path(database_path)
+
+
 def enable(paths: Mapping[Path, DatasetName]) -> None:
     """managed 모드에서 boot 가 한 번 부른다. 이 호출 전에는 어떤 파일도 만들지 않는다."""
     _ENABLED.clear()
-    _ENABLED.update({Path(path): dataset for path, dataset in paths.items()})
+    _ENABLED.update({_registry_key(path): dataset for path, dataset in paths.items()})
 
 
 def is_enabled(database_path: Path) -> bool:
-    return Path(database_path) in _ENABLED
+    return _registry_key(database_path) in _ENABLED
 
 
 def clear_all() -> None:
@@ -119,7 +132,7 @@ def write_state(database_path: Path, state: SyncState) -> None:
 def _update(database_path: Path, **changes: object) -> None:
     """등록된 경로에만 쓴다. 실패는 삼킨다 — 저장 경로로 예외를 올려보내지 않는다."""
     path = Path(database_path)
-    dataset = _ENABLED.get(path)
+    dataset = _ENABLED.get(_registry_key(path))
     if dataset is None:
         return
     try:
@@ -206,7 +219,7 @@ def adopt_generation(
 def touch_heartbeat(database_path: Path, *, instance_id: str) -> None:
     """살아 있음을 알린다. 10초에 한 번만 실제로 쓴다 — rerun 마다 쓸 이유가 없다."""
     path = Path(database_path)
-    if path not in _ENABLED:
+    if _registry_key(path) not in _ENABLED:
         return
     now = time.monotonic()
     last = _LAST_HEARTBEAT.get(path)

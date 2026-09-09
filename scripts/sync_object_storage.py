@@ -431,7 +431,7 @@ def command_pull(args: argparse.Namespace) -> int:
             continue
         scratch = snapshot_export.prepare_scratch()
         download = scratch / f"{dataset}-download.duckdb"
-        client.get_file(head.snapshot_key, download)
+        client.get_file(head.snapshot_key, download, expected_bytes=head.size_bytes)
         snapshot_export.verify_snapshot(
             download,
             dataset=dataset,  # type: ignore[arg-type]

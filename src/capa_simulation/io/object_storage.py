@@ -74,6 +74,25 @@ EXIT_CODE_MEANING: Final[Mapping[int, str]] = {
 
 DEFAULT_TIMEOUT_SECONDS: Final = 300.0
 SMALL_TIMEOUT_SECONDS: Final = 60.0
+_MIB: Final = 1024 * 1024
+# 전송 제한시간의 바닥 속도. 사내 실측(2026-09-09)에서 42.8 MiB push 가 스냅샷 생성 2.88초를
+# 뺀 63초 안에 끝났다. 그 63초에는 `aws` 프로세스 기동이 여러 번 섞여 있어 실제 전송은 더
+# 빠르다. 바닥값을 0.3 MiB/s 로 두면 최악으로 잡은 실측치의 두 배 이상 여유가 된다.
+MIN_TRANSFER_MIB_PER_SECOND: Final = 0.3
+TRANSFER_OVERHEAD_SECONDS: Final = 60.0
+
+
+def transfer_timeout_seconds(size_bytes: int | None) -> float:
+    """전송 크기에 맞춘 제한시간. 절대 `DEFAULT_TIMEOUT_SECONDS` 보다 짧아지지 않는다.
+
+    고정 300초는 지금 스냅샷(42.8 MiB)에는 넉넉하지만 DB 가 커지면 그대로 상한이 된다.
+    크기를 모르면(`None`) 기본값을 쓴다 — 짐작으로 줄이지 않는다.
+    """
+    if size_bytes is None or size_bytes <= 0:
+        return DEFAULT_TIMEOUT_SECONDS
+    estimated = TRANSFER_OVERHEAD_SECONDS + (size_bytes / _MIB) / MIN_TRANSFER_MIB_PER_SECOND
+    return max(DEFAULT_TIMEOUT_SECONDS, estimated)
+
 
 SyncMode = Literal["local", "managed"]
 
@@ -286,11 +305,13 @@ class ObjectStorageClient:
         finally:
             destination.unlink(missing_ok=True)
 
-    def get_file(self, key: str, destination: Path) -> ObjectRecord:
+    def get_file(
+        self, key: str, destination: Path, *, expected_bytes: int | None = None
+    ) -> ObjectRecord:
         destination.parent.mkdir(parents=True, exist_ok=True)
         result = self._run(
             self._argv("get-object", "--key", key, str(destination)),
-            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+            timeout_seconds=transfer_timeout_seconds(expected_bytes),
         )
         payload = _parse_json(_required(result))
         return ObjectRecord(
@@ -339,7 +360,7 @@ class ObjectStorageClient:
             args += ["--if-none-match", "*"]
         result = self._run(
             self._argv(*args),
-            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+            timeout_seconds=transfer_timeout_seconds(_size_or_none(source)),
             allow_precondition_failed=True,
         )
         if result is None:
@@ -499,3 +520,11 @@ def _is_retryable(result: CommandResult) -> bool:
     if "credential" in text or "access denied" in text or "invalidaccesskeyid" in text:
         return False
     return True
+
+
+def _size_or_none(path: Path) -> int | None:
+    """크기를 못 읽으면 None. 제한시간 계산은 여기서 실패해선 안 된다."""
+    try:
+        return path.stat().st_size
+    except OSError:
+        return None

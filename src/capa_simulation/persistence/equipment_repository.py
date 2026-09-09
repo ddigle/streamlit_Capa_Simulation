@@ -16,6 +16,7 @@ from uuid import uuid4
 import duckdb
 import pandas as pd
 
+from capa_simulation.persistence import sync_state
 from capa_simulation.persistence._sql_helpers import connect
 from capa_simulation.persistence.equipment_migration_runner import apply_equipment_migrations
 from capa_simulation.services.equipment_contract import (
@@ -282,6 +283,9 @@ class DuckDBEquipmentRepository:
             except Exception:
                 connection.execute("ROLLBACK")
                 raise
+        # COMMIT 이 끝나고 연결이 닫힌 뒤에만 표시한다. `sync_state` 는 등록되지 않은
+        # 환경에서 아무 파일도 만들지 않으므로 개발 PC·CI 동작은 그대로다.
+        sync_state.mark_dirty(self._database_path)
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
         return connect(self._database_path)
