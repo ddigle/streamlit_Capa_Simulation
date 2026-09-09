@@ -277,7 +277,7 @@ STEP·MCP 키 도입 전에 첫 행 선택 방식으로 저장한 사내 검증 
 사내 조회를 연결하려면
 `src/capa_simulation/io/company_bigdataquery_adapter.py`의 `QUERY_TEMPLATE`과
 `SOURCE_COLUMN_MAPPING`을 실제 SQL·컬럼명으로 채웁니다. `bigdataquery`는 사내 전용
-환경에서만 설치하고 공통 requirements에는 넣지 않습니다.
+환경에서만 설치하고 `pyproject.toml`의 공통 의존성에는 넣지 않습니다.
 
 XLSB, SQLite 및 DuckDB 파일은 로컬 데이터이므로 Git에 포함되지 않습니다. 시뮬레이션
 DuckDB는 `data/capa_simulation.duckdb`, 설비 운영 전용 DuckDB는
@@ -388,11 +388,15 @@ py -3.10 --version
 py -3.10 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip setuptools wheel
-pip install -r requirements-dev.txt
+pip install -e .[dev]
 ```
 
 PowerShell에서 가상환경 활성화 스크립트가 차단되면 조직 보안 정책에 맞게 실행
 정책을 확인합니다. 활성화하지 않고도 `.venv`의 실행 파일을 직접 사용할 수 있습니다.
+
+에디터가 `import streamlit`을 찾지 못한다고 표시하면 인터프리터를 `.venv`로 지정합니다.
+`pyrightconfig.json`이 `.venv`와 `src`를 알려 주지만, 편집기가 이 파일을 읽지 않으면
+인터프리터를 직접 골라야 합니다. 실행·테스트에는 영향이 없는 표시상의 문제입니다.
 
 ## 실행
 

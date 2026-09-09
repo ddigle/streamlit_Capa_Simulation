@@ -1,0 +1,8 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": ["src"],
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "basic",
+  "exclude": [".venv*", "build", "**/__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"]
+}
