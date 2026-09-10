@@ -5,9 +5,13 @@ from io import BytesIO
 import pandas as pd
 from test_equipment_availability import _downtime, _equipment
 
+from capa_simulation.services.equipment_contract import QUAL_CONFIRMATION_STATUSES
 from capa_simulation.services.equipment_csv import (
+    EQUIPMENT_CHOICE_ROWS,
+    SAMPLE_DOWNTIME_NOTE,
     SAMPLE_EQUIPMENT_ID,
-    SAMPLE_NOTE,
+    SAMPLE_EQUIPMENT_MANAGER,
+    SAMPLE_EQUIPMENT_NOTE,
     build_downtime_import_preview,
     build_equipment_import_preview,
     downtime_csv_template,
@@ -24,13 +28,24 @@ from capa_simulation.services.equipment_csv import (
 def test_equipment_csv_template_round_trips_with_30_columns() -> None:
     result = read_equipment_csv(equipment_csv_template())
 
-    assert len(equipment_csv_template().decode("utf-8-sig").splitlines()) == 2
     assert len(result.columns) == 30
+    assert "사업부" not in result.columns
+    assert result.columns.tolist()[5:7] == ["투자기준", "담당자"]
+    assert len(result) == 1
     assert result.loc[0, "호기"] == SAMPLE_EQUIPMENT_ID
-    assert result.loc[0, "비고"] == SAMPLE_NOTE
-    assert result.loc[0, "확정상태"] == "확정"
-    assert "샘플데이터" in result.loc[0, "비고"]
-    assert "삭제" in result.loc[0, "비고"]
+    assert result.loc[0, "담당자"] == SAMPLE_EQUIPMENT_MANAGER
+    assert result.loc[0, "비고"] == SAMPLE_EQUIPMENT_NOTE
+    assert result.loc[0, "확정상태"] == "계획"
+
+
+def test_equipment_csv_template_lists_choice_rows_without_equipment_id() -> None:
+    raw = pd.read_csv(BytesIO(equipment_csv_template()), dtype="object")
+
+    assert len(raw) == 1 + len(EQUIPMENT_CHOICE_ROWS)
+    choices = raw.loc[raw["호기"].isna()]
+    assert len(choices) == len(EQUIPMENT_CHOICE_ROWS)
+    assert choices["활용구분"].tolist() == ["WLP", "2.5D", "HCB"]
+    assert set(raw["확정상태"]) == set(QUAL_CONFIRMATION_STATUSES)
 
 
 def test_downtime_csv_template_has_no_id_and_round_trips() -> None:
@@ -40,7 +55,7 @@ def test_downtime_csv_template_has_no_id_and_round_trips() -> None:
     assert len(downtime_csv_template().decode("utf-8-sig").splitlines()) == 2
     assert "비가동ID" not in result.columns
     assert result.loc[0, "호기"] == SAMPLE_EQUIPMENT_ID
-    assert result.loc[0, "비고"] == SAMPLE_NOTE
+    assert result.loc[0, "비고"] == SAMPLE_DOWNTIME_NOTE
 
 
 def test_equipment_templates_round_trip_through_excel_clipboard() -> None:
@@ -55,7 +70,9 @@ def test_equipment_templates_round_trip_through_excel_clipboard() -> None:
     )
     downtime = read_downtime_clipboard(downtime_text, equipment=equipment)
 
+    assert len(equipment) == 1
     assert equipment.loc[0, "호기"] == SAMPLE_EQUIPMENT_ID
+    assert equipment.loc[0, "담당자"] == SAMPLE_EQUIPMENT_MANAGER
     assert downtime.loc[0, "호기"] == SAMPLE_EQUIPMENT_ID
 
 

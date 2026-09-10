@@ -17,6 +17,15 @@ DASHBOARD_TITLE_HEIGHT_PX = 44
 
 DASHBOARD_TITLE_GAP_PX = 8
 
+# 상세 B/N 공정 시트. 한 칸에는 가로막대 한 줄과 그 위의 공정명만 들어가고, 순위 20행이
+# 한 화면에 담기는 행 높이다. 세 값은 Figure 높이·표 높이·행 경계 계산이 함께 보므로
+# 한 곳에서만 정의한다.
+BOTTLENECK_DETAIL_HEADER_HEIGHT_PX = 36
+
+BOTTLENECK_DETAIL_ROW_HEIGHT_PX = 29
+
+BOTTLENECK_DETAIL_BAR_HEIGHT_PX = 22
+
 LOB_TABLE_HEADER_HEIGHT_PX = 45
 
 LOB_DENSITY_ROW_HEIGHT_PX = 36

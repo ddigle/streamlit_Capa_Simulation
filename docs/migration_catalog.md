@@ -44,3 +44,4 @@ sidecar 카탈로그다.
 | `src/capa_simulation/persistence/equipment_migrations/0003_equipment_master_contract.sql` | 30컬럼 설비 마스터 계약과 계약 버전을 추가한다. |
 | `src/capa_simulation/persistence/equipment_migrations/0004_qual_confirmation_status.sql` | 설비 마스터에 Qual 확정상태를 추가하고 기존 값을 이관한다. |
 | `src/capa_simulation/persistence/equipment_migrations/0005_standard_target_availability.sql` | 표준 목표 Capa용 공정·주차별 수동 가용대수 최신값을 저장한다. |
+| `src/capa_simulation/persistence/equipment_migrations/0006_manager_name.sql` | 설비 마스터에 담당자 컬럼을 추가한다. |

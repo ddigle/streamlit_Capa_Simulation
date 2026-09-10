@@ -1,20 +1,22 @@
 # HANDOFF — 2026-09-06 전역 리팩토링 세션
 
-이 문서는 인수인계용 요약이다. 상세 근거와 측정치는 `docs/TODO.md` §3-6 에 있고,
-개발 규칙은 `AGENTS.md` 가 정본이다. 여기서는 **지금 상태**와 **다음에 할 일**만 적는다.
+이 문서는 인수인계용 요약이다. 상세 근거와 측정치는 `docs/TODO.md` §3-6(2026-09-06 세션)·
+§3-9(2026-09-09 세션) 에 있고, 개발 규칙은 `AGENTS.md` 가 정본이다. 여기서는 **지금 상태**와
+**다음에 할 일**만 적는다.
 
-## 1. 현재 상태
+## 1. 현재 상태 (2026-09-06 세션 종료 시점)
 
 | 항목 | 값 |
 |---|---|
 | 브랜치 | `main` (작업 트리 깨끗) |
-| 원격 | `origin/main` = `06bb8ad` — 로컬과 동일, 미푸시 커밋 0 |
+| 원격 | 이 시점에는 `origin/main` = `06bb8ad` 로 로컬과 같았다. 이후 커밋이 쌓이므로 **현재 값은 `git status -sb` 와 `git log --oneline origin/main..HEAD` 로 확인한다** |
 | 검증 | ruff format·check 통과 / mypy 112 파일 이상 없음 / pytest 전체 통과 |
 | 배포본 | `C:\Dev\Streamlit_Project_Move` 재생성 (150 파일, 금지 항목 0, 해시 불일치 0) |
 | ZIP | `C:\Dev\Streamlit_Project_Dummyfile\202609061010.zip` (399,309 bytes, 엔트리 150) |
 | 메일 | 2026-09-06 발송 완료. 수신 `hoyeon.jeon@samsung.com`, 제목 `202609061010`, 보낸 편지함에서 확인함 |
 
-ZIP 은 `06bb8ad` 커밋의 소스와 동일하다. `CLAUDE.md` 는 추적되지 않은 파일로 남아 있다.
+ZIP 은 `06bb8ad` 커밋의 소스와 동일하다. `CLAUDE.md` 는 이 시점까지 추적되지 않은 파일이었다
+— 지금은 `HANDOFF.md` 와 함께 추적된다(`git ls-files`).
 
 ## 2. 이번 세션에 한 일
 
@@ -127,7 +129,7 @@ SELECT equipment_contract_version, COUNT(*) FROM equipment_ops.revision GROUP BY
 
 # HANDOFF — 2026-09-09 S3 동기화 사내 실측 세션
 
-## 5. 현재 상태
+## 5. 현재 상태 (2026-09-09 세션)
 
 사내 PC 에 배포한 버전으로 오브젝트 스토리지 왕복(`init` → `push` → `pull`)이 **성공했다.**
 1~4단계 절차(`docs/objectstore_setup.md`)가 실제 환경에서 검증됐다.
@@ -187,14 +189,16 @@ SELECT equipment_contract_version, COUNT(*) FROM equipment_ops.revision GROUP BY
 
 고정 300초는 지금 스냅샷에는 6배 여유지만 DB 가 커지면 그대로 상한이 된다.
 `transfer_timeout_seconds()` 가 `max(300, 60 + MiB/0.3)` 을 돌려준다. 바닥 속도 0.3 MiB/s 는
-실측을 최악으로 잡은 값의 절반이다. 스냅샷이 90 MiB 를 넘어야 300초 위로 올라간다.
+실측을 최악으로 잡은 값의 절반이다. 스냅샷이 72 MiB 를 넘어야 300초 위로 올라간다
+(60 + 72/0.3 = 300).
 
-### D. `requirements` 파일 4개 제거
+### D. `requirements` 파일 제거
 
 `requirements.txt` 는 `-e .`, `requirements-dev.txt` 는 `-e .[dev]` 였다 — `pyproject.toml`
 을 가리키는 껍데기라 정보가 없었다. 교차 검사로 확인했다: pyproject 의 직접 선언 12개가
 락에 모두 있고, 락의 고정 버전이 전부 선언 범위를 만족하며, 양방향으로 빠지거나 남는
-패키지가 없었다. 설치는 이제 `pip install -e .` / `pip install -e .[dev]` 하나뿐이다.
+패키지가 없었다. 지운 것은 이 둘이고(커밋 제목의 「네 개」는 변경 파일 수를 센 오기다),
+설치는 이제 `pip install -e .` / `pip install -e .[dev]` 하나뿐이다.
 
 `pyrightconfig.json` 을 추가했다. 에디터가 uv 의 `.venv` 를 못 찾아 `import streamlit` 에
 빨간 줄을 긋는 문제 때문이다. `.vscode/` 는 `.gitignore` 에 막혀 배포 ZIP 에 실리지 않아서
@@ -214,6 +218,9 @@ SELECT equipment_contract_version, COUNT(*) FROM equipment_ops.revision GROUP BY
 가야 한다. 체크리스트 9번이 이 선택을 가른다.
 
 ### 8-2. 남은 확인 항목
+
+번호는 `docs/objectstore_setup.md` 의 「사내에서 확인해 주셔야 하는 것」 10행 표를 따른다.
+확인 결과도 그 표에 적는다.
 
 - **9번 — WebIDE 재시작 주기·디스크 영속성.** 위 결정의 전제다.
 - **8번 — WebIDE 안에서 `aws` 가 PATH 에 있는가.** 사내 PC 는 확인됐지만 WebIDE 는 아직이다.

@@ -154,7 +154,7 @@ class CommandRunner(Protocol):
 
 @dataclass(frozen=True)
 class SubprocessCommandRunner:
-    """실제 `aws` 를 부르는 실행기. 이 저장소에서 `subprocess` 를 쓰는 유일한 자리다."""
+    """실제 `aws` 를 부르는 실행기. 앱 코드에서 `subprocess` 를 쓰는 유일한 자리다."""
 
     executable: str = "aws"
 

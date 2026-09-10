@@ -10,6 +10,9 @@ Streamlit 구현 규칙, 변경 체크리스트) 이 파일은 그 요약과 진
 바꾸기 전에는 `AGENTS.md`의 해당 절을 반드시 읽는다. 구조나 계산 규칙을 바꾸면 같은 변경에서
 `AGENTS.md`·`README.md`·`docs/TODO.md`도 갱신한다.
 
+직전 세션의 현재 상태와 다음 할 일은 `HANDOFF.md`에 있다. 정본이 아니라 그 시점의 세션
+스냅샷이므로 위 세 문서·코드와 어긋나면 위를 따른다.
+
 ## 명령
 
 Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다(PowerShell 기준).
@@ -49,17 +52,28 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
 
 - `app.py` — 진입점. `navigation.run()` 전에 공식 시나리오 부트스트랩, 공통 사이드바
   (시나리오 컨트롤·조회기간)를 만든다. 페이지 간 공유 위젯은 여기서만 만든다.
-- `src/capa_simulation/navigation.py` — 사이드바 페이지 목록의 **선언 한 곳**. 페이지 추가·
-  제목 변경은 여기만 고친다.
+- `src/capa_simulation/navigation.py` — 사이드바 페이지 목록의 **선언 한 곳**. 기존 그룹의
+  하위 페이지 추가·제목 변경은 여기만 고친다. 다만 `app.py`가
+  `st.navigation(..., position="hidden")`으로 기본 사이드바를 끄고 그룹 컨테이너를 손수
+  배치하며 CSS가 `st-key-*_navigation`을 그룹별로 지정하므로, **새 최상위 그룹**을 만들면
+  `app.py`도 함께 고쳐야 한다.
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·
   조회기간)와 공용 예외 튜플 `BOOTSTRAP_ERRORS`. 페이지가 각자 예외 튜플을 만들지 않는다.
-- `app_pages/` — UI만. 계산 로직을 여기 넣지 않는다(`home.py`는 이미 크다).
-- `services/` — 순수 계산 함수. UI 상태에 접근하지 않는다.
-- `services/simulation_cache.py` — Streamlit 캐시는 **여기 래퍼에만** 둔다.
-- `services/frame_contracts.py` — 서비스 공용 컬럼 계약과 업무 키 정규화.
-- `io/reference_cache.py` — 활성 기준정보 경계. 계산 페이지는 기준정보를 직접 읽지 말고
-  `get_effective_reference_tables()`만 쓴다.
-- `persistence/` — DuckDB 마이그레이션·Repository·모델. `design/tokens.py` — 색·서체·표 치수.
+- `app_pages/` — UI만. 계산 로직을 페이지에 넣지 않는다.
+- `src/capa_simulation/components/` — 페이지가 공유하는 화면 조각(앱·페이지 머리말, 월별 표,
+  Figure 그리기 유틸, 탭 상태 등). 둘 이상의 페이지가 같은 UI를 쓰면 여기로 올린다.
+- `src/capa_simulation/services/` — 순수 계산 함수. UI 상태에 접근하지 않는다.
+- `src/capa_simulation/services/simulation_cache.py` — 계산 함수의 content-addressed
+  Streamlit 캐시 래퍼. Streamlit 캐시는 정해진 경계 모듈에만 둔다 — 이 파일,
+  `src/capa_simulation/persistence/cache.py`·`equipment_cache.py`(불변 리비전 스냅샷과 공용
+  표시순서·설비 스냅샷의 캐시 경계), `src/capa_simulation/components/`의
+  `display_order_management.py`(그 탭 국소)다. 그 밖의 모듈에 `@st.cache_data`·
+  `@st.cache_resource`를 새로 두지 않는다.
+- `src/capa_simulation/services/frame_contracts.py` — 서비스 공용 컬럼 계약과 업무 키 정규화.
+- `src/capa_simulation/io/reference_cache.py` — 활성 기준정보 경계. 계산 페이지는 기준정보를
+  직접 읽지 말고 `get_effective_reference_tables()`만 쓴다.
+- `src/capa_simulation/persistence/` — DuckDB 마이그레이션·Repository·모델.
+  `src/capa_simulation/design/tokens.py` — 색·서체·표 치수.
 
 DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_simulation.duckdb`)과 가용설비
 운영(`data/equipment_availability.duckdb`). 설비 쪽은 전용 마이그레이션·Repository·캐시를 쓰고
@@ -79,9 +93,9 @@ DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_sim
 ### SQL 마이그레이션
 
 적용된 마이그레이션은 **버전 번호로 체크섬을 대조**하므로 주석 추가를 포함해 절대 수정하지
-않는다. 후속 번호를 새로 추가한다. **2·3번은 영구 결번**이고 재사용하면 기존 DB에서 앱이
-시작조차 못 한다(`tests/test_migration_numbering.py`가 막는다). 신규 SQL은 `--` 형식의
-`Purpose` 한 줄과 `docs/migration_catalog.md` 항목을 함께 작성한다.
+않는다. 후속 번호를 새로 추가한다. **시뮬레이션 DB의 2·3번은 영구 결번**이고 재사용하면
+기존 DB에서 앱이 시작조차 못 한다(`tests/test_migration_numbering.py`가 막는다). 신규 SQL은
+`--` 형식의 `Purpose` 한 줄과 `docs/migration_catalog.md` 항목을 함께 작성한다.
 
 ## 코드 규칙
 

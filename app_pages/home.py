@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.home_figures import (
+    BOTTLENECK_DETAIL_RANK_LIMIT,
     build_bottleneck_detail_figures,
     build_lob_summary_figures,
     build_plan_detail_figures,
@@ -40,9 +41,9 @@ from capa_simulation.scenario_state import (
 )
 from capa_simulation.services.dashboard import (
     build_bottleneck_capacity,
+    build_monthly_bottleneck_details_from_ranking,
     build_monthly_bottleneck_ranking,
     build_monthly_bottleneck_top5_from_ranking,
-    build_monthly_bottleneck_top10_details_from_ranking,
     build_monthly_bottlenecks_from_ranking,
     build_production_lob_summary,
 )
@@ -322,9 +323,10 @@ monthly_top5 = build_monthly_bottleneck_top5_from_ranking(
     monthly_wafer=monthly_wafer,
 )
 if show_home_details:
-    monthly_top10_details = build_monthly_bottleneck_top10_details_from_ranking(
+    monthly_bottleneck_details = build_monthly_bottleneck_details_from_ranking(
         bottleneck_ranking,
         monthly_wafer,
+        rank_limit=BOTTLENECK_DETAIL_RANK_LIMIT,
     )
 lob_summary = build_production_lob_summary(
     monthly_density,
@@ -364,9 +366,10 @@ detail_label_figure, detail_month_figure = build_plan_detail_figures(
     month_labels=month_labels,
 )
 bottleneck_detail_label_figure, bottleneck_detail_month_figure = build_bottleneck_detail_figures(
-    monthly_density=monthly_density,
-    monthly_top10_details=monthly_top10_details,
+    monthly_bottleneck_details=monthly_bottleneck_details,
     month_labels=month_labels,
+    secure_threshold=secure_threshold,
+    warning_threshold=warning_threshold,
 )
 cached_figures = (
     label_figure,

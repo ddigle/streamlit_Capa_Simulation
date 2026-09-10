@@ -240,30 +240,44 @@ def build_monthly_bottleneck_top5_from_ranking(
     return result.reset_index(drop=True)
 
 
-def build_monthly_bottleneck_top10_details(
+def build_monthly_bottleneck_details(
     securement_rate: pd.DataFrame,
     monthly_wafer: pd.DataFrame,
     included_processes: list[str] | None = None,
+    *,
+    rank_limit: int,
 ) -> pd.DataFrame:
-    """Return each month's ten lowest-rate processes with equipment and Wafer Capa."""
+    """Return each month's lowest-rate processes with equipment and Wafer Capa."""
     required = ["생산계획년월", "공정", "가용대수", "소요대수", "확보율"]
     missing = [column for column in required if column not in securement_rate.columns]
     if missing:
         raise ValueError(f"확보율 필수 컬럼이 없습니다: {', '.join(missing)}")
     ranking = build_monthly_bottleneck_ranking(securement_rate, included_processes)
-    return build_monthly_bottleneck_top10_details_from_ranking(ranking, monthly_wafer)
+    return build_monthly_bottleneck_details_from_ranking(
+        ranking,
+        monthly_wafer,
+        rank_limit=rank_limit,
+    )
 
 
-def build_monthly_bottleneck_top10_details_from_ranking(
+def build_monthly_bottleneck_details_from_ranking(
     ranking: pd.DataFrame,
     monthly_wafer: pd.DataFrame,
+    *,
+    rank_limit: int,
 ) -> pd.DataFrame:
-    """Build Top 10 equipment details from one shared monthly ranking."""
+    """Build the lowest-rate equipment details from one shared monthly ranking.
+
+    `rank_limit`은 화면이 보여줄 순위 상한이다. 그 달의 유효 공정이 상한보다 적으면
+    있는 만큼만 나온다.
+    """
+    if rank_limit < 1:
+        raise ValueError("B/N 상세 순위 상한은 1 이상이어야 합니다.")
     required = ["생산계획년월", "공정", "가용대수", "소요대수", "확보율", "순위"]
     missing = [column for column in required if column not in ranking.columns]
     if missing:
         raise ValueError(f"B/N 순위 필수 컬럼이 없습니다: {', '.join(missing)}")
-    prepared = ranking.loc[ranking["순위"].le(10), required].copy()
+    prepared = ranking.loc[ranking["순위"].le(rank_limit), required].copy()
 
     wafer_required = ["생산계획년월", "Wafer 부하량"]
     wafer_missing = [column for column in wafer_required if column not in monthly_wafer.columns]

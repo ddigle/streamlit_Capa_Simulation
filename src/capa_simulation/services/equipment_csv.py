@@ -20,8 +20,17 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_master,
 )
 
-SAMPLE_EQUIPMENT_ID = "EQ-SAMPLE-001"
-SAMPLE_NOTE = "샘플데이터 - 업로드 전 이 행을 삭제하세요"
+SAMPLE_EQUIPMENT_ID = "SAM01"
+SAMPLE_EQUIPMENT_MANAGER = "홍길동"
+SAMPLE_EQUIPMENT_NOTE = "이력 기록"
+SAMPLE_DOWNTIME_NOTE = "내용 기록"
+
+# 호기를 비워 둔 안내 행. 열별 허용값만 나열하며 `prepare_equipment_master` 가 버린다.
+EQUIPMENT_CHOICE_ROWS: tuple[dict[str, str], ...] = (
+    {"라인구분": "PKG", "활용구분": "WLP", "투자기준": "322K", "확정상태": "확정"},
+    {"활용구분": "2.5D", "확정상태": "완료"},
+    {"활용구분": "HCB", "확정상태": "지연"},
+)
 
 
 def equipment_csv_template() -> bytes:
@@ -30,39 +39,40 @@ def equipment_csv_template() -> bytes:
             [
                 {
                     "호기": SAMPLE_EQUIPMENT_ID,
-                    "공정대분류": "B/N",
-                    "공정소분류": "TC Bonding",
-                    "라인구분": "Line-A",
-                    "활용구분": "양산",
-                    "사업부": "PKG",
-                    "투자기준": "신규 투자",
-                    "Maker": "Sample Maker",
-                    "모델": "Sample Model",
-                    "분류1": "Capa 제약",
-                    "분류2": "신규 도입",
+                    "공정대분류": "Wafer_Sorter",
+                    "공정소분류": "Wafer_Sorter_P878",
+                    "라인구분": "FRONT",
+                    "활용구분": "HBM",
+                    "투자기준": "299K",
+                    "담당자": SAMPLE_EQUIPMENT_MANAGER,
+                    "Maker": "KOREATECHNO",
+                    "모델": "KTLMS-3404B",
+                    "분류1": "",
+                    "분류2": "",
                     "분류3": "",
                     "동": "C1",
-                    "층": "1F",
-                    "X좌표": 10.0,
-                    "Y좌표": 10.0,
-                    "Xsize": 12.0,
-                    "Ysize": 7.0,
+                    "층": "4F",
+                    "X좌표": "",
+                    "Y좌표": "",
+                    "Xsize": "",
+                    "Ysize": "",
                     "제진대일정": "2026-09-01",
                     "물류일정": "2026-09-03",
                     "입고일정": "2026-09-05",
                     "Qual일정": "2026-09-16",
-                    "확정상태": "확정",
+                    "확정상태": "계획",
                     "반출일정": "",
                     "이설일": "",
                     "장기보관여부": "N",
                     "기존설비여부": "N",
-                    "호기이력": "신규 도입 예시",
-                    "비고": SAMPLE_NOTE,
-                    "레이아웃표시": "Y",
-                }
+                    "호기이력": "호기 변동 이력 기록",
+                    "비고": SAMPLE_EQUIPMENT_NOTE,
+                    "레이아웃표시": "N",
+                },
+                *EQUIPMENT_CHOICE_ROWS,
             ],
             columns=EQUIPMENT_COLUMNS,
-        )
+        ).fillna("")
     )
 
 
@@ -75,8 +85,8 @@ def downtime_csv_template() -> bytes:
                     "비가동유형": "고장",
                     "시작일": "2026-10-01",
                     "종료일": "2026-10-03",
-                    "상세사유": "예시: 부품 교체",
-                    "비고": SAMPLE_NOTE,
+                    "상세사유": "사유 기록",
+                    "비고": SAMPLE_DOWNTIME_NOTE,
                 }
             ],
             columns=DOWNTIME_COLUMNS,

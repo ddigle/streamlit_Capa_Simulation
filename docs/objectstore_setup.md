@@ -17,6 +17,7 @@ DuckDB 파일을 WebIDE 밖의 S3 호환 스토리지(사내 구축, Dell ECS �
 | 프로필 | `hoyeon.jeon-org-system_package_mfg_team` |
 | 네임스페이스 | `org-system_package_mfg_team` — **프로필에 매여 있고 명령 인자가 아니다** |
 | 버킷 | `Capa_simulation_project` |
+| 명령 접두 | 사내는 `uv` 구성이라 **`uv run python`** — 아래 본문의 `.\.venv\Scripts\python.exe` 는 개발 PC 표기다 |
 
 ---
 
@@ -39,12 +40,22 @@ DuckDB 파일을 WebIDE 밖의 S3 호환 스토리지(사내 구축, Dell ECS �
 ## 1단계 — 접속 확인
 
 ```powershell
-$env:CAPA_S3_SYNC_MODE = "managed"
+setx CAPA_S3_SYNC_MODE managed       # 앱용. 새로 여는 창부터 적용되므로 앱을 다시 띄워야 한다
+$env:CAPA_S3_SYNC_MODE = "managed"   # 지금 창에서 돌릴 스크립트용. 이 셸이 닫히면 사라진다
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py doctor
 ```
 
+`$env:` 만 걸고 앱을 다른 창에서 띄우면 **앱은 `local` 로 뜬다.** 커밋된
+`config/object_storage.json` 의 `mode` 가 `local` 이고 `sync_boot.py` 는 `managed` 가 아니면
+사이드카 등록을 건너뛴다 — 그러면 리비전을 아무리 저장해도 `mark_dirty()` 가 파일을 쓰지
+않아 사이드카가 `dirty: false` 로 남고 `push` 가 영원히 "올릴 것 없음" 이 된다.
+**이미 한 번 일어난 결함이다.** 그래서 `setx` 는 앱용, `$env:` 는 이 창의 스크립트용이다.
+
 모드·엔드포인트·버킷·프로필과 CLI 버전, 그리고 두 DB 의 원격/로컬 세대를 찍는다.
 원격이 비어 있는 것이 최초 상태의 정상이다.
+
+`mode` 는 이 스크립트에서 **출력에만 쓰이고 어떤 하위 명령도 막지 않는다.** 모드가 실제로
+가르는 것은 앱 쪽 `sync_boot.py` 의 사이드카 등록뿐이다.
 
 여기서 `Content-MD5` 오류가 나면 0단계의 체크섬 설정이 안 먹은 것이다. 그래도 나면
 **CLI 를 2.22.x 로 내린다.** 이것이 이 연동에서 1순위 위험이다.
@@ -77,6 +88,7 @@ $env:CAPA_S3_SYNC_MODE = "managed"
 ```powershell
 # 앱에서 리비전을 하나 저장한 뒤
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py status   # 변경: 있음
+# — 앱 프로세스가 managed 로 떠 있어야 여기에 "변경 있음" 이 찍힌다(1단계 `setx`)
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py push --note "왕복 확인"
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py status   # 원격 seq 증가
 
@@ -118,12 +130,18 @@ $env:CAPA_S3_SYNC_MODE = "managed"
 | 2 | ECS 버전 | 조건부 쓰기·체크섬 지원이 여기서 갈린다 | 스토리지 팀 문의 | |
 | 3 | `--if-none-match '*'` 지원 | 동시 저장 예방의 3겹째를 켤지 결정 | 2단계 `probe` | |
 | 4 | 단일 PUT ETag 가 MD5 인가 | 무결성 검증 수단 유무 | 2단계 `probe` | |
-| 5 | 업로드·다운로드 실측 시간 | 타임아웃 상수의 근거 | 4단계 왕복 | **2026-09-09 push 66초 / pull 50초.** 시뮬레이션 62.6→42.8 MiB(스냅샷 생성 2.88초), 설비 0.4→0.4 MiB(0.06초). 전송은 양방향 모두 대략 1 MiB/s. 제한시간 300초 대비 6배 여유 |
+| 5 | 업로드·다운로드 실측 시간 | 타임아웃 상수의 근거 | 4단계 왕복 | **2026-09-09 push 66초 / pull 50초.** 시뮬레이션 62.6→42.8 MiB(스냅샷 생성 2.88초), 설비 0.4→0.4 MiB(0.06초). 전송은 양방향 모두 대략 1 MiB/s. 제한시간은 고정 300초가 아니라 크기에 딸린 `max(300, 60 + MiB/0.3)` 초라(`transfer_timeout_seconds()`) 42.8 MiB 에서는 여전히 300초 — 여유는 그대로다 |
 | 6 | `aws s3 ls s3://` 전체 목록 권한 | 없어도 되지만 진단이 편해진다 | 손으로 | |
 | 7 | 9021(HTTPS) 개방 여부 | 지금은 평문 HTTP 라 생산계획이 사내망에 그대로 흐른다 | 네트워크 담당 | |
 | 8 | WebIDE 안에서 `aws` 가 PATH 에 있는가 | 앱이 `subprocess` 로 부른다. 없으면 자동화를 못 붙인다 | 컨테이너에서 `aws --version` | |
 | 9 | WebIDE 재시작 주기·프로필명 변화 | 환경변수로 덮어쓸 준비는 돼 있다 | 운영 담당 | |
 | 10 | 동시 사용자가 늘어날 시점 | 지금은 단일 사용자 전제다 | 업무 판단 | |
+
+1·5번이 확인 완료인 것은 **4단계 왕복으로 확인한 것이지 `probe` 결과가 아니다.** 2단계
+`probe` 는 아직 사내에서 돌리지 않았으므로 `config/object_storage_capabilities.json` 이
+비어 있는 것이 정상이다 — 그 파일과 이 표를 나란히 놓고 "실측 결과가 반영되지 않았다"고
+읽지 않는다. 또 `probe` 는 3·4번과 `content_md5_rejects_mismatch` 만 덮어쓰고
+`checksum_optout_required`·`bucket_versioning` 은 채우지 않는다. 이 둘은 손으로 적는다.
 
 ## 이 단계에서 하지 않은 것
 

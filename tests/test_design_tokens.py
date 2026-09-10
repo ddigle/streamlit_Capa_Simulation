@@ -117,6 +117,36 @@ def _theme_colors() -> dict[str, str]:
     return colors
 
 
+def _theme_string(key: str) -> str | None:
+    """`[theme]` 블록에서 문자열 한 항목을 읽는다. 없으면 None."""
+    in_theme = False
+    for line in CONFIG_FILE.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_theme = stripped == "[theme]"
+            continue
+        if not in_theme or "=" not in stripped:
+            continue
+        name, _, value = stripped.partition("=")
+        if name.strip() == key:
+            return value.strip().strip('"')
+    return None
+
+
+def test_heading_font_matches_the_token_stack() -> None:
+    """제목 서체가 `tokens.FONT_FAMILY` 와 갈라지면 한글만 폴백 face 로 넘어간다.
+
+    폴백 face 는 같은 줄상자 안에서 잉크 상단 위치가 라틴과 달라, 영어 제목 페이지와
+    한글 제목 페이지의 제목·헤더 간격이 서로 다르게 보인다. 두 선언을 한 값으로 묶는다.
+    """
+    declared = _theme_string("headingFont")
+
+    assert declared == tokens.FONT_FAMILY, (
+        "config.toml 의 headingFont 와 tokens.FONT_FAMILY 가 갈라졌습니다:\n"
+        f"headingFont={declared}\ntokens.FONT_FAMILY={tokens.FONT_FAMILY}"
+    )
+
+
 def test_tokens_match_the_theme_declared_in_config() -> None:
     """토큰 값의 근거는 `config.toml` 이다. 한쪽만 바꾸면 화면이 조용히 갈라진다."""
     theme = _theme_colors()

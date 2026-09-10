@@ -1,6 +1,6 @@
 # 화면 디자인 규칙
 
-마지막 갱신일: 2026-09-05
+마지막 갱신일: 2026-09-10
 
 이 문서는 색·서체·표 밀도를 어디서 정하고 어떻게 쓰는지 규정한다. 규칙이 없으면 토큰을
 만들어도 다시 갈라진다. 실제로 갈라져 있었다 — 같은 "분류 컬럼 음영"이 HOME은
@@ -19,10 +19,32 @@ Streamlit 위젯은 `config.toml`을 직접 읽지만 Plotly Figure와 주입 CS
 그래서 같은 값을 `tokens.py`에 한 번 더 선언하고, **화면 코드는 토큰만 참조한다.**
 두 파일 중 하나를 고치면 다른 하나도 같은 변경에서 맞춘다.
 
-한쪽만 고치는 실수는 `tests/test_design_tokens.py`가 잡는다. `[theme]`의 색 항목과
-대응 토큰을 1:1로 비교한다. 실제로 `dataframeHeaderBackgroundColor`가 `#E4E4E7`,
-`HEADER_BACKGROUND`가 `#E4E7EB`로 갈라져 있었다. `st.dataframe` 헤더와 Plotly 표
-헤더가 서로 다른 회색이었는데 두 표를 나란히 놓기 전에는 눈에 띄지 않았다.
+한쪽만 고치는 실수는 `tests/test_design_tokens.py`가 잡는다. 최상위 `[theme]`의 단일
+색 항목과 대응 토큰을 1:1로 비교한다(대조 범위는 4장). 실제로
+`dataframeHeaderBackgroundColor`가 `#E4E4E7`, `HEADER_BACKGROUND`가 `#E4E7EB`로 갈라져
+있었다. `st.dataframe` 헤더와 Plotly 표 헤더가 서로 다른 회색이었는데 두 표를 나란히
+놓기 전에는 눈에 띄지 않았다.
+
+### 제목 서체도 같은 근거를 따른다
+
+`[theme]`에 `headingFont`가 없으면 제목은 Streamlit 기본 Source Sans로 그려진다. 그 폰트에는
+한글 글리프가 없어 **한글 제목만 브라우저 폴백 face로 넘어간다.** 같은 줄상자
+(`headingFontSizes[0]` 40px × line-height 1.2)에서 폴백 face의 잉크 상단 위치가 라틴과 달라,
+영어 제목 페이지(`HOME`의 `Capa LOB Summary`)와 한글 제목 페이지(`부하량`)의 제목·헤더 간격이
+서로 다르게 보였다. 여백 문제가 아니라 서체 문제였다.
+
+그래서 `headingFont`를 `tokens.FONT_FAMILY`와 **같은 문자열**로 선언한다. 한 face로 통일해야
+간격이 언어에 따라 어긋나지 않는다. `tests/test_design_tokens.py`의
+`test_heading_font_matches_the_token_stack`이 두 선언이 갈라지는 것을 막는다.
+
+스택은 `Noto Sans KR` 을 앞에 두고 `Malgun Gothic` 을 폴백으로 받친다. Malgun 은 Windows 에
+항상 있어 안전하지만 자간과 획 굵기가 고르지 않다. **사내 PC 에 Noto Sans KR 이 설치돼 있는지는
+확인되지 않았다** — 없으면 사내는 Malgun 으로 폴백되어 개발 PC 와 다르게 보인다. 어느 쪽이든
+한 화면 안에서는 제목·본문·차트가 모두 같은 face 라 간격은 일정하다.
+
+Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트 이름으로 넘긴다
+(`runtime/theme_util.py`의 `_parse_font_config`). 스택에 콜론을 넣으면 `<이름>:<URL>` 형식으로
+오인되므로 넣지 않는다.
 
 ## 2. 지켜야 할 규칙
 
@@ -38,10 +60,11 @@ Streamlit 위젯은 `config.toml`을 직접 읽지만 Plotly Figure와 주입 CS
   합치지 않는다.
 - **Plotly Figure는 배경과 서체를 토큰에서 가져온다.** 예전에는 `design/plotly_theme.py`의
   `base_layout()`을 거치라고 규정했지만 그 모듈을 부르는 곳이 한 곳도 없었고, Figure마다
-  여백과 높이가 실제로 달라 공통 레이아웃으로 묶이지 않았다. 규칙을 코드에 맞춰
-  다시 적는다 — 값은 `tokens`에서만 가져오면 되고, 그 이탈은
-  `tests/test_design_tokens.py`가 이미 검사한다. 공통 레이아웃 헬퍼가 다시 필요해지면
-  그때 실제 호출부와 함께 만든다.
+  여백과 높이가 실제로 달라 공통 레이아웃으로 묶이지 않았다. 그래서 그 파일은 지웠고
+  전체 레이아웃을 강제하는 진입점은 지금 없다. 값은 `tokens`에서만 가져오면 되고, 그
+  이탈은 `tests/test_design_tokens.py`가 이미 검사한다. Figure 공통 유틸리티는
+  `components/plotly_layout.py`에 있는데 제목·테두리·분기 경계·고정 행처럼 여러 Figure가
+  실제로 똑같이 그리는 조각만 담는다. 새 헬퍼도 같은 기준으로, 실제 호출부와 함께 만든다.
 - **Figure 의 `paper_bgcolor`·`plot_bgcolor` 는 `CHART_CANVAS` 다.** 모든 Figure 는 배경이
   투명한 `st.container(border=True)` 안에 놓여 페이지 바탕 위에 그려진다. 흰 면(`SURFACE`)
   을 쓰면 Figure 만 흰 사각형으로 떠서 컨테이너 테두리 안이 두 색으로 갈린다. 표의 셀
@@ -63,8 +86,15 @@ Streamlit 위젯은 `config.toml`을 직접 읽지만 Plotly Figure와 주입 CS
 | Plotly 캔버스 | `CHART_CANVAS` | `#F7F8FA` |
 | 분류 컬럼 음영 | `SURFACE_CLASSIFICATION` | `#F1F3F6` |
 | 표 머리글 | `HEADER_BACKGROUND` | `#E4E7EB` |
+| 가로막대 트랙 | `BAR_TRACK` | `#E1E5EA` |
 | 테두리 | `BORDER` | `#DDE0E5` |
 | 상단 띠 | `HEADER_BAR` | `#EFF1F5` |
+
+가로막대 트랙(`BAR_TRACK`)은 상세 B/N 공정 시트에서 막대 길이 눈금(확보율 80~150%)의 전체
+구간을 보여주는 홈이다. 표 머리글·스크롤바 트랙과 값이 가깝지만 역할이 달라 별도 토큰이며,
+그 둘을 재사용하지 않는다. 셀 면(`SURFACE`) 대비 1.27:1 로 홈이 먼저 읽히고, 그 위의 확보
+막대(`STATUS_SECURE`)와는 1.17:1 뿐이라 막대의 끝은 테두리(`LINE`, 트랙 대비 8.25:1)를
+`BAR_OUTLINE_WIDTH_PX` 굵기로 그어 만든다.
 
 상단 띠(화면 맨 위 `3.75rem`)는 본문 너비만 덮는 `stHeader` 와 사이드바 위쪽을 같은 색으로
 이어 붙여 만든다. 한쪽만 칠하면 색이 화면 중간에서 끊겨, 같은 줄에 놓인 앱 이름과 문의처가
@@ -107,14 +137,26 @@ Streamlit 위젯은 `config.toml`을 직접 읽지만 Plotly Figure와 주입 CS
   하위 팔레트이며 표·차트와 섞어 쓰지 않는다.
 - **월 스크롤 임계**가 상세표 8, HOME 대시보드 10으로 다르다. 두 화면의 밀도가 달라
   유지하되 같은 개념이므로 `tokens.py`에 나란히 두어 차이가 보이게 했다.
+- **`[theme]` ↔ 토큰 1:1 대조에서 빠지는 것**이 둘 있다. `[theme.sidebar]` 하위 블록은
+  사이드바 전용 팔레트라 본문 토큰과 값이 달라도 되므로 파서가 통째로 건너뛴다. 같은
+  `[theme]` 안이라도 `chartCategoricalColors`처럼 색 목록으로 적힌 항목은 단일
+  `#RRGGBB` 한 줄만 읽는 파서에 걸리지 않아 대조되지 않는다. 실제로 대조되는 것은
+  최상위 단색 8개(`primaryColor`·`backgroundColor`·`secondaryBackgroundColor`·`textColor`·
+  `borderColor`·`grayColor`·`dataframeBorderColor`·`dataframeHeaderBackgroundColor`)뿐이고,
+  나머지는 손으로 맞춰야 한다.
+- **위젯 고정 px 폭은 그대로 둔다.** 더 손대지 않기로 닫혔다
+  (`docs/TODO.md` 3-1 [결정]). Streamlit 가로 컨테이너는 `flex-wrap: wrap`이라 폭이
+  모자라면 다음 줄로 접힐 뿐이고, 앱을 띄워 `scrollWidth == clientWidth`까지 재 보니
+  잘리지도 가로 스크롤이 생기지도 않았다.
 
 ## 5. 아직 남은 것
 
 - **표가 `staticPlot` Plotly SVG다.** 정렬·검색(Ctrl+F)·텍스트 선택·복사·키보드 이동·
-  스크린리더가 모두 없고 긴 분류값은 말줄임 없이 잘린다. Components v2 안의 실제
-  `<table>`로 바꾸면 한 번에 해결되지만 범위가 크다.
+  스크린리더가 모두 없고 긴 분류값은 말줄임 없이 잘린다. 실제 `<table>`로 바꾸는
+  중기안은 진행하지 않기로 닫혔고(`docs/TODO.md` 3-2 [결정]), 표가 그림이라 못 하는
+  것은 모든 결과표에 붙어 있는 `CSV 다운로드`가 대신한다. 화면 안에서 그대로 다루는
+  방법은 여전히 없다.
 - **다크 테마가 없다.** 토큰이 한곳에 모였으므로 이제 추가할 수 있는 상태가 됐다.
 - **월별 표 두 컴포넌트에 아직 남은 복제**: 테두리·머리선·경계선은 `monthly_table_base`로
   합쳤고 행 경계 주입도 같은 방식(일괄 주입)이다. 남은 것은 `_classification_widths`·
   go.Table 조립·반복 접두 생략 루프 정도이며 실행 시간·화면 결함은 없다(순수 유지보수 비용).
-- **고정 px width 69곳**으로 좁은 화면에서 필터 행이 넘친다.

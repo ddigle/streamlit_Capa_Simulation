@@ -15,7 +15,7 @@ from capa_simulation.components.reference_csv_tools import (
     render_reference_clipboard_tools,
 )
 from capa_simulation.components.tab_state import stateful_tabs
-from capa_simulation.components.table_toolbar import render_table_heading
+from capa_simulation.components.table_toolbar import render_csv_download, render_table_heading
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -222,6 +222,13 @@ else:
                     "공정별 확보율",
                     "소요대수",
                 )
+                render_csv_download(
+                    data=displayed_capacity_exclusions.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=(
+                        f"Capa_Unit_Capacity_Exclusions_{effective_start}_{effective_end}.csv"
+                    ),
+                    key="download_capacity_exclusions_csv",
+                )
                 st.dataframe(
                     displayed_capacity_exclusions,
                     hide_index=True,
@@ -245,6 +252,13 @@ else:
                     display_order,
                     "공정별 확보율",
                     "소요대수",
+                )
+                render_csv_download(
+                    data=displayed_required_exclusions.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=(
+                        f"Capa_Required_Equipment_Exclusions_{effective_start}_{effective_end}.csv"
+                    ),
+                    key="download_required_exclusions_csv",
                 )
                 st.dataframe(
                     displayed_required_exclusions,

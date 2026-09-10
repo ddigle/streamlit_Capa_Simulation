@@ -1,5 +1,7 @@
 {
   "_설명": "사내 스토리지가 실제로 무엇을 지원하는지 실측한 결과. 확인하지 못한 능력은 false 로 둔다 — 없는 능력을 있다고 가정하면 데이터가 조용히 갈라진다. sync_object_storage.py probe 가 사내 PC 에서 채운다.",
+  "_probe_미실행": "2026-09-10 기준 사내에서 probe 를 아직 돌리지 않았다. docs/objectstore_setup.md 의 1·5번이 확인 완료인 것은 4단계 왕복(doctor·init·push·pull)으로 확인한 것이지 probe 결과가 아니다 — 이 파일이 비어 있는 것이 정상이다.",
+  "_probe가_채우지_않는_키": "probe 는 single_put_etag_is_md5·content_md5_rejects_mismatch·conditional_put_if_none_match_star 와 _확인일·_확인자만 덮어쓴다. checksum_optout_required 와 bucket_versioning 은 손으로 채운다.",
   "_확인일": null,
   "_확인자": null,
   "conditional_put_if_none_match_star": false,

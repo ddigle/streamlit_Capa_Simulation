@@ -47,8 +47,8 @@ XLSB를 읽지 않는다. `templates/structure_template.xlsb`는 초기 표시�
 검증에만 사용한다. SQLite 파일은 병행 검증용으로 앱에서 읽지 않는다. 가용설비 현황의
 운영 데이터는 시뮬레이션과 물리적으로 분리된
 `data/equipment_availability.duckdb`에 저장한다. `Core_Data` 78컬럼 계약·typed raw
-적재와 pandas 기반 16개 RQ 변환은 구현되었고, DataLake·BigDataQuery 실제 조회
-어댑터만 사내 환경에서 연결해야 한다.
+적재와 pandas 기반 16개 RQ 변환은 구현되었고, BigDataQuery 어댑터의 실제 SQL·컬럼
+매핑도 커밋을 마쳤다. 남은 것은 사내 환경에서의 접속·조회 검증이다.
 
 GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json`과 코드로 생성한
 비민감 `DEMO_*` Core Data를 공통 변환 파이프라인에 넣어 초기 시나리오·리비전·공식버전을
@@ -278,8 +278,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 0행 결과는 `rename` 이전에 막는다. 뒤에 두면 MPGA TEST 예외가 `KeyError` 로 먼저 터진다.
 - `src/capa_simulation/io/object_storage.py`
   - 사내 S3 호환 오브젝트 스토리지(Dell ECS 추정)에 `aws` CLI 로 붙는 유일한 경계다.
-    이 저장소에서 `subprocess` 를 쓰는 유일한 자리이고, 명령 실행기를 주입받아 `aws` 가 없는
-    개발 PC 에서도 조립된 인자 배열을 테스트한다.
+    앱 코드에서 `subprocess` 를 쓰는 유일한 자리이고(테스트에는 별도로 있다), 명령 실행기를
+    주입받아 `aws` 가 없는 개발 PC 에서도 조립된 인자 배열을 테스트한다.
   - **모든 명령에 `--profile` 을 붙인다.** 네임스페이스가 프로필에 매여 있어 빠지면 다른
     네임스페이스를 본다. 조립 자리는 `_argv()` 하나뿐이다. 경로 스타일 주소와 체크섬
     옵트아웃(AWS CLI 2.23+ × ECS 비호환, Dell KB 000299507)을 환경변수로 강제한다.
@@ -361,9 +361,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   주차 집계는 정규화한 설비·비가동 입력을 전체 기간에 재사용하고 주차별 공정 집계를
   `groupby`·`crosstab`으로 한 번에 만든다.
 - `equipment_csv.py`: 호기 마스터와 비가동 일정의 CSV 양식 생성, Excel 붙여넣기 표
-  검증·자연키 기준 병합. 다운로드 양식은 2행에 서로 연결되는 입력 예시를 포함하고
-  비고에 샘플 행 삭제 안내를 둔다.
-- `dashboard.py`: HOME 월별 집계, B/N 단일 월별 순위에서 파생하는 Top 1·5·10, Wafer Capa
+  검증·자연키 기준 병합. 호기 마스터 양식은 두 양식이 공유하는 호기로 2행에 전체 입력
+  예시를 채우고, 3행부터는 호기를 비운 채 활용구분·확정상태의 허용값과 라인구분·투자기준의
+  기재 예시를 나열한다. 호기가 빈 안내 행은 붙여넣기·업로드 때 버려진다.
+- `dashboard.py`: HOME 월별 집계, B/N 단일 월별 순위에서 파생하는 Top 1·Top 5·순위 상한을
+  인자로 받는 상세, Wafer Capa
 - `dynamic_capacity.py`: 표준 Capa에 실적 효율·UPEH·Rundown·생산실적을 순차 반영하는
   Dynamic Capa 손실 분석, 시간 가중 집계, 필터와 미연결 화면용 결정론적 데모 데이터
 - `wip_status.py`: 재공 DB 연결용 일자·공정·STEP·제품·보유재공·유입·Flow 계약,
@@ -425,8 +427,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/settings.py`, `sidebar_status.py`
   - 앱 이름·경로·조회기간 상수와 사이드바의 적용 조회기간 표시.
 - `src/capa_simulation/design/tokens.py`
-  - 색·서체·표 치수를 역할 이름으로 단일 정의하고 Plotly 공통 레이아웃을 만든다.
-    파이썬 코드에 색 리터럴을 쓰지 않는다. 규칙은 `docs/design_system.md` 를 따른다.
+  - 색·서체·표 치수를 역할 이름으로 단일 정의한다. 파이썬 코드에 색 리터럴을 쓰지
+    않는다. 규칙은 `docs/design_system.md` 를 따른다. Figure 공통 유틸리티는 여기가 아니라
+    `components/plotly_layout.py` 에 있다.
 - `src/capa_simulation/components/page_header.py`
   - 모든 페이지의 제목·설명·상태 배지. `(구현중)` 은 제목에서 떼어 배지로 보여준다.
     사이드바 라벨과 같은 문자열을 써야 하며 어긋나면 테스트가 잡는다.
@@ -482,7 +485,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/plotly_layout.py`
   - 제목 주석·외곽 테두리·분기 경계·고정 행 등 Figure 그리기 공통 유틸리티.
 - `src/capa_simulation/components/home_figures.py`, `home_rendering.py`, `home_dimensions.py`
-  - HOME 의 Figure 생성기 3종, 세션 Figure 캐시와 렌더링, LOB 픽셀 치수.
+  - HOME 의 Figure 생성기 3종, 세션 Figure 캐시와 렌더링, LOB·상세 B/N 픽셀 치수.
+  - 상세 B/N 은 `go.Table` 이 아니라 카테시안 xy 다. 월 오프셋은 `go.Bar` 의 `base`
+    로 주고, hover 표적 막대·트랙 막대·확보율 막대·공정명 텍스트 trace 네 개만 쓴다.
+    hover 표적은 `HIT_TARGET` 색으로 행 전체 높이를 덮어 칸 어디서나 툴팁이 뜨게 하고,
+    보이는 막대는 전부 `hoverinfo="skip"` 이다. 공정명은 월 칸 폭에 맞춰 글자 크기를
+    줄이고 그래도 넘치면 말줄임하며, 전체 이름은 hover 의 `customdata` 에만 있다.
+    순위 상한 `BOTTLENECK_DETAIL_RANK_LIMIT` 은 여기서 정하고 서비스에 인자로 넘긴다.
+    자르는 곳은 서비스 한 곳이고 Figure 는 받은 프레임을 다시 자르지 않는다.
 - `src/capa_simulation/components/scenario_management.py`,
   `display_order_management.py`, `bigdataquery_registration.py`
   - 시나리오 관리 페이지의 세 탭 UI.
@@ -624,9 +634,13 @@ Dummy Wafer = 생산수량 × 1,000 × 구분_Chip
               ÷ EDS_수율 ÷ BE_수율 ÷ Net Die × (1 - EDS_수율)
 ```
 
-`WF 구분`의 Dummy 판별은 기존 리비전과 BigDataQuery의 표기 차이를 흡수하도록 대소문자와
-앞뒤 공백에 의존하지 않는다. 정확한 현재 구현은 `load_calculator.py`와 `docs/TODO.md`를
-기준으로 한다.
+Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구분)` 게이트**다. 목록은
+`product_type.py`의 `DUMMY_DIVISIONS_BY_PRODUCT_TYPE`이 선언하고 적용은
+`load_calculator.py`의 `_dummy_mask`가 한다. HBM은 `Dummy` 하나이고 EDP-TSV는 목록이 비어
+있어 `WF 구분`이 `Dummy`여도 Dummy 산식을 받지 않는다. `제품타입` 컬럼이 없는 레거시
+프레임에서만 두 목록을 합쳐 이름으로 판정한다. 이름 비교는 기존 리비전과 BigDataQuery의
+표기 차이를 흡수하도록 대소문자와 앞뒤 공백에 의존하지 않는다. 정확한 현재 구현은 두
+모듈과 `docs/TODO.md`를 기준으로 한다.
 
 ### 대당 Capa
 
@@ -643,7 +657,14 @@ Dummy Wafer = 생산수량 × 1,000 × 구분_Chip
   Lot/WF 측정률의 빈 값은 측정 대상이 아닌 경로로 보고 `1.0`을 적용하되, 숫자가 아닌
   값은 오류로 처리한다.
 - `소요기준 = PKG 또는 CHIP`: UPEH를 Kea 기준으로 `/ 1000`
-- WF측정률 0 이하 및 대당 Capa 0 이하는 제외 행으로 남기고 계산에서 제외
+- Lot 측정률·WF측정률이 0 이하인 행과 대당 Capa 0 이하인 행은 제외 행으로 남기고 계산에서
+  제외한다. 두 측정률은 같은 규칙을 쓰며 `WF측정률 0 이하`·`Lot 측정률 0 이하` 사유를 붙인다.
+  한 행이 둘 다에 걸리면 WF측정률 사유로 한 번만 남는다.
+- 계산 대상 행을 먼저 확정한 뒤 편중률·모듈수·`RUN_DAY`의 0 이하 검증을 남은 행에만 돌린다.
+  어차피 제외될 행의 기준값이 화면 전체를 멈추면 그 값을 고칠 편집기조차 열 수 없다.
+  이 세 검증은 실패 시 위반 건수와 문제 업무 키·값 예시 5건을 메시지에 싣는다.
+- 제외 행은 사유 컬럼과 함께 `CAPACITY_EXCLUSIONS_ATTR`로 전달되고 공정별 Capa·공정별
+  확보율 화면이 건수·상세 표·CSV 내려받기로 보여 준다
 - BOX·PCB는 산식 구현 전까지 제외
 - 기본 화면용 공정 유효 Capa는 STEP으로 중복된 수요를 한 번만 센 원수요 부하량을
   STEP별 소요대수 합계로 나눠 `원수요 부하량 ÷ Σ(STEP별 부하량 ÷ STEP별 대당 Capa)`로
@@ -836,7 +857,11 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - 복잡한 Plotly UI를 변경할 때는 월별 고정 열 너비, 좌측 라벨 Figure, 공통 가로
   스크롤 정렬을 함께 검증한다.
 - HOME Plotly shape·annotation을 반복해서 추가하지 않는다. 레이아웃에 일괄 주입해
-  Figure 생성 시간이 선형에 가깝게 유지되도록 한다.
+  Figure 생성 시간이 선형에 가깝게 유지되도록 한다. 칸마다 반복되는 값은 shape·
+  annotation 이 아니라 배열 `text`·`customdata` 를 실은 trace 하나로 그린다.
+- hover 가 필요한 Figure 만 `staticPlot` 을 끄고 같은 캔버스의 다른 Figure 설정은
+  건드리지 않는다. 끄면 `displayModeBar`·`doubleClick`·`showAxisDragHandles` 가
+  기본값으로 돌아가므로 셋을 직접 끄고, 드래그 확대는 축 양쪽 `fixedrange` 로 막는다.
 
 ## 10. 로컬 파일과 보안
 
@@ -895,9 +920,10 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   확장할 때는 별도 쓰기 서비스 또는 서버형 DB로 전환한다.
 - BOX·PCB 계산은 제외 상태다.
 - `MCP_Chip_Ratio` 보정식은 미확정이다.
-- DataLake·Impala·BigDataQuery 실제 SQL과 컬럼 매핑은 외부 PC에서 확정하지 않는다.
-  `company_bigdataquery_adapter.py`의 설정 영역만 사내에서 채우고, 반환 DataFrame은 구현된
-  `CoreDataProvider` 공통 처리·DuckDB 저장 경로를 그대로 사용한다.
+- BigDataQuery 실제 SQL과 컬럼 매핑은 `company_bigdataquery_adapter.py`에 커밋을 마쳤고
+  `is_bigdataquery_adapter_configured()`도 참이다. 남은 것은 사내 환경에서의 접속·조회
+  검증이며, 반환 DataFrame은 구현된 `CoreDataProvider` 공통 처리·DuckDB 저장 경로를
+  그대로 사용한다. DataLake·Impala를 별도 원천 어댑터로 붙이는 경로는 아직 없다.
 - `app_pages/home.py`는 UI 코드가 크다. 대시보드 기능을 추가할 때 계산 로직을 더 넣지
   말고 Figure 생성기 또는 서비스 모듈 분리를 우선 검토한다.
 
@@ -936,6 +962,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - 확정된 업무 결정 및 향후 항목: `docs/TODO.md`
 - 사용자 설치·운영 안내: `README.md`
 - 개발 구조와 에이전트 작업 규칙: `AGENTS.md`
+- 직전 세션 인수인계 스냅샷: `HANDOFF.md`. 정본이 아니라 그 시점 상태의 기록이므로 위 네
+  항목과 어긋나면 위를 따른다.
 
 문서와 코드가 다르면 코드만 따라가고 끝내지 말고, 차이의 원인을 확인한 후 관련 문서를
 함께 수정한다.

@@ -17,6 +17,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from capa_simulation.components.home_dimensions import (
+    BOTTLENECK_DETAIL_BAR_HEIGHT_PX,
+    BOTTLENECK_DETAIL_HEADER_HEIGHT_PX,
+    BOTTLENECK_DETAIL_ROW_HEIGHT_PX,
     DASHBOARD_TITLE_HEIGHT_PX,
     LOB_BOTTOM_MARGIN_PX,
     LOB_CHART_HEIGHT_PX,
@@ -37,6 +40,45 @@ from capa_simulation.components.plotly_layout import (
 from capa_simulation.design import tokens
 from capa_simulation.services.dashboard import PRODUCTION_DETAIL_DIMENSIONS
 
+# 상세 B/N 공정 시트가 보여줄 순위 상한. 페이지가 서비스에 넘기는 값이고, 자르는 곳은
+# 서비스 한 곳이다. Figure 는 받은 프레임을 그대로 믿고 행 수를 `순위` 최대값으로만
+# 정하므로, 유효 공정이 이보다 적은 달은 남는 칸을 비운다.
+BOTTLENECK_DETAIL_RANK_LIMIT = 20
+
+# 막대 길이가 표현하는 확보율 구간. 확보율은 비율이므로 0.80 = 80%, 1.50 = 150% 다
+# (`services/securement_rate.py` 가 가용대수/소요대수를 그대로 넣는다). 80% 미만은
+# 막대가 보이지 않고 150% 이상은 열 너비를 꽉 채운다.
+BOTTLENECK_BAR_MIN_RATE = 0.80
+BOTTLENECK_BAR_MAX_RATE = 1.50
+
+# 월 열(MONTH_COLUMN_WIDTH_PX) 안에서 막대가 비우는 좌우 여백과, 막대 왼쪽 끝에서
+# 공정명이 시작하는 자리. 이름은 막대 길이와 무관하게 이 고정 앵커에 그린다 — 확보율
+# 오름차순이라 상위 순위는 대부분 막대가 0 길이인데, 이름을 막대 안에 넣으면 가장
+# 심각한 병목의 공정명이 화면에서 사라진다.
+BOTTLENECK_BAR_SIDE_INSET_RATIO = 0.04
+BOTTLENECK_NAME_INSET_RATIO = 0.07
+
+# 공정명 글자 크기 자동 축소 예산. 막대와 같은 줄에 한 줄로 들어가는 크기다.
+BOTTLENECK_NAME_WIDTH_BUDGET_PX = 80
+BOTTLENECK_NAME_MIN_FONT_PX = 8
+BOTTLENECK_NAME_MAX_FONT_PX = 12
+
+# 글자 크기가 최소값 바닥에 걸리면 더 줄일 수 없어 렌더 폭이 계속 늘어난다. `go.Scatter`
+# 의 text 는 줄바꿈도 칸 단위 클립도 없어 그대로 옆 달 칸을 침범하므로, 남는 한 단계는
+# 말줄임이다. 전체 이름은 hover 의 `customdata` 에 잘리지 않고 뜬다.
+BOTTLENECK_NAME_ELLIPSIS = "…"
+
+# `필요대수`는 화면 라벨이고 프레임의 컬럼명은 `소요대수`다. 화면 라벨 때문에 원본
+# 컬럼명을 바꾸지 않는다.
+BOTTLENECK_HOVER_TEMPLATE = (
+    "<b>%{customdata[0]} · %{customdata[1]}</b>"
+    "<br>확보율 %{customdata[2]}"
+    "<br>가용대수 %{customdata[3]}"
+    "<br>필요대수 %{customdata[4]}"
+    "<br>Wafer Capa %{customdata[5]}"
+    "<extra></extra>"
+)
+
 
 def _capacity_color(rate: float, *, secure_threshold: float, warning_threshold: float) -> str:
     """확보율을 확보·경고·부족 상태색으로 바꾼다."""
@@ -45,6 +87,67 @@ def _capacity_color(rate: float, *, secure_threshold: float, warning_threshold: 
     if rate >= warning_threshold:
         return tokens.STATUS_WARNING
     return tokens.STATUS_SHORTAGE
+
+
+def bottleneck_bar_ratio(rate: object) -> float:
+    """확보율을 상세 B/N 가로막대의 길이 비율(0~1)로 정규화한다.
+
+    자르는 것은 막대 길이뿐이다. hover 에 뜨는 확보율 숫자는 150% 를 넘어도 실제 값
+    그대로 보여준다.
+    """
+    if bool(pd.isna(cast(Any, rate))):
+        return 0.0
+    span = BOTTLENECK_BAR_MAX_RATE - BOTTLENECK_BAR_MIN_RATE
+    ratio = (float(cast(Any, rate)) - BOTTLENECK_BAR_MIN_RATE) / span
+    return min(max(ratio, 0.0), 1.0)
+
+
+def _text_width_units(text: str) -> float:
+    """글자 크기 1px 기준의 렌더 폭. 전각 1.0, 반각 0.6 으로 센다.
+
+    Ambiguous(`A`) 도 전각으로 센다. 말줄임 `…` 와 `±`·`×` 가 여기 속하는데, 한글 face 는
+    이들을 전각으로 그리므로 반각으로 세면 잘라 낸 이름이 다시 칸을 넘는다.
+    """
+    return sum(
+        1.0 if unicodedata.east_asian_width(character) in {"F", "W", "A"} else 0.6
+        for character in text
+    )
+
+
+def bottleneck_name_layout(value: object) -> tuple[str, int]:
+    """공정명을 월 칸 안에 들어가는 표시 문자열과 글자 크기로 바꾼다.
+
+    글자 크기를 폭 예산으로 먼저 정하고, 그래도 넘치면 뒤에서부터 잘라 말줄임을 붙인다.
+    쓸 수 있는 폭은 월 칸 폭에서 이름 앵커 인셋을 뺀 만큼이다.
+    """
+    process = str(value)
+    width_units = _text_width_units(process)
+    font_size = max(
+        BOTTLENECK_NAME_MIN_FONT_PX,
+        min(
+            BOTTLENECK_NAME_MAX_FONT_PX,
+            round(BOTTLENECK_NAME_WIDTH_BUDGET_PX / max(width_units, 1.0)),
+        ),
+    )
+    available_px = tokens.MONTH_COLUMN_WIDTH_PX * (1.0 - BOTTLENECK_NAME_INSET_RATIO)
+    if width_units * font_size <= available_px:
+        return process, font_size
+    unit_budget = available_px / font_size - _text_width_units(BOTTLENECK_NAME_ELLIPSIS)
+    kept: list[str] = []
+    used = 0.0
+    for character in process:
+        character_units = _text_width_units(character)
+        if used + character_units > unit_budget:
+            break
+        kept.append(character)
+        used += character_units
+    return "".join(kept) + BOTTLENECK_NAME_ELLIPSIS, font_size
+
+
+def format_bottleneck_process_name(value: object) -> str:
+    """공정명을 월 칸 폭에 맞춘 글자 크기의 `text` 마크업으로 만든다."""
+    display_text, font_size = bottleneck_name_layout(value)
+    return f'<span style="font-size:{font_size}px">{html.escape(display_text)}</span>'
 
 
 def build_lob_summary_figures(
@@ -765,59 +868,102 @@ def build_plan_detail_figures(
 
 def build_bottleneck_detail_figures(
     *,
-    monthly_density: pd.DataFrame,
-    monthly_top10_details: pd.DataFrame,
+    monthly_bottleneck_details: pd.DataFrame,
     month_labels: list[str],
+    secure_threshold: float,
+    warning_threshold: float,
 ) -> tuple[go.Figure, go.Figure]:
-    """월별 B/N 상위 10개 공정 상세 Figure 한 쌍을 만든다."""
-    bottleneck_detail_ranks = list(range(1, 11))
-    bottleneck_detail_labels = "확보율<br>공정명<br>가용대수<br>필요대수<br>Wafer Capa"
-    bottleneck_detail_lookup = {
-        (int(row["생산계획년월"]), int(row["순위"])): row
-        for _, row in monthly_top10_details.iterrows()
-    }
+    """월별 B/N 상위 공정을 순위별 가로막대로 그린 Figure 한 쌍을 만든다.
+
+    행 축은 공정이 아니라 순위다. 순위는 `services/dashboard.py` 가 달마다 독립으로
+    매기므로 같은 행의 각 칸은 매달 다른 공정이고, 월별 열 그리드와 확보율 오름차순
+    정렬이 충돌하지 않는다.
+
+    막대는 확보율 80~150% 구간만 표현한다. 그래서 상위 순위는 대부분 막대가 0 길이다.
+    공정명을 막대 안에 넣으면 가장 심각한 병목의 이름이 사라지므로, 이름은 막대와
+    별개의 trace 로 각 칸 왼쪽 고정 앵커에 그린다.
+    """
+    month_count = max(len(month_labels), 1)
+    month_positions = {label: index for index, label in enumerate(month_labels)}
 
     def format_equipment_count(value: object) -> str:
         if bool(pd.isna(cast(Any, value))):
-            return ""
+            return "-"
         return f"{float(cast(Any, value)):,.1f}대"
 
-    def format_process_name(value: object) -> str:
+    def format_wafer_capa(value: object) -> str:
         if bool(pd.isna(cast(Any, value))):
-            return ""
-        process = str(value)
-        width_units = sum(
-            1.0 if unicodedata.east_asian_width(character) in {"F", "W"} else 0.6
-            for character in process
-        )
-        process_font_size = max(8, min(13, round(88 / max(width_units, 1.0))))
-        return f'<span style="font-size:{process_font_size}px">{html.escape(process)}</span>'
+            return "-"
+        return f"{float(cast(Any, value)) / 1_000:,.0f}K"
 
-    def format_bottleneck_detail(month: int, rank: int) -> str:
-        row = bottleneck_detail_lookup.get((month, rank))
-        if row is None:
-            return "<br><br><br><br>"
-        rate = "" if pd.isna(row["확보율"]) else f"{float(row['확보율']):.1%}"
-        process = format_process_name(row["공정"])
-        available = format_equipment_count(row["가용대수"])
-        required = format_equipment_count(row["소요대수"])
-        wafer_capa = (
-            "" if pd.isna(row["Wafer Capa"]) else f"{float(row['Wafer Capa']) / 1_000:,.0f}K"
-        )
-        return "<br>".join((rate, process, available, required, wafer_capa))
+    # 월 축의 근거는 `month_labels` 하나뿐이다. 세부 프레임의 월 목록으로 칸을 만들면
+    # 데이터가 없는 달에서 열 수와 Figure 폭이 갈라져 헤더가 밀린다.
+    # 순위 상한은 서비스가 정본이다. 여기서 다시 자르면 근거가 둘로 갈라진다.
+    displayed = monthly_bottleneck_details.loc[
+        monthly_bottleneck_details["년월"].astype("string").isin(month_labels)
+    ]
+    # 행 수는 조회기간에서 유효 공정이 가장 많은 달을 따른다. 그보다 적은 달은 남는
+    # 칸을 비운다.
+    rank_count = 1 if displayed.empty else max(int(displayed["순위"].max()), 1)
+    table_height = BOTTLENECK_DETAIL_HEADER_HEIGHT_PX + rank_count * BOTTLENECK_DETAIL_ROW_HEIGHT_PX
+    figure_height = DASHBOARD_TITLE_HEIGHT_PX + table_height
+    track_length = 1.0 - 2 * BOTTLENECK_BAR_SIDE_INSET_RATIO
 
-    bottleneck_detail_row_height = 110
-    bottleneck_detail_header_height = 36
-    bottleneck_detail_figure_height = (
-        DASHBOARD_TITLE_HEIGHT_PX
-        + bottleneck_detail_header_height
-        + len(bottleneck_detail_ranks) * bottleneck_detail_row_height
-    )
+    track_bases: list[float] = []
+    track_centers: list[float] = []
+    track_lengths: list[float] = []
+    hover_values: list[list[str]] = []
+    bar_bases: list[float] = []
+    bar_centers: list[float] = []
+    bar_lengths: list[float] = []
+    bar_colors: list[str] = []
+    name_positions: list[float] = []
+    name_texts: list[str] = []
+    for _, row in displayed.iterrows():
+        month_index = month_positions[str(row["년월"])]
+        rank = int(row["순위"])
+        center_y = (
+            table_height
+            - BOTTLENECK_DETAIL_HEADER_HEIGHT_PX
+            - (rank - 0.5) * BOTTLENECK_DETAIL_ROW_HEIGHT_PX
+        )
+        base = month_index + BOTTLENECK_BAR_SIDE_INSET_RATIO
+        rate = row["확보율"]
+        missing_rate = bool(pd.isna(cast(Any, rate)))
+        track_bases.append(base)
+        track_centers.append(center_y)
+        track_lengths.append(track_length)
+        hover_values.append(
+            [
+                html.escape(str(row["년월"])),
+                html.escape(str(row["공정"])),
+                "-" if missing_rate else f"{float(rate):.1%}",
+                format_equipment_count(row["가용대수"]),
+                format_equipment_count(row["소요대수"]),
+                format_wafer_capa(row["Wafer Capa"]),
+            ]
+        )
+        name_positions.append(month_index + BOTTLENECK_NAME_INSET_RATIO)
+        name_texts.append(format_bottleneck_process_name(row["공정"]))
+        ratio = bottleneck_bar_ratio(rate)
+        if ratio <= 0:
+            continue
+        bar_bases.append(base)
+        bar_centers.append(center_y)
+        bar_lengths.append(ratio * track_length)
+        bar_colors.append(
+            _capacity_color(
+                float(rate),
+                secure_threshold=secure_threshold,
+                warning_threshold=warning_threshold,
+            )
+        )
+
     bottleneck_detail_label_figure = go.Figure(
         go.Table(
-            columnwidth=[0.65, 1.35],
+            columnwidth=[1.0],
             header={
-                "values": ["<b>B/N</b>", "<b>구분</b>"],
+                "values": ["<b>B/N</b>"],
                 "align": "center",
                 "fill_color": tokens.HEADER_BACKGROUND,
                 "line_color": tokens.BORDER,
@@ -826,59 +972,82 @@ def build_bottleneck_detail_figures(
                     "size": 15,
                     "family": tokens.FONT_FAMILY,
                 },
-                "height": bottleneck_detail_header_height,
+                "height": BOTTLENECK_DETAIL_HEADER_HEIGHT_PX,
             },
             cells={
-                "values": [
-                    [f"<br><br>{rank}<br><br>" for rank in bottleneck_detail_ranks],
-                    [bottleneck_detail_labels] * len(bottleneck_detail_ranks),
-                ],
+                "values": [[str(rank) for rank in range(1, rank_count + 1)]],
                 "align": "center",
                 "fill_color": tokens.SURFACE_CLASSIFICATION,
                 "line_color": tokens.BORDER,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": [20, 13],
+                    "size": 14,
                     "family": tokens.FONT_FAMILY,
                 },
-                "height": bottleneck_detail_row_height,
+                "height": BOTTLENECK_DETAIL_ROW_HEIGHT_PX,
             },
         )
     )
     bottleneck_detail_month_figure = go.Figure(
-        go.Table(
-            columnwidth=[1.0] * len(month_labels),
-            header={
-                "values": [f"<b>{month}</b>" for month in month_labels],
-                "align": "center",
-                "fill_color": tokens.HEADER_BACKGROUND,
-                "line_color": tokens.BORDER,
-                "font": {
+        [
+            # 보이지 않는 hover 표적. 눈에 보이는 트랙 막대는 행 높이보다 낮고 좌우
+            # 인셋만큼 짧아 칸 가장자리에서 툴팁이 뜨지 않는다. 행 전체를 덮는 이
+            # 막대가 표적이므로 막대가 0 길이인 칸에서도 칸 어디서나 값이 뜬다.
+            go.Bar(
+                x=[1.0] * len(track_centers),
+                y=track_centers,
+                base=[position - BOTTLENECK_BAR_SIDE_INSET_RATIO for position in track_bases],
+                orientation="h",
+                width=BOTTLENECK_DETAIL_ROW_HEIGHT_PX,
+                marker={"color": tokens.HIT_TARGET, "line": {"width": 0}},
+                customdata=hover_values,
+                hovertemplate=BOTTLENECK_HOVER_TEMPLATE,
+                showlegend=False,
+            ),
+            go.Bar(
+                x=track_lengths,
+                y=track_centers,
+                base=track_bases,
+                orientation="h",
+                width=BOTTLENECK_DETAIL_BAR_HEIGHT_PX,
+                marker={
+                    "color": tokens.BAR_TRACK,
+                    "line": {"color": tokens.BORDER_STRONG, "width": tokens.GRID_LINE_WIDTH_PX},
+                },
+                hoverinfo="skip",
+                showlegend=False,
+            ),
+            go.Bar(
+                x=bar_lengths,
+                y=bar_centers,
+                base=bar_bases,
+                orientation="h",
+                width=BOTTLENECK_DETAIL_BAR_HEIGHT_PX,
+                marker={
+                    "color": bar_colors,
+                    "line": {"color": tokens.LINE, "width": tokens.BAR_OUTLINE_WIDTH_PX},
+                },
+                hoverinfo="skip",
+                showlegend=False,
+            ),
+            go.Scatter(
+                x=name_positions,
+                y=track_centers,
+                mode="text",
+                text=name_texts,
+                textposition="middle right",
+                textfont={
                     "color": tokens.TEXT,
-                    "size": 15,
+                    "size": BOTTLENECK_NAME_MAX_FONT_PX,
                     "family": tokens.FONT_FAMILY,
                 },
-                "height": bottleneck_detail_header_height,
-            },
-            cells={
-                "values": [
-                    [format_bottleneck_detail(int(month), rank) for rank in bottleneck_detail_ranks]
-                    for month in monthly_density["생산계획년월"]
-                ],
-                "align": "center",
-                "fill_color": tokens.SURFACE,
-                "line_color": tokens.BORDER,
-                "font": {
-                    "color": tokens.TEXT,
-                    "size": 13,
-                    "family": tokens.FONT_FAMILY,
-                },
-                "height": bottleneck_detail_row_height,
-            },
-        )
+                hoverinfo="skip",
+                showlegend=False,
+            ),
+        ]
     )
     bottleneck_detail_layout = {
-        "height": bottleneck_detail_figure_height,
+        "height": figure_height,
         "margin": {
             "l": 0,
             "r": 0,
@@ -893,22 +1062,74 @@ def build_bottleneck_detail_figures(
         bottleneck_detail_label_figure,
         annotations=[dashboard_title_annotation("<b>상세 B/N 공정</b>")],
     )
+    # 축 눈금으로 마진이 자동 확장되면 paper 0~1 이 표 영역과 어긋나 경계선 계산이
+    # 전부 밀린다. 두 축 모두 `fixedrange` 여야 hover 를 켜도 드래그 확대가 붙지 않는다.
+    hidden_axis = {
+        "domain": [0.0, 1.0],
+        "showgrid": False,
+        "zeroline": False,
+        "showline": False,
+        "showticklabels": False,
+        "ticks": "",
+        "automargin": False,
+        "fixedrange": True,
+    }
     bottleneck_detail_month_figure.update_layout(
         **bottleneck_detail_layout,
         width=len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX,
         autosize=False,
+        barmode="overlay",
+        bargap=0,
+        plot_bgcolor=tokens.SURFACE,
+        showlegend=False,
+        dragmode=False,
+        hovermode="closest",
+        hoverlabel={
+            "bgcolor": tokens.SURFACE,
+            "bordercolor": tokens.BORDER_STRONG,
+            "font": {"color": tokens.TEXT, "size": 12, "family": tokens.FONT_FAMILY},
+        },
+        xaxis={**hidden_axis, "range": [0, month_count]},
+        yaxis={**hidden_axis, "range": [0, table_height]},
     )
-    bottleneck_detail_table_height = (
-        bottleneck_detail_header_height
-        + len(bottleneck_detail_ranks) * bottleneck_detail_row_height
-    )
-    bottleneck_detail_boundaries = [
-        1 - bottleneck_detail_header_height / bottleneck_detail_table_height,
+    header_boundary_y = 1 - BOTTLENECK_DETAIL_HEADER_HEIGHT_PX / table_height
+    # 행 사이는 얇은 격자선으로 긋는다. 20행에 바깥 테두리 굵기를 쓰면 격자가 내용보다
+    # 무거워진다. 머리글 밑줄만 굵게 남겨 위계를 지킨다.
+    bottleneck_boundary_shapes = [
+        {
+            "type": "line",
+            "x0": 0,
+            "x1": 1,
+            "y0": header_boundary_y,
+            "y1": header_boundary_y,
+            "xref": "paper",
+            "yref": "paper",
+            "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX},
+            "layer": "above",
+        },
         *[
-            1
-            - (bottleneck_detail_header_height + rank_index * bottleneck_detail_row_height)
-            / bottleneck_detail_table_height
-            for rank_index in range(1, len(bottleneck_detail_ranks))
+            {
+                "type": "line",
+                "x0": 0,
+                "x1": 1,
+                "y0": 1
+                - (
+                    BOTTLENECK_DETAIL_HEADER_HEIGHT_PX
+                    + rank_index * BOTTLENECK_DETAIL_ROW_HEIGHT_PX
+                )
+                / table_height,
+                "y1": 1
+                - (
+                    BOTTLENECK_DETAIL_HEADER_HEIGHT_PX
+                    + rank_index * BOTTLENECK_DETAIL_ROW_HEIGHT_PX
+                )
+                / table_height,
+                "xref": "paper",
+                "yref": "paper",
+                "line": {"color": tokens.BORDER, "width": tokens.GRID_LINE_WIDTH_PX},
+                "layer": "above",
+            }
+            for rank_index in range(1, rank_count)
         ],
     ]
     add_figure_outer_border(
@@ -920,21 +1141,53 @@ def build_bottleneck_detail_figures(
         emphasize_left=False,
         emphasize_bottom=True,
     )
-    bottleneck_boundary_shapes = [
-        {
-            "type": "line",
-            "x0": 0,
-            "x1": 1,
-            "y0": boundary_y,
-            "y1": boundary_y,
-            "xref": "paper",
-            "yref": "paper",
-            "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX},
-            "layer": "above",
-        }
-        for boundary_y in bottleneck_detail_boundaries
-    ]
     append_layout_items(bottleneck_detail_label_figure, shapes=bottleneck_boundary_shapes)
-    append_layout_items(bottleneck_detail_month_figure, shapes=bottleneck_boundary_shapes)
+    # `go.Table` 이 그려 주던 머리글 띠·셀 격자를 카테시안에서는 직접 그린다.
+    append_layout_items(
+        bottleneck_detail_month_figure,
+        shapes=[
+            {
+                "type": "rect",
+                "x0": 0,
+                "x1": 1,
+                "y0": header_boundary_y,
+                "y1": 1,
+                "xref": "paper",
+                "yref": "paper",
+                "fillcolor": tokens.HEADER_BACKGROUND,
+                "line": {"width": 0},
+                "layer": "below",
+            },
+            *[
+                {
+                    "type": "line",
+                    "x0": month_index / month_count,
+                    "x1": month_index / month_count,
+                    "y0": 0,
+                    "y1": 1,
+                    "xref": "paper",
+                    "yref": "paper",
+                    "line": {"color": tokens.BORDER, "width": tokens.GRID_LINE_WIDTH_PX},
+                    "layer": "above",
+                }
+                for month_index in range(1, month_count)
+            ],
+            *bottleneck_boundary_shapes,
+        ],
+        annotations=[
+            {
+                "x": (month_index + 0.5) / month_count,
+                "y": (1 + header_boundary_y) / 2,
+                "xref": "paper",
+                "yref": "paper",
+                "text": f"<b>{html.escape(month)}</b>",
+                "showarrow": False,
+                "xanchor": "center",
+                "yanchor": "middle",
+                "font": {"color": tokens.TEXT, "size": 15, "family": tokens.FONT_FAMILY},
+            }
+            for month_index, month in enumerate(month_labels)
+        ],
+    )
     add_quarter_boundaries(bottleneck_detail_month_figure, month_labels)
     return bottleneck_detail_label_figure, bottleneck_detail_month_figure

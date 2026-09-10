@@ -46,7 +46,7 @@ def prepare_equipment_baseline(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def prepare_equipment_master(data: pd.DataFrame) -> pd.DataFrame:
-    """Normalize and validate the 29-column equipment master contract."""
+    """호기 마스터 30컬럼 계약을 정규화하고 검증한다."""
     require_columns(data, EQUIPMENT_COLUMNS, "호기 마스터")
     result = data.loc[:, EQUIPMENT_COLUMNS].copy()
     result = _drop_blank_rows(result, ("호기",))

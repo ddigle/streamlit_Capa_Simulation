@@ -16,7 +16,7 @@ from capa_simulation.components.reference_csv_tools import (
 )
 from capa_simulation.components.scenario_edit_bar import render_scenario_edit_bar
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
-from capa_simulation.components.table_toolbar import render_table_heading
+from capa_simulation.components.table_toolbar import render_csv_download, render_table_heading
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     load_page_context,
@@ -608,6 +608,14 @@ else:
                     display_order,
                     "공정별 Capa",
                     "대당 Capa",
+                )
+                render_csv_download(
+                    data=displayed_exclusions.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=(
+                        "Capa_Unit_Capacity_Exclusions_"
+                        f"{effective_start_month}_{effective_end_month}.csv"
+                    ),
+                    key="download_unit_capacity_exclusions_csv",
                 )
                 st.dataframe(displayed_exclusions, hide_index=True, width="stretch")
 

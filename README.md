@@ -41,13 +41,14 @@ GitHub에서 소스만 받은 빈 환경은 첫 실행 시 DuckDB 스키마를 �
 - HOME 하단 독립 메뉴의 `Capa Chatbot` 대화형 분석 화면 초안
 - `Static Capa` 상위 화면의 경고·확보 기준별 월간 설비 부족 현황과 하위 부하량·공정별
   Capa·공정별 확보율·표준 목표 Capa 페이지
-- `Dynamic Capa` 아래 가용설비 현황·효율 실적·UPEH 실적·Space 현황 페이지
+- `Dynamic Capa` 아래 표준 대비 재공 현황·가용설비 현황·효율 실적·UPEH 실적·Space 현황
+  페이지
 - 전체 공정 우선순위와 공정·제품·Stack·WF 속성별 표준/실효/실적 Capa 비교 프로토타입
 - 공정·제품·STEP별 일일 보유 재공·유입·Flow와 표준 가능량을 비교하는 Plotly 격자
   프로토타입
 
-Dynamic Capa 영역의 상위·하위 페이지 제목에는 실제 실적 DB 연결과 운영 기준 확정 전임을
-명확히 하기 위해 `(구현중)`을 표시합니다.
+`Capa Chatbot`과 `Dynamic Capa` 영역의 상위·하위 페이지 제목에는 실제 실적 DB 연결과
+운영 기준 확정 전임을 명확히 하기 위해 `(구현중)`을 표시합니다.
 
 `Static Capa` 상위 화면은 월·공정별 확보율에서 경고 기준까지 필요한 대수와 경고 기준에서
 확보 기준까지 추가로 필요한 대수를 분리해 표시합니다. 두 단계의 합계는 확보 기준을
@@ -113,11 +114,17 @@ src/capa_simulation/navigation.py
                                사이드바 페이지 목록 선언
 src/capa_simulation/page_bootstrap.py
                                계산 페이지 공통 진입 절차(활성 리비전·조회기간)
-src/capa_simulation/design/    색·서체·표 치수 토큰과 Plotly 공통 레이아웃
+src/capa_simulation/design/    색·서체·표 치수 토큰
 src/capa_simulation/components/ Streamlit 커스텀 UI 컴포넌트와 Figure 생성기
 src/capa_simulation/io/        Core Data 어댑터와 DuckDB 활성 기준정보 경계
+src/capa_simulation/io/object_storage.py
+                               S3 호환 오브젝트 스토리지를 aws CLI로 호출하는 유일한 경계
 src/capa_simulation/persistence/
                                DuckDB 마이그레이션·Repository·데이터 모델
+src/capa_simulation/persistence/sync_state.py
+                               DB 파일 옆 사이드카의 원격 세대·미반영 변경 표시
+src/capa_simulation/persistence/snapshot_export.py
+                               DuckDB 스냅샷 내보내기와 받은 스냅샷의 검증·설치
 src/capa_simulation/services/  계산·정렬·표 변환 로직
 src/capa_simulation/services/frame_contracts.py
                                서비스 공용 컬럼 계약과 업무 키 정규화
@@ -127,19 +134,27 @@ src/capa_simulation/scenario_activation.py
                                저장 리비전의 테이블·프리셋 활성화
 src/capa_simulation/application_bootstrap.py
                                빈 시나리오 저장소의 안전한 최초 구성
+src/capa_simulation/sync_boot.py
+                               managed 모드에서만 동기화 사이드카 기록을 켜는 기동 등록
 src/capa_simulation/services/builtin_seed.py
                                78컬럼 DEMO Core Data와 RQ 16개 생성 경계
 src/capa_simulation/performance.py
                                HOME 단계별 성능 계측
 config/bootstrap_display_order.json
                                GitHub 독립 실행용 비민감 최소 표시순서 시드
+config/object_storage.json     오브젝트 스토리지 동기화 모드·엔드포인트·버킷 설정
 data/input/RQ_DISPLAY_ORDER.csv
                                선택적인 로컬 공용 표시순서 초기 이관 파일(Git 제외)
 templates/                     일회성 초기 이관·병행 검증용 로컬 XLSB
 scripts/                       초기 이관·통합 검증·벤치마크·오브젝트 스토리지 동기화 도구
+scripts/sync_object_storage.py
+                               스냅샷 진단·초기화와 수동 pull·push 운영 도구
 tests/                         계산·캐시·시나리오·화면 테스트
 docs/TODO.md                   결정 이력과 작업 목록
+docs/data_model.md             DuckDB 데이터 모델
 docs/design_system.md          색·서체·표 밀도 규칙
+docs/migration_catalog.md      SQL 마이그레이션 목적·출처 카탈로그
+docs/objectstore_setup.md      사내 오브젝트 스토리지 연동 절차
 AGENTS.md                      개발 에이전트용 구조·규칙 문서
 ```
 
@@ -196,7 +211,8 @@ STEP 소요대수, 공정 유효 Capa, RUN_DAY, 대당 일 Capa, 가용대수와
 시나리오 및 리비전 소유 테이블에 포함됩니다.
 
 자세한 개발 구조와 변경 규칙은 [AGENTS.md](AGENTS.md), 확정사항과 향후 계획은
-[docs/TODO.md](docs/TODO.md)를 참고합니다.
+[docs/TODO.md](docs/TODO.md)를 참고합니다. 직전 세션의 상태와 다음 할 일은
+[HANDOFF.md](HANDOFF.md)를 참고합니다.
 
 모든 Python·PowerShell 파일 최상단에는 그 파일의 단일 책임을 설명하는 `Purpose` 한 줄을
 유지하고, 책임이 달라지면 같은 변경에서 함께 고칩니다. 변경 출처와 이력은 주석이 아니라
@@ -257,9 +273,9 @@ typed raw에 그대로 보존하고, RQ 변환 단계에서는 BigDataQuery가 �
 `Area_Name`은 Core Data 변환과 기존 리비전의 `RQ_REQB ↔ 대당 Capa` 런타임 연결에서
 입력 대소문자와 앞뒤 공백을 정규화해 `Main`·`MI`로 통일하며,
 Lot/WF 측정률의 빈 값은 측정 대상이 아닌 경로의 기본값 `1.0`으로 계산합니다.
-Dummy Chip·Wafer의 EDS Loss 보정은 `WF 구분`이 `Dummy`, `DUMMY` 또는 앞뒤 공백을
-포함하더라도 동일하게 적용되므로 기존 리비전과 BigDataQuery 원천 표기 차이에 영향을
-받지 않습니다.
+Dummy Chip·Wafer의 EDS Loss 보정은 `WF 구분` 하나가 아니라 `(제품타입, WF 구분)` 짝으로
+판정하므로 현재 Dummy가 있는 HBM에만 적용되며, `Dummy`·`DUMMY`나 앞뒤 공백 같은 표기
+차이에는 영향을 받지 않아 기존 리비전과 BigDataQuery 원천을 함께 다룰 수 있습니다.
 Core Data에서 같은 RQ 업무 키에 서로 다른 값이 발견되면 전체 변환을 중단하지 않고
 원천 행 순서상 첫 값을 임시 적용합니다. BigDataQuery 등록 화면에는 테이블별 충돌 건수와
 임시 제외 행 수를 표시하고, 업무 키·후보값·선택값·원천행 번호를 UTF-8 CSV로 제공합니다.
@@ -274,9 +290,10 @@ STEP·MCP 키 도입 전에 첫 행 선택 방식으로 저장한 사내 검증 
 .\.venv\Scripts\python.exe scripts\bootstrap_initial_duckdb_scenario.py --replace-existing
 ```
 
-사내 조회를 연결하려면
+사내 조회에 쓰는
 `src/capa_simulation/io/company_bigdataquery_adapter.py`의 `QUERY_TEMPLATE`과
-`SOURCE_COLUMN_MAPPING`을 실제 SQL·컬럼명으로 채웁니다. `bigdataquery`는 사내 전용
+`SOURCE_COLUMN_MAPPING`은 실제 원천 테이블의 SQL·컬럼명으로 이미 채워져 있고, 남은
+것은 사내 환경에서의 접속·조회 검증입니다. `bigdataquery`는 사내 전용
 환경에서만 설치하고 `pyproject.toml`의 공통 의존성에는 넣지 않습니다.
 
 XLSB, SQLite 및 DuckDB 파일은 로컬 데이터이므로 Git에 포함되지 않습니다. 시뮬레이션
@@ -304,6 +321,10 @@ DuckDB는 `data/capa_simulation.duckdb`, 설비 운영 전용 DuckDB는
   확인할 수 있습니다.
 - 공정별 Capa의 UPEH·효율·여유율·Lot/WF측정률·일수 편집기는 선택한 탭만 생성합니다.
   탭 전환 시 rerun되지만 입력 적용·세션 revision 계약은 기존과 같습니다.
+- Lot 측정률·WF측정률이 0 이하인 경로와 대당 Capa가 0 이하인 경로는 그 행만 계산에서
+  빠지고 화면은 계속 그려집니다. 공정별 Capa와 공정별 확보율은 제외 건수를 경고로 알리고
+  사유가 붙은 제외 목록을 상세 표와 UTF-8 CSV로 제공하므로, 문제 값은 같은 페이지의
+  기준정보 편집 탭에서 바로 고칠 수 있습니다.
 - 저장하지 않은 웹 편집값은 브라우저 세션별 활성 시나리오에만 존재합니다.
 - 페이지를 이동해도 편집값은 유지되고 다른 산출 페이지에 반영됩니다.
 - `시나리오 관리`에서 신규 시나리오 또는 리비전으로 저장하면 서버 재시작 후에도
@@ -324,6 +345,9 @@ DuckDB는 `data/capa_simulation.duckdb`, 설비 운영 전용 DuckDB는
 - 공식 지정은 리비전을 수정하지 않고 발행 이력을 추가합니다. 최신 공식 시나리오는 다른
   공식버전을 먼저 지정하기 전에는 보관할 수 없습니다.
 - 시나리오 보관은 논리 상태 변경이며 데이터를 물리 삭제하지 않습니다.
+- 오브젝트 스토리지 동기화를 켠 사내 환경(`managed` 모드)에서는 DuckDB 파일 옆에
+  `<db파일명>.sync.json` 사이드카가 생겨 원격 세대와 아직 올리지 않은 변경 표시를
+  기록합니다.
 
 ## 가용설비 현황 관리
 
@@ -336,7 +360,8 @@ DuckDB는 `data/capa_simulation.duckdb`, 설비 운영 전용 DuckDB는
 - 기존 보유대수와 공정명은 설비 전용 입력표에서 직접 등록합니다. 오래된 가동설비처럼
   호기별 양산전환 이력을 관리할 실익이 없는 설비를 공정·분류별 기준 대수로 유지합니다.
 - 기존 보유대수는 전체 조회기간에 즉시 가용한 기준 대수입니다.
-- 호기 마스터는 호기를 키로 공정대·소분류, 참고 속성, 분류1~3, 동·층,
+- 호기 마스터는 호기를 키로 공정대·소분류, 라인·활용구분, 투자기준·담당자 등 참고 속성,
+  분류1~3, 동·층,
   Space X좌표·Y좌표·Xsize·Ysize, 제진대·물류·입고·Qual·반출·이설 일정과
   Qual 실행관리용 확정상태,
   장기보관·기존설비·레이아웃 표시 여부를 관리합니다. 공정소분류를 대시보드와
@@ -350,7 +375,8 @@ DuckDB는 `data/capa_simulation.duckdb`, 설비 운영 전용 DuckDB는
   헤더 포함 전체 표를 붙여넣을 수 있습니다. 입력 표는 각각 호기, 호기 + 비가동유형 + 시작일을 기준으로 현재 편집본에
   추가·대체됩니다. Import 전 신규·대체 행과 변경 컬럼을 미리 확인하고 편집본 적용을
   확정하며, DuckDB 저장은 별도 저장 버튼에서 수행합니다. 다운로드 양식의 2행에는 입력
-  예시가 있으며 비고의 안내대로 업로드 전에 삭제합니다.
+  예시가 있고, 호기 마스터 양식의 3행부터는 호기를 비운 채 허용값만 나열한 안내 행이
+  이어집니다. 호기가 빈 안내 행은 붙여넣기·업로드 때 자동으로 제외됩니다.
 - 주차는 월요일부터 일요일까지의 ISO Weeknum(`YY-W##`)으로 표시하며, 가용설비
   페이지 상단에서 시뮬레이션과 독립된 조회기간을 설정합니다.
 - 대시보드 조회 조건은 `라인구분 → 활용구분 → 공정대분류 → 공정소분류` 순으로 제공하며,
@@ -422,7 +448,7 @@ DuckDB도 페이지 최초 접근 시 스키마가 생성되고, 실제 리비�
 
 ## 현재 주요 미구현 항목
 
-- 사내 BigDataQuery 실제 SQL·DB 컬럼 매핑과 접속 검증
+- 사내 환경에서의 BigDataQuery 접속·조회 검증
 - 시나리오·공식버전·표시순서 관리의 사용자 권한과 승인자 이력
 - BOX·PCB 부하량과 Capa 산식
 - `MCP_Chip_Ratio` 소요대수 보정

@@ -16,8 +16,8 @@ HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
 def _home_script(database_path: Path) -> str:
     """app.py의 전역 준비 단계만 재현한 뒤 HOME 페이지를 실행한다.
 
-    AppTest에는 plotly_chart 접근자가 없어 st.plotly_chart를 감싸 호출별 trace 수를
-    session_state에 기록한다. Components v2 위젯은 모듈 import 시점에 한 번 등록되므로
+    AppTest에는 plotly_chart 접근자가 없어 st.plotly_chart를 감싸 호출별 trace 수와
+    config를 session_state에 기록한다. Components v2 위젯은 모듈 import 시점에 한 번 등록되므로
     AppTest 인스턴스를 새로 만들면 레지스트리에 남아 있지 않다. 가로 스크롤바는
     특성화 대상이 아니므로 호출 횟수만 세는 스텁으로 대체한다.
     """
@@ -38,6 +38,7 @@ bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
 apply_pending_scenario_preset()
 
 st.session_state["spy_traces"] = []
+st.session_state["spy_configs"] = {{}}
 st.session_state["spy_scrollbars"] = 0
 _original_plotly_chart = st.plotly_chart
 _original_scrollbar = horizontal_scrollbar.render_horizontal_scrollbar
@@ -47,6 +48,10 @@ def _spy_plotly_chart(figure, *args, **kwargs):
     st.session_state["spy_traces"] = st.session_state["spy_traces"] + [
         len(getattr(figure, "data", []) or [])
     ]
+    st.session_state["spy_configs"] = {{
+        **st.session_state["spy_configs"],
+        kwargs.get("key"): dict(kwargs.get("config") or {{}}),
+    }}
     return _original_plotly_chart(figure, *args, **kwargs)
 
 
@@ -90,8 +95,9 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     ]
 
     # 기본 진입은 상세표까지 펼친다: 요약(좌측 라벨 trace 0 + 월별 본문 trace 3)에
-    # 계획 세부수량과 B/N 상세 시트가 더해진다.
-    assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 1]
+    # 계획 세부수량과 B/N 상세 시트가 더해진다. B/N 상세 월 Figure 의 4는 hover 표적
+    # 막대·트랙 막대·확보율 막대·공정명 텍스트다. 값이 커지면 trace 를 늘린 것이다.
+    assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 4]
     assert app.session_state["spy_scrollbars"] == 1
 
     assert [widget.label for widget in app.main.toggle] == ["계획·B/N 상세표 표시"]
@@ -108,13 +114,33 @@ def test_home_detail_toggle_starts_on_and_can_be_turned_off(seeded_database: Pat
     app = _run(seeded_database)
     assert app.main.toggle[0].value is True
     # 계획 세부수량과 B/N 상세 시트가 요약에 더해져 있다.
-    assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 1]
+    assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 4]
 
     app.main.toggle[0].set_value(False).run()
 
     assert not list(app.exception)
     # 좌측 라벨(trace 0) + 월별 본문(trace 3) 만 남는다.
     assert app.session_state["spy_traces"] == [0, 3]
+
+
+def test_the_bottleneck_detail_chart_keeps_hover_on(seeded_database: Path) -> None:
+    """상세 B/N 월 Figure 의 hover 는 `staticPlot` 을 빼 둔 것이 유일한 근거다.
+
+    같은 캔버스의 상세 두 Figure 중 계획 세부수량 쪽은 `staticPlot: True` 라, 일관성을
+    이유로 이 한 곳에 다시 넣으면 hover 가 조용히 죽는다. 그 한 줄을 여기서 고정한다.
+    """
+    app = _run(seeded_database)
+    configs = app.session_state["spy_configs"]
+
+    bottleneck_config = configs["bottleneck_detail_months"]
+    assert "staticPlot" not in bottleneck_config
+    assert bottleneck_config["displayModeBar"] is False
+    # `staticPlot` 을 빼면 기본값으로 돌아오는 둘도 함께 꺼져 있어야 한다.
+    assert bottleneck_config["doubleClick"] is False
+    assert bottleneck_config["showAxisDragHandles"] is False
+
+    assert configs["production_detail_months"]["staticPlot"] is True
+    assert configs["bottleneck_detail_labels"]["staticPlot"] is True
 
 
 def test_home_reuses_cached_figures_on_an_unchanged_rerun(seeded_database: Path) -> None:

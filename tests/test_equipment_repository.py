@@ -25,7 +25,7 @@ from capa_simulation.persistence.equipment_repository import (
 
 def _repository(path: Path) -> DuckDBEquipmentRepository:
     repository = DuckDBEquipmentRepository(path)
-    assert repository.initialize() == (1, 2, 3, 4, 5)
+    assert repository.initialize() == (1, 2, 3, 4, 5, 6)
     assert repository.initialize() == ()
     return repository
 
@@ -48,6 +48,7 @@ def test_equipment_snapshots_are_immutable_revisions(tmp_path: Path) -> None:
     loaded_first = repository.load_snapshot(first.revision.revision_id)
     assert loaded_first.equipment.loc[1, "Qual일정"] == pd.Timestamp("2026-08-21")
     assert loaded_first.equipment.loc[1, "확정상태"] == "확정"
+    assert loaded_first.equipment.loc[1, "담당자"] == "담당A"
     assert [revision.revision_no for revision in repository.list_revisions()] == [2, 1]
 
 
@@ -184,7 +185,7 @@ def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (3, 4, 5)
+    assert repository.initialize() == (3, 4, 5, 6)
     snapshot = repository.load_snapshot("legacy-r1")
 
     assert snapshot.equipment.loc[0, "호기"] == "EQ-LEGACY"

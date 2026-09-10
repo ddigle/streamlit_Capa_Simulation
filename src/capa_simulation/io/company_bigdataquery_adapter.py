@@ -375,5 +375,6 @@ def load_bigdataquery_module() -> ModuleType:
     except ModuleNotFoundError as exc:
         raise RuntimeError(
             "현재 환경에 bigdataquery 패키지가 없습니다. "
-            "사내 전용 가상환경에서 실행하거나 사내 requirements를 적용하세요."
+            "이 패키지는 사내 전용이라 pyproject.toml 의존성에 넣지 않습니다. "
+            "사내 환경에서 `uv pip install bigdataquery` 로 따로 설치한 뒤 실행하세요."
         ) from exc

@@ -5,11 +5,11 @@ import pytest
 
 from capa_simulation.services.dashboard import (
     build_bottleneck_capacity,
+    build_monthly_bottleneck_details,
+    build_monthly_bottleneck_details_from_ranking,
     build_monthly_bottleneck_ranking,
     build_monthly_bottleneck_top5,
     build_monthly_bottleneck_top5_from_ranking,
-    build_monthly_bottleneck_top10_details,
-    build_monthly_bottleneck_top10_details_from_ranking,
     build_monthly_bottlenecks,
     build_monthly_bottlenecks_from_ranking,
     build_monthly_wafer_load,
@@ -157,7 +157,11 @@ def test_dashboard_reuses_one_monthly_bottleneck_ranking() -> None:
         monthly_density,
         monthly_wafer,
     )
-    top10 = build_monthly_bottleneck_top10_details_from_ranking(ranking, monthly_wafer)
+    details = build_monthly_bottleneck_details_from_ranking(
+        ranking,
+        monthly_wafer,
+        rank_limit=20,
+    )
 
     assert ranking["공정"].tolist() == [
         "Process-5",
@@ -170,7 +174,8 @@ def test_dashboard_reuses_one_monthly_bottleneck_ranking() -> None:
     assert ranking["순위"].tolist() == [1, 2, 3, 4, 5, 6]
     assert top1["공정"].tolist() == ["Process-5"]
     assert top5["공정"].tolist() == ranking["공정"].head(5).tolist()
-    assert top10["공정"].tolist() == ranking["공정"].tolist()
+    # 상한(20)보다 유효 공정이 적은 달은 있는 만큼만 나온다.
+    assert details["공정"].tolist() == ranking["공정"].tolist()
 
 
 def test_dashboard_converts_bottleneck_rate_to_density_capacity() -> None:
@@ -226,7 +231,7 @@ def test_dashboard_builds_monthly_bottleneck_top5_capacity() -> None:
     assert result["Wafer Capa"].tolist() == pytest.approx([700.0, 800.0, 900.0, 1_000.0, 1_100.0])
 
 
-def test_dashboard_builds_monthly_bottleneck_top10_details() -> None:
+def test_dashboard_builds_monthly_bottleneck_details() -> None:
     securement = pd.DataFrame(
         {
             "생산계획년월": [202608] * 12,
@@ -240,14 +245,8 @@ def test_dashboard_builds_monthly_bottleneck_top10_details() -> None:
         {"생산계획년월": [202608], "Wafer 부하량": [1_000.0], "년월": ["26.08"]}
     )
 
-    result = build_monthly_bottleneck_top10_details(
-        securement,
-        monthly_wafer,
-        included_processes=[f"Process-{index:02d}" for index in range(11)],
-    )
-
-    assert len(result) == 10
-    assert result["공정"].tolist() == [
+    included = [f"Process-{index:02d}" for index in range(11)]
+    ascending_by_rate = [
         "Process-09",
         "Process-07",
         "Process-05",
@@ -258,11 +257,63 @@ def test_dashboard_builds_monthly_bottleneck_top10_details() -> None:
         "Process-00",
         "Process-06",
         "Process-08",
+        "Process-10",
     ]
-    assert result["순위"].tolist() == list(range(1, 11))
-    assert result["Wafer Capa"].tolist() == pytest.approx(
-        [500.0, 600.0, 700.0, 800.0, 900.0, 1_000.0, 1_100.0, 1_200.0, 1_300.0, 1_400.0]
+
+    # 상한이 유효 공정 수보다 크면 있는 만큼만 나온다.
+    result = build_monthly_bottleneck_details(
+        securement,
+        monthly_wafer,
+        included_processes=included,
+        rank_limit=20,
     )
+
+    assert len(result) == 11
+    assert result["공정"].tolist() == ascending_by_rate
+    assert result["순위"].tolist() == list(range(1, 12))
+    assert result["Wafer Capa"].tolist() == pytest.approx(
+        [
+            500.0,
+            600.0,
+            700.0,
+            800.0,
+            900.0,
+            1_000.0,
+            1_100.0,
+            1_200.0,
+            1_300.0,
+            1_400.0,
+            1_500.0,
+        ]
+    )
+
+    # 상한이 실제로 자른다.
+    limited = build_monthly_bottleneck_details(
+        securement,
+        monthly_wafer,
+        included_processes=included,
+        rank_limit=4,
+    )
+
+    assert limited["공정"].tolist() == ascending_by_rate[:4]
+    assert limited["순위"].tolist() == [1, 2, 3, 4]
+
+
+def test_dashboard_rejects_a_bottleneck_detail_rank_limit_below_one() -> None:
+    ranking = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "공정": ["Process-A"],
+            "가용대수": [10.0],
+            "소요대수": [20.0],
+            "확보율": [0.5],
+            "순위": [1],
+        }
+    )
+    monthly_wafer = pd.DataFrame({"생산계획년월": [202608], "Wafer 부하량": [1_000.0]})
+
+    with pytest.raises(ValueError, match="1 이상"):
+        build_monthly_bottleneck_details_from_ranking(ranking, monthly_wafer, rank_limit=0)
 
 
 def test_dashboard_builds_wafer_lob_summary() -> None:

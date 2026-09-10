@@ -33,6 +33,19 @@ UNIT_CAPACITY_DIMENSIONS = [
 UNIMPLEMENTED_BASES = {"BOX", "PCB"}
 CAPACITY_EXCLUSIONS_ATTR = "excluded_capacity_rows"
 
+# 검증 실패 메시지에 문제 행의 업무 키를 실으려면 그 컬럼이 어떤 키로 붙었는지 알아야 한다.
+# 연결에 쓰는 키 목록과 검증이 보고하는 키 목록이 갈라지지 않게 한 곳에 둔다.
+VITAL_KEYS = ["생산계획년월", "공정", "양산구분"]
+MODULE_KEYS = ["공정"]
+RUN_DAY_KEYS = ["생산계획년월", "공정"]
+
+# 0 이하이면 그 행만 계산에서 빼는 컬럼. 둘 다 대당 Capa 식의 분모이고 결측 기본값이
+# 1.0 인 쌍둥이 기준정보라 같은 규칙을 쓴다.
+NONPOSITIVE_EXCLUDED_COLUMNS = (
+    ("WF측정률", "WF측정률 0 이하"),
+    ("Lot 측정률", "Lot 측정률 0 이하"),
+)
+
 
 def calculate_unit_capacity(
     upeh: pd.DataFrame,
@@ -68,15 +81,15 @@ def calculate_unit_capacity(
     result = _join_reference(
         result,
         vital,
-        ["생산계획년월", "공정", "양산구분"],
+        VITAL_KEYS,
         "편중률",
         "RQ_VITAL",
     )
-    result = _join_reference(result, module, ["공정"], "모듈수", "RQ_MODULE")
+    result = _join_reference(result, module, MODULE_KEYS, "모듈수", "RQ_MODULE")
     result = _join_reference(
         result,
         run_day,
-        ["생산계획년월", "공정"],
+        RUN_DAY_KEYS,
         "RUN_DAY",
         "RQ_RUN_DAY",
     )
@@ -97,17 +110,20 @@ def calculate_unit_capacity(
         missing_value_default=1.0,
     )
 
-    for column, table_name in (
-        ("편중률", "RQ_VITAL"),
-        ("모듈수", "RQ_MODULE"),
-        ("RUN_DAY", "RQ_RUN_DAY"),
-        ("Lot 측정률", "RQ_LOT_RATIO"),
-    ):
-        _assert_positive(result, column, table_name)
+    # 계산 대상 행을 먼저 확정한다. 어차피 빠질 행의 다른 기준값 때문에 화면 전체가
+    # 멈추면 그 값을 고칠 편집기조차 열리지 않는다.
+    excluded_frames: list[pd.DataFrame] = []
+    for column, reason in NONPOSITIVE_EXCLUDED_COLUMNS:
+        nonpositive_ratio = result[column].le(0)
+        excluded_frames.append(_exclusion_rows(result, nonpositive_ratio, reason))
+        result = result.loc[~nonpositive_ratio].copy()
 
-    nonpositive_wf_ratio = result["WF측정률"].le(0)
-    excluded_frames = [_exclusion_rows(result, nonpositive_wf_ratio, "WF측정률 0 이하")]
-    result = result.loc[~nonpositive_wf_ratio].copy()
+    for column, table_name, keys in (
+        ("편중률", "RQ_VITAL", VITAL_KEYS),
+        ("모듈수", "RQ_MODULE", MODULE_KEYS),
+        ("RUN_DAY", "RQ_RUN_DAY", RUN_DAY_KEYS),
+    ):
+        _assert_positive(result, column, table_name, keys)
 
     result["대당 Capa"] = (
         result["환산_UPEH"]
@@ -264,9 +280,21 @@ def _numeric_column(
     return numeric.astype("float64")
 
 
-def _assert_positive(data: pd.DataFrame, column: str, table_name: str) -> None:
-    if data[column].le(0).any():
-        raise ValueError(f"{table_name}의 {column} 값은 0보다 커야 합니다.")
+def _assert_positive(
+    data: pd.DataFrame,
+    column: str,
+    table_name: str,
+    keys: list[str],
+) -> None:
+    """0 이하 값을 막고, 어느 경로가 걸렸는지 건수와 예시 키·값으로 알린다."""
+    nonpositive = data[column].le(0)
+    if not bool(nonpositive.any()):
+        return
+    examples = data.loc[nonpositive, [*keys, column]].drop_duplicates().head(5).to_dict("records")
+    raise ValueError(
+        f"{table_name}의 {column} 값은 0보다 커야 합니다:"
+        f" {int(nonpositive.sum()):,}건, 예시 {examples}"
+    )
 
 
 def _exclusion_rows(data: pd.DataFrame, mask: pd.Series, reason: str) -> pd.DataFrame:

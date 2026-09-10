@@ -21,6 +21,7 @@ showWidgetBorder = true
 showSidebarBorder = true
 baseFontSize = 15
 baseFontWeight = 400
+headingFont = "Noto Sans KR, Malgun Gothic, 'Apple SD Gothic Neo', sans-serif"
 headingFontSizes = ["40px", "24px", "20px", "17px", "15px", "13px"]
 headingFontWeights = [650, 650, 600, 600, 600, 600]
 linkUnderline = false

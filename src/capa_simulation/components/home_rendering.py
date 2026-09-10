@@ -33,7 +33,7 @@ HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 
 HOME_FIGURE_CACHE_MAX_ENTRIES = 3
 
-HOME_FIGURE_SCHEMA_VERSION = 26
+HOME_FIGURE_SCHEMA_VERSION = 28
 
 
 def home_figure_cache() -> dict[HomeFigureCacheKey, HomeFigureSet]:
@@ -158,9 +158,19 @@ def render_home_figures(
                             key="production_detail_months",
                             config={"displayModeBar": False, "staticPlot": True},
                         )
+                        # 상세 B/N 월 Figure 는 hover 를 쓰므로 `staticPlot` 을 빼 둔다.
+                        # 같은 캔버스의 상세 두 Figure 중 계획 세부수량 쪽은 켜져 있다.
+                        # `staticPlot` 은 hover 까지 함께 끈다. 빼면 `displayModeBar`
+                        # 기본값이 "hover" 로,
+                        # `doubleClick`·`showAxisDragHandles` 는 켜짐으로 돌아가므로
+                        # 셋을 직접 끈다. 드래그 확대는 Figure 축의 `fixedrange` 가 막는다.
                         st.plotly_chart(
                             detail_figures[3],
                             width="stretch",
                             key="bottleneck_detail_months",
-                            config={"displayModeBar": False, "staticPlot": True},
+                            config={
+                                "displayModeBar": False,
+                                "doubleClick": False,
+                                "showAxisDragHandles": False,
+                            },
                         )

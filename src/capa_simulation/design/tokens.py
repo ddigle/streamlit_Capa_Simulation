@@ -57,6 +57,13 @@ STATUS_SECURE: Final = "#D4D4D8"
 STATUS_WARNING: Final = "#FB923C"
 STATUS_SHORTAGE: Final = "#F43F5E"
 
+# 가로막대의 바탕 트랙. 막대 길이 눈금(80~150%)의 전체 구간을 보여준다. 표 머리글·
+# 스크롤바 트랙과 값이 비슷하지만 역할이 다르므로 별도 토큰이다.
+# 트랙이 먼저 셀 면(SURFACE)에서 분리돼야 눈금 구간이 보인다: 대비 1.27:1.
+# 그 위의 "확보" 막대(STATUS_SECURE)와는 1.17:1 뿐이라 면색만으로는 부족하고,
+# 막대 테두리(LINE, 트랙 대비 8.25:1)가 BAR_OUTLINE_WIDTH_PX 굵기로 경계를 만든다.
+BAR_TRACK: Final = "#E1E5EA"
+
 # --------------------------------------------------------- Dynamic Capa 계열색
 # 표준 → 실효 → 실적으로 갈수록 밝아지는 단계 비교용이며 상태 판정과는 무관하다.
 SERIES_STANDARD: Final = "#3F3F46"
@@ -143,7 +150,7 @@ HIT_TARGET: Final = "rgba(255,255,255,0.01)"
 # ----------------------------------------------------------------------- 서체
 # Windows 전용 서체 하나만 지정하면 비Windows 클라이언트에서 서체와 컬럼 폭이 함께
 # 깨진다. 폴백 스택을 반드시 함께 넘긴다.
-FONT_FAMILY: Final = "Malgun Gothic, Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif"
+FONT_FAMILY: Final = "Noto Sans KR, Malgun Gothic, 'Apple SD Gothic Neo', sans-serif"
 FONT_FAMILY_NUMERIC: Final = "Calibri, " + FONT_FAMILY
 
 # --------------------------------------------------------------------- 표 치수
@@ -154,6 +161,10 @@ SCROLLBAR_HEIGHT_PX: Final = 10
 OUTER_BORDER_WIDTH_PX: Final = 1.8
 # 셀 사이를 나누는 얇은 격자선. 바깥 테두리·분기 경계보다 가늘어야 위계가 읽힌다.
 GRID_LINE_WIDTH_PX: Final = 0.8
+# 트랙 위에 얹히는 가로막대의 테두리. 면색만으로는 "확보" 막대와 트랙의 대비가
+# 1.17:1 뿐이라 막대의 끝이 어디인지 이 선이 정한다. 격자선보다 굵어야 셀 안에서
+# 막대가 격자에 묻히지 않는다.
+BAR_OUTLINE_WIDTH_PX: Final = 1.0
 CLASSIFICATION_MIN_WIDTH_PX: Final = 84
 CLASSIFICATION_MAX_WIDTH_PX: Final = 220
 CLASSIFICATION_TEXT_UNIT_PX: Final = 15

@@ -1,11 +1,16 @@
 # DuckDB 데이터 모델
 
-마지막 갱신일: 2026-09-06
+마지막 갱신일: 2026-09-10
 
 ## 운영 원칙
 
 - 시뮬레이션 운영 파일은 `data/capa_simulation.duckdb`, 설비 운영 파일은
   `data/equipment_availability.duckdb`이며 둘 다 Git과 배포 패키지에 포함하지 않는다.
+- `managed` 모드에서는 각 DuckDB 파일 옆에 `<파일명>.sync.json` 동기화 사이드카가 생긴다.
+  원격 세대(`base_seq`·`base_sha256`·`base_snapshot_key`), 미반영 변경 표시(`dirty`), 게시하지
+  못한 스냅샷 키와 실행 중 인스턴스의 심장박동을 담는다. 그 파일 자체가 동기화 대상이라 상태를
+  DuckDB 안에 두면 순환이 되므로 DB 밖에 둔다. 사이드카를 읽지 못하면 변경 있음으로 본다.
+  `local` 모드에서는 사이드카를 만들지 않는다.
 - `시나리오 1개 = 데이터셋 1개`다. 새 시나리오는 RQ 16개를 물리 복제하고 기존
   데이터셋을 덮어쓰지 않는다.
 - 데이터셋의 읽기 전용 기준정보를 바꾸려면 새 시나리오를 만든다.
@@ -105,8 +110,11 @@ RQ_EQP_AVBL
 1부터 부여하며, 원본 컬럼명과 순서를 유지한다. 업무 고유 키는
 `config/data_contract.json`의 `derived_keys`에 테이블별로 정의한다.
 `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO`는 생산계획년월·Area·공정·`STEP_SEQ`·
-`MCP_SEQ`·양산구분·제품정보·Stack·WF 구분을 경로 키로 사용한다. `RQ_REQB`와 대당
-Capa를 연결할 때도 Area·STEP·MCP를 포함해 정확히 일치시킨다.
+`MCP_SEQ`·양산구분·제품정보·Stack·WF 구분을 경로 키로 사용한다. 조인 키로 쓰는 `WF 구분`의
+값은 EDP-TSV 행에서 `Top`이 아니라 `Top_e`다. 원천에는 없는 값이며 `services/product_type.py`의
+규칙에 따라 `build_q_core_data`가 파생 경계에서 한 번만 갈라 붙인다. 0014 이전에 적재한
+기준정보·리비전 스냅샷은 마이그레이션이 같은 값으로 맞춘다. `RQ_REQB`와 대당 Capa를 연결할
+때도 Area·STEP·MCP를 포함해 정확히 일치시킨다.
 
 ### `rev_data`
 
@@ -148,10 +156,13 @@ RQ_CHIP_QTY  RQ_CHIP_EQ
 - `equipment_meta.schema_migration`: 설비 DB에만 적용하는 SQL 버전과 체크섬
 - `revision`: 설비 운영 입력의 증가 리비전 번호, 변경 메모, 입력 해시와 저장 시각
 - `baseline_snapshot`: 공정·분류별 기존 보유대수와 비고의 전체 스냅샷
-- `equipment_master_snapshot`: 호기를 키로 공정대/소분류, 참고 속성, 분류1~3, 동·층,
+- `equipment_master_snapshot`: 호기를 키로 공정대/소분류, 라인·활용구분, 투자기준·담당자
+  등 참고 속성, 분류1~3, 동·층,
   Space X/Y 좌표와 X/Y 크기, 제진대·물류·입고·Qual·반출·이설 일정, Qual 실행관리용
   확정상태, 장기보관·기존설비·
-  레이아웃 표시 여부, 호기이력과 비고를 저장하는 전체 스냅샷
+  레이아웃 표시 여부, 호기이력과 비고를 저장하는 전체 스냅샷.
+  `business_unit` 은 입력 계약에 없지만 그 값을 담은 과거 리비전이 남아 있어 컬럼을
+  유지한다. 신규 리비전에서는 NULL 이다.
 - `downtime_schedule_snapshot`: 호기·유형·시작일 자연키와 종료일·상세사유·비고의
   전체 스냅샷
 - `standard_target_weekly_availability`: 표준 목표 Capa 수동 입력용 공정·Weeknum별
@@ -206,7 +217,15 @@ Dynamic Capa의 표준과 실적은 수명주기가 다르므로 같은 리비�
 - 시나리오 보관은 `ACTIVE → ARCHIVED` 논리 변경이며 물리 삭제하지 않는다.
 - STEP·MCP 경로 키 도입 전 첫 행 유지 방식으로 저장한 사내 검증 시나리오는 의미를
   추정해 보정하지 않는다. 기존 시나리오를 제거하고 원천 Query로 신규 등록한다.
-- 두 DuckDB 파일은 서로 독립적으로 백업·복원하며 정책은 운영 배포 절차에서 확정한다.
+- 마이그레이션 0014는 이미 저장된 EDP-TSV 행의 `WF 구분` `Top`을 `Top_e`로 이관해 신규 파생과
+  값을 맞춘다. `ref_data`·`rev_data`의 RQ 7개씩을 갱신하고, 판별은 `RQ_PKG_PLAN`의 `제품타입`과
+  원천의 제품→타입 매핑을 쓰며 매핑이 갈리는 제품은 건드리지 않는다.
+- 두 DuckDB 파일은 서로 독립적으로 백업·복원한다. 백업은 라이브 파일 복사가 아니라
+  `persistence/snapshot_export.py`의 `ATTACH` + `COPY FROM DATABASE` 스냅샷이며, 설치할 때
+  기존 파일과 `.wal`은 지우지 않고 `data/temp/objectstore/superseded/`로 물러난다. 사내 S3 호환
+  스토리지와의 왕복은 앱을 끈 채 `scripts/sync_object_storage.py`의 `init`·`pull`·`push`를 사람이
+  실행하고, 앱은 `sync_boot.py`가 켠 `persistence/sync_state.py` 사이드카에 변경 표시만 남긴다.
+  사람이 해야 하는 절차는 `docs/objectstore_setup.md`에 있다.
 - 새 DuckDB 파일은 `persistence/_sql_helpers.py`의 `DUCKDB_BLOCK_SIZE`(16 KiB)로 만든다.
   DuckDB 기본 블록 256 KiB는 행이 2,767개뿐인 첫 부팅 DB도 24.5 MiB로 부풀리며, 16 KiB에서는
   같은 내용이 4.2 MiB이고 리비전 저장당 증가분도 2.5~9.5 MB에서 0.6 MB로 줄어든다. 블록 크기는
