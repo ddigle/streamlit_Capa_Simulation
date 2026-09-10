@@ -10,6 +10,7 @@ from capa_simulation.components.space_layout import (
     build_fab_figure,
     build_floor_layout_figure,
     equipment_counts,
+    floor_layout_figure_height,
     floors_for,
     invalid_equipment_rows,
 )
@@ -116,3 +117,57 @@ def test_invalid_equipment_rows_detects_out_of_canvas_equipment() -> None:
     )
 
     assert invalid_equipment_rows(equipment) == [2, 3]
+
+
+def test_invalid_equipment_rows_follow_the_floor_canvas() -> None:
+    equipment = pd.DataFrame(
+        [
+            {"X좌표": 10, "Y좌표": 10, "Xsize": 20, "Ysize": 10},
+            {"X좌표": 95, "Y좌표": 10, "Xsize": 10, "Ysize": 10},
+            {"X좌표": 10, "Y좌표": 30, "Xsize": 20, "Ysize": 10},
+        ]
+    )
+
+    # 도면을 올린 넓은 층은 2번 호기를 정상으로 보고, 낮아진 높이는 3번을 잡는다.
+    assert invalid_equipment_rows(equipment, canvas_width=120.0, canvas_height=37.5) == [3]
+    # 도면이 없는 층은 기본 캔버스 그대로다.
+    assert invalid_equipment_rows(equipment) == [2]
+
+
+def test_floor_layout_without_a_drawing_keeps_the_previous_canvas() -> None:
+    equipment = _space_equipment().loc[lambda frame: frame["동"].eq("C1")]
+
+    figure = build_floor_layout_figure(equipment, "C1", "1F")
+
+    canvas = figure.layout.shapes[0]
+    assert (canvas.x0, canvas.x1, canvas.y0, canvas.y1) == (0, 100, 0, 60)
+    assert figure.layout.xaxis.range == (0.0, 100.0)
+    assert figure.layout.yaxis.range == (0.0, 60.0)
+    assert figure.layout.height == 600
+    assert figure.layout.xaxis.dtick == 10
+    assert figure.layout.yaxis.dtick == 10
+    assert figure.layout.images == ()
+
+
+def test_floor_layout_draws_the_uploaded_drawing_on_the_floor_canvas() -> None:
+    equipment = _space_equipment().loc[lambda frame: frame["동"].eq("C1")]
+
+    figure = build_floor_layout_figure(
+        equipment,
+        "C1",
+        "1F",
+        background_image="data:image/png;base64,AAAA",
+        canvas_width=100.0,
+        canvas_height=37.5,
+    )
+
+    image = figure.layout.images[0]
+    assert image.source == "data:image/png;base64,AAAA"
+    # xref·yref 가 없으면 plotly 가 paper 좌표로 읽어 도면이 화면 밖으로 나간다.
+    assert (image.xref, image.yref) == ("x", "y")
+    assert (image.x, image.y, image.sizex, image.sizey) == (0, 37.5, 100.0, 37.5)
+    canvas = figure.layout.shapes[0]
+    assert (canvas.x1, canvas.y1) == (100.0, 37.5)
+    assert figure.layout.yaxis.range == (0.0, 37.5)
+    assert figure.layout.height == floor_layout_figure_height(100.0, 37.5)
+    assert figure.layout.height == 375

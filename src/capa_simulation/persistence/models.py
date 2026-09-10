@@ -22,6 +22,20 @@ class GlobalDisplayOrder:
     rules: pd.DataFrame
 
 
+@dataclass(frozen=True)
+class GlobalProcessRename:
+    """Scenario-independent process display-name profile used by the render layer only.
+
+    프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`,
+    `updated_at=None`, 규칙 0건이다.
+    """
+
+    version: int
+    source: str
+    updated_at: datetime | None
+    rules: pd.DataFrame
+
+
 def _required_text(value: str, label: str) -> str:
     normalized = value.strip()
     if not normalized:

@@ -1,0 +1,51 @@
+# Purpose: Dynamic Capa 하위의 관리 기능(공정 표시명 재지정 등)을 탭으로 모아 제공한다.
+
+from __future__ import annotations
+
+import streamlit as st
+
+from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.process_rename_management import (
+    render_process_rename_management,
+)
+from capa_simulation.io.reference_cache import get_effective_reference_tables
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.persistence.cache import get_scenario_repository
+from capa_simulation.settings import DUCKDB_PATH
+
+# 탭을 더할 자리다. 이름을 여기에 모아 두고 아래에서 같은 순서로 그린다. 차트·월별 표가
+# 들어오면 그때 `tab_state.stateful_tabs` 로 바꿔 **그림만** 건너뛴다. 입력 위젯은 닫힌
+# 탭에서도 항상 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다.
+TAB_NAMES = (":material/label: Proc Rename",)
+
+render_page_header(
+    "Admin Area (구현중)",
+    description="화면 표기·정렬순서 같은 운영 관리 설정을 한곳에 모읍니다.",
+)
+
+try:
+    database_path = str(DUCKDB_PATH.resolve())
+    repository = get_scenario_repository(database_path)
+except BOOTSTRAP_ERRORS as exc:
+    st.error(bootstrap_error_message(exc))
+    st.stop()
+
+# 공정 목록은 안내·편집 보조일 뿐이라 활성 시나리오가 없어도 화면을 멈추지 않는다.
+# 공용 표시명 저장 자체는 시나리오와 무관하다.
+try:
+    reference_tables = get_effective_reference_tables()
+    available_processes = sorted(
+        reference_tables["RQ_MODULE"]["공정"]
+        .astype("string")
+        .str.strip()
+        .dropna()
+        .unique()
+        .tolist()
+    )
+except BOOTSTRAP_ERRORS:
+    available_processes = []
+
+(process_rename_tab,) = st.tabs(list(TAB_NAMES))
+
+with process_rename_tab:
+    render_process_rename_management(repository, available_processes)

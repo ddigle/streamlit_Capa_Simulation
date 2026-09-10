@@ -8,6 +8,7 @@ import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
+    BASELINE_KEY_COLUMNS,
     COORDINATE_COLUMNS,
     DATE_COLUMNS,
     DOWNTIME_COLUMNS,
@@ -22,6 +23,11 @@ from capa_simulation.services.equipment_contract import (
     empty_equipment_baseline,
     empty_equipment_master,
 )
+from capa_simulation.services.floor_layout_profile import (
+    DEFAULT_CANVAS_HEIGHT,
+    DEFAULT_CANVAS_WIDTH,
+    FloorCanvasMap,
+)
 from capa_simulation.services.frame_contracts import require_columns
 
 
@@ -32,21 +38,29 @@ def prepare_equipment_baseline(data: pd.DataFrame) -> pd.DataFrame:
     result = _drop_blank_rows(result, ("공정", "분류", "기존보유대수"))
     if result.empty:
         return empty_equipment_baseline()
-    _normalize_required_text(result, ("공정", "분류"), "기존 보유대수")
+    _normalize_required_text(result, BASELINE_KEY_COLUMNS, "기존 보유대수")
     counts = pd.to_numeric(result["기존보유대수"], errors="coerce")
     if not (counts.notna() & counts.ge(0)).all():
         raise ValueError("기존보유대수는 0 이상의 숫자여야 합니다.")
     result["기존보유대수"] = counts.astype("float64")
     result["비고"] = _optional_text(result["비고"])
-    duplicated = result.duplicated(["공정", "분류"], keep=False)
+    duplicated = result.duplicated(list(BASELINE_KEY_COLUMNS), keep=False)
     if duplicated.any():
-        examples = _key_examples(result.loc[duplicated], ("공정", "분류"))
+        examples = _key_examples(result.loc[duplicated], BASELINE_KEY_COLUMNS)
         raise ValueError(f"기존 보유대수의 공정·분류가 중복되었습니다: {examples}")
     return result.reset_index(drop=True)
 
 
-def prepare_equipment_master(data: pd.DataFrame) -> pd.DataFrame:
-    """호기 마스터 30컬럼 계약을 정규화하고 검증한다."""
+def prepare_equipment_master(
+    data: pd.DataFrame,
+    *,
+    floor_canvases: FloorCanvasMap | None = None,
+) -> pd.DataFrame:
+    """호기 마스터 30컬럼 계약을 정규화하고 검증한다.
+
+    `floor_canvases` 를 넘기면 층별 캔버스 폭·높이를 상한으로 좌표를 검사한다. 넘기지
+    않으면 상한 검사를 건너뛴다 — 이미 저장된 리비전은 캔버스가 줄어든 뒤에도 열려야 한다.
+    """
     require_columns(data, EQUIPMENT_COLUMNS, "호기 마스터")
     result = data.loc[:, EQUIPMENT_COLUMNS].copy()
     result = _drop_blank_rows(result, ("호기",))
@@ -71,7 +85,7 @@ def prepare_equipment_master(data: pd.DataFrame) -> pd.DataFrame:
 
     for column in COORDINATE_COLUMNS:
         result[column] = pd.to_numeric(result[column], errors="coerce")
-    _validate_locations_and_coordinates(result)
+    _validate_locations_and_coordinates(result, floor_canvases)
 
     for column in DATE_COLUMNS:
         result[column] = _normalize_date(result[column], column)
@@ -171,7 +185,10 @@ def prepare_downtime_for_prepared_equipment(
     return prepared_downtime
 
 
-def _validate_locations_and_coordinates(result: pd.DataFrame) -> None:
+def _validate_locations_and_coordinates(
+    result: pd.DataFrame,
+    floor_canvases: FloorCanvasMap | None,
+) -> None:
     layout = result["레이아웃표시"].eq("Y")
     missing_location = layout & (
         result["동"].isna()
@@ -199,12 +216,33 @@ def _validate_locations_and_coordinates(result: pd.DataFrame) -> None:
         | result["Y좌표"].lt(0)
         | result["Xsize"].le(0)
         | result["Ysize"].le(0)
-        | result["X좌표"].add(result["Xsize"]).gt(100)
-        | result["Y좌표"].add(result["Ysize"]).gt(60)
     )
     if invalid.any():
         examples = result.loc[invalid, "호기"].head(5).tolist()
-        raise ValueError(f"Space 블럭은 X 0~100, Y 0~60 범위 안에 있어야 합니다: {examples}")
+        raise ValueError(f"Space 좌표는 0 이상, 크기는 0 초과여야 합니다: {examples}")
+    if floor_canvases is None:
+        return
+    limit_width, limit_height = _canvas_limits(result, floor_canvases)
+    outside = complete & (
+        result["X좌표"].add(result["Xsize"]).gt(limit_width)
+        | result["Y좌표"].add(result["Ysize"]).gt(limit_height)
+    )
+    if outside.any():
+        examples = result.loc[outside, "호기"].head(5).tolist()
+        raise ValueError(f"Space 블럭이 층 캔버스 범위를 벗어났습니다: {examples}")
+
+
+def _canvas_limits(
+    result: pd.DataFrame,
+    floor_canvases: FloorCanvasMap,
+) -> tuple[pd.Series, pd.Series]:
+    width = pd.Series(DEFAULT_CANVAS_WIDTH, index=result.index, dtype="float64")
+    height = pd.Series(DEFAULT_CANVAS_HEIGHT, index=result.index, dtype="float64")
+    for (building, floor), (canvas_width, canvas_height) in floor_canvases.items():
+        matched = result["동"].eq(building) & result["층"].eq(floor)
+        width = width.mask(matched, canvas_width)
+        height = height.mask(matched, canvas_height)
+    return width, height
 
 
 def _invalid_optional_order(data: pd.DataFrame, columns: tuple[str, ...]) -> pd.Series:

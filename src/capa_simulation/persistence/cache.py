@@ -11,6 +11,7 @@ import streamlit as st
 
 from capa_simulation.persistence.models import (
     GlobalDisplayOrder,
+    GlobalProcessRename,
     RevisionSummary,
     ScenarioPreset,
     ScenarioSnapshot,
@@ -65,6 +66,13 @@ class _GlobalDisplayOrderPayload(TypedDict):
     version: int
     source: str
     updated_at: datetime
+    rules: pd.DataFrame
+
+
+class _GlobalProcessRenamePayload(TypedDict):
+    version: int
+    source: str
+    updated_at: datetime | None
     rules: pd.DataFrame
 
 
@@ -170,7 +178,39 @@ def clear_global_display_order_cache() -> None:
     _load_scenario_snapshot_payload.clear()
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_process_rename_payload(database_path: str) -> _GlobalProcessRenamePayload:
+    profile = get_scenario_repository(database_path).load_global_process_rename()
+    return {
+        "version": profile.version,
+        "source": profile.source,
+        "updated_at": profile.updated_at,
+        "rules": profile.rules,
+    }
+
+
+def load_global_process_rename(database_path: str) -> GlobalProcessRename:
+    """Share the process display-name profile without caching its model class."""
+    payload = _load_global_process_rename_payload(database_path)
+    return GlobalProcessRename(
+        version=payload["version"],
+        source=payload["source"],
+        updated_at=payload["updated_at"],
+        rules=payload["rules"],
+    )
+
+
+def clear_global_process_rename_cache() -> None:
+    """표시명 프로필만 비운다.
+
+    표시순서와 달리 어떤 `RQ_*` 표에도 오버레이되지 않으므로 리비전 스냅샷 캐시는
+    건드리지 않는다. 같이 비우면 저장할 때마다 16표 재적재가 딸려온다.
+    """
+    _load_global_process_rename_payload.clear()
+
+
 def clear_scenario_repository() -> None:
     _load_global_display_order_payload.clear()
+    _load_global_process_rename_payload.clear()
     _load_scenario_snapshot_payload.clear()
     get_scenario_repository.clear()

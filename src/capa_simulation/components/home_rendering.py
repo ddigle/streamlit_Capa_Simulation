@@ -23,9 +23,11 @@ from capa_simulation.components.scroll_shell import (
 from capa_simulation.design import tokens
 from capa_simulation.performance import PerformanceTrace
 
-# 세 번째 요소는 시나리오 내용 토큰이다. 편집 카운터(`revision`)를 쓰면 내용이 달라도
+# 네 번째 요소는 시나리오 내용 토큰이다. 편집 카운터(`revision`)를 쓰면 내용이 달라도
 # 번호가 겹쳐 예전 Figure 가 그대로 나온다. 계산 캐시와 같은 근거로 토큰을 쓴다.
-HomeFigureCacheKey = tuple[int, int, str, int, int, str, tuple[str, ...], float, float, bool]
+# 두 번째 요소는 공용 공정 표시명 프로필 버전이다. 표시명은 계산 입력이 아니라 라벨이므로
+# 계산 캐시 키(`build_home_simulation_cache_key`)에는 넣지 않고 여기에만 접어 넣는다.
+HomeFigureCacheKey = tuple[int, int, int, str, int, int, str, tuple[str, ...], float, float, bool]
 
 HomeFigureSet = tuple[Any, ...]
 

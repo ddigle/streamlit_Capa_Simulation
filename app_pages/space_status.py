@@ -8,6 +8,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.floor_layout_upload import render_floor_layout_editor
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.space_layout import (
     BUILDINGS,
@@ -24,7 +25,12 @@ from capa_simulation.components.space_layout import (
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
-from capa_simulation.persistence.equipment_cache import load_latest_equipment_snapshot
+from capa_simulation.persistence.equipment_cache import (
+    load_floor_layout_canvases,
+    load_floor_layout_profile,
+    load_floor_layout_summaries,
+    load_latest_equipment_snapshot,
+)
 from capa_simulation.services.equipment_availability import (
     build_milestone_transition_events,
     build_space_equipment_status,
@@ -36,6 +42,10 @@ from capa_simulation.services.equipment_contract import (
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_master,
+)
+from capa_simulation.services.floor_layout_profile import (
+    DEFAULT_CANVAS_HEIGHT,
+    DEFAULT_CANVAS_WIDTH,
 )
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
@@ -57,6 +67,12 @@ today = date.today()
 try:
     equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
     latest_snapshot = load_latest_equipment_snapshot(equipment_database_path)
+    floor_canvases = load_floor_layout_canvases(equipment_database_path)
+    floors_with_layout_image = {
+        (summary.building, summary.floor)
+        for summary in load_floor_layout_summaries(equipment_database_path)
+        if summary.has_image
+    }
     if latest_snapshot is None or latest_snapshot.equipment.empty:
         equipment = sample_equipment_master(anchor_date=today)
         downtime = sample_downtime_schedule(anchor_date=today)
@@ -397,12 +413,20 @@ elif selected_floor is None:
     for floor in building_floors:
         floor_equipment = building_equipment.loc[building_equipment["층"].eq(floor.floor)]
         production, progress, inactive = equipment_counts(floor_equipment)
+        canvas = floor_canvases.get((selected_building, floor.floor))
+        has_layout_image = (selected_building, floor.floor) in floors_with_layout_image
         floor_rows.append(
             {
                 "층": floor.floor,
                 "가용대수": production,
                 "진행대수": progress,
                 "비가동대수": inactive,
+                "배치 도면": "등록" if has_layout_image else "미등록",
+                "캔버스": (
+                    f"{canvas[0]:g} × {canvas[1]:g}"
+                    if canvas
+                    else f"{DEFAULT_CANVAS_WIDTH:g} × {DEFAULT_CANVAS_HEIGHT:g}"
+                ),
             }
         )
     st.dataframe(pd.DataFrame(floor_rows), hide_index=True, width="stretch")
@@ -416,9 +440,22 @@ else:
         .copy()
         .reset_index(drop=True)
     )
-    invalid_rows = invalid_equipment_rows(floor_equipment)
+    layout_profile = load_floor_layout_profile(
+        equipment_database_path, selected_building, selected_floor
+    )
+    canvas_width, canvas_height = (
+        layout_profile.canvas_size
+        if layout_profile is not None
+        else (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
+    )
+    invalid_rows = invalid_equipment_rows(
+        floor_equipment, canvas_width=canvas_width, canvas_height=canvas_height
+    )
     if invalid_rows:
-        st.warning("배치 영역을 벗어난 호기가 있습니다: " + ", ".join(map(str, invalid_rows)))
+        st.warning(
+            f"캔버스 {canvas_width:g} × {canvas_height:g}를 벗어난 호기가 있습니다: "
+            + ", ".join(map(str, invalid_rows))
+        )
 
     production_count, progress_count, inactive_count = equipment_counts(floor_equipment)
     with st.container(horizontal=True):
@@ -434,10 +471,25 @@ else:
             "운영 비가동 상태를 색상으로 구분합니다."
         )
         st.plotly_chart(
-            build_floor_layout_figure(floor_equipment, selected_building, selected_floor),
+            build_floor_layout_figure(
+                floor_equipment,
+                selected_building,
+                selected_floor,
+                background_image=(
+                    layout_profile.image_data_uri if layout_profile is not None else None
+                ),
+                canvas_width=canvas_width,
+                canvas_height=canvas_height,
+            ),
             key=f"space_status_layout_chart_{selected_building}_{selected_floor}",
             width="stretch",
             config={"displayModeBar": False, "scrollZoom": False},
+        )
+        render_floor_layout_editor(
+            database_path=equipment_database_path,
+            building=selected_building,
+            floor=selected_floor,
+            floor_equipment=floor_equipment,
         )
     st.dataframe(
         floor_equipment,

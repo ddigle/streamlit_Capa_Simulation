@@ -87,7 +87,8 @@ with pinned_connections(DUCKDB_PATH):
         .st-key-capa_chatbot_navigation a p,
         .st-key-scenario_management_navigation a p,
         .st-key-static_capa_navigation a p,
-        .st-key-dynamic_capa_navigation a p {
+        .st-key-dynamic_capa_navigation a p,
+        .st-key-admin_area_navigation a p {
             font-size: 1.15rem;
             font-weight: 700;
         }
@@ -154,5 +155,10 @@ with pinned_connections(DUCKDB_PATH):
             int(selected_start_label.replace("-", "")),
             int(selected_end_label.replace("-", "")),
         )
+
+    # 관리 기능이라 조회 컨트롤보다 아래, 사이드바에서 가장 먼 곳에 둔다.
+    with st.sidebar.container(border=True):
+        with st.container(key="admin_area_navigation"):
+            st.page_link(pages.admin_area, width="stretch")
 
     navigation.run()

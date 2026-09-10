@@ -11,19 +11,30 @@ import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
 from capa_simulation.services.equipment_contract import (
+    BASELINE_COLUMNS,
+    BASELINE_KEY_COLUMNS,
     DOWNTIME_COLUMNS,
     DOWNTIME_KEY_COLUMNS,
     EQUIPMENT_COLUMNS,
 )
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_schedule,
+    prepare_equipment_baseline,
     prepare_equipment_master,
 )
+from capa_simulation.services.floor_layout_profile import FloorCanvasMap
 
 SAMPLE_EQUIPMENT_ID = "SAM01"
 SAMPLE_EQUIPMENT_MANAGER = "홍길동"
 SAMPLE_EQUIPMENT_NOTE = "이력 기록"
 SAMPLE_DOWNTIME_NOTE = "내용 기록"
+# 기존 보유대수 양식의 예시 한 줄. `공정` 은 호기 마스터의 `공정소분류` 와 이어 붙는 값이다.
+# 비고 상수 이름에 `TEMPLATE` 을 넣는다. `equipment_samples.SAMPLE_BASELINE_NOTE` 는 저장
+# 가드가 손대지 않은 개발 샘플 행을 가려내는 표식이라 같은 이름을 쓰면 의미가 뒤섞인다.
+SAMPLE_BASELINE_PROCESS = "Wafer_Sorter_P878"
+SAMPLE_BASELINE_CATEGORY = "전체"
+SAMPLE_BASELINE_COUNT = 12
+SAMPLE_BASELINE_TEMPLATE_NOTE = "집계 근거 기록"
 
 # 호기를 비워 둔 안내 행. 열별 허용값만 나열하며 `prepare_equipment_master` 가 버린다.
 EQUIPMENT_CHOICE_ROWS: tuple[dict[str, str], ...] = (
@@ -31,6 +42,27 @@ EQUIPMENT_CHOICE_ROWS: tuple[dict[str, str], ...] = (
     {"활용구분": "2.5D", "확정상태": "완료"},
     {"활용구분": "HCB", "확정상태": "지연"},
 )
+
+
+def baseline_csv_template() -> bytes:
+    """기존 보유대수 양식. 예시 한 줄만 담고 허용값 안내 행은 두지 않는다.
+
+    `분류` 에 허용값 목록이 없고, `prepare_equipment_baseline` 이 공정·분류·기존보유대수
+    셋 중 하나만 채워져 있어도 행을 남기므로 안내 행이 곧바로 누락값 오류가 된다.
+    """
+    return _to_csv_bytes(
+        pd.DataFrame(
+            [
+                {
+                    "공정": SAMPLE_BASELINE_PROCESS,
+                    "분류": SAMPLE_BASELINE_CATEGORY,
+                    "기존보유대수": SAMPLE_BASELINE_COUNT,
+                    "비고": SAMPLE_BASELINE_TEMPLATE_NOTE,
+                }
+            ],
+            columns=BASELINE_COLUMNS,
+        )
+    )
 
 
 def equipment_csv_template() -> bytes:
@@ -94,8 +126,20 @@ def downtime_csv_template() -> bytes:
     )
 
 
-def read_equipment_csv(payload: bytes) -> pd.DataFrame:
-    return prepare_equipment_master(_read_csv(payload, EQUIPMENT_COLUMNS, "호기 마스터"))
+def read_baseline_csv(payload: bytes) -> pd.DataFrame:
+    return prepare_equipment_baseline(_read_csv(payload, BASELINE_COLUMNS, "기존 보유대수"))
+
+
+def read_equipment_csv(
+    payload: bytes,
+    *,
+    floor_canvases: FloorCanvasMap | None = None,
+) -> pd.DataFrame:
+    """`floor_canvases` 를 넘기면 읽는 즉시 층별 캔버스 좌표 상한까지 검사한다."""
+    return prepare_equipment_master(
+        _read_csv(payload, EQUIPMENT_COLUMNS, "호기 마스터"),
+        floor_canvases=floor_canvases,
+    )
 
 
 def read_downtime_csv(payload: bytes, *, equipment: pd.DataFrame) -> pd.DataFrame:
@@ -105,11 +149,27 @@ def read_downtime_csv(payload: bytes, *, equipment: pd.DataFrame) -> pd.DataFram
     )
 
 
-def read_equipment_clipboard(content: str) -> pd.DataFrame:
+def read_baseline_clipboard(content: str) -> pd.DataFrame:
+    return prepare_equipment_baseline(
+        _select_columns(
+            parse_clipboard_table(content, "기존 보유대수"),
+            BASELINE_COLUMNS,
+            "기존 보유대수",
+        )
+    )
+
+
+def read_equipment_clipboard(
+    content: str,
+    *,
+    floor_canvases: FloorCanvasMap | None = None,
+) -> pd.DataFrame:
+    """`floor_canvases` 를 넘기면 붙여넣기 시점에 층별 캔버스 좌표 상한까지 검사한다."""
     return prepare_equipment_master(
         _select_columns(
             parse_clipboard_table(content, "호기 마스터"), EQUIPMENT_COLUMNS, "호기 마스터"
-        )
+        ),
+        floor_canvases=floor_canvases,
     )
 
 
@@ -124,8 +184,21 @@ def read_downtime_clipboard(content: str, *, equipment: pd.DataFrame) -> pd.Data
     )
 
 
-def merge_equipment_rows(current: pd.DataFrame, incoming: pd.DataFrame) -> pd.DataFrame:
-    return prepare_equipment_master(_merge_by_keys(current, incoming, ("호기",)))
+def merge_baseline_rows(current: pd.DataFrame, incoming: pd.DataFrame) -> pd.DataFrame:
+    return prepare_equipment_baseline(_merge_by_keys(current, incoming, BASELINE_KEY_COLUMNS))
+
+
+def merge_equipment_rows(
+    current: pd.DataFrame,
+    incoming: pd.DataFrame,
+    *,
+    floor_canvases: FloorCanvasMap | None = None,
+) -> pd.DataFrame:
+    """`floor_canvases` 를 넘기면 편집본에 적용하기 전에 층별 좌표 상한까지 검사한다."""
+    return prepare_equipment_master(
+        _merge_by_keys(current, incoming, ("호기",)),
+        floor_canvases=floor_canvases,
+    )
 
 
 def merge_downtime_rows(
@@ -136,6 +209,13 @@ def merge_downtime_rows(
 ) -> pd.DataFrame:
     merged = _merge_by_keys(current, incoming, DOWNTIME_KEY_COLUMNS)
     return prepare_downtime_schedule(merged, equipment=equipment)
+
+
+def build_baseline_import_preview(
+    current: pd.DataFrame,
+    incoming: pd.DataFrame,
+) -> pd.DataFrame:
+    return _build_import_preview(current, incoming, BASELINE_KEY_COLUMNS)
 
 
 def build_equipment_import_preview(

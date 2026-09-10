@@ -10,6 +10,7 @@ from capa_simulation.components.hierarchical_monthly_table import (
 )
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
     render_reference_clipboard_tools,
@@ -66,6 +67,8 @@ render_page_header(
     "공정별 확보율",
     description=("월·공정별 가용대수를 소요대수로 나눠 확보율과 B/N 공정을 판정합니다."),
 )
+# 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
+process_labels = get_process_labels()
 availability_tab, required_tab, equipment_tab = stateful_tabs(
     TAB_NAMES,
     key="process_securement_active_tab",
@@ -180,6 +183,7 @@ else:
             securement_table,
             SECUREMENT_DIMENSIONS,
             key_prefix="securement_filter",
+            value_labels=process_labels.value_labels(),
         )
         securement_export = build_hierarchical_monthly_export(
             displayed_securement_table,
@@ -202,6 +206,7 @@ else:
             decimal_places=2,
             value_format="percent",
             key="securement_rate_monthly_table",
+            value_labels=process_labels.value_labels(),
             owner_tab=availability_tab,
         )
 
@@ -288,6 +293,7 @@ else:
             table_dimensions,
             key_prefix="required_equipment_filter",
             column_labels=COLUMN_LABELS,
+            value_labels=process_labels.value_labels(),
         )
         required_export = build_hierarchical_monthly_export(
             filtered_required_table,
@@ -320,6 +326,7 @@ else:
                 if show_detail
                 else "required_equipment_summary_table"
             ),
+            value_labels=process_labels.value_labels(),
             page_size=60 if show_detail else None,
             owner_tab=required_tab,
         )

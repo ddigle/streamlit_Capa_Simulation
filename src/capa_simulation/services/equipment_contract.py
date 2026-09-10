@@ -8,6 +8,10 @@ import pandas as pd
 
 BASELINE_COLUMNS = ("공정", "분류", "기존보유대수", "비고")
 
+# 기존 보유대수의 자연키. 집계는 `공정` 하나로 합산하지만 한 공정에 분류가 여럿일 수 있어
+# 중복 판정과 Import 병합은 두 컬럼 조합으로 한다.
+BASELINE_KEY_COLUMNS = ("공정", "분류")
+
 EQUIPMENT_COLUMNS = (
     "호기",
     "공정대분류",

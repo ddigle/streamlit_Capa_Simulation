@@ -11,6 +11,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
 from capa_simulation.services.wip_status import (
     WIP_HISTORY_COLUMNS,
@@ -27,8 +28,14 @@ def build_wip_status_grid_figure(
     products: list[str],
     start_date: date,
     end_date: date,
+    process_labels: ProcessLabels | None = None,
 ) -> go.Figure:
-    """Build a fixed-cell matrix ordered by product rows and STEP columns."""
+    """Build a fixed-cell matrix ordered by product rows and STEP columns.
+
+    `process_labels` 는 subplot 제목에만 쓴다. 아래 셀 대조는 원본 `lane.공정` 을 그대로
+    써야 한다 — 라벨로 대조하면 모든 칸이 `경로 없음` 이 된다.
+    """
+    labels = process_labels or ProcessLabels()
     missing = [column for column in WIP_HISTORY_COLUMNS if column not in data.columns]
     if missing:
         raise ValueError(f"재공 현황 차트 필수 컬럼이 없습니다: {', '.join(missing)}")
@@ -51,7 +58,7 @@ def build_wip_status_grid_figure(
     rows = len(ordered_products)
     cols = len(lanes)
     titles = [
-        f"<b>{lane.STEP_SEQ}</b> · {lane.공정}<br>{product}"
+        f"<b>{lane.STEP_SEQ}</b> · {labels.label(lane.공정)}<br>{product}"
         for product in ordered_products
         for lane in lanes.itertuples(index=False)
     ]

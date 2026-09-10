@@ -33,7 +33,7 @@ from capa_simulation.components.monthly_table_base import (
     add_header_rule,
     add_month_boundaries,
     add_outer_border,
-    display_text,
+    display_value_text,
     header_boundary_ratio,
     header_label,
     month_label,
@@ -82,9 +82,14 @@ def _classification_widths(
 def _build_hierarchical_display(
     data: pd.DataFrame,
     classification_columns: list[str],
+    value_labels: Mapping[str, Mapping[str, str]] | None = None,
 ) -> _HierarchicalDisplay:
+    labels = value_labels or {}
     raw_values = [
-        [display_text(value).replace(" ", "\u00a0") for value in data[column]]
+        [
+            display_value_text(value, labels.get(column)).replace(" ", "\u00a0")
+            for value in data[column]
+        ]
         for column in classification_columns
     ]
     displayed_values = [values.copy() for values in raw_values]
@@ -253,6 +258,7 @@ def render_hierarchical_monthly_table(
     column_labels: Mapping[str, str],
     decimal_places: int,
     key: str,
+    value_labels: Mapping[str, Mapping[str, str]] | None = None,
     value_format: _ValueFormat = "number",
     page_size: int | None = None,
     owner_tab: OpenTab | None = None,
@@ -290,7 +296,7 @@ def render_hierarchical_monthly_table(
     # 아래 `render_split_scroll_table` 도 막지만 그 전에 격자 1~2초를 만들고 버리고 있었다.
     if tab_is_hidden(owner_tab):
         return
-    display = _build_hierarchical_display(data, classification_columns)
+    display = _build_hierarchical_display(data, classification_columns, value_labels)
     classification_widths = _classification_widths(
         display.classification_values,
         classification_columns,

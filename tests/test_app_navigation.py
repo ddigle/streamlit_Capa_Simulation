@@ -4,6 +4,7 @@ import ast
 from pathlib import Path
 
 from capa_simulation.navigation import (
+    ADMIN_AREA,
     ALL_SPECS,
     CAPA_CHATBOT,
     DYNAMIC_CAPA,
@@ -39,6 +40,12 @@ EXPECTED_PAGES = [
     ("app_pages/actual_efficiency.py", "효율 실적 (구현중)", ":material/speed:", False),
     ("app_pages/actual_upeh.py", "UPEH 실적 (구현중)", ":material/timer:", False),
     ("app_pages/space_status.py", "Space 현황 (구현중)", ":material/grid_view:", False),
+    (
+        "app_pages/admin_area.py",
+        "Admin Area (구현중)",
+        ":material/admin_panel_settings:",
+        False,
+    ),
 ]
 
 
@@ -65,6 +72,9 @@ def test_group_membership_matches_the_sidebar_sections() -> None:
     assert len(STATIC_CAPA_SUBPAGES) == 4
     assert DYNAMIC_CAPA.path == "app_pages/reference_integrity.py"
     assert len(DYNAMIC_CAPA_SUBPAGES) == 5
+    # 관리 기능이라 하위 페이지가 아니라 자기 박스로 사이드바 맨 아래에 있다.
+    assert ADMIN_AREA.path == "app_pages/admin_area.py"
+    assert ALL_SPECS[-1] is ADMIN_AREA
 
 
 def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:
@@ -74,7 +84,7 @@ def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:
     `Capa Chatbot` 은 본문이 "화면 초안" 이라고 밝히는데도 사이드바에만 표기가 없어
     가장 덜 된 화면이 완성된 것처럼 보였다.
     """
-    for spec in (CAPA_CHATBOT, DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES):
+    for spec in (CAPA_CHATBOT, DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES, ADMIN_AREA):
         assert spec.title.endswith(IMPLEMENTING_SUFFIX), spec.path
         # 본문은 공통 헤더가 그린다. 제목 문자열이 사이드바와 같아야 한다는 계약은 같다.
         # 서식(한 줄/여러 줄)에 흔들리지 않도록 AST 로 첫 인자를 읽는다.

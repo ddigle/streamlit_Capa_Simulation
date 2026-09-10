@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
 from capa_simulation.components.status_metric import (
     metric_row,
@@ -81,6 +82,8 @@ render_page_header(
         "가로는 STEP 순서, 세로는 제품 표시순서이며 각 셀은 동일한 11일 구간을 표시합니다."
     ),
 )
+# 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
+process_labels = get_process_labels()
 st.info(
     "현재 재공 값은 화면·연결 계약 검토용 결정론적 샘플입니다. 실제 재공 실적 DB의 "
     "일자·공정·STEP·제품·보유재공·유입·Flow 컬럼 매핑은 아직 연결하지 않았습니다."
@@ -153,6 +156,8 @@ with st.container(border=True):
                 help="옵션과 차트 열은 STEP의 P→T, 숫자 구간 오름차순을 따릅니다.",
                 persist_state="session",
                 width=420,
+                # 표시만 바꾼다. 선택값은 아래 `isin` 이 원본 컬럼과 대조한다.
+                format_func=process_labels.format_func(),
             )
             selected_products = st.multiselect(
                 "제품",
@@ -216,6 +221,7 @@ try:
         selected_product_order,
         start_date,
         end_date,
+        process_labels=process_labels,
     )
 except ValueError as exc:
     st.error(str(exc))

@@ -1,6 +1,8 @@
 # Purpose: 생산계획·Wafer Capa·Bottleneck 요약과 상세표를 결합한 HOME 대시보드를 렌더링한다.
 
 
+from typing import Any
+
 import pandas as pd
 import streamlit as st
 
@@ -19,6 +21,7 @@ from capa_simulation.components.home_rendering import (
     store_home_figures,
 )
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
@@ -85,6 +88,9 @@ show_home_performance = st.sidebar.toggle(
     persist_state="session",
 )
 home_trace = PerformanceTrace()
+# 공정 표시명은 화면 라벨일 뿐이라 계산 입력이 아니다. `content_token` 을 다시
+# 발급하지 않고 Figure 캐시 키에 버전 정수만 접어 넣는다.
+process_labels = get_process_labels()
 
 try:
     reference_version = get_effective_reference_version()
@@ -198,30 +204,38 @@ def show_process_filter_dialog(options: list[str]) -> None:
             key="dashboard_bottleneck_process_restore",
         )
 
-    selection_frame = pd.DataFrame(
-        {
-            "포함": [process in selected_set for process in options],
-            "공정": options,
-        }
-    )
+    # 이 선택 UI 는 `multiselect` 가 아니라 `data_editor` 라 `format_func` 가 없다. 표시명은
+    # 별도 컬럼으로 보여주기만 하고, 적용할 때 되쓰는 값은 반드시 원본 `공정` 컬럼이다.
+    # 값을 표시명으로 바꾸면 아래 세션 되쓰기가 옵션에 없는 값을 만들어 대시보드가 오류
+    # 없이 텅 빈다.
+    selection_columns: dict[str, list[object]] = {
+        "포함": [process in selected_set for process in options],
+        "공정": list(options),
+    }
+    column_config: dict[str, Any] = {
+        "포함": st.column_config.CheckboxColumn(
+            "포함",
+            help="B/N 집계에 포함하려면 선택합니다.",
+            width="small",
+        ),
+        "공정": st.column_config.TextColumn("공정", width="large"),
+    }
+    if process_labels:
+        selection_columns["표시명"] = [process_labels.label(process) for process in options]
+        column_config["공정"] = st.column_config.TextColumn("공정 (원본)", width="medium")
+        column_config["표시명"] = st.column_config.TextColumn("표시명", width="medium")
+    selection_frame = pd.DataFrame(selection_columns)
     with st.form("dashboard_bottleneck_process_dialog_form", border=False):
         edited_selection = st.data_editor(
             selection_frame,
             key=process_dialog_editor_key,
             hide_index=True,
-            disabled=["공정"],
+            disabled=[column for column in selection_frame.columns if column != "포함"],
             num_rows="fixed",
             width="stretch",
             height=520,
             row_height=34,
-            column_config={
-                "포함": st.column_config.CheckboxColumn(
-                    "포함",
-                    help="B/N 집계에 포함하려면 선택합니다.",
-                    width="small",
-                ),
-                "공정": st.column_config.TextColumn("공정", width="large"),
-            },
+            column_config=column_config,
         )
         apply_selection = st.form_submit_button(
             "선택 공정 적용",
@@ -286,6 +300,7 @@ warning_threshold = warning_threshold_percent / 100.0
 month_labels = [str(value) for value in monthly_density["년월"].tolist()]
 figure_cache_key: HomeFigureCacheKey = (
     HOME_FIGURE_SCHEMA_VERSION,
+    process_labels.version,
     reference_version,
     active_scenario["content_token"],
     effective_start,
@@ -345,6 +360,7 @@ label_figure, month_figure = build_lob_summary_figures(
     month_labels=month_labels,
     secure_threshold=secure_threshold,
     warning_threshold=warning_threshold,
+    process_labels=process_labels,
 )
 if not show_home_details:
     cached_figures = (label_figure, month_figure)
@@ -370,6 +386,7 @@ bottleneck_detail_label_figure, bottleneck_detail_month_figure = build_bottlenec
     month_labels=month_labels,
     secure_threshold=secure_threshold,
     warning_threshold=warning_threshold,
+    process_labels=process_labels,
 )
 cached_figures = (
     label_figure,

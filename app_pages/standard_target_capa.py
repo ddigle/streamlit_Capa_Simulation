@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from calendar import monthrange
+from collections.abc import Callable
 from datetime import date
 from math import isfinite
 from typing import cast
@@ -16,6 +17,10 @@ from capa_simulation.components.hierarchical_monthly_table import (
 )
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.process_labels import (
+    ProcessLabels,
+    get_process_labels,
+)
 from capa_simulation.components.table_toolbar import (
     CSV_TEMPLATE_LABEL,
     render_csv_download,
@@ -122,6 +127,7 @@ def _required_selectbox(
     key: str,
     *,
     disabled: bool = False,
+    format_func: Callable[[object], str] = str,
 ) -> str | None:
     saved = st.session_state.get(key)
     if saved not in options:
@@ -134,6 +140,8 @@ def _required_selectbox(
         key=key,
         disabled=disabled,
         width=190,
+        # 표시만 바꾼다. 아래 필터가 원본 컬럼과 문자열로 대조하므로 값은 원본이어야 한다.
+        format_func=format_func,
     )
     return selected
 
@@ -152,6 +160,7 @@ def _render_logic_analysis(
     start_date: date,
     end_date: date,
     process_order: list[str],
+    process_labels: ProcessLabels,
 ) -> None:
     st.subheader("일 표준 가능량 로직 분석")
     st.caption(
@@ -191,6 +200,7 @@ def _render_logic_analysis(
             process_options,
             LOGIC_FILTER_KEYS["공정"],
             disabled=weeknum is None,
+            format_func=process_labels.format_func(),
         )
 
         process_source = month_source.iloc[0:0].copy()
@@ -446,6 +456,8 @@ render_page_header(
         "주차별 가용설비를 곱해 투입 Unit 기준의 일 표준 가능량을 산출합니다."
     ),
 )
+# 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
+process_labels = get_process_labels()
 
 try:
     context = load_page_context()
@@ -577,6 +589,8 @@ with st.container(border=True):
         placeholder="미선택 시 전체 공정",
         key=PROCESS_FILTER_KEY,
         persist_state="session",
+        # 표시만 바꾼다. 이 선택값은 리비전 프리셋으로 저장되므로 원본이어야 한다.
+        format_func=process_labels.format_func(),
     )
     effective_public_default = set(public_default or process_options)
     effective_selection = set(selected_processes or process_options)
@@ -695,6 +709,7 @@ if output_metric == "로직 분석":
             start_date=start_date,
             end_date=end_date,
             process_order=target_processes,
+            process_labels=process_labels,
         )
 else:
     try:
@@ -817,5 +832,6 @@ else:
             column_labels=COLUMN_LABELS,
             decimal_places=decimal_places,
             key="standard_target_weekly_table",
+            value_labels=process_labels.value_labels(),
             page_size=80,
         )

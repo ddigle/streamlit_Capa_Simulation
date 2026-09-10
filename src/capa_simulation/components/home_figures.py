@@ -37,6 +37,7 @@ from capa_simulation.components.plotly_layout import (
     dashboard_title_annotation,
     fixed_row_domains,
 )
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
 from capa_simulation.services.dashboard import PRODUCTION_DETAIL_DIMENSIONS
 
@@ -159,8 +160,14 @@ def build_lob_summary_figures(
     month_labels: list[str],
     secure_threshold: float,
     warning_threshold: float,
+    process_labels: ProcessLabels | None = None,
 ) -> tuple[go.Figure, go.Figure]:
-    """생산계획·Wafer Capa·Bottleneck 요약 Figure 한 쌍을 만든다."""
+    """생산계획·Wafer Capa·Bottleneck 요약 Figure 한 쌍을 만든다.
+
+    `process_labels` 는 **화면 문자열에만** 쓴다. 프레임의 `공정` 값은 그대로 두므로
+    월 위치 계산과 확보율 색 판정은 원본을 본다.
+    """
+    labels = process_labels or ProcessLabels()
     month_positions = list(range(len(month_labels)))
     month_position_by_value = dict(
         zip(monthly_density["생산계획년월"], month_positions, strict=True)
@@ -248,7 +255,9 @@ def build_lob_summary_figures(
                 name="B/N 공정",
                 x=[month_position_by_value[month] for month in bottleneck_capacity["생산계획년월"]],
                 y=bottleneck_capacity["B/N Capa"],
-                customdata=bottleneck_capacity[["년월", "확보율", "공정"]],
+                customdata=bottleneck_capacity[["년월", "확보율"]].assign(
+                    공정=labels.series(bottleneck_capacity["공정"])
+                ),
                 text=bottleneck_capacity["확보율"],
                 texttemplate="<b>%{text:.0%}</b>",
                 textposition="inside",
@@ -312,7 +321,9 @@ def build_lob_summary_figures(
                 x=top5_positions,
                 y=monthly_top5["B/N Capa"],
                 width=0.15,
-                customdata=monthly_top5[["년월", "공정", "확보율", "Wafer Capa"]],
+                customdata=monthly_top5[["년월", "공정", "확보율", "Wafer Capa"]].assign(
+                    공정=labels.series(monthly_top5["공정"])
+                ),
                 marker={
                     "color": [
                         _capacity_color(
@@ -390,7 +401,7 @@ def build_lob_summary_figures(
                     "y": 0,
                     "xref": "x2",
                     "yref": "y2",
-                    "text": str(process),
+                    "text": labels.label(process),
                     "textangle": 270,
                     "xanchor": "right",
                     "yanchor": "top",
@@ -872,6 +883,7 @@ def build_bottleneck_detail_figures(
     month_labels: list[str],
     secure_threshold: float,
     warning_threshold: float,
+    process_labels: ProcessLabels | None = None,
 ) -> tuple[go.Figure, go.Figure]:
     """월별 B/N 상위 공정을 순위별 가로막대로 그린 Figure 한 쌍을 만든다.
 
@@ -883,6 +895,7 @@ def build_bottleneck_detail_figures(
     공정명을 막대 안에 넣으면 가장 심각한 병목의 이름이 사라지므로, 이름은 막대와
     별개의 trace 로 각 칸 왼쪽 고정 앵커에 그린다.
     """
+    labels = process_labels or ProcessLabels()
     month_count = max(len(month_labels), 1)
     month_positions = {label: index for index, label in enumerate(month_labels)}
 
@@ -936,7 +949,7 @@ def build_bottleneck_detail_figures(
         hover_values.append(
             [
                 html.escape(str(row["년월"])),
-                html.escape(str(row["공정"])),
+                html.escape(labels.label(row["공정"])),
                 "-" if missing_rate else f"{float(rate):.1%}",
                 format_equipment_count(row["가용대수"]),
                 format_equipment_count(row["소요대수"]),
@@ -944,7 +957,7 @@ def build_bottleneck_detail_figures(
             ]
         )
         name_positions.append(month_index + BOTTLENECK_NAME_INSET_RATIO)
-        name_texts.append(format_bottleneck_process_name(row["공정"]))
+        name_texts.append(format_bottleneck_process_name(labels.label(row["공정"])))
         ratio = bottleneck_bar_ratio(rate)
         if ratio <= 0:
             continue

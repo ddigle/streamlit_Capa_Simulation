@@ -11,6 +11,7 @@ from capa_simulation.components.hierarchical_monthly_table import (
 from capa_simulation.components.month_editor import render_month_editor
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
 )
@@ -94,6 +95,8 @@ render_page_header(
         "경로별 대당 Capa와 공정 유효 Capa를 산출하고, 계산에 쓰는 기준정보를 월별로 편집합니다."
     ),
 )
+# 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
+process_labels = get_process_labels()
 
 tabs = stateful_tabs(TAB_NAMES, key="capacity_standards_active_tab")
 unit_capacity_tab = tabs[0]
@@ -420,6 +423,8 @@ edited_upeh_table, apply_upeh, imported_upeh_table = render_month_editor(
     0.01,
     table_name="RQ_UPEH",
     csv_file_name=f"RQ_UPEH_{effective_start_month}_{effective_end_month}.csv",
+    # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
+    value_labels=process_labels.value_labels(),
 )
 edited_run_rate_table, apply_run_rate, imported_run_rate_table = render_month_editor(
     tabs[3],
@@ -432,6 +437,8 @@ edited_run_rate_table, apply_run_rate, imported_run_rate_table = render_month_ed
     max_value=1.0,
     table_name="RQ_RUN_RATE",
     csv_file_name=f"RQ_RUN_RATE_{effective_start_month}_{effective_end_month}.csv",
+    # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
+    value_labels=process_labels.value_labels(),
 )
 edited_vital_table, apply_vital, imported_vital_table = render_month_editor(
     tabs[4],
@@ -443,6 +450,8 @@ edited_vital_table, apply_vital, imported_vital_table = render_month_editor(
     0.001,
     table_name="RQ_VITAL",
     csv_file_name=f"RQ_VITAL_{effective_start_month}_{effective_end_month}.csv",
+    # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
+    value_labels=process_labels.value_labels(),
 )
 edited_lot_ratio_table, apply_lot_ratio, imported_lot_ratio_table = render_month_editor(
     tabs[5],
@@ -455,6 +464,8 @@ edited_lot_ratio_table, apply_lot_ratio, imported_lot_ratio_table = render_month
     max_value=1.0,
     table_name="RQ_LOT_RATIO",
     csv_file_name=f"RQ_LOT_RATIO_{effective_start_month}_{effective_end_month}.csv",
+    # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
+    value_labels=process_labels.value_labels(),
 )
 edited_wf_ratio_table, apply_wf_ratio, imported_wf_ratio_table = render_month_editor(
     tabs[6],
@@ -467,6 +478,8 @@ edited_wf_ratio_table, apply_wf_ratio, imported_wf_ratio_table = render_month_ed
     max_value=1.0,
     table_name="RQ_WF_RATIO",
     csv_file_name=f"RQ_WF_RATIO_{effective_start_month}_{effective_end_month}.csv",
+    # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
+    value_labels=process_labels.value_labels(),
 )
 edited_run_day_table, apply_run_day, imported_run_day_table = render_month_editor(
     tabs[7],
@@ -478,6 +491,8 @@ edited_run_day_table, apply_run_day, imported_run_day_table = render_month_edito
     1.0,
     table_name="RQ_RUN_DAY",
     csv_file_name=f"RQ_RUN_DAY_{effective_start_month}_{effective_end_month}.csv",
+    # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
+    value_labels=process_labels.value_labels(),
 )
 
 pending_updates: dict[str, pd.DataFrame] = {}
@@ -578,47 +593,29 @@ except (KeyError, ValueError) as exc:
         st.error(str(exc))
     st.stop()
 
-if not unit_capacity_tab.open:
-    st.stop()
-
-try:
-    # 편집은 apply_month_updates 로 활성 시나리오에 반영되고 content_token 이 바뀐다. 그래서
-    # 활성 시나리오 표를 키로 캐시한 계산이 곧 "편집 중인 기준정보" 계산이다.
-    unit_capacity, required_equipment_for_display = get_scenario_capacity_and_demand(
-        scenario_cache_key(reference_version, active_scenario, start_month, end_month),
-        _scenario_tables=active_scenario["tables"],
-        _reference_tables=reference_tables,
-    )
-    excluded_capacity_rows = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
-except ValueError as exc:
-    with unit_capacity_tab:
-        st.error(str(exc))
-else:
-    with unit_capacity_tab:
-        if not excluded_capacity_rows.empty:
-            st.warning(f"대당 Capa 산출에서 {len(excluded_capacity_rows):,}개 기준을 제외했습니다.")
-            with st.expander("제외 기준정보 확인", expanded=False):
-                displayed_exclusions, _ = reorder_display_columns(
-                    excluded_capacity_rows,
-                    [
-                        column
-                        for column in UNIT_CAPACITY_DIMENSIONS
-                        if column in excluded_capacity_rows.columns
-                    ],
-                    display_order,
-                    "공정별 Capa",
-                    "대당 Capa",
-                )
-                render_csv_download(
-                    data=displayed_exclusions.to_csv(index=False).encode("utf-8-sig"),
-                    file_name=(
-                        "Capa_Unit_Capacity_Exclusions_"
-                        f"{effective_start_month}_{effective_end_month}.csv"
-                    ),
-                    key="download_unit_capacity_exclusions_csv",
-                )
-                st.dataframe(displayed_exclusions, hide_index=True, width="stretch")
-
+# 표시 방식·집계 수준·공정 필터는 입력 위젯이라 탭이 닫혀 있어도 항상 그린다. 본문을
+# 통째로 건너뛰면 Streamlit 이 세 위젯의 상태를 버려 탭을 오갈 때마다 선택이 초기화된다.
+# 건너뛰는 것은 계산·표·CSV·Plotly 뿐이다.
+capacity_tab_hidden = tab_is_hidden(unit_capacity_tab)
+process_filter_key = "unit_capacity_process_filter"
+excluded_capacity_rows = pd.DataFrame()
+capacity_error: str | None = None
+capacity_ready = False
+process_options: list[str] = []
+if not capacity_tab_hidden:
+    try:
+        # 편집은 apply_month_updates 로 활성 시나리오에 반영되고 content_token 이 바뀐다.
+        # 그래서 활성 시나리오 표를 키로 캐시한 계산이 곧 "편집 중인 기준정보" 계산이다.
+        unit_capacity, required_equipment_for_display = get_scenario_capacity_and_demand(
+            scenario_cache_key(reference_version, active_scenario, start_month, end_month),
+            _scenario_tables=active_scenario["tables"],
+            _reference_tables=reference_tables,
+        )
+    except ValueError as exc:
+        capacity_error = str(exc)
+    else:
+        capacity_ready = True
+        excluded_capacity_rows = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
         process_order = required_equipment_for_display[["공정"]].drop_duplicates()
         process_order = apply_display_order(
             process_order,
@@ -627,104 +624,157 @@ else:
             "대당 Capa",
         )
         process_options = process_order["공정"].astype(str).tolist()
-        process_filter_key = "unit_capacity_process_filter"
-        saved_processes = st.session_state.get(process_filter_key, [])
-        if isinstance(saved_processes, list):
-            st.session_state[process_filter_key] = [
-                process for process in saved_processes if process in process_options
-            ]
-        with st.container(border=True):
-            view_column, level_column, process_column = st.columns([1.4, 1, 2])
-            with view_column:
-                capacity_view = st.segmented_control(
-                    "표시 방식",
-                    options=["공정 유효 Capa", "STEP별 대당 Capa"],
-                    default="공정 유효 Capa",
-                    key="unit_capacity_view_mode",
-                    persist_state="page",
-                )
-            with level_column:
-                selected_level_label = st.selectbox(
-                    "집계 수준",
-                    options=list(CAPACITY_LEVEL_LABELS.values()),
-                    index=0,
-                    key="unit_capacity_detail_level",
-                    disabled=capacity_view == "STEP별 대당 Capa",
-                )
-            with process_column:
-                selected_processes = st.multiselect(
-                    "공정 필터",
-                    options=process_options,
-                    placeholder="미선택 시 전체 공정",
-                    key=process_filter_key,
-                )
 
-        selected_level = next(
-            level for level, label in CAPACITY_LEVEL_LABELS.items() if label == selected_level_label
-        )
-        if capacity_view == "STEP별 대당 Capa":
-            unit_capacity_table = unit_capacity_to_month_table(unit_capacity)
-            classification_columns = list(UNIT_CAPACITY_DIMENSIONS)
-            output_title = "STEP별 대당 Capa"
-            output_caption = (
-                "각 MCP_SEQ·STEP_SEQ 경로의 상세 대당 Capa입니다. "
-                "공정 전체 Capa 판단에는 기본 공정 유효 Capa를 사용하세요."
+saved_processes = st.session_state.get(process_filter_key, [])
+if not isinstance(saved_processes, list):
+    saved_processes = []
+if not capacity_ready:
+    # 옵션을 만들 계산을 돌리지 않은 렌더다. 지금 선택값을 그대로 옵션으로 두어야
+    # multiselect 가 그 선택을 버리지 않는다.
+    process_options = [str(process) for process in saved_processes]
+st.session_state[process_filter_key] = [
+    process for process in saved_processes if process in process_options
+]
+
+with unit_capacity_tab:
+    if capacity_error is not None:
+        st.error(capacity_error)
+    if not excluded_capacity_rows.empty:
+        st.warning(f"대당 Capa 산출에서 {len(excluded_capacity_rows):,}개 기준을 제외했습니다.")
+        with st.expander("제외 기준정보 확인", expanded=False):
+            displayed_exclusions, _ = reorder_display_columns(
+                excluded_capacity_rows,
+                [
+                    column
+                    for column in UNIT_CAPACITY_DIMENSIONS
+                    if column in excluded_capacity_rows.columns
+                ],
+                display_order,
+                "공정별 Capa",
+                "대당 Capa",
             )
-            file_prefix = "Capa_Step_Unit_Capacity"
+            render_csv_download(
+                data=displayed_exclusions.to_csv(index=False).encode("utf-8-sig"),
+                file_name=(
+                    "Capa_Unit_Capacity_Exclusions_"
+                    f"{effective_start_month}_{effective_end_month}.csv"
+                ),
+                key="download_unit_capacity_exclusions_csv",
+            )
+            st.dataframe(displayed_exclusions, hide_index=True, width="stretch")
+
+    with st.container(border=True):
+        view_column, level_column, process_column = st.columns([1.4, 1, 2])
+        with view_column:
+            capacity_view = st.segmented_control(
+                "표시 방식",
+                options=["공정 유효 Capa", "STEP별 대당 Capa"],
+                default="공정 유효 Capa",
+                key="unit_capacity_view_mode",
+                persist_state="page",
+            )
+        with level_column:
+            selected_level_label = st.selectbox(
+                "집계 수준",
+                options=list(CAPACITY_LEVEL_LABELS.values()),
+                index=0,
+                key="unit_capacity_detail_level",
+                disabled=capacity_view == "STEP별 대당 Capa",
+            )
+        with process_column:
+            selected_processes = st.multiselect(
+                "공정 필터",
+                options=process_options,
+                placeholder=(
+                    "공정을 선택하세요"
+                    if capacity_view == "STEP별 대당 Capa"
+                    else "미선택 시 전체 공정"
+                ),
+                key=process_filter_key,
+                # 표시만 바꾼다. 선택값은 원본이어야 아래 `isin` 이 원본 컬럼과 맞는다.
+                format_func=process_labels.format_func(),
+            )
+
+    selected_level = next(
+        level for level, label in CAPACITY_LEVEL_LABELS.items() if label == selected_level_label
+    )
+    if capacity_ready:
+        # STEP 뷰는 경로 하나하나가 행이라 전 공정을 그리면 Plotly 표가 수천 행이 된다.
+        # 미선택이면 표를 만들지도 CSV 로 인코딩하지도 않고 안내만 남긴다. 선택 해제를
+        # 허용하는 컨트롤이라 `capacity_view` 는 None 일 수 있으므로 명시 비교로 판단한다.
+        if capacity_view == "STEP별 대당 Capa" and not selected_processes:
+            st.info(
+                "STEP별 대당 Capa는 선택한 공정만 그립니다. 위 공정 필터에서 공정을 선택하세요. "
+                "전체 공정을 한 번에 보려면 공정 유효 Capa를 사용하세요."
+            )
         else:
-            unit_capacity_table = get_effective_process_capacity_table(
-                required_equipment_for_display,
-                selected_level,
+            if capacity_view == "STEP별 대당 Capa":
+                unit_capacity_table = unit_capacity_to_month_table(unit_capacity)
+                classification_columns = list(UNIT_CAPACITY_DIMENSIONS)
+                output_title = "STEP별 대당 Capa"
+                output_caption = (
+                    "각 MCP_SEQ·STEP_SEQ 경로의 상세 대당 Capa입니다. "
+                    "공정 전체 Capa 판단에는 기본 공정 유효 Capa를 사용하세요."
+                )
+                file_prefix = "Capa_Step_Unit_Capacity"
+            else:
+                unit_capacity_table = get_effective_process_capacity_table(
+                    required_equipment_for_display,
+                    selected_level,
+                )
+                classification_columns = [
+                    column
+                    for column in ["공정", "소요기준", *WEIGHTED_CAPACITY_HIERARCHY[1:]]
+                    if column in unit_capacity_table.columns
+                ]
+                output_title = "공정 유효 Capa"
+                output_caption = (
+                    "중복되지 않은 원수요 부하량을 STEP별 소요대수 합계로 나눈 값입니다. "
+                    "STEP이 추가되면 소요대수는 누적되고 공정 유효 Capa는 감소합니다."
+                )
+                file_prefix = "Capa_Effective_Process_Capacity"
+            unit_capacity_table = apply_display_order(
+                unit_capacity_table,
+                display_order,
+                "공정별 Capa",
+                "대당 Capa",
             )
-            classification_columns = [
-                column
-                for column in ["공정", "소요기준", *WEIGHTED_CAPACITY_HIERARCHY[1:]]
-                if column in unit_capacity_table.columns
-            ]
-            output_title = "공정 유효 Capa"
-            output_caption = (
-                "중복되지 않은 원수요 부하량을 STEP별 소요대수 합계로 나눈 값입니다. "
-                "STEP이 추가되면 소요대수는 누적되고 공정 유효 Capa는 감소합니다."
+            unit_capacity_table, classification_columns = reorder_display_columns(
+                unit_capacity_table,
+                classification_columns,
+                display_order,
+                "공정별 Capa",
+                "대당 Capa",
             )
-            file_prefix = "Capa_Effective_Process_Capacity"
-        unit_capacity_table = apply_display_order(
-            unit_capacity_table,
-            display_order,
-            "공정별 Capa",
-            "대당 Capa",
-        )
-        unit_capacity_table, classification_columns = reorder_display_columns(
-            unit_capacity_table,
-            classification_columns,
-            display_order,
-            "공정별 Capa",
-            "대당 Capa",
-        )
-        if selected_processes:
-            unit_capacity_table = unit_capacity_table.loc[
-                unit_capacity_table["공정"].isin(selected_processes)
-            ].reset_index(drop=True)
+            if selected_processes:
+                unit_capacity_table = unit_capacity_table.loc[
+                    unit_capacity_table["공정"].isin(selected_processes)
+                ].reset_index(drop=True)
 
-        capacity_export = build_hierarchical_monthly_export(
-            unit_capacity_table,
-            classification_columns=classification_columns,
-            column_labels=COLUMN_LABELS,
-            decimal_places=0,
-        )
-        capacity_csv = capacity_export.to_csv(index=False, float_format="%.0f").encode("utf-8-sig")
-        st.caption(output_caption)
-        render_table_heading(
-            output_title,
-            csv=capacity_csv,
-            file_name=(
-                f"{file_prefix}_{selected_level}_{effective_start_month}_{effective_end_month}.csv"
-            ),
-            key="download_unit_capacity_csv",
-        )
-        render_hierarchical_monthly_table(
-            unit_capacity_table,
-            classification_columns=classification_columns,
-            column_labels=COLUMN_LABELS,
-            decimal_places=0,
-            key="unit_capacity_monthly_table",
-        )
+            capacity_export = build_hierarchical_monthly_export(
+                unit_capacity_table,
+                classification_columns=classification_columns,
+                column_labels=COLUMN_LABELS,
+                decimal_places=0,
+            )
+            capacity_csv = capacity_export.to_csv(index=False, float_format="%.0f").encode(
+                "utf-8-sig"
+            )
+            st.caption(output_caption)
+            render_table_heading(
+                output_title,
+                csv=capacity_csv,
+                file_name=(
+                    f"{file_prefix}_{selected_level}_"
+                    f"{effective_start_month}_{effective_end_month}.csv"
+                ),
+                key="download_unit_capacity_csv",
+            )
+            render_hierarchical_monthly_table(
+                unit_capacity_table,
+                classification_columns=classification_columns,
+                column_labels=COLUMN_LABELS,
+                decimal_places=0,
+                key="unit_capacity_monthly_table",
+                value_labels=process_labels.value_labels(),
+            )

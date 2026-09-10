@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 import pandas as pd
@@ -25,6 +25,7 @@ import streamlit as st
 # 테스트가 스크롤바를 갈아끼울 수 있도록 이름이 아니라 모듈을 잡는다. 이름을 직접
 # import 하면 여기서 잡은 바인딩이 교체를 무시한다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+from capa_simulation.components.process_labels import apply_process_label
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
@@ -95,6 +96,18 @@ def header_label(value: str) -> str:
 def display_text(value: object) -> str:
     """Plotly 셀에 넣을 표시 문자열로 바꾼다. 결측은 빈 칸으로 둔다."""
     return "" if bool(pd.isna(cast(Any, value))) else str(value)
+
+
+def display_value_text(value: object, labels: Mapping[str, str] | None) -> str:
+    """분류 셀의 표시 문자열. 표시명 매핑이 있으면 그 컬럼에만 적용한다.
+
+    치환은 여기(렌더 계층)에서만 한다. 프레임 값은 그대로 두므로 정렬·그룹 판정과 CSV
+    내보내기가 쓰는 원본은 바뀌지 않는다.
+    """
+    text = display_text(value)
+    if not labels or not text:
+        return text
+    return apply_process_label(value, labels)
 
 
 def text_width_units(value: str) -> float:

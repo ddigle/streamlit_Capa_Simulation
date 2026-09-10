@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.roadmap_panel import render_roadmap_panel
 from capa_simulation.components.status_metric import (
     metric_row,
@@ -65,8 +66,21 @@ def _monthly_peak(data: pd.DataFrame, value_column: str) -> int:
     return int(monthly_sum.max())
 
 
-def _render_shortfall_table(data: pd.DataFrame, *, warning_section: bool, key: str) -> None:
-    displayed = _display_shortfalls(data, warning_section=warning_section)
+def _render_shortfall_table(
+    data: pd.DataFrame,
+    *,
+    warning_section: bool,
+    key: str,
+    labels: ProcessLabels,
+) -> None:
+    """화면용 프레임과 CSV 프레임을 분리한다.
+
+    표시명은 `st.dataframe` 에 넘기는 복사본에만 입힌다. 이 표의 CSV 는 투자 검토와
+    A/Item 배분에 그대로 옮겨 쓰므로 `공정` 은 원본이어야 한다.
+    """
+    exported = _display_shortfalls(data, warning_section=warning_section)
+    displayed = exported.copy()
+    displayed["공정"] = labels.series(displayed["공정"])
     st.dataframe(
         displayed,
         hide_index=True,
@@ -98,11 +112,13 @@ def _render_shortfall_table(data: pd.DataFrame, *, warning_section: bool, key: s
     )
     # 투자 검토와 A/Item 배분에 그대로 쓰는 표다. 화면에서 옮겨 적지 않도록 내보낸다.
     render_csv_download(
-        data=displayed.to_csv(index=False).encode("utf-8-sig"),
+        data=exported.to_csv(index=False).encode("utf-8-sig"),
         file_name=f"{key}.csv",
         key=f"{key}_download",
     )
 
+
+process_labels = get_process_labels()
 
 render_page_header(
     "Static Capa",
@@ -239,6 +255,7 @@ else:
                 warning_shortfalls,
                 warning_section=True,
                 key="static_capa_warning_shortfalls",
+                labels=process_labels,
             )
             st.caption(
                 "`경고까지 필요 + 확보까지 추가 = 총 추가 필요`입니다. 같은 설비가 여러 달에 "
@@ -276,6 +293,7 @@ else:
                 secure_shortfalls,
                 warning_section=False,
                 key="static_capa_secure_shortfalls",
+                labels=process_labels,
             )
 
     with st.expander("추가 필요대수 계산 기준", icon=":material/function:"):

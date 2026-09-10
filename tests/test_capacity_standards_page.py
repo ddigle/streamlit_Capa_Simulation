@@ -182,6 +182,29 @@ if ADD_EXCLUDED_STEP:
     for step in (lot_zero_step, wf_zero_step, no_capacity_step, unplanned_step):
         tables["RQ_REQB"] = clone_step(tables["RQ_REQB"], **step)
 
+# 공정 필터를 보려면 공정이 둘 이상이어야 한다. 기본은 꺼 두어 다른 테스트의 건수 문구를
+# 건드리지 않는다.
+ADD_SECOND_PROCESS = False
+if ADD_SECOND_PROCESS:
+    for table_name in (
+        "RQ_UPEH",
+        "RQ_RUN_RATE",
+        "RQ_VITAL",
+        "RQ_RUN_DAY",
+        "RQ_LOT_RATIO",
+        "RQ_WF_RATIO",
+        "RQ_REQB",
+        "RQ_MODULE",
+        "RQ_EQP_OWN",
+        "RQ_EQP_LENT",
+        "RQ_EQP_AVBL",
+    ):
+        second_row = tables[table_name].iloc[0].to_dict()
+        second_row["공정"] = "Process-B"
+        tables[table_name] = pd.concat(
+            [tables[table_name], pd.DataFrame([second_row])], ignore_index=True
+        )
+
 active = {
     "reference_version": 1,
     "revision": 1,
@@ -211,19 +234,29 @@ scenario_state.scenario_table = lambda scenario, name: scenario["tables"][name].
 
 
 def capture_month_updates(_scenario, replacements, _start, _end):
-    st.session_state["test_step_reqb_rows"] = len(replacements["RQ_REQB"])
+    if "RQ_REQB" in replacements:
+        st.session_state["test_step_reqb_rows"] = len(replacements["RQ_REQB"])
+    # 적용 버튼은 `st.rerun()` 을 부르고 AppTest 는 그 rerun 에서 버튼값을 되돌리지 않아
+    # 같은 적용이 여러 번 잡힌다. 사용자가 실제로 누른 첫 적용만 남긴다.
+    st.session_state.setdefault(
+        "test_month_updates",
+        {name: frame.copy() for name, frame in replacements.items()},
+    )
     return _scenario
 
 
 scenario_state.apply_month_updates = capture_month_updates
 
 
-def capture_hierarchical_table(*_args, **kwargs):
+def capture_hierarchical_table(*args, **kwargs):
     key = kwargs.get("key")
     if key:
         st.session_state[f"captured_dimensions::{key}"] = kwargs.get(
             "classification_columns"
         )
+        frame = args[0] if args else kwargs.get("data")
+        if frame is not None and "공정" in getattr(frame, "columns", []):
+            st.session_state[f"captured_processes::{key}"] = sorted(set(frame["공정"]))
 
 
 hierarchical_table.render_hierarchical_monthly_table = capture_hierarchical_table
@@ -329,6 +362,21 @@ def _exclusion_script(page_name: str) -> str:
 
 EXCLUSION_TEST_SCRIPT = _exclusion_script("capacity_standards.py")
 EXCLUSION_PROCESS_TEST_SCRIPT = _exclusion_script("process_securement.py")
+
+# 공정 필터를 보려면 공정이 둘이어야 하고, STEP 뷰는 대당 Capa 를 실제로 돌려야 한다.
+TWO_PROCESS_TEST_SCRIPT = (
+    TEST_SCRIPT.replace("ADD_SECOND_PROCESS = False", "ADD_SECOND_PROCESS = True")
+    .replace("STUB_CALCULATIONS = True", "STUB_CALCULATIONS = False")
+    .replace('"test-capacity-standards-page"', '"test-capacity-two-process-page"')
+)
+
+STEP_VIEW = "STEP별 대당 Capa"
+STEP_VIEW_HINT = (
+    "STEP별 대당 Capa는 선택한 공정만 그립니다. 위 공정 필터에서 공정을 선택하세요. "
+    "전체 공정을 한 번에 보려면 공정 유효 Capa를 사용하세요."
+)
+CAPACITY_TABLE_KEY = "captured_dimensions::unit_capacity_monthly_table"
+CAPACITY_PROCESS_KEY = "captured_processes::unit_capacity_monthly_table"
 
 # 제외 상세 표에 실리는 제외사유. services 쪽 상수가 바뀌면 화면 문구도 함께 깨진다.
 LOT_RATIO_EXCLUSION_REASON = "Lot 측정률 0 이하"
@@ -491,3 +539,179 @@ def test_step_tab_widgets_render_while_the_tab_is_hidden() -> None:
     assert not app.exception
     # 기본 탭은 유효 Capa 다. STEP 구성 탭의 경로 선택은 닫혀 있어도 그려져야 한다.
     assert app.selectbox(key="capacity_step_route").options
+
+
+def test_step_unit_capacity_stays_empty_until_a_process_is_selected() -> None:
+    """전 공정 STEP 을 그리면 Plotly 데이터가 폭증한다. 미선택이면 표를 만들지도 않는다."""
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["unit_capacity_view_mode"] = STEP_VIEW
+    app.run()
+
+    assert not app.exception
+    assert STEP_VIEW_HINT in {info.value for info in app.info}
+    assert "download_unit_capacity_csv" not in {button.key for button in app.download_button}
+    assert CAPACITY_TABLE_KEY not in app.session_state
+
+
+def test_step_unit_capacity_draws_only_the_selected_process() -> None:
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["unit_capacity_view_mode"] = STEP_VIEW
+    app.session_state["unit_capacity_process_filter"] = ["Process-A"]
+    app.run()
+
+    assert not app.exception
+    assert STEP_VIEW_HINT not in {info.value for info in app.info}
+    assert app.session_state[CAPACITY_PROCESS_KEY] == ["Process-A"]
+    assert "download_unit_capacity_csv" in {button.key for button in app.download_button}
+
+
+def test_effective_process_capacity_still_shows_every_process_without_a_filter() -> None:
+    """집계된 값이라 가볍다. 전체 조망이 이 뷰의 용도이므로 미선택 동작을 바꾸지 않는다."""
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert app.session_state[CAPACITY_PROCESS_KEY] == ["Process-A", "Process-B"]
+    assert STEP_VIEW_HINT not in {info.value for info in app.info}
+    assert "download_unit_capacity_csv" in {button.key for button in app.download_button}
+
+
+def test_the_process_filter_placeholder_follows_the_view() -> None:
+    """`미선택 시 전체 공정` 은 STEP 뷰에서 거짓말이 된다."""
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    assert app.multiselect(key="unit_capacity_process_filter").proto.placeholder == (
+        "미선택 시 전체 공정"
+    )
+
+    app.session_state["unit_capacity_view_mode"] = STEP_VIEW
+    app.run()
+
+    assert not app.exception
+    assert app.multiselect(key="unit_capacity_process_filter").proto.placeholder == (
+        "공정을 선택하세요"
+    )
+
+
+def _edit_and_apply(app: AppTest, editor_key: str, month_column: str, value: float) -> AppTest:
+    """셀 하나를 고치고 곧바로 「변경사항 적용」 을 누른다.
+
+    편집 델타는 **보이는 표 안의 행 위치**로 기록되므로 필터를 건 다음에 넣어야 한다.
+    AppTest 는 세션에 직접 넣은 data_editor 값을 다음 run 한 번만 들고 있어, 편집과 클릭을
+    같은 run 에 태운다.
+    """
+    app.session_state[editor_key] = {
+        "edited_rows": {0: {month_column: value}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    apply_button = next(button for button in app.button if button.key == f"{editor_key}_apply")
+    apply_button.click()
+    return app.run()
+
+
+def _filtered_editor_app(tab_name: str, editor_key: str, filter_column: str) -> AppTest:
+    """편집기 탭 하나를 열고 공정 필터로 Process-B 만 남긴 화면."""
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["capacity_standards_active_tab"] = tab_name
+    app.session_state[f"{editor_key}_filter_{filter_column}"] = ["Process-B"]
+    app.run()
+    assert not app.exception
+    return app
+
+
+def test_filtered_run_day_editor_keeps_the_process_the_filter_hid() -> None:
+    """`replace_month_range` 는 조회기간을 통째로 갈아끼운다. 걸러진 공정이 빠지면 삭제된다."""
+    app = _filtered_editor_app("일수", "capa_run_day_editor", "공정")
+    app = _edit_and_apply(app, "capa_run_day_editor", "202608", 15.0)
+
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_RUN_DAY"]
+    assert dict(zip(saved["공정"], saved["RUN_DAY"], strict=True)) == {
+        "Process-A": 31.0,
+        "Process-B": 15.0,
+    }
+
+
+def test_filtered_upeh_editor_keeps_the_process_the_filter_hid() -> None:
+    """UPEH 탭은 분류 컬럼이 아홉 개다. 되머지 키가 탭마다 다르다는 것을 함께 고정한다."""
+    app = _filtered_editor_app("UPEH", "capa_upeh_editor", "공정")
+    app = _edit_and_apply(app, "capa_upeh_editor", "202608", 55.0)
+
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_UPEH"]
+    assert dict(zip(saved["공정"], saved["UPEH"], strict=True)) == {
+        "Process-A": 100.0,
+        "Process-B": 55.0,
+    }
+
+
+def test_run_rate_and_vital_tabs_do_not_share_their_process_filter() -> None:
+    """두 탭은 `dimensions` 가 `공정`·`양산구분` 으로 완전히 같다.
+
+    필터 상태를 갈라 놓는 것은 `editor_key` 로 만든 위젯 key 뿐이다. 한쪽 선택이 다른 쪽에
+    새면 사용자가 보지도 않은 필터로 편집표가 좁아진다.
+    """
+    app = _filtered_editor_app("효율", "capa_run_rate_editor", "공정")
+
+    # 열린 탭의 필터만 그려진다. 두 key 가 같으면 여기서 여유율 쪽도 함께 잡힌다.
+    assert app.multiselect(key="capa_run_rate_editor_filter_공정").value == ["Process-B"]
+    assert "capa_vital_editor_filter_공정" not in {widget.key for widget in app.multiselect}
+
+    # 여유율 탭을 열면서 효율 쪽 선택을 그대로 남겨 둔다. key 가 겹치면 여유율 필터가
+    # 그 선택을 그대로 집어 편집표가 Process-B 한 줄로 좁아진다.
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["capacity_standards_active_tab"] = "여유율"
+    app.session_state["capa_run_rate_editor_filter_공정"] = ["Process-B"]
+    app.run()
+    assert not app.exception
+    assert app.multiselect(key="capa_vital_editor_filter_공정").value == []
+
+    # 필터가 새지 않았으니 여유율 편집표의 첫 행은 걸러지지 않은 Process-A 다.
+    app = _edit_and_apply(app, "capa_vital_editor", "202608", 0.5)
+
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_VITAL"]
+    assert dict(zip(saved["공정"], saved["편중률"], strict=True)) == {
+        "Process-A": 0.5,
+        "Process-B": 1.0,
+    }
+
+
+def test_unit_capacity_controls_render_while_their_tab_is_hidden() -> None:
+    """숨은 탭에서는 계산·표·CSV·Plotly 만 건너뛴다.
+
+    본문을 통째로 건너뛰면 그 안의 위젯이 렌더되지 않아 Streamlit 이 선택값을 버린다.
+    표시 방식·집계 수준·공정 필터 세 개가 탭을 옮길 때마다 초기화되는 것이 그 결과다.
+    """
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["unit_capacity_process_filter"] = ["Process-B"]
+    app.run()
+    assert not app.exception
+    assert app.session_state[CAPACITY_PROCESS_KEY] == ["Process-B"]
+
+    app.session_state["capacity_standards_active_tab"] = "일수"
+    app.run()
+
+    assert not app.exception
+    assert app.segmented_control(key="unit_capacity_view_mode").value == "공정 유효 Capa"
+    assert app.selectbox(key="unit_capacity_detail_level").value == "공정"
+    assert app.multiselect(key="unit_capacity_process_filter").value == ["Process-B"]
+    assert app.session_state["unit_capacity_process_filter"] == ["Process-B"]
+    # 계산 결과를 쓰는 표·CSV 는 그대로 건너뛴다.
+    assert "download_unit_capacity_csv" not in {button.key for button in app.download_button}
+
+
+def test_unfiltered_editor_apply_saves_the_same_rows_as_before() -> None:
+    """필터를 만지지 않은 적용은 예전과 같아야 한다."""
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["capacity_standards_active_tab"] = "일수"
+    app.run()
+    assert not app.exception
+    app = _edit_and_apply(app, "capa_run_day_editor", "202608", 20.0)
+
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_RUN_DAY"]
+    assert dict(zip(saved["공정"], saved["RUN_DAY"], strict=True)) == {
+        "Process-A": 20.0,
+        "Process-B": 31.0,
+    }

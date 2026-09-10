@@ -146,7 +146,9 @@ simulation_cache.get_weekly_standard_target_capacity = (
 )
 
 
-def capture_figure(data, routes, products, _start_date, _end_date):
+def capture_figure(data, routes, products, _start_date, _end_date, process_labels=None):
+    # 공정 표시명은 subplot 제목 라벨일 뿐이라 이 테스트가 보는 값에는 영향이 없다.
+    st.session_state["captured_wip_labels"] = process_labels
     st.session_state["captured_wip_products"] = products
     st.session_state["captured_wip_steps"] = (
         routes["STEP_SEQ"].drop_duplicates().astype(str).tolist()
@@ -191,6 +193,8 @@ def test_wip_status_page_renders_filtered_step_product_grid() -> None:
     assert app.multiselect[1].options == ["Product-B", "Product-A"]
     assert app.session_state["captured_wip_products"] == ["Product-B", "Product-A"]
     assert app.session_state["captured_wip_steps"] == ["P100", "T100"]
+    # 표시명 매핑을 넘기는 배선이 사라지면 subplot 제목이 조용히 원본으로 돌아간다.
+    assert app.session_state["captured_wip_labels"] is not None
     assert app.session_state["captured_wip_days"] == 11
     assert any(button.label.endswith("조건 적용") for button in app.button)
     assert [metric.label for metric in app.metric] == [

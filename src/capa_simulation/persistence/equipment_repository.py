@@ -17,18 +17,32 @@ import duckdb
 import pandas as pd
 
 from capa_simulation.persistence import sync_state
-from capa_simulation.persistence._sql_helpers import connect
+from capa_simulation.persistence._sql_helpers import as_datetime, connect
 from capa_simulation.persistence.equipment_migration_runner import apply_equipment_migrations
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
+    VALID_BUILDINGS,
+    VALID_FLOORS,
     empty_equipment_master,
 )
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_baseline,
     prepare_equipment_master,
+)
+from capa_simulation.services.floor_layout_profile import (
+    CanvasSize,
+    FloorKey,
+    FloorLayoutCanvas,
+    FloorLayoutProfile,
+    canvas_from_pixel_size,
+    image_pixel_size,
+    normalize_canvas_size,
+    normalize_image_upload,
+    require_total_layout_budget,
+    to_data_uri,
 )
 from capa_simulation.services.weekly_availability_input import prepare_weekly_availability
 
@@ -78,7 +92,11 @@ class DuckDBEquipmentRepository:
         note: str | None = None,
     ) -> EquipmentSnapshot:
         prepared_baseline = prepare_equipment_baseline(baseline)
-        prepared_equipment = prepare_equipment_master(equipment)
+        # 저장 시점에만 층 캔버스 상한을 강제한다. 과거 리비전을 다시 읽을 때는 캔버스를
+        # 넘기지 않아, 도면 비율을 줄여도 이미 저장된 리비전이 계속 열린다.
+        prepared_equipment = prepare_equipment_master(
+            equipment, floor_canvases=self.load_floor_layout_canvases()
+        )
         prepared_downtime = prepare_downtime_for_prepared_equipment(downtime, prepared_equipment)
         normalized_note = note.strip() if note and note.strip() else None
         baseline_hash = _frame_hash(prepared_baseline)
@@ -273,6 +291,162 @@ class DuckDBEquipmentRepository:
         with self._write_transaction() as connection:
             connection.execute("DELETE FROM equipment_ops.standard_target_weekly_availability")
 
+    def save_floor_layout_image(
+        self,
+        building: str,
+        floor: str,
+        file_name: str,
+        payload: bytes,
+        *,
+        canvas_width: float | None = None,
+        canvas_height: float | None = None,
+    ) -> FloorLayoutProfile:
+        """Upsert one floor's background drawing without creating a revision."""
+        _require_floor_key(building, floor)
+        normalized_name, mime = normalize_image_upload(file_name, payload)
+        if canvas_width is None or canvas_height is None:
+            pixel_size = image_pixel_size(payload)
+            if pixel_size is None:
+                raise ValueError(f"도면 파일 형식을 읽지 못했습니다: {normalized_name}")
+            width, height = canvas_from_pixel_size(*pixel_size)
+        else:
+            width, height = normalize_canvas_size(canvas_width, canvas_height)
+        with self._write_transaction() as connection:
+            require_total_layout_budget(
+                _other_floors_layout_bytes(connection, building, floor), len(payload)
+            )
+            row_exists, stored_digest = _stored_image_digest(connection, building, floor)
+            if not row_exists:
+                _insert_floor_layout(
+                    connection, building, floor, width, height, (mime, normalized_name, payload)
+                )
+            elif stored_digest == hashlib.sha256(payload).hexdigest():
+                # 같은 도면을 다시 올렸다. BLOB 을 다시 쓰면 DuckDB 가 이전 페이지를
+                # 회수하지 않아 파일만 커지므로 나머지 컬럼만 고친다.
+                connection.execute(
+                    """
+                    UPDATE equipment_ops.floor_layout_profile
+                    SET canvas_width = ?, canvas_height = ?, image_mime = ?, image_name = ?,
+                        updated_at = current_timestamp
+                    WHERE building = ? AND floor_name = ?
+                    """,
+                    [width, height, mime, normalized_name, building, floor],
+                )
+            else:
+                connection.execute(
+                    """
+                    UPDATE equipment_ops.floor_layout_profile
+                    SET canvas_width = ?, canvas_height = ?, image_mime = ?, image_name = ?,
+                        image_payload = ?, updated_at = current_timestamp
+                    WHERE building = ? AND floor_name = ?
+                    """,
+                    [width, height, mime, normalized_name, payload, building, floor],
+                )
+        return self._require_floor_layout_profile(building, floor)
+
+    def save_floor_layout_canvas(
+        self,
+        building: str,
+        floor: str,
+        canvas_width: float,
+        canvas_height: float,
+    ) -> FloorLayoutProfile:
+        """Upsert one floor's canvas size and keep the stored drawing as is."""
+        _require_floor_key(building, floor)
+        width, height = normalize_canvas_size(canvas_width, canvas_height)
+        with self._write_transaction() as connection:
+            # 행이 이미 있으면 숫자 두 개만 UPDATE 한다. DELETE+INSERT 로 행을 다시 쓰면
+            # 도면 BLOB 이 통째로 다시 기록되고 DuckDB 는 지운 페이지를 회수하지 않는다.
+            updated = connection.execute(
+                """
+                UPDATE equipment_ops.floor_layout_profile
+                SET canvas_width = ?, canvas_height = ?, updated_at = current_timestamp
+                WHERE building = ? AND floor_name = ?
+                """,
+                [width, height, building, floor],
+            ).fetchone()
+            if updated is None or int(updated[0]) == 0:
+                _insert_floor_layout(connection, building, floor, width, height, None)
+        return self._require_floor_layout_profile(building, floor)
+
+    def delete_floor_layout_profile(self, building: str, floor: str) -> None:
+        """Delete one floor's drawing and canvas without creating a revision."""
+        _require_floor_key(building, floor)
+        with self._write_transaction() as connection:
+            connection.execute(
+                """
+                DELETE FROM equipment_ops.floor_layout_profile
+                WHERE building = ? AND floor_name = ?
+                """,
+                [building, floor],
+            )
+
+    def load_floor_layout_summaries(self) -> tuple[FloorLayoutCanvas, ...]:
+        """Load every floor's canvas size without reading the drawing bytes."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT building, floor_name, canvas_width, canvas_height, image_name,
+                       COALESCE(octet_length(image_payload), 0), updated_at
+                FROM equipment_ops.floor_layout_profile
+                ORDER BY building, floor_name
+                """
+            ).fetchall()
+        return tuple(
+            FloorLayoutCanvas(
+                building=str(row[0]),
+                floor=str(row[1]),
+                canvas_width=float(row[2]),
+                canvas_height=float(row[3]),
+                image_name=str(row[4]) if row[4] is not None else None,
+                image_byte_count=int(row[5]),
+                updated_at=as_datetime(row[6]),
+            )
+            for row in rows
+        )
+
+    def load_floor_layout_canvases(self) -> dict[FloorKey, CanvasSize]:
+        """Map (동, 층) to its canvas size for coordinate validation."""
+        return {
+            (summary.building, summary.floor): summary.canvas_size
+            for summary in self.load_floor_layout_summaries()
+        }
+
+    def load_floor_layout_profile(self, building: str, floor: str) -> FloorLayoutProfile | None:
+        """Load one floor's canvas size and its drawing as a plotly data URI."""
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT canvas_width, canvas_height, image_mime, image_name, image_payload,
+                       updated_at
+                FROM equipment_ops.floor_layout_profile
+                WHERE building = ? AND floor_name = ?
+                """,
+                [building, floor],
+            ).fetchone()
+        if row is None:
+            return None
+        payload = row[4]
+        mime = str(row[2]) if row[2] is not None else None
+        has_image = isinstance(payload, (bytes, bytearray)) and bool(payload) and mime is not None
+        image_bytes = bytes(payload) if has_image else b""
+        return FloorLayoutProfile(
+            building=building,
+            floor=floor,
+            canvas_width=float(row[0]),
+            canvas_height=float(row[1]),
+            image_data_uri=to_data_uri(str(mime), image_bytes) if has_image else None,
+            image_name=str(row[3]) if row[3] is not None else None,
+            image_byte_count=len(image_bytes),
+            updated_at=as_datetime(row[5]),
+        )
+
+    def _require_floor_layout_profile(self, building: str, floor: str) -> FloorLayoutProfile:
+        profile = self.load_floor_layout_profile(building, floor)
+        if profile is None:
+            raise RuntimeError(f"층 도면 프로필을 저장하지 못했습니다: {building} {floor}")
+        return profile
+
     @contextmanager
     def _write_transaction(self) -> Iterator[duckdb.DuckDBPyConnection]:
         with _WRITE_LOCK, self._connect() as connection:
@@ -289,6 +463,67 @@ class DuckDBEquipmentRepository:
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
         return connect(self._database_path)
+
+
+def _require_floor_key(building: str, floor: str) -> None:
+    if building not in VALID_BUILDINGS or floor not in VALID_FLOORS:
+        raise ValueError(f"동은 C1~C5, 층은 1F~6F 범위여야 합니다: {building} {floor}")
+
+
+def _stored_image_digest(
+    connection: duckdb.DuckDBPyConnection,
+    building: str,
+    floor: str,
+) -> tuple[bool, str | None]:
+    """(행이 있는지, 저장된 도면의 sha256) 을 돌려준다. BLOB 을 파이썬으로 읽지 않는다."""
+    row = connection.execute(
+        """
+        SELECT sha256(image_payload)
+        FROM equipment_ops.floor_layout_profile
+        WHERE building = ? AND floor_name = ?
+        """,
+        [building, floor],
+    ).fetchone()
+    if row is None:
+        return False, None
+    return True, str(row[0]) if row[0] is not None else None
+
+
+def _other_floors_layout_bytes(
+    connection: duckdb.DuckDBPyConnection,
+    building: str,
+    floor: str,
+) -> int:
+    """이 층을 뺀 나머지 층 도면의 바이트 합계."""
+    row = connection.execute(
+        """
+        SELECT COALESCE(SUM(octet_length(image_payload)), 0)
+        FROM equipment_ops.floor_layout_profile
+        WHERE NOT (building = ? AND floor_name = ?)
+        """,
+        [building, floor],
+    ).fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def _insert_floor_layout(
+    connection: duckdb.DuckDBPyConnection,
+    building: str,
+    floor: str,
+    canvas_width: float,
+    canvas_height: float,
+    image: tuple[str, str, bytes] | None,
+) -> None:
+    mime, name, payload = image if image is not None else (None, None, None)
+    connection.execute(
+        """
+        INSERT INTO equipment_ops.floor_layout_profile (
+            building, floor_name, canvas_width, canvas_height,
+            image_mime, image_name, image_payload
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        [building, floor, canvas_width, canvas_height, mime, name, payload],
+    )
 
 
 def _load_baseline(connection: duckdb.DuckDBPyConnection, revision_id: str) -> pd.DataFrame:

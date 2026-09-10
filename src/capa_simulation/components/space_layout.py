@@ -11,6 +11,16 @@ import plotly.graph_objects as go
 
 from capa_simulation.components.plotly_layout import append_layout_items
 from capa_simulation.design import tokens
+from capa_simulation.services.floor_layout_profile import (
+    DEFAULT_CANVAS_HEIGHT,
+    DEFAULT_CANVAS_WIDTH,
+)
+
+# 기본 캔버스(100×60)에서의 층 상세 Figure 픽셀 높이와 격자 칸 수.
+LAYOUT_BASE_FIGURE_HEIGHT: Final = 600
+LAYOUT_MIN_FIGURE_HEIGHT: Final = 320
+LAYOUT_MAX_FIGURE_HEIGHT: Final = 900
+LAYOUT_GRID_DIVISIONS: Final = 10
 
 
 @dataclass(frozen=True)
@@ -189,15 +199,20 @@ def build_floor_layout_figure(
     floor: str,
     *,
     background_image: str | None = None,
+    canvas_width: float = DEFAULT_CANVAS_WIDTH,
+    canvas_height: float = DEFAULT_CANVAS_HEIGHT,
 ) -> go.Figure:
     figure = go.Figure()
     if background_image:
+        # xref·yref 를 주지 않으면 plotly 가 paper 좌표로 읽어 도면이 화면 밖으로 나간다.
         figure.add_layout_image(
             source=background_image,
+            xref="x",
+            yref="y",
             x=0,
-            y=60,
-            sizex=100,
-            sizey=60,
+            y=canvas_height,
+            sizex=canvas_width,
+            sizey=canvas_height,
             sizing="stretch",
             opacity=0.65,
             layer="below",
@@ -205,9 +220,9 @@ def build_floor_layout_figure(
     figure.add_shape(
         type="rect",
         x0=0,
-        x1=100,
+        x1=canvas_width,
         y0=0,
-        y1=60,
+        y1=canvas_height,
         fillcolor=tokens.SPACE_CANVAS_OVERLAY if background_image else tokens.SPACE_CANVAS,
         line={"color": tokens.SPACE_BORDER, "width": 2.5},
         layer="below",
@@ -295,10 +310,26 @@ def build_floor_layout_figure(
         title={"text": f"{building} {floor} Space 배치도", "x": 0.01, "xanchor": "left"},
         legend={"orientation": "h", "x": 1, "xanchor": "right", "y": 1.14},
     )
-    _apply_layout(figure, x_range=(0.0, 100.0), y_range=(0.0, 60.0), height=600)
-    figure.update_xaxes(showgrid=True, gridcolor=tokens.SPACE_GRID, dtick=10)
-    figure.update_yaxes(showgrid=True, gridcolor=tokens.SPACE_GRID, dtick=10)
+    _apply_layout(
+        figure,
+        x_range=(0.0, canvas_width),
+        y_range=(0.0, canvas_height),
+        height=floor_layout_figure_height(canvas_width, canvas_height),
+    )
+    # 격자 간격을 폭에서 뽑아 캔버스 비율이 바뀌어도 칸이 정사각으로 남는다.
+    grid_step = canvas_width / LAYOUT_GRID_DIVISIONS
+    figure.update_xaxes(showgrid=True, gridcolor=tokens.SPACE_GRID, dtick=grid_step)
+    figure.update_yaxes(showgrid=True, gridcolor=tokens.SPACE_GRID, dtick=grid_step)
     return figure
+
+
+def floor_layout_figure_height(canvas_width: float, canvas_height: float) -> int:
+    """캔버스 종횡비에 맞춰 Figure 픽셀 높이를 정한다(기본 캔버스에서 기준값 그대로)."""
+    if canvas_width <= 0 or canvas_height <= 0:
+        return LAYOUT_BASE_FIGURE_HEIGHT
+    ratio = (canvas_height / canvas_width) / (DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH)
+    scaled = round(LAYOUT_BASE_FIGURE_HEIGHT * ratio)
+    return int(min(max(scaled, LAYOUT_MIN_FIGURE_HEIGHT), LAYOUT_MAX_FIGURE_HEIGHT))
 
 
 def first_selected_customdata(event: object) -> str | None:
@@ -321,7 +352,12 @@ def first_selected_customdata(event: object) -> str | None:
     return None
 
 
-def invalid_equipment_rows(equipment: pd.DataFrame) -> list[int]:
+def invalid_equipment_rows(
+    equipment: pd.DataFrame,
+    *,
+    canvas_width: float = DEFAULT_CANVAS_WIDTH,
+    canvas_height: float = DEFAULT_CANVAS_HEIGHT,
+) -> list[int]:
     required = {"X좌표", "Y좌표", "Xsize", "Ysize"}
     if not required.issubset(equipment.columns):
         return list(range(1, len(equipment) + 1))
@@ -334,8 +370,8 @@ def invalid_equipment_rows(equipment: pd.DataFrame) -> list[int]:
         | numeric["Y좌표"].lt(0)
         | numeric["Xsize"].le(0)
         | numeric["Ysize"].le(0)
-        | numeric["X좌표"].add(numeric["Xsize"]).gt(100)
-        | numeric["Y좌표"].add(numeric["Ysize"]).gt(60)
+        | numeric["X좌표"].add(numeric["Xsize"]).gt(canvas_width)
+        | numeric["Y좌표"].add(numeric["Ysize"]).gt(canvas_height)
     )
     return [int(index) + 1 for index in numeric.index[invalid].tolist()]
 

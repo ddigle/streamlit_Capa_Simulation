@@ -22,6 +22,7 @@ from capa_simulation.persistence.equipment_cache import (
     clear_equipment_snapshot_cache,
     get_equipment_repository,
     load_equipment_snapshot,
+    load_floor_layout_canvases,
     load_latest_equipment_snapshot,
 )
 from capa_simulation.services.equipment_availability import (
@@ -40,12 +41,16 @@ from capa_simulation.services.equipment_contract import (
     empty_equipment_master,
 )
 from capa_simulation.services.equipment_csv import (
+    baseline_csv_template,
+    build_baseline_import_preview,
     build_downtime_import_preview,
     build_equipment_import_preview,
     downtime_csv_template,
     equipment_csv_template,
+    merge_baseline_rows,
     merge_downtime_rows,
     merge_equipment_rows,
+    read_baseline_clipboard,
     read_downtime_clipboard,
     read_equipment_clipboard,
 )
@@ -55,6 +60,7 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_master,
     untouched_sample_baseline_rows,
 )
+from capa_simulation.services.floor_layout_profile import max_canvas_extent
 from capa_simulation.services.simulation_cache import get_weekly_equipment_availability
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
@@ -62,9 +68,11 @@ FLASH_KEY = "equipment_status_flash"
 BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
 EQUIPMENT_EDITOR_KEY = "equipment_master_editor_v3"
 DOWNTIME_EDITOR_KEY = "equipment_downtime_editor_v3"
+BASELINE_DRAFT_KEY = "equipment_baseline_draft_v3"
 EQUIPMENT_DRAFT_KEY = "equipment_master_draft_v3"
 DOWNTIME_DRAFT_KEY = "equipment_downtime_draft_v3"
-DRAFT_REVISION_KEY = "equipment_draft_revision_v3"
+DRAFT_REVISION_KEY = "equipment_draft_revision_v4"
+BASELINE_IMPORT_KEY = "baseline_import_preview_rows_v3"
 EQUIPMENT_IMPORT_KEY = "equipment_import_preview_rows_v3"
 DOWNTIME_IMPORT_KEY = "downtime_import_preview_rows_v3"
 
@@ -102,9 +110,11 @@ def _reset_drafts() -> None:
         BASELINE_EDITOR_KEY,
         EQUIPMENT_EDITOR_KEY,
         DOWNTIME_EDITOR_KEY,
+        BASELINE_DRAFT_KEY,
         EQUIPMENT_DRAFT_KEY,
         DOWNTIME_DRAFT_KEY,
         DRAFT_REVISION_KEY,
+        BASELINE_IMPORT_KEY,
         EQUIPMENT_IMPORT_KEY,
         DOWNTIME_IMPORT_KEY,
     ):
@@ -165,14 +175,18 @@ today = date.today()
 try:
     equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
     repository = get_equipment_repository(equipment_database_path)
+    # 층마다 캔버스가 달라 편집기 상한은 전 층 최댓값으로 열어 두고, 층별 범위는 붙여넣기·
+    # 저장 시점에 호기 마스터 검증이 잡는다.
+    floor_canvases = load_floor_layout_canvases(equipment_database_path)
+    max_canvas_width, max_canvas_height = max_canvas_extent(floor_canvases)
     latest_snapshot = load_latest_equipment_snapshot(equipment_database_path)
     if latest_snapshot is None:
-        baseline = sample_equipment_baseline()
+        saved_baseline = sample_equipment_baseline()
         saved_equipment = empty_equipment_master()
         saved_downtime = empty_downtime_schedule()
         revision_token = "empty"
     else:
-        baseline = latest_snapshot.baseline
+        saved_baseline = latest_snapshot.baseline
         saved_equipment = latest_snapshot.equipment
         saved_downtime = latest_snapshot.downtime
         revision_token = latest_snapshot.revision.revision_id
@@ -181,11 +195,16 @@ except BOOTSTRAP_ERRORS as exc:
     st.stop()
 
 if st.session_state.get(DRAFT_REVISION_KEY) != revision_token:
+    st.session_state[BASELINE_DRAFT_KEY] = saved_baseline.copy()
     st.session_state[EQUIPMENT_DRAFT_KEY] = saved_equipment.copy()
     st.session_state[DOWNTIME_DRAFT_KEY] = saved_downtime.copy()
     st.session_state[DRAFT_REVISION_KEY] = revision_token
+    st.session_state.pop(BASELINE_IMPORT_KEY, None)
     st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
     st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
+# 세 표 모두 편집본을 본다. 대시보드가 저장본만 보면 붙여넣기 직후 기존 보유대수만
+# 옛 값으로 남아 총대수·가용률이 호기 마스터와 어긋난다.
+baseline = st.session_state[BASELINE_DRAFT_KEY].copy()
 equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
 downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
 using_dashboard_sample = equipment.empty
@@ -564,7 +583,8 @@ with management_tab:
 
 #### 운영 절차
 
-1. 웹에서 직접 행을 편집하거나 호기 마스터·비가동 일정 Excel 표를 붙여넣습니다.
+1. 웹에서 직접 행을 편집하거나 기존 보유대수·호기 마스터·비가동 일정 Excel 표를
+   붙여넣습니다.
 2. 붙여넣기 Import 시 신규·대체 행과 변경 컬럼을 미리 확인합니다.
 3. `확인 후 편집본에 적용`으로 현재 편집본에 반영합니다.
 4. 하단의 `설비 데이터 저장`을 눌러야 DuckDB에 새 불변 리비전으로 영구 저장됩니다.
@@ -596,12 +616,34 @@ with management_tab:
     with st.container(border=True):
         st.markdown("#### :material/content_paste: Excel 붙여넣기 Import 미리보기")
         st.caption(
-            "호기 마스터는 호기, 비가동 일정은 호기 + 비가동유형 + 시작일을 "
-            "중복 구분자로 사용합니다. CSV 양식을 Excel에서 열어 수정한 뒤 헤더를 포함한 "
-            "전체 표를 복사해 붙여넣으세요. 신규/대체 행과 변경 컬럼을 확인한 뒤 편집본에 "
-            "적용하며, 실제 DuckDB 저장은 아래 저장 버튼에서 한 번 더 수행합니다."
+            "기존 보유대수는 공정 + 분류, 호기 마스터는 호기, 비가동 일정은 호기 + "
+            "비가동유형 + 시작일을 중복 구분자로 사용합니다. CSV 양식을 Excel에서 열어 "
+            "수정한 뒤 헤더를 포함한 전체 표를 복사해 붙여넣으세요. 화면 표시 이름이 아니라 "
+            "양식의 헤더를 그대로 써야 하며, 기존 보유대수는 쉼표 없는 숫자로 적습니다. "
+            "신규/대체 행과 변경 컬럼을 확인한 뒤 편집본에 적용하며, 실제 DuckDB 저장은 "
+            "아래 저장 버튼에서 한 번 더 수행합니다."
         )
-        equipment_import_col, downtime_import_col = st.columns(2)
+        baseline_import_col, equipment_import_col, downtime_import_col = st.columns(3)
+        with baseline_import_col:
+            baseline_clipboard = st.text_area(
+                "기존 보유대수 표 붙여넣기",
+                key="equipment_baseline_clipboard_v4",
+                height=220,
+                placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
+            )
+            with st.container(horizontal=True):
+                render_csv_download(
+                    data=baseline_csv_template(),
+                    file_name="equipment_baseline_template.csv",
+                    key="equipment_baseline_template_download_v3",
+                    label=CSV_TEMPLATE_LABEL,
+                )
+                preview_baseline_import = st.button(
+                    "미리보기",
+                    icon=":material/preview:",
+                    disabled=not baseline_clipboard.strip(),
+                    key="equipment_baseline_clipboard_preview_v4",
+                )
         with equipment_import_col:
             equipment_clipboard = st.text_area(
                 "호기 마스터 표 붙여넣기",
@@ -643,15 +685,28 @@ with management_tab:
                     key="equipment_downtime_clipboard_preview_v4",
                 )
 
+        if preview_baseline_import:
+            try:
+                incoming = read_baseline_clipboard(baseline_clipboard)
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                st.session_state[BASELINE_IMPORT_KEY] = incoming
+                st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
+                st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
+                st.rerun()
         if preview_equipment_import:
             try:
-                incoming = read_equipment_clipboard(equipment_clipboard)
-                merged = merge_equipment_rows(equipment, incoming)
+                incoming = read_equipment_clipboard(
+                    equipment_clipboard, floor_canvases=floor_canvases
+                )
+                merged = merge_equipment_rows(equipment, incoming, floor_canvases=floor_canvases)
                 merge_downtime_rows(downtime, empty_downtime_schedule(), equipment=merged)
             except ValueError as exc:
                 st.error(str(exc))
             else:
                 st.session_state[EQUIPMENT_IMPORT_KEY] = incoming
+                st.session_state.pop(BASELINE_IMPORT_KEY, None)
                 st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
                 st.rerun()
         if preview_downtime_import:
@@ -661,7 +716,41 @@ with management_tab:
                 st.error(str(exc))
             else:
                 st.session_state[DOWNTIME_IMPORT_KEY] = incoming
+                st.session_state.pop(BASELINE_IMPORT_KEY, None)
                 st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
+                st.rerun()
+
+        incoming_baseline = st.session_state.get(BASELINE_IMPORT_KEY)
+        if isinstance(incoming_baseline, pd.DataFrame):
+            st.markdown("**기존 보유대수 Import 확인**")
+            baseline_preview = build_baseline_import_preview(baseline, incoming_baseline)
+            _import_summary(baseline_preview)
+            st.dataframe(baseline_preview, hide_index=True, width="stretch")
+            with st.container(horizontal=True):
+                confirm = st.button(
+                    "확인 후 편집본에 적용",
+                    type="primary",
+                    icon=":material/check:",
+                    key="confirm_baseline_import_v3",
+                )
+                cancel = st.button("취소", icon=":material/close:", key="cancel_baseline_import_v3")
+            if confirm:
+                try:
+                    merged_baseline = merge_baseline_rows(baseline, incoming_baseline)
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.session_state[BASELINE_DRAFT_KEY] = merged_baseline
+                    st.session_state.pop(BASELINE_EDITOR_KEY, None)
+                    st.session_state.pop(BASELINE_IMPORT_KEY, None)
+                    st.session_state[FLASH_KEY] = (
+                        f"기존 보유대수 붙여넣기 데이터 {len(incoming_baseline):,}행을 편집본에 "
+                        "적용했습니다. 아직 DuckDB에는 저장되지 않았습니다. 손대지 않은 개발 "
+                        "샘플 행이 남아 있으면 저장 전에 고치거나 지워야 합니다."
+                    )
+                    st.rerun()
+            if cancel:
+                st.session_state.pop(BASELINE_IMPORT_KEY, None)
                 st.rerun()
 
         incoming_equipment = st.session_state.get(EQUIPMENT_IMPORT_KEY)
@@ -682,7 +771,9 @@ with management_tab:
                 )
             if confirm:
                 try:
-                    merged_equipment = merge_equipment_rows(equipment, incoming_equipment)
+                    merged_equipment = merge_equipment_rows(
+                        equipment, incoming_equipment, floor_canvases=floor_canvases
+                    )
                     merged_downtime = merge_downtime_rows(
                         downtime,
                         empty_downtime_schedule(),
@@ -779,10 +870,18 @@ with management_tab:
             "공정소분류": st.column_config.TextColumn(required=True),
             "동": st.column_config.SelectboxColumn(options=list(VALID_BUILDINGS)),
             "층": st.column_config.SelectboxColumn(options=list(VALID_FLOORS)),
-            "X좌표": st.column_config.NumberColumn(min_value=0.0, max_value=100.0, step=1.0),
-            "Y좌표": st.column_config.NumberColumn(min_value=0.0, max_value=60.0, step=1.0),
-            "Xsize": st.column_config.NumberColumn(min_value=0.1, max_value=100.0, step=1.0),
-            "Ysize": st.column_config.NumberColumn(min_value=0.1, max_value=60.0, step=1.0),
+            "X좌표": st.column_config.NumberColumn(
+                min_value=0.0, max_value=max_canvas_width, step=1.0
+            ),
+            "Y좌표": st.column_config.NumberColumn(
+                min_value=0.0, max_value=max_canvas_height, step=1.0
+            ),
+            "Xsize": st.column_config.NumberColumn(
+                min_value=0.1, max_value=max_canvas_width, step=1.0
+            ),
+            "Ysize": st.column_config.NumberColumn(
+                min_value=0.1, max_value=max_canvas_height, step=1.0
+            ),
             "확정상태": st.column_config.SelectboxColumn(options=list(QUAL_CONFIRMATION_STATUSES)),
             "장기보관여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),
             "기존설비여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),

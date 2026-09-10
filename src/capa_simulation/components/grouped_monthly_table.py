@@ -30,7 +30,7 @@ from capa_simulation.components.monthly_table_base import (
     add_header_rule,
     add_month_boundaries,
     add_outer_border,
-    display_text,
+    display_value_text,
     header_boundary_ratio,
     header_label,
     month_label,
@@ -89,9 +89,15 @@ def _classification_widths(
 def _grouped_values(
     data: pd.DataFrame,
     columns: list[str],
+    value_labels: Mapping[str, Mapping[str, str]] | None = None,
 ) -> tuple[list[list[str]], list[int], list[int]]:
+    column_value_labels = value_labels or {}
     dimension_values = [
-        [display_text(value).replace(" ", "\u00a0") for value in data[column]] for column in columns
+        [
+            display_value_text(value, column_value_labels.get(column)).replace(" ", "\u00a0")
+            for value in data[column]
+        ]
+        for column in columns
     ]
     displayed_values = [values.copy() for values in dimension_values]
     for dimension_index, values in enumerate(displayed_values):
@@ -134,9 +140,11 @@ def _build_display_rows(
     data: pd.DataFrame,
     classification_columns: list[str],
     month_columns: list[str],
+    value_labels: Mapping[str, Mapping[str, str]] | None = None,
 ) -> _DisplayRows:
+    column_value_labels = value_labels or {}
     grouped_values, product_group_indices, production_group_indices = _grouped_values(
-        data, classification_columns
+        data, classification_columns, column_value_labels
     )
     product_column_index = (
         classification_columns.index("제품정보") if "제품정보" in classification_columns else 0
@@ -207,8 +215,9 @@ def _build_display_rows(
             product_totals = [0.0 for _ in month_columns]
 
         if production_ends:
-            production_label = display_text(
-                data.iloc[row_index][classification_columns[0]]
+            production_label = display_value_text(
+                data.iloc[row_index][classification_columns[0]],
+                column_value_labels.get(classification_columns[0]),
             ).replace(" ", "\u00a0")
             subtotal_labels = ["" for _ in classification_columns]
             subtotal_labels[0] = f"{production_label}\u00a0Total"
@@ -403,6 +412,7 @@ def render_grouped_monthly_table(
     column_labels: Mapping[str, str],
     decimal_places: int,
     key: str,
+    value_labels: Mapping[str, Mapping[str, str]] | None = None,
     owner_tab: OpenTab | None = None,
 ) -> None:
     """Render fixed grouped classifications and horizontally scrolling month columns.
@@ -422,7 +432,7 @@ def render_grouped_monthly_table(
     # 소계·격자를 만들고 버리고 있었다. 이 함수는 앞에서 위젯을 그리지 않으므로 상태 유실이 없다.
     if tab_is_hidden(owner_tab):
         return
-    display = _build_display_rows(data, classification_columns, month_columns)
+    display = _build_display_rows(data, classification_columns, month_columns, value_labels)
     classification_widths = _classification_widths(
         display.classification_values,
         classification_columns,

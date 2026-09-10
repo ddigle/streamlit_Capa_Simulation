@@ -117,10 +117,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - PKG PLAN과 수율의 현재 월별 Wide 표를 CSV로 내려받아 값만 일괄 수정·적용한다.
 - `app_pages/capacity_standards.py`
   - 기본 `공정 유효 Capa`는 중복되지 않은 원수요 부하량을 STEP별 소요대수 합계로 나눈
-    화면용 결과이며, STEP별 상세 대당 Capa와 공정 필터도 제공한다.
+    화면용 결과이며, STEP별 상세 대당 Capa와 공정 필터도 제공한다. `공정 유효 Capa`는
+    집계값이라 공정 미선택이면 전체를 그린다.
+  - `STEP별 대당 Capa`는 **공정을 선택해야 그린다.** 미선택이면 표·CSV·안내 문구를 모두
+    감추고 공정을 고르라는 안내만 남긴다 — 경로 하나하나가 행이라 전 공정을 그리면 표 생성·
+    정렬·CSV 인코딩·Plotly 조립이 모두 행 수에 비례해 커진다. 그래서 필터를 앞으로 당기는
+    것이 아니라 그 계산 자체를 타지 않는다. 공정 필터 placeholder 도 뷰에 따라 달라진다.
   - `STEP 구성`은 선택한 경로를 실제 MCP·STEP 식별값으로 복제하거나 삭제하고 연결된
     모든 Capa Code·Customer·CS 변형을 `RQ_REQB`·UPEH·Lot/WF 측정률에 함께 반영한다.
   - 확보율 계산용 상세 대당 Capa는 변경하지 않고 UPEH·효율·여유율·측정률·일수 편집 탭을 제공한다.
+  - 편집 탭 여섯 개에는 그 탭의 분류 컬럼 필터가 붙는다. **필터는 보기만 좁히고 적용은 표
+    전체를 저장한다** — 자세한 계약은 `components/month_editor.py` 항목에 있다.
   - 대형 월별 편집기는 상태 추적 탭으로 구성해 선택된 탭만 렌더링하며, 탭 전환 시 rerun한다.
 - `app_pages/process_securement.py`
   - `확보율`, `소요대수`, `설비대수` 탭을 제공한다.
@@ -153,8 +160,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     저장하고 공정소분류별 주차 단위 총대수·가용대수·비가동대수와 상태를 집계한다.
   - 대시보드 조회 조건은 라인구분·활용구분·공정대분류·공정소분류 순으로 제공하며,
     집계형 기존 보유대수에는 공정소분류 조건만 적용한다.
-  - 호기 마스터는 호기, 비가동 일정은 호기·유형·시작일 자연키로 Import하며
+  - 세 표 모두 CSV 양식 내려받기와 Excel 붙여넣기 Import를 지원한다. 기존 보유대수는
+    공정·분류, 호기 마스터는 호기, 비가동 일정은 호기·유형·시작일 자연키로 Import하며
     신규·대체·변경 컬럼 미리보기와 편집본 적용 확인 후 별도로 리비전을 저장한다.
+  - 세 입력 표는 각자 draft 세션키를 갖고, 대시보드도 저장본이 아니라 draft 를 본다.
+    씨뿌리기는 `DRAFT_REVISION_KEY` 가 활성 리비전과 다를 때만 세 키를 한꺼번에 채우므로,
+    **표를 더하면서 그 키 이름을 올리지 않으면** 이미 열려 있던 세션이 블록을 건너뛰고
+    새 draft 키 첨자 접근에서 `KeyError` 로 죽는다. 입력 표를 더하면 키 이름을 올린다.
+  - Import 확정 시에는 해당 `*_EDITOR_KEY` 를 반드시 `pop` 한다. `st.data_editor` 의 세션
+    상태는 값이 아니라 **행 인덱스 기준 delta** 라, 남은 옛 delta 가 새 프레임 위에 다시
+    얹히면 Import 가 조용히 되돌려진다.
   - 데이터·이력 관리 탭의 접힌 운영 지침에서 기존 보유대수·호기 마스터·비가동 일정의
     역할 구분, Import부터 리비전 저장까지의 절차와 적용 제한을 안내한다.
   - 시뮬레이션 DB, 활성 시나리오, `RQ_*` 기준정보와 공통 시뮬레이션 조회기간을 읽지 않는다.
@@ -175,6 +190,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Capa 연결은 미구현이다.
   - 지정 기간의 단계 완료일을 호기별 전환 이벤트로 펼쳐 완료·예정 건수, 이전·전환 단계,
     전환일과 기준일 대비 일수를 조회하는 실행관리 현황을 제공한다.
+- `app_pages/admin_area.py`
+  - Dynamic Capa 하위의 관리 화면이다. 화면 표기·정렬순서 같은 운영 관리 설정을
+    탭으로 모은다. 지금은 `Proc Rename` 탭 하나이고 탭을 더하기 쉬운 구조로 둔다.
+  - `load_page_context()` 를 부르지 않는다. 계산이 없어 표시순서 준비·활성 시나리오
+    물질화 비용과 부작용을 지불할 이유가 없고 조회기간도 쓰지 않는다. 저장소만 확보한다.
+  - 보유 공정 목록은 안내·편집 보조라 활성 시나리오가 없으면 빈 목록으로 낮추고
+    화면을 멈추지 않는다. 공용 표시명 저장 자체는 시나리오와 무관하다.
+  - 나중에 관리자 권한으로만 열도록 제한할 자리다. 지금은 숨김 플래그를 두지 않는다.
 - `app_pages/scenario_management.py`
   - `시나리오 관리`, `BigDataQuery 등록`, `표시순서 관리` 탭을 제공한다. 세 탭은 항상
     그린다(열린 탭만 그리면 다른 탭을 여는 순간 form 입력값이 사라진다). `BigDataQuery
@@ -225,8 +248,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오 생성은 독립 `시나리오 관리` 페이지에서 수행한다.
 - `src/capa_simulation/components/space_layout.py`
   - FAB 동·층 정의, 설치 단계·양산·운영 비가동 집계와 3단계 Plotly Figure를 생성한다.
-  - 층 상세를 100×60 논리 좌표계로 렌더링하며, 향후 실제 레이아웃 이미지를 배경으로
-    주입할 수 있는 `background_image` 경계를 제공한다.
+  - 층 상세 캔버스는 층마다 다르다. `equipment_ops.floor_layout_profile` 에 저장된
+    폭·높이를 쓰고, 프로필이 없는 층만 기본값 100×60 이다. 배경 도면은
+    `background_image` 인자로 받아 `add_layout_image` 로 깐다.
+  - `invalid_equipment_rows` 도 같은 층 캔버스를 기준으로 이탈을 판정한다. 상수를
+    다시 박으면 도면 비율을 바꾼 순간 멀쩡한 호기가 오류로 찍힌다.
+- `src/capa_simulation/components/floor_layout_upload.py`
+  - Space 현황의 동·층별 배경 도면 업로드·삭제와 캔버스 치수 조정 UI.
+    도면 없이 캔버스만 저장할 수도 있다. 캔버스를 줄여 이탈 호기가 생기면 확인
+    체크박스를 통과해야 저장한다 — 이탈이 있으면 `save_snapshot` 이 마스터 프레임
+    전체를 거부해 무관한 동·층 편집까지 막히기 때문이다.
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py`
   - Dynamic Capa 전체 공정 비교, Capa 손실 Waterfall과 일별 표준·실효·실적 추이 Figure를
     생성한다. 공정 간 단위가 다르면 수량을 합산하지 않고 비율만 비교한다.
@@ -350,6 +381,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `standard_target_capacity.py`: ER 제외 월간 공정 유효 Capa의 일 환산, ISO 주차 캘린더,
   수동 가용대수 표 계약과 주차별 일 표준 가능량
 - `route_step_editor.py`: MCP·STEP 고유 조합 수와 네 경로 테이블의 일괄 복제·삭제
+- `process_rename.py`: 공용 공정 표시명의 값 정규화(앞뒤 공백·U+00A0), 1:1 검증과
+  CSV·붙여넣기 직렬화. **치환은 여기 없다** — 표시명을 실제로 갈아 끼우는 헬퍼는
+  `components/process_labels.py` 에만 둔다.
 - `required_equipment.py`: RQ_REQB 경로 연결과 소요대수
 - `securement_rate.py`: 공정별 확보율과 경고·확보 기준별 최소 정수 추가 필요대수
 - `equipment_count.py`: 보유·대여·가용 설비대수 표
@@ -360,10 +394,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   제공한다. 임시 호기와 비가동 샘플은 DB에 저장하지 않는다.
   주차 집계는 정규화한 설비·비가동 입력을 전체 기간에 재사용하고 주차별 공정 집계를
   `groupby`·`crosstab`으로 한 번에 만든다.
-- `equipment_csv.py`: 호기 마스터와 비가동 일정의 CSV 양식 생성, Excel 붙여넣기 표
-  검증·자연키 기준 병합. 호기 마스터 양식은 두 양식이 공유하는 호기로 2행에 전체 입력
-  예시를 채우고, 3행부터는 호기를 비운 채 활용구분·확정상태의 허용값과 라인구분·투자기준의
-  기재 예시를 나열한다. 호기가 빈 안내 행은 붙여넣기·업로드 때 버려진다.
+- `equipment_csv.py`: 기존 보유대수·호기 마스터·비가동 일정 **세 표 모두**의 CSV 양식
+  생성, Excel 붙여넣기 표 검증·자연키 기준 병합. 호기 마스터 양식은 두 양식이 공유하는
+  호기로 2행에 전체 입력 예시를 채우고, 3행부터는 호기를 비운 채 활용구분·확정상태의
+  허용값과 라인구분·투자기준의 기재 예시를 나열한다. 호기가 빈 안내 행은 붙여넣기·업로드
+  때 버려진다. 기존 보유대수 양식에는 그 안내 행을 두지 않는다 — `분류` 에 허용값 목록이
+  없고, `equipment_validation.py` 의 `_drop_blank_rows` 가 공정·분류·기존보유대수 중
+  하나라도 값이 있으면 행을 남기므로 안내 행이 그대로 누락값 오류가 된다. 양식 예시의 비고
+  상수는 `SAMPLE_BASELINE_TEMPLATE_NOTE` 다. `equipment_samples.py` 의
+  `SAMPLE_BASELINE_NOTE` 는 저장 가드가 보는 개발 샘플 표식이라 이름을 나눈다.
 - `dashboard.py`: HOME 월별 집계, B/N 단일 월별 순위에서 파생하는 Top 1·Top 5·순위 상한을
   인자로 받는 상세, Wafer Capa
 - `dynamic_capacity.py`: 표준 Capa에 실적 효율·UPEH·Rundown·생산실적을 순차 반영하는
@@ -409,10 +448,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `weekly_availability_input.py`: 표준 목표 Capa 수동 가용대수 입력 표 계약. 계산 서비스가
   아니라 입력 계약이므로 설비 Repository 도 여기를 참조한다.
 - `standard_target_logic.py`: 단일 공정·주차를 제품·WF 속성 Mix 로 분해하는 로직 분석
-- `equipment_contract.py`: 설비 세 입력의 컬럼 계약과 허용값
+- `equipment_contract.py`: 설비 세 입력의 컬럼 계약과 허용값. 기존 보유대수의 자연키는
+  `BASELINE_KEY_COLUMNS = ("공정", "분류")` 다. 주차 집계는 `공정` 하나로 합산하지만
+  중복 판정과 Import 병합·미리보기는 두 컬럼 조합을 쓴다 — 같은 공정을 분류로 나눠
+  여러 줄 적는 것이 정상 입력이기 때문이다.
 - `equipment_validation.py`: 설비 마스터·기존 보유대수·비가동 일정 입력 검증
 - `equipment_samples.py`: 설비 DB 가 비어 있을 때만 쓰는 비영속 화면 샘플. 실제 DB 연결이
   끝나면 이 파일만 삭제한다.
+- `floor_layout_profile.py`: 층 배경 도면의 순수 계층. PNG·JPEG 헤더를 직접 읽어 픽셀
+  치수를 얻고(새 의존성 없이), 캔버스 기본값을 폭 100 고정·높이 100×h/w 로 만든다.
+  상한은 층당 2MB(`MAX_FLOOR_LAYOUT_BYTES`)와 전 층 합계 30MB(`MAX_TOTAL_LAYOUT_BYTES`)
+  이고 둘 다 이 파일에만 둔다. 파일 시그니처와 확장자가 다르면 거부한다 — data URI 의
+  MIME 이 내용과 어긋나면 배경이 조용히 안 그려진다.
 - `display_order_editor.py`, `display_order_csv.py`: 웹 편집 표시순서 규칙의 검증·범위
   교체·CSV 직렬화와 수동 입력 `RQ_DISPLAY_ORDER` 변환
 
@@ -440,6 +487,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     ⋮ 메뉴의 About 과 같은 상수를 본다. `app.py` 에서 한 번만 부른다.
 - `src/capa_simulation/components/column_filter.py`
   - 분류 컬럼별 다중선택 필터와 초기화 버튼. 선택값으로 거른 프레임을 돌려준다.
+    `value_labels` 는 `format_func` 로 표시만 바꾼다. 옵션 값과 세션 저장값은 원본이다.
+- `src/capa_simulation/components/process_labels.py`
+  - 원본 공정명을 화면 표시명으로 바꾸는 **유일한 지점**이다. `공정` 은 1급 조인 키라
+    데이터에서 바꾸지 않고 표시 직전에만 라벨을 갈아 끼운다. `services/` 는 이 모듈을
+    import 하지 않는다 — 그 금지가 왕복 CSV·클립보드, 표시순서 `분류값`, 예외 메시지,
+    프리셋·세션 저장값, 설비 DB 공정명에 표시명이 닿지 않게 하는 경계다.
+  - `ProcessLabels.version` 은 HOME Figure 캐시 키 원소로 쓴다. 계산 캐시 키와
+    `content_token` 은 건드리지 않는다.
+- `src/capa_simulation/components/process_rename_management.py`
+  - Admin Area 의 `Proc Rename` 탭. 공용 공정 표시명의 CSV 다운로드·Excel 붙여넣기·
+    직접 편집과 저장을 담당한다. 저장은 공용 프로필 교체이며 리비전을 만들지 않는다.
 - `src/capa_simulation/components/scenario_edit_bar.py`
   - 편집 페이지 상단의 "활성 시나리오 · 수정본 N" 과 원본 초기화 버튼.
     초기화할 때 함께 비울 세션 키는 페이지가 넘긴다.
@@ -482,6 +540,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     인자는 비율이라 창이 좁으면 분류 이름이 잘렸다.
 - `src/capa_simulation/components/month_editor.py`
   - 월별 Wide 기준정보를 탭 안에서 편집하는 `data_editor` 와 분류 컬럼 표시 라벨.
+  - **필터는 보기만 좁히고 저장은 전체다.** 분류 컬럼 필터(`render_column_filters`)는 화면에
+    그릴 행만 줄이고, 돌려주는 표는 언제나 원본과 행 수·행 순서가 같은 전체 표다. 편집값은
+    `merge_edited_months` 가 그 탭의 `dimensions` 를 키로 원본에 되머지한다. 되머지를 지우고
+    걸러진 표를 그대로 돌려주면 `replace_month_range` 가 조회기간의 행을 편집값으로 통째로
+    갈아끼우므로 **화면에서 걸러진 공정이 그 기간에서 조용히 삭제된다.** 되머지가 정확한
+    근거는 `num_rows="fixed"` 와 `disabled=dimensions` 다 — 행 추가·삭제와 분류 컬럼 편집이
+    막혀 있어 바뀔 수 있는 것은 월 컬럼 숫자뿐이다.
+  - `data_editor` 의 편집 델타는 **행 위치**로 기록된다. 보이는 행 집합이 바뀌면 남은 편집이
+    다른 행에 붙으므로, 필터 선택이 달라지면 `data_editor` 를 만들기 전에 `editor_key` 를
+    세션에서 버린다. `editor_key` 자체에 필터를 섞지 않는다 — 페이지가 고정 키 목록으로
+    세션을 청소하는 경로가 그 키를 못 찾는다.
+  - 왕복 CSV·붙여넣기(`render_reference_clipboard_tools`)에는 **필터 이전의 전체 표**를
+    넘긴다. 양식이 부분 표가 되면 그 부분 표가 행 집합 검증을 통과해 나머지 공정을 지운다.
+  - 공정 표시명은 페이지가 조회해 `value_labels=` 로 넘기고 필터 옵션 표기에만 쓴다. 이
+    모듈은 `process_labels` 를 import 하지 않는다.
 - `src/capa_simulation/components/plotly_layout.py`
   - 제목 주석·외곽 테두리·분기 경계·고정 행 등 Figure 그리기 공통 유틸리티.
 - `src/capa_simulation/components/home_figures.py`, `home_rendering.py`, `home_dimensions.py`
@@ -520,6 +593,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/repository.py`: `DuckDBScenarioRepository` 와 쓰기 잠금·트랜잭션 경계
 - `persistence/models.py`: Repository 가 주고받는 타입
 - `persistence/display_order_store.py`: 공용 표시순서 프로필의 검증·이관·저장
+- `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·삽입 SQL
 - `persistence/preset_store.py`: 리비전 프리셋 저장·복원
 - `persistence/source_data_store.py`: 원천 Core Data raw 와 컬럼 프로파일
 - `persistence/summaries.py`: 조회 행을 요약 모델로 변환
@@ -603,6 +677,11 @@ session state에 별도 복사하지 말고 활성 시나리오의 editable tabl
 13. **표시순서는 시나리오에 종속시키지 않는다.** 공용 표시순서는 별도 DB 프로필에서
     읽고 Excel 표 붙여넣기 또는 직접 편집으로 원자 교체한다. 시나리오 전환·신규 생성 시에는
     항상 현재 공용 프로필을 적용하며 표시순서 변경만으로 리비전을 만들지 않는다.
+14. **공정 표시명은 화면 표기 전용이다.** 공용 프로필(`app_meta.global_process_rename*`)
+    에 저장하고 원본 `공정` 값은 데이터·저장·왕복 CSV 어디에서도 바꾸지 않는다. 라벨은
+    계산 입력이 아니므로 `content_token` 을 재발급하지 않고, 프로필 버전 정수를 HOME
+    Figure 캐시 키 원소로 넣어 버전이 바뀔 때만 Figure 를 무효화한다. 계산 캐시
+    (`build_home_simulation_cache_key`)에는 넣지 않는다.
 
 ## 6. 핵심 계산 규칙
 
@@ -837,6 +916,23 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   항상 마지막 분류 계층으로 둔다. 기존 공용 프로필에 두 규칙이 없으면 Repository가
   해당 페이지·탭 범위의 마지막 우선순위로 자동 보강한다.
 - 지원 정렬방식은 `사용자지정`, `오름차순`, `내림차순`이다.
+- 공정 표시명(Proc Rename)은 **화면 표기에만** 적용한다. 적용하는 곳은 세 계층뿐이다.
+  ① 월별 표의 분류 값(`value_labels=`, 치환은 `components/` 안에서만 한다),
+  ② `multiselect`·`selectbox` 의 `format_func=`(값은 절대 바꾸지 않는다),
+  ③ Figure 라벨(LOB 공정명 annotation·hover, 상세 B/N 이름·hover, 재공 격자 제목).
+  HOME 의 B/N 공정 선택 `data_editor` 는 `format_func` 가 없어 표시용 컬럼을 따로 두고,
+  적용 시 되쓰는 값은 원본 `공정` 컬럼에서 읽는다.
+- 표시명이 닿으면 안 되는 곳: 왕복 CSV·클립보드 양식(기준정보 월별 편집기, 설비대수,
+  주차별 가용대수, 표시순서), 보고용 월별 표 CSV, 표시순서 `분류값`, `services/` 의
+  예외 메시지, 프리셋·세션 저장값, 설비 DB 의 `공정대분류`·`공정소분류`, 제외·누락
+  안내 목록(원본을 고치라는 안내다). 편집 대상 선택 화면(STEP 구성)에도 적용하지 않는다.
+  월별 편집기는 편집 표와 왕복 CSV 가 원본 공정명 그대로이고, 탭의 분류 컬럼 필터 옵션에만
+  ② 계층으로 표시명을 입힌다. 표시명 조회는 페이지가 하고 `components/month_editor.py` 는
+  받은 매핑을 필터로만 넘긴다 — 그 파일에 `process_labels` import 가 없는 것이 경계이며
+  `tests/test_process_label_boundaries.py` 가 검사한다.
+- 매핑에 없는 공정은 원본 공정명을 그대로 표시하고, 보유하지 않은 원본에 지정된
+  표시명은 오류가 아니라 무시한다. 표시명이 짧아지면 상세 B/N 의 글자 축소·말줄임이
+  자연히 걸리지 않는다 — 축소 로직을 새로 넣지 않는다.
 - 월별 컬럼은 선택한 유효 조회기간만 전개한다.
 - 주요 표의 분류 컬럼은 고정하고 월 컬럼은 필요할 때 가로 스크롤한다.
 

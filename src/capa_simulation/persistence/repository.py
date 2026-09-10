@@ -40,6 +40,7 @@ from capa_simulation.persistence.display_order_store import (
 from capa_simulation.persistence.migration_runner import apply_migrations
 from capa_simulation.persistence.models import (
     GlobalDisplayOrder,
+    GlobalProcessRename,
     OfficialReleaseSummary,
     RevisionSummary,
     ScenarioCreate,
@@ -52,6 +53,10 @@ from capa_simulation.persistence.preset_store import (
     load_preset,
     validate_preset_processes,
 )
+from capa_simulation.persistence.process_rename_store import (
+    insert_global_process_rename,
+    load_global_process_rename_rules,
+)
 from capa_simulation.persistence.source_data_store import (
     insert_core_data,
     insert_source_profile,
@@ -63,6 +68,10 @@ from capa_simulation.persistence.summaries import (
     official_release_summary,
     revision_summary,
     scenario_summary,
+)
+from capa_simulation.services.process_rename import (
+    empty_process_rename_rules,
+    prepare_process_rename_rules,
 )
 
 REFERENCE_TABLES: dict[str, str] = {
@@ -202,6 +211,66 @@ class DuckDBScenarioRepository:
                 source=source_label,
             )
         return self.load_global_display_order()
+
+    def load_global_process_rename(self) -> GlobalProcessRename:
+        """Load the scenario-independent process display-name profile.
+
+        한 번도 저장하지 않은 상태가 정상이므로 표시순서와 달리 예외를 내지 않는다.
+        여기서 예외를 내면 첫 저장 전까지 모든 화면이 죽는다.
+        """
+        with self._connect() as connection:
+            metadata = connection.execute(
+                """
+                SELECT version, source, updated_at
+                FROM app_meta.global_process_rename
+                WHERE profile_id = 1
+                """
+            ).fetchone()
+            if metadata is None:
+                return GlobalProcessRename(
+                    version=0,
+                    source="",
+                    updated_at=None,
+                    rules=empty_process_rename_rules(),
+                )
+            rules = load_global_process_rename_rules(connection)
+        return GlobalProcessRename(
+            version=int(metadata[0]),
+            source=str(metadata[1]),
+            updated_at=metadata[2],
+            rules=rules,
+        )
+
+    def replace_global_process_rename(
+        self,
+        rules: pd.DataFrame,
+        *,
+        source: str,
+    ) -> GlobalProcessRename:
+        """Atomically replace the shared profile without creating scenario revisions.
+
+        표시순서와 같은 결로 현재본만 남기고 version 번호를 올린다. 이전 규칙은 보존하지
+        않으므로 되돌리기 수단은 교체 전 CSV 다운로드뿐이다. 규칙 0건(전체 해제)도
+        정상 저장이며 version 은 올라간다.
+        """
+        prepared_rules = prepare_process_rename_rules(rules)
+        source_label = required_text(source, "공정 표시명 변경 출처")
+        with self._write_transaction() as connection:
+            row = connection.execute(
+                "SELECT version FROM app_meta.global_process_rename WHERE profile_id = 1"
+            ).fetchone()
+            version = 1 if row is None else int(row[0]) + 1
+            connection.execute(
+                "DELETE FROM app_meta.global_process_rename_rule WHERE profile_id = 1"
+            )
+            connection.execute("DELETE FROM app_meta.global_process_rename WHERE profile_id = 1")
+            insert_global_process_rename(
+                connection,
+                prepared_rules,
+                version=version,
+                source=source_label,
+            )
+        return self.load_global_process_rename()
 
     def create_scenario(
         self,

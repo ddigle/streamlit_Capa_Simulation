@@ -18,6 +18,10 @@
 - 표시순서는 시나리오와 분리된 단일 공용 프로필로 저장하고 모든 시나리오에 적용한다.
   정렬우선순위는 행 정렬과 분류컬럼 배치에 함께 사용하며, 경로 상세 범위의
   `STEP_SEQ → MCP_SEQ`는 마지막 계층으로 자동 보강한다.
+- 공정 표시명(Proc Rename)도 시나리오와 분리된 단일 공용 프로필이다. 원본 공정과
+  표시명은 항상 1:1이며 **화면 표기에만** 적용한다. `RQ_*` 저장값, 보고용 CSV와
+  붙여넣기 왕복 양식은 원본 공정명을 그대로 유지한다. 프로필이 없는 상태(버전 0)가
+  정상이고, 규칙 0건으로 저장하면 지정을 전부 해제한다.
 - 리비전은 조회기간, B/N 포함 공정, 표준 목표 Capa 공정 기본값, 확보·경고 기준
   프리셋을 함께 소유한다.
 - 공식버전은 특정 불변 리비전을 가리키는 append-only 발행 이력이며 최신 발행을 새 웹
@@ -54,6 +58,9 @@ app_meta.official_release N ── 1 app_meta.scenario_revision
 app_meta.global_display_order 1 ── N app_meta.global_display_order_rule
         └── 시나리오와 독립된 현재 공용 표시순서
 
+app_meta.global_process_rename 1 ── N app_meta.global_process_rename_rule
+        └── 시나리오와 독립된 현재 공용 공정 표시명(화면 표기 전용)
+
 # data/equipment_availability.duckdb
 equipment_ops.revision
        ├── N equipment_ops.baseline_snapshot
@@ -84,6 +91,9 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
 - `official_release`: 전역 공식버전 번호, 대상 시나리오·리비전, 공식버전명·메모·발행시각
 - `global_display_order`: 공용 표시순서 버전, 변경 출처와 갱신시각
 - `global_display_order_rule`: 페이지·탭·분류컬럼별 현재 정렬 규칙과 원본 행 순서
+- `global_process_rename`: 공용 공정 표시명 버전, 변경 출처와 갱신시각
+- `global_process_rename_rule`: 원본 `공정` → 화면 `표시명` 규칙과 원본 행 순서.
+  `(profile_id, 공정)`·`(profile_id, 표시명)` UNIQUE가 1:1을 받친다.
 
 `scenario_revision.parent_revision_id`는 과거 리비전에서 새 리비전을 저장하는 분기 이력을
 보존한다. `scenario.active_revision_id`는 가장 최근에 저장한 리비전을 가리키며, 사용자는
@@ -167,6 +177,15 @@ RQ_CHIP_QTY  RQ_CHIP_EQ
   전체 스냅샷
 - `standard_target_weekly_availability`: 표준 목표 Capa 수동 입력용 공정·Weeknum별
   가용대수 최신값. 리비전을 만들지 않고 같은 키를 갱신하며 명시적 초기화 시 전체 삭제한다.
+- `floor_layout_profile`: 동·층별 배경 도면과 캔버스 치수. `(building, floor_name)` PK 이고
+  `revision_id` 가 없다 — `standard_target_weekly_availability` 와 같은 리비전 무관 공용
+  프로필이라 설비 리비전을 저장해도 복제되지 않는다. 도면 원본은 `image_payload` BLOB 으로
+  두고 조회 시에만 `data:{mime};base64,...` 로 만들어 Plotly 배경으로 넘긴다.
+  이미지 없이 캔버스 치수만 저장할 수도 있다(`image_*` NULL).
+  **저장은 append 가 아니라 UPDATE 다.** DuckDB 는 지운 페이지를 회수하지 않아
+  행을 DELETE+INSERT 로 다시 쓰면 수정마다 BLOB 한 벌씩 파일이 커진다(실측: 3.8MB 한 장을
+  6회 수정하면 51.7MB). 캔버스만 바꿀 때는 치수 두 컬럼만 UPDATE 하고, 같은 도면
+  재업로드는 저장된 `sha256(image_payload)` 와 비교해 BLOB 쓰기를 건너뛴다.
 - `schedule_snapshot`: 마이그레이션 1에서 생성한 기존 입고·셋업 일정 보존용 레거시 테이블.
 - `equipment_snapshot`, `downtime_snapshot`: 마이그레이션 2 계약의 과거 리비전
   보존용 레거시 테이블. 신규 저장은 마이그레이션 3의 두 스냅샷 테이블을 사용한다.
@@ -217,6 +236,10 @@ Dynamic Capa의 표준과 실적은 수명주기가 다르므로 같은 리비�
 - 시나리오 보관은 `ACTIVE → ARCHIVED` 논리 변경이며 물리 삭제하지 않는다.
 - STEP·MCP 경로 키 도입 전 첫 행 유지 방식으로 저장한 사내 검증 시나리오는 의미를
   추정해 보정하지 않는다. 기존 시나리오를 제거하고 원천 Query로 신규 등록한다.
+- 마이그레이션 0015가 만드는 공용 공정 표시명 프로필은 `RQ_*` 어느 표에도 오버레이하지
+  않는다. 표시순서와 달리 리비전 스냅샷 캐시를 비울 이유가 없고, 화면 Figure 캐시는
+  프로필 버전 정수를 키 원소로 받아 무효화한다. 시나리오 `content_token`은 재발급하지
+  않는다.
 - 마이그레이션 0014는 이미 저장된 EDP-TSV 행의 `WF 구분` `Top`을 `Top_e`로 이관해 신규 파생과
   값을 맞춘다. `ref_data`·`rev_data`의 RQ 7개씩을 갱신하고, 판별은 `RQ_PKG_PLAN`의 `제품타입`과
   원천의 제품→타입 매핑을 쓰며 매핑이 갈리는 제품은 건드리지 않는다.

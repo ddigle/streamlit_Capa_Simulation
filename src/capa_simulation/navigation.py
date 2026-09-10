@@ -71,6 +71,13 @@ DYNAMIC_CAPA_SUBPAGES = (
     PageSpec("app_pages/space_status.py", _implementing("Space 현황"), ":material/grid_view:"),
 )
 
+# 관리 기능이라 조회 컨트롤과 떨어뜨려 사이드바 맨 아래에 자기 박스로 둔다.
+ADMIN_AREA = PageSpec(
+    "app_pages/admin_area.py",
+    _implementing("Admin Area"),
+    ":material/admin_panel_settings:",
+)
+
 ALL_SPECS: tuple[PageSpec, ...] = (
     HOME,
     CAPA_CHATBOT,
@@ -79,6 +86,7 @@ ALL_SPECS: tuple[PageSpec, ...] = (
     *STATIC_CAPA_SUBPAGES,
     DYNAMIC_CAPA,
     *DYNAMIC_CAPA_SUBPAGES,
+    ADMIN_AREA,
 )
 
 
@@ -93,6 +101,7 @@ class NavigationPages:
     static_capa_subpages: list[StreamlitPage]
     dynamic_capa: StreamlitPage
     dynamic_capa_subpages: list[StreamlitPage]
+    admin_area: StreamlitPage
 
     @property
     def ordered(self) -> list[StreamlitPage]:
@@ -105,6 +114,7 @@ class NavigationPages:
             *self.static_capa_subpages,
             self.dynamic_capa,
             *self.dynamic_capa_subpages,
+            self.admin_area,
         ]
 
 
@@ -118,4 +128,5 @@ def build_navigation_pages() -> NavigationPages:
         static_capa_subpages=[spec.to_page() for spec in STATIC_CAPA_SUBPAGES],
         dynamic_capa=DYNAMIC_CAPA.to_page(),
         dynamic_capa_subpages=[spec.to_page() for spec in DYNAMIC_CAPA_SUBPAGES],
+        admin_area=ADMIN_AREA.to_page(),
     )
