@@ -1177,7 +1177,10 @@ WebIDE 로 이관하면서 DuckDB 파일을 WebIDE 밖에 두기로 했다. 저�
   오류가 없었다. 이 값으로 전송 제한시간을 `max(300, 60 + MiB/0.3)` 으로 바꿨다.
 - [ ] **아직 사내에서만 확인 가능한 것.** WebIDE 재시작 주기와 디스크 영속성(위 push 시점
   결정의 전제), WebIDE 안에서 `aws` 가 PATH 에 있는지, 프로필명이 어떻게 바뀌는지.
-- [ ] **사내 `pyproject.toml` 변경 크로스체크 (사용자 판단 대기).** 원문은 `HANDOFF.md`
+- [x] **사내 `pyproject.toml` 변경 크로스체크.** 개발 도구는 `[dependency-groups]` 의 `dev`
+  그룹에 있고 `company` extra 는 두지 않는다. 설치 명령은 `README.md` 「초기 설정」이 정본이다.
+  `uv.lock` 은 이 저장소에 없다 — uv 가 개발 PC 에 없어 만들지 못했고, 사내에서 `uv lock` 으로
+  만들어 커밋할지는 결정 대기다. 판단 근거는 아래에 남긴다. 원문은 `HANDOFF.md`
   §8-3 이다. 사내에서 `company = ["bigdataquery"]` extra 를 추가하고 dev 의존성을
   `[dependency-groups]` 로 옮겼다. **`[dependency-groups]` 이동은 안전하다** — 배포
   메타데이터에 들어가지 않아 오히려 정확하다. 단 그룹 이름이 `dev` 여야 `uv sync` 가 자동

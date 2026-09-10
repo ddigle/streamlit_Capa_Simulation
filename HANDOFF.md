@@ -198,7 +198,9 @@ SELECT equipment_contract_version, COUNT(*) FROM equipment_ops.revision GROUP BY
 을 가리키는 껍데기라 정보가 없었다. 교차 검사로 확인했다: pyproject 의 직접 선언 12개가
 락에 모두 있고, 락의 고정 버전이 전부 선언 범위를 만족하며, 양방향으로 빠지거나 남는
 패키지가 없었다. 지운 것은 이 둘이고(커밋 제목의 「네 개」는 변경 파일 수를 센 오기다),
-설치는 이제 `pip install -e .` / `pip install -e .[dev]` 하나뿐이다.
+의존성 선언은 `pyproject.toml` 하나로 모였다. 그 뒤 개발 도구를 `[dependency-groups]` 의
+`dev` 그룹으로 옮겼으므로 지금 명령은 `uv sync`(사내) / `pip install -e . --group dev`
+(개발 PC)다 — `README.md` 「초기 설정」이 정본이다.
 
 `pyrightconfig.json` 을 추가했다. 에디터가 uv 의 `.venv` 를 못 찾아 `import streamlit` 에
 빨간 줄을 긋는 문제 때문이다. `.vscode/` 는 `.gitignore` 에 막혀 배포 ZIP 에 실리지 않아서

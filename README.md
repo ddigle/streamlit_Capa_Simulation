@@ -409,13 +409,40 @@ Repository의 쓰기를 별도 잠금과 DB 트랜잭션으로 직렬화합니�
 
 ## 초기 설정
 
+의존성 선언은 `pyproject.toml` 하나입니다. 사내는 `uv`, 개발 PC는 `pip`를 쓰지만 두 경로가
+같은 선언을 읽습니다. 개발 도구(mypy·ruff·pytest 등)는 extra가 아니라 PEP 735 의존성 그룹
+`[dependency-groups]`의 `dev`에 있습니다.
+
+### uv (사내)
+
+```powershell
+uv sync
+```
+
+`uv sync`는 `dev` 그룹을 기본으로 함께 설치합니다. 이후 명령 접두는 `uv run python ...`입니다.
+
+사내 전용 `bigdataquery` 패키지는 `pyproject.toml`에 넣지 않습니다. 공개 인덱스에 없어
+`uv lock`이 실패하거나, 사내 인덱스에 있으면 락 파일에 사내 전용 패키지가 박히기 때문입니다.
+따로 설치합니다.
+
+```powershell
+uv pip install bigdataquery
+```
+
+`uv sync`는 락에 없는 패키지를 지우므로, 이 패키지를 넣은 뒤에는 `uv sync --inexact`를 씁니다.
+패키지가 없어도 앱은 뜹니다 — 사내 조회 화면만 안내 문구를 띄우고 멈춥니다.
+
+### pip (개발 PC)
+
 ```powershell
 py -3.10 --version
 py -3.10 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip setuptools wheel
-pip install -e .[dev]
+pip install -e . --group dev
 ```
+
+`--group`은 pip 25.1부터 지원합니다. 그보다 낮으면 pip를 먼저 올립니다.
 
 PowerShell에서 가상환경 활성화 스크립트가 차단되면 조직 보안 정책에 맞게 실행
 정책을 확인합니다. 활성화하지 않고도 `.venv`의 실행 파일을 직접 사용할 수 있습니다.

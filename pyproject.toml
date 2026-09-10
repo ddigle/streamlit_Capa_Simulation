@@ -21,7 +21,10 @@ dependencies = [
     "xlwings>=0.33,<1",
 ]
 
-[project.optional-dependencies]
+# PEP 735 의존성 그룹. `[project.optional-dependencies]` 의 extra 와 달리 배포 메타데이터에
+# 들어가지 않아 개발 도구를 소비자에게 노출하지 않는다. 그룹 이름이 `dev` 여야
+# `uv sync` 가 기본으로 함께 설치한다(uv 의 default-groups 가 `["dev"]` 다).
+[dependency-groups]
 dev = [
     "mypy>=1.12,<2",
     "pandas-stubs",
