@@ -944,6 +944,20 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   `persist_state="session"` 패턴을 따른다.
 - 비싼 계산을 탭 내부에서 직접 반복하지 않는다. 먼저 캐시된 결과를 만들고 탭은 표시만
   담당하게 한다.
+- 숨은 탭에서도 입력 위젯은 항상 그리고 계산·표·차트만 건너뛴다. 본문을 `st.stop()` 으로
+  통째로 접으면 Streamlit 이 그려지지 않은 위젯의 값을 버린다. `app_pages/capacity_standards.py`
+  의 대당 Capa 탭이 `capacity_ready` 플래그로 이 둘을 가른다.
+- **옵션을 계산 결과에서 얻는 위젯**은 닫힌 탭에서 옵션을 만들 수 없다. 이때 옵션을 빈
+  리스트로 두면 위젯을 그려도 선택값이 버려지므로, 계산을 건너뛴 렌더에서는 **현재 선택값을
+  그대로 옵션으로 둔다**(공정 필터 `unit_capacity_process_filter` 가 그 방식이다).
+- 편집 탭의 분류 필터 상태는 `f"{editor_key}_filter_{column}"` 로 갈린다. 효율과 여유율은
+  `dimensions` 가 완전히 같아 이 key 가 유일한 분리 장치다 — 새 편집 탭에 `editor_key` 를
+  재사용하지 않는다.
+- **`components/month_editor.py` 가 `render_reference_clipboard_tools` 에 넘기는 첫 인자와
+  `key_columns` 는 반드시 필터 이전의 전체 표다.** 필터된 프레임을 넘기면 양식 CSV 가 부분
+  표가 되고, 그 부분 표는 `services/reference_csv.py` 의 행 집합 검증을 통과해 조회기간의
+  나머지 공정을 지운다. `tests/test_month_editor_filter.py` 가 다운로드 바이트를 실제로
+  디코드해 이 계약을 고정한다.
 - HOME 상세표 토글은 켜진 상태로 시작한다. 토글을 끄면 상세 Figure 를 만들지 않으며, 상세
   Figure 는 요약과 별도 캐시다.
 - 여러 필터가 같은 결과를 바꾸면 `st.form`으로 묶어 중간 입력마다 전체 재실행하지 않는다.
@@ -1004,6 +1018,10 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 설명이 데이터와 충돌한다고 보고한 적이 있다. 충돌 상대는 실데이터가 아니라 생성기였다.
 
 ## 11. 현재 미구현 및 주의 사항
+
+- 편집 탭의 분류 필터 선택은 탭을 옮기면 초기화된다. 페이지가 닫힌 탭의 `default_*_table` 을
+  만들지 않아 `render_month_editor` 가 조기 반환하고, 그려지지 않은 위젯의 상태를 Streamlit 이
+  버리기 때문이다. 화면 안내는 `month_editor.FILTER_NOTICE` 가 담당한다.
 
 - SQLite는 실제 런타임 Repository가 아니다.
 - 실행 결과 스냅샷과 사용자 권한은 미구현이다.
