@@ -117,7 +117,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세부수량 행이 대상이다. 소요대수·확보율·B/N 공정 순위는 **바뀌지 않는다** — 설비가 받는
     부하는 EDP 를 포함한 전체 계획이다. 그래서 설비 수요를 다시 돌리지 않고
     `get_home_lob_without_edp` 로 부하량 쪽만 다시 만든다.
-  - `계획 세부수량 상세` 를 켜면 제품·Stack 아래에 `Customer` 를 분류로 더한다. `Customer`
+  - `계획 세부수량` 제목과 「상세」 토글도 Plotly 주석이 아니라 Streamlit 이 그린다. 그
+    줄은 두 칸이 나란한 캔버스 **안**이라 월 칸에도 같은 높이의 빈 줄을 끼워야 행이 맞는다
+    (`plan_detail_title_row`·`plan_detail_title_spacer`, 둘 다 CSS 로 높이를 못박는다).
+    빈 컨테이너는 Streamlit 이 아예 그리지 않으므로 빈 줄에는 높이를 준다.
+  - 그 줄은 fragment 안이라 토글을 눌러도 fragment 만 다시 돈다. 그러면 Figure 가 옛것
+    그대로이므로 지금 그림이 쓴 값과 달라지면 `st.rerun(scope="app")` 으로 앱 전체를
+    다시 돌린다.
+  - 「상세」 를 켜면 제품·Stack 아래에 `Customer` 를 분류로 더한다. `Customer`
     는 `RQ_PKG_PLAN` 의 1급 컬럼이라 조인이 아니라 묶는 키 하나가 늘어나는 것뿐이다.
     머리글과 칸 폭은 `DETAIL_DIMENSION_HEADERS`·`DETAIL_DIMENSION_WIDTHS` 에서 끌어오므로
     분류가 늘어도 Figure 에서 다시 적을 것이 없다. 기본 조합이 아닌 경우에만

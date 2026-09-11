@@ -15,7 +15,9 @@ from capa_simulation.components.home_dimensions import (
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     DASHBOARD_SCROLLBAR_HEIGHT_PX,
     DASHBOARD_SECTION_GAP_PX,
+    DASHBOARD_TITLE_HEIGHT_PX,
 )
+from capa_simulation.components.home_preference import render_plan_detail_title_row
 from capa_simulation.components.loading_progress import LoadingStage
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
@@ -110,6 +112,8 @@ def render_home_performance(
 def render_home_figures(
     figures: HomeFigureSet,
     month_labels: list[str],
+    *,
+    applied_plan_detail_customer: bool = False,
 ) -> None:
     if len(figures) != 6:
         raise ValueError("HOME Figure 묶음은 요약 2개와 상세 4개, 모두 6개여야 합니다.")
@@ -126,6 +130,21 @@ def render_home_figures(
                 month_key="production_lob_month_region",
                 label_width_px=DASHBOARD_LABEL_COLUMN_WIDTH_PX,
             )
+        )
+        # 제목 줄과 그 짝인 빈 줄을 같은 높이로 못박는다. 위젯 기본 높이에 맡기면 브라우저
+        # 글꼴이나 Streamlit 판이 바뀔 때마다 두 칸이 어긋난다.
+        st.html(
+            f"""
+            <style>
+            .st-key-plan_detail_title_row,
+            .st-key-plan_detail_title_spacer {{
+                height: {DASHBOARD_TITLE_HEIGHT_PX}px;
+                min-height: {DASHBOARD_TITLE_HEIGHT_PX}px;
+                margin: 0;
+            }}
+            .st-key-plan_detail_title_row {{ align-items: center; }}
+            </style>
+            """
         )
         label_column, month_column = st.columns(
             [
@@ -145,6 +164,9 @@ def render_home_figures(
                     key="production_lob_labels",
                     config={"displayModeBar": False, "staticPlot": True},
                 )
+                # `계획 세부수량` 제목과 「상세」 토글. 제목이 Plotly 주석으로 쓰던 자리를
+                # 그대로 받는다. 월 칸에도 같은 높이의 빈 줄을 끼워야 행이 맞는다.
+                render_plan_detail_title_row(applied_customer=applied_plan_detail_customer)
                 st.plotly_chart(
                     detail_figures[0],
                     width="stretch",
@@ -186,6 +208,14 @@ def render_home_figures(
                         width="stretch",
                         key="production_lob_months",
                         config={"displayModeBar": False, "responsive": True},
+                    )
+                    # 라벨 칸의 제목 줄과 같은 높이로 비워 둔다. 두 칸의 자식 수와 높이가
+                    # 같아야 아래 표의 행이 맞는다. 높이를 주지 않으면 빈 컨테이너를
+                    # Streamlit 이 아예 그리지 않아 월 칸만 위로 올라붙는다.
+                    st.container(
+                        key="plan_detail_title_spacer",
+                        height=DASHBOARD_TITLE_HEIGHT_PX,
+                        border=False,
                     )
                     st.plotly_chart(
                         detail_figures[1],

@@ -955,11 +955,10 @@ def build_plan_detail_figures(
     ]
     detail_row_height = 27
     detail_header_height = 36
-    detail_figure_height = (
-        DASHBOARD_TITLE_HEIGHT_PX
-        + detail_header_height
-        + max(len(displayed_detail), 1) * detail_row_height
-    )
+    # 제목 자리를 Figure 가 갖지 않는다. `계획 세부수량` 은 Plotly 주석이 아니라 Streamlit
+    # 이 그려서 그 옆에 「상세」 토글을 둔다. 두 칸 모두 같은 높이의 줄을 끼우므로 여백을
+    # 남겨 두면 표 위에 빈 띠만 생긴다.
+    detail_figure_height = detail_header_height + max(len(displayed_detail), 1) * detail_row_height
     detail_label_figure = go.Figure(
         go.Table(
             columnwidth=[DETAIL_DIMENSION_WIDTHS.get(column, 1.0) for column in dimensions],
@@ -1031,15 +1030,11 @@ def build_plan_detail_figures(
     )
     detail_layout = {
         "height": detail_figure_height,
-        "margin": {"l": 0, "r": 0, "t": DASHBOARD_TITLE_HEIGHT_PX, "b": 0},
+        "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
         "paper_bgcolor": tokens.CHART_CANVAS,
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
     detail_label_figure.update_layout(**detail_layout)
-    append_layout_items(
-        detail_label_figure,
-        annotations=[dashboard_title_annotation("<b>계획 세부수량</b>")],
-    )
     detail_month_figure.update_layout(
         **detail_layout,
         width=len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX,

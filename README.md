@@ -335,7 +335,7 @@ DuckDB는 `data/capa_simulation.duckdb`, 설비 운영 전용 DuckDB는
 - `Preference`의 `EDP 포함`을 끄면 LOB로 표현되는 값(Density·Wafer 계획·Wafer Capa·B/N Capa
   막대·Top 5·상세 B/N의 Wafer Capa)과 계획 세부수량에서 EDP-TSV를 뺍니다. 설비가 받는 부하는
   전체 계획 그대로라 **확보율과 B/N 공정 순위는 바뀌지 않습니다.**
-- `Preference`의 `계획 세부수량 상세`를 켜면 계획 세부수량의 제품·Stack 아래에 거래선을
+- `계획 세부수량` 제목 옆 `상세` 토글을 켜면 제품·Stack 아래에 거래선을
   분류로 더합니다. 거래선 수만큼 행이 늘어 표가 길어집니다. 거래선 정렬은
   `Admin Area → 표시순서 관리`에 `분류컬럼 = Customer` 규칙을 `부하량`·`PKG PLAN` 범위로
   넣으면 걸리며, 상세를 끈 화면에서는 같은 규칙이 아무 일도 하지 않습니다.

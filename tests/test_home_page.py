@@ -108,12 +108,13 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     assert app.session_state["spy_scrollbars"] == 1
 
     # 상세표 표시 여부를 고르던 자리는 탭이 가져갔고, 본문 토글은 표시 기준이다.
-    # 「선행」 은 Main 탭 제목 옆, 나머지는 Preference 탭에 있다.
+    # 「선행」·「GAP」 은 Capa LOB 현황 제목 옆, 「상세」 는 계획 세부수량 제목 옆,
+    # 「EDP 포함」 은 Preference 탭에 있다.
     assert [widget.label for widget in app.main.toggle] == [
         "선행",
         "GAP",
+        "상세",
         "EDP 포함",
-        "계획 세부수량 상세",
     ]
     assert [widget.label for widget in app.sidebar.toggle] == ["HOME 성능 진단"]
     assert sorted(widget.label for widget in app.button) == [

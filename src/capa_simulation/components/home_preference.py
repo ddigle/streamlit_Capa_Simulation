@@ -40,6 +40,45 @@ ADVANCE_NOTE_KEY = "home_preference_advance_note"
 DIMENSION_COLUMN = "구분"
 
 
+def render_plan_detail_title_row(*, applied_customer: bool) -> None:
+    """`계획 세부수량` 제목과 그 옆의 「상세」 토글.
+
+    이 줄은 두 칸이 나란한 캔버스 **안**에서 그려진다. 제목이 Plotly 주석으로 있던 44px 을
+    그대로 받아 쓰되 월 칸에도 같은 높이의 빈 줄을 끼워야 행이 맞는다.
+
+    캔버스는 fragment 안이라 여기서 토글을 누르면 fragment 만 다시 돈다. 그러면 Figure 는
+    옛것 그대로다. `applied_customer` 는 지금 그림이 만들어질 때 쓴 값이고, 그것과 달라지면
+    앱 전체를 다시 돌린다.
+    """
+    with st.container(
+        key="plan_detail_title_row",
+        horizontal=True,
+        vertical_alignment="center",
+        gap="medium",
+    ):
+        st.markdown(_section_title("계획 세부수량"), unsafe_allow_html=True)
+        st.toggle(
+            "상세",
+            value=False,
+            key=PLAN_DETAIL_CUSTOMER_KEY,
+            persist_state="session",
+            help=(
+                "제품·Stack 아래에 거래선을 분류로 더합니다. 거래선 수만큼 행이 늘어 표가 "
+                "길어집니다. 거래선 정렬은 Admin Area 의 표시순서 관리에서 정합니다."
+            ),
+        )
+    if bool(st.session_state.get(PLAN_DETAIL_CUSTOMER_KEY, False)) != applied_customer:
+        st.rerun(scope="app")
+
+
+def _section_title(text: str) -> str:
+    """구획 제목 한 줄. Plotly 주석이 그리던 모양을 그대로 옮긴 것이다."""
+    return (
+        f'<span style="color:{tokens.ACCENT}">▍</span>'
+        f'<span style="font-size:20px;font-weight:700">{text}</span>'
+    )
+
+
 def render_lob_title_row(
     *,
     unapplied_months: Sequence[int],
@@ -54,11 +93,7 @@ def render_lob_title_row(
     바뀌지 않으면 고장으로 읽힌다.
     """
     with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
-        st.markdown(
-            f'<span style="color:{tokens.ACCENT}">▍</span>'
-            f'<span style="font-size:20px;font-weight:700">Capa LOB 현황</span>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(_section_title("Capa LOB 현황"), unsafe_allow_html=True)
         st.toggle(
             "선행",
             value=False,
@@ -112,16 +147,6 @@ def render_home_preference(
                 "끄면 Density·Wafer 계획·Wafer Capa 와 계획 세부수량에서 EDP-TSV 제품을 "
                 "뺍니다. 설비가 받는 부하는 그대로라 확보율과 B/N 공정 순위는 바뀌지 "
                 "않습니다."
-            ),
-        )
-        st.toggle(
-            "계획 세부수량 상세",
-            value=False,
-            key=PLAN_DETAIL_CUSTOMER_KEY,
-            persist_state="session",
-            help=(
-                "계획 세부수량의 제품·Stack 아래에 거래선을 분류로 더합니다. 거래선 수만큼 "
-                "행이 늘어 표가 길어집니다."
             ),
         )
     _render_comparison_picker(database_path, active_scenario_id)

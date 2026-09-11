@@ -607,6 +607,7 @@ with main_tab:
     render_home_figures(
         cached_figures,
         month_labels,
+        applied_plan_detail_customer=plan_detail_customer,
     )
 with past_tab:
     render_past_data_management(str(DUCKDB_PATH.resolve()), past_profile)
