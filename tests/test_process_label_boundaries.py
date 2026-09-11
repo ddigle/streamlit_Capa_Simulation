@@ -377,7 +377,8 @@ def test_rename_is_not_part_of_the_calculation_cache_key() -> None:
 
 
 def test_home_figure_cache_key_type_grew_by_the_rename_version() -> None:
-    assert len(get_args(HomeFigureCacheKey)) == 11
+    """상세표 토글이 사라져 bool 한 자리가 빠졌다. rename 버전 자리는 그대로 둘째다."""
+    assert len(get_args(HomeFigureCacheKey)) == 10
 
 
 def test_home_figure_cache_key_includes_the_rename_version_and_display_order_digest() -> None:

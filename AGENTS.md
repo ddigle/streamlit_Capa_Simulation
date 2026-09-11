@@ -106,8 +106,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/home.py`
   - 전체 계산 결과를 조합하는 HOME 대시보드다.
   - Plotly Figure 묶음을 사용자 세션에 캐시하고 렌더링은 fragment로 분리한다.
-  - `계획·B/N 상세표 표시` 토글은 켜진 상태로 시작한다(2026-09-05 사용자 결정, `persist_state="session"`).
-    꺼져 있으면 상세 Figure 를 만들지 않고 요약만 만든 뒤 멈춘다. 토글 상태는 Figure 캐시 키에 들어간다.
+  - 본문은 `Main`·`Preference` 두 탭이다. `Main` 이 계획·LOB·B/N Figure 여섯 개를 그리고
+    `Preference` 는 차트별 표시 설정을 담을 자리다. 요약만 그리는 경로는 없다 — 여섯 개를
+    항상 만든다.
+  - 제목 아래 설명 문구, `계획·B/N 상세표 표시` 토글, `계획 세부수량 CSV` 는 탭이 그 자리를
+    쓰면서 없앴다.
+  - 본문 맨 위, 탭 위에 `LoadingProgress` 막대를 둔다. 계산 단계마다 `advance()` 하고
+    끝나면 `close()` 한다. **모든 종료 경로가 `close()` 를 지나야 한다** — 오류로 멈추면
+    멈춰 선 막대가 오류 문구 위에 남는다. Figure 캐시 적중 경로는 건너뛴 단계 수만큼
+    `advance()` 를 더 불러 두 경로의 단계 수를 맞춘다.
   - B/N 임계값과 포함 공정은 사이드바 form 제출 시 한 번에 적용하고, 성능 진단 토글은
     단계별 시간과 Figure 캐시 적중 여부만 표시한다.
 - `app_pages/load_conversion.py`
@@ -574,6 +581,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     넘긴다. 양식이 부분 표가 되면 그 부분 표가 행 집합 검증을 통과해 나머지 공정을 지운다.
   - 공정 표시명은 페이지가 조회해 `value_labels=` 로 넘기고 필터 옵션 표기에만 쓴다. 이
     모듈은 `process_labels` 를 import 하지 않는다.
+- `src/capa_simulation/components/loading_progress.py`
+  - 계산이 오래 걸리는 페이지가 본문 맨 위에 띄우는 진행 막대다. 단계 목록
+    (`LoadingStage`)을 미리 선언하고 호출부는 `advance()` 만 부른다 — 호출부가 퍼센트를
+    직접 적으면 단계를 더하고 뺄 때 누적값이 어긋나고 화면에서만 드러난다.
+  - 누적 퍼센트는 단계 수 균등 분할이 아니라 **측정한 소요 시간 비율**로 정한다. HOME 은
+    차트 생성이 대부분을 쓴다(`HOME_LOADING_STAGES`).
 - `src/capa_simulation/components/plotly_layout.py`
   - 제목 주석·외곽 테두리·분기 경계·고정 행 등 Figure 그리기 공통 유틸리티.
 - `src/capa_simulation/components/home_figures.py`, `home_rendering.py`, `home_dimensions.py`

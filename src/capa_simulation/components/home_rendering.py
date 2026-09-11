@@ -16,6 +16,7 @@ from capa_simulation.components.home_dimensions import (
     DASHBOARD_SCROLLBAR_HEIGHT_PX,
     DASHBOARD_SECTION_GAP_PX,
 )
+from capa_simulation.components.loading_progress import LoadingStage
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
@@ -27,7 +28,7 @@ from capa_simulation.performance import PerformanceTrace
 # 번호가 겹쳐 예전 Figure 가 그대로 나온다. 계산 캐시와 같은 근거로 토큰을 쓴다.
 # 두 번째 요소는 공용 공정 표시명 프로필 버전이다. 표시명은 계산 입력이 아니라 라벨이므로
 # 계산 캐시 키(`build_home_simulation_cache_key`)에는 넣지 않고 여기에만 접어 넣는다.
-HomeFigureCacheKey = tuple[int, int, int, str, int, int, str, tuple[str, ...], float, float, bool]
+HomeFigureCacheKey = tuple[int, int, int, str, int, int, str, tuple[str, ...], float, float]
 
 HomeFigureSet = tuple[Any, ...]
 
@@ -35,7 +36,18 @@ HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 
 HOME_FIGURE_CACHE_MAX_ENTRIES = 3
 
-HOME_FIGURE_SCHEMA_VERSION = 28
+HOME_FIGURE_SCHEMA_VERSION = 29
+
+# 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
+# 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지
+# 순식간에 찬 뒤 남은 구간에서 멈춰 선 것처럼 보인다.
+HOME_LOADING_STAGES = (
+    LoadingStage("기준정보와 활성 시나리오를 확인하는 중", 5),
+    LoadingStage("Capa 를 계산하는 중", 25),
+    LoadingStage("B/N 순위를 집계하는 중", 32),
+    LoadingStage("차트를 그리는 중", 95),
+    LoadingStage("화면에 전달하는 중", 100),
+)
 
 
 def home_figure_cache() -> dict[HomeFigureCacheKey, HomeFigureSet]:
@@ -76,8 +88,8 @@ def render_home_figures(
     figures: HomeFigureSet,
     month_labels: list[str],
 ) -> None:
-    if len(figures) not in {2, 6}:
-        raise ValueError("HOME Figure 묶음은 요약 2개 또는 상세 포함 6개여야 합니다.")
+    if len(figures) != 6:
+        raise ValueError("HOME Figure 묶음은 요약 2개와 상세 4개, 모두 6개여야 합니다.")
     label_figure, month_figure = figures[:2]
     detail_figures = figures[2:]
     visible_month_count = min(max(len(month_labels), 1), tokens.DASHBOARD_MONTH_SCROLL_THRESHOLD)
@@ -110,19 +122,18 @@ def render_home_figures(
                     key="production_lob_labels",
                     config={"displayModeBar": False, "staticPlot": True},
                 )
-                if detail_figures:
-                    st.plotly_chart(
-                        detail_figures[0],
-                        width="stretch",
-                        key="production_detail_labels",
-                        config={"displayModeBar": False, "staticPlot": True},
-                    )
-                    st.plotly_chart(
-                        detail_figures[2],
-                        width="stretch",
-                        key="bottleneck_detail_labels",
-                        config={"displayModeBar": False, "staticPlot": True},
-                    )
+                st.plotly_chart(
+                    detail_figures[0],
+                    width="stretch",
+                    key="production_detail_labels",
+                    config={"displayModeBar": False, "staticPlot": True},
+                )
+                st.plotly_chart(
+                    detail_figures[2],
+                    width="stretch",
+                    key="bottleneck_detail_labels",
+                    config={"displayModeBar": False, "staticPlot": True},
+                )
         with month_column:
             # 라벨 영역은 월 영역 위에 얹힌 스크롤바 높이만큼 내려야 행이 맞는다.
             st.html(
@@ -153,26 +164,24 @@ def render_home_figures(
                         key="production_lob_months",
                         config={"displayModeBar": False, "responsive": True},
                     )
-                    if detail_figures:
-                        st.plotly_chart(
-                            detail_figures[1],
-                            width="stretch",
-                            key="production_detail_months",
-                            config={"displayModeBar": False, "staticPlot": True},
-                        )
-                        # 상세 B/N 월 Figure 는 hover 를 쓰므로 `staticPlot` 을 빼 둔다.
-                        # 같은 캔버스의 상세 두 Figure 중 계획 세부수량 쪽은 켜져 있다.
-                        # `staticPlot` 은 hover 까지 함께 끈다. 빼면 `displayModeBar`
-                        # 기본값이 "hover" 로,
-                        # `doubleClick`·`showAxisDragHandles` 는 켜짐으로 돌아가므로
-                        # 셋을 직접 끈다. 드래그 확대는 Figure 축의 `fixedrange` 가 막는다.
-                        st.plotly_chart(
-                            detail_figures[3],
-                            width="stretch",
-                            key="bottleneck_detail_months",
-                            config={
-                                "displayModeBar": False,
-                                "doubleClick": False,
-                                "showAxisDragHandles": False,
-                            },
-                        )
+                    st.plotly_chart(
+                        detail_figures[1],
+                        width="stretch",
+                        key="production_detail_months",
+                        config={"displayModeBar": False, "staticPlot": True},
+                    )
+                    # 상세 B/N 월 Figure 는 hover 를 쓰므로 `staticPlot` 을 빼 둔다.
+                    # 같은 캔버스의 상세 두 Figure 중 계획 세부수량 쪽은 켜져 있다.
+                    # `staticPlot` 은 hover 까지 함께 끈다. 빼면 `displayModeBar` 기본값이
+                    # "hover" 로, `doubleClick`·`showAxisDragHandles` 는 켜짐으로 돌아가므로
+                    # 셋을 직접 끈다. 드래그 확대는 Figure 축의 `fixedrange` 가 막는다.
+                    st.plotly_chart(
+                        detail_figures[3],
+                        width="stretch",
+                        key="bottleneck_detail_months",
+                        config={
+                            "displayModeBar": False,
+                            "doubleClick": False,
+                            "showAxisDragHandles": False,
+                        },
+                    )

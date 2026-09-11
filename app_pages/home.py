@@ -14,15 +14,16 @@ from capa_simulation.components.home_figures import (
 )
 from capa_simulation.components.home_rendering import (
     HOME_FIGURE_SCHEMA_VERSION,
+    HOME_LOADING_STAGES,
     HomeFigureCacheKey,
     home_figure_cache,
     render_home_figures,
     render_home_performance,
     store_home_figures,
 )
+from capa_simulation.components.loading_progress import LoadingProgress
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -61,26 +62,9 @@ from capa_simulation.sidebar_status import (
     show_month_range_unavailable,
 )
 
-render_page_header(
-    "Capa LOB Summary",
-    description=(
-        "월별 생산계획을 부하량으로 환산해 Density·Wafer 현황과 "
-        "확보율이 가장 낮은 B/N 공정을 한 화면에서 봅니다."
-    ),
-)
-# 대시보드는 Plotly 그림이라 셀을 복사할 수 없다. 표 내용을 그대로 쓰려면 CSV 가 있어야
-# 하는데, 내보낼 데이터는 아래 계산이 끝나야 나온다. 줄만 먼저 잡고 뒤에서 채운다.
-detail_row = st.container(horizontal=True, vertical_alignment="center", gap="small")
-with detail_row:
-    show_home_details = st.toggle(
-        # 켠 상태로 시작한다. 계획 세부수량과 B/N 상세 시트를 매번 손으로 펼치던 것을
-        # 없앤다. 요약만 보려면 끄면 되고, 그 선택은 세션 동안 유지된다.
-        "계획·B/N 상세표 표시",
-        value=True,
-        key="dashboard_show_details",
-        persist_state="session",
-        help="제품·Stack별 계획 세부수량과 상세 B/N 공정 시트를 아래에 함께 펼칩니다.",
-    )
+render_page_header("Capa LOB Summary")
+# 진행 표시는 탭 위에 둔다. 어느 탭을 보고 있든 같은 자리에서 읽혀야 한다.
+loading = LoadingProgress(st.empty(), HOME_LOADING_STAGES)
 show_home_performance = st.sidebar.toggle(
     "HOME 성능 진단",
     value=False,
@@ -108,6 +92,7 @@ try:
         )
     show_applied_month_range(effective_start, effective_end)
     home_trace.mark("기준정보·시나리오")
+    loading.advance()
 
     home_simulation_cache_key = build_home_simulation_cache_key(
         reference_version=reference_version,
@@ -129,18 +114,12 @@ try:
         _module=reference_tables["RQ_MODULE"],
     )
     home_trace.mark("HOME 계산 파이프라인")
+    loading.advance()
 except BOOTSTRAP_ERRORS as exc:
+    # 막대를 남긴 채 멈추면 오류 문구 위에 멈춰 선 진행률이 함께 보인다.
+    loading.close()
     st.error(bootstrap_error_message(exc))
     st.stop()
-
-with detail_row:
-    # 화면은 K 단위로 줄여 적지만 내보내기는 원래 수량을 그대로 준다.
-    render_csv_download(
-        data=production_detail.to_csv(index=False).encode("utf-8-sig"),
-        file_name=f"Home_Plan_Detail_{effective_start}_{effective_end}.csv",
-        key="download_home_plan_detail",
-        label="계획 세부수량 CSV",
-    )
 
 process_options = sorted(
     securement_rate["공정"].astype("string").str.strip().dropna().unique().tolist()
@@ -314,103 +293,86 @@ figure_cache_key: HomeFigureCacheKey = (
     tuple(included_processes),
     float(secure_threshold_percent),
     float(warning_threshold_percent),
-    show_home_details,
 )
 cached_figures = home_figure_cache().get(figure_cache_key)
-if cached_figures is not None:
-    home_trace.mark("Figure 캐시 조회")
-    render_home_figures(
-        cached_figures,
-        month_labels,
+figure_cache_hit = cached_figures is not None
+if cached_figures is None:
+    bottleneck_ranking = build_monthly_bottleneck_ranking(
+        securement_rate,
+        included_processes=included_processes,
     )
-    home_trace.mark("Plotly 전달")
-    render_home_performance(
-        home_trace,
-        cache_hit=True,
-        enabled=show_home_performance,
+    monthly_bottlenecks = build_monthly_bottlenecks_from_ranking(bottleneck_ranking)
+    bottleneck_capacity = build_bottleneck_capacity(monthly_density, monthly_bottlenecks)
+    monthly_top5 = build_monthly_bottleneck_top5_from_ranking(
+        bottleneck_ranking,
+        monthly_density,
+        monthly_wafer=monthly_wafer,
     )
-    st.stop()
-
-bottleneck_ranking = build_monthly_bottleneck_ranking(
-    securement_rate,
-    included_processes=included_processes,
-)
-monthly_bottlenecks = build_monthly_bottlenecks_from_ranking(bottleneck_ranking)
-bottleneck_capacity = build_bottleneck_capacity(monthly_density, monthly_bottlenecks)
-monthly_top5 = build_monthly_bottleneck_top5_from_ranking(
-    bottleneck_ranking,
-    monthly_density,
-    monthly_wafer=monthly_wafer,
-)
-if show_home_details:
     monthly_bottleneck_details = build_monthly_bottleneck_details_from_ranking(
         bottleneck_ranking,
         monthly_wafer,
         rank_limit=BOTTLENECK_DETAIL_RANK_LIMIT,
     )
-lob_summary = build_production_lob_summary(
-    monthly_density,
-    monthly_wafer,
-    monthly_bottlenecks,
-)
-home_trace.mark("B/N 단일 순위·파생")
-
-
-# 위 캐시 적중 분기가 st.stop() 으로 끝나므로 여기부터는 항상 캐시 미적중 경로다.
-label_figure, month_figure = build_lob_summary_figures(
-    monthly_density=monthly_density,
-    monthly_top5=monthly_top5,
-    bottleneck_capacity=bottleneck_capacity,
-    lob_summary=lob_summary,
-    month_labels=month_labels,
-    secure_threshold=secure_threshold,
-    warning_threshold=warning_threshold,
-    process_labels=process_labels,
-)
-if not show_home_details:
-    cached_figures = (label_figure, month_figure)
+    lob_summary = build_production_lob_summary(
+        monthly_density,
+        monthly_wafer,
+        monthly_bottlenecks,
+    )
+    home_trace.mark("B/N 단일 순위·파생")
+    loading.advance()
+    label_figure, month_figure = build_lob_summary_figures(
+        monthly_density=monthly_density,
+        monthly_top5=monthly_top5,
+        bottleneck_capacity=bottleneck_capacity,
+        lob_summary=lob_summary,
+        month_labels=month_labels,
+        secure_threshold=secure_threshold,
+        warning_threshold=warning_threshold,
+        process_labels=process_labels,
+    )
+    detail_label_figure, detail_month_figure = build_plan_detail_figures(
+        production_detail=production_detail,
+        month_labels=month_labels,
+    )
+    (
+        bottleneck_detail_label_figure,
+        bottleneck_detail_month_figure,
+    ) = build_bottleneck_detail_figures(
+        monthly_bottleneck_details=monthly_bottleneck_details,
+        month_labels=month_labels,
+        secure_threshold=secure_threshold,
+        warning_threshold=warning_threshold,
+        process_labels=process_labels,
+    )
+    cached_figures = (
+        label_figure,
+        month_figure,
+        detail_label_figure,
+        detail_month_figure,
+        bottleneck_detail_label_figure,
+        bottleneck_detail_month_figure,
+    )
     store_home_figures(figure_cache_key, cached_figures)
-    home_trace.mark("요약 Figure 생성")
+    home_trace.mark("Figure 생성")
+else:
+    home_trace.mark("Figure 캐시 조회")
+    # 캐시가 맞으면 순위 집계와 차트 생성을 건너뛴다. 건너뛴 단계만큼 막대도 함께 넘겨야
+    # 두 경로의 진행 단계 수가 같아지고 끝이 100% 로 맞는다.
+    loading.advance()
+loading.advance()
+
+main_tab, preference_tab = st.tabs([":material/dashboard: Main", ":material/tune: Preference"])
+with main_tab:
     render_home_figures(
         cached_figures,
         month_labels,
     )
-    home_trace.mark("Plotly 전달")
-    render_home_performance(
-        home_trace,
-        cache_hit=False,
-        enabled=show_home_performance,
-    )
-    st.stop()
-detail_label_figure, detail_month_figure = build_plan_detail_figures(
-    production_detail=production_detail,
-    month_labels=month_labels,
-)
-bottleneck_detail_label_figure, bottleneck_detail_month_figure = build_bottleneck_detail_figures(
-    monthly_bottleneck_details=monthly_bottleneck_details,
-    month_labels=month_labels,
-    secure_threshold=secure_threshold,
-    warning_threshold=warning_threshold,
-    process_labels=process_labels,
-)
-cached_figures = (
-    label_figure,
-    month_figure,
-    detail_label_figure,
-    detail_month_figure,
-    bottleneck_detail_label_figure,
-    bottleneck_detail_month_figure,
-)
-store_home_figures(figure_cache_key, cached_figures)
-home_trace.mark("상세 Figure 생성")
-
-render_home_figures(
-    cached_figures,
-    month_labels,
-)
+with preference_tab:
+    st.caption("차트별 표시 설정을 여기에 모읍니다.")
 home_trace.mark("Plotly 전달")
+loading.close()
 render_home_performance(
     home_trace,
-    cache_hit=False,
+    cache_hit=figure_cache_hit,
     enabled=show_home_performance,
 )

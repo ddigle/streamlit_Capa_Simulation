@@ -100,27 +100,22 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 4]
     assert app.session_state["spy_scrollbars"] == 1
 
-    assert [widget.label for widget in app.main.toggle] == ["계획·B/N 상세표 표시"]
+    # 본문에는 토글이 없다. 상세표 표시 여부를 고르던 자리는 탭 인터페이스가 가져갔다.
+    assert [widget.label for widget in app.main.toggle] == []
     assert [widget.label for widget in app.sidebar.toggle] == ["HOME 성능 진단"]
     assert [widget.label for widget in app.button] == ["판정 기준 적용", "공정 선택창 열기"]
+    # 제목 아래 설명 문구와 계획 세부수량 CSV 는 탭 자리를 내주고 사라졌다.
+    assert not app.get("download_button")
 
 
-def test_home_detail_toggle_starts_on_and_can_be_turned_off(seeded_database: Path) -> None:
-    """상세표는 켠 상태로 시작하고, 끄면 요약만 남는다.
-
-    기본값을 켜짐으로 바꾼 뒤로는 "토글하면 늘어난다" 가 아니라 "기본이 켜져 있고 끄면
-    줄어든다" 가 계약이다. 기본값만 단언하면 끄는 경로가 덮이지 않는다.
-    """
+def test_home_puts_the_charts_in_a_main_tab_next_to_preference(seeded_database: Path) -> None:
+    """차트별 설정을 담을 자리를 만들기 위한 탭이다. Main 은 기존 화면 그대로다."""
     app = _run(seeded_database)
-    assert app.main.toggle[0].value is True
-    # 계획 세부수량과 B/N 상세 시트가 요약에 더해져 있다.
+
+    tabs = [tab.label for tab in app.main.tabs]
+    assert tabs == [":material/dashboard: Main", ":material/tune: Preference"]
+    # 차트는 Main 탭 안에서만 그린다.
     assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 4]
-
-    app.main.toggle[0].set_value(False).run()
-
-    assert not list(app.exception)
-    # 좌측 라벨(trace 0) + 월별 본문(trace 3) 만 남는다.
-    assert app.session_state["spy_traces"] == [0, 3]
 
 
 def test_the_bottleneck_detail_chart_keeps_hover_on(seeded_database: Path) -> None:
