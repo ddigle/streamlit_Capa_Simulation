@@ -193,7 +193,13 @@ def _lob_frames() -> dict[str, pd.DataFrame]:
             {"생산계획년월": [202608], "년월": ["26.08"], "부하량": [1.5]}
         ),
         "lob_summary": pd.DataFrame(
-            {"부하량": [1.5], "Wafer 부하량": [12_000.0], "Wafer Capa": [11_000.0]}
+            {
+                "생산계획년월": [202608],
+                "년월": ["26.08"],
+                "부하량": [1.5],
+                "Wafer 부하량": [12_000.0],
+                "Wafer Capa": [11_000.0],
+            }
         ),
         "bottleneck_capacity": pd.DataFrame(
             {

@@ -122,6 +122,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     머리글과 칸 폭은 `DETAIL_DIMENSION_HEADERS`·`DETAIL_DIMENSION_WIDTHS` 에서 끌어오므로
     분류가 늘어도 Figure 에서 다시 적을 것이 없다. 기본 조합이 아닌 경우에만
     `get_home_plan_detail` 이 돌아 토글을 건드린 사람만 계산을 치른다.
+  - 연간 Total 열은 Density·Wafer 계획·계획 세부수량만 합계를 적는다. Wafer Capa 는
+    비운다 — 월별 Capa 의 단순 합은 연간 Capa 가 아니라서 더해 놓으면 그 해 투입
+    가능량으로 읽힌다. 생산계획 LOB·B/N Top 5·상세 B/N 도 비고, 머리글을 뺀 Total 칸은
+    살짝 어둡게 칠한다. Density 꺾은선은 그 칸에서 끊는다.
   - `GAP` 을 켜면 Preference 에서 고른 비교 시나리오 대비 증감을 Density·Wafer 계획·계획
     세부수량 값 **아래**에 적는다(선행 증감은 값 **위**). 비교 대상은 시나리오와 리비전을
     함께 골라 정하고, 그 리비전에서 **계획만** 가져오고 환산에 쓰는 표는 현재 것을 쓴다 — 수율·Chip 기준정보가
@@ -607,6 +611,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     넘긴다. 양식이 부분 표가 되면 그 부분 표가 행 집합 검증을 통과해 나머지 공정을 지운다.
   - 공정 표시명은 페이지가 조회해 `value_labels=` 로 넘기고 필터 옵션 표기에만 쓴다. 이
     모듈은 `process_labels` 를 import 하지 않는다.
+- `src/capa_simulation/services/month_columns.py`
+  - 월 축과 연간 Total 열의 규칙. **1~12월이 모두 조회범위 안에 있는 해**만 Total 을 갖고,
+    그 해 12월 바로 뒤에 들어간다. 일부 달만 든 해의 합계는 연간이 아니라 "조회한 달의
+    합" 이라 같은 이름으로 두면 읽는 사람이 속는다.
+  - 축은 **하나**다. 표·차트·가로 스크롤 폭이 모두 같은 칸 수를 보아야 하므로 Total 을
+    끼운 라벨 목록 하나만 만들어 돌려준다.
 - `src/capa_simulation/components/home_preference.py`
   - HOME `Preference` 탭과 `Capa LOB 현황` 제목 줄. 제목은 Plotly 주석이 아니라 여기서
     그린다 — 주석 안에는 위젯을 놓을 수 없어 「선행」 토글을 제목 옆에 둘 수 없었다.

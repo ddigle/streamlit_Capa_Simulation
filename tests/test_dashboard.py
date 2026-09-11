@@ -6,7 +6,6 @@ import pytest
 from capa_simulation.services.dashboard import (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
     align_detail_with_comparison,
-    align_monthly_with_comparison,
     build_bottleneck_capacity,
     build_monthly_bottleneck_details,
     build_monthly_bottleneck_details_from_ranking,
@@ -452,20 +451,6 @@ def test_dashboard_builds_wafer_lob_summary() -> None:
 
     assert wafer.loc[0, "Wafer 부하량"] == pytest.approx(150 * 1_000 * 2 / 0.8 / 0.5 / 500)
     assert summary.loc[0, "Wafer Capa"] == pytest.approx(wafer.loc[0, "Wafer 부하량"] * 1.1)
-
-
-def test_monthly_comparison_leaves_a_missing_month_blank_instead_of_zero() -> None:
-    """비교 대상에 없는 달과 계획이 0 인 달은 다른 이야기다.
-
-    없는 달을 0 으로 채우면 그 달이 전액 증가로 읽힌다.
-    """
-    current = pd.DataFrame({"생산계획년월": [202601, 202602], "부하량": [10.0, 20.0]})
-    comparison = pd.DataFrame({"생산계획년월": [202601], "부하량": [8.0]})
-
-    aligned = align_monthly_with_comparison(current, comparison, "부하량")
-
-    assert aligned["비교값"].tolist()[0] == pytest.approx(8.0)
-    assert pd.isna(aligned["비교값"].tolist()[1])
 
 
 def test_detail_comparison_keeps_rows_that_only_the_comparison_has() -> None:

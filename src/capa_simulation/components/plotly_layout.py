@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import html
+from collections.abc import Sequence
 from typing import Any
 
 import plotly.graph_objects as go
@@ -145,9 +146,15 @@ def add_quarter_boundaries(
     *,
     y0: float = 0.0,
 ) -> None:
-    quarter_keys = [
-        (int(month.split(".")[0]), (int(month.split(".")[1]) - 1) // 3) for month in month_labels
-    ]
+    # 월 축에는 `YY.MM` 이 아닌 칸도 섞인다(연간 Total). 분기를 셀 수 없으므로 그 칸은
+    # 자기만의 칸으로 두어 양옆에 경계가 서게 한다 — 합계 칸이 분기에 묻히면 안 된다.
+    quarter_keys: list[tuple[int, int] | str] = []
+    for month in month_labels:
+        year, _, month_number = month.partition(".")
+        if month_number.isdigit() and year.isdigit():
+            quarter_keys.append((int(year), (int(month_number) - 1) // 3))
+        else:
+            quarter_keys.append(month)
     shapes = [
         {
             "type": "line",
@@ -211,7 +218,7 @@ def add_fixed_table_row(
     *,
     domain: tuple[float, float],
     values: list[str],
-    fill_color: str,
+    fill_color: str | Sequence[str],
     font_size: int,
     bold: bool,
     gaps: list[str] | None = None,
@@ -282,21 +289,37 @@ def add_fixed_table_row(
                     },
                 }
             )
+    # 칸마다 다른 면색을 받으면 칸 단위로 사각형을 그린다. 연간 Total 열만 살짝 어둡게
+    # 하려고 행 전체를 다시 그리지 않는다.
+    if isinstance(fill_color, str):
+        fills = [{"x0": 0.0, "x1": 1.0, "color": fill_color}]
+    else:
+        if len(fill_color) != len(values):
+            raise ValueError("면색 개수가 값 개수와 다릅니다.")
+        fills = [
+            {
+                "x0": index / value_count,
+                "x1": (index + 1) / value_count,
+                "color": color,
+            }
+            for index, color in enumerate(fill_color)
+        ]
     append_layout_items(
         figure,
         shapes=[
             {
                 "type": "rect",
-                "x0": 0,
-                "x1": 1,
+                "x0": fill["x0"],
+                "x1": fill["x1"],
                 "y0": domain[0],
                 "y1": domain[1],
                 "xref": "paper",
                 "yref": "paper",
-                "fillcolor": fill_color,
+                "fillcolor": fill["color"],
                 "line": {"width": 0},
                 "layer": "below",
             }
+            for fill in fills
         ],
         annotations=annotations,
     )

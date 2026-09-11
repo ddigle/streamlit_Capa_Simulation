@@ -1,5 +1,7 @@
 # Purpose: HOME의 생산계획·Wafer 부하량·Bottleneck 순위와 Capa 요약 데이터를 집계한다.
 
+from collections.abc import Sequence
+
 import pandas as pd
 
 from capa_simulation.services.display_order import apply_display_order
@@ -7,6 +9,7 @@ from capa_simulation.services.load_calculator import (
     calculate_density_load,
     calculate_wafer_load,
 )
+from capa_simulation.services.month_columns import year_total_label
 
 PRODUCTION_DETAIL_DIMENSIONS = ["제품정보", "Stack"]
 
@@ -78,24 +81,57 @@ def build_production_dashboard(
     return monthly, detail
 
 
-def align_monthly_with_comparison(
-    current: pd.DataFrame,
-    comparison: pd.DataFrame,
-    value_column: str,
-) -> pd.DataFrame:
-    """현재 월 축에 비교값을 붙인다. 비교에 없는 달은 결측으로 남긴다.
+def build_year_totals(
+    monthly_density: pd.DataFrame,
+    monthly_wafer: pd.DataFrame,
+    total_labels: Sequence[str],
+) -> dict[str, dict[str, float]]:
+    """연간 Total 칸에 적을 합계. 라벨 → 컬럼 → 값.
 
-    결측을 0 으로 채우지 않는다. 0 은 "그 달 계획이 0" 이라는 뜻이고 결측은 "비교 대상에
-    그 달이 없다" 는 뜻이다. 0 으로 채우면 없던 달이 전액 증가로 읽힌다.
+    Wafer Capa 는 넣지 않는다. 월별 Capa 의 단순 합은 연간 Capa 가 아니다.
     """
-    if "생산계획년월" not in current.columns or value_column not in current.columns:
-        raise ValueError(f"현재 월별 표에 필수 컬럼이 없습니다: 생산계획년월, {value_column}")
-    result = current[["생산계획년월", value_column]].copy()
-    if "생산계획년월" not in comparison.columns or value_column not in comparison.columns:
-        result["비교값"] = pd.NA
-        return result
-    lookup = comparison.set_index("생산계획년월")[value_column]
-    result["비교값"] = result["생산계획년월"].map(lookup)
+    if not total_labels:
+        return {}
+    density = monthly_density[["생산계획년월", "부하량"]].copy()
+    density["생산계획년월"] = pd.to_numeric(density["생산계획년월"], errors="coerce").astype(
+        "Int64"
+    )
+    wafer = monthly_wafer[["생산계획년월", "Wafer 부하량"]].copy()
+    wafer["생산계획년월"] = pd.to_numeric(wafer["생산계획년월"], errors="coerce").astype("Int64")
+    merged = density.merge(wafer, on="생산계획년월", how="left")
+    merged["연도"] = merged["생산계획년월"] // 100
+    totals: dict[str, dict[str, float]] = {}
+    for year, group in merged.dropna(subset=["연도"]).groupby("연도", dropna=True):
+        label = year_total_label(int(str(year)))
+        if label not in total_labels:
+            continue
+        totals[label] = {
+            "부하량": float(pd.to_numeric(group["부하량"], errors="coerce").sum()),
+            "Wafer 부하량": float(pd.to_numeric(group["Wafer 부하량"], errors="coerce").sum()),
+        }
+    return totals
+
+
+def add_detail_year_totals(
+    detail: pd.DataFrame,
+    dimensions: list[str],
+    total_labels: Sequence[str],
+) -> pd.DataFrame:
+    """계획 세부수량에 연간 Total 열을 더한다. 그 해 월 컬럼의 행별 합이다."""
+    if not total_labels:
+        return detail
+    result = detail.copy()
+    for label in total_labels:
+        year_prefix = f"{label[:2]}."
+        month_columns = [
+            column
+            for column in detail.columns
+            if column not in dimensions and str(column).startswith(year_prefix)
+        ]
+        if not month_columns:
+            continue
+        numeric = result[month_columns].apply(pd.to_numeric, errors="coerce")
+        result[label] = numeric.sum(axis=1, skipna=True)
     return result
 
 

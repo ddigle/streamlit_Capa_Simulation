@@ -69,6 +69,7 @@ from capa_simulation.services.advance_load import (
 from capa_simulation.services.dashboard import (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
     PRODUCTION_DETAIL_DIMENSIONS,
+    add_detail_year_totals,
     align_detail_with_comparison,
     build_bottleneck_capacity,
     build_monthly_bottleneck_details_from_ranking,
@@ -76,7 +77,9 @@ from capa_simulation.services.dashboard import (
     build_monthly_bottleneck_top5_from_ranking,
     build_monthly_bottlenecks_from_ranking,
     build_production_lob_summary,
+    build_year_totals,
 )
+from capa_simulation.services.month_columns import build_month_axis, month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
@@ -398,7 +401,12 @@ with st.sidebar.container(border=True):
 
 secure_threshold = secure_threshold_percent / 100.0
 warning_threshold = warning_threshold_percent / 100.0
-month_labels = [str(value) for value in monthly_density["년월"].tolist()]
+# 월 축에 완전한 해의 연간 Total 칸을 끼운다. 표·차트·가로 스크롤 폭이 모두 이 축 하나를
+# 본다 — 축을 두 벌로 만들면 칸이 어긋난다.
+month_labels, year_total_labels = build_month_axis(
+    [int(value) for value in monthly_density["생산계획년월"]]
+)
+year_totals = build_year_totals(monthly_density, monthly_wafer, year_total_labels)
 figure_cache_key: HomeFigureCacheKey = (
     HOME_FIGURE_SCHEMA_VERSION,
     process_labels.version,
@@ -468,6 +476,7 @@ if cached_figures is None:
         baseline_lob_summary=baseline_lob_summary,
         comparison_density=comparison_density,
         comparison_wafer=comparison_wafer,
+        year_totals=year_totals,
     )
     displayed_detail = production_detail
     aligned_comparison_detail: pd.DataFrame | None = None
@@ -481,10 +490,13 @@ if cached_figures is None:
             reference_tables["RQ_DISPLAY_ORDER"],
         )
     detail_label_figure, detail_month_figure = build_plan_detail_figures(
-        production_detail=displayed_detail,
+        production_detail=add_detail_year_totals(
+            displayed_detail, plan_detail_dimensions, year_total_labels
+        ),
         month_labels=month_labels,
         detail_dimensions=plan_detail_dimensions,
         comparison_detail=aligned_comparison_detail,
+        year_total_labels=year_total_labels,
     )
     (
         bottleneck_detail_label_figure,
@@ -495,6 +507,7 @@ if cached_figures is None:
         secure_threshold=secure_threshold,
         warning_threshold=warning_threshold,
         process_labels=process_labels,
+        year_total_labels=year_total_labels,
     )
     cached_figures = (
         label_figure,
@@ -524,9 +537,11 @@ with main_tab:
         month_labels,
     )
 with preference_tab:
+    # 선행 물량은 실제 달에만 넣는다. 화면 축에 끼운 연간 Total 칸은 입력할 자리가 아니다.
+    advance_months = [int(value) for value in baseline_density["생산계획년월"]]
     render_home_preference(
-        months=[int(value) for value in baseline_density["생산계획년월"]],
-        month_labels=month_labels,
+        months=advance_months,
+        month_labels=[month_label(value) for value in advance_months],
         advance_profile=advance_profile,
         database_path=str(DUCKDB_PATH.resolve()),
         active_scenario_id=active_persisted_scenario_id(),

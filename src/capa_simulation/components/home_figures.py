@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import html
 import unicodedata
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 import pandas as pd
@@ -45,7 +46,6 @@ from capa_simulation.services.dashboard import (
     DETAIL_DIMENSION_HEADERS,
     DETAIL_DIMENSION_WIDTHS,
     PRODUCTION_DETAIL_DIMENSIONS,
-    align_monthly_with_comparison,
 )
 
 # 상세 B/N 공정 시트가 보여줄 순위 상한. 페이지가 서비스에 넘기는 값이고, 자르는 곳은
@@ -163,6 +163,39 @@ def format_bottleneck_process_name(value: object) -> str:
 _GAP_EPSILON = 5e-3
 
 
+def _aligned_by_label(frame: pd.DataFrame | None, month_labels: list[str]) -> pd.DataFrame | None:
+    """월 축 라벨 차례로 프레임을 맞춘다. 축에 없는 칸은 결측이 된다."""
+    if frame is None or "년월" not in frame.columns:
+        return None
+    return frame.set_index(frame["년월"].astype("string")).reindex(month_labels)
+
+
+def _axis_series(frame: pd.DataFrame | None, column: str) -> list[float | None]:
+    """칸마다 값 하나. 결측은 `None` 이라 Plotly 가 선을 끊는다."""
+    if frame is None or column not in frame.columns:
+        return []
+    return [None if pd.isna(value) else float(value) for value in frame[column]]
+
+
+def _axis_values(
+    frame: pd.DataFrame,
+    month_labels: list[str],
+    totals: Mapping[str, Mapping[str, float]],
+    column: str,
+    number_format: str,
+    *,
+    scale: float = 1.0,
+) -> list[str]:
+    """표 한 행의 칸 글자. 연간 Total 칸은 미리 더해 둔 값에서 꺼낸다."""
+    values = frame[column] if column in frame.columns else pd.Series(dtype="float64")
+    rendered: list[str] = []
+    for label, value in zip(month_labels, values, strict=True):
+        total = totals.get(label, {}).get(column)
+        amount = total if total is not None else value
+        rendered.append("" if pd.isna(amount) else number_format.format(float(amount) / scale))
+    return rendered
+
+
 def _value_gaps(
     current: pd.DataFrame,
     baseline: pd.DataFrame | None,
@@ -177,33 +210,6 @@ def _value_gaps(
     differences = (
         pd.to_numeric(current[column], errors="coerce").to_numpy()
         - pd.to_numeric(baseline[column], errors="coerce").to_numpy()
-    ) / scale
-    gaps = [
-        "" if pd.isna(value) or abs(value) < _GAP_EPSILON else number_format.format(value)
-        for value in differences
-    ]
-    return gaps if any(gaps) else None
-
-
-def _comparison_gaps(
-    current: pd.DataFrame,
-    comparison: pd.DataFrame | None,
-    column: str,
-    number_format: str,
-    *,
-    scale: float = 1.0,
-) -> list[str] | None:
-    """비교 시나리오 대비 증감. 비교에 그 달이 없으면 그 칸은 비운다.
-
-    없는 달을 0 으로 보면 전액 증가로 읽힌다. 비교 대상에 그 달이 없는 것과 그 달 계획이
-    0 인 것은 다른 이야기다.
-    """
-    if comparison is None or column not in current.columns:
-        return None
-    aligned = align_monthly_with_comparison(current, comparison, column)
-    differences = (
-        pd.to_numeric(aligned[column], errors="coerce")
-        - pd.to_numeric(aligned["비교값"], errors="coerce")
     ) / scale
     gaps = [
         "" if pd.isna(value) or abs(value) < _GAP_EPSILON else number_format.format(value)
@@ -259,6 +265,7 @@ def build_lob_summary_figures(
     baseline_lob_summary: pd.DataFrame | None = None,
     comparison_density: pd.DataFrame | None = None,
     comparison_wafer: pd.DataFrame | None = None,
+    year_totals: Mapping[str, Mapping[str, float]] | None = None,
 ) -> tuple[go.Figure, go.Figure]:
     """생산계획·Wafer Capa·Bottleneck 요약 Figure 한 쌍을 만든다.
 
@@ -273,20 +280,36 @@ def build_lob_summary_figures(
     **아래**에 증감을 적는다. 위아래를 나눠 둔 것은 한 칸에 둘이 함께 붙을 수 있어서다.
     """
     labels = process_labels or ProcessLabels()
-    density_gaps = _value_gaps(lob_summary, baseline_lob_summary, "부하량", "{:+,.2f}")
+    totals = dict(year_totals or {})
+    # 월 축의 근거는 `month_labels` 하나뿐이다. 연간 Total 칸이 끼면 프레임의 행 수와 칸
+    # 수가 더는 같지 않으므로 라벨로 맞춘다. 맞추고 나면 Total 칸은 결측이라 증감도
+    # 자연히 비고, 그것이 맞다 — 합계 칸에 전월 대비를 적을 자리는 없다.
+    if "년월" not in lob_summary.columns:
+        raise ValueError("LOB 요약에 월 축을 맞출 `년월` 컬럼이 없습니다.")
+    aligned_summary = _aligned_by_label(lob_summary, month_labels)
+    aligned_baseline = _aligned_by_label(baseline_lob_summary, month_labels)
+    aligned_comparison_density = _aligned_by_label(comparison_density, month_labels)
+    aligned_comparison_wafer = _aligned_by_label(comparison_wafer, month_labels)
+    assert aligned_summary is not None
+    density_gaps = _value_gaps(aligned_summary, aligned_baseline, "부하량", "{:+,.2f}")
     wafer_plan_gaps = _value_gaps(
-        lob_summary, baseline_lob_summary, "Wafer 부하량", "{:+,.0f}K", scale=1_000
+        aligned_summary, aligned_baseline, "Wafer 부하량", "{:+,.0f}K", scale=1_000
     )
-    density_comparison_gaps = _comparison_gaps(
-        lob_summary, comparison_density, "부하량", "{:+,.2f}"
+    density_comparison_gaps = _value_gaps(
+        aligned_summary, aligned_comparison_density, "부하량", "{:+,.2f}"
     )
-    wafer_plan_comparison_gaps = _comparison_gaps(
-        lob_summary, comparison_wafer, "Wafer 부하량", "{:+,.0f}K", scale=1_000
+    wafer_plan_comparison_gaps = _value_gaps(
+        aligned_summary, aligned_comparison_wafer, "Wafer 부하량", "{:+,.0f}K", scale=1_000
     )
     month_positions = list(range(len(month_labels)))
-    month_position_by_value = dict(
-        zip(monthly_density["생산계획년월"], month_positions, strict=True)
-    )
+    month_position_by_value = {
+        int(month): index
+        for index, month in enumerate(aligned_summary["생산계획년월"])
+        if pd.notna(month)
+    }
+    value_fills = [
+        tokens.SURFACE_YEAR_TOTAL if label in totals else tokens.SURFACE for label in month_labels
+    ]
     subplot_options = {
         "rows": 3,
         "cols": 1,
@@ -317,27 +340,28 @@ def build_lob_summary_figures(
             None,
         ),
         (
-            [f"{row['부하량']:,.2f}" for _, row in lob_summary.iterrows()],
-            tokens.SURFACE,
+            _axis_values(aligned_summary, month_labels, totals, "부하량", "{:,.2f}"),
+            value_fills,
             20,
             False,
             density_gaps,
             density_comparison_gaps,
         ),
         (
-            [f"{row['Wafer 부하량'] / 1_000:,.0f}K" for _, row in lob_summary.iterrows()],
-            tokens.SURFACE,
+            _axis_values(
+                aligned_summary, month_labels, totals, "Wafer 부하량", "{:,.0f}K", scale=1_000
+            ),
+            value_fills,
             20,
             False,
             wafer_plan_gaps,
             wafer_plan_comparison_gaps,
         ),
         (
-            [
-                "" if pd.isna(row["Wafer Capa"]) else f"{row['Wafer Capa'] / 1_000:,.0f}K"
-                for _, row in lob_summary.iterrows()
-            ],
-            tokens.SURFACE,
+            # Wafer Capa 는 연간 Total 을 적지 않는다. 월별 Capa 의 단순 합은 연간 Capa 가
+            # 아니다 — 더해 놓으면 그 해 투입 가능량으로 읽힌다.
+            _axis_values(aligned_summary, month_labels, {}, "Wafer Capa", "{:,.0f}K", scale=1_000),
+            value_fills,
             20,
             False,
             None,
@@ -364,18 +388,23 @@ def build_lob_summary_figures(
             font_size=font_size,
             bold=bold,
         )
-    for row_domain, (values, fill_color, font_size, bold, gaps, lower_gaps) in zip(
-        lob_table_domains,
-        month_table_rows,
-        strict=True,
-    ):
+    # 라벨 칸과 이름을 나눈다. 월 칸은 연간 Total 만 달리 칠하려고 칸별 면색 목록을 받는데,
+    # 같은 이름을 쓰면 검사기가 라벨 칸의 단일 색 타입으로 고정한다.
+    for row_domain, (
+        month_values,
+        month_fill,
+        month_font_size,
+        month_bold,
+        gaps,
+        lower_gaps,
+    ) in zip(lob_table_domains, month_table_rows, strict=True):
         add_fixed_table_row(
             month_figure,
             domain=row_domain,
-            values=values,
-            fill_color=fill_color,
-            font_size=font_size,
-            bold=bold,
+            values=month_values,
+            fill_color=month_fill,
+            font_size=month_font_size,
+            bold=month_bold,
             gaps=gaps,
             lower_gaps=lower_gaps,
         )
@@ -419,8 +448,8 @@ def build_lob_summary_figures(
             go.Scatter(
                 name="Density (선행 전)",
                 x=month_positions,
-                y=baseline_lob_summary["부하량"],
-                customdata=baseline_lob_summary["년월"],
+                y=_axis_series(aligned_baseline, "부하량"),
+                customdata=month_labels,
                 mode="lines",
                 line={"color": tokens.TEXT_MUTED, "width": 2, "dash": "dot"},
                 cliponaxis=False,
@@ -433,10 +462,12 @@ def build_lob_summary_figures(
         go.Scatter(
             name="Density",
             x=month_positions,
-            y=monthly_density["부하량"],
-            customdata=monthly_density["년월"],
+            # 연간 Total 칸에서는 선을 끊는다. 합계 칸을 가로지르면 그 값이 그 달의 계획인
+            # 것처럼 읽힌다.
+            y=_axis_series(aligned_summary, "부하량"),
+            customdata=month_labels,
             mode="lines+markers+text",
-            text=monthly_density["부하량"],
+            text=_axis_series(aligned_summary, "부하량"),
             texttemplate="<b>%{text:,.2f}</b>",
             textposition="top center",
             textfont={"size": 20, "color": tokens.TEXT, "family": tokens.FONT_FAMILY_NUMERIC},
@@ -800,7 +831,25 @@ def build_lob_summary_figures(
         for boundary_y, boundary_width, boundary_color in lob_row_boundaries
     ]
     append_layout_items(label_figure, shapes=lob_row_shapes)
-    append_layout_items(month_figure, shapes=lob_row_shapes)
+    # 차트 두 칸(생산계획 LOB·B/N Top 5)의 연간 Total 열. 표 칸은 행마다 칠했지만 차트는
+    # 면이 하나라 여기서 세로 띠로 덮는다. 막대·꺾은선이 없는 칸이라 겹칠 것도 없다.
+    total_column_shapes = [
+        {
+            "type": "rect",
+            "x0": index / max(len(month_labels), 1),
+            "x1": (index + 1) / max(len(month_labels), 1),
+            "y0": panel_bottom,
+            "y1": lob_table_domains[-1][0],
+            "xref": "paper",
+            "yref": "paper",
+            "fillcolor": tokens.SURFACE_YEAR_TOTAL,
+            "line": {"width": 0},
+            "layer": "below",
+        }
+        for index, label in enumerate(month_labels)
+        if label in totals
+    ]
+    append_layout_items(month_figure, shapes=[*total_column_shapes, *lob_row_shapes])
     add_quarter_boundaries(month_figure, month_labels, y0=panel_bottom)
     return label_figure, month_figure
 
@@ -851,6 +900,7 @@ def build_plan_detail_figures(
     month_labels: list[str],
     detail_dimensions: list[str] | None = None,
     comparison_detail: pd.DataFrame | None = None,
+    year_total_labels: Sequence[str] = (),
 ) -> tuple[go.Figure, go.Figure]:
     """분류별 계획 세부수량 Figure 한 쌍을 만든다.
 
@@ -963,7 +1013,12 @@ def build_plan_detail_figures(
                     for month in detail_month_columns
                 ],
                 "align": "center",
-                "fill_color": [detail_month_row_colors for _ in detail_month_columns],
+                "fill_color": [
+                    [tokens.SURFACE_YEAR_TOTAL] * len(detail_month_row_colors)
+                    if month in year_total_labels
+                    else detail_month_row_colors
+                    for month in detail_month_columns
+                ],
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
                     "color": tokens.TEXT,
@@ -1075,6 +1130,7 @@ def build_bottleneck_detail_figures(
     secure_threshold: float,
     warning_threshold: float,
     process_labels: ProcessLabels | None = None,
+    year_total_labels: Sequence[str] = (),
 ) -> tuple[go.Figure, go.Figure]:
     """월별 B/N 상위 공정을 순위별 가로막대로 그린 Figure 한 쌍을 만든다.
 
@@ -1362,6 +1418,24 @@ def build_bottleneck_detail_figures(
                 "line": {"width": 0},
                 "layer": "below",
             },
+            # 연간 Total 칸은 데이터가 없어 비지만, 비었다는 것과 그 칸이 합계 자리라는
+            # 것은 다른 이야기다. 머리글 아래 본문만 살짝 어둡게 칠해 알린다.
+            *[
+                {
+                    "type": "rect",
+                    "x0": month_positions[label] / month_count,
+                    "x1": (month_positions[label] + 1) / month_count,
+                    "y0": 0,
+                    "y1": header_boundary_y,
+                    "xref": "paper",
+                    "yref": "paper",
+                    "fillcolor": tokens.SURFACE_YEAR_TOTAL,
+                    "line": {"width": 0},
+                    "layer": "below",
+                }
+                for label in year_total_labels
+                if label in month_positions
+            ],
             *[
                 {
                     "type": "line",
