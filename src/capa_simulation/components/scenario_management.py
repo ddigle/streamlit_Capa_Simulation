@@ -43,6 +43,7 @@ from capa_simulation.scenario_state import (
     session_virtual_products,
 )
 from capa_simulation.services.builtin_seed import BUILTIN_SEED_SOURCE_CODE
+from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.virtual_product import VirtualProductRecord
 
 CLONE_PIPELINE_VERSION = "duckdb-rq-snapshot-v3"
@@ -53,6 +54,7 @@ LIST_EDITOR_KEY = "scenario_list_editor"
 ACTION_KEY = "scenario_list_action"
 ACTION_OWNER_KEY = "scenario_list_action_owner"
 DELETE_CONFIRM_KEY = "scenario_list_delete_confirm"
+REVISION_SELECT_KEY = "scenario_list_revision_id"
 SELECT_COLUMN = "선택"
 ORDER_COLUMN = "순서"
 
@@ -283,17 +285,28 @@ def _render_scenario_actions(
         st.session_state[ACTION_OWNER_KEY] = summary.scenario_id
         st.session_state.pop(ACTION_KEY, None)
         st.session_state.pop(DELETE_CONFIRM_KEY, None)
+        st.session_state.pop(REVISION_SELECT_KEY, None)
     with st.container(border=True):
         st.markdown(f"#### :material/check_box: {summary.scenario_name}")
         revisions = repository.list_revisions(summary.scenario_id)
         revision_by_id = {revision.revision_id: revision for revision in revisions}
+        # 목록은 최신 리비전이 먼저 온다. 그러나 지금 보고 있는 시나리오라면 **활성
+        # 리비전**이 미리 골라져 있어야 한다. 화면과 다른 것이 골라져 있으면 "같은 것을
+        # 다시 불러왔다" 고 여기면서 실은 다른 리비전을 올리게 된다.
+        active_revision_id = active_persisted_revision_id()
+        if (
+            summary.scenario_id == active_persisted_scenario_id()
+            and active_revision_id in revision_by_id
+            and REVISION_SELECT_KEY not in st.session_state
+        ):
+            st.session_state[REVISION_SELECT_KEY] = active_revision_id
         selected_revision_id = st.selectbox(
             "리비전",
             options=list(revision_by_id),
             format_func=lambda value: (
                 f"r{revision_by_id[value].revision_no} · {revision_by_id[value].revision_name}"
             ),
-            key="scenario_list_revision_id",
+            key=REVISION_SELECT_KEY,
         )
         discard_changes = True
         if has_unsaved_scenario_changes():
@@ -335,6 +348,12 @@ def _action_button(label: str, action: str, icon: str) -> None:
 
 def _load_revision(database_path: str, revision_id: str) -> None:
     snapshot = load_scenario_snapshot(database_path, revision_id)
+    # 활성화 **전에** 본다. 활성화한 뒤에 계산이 죽으면 활성 시나리오가 이미 바뀐 뒤라
+    # 화면에서 되돌릴 방법이 없다.
+    blocked = revision_block_reason(snapshot.tables)
+    if blocked is not None:
+        st.error(blocked)
+        return
     activate_persisted_snapshot(snapshot)
     st.session_state[FLASH_KEY] = (
         f"{snapshot.scenario.scenario_name} r{snapshot.revision.revision_no}을 불러왔습니다."
