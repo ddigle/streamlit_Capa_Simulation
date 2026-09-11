@@ -363,6 +363,19 @@ def _create_comparison_scenario(database_path: Path, factor: float) -> tuple[str
     return str(created.scenario.scenario_id), str(created.revision.revision_id)
 
 
+def _pick_comparison(app: AppTest, scenario_id: str, revision_id: str) -> None:
+    """비교 대상을 고른 상태로 만든다. 목록에 실린 **뒤에** 골라야 한다.
+
+    AppTest 는 다음 실행을 시작할 때 직전 화면의 위젯 옵션으로 세션 값을 되짚는다. 화면이
+    한 번도 보여 준 적 없는 시나리오를 세션에 바로 꽂으면 옵션에 없는 값이라며 멈춘다.
+    실제 화면에서도 사용자는 목록에 뜬 뒤에야 고를 수 있으므로 한 번 더 돌려 맞춘다.
+    """
+    app.run()
+    app.session_state["home_preference_comparison_scenario"] = scenario_id
+    app.session_state["home_preference_comparison_revision"] = revision_id
+    app.session_state["home_show_comparison"] = True
+
+
 def test_comparison_gap_is_written_under_the_value(tmp_path: Path) -> None:
     """비교 GAP 은 값 아래에 붙는다. 선행 GAP(위)과 자리를 나눠 함께 켤 수 있어야 한다."""
     database_path = tmp_path / "scenario.duckdb"
@@ -370,9 +383,7 @@ def test_comparison_gap_is_written_under_the_value(tmp_path: Path) -> None:
     assert not list(app.exception)
 
     comparison_id, comparison_revision_id = _create_comparison_scenario(database_path, 0.5)
-    app.session_state["home_preference_comparison_scenario"] = comparison_id
-    app.session_state["home_preference_comparison_revision"] = comparison_revision_id
-    app.session_state["home_show_comparison"] = True
+    _pick_comparison(app, comparison_id, comparison_revision_id)
     app.run()
 
     assert not list(app.exception), [element.message for element in app.exception]
@@ -399,10 +410,47 @@ def test_a_comparison_revision_from_another_scenario_is_ignored(tmp_path: Path) 
     assert not list(app.exception)
 
     comparison_id, _ = _create_comparison_scenario(database_path, 0.5)
-    app.session_state["home_preference_comparison_scenario"] = comparison_id
-    app.session_state["home_preference_comparison_revision"] = "사라진-리비전"
-    app.session_state["home_show_comparison"] = True
+    _pick_comparison(app, comparison_id, "사라진-리비전")
     app.run()
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert _gap_annotations(app) == []
+
+
+def test_comparison_can_target_another_revision_of_the_same_scenario(tmp_path: Path) -> None:
+    """리비전이 달라지며 계획이 얼마나 바뀌었는지가 비교의 중요한 쓰임이다.
+
+    현재 활성 시나리오를 비교 대상에서 빼면 그 비교를 아예 할 수 없고, 시나리오가 하나뿐인
+    저장소에서는 고를 것 자체가 없어진다.
+    """
+    from capa_simulation.persistence.cache import load_scenario_snapshot
+    from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
+
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+
+    repository = DuckDBScenarioRepository(database_path)
+    official = repository.latest_official_release()
+    assert official is not None
+    base = load_scenario_snapshot(str(database_path), official.revision_id)
+    revision_tables = {name: base.tables[name] for name in REVISION_TABLES if name in base.tables}
+    halved = revision_tables["RQ_PKG_PLAN"].copy()
+    halved["생산수량"] = pd.to_numeric(halved["생산수량"], errors="coerce") * 0.5
+    revision_tables["RQ_PKG_PLAN"] = halved
+    saved = repository.save_revision(
+        official.scenario_id,
+        revision_tables,
+        base.preset,
+        revision_name="계획 절반",
+    )
+
+    # 현재 활성은 공식 리비전 그대로 두고, 같은 시나리오의 새 리비전과 견준다.
+    _pick_comparison(app, str(official.scenario_id), str(saved.revision.revision_id))
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    gaps = _gap_annotations(app)
+    # 비교 쪽 계획이 절반이므로 현재가 더 많다 — 전부 증가여야 한다.
+    assert gaps, "같은 시나리오의 다른 리비전과 견준 GAP 이 하나도 없다"
+    assert all(text.startswith("+") for text in gaps), gaps

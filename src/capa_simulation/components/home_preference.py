@@ -23,7 +23,12 @@ from capa_simulation.persistence.cache import (
     clear_global_advance_load_cache,
     get_scenario_repository,
 )
-from capa_simulation.persistence.models import GlobalAdvanceLoad, ScenarioSummary
+from capa_simulation.persistence.models import (
+    GlobalAdvanceLoad,
+    RevisionSummary,
+    ScenarioSummary,
+)
+from capa_simulation.scenario_activation import active_persisted_revision_id
 from capa_simulation.services.advance_load import (
     ADVANCE_LOAD_ROW_LABEL,
     merge_advance_load_edits,
@@ -159,7 +164,13 @@ def render_home_preference(
 
 
 def _render_comparison_picker(database_path: str, active_scenario_id: str | None) -> None:
-    """GAP 의 비교 대상. 시나리오와 리비전까지 골라 그 리비전의 계획을 쓴다."""
+    """GAP 의 비교 대상. 시나리오와 리비전까지 골라 그 리비전의 계획을 쓴다.
+
+    **지금 활성인 시나리오도 고를 수 있다.** 리비전이 달라지며 계획이 얼마나 바뀌었는지가
+    비교의 중요한 쓰임이고, 시나리오가 하나뿐이면 그것을 빼는 순간 고를 것이 없어진다.
+    지금 활성인 리비전을 그대로 고르면 자기와 견주는 셈이라 증감이 전부 0 이므로, 그
+    자리에는 표시를 붙여 알린다.
+    """
     with st.container(border=True):
         st.markdown("#### :material/compare_arrows: 비교 시나리오")
         st.caption(
@@ -169,28 +180,24 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
         )
         repository = get_scenario_repository(database_path)
         try:
-            scenarios = [
-                scenario
-                for scenario in repository.list_scenarios()
-                if scenario.scenario_id != active_scenario_id
-            ]
+            scenarios = repository.list_scenarios()
         except BOOTSTRAP_ERRORS as exc:
             st.error(bootstrap_error_message(exc))
             return
         if not scenarios:
-            st.info("비교할 다른 시나리오가 없습니다.")
+            st.info("저장된 시나리오가 없습니다.")
             st.session_state.pop(COMPARISON_SCENARIO_KEY, None)
             st.session_state.pop(COMPARISON_REVISION_KEY, None)
             return
         scenario_by_id = {scenario.scenario_id: scenario for scenario in scenarios}
-        # 지웠거나 현재 활성이 된 시나리오가 남아 있으면 위젯이 옵션에 없는 값을 만나 죽는다.
+        # 지운 시나리오가 세션에 남아 있으면 위젯이 옵션에 없는 값을 만나 죽는다.
         if st.session_state.get(COMPARISON_SCENARIO_KEY) not in scenario_by_id:
             st.session_state.pop(COMPARISON_SCENARIO_KEY, None)
             st.session_state.pop(COMPARISON_REVISION_KEY, None)
         scenario_id = st.selectbox(
             "비교 시나리오",
             options=[None, *scenario_by_id],
-            format_func=lambda value: _comparison_label(scenario_by_id, value),
+            format_func=lambda value: _comparison_label(scenario_by_id, value, active_scenario_id),
             key=COMPARISON_SCENARIO_KEY,
             persist_state="session",
         )
@@ -209,19 +216,37 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
         if not revision_by_id:
             st.info("그 시나리오에는 리비전이 없습니다.")
             return
+        active_revision_id = active_persisted_revision_id()
         st.selectbox(
             "비교 리비전",
             options=list(revision_by_id),
-            format_func=lambda value: (
-                f"r{revision_by_id[value].revision_no} · {revision_by_id[value].revision_name}"
+            format_func=lambda value: _revision_label(
+                revision_by_id[value], value == active_revision_id
             ),
             key=COMPARISON_REVISION_KEY,
             persist_state="session",
         )
+        if st.session_state.get(COMPARISON_REVISION_KEY) == active_revision_id:
+            st.caption(
+                "지금 화면이 쓰고 있는 리비전입니다. 자기와 견주는 셈이라 증감이 모두 "
+                "0 으로 나옵니다."
+            )
 
 
-def _comparison_label(scenarios: dict[str, ScenarioSummary], value: str | None) -> str:
-    return "선택 안 함" if value is None else scenarios[value].scenario_name
+def _comparison_label(
+    scenarios: dict[str, ScenarioSummary],
+    value: str | None,
+    active_scenario_id: str | None,
+) -> str:
+    if value is None:
+        return "선택 안 함"
+    name = scenarios[value].scenario_name
+    return f"{name} · 현재 시나리오" if value == active_scenario_id else name
+
+
+def _revision_label(revision: RevisionSummary, is_active: bool) -> str:
+    label = f"r{revision.revision_no} · {revision.revision_name}"
+    return f"{label} · 현재 활성" if is_active else label
 
 
 def _render_advance_editor(
