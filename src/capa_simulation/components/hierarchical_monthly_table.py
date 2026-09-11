@@ -41,7 +41,7 @@ from capa_simulation.components.monthly_table_base import (
     table_height_px,
     text_width_units,
 )
-from capa_simulation.components.plotly_layout import append_layout_items
+from capa_simulation.components.plotly_layout import append_layout_items, flush_layout_items
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 
@@ -249,6 +249,7 @@ def _add_table_grid(
         )
     append_layout_items(label_figure, shapes=label_shapes)
     append_layout_items(month_figure, shapes=month_shapes)
+    flush_layout_items(label_figure, month_figure)
 
 
 def render_hierarchical_monthly_table(

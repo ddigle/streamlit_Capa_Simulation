@@ -39,6 +39,7 @@ from capa_simulation.components.plotly_layout import (
     dashboard_title_annotation,
     delta_color,
     fixed_row_domains,
+    flush_layout_items,
 )
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
@@ -851,6 +852,7 @@ def build_lob_summary_figures(
     ]
     append_layout_items(month_figure, shapes=[*total_column_shapes, *lob_row_shapes])
     add_quarter_boundaries(month_figure, month_labels, y0=panel_bottom)
+    flush_layout_items(label_figure, month_figure)
     return label_figure, month_figure
 
 
@@ -1115,6 +1117,7 @@ def build_plan_detail_figures(
     ]
     append_layout_items(detail_label_figure, shapes=detail_group_shapes)
     append_layout_items(detail_month_figure, shapes=detail_group_shapes)
+    flush_layout_items(detail_label_figure, detail_month_figure)
     return detail_label_figure, detail_month_figure
 
 
@@ -1463,4 +1466,5 @@ def build_bottleneck_detail_figures(
         ],
     )
     add_quarter_boundaries(bottleneck_detail_month_figure, month_labels)
+    flush_layout_items(bottleneck_detail_label_figure, bottleneck_detail_month_figure)
     return bottleneck_detail_label_figure, bottleneck_detail_month_figure

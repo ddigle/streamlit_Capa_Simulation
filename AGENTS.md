@@ -663,6 +663,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     차트 생성이 대부분을 쓴다(`HOME_LOADING_STAGES`).
 - `src/capa_simulation/components/plotly_layout.py`
   - 제목 주석·외곽 테두리·분기 경계·고정 행 등 Figure 그리기 공통 유틸리티.
+  - **레이아웃 항목은 모았다가 한 번에 넣는다.** `append_layout_items` 는 누적만 하고
+    Figure 를 돌려주는 쪽이 `flush_layout_items` 를 부른다. 부를 때마다 `update_layout`
+    하면 Plotly 가 그때까지 쌓인 항목 **전부를 다시 검증**해 O(n²) 가 된다 — 항목 200개
+    기준 72초 대 0.12초이고, HOME 은 Figure 하나에 7.7초를 쓰고 있었다.
+  - flush 를 잊으면 테두리·격자·라벨이 통째로 빠져 화면에서 바로 드러난다.
+    `tests/test_plotly_layout.py` 가 그 계약을 고정한다.
+  - 표 행의 면색이 모두 같으면 칸마다 사각형을 그리지 않는다. 도형 수가 그대로 비용이다.
 - `src/capa_simulation/components/home_figures.py`, `home_rendering.py`, `home_dimensions.py`
   - HOME 의 Figure 생성기 3종, 세션 Figure 캐시와 렌더링, LOB·상세 B/N 픽셀 치수.
   - 상세 B/N 은 `go.Table` 이 아니라 카테시안 xy 다. 월 오프셋은 `go.Bar` 의 `base`

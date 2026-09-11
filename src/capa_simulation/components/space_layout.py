@@ -9,7 +9,7 @@ from typing import Any, Final, cast
 import pandas as pd
 import plotly.graph_objects as go
 
-from capa_simulation.components.plotly_layout import append_layout_items
+from capa_simulation.components.plotly_layout import append_layout_items, flush_layout_items
 from capa_simulation.design import tokens
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
@@ -132,6 +132,7 @@ def build_fab_figure(equipment: pd.DataFrame) -> go.Figure:
         font={"size": 12, "color": tokens.SPACE_LABEL_TEXT},
     )
     _apply_layout(figure, x_range=(0.0, 10.2), y_range=(0.0, 5.6), height=470)
+    flush_layout_items(figure)
     return figure
 
 
@@ -190,6 +191,7 @@ def build_floor_figure(equipment: pd.DataFrame, building: str) -> go.Figure:
     figure_height = max(340, 105 * len(floors) + 80)
     y_max = len(floors) * (band_height + gap) + 0.65
     _apply_layout(figure, x_range=(0.0, 10.0), y_range=(0.0, y_max), height=figure_height)
+    flush_layout_items(figure)
     return figure
 
 
@@ -320,6 +322,7 @@ def build_floor_layout_figure(
     grid_step = canvas_width / LAYOUT_GRID_DIVISIONS
     figure.update_xaxes(showgrid=True, gridcolor=tokens.SPACE_GRID, dtick=grid_step)
     figure.update_yaxes(showgrid=True, gridcolor=tokens.SPACE_GRID, dtick=grid_step)
+    flush_layout_items(figure)
     return figure
 
 

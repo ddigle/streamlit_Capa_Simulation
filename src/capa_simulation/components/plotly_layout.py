@@ -38,20 +38,54 @@ def dashboard_title_annotation(text: str) -> dict[str, Any]:
     }
 
 
+# Figure 에 붙여 두는 누적함. 이름은 Plotly 속성과 겹치지 않아야 한다.
+_PENDING_LAYOUT_ITEMS = "_capa_pending_layout_items"
+
+
+def _pending_layout_items(figure: go.Figure) -> dict[str, list[dict[str, Any]]]:
+    """그 Figure 의 누적함. 처음 열 때 이미 들어 있던 항목을 평범한 dict 로 옮겨 온다."""
+    pending = getattr(figure, _PENDING_LAYOUT_ITEMS, None)
+    if pending is None:
+        pending = {
+            "shapes": [item.to_plotly_json() for item in (figure.layout.shapes or ())],
+            "annotations": [item.to_plotly_json() for item in (figure.layout.annotations or ())],
+        }
+        setattr(figure, _PENDING_LAYOUT_ITEMS, pending)
+    return pending
+
+
 def append_layout_items(
     figure: go.Figure,
     *,
     shapes: list[dict[str, Any]] | None = None,
     annotations: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Append Plotly layout collections with one validation pass per collection."""
-    updates: dict[str, Any] = {}
+    """레이아웃 항목을 모아만 둔다. 실제 반영은 `flush_layout_items` 가 한 번에 한다.
+
+    부를 때마다 `update_layout` 하면 Plotly 가 **그때까지 쌓인 항목 전부를 다시 검증**한다.
+    항목이 수백 개인 화면에서 그 재검증이 O(n²) 로 불어나 Figure 하나에 7 초가 들었다.
+    같은 항목을 마지막에 한 번만 넣으면 0.1 초다.
+
+    그래서 Figure 를 돌려주는 쪽이 **반드시 `flush_layout_items` 를 불러야 한다.** 잊으면
+    테두리·격자·라벨이 통째로 사라져 화면에서 바로 드러난다.
+    """
+    pending = _pending_layout_items(figure)
     if shapes:
-        updates["shapes"] = [*list(figure.layout.shapes or ()), *shapes]
+        pending["shapes"].extend(shapes)
     if annotations:
-        updates["annotations"] = [*list(figure.layout.annotations or ()), *annotations]
-    if updates:
-        figure.update_layout(**updates)
+        pending["annotations"].extend(annotations)
+
+
+def flush_layout_items(*figures: go.Figure) -> None:
+    """모아 둔 항목을 Figure 마다 한 번에 반영한다. 여러 번 불러도 결과가 같다."""
+    for figure in figures:
+        pending = getattr(figure, _PENDING_LAYOUT_ITEMS, None)
+        if pending is None:
+            continue
+        figure.update_layout(
+            shapes=pending["shapes"],
+            annotations=pending["annotations"],
+        )
 
 
 def add_figure_outer_border(
@@ -291,8 +325,9 @@ def add_fixed_table_row(
             )
     # 칸마다 다른 면색을 받으면 칸 단위로 사각형을 그린다. 연간 Total 열만 살짝 어둡게
     # 하려고 행 전체를 다시 그리지 않는다.
-    if isinstance(fill_color, str):
-        fills = [{"x0": 0.0, "x1": 1.0, "color": fill_color}]
+    if isinstance(fill_color, str) or len(set(fill_color)) <= 1:
+        single = fill_color if isinstance(fill_color, str) else next(iter(fill_color), "")
+        fills = [{"x0": 0.0, "x1": 1.0, "color": single}]
     else:
         if len(fill_color) != len(values):
             raise ValueError("면색 개수가 값 개수와 다릅니다.")
