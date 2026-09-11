@@ -49,8 +49,12 @@ LOB_TOP5_HEIGHT_PX = 150
 
 LOB_BOTTOM_MARGIN_PX = 130
 
+# LOB 두 Figure 만 제목 자리를 쓰지 않는다. `Capa LOB 현황` 은 Plotly 주석이 아니라
+# Streamlit 이 그려서 그 옆에 「선행」 토글을 둔다. 여백을 남겨 두면 표 위에 빈 띠가 생긴다.
+LOB_TOP_MARGIN_PX = 0
+
 LOB_FIGURE_HEIGHT_PX = (
-    DASHBOARD_TITLE_HEIGHT_PX
+    LOB_TOP_MARGIN_PX
     + LOB_TABLE_HEIGHT_PX
     + LOB_CHART_HEIGHT_PX
     + LOB_TOP5_HEIGHT_PX

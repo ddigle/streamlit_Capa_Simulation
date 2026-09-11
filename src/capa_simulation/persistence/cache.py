@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.persistence.models import (
+    GlobalAdvanceLoad,
     GlobalDisplayOrder,
     GlobalProcessRename,
     RevisionSummary,
@@ -79,6 +80,13 @@ class _GlobalProcessRenamePayload(TypedDict):
     source: str
     updated_at: datetime | None
     rules: pd.DataFrame
+
+
+class _GlobalAdvanceLoadPayload(TypedDict):
+    version: int
+    source: str
+    updated_at: datetime | None
+    rows: pd.DataFrame
 
 
 @st.cache_resource
@@ -215,6 +223,37 @@ def load_global_process_rename(database_path: str) -> GlobalProcessRename:
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_advance_load_payload(database_path: str) -> _GlobalAdvanceLoadPayload:
+    profile = get_scenario_repository(database_path).load_global_advance_load()
+    return {
+        "version": profile.version,
+        "source": profile.source,
+        "updated_at": profile.updated_at,
+        "rows": profile.rows,
+    }
+
+
+def load_global_advance_load(database_path: str) -> GlobalAdvanceLoad:
+    """Share the advance-load profile without caching its model class."""
+    payload = _load_global_advance_load_payload(database_path)
+    return GlobalAdvanceLoad(
+        version=payload["version"],
+        source=payload["source"],
+        updated_at=payload["updated_at"],
+        rows=payload["rows"],
+    )
+
+
+def clear_global_advance_load_cache() -> None:
+    """선행 물량 프로필만 비운다.
+
+    표시명과 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다. 선행 물량은 어떤 `RQ_*`
+    표에도 오버레이되지 않고 화면 산출 직전에만 곱해진다.
+    """
+    _load_global_advance_load_payload.clear()
+
+
 def clear_global_process_rename_cache() -> None:
     """표시명 프로필만 비운다.
 
@@ -225,6 +264,7 @@ def clear_global_process_rename_cache() -> None:
 
 
 def clear_scenario_repository() -> None:
+    _load_global_advance_load_payload.clear()
     _load_global_display_order_payload.clear()
     _load_global_process_rename_payload.clear()
     _load_scenario_snapshot_payload.clear()

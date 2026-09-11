@@ -12,6 +12,12 @@ from capa_simulation.components.home_figures import (
     build_lob_summary_figures,
     build_plan_detail_figures,
 )
+from capa_simulation.components.home_preference import (
+    ADVANCE_TOGGLE_KEY,
+    EDP_TOGGLE_KEY,
+    render_home_preference,
+    render_lob_title_row,
+)
 from capa_simulation.components.home_rendering import (
     HOME_FIGURE_SCHEMA_VERSION,
     HOME_LOADING_STAGES,
@@ -34,6 +40,7 @@ from capa_simulation.page_bootstrap import (
     selected_month_range,
 )
 from capa_simulation.performance import PerformanceTrace
+from capa_simulation.persistence.cache import load_global_advance_load
 from capa_simulation.scenario_preset_state import (
     DEFAULT_SECURE_THRESHOLD_PERCENT,
     DEFAULT_WARNING_THRESHOLD_PERCENT,
@@ -42,6 +49,13 @@ from capa_simulation.scenario_preset_state import (
 )
 from capa_simulation.scenario_state import (
     ensure_active_scenario,
+)
+from capa_simulation.services.advance_load import (
+    apply_advance_to_density,
+    apply_advance_to_securement,
+    apply_advance_to_wafer,
+    build_advance_load_ratio,
+    unapplicable_advance_months,
 )
 from capa_simulation.services.dashboard import (
     build_bottleneck_capacity,
@@ -54,8 +68,10 @@ from capa_simulation.services.dashboard import (
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
+    get_home_lob_without_edp,
     get_home_simulation,
 )
+from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import (
     format_short_month,
     show_applied_month_range,
@@ -72,6 +88,10 @@ show_home_performance = st.sidebar.toggle(
     persist_state="session",
 )
 home_trace = PerformanceTrace()
+# 두 토글의 위젯은 아래 탭 안에서 그리지만 값은 계산보다 먼저 필요하다. 위젯이 `key` 로
+# 쓰는 자리를 그대로 읽는다 — 사용자가 토글을 누르면 다음 실행의 이 줄에 새 값이 들어온다.
+include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, True))
+show_advance = bool(st.session_state.get(ADVANCE_TOGGLE_KEY, False))
 # 공정 표시명은 화면 라벨일 뿐이라 계산 입력이 아니다. `content_token` 을 다시
 # 발급하지 않고 Figure 캐시 키에 버전 정수만 접어 넣는다.
 process_labels = get_process_labels()
@@ -113,6 +133,27 @@ try:
         _display_order=reference_tables["RQ_DISPLAY_ORDER"],
         _module=reference_tables["RQ_MODULE"],
     )
+    if not include_edp:
+        # LOB 로 표현되는 값만 EDP 를 뺀다. 확보율과 B/N 공정 순위는 설비가 받는 전체
+        # 부하 기준이라 그대로 둔다.
+        monthly_density, production_detail, monthly_wafer = get_home_lob_without_edp(
+            cache_key=home_simulation_cache_key,
+            _tables=active_scenario["tables"],
+            _display_order=reference_tables["RQ_DISPLAY_ORDER"],
+        )
+    advance_profile = load_global_advance_load(str(DUCKDB_PATH.resolve()))
+    baseline_density = monthly_density
+    baseline_wafer = monthly_wafer
+    advance_ratio: pd.DataFrame | None = None
+    unapplied_advance_months: list[int] = []
+    if show_advance:
+        # 변동률은 **화면이 지금 쓰는 계획** 기준이다. EDP 를 뺀 화면이면 뺀 계획이
+        # 기준이라야 어느 상태에서든 Capa 가 그대로이고 Density 증감이 입력값과 같다.
+        advance_ratio = build_advance_load_ratio(monthly_density, advance_profile.rows)
+        unapplied_advance_months = unapplicable_advance_months(advance_ratio)
+        monthly_density = apply_advance_to_density(monthly_density, advance_ratio)
+        monthly_wafer = apply_advance_to_wafer(monthly_wafer, advance_ratio)
+        securement_rate = apply_advance_to_securement(securement_rate, advance_ratio)
     home_trace.mark("HOME 계산 파이프라인")
     loading.advance()
 except BOOTSTRAP_ERRORS as exc:
@@ -293,6 +334,9 @@ figure_cache_key: HomeFigureCacheKey = (
     tuple(included_processes),
     float(secure_threshold_percent),
     float(warning_threshold_percent),
+    include_edp,
+    show_advance,
+    advance_profile.version if show_advance else 0,
 )
 cached_figures = home_figure_cache().get(figure_cache_key)
 figure_cache_hit = cached_figures is not None
@@ -318,6 +362,19 @@ if cached_figures is None:
         monthly_wafer,
         monthly_bottlenecks,
     )
+    # 선행 전후를 한 그림에 함께 그리려면 기존값이 있어야 한다. 순위는 선행에 따라 바뀌지
+    # 않으므로(월마다 같은 수를 곱한다) B/N 공정은 그대로 두고 확보율만 되돌린다.
+    baseline_lob_summary: pd.DataFrame | None = None
+    if advance_ratio is not None:
+        baseline_bottlenecks = monthly_bottlenecks.copy()
+        baseline_bottlenecks["확보율"] = monthly_bottlenecks["확보율"] / baseline_bottlenecks[
+            "생산계획년월"
+        ].map(advance_ratio.set_index("생산계획년월")["변동률"])
+        baseline_lob_summary = build_production_lob_summary(
+            baseline_density,
+            baseline_wafer,
+            baseline_bottlenecks,
+        )
     home_trace.mark("B/N 단일 순위·파생")
     loading.advance()
     label_figure, month_figure = build_lob_summary_figures(
@@ -329,6 +386,7 @@ if cached_figures is None:
         secure_threshold=secure_threshold,
         warning_threshold=warning_threshold,
         process_labels=process_labels,
+        baseline_lob_summary=baseline_lob_summary,
     )
     detail_label_figure, detail_month_figure = build_plan_detail_figures(
         production_detail=production_detail,
@@ -363,12 +421,18 @@ loading.advance()
 
 main_tab, preference_tab = st.tabs([":material/dashboard: Main", ":material/tune: Preference"])
 with main_tab:
+    render_lob_title_row(unapplied_months=unapplied_advance_months)
     render_home_figures(
         cached_figures,
         month_labels,
     )
 with preference_tab:
-    st.caption("차트별 표시 설정을 여기에 모읍니다.")
+    render_home_preference(
+        months=[int(value) for value in baseline_density["생산계획년월"]],
+        month_labels=month_labels,
+        advance_profile=advance_profile,
+        database_path=str(DUCKDB_PATH.resolve()),
+    )
 home_trace.mark("Plotly 전달")
 loading.close()
 render_home_performance(

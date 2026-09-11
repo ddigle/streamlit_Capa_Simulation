@@ -41,6 +41,20 @@ class GlobalProcessRename:
     rules: pd.DataFrame
 
 
+@dataclass(frozen=True)
+class GlobalAdvanceLoad:
+    """Scenario-independent advance-load profile in 억Gb per plan month.
+
+    프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`,
+    `updated_at=None`, 행 0건이다.
+    """
+
+    version: int
+    source: str
+    updated_at: datetime | None
+    rows: pd.DataFrame
+
+
 def _optional_date(value: date | None) -> date | None:
     """Normalize one optional stored date without rejecting a persisted revision."""
     if value is None:

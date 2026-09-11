@@ -181,6 +181,18 @@ def fixed_row_domains(
     return domains
 
 
+# GAP 을 함께 적을 때 값 글자를 줄이는 정도와 두 줄을 벌리는 거리. 행 높이는 그대로
+# 두고 이 둘만 조인다. 행마다 높이가 달라지면 왼쪽 라벨 칸과 월 칸의 행이 어긋난다.
+GAP_VALUE_FONT_SCALE = 0.85
+GAP_FONT_SCALE = 0.6
+GAP_LINE_SHIFT_PX = 9
+
+
+def delta_color(text: str) -> str:
+    """증감 문구의 색. 부호만 본다 — 좋고 나쁨이 아니라 방향이다."""
+    return tokens.DELTA_DECREASE if text.strip().startswith("-") else tokens.DELTA_INCREASE
+
+
 def add_fixed_table_row(
     figure: go.Figure,
     *,
@@ -189,26 +201,58 @@ def add_fixed_table_row(
     fill_color: str,
     font_size: int,
     bold: bool,
+    gaps: list[str] | None = None,
 ) -> None:
-    """Draw a fixed-height row without Plotly Table's internal scroll layer."""
+    """Draw a fixed-height row without Plotly Table's internal scroll layer.
+
+    `gaps` 는 칸마다 값 위에 작게 적을 증감 문구다. 빈 문자열이면 그 칸에는 아무것도
+    적지 않고 값도 원래 크기·위치 그대로 둔다 — 변화가 없는 칸까지 글자를 줄이면 같은
+    행 안에서 숫자 크기가 들쭉날쭉해진다.
+    """
     value_count = max(len(values), 1)
+    gap_texts = list(gaps) if gaps is not None else [""] * len(values)
+    if len(gap_texts) != len(values):
+        raise ValueError("GAP 개수가 값 개수와 다릅니다.")
+    middle = (domain[0] + domain[1]) / 2
     annotations = []
-    for value_index, value in enumerate(values):
+    for value_index, (value, gap_text) in enumerate(zip(values, gap_texts, strict=True)):
         escaped_value = html.escape(value)
+        position = (value_index + 0.5) / value_count
         annotations.append(
             {
-                "x": (value_index + 0.5) / value_count,
-                "y": (domain[0] + domain[1]) / 2,
+                "x": position,
+                "y": middle,
                 "xref": "paper",
                 "yref": "paper",
                 "text": f"<b>{escaped_value}</b>" if bold else escaped_value,
                 "showarrow": False,
                 "xanchor": "center",
                 "yanchor": "middle",
+                "yshift": -GAP_LINE_SHIFT_PX if gap_text else 0,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": font_size,
+                    "size": round(font_size * GAP_VALUE_FONT_SCALE) if gap_text else font_size,
                     "family": tokens.FONT_FAMILY,
+                },
+            }
+        )
+        if not gap_text:
+            continue
+        annotations.append(
+            {
+                "x": position,
+                "y": middle,
+                "xref": "paper",
+                "yref": "paper",
+                "text": html.escape(gap_text),
+                "showarrow": False,
+                "xanchor": "center",
+                "yanchor": "middle",
+                "yshift": GAP_LINE_SHIFT_PX,
+                "font": {
+                    "color": delta_color(gap_text),
+                    "size": round(font_size * GAP_FONT_SCALE),
+                    "family": tokens.FONT_FAMILY_NUMERIC,
                 },
             }
         )

@@ -20,6 +20,7 @@ from capa_simulation.services.load_calculator import (
     DemandBasis,
     build_monthly_volume,
     calculate_chip_and_wafer_loads,
+    filter_edp_plan,
 )
 from capa_simulation.services.month_filter import filter_month_range
 from capa_simulation.services.required_equipment import (
@@ -290,6 +291,36 @@ def get_home_simulation(
     )
     securement_rate = calculate_securement_rate(_available_equipment, required_equipment)
     return monthly_density, production_detail, monthly_wafer, securement_rate
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_home_lob_without_edp(
+    cache_key: HomeSimulationCacheKey,
+    _tables: Mapping[str, pd.DataFrame],
+    _display_order: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """EDP 를 뺀 Density·계획 세부수량·Wafer 부하량. **소요대수는 여기서 만들지 않는다.**
+
+    EDP 제외는 LOB 로 표현되는 값, 곧 `확보율 × 부하량` 꼴로 나오는 값에만 건다. 설비가
+    받는 부하는 EDP 를 포함한 전체 계획이므로 확보율과 B/N 공정 순위는 바뀌면 안 된다.
+    그래서 설비 수요 계산을 다시 돌리지 않고 부하량 쪽만 다시 만든다.
+
+    토글을 켠 동안에만 불린다. 끈 상태에서는 이 계산 자체가 돌지 않는다.
+    """
+    _, _, start_month, end_month, _ = cache_key
+    plan = filter_edp_plan(
+        filter_month_range(_tables["RQ_PKG_PLAN"], start_month, end_month, "RQ_PKG_PLAN"),
+        False,
+    )
+    yield_data = filter_month_range(_tables["RQ_YLD"], start_month, end_month, "RQ_YLD")
+    monthly_density, production_detail = build_production_dashboard(
+        plan,
+        _tables["RQ_CHIP_EQ"],
+        _display_order,
+    )
+    _, wafer_load = calculate_chip_and_wafer_loads(plan, yield_data, _tables["RQ_CHIP_QTY"])
+    monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
+    return monthly_density, production_detail, monthly_wafer
 
 
 @st.cache_data(show_spinner=False, max_entries=16)

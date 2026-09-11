@@ -27,6 +27,7 @@ from capa_simulation.components.home_dimensions import (
     LOB_TABLE_HEIGHT_PX,
     LOB_TABLE_ROW_HEIGHTS_PX,
     LOB_TOP5_HEIGHT_PX,
+    LOB_TOP_MARGIN_PX,
 )
 from capa_simulation.components.plotly_layout import (
     TRANSPARENT_COLOR,
@@ -35,6 +36,7 @@ from capa_simulation.components.plotly_layout import (
     add_quarter_boundaries,
     append_layout_items,
     dashboard_title_annotation,
+    delta_color,
     fixed_row_domains,
 )
 from capa_simulation.components.process_labels import ProcessLabels
@@ -151,6 +153,67 @@ def format_bottleneck_process_name(value: object) -> str:
     return f'<span style="font-size:{font_size}px">{html.escape(display_text)}</span>'
 
 
+# 증감이 이 값보다 작으면 적지 않는다. 화면에 보이는 자릿수에서 달라지지 않은 칸까지
+# `+0.00` 을 달면 무엇이 움직였는지 오히려 안 읽힌다.
+_GAP_EPSILON = 5e-3
+
+
+def _value_gaps(
+    current: pd.DataFrame,
+    baseline: pd.DataFrame | None,
+    column: str,
+    number_format: str,
+    *,
+    scale: float = 1.0,
+) -> list[str] | None:
+    """칸마다 적을 증감 문구. 기준이 없거나 달라진 칸이 없으면 `None` 이다."""
+    if baseline is None or column not in current.columns or column not in baseline.columns:
+        return None
+    differences = (
+        pd.to_numeric(current[column], errors="coerce").to_numpy()
+        - pd.to_numeric(baseline[column], errors="coerce").to_numpy()
+    ) / scale
+    gaps = [
+        "" if pd.isna(value) or abs(value) < _GAP_EPSILON else number_format.format(value)
+        for value in differences
+    ]
+    return gaps if any(gaps) else None
+
+
+def _bottleneck_rate_labels(
+    bottleneck_capacity: pd.DataFrame,
+    baseline: pd.DataFrame | None,
+) -> list[str]:
+    """막대 안 확보율 글자. 선행 전 기준이 있으면 그 위에 증감을 작게 얹는다.
+
+    `texttemplate` 대신 칸마다 문자열을 만든다 — 한 trace 안에서 어떤 칸만 두 줄이 되고
+    글자 크기도 달라야 하는데 서식 문자열 하나로는 그렇게 나눌 수 없다.
+    """
+    rates = pd.to_numeric(bottleneck_capacity["확보율"], errors="coerce")
+    if baseline is None or "확보율" not in baseline.columns:
+        return [f"<b>{rate:.0%}</b>" if pd.notna(rate) else "" for rate in rates]
+    base_rates = pd.to_numeric(
+        bottleneck_capacity[["생산계획년월"]].merge(
+            baseline[["생산계획년월", "확보율"]], on="생산계획년월", how="left"
+        )["확보율"],
+        errors="coerce",
+    )
+    labels: list[str] = []
+    for rate, base_rate in zip(rates, base_rates, strict=True):
+        if pd.isna(rate):
+            labels.append("")
+            continue
+        body = f"<b>{rate:.0%}</b>"
+        difference = rate - base_rate if pd.notna(base_rate) else float("nan")
+        if pd.isna(difference) or abs(difference) < _GAP_EPSILON:
+            labels.append(body)
+            continue
+        color = delta_color(f"{difference:+.0%}")
+        gap = f'<span style="font-size:13px;color:{color}">{difference * 100:+.0f}%p</span>'
+        labels.append(f"{gap}<br>{body}")
+    return labels
+
+
 def build_lob_summary_figures(
     *,
     monthly_density: pd.DataFrame,
@@ -161,13 +224,22 @@ def build_lob_summary_figures(
     secure_threshold: float,
     warning_threshold: float,
     process_labels: ProcessLabels | None = None,
+    baseline_lob_summary: pd.DataFrame | None = None,
 ) -> tuple[go.Figure, go.Figure]:
     """생산계획·Wafer Capa·Bottleneck 요약 Figure 한 쌍을 만든다.
 
     `process_labels` 는 **화면 문자열에만** 쓴다. 프레임의 `공정` 값은 그대로 두므로
     월 위치 계산과 확보율 색 판정은 원본을 본다.
+
+    `baseline_lob_summary` 는 선행 반영 **전**의 같은 요약이다. 주면 Density·Wafer 계획
+    칸에 증감을 작게 얹고 생산계획 LOB 에 기존 계획을 점선으로 함께 그린다. Wafer Capa 는
+    `계획 × 확보율` 이라 선행 전후가 정확히 같으므로 증감을 적지 않는다.
     """
     labels = process_labels or ProcessLabels()
+    density_gaps = _value_gaps(lob_summary, baseline_lob_summary, "부하량", "{:+,.2f}")
+    wafer_plan_gaps = _value_gaps(
+        lob_summary, baseline_lob_summary, "Wafer 부하량", "{:+,.0f}K", scale=1_000
+    )
     month_positions = list(range(len(month_labels)))
     month_position_by_value = dict(
         zip(monthly_density["생산계획년월"], month_positions, strict=True)
@@ -193,18 +265,20 @@ def build_lob_summary_figures(
         ("Wafer Capa", tokens.SURFACE_CLASSIFICATION, 20, True),
     )
     month_table_rows = (
-        ([f"{month}" for month in month_labels], tokens.HEADER_BACKGROUND, 21, True),
+        ([f"{month}" for month in month_labels], tokens.HEADER_BACKGROUND, 21, True, None),
         (
             [f"{row['부하량']:,.2f}" for _, row in lob_summary.iterrows()],
             tokens.SURFACE,
             20,
             False,
+            density_gaps,
         ),
         (
             [f"{row['Wafer 부하량'] / 1_000:,.0f}K" for _, row in lob_summary.iterrows()],
             tokens.SURFACE,
             20,
             False,
+            wafer_plan_gaps,
         ),
         (
             [
@@ -214,6 +288,7 @@ def build_lob_summary_figures(
             tokens.SURFACE,
             20,
             False,
+            None,
         ),
     )
     lob_chart_domain = cast(Any, month_figure.layout.yaxis).domain
@@ -236,7 +311,7 @@ def build_lob_summary_figures(
             font_size=font_size,
             bold=bold,
         )
-    for row_domain, (values, fill_color, font_size, bold) in zip(
+    for row_domain, (values, fill_color, font_size, bold, gaps) in zip(
         lob_table_domains,
         month_table_rows,
         strict=True,
@@ -248,6 +323,7 @@ def build_lob_summary_figures(
             fill_color=fill_color,
             font_size=font_size,
             bold=bold,
+            gaps=gaps,
         )
     if bottleneck_capacity["B/N Capa"].notna().any():
         month_figure.add_trace(
@@ -258,8 +334,7 @@ def build_lob_summary_figures(
                 customdata=bottleneck_capacity[["년월", "확보율"]].assign(
                     공정=labels.series(bottleneck_capacity["공정"])
                 ),
-                text=bottleneck_capacity["확보율"],
-                texttemplate="<b>%{text:.0%}</b>",
+                text=_bottleneck_rate_labels(bottleneck_capacity, baseline_lob_summary),
                 textposition="inside",
                 insidetextanchor="start",
                 textfont={"color": tokens.TEXT, "size": 22, "family": tokens.FONT_FAMILY_NUMERIC},
@@ -279,6 +354,23 @@ def build_lob_summary_figures(
                     "<br>Capa %{y:,.2f} 억Gb"
                     "<br>확보율 %{customdata[1]:.1%}<extra></extra>"
                 ),
+            ),
+            row=2,
+            col=1,
+        )
+    if baseline_lob_summary is not None:
+        # 기존 계획은 비교용이라 표식과 라벨을 지운다. 두 줄 모두 값을 적으면 숫자가
+        # 겹쳐 어느 쪽이 지금 기준인지 읽히지 않는다.
+        month_figure.add_trace(
+            go.Scatter(
+                name="Density (선행 전)",
+                x=month_positions,
+                y=baseline_lob_summary["부하량"],
+                customdata=baseline_lob_summary["년월"],
+                mode="lines",
+                line={"color": tokens.TEXT_MUTED, "width": 2, "dash": "dot"},
+                cliponaxis=False,
+                hovertemplate="%{customdata} · 선행 전<br>%{y:,.2f} 억Gb<extra></extra>",
             ),
             row=2,
             col=1,
@@ -420,8 +512,13 @@ def build_lob_summary_figures(
         "margin": {
             "l": 0,
             "r": 0,
-            "t": DASHBOARD_TITLE_HEIGHT_PX,
+            "t": LOB_TOP_MARGIN_PX,
             "b": LOB_BOTTOM_MARGIN_PX,
+            # Plotly 는 그림 밖으로 나가는 글자에 맞춰 여백을 **스스로 늘린다**. 두 Figure 의
+            # 글자가 다르므로 늘어나는 양도 달라지고, 그러면 왼쪽 라벨 칸과 월 칸의 행이
+            # 어긋난다. 제목 여백 44px 이 그 차이를 가려 주고 있었다. 여백을 적은 대로만
+            # 쓰게 해 두 칸이 같은 자리에서 시작하게 한다.
+            "autoexpand": False,
         },
         "barmode": "overlay",
         "bargap": 0.16,
@@ -507,7 +604,6 @@ def build_lob_summary_figures(
     append_layout_items(
         label_figure,
         annotations=[
-            dashboard_title_annotation("<b>Capa LOB 현황</b>"),
             {
                 "x": 0.5,
                 "y": (lob_y_domain[0] + lob_y_domain[1]) / 2,

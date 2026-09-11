@@ -1,7 +1,9 @@
 # Purpose: HOME 대시보드가 내장 시드 시나리오에서 렌더링되는 현재 동작을 고정한다.
 
 from pathlib import Path
+from typing import Any
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -39,6 +41,7 @@ apply_pending_scenario_preset()
 
 st.session_state["spy_traces"] = []
 st.session_state["spy_configs"] = {{}}
+st.session_state["spy_figures"] = {{}}
 st.session_state["spy_scrollbars"] = 0
 _original_plotly_chart = st.plotly_chart
 _original_scrollbar = horizontal_scrollbar.render_horizontal_scrollbar
@@ -51,6 +54,10 @@ def _spy_plotly_chart(figure, *args, **kwargs):
     st.session_state["spy_configs"] = {{
         **st.session_state["spy_configs"],
         kwargs.get("key"): dict(kwargs.get("config") or {{}}),
+    }}
+    st.session_state["spy_figures"] = {{
+        **st.session_state["spy_figures"],
+        kwargs.get("key"): figure,
     }}
     return _original_plotly_chart(figure, *args, **kwargs)
 
@@ -100,10 +107,15 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 4]
     assert app.session_state["spy_scrollbars"] == 1
 
-    # 본문에는 토글이 없다. 상세표 표시 여부를 고르던 자리는 탭 인터페이스가 가져갔다.
-    assert [widget.label for widget in app.main.toggle] == []
+    # 상세표 표시 여부를 고르던 자리는 탭이 가져갔고, 본문 토글은 표시 기준 둘이다.
+    # 「선행」 은 Main 탭 제목 옆, 「EDP 포함」 은 Preference 탭에 있다.
+    assert [widget.label for widget in app.main.toggle] == ["선행", "EDP 포함"]
     assert [widget.label for widget in app.sidebar.toggle] == ["HOME 성능 진단"]
-    assert [widget.label for widget in app.button] == ["판정 기준 적용", "공정 선택창 열기"]
+    assert sorted(widget.label for widget in app.button) == [
+        "공정 선택창 열기",
+        "선행 물량 저장",
+        "판정 기준 적용",
+    ]
     # 제목 아래 설명 문구와 계획 세부수량 CSV 는 탭 자리를 내주고 사라졌다.
     assert not app.get("download_button")
 
@@ -148,6 +160,13 @@ def test_home_reuses_cached_figures_on_an_unchanged_rerun(seeded_database: Path)
     assert "공정 선택 · 3 / 3개 포함" in [element.value for element in app.caption]
 
 
+def _button(app: AppTest, label: str) -> Any:
+    """라벨로 버튼 하나를 집는다. 인덱스는 화면에 버튼이 늘 때마다 의미가 달라진다."""
+    matched = [button for button in app.button if button.label == label]
+    assert len(matched) == 1, f"버튼 '{label}' 이 하나여야 한다: {[b.label for b in app.button]}"
+    return matched[0]
+
+
 def _cache_state(app: AppTest) -> str:
     states = [
         element.value.removeprefix("Figure 캐시: ")
@@ -164,8 +183,9 @@ def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -
     assert _cache_state(app) == "적중"
 
     # 판정 기준은 Figure 캐시 키에 포함되어야 한다(AGENTS.md 5장 불변조건 7).
+    # 버튼은 반드시 라벨로 집는다 — 본문에 버튼이 늘면 인덱스가 조용히 다른 것을 가리킨다.
     app.sidebar.number_input[1].set_value(95.0)
-    app.button[0].click().run()
+    _button(app, "판정 기준 적용").click().run()
 
     assert not list(app.exception)
     assert [widget.value for widget in app.sidebar.number_input] == [109.5, 95.0]
@@ -226,3 +246,72 @@ def test_home_names_the_data_range_when_the_selection_is_outside_it(seeded_datab
     assert not list(app.exception)
     assert len(app.error) == 1
     assert "데이터 범위" in app.error[0].value
+
+
+def test_the_two_display_toggles_are_part_of_the_figure_cache_key(
+    seeded_database: Path,
+) -> None:
+    """EDP 포함 여부와 선행 반영 여부는 그림을 바꾼다. 캐시 키에 없으면 옛 그림이 남는다."""
+    app = _run(seeded_database)
+    app.sidebar.toggle[0].set_value(True).run()
+    assert _cache_state(app) == "적중"
+
+    app.session_state["home_preference_include_edp"] = False
+    app.run()
+    assert not list(app.exception)
+    assert _cache_state(app) == "생성"
+
+    app.session_state["home_preference_include_edp"] = True
+    app.run()
+    # 되돌리면 다시 만들지 않는다. 두 토글을 오가며 비교하는 화면이라 칸이 넉넉해야 한다.
+    assert _cache_state(app) == "적중"
+
+    app.session_state["home_show_advance"] = True
+    app.run()
+    assert not list(app.exception)
+    assert _cache_state(app) == "생성"
+
+
+def test_advance_scales_the_plan_and_rate_but_leaves_capacity_alone(
+    seeded_database: Path,
+) -> None:
+    """선행은 물량을 앞으로 옮긴 것이라 Capa 가 움직이면 안 된다.
+
+    서비스 단위 시험이 있어도 페이지가 기존 계획과 선행 계획을 뒤바꿔 넘기면 여기서만
+    드러난다. 그래서 화면까지 통과한 Figure 값으로 다시 확인한다.
+    """
+    import capa_simulation.settings as settings
+    from capa_simulation.persistence.cache import clear_global_advance_load_cache
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    app = _run(seeded_database)
+    before = _lob_traces(app)
+    first_month_capacity = before["B/N 공정"].y[0]
+    first_month_density = before["Density"].y[0]
+    # 첫 달은 시드 프리셋이 정한다. 숫자를 적어 두면 시드가 바뀔 때 엉뚱한 달에 넣는다.
+    first_month = 200000 + int(str(before["Density"].customdata[0]).replace(".", ""))
+
+    repository = DuckDBScenarioRepository(settings.DUCKDB_PATH)
+    repository.replace_global_advance_load(
+        pd.DataFrame({"생산계획년월": [first_month], "선행 물량": [2.5]}),
+        source="테스트",
+    )
+    clear_global_advance_load_cache()
+    app.session_state["home_show_advance"] = True
+    app.run()
+
+    assert not list(app.exception)
+    after = _lob_traces(app)
+    # 계획은 넣은 만큼 정확히 늘고, 그 달의 Capa 는 그대로다.
+    assert after["Density"].y[0] == pytest.approx(first_month_density + 2.5)
+    assert after["B/N 공정"].y[0] == pytest.approx(first_month_capacity)
+    # 기존 계획은 표식·라벨 없는 점선으로 함께 남는다.
+    assert after["Density (선행 전)"].y[0] == pytest.approx(first_month_density)
+    assert after["Density (선행 전)"].mode == "lines"
+    assert after["Density (선행 전)"].line.dash == "dot"
+
+
+def _lob_traces(app: AppTest) -> dict[str, Any]:
+    """LOB 월 Figure 의 trace 를 이름으로 찾는다. 순서는 trace 를 더할 때마다 바뀐다."""
+    figure = app.session_state["spy_figures"]["production_lob_months"]
+    return {trace.name: trace for trace in figure.data}

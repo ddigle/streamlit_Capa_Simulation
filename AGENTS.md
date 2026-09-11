@@ -107,8 +107,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 전체 계산 결과를 조합하는 HOME 대시보드다.
   - Plotly Figure 묶음을 사용자 세션에 캐시하고 렌더링은 fragment로 분리한다.
   - 본문은 `Main`·`Preference` 두 탭이다. `Main` 이 계획·LOB·B/N Figure 여섯 개를 그리고
-    `Preference` 는 차트별 표시 설정을 담을 자리다. 요약만 그리는 경로는 없다 — 여섯 개를
-    항상 만든다.
+    `Preference` 가 표시 기준(EDP 포함 여부·선행 투입 물량)을 받는다. 요약만 그리는 경로는
+    없다 — 여섯 개를 항상 만든다.
+  - **두 토글의 값은 계산보다 먼저 필요하고 위젯은 계산 뒤에 그려진다.** 페이지가
+    `components/home_preference.py` 의 세션 키를 직접 읽고 위젯은 같은 키로 만든다. 키
+    문자열을 두 곳에서 따로 적으면 조용히 끊어지므로 상수로 내보낸다.
+  - `EDP 포함` 을 끄면 **LOB 로 표현되는 값만** EDP 를 뺀다. `확보율 × 부하량` 꼴로 나오는
+    값(Density·Wafer 계획·Wafer Capa·B/N Capa 막대·Top 5·상세 B/N 의 Wafer Capa)과 계획
+    세부수량 행이 대상이다. 소요대수·확보율·B/N 공정 순위는 **바뀌지 않는다** — 설비가 받는
+    부하는 EDP 를 포함한 전체 계획이다. 그래서 설비 수요를 다시 돌리지 않고
+    `get_home_lob_without_edp` 로 부하량 쪽만 다시 만든다.
+  - `선행` 을 켜면 공용 선행 물량으로 변동률을 내 계획·확보율에 건다. 변동률은 **화면이
+    지금 쓰는 계획** 기준이다(EDP 를 뺀 화면이면 뺀 계획). 그래야 어느 상태에서든 Capa 가
+    그대로이고 Density 증감이 입력값과 정확히 같다.
   - 제목 아래 설명 문구, `계획·B/N 상세표 표시` 토글, `계획 세부수량 CSV` 는 탭이 그 자리를
     쓰면서 없앴다.
   - 본문 맨 위, 탭 위에 `LoadingProgress` 막대를 둔다. 계산 단계마다 `advance()` 하고
@@ -581,6 +592,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     넘긴다. 양식이 부분 표가 되면 그 부분 표가 행 집합 검증을 통과해 나머지 공정을 지운다.
   - 공정 표시명은 페이지가 조회해 `value_labels=` 로 넘기고 필터 옵션 표기에만 쓴다. 이
     모듈은 `process_labels` 를 import 하지 않는다.
+- `src/capa_simulation/components/home_preference.py`
+  - HOME `Preference` 탭과 `Capa LOB 현황` 제목 줄. 제목은 Plotly 주석이 아니라 여기서
+    그린다 — 주석 안에는 위젯을 놓을 수 없어 「선행」 토글을 제목 옆에 둘 수 없었다.
+  - 선행 물량 저장은 **표에 보이는 달만** 갈아 끼운다(`merge_advance_load_edits`). 조회기간을
+    좁힌 채 저장한 사람이 보이지 않는 달의 입력을 모르는 새 날리면 안 된다.
+- `src/capa_simulation/services/advance_load.py`
+  - 선행 투입 물량 정규화와 월별 Capa 부하 변동률. `변동률 = 기존 계획 ÷ 선행 반영 계획`
+    이고 확보율에 곱하고 Wafer 는 나눈다. 그래서 `계획 × 확보율` 인 Capa 가 **정확히
+    그대로**다 — 선행 투입은 물량을 앞으로 옮긴 것이지 설비를 늘린 것이 아니다.
+  - 한 달 안에서는 모든 공정에 같은 수를 곱하므로 **B/N 공정 순위가 바뀌지 않는다.**
+  - 선행 반영 계획이 0 이하가 되는 달은 변동률을 낼 수 없다. 그 달만 미적용으로 두고
+    화면이 알린다 — 한 달의 과한 입력으로 대시보드 전체가 사라지면 어디가 잘못됐는지
+    볼 수 없다.
 - `src/capa_simulation/components/loading_progress.py`
   - 계산이 오래 걸리는 페이지가 본문 맨 위에 띄우는 진행 막대다. 단계 목록
     (`LoadingStage`)을 미리 선언하고 호출부는 `advance()` 만 부른다 — 호출부가 퍼센트를
@@ -626,6 +650,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/models.py`: Repository 가 주고받는 타입
 - `persistence/display_order_store.py`: 공용 표시순서 프로필의 검증·이관·저장
 - `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·삽입 SQL
+- `persistence/advance_load_store.py`: 공용 선행 투입 물량 프로필의 조회·삽입 SQL
 - `persistence/preset_store.py`: 리비전 프리셋 저장·복원
 - `persistence/source_data_store.py`: 원천 Core Data raw 와 컬럼 프로파일
 - `persistence/summaries.py`: 조회 행을 요약 모델로 변환

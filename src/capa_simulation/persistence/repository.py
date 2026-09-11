@@ -30,6 +30,10 @@ from capa_simulation.persistence._sql_helpers import (
     require_tables,
     required_text,
 )
+from capa_simulation.persistence.advance_load_store import (
+    insert_global_advance_load,
+    load_global_advance_load_rows,
+)
 from capa_simulation.persistence.display_order_store import (
     display_order_frames_equal,
     insert_global_display_order,
@@ -39,6 +43,7 @@ from capa_simulation.persistence.display_order_store import (
 )
 from capa_simulation.persistence.migration_runner import apply_migrations
 from capa_simulation.persistence.models import (
+    GlobalAdvanceLoad,
     GlobalDisplayOrder,
     GlobalProcessRename,
     OfficialReleaseSummary,
@@ -68,6 +73,10 @@ from capa_simulation.persistence.summaries import (
     official_release_summary,
     revision_summary,
     scenario_summary,
+)
+from capa_simulation.services.advance_load import (
+    empty_advance_load,
+    prepare_advance_load,
 )
 from capa_simulation.services.process_rename import (
     empty_process_rename_rules,
@@ -302,6 +311,65 @@ class DuckDBScenarioRepository:
                 source=source_label,
             )
         return self.load_global_process_rename()
+
+    def load_global_advance_load(self) -> GlobalAdvanceLoad:
+        """Load the scenario-independent advance-load profile.
+
+        표시명 프로필과 같은 이유로 예외를 내지 않는다. 한 번도 저장하지 않은 상태가
+        정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
+        """
+        with self._connect() as connection:
+            metadata = connection.execute(
+                """
+                SELECT version, source, updated_at
+                FROM app_meta.global_advance_load
+                WHERE profile_id = 1
+                """
+            ).fetchone()
+            if metadata is None:
+                return GlobalAdvanceLoad(
+                    version=0,
+                    source="",
+                    updated_at=None,
+                    rows=empty_advance_load(),
+                )
+            rows = load_global_advance_load_rows(connection)
+        return GlobalAdvanceLoad(
+            version=int(metadata[0]),
+            source=str(metadata[1]),
+            updated_at=metadata[2],
+            rows=prepare_advance_load(rows),
+        )
+
+    def replace_global_advance_load(
+        self,
+        rows: pd.DataFrame,
+        *,
+        source: str,
+    ) -> GlobalAdvanceLoad:
+        """Atomically replace the shared advance-load profile without a scenario revision.
+
+        표시명·표시순서와 같은 결로 현재본만 남기고 version 번호를 올린다. 행 0건(전체
+        해제)도 정상 저장이며 version 은 올라간다.
+        """
+        prepared_rows = prepare_advance_load(rows)
+        source_label = required_text(source, "선행 물량 변경 출처")
+        with self._write_transaction() as connection:
+            row = connection.execute(
+                "SELECT version FROM app_meta.global_advance_load WHERE profile_id = 1"
+            ).fetchone()
+            version = 1 if row is None else int(row[0]) + 1
+            connection.execute(
+                "DELETE FROM app_meta.global_advance_load_month WHERE profile_id = 1"
+            )
+            connection.execute("DELETE FROM app_meta.global_advance_load WHERE profile_id = 1")
+            insert_global_advance_load(
+                connection,
+                prepared_rows,
+                version=version,
+                source=source_label,
+            )
+        return self.load_global_advance_load()
 
     def create_scenario(
         self,
