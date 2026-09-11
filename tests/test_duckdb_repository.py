@@ -517,20 +517,104 @@ def test_revision_rejects_parent_from_another_scenario(tmp_path: Path) -> None:
     assert repository.list_revisions(first.scenario.scenario_id) == [first.revision]
 
 
-def test_archive_hides_scenario_without_deleting_it(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "scenario.duckdb")
-    snapshot = repository.create_scenario(
+def test_delete_removes_every_row_the_scenario_owned(tmp_path: Path) -> None:
+    """삭제는 논리 상태 변경이 아니라 물리 삭제다. 주인 없는 행이 남으면 안 된다."""
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    doomed = repository.create_scenario(
         _metadata(),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+        source_data=_core_data_source(),
+    )
+    repository.save_revision(
+        doomed.scenario.scenario_id,
+        doomed.tables,
+        doomed.preset,
+        revision_name="두 번째",
+    )
+    kept = repository.create_scenario(
+        _metadata("Kept"),
         _reference_tables(),
         ScenarioPreset(202608, 202608, ("Process-A",)),
     )
 
-    repository.archive_scenario(snapshot.scenario.scenario_id)
+    repository.delete_scenario(doomed.scenario.scenario_id)
 
-    assert repository.list_scenarios() == []
-    archived = repository.list_scenarios(include_archived=True)
-    assert len(archived) == 1
-    assert archived[0].status == "ARCHIVED"
+    assert [scenario.scenario_id for scenario in repository.list_scenarios()] == [
+        kept.scenario.scenario_id
+    ]
+    with duckdb.connect(str(database_path), read_only=True) as connection:
+        leftovers = _rows_owned_by(
+            connection, doomed.scenario.scenario_id, doomed.scenario.dataset_id
+        )
+    assert leftovers == {}
+
+
+def _rows_owned_by(
+    connection: duckdb.DuckDBPyConnection,
+    scenario_id: str,
+    dataset_id: str,
+) -> dict[str, int]:
+    """시나리오·데이터셋·리비전 소유 컬럼으로 아직 남아 있는 행 수."""
+    revision_ids = [
+        str(row[0])
+        for row in connection.execute(
+            "SELECT revision_id FROM app_meta.scenario_revision WHERE scenario_id = ?",
+            [scenario_id],
+        ).fetchall()
+    ]
+    tables = connection.execute(
+        """
+        SELECT table_schema, table_name, list(column_name)
+        FROM information_schema.columns
+        WHERE table_schema IN ('app_meta', 'raw_data', 'ref_data', 'rev_data', 'result_data')
+        GROUP BY table_schema, table_name
+        """
+    ).fetchall()
+    remaining: dict[str, int] = {}
+    for schema, table, columns in tables:
+        present = set(columns)
+        if "scenario_id" in present:
+            clause, parameters = "scenario_id = ?", [scenario_id]
+        elif "dataset_id" in present:
+            clause, parameters = "dataset_id = ?", [dataset_id]
+        elif "revision_id" in present and revision_ids:
+            placeholders = ", ".join("?" for _ in revision_ids)
+            clause, parameters = f"revision_id IN ({placeholders})", list(revision_ids)
+        else:
+            continue
+        row = connection.execute(
+            f"SELECT count(*) FROM {schema}.{table} WHERE {clause}", parameters
+        ).fetchone()
+        count = 0 if row is None else int(row[0])
+        if count:
+            remaining[f"{schema}.{table}"] = count
+    return remaining
+
+
+def test_list_order_is_saved_and_rejects_a_partial_list(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "scenario.duckdb")
+    first = repository.create_scenario(
+        _metadata("First"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+    second = repository.create_scenario(
+        _metadata("Second"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+    ids = [first.scenario.scenario_id, second.scenario.scenario_id]
+
+    reordered = repository.reorder_scenarios(ids)
+
+    assert [scenario.scenario_id for scenario in reordered] == ids
+    assert [scenario.scenario_id for scenario in repository.list_scenarios()] == ids
+    # 최근 수정 순서였다면 나중에 만든 쪽이 앞에 온다. 지정한 순서가 그것을 이긴다.
+    assert reordered[0].scenario_name == "First"
+    with pytest.raises(ValueError, match="전체를 한 번에"):
+        repository.reorder_scenarios([ids[0]])
 
 
 def test_scenario_can_be_renamed_without_changing_revision(tmp_path: Path) -> None:
@@ -579,7 +663,7 @@ def test_latest_official_release_is_append_only_and_loadable(tmp_path: Path) -> 
     assert repository.load_revision(release_two.revision_id).scenario.scenario_name == "Second"
 
 
-def test_official_release_rejects_foreign_revision_and_latest_cannot_be_archived(
+def test_official_release_rejects_foreign_revision_and_latest_cannot_be_deleted(
     tmp_path: Path,
 ) -> None:
     repository = _repository(tmp_path / "scenario.duckdb")
@@ -607,7 +691,7 @@ def test_official_release_rejects_foreign_revision_and_latest_cannot_be_archived
         release_name="Official",
     )
     with pytest.raises(ValueError, match="최신 공식버전"):
-        repository.archive_scenario(first.scenario.scenario_id)
+        repository.delete_scenario(first.scenario.scenario_id)
 
 
 def test_typed_core_data_and_profile_round_trip(tmp_path: Path) -> None:

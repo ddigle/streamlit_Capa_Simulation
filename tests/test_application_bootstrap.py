@@ -86,7 +86,7 @@ def test_empty_store_is_seeded_published_and_idempotent(tmp_path: Path) -> None:
     assert created.release is not None
     assert repeated.status == "existing_official"
     assert repeated.release == created.release
-    scenarios = repository.list_scenarios(include_archived=True)
+    scenarios = repository.list_scenarios()
     assert len(scenarios) == 1
     assert scenarios[0].source_simulation_code == BUILTIN_SEED_SOURCE_CODE
     assert len(repository.load_source_data(scenarios[0].scenario_id).columns) == 78
@@ -140,5 +140,5 @@ def test_existing_unpublished_store_is_not_overwritten(tmp_path: Path) -> None:
 
     assert result.status == "existing_without_official"
     assert result.release is None
-    scenarios = repository.list_scenarios(include_archived=True)
+    scenarios = repository.list_scenarios()
     assert [scenario.scenario_id for scenario in scenarios] == [snapshot.scenario.scenario_id]

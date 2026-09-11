@@ -90,7 +90,7 @@ if st.session_state.get("__request_reset__"):
     st.session_state.pop("__request_reset__")
     registration._request_reset()
 
-repository = SimpleNamespace(list_scenarios=lambda include_archived=False: [])
+repository = SimpleNamespace(list_scenarios=lambda: [])
 registration.render_bigdataquery_registration(repository, "demo.duckdb")
 """
 

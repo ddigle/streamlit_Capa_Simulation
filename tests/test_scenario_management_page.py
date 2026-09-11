@@ -27,9 +27,48 @@ def test_every_tab_form_is_rendered_in_one_run(seeded_databases: tuple[Path, Pat
 
     assert not app.exception
     labels = {widget.label for widget in app.text_input}
-    # 시나리오 관리 탭의 이름 수정 폼 · BigDataQuery 등록 폼 · 표시순서 직접 편집 폼. 신규
-    # 생성·리비전 저장 폼은 탭 안의 작업 선택(segmented control)에 따라 그려지므로 여기 없다.
-    assert {"새 시나리오명", "조회할 시뮬레이션 코드", "변경 메모"} <= labels
+    # BigDataQuery 등록 폼 · 표시순서 직접 편집 폼. 시나리오 관리 탭의 폼(복제 저장·리비전
+    # 저장과 목록 관리의 이름 수정·공식 지정)은 탭 안의 작업 선택(segmented control)과 고른
+    # 시나리오에 따라 그려지므로 여기 없다.
+    assert {"조회할 시뮬레이션 코드", "변경 메모"} <= labels
     # 1단계 조회 폼과 2단계 등록 폼이 한 rerun 에 함께 있어야 탭을 오갈 때 값이 남는다.
     assert {"시작일", "종료일"} <= {widget.label for widget in app.date_input}
     assert "시뮬레이션 코드 조회" in {button.label for button in app.button}
+
+
+def test_list_management_acts_on_the_checked_scenario(
+    seeded_databases: tuple[Path, Path],
+) -> None:
+    """체크한 한 건에 대해서만 작업 칸이 열린다. 두 건을 체크하면 아무것도 열리지 않는다."""
+    database_path, equipment_path = seeded_databases
+    script = _page_script(PAGE_PATH, database_path, equipment_path)
+
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    assert "순서 저장" in {button.label for button in app.button}
+    # 고른 것이 없으면 작업 버튼이 없다.
+    assert "시나리오 삭제" not in {button.label for button in app.button}
+
+    # data_editor 위젯 상태는 편집한 셀만 담는다. 체크 한 번을 그 모양 그대로 넣는다.
+    app = AppTest.from_string(script, default_timeout=120)
+    app.session_state["scenario_list_editor"] = {
+        "edited_rows": {0: {"선택": True}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    app.run()
+
+    assert not app.exception
+    labels = {button.label for button in app.button}
+    assert {"시나리오 불러오기", "시나리오명 수정", "공식버전 지정", "시나리오 삭제"} <= labels
+
+    app.session_state["scenario_list_action"] = "delete"
+    app.run()
+
+    assert not app.exception
+    assert "확인을 위해 시나리오명을 그대로 입력하세요" in {
+        widget.label for widget in app.text_input
+    }
+    # 이름을 적기 전에는 파괴적인 버튼을 누를 수 없다.
+    execute = next(button for button in app.button if button.label == "삭제 실행")
+    assert execute.disabled

@@ -57,14 +57,11 @@ def main() -> None:
 
     existing = [
         scenario
-        for scenario in repository.list_scenarios(include_archived=True)
+        for scenario in repository.list_scenarios()
         if scenario.source_simulation_code == args.source_code
     ]
     if existing and not args.replace_existing:
-        active = [scenario for scenario in existing if scenario.status == "ACTIVE"]
-        scenario = active[0] if active else existing[0]
-        if scenario.status != "ACTIVE":
-            raise RuntimeError("초기 이관 시나리오가 이미 보관 상태입니다.")
+        scenario = existing[0]
         latest = repository.latest_official_release()
         if latest is not None and latest.revision_id == scenario.active_revision_id:
             print(
@@ -137,17 +134,19 @@ def main() -> None:
             else "DuckDB 전용 런타임 전환을 위한 초기 공식버전"
         ),
     )
-    archived_count = 0
-    for previous in existing:
-        if previous.status == "ACTIVE" and previous.scenario_id != snapshot.scenario.scenario_id:
-            repository.archive_scenario(previous.scenario_id)
-            archived_count += 1
+    # 같은 원천 코드의 이전 시나리오를 스크립트가 스스로 지우지 않는다. 무엇이 필요
+    # 없는지는 사람이 판단할 일이고, 삭제는 되돌릴 수 없다.
+    leftover = [
+        previous for previous in existing if previous.scenario_id != snapshot.scenario.scenario_id
+    ]
     print(
         f"Created {snapshot.scenario.scenario_name}: "
         f"{len(core_data):,} raw rows, {len(reference_tables['RQ_DISPLAY_ORDER']):,} "
         f"display-order rows, official v{release.release_no}, "
-        f"archived {archived_count} previous scenario(s)"
+        f"{len(leftover)} previous scenario(s) left in the list"
     )
+    if leftover:
+        print("Remove them in 시나리오 관리 > 시나리오 관리 탭 > 목록 관리 if unnecessary.")
 
 
 if __name__ == "__main__":

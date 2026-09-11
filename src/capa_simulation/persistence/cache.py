@@ -188,6 +188,11 @@ def clear_global_display_order_cache() -> None:
     _load_scenario_snapshot_payload.clear()
 
 
+def clear_scenario_snapshot_cache() -> None:
+    """지운 리비전의 스냅샷이 캐시에 남아 되살아나지 않게 한다."""
+    _load_scenario_snapshot_payload.clear()
+
+
 @st.cache_data(show_spinner=False, max_entries=4)
 def _load_global_process_rename_payload(database_path: str) -> _GlobalProcessRenamePayload:
     profile = get_scenario_repository(database_path).load_global_process_rename()

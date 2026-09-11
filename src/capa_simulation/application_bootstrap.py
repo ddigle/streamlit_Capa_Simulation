@@ -51,7 +51,7 @@ def ensure_initial_scenario(
         if release is not None:
             return InitialScenarioBootstrap("existing_official", release)
 
-        scenarios = repository.list_scenarios(include_archived=True)
+        scenarios = repository.list_scenarios()
         interrupted_seed = next(
             (
                 scenario

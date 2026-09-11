@@ -215,7 +215,7 @@ def _registered_scenarios(
     매 렌더 다시 계산한다. 세션 프레임에 구워 두면 저장 직후 목록의 `등록여부` 가 낡는다.
     """
     try:
-        scenarios = repository.list_scenarios(include_archived=True)
+        scenarios = repository.list_scenarios()
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         return frozenset(), frozenset()

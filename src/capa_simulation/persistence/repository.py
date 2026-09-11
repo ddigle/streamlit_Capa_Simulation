@@ -112,6 +112,37 @@ REVISION_TABLES: dict[str, str] = {
     )
 }
 
+# 시나리오가 소유한 행이 사는 스키마. 공용 프로필(`app_meta.global_*`)은 `profile_id`
+# 하나뿐이라 여기서 걸리지 않는다.
+_OWNED_SCHEMAS = ("app_meta", "raw_data", "ref_data", "rev_data", "result_data")
+# 한 표가 두 소유 컬럼을 함께 가지면 넓은 쪽으로 지운다. `app_meta.scenario_revision` 은
+# `scenario_id` 로 한 번에 지우는 편이 리비전 목록을 미리 붙잡아 둘 필요를 없앤다.
+_OWNER_COLUMNS = ("scenario_id", "dataset_id", "revision_id")
+
+
+def _owned_tables(connection: duckdb.DuckDBPyConnection) -> list[tuple[str, str, str]]:
+    """(스키마, 표, 소유 컬럼) 목록. 시나리오 뿌리 행은 마지막에 따로 지우므로 뺀다."""
+    rows = connection.execute(
+        """
+        SELECT table_schema, table_name, list(column_name)
+        FROM information_schema.columns
+        WHERE table_schema IN (?, ?, ?, ?, ?)
+        GROUP BY table_schema, table_name
+        ORDER BY table_schema, table_name
+        """,
+        list(_OWNED_SCHEMAS),
+    ).fetchall()
+    owned: list[tuple[str, str, str]] = []
+    for schema, table, columns in rows:
+        if (schema, table) == ("app_meta", "scenario"):
+            continue
+        present = set(columns)
+        owner = next((column for column in _OWNER_COLUMNS if column in present), None)
+        if owner is not None:
+            owned.append((str(schema), str(table), owner))
+    return owned
+
+
 _WRITE_LOCK = threading.RLock()
 
 
@@ -467,20 +498,17 @@ class DuckDBScenarioRepository:
             row = connection.execute(
                 """
                 SELECT s.active_revision_id,
-                       COALESCE(MAX(r.revision_no), 0) AS latest_revision_no,
-                       s.status
+                       COALESCE(MAX(r.revision_no), 0) AS latest_revision_no
                 FROM app_meta.scenario s
                 LEFT JOIN app_meta.scenario_revision r ON r.scenario_id = s.scenario_id
                 WHERE s.scenario_id = ?
-                GROUP BY s.active_revision_id, s.status
+                GROUP BY s.active_revision_id
                 """,
                 [scenario_id],
             ).fetchone()
             if row is None:
                 raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
-            active_revision_id, latest_revision_no, status = row
-            if str(status) != "ACTIVE":
-                raise ValueError("보관된 시나리오에는 새 리비전을 저장할 수 없습니다.")
+            active_revision_id, latest_revision_no = row
             selected_parent_id = parent_revision_id or (
                 str(active_revision_id) if active_revision_id else None
             )
@@ -522,11 +550,16 @@ class DuckDBScenarioRepository:
 
         return self.load_revision(revision_id)
 
-    def list_scenarios(self, *, include_archived: bool = False) -> list[ScenarioSummary]:
-        where_clause = "" if include_archived else "WHERE s.status = 'ACTIVE'"
+    def list_scenarios(self) -> list[ScenarioSummary]:
+        """누적 시나리오 목록. 사용자가 지정한 순서가 있으면 그 순서를 먼저 따른다.
+
+        `list_order` 는 「목록 관리」에서 저장할 때만 채워진다. 한 번도 순서를 저장하지
+        않았거나 그 뒤에 새로 만든 시나리오는 NULL 이므로 예전과 같이 최근 수정 순으로
+        뒤에 붙는다.
+        """
         with self._connect() as connection:
             rows = connection.execute(
-                f"""
+                """
                 SELECT s.scenario_id, d.dataset_id, s.scenario_name,
                        s.source_simulation_code, s.source_simulation_name,
                        d.source_type, s.status, s.active_revision_id,
@@ -534,11 +567,38 @@ class DuckDBScenarioRepository:
                 FROM app_meta.scenario s
                 JOIN app_meta.dataset d ON d.scenario_id = s.scenario_id
                 JOIN app_meta.scenario_revision r ON r.revision_id = s.active_revision_id
-                {where_clause}
-                ORDER BY s.updated_at DESC, s.scenario_name
+                ORDER BY s.list_order NULLS LAST, s.updated_at DESC, s.scenario_name
                 """
             ).fetchall()
         return [scenario_summary(row) for row in rows]
+
+    def reorder_scenarios(self, scenario_ids: Sequence[str]) -> list[ScenarioSummary]:
+        """목록의 누적 순서를 통째로 다시 매긴다.
+
+        일부만 받아 부분 갱신하지 않는다. 남은 시나리오의 순서가 무엇이 되어야 하는지
+        호출자가 모르는 채로 정하게 되고, 화면에서 본 순서와 저장된 순서가 어긋난다.
+        """
+        ordered = [str(scenario_id) for scenario_id in scenario_ids]
+        if len(set(ordered)) != len(ordered):
+            raise ValueError("목록 순서에 같은 시나리오가 두 번 들어 있습니다.")
+        with self._write_transaction() as connection:
+            stored = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT scenario_id FROM app_meta.scenario"
+                ).fetchall()
+            }
+            if set(ordered) != stored:
+                raise ValueError(
+                    "목록 순서는 저장된 시나리오 전체를 한 번에 받아야 합니다. "
+                    "화면을 새로 고쳐 최신 목록으로 다시 저장하세요."
+                )
+            for position, scenario_id in enumerate(ordered, start=1):
+                connection.execute(
+                    "UPDATE app_meta.scenario SET list_order = ? WHERE scenario_id = ?",
+                    [position, scenario_id],
+                )
+        return self.list_scenarios()
 
     def list_revisions(self, scenario_id: str) -> list[RevisionSummary]:
         with self._connect() as connection:
@@ -562,13 +622,13 @@ class DuckDBScenarioRepository:
                 """
                 UPDATE app_meta.scenario
                 SET scenario_name = ?, updated_at = current_timestamp
-                WHERE scenario_id = ? AND status = 'ACTIVE'
+                WHERE scenario_id = ?
                 RETURNING scenario_id
                 """,
                 [label, scenario_id],
             ).fetchone()
             if changed is None:
-                raise KeyError(f"활성 시나리오를 찾을 수 없습니다: {scenario_id}")
+                raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
         for scenario in self.list_scenarios():
             if scenario.scenario_id == scenario_id:
                 return scenario
@@ -588,7 +648,7 @@ class DuckDBScenarioRepository:
         with self._write_transaction() as connection:
             owner = connection.execute(
                 """
-                SELECT s.status
+                SELECT r.revision_id
                 FROM app_meta.scenario_revision r
                 JOIN app_meta.scenario s ON s.scenario_id = r.scenario_id
                 WHERE r.revision_id = ? AND r.scenario_id = ?
@@ -597,8 +657,6 @@ class DuckDBScenarioRepository:
             ).fetchone()
             if owner is None:
                 raise ValueError("공식 지정할 리비전이 선택한 시나리오에 속하지 않습니다.")
-            if str(owner[0]) != "ACTIVE":
-                raise ValueError("보관된 시나리오는 공식버전으로 지정할 수 없습니다.")
             release_no_row = connection.execute(
                 "SELECT COALESCE(MAX(release_no), 0) + 1 FROM app_meta.official_release"
             ).fetchone()
@@ -717,8 +775,29 @@ class DuckDBScenarioRepository:
             tables=tables,
         )
 
-    def archive_scenario(self, scenario_id: str) -> None:
+    def delete_scenario(self, scenario_id: str) -> None:
+        """시나리오와 그것이 소유한 모든 행을 물리 삭제한다.
+
+        지울 표를 손으로 적지 않고 `information_schema` 에서 소유 컬럼으로 찾는다.
+        마이그레이션이 새 표를 더할 때마다 목록을 고치는 것을 잊으면 주인 없는 행이
+        남는데, 그 누락은 삭제한 다음에야 드러나고 되돌릴 수 없다.
+
+        DuckDB 는 지운 페이지를 파일에 되돌려주지 않는다. 행은 사라져도 파일 크기는 줄지
+        않고 삭제 기록만큼 오히려 늘어난다. 실제로 줄이려면 별도 스냅샷 재작성이 필요하다.
+        """
         with self._write_transaction() as connection:
+            owner_row = connection.execute(
+                """
+                SELECT d.dataset_id
+                FROM app_meta.scenario s
+                JOIN app_meta.dataset d ON d.scenario_id = s.scenario_id
+                WHERE s.scenario_id = ?
+                """,
+                [scenario_id],
+            ).fetchone()
+            if owner_row is None:
+                raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
+            dataset_id = str(owner_row[0])
             latest_official = connection.execute(
                 """
                 SELECT scenario_id
@@ -729,24 +808,42 @@ class DuckDBScenarioRepository:
             ).fetchone()
             if latest_official is not None and str(latest_official[0]) == scenario_id:
                 raise ValueError(
-                    "현재 최신 공식버전의 시나리오는 보관할 수 없습니다. "
+                    "현재 최신 공식버전의 시나리오는 삭제할 수 없습니다. "
                     "다른 공식버전을 먼저 지정하세요."
                 )
-            changed = connection.execute(
-                """
-                UPDATE app_meta.scenario
-                SET status = 'ARCHIVED', updated_at = current_timestamp
-                WHERE scenario_id = ? AND status = 'ACTIVE'
-                RETURNING scenario_id
-                """,
+            revision_ids = [
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT revision_id FROM app_meta.scenario_revision WHERE scenario_id = ?",
+                    [scenario_id],
+                ).fetchall()
+            ]
+            for schema, table, owner in _owned_tables(connection):
+                qualified = f"{quote(schema)}.{quote(table)}"
+                if owner == "scenario_id":
+                    connection.execute(
+                        f"DELETE FROM {qualified} WHERE scenario_id = ?", [scenario_id]
+                    )
+                elif owner == "dataset_id":
+                    connection.execute(
+                        f"DELETE FROM {qualified} WHERE dataset_id = ?", [dataset_id]
+                    )
+                elif revision_ids:
+                    placeholders = ", ".join("?" for _ in revision_ids)
+                    connection.execute(
+                        f"DELETE FROM {qualified} WHERE revision_id IN ({placeholders})",
+                        revision_ids,
+                    )
+            connection.execute("DELETE FROM app_meta.scenario WHERE scenario_id = ?", [scenario_id])
+
+    def count_official_releases(self, scenario_id: str) -> int:
+        """그 시나리오가 가진 공식 발행 이력 건수. 삭제 전 경고 문구가 쓴다."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT count(*) FROM app_meta.official_release WHERE scenario_id = ?",
                 [scenario_id],
             ).fetchone()
-            if changed is None:
-                raise KeyError(f"활성 시나리오를 찾을 수 없습니다: {scenario_id}")
-            connection.execute(
-                "UPDATE app_meta.dataset SET status = 'ARCHIVED' WHERE scenario_id = ?",
-                [scenario_id],
-            )
+        return 0 if row is None else int(row[0])
 
     def _insert_revision(
         self,

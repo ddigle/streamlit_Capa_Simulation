@@ -41,6 +41,7 @@ sidecar 카탈로그다.
 | `src/capa_simulation/persistence/migrations/0014_edp_top_division.sql` | 이미 저장된 EDP-TSV 행의 `WF 구분` `Top`을 `Top_e`로 이관한다. |
 | `src/capa_simulation/persistence/migrations/0015_global_process_rename.sql` | 시나리오와 독립된 공용 공정 표시명 프로필(원본 공정 → 화면 표시명)과 버전 번호를 저장한다(단일 행 프로필, 원본·표시명 UNIQUE 로 1:1을 받치며 이전 규칙은 보존하지 않는다). |
 | `src/capa_simulation/persistence/migrations/0016_standard_target_preset_view_settings.sql` | 표준 목표 Capa 「조회·집계 설정」(시작일·종료일·상세 토글·제품 분류 수준·출력 지표)을 리비전 프리셋 스칼라 컬럼으로 저장한다(과거 리비전은 NULL 로 읽혀 기본값으로 열린다). |
+| `src/capa_simulation/persistence/migrations/0017_scenario_list_order.sql` | 시나리오 목록의 사용자 지정 누적 순서 컬럼을 추가하고, 보관 기능이 삭제로 바뀌면서 갈 곳이 없어진 `ARCHIVED` 시나리오·데이터셋을 활성으로 되돌린다. |
 | `src/capa_simulation/persistence/equipment_migrations/0001_initial.sql` | 가용설비 DB의 메타·운영 스키마와 초기 리비전·기준·일정 테이블을 생성한다. |
 | `src/capa_simulation/persistence/equipment_migrations/0002_unified_equipment_input.sql` | 설비 호기와 운영 비가동을 통합 입력하는 스냅샷 구조를 추가한다. |
 | `src/capa_simulation/persistence/equipment_migrations/0003_equipment_master_contract.sql` | 30컬럼 설비 마스터 계약과 계약 버전을 추가한다. |
