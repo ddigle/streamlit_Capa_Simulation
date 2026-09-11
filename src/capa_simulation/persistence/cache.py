@@ -12,6 +12,7 @@ import streamlit as st
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
     GlobalDisplayOrder,
+    GlobalPastData,
     GlobalProcessRename,
     RevisionSummary,
     ScenarioPreset,
@@ -87,6 +88,15 @@ class _GlobalAdvanceLoadPayload(TypedDict):
     source: str
     updated_at: datetime | None
     rows: pd.DataFrame
+
+
+class _GlobalPastDataPayload(TypedDict):
+    version: int
+    source: str
+    updated_at: datetime | None
+    monthly: pd.DataFrame
+    plan_detail: pd.DataFrame
+    securement: pd.DataFrame
 
 
 @st.cache_resource
@@ -245,6 +255,37 @@ def load_global_advance_load(database_path: str) -> GlobalAdvanceLoad:
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_past_data_payload(database_path: str) -> _GlobalPastDataPayload:
+    profile = get_scenario_repository(database_path).load_global_past_data()
+    return {
+        "version": profile.version,
+        "source": profile.source,
+        "updated_at": profile.updated_at,
+        "monthly": profile.monthly,
+        "plan_detail": profile.plan_detail,
+        "securement": profile.securement,
+    }
+
+
+def load_global_past_data(database_path: str) -> GlobalPastData:
+    """Share the past-period profile without caching its model class."""
+    payload = _load_global_past_data_payload(database_path)
+    return GlobalPastData(
+        version=payload["version"],
+        source=payload["source"],
+        updated_at=payload["updated_at"],
+        monthly=payload["monthly"],
+        plan_detail=payload["plan_detail"],
+        securement=payload["securement"],
+    )
+
+
+def clear_global_past_data_cache() -> None:
+    """과거 구간 프로필만 비운다. 어떤 `RQ_*` 표에도 오버레이되지 않는다."""
+    _load_global_past_data_payload.clear()
+
+
 def clear_global_advance_load_cache() -> None:
     """선행 물량 프로필만 비운다.
 
@@ -265,6 +306,7 @@ def clear_global_process_rename_cache() -> None:
 
 def clear_scenario_repository() -> None:
     _load_global_advance_load_payload.clear()
+    _load_global_past_data_payload.clear()
     _load_global_display_order_payload.clear()
     _load_global_process_rename_payload.clear()
     _load_scenario_snapshot_payload.clear()

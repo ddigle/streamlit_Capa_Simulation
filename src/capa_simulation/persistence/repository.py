@@ -45,6 +45,7 @@ from capa_simulation.persistence.migration_runner import apply_migrations
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
     GlobalDisplayOrder,
+    GlobalPastData,
     GlobalProcessRename,
     OfficialReleaseSummary,
     RevisionSummary,
@@ -52,6 +53,11 @@ from capa_simulation.persistence.models import (
     ScenarioPreset,
     ScenarioSnapshot,
     ScenarioSummary,
+)
+from capa_simulation.persistence.past_data_store import (
+    PAST_TABLES,
+    insert_global_past_data,
+    load_global_past_table,
 )
 from capa_simulation.persistence.preset_store import (
     insert_preset,
@@ -77,6 +83,10 @@ from capa_simulation.persistence.summaries import (
 from capa_simulation.services.advance_load import (
     empty_advance_load,
     prepare_advance_load,
+)
+from capa_simulation.services.past_data import (
+    empty_past_table,
+    prepare_past_table,
 )
 from capa_simulation.services.process_rename import (
     empty_process_rename_rules,
@@ -370,6 +380,74 @@ class DuckDBScenarioRepository:
                 source=source_label,
             )
         return self.load_global_advance_load()
+
+    def load_global_past_data(self) -> GlobalPastData:
+        """Load the scenario-independent past-period profile.
+
+        다른 공용 프로필과 같은 이유로 예외를 내지 않는다. 한 번도 저장하지 않은 상태가
+        정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
+        """
+        with self._connect() as connection:
+            metadata = connection.execute(
+                """
+                SELECT version, source, updated_at
+                FROM app_meta.global_past_data
+                WHERE profile_id = 1
+                """
+            ).fetchone()
+            if metadata is None:
+                return GlobalPastData(
+                    version=0,
+                    source="",
+                    updated_at=None,
+                    monthly=empty_past_table(PAST_TABLES["월별"][1]),
+                    plan_detail=empty_past_table(PAST_TABLES["계획"][1]),
+                    securement=empty_past_table(PAST_TABLES["확보율"][1]),
+                )
+            loaded = {
+                name: prepare_past_table(load_global_past_table(connection, name), columns)
+                for name, (_, columns) in PAST_TABLES.items()
+            }
+        return GlobalPastData(
+            version=int(metadata[0]),
+            source=str(metadata[1]),
+            updated_at=metadata[2],
+            monthly=loaded["월별"],
+            plan_detail=loaded["계획"],
+            securement=loaded["확보율"],
+        )
+
+    def replace_global_past_data(
+        self,
+        tables: Mapping[str, pd.DataFrame],
+        *,
+        source: str,
+    ) -> GlobalPastData:
+        """Atomically replace the shared past-period profile without a scenario revision.
+
+        세 표가 한 버전을 공유한다. 한 표만 고쳐도 나머지를 함께 다시 써야 하므로 호출자가
+        세 표를 모두 준다 — 부분 저장을 허용하면 어느 표가 어느 버전인지 알 수 없다.
+        """
+        prepared = {
+            name: prepare_past_table(tables[name], columns)
+            for name, (_, columns) in PAST_TABLES.items()
+        }
+        source_label = required_text(source, "과거 구간 변경 출처")
+        with self._write_transaction() as connection:
+            row = connection.execute(
+                "SELECT version FROM app_meta.global_past_data WHERE profile_id = 1"
+            ).fetchone()
+            version = 1 if row is None else int(row[0]) + 1
+            for table, _ in PAST_TABLES.values():
+                connection.execute(f"DELETE FROM app_meta.{quote(table)} WHERE profile_id = 1")
+            connection.execute("DELETE FROM app_meta.global_past_data WHERE profile_id = 1")
+            insert_global_past_data(
+                connection,
+                dict(prepared),
+                version=version,
+                source=source_label,
+            )
+        return self.load_global_past_data()
 
     def create_scenario(
         self,

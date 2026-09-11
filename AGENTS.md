@@ -122,6 +122,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     머리글과 칸 폭은 `DETAIL_DIMENSION_HEADERS`·`DETAIL_DIMENSION_WIDTHS` 에서 끌어오므로
     분류가 늘어도 Figure 에서 다시 적을 것이 없다. 기본 조합이 아닌 경우에만
     `get_home_plan_detail` 이 돌아 토글을 건드린 사람만 계산을 치른다.
+  - 과거 구간을 넣으면 조회 가능 범위가 그만큼 넓어진다. 계산 원천의 월 범위로만 자르면
+    넣어 둔 과거가 절대 조회 범위에 들어오지 못한다.
+  - 과거 달에는 `선행` 만 걸린다. EDP 제외와 비교 GAP 은 걸 근거가 없다 — 과거는 입력값
+    하나뿐이라 EDP 를 뗄 수도, 비교할 계획도 없다.
+  - 공정 선택은 **처음 보는 공정을 기본 포함**한다. 저장된 것이 포함 목록뿐이라 "사용자가
+    끈 공정" 과 "새 공정" 이 구분되지 않으므로 직전 실행의 옵션 집합을 함께 들고 있는다.
+    과거 구간을 넣거나 시나리오를 바꿔 공정이 늘었을 때 조용히 빠지면 B/N 이 틀린다.
   - 연간 Total 열은 Density·Wafer 계획·계획 세부수량만 합계를 적는다. Wafer Capa 는
     비운다 — 월별 Capa 의 단순 합은 연간 Capa 가 아니라서 더해 놓으면 그 해 투입
     가능량으로 읽힌다. 생산계획 LOB·B/N Top 5·상세 B/N 도 비고, 머리글을 뺀 Total 칸은
@@ -611,6 +618,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     넘긴다. 양식이 부분 표가 되면 그 부분 표가 행 집합 검증을 통과해 나머지 공정을 지운다.
   - 공정 표시명은 페이지가 조회해 `value_labels=` 로 넘기고 필터 옵션 표기에만 쓴다. 이
     모듈은 `process_labels` 를 import 하지 않는다.
+- `src/capa_simulation/services/past_data.py`
+  - 적재 시점 이전 과거 구간의 정규화·검증과 계산 결과 병합. **산출하지 않는다** — 화면을
+    채울 최소한만 받고 나머지는 거기서 곧장 나온다(`Wafer Capa = Wafer Total × 확보율`,
+    `B/N Capa = Density × 확보율`). B/N 공정명을 따로 받지 않는 것도 같은 이유다.
+    **확보율 오름차순이 곧 B/N 순위**라 공정별 확보율 표가 그 자리를 이미 채운다.
+  - 같은 달이 계산과 과거 양쪽에 있으면 **계산이 이긴다.** 적재 범위가 뒤로 넘어가도
+    입력을 지울 필요가 없어야 한다.
+  - 가용대수·소요대수는 받지 않는다. 상세 B/N 의 그 두 칸은 과거 구간에서 빈다.
+- `src/capa_simulation/components/past_data_management.py`
+  - `Past Data` 탭. 세 표가 **한 버전을 공유**하므로 붙여넣기는 세션에 모아 두었다가 한
+    번에 저장한다 — 부분 저장을 허용하면 어느 표가 어느 버전인지 알 수 없다.
 - `src/capa_simulation/services/month_columns.py`
   - 월 축과 연간 Total 열의 규칙. **1~12월이 모두 조회범위 안에 있는 해**만 Total 을 갖고,
     그 해 12월 바로 뒤에 들어간다. 일부 달만 든 해의 합계는 연간이 아니라 "조회한 달의
@@ -676,6 +694,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/display_order_store.py`: 공용 표시순서 프로필의 검증·이관·저장
 - `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·삽입 SQL
 - `persistence/advance_load_store.py`: 공용 선행 투입 물량 프로필의 조회·삽입 SQL
+- `persistence/past_data_store.py`: 공용 과거 구간 프로필 세 표의 조회·삽입 SQL
 - `persistence/preset_store.py`: 리비전 프리셋 저장·복원
 - `persistence/source_data_store.py`: 원천 Core Data raw 와 컬럼 프로파일
 - `persistence/summaries.py`: 조회 행을 요약 모델로 변환

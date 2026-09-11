@@ -118,11 +118,16 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     assert [widget.label for widget in app.sidebar.toggle] == ["HOME 성능 진단"]
     assert sorted(widget.label for widget in app.button) == [
         "공정 선택창 열기",
+        "과거 구간 저장",
+        "붙여넣기 읽기",
+        "붙여넣기 읽기",
+        "붙여넣기 읽기",
         "선행 물량 저장",
         "판정 기준 적용",
     ]
-    # 제목 아래 설명 문구와 계획 세부수량 CSV 는 탭 자리를 내주고 사라졌다.
-    assert not app.get("download_button")
+    # 제목 아래 설명 문구와 계획 세부수량 CSV 는 탭 자리를 내주고 사라졌다. 남은 내려받기는
+    # Past Data 탭의 양식 세 개뿐이다.
+    assert [button.label for button in app.get("download_button")] == ["양식 CSV"] * 3
 
 
 def test_home_puts_the_charts_in_a_main_tab_next_to_preference(seeded_database: Path) -> None:
@@ -130,7 +135,11 @@ def test_home_puts_the_charts_in_a_main_tab_next_to_preference(seeded_database: 
     app = _run(seeded_database)
 
     tabs = [tab.label for tab in app.main.tabs]
-    assert tabs == [":material/dashboard: Main", ":material/tune: Preference"]
+    assert tabs == [
+        ":material/dashboard: Main",
+        ":material/tune: Preference",
+        ":material/history: Past Data",
+    ]
     # 차트는 Main 탭 안에서만 그린다.
     assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 4]
 

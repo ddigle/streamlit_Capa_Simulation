@@ -33,6 +33,7 @@ from capa_simulation.components.home_rendering import (
 )
 from capa_simulation.components.loading_progress import LoadingProgress
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.past_data_management import render_past_data_management
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
@@ -47,6 +48,7 @@ from capa_simulation.performance import PerformanceTrace
 from capa_simulation.persistence.cache import (
     get_scenario_repository,
     load_global_advance_load,
+    load_global_past_data,
     load_scenario_snapshot,
 )
 from capa_simulation.scenario_activation import active_persisted_scenario_id
@@ -81,6 +83,11 @@ from capa_simulation.services.dashboard import (
 )
 from capa_simulation.services.month_columns import build_month_axis, month_label
 from capa_simulation.services.month_filter import available_month_range
+from capa_simulation.services.past_data import (
+    merge_past_frame,
+    merge_past_months,
+    past_plan_detail_to_wide,
+)
 from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
     get_home_comparison_plan,
@@ -146,13 +153,20 @@ try:
     active_scenario = ensure_active_scenario(reference_tables, reference_version)
     selected_start, selected_end = selected_month_range()
     source_start, source_end = available_month_range(reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN")
-    effective_start = max(selected_start, source_start)
-    effective_end = min(selected_end, source_end)
+    # 과거 구간은 계산 원천의 월 범위 밖에 있다. 원천 범위로만 자르면 넣어 둔 과거가 절대
+    # 조회 범위에 들어오지 못한다. 볼 수 있는 범위를 과거 구간만큼 넓힌다.
+    past_profile = load_global_past_data(str(DUCKDB_PATH.resolve()))
+    past_months = [int(value) for value in past_profile.monthly["생산계획년월"]]
+    available_start = min([source_start, *past_months])
+    available_end = max([source_end, *past_months])
+    effective_start = max(selected_start, available_start)
+    effective_end = min(selected_end, available_end)
     if effective_start > effective_end:
         show_month_range_unavailable()
         raise ValueError(
             "선택 범위에 생산계획 데이터가 없습니다 "
-            f"(데이터 범위 {format_short_month(source_start)}–{format_short_month(source_end)})"
+            f"(데이터 범위 {format_short_month(available_start)}–"
+            f"{format_short_month(available_end)})"
         )
     show_applied_month_range(effective_start, effective_end)
     home_trace.mark("기준정보·시나리오")
@@ -220,6 +234,47 @@ try:
                 include_edp=include_edp,
                 detail_dimensions=tuple(plan_detail_dimensions),
             )
+    # 과거 구간은 계산에 없는 달만 채운다. 계산 결과가 있는 달은 계산이 이긴다.
+    calculated_months = {int(value) for value in monthly_density["생산계획년월"]}
+    monthly_density = merge_past_months(
+        monthly_density,
+        past_profile.monthly,
+        value_columns={"Density": "부하량"},
+        start_month=effective_start,
+        end_month=effective_end,
+    )
+    monthly_wafer = merge_past_months(
+        monthly_wafer,
+        past_profile.monthly,
+        value_columns={"Wafer Total": "Wafer 부하량"},
+        start_month=effective_start,
+        end_month=effective_end,
+    )
+    securement_rate = merge_past_frame(
+        securement_rate,
+        past_profile.securement,
+        start_month=effective_start,
+        end_month=effective_end,
+    )
+    # 상세 B/N 이 요구하는 두 칸은 과거 입력에 없다. 컬럼 자체가 없으면 그 화면이 죽으므로
+    # 결측으로 자리만 만든다 — 화면은 빈 칸으로 그린다.
+    for equipment_column in ("가용대수", "소요대수"):
+        if equipment_column not in securement_rate.columns:
+            securement_rate[equipment_column] = pd.NA
+    past_detail = past_plan_detail_to_wide(
+        past_profile.plan_detail,
+        plan_detail_dimensions,
+        start_month=effective_start,
+        end_month=effective_end,
+        exclude_months=calculated_months,
+    )
+    if not past_detail.empty:
+        production_detail = (
+            pd.concat([production_detail, past_detail], ignore_index=True)
+            .groupby(plan_detail_dimensions, as_index=False, dropna=False)
+            .sum(numeric_only=True)
+            .reset_index(drop=True)
+        )
     advance_profile = load_global_advance_load(str(DUCKDB_PATH.resolve()))
     baseline_density = monthly_density
     baseline_wafer = monthly_wafer
@@ -247,6 +302,7 @@ process_options = sorted(
 process_selection_key = "dashboard_bottleneck_process_selection"
 process_dialog_draft_key = "dashboard_bottleneck_process_dialog_draft"
 process_dialog_editor_key = "dashboard_bottleneck_process_dialog_editor"
+process_seen_key = "dashboard_bottleneck_process_seen"
 if process_selection_key not in st.session_state:
     # 예전 사이드바 토글 키(dashboard_bottleneck_process_{공정})를 읽던 이관 코드였다.
     # 그 토글은 70ad6d0 에서 지워져 항상 기본값 True — 곧 전체 목록이다.
@@ -254,9 +310,18 @@ if process_selection_key not in st.session_state:
 else:
     saved_processes = st.session_state[process_selection_key]
     if isinstance(saved_processes, list):
+        # 저장된 것은 **포함 목록**이라 "사용자가 끈 공정" 과 "처음 보는 공정" 이 구분되지
+        # 않는다. 직전 실행의 옵션 집합을 함께 들고 있다가, 그때 없던 공정만 새 공정으로
+        # 보아 포함한다. 시나리오를 바꾸거나 과거 구간을 넣어 공정이 늘었을 때 그것들이
+        # 조용히 빠지면 B/N 이 틀린다.
+        seen_processes = set(st.session_state.get(process_seen_key, []))
+        kept = {process for process in saved_processes if process in process_options}
         st.session_state[process_selection_key] = [
-            process for process in saved_processes if process in process_options
+            process
+            for process in process_options
+            if process in kept or process not in seen_processes
         ]
+st.session_state[process_seen_key] = list(process_options)
 
 
 def set_process_dialog_selection(processes: list[str]) -> None:
@@ -424,6 +489,7 @@ figure_cache_key: HomeFigureCacheKey = (
     str(comparison_revision_id or ""),
     show_advance,
     advance_profile.version if show_advance else 0,
+    past_profile.version,
 )
 cached_figures = home_figure_cache().get(figure_cache_key)
 figure_cache_hit = cached_figures is not None
@@ -526,7 +592,13 @@ else:
     loading.advance()
 loading.advance()
 
-main_tab, preference_tab = st.tabs([":material/dashboard: Main", ":material/tune: Preference"])
+main_tab, preference_tab, past_tab = st.tabs(
+    [
+        ":material/dashboard: Main",
+        ":material/tune: Preference",
+        ":material/history: Past Data",
+    ]
+)
 with main_tab:
     render_lob_title_row(
         unapplied_months=unapplied_advance_months,
@@ -536,6 +608,8 @@ with main_tab:
         cached_figures,
         month_labels,
     )
+with past_tab:
+    render_past_data_management(str(DUCKDB_PATH.resolve()), past_profile)
 with preference_tab:
     # 선행 물량은 실제 달에만 넣는다. 화면 축에 끼운 연간 Total 칸은 입력할 자리가 아니다.
     advance_months = [int(value) for value in baseline_density["생산계획년월"]]
