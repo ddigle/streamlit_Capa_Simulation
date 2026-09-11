@@ -19,6 +19,7 @@ from capa_simulation.components.page_header import (
     pending_badge,
     render_page_header,
 )
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.roadmap_panel import render_roadmap_panel
 from capa_simulation.components.status_metric import (
     metric_row,
@@ -33,6 +34,9 @@ from capa_simulation.services.dynamic_capacity import (
 
 _ALL = "전체"
 _CAPACITY_UNIT_LABELS = {"WF": "매", "CHIP": "Kea", "PKG": "Kea"}
+
+# 공정 표시명은 화면 표기 전용 라벨이다. 선택값·집계 키·계산 입력은 원본 공정명을 쓴다.
+process_labels = get_process_labels()
 
 
 def _clear_invalid_widget_value(key: str, options: list[str]) -> None:
@@ -152,7 +156,7 @@ with overview_chart.container(border=True):
     st.markdown("#### :material/bar_chart: 공정별 Capa 실현 수준")
     st.caption("단위가 다른 공정은 수량을 합산하지 않고 각 공정의 비율로 비교합니다.")
     st.plotly_chart(
-        build_process_comparison_figure(process_summary),
+        build_process_comparison_figure(process_summary, process_labels=process_labels),
         width="stretch",
         config={"displayModeBar": False},
         key="dynamic_capacity_process_overview",
@@ -173,6 +177,8 @@ with overview_table.container(border=True):
         ]
     ].reset_index(drop=True)
     priority.insert(0, "순위", pd.Series(range(1, len(priority) + 1), dtype="int64"))
+    # CSV 출구가 없는 조회 표다. 화면 복사본에만 표시명을 입힌다.
+    priority["공정"] = process_labels.series(priority["공정"])
     st.dataframe(
         priority,
         hide_index=True,
@@ -222,6 +228,9 @@ with st.container(border=True):
                 index=default_process_index,
                 key="dynamic_capacity_process_filter",
                 width=210,
+                # 표시만 바꾼다. 선택값은 원본이라 아래 `eq`·`filter_dynamic_capacity` 가
+                # 원본 컬럼과 그대로 대조한다.
+                format_func=process_labels.format_func(),
             ),
         )
 
@@ -320,7 +329,10 @@ with st.container(horizontal=True, gap="small"):
 waterfall_column, trend_column = st.columns(2, gap="medium")
 with waterfall_column.container(border=True):
     st.markdown("#### :material/waterfall_chart: Capa 손실 구조")
-    st.caption(f"선택한 {process} 공정의 표준 Capa부터 실제 실적까지를 {unit_label}로 연결합니다.")
+    st.caption(
+        f"선택한 {process_labels.label(process)} 공정의 표준 Capa부터 실제 실적까지를 "
+        f"{unit_label}로 연결합니다."
+    )
     st.plotly_chart(
         build_capacity_waterfall_figure(detail_summary),
         width="stretch",

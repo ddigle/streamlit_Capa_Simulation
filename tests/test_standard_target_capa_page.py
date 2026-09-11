@@ -1,5 +1,10 @@
 # Purpose: standard target capa page 관련 정상·예외·회귀 동작을 검증한다.
 
+from datetime import date
+from io import BytesIO
+from pathlib import Path
+
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -11,6 +16,7 @@ import streamlit as st
 
 import capa_simulation
 import capa_simulation.components.hierarchical_monthly_table as hierarchical_table
+import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.scenario_state as scenario_state
@@ -98,6 +104,11 @@ availability = pd.DataFrame(
         "가용대수": [2.0] * 5,
     }
 )
+# 한 주만 지우면 `누락 공정·주차 확인` 안내가 뜬다. 기본은 꺼 두어 다른 테스트의 화면을
+# 건드리지 않는다.
+DROP_ONE_WEEK = False
+if DROP_ONE_WEEK:
+    availability = availability.loc[availability["Weeknum"].ne("26-W33")].reset_index(drop=True)
 
 original_reference_version = reference_cache.get_effective_reference_version
 original_reference_tables = reference_cache.get_effective_reference_tables
@@ -145,7 +156,33 @@ def capture_table(data, **kwargs):
 
 hierarchical_table.render_hierarchical_monthly_table = capture_table
 
+original_download_button = st.download_button
+
+
+def record_download_button(label, *args, **kwargs):
+    # 내보낸 바이트는 위젯 proto 에 실리지 않는다. 파일이 원본 공정명인지 보려면 여기서
+    # 잡아 두는 수밖에 없다.
+    captured = st.session_state.setdefault("captured_download_data", {})
+    captured[kwargs.get("key")] = kwargs.get("data")
+    return original_download_button(label, *args, **kwargs)
+
+
+# 화면 표기만 표시명으로 바꾼다. 페이지는 exec 로 새로 읽히므로 모듈 속성을 갈아끼우면
+# 페이지의 `from ... import get_process_labels` 가 이 가짜를 집는다.
+APPLY_RENAME = False
+original_get_process_labels = process_labels_module.get_process_labels
+if APPLY_RENAME:
+    renamed = process_labels_module.process_labels_from_rules(
+        pd.DataFrame(
+            [("Process-A", "가공"), ("Pre B/D", "선다이싱")],
+            columns=["공정", "표시명"],
+        ),
+        7,
+    )
+    process_labels_module.get_process_labels = lambda: renamed
+
 try:
+    st.download_button = record_download_button
     st.session_state["production_month_range_v2"] = ("2026-08", "2026-08")
     PAGE_NAME = "standard_target_capa.py"
     page = Path(capa_simulation.__file__).resolve().parents[2] / "app_pages" / PAGE_NAME
@@ -159,7 +196,14 @@ finally:
     scenario_state.scenario_month_table = original_scenario_month_table
     simulation_cache.get_scenario_capacity_and_demand = original_capacity_and_demand
     hierarchical_table.render_hierarchical_monthly_table = original_hierarchical_render
+    process_labels_module.get_process_labels = original_get_process_labels
+    st.download_button = original_download_button
 """
+
+RENAMED_TEST_SCRIPT = TEST_SCRIPT.replace("APPLY_RENAME = False", "APPLY_RENAME = True")
+RENAMED_MISSING_WEEK_SCRIPT = RENAMED_TEST_SCRIPT.replace(
+    "DROP_ONE_WEEK = False", "DROP_ONE_WEEK = True"
+)
 
 
 def test_standard_target_page_renders_weeknum_plotly_table() -> None:
@@ -246,3 +290,121 @@ def test_standard_target_page_analyzes_one_selected_process_week() -> None:
     assert "일 표준 가능량 로직 분석" in [element.value for element in app.subheader]
     assert "일 표준 가능량 (매)" in [element.label for element in app.metric]
     assert len(app.dataframe) == 2
+
+
+def test_saved_view_date_outside_the_current_period_is_clamped_with_a_notice() -> None:
+    """조회기간을 바꾼 뒤 과거 리비전을 열어도 페이지가 죽지 않고 범위 안으로 맞춘다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state["standard_target_start_date"] = date(2026, 6, 15)
+    app.session_state["standard_target_end_date"] = date(2027, 3, 20)
+    app = app.run()
+
+    assert not app.exception
+    assert app.session_state["standard_target_start_date"] == date(2026, 8, 1)
+    assert app.session_state["standard_target_end_date"] == date(2026, 8, 31)
+    assert any("조정됨" in element.value for element in app.caption)
+
+
+def test_saved_view_dates_in_reverse_order_are_corrected() -> None:
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state["standard_target_start_date"] = date(2026, 8, 25)
+    app.session_state["standard_target_end_date"] = date(2026, 8, 5)
+    app = app.run()
+
+    assert not app.exception
+    assert app.session_state["standard_target_end_date"] == date(2026, 8, 25)
+    # 두 조정 원인은 문구가 다르다. 한 깃발로 합치면 기간 안인 날짜에도 범위 문구가 뜬다.
+    captions = [element.value for element in app.caption]
+    assert any("시작일이 종료일보다 늦어" in caption for caption in captions)
+    assert not any("조회기간 밖이라" in caption for caption in captions)
+
+
+def test_fallback_constants_exist_in_the_page_option_lists() -> None:
+    """폴백 상수는 persistence 가, 옵션 목록은 화면이 소유한다. 갈라지면 위젯이 죽는다."""
+    from capa_simulation.persistence.models import (
+        DEFAULT_STANDARD_TARGET_DETAIL_LEVEL,
+        DEFAULT_STANDARD_TARGET_OUTPUT_METRIC,
+    )
+
+    page = (Path(__file__).resolve().parents[1] / "app_pages/standard_target_capa.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert f'"{DEFAULT_STANDARD_TARGET_DETAIL_LEVEL}"' in page
+    assert f'"{DEFAULT_STANDARD_TARGET_OUTPUT_METRIC}"' in page
+
+
+def test_saved_view_settings_outside_the_current_options_fall_back() -> None:
+    """옵션 문자열이 바뀌어도 저장된 값 때문에 위젯 생성이 실패하지 않는다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state["standard_target_output_metric"] = "일 최대 투입 가능량"
+    app.session_state["standard_target_detail_level"] = "없어진 분류 수준"
+    app.session_state["standard_target_show_detail"] = True
+    app = app.run()
+
+    assert not app.exception
+    assert app.session_state["standard_target_output_metric"] == "일 표준 가능량"
+    assert app.session_state["standard_target_detail_level"] == "제품정보"
+    assert app.session_state["captured_classification_columns"] == [
+        "공정",
+        "소요기준",
+        "양산구분",
+        "제품정보",
+    ]
+
+
+# ------------------------------------------- 화면은 표시명, 파일은 원본
+
+
+def _frame_with_value(app: AppTest, column: str, value: str):
+    for frame in app.dataframe:
+        data = frame.value
+        if column in getattr(data, "columns", []) and value in set(data[column]):
+            return data
+    raise AssertionError(f"`{column}` 에 `{value}` 가 든 표가 없습니다.")
+
+
+def test_exception_process_notice_shows_the_display_name() -> None:
+    """`예외 처리 공정` 안내는 CSV 출구가 없는 순수 표시 상수 표다."""
+    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert _frame_with_value(app, "공정", "선다이싱") is not None
+
+
+def test_exception_process_notice_stays_original_without_a_rename_profile() -> None:
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert _frame_with_value(app, "공정", "Pre B/D") is not None
+
+
+def test_weekly_availability_template_keeps_the_original_process_name() -> None:
+    """양식 CSV 는 그대로 되붙는 왕복이다. 표시명이 새면 파서가 공정을 찾지 못한다."""
+    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    template = pd.read_csv(
+        BytesIO(
+            bytes(
+                app.session_state["captured_download_data"][
+                    "download_standard_target_availability_template"
+                ]
+            )
+        ),
+        encoding="utf-8-sig",
+        dtype="object",
+    )
+
+    assert set(template["공정"]) == {"Process-A", "Process-B"}
+
+
+def test_missing_availability_table_shows_the_display_name_with_a_source_notice() -> None:
+    """누락 안내 표는 화면이라 표시명이고, 붙여넣을 원본이 어디 있는지 함께 알린다."""
+    app = AppTest.from_string(RENAMED_MISSING_WEEK_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert "누락 공정·주차 확인" in {expander.label for expander in app.expander}
+    missing = _frame_with_value(app, "공정", "가공")
+    assert missing["Weeknum"].tolist() == ["26-W33"]
+    assert any("주차별 가용설비 CSV 양식" in caption.value for caption in app.caption)

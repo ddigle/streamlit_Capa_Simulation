@@ -1,5 +1,7 @@
 # Purpose: capacity standards page 관련 정상·예외·회귀 동작을 검증한다.
 
+from io import BytesIO
+
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 
@@ -12,6 +14,7 @@ import streamlit as st
 import capa_simulation
 import capa_simulation.components.grouped_monthly_table as grouped_table
 import capa_simulation.components.hierarchical_monthly_table as hierarchical_table
+import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
@@ -267,8 +270,25 @@ original_download_button = st.download_button
 
 def record_download_button(label, *args, **kwargs):
     downloads = st.session_state.setdefault("captured_downloads", {})
-    downloads[kwargs.get("key")] = {"label": label, "file_name": kwargs.get("file_name")}
+    downloads[kwargs.get("key")] = {
+        "label": label,
+        "file_name": kwargs.get("file_name"),
+        # 내보낸 바이트는 위젯 proto 에 실리지 않는다. 파일이 원본 공정명인지 보려면
+        # 여기서 잡아 두는 수밖에 없다.
+        "data": kwargs.get("data"),
+    }
     return original_download_button(label, *args, **kwargs)
+
+
+# 화면 표기만 표시명으로 바꾼다. 페이지는 exec 로 새로 읽히므로 모듈 속성을 갈아끼우면
+# 페이지의 `from ... import get_process_labels` 가 이 가짜를 집는다.
+APPLY_RENAME = False
+original_get_process_labels = process_labels_module.get_process_labels
+if APPLY_RENAME:
+    renamed = process_labels_module.process_labels_from_rules(
+        pd.DataFrame([("Process-A", "가공")], columns=["공정", "표시명"]), 7
+    )
+    process_labels_module.get_process_labels = lambda: renamed
 
 
 # 제외 경로 테스트는 대당 Capa·소요대수·확보율을 실제로 돌려야 하므로 갈아끼우지 않는다.
@@ -329,6 +349,7 @@ finally:
     # 모듈 속성 교체는 프로세스 전역이다. 원복하지 않으면 같은 프로세스의 다른 테스트가
     # 가짜 확보율을 본다.
     simulation_cache.get_securement_rate = original_securement_rate
+    process_labels_module.get_process_labels = original_get_process_labels
     st.download_button = original_download_button
 """
 
@@ -370,6 +391,18 @@ TWO_PROCESS_TEST_SCRIPT = (
     .replace('"test-capacity-standards-page"', '"test-capacity-two-process-page"')
 )
 
+
+def _renamed(script: str) -> str:
+    """같은 픽스처를 공정 표시명 프로필이 있는 상태로 연다."""
+    return script.replace("APPLY_RENAME = False", "APPLY_RENAME = True")
+
+
+RENAMED_TEST_SCRIPT = _renamed(TEST_SCRIPT)
+RENAMED_TWO_PROCESS_TEST_SCRIPT = _renamed(TWO_PROCESS_TEST_SCRIPT)
+RENAMED_PROCESS_TEST_SCRIPT = _renamed(PROCESS_TEST_SCRIPT)
+RENAMED_EXCLUSION_TEST_SCRIPT = _renamed(EXCLUSION_TEST_SCRIPT)
+RENAMED_EXCLUSION_PROCESS_TEST_SCRIPT = _renamed(EXCLUSION_PROCESS_TEST_SCRIPT)
+
 STEP_VIEW = "STEP별 대당 Capa"
 STEP_VIEW_HINT = (
     "STEP별 대당 Capa는 선택한 공정만 그립니다. 위 공정 필터에서 공정을 선택하세요. "
@@ -390,6 +423,24 @@ def _download(app: AppTest, key: str) -> dict[str, str]:
     assert key in labels, f"CSV 다운로드 버튼이 없습니다: {sorted(labels)}"
     captured = app.session_state["captured_downloads"][key]
     return {"label": labels[key], "file_name": captured["file_name"]}
+
+
+def _download_bytes(app: AppTest, key: str) -> bytes:
+    """`render_csv_download` 가 실제로 내보낸 바이트. 파일은 언제나 원본 공정명이다."""
+    captured = app.session_state["captured_downloads"]
+    assert key in captured, f"CSV 다운로드 버튼이 없습니다: {sorted(captured)}"
+    return bytes(captured[key]["data"])
+
+
+def _download_frame(app: AppTest, key: str) -> pd.DataFrame:
+    return pd.read_csv(BytesIO(_download_bytes(app, key)), encoding="utf-8-sig", dtype="object")
+
+
+def _frame_with_column(app: AppTest, column: str) -> pd.DataFrame:
+    for frame in app.dataframe:
+        if column in getattr(frame.value, "columns", []):
+            return frame.value
+    raise AssertionError(f"`{column}` 컬럼이 있는 표가 없습니다.")
 
 
 def _exclusion_frame(app: AppTest, reason: str) -> pd.DataFrame:
@@ -715,3 +766,126 @@ def test_unfiltered_editor_apply_saves_the_same_rows_as_before() -> None:
         "Process-A": 20.0,
         "Process-B": 31.0,
     }
+
+
+# ------------------------------------------------- 화면은 표시명, 파일은 원본
+
+
+def test_capacity_exclusion_table_shows_the_display_name_while_its_csv_keeps_the_original() -> None:
+    """제외 안내 목록은 화면 프레임과 CSV 프레임이 갈라져 있다."""
+    app = AppTest.from_string(RENAMED_EXCLUSION_TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    excluded = _exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)
+    assert set(excluded["공정"]) == {"가공"}
+
+    exported = _download_frame(app, "download_unit_capacity_exclusions_csv")
+    assert set(exported["공정"]) == {"Process-A"}
+
+
+def test_process_securement_exclusion_csvs_keep_the_original_process_name() -> None:
+    """두 제외 목록 모두 화면은 표시명, 내려받는 파일은 원본이다."""
+    app = AppTest.from_string(RENAMED_EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert set(_exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)["공정"]) == {"가공"}
+    assert set(_exclusion_frame(app, MISSING_CAPACITY_REASON)["공정"]) == {"가공"}
+
+    for key in ("download_capacity_exclusions_csv", "download_required_exclusions_csv"):
+        assert set(_download_frame(app, key)["공정"]) == {"Process-A"}, key
+
+
+def test_exclusion_tables_stay_original_without_a_rename_profile() -> None:
+    """매핑이 비어 있으면 화면에도 원본 공정명이 그대로 보인다."""
+    app = AppTest.from_string(EXCLUSION_TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert set(_exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)["공정"]) == {"Process-A"}
+
+
+def test_step_summary_and_route_selector_show_the_display_name() -> None:
+    """STEP 구성 요약 표와 복제·삭제 대상 선택 라벨도 화면이라 표시명을 쓴다."""
+    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60)
+    app.session_state["capacity_standards_active_tab"] = "STEP 구성"
+    app.run()
+
+    assert not app.exception
+    summary = _frame_with_column(app, "STEP 수")
+    assert set(summary["공정"]) == {"가공"}
+    assert all(
+        option.startswith("가공 · ") for option in app.selectbox(key="capacity_step_route").options
+    )
+
+
+def test_step_route_selection_still_edits_the_original_process() -> None:
+    """선택 라벨이 표시명이어도 STEP 복제는 원본 경로에 그대로 적용된다."""
+    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
+
+    new_mcp = next(widget for widget in app.text_input if widget.label == "신규 MCP_SEQ")
+    app = new_mcp.set_value("2A").run()
+    new_step = next(widget for widget in app.text_input if widget.label == "신규 STEP_SEQ")
+    app = new_step.set_value("P200").run()
+    add_button = next(button for button in app.button if button.label == "STEP 일괄 추가")
+    app = add_button.click().run()
+
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_REQB"]
+    assert set(saved["공정"]) == {"Process-A"}
+
+
+def test_equipment_count_table_shows_the_display_name_while_its_paste_form_stays_original() -> None:
+    """설비대수 조회 표는 표시명이고, 같은 탭의 왕복 양식은 원본 공정명이다."""
+    app = AppTest.from_string(RENAMED_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["process_securement_active_tab"] = "설비대수"
+    app.run()
+
+    assert not app.exception
+    assert set(_frame_with_column(app, "공정")["공정"]) == {"가공"}
+    assert app.multiselect(key="equipment_count_filter_공정").options == ["가공"]
+    for table_name in ("rq_eqp_own", "rq_eqp_lent", "rq_eqp_avbl"):
+        exported = _download_frame(app, f"{table_name}_csv_download")
+        assert exported["공정"].tolist() == ["Process-A"], table_name
+
+
+def test_equipment_count_filter_keeps_the_original_selection_value() -> None:
+    """필터 표기만 표시명이다. 선택값이 표시명이면 `isin` 이 원본과 맞지 않아 표가 빈다."""
+    app = AppTest.from_string(RENAMED_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["process_securement_active_tab"] = "설비대수"
+    app.run()
+    app.multiselect(key="equipment_count_filter_공정").select("가공")
+    app.run()
+
+    assert not app.exception
+    assert app.session_state["equipment_count_filter_공정"] == ["Process-A"]
+    assert set(_frame_with_column(app, "공정")["공정"]) == {"가공"}
+
+
+def test_month_editor_shows_the_label_but_returns_the_original_process() -> None:
+    """편집기 분류 컬럼의 값은 원본이다. 되머지 키와 저장값이 여기 걸린다."""
+    app = AppTest.from_string(RENAMED_TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["capacity_standards_active_tab"] = "일수"
+    app.run()
+    assert not app.exception
+
+    editor = next(frame for frame in app.dataframe if "RUN_DAY" not in frame.value.columns)
+    assert editor.value["공정"].tolist() == ["Process-A", "Process-B"]
+
+    app = _edit_and_apply(app, "capa_run_day_editor", "202608", 20.0)
+
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_RUN_DAY"]
+    assert dict(zip(saved["공정"], saved["RUN_DAY"], strict=True)) == {
+        "Process-A": 20.0,
+        "Process-B": 31.0,
+    }
+
+
+def test_month_editor_paste_template_keeps_the_original_process_name() -> None:
+    """편집기 아래 왕복 양식은 표시명이 닿으면 안 되는 첫 번째 자리다."""
+    app = AppTest.from_string(RENAMED_TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["capacity_standards_active_tab"] = "일수"
+    app.run()
+
+    assert not app.exception
+    exported = _download_frame(app, "capa_run_day_editor_csv_download")
+    assert exported["공정"].tolist() == ["Process-A", "Process-B"]

@@ -4,6 +4,7 @@
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.exclusion_table import render_exclusion_table
 from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
@@ -17,7 +18,7 @@ from capa_simulation.components.reference_csv_tools import (
 )
 from capa_simulation.components.scenario_edit_bar import render_scenario_edit_bar
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
-from capa_simulation.components.table_toolbar import render_csv_download, render_table_heading
+from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     load_page_context,
@@ -278,16 +279,20 @@ with tabs[1]:
     # 요약 표는 그림이라 숨은 탭에서는 건너뛴다. 아래 작업·경로 선택과 form 은 위젯이라
     # 항상 그린다 — 본문을 통째로 건너뛰면 탭을 오갈 때 선택값이 초기화된다.
     if not tab_is_hidden(tabs[1]):
+        # `step_summary` 는 캐시된 프레임이다. 제자리에서 고치면 다음 rerun 이 표시명 프레임을
+        # 계산 입력으로 받으므로 화면 복사본에만 표시명을 입힌다.
+        displayed_step_summary = step_summary.rename(
+            columns={
+                "생산계획년월": "월",
+                "Area_Name": "Area",
+                "양산구분": "양산",
+                "제품정보": "제품",
+                "WF 구분": "속성",
+            }
+        ).copy()
+        displayed_step_summary["공정"] = process_labels.series(displayed_step_summary["공정"])
         st.dataframe(
-            step_summary.rename(
-                columns={
-                    "생산계획년월": "월",
-                    "Area_Name": "Area",
-                    "양산구분": "양산",
-                    "제품정보": "제품",
-                    "WF 구분": "속성",
-                }
-            ),
+            displayed_step_summary,
             hide_index=True,
             width="stretch",
             height=260,
@@ -314,9 +319,12 @@ with tabs[1]:
         route_options = list(range(len(step_catalog)))
 
         def route_label(index: int) -> str:
+            # 표시 문자열만 만든다. 선택값은 정수 인덱스이고 아래에서 다시 `step_catalog` 의
+            # 원본 행을 읽어 STEP 복제·삭제에 넘기므로 값 경로에는 표시명이 닿지 않는다.
             row = step_catalog.iloc[index]
             return (
-                f"{row['공정']} · {row['제품정보']} · {row['Stack']} · {row['WF 구분']} · "
+                f"{process_labels.label(row['공정'])} · {row['제품정보']} · "
+                f"{row['Stack']} · {row['WF 구분']} · "
                 f"{row['Area_Name']} · {row['소요기준']} · "
                 f"MCP {row['MCP_SEQ']} / STEP {row['STEP_SEQ']} · {row['적용월수']}개월"
             )
@@ -642,26 +650,19 @@ with unit_capacity_tab:
     if not excluded_capacity_rows.empty:
         st.warning(f"대당 Capa 산출에서 {len(excluded_capacity_rows):,}개 기준을 제외했습니다.")
         with st.expander("제외 기준정보 확인", expanded=False):
-            displayed_exclusions, _ = reorder_display_columns(
+            render_exclusion_table(
                 excluded_capacity_rows,
-                [
-                    column
-                    for column in UNIT_CAPACITY_DIMENSIONS
-                    if column in excluded_capacity_rows.columns
-                ],
-                display_order,
-                "공정별 Capa",
-                "대당 Capa",
-            )
-            render_csv_download(
-                data=displayed_exclusions.to_csv(index=False).encode("utf-8-sig"),
+                dimensions=UNIT_CAPACITY_DIMENSIONS,
+                display_order=display_order,
+                page="공정별 Capa",
+                tab="대당 Capa",
+                labels=process_labels,
                 file_name=(
                     "Capa_Unit_Capacity_Exclusions_"
                     f"{effective_start_month}_{effective_end_month}.csv"
                 ),
                 key="download_unit_capacity_exclusions_csv",
             )
-            st.dataframe(displayed_exclusions, hide_index=True, width="stretch")
 
     with st.container(border=True):
         view_column, level_column, process_column = st.columns([1.4, 1, 2])

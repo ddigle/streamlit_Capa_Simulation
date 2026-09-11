@@ -133,6 +133,18 @@ def test_static_capa_shortfall_csv_never_takes_display_names() -> None:
     assert not exported_frames & labelled
 
 
+def test_bigdataquery_conflict_preview_labels_only_the_screen_copy() -> None:
+    """충돌 보고서는 세션에 담긴 한 객체를 CSV 와 화면이 함께 쓴다. 복사본에만 입힌다."""
+    source = (
+        PROJECT_ROOT / "src/capa_simulation/components/bigdataquery_registration.py"
+    ).read_text(encoding="utf-8")
+    body = source.split("def _render_reference_conflict_report()")[1]
+
+    assert "reference_conflicts_to_csv(report)" in body
+    assert "displayed = report.copy()" in body
+    assert "st.dataframe(displayed" in body
+
+
 def test_round_trip_paste_templates_keep_the_original_process_name() -> None:
     """왕복 CSV·클립보드 양식은 다시 DB 로 들어간다. 여기에 표시명이 새면 안 된다."""
     from capa_simulation.components.reference_csv_tools import (
@@ -159,7 +171,6 @@ def test_display_order_and_equipment_paths_never_see_display_names() -> None:
         "src/capa_simulation/persistence/equipment_repository.py",
         "app_pages/available_equipment_status.py",
         "app_pages/space_status.py",
-        "src/capa_simulation/components/month_editor.py",
         "src/capa_simulation/components/reference_csv_tools.py",
         "src/capa_simulation/components/display_order_management.py",
     ]
@@ -409,3 +420,100 @@ def test_saving_a_rename_does_not_clear_the_revision_snapshot_cache() -> None:
 
     assert "_load_global_process_rename_payload.clear()" in body
     assert "_load_scenario_snapshot_payload" not in body
+
+
+# ------------------------------------------- 편집기는 값은 원본, 표시만 표시명
+
+
+def test_month_editor_dimension_uses_a_selectbox_that_splits_value_and_label() -> None:
+    """`SelectboxColumn` 은 옵션의 `value` 와 `label` 을 나눠 갖는다.
+
+    셀에 그려지는 것은 `label`, 편집 결과·복사 데이터로 돌아오는 것은 `value` 다. 그래서
+    분류 컬럼의 값이 원본으로 남고 `merge_edited_months` 의 되머지 키가 어긋나지 않는다.
+    """
+    from capa_simulation.components.month_editor import _dimension_column_config
+
+    config = _dimension_column_config(_monthly_frame(), ["공정"], LABELS.value_labels())
+    type_config = config["공정"]["type_config"]
+
+    assert type_config["type"] == "selectbox"
+    assert type_config["options"] == [
+        {"value": "SAW", "label": "절단"},
+        {"value": "MOLD", "label": "MOLD"},
+    ]
+
+
+def test_month_editor_dimension_stays_a_text_column_without_a_mapping() -> None:
+    """매핑이 없는 컬럼은 `TextColumn` 이라 원본 공정명이 그대로 보인다."""
+    from capa_simulation.components.month_editor import _dimension_column_config
+
+    config = _dimension_column_config(_monthly_frame(), ["공정"], None)
+
+    assert config["공정"]["type_config"]["type"] == "text"
+    assert config["공정"]["alignment"] == "center"
+
+
+def test_month_editor_selectbox_options_cover_every_value_in_the_table() -> None:
+    """옵션에 없는 값은 셀이 빈칸으로 그려진다. 표의 값 전체가 옵션이어야 한다."""
+    from capa_simulation.components.month_editor import _dimension_column_config
+
+    frame = _monthly_frame()
+    config = _dimension_column_config(frame, ["공정"], LABELS.value_labels())
+    values = {option["value"] for option in config["공정"]["type_config"]["options"]}
+
+    assert values == set(frame["공정"])
+
+
+def test_home_process_dialog_uses_one_selectbox_column_with_original_values() -> None:
+    """HOME 의 B/N 공정 선택도 월별 편집기와 같은 한 컬럼 표기다.
+
+    값은 원본 `공정` 이어야 한다. 선택값이 세션·프리셋에 저장되고 `isin` 대조에 쓰이므로
+    표시명이 들어가면 대시보드가 오류 없이 텅 빈다.
+    """
+    tree = ast.parse(HOME_PAGE.read_text(encoding="utf-8"))
+    function = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "show_process_filter_dialog"
+    )
+    body = ast.unparse(function)
+
+    assert "st.column_config.SelectboxColumn" in body
+    assert "format_func=process_labels.format_func()" in body
+    # 표시명 전용 컬럼을 따로 만들면 편집기 두 벌의 표기가 갈린다.
+    assert "'표시명'" not in body
+    assert "edited_selection.loc[included_mask, '공정']" in body
+
+
+# ------------------------------------------- Dynamic Capa Figure 는 표시명을 쓴다
+
+
+def _process_summary() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "공정": ["SAW", "MOLD"],
+            "상태": ["정상", "개선 필요"],
+            "Capa 실현률": [0.95, 0.70],
+            "설비 성능 실현률": [0.98, 0.80],
+        }
+    )
+
+
+def test_dynamic_capacity_comparison_axis_shows_the_display_name() -> None:
+    from capa_simulation.components.dynamic_capacity_dashboard import (
+        build_process_comparison_figure,
+    )
+
+    figure = build_process_comparison_figure(_process_summary(), process_labels=LABELS)
+
+    assert [str(value) for value in figure.data[0].y] == ["MOLD", "절단"]
+
+
+def test_dynamic_capacity_comparison_axis_stays_original_without_labels() -> None:
+    from capa_simulation.components.dynamic_capacity_dashboard import (
+        build_process_comparison_figure,
+    )
+
+    figure = build_process_comparison_figure(_process_summary())
+
+    assert [str(value) for value in figure.data[0].y] == ["MOLD", "SAW"]

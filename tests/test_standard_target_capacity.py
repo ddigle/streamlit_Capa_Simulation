@@ -355,3 +355,32 @@ def test_availability_rejects_duplicate_process_week() -> None:
 
     with pytest.raises(ValueError, match="중복"):
         prepare_weekly_availability(source)
+
+
+def test_availability_rejects_a_process_outside_the_known_list() -> None:
+    """화면이 표시명을 그리므로 그 이름을 양식에 적어 붙여넣는 실수가 여기서 막혀야 한다."""
+    source = pd.DataFrame(
+        {
+            "공정": ["Process-A", "절단"],
+            "Weeknum": ["26-W32", "26-W32"],
+            "가용대수": [1.0, 2.0],
+        }
+    )
+
+    with pytest.raises(ValueError, match="보유하지 않은 공정"):
+        prepare_weekly_availability(source, known_processes=["Process-A", "Process-B"])
+
+
+def test_availability_without_a_known_list_accepts_any_process() -> None:
+    """저장된 값을 되읽는 경로는 목록을 넘기지 않는다. 막으면 화면이 열리지 않는다."""
+    source = pd.DataFrame({"공정": ["절단"], "Weeknum": ["26-W32"], "가용대수": [1.0]})
+
+    assert prepare_weekly_availability(source)["공정"].tolist() == ["절단"]
+
+
+def test_availability_clipboard_passes_the_known_process_list_through() -> None:
+    with pytest.raises(ValueError, match="보유하지 않은 공정"):
+        parse_weekly_availability_clipboard(
+            "공정\tWeeknum\t가용대수\n절단\t26-W32\t2.5",
+            known_processes=["Process-A"],
+        )

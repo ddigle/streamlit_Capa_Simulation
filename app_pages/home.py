@@ -204,14 +204,16 @@ def show_process_filter_dialog(options: list[str]) -> None:
             key="dashboard_bottleneck_process_restore",
         )
 
-    # 이 선택 UI 는 `multiselect` 가 아니라 `data_editor` 라 `format_func` 가 없다. 표시명은
-    # 별도 컬럼으로 보여주기만 하고, 적용할 때 되쓰는 값은 반드시 원본 `공정` 컬럼이다.
+    # 분류 컬럼은 월별 편집기와 같은 모양이다 — `SelectboxColumn` 이 옵션의 `value` 와
+    # `label` 을 나눠 가져 셀에 보이는 글자만 표시명이 된다. 값은 반드시 원본 `공정` 이다.
     # 값을 표시명으로 바꾸면 아래 세션 되쓰기가 옵션에 없는 값을 만들어 대시보드가 오류
     # 없이 텅 빈다.
-    selection_columns: dict[str, list[object]] = {
-        "포함": [process in selected_set for process in options],
-        "공정": list(options),
-    }
+    selection_frame = pd.DataFrame(
+        {
+            "포함": [process in selected_set for process in options],
+            "공정": list(options),
+        }
+    )
     column_config: dict[str, Any] = {
         "포함": st.column_config.CheckboxColumn(
             "포함",
@@ -221,10 +223,13 @@ def show_process_filter_dialog(options: list[str]) -> None:
         "공정": st.column_config.TextColumn("공정", width="large"),
     }
     if process_labels:
-        selection_columns["표시명"] = [process_labels.label(process) for process in options]
-        column_config["공정"] = st.column_config.TextColumn("공정 (원본)", width="medium")
-        column_config["표시명"] = st.column_config.TextColumn("표시명", width="medium")
-    selection_frame = pd.DataFrame(selection_columns)
+        # 옵션에 없는 값은 셀이 빈칸으로 그려진다. 표의 값 전체를 옵션에 넣는다.
+        column_config["공정"] = st.column_config.SelectboxColumn(
+            "공정",
+            options=list(options),
+            format_func=process_labels.format_func(),
+            width="large",
+        )
     with st.form("dashboard_bottleneck_process_dialog_form", border=False):
         edited_selection = st.data_editor(
             selection_frame,

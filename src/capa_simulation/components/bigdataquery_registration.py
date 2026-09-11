@@ -21,6 +21,7 @@ from typing import Any, Final, cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.process_labels import PROCESS_COLUMN, get_process_labels
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
 from capa_simulation.io.bigdataquery_catalog import (
@@ -574,7 +575,12 @@ def _render_reference_conflict_report() -> None:
         label="RQ 업무 키 충돌 CSV 다운로드",
     )
     with st.expander("충돌 상세 미리보기"):
-        st.dataframe(report, hide_index=True, width="stretch")
+        # `report` 는 세션에 담아 둔 보고서이고 바로 위 CSV 가 같은 객체를 내보낸다.
+        # 화면 복사본에만 표시명을 입혀야 파일이 원본 공정명으로 남는다.
+        displayed = report.copy()
+        if PROCESS_COLUMN in displayed.columns:
+            displayed[PROCESS_COLUMN] = get_process_labels().series(displayed[PROCESS_COLUMN])
+        st.dataframe(displayed, hide_index=True, width="stretch")
 
 
 def _optional_datetime(value: str) -> datetime | None:

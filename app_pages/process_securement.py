@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.column_filter import render_column_filters
+from capa_simulation.components.exclusion_table import render_exclusion_table
 from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
@@ -16,7 +17,7 @@ from capa_simulation.components.reference_csv_tools import (
     render_reference_clipboard_tools,
 )
 from capa_simulation.components.tab_state import stateful_tabs
-from capa_simulation.components.table_toolbar import render_csv_download, render_table_heading
+from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -216,28 +217,17 @@ else:
                 f"0 이하 기준값으로 대당 Capa {len(capacity_exclusions):,}건을 제외했습니다."
             )
             with st.expander("제외된 대당 Capa 기준정보", expanded=False):
-                displayed_capacity_exclusions, _ = reorder_display_columns(
+                render_exclusion_table(
                     capacity_exclusions,
-                    [
-                        column
-                        for column in RESULT_DIMENSIONS
-                        if column in capacity_exclusions.columns
-                    ],
-                    display_order,
-                    "공정별 확보율",
-                    "소요대수",
-                )
-                render_csv_download(
-                    data=displayed_capacity_exclusions.to_csv(index=False).encode("utf-8-sig"),
+                    dimensions=RESULT_DIMENSIONS,
+                    display_order=display_order,
+                    page="공정별 확보율",
+                    tab="소요대수",
+                    labels=process_labels,
                     file_name=(
                         f"Capa_Unit_Capacity_Exclusions_{effective_start}_{effective_end}.csv"
                     ),
                     key="download_capacity_exclusions_csv",
-                )
-                st.dataframe(
-                    displayed_capacity_exclusions,
-                    hide_index=True,
-                    width="stretch",
                 )
         if not required_exclusions.empty:
             positive_load_exclusions = required_exclusions.loc[required_exclusions["부하량"].gt(0)]
@@ -247,28 +237,17 @@ else:
                 f" (부하량 발생 {len(positive_load_exclusions):,}건)."
             )
             with st.expander("소요대수 제외 기준정보", expanded=False):
-                displayed_required_exclusions, _ = reorder_display_columns(
+                render_exclusion_table(
                     required_exclusions,
-                    [
-                        column
-                        for column in RESULT_DIMENSIONS
-                        if column in required_exclusions.columns
-                    ],
-                    display_order,
-                    "공정별 확보율",
-                    "소요대수",
-                )
-                render_csv_download(
-                    data=displayed_required_exclusions.to_csv(index=False).encode("utf-8-sig"),
+                    dimensions=RESULT_DIMENSIONS,
+                    display_order=display_order,
+                    page="공정별 확보율",
+                    tab="소요대수",
+                    labels=process_labels,
                     file_name=(
                         f"Capa_Required_Equipment_Exclusions_{effective_start}_{effective_end}.csv"
                     ),
                     key="download_required_exclusions_csv",
-                )
-                st.dataframe(
-                    displayed_required_exclusions,
-                    hide_index=True,
-                    width="stretch",
                 )
         st.caption("월간 소요대수 (부하량 ÷ 대당 Capa)")
         show_detail = st.toggle(
@@ -395,6 +374,7 @@ else:
             equipment_table,
             equipment_dimensions,
             key_prefix="equipment_count_filter",
+            value_labels=process_labels.value_labels(),
         )
         equipment_month_columns = [
             column for column in equipment_table.columns if column not in equipment_dimensions
@@ -403,6 +383,10 @@ else:
         displayed_equipment_table[equipment_month_columns] = displayed_equipment_table[
             equipment_month_columns
         ].mask(displayed_equipment_table[equipment_month_columns].eq(0))
+        # 필터를 먼저 걸고 그 뒤에 표시명을 입힌다. 순서가 바뀌면 위 `isin` 이 원본 컬럼과
+        # 맞지 않는다. 같은 탭의 왕복 양식은 `equipment_edit_tables` 라는 별도 프레임이라
+        # 이 복사본이 붙여넣기 경로에 닿지 않는다.
+        displayed_equipment_table["공정"] = process_labels.series(displayed_equipment_table["공정"])
         styled_equipment_table = displayed_equipment_table.style.set_properties(
             subset=pd.Index(equipment_dimensions),
             **{"background-color": tokens.SURFACE_CLASSIFICATION},

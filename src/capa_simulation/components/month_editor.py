@@ -12,6 +12,12 @@
 
 되머지가 정확한 근거는 `num_rows="fixed"` 와 `disabled=dimensions` 다. 행 추가·삭제가
 불가능하고 분류 컬럼도 잠겨 있어 사용자가 바꿀 수 있는 것은 월 컬럼 숫자뿐이다.
+
+**분류 컬럼의 값은 언제나 원본이다.** 표시명이 지정된 컬럼은 `SelectboxColumn` 으로 그려
+셀에 보이는 글자만 바꾼다. 그 컬럼 설정은 옵션의 `value` 와 `label` 을 나눠 갖고 편집
+결과·복사 데이터로는 `value` 를 돌려주므로 아래 되머지 키와 왕복 CSV 가 원본으로 남는다.
+값 자체를 표시명으로 갈면 되머지 키가 어긋나 편집이 조용히 버려지고, 필터를 걸지 않은
+단축 반환 경로에서는 표시명이 그대로 `RQ_*` 저장값이 된다.
 """
 
 from __future__ import annotations
@@ -20,9 +26,11 @@ from collections.abc import Mapping
 
 import pandas as pd
 import streamlit as st
+from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation.components.column_filter import render_column_filters
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
+from capa_simulation.components.process_labels import ProcessLabelFormatter
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_tools
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
@@ -34,6 +42,16 @@ FILTER_NOTICE = (
     "필터를 바꾸면 아직 적용하지 않은 편집은 사라지고, 다른 탭으로 옮기면 필터 선택도 "
     "초기화됩니다."
 )
+# 화면은 표시명이지만 아래 CSV 양식과 붙여넣기 검증은 원본 공정명 계약이다. 화면 이름을
+# 그대로 적어 붙여넣으면 분류 행 대조에서 막히므로 그 사실을 표 아래에 적는다.
+RENAME_NOTICE = (
+    "분류 컬럼은 화면 표시명으로 보입니다. CSV 양식과 붙여넣기는 원본 공정명 계약이므로 "
+    "양식을 내려받아 그 이름 그대로 수정하세요."
+)
+# 표시명을 그리는 분류 컬럼의 폭 한계. `SelectboxColumn` 은 원본 값으로 폭을 재므로
+# 표시명이 더 길면 잘린다.
+DIMENSION_MIN_WIDTH_PX = 110
+DIMENSION_MAX_WIDTH_PX = 280
 
 
 def render_month_editor(
@@ -71,14 +89,7 @@ def render_month_editor(
             num_rows="fixed",
             disabled=dimensions,
             column_config={
-                **{
-                    column: st.column_config.TextColumn(
-                        COLUMN_LABELS.get(column, column),
-                        alignment="center",
-                        pinned=True,
-                    )
-                    for column in dimensions
-                },
+                **_dimension_column_config(default_table, dimensions, value_labels),
                 **{
                     month: st.column_config.NumberColumn(
                         month,
@@ -99,6 +110,8 @@ def render_month_editor(
             key=f"{editor_key}_apply",
             type="primary",
         )
+        if _has_display_labels(dimensions, value_labels):
+            st.caption(RENAME_NOTICE)
         # 왕복 CSV·붙여넣기는 전체 표 계약이다. 여기에 걸러진 표를 넘기면 양식이 부분 표가
         # 되고, 그 부분 표는 검증을 통과해 나머지 공정을 조회기간에서 지운다.
         imported = render_reference_clipboard_tools(
@@ -113,6 +126,49 @@ def render_month_editor(
         submitted,
         imported,
     )
+
+
+def _has_display_labels(
+    dimensions: list[str],
+    value_labels: Mapping[str, Mapping[str, str]] | None,
+) -> bool:
+    return any((value_labels or {}).get(column) for column in dimensions)
+
+
+def _dimension_column_config(
+    default_table: pd.DataFrame,
+    dimensions: list[str],
+    value_labels: Mapping[str, Mapping[str, str]] | None,
+) -> dict[str, ColumnConfig]:
+    """분류 컬럼의 `column_config`. 표시명이 있는 컬럼만 `SelectboxColumn` 으로 그린다.
+
+    매핑이 없는 컬럼은 `TextColumn` 으로 원본 값을 그대로 그린다. `SelectboxColumn` 에는
+    `alignment` 가 없어 그 컬럼만 가운데 정렬이 아니며, 열 폭은 표시명이 아니라 원본 값으로
+    재므로 명시 폭을 준다.
+    """
+    config: dict[str, ColumnConfig] = {}
+    for column in dimensions:
+        title = COLUMN_LABELS.get(column, column)
+        labels = (value_labels or {}).get(column)
+        if not labels or column not in default_table.columns:
+            config[column] = st.column_config.TextColumn(
+                title,
+                alignment="center",
+                pinned=True,
+            )
+            continue
+        # 셀 값이 옵션에 없으면 빈칸으로 그려진다. 표에 나오는 값 전체를 옵션에 넣는다.
+        options = default_table[column].dropna().drop_duplicates().tolist()
+        formatter = ProcessLabelFormatter(labels)
+        longest = max((len(formatter(option)) for option in options), default=0)
+        config[column] = st.column_config.SelectboxColumn(
+            title,
+            options=options,
+            format_func=formatter,
+            pinned=True,
+            width=min(DIMENSION_MAX_WIDTH_PX, max(DIMENSION_MIN_WIDTH_PX, 13 * longest)),
+        )
+    return config
 
 
 def merge_edited_months(

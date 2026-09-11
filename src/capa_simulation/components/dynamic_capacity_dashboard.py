@@ -7,13 +7,22 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
 from capa_simulation.services.dynamic_capacity import aggregate_dynamic_capacity
 
 
-def build_process_comparison_figure(process_summary: pd.DataFrame) -> go.Figure:
-    """Compare equipment performance and Capa realization for every process."""
+def build_process_comparison_figure(
+    process_summary: pd.DataFrame,
+    *,
+    process_labels: ProcessLabels | None = None,
+) -> go.Figure:
+    """Compare equipment performance and Capa realization for every process.
+
+    `process_labels` 는 y축 카테고리 표기에만 쓴다. 정렬·색·값은 원본 프레임 그대로다.
+    """
     prepared = process_summary.sort_values("Capa 실현률", ascending=True, kind="stable")
+    axis_processes = process_labels.series(prepared["공정"]) if process_labels else prepared["공정"]
     colors = prepared["상태"].map(
         {
             "정상": tokens.STATUS_SECURE,
@@ -25,7 +34,7 @@ def build_process_comparison_figure(process_summary: pd.DataFrame) -> go.Figure:
     figure.add_trace(
         go.Bar(
             name="설비 성능 실현률",
-            y=prepared["공정"],
+            y=axis_processes,
             x=prepared["설비 성능 실현률"],
             orientation="h",
             marker={"color": tokens.SERIES_EFFECTIVE},
@@ -39,7 +48,7 @@ def build_process_comparison_figure(process_summary: pd.DataFrame) -> go.Figure:
     figure.add_trace(
         go.Bar(
             name="Capa 실현률",
-            y=prepared["공정"],
+            y=axis_processes,
             x=prepared["Capa 실현률"],
             orientation="h",
             marker={"color": colors, "line": {"color": tokens.SERIES_STANDARD, "width": 1}},

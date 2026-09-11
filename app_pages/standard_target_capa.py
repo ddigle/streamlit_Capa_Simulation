@@ -33,9 +33,18 @@ from capa_simulation.page_bootstrap import (
     resolve_effective_months,
 )
 from capa_simulation.persistence.equipment_cache import get_equipment_repository
+from capa_simulation.persistence.models import (
+    DEFAULT_STANDARD_TARGET_DETAIL_LEVEL,
+    DEFAULT_STANDARD_TARGET_OUTPUT_METRIC,
+)
 from capa_simulation.scenario_preset_state import (
+    STANDARD_TARGET_DETAIL_LEVEL_KEY,
+    STANDARD_TARGET_END_DATE_KEY,
+    STANDARD_TARGET_OUTPUT_METRIC_KEY,
     STANDARD_TARGET_PROCESS_DEFAULT_KEY,
     STANDARD_TARGET_PROCESS_SELECTION_KEY,
+    STANDARD_TARGET_SHOW_DETAIL_KEY,
+    STANDARD_TARGET_START_DATE_KEY,
 )
 from capa_simulation.scenario_state import (
     scenario_month_table,
@@ -66,12 +75,12 @@ from capa_simulation.services.weekly_availability_input import (
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
-START_DATE_KEY = "standard_target_start_date"
-END_DATE_KEY = "standard_target_end_date"
+START_DATE_KEY = STANDARD_TARGET_START_DATE_KEY
+END_DATE_KEY = STANDARD_TARGET_END_DATE_KEY
 PROCESS_FILTER_KEY = STANDARD_TARGET_PROCESS_SELECTION_KEY
-SHOW_DETAIL_KEY = "standard_target_show_detail"
-DETAIL_LEVEL_KEY = "standard_target_detail_level"
-OUTPUT_METRIC_KEY = "standard_target_output_metric"
+SHOW_DETAIL_KEY = STANDARD_TARGET_SHOW_DETAIL_KEY
+DETAIL_LEVEL_KEY = STANDARD_TARGET_DETAIL_LEVEL_KEY
+OUTPUT_METRIC_KEY = STANDARD_TARGET_OUTPUT_METRIC_KEY
 PKG_BASIS_KEY = "standard_target_pkg_basis"
 
 DETAIL_LEVEL_LABELS = {
@@ -107,12 +116,19 @@ def _last_day(month: int) -> date:
     return date(year, month_number, monthrange(year, month_number)[1])
 
 
-def _initialize_date_state(key: str, default: date, lower: date, upper: date) -> None:
+def _initialize_date_state(key: str, default: date, lower: date, upper: date) -> bool:
+    """리비전이 저장한 조회일을 현재 조회기간 안으로 맞추고 조정 여부를 알린다.
+
+    사이드바 조회기간을 좁힌 뒤 과거 리비전을 열면 저장된 날짜가 범위 밖이 된다.
+    그대로 두면 `st.date_input` 이 예외를 던져 페이지가 열리지 않으므로 잘라 넣는다.
+    """
     saved = st.session_state.get(key)
     if not isinstance(saved, date):
         st.session_state[key] = default
-        return
-    st.session_state[key] = min(max(saved, lower), upper)
+        return False
+    clamped = min(max(saved, lower), upper)
+    st.session_state[key] = clamped
+    return clamped != saved
 
 
 def _ordered_text_options(values: pd.Series) -> list[str]:
@@ -424,7 +440,8 @@ def _render_logic_analysis(
     )
 
 
-def _render_standard_target_exceptions(excluded_row_count: int) -> None:
+def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessLabels) -> None:
+    # 순수 표시 상수를 그리는 안내 표다. CSV 출구가 없어 표시명을 바로 입힌다.
     with st.expander("예외 처리 공정", expanded=False):
         st.caption(
             "아래 규칙은 표준 목표 Capa의 공정 유효 Capa와 로직 분석에만 적용됩니다. "
@@ -434,7 +451,7 @@ def _render_standard_target_exceptions(excluded_row_count: int) -> None:
             pd.DataFrame(
                 [
                     {
-                        "공정": process,
+                        "공정": labels.label(process),
                         "제외 대상": "WF 구분 = Dummy",
                         "적용 내용": (
                             "Dummy 부하량과 STEP 소요대수를 제품 Mix 가중 분자·분모에서 제외"
@@ -483,10 +500,29 @@ minimum_date = _first_day(effective_start_month)
 maximum_date = _last_day(effective_end_month)
 default_start_date = _first_day(effective_start_month)
 default_end_date = _last_day(effective_end_month)
-_initialize_date_state(START_DATE_KEY, default_start_date, minimum_date, maximum_date)
-_initialize_date_state(END_DATE_KEY, default_end_date, minimum_date, maximum_date)
+date_clamped = _initialize_date_state(
+    START_DATE_KEY, default_start_date, minimum_date, maximum_date
+)
+date_clamped |= _initialize_date_state(END_DATE_KEY, default_end_date, minimum_date, maximum_date)
+date_reordered = False
 if st.session_state[START_DATE_KEY] > st.session_state[END_DATE_KEY]:
     st.session_state[END_DATE_KEY] = st.session_state[START_DATE_KEY]
+    date_reordered = True
+
+# 저장된 선택지 문자열이 현재 옵션에 없으면 위젯 생성이 실패한다. 옵션은 화면이 소유하므로
+# 검증도 여기서 한다. 상세 토글이 꺼져 위젯이 없는 실행에서도 세션값을 정상으로 유지한다.
+if st.session_state.get(OUTPUT_METRIC_KEY) == "일 최대 투입 가능량":
+    st.session_state[OUTPUT_METRIC_KEY] = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
+if st.session_state.get(OUTPUT_METRIC_KEY) not in (*OUTPUT_OPTIONS, None):
+    st.session_state[OUTPUT_METRIC_KEY] = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
+if OUTPUT_METRIC_KEY not in st.session_state:
+    # 위젯에 `default=` 를 함께 주면 세션 키와 충돌해 Streamlit 이 경고를 내고
+    # 리비전에서 복원한 값을 첫 렌더에 되돌린다. 기본값은 여기서만 심는다.
+    st.session_state[OUTPUT_METRIC_KEY] = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
+if st.session_state.get(DETAIL_LEVEL_KEY) not in DETAIL_LEVEL_LABELS:
+    st.session_state[DETAIL_LEVEL_KEY] = DEFAULT_STANDARD_TARGET_DETAIL_LEVEL
+if not isinstance(st.session_state.get(SHOW_DETAIL_KEY), bool):
+    st.session_state[SHOW_DETAIL_KEY] = False
 
 with st.container(border=True):
     st.markdown("#### :material/tune: 조회·집계 설정")
@@ -526,6 +562,17 @@ with st.container(border=True):
             )
         else:
             detail_level = "공정"
+    if date_clamped:
+        st.caption(
+            ":orange-badge[조정됨] 조회일이 현재 조회기간 밖이라 "
+            f"{minimum_date:%Y-%m-%d} ~ {maximum_date:%Y-%m-%d} 안으로 맞췄습니다."
+        )
+    if date_reordered:
+        st.caption(":orange-badge[조정됨] 시작일이 종료일보다 늦어 종료일을 시작일에 맞췄습니다.")
+    st.caption(
+        "조회·집계 설정 변경은 현재 사용자 세션에만 적용됩니다. 현재 설정은 신규 리비전을 "
+        "저장할 때 다음 공용 기본값으로 보존됩니다."
+    )
     if start_date > end_date:
         st.error("시작일은 종료일보다 늦을 수 없습니다.")
         st.stop()
@@ -666,14 +713,20 @@ with st.container(border=True):
         else:
             try:
                 availability = equipment_repository.save_standard_target_availability(
-                    parse_weekly_availability_clipboard(clipboard_text)
+                    # 보유 공정 목록은 이 화면이 소유한다. 표시명을 그대로 적어 붙여넣거나
+                    # 오타가 난 공정은 여기서 막지 않으면 아무 계산에도 붙지 않는 행으로
+                    # 조용히 저장된다. 필터와 무관하게 전체 공정을 허용한다.
+                    parse_weekly_availability_clipboard(
+                        clipboard_text,
+                        known_processes=process_options,
+                    )
                 )
             except BOOTSTRAP_ERRORS as exc:
                 st.error(bootstrap_error_message(exc))
             else:
                 st.success("주차별 가용설비 최신본을 저장했습니다. 서버를 재시작해도 유지됩니다.")
 
-_render_standard_target_exceptions(standard_target_exception_rows)
+_render_standard_target_exceptions(standard_target_exception_rows, process_labels)
 
 if availability.empty:
     with weekly_output_container:
@@ -687,18 +740,15 @@ if selected_processes:
         required_equipment["공정"].isin(selected_processes)
     ].reset_index(drop=True)
 
-if st.session_state.get(OUTPUT_METRIC_KEY) == "일 최대 투입 가능량":
-    st.session_state[OUTPUT_METRIC_KEY] = "일 표준 가능량"
 with weekly_output_container:
     output_metric = st.segmented_control(
         "표시 항목",
         options=OUTPUT_OPTIONS,
-        default="일 표준 가능량",
         key=OUTPUT_METRIC_KEY,
         persist_state="session",
     )
     if output_metric is None:
-        output_metric = "일 표준 가능량"
+        output_metric = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
 
 if output_metric == "로직 분석":
     with weekly_output_container:
@@ -740,7 +790,17 @@ else:
                 "결과를 빈칸으로 표시합니다."
             )
             with st.expander("누락 공정·주차 확인", expanded=False):
-                st.dataframe(missing_availability, hide_index=True, width="stretch")
+                displayed_missing = missing_availability.copy()
+                displayed_missing["공정"] = process_labels.series(displayed_missing["공정"])
+                if process_labels:
+                    # 이 표가 가리키는 입력은 위 `주차별 가용설비 CSV 양식`이고 그 양식과
+                    # 붙여넣기 파서는 원본 공정명을 요구한다. 화면 이름을 그대로 적어
+                    # 붙여넣지 않도록 여기서 알린다.
+                    st.caption(
+                        "공정은 화면 표시명입니다. 붙여넣기에 쓸 원본 공정명은 위 "
+                        "`주차별 가용설비 CSV 양식`에서 확인하세요."
+                    )
+                st.dataframe(displayed_missing, hide_index=True, width="stretch")
 
     classification_columns = [
         "공정",
