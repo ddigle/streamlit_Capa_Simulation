@@ -45,6 +45,7 @@ from capa_simulation.services.dashboard import (
     DETAIL_DIMENSION_HEADERS,
     DETAIL_DIMENSION_WIDTHS,
     PRODUCTION_DETAIL_DIMENSIONS,
+    align_monthly_with_comparison,
 )
 
 # 상세 B/N 공정 시트가 보여줄 순위 상한. 페이지가 서비스에 넘기는 값이고, 자르는 곳은
@@ -184,6 +185,33 @@ def _value_gaps(
     return gaps if any(gaps) else None
 
 
+def _comparison_gaps(
+    current: pd.DataFrame,
+    comparison: pd.DataFrame | None,
+    column: str,
+    number_format: str,
+    *,
+    scale: float = 1.0,
+) -> list[str] | None:
+    """비교 시나리오 대비 증감. 비교에 그 달이 없으면 그 칸은 비운다.
+
+    없는 달을 0 으로 보면 전액 증가로 읽힌다. 비교 대상에 그 달이 없는 것과 그 달 계획이
+    0 인 것은 다른 이야기다.
+    """
+    if comparison is None or column not in current.columns:
+        return None
+    aligned = align_monthly_with_comparison(current, comparison, column)
+    differences = (
+        pd.to_numeric(aligned[column], errors="coerce")
+        - pd.to_numeric(aligned["비교값"], errors="coerce")
+    ) / scale
+    gaps = [
+        "" if pd.isna(value) or abs(value) < _GAP_EPSILON else number_format.format(value)
+        for value in differences
+    ]
+    return gaps if any(gaps) else None
+
+
 def _bottleneck_rate_labels(
     bottleneck_capacity: pd.DataFrame,
     baseline: pd.DataFrame | None,
@@ -229,6 +257,8 @@ def build_lob_summary_figures(
     warning_threshold: float,
     process_labels: ProcessLabels | None = None,
     baseline_lob_summary: pd.DataFrame | None = None,
+    comparison_density: pd.DataFrame | None = None,
+    comparison_wafer: pd.DataFrame | None = None,
 ) -> tuple[go.Figure, go.Figure]:
     """생산계획·Wafer Capa·Bottleneck 요약 Figure 한 쌍을 만든다.
 
@@ -236,13 +266,22 @@ def build_lob_summary_figures(
     월 위치 계산과 확보율 색 판정은 원본을 본다.
 
     `baseline_lob_summary` 는 선행 반영 **전**의 같은 요약이다. 주면 Density·Wafer 계획
-    칸에 증감을 작게 얹고 생산계획 LOB 에 기존 계획을 점선으로 함께 그린다. Wafer Capa 는
-    `계획 × 확보율` 이라 선행 전후가 정확히 같으므로 증감을 적지 않는다.
+    칸에 증감을 값 **위**에 작게 얹고 생산계획 LOB 에 기존 계획을 점선으로 함께 그린다.
+    Wafer Capa 는 `계획 × 확보율` 이라 선행 전후가 정확히 같으므로 증감을 적지 않는다.
+
+    `comparison_density`·`comparison_wafer` 는 비교 시나리오의 같은 월별 표다. 주면 값
+    **아래**에 증감을 적는다. 위아래를 나눠 둔 것은 한 칸에 둘이 함께 붙을 수 있어서다.
     """
     labels = process_labels or ProcessLabels()
     density_gaps = _value_gaps(lob_summary, baseline_lob_summary, "부하량", "{:+,.2f}")
     wafer_plan_gaps = _value_gaps(
         lob_summary, baseline_lob_summary, "Wafer 부하량", "{:+,.0f}K", scale=1_000
+    )
+    density_comparison_gaps = _comparison_gaps(
+        lob_summary, comparison_density, "부하량", "{:+,.2f}"
+    )
+    wafer_plan_comparison_gaps = _comparison_gaps(
+        lob_summary, comparison_wafer, "Wafer 부하량", "{:+,.0f}K", scale=1_000
     )
     month_positions = list(range(len(month_labels)))
     month_position_by_value = dict(
@@ -269,13 +308,21 @@ def build_lob_summary_figures(
         ("Wafer Capa", tokens.SURFACE_CLASSIFICATION, 20, True),
     )
     month_table_rows = (
-        ([f"{month}" for month in month_labels], tokens.HEADER_BACKGROUND, 21, True, None),
+        (
+            [f"{month}" for month in month_labels],
+            tokens.HEADER_BACKGROUND,
+            21,
+            True,
+            None,
+            None,
+        ),
         (
             [f"{row['부하량']:,.2f}" for _, row in lob_summary.iterrows()],
             tokens.SURFACE,
             20,
             False,
             density_gaps,
+            density_comparison_gaps,
         ),
         (
             [f"{row['Wafer 부하량'] / 1_000:,.0f}K" for _, row in lob_summary.iterrows()],
@@ -283,6 +330,7 @@ def build_lob_summary_figures(
             20,
             False,
             wafer_plan_gaps,
+            wafer_plan_comparison_gaps,
         ),
         (
             [
@@ -292,6 +340,7 @@ def build_lob_summary_figures(
             tokens.SURFACE,
             20,
             False,
+            None,
             None,
         ),
     )
@@ -315,7 +364,7 @@ def build_lob_summary_figures(
             font_size=font_size,
             bold=bold,
         )
-    for row_domain, (values, fill_color, font_size, bold, gaps) in zip(
+    for row_domain, (values, fill_color, font_size, bold, gaps, lower_gaps) in zip(
         lob_table_domains,
         month_table_rows,
         strict=True,
@@ -328,6 +377,7 @@ def build_lob_summary_figures(
             font_size=font_size,
             bold=bold,
             gaps=gaps,
+            lower_gaps=lower_gaps,
         )
     if bottleneck_capacity["B/N Capa"].notna().any():
         month_figure.add_trace(
@@ -755,14 +805,44 @@ def build_lob_summary_figures(
     return label_figure, month_figure
 
 
-def _detail_month_cell_values(displayed_detail: pd.DataFrame, month: str) -> list[str]:
-    """한 달의 세부수량 셀 값을 만든다. 데이터에 없는 달은 빈 칸으로 채운다."""
+def _detail_month_cell_values(
+    displayed_detail: pd.DataFrame,
+    month: str,
+    comparison_detail: pd.DataFrame | None = None,
+) -> list[str]:
+    """한 달의 세부수량 셀 값. 데이터에 없는 달은 빈 칸으로 채운다.
+
+    비교 표를 주면 값 **아래** 줄에 증감을 작게 적는다. 행 높이는 그대로 두고 글자만
+    줄인다 — 행 높이가 달라지면 왼쪽 분류 칸과 월 칸의 행이 어긋난다.
+    """
     if month not in displayed_detail.columns:
         return [""] * len(displayed_detail)
-    return [
+    values = [
         "" if pd.isna(value) or float(value) == 0 else f"{float(value):,.0f}K"
         for value in displayed_detail[month]
     ]
+    if comparison_detail is None:
+        return values
+    comparison_values = (
+        pd.to_numeric(comparison_detail[month], errors="coerce")
+        if month in comparison_detail.columns
+        else pd.Series([pd.NA] * len(displayed_detail), index=displayed_detail.index)
+    )
+    current_values = pd.to_numeric(displayed_detail[month], errors="coerce")
+    labelled: list[str] = []
+    for value, current, before in zip(values, current_values, comparison_values, strict=True):
+        # 한쪽에만 있는 조합은 없는 쪽을 0 으로 본다. 비교의 목적이 사라지거나 새로 생긴
+        # 제품을 보이게 하는 것이라 그 전액이 증감이어야 한다.
+        current_amount = 0.0 if pd.isna(current) else float(current)
+        before_amount = 0.0 if pd.isna(before) else float(before)
+        difference = current_amount - before_amount
+        if abs(difference) < 0.5:
+            labelled.append(value)
+            continue
+        color = delta_color(f"{difference:+.0f}")
+        gap = f'<span style="font-size:10px;color:{color}">{difference:+,.0f}K</span>'
+        labelled.append(f'<span style="font-size:12px">{value}</span><br>{gap}')
+    return labelled
 
 
 def build_plan_detail_figures(
@@ -770,6 +850,7 @@ def build_plan_detail_figures(
     production_detail: pd.DataFrame,
     month_labels: list[str],
     detail_dimensions: list[str] | None = None,
+    comparison_detail: pd.DataFrame | None = None,
 ) -> tuple[go.Figure, go.Figure]:
     """분류별 계획 세부수량 Figure 한 쌍을 만든다.
 
@@ -878,7 +959,7 @@ def build_plan_detail_figures(
             },
             cells={
                 "values": [
-                    _detail_month_cell_values(displayed_detail, month)
+                    _detail_month_cell_values(displayed_detail, month, comparison_detail)
                     for month in detail_month_columns
                 ],
                 "align": "center",

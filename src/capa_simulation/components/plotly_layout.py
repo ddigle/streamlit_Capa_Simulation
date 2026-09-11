@@ -181,11 +181,24 @@ def fixed_row_domains(
     return domains
 
 
-# GAP 을 함께 적을 때 값 글자를 줄이는 정도와 두 줄을 벌리는 거리. 행 높이는 그대로
-# 두고 이 둘만 조인다. 행마다 높이가 달라지면 왼쪽 라벨 칸과 월 칸의 행이 어긋난다.
+# GAP 을 함께 적을 때 값 글자를 줄이는 정도와 줄을 벌리는 거리. 행 높이는 그대로 두고
+# 이 둘만 조인다. 행마다 높이가 달라지면 왼쪽 라벨 칸과 월 칸의 행이 어긋난다.
+#
+# 위·아래 GAP 이 함께 붙으면 한 칸이 세 줄이 된다. 그때만 값을 한 단계 더 줄이고 간격을
+# 넓혀 36px 안에 들어가게 한다.
 GAP_VALUE_FONT_SCALE = 0.85
+GAP_VALUE_FONT_SCALE_BOTH = 0.65
 GAP_FONT_SCALE = 0.6
 GAP_LINE_SHIFT_PX = 9
+GAP_LINE_SHIFT_PX_BOTH = 12
+
+
+def _gap_texts(gaps: list[str] | None, count: int) -> list[str]:
+    if gaps is None:
+        return [""] * count
+    if len(gaps) != count:
+        raise ValueError("GAP 개수가 값 개수와 다릅니다.")
+    return list(gaps)
 
 
 def delta_color(text: str) -> str:
@@ -202,22 +215,34 @@ def add_fixed_table_row(
     font_size: int,
     bold: bool,
     gaps: list[str] | None = None,
+    lower_gaps: list[str] | None = None,
 ) -> None:
     """Draw a fixed-height row without Plotly Table's internal scroll layer.
 
-    `gaps` 는 칸마다 값 위에 작게 적을 증감 문구다. 빈 문자열이면 그 칸에는 아무것도
-    적지 않고 값도 원래 크기·위치 그대로 둔다 — 변화가 없는 칸까지 글자를 줄이면 같은
-    행 안에서 숫자 크기가 들쭉날쭉해진다.
+    `gaps` 는 값 **위**, `lower_gaps` 는 값 **아래**에 작게 적을 증감 문구다. 빈 문자열이면
+    그 칸에는 아무것도 적지 않고 값도 원래 크기·위치 그대로 둔다 — 변화가 없는 칸까지
+    글자를 줄이면 같은 행 안에서 숫자 크기가 들쭉날쭉해진다.
     """
     value_count = max(len(values), 1)
-    gap_texts = list(gaps) if gaps is not None else [""] * len(values)
-    if len(gap_texts) != len(values):
-        raise ValueError("GAP 개수가 값 개수와 다릅니다.")
+    upper_texts = _gap_texts(gaps, len(values))
+    lower_texts = _gap_texts(lower_gaps, len(values))
     middle = (domain[0] + domain[1]) / 2
     annotations = []
-    for value_index, (value, gap_text) in enumerate(zip(values, gap_texts, strict=True)):
+    for value_index, (value, upper, lower) in enumerate(
+        zip(values, upper_texts, lower_texts, strict=True)
+    ):
         escaped_value = html.escape(value)
         position = (value_index + 0.5) / value_count
+        both = bool(upper) and bool(lower)
+        shift = GAP_LINE_SHIFT_PX_BOTH if both else GAP_LINE_SHIFT_PX
+        if both:
+            value_size = round(font_size * GAP_VALUE_FONT_SCALE_BOTH)
+        elif upper or lower:
+            value_size = round(font_size * GAP_VALUE_FONT_SCALE)
+        else:
+            value_size = font_size
+        # 한쪽에만 붙으면 값이 반대쪽으로 밀려 칸 가운데를 유지한다. 양쪽이면 그대로 둔다.
+        value_shift = 0 if both else (-shift if upper else (shift if lower else 0))
         annotations.append(
             {
                 "x": position,
@@ -228,34 +253,35 @@ def add_fixed_table_row(
                 "showarrow": False,
                 "xanchor": "center",
                 "yanchor": "middle",
-                "yshift": -GAP_LINE_SHIFT_PX if gap_text else 0,
+                "yshift": value_shift,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": round(font_size * GAP_VALUE_FONT_SCALE) if gap_text else font_size,
+                    "size": value_size,
                     "family": tokens.FONT_FAMILY,
                 },
             }
         )
-        if not gap_text:
-            continue
-        annotations.append(
-            {
-                "x": position,
-                "y": middle,
-                "xref": "paper",
-                "yref": "paper",
-                "text": html.escape(gap_text),
-                "showarrow": False,
-                "xanchor": "center",
-                "yanchor": "middle",
-                "yshift": GAP_LINE_SHIFT_PX,
-                "font": {
-                    "color": delta_color(gap_text),
-                    "size": round(font_size * GAP_FONT_SCALE),
-                    "family": tokens.FONT_FAMILY_NUMERIC,
-                },
-            }
-        )
+        for gap_text, gap_shift in ((upper, shift), (lower, -shift)):
+            if not gap_text:
+                continue
+            annotations.append(
+                {
+                    "x": position,
+                    "y": middle,
+                    "xref": "paper",
+                    "yref": "paper",
+                    "text": html.escape(gap_text),
+                    "showarrow": False,
+                    "xanchor": "center",
+                    "yanchor": "middle",
+                    "yshift": gap_shift,
+                    "font": {
+                        "color": delta_color(gap_text),
+                        "size": round(font_size * GAP_FONT_SCALE),
+                        "family": tokens.FONT_FAMILY_NUMERIC,
+                    },
+                }
+            )
     append_layout_items(
         figure,
         shapes=[

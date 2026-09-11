@@ -377,14 +377,14 @@ def test_rename_is_not_part_of_the_calculation_cache_key() -> None:
 
 
 def test_home_figure_cache_key_type_grew_by_the_rename_version() -> None:
-    """뒤에 화면 기준 토글 넷(EDP·거래선 분류·선행·선행 버전)이 붙었다.
+    """뒤에 화면 기준 여섯(EDP·거래선 분류·비교 GAP·비교 시나리오·선행·선행 버전)이 붙었다.
 
     rename 버전 자리는 그대로 둘째다.
 
     **rename 버전은 반드시 둘째 자리다.** 맨 뒤에 붙이면 표시순서 digest 를 `[-1]` 로 꺼내
     쓰는 자리가 엉뚱한 값을 집는다.
     """
-    assert len(get_args(HomeFigureCacheKey)) == 14
+    assert len(get_args(HomeFigureCacheKey)) == 16
 
 
 def test_home_figure_cache_key_includes_the_rename_version_and_display_order_digest() -> None:

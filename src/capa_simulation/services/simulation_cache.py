@@ -357,6 +357,48 @@ def get_home_plan_detail(
     return detail
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_home_comparison_plan(
+    cache_key: HomeSimulationCacheKey,
+    _tables: Mapping[str, pd.DataFrame],
+    _comparison_tables: Mapping[str, pd.DataFrame],
+    _display_order: pd.DataFrame,
+    *,
+    comparison_revision_id: str,
+    include_edp: bool,
+    detail_dimensions: tuple[str, ...],
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """비교 시나리오의 **계획만** 가져와 현재 기준정보로 환산한 Density·Wafer·세부수량.
+
+    수율·Chip 기준정보가 그 사이 바뀌었어도 그것은 계획 변동이 아니다. 계획 차이만 보려는
+    것이므로 `RQ_PKG_PLAN` 만 비교 시나리오에서 가져오고 환산에 쓰는 표는 현재 것을 쓴다.
+
+    `comparison_revision_id` 는 키에만 쓴다. 프레임 인자는 `_` 로 시작해 해시를 건너뛰므로
+    어느 리비전의 계획인지를 이 값이 혼자 책임진다.
+    """
+    del comparison_revision_id
+    _, _, start_month, end_month, _ = cache_key
+    plan = filter_edp_plan(
+        filter_month_range(
+            _comparison_tables["RQ_PKG_PLAN"], start_month, end_month, "RQ_PKG_PLAN"
+        ),
+        include_edp,
+    )
+    monthly_density, production_detail = build_production_dashboard(
+        plan,
+        _tables["RQ_CHIP_EQ"],
+        _display_order,
+        detail_dimensions=list(detail_dimensions),
+    )
+    _, wafer_load = calculate_chip_and_wafer_loads(
+        plan,
+        filter_month_range(_tables["RQ_YLD"], start_month, end_month, "RQ_YLD"),
+        _tables["RQ_CHIP_QTY"],
+    )
+    monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
+    return monthly_density, monthly_wafer, production_detail
+
+
 @st.cache_data(show_spinner=False, max_entries=16)
 def get_weekly_equipment_availability(
     baseline: pd.DataFrame,

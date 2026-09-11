@@ -14,6 +14,8 @@ from capa_simulation.components.home_figures import (
 )
 from capa_simulation.components.home_preference import (
     ADVANCE_TOGGLE_KEY,
+    COMPARISON_SCENARIO_KEY,
+    COMPARISON_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
     PLAN_DETAIL_CUSTOMER_KEY,
     render_home_preference,
@@ -41,7 +43,12 @@ from capa_simulation.page_bootstrap import (
     selected_month_range,
 )
 from capa_simulation.performance import PerformanceTrace
-from capa_simulation.persistence.cache import load_global_advance_load
+from capa_simulation.persistence.cache import (
+    get_scenario_repository,
+    load_global_advance_load,
+    load_scenario_snapshot,
+)
+from capa_simulation.scenario_activation import active_persisted_scenario_id
 from capa_simulation.scenario_preset_state import (
     DEFAULT_SECURE_THRESHOLD_PERCENT,
     DEFAULT_WARNING_THRESHOLD_PERCENT,
@@ -61,6 +68,7 @@ from capa_simulation.services.advance_load import (
 from capa_simulation.services.dashboard import (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
     PRODUCTION_DETAIL_DIMENSIONS,
+    align_detail_with_comparison,
     build_bottleneck_capacity,
     build_monthly_bottleneck_details_from_ranking,
     build_monthly_bottleneck_ranking,
@@ -71,6 +79,7 @@ from capa_simulation.services.dashboard import (
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
+    get_home_comparison_plan,
     get_home_lob_without_edp,
     get_home_plan_detail,
     get_home_simulation,
@@ -81,6 +90,19 @@ from capa_simulation.sidebar_status import (
     show_applied_month_range,
     show_month_range_unavailable,
 )
+
+
+def _comparison_revision_id(database_path: str, scenario_id: str) -> str | None:
+    """비교 시나리오의 활성 리비전. 그 사이 지워졌으면 조용히 비교를 끈다."""
+    try:
+        summaries = get_scenario_repository(database_path).list_scenarios()
+    except BOOTSTRAP_ERRORS:
+        return None
+    for summary in summaries:
+        if summary.scenario_id == scenario_id:
+            return summary.active_revision_id
+    return None
+
 
 render_page_header("Capa LOB Summary")
 # 진행 표시는 탭 위에 둔다. 어느 탭을 보고 있든 같은 자리에서 읽혀야 한다.
@@ -97,6 +119,10 @@ home_trace = PerformanceTrace()
 include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, True))
 show_advance = bool(st.session_state.get(ADVANCE_TOGGLE_KEY, False))
 plan_detail_customer = bool(st.session_state.get(PLAN_DETAIL_CUSTOMER_KEY, False))
+comparison_scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
+show_comparison = bool(st.session_state.get(COMPARISON_TOGGLE_KEY, False)) and bool(
+    comparison_scenario_id
+)
 plan_detail_dimensions = (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS if plan_detail_customer else PRODUCTION_DETAIL_DIMENSIONS
 )
@@ -158,6 +184,30 @@ try:
             include_edp=include_edp,
             include_customer=True,
         )
+    comparison_density: pd.DataFrame | None = None
+    comparison_wafer: pd.DataFrame | None = None
+    comparison_detail: pd.DataFrame | None = None
+    if show_comparison:
+        comparison_revision_id = _comparison_revision_id(
+            str(DUCKDB_PATH.resolve()), str(comparison_scenario_id)
+        )
+        if comparison_revision_id is not None:
+            comparison_snapshot = load_scenario_snapshot(
+                str(DUCKDB_PATH.resolve()), comparison_revision_id
+            )
+            (
+                comparison_density,
+                comparison_wafer,
+                comparison_detail,
+            ) = get_home_comparison_plan(
+                cache_key=home_simulation_cache_key,
+                _tables=active_scenario["tables"],
+                _comparison_tables=comparison_snapshot.tables,
+                _display_order=reference_tables["RQ_DISPLAY_ORDER"],
+                comparison_revision_id=comparison_revision_id,
+                include_edp=include_edp,
+                detail_dimensions=tuple(plan_detail_dimensions),
+            )
     advance_profile = load_global_advance_load(str(DUCKDB_PATH.resolve()))
     baseline_density = monthly_density
     baseline_wafer = monthly_wafer
@@ -353,6 +403,8 @@ figure_cache_key: HomeFigureCacheKey = (
     float(warning_threshold_percent),
     include_edp,
     plan_detail_customer,
+    show_comparison,
+    str(comparison_scenario_id or ""),
     show_advance,
     advance_profile.version if show_advance else 0,
 )
@@ -405,11 +457,25 @@ if cached_figures is None:
         warning_threshold=warning_threshold,
         process_labels=process_labels,
         baseline_lob_summary=baseline_lob_summary,
+        comparison_density=comparison_density,
+        comparison_wafer=comparison_wafer,
     )
+    displayed_detail = production_detail
+    aligned_comparison_detail: pd.DataFrame | None = None
+    if comparison_detail is not None:
+        # 비교 시나리오에만 있는 분류 조합도 행으로 남긴다. 빠진 제품을 화면에서 보이게
+        # 하는 것이 비교의 목적이다.
+        displayed_detail, aligned_comparison_detail = align_detail_with_comparison(
+            production_detail,
+            comparison_detail,
+            plan_detail_dimensions,
+            reference_tables["RQ_DISPLAY_ORDER"],
+        )
     detail_label_figure, detail_month_figure = build_plan_detail_figures(
-        production_detail=production_detail,
+        production_detail=displayed_detail,
         month_labels=month_labels,
         detail_dimensions=plan_detail_dimensions,
+        comparison_detail=aligned_comparison_detail,
     )
     (
         bottleneck_detail_label_figure,
@@ -440,7 +506,10 @@ loading.advance()
 
 main_tab, preference_tab = st.tabs([":material/dashboard: Main", ":material/tune: Preference"])
 with main_tab:
-    render_lob_title_row(unapplied_months=unapplied_advance_months)
+    render_lob_title_row(
+        unapplied_months=unapplied_advance_months,
+        comparison_ready=bool(comparison_scenario_id),
+    )
     render_home_figures(
         cached_figures,
         month_labels,
@@ -451,6 +520,7 @@ with preference_tab:
         month_labels=month_labels,
         advance_profile=advance_profile,
         database_path=str(DUCKDB_PATH.resolve()),
+        active_scenario_id=active_persisted_scenario_id(),
     )
 home_trace.mark("Plotly 전달")
 loading.close()

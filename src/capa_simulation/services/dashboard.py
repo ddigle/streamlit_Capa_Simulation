@@ -78,6 +78,55 @@ def build_production_dashboard(
     return monthly, detail
 
 
+def align_monthly_with_comparison(
+    current: pd.DataFrame,
+    comparison: pd.DataFrame,
+    value_column: str,
+) -> pd.DataFrame:
+    """현재 월 축에 비교값을 붙인다. 비교에 없는 달은 결측으로 남긴다.
+
+    결측을 0 으로 채우지 않는다. 0 은 "그 달 계획이 0" 이라는 뜻이고 결측은 "비교 대상에
+    그 달이 없다" 는 뜻이다. 0 으로 채우면 없던 달이 전액 증가로 읽힌다.
+    """
+    if "생산계획년월" not in current.columns or value_column not in current.columns:
+        raise ValueError(f"현재 월별 표에 필수 컬럼이 없습니다: 생산계획년월, {value_column}")
+    result = current[["생산계획년월", value_column]].copy()
+    if "생산계획년월" not in comparison.columns or value_column not in comparison.columns:
+        result["비교값"] = pd.NA
+        return result
+    lookup = comparison.set_index("생산계획년월")[value_column]
+    result["비교값"] = result["생산계획년월"].map(lookup)
+    return result
+
+
+def align_detail_with_comparison(
+    current: pd.DataFrame,
+    comparison: pd.DataFrame,
+    dimensions: list[str],
+    display_order: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """두 세부수량 표를 같은 행 집합·같은 차례로 맞춘다.
+
+    비교 시나리오에만 있는 분류 조합도 행으로 남긴다 — 빠진 제품을 화면에서 보이게 하는
+    것이 비교의 목적이다. 그 행의 현재 수량은 결측이고 비교값만 있다.
+
+    행이 늘었으므로 표시순서를 다시 건다. 새 행이 맨 뒤에 붙으면 같은 제품의 행이 표
+    위아래로 흩어진다.
+    """
+    missing = [column for column in dimensions if column not in current.columns]
+    if missing:
+        raise ValueError(f"세부수량 분류 컬럼이 없습니다: {', '.join(missing)}")
+    if any(column not in comparison.columns for column in dimensions):
+        return current.copy(), current.iloc[0:0].copy()
+    keys = pd.concat(
+        [current[dimensions], comparison[dimensions]], ignore_index=True
+    ).drop_duplicates()
+    keys = apply_display_order(keys, display_order, "부하량", "PKG PLAN").reset_index(drop=True)
+    aligned_current = keys.merge(current, on=dimensions, how="left", validate="one_to_one")
+    aligned_comparison = keys.merge(comparison, on=dimensions, how="left", validate="one_to_one")
+    return aligned_current, aligned_comparison
+
+
 def build_monthly_wafer_load(
     plan: pd.DataFrame,
     yield_data: pd.DataFrame,

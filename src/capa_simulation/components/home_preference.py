@@ -23,7 +23,7 @@ from capa_simulation.persistence.cache import (
     clear_global_advance_load_cache,
     get_scenario_repository,
 )
-from capa_simulation.persistence.models import GlobalAdvanceLoad
+from capa_simulation.persistence.models import GlobalAdvanceLoad, ScenarioSummary
 from capa_simulation.services.advance_load import (
     ADVANCE_LOAD_ROW_LABEL,
     merge_advance_load_edits,
@@ -32,16 +32,25 @@ from capa_simulation.services.advance_load import (
 EDP_TOGGLE_KEY = "home_preference_include_edp"
 ADVANCE_TOGGLE_KEY = "home_show_advance"
 PLAN_DETAIL_CUSTOMER_KEY = "home_preference_plan_detail_customer"
+COMPARISON_TOGGLE_KEY = "home_show_comparison"
+COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
 ADVANCE_EDITOR_KEY = "home_preference_advance_editor"
 ADVANCE_NOTE_KEY = "home_preference_advance_note"
 DIMENSION_COLUMN = "구분"
 
 
-def render_lob_title_row(*, unapplied_months: Sequence[int]) -> None:
-    """`Capa LOB 현황` 제목과 그 옆의 「선행」 토글.
+def render_lob_title_row(
+    *,
+    unapplied_months: Sequence[int],
+    comparison_ready: bool,
+) -> None:
+    """`Capa LOB 현황` 제목과 그 옆의 「선행」·「GAP」 토글.
 
     토글은 값을 바꾸기만 하고 아무것도 계산하지 않는다. 다음 실행에서 `home.py` 가 이
     키를 읽어 계산에 반영한다.
+
+    비교 시나리오를 고르지 않았으면 「GAP」 을 누를 수 없다. 켤 수는 있는데 아무것도
+    바뀌지 않으면 고장으로 읽힌다.
     """
     with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
         st.markdown(
@@ -60,6 +69,19 @@ def render_lob_title_row(*, unapplied_months: Sequence[int]) -> None:
                 "반비례로 움직입니다."
             ),
         )
+        st.toggle(
+            "GAP",
+            value=False,
+            key=COMPARISON_TOGGLE_KEY,
+            persist_state="session",
+            disabled=not comparison_ready,
+            help=(
+                "Preference 탭에서 고른 비교 시나리오 대비 증감을 Density·Wafer 계획·"
+                "계획 세부수량 값 **아래**에 적습니다. 선행 증감은 값 위에 적습니다."
+                if comparison_ready
+                else "Preference 탭에서 비교 시나리오를 먼저 고르세요."
+            ),
+        )
     if unapplied_months:
         labels = _month_labels(unapplied_months)
         st.warning(
@@ -75,8 +97,9 @@ def render_home_preference(
     month_labels: Sequence[str],
     advance_profile: GlobalAdvanceLoad,
     database_path: str,
+    active_scenario_id: str | None,
 ) -> None:
-    """EDP 토글과 선행 물량 입력 시트 한 장."""
+    """표시 기준 토글과 비교 시나리오 선택, 선행 물량 입력 시트."""
     with st.container(border=True):
         st.markdown("#### :material/tune: 표시 기준")
         st.toggle(
@@ -100,12 +123,55 @@ def render_home_preference(
                 "행이 늘어 표가 길어집니다."
             ),
         )
+    _render_comparison_picker(database_path, active_scenario_id)
     _render_advance_editor(
         months=months,
         month_labels=month_labels,
         advance_profile=advance_profile,
         database_path=database_path,
     )
+
+
+def _render_comparison_picker(database_path: str, active_scenario_id: str | None) -> None:
+    """GAP 의 비교 대상. 시나리오만 고르면 그 시나리오의 **활성 리비전** 계획을 쓴다."""
+    with st.container(border=True):
+        st.markdown("#### :material/compare_arrows: 비교 시나리오")
+        st.caption(
+            "고른 시나리오의 활성 리비전에서 **계획만** 가져와 현재 기준정보로 환산해 "
+            "비교합니다. 수율·Chip 기준정보가 그 사이 바뀌었어도 그것은 계획 변동이 "
+            "아니므로 환산에 쓰는 표는 현재 것을 씁니다."
+        )
+        try:
+            scenarios = [
+                scenario
+                for scenario in get_scenario_repository(database_path).list_scenarios()
+                if scenario.scenario_id != active_scenario_id
+            ]
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(bootstrap_error_message(exc))
+            return
+        if not scenarios:
+            st.info("비교할 다른 시나리오가 없습니다.")
+            st.session_state.pop(COMPARISON_SCENARIO_KEY, None)
+            return
+        scenario_by_id = {scenario.scenario_id: scenario for scenario in scenarios}
+        # 지웠거나 현재 활성이 된 시나리오가 남아 있으면 위젯이 옵션에 없는 값을 만나 죽는다.
+        if st.session_state.get(COMPARISON_SCENARIO_KEY) not in scenario_by_id:
+            st.session_state.pop(COMPARISON_SCENARIO_KEY, None)
+        st.selectbox(
+            "비교 대상",
+            options=[None, *scenario_by_id],
+            format_func=lambda value: _comparison_label(scenario_by_id, value),
+            key=COMPARISON_SCENARIO_KEY,
+            persist_state="session",
+        )
+
+
+def _comparison_label(scenarios: dict[str, ScenarioSummary], value: str | None) -> str:
+    if value is None:
+        return "선택 안 함"
+    scenario = scenarios[value]
+    return f"{scenario.scenario_name} · r{scenario.active_revision_no}"
 
 
 def _render_advance_editor(

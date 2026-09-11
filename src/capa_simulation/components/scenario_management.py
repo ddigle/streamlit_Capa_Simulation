@@ -201,12 +201,24 @@ def _render_scenario_list_editor(
         num_rows="fixed",
         hide_index=True,
         width="stretch",
+        # 체크박스 한 칸, 두 자리 숫자, `r12` 는 `small` 로도 필요 이상 넓다. 남는 폭은
+        # 실제로 길어질 수 있는 시나리오명·원천 코드가 가져가는 편이 읽기 좋다.
+        #
+        # 픽셀 값은 **최소 폭이 아니라 비율**이다. 합이 표 폭보다 작으면 Streamlit 이
+        # 남는 폭을 비례로 나눠 준다. 그래서 좁힐 칸만 줄이면 소용이 없고 넓힐 칸을 함께
+        # 키워야 비율이 바뀐다.
         column_config={
-            SELECT_COLUMN: st.column_config.CheckboxColumn(SELECT_COLUMN, width="small"),
+            SELECT_COLUMN: st.column_config.CheckboxColumn(SELECT_COLUMN, width=44),
             ORDER_COLUMN: st.column_config.NumberColumn(
-                ORDER_COLUMN, min_value=1, step=1, required=True, width="small"
+                ORDER_COLUMN, min_value=1, step=1, required=True, width=44
             ),
-            "최근 수정": st.column_config.DatetimeColumn("최근 수정", format="YYYY-MM-DD HH:mm"),
+            "시나리오명": st.column_config.TextColumn("시나리오명", width=300),
+            "원천 코드": st.column_config.TextColumn("원천 코드", width=240),
+            "활성 리비전": st.column_config.TextColumn("활성 리비전", width=70),
+            "공식버전": st.column_config.TextColumn("공식버전", width=90),
+            "최근 수정": st.column_config.DatetimeColumn(
+                "최근 수정", format="YYYY-MM-DD HH:mm", width=140
+            ),
         },
         disabled=["시나리오명", "원천 코드", "활성 리비전", "공식버전", "최근 수정"],
     )

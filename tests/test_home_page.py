@@ -111,6 +111,7 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     # 「선행」 은 Main 탭 제목 옆, 나머지는 Preference 탭에 있다.
     assert [widget.label for widget in app.main.toggle] == [
         "선행",
+        "GAP",
         "EDP 포함",
         "계획 세부수량 상세",
     ]
@@ -319,3 +320,62 @@ def _lob_traces(app: AppTest) -> dict[str, Any]:
     """LOB 월 Figure 의 trace 를 이름으로 찾는다. 순서는 trace 를 더할 때마다 바뀐다."""
     figure = app.session_state["spy_figures"]["production_lob_months"]
     return {trace.name: trace for trace in figure.data}
+
+
+def _create_comparison_scenario(database_path: Path, factor: float) -> str:
+    """현재 활성 계획의 수량만 바꾼 비교용 시나리오를 만든다.
+
+    계획만 다르고 나머지 기준정보는 같아야 GAP 이 계획 차이만 나타내는지 확인할 수 있다.
+    """
+    from capa_simulation.persistence.cache import load_scenario_snapshot
+    from capa_simulation.persistence.models import ScenarioCreate
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    repository = DuckDBScenarioRepository(database_path)
+    official = repository.latest_official_release()
+    assert official is not None
+    snapshot = load_scenario_snapshot(str(database_path), official.revision_id)
+    tables = dict(snapshot.tables)
+    plan = tables["RQ_PKG_PLAN"].copy()
+    plan["생산수량"] = pd.to_numeric(plan["생산수량"], errors="coerce") * factor
+    tables["RQ_PKG_PLAN"] = plan
+    created = repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="비교용",
+            source_simulation_code="COMPARE-1",
+            source_simulation_name="비교용",
+            source_type="DUCKDB_SCENARIO_CLONE",
+            pipeline_version="duckdb-rq-snapshot-v3",
+        ),
+        tables,
+        snapshot.preset,
+    )
+    return str(created.scenario.scenario_id)
+
+
+def test_comparison_gap_is_written_under_the_value(tmp_path: Path) -> None:
+    """비교 GAP 은 값 아래에 붙는다. 선행 GAP(위)과 자리를 나눠 함께 켤 수 있어야 한다."""
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+
+    comparison_id = _create_comparison_scenario(database_path, 0.5)
+    app.session_state["home_preference_comparison_scenario"] = comparison_id
+    app.session_state["home_show_comparison"] = True
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    gaps = _gap_annotations(app)
+    # 계획을 절반으로 줄인 시나리오와 견주므로 현재가 더 많다 — 전부 증가여야 한다.
+    assert gaps, "비교 GAP 주석이 하나도 없다"
+    assert all(text.startswith("+") for text in gaps), gaps
+
+
+def _gap_annotations(app: AppTest) -> list[str]:
+    """LOB 월 Figure 에서 증감으로 적힌 주석만 고른다."""
+    figure = app.session_state["spy_figures"]["production_lob_months"]
+    return [
+        str(annotation.text).strip()
+        for annotation in figure.layout.annotations
+        if str(annotation.text).strip().startswith(("+", "-"))
+    ]
