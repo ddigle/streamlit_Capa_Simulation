@@ -322,7 +322,7 @@ def _lob_traces(app: AppTest) -> dict[str, Any]:
     return {trace.name: trace for trace in figure.data}
 
 
-def _create_comparison_scenario(database_path: Path, factor: float) -> str:
+def _create_comparison_scenario(database_path: Path, factor: float) -> tuple[str, str]:
     """현재 활성 계획의 수량만 바꾼 비교용 시나리오를 만든다.
 
     계획만 다르고 나머지 기준정보는 같아야 GAP 이 계획 차이만 나타내는지 확인할 수 있다.
@@ -350,7 +350,7 @@ def _create_comparison_scenario(database_path: Path, factor: float) -> str:
         tables,
         snapshot.preset,
     )
-    return str(created.scenario.scenario_id)
+    return str(created.scenario.scenario_id), str(created.revision.revision_id)
 
 
 def test_comparison_gap_is_written_under_the_value(tmp_path: Path) -> None:
@@ -359,8 +359,9 @@ def test_comparison_gap_is_written_under_the_value(tmp_path: Path) -> None:
     app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
     assert not list(app.exception)
 
-    comparison_id = _create_comparison_scenario(database_path, 0.5)
+    comparison_id, comparison_revision_id = _create_comparison_scenario(database_path, 0.5)
     app.session_state["home_preference_comparison_scenario"] = comparison_id
+    app.session_state["home_preference_comparison_revision"] = comparison_revision_id
     app.session_state["home_show_comparison"] = True
     app.run()
 
@@ -379,3 +380,19 @@ def _gap_annotations(app: AppTest) -> list[str]:
         for annotation in figure.layout.annotations
         if str(annotation.text).strip().startswith(("+", "-"))
     ]
+
+
+def test_a_comparison_revision_from_another_scenario_is_ignored(tmp_path: Path) -> None:
+    """세션에 남은 리비전이 남의 것이면 조용히 비교를 끈다. 화면이 멈추면 안 된다."""
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+
+    comparison_id, _ = _create_comparison_scenario(database_path, 0.5)
+    app.session_state["home_preference_comparison_scenario"] = comparison_id
+    app.session_state["home_preference_comparison_revision"] = "사라진-리비전"
+    app.session_state["home_show_comparison"] = True
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _gap_annotations(app) == []

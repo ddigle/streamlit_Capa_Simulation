@@ -14,6 +14,7 @@ from capa_simulation.components.home_figures import (
 )
 from capa_simulation.components.home_preference import (
     ADVANCE_TOGGLE_KEY,
+    COMPARISON_REVISION_KEY,
     COMPARISON_SCENARIO_KEY,
     COMPARISON_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
@@ -92,16 +93,21 @@ from capa_simulation.sidebar_status import (
 )
 
 
-def _comparison_revision_id(database_path: str, scenario_id: str) -> str | None:
-    """비교 시나리오의 활성 리비전. 그 사이 지워졌으면 조용히 비교를 끈다."""
+def _owned_comparison_revision(
+    database_path: str,
+    scenario_id: str,
+    revision_id: str,
+) -> str | None:
+    """고른 리비전이 아직 그 시나리오 것인지 확인한다.
+
+    세션에 남은 값은 그 사이 시나리오가 지워졌거나 리비전이 사라졌을 수 있다. 그대로
+    불러오면 화면 전체가 오류로 멈춘다. 확인해서 아니면 조용히 비교를 끈다.
+    """
     try:
-        summaries = get_scenario_repository(database_path).list_scenarios()
+        revisions = get_scenario_repository(database_path).list_revisions(scenario_id)
     except BOOTSTRAP_ERRORS:
         return None
-    for summary in summaries:
-        if summary.scenario_id == scenario_id:
-            return summary.active_revision_id
-    return None
+    return revision_id if any(item.revision_id == revision_id for item in revisions) else None
 
 
 render_page_header("Capa LOB Summary")
@@ -120,8 +126,9 @@ include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, True))
 show_advance = bool(st.session_state.get(ADVANCE_TOGGLE_KEY, False))
 plan_detail_customer = bool(st.session_state.get(PLAN_DETAIL_CUSTOMER_KEY, False))
 comparison_scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
+comparison_revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
 show_comparison = bool(st.session_state.get(COMPARISON_TOGGLE_KEY, False)) and bool(
-    comparison_scenario_id
+    comparison_scenario_id and comparison_revision_id
 )
 plan_detail_dimensions = (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS if plan_detail_customer else PRODUCTION_DETAIL_DIMENSIONS
@@ -188,12 +195,14 @@ try:
     comparison_wafer: pd.DataFrame | None = None
     comparison_detail: pd.DataFrame | None = None
     if show_comparison:
-        comparison_revision_id = _comparison_revision_id(
-            str(DUCKDB_PATH.resolve()), str(comparison_scenario_id)
+        owned_revision_id = _owned_comparison_revision(
+            str(DUCKDB_PATH.resolve()),
+            str(comparison_scenario_id),
+            str(comparison_revision_id),
         )
-        if comparison_revision_id is not None:
+        if owned_revision_id is not None:
             comparison_snapshot = load_scenario_snapshot(
-                str(DUCKDB_PATH.resolve()), comparison_revision_id
+                str(DUCKDB_PATH.resolve()), owned_revision_id
             )
             (
                 comparison_density,
@@ -204,7 +213,7 @@ try:
                 _tables=active_scenario["tables"],
                 _comparison_tables=comparison_snapshot.tables,
                 _display_order=reference_tables["RQ_DISPLAY_ORDER"],
-                comparison_revision_id=comparison_revision_id,
+                comparison_revision_id=owned_revision_id,
                 include_edp=include_edp,
                 detail_dimensions=tuple(plan_detail_dimensions),
             )
@@ -404,7 +413,7 @@ figure_cache_key: HomeFigureCacheKey = (
     include_edp,
     plan_detail_customer,
     show_comparison,
-    str(comparison_scenario_id or ""),
+    str(comparison_revision_id or ""),
     show_advance,
     advance_profile.version if show_advance else 0,
 )
@@ -508,7 +517,7 @@ main_tab, preference_tab = st.tabs([":material/dashboard: Main", ":material/tune
 with main_tab:
     render_lob_title_row(
         unapplied_months=unapplied_advance_months,
-        comparison_ready=bool(comparison_scenario_id),
+        comparison_ready=bool(comparison_scenario_id and comparison_revision_id),
     )
     render_home_figures(
         cached_figures,

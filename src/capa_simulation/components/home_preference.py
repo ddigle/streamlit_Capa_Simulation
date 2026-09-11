@@ -34,6 +34,7 @@ ADVANCE_TOGGLE_KEY = "home_show_advance"
 PLAN_DETAIL_CUSTOMER_KEY = "home_preference_plan_detail_customer"
 COMPARISON_TOGGLE_KEY = "home_show_comparison"
 COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
+COMPARISON_REVISION_KEY = "home_preference_comparison_revision"
 ADVANCE_EDITOR_KEY = "home_preference_advance_editor"
 ADVANCE_NOTE_KEY = "home_preference_advance_note"
 DIMENSION_COLUMN = "구분"
@@ -133,18 +134,19 @@ def render_home_preference(
 
 
 def _render_comparison_picker(database_path: str, active_scenario_id: str | None) -> None:
-    """GAP 의 비교 대상. 시나리오만 고르면 그 시나리오의 **활성 리비전** 계획을 쓴다."""
+    """GAP 의 비교 대상. 시나리오와 리비전까지 골라 그 리비전의 계획을 쓴다."""
     with st.container(border=True):
         st.markdown("#### :material/compare_arrows: 비교 시나리오")
         st.caption(
-            "고른 시나리오의 활성 리비전에서 **계획만** 가져와 현재 기준정보로 환산해 "
-            "비교합니다. 수율·Chip 기준정보가 그 사이 바뀌었어도 그것은 계획 변동이 "
-            "아니므로 환산에 쓰는 표는 현재 것을 씁니다."
+            "고른 리비전에서 **계획만** 가져와 현재 기준정보로 환산해 비교합니다. 수율·Chip "
+            "기준정보가 그 사이 바뀌었어도 그것은 계획 변동이 아니므로 환산에 쓰는 표는 "
+            "현재 것을 씁니다."
         )
+        repository = get_scenario_repository(database_path)
         try:
             scenarios = [
                 scenario
-                for scenario in get_scenario_repository(database_path).list_scenarios()
+                for scenario in repository.list_scenarios()
                 if scenario.scenario_id != active_scenario_id
             ]
         except BOOTSTRAP_ERRORS as exc:
@@ -153,25 +155,48 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
         if not scenarios:
             st.info("비교할 다른 시나리오가 없습니다.")
             st.session_state.pop(COMPARISON_SCENARIO_KEY, None)
+            st.session_state.pop(COMPARISON_REVISION_KEY, None)
             return
         scenario_by_id = {scenario.scenario_id: scenario for scenario in scenarios}
         # 지웠거나 현재 활성이 된 시나리오가 남아 있으면 위젯이 옵션에 없는 값을 만나 죽는다.
         if st.session_state.get(COMPARISON_SCENARIO_KEY) not in scenario_by_id:
             st.session_state.pop(COMPARISON_SCENARIO_KEY, None)
-        st.selectbox(
-            "비교 대상",
+            st.session_state.pop(COMPARISON_REVISION_KEY, None)
+        scenario_id = st.selectbox(
+            "비교 시나리오",
             options=[None, *scenario_by_id],
             format_func=lambda value: _comparison_label(scenario_by_id, value),
             key=COMPARISON_SCENARIO_KEY,
             persist_state="session",
         )
+        if scenario_id is None:
+            st.session_state.pop(COMPARISON_REVISION_KEY, None)
+            return
+        try:
+            revisions = repository.list_revisions(str(scenario_id))
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(bootstrap_error_message(exc))
+            return
+        revision_by_id = {revision.revision_id: revision for revision in revisions}
+        # 시나리오를 바꾸면 앞서 고른 리비전은 남의 것이 된다. 위젯을 만들기 전에 버린다.
+        if st.session_state.get(COMPARISON_REVISION_KEY) not in revision_by_id:
+            st.session_state.pop(COMPARISON_REVISION_KEY, None)
+        if not revision_by_id:
+            st.info("그 시나리오에는 리비전이 없습니다.")
+            return
+        st.selectbox(
+            "비교 리비전",
+            options=list(revision_by_id),
+            format_func=lambda value: (
+                f"r{revision_by_id[value].revision_no} · {revision_by_id[value].revision_name}"
+            ),
+            key=COMPARISON_REVISION_KEY,
+            persist_state="session",
+        )
 
 
 def _comparison_label(scenarios: dict[str, ScenarioSummary], value: str | None) -> str:
-    if value is None:
-        return "선택 안 함"
-    scenario = scenarios[value]
-    return f"{scenario.scenario_name} · r{scenario.active_revision_no}"
+    return "선택 안 함" if value is None else scenarios[value].scenario_name
 
 
 def _render_advance_editor(
