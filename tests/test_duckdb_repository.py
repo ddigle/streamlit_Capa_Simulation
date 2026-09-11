@@ -1,6 +1,8 @@
 # Purpose: duckdb repository 관련 정상·예외·회귀 동작을 검증한다.
 
 import pickle
+from dataclasses import replace
+from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -712,3 +714,89 @@ def test_revision_records_virtual_products(tmp_path: Path) -> None:
     assert recorded["제품정보"].tolist() == ["DEMO_NEW"]
     assert recorded["원본 제품정보"].tolist() == ["Product-A"]
     assert repository.list_virtual_products(created.revision.revision_id).empty
+
+
+def test_standard_target_view_settings_survive_a_revision_round_trip(tmp_path: Path) -> None:
+    """표준 목표 Capa 조회·집계 설정이 리비전과 함께 저장되고 그대로 돌아온다."""
+    repository = _repository(tmp_path / "scenario.duckdb")
+    preset = ScenarioPreset(
+        start_month=202608,
+        end_month=202608,
+        included_processes=("Process-A",),
+        standard_target_processes=("Process-A",),
+        standard_target_start_date=date(2026, 8, 10),
+        standard_target_end_date=date(2026, 8, 20),
+        standard_target_show_detail=True,
+        standard_target_detail_level="Stack",
+        standard_target_output_metric="가용대수",
+    )
+
+    created = repository.create_scenario(_metadata(), _reference_tables(), preset)
+    restored = repository.load_revision(created.revision.revision_id)
+
+    assert restored.preset == preset
+    assert restored.preset.standard_target_start_date == date(2026, 8, 10)
+    assert restored.preset.standard_target_end_date == date(2026, 8, 20)
+    assert restored.preset.standard_target_show_detail is True
+    assert restored.preset.standard_target_detail_level == "Stack"
+    assert restored.preset.standard_target_output_metric == "가용대수"
+
+
+def test_revision_saved_before_view_settings_existed_opens_with_defaults(tmp_path: Path) -> None:
+    """조회·집계 설정 컬럼이 NULL 인 과거 리비전도 예외 없이 기본값으로 열린다."""
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    created = repository.create_scenario(
+        _metadata(),
+        _reference_tables(),
+        ScenarioPreset(
+            202608,
+            202608,
+            ("Process-A",),
+            standard_target_start_date=date(2026, 8, 10),
+            standard_target_show_detail=True,
+            standard_target_output_metric="가용대수",
+        ),
+    )
+    with connect(database_path) as connection:
+        connection.execute(
+            """
+            UPDATE app_meta.scenario_preset
+            SET standard_target_start_date = NULL,
+                standard_target_end_date = NULL,
+                standard_target_show_detail = NULL,
+                standard_target_detail_level = NULL,
+                standard_target_output_metric = NULL
+            WHERE revision_id = ?
+            """,
+            [created.revision.revision_id],
+        )
+
+    restored = repository.load_revision(created.revision.revision_id)
+
+    assert restored.preset.standard_target_start_date is None
+    assert restored.preset.standard_target_end_date is None
+    assert restored.preset.standard_target_show_detail is False
+    assert restored.preset.standard_target_detail_level == "제품정보"
+    assert restored.preset.standard_target_output_metric == "일 표준 가능량"
+
+
+def test_reversed_view_dates_are_corrected_instead_of_rejected() -> None:
+    """저장값이 뒤집혀 있어도 리비전을 열 수 있어야 한다. 종료일을 시작일에 맞춘다."""
+    preset = ScenarioPreset(
+        202608,
+        202608,
+        ("Process-A",),
+        standard_target_start_date=date(2026, 8, 25),
+        standard_target_end_date=date(2026, 8, 5),
+    )
+
+    assert preset.standard_target_start_date == date(2026, 8, 25)
+    assert preset.standard_target_end_date == date(2026, 8, 25)
+
+
+def test_view_settings_change_the_preset_digest() -> None:
+    base = ScenarioPreset(202608, 202608, ("Process-A",))
+
+    assert base.digest() != replace(base, standard_target_detail_level="Stack").digest()
+    assert base.digest() != replace(base, standard_target_start_date=date(2026, 8, 1)).digest()

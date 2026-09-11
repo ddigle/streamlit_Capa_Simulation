@@ -2,7 +2,7 @@
 
 """Streamlit cache boundary for the shared DuckDB repository configuration."""
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import TypedDict
 
@@ -53,6 +53,11 @@ class _ScenarioPresetPayload(TypedDict):
     warning_threshold: float
     schema_version: int
     standard_target_processes: tuple[str, ...]
+    standard_target_start_date: date | None
+    standard_target_end_date: date | None
+    standard_target_show_detail: bool
+    standard_target_detail_level: str
+    standard_target_output_metric: str
 
 
 class _ScenarioSnapshotPayload(TypedDict):
@@ -123,6 +128,11 @@ def _snapshot_to_payload(snapshot: ScenarioSnapshot) -> _ScenarioSnapshotPayload
             "warning_threshold": preset.warning_threshold,
             "schema_version": preset.schema_version,
             "standard_target_processes": preset.standard_target_processes,
+            "standard_target_start_date": preset.standard_target_start_date,
+            "standard_target_end_date": preset.standard_target_end_date,
+            "standard_target_show_detail": preset.standard_target_show_detail,
+            "standard_target_detail_level": preset.standard_target_detail_level,
+            "standard_target_output_metric": preset.standard_target_output_metric,
         },
         "tables": dict(snapshot.tables),
     }

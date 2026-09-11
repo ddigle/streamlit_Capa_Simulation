@@ -83,7 +83,12 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
 - `scenario`: 이름, 원천 시뮬레이션 코드/명, 활성·보관 상태, 현재 최신 리비전
 - `dataset`: 시나리오 소유 데이터셋, 원천 등록·적재 시각, 원천 해시, 변환 버전
 - `scenario_revision`: 증가하는 리비전 번호, 부모 리비전, 입력 해시와 변경 메모
-- `scenario_preset`: 조회 시작·종료월, 내부 비율의 확보·경고 기준, 프리셋 해시
+- `scenario_preset`: 조회 시작·종료월, 내부 비율의 확보·경고 기준, 프리셋 해시와 표준
+  목표 Capa 「조회·집계 설정」(`standard_target_start_date`·`standard_target_end_date`·
+  `standard_target_show_detail`·`standard_target_detail_level`·
+  `standard_target_output_metric`). 조회·집계 설정 컬럼은 NULL 을 허용하며 값이 없으면
+  화면 기본값으로 연다. DuckDB 는 `ADD COLUMN` 에 CHECK 를 받지 않으므로 시작일·종료일
+  순서 같은 제약은 `ScenarioPreset.__post_init__` 이 지킨다.
 - `scenario_preset_process`: 리비전별 B/N 집계 포함 공정과 저장 순서
 - `scenario_preset_standard_target_process`: 리비전별 표준 목표 Capa 공정 공용 기본값과
   저장 순서. 행이 없으면 전체 공정으로 해석한다.

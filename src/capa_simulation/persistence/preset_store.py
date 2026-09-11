@@ -4,10 +4,22 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
+
 import duckdb
 import pandas as pd
 
-from capa_simulation.persistence.models import ScenarioPreset
+from capa_simulation.persistence.models import (
+    DEFAULT_STANDARD_TARGET_DETAIL_LEVEL,
+    DEFAULT_STANDARD_TARGET_OUTPUT_METRIC,
+    ScenarioPreset,
+)
+
+
+def _optional_date(value: object) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    return value if isinstance(value, date) else None
 
 
 def insert_preset(
@@ -19,9 +31,12 @@ def insert_preset(
         """
         INSERT INTO app_meta.scenario_preset (
             revision_id, start_month, end_month, secure_threshold,
-            warning_threshold, preset_schema_version, preset_hash
+            warning_threshold, preset_schema_version, preset_hash,
+            standard_target_start_date, standard_target_end_date,
+            standard_target_show_detail, standard_target_detail_level,
+            standard_target_output_metric
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             revision_id,
@@ -31,6 +46,11 @@ def insert_preset(
             preset.warning_threshold,
             preset.schema_version,
             preset.digest(),
+            preset.standard_target_start_date,
+            preset.standard_target_end_date,
+            preset.standard_target_show_detail,
+            preset.standard_target_detail_level,
+            preset.standard_target_output_metric,
         ],
     )
     if preset.included_processes:
@@ -78,7 +98,10 @@ def load_preset(
     row = connection.execute(
         """
         SELECT start_month, end_month, secure_threshold,
-               warning_threshold, preset_schema_version
+               warning_threshold, preset_schema_version,
+               standard_target_start_date, standard_target_end_date,
+               standard_target_show_detail, standard_target_detail_level,
+               standard_target_output_metric
         FROM app_meta.scenario_preset
         WHERE revision_id = ?
         """,
@@ -112,6 +135,16 @@ def load_preset(
         schema_version=int(row[4]),
         included_processes=tuple(str(process[0]) for process in process_rows),
         standard_target_processes=tuple(str(process[0]) for process in standard_target_rows),
+        # 조회·집계 설정 컬럼이 없던 과거 리비전은 NULL 로 읽히고 기본값으로 열린다.
+        standard_target_start_date=_optional_date(row[5]),
+        standard_target_end_date=_optional_date(row[6]),
+        standard_target_show_detail=bool(row[7]),
+        standard_target_detail_level=(
+            str(row[8]) if row[8] else DEFAULT_STANDARD_TARGET_DETAIL_LEVEL
+        ),
+        standard_target_output_metric=(
+            str(row[9]) if row[9] else DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
+        ),
     )
 
 

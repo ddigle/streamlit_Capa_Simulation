@@ -7,9 +7,14 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 import pandas as pd
+
+# 표준 목표 Capa 조회·집계 설정의 저장 기본값. 화면 옵션 목록은 페이지가 소유하고,
+# 값이 비었을 때 되돌아갈 기본값만 프리셋과 함께 여기에 둔다.
+DEFAULT_STANDARD_TARGET_DETAIL_LEVEL = "제품정보"
+DEFAULT_STANDARD_TARGET_OUTPUT_METRIC = "일 표준 가능량"
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,21 @@ class GlobalProcessRename:
     rules: pd.DataFrame
 
 
+def _optional_date(value: date | None) -> date | None:
+    """Normalize one optional stored date without rejecting a persisted revision."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    raise TypeError("표준 목표 Capa 조회일은 date 값이어야 합니다.")
+
+
+def _date_text(value: date | None) -> str | None:
+    return None if value is None else value.isoformat()
+
+
 def _required_text(value: str, label: str) -> str:
     normalized = value.strip()
     if not normalized:
@@ -52,8 +72,15 @@ class ScenarioPreset:
     included_processes: tuple[str, ...]
     secure_threshold: float = 1.095
     warning_threshold: float = 0.995
-    schema_version: int = 2
+    schema_version: int = 3
     standard_target_processes: tuple[str, ...] = ()
+    # 표준 목표 Capa 「조회·집계 설정」. 날짜는 사이드바 조회기간에서 파생되므로
+    # "저장값 없음"(None)과 특정 날짜를 구분한다.
+    standard_target_start_date: date | None = None
+    standard_target_end_date: date | None = None
+    standard_target_show_detail: bool = False
+    standard_target_detail_level: str = DEFAULT_STANDARD_TARGET_DETAIL_LEVEL
+    standard_target_output_metric: str = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
 
     def __post_init__(self) -> None:
         for value, label in ((self.start_month, "조회 시작월"), (self.end_month, "조회 종료월")):
@@ -79,13 +106,43 @@ class ScenarioPreset:
                 raise ValueError(f"{label}에는 중복값을 저장할 수 없습니다.")
             object.__setattr__(self, field_name, normalized)
 
+        for field_name in ("standard_target_start_date", "standard_target_end_date"):
+            object.__setattr__(self, field_name, _optional_date(getattr(self, field_name)))
+        # 저장 시점에 유효했던 값이라 읽기가 실패하면 리비전을 영영 열 수 없다.
+        # 앞뒤가 뒤집힌 조회일은 예외 대신 종료일을 시작일에 맞춰 바로잡는다.
+        if (
+            self.standard_target_start_date is not None
+            and self.standard_target_end_date is not None
+            and self.standard_target_start_date > self.standard_target_end_date
+        ):
+            object.__setattr__(self, "standard_target_end_date", self.standard_target_start_date)
+        object.__setattr__(
+            self,
+            "standard_target_detail_level",
+            str(self.standard_target_detail_level).strip() or DEFAULT_STANDARD_TARGET_DETAIL_LEVEL,
+        )
+        object.__setattr__(
+            self,
+            "standard_target_output_metric",
+            str(self.standard_target_output_metric).strip()
+            or DEFAULT_STANDARD_TARGET_OUTPUT_METRIC,
+        )
+        object.__setattr__(
+            self, "standard_target_show_detail", bool(self.standard_target_show_detail)
+        )
+
     def digest(self) -> str:
         payload = {
             "end_month": self.end_month,
             "included_processes": self.included_processes,
             "schema_version": self.schema_version,
             "secure_threshold": self.secure_threshold,
+            "standard_target_detail_level": self.standard_target_detail_level,
+            "standard_target_end_date": _date_text(self.standard_target_end_date),
+            "standard_target_output_metric": self.standard_target_output_metric,
             "standard_target_processes": self.standard_target_processes,
+            "standard_target_show_detail": self.standard_target_show_detail,
+            "standard_target_start_date": _date_text(self.standard_target_start_date),
             "start_month": self.start_month,
             "warning_threshold": self.warning_threshold,
         }

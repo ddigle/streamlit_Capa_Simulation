@@ -6,11 +6,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+from datetime import date, datetime
 
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.persistence.models import ScenarioPreset
+from capa_simulation.persistence.models import (
+    DEFAULT_STANDARD_TARGET_DETAIL_LEVEL,
+    DEFAULT_STANDARD_TARGET_OUTPUT_METRIC,
+    ScenarioPreset,
+)
 from capa_simulation.services.month_filter import MONTH_COLUMN, available_month_range
 from capa_simulation.settings import MONTH_SELECTION_END, MONTH_SELECTION_START, format_month
 
@@ -26,6 +31,12 @@ DEFAULT_SECURE_THRESHOLD_PERCENT = 109.5
 DEFAULT_WARNING_THRESHOLD_PERCENT = 99.5
 STANDARD_TARGET_PROCESS_SELECTION_KEY = "standard_target_process_filter"
 STANDARD_TARGET_PROCESS_DEFAULT_KEY = "standard_target_process_default"
+# 표준 목표 Capa 「조회·집계 설정」도 리비전 프리셋이 소유하므로 세션 키를 여기서 선언한다.
+STANDARD_TARGET_START_DATE_KEY = "standard_target_start_date"
+STANDARD_TARGET_END_DATE_KEY = "standard_target_end_date"
+STANDARD_TARGET_SHOW_DETAIL_KEY = "standard_target_show_detail"
+STANDARD_TARGET_DETAIL_LEVEL_KEY = "standard_target_detail_level"
+STANDARD_TARGET_OUTPUT_METRIC_KEY = "standard_target_output_metric"
 
 
 def capture_scenario_preset(reference_tables: Mapping[str, pd.DataFrame]) -> ScenarioPreset:
@@ -53,6 +64,18 @@ def capture_scenario_preset(reference_tables: Mapping[str, pd.DataFrame]) -> Sce
         secure_threshold=secure_percent / 100.0,
         warning_threshold=warning_percent / 100.0,
         standard_target_processes=standard_target_processes,
+        standard_target_start_date=_session_date(STANDARD_TARGET_START_DATE_KEY),
+        standard_target_end_date=_session_date(STANDARD_TARGET_END_DATE_KEY),
+        standard_target_show_detail=bool(st.session_state.get(STANDARD_TARGET_SHOW_DETAIL_KEY)),
+        # 상세 토글이 꺼지면 분류 수준 위젯이 화면에 없다. 마지막 선택을 그대로 보존한다.
+        standard_target_detail_level=_session_text(
+            STANDARD_TARGET_DETAIL_LEVEL_KEY,
+            DEFAULT_STANDARD_TARGET_DETAIL_LEVEL,
+        ),
+        standard_target_output_metric=_session_text(
+            STANDARD_TARGET_OUTPUT_METRIC_KEY,
+            DEFAULT_STANDARD_TARGET_OUTPUT_METRIC,
+        ),
     )
 
 
@@ -68,6 +91,11 @@ def capture_full_data_scenario_preset(
         end_month=end_month,
         included_processes=tuple(_available_processes(reference_tables)),
         standard_target_processes=(),
+        standard_target_start_date=None,
+        standard_target_end_date=None,
+        standard_target_show_detail=False,
+        standard_target_detail_level=DEFAULT_STANDARD_TARGET_DETAIL_LEVEL,
+        standard_target_output_metric=DEFAULT_STANDARD_TARGET_OUTPUT_METRIC,
     )
 
 
@@ -92,6 +120,19 @@ def apply_pending_scenario_preset() -> bool:
     standard_target_processes = list(value.standard_target_processes)
     st.session_state[STANDARD_TARGET_PROCESS_DEFAULT_KEY] = standard_target_processes
     st.session_state[STANDARD_TARGET_PROCESS_SELECTION_KEY] = standard_target_processes.copy()
+    # 페이지를 한 번도 열지 않은 세션이 리비전을 저장해도 직전 설정이 날아가지 않도록
+    # 조회·집계 설정도 여기서 반드시 세션에 쓴다. 저장된 날짜가 없으면 페이지 기본값을 쓴다.
+    for key, saved_date in (
+        (STANDARD_TARGET_START_DATE_KEY, value.standard_target_start_date),
+        (STANDARD_TARGET_END_DATE_KEY, value.standard_target_end_date),
+    ):
+        if saved_date is None:
+            st.session_state.pop(key, None)
+        else:
+            st.session_state[key] = saved_date
+    st.session_state[STANDARD_TARGET_SHOW_DETAIL_KEY] = value.standard_target_show_detail
+    st.session_state[STANDARD_TARGET_DETAIL_LEVEL_KEY] = value.standard_target_detail_level
+    st.session_state[STANDARD_TARGET_OUTPUT_METRIC_KEY] = value.standard_target_output_metric
     return True
 
 
@@ -113,6 +154,20 @@ def _session_number(key: str, default: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"시나리오 프리셋 숫자 설정이 잘못되었습니다: {key}")
     return float(value)
+
+
+def _session_date(key: str) -> date | None:
+    value = st.session_state.get(key)
+    if isinstance(value, datetime):
+        return value.date()
+    return value if isinstance(value, date) else None
+
+
+def _session_text(key: str, default: str) -> str:
+    value = st.session_state.get(key)
+    if not isinstance(value, str):
+        return default
+    return value.strip() or default
 
 
 def _available_processes(reference_tables: Mapping[str, pd.DataFrame]) -> list[str]:
