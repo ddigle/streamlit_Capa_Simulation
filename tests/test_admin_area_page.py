@@ -30,7 +30,8 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert [heading.value for heading in app.title] == ["Admin Area"]
-    assert any("구현중" in markdown.value for markdown in app.markdown)
+    # 운영 관리 기능은 이미 쓰는 화면이라 `(구현중)` 배지를 달지 않는다.
+    assert not any("구현중" in markdown.value for markdown in app.markdown)
     assert any("Proc Rename" in subheader.value for subheader in app.subheader)
     assert len(app.get("download_button")) == 1
     assert len(app.get("file_uploader")) == 0

@@ -1,4 +1,4 @@
-# Purpose: Dynamic Capa 하위의 관리 기능(공정 표시명 재지정 등)을 탭으로 모아 제공한다.
+# Purpose: 화면 표기·정렬순서 같은 운영 관리 기능을 탭으로 모아 제공한다.
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from capa_simulation.settings import DUCKDB_PATH
 TAB_NAMES = (":material/label: Proc Rename",)
 
 render_page_header(
-    "Admin Area (구현중)",
+    "Admin Area",
     description="화면 표기·정렬순서 같은 운영 관리 설정을 한곳에 모읍니다.",
 )
 

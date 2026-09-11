@@ -87,8 +87,7 @@ with pinned_connections(DUCKDB_PATH):
         .st-key-capa_chatbot_navigation a p,
         .st-key-scenario_management_navigation a p,
         .st-key-static_capa_navigation a p,
-        .st-key-dynamic_capa_navigation a p,
-        .st-key-admin_area_navigation a p {
+        .st-key-dynamic_capa_navigation a p {
             font-size: 1.15rem;
             font-weight: 700;
         }

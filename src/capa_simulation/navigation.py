@@ -74,7 +74,7 @@ DYNAMIC_CAPA_SUBPAGES = (
 # 관리 기능이라 조회 컨트롤과 떨어뜨려 사이드바 맨 아래에 자기 박스로 둔다.
 ADMIN_AREA = PageSpec(
     "app_pages/admin_area.py",
-    _implementing("Admin Area"),
+    "Admin Area",
     ":material/admin_panel_settings:",
 )
 

@@ -42,7 +42,7 @@ EXPECTED_PAGES = [
     ("app_pages/space_status.py", "Space 현황 (구현중)", ":material/grid_view:", False),
     (
         "app_pages/admin_area.py",
-        "Admin Area (구현중)",
+        "Admin Area",
         ":material/admin_panel_settings:",
         False,
     ),
@@ -84,11 +84,15 @@ def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:
     `Capa Chatbot` 은 본문이 "화면 초안" 이라고 밝히는데도 사이드바에만 표기가 없어
     가장 덜 된 화면이 완성된 것처럼 보였다.
     """
-    for spec in (CAPA_CHATBOT, DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES, ADMIN_AREA):
+    for spec in (CAPA_CHATBOT, DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES):
         assert spec.title.endswith(IMPLEMENTING_SUFFIX), spec.path
-        # 본문은 공통 헤더가 그린다. 제목 문자열이 사이드바와 같아야 한다는 계약은 같다.
-        # 서식(한 줄/여러 줄)에 흔들리지 않도록 AST 로 첫 인자를 읽는다.
+    # 사이드바 라벨과 본문 제목이 같아야 한다는 계약은 표기 유무와 무관하다. `Admin Area`
+    # 는 이미 쓰는 관리 화면이라 표기를 달지 않지만 두 제목은 여전히 같아야 한다.
+    for spec in (CAPA_CHATBOT, DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES, ADMIN_AREA):
+        # 본문은 공통 헤더가 그린다. 서식(한 줄/여러 줄)에 흔들리지 않도록 AST 로 첫 인자를
+        # 읽는다.
         assert _page_header_title(PROJECT_ROOT / spec.path) == spec.title, spec.path
+    assert not ADMIN_AREA.title.endswith(IMPLEMENTING_SUFFIX)
 
 
 def _page_header_title(page_path: Path) -> str | None:

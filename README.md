@@ -41,8 +41,8 @@ GitHub에서 소스만 받은 빈 환경은 첫 실행 시 DuckDB 스키마를 �
 - HOME 하단 독립 메뉴의 `Capa Chatbot` 대화형 분석 화면 초안
 - `Static Capa` 상위 화면의 경고·확보 기준별 월간 설비 부족 현황과 하위 부하량·공정별
   Capa·공정별 확보율·표준 목표 Capa 페이지
-- `Dynamic Capa` 아래 표준 대비 재공 현황·가용설비 현황·효율 실적·UPEH 실적·Space 현황·
-  Admin Area 페이지
+- `Dynamic Capa` 아래 표준 대비 재공 현황·가용설비 현황·효율 실적·UPEH 실적·Space 현황
+  페이지와, 사이드바 맨 아래 별도 박스의 `Admin Area` 페이지
 - 전체 공정 우선순위와 공정·제품·Stack·WF 속성별 표준/실효/실적 Capa 비교 프로토타입
 - 공정·제품·STEP별 일일 보유 재공·유입·Flow와 표준 가능량을 비교하는 Plotly 격자
   프로토타입

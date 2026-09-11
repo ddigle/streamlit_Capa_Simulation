@@ -1231,7 +1231,7 @@ WebIDE 로 이관하면서 DuckDB 파일을 WebIDE 밖에 두기로 했다. 저�
 
 ## 3-10. 2026-09-10 Admin Area 와 공정 표시명(Proc Rename)
 
-Dynamic Capa 하위 마지막에 `Admin Area (구현중)` 페이지가 있고 그 안 `Proc Rename` 탭이
+사이드바 맨 아래 별도 박스에 `Admin Area` 페이지가 있고 그 안 `Proc Rename` 탭이
 공용 공정 표시명 프로필을 관리한다. 저장은 시뮬레이션 DB 마이그레이션 `0015` 의
 `app_meta.global_process_rename*` 두 테이블이며 표시순서 프로필과 같은 결이다 —
 단일 행 프로필, 교체마다 version+1, 이전 규칙은 보존하지 않는다(되돌리기는 교체 전 CSV

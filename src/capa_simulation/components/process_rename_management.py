@@ -161,7 +161,7 @@ def _render_direct_editor(
             st.dataframe(
                 pd.DataFrame({"공정": available_processes}),
                 hide_index=True,
-                width="content",
+                width="stretch",
                 height=240,
             )
     editable = (
