@@ -15,6 +15,7 @@ from capa_simulation.components.home_figures import (
 from capa_simulation.components.home_preference import (
     ADVANCE_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
+    PLAN_DETAIL_CUSTOMER_KEY,
     render_home_preference,
     render_lob_title_row,
 )
@@ -58,6 +59,8 @@ from capa_simulation.services.advance_load import (
     unapplicable_advance_months,
 )
 from capa_simulation.services.dashboard import (
+    PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
+    PRODUCTION_DETAIL_DIMENSIONS,
     build_bottleneck_capacity,
     build_monthly_bottleneck_details_from_ranking,
     build_monthly_bottleneck_ranking,
@@ -69,6 +72,7 @@ from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
     get_home_lob_without_edp,
+    get_home_plan_detail,
     get_home_simulation,
 )
 from capa_simulation.settings import DUCKDB_PATH
@@ -92,6 +96,10 @@ home_trace = PerformanceTrace()
 # 쓰는 자리를 그대로 읽는다 — 사용자가 토글을 누르면 다음 실행의 이 줄에 새 값이 들어온다.
 include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, True))
 show_advance = bool(st.session_state.get(ADVANCE_TOGGLE_KEY, False))
+plan_detail_customer = bool(st.session_state.get(PLAN_DETAIL_CUSTOMER_KEY, False))
+plan_detail_dimensions = (
+    PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS if plan_detail_customer else PRODUCTION_DETAIL_DIMENSIONS
+)
 # 공정 표시명은 화면 라벨일 뿐이라 계산 입력이 아니다. `content_token` 을 다시
 # 발급하지 않고 Figure 캐시 키에 버전 정수만 접어 넣는다.
 process_labels = get_process_labels()
@@ -140,6 +148,15 @@ try:
             cache_key=home_simulation_cache_key,
             _tables=active_scenario["tables"],
             _display_order=reference_tables["RQ_DISPLAY_ORDER"],
+        )
+    if plan_detail_customer:
+        # 기본 조합의 세부수량은 위에서 이미 나왔다. 분류를 바꾼 사람만 다시 만든다.
+        production_detail = get_home_plan_detail(
+            cache_key=home_simulation_cache_key,
+            _tables=active_scenario["tables"],
+            _display_order=reference_tables["RQ_DISPLAY_ORDER"],
+            include_edp=include_edp,
+            include_customer=True,
         )
     advance_profile = load_global_advance_load(str(DUCKDB_PATH.resolve()))
     baseline_density = monthly_density
@@ -335,6 +352,7 @@ figure_cache_key: HomeFigureCacheKey = (
     float(secure_threshold_percent),
     float(warning_threshold_percent),
     include_edp,
+    plan_detail_customer,
     show_advance,
     advance_profile.version if show_advance else 0,
 )
@@ -391,6 +409,7 @@ if cached_figures is None:
     detail_label_figure, detail_month_figure = build_plan_detail_figures(
         production_detail=production_detail,
         month_labels=month_labels,
+        detail_dimensions=plan_detail_dimensions,
     )
     (
         bottleneck_detail_label_figure,

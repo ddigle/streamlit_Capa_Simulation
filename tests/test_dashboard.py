@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.services.dashboard import (
+    PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
     build_bottleneck_capacity,
     build_monthly_bottleneck_details,
     build_monthly_bottleneck_details_from_ranking,
@@ -47,6 +48,99 @@ def test_production_dashboard_groups_pkg_plan_by_product_and_stack() -> None:
     assert list(detail.columns) == ["제품정보", "Stack", "26.08", "26.09"]
     assert detail.loc[0, "26.08"] == pytest.approx(100.0)
     assert detail.loc[0, "26.09"] == pytest.approx(200.0)
+
+
+def test_production_dashboard_can_split_the_detail_by_customer() -> None:
+    """`상세` 를 켜면 제품·Stack 아래에 거래선이 분류로 더해진다.
+
+    `Customer` 는 `RQ_PKG_PLAN` 의 1급 컬럼이라 조인이 아니라 묶는 키 하나가 늘어난다.
+    같은 제품·Stack 이라도 거래선이 다르면 행이 갈라져야 한다.
+    """
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608, 202608],
+            "양산구분": ["양산", "양산", "양산"],
+            "제품정보": ["HBM다E", "HBM다E", "HBM다E"],
+            "Stack": ["12H", "12H", "12H"],
+            "Customer": ["Customer-A", "Customer-B", "Customer-A"],
+            "생산수량": [100.0, 40.0, 60.0],
+        }
+    )
+    density_data = pd.DataFrame(
+        {
+            "제품정보": ["HBM다E"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "구분_Chip": [11.0],
+            "구분_EQ": [24.0],
+        }
+    )
+
+    _, detail = build_production_dashboard(
+        plan,
+        density_data,
+        detail_dimensions=PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
+    )
+
+    assert list(detail.columns) == ["제품정보", "Stack", "Customer", "26.08"]
+    assert detail["Customer"].tolist() == ["Customer-A", "Customer-B"]
+    # 같은 거래선의 두 행은 합쳐지고 다른 거래선은 갈라진다.
+    assert detail["26.08"].tolist() == pytest.approx([160.0, 40.0])
+    # Density 는 분류와 무관하게 전체 합이다 — 분류를 바꿔도 부하량은 그대로여야 한다.
+    _, base_detail = build_production_dashboard(plan, density_data)
+    assert base_detail["26.08"].sum() == pytest.approx(detail["26.08"].sum())
+
+
+def test_customer_order_comes_from_the_shared_display_order_profile() -> None:
+    """거래선 정렬은 표시순서 관리에 `Customer` 규칙을 넣으면 그대로 걸린다.
+
+    `apply_display_order` 는 데이터에 없는 분류컬럼 규칙을 건너뛴다. 그래서 같은 규칙이
+    `상세` 를 끈 화면에서는 아무 일도 하지 않고, 켠 화면에서만 거래선 순서를 정한다.
+    """
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["HBM다E", "HBM다E"],
+            "Stack": ["12H", "12H"],
+            "Customer": ["Customer-A", "Customer-B"],
+            "생산수량": [100.0, 40.0],
+        }
+    )
+    density_data = pd.DataFrame(
+        {
+            "제품정보": ["HBM다E"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "구분_Chip": [11.0],
+            "구분_EQ": [24.0],
+        }
+    )
+    display_order = pd.DataFrame(
+        {
+            "페이지 구분": ["부하량", "부하량"],
+            "탭 구분": ["PKG PLAN", "PKG PLAN"],
+            "정렬우선순위": [3, 3],
+            "분류컬럼": ["Customer", "Customer"],
+            "정렬방식": ["사용자지정", "사용자지정"],
+            "분류값": ["Customer-B", "Customer-A"],
+            "값표시순서": [1, 2],
+            "활성여부": ["Y", "Y"],
+        }
+    )
+
+    _, detail = build_production_dashboard(
+        plan,
+        density_data,
+        display_order,
+        detail_dimensions=PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
+    )
+
+    assert detail["Customer"].tolist() == ["Customer-B", "Customer-A"]
+
+    # 같은 규칙이 분류에 거래선이 없는 화면에서는 아무것도 바꾸지 않는다.
+    _, base_detail = build_production_dashboard(plan, density_data, display_order)
+    assert list(base_detail.columns) == ["제품정보", "Stack", "26.08"]
 
 
 def test_production_dashboard_uses_pkg_plan_display_order() -> None:

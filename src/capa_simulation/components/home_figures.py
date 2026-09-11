@@ -41,7 +41,11 @@ from capa_simulation.components.plotly_layout import (
 )
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
-from capa_simulation.services.dashboard import PRODUCTION_DETAIL_DIMENSIONS
+from capa_simulation.services.dashboard import (
+    DETAIL_DIMENSION_HEADERS,
+    DETAIL_DIMENSION_WIDTHS,
+    PRODUCTION_DETAIL_DIMENSIONS,
+)
 
 # 상세 B/N 공정 시트가 보여줄 순위 상한. 페이지가 서비스에 넘기는 값이고, 자르는 곳은
 # 서비스 한 곳이다. Figure 는 받은 프레임을 그대로 믿고 행 수를 `순위` 최대값으로만
@@ -765,8 +769,15 @@ def build_plan_detail_figures(
     *,
     production_detail: pd.DataFrame,
     month_labels: list[str],
+    detail_dimensions: list[str] | None = None,
 ) -> tuple[go.Figure, go.Figure]:
-    """제품·Stack별 계획 세부수량 Figure 한 쌍을 만든다."""
+    """분류별 계획 세부수량 Figure 한 쌍을 만든다.
+
+    `detail_dimensions` 는 왼쪽 분류 칸을 정한다. 기본은 제품·Stack 이고 `상세` 를 켜면
+    거래선이 더해진다. 머리글과 칸 폭은 컬럼 이름에서 끌어오므로 분류가 늘어도 여기서
+    다시 적을 것이 없다.
+    """
+    dimensions = list(detail_dimensions or PRODUCTION_DETAIL_DIMENSIONS)
     # 조회 범위의 모든 달을 컬럼으로 유지한다. 세부 데이터에 없는 달을 빼면 컬럼 수가
     # 줄어드는데 Figure 폭은 `len(month_labels)` 로 잡으므로, 컬럼 폭이 100px 그리드보다
     # 넓어져 헤더가 뒤로 갈수록 밀린다. 요약표와 월이 세로로 어긋나기도 한다.
@@ -774,7 +785,7 @@ def build_plan_detail_figures(
     displayed_detail = production_detail.copy()
     detail_dimension_values = [
         ["" if pd.isna(value) else str(value) for value in displayed_detail[column]]
-        for column in PRODUCTION_DETAIL_DIMENSIONS
+        for column in dimensions
     ]
     grouped_dimension_values = [values.copy() for values in detail_dimension_values]
     for dimension_index, values in enumerate(grouped_dimension_values):
@@ -820,9 +831,12 @@ def build_plan_detail_figures(
     )
     detail_label_figure = go.Figure(
         go.Table(
-            columnwidth=[1.4, 0.6],
+            columnwidth=[DETAIL_DIMENSION_WIDTHS.get(column, 1.0) for column in dimensions],
             header={
-                "values": ["<b>제품</b>", "<b>Stack</b>"],
+                "values": [
+                    f"<b>{DETAIL_DIMENSION_HEADERS.get(column, column)}</b>"
+                    for column in dimensions
+                ],
                 "align": "center",
                 "fill_color": tokens.HEADER_BACKGROUND,
                 "line_color": TRANSPARENT_COLOR,
@@ -836,7 +850,7 @@ def build_plan_detail_figures(
             cells={
                 "values": grouped_dimension_values,
                 "align": "center",
-                "fill_color": [detail_label_row_colors for _ in PRODUCTION_DETAIL_DIMENSIONS],
+                "fill_color": [detail_label_row_colors for _ in dimensions],
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
                     "color": tokens.TEXT,

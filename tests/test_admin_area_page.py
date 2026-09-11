@@ -33,7 +33,13 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
     # 운영 관리 기능은 이미 쓰는 화면이라 `(구현중)` 배지를 달지 않는다.
     assert not any("구현중" in markdown.value for markdown in app.markdown)
     assert any("Proc Rename" in subheader.value for subheader in app.subheader)
-    assert len(app.get("download_button")) == 1
+    # 표시순서 관리가 시나리오 관리 페이지에서 여기로 옮겨 와 두 탭이다.
+    assert [tab.label for tab in app.main.tabs] == [
+        ":material/label: Proc Rename",
+        ":material/sort: 표시순서 관리",
+    ]
+    # 내려받기는 표시명 양식과 표시순서 양식 둘이다.
+    assert len(app.get("download_button")) == 2
     assert len(app.get("file_uploader")) == 0
     assert any(area.label == "공정 표시명 표 붙여넣기" for area in app.text_area)
     assert any("공용 버전 없음" in caption.value for caption in app.caption)

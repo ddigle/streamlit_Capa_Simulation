@@ -31,6 +31,7 @@ from capa_simulation.services.advance_load import (
 
 EDP_TOGGLE_KEY = "home_preference_include_edp"
 ADVANCE_TOGGLE_KEY = "home_show_advance"
+PLAN_DETAIL_CUSTOMER_KEY = "home_preference_plan_detail_customer"
 ADVANCE_EDITOR_KEY = "home_preference_advance_editor"
 ADVANCE_NOTE_KEY = "home_preference_advance_note"
 DIMENSION_COLUMN = "구분"
@@ -87,6 +88,16 @@ def render_home_preference(
                 "끄면 Density·Wafer 계획·Wafer Capa 와 계획 세부수량에서 EDP-TSV 제품을 "
                 "뺍니다. 설비가 받는 부하는 그대로라 확보율과 B/N 공정 순위는 바뀌지 "
                 "않습니다."
+            ),
+        )
+        st.toggle(
+            "계획 세부수량 상세",
+            value=False,
+            key=PLAN_DETAIL_CUSTOMER_KEY,
+            persist_state="session",
+            help=(
+                "계획 세부수량의 제품·Stack 아래에 거래선을 분류로 더합니다. 거래선 수만큼 "
+                "행이 늘어 표가 길어집니다."
             ),
         )
     _render_advance_editor(

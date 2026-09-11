@@ -27,10 +27,11 @@ def test_every_tab_form_is_rendered_in_one_run(seeded_databases: tuple[Path, Pat
 
     assert not app.exception
     labels = {widget.label for widget in app.text_input}
-    # BigDataQuery 등록 폼 · 표시순서 직접 편집 폼. 시나리오 관리 탭의 폼(복제 저장·리비전
-    # 저장과 목록 관리의 이름 수정·공식 지정)은 탭 안의 작업 선택(segmented control)과 고른
-    # 시나리오에 따라 그려지므로 여기 없다.
-    assert {"조회할 시뮬레이션 코드", "변경 메모"} <= labels
+    # BigDataQuery 등록 폼. 시나리오 관리 탭의 폼(복제 저장·리비전 저장과 목록 관리의 이름
+    # 수정·공식 지정)은 탭 안의 작업 선택(segmented control)과 고른 시나리오에 따라
+    # 그려지므로 여기 없다. 표시순서 관리는 Admin Area 로 옮겼다.
+    assert {"조회할 시뮬레이션 코드"} <= labels
+    assert [tab.label for tab in app.main.tabs] == ["시나리오 관리", "BigDataQuery 등록"]
     # 1단계 조회 폼과 2단계 등록 폼이 한 rerun 에 함께 있어야 탭을 오갈 때 값이 남는다.
     assert {"시작일", "종료일"} <= {widget.label for widget in app.date_input}
     assert "시뮬레이션 코드 조회" in {button.label for button in app.button}

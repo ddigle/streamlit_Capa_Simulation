@@ -28,10 +28,11 @@ from capa_simulation.performance import PerformanceTrace
 # 번호가 겹쳐 예전 Figure 가 그대로 나온다. 계산 캐시와 같은 근거로 토큰을 쓴다.
 # 두 번째 요소는 공용 공정 표시명 프로필 버전이다. 표시명은 계산 입력이 아니라 라벨이므로
 # 계산 캐시 키(`build_home_simulation_cache_key`)에는 넣지 않고 여기에만 접어 넣는다.
-# 뒤의 셋은 화면 기준 토글이다 — EDP 포함 여부, 선행 반영 여부, 선행 물량 프로필 버전.
+# 뒤의 넷은 화면 기준 토글이다 — EDP 포함 여부, 계획 세부수량 거래선 분류 여부,
+# 선행 반영 여부, 선행 물량 프로필 버전.
 # 버전은 선행을 켰을 때만 채우므로 껐다 켜도 같은 칸을 다시 쓰지 않는다.
 HomeFigureCacheKey = tuple[
-    int, int, int, str, int, int, str, tuple[str, ...], float, float, bool, bool, int
+    int, int, int, str, int, int, str, tuple[str, ...], float, float, bool, bool, bool, int
 ]
 
 HomeFigureSet = tuple[Any, ...]
@@ -42,7 +43,7 @@ HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 # 때마다 차트를 다시 조립해 2 초를 쓴다. 한 칸은 Figure 여섯 개다.
 HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 
-HOME_FIGURE_SCHEMA_VERSION = 30
+HOME_FIGURE_SCHEMA_VERSION = 31
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지

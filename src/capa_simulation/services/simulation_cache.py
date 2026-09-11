@@ -10,6 +10,8 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.services.dashboard import (
+    PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
+    PRODUCTION_DETAIL_DIMENSIONS,
     build_monthly_wafer_load_from_load,
     build_production_dashboard,
 )
@@ -321,6 +323,38 @@ def get_home_lob_without_edp(
     _, wafer_load = calculate_chip_and_wafer_loads(plan, yield_data, _tables["RQ_CHIP_QTY"])
     monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
     return monthly_density, production_detail, monthly_wafer
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_home_plan_detail(
+    cache_key: HomeSimulationCacheKey,
+    _tables: Mapping[str, pd.DataFrame],
+    _display_order: pd.DataFrame,
+    *,
+    include_edp: bool,
+    include_customer: bool,
+) -> pd.DataFrame:
+    """기본(EDP 포함·제품/Stack)이 아닌 조합의 계획 세부수량.
+
+    기본 조합은 `get_home_simulation` 이 이미 만들어 돌려주므로 여기 오지 않는다. 토글을
+    건드린 사람만 이 계산을 치른다.
+    """
+    _, _, start_month, end_month, _ = cache_key
+    plan = filter_edp_plan(
+        filter_month_range(_tables["RQ_PKG_PLAN"], start_month, end_month, "RQ_PKG_PLAN"),
+        include_edp,
+    )
+    _, detail = build_production_dashboard(
+        plan,
+        _tables["RQ_CHIP_EQ"],
+        _display_order,
+        detail_dimensions=(
+            PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS
+            if include_customer
+            else PRODUCTION_DETAIL_DIMENSIONS
+        ),
+    )
+    return detail
 
 
 @st.cache_data(show_spinner=False, max_entries=16)

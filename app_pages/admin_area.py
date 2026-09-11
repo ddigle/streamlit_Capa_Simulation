@@ -1,9 +1,12 @@
-# Purpose: 화면 표기·정렬순서 같은 운영 관리 기능을 탭으로 모아 제공한다.
+# Purpose: 공정 표시명과 공용 표시순서 같은 운영 관리 기능을 탭으로 모아 제공한다.
 
 from __future__ import annotations
 
 import streamlit as st
 
+from capa_simulation.components.display_order_management import (
+    render_display_order_management,
+)
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_rename_management import (
     render_process_rename_management,
@@ -16,7 +19,10 @@ from capa_simulation.settings import DUCKDB_PATH
 # 탭을 더할 자리다. 이름을 여기에 모아 두고 아래에서 같은 순서로 그린다. 차트·월별 표가
 # 들어오면 그때 `tab_state.stateful_tabs` 로 바꿔 **그림만** 건너뛴다. 입력 위젯은 닫힌
 # 탭에서도 항상 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다.
-TAB_NAMES = (":material/label: Proc Rename",)
+TAB_NAMES = (
+    ":material/label: Proc Rename",
+    ":material/sort: 표시순서 관리",
+)
 
 render_page_header(
     "Admin Area",
@@ -45,7 +51,9 @@ try:
 except BOOTSTRAP_ERRORS:
     available_processes = []
 
-(process_rename_tab,) = st.tabs(list(TAB_NAMES))
+process_rename_tab, display_order_tab = st.tabs(list(TAB_NAMES))
 
 with process_rename_tab:
     render_process_rename_management(repository, available_processes)
+with display_order_tab:
+    render_display_order_management(repository)

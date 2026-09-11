@@ -10,20 +10,34 @@ from capa_simulation.services.load_calculator import (
 
 PRODUCTION_DETAIL_DIMENSIONS = ["제품정보", "Stack"]
 
+# `상세` 를 켜면 거래선을 가장 아래 분류로 더한다. `Customer` 는 `RQ_PKG_PLAN` 의 1급
+# 컬럼이라 조인이 아니라 묶는 키 하나가 늘어나는 것뿐이다.
+PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS = [*PRODUCTION_DETAIL_DIMENSIONS, "Customer"]
+
+# 화면 머리글. 원본 컬럼명을 그대로 쓰면 `제품정보` 가 칸을 넘는다. 계약 컬럼명은 그대로
+# 두고 표시 글자만 여기서 정한다.
+DETAIL_DIMENSION_HEADERS = {"제품정보": "제품", "Stack": "Stack", "Customer": "거래선"}
+
+# 라벨 칸 안에서 분류 컬럼이 나눠 갖는 폭. 제품명이 길고 Stack 은 짧다.
+DETAIL_DIMENSION_WIDTHS = {"제품정보": 1.4, "Stack": 0.6, "Customer": 1.0}
+
 
 def build_production_dashboard(
     plan: pd.DataFrame,
     density_data: pd.DataFrame,
     display_order: pd.DataFrame | None = None,
+    *,
+    detail_dimensions: list[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Build mass-production Density totals and product/stack PKG Plan detail."""
+    """Build mass-production Density totals and PKG Plan detail by the given dimensions."""
+    dimensions = list(detail_dimensions or PRODUCTION_DETAIL_DIMENSIONS)
     density = calculate_density_load(plan, density_data)
     production_class = density["양산구분"].astype("string").str.strip()
     density = density.loc[production_class.eq("양산")].copy()
     if density.empty:
         return (
             pd.DataFrame(columns=["생산계획년월", "부하량", "년월"]),
-            pd.DataFrame(columns=PRODUCTION_DETAIL_DIMENSIONS),
+            pd.DataFrame(columns=dimensions),
         )
     monthly = (
         density.groupby("생산계획년월", as_index=False, dropna=False)[["물량"]]
@@ -36,7 +50,7 @@ def build_production_dashboard(
 
     production_plan = plan.copy()
     production_plan["양산구분"] = production_plan["양산구분"].astype("string").str.strip()
-    for column in PRODUCTION_DETAIL_DIMENSIONS:
+    for column in dimensions:
         production_plan[column] = production_plan[column].astype("string").str.strip()
     production_plan["생산계획년월"] = pd.to_numeric(
         production_plan["생산계획년월"], errors="coerce"
@@ -46,22 +60,20 @@ def build_production_dashboard(
     ).fillna(0.0)
     production_plan = production_plan.loc[production_plan["양산구분"].eq("양산")]
     grouped_detail = production_plan.groupby(
-        ["생산계획년월", *PRODUCTION_DETAIL_DIMENSIONS],
+        ["생산계획년월", *dimensions],
         as_index=False,
         dropna=False,
     )["생산수량"].sum()
     detail = grouped_detail.pivot(
-        index=PRODUCTION_DETAIL_DIMENSIONS,
+        index=dimensions,
         columns="생산계획년월",
         values="생산수량",
     ).reset_index()
     detail.columns.name = None
-    raw_month_columns = [
-        column for column in detail.columns if column not in PRODUCTION_DETAIL_DIMENSIONS
-    ]
+    raw_month_columns = [column for column in detail.columns if column not in dimensions]
     detail = detail.rename(columns={month: _month_label(int(month)) for month in raw_month_columns})
     month_columns = [_month_label(int(month)) for month in sorted(raw_month_columns)]
-    detail = detail[[*PRODUCTION_DETAIL_DIMENSIONS, *month_columns]]
+    detail = detail[[*dimensions, *month_columns]]
     detail = apply_display_order(detail, display_order, "부하량", "PKG PLAN")
     return monthly, detail
 
