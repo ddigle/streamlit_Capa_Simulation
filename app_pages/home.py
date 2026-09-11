@@ -32,7 +32,7 @@ from capa_simulation.components.home_rendering import (
     store_home_figures,
 )
 from capa_simulation.components.loading_progress import LoadingProgress
-from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.page_header import render_page_header_with_status
 from capa_simulation.components.past_data_management import render_past_data_management
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.io.reference_cache import (
@@ -120,9 +120,10 @@ def _owned_comparison_revision(
     return revision_id if any(item.revision_id == revision_id for item in revisions) else None
 
 
-render_page_header("Capa LOB Summary")
-# 진행 표시는 탭 위에 둔다. 어느 탭을 보고 있든 같은 자리에서 읽혀야 한다.
-loading = LoadingProgress(st.empty(), HOME_LOADING_STAGES)
+# 진행 표시는 제목 줄 안에 둔다. 본문 흐름에 두면 막대가 뜨고 질 때마다 아래 차트가 그만큼
+# 밀려 보던 자리가 흔들린다. 줄 높이는 제목이 잡으므로 막대가 사라져도 아래가 움직이지 않고,
+# 어느 탭을 보고 있든 같은 자리에서 읽힌다.
+loading = LoadingProgress(render_page_header_with_status("Capa LOB Summary"), HOME_LOADING_STAGES)
 show_home_performance = st.sidebar.toggle(
     "HOME 성능 진단",
     value=False,

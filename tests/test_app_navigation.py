@@ -101,7 +101,7 @@ def _page_header_title(page_path: Path) -> str | None:
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
-            and node.func.id == "render_page_header"
+            and node.func.id in {"render_page_header", "render_page_header_with_status"}
             and node.args
             and isinstance(node.args[0], ast.Constant)
         ):

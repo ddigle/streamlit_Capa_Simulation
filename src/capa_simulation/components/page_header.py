@@ -13,8 +13,12 @@
 from __future__ import annotations
 
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.navigation import IMPLEMENTING_SUFFIX
+
+# 제목 오른쪽 진행 표시 자리의 폭. 단계 이름과 퍼센트가 한 줄에 들어가는 최소치다.
+STATUS_SLOT_WIDTH_PX = 320
 
 # 화면이 어느 단계인지 알려주는 배지. 본문이 이미 쓰던 어휘를 그대로 쓴다.
 # 사이드바는 `(구현중)` 한 단계만 쓰고 성숙도는 여기서만 나눈다(docs/TODO.md 결정).
@@ -53,6 +57,32 @@ def render_page_header(
     """
     heading, implementing = _split_implementing(title)
     st.title(heading)
+    _render_marks(implementing, badges, description)
+
+
+def render_page_header_with_status(
+    title: str,
+    *,
+    description: str | None = None,
+    badges: str | None = None,
+) -> DeltaGenerator:
+    """제목 오른쪽에 진행 표시 자리를 둔 머리말. 그 자리를 쓸 `st.empty()` 를 돌려준다.
+
+    진행 막대를 본문 흐름에 그대로 두면 뜨고 질 때마다 아래의 모든 것이 그만큼 위아래로
+    밀린다. 차트를 보는 중에 그 움직임이 그대로 보인다. 제목 줄 안에 넣으면 줄 높이를
+    제목이 잡고 있으므로 막대가 사라져도 아래가 움직이지 않는다.
+    """
+    heading, implementing = _split_implementing(title)
+    with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
+        with st.container(width="content"):
+            st.title(heading)
+        with st.container(width=STATUS_SLOT_WIDTH_PX):
+            slot = st.empty()
+    _render_marks(implementing, badges, description)
+    return slot
+
+
+def _render_marks(implementing: bool, badges: str | None, description: str | None) -> None:
     marks = [mark for mark in (":orange-badge[구현중]" if implementing else "", badges) if mark]
     if marks:
         st.markdown(" ".join(marks))

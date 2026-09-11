@@ -155,7 +155,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그대로이고 Density 증감이 입력값과 정확히 같다.
   - 제목 아래 설명 문구, `계획·B/N 상세표 표시` 토글, `계획 세부수량 CSV` 는 탭이 그 자리를
     쓰면서 없앴다.
-  - 본문 맨 위, 탭 위에 `LoadingProgress` 막대를 둔다. 계산 단계마다 `advance()` 하고
+  - `LoadingProgress` 막대는 **제목 줄 안**, `Capa LOB Summary` 오른쪽에 둔다
+    (`render_page_header_with_status`). 본문 흐름에 두면 막대가 뜨고 질 때마다 아래 차트가
+    그만큼 밀린다. 줄 높이는 제목이 잡으므로 막대가 사라져도 아래가 움직이지 않는다.
+    계산 단계마다 `advance()` 하고
     끝나면 `close()` 한다. **모든 종료 경로가 `close()` 를 지나야 한다** — 오류로 멈추면
     멈춰 선 막대가 오류 문구 위에 남는다. Figure 캐시 적중 경로는 건너뛴 단계 수만큼
     `advance()` 를 더 불러 두 경로의 단계 수를 맞춘다.
