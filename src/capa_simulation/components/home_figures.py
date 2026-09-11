@@ -21,7 +21,6 @@ from capa_simulation.components.home_dimensions import (
     BOTTLENECK_DETAIL_BAR_HEIGHT_PX,
     BOTTLENECK_DETAIL_HEADER_HEIGHT_PX,
     BOTTLENECK_DETAIL_ROW_HEIGHT_PX,
-    DASHBOARD_TITLE_HEIGHT_PX,
     LOB_BOTTOM_MARGIN_PX,
     LOB_CHART_HEIGHT_PX,
     LOB_FIGURE_HEIGHT_PX,
@@ -29,6 +28,8 @@ from capa_simulation.components.home_dimensions import (
     LOB_TABLE_ROW_HEIGHTS_PX,
     LOB_TOP5_HEIGHT_PX,
     LOB_TOP_MARGIN_PX,
+    LOB_VALUE_FONT_SIZE_PX,
+    stacked_row_height,
 )
 from capa_simulation.components.plotly_layout import (
     TRANSPARENT_COLOR,
@@ -36,7 +37,6 @@ from capa_simulation.components.plotly_layout import (
     add_fixed_table_row,
     add_quarter_boundaries,
     append_layout_items,
-    dashboard_title_annotation,
     delta_color,
     fixed_row_domains,
     flush_layout_items,
@@ -71,6 +71,9 @@ BOTTLENECK_NAME_INSET_RATIO = 0.07
 BOTTLENECK_NAME_WIDTH_BUDGET_PX = 80
 BOTTLENECK_NAME_MIN_FONT_PX = 8
 BOTTLENECK_NAME_MAX_FONT_PX = 12
+
+# 계획 세부수량 칸의 값 글자. 분류 칸과 월 칸이 같아야 두 칸의 글자가 같은 눈높이에 선다.
+DETAIL_VALUE_FONT_SIZE_PX = 14
 
 # 글자 크기가 최소값 바닥에 걸리면 더 줄일 수 없어 렌더 폭이 계속 늘어난다. `go.Scatter`
 # 의 text 는 줄바꿈도 칸 단위 클립도 없어 그대로 옆 달 칸을 침범하므로, 남는 한 단계는
@@ -248,7 +251,10 @@ def _bottleneck_rate_labels(
             labels.append(body)
             continue
         color = delta_color(f"{difference:+.0%}")
-        gap = f'<span style="font-size:13px;color:{color}">{difference * 100:+.0f}%p</span>'
+        gap = (
+            f'<span style="font-size:{tokens.DELTA_FONT_SIZE_PX}px;color:{color}">'
+            f"{difference * 100:+.0f}%</span>"
+        )
         labels.append(f"{gap}<br>{body}")
     return labels
 
@@ -343,7 +349,7 @@ def build_lob_summary_figures(
         (
             _axis_values(aligned_summary, month_labels, totals, "부하량", "{:,.2f}"),
             value_fills,
-            20,
+            LOB_VALUE_FONT_SIZE_PX,
             False,
             density_gaps,
             density_comparison_gaps,
@@ -353,7 +359,7 @@ def build_lob_summary_figures(
                 aligned_summary, month_labels, totals, "Wafer 부하량", "{:,.0f}K", scale=1_000
             ),
             value_fills,
-            20,
+            LOB_VALUE_FONT_SIZE_PX,
             False,
             wafer_plan_gaps,
             wafer_plan_comparison_gaps,
@@ -863,8 +869,10 @@ def _detail_month_cell_values(
 ) -> list[str]:
     """한 달의 세부수량 셀 값. 데이터에 없는 달은 빈 칸으로 채운다.
 
-    비교 표를 주면 값 **아래** 줄에 증감을 작게 적는다. 행 높이는 그대로 두고 글자만
-    줄인다 — 행 높이가 달라지면 왼쪽 분류 칸과 월 칸의 행이 어긋난다.
+    비교 표를 주면 값 **아래** 줄에 증감을 적는다. 값은 그때도 같은 크기·같은 자리에
+    선다 — 증감 줄의 자리를 빈 줄로 미리 비워 두기 때문이다. 값을 줄여 끼워 넣으면 토글
+    하나에 표 전체의 숫자 크기가 바뀌고, 줄만 더하면 칸 가운데 정렬 탓에 값이 위로
+    올라가 왼쪽 분류 칸과 눈높이가 어긋난다.
     """
     if month not in displayed_detail.columns:
         return [""] * len(displayed_detail)
@@ -873,7 +881,7 @@ def _detail_month_cell_values(
         for value in displayed_detail[month]
     ]
     if comparison_detail is None:
-        return values
+        return [_detail_cell_text(value, "") for value in values]
     comparison_values = (
         pd.to_numeric(comparison_detail[month], errors="coerce")
         if month in comparison_detail.columns
@@ -888,12 +896,23 @@ def _detail_month_cell_values(
         before_amount = 0.0 if pd.isna(before) else float(before)
         difference = current_amount - before_amount
         if abs(difference) < 0.5:
-            labelled.append(value)
+            labelled.append(_detail_cell_text(value, ""))
             continue
         color = delta_color(f"{difference:+.0f}")
-        gap = f'<span style="font-size:10px;color:{color}">{difference:+,.0f}K</span>'
-        labelled.append(f'<span style="font-size:12px">{value}</span><br>{gap}')
+        gap = (
+            f'<span style="font-size:{tokens.DELTA_FONT_SIZE_PX}px;color:{color}">'
+            f"{difference:+,.0f}K</span>"
+        )
+        labelled.append(_detail_cell_text(value, gap))
     return labelled
+
+
+def _detail_cell_text(value: str, gap_markup: str) -> str:
+    """값 한 줄과 증감 한 줄. 증감이 없어도 빈 줄을 남겨 값의 자리를 붙박는다."""
+    if not value:
+        return ""
+    blank = f'<span style="font-size:{tokens.DELTA_FONT_SIZE_PX}px">&nbsp;</span>'
+    return f"{value}<br>{gap_markup or blank}"
 
 
 def build_plan_detail_figures(
@@ -931,6 +950,11 @@ def build_plan_detail_figures(
             if row_index > 0 and current_prefix == previous_prefix:
                 values[row_index] = ""
             previous_prefix = current_prefix
+    # 월 칸이 값 아래에 증감 줄 자리를 늘 비워 두므로 분류 칸도 같은 두 줄이어야 한다.
+    # 한쪽만 두 줄이면 같은 행의 글자가 서로 다른 높이에 선다.
+    grouped_dimension_values = [
+        [_detail_cell_text(value, "") for value in values] for values in grouped_dimension_values
+    ]
 
     detail_group_indices: list[int] = []
     detail_group_starts: list[int] = []
@@ -955,7 +979,8 @@ def build_plan_detail_figures(
         tokens.SURFACE if group_number % 2 == 0 else tokens.SURFACE_SUBTLE
         for group_number in detail_group_indices
     ]
-    detail_row_height = 27
+    # 값 한 줄 + 증감 한 줄이 들어가는 최소 높이. 증감이 없어도 같은 높이를 쓴다.
+    detail_row_height = stacked_row_height(DETAIL_VALUE_FONT_SIZE_PX)
     detail_header_height = 36
     # 제목 자리를 Figure 가 갖지 않는다. `계획 세부수량` 은 Plotly 주석이 아니라 Streamlit
     # 이 그려서 그 옆에 「상세」 토글을 둔다. 두 칸 모두 같은 높이의 줄을 끼우므로 여백을
@@ -986,7 +1011,7 @@ def build_plan_detail_figures(
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": 14,
+                    "size": DETAIL_VALUE_FONT_SIZE_PX,
                     "family": tokens.FONT_FAMILY,
                 },
                 "height": detail_row_height,
@@ -1023,7 +1048,7 @@ def build_plan_detail_figures(
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": 14,
+                    "size": DETAIL_VALUE_FONT_SIZE_PX,
                     "family": tokens.FONT_FAMILY,
                 },
                 "height": detail_row_height,
@@ -1164,7 +1189,10 @@ def build_bottleneck_detail_figures(
     # 칸을 비운다.
     rank_count = 1 if displayed.empty else max(int(displayed["순위"].max()), 1)
     table_height = BOTTLENECK_DETAIL_HEADER_HEIGHT_PX + rank_count * BOTTLENECK_DETAIL_ROW_HEIGHT_PX
-    figure_height = DASHBOARD_TITLE_HEIGHT_PX + table_height
+    # 제목 자리를 Figure 가 갖지 않는다. `상세 B/N 공정` 은 Plotly 주석이 아니라 Streamlit
+    # 이 그린다 — 주석이 잡던 44px 과 Streamlit 줄의 높이가 달라 세 구획의 제목·표 간격이
+    # 제각각이었다. 세 구획 모두 같은 줄 컴포넌트를 쓰면 간격이 하나로 맞는다.
+    figure_height = table_height
     track_length = 1.0 - 2 * BOTTLENECK_BAR_SIDE_INSET_RATIO
 
     track_bases: list[float] = []
@@ -1309,17 +1337,13 @@ def build_bottleneck_detail_figures(
         "margin": {
             "l": 0,
             "r": 0,
-            "t": DASHBOARD_TITLE_HEIGHT_PX,
+            "t": 0,
             "b": 0,
         },
         "paper_bgcolor": tokens.CHART_CANVAS,
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
     bottleneck_detail_label_figure.update_layout(**bottleneck_detail_layout)
-    append_layout_items(
-        bottleneck_detail_label_figure,
-        annotations=[dashboard_title_annotation("<b>상세 B/N 공정</b>")],
-    )
     # 축 눈금으로 마진이 자동 확장되면 paper 0~1 이 표 영역과 어긋나 경계선 계산이
     # 전부 밀린다. 두 축 모두 `fixedrange` 여야 hover 를 켜도 드래그 확대가 붙지 않는다.
     hidden_axis = {

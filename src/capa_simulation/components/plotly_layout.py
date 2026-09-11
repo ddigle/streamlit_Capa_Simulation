@@ -10,32 +10,10 @@ from typing import Any
 
 import plotly.graph_objects as go
 
-from capa_simulation.components.home_dimensions import (
-    DASHBOARD_TITLE_GAP_PX,
-)
+from capa_simulation.components.home_dimensions import delta_line_shift_px
 from capa_simulation.design import tokens
 
 TRANSPARENT_COLOR = tokens.TRANSPARENT
-
-
-def dashboard_title_annotation(text: str) -> dict[str, Any]:
-    """대시보드 구획 제목을 만든다. 앞의 강조색 막대가 구획의 시작을 알린다.
-
-    예전에는 손 이모지(☝️✌️👌)로 순서를 표시했다. 플랫폼마다 다르게 그려지고 화면
-    톤과도 맞지 않아 강조색 막대로 바꿨다.
-    """
-    return {
-        "x": 0,
-        "y": 1,
-        "xref": "paper",
-        "yref": "paper",
-        "text": f'<span style="color:{tokens.ACCENT}">▍</span>{text}',
-        "showarrow": False,
-        "xanchor": "left",
-        "yanchor": "bottom",
-        "yshift": DASHBOARD_TITLE_GAP_PX,
-        "font": {"size": 20, "color": tokens.TEXT, "family": tokens.FONT_FAMILY},
-    }
 
 
 # Figure 에 붙여 두는 누적함. 이름은 Plotly 속성과 겹치지 않아야 한다.
@@ -112,20 +90,21 @@ def add_figure_outer_border(
                 "layer": "above",
             }
         )
-    else:
-        shapes.append(
-            {
-                "type": "line",
-                "x0": 0,
-                "x1": 1,
-                "y0": 1,
-                "y1": 1,
-                "xref": "paper",
-                "yref": "paper",
-                "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX},
-                "layer": "above",
-            }
-        )
+    # 위 테두리. paper y=1 은 캔버스의 맨 윗줄이라 획의 절반이 밖으로 나가 잘린다. 좌·우·
+    # 아래와 같이 두 배로 그려 보이는 굵기를 맞춘다 — 그렇지 않으면 위만 절반으로 얇다.
+    shapes.append(
+        {
+            "type": "line",
+            "x0": 0,
+            "x1": 1,
+            "y0": 1,
+            "y1": 1,
+            "xref": "paper",
+            "yref": "paper",
+            "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX * 2},
+            "layer": "above",
+        }
+    )
     if emphasize_left:
         shapes.append(
             {
@@ -227,11 +206,6 @@ def fixed_row_domains(
 #
 # 위·아래 GAP 이 함께 붙으면 한 칸이 세 줄이 된다. 그때만 값을 한 단계 더 줄이고 간격을
 # 넓혀 36px 안에 들어가게 한다.
-GAP_VALUE_FONT_SCALE = 0.85
-GAP_VALUE_FONT_SCALE_BOTH = 0.65
-GAP_FONT_SCALE = 0.6
-GAP_LINE_SHIFT_PX = 9
-GAP_LINE_SHIFT_PX_BOTH = 12
 
 
 def _gap_texts(gaps: list[str] | None, count: int) -> list[str]:
@@ -260,30 +234,24 @@ def add_fixed_table_row(
 ) -> None:
     """Draw a fixed-height row without Plotly Table's internal scroll layer.
 
-    `gaps` 는 값 **위**, `lower_gaps` 는 값 **아래**에 작게 적을 증감 문구다. 빈 문자열이면
-    그 칸에는 아무것도 적지 않고 값도 원래 크기·위치 그대로 둔다 — 변화가 없는 칸까지
-    글자를 줄이면 같은 행 안에서 숫자 크기가 들쭉날쭉해진다.
+    `gaps` 는 값 **위**, `lower_gaps` 는 값 **아래**에 적을 증감 문구다. 빈 문자열이면 그
+    칸에는 아무것도 적지 않는다.
+
+    **값은 증감이 있든 없든 같은 크기로 칸 한가운데에 선다.** 증감을 끼우려고 값을 줄이거나
+    밀면 토글 하나에 표 전체의 숫자가 흔들린다. 두 줄이 들어갈 자리는 행 높이가 미리 비워
+    두며(`row_height_with_deltas`), 여기서는 그 자리에 놓기만 한다.
     """
     value_count = max(len(values), 1)
     upper_texts = _gap_texts(gaps, len(values))
     lower_texts = _gap_texts(lower_gaps, len(values))
     middle = (domain[0] + domain[1]) / 2
+    shift = delta_line_shift_px(font_size)
     annotations = []
     for value_index, (value, upper, lower) in enumerate(
         zip(values, upper_texts, lower_texts, strict=True)
     ):
         escaped_value = html.escape(value)
         position = (value_index + 0.5) / value_count
-        both = bool(upper) and bool(lower)
-        shift = GAP_LINE_SHIFT_PX_BOTH if both else GAP_LINE_SHIFT_PX
-        if both:
-            value_size = round(font_size * GAP_VALUE_FONT_SCALE_BOTH)
-        elif upper or lower:
-            value_size = round(font_size * GAP_VALUE_FONT_SCALE)
-        else:
-            value_size = font_size
-        # 한쪽에만 붙으면 값이 반대쪽으로 밀려 칸 가운데를 유지한다. 양쪽이면 그대로 둔다.
-        value_shift = 0 if both else (-shift if upper else (shift if lower else 0))
         annotations.append(
             {
                 "x": position,
@@ -294,10 +262,9 @@ def add_fixed_table_row(
                 "showarrow": False,
                 "xanchor": "center",
                 "yanchor": "middle",
-                "yshift": value_shift,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": value_size,
+                    "size": font_size,
                     "family": tokens.FONT_FAMILY,
                 },
             }
@@ -318,7 +285,7 @@ def add_fixed_table_row(
                     "yshift": gap_shift,
                     "font": {
                         "color": delta_color(gap_text),
-                        "size": round(font_size * GAP_FONT_SCALE),
+                        "size": tokens.DELTA_FONT_SIZE_PX,
                         "family": tokens.FONT_FAMILY_NUMERIC,
                     },
                 }

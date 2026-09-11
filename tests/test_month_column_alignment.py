@@ -71,7 +71,8 @@ def test_missing_months_stay_as_empty_columns() -> None:
     ]
     # 데이터가 없는 26.02 는 두 번째 컬럼이고 전부 빈 칸이어야 한다.
     assert list(table.cells.values[1]) == ["", ""]
-    assert list(table.cells.values[0]) == ["100K", "200K"]
+    # 값 아래에는 증감 줄 자리가 늘 비워져 있다. 그래야 비교를 켜도 값이 움직이지 않는다.
+    assert [_value_line(cell) for cell in table.cells.values[0]] == ["100K", "200K"]
 
 
 def test_headers_are_centered() -> None:
@@ -83,3 +84,8 @@ def test_headers_are_centered() -> None:
     table = _month_table(month_figure)
     assert table.header.align == ("center",) or table.header.align == "center"
     assert table.cells.align == ("center",) or table.cells.align == "center"
+
+
+def _value_line(cell: str) -> str:
+    """칸의 첫 줄만 떼어 낸다. 둘째 줄은 증감 자리를 비워 두는 빈 줄이다."""
+    return cell.split("<br>", 1)[0]

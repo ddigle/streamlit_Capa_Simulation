@@ -9,7 +9,6 @@ import pytest
 from capa_simulation.components.home_dimensions import (
     BOTTLENECK_DETAIL_HEADER_HEIGHT_PX,
     BOTTLENECK_DETAIL_ROW_HEIGHT_PX,
-    DASHBOARD_TITLE_HEIGHT_PX,
 )
 from capa_simulation.components.home_figures import (
     BOTTLENECK_DETAIL_RANK_LIMIT,
@@ -98,11 +97,9 @@ def test_row_count_follows_the_month_with_the_most_processes() -> None:
         )
     )
 
-    expected_height = (
-        DASHBOARD_TITLE_HEIGHT_PX
-        + BOTTLENECK_DETAIL_HEADER_HEIGHT_PX
-        + 3 * BOTTLENECK_DETAIL_ROW_HEIGHT_PX
-    )
+    # 제목 자리는 Figure 밖이다. `상세 B/N 공정` 은 Streamlit 이 그리므로 Figure 높이는
+    # 표 높이 그대로다.
+    expected_height = BOTTLENECK_DETAIL_HEADER_HEIGHT_PX + 3 * BOTTLENECK_DETAIL_ROW_HEIGHT_PX
     assert month_figure.layout.height == expected_height
     assert list(label_figure.data[0].cells.values[0]) == ["1", "2", "3"]
 

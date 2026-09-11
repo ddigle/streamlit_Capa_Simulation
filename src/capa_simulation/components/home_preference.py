@@ -61,7 +61,7 @@ def render_plan_detail_title_row(*, applied_customer: bool) -> None:
         vertical_alignment="center",
         gap="medium",
     ):
-        st.markdown(_section_title("계획 세부수량"), unsafe_allow_html=True)
+        st.markdown(section_title_markup("계획 세부수량"), unsafe_allow_html=True)
         st.toggle(
             "상세",
             value=False,
@@ -76,7 +76,17 @@ def render_plan_detail_title_row(*, applied_customer: bool) -> None:
         st.rerun(scope="app")
 
 
-def _section_title(text: str) -> str:
+def render_section_title_row(text: str, *, key: str) -> None:
+    """위젯 없는 구획 제목 줄. 토글이 붙는 줄들과 같은 높이·같은 모양이다.
+
+    세 구획의 제목이 같은 컴포넌트로 그려져야 제목과 표 사이 간격이 하나로 맞는다.
+    하나만 Plotly 주석으로 남겨 두면 그 구획만 간격이 다르다.
+    """
+    with st.container(key=key, horizontal=True, vertical_alignment="center", gap="medium"):
+        st.markdown(section_title_markup(text), unsafe_allow_html=True)
+
+
+def section_title_markup(text: str) -> str:
     """구획 제목 한 줄. Plotly 주석이 그리던 모양을 그대로 옮긴 것이다."""
     return (
         f'<span style="color:{tokens.ACCENT}">▍</span>'
@@ -98,7 +108,7 @@ def render_lob_title_row(
     바뀌지 않으면 고장으로 읽힌다.
     """
     with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
-        st.markdown(_section_title("Capa LOB 현황"), unsafe_allow_html=True)
+        st.markdown(section_title_markup("Capa LOB 현황"), unsafe_allow_html=True)
         st.toggle(
             "선행",
             value=False,

@@ -17,7 +17,10 @@ from capa_simulation.components.home_dimensions import (
     DASHBOARD_SECTION_GAP_PX,
     DASHBOARD_TITLE_HEIGHT_PX,
 )
-from capa_simulation.components.home_preference import render_plan_detail_title_row
+from capa_simulation.components.home_preference import (
+    render_plan_detail_title_row,
+    render_section_title_row,
+)
 from capa_simulation.components.loading_progress import LoadingStage
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
@@ -61,7 +64,7 @@ HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 # 때마다 차트를 다시 조립해 2 초를 쓴다. 한 칸은 Figure 여섯 개다.
 HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 
-HOME_FIGURE_SCHEMA_VERSION = 33
+HOME_FIGURE_SCHEMA_VERSION = 34
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지
@@ -137,12 +140,15 @@ def render_home_figures(
             f"""
             <style>
             .st-key-plan_detail_title_row,
-            .st-key-plan_detail_title_spacer {{
+            .st-key-plan_detail_title_spacer,
+            .st-key-bottleneck_title_row,
+            .st-key-bottleneck_title_spacer {{
                 height: {DASHBOARD_TITLE_HEIGHT_PX}px;
                 min-height: {DASHBOARD_TITLE_HEIGHT_PX}px;
                 margin: 0;
             }}
-            .st-key-plan_detail_title_row {{ align-items: center; }}
+            .st-key-plan_detail_title_row,
+            .st-key-bottleneck_title_row {{ align-items: center; }}
             </style>
             """
         )
@@ -173,6 +179,9 @@ def render_home_figures(
                     key="production_detail_labels",
                     config={"displayModeBar": False, "staticPlot": True},
                 )
+                # `상세 B/N 공정` 제목. 앞의 두 구획과 같은 줄 컴포넌트라 제목과 표
+                # 사이 간격이 셋 다 같다.
+                render_section_title_row("상세 B/N 공정", key="bottleneck_title_row")
                 st.plotly_chart(
                     detail_figures[2],
                     width="stretch",
@@ -222,6 +231,12 @@ def render_home_figures(
                         width="stretch",
                         key="production_detail_months",
                         config={"displayModeBar": False, "staticPlot": True},
+                    )
+                    # 라벨 칸의 `상세 B/N 공정` 제목 줄과 짝이 되는 빈 줄.
+                    st.container(
+                        key="bottleneck_title_spacer",
+                        height=DASHBOARD_TITLE_HEIGHT_PX,
+                        border=False,
                     )
                     # 상세 B/N 월 Figure 는 hover 를 쓰므로 `staticPlot` 을 빼 둔다.
                     # 같은 캔버스의 상세 두 Figure 중 계획 세부수량 쪽은 켜져 있다.

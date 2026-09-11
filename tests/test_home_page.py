@@ -7,6 +7,9 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from capa_simulation.components.home_dimensions import LOB_VALUE_FONT_SIZE_PX
+from capa_simulation.design import tokens
+
 # cwd 가 아니라 이 파일 위치를 기준으로 잡는다. tests/ 안에서 pytest 를 돌려도 같은 페이지를 연다.
 HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
 
@@ -454,3 +457,64 @@ def test_comparison_can_target_another_revision_of_the_same_scenario(tmp_path: P
     # 비교 쪽 계획이 절반이므로 현재가 더 많다 — 전부 증가여야 한다.
     assert gaps, "같은 시나리오의 다른 리비전과 견준 GAP 이 하나도 없다"
     assert all(text.startswith("+") for text in gaps), gaps
+
+
+def _value_slots(app: AppTest) -> list[tuple[float, float, float]]:
+    """LOB 표 세 행의 값 글자가 놓인 자리. 값 자체가 아니라 **자리**만 본다.
+
+    선행을 켜면 값 숫자는 바뀌므로 글자로는 맞출 수 없다. 크기가 값 글자 크기인 주석의
+    (x, y, yshift) 를 모으면 그 자리가 그대로인지 볼 수 있다.
+    """
+    figure = app.session_state["spy_figures"]["production_lob_months"]
+    return sorted(
+        (float(annotation.x), float(annotation.y), float(annotation.yshift or 0))
+        for annotation in figure.layout.annotations
+        if annotation.font.size == LOB_VALUE_FONT_SIZE_PX
+    )
+
+
+def test_the_value_never_moves_or_shrinks_when_gaps_are_switched_on(tmp_path: Path) -> None:
+    """선행·GAP 을 어떻게 켜도 원 데이터의 크기와 자리는 그대로여야 한다.
+
+    예전에는 증감을 끼우려고 값 글자를 0.85·0.65 배로 줄이고 반대쪽으로 밀었다. 토글 하나에
+    표 전체의 숫자가 커졌다 작아졌다 해서 읽던 자리를 놓친다. 지금은 행 높이가 두 줄 자리를
+    미리 비워 두므로 값은 언제나 같은 크기로 칸 한가운데에 선다.
+
+    자리 **개수**까지 함께 본다. 값 하나라도 작아지면 그 주석이 이 묶음에서 빠진다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+
+    before = _value_slots(app)
+    assert before, "값 주석을 하나도 찾지 못했다"
+
+    comparison_id, comparison_revision_id = _create_comparison_scenario(database_path, 0.5)
+    _pick_comparison(app, comparison_id, comparison_revision_id)
+    app.session_state["home_show_advance"] = True
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _gap_annotations(app), "선행·GAP 을 켰는데 증감이 하나도 없다"
+
+    assert _value_slots(app) == before
+
+
+def test_every_gap_uses_one_font_size(tmp_path: Path) -> None:
+    """증감 글자는 자리마다 다르면 안 된다. 같은 뜻의 표기가 크기로 갈리면 위계로 읽힌다."""
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+
+    comparison_id, comparison_revision_id = _create_comparison_scenario(database_path, 0.5)
+    _pick_comparison(app, comparison_id, comparison_revision_id)
+    app.session_state["home_show_advance"] = True
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    figure = app.session_state["spy_figures"]["production_lob_months"]
+    sizes = {
+        int(annotation.font.size)
+        for annotation in figure.layout.annotations
+        if str(annotation.text).strip().startswith(("+", "-"))
+    }
+    assert sizes == {tokens.DELTA_FONT_SIZE_PX}, sizes

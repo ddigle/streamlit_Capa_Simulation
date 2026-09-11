@@ -167,6 +167,10 @@ HIT_TARGET: Final = "rgba(255,255,255,0.01)"
 FONT_FAMILY: Final = "Noto Sans KR, Malgun Gothic, 'Apple SD Gothic Neo', sans-serif"
 FONT_FAMILY_NUMERIC: Final = "Calibri, " + FONT_FAMILY
 
+# 증감(+-) 표기는 화면 어디에서나 이 한 크기를 쓴다. 표 칸 12, 막대 13, 세부수량 10 으로
+# 갈려 있던 탓에 같은 뜻의 글자가 자리마다 달라 보였다.
+DELTA_FONT_SIZE_PX: Final = 12
+
 # --------------------------------------------------------------------- 표 치수
 TABLE_HEADER_HEIGHT_PX: Final = 36
 TABLE_ROW_HEIGHT_PX: Final = 27
