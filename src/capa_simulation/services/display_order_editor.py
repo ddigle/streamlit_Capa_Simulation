@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import require_columns
@@ -216,3 +218,25 @@ def _nullable_integer(series: pd.Series, label: str) -> pd.Series:
     if invalid.any() or fractional.any():
         raise ValueError(f"RQ_DISPLAY_ORDER {label}은 정수여야 합니다.")
     return numeric.astype("Int64")
+
+
+def display_label_mistakes(
+    rules: pd.DataFrame,
+    column_labels: Mapping[str, str],
+) -> dict[str, str]:
+    """`분류컬럼` 에 원본 컬럼명 대신 화면 표시명을 적은 항목. `{적은 값: 원본 컬럼명}`.
+
+    `apply_display_order` 는 프레임에 없는 분류컬럼 규칙을 **조용히 건너뛴다**. 그래서
+    `Customer` 대신 화면에 보이는 `거래선` 을 적으면 저장은 통과하는데 정렬은 걸리지 않고,
+    사용자는 "설정했는데 왜 안 되지" 가 된다. 저장을 막지는 않고 화면이 물어보게 한다.
+
+    표시명이 다른 범위에서는 실제 컬럼일 수 있다(`구분` 이 그렇다). 그래서 판정이 아니라
+    **제안**이고, 문구도 단정하지 않는다.
+    """
+    if "분류컬럼" not in rules.columns:
+        return {}
+    by_label = {
+        str(label): str(column) for column, label in column_labels.items() if str(label).strip()
+    }
+    typed = {str(value).strip() for value in rules["분류컬럼"].dropna()}
+    return {value: by_label[value] for value in sorted(typed) if value in by_label}

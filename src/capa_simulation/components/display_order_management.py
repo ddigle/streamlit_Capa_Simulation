@@ -7,6 +7,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.io.reference_cache import apply_global_display_order
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -21,6 +22,7 @@ from capa_simulation.services.display_order_csv import (
 )
 from capa_simulation.services.display_order_editor import (
     DISPLAY_ORDER_RULE_COLUMNS,
+    display_label_mistakes,
     replace_display_order_scope,
     validate_display_order,
 )
@@ -201,6 +203,14 @@ def _render_direct_editor(
         )
         source = note.strip() or f"웹 직접 편집 · {selected_page}/{selected_tab}"
         _save_global_display_order(repository, revised, source=source)
+        # 표시명을 적으면 저장은 통과하고 정렬만 조용히 걸리지 않는다. 막지 않고 알린다.
+        mistakes = display_label_mistakes(pd.DataFrame(edited), COLUMN_LABELS)
+        for typed, column in mistakes.items():
+            st.warning(
+                f"`{typed}` 은 화면 표시명입니다. 정렬은 원본 컬럼명을 봅니다 — "
+                f"`{column}` 을 뜻하신 것이라면 그렇게 적어야 걸립니다.",
+                icon=":material/help:",
+            )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:

@@ -14,6 +14,7 @@ from capa_simulation.services.display_order_csv import (
     display_order_to_csv,
 )
 from capa_simulation.services.display_order_editor import (
+    display_label_mistakes,
     ensure_route_sequence_rules,
     replace_display_order_scope,
     validate_display_order,
@@ -163,3 +164,28 @@ def test_prepared_display_order_is_reused_across_helpers(
     assert prepare_calls == 1
     assert sorted_data["제품정보"].tolist() == ["A", "B"]
     assert columns == ["제품정보", "값"]
+
+
+def test_a_display_label_in_the_column_field_is_flagged() -> None:
+    """`거래선` 은 화면 표시명이다. 그대로 적으면 저장은 통과하고 정렬만 조용히 안 걸린다.
+
+    `apply_display_order` 가 프레임에 없는 분류컬럼 규칙을 건너뛰기 때문인데, 그 침묵에는
+    단서가 없다. 저장을 막지 않고 원본 컬럼명을 일러 준다.
+    """
+    labels = {"Customer": "거래선", "제품정보": "제품"}
+    rules = pd.DataFrame({"분류컬럼": ["거래선", "제품정보", "Stack"]})
+
+    assert display_label_mistakes(rules, labels) == {"거래선": "Customer"}
+
+
+def test_original_column_names_are_not_flagged() -> None:
+    """원본 컬럼명만 적었으면 아무 말도 하지 않는다."""
+    labels = {"Customer": "거래선", "제품정보": "제품"}
+    rules = pd.DataFrame({"분류컬럼": ["Customer", "제품정보"]})
+
+    assert display_label_mistakes(rules, labels) == {}
+
+
+def test_a_frame_without_the_column_field_is_ignored() -> None:
+    """편집 표가 비어 컬럼조차 없으면 판정할 것이 없다."""
+    assert display_label_mistakes(pd.DataFrame(), {"Customer": "거래선"}) == {}
