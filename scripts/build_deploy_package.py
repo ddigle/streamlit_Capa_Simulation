@@ -5,12 +5,17 @@
 배포 세트는 `git ls-files` 전체에 운영에 필요한 몇 개를 더한 것이다. `tests/`·`scripts/` 도
 넣는다 — 사내 PC 에서 단독으로 돌려 보고 검증할 수 있어야 한다.
 
-**`pyproject.toml` 은 빼고 보낸다.** 사내 PC 의 `pyproject.toml` 에는 삼성 Artifactory 인덱스
-설정이 손으로 들어가 있고, 그 파일을 덮으면 그 설정이 조용히 사라진다. 개발 PC 에는 그
-인덱스가 없으므로(`uv lock` 이 사외에서 깨지지 않게 일부러 뺐다) 덮어쓰는 쪽이 항상 손해다.
+**`pyproject.toml` 과 `uv.lock` 은 빼고 보낸다.** 사내 PC 의 `pyproject.toml` 에는 삼성
+Artifactory 인덱스 설정이 손으로 들어가 있고, 그 선언에서 나온 `uv.lock` 에는 `bigdataquery`
+가 박혀 있다. 개발 PC 에는 둘 다 없으므로(`uv lock` 이 사외에서 깨지지 않게 일부러 뺐다)
+덮어쓰는 쪽이 항상 손해다.
+
+**둘은 짝이라 함께 빼야 한다.** 하나만 보내면 사내에서 선언과 잠금이 어긋나 `uv sync` 가
+락을 다시 만들려 들고, 그 순간 사내 전용 패키지가 환경에서 빠진다.
 
 그래서 **의존성을 바꾸면 ZIP 만으로는 사내에 반영되지 않는다.** 그때는 바뀐 줄을 따로 알려
-사내 PC 의 `pyproject.toml` 을 손으로 맞춰야 한다. 스크립트가 실행할 때마다 그 사실을 알린다.
+사내 PC 의 `pyproject.toml` 을 손으로 맞추고 거기서 `uv lock` 을 다시 돌려야 한다. 스크립트가
+실행할 때마다 그 사실을 알린다.
 
 사용:
 
@@ -32,11 +37,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # `git ls-files` 에 없지만 운영에 필요한 파일. 공용 표시순서의 부트스트랩 입력이다.
 EXTRA_FILES: tuple[str, ...] = ("data/input/RQ_DISPLAY_ORDER.csv",)
 
-# 추적되지만 보내지 않는 파일.
+# 추적되지만 보내지 않는 파일. 선언(`pyproject.toml`)과 그 잠금(`uv.lock`)은 짝이므로 둘
+# 다 사내 것을 남긴다 — 하나만 덮으면 어긋난 채로 `uv sync` 가 락을 다시 만든다.
 EXCLUDED_FILES: frozenset[str] = frozenset(
     {
         # 사내 PC 에만 있는 Artifactory 인덱스 설정을 덮지 않기 위해서다.
         "pyproject.toml",
+        # 그 선언에서 나온 잠금. 사내 락에는 `bigdataquery` 가 박혀 있다.
+        "uv.lock",
     }
 )
 
@@ -145,7 +153,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"제외: {', '.join(sorted(EXCLUDED_FILES))}")
     print(
         "의존성을 바꿨다면 이 ZIP 만으로는 사내에 반영되지 않습니다 — "
-        "`pyproject.toml` 은 보내지 않으므로 바뀐 줄을 따로 알려 주세요."
+        "`pyproject.toml`·`uv.lock` 은 보내지 않으므로 바뀐 줄을 따로 알리고 "
+        "사내에서 `uv lock` 을 다시 돌려야 합니다."
     )
     return 0
 

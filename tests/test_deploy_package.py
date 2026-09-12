@@ -17,16 +17,21 @@ from build_deploy_package import (  # noqa: E402
 )
 
 
-def test_pyproject_never_ships() -> None:
-    """사내 PC 의 `pyproject.toml` 에는 삼성 Artifactory 인덱스가 손으로 들어가 있다.
+def test_the_dependency_declaration_and_its_lock_never_ship() -> None:
+    """사내 PC 의 `pyproject.toml` 에는 삼성 Artifactory 인덱스가 손으로 들어가 있고, 그
+    선언에서 나온 `uv.lock` 에는 `bigdataquery` 가 박혀 있다.
 
-    개발 PC 쪽에는 그 설정이 없다 — 적어 두면 인덱스에 닿지 못하는 곳에서 `uv lock` 이
-    깨지기 때문에 일부러 뺐다. 그러니 덮어쓰면 사내 설정만 사라진다. 이 규칙이 주석으로만
-    남으면 다음 배포에서 조용히 다시 들어간다.
+    개발 PC 쪽에는 둘 다 없다 — 적어 두면 인덱스에 닿지 못하는 곳에서 `uv lock` 이 깨지기
+    때문에 일부러 뺐다. 그러니 덮어쓰면 사내 설정만 사라진다. **둘은 짝이라 함께 빼야
+    한다** — 하나만 보내면 선언과 잠금이 어긋나 `uv sync` 가 락을 다시 만들고, 그 순간
+    사내 전용 패키지가 환경에서 빠진다. 이 규칙이 주석으로만 남으면 다음 배포에서 조용히
+    다시 들어간다.
     """
-    tracked = ["app.py", "pyproject.toml", "src/capa_simulation/settings.py"]
+    tracked = ["app.py", "pyproject.toml", "uv.lock", "src/capa_simulation/settings.py"]
 
-    assert "pyproject.toml" not in deploy_set(tracked, extras=())
+    shipped = deploy_set(tracked, extras=())
+
+    assert shipped == ["app.py", "src/capa_simulation/settings.py"]
 
 
 def test_the_deploy_set_keeps_tests_and_scripts() -> None:
@@ -104,7 +109,7 @@ def test_the_archive_holds_exactly_the_set(tmp_path: Path) -> None:
 
 def test_the_exclusion_list_is_explicit() -> None:
     """제외 목록이 늘면 배포본에서 사라지는 파일이 는다. 눈에 띄게 고정한다."""
-    assert EXCLUDED_FILES == frozenset({"pyproject.toml"})
+    assert EXCLUDED_FILES == frozenset({"pyproject.toml", "uv.lock"})
 
 
 def test_directory_placeholders_still_ship() -> None:
