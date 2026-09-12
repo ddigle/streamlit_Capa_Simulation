@@ -26,10 +26,10 @@ from capa_simulation.components.home_rendering import (
     HOME_FIGURE_SCHEMA_VERSION,
     HOME_LOADING_STAGES,
     HomeFigureCacheKey,
-    home_figure_cache,
     render_home_figures,
     render_home_performance,
     store_home_figures,
+    take_home_figures,
 )
 from capa_simulation.components.loading_progress import LoadingProgress
 from capa_simulation.components.page_header import render_page_header_with_status
@@ -50,7 +50,7 @@ from capa_simulation.persistence.cache import (
     get_scenario_repository,
     load_global_advance_load,
     load_global_past_data,
-    load_scenario_snapshot,
+    load_scenario_plan,
 )
 from capa_simulation.scenario_activation import active_persisted_scenario_id
 from capa_simulation.scenario_preset_state import (
@@ -191,7 +191,7 @@ try:
         cache_key=home_simulation_cache_key,
         _tables=active_scenario["tables"],
         _display_order=reference_tables["RQ_DISPLAY_ORDER"],
-        _module=reference_tables["RQ_MODULE"],
+        _reference_tables=reference_tables,
     )
     if not include_edp:
         # LOB 로 표현되는 값만 EDP 를 뺀다. 확보율과 B/N 공정 순위는 설비가 받는 전체
@@ -220,9 +220,9 @@ try:
             str(comparison_revision_id),
         )
         if owned_revision_id is not None:
-            comparison_snapshot = load_scenario_snapshot(
-                str(DUCKDB_PATH.resolve()), owned_revision_id
-            )
+            # 비교는 계획 한 장만 쓴다. 16표 스냅샷을 풀면 적중하는 실행마다 그 값을
+            # 다시 역직렬화한다.
+            comparison_plan = load_scenario_plan(str(DUCKDB_PATH.resolve()), owned_revision_id)
             (
                 comparison_density,
                 comparison_wafer,
@@ -230,7 +230,7 @@ try:
             ) = get_home_comparison_plan(
                 cache_key=home_simulation_cache_key,
                 _tables=active_scenario["tables"],
-                _comparison_tables=comparison_snapshot.tables,
+                _comparison_plan=comparison_plan,
                 _display_order=reference_tables["RQ_DISPLAY_ORDER"],
                 comparison_revision_id=owned_revision_id,
                 include_edp=include_edp,
@@ -493,7 +493,7 @@ figure_cache_key: HomeFigureCacheKey = (
     advance_profile.version if show_advance else 0,
     past_profile.version,
 )
-cached_figures = home_figure_cache().get(figure_cache_key)
+cached_figures = take_home_figures(figure_cache_key)
 figure_cache_hit = cached_figures is not None
 if cached_figures is None:
     bottleneck_ranking = build_monthly_bottleneck_ranking(

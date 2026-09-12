@@ -22,6 +22,7 @@ from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_mes
 from capa_simulation.persistence.cache import (
     clear_global_past_data_cache,
     get_scenario_repository,
+    past_table_csv,
 )
 from capa_simulation.persistence.models import GlobalPastData
 from capa_simulation.services.past_data import (
@@ -30,7 +31,6 @@ from capa_simulation.services.past_data import (
     PAST_SECUREMENT_COLUMNS,
     past_sample_rows,
     past_table_from_clipboard,
-    past_table_to_csv,
 )
 
 PAST_CLIPBOARD_KEY = "home_past_clipboard"
@@ -101,11 +101,13 @@ def render_past_data_management(database_path: str, profile: GlobalPastData) -> 
         )
         st.caption(_version_caption(profile))
     for spec in PAST_TABLE_SPECS:
-        _render_table_editor(spec, stored[spec.name], draft)
+        _render_table_editor(database_path, profile.version, spec, stored[spec.name], draft)
     _render_save(database_path, stored, draft)
 
 
 def _render_table_editor(
+    database_path: str,
+    version: int,
     spec: PastTableSpec,
     stored: pd.DataFrame,
     draft: dict[str, pd.DataFrame],
@@ -121,9 +123,13 @@ def _render_table_editor(
                 + ("" if pending is None else f" · 대기 {len(pending):,}행")
             )
             render_csv_download(
-                data=past_table_to_csv(
-                    stored if not stored.empty else past_sample_rows(spec.columns),
+                # 탭이 닫혀 있어도 그리므로 인코딩을 HOME 의 매 실행에 얹지 않는다.
+                data=past_table_csv(
+                    database_path,
+                    version,
+                    spec.name,
                     spec.columns,
+                    stored if not stored.empty else past_sample_rows(spec.columns),
                 ),
                 file_name=f"PAST_{spec.name}.csv",
                 key=f"home_past_download_{spec.name}",
@@ -169,6 +175,9 @@ def _render_save(
             "변경 메모",
             placeholder="예: 25년 실적 반영",
             key=PAST_NOTE_KEY,
+            # 이 값은 바로 아래 저장 버튼을 누를 때만 읽는다. Enter·포커스 이탈로 HOME 을
+            # 통째로 다시 그릴 이유가 없고, 버튼을 누른 실행에 값이 함께 올라온다.
+            on_change="ignore",
         )
         pending_names = [name for name in stored if name in draft]
         if st.button(

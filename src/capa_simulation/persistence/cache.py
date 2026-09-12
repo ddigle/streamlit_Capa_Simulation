@@ -20,6 +20,7 @@ from capa_simulation.persistence.models import (
     ScenarioSummary,
 )
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.past_data import past_table_to_csv
 
 
 class _ScenarioSummaryPayload(TypedDict):
@@ -179,6 +180,16 @@ def load_scenario_snapshot(database_path: str, revision_id: str) -> ScenarioSnap
     return _snapshot_from_payload(_load_scenario_snapshot_payload(database_path, revision_id))
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
+def load_scenario_plan(database_path: str, revision_id: str) -> pd.DataFrame:
+    """비교 GAP 이 쓰는 것은 계획 한 장뿐이다. 16표 전체를 rerun 마다 풀지 않는다.
+
+    `st.cache_data` 는 적중해도 저장된 피클을 매번 역직렬화한다. 샘플 관측으로 스냅샷
+    전체는 5.1MB·64.6ms 인데 그중 계획은 0.04MB·0.4ms 다.
+    """
+    return _load_scenario_snapshot_payload(database_path, revision_id)["tables"]["RQ_PKG_PLAN"]
+
+
 @st.cache_data(show_spinner=False, max_entries=4)
 def _load_global_display_order_payload(database_path: str) -> _GlobalDisplayOrderPayload:
     profile = get_scenario_repository(database_path).load_global_display_order()
@@ -209,6 +220,7 @@ def clear_global_display_order_cache() -> None:
 def clear_scenario_snapshot_cache() -> None:
     """지운 리비전의 스냅샷이 캐시에 남아 되살아나지 않게 한다."""
     _load_scenario_snapshot_payload.clear()
+    load_scenario_plan.clear()
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -281,9 +293,28 @@ def load_global_past_data(database_path: str) -> GlobalPastData:
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
+def past_table_csv(
+    database_path: str,
+    version: int,
+    table_name: str,
+    columns: tuple[str, ...],
+    _frame: pd.DataFrame,
+) -> bytes:
+    """과거 구간 양식 CSV. 공용 버전이 같으면 결과도 같다.
+
+    Past Data 탭은 닫혀 있어도 본문을 그리므로 세 표의 정규화·직렬화가 HOME 의 모든
+    rerun 에 실린다. 세 표는 한 버전을 공유하고 교체할 때마다 version 이 오르므로 키에
+    version 과 표 이름만 있으면 된다.
+    """
+    del database_path, version, table_name
+    return past_table_to_csv(_frame, columns)
+
+
 def clear_global_past_data_cache() -> None:
     """과거 구간 프로필만 비운다. 어떤 `RQ_*` 표에도 오버레이되지 않는다."""
     _load_global_past_data_payload.clear()
+    past_table_csv.clear()
 
 
 def clear_global_advance_load_cache() -> None:
@@ -307,7 +338,9 @@ def clear_global_process_rename_cache() -> None:
 def clear_scenario_repository() -> None:
     _load_global_advance_load_payload.clear()
     _load_global_past_data_payload.clear()
+    past_table_csv.clear()
     _load_global_display_order_payload.clear()
     _load_global_process_rename_payload.clear()
     _load_scenario_snapshot_payload.clear()
+    load_scenario_plan.clear()
     get_scenario_repository.clear()

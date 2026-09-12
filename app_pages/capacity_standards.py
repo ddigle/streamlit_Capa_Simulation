@@ -720,6 +720,7 @@ with unit_capacity_tab:
                 file_prefix = "Capa_Step_Unit_Capacity"
             else:
                 unit_capacity_table = get_effective_process_capacity_table(
+                    scenario_cache_key(reference_version, active_scenario, start_month, end_month),
                     required_equipment_for_display,
                     selected_level,
                 )

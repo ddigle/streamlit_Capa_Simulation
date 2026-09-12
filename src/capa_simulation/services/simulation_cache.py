@@ -27,7 +27,6 @@ from capa_simulation.services.load_calculator import (
 from capa_simulation.services.month_filter import filter_month_range
 from capa_simulation.services.required_equipment import (
     calculate_required_equipment,
-    calculate_required_equipment_from_loads,
 )
 from capa_simulation.services.route_step_editor import route_step_catalog, route_step_summary
 from capa_simulation.services.securement_rate import calculate_securement_rate
@@ -111,11 +110,17 @@ def get_securement_rate(
 
 @st.cache_data(show_spinner=False, max_entries=32)
 def get_effective_process_capacity_table(
-    required_equipment: pd.DataFrame,
+    cache_key: ScenarioCacheKey,
+    _required_equipment: pd.DataFrame,
     detail_level: str,
 ) -> pd.DataFrame:
-    """공정 유효 Capa 월 표. 공정 필터는 이 뒤에 걸리므로 필터마다 같은 계산을 반복하고 있었다."""
-    return effective_process_capacity_to_month_table(required_equipment, detail_level)
+    """공정 유효 Capa 월 표. 공정 필터는 이 뒤에 걸리므로 필터마다 같은 계산을 반복하고 있었다.
+
+    소요대수는 같은 키로 계산한 결과라 키가 내용을 이미 결정한다. 넘겨받아 해시하면 적중할
+    때도 19MB 프레임을 다시 훑는다 — `get_securement_rate` 와 같은 계약이다.
+    """
+    del cache_key
+    return effective_process_capacity_to_month_table(_required_equipment, detail_level)
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -143,22 +148,20 @@ def get_pkg_equivalent_standard_target(
     end_date: date,
     detail_level: str,
     plan: pd.DataFrame,
+    *,
+    _weekly_target: pd.DataFrame,
 ) -> pd.DataFrame:
     """PKG Kea 환산 표준 목표 Capa.
 
     키는 1차 입력이다. 파생 프레임(weekly_target)을 키로 쓰면 5만 행을 넘길 때 Streamlit 이
     1만 행 표본만 해시해 가용대수 편집이 캐시에 묻힐 수 있다.
+
+    `_weekly_target` 은 **키에 들어간 여섯 인자로 만든** 주간 표준 목표여야 한다. 다른
+    인자로 만든 프레임을 넘기면 키와 내용이 어긋나 틀린 값이 캐시에 남는다. 여기서 다시
+    부르면 호출자가 방금 만든 것을 한 번 더 해시하고 역직렬화한다.
     """
-    weekly_target = get_weekly_standard_target_capacity(
-        required_equipment=required_equipment,
-        run_day=run_day,
-        weekly_availability=weekly_availability,
-        start_date=start_date,
-        end_date=end_date,
-        detail_level=detail_level,
-    )
     return add_pkg_equivalent_standard_target(
-        weekly_target=weekly_target,
+        weekly_target=_weekly_target,
         required_equipment=required_equipment,
         plan=plan,
         detail_level=detail_level,
@@ -216,34 +219,12 @@ def get_production_dashboard(
     return build_production_dashboard(plan, density_data, display_order)
 
 
-@st.cache_data(show_spinner=False, max_entries=32)
-def get_home_equipment_demand(
-    reqb: pd.DataFrame,
-    plan: pd.DataFrame,
-    yield_data: pd.DataFrame,
-    chip_qty: pd.DataFrame,
-    unit_capacity: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Build HOME Wafer totals and required equipment from one shared load join."""
-    # Load-calculation cache schema v2: normalize WF type before Dummy detection.
-    chip_load, wafer_load = calculate_chip_and_wafer_loads(plan, yield_data, chip_qty)
-    monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
-    required_equipment = calculate_required_equipment_from_loads(
-        reqb=reqb,
-        plan=plan,
-        unit_capacity=unit_capacity,
-        chip_load=chip_load,
-        wafer_load=wafer_load,
-    )
-    return monthly_wafer, required_equipment
-
-
 @st.cache_data(show_spinner=False, max_entries=16)
 def get_home_simulation(
     cache_key: HomeSimulationCacheKey,
     _tables: Mapping[str, pd.DataFrame],
     _display_order: pd.DataFrame,
-    _module: pd.DataFrame,
+    _reference_tables: Mapping[str, pd.DataFrame],
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Reuse HOME results while hashing only ``cache_key`` on warm reruns.
 
@@ -258,13 +239,6 @@ def get_home_simulation(
 
     _plan = sliced("RQ_PKG_PLAN")
     _yield_data = sliced("RQ_YLD")
-    _upeh = sliced("RQ_UPEH")
-    _run_rate = sliced("RQ_RUN_RATE")
-    _vital = sliced("RQ_VITAL")
-    _run_day = sliced("RQ_RUN_DAY")
-    _lot_ratio = sliced("RQ_LOT_RATIO")
-    _wf_ratio = sliced("RQ_WF_RATIO")
-    _reqb = sliced("RQ_REQB")
     _available_equipment = sliced("RQ_EQP_AVBL")
     # 월 축이 없는 두 표는 그대로.
     _density_data = _tables["RQ_CHIP_EQ"]
@@ -275,23 +249,18 @@ def get_home_simulation(
         _density_data,
         _display_order,
     )
-    unit_capacity = calculate_unit_capacity(
-        upeh=_upeh,
-        run_rate=_run_rate,
-        vital=_vital,
-        module=_module,
-        run_day=_run_day,
-        lot_ratio=_lot_ratio,
-        wf_ratio=_wf_ratio,
+    # 대당 Capa 와 소요대수는 HOME 전용이 아니다. 이 키의 앞 네 칸이 `ScenarioCacheKey` 와
+    # 같은 자리라, 같은 시나리오·월 범위면 Static Capa 다섯 페이지와 한 번만 계산한다.
+    # 표시순서가 바뀌어도(이 키의 다섯째 칸) 소요대수는 그대로 살아남는다.
+    scenario_key: ScenarioCacheKey = cache_key[:4]
+    _, required_equipment = get_scenario_capacity_and_demand(
+        scenario_key,
+        _scenario_tables=_tables,
+        _reference_tables=_reference_tables,
     )
-    monthly_wafer, required_equipment = get_home_equipment_demand(
-        reqb=_reqb,
-        plan=_plan,
-        yield_data=_yield_data,
-        chip_qty=_chip_qty,
-        unit_capacity=unit_capacity,
-    )
-    securement_rate = calculate_securement_rate(_available_equipment, required_equipment)
+    _, wafer_load = calculate_chip_and_wafer_loads(_plan, _yield_data, _chip_qty)
+    monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
+    securement_rate = get_securement_rate(scenario_key, _available_equipment, required_equipment)
     return monthly_density, production_detail, monthly_wafer, securement_rate
 
 
@@ -361,7 +330,7 @@ def get_home_plan_detail(
 def get_home_comparison_plan(
     cache_key: HomeSimulationCacheKey,
     _tables: Mapping[str, pd.DataFrame],
-    _comparison_tables: Mapping[str, pd.DataFrame],
+    _comparison_plan: pd.DataFrame,
     _display_order: pd.DataFrame,
     *,
     comparison_revision_id: str,
@@ -379,9 +348,7 @@ def get_home_comparison_plan(
     del comparison_revision_id
     _, _, start_month, end_month, _ = cache_key
     plan = filter_edp_plan(
-        filter_month_range(
-            _comparison_tables["RQ_PKG_PLAN"], start_month, end_month, "RQ_PKG_PLAN"
-        ),
+        filter_month_range(_comparison_plan, start_month, end_month, "RQ_PKG_PLAN"),
         include_edp,
     )
     monthly_density, production_detail = build_production_dashboard(

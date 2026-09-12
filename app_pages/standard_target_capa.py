@@ -824,6 +824,9 @@ else:
                 end_date=end_date,
                 detail_level=detail_level,
                 plan=filtered_tables["RQ_PKG_PLAN"],
+                # 바로 위에서 같은 인자로 만든 것이다. 넘기지 않으면 한 실행에서 같은
+                # 프레임을 한 번 더 해시한다.
+                _weekly_target=weekly_target,
             )
         except ValueError as exc:
             st.error(str(exc))

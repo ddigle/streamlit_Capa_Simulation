@@ -84,6 +84,20 @@ def home_figure_cache() -> dict[HomeFigureCacheKey, HomeFigureSet]:
     return cast(dict[HomeFigureCacheKey, HomeFigureSet], cached)
 
 
+def take_home_figures(cache_key: HomeFigureCacheKey) -> HomeFigureSet | None:
+    """꺼내면서 **가장 최근에 쓴 칸**으로 옮긴다.
+
+    dict 는 넣은 차례만 기억한다. 꺼내 쓰기만 하면 차례가 그대로여서, 칸이 넘칠 때
+    `store_home_figures` 가 방금 쓴 칸을 버린다. 토글 조합은 넷이라 최대 16 가지인데 칸은
+    여덟이라 축출이 실제로 일어난다.
+    """
+    cache = home_figure_cache()
+    figures = cache.pop(cache_key, None)
+    if figures is not None:
+        cache[cache_key] = figures
+    return figures
+
+
 def store_home_figures(
     cache_key: HomeFigureCacheKey,
     figures: HomeFigureSet,

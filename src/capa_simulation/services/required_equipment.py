@@ -97,32 +97,6 @@ def calculate_required_equipment(
     )
 
 
-def calculate_required_equipment_from_loads(
-    reqb: pd.DataFrame,
-    plan: pd.DataFrame,
-    unit_capacity: pd.DataFrame,
-    chip_load: pd.DataFrame,
-    wafer_load: pd.DataFrame,
-) -> pd.DataFrame:
-    """Calculate required equipment from already prepared Chip and Wafer loads."""
-    prepared_reqb = _prepare_reqb(reqb)
-    if prepared_reqb.empty:
-        return _empty_required_equipment_result()
-    loads = _build_loads(
-        plan,
-        None,
-        None,
-        set(prepared_reqb["소요기준"].unique()),
-        chip_load=chip_load,
-        wafer_load=wafer_load,
-    )
-    return _calculate_required_equipment_from_prepared(
-        prepared_reqb,
-        loads,
-        unit_capacity,
-    )
-
-
 def _prepare_reqb(reqb: pd.DataFrame) -> pd.DataFrame:
     require_columns(reqb, REQB_COLUMNS, "RQ_REQB")
     prepared_reqb = reqb[REQB_COLUMNS].copy()
@@ -200,12 +174,9 @@ def required_equipment_to_month_table(data: pd.DataFrame) -> pd.DataFrame:
 
 def _build_loads(
     plan: pd.DataFrame,
-    yield_data: pd.DataFrame | None,
-    chip_qty: pd.DataFrame | None,
+    yield_data: pd.DataFrame,
+    chip_qty: pd.DataFrame,
     required_bases: set[str],
-    *,
-    chip_load: pd.DataFrame | None = None,
-    wafer_load: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     plan_columns = [
         "생산계획년월",
@@ -236,27 +207,24 @@ def _build_loads(
         load_frames.append(pkg)
     needs_chip = "CHIP" in required_bases
     needs_wafer = "WF" in required_bases
-    if needs_chip and chip_load is None and needs_wafer and wafer_load is None:
-        if yield_data is None or chip_qty is None:
-            raise ValueError("Chip·Wafer 부하량 또는 수율·Chip 기준정보가 필요합니다.")
+    chip_load: pd.DataFrame | None = None
+    wafer_load: pd.DataFrame | None = None
+    # 둘 다 필요하면 한 번에 만든다. 따로 부르면 같은 계획을 두 번 훑는다.
+    if needs_chip and needs_wafer:
         chip_load, wafer_load = calculate_chip_and_wafer_loads(
             prepared_plan,
             yield_data,
             chip_qty,
         )
-    if needs_chip:
-        if chip_load is None:
-            if yield_data is None or chip_qty is None:
-                raise ValueError("Chip 부하량 또는 수율·Chip 기준정보가 필요합니다.")
-            chip_load = calculate_chip_load(prepared_plan, yield_data, chip_qty)
+    elif needs_chip:
+        chip_load = calculate_chip_load(prepared_plan, yield_data, chip_qty)
+    elif needs_wafer:
+        wafer_load = calculate_wafer_load(prepared_plan, yield_data, chip_qty)
+    if chip_load is not None:
         chip = chip_load.rename(columns={"물량": "부하량"})
         chip["소요기준"] = "CHIP"
         load_frames.append(chip)
-    if needs_wafer:
-        if wafer_load is None:
-            if yield_data is None or chip_qty is None:
-                raise ValueError("Wafer 부하량 또는 수율·Chip 기준정보가 필요합니다.")
-            wafer_load = calculate_wafer_load(prepared_plan, yield_data, chip_qty)
+    if wafer_load is not None:
         wafer = wafer_load.rename(columns={"물량": "부하량"})
         wafer["소요기준"] = "WF"
         load_frames.append(wafer)
