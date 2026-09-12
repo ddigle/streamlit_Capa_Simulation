@@ -51,3 +51,4 @@ sidecar 카탈로그다.
 | `src/capa_simulation/persistence/equipment_migrations/0005_standard_target_availability.sql` | 표준 목표 Capa용 공정·주차별 수동 가용대수 최신값을 저장한다. |
 | `src/capa_simulation/persistence/equipment_migrations/0006_manager_name.sql` | 설비 마스터에 담당자 컬럼을 추가한다. |
 | `src/capa_simulation/persistence/equipment_migrations/0007_floor_layout_profile.sql` | 동·층별 배경 도면과 캔버스 치수를 리비전과 무관한 단일 저장값으로 보관한다. |
+| `src/capa_simulation/persistence/migrations/0020_global_comparison_scenario.sql` | GAP 의 비교 대상(시나리오·리비전)을 시나리오와 독립된 공용 프로필로 저장한다(단일 행 프로필, 교체마다 version+1). 고르지 않은 상태는 두 값이 NULL 이다. |

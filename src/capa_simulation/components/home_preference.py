@@ -21,7 +21,9 @@ from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
     clear_global_advance_load_cache,
+    clear_global_comparison_scenario_cache,
     get_scenario_repository,
+    load_global_comparison_scenario,
 )
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
@@ -192,6 +194,14 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
             "현재 것을 씁니다."
         )
         repository = get_scenario_repository(database_path)
+        # 비교 대상은 시나리오와 분리된 공용 프로필이다. 세션에 없으면 프로필에서 심어
+        # 새 브라우저 세션에서도 고른 대상이 그대로 살아 있게 한다. 이미 세션 값이 있으면
+        # 그쪽이 최신이므로 덮지 않는다.
+        profile = load_global_comparison_scenario(database_path)
+        if COMPARISON_SCENARIO_KEY not in st.session_state and profile.scenario_id is not None:
+            st.session_state[COMPARISON_SCENARIO_KEY] = profile.scenario_id
+            if profile.revision_id is not None:
+                st.session_state[COMPARISON_REVISION_KEY] = profile.revision_id
         try:
             scenarios = repository.list_scenarios()
         except BOOTSTRAP_ERRORS as exc:
@@ -213,6 +223,8 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
             format_func=lambda value: _comparison_label(scenario_by_id, value, active_scenario_id),
             key=COMPARISON_SCENARIO_KEY,
             persist_state="session",
+            on_change=_save_comparison_choice,
+            args=(database_path,),
         )
         if scenario_id is None:
             st.session_state.pop(COMPARISON_REVISION_KEY, None)
@@ -238,12 +250,41 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
             ),
             key=COMPARISON_REVISION_KEY,
             persist_state="session",
+            on_change=_save_comparison_choice,
+            args=(database_path,),
         )
         if st.session_state.get(COMPARISON_REVISION_KEY) == active_revision_id:
             st.caption(
                 "지금 화면이 쓰고 있는 리비전입니다. 자기와 견주는 셈이라 증감이 모두 "
                 "0 으로 나옵니다."
             )
+
+
+def _save_comparison_choice(database_path: str) -> None:
+    """고른 비교 대상을 공용 프로필에 남긴다.
+
+    선택 위젯이라 저장 버튼을 따로 두지 않는다 — 고르는 것이 곧 결정이고, 버튼을 한 번 더
+    누르게 하면 눌렀는지 아닌지가 화면에 남지 않는다.
+
+    **저장에 실패해도 화면을 멈추지 않는다.** 비교 대상은 이번 화면에서 이미 세션 값으로
+    동작하고, 남기지 못한 것은 다음 세션에서 기본값이 안 뜨는 정도의 일이다. 그것 때문에
+    대시보드가 서면 손해가 더 크다.
+    """
+    scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
+    revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
+    if scenario_id is None:
+        # 시나리오를 비우면 리비전은 남의 것이 된다. 짝을 맞춰 함께 비운다.
+        revision_id = None
+        st.session_state.pop(COMPARISON_REVISION_KEY, None)
+    try:
+        get_scenario_repository(database_path).replace_global_comparison_scenario(
+            None if scenario_id is None else str(scenario_id),
+            None if revision_id is None else str(revision_id),
+            source="HOME 비교 대상 선택",
+        )
+    except (*BOOTSTRAP_ERRORS, ValueError):
+        return
+    clear_global_comparison_scenario_cache()
 
 
 def _comparison_label(

@@ -44,6 +44,7 @@ from capa_simulation.persistence.display_order_store import (
 from capa_simulation.persistence.migration_runner import apply_migrations
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
+    GlobalComparisonScenario,
     GlobalDisplayOrder,
     GlobalPastData,
     GlobalProcessRename,
@@ -321,6 +322,77 @@ class DuckDBScenarioRepository:
                 source=source_label,
             )
         return self.load_global_process_rename()
+
+    def load_global_comparison_scenario(self) -> GlobalComparisonScenario:
+        """Load the scenario-independent GAP comparison target.
+
+        다른 공용 프로필과 같은 이유로 예외를 내지 않는다. 한 번도 저장하지 않은 상태가
+        정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
+        """
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT scenario_id, revision_id, version, source, updated_at
+                FROM app_meta.global_comparison_scenario
+                WHERE profile_id = 1
+                """
+            ).fetchone()
+        if row is None:
+            return GlobalComparisonScenario(
+                version=0,
+                source="",
+                updated_at=None,
+                scenario_id=None,
+                revision_id=None,
+            )
+        return GlobalComparisonScenario(
+            version=int(row[2]),
+            source=str(row[3]),
+            updated_at=row[4],
+            scenario_id=None if row[0] is None else str(row[0]),
+            revision_id=None if row[1] is None else str(row[1]),
+        )
+
+    def replace_global_comparison_scenario(
+        self,
+        scenario_id: str | None,
+        revision_id: str | None,
+        *,
+        source: str,
+    ) -> GlobalComparisonScenario:
+        """Atomically replace the shared comparison target.
+
+        다른 공용 프로필과 같은 결로 현재본만 남기고 version 을 올린다. **고르지 않음(둘 다
+        `None`)도 정상 저장이며 version 은 올라간다** — 캐시 키가 version 을 보므로 해제도
+        올라가야 무효화된다.
+
+        리비전만 있고 시나리오가 없는 짝은 저장하지 않는다. 그 상태로는 어느 시나리오의
+        리비전인지 알 수 없어 화면이 복원할 수 없다.
+        """
+        chosen_scenario = (
+            None if scenario_id is None else required_text(scenario_id, "비교 시나리오")
+        )
+        chosen_revision = None if revision_id is None else required_text(revision_id, "비교 리비전")
+        if chosen_revision is not None and chosen_scenario is None:
+            raise ValueError("비교 리비전만 저장할 수 없습니다. 시나리오를 함께 주세요.")
+        source_label = required_text(source, "비교 대상 변경 출처")
+        with self._write_transaction() as connection:
+            row = connection.execute(
+                "SELECT version FROM app_meta.global_comparison_scenario WHERE profile_id = 1"
+            ).fetchone()
+            version = 1 if row is None else int(row[0]) + 1
+            connection.execute(
+                "DELETE FROM app_meta.global_comparison_scenario WHERE profile_id = 1"
+            )
+            connection.execute(
+                """
+                INSERT INTO app_meta.global_comparison_scenario
+                    (profile_id, scenario_id, revision_id, version, source)
+                VALUES (1, ?, ?, ?, ?)
+                """,
+                [chosen_scenario, chosen_revision, version, source_label],
+            )
+        return self.load_global_comparison_scenario()
 
     def load_global_advance_load(self) -> GlobalAdvanceLoad:
         """Load the scenario-independent advance-load profile.

@@ -11,6 +11,7 @@ import streamlit as st
 
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
+    GlobalComparisonScenario,
     GlobalDisplayOrder,
     GlobalPastData,
     GlobalProcessRename,
@@ -82,6 +83,14 @@ class _GlobalProcessRenamePayload(TypedDict):
     source: str
     updated_at: datetime | None
     rules: pd.DataFrame
+
+
+class _GlobalComparisonScenarioPayload(TypedDict):
+    version: int
+    source: str
+    updated_at: datetime | None
+    scenario_id: str | None
+    revision_id: str | None
 
 
 class _GlobalAdvanceLoadPayload(TypedDict):
@@ -246,6 +255,41 @@ def load_global_process_rename(database_path: str) -> GlobalProcessRename:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_comparison_scenario_payload(
+    database_path: str,
+) -> _GlobalComparisonScenarioPayload:
+    profile = get_scenario_repository(database_path).load_global_comparison_scenario()
+    return {
+        "version": profile.version,
+        "source": profile.source,
+        "updated_at": profile.updated_at,
+        "scenario_id": profile.scenario_id,
+        "revision_id": profile.revision_id,
+    }
+
+
+def load_global_comparison_scenario(database_path: str) -> GlobalComparisonScenario:
+    """Share the comparison-target profile without caching its model class."""
+    payload = _load_global_comparison_scenario_payload(database_path)
+    return GlobalComparisonScenario(
+        version=payload["version"],
+        source=payload["source"],
+        updated_at=payload["updated_at"],
+        scenario_id=payload["scenario_id"],
+        revision_id=payload["revision_id"],
+    )
+
+
+def clear_global_comparison_scenario_cache() -> None:
+    """비교 대상 프로필만 비운다.
+
+    다른 공용 프로필과 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다. 비교 대상은 어떤
+    `RQ_*` 표에도 오버레이되지 않고 비교 계획을 어디서 읽을지만 정한다.
+    """
+    _load_global_comparison_scenario_payload.clear()
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
 def _load_global_advance_load_payload(database_path: str) -> _GlobalAdvanceLoadPayload:
     profile = get_scenario_repository(database_path).load_global_advance_load()
     return {
@@ -337,6 +381,7 @@ def clear_global_process_rename_cache() -> None:
 
 def clear_scenario_repository() -> None:
     _load_global_advance_load_payload.clear()
+    _load_global_comparison_scenario_payload.clear()
     _load_global_past_data_payload.clear()
     past_table_csv.clear()
     _load_global_display_order_payload.clear()

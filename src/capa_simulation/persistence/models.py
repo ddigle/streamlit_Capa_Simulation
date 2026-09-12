@@ -42,6 +42,24 @@ class GlobalProcessRename:
 
 
 @dataclass(frozen=True)
+class GlobalComparisonScenario:
+    """Scenario-independent choice of the GAP comparison target.
+
+    프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`,
+    `updated_at=None`, 두 식별자가 `None` 이다.
+
+    비교 **토글**은 여기 담지 않는다. 켜고 끄는 것은 지금 보는 사람의 상태이고, 시나리오를
+    바꾸면 꺼지는 값이라 공용으로 남기면 남의 화면까지 켜진다.
+    """
+
+    version: int
+    source: str
+    updated_at: datetime | None
+    scenario_id: str | None
+    revision_id: str | None
+
+
+@dataclass(frozen=True)
 class GlobalAdvanceLoad:
     """Scenario-independent advance-load profile in 억Gb per plan month.
 
