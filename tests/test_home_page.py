@@ -646,32 +646,27 @@ def test_the_chart_rows_share_the_table_rows_label_color(seeded_database: Path) 
     assert {colors[name] for name in row_names} == {tokens.TEXT}
 
 
-def test_the_classification_cells_center_while_month_cells_reserve_the_gap_line(
-    seeded_database: Path,
-) -> None:
-    """같은 행이라도 분류 칸과 월 칸은 글자가 서는 자리가 다르다.
+def test_both_detail_columns_center_when_the_gap_toggle_is_off(seeded_database: Path) -> None:
+    """GAP 이 꺼져 있으면 분류 칸과 월 칸의 글자가 같은 눈높이에 선다.
 
-    `go.Table` 은 한 줄짜리 칸의 글자를 칸 위에 붙여 그린다. 월 칸은 그래야 값 아래에
-    GAP 주석이 들어가지만, GAP 이 없는 분류 칸은 그 자리에 서면 위로 쏠려 보인다.
-    빈 줄 하나를 붙여 Plotly 가 `valign` 을 적용하게 만들되, 행 높이는 그대로여야 한다.
+    `go.Table` 은 한 줄짜리 칸의 글자를 칸 위에 붙여 그린다. 증감이 오지 않는데 그 자리에
+    세우면 위로 쏠려 보이고, 한쪽만 그러면 같은 행의 두 칸이 어긋나 보인다. 빈 줄 하나를
+    붙여 가운데에 세우되 행 높이는 그대로여야 한다.
     """
     app = _run(seeded_database)
-    label_figure = app.session_state["spy_figures"]["production_detail_labels"]
-    month_figure = app.session_state["spy_figures"]["production_detail_months"]
+    assert not app.session_state["home_show_comparison"], "이 테스트는 GAP 이 꺼진 상태다"
+    label_cells = app.session_state["spy_figures"]["production_detail_labels"].data[0].cells
+    month_cells = app.session_state["spy_figures"]["production_detail_months"].data[0].cells
 
-    label_cells = label_figure.data[0].cells
-    month_cells = month_figure.data[0].cells
-
-    filled_labels = [value for column in label_cells.values for value in column if value]
-    assert filled_labels, "분류 칸이 비어 있다"
-    assert all(value.endswith("<br>") for value in filled_labels)
-    # 빈 칸에 빈 줄을 붙이면 없는 값 자리에 줄만 생긴다.
-    assert all(value == "" for column in label_cells.values for value in column if not value)
-
-    filled_months = [value for column in month_cells.values for value in column if value]
-    assert filled_months, "월 칸이 비어 있다"
-    assert not any(value.endswith("<br>") for value in filled_months)
+    for name, cells in (("분류", label_cells), ("월", month_cells)):
+        filled = [value for column in cells.values for value in column if value]
+        assert filled, f"{name} 칸이 비어 있다"
+        assert all(value.endswith("<br>") for value in filled), name
+        # 빈 칸에 빈 줄을 붙이면 없는 값 자리에 줄만 생긴다.
+        assert all(value == "" for column in cells.values for value in column if not value), name
 
     # 빈 줄은 높이를 더하지 않는다. 두 칸의 행이 어긋나면 표 전체가 틀어진다.
     assert label_cells.height == month_cells.height
+    label_figure = app.session_state["spy_figures"]["production_detail_labels"]
+    month_figure = app.session_state["spy_figures"]["production_detail_months"]
     assert label_figure.layout.height == month_figure.layout.height

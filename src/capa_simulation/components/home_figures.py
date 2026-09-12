@@ -931,9 +931,9 @@ def _centered_cell_text(value: str) -> str:
     `go.Table` 은 **한 줄짜리 칸의 글자를 칸 위에 붙여** 그리고, 여러 줄일 때만 가운데에
     세운다. 칸의 세로 정렬을 직접 지정할 방법은 없다 — `table.Cells` 에 `valign` 이 없다.
 
-    월 칸은 위에 붙는 편이 맞다. 값 아래에 GAP 주석을 얹기 때문이다. 분류 칸은 GAP 이
-    없어서 같은 자리에 서면 위로 쏠려 보인다. 빈 줄 하나를 뒤에 붙이면 Plotly 가 여러
-    줄로 보아 가운데에 세우는데, 그 빈 줄은 높이를 더하지 않아 행이 두꺼워지지 않는다.
+    빈 줄 하나를 뒤에 붙이면 Plotly 가 여러 줄로 보아 가운데에 세우는데, 그 빈 줄은 높이를
+    더하지 않아 행이 두꺼워지지 않는다. 증감이 오지 않는 칸에 이것을 쓴다 — 분류 칸은 늘,
+    월 칸은 GAP 이 꺼져 있을 때다.
 
     빈 칸은 그대로 둔다 — 붙이면 없는 값 자리에 빈 줄만 생긴다.
     """
@@ -1045,6 +1045,14 @@ def build_plan_detail_figures(
         _detail_month_cell_values(displayed_detail, month, comparison_detail)
         for month in detail_month_columns
     ]
+    # GAP 이 꺼져 있으면 월 칸에도 증감이 오지 않으므로 값을 분류 칸처럼 한가운데에 세운다.
+    # 켜면 값이 위로 붙고 그 아래가 증감 주석 자리다. 행 높이는 어느 쪽이든 같아서 토글에
+    # 표 높이가 출렁이지는 않는다 — 움직이는 것은 칸 안의 글자뿐이다.
+    reserves_gap_line = comparison_detail is not None
+    detail_month_values = [
+        values if reserves_gap_line else [_centered_cell_text(value) for value in values]
+        for values, _ in detail_month_cells
+    ]
     detail_month_figure = go.Figure(
         go.Table(
             columnwidth=[1.0] * len(detail_month_columns),
@@ -1061,7 +1069,7 @@ def build_plan_detail_figures(
                 "height": detail_header_height,
             },
             cells={
-                "values": [values for values, _ in detail_month_cells],
+                "values": detail_month_values,
                 "align": "center",
                 "fill_color": [
                     [tokens.SURFACE_YEAR_TOTAL] * len(detail_month_row_colors)
