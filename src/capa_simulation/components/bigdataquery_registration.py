@@ -301,6 +301,9 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
         keyword = st.text_input(
             "검색",
             key=CATALOG_KEYWORD_KEY,
+            # 목록을 좁히는 필터 전용이다. 검색 칸으로 선언하면 값이 있을 때 지우기 버튼이
+            # 붙어, 전체 목록으로 되돌리는 조작이 한 번에 끝난다.
+            type="search",
             width=360,
             placeholder="시뮬레이션명·코드·PLAN 부분 일치(공백은 AND)",
         )
@@ -450,6 +453,13 @@ def _render_registration_form(
             "원천 DB 등록시점 (선택)",
             key=FORM_REGISTERED_AT_KEY,
             placeholder="2026-08-29 14:30:00",
+            # 빈 값은 검증을 건너뛰므로 (선택) 의미가 그대로다. 앞뒤 공백을 허용하는 것은
+            # 원천 DB 값을 붙여넣는 칸이고 `_optional_datetime` 이 `strip()` 하기 때문이다.
+            # 브라우저에서 우회할 수 있으므로 서버의 파싱은 최종 방어선으로 남긴다.
+            validate=(
+                r"^\s*\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?\s*$",
+                "등록시점은 YYYY-MM-DD HH:MM:SS 형식으로 입력하세요.",
+            ),
         )
         st.text_area("등록 메모", key=FORM_NOTE_KEY, height=90)
         submitted = st.form_submit_button(

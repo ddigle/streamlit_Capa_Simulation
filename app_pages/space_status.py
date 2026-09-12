@@ -495,6 +495,8 @@ else:
         floor_equipment,
         hide_index=True,
         width="stretch",
+        # 아직 잡히지 않은 일정·메모 칸에 리터럴 "None" 이 찍혔다. 비워 두는 편이 맞다.
+        placeholder="",
         column_config={
             column: st.column_config.DateColumn(column, format="YYYY-MM-DD")
             for column in (

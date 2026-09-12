@@ -86,12 +86,9 @@ def render_status_metric(
     `chart_data` 를 넘기면 값 아래에 추이 스파크라인이 붙는다. 한 줄에 놓인 카드 중
     일부에만 넣으면 높이가 어긋나므로 그 줄 전체에 넣거나 전부 빼야 한다.
     """
-    chart_kwargs: dict[str, object] = {}
-    if chart_data is not None:
-        chart_kwargs = {"chart_data": chart_data, "chart_type": "area"}
     color = TONE_COLORS.get(tone)
     if color is None:
-        st.metric(label, value, border=True, help=help, **chart_kwargs)  # type: ignore[arg-type]
+        _draw(label, value, help, chart_data)
         return
     st.html(
         "\n".join(
@@ -105,4 +102,21 @@ def render_status_metric(
         )
     )
     with st.container(key=key):
-        st.metric(label, value, border=True, help=help, **chart_kwargs)  # type: ignore[arg-type]
+        _draw(label, value, help, chart_data)
+
+
+def _draw(
+    label: str,
+    value: str,
+    help: str | None,
+    chart_data: Sequence[float] | pd.Series | None,
+) -> None:
+    """카드 한 장. 스파크라인은 정식 파라미터라 `**kwargs` 로 풀 이유가 없다.
+
+    `dict[str, object]` 를 풀어 넘기면 타입이 흐려져 `type: ignore` 가 필요했고, 그 ignore
+    가 label·value 의 타입 오류까지 함께 가렸다.
+    """
+    if chart_data is None:
+        st.metric(label, value, border=True, help=help)
+        return
+    st.metric(label, value, border=True, help=help, chart_data=chart_data, chart_type="area")

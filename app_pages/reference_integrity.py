@@ -301,7 +301,7 @@ detail_summary = aggregate_dynamic_capacity(filtered, ["공정"]).iloc[0]
 requirement_basis = str(detail_summary["소요기준"])
 unit_label = _CAPACITY_UNIT_LABELS.get(requirement_basis, requirement_basis)
 
-with st.container(horizontal=True, gap="small"):
+with metric_row(key="reference_integrity_detail_metrics"):
     st.metric(
         f"표준 Capa ({unit_label})",
         f"{detail_summary['표준 Capa']:,.0f}",
@@ -356,7 +356,7 @@ with trend_column.container(border=True):
 
 with st.container(border=True):
     st.markdown("#### :material/search_insights: 원인 지표")
-    with st.container(horizontal=True, gap="small"):
+    with metric_row(key="reference_integrity_cause_metrics"):
         st.metric(
             "효율 실적 / 기준",
             f"{detail_summary['실적 효율']:.1%} / {detail_summary['표준 효율']:.1%}",

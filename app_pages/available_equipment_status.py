@@ -468,7 +468,7 @@ with dashboard_tab:
                 "확정상태는 Qual 일정의 계획·확정·완료·지연만 관리합니다. "
                 "가용대수는 기존 규칙대로 Qual일정을 기준으로 계산합니다."
             )
-            with st.container(horizontal=True):
+            with metric_row(key="equipment_qual_confirmation_metrics"):
                 st.metric("Qual 대상", f"{len(qual_execution):,}대", border=True)
                 for confirmation_status in QUAL_CONFIRMATION_STATUSES:
                     count = int(
@@ -984,6 +984,9 @@ with management_tab:
                 history,
                 hide_index=True,
                 width="stretch",
+                # 메모 없는 리비전에 리터럴 "None" 이 찍혔다. 같은 화면의 선택 상자는
+                # 이미 "메모 없음" 을 쓴다.
+                placeholder="메모 없음",
                 column_config={
                     "저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm")
                 },

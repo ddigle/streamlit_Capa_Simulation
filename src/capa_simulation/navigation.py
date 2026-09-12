@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import streamlit as st
-from streamlit.navigation.page import StreamlitPage
 
 # 실적 DB 연결과 운영 기준 확정 전인 화면에 붙인다. 이전에는 사이드바에만
 # `(구현중)`·`(구현 중)`·`(DB 셋팅중)` 세 표기가 섞여 있었고 페이지 본문 제목과도
@@ -32,7 +31,7 @@ class PageSpec:
     icon: str | None = None
     default: bool = False
 
-    def to_page(self) -> StreamlitPage:
+    def to_page(self) -> st.Page:
         return st.Page(self.path, title=self.title, icon=self.icon, default=self.default)
 
 
@@ -94,17 +93,17 @@ ALL_SPECS: tuple[PageSpec, ...] = (
 class NavigationPages:
     """`app.py`가 사이드바를 그릴 때 쓰는 `st.Page` 묶음."""
 
-    home: StreamlitPage
-    capa_chatbot: StreamlitPage
-    scenario_management: StreamlitPage
-    static_capa: StreamlitPage
-    static_capa_subpages: list[StreamlitPage]
-    dynamic_capa: StreamlitPage
-    dynamic_capa_subpages: list[StreamlitPage]
-    admin_area: StreamlitPage
+    home: st.Page
+    capa_chatbot: st.Page
+    scenario_management: st.Page
+    static_capa: st.Page
+    static_capa_subpages: list[st.Page]
+    dynamic_capa: st.Page
+    dynamic_capa_subpages: list[st.Page]
+    admin_area: st.Page
 
     @property
-    def ordered(self) -> list[StreamlitPage]:
+    def ordered(self) -> list[st.Page]:
         """`st.navigation`에 넘길 전체 페이지를 사이드바 표시 순서로 돌려준다."""
         return [
             self.home,
