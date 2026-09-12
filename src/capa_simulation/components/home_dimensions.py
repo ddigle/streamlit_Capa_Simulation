@@ -8,13 +8,33 @@ import math
 
 from capa_simulation.design import tokens
 
-# 값 글자와 증감(+-) 줄이 겹치지 않게 하는 최소 치수.
+# 값 글자와 증감(+-) 줄을 나란히 놓기 위한 세로 지표.
 #
-# 숫자 글리프는 글자 크기의 약 0.75 배만 세로를 쓴다. 줄 상자 전체(약 1.2 배)로 잡으면
-# 필요 없는 여백까지 행에 얹혀 표가 두꺼워진다.
-GLYPH_HEIGHT_RATIO = 0.75
+# 글자는 글리프가 아니라 **줄 상자** 기준으로 놓인다. 줄 상자에는 글리프 아래로 내림선
+# 자리가 더 있어서, 두 글자의 상자 가운데를 같은 간격으로 벌려도 위쪽 틈이 아래쪽보다
+# 넓어 보인다. 그래서 상자가 아니라 **글리프 가운데**를 기준으로 계산하고, 상자 기준으로만
+# 놓을 수 있는 Plotly 에는 그 차이를 `yshift` 로 돌려준다.
+#
+# 아래 네 비율은 Chrome 의 `TextMetrics` 로 두 서체를 재어 얻은 값이다(글자 크기 대비).
+# `INK_HEIGHT` 는 숫자 글리프가 실제로 칠해지는 높이, `INK_OFFSET` 은 줄 상자 가운데보다
+# 글리프 가운데가 아래로 내려앉는 거리다.
+TEXT_INK_HEIGHT_RATIO = 0.80
+TEXT_INK_OFFSET_RATIO = 0.125
+NUMERIC_INK_HEIGHT_RATIO = 0.65
+NUMERIC_INK_OFFSET_RATIO = 0.025
 
-# 값과 증감 글자 사이의 틈. 겹치지 않는 최소치라 더 줄이면 글자가 맞닿는다.
+# Plotly 표 칸의 세로 치수. **칸 높이를 글자보다 작게 주면 Plotly 는 칸을 늘려 버린다.**
+# 그러면 Figure 높이 계산과 실제 그림이 어긋나 표가 아래 구획을 덮는다. 그래서 필요한
+# 높이를 여기서 미리 낸다.
+#
+# `LINE_BOX_RATIO` 는 첫 줄이 차지하는 상자 높이, `LINE_STEP_RATIO` 는 `<br>` 로 붙는
+# 다음 줄이 더하는 높이, `TABLE_CELL_PADDING_PX` 는 Plotly 가 글자 위아래에 두는 여백의
+# 합이다. 셋 다 Chrome 에서 그려 본 값이다.
+LINE_BOX_RATIO = 1.45
+LINE_STEP_RATIO = 1.30
+TABLE_CELL_PADDING_PX = 16
+
+# 값과 증감 글리프 사이의 틈. 겹치지 않는 최소치라 더 줄이면 글자가 맞닿는다.
 DELTA_GUTTER_PX = 2
 
 # 행 경계선과 글자 사이의 틈. 0 이면 글자가 경계선에 붙어 읽힌다.
@@ -22,9 +42,22 @@ ROW_EDGE_PADDING_PX = 3
 
 
 def delta_line_shift_px(value_font_size: int) -> float:
-    """값 중심에서 증감 줄 중심까지의 거리."""
-    half_glyphs = (value_font_size + tokens.DELTA_FONT_SIZE_PX) * GLYPH_HEIGHT_RATIO / 2
+    """값 글리프 가운데에서 증감 글리프 가운데까지의 거리."""
+    half_glyphs = (
+        value_font_size * TEXT_INK_HEIGHT_RATIO
+        + tokens.DELTA_FONT_SIZE_PX * NUMERIC_INK_HEIGHT_RATIO
+    ) / 2
     return half_glyphs + DELTA_GUTTER_PX
+
+
+def value_ink_yshift_px(value_font_size: int) -> float:
+    """값 글리프 가운데를 칸 한가운데에 맞추는 `yshift`."""
+    return value_font_size * TEXT_INK_OFFSET_RATIO
+
+
+def delta_ink_yshift_px() -> float:
+    """증감 글리프 가운데를 목표 자리에 맞추는 `yshift` 보정."""
+    return tokens.DELTA_FONT_SIZE_PX * NUMERIC_INK_OFFSET_RATIO
 
 
 def row_height_with_deltas(value_font_size: int) -> int:
@@ -36,16 +69,24 @@ def row_height_with_deltas(value_font_size: int) -> int:
     """
     half = (
         delta_line_shift_px(value_font_size)
-        + tokens.DELTA_FONT_SIZE_PX * GLYPH_HEIGHT_RATIO / 2
+        + tokens.DELTA_FONT_SIZE_PX * NUMERIC_INK_HEIGHT_RATIO / 2
         + ROW_EDGE_PADDING_PX
     )
     return math.ceil(2 * half)
 
 
+def table_row_height(value_font_size: int) -> int:
+    """값 한 줄만 있는 표 칸의 높이."""
+    return math.ceil(value_font_size * LINE_BOX_RATIO + TABLE_CELL_PADDING_PX)
+
+
 def stacked_row_height(value_font_size: int) -> int:
-    """값 아래 한 줄만 증감을 놓는 칸의 최소 높이. 값은 언제나 위쪽 줄에 선다."""
-    body = (value_font_size + tokens.DELTA_FONT_SIZE_PX) * GLYPH_HEIGHT_RATIO + DELTA_GUTTER_PX
-    return math.ceil(body + 2 * ROW_EDGE_PADDING_PX)
+    """값 한 줄과 증감 한 줄을 담는 표 칸의 높이.
+
+    증감이 없어도 이 높이를 쓴다. 있을 때만 늘리면 토글 하나에 표 전체가 출렁인다.
+    """
+    text_height = value_font_size * LINE_BOX_RATIO + tokens.DELTA_FONT_SIZE_PX * LINE_STEP_RATIO
+    return math.ceil(text_height + TABLE_CELL_PADDING_PX)
 
 
 DASHBOARD_SCROLLBAR_HEIGHT_PX = 15
@@ -79,9 +120,9 @@ LOB_DENSITY_ROW_HEIGHT_PX = row_height_with_deltas(LOB_VALUE_FONT_SIZE_PX)
 
 LOB_WAFER_PLAN_ROW_HEIGHT_PX = LOB_DENSITY_ROW_HEIGHT_PX
 
-# Wafer Capa 는 증감을 적지 않는다 — 설비가 늘어난 것이 아니므로 비교할 것이 없다.
-# 자리를 비워 둘 이유가 없어 예전 높이 그대로다.
-LOB_WAFER_CAPA_ROW_HEIGHT_PX = 36
+# Wafer Capa 는 증감을 적지 않지만 높이는 같이 맞춘다. 세 행의 띠 높이가 다르면 증감과
+# 무관하게 표가 한쪽만 눌린 것처럼 보인다.
+LOB_WAFER_CAPA_ROW_HEIGHT_PX = LOB_DENSITY_ROW_HEIGHT_PX
 
 LOB_TABLE_ROW_HEIGHTS_PX = (
     LOB_TABLE_HEADER_HEIGHT_PX,

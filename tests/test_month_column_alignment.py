@@ -1,5 +1,7 @@
 # Purpose: 월 컬럼 Figure 의 컬럼 수와 폭이 항상 같은 근거에서 나오는지 고정한다.
 
+import re
+
 import pandas as pd
 import plotly.graph_objects as go
 
@@ -87,5 +89,10 @@ def test_headers_are_centered() -> None:
 
 
 def _value_line(cell: str) -> str:
-    """칸의 첫 줄만 떼어 낸다. 둘째 줄은 증감 자리를 비워 두는 빈 줄이다."""
-    return cell.split("<br>", 1)[0]
+    """칸의 첫 줄에서 값만 떼어 낸다.
+
+    칸은 늘 두 줄이다. 둘째 줄은 증감 자리를 비워 두는 빈 줄이고, 첫 줄의 값은 칸 글자
+    크기를 거스르는 span 안에 들어 있다 — 줄 간격을 증감 크기로 잡기 위한 것이다.
+    """
+    head = cell.split("<br>", 1)[0]
+    return re.sub(r"<[^>]+>", "", head)

@@ -10,7 +10,11 @@ from typing import Any
 
 import plotly.graph_objects as go
 
-from capa_simulation.components.home_dimensions import delta_line_shift_px
+from capa_simulation.components.home_dimensions import (
+    delta_ink_yshift_px,
+    delta_line_shift_px,
+    value_ink_yshift_px,
+)
 from capa_simulation.design import tokens
 
 TRANSPARENT_COLOR = tokens.TRANSPARENT
@@ -245,7 +249,11 @@ def add_fixed_table_row(
     upper_texts = _gap_texts(gaps, len(values))
     lower_texts = _gap_texts(lower_gaps, len(values))
     middle = (domain[0] + domain[1]) / 2
+    # 세 글자를 **글리프 가운데** 기준으로 고르게 벌린다. 상자 기준으로 놓으면 같은 거리를
+    # 주어도 위쪽 틈이 아래쪽보다 넓어 보인다.
     shift = delta_line_shift_px(font_size)
+    value_shift = value_ink_yshift_px(font_size)
+    delta_shift = delta_ink_yshift_px()
     annotations = []
     for value_index, (value, upper, lower) in enumerate(
         zip(values, upper_texts, lower_texts, strict=True)
@@ -262,6 +270,7 @@ def add_fixed_table_row(
                 "showarrow": False,
                 "xanchor": "center",
                 "yanchor": "middle",
+                "yshift": value_shift,
                 "font": {
                     "color": tokens.TEXT,
                     "size": font_size,
@@ -269,7 +278,10 @@ def add_fixed_table_row(
                 },
             }
         )
-        for gap_text, gap_shift in ((upper, shift), (lower, -shift)):
+        for gap_text, gap_shift in (
+            (upper, shift + delta_shift),
+            (lower, -shift + delta_shift),
+        ):
             if not gap_text:
                 continue
             annotations.append(

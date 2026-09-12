@@ -33,6 +33,17 @@ dev = [
     "ruff>=0.7,<1",
 ]
 
+[project.optional-dependencies]
+company = ["bigdataquery==2.5.0"]
+
+[[tool.uv.index]]
+name = "samsung-artifactory"
+url = "https://artifactory.samsungds.net/repository/dataservice-devsecops-pypi/simple"
+explicit = true
+
+[tool.uv.sources]
+bigdataquery = { index = "samsung-artifactory" }
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

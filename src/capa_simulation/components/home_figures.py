@@ -30,6 +30,7 @@ from capa_simulation.components.home_dimensions import (
     LOB_TOP_MARGIN_PX,
     LOB_VALUE_FONT_SIZE_PX,
     stacked_row_height,
+    table_row_height,
 )
 from capa_simulation.components.plotly_layout import (
     TRANSPARENT_COLOR,
@@ -74,6 +75,12 @@ BOTTLENECK_NAME_MAX_FONT_PX = 12
 
 # 계획 세부수량 칸의 값 글자. 분류 칸과 월 칸이 같아야 두 칸의 글자가 같은 눈높이에 선다.
 DETAIL_VALUE_FONT_SIZE_PX = 14
+
+# 생산계획 LOB 막대 안 확보율 글자.
+LOB_BAR_LABEL_FONT_SIZE_PX = 22
+
+# 계획 세부수량 머리글. 칸 높이가 이 크기에서 나온다.
+DETAIL_HEADER_FONT_SIZE_PX = 15
 
 # 글자 크기가 최소값 바닥에 걸리면 더 줄일 수 없어 렌더 폭이 계속 늘어난다. `go.Scatter`
 # 의 text 는 줄바꿈도 칸 단위 클립도 없어 그대로 옆 달 칸을 침범하므로, 남는 한 단계는
@@ -233,7 +240,7 @@ def _bottleneck_rate_labels(
     """
     rates = pd.to_numeric(bottleneck_capacity["확보율"], errors="coerce")
     if baseline is None or "확보율" not in baseline.columns:
-        return [f"<b>{rate:.0%}</b>" if pd.notna(rate) else "" for rate in rates]
+        return [_bar_rate_text(rate) for rate in rates]
     base_rates = pd.to_numeric(
         bottleneck_capacity[["생산계획년월"]].merge(
             baseline[["생산계획년월", "확보율"]], on="생산계획년월", how="left"
@@ -245,18 +252,27 @@ def _bottleneck_rate_labels(
         if pd.isna(rate):
             labels.append("")
             continue
-        body = f"<b>{rate:.0%}</b>"
+        body = _bar_rate_text(rate)
         difference = rate - base_rate if pd.notna(base_rate) else float("nan")
         if pd.isna(difference) or abs(difference) < _GAP_EPSILON:
             labels.append(body)
             continue
         color = delta_color(f"{difference:+.0%}")
-        gap = (
-            f'<span style="font-size:{tokens.DELTA_FONT_SIZE_PX}px;color:{color}">'
-            f"{difference * 100:+.0f}%</span>"
-        )
+        gap = f'<span style="color:{color}">{difference * 100:+.0f}%</span>'
         labels.append(f"{gap}<br>{body}")
     return labels
+
+
+def _bar_rate_text(rate: float) -> str:
+    """막대 안 확보율 한 줄.
+
+    trace 의 글자 크기는 증감 크기로 낮추고 값만 span 으로 키운다. Plotly 는 `<br>` 줄
+    간격을 **요소의 글자 크기**로 정하므로, 값 크기를 그대로 두면 증감이 값에서 한 줄
+    높이(약 29px)만큼 떨어져 따로 노는 글자로 읽힌다.
+    """
+    if pd.isna(rate):
+        return ""
+    return f'<span style="font-size:{LOB_BAR_LABEL_FONT_SIZE_PX}px"><b>{rate:.0%}</b></span>'
 
 
 def build_lob_summary_figures(
@@ -427,7 +443,12 @@ def build_lob_summary_figures(
                 text=_bottleneck_rate_labels(bottleneck_capacity, baseline_lob_summary),
                 textposition="inside",
                 insidetextanchor="start",
-                textfont={"color": tokens.TEXT, "size": 22, "family": tokens.FONT_FAMILY_NUMERIC},
+                # 값은 `_bar_rate_text` 가 span 으로 키운다. 여기 크기는 줄 간격을 정한다.
+                textfont={
+                    "color": tokens.TEXT,
+                    "size": tokens.DELTA_FONT_SIZE_PX,
+                    "family": tokens.FONT_FAMILY_NUMERIC,
+                },
                 marker={
                     "color": [
                         _capacity_color(
@@ -741,7 +762,9 @@ def build_lob_summary_figures(
             "yref": "paper",
             "line": {
                 "color": tokens.BORDER_STRONG if boundary_index in {1, 2} else tokens.BORDER,
-                "width": tokens.OUTER_BORDER_WIDTH_PX if boundary_index in {1, 2} else 0.8,
+                "width": tokens.OUTER_BORDER_WIDTH_PX
+                if boundary_index in {1, 2}
+                else tokens.GRID_LINE_WIDTH_PX,
             },
             "layer": "above" if boundary_index in {1, 2} else "below",
         }
@@ -777,7 +800,7 @@ def build_lob_summary_figures(
                     "y1": 1,
                     "xref": "paper",
                     "yref": "paper",
-                    "line": {"color": tokens.BORDER, "width": 0.8},
+                    "line": {"color": tokens.BORDER, "width": tokens.GRID_LINE_WIDTH_PX},
                     "layer": "below",
                 }
                 for x_boundary in (0.0, 1.0)
@@ -797,7 +820,7 @@ def build_lob_summary_figures(
                     "y1": 1,
                     "xref": "paper",
                     "yref": "paper",
-                    "line": {"color": tokens.BORDER, "width": 0.8},
+                    "line": {"color": tokens.BORDER, "width": tokens.GRID_LINE_WIDTH_PX},
                     "layer": "below",
                 }
                 for index in range(1, len(month_labels))
@@ -820,8 +843,8 @@ def build_lob_summary_figures(
     )
     lob_row_boundaries = (
         (lob_table_domains[0][0], tokens.OUTER_BORDER_WIDTH_PX, tokens.BORDER_STRONG),
-        (lob_table_domains[1][0], 0.8, tokens.BORDER),
-        (lob_table_domains[2][0], 0.8, tokens.BORDER),
+        (lob_table_domains[1][0], tokens.GRID_LINE_WIDTH_PX, tokens.BORDER),
+        (lob_table_domains[2][0], tokens.GRID_LINE_WIDTH_PX, tokens.BORDER),
     )
     lob_row_shapes = [
         {
@@ -899,20 +922,23 @@ def _detail_month_cell_values(
             labelled.append(_detail_cell_text(value, ""))
             continue
         color = delta_color(f"{difference:+.0f}")
-        gap = (
-            f'<span style="font-size:{tokens.DELTA_FONT_SIZE_PX}px;color:{color}">'
-            f"{difference:+,.0f}K</span>"
-        )
+        gap = f'<span style="color:{color}">{difference:+,.0f}K</span>'
         labelled.append(_detail_cell_text(value, gap))
     return labelled
 
 
 def _detail_cell_text(value: str, gap_markup: str) -> str:
-    """값 한 줄과 증감 한 줄. 증감이 없어도 빈 줄을 남겨 값의 자리를 붙박는다."""
+    """값 한 줄과 증감 한 줄. 증감이 없어도 빈 줄을 남겨 값의 자리를 붙박는다.
+
+    칸의 글자 크기는 증감 크기로 낮추고 값만 span 으로 키운다. Plotly 는 `<br>` 줄 간격을
+    **칸의 글자 크기**로 정하므로, 값 크기를 그대로 두면 두 줄 사이가 벌어져 증감이 아래
+    행의 띠 위에 얹히고 별개의 행처럼 읽힌다.
+    """
     if not value:
         return ""
-    blank = f'<span style="font-size:{tokens.DELTA_FONT_SIZE_PX}px">&nbsp;</span>'
-    return f"{value}<br>{gap_markup or blank}"
+    blank = "&nbsp;"
+    body = f'<span style="font-size:{DETAIL_VALUE_FONT_SIZE_PX}px">{value}</span>'
+    return f"{body}<br>{gap_markup or blank}"
 
 
 def build_plan_detail_figures(
@@ -979,9 +1005,9 @@ def build_plan_detail_figures(
         tokens.SURFACE if group_number % 2 == 0 else tokens.SURFACE_SUBTLE
         for group_number in detail_group_indices
     ]
-    # 값 한 줄 + 증감 한 줄이 들어가는 최소 높이. 증감이 없어도 같은 높이를 쓴다.
+    # 값 한 줄 + 증감 한 줄이 온전히 들어가는 높이. 증감이 없어도 같은 높이를 쓴다.
     detail_row_height = stacked_row_height(DETAIL_VALUE_FONT_SIZE_PX)
-    detail_header_height = 36
+    detail_header_height = table_row_height(DETAIL_HEADER_FONT_SIZE_PX)
     # 제목 자리를 Figure 가 갖지 않는다. `계획 세부수량` 은 Plotly 주석이 아니라 Streamlit
     # 이 그려서 그 옆에 「상세」 토글을 둔다. 두 칸 모두 같은 높이의 줄을 끼우므로 여백을
     # 남겨 두면 표 위에 빈 띠만 생긴다.
@@ -999,7 +1025,7 @@ def build_plan_detail_figures(
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": 15,
+                    "size": DETAIL_HEADER_FONT_SIZE_PX,
                     "family": tokens.FONT_FAMILY,
                 },
                 "height": detail_header_height,
@@ -1011,7 +1037,7 @@ def build_plan_detail_figures(
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": DETAIL_VALUE_FONT_SIZE_PX,
+                    "size": tokens.DELTA_FONT_SIZE_PX,
                     "family": tokens.FONT_FAMILY,
                 },
                 "height": detail_row_height,
@@ -1028,7 +1054,7 @@ def build_plan_detail_figures(
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": 15,
+                    "size": DETAIL_HEADER_FONT_SIZE_PX,
                     "family": tokens.FONT_FAMILY,
                 },
                 "height": detail_header_height,
@@ -1048,7 +1074,7 @@ def build_plan_detail_figures(
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": DETAIL_VALUE_FONT_SIZE_PX,
+                    "size": tokens.DELTA_FONT_SIZE_PX,
                     "family": tokens.FONT_FAMILY,
                 },
                 "height": detail_row_height,
@@ -1098,7 +1124,7 @@ def build_plan_detail_figures(
                 "y1": 1,
                 "xref": "paper",
                 "yref": "paper",
-                "line": {"color": tokens.BORDER, "width": 0.8},
+                "line": {"color": tokens.BORDER, "width": tokens.GRID_LINE_WIDTH_PX},
                 "layer": "above",
             },
         ],
@@ -1116,7 +1142,7 @@ def build_plan_detail_figures(
                     "y1": 1,
                     "xref": "paper",
                     "yref": "paper",
-                    "line": {"color": tokens.BORDER, "width": 0.8},
+                    "line": {"color": tokens.BORDER, "width": tokens.GRID_LINE_WIDTH_PX},
                     "layer": "above",
                 }
                 for month_index in range(1, len(detail_month_columns))
@@ -1135,7 +1161,7 @@ def build_plan_detail_figures(
             - (detail_header_height + group_start * detail_row_height) / detail_table_height,
             "xref": "paper",
             "yref": "paper",
-            "line": {"color": tokens.BORDER_STRONG, "width": 1.4},
+            "line": {"color": tokens.BORDER_STRONG, "width": tokens.GROUP_BORDER_WIDTH_PX},
             "layer": "above",
         }
         for group_start in detail_group_starts

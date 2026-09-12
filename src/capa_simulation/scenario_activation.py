@@ -31,6 +31,9 @@ ACTIVE_PERSISTED_REVISION_ID_KEY = "active_persisted_revision_id"
 ACTIVE_PERSISTED_SESSION_REVISION_KEY = "active_persisted_session_revision"
 OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY = "official_scenario_bootstrap_attempted"
 
+# 시나리오를 바꾸면 버려야 하는 세션 값. 여기 적힌 키는 화면 모듈이 소유하지만 문자열로
+# 적는다 — 그 모듈들이 이 파일을 거꾸로 import 하므로 상수를 가져오면 순환이 된다.
+# `tests/test_scenario_activation.py` 가 두 곳의 철자가 같은지 지킨다.
 _STALE_UI_KEYS = (
     "load_conversion_inputs",
     "unit_capacity_result",
@@ -38,6 +41,12 @@ _STALE_UI_KEYS = (
     "load_conversion_source_token",
     "capacity_standards_source_token",
     "home_dashboard_figure_cache",
+    # HOME 의 세 토글. 선행·GAP·상세는 모두 **지금 그 시나리오**를 전제로 켠 것이다.
+    # 켠 채로 시나리오를 바꾸면 다른 시나리오의 계획에 남의 선행 물량과 남의 비교 대상이
+    # 얹혀 그려진다. 바뀔 때마다 꺼서 새 시나리오를 있는 그대로 먼저 보게 한다.
+    "home_show_advance",
+    "home_show_comparison",
+    "home_preference_plan_detail_customer",
 )
 
 

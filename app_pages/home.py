@@ -133,7 +133,7 @@ show_home_performance = st.sidebar.toggle(
 home_trace = PerformanceTrace()
 # 두 토글의 위젯은 아래 탭 안에서 그리지만 값은 계산보다 먼저 필요하다. 위젯이 `key` 로
 # 쓰는 자리를 그대로 읽는다 — 사용자가 토글을 누르면 다음 실행의 이 줄에 새 값이 들어온다.
-include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, True))
+include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, False))
 show_advance = bool(st.session_state.get(ADVANCE_TOGGLE_KEY, False))
 plan_detail_customer = bool(st.session_state.get(PLAN_DETAIL_CUSTOMER_KEY, False))
 comparison_scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)

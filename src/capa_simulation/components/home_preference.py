@@ -153,9 +153,11 @@ def render_home_preference(
     """표시 기준 토글과 비교 시나리오 선택, 선행 물량 입력 시트."""
     with st.container(border=True):
         st.markdown("#### :material/tune: 표시 기준")
+        # 기본은 **끔**이다. LOB 로 읽는 수치는 EDP 를 뺀 값이 기준이고, 넣은 화면을 보려면
+        # 그때 켜면 된다. 기본값을 바꿀 때는 `app_pages/home.py` 의 세션 기본값도 같이 고친다.
         st.toggle(
             "EDP 포함",
-            value=True,
+            value=False,
             key=EDP_TOGGLE_KEY,
             persist_state="session",
             help=(

@@ -274,12 +274,13 @@ def test_the_two_display_toggles_are_part_of_the_figure_cache_key(
     app.sidebar.toggle[0].set_value(True).run()
     assert _cache_state(app) == "적중"
 
-    app.session_state["home_preference_include_edp"] = False
+    # `EDP 포함` 의 기본은 꺼짐이다. 켜면 새로 그려야 한다.
+    app.session_state["home_preference_include_edp"] = True
     app.run()
     assert not list(app.exception)
     assert _cache_state(app) == "생성"
 
-    app.session_state["home_preference_include_edp"] = True
+    app.session_state["home_preference_include_edp"] = False
     app.run()
     # 되돌리면 다시 만들지 않는다. 두 토글을 오가며 비교하는 화면이라 칸이 넉넉해야 한다.
     assert _cache_state(app) == "적중"
