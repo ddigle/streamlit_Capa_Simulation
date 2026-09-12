@@ -715,6 +715,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/past_data_management.py`
   - `Past Data` 탭. 세 표가 **한 버전을 공유**하므로 붙여넣기는 세션에 모아 두었다가 한
     번에 저장한다 — 부분 저장을 허용하면 어느 표가 어느 버전인지 알 수 없다.
+- `src/capa_simulation/services/process_selection.py`
+  - B/N 집계에 포함할 공정을 저장값·현재 옵션·**직전 옵션 집합**에서 정한다. 저장되는 것은
+    포함 목록이라 "끈 공정" 과 "처음 보는 공정" 이 구분되지 않는다 — 직전 옵션이 그 구분을
+    만든다.
+  - **기준이 없는 첫 렌더에는 저장된 포함 목록을 그대로 믿는다.** 같은 규칙을 쓰면 모든
+    공정이 처음 보는 공정이 되어, 공식버전이 저장해 둔 공정 필터가 새 세션의 첫 화면에서
+    통째로 덮인다. `seen=None`(기준 없음)과 `seen=[]`(직전에 옵션이 없었다)은 다르다.
 - `src/capa_simulation/services/month_columns.py`
   - 월 축과 연간 Total 열의 규칙. **1~12월이 모두 조회범위 안에 있는 해**만 Total 을 갖고,
     그 해 12월 바로 뒤에 들어간다. 일부 달만 든 해의 합계는 연간이 아니라 "조회한 달의

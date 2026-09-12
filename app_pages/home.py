@@ -90,6 +90,7 @@ from capa_simulation.services.past_data import (
     merge_past_plan_detail,
     past_plan_detail_to_wide,
 )
+from capa_simulation.services.process_selection import resolve_included_processes
 from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
     get_home_comparison_plan,
@@ -322,13 +323,11 @@ else:
         # 않는다. 직전 실행의 옵션 집합을 함께 들고 있다가, 그때 없던 공정만 새 공정으로
         # 보아 포함한다. 시나리오를 바꾸거나 과거 구간을 넣어 공정이 늘었을 때 그것들이
         # 조용히 빠지면 B/N 이 틀린다.
-        seen_processes = set(st.session_state.get(process_seen_key, []))
-        kept = {process for process in saved_processes if process in process_options}
-        st.session_state[process_selection_key] = [
-            process
-            for process in process_options
-            if process in kept or process not in seen_processes
-        ]
+        st.session_state[process_selection_key] = resolve_included_processes(
+            saved_processes,
+            process_options,
+            st.session_state.get(process_seen_key),
+        )
 st.session_state[process_seen_key] = list(process_options)
 
 
