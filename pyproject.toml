@@ -17,7 +17,10 @@ dependencies = [
     "plotly>=5.24,<7",
     # 코드가 아직 import 하지 않는다. docs/TODO.md 의 domain/schemas.py 구현에 쓴다.
     "pydantic>=2.9,<3",
-    "streamlit>=1.60,<2",
+    # 마이너 하나에 묶는다. 화면이 `persist_state`·`st.container(horizontal=)`·fragment 같은
+    # 최신 위젯 API 에 기대고 있어 마이너가 오르면 배치가 바뀔 수 있다. 사내에는 락을
+    # 보내지 않으므로 개발·사내를 같은 버전으로 묶는 수단이 이 범위뿐이다.
+    "streamlit>=1.63,<1.64",
     "xlwings>=0.33,<1",
 ]
 
