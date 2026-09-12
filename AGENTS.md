@@ -168,6 +168,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `table_row_height` 로 글자에서 내고, 눈대중 상수로 적지 않는다.
   - 시나리오를 바꾸면 선행·GAP·상세 토글을 끈다(`_STALE_UI_KEYS`). 셋 다 **그 시나리오**를
     전제로 켠 것이라, 켠 채로 바꾸면 남의 선행 물량과 남의 비교 대상이 새 계획 위에 얹힌다.
+  - **탭은 `stateful_tabs` 로 만들고 `render_home_figures` 에 `owner_tab` 을 넘긴다.** 숨은
+    탭에서 그리면 `go.Table` 머리글이 셀 가운데를 놓치고 `staticPlot` 이라 그대로 굳는다.
+    `tests/test_hidden_tab_rendering.py` 가 `render_home_figures(` 까지 그물에 넣어 둔다.
+  - 대당 Capa·소요대수는 HOME 전용이 아니다. `HomeSimulationCacheKey` 의 앞 네 칸이
+    `ScenarioCacheKey` 와 같은 자리라 `cache_key[:4]` 로 Static Capa 다섯 페이지와 한 칸을
+    나눠 쓴다. 이 순서를 바꾸면 두 화면이 조용히 따로 계산한다.
   - `EDP 포함` 의 기본값은 **끔**이다. 바꿀 때는 `app_pages/home.py` 의 세션 기본값과
     위젯 `value` 를 같이 고친다 — 한쪽만 고치면 첫 화면과 위젯이 어긋난다.
   - `선행` 을 켜면 공용 선행 물량으로 변동률을 내 계획·확보율에 건다. 변동률은 **화면이
@@ -756,7 +762,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/source_data_store.py`: 원천 Core Data raw 와 컬럼 프로파일
 - `persistence/summaries.py`: 조회 행을 요약 모델로 변환
 - `persistence/_sql_helpers.py`: 프레임 저장·조회와 값 변환 공용 헬퍼
-- `persistence/migration_runner.py`, `equipment_migration_runner.py`: 체크섬 기반 SQL 적용
+- `persistence/_migration_core.py`: 두 DuckDB가 공유하는 마이그레이션 적용 엔진(버전 순
+  읽기·체크섬 대조·건별 트랜잭션)
+- `persistence/migration_runner.py`, `equipment_migration_runner.py`: 각 DB의 패키지·스키마를
+  그 엔진에 묶는 진입점
 - `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷과 공용 표시순서의 Streamlit 캐시 경계
 - `persistence/equipment_repository.py`: 설비 운영 입력의 불변 전체 스냅샷 저장소
 
