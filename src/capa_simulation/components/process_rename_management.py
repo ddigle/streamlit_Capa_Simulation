@@ -29,6 +29,8 @@ from capa_simulation.services.process_rename import (
 )
 
 CLIPBOARD_KEY = "admin_area_process_rename_clipboard"
+# 전체 교체 확인 체크박스의 자리. 적용에 성공하면 비워 다음 붙여넣기가 다시 확인을 거친다.
+CLIPBOARD_CONFIRM_KEY = "admin_area_process_rename_clipboard_confirm"
 EDITOR_KEY = "admin_area_process_rename_editor"
 
 
@@ -115,7 +117,7 @@ def _render_clipboard_import(
             )
             confirmed = st.checkbox(
                 "현재 공용 공정 표시명 전체 교체를 확인했습니다.",
-                key="admin_area_process_rename_clipboard_confirm",
+                key=CLIPBOARD_CONFIRM_KEY,
             )
             submitted = st.form_submit_button(
                 "붙여넣기 표시명 적용",
@@ -140,6 +142,9 @@ def _render_clipboard_import(
         except BOOTSTRAP_ERRORS as exc:
             st.error(bootstrap_error_message(exc))
         else:
+            # 확인 체크는 이번 교체 한 번에만 유효하다. 폼은 제출해도 값을 비우지 않으므로
+            # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
+            st.session_state.pop(CLIPBOARD_CONFIRM_KEY, None)
             st.success("붙여넣은 공정 표시명을 공용 설정으로 적용했습니다.")
             st.rerun()
 

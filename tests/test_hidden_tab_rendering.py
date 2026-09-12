@@ -87,6 +87,9 @@ CHART_MARKERS = (
     "render_hierarchical_monthly_table(",
     "render_grouped_monthly_table(",
     "render_month_editor(",
+    # 차트를 다른 모듈에 맡긴 페이지도 같은 규칙을 받아야 한다. HOME 이 `st.tabs` 를 직접
+    # 부르는데 `st.plotly_chart` 는 `home_rendering.py` 에 있어 이 검사를 빠져나갔었다.
+    "render_home_figures(",
 )
 
 

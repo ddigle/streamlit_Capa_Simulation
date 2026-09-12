@@ -26,6 +26,7 @@ from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
 )
+from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.performance import PerformanceTrace
 
@@ -117,7 +118,19 @@ def render_home_figures(
     month_labels: list[str],
     *,
     applied_plan_detail_customer: bool = False,
+    owner_tab: OpenTab | None = None,
 ) -> None:
+    """대시보드 여섯 Figure. **숨은 탭에서는 그리지 않는다.**
+
+    숨겨진 요소 안에서는 SVG 글자 폭 측정이 0 이라 `go.Table` 이 머리글을 셀 가운데에
+    놓지 못하고, 상세 세 Figure 는 `staticPlot` 이라 탭을 열어도 다시 그리지 않는다.
+    어긋난 머리글이 그대로 남는다.
+
+    여기서 건너뛰는 위젯은 「상세」 토글 하나뿐이고 `persist_state="session"` 이라 값이
+    살아남는다. 선행·GAP 토글은 이 함수 밖이라 숨어도 계속 그려진다.
+    """
+    if tab_is_hidden(owner_tab):
+        return
     if len(figures) != 6:
         raise ValueError("HOME Figure 묶음은 요약 2개와 상세 4개, 모두 6개여야 합니다.")
     label_figure, month_figure = figures[:2]

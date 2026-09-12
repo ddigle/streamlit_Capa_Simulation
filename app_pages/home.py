@@ -35,6 +35,7 @@ from capa_simulation.components.loading_progress import LoadingProgress
 from capa_simulation.components.page_header import render_page_header_with_status
 from capa_simulation.components.past_data_management import render_past_data_management
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.tab_state import stateful_tabs
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -593,12 +594,15 @@ else:
     loading.advance()
 loading.advance()
 
-main_tab, preference_tab, past_tab = st.tabs(
+# 차트가 든 탭은 `stateful_tabs` 로 만든다. `key` 와 `on_change="rerun"` 이 있어야 서버가
+# 어느 탭이 열렸는지 알고, 숨은 채로 그려 머리글이 밀리는 것을 막을 수 있다.
+main_tab, preference_tab, past_tab = stateful_tabs(
     [
         ":material/dashboard: Main",
         ":material/tune: Preference",
         ":material/history: Past Data",
-    ]
+    ],
+    key="home_active_tab",
 )
 with main_tab:
     render_lob_title_row(
@@ -609,6 +613,7 @@ with main_tab:
         cached_figures,
         month_labels,
         applied_plan_detail_customer=plan_detail_customer,
+        owner_tab=main_tab,
     )
 with past_tab:
     render_past_data_management(str(DUCKDB_PATH.resolve()), past_profile)

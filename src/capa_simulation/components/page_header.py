@@ -73,9 +73,10 @@ def render_page_header_with_status(
     제목이 잡고 있으므로 막대가 사라져도 아래가 움직이지 않는다.
     """
     heading, implementing = _split_implementing(title)
-    with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
-        with st.container(width="content"):
-            st.title(heading)
+    # `wrap=False` 로 한 줄을 강제한다. 줄바꿈되면 진행바가 자기 줄을 차지해, 막대가 뜨고
+    # 질 때마다 아래 차트가 그만큼 밀린다 — 이 함수가 막으려던 바로 그 움직임이다.
+    with st.container(horizontal=True, wrap=False, vertical_alignment="center", gap="medium"):
+        st.title(heading, width="content")
         with st.container(width=STATUS_SLOT_WIDTH_PX):
             slot = st.empty()
     _render_marks(implementing, badges, description)

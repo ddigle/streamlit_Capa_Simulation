@@ -307,16 +307,20 @@ with st.container(horizontal=True, gap="small"):
         f"{detail_summary['표준 Capa']:,.0f}",
         border=True,
     )
+    # 증감 문구는 부호로 시작해야 한다. 앞에 말을 붙이면 Streamlit 이 음수로 읽지 못해
+    # 미달인데도 초록 상승 화살표가 붙는다. 설명은 `delta_description` 이 맡는다.
     st.metric(
         f"실효 Capa ({unit_label})",
         f"{detail_summary['실효 Capa']:,.0f}",
-        delta=f"표준 대비 {detail_summary['설비 성능 실현률'] - 1:.1%}",
+        delta=f"{detail_summary['설비 성능 실현률'] - 1:.1%}",
+        delta_description="표준 대비",
         border=True,
     )
     st.metric(
         f"실제 실적 ({unit_label})",
         f"{detail_summary['실적수량']:,.0f}",
-        delta=f"표준 대비 {detail_summary['Capa 실현률'] - 1:.1%}",
+        delta=f"{detail_summary['Capa 실현률'] - 1:.1%}",
+        delta_description="표준 대비",
         border=True,
     )
     st.metric("Capa 실현률", f"{detail_summary['Capa 실현률']:.1%}", border=True)
@@ -365,11 +369,14 @@ with st.container(border=True):
             delta=f"{detail_summary['UPEH Gap']:.1%}",
             border=True,
         )
+        # 이 줄은 증감이 아니라 함께 보는 값이다. `delta_color="off"` 는 색만 끄므로
+        # 화살표까지 지우려면 `delta_arrow="off"` 가 따로 필요하다.
         st.metric(
             "Rundown 시간",
             f"{detail_summary['Rundown 시간']:,.1f}h",
             delta=f"미활용 Capa {detail_summary['재공부족 미활용 Capa']:,.0f}{unit_label}",
             delta_color="off",
+            delta_arrow="off",
             border=True,
         )
         st.metric(

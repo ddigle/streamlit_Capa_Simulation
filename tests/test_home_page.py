@@ -519,3 +519,40 @@ def test_every_gap_uses_one_font_size(tmp_path: Path) -> None:
         if str(annotation.text).strip().startswith(("+", "-"))
     }
     assert sizes == {tokens.DELTA_FONT_SIZE_PX}, sizes
+
+
+def test_the_dashboard_is_not_drawn_while_its_tab_is_hidden(seeded_database: Path) -> None:
+    """숨은 탭에서 그리면 `go.Table` 머리글이 셀 가운데를 놓치고 그대로 굳는다.
+
+    숨겨진 요소 안에서는 SVG 글자 폭 측정이 0 이라 Plotly 가 가운데 정렬 보정을 못 하고,
+    상세 세 Figure 는 `staticPlot` 이라 탭을 열어도 다시 그리지 않는다. Preference 에서
+    비교 시나리오를 고르거나 선행 물량을 저장하면 앱이 다시 도는데, 그때 Main 이 닫혀
+    있으면 정확히 그 상황이 된다.
+    """
+    app = _run(seeded_database)
+    assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 4]
+
+    app.session_state["home_active_tab"] = ":material/tune: Preference"
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state["spy_traces"] == []
+
+
+def test_the_detail_toggle_survives_a_hidden_tab(seeded_database: Path) -> None:
+    """닫힌 동안 위젯을 그리지 않아도 값은 남아야 한다.
+
+    「상세」 토글은 그림과 함께 건너뛰는 유일한 위젯이다. `persist_state="session"` 이
+    그 값을 붙들어 주는데, 그것이 깨지면 탭을 오갈 때마다 분류가 초기화된다.
+    """
+    app = _run(seeded_database)
+    app.session_state["home_preference_plan_detail_customer"] = True
+    app.session_state["home_active_tab"] = ":material/tune: Preference"
+    app.run()
+    assert not list(app.exception)
+
+    app.session_state["home_active_tab"] = ":material/dashboard: Main"
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state["home_preference_plan_detail_customer"] is True

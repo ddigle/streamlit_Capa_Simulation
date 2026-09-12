@@ -253,8 +253,8 @@ def _save_list_order(repository: DuckDBScenarioRepository, edited: pd.DataFrame)
     ordered = edited.sort_values(ORDER_COLUMN, kind="stable").index.tolist()
     try:
         repository.reorder_scenarios([str(scenario_id) for scenario_id in ordered])
-    except (KeyError, ValueError) as exc:
-        st.error(str(exc))
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
         return
     st.session_state[FLASH_KEY] = "시나리오 누적 순서를 저장했습니다."
     st.session_state.pop(LIST_EDITOR_KEY, None)
@@ -369,8 +369,8 @@ def _render_rename(repository: DuckDBScenarioRepository, summary: ScenarioSummar
         return
     try:
         renamed_summary = repository.rename_scenario(summary.scenario_id, renamed)
-    except (KeyError, ValueError) as exc:
-        st.error(str(exc))
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
         return
     st.session_state[FLASH_KEY] = f"시나리오명을 {renamed_summary.scenario_name} 으로 변경했습니다."
     st.session_state.pop(ACTION_KEY, None)
@@ -400,8 +400,8 @@ def _render_official(
                 release_name=release_name,
                 note=release_note,
             )
-        except (KeyError, ValueError) as exc:
-            st.error(str(exc))
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(bootstrap_error_message(exc))
         else:
             st.session_state[FLASH_KEY] = (
                 f"공식 v{release.release_no} · {release.release_name}을 지정했습니다."
@@ -455,8 +455,8 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
         return
     try:
         repository.delete_scenario(summary.scenario_id)
-    except (KeyError, ValueError) as exc:
-        st.error(str(exc))
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
         return
     clear_scenario_snapshot_cache()
     if summary.scenario_id == active_persisted_scenario_id():
@@ -470,8 +470,10 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
 def _render_clone(repository: DuckDBScenarioRepository) -> None:
     try:
         reference_tables, active_scenario = _current_reference_context()
-    except Exception as exc:
-        st.error(f"신규 시나리오의 기준 표시순서를 준비하지 못했습니다: {exc}")
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(
+            f"신규 시나리오의 기준 표시순서를 준비하지 못했습니다: {bootstrap_error_message(exc)}"
+        )
         return
     st.info("현재 활성 RQ 16개와 프리셋을 독립 데이터셋으로 물리 복제합니다.")
     with st.form("scenario_create_form"):
@@ -507,8 +509,8 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             revision_name=revision_name,
             note=note.strip() or None,
         )
-    except (FileNotFoundError, KeyError, RuntimeError, TypeError, ValueError) as exc:
-        st.error(str(exc))
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
     else:
         activate_persisted_snapshot(snapshot)
         st.session_state[FLASH_KEY] = f"{snapshot.scenario.scenario_name}을 저장했습니다."
@@ -522,8 +524,8 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
         return
     try:
         reference_tables, active_scenario = _current_reference_context()
-    except Exception as exc:
-        st.error(f"리비전 기준정보를 불러오지 못했습니다: {exc}")
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(f"리비전 기준정보를 불러오지 못했습니다: {bootstrap_error_message(exc)}")
         return
     with st.form("scenario_revision_form"):
         revision_name = st.text_input("새 리비전명")

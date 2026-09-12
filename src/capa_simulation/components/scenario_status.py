@@ -50,8 +50,8 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
             repository = get_scenario_repository(resolved_path)
             scenarios = repository.list_scenarios()
             official = repository.latest_official_release()
-        except Exception as exc:
-            st.error(f"시나리오 저장소를 읽지 못했습니다: {exc}")
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(f"시나리오 저장소를 읽지 못했습니다: {bootstrap_error_message(exc)}")
             return
 
         if not scenarios:
@@ -135,8 +135,8 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
             try:
                 snapshot = load_scenario_snapshot(resolved_path, selected_revision_id)
                 activate_persisted_snapshot(snapshot)
-            except (KeyError, RuntimeError, TypeError, ValueError) as exc:
-                st.error(f"리비전을 불러오지 못했습니다: {exc}")
+            except BOOTSTRAP_ERRORS as exc:
+                st.error(f"리비전을 불러오지 못했습니다: {bootstrap_error_message(exc)}")
             else:
                 st.session_state[SIDEBAR_FLASH_KEY] = (
                     f"{snapshot.scenario.scenario_name} "

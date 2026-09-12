@@ -9,6 +9,7 @@ import streamlit as st
 
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.io.reference_cache import apply_global_display_order
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
     clear_global_display_order_cache,
     load_global_display_order,
@@ -23,6 +24,9 @@ from capa_simulation.services.display_order_editor import (
     replace_display_order_scope,
     validate_display_order,
 )
+
+# 전체 교체 확인 체크박스의 자리. 적용에 성공하면 비워 다음 붙여넣기가 다시 확인을 거친다.
+CLIPBOARD_CONFIRM_KEY = "global_display_order_clipboard_confirm"
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -54,8 +58,8 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
         display_order, csv_bytes = _validated_display_order(
             database_path, profile.version, profile.rules
         )
-    except (KeyError, RuntimeError, TypeError, ValueError) as exc:
-        st.error(str(exc))
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
         return
 
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
@@ -89,7 +93,10 @@ def _render_clipboard_import(
                 height=220,
                 placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
             )
-            confirmed = st.checkbox("현재 공용 표시순서 전체 교체를 확인했습니다.")
+            confirmed = st.checkbox(
+                "현재 공용 표시순서 전체 교체를 확인했습니다.",
+                key=CLIPBOARD_CONFIRM_KEY,
+            )
             submitted = st.form_submit_button(
                 "붙여넣기 표시순서 적용",
                 icon=":material/content_paste:",
@@ -110,9 +117,12 @@ def _render_clipboard_import(
                 st.info("붙여넣은 표시순서가 현재 공용 설정과 동일합니다.")
                 return
             _save_global_display_order(repository, imported, source="Excel 붙여넣기")
-        except (KeyError, RuntimeError, TypeError, ValueError) as exc:
-            st.error(str(exc))
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(bootstrap_error_message(exc))
         else:
+            # 확인 체크는 이번 교체 한 번에만 유효하다. 폼은 제출해도 값을 비우지 않으므로
+            # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
+            st.session_state.pop(CLIPBOARD_CONFIRM_KEY, None)
             st.success("붙여넣은 표시순서를 모든 시나리오의 공용 설정으로 적용했습니다.")
             st.rerun()
 
@@ -191,8 +201,8 @@ def _render_direct_editor(
         )
         source = note.strip() or f"웹 직접 편집 · {selected_page}/{selected_tab}"
         _save_global_display_order(repository, revised, source=source)
-    except (KeyError, RuntimeError, TypeError, ValueError) as exc:
-        st.error(str(exc))
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
     else:
         st.success("표시순서를 모든 시나리오의 공용 설정으로 저장했습니다.")
         st.rerun()
