@@ -488,11 +488,16 @@ uv sync
 따로 설치합니다.
 
 ```powershell
-uv pip install bigdataquery
+uv pip install bigdataquery==2.5.0 --index-url `
+  https://artifactory.samsungds.net/repository/dataservice-devsecops-pypi/simple
 ```
 
 `uv sync`는 락에 없는 패키지를 지우므로, 이 패키지를 넣은 뒤에는 `uv sync --inexact`를 씁니다.
 패키지가 없어도 앱은 뜹니다 — 사내 조회 화면만 안내 문구를 띄우고 멈춥니다.
+
+사내 PC의 `pyproject.toml`에 인덱스를 적어 두었다면 **배포 ZIP이 그것을 덮지 않습니다.**
+`scripts/build_deploy_package.py`가 이 파일을 배포 세트에서 뺍니다. 대신 **의존성을 바꾸면
+ZIP만으로는 사내에 반영되지 않으므로** 바뀐 줄을 따로 알려 사내 파일을 손으로 맞춰야 합니다.
 
 ### pip (개발 PC)
 

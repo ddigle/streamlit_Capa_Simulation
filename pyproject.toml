@@ -33,16 +33,16 @@ dev = [
     "ruff>=0.7,<1",
 ]
 
-[project.optional-dependencies]
-company = ["bigdataquery==2.5.0"]
-
-[[tool.uv.index]]
-name = "samsung-artifactory"
-url = "https://artifactory.samsungds.net/repository/dataservice-devsecops-pypi/simple"
-explicit = true
-
-[tool.uv.sources]
-bigdataquery = { index = "samsung-artifactory" }
+# `bigdataquery` 는 여기에 적지 않는다. uv 락파일은 universal 이라 extra·group 을 가리지 않고
+# 전부 해석한다 — 적어 두면 사내 인덱스에 닿지 못하는 개발 PC 에서 `uv lock` 자체가 실패한다.
+# 사내에서는 `uv sync` 뒤에 아래 한 줄로 따로 넣는다. 그 뒤로는 락에 없는 패키지를 지우지
+# 않도록 `uv sync --inexact` 를 쓴다.
+#
+#   uv pip install bigdataquery==2.5.0 --index-url \
+#     https://artifactory.samsungds.net/repository/dataservice-devsecops-pypi/simple
+#
+# 사내 PC 의 pyproject.toml 에 인덱스를 적어 두었다면 **배포 ZIP 이 그것을 덮지 않는다** —
+# `scripts/build_deploy_package.py` 가 이 파일을 세트에서 뺀다.
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -29,6 +29,7 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다(PowerShell
 
 보조 스크립트: `scripts\benchmark_home.py`(HOME 단계별 성능), `scripts\validate_duckdb_persistence.py`
 (영속성 통합 검증), `scripts\generate_sample_core_data.py`(합성 Core Data 생성).
+`scripts\build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖는다).
 
 `mypy`는 `tests/`·`scripts/`를 검사하지 않는다. Streamlit 화면·상태를 바꿨으면
 `streamlit.testing.v1.AppTest` 또는 실제 브라우저로 페이지 진입·수정·왕복을 추가 검증한다.

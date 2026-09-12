@@ -122,8 +122,13 @@ SELECT equipment_contract_version, COUNT(*) FROM equipment_ops.revision GROUP BY
   push 도 배포 흐름의 일부다.
 - **메일 발송 경로는 Claude in Chrome + `outlook.live.com` 뿐이다.** 이 PC 의 Microsoft 365 는
   설치 구성에서 Outlook 이 제외돼 있어 COM 발신이 불가능하다. 확장은 Chrome `Profile 1` 에 있다.
-- 배포 세트 규칙: `git ls-files` 전체 + `data/input/RQ_DISPLAY_ORDER.csv`. `tests/`·`scripts/`도
-  포함한다(사내에서 단독 운영·검증할 수 있게). 의존성은 `pyproject.toml` 하나만 본다. **이 문서를 커밋하면 배포 ZIP 에도 들어간다.**
+- 배포 세트 규칙은 이제 `scripts/build_deploy_package.py` 가 갖는다: `git ls-files` 전체 +
+  `data/input/RQ_DISPLAY_ORDER.csv` − `pyproject.toml`. `tests/`·`scripts/`도 포함한다(사내에서
+  단독 운영·검증할 수 있게). `--list-only` 로 목록만 볼 수 있고, 금지 파일이 섞이면 멈춘다.
+  **이 문서를 커밋하면 배포 ZIP 에도 들어간다.**
+- **`pyproject.toml` 은 보내지 않는다.** 사내 PC 의 그 파일에는 삼성 Artifactory 인덱스가
+  손으로 들어가 있고 개발 PC 에는 없다(사외에서 `uv lock` 이 깨지지 않게 뺐다). 덮으면 사내
+  설정만 사라진다. 대신 **의존성을 바꾸면 ZIP 만으로 반영되지 않으므로** 바뀐 줄을 따로 알린다.
 
 ---
 
