@@ -53,6 +53,16 @@ def render_column_filters(
                     placeholder="전체",
                     width=FILTER_WIDTH_PX,
                     format_func=ProcessLabelFormatter(labels) if labels else str,
+                    # 일괄선택은 이 화면에서 실제로 쓰는 기능이라 임계값에 맡기지 않고 켠다.
+                    # 두 가지로 쓴다: 쳐서 좁힌 뒤 `Select N matches` 로 일치분만 담기,
+                    # 그리고 전부 담은 뒤 몇 개를 빼서 "이것만 빼고 보기". 둘 다 결과가
+                    # **부분 선택**이라 아래 `isin` 이 실제로 일한다 — 전체선택이 미선택과
+                    # 같아지는 것은 전부 선택된 최종 상태뿐이다.
+                    #
+                    # 여기 들어오는 컬럼은 공정·Area_Name·Stack·STEP_SEQ 같은 분류 축뿐이라
+                    # 옵션이 많아야 수십 개다. 수천 개를 한 번에 담아 브라우저가 멈추는
+                    # `select_all=True` 의 주의사항은 이 컴포넌트에 해당하지 않는다.
+                    select_all=True,
                 )
 
     filtered = data
