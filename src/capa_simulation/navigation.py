@@ -88,16 +88,39 @@ ADMIN_AREA = PageSpec(
     ":material/admin_panel_settings:",
 )
 
+
+@dataclass(frozen=True)
+class SidebarGroupSpec:
+    """사이드바 박스 하나의 선언. `slug` 가 컨테이너 key 와 CSS 선택자의 단일 근거다."""
+
+    slug: str
+    main: PageSpec
+    subpages: tuple[PageSpec, ...] = ()
+
+
+# HOME(가운데·큰 글씨)과 Admin Area(조회 컨트롤 아래)는 배치가 달라 `app.py` 가 손수 그린다.
+# 나머지 박스는 여기 선언에서 나온다 — 새 그룹을 더할 때 `app.py` 를 함께 고칠 필요가 없다.
+SIDEBAR_GROUPS: tuple[SidebarGroupSpec, ...] = (
+    SidebarGroupSpec("capa_chatbot", CAPA_CHATBOT),
+    SidebarGroupSpec("scenario_management", SCENARIO_MANAGEMENT),
+    SidebarGroupSpec("static_capa", STATIC_CAPA, STATIC_CAPA_SUBPAGES),
+    SidebarGroupSpec("dynamic_capa", DYNAMIC_CAPA, DYNAMIC_CAPA_SUBPAGES),
+)
+
 ALL_SPECS: tuple[PageSpec, ...] = (
     HOME,
-    CAPA_CHATBOT,
-    SCENARIO_MANAGEMENT,
-    STATIC_CAPA,
-    *STATIC_CAPA_SUBPAGES,
-    DYNAMIC_CAPA,
-    *DYNAMIC_CAPA_SUBPAGES,
+    *(spec for group in SIDEBAR_GROUPS for spec in (group.main, *group.subpages)),
     ADMIN_AREA,
 )
+
+
+@dataclass(frozen=True)
+class SidebarGroup:
+    """`app.py` 가 사이드바 박스 하나를 그릴 때 쓰는 `st.Page` 묶음."""
+
+    slug: str
+    main: st.Page
+    subpages: tuple[st.Page, ...]
 
 
 @dataclass(frozen=True)
@@ -105,12 +128,7 @@ class NavigationPages:
     """`app.py`가 사이드바를 그릴 때 쓰는 `st.Page` 묶음."""
 
     home: st.Page
-    capa_chatbot: st.Page
-    scenario_management: st.Page
-    static_capa: st.Page
-    static_capa_subpages: list[st.Page]
-    dynamic_capa: st.Page
-    dynamic_capa_subpages: list[st.Page]
+    groups: tuple[SidebarGroup, ...]
     admin_area: st.Page
 
     @property
@@ -118,12 +136,7 @@ class NavigationPages:
         """`st.navigation`에 넘길 전체 페이지를 사이드바 표시 순서로 돌려준다."""
         return [
             self.home,
-            self.capa_chatbot,
-            self.scenario_management,
-            self.static_capa,
-            *self.static_capa_subpages,
-            self.dynamic_capa,
-            *self.dynamic_capa_subpages,
+            *(page for group in self.groups for page in (group.main, *group.subpages)),
             self.admin_area,
         ]
 
@@ -132,11 +145,13 @@ def build_navigation_pages() -> NavigationPages:
     """선언을 실제 `st.Page` 객체로 만든다."""
     return NavigationPages(
         home=HOME.to_page(),
-        capa_chatbot=CAPA_CHATBOT.to_page(),
-        scenario_management=SCENARIO_MANAGEMENT.to_page(),
-        static_capa=STATIC_CAPA.to_page(),
-        static_capa_subpages=[spec.to_page() for spec in STATIC_CAPA_SUBPAGES],
-        dynamic_capa=DYNAMIC_CAPA.to_page(),
-        dynamic_capa_subpages=[spec.to_page() for spec in DYNAMIC_CAPA_SUBPAGES],
+        groups=tuple(
+            SidebarGroup(
+                slug=group.slug,
+                main=group.main.to_page(),
+                subpages=tuple(spec.to_page() for spec in group.subpages),
+            )
+            for group in SIDEBAR_GROUPS
+        ),
         admin_area=ADMIN_AREA.to_page(),
     )

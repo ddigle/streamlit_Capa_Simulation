@@ -53,11 +53,10 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
 
 - `app.py` — 진입점. `navigation.run()` 전에 공식 시나리오 부트스트랩, 공통 사이드바
   (시나리오 컨트롤·조회기간)를 만든다. 페이지 간 공유 위젯은 여기서만 만든다.
-- `src/capa_simulation/navigation.py` — 사이드바 페이지 목록의 **선언 한 곳**. 기존 그룹의
-  하위 페이지 추가·제목 변경은 여기만 고친다. 다만 `app.py`가
-  `st.navigation(..., position="hidden")`으로 기본 사이드바를 끄고 그룹 컨테이너를 손수
-  배치하며 CSS가 `st-key-*_navigation`을 그룹별로 지정하므로, **새 최상위 그룹**을 만들면
-  `app.py`도 함께 고쳐야 한다.
+- `src/capa_simulation/navigation.py` — 사이드바 페이지 목록의 **선언 한 곳**. 하위 페이지
+  추가·제목 변경뿐 아니라 **새 최상위 그룹**도 여기서 끝난다 — `SIDEBAR_GROUPS`에 한 줄을
+  더하면 `app.py`의 박스·CSS 선택자·페이지 순서가 모두 그 선언에서 나온다. HOME과 Admin
+  Area만 배치가 달라 `app.py`가 손수 그린다.
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·
   조회기간)와 공용 예외 튜플 `BOOTSTRAP_ERRORS`. 페이지가 각자 예외 튜플을 만들지 않는다.
 - `app_pages/` — UI만. 계산 로직을 페이지에 넣지 않는다.

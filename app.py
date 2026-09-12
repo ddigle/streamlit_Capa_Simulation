@@ -30,6 +30,9 @@ from capa_simulation.sidebar_status import (
 )
 from capa_simulation.sync_boot import enable_sync_state_if_managed
 
+# CSS 선택자 여러 개를 한 규칙에 묶을 때 쓰는 구분자. 규칙 안 들여쓰기까지 붙여 둔다.
+_SELECTOR_JOINER = ",\n        "
+
 st.set_page_config(
     page_title=APP_NAME,
     page_icon=":material/factory:",
@@ -63,40 +66,45 @@ with pinned_connections(DUCKDB_PATH):
     pages = build_navigation_pages()
     navigation = st.navigation(pages.ordered, position="hidden")
 
+    # 선택자도 같은 선언에서 낸다. 손으로 적으면 그룹을 더할 때 한쪽만 고치게 된다.
+    group_title_selectors = _SELECTOR_JOINER.join(
+        f".st-key-{group.slug}_navigation a p" for group in pages.groups
+    )
+    subpage_selectors = _SELECTOR_JOINER.join(
+        f'.st-key-{group.slug}_subpages [data-testid="stPageLink-NavLink"]'
+        for group in pages.groups
+        if group.subpages
+    )
     st.html(
-        """
+        f"""
         <style>
-        [data-testid="stMainBlockContainer"] {
+        [data-testid="stMainBlockContainer"] {{
             padding-left: 1.5rem !important;
             padding-right: 1.5rem !important;
             padding-top: 3rem !important;
-        }
+        }}
 
         .st-key-home_navigation a,
-        .st-key-home_navigation a p {
+        .st-key-home_navigation a p {{
             font-size: 1.5rem;
             font-weight: 700;
-        }
-        .st-key-home_navigation a {
+        }}
+        .st-key-home_navigation a {{
             justify-content: center;
-        }
-        .st-key-home_navigation a p {
+        }}
+        .st-key-home_navigation a p {{
             text-align: center;
-        }
+        }}
 
-        .st-key-capa_chatbot_navigation a p,
-        .st-key-scenario_management_navigation a p,
-        .st-key-static_capa_navigation a p,
-        .st-key-dynamic_capa_navigation a p {
+        {group_title_selectors} {{
             font-size: 1.15rem;
             font-weight: 700;
-        }
+        }}
 
-        .st-key-static_capa_subpages [data-testid="stPageLink-NavLink"],
-        .st-key-dynamic_capa_subpages [data-testid="stPageLink-NavLink"] {
+        {subpage_selectors} {{
             margin-left: 1rem;
             width: calc(100% - 1rem);
-        }
+        }}
         </style>
         """
     )
@@ -104,27 +112,17 @@ with pinned_connections(DUCKDB_PATH):
     with st.sidebar.container(key="home_navigation"):
         st.page_link(pages.home, width="stretch")
 
-    with st.sidebar.container(border=True):
-        with st.container(key="capa_chatbot_navigation"):
-            st.page_link(pages.capa_chatbot, width="stretch")
-
-    with st.sidebar.container(border=True):
-        with st.container(key="scenario_management_navigation"):
-            st.page_link(pages.scenario_management, width="stretch")
-
-    with st.sidebar.container(border=True):
-        with st.container(key="static_capa_navigation"):
-            st.page_link(pages.static_capa, width="stretch")
-        with st.container(key="static_capa_subpages"):
-            for page in pages.static_capa_subpages:
-                st.page_link(page, width="stretch")
-
-    with st.sidebar.container(border=True):
-        with st.container(key="dynamic_capa_navigation"):
-            st.page_link(pages.dynamic_capa, width="stretch")
-        with st.container(key="dynamic_capa_subpages"):
-            for page in pages.dynamic_capa_subpages:
-                st.page_link(page, width="stretch")
+    # 박스 목록은 `navigation.SIDEBAR_GROUPS` 하나에서 나온다. 위 CSS 선택자도 같은 선언을
+    # 읽으므로, 그룹을 더할 때 이 파일에서 고칠 것이 없다.
+    for group in pages.groups:
+        with st.sidebar.container(border=True):
+            with st.container(key=f"{group.slug}_navigation"):
+                st.page_link(group.main, width="stretch")
+            if not group.subpages:
+                continue
+            with st.container(key=f"{group.slug}_subpages"):
+                for page in group.subpages:
+                    st.page_link(page, width="stretch")
 
     render_scenario_controls()
 
