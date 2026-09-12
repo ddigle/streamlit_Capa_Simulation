@@ -799,6 +799,12 @@ RQ_CHIP_QTY
 RQ_CHIP_EQ
 ```
 
+`RQ_PKG_PLAN` 업무 키는 계약 `derived_keys` 의 8키다 — 7키에 `Pack Code` 가 더해진다.
+같은 7키 안에서 생산수량을 가르는 값이라 **저장과 편집은 행을 나누고, 합산은 계산 계층이**
+한다. 부하량·소요대수·HOME 은 Pack Code 없는 키로 `groupby` 하고, PKG 환산은
+`_prepare_pkg_plan_for_equivalent` 가 7키 합계로 접는다. 변환기나 `validated_distinct` 에서
+합산하지 않는다 — 거기서 접으면 편집 왕복에서 Pack Code 별 수량을 되살릴 수 없다.
+
 웹 수정은 반드시 `apply_month_updates()`를 통해 반영한다. 페이지 전용 DataFrame만
 수정하고 끝내면 다른 페이지와 계산 캐시에 변경이 전달되지 않는다. 월 축(`생산계획년월`)이
 없는 `RQ_CHIP_QTY`·`RQ_CHIP_EQ`는 `apply_table_updates()`로 통째로 교체한다 —

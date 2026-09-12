@@ -210,6 +210,7 @@ def test_edited_pkg_plan_recalculates_monthly_volume() -> None:
             "Stack": ["12H", "12H"],
             "Capa Code": ["CAPA-A", "CAPA-A"],
             "Customer": ["Customer-A", "Customer-A"],
+            "Pack Code": ["PK-1", "PK-1"],
             "생산수량": [100.0, 120.0],
         }
     )
@@ -221,6 +222,7 @@ def test_edited_pkg_plan_recalculates_monthly_volume() -> None:
         "Capa Code",
         "Customer",
         "CS",
+        "Pack Code",
     ]
     wide_plan.loc[0, "202609"] = 250.25
     edited_plan = plan_from_edit_table(wide_plan)
@@ -271,6 +273,7 @@ def test_sparse_pkg_plan_treats_missing_months_as_zero_demand() -> None:
             "Stack": ["12H", "8H"],
             "Capa Code": ["ABCD", "EFGH"],
             "Customer": ["others", "Customer-A"],
+            "Pack Code": ["PK-1", "PK-2"],
             "생산수량": [100.0, 200.0],
         }
     )
@@ -394,3 +397,32 @@ def test_edited_yield_recalculates_chip_volume() -> None:
 
     assert result.loc[0, "202608"] == pytest.approx(100 * 11 / 0.9)
     assert result.loc[0, "202609"] == pytest.approx(100 * 11 / 0.5)
+
+
+def test_a_plan_without_pack_code_names_the_empty_column_and_asks_for_reregistration() -> None:
+    """0013 이전 리비전은 `Pack Code` 가 NULL 이라 격자를 만들 수 없다.
+
+    부하량 페이지는 격자 생성이 시나리오 편집 바보다 앞이라 여기서 멈추면 페이지 전체가
+    서고 "전체 입력 원본으로 초기화" 버튼도 보이지 않는다. 어느 컬럼이 비었는지와 무엇을
+    해야 하는지가 문구에 없으면 사용자가 빠져나올 길이 없다.
+    """
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "양산구분": ["양산"],
+            "CS": ["MP"],
+            "제품정보": ["HBM라"],
+            "Stack": ["12H"],
+            "Capa Code": ["CAPA-A"],
+            "Customer": ["Customer-A"],
+            "Pack Code": [None],
+            "생산수량": [100.0],
+        }
+    )
+
+    with pytest.raises(ValueError) as error:
+        plan_to_edit_table(plan)
+
+    message = str(error.value)
+    assert "Pack Code" in message
+    assert "다시 조회" in message

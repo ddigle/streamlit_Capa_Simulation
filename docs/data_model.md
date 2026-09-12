@@ -151,7 +151,9 @@ RQ_REQB      RQ_EQP_OWN   RQ_EQP_LENT   RQ_EQP_AVBL
 RQ_CHIP_QTY  RQ_CHIP_EQ
 ```
 
-`RQ_PKG_PLAN`은 0013 부터 `제품타입`·`Pack Code`를 함께 싣는다(`Pack Code`는 아직 업무 키가 아니다).
+`RQ_PKG_PLAN`은 0013 부터 `제품타입`·`Pack Code`를 함께 싣는다. `Pack Code`는 2026-09-12
+부터 업무 키(계약 `derived_keys` 8키의 마지막)이고 `제품타입`은 값 컬럼이다. 컬럼 순서는
+DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 리비전 왕복 동등성이 깨진다.
 
 기술 키는 `(revision_id, source_row_no)`다. 리비전을 읽을 때 이 14개는 `ref_data`의 같은
 이름 테이블을 대체하고, 나머지 읽기 전용 테이블은 데이터셋 기본 스냅샷을 사용한다.

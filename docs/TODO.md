@@ -80,7 +80,7 @@
 
 ### 컬럼별 조사 항목
 
-- [결정] `Pack Code` 는 **생산수량을 가르는 업무 키**다(2026-09-05 확정). `RQ_PKG_PLAN` 업무 키에 추가한다. 현재 로컬 Core Data 로는 키 그룹 204개 모두 Pack Code 가 1종이라 행 수와 계산 결과가 바뀌지 않고, 사내 실데이터에서 관측된 Pack Code 충돌을 `임시 첫 행 선택` 없이 행 분리로 처리하게 된다. 0013 이 컬럼을 이미 실었으므로 남은 것은 계약(`derived_keys`)·변환기·`PKG_PLAN_KEYS`·편집 탭 분류 컬럼·표시순서뿐이다 — 아래 3-5 절 참조.
+- [결정] `Pack Code` 는 **생산수량을 가르는 업무 키**다(2026-09-05 확정, 2026-09-12 구현 완료). `RQ_PKG_PLAN` 업무 키 8번째 컬럼이다. 로컬 Core Data 로는 키 그룹 204개 모두 Pack Code 가 1종이라 행 수와 계산 결과가 바뀌지 않고(204 → 204), 사내 실데이터에서 관측된 Pack Code 충돌이 `임시 첫 행 선택` 없이 행 분리로 처리된다. **합산은 계산 계층이 한다** — 저장·편집은 Pack Code 별 행을 그대로 두고, 부하량·소요대수·HOME 은 Pack Code 없는 키로 `groupby` 합산하며 PKG 환산은 `_prepare_pkg_plan_for_equivalent` 가 7키 합계로 접는다. `PKG_PLAN_KEYS` 는 7키 그대로다(연결 상대인 소요대수 상세에 Pack Code 가 없다) — 아래 3-5 절 참조.
 - [x] `생산수량`과 `계획(K개)`는 동일한 값으로 확인했다. `생산수량`을 사용하고 `계획(K개)`는 쿼리에서 비활성화했다.
 - [x] `Chip수`와 `CHIP`는 동일한 값으로 확인했다. `Chip수`는 쿼리에서 비활성화하고 부하량 산출에는 쿼리 결과 컬럼 `구분_Chip`을 사용한다.
 - [x] `메이커`, `모델명`은 두 컬럼 모두 데이터가 없어 쿼리에서 비활성화했다.
@@ -200,8 +200,9 @@
 - [x] Core 파생 RQ의 동일 업무 키에 서로 다른 값이 있어도 테이블별 오류로 변환을 반복
   중단하지 않고 원천 첫 행을 임시 적용한다. BigDataQuery 등록 화면에서 전체 RQ 충돌을
   테이블별 Summary로 표시하고 업무 키·후보값·선택값·원천행 번호 CSV를 제공한다.
-- [ ] 충돌 CSV를 근거로 `RQ_PKG_PLAN`의 Pack Code별 생산수량을 포함한 테이블별 실제
-  집계·대표값 선택 규칙을 확정하고 임시 첫 행 선택 정책을 제거한다.
+- [x] `RQ_PKG_PLAN`은 `Pack Code`를 업무 키로 승격해 Pack Code별 생산수량이 행으로
+  분리 저장된다. 임시 첫 행 선택 정책은 `RQ_PKG_PLAN`에서 사라졌고, 다른 RQ 표에는
+  그대로 남는다.
 
 ### 데이터 계약과 검증
 
@@ -640,7 +641,7 @@ Codex 구축분에 대한 구조 리팩토링을 진행했다. 계산 결과와 
 
 | 테이블 | 연결 키 | 채워야 할 값 | 세션 편집 |
 | --- | --- | --- | --- |
-| `RQ_PKG_PLAN` | 월 + 양산구분·제품정보·Stack·Capa Code·Customer·CS | 생산수량 | 가능 |
+| `RQ_PKG_PLAN` | 월 + 양산구분·제품정보·Stack·Capa Code·Customer·CS·Pack Code | 생산수량 | 가능 |
 | `RQ_CHIP_QTY` | 제품정보 + Stack + WF 구분 | 구분_Chip, Net Die | **불가** |
 | `RQ_YLD` | 월 + 제품정보 + Stack + WF 구분 | EDS_수율, BE_수율 | 가능 |
 | `RQ_CHIP_EQ` | 제품정보 + Stack + WF 구분 | 구분_Chip, 구분_EQ | **불가** |
@@ -820,18 +821,31 @@ Codex 구축분에 대한 구조 리팩토링을 진행했다. 계산 결과와 
 사용자가 미결 7건에 답을 줬다. 각 항목은 1~2장에 반영했고, 코드와 어긋나는 부분만
 여기에 모았다.
 
-### Pack Code 를 업무 키로 승격 (구현 대기)
+### Pack Code 를 업무 키로 승격 (2026-09-12 완료)
 
-- [ ] `RQ_PKG_PLAN` 업무 키에 `Pack Code` 를 추가한다. **마이그레이션은 더 필요 없다** —
-  `0013_pkg_plan_product_type.sql` 이 `ref_data`·`rev_data` 양쪽에 컬럼을 실었고 값도 되채웠다.
-  남은 것은 계약·코드 변경뿐이다. 함께 손봐야 하는 곳: `config/data_contract.json` 의
-  `derived_keys`, `services/reference_transformer.py` 의 `RQ_PKG_PLAN` 빌더,
-  `services/standard_target_capacity.py` 의 `PKG_PLAN_KEYS`, 부하량 `PKG PLAN` 편집 탭의
-  분류 컬럼, 표시순서, 리비전 스냅샷 저장·복원.
+- [x] `RQ_PKG_PLAN` 업무 키에 `Pack Code` 를 더했다. **마이그레이션은 만들지 않았다** —
+  `0013_pkg_plan_product_type.sql` 이 `ref_data`·`rev_data` 양쪽에 컬럼을 실었고 PK 가
+  `(dataset_id|revision_id, source_row_no)` 라 업무 키 제약이 없다. 고친 곳은 네 군데다:
+  `config/data_contract.json` 의 `derived_keys`(나머지는 계약을 읽어 자동 추종),
+  `services/load_calculator.py` 의 `PLAN_EDITOR_DIMENSIONS`(추가)·`PLAN_ATTRIBUTE_COLUMNS`
+  (제거 — 키와 속성 양쪽에 두면 `attach_plan_attributes` 가 중복 라벨 프레임을 만든다),
+  `services/standard_target_capacity.py` 의 `_prepare_pkg_plan_for_equivalent`(7키 중복
+  거부 → 7키 합계), `app_pages/load_conversion.py` 의 staged 붙여넣기 스키마 검사.
+- `PKG_PLAN_KEYS` 는 **7키 그대로** 뒀다. 연결 상대인 소요대수 상세(`DEMAND_ID_COLUMNS`)에
+  Pack Code 컬럼이 없어 넣으면 `KeyError` 가 난다. 회귀 가드는
+  `tests/test_standard_target_capa_page.py` 다 — 넣으면 곧바로 깨진다.
+- 부하량·HOME 표의 분류 차원(`CLASSIFICATION_COLUMNS`·`LOAD_KEYS`·
+  `PRODUCTION_DETAIL_DIMENSIONS`)에는 넣지 않았다. 화면 집계 단위는 그대로다.
 - 근거의 출처를 가른다. **사내 BigDataQuery 실데이터에서 `Pack Code` 충돌이 관측된 것**이
   이 작업의 근거다. 로컬 샘플에서 키 그룹 204개가 전부 1종이라 승격해도 결과가 안 바뀌는
   것(204 → 204)은 합성 샘플의 성질일 뿐이며, "위험이 없다" 는 근거로만 쓴다.
-- 이 작업이 끝나면 2장의 `임시 첫 행 선택 정책 제거` 항목도 함께 닫힌다.
+- **옛 리비전은 재등록한다.** 0013 이전에 저장한 리비전은 `Pack Code` 가 NULL 이라 부하량
+  페이지의 `plan_to_edit_table` 에서 멈춘다. 백필 마이그레이션은 만들지 않았고, 대신 그
+  예외 문구가 어느 컬럼이 비었는지와 재등록이 필요하다는 것을 적는다.
+- 사용자 안내 두 가지: 충돌 CSV 양식에 `Pack Code` 열이 늘고 `업무키컬럼` 이 8키 문자열이
+  된다. 승격 전에 내려받은 PKG PLAN CSV 양식은 붙여넣으면 `누락 ['Pack Code']` 로 거부되니
+  다시 내려받아야 한다.
+- 2장의 `임시 첫 행 선택 정책 제거` 항목도 `RQ_PKG_PLAN` 에 한해 함께 닫혔다.
 
 ### 감사 확인 3건 — 답변 반영 (2026-09-05)
 

@@ -22,7 +22,13 @@ LOAD_DETAIL_COLUMNS = ["Capa Code", "Customer", "CS"]
 # 제품타입별 `WF 구분` 규칙은 `services/product_type.py` 가 단일 근거다.
 # 계획에 딸려 다니지만 사용자가 격자에서 고칠 값이 아닌 속성들. 편집 왕복에서 떨어지므로
 # `attach_plan_attributes` 로 되붙인다.
-PLAN_ATTRIBUTE_COLUMNS = [PRODUCT_TYPE_COLUMN, "Pack Code"]
+#
+# `Pack Code` 는 여기 두지 않는다 — 업무 키로 올라가 `PLAN_EDITOR_DIMENSIONS` 에 있으므로,
+# 남겨 두면 `attach_plan_attributes` 가 키와 속성 양쪽에서 같은 컬럼을 골라 중복 라벨
+# 프레임을 만들고 바로 다음 `_normalize_text` 가 죽는다.
+PLAN_ATTRIBUTE_COLUMNS = [PRODUCT_TYPE_COLUMN]
+# `Pack Code` 는 같은 7키 안에서 생산수량을 가르는 업무 키다. 격자에서 합쳐 보이면
+# 편집 왕복에서 Pack Code 별 수량을 되살릴 수 없으므로 행 차원으로 노출한다.
 PLAN_EDITOR_DIMENSIONS = [
     "양산구분",
     "제품정보",
@@ -30,6 +36,7 @@ PLAN_EDITOR_DIMENSIONS = [
     "Capa Code",
     "Customer",
     "CS",
+    "Pack Code",
 ]
 PLAN_REQUIRED_COLUMNS = [
     "생산계획년월",
@@ -68,8 +75,17 @@ def plan_to_edit_table(plan: pd.DataFrame, display_order: DisplayOrderInput = No
     prepared = _to_numeric(prepared, ["생산수량"], "RQ_PKG_PLAN")
     prepared["생산수량"] = prepared["생산수량"].fillna(0.0)
 
-    if prepared[["생산계획년월", *PLAN_EDITOR_DIMENSIONS]].isna().any(axis=None):
-        raise ValueError("RQ_PKG_PLAN의 편집 테이블 식별 컬럼에 누락값이 있습니다.")
+    identity_columns = ["생산계획년월", *PLAN_EDITOR_DIMENSIONS]
+    empty_columns = [column for column in identity_columns if prepared[column].isna().any()]
+    if empty_columns:
+        # 어느 컬럼이 비었는지 적어야 한다. `Pack Code` 승격 이전에 저장한 리비전은 그
+        # 컬럼이 NULL 이라 여기서 멈추는데, 부하량 페이지는 격자 생성이 시나리오 편집보다
+        # 앞이라 페이지 전체가 서고 "전체 입력 원본으로 초기화" 버튼도 보이지 않는다.
+        raise ValueError(
+            "RQ_PKG_PLAN의 편집 테이블 식별 컬럼에 누락값이 있습니다: "
+            f"{', '.join(empty_columns)}. 그 컬럼이 비어 있는 옛 리비전은 BigDataQuery 에서 "
+            "다시 조회·저장해야 합니다."
+        )
 
     duplicate_keys = [*PLAN_EDITOR_DIMENSIONS, "생산계획년월"]
     duplicated = prepared.duplicated(duplicate_keys, keep=False)
@@ -131,10 +147,12 @@ def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
 def attach_plan_attributes(long_plan: pd.DataFrame, source_plan: pd.DataFrame) -> pd.DataFrame:
     """편집 격자가 들고 있지 않은 계획 속성을 원래 계획에서 되붙인다.
 
-    격자는 `PLAN_EDITOR_DIMENSIONS` 와 월 컬럼만 보여 준다. `제품타입`·`Pack Code` 는
-    사용자가 고칠 값이 아니라 제품에 딸린 속성이라 격자에 두지 않았는데, 되붙이지 않으면
-    변경사항을 적용할 때마다 조용히 사라진다. 그러면 `replace_month_range` 가
-    "편집값에 원본 컬럼이 없습니다" 로 막고, 화면에는 오류만 뜬 채 적용이 안 된다.
+    격자는 `PLAN_EDITOR_DIMENSIONS` 와 월 컬럼만 보여 준다. `제품타입` 은 사용자가 고칠
+    값이 아니라 제품에 딸린 속성이라 격자에 두지 않았는데, 되붙이지 않으면 변경사항을
+    적용할 때마다 조용히 사라진다. 그러면 `replace_month_range` 가 "편집값에 원본 컬럼이
+    없습니다" 로 막고, 화면에는 오류만 뜬 채 적용이 안 된다.
+
+    `Pack Code` 는 업무 키라 격자가 직접 들고 오므로 여기서 되붙일 것이 없다.
 
     격자에 없던 새 행은 붙일 원본이 없어 결측으로 남는다. 그 상태로 EDP 를 판별하려 하면
     `filter_edp_plan` 이 어느 제품인지 짚어 알려 준다 — 조용히 넘어가지 않는다.

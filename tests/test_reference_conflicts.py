@@ -73,3 +73,32 @@ def test_no_conflict_means_no_records_and_no_group_loop() -> None:
 
     assert len(distinct) == 2
     assert records == []
+
+
+def test_rows_that_differ_only_by_pack_code_are_two_plans_not_a_conflict() -> None:
+    """`Pack Code` 가 업무 키이므로 그것만 다른 두 행은 충돌이 아니라 서로 다른 계획이다.
+
+    승격 전에는 두 행이 같은 키로 접혀 둘째 행의 생산수량이 통째로 사라졌다. 사내 실데이터의
+    같은 7키에서 119.93 과 72.51 이 "값 충돌" 로 보고되고 72.51 이 버려진 것이 그 결과다.
+    """
+    contract = load_core_data_contract()
+    base = {
+        "생산계획년월": 202601,
+        "양산구분": "양산",
+        "CS": "MP",
+        "제품정보": "P",
+        "Stack": "8H",
+        "Capa Code": "C1",
+        "Customer": "K",
+        "생산수량": 119.93,
+        "제품타입": "HBM",
+        "Pack Code": "PK-5JK",
+    }
+    frame = pd.DataFrame([base, {**base, "Pack Code": "PK-5WC", "생산수량": 72.51}])
+    records: list[dict[str, object]] = []
+
+    distinct = validated_distinct(frame, "RQ_PKG_PLAN", contract, records)
+
+    assert len(distinct) == 2
+    assert records == []
+    assert sorted(distinct["생산수량"]) == [72.51, 119.93]

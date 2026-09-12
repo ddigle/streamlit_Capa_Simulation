@@ -108,6 +108,7 @@ tables = {
             "Stack": ["8H"],
             "Capa Code": ["CAPA-A"],
             "Customer": ["Customer-A"],
+            "Pack Code": ["PK-1"],
             "생산수량": [100.0],
         }
     ),

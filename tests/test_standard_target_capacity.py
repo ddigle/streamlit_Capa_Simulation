@@ -384,3 +384,45 @@ def test_availability_clipboard_passes_the_known_process_list_through() -> None:
             "공정\tWeeknum\t가용대수\n절단\t26-W32\t2.5",
             known_processes=["Process-A"],
         )
+
+
+def test_pkg_equivalent_sums_plan_rows_that_differ_only_by_pack_code() -> None:
+    """Pack Code 별로 갈린 계획 줄은 PKG 환산에서 7키 합계로 들어가야 한다.
+
+    승격 전에는 `_prepare_pkg_plan_for_equivalent` 가 7키 중복을 예외로 막아, Pack Code 가
+    둘인 리비전에서 PKG 환산 토글이 통째로 실패했다.
+    """
+    required_equipment = _required_equipment()
+    weekly_target = build_weekly_standard_target_capacity(
+        required_equipment=required_equipment,
+        run_day=pd.DataFrame({"생산계획년월": [202608], "공정": ["Process-A"], "RUN_DAY": [10.0]}),
+        weekly_availability=pd.DataFrame(
+            {"공정": ["Process-A"], "Weeknum": ["26-W32"], "가용대수": [2.0]}
+        ),
+        start_date=date(2026, 8, 3),
+        end_date=date(2026, 8, 9),
+        detail_level="공정",
+    )
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608, 202608],
+            "양산구분": ["양산", "양산", "양산"],
+            "제품정보": ["Product-A", "Product-A", "Product-A"],
+            "Stack": ["8H", "8H", "8H"],
+            "Capa Code": ["C1", "C1", "C2"],
+            "Customer": ["Customer-A", "Customer-A", "Customer-B"],
+            "CS": ["MP", "MP", "ER"],
+            "Pack Code": ["PK-1", "PK-2", "PK-1"],
+            "생산수량": [20.0, 10.0, 20.0],
+        }
+    )
+
+    result = add_pkg_equivalent_standard_target(
+        weekly_target=weekly_target,
+        required_equipment=required_equipment,
+        plan=plan,
+        detail_level="공정",
+    )
+
+    # 20 + 10 + 20 = 50. 7키가 같은 두 줄이 접히지 않고 더해진다.
+    assert result.loc[0, PKG_EQUIVALENT_COLUMN] == pytest.approx(5.0)

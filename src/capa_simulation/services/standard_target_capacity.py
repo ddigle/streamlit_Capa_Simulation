@@ -24,6 +24,9 @@ from capa_simulation.services.weighted_unit_capacity import (
 
 STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES = ("Pre B/D",)
 PKG_EQUIVALENT_COLUMN = "PKG 환산 일 표준 가능량"
+# 소요대수 상세와 계획을 잇는 키. `Pack Code` 는 **넣지 않는다** — 연결 상대인
+# `DEMAND_ID_COLUMNS` 에 그 컬럼이 없어 `KeyError` 가 난다. Pack Code 별 계획 줄은
+# `_prepare_pkg_plan_for_equivalent` 가 이 7키 합계로 접어서 넘긴다.
 PKG_PLAN_KEYS = [
     "생산계획년월",
     "양산구분",
@@ -292,11 +295,10 @@ def _prepare_pkg_plan_for_equivalent(data: pd.DataFrame) -> pd.DataFrame:
     result["생산수량"] = to_numeric_strict(result["생산수량"], "RQ_PKG_PLAN.생산수량")
     if result["생산수량"].lt(0).any():
         raise ValueError("RQ_PKG_PLAN의 생산수량은 0 이상이어야 합니다.")
-    duplicated = result.duplicated(PKG_PLAN_KEYS, keep=False)
-    if duplicated.any():
-        examples = result.loc[duplicated, PKG_PLAN_KEYS].drop_duplicates().head(5)
-        raise ValueError(f"RQ_PKG_PLAN 업무 키가 중복되었습니다: {examples.to_dict('records')}")
-    return result
+    # `Pack Code` 가 업무 키로 올라가 같은 7키에 계획 줄이 여럿 있을 수 있다. 연결 상대인
+    # 소요대수 상세(`DEMAND_ID_COLUMNS`)에는 Pack Code 가 없으므로 여기서 7키 합계로 접는다.
+    # 중복을 예외로 막으면 Pack Code 가 갈린 리비전에서 PKG 환산이 통째로 실패한다.
+    return result.groupby(PKG_PLAN_KEYS, as_index=False).agg(생산수량=("생산수량", "sum"))
 
 
 def _normalize_text_values(data: pd.DataFrame, columns: list[str], table_name: str) -> None:

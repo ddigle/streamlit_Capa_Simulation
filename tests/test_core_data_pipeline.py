@@ -258,3 +258,26 @@ def test_source_hash_ignores_query_row_order_but_preserves_row_multiplicity() ->
 
     assert core_data_hash(source) == core_data_hash(reordered)
     assert core_data_hash(source) != core_data_hash(duplicated)
+
+
+def test_source_rows_that_differ_only_by_pack_code_stay_two_plan_rows() -> None:
+    """Pack Code 가 업무 키라 등록에서 접히지 않는다. 합산은 계산 계층의 몫이다."""
+    source = pd.concat([_core_data_row(), _core_data_row()], ignore_index=True)
+    source.loc[1, "Pack Code"] = "PACK-2"
+    source.loc[1, "생산수량"] = 72.51
+
+    prepared = prepare_core_data_dataset(
+        CoreDataBatch(
+            simulation_code="SIM-001",
+            simulation_name="사내 조회 결과",
+            source_type="BIGDATAQUERY",
+            frame=source,
+        ),
+        _display_order(),
+    )
+
+    plan = prepared.reference_tables["RQ_PKG_PLAN"]
+    assert len(plan) == 2
+    assert sorted(plan["생산수량"]) == [72.51, 100.0]
+    assert sorted(plan["Pack Code"]) == ["PACK-2", "기준값"]
+    assert "RQ_PKG_PLAN" not in prepared.reference_conflicts["RQ테이블"].tolist()

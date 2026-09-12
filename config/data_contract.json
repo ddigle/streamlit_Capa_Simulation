@@ -329,7 +329,8 @@
       "제품정보",
       "Stack",
       "Capa Code",
-      "Customer"
+      "Customer",
+      "Pack Code"
     ],
     "RQ_YLD": [
       "생산계획년월",

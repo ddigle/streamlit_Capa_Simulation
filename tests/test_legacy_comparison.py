@@ -31,7 +31,13 @@ METRIC = LegacyMetric(label="Wafer 부하량 (매)", legacy_column="WF수(매)")
 CONTRACT = load_core_data_contract()
 
 # 대조 키 밖에 있으면서 계획 줄을 가르는 컬럼들. 이것이 다르면 서로 다른 계획이다.
-_PLAN_DEFAULTS = {"양산구분": "양산", "CS": "MP", "Capa Code": "CAPA-1", "Customer": "고객가"}
+_PLAN_DEFAULTS = {
+    "양산구분": "양산",
+    "CS": "MP",
+    "Capa Code": "CAPA-1",
+    "Customer": "고객가",
+    "Pack Code": "PACK-1",
+}
 
 
 def _plan_row(value: float, *, routes: int = 31, **overrides: object) -> pd.DataFrame:
@@ -154,3 +160,22 @@ def test_grain_follows_the_pkg_plan_business_key() -> None:
     """기존값이 한 번 기록되는 단위는 계약의 계획 업무 키다. 키가 늘면 대조도 따라간다."""
     assert legacy_grain(CONTRACT) == [*CONTRACT.derived_keys["RQ_PKG_PLAN"], "WF 구분"]
     assert COMPARISON_KEYS == ["생산계획년월", "제품정보", "Stack", "WF 구분"]
+
+
+def test_plan_rows_that_differ_only_by_pack_code_are_summed_in_the_grain() -> None:
+    """Pack Code 가 업무 키가 되면 두 줄은 각각의 그레인이라 대조 키에서 더해진다.
+
+    승격 전에는 같은 그레인 안에서 값이 갈린 것으로 보여 `값 불일치` 가 되고 기존값이
+    비워졌다 — 대조에서 통째로 빠지는 자리다.
+    """
+    core = _core(
+        _plan_row(100.0, **{"Pack Code": "PACK-1"}),
+        _plan_row(60.0, **{"Pack Code": "PACK-2"}),
+    )
+
+    comparison = _compare(core, _calculated(160.0))
+
+    assert len(comparison) == 1
+    assert comparison["기존값"].iloc[0] == 160.0
+    assert bool(comparison["값 불일치"].iloc[0]) is False
+    assert summarize_comparison(comparison)["값 불일치"] == 0

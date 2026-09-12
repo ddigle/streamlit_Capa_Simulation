@@ -143,6 +143,14 @@ with pkg_plan_tab:
     )
     # 붙여넣기한 표가 있으면 그것을 편집 대상으로 보여준다. 아직 전역에는 반영되지 않았다.
     staged_plan_table = st.session_state.get(plan_staged_key)
+    if isinstance(staged_plan_table, pd.DataFrame) and not set(PLAN_EDITOR_DIMENSIONS).issubset(
+        staged_plan_table.columns
+    ):
+        # `source_token` 은 원본의 버전·기간만 보고 격자 스키마는 보지 않는다. 그래서 행
+        # 차원이 늘어난 뒤에도(예: `Pack Code` 업무 키 승격) 옛 스키마로 붙여넣어 둔 표가
+        # 세션에 남아 편집 원본이 되고, 아래 `set_properties` 가 `KeyError` 로 죽는다.
+        st.session_state.pop(plan_staged_key, None)
+        staged_plan_table = None
     plan_editor_source = (
         staged_plan_table if isinstance(staged_plan_table, pd.DataFrame) else default_plan_table
     )

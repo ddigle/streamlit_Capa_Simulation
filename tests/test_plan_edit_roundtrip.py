@@ -19,6 +19,7 @@ DIMENSIONS = {
     "Capa Code": "DEMO_C1",
     "Customer": "DEMO_CUST",
     "CS": "DEMO_CS",
+    "Pack Code": "DEMO_PK",
 }
 DISPLAY_ORDER = pd.DataFrame(
     {"화면": ["부하량"], "컬럼": ["제품정보"], "정렬": ["오름차순"], "사용자지정순서": [None]}
@@ -113,7 +114,7 @@ def test_active_scenario_issues_a_new_token_on_every_change() -> None:
 
 
 def test_plan_attributes_survive_the_apply_path() -> None:
-    """편집 격자에 없는 `제품타입`·`Pack Code` 가 적용에서 사라지면 안 된다.
+    """편집 격자에 없는 `제품타입` 이 적용에서 사라지면 안 된다.
 
     사라지면 `replace_month_range` 가 "편집값에 원본 컬럼이 없습니다" 로 막고, 화면에는
     오류만 뜬 채 계획 적용이 조용히 무산된다. 실제로 그 상태가 되어 붙여넣기 적용 테스트가
@@ -129,7 +130,7 @@ def test_plan_attributes_survive_the_apply_path() -> None:
                 "생산수량": 50.0,
             },
         ]
-    ).assign(제품타입=["HBM", "EDP-TSV"], **{"Pack Code": ["PK-1", "PK-2"]})
+    ).assign(제품타입=["HBM", "EDP-TSV"])
     wide = _wide(
         [
             {"제품정보": "DEMO_P1", "202601": 120.0},
@@ -139,7 +140,7 @@ def test_plan_attributes_survive_the_apply_path() -> None:
 
     applied = attach_plan_attributes(plan_from_edit_table(wide), source)
 
-    assert set(applied.columns) >= {*PLAN_EDITOR_DIMENSIONS, "제품타입", "Pack Code"}
+    assert set(applied.columns) >= {*PLAN_EDITOR_DIMENSIONS, "제품타입"}
     by_product = dict(zip(applied["제품정보"], applied["제품타입"], strict=True))
     assert by_product == {"DEMO_P1": "HBM", "DEMO_P2": "EDP-TSV"}
 
@@ -147,7 +148,7 @@ def test_plan_attributes_survive_the_apply_path() -> None:
 def test_a_row_with_no_source_gets_no_invented_attributes() -> None:
     """붙일 원본이 없는 새 행을 아무 값으로 채우면 EDP 판별이 조용히 틀린다."""
     source = pd.DataFrame([{**DIMENSIONS, "생산계획년월": 202601, "생산수량": 100.0}]).assign(
-        제품타입=["HBM"], **{"Pack Code": ["PK-1"]}
+        제품타입=["HBM"]
     )
     wide = _wide([{"제품정보": "새 제품", "202601": 10.0}])
 
