@@ -1169,12 +1169,21 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   디코드해 이 계약을 고정한다.
 - HOME 상세표 토글은 켜진 상태로 시작한다. 토글을 끄면 상세 Figure 를 만들지 않으며, 상세
   Figure 는 요약과 별도 캐시다.
+- **가로 컨테이너 안의 제목은 `h1` 의 위아래 여백을 잃는다.** `st.container(horizontal=True)`
+  에 `st.title` 을 넣으면 Streamlit 이 `padding: 0` 을 걸어 그 페이지만 제목이 위로
+  올라붙고 앱 헤더에 닿는다. 제목 옆에 무언가를 두려면 `st.columns(..., wrap=False)` 를
+  쓴다 — 컬럼은 여백을 그대로 둬서 제목 줄 높이가 다른 페이지와 같다
+  (`components/page_header.py`).
 - 여러 필터가 같은 결과를 바꾸면 `st.form`으로 묶어 중간 입력마다 전체 재실행하지 않는다.
 - `use_container_width`를 새로 사용하지 말고 `width="stretch"` 또는
   `width="content"`를 사용한다.
 - 단순 UI 그룹은 네이티브 `st.container(border=True)`를 우선한다.
 - 복잡한 Plotly UI를 변경할 때는 월별 고정 열 너비, 좌측 라벨 Figure, 공통 가로
   스크롤 정렬을 함께 검증한다.
+- **paper 좌표는 픽셀에서 낸다.** Plotly 의 paper `y` 는 여백을 뺀 **그림 영역** 기준이라
+  `-0.28` 같은 비율을 손으로 적어 두면 행 높이를 한 번 올릴 때마다 같은 비율이 다른
+  자리를 가리킨다. 캔버스 밖으로 밀린 테두리는 오류 없이 잘려 사라진다 — LOB 패널 아래
+  테두리가 그렇게 사라졌다. `LOB_PANEL_BOTTOM_Y` 처럼 여백·높이 상수에서 계산한다.
 - HOME Plotly shape·annotation을 반복해서 추가하지 않는다. 레이아웃에 일괄 주입해
   Figure 생성 시간이 선형에 가깝게 유지되도록 한다. 칸마다 반복되는 값은 shape·
   annotation 이 아니라 배열 `text`·`customdata` 를 실은 trace 하나로 그린다.

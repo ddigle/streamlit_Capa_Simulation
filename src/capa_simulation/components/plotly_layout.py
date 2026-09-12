@@ -76,7 +76,6 @@ def add_figure_outer_border(
     y0: float = 0.0,
     emphasize_left: bool = True,
     emphasize_bottom: bool = False,
-    compensate_bottom: bool = True,
 ) -> None:
     shapes: list[dict[str, Any]] = []
     if emphasize_left:
@@ -140,7 +139,6 @@ def add_figure_outer_border(
         }
     )
     if emphasize_bottom:
-        bottom_width = tokens.OUTER_BORDER_WIDTH_PX * (2 if compensate_bottom else 1)
         shapes.append(
             {
                 "type": "line",
@@ -150,7 +148,10 @@ def add_figure_outer_border(
                 "y1": y0,
                 "xref": "paper",
                 "yref": "paper",
-                "line": {"color": tokens.BORDER_STRONG, "width": bottom_width},
+                "line": {
+                    "color": tokens.BORDER_STRONG,
+                    "width": tokens.OUTER_BORDER_WIDTH_PX * 2,
+                },
                 "layer": "above",
             }
         )

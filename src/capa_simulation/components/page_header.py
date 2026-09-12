@@ -20,6 +20,11 @@ from capa_simulation.navigation import IMPLEMENTING_SUFFIX
 # 제목 오른쪽 진행 표시 자리의 폭. 단계 이름과 퍼센트가 한 줄에 들어가는 최소치다.
 STATUS_SLOT_WIDTH_PX = 320
 
+# 제목 줄을 나누는 비율. 왼쪽 칸이 제목보다 조금 넓어 진행 표시가 제목 바로 옆에서
+# 시작한다. 왼쪽을 더 좁히면 제목이 두 줄로 접히고, 더 넓히면 진행 표시가 제목에서
+# 멀찍이 떨어진다.
+TITLE_STATUS_COLUMN_RATIO = (2, 3)
+
 # 화면이 어느 단계인지 알려주는 배지. 본문이 이미 쓰던 어휘를 그대로 쓴다.
 # 사이드바는 `(구현중)` 한 단계만 쓰고 성숙도는 여기서만 나눈다(docs/TODO.md 결정).
 MATURITY_BADGES = {
@@ -73,12 +78,20 @@ def render_page_header_with_status(
     제목이 잡고 있으므로 막대가 사라져도 아래가 움직이지 않는다.
     """
     heading, implementing = _split_implementing(title)
-    # `wrap=False` 로 한 줄을 강제한다. 줄바꿈되면 진행바가 자기 줄을 차지해, 막대가 뜨고
-    # 질 때마다 아래 차트가 그만큼 밀린다 — 이 함수가 막으려던 바로 그 움직임이다.
-    with st.container(horizontal=True, wrap=False, vertical_alignment="center", gap="medium"):
-        st.title(heading, width="content")
-        with st.container(width=STATUS_SLOT_WIDTH_PX):
-            slot = st.empty()
+    # 가로 컨테이너가 아니라 컬럼으로 나눈다. **가로 컨테이너 안의 `h1` 은 Streamlit 이
+    # 위아래 여백을 지운다.** 그러면 이 머리말을 쓰는 페이지만 제목이 그만큼 위로 올라가
+    # 앱 헤더에 닿고, 같은 자리에 있어야 할 다른 페이지 제목과 눈높이가 어긋난다.
+    # 컬럼은 그 여백을 그대로 두므로 제목 줄 높이가 다른 페이지와 같다.
+    #
+    # 두 `wrap=False` 가 각각 막는 것이 다르다. 컬럼 쪽은 진행 표시가 제목 아래로 접히는
+    # 것을, 제목 쪽은 제목 자체가 두 줄이 되는 것을 막는다. 어느 쪽이든 접히면 막대가
+    # 뜨고 질 때마다 아래 차트가 밀린다 — 이 함수가 막으려던 바로 그 움직임이다.
+    title_column, status_column = st.columns(
+        TITLE_STATUS_COLUMN_RATIO, vertical_alignment="center", wrap=False
+    )
+    title_column.title(heading, wrap=False)
+    with status_column, st.container(width=STATUS_SLOT_WIDTH_PX):
+        slot = st.empty()
     _render_marks(implementing, badges, description)
     return slot
 

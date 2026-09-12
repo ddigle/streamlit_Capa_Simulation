@@ -9,6 +9,8 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_TITLE_HEIGHT_PX,
+    LOB_BOTTOM_MARGIN_PX,
+    LOB_TOP_MARGIN_PX,
     LOB_VALUE_FONT_SIZE_PX,
 )
 from capa_simulation.design import tokens
@@ -592,3 +594,53 @@ def test_the_title_spacers_keep_their_pinned_height(seeded_database: Path) -> No
     for key in ("plan_detail_title_spacer", "bottleneck_title_spacer"):
         spacer = app.get_by_key(key)
         assert spacer.proto.height_config.pixel_height == DASHBOARD_TITLE_HEIGHT_PX, key
+
+
+def test_the_lob_panel_border_closes_on_the_bottom_edge(seeded_database: Path) -> None:
+    """아래 테두리는 그림의 맨 아랫줄에 놓여야 한다.
+
+    paper 좌표를 비율로 적어 두면 행 높이를 한 번 올릴 때마다 그림 영역이 함께 커져
+    같은 비율이 캔버스 밖으로 밀린다. 그러면 Plotly 는 선을 그리기는 하지만 잘려 나가
+    **화면에서는 아래 테두리가 통째로 사라진다.** 오류도 경고도 없다.
+    """
+    app = _run(seeded_database)
+    figure = app.session_state["spy_figures"]["production_lob_labels"]
+
+    plot_area = figure.layout.height - LOB_TOP_MARGIN_PX - LOB_BOTTOM_MARGIN_PX
+    horizontals = [
+        shape for shape in figure.layout.shapes if shape.type == "line" and shape.y0 == shape.y1
+    ]
+    assert horizontals, "가로선이 하나도 없다"
+    # 패널 맨 아랫줄에는 테두리와 구획 격자선이 함께 놓인다. 굵은 쪽이 테두리다.
+    bottom_y = min(shape.y0 for shape in horizontals)
+    assert bottom_y < 0, "아래 테두리가 그림 영역 안에 머물러 아래 여백을 감싸지 못한다"
+
+    bottom_px = LOB_TOP_MARGIN_PX + plot_area * (1 - bottom_y)
+    assert bottom_px == pytest.approx(figure.layout.height)
+
+    def _widest(target_y: float) -> float:
+        return max(shape.line.width for shape in horizontals if shape.y0 == target_y)
+
+    # 맨 끝줄의 획은 절반이 잘린다. 위 테두리와 같은 굵기로 그려야 보이는 두께가 같다.
+    assert _widest(bottom_y) == _widest(1)
+
+
+def test_the_chart_rows_share_the_table_rows_label_color(seeded_database: Path) -> None:
+    """`생산계획 LOB`·`B/N Top 5` 도 `Density (억Gb)` 와 같은 구분 칸의 행 이름이다.
+
+    한쪽만 흐리면 같은 칸에 나란히 선 이름들이 서로 다른 위계로 읽힌다.
+    """
+    app = _run(seeded_database)
+    figure = app.session_state["spy_figures"]["production_lob_labels"]
+
+    colors = {annotation.text: annotation.font.color for annotation in figure.layout.annotations}
+    row_names = [
+        "<b>Density (억Gb)</b>",
+        "<b>Wafer 계획</b>",
+        "<b>Wafer Capa</b>",
+        "<b>생산계획 LOB</b>",
+        "<b>B/N Top 5</b>",
+    ]
+    missing = [name for name in row_names if name not in colors]
+    assert not missing, missing
+    assert {colors[name] for name in row_names} == {tokens.TEXT}

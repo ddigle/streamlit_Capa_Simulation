@@ -175,3 +175,14 @@ LOB_FIGURE_HEIGHT_PX = (
     + LOB_TOP5_HEIGHT_PX
     + LOB_BOTTOM_MARGIN_PX
 )
+
+# Plotly 가 좌표 1.0 을 재는 기준 높이. paper 좌표는 **여백을 뺀 그림 영역** 기준이라
+# 그림 전체 높이로 나누면 어긋난다.
+LOB_PLOT_AREA_HEIGHT_PX = LOB_FIGURE_HEIGHT_PX - LOB_TOP_MARGIN_PX - LOB_BOTTOM_MARGIN_PX
+
+# 패널 아래 테두리·세로 격자가 내려오는 paper 좌표. 아래 여백까지 감싸야 B/N Top 5 의
+# 축 글자가 테두리 안에 들어오므로 0 이 아니라 그림의 맨 아랫줄이다.
+#
+# **비율을 손으로 적지 않는다.** 행 높이를 한 번 올리면 그림 영역이 함께 커져서 같은
+# 비율이 캔버스 밖으로 밀려나고, 아래 테두리가 그려지기는 하되 잘려서 통째로 사라진다.
+LOB_PANEL_BOTTOM_Y = -LOB_BOTTOM_MARGIN_PX / LOB_PLOT_AREA_HEIGHT_PX

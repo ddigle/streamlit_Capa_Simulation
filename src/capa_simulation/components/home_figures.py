@@ -24,6 +24,7 @@ from capa_simulation.components.home_dimensions import (
     LOB_BOTTOM_MARGIN_PX,
     LOB_CHART_HEIGHT_PX,
     LOB_FIGURE_HEIGHT_PX,
+    LOB_PANEL_BOTTOM_Y,
     LOB_TABLE_HEIGHT_PX,
     LOB_TABLE_ROW_HEIGHTS_PX,
     LOB_TOP5_HEIGHT_PX,
@@ -711,7 +712,7 @@ def build_lob_summary_figures(
             row=row_number,
             col=1,
         )
-    panel_bottom = -0.28
+    panel_bottom = LOB_PANEL_BOTTOM_Y
     lob_y_domain = month_figure.layout.yaxis.domain
     top5_y_domain = month_figure.layout.yaxis2.domain
     table_y_domain = (lob_table_domains[-1][0], lob_table_domains[0][1])
@@ -727,7 +728,7 @@ def build_lob_summary_figures(
                 "showarrow": False,
                 "font": {
                     "size": 20,
-                    "color": tokens.TEXT_MUTED,
+                    "color": tokens.TEXT,
                     "family": tokens.FONT_FAMILY,
                 },
             },
@@ -740,7 +741,7 @@ def build_lob_summary_figures(
                 "showarrow": False,
                 "font": {
                     "size": 20,
-                    "color": tokens.TEXT_MUTED,
+                    "color": tokens.TEXT,
                     "family": tokens.FONT_FAMILY,
                 },
             },
@@ -833,14 +834,12 @@ def build_lob_summary_figures(
         label_figure,
         y0=panel_bottom,
         emphasize_bottom=True,
-        compensate_bottom=False,
     )
     add_figure_outer_border(
         month_figure,
         y0=panel_bottom,
         emphasize_left=False,
         emphasize_bottom=True,
-        compensate_bottom=False,
     )
     lob_row_boundaries = (
         (lob_table_domains[0][0], tokens.OUTER_BORDER_WIDTH_PX, tokens.BORDER_STRONG),
