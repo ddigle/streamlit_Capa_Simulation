@@ -644,3 +644,34 @@ def test_the_chart_rows_share_the_table_rows_label_color(seeded_database: Path) 
     missing = [name for name in row_names if name not in colors]
     assert not missing, missing
     assert {colors[name] for name in row_names} == {tokens.TEXT}
+
+
+def test_the_classification_cells_center_while_month_cells_reserve_the_gap_line(
+    seeded_database: Path,
+) -> None:
+    """같은 행이라도 분류 칸과 월 칸은 글자가 서는 자리가 다르다.
+
+    `go.Table` 은 한 줄짜리 칸의 글자를 칸 위에 붙여 그린다. 월 칸은 그래야 값 아래에
+    GAP 주석이 들어가지만, GAP 이 없는 분류 칸은 그 자리에 서면 위로 쏠려 보인다.
+    빈 줄 하나를 붙여 Plotly 가 `valign` 을 적용하게 만들되, 행 높이는 그대로여야 한다.
+    """
+    app = _run(seeded_database)
+    label_figure = app.session_state["spy_figures"]["production_detail_labels"]
+    month_figure = app.session_state["spy_figures"]["production_detail_months"]
+
+    label_cells = label_figure.data[0].cells
+    month_cells = month_figure.data[0].cells
+
+    filled_labels = [value for column in label_cells.values for value in column if value]
+    assert filled_labels, "분류 칸이 비어 있다"
+    assert all(value.endswith("<br>") for value in filled_labels)
+    # 빈 칸에 빈 줄을 붙이면 없는 값 자리에 줄만 생긴다.
+    assert all(value == "" for column in label_cells.values for value in column if not value)
+
+    filled_months = [value for column in month_cells.values for value in column if value]
+    assert filled_months, "월 칸이 비어 있다"
+    assert not any(value.endswith("<br>") for value in filled_months)
+
+    # 빈 줄은 높이를 더하지 않는다. 두 칸의 행이 어긋나면 표 전체가 틀어진다.
+    assert label_cells.height == month_cells.height
+    assert label_figure.layout.height == month_figure.layout.height
