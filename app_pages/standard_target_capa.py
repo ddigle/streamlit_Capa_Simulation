@@ -336,22 +336,27 @@ def _render_logic_analysis(
     # st.columns 는 남는 폭을 나눠 갖고 화면이 줄면 함께 줄어든다.
     first_row = st.columns(4, vertical_alignment="center")
     with first_row[0]:
-        st.metric(f"원수요 부하량 ({unit_label})", _format_metric(target_row["원수요_부하량"]))
+        st.metric(
+            f"원수요 부하량 ({unit_label})",
+            _format_metric(target_row["원수요_부하량"]),
+            border=True,
+        )
     with first_row[1]:
-        st.metric("STEP 소요대수", _format_metric(target_row["STEP_소요대수"]))
+        st.metric("STEP 소요대수", _format_metric(target_row["STEP_소요대수"]), border=True)
     with first_row[2]:
-        st.metric("공정 유효 Capa", _format_metric(target_row["공정 유효 Capa"]))
+        st.metric("공정 유효 Capa", _format_metric(target_row["공정 유효 Capa"]), border=True)
     with first_row[3]:
-        st.metric("RUN_DAY", _format_metric(target_row["RUN_DAY"], 1))
+        st.metric("RUN_DAY", _format_metric(target_row["RUN_DAY"], 1), border=True)
     second_row = st.columns(4, vertical_alignment="center")
     with second_row[0]:
-        st.metric("대당 일 Capa", _format_metric(target_row["대당 일 Capa"]))
+        st.metric("대당 일 Capa", _format_metric(target_row["대당 일 Capa"]), border=True)
     with second_row[1]:
-        st.metric("가용대수", _format_metric(target_row["가용대수"], 1))
+        st.metric("가용대수", _format_metric(target_row["가용대수"], 1), border=True)
     with second_row[2]:
         st.metric(
             f"일 표준 가능량 ({unit_label})",
             _format_metric(target_row["일 표준 가능량"]),
+            border=True,
         )
 
     st.code(
@@ -379,14 +384,17 @@ def _render_logic_analysis(
         st.metric(
             "선택 분류 부하량 비중",
             f"{float(contribution_row['부하량 비중']):.2%}",
+            border=True,
         )
         st.metric(
             "선택 분류 소요대수 비중",
             f"{float(contribution_row['소요대수 비중']):.2%}",
+            border=True,
         )
         st.metric(
             "선택 분류 유효 Capa",
             _format_metric(contribution_row["분류 유효 Capa"]),
+            border=True,
         )
 
     st.markdown("#### 제품·WF 속성별 Mix 산출 근거")

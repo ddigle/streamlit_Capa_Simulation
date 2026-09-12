@@ -17,21 +17,17 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
-import duckdb
 import pandas as pd
 
 # 테스트가 `settings.DUCKDB_PATH` 를 갈아끼운다. 이름을 직접 import 하면 여기서 잡은
 # 바인딩이 교체를 무시하므로 호출 시점에 모듈에서 찾는다.
 import capa_simulation.settings as settings
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS
 from capa_simulation.persistence.cache import load_global_process_rename
 from capa_simulation.services.process_rename import (
     PROCESS_RENAME_COLUMNS,
     normalize_process_text,
 )
-
-# 표시명 조회는 화면을 그리기 위한 것이라 실패해도 화면이 죽으면 안 된다. 프로필이 없거나
-# DB 를 열지 못하면 원본 공정명을 그대로 쓰는 것이 옳은 저하 동작이다.
-_LOOKUP_ERRORS = (KeyError, OSError, RuntimeError, TypeError, ValueError, duckdb.Error)
 
 PROCESS_COLUMN = PROCESS_RENAME_COLUMNS[0]
 
@@ -145,6 +141,8 @@ def get_process_labels() -> ProcessLabels:
     """현재 공용 프로필의 표시명. 프로필이 없으면 빈 매핑(=원본 그대로)이다."""
     try:
         profile = load_global_process_rename(str(settings.DUCKDB_PATH.resolve()))
-    except _LOOKUP_ERRORS:
+    # 표시명 조회는 화면을 그리기 위한 것이라 실패해도 화면이 죽으면 안 된다. 프로필이
+    # 없거나 DB 를 열지 못하면 원본 공정명을 그대로 쓰는 것이 옳은 저하 동작이다.
+    except BOOTSTRAP_ERRORS:
         return ProcessLabels()
     return process_labels_from_rules(profile.rules, profile.version)

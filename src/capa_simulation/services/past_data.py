@@ -14,8 +14,6 @@ B/N 순위는 확보율 오름차순이다. 그래서 공정명을 따로 받지
 
 from __future__ import annotations
 
-from io import BytesIO
-
 import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
@@ -116,27 +114,6 @@ def past_table_to_csv(frame: pd.DataFrame, columns: tuple[str, ...]) -> bytes:
 def past_table_from_clipboard(content: str, columns: tuple[str, ...]) -> pd.DataFrame:
     """Excel 에서 복사한 머리글 포함 표를 읽는다."""
     parsed = parse_clipboard_table(content, _TABLE_NAMES[columns])
-    return prepare_past_table(parsed, columns)
-
-
-def past_table_from_csv(content: bytes, columns: tuple[str, ...]) -> pd.DataFrame:
-    """UTF-8 또는 CP949 CSV 를 읽어 전체 계약을 검증한다."""
-    table_name = _TABLE_NAMES[columns]
-    if not content:
-        raise ValueError(f"{table_name} CSV 파일이 비어 있습니다.")
-    parsed: pd.DataFrame | None = None
-    for encoding in ("utf-8-sig", "cp949"):
-        try:
-            parsed = pd.read_csv(
-                BytesIO(content), encoding=encoding, keep_default_na=False, na_values=[""]
-            )
-        except UnicodeDecodeError:
-            continue
-        break
-    if parsed is None:
-        raise ValueError(
-            f"{table_name} CSV 인코딩을 읽지 못했습니다. UTF-8 또는 CP949 여야 합니다."
-        )
     return prepare_past_table(parsed, columns)
 
 

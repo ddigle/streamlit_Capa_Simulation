@@ -33,6 +33,7 @@ from capa_simulation.services.advance_load import (
     ADVANCE_LOAD_ROW_LABEL,
     merge_advance_load_edits,
 )
+from capa_simulation.services.month_columns import month_label
 
 EDP_TOGGLE_KEY = "home_preference_include_edp"
 ADVANCE_TOGGLE_KEY = "home_show_advance"
@@ -371,7 +372,7 @@ def _save_advance_load(
 
 def _month_labels(months: Sequence[int]) -> str:
     """차트 월 칸과 같은 `YY.MM` 표기. 안내 문구가 표와 같은 낱말을 써야 찾을 수 있다."""
-    return ", ".join(f"{month // 100 % 100:02d}.{month % 100:02d}" for month in months)
+    return ", ".join(month_label(month) for month in months)
 
 
 def _stored_by_month(advance_profile: GlobalAdvanceLoad) -> dict[int, float]:

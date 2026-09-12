@@ -68,8 +68,10 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   Streamlit 캐시 래퍼. Streamlit 캐시는 정해진 경계 모듈에만 둔다 — 이 파일,
   `src/capa_simulation/persistence/cache.py`·`equipment_cache.py`(불변 리비전 스냅샷과 공용
   표시순서·설비 스냅샷의 캐시 경계), `src/capa_simulation/components/`의
-  `display_order_management.py`(그 탭 국소)다. 그 밖의 모듈에 `@st.cache_data`·
-  `@st.cache_resource`를 새로 두지 않는다.
+  `display_order_management.py`·`process_rename_management.py`다. 뒤의 둘은 탭 국소
+  예외로, 공용 프로필 `version`만 키로 쓰고 DB를 읽지 않는 CSV 직렬화다(항상 그리는 탭이라
+  그 비용이 모든 rerun에 실린다). 그 밖의 모듈에 `@st.cache_data`·`@st.cache_resource`를
+  새로 두지 않으며, 이 예외를 늘리려면 여기 목록을 같이 고친다.
 - `src/capa_simulation/services/frame_contracts.py` — 서비스 공용 컬럼 계약과 업무 키 정규화.
 - `src/capa_simulation/io/reference_cache.py` — 활성 기준정보 경계. 계산 페이지는 기준정보를
   직접 읽지 말고 `get_effective_reference_tables()`만 쓴다.

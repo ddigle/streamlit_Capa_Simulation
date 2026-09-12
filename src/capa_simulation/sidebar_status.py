@@ -2,6 +2,8 @@
 
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation.services.month_columns import month_label
+
 _month_range_placeholder: DeltaGenerator | None = None
 
 
@@ -19,8 +21,7 @@ def show_applied_month_range(start_month: int, end_month: int) -> None:
     if _month_range_placeholder is None:
         return
     _month_range_placeholder.caption(
-        f":material/check_circle: 적용 · "
-        f"{format_short_month(start_month)}–{format_short_month(end_month)}"
+        f":material/check_circle: 적용 · {month_label(start_month)}–{month_label(end_month)}"
     )
 
 
@@ -33,7 +34,3 @@ def show_month_range_unavailable() -> None:
     if _month_range_placeholder is None:
         return
     _month_range_placeholder.caption(":material/block: 적용 안 됨 · 선택 범위에 데이터 없음")
-
-
-def format_short_month(month: int) -> str:
-    return f"{month // 100 % 100:02d}.{month % 100:02d}"

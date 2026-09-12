@@ -1093,8 +1093,9 @@ def build_plan_detail_figures(
         width=len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX,
         autosize=False,
     )
-    detail_table_height = detail_header_height + max(len(displayed_detail), 1) * detail_row_height
-    detail_header_boundary_y = 1 - detail_header_height / detail_table_height
+    # 경계선 비율의 분모는 Figure 높이와 **같은 수**여야만 맞는다. 이름을 둘로 두면 한쪽
+    # 행 높이만 고쳤을 때 머리글 밑줄과 그룹 경계가 조용히 어긋난다.
+    detail_header_boundary_y = 1 - detail_header_height / detail_figure_height
     add_figure_outer_border(detail_label_figure, emphasize_bottom=True)
     add_figure_outer_border(
         detail_month_figure,
@@ -1156,9 +1157,9 @@ def build_plan_detail_figures(
             "x0": 0,
             "x1": 1,
             "y0": 1
-            - (detail_header_height + group_start * detail_row_height) / detail_table_height,
+            - (detail_header_height + group_start * detail_row_height) / detail_figure_height,
             "y1": 1
-            - (detail_header_height + group_start * detail_row_height) / detail_table_height,
+            - (detail_header_height + group_start * detail_row_height) / detail_figure_height,
             "xref": "paper",
             "yref": "paper",
             "line": {"color": tokens.BORDER_STRONG, "width": tokens.GROUP_BORDER_WIDTH_PX},

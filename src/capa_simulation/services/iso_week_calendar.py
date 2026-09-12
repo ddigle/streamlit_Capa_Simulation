@@ -19,6 +19,12 @@ WEEK_CALENDAR_COLUMNS = ["Weeknum", "주차시작일", "주차종료일", "생�
 _WEEK_PATTERN = re.compile(r"^(?P<year>\d{2})-W(?P<week>\d{2})$")
 
 
+def weeknum_label(week_start: date | pd.Timestamp) -> str:
+    """월요일 날짜 하나를 `YY-W##` 로 적는다. `_WEEK_PATTERN` 이 읽는 표기의 소유자다."""
+    iso_calendar = pd.Timestamp(week_start).isocalendar()
+    return f"{iso_calendar.year % 100:02d}-W{iso_calendar.week:02d}"
+
+
 def build_iso_week_calendar(start_date: date, end_date: date) -> pd.DataFrame:
     """Build Monday-start ISO weeks intersecting the requested date range."""
     if start_date > end_date:
@@ -31,10 +37,9 @@ def build_iso_week_calendar(start_date: date, end_date: date) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for week_start in pd.date_range(first_monday, last_monday, freq="7D"):
         week_end = week_start + pd.Timedelta(days=6)
-        iso_calendar = week_start.isocalendar()
         rows.append(
             {
-                "Weeknum": f"{iso_calendar.year % 100:02d}-W{iso_calendar.week:02d}",
+                "Weeknum": weeknum_label(week_start),
                 "주차시작일": week_start.date(),
                 "주차종료일": week_end.date(),
                 "생산계획년월": owning_month(week_start.date()),

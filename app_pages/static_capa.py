@@ -28,6 +28,7 @@ from capa_simulation.scenario_preset_state import (
 from capa_simulation.scenario_state import (
     scenario_month_table,
 )
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.securement_rate import build_securement_shortfall_tables
 from capa_simulation.services.simulation_cache import (
     get_scenario_capacity_and_demand,
@@ -41,9 +42,7 @@ def _display_shortfalls(data: pd.DataFrame, *, warning_section: bool) -> pd.Data
     result.insert(
         0,
         "년월",
-        result["생산계획년월"].map(
-            lambda value: f"{int(value) // 100 % 100:02d}.{int(value) % 100:02d}"
-        ),
+        result["생산계획년월"].map(lambda value: month_label(int(value))),
     )
     columns = ["년월", "공정", "확보율", "가용대수", "소요대수"]
     if warning_section:

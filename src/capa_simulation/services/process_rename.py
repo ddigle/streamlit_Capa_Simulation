@@ -10,8 +10,6 @@
 
 from __future__ import annotations
 
-from io import BytesIO
-
 import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
@@ -109,27 +107,6 @@ def process_rename_to_csv(rules: pd.DataFrame) -> bytes:
     """수정 없이 그대로 다시 붙여넣을 수 있는 UTF-8 CSV."""
     prepared = prepare_process_rename_rules(rules)
     return prepared.to_csv(index=False).encode("utf-8-sig")
-
-
-def process_rename_from_csv(content: bytes) -> pd.DataFrame:
-    """UTF-8 또는 CP949 CSV 를 읽어 전체 계약을 검증한다."""
-    if not content:
-        raise ValueError("공정 표시명 CSV 파일이 비어 있습니다.")
-    parsed: pd.DataFrame | None = None
-    for encoding in ("utf-8-sig", "cp949"):
-        try:
-            parsed = pd.read_csv(
-                BytesIO(content),
-                encoding=encoding,
-                keep_default_na=False,
-                na_values=[""],
-            )
-        except UnicodeDecodeError:
-            continue
-        break
-    if parsed is None:
-        raise ValueError("공정 표시명 CSV는 UTF-8 또는 CP949 인코딩이어야 합니다.")
-    return validate_process_rename_import(parsed)
 
 
 def process_rename_from_clipboard(content: str) -> pd.DataFrame:

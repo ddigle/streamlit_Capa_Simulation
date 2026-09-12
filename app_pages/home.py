@@ -98,7 +98,6 @@ from capa_simulation.services.simulation_cache import (
 )
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import (
-    format_short_month,
     show_applied_month_range,
     show_month_range_unavailable,
 )
@@ -167,8 +166,8 @@ try:
         show_month_range_unavailable()
         raise ValueError(
             "선택 범위에 생산계획 데이터가 없습니다 "
-            f"(데이터 범위 {format_short_month(available_start)}–"
-            f"{format_short_month(available_end)})"
+            f"(데이터 범위 {month_label(available_start)}–"
+            f"{month_label(available_end)})"
         )
     show_applied_month_range(effective_start, effective_end)
     home_trace.mark("기준정보·시나리오")

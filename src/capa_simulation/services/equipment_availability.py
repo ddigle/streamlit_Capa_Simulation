@@ -20,6 +20,7 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_baseline,
     prepare_equipment_master,
 )
+from capa_simulation.services.iso_week_calendar import weeknum_label
 
 # Backward-compatible public name used by the Space page.
 
@@ -121,8 +122,7 @@ def build_weekly_equipment_availability(
     rows: list[dict[str, object]] = []
     for week_start in pd.date_range(first_monday, last_monday, freq="7D"):
         week_end = week_start + pd.Timedelta(days=6)
-        iso_calendar = week_start.isocalendar()
-        weeknum = f"{iso_calendar.year % 100:02d}-W{iso_calendar.week:02d}"
+        weeknum = weeknum_label(week_start)
         status = _build_equipment_status_from_prepared(
             prepared_equipment,
             prepared_downtime,

@@ -5,11 +5,12 @@ from collections.abc import Sequence
 import pandas as pd
 
 from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.frame_contracts import require_columns
 from capa_simulation.services.load_calculator import (
     calculate_density_load,
     calculate_wafer_load,
 )
-from capa_simulation.services.month_columns import year_total_label
+from capa_simulation.services.month_columns import month_label, year_total_label
 
 PRODUCTION_DETAIL_DIMENSIONS = ["제품정보", "Stack"]
 
@@ -177,9 +178,7 @@ def build_monthly_wafer_load(
 def build_monthly_wafer_load_from_load(wafer: pd.DataFrame) -> pd.DataFrame:
     """Aggregate a precomputed detailed Wafer load by month."""
     required = ["생산계획년월", "물량"]
-    missing = [column for column in required if column not in wafer.columns]
-    if missing:
-        raise ValueError(f"Wafer 부하량 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(wafer, required, "Wafer 부하량")
     if wafer.empty:
         return pd.DataFrame(columns=["생산계획년월", "Wafer 부하량", "년월"])
     monthly = (
@@ -230,9 +229,7 @@ def build_monthly_bottleneck_ranking(
 ) -> pd.DataFrame:
     """Normalize and rank each month's valid processes once for all HOME views."""
     required = ["생산계획년월", "공정", "확보율"]
-    missing = [column for column in required if column not in securement_rate.columns]
-    if missing:
-        raise ValueError(f"확보율 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(securement_rate, required, "확보율")
     detail_columns = [
         column for column in ("가용대수", "소요대수") if column in securement_rate.columns
     ]
@@ -253,9 +250,7 @@ def build_monthly_bottleneck_ranking(
 def build_monthly_bottlenecks_from_ranking(ranking: pd.DataFrame) -> pd.DataFrame:
     """Select monthly Top 1 from an already normalized bottleneck ranking."""
     required = ["생산계획년월", "공정", "확보율", "순위"]
-    missing = [column for column in required if column not in ranking.columns]
-    if missing:
-        raise ValueError(f"B/N 순위 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(ranking, required, "B/N 순위")
     prepared = ranking.loc[ranking["순위"].eq(1), required[:-1]].copy().reset_index(drop=True)
     prepared["년월"] = prepared["생산계획년월"].map(_month_label).astype("string")
     prepared["축레이블"] = prepared["년월"].str.cat(prepared["공정"], sep="<br>")
@@ -309,9 +304,7 @@ def build_monthly_bottleneck_top5_from_ranking(
 ) -> pd.DataFrame:
     """Build Top 5 capacity output from one shared monthly ranking."""
     required = ["생산계획년월", "공정", "확보율", "순위"]
-    missing = [column for column in required if column not in ranking.columns]
-    if missing:
-        raise ValueError(f"B/N 순위 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(ranking, required, "B/N 순위")
     prepared = ranking.loc[ranking["순위"].le(5), required].copy()
     density = monthly_density[["생산계획년월", "부하량"]].copy()
     result = prepared.merge(
@@ -346,9 +339,7 @@ def build_monthly_bottleneck_details(
 ) -> pd.DataFrame:
     """Return each month's lowest-rate processes with equipment and Wafer Capa."""
     required = ["생산계획년월", "공정", "가용대수", "소요대수", "확보율"]
-    missing = [column for column in required if column not in securement_rate.columns]
-    if missing:
-        raise ValueError(f"확보율 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(securement_rate, required, "확보율")
     ranking = build_monthly_bottleneck_ranking(securement_rate, included_processes)
     return build_monthly_bottleneck_details_from_ranking(
         ranking,
@@ -371,9 +362,7 @@ def build_monthly_bottleneck_details_from_ranking(
     if rank_limit < 1:
         raise ValueError("B/N 상세 순위 상한은 1 이상이어야 합니다.")
     required = ["생산계획년월", "공정", "가용대수", "소요대수", "확보율", "순위"]
-    missing = [column for column in required if column not in ranking.columns]
-    if missing:
-        raise ValueError(f"B/N 순위 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(ranking, required, "B/N 순위")
     prepared = ranking.loc[ranking["순위"].le(rank_limit), required].copy()
 
     wafer_required = ["생산계획년월", "Wafer 부하량"]
@@ -392,5 +381,5 @@ def build_monthly_bottleneck_details_from_ranking(
 
 
 def _month_label(month: int | float) -> str:
-    numeric_month = int(month)
-    return f"{numeric_month // 100 % 100:02d}.{numeric_month % 100:02d}"
+    """`Series.map` 에 넘길 수 있게 float 도 받는 얇은 겉면. 서식은 소유 모듈이 정한다."""
+    return month_label(int(month))

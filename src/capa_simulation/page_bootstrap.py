@@ -25,6 +25,7 @@ from capa_simulation.services.display_order import (
     PreparedDisplayOrder,
     prepare_display_order,
 )
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.settings import (
     DUCKDB_PATH,
@@ -33,7 +34,6 @@ from capa_simulation.settings import (
     format_month,
 )
 from capa_simulation.sidebar_status import (
-    format_short_month,
     show_applied_month_range,
     show_month_range_unavailable,
 )
@@ -124,8 +124,8 @@ def resolve_effective_months(
         # 사용자가 어디로 옮겨야 하는지 안다.
         show_month_range_unavailable()
         raise ValueError(
-            f"{empty_message} (데이터 범위 {format_short_month(source_start_month)}–"
-            f"{format_short_month(source_end_month)})"
+            f"{empty_message} (데이터 범위 {month_label(source_start_month)}–"
+            f"{month_label(source_end_month)})"
         )
     show_applied_month_range(effective_start_month, effective_end_month)
     return effective_start_month, effective_end_month

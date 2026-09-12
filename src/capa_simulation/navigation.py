@@ -30,9 +30,17 @@ class PageSpec:
     title: str
     icon: str | None = None
     default: bool = False
+    # 비워 두면 주소가 파일명에서 만들어진다. 파일명과 화면 이름이 다른 페이지에만 준다.
+    url_path: str | None = None
 
     def to_page(self) -> st.Page:
-        return st.Page(self.path, title=self.title, icon=self.icon, default=self.default)
+        return st.Page(
+            self.path,
+            title=self.title,
+            icon=self.icon,
+            default=self.default,
+            url_path=self.url_path,
+        )
 
 
 HOME = PageSpec("app_pages/home.py", "HOME", default=True)
@@ -52,7 +60,10 @@ STATIC_CAPA_SUBPAGES = (
 )
 
 DYNAMIC_CAPA = PageSpec(
-    "app_pages/reference_integrity.py", _implementing("Dynamic Capa"), ":material/sync_alt:"
+    "app_pages/reference_integrity.py",
+    _implementing("Dynamic Capa"),
+    ":material/sync_alt:",
+    url_path="dynamic_capa",
 )
 DYNAMIC_CAPA_SUBPAGES = (
     PageSpec(

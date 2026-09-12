@@ -68,6 +68,34 @@ class EquipmentSnapshot:
     downtime: pd.DataFrame
 
 
+# 리비전 요약 한 줄을 만드는 투영. 계약 버전 3 을 기준으로 표가 갈려 CASE 가 길고, 두 조회
+# (스냅샷 하나 · 목록)가 **같은 열 순서**로 읽어야 모델 생성이 맞는다.
+_REVISION_SUMMARY_PROJECTION = """
+                r.revision_id, r.revision_no, r.note,
+                       (SELECT COUNT(*) FROM equipment_ops.baseline_snapshot b
+                        WHERE b.revision_id = r.revision_id),
+                       CASE
+                           WHEN r.equipment_contract_version = 3
+                           THEN (SELECT COUNT(*) FROM equipment_ops.equipment_master_snapshot e
+                                 WHERE e.revision_id = r.revision_id)
+                           WHEN (SELECT COUNT(*) FROM equipment_ops.equipment_snapshot e
+                                 WHERE e.revision_id = r.revision_id) > 0
+                           THEN (SELECT COUNT(*) FROM equipment_ops.equipment_snapshot e
+                                 WHERE e.revision_id = r.revision_id)
+                           ELSE (SELECT COUNT(*) FROM equipment_ops.schedule_snapshot s
+                                 WHERE s.revision_id = r.revision_id)
+                       END,
+                       CASE
+                           WHEN r.equipment_contract_version = 3
+                           THEN (SELECT COUNT(*) FROM equipment_ops.downtime_schedule_snapshot d
+                                 WHERE d.revision_id = r.revision_id)
+                           ELSE (SELECT COUNT(*) FROM equipment_ops.downtime_snapshot d
+                                 WHERE d.revision_id = r.revision_id)
+                       END,
+                       r.created_at
+"""
+
+
 class DuckDBEquipmentRepository:
     """Persist full equipment input snapshots without changing past revisions."""
 
@@ -151,29 +179,8 @@ class DuckDBEquipmentRepository:
     def load_snapshot(self, revision_id: str) -> EquipmentSnapshot:
         with self._connect() as connection:
             revision_row = connection.execute(
-                """
-                SELECT r.revision_id, r.revision_no, r.note,
-                       (SELECT COUNT(*) FROM equipment_ops.baseline_snapshot b
-                        WHERE b.revision_id = r.revision_id),
-                       CASE
-                           WHEN r.equipment_contract_version = 3
-                           THEN (SELECT COUNT(*) FROM equipment_ops.equipment_master_snapshot e
-                                 WHERE e.revision_id = r.revision_id)
-                           WHEN (SELECT COUNT(*) FROM equipment_ops.equipment_snapshot e
-                                 WHERE e.revision_id = r.revision_id) > 0
-                           THEN (SELECT COUNT(*) FROM equipment_ops.equipment_snapshot e
-                                 WHERE e.revision_id = r.revision_id)
-                           ELSE (SELECT COUNT(*) FROM equipment_ops.schedule_snapshot s
-                                 WHERE s.revision_id = r.revision_id)
-                       END,
-                       CASE
-                           WHEN r.equipment_contract_version = 3
-                           THEN (SELECT COUNT(*) FROM equipment_ops.downtime_schedule_snapshot d
-                                 WHERE d.revision_id = r.revision_id)
-                           ELSE (SELECT COUNT(*) FROM equipment_ops.downtime_snapshot d
-                                 WHERE d.revision_id = r.revision_id)
-                       END,
-                       r.created_at, r.equipment_contract_version
+                f"""
+                SELECT {_REVISION_SUMMARY_PROJECTION}, r.equipment_contract_version
                 FROM equipment_ops.revision r
                 WHERE r.revision_id = ?
                 """,
@@ -206,29 +213,8 @@ class DuckDBEquipmentRepository:
             raise ValueError("설비 이력 조회 건수는 1 이상이어야 합니다.")
         with self._connect() as connection:
             rows = connection.execute(
-                """
-                SELECT r.revision_id, r.revision_no, r.note,
-                       (SELECT COUNT(*) FROM equipment_ops.baseline_snapshot b
-                        WHERE b.revision_id = r.revision_id),
-                       CASE
-                           WHEN r.equipment_contract_version = 3
-                           THEN (SELECT COUNT(*) FROM equipment_ops.equipment_master_snapshot e
-                                 WHERE e.revision_id = r.revision_id)
-                           WHEN (SELECT COUNT(*) FROM equipment_ops.equipment_snapshot e
-                                 WHERE e.revision_id = r.revision_id) > 0
-                           THEN (SELECT COUNT(*) FROM equipment_ops.equipment_snapshot e
-                                 WHERE e.revision_id = r.revision_id)
-                           ELSE (SELECT COUNT(*) FROM equipment_ops.schedule_snapshot s
-                                 WHERE s.revision_id = r.revision_id)
-                       END,
-                       CASE
-                           WHEN r.equipment_contract_version = 3
-                           THEN (SELECT COUNT(*) FROM equipment_ops.downtime_schedule_snapshot d
-                                 WHERE d.revision_id = r.revision_id)
-                           ELSE (SELECT COUNT(*) FROM equipment_ops.downtime_snapshot d
-                                 WHERE d.revision_id = r.revision_id)
-                       END,
-                       r.created_at
+                f"""
+                SELECT {_REVISION_SUMMARY_PROJECTION}
                 FROM equipment_ops.revision r
                 ORDER BY r.revision_no DESC LIMIT ?
                 """,
