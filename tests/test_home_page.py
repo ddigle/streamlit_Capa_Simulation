@@ -7,8 +7,12 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation.components.home_dimensions import LOB_VALUE_FONT_SIZE_PX
+from capa_simulation.components.home_dimensions import (
+    DASHBOARD_TITLE_HEIGHT_PX,
+    LOB_VALUE_FONT_SIZE_PX,
+)
 from capa_simulation.design import tokens
+from capa_simulation.scenario_preset_state import WARNING_THRESHOLD_KEY
 
 # cwd 가 아니라 이 파일 위치를 기준으로 잡는다. tests/ 안에서 pytest 를 돌려도 같은 페이지를 연다.
 HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
@@ -171,18 +175,11 @@ def test_the_bottleneck_detail_chart_keeps_hover_on(seeded_database: Path) -> No
 def test_home_reuses_cached_figures_on_an_unchanged_rerun(seeded_database: Path) -> None:
     app = _run(seeded_database)
 
-    app.sidebar.toggle[0].set_value(True).run()
+    app.sidebar.toggle(key="dashboard_show_performance").set_value(True).run()
 
     assert not list(app.exception)
     assert _cache_state(app) == "적중"
     assert "공정 선택 · 3 / 3개 포함" in [element.value for element in app.caption]
-
-
-def _button(app: AppTest, label: str) -> Any:
-    """라벨로 버튼 하나를 집는다. 인덱스는 화면에 버튼이 늘 때마다 의미가 달라진다."""
-    matched = [button for button in app.button if button.label == label]
-    assert len(matched) == 1, f"버튼 '{label}' 이 하나여야 한다: {[b.label for b in app.button]}"
-    return matched[0]
 
 
 def _cache_state(app: AppTest) -> str:
@@ -197,13 +194,13 @@ def _cache_state(app: AppTest) -> str:
 
 def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -> None:
     app = _run(seeded_database)
-    app.sidebar.toggle[0].set_value(True).run()
+    app.sidebar.toggle(key="dashboard_show_performance").set_value(True).run()
     assert _cache_state(app) == "적중"
 
     # 판정 기준은 Figure 캐시 키에 포함되어야 한다(AGENTS.md 5장 불변조건 7).
-    # 버튼은 반드시 라벨로 집는다 — 본문에 버튼이 늘면 인덱스가 조용히 다른 것을 가리킨다.
-    app.sidebar.number_input[1].set_value(95.0)
-    _button(app, "판정 기준 적용").click().run()
+    # 위젯은 키로 집는다 — 라벨은 화면 문구라 바뀌고, 인덱스는 위젯이 늘면 다른 것을 가리킨다.
+    app.sidebar.number_input(key=WARNING_THRESHOLD_KEY).set_value(95.0)
+    app.get_by_key("dashboard_threshold_apply").click().run()
 
     assert not list(app.exception)
     assert [widget.value for widget in app.sidebar.number_input] == [109.5, 95.0]
@@ -271,7 +268,7 @@ def test_the_two_display_toggles_are_part_of_the_figure_cache_key(
 ) -> None:
     """EDP 포함 여부와 선행 반영 여부는 그림을 바꾼다. 캐시 키에 없으면 옛 그림이 남는다."""
     app = _run(seeded_database)
-    app.sidebar.toggle[0].set_value(True).run()
+    app.sidebar.toggle(key="dashboard_show_performance").set_value(True).run()
     assert _cache_state(app) == "적중"
 
     # `EDP 포함` 의 기본은 꺼짐이다. 켜면 새로 그려야 한다.
@@ -556,3 +553,42 @@ def test_the_detail_toggle_survives_a_hidden_tab(seeded_database: Path) -> None:
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert app.session_state["home_preference_plan_detail_customer"] is True
+
+
+def test_the_two_columns_keep_paired_children(seeded_database: Path) -> None:
+    """왼쪽 라벨 칸과 오른쪽 월 칸은 자식 수·차례가 같아야 행이 맞는다.
+
+    이 계약은 지금까지 브라우저로만 확인할 수 있었다. 한쪽에만 무언가를 끼우면 그 아래
+    모든 행이 어긋나는데, 어긋난 픽셀은 눈으로 봐야 보였다. `AppTest` 가 1.63 부터 컨테이너
+    key 를 내주므로 여기서 잡는다.
+    """
+    app = _run(seeded_database)
+
+    label_canvas = app.get_by_key("production_lob_label_canvas")
+    month_canvas = app.get_by_key("production_lob_month_canvas")
+    assert [child.key for child in label_canvas.children.values()] == [
+        "production_lob_labels",
+        "plan_detail_title_row",
+        "production_detail_labels",
+        "bottleneck_title_row",
+        "bottleneck_detail_labels",
+    ]
+    assert [child.key for child in month_canvas.children.values()] == [
+        "production_lob_months",
+        "plan_detail_title_spacer",
+        "production_detail_months",
+        "bottleneck_title_spacer",
+        "bottleneck_detail_months",
+    ]
+
+
+def test_the_title_spacers_keep_their_pinned_height(seeded_database: Path) -> None:
+    """빈 컨테이너는 높이를 주지 않으면 Streamlit 이 아예 그리지 않는다.
+
+    월 칸의 빈 줄이 사라지면 그 칸만 위로 올라붙어 아래 표의 행이 통째로 어긋난다.
+    """
+    app = _run(seeded_database)
+
+    for key in ("plan_detail_title_spacer", "bottleneck_title_spacer"):
+        spacer = app.get_by_key(key)
+        assert spacer.proto.height_config.pixel_height == DASHBOARD_TITLE_HEIGHT_PX, key

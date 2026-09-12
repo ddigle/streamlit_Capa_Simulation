@@ -2,6 +2,11 @@
 
 from streamlit.testing.v1 import AppTest
 
+from capa_simulation.components.scenario_status import (
+    SIDEBAR_REVISION_KEY,
+    SIDEBAR_SCENARIO_KEY,
+)
+
 TEST_SCRIPT = """
 from pathlib import Path
 from types import SimpleNamespace
@@ -113,8 +118,8 @@ def test_sidebar_selects_and_loads_another_revision() -> None:
     assert not app.exception
     assert [widget.label for widget in app.selectbox] == ["시나리오", "리비전"]
 
-    app = app.selectbox[0].select("scenario-2").run()
-    assert app.selectbox[1].value == "revision-2"
+    app = app.selectbox(key=SIDEBAR_SCENARIO_KEY).select("scenario-2").run()
+    assert app.selectbox(key=SIDEBAR_REVISION_KEY).value == "revision-2"
 
     load_button = next(button for button in app.button if button.label == "선택 리비전 불러오기")
     app = load_button.click().run()

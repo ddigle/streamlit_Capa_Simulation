@@ -449,7 +449,7 @@ with st.sidebar.container(border=True):
             key=warning_threshold_key,
             persist_state="session",
         )
-        st.form_submit_button("판정 기준 적용", width="stretch")
+        st.form_submit_button("판정 기준 적용", width="stretch", key="dashboard_threshold_apply")
     st.caption(f"공정 선택 · {len(included_processes)} / {len(process_options)}개 포함")
     if st.button(
         "공정 선택창 열기",

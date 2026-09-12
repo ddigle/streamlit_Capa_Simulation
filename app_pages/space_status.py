@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, timedelta
 
 import altair as alt
@@ -22,6 +23,7 @@ from capa_simulation.components.space_layout import (
     floors_for,
     invalid_equipment_rows,
 )
+from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -61,6 +63,26 @@ def _show_fab_overview() -> None:
 def _show_building(building: str) -> None:
     st.session_state[SELECTED_BUILDING_KEY] = building
     st.session_state.pop(SELECTED_FLOOR_KEY, None)
+
+
+def _render_space_counts(
+    counts: tuple[int, int, int],
+    *,
+    key: str,
+    leading: Sequence[tuple[str, int | str]] = (),
+) -> None:
+    """세 단계 화면이 공통으로 쓰는 `가용 / 설치·전환 진행 / 비가동` 카드 줄.
+
+    앞에 화면별 카드를 끼울 수 있다. 세 장은 정수를 그대로 넘기고 서식은 `format` 에
+    맡긴다 — 문자열을 미리 만들면 천단위 구분이 자리마다 갈린다.
+    """
+    production, progress, inactive = counts
+    with metric_row(key=key):
+        for label, value in leading:
+            st.metric(label, value, border=True)
+        st.metric("가용", production, format="%,d대", border=True)
+        st.metric("설치·전환 진행", progress, format="%,d대", border=True)
+        st.metric("비가동", inactive, format="%,d대", border=True)
 
 
 today = date.today()
@@ -348,12 +370,12 @@ with st.container(horizontal=True, gap="small", vertical_alignment="center"):
 
 if selected_building is None:
     production_count, progress_count, inactive_count = fab_counts(located_equipment)
-    with st.container(horizontal=True):
-        st.metric("배치 호기", f"{len(located_equipment)}대", border=True)
-        st.metric("가용", f"{production_count}대", border=True)
-        st.metric("설치·전환 진행", f"{progress_count}대", border=True)
-        st.metric("비가동", f"{inactive_count}대", border=True)
-        st.metric("레이아웃 제외·미지정", f"{unlocated_count}대", border=True)
+    _render_space_counts(
+        (production_count, progress_count, inactive_count),
+        key="space_fab_counts",
+        leading=(("배치 호기", len(located_equipment)),),
+    )
+    st.metric("레이아웃 제외·미지정", unlocated_count, format="%,d대", border=True)
 
     with st.container(border=True):
         st.markdown("#### :material/domain: S.PKG FAB 전체 배치")
@@ -388,11 +410,11 @@ elif selected_floor is None:
     building_equipment = located_equipment.loc[located_equipment["동"].eq(selected_building)]
     production_count, progress_count, inactive_count = equipment_counts(building_equipment)
     building_floors = floors_for(selected_building)
-    with st.container(horizontal=True):
-        st.metric("선택 동", selected_building, border=True)
-        st.metric("가용", f"{production_count}대", border=True)
-        st.metric("설치·전환 진행", f"{progress_count}대", border=True)
-        st.metric("비가동", f"{inactive_count}대", border=True)
+    _render_space_counts(
+        (production_count, progress_count, inactive_count),
+        key="space_building_counts",
+        leading=(("선택 동", selected_building),),
+    )
 
     with st.container(border=True):
         st.markdown(f"#### :material/apartment: {selected_building}동 층별 현황")
@@ -458,11 +480,11 @@ else:
         )
 
     production_count, progress_count, inactive_count = equipment_counts(floor_equipment)
-    with st.container(horizontal=True):
-        st.metric("선택 Space", f"{selected_building} {selected_floor}", border=True)
-        st.metric("가용", f"{production_count}대", border=True)
-        st.metric("설치·전환 진행", f"{progress_count}대", border=True)
-        st.metric("비가동", f"{inactive_count}대", border=True)
+    _render_space_counts(
+        (production_count, progress_count, inactive_count),
+        key="space_floor_counts",
+        leading=(("선택 Space", f"{selected_building} {selected_floor}"),),
+    )
 
     with st.container(border=True):
         st.markdown(f"#### :material/map: {selected_building} {selected_floor} 상세 레이아웃")

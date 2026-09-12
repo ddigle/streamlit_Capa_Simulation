@@ -8,6 +8,11 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from capa_simulation.scenario_preset_state import (
+    STANDARD_TARGET_PROCESS_SELECTION_KEY,
+    STANDARD_TARGET_SHOW_DETAIL_KEY,
+)
+
 TEST_SCRIPT = r"""
 from pathlib import Path
 
@@ -226,19 +231,19 @@ def test_standard_target_page_renders_weeknum_plotly_table() -> None:
     subheaders = [element.value for element in app.subheader]
     assert subheaders.index("주차별 일 표준 가능량") < subheaders.index("주차별 가용설비 입력")
 
-    process_filter = next(widget for widget in app.multiselect if widget.label == "공정 필터")
+    process_filter = app.multiselect(key=STANDARD_TARGET_PROCESS_SELECTION_KEY)
     assert process_filter.value == []
     app = process_filter.set_value(["Process-A"]).run()
 
     assert not app.exception
-    restore_button = next(button for button in app.button if button.label == "공용 기본값으로 복원")
+    restore_button = app.button(key="restore_standard_target_process_default")
     app = restore_button.click().run()
 
     assert not app.exception
-    process_filter = next(widget for widget in app.multiselect if widget.label == "공정 필터")
+    process_filter = app.multiselect(key=STANDARD_TARGET_PROCESS_SELECTION_KEY)
     assert process_filter.value == []
 
-    detail_toggle = next(widget for widget in app.toggle if widget.label == "상세")
+    detail_toggle = app.toggle(key=STANDARD_TARGET_SHOW_DETAIL_KEY)
     app = detail_toggle.set_value(True).run()
 
     assert not app.exception
@@ -254,7 +259,7 @@ def test_standard_target_page_toggles_pkg_equivalent_output() -> None:
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
 
     assert app.session_state["captured_first_week_value"] == pytest.approx(200.0 / 31.0)
-    pkg_toggle = next(widget for widget in app.toggle if widget.label == "PKG 기준")
+    pkg_toggle = app.toggle(key="standard_target_pkg_basis")
     app = pkg_toggle.set_value(True).run()
 
     assert not app.exception
