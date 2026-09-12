@@ -27,12 +27,13 @@ NUMERIC_INK_OFFSET_RATIO = 0.025
 # 그러면 Figure 높이 계산과 실제 그림이 어긋나 표가 아래 구획을 덮는다. 그래서 필요한
 # 높이를 여기서 미리 낸다.
 #
-# `LINE_BOX_RATIO` 는 첫 줄이 차지하는 상자 높이, `LINE_STEP_RATIO` 는 `<br>` 로 붙는
-# 다음 줄이 더하는 높이, `TABLE_CELL_PADDING_PX` 는 Plotly 가 글자 위아래에 두는 여백의
-# 합이다. 셋 다 Chrome 에서 그려 본 값이다.
+# `LINE_BOX_RATIO` 는 한 줄이 차지하는 상자 높이, `TABLE_CELL_PADDING_PX` 는 Plotly 가
+# 글자 위아래에 두는 여백의 합, `TABLE_TEXT_TOP_PAD_PX` 는 그 여백 중 **위쪽 몫**이다.
+# 여백은 반씩 나뉘지 않는다 — 한 줄짜리 칸의 글자는 위에 붙어 그려진다. 셋 다 Chrome 에서
+# 그려 본 값이다.
 LINE_BOX_RATIO = 1.45
-LINE_STEP_RATIO = 1.30
 TABLE_CELL_PADDING_PX = 16
+TABLE_TEXT_TOP_PAD_PX = 2.5
 
 # 값과 증감 글리프 사이의 틈. 겹치지 않는 최소치라 더 줄이면 글자가 맞닿는다.
 DELTA_GUTTER_PX = 2
@@ -80,13 +81,37 @@ def table_row_height(value_font_size: int) -> int:
     return math.ceil(value_font_size * LINE_BOX_RATIO + TABLE_CELL_PADDING_PX)
 
 
-def stacked_row_height(value_font_size: int) -> int:
-    """값 한 줄과 증감 한 줄을 담는 표 칸의 높이.
+def lower_delta_yshift_px(value_font_size: int) -> float:
+    """표 칸 **위 모서리** 기준으로 값 아래 증감 줄을 놓는 `yshift`.
+
+    Plotly 표는 한 줄짜리 칸의 글자를 가운데가 아니라 **위에 붙여** 놓는다(`valign` 은
+    두 줄 이상일 때만 듣는다). 그래서 기준을 칸 한가운데로 잡으면 행 높이를 바꿀 때마다
+    증감이 값에서 멀어진다. 위 모서리에서 재면 행 높이와 무관하게 같은 거리를 지킨다.
+    """
+    value_box_center = TABLE_TEXT_TOP_PAD_PX + value_font_size * LINE_BOX_RATIO / 2
+    return -(
+        value_box_center
+        + value_ink_yshift_px(value_font_size)
+        + delta_line_shift_px(value_font_size)
+        - delta_ink_yshift_px()
+    )
+
+
+def lower_delta_row_height(value_font_size: int) -> int:
+    """값 한 줄과 그 아래 증감 한 줄이 들어가는 표 칸의 높이.
 
     증감이 없어도 이 높이를 쓴다. 있을 때만 늘리면 토글 하나에 표 전체가 출렁인다.
+
+    증감을 `<br>` 다음 줄로 적으면 Plotly 가 **줄 상자 두 개에 고정 여백 16px** 을 더한
+    높이를 요구해 52px 아래로 내려가지 않는다. 값을 한 줄로 두고 증감을 주석으로 얹으면
+    그 바닥이 사라지고, 남는 것은 한 줄짜리 칸의 최소 높이뿐이다.
     """
-    text_height = value_font_size * LINE_BOX_RATIO + tokens.DELTA_FONT_SIZE_PX * LINE_STEP_RATIO
-    return math.ceil(text_height + TABLE_CELL_PADDING_PX)
+    needed = (
+        -lower_delta_yshift_px(value_font_size)
+        + tokens.DELTA_FONT_SIZE_PX * NUMERIC_INK_HEIGHT_RATIO / 2
+        + ROW_EDGE_PADDING_PX
+    )
+    return max(math.ceil(needed), table_row_height(value_font_size))
 
 
 DASHBOARD_SCROLLBAR_HEIGHT_PX = 15

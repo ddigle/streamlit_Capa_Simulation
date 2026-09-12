@@ -29,7 +29,8 @@ from capa_simulation.components.home_dimensions import (
     LOB_TOP5_HEIGHT_PX,
     LOB_TOP_MARGIN_PX,
     LOB_VALUE_FONT_SIZE_PX,
-    stacked_row_height,
+    lower_delta_row_height,
+    lower_delta_yshift_px,
     table_row_height,
 )
 from capa_simulation.components.plotly_layout import (
@@ -889,56 +890,40 @@ def _detail_month_cell_values(
     displayed_detail: pd.DataFrame,
     month: str,
     comparison_detail: pd.DataFrame | None = None,
-) -> list[str]:
-    """한 달의 세부수량 셀 값. 데이터에 없는 달은 빈 칸으로 채운다.
+) -> tuple[list[str], list[str]]:
+    """한 달의 세부수량 값과 그 아래 증감을 따로 돌려준다. 없는 달은 빈 칸이다.
 
-    비교 표를 주면 값 **아래** 줄에 증감을 적는다. 값은 그때도 같은 크기·같은 자리에
-    선다 — 증감 줄의 자리를 빈 줄로 미리 비워 두기 때문이다. 값을 줄여 끼워 넣으면 토글
-    하나에 표 전체의 숫자 크기가 바뀌고, 줄만 더하면 칸 가운데 정렬 탓에 값이 위로
-    올라가 왼쪽 분류 칸과 눈높이가 어긋난다.
+    증감을 값과 한 칸에 담지 않는 이유는 두 가지다. 칸 안에서 `<br>` 로 줄을 더하면 값이
+    칸 가운데 정렬 탓에 위로 올라가 왼쪽 분류 칸과 눈높이가 어긋나고, Plotly 가 줄 상자
+    두 개에 고정 여백을 더한 높이를 요구해 행이 필요 이상으로 두꺼워진다. 값은 한 줄로
+    두고 증감은 주석으로 얹는다.
     """
     if month not in displayed_detail.columns:
-        return [""] * len(displayed_detail)
+        return [""] * len(displayed_detail), [""] * len(displayed_detail)
     values = [
         "" if pd.isna(value) or float(value) == 0 else f"{float(value):,.0f}K"
         for value in displayed_detail[month]
     ]
     if comparison_detail is None:
-        return [_detail_cell_text(value, "") for value in values]
+        return values, [""] * len(values)
     comparison_values = (
         pd.to_numeric(comparison_detail[month], errors="coerce")
         if month in comparison_detail.columns
         else pd.Series([pd.NA] * len(displayed_detail), index=displayed_detail.index)
     )
     current_values = pd.to_numeric(displayed_detail[month], errors="coerce")
-    labelled: list[str] = []
+    gaps: list[str] = []
     for value, current, before in zip(values, current_values, comparison_values, strict=True):
         # 한쪽에만 있는 조합은 없는 쪽을 0 으로 본다. 비교의 목적이 사라지거나 새로 생긴
         # 제품을 보이게 하는 것이라 그 전액이 증감이어야 한다.
         current_amount = 0.0 if pd.isna(current) else float(current)
         before_amount = 0.0 if pd.isna(before) else float(before)
         difference = current_amount - before_amount
-        if abs(difference) < 0.5:
-            labelled.append(_detail_cell_text(value, ""))
+        if not value or abs(difference) < 0.5:
+            gaps.append("")
             continue
-        color = delta_color(f"{difference:+.0f}")
-        gap = f'<span style="color:{color}">{difference:+,.0f}K</span>'
-        labelled.append(_detail_cell_text(value, gap))
-    return labelled
-
-
-def _detail_cell_text(value: str, gap_markup: str) -> str:
-    """값 한 줄과 증감 한 줄. 증감이 없어도 빈 줄을 남겨 값의 자리를 붙박는다.
-
-    칸의 글자 크기는 증감 크기로 낮추고 값만 span 으로 키운다. Plotly 는 `<br>` 줄 간격을
-    **칸의 글자 크기**로 정하므로, 값 크기를 그대로 두면 두 줄 사이가 벌어져 증감이 아래
-    행의 띠 위에 얹히고 별개의 행처럼 읽힌다.
-    """
-    if not value:
-        return ""
-    blank = "&nbsp;"
-    body = f'<span style="font-size:{DETAIL_VALUE_FONT_SIZE_PX}px">{value}</span>'
-    return f"{body}<br>{gap_markup or blank}"
+        gaps.append(f"{difference:+,.0f}K")
+    return values, gaps
 
 
 def build_plan_detail_figures(
@@ -976,12 +961,6 @@ def build_plan_detail_figures(
             if row_index > 0 and current_prefix == previous_prefix:
                 values[row_index] = ""
             previous_prefix = current_prefix
-    # 월 칸이 값 아래에 증감 줄 자리를 늘 비워 두므로 분류 칸도 같은 두 줄이어야 한다.
-    # 한쪽만 두 줄이면 같은 행의 글자가 서로 다른 높이에 선다.
-    grouped_dimension_values = [
-        [_detail_cell_text(value, "") for value in values] for values in grouped_dimension_values
-    ]
-
     detail_group_indices: list[int] = []
     detail_group_starts: list[int] = []
     previous_product: str | None = None
@@ -1005,8 +984,8 @@ def build_plan_detail_figures(
         tokens.SURFACE if group_number % 2 == 0 else tokens.SURFACE_SUBTLE
         for group_number in detail_group_indices
     ]
-    # 값 한 줄 + 증감 한 줄이 온전히 들어가는 높이. 증감이 없어도 같은 높이를 쓴다.
-    detail_row_height = stacked_row_height(DETAIL_VALUE_FONT_SIZE_PX)
+    # 값 한 줄과 그 아래 증감 한 줄이 온전히 들어가는 높이. 증감이 없어도 같은 높이를 쓴다.
+    detail_row_height = lower_delta_row_height(DETAIL_VALUE_FONT_SIZE_PX)
     detail_header_height = table_row_height(DETAIL_HEADER_FONT_SIZE_PX)
     # 제목 자리를 Figure 가 갖지 않는다. `계획 세부수량` 은 Plotly 주석이 아니라 Streamlit
     # 이 그려서 그 옆에 「상세」 토글을 둔다. 두 칸 모두 같은 높이의 줄을 끼우므로 여백을
@@ -1037,13 +1016,17 @@ def build_plan_detail_figures(
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": tokens.DELTA_FONT_SIZE_PX,
+                    "size": DETAIL_VALUE_FONT_SIZE_PX,
                     "family": tokens.FONT_FAMILY,
                 },
                 "height": detail_row_height,
             },
         )
     )
+    detail_month_cells = [
+        _detail_month_cell_values(displayed_detail, month, comparison_detail)
+        for month in detail_month_columns
+    ]
     detail_month_figure = go.Figure(
         go.Table(
             columnwidth=[1.0] * len(detail_month_columns),
@@ -1060,10 +1043,7 @@ def build_plan_detail_figures(
                 "height": detail_header_height,
             },
             cells={
-                "values": [
-                    _detail_month_cell_values(displayed_detail, month, comparison_detail)
-                    for month in detail_month_columns
-                ],
+                "values": [values for values, _ in detail_month_cells],
                 "align": "center",
                 "fill_color": [
                     [tokens.SURFACE_YEAR_TOTAL] * len(detail_month_row_colors)
@@ -1074,7 +1054,7 @@ def build_plan_detail_figures(
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": tokens.DELTA_FONT_SIZE_PX,
+                    "size": DETAIL_VALUE_FONT_SIZE_PX,
                     "family": tokens.FONT_FAMILY,
                 },
                 "height": detail_row_height,
@@ -1151,6 +1131,35 @@ def build_plan_detail_figures(
         ],
     )
     add_quarter_boundaries(detail_month_figure, detail_month_columns)
+    # 증감은 칸 안의 둘째 줄이 아니라 값 아래에 얹는 주석이다. 칸이 값 한 줄만 담으므로
+    # 행 높이가 한 줄짜리 칸의 최소 높이로 줄고, 증감이 붙든 말든 값은 같은 자리에 선다.
+    # 기준점은 행의 **위 모서리**다 — Plotly 가 한 줄짜리 칸의 글자를 위에 붙여 그린다.
+    detail_delta_yshift = lower_delta_yshift_px(DETAIL_VALUE_FONT_SIZE_PX)
+    append_layout_items(
+        detail_month_figure,
+        annotations=[
+            {
+                "x": (month_index + 0.5) / len(detail_month_columns),
+                "y": 1
+                - (detail_header_height + row_index * detail_row_height) / detail_figure_height,
+                "xref": "paper",
+                "yref": "paper",
+                "text": gap,
+                "showarrow": False,
+                "xanchor": "center",
+                "yanchor": "middle",
+                "yshift": detail_delta_yshift,
+                "font": {
+                    "color": delta_color(gap),
+                    "size": tokens.DELTA_FONT_SIZE_PX,
+                    "family": tokens.FONT_FAMILY_NUMERIC,
+                },
+            }
+            for month_index, (_, gaps) in enumerate(detail_month_cells)
+            for row_index, gap in enumerate(gaps)
+            if gap
+        ],
+    )
     detail_group_shapes = [
         {
             "type": "line",
