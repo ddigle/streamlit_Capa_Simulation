@@ -13,6 +13,7 @@ from capa_simulation.services.past_data import (
     empty_past_table,
     merge_past_frame,
     merge_past_months,
+    merge_past_plan_detail,
     past_plan_detail_to_wide,
     past_table_from_clipboard,
     prepare_past_table,
@@ -202,3 +203,61 @@ def test_the_shared_profile_round_trips_and_bumps_its_version(tmp_path: Path) ->
 
     assert cleared.version == 2
     assert cleared.monthly.empty
+
+
+def test_merging_past_detail_keeps_the_display_order() -> None:
+    """과거를 붙인다고 제품 차례가 바뀌면 안 된다.
+
+    `groupby` 의 기본값은 그룹 키로 다시 정렬한다. 들어온 표는 이미 `apply_display_order` 로
+    사용자가 정한 차례를 갖고 있으므로, 그대로 두면 과거를 넣는 순간 가나다순으로 뒤집힌다.
+    """
+    detail = pd.DataFrame(
+        {
+            "제품정보": ["HBM라", "HBM다E", "HBM나"],
+            "Stack": ["12H", "8H", "4H"],
+            "26.01": [10.0, 20.0, 30.0],
+        }
+    )
+    past = pd.DataFrame({"제품정보": ["HBM라"], "Stack": ["12H"], "25.12": [5.0]})
+
+    merged = merge_past_plan_detail(detail, past, ["제품정보", "Stack"])
+
+    assert list(merged["제품정보"]) == ["HBM라", "HBM다E", "HBM나"]
+    assert float(merged.loc[0, "25.12"]) == 5.0
+    assert float(merged.loc[0, "26.01"]) == 10.0
+
+
+def test_a_product_only_in_the_past_lands_where_the_display_order_says() -> None:
+    """과거에만 있는 분류도 표시순서를 따른다. `sort=False` 만 쓰면 맨 뒤에 붙는다."""
+    detail = pd.DataFrame({"제품정보": ["B"], "Stack": ["8H"], "26.01": [10.0]})
+    past = pd.DataFrame({"제품정보": ["A"], "Stack": ["4H"], "25.12": [5.0]})
+    order = pd.DataFrame(
+        [
+            ["부하량", "PKG PLAN", 1, "제품정보", "오름차순", None, None, "Y"],
+        ],
+        columns=[
+            "페이지 구분",
+            "탭 구분",
+            "정렬우선순위",
+            "분류컬럼",
+            "정렬방식",
+            "분류값",
+            "값표시순서",
+            "활성여부",
+        ],
+    )
+
+    merged = merge_past_plan_detail(detail, past, ["제품정보", "Stack"], order)
+
+    assert list(merged["제품정보"]) == ["A", "B"]
+
+
+def test_merging_without_past_rows_changes_nothing() -> None:
+    """과거 입력이 없으면 원래 표를 그대로 돌려준다."""
+    detail = pd.DataFrame({"제품정보": ["B", "A"], "Stack": ["8H", "4H"], "26.01": [1.0, 2.0]})
+
+    merged = merge_past_plan_detail(
+        detail, pd.DataFrame(columns=["제품정보"]), ["제품정보", "Stack"]
+    )
+
+    assert list(merged["제품정보"]) == ["B", "A"]

@@ -87,6 +87,7 @@ from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.past_data import (
     merge_past_frame,
     merge_past_months,
+    merge_past_plan_detail,
     past_plan_detail_to_wide,
 )
 from capa_simulation.services.simulation_cache import (
@@ -100,6 +101,7 @@ from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import (
     show_applied_month_range,
     show_month_range_unavailable,
+    show_past_months_outside_range,
 )
 
 
@@ -169,7 +171,13 @@ try:
             f"(데이터 범위 {month_label(available_start)}–"
             f"{month_label(available_end)})"
         )
-    show_applied_month_range(effective_start, effective_end)
+    # 고른 범위 밖의 과거 구간은 표에 들어오지 못한다. 넣어 둔 값이 사라진 것처럼 보이므로
+    # 시작월을 어디까지 내려야 하는지 알린다. 적용 범위 표시와 같은 자리를 쓴다.
+    hidden_past_months = [month for month in past_months if month < effective_start]
+    if hidden_past_months:
+        show_past_months_outside_range(min(hidden_past_months))
+    else:
+        show_applied_month_range(effective_start, effective_end)
     home_trace.mark("기준정보·시나리오")
     loading.advance()
 
@@ -269,13 +277,12 @@ try:
         end_month=effective_end,
         exclude_months=calculated_months,
     )
-    if not past_detail.empty:
-        production_detail = (
-            pd.concat([production_detail, past_detail], ignore_index=True)
-            .groupby(plan_detail_dimensions, as_index=False, dropna=False)
-            .sum(numeric_only=True)
-            .reset_index(drop=True)
-        )
+    production_detail = merge_past_plan_detail(
+        production_detail,
+        past_detail,
+        plan_detail_dimensions,
+        reference_tables["RQ_DISPLAY_ORDER"],
+    )
     advance_profile = load_global_advance_load(str(DUCKDB_PATH.resolve()))
     baseline_density = monthly_density
     baseline_wafer = monthly_wafer

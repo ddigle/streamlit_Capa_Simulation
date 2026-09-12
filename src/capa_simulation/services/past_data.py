@@ -17,6 +17,7 @@ from __future__ import annotations
 import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
+from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
 from capa_simulation.services.month_columns import month_label
 
 PAST_MONTH_COLUMNS = ("생산계획년월", "Density", "Wafer Total")
@@ -229,3 +230,29 @@ def past_plan_detail_to_wide(
     ).reset_index()
     wide.columns.name = None
     return wide
+
+
+def merge_past_plan_detail(
+    production_detail: pd.DataFrame,
+    past_detail: pd.DataFrame,
+    dimensions: list[str],
+    display_order: DisplayOrderInput = None,
+) -> pd.DataFrame:
+    """계획 세부수량에 과거 구간 열을 붙이고 화면 표시순서를 다시 세운다.
+
+    **`groupby` 의 기본 정렬을 쓰지 않는다.** 기본값(`sort=True`)은 그룹 키로 다시 정렬하는데,
+    들어온 표는 이미 `apply_display_order` 로 사용자가 정한 차례를 갖고 있다. 그대로 두면
+    과거를 넣는 순간 제품 차례가 가나다순으로 뒤집힌다.
+
+    `sort=False` 만으로는 과거에만 있는 분류가 맨 뒤에 붙는다. 표시순서를 한 번 더 세워
+    그 행도 제자리에 놓는다.
+    """
+    if past_detail.empty:
+        return production_detail
+    merged = (
+        pd.concat([production_detail, past_detail], ignore_index=True)
+        .groupby(dimensions, as_index=False, dropna=False, sort=False)
+        .sum(numeric_only=True)
+        .reset_index(drop=True)
+    )
+    return apply_display_order(merged, display_order, "부하량", "PKG PLAN")

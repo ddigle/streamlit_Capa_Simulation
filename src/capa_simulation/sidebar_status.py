@@ -25,6 +25,21 @@ def show_applied_month_range(start_month: int, end_month: int) -> None:
     )
 
 
+def show_past_months_outside_range(first_past_month: int) -> None:
+    """넣어 둔 과거 구간이 조회기간 밖이라 화면에 없다는 사실을 알린다.
+
+    볼 수 있는 범위는 과거 구간만큼 자동으로 넓어지지만 **고른 범위는 그대로다**. 그래서
+    과거를 저장해도 조회기간 시작월을 내리지 않으면 그 달이 표에 나타나지 않는데, 화면만
+    보면 넣은 값이 사라진 것처럼 보인다. 어디까지 내려야 하는지 함께 적는다.
+    """
+    if _month_range_placeholder is None:
+        return
+    _month_range_placeholder.caption(
+        f":material/info: 과거 구간이 조회기간 밖에 있습니다 · 시작월을 "
+        f"{month_label(first_past_month)} 로 내리면 보입니다"
+    )
+
+
 def show_month_range_unavailable() -> None:
     """선택 범위에 데이터가 없어 계산이 서지 않았음을 같은 자리에 알린다.
 

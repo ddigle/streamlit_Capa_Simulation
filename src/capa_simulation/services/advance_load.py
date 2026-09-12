@@ -156,11 +156,17 @@ def apply_advance_to_density(
     monthly_density: pd.DataFrame,
     ratio: pd.DataFrame,
 ) -> pd.DataFrame:
-    """`부하량` 을 선행 반영 부하량으로 갈아 끼운 월별 부하량."""
+    """`부하량` 을 선행 반영 부하량으로 갈아 끼운 월별 부하량.
+
+    변동률 표에 없는 달은 원래 값을 그대로 둔다. 그 표는 이 프레임에서 만들어지므로 보통
+    빠지는 달이 없지만, 없는 달에 `map` 이 돌려주는 결측을 그대로 넣으면 값이 통째로
+    사라진다 — 그 사라짐은 오류도 경고도 없이 빈칸으로만 보인다.
+    """
     result = monthly_density.copy()
     replacement = ratio.set_index("생산계획년월")["선행 반영 부하량"]
     months = pd.to_numeric(result["생산계획년월"], errors="coerce").astype("int64")
-    result["부하량"] = months.map(replacement).astype("float64")
+    original = pd.to_numeric(result["부하량"], errors="coerce")
+    result["부하량"] = months.map(replacement).astype("float64").fillna(original)
     return result
 
 
@@ -172,11 +178,12 @@ def apply_advance_to_wafer(
     if "Wafer 부하량" not in monthly_wafer.columns:
         raise ValueError("월별 Wafer 필수 컬럼이 없습니다: Wafer 부하량")
     result = monthly_wafer.copy()
+    # 변동률 표에 없는 달은 1 로 둔다 — 선행을 넣지 않은 달과 같은 취급이다.
     factor = ratio.set_index("생산계획년월")["변동률"]
     months = pd.to_numeric(result["생산계획년월"], errors="coerce").astype("int64")
     result["Wafer 부하량"] = pd.to_numeric(result["Wafer 부하량"], errors="coerce") / months.map(
         factor
-    ).astype("float64")
+    ).astype("float64").fillna(1.0)
     return result
 
 
@@ -188,6 +195,10 @@ def apply_advance_to_securement(
 
     한 달 안에서는 모두 같은 수를 곱하므로 **공정 순위는 바뀌지 않는다.** B/N 공정이
     선행 입력에 따라 갈아 끼워지면 그것은 계산이 아니라 착시다.
+
+    **변동률 표에 없는 달은 1 로 둔다.** 변동률은 월별 부하량에서 만드는데 확보율은 거기
+    없는 달을 가질 수 있다 — 과거 구간을 공정별 확보율에만 넣고 월별 실적에는 넣지 않은
+    경우가 그렇다. 없는 달을 결측으로 곱하면 그 달 확보율이 통째로 사라진다.
     """
     if "확보율" not in securement_rate.columns:
         raise ValueError("확보율 필수 컬럼이 없습니다: 확보율")
@@ -196,5 +207,5 @@ def apply_advance_to_securement(
     months = pd.to_numeric(result["생산계획년월"], errors="coerce").astype("int64")
     result["확보율"] = pd.to_numeric(result["확보율"], errors="coerce") * months.map(factor).astype(
         "float64"
-    )
+    ).fillna(1.0)
     return result

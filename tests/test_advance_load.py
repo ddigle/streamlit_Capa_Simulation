@@ -185,3 +185,36 @@ def test_a_negative_entry_survives_the_editor_round_trip(tmp_path: Path) -> None
     saved = repository.replace_global_advance_load(merged, source="테스트")
 
     assert saved.rows["선행 물량"].tolist() == [2.5, -2.5]
+
+
+def test_a_month_outside_the_ratio_keeps_its_own_values() -> None:
+    """변동률 표에 없는 달은 손대지 않는다.
+
+    변동률은 월별 부하량에서 만드는데 확보율·Wafer 는 거기 없는 달을 가질 수 있다 — 과거
+    구간을 공정별 확보율에만 넣고 월별 실적에는 넣지 않으면 그렇다. 없는 달을 결측으로
+    곱하면 그 달이 오류도 경고도 없이 빈칸이 된다.
+    """
+    monthly_density = pd.DataFrame({"생산계획년월": [202601, 202603], "부하량": [50.0, 80.0]})
+    ratio = build_advance_load_ratio(
+        monthly_density, pd.DataFrame({"생산계획년월": [202601], "선행 물량": [10.0]})
+    )
+
+    securement = pd.DataFrame(
+        {
+            "생산계획년월": [202601, 202602, 202603],
+            "공정": ["A", "A", "A"],
+            "확보율": [1.5, 1.4, 1.2],
+        }
+    )
+    applied = apply_advance_to_securement(securement, ratio)
+    assert not applied["확보율"].isna().any()
+    # 202602 는 변동률 표에 없으므로 그대로다.
+    assert float(applied.loc[applied["생산계획년월"].eq(202602), "확보율"].iloc[0]) == 1.4
+
+    wafer = pd.DataFrame({"생산계획년월": [202601, 202602], "Wafer 부하량": [1000.0, 2000.0]})
+    applied_wafer = apply_advance_to_wafer(wafer, ratio)
+    assert not applied_wafer["Wafer 부하량"].isna().any()
+    assert (
+        float(applied_wafer.loc[applied_wafer["생산계획년월"].eq(202602), "Wafer 부하량"].iloc[0])
+        == 2000.0
+    )
