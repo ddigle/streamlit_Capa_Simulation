@@ -320,11 +320,16 @@ def build_lob_summary_figures(
     wafer_plan_gaps = _value_gaps(
         aligned_summary, aligned_baseline, "Wafer 부하량", "{:+,.0f}K", scale=1_000
     )
+    # GAP 은 **원 데이터끼리의** 차이다. 선행을 켜면 `aligned_summary` 는 이미 선행이 반영된
+    # 값이라 그대로 빼면 비교 시나리오와의 차이에 내가 넣은 선행 물량이 섞인다. 비교
+    # 시나리오 쪽에는 선행이 반영되지 않으므로(선행은 이 화면에만 얹는 공용 설정이다)
+    # 기준을 선행 전 값으로 맞춘다. 선행이 꺼져 있으면 둘이 같은 프레임이다.
+    raw_summary = aligned_baseline if aligned_baseline is not None else aligned_summary
     density_comparison_gaps = _value_gaps(
-        aligned_summary, aligned_comparison_density, "부하량", "{:+,.2f}"
+        raw_summary, aligned_comparison_density, "부하량", "{:+,.2f}"
     )
     wafer_plan_comparison_gaps = _value_gaps(
-        aligned_summary, aligned_comparison_wafer, "Wafer 부하량", "{:+,.0f}K", scale=1_000
+        raw_summary, aligned_comparison_wafer, "Wafer 부하량", "{:+,.0f}K", scale=1_000
     )
     month_positions = list(range(len(month_labels)))
     month_position_by_value = {
