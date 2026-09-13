@@ -498,6 +498,12 @@ month_labels, year_total_labels = build_month_axis(
     [int(value) for value in monthly_density["생산계획년월"]]
 )
 year_totals = build_year_totals(monthly_density, monthly_wafer, year_total_labels)
+# GAP 은 DB 계산 구간에서만 뜻을 갖는다. 과거 구간은 시나리오와 분리된 공용 프로필
+# (`app_meta.global_past_*`)에서 오므로 현재와 비교 시나리오가 같은 값을 받는다 — 그
+# 구간의 차이는 언제나 0 이고, 비교 프레임에는 과거가 병합되지 않아 그대로 두면 과거
+# 입력 전액이 거짓 증감으로 찍힌다. `calculated_months` 는 과거 병합 **직전**에 잡은
+# 집합이라 그 경계가 그대로다.
+gap_month_labels = {month_label(month) for month in calculated_months}
 figure_cache_key: HomeFigureCacheKey = (
     HOME_FIGURE_SCHEMA_VERSION,
     process_labels.version,
@@ -594,6 +600,7 @@ if cached_figures is None:
         detail_dimensions=plan_detail_dimensions,
         comparison_detail=aligned_comparison_detail,
         year_total_labels=year_total_labels,
+        gap_month_labels=gap_month_labels,
     )
     (
         bottleneck_detail_label_figure,

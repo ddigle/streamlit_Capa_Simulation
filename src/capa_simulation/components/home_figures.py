@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import html
 import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import Any, NamedTuple, cast
 
 import pandas as pd
@@ -1116,7 +1116,7 @@ def build_lob_summary_figures(
 def _detail_month_cell_values(
     displayed_detail: pd.DataFrame,
     month: str,
-    comparison_detail: pd.DataFrame | None = None,
+    gap_amounts: Sequence[float] | None = None,
 ) -> tuple[list[str], list[str]]:
     """한 달의 세부수량 값과 그 아래 증감을 따로 돌려준다. 없는 달은 빈 칸이다.
 
@@ -1131,26 +1131,81 @@ def _detail_month_cell_values(
         "" if pd.isna(value) or float(value) == 0 else f"{float(value):,.0f}K"
         for value in displayed_detail[month]
     ]
-    if comparison_detail is None:
+    if gap_amounts is None:
         return values, [""] * len(values)
-    comparison_values = (
-        pd.to_numeric(comparison_detail[month], errors="coerce")
-        if month in comparison_detail.columns
-        else pd.Series([pd.NA] * len(displayed_detail), index=displayed_detail.index)
-    )
-    current_values = pd.to_numeric(displayed_detail[month], errors="coerce")
     gaps: list[str] = []
-    for value, current, before in zip(values, current_values, comparison_values, strict=True):
-        # 한쪽에만 있는 조합은 없는 쪽을 0 으로 본다. 비교의 목적이 사라지거나 새로 생긴
-        # 제품을 보이게 하는 것이라 그 전액이 증감이어야 한다.
-        current_amount = 0.0 if pd.isna(current) else float(current)
-        before_amount = 0.0 if pd.isna(before) else float(before)
-        difference = current_amount - before_amount
+    for value, difference in zip(values, gap_amounts, strict=True):
         if not value or abs(difference) < 0.5:
             gaps.append("")
             continue
         gaps.append(f"{difference:+,.0f}K")
     return values, gaps
+
+
+def _detail_gap_amounts(
+    displayed_detail: pd.DataFrame,
+    comparison_detail: pd.DataFrame,
+    month: str,
+    *,
+    gap_month_labels: Collection[str] | None,
+    year_total_labels: Sequence[str],
+) -> list[float] | None:
+    """그 칸에 적을 행별 증감. `None` 이면 증감 줄을 아예 비운다.
+
+    **과거 구간에는 증감을 적지 않는다.** 과거는 시나리오와 분리된 공용 프로필
+    (`app_meta.global_past_*`)에서 오므로 현재와 비교 시나리오가 같은 값을 받는다. 그런데
+    비교 프레임에는 과거가 병합되지 않아 그 달 컬럼이 아예 없고, 아래 「없는 쪽을 0 으로
+    본다」 규칙이 그대로 걸리면 **과거 입력 전액이 거짓 증감**으로 찍힌다.
+
+    연간 Total 도 같은 이유로 DB 계산 구간의 달만 더한다. 그러지 않으면 비교 쪽에 Total
+    컬럼이 없어 그 해 합계 전체가 증감이 된다.
+    """
+
+    def amounts(frame: pd.DataFrame, column: str) -> list[float]:
+        if column not in frame.columns:
+            # 한쪽에만 있는 조합은 없는 쪽을 0 으로 본다. 비교의 목적이 사라지거나 새로
+            # 생긴 제품을 보이게 하는 것이라 그 전액이 증감이어야 한다.
+            return [0.0] * len(displayed_detail)
+        numeric = pd.to_numeric(frame[column], errors="coerce").fillna(0.0)
+        return [float(value) for value in numeric]
+
+    def difference(column: str) -> list[float]:
+        return [
+            current - before
+            for current, before in zip(
+                amounts(displayed_detail, column),
+                amounts(comparison_detail, column),
+                strict=True,
+            )
+        ]
+
+    if month in year_total_labels:
+        members = _gap_months_of_year(
+            month,
+            displayed_detail.columns,
+            gap_month_labels=gap_month_labels,
+        )
+        if not members:
+            return None
+        totals = [0.0] * len(displayed_detail)
+        for label in members:
+            totals = [total + value for total, value in zip(totals, difference(label), strict=True)]
+        return totals
+    if gap_month_labels is not None and month not in gap_month_labels:
+        return None
+    return difference(month)
+
+
+def _gap_months_of_year(
+    total_label: str,
+    columns: Iterable[object],
+    *,
+    gap_month_labels: Collection[str] | None,
+) -> list[str]:
+    """연간 Total 칸이 더할 달. 월 라벨은 `26.07` 이고 Total 라벨은 `26년` 이다."""
+    prefix = f"{total_label[:2]}."
+    source: Iterable[object] = columns if gap_month_labels is None else gap_month_labels
+    return [str(label) for label in source if isinstance(label, str) and label.startswith(prefix)]
 
 
 def _centered_cell_text(value: str) -> str:
@@ -1175,6 +1230,7 @@ def build_plan_detail_figures(
     detail_dimensions: list[str] | None = None,
     comparison_detail: pd.DataFrame | None = None,
     year_total_labels: Sequence[str] = (),
+    gap_month_labels: Collection[str] | None = None,
 ) -> tuple[go.Figure, go.Figure]:
     """분류별 계획 세부수량 Figure 한 쌍을 만든다.
 
@@ -1270,7 +1326,19 @@ def build_plan_detail_figures(
         )
     )
     detail_month_cells = [
-        _detail_month_cell_values(displayed_detail, month, comparison_detail)
+        _detail_month_cell_values(
+            displayed_detail,
+            month,
+            None
+            if comparison_detail is None
+            else _detail_gap_amounts(
+                displayed_detail,
+                comparison_detail,
+                month,
+                gap_month_labels=gap_month_labels,
+                year_total_labels=year_total_labels,
+            ),
+        )
         for month in detail_month_columns
     ]
     # GAP 이 꺼져 있으면 월 칸에도 증감이 오지 않으므로 값을 분류 칸처럼 한가운데에 세운다.

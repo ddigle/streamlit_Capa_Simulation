@@ -41,6 +41,99 @@ def _filled(figure: object) -> list[str]:
     return [value for column in cells.values for value in column if value]
 
 
+PAST_MONTHS = ["26.01", "26.07", "26.08", "26년"]
+
+
+def _past_detail() -> pd.DataFrame:
+    """과거 구간(26.01) 과 DB 계산 구간(26.07·26.08), 그리고 연간 Total."""
+    return pd.DataFrame(
+        {
+            "제품정보": ["A"],
+            "Stack": ["12H"],
+            "26.01": [1000.0],
+            "26.07": [200.0],
+            "26.08": [300.0],
+            "26년": [1500.0],
+        }
+    )
+
+
+def _past_comparison() -> pd.DataFrame:
+    """비교 프레임에는 과거도 연간 Total 도 없다 — 실제 파이프라인과 같은 모양이다."""
+    return pd.DataFrame(
+        {
+            "제품정보": ["A"],
+            "Stack": ["12H"],
+            "26.07": [150.0],
+            "26.08": [300.0],
+        }
+    )
+
+
+def _gap_notes(figure: object) -> list[str]:
+    annotations = figure.layout.annotations  # type: ignore[attr-defined]
+    return [annotation.text for annotation in annotations if annotation.text]
+
+
+def test_past_months_get_no_gap() -> None:
+    """과거 구간은 공용 프로필에서 와 두 시나리오가 같은 값을 받는다.
+
+    비교 프레임에는 과거가 병합되지 않으므로, 거르지 않으면 과거 입력 전액이 거짓 증감으로
+    찍힌다. 여기서는 26.01 의 1,000K 가 그것이다.
+    """
+    _, month_figure = build_plan_detail_figures(
+        production_detail=_past_detail(),
+        month_labels=PAST_MONTHS,
+        comparison_detail=_past_comparison(),
+        year_total_labels=["26년"],
+        gap_month_labels={"26.07", "26.08"},
+    )
+
+    notes = _gap_notes(month_figure)
+
+    assert "+1,000K" not in notes, f"과거 구간에 증감이 찍혔다: {notes}"
+    assert "+50K" in notes, f"DB 구간 증감이 사라졌다: {notes}"
+
+
+def test_year_total_gap_sums_only_the_db_range() -> None:
+    """연간 Total 은 DB 계산 구간의 차이만 더한다.
+
+    비교 프레임에 `26년` 컬럼이 없어 그대로 두면 그 해 합계 전액(1,500K)이 증감이 된다.
+    실제 차이는 26.07 의 +50K 하나뿐이다.
+    """
+    _, month_figure = build_plan_detail_figures(
+        production_detail=_past_detail(),
+        month_labels=PAST_MONTHS,
+        comparison_detail=_past_comparison(),
+        year_total_labels=["26년"],
+        gap_month_labels={"26.07", "26.08"},
+    )
+
+    notes = _gap_notes(month_figure)
+
+    assert "+1,500K" not in notes, f"연간 Total 에 그 해 전액이 찍혔다: {notes}"
+    # 26.07 의 +50K 와 Total 의 +50K 둘 다 나온다.
+    assert notes.count("+50K") == 2, notes
+
+
+def test_without_a_month_whitelist_every_month_keeps_its_gap() -> None:
+    """`gap_month_labels` 를 주지 않으면 예전과 같이 모든 달에 증감을 낸다.
+
+    과거 구간을 쓰지 않는 호출자(테스트·다른 화면)가 이 인자를 몰라도 동작이 바뀌지 않아야
+    한다.
+    """
+    _, month_figure = build_plan_detail_figures(
+        production_detail=_past_detail(),
+        month_labels=PAST_MONTHS,
+        comparison_detail=_past_comparison(),
+        year_total_labels=["26년"],
+    )
+
+    notes = _gap_notes(month_figure)
+
+    assert "+1,000K" in notes, notes
+
+
 def test_both_columns_center_without_a_comparison() -> None:
     """GAP 이 없으면 두 칸 모두 가운데다. 한쪽만 가운데면 같은 행의 글자가 어긋나 보인다."""
     label_figure, month_figure = build_plan_detail_figures(
