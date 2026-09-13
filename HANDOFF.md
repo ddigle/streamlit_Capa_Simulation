@@ -285,3 +285,130 @@ SELECT equipment_contract_version, COUNT(*) FROM equipment_ops.revision GROUP BY
 세대·분기 판정, 변경 표시는 그대로 필요하다. pull/push 가 정말 없어지려면 DuckDB 파일을
 버리고 서버형 DB 로 가야 하는데, 그건 사용자가 여럿으로 늘어나는 시점(체크리스트 10번)의
 판단이다.
+
+---
+
+# HANDOFF — 2026-09-12 계획 세부수량 · 과거 구간 · 공용 프로필 세션
+
+## 10. 현재 상태 (2026-09-12 세션 종료 시점)
+
+| 항목 | 값 |
+|---|---|
+| 브랜치 | `main` (작업 트리 깨끗), `origin/main` = `20f0ae0` 로 로컬과 같음 |
+| 검증 | ruff check·format(262 파일) 통과 / mypy 139 파일 이상 없음 / pytest 전체 통과 |
+| 마지막 ZIP | `C:\Dev\Streamlit_Project_Dummyfile\202609122144.zip` (870,591 bytes, 엔트리 304) |
+| 메일 | 발송 완료. 보낸 편지함에서 확인함 |
+| 보류 | `stash@{0}` 에 bigdataquery `user_name` 작업 4파일 (12-2 절) |
+
+이 세션의 배포는 네 번이었다. `202609121646`(1차 검수 후) · `202609121712`(월 칸 정렬
+추가) · `202609122124`(과거 구간·GAP·표시명 경고) · `202609122144`(비교 대상 공용 프로필·
+공정 필터). 배포 타이밍은 매번 사용자가 정했다.
+
+## 11. 이번 세션에 한 일
+
+### A. 계획 세부수량 표 (Plotly `go.Table`)
+
+| 커밋 | 내용 |
+|---|---|
+| `85ba2c1` | 빈 증감 줄을 걷어내고 행 높이를 37px 로 (`stacked_row_height` 삭제) |
+| `723793f` | HOME 제목 위치·LOB 패널 아래 테두리·분류 칸 글자색 |
+| `116a269` | 분류 칸 글자를 행 한가운데로 |
+| `89c579b` | GAP 이 꺼져 있으면 월 칸 값도 같은 눈높이로, 켜져 있으면 종전대로 |
+
+**`go.Table` 에서 알아낸 것 세 가지.** 이 표를 다시 손대기 전에 읽는다.
+
+1. `cells.height` 는 `textHeight + 16px` 아래로 내려가지 않는다. 행을 더 줄이려면 글꼴을
+   줄이는 수밖에 없다.
+2. **`valign` 속성은 plotly 6.9 `table.Cells` 에 없다**(`align`·`alignsrc` 뿐). 한 줄짜리
+   칸의 글자는 칸 위 2.5px 에 붙는다. 예전 `AGENTS.md` 의 "`cells.valign` 은 두 줄부터
+   듣는다" 는 서술은 **틀렸고 이번에 정정했다.**
+3. 여러 줄이면 plotly 가 세로 가운데로 놓는다. 그래서 **값 뒤에 빈 `<br>` 하나**를 붙이면
+   높이를 늘리지 않고 글자만 가운데로 온다(`_centered_cell_text`). 지금 월 칸은
+   GAP 유무로 이 처리를 갈라 쓴다.
+4. paper 좌표는 여백을 뺀 **그림 영역** 기준이다. 비율 리터럴을 박아 두면 행 높이가 바뀔 때
+   캔버스 밖으로 밀려 **오류 없이 잘린다**. `LOB_PANEL_BOTTOM_Y` 는 여백에서 계산한다.
+
+### B. 과거 구간 · 선행 투입 · GAP
+
+| 커밋 | 내용 |
+|---|---|
+| `205722f` | 비교 GAP 을 **선행 반영 전 원 데이터** 기준으로 낸다 |
+| `4fd690b` | 과거 구간을 넣었을 때 생기던 세 가지 |
+| `b426b79` | 표시순서 분류컬럼에 화면 표시명을 적으면 알려준다 |
+
+- **GAP 은 선행과 무관하다.** 전 시나리오 대비 현 시나리오의 원 데이터 차이여야 하는데
+  선행 반영본과 비교하고 있었다. `home_figures` 가 `aligned_baseline`(선행 전)을 기준으로
+  잡는다.
+- **과거 구간은 조회기간 밖이면 화면에 안 나온다.** 사이드바가 그 사실을 알려준다
+  (`show_past_months_outside_range`). 데이터를 넣었는데 월 컬럼이 안 늘어난다는 신고의 답이다.
+- **`groupby` 기본 `sort=True` 가 표시순서를 덮는다.** 과거 병합 뒤 제품 정렬이 뒤집힌
+  원인이었다. `sort=False` + `apply_display_order` 로 고쳤다.
+- **선행은 계획 세부수량에 반영하지 않는다**(사용자 결정). 화면에 설명도 붙이지 않는다.
+
+### C. 공용 프로필 · 필터
+
+| 커밋 | 내용 |
+|---|---|
+| `ac6323b` | 분류 필터 일괄선택을 임계값에 맡기지 않고 켜 둔다 |
+| `2dcbf0a` | Pack Code 를 `RQ_PKG_PLAN` 의 8번째 업무 키로 |
+| `e345ed6` | GAP 비교 대상을 시나리오와 분리된 공용 프로필로 (마이그레이션 `0020`) |
+| `20f0ae0` | 공식버전의 공정 필터가 새 세션 첫 화면에서 덮이던 것을 고쳤다 |
+
+`select_all` 은 **켜 두는 쪽**으로 확정했다 — 이 필터는 "타이핑해 좁힌 뒤 선택" 과
+"전체선택 후 몇 개 빼기" 를 둘 다 쓴다.
+
+공정 필터 복원은 `services/process_selection.py` 의 `resolve_included_processes` 가
+소유한다. **"저장값에 없다" 와 "이번에 처음 본 공정" 을 구분**하는 것이 핵심이다 —
+`seen` 이 없으면(첫 기동) 저장값을 그대로 쓰고, 있으면 처음 보는 공정만 더한다.
+
+### D. 마이그레이션 호환성 — 질문에 대한 답
+
+**새 번호를 더하는 것은 기존 DB 와 호환된다.** 러너는 파일을 순회하며 `applied` 와 대조하고
+아직 안 된 번호만 실행한다. DB 에만 있고 파일에 없는 버전은 무시한다(결번 2·3 이 이 원리로
+산다). 호환이 깨지는 것은 **이미 적용된 파일을 고칠 때**뿐이고, 체크섬이 그걸 막는다.
+다음 번호는 시뮬레이션 DB `0021`, 설비 DB `0008` 이다.
+
+### E. 배포 절차에서 이번에 데인 것
+
+- **ZIP 은 `git ls-files` 의 경로를 작업 트리에서 읽는다.** 커밋하지 않은 변경이 그대로
+  샌다. 이번에 bigdataquery 4파일을 `git stash push -- <경로>` 로 빼내고 ZIP 본문에서
+  `CAPA_BDQ_USER_NAME` 0건을 확인한 뒤 보냈다.
+- **ZIP 파일명은 로컬 시각이다.** `TZ=Asia/Seoul date` 를 쓰면 9시간 어긋난다(이 PC 가 이미
+  KST 다). 이 규칙을 어겨 만든 ZIP 하나를 지우고 다시 만들었다.
+
+## 12. 다음에 할 일
+
+### 12-1. 사내 — Pack Code 승격 뒤 실데이터 재등록
+
+`2dcbf0a` 로 `Pack Code` 가 업무 키가 됐다. **옛 리비전은 Pack Code 가 NULL 이라 부하량
+화면이 선다.** 사내에서 실데이터를 다시 등록해야 Pack Code 별 행이 산다. 3-3 절 1번과 같은
+내용이며 아직 사내에서 하지 않았다.
+
+### 12-2. `stash@{0}` — bigdataquery `user_name` (재개 지점)
+
+사내에서 시뮬레이션 코드를 조회하면 `parameter user_name is necessary.` 가 뜬다. 원인은
+`bigdataquery.getData(...)` 의 `user_name` 기본값이 빈 문자열인데 우리가 넘기지 않는 것이다.
+
+작업은 끝났지만 **사내 per-user 값을 아직 모른다**. 저장소에 값을 커밋하지 않기 위해
+스태시에 둔 상태다.
+
+```
+stash@{0}: On main: bigdataquery user_name (사내 값 확인 후 반영)
+  src/capa_simulation/io/bigdataquery_catalog.py
+  src/capa_simulation/io/company_bigdataquery_adapter.py
+  tests/test_bigdataquery_catalog.py
+  tests/test_company_bigdataquery_adapter.py
+```
+
+- 내용: `BDQ_USER_NAME_ENV = "CAPA_BDQ_USER_NAME"` 과 `resolve_user_name()` 을 두고 두
+  호출 지점에 `user_name=` 을 넘긴다. Protocol 시그니처도 실제 8인자로 맞췄다.
+- **재부팅해도 스태시는 남는다.** 다음 세션은 `git stash pop` 으로 이어받는다.
+- 값을 알게 되면 사내 PC 에서 `setx CAPA_BDQ_USER_NAME <사번 또는 계정>` 을 걸고 앱을 다시
+  띄운다. **값 자체는 저장소에 커밋하지 않는다.**
+
+### 12-3. 보고만 하고 손대지 않은 것 두 건
+
+- 상세 B/N 공정 표의 `B/N` 칸이 29px 행에서 위 2.5 / 아래 6.5 로 2px 쏠린다. 11-A-2 의
+  `valign` 부재가 원인이고 같은 `<br>` 수법으로 고칠 수 있다.
+- `column_filter` 의 `filter_mode="contains"` 제안은 기각했다. `Area_Name`·`구분` 은 표시명
+  매핑이 없어 원본 코드로 검색되고, 구분자가 든 값에서 fuzzy 보다 오히려 덜 잡는다.
