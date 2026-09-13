@@ -17,16 +17,19 @@ from collections.abc import Sequence
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
     clear_global_advance_load_cache,
     clear_global_comparison_scenario_cache,
+    clear_global_execution_capacity_cache,
     get_scenario_repository,
     load_global_comparison_scenario,
 )
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
+    GlobalExecutionCapacity,
     RevisionSummary,
     ScenarioSummary,
 )
@@ -35,10 +38,18 @@ from capa_simulation.services.advance_load import (
     ADVANCE_LOAD_ROW_LABEL,
     merge_advance_load_edits,
 )
+from capa_simulation.services.execution_capacity import (
+    EXECUTION_CAPACITY_COLUMNS,
+    empty_execution_capacity,
+    prepare_execution_capacity,
+)
 from capa_simulation.services.month_columns import month_label
 
 EDP_TOGGLE_KEY = "home_preference_include_edp"
 ADVANCE_TOGGLE_KEY = "home_show_advance"
+EXECUTION_TOGGLE_KEY = "home_show_execution"
+EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
+EXECUTION_NOTE_KEY = "home_preference_execution_note"
 PLAN_DETAIL_CUSTOMER_KEY = "home_preference_plan_detail_customer"
 COMPARISON_TOGGLE_KEY = "home_show_comparison"
 COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
@@ -110,7 +121,12 @@ def render_lob_title_row(
     비교 시나리오를 고르지 않았으면 「GAP」 을 누를 수 없다. 켤 수는 있는데 아무것도
     바뀌지 않으면 고장으로 읽힌다.
     """
-    with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
+    with st.container(
+        key="lob_title_row",
+        horizontal=True,
+        vertical_alignment="center",
+        gap="medium",
+    ):
         st.markdown(section_title_markup("Capa LOB 현황"), unsafe_allow_html=True)
         st.toggle(
             "선행",
@@ -121,6 +137,17 @@ def render_lob_title_row(
                 "Preference 탭에 넣은 선행 투입 물량을 계획과 확보율에 반영합니다. "
                 "설비가 늘어난 것이 아니므로 Capa 는 그대로이고 계획과 확보율만 "
                 "반비례로 움직입니다."
+            ),
+        )
+        st.toggle(
+            "실행",
+            value=False,
+            key=EXECUTION_TOGGLE_KEY,
+            persist_state="session",
+            help=(
+                "Preference 탭에 넣은 실행 Capa 반영을 확보율에 얹습니다. 기준정보 밖에서 "
+                "생긴 변수(비가동·UPEH·재공)를 퍼센트포인트로 차감·가산하며, B/N 순위도 "
+                "그 값으로 다시 매깁니다. 가용대수·소요대수는 기준정보 값 그대로입니다."
             ),
         )
         st.toggle(
@@ -150,10 +177,15 @@ def render_home_preference(
     months: Sequence[int],
     month_labels: Sequence[str],
     advance_profile: GlobalAdvanceLoad,
+    execution_profile: GlobalExecutionCapacity,
+    process_options: Sequence[str],
+    process_labels: ProcessLabels,
+    unmatched_execution: pd.DataFrame,
+    clamped_execution: pd.DataFrame,
     database_path: str,
     active_scenario_id: str | None,
 ) -> None:
-    """표시 기준 토글과 비교 시나리오 선택, 선행 물량 입력 시트."""
+    """표시 기준 토글과 비교 시나리오 선택, 선행 물량·실행 Capa 입력 시트."""
     with st.container(border=True):
         st.markdown("#### :material/tune: 표시 기준")
         # 기본은 **끔**이다. LOB 로 읽는 수치는 EDP 를 뺀 값이 기준이고, 넣은 화면을 보려면
@@ -174,6 +206,15 @@ def render_home_preference(
         months=months,
         month_labels=month_labels,
         advance_profile=advance_profile,
+        database_path=database_path,
+    )
+    _render_execution_editor(
+        months=months,
+        execution_profile=execution_profile,
+        process_options=process_options,
+        process_labels=process_labels,
+        unmatched=unmatched_execution,
+        clamped=clamped_execution,
         database_path=database_path,
     )
 
@@ -424,6 +465,159 @@ def _stored_by_month(advance_profile: GlobalAdvanceLoad) -> dict[int, float]:
         int(month): float(value)
         for month, value in zip(rows["생산계획년월"], rows["선행 물량"], strict=True)
     }
+
+
+def _render_execution_editor(
+    *,
+    months: Sequence[int],
+    execution_profile: GlobalExecutionCapacity,
+    process_options: Sequence[str],
+    process_labels: ProcessLabels,
+    unmatched: pd.DataFrame,
+    clamped: pd.DataFrame,
+    database_path: str,
+) -> None:
+    """기준정보 밖에서 생긴 변수를 확보율에 퍼센트포인트로 얹는 입력 표."""
+    with st.container(border=True):
+        st.markdown("#### :material/bolt: 실행 Capa 반영")
+        st.caption(
+            "비가동대수 증가·UPEH 실적 부진·재공 부진처럼 기준정보 밖에서 생긴 변수를 "
+            "**퍼센트포인트**로 넣습니다. 확보율 105% 에 `-10` 을 넣으면 95% 가 됩니다"
+            "(비율 곱셈이 아닙니다). 시나리오와 분리된 공용 설정이고, 「실행」 토글을 켠 "
+            "화면에만 반영됩니다. 순위도 이 값으로 다시 매겨집니다."
+        )
+        st.caption(_execution_version_caption(execution_profile))
+        if not months or not process_options:
+            st.info("조회기간에 계산된 공정이 없어 입력할 칸이 없습니다.")
+            return
+        table = _execution_editor_frame(execution_profile)
+        with st.form("home_execution_capacity_form"):
+            edited = st.data_editor(
+                table,
+                key=EXECUTION_EDITOR_KEY,
+                hide_index=True,
+                num_rows="dynamic",
+                width="stretch",
+                column_config={
+                    "생산계획년월": st.column_config.SelectboxColumn(
+                        "년월",
+                        options=list(months),
+                        # 저장은 YYYYMM 정수다. 표시만 `26.07` 로 바꾼다.
+                        format_func=_month_option_label,
+                        required=True,
+                    ),
+                    "공정": st.column_config.SelectboxColumn(
+                        "공정",
+                        options=list(process_options),
+                        # **값은 원본 공정명이고 보이는 글자만 표시명이다.** 표시명으로
+                        # 저장하면 Proc Rename 을 바꾸는 순간 매칭이 끊긴다.
+                        format_func=process_labels.label,  # 값은 원본, 글자만 표시명
+                        required=True,
+                    ),
+                    "증감 확보율": st.column_config.NumberColumn(
+                        "증감 확보율(%p)",
+                        step=0.1,
+                        format="%.1f",
+                        required=True,
+                    ),
+                    "비고": st.column_config.TextColumn("비고", width="medium"),
+                },
+            )
+            note = st.text_input(
+                "변경 메모",
+                placeholder="예: 26.07 Wafer Mount 비가동 3대",
+                key=EXECUTION_NOTE_KEY,
+            )
+            submitted = st.form_submit_button(
+                "실행 Capa 저장",
+                icon=":material/save:",
+                type="primary",
+                width="stretch",
+            )
+        if not submitted:
+            _render_execution_notices(unmatched, clamped, process_labels)
+            return
+        try:
+            _save_execution_capacity(
+                database_path,
+                edited=edited,
+                source=note.strip() or "웹 직접 편집",
+            )
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(bootstrap_error_message(exc))
+            return
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        st.success("실행 Capa 반영을 저장했습니다.")
+        st.rerun(scope="app")
+
+
+def _month_option_label(value: str | int | float | bool) -> str:
+    """`SelectboxColumn` 은 스칼라 합집합을 넘긴다. 저장값은 YYYYMM 정수다."""
+    return month_label(int(value))
+
+
+def _execution_editor_frame(execution_profile: GlobalExecutionCapacity) -> pd.DataFrame:
+    """저장분을 그대로 보여준다. 한 행도 없으면 빈 표로 시작한다."""
+    rows = execution_profile.rows
+    if rows.empty:
+        return empty_execution_capacity()
+    return rows.loc[:, list(EXECUTION_CAPACITY_COLUMNS)].copy()
+
+
+def _save_execution_capacity(
+    database_path: str,
+    *,
+    edited: pd.DataFrame,
+    source: str,
+) -> None:
+    frame = edited.loc[:, list(EXECUTION_CAPACITY_COLUMNS)].copy()
+    get_scenario_repository(database_path).replace_global_execution_capacity(
+        prepare_execution_capacity(frame),
+        source=source,
+    )
+    clear_global_execution_capacity_cache()
+
+
+def _render_execution_notices(
+    unmatched: pd.DataFrame,
+    clamped: pd.DataFrame,
+    process_labels: ProcessLabels,
+) -> None:
+    """넣었는데 화면이 그대로인 이유와, 0 에서 잘린 행을 알린다."""
+    if not unmatched.empty:
+        examples = ", ".join(
+            f"{month_label(int(month))}·{process_labels.label(process)}"
+            for month, process in zip(
+                unmatched["생산계획년월"].head(5),
+                unmatched["공정"].head(5),
+                strict=True,
+            )
+        )
+        st.warning(
+            f"이번 시나리오·조회기간에 짝이 없어 반영되지 않은 행 {len(unmatched)}건: "
+            f"{examples}. 공용 설정이라 저장은 남아 있고, 해당 공정이 있는 시나리오에서는 "
+            "그대로 적용됩니다.",
+            icon=":material/link_off:",
+        )
+    if not clamped.empty:
+        st.warning(
+            f"조정 결과가 0% 아래로 내려가 0 에서 자른 행이 {len(clamped)}건 있습니다. "
+            "막대 길이와 순위가 의미를 잃지 않도록 자릅니다.",
+            icon=":material/vertical_align_bottom:",
+        )
+
+
+def _execution_version_caption(execution_profile: GlobalExecutionCapacity) -> str:
+    if execution_profile.version == 0:
+        return "공용 버전 없음 · 아직 넣은 실행 Capa 반영이 없습니다"
+    if execution_profile.updated_at is None:
+        return f"공용 버전 v{execution_profile.version} · {execution_profile.source}"
+    return (
+        f"공용 버전 v{execution_profile.version} · {execution_profile.source} · "
+        f"{execution_profile.updated_at:%Y-%m-%d %H:%M}"
+    )
 
 
 def _version_caption(advance_profile: GlobalAdvanceLoad) -> str:

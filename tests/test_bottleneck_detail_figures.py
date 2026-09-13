@@ -72,6 +72,16 @@ def _build(details: pd.DataFrame) -> tuple[object, object]:
     )
 
 
+def _rank_labels(label_figure: object) -> list[str]:
+    """순위 라벨은 표 칸이 아니라 주석으로 그린다. 머리글 주석만 빼고 순서대로 읽는다."""
+    figure = cast(Any, label_figure)
+    return [
+        annotation.text
+        for annotation in figure.layout.annotations
+        if annotation.text != "<b>B/N</b>"
+    ]
+
+
 def test_month_figure_keeps_the_fixed_month_column_grid() -> None:
     """세 개의 월 Figure 가 같은 스크롤 캔버스에 들어가므로 폭 규칙이 같아야 한다."""
     label_figure, month_figure = _build(
@@ -101,7 +111,10 @@ def test_row_count_follows_the_month_with_the_most_processes() -> None:
     # 표 높이 그대로다.
     expected_height = BOTTLENECK_DETAIL_HEADER_HEIGHT_PX + 3 * BOTTLENECK_DETAIL_ROW_HEIGHT_PX
     assert month_figure.layout.height == expected_height
-    assert list(label_figure.data[0].cells.values[0]) == ["1", "2", "3"]
+    # 순위 숫자는 표 칸이 아니라 주석이다. 칸에 글자를 넣으면 Plotly 가 29px 행을
+    # `글자상자 + 16px` 로 부풀려 월 Figure 와 어긋난다.
+    assert set(label_figure.data[0].cells.values[0]) == {""}
+    assert _rank_labels(label_figure) == ["1", "2", "3"]
 
 
 def test_rank_limit_is_the_twenty_row_screen_contract() -> None:
@@ -122,9 +135,11 @@ def test_row_count_trusts_the_frame_the_service_already_cut() -> None:
 
     label_figure, _ = _build(details)
 
-    assert list(label_figure.data[0].cells.values[0]) == [
+    assert _rank_labels(label_figure) == [
         str(rank) for rank in range(1, BOTTLENECK_DETAIL_RANK_LIMIT + 1)
     ]
+    # 칸은 끝까지 비어 있어야 29px 행이 유지된다.
+    assert set(label_figure.data[0].cells.values[0]) == {""}
 
 
 def test_month_figure_draws_hover_target_track_bars_and_names_in_four_traces() -> None:
@@ -144,7 +159,9 @@ def test_month_figure_draws_hover_target_track_bars_and_names_in_four_traces() -
     assert len(hover_target.x) == 2
     assert hover_target.width == BOTTLENECK_DETAIL_ROW_HEIGHT_PX
     assert hover_target.marker.color == tokens.HIT_TARGET
-    assert hover_target.hovertemplate.count("customdata") == 6
+    # 여섯 값 + 실행 Capa 조정 줄. 조정이 없으면 마지막 칸이 빈 문자열이라 아무 줄도
+    # 붙지 않는다.
+    assert hover_target.hovertemplate.count("customdata") == 7
     # 보이는 트랙 막대는 눈금만 담당한다.
     assert track.marker.color == tokens.BAR_TRACK
     assert track.hoverinfo == "skip"
@@ -162,6 +179,90 @@ def test_month_figure_draws_hover_target_track_bars_and_names_in_four_traces() -
     assert len(month_figure.layout.annotations) == len(MONTH_LABELS)
 
 
+def _details_with_execution(
+    rows: list[tuple[str, int, str, float, float, float, str]],
+) -> pd.DataFrame:
+    """`기준 확보율`·`확보율 증감`·`실행 비고` 를 실은 상세 프레임."""
+    base = _details([(label, rank, process, rate) for label, rank, process, rate, *_ in rows])
+    base["기준 확보율"] = [baseline for *_, baseline, _delta, _note in rows]
+    base["확보율 증감"] = [delta for *_, _baseline, delta, _note in rows]
+    base["실행 비고"] = [note for *_, note in rows]
+    return base
+
+
+def test_no_adjustment_keeps_the_original_four_traces() -> None:
+    """조정 0건이면 trace 구성이 조정 전과 같아야 한다.
+
+    빈 trace 를 늘 끼우면 「조정이 없으면 오늘과 픽셀 단위로 같다」가 무너진다.
+    """
+    _, month_figure = _build(
+        _details_with_execution([("26.01", 1, "DEMO_공정", 1.0, 1.0, 0.0, "")])
+    )
+
+    assert len(month_figure.data) == 4
+
+
+def test_a_decrease_paints_the_lost_span_without_a_border() -> None:
+    """줄어든 만큼은 테두리 없는 적분홍이고, 테두리는 줄어든 결과값에만 남는다."""
+    _, month_figure = _build(
+        _details_with_execution([("26.01", 1, "DEMO_공정", 1.0, 1.2, -20.0, "비가동 3대")])
+    )
+
+    # hover 표적 · 트랙 · 증감 영역 · 값 막대 · 공정명
+    assert len(month_figure.data) == 5
+    delta = month_figure.data[2]
+    assert delta.marker.color == (tokens.DELTA_AREA_DECREASE,)
+    assert delta.marker.line.width == 0
+    value_bar = month_figure.data[3]
+    # 줄어든 쪽은 값 막대가 곧 결과값이므로 제 테두리를 그대로 쓴다. 증가 행이 없으니
+    # 굵기는 스칼라로 남는다.
+    assert value_bar.marker.line.width == tokens.BAR_OUTLINE_WIDTH_PX
+
+
+def test_an_increase_borders_the_whole_new_value_including_the_green_span() -> None:
+    """늘어난 경우 테두리는 연두 영역까지 두르고, 값 막대 자신의 테두리는 꺼진다."""
+    _, month_figure = _build(
+        _details_with_execution([("26.01", 1, "DEMO_공정", 1.2, 1.0, 20.0, "UPEH 개선")])
+    )
+
+    # hover 표적 · 트랙 · 증감 영역 · 값 막대 · 증가 테두리 · 공정명
+    assert len(month_figure.data) == 6
+    delta = month_figure.data[2]
+    assert delta.marker.color == (tokens.DELTA_AREA_INCREASE,)
+    assert delta.marker.line.width == 0
+    value_bar = month_figure.data[3]
+    assert value_bar.marker.line.width == (0.0,)
+    outline = month_figure.data[4]
+    assert outline.marker.color == tokens.TRANSPARENT
+    assert outline.marker.line.width == tokens.BAR_OUTLINE_WIDTH_PX
+    # 테두리는 값 막대보다 길다 — 연두 구간을 품는다.
+    assert outline.x[0] > value_bar.x[0]
+
+
+def test_hover_carries_the_adjustment_and_the_note() -> None:
+    """가용·필요대수는 기준정보 값 그대로다. 어긋나 보이는 까닭을 hover 가 밝힌다."""
+    _, month_figure = _build(
+        _details_with_execution([("26.01", 1, "DEMO_공정", 1.0, 1.2, -20.0, "비가동 3대")])
+    )
+
+    note = month_figure.data[0].customdata[0][6]
+
+    assert "실행 반영 -20.0%p" in note
+    assert "비고 비가동 3대" in note
+
+
+def test_hover_escapes_markup_in_the_note() -> None:
+    """비고는 자유 텍스트다. 꺾쇠가 그대로 들어가면 hover 마크업이 깨진다."""
+    _, month_figure = _build(
+        _details_with_execution([("26.01", 1, "DEMO_공정", 1.0, 1.2, -20.0, "<b>주의</b>")])
+    )
+
+    note = month_figure.data[0].customdata[0][6]
+
+    assert "&lt;b&gt;" in note
+    assert "<b>주의" not in note
+
+
 def test_hover_shows_the_real_rate_above_the_bar_cap() -> None:
     """막대만 150% 에서 잘린다. hover 숫자는 실제 값 그대로다."""
     _, month_figure = _build(_details([("26.01", 1, "DEMO_공정", 2.0)]))
@@ -174,6 +275,8 @@ def test_hover_shows_the_real_rate_above_the_bar_cap() -> None:
         "10.0대",
         "20.0대",
         "1K",
+        # 실행 Capa 조정이 없으면 빈 문자열이라 hover 에 아무 줄도 붙지 않는다.
+        "",
     ]
 
 

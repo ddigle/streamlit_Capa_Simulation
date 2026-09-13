@@ -14,7 +14,7 @@ from capa_simulation.settings import DUCKDB_PATH
 
 render_page_header(
     "시나리오 관리",
-    description="DuckDB 시나리오·리비전·공식버전과 웹 표시순서를 관리합니다.",
+    description="DuckDB 시나리오·리비전·공식버전과 BigDataQuery 등록을 관리합니다.",
 )
 
 try:
@@ -28,8 +28,8 @@ except Exception as exc:
 # 순간 그 탭의 form 위젯이 사라져 입력 중이던 값이 없어졌다. BigDataQuery 탭에 시뮬레이션
 # 코드 목록 표가 생겼지만 그 표는 세션에 담긴 조회 결과를 표시만 하고 사내 DB 조회는 버튼
 # 제출로만 돈다 — 숨은 탭을 다시 그리는 비용은 검색으로 좁힌 뷰의 직렬화뿐이다. 그 비용보다
-# 탭을 오갈 때 폼 입력(기간 2개 + 등록 폼 6개)이 사라지는 쪽이 훨씬 나쁘다. 표시순서 검증·
-# CSV 는 공용 버전 키로 캐시했다. 그래서 탭 전환에 rerun 을 걸 이유도 없다.
+# 탭을 오갈 때 폼 입력(기간 2개 + 등록 폼 6개)이 사라지는 쪽이 훨씬 나쁘다. 그래서 탭
+# 전환에 rerun 을 걸 이유도 없다.
 management_tab, query_tab = st.tabs(["시나리오 관리", "BigDataQuery 등록"])
 
 with management_tab:

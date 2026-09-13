@@ -223,6 +223,25 @@ def build_monthly_bottlenecks(
     return build_monthly_bottlenecks_from_ranking(ranking)
 
 
+# 순위 파생이 **있을 때만** 함께 나르는 컬럼. 앞의 둘은 원래부터 상세 화면이 쓰던 것이고,
+# 뒤의 셋은 실행 Capa 반영이 남긴 기준값이다. 증감 영역을 그리려면 조정 전 확보율이
+# 필요하므로 순위 단계에서 잃어버리면 안 된다. `실행 비고` 는 자유 텍스트라 숫자 변환에서
+# 뺀다.
+BOTTLENECK_PASSTHROUGH_COLUMNS = (
+    "가용대수",
+    "소요대수",
+    "기준 확보율",
+    "확보율 증감",
+    "실행 비고",
+)
+BOTTLENECK_TEXT_PASSTHROUGH_COLUMNS = ("실행 비고",)
+
+
+def _passthrough(frame: pd.DataFrame) -> list[str]:
+    """그 프레임에 실제로 있는 패스스루 컬럼만."""
+    return [column for column in BOTTLENECK_PASSTHROUGH_COLUMNS if column in frame.columns]
+
+
 def build_monthly_bottleneck_ranking(
     securement_rate: pd.DataFrame,
     included_processes: list[str] | None = None,
@@ -230,11 +249,14 @@ def build_monthly_bottleneck_ranking(
     """Normalize and rank each month's valid processes once for all HOME views."""
     required = ["생산계획년월", "공정", "확보율"]
     require_columns(securement_rate, required, "확보율")
-    detail_columns = [
-        column for column in ("가용대수", "소요대수") if column in securement_rate.columns
-    ]
+    detail_columns = _passthrough(securement_rate)
     prepared = securement_rate[[*required, *detail_columns]].copy()
-    for column in ["확보율", *detail_columns]:
+    numeric_columns = [
+        column
+        for column in ["확보율", *detail_columns]
+        if column not in BOTTLENECK_TEXT_PASSTHROUGH_COLUMNS
+    ]
+    for column in numeric_columns:
         prepared[column] = pd.to_numeric(prepared[column], errors="coerce")
     prepared["공정"] = prepared["공정"].astype("string").str.strip()
     prepared = prepared.dropna(subset=["생산계획년월", "공정", "확보율"])
@@ -251,7 +273,8 @@ def build_monthly_bottlenecks_from_ranking(ranking: pd.DataFrame) -> pd.DataFram
     """Select monthly Top 1 from an already normalized bottleneck ranking."""
     required = ["생산계획년월", "공정", "확보율", "순위"]
     require_columns(ranking, required, "B/N 순위")
-    prepared = ranking.loc[ranking["순위"].eq(1), required[:-1]].copy().reset_index(drop=True)
+    carried = [*required[:-1], *_passthrough(ranking)]
+    prepared = ranking.loc[ranking["순위"].eq(1), carried].copy().reset_index(drop=True)
     prepared["년월"] = prepared["생산계획년월"].map(_month_label).astype("string")
     prepared["축레이블"] = prepared["년월"].str.cat(prepared["공정"], sep="<br>")
     return prepared
@@ -272,13 +295,18 @@ def build_bottleneck_capacity(
         if missing:
             raise ValueError(f"{label} 필수 컬럼이 없습니다: {', '.join(missing)}")
 
+    carried = [*bottleneck_required, *_passthrough(monthly_bottlenecks)]
     result = monthly_density[density_required].merge(
-        monthly_bottlenecks[bottleneck_required],
+        monthly_bottlenecks[carried],
         on="생산계획년월",
         how="left",
         validate="one_to_one",
     )
     result["B/N Capa"] = result["부하량"] * result["확보율"]
+    if "기준 확보율" in result.columns:
+        # 증감 영역은 조정 전 Capa 와의 차이로 그린다. 여기서 만들지 않으면 Figure 가
+        # 부하량을 다시 들고 와 곱해야 한다.
+        result["기준 B/N Capa"] = result["부하량"] * result["기준 확보율"]
     return result
 
 
@@ -305,7 +333,7 @@ def build_monthly_bottleneck_top5_from_ranking(
     """Build Top 5 capacity output from one shared monthly ranking."""
     required = ["생산계획년월", "공정", "확보율", "순위"]
     require_columns(ranking, required, "B/N 순위")
-    prepared = ranking.loc[ranking["순위"].le(5), required].copy()
+    prepared = ranking.loc[ranking["순위"].le(5), [*required, *_passthrough(ranking)]].copy()
     density = monthly_density[["생산계획년월", "부하량"]].copy()
     result = prepared.merge(
         density,
@@ -314,6 +342,8 @@ def build_monthly_bottleneck_top5_from_ranking(
         validate="many_to_one",
     )
     result["B/N Capa"] = result["부하량"] * result["확보율"]
+    if "기준 확보율" in result.columns:
+        result["기준 B/N Capa"] = result["부하량"] * result["기준 확보율"]
     if monthly_wafer is not None:
         wafer_required = ["생산계획년월", "Wafer 부하량"]
         wafer_missing = [column for column in wafer_required if column not in monthly_wafer.columns]
@@ -326,6 +356,8 @@ def build_monthly_bottleneck_top5_from_ranking(
             validate="many_to_one",
         )
         result["Wafer Capa"] = result["Wafer 부하량"] * result["확보율"]
+        if "기준 확보율" in result.columns:
+            result["기준 Wafer Capa"] = result["Wafer 부하량"] * result["기준 확보율"]
     result["년월"] = result["생산계획년월"].map(_month_label)
     return result.reset_index(drop=True)
 
@@ -363,7 +395,8 @@ def build_monthly_bottleneck_details_from_ranking(
         raise ValueError("B/N 상세 순위 상한은 1 이상이어야 합니다.")
     required = ["생산계획년월", "공정", "가용대수", "소요대수", "확보율", "순위"]
     require_columns(ranking, required, "B/N 순위")
-    prepared = ranking.loc[ranking["순위"].le(rank_limit), required].copy()
+    extra = [column for column in _passthrough(ranking) if column not in required]
+    prepared = ranking.loc[ranking["순위"].le(rank_limit), [*required, *extra]].copy()
 
     wafer_required = ["생산계획년월", "Wafer 부하량"]
     wafer_missing = [column for column in wafer_required if column not in monthly_wafer.columns]
@@ -376,6 +409,8 @@ def build_monthly_bottleneck_details_from_ranking(
         validate="many_to_one",
     )
     result["Wafer Capa"] = result["Wafer 부하량"] * result["확보율"]
+    if "기준 확보율" in result.columns:
+        result["기준 Wafer Capa"] = result["Wafer 부하량"] * result["기준 확보율"]
     result["년월"] = result["생산계획년월"].map(_month_label)
     return result.reset_index(drop=True)
 

@@ -48,7 +48,7 @@ def test_list_management_acts_on_the_checked_scenario(
     assert not app.exception
     assert "순서 저장" in {button.label for button in app.button}
     # 고른 것이 없으면 작업 버튼이 없다.
-    assert "시나리오 삭제" not in {button.label for button in app.button}
+    assert "시나리오 보관" not in {button.label for button in app.button}
 
     # data_editor 위젯 상태는 편집한 셀만 담는다. 체크 한 번을 그 모양 그대로 넣는다.
     app = AppTest.from_string(script, default_timeout=120)
@@ -61,15 +61,13 @@ def test_list_management_acts_on_the_checked_scenario(
 
     assert not app.exception
     labels = {button.label for button in app.button}
-    assert {"시나리오 불러오기", "시나리오명 수정", "공식버전 지정", "시나리오 삭제"} <= labels
+    assert {"시나리오 불러오기", "시나리오명 수정", "공식버전 지정", "시나리오 보관"} <= labels
 
-    app.session_state["scenario_list_action"] = "delete"
+    app.session_state["scenario_list_action"] = "archive"
     app.run()
 
     assert not app.exception
-    assert "확인을 위해 시나리오명을 그대로 입력하세요" in {
-        widget.label for widget in app.text_input
-    }
-    # 이름을 적기 전에는 파괴적인 버튼을 누를 수 없다.
-    execute = next(button for button in app.button if button.label == "삭제 실행")
+    # 보관은 되돌릴 수 있으므로 확인이 체크박스 한 번이다. 영구 삭제만 이름을 받는다.
+    assert "보관합니다" in "".join(widget.label for widget in app.checkbox)
+    execute = next(button for button in app.button if button.label == "보관 실행")
     assert execute.disabled

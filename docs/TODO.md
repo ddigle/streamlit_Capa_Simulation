@@ -154,7 +154,11 @@
   활성화를 테스트했다.
 - [결정] 저장된 시뮬레이션 실행은 부하량·대당 Capa·소요대수·확보율·B/N과 계산 진단의 상세 결과, 입력·결과 해시 및 계산 버전을 보관하고 Plotly Figure 자체는 저장하지 않는다.
   `result_data.simulation_run` 스키마 골격만 있고 저장 코드는 미구현이다(AGENTS 11장).
-- [폐기] 시나리오를 물리 삭제하지 않고 활성·보관 상태로 관리한다. 보관은 목록에서 감출 뿐
+- [x] 시나리오를 활성·보관 상태로 관리한다(2026-09-13 복원). 한 번 폐기했다가 되살린
+  항목이라 경위를 남긴다 — 폐기 사유는 "보관이 파일을 줄이지 못한다" 였는데, **그 진단은
+  맞지만 보관의 목적이 용량이 아니다.** 보관이 사는 것은 실수로 지운 시나리오를 되돌릴
+  여지이고, 용량 회수는 영구 삭제 + `scripts/compact_duckdb.py` 재구축이 맡는다. 둘 다
+  남긴다. 아래는 폐기 당시의 기록이다 — 보관은 목록에서 감출 뿐
   파일을 줄이지도 되돌릴 일도 없어, 불필요하다고 판단한 시나리오를 바로 지우는 편이 맞다.
 - [x] 시나리오 삭제는 물리 삭제다(마이그레이션 0017). 지울 표는 `information_schema` 에서
   소유 컬럼으로 찾아 한 트랜잭션에서 지우고, 최신 공식 시나리오만 막는다. 운영 DuckDB
@@ -182,8 +186,8 @@
   `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO`에는 Area·`STEP_SEQ`·`MCP_SEQ` 경로 키를
   추가하고 변환·DuckDB 마이그레이션·Repository·편집 UI·대당 Capa/소요대수 정확 일치
   조인과 테스트를 반영했다. 첫 행 유지 방식으로 저장한 기존 검증 시나리오는 호환하지 않고
-  제거 후 재등록한다. `MPGA TEST`의 소수 `모듈수` 규칙과 `RQ_PKG_PLAN`의 `Pack Code`별
-  생산수량 충돌 집계·선택 규칙은 계속 확정해야 한다.
+  제거 후 재등록한다. `RQ_PKG_PLAN`의 `Pack Code`별 생산수량은 2026-09-12 업무 키 승격으로
+  행 분리 처리했고, `MPGA TEST`의 소수 `모듈수` 규칙만 계속 확정해야 한다.
 - [x] 외부 개발 환경에서는 사내 DB 조회 결과를 직접 받을 수 없으므로 `Core_Data.csv`를 읽어 만든 pandas DataFrame을 원천 어댑터로 사용한다. CSV 읽기까지만 임시 경계로 격리하고, 이후 스키마 정규화·검증·DuckDB 적재·`RQ_*` 변환은 사내 DB DataFrame과 동일한 공통 파이프라인을 사용한다.
 - [x] 원천 DB의 등록시각 `source_registered_at`과 Streamlit 프로젝트의 적재시각 `imported_at`은 별도 계보 정보로 저장하기로 확정했다.
 - [x] 동일한 시뮬레이션 코드의 원천 데이터는 변경되지 않고 조회 시 전체 약 3만 행을 반환한다. 동일 코드의 내용이 다른 경우 등록을 거부하며, 사용자 편집은 기존 raw를 유지한 리비전 1·2·3으로 저장한다.
@@ -996,12 +1000,33 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
 - [x] `src/capa_simulation/py.typed` 를 추가했다. 이게 없어서 `tests`·`scripts` 에 mypy 를
   돌리면 실제 오류 대신 "missing library stubs or py.typed marker" 만 42건 나왔다. 이제
   진짜 오류가 보인다.
-- [ ] `pyproject.toml` 의 mypy `files` 에 `tests`·`scripts` 를 넣는다. 지금 넣으면
-  **44건이 걸린다**(실측, `--explicit-package-bases` 기준): arg-type 17 · operator 10 ·
-  no-untyped-def 5 · attr-defined 3 · typeddict-item 2 · override 2 · list-item 2 ·
-  index 2 · func-returns-value 1. 대부분 테스트 코드의 pandas 타입 마찰이지만
-  `test_page_bootstrap.py:15` 의 `ActiveScenario` 필수 키 누락처럼 실제 결손도 섞여 있다.
-  `tests/` 에 `conftest.py` 나 `__init__.py` 가 없어 모듈 경로 중복 경고도 함께 나온다.
+- [ ] `pyproject.toml` 의 mypy `files` 에 `tests`·`scripts` 를 넣는다. 2026-09-13 실측으로
+  `--explicit-package-bases tests scripts` 는 **188건 / 37파일** 이다(checked 114 source
+  files, mypy 1.20.2 · pandas 2.3.3 + pandas-stubs · streamlit 1.63.0 · plotly 6.9.0).
+  코드별로 attr-defined 39 · typeddict-item 38 · arg-type 37 · index 17 · no-untyped-def 16 ·
+  operator 12 · import-not-found 11 · 나머지 18(no-untyped-call 5 · union-attr 3 ·
+  no-any-return 3 · override 2 · list-item 2 · func-returns-value 1 · type-var 1 · misc 1).
+- [ ] 1단계는 `[tool.mypy]` 에 `mypy_path = "tests, scripts"` 한 줄이다. 코드를 한 줄도
+  고치지 않고 **188 → 176** 으로 준다(실측). `import-not-found` 11건은 전부 검색경로
+  문제다 — 10건은 테스트가 다른 테스트 모듈을 bare 이름으로 부르는 것이고(pytest 의
+  prepend 모드가 `tests/` 를 `sys.path[0]` 에 넣어 주는 데 기댄다), 1건은
+  `tests/test_deploy_package.py` 가 `sys.path` 에 끼워 넣는 `scripts/` 다. 이 한 줄은 기본
+  `mypy` 실행(139 files)에 영향이 없다. 상대경로는 cwd 기준이라 저장소 루트에서 돌려야 한다.
+- [ ] `tests/__init__.py` 는 넣지 않는다. pytest 는 `__init__.py` 가 없는 첫 상위를
+  pkg_root 로 잡아 `sys.path[0]` 에 넣는다. `__init__.py` 를 넣으면 pkg_root 가 저장소
+  루트로 올라가 위 10건의 import 가 전부 `ModuleNotFoundError` 로 죽는다.
+- [ ] 남은 176건 중 **스텁·라이브러리 마찰이 77건(41%)** 이라 `cast` 만 늘어난다 — streamlit
+  `ColumnConfig` TypedDict 합집합 42 · `df.loc[r, c]` 의 pandas 스칼라 합집합 23 ·
+  `f(**dict)` 언팩 12. 나머지 99건이 고칠 값어치가 있고, 그중 74건이 여섯 줄에 몰려 있다.
+- [ ] 런타임·계약이 걸린 실제 결손: `tests/test_page_bootstrap.py` 가 `display_order` 에
+  `pd.DataFrame()` 를 넘기는데 필드 타입은 `PreparedDisplayOrder | None` 이다. 같은 파일과
+  `tests/test_scenario_state.py` 의 `ActiveScenario` 리터럴에 `content_token` 이 없어
+  **캐시 키 불변조건을 안 지키는 모양을 테스트가 굳히고 있다.**
+  `scripts/compact_duckdb.py` 의 `sys.exit(main())` 은 `main() -> None` 이라 항상 0 이다.
+- [ ] `files` 를 넓히는 시점은 결정 대기다. (a) 176건을 0으로 만든 뒤 넓히거나,
+  (b) 지금 넓히면서 `[[tool.mypy.overrides]] module = ["tests.*"]` 로 스텁 마찰 77건을
+  완화하고 진짜 결손 99건만 걸리게 한다. (b)는 즉시 켜지지만 테스트 코드의 strict 수준이
+  영구히 낮아진다.
 
 ### 예정된 후속
 
@@ -1258,8 +1283,9 @@ WebIDE 로 이관하면서 DuckDB 파일을 WebIDE 밖에 두기로 했다. 저�
   결정의 전제), WebIDE 안에서 `aws` 가 PATH 에 있는지, 프로필명이 어떻게 바뀌는지.
 - [x] **사내 `pyproject.toml` 변경 크로스체크.** 개발 도구는 `[dependency-groups]` 의 `dev`
   그룹에 있고 `company` extra 는 두지 않는다. 설치 명령은 `README.md` 「초기 설정」이 정본이다.
-  `uv.lock` 은 이 저장소에 없다 — uv 가 개발 PC 에 없어 만들지 못했고, 사내에서 `uv lock` 으로
-  만들어 커밋할지는 결정 대기다. 판단 근거는 아래에 남긴다. 원문은 `HANDOFF.md`
+  `uv.lock` 은 개발 PC 에서 `uv lock` 으로 만들어 저장소에 커밋했다 — 사외 기준 잠금이라
+  `bigdataquery` 는 들어 있지 않고, 배포 세트에서는 `pyproject.toml` 과 짝으로 뺀다.
+  판단 근거는 아래에 남긴다. 원문은 `HANDOFF.md`
   §8-3 이다. 사내에서 `company = ["bigdataquery"]` extra 를 추가하고 dev 의존성을
   `[dependency-groups]` 로 옮겼다. **`[dependency-groups]` 이동은 안전하다** — 배포
   메타데이터에 들어가지 않아 오히려 정확하다. 단 그룹 이름이 `dev` 여야 `uv sync` 가 자동
@@ -1269,10 +1295,10 @@ WebIDE 로 이관하면서 DuckDB 파일을 WebIDE 밖에 두기로 했다. 저�
   없으면 `uv lock` 자체가 실패한다. "락에서 빼는" 방법이 아니다. **권장은** pyproject 에서
   빼고 `uv sync` 뒤에 `uv pip install bigdataquery` 로 따로 넣는 것이다(이후엔
   `uv sync --inexact`). 코드가 이미 부재를 전제로 짜여 있는 것이 근거다.
-  **배포 ZIP 이 `pyproject.toml` 을 덮어쓰므로** 사내에서만 고쳐 두면 다음 배포에 조용히
-  원복된다 — 양쪽을 같게 유지한다. 부수 작업으로
-  `io/company_bigdataquery_adapter.py` 의 안내 문구가 아직 "사내 requirements를
-  적용하세요" 라 실제 명령으로 고쳐야 한다.
+  **배포 ZIP 은 `pyproject.toml` 을 덮지 않는다** — `scripts/build_deploy_package.py` 의
+  `EXCLUDED_FILES` 가 `uv.lock` 과 짝으로 뺀다. 그래도 양쪽 선언은 같게 유지한다.
+  `io/company_bigdataquery_adapter.py` 의 안내 문구는 실제 명령
+  (`uv pip install bigdataquery`)으로 고쳤다.
 - [ ] **`mode` 가드 도입 여부 (사용자 판단 대기).** 원문은 `HANDOFF.md` §8-4 다.
   `config/object_storage.json` 주석은 `mode` 를 `local` 로 커밋해야 개발 PC 가 사내
   스토리지를 건드리지 않는다고 경고하지만, 코드에서 `mode` 는 `doctor`·`status` 출력에만
@@ -1320,7 +1346,8 @@ CSV 출구가 있는 표는 화면 프레임과 CSV 프레임을 나눈다. `Sta
 
 - [ ] 관리자 권한 게이트. 페이지 이름을 `Admin Area` 로 잡은 이유이며 아직 인증·권한
       계층이 없어 지금은 사내 배포본에 그대로 노출한다.
-- [ ] 정렬순서 관리도 이 페이지로 옮길지 결정. 지금은 `시나리오 관리` 탭에 있다.
+- [x] 정렬순서 관리를 이 페이지로 옮겼다. `Admin Area` 의 `표시순서 관리` 탭이고,
+      `시나리오 관리` 페이지에는 `시나리오 관리`·`BigDataQuery 등록` 두 탭만 남았다.
 - [x] `st.dataframe` 로만 그리는 조회 표에도 표시명을 적용했다. 제외 기준정보 표 세 개
       (`공정별 Capa`·`공정별 확보율`), STEP 구성 요약과 복제·삭제 대상 선택 라벨, 설비대수
       표시 표와 그 공정 필터, 예외 처리 공정 안내, 누락 공정·주차 확인, Dynamic Capa 의
@@ -1387,22 +1414,60 @@ Space 현황의 층 배치 캔버스가 층마다 다르다. `equipment_ops.floo
 - [ ] 층 캔버스를 줄이면 그 층 이탈 호기 때문에 호기 마스터 저장이 전부 막힌다. 지금은
       확인 체크박스로 알리고 통과시킨다. 층 단위 검증으로 좁힐지 결정한다.
 
+## 3-13. 2026-09-14 실행 Capa 반영
+
+기준정보 밖에서 생긴 변수를 확보율에 즉시 얹는 기능. 리비전을 새로 저장하지 않는다.
+
+- [x] 공용 프로필 `app_meta.global_execution_capacity`(헤더) + `_row`(년월·공정별 조정),
+      마이그레이션 `0021`. 소유 컬럼을 두지 않아 시나리오 삭제·보관이 건드리지 않는다.
+- [x] `services/execution_capacity.py` — **퍼센트포인트 차감**(105% + (-10) = 95%).
+      비율 곱셈(94.5%)이 아니다. 조정 0건이어도 `기준 확보율`·`확보율 증감`·`실행 비고`
+      세 컬럼을 항상 만든다.
+- [x] 적용 순서는 **실행 → 선행**이다. 실행은 원데이터에 얹고 선행은 그 위에 곱한다.
+      `apply_advance_to_securement` 가 `기준 확보율` 도 같은 변동률로 함께 곱한다 — 한쪽만
+      곱하면 증감 영역이 선행 배율만큼 부풀어 조정량이 거짓으로 보인다.
+- [x] B/N 순위 재배치. 정렬 로직은 그대로 두고 입력 확보율만 바꾼다. LOB 의 B/N 확보율도
+      재배치 뒤 최종 B/N 공정 기준이다.
+- [x] 증감 영역·테두리. 감소는 `DELTA_AREA_DECREASE`, 증가는 `DELTA_AREA_INCREASE`(둘 다
+      테두리 없음). 테두리는 감소면 줄어든 결과값에만, 증가면 연두 포함 전체에 두른다.
+      값 막대 길이를 `min(기준, 조정)` 으로 두고 증가 행만 제 테두리를 끄는 방식이다.
+- [x] hover 에 「실행 반영 ±n%p · 비고」. 비고는 자유 텍스트라 `html.escape` 를 통과한다.
+- [x] Preference 입력 표. 공정은 **값은 원본, 보이는 글자만 표시명**이다. 미매칭·클램프
+      경고를 함께 띄운다.
+
+**남은 것과 알아 둘 것**
+
+- 막대 길이는 80~150% 밴드에서 잘린다. 그 밖에서의 조정(예: 200% → 170%)은 막대에
+  나타나지 않고 hover 로만 알 수 있다. 막대 길이 = 확보율이라는 계약을 지키려는 것이다.
+- `확보율 = 가용대수 ÷ 소요대수` 항등식이 깨진다. 가용·소요대수는 기준정보 값 그대로다.
+  어느 항으로 되돌릴지는 조정 사유(비가동·UPEH·재공)에 달려 코드가 정할 수 없다.
+- HOME 전용이다. 공정별 확보율·Static Capa 는 기준정보 대비 원본 확보율을 본다.
+- lime-400(`#A3E635`)은 쓰지 않았다. 휘도가 `STATUS_SECURE` 와 1.02:1 이라 확보 막대 옆에서
+  경계가 사라진다. lime-500(`#84CC16`)은 1.34:1 이다.
+
 ## 4. 현재 권장 진행 순서
 
-2026-09-05 에 TODO 전 항목을 코드와 대조해 다시 세웠다. 앞의 순서는 1순위가 외부 연결
-대기였는데, 지금 착수할 수 없는 것을 맨 앞에 두면 순서로 쓸 수 없다.
+2026-09-13 에 TODO 전 항목을 코드와 다시 대조해 세웠다. 지금 착수할 수 없는 것을 맨 앞에
+두면 순서로 쓸 수 없으므로, 코드로 바로 손댈 수 있는 것을 먼저 적는다.
 
 **지금 코드로 할 수 있는 것**
 
-1. `Pack Code` 업무 키 승격 (3-5 절). 사내 실데이터 전환 전에 넣어야 안전망이 된다.
-2. 기존 결과 대조 — `raw_data.core_data` 의 `WF수(매)`·`EQ(억Gb)` 를 신규 계산과 비교한다.
+1. 기존 결과 대조 — `raw_data.core_data` 의 `WF수(매)`·`EQ(억Gb)` 를 신규 계산과 비교한다.
    **마지막 관문은 실데이터로 돌린 대조다.** 합성 샘플은 기존 결과 컬럼을 `생산수량` 과
    같은 계수로 스케일하므로 선형 산식은 자동으로 일치한다 — 지금의 0.0000% 는 산식이
    옳다는 근거가 아니라 샘플의 내부 일관성이다. `Plan_Chip(K개)`·`GOOD_DIE` 는 단위·정의가
    같다는 근거를 확인한 뒤 추가한다. `소요대수`·`PCB수` 는 샘플이 채우지 않을 뿐이므로
    실데이터에서 다시 본다.
-3. 누락 기준정보·입력 검증 화면을 마무리한다(2장 두 항목이 사실상 같은 요구다).
-4. 결과 Excel 다운로드와 계산 실행 이력.
+2. 누락 기준정보·입력 검증 화면을 마무리한다(2장 두 항목이 사실상 같은 요구다).
+3. 결과 Excel 다운로드와 계산 실행 이력.
+
+**`Pack Code` 업무 키 승격(3-5 절)의 후속** — 승격 자체는 2026-09-12 에 끝났고 둘이 남았다.
+
+- 0013 이전에 저장한 옛 리비전은 `Pack Code` 가 NULL 이라 부하량 페이지에서 멈춘다.
+  백필 마이그레이션을 만들지 않았으므로 사내에서 실데이터를 **다시 등록**해야 Pack Code
+  별 행이 산다.
+- 승격 전에 내려받은 PKG PLAN CSV 양식은 붙여넣으면 `누락 ['Pack Code']` 로 거부된다.
+  양식을 다시 내려받아야 한다고 사용자에게 안내한다.
 
 **사용자·외부 대기**
 

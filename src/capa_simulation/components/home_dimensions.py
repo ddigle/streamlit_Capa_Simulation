@@ -114,16 +114,36 @@ def lower_delta_row_height(value_font_size: int) -> int:
     return max(math.ceil(needed), table_row_height(value_font_size))
 
 
-DASHBOARD_SCROLLBAR_HEIGHT_PX = 15
-
 # 왼쪽 구분·분류 컬럼의 폭. 구획 제목("Capa LOB 현황")과 가장 긴 행 이름
 # ("Density (억Gb)")이 함께 들어가는 값이다. 비율로 두면 창 폭과 조회 월 수에 따라
 # 149px~618px 사이를 오가며 제목이 잘리거나 빈 여백이 생겼다.
 DASHBOARD_LABEL_COLUMN_WIDTH_PX = 260
 
+# 생산계획 LOB 의 B/N 막대 폭과 그 근거가 되는 `bargap`.
+# Plotly 는 폭을 안 주면 `1 - bargap`(= 0.84) 으로 그린다. 그보다 좁게 두려면 값을 명시해야
+# 하고, 증감 영역 trace 도 **같은 값**을 써야 한다 — overlay 모드에서는 trace 마다 제 x
+# 위치만 보고 폭을 정하므로, 조정된 달이 흩어져 있으면 자동 폭이 몇 배로 튄다.
+LOB_BARGAP = 0.16
+LOB_BAR_WIDTH = (1 - LOB_BARGAP) * 0.75
+
+# Top5 세로 막대의 폭과 테두리. overlay 모드에서 증감 trace 가 같은 폭을 **명시**해야
+# 조정된 달이 흩어져 있을 때 폭이 제각각으로 튀지 않는다. 두 곳에 따로 적으면 조용히 갈린다.
+TOP5_BAR_WIDTH = 0.15
+TOP5_BAR_OUTLINE_WIDTH_PX = 0.8
+
+# LOB 세로 막대의 테두리 굵기. 상세 B/N 의 가로막대(BAR_OUTLINE_WIDTH_PX)보다 조금 굵다 —
+# 막대가 크고 면색이 진해 같은 굵기면 테두리가 묻힌다.
+LOB_BAR_OUTLINE_WIDTH_PX = 1.2
+
 DASHBOARD_SECTION_GAP_PX = 16
 
 DASHBOARD_TITLE_HEIGHT_PX = 44
+
+# 테두리 상자가 `Capa LOB 현황` 제목 줄과 두 칸을 함께 감쌀 때 그 사이 간격.
+# 라벨 캔버스는 월 칸 스크롤바 높이만큼 `padding-top` 으로 이미 내려와 있다. 제목 아래
+# 간격이 다른 두 구획과 같은 `DASHBOARD_SECTION_GAP_PX` 로 보이려면 그만큼 뺀 값만
+# 상자 gap 으로 준다. 손으로 적지 않고 두 값의 차로 둬야 한쪽을 고칠 때 따라 움직인다.
+DASHBOARD_PANEL_TITLE_GAP_PX = DASHBOARD_SECTION_GAP_PX - tokens.SCROLLBAR_HEIGHT_PX
 
 # 상세 B/N 공정 시트. 한 칸에는 가로막대 한 줄과 그 위의 공정명만 들어가고, 순위 20행이
 # 한 화면에 담기는 행 높이다. 세 값은 Figure 높이·표 높이·행 경계 계산이 함께 보므로

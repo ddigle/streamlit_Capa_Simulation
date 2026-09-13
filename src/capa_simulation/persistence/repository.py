@@ -41,11 +41,16 @@ from capa_simulation.persistence.display_order_store import (
     load_global_display_order_rules,
     prepare_global_display_order_rules,
 )
+from capa_simulation.persistence.execution_capacity_store import (
+    insert_global_execution_capacity,
+    load_global_execution_capacity_rows,
+)
 from capa_simulation.persistence.migration_runner import apply_migrations
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
     GlobalComparisonScenario,
     GlobalDisplayOrder,
+    GlobalExecutionCapacity,
     GlobalPastData,
     GlobalProcessRename,
     OfficialReleaseSummary,
@@ -84,6 +89,10 @@ from capa_simulation.persistence.summaries import (
 from capa_simulation.services.advance_load import (
     empty_advance_load,
     prepare_advance_load,
+)
+from capa_simulation.services.execution_capacity import (
+    empty_execution_capacity,
+    prepare_execution_capacity,
 )
 from capa_simulation.services.past_data import (
     empty_past_table,
@@ -132,9 +141,15 @@ REVISION_TABLES: dict[str, str] = {
     )
 }
 
-# 시나리오가 소유한 행이 사는 스키마. 공용 프로필(`app_meta.global_*`)은 `profile_id`
-# 하나뿐이라 여기서 걸리지 않는다.
+# 시나리오가 소유한 행이 사는 스키마.
 _OWNED_SCHEMAS = ("app_meta", "raw_data", "ref_data", "rev_data", "result_data")
+# 공용 프로필은 시나리오에 종속되지 않는다 — 단일 행이고 `version` 으로 캐시를 가른다.
+# 그런데 `global_comparison_scenario` 는 비교 대상을 가리키느라 `scenario_id` 컬럼을
+# 가져서(마이그레이션 0020) 아래 자동 발견에 걸린다. 그대로 두면 시나리오 삭제가 그 단일
+# 행을 **통째로 지워** 프로필 자체가 사라지고 `version` 도 올라가지 않아, 다른 세션이
+# 낡은 비교 대상을 계속 쓴다. 소유가 아니라 참조이므로 자동 발견에서 빼고 삭제 경로가
+# 보관과 같은 방식으로 명시적으로 비운다.
+_GLOBAL_PROFILE_TABLES = frozenset({"global_comparison_scenario"})
 # 한 표가 두 소유 컬럼을 함께 가지면 넓은 쪽으로 지운다. `app_meta.scenario_revision` 은
 # `scenario_id` 로 한 번에 지우는 편이 리비전 목록을 미리 붙잡아 둘 필요를 없앤다.
 _OWNER_COLUMNS = ("scenario_id", "dataset_id", "revision_id")
@@ -156,11 +171,34 @@ def _owned_tables(connection: duckdb.DuckDBPyConnection) -> list[tuple[str, str,
     for schema, table, columns in rows:
         if (schema, table) == ("app_meta", "scenario"):
             continue
+        if schema == "app_meta" and table in _GLOBAL_PROFILE_TABLES:
+            continue
         present = set(columns)
         owner = next((column for column in _OWNER_COLUMNS if column in present), None)
         if owner is not None:
             owned.append((str(schema), str(table), owner))
     return owned
+
+
+def _clear_global_comparison_scenario(
+    connection: duckdb.DuckDBPyConnection,
+    scenario_id: str,
+) -> None:
+    """공용 GAP 비교 대상이 이 시나리오를 가리키고 있으면 비운다.
+
+    `version` 을 함께 올려야 한다. 이 프로필의 캐시 키가 `version` 이므로, 올리지 않으면
+    다른 세션이 사라진 시나리오를 비교 대상으로 계속 쥐고 있는다. `revision_id` 도 같이
+    비운다 — 표의 `CHECK (revision_id IS NULL OR scenario_id IS NOT NULL)` 때문에 한쪽만
+    비우면 제약에 걸린다.
+    """
+    connection.execute(
+        """
+        UPDATE app_meta.global_comparison_scenario
+        SET scenario_id = NULL, revision_id = NULL, version = version + 1
+        WHERE scenario_id = ?
+        """,
+        [scenario_id],
+    )
 
 
 _WRITE_LOCK = threading.RLock()
@@ -322,6 +360,65 @@ class DuckDBScenarioRepository:
                 source=source_label,
             )
         return self.load_global_process_rename()
+
+    def load_global_execution_capacity(self) -> GlobalExecutionCapacity:
+        """Load the scenario-independent execution-capacity profile.
+
+        선행 물량 프로필과 같은 이유로 예외를 내지 않는다. 한 번도 저장하지 않은 상태가
+        정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
+        """
+        with self._connect() as connection:
+            metadata = connection.execute(
+                """
+                SELECT version, source, updated_at
+                FROM app_meta.global_execution_capacity
+                WHERE profile_id = 1
+                """
+            ).fetchone()
+            if metadata is None:
+                return GlobalExecutionCapacity(
+                    version=0,
+                    source="",
+                    updated_at=None,
+                    rows=empty_execution_capacity(),
+                )
+            rows = load_global_execution_capacity_rows(connection)
+        return GlobalExecutionCapacity(
+            version=int(metadata[0]),
+            source=str(metadata[1]),
+            updated_at=metadata[2],
+            rows=prepare_execution_capacity(rows),
+        )
+
+    def replace_global_execution_capacity(
+        self,
+        rows: pd.DataFrame,
+        *,
+        source: str,
+    ) -> GlobalExecutionCapacity:
+        """Atomically replace the shared execution-capacity profile.
+
+        다른 공용 프로필과 같은 결로 현재본만 남기고 version 을 올린다. **행 0건(전체
+        해제)도 정상 저장이며 version 은 올라간다** — 캐시 키가 version 을 보므로 해제도
+        올라가야 무효화된다.
+        """
+        prepared = prepare_execution_capacity(rows)
+        source_label = required_text(source, "실행 Capa 반영 출처")
+        with self._write_transaction() as connection:
+            current = connection.execute(
+                "SELECT version FROM app_meta.global_execution_capacity WHERE profile_id = 1"
+            ).fetchone()
+            version = 1 if current is None else int(current[0]) + 1
+            connection.execute(
+                "DELETE FROM app_meta.global_execution_capacity_row WHERE profile_id = 1"
+            )
+            connection.execute(
+                "DELETE FROM app_meta.global_execution_capacity WHERE profile_id = 1"
+            )
+            insert_global_execution_capacity(
+                connection, prepared, version=version, source=source_label
+            )
+        return self.load_global_execution_capacity()
 
     def load_global_comparison_scenario(self) -> GlobalComparisonScenario:
         """Load the scenario-independent GAP comparison target.
@@ -716,17 +813,20 @@ class DuckDBScenarioRepository:
             row = connection.execute(
                 """
                 SELECT s.active_revision_id,
-                       COALESCE(MAX(r.revision_no), 0) AS latest_revision_no
+                       COALESCE(MAX(r.revision_no), 0) AS latest_revision_no,
+                       s.status
                 FROM app_meta.scenario s
                 LEFT JOIN app_meta.scenario_revision r ON r.scenario_id = s.scenario_id
                 WHERE s.scenario_id = ?
-                GROUP BY s.active_revision_id
+                GROUP BY s.active_revision_id, s.status
                 """,
                 [scenario_id],
             ).fetchone()
             if row is None:
                 raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
-            active_revision_id, latest_revision_no = row
+            active_revision_id, latest_revision_no, status = row
+            if str(status) != "ACTIVE":
+                raise ValueError("보관된 시나리오에는 새 리비전을 저장할 수 없습니다.")
             selected_parent_id = parent_revision_id or (
                 str(active_revision_id) if active_revision_id else None
             )
@@ -768,16 +868,21 @@ class DuckDBScenarioRepository:
 
         return self.load_revision(revision_id)
 
-    def list_scenarios(self) -> list[ScenarioSummary]:
+    def list_scenarios(self, *, include_archived: bool = False) -> list[ScenarioSummary]:
         """누적 시나리오 목록. 사용자가 지정한 순서가 있으면 그 순서를 먼저 따른다.
 
         `list_order` 는 「목록 관리」에서 저장할 때만 채워진다. 한 번도 순서를 저장하지
         않았거나 그 뒤에 새로 만든 시나리오는 NULL 이므로 예전과 같이 최근 수정 순으로
         뒤에 붙는다.
+
+        보관본은 기본으로 빠진다. 같은 원천 코드의 중복 등록을 막는 쪽처럼 **숨은 것까지
+        봐야 하는 호출자만** `include_archived=True` 를 쓴다 — 그 판정이 보관본을 못 보면
+        같은 코드로 시나리오가 하나 더 생긴다.
         """
+        where_clause = "" if include_archived else "WHERE s.status = 'ACTIVE'"
         with self._connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT s.scenario_id, d.dataset_id, s.scenario_name,
                        s.source_simulation_code, s.source_simulation_name,
                        d.source_type, s.status, s.active_revision_id,
@@ -785,10 +890,69 @@ class DuckDBScenarioRepository:
                 FROM app_meta.scenario s
                 JOIN app_meta.dataset d ON d.scenario_id = s.scenario_id
                 JOIN app_meta.scenario_revision r ON r.revision_id = s.active_revision_id
+                {where_clause}
                 ORDER BY s.list_order NULLS LAST, s.updated_at DESC, s.scenario_name
                 """
             ).fetchall()
         return [scenario_summary(row) for row in rows]
+
+    def archive_scenario(self, scenario_id: str) -> None:
+        """시나리오를 목록에서 숨긴다. 행은 그대로 남아 되돌릴 수 있다.
+
+        **파일 크기는 줄지 않는다** — 보관본의 기준정보·리비전·원천 행이 한 바이트도
+        사라지지 않으므로 오히려 물리 삭제보다 크게 유지된다. 보관이 사는 것은 용량이
+        아니라 실수를 되돌릴 여지다. 파일을 실제로 줄이려면 `delete_scenario` 로 지운 뒤
+        `scripts/compact_duckdb.py` 로 재구축한다.
+        """
+        with self._write_transaction() as connection:
+            latest_official = connection.execute(
+                """
+                SELECT scenario_id
+                FROM app_meta.official_release
+                ORDER BY release_no DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            if latest_official is not None and str(latest_official[0]) == scenario_id:
+                raise ValueError(
+                    "현재 최신 공식버전의 시나리오는 보관할 수 없습니다. "
+                    "다른 공식버전을 먼저 지정하세요."
+                )
+            changed = connection.execute(
+                """
+                UPDATE app_meta.scenario
+                SET status = 'ARCHIVED', updated_at = current_timestamp
+                WHERE scenario_id = ? AND status = 'ACTIVE'
+                RETURNING scenario_id
+                """,
+                [scenario_id],
+            ).fetchone()
+            if changed is None:
+                raise KeyError(f"활성 시나리오를 찾을 수 없습니다: {scenario_id}")
+            connection.execute(
+                "UPDATE app_meta.dataset SET status = 'ARCHIVED' WHERE scenario_id = ?",
+                [scenario_id],
+            )
+            _clear_global_comparison_scenario(connection, scenario_id)
+
+    def restore_scenario(self, scenario_id: str) -> None:
+        """보관을 풀어 목록으로 되돌린다."""
+        with self._write_transaction() as connection:
+            changed = connection.execute(
+                """
+                UPDATE app_meta.scenario
+                SET status = 'ACTIVE', updated_at = current_timestamp
+                WHERE scenario_id = ? AND status = 'ARCHIVED'
+                RETURNING scenario_id
+                """,
+                [scenario_id],
+            ).fetchone()
+            if changed is None:
+                raise KeyError(f"보관된 시나리오를 찾을 수 없습니다: {scenario_id}")
+            connection.execute(
+                "UPDATE app_meta.dataset SET status = 'READY' WHERE scenario_id = ?",
+                [scenario_id],
+            )
 
     def reorder_scenarios(self, scenario_ids: Sequence[str]) -> list[ScenarioSummary]:
         """목록의 누적 순서를 통째로 다시 매긴다.
@@ -800,10 +964,12 @@ class DuckDBScenarioRepository:
         if len(set(ordered)) != len(ordered):
             raise ValueError("목록 순서에 같은 시나리오가 두 번 들어 있습니다.")
         with self._write_transaction() as connection:
+            # 목록이 보관본을 빼고 그리므로 대조 대상도 활성만이다. 전체와 대조하면
+            # 보관본이 하나라도 있는 순간 「순서 저장」이 항상 실패한다.
             stored = {
                 str(row[0])
                 for row in connection.execute(
-                    "SELECT scenario_id FROM app_meta.scenario"
+                    "SELECT scenario_id FROM app_meta.scenario WHERE status = 'ACTIVE'"
                 ).fetchall()
             }
             if set(ordered) != stored:
@@ -866,7 +1032,7 @@ class DuckDBScenarioRepository:
         with self._write_transaction() as connection:
             owner = connection.execute(
                 """
-                SELECT r.revision_id
+                SELECT s.status
                 FROM app_meta.scenario_revision r
                 JOIN app_meta.scenario s ON s.scenario_id = r.scenario_id
                 WHERE r.revision_id = ? AND r.scenario_id = ?
@@ -875,6 +1041,8 @@ class DuckDBScenarioRepository:
             ).fetchone()
             if owner is None:
                 raise ValueError("공식 지정할 리비전이 선택한 시나리오에 속하지 않습니다.")
+            if str(owner[0]) != "ACTIVE":
+                raise ValueError("보관된 시나리오는 공식버전으로 지정할 수 없습니다.")
             release_no_row = connection.execute(
                 "SELECT COALESCE(MAX(release_no), 0) + 1 FROM app_meta.official_release"
             ).fetchone()
@@ -1052,6 +1220,9 @@ class DuckDBScenarioRepository:
                         f"DELETE FROM {qualified} WHERE revision_id IN ({placeholders})",
                         revision_ids,
                     )
+            # 공용 프로필은 소유가 아니라 참조라 위 자동 발견에서 빠져 있다. 가리키고
+            # 있었다면 여기서 비운다.
+            _clear_global_comparison_scenario(connection, scenario_id)
             connection.execute("DELETE FROM app_meta.scenario WHERE scenario_id = ?", [scenario_id])
 
     def count_official_releases(self, scenario_id: str) -> int:

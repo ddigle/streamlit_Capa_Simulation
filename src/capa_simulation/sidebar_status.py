@@ -1,15 +1,26 @@
 # Purpose: 공통 사이드바에 실제 계산에 적용된 생산계획년월 범위를 표시한다.
 
+import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.services.month_columns import month_label
 
-_month_range_placeholder: DeltaGenerator | None = None
+# 자리표시자는 **세션 상태**에 둔다. 모듈 전역에 두면 같은 서버 프로세스의 모든 세션이
+# 하나를 공유해, 두 번째 사용자가 접속하는 순간 첫 사용자의 자리표시자가 교체된다.
+# 그러면 한쪽의 "적용 · 범위" 가 다른 쪽 사이드바에 쓰이거나, 사라진 컨테이너에 써서
+# 아무 데도 나타나지 않는다.
+PLACEHOLDER_STATE_KEY = "sidebar_month_range_placeholder"
 
 
 def register_month_range_placeholder(placeholder: DeltaGenerator) -> None:
-    global _month_range_placeholder
-    _month_range_placeholder = placeholder
+    st.session_state[PLACEHOLDER_STATE_KEY] = placeholder
+
+
+def _placeholder() -> DeltaGenerator | None:
+    registered = st.session_state.get(PLACEHOLDER_STATE_KEY)
+    if isinstance(registered, DeltaGenerator):
+        return registered
+    return None
 
 
 def show_applied_month_range(start_month: int, end_month: int) -> None:
@@ -18,9 +29,10 @@ def show_applied_month_range(start_month: int, end_month: int) -> None:
     사용자가 고른 범위에 데이터가 없으면 `resolve_effective_months` 가 범위를 좁힌다.
     좁혀졌다는 사실을 알리지 않으면 화면 숫자가 왜 다른지 알 수 없다.
     """
-    if _month_range_placeholder is None:
+    placeholder = _placeholder()
+    if placeholder is None:
         return
-    _month_range_placeholder.caption(
+    placeholder.caption(
         f":material/check_circle: 적용 · {month_label(start_month)}–{month_label(end_month)}"
     )
 
@@ -32,9 +44,10 @@ def show_past_months_outside_range(first_past_month: int) -> None:
     과거를 저장해도 조회기간 시작월을 내리지 않으면 그 달이 표에 나타나지 않는데, 화면만
     보면 넣은 값이 사라진 것처럼 보인다. 어디까지 내려야 하는지 함께 적는다.
     """
-    if _month_range_placeholder is None:
+    placeholder = _placeholder()
+    if placeholder is None:
         return
-    _month_range_placeholder.caption(
+    placeholder.caption(
         f":material/info: 과거 구간이 조회기간 밖에 있습니다 · 시작월을 "
         f"{month_label(first_past_month)} 로 내리면 보입니다"
     )
@@ -46,6 +59,7 @@ def show_month_range_unavailable() -> None:
     자리표시자는 rerun 을 넘어 남는다. 실패한 rerun 에서 아무것도 쓰지 않으면 직전에 성공한
     범위가 "적용" 으로 계속 보여 본문 오류와 어긋난다.
     """
-    if _month_range_placeholder is None:
+    placeholder = _placeholder()
+    if placeholder is None:
         return
-    _month_range_placeholder.caption(":material/block: 적용 안 됨 · 선택 범위에 데이터 없음")
+    placeholder.caption(":material/block: 적용 안 됨 · 선택 범위에 데이터 없음")

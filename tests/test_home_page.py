@@ -117,10 +117,12 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     assert app.session_state["spy_scrollbars"] == 1
 
     # 상세표 표시 여부를 고르던 자리는 탭이 가져갔고, 본문 토글은 표시 기준이다.
-    # 「선행」·「GAP」 은 Capa LOB 현황 제목 옆, 「상세」 는 계획 세부수량 제목 옆,
-    # 「EDP 포함」 은 Preference 탭에 있다.
+    # 「선행」·「실행」·「GAP」 은 Capa LOB 현황 제목 옆, 「상세」 는 계획 세부수량 제목
+    # 옆, 「EDP 포함」 은 Preference 탭에 있다. 순서는 계산이 얹히는 순서와 같다 —
+    # 선행(계획 이동) → 실행(기준정보 밖 변수) → GAP(비교 표기).
     assert [widget.label for widget in app.main.toggle] == [
         "선행",
+        "실행",
         "GAP",
         "상세",
         "EDP 포함",
@@ -133,6 +135,7 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
         "붙여넣기 읽기",
         "붙여넣기 읽기",
         "선행 물량 저장",
+        "실행 Capa 저장",
         "판정 기준 적용",
     ]
     # 제목 아래 설명 문구와 계획 세부수량 CSV 는 탭 자리를 내주고 사라졌다. 남은 내려받기는

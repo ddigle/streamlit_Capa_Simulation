@@ -65,8 +65,10 @@ ZIP 은 `06bb8ad` 커밋의 소스와 동일하다. `CLAUDE.md` 는 이 시점�
 - 전체 행의 33.7% 가 rev1 사본과 완전히 동일하고 읽는 코드가 없다. 재구축하면 34.09 → 24.92MB.
 - **새 세션에서 단독으로, DB 백업 후 진행할 것.** 이번 B 항목 중 유일하게 저장 구조를 바꾸고
   DB 파일을 재구축한다.
-- 착수 전 확인: 신규 마이그레이션 번호는 시뮬레이션 DB `0015`, 설비 DB `0006` 이다
-  (결번 2·3 은 이미 태웠다). **기존 SQL 마이그레이션은 체크섬 때문에 절대 수정하지 않는다.**
+- 착수 전 확인: 신규 마이그레이션 번호는 시뮬레이션 DB `0021`, 설비 DB `0008` 이다
+  (시뮬레이션 DB 의 2·3 은 영구 결번이라 재사용하지 않는다). 번호는 계속 늘어나므로 착수
+  시점에 `persistence/migrations/`·`equipment_migrations/` 의 마지막 파일을 다시 본다.
+  **기존 SQL 마이그레이션은 체크섬 때문에 절대 수정하지 않는다.**
 - 채택하면 `scripts/compare_legacy_results.py` 의 대조 기준을 rev1 로 바꿔야 한다.
 
 **B6 — grouped/hierarchical 표 컴포넌트의 남은 복제 통합**
@@ -129,7 +131,7 @@ SELECT equipment_contract_version, COUNT(*) FROM equipment_ops.revision GROUP BY
   섞이면 멈춘다. **이 문서를 커밋하면 배포 ZIP 에도 들어간다.**
 - **`pyproject.toml` 과 `uv.lock` 은 보내지 않는다.** 사내 PC 의 `pyproject.toml` 에는 삼성
   Artifactory 인덱스가 손으로 들어가 있고, 그 선언에서 나온 `uv.lock` 에는 `bigdataquery` 가
-  박혀 있다. 개발 PC 에는 둘 다 없다(사외에서 `uv lock` 이 깨지지 않게 뺐다). **둘은 짝이라
+  박혀 있다. 저장소의 두 파일은 사외 기준이라 사내 인덱스도 `bigdataquery` 도 없다. **둘은 짝이라
   함께 빼야 한다** — 하나만 보내면 선언과 잠금이 어긋나 사내에서 `uv sync` 가 락을 다시
   만들고 그 순간 사내 전용 패키지가 환경에서 빠진다. 대신 **의존성을 바꾸면 ZIP 만으로
   반영되지 않으므로** 바뀐 줄을 따로 알리고 사내에서 `uv lock` 을 다시 돌린다.
@@ -255,10 +257,11 @@ SELECT equipment_contract_version, COUNT(*) FROM equipment_ops.revision GROUP BY
   다음 `uv sync` 가 락에 없는 패키지를 지우므로 이후엔 `uv sync --inexact` 를 쓴다.
   근거는 코드가 이미 부재를 전제로 짜여 있다는 것이다 — `is_bigdataquery_package_available()`
   은 `find_spec` 으로만 보고 `load_bigdataquery_module()` 은 없으면 한국어 안내를 띄운다.
-- **배포 ZIP 이 `pyproject.toml` 을 덮어쓴다.** 사내에서만 고쳐 두면 다음 배포에 조용히
-  원복된다. 양쪽을 같게 유지해야 한다. dev 그룹 이동은 저장소에도 반영하는 편이 맞다.
-- **부수 작업:** `load_bigdataquery_module()` 의 안내가 "사내 requirements를 적용하세요"
-  인데 그 파일을 지웠다. 실제 명령으로 고쳐야 한다.
+- **배포 ZIP 은 `pyproject.toml` 을 덮지 않는다.** `scripts/build_deploy_package.py` 의
+  `EXCLUDED_FILES` 가 `uv.lock` 과 짝으로 뺀다. 그래도 dev 그룹 이동은 저장소에도 반영해
+  양쪽 선언을 같게 유지한다.
+- **부수 작업(완료):** `load_bigdataquery_module()` 의 안내를 실제 명령
+  (`uv pip install bigdataquery`)으로 고쳤다.
 
 ### 8-4. `mode` 가 아무것도 막지 않는다
 

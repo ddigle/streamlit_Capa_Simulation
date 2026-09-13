@@ -18,6 +18,7 @@ from capa_simulation.components.home_preference import (
     COMPARISON_SCENARIO_KEY,
     COMPARISON_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
+    EXECUTION_TOGGLE_KEY,
     PLAN_DETAIL_CUSTOMER_KEY,
     render_home_preference,
     render_lob_title_row,
@@ -26,6 +27,7 @@ from capa_simulation.components.home_rendering import (
     HOME_FIGURE_SCHEMA_VERSION,
     HOME_LOADING_STAGES,
     HomeFigureCacheKey,
+    home_dashboard_panel,
     render_home_figures,
     render_home_performance,
     store_home_figures,
@@ -49,6 +51,7 @@ from capa_simulation.performance import PerformanceTrace
 from capa_simulation.persistence.cache import (
     get_scenario_repository,
     load_global_advance_load,
+    load_global_execution_capacity,
     load_global_past_data,
     load_scenario_plan,
 )
@@ -81,6 +84,12 @@ from capa_simulation.services.dashboard import (
     build_monthly_bottlenecks_from_ranking,
     build_production_lob_summary,
     build_year_totals,
+)
+from capa_simulation.services.execution_capacity import (
+    apply_execution_adjustment,
+    clamped_execution_adjustments,
+    empty_execution_capacity,
+    unmatched_execution_adjustments,
 )
 from capa_simulation.services.month_columns import build_month_axis, month_label
 from capa_simulation.services.month_filter import available_month_range
@@ -138,6 +147,7 @@ home_trace = PerformanceTrace()
 # 쓰는 자리를 그대로 읽는다 — 사용자가 토글을 누르면 다음 실행의 이 줄에 새 값이 들어온다.
 include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, False))
 show_advance = bool(st.session_state.get(ADVANCE_TOGGLE_KEY, False))
+show_execution = bool(st.session_state.get(EXECUTION_TOGGLE_KEY, False))
 plan_detail_customer = bool(st.session_state.get(PLAN_DETAIL_CUSTOMER_KEY, False))
 comparison_scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
 comparison_revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
@@ -284,6 +294,15 @@ try:
         plan_detail_dimensions,
         reference_tables["RQ_DISPLAY_ORDER"],
     )
+    # 실행 Capa 반영은 **원데이터 기준**이다. 기준정보 밖에서 생긴 변수(비가동·UPEH·
+    # 재공)를 원 확보율에 퍼센트포인트로 얹은 뒤, 선행은 그렇게 조정된 값 위에 변동률을
+    # 곱한다. 조정이 없어도 부른다 — `기준 확보율`·`확보율 증감`·`실행 비고` 세 컬럼이
+    # 항상 있어야 뒤의 순위·Figure 가 컬럼 유무로 갈라지지 않는다.
+    execution_profile = load_global_execution_capacity(str(DUCKDB_PATH.resolve()))
+    execution_rows = execution_profile.rows if show_execution else empty_execution_capacity()
+    unmatched_execution = unmatched_execution_adjustments(securement_rate, execution_rows)
+    securement_rate = apply_execution_adjustment(securement_rate, execution_rows)
+    clamped_execution = clamped_execution_adjustments(securement_rate)
     advance_profile = load_global_advance_load(str(DUCKDB_PATH.resolve()))
     baseline_density = monthly_density
     baseline_wafer = monthly_wafer
@@ -496,6 +515,8 @@ figure_cache_key: HomeFigureCacheKey = (
     str(comparison_revision_id or ""),
     show_advance,
     advance_profile.version if show_advance else 0,
+    show_execution,
+    execution_profile.version if show_execution else 0,
     past_profile.version,
 )
 cached_figures = take_home_figures(figure_cache_key)
@@ -524,6 +545,9 @@ if cached_figures is None:
     )
     # 선행 전후를 한 그림에 함께 그리려면 기존값이 있어야 한다. 순위는 선행에 따라 바뀌지
     # 않으므로(월마다 같은 수를 곱한다) B/N 공정은 그대로 두고 확보율만 되돌린다.
+    #
+    # 나누는 것은 `확보율` 이 맞다. 실행 Capa 반영은 선행보다 **앞**에서 끝나므로 여기서
+    # 되돌리는 것은 곱셈 한 겹뿐이다 — 선행 전 값은 「실행까지 반영된 원데이터」다.
     baseline_lob_summary: pd.DataFrame | None = None
     if advance_ratio is not None:
         baseline_bottlenecks = monthly_bottlenecks.copy()
@@ -610,16 +634,19 @@ main_tab, preference_tab, past_tab = stateful_tabs(
     key="home_active_tab",
 )
 with main_tab:
-    render_lob_title_row(
-        unapplied_months=unapplied_advance_months,
-        comparison_ready=bool(comparison_scenario_id and comparison_revision_id),
-    )
-    render_home_figures(
-        cached_figures,
-        month_labels,
-        applied_plan_detail_customer=plan_detail_customer,
-        owner_tab=main_tab,
-    )
+    # 제목 줄과 여섯 Figure 는 한 상자 안이다. 제목 옆 토글은 숨은 탭에서도 그려야 하므로
+    # Figure 를 건너뛰는 `render_home_figures` 안으로 넣지 않고 상자만 여기서 연다.
+    with home_dashboard_panel():
+        render_lob_title_row(
+            unapplied_months=unapplied_advance_months,
+            comparison_ready=bool(comparison_scenario_id and comparison_revision_id),
+        )
+        render_home_figures(
+            cached_figures,
+            month_labels,
+            applied_plan_detail_customer=plan_detail_customer,
+            owner_tab=main_tab,
+        )
 with past_tab:
     render_past_data_management(str(DUCKDB_PATH.resolve()), past_profile)
 with preference_tab:
@@ -629,6 +656,12 @@ with preference_tab:
         months=advance_months,
         month_labels=[month_label(value) for value in advance_months],
         advance_profile=advance_profile,
+        execution_profile=execution_profile,
+        # 실행 Capa 는 **원본 공정명** 기준이다. 표시명은 고르는 화면에서만 보인다.
+        process_options=process_options,
+        process_labels=process_labels,
+        unmatched_execution=unmatched_execution,
+        clamped_execution=clamped_execution,
         database_path=str(DUCKDB_PATH.resolve()),
         active_scenario_id=active_persisted_scenario_id(),
     )

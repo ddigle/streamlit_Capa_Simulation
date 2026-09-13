@@ -205,7 +205,10 @@ def apply_advance_to_securement(
     result = securement_rate.copy()
     factor = ratio.set_index("생산계획년월")["변동률"]
     months = pd.to_numeric(result["생산계획년월"], errors="coerce").astype("int64")
-    result["확보율"] = pd.to_numeric(result["확보율"], errors="coerce") * months.map(factor).astype(
-        "float64"
-    ).fillna(1.0)
+    scale = months.map(factor).astype("float64").fillna(1.0)
+    result["확보율"] = pd.to_numeric(result["확보율"], errors="coerce") * scale
+    # 실행 Capa 반영이 남긴 **조정 전** 확보율도 같은 변동률로 옮긴다. 한쪽만 곱하면
+    # 증감 영역이 선행 배율만큼 부풀거나 줄어 화면에서 조정량이 거짓으로 보인다.
+    if "기준 확보율" in result.columns:
+        result["기준 확보율"] = pd.to_numeric(result["기준 확보율"], errors="coerce") * scale
     return result

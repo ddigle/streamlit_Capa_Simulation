@@ -11,7 +11,7 @@ from __future__ import annotations
 import html
 import unicodedata
 from collections.abc import Mapping, Sequence
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -21,6 +21,9 @@ from capa_simulation.components.home_dimensions import (
     BOTTLENECK_DETAIL_BAR_HEIGHT_PX,
     BOTTLENECK_DETAIL_HEADER_HEIGHT_PX,
     BOTTLENECK_DETAIL_ROW_HEIGHT_PX,
+    LOB_BAR_OUTLINE_WIDTH_PX,
+    LOB_BAR_WIDTH,
+    LOB_BARGAP,
     LOB_BOTTOM_MARGIN_PX,
     LOB_CHART_HEIGHT_PX,
     LOB_FIGURE_HEIGHT_PX,
@@ -30,6 +33,8 @@ from capa_simulation.components.home_dimensions import (
     LOB_TOP5_HEIGHT_PX,
     LOB_TOP_MARGIN_PX,
     LOB_VALUE_FONT_SIZE_PX,
+    TOP5_BAR_OUTLINE_WIDTH_PX,
+    TOP5_BAR_WIDTH,
     lower_delta_row_height,
     lower_delta_yshift_px,
     table_row_height,
@@ -75,6 +80,22 @@ BOTTLENECK_NAME_WIDTH_BUDGET_PX = 80
 BOTTLENECK_NAME_MIN_FONT_PX = 8
 BOTTLENECK_NAME_MAX_FONT_PX = 12
 
+# 공정명을 행 한가운데로 내리는 보정. `go.Scatter` 의 `textposition="middle *"` 는 글자
+# 상자 가운데가 아니라 **베이스라인**을 기준점에서 0.25×글자크기 아래에 놓는다. 라틴
+# 이름은 디센더 칸이 대개 비어 있어 그 결과 잉크가 행 가운데보다 위로 뜬다 — 브라우저에서
+# 재니 12px 에서 평균 1.8px 이었다. 한 상수로 완전히 맞출 수는 없다(이름에 g·p 가 있으면
+# 1.7px 덜 뜬다). 평균을 0 에 맞추는 값이다.
+BOTTLENECK_NAME_INK_DROP_RATIO = 0.15
+
+# 상세 B/N 왼쪽 표의 머리글·순위 글자. `go.Table` 은 칸 글자를 세로 가운데에 세우지
+# 못한다 — plotly 6.9 `table.Cells` 에 `valign` 이 없어 한 줄짜리 글자가 칸 위 2.5px 에
+# 붙는다. 계획 세부수량 표가 쓰는 빈 `<br>` 우회로는 **이 표에서는 못 쓴다**: 칸 글자에
+# `<br>`·`<`·`&`·`>`·공백이 하나라도 있으면 Plotly 가 행 높이 바닥을 `글자상자 + 16px`
+# (= `table_row_height`) 로 올려 29px 행이 37px 로 부푼다. 그래서 표 칸은 배경·격자만
+# 맡기고 글자는 paper 주석으로 얹는다 — LOB 표의 `add_fixed_table_row` 와 같은 방법이다.
+BOTTLENECK_RANK_HEADER_FONT_SIZE_PX = 15
+BOTTLENECK_RANK_FONT_SIZE_PX = 14
+
 # 계획 세부수량 칸의 값 글자. 분류 칸과 월 칸이 같아야 두 칸의 글자가 같은 눈높이에 선다.
 DETAIL_VALUE_FONT_SIZE_PX = 14
 
@@ -97,8 +118,130 @@ BOTTLENECK_HOVER_TEMPLATE = (
     "<br>가용대수 %{customdata[3]}"
     "<br>필요대수 %{customdata[4]}"
     "<br>Wafer Capa %{customdata[5]}"
+    # 조정이 없으면 빈 문자열이라 아무 줄도 붙지 않는다. 가용·필요대수는 기준정보 값
+    # 그대로이므로, 확보율과 어긋나 보이는 까닭을 이 줄이 밝힌다.
+    "%{customdata[6]}"
     "<extra></extra>"
 )
+
+
+def _execution_hover_note(delta: object, note: object) -> str:
+    """hover 끝에 붙일 「실행 반영 ±n%p · 비고」 줄. 조정이 없으면 빈 문자열."""
+    if bool(pd.isna(cast(Any, delta))) or float(cast(Any, delta)) == 0.0:
+        return ""
+    text = f"<br>실행 반영 {float(cast(Any, delta)):+.1f}%p"
+    label = "" if note is None or bool(pd.isna(cast(Any, note))) else str(note).strip()
+    if label:
+        # 비고는 사용자가 적는 자유 텍스트다. 꺾쇠가 들어오면 hover 마크업이 깨진다.
+        text += f"<br>비고 {html.escape(label)}"
+    return text
+
+
+class ExecutionDeltaBars(NamedTuple):
+    """세로 막대에 실행 Capa 증감을 그리기 위한 조각.
+
+    `drawn` 은 값 막대가 실제로 그릴 높이다 — 두 값 중 **짧은 쪽**이다. 줄었으면 결과값
+    까지(적분홍 제외), 늘었으면 기준값까지이고 그 위를 연두가 잇는다.
+    """
+
+    drawn: list[float]
+    outline_widths: list[float]
+    traces: list[go.Bar]
+
+
+def build_execution_delta_bars(
+    *,
+    positions: Sequence[float],
+    values: Sequence[float],
+    baselines: Sequence[float] | None,
+    hover_notes: Sequence[str] | None,
+    width: float | None,
+    outline_width: float,
+) -> ExecutionDeltaBars:
+    """증감 영역과 「늘어난 결과값 전체」 테두리를 만든다.
+
+    조정이 한 건도 없으면 `traces` 가 비고 `outline_widths` 도 전부 같은 값이다. 그때
+    호출자는 스칼라 테두리를 그대로 써서 Figure 규격이 조정 전과 다르지 않게 유지한다.
+    """
+    numeric_values = [0.0 if pd.isna(cast(Any, value)) else float(value) for value in values]
+    if baselines is None:
+        numeric_baselines = list(numeric_values)
+    else:
+        numeric_baselines = [
+            numeric_values[index] if pd.isna(cast(Any, base)) else float(base)
+            for index, base in enumerate(baselines)
+        ]
+    notes = list(hover_notes) if hover_notes is not None else [""] * len(numeric_values)
+
+    drawn: list[float] = []
+    outline_widths: list[float] = []
+    delta_positions: list[float] = []
+    delta_bases: list[float] = []
+    delta_heights: list[float] = []
+    delta_colors: list[str] = []
+    delta_notes: list[str] = []
+    grew_positions: list[float] = []
+    grew_heights: list[float] = []
+    for index, value in enumerate(numeric_values):
+        baseline = numeric_baselines[index]
+        grew = baseline < value
+        drawn.append(min(baseline, value))
+        outline_widths.append(0.0 if grew else outline_width)
+        if baseline != value:
+            delta_positions.append(positions[index])
+            delta_bases.append(min(baseline, value))
+            delta_heights.append(abs(value - baseline))
+            delta_colors.append(tokens.DELTA_AREA_INCREASE if grew else tokens.DELTA_AREA_DECREASE)
+            delta_notes.append(notes[index] if index < len(notes) else "")
+        if grew:
+            grew_positions.append(positions[index])
+            grew_heights.append(value)
+
+    traces: list[go.Bar] = []
+    if delta_positions:
+        traces.append(
+            go.Bar(
+                x=delta_positions,
+                y=delta_heights,
+                base=delta_bases,
+                width=width,
+                marker={"color": delta_colors, "line": {"width": 0}},
+                customdata=[[note] for note in delta_notes],
+                hovertemplate="%{customdata[0]}<extra></extra>",
+                showlegend=False,
+            )
+        )
+    if grew_positions:
+        traces.append(
+            go.Bar(
+                x=grew_positions,
+                y=grew_heights,
+                width=width,
+                marker={
+                    "color": tokens.TRANSPARENT,
+                    "line": {"color": tokens.LINE, "width": outline_width},
+                },
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+    return ExecutionDeltaBars(drawn=drawn, outline_widths=outline_widths, traces=traces)
+
+
+def _execution_delta_note(delta: object, note: object) -> str:
+    """증감 영역 hover 에 띄울 「실행 반영 ±n%p · 비고」."""
+    if bool(pd.isna(cast(Any, delta))) or float(cast(Any, delta)) == 0.0:
+        return ""
+    text = f"<b>실행 반영 {float(cast(Any, delta)):+.1f}%p</b>"
+    label = "" if note is None or bool(pd.isna(cast(Any, note))) else str(note).strip()
+    if label:
+        text += f"<br>{html.escape(label)}"
+    return text
+
+
+def _execution_series(frame: pd.DataFrame, column: str) -> pd.Series | None:
+    """있을 때만 돌려준다. Figure 는 조정 컬럼 없이도 그려져야 한다."""
+    return frame[column] if column in frame.columns else None
 
 
 def _capacity_color(rate: float, *, secure_threshold: float, warning_threshold: float) -> str:
@@ -439,11 +582,40 @@ def build_lob_summary_figures(
             lower_gaps=lower_gaps,
         )
     if bottleneck_capacity["B/N Capa"].notna().any():
+        bottleneck_positions = [
+            month_position_by_value[month] for month in bottleneck_capacity["생산계획년월"]
+        ]
+        # 순위 재배치 뒤의 **최종 B/N 공정** 기준으로 증감을 그린다. `기준 B/N Capa` 는
+        # 같은 공정의 조정 전 Capa 이고, 서비스가 부하량 × 기준 확보율로 미리 만든다.
+        bottleneck_delta = build_execution_delta_bars(
+            positions=bottleneck_positions,
+            values=bottleneck_capacity["B/N Capa"].tolist(),
+            baselines=(
+                series.tolist()
+                if (series := _execution_series(bottleneck_capacity, "기준 B/N Capa")) is not None
+                else None
+            ),
+            hover_notes=[
+                _execution_delta_note(delta, note)
+                for delta, note in zip(
+                    bottleneck_capacity.get(
+                        "확보율 증감", pd.Series(0.0, index=bottleneck_capacity.index)
+                    ),
+                    bottleneck_capacity.get(
+                        "실행 비고", pd.Series("", index=bottleneck_capacity.index)
+                    ),
+                    strict=True,
+                )
+            ],
+            width=LOB_BAR_WIDTH,
+            outline_width=LOB_BAR_OUTLINE_WIDTH_PX,
+        )
         month_figure.add_trace(
             go.Bar(
                 name="B/N 공정",
-                x=[month_position_by_value[month] for month in bottleneck_capacity["생산계획년월"]],
-                y=bottleneck_capacity["B/N Capa"],
+                x=bottleneck_positions,
+                y=bottleneck_delta.drawn,
+                width=LOB_BAR_WIDTH,
                 customdata=bottleneck_capacity[["년월", "확보율"]].assign(
                     공정=labels.series(bottleneck_capacity["공정"])
                 ),
@@ -465,7 +637,16 @@ def build_lob_summary_figures(
                         )
                         for rate in bottleneck_capacity["확보율"]
                     ],
-                    "line": {"color": tokens.LINE, "width": 1.2},
+                    "line": {
+                        "color": tokens.LINE,
+                        # 조정이 없으면 굵기가 모두 같다. 그때는 스칼라로 남겨 Figure
+                        # 규격이 조정 전과 다르지 않게 한다.
+                        "width": (
+                            bottleneck_delta.outline_widths
+                            if bottleneck_delta.traces
+                            else LOB_BAR_OUTLINE_WIDTH_PX
+                        ),
+                    },
                 },
                 hovertemplate=(
                     "%{customdata[0]} · B/N %{customdata[2]}"
@@ -476,6 +657,8 @@ def build_lob_summary_figures(
             row=2,
             col=1,
         )
+        for delta_trace in bottleneck_delta.traces:
+            month_figure.add_trace(delta_trace, row=2, col=1)
     if baseline_lob_summary is not None:
         # 기존 계획은 비교용이라 표식과 라벨을 지운다. 두 줄 모두 값을 적으면 숫자가
         # 겹쳐 어느 쪽이 지금 기준인지 읽히지 않는다.
@@ -520,19 +703,45 @@ def build_lob_summary_figures(
     )
     top5_annotations: list[dict[str, Any]] = []
     if not monthly_top5.empty:
-        top5_axis_max = max(float(monthly_top5["B/N Capa"].max()) * 1.8, 1.0)
+        top5_peak = float(monthly_top5["B/N Capa"].max())
+        if "기준 B/N Capa" in monthly_top5.columns:
+            baseline_peak = monthly_top5["기준 B/N Capa"].max()
+            if pd.notna(baseline_peak):
+                top5_peak = max(top5_peak, float(baseline_peak))
+        top5_axis_max = max(top5_peak * 1.8, 1.0)
         wafer_capa_label_y = top5_axis_max * 0.04
         slot_offsets = {1: -0.36, 2: -0.18, 3: 0.0, 4: 0.18, 5: 0.36}
         top5_positions = [
             month_position_by_value[month] + slot_offsets[int(rank)]
             for month, rank in zip(monthly_top5["생산계획년월"], monthly_top5["순위"], strict=True)
         ]
+        # 증감은 **슬롯이 아니라 공정 기준**이다. 순위가 재배치돼 슬롯 3 이 다른 공정이
+        # 되어도, 그 자리에 선 공정의 조정 전·후를 그린다.
+        top5_delta = build_execution_delta_bars(
+            positions=top5_positions,
+            values=monthly_top5["B/N Capa"].tolist(),
+            baselines=(
+                series.tolist()
+                if (series := _execution_series(monthly_top5, "기준 B/N Capa")) is not None
+                else None
+            ),
+            hover_notes=[
+                _execution_delta_note(delta, note)
+                for delta, note in zip(
+                    monthly_top5.get("확보율 증감", pd.Series(0.0, index=monthly_top5.index)),
+                    monthly_top5.get("실행 비고", pd.Series("", index=monthly_top5.index)),
+                    strict=True,
+                )
+            ],
+            width=TOP5_BAR_WIDTH,
+            outline_width=TOP5_BAR_OUTLINE_WIDTH_PX,
+        )
         month_figure.add_trace(
             go.Bar(
                 name="B/N Capa Top 5",
                 x=top5_positions,
-                y=monthly_top5["B/N Capa"],
-                width=0.15,
+                y=top5_delta.drawn,
+                width=TOP5_BAR_WIDTH,
                 customdata=monthly_top5[["년월", "공정", "확보율", "Wafer Capa"]].assign(
                     공정=labels.series(monthly_top5["공정"])
                 ),
@@ -545,7 +754,14 @@ def build_lob_summary_figures(
                         )
                         for rate in monthly_top5["확보율"]
                     ],
-                    "line": {"color": tokens.LINE, "width": 0.8},
+                    "line": {
+                        "color": tokens.LINE,
+                        "width": (
+                            top5_delta.outline_widths
+                            if top5_delta.traces
+                            else TOP5_BAR_OUTLINE_WIDTH_PX
+                        ),
+                    },
                 },
                 hovertemplate=(
                     "%{customdata[0]} · %{customdata[1]}"
@@ -559,6 +775,8 @@ def build_lob_summary_figures(
             row=3,
             col=1,
         )
+        for delta_trace in top5_delta.traces:
+            month_figure.add_trace(delta_trace, row=3, col=1)
         for x_position, capa, rate in zip(
             top5_positions,
             monthly_top5["B/N Capa"],
@@ -573,9 +791,13 @@ def build_lob_summary_figures(
                     "yref": "y2",
                     "text": f"<b>{rate:.0%}</b>",
                     "textangle": 270,
+                    # 가로는 보정하지 않는다. `xanchor="center"` 가 세운 글자의 상자
+                    # 가운데를 막대 중심에 정확히 놓는다 — 브라우저에서 회전 중심과 막대
+                    # 중심을 대조해 10개 라벨 모두 오차 0 임을 확인했다. 숫자는 디센더가
+                    # 없어 상자 안에서 위로 몰릴 것 같지만, 실측한 잉크 중심이 상자
+                    # 중심과 같았다. 여기에 `xshift` 를 두면 그만큼 그대로 어긋난다.
                     "xanchor": "center",
                     "yanchor": "bottom",
-                    "xshift": -1.0,
                     "yshift": 10.0,
                     "showarrow": False,
                     "font": {
@@ -594,9 +816,9 @@ def build_lob_summary_figures(
                     "yref": "y2",
                     "text": f"{wafer_capa / 1_000:,.0f}K",
                     "textangle": 270,
+                    # 확보율 레이블과 같은 줄에 세로로 붙으므로 가로 기준이 같아야 한다.
                     "xanchor": "center",
                     "yanchor": "bottom",
-                    "xshift": -1.0,
                     "yshift": -6.0,
                     "showarrow": False,
                     "font": {
@@ -641,7 +863,7 @@ def build_lob_summary_figures(
             "autoexpand": False,
         },
         "barmode": "overlay",
-        "bargap": 0.16,
+        "bargap": LOB_BARGAP,
         "plot_bgcolor": tokens.CHART_CANVAS,
         "paper_bgcolor": tokens.CHART_CANVAS,
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
@@ -661,15 +883,16 @@ def build_lob_summary_figures(
         },
     )
     append_layout_items(month_figure, annotations=top5_annotations)
+    # 조정 **전** Capa 도 함께 본다. 빼먹으면 한 달만 조정해도 전 달 막대 높이가 바뀌어
+    # 「조정이 없는 달은 그대로」가 무너진다.
+    axis_candidates = [
+        monthly_density["부하량"].max(),
+        bottleneck_capacity["B/N Capa"].max(),
+    ]
+    if "기준 B/N Capa" in bottleneck_capacity.columns:
+        axis_candidates.append(bottleneck_capacity["기준 B/N Capa"].max())
     lob_axis_max = max(
-        (
-            float(value)
-            for value in (
-                monthly_density["부하량"].max(),
-                bottleneck_capacity["B/N Capa"].max(),
-            )
-            if pd.notna(value)
-        ),
+        (float(value) for value in axis_candidates if pd.notna(value)),
         default=1.0,
     )
     lob_axis_max = max(lob_axis_max, 1.0)
@@ -1270,6 +1493,16 @@ def build_bottleneck_detail_figures(
     bar_centers: list[float] = []
     bar_lengths: list[float] = []
     bar_colors: list[str] = []
+    bar_outline_widths: list[float] = []
+    # 실행 Capa 반영으로 줄거나 늘어난 구간. 조정이 한 건도 없으면 비어 있고, 그때는
+    # 아래에서 trace 자체를 만들지 않아 그림이 조정 전과 픽셀 단위로 같다.
+    delta_bases: list[float] = []
+    delta_centers: list[float] = []
+    delta_lengths: list[float] = []
+    delta_colors: list[str] = []
+    increase_bases: list[float] = []
+    increase_centers: list[float] = []
+    increase_lengths: list[float] = []
     name_positions: list[float] = []
     name_texts: list[str] = []
     for _, row in displayed.iterrows():
@@ -1294,16 +1527,40 @@ def build_bottleneck_detail_figures(
                 format_equipment_count(row["가용대수"]),
                 format_equipment_count(row["소요대수"]),
                 format_wafer_capa(row["Wafer Capa"]),
+                _execution_hover_note(
+                    row.get("확보율 증감"),
+                    row.get("실행 비고"),
+                ),
             ]
         )
         name_positions.append(month_index + BOTTLENECK_NAME_INSET_RATIO)
         name_texts.append(format_bottleneck_process_name(labels.label(row["공정"])))
         ratio = bottleneck_bar_ratio(rate)
-        if ratio <= 0:
+        # 기준 비율은 조정 전이다. 컬럼이 없으면(계약을 넓히기 전 호출) 조정 0 으로 본다.
+        baseline_ratio = bottleneck_bar_ratio(row.get("기준 확보율", rate))
+        grew = baseline_ratio < ratio
+        if baseline_ratio != ratio:
+            # 증감 영역은 두 비율 사이 구간이다. 테두리를 두지 않는 것이 규칙이라
+            # 아래에서 `line.width = 0` 으로 그린다.
+            delta_bases.append(base + min(baseline_ratio, ratio) * track_length)
+            delta_centers.append(center_y)
+            delta_lengths.append(abs(ratio - baseline_ratio) * track_length)
+            delta_colors.append(tokens.DELTA_AREA_INCREASE if grew else tokens.DELTA_AREA_DECREASE)
+        if grew:
+            # 늘어난 경우 테두리는 **연두 영역까지 포함해** 결과값 전체를 두른다. 값 막대
+            # 자신의 테두리를 끄고, 채움이 없는 막대를 위에 얹어 한 줄로 두른다.
+            increase_bases.append(base)
+            increase_centers.append(center_y)
+            increase_lengths.append(ratio * track_length)
+        # 값 막대는 두 비율 중 **짧은 쪽**까지다. 줄었으면 결과값까지(적분홍 제외),
+        # 늘었으면 기준값까지 — 그 위를 연두가 잇는다.
+        drawn_ratio = min(baseline_ratio, ratio)
+        if drawn_ratio <= 0:
             continue
         bar_bases.append(base)
         bar_centers.append(center_y)
-        bar_lengths.append(ratio * track_length)
+        bar_lengths.append(drawn_ratio * track_length)
+        bar_outline_widths.append(0.0 if grew else tokens.BAR_OUTLINE_WIDTH_PX)
         bar_colors.append(
             _capacity_color(
                 float(rate),
@@ -1316,89 +1573,138 @@ def build_bottleneck_detail_figures(
         go.Table(
             columnwidth=[1.0],
             header={
-                "values": ["<b>B/N</b>"],
+                "values": [""],
                 "align": "center",
                 "fill_color": tokens.HEADER_BACKGROUND,
                 "line_color": tokens.BORDER,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": 15,
+                    "size": BOTTLENECK_RANK_HEADER_FONT_SIZE_PX,
                     "family": tokens.FONT_FAMILY,
                 },
                 "height": BOTTLENECK_DETAIL_HEADER_HEIGHT_PX,
             },
             cells={
-                "values": [[str(rank) for rank in range(1, rank_count + 1)]],
+                "values": [[""] * rank_count],
                 "align": "center",
                 "fill_color": tokens.SURFACE_CLASSIFICATION,
                 "line_color": tokens.BORDER,
                 "font": {
                     "color": tokens.TEXT,
-                    "size": 14,
+                    "size": BOTTLENECK_RANK_FONT_SIZE_PX,
                     "family": tokens.FONT_FAMILY,
                 },
                 "height": BOTTLENECK_DETAIL_ROW_HEIGHT_PX,
             },
         )
     )
-    bottleneck_detail_month_figure = go.Figure(
-        [
-            # 보이지 않는 hover 표적. 눈에 보이는 트랙 막대는 행 높이보다 낮고 좌우
-            # 인셋만큼 짧아 칸 가장자리에서 툴팁이 뜨지 않는다. 행 전체를 덮는 이
-            # 막대가 표적이므로 막대가 0 길이인 칸에서도 칸 어디서나 값이 뜬다.
+    # 조정이 한 건이라도 있을 때만 증감 trace 를 끼운다. 빈 trace 를 항상 넣으면 조정
+    # 0건에서도 Figure 구성이 달라져, 「조정이 없으면 오늘과 픽셀 단위로 같다」는 계약이
+    # 깨진다.
+    detail_month_traces: list[Any] = [
+        # 보이지 않는 hover 표적. 눈에 보이는 트랙 막대는 행 높이보다 낮고 좌우
+        # 인셋만큼 짧아 칸 가장자리에서 툴팁이 뜨지 않는다. 행 전체를 덮는 이
+        # 막대가 표적이므로 막대가 0 길이인 칸에서도 칸 어디서나 값이 뜬다.
+        go.Bar(
+            x=[1.0] * len(track_centers),
+            y=track_centers,
+            base=[position - BOTTLENECK_BAR_SIDE_INSET_RATIO for position in track_bases],
+            orientation="h",
+            width=BOTTLENECK_DETAIL_ROW_HEIGHT_PX,
+            marker={"color": tokens.HIT_TARGET, "line": {"width": 0}},
+            customdata=hover_values,
+            hovertemplate=BOTTLENECK_HOVER_TEMPLATE,
+            showlegend=False,
+        ),
+        go.Bar(
+            x=track_lengths,
+            y=track_centers,
+            base=track_bases,
+            orientation="h",
+            width=BOTTLENECK_DETAIL_BAR_HEIGHT_PX,
+            marker={
+                "color": tokens.BAR_TRACK,
+                "line": {"color": tokens.BORDER_STRONG, "width": tokens.GRID_LINE_WIDTH_PX},
+            },
+            hoverinfo="skip",
+            showlegend=False,
+        ),
+    ]
+    if delta_centers:
+        # 줄거나 늘어난 구간 자체. **테두리가 없다** — 규칙상 감소분은 테두리 밖이고,
+        # 증가분은 아래 결과값 테두리가 통째로 두른다.
+        detail_month_traces.append(
             go.Bar(
-                x=[1.0] * len(track_centers),
-                y=track_centers,
-                base=[position - BOTTLENECK_BAR_SIDE_INSET_RATIO for position in track_bases],
-                orientation="h",
-                width=BOTTLENECK_DETAIL_ROW_HEIGHT_PX,
-                marker={"color": tokens.HIT_TARGET, "line": {"width": 0}},
-                customdata=hover_values,
-                hovertemplate=BOTTLENECK_HOVER_TEMPLATE,
-                showlegend=False,
-            ),
-            go.Bar(
-                x=track_lengths,
-                y=track_centers,
-                base=track_bases,
+                x=delta_lengths,
+                y=delta_centers,
+                base=delta_bases,
                 orientation="h",
                 width=BOTTLENECK_DETAIL_BAR_HEIGHT_PX,
-                marker={
-                    "color": tokens.BAR_TRACK,
-                    "line": {"color": tokens.BORDER_STRONG, "width": tokens.GRID_LINE_WIDTH_PX},
-                },
+                marker={"color": delta_colors, "line": {"width": 0}},
                 hoverinfo="skip",
                 showlegend=False,
-            ),
+            )
+        )
+    detail_month_traces.append(
+        go.Bar(
+            x=bar_lengths,
+            y=bar_centers,
+            base=bar_bases,
+            orientation="h",
+            width=BOTTLENECK_DETAIL_BAR_HEIGHT_PX,
+            marker={
+                "color": bar_colors,
+                # 증가 행이 없으면 굵기가 모두 같다. 그때는 스칼라를 그대로 둬서 Figure
+                # 규격이 조정 전과 한 글자도 다르지 않게 한다.
+                "line": {
+                    "color": tokens.LINE,
+                    "width": (
+                        bar_outline_widths if increase_centers else tokens.BAR_OUTLINE_WIDTH_PX
+                    ),
+                },
+            },
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+    if increase_centers:
+        # 늘어난 결과값 **전체**를 두르는 테두리. 채움이 없어야 아래 연두가 비친다.
+        detail_month_traces.append(
             go.Bar(
-                x=bar_lengths,
-                y=bar_centers,
-                base=bar_bases,
+                x=increase_lengths,
+                y=increase_centers,
+                base=increase_bases,
                 orientation="h",
                 width=BOTTLENECK_DETAIL_BAR_HEIGHT_PX,
                 marker={
-                    "color": bar_colors,
+                    "color": tokens.TRANSPARENT,
                     "line": {"color": tokens.LINE, "width": tokens.BAR_OUTLINE_WIDTH_PX},
                 },
                 hoverinfo="skip",
                 showlegend=False,
-            ),
-            go.Scatter(
-                x=name_positions,
-                y=track_centers,
-                mode="text",
-                text=name_texts,
-                textposition="middle right",
-                textfont={
-                    "color": tokens.TEXT,
-                    "size": BOTTLENECK_NAME_MAX_FONT_PX,
-                    "family": tokens.FONT_FAMILY,
-                },
-                hoverinfo="skip",
-                showlegend=False,
-            ),
-        ]
+            )
+        )
+    detail_month_traces.append(
+        go.Scatter(
+            x=name_positions,
+            # 데이터 1 = 1px 이다(여백 0, Figure 높이 = 표 높이).
+            y=[
+                center - BOTTLENECK_NAME_MAX_FONT_PX * BOTTLENECK_NAME_INK_DROP_RATIO
+                for center in track_centers
+            ],
+            mode="text",
+            text=name_texts,
+            textposition="middle right",
+            textfont={
+                "color": tokens.TEXT,
+                "size": BOTTLENECK_NAME_MAX_FONT_PX,
+                "family": tokens.FONT_FAMILY,
+            },
+            hoverinfo="skip",
+            showlegend=False,
+        )
     )
+    bottleneck_detail_month_figure = go.Figure(detail_month_traces)
     bottleneck_detail_layout = {
         "height": figure_height,
         "margin": {
@@ -1490,7 +1796,57 @@ def build_bottleneck_detail_figures(
         emphasize_left=False,
         emphasize_bottom=True,
     )
-    append_layout_items(bottleneck_detail_label_figure, shapes=bottleneck_boundary_shapes)
+    # 표 칸은 비워 두고 머리글·순위 글자를 행 한가운데를 직접 가리키는 주석으로 얹는다.
+    # 여백이 0 이고 Figure 높이가 `table_height` 와 같아 paper 1.0 이 곧 표 전체다 —
+    # 아래 주석과 `bottleneck_boundary_shapes` 가 같은 분모를 본다.
+    append_layout_items(
+        bottleneck_detail_label_figure,
+        shapes=bottleneck_boundary_shapes,
+        annotations=[
+            {
+                # 월 머리글 라벨과 같은 식이라 `B/N` 이 월 라벨과 같은 눈높이에 선다.
+                "x": 0.5,
+                "y": (1 + header_boundary_y) / 2,
+                "xref": "paper",
+                "yref": "paper",
+                "text": "<b>B/N</b>",
+                "showarrow": False,
+                "xanchor": "center",
+                "yanchor": "middle",
+                "font": {
+                    "color": tokens.TEXT,
+                    "size": BOTTLENECK_RANK_HEADER_FONT_SIZE_PX,
+                    "family": tokens.FONT_FAMILY,
+                },
+            },
+            *[
+                {
+                    "x": 0.5,
+                    "y": 1
+                    - (
+                        BOTTLENECK_DETAIL_HEADER_HEIGHT_PX
+                        + (rank - 0.5) * BOTTLENECK_DETAIL_ROW_HEIGHT_PX
+                    )
+                    / table_height,
+                    "xref": "paper",
+                    "yref": "paper",
+                    "text": str(rank),
+                    "showarrow": False,
+                    "xanchor": "center",
+                    # 세로도 보정하지 않는다. 순위 칸은 숫자만 있어 잉크 가운데가 줄
+                    # 상자 가운데와 같다(브라우저에서 실측). `value_ink_yshift_px` 는
+                    # 한글이 섞인 LOB 표용 보정이라 여기 쓰면 1.5px 위로 지나친다.
+                    "yanchor": "middle",
+                    "font": {
+                        "color": tokens.TEXT,
+                        "size": BOTTLENECK_RANK_FONT_SIZE_PX,
+                        "family": tokens.FONT_FAMILY,
+                    },
+                }
+                for rank in range(1, rank_count + 1)
+            ],
+        ],
+    )
     # `go.Table` 이 그려 주던 머리글 띠·셀 격자를 카테시안에서는 직접 그린다.
     append_layout_items(
         bottleneck_detail_month_figure,

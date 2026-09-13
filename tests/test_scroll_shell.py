@@ -71,6 +71,16 @@ def test_padding_bottom_is_omitted_when_not_requested() -> None:
     )
 
 
+def _without_comments(source: str) -> str:
+    """줄 끝 `#` 주석을 걷어낸 소스.
+
+    이 규칙이 막는 것은 셸 CSS 를 손으로 복제하는 일이지, 왜 그러면 안 되는지 주석에
+    적는 일이 아니다. 문자열 안의 `#` 는 색 리터럴뿐인데 그건 별도 규칙이 따로 막는다.
+    """
+    lines = [line.split("#", 1)[0] for line in source.splitlines()]
+    return "\n".join(lines)
+
+
 def test_scroll_shell_css_is_not_duplicated_in_pages_or_components() -> None:
     """셸 CSS 가 다시 복제되면 걸린다. 앞서 네 벌이 서로 갈라져 있었다."""
     owner = PROJECT_ROOT / "src/capa_simulation/components/scroll_shell.py"
@@ -83,10 +93,12 @@ def test_scroll_shell_css_is_not_duplicated_in_pages_or_components() -> None:
         if path != owner
     ]
 
+    # 주석은 뺀다. 이 규칙이 막는 것은 셸 CSS 를 손으로 복제하는 일이지, 왜 그러면 안
+    # 되는지 주석에 적는 일이 아니다.
     offenders = [
         path.relative_to(PROJECT_ROOT).as_posix()
         for path in sources
-        if "overflow-x: auto" in path.read_text(encoding="utf-8")
+        if "overflow-x: auto" in _without_comments(path.read_text(encoding="utf-8"))
     ]
 
     assert not offenders, f"scroll_shell.horizontal_scroll_canvas 를 쓰세요: {offenders}"

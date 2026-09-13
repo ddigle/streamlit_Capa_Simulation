@@ -54,6 +54,8 @@ LIST_EDITOR_KEY = "scenario_list_editor"
 ACTION_KEY = "scenario_list_action"
 ACTION_OWNER_KEY = "scenario_list_action_owner"
 DELETE_CONFIRM_KEY = "scenario_list_delete_confirm"
+ARCHIVE_CONFIRM_KEY = "scenario_list_archive_confirm"
+ARCHIVED_SELECT_KEY = "scenario_list_archived_id"
 REVISION_SELECT_KEY = "scenario_list_revision_id"
 SELECT_COLUMN = "선택"
 ORDER_COLUMN = "순서"
@@ -155,17 +157,20 @@ def _render_list_management(
 ) -> None:
     if not scenarios:
         st.info("저장된 시나리오가 없습니다. 초기 이관 또는 신규 등록이 필요합니다.")
+        _render_archived_scenarios(repository)
         return
     edited = _render_scenario_list_editor(repository, scenarios)
     selected_id = _resolve_selected_scenario(edited)
     if selected_id is None:
         st.caption(
-            "표에서 시나리오 한 건을 선택하면 불러오기·이름 수정·공식버전 지정·삭제를 "
+            "표에서 시나리오 한 건을 선택하면 불러오기·이름 수정·공식버전 지정·보관을 "
             "할 수 있습니다."
         )
+        _render_archived_scenarios(repository)
         return
     scenario_by_id = {scenario.scenario_id: scenario for scenario in scenarios}
     _render_scenario_actions(repository, database_path, scenario_by_id[selected_id])
+    _render_archived_scenarios(repository)
 
 
 def _render_scenario_list_editor(
@@ -285,6 +290,7 @@ def _render_scenario_actions(
         st.session_state[ACTION_OWNER_KEY] = summary.scenario_id
         st.session_state.pop(ACTION_KEY, None)
         st.session_state.pop(DELETE_CONFIRM_KEY, None)
+        st.session_state.pop(ARCHIVE_CONFIRM_KEY, None)
         st.session_state.pop(REVISION_SELECT_KEY, None)
     with st.container(border=True):
         st.markdown(f"#### :material/check_box: {summary.scenario_name}")
@@ -330,14 +336,14 @@ def _render_scenario_actions(
         with official_column:
             _action_button("공식버전 지정", "official", ":material/verified:")
         with delete_column:
-            _action_button("시나리오 삭제", "delete", ":material/delete_forever:")
+            _action_button("시나리오 보관", "archive", ":material/archive:")
         action = st.session_state.get(ACTION_KEY)
         if action == "rename":
             _render_rename(repository, summary)
         elif action == "official":
             _render_official(repository, summary, selected_revision_id)
-        elif action == "delete":
-            _render_delete(repository, summary)
+        elif action == "archive":
+            _render_archive(repository, summary)
 
 
 def _action_button(label: str, action: str, icon: str) -> None:
@@ -428,27 +434,109 @@ def _render_official(
         )
 
 
-def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummary) -> None:
-    st.warning(
-        "삭제하면 그 시나리오의 리비전·원천 데이터·프리셋이 DuckDB 에서 사라지고 되돌릴 수 "
-        "없습니다. 목록에서만 숨기는 보관 상태는 없습니다."
+def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSummary) -> None:
+    st.info(
+        "보관하면 목록에서 숨겨지고 새 리비전 저장·공식버전 지정이 막힙니다. 데이터는 "
+        "그대로 남아 아래 「보관된 시나리오」에서 되돌릴 수 있습니다."
     )
+    # 사용자가 보관을 고르는 이유가 용량이면 잘못 고른 것이다. 그 사실을 화면에서 말한다.
+    st.caption(
+        "보관은 파일 크기를 줄이지 않습니다 — 행이 그대로 남으므로 오히려 지운 경우보다 "
+        "크게 유지됩니다. 용량을 줄이려면 영구 삭제한 뒤 `scripts/compact_duckdb.py` 로 "
+        "재구축하세요."
+    )
+    confirmed = st.checkbox(
+        f"{summary.scenario_name} 을 보관합니다",
+        key=ARCHIVE_CONFIRM_KEY,
+    )
+    if not st.button(
+        "보관 실행",
+        icon=":material/archive:",
+        type="primary",
+        disabled=not confirmed,
+        width="stretch",
+    ):
+        return
+    try:
+        repository.archive_scenario(summary.scenario_id)
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
+        return
+    clear_scenario_snapshot_cache()
+    if summary.scenario_id == active_persisted_scenario_id():
+        clear_persisted_scenario_activation()
+    st.session_state[FLASH_KEY] = f"{summary.scenario_name} 을 보관했습니다."
+    for key in (LIST_EDITOR_KEY, ACTION_KEY, ACTION_OWNER_KEY, ARCHIVE_CONFIRM_KEY):
+        st.session_state.pop(key, None)
+    st.rerun()
+
+
+def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
+    """보관함. 되돌리기와 영구 삭제가 여기 모인다."""
+    archived = [
+        scenario
+        for scenario in repository.list_scenarios(include_archived=True)
+        if scenario.status != "ACTIVE"
+    ]
+    if not archived:
+        return
+    with st.expander(f"보관된 시나리오 {len(archived)}건", icon=":material/inventory_2:"):
+        by_id = {scenario.scenario_id: scenario for scenario in archived}
+        selected_id = st.selectbox(
+            "보관본",
+            options=list(by_id),
+            format_func=lambda value: by_id[value].scenario_name,
+            key=ARCHIVED_SELECT_KEY,
+        )
+        summary = by_id[selected_id]
+        restore_column, delete_column = st.columns(2)
+        with restore_column:
+            if st.button(
+                "되돌리기",
+                icon=":material/unarchive:",
+                width="stretch",
+                key="scenario_archived_restore",
+            ):
+                _restore_scenario(repository, summary)
+        with delete_column:
+            st.caption("영구 삭제는 되돌릴 수 없습니다.")
+        _render_delete(repository, summary)
+
+
+def _restore_scenario(
+    repository: DuckDBScenarioRepository,
+    summary: ScenarioSummary,
+) -> None:
+    try:
+        repository.restore_scenario(summary.scenario_id)
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
+        return
+    clear_scenario_snapshot_cache()
+    st.session_state[FLASH_KEY] = f"{summary.scenario_name} 을 목록으로 되돌렸습니다."
+    for key in (LIST_EDITOR_KEY, ARCHIVED_SELECT_KEY):
+        st.session_state.pop(key, None)
+    st.rerun()
+
+
+def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummary) -> None:
+    """영구 삭제. 보관본에만 연다 — 되돌릴 수 없는 길을 한 단계 뒤에 둔다."""
     release_count = repository.count_official_releases(summary.scenario_id)
     if release_count:
         st.warning(f"이 시나리오의 공식 발행 이력 {release_count}건도 함께 사라집니다.")
     st.caption(
         "DuckDB 는 지운 페이지를 파일에 되돌려주지 않습니다. 행은 사라져도 파일 크기는 "
-        "줄지 않고 삭제 기록만큼 오히려 조금 늘어납니다."
+        "줄지 않고 삭제 기록만큼 오히려 조금 늘어납니다. 파일을 실제로 줄이려면 앱을 내린 "
+        "뒤 `scripts/compact_duckdb.py` 로 재구축하세요."
     )
     typed = st.text_input(
-        "확인을 위해 시나리오명을 그대로 입력하세요",
+        "영구 삭제하려면 시나리오명을 그대로 입력하세요",
         key=DELETE_CONFIRM_KEY,
         placeholder=summary.scenario_name,
     )
     if not st.button(
-        "삭제 실행",
+        "영구 삭제 실행",
         icon=":material/delete_forever:",
-        type="primary",
         disabled=typed.strip() != summary.scenario_name,
         width="stretch",
     ):
@@ -461,8 +549,14 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     clear_scenario_snapshot_cache()
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
-    st.session_state[FLASH_KEY] = f"{summary.scenario_name} 을 삭제했습니다."
-    for key in (LIST_EDITOR_KEY, ACTION_KEY, ACTION_OWNER_KEY, DELETE_CONFIRM_KEY):
+    st.session_state[FLASH_KEY] = f"{summary.scenario_name} 을 영구 삭제했습니다."
+    for key in (
+        LIST_EDITOR_KEY,
+        ACTION_KEY,
+        ACTION_OWNER_KEY,
+        DELETE_CONFIRM_KEY,
+        ARCHIVED_SELECT_KEY,
+    ):
         st.session_state.pop(key, None)
     st.rerun()
 

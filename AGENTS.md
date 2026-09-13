@@ -144,6 +144,29 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세부수량 값 **아래**에 적는다(선행 증감은 값 **위**). 비교 대상은 시나리오와 리비전을
     함께 골라 정하고, 그 리비전에서 **계획만** 가져오고 환산에 쓰는 표는 현재 것을 쓴다 — 수율·Chip 기준정보가
     바뀐 것은 계획 변동이 아니다. 비교 시나리오에만 있는 분류 조합도 행으로 남긴다.
+  - `실행` 을 켜면 **실행 Capa 반영**이 확보율에 얹힌다. 기준정보 밖에서 생긴 변수
+    (비가동대수 증가로 인한 가용대수 축소·UPEH 실적 부진·재공 부진)를 년월·공정별
+    **퍼센트포인트**로 넣는다 — 확보율 105% 에 `-10` 이면 95% 이지 94.5% 가 아니다.
+    비율 곱셈으로 바꾸면 화면 눈금과 입력 숫자가 어긋난다.
+  - **적용 순서는 실행 → 선행이다.** 실행 조정은 **원데이터** 확보율에 얹고, 선행은 그렇게
+    조정된 값 위에 변동률을 곱한다. 그래서 선행 baseline 은 `확보율 ÷ 변동률` 로 되돌릴 수
+    있다(곱셈 한 겹). 순서를 뒤집으면 곱셈과 덧셈이 섞여 되돌릴 수 없다.
+    `apply_advance_to_securement` 는 `기준 확보율` 도 **같은 변동률로 함께** 곱한다 —
+    한쪽만 곱하면 증감 영역이 선행 배율만큼 부풀어 조정량이 거짓으로 보인다.
+  - **B/N 순위는 조정된 확보율로 다시 매긴다.** 정렬 로직은 그대로 두고 입력 확보율만
+    바꾼다. 생산계획 LOB 의 B/N 확보율도 재배치 뒤의 **최종 B/N 공정** 기준이다.
+  - 증감은 색 영역과 테두리로 보인다 — 줄어든 만큼은 테두리 없는 `DELTA_AREA_DECREASE`,
+    늘어난 만큼은 테두리 없는 `DELTA_AREA_INCREASE`. **테두리는 감소면 줄어든 결과값에만,
+    증가면 늘어난 결과값 전체(연두 포함)에 두른다.** 이 규칙은 값 막대 길이를
+    `min(기준, 조정)` 으로 두고 증가 행만 제 테두리를 끄는 방식으로 만든다
+    (`build_execution_delta_bars`).
+  - **조정이 한 건도 없으면 Figure 구성이 조정 전과 같아야 한다.** 빈 trace 를 늘 끼우거나
+    테두리 굵기를 배열로 바꾸면 그 계약이 깨진다 — 둘 다 조정이 있을 때만 한다.
+  - `확보율 = 가용대수 ÷ 소요대수` **항등식은 깨진다.** 조정 사유가 비가동·UPEH·재공으로
+    제각각이라 어느 항으로 되돌릴지 코드가 정할 수 없다. 가용·소요대수는 기준정보 값
+    그대로 두고, 차이의 출처는 hover 의 「실행 반영 ±n%p · 비고」 줄이 밝힌다.
+  - 입력의 `공정` 은 **원본 공정명**이다. 표시명(Proc Rename)으로 저장하면 표시명을 바꾸는
+    순간 매칭이 끊긴다. 입력 표는 값은 원본을 저장하고 보이는 글자만 표시명으로 바꾼다.
   - **비교 대상은 시나리오와 분리된 공용 프로필이다**(`app_meta.global_comparison_scenario`).
     세션에만 두면 브라우저를 새로 열 때마다 고른 대상이 사라진다. 고르는 순간 저장하고,
     세션에 값이 없을 때만 프로필에서 심는다 — 세션 값이 있으면 그쪽이 최신이다.
@@ -336,7 +359,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     불러오기·이름 수정·공식버전 지정·삭제를 그 한 건에 대해 수행한다. 표의 `순서` 칸을
     고쳐 저장하면 누적 순서를 다시 매긴다(`scenario.list_order`). 두 건 이상 체크하면
     작업 칸을 열지 않는다.
-  - 시나리오 삭제는 물리 삭제다. 목록에서만 숨기는 보관 상태는 없다. 지울 표는
+  - 목록에서 치우는 기본 수단은 **보관**(`archive_scenario`)이다. `app_meta.scenario.status`
+    를 `ARCHIVED` 로 바꿔 목록에서 숨기고 새 리비전 저장·공식버전 지정을 막을 뿐, 행은
+    남는다(`restore_scenario` 로 되돌린다). `list_scenarios` 는 기본으로 보관본을 빼며,
+    **같은 원천 코드의 중복 등록을 막는 판정만 `include_archived=True`** 를 쓴다 — 숨은
+    것을 못 보면 같은 코드로 시나리오가 하나 더 생긴다. 목록 순서 대조(`reorder_scenarios`)도
+    활성만 본다. 보관은 **파일 크기를 줄이지 않는다** — 용량 회수는 영구 삭제 뒤
+    `scripts/compact_duckdb.py` 재구축뿐이다.
+  - 영구 삭제(`delete_scenario`)는 물리 삭제이며 되돌릴 수 없다. 지울 표는
     `information_schema` 에서 소유 컬럼(`scenario_id`·`dataset_id`·`revision_id`)으로
     찾으므로 새 표가 생겨도 목록을 고칠 필요가 없다. 되돌릴 수 없으니 시나리오명을 그대로
     입력해야 실행 버튼이 열린다.
@@ -640,6 +670,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/process_rename_management.py`
   - Admin Area 의 `Proc Rename` 탭. 공용 공정 표시명의 CSV 다운로드·Excel 붙여넣기·
     직접 편집과 저장을 담당한다. 저장은 공용 프로필 교체이며 리비전을 만들지 않는다.
+- `src/capa_simulation/components/display_order_management.py`
+  - Admin Area 의 `표시순서 관리` 탭. 공용 표시순서 규칙의 검증·CSV 다운로드·Excel 표
+    붙여넣기·범위별 직접 편집과 원자 교체를 담당한다. 저장은 공용 프로필 교체이며
+    리비전을 만들지 않는다.
 - `src/capa_simulation/components/scenario_edit_bar.py`
   - 편집 페이지 상단의 "활성 시나리오 · 수정본 N" 과 원본 초기화 버튼.
     초기화할 때 함께 비울 세션 키는 페이지가 넘긴다.
@@ -741,6 +775,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 선행 반영 계획이 0 이하가 되는 달은 변동률을 낼 수 없다. 그 달만 미적용으로 두고
     화면이 알린다 — 한 달의 과한 입력으로 대시보드 전체가 사라지면 어디가 잘못됐는지
     볼 수 없다.
+- `src/capa_simulation/services/execution_capacity.py`
+  - 실행 Capa 반영의 값 정규화와 확보율 증감 적용. `조정 확보율 = 기준 확보율 + 증감/100`
+    (**퍼센트포인트 차감**)이고, 조정이 한 건도 없어도 `기준 확보율`·`확보율 증감`·
+    `실행 비고` 세 컬럼을 **항상** 만든다 — 뒤의 순위·Figure 가 컬럼 유무로 갈라지지 않게
+    하려는 것이다.
+  - 조정 결과가 음수면 0 에서 자른다(`clamped_execution_adjustments` 가 그 행을 돌려준다).
+    막대 길이도 순위도 음수 확보율에서는 의미를 잃는다.
+  - 계산 결과에 짝이 없는 행은 **막지 않고 알린다**(`unmatched_execution_adjustments`).
+    공용 프로필이라 다른 시나리오에서는 유효할 수 있다.
 - `src/capa_simulation/components/loading_progress.py`
   - 계산이 오래 걸리는 페이지가 본문 맨 위에 띄우는 진행 막대다. 단계 목록
     (`LoadingStage`)을 미리 선언하고 호출부는 `advance()` 만 부른다 — 호출부가 퍼센트를
@@ -766,8 +809,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     순위 상한 `BOTTLENECK_DETAIL_RANK_LIMIT` 은 여기서 정하고 서비스에 인자로 넘긴다.
     자르는 곳은 서비스 한 곳이고 Figure 는 받은 프레임을 다시 자르지 않는다.
 - `src/capa_simulation/components/scenario_management.py`,
-  `display_order_management.py`, `bigdataquery_registration.py`
-  - 시나리오 관리 페이지의 세 탭 UI.
+  `bigdataquery_registration.py`
+  - 시나리오 관리 페이지의 두 탭 UI.
   - `bigdataquery_registration.py` 는 2단계다. 목록 위젯은 반드시 `st.form` 밖의
     `st.dataframe(on_select="rerun", selection_mode="single-row")` 이고(폼 안에서는 제출
     전까지 선택이 서버에 오지 않아 예외 없이 조용히 실패한다), 목록을 등록 폼보다 **위**에
@@ -794,6 +837,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/display_order_store.py`: 공용 표시순서 프로필의 검증·이관·저장
 - `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·삽입 SQL
 - `persistence/advance_load_store.py`: 공용 선행 투입 물량 프로필의 조회·삽입 SQL
+- `persistence/execution_capacity_store.py`: 공용 실행 Capa 반영 프로필의 조회·삽입 SQL
 - `persistence/past_data_store.py`: 공용 과거 구간 프로필 세 표의 조회·삽입 SQL
 - `persistence/preset_store.py`: 리비전 프리셋 저장·복원
 - `persistence/source_data_store.py`: 원천 Core Data raw 와 컬럼 프로파일
@@ -861,8 +905,14 @@ session state에 별도 복사하지 말고 활성 시나리오의 editable tabl
 3. **편집 적용마다 `revision`을 올리고 `content_token`을 재발급한다.** 편집 UI(위젯 초기화·
    미저장 감지)는 `revision`을, 계산·Figure 캐시 키는 `content_token`을 본다 — `revision`
    번호는 내용이 달라도 겹칠 수 있다(세션 편집 0,1,2… 와 저장 리비전 번호).
-4. **계산 함수는 가능한 순수 함수로 유지한다.** Streamlit 캐시는 `simulation_cache.py`
-   래퍼에 두고 서비스 함수 내부에 UI 상태 접근을 넣지 않는다.
+4. **계산 함수는 가능한 순수 함수로 유지한다.** 서비스 함수 내부에 UI 상태 접근을 넣지
+   않는다. Streamlit 캐시는 정해진 경계 모듈에만 둔다 — `services/simulation_cache.py`,
+   `persistence/cache.py`·`equipment_cache.py`(불변 리비전 스냅샷과 공용 표시순서·설비
+   스냅샷), 그리고 `components/` 의 `display_order_management.py`·
+   `process_rename_management.py` 다. 뒤의 둘은 탭 국소 예외로, 공용 프로필 `version` 만
+   키로 쓰고 DB 를 읽지 않는 CSV 직렬화다(항상 그리는 탭이라 그 비용이 모든 rerun 에
+   실린다). 그 밖의 모듈에 `@st.cache_data`·`@st.cache_resource` 를 새로 두지 않으며,
+   이 예외를 늘리려면 여기 목록을 같이 고친다.
 5. **공식버전은 append-only다.** 특정 시나리오·리비전을 새 공식버전으로 발행하며 과거
    공식 이력을 갱신하지 않는다. 최신 공식 시나리오는 다른 공식 발행 전 삭제하지 않는다.
    그 외 시나리오는 삭제할 수 있고, 그때 그 시나리오의 공식 발행 이력도 함께 사라진다.
@@ -958,7 +1008,7 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
   이 세 검증은 실패 시 위반 건수와 문제 업무 키·값 예시 5건을 메시지에 싣는다.
 - 제외 행은 사유 컬럼과 함께 `CAPACITY_EXCLUSIONS_ATTR`로 전달되고 공정별 Capa·공정별
   확보율 화면이 건수·상세 표·CSV 내려받기로 보여 준다
-- BOX·PCB는 산식 구현 전까지 제외
+- BOX·PCB는 산식 확정 전까지 계산에서 제외한다(제외가 아니라 `추가 예정` 이다 — 11장 참조)
 - 기본 화면용 공정 유효 Capa는 STEP으로 중복된 수요를 한 번만 센 원수요 부하량을
   STEP별 소요대수 합계로 나눠 `원수요 부하량 ÷ Σ(STEP별 부하량 ÷ STEP별 대당 Capa)`로
   집계한다. 동일한 대당 Capa의 STEP이 늘면 공정 유효 Capa는 그 수에 반비례해 감소한다.
@@ -1201,9 +1251,11 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   Figure 는 요약과 별도 캐시다.
 - **가로 컨테이너 안의 제목은 `h1` 의 위아래 여백을 잃는다.** `st.container(horizontal=True)`
   에 `st.title` 을 넣으면 Streamlit 이 `padding: 0` 을 걸어 그 페이지만 제목이 위로
-  올라붙고 앱 헤더에 닿는다. 제목 옆에 무언가를 두려면 `st.columns(..., wrap=False)` 를
-  쓴다 — 컬럼은 여백을 그대로 둬서 제목 줄 높이가 다른 페이지와 같다
-  (`components/page_header.py`).
+  올라붙고 앱 헤더에 닿는다. 제목 옆에 무언가를 두려면 `st.columns(...)` 를 쓴다 — 컬럼은
+  여백을 그대로 둬서 제목 줄 높이가 다른 페이지와 같다. **이때 컬럼에 `wrap=False` 는
+  걸지 않는다.** 가로 flex 블록의 `wrap=False` 는 `overflow-x: auto` 를 부르고, CSS 가
+  반대 축의 `visible` 을 `auto` 로 올려 제목 줄에 세로 스크롤바를 남긴다. 제목을 한 줄로
+  묶는 것은 `st.title(..., wrap=False)` 의 몫이다 (`components/page_header.py`).
 - 여러 필터가 같은 결과를 바꾸면 `st.form`으로 묶어 중간 입력마다 전체 재실행하지 않는다.
 - `use_container_width`를 새로 사용하지 말고 `width="stretch"` 또는
   `width="content"`를 사용한다.
@@ -1280,7 +1332,15 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   시점 정의, 공정·STEP·제품 매핑, 미래 3일의 계획/전망 데이터 공급 규칙은 미확정이다.
 - DuckDB 쓰기 직렬화는 단일 Streamlit 서버 프로세스 범위다. 다중 서버 프로세스로
   확장할 때는 별도 쓰기 서비스 또는 서버형 DB로 전환한다.
-- BOX·PCB 계산은 제외 상태다.
+- 증감 표기색은 **글자색**(`DELTA_INCREASE`·`DELTA_DECREASE`)과 **면색**
+  (`DELTA_AREA_INCREASE`·`DELTA_AREA_DECREASE`)이 다르다. 앞은 값 위에 작게 적는 선행
+  증감이고 뒤는 실행 Capa 증감 **구간 자체**를 칠한다. 면색으로 글자색을 쓰면 막대 안에서
+  글자보다 무거워진다. 휘도 단조 검사는 `STATUS_*` 셋만 보므로 이 둘은 그 검사 대상이
+  아니지만, 막대 트랙·확보 막대에서 떨어지는지는 토큰 주석의 대비값으로 확인한다.
+- BOX·PCB 는 산식 확정 전까지 대당 Capa·소요대수 계산에서 빼 두었다. **제외가 아니라
+  `추가 예정` 이다**(2026-09-05 확정). `PCB수(K매)` 의 원천 공식 또는 PCB당 Unit·수율·보정
+  기준이 확정되면 넣는다. 경계는 `frame_contracts.DEMAND_BASES` 와
+  `unit_capacity.UNIMPLEMENTED_BASES`·`required_equipment.UNIMPLEMENTED_BASES` 다.
 - `MCP_Chip_Ratio` 보정식은 미확정이다.
 - BigDataQuery 실제 SQL과 컬럼 매핑은 `company_bigdataquery_adapter.py`에 커밋을 마쳤고
   `is_bigdataquery_adapter_configured()`도 참이다. 남은 것은 사내 환경에서의 접속·조회

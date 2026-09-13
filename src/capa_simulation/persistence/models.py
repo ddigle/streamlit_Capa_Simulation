@@ -74,6 +74,22 @@ class GlobalAdvanceLoad:
 
 
 @dataclass(frozen=True)
+class GlobalExecutionCapacity:
+    """Scenario-independent execution-capacity profile in percentage points.
+
+    프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`,
+    `updated_at=None`, 행 0건이다.
+
+    `rows` 의 `증감 확보율` 단위는 **퍼센트포인트**다(105% 에 -10 이면 95%).
+    """
+
+    version: int
+    source: str
+    updated_at: datetime | None
+    rows: pd.DataFrame
+
+
+@dataclass(frozen=True)
 class GlobalPastData:
     """Scenario-independent past-period profile: monthly totals, plan detail, rates.
 

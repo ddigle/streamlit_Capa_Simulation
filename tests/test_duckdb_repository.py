@@ -593,6 +593,175 @@ def _rows_owned_by(
     return remaining
 
 
+def test_removing_a_scenario_clears_the_shared_comparison_profile(tmp_path: Path) -> None:
+    """공용 GAP 비교 프로필은 시나리오 소유가 아니라 참조다.
+
+    소유로 보면 자동 발견이 단일 행 프로필을 통째로 지워 프로필 자체가 사라지고
+    `version` 도 안 올라가, 다른 세션이 사라진 시나리오를 계속 비교 대상으로 쥔다.
+    """
+    repository = _repository(tmp_path / "capa.duckdb")
+    kept = repository.create_scenario(
+        _metadata("Kept"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+        source_data=_core_data_source(),
+    )
+    doomed = repository.create_scenario(
+        _metadata("Doomed"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+    repository.replace_global_comparison_scenario(
+        doomed.scenario.scenario_id,
+        doomed.revision.revision_id,
+        source="test",
+    )
+    before = repository.load_global_comparison_scenario()
+
+    repository.delete_scenario(doomed.scenario.scenario_id)
+
+    after = repository.load_global_comparison_scenario()
+    # 프로필 행 자체는 살아 있고 대상만 비워진다.
+    assert after.scenario_id is None
+    assert after.revision_id is None
+    # `version` 이 올라가야 다른 세션 캐시가 낡은 대상을 버린다.
+    assert after.version > before.version
+    # 남은 시나리오를 가리키던 값이었다면 건드리지 않는다.
+    repository.replace_global_comparison_scenario(
+        kept.scenario.scenario_id,
+        kept.revision.revision_id,
+        source="test",
+    )
+    untouched = repository.load_global_comparison_scenario()
+    assert untouched.scenario_id == kept.scenario.scenario_id
+
+
+def test_archiving_clears_the_shared_comparison_profile(tmp_path: Path) -> None:
+    """보관본은 목록에 없다. 비교 대상으로 남겨 두면 매 세션 되살렸다 버리는 왕복이 생긴다."""
+    repository = _repository(tmp_path / "capa.duckdb")
+    repository.create_scenario(
+        _metadata("Kept"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+        source_data=_core_data_source(),
+    )
+    hidden = repository.create_scenario(
+        _metadata("Hidden"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+    repository.replace_global_comparison_scenario(
+        hidden.scenario.scenario_id,
+        hidden.revision.revision_id,
+        source="test",
+    )
+    before = repository.load_global_comparison_scenario()
+
+    repository.archive_scenario(hidden.scenario.scenario_id)
+
+    after = repository.load_global_comparison_scenario()
+    assert after.scenario_id is None
+    assert after.version > before.version
+
+
+def test_archiving_hides_the_scenario_but_keeps_every_row(tmp_path: Path) -> None:
+    """보관은 목록에서 숨길 뿐이다. 행이 남아 있어야 되돌릴 수 있다."""
+    repository = _repository(tmp_path / "capa.duckdb")
+    kept = repository.create_scenario(
+        _metadata("Kept"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+        source_data=_core_data_source(),
+    )
+    hidden = repository.create_scenario(
+        _metadata("Hidden"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+
+    repository.archive_scenario(hidden.scenario.scenario_id)
+
+    assert [scenario.scenario_id for scenario in repository.list_scenarios()] == [
+        kept.scenario.scenario_id
+    ]
+    assert {
+        scenario.scenario_id for scenario in repository.list_scenarios(include_archived=True)
+    } == {kept.scenario.scenario_id, hidden.scenario.scenario_id}
+    # 행이 남아 있으므로 리비전을 그대로 읽을 수 있다. 이것이 삭제와의 차이다.
+    assert repository.load_revision(hidden.revision.revision_id).scenario.scenario_id == (
+        hidden.scenario.scenario_id
+    )
+
+    repository.restore_scenario(hidden.scenario.scenario_id)
+
+    assert {scenario.scenario_id for scenario in repository.list_scenarios()} == {
+        kept.scenario.scenario_id,
+        hidden.scenario.scenario_id,
+    }
+
+
+def test_archived_scenarios_reject_new_revisions_and_official_release(
+    tmp_path: Path,
+) -> None:
+    """보관본은 읽기 전용이다. 숨은 시나리오가 자라면 되돌릴 지점이 흐려진다."""
+    repository = _repository(tmp_path / "capa.duckdb")
+    snapshot = repository.create_scenario(
+        _metadata("Frozen"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+        source_data=_core_data_source(),
+    )
+    repository.archive_scenario(snapshot.scenario.scenario_id)
+
+    with pytest.raises(ValueError, match="보관된 시나리오에는 새 리비전을"):
+        repository.save_revision(
+            snapshot.scenario.scenario_id,
+            snapshot.tables,
+            snapshot.preset,
+            revision_name="두 번째",
+        )
+    with pytest.raises(ValueError, match="보관된 시나리오는 공식버전으로"):
+        repository.publish_official_revision(
+            snapshot.scenario.scenario_id,
+            snapshot.revision.revision_id,
+            release_name="v1",
+        )
+
+
+def test_reordering_compares_against_active_scenarios_only(tmp_path: Path) -> None:
+    """목록이 보관본을 빼고 그리므로 순서 대조도 활성만 본다.
+
+    전체와 대조하면 보관본이 하나만 생겨도 「순서 저장」이 항상 ValueError 로 죽는다.
+    """
+    repository = _repository(tmp_path / "capa.duckdb")
+    first = repository.create_scenario(
+        _metadata("First"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+        source_data=_core_data_source(),
+    )
+    second = repository.create_scenario(
+        _metadata("Second"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+    hidden = repository.create_scenario(
+        _metadata("Hidden"),
+        _reference_tables(),
+        ScenarioPreset(202608, 202608, ("Process-A",)),
+    )
+    repository.archive_scenario(hidden.scenario.scenario_id)
+
+    reordered = repository.reorder_scenarios(
+        [second.scenario.scenario_id, first.scenario.scenario_id]
+    )
+
+    assert [scenario.scenario_id for scenario in reordered] == [
+        second.scenario.scenario_id,
+        first.scenario.scenario_id,
+    ]
+
+
 def test_list_order_is_saved_and_rejects_a_partial_list(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "scenario.duckdb")
     first = repository.create_scenario(

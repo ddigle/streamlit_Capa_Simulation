@@ -83,12 +83,12 @@ def render_page_header_with_status(
     # 앱 헤더에 닿고, 같은 자리에 있어야 할 다른 페이지 제목과 눈높이가 어긋난다.
     # 컬럼은 그 여백을 그대로 두므로 제목 줄 높이가 다른 페이지와 같다.
     #
-    # 두 `wrap=False` 가 각각 막는 것이 다르다. 컬럼 쪽은 진행 표시가 제목 아래로 접히는
-    # 것을, 제목 쪽은 제목 자체가 두 줄이 되는 것을 막는다. 어느 쪽이든 접히면 막대가
-    # 뜨고 질 때마다 아래 차트가 밀린다 — 이 함수가 막으려던 바로 그 움직임이다.
-    title_column, status_column = st.columns(
-        TITLE_STATUS_COLUMN_RATIO, vertical_alignment="center", wrap=False
-    )
+    # **컬럼에는 `wrap=False` 를 걸지 않는다.** 가로 flex 블록에 `wrap=False` 를 주면
+    # Streamlit 이 `overflow-x: auto` 를 걸고 세로 축은 `visible` 로 남는데, CSS 는 한 축이
+    # `auto` 면 나머지 `visible` 을 `auto` 로 계산한다. 그래서 제목 줄에 쓰지도 않는 세로
+    # 스크롤바가 생긴다. 제목이 두 줄이 되는 것은 아래 `st.title(..., wrap=False)` 가 따로
+    # 막는다 — 그쪽은 `overflow: hidden` + 말줄임이라 스크롤바를 만들지 않는다.
+    title_column, status_column = st.columns(TITLE_STATUS_COLUMN_RATIO, vertical_alignment="center")
     title_column.title(heading, wrap=False)
     with status_column, st.container(width=STATUS_SLOT_WIDTH_PX):
         slot = st.empty()
