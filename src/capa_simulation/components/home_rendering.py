@@ -53,7 +53,6 @@ HomeFigureCacheKey = tuple[
     float,
     bool,
     bool,
-    bool,
     str,
     bool,
     int,
@@ -73,7 +72,7 @@ HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 # 때마다 차트를 다시 조립해 2 초를 쓴다. 한 칸은 Figure 여섯 개다.
 HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 
-HOME_FIGURE_SCHEMA_VERSION = 39
+HOME_FIGURE_SCHEMA_VERSION = 40
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지

@@ -244,6 +244,11 @@ try:
     comparison_density: pd.DataFrame | None = None
     comparison_wafer: pd.DataFrame | None = None
     comparison_detail: pd.DataFrame | None = None
+    # **Figure 캐시 키가 보는 것은 이 값이다.** 고른 리비전이 아니라 실제로 붙은 리비전이다 —
+    # 토글은 켜져 있어도 그 리비전이 지워졌거나 DB 를 잠깐 못 읽으면 비교 없이 그린다.
+    # 요청한 값을 키에 적으면 그렇게 GAP 없이 그려진 그림이 「GAP 켜짐」 키로 저장되고,
+    # 다음 실행에서 DB 가 멀쩡해져도 그 그림이 그대로 나와 GAP 이 조용히 사라진 채로 남는다.
+    applied_comparison_revision_id: str | None = None
     if show_comparison:
         owned_revision_id = _owned_comparison_revision(
             str(DUCKDB_PATH.resolve()),
@@ -267,6 +272,7 @@ try:
                 include_edp=include_edp,
                 detail_dimensions=tuple(plan_detail_dimensions),
             )
+            applied_comparison_revision_id = owned_revision_id
     # 과거 구간은 계산에 없는 달만 채운다. 계산 결과가 있는 달은 계산이 이긴다.
     calculated_months = {int(value) for value in monthly_density["생산계획년월"]}
     monthly_density = merge_past_months(
@@ -540,8 +546,9 @@ figure_cache_key: HomeFigureCacheKey = (
     float(warning_threshold_percent),
     include_edp,
     plan_detail_customer,
-    show_comparison,
-    str(comparison_revision_id or ""),
+    # 비교는 이 한 값으로 충분하다. 「껐다」와 「켰지만 못 붙였다」는 그림이 똑같으므로
+    # 같은 키를 나눠 쓰는 것이 맞다.
+    str(applied_comparison_revision_id or ""),
     show_advance,
     advance_profile.version if show_advance else 0,
     show_execution,

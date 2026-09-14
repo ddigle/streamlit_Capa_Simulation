@@ -383,16 +383,41 @@ def test_rename_is_not_part_of_the_calculation_cache_key() -> None:
 
 
 def test_home_figure_cache_key_type_grew_by_the_rename_version() -> None:
-    """뒤에 화면 기준 아홉이 붙었다.
+    """뒤에 화면 기준 여덟이 붙었다.
 
-    EDP·거래선 분류·비교 GAP·비교 리비전·선행·선행 버전·실행·실행 버전·과거 버전, 그리고
+    EDP·거래선 분류·적용된 비교 리비전·선행·선행 버전·실행·실행 버전·과거 버전, 그리고
     **B/N Top5 확보율 구간** 셋(버전·하한·상한). 구간은 버전만으로는 부족하다 — 값이 곧
     막대 길이라 저장하지 않고 화면에서 바꾸는 경로가 생기면 버전이 안 움직인다.
+
+    비교는 **토글과 리비전 둘이 아니라 적용된 리비전 하나**다. 「껐다」와 「켰지만 그
+    리비전을 못 붙였다」는 그림이 똑같으므로 같은 키를 나눠 쓰는 것이 맞다.
 
     **rename 버전은 반드시 둘째 자리다.** 맨 뒤에 붙이면 표시순서 digest 를 `[-1]` 로 꺼내
     쓰는 자리가 엉뚱한 값을 집는다.
     """
-    assert len(get_args(HomeFigureCacheKey)) == 22
+    assert len(get_args(HomeFigureCacheKey)) == 21
+
+
+def test_home_figure_cache_key_records_the_applied_comparison_not_the_requested_one() -> None:
+    """고른 리비전을 키에 적으면 GAP 이 조용히 사라진 그림이 캐시에 눌러앉는다.
+
+    리비전이 지워졌거나 DB 를 잠깐 못 읽으면 비교 없이 그리는데, 그때도 키는 「GAP 켜짐」
+    이라 다음 실행에서 DB 가 멀쩡해져도 그 그림이 그대로 나온다.
+    """
+    tree = ast.parse(HOME_PAGE.read_text(encoding="utf-8"))
+    elements: list[str] = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "figure_cache_key"
+            and isinstance(node.value, ast.Tuple)
+        ):
+            elements = [ast.unparse(item) for item in node.value.elts]
+
+    assert "str(applied_comparison_revision_id or '')" in elements
+    assert "show_comparison" not in elements
+    assert "str(comparison_revision_id or '')" not in elements
 
 
 def test_home_figure_cache_key_includes_the_rename_version_and_display_order_digest() -> None:
