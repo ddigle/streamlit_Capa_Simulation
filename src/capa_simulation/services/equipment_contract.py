@@ -43,6 +43,7 @@ EQUIPMENT_COLUMNS = (
     "호기이력",
     "비고",
     "레이아웃표시",
+    "환산비",
 )
 
 DOWNTIME_COLUMNS = ("호기", "비가동유형", "시작일", "종료일", "상세사유", "비고")
@@ -141,6 +142,25 @@ REFERENCE_TEXT_COLUMNS = (
 
 COORDINATE_COLUMNS = ("X좌표", "Y좌표", "Xsize", "Ysize")
 
+# ------------------------------------------------------------------------ 환산비
+# 같은 공정에 생산성이 다른 설비 모델이 섞일 때 **한 대가 몇 대 몫을 하는지**다. 기준
+# 모델이 1.0 이고 더 빠른 모델은 1 보다 크다.
+#
+#     환산비 1.5 모델 2대 + 환산비 1.0 모델 2대
+#       → 설비대수 4대, 가용대수 5대
+#
+# **설비대수와 가용대수를 가르는 값이다.** 설비대수는 세는 것이고 가용대수는 더하는 것이다.
+# 아직 Capa 의 가용대수는 이 값을 보지 않는다(그 쪽은 호기 데이터와 분리돼 있다) — 지금은
+# 이력을 쌓기 위해 계약에만 넣는다.
+#
+# 빈 칸은 1.0 이다. 대부분의 공정은 모델이 하나뿐이라 적을 것이 없고, 그때 빈 칸을 0 으로
+# 읽으면 그 설비가 통째로 사라진다.
+CONVERSION_RATIO_COLUMN = "환산비"
+
+DEFAULT_CONVERSION_RATIO = 1.0
+
+NUMERIC_COLUMNS = (*COORDINATE_COLUMNS, CONVERSION_RATIO_COLUMN)
+
 FLAG_COLUMNS = ("장기보관여부", "기존설비여부", "레이아웃표시")
 
 VALID_BUILDINGS = tuple(f"C{index}" for index in range(1, 6))
@@ -167,7 +187,7 @@ def empty_equipment_master() -> pd.DataFrame:
                     "datetime64[ns]"
                     if column in DATE_COLUMNS
                     else "float64"
-                    if column in COORDINATE_COLUMNS
+                    if column in NUMERIC_COLUMNS
                     else "string"
                 )
             )

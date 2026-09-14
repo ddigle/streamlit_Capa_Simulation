@@ -100,6 +100,8 @@ def equipment_csv_template() -> bytes:
                     "호기이력": "호기 변동 이력 기록",
                     "비고": SAMPLE_EQUIPMENT_NOTE,
                     "레이아웃표시": "N",
+                    # 기준 모델이 1 이다. 비워 두면 검증이 1 로 채운다.
+                    "환산비": "1",
                 },
                 *EQUIPMENT_CHOICE_ROWS,
             ],

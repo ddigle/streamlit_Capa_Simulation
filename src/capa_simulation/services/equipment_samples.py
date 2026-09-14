@@ -9,6 +9,7 @@ from datetime import date
 import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
+    DEFAULT_CONVERSION_RATIO,
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
 )
@@ -171,6 +172,12 @@ def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
             "Y",
         ),
     )
+    # 같은 공정에 생산성이 다른 모델이 섞인 모습을 샘플에서도 볼 수 있게 둔다. 전부 1.0
+    # 이면 빈 DB 로 여는 사람은 이 컬럼이 무엇을 하는지 알 수 없다.
+    conversion_ratio_by_equipment = {
+        "SAMPLE-SETUP-01": 1.5,
+        "SAMPLE-AVBL-01": 0.8,
+    }
     confirmation_by_equipment = {
         "SAMPLE-IN-01": "계획",
         "SAMPLE-SETUP-01": "확정",
@@ -215,6 +222,7 @@ def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
                 "이설일": _offset_date(anchor, relocation),
                 "장기보관여부": storage,
                 "기존설비여부": existing,
+                "환산비": conversion_ratio_by_equipment.get(equipment_id, DEFAULT_CONVERSION_RATIO),
             }
         )
     return prepare_equipment_master(pd.DataFrame(records, columns=EQUIPMENT_COLUMNS))

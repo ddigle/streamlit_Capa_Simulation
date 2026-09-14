@@ -163,7 +163,7 @@ def _format_equipment_count(value: float) -> str:
 render_page_header(
     "가용설비 현황 (구현중)",
     description=(
-        "기존 보유대수와 30개 컬럼 호기 마스터, 운영 비가동 일정을 설비 전용 DuckDB "
+        "기존 보유대수와 31개 컬럼 호기 마스터, 운영 비가동 일정을 설비 전용 DuckDB "
         "불변 리비전으로 관리합니다."
     ),
 )
@@ -863,7 +863,9 @@ with management_tab:
         st.caption(
             "일반 신규 호기는 입고일정·Qual일정이 필수입니다. 장기보관 또는 기존설비 Y는 "
             "두 일정이 없어도 됩니다. 확정상태는 Qual 실행관리 전용이며, 레이아웃표시 Y는 "
-            "위치와 좌표·크기가 모두 필요합니다."
+            "위치와 좌표·크기가 모두 필요합니다. 환산비는 같은 공정에 생산성이 다른 모델이 "
+            "섞일 때 **한 대가 몇 대 몫을 하는지**입니다 — 기준 모델이 1이고 비우면 1로 "
+            "채워집니다. 아직 Capa 가용대수에는 반영되지 않고 이력으로만 쌓입니다."
         )
         equipment_column_config: dict[str, Any] = {
             "호기": st.column_config.TextColumn(required=True, pinned=True),
@@ -886,6 +888,9 @@ with management_tab:
             "장기보관여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),
             "기존설비여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),
             "레이아웃표시": st.column_config.SelectboxColumn(options=["Y", "N"], required=True),
+            # 하한을 0 이 아니라 그 위로 둔다. 0 은 「이 설비는 없는 셈」이라는 뜻이 되는데
+            # 그것은 비가동 일정이 맡는 일이다. 비워 두면 기준 모델(1.0)로 채워진다.
+            "환산비": st.column_config.NumberColumn(min_value=0.01, step=0.1, format="%.2f"),
         }
         equipment_column_config.update(
             {column: st.column_config.DateColumn(format="YYYY-MM-DD") for column in DATE_COLUMNS}

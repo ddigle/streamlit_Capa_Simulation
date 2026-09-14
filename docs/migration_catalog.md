@@ -51,6 +51,7 @@ sidecar 카탈로그다.
 | `src/capa_simulation/persistence/equipment_migrations/0005_standard_target_availability.sql` | 표준 목표 Capa용 공정·주차별 수동 가용대수 최신값을 저장한다. |
 | `src/capa_simulation/persistence/equipment_migrations/0006_manager_name.sql` | 설비 마스터에 담당자 컬럼을 추가한다. |
 | `src/capa_simulation/persistence/equipment_migrations/0007_floor_layout_profile.sql` | 동·층별 배경 도면과 캔버스 치수를 리비전과 무관한 단일 저장값으로 보관한다. |
+| `src/capa_simulation/persistence/equipment_migrations/0008_equipment_conversion_ratio.sql` | 설비 마스터에 공정 내 모델별 생산성 환산비(기준 1.0)를 추가한다. DuckDB 가 `ADD COLUMN` 에 제약을 받지 않아 양수 검사는 서비스 검증이 맡는다. |
 | `src/capa_simulation/persistence/migrations/0020_global_comparison_scenario.sql` | GAP 의 비교 대상(시나리오·리비전)을 시나리오와 독립된 공용 프로필로 저장한다(단일 행 프로필, 교체마다 version+1). 고르지 않은 상태는 두 값이 NULL 이다. |
 | `src/capa_simulation/persistence/migrations/0021_global_execution_capacity.sql` | 실행 Capa 반영(년월·공정별 확보율 증감)을 시나리오와 독립된 공용 프로필로 저장한다(헤더 1행 + 조정 N행, 교체마다 version+1). 증감 단위는 퍼센트포인트이고, 소유 컬럼을 두지 않아 시나리오 삭제·보관이 건드리지 않는다. |
 | `src/capa_simulation/persistence/migrations/0022_global_top5_band.sql` | B/N Top5 막대가 표현하는 확보율 구간(기본 50~200%)을 시나리오와 독립된 공용 프로필로 저장한다(단일 행, 교체마다 version+1). 소유 컬럼을 두지 않아 시나리오 삭제·보관이 건드리지 않는다. |

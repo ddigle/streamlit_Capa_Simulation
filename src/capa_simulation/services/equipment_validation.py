@@ -9,8 +9,10 @@ import pandas as pd
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
     BASELINE_KEY_COLUMNS,
+    CONVERSION_RATIO_COLUMN,
     COORDINATE_COLUMNS,
     DATE_COLUMNS,
+    DEFAULT_CONVERSION_RATIO,
     DOWNTIME_COLUMNS,
     DOWNTIME_KEY_COLUMNS,
     EQUIPMENT_COLUMNS,
@@ -56,7 +58,7 @@ def prepare_equipment_master(
     *,
     floor_canvases: FloorCanvasMap | None = None,
 ) -> pd.DataFrame:
-    """호기 마스터 30컬럼 계약을 정규화하고 검증한다.
+    """호기 마스터 31컬럼 계약을 정규화하고 검증한다.
 
     `floor_canvases` 를 넘기면 층별 캔버스 폭·높이를 상한으로 좌표를 검사한다. 넘기지
     않으면 상한 검사를 건너뛴다 — 이미 저장된 리비전은 캔버스가 줄어든 뒤에도 열려야 한다.
@@ -86,6 +88,7 @@ def prepare_equipment_master(
     for column in COORDINATE_COLUMNS:
         result[column] = pd.to_numeric(result[column], errors="coerce")
     _validate_locations_and_coordinates(result, floor_canvases)
+    result[CONVERSION_RATIO_COLUMN] = _normalize_conversion_ratio(result)
 
     for column in DATE_COLUMNS:
         result[column] = _normalize_date(result[column], column)
@@ -250,6 +253,34 @@ def _invalid_optional_order(data: pd.DataFrame, columns: tuple[str, ...]) -> pd.
     for left, right in zip(columns, columns[1:], strict=False):
         invalid |= data[left].notna() & data[right].notna() & data[right].lt(data[left])
     return invalid
+
+
+def _normalize_conversion_ratio(result: pd.DataFrame) -> pd.Series:
+    """환산비를 양수 실수로 맞춘다. 빈 칸은 기준 모델(1.0)로 본다.
+
+    **빈 칸과 못 읽는 값을 가른다.** 둘 다 `to_numeric` 으로는 NaN 이 되는데, 빈 칸은
+    1.0 으로 채우고 못 읽는 값은 막아야 한다. 한데 묶어 1.0 으로 채우면 `1,5`·`1.5배`
+    같은 오타가 조용히 기준 모델로 내려앉아, 화면에는 아무 말도 없이 그 설비의 몫이
+    3분의 1 줄어든다.
+
+    빈 칸을 0 으로 읽지도 않는다. 모델이 하나뿐인 공정은 적을 것이 없어 대개 비어 있고,
+    0 으로 읽으면 그 설비가 가용대수에서 통째로 사라진다.
+
+    0 과 음수는 막는다. 0 은 「이 설비는 없는 셈」이라는 뜻이 되는데 그것은 비가동 일정이
+    맡는 일이고, 음수는 다른 설비의 몫을 깎아 합계를 거짓으로 만든다.
+    """
+    raw = result[CONVERSION_RATIO_COLUMN]
+    blank = raw.isna() | raw.astype("string").str.strip().isin(["", "nan", "None", "<NA>"])
+    ratio = pd.to_numeric(raw, errors="coerce")
+    unreadable = ~blank & ratio.isna()
+    if unreadable.any():
+        examples = result.loc[unreadable, "호기"].head(5).tolist()
+        raise ValueError(f"환산비를 숫자로 읽을 수 없습니다: {examples}")
+    not_positive = ~blank & ratio.le(0)
+    if not_positive.any():
+        examples = result.loc[not_positive, "호기"].head(5).tolist()
+        raise ValueError(f"환산비는 0보다 큰 숫자여야 합니다: {examples}")
+    return ratio.mask(blank, DEFAULT_CONVERSION_RATIO).astype("float64")
 
 
 def _drop_blank_rows(data: pd.DataFrame, columns: tuple[str, ...]) -> pd.DataFrame:

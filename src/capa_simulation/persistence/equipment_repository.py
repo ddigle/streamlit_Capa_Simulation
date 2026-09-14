@@ -21,6 +21,7 @@ from capa_simulation.persistence._sql_helpers import as_datetime, connect
 from capa_simulation.persistence.equipment_migration_runner import apply_equipment_migrations
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
+    DEFAULT_CONVERSION_RATIO,
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
     VALID_BUILDINGS,
@@ -549,7 +550,8 @@ def _load_equipment_master(
                long_term_storage_flag AS "장기보관여부",
                existing_equipment_flag AS "기존설비여부",
                equipment_history AS "호기이력", note AS "비고",
-               layout_display_flag AS "레이아웃표시"
+               layout_display_flag AS "레이아웃표시",
+               COALESCE(conversion_ratio, 1.0) AS "환산비"
         FROM equipment_ops.equipment_master_snapshot
         WHERE revision_id = ? ORDER BY source_row_no
         """,
@@ -662,6 +664,8 @@ def _convert_legacy_equipment(legacy: pd.DataFrame) -> pd.DataFrame:
     result["확정상태"] = has_legacy_schedule.map({True: "계획", False: None})
     result["비고"] = legacy.get("비고")
     result["레이아웃표시"] = has_coordinates.map({True: "Y", False: "N"})
+    # 옛 리비전에는 모델별 생산성 구분이 없었다. 전부 기준 모델로 본다.
+    result["환산비"] = DEFAULT_CONVERSION_RATIO
     return result
 
 
@@ -718,6 +722,7 @@ def _insert_equipment(
             "호기이력": "equipment_history",
             "비고": "note",
             "레이아웃표시": "layout_display_flag",
+            "환산비": "conversion_ratio",
         }
     )
     _insert_snapshot(
