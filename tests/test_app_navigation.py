@@ -25,21 +25,22 @@ EXPECTED_PAGES = [
     ("app_pages/capa_chatbot.py", "Capa Chatbot (구현중)", ":material/chat:", False),
     ("app_pages/scenario_management.py", "시나리오 관리", ":material/database:", False),
     ("app_pages/static_capa.py", "Static Capa", ":material/factory:", False),
-    ("app_pages/load_conversion.py", "부하량", ":material/scale:", False),
+    ("app_pages/load_conversion.py", "생산 계획", ":material/scale:", False),
     ("app_pages/capacity_standards.py", "공정별 Capa", ":material/settings:", False),
     ("app_pages/process_securement.py", "공정별 확보율", ":material/monitoring:", False),
     ("app_pages/standard_target_capa.py", "표준 목표 Capa", ":material/track_changes:", False),
     ("app_pages/reference_integrity.py", "Dynamic Capa (구현중)", ":material/sync_alt:", False),
-    ("app_pages/wip_status.py", "표준 대비 재공 현황 (구현중)", ":material/inventory_2:", False),
     (
         "app_pages/available_equipment_status.py",
         "가용설비 현황 (구현중)",
         ":material/precision_manufacturing:",
         False,
     ),
+    ("app_pages/space_status.py", "Space 현황 (구현중)", ":material/grid_view:", False),
     ("app_pages/actual_efficiency.py", "효율 실적 (구현중)", ":material/speed:", False),
     ("app_pages/actual_upeh.py", "UPEH 실적 (구현중)", ":material/timer:", False),
-    ("app_pages/space_status.py", "Space 현황 (구현중)", ":material/grid_view:", False),
+    ("app_pages/yield_actual.py", "수율 실적 (구현중)", ":material/percent:", False),
+    ("app_pages/wip_status.py", "표준 대비 재공 현황 (구현중)", ":material/inventory_2:", False),
     (
         "app_pages/admin_area.py",
         "Admin Area",
@@ -71,7 +72,8 @@ def test_group_membership_matches_the_sidebar_sections() -> None:
     assert STATIC_CAPA.path == "app_pages/static_capa.py"
     assert len(STATIC_CAPA_SUBPAGES) == 4
     assert DYNAMIC_CAPA.path == "app_pages/reference_integrity.py"
-    assert len(DYNAMIC_CAPA_SUBPAGES) == 5
+    # 자원 현황(설비·공간) → 실적(효율·UPEH·수율) → 그 결과가 쌓인 재공 순서다.
+    assert len(DYNAMIC_CAPA_SUBPAGES) == 6
     # 관리 기능이라 하위 페이지가 아니라 자기 박스로 사이드바 맨 아래에 있다.
     assert ADMIN_AREA.path == "app_pages/admin_area.py"
     assert ALL_SPECS[-1] is ADMIN_AREA

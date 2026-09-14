@@ -24,12 +24,14 @@ from capa_simulation.persistence.cache import (
     clear_global_advance_load_cache,
     clear_global_comparison_scenario_cache,
     clear_global_execution_capacity_cache,
+    clear_global_top5_band_cache,
     get_scenario_repository,
     load_global_comparison_scenario,
 )
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
     GlobalExecutionCapacity,
+    GlobalTop5Band,
     RevisionSummary,
     ScenarioSummary,
 )
@@ -50,6 +52,8 @@ ADVANCE_TOGGLE_KEY = "home_show_advance"
 EXECUTION_TOGGLE_KEY = "home_show_execution"
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
 EXECUTION_NOTE_KEY = "home_preference_execution_note"
+TOP5_MIN_KEY = "home_preference_top5_min"
+TOP5_MAX_KEY = "home_preference_top5_max"
 PLAN_DETAIL_CUSTOMER_KEY = "home_preference_plan_detail_customer"
 COMPARISON_TOGGLE_KEY = "home_show_comparison"
 COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
@@ -178,6 +182,7 @@ def render_home_preference(
     month_labels: Sequence[str],
     advance_profile: GlobalAdvanceLoad,
     execution_profile: GlobalExecutionCapacity,
+    top5_band_profile: GlobalTop5Band,
     process_options: Sequence[str],
     process_labels: ProcessLabels,
     unmatched_execution: pd.DataFrame,
@@ -208,6 +213,10 @@ def render_home_preference(
         advance_profile=advance_profile,
         database_path=database_path,
     )
+    _render_top5_band_editor(
+        top5_band_profile=top5_band_profile,
+        database_path=database_path,
+    )
     _render_execution_editor(
         months=months,
         execution_profile=execution_profile,
@@ -217,6 +226,30 @@ def render_home_preference(
         clamped=clamped_execution,
         database_path=database_path,
     )
+
+
+def seed_comparison_selection(database_path: str) -> None:
+    """비교 대상 공용 프로필을 세션에 심는다. 이미 세션 값이 있으면 덮지 않는다.
+
+    **`Preference` 탭이 그려질 때가 아니라 HOME 진입 첫 줄에서 불러야 한다.** 이 함수가
+    피커 안에만 있으면, 프로필에 비교 대상이 저장돼 있어도 첫 화면에서는 세션이 비어
+    있어 「GAP」 토글이 꺼진 채로 뜬다. 탭을 한 번 다녀와야 켜지는데 그 왕복이 사용자에게는
+    고장으로 읽힌다.
+
+    세션 값이 있으면 그쪽이 최신이므로 덮지 않는다 — 이번 실행에서 사용자가 고른 값이다.
+    """
+    if COMPARISON_SCENARIO_KEY in st.session_state:
+        return
+    try:
+        profile = load_global_comparison_scenario(database_path)
+    except BOOTSTRAP_ERRORS:
+        # 심기에 실패해도 화면은 떠야 한다. 피커가 열릴 때 같은 오류를 사용자에게 알린다.
+        return
+    if profile.scenario_id is None:
+        return
+    st.session_state[COMPARISON_SCENARIO_KEY] = profile.scenario_id
+    if profile.revision_id is not None:
+        st.session_state[COMPARISON_REVISION_KEY] = profile.revision_id
 
 
 def _render_comparison_picker(database_path: str, active_scenario_id: str | None) -> None:
@@ -235,14 +268,7 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
             "현재 것을 씁니다."
         )
         repository = get_scenario_repository(database_path)
-        # 비교 대상은 시나리오와 분리된 공용 프로필이다. 세션에 없으면 프로필에서 심어
-        # 새 브라우저 세션에서도 고른 대상이 그대로 살아 있게 한다. 이미 세션 값이 있으면
-        # 그쪽이 최신이므로 덮지 않는다.
-        profile = load_global_comparison_scenario(database_path)
-        if COMPARISON_SCENARIO_KEY not in st.session_state and profile.scenario_id is not None:
-            st.session_state[COMPARISON_SCENARIO_KEY] = profile.scenario_id
-            if profile.revision_id is not None:
-                st.session_state[COMPARISON_REVISION_KEY] = profile.revision_id
+        seed_comparison_selection(database_path)
         try:
             scenarios = repository.list_scenarios()
         except BOOTSTRAP_ERRORS as exc:
@@ -294,11 +320,45 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
             on_change=_save_comparison_choice,
             args=(database_path,),
         )
+        # **위젯 기본값은 `on_change` 를 부르지 않는다.** 시나리오만 고르면 그 시점의
+        # 콜백은 리비전 위젯이 생기기 전이라 `revision_id=None` 으로 저장하고, 뒤이어
+        # 잡히는 리비전 기본값은 세션에만 들어간다. 그러면 다음 세션에서 짝이 맞지 않아
+        # 「GAP」 토글이 꺼진 채로 뜨고, Preference 를 한 번 다녀와야 켜진다.
+        _persist_comparison_choice(database_path)
         if st.session_state.get(COMPARISON_REVISION_KEY) == active_revision_id:
             st.caption(
                 "지금 화면이 쓰고 있는 리비전입니다. 자기와 견주는 셈이라 증감이 모두 "
                 "0 으로 나옵니다."
             )
+
+
+def _persist_comparison_choice(database_path: str) -> None:
+    """화면에 **그려진 실제 선택**을 프로필과 대조해 다르면 남긴다.
+
+    `on_change` 만으로는 부족하다 — 선택 위젯의 기본값은 콜백을 부르지 않는다. 여기서는
+    위젯이 다 그려진 뒤의 세션 값을 보므로 기본값도 잡힌다.
+
+    **저장에 실패해도 화면을 멈추지 않는다.** 이번 화면은 세션 값으로 이미 동작하고,
+    남기지 못한 것은 다음 세션에서 기본값이 안 뜨는 정도의 일이다.
+    """
+    scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
+    revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
+    current = (
+        None if scenario_id is None else str(scenario_id),
+        None if revision_id is None else str(revision_id),
+    )
+    try:
+        profile = load_global_comparison_scenario(database_path)
+        if (profile.scenario_id, profile.revision_id) == current:
+            return
+        get_scenario_repository(database_path).replace_global_comparison_scenario(
+            current[0],
+            current[1],
+            source="HOME 비교 대상 선택",
+        )
+    except (*BOOTSTRAP_ERRORS, ValueError):
+        return
+    clear_global_comparison_scenario_cache()
 
 
 def _save_comparison_choice(database_path: str) -> None:
@@ -465,6 +525,73 @@ def _stored_by_month(advance_profile: GlobalAdvanceLoad) -> dict[int, float]:
         int(month): float(value)
         for month, value in zip(rows["생산계획년월"], rows["선행 물량"], strict=True)
     }
+
+
+def _render_top5_band_editor(
+    *,
+    top5_band_profile: GlobalTop5Band,
+    database_path: str,
+) -> None:
+    """B/N Top5 막대가 표현하는 확보율 구간."""
+    with st.container(border=True):
+        st.markdown("#### :material/straighten: B/N Top5 확보율 구간")
+        st.caption(
+            "Top5 막대의 높이는 `부하량 × 확보율` 이라 한 달 안에서 확보율에 비례합니다. "
+            "한 달의 확보율이 크면 그 달 막대가 다른 달을 눌러 버리므로, 막대 길이가 "
+            "표현할 구간을 여기서 정합니다. 구간 아래는 막대가 0 이고 위는 축 끝까지입니다. "
+            "**hover 에 뜨는 Capa 숫자는 자르지 않은 실제 값입니다.** 상세 B/N 가로막대의 "
+            "구간(80~150%)은 쓰임이 달라 여기서 바뀌지 않습니다."
+        )
+        st.caption(_top5_band_version_caption(top5_band_profile))
+        with st.form("home_top5_band_form"):
+            min_column, max_column = st.columns(2)
+            with min_column:
+                minimum = st.number_input(
+                    "하한(%)",
+                    value=top5_band_profile.min_rate * 100,
+                    step=10.0,
+                    format="%.0f",
+                    key=TOP5_MIN_KEY,
+                )
+            with max_column:
+                maximum = st.number_input(
+                    "상한(%)",
+                    value=top5_band_profile.max_rate * 100,
+                    step=10.0,
+                    format="%.0f",
+                    key=TOP5_MAX_KEY,
+                )
+            submitted = st.form_submit_button(
+                "확보율 구간 저장",
+                icon=":material/save:",
+                type="primary",
+                width="stretch",
+            )
+        if not submitted:
+            return
+        try:
+            get_scenario_repository(database_path).replace_global_top5_band(
+                float(minimum) / 100,
+                float(maximum) / 100,
+                source="웹 직접 편집",
+            )
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(bootstrap_error_message(exc))
+            return
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        clear_global_top5_band_cache()
+        st.success("B/N Top5 확보율 구간을 저장했습니다.")
+        st.rerun(scope="app")
+
+
+def _top5_band_version_caption(profile: GlobalTop5Band) -> str:
+    if profile.version == 0:
+        return f"공용 버전 없음 · 기본값 {profile.min_rate:.0%}~{profile.max_rate:.0%} 을 씁니다"
+    if profile.updated_at is None:
+        return f"공용 버전 v{profile.version} · {profile.source}"
+    return f"공용 버전 v{profile.version} · {profile.source} · {profile.updated_at:%Y-%m-%d %H:%M}"
 
 
 def _render_execution_editor(

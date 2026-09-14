@@ -59,6 +59,9 @@ HomeFigureCacheKey = tuple[
     bool,
     int,
     int,
+    float,
+    float,
+    int,
 ]
 
 HomeFigureSet = tuple[Any, ...]
@@ -69,7 +72,7 @@ HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 # 때마다 차트를 다시 조립해 2 초를 쓴다. 한 칸은 Figure 여섯 개다.
 HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 
-HOME_FIGURE_SCHEMA_VERSION = 36
+HOME_FIGURE_SCHEMA_VERSION = 38
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지
@@ -271,7 +274,17 @@ def render_home_figures(
                     month_figure,
                     width="stretch",
                     key="production_lob_months",
-                    config={"displayModeBar": False, "responsive": True},
+                    # 드래그 확대는 Figure 축의 `fixedrange` 와 `dragmode=False` 가 막는다.
+                    # 여기서는 더블클릭 복귀와 축 손잡이를 함께 끈다 — 확대가 없는데 그
+                    # 둘만 살아 있으면 누를 때마다 아무 일도 안 일어나는 조작이 된다.
+                    # hover 는 그대로 살린다.
+                    config={
+                        "displayModeBar": False,
+                        "responsive": True,
+                        "doubleClick": False,
+                        "showAxisDragHandles": False,
+                        "scrollZoom": False,
+                    },
                 )
                 # 라벨 칸의 제목 줄과 같은 높이로 비워 둔다. 두 칸의 자식 수와 높이가
                 # 같아야 아래 표의 행이 맞는다. 높이를 주지 않으면 빈 컨테이너를

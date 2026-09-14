@@ -56,7 +56,7 @@ from capa_simulation.services.virtual_product import (
 PRODUCT_COLUMN_WIDTH_PX = 100
 
 render_page_header(
-    "부하량",
+    "생산 계획",
     description=(
         "월별 PKG 생산계획을 Chip·Wafer·Density 부하량으로 환산합니다. "
         "계획과 수율을 편집하면 다른 페이지의 산출값이 함께 바뀝니다."

@@ -22,6 +22,7 @@ from capa_simulation.components.home_preference import (
     PLAN_DETAIL_CUSTOMER_KEY,
     render_home_preference,
     render_lob_title_row,
+    seed_comparison_selection,
 )
 from capa_simulation.components.home_rendering import (
     HOME_FIGURE_SCHEMA_VERSION,
@@ -53,6 +54,7 @@ from capa_simulation.persistence.cache import (
     load_global_advance_load,
     load_global_execution_capacity,
     load_global_past_data,
+    load_global_top5_band,
     load_scenario_plan,
 )
 from capa_simulation.scenario_activation import active_persisted_scenario_id
@@ -91,7 +93,11 @@ from capa_simulation.services.execution_capacity import (
     empty_execution_capacity,
     unmatched_execution_adjustments,
 )
-from capa_simulation.services.month_columns import build_month_axis, month_label
+from capa_simulation.services.month_columns import (
+    build_month_axis,
+    build_past_month_labels,
+    month_label,
+)
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.past_data import (
     merge_past_frame,
@@ -149,6 +155,10 @@ include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, False))
 show_advance = bool(st.session_state.get(ADVANCE_TOGGLE_KEY, False))
 show_execution = bool(st.session_state.get(EXECUTION_TOGGLE_KEY, False))
 plan_detail_customer = bool(st.session_state.get(PLAN_DETAIL_CUSTOMER_KEY, False))
+# 비교 대상은 공용 프로필이라 새 브라우저 세션에도 남아 있다. 세션 키를 읽기 **전에**
+# 심어야 첫 화면부터 「GAP」 토글이 켜진다 — 심는 자리가 Preference 피커 안에만 있으면
+# 탭을 한 번 다녀와야 켜진다.
+seed_comparison_selection(str(DUCKDB_PATH.resolve()))
 comparison_scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
 comparison_revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
 show_comparison = bool(st.session_state.get(COMPARISON_TOGGLE_KEY, False)) and bool(
@@ -299,6 +309,7 @@ try:
     # 곱한다. 조정이 없어도 부른다 — `기준 확보율`·`확보율 증감`·`실행 비고` 세 컬럼이
     # 항상 있어야 뒤의 순위·Figure 가 컬럼 유무로 갈라지지 않는다.
     execution_profile = load_global_execution_capacity(str(DUCKDB_PATH.resolve()))
+    top5_band_profile = load_global_top5_band(str(DUCKDB_PATH.resolve()))
     execution_rows = execution_profile.rows if show_execution else empty_execution_capacity()
     unmatched_execution = unmatched_execution_adjustments(securement_rate, execution_rows)
     securement_rate = apply_execution_adjustment(securement_rate, execution_rows)
@@ -504,6 +515,9 @@ year_totals = build_year_totals(monthly_density, monthly_wafer, year_total_label
 # 입력 전액이 거짓 증감으로 찍힌다. `calculated_months` 는 과거 병합 **직전**에 잡은
 # 집합이라 그 경계가 그대로다.
 gap_month_labels = {month_label(month) for month in calculated_months}
+# 같은 경계가 면색도 정한다. 과거 구간 열은 한 단계 눌러 지난 이력임을 알린다 — 값은
+# 그대로 읽히되 DB 계산 구간과 한눈에 갈린다.
+past_month_labels = build_past_month_labels(month_labels, year_total_labels, gap_month_labels)
 figure_cache_key: HomeFigureCacheKey = (
     HOME_FIGURE_SCHEMA_VERSION,
     process_labels.version,
@@ -523,6 +537,9 @@ figure_cache_key: HomeFigureCacheKey = (
     advance_profile.version if show_advance else 0,
     show_execution,
     execution_profile.version if show_execution else 0,
+    top5_band_profile.version,
+    top5_band_profile.min_rate,
+    top5_band_profile.max_rate,
     past_profile.version,
 )
 cached_figures = take_home_figures(figure_cache_key)
@@ -580,6 +597,8 @@ if cached_figures is None:
         comparison_density=comparison_density,
         comparison_wafer=comparison_wafer,
         year_totals=year_totals,
+        top5_rate_band=top5_band_profile.band,
+        past_month_labels=past_month_labels,
     )
     displayed_detail = production_detail
     aligned_comparison_detail: pd.DataFrame | None = None
@@ -601,6 +620,7 @@ if cached_figures is None:
         comparison_detail=aligned_comparison_detail,
         year_total_labels=year_total_labels,
         gap_month_labels=gap_month_labels,
+        past_month_labels=past_month_labels,
     )
     (
         bottleneck_detail_label_figure,
@@ -612,6 +632,7 @@ if cached_figures is None:
         warning_threshold=warning_threshold,
         process_labels=process_labels,
         year_total_labels=year_total_labels,
+        past_month_labels=past_month_labels,
     )
     cached_figures = (
         label_figure,
@@ -664,6 +685,7 @@ with preference_tab:
         month_labels=[month_label(value) for value in advance_months],
         advance_profile=advance_profile,
         execution_profile=execution_profile,
+        top5_band_profile=top5_band_profile,
         # 실행 Capa 는 **원본 공정명** 기준이다. 표시명은 고르는 화면에서만 보인다.
         process_options=process_options,
         process_labels=process_labels,

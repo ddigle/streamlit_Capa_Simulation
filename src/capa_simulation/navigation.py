@@ -53,7 +53,7 @@ SCENARIO_MANAGEMENT = PageSpec(
 
 STATIC_CAPA = PageSpec("app_pages/static_capa.py", "Static Capa", ":material/factory:")
 STATIC_CAPA_SUBPAGES = (
-    PageSpec("app_pages/load_conversion.py", "부하량", ":material/scale:"),
+    PageSpec("app_pages/load_conversion.py", "생산 계획", ":material/scale:"),
     PageSpec("app_pages/capacity_standards.py", "공정별 Capa", ":material/settings:"),
     PageSpec("app_pages/process_securement.py", "공정별 확보율", ":material/monitoring:"),
     PageSpec("app_pages/standard_target_capa.py", "표준 목표 Capa", ":material/track_changes:"),
@@ -65,20 +65,23 @@ DYNAMIC_CAPA = PageSpec(
     ":material/sync_alt:",
     url_path="dynamic_capa",
 )
+# 순서는 사용자가 정한 조회 흐름이다 — 설비·공간 같은 **자원 현황**을 먼저 보고, 효율·
+# UPEH·수율 **실적**을 지나, 마지막에 그 결과가 쌓인 재공을 본다.
 DYNAMIC_CAPA_SUBPAGES = (
-    PageSpec(
-        "app_pages/wip_status.py",
-        _implementing("표준 대비 재공 현황"),
-        ":material/inventory_2:",
-    ),
     PageSpec(
         "app_pages/available_equipment_status.py",
         _implementing("가용설비 현황"),
         ":material/precision_manufacturing:",
     ),
+    PageSpec("app_pages/space_status.py", _implementing("Space 현황"), ":material/grid_view:"),
     PageSpec("app_pages/actual_efficiency.py", _implementing("효율 실적"), ":material/speed:"),
     PageSpec("app_pages/actual_upeh.py", _implementing("UPEH 실적"), ":material/timer:"),
-    PageSpec("app_pages/space_status.py", _implementing("Space 현황"), ":material/grid_view:"),
+    PageSpec("app_pages/yield_actual.py", _implementing("수율 실적"), ":material/percent:"),
+    PageSpec(
+        "app_pages/wip_status.py",
+        _implementing("표준 대비 재공 현황"),
+        ":material/inventory_2:",
+    ),
 )
 
 # 관리 기능이라 조회 컨트롤과 떨어뜨려 사이드바 맨 아래에 자기 박스로 둔다.

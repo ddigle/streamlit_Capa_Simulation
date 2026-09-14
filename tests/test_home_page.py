@@ -137,6 +137,7 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
         "선행 물량 저장",
         "실행 Capa 저장",
         "판정 기준 적용",
+        "확보율 구간 저장",
     ]
     # 제목 아래 설명 문구와 계획 세부수량 CSV 는 탭 자리를 내주고 사라졌다. 남은 내려받기는
     # Past Data 탭의 양식 세 개뿐이다.

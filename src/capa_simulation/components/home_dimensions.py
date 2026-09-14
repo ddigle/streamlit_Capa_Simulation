@@ -129,6 +129,10 @@ LOB_BAR_WIDTH = (1 - LOB_BARGAP) * 0.75
 # Top5 세로 막대의 폭과 테두리. overlay 모드에서 증감 trace 가 같은 폭을 **명시**해야
 # 조정된 달이 흩어져 있을 때 폭이 제각각으로 튀지 않는다. 두 곳에 따로 적으면 조용히 갈린다.
 TOP5_BAR_WIDTH = 0.15
+
+# B/N Top5 의 `Wafer Capa` 레이블만 받는 가로 보정. 같은 x 를 쓰는 확보율 레이블은 `<b>`
+# 굵은 글자라 글꼴 상자 폭이 달라, 보정을 공유하면 한쪽이 치우친다.
+TOP5_WAFER_LABEL_XSHIFT_PX = -1.0
 TOP5_BAR_OUTLINE_WIDTH_PX = 0.8
 
 # LOB 세로 막대의 테두리 굵기. 상세 B/N 의 가로막대(BAR_OUTLINE_WIDTH_PX)보다 조금 굵다 —

@@ -16,6 +16,7 @@ from capa_simulation.persistence.models import (
     GlobalExecutionCapacity,
     GlobalPastData,
     GlobalProcessRename,
+    GlobalTop5Band,
     RevisionSummary,
     ScenarioPreset,
     ScenarioSnapshot,
@@ -99,6 +100,14 @@ class _GlobalAdvanceLoadPayload(TypedDict):
     source: str
     updated_at: datetime | None
     rows: pd.DataFrame
+
+
+class _GlobalTop5BandPayload(TypedDict):
+    version: int
+    source: str
+    updated_at: datetime | None
+    min_rate: float
+    max_rate: float
 
 
 class _GlobalExecutionCapacityPayload(TypedDict):
@@ -320,6 +329,39 @@ def load_global_advance_load(database_path: str) -> GlobalAdvanceLoad:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_top5_band_payload(database_path: str) -> _GlobalTop5BandPayload:
+    profile = get_scenario_repository(database_path).load_global_top5_band()
+    return {
+        "version": profile.version,
+        "source": profile.source,
+        "updated_at": profile.updated_at,
+        "min_rate": profile.min_rate,
+        "max_rate": profile.max_rate,
+    }
+
+
+def load_global_top5_band(database_path: str) -> GlobalTop5Band:
+    """Share the Top 5 band without caching its model class."""
+    payload = _load_global_top5_band_payload(database_path)
+    return GlobalTop5Band(
+        version=payload["version"],
+        source=payload["source"],
+        updated_at=payload["updated_at"],
+        min_rate=payload["min_rate"],
+        max_rate=payload["max_rate"],
+    )
+
+
+def clear_global_top5_band_cache() -> None:
+    """Top5 확보율 구간 프로필만 비운다.
+
+    다른 공용 프로필과 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다 — 어떤 `RQ_*`
+    표에도 오버레이되지 않고 막대 길이를 정할 때만 쓰인다.
+    """
+    _load_global_top5_band_payload.clear()
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
 def _load_global_execution_capacity_payload(
     database_path: str,
 ) -> _GlobalExecutionCapacityPayload:
@@ -424,6 +466,7 @@ def clear_scenario_repository() -> None:
     _load_global_advance_load_payload.clear()
     _load_global_comparison_scenario_payload.clear()
     _load_global_execution_capacity_payload.clear()
+    _load_global_top5_band_payload.clear()
     _load_global_past_data_payload.clear()
     past_table_csv.clear()
     _load_global_display_order_payload.clear()

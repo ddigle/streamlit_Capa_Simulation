@@ -74,6 +74,25 @@ class GlobalAdvanceLoad:
 
 
 @dataclass(frozen=True)
+class GlobalTop5Band:
+    """Scenario-independent securement band for the B/N Top 5 bar heights.
+
+    프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`,
+    `updated_at=None`, 그리고 서비스 기본값(50%~200%)이다.
+    """
+
+    version: int
+    source: str
+    updated_at: datetime | None
+    min_rate: float
+    max_rate: float
+
+    @property
+    def band(self) -> tuple[float, float]:
+        return self.min_rate, self.max_rate
+
+
+@dataclass(frozen=True)
 class GlobalExecutionCapacity:
     """Scenario-independent execution-capacity profile in percentage points.
 

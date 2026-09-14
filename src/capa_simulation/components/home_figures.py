@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import html
 import unicodedata
-from collections.abc import Collection, Iterable, Mapping, Sequence
-from typing import Any, NamedTuple, cast
+from collections.abc import Collection, Container, Iterable, Mapping, Sequence
+from typing import Any, Final, NamedTuple, cast
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -35,6 +35,7 @@ from capa_simulation.components.home_dimensions import (
     LOB_VALUE_FONT_SIZE_PX,
     TOP5_BAR_OUTLINE_WIDTH_PX,
     TOP5_BAR_WIDTH,
+    TOP5_WAFER_LABEL_XSHIFT_PX,
     lower_delta_row_height,
     lower_delta_yshift_px,
     table_row_height,
@@ -55,6 +56,11 @@ from capa_simulation.services.dashboard import (
     DETAIL_DIMENSION_HEADERS,
     DETAIL_DIMENSION_WIDTHS,
     PRODUCTION_DETAIL_DIMENSIONS,
+)
+from capa_simulation.services.top5_band import (
+    DEFAULT_TOP5_MAX_RATE,
+    DEFAULT_TOP5_MIN_RATE,
+    clamp_rate,
 )
 
 # 상세 B/N 공정 시트가 보여줄 순위 상한. 페이지가 서비스에 넘기는 값이고, 자르는 곳은
@@ -242,6 +248,62 @@ def _execution_delta_note(delta: object, note: object) -> str:
 def _execution_series(frame: pd.DataFrame, column: str) -> pd.Series | None:
     """있을 때만 돌려준다. Figure 는 조정 컬럼 없이도 그려져야 한다."""
     return frame[column] if column in frame.columns else None
+
+
+# 과거 구간에서 바탕색이 갈아타는 짝. 키가 없는 색은 그대로 둔다 — 머리글처럼 과거·현재를
+# 나눌 이유가 없는 면까지 눌리면 월 라벨 줄이 구간마다 다른 회색으로 끊긴다.
+_PAST_SURFACES: Final[Mapping[str, str]] = {
+    tokens.SURFACE: tokens.SURFACE_PAST,
+    tokens.SURFACE_SUBTLE: tokens.SURFACE_PAST_SUBTLE,
+    tokens.SURFACE_YEAR_TOTAL: tokens.SURFACE_PAST_YEAR_TOTAL,
+}
+
+
+def _past_surface(surface: str) -> str:
+    """그 면색의 과거 구간 짝."""
+    return _PAST_SURFACES.get(surface, surface)
+
+
+def _month_surface(
+    label: str,
+    year_totals: Container[str],
+    past_month_labels: Collection[str] | None,
+    *,
+    base: str = tokens.SURFACE,
+) -> str:
+    """월 칸 하나의 바탕색.
+
+    연간 Total 인지 먼저 보고, 그 위에 과거 여부를 얹는다. 두 성격은 서로 배타가 아니라서
+    (과거만 든 해의 Total) 한쪽을 지우면 그 칸이 이웃보다 밝아져 거꾸로 읽힌다.
+    """
+    surface = tokens.SURFACE_YEAR_TOTAL if label in year_totals else base
+    if past_month_labels is not None and label in past_month_labels:
+        return _past_surface(surface)
+    return surface
+
+
+def _banded_capa(
+    monthly_top5: pd.DataFrame,
+    rate_column: str,
+    capa_column: str,
+    band: tuple[float, float],
+) -> list[float]:
+    """밴드로 자른 확보율로 낸 막대 높이.
+
+    `B/N Capa = 부하량 × 확보율` 이므로 부하량이 있으면 그것을 그대로 곱한다. 없는
+    프레임(다른 화면·테스트)에서는 `Capa ÷ 확보율` 로 부하량을 되돌린다 — 확보율이 0 이면
+    되돌릴 수 없으므로 그 행은 0 이다.
+    """
+    rates = pd.to_numeric(monthly_top5[rate_column], errors="coerce")
+    if "부하량" in monthly_top5.columns:
+        loads = pd.to_numeric(monthly_top5["부하량"], errors="coerce")
+    else:
+        capas = pd.to_numeric(monthly_top5[capa_column], errors="coerce")
+        loads = capas.divide(rates.where(rates != 0))
+    return [
+        0.0 if pd.isna(load) or pd.isna(rate) else float(load) * clamp_rate(float(rate), band)
+        for load, rate in zip(loads, rates, strict=True)
+    ]
 
 
 def _capacity_color(rate: float, *, secure_threshold: float, warning_threshold: float) -> str:
@@ -434,6 +496,8 @@ def build_lob_summary_figures(
     comparison_density: pd.DataFrame | None = None,
     comparison_wafer: pd.DataFrame | None = None,
     year_totals: Mapping[str, Mapping[str, float]] | None = None,
+    top5_rate_band: tuple[float, float] = (DEFAULT_TOP5_MIN_RATE, DEFAULT_TOP5_MAX_RATE),
+    past_month_labels: Collection[str] | None = None,
 ) -> tuple[go.Figure, go.Figure]:
     """생산계획·Wafer Capa·Bottleneck 요약 Figure 한 쌍을 만든다.
 
@@ -480,9 +544,7 @@ def build_lob_summary_figures(
         for index, month in enumerate(aligned_summary["생산계획년월"])
         if pd.notna(month)
     }
-    value_fills = [
-        tokens.SURFACE_YEAR_TOTAL if label in totals else tokens.SURFACE for label in month_labels
-    ]
+    value_fills = [_month_surface(label, totals, past_month_labels) for label in month_labels]
     subplot_options = {
         "rows": 3,
         "cols": 1,
@@ -703,11 +765,16 @@ def build_lob_summary_figures(
     )
     top5_annotations: list[dict[str, Any]] = []
     if not monthly_top5.empty:
-        top5_peak = float(monthly_top5["B/N Capa"].max())
-        if "기준 B/N Capa" in monthly_top5.columns:
-            baseline_peak = monthly_top5["기준 B/N Capa"].max()
-            if pd.notna(baseline_peak):
-                top5_peak = max(top5_peak, float(baseline_peak))
+        # 막대 높이는 **밴드로 자른 확보율**에서 낸다. `B/N Capa = 부하량 × 확보율` 이라
+        # 한 달 안에서는 높이가 곧 확보율에 비례하는데, 한 달의 확보율이 크면 그 달이 다른
+        # 달을 눈동자로 만든다. hover 의 Capa 숫자는 자르지 않은 실제 값 그대로다.
+        top5_bar_values = _banded_capa(monthly_top5, "확보율", "B/N Capa", top5_rate_band)
+        top5_baseline_values = (
+            _banded_capa(monthly_top5, "기준 확보율", "기준 B/N Capa", top5_rate_band)
+            if "기준 확보율" in monthly_top5.columns
+            else None
+        )
+        top5_peak = max([*top5_bar_values, *(top5_baseline_values or [])], default=0.0)
         top5_axis_max = max(top5_peak * 1.8, 1.0)
         wafer_capa_label_y = top5_axis_max * 0.04
         slot_offsets = {1: -0.36, 2: -0.18, 3: 0.0, 4: 0.18, 5: 0.36}
@@ -719,12 +786,8 @@ def build_lob_summary_figures(
         # 되어도, 그 자리에 선 공정의 조정 전·후를 그린다.
         top5_delta = build_execution_delta_bars(
             positions=top5_positions,
-            values=monthly_top5["B/N Capa"].tolist(),
-            baselines=(
-                series.tolist()
-                if (series := _execution_series(monthly_top5, "기준 B/N Capa")) is not None
-                else None
-            ),
+            values=top5_bar_values,
+            baselines=top5_baseline_values,
             hover_notes=[
                 _execution_delta_note(delta, note)
                 for delta, note in zip(
@@ -742,9 +805,11 @@ def build_lob_summary_figures(
                 x=top5_positions,
                 y=top5_delta.drawn,
                 width=TOP5_BAR_WIDTH,
-                customdata=monthly_top5[["년월", "공정", "확보율", "Wafer Capa"]].assign(
-                    공정=labels.series(monthly_top5["공정"])
-                ),
+                # 막대 길이는 잘렸어도 hover 숫자는 실제 Capa 다. `%{y}` 를 쓰면 잘린
+                # 값이 그대로 뜬다.
+                customdata=monthly_top5[
+                    ["년월", "공정", "확보율", "Wafer Capa", "B/N Capa"]
+                ].assign(공정=labels.series(monthly_top5["공정"])),
                 marker={
                     "color": [
                         _capacity_color(
@@ -765,7 +830,7 @@ def build_lob_summary_figures(
                 },
                 hovertemplate=(
                     "%{customdata[0]} · %{customdata[1]}"
-                    "<br>Capa %{y:,.2f} 억Gb"
+                    "<br>Capa %{customdata[4]:,.2f} 억Gb"
                     "<br>확보율 %{customdata[2]:.1%}"
                     "<br>Wafer Capa %{customdata[3]:,.0f} 매"
                     "<extra></extra>"
@@ -779,7 +844,8 @@ def build_lob_summary_figures(
             month_figure.add_trace(delta_trace, row=3, col=1)
         for x_position, capa, rate in zip(
             top5_positions,
-            monthly_top5["B/N Capa"],
+            # 라벨은 그려진 막대 끝에 붙어야 한다. 실제 Capa 를 쓰면 잘린 막대에서 떨어진다.
+            top5_bar_values,
             monthly_top5["확보율"],
             strict=True,
         ):
@@ -816,8 +882,11 @@ def build_lob_summary_figures(
                     "yref": "y2",
                     "text": f"{wafer_capa / 1_000:,.0f}K",
                     "textangle": 270,
-                    # 확보율 레이블과 같은 줄에 세로로 붙으므로 가로 기준이 같아야 한다.
+                    # **확보율 레이블과 가로 보정이 다르다.** 두 라벨은 x 위치를 공유하지만
+                    # 확보율은 `<b>` 굵은 글자라 글꼴 상자가 달라, 같은 기준으로 두면 이쪽만
+                    # 오른쪽으로 치우쳐 보인다. 그 차이를 여기서만 되민다.
                     "xanchor": "center",
+                    "xshift": TOP5_WAFER_LABEL_XSHIFT_PX,
                     "yanchor": "bottom",
                     "yshift": -6.0,
                     "showarrow": False,
@@ -864,6 +933,9 @@ def build_lob_summary_figures(
         },
         "barmode": "overlay",
         "bargap": LOB_BARGAP,
+        # 드래그로 영역을 잡아 확대하는 동작을 끈다. hover 는 그대로 살아 있다 —
+        # `staticPlot` 을 쓰면 툴팁까지 죽으므로 그 방법은 쓰지 않는다.
+        "dragmode": False,
         "plot_bgcolor": tokens.CHART_CANVAS,
         "paper_bgcolor": tokens.CHART_CANVAS,
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
@@ -896,12 +968,15 @@ def build_lob_summary_figures(
         default=1.0,
     )
     lob_axis_max = max(lob_axis_max, 1.0)
+    # 두 축 모두 `fixedrange` 여야 hover 를 켜 둔 채로 드래그 확대가 붙지 않는다. 상세
+    # B/N 월 Figure 가 같은 이유로 같은 설정을 쓴다.
     for target_figure in (label_figure, month_figure):
         target_figure.update_yaxes(
             title=None,
             showticklabels=False,
             showgrid=False,
             zeroline=False,
+            fixedrange=True,
             range=[0, lob_axis_max * 1.35],
             row=2,
             col=1,
@@ -911,6 +986,7 @@ def build_lob_summary_figures(
             showticklabels=False,
             showgrid=False,
             zeroline=False,
+            fixedrange=True,
             range=[
                 0,
                 top5_axis_max if not monthly_top5.empty else 1.0,
@@ -926,6 +1002,7 @@ def build_lob_summary_figures(
             showticklabels=False,
             title=None,
             showgrid=False,
+            fixedrange=True,
             range=[-0.5, max(len(month_positions) - 0.5, 0.5)],
             domain=[0.0, 1.0],
             row=row_number,
@@ -1089,9 +1166,10 @@ def build_lob_summary_figures(
         for boundary_y, boundary_width, boundary_color in lob_row_boundaries
     ]
     append_layout_items(label_figure, shapes=lob_row_shapes)
-    # 차트 두 칸(생산계획 LOB·B/N Top 5)의 연간 Total 열. 표 칸은 행마다 칠했지만 차트는
-    # 면이 하나라 여기서 세로 띠로 덮는다. 막대·꺾은선이 없는 칸이라 겹칠 것도 없다.
-    total_column_shapes = [
+    # 차트 두 칸(생산계획 LOB·B/N Top 5)의 연간 Total·과거 구간 열. 표 칸은 행마다
+    # 칠했지만 차트는 면이 하나라 여기서 세로 띠로 덮는다. 과거 구간에는 막대·꺾은선이
+    # 있으므로 `layer: below` 로 값 아래에 깐다.
+    column_surface_shapes = [
         {
             "type": "rect",
             "x0": index / max(len(month_labels), 1),
@@ -1100,14 +1178,14 @@ def build_lob_summary_figures(
             "y1": lob_table_domains[-1][0],
             "xref": "paper",
             "yref": "paper",
-            "fillcolor": tokens.SURFACE_YEAR_TOTAL,
+            "fillcolor": surface,
             "line": {"width": 0},
             "layer": "below",
         }
         for index, label in enumerate(month_labels)
-        if label in totals
+        if (surface := _month_surface(label, totals, past_month_labels)) != tokens.SURFACE
     ]
-    append_layout_items(month_figure, shapes=[*total_column_shapes, *lob_row_shapes])
+    append_layout_items(month_figure, shapes=[*column_surface_shapes, *lob_row_shapes])
     add_quarter_boundaries(month_figure, month_labels, y0=panel_bottom)
     flush_layout_items(label_figure, month_figure)
     return label_figure, month_figure
@@ -1231,6 +1309,7 @@ def build_plan_detail_figures(
     comparison_detail: pd.DataFrame | None = None,
     year_total_labels: Sequence[str] = (),
     gap_month_labels: Collection[str] | None = None,
+    past_month_labels: Collection[str] | None = None,
 ) -> tuple[go.Figure, go.Figure]:
     """분류별 계획 세부수량 Figure 한 쌍을 만든다.
 
@@ -1349,6 +1428,18 @@ def build_plan_detail_figures(
         values if reserves_gap_line else [_centered_cell_text(value) for value in values]
         for values, _ in detail_month_cells
     ]
+
+    def _detail_month_column_fills(month: str) -> list[str]:
+        """한 월 열의 행별 바탕색. 제품 그룹 줄무늬를 과거 구간에서도 유지한다."""
+        base = (
+            [tokens.SURFACE_YEAR_TOTAL] * len(detail_month_row_colors)
+            if month in year_total_labels
+            else detail_month_row_colors
+        )
+        if past_month_labels is not None and month in past_month_labels:
+            return [_past_surface(surface) for surface in base]
+        return base
+
     detail_month_figure = go.Figure(
         go.Table(
             columnwidth=[1.0] * len(detail_month_columns),
@@ -1367,12 +1458,7 @@ def build_plan_detail_figures(
             cells={
                 "values": detail_month_values,
                 "align": "center",
-                "fill_color": [
-                    [tokens.SURFACE_YEAR_TOTAL] * len(detail_month_row_colors)
-                    if month in year_total_labels
-                    else detail_month_row_colors
-                    for month in detail_month_columns
-                ],
+                "fill_color": [_detail_month_column_fills(month) for month in detail_month_columns],
                 "line_color": TRANSPARENT_COLOR,
                 "font": {
                     "color": tokens.TEXT,
@@ -1512,6 +1598,7 @@ def build_bottleneck_detail_figures(
     warning_threshold: float,
     process_labels: ProcessLabels | None = None,
     year_total_labels: Sequence[str] = (),
+    past_month_labels: Collection[str] | None = None,
 ) -> tuple[go.Figure, go.Figure]:
     """월별 B/N 상위 공정을 순위별 가로막대로 그린 Figure 한 쌍을 만든다.
 
@@ -1932,7 +2019,8 @@ def build_bottleneck_detail_figures(
                 "layer": "below",
             },
             # 연간 Total 칸은 데이터가 없어 비지만, 비었다는 것과 그 칸이 합계 자리라는
-            # 것은 다른 이야기다. 머리글 아래 본문만 살짝 어둡게 칠해 알린다.
+            # 것은 다른 이야기다. 과거 구간도 마찬가지라, 머리글 아래 본문만 살짝 어둡게
+            # 칠해 알린다. 이 Figure 는 표가 아니라 차트라 줄무늬 대신 열 띠 하나로 덮는다.
             *[
                 {
                     "type": "rect",
@@ -1942,12 +2030,13 @@ def build_bottleneck_detail_figures(
                     "y1": header_boundary_y,
                     "xref": "paper",
                     "yref": "paper",
-                    "fillcolor": tokens.SURFACE_YEAR_TOTAL,
+                    "fillcolor": surface,
                     "line": {"width": 0},
                     "layer": "below",
                 }
-                for label in year_total_labels
-                if label in month_positions
+                for label in month_labels
+                if (surface := _month_surface(label, year_total_labels, past_month_labels))
+                != tokens.SURFACE
             ],
             *[
                 {

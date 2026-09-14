@@ -53,6 +53,7 @@ from capa_simulation.persistence.models import (
     GlobalExecutionCapacity,
     GlobalPastData,
     GlobalProcessRename,
+    GlobalTop5Band,
     OfficialReleaseSummary,
     RevisionSummary,
     ScenarioCreate,
@@ -101,6 +102,11 @@ from capa_simulation.services.past_data import (
 from capa_simulation.services.process_rename import (
     empty_process_rename_rules,
     prepare_process_rename_rules,
+)
+from capa_simulation.services.top5_band import (
+    DEFAULT_TOP5_MAX_RATE,
+    DEFAULT_TOP5_MIN_RATE,
+    validate_top5_band,
 )
 
 REFERENCE_TABLES: dict[str, str] = {
@@ -419,6 +425,62 @@ class DuckDBScenarioRepository:
                 connection, prepared, version=version, source=source_label
             )
         return self.load_global_execution_capacity()
+
+    def load_global_top5_band(self) -> GlobalTop5Band:
+        """Load the scenario-independent Top 5 securement band.
+
+        다른 공용 프로필과 같은 이유로 예외를 내지 않는다. 한 번도 저장하지 않은 상태가
+        정상이고 그때는 서비스 기본값을 돌려준다.
+        """
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT min_rate, max_rate, version, source, updated_at
+                FROM app_meta.global_top5_band
+                WHERE profile_id = 1
+                """
+            ).fetchone()
+        if row is None:
+            return GlobalTop5Band(
+                version=0,
+                source="",
+                updated_at=None,
+                min_rate=DEFAULT_TOP5_MIN_RATE,
+                max_rate=DEFAULT_TOP5_MAX_RATE,
+            )
+        return GlobalTop5Band(
+            version=int(row[2]),
+            source=str(row[3]),
+            updated_at=row[4],
+            min_rate=float(row[0]),
+            max_rate=float(row[1]),
+        )
+
+    def replace_global_top5_band(
+        self,
+        min_rate: float,
+        max_rate: float,
+        *,
+        source: str,
+    ) -> GlobalTop5Band:
+        """Atomically replace the shared Top 5 band. 교체마다 version 이 오른다."""
+        low, high = validate_top5_band(min_rate, max_rate)
+        source_label = required_text(source, "Top5 확보율 구간 출처")
+        with self._write_transaction() as connection:
+            current = connection.execute(
+                "SELECT version FROM app_meta.global_top5_band WHERE profile_id = 1"
+            ).fetchone()
+            version = 1 if current is None else int(current[0]) + 1
+            connection.execute("DELETE FROM app_meta.global_top5_band WHERE profile_id = 1")
+            connection.execute(
+                """
+                INSERT INTO app_meta.global_top5_band
+                    (profile_id, min_rate, max_rate, version, source)
+                VALUES (1, ?, ?, ?, ?)
+                """,
+                [low, high, version, source_label],
+            )
+        return self.load_global_top5_band()
 
     def load_global_comparison_scenario(self) -> GlobalComparisonScenario:
         """Load the scenario-independent GAP comparison target.

@@ -11,7 +11,7 @@ Total 은 그 해 12월 바로 뒤에 들어간다. 다음 해가 이어지면 �
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 FULL_YEAR_MONTH_COUNT = 12
 
@@ -36,6 +36,34 @@ def complete_years(months: Sequence[int]) -> list[int]:
         for year, present in by_year.items()
         if len(present) == FULL_YEAR_MONTH_COUNT and present == set(range(1, 13))
     )
+
+
+def build_past_month_labels(
+    month_labels: Sequence[str],
+    year_total_labels: Sequence[str],
+    calculated_month_labels: Collection[str],
+) -> frozenset[str]:
+    """월 축에서 **과거 구간**인 칸. Past Data 로만 채워진 달이다.
+
+    근거는 `calculated_month_labels` 하나다 — DB 계산 구간의 달 라벨이고, 그 밖의 달은
+    공용 과거 프로필에서 온 입력값이다.
+
+    연간 Total 은 **그 해의 달이 모두 과거일 때만** 과거로 본다. 한 달이라도 DB 값이
+    섞이면 그 합계는 더는 지난 이력이 아니라 이력과 계획을 함께 더한 수이고, 과거로
+    칠하면 읽는 사람이 전체를 확정된 실적으로 본다.
+    """
+    totals = set(year_total_labels)
+    past = {
+        label
+        for label in month_labels
+        if label not in totals and label not in calculated_month_labels
+    }
+    for total in totals:
+        # 월 라벨은 `26.07`, Total 라벨은 `26년` 이라 앞 두 자리가 같은 해를 가리킨다.
+        members = [label for label in month_labels if label.startswith(f"{total[:2]}.")]
+        if members and all(label in past for label in members):
+            past.add(total)
+    return frozenset(past)
 
 
 def build_month_axis(months: Sequence[int]) -> tuple[list[str], list[str]]:
