@@ -66,6 +66,26 @@ def build_past_month_labels(
     return frozenset(past)
 
 
+def leading_past_column_count(
+    month_labels: Sequence[str],
+    past_month_labels: Collection[str],
+) -> int:
+    """월 축 **맨 앞에 연달아 놓인** 과거 칸 수.
+
+    가로 스크롤의 시작 위치가 이 수에서 나온다. DB 계산 구간의 첫 달이 화면 왼쪽에
+    서야 화면을 열자마자 보이는 것이 계획이 된다 — 과거는 왼쪽으로 되짚어 본다.
+
+    중간에 낀 과거 칸은 세지 않는다. 연속된 앞머리만 건너뛰어야 그 뒤의 열 순서가
+    그대로 남는다.
+    """
+    count = 0
+    for label in month_labels:
+        if label not in past_month_labels:
+            break
+        count += 1
+    return count
+
+
 def build_month_axis(months: Sequence[int]) -> tuple[list[str], list[str]]:
     """(월 축 라벨, 그중 연간 Total 라벨).
 

@@ -416,6 +416,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/horizontal_scrollbar.py`
   - HOME 월별 영역과 동기화되는 픽셀 단위 커스텀 가로 스크롤바를 제공한다.
   - 네이티브 스크롤바가 아닌 Streamlit Custom Components v2로 구현한다.
+  - `initial_offset_px` 는 **처음 그려질 때 한 번만** 걸리는 시작 위치다. 적용값을 대상
+    요소의 `dataset` 에 적어 두고 같은 요소가 살아 있으면 건너뛴다 — 리런마다 다시 걸면
+    사용자가 옮겨 둔 위치를 계속 되돌린다. 표시를 컴포넌트가 아니라 **대상 요소**에
+    남기는 것이 핵심이다. 이 JS 모듈이 다시 실행돼도 대상 DOM 이 그대로면 표시가 함께
+    살아남고, Streamlit 이 요소를 새로 그렸다면 스크롤이 0 이라 다시 걸어야 맞다.
+  - 차트가 그려지기 전에는 스크롤 한도가 0 이라 어디로도 못 간다. 그래서 적용은
+    `ResizeObserver` 가 폭을 잡은 뒤의 `render` 까지 미룬다.
 - `src/capa_simulation/components/month_range_picker.py`
   - 공통 사이드바의 시작·종료 월 선택기를 제공한다.
   - 브라우저 네이티브 `input[type="month"]`를 Streamlit Custom Components v2로 연결한다.
@@ -774,11 +781,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     합" 이라 같은 이름으로 두면 읽는 사람이 속는다.
   - 축은 **하나**다. 표·차트·가로 스크롤 폭이 모두 같은 칸 수를 보아야 하므로 Total 을
     끼운 라벨 목록 하나만 만들어 돌려준다.
+  - `build_past_month_labels`·`leading_past_column_count` 는 과거 구간의 **면색과 스크롤
+    시작 위치**가 함께 보는 근거다. 뒤의 것은 **연속된 앞머리만** 센다 — 중간에 낀 과거
+    칸까지 세면 건너뛴 뒤의 열 순서가 어긋난다.
 - `src/capa_simulation/components/home_preference.py`
   - HOME `Preference` 탭과 `Capa LOB 현황` 제목 줄. 제목은 Plotly 주석이 아니라 여기서
     그린다 — 주석 안에는 위젯을 놓을 수 없어 「선행」 토글을 제목 옆에 둘 수 없었다.
   - 선행 물량 저장은 **표에 보이는 달만** 갈아 끼운다(`merge_advance_load_edits`). 조회기간을
     좁힌 채 저장한 사람이 보이지 않는 달의 입력을 모르는 새 날리면 안 된다.
+  - `Summary 공지` 는 **빈 문구도 저장한다.** 공지를 내리는 것도 결정이고, 그때도 version
+    이 올라야 다른 세션의 캐시가 풀린다. 저장 화면은 「미저장」과 「내림」을 구분해
+    보여 준다 — 화면에서는 둘 다 아무것도 뜨지 않지만 뜻이 다르다.
 - `src/capa_simulation/services/advance_load.py`
   - 선행 투입 물량 정규화와 월별 Capa 부하 변동률. `변동률 = 기존 계획 ÷ 선행 반영 계획`
     이고 확보율에 곱하고 Wafer 는 나눈다. 그래서 `계획 × 확보율` 인 Capa 가 **정확히
@@ -796,6 +809,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     막대 길이도 순위도 음수 확보율에서는 의미를 잃는다.
   - 계산 결과에 짝이 없는 행은 **막지 않고 알린다**(`unmatched_execution_adjustments`).
     공용 프로필이라 다른 시나리오에서는 유효할 수 있다.
+- `src/capa_simulation/services/top5_band.py`
+  - B/N Top 5 세로 막대의 값 경계(기본 50%~200%)를 검증하고 확보율을 그 대역으로 자른다.
+  - 경계는 **B/N 확보율에서 끊어 낸다.** 확보율에 묶여 있으면 달마다 다른 눈금이 걸려
+    같은 길이의 막대가 서로 다른 값을 뜻한다. 대역은 공용 프로필이 정본이다.
 - `src/capa_simulation/components/loading_progress.py`
   - 계산이 오래 걸리는 페이지가 본문 맨 위에 띄우는 진행 막대다. 단계 목록
     (`LoadingStage`)을 미리 선언하고 호출부는 `advance()` 만 부른다 — 호출부가 퍼센트를
@@ -820,6 +837,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     줄이고 그래도 넘치면 말줄임하며, 전체 이름은 hover 의 `customdata` 에만 있다.
     순위 상한 `BOTTLENECK_DETAIL_RANK_LIMIT` 은 여기서 정하고 서비스에 인자로 넘긴다.
     자르는 곳은 서비스 한 곳이고 Figure 는 받은 프레임을 다시 자르지 않는다.
+  - **B/N Top 5 축의 위쪽 여유는 비율이 아니라 픽셀이다**(`TOP5_AXIS_HEADROOM_PX`).
+    세워 둔 확보율 라벨이 먹는 만큼만 비우고 남는 높이는 전부 막대가 쓴다. 예전의
+    `봉우리 × 1.8` 은 위쪽 44% 를 늘 비웠는데, 확보율 구간을 상한에서 잘라 여러 달이 같은
+    높이에 서면 그 띠가 그대로 드러난다. 라벨을 띄우는 `yshift` 와 여유 계산은 **같은
+    상수**를 본다 — 갈라지면 라벨이 비워 둔 자리 밖으로 나가 잘린다.
+  - 가로 스크롤은 **DB 계산 구간의 첫 달**에서 시작한다. 앞머리의 과거 칸 수
+    (`leading_past_column_count`)를 픽셀로 바꿔 스크롤바에 넘긴다 — 왼쪽 끝은 지난
+    이력이라 화면을 열자마자 보이는 것이 계획이 아니게 된다.
+  - `render_summary_notice` 는 `Main` 탭 맨 위의 공지다. **대시보드 테두리 상자 밖**이다
+    — 안에 두면 스크롤되는 월 영역과 폭을 나눠 가져 문구가 월 칸 너비에 갇힌다. 기본은
+    접힘이고(펼친 채로 뜨면 긴 글 하나가 차트를 화면 밖으로 민다) 여닫는 데 rerun 이
+    필요 없도록 `st.expander` 를 쓴다. 본문은 `html.escape` + `white-space: pre-wrap`
+    이다 — 마크다운으로 넘기면 줄 앞의 `#`·`-` 가 제목이나 목록으로 바뀌어 적은 사람이
+    보던 글과 달라지고, 높이를 주거나 `overflow` 를 걸면 긴 공지가 스크롤 안에 숨는다.
 - `src/capa_simulation/components/scenario_management.py`,
   `bigdataquery_registration.py`
   - 시나리오 관리 페이지의 두 탭 UI.

@@ -16,6 +16,7 @@ from capa_simulation.persistence.models import (
     GlobalExecutionCapacity,
     GlobalPastData,
     GlobalProcessRename,
+    GlobalSummaryNote,
     GlobalTop5Band,
     RevisionSummary,
     ScenarioPreset,
@@ -100,6 +101,13 @@ class _GlobalAdvanceLoadPayload(TypedDict):
     source: str
     updated_at: datetime | None
     rows: pd.DataFrame
+
+
+class _GlobalSummaryNotePayload(TypedDict):
+    version: int
+    source: str
+    updated_at: datetime | None
+    note: str
 
 
 class _GlobalTop5BandPayload(TypedDict):
@@ -329,6 +337,37 @@ def load_global_advance_load(database_path: str) -> GlobalAdvanceLoad:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_summary_note_payload(database_path: str) -> _GlobalSummaryNotePayload:
+    profile = get_scenario_repository(database_path).load_global_summary_note()
+    return {
+        "version": profile.version,
+        "source": profile.source,
+        "updated_at": profile.updated_at,
+        "note": profile.note,
+    }
+
+
+def load_global_summary_note(database_path: str) -> GlobalSummaryNote:
+    """Share the HOME summary notice without caching its model class."""
+    payload = _load_global_summary_note_payload(database_path)
+    return GlobalSummaryNote(
+        version=payload["version"],
+        source=payload["source"],
+        updated_at=payload["updated_at"],
+        note=payload["note"],
+    )
+
+
+def clear_global_summary_note_cache() -> None:
+    """Summary 공지 프로필만 비운다.
+
+    다른 공용 프로필과 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다 — 어떤 `RQ_*`
+    표에도 오버레이되지 않고 계산에도 들어가지 않는 화면 문구다.
+    """
+    _load_global_summary_note_payload.clear()
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
 def _load_global_top5_band_payload(database_path: str) -> _GlobalTop5BandPayload:
     profile = get_scenario_repository(database_path).load_global_top5_band()
     return {
@@ -467,6 +506,7 @@ def clear_scenario_repository() -> None:
     _load_global_comparison_scenario_payload.clear()
     _load_global_execution_capacity_payload.clear()
     _load_global_top5_band_payload.clear()
+    _load_global_summary_note_payload.clear()
     _load_global_past_data_payload.clear()
     past_table_csv.clear()
     _load_global_display_order_payload.clear()

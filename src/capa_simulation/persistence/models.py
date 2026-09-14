@@ -93,6 +93,29 @@ class GlobalTop5Band:
 
 
 @dataclass(frozen=True)
+class GlobalSummaryNote:
+    """Scenario-independent notice shown at the top of HOME.
+
+    프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`,
+    `updated_at=None`, 빈 문자열이다.
+
+    **빈 문자열과 미저장을 구분한다.** 빈 문자열은 「공지를 내렸다」는 결정이고 미저장은
+    아직 아무도 손대지 않은 상태다. 화면은 둘 다 아무것도 띄우지 않지만, 저장 화면은
+    마지막에 누가 언제 내렸는지를 보여 줄 수 있어야 한다.
+    """
+
+    version: int
+    source: str
+    updated_at: datetime | None
+    note: str
+
+    @property
+    def is_visible(self) -> bool:
+        """화면에 띄울 내용이 있는지. 공백뿐인 글은 띄우지 않는다."""
+        return bool(self.note.strip())
+
+
+@dataclass(frozen=True)
 class GlobalExecutionCapacity:
     """Scenario-independent execution-capacity profile in percentage points.
 

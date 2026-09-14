@@ -24,6 +24,7 @@ from capa_simulation.persistence.cache import (
     clear_global_advance_load_cache,
     clear_global_comparison_scenario_cache,
     clear_global_execution_capacity_cache,
+    clear_global_summary_note_cache,
     clear_global_top5_band_cache,
     get_scenario_repository,
     load_global_comparison_scenario,
@@ -31,6 +32,7 @@ from capa_simulation.persistence.cache import (
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
     GlobalExecutionCapacity,
+    GlobalSummaryNote,
     GlobalTop5Band,
     RevisionSummary,
     ScenarioSummary,
@@ -183,6 +185,7 @@ def render_home_preference(
     advance_profile: GlobalAdvanceLoad,
     execution_profile: GlobalExecutionCapacity,
     top5_band_profile: GlobalTop5Band,
+    summary_profile: GlobalSummaryNote,
     process_options: Sequence[str],
     process_labels: ProcessLabels,
     unmatched_execution: pd.DataFrame,
@@ -190,7 +193,7 @@ def render_home_preference(
     database_path: str,
     active_scenario_id: str | None,
 ) -> None:
-    """표시 기준 토글과 비교 시나리오 선택, 선행 물량·실행 Capa 입력 시트."""
+    """표시 기준 토글과 비교 시나리오 선택, Summary 공지·선행 물량·실행 Capa 입력 시트."""
     with st.container(border=True):
         st.markdown("#### :material/tune: 표시 기준")
         # 기본은 **끔**이다. LOB 로 읽는 수치는 EDP 를 뺀 값이 기준이고, 넣은 화면을 보려면
@@ -211,6 +214,10 @@ def render_home_preference(
         months=months,
         month_labels=month_labels,
         advance_profile=advance_profile,
+        database_path=database_path,
+    )
+    _render_summary_note_editor(
+        summary_profile=summary_profile,
         database_path=database_path,
     )
     _render_top5_band_editor(
@@ -527,6 +534,76 @@ def _stored_by_month(advance_profile: GlobalAdvanceLoad) -> dict[int, float]:
     }
 
 
+def _render_summary_note_editor(
+    *,
+    summary_profile: GlobalSummaryNote,
+    database_path: str,
+) -> None:
+    """HOME 맨 위에 띄우는 공지 문구.
+
+    계산에 들어가지 않는 **화면 문구**다. 그래서 공용 프로필 중 유일하게 캐시를 비운 뒤
+    `st.rerun` 을 부르지 않아도 되지만, 부르지 않으면 저장한 사람만 옛 문구를 본다.
+
+    **빈 문구도 저장한다.** 공지를 내리는 것도 결정이고, 지우고 저장하면 화면에서
+    사라지는 것이 지우기의 뜻이다.
+    """
+    with st.container(border=True):
+        st.markdown("#### :material/campaign: Summary 공지")
+        st.caption(
+            "HOME `Main` 탭 맨 위에 접힌 채로 뜹니다. 여러 사람이 같은 문구를 보는 공용 "
+            "프로필이라 시나리오를 바꿔도 그대로입니다. **비우고 저장하면 공지가 "
+            "내려갑니다.** 줄바꿈은 그대로 살아납니다."
+        )
+        st.caption(_summary_note_version_caption(summary_profile))
+        with st.form("home_summary_note_form"):
+            # **`key` 를 두지 않는다.** 키가 붙은 위젯은 한 번 그려진 뒤 `value` 를 무시하고
+            # 세션 값을 쓴다. Preference 는 숨은 탭에서도 위젯을 그리므로 HOME 첫 진입의
+            # 공지(대개 빈 문구)가 세션에 박히고, 그 뒤 다른 사람이 올린 공지를 이 화면은
+            # 영영 못 본 채 저장 버튼 한 번으로 덮어쓴다. 값은 폼 반환값으로 받으면 된다.
+            note = st.text_area(
+                "Summary",
+                value=summary_profile.note,
+                height=180,
+                placeholder="예: 9월 물량 확정 전 잠정 계획입니다. B/N 은 SAM 기준.",
+            )
+            submitted = st.form_submit_button(
+                "Summary 저장",
+                icon=":material/save:",
+                type="primary",
+                width="stretch",
+            )
+        if not submitted:
+            return
+        try:
+            get_scenario_repository(database_path).replace_global_summary_note(
+                str(note),
+                source="웹 직접 편집",
+            )
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(bootstrap_error_message(exc))
+            return
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        clear_global_summary_note_cache()
+        st.success(
+            "Summary 공지를 저장했습니다." if str(note).strip() else "Summary 공지를 내렸습니다."
+        )
+        st.rerun(scope="app")
+
+
+def _summary_note_version_caption(profile: GlobalSummaryNote) -> str:
+    if profile.version == 0:
+        return "공용 버전 없음 · 아직 공지를 올린 적이 없습니다"
+    state = "공지 중" if profile.is_visible else "내림"
+    if profile.updated_at is None:
+        return f"공용 버전 v{profile.version} · {profile.source} · {state}"
+    return (
+        f"공용 버전 v{profile.version} · {profile.source} · "
+        f"{profile.updated_at:%Y-%m-%d %H:%M} · {state}"
+    )
+
+
 def _render_top5_band_editor(
     *,
     top5_band_profile: GlobalTop5Band,
@@ -538,7 +615,9 @@ def _render_top5_band_editor(
         st.caption(
             "Top5 막대의 높이는 `부하량 × 확보율` 이라 한 달 안에서 확보율에 비례합니다. "
             "한 달의 확보율이 크면 그 달 막대가 다른 달을 눌러 버리므로, 막대 길이가 "
-            "표현할 구간을 여기서 정합니다. 구간 아래는 막대가 0 이고 위는 축 끝까지입니다. "
+            "표현할 구간을 여기서 정합니다. 구간 밖의 확보율은 **경계값 길이로 그립니다** "
+            "— 하한 아래는 하한 길이, 상한 위는 상한 길이라 상한에 걸린 달끼리는 막대가 "
+            "같은 높이입니다. "
             "**hover 에 뜨는 Capa 숫자는 자르지 않은 실제 값입니다.** 상세 B/N 가로막대의 "
             "구간(80~150%)은 쓰임이 달라 여기서 바뀌지 않습니다."
         )

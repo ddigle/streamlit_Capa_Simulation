@@ -53,6 +53,7 @@ from capa_simulation.persistence.models import (
     GlobalExecutionCapacity,
     GlobalPastData,
     GlobalProcessRename,
+    GlobalSummaryNote,
     GlobalTop5Band,
     OfficialReleaseSummary,
     RevisionSummary,
@@ -481,6 +482,51 @@ class DuckDBScenarioRepository:
                 [low, high, version, source_label],
             )
         return self.load_global_top5_band()
+
+    def load_global_summary_note(self) -> GlobalSummaryNote:
+        """Load the scenario-independent HOME summary notice.
+
+        다른 공용 프로필과 같은 이유로 예외를 내지 않는다. 한 번도 저장하지 않은 상태가
+        정상이고 그때는 빈 공지다.
+        """
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT note, version, source, updated_at
+                FROM app_meta.global_summary_note
+                WHERE profile_id = 1
+                """
+            ).fetchone()
+        if row is None:
+            return GlobalSummaryNote(version=0, source="", updated_at=None, note="")
+        return GlobalSummaryNote(
+            version=int(row[1]),
+            source=str(row[2]),
+            updated_at=row[3],
+            note=str(row[0]),
+        )
+
+    def replace_global_summary_note(self, note: str, *, source: str) -> GlobalSummaryNote:
+        """Atomically replace the shared summary notice. 교체마다 version 이 오른다.
+
+        **빈 문구를 막지 않는다.** 공지를 내리는 것도 저장해야 하는 결정이고, 그때도
+        version 이 올라야 다른 세션의 캐시가 풀린다.
+        """
+        source_label = required_text(source, "Summary 공지 출처")
+        with self._write_transaction() as connection:
+            current = connection.execute(
+                "SELECT version FROM app_meta.global_summary_note WHERE profile_id = 1"
+            ).fetchone()
+            version = 1 if current is None else int(current[0]) + 1
+            connection.execute("DELETE FROM app_meta.global_summary_note WHERE profile_id = 1")
+            connection.execute(
+                """
+                INSERT INTO app_meta.global_summary_note (profile_id, note, version, source)
+                VALUES (1, ?, ?, ?)
+                """,
+                [note, version, source_label],
+            )
+        return self.load_global_summary_note()
 
     def load_global_comparison_scenario(self) -> GlobalComparisonScenario:
         """Load the scenario-independent GAP comparison target.

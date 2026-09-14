@@ -130,6 +130,32 @@ LOB_BAR_WIDTH = (1 - LOB_BARGAP) * 0.75
 # 조정된 달이 흩어져 있을 때 폭이 제각각으로 튀지 않는다. 두 곳에 따로 적으면 조용히 갈린다.
 TOP5_BAR_WIDTH = 0.15
 
+# B/N Top 5 축의 위쪽 여유. 세워 둔 확보율 라벨이 들어갈 자리만 비우고 **남는 높이는
+# 전부 막대가 쓴다.**
+#
+# 예전에는 `봉우리 × 1.8` 이라는 비율이었다. 비율은 행 높이를 바꿀 때마다 위쪽 공백이
+# 같이 변하고, 확보율 구간을 200% 에서 잘라 여러 달이 같은 높이에 서면 라벨 위로 쓰지
+# 않는 띠가 눈에 띄게 남는다. 그래서 **라벨이 실제로 먹는 픽셀**로 적는다.
+#
+# 잉크 길이는 회전한 글자의 **세로** 길이라 글자 수에 비례한다. 한 글자당 값은 브라우저
+# 실측이다 — 15px 볼드 숫자 `228%` 네 글자가 34px 이었다.
+#
+# **글자 수를 상수로 박지 않는다.** 라벨은 밴드로 자르기 전의 원 확보율이라 상한을 200% 로
+# 두어도 `1250%` 같은 긴 글자가 뜬다. 네 글자를 가정하고 고정값을 쓰면 그 순간 라벨이 행
+# 밖으로 나가 위 구획을 침범한다. 그래서 축 여유는 그 화면에서 가장 긴 라벨에서 낸다.
+TOP5_RATE_LABEL_GAP_PX = 10.0
+TOP5_RATE_LABEL_CHAR_PX = 8.6
+TOP5_RATE_LABEL_MARGIN_PX = 6.0
+# 라벨이 하나도 없을 때 쓰는 글자 수. `100%` 네 글자다.
+TOP5_RATE_LABEL_MIN_CHARS = 4
+
+
+def top5_axis_headroom_px(longest_label_chars: int) -> float:
+    """Top5 축 위에 비워 둘 픽셀. 막대 끝에서 띄우는 틈 + 라벨 잉크 + 숨 쉴 틈."""
+    chars = max(int(longest_label_chars), TOP5_RATE_LABEL_MIN_CHARS)
+    return TOP5_RATE_LABEL_GAP_PX + chars * TOP5_RATE_LABEL_CHAR_PX + TOP5_RATE_LABEL_MARGIN_PX
+
+
 # B/N Top5 의 `Wafer Capa` 레이블만 받는 가로 보정. 같은 x 를 쓰는 확보율 레이블은 `<b>`
 # 굵은 글자라 글꼴 상자 폭이 달라, 보정을 공유하면 한쪽이 치우친다.
 TOP5_WAFER_LABEL_XSHIFT_PX = -1.0

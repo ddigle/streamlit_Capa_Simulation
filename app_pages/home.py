@@ -31,6 +31,7 @@ from capa_simulation.components.home_rendering import (
     home_dashboard_panel,
     render_home_figures,
     render_home_performance,
+    render_summary_notice,
     store_home_figures,
     take_home_figures,
 )
@@ -54,6 +55,7 @@ from capa_simulation.persistence.cache import (
     load_global_advance_load,
     load_global_execution_capacity,
     load_global_past_data,
+    load_global_summary_note,
     load_global_top5_band,
     load_scenario_plan,
 )
@@ -96,6 +98,7 @@ from capa_simulation.services.execution_capacity import (
 from capa_simulation.services.month_columns import (
     build_month_axis,
     build_past_month_labels,
+    leading_past_column_count,
     month_label,
 )
 from capa_simulation.services.month_filter import available_month_range
@@ -310,6 +313,9 @@ try:
     # 항상 있어야 뒤의 순위·Figure 가 컬럼 유무로 갈라지지 않는다.
     execution_profile = load_global_execution_capacity(str(DUCKDB_PATH.resolve()))
     top5_band_profile = load_global_top5_band(str(DUCKDB_PATH.resolve()))
+    # 공지는 계산에 들어가지 않는 화면 문구다. 그래서 Figure 캐시 키에도 넣지 않는다 —
+    # 넣으면 문구 한 줄을 고칠 때마다 여섯 Figure 를 다시 그린다.
+    summary_profile = load_global_summary_note(str(DUCKDB_PATH.resolve()))
     execution_rows = execution_profile.rows if show_execution else empty_execution_capacity()
     unmatched_execution = unmatched_execution_adjustments(securement_rate, execution_rows)
     securement_rate = apply_execution_adjustment(securement_rate, execution_rows)
@@ -518,6 +524,9 @@ gap_month_labels = {month_label(month) for month in calculated_months}
 # 같은 경계가 면색도 정한다. 과거 구간 열은 한 단계 눌러 지난 이력임을 알린다 — 값은
 # 그대로 읽히되 DB 계산 구간과 한눈에 갈린다.
 past_month_labels = build_past_month_labels(month_labels, year_total_labels, gap_month_labels)
+# 가로 스크롤의 시작 위치도 같은 경계를 본다. 앞머리의 과거 칸을 지나야 DB 계산 구간의
+# 첫 달이 화면 왼쪽에 선다.
+leading_past_months = leading_past_column_count(month_labels, past_month_labels)
 figure_cache_key: HomeFigureCacheKey = (
     HOME_FIGURE_SCHEMA_VERSION,
     process_labels.version,
@@ -662,6 +671,9 @@ main_tab, preference_tab, past_tab = stateful_tabs(
     key="home_active_tab",
 )
 with main_tab:
+    # 공지는 대시보드 상자 **밖**, 화면 맨 위다. 상자 안에 두면 스크롤되는 월 영역과 폭을
+    # 나눠 가져 문구가 월 칸 너비에 갇힌다.
+    render_summary_notice(summary_profile.note)
     # 제목 줄과 여섯 Figure 는 한 상자 안이다. 제목 옆 토글은 숨은 탭에서도 그려야 하므로
     # Figure 를 건너뛰는 `render_home_figures` 안으로 넣지 않고 상자만 여기서 연다.
     with home_dashboard_panel():
@@ -673,6 +685,7 @@ with main_tab:
             cached_figures,
             month_labels,
             applied_plan_detail_customer=plan_detail_customer,
+            leading_past_month_count=leading_past_months,
             owner_tab=main_tab,
         )
 with past_tab:
@@ -686,6 +699,7 @@ with preference_tab:
         advance_profile=advance_profile,
         execution_profile=execution_profile,
         top5_band_profile=top5_band_profile,
+        summary_profile=summary_profile,
         # 실행 Capa 는 **원본 공정명** 기준이다. 표시명은 고르는 화면에서만 보인다.
         process_options=process_options,
         process_labels=process_labels,

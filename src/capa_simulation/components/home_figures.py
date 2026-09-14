@@ -35,10 +35,12 @@ from capa_simulation.components.home_dimensions import (
     LOB_VALUE_FONT_SIZE_PX,
     TOP5_BAR_OUTLINE_WIDTH_PX,
     TOP5_BAR_WIDTH,
+    TOP5_RATE_LABEL_GAP_PX,
     TOP5_WAFER_LABEL_XSHIFT_PX,
     lower_delta_row_height,
     lower_delta_yshift_px,
     table_row_height,
+    top5_axis_headroom_px,
 )
 from capa_simulation.components.plotly_layout import (
     TRANSPARENT_COLOR,
@@ -470,6 +472,16 @@ def _bottleneck_rate_labels(
     return labels
 
 
+def _bar_rate_label(rate: float) -> str:
+    """Top5 막대 위에 세우는 확보율 글자. 축 여유를 재는 쪽과 **같은 함수**를 본다.
+
+    두 곳이 따로 서식을 적으면 글자 수가 갈라져 비워 둔 자리 밖으로 라벨이 나간다.
+    """
+    if pd.isna(rate):
+        return ""
+    return f"{rate:.0%}"
+
+
 def _bar_rate_text(rate: float) -> str:
     """막대 안 확보율 한 줄.
 
@@ -775,7 +787,17 @@ def build_lob_summary_figures(
             else None
         )
         top5_peak = max([*top5_bar_values, *(top5_baseline_values or [])], default=0.0)
-        top5_axis_max = max(top5_peak * 1.8, 1.0)
+        # 축 위쪽은 라벨이 먹는 픽셀만큼만 비운다. 나머지는 막대가 쓴다 — 확보율 구간을
+        # 잘라 여러 달이 같은 높이에 서면 그 위로 쓰지 않는 띠가 그대로 드러난다.
+        #
+        # 자리는 **그 화면에서 가장 긴 라벨**이 정한다. 라벨은 밴드로 자르기 전의 원
+        # 확보율이라 상한을 200% 로 두어도 `1250%` 가 뜰 수 있고, 네 글자를 가정하면 그
+        # 순간 라벨이 행 밖으로 나가 위 구획을 침범한다.
+        top5_headroom_px = top5_axis_headroom_px(
+            max((len(_bar_rate_label(rate)) for rate in monthly_top5["확보율"]), default=0)
+        )
+        top5_headroom = min(top5_headroom_px / LOB_TOP5_HEIGHT_PX, 0.5)
+        top5_axis_max = max(top5_peak / (1 - top5_headroom), 1.0)
         wafer_capa_label_y = top5_axis_max * 0.04
         slot_offsets = {1: -0.36, 2: -0.18, 3: 0.0, 4: 0.18, 5: 0.36}
         top5_positions = [
@@ -855,7 +877,7 @@ def build_lob_summary_figures(
                     "y": capa,
                     "xref": "x2",
                     "yref": "y2",
-                    "text": f"<b>{rate:.0%}</b>",
+                    "text": f"<b>{_bar_rate_label(rate)}</b>",
                     "textangle": 270,
                     # 가로는 보정하지 않는다. `xanchor="center"` 가 세운 글자의 상자
                     # 가운데를 막대 중심에 정확히 놓는다 — 브라우저에서 회전 중심과 막대
@@ -864,7 +886,9 @@ def build_lob_summary_figures(
                     # 중심과 같았다. 여기에 `xshift` 를 두면 그만큼 그대로 어긋난다.
                     "xanchor": "center",
                     "yanchor": "bottom",
-                    "yshift": 10.0,
+                    # 축 여유를 계산한 값과 **같은 상수**를 쓴다. 둘이 갈라지면 라벨이
+                    # 비워 둔 자리 밖으로 나가 잘린다.
+                    "yshift": TOP5_RATE_LABEL_GAP_PX,
                     "showarrow": False,
                     "font": {
                         "size": 15,

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import html
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any, cast
@@ -72,7 +73,7 @@ HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 # 때마다 차트를 다시 조립해 2 초를 쓴다. 한 칸은 Figure 여섯 개다.
 HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 
-HOME_FIGURE_SCHEMA_VERSION = 38
+HOME_FIGURE_SCHEMA_VERSION = 39
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지
@@ -157,6 +158,68 @@ def dashboard_title_row_style() -> str:
     """
 
 
+SUMMARY_NOTICE_KEY = "home_summary_notice"
+
+
+def summary_notice_style() -> str:
+    """공지 상자를 다른 구획 제목과 같은 모양으로 맞춘다.
+
+    `st.expander` 의 기본 제목은 본문 글씨 크기다. 그대로 두면 바로 아래 `Capa LOB 현황`
+    보다 작아 두 상자가 다른 화면에서 온 것처럼 보인다. 제목 글자와 앞의 강조 막대를
+    구획 제목(`section_title_markup`)과 같은 값으로 맞춘다.
+
+    **본문은 내용만큼 자란다.** 높이를 주거나 `overflow` 를 걸면 긴 공지가 잘려 스크롤
+    안에 숨는데, 공지는 접힘을 펴는 순간 전부 보여야 하는 글이다.
+    """
+    return f"""
+    <style>
+    .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary p {{
+        font-size: 20px;
+        font-weight: 700;
+    }}
+    .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary p::before {{
+        content: "▍";
+        color: {tokens.ACCENT};
+        font-weight: 400;
+    }}
+    .capa-summary-note {{
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        overflow: visible;
+        max-height: none;
+        line-height: 1.65;
+        color: {tokens.TEXT};
+    }}
+    </style>
+    """
+
+
+def render_summary_notice(note: str) -> None:
+    """`Main` 탭 맨 위의 공지. 접힌 채로 열리고 내용이 없으면 아예 그리지 않는다.
+
+    **Plotly 상자 밖**이다. 안에 두면 스크롤되는 월 영역과 폭을 나눠 가져 문구가 월 칸
+    너비에 갇힌다.
+
+    기본이 접힘인 이유는 이 화면의 주인공이 대시보드이기 때문이다. 공지가 펼친 채로
+    뜨면 긴 글 하나가 차트를 화면 밖으로 밀어낸다.
+
+    `st.expander` 를 쓰는 것은 펴고 접는 데 rerun 이 필요 없어서다. 버튼으로 만들면 누를
+    때마다 HOME 전체가 다시 돌고, 그 비용을 문구 하나를 여닫는 데 치르게 된다.
+    """
+    if not note.strip():
+        return
+    st.html(summary_notice_style())
+    with st.container(key=SUMMARY_NOTICE_KEY):
+        with st.expander("Summary", expanded=False):
+            # `st.markdown` 이 아니라 `st.html` 이다. 마크다운은 raw HTML 블록을
+            # **빈 줄에서 끊으므로**(CommonMark block type 6), 문단을 나눈 공지의 둘째
+            # 문단부터는 `<div>` 밖으로 나가 줄 앞의 `#`·`-` 가 제목과 목록으로 바뀐다.
+            # `st.html` 은 파서를 거치지 않는다. `pre-wrap` 이 줄바꿈과 들여쓰기를 살리고
+            # `html.escape` 가 태그를 막는다.
+            st.html(f'<div class="capa-summary-note">{html.escape(note)}</div>')
+
+
 @contextmanager
 def home_dashboard_panel() -> Iterator[None]:
     """`Capa LOB 현황` 제목 줄과 여섯 Figure 를 함께 감싸는 테두리 상자.
@@ -180,6 +243,7 @@ def render_home_figures(
     month_labels: list[str],
     *,
     applied_plan_detail_customer: bool = False,
+    leading_past_month_count: int = 0,
     owner_tab: OpenTab | None = None,
 ) -> None:
     """대시보드 여섯 Figure. **숨은 탭에서는 그리지 않는다.**
@@ -262,6 +326,10 @@ def render_home_figures(
                 target_selector=".st-key-production_lob_month_scroll",
                 height=tokens.SCROLLBAR_HEIGHT_PX,
                 key="production_lob_custom_scrollbar",
+                # 화면을 열면 **DB 계산 구간의 첫 달**이 왼쪽에 선다. 과거 구간은 앞에
+                # 붙어 있으므로 그 칸 수만큼 지나야 한다 — 왼쪽 끝은 지난 이력이라
+                # 화면을 열자마자 보이는 것이 계획이 아니게 된다.
+                initial_offset_px=leading_past_month_count * tokens.MONTH_COLUMN_WIDTH_PX,
             )
             with horizontal_scroll_canvas(
                 key="production_lob_month",

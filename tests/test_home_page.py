@@ -129,6 +129,7 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     ]
     assert [widget.label for widget in app.sidebar.toggle] == ["HOME 성능 진단"]
     assert sorted(widget.label for widget in app.button) == [
+        "Summary 저장",
         "공정 선택창 열기",
         "과거 구간 저장",
         "붙여넣기 읽기",
