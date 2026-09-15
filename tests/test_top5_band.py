@@ -211,6 +211,43 @@ def test_hover_keeps_the_real_capa_not_the_cut_bar() -> None:
     assert list(trace.customdata[2])[4] == pytest.approx(286.0)  # type: ignore[attr-defined]
 
 
+def test_the_threshold_lines_skip_the_year_total_column() -> None:
+    """판정 기준선은 **월 칸 위에만** 긋는다.
+
+    연간 Total 열은 확보율을 더하지 않는 빈 칸이라 그 위로 선이 지나가면 합계에도 기준이
+    있는 것처럼 읽힌다. `add_hline` 은 축 전체를 가로지르므로 쓸 수 없다 — 이어진 월
+    구간마다 선분을 따로 그어야 한다.
+    """
+    frames = _frames()
+    months = ["26.07", "26.08", "26년", "27.01"]
+    for frame_name in ("lob_summary", "monthly_density", "bottleneck_capacity", "monthly_top5"):
+        frames[frame_name] = frames[frame_name].copy()
+    _, month_figure = build_lob_summary_figures(
+        lob_summary=frames["lob_summary"],
+        monthly_density=frames["monthly_density"],
+        bottleneck_capacity=frames["bottleneck_capacity"],
+        monthly_top5=frames["monthly_top5"],
+        month_labels=months,
+        process_labels=LABELS,
+        secure_threshold=1.095,
+        warning_threshold=0.995,
+        year_totals={"26년": {}},
+    )
+    year_total_index = months.index("26년")
+    threshold_lines = [
+        shape
+        for shape in month_figure.layout.shapes
+        if shape.type == "line" and shape.yref == "y2" and shape.y0 == shape.y1
+    ]
+
+    # 기준 둘 × 끊긴 월 구간 둘 = 선분 넷. 어느 선분도 합계 열을 지나지 않는다.
+    assert len(threshold_lines) == 4
+    assert all(
+        shape.x1 <= year_total_index - 0.5 or shape.x0 >= year_total_index + 0.5
+        for shape in threshold_lines
+    )
+
+
 def test_migration_is_registered(tmp_path: Path) -> None:
     """0022 가 카탈로그에 등재돼 있어야 한다. 기존 SQL 은 한 글자도 고치지 않는다."""
     root = Path(__file__).resolve().parents[1]
