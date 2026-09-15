@@ -1,9 +1,10 @@
-# Purpose: Dynamic Capa의 공정·제품별 수율 실적 화면 자리를 잡는다.
+# Purpose: 수율 실적 Gap 과 개선 우선순위 화면을 공통 실적 화면으로 그린다.
 
-"""수율 실적 — 아직 화면 구조를 잡지 않은 빈 자리다.
+"""수율 실적 — 기준 대비 실적 Gap 과 개선 우선순위.
 
-구성과 지표는 실적 DB 의 수율 컬럼 계약이 정해진 뒤에 붙인다. 지금 표를 먼저 그려 두면
-연결 시점에 그 모양을 다시 뜯게 되고, 무엇보다 **합성 표본으로 채운 화면이 실적처럼 읽힌다.**
+화면 한 벌은 `components/performance_actual_screen.py` 가 갖는다. 효율·UPEH·수율 세
+화면이 **같은 질문을 지표만 바꿔** 묻기 때문이다. 이 파일이 갖는 것은 지표 사양과 머리말
+문구뿐이다.
 """
 
 import streamlit as st
@@ -14,17 +15,24 @@ from capa_simulation.components.page_header import (
     pending_badge,
     render_page_header,
 )
+from capa_simulation.components.performance_actual_screen import (
+    render_performance_actual_screen,
+)
+from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.services.performance_actuals import YIELD_METRIC
 
 render_page_header(
     "수율 실적 (구현중)",
     description=(
-        "공정·제품별 수율 실적을 Capa 기준정보의 수율과 비교하는 화면입니다. "
-        "아직 화면을 구성하지 않았습니다."
+        "공정·제품별 수율 실적을 Capa 기준정보(RQ_YLD)의 수율과 비교하고, "
+        "개선 우선순위와 조치 진행상태를 관리하는 화면입니다."
     ),
-    badges=page_badges(MATURITY_BADGES["draft"], pending_badge("데이터")),
+    badges=page_badges(MATURITY_BADGES["prototype"], pending_badge("수율 실적 DB")),
 )
-st.info(
-    "아직 빈 화면입니다. 실적 DB 의 수율 컬럼 계약(집계 구간·공정·제품 매핑)이 정해지면 "
-    "조회 조건과 지표를 붙입니다.",
-    icon=":material/database:",
+st.caption(YIELD_METRIC.description)
+
+render_performance_actual_screen(
+    YIELD_METRIC,
+    key_prefix="yield_actual",
+    process_labels=get_process_labels(),
 )

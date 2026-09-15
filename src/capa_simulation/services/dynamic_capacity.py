@@ -64,7 +64,14 @@ _SUM_COLUMNS = [
 
 
 @dataclass(frozen=True)
-class _DemoProfile:
+class DemoProfile:
+    """데모 세계의 공정·제품 한 줄.
+
+    Dynamic Capa 화면들이 **같은 세계**를 보게 하려고 공개한다. 상위 워터폴의 효율 손실과
+    효율 실적 화면의 Gap 이 다른 데이터에서 나오면, 화면 사이를 오갈 때 숫자가 어긋나
+    「이 손실을 저기서 파고든다」는 이야기가 무너진다.
+    """
+
     process: str
     product: str
     stack: str
@@ -77,17 +84,17 @@ class _DemoProfile:
     rundown_share: float
 
 
-_DEMO_PROFILES = [
-    _DemoProfile("Wafer Sorter", "HBM라", "12H", "Core", "WF", 2_400, 0.86, 0.95, 0.97, 0.08),
-    _DemoProfile("Wafer Sorter", "HBM다E", "12H", "Top", "WF", 2_050, 0.86, 0.91, 0.94, 0.13),
-    _DemoProfile("Pre B/D", "HBM라", "12H", "Core", "WF", 1_820, 0.84, 0.88, 0.96, 0.17),
-    _DemoProfile("Pre B/D", "HBM나", "8H", "Buffer", "WF", 1_650, 0.84, 0.92, 0.92, 0.12),
-    _DemoProfile("TC Bonding", "HBM라", "12H", "Core", "CHIP", 225, 0.82, 0.86, 0.90, 0.18),
-    _DemoProfile("TC Bonding", "HBM다E", "12H", "Top", "CHIP", 238, 0.82, 0.90, 0.93, 0.15),
-    _DemoProfile("Mold", "HBM나", "8H", "Core", "PKG", 145, 0.88, 1.00, 1.00, 0.03),
-    _DemoProfile("Mold", "DDR5", "2H", "Buffer", "PKG", 170, 0.88, 0.99, 0.995, 0.04),
-    _DemoProfile("AVI-PKG", "HBM라", "12H", "PKG", "PKG", 112, 0.90, 0.94, 0.91, 0.14),
-    _DemoProfile("AVI-PKG", "DDR5", "2H", "PKG", "PKG", 132, 0.90, 0.97, 0.95, 0.09),
+DEMO_PROFILES = [
+    DemoProfile("Wafer Sorter", "HBM라", "12H", "Core", "WF", 2_400, 0.86, 0.95, 0.97, 0.08),
+    DemoProfile("Wafer Sorter", "HBM다E", "12H", "Top", "WF", 2_050, 0.86, 0.91, 0.94, 0.13),
+    DemoProfile("Pre B/D", "HBM라", "12H", "Core", "WF", 1_820, 0.84, 0.88, 0.96, 0.17),
+    DemoProfile("Pre B/D", "HBM나", "8H", "Buffer", "WF", 1_650, 0.84, 0.92, 0.92, 0.12),
+    DemoProfile("TC Bonding", "HBM라", "12H", "Core", "CHIP", 225, 0.82, 0.86, 0.90, 0.18),
+    DemoProfile("TC Bonding", "HBM다E", "12H", "Top", "CHIP", 238, 0.82, 0.90, 0.93, 0.15),
+    DemoProfile("Mold", "HBM나", "8H", "Core", "PKG", 145, 0.88, 1.00, 1.00, 0.03),
+    DemoProfile("Mold", "DDR5", "2H", "Buffer", "PKG", 170, 0.88, 0.99, 0.995, 0.04),
+    DemoProfile("AVI-PKG", "HBM라", "12H", "PKG", "PKG", 112, 0.90, 0.94, 0.91, 0.14),
+    DemoProfile("AVI-PKG", "DDR5", "2H", "PKG", "PKG", 132, 0.90, 0.97, 0.95, 0.09),
 ]
 
 
@@ -97,7 +104,7 @@ def build_dynamic_capacity_demo() -> pd.DataFrame:
     start = date(2026, 8, 15)
     for day_index in range(14):
         production_date = start + timedelta(days=day_index)
-        for profile_index, profile in enumerate(_DEMO_PROFILES):
+        for profile_index, profile in enumerate(DEMO_PROFILES):
             planned_hours = 8.0
             daily_wave = sin((day_index + profile_index) * 0.72)
             actual_efficiency = _clip(

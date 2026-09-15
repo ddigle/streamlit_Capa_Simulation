@@ -114,7 +114,7 @@ DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_sim
 ## 로컬 데이터는 합성 표본이다
 
 `data/input/Core_Data.csv`와 `data/capa_simulation.duckdb`, `equipment_samples.py`,
-`builtin_seed.py`, `dynamic_capacity.py`의 `_DemoProfile`은 **실제 운영 데이터가 아니라
+`builtin_seed.py`, `dynamic_capacity.py`의 `DemoProfile`은 **실제 운영 데이터가 아니라
 `scripts/generate_sample_core_data.py`의 리터럴에서 나온 합성 데모**다.
 
 - 로컬 DB·CSV 쿼리 결과로 업무 구조를 판단하거나 설계를 바꾸지 않는다. 쿼리는 코드 경로가

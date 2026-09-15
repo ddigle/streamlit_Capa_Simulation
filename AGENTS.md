@@ -466,6 +466,38 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py`
   - Dynamic Capa 전체 공정 비교, Capa 손실 Waterfall과 일별 표준·실효·실적 추이 Figure를
     생성한다. 공정 간 단위가 다르면 수량을 합산하지 않고 비율만 비교한다.
+- `src/capa_simulation/components/sample_data.py`
+  - 원천이 아직 붙지 않은 화면의 샘플 표시 스위치. 세션 키 하나(`dynamic_capa_sample_data`)를
+    Dynamic Capa 화면 전체가 공유하므로 페이지를 옮겨도 선택이 유지된다. 켜면 「연결 후」,
+    끄면 「연결 전」이다 — 합성 숫자가 실적처럼 읽히는 것을 막으면서 만들 가치를 같은
+    자리에서 보여 준다. 끈 상태의 자리표시자(`render_pending_source`)도 여기 있다.
+- `src/capa_simulation/components/performance_actual_screen.py`
+  - 효율·UPEH·수율 실적 화면 **한 벌**. 세 화면이 같은 질문을 지표만 바꿔 묻기 때문에
+    `MetricSpec` 만 갈아 끼운다. 요약(보고용)·상세 분석·개선과제 세 탭이고 탭은
+    `stateful_tabs` 로 만든다. 조회 조건 위젯은 숨은 탭에서도 그리고 Plotly 만 건너뛴다.
+- `src/capa_simulation/components/securement_heatmap.py`
+  - 공정 × 월 확보율을 상태 3색 격자로 그린다. 경계는 HOME·Static Capa 와 같은 세션
+    값(`dashboard_*_threshold_percent`)을 읽는다. 연속 색을 쓰지 않는 이유는 같은 확보율이
+    화면마다 다른 색 체계로 보이면 판정이 흐려지기 때문이다. 주요 공정별 최초 부족 월을
+    적는 `shortage_summary` 도 여기 있다. **두 축 모두 범주**여야 한다 — `"26.07"` 을
+    숫자로 두면 월 칸이 실수 축에 눌려 붙는다.
+- `src/capa_simulation/components/exclusion_waterfall.py`
+  - 후보 경로 → 사유별 차감 → 남은 경로. 사유의 순서는 `services/unit_capacity.py` 가
+    실제로 걸러 내는 차례와 같아야 한다. 한 행이 두 사유에 걸리면 앞의 사유가 가져가므로
+    순서를 바꾸면 같은 데이터에서 다른 그림이 나온다. 단위는 경로 수다.
+- `src/capa_simulation/components/plan_comparison_dumbbell.py`
+  - 두 시나리오의 기간 계획 물량 차이를 분류별 덤벨로 세운다. 한쪽에만 있는 분류는 다른
+    쪽을 0 으로 봐야 빠진 계획이 길이로 드러난다. 연결선 색은 상태색이 아니라 `DELTA_*`
+    다 — 늘고 주는 것은 좋고 나쁨이 아니다.
+- `src/capa_simulation/components/source_quality.py`
+  - 활성 시나리오 원천 78컬럼의 결측률·카디널리티 표. `load_source_profile` 이 이미 주는
+    `null_count`·`unique_count` 를 쓰므로 새 조인이 없다. 등급을 글자로도 적어 막대 길이
+    하나에 기대지 않는다.
+- `src/capa_simulation/components/equipment_lifecycle_gantt.py`
+  - 호기별 생애주기 구간 Gantt. 구간 계산은
+    `services/equipment_availability.build_equipment_lifecycle_spans` 가 하고 여기서는
+    그리기만 한다. Plotly 의 구간 끝은 배타적이라 마지막 날에 하루를 더해야 하루짜리
+    구간이 사라지지 않는다.
 - `src/capa_simulation/components/wip_status_dashboard.py`
   - 제품을 행, `P → T`와 숫자 구간 오름차순 STEP·공정을 열로 두는 고정 셀 크기의
     Plotly 재공 격자를 생성한다. 보유 재공·유입·Flow 막대와 표준 가능량 기준선을 표시한다.
@@ -762,6 +794,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `raw_data.core_data` 도 `Top` 그대로다. 표시순서 규칙도 입력에는 `Top` 뿐이라
     `display_order._with_edp_top_rule` 이 적용 시점에 `Top_e` 규칙을 파생한다 — 없으면
     화면 맨 뒤로 조용히 밀린다.
+- `src/capa_simulation/services/performance_actuals.py`
+  - 효율·UPEH·수율 세 화면이 공유하는 Gap·우선순위 계산과 합성 데모. **Gap 의 뜻이 지표마다
+    다르다** — 효율·수율은 `%p`, UPEH 는 비율이며 그 차이를 화면이 아니라 `MetricSpec` 이
+    갖는다. 비율 집계는 월별 비율의 평균이 아니라 생산수량 가중으로 다시 계산한다. 상태는
+    기간 평균이 아니라 **마지막 달 기준 연속 미달 개월**로 판정한다. 데모는
+    `dynamic_capacity.DEMO_PROFILES` 에서 나와 상위 워터폴과 같은 세계를 본다.
 - `src/capa_simulation/services/legacy_comparison.py`
   - 원천에 보존된 기존 결과와 신규 계산을 같은 단위로 대조한다. 기존 컬럼은 **계획 한 줄
     (`RQ_PKG_PLAN` 업무 키) × `WF 구분`** 안에서 경로 행마다 반복되므로, 그 단위에서 접은
@@ -1395,7 +1433,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 데이터가 아니라 합성 데모 표본**이다. 공정 목록·소요기준(WF/CHIP)·성능·수율은
 `scripts/generate_sample_core_data.py` 의 `PROCESS_SPECS` 리터럴에 사람이 써 넣은 값이고,
 행의 팬아웃(계획 1행 × 공정 30행)도 `process_rows()` 가 계획 행을 전 공정에 복제해서
-생기는 구조적 산물이다. `equipment_samples.py`, `dynamic_capacity.py` 의 `_DemoProfile`,
+생기는 구조적 산물이다. `equipment_samples.py`, `dynamic_capacity.py` 의 `DemoProfile`,
 `builtin_seed.py` 도 같다.
 
 따라서 다음을 지킨다.

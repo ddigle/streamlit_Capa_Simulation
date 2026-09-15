@@ -70,6 +70,9 @@ def test_selecting_a_renamed_process_keeps_the_original_value() -> None:
     app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
     renamed_source = app.session_state["renamed_source"]
 
+    # 워터폴은 「공정 상세」 탭 안이고 숨은 탭에서는 그리지 않는다. 조회 조건 위젯은
+    # 숨어 있어도 그려지므로 선택은 어느 탭에서든 걸린다.
+    app.session_state["dynamic_capa_active_tab"] = "공정 상세"
     app.selectbox(key="dynamic_capacity_process_filter").set_value(renamed_source)
     app.run()
 
