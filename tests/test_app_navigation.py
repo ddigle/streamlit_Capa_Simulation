@@ -7,6 +7,7 @@ from capa_simulation.navigation import (
     ADMIN_AREA,
     ALL_SPECS,
     CAPA_CHATBOT,
+    DATA_PENDING_SUFFIX,
     DYNAMIC_CAPA,
     DYNAMIC_CAPA_SUBPAGES,
     HOME,
@@ -32,11 +33,11 @@ EXPECTED_PAGES = [
     ("app_pages/reference_integrity.py", "Dynamic Capa (구현중)", ":material/sync_alt:", False),
     (
         "app_pages/available_equipment_status.py",
-        "가용설비 현황 (구현중)",
+        "가용설비 현황 (Data확보중)",
         ":material/precision_manufacturing:",
         False,
     ),
-    ("app_pages/space_status.py", "Space 현황 (구현중)", ":material/grid_view:", False),
+    ("app_pages/space_status.py", "Space 현황 (Data확보중)", ":material/grid_view:", False),
     ("app_pages/actual_efficiency.py", "효율 실적 (구현중)", ":material/speed:", False),
     ("app_pages/actual_upeh.py", "UPEH 실적 (구현중)", ":material/timer:", False),
     ("app_pages/yield_actual.py", "수율 실적 (구현중)", ":material/percent:", False),
@@ -85,16 +86,19 @@ def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:
     이전에는 사이드바만 `(구현중)`·`(구현 중)`·`(DB 셋팅중)` 세 갈래였다.
     `Capa Chatbot` 은 본문이 "화면 초안" 이라고 밝히는데도 사이드바에만 표기가 없어
     가장 덜 된 화면이 완성된 것처럼 보였다.
+
+    표기는 둘이다. `(구현중)` 은 아직 못 만든 화면, `(Data확보중)` 은 화면은 다 만들었고
+    연결할 데이터만 기다리는 화면이다. 사용자에게 뜻이 다르므로 갈라 둔다.
     """
     for spec in (CAPA_CHATBOT, DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES):
-        assert spec.title.endswith(IMPLEMENTING_SUFFIX), spec.path
+        assert spec.title.endswith((IMPLEMENTING_SUFFIX, DATA_PENDING_SUFFIX)), spec.path
     # 사이드바 라벨과 본문 제목이 같아야 한다는 계약은 표기 유무와 무관하다. `Admin Area`
     # 는 이미 쓰는 관리 화면이라 표기를 달지 않지만 두 제목은 여전히 같아야 한다.
     for spec in (CAPA_CHATBOT, DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES, ADMIN_AREA):
         # 본문은 공통 헤더가 그린다. 서식(한 줄/여러 줄)에 흔들리지 않도록 AST 로 첫 인자를
         # 읽는다.
         assert _page_header_title(PROJECT_ROOT / spec.path) == spec.title, spec.path
-    assert not ADMIN_AREA.title.endswith(IMPLEMENTING_SUFFIX)
+    assert not ADMIN_AREA.title.endswith((IMPLEMENTING_SUFFIX, DATA_PENDING_SUFFIX))
 
 
 def _page_header_title(page_path: Path) -> str | None:

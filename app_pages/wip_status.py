@@ -257,7 +257,7 @@ with st.container(border=True):
     st.markdown("#### :material/insights: 일별 재공·Flow와 표준 가능 수준")
     st.caption(
         "Flow 막대는 표준 이상이면 초록색, 미달이면 빨간색입니다. 점선은 현재 `표준 목표 "
-        "Capa`와 같은 산식(공정 유효 Capa ÷ RUN_DAY × 주차별 가용대수)의 제품별 가능 "
+        "Capa`와 같은 산식(공정별 대당 Capa ÷ RUN_DAY × 주차별 가용대수)의 제품별 가능 "
         "수준입니다. 공정 소요기준에 따라 단위는 Kea 또는 매이며 서로 합산하지 않습니다."
     )
     if today_unset:
@@ -290,7 +290,7 @@ with st.expander("데이터·계산 경계", expanded=False):
     st.markdown(
         "- 재공 실적 계약: `일자 + 공정 + STEP_SEQ + 제품정보 + 보유 재공 + 유입량 + "
         "Flow량`\n"
-        "- 표준 기준: 활성 시나리오의 제품 Mix 기반 공정 유효 Capa와 설비 DB의 주차별 "
+        "- 표준 기준: 활성 시나리오의 제품 Mix 기반 공정별 대당 Capa와 설비 DB의 주차별 "
         "가용대수\n"
         "- 실제 DB 연결 시 샘플 생성부만 조회 Provider로 교체하고 표준 계산과 차트 계약은 "
         "유지합니다."

@@ -162,6 +162,10 @@ def _with_alpha(hex_color: str, alpha: float) -> str:
 # 사이드바 네비게이션의 "지금 여기" 표시. 이 앱에서 그림자를 쓰는 유일한 자리다 —
 # 화면 어디에도 융기가 없기 때문에 사이드바에서만 쓰면 그 자체가 신호가 된다.
 # 링은 ACCENT 라 색이고, 그림자는 TEXT 라 깊이다. 둘을 한 토큰으로 합치지 않는다.
+# HOME 은 사이드바의 귀환점이라 누르지 않았을 때도 보여야 한다. 옅은 틴트 + ACCENT
+# 테두리로 윤곽선 버튼을 만들고, 지금 HOME 에 있으면 융기 규칙이 그 위에 얹혀 채워진
+# 모양이 된다 — 윤곽선에서 채움으로 가는 흔한 단계다.
+NAV_HOME_TINT: Final = _with_alpha(ACCENT, 0.07)
 NAV_ACTIVE_RING: Final = _with_alpha(ACCENT, 0.14)
 NAV_SHADOW: Final = _with_alpha(TEXT, 0.10)
 

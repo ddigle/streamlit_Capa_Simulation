@@ -125,7 +125,7 @@ if not isinstance(selected_floor, str) or selected_floor not in valid_floor_name
     st.session_state.pop(SELECTED_FLOOR_KEY, None)
 
 render_page_header(
-    "Space 현황 (구현중)",
+    "Space 현황 (Data확보중)",
     description=(
         "가용설비 현황과 동일한 설비 전용 DuckDB 리비전에서 호기 생애주기·비가동 상태와 "
         "Space 좌표를 조회합니다."

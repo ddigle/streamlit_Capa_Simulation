@@ -344,7 +344,11 @@ def _render_logic_analysis(
     with first_row[1]:
         st.metric("STEP 소요대수", _format_metric(target_row["STEP_소요대수"]), border=True)
     with first_row[2]:
-        st.metric("공정 유효 Capa", _format_metric(target_row["공정 유효 Capa"]), border=True)
+        st.metric(
+            "공정별 대당 Capa",
+            _format_metric(target_row["공정 유효 Capa"]),
+            border=True,
+        )
     with first_row[3]:
         st.metric("RUN_DAY", _format_metric(target_row["RUN_DAY"], 1), border=True)
     second_row = st.columns(4, vertical_alignment="center")
@@ -360,15 +364,15 @@ def _render_logic_analysis(
         )
 
     st.code(
-        "공정 유효 Capa = 원수요 부하량 합 ÷ STEP 소요대수 합\n"
+        "공정별 대당 Capa = 원수요 부하량 합 ÷ STEP 소요대수 합\n"
         f"                 = {_format_metric(target_row['원수요_부하량'])} ÷ "
         f"{_format_metric(target_row['STEP_소요대수'])} = "
         f"{_format_metric(target_row['공정 유효 Capa'])}\n"
-        "대당 일 Capa   = 공정 유효 Capa ÷ RUN_DAY\n"
+        "대당 일 Capa     = 공정별 대당 Capa ÷ RUN_DAY\n"
         f"                 = {_format_metric(target_row['공정 유효 Capa'])} ÷ "
         f"{_format_metric(target_row['RUN_DAY'], 1)} = "
         f"{_format_metric(target_row['대당 일 Capa'])}\n"
-        "일 표준 가능량 = 대당 일 Capa × 가용대수\n"
+        "일 표준 가능량   = 대당 일 Capa × 가용대수\n"
         f"                 = {_format_metric(target_row['대당 일 Capa'])} × "
         f"{_format_metric(target_row['가용대수'], 1)} = "
         f"{_format_metric(target_row['일 표준 가능량'])}",
@@ -399,7 +403,7 @@ def _render_logic_analysis(
 
     st.markdown("#### 제품·WF 속성별 Mix 산출 근거")
     st.caption(
-        "공정 유효 Capa는 분류별 Capa의 단순 평균이 아닙니다. 각 분류의 부하량 비중을 "
+        "공정별 대당 Capa는 분류별 Capa의 단순 평균이 아닙니다. 각 분류의 부하량 비중을 "
         "유효 Capa의 역수에 적용한 조화가중 결과이며, 이는 전체 부하량을 STEP 소요대수 "
         "합으로 나눈 값과 같습니다. 선택한 분류는 `●`로 표시합니다."
     )
@@ -452,7 +456,7 @@ def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessL
     # 순수 표시 상수를 그리는 안내 표다. CSV 출구가 없어 표시명을 바로 입힌다.
     with st.expander("예외 처리 공정", expanded=False):
         st.caption(
-            "아래 규칙은 표준 목표의 공정 유효 Capa와 로직 분석에만 적용됩니다. "
+            "아래 규칙은 표준 목표의 공정별 대당 Capa와 로직 분석에만 적용됩니다. "
             "부하량·소요대수·확보율 원본 계산 결과는 변경하지 않습니다."
         )
         st.dataframe(
@@ -477,7 +481,7 @@ def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessL
 render_page_header(
     "표준 목표",
     description=(
-        "공정·제품 분류별 월간 부하 Mix를 반영한 공정 유효 Capa를 일 단위로 환산하고, "
+        "공정·제품 분류별 월간 부하 Mix를 반영한 공정별 대당 Capa를 일 단위로 환산하고, "
         "주차별 가용설비를 곱해 투입 Unit 기준의 일 표준 가능량을 산출합니다."
     ),
 )
@@ -885,7 +889,7 @@ else:
                     width=110,
                 )
         calculation_caption = (
-            "대당 일 Capa = 월간 공정 유효 Capa ÷ RUN_DAY · "
+            "대당 일 Capa = 월간 공정별 대당 Capa ÷ RUN_DAY · "
             "일 표준 가능량 = 대당 일 Capa × 주차별 가용대수 · "
         )
         if pkg_basis:

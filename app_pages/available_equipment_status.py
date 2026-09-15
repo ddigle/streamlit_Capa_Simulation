@@ -161,7 +161,7 @@ def _format_equipment_count(value: float) -> str:
 
 
 render_page_header(
-    "가용설비 현황 (구현중)",
+    "가용설비 현황 (Data확보중)",
     description=(
         "기존 보유대수와 31개 컬럼 호기 마스터, 운영 비가동 일정을 설비 전용 DuckDB "
         "불변 리비전으로 관리합니다."

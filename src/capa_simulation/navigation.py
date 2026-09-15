@@ -16,10 +16,17 @@ import streamlit as st
 # `(구현중)`·`(구현 중)`·`(DB 셋팅중)` 세 표기가 섞여 있었고 페이지 본문 제목과도
 # 달랐다. 본문이 이미 쓰고 있던 표기로 통일했다.
 IMPLEMENTING_SUFFIX = "(구현중)"
+# 화면은 이미 다 만들었고 **데이터만 기다리는** 페이지에 붙인다. `(구현중)` 과 갈라 둔 것은
+# 둘이 사용자에게 다른 뜻이기 때문이다 — 하나는 "아직 못 만들었다", 하나는 "연결만 남았다".
+DATA_PENDING_SUFFIX = "(Data확보중)"
 
 
 def _implementing(title: str) -> str:
     return f"{title} {IMPLEMENTING_SUFFIX}"
+
+
+def _data_pending(title: str) -> str:
+    return f"{title} {DATA_PENDING_SUFFIX}"
 
 
 @dataclass(frozen=True)
@@ -70,10 +77,10 @@ DYNAMIC_CAPA = PageSpec(
 DYNAMIC_CAPA_SUBPAGES = (
     PageSpec(
         "app_pages/available_equipment_status.py",
-        _implementing("가용설비 현황"),
+        _data_pending("가용설비 현황"),
         ":material/precision_manufacturing:",
     ),
-    PageSpec("app_pages/space_status.py", _implementing("Space 현황"), ":material/grid_view:"),
+    PageSpec("app_pages/space_status.py", _data_pending("Space 현황"), ":material/grid_view:"),
     PageSpec("app_pages/actual_efficiency.py", _implementing("효율 실적"), ":material/speed:"),
     PageSpec("app_pages/actual_upeh.py", _implementing("UPEH 실적"), ":material/timer:"),
     PageSpec("app_pages/yield_actual.py", _implementing("수율 실적"), ":material/percent:"),

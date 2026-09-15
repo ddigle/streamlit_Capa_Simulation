@@ -1,4 +1,4 @@
-# Purpose: 공정 유효 Capa와 STEP 상세를 표시하고 관련 기준정보 및 STEP 구성을 편집한다.
+# Purpose: Capa 산출에 쓰는 입력값과 STEP 구성을 월별로 편집한다.
 
 
 import pandas as pd

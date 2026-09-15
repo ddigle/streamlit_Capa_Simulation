@@ -121,11 +121,23 @@ with pinned_connections(DUCKDB_PATH):
             font-size: 1.5rem;
             font-weight: 700;
         }}
-        .st-key-home_navigation a {{
+        /* HOME 은 누르지 않았을 때도 보여야 한다. 다른 항목처럼 납작하게 두면 글자만
+           클 뿐 "여기로 돌아온다" 가 읽히지 않는다. 옅은 틴트와 ACCENT 테두리로 윤곽선
+           버튼을 만들고, 지금 HOME 에 있으면 아래 융기 규칙이 그 위에 얹혀 채워진 모양이
+           된다 — 윤곽선에서 채움으로 가는 단계라 둘이 경쟁하지 않는다.
+
+           `:hover` 를 같이 적는 이유는 아래 활성 규칙과 같다. Streamlit 의 emotion
+           `:hover` (0,2,0) 가 클래스 하나뿐인 선택자를 이긴다. */
+        .st-key-home_navigation a,
+        .st-key-home_navigation a:hover,
+        .st-key-home_navigation a:focus-visible {{
             justify-content: center;
+            border-color: {tokens.ACCENT};
+            background-color: {tokens.NAV_HOME_TINT};
         }}
         .st-key-home_navigation a p {{
             text-align: center;
+            color: {tokens.ACCENT};
         }}
 
         /* 지금 보고 있는 페이지를 **융기**로 알린다. Streamlit 이 주는 활성 표시는 알파

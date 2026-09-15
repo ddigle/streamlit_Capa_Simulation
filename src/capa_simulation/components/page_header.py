@@ -15,7 +15,7 @@ from __future__ import annotations
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
-from capa_simulation.navigation import IMPLEMENTING_SUFFIX
+from capa_simulation.navigation import DATA_PENDING_SUFFIX, IMPLEMENTING_SUFFIX
 
 # 제목 오른쪽 진행 표시 자리의 폭. 단계 이름과 퍼센트가 한 줄에 들어가는 최소치다.
 STATUS_SLOT_WIDTH_PX = 320
@@ -60,9 +60,9 @@ def render_page_header(
     `title` 에 `(구현중)` 이 붙어 있으면 제목에서 떼어 배지로 보여준다. 제목 줄이
     짧아지고 미구현 여부가 색으로 먼저 읽힌다.
     """
-    heading, implementing = _split_implementing(title)
+    heading, status_badge = _split_status_suffix(title)
     st.title(heading)
-    _render_marks(implementing, badges, description)
+    _render_marks(status_badge, badges, description)
 
 
 def render_page_header_with_status(
@@ -77,7 +77,7 @@ def render_page_header_with_status(
     밀린다. 차트를 보는 중에 그 움직임이 그대로 보인다. 제목 줄 안에 넣으면 줄 높이를
     제목이 잡고 있으므로 막대가 사라져도 아래가 움직이지 않는다.
     """
-    heading, implementing = _split_implementing(title)
+    heading, status_badge = _split_status_suffix(title)
     # 가로 컨테이너가 아니라 컬럼으로 나눈다. **가로 컨테이너 안의 `h1` 은 Streamlit 이
     # 위아래 여백을 지운다.** 그러면 이 머리말을 쓰는 페이지만 제목이 그만큼 위로 올라가
     # 앱 헤더에 닿고, 같은 자리에 있어야 할 다른 페이지 제목과 눈높이가 어긋난다.
@@ -92,20 +92,29 @@ def render_page_header_with_status(
     title_column.title(heading, wrap=False)
     with status_column, st.container(width=STATUS_SLOT_WIDTH_PX):
         slot = st.empty()
-    _render_marks(implementing, badges, description)
+    _render_marks(status_badge, badges, description)
     return slot
 
 
-def _render_marks(implementing: bool, badges: str | None, description: str | None) -> None:
-    marks = [mark for mark in (":orange-badge[구현중]" if implementing else "", badges) if mark]
+def _render_marks(status_badge: str | None, badges: str | None, description: str | None) -> None:
+    marks = [mark for mark in (status_badge or "", badges) if mark]
     if marks:
         st.markdown(" ".join(marks))
     if description:
         st.caption(description)
 
 
-def _split_implementing(title: str) -> tuple[str, bool]:
-    suffix = f" {IMPLEMENTING_SUFFIX}"
-    if title.endswith(suffix):
-        return title[: -len(suffix)], True
-    return title, False
+def _split_status_suffix(title: str) -> tuple[str, str | None]:
+    """사이드바 라벨의 상태 접미를 제목에서 떼어 배지 글자로 돌려준다.
+
+    접미는 둘이다 — `(구현중)` 은 아직 못 만든 화면, `(Data확보중)` 은 화면은 다 만들었고
+    연결할 데이터만 기다리는 화면이다. 사용자에게 뜻이 다르므로 배지 색도 가른다.
+    """
+    for suffix, badge in (
+        (IMPLEMENTING_SUFFIX, ":orange-badge[구현중]"),
+        (DATA_PENDING_SUFFIX, ":blue-badge[Data확보중]"),
+    ):
+        spaced = f" {suffix}"
+        if title.endswith(spaced):
+            return title[: -len(spaced)], badge
+    return title, None
