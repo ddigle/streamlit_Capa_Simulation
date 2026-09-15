@@ -21,6 +21,14 @@ from capa_simulation.components.home_dimensions import (
     BOTTLENECK_DETAIL_BAR_HEIGHT_PX,
     BOTTLENECK_DETAIL_HEADER_HEIGHT_PX,
     BOTTLENECK_DETAIL_ROW_HEIGHT_PX,
+    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+    KEY_PROCESS_CELL_HEIGHT_PX,
+    KEY_PROCESS_CELL_SIDE_INSET_RATIO,
+    KEY_PROCESS_HEADER_HEIGHT_PX,
+    KEY_PROCESS_NAME_FONT_SIZE_PX,
+    KEY_PROCESS_NAME_INSET_PX,
+    KEY_PROCESS_RATE_FONT_SIZE_PX,
+    KEY_PROCESS_ROW_HEIGHT_PX,
     LOB_BAR_OUTLINE_WIDTH_PX,
     LOB_BAR_WIDTH,
     LOB_BARGAP,
@@ -59,6 +67,7 @@ from capa_simulation.services.dashboard import (
     DETAIL_DIMENSION_WIDTHS,
     PRODUCTION_DETAIL_DIMENSIONS,
 )
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.top5_band import (
     DEFAULT_TOP5_MAX_RATE,
     DEFAULT_TOP5_MIN_RATE,
@@ -1654,6 +1663,411 @@ def build_plan_detail_figures(
     append_layout_items(detail_month_figure, shapes=detail_group_shapes)
     flush_layout_items(detail_label_figure, detail_month_figure)
     return detail_label_figure, detail_month_figure
+
+
+KEY_PROCESS_HOVER_TEMPLATE = (
+    "<b>%{customdata[0]} · %{customdata[1]}</b>"
+    "<br>확보율 %{customdata[2]}"
+    "<br>가용대수 %{customdata[3]}"
+    "<br>필요대수 %{customdata[4]}"
+    # 조정이 없으면 빈 문자열이라 아무 줄도 붙지 않는다.
+    "%{customdata[5]}"
+    "<extra></extra>"
+)
+
+KEY_PROCESS_EMPTY_NOTICE = "Preference 탭에서 주요 공정을 고르세요"
+
+
+def _key_process_name_markup(value: object) -> str:
+    """라벨 칸 폭(`DASHBOARD_LABEL_COLUMN_WIDTH_PX`)에 맞춰 자른 공정명.
+
+    상세 B/N 의 `bottleneck_name_layout` 은 **월 칸 폭**(100px) 예산이라 여기 쓰면 260px
+    칸에서 이름이 필요 이상으로 작아지고 일찍 잘린다. 잘린 전체 이름은 hover 에 뜬다.
+    """
+    process = str(value)
+    available_px = DASHBOARD_LABEL_COLUMN_WIDTH_PX - 2 * KEY_PROCESS_NAME_INSET_PX
+    unit_budget = available_px / KEY_PROCESS_NAME_FONT_SIZE_PX
+    if _text_width_units(process) <= unit_budget:
+        return html.escape(process)
+    unit_budget -= _text_width_units(BOTTLENECK_NAME_ELLIPSIS)
+    kept: list[str] = []
+    used = 0.0
+    for character in process:
+        character_units = _text_width_units(character)
+        if used + character_units > unit_budget:
+            break
+        kept.append(character)
+        used += character_units
+    return html.escape("".join(kept) + BOTTLENECK_NAME_ELLIPSIS)
+
+
+def build_key_process_heatmap_figures(
+    *,
+    securement_rate: pd.DataFrame,
+    key_processes: Sequence[str],
+    month_labels: list[str],
+    secure_threshold: float,
+    warning_threshold: float,
+    process_labels: ProcessLabels | None = None,
+    year_total_labels: Sequence[str] = (),
+    past_month_labels: Collection[str] | None = None,
+) -> tuple[go.Figure, go.Figure]:
+    """고른 주요 공정의 월별 확보율을 색 격자로 그린 Figure 한 쌍을 만든다.
+
+    **행 축이 공정이라는 점이 상세 B/N 과 다르다.** 상세 B/N 의 행은 순위라 같은 줄이
+    매달 다른 공정이고, 그래서 「이 공정이 언제부터 무너지나」를 가로로 읽을 수 없다.
+    여기서는 한 줄이 끝까지 같은 공정이라 부족이 시작되는 달이 가로로 보인다. 행 차례는
+    사용자가 고른 차례 그대로다 — 확보율로 다시 정렬하면 매달 행이 뛰어다닌다.
+
+    `go.Heatmap` 을 쓰지 않는다. 그 trace 는 칸 폭을 Plotly 가 정해 100px 월 격자·paper
+    경계선과 맞지 않는다. 상세 B/N 과 같은 가로막대 방식이면 칠과 hover 가 한 trace 로
+    끝나고, 색 판정도 `_capacity_color` 하나에서 나온다.
+
+    **연간 Total 칸은 그리지 않는다.** 확보율은 합산도 평균도 할 수 없다 — 그 해 평균은
+    부하량 가중이 필요한데 이 프레임에 근거가 없다. `Wafer Capa` 가 연간 Total 을 적지
+    않는 것과 같은 규칙이고, 그 열은 면색만 깔아 「합계 자리」임을 알린다.
+    """
+    labels = process_labels or ProcessLabels()
+    month_count = max(len(month_labels), 1)
+    month_positions = {label: index for index, label in enumerate(month_labels)}
+    processes = list(key_processes)
+    row_count = max(len(processes), 1)
+    table_height = KEY_PROCESS_HEADER_HEIGHT_PX + row_count * KEY_PROCESS_ROW_HEIGHT_PX
+    cell_length = 1.0 - 2 * KEY_PROCESS_CELL_SIDE_INSET_RATIO
+
+    def format_equipment_count(value: object) -> str:
+        if bool(pd.isna(cast(Any, value))):
+            return "-"
+        return f"{float(cast(Any, value)):,.1f}대"
+
+    # 월 축의 근거는 `month_labels` 하나뿐이다. 자기 프레임의 월 목록으로 열을 만들면
+    # 데이터가 없는 달에서 열 수와 Figure 폭이 갈라져 머리글이 뒤로 갈수록 밀린다.
+    # 연간 Total 라벨은 `securement_rate` 에 없는 `년월` 이라 이 필터에서 자연히 빠진다.
+    if processes and not securement_rate.empty:
+        frame = securement_rate.loc[securement_rate["공정"].astype("string").isin(processes)].copy()
+        frame["년월"] = [month_label(int(value)) for value in frame["생산계획년월"]]
+        displayed = frame.loc[frame["년월"].isin(month_labels)]
+    else:
+        displayed = securement_rate.iloc[0:0].assign(년월="")
+
+    row_by_process = {process: index for index, process in enumerate(processes)}
+    cell_bases: list[float] = []
+    cell_centers: list[float] = []
+    cell_colors: list[str] = []
+    hover_values: list[list[str]] = []
+    rate_positions: list[float] = []
+    rate_centers: list[float] = []
+    rate_texts: list[str] = []
+    for _, row in displayed.iterrows():
+        month_index = month_positions[str(row["년월"])]
+        row_index = row_by_process[str(row["공정"])]
+        center_y = (
+            table_height
+            - KEY_PROCESS_HEADER_HEIGHT_PX
+            - (row_index + 0.5) * KEY_PROCESS_ROW_HEIGHT_PX
+        )
+        rate = row["확보율"]
+        missing_rate = bool(pd.isna(cast(Any, rate)))
+        cell_bases.append(month_index + KEY_PROCESS_CELL_SIDE_INSET_RATIO)
+        cell_centers.append(center_y)
+        cell_colors.append(
+            tokens.SURFACE
+            if missing_rate
+            else _capacity_color(
+                float(rate),
+                secure_threshold=secure_threshold,
+                warning_threshold=warning_threshold,
+            )
+        )
+        hover_values.append(
+            [
+                html.escape(str(row["년월"])),
+                # 라벨 칸이 말줄임했을 때 전체 이름을 볼 유일한 자리다.
+                html.escape(labels.label(row["공정"])),
+                "-" if missing_rate else f"{float(rate):.1%}",
+                format_equipment_count(row.get("가용대수")),
+                format_equipment_count(row.get("소요대수")),
+                _execution_hover_note(row.get("확보율 증감"), row.get("실행 비고")),
+            ]
+        )
+        if not missing_rate:
+            # 색만으로 뜻을 나르지 않는다. 칸마다 숫자가 있어야 색각이상·흑백에서도 읽힌다.
+            rate_positions.append(month_index + 0.5)
+            rate_centers.append(center_y)
+            rate_texts.append(f"{float(rate):.0%}")
+
+    key_process_label_figure = go.Figure(
+        go.Table(
+            columnwidth=[1.0],
+            header={
+                "values": [""],
+                "align": "center",
+                "fill_color": tokens.HEADER_BACKGROUND,
+                "line_color": tokens.BORDER,
+                "font": {
+                    "color": tokens.TEXT,
+                    "size": BOTTLENECK_RANK_HEADER_FONT_SIZE_PX,
+                    "family": tokens.FONT_FAMILY,
+                },
+                "height": KEY_PROCESS_HEADER_HEIGHT_PX,
+            },
+            cells={
+                # 칸 글자에 공백 하나만 들어가도 Plotly 가 행 높이 바닥을 37px 로 올려
+                # 29px 설계가 깨진다. 표 칸은 배경·격자만 맡고 글자는 paper 주석이 얹는다.
+                "values": [[""] * row_count],
+                "align": "center",
+                "fill_color": tokens.SURFACE_CLASSIFICATION,
+                "line_color": tokens.BORDER,
+                "font": {
+                    "color": tokens.TEXT,
+                    "size": KEY_PROCESS_NAME_FONT_SIZE_PX,
+                    "family": tokens.FONT_FAMILY,
+                },
+                "height": KEY_PROCESS_ROW_HEIGHT_PX,
+            },
+        )
+    )
+    key_process_month_figure = go.Figure(
+        [
+            # 보이지 않는 hover 표적. 보이는 칸은 행보다 낮고 좌우 인셋만큼 짧아 칸
+            # 가장자리에서 툴팁이 뜨지 않는다. 행 전체를 덮는 이 막대가 표적이다.
+            go.Bar(
+                x=[1.0] * len(cell_centers),
+                y=cell_centers,
+                base=[position - KEY_PROCESS_CELL_SIDE_INSET_RATIO for position in cell_bases],
+                orientation="h",
+                width=KEY_PROCESS_ROW_HEIGHT_PX,
+                marker={"color": tokens.HIT_TARGET, "line": {"width": 0}},
+                customdata=hover_values,
+                hovertemplate=KEY_PROCESS_HOVER_TEMPLATE,
+                showlegend=False,
+            ),
+            go.Bar(
+                x=[cell_length] * len(cell_centers),
+                y=cell_centers,
+                base=cell_bases,
+                orientation="h",
+                width=KEY_PROCESS_CELL_HEIGHT_PX,
+                marker={
+                    "color": cell_colors,
+                    "line": {"color": tokens.LINE, "width": tokens.BAR_OUTLINE_WIDTH_PX},
+                },
+                hoverinfo="skip",
+                showlegend=False,
+            ),
+            go.Scatter(
+                x=rate_positions,
+                y=rate_centers,
+                mode="text",
+                text=rate_texts,
+                textposition="middle center",
+                textfont={
+                    "color": tokens.TEXT,
+                    "size": KEY_PROCESS_RATE_FONT_SIZE_PX,
+                    "family": tokens.FONT_FAMILY_NUMERIC,
+                },
+                hoverinfo="skip",
+                showlegend=False,
+            ),
+        ]
+    )
+    key_process_layout = {
+        "height": table_height,
+        "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
+        "paper_bgcolor": tokens.CHART_CANVAS,
+        "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
+    }
+    key_process_label_figure.update_layout(**key_process_layout)
+    # 축 눈금으로 마진이 자동 확장되면 paper 0~1 이 표 영역과 어긋나 경계선 계산이 전부
+    # 밀린다. 두 축 모두 `fixedrange` 여야 hover 를 켜도 드래그 확대가 붙지 않는다.
+    hidden_axis = {
+        "domain": [0.0, 1.0],
+        "showgrid": False,
+        "zeroline": False,
+        "showline": False,
+        "showticklabels": False,
+        "ticks": "",
+        "automargin": False,
+        "fixedrange": True,
+    }
+    key_process_month_figure.update_layout(
+        **key_process_layout,
+        width=len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX,
+        autosize=False,
+        barmode="overlay",
+        bargap=0,
+        plot_bgcolor=tokens.SURFACE,
+        showlegend=False,
+        dragmode=False,
+        hovermode="closest",
+        hoverlabel={
+            "bgcolor": tokens.SURFACE,
+            "bordercolor": tokens.BORDER_STRONG,
+            "font": {"color": tokens.TEXT, "size": 12, "family": tokens.FONT_FAMILY},
+        },
+        xaxis={**hidden_axis, "range": [0, month_count]},
+        yaxis={**hidden_axis, "range": [0, table_height]},
+    )
+    header_boundary_y = 1 - KEY_PROCESS_HEADER_HEIGHT_PX / table_height
+    row_boundary_shapes = [
+        {
+            "type": "line",
+            "x0": 0,
+            "x1": 1,
+            "y0": header_boundary_y,
+            "y1": header_boundary_y,
+            "xref": "paper",
+            "yref": "paper",
+            "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX},
+            "layer": "above",
+        },
+        *[
+            {
+                "type": "line",
+                "x0": 0,
+                "x1": 1,
+                "y0": 1
+                - (KEY_PROCESS_HEADER_HEIGHT_PX + row_index * KEY_PROCESS_ROW_HEIGHT_PX)
+                / table_height,
+                "y1": 1
+                - (KEY_PROCESS_HEADER_HEIGHT_PX + row_index * KEY_PROCESS_ROW_HEIGHT_PX)
+                / table_height,
+                "xref": "paper",
+                "yref": "paper",
+                "line": {"color": tokens.BORDER, "width": tokens.GRID_LINE_WIDTH_PX},
+                "layer": "above",
+            }
+            for row_index in range(1, row_count)
+        ],
+    ]
+    add_figure_outer_border(key_process_label_figure, emphasize_bottom=True)
+    add_figure_outer_border(
+        key_process_month_figure,
+        emphasize_left=False,
+        emphasize_bottom=True,
+    )
+
+    def name_annotation(row_index: int, text: str, color: str) -> dict[str, Any]:
+        return {
+            "x": KEY_PROCESS_NAME_INSET_PX / DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+            "y": 1
+            - (KEY_PROCESS_HEADER_HEIGHT_PX + (row_index + 0.5) * KEY_PROCESS_ROW_HEIGHT_PX)
+            / table_height,
+            "xref": "paper",
+            "yref": "paper",
+            "text": text,
+            "showarrow": False,
+            "xanchor": "left",
+            "yanchor": "middle",
+            "font": {
+                "color": color,
+                "size": KEY_PROCESS_NAME_FONT_SIZE_PX,
+                "family": tokens.FONT_FAMILY,
+            },
+        }
+
+    # 고른 공정이 없으면 행 한 줄짜리 안내만 남긴다. **Figure 를 빼지는 않는다** —
+    # `render_home_figures` 는 정확한 개수를 요구하고, 개수를 분기시키면 두 칸의 정렬
+    # 규칙이 두 벌이 된다.
+    name_annotations = (
+        [
+            name_annotation(row_index, _key_process_name_markup(labels.label(process)), tokens.TEXT)
+            for row_index, process in enumerate(processes)
+        ]
+        if processes
+        else [name_annotation(0, KEY_PROCESS_EMPTY_NOTICE, tokens.TEXT_MUTED)]
+    )
+    append_layout_items(
+        key_process_label_figure,
+        shapes=row_boundary_shapes,
+        annotations=[
+            {
+                "x": 0.5,
+                "y": (1 + header_boundary_y) / 2,
+                "xref": "paper",
+                "yref": "paper",
+                "text": "<b>주요공정</b>",
+                "showarrow": False,
+                "xanchor": "center",
+                "yanchor": "middle",
+                "font": {
+                    "color": tokens.TEXT,
+                    "size": BOTTLENECK_RANK_HEADER_FONT_SIZE_PX,
+                    "family": tokens.FONT_FAMILY,
+                },
+            },
+            *name_annotations,
+        ],
+    )
+    # `go.Table` 이 그려 주던 머리글 띠·셀 격자를 카테시안에서는 직접 그린다.
+    append_layout_items(
+        key_process_month_figure,
+        shapes=[
+            {
+                "type": "rect",
+                "x0": 0,
+                "x1": 1,
+                "y0": header_boundary_y,
+                "y1": 1,
+                "xref": "paper",
+                "yref": "paper",
+                "fillcolor": tokens.HEADER_BACKGROUND,
+                "line": {"width": 0},
+                "layer": "below",
+            },
+            # 연간 Total 칸은 확보율을 더할 수 없어 비지만, 비었다는 것과 그 칸이 합계
+            # 자리라는 것은 다른 이야기다. 과거 구간도 같은 자리에서 한 단계 눌러 칠한다.
+            *[
+                {
+                    "type": "rect",
+                    "x0": month_positions[label] / month_count,
+                    "x1": (month_positions[label] + 1) / month_count,
+                    "y0": 0,
+                    "y1": header_boundary_y,
+                    "xref": "paper",
+                    "yref": "paper",
+                    "fillcolor": surface,
+                    "line": {"width": 0},
+                    "layer": "below",
+                }
+                for label in month_labels
+                if (surface := _month_surface(label, year_total_labels, past_month_labels))
+                != tokens.SURFACE
+            ],
+            *[
+                {
+                    "type": "line",
+                    "x0": month_index / month_count,
+                    "x1": month_index / month_count,
+                    "y0": 0,
+                    "y1": 1,
+                    "xref": "paper",
+                    "yref": "paper",
+                    "line": {"color": tokens.BORDER, "width": tokens.GRID_LINE_WIDTH_PX},
+                    "layer": "above",
+                }
+                for month_index in range(1, month_count)
+            ],
+            *row_boundary_shapes,
+        ],
+        annotations=[
+            {
+                "x": (month_index + 0.5) / month_count,
+                "y": (1 + header_boundary_y) / 2,
+                "xref": "paper",
+                "yref": "paper",
+                "text": f"<b>{html.escape(month)}</b>",
+                "showarrow": False,
+                "xanchor": "center",
+                "yanchor": "middle",
+                "font": {"color": tokens.TEXT, "size": 15, "family": tokens.FONT_FAMILY},
+            }
+            for month_index, month in enumerate(month_labels)
+        ],
+    )
+    add_quarter_boundaries(key_process_month_figure, month_labels)
+    flush_layout_items(key_process_label_figure, key_process_month_figure)
+    return key_process_label_figure, key_process_month_figure
 
 
 def build_bottleneck_detail_figures(

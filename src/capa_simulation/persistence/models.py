@@ -93,6 +93,26 @@ class GlobalTop5Band:
 
 
 @dataclass(frozen=True)
+class GlobalKeyProcess:
+    """Scenario-independent list of key processes for the HOME securement heatmap.
+
+    프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`,
+    `updated_at=None`, 빈 목록이다.
+
+    **빈 목록은 「하나도 안 고름」이라는 결정**이라 미저장과 화면은 같지만 저장 쪽은
+    누가 언제 비웠는지 보여 줄 수 있어야 한다. 그래서 0건도 version 이 올라간다.
+
+    `rows: pd.DataFrame` 이 아니라 tuple 인 것은 이 값이 그대로 Figure 캐시 키의 원소가
+    되기 때문이다. 프레임으로 두면 rerun 마다 tuple 로 되만드는 코드가 호출부에 흩어진다.
+    """
+
+    version: int
+    source: str
+    updated_at: datetime | None
+    processes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class GlobalSummaryNote:
     """Scenario-independent notice shown at the top of HOME.
 

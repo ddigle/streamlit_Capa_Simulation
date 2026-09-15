@@ -10,6 +10,7 @@ import streamlit as st
 from capa_simulation.components.home_figures import (
     BOTTLENECK_DETAIL_RANK_LIMIT,
     build_bottleneck_detail_figures,
+    build_key_process_heatmap_figures,
     build_lob_summary_figures,
     build_plan_detail_figures,
 )
@@ -59,6 +60,7 @@ from capa_simulation.persistence.cache import (
     get_scenario_repository,
     load_global_advance_load,
     load_global_execution_capacity,
+    load_global_key_process,
     load_global_past_data,
     load_global_summary_note,
     load_global_top5_band,
@@ -342,6 +344,7 @@ try:
     # 항상 있어야 뒤의 순위·Figure 가 컬럼 유무로 갈라지지 않는다.
     execution_profile = load_global_execution_capacity(str(DUCKDB_PATH.resolve()))
     top5_band_profile = load_global_top5_band(str(DUCKDB_PATH.resolve()))
+    key_process_profile = load_global_key_process(str(DUCKDB_PATH.resolve()))
     # 공지는 계산에 들어가지 않는 화면 문구다. 그래서 Figure 캐시 키에도 넣지 않는다 —
     # 넣으면 문구 한 줄을 고칠 때마다 여섯 Figure 를 다시 그린다.
     summary_profile = load_global_summary_note(str(DUCKDB_PATH.resolve()))
@@ -373,6 +376,13 @@ except BOOTSTRAP_ERRORS as exc:
 process_options = sorted(
     securement_rate["공정"].astype("string").str.strip().dropna().unique().tolist()
 )
+# 히트맵이 **실제로 그릴** 목록. 고른 공정이 이 시나리오·조회기간에 없으면 건너뛰되
+# 프로필에서 지우지는 않는다 — 공용 설정이라 다른 시나리오에는 그 공정이 있다.
+# `resolve_included_processes` 를 쓰지 않는다. 그쪽의 「직전 옵션에 없던 공정은 새 공정
+# 이니 포함」 규칙은 B/N 집계용이고, 주요공정은 명시적 선택이라 자동으로 들어오면 안 된다.
+applied_key_processes = [
+    process for process in key_process_profile.processes if process in set(process_options)
+]
 process_selection_key = "dashboard_bottleneck_process_selection"
 process_dialog_draft_key = "dashboard_bottleneck_process_dialog_draft"
 process_dialog_editor_key = "dashboard_bottleneck_process_dialog_editor"
@@ -580,6 +590,8 @@ figure_cache_key: HomeFigureCacheKey = (
     top5_band_profile.min_rate,
     top5_band_profile.max_rate,
     past_profile.version,
+    tuple(applied_key_processes),
+    key_process_profile.version,
 )
 cached_figures = take_home_figures(figure_cache_key)
 figure_cache_hit = cached_figures is not None
@@ -673,11 +685,27 @@ if cached_figures is None:
         year_total_labels=year_total_labels,
         past_month_labels=past_month_labels,
     )
+    (
+        key_process_label_figure,
+        key_process_month_figure,
+    ) = build_key_process_heatmap_figures(
+        securement_rate=securement_rate,
+        key_processes=applied_key_processes,
+        month_labels=month_labels,
+        secure_threshold=secure_threshold,
+        warning_threshold=warning_threshold,
+        process_labels=process_labels,
+        year_total_labels=year_total_labels,
+        past_month_labels=past_month_labels,
+    )
+    # 순서가 곧 화면 순서다. 주요공정 히트맵은 계획 세부수량과 상세 B/N 사이 구획이다.
     cached_figures = (
         label_figure,
         month_figure,
         detail_label_figure,
         detail_month_figure,
+        key_process_label_figure,
+        key_process_month_figure,
         bottleneck_detail_label_figure,
         bottleneck_detail_month_figure,
     )
@@ -744,6 +772,7 @@ with preference_tab:
         advance_profile=advance_profile,
         execution_profile=execution_profile,
         top5_band_profile=top5_band_profile,
+        key_process_profile=key_process_profile,
         summary_profile=summary_profile,
         # 실행 Capa 는 **원본 공정명** 기준이다. 표시명은 고르는 화면에서만 보인다.
         process_options=process_options,

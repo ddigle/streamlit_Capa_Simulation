@@ -45,12 +45,17 @@ from capa_simulation.persistence.execution_capacity_store import (
     insert_global_execution_capacity,
     load_global_execution_capacity_rows,
 )
+from capa_simulation.persistence.key_process_store import (
+    insert_global_key_process,
+    load_global_key_process_rows,
+)
 from capa_simulation.persistence.migration_runner import apply_migrations
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
     GlobalComparisonScenario,
     GlobalDisplayOrder,
     GlobalExecutionCapacity,
+    GlobalKeyProcess,
     GlobalPastData,
     GlobalProcessRename,
     GlobalSummaryNote,
@@ -96,6 +101,7 @@ from capa_simulation.services.execution_capacity import (
     empty_execution_capacity,
     prepare_execution_capacity,
 )
+from capa_simulation.services.key_process import normalize_key_processes
 from capa_simulation.services.past_data import (
     empty_past_table,
     prepare_past_table,
@@ -482,6 +488,53 @@ class DuckDBScenarioRepository:
                 [low, high, version, source_label],
             )
         return self.load_global_top5_band()
+
+    def load_global_key_process(self) -> GlobalKeyProcess:
+        """Load the scenario-independent key-process list for the HOME heatmap.
+
+        다른 공용 프로필과 같은 이유로 예외를 내지 않는다. 한 번도 저장하지 않은 상태가
+        정상이고, 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
+        """
+        with self._connect() as connection:
+            metadata = connection.execute(
+                """
+                SELECT version, source, updated_at
+                FROM app_meta.global_key_process
+                WHERE profile_id = 1
+                """
+            ).fetchone()
+            if metadata is None:
+                return GlobalKeyProcess(version=0, source="", updated_at=None, processes=())
+            processes = load_global_key_process_rows(connection)
+        return GlobalKeyProcess(
+            version=int(metadata[0]),
+            source=str(metadata[1]),
+            updated_at=metadata[2],
+            processes=normalize_key_processes(processes),
+        )
+
+    def replace_global_key_process(
+        self,
+        processes: Sequence[str],
+        *,
+        source: str,
+    ) -> GlobalKeyProcess:
+        """Atomically replace the shared key-process list.
+
+        **0건(전체 해제)도 정상 저장이며 version 은 올라간다** — 캐시 키가 version 을
+        보므로 해제도 올라가야 다른 세션의 히트맵이 무효화된다.
+        """
+        normalized = normalize_key_processes(processes)
+        source_label = required_text(source, "주요공정 목록 출처")
+        with self._write_transaction() as connection:
+            current = connection.execute(
+                "SELECT version FROM app_meta.global_key_process WHERE profile_id = 1"
+            ).fetchone()
+            version = 1 if current is None else int(current[0]) + 1
+            connection.execute("DELETE FROM app_meta.global_key_process_item WHERE profile_id = 1")
+            connection.execute("DELETE FROM app_meta.global_key_process WHERE profile_id = 1")
+            insert_global_key_process(connection, normalized, version=version, source=source_label)
+        return self.load_global_key_process()
 
     def load_global_summary_note(self) -> GlobalSummaryNote:
         """Load the scenario-independent HOME summary notice.

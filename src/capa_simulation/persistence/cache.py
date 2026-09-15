@@ -14,6 +14,7 @@ from capa_simulation.persistence.models import (
     GlobalComparisonScenario,
     GlobalDisplayOrder,
     GlobalExecutionCapacity,
+    GlobalKeyProcess,
     GlobalPastData,
     GlobalProcessRename,
     GlobalSummaryNote,
@@ -116,6 +117,13 @@ class _GlobalTop5BandPayload(TypedDict):
     updated_at: datetime | None
     min_rate: float
     max_rate: float
+
+
+class _GlobalKeyProcessPayload(TypedDict):
+    version: int
+    source: str
+    updated_at: datetime | None
+    processes: tuple[str, ...]
 
 
 class _GlobalExecutionCapacityPayload(TypedDict):
@@ -401,6 +409,37 @@ def clear_global_top5_band_cache() -> None:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_key_process_payload(database_path: str) -> _GlobalKeyProcessPayload:
+    profile = get_scenario_repository(database_path).load_global_key_process()
+    return {
+        "version": profile.version,
+        "source": profile.source,
+        "updated_at": profile.updated_at,
+        "processes": profile.processes,
+    }
+
+
+def load_global_key_process(database_path: str) -> GlobalKeyProcess:
+    """Share the key-process list without caching its model class."""
+    payload = _load_global_key_process_payload(database_path)
+    return GlobalKeyProcess(
+        version=payload["version"],
+        source=payload["source"],
+        updated_at=payload["updated_at"],
+        processes=payload["processes"],
+    )
+
+
+def clear_global_key_process_cache() -> None:
+    """주요공정 목록 프로필만 비운다.
+
+    다른 공용 프로필과 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다 — 어떤 `RQ_*`
+    표에도 오버레이되지 않고 히트맵이 그릴 행만 정하는 화면 필터다.
+    """
+    _load_global_key_process_payload.clear()
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
 def _load_global_execution_capacity_payload(
     database_path: str,
 ) -> _GlobalExecutionCapacityPayload:
@@ -506,6 +545,7 @@ def clear_scenario_repository() -> None:
     _load_global_comparison_scenario_payload.clear()
     _load_global_execution_capacity_payload.clear()
     _load_global_top5_band_payload.clear()
+    _load_global_key_process_payload.clear()
     _load_global_summary_note_payload.clear()
     _load_global_past_data_payload.clear()
     past_table_csv.clear()

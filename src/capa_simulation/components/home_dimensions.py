@@ -187,6 +187,29 @@ BOTTLENECK_DETAIL_ROW_HEIGHT_PX = 29
 
 BOTTLENECK_DETAIL_BAR_HEIGHT_PX = 22
 
+# 주요공정 확보율 히트맵 시트. 상세 B/N 과 **같은** 머리글·행 높이를 쓴다 — 두 구획이
+# 세로로 나란히 서므로 행 리듬이 다르면 한쪽만 눌린 표로 읽힌다.
+# `components/securement_heatmap.py` 의 20px 는 66공정을 한 화면에 넣으려는 **다른 화면**
+# 의 값이라 여기 가져오지 않는다.
+KEY_PROCESS_HEADER_HEIGHT_PX = BOTTLENECK_DETAIL_HEADER_HEIGHT_PX
+
+KEY_PROCESS_ROW_HEIGHT_PX = BOTTLENECK_DETAIL_ROW_HEIGHT_PX
+
+# 칸을 행보다 낮게 그린다. 위아래에 드러나는 띠가 연간 Total·과거 구간의 면색을 보여
+# 주는 자리다 — 칸이 행을 꽉 채우면 그 열이 눌린 색이라는 것이 안 보인다.
+KEY_PROCESS_CELL_HEIGHT_PX = BOTTLENECK_DETAIL_BAR_HEIGHT_PX
+
+# 월 열 안에서 칸이 비우는 좌우 여백 비율. 세로 월 경계선이 칸에 가려지지 않게 한다.
+KEY_PROCESS_CELL_SIDE_INSET_RATIO = 0.02
+
+# 칸 안 확보율 글자와 왼쪽 공정명 글자. 색만으로 뜻을 나르지 않으려면 칸마다 숫자가
+# 있어야 한다(색각이상·흑백 인쇄).
+KEY_PROCESS_RATE_FONT_SIZE_PX = 13
+KEY_PROCESS_NAME_FONT_SIZE_PX = 13
+
+# 라벨 칸에서 공정명이 시작하는 왼쪽 여백.
+KEY_PROCESS_NAME_INSET_PX = 10
+
 LOB_TABLE_HEADER_HEIGHT_PX = 45
 
 # 값 글자 크기. 세 행이 같고, 행 높이 계산이 이 값을 본다.

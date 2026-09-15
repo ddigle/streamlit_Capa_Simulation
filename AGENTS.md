@@ -495,6 +495,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     화면마다 다른 색 체계로 보이면 판정이 흐려지기 때문이다. 주요 공정별 최초 부족 월을
     적는 `shortage_summary` 도 여기 있다. **두 축 모두 범주**여야 한다 — `"26.07"` 을
     숫자로 두면 월 칸이 실수 축에 눌려 붙는다.
+  - **HOME 의 `주요공정 확보율` 격자와는 다른 화면이다.** 이쪽은 `산출 결과` 안에서 66공정을
+    한 화면에 넣으려고 칸 폭을 Plotly 에 맡긴 반응형이고, HOME 쪽은
+    `home_figures.build_key_process_heatmap_figures` 가 100px 월 격자에 맞춰 직접 그린다.
+    둘을 합치려 들면 한쪽의 칸 폭 계약이 깨진다. 공유하는 것은 **판정 경계의 뜻**뿐이다.
 - `src/capa_simulation/components/exclusion_waterfall.py`
   - 후보 경로 → 사유별 차감 → 남은 경로. 사유의 순서는 `services/unit_capacity.py` 가
     실제로 걸러 내는 차례와 같아야 한다. 한 행이 두 사유에 걸리면 앞의 사유가 가져가므로
@@ -923,6 +927,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - B/N Top 5 세로 막대의 값 경계(기본 50%~200%)를 검증하고 확보율을 그 대역으로 자른다.
   - 경계는 **B/N 확보율에서 끊어 낸다.** 확보율에 묶여 있으면 달마다 다른 눈금이 걸려
     같은 길이의 막대가 서로 다른 값을 뜻한다. 대역은 공용 프로필이 정본이다.
+- `src/capa_simulation/services/key_process.py`
+  - HOME `주요공정 확보율` 히트맵이 그릴 공정 목록의 상한(`KEY_PROCESS_LIMIT`)과 정규화.
+  - **고른 차례가 곧 행 순서다.** 확보율로 다시 정렬하지 않는다 — 매달 행이 뛰어다니면
+    「이 공정이 언제부터 무너지나」를 가로로 읽을 수 없다.
+  - 빈 목록은 오류가 아니라 「하나도 고르지 않는다」는 결정이다. 그때 HOME 은 그 구획을
+    안내 한 줄로 남긴다.
+  - 상한이 있는 것은 이 구획이 계획 세부수량과 상세 B/N **사이**에 끼어 있어 행이 늘면
+    아래 구획이 그만큼 화면 밖으로 밀리기 때문이다.
 - `src/capa_simulation/components/loading_progress.py`
   - 계산이 오래 걸리는 페이지가 본문 맨 위에 띄우는 진행 막대다. 단계 목록
     (`LoadingStage`)을 미리 선언하고 호출부는 `advance()` 만 부른다 — 호출부가 퍼센트를
@@ -947,6 +959,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     줄이고 그래도 넘치면 말줄임하며, 전체 이름은 hover 의 `customdata` 에만 있다.
     순위 상한 `BOTTLENECK_DETAIL_RANK_LIMIT` 은 여기서 정하고 서비스에 인자로 넘긴다.
     자르는 곳은 서비스 한 곳이고 Figure 는 받은 프레임을 다시 자르지 않는다.
+  - **Figure 묶음은 정확히 여덟 개다**(요약 2 + 계획 세부수량 2 + 주요공정 히트맵 2 +
+    상세 B/N 2). 순서가 곧 화면 순서이고 `render_home_figures` 가 길이를 검사한다. 개수를
+    바꿀 때는 `HOME_FIGURE_SCHEMA_VERSION` 을 함께 올린다 — 올리지 않으면 세션 캐시에
+    남은 옛 묶음이 길이 검사에 걸려 HOME 이 예외로 죽는다.
+  - `build_key_process_heatmap_figures` 는 상세 B/N 과 **같은 머리글·행 높이**를 쓰고
+    `go.Heatmap` 을 쓰지 않는다. 그 trace 는 칸 폭을 Plotly 가 정해 100px 월 격자·paper
+    경계선과 맞지 않는다. 가로막대 방식이면 칠과 hover 가 한 trace 로 끝나고 색 판정도
+    `_capacity_color` 하나에서 나온다. 행 축이 **공정**이라는 점이 상세 B/N 과 다르다 —
+    상세 B/N 의 행은 순위라 같은 줄이 매달 다른 공정이다.
+  - 히트맵의 **연간 Total 열은 칸을 그리지 않고 면색만 깐다.** 확보율은 합산도 평균도 할
+    수 없다(그 해 평균은 부하량 가중이 필요한데 이 프레임에 근거가 없다). `Wafer Capa` 가
+    연간 Total 을 적지 않는 것과 같은 규칙이다.
+  - 네 구획의 제목 줄과 그 짝인 빈 줄은 `dashboard_title_row_style()` 이 높이를 못박는다.
+    **한 줄이라도 빠지면 그 아래 구획 전부가 어긋나고, 증상은 그 구획이 아니라 아래
+    구획에서 먼저 보인다.**
   - **B/N Top 5 축의 위쪽 여유는 비율이 아니라 픽셀이다**(`TOP5_AXIS_HEADROOM_PX`).
     세워 둔 확보율 라벨이 먹는 만큼만 비우고 남는 높이는 전부 막대가 쓴다. 예전의
     `봉우리 × 1.8` 은 위쪽 44% 를 늘 비웠는데, 확보율 구간을 상한에서 잘라 여러 달이 같은
@@ -991,6 +1018,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·삽입 SQL
 - `persistence/advance_load_store.py`: 공용 선행 투입 물량 프로필의 조회·삽입 SQL
 - `persistence/execution_capacity_store.py`: 공용 실행 Capa 반영 프로필의 조회·삽입 SQL
+- `persistence/key_process_store.py`: 공용 주요공정 목록 프로필의 조회·삽입 SQL(저장 차례가 곧 히트맵 행 순서)
 - `persistence/past_data_store.py`: 공용 과거 구간 프로필 세 표의 조회·삽입 SQL
 - `persistence/preset_store.py`: 리비전 프리셋 저장·복원
 - `persistence/source_data_store.py`: 원천 Core Data raw 와 컬럼 프로파일

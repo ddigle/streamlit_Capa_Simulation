@@ -394,8 +394,14 @@ def test_home_figure_cache_key_type_grew_by_the_rename_version() -> None:
 
     **rename 버전은 반드시 둘째 자리다.** 맨 뒤에 붙이면 표시순서 digest 를 `[-1]` 로 꺼내
     쓰는 자리가 엉뚱한 값을 집는다.
+
+    맨 뒤의 둘은 주요공정 히트맵이다 — **실제로 그린 공정 목록**과 공용 프로필 버전.
+    고른 목록이 아니라 그린 목록인 것은 위 비교 리비전과 같은 근거다: 「고름 + 이 시나리오에
+    없어 못 그림」이 「고름」 키로 눌러앉으면 나중에 그 공정이 생겨도 빈 그림이 그대로
+    나온다. 버전도 함께 넣는 것은 집합은 같고 **차례만 바꾼** 저장을 목록 튜플이 못 잡기
+    때문이다 — 차례가 곧 행 순서다.
     """
-    assert len(get_args(HomeFigureCacheKey)) == 21
+    assert len(get_args(HomeFigureCacheKey)) == 23
 
 
 def test_home_figure_cache_key_records_the_applied_comparison_not_the_requested_one() -> None:

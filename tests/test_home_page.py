@@ -110,10 +110,11 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
         ("경고 기준 (%)", 99.5),
     ]
 
-    # 기본 진입은 상세표까지 펼친다: 요약(좌측 라벨 trace 0 + 월별 본문 trace 3)에
-    # 계획 세부수량과 B/N 상세 시트가 더해진다. B/N 상세 월 Figure 의 4는 hover 표적
-    # 막대·트랙 막대·확보율 막대·공정명 텍스트다. 값이 커지면 trace 를 늘린 것이다.
-    assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 4]
+    # 그리는 차례다 — 라벨 칸 넷을 먼저, 그 다음 월 칸 넷. 요약 라벨은 trace 0(격자와
+    # 글자가 전부 layout 항목이다), 나머지 라벨 셋은 `go.Table` 하나씩이다. 월 칸은
+    # 요약 3, 계획 세부수량 1, 주요공정 히트맵 3(hover 표적 막대·칸 막대·확보율 글자),
+    # B/N 상세 4(hover 표적·트랙·확보율 막대·공정명)다. 값이 커지면 trace 를 늘린 것이다.
+    assert app.session_state["spy_traces"] == [0, 1, 1, 1, 3, 1, 3, 4]
     assert app.session_state["spy_scrollbars"] == 1
 
     # 상세표 표시 여부를 고르던 자리는 탭이 가져갔고, 본문 토글은 표시 기준이다.
@@ -139,6 +140,7 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
         "붙여넣기 읽기",
         "선행 물량 저장",
         "실행 Capa 저장",
+        "주요공정 저장",
         "판정 기준 적용",
         "확보율 구간 저장",
     ]
@@ -158,7 +160,7 @@ def test_home_puts_the_charts_in_a_main_tab_next_to_preference(seeded_database: 
         ":material/history: Past Data",
     ]
     # 차트는 Main 탭 안에서만 그린다.
-    assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 4]
+    assert app.session_state["spy_traces"] == [0, 1, 1, 1, 3, 1, 3, 4]
 
 
 def test_the_bottleneck_detail_chart_keeps_hover_on(seeded_database: Path) -> None:
@@ -536,7 +538,7 @@ def test_the_dashboard_is_not_drawn_while_its_tab_is_hidden(seeded_database: Pat
     있으면 정확히 그 상황이 된다.
     """
     app = _run(seeded_database)
-    assert app.session_state["spy_traces"] == [0, 1, 1, 3, 1, 4]
+    assert app.session_state["spy_traces"] == [0, 1, 1, 1, 3, 1, 3, 4]
 
     app.session_state["home_active_tab"] = ":material/tune: Preference"
     app.run()
@@ -579,6 +581,8 @@ def test_the_two_columns_keep_paired_children(seeded_database: Path) -> None:
         "production_lob_labels",
         "plan_detail_title_row",
         "production_detail_labels",
+        "key_process_title_row",
+        "key_process_heatmap_labels",
         "bottleneck_title_row",
         "bottleneck_detail_labels",
     ]
@@ -586,6 +590,8 @@ def test_the_two_columns_keep_paired_children(seeded_database: Path) -> None:
         "production_lob_months",
         "plan_detail_title_spacer",
         "production_detail_months",
+        "key_process_title_spacer",
+        "key_process_heatmap_months",
         "bottleneck_title_spacer",
         "bottleneck_detail_months",
     ]
@@ -598,7 +604,7 @@ def test_the_title_spacers_keep_their_pinned_height(seeded_database: Path) -> No
     """
     app = _run(seeded_database)
 
-    for key in ("plan_detail_title_spacer", "bottleneck_title_spacer"):
+    for key in ("plan_detail_title_spacer", "key_process_title_spacer", "bottleneck_title_spacer"):
         spacer = app.get_by_key(key)
         assert spacer.proto.height_config.pixel_height == DASHBOARD_TITLE_HEIGHT_PX, key
 

@@ -44,6 +44,10 @@ from capa_simulation.performance import PerformanceTrace
 # 뒤의 여섯은 화면 기준이다 — EDP 포함 여부, 계획 세부수량 거래선 분류 여부, 비교 GAP
 # 표시 여부와 비교 리비전, 선행 반영 여부, 선행 물량 프로필 버전, 과거 구간 프로필 버전.
 # 버전은 선행을 켰을 때만 채우므로 껐다 켜도 같은 칸을 다시 쓰지 않는다.
+# 마지막 둘은 주요공정 히트맵이다 — **실제로 그린 공정 목록**과 공용 프로필 버전. 고른
+# 목록이 아니라 그린 목록인 것은, 고른 공정이 이 시나리오에 없어 못 그린 그림이 「고름」
+# 키로 눌러앉으면 나중에 그 공정이 생겨도 빈 그림이 그대로 나오기 때문이다. 버전도 함께
+# 넣는 것은 집합은 같고 **차례만 바꾼** 저장을 목록 튜플이 못 잡기 때문이다.
 HomeFigureCacheKey = tuple[
     int,
     int,
@@ -66,6 +70,8 @@ HomeFigureCacheKey = tuple[
     float,
     float,
     int,
+    tuple[str, ...],
+    int,
 ]
 
 HomeFigureSet = tuple[Any, ...]
@@ -73,10 +79,12 @@ HomeFigureSet = tuple[Any, ...]
 HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 
 # EDP 포함/제외 × 선행 ON/OFF 네 가지 상태를 사람이 오가며 비교한다. 3 칸이면 되돌릴
-# 때마다 차트를 다시 조립해 2 초를 쓴다. 한 칸은 Figure 여섯 개다.
+# 때마다 차트를 다시 조립해 2 초를 쓴다. 한 칸은 Figure 여덟 개다 — 구획이 하나 늘어
+# 칸당 메모리가 33% 올랐지만, 늘어난 두 Figure 는 주요공정 상한(15행)이 묶고 있어
+# 여덟 칸을 그대로 둔다.
 HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 
-HOME_FIGURE_SCHEMA_VERSION = 40
+HOME_FIGURE_SCHEMA_VERSION = 41
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지
@@ -138,16 +146,22 @@ def render_home_performance(
 
 
 def dashboard_title_row_style() -> str:
-    """세 구획 제목 줄과 그 짝인 빈 줄의 높이를 하나로 못박는다.
+    """네 구획 제목 줄과 그 짝인 빈 줄의 높이를 하나로 못박는다.
 
     위젯 기본 높이에 맡기면 브라우저 글꼴이나 Streamlit 판이 바뀔 때마다 두 칸이
-    어긋난다. 세 제목이 같은 높이라야 제목과 표 사이 간격도 하나로 맞는다.
+    어긋난다. 네 제목이 같은 높이라야 제목과 표 사이 간격도 하나로 맞는다.
+
+    **한 줄이라도 빠지면 그 아래 전부가 어긋난다.** 월 칸 스페이서는 여기서 44px 로
+    못박히는데 라벨 칸 제목 줄은 CSS 가 없으면 Streamlit 기본 높이다 — 증상은 그
+    구획이 아니라 **그 아래 구획**에서 먼저 보인다.
     """
     return f"""
     <style>
     .st-key-lob_title_row,
     .st-key-plan_detail_title_row,
     .st-key-plan_detail_title_spacer,
+    .st-key-key_process_title_row,
+    .st-key-key_process_title_spacer,
     .st-key-bottleneck_title_row,
     .st-key-bottleneck_title_spacer {{
         height: {DASHBOARD_TITLE_HEIGHT_PX}px;
@@ -156,6 +170,7 @@ def dashboard_title_row_style() -> str:
     }}
     .st-key-lob_title_row,
     .st-key-plan_detail_title_row,
+    .st-key-key_process_title_row,
     .st-key-bottleneck_title_row {{ align-items: center; }}
     /* 범례는 제목·토글과 같은 줄의 오른쪽 끝이다. 아래 월 영역 위에 얹힌 가로
        스크롤바와 겹치지 않게 별도 블록으로 두지 않는다. */
@@ -268,7 +283,7 @@ def render_home_figures(
     leading_past_month_count: int = 0,
     owner_tab: OpenTab | None = None,
 ) -> None:
-    """대시보드 여섯 Figure. **숨은 탭에서는 그리지 않는다.**
+    """대시보드 여덟 Figure. **숨은 탭에서는 그리지 않는다.**
 
     숨겨진 요소 안에서는 SVG 글자 폭 측정이 0 이라 `go.Table` 이 머리글을 셀 가운데에
     놓지 못하고, 상세 세 Figure 는 `staticPlot` 이라 탭을 열어도 다시 그리지 않는다.
@@ -280,8 +295,8 @@ def render_home_figures(
     """
     if tab_is_hidden(owner_tab):
         return
-    if len(figures) != 6:
-        raise ValueError("HOME Figure 묶음은 요약 2개와 상세 4개, 모두 6개여야 합니다.")
+    if len(figures) != 8:
+        raise ValueError("HOME Figure 묶음은 요약 2개와 상세 6개, 모두 8개여야 합니다.")
     label_figure, month_figure = figures[:2]
     detail_figures = figures[2:]
     visible_month_count = min(max(len(month_labels), 1), tokens.DASHBOARD_MONTH_SCROLL_THRESHOLD)
@@ -322,11 +337,18 @@ def render_home_figures(
                 key="production_detail_labels",
                 config={"displayModeBar": False, "staticPlot": True},
             )
-            # `상세 B/N 공정` 제목. 앞의 두 구획과 같은 줄 컴포넌트라 제목과 표
-            # 사이 간격이 셋 다 같다.
-            render_section_title_row("상세 B/N 공정", key="bottleneck_title_row")
+            # `주요공정 확보율` 제목. 네 구획이 같은 줄 컴포넌트를 쓰므로 제목과 표
+            # 사이 간격이 넷 다 같다.
+            render_section_title_row("주요공정 확보율", key="key_process_title_row")
             st.plotly_chart(
                 detail_figures[2],
+                width="stretch",
+                key="key_process_heatmap_labels",
+                config={"displayModeBar": False, "staticPlot": True},
+            )
+            render_section_title_row("상세 B/N 공정", key="bottleneck_title_row")
+            st.plotly_chart(
+                detail_figures[4],
                 width="stretch",
                 key="bottleneck_detail_labels",
                 config={"displayModeBar": False, "staticPlot": True},
@@ -390,6 +412,24 @@ def render_home_figures(
                     key="production_detail_months",
                     config={"displayModeBar": False, "staticPlot": True},
                 )
+                # 라벨 칸의 `주요공정 확보율` 제목 줄과 짝이 되는 빈 줄.
+                st.container(
+                    key="key_process_title_spacer",
+                    height=DASHBOARD_TITLE_HEIGHT_PX,
+                    border=False,
+                )
+                # 히트맵은 hover 로 확보율·가용/필요대수를 읽는다. `staticPlot` 은 hover
+                # 까지 끄므로 상세 B/N 월 Figure 와 같은 config 를 쓴다.
+                st.plotly_chart(
+                    detail_figures[3],
+                    width="stretch",
+                    key="key_process_heatmap_months",
+                    config={
+                        "displayModeBar": False,
+                        "doubleClick": False,
+                        "showAxisDragHandles": False,
+                    },
+                )
                 # 라벨 칸의 `상세 B/N 공정` 제목 줄과 짝이 되는 빈 줄.
                 st.container(
                     key="bottleneck_title_spacer",
@@ -402,7 +442,7 @@ def render_home_figures(
                 # "hover" 로, `doubleClick`·`showAxisDragHandles` 는 켜짐으로 돌아가므로
                 # 셋을 직접 끈다. 드래그 확대는 Figure 축의 `fixedrange` 가 막는다.
                 st.plotly_chart(
-                    detail_figures[3],
+                    detail_figures[5],
                     width="stretch",
                     key="bottleneck_detail_months",
                     config={

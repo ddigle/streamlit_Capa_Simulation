@@ -56,3 +56,4 @@ sidecar 카탈로그다.
 | `src/capa_simulation/persistence/migrations/0021_global_execution_capacity.sql` | 실행 Capa 반영(년월·공정별 확보율 증감)을 시나리오와 독립된 공용 프로필로 저장한다(헤더 1행 + 조정 N행, 교체마다 version+1). 증감 단위는 퍼센트포인트이고, 소유 컬럼을 두지 않아 시나리오 삭제·보관이 건드리지 않는다. |
 | `src/capa_simulation/persistence/migrations/0022_global_top5_band.sql` | B/N Top5 막대가 표현하는 확보율 구간(기본 50~200%)을 시나리오와 독립된 공용 프로필로 저장한다(단일 행, 교체마다 version+1). 소유 컬럼을 두지 않아 시나리오 삭제·보관이 건드리지 않는다. |
 | `src/capa_simulation/persistence/migrations/0023_global_summary_note.sql` | HOME 상단 Summary 공지 문구를 시나리오와 독립된 공용 프로필로 저장한다(단일 행, 교체마다 version+1). 빈 문자열은 「공지를 내린 상태」라 막지 않는다. 소유 컬럼을 두지 않아 시나리오 삭제·보관이 건드리지 않는다. |
+| `src/capa_simulation/persistence/migrations/0024_global_key_process.sql` | HOME `주요공정 확보율` 히트맵이 그릴 공정 목록을 시나리오와 독립된 공용 프로필로 저장한다(헤더 1행 + 공정 N행, 교체마다 version+1). 고른 차례가 곧 히트맵 행 순서이고, 0건(전체 해제)도 정상 저장이라 version 이 올라간다. 소유 컬럼을 두지 않아 시나리오 삭제·보관이 건드리지 않는다. |

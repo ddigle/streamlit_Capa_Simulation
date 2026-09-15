@@ -24,6 +24,7 @@ from capa_simulation.persistence.cache import (
     clear_global_advance_load_cache,
     clear_global_comparison_scenario_cache,
     clear_global_execution_capacity_cache,
+    clear_global_key_process_cache,
     clear_global_summary_note_cache,
     clear_global_top5_band_cache,
     get_scenario_repository,
@@ -32,6 +33,7 @@ from capa_simulation.persistence.cache import (
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
     GlobalExecutionCapacity,
+    GlobalKeyProcess,
     GlobalSummaryNote,
     GlobalTop5Band,
     RevisionSummary,
@@ -47,6 +49,7 @@ from capa_simulation.services.execution_capacity import (
     empty_execution_capacity,
     prepare_execution_capacity,
 )
+from capa_simulation.services.key_process import KEY_PROCESS_LIMIT
 from capa_simulation.services.month_columns import month_label
 
 EDP_TOGGLE_KEY = "home_preference_include_edp"
@@ -254,6 +257,7 @@ def render_home_preference(
     advance_profile: GlobalAdvanceLoad,
     execution_profile: GlobalExecutionCapacity,
     top5_band_profile: GlobalTop5Band,
+    key_process_profile: GlobalKeyProcess,
     summary_profile: GlobalSummaryNote,
     process_options: Sequence[str],
     process_labels: ProcessLabels,
@@ -309,6 +313,12 @@ def render_home_preference(
     )
     _render_top5_band_editor(
         top5_band_profile=top5_band_profile,
+        database_path=database_path,
+    )
+    _render_key_process_editor(
+        key_process_profile=key_process_profile,
+        process_options=process_options,
+        process_labels=process_labels,
         database_path=database_path,
     )
     _render_execution_editor(
@@ -758,6 +768,98 @@ def _top5_band_version_caption(profile: GlobalTop5Band) -> str:
     if profile.updated_at is None:
         return f"공용 버전 v{profile.version} · {profile.source}"
     return f"공용 버전 v{profile.version} · {profile.source} · {profile.updated_at:%Y-%m-%d %H:%M}"
+
+
+def _render_key_process_editor(
+    *,
+    key_process_profile: GlobalKeyProcess,
+    process_options: Sequence[str],
+    process_labels: ProcessLabels,
+    database_path: str,
+) -> None:
+    """HOME `주요공정 확보율` 격자에 그릴 공정을 고르는 시트.
+
+    **위젯에 `key` 를 두지 않는다.** `Preference` 탭은 숨어 있어도 본문이 그려지므로,
+    `key` 를 두면 첫 진입의 값(대개 빈 목록)이 세션에 박히고 그 뒤 다른 사람이 저장한
+    목록을 이 화면은 영영 못 본 채 저장 한 번으로 덮어쓴다. 값은 폼 반환값으로 받는다.
+    """
+    with st.container(border=True):
+        st.markdown("#### :material/grid_view: 주요공정 히트맵")
+        st.caption(
+            "HOME 대시보드의 `주요공정 확보율` 격자에 그릴 공정입니다. 시나리오와 분리된 "
+            "공용 설정이라 모든 시나리오에 같이 적용됩니다. **고른 차례가 곧 행 순서**이고, "
+            "확보율로 다시 정렬하지 않습니다 — 그래야 「이 공정이 언제부터 부족해지나」를 "
+            f"가로로 읽을 수 있습니다. 비우고 저장하면 그 구획은 안내 한 줄만 남습니다. "
+            f"최대 {KEY_PROCESS_LIMIT}개."
+        )
+        st.caption(_key_process_version_caption(key_process_profile))
+        known_options = set(process_options)
+        with st.form("home_key_process_form"):
+            selected = st.multiselect(
+                "주요 공정",
+                options=list(process_options),
+                default=[
+                    process for process in key_process_profile.processes if process in known_options
+                ],
+                format_func=process_labels.format_func(),
+                max_selections=KEY_PROCESS_LIMIT,
+                placeholder="공정을 고르세요",
+            )
+            submitted = st.form_submit_button(
+                "주요공정 저장",
+                icon=":material/save:",
+                type="primary",
+                width="stretch",
+            )
+        if not submitted:
+            _render_key_process_notice(key_process_profile, known_options, process_labels)
+            return
+        try:
+            get_scenario_repository(database_path).replace_global_key_process(
+                selected,
+                source="웹 직접 편집",
+            )
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(bootstrap_error_message(exc))
+            return
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        clear_global_key_process_cache()
+        st.success("주요공정 목록을 저장했습니다.")
+        st.rerun(scope="app")
+
+
+def _render_key_process_notice(
+    profile: GlobalKeyProcess,
+    known_options: set[str],
+    process_labels: ProcessLabels,
+) -> None:
+    """저장돼 있으나 이번 화면에서는 그릴 수 없는 공정을 알린다.
+
+    **프로필에서 지우지 않는다.** 공용 설정이라 다른 시나리오·조회기간에는 그 공정이
+    있고, 여기서 조용히 걷어내면 그 화면의 히트맵이 함께 비어 버린다.
+    """
+    missing = [process for process in profile.processes if process not in known_options]
+    if not missing:
+        return
+    names = ", ".join(process_labels.label(process) for process in missing)
+    st.caption(
+        f":material/info: 이번 시나리오·조회기간에 없어 그리지 않은 공정: {names}. "
+        "공용 설정이라 저장은 그대로 남고, 해당 공정이 있는 화면에서는 그려집니다."
+    )
+
+
+def _key_process_version_caption(profile: GlobalKeyProcess) -> str:
+    if profile.version == 0:
+        return "공용 버전 없음 · 아직 고른 주요공정이 없습니다"
+    count = f"{len(profile.processes)}개 공정"
+    if profile.updated_at is None:
+        return f"공용 버전 v{profile.version} · {count} · {profile.source}"
+    return (
+        f"공용 버전 v{profile.version} · {count} · {profile.source} · "
+        f"{profile.updated_at:%Y-%m-%d %H:%M}"
+    )
 
 
 def _render_execution_editor(
