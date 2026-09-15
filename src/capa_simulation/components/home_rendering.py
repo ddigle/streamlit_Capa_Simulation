@@ -256,11 +256,23 @@ def summary_notice_style() -> str:
         [data-testid="stIconMaterial"] {{
         display: none;
     }}
-    /* 꺾쇠 자리가 비면 제목이 가운데로 밀린다. 줄 전체를 눌러 여닫는다는 것은 손 모양
-       커서가 말한다. */
+    /* **아이콘을 감싼 칸과 그 옆 간격까지 없앤다.** 아이콘만 숨기면 빈 칸과 flex 간격이
+       그대로 남아 제목이 20px 오른쪽으로 밀린다 — 바로 아래 `Capa LOB 현황` 과 첫 글자가
+       어긋나 두 상자가 계단처럼 보인다. */
+    .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary
+        span:has(> [data-testid="stIconMaterial"]) {{
+        display: none;
+    }}
+    .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary > span {{
+        gap: 0;
+    }}
+    /* 제목 첫 글자를 아래 대시보드 상자의 제목과 **같은 세로선**에 세운다. 두 상자는
+       테두리 위치가 같으므로 안쪽 여백만 맞추면 된다(테두리 1px + 안쪽 14px). 줄 전체를
+       눌러 여닫는다는 것은 손 모양 커서가 말한다. */
     .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary {{
         justify-content: flex-start;
         cursor: pointer;
+        padding-left: 14px;
     }}
     .capa-summary-note {{
         margin: 0;
