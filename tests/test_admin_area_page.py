@@ -33,11 +33,14 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
     # 운영 관리 기능은 이미 쓰는 화면이라 `(구현중)` 배지를 달지 않는다.
     assert not any("구현중" in markdown.value for markdown in app.markdown)
     assert any("Proc Rename" in subheader.value for subheader in app.subheader)
-    # 표시순서 관리가 시나리오 관리 페이지에서 여기로 옮겨 와 두 탭이다.
+    # 표시순서 관리가 시나리오 관리 페이지에서 여기로 옮겨 왔고, 원천 품질이 뒤에 붙어 세 탭이다.
     assert [tab.label for tab in app.main.tabs] == [
         ":material/label: Proc Rename",
         ":material/sort: 표시순서 관리",
+        ":material/fact_check: 원천 품질",
     ]
+    # 활성 시나리오가 없으면 원천 품질 탭은 안내만 남긴다 — 화면을 멈추지 않는다.
+    assert any("활성 시나리오가 없습니다" in info.value for info in app.info)
     # 내려받기는 표시명 양식과 표시순서 양식 둘이다.
     assert len(app.get("download_button")) == 2
     assert len(app.get("file_uploader")) == 0

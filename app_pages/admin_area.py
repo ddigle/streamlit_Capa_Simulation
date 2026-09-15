@@ -11,9 +11,11 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_rename_management import (
     render_process_rename_management,
 )
+from capa_simulation.components.source_quality import render_source_quality
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
+from capa_simulation.scenario_activation import active_persisted_scenario_id
 from capa_simulation.settings import DUCKDB_PATH
 
 # 탭을 더할 자리다. 이름을 여기에 모아 두고 아래에서 같은 순서로 그린다. 차트·월별 표가
@@ -22,6 +24,7 @@ from capa_simulation.settings import DUCKDB_PATH
 TAB_NAMES = (
     ":material/label: Proc Rename",
     ":material/sort: 표시순서 관리",
+    ":material/fact_check: 원천 품질",
 )
 
 render_page_header(
@@ -51,9 +54,26 @@ try:
 except BOOTSTRAP_ERRORS:
     available_processes = []
 
-process_rename_tab, display_order_tab = st.tabs(list(TAB_NAMES))
+process_rename_tab, display_order_tab, source_quality_tab = st.tabs(list(TAB_NAMES))
 
 with process_rename_tab:
     render_process_rename_management(repository, available_processes)
 with display_order_tab:
     render_display_order_management(repository)
+with source_quality_tab:
+    st.caption(
+        "활성 시나리오의 원천 78컬럼이 애초에 성한 데이터인지 **계산 전에** 봅니다. "
+        "비어 있는 컬럼과 값이 하나뿐인 상수 컬럼이 위로 옵니다."
+    )
+    # 원천이 없는 시나리오(복제본 등)가 정상이다. 그때 화면을 멈추지 않는다.
+    scenario_id = active_persisted_scenario_id()
+    if scenario_id is None:
+        st.info("활성 시나리오가 없습니다. 시나리오를 먼저 불러오세요.")
+    else:
+        try:
+            source_profile = repository.load_source_profile(scenario_id)
+            source_rows = repository.load_source_row_count(scenario_id)
+        except BOOTSTRAP_ERRORS as exc:
+            st.info(bootstrap_error_message(exc))
+        else:
+            render_source_quality(source_profile, source_rows)

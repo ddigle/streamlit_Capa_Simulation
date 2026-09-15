@@ -901,6 +901,21 @@ class DuckDBScenarioRepository:
                 [str(dataset[0])],
             ).fetchdf()
 
+    def load_source_row_count(self, scenario_id: str) -> int:
+        """원천 행 수. 결측률의 분모라 컬럼 프로필과 짝으로 쓴다.
+
+        `load_source_data` 와 달리 78컬럼을 읽지 않는다 — 분모 하나를 얻으려고 수만 행을
+        메모리에 올릴 이유가 없다. 원천이 없으면 0 이고, 호출부가 그때 결측률을 비운다.
+        """
+        with self._connect() as connection:
+            dataset = connection.execute(
+                "SELECT source_row_count FROM app_meta.dataset WHERE scenario_id = ?",
+                [scenario_id],
+            ).fetchone()
+            if dataset is None:
+                raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
+            return max(int(dataset[0]), 0)
+
     def save_revision(
         self,
         scenario_id: str,
