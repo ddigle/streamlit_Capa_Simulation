@@ -5,6 +5,7 @@ import streamlit as st
 
 from capa_simulation.components.column_filter import render_column_filters
 from capa_simulation.components.exclusion_table import render_exclusion_table
+from capa_simulation.components.exclusion_waterfall import render_exclusion_waterfall
 from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
@@ -12,12 +13,22 @@ from capa_simulation.components.hierarchical_monthly_table import (
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.securement_heatmap import (
+    render_securement_heatmap,
+    shortage_summary,
+)
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     load_page_context,
     resolve_effective_months,
+)
+from capa_simulation.scenario_preset_state import (
+    DEFAULT_SECURE_THRESHOLD_PERCENT,
+    DEFAULT_WARNING_THRESHOLD_PERCENT,
+    SECURE_THRESHOLD_KEY,
+    WARNING_THRESHOLD_KEY,
 )
 from capa_simulation.scenario_state import scenario_month_table
 from capa_simulation.services.display_order import (
@@ -45,6 +56,18 @@ from capa_simulation.services.unit_capacity import (
     unit_capacity_to_month_table,
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
+
+KEY_PROCESS_FILTER_KEY = "securement_heatmap_key_processes"
+
+
+def _threshold(key: str, default_percent: float) -> float:
+    """세션의 판정 기준(%)을 비율로 바꾼다. 아직 아무도 위젯을 그리지 않았으면 기본값이다."""
+    value = st.session_state.get(key, default_percent)
+    try:
+        return float(value) / 100.0
+    except (TypeError, ValueError):
+        return default_percent / 100.0
+
 
 CAPACITY_LEVEL_LABELS = {
     "공정": "공정",
@@ -174,6 +197,14 @@ else:
     with unit_capacity_tab:
         if not capacity_exclusions.empty:
             st.warning(f"대당 Capa 산출에서 {len(capacity_exclusions):,}개 기준을 제외했습니다.")
+            # 표는 「무엇이 빠졌나」를 답하고 워터폴은 「얼마나·어디서 빠졌나」를 답한다.
+            # 확보율이 낮을 때 설비 부족인지 기준정보 결손인지를 가르는 것이 이 그림이다.
+            render_exclusion_waterfall(
+                capacity_exclusions,
+                remaining_rows=len(unit_capacity),
+                key="unit_capacity_exclusion_waterfall",
+                owner_tab=unit_capacity_tab,
+            )
             with st.expander("제외 기준정보 확인", expanded=False):
                 render_exclusion_table(
                     capacity_exclusions,
@@ -390,6 +421,11 @@ else:
         )
     with availability_tab:
         st.caption("월간 공정별 확보율 (가용대수 ÷ 소요대수)")
+        # 판정 기준은 리비전 프리셋이 소유하는 **세션 공용 값**이다. 이 페이지는 위젯을
+        # 두지 않고 HOME·Static Capa 가 정한 경계를 그대로 읽는다 — 같은 확보율이 화면마다
+        # 다른 색으로 보이면 안 된다.
+        secure_threshold = _threshold(SECURE_THRESHOLD_KEY, DEFAULT_SECURE_THRESHOLD_PERCENT)
+        warning_threshold = _threshold(WARNING_THRESHOLD_KEY, DEFAULT_WARNING_THRESHOLD_PERCENT)
         displayed_securement_table = render_column_filters(
             securement_table,
             SECUREMENT_DIMENSIONS,
@@ -420,3 +456,66 @@ else:
             value_labels=process_labels.value_labels(),
             owner_tab=availability_tab,
         )
+        # 표는 숫자를 답하고 히트맵은 모양을 답한다. 「주요 공정이 **언제** 무너지나」는
+        # 66행을 훑어서 알 것이 아니다. 지정은 위의 표 필터와 따로 둔다 — 표는 값을 뒤지는
+        # 화면이고 이 그림은 관리 대상만 남겨 두고 보는 화면이라 쓰임이 다르다.
+        key_process_options = securement_table[SECUREMENT_DIMENSIONS[0]].astype(str).tolist()
+        saved_key_processes = st.session_state.get(KEY_PROCESS_FILTER_KEY, [])
+        if not isinstance(saved_key_processes, list):
+            saved_key_processes = []
+        st.session_state[KEY_PROCESS_FILTER_KEY] = [
+            process for process in saved_key_processes if process in key_process_options
+        ]
+        with st.expander("주요 공정 × 월 히트맵", expanded=False):
+            selected_key_processes = st.multiselect(
+                "주요 공정",
+                options=key_process_options,
+                placeholder="전체 공정",
+                key=KEY_PROCESS_FILTER_KEY,
+                persist_state="session",
+                format_func=process_labels.format_func(),
+                help=(
+                    "관리 대상 공정만 남겨 두고 봅니다. 비워 두면 전체 공정을 그립니다. "
+                    "위 표의 필터와는 따로 적용됩니다."
+                ),
+            )
+            heatmap_table = securement_table
+            if selected_key_processes:
+                heatmap_table = securement_table.loc[
+                    securement_table[SECUREMENT_DIMENSIONS[0]]
+                    .astype(str)
+                    .isin(selected_key_processes)
+                ]
+            shortages = shortage_summary(
+                heatmap_table,
+                dimension_columns=SECUREMENT_DIMENSIONS,
+                warning_threshold=warning_threshold,
+                labels=process_labels,
+            )
+            if shortages.empty:
+                st.success("선택한 공정은 조회 기간에 부족 구간이 없습니다.")
+            else:
+                # 「언제」가 이 화면의 요점이다. 빨간 칸을 세는 것보다 숫자가 빠르다.
+                st.warning(
+                    f"{len(shortages):,}개 공정에 부족 구간이 있습니다. "
+                    f"가장 이른 부족은 {shortages['최초 부족'].iloc[0]} 입니다."
+                )
+                st.dataframe(
+                    shortages,
+                    hide_index=True,
+                    width="content",
+                    key="securement_shortage_summary",
+                )
+            render_securement_heatmap(
+                heatmap_table,
+                dimension_columns=SECUREMENT_DIMENSIONS,
+                secure_threshold=secure_threshold,
+                warning_threshold=warning_threshold,
+                key="securement_rate_heatmap",
+                labels=process_labels,
+                owner_tab=availability_tab,
+            )
+            st.caption(
+                "위 표와 같은 값·같은 판정 기준입니다. 색은 확보·경고·부족 세 단계로만 "
+                "접고, 칸 안 숫자와 hover 는 자르지 않은 확보율입니다."
+            )
