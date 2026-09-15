@@ -5,16 +5,16 @@ from typing import Any, cast
 
 import streamlit as st
 
+# 칸 위 글자를 지운 자리는 `aria-label` 이 대신한다. `시작 월`·`종료 월` 두 줄은 박스
+# 제목(`조회기간`)과 화살표가 이미 말하고 있는 것을 한 번 더 적어 세로 26px 을 먹었다.
 _MONTH_RANGE_HTML = """
 <div class="capa-month-range" lang="ko">
   <label class="capa-month-field" for="capa-start-month">
-    <span>시작 월</span>
-    <input id="capa-start-month" type="month" />
+    <input id="capa-start-month" type="month" aria-label="시작 월" />
   </label>
   <span class="capa-month-separator" aria-hidden="true">→</span>
   <label class="capa-month-field" for="capa-end-month">
-    <span>종료 월</span>
-    <input id="capa-end-month" type="month" />
+    <input id="capa-end-month" type="month" aria-label="종료 월" />
   </label>
 </div>
 """
@@ -29,10 +29,10 @@ _MONTH_RANGE_CSS = """
   display: grid;
   grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr);
   gap: 6px;
-  align-items: end;
+  align-items: center;
   box-sizing: border-box;
   width: 100%;
-  padding: 2px 0;
+  padding: 0;
   color: var(--st-text-color);
   font-family: var(--st-font);
 }
@@ -40,20 +40,13 @@ _MONTH_RANGE_CSS = """
 .capa-month-field {
   display: grid;
   min-width: 0;
-  gap: 5px;
-}
-
-.capa-month-field span {
-  color: var(--st-text-color);
-  font-size: 0.78rem;
-  font-weight: 650;
 }
 
 .capa-month-field input {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  height: 38px;
+  height: 36px;
   padding: 0 7px;
   border: 1px solid color-mix(in srgb, var(--st-text-color) 22%, transparent);
   border-radius: 8px;
@@ -71,15 +64,16 @@ _MONTH_RANGE_CSS = """
 
 .capa-month-field input:focus-visible {
   border-color: var(--st-primary-color);
-  outline: 2px solid color-mix(in srgb, var(--st-primary-color) 22%, transparent);
-  outline-offset: 1px;
+  /* 사이드바 활성 링크의 링(ACCENT 14%)과 같은 세기다. */
+  outline: 3px solid color-mix(in srgb, var(--st-primary-color) 14%, transparent);
+  outline-offset: 0;
 }
 
 .capa-month-separator {
   display: grid;
-  height: 38px;
+  height: 36px;
   place-items: center;
-  color: color-mix(in srgb, var(--st-text-color) 58%, transparent);
+  color: var(--st-primary-color);
   font-size: 0.95rem;
   font-weight: 700;
 }
@@ -189,7 +183,8 @@ def render_month_range_picker(
         default={"value": current_value},
         on_value_change=lambda: None,
         width="stretch",
-        height=68,
+        # 칸 위 글자를 지운 만큼 낮춘다. 남는 높이를 두면 박스 아래가 빈다.
+        height=40,
     )
     result_value = getattr(result, "value", current_value)
     returned_value = (

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from capa_simulation.navigation import (
     ADMIN_AREA,
+    ADMIN_SUBPAGES,
     ALL_SPECS,
     CAPA_CHATBOT,
     DATA_PENDING_SUFFIX,
@@ -22,7 +23,7 @@ APP_PATH = PROJECT_ROOT / "app.py"
 # 특성화 테스트다. 페이지가 빠지거나 제목·아이콘이 바뀌는 것을 잡기 위한 기준값이며,
 # 의도적으로 바꿀 때는 함께 갱신한다.
 EXPECTED_PAGES = [
-    ("app_pages/home.py", "HOME", None, True),
+    ("app_pages/home.py", "HOME", ":material/home:", True),
     ("app_pages/capa_chatbot.py", "Capa Chatbot (구현중)", ":material/chat:", False),
     ("app_pages/scenario_management.py", "시나리오 관리", ":material/database:", False),
     ("app_pages/static_capa.py", "Static Capa", ":material/factory:", False),
@@ -48,6 +49,7 @@ EXPECTED_PAGES = [
         ":material/admin_panel_settings:",
         False,
     ),
+    ("app_pages/voc.py", "VOC", ":material/forum:", False),
 ]
 
 
@@ -75,9 +77,12 @@ def test_group_membership_matches_the_sidebar_sections() -> None:
     assert DYNAMIC_CAPA.path == "app_pages/reference_integrity.py"
     # 자원 현황(설비·공간) → 실적(효율·UPEH·수율) → 그 결과가 쌓인 재공 순서다.
     assert len(DYNAMIC_CAPA_SUBPAGES) == 6
-    # 관리 기능이라 하위 페이지가 아니라 자기 박스로 사이드바 맨 아래에 있다.
+    # 관리 기능이라 하위 페이지가 아니라 자기 박스로 사이드바 맨 아래에 있다. 그 박스의
+    # 하위가 VOC 다 — 계산 화면이 아니라 사람이 쓰는 자리라 계산 그룹 어디에도 안 맞는다.
     assert ADMIN_AREA.path == "app_pages/admin_area.py"
-    assert ALL_SPECS[-1] is ADMIN_AREA
+    assert [spec.path for spec in ADMIN_SUBPAGES] == ["app_pages/voc.py"]
+    assert ALL_SPECS[-len(ADMIN_SUBPAGES) - 1] is ADMIN_AREA
+    assert ALL_SPECS[-len(ADMIN_SUBPAGES) :] == ADMIN_SUBPAGES
 
 
 def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:

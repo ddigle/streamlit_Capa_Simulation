@@ -4,7 +4,10 @@ import streamlit as st
 
 from capa_simulation.components.app_header import render_app_header
 from capa_simulation.components.month_range_picker import render_month_range_picker
-from capa_simulation.components.scenario_status import render_scenario_controls
+from capa_simulation.components.scenario_status import (
+    SCENARIO_BOX_KEY,
+    render_scenario_controls,
+)
 from capa_simulation.design import tokens
 from capa_simulation.navigation import build_navigation_pages
 from capa_simulation.page_bootstrap import bootstrap_error_message
@@ -33,6 +36,10 @@ from capa_simulation.sync_boot import enable_sync_state_if_managed
 
 # CSS 선택자 여러 개를 한 규칙에 묶을 때 쓰는 구분자. 규칙 안 들여쓰기까지 붙여 둔다.
 _SELECTOR_JOINER = ",\n        "
+
+# 사이드바 박스 CSS 훅. 여백을 좁히는 규칙과 Admin 의 `order` 가 이 key 를 읽는다.
+MONTH_BOX_KEY = "sidebar_month_box"
+ADMIN_BOX_KEY = "sidebar_admin_box"
 
 st.set_page_config(
     page_title=APP_NAME,
@@ -78,10 +85,18 @@ with pinned_connections(DUCKDB_PATH):
     group_title_selectors = _SELECTOR_JOINER.join(
         f".st-key-{group.slug}_navigation a p" for group in pages.groups
     )
+    subpage_slugs = [group.slug for group in pages.groups if group.subpages]
+    if pages.admin_subpages:
+        subpage_slugs.append("admin_area")
     subpage_selectors = _SELECTOR_JOINER.join(
-        f'.st-key-{group.slug}_subpages [data-testid="stPageLink-NavLink"]'
-        for group in pages.groups
-        if group.subpages
+        f'.st-key-{slug}_subpages [data-testid="stPageLink-NavLink"]' for slug in subpage_slugs
+    )
+    # 그룹 박스와 하위 묶음 선택자도 같은 선언에서 낸다.
+    group_box_selectors = _SELECTOR_JOINER.join(
+        f".st-key-{group.slug}_box" for group in pages.groups
+    )
+    subpage_box_selectors = _SELECTOR_JOINER.join(
+        f".st-key-{slug}_subpages" for slug in subpage_slugs
     )
     # 사이드바 안의 페이지 링크 전부. 본문에도 `stPageLink` 가 있을 수 있어 사이드바로 좁힌다.
     NAV_LINK = '[data-testid="stSidebarContent"] [data-testid="stPageLink-NavLink"]'
@@ -106,13 +121,31 @@ with pinned_connections(DUCKDB_PATH):
         }}
         {active_link} p {{
             color: {tokens.ACCENT};
+        }}
+        /* 헤더 두 글줄이 이미 3px ACCENT 막대를 쓴다. 같은 막대를 지금 있는 자리에도
+           세우면 헤더와 사이드바가 한 언어를 쓴다. 여백은 **모든 링크**에 주고 막대만
+           활성에 켠다 — 활성에만 주면 라벨 시작 위치가 들쭉날쭉해진다. */
+        {active_link}::before {{
+            content: "";
+            position: absolute;
+            left: 0.28rem;
+            top: 0.34rem;
+            bottom: 0.34rem;
+            width: 3px;
+            border-radius: 2px;
+            background-color: {tokens.ACCENT};
         }}"""
     st.html(
         f"""
         <style>
+        /* **위쪽 여백은 줄이지 않는다.** 장식이 아니라 겹쳐 있는 헤더 띠(실측 56px)를
+           피하는 자리다 — 브라우저에서 재니 2.25rem 에서 제목 줄상자가 띠 안으로 8.8px
+           들어가고 2.75rem 에서도 1.3px 겹친다. 3rem 이 글자 윗선과 띠 사이에 12px 을
+           남기는 최소값이다. 좌우만 줄인다 — 표와 차트가 가로로 길어 0.25rem 을 덜어도
+           읽는 데 지장이 없고, 사이드바를 좁힌 만큼 본문이 그 폭을 가져간다. */
         [data-testid="stMainBlockContainer"] {{
-            padding-left: 1.5rem !important;
-            padding-right: 1.5rem !important;
+            padding-left: 1.25rem !important;
+            padding-right: 1.25rem !important;
             padding-top: 3rem !important;
         }}
 
@@ -133,10 +166,20 @@ with pinned_connections(DUCKDB_PATH):
         .st-key-home_navigation a:focus-visible {{
             justify-content: center;
             border-color: {tokens.ACCENT};
-            background-color: {tokens.NAV_HOME_TINT};
+            /* 단색 틴트는 「누를 수 있는 것」에서 멈춘다. 위가 진하고 아래가 밝으면 맨
+               위 칸이 「돌아오는 자리」로 읽힌다. */
+            background: linear-gradient(
+                180deg,
+                {tokens.NAV_HOME_TINT_STRONG} 0%,
+                {tokens.SURFACE} 100%
+            );
         }}
         .st-key-home_navigation a p {{
             text-align: center;
+            color: {tokens.ACCENT};
+        }}
+        /* 아이콘을 더하기 전에는 전 페이지 중 HOME 만 아이콘이 없어 맨 위가 비어 보였다. */
+        .st-key-home_navigation a [data-testid="stIconMaterial"] {{
             color: {tokens.ACCENT};
         }}
 
@@ -147,6 +190,12 @@ with pinned_connections(DUCKDB_PATH):
            장식이 아니라 신호가 된다 — 떠 있는 것이 지금 있는 곳이다. */
         {NAV_LINK} {{
             border: 1px solid transparent;
+            /* 활성 막대가 설 자리. 막대가 없는 링크도 같은 여백을 가져야 라벨이 한 줄로
+               선다. 세로는 좁혀 링크가 촘촘히 쌓이게 한다. */
+            position: relative;
+            padding-left: 0.78rem;
+            padding-top: 0.28rem;
+            padding-bottom: 0.28rem;
             transition:
                 transform 140ms ease,
                 box-shadow 140ms ease,
@@ -163,9 +212,63 @@ with pinned_connections(DUCKDB_PATH):
             font-weight: 700;
         }}
 
+        /* 여백만으로는 어디까지가 하위인지 보이지 않는다. 하위가 여섯인 그룹에서 특히
+           그렇다. 들여쓰기 1rem 을 **컨테이너와 링크가 나눠 갖고** 그 경계에 선을 긋는다.
+           한쪽만 고치면 두 번 들여써져 오른쪽이 잘리므로 두 규칙을 함께 본다. */
+        {subpage_box_selectors} {{
+            border-left: 1px solid {tokens.BORDER};
+            margin-left: 0.5rem;
+            padding-left: 0.5rem;
+            /* 왼쪽으로 민 만큼 폭에서 빼지 않으면 오른쪽이 상자 안쪽 선을 넘어간다. */
+            width: calc(100% - 0.5rem);
+        }}
         {subpage_selectors} {{
-            margin-left: 1rem;
-            width: calc(100% - 1rem);
+            margin-left: 0;
+            width: 100%;
+        }}
+
+        /* 박스 위쪽만 한 단계 눌러 칠한다. 제목이 앉은 자리가 「머리칸」으로 읽혀 박스가
+           단순한 테두리가 아니라 카드가 된다. 배경은 테두리를 그리는 요소 자신에게 주므로
+           둥근 모서리에서 잘린다. */
+        {group_box_selectors} {{
+            background: linear-gradient(
+                180deg,
+                {tokens.SURFACE_PAGE} 0,
+                {tokens.SURFACE} 2.1rem
+            );
+        }}
+
+        /* 사이드바를 촘촘하게. 기본 세로 간격은 본문 기준이라 박스가 예닐곱 개 쌓이는
+           사이드바에서는 스크롤만 길어진다. */
+        [data-testid="stSidebarContent"] [data-testid="stVerticalBlock"] {{
+            gap: 0.42rem;
+        }}
+        /* 세로를 반으로 줄이면 가로도 같은 비율로 줄여야 상자가 납작해 보이지 않는다.
+           다만 1:1 로 맞추지는 않는다 — 글은 가로로 읽으므로 좌우에 조금 더 남긴다.
+           기본 16px 대비 세로 0.52배, 가로 0.66배다. */
+        {group_box_selectors},
+        .st-key-{SCENARIO_BOX_KEY},
+        .st-key-{MONTH_BOX_KEY},
+        .st-key-{ADMIN_BOX_KEY} {{
+            padding: 0.55rem 0.7rem;
+        }}
+        /* HOME 만 상자가 없어 테두리가 바깥 끝에 붙었다. 다른 링크의 테두리는 상자 안쪽
+           여백만큼 들어와 있어, 같은 링크인데 HOME 만 혼자 넓어 보였다. 같은 만큼 들여
+           모든 링크 테두리를 한 선에 세운다. */
+        .st-key-home_navigation {{
+            /* 상자 안쪽 여백(0.7rem)에 상자 테두리 1px 을 더한 값이다. 그래야 HOME 의
+               테두리가 상자 안 링크의 테두리와 **같은 선**에 선다. */
+            padding-left: calc(0.7rem + 1px);
+            padding-right: calc(0.7rem + 1px);
+        }}
+
+        /* Admin Area 는 **언제나 맨 아래**다. 페이지가 자기 사이드바 요소를 그리는 것은
+           `navigation.run()` 안이라 파이썬 차례로는 뒤에 둘 수 없다 — HOME 의 「B/N 집계
+           공정」 상자가 그래서 Admin 아래에 붙었다. 세로 흐름에서 자리만 마지막으로 민다.
+           `order` 는 **flex 항목**이 받아야 한다. `.st-key-*` 는 그 한 겹 안쪽이라 거기에
+           주면 아무 일도 일어나지 않는다(형제가 자기 자신뿐이다). */
+        [data-testid="stLayoutWrapper"]:has(> .st-key-{ADMIN_BOX_KEY}) {{
+            order: 99;
         }}
         </style>
         """
@@ -177,7 +280,7 @@ with pinned_connections(DUCKDB_PATH):
     # 박스 목록은 `navigation.SIDEBAR_GROUPS` 하나에서 나온다. 위 CSS 선택자도 같은 선언을
     # 읽으므로, 그룹을 더할 때 이 파일에서 고칠 것이 없다.
     for group in pages.groups:
-        with st.sidebar.container(border=True):
+        with st.sidebar.container(border=True, key=f"{group.slug}_box"):
             with st.container(key=f"{group.slug}_navigation"):
                 st.page_link(group.main, width="stretch")
             if not group.subpages:
@@ -188,9 +291,14 @@ with pinned_connections(DUCKDB_PATH):
 
     render_scenario_controls()
 
-    with st.sidebar.container(border=True):
-        # 다른 화면과 같은 낱말을 쓴다. 여기만 "조회 기간" 으로 띄어져 있었다.
-        st.markdown("#### :material/date_range: 조회기간")
+    with st.sidebar.container(border=True, key=MONTH_BOX_KEY):
+        # 적용 범위는 제목 **옆**이다. 아래에 한 줄로 두면 두 칸짜리 피커 밑에 글줄이
+        # 하나 더 붙어 상자가 세 줄이 된다. 자리는 여기서 잡고, 값은 페이지가 계산을
+        # 끝낸 뒤 `show_applied_month_range` 가 채운다 — 좁혀진 범위는 그때 정해진다.
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            # 다른 화면과 같은 낱말을 쓴다. 여기만 "조회 기간" 으로 띄어져 있었다.
+            st.markdown("#### :material/date_range: 조회기간", width="content")
+            register_month_range_placeholder(st.empty())
         default_month_range = (
             format_month(MONTH_SELECTION_START),
             format_month(MONTH_SELECTION_END),
@@ -209,15 +317,21 @@ with pinned_connections(DUCKDB_PATH):
             selected_start_label,
             selected_end_label,
         )
-        register_month_range_placeholder(st.empty())
         show_applied_month_range(
             int(selected_start_label.replace("-", "")),
             int(selected_end_label.replace("-", "")),
         )
 
-    # 관리 기능이라 조회 컨트롤보다 아래, 사이드바에서 가장 먼 곳에 둔다.
-    with st.sidebar.container(border=True):
+    # 관리 기능이라 조회 컨트롤보다 아래, 사이드바에서 가장 먼 곳에 둔다. 페이지가 자기
+    # 사이드바 요소를 더하는 것은 `navigation.run()` 안이라 파이썬 차례로는 뒤에 둘 수
+    # 없다 — 맨 아래를 지키는 것은 위 CSS 의 `order` 다.
+    with st.sidebar.container(border=True, key=ADMIN_BOX_KEY):
         with st.container(key="admin_area_navigation"):
             st.page_link(pages.admin_area, width="stretch")
+        # VOC 는 계산 화면이 아니라 사람이 쓰는 자리다. 계산 그룹 어디에도 속하지 않아
+        # 관리 상자 아래에 둔다 — 「말할 곳」을 찾는 사람은 맨 아래를 본다.
+        with st.container(key="admin_area_subpages"):
+            for page in pages.admin_subpages:
+                st.page_link(page, width="stretch")
 
     navigation.run()

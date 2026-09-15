@@ -121,7 +121,9 @@ def test_sidebar_selects_and_loads_another_revision() -> None:
     app = app.selectbox(key=SIDEBAR_SCENARIO_KEY).select("scenario-2").run()
     assert app.selectbox(key=SIDEBAR_REVISION_KEY).value == "revision-2"
 
-    load_button = next(button for button in app.button if button.label == "선택 리비전 불러오기")
+    # 라벨이 짧다. 무엇을 불러오는지는 바로 위 두 선택 상자가 말하고, 이 버튼은 「저장」
+    # 과 한 줄에 반씩 서므로 긴 라벨이 들어가지 않는다.
+    load_button = next(button for button in app.button if button.label == "불러오기")
     app = load_button.click().run()
 
     assert not app.exception

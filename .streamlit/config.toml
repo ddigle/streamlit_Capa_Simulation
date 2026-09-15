@@ -25,6 +25,15 @@ headingFont = "Noto Sans KR, Malgun Gothic, 'Apple SD Gothic Neo', sans-serif"
 headingFontSizes = ["40px", "24px", "20px", "17px", "15px", "13px"]
 headingFontWeights = [650, 650, 600, 600, 600, 600]
 linkUnderline = false
+# 색배지(`:green-badge[]` 등)와 알림 상자의 색. Streamlit 기본값은 zinc + teal 팔레트
+# 밖이라 14개 화면 중 아홉이 다는 배지가 앱의 첫인상을 밖으로 끌어냈다. 여기 값은
+# `st.success`/`st.info`/`st.warning` 에도 같이 걸린다.
+greenColor = "#0B5A54"
+greenBackgroundColor = "#E3EFEE"
+blueColor = "#1D4ED8"
+blueBackgroundColor = "#E5E9F7"
+orangeColor = "#B45309"
+orangeBackgroundColor = "#F6EBDC"
 
 [theme.sidebar]
 backgroundColor = "#FFFFFF"
@@ -32,3 +41,12 @@ secondaryBackgroundColor = "#F7F8FA"
 textColor = "#20242B"
 borderColor = "#E6E9ED"
 primaryColor = "#0F766E"
+# 사이드바 안에서 크기를 정하는 경로가 둘이었다 — 그룹 제목은 `app.py` 가 주입한
+# CSS(1.15rem/700), `시나리오·리비전`·`조회기간` 머리글은 테마의 h4(17px/600). 두 줄이
+# 다른 선에 서 있어 위계가 어긋나 보였다. h4 만 굵기를 올려 같은 선에 세운다.
+# **이 블록은 토큰 대조 테스트에서 제외돼 있다** — 값이 갈라져도 조용히 통과하므로
+# `design/tokens.py` 와 손으로 맞춘다.
+headingFontWeights = [650, 650, 600, 700, 600, 600]
+# 박스가 여럿 쌓이는 사이드바에서 각진 모서리가 가장 먼저 피로하다. 본문(10px)보다 한
+# 단계 부드럽게 둔다.
+baseRadius = "12px"

@@ -30,6 +30,7 @@ from capa_simulation.components.home_preference import (
 from capa_simulation.components.home_rendering import (
     HOME_FIGURE_SCHEMA_VERSION,
     HOME_LOADING_STAGES,
+    HOME_PERFORMANCE_KEY,
     HomeFigureCacheKey,
     home_dashboard_panel,
     render_home_figures,
@@ -152,12 +153,10 @@ def _owned_comparison_revision(
 # 밀려 보던 자리가 흔들린다. 줄 높이는 제목이 잡으므로 막대가 사라져도 아래가 움직이지 않고,
 # 어느 탭을 보고 있든 같은 자리에서 읽힌다.
 loading = LoadingProgress(render_page_header_with_status("Capa LOB Summary"), HOME_LOADING_STAGES)
-show_home_performance = st.sidebar.toggle(
-    "HOME 성능 진단",
-    value=False,
-    key="dashboard_show_performance",
-    persist_state="session",
-)
+# 성능 진단은 **위젯이 아니라 세션 스위치**다. 사이드바에 토글을 두면 모든 사용자가 늘
+# 보는 자리를 개발용 계측 하나가 차지한다. 단계별 소요 시간은 `scripts/benchmark_home.py`
+# 로 재는 것이 정본이고, 화면에서 봐야 할 때만 이 키를 세션에 직접 넣는다.
+show_home_performance = bool(st.session_state.get(HOME_PERFORMANCE_KEY, False))
 home_trace = PerformanceTrace()
 # 두 토글의 위젯은 아래 탭 안에서 그리지만 값은 계산보다 먼저 필요하다. 위젯이 `key` 로
 # 쓰는 자리를 그대로 읽는다 — 사용자가 토글을 누르면 다음 실행의 이 줄에 새 값이 들어온다.

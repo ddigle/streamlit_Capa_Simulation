@@ -927,6 +927,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - B/N Top 5 세로 막대의 값 경계(기본 50%~200%)를 검증하고 확보율을 그 대역으로 자른다.
   - 경계는 **B/N 확보율에서 끊어 낸다.** 확보율에 묶여 있으면 달마다 다른 눈금이 걸려
     같은 길이의 막대가 서로 다른 값을 뜻한다. 대역은 공용 프로필이 정본이다.
+- `src/capa_simulation/services/voc_board.py`
+  - VOC 게시판 글·답글의 분류 목록과 입력 검증. **계산에 닿지 않는다** — 시나리오·리비전
+    어디에도 매이지 않아 시나리오를 지워도 그때 나온 질문은 남는다.
+  - 분류를 넷으로 고정한 것은 자유 입력이 곧 분류를 없애기 때문이다. 화면 필터와 저장값이
+    같은 목록(`VOC_CATEGORIES`)을 본다.
+  - 작성자는 로그인 이름이 아니라 직접 적는 이름이다. 이 앱에는 인증이 없으므로 서버가
+    보증하는 척하지 않고, 답을 돌려줄 정도만 남긴다.
 - `src/capa_simulation/services/key_process.py`
   - HOME `주요공정 확보율` 히트맵이 그릴 공정 목록의 상한(`KEY_PROCESS_LIMIT`)과 정규화.
   - **고른 차례가 곧 행 순서다.** 확보율로 다시 정렬하지 않는다 — 매달 행이 뛰어다니면
@@ -1019,6 +1026,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/advance_load_store.py`: 공용 선행 투입 물량 프로필의 조회·삽입 SQL
 - `persistence/execution_capacity_store.py`: 공용 실행 Capa 반영 프로필의 조회·삽입 SQL
 - `persistence/key_process_store.py`: 공용 주요공정 목록 프로필의 조회·삽입 SQL(저장 차례가 곧 히트맵 행 순서)
+- `persistence/voc_store.py`: VOC 게시판 글·답글의 조회·삽입·삭제 SQL
 - `persistence/past_data_store.py`: 공용 과거 구간 프로필 세 표의 조회·삽입 SQL
 - `persistence/preset_store.py`: 리비전 프리셋 저장·복원
 - `persistence/source_data_store.py`: 원천 Core Data raw 와 컬럼 프로파일

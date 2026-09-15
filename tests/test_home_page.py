@@ -130,7 +130,8 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
         "EDP 포함",
         "Past Data 포함",
     ]
-    assert [widget.label for widget in app.sidebar.toggle] == ["HOME 성능 진단"]
+    # 사이드바에 토글이 없다. 성능 진단은 세션 키로만 켜는 개발용 계측이다.
+    assert [widget.label for widget in app.sidebar.toggle] == []
     assert sorted(widget.label for widget in app.button) == [
         "Summary 저장",
         "공정 선택창 열기",
@@ -186,7 +187,8 @@ def test_the_bottleneck_detail_chart_keeps_hover_on(seeded_database: Path) -> No
 def test_home_reuses_cached_figures_on_an_unchanged_rerun(seeded_database: Path) -> None:
     app = _run(seeded_database)
 
-    app.sidebar.toggle(key="dashboard_show_performance").set_value(True).run()
+    app.session_state["dashboard_show_performance"] = True
+    app.run()
 
     assert not list(app.exception)
     assert _cache_state(app) == "적중"
@@ -205,7 +207,8 @@ def _cache_state(app: AppTest) -> str:
 
 def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -> None:
     app = _run(seeded_database)
-    app.sidebar.toggle(key="dashboard_show_performance").set_value(True).run()
+    app.session_state["dashboard_show_performance"] = True
+    app.run()
     assert _cache_state(app) == "적중"
 
     # 판정 기준은 Figure 캐시 키에 포함되어야 한다(AGENTS.md 5장 불변조건 7).
@@ -279,7 +282,8 @@ def test_the_two_display_toggles_are_part_of_the_figure_cache_key(
 ) -> None:
     """EDP 포함 여부와 선행 반영 여부는 그림을 바꾼다. 캐시 키에 없으면 옛 그림이 남는다."""
     app = _run(seeded_database)
-    app.sidebar.toggle(key="dashboard_show_performance").set_value(True).run()
+    app.session_state["dashboard_show_performance"] = True
+    app.run()
     assert _cache_state(app) == "적중"
 
     # `EDP 포함` 의 기본은 꺼짐이다. 켜면 새로 그려야 한다.

@@ -46,9 +46,18 @@ _BOTTOM_LINE = (
 # 센티넬을 두고 모듈 로드 시 한 번만 치환한다.
 _HEADER_CSS = (
     """
+/* 헤더 글자는 가상요소뿐이라 한 줄 안에서 굵기·색을 섞을 수 없다. 그래서 「머리」를
+   만드는 길은 글자 구성이 아니라 **면**이다. 위가 밝고 아래로 내려앉는 2단 면에 머리
+   2px ACCENT 실선 하나. 아래 사이드바 띠와 **같은 값**을 쓴다 — 부모가 다른 두 요소를
+   같은 색으로 이어 붙여 하나의 띠처럼 보이게 한 것이라, 한쪽만 고치면 화면 중간에
+   이음매가 생긴다. 그라디언트 높이도 `background-size` 로 못박아 두 요소의 높이가 달라도
+   같은 자리에서 같은 색이 되게 한다. */
 [data-testid="stHeader"] {
-  background: __BAR__ !important;
+  background:
+    linear-gradient(180deg, __SURFACE__ 0, __BAR__ 100%) top left / 100% 3.75rem no-repeat,
+    __BAR__ !important;
   border-bottom: 1px solid __BAR_BORDER__;
+  box-shadow: inset 0 2px 0 __ACCENT__;
 }
 
 /* `stHeader` 는 본문 너비만 덮는다. 사이드바 위쪽에도 같은 띠를 이어 붙이지 않으면 색이
@@ -61,8 +70,11 @@ _HEADER_CSS = (
   left: 0;
   right: 0;
   height: 3.75rem;
-  background: __BAR__;
+  background:
+    linear-gradient(180deg, __SURFACE__ 0, __BAR__ 100%) top left / 100% 3.75rem no-repeat,
+    __BAR__;
   border-bottom: 1px solid __BAR_BORDER__;
+  box-shadow: inset 0 2px 0 __ACCENT__;
   z-index: 10;
 }
 
@@ -154,6 +166,7 @@ _HEADER_CSS = (
   left: 4rem;
 }
 """.replace("__ACCENT__", tokens.ACCENT)
+    .replace("__SURFACE__", tokens.SURFACE)
     .replace("__BAR_BORDER__", tokens.BORDER)
     .replace("__BAR__", tokens.HEADER_BAR)
     .replace("__APP_NAME__", APP_NAME)

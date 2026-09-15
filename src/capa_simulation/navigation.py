@@ -50,7 +50,8 @@ class PageSpec:
         )
 
 
-HOME = PageSpec("app_pages/home.py", "HOME", default=True)
+# 전 페이지 중 HOME 만 아이콘이 없어 사이드바 맨 위가 비어 보였다.
+HOME = PageSpec("app_pages/home.py", "HOME", ":material/home:", default=True)
 CAPA_CHATBOT = PageSpec(
     "app_pages/capa_chatbot.py", _implementing("Capa Chatbot"), ":material/chat:"
 )
@@ -97,6 +98,9 @@ ADMIN_AREA = PageSpec(
     "Admin Area",
     ":material/admin_panel_settings:",
 )
+# VOC 는 계산 화면이 아니라 사람이 쓰는 자리라 계산 그룹 어디에도 속하지 않는다. 관리
+# 상자 아래에 둔다 — 쓰는 사람이 「여기가 말할 곳」을 찾을 때 맨 아래를 본다.
+ADMIN_SUBPAGES: tuple[PageSpec, ...] = (PageSpec("app_pages/voc.py", "VOC", ":material/forum:"),)
 
 
 @dataclass(frozen=True)
@@ -121,6 +125,7 @@ ALL_SPECS: tuple[PageSpec, ...] = (
     HOME,
     *(spec for group in SIDEBAR_GROUPS for spec in (group.main, *group.subpages)),
     ADMIN_AREA,
+    *ADMIN_SUBPAGES,
 )
 
 
@@ -140,6 +145,7 @@ class NavigationPages:
     home: st.Page
     groups: tuple[SidebarGroup, ...]
     admin_area: st.Page
+    admin_subpages: tuple[st.Page, ...]
 
     @property
     def ordered(self) -> list[st.Page]:
@@ -148,6 +154,7 @@ class NavigationPages:
             self.home,
             *(page for group in self.groups for page in (group.main, *group.subpages)),
             self.admin_area,
+            *self.admin_subpages,
         ]
 
 
@@ -164,4 +171,5 @@ def build_navigation_pages() -> NavigationPages:
             for group in SIDEBAR_GROUPS
         ),
         admin_area=ADMIN_AREA.to_page(),
+        admin_subpages=tuple(spec.to_page() for spec in ADMIN_SUBPAGES),
     )

@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.scenario_management import revision_tables_for_save
 from capa_simulation.io.reference_cache import (
@@ -35,13 +36,19 @@ SIDEBAR_SCENARIO_KEY = "sidebar_scenario_id"
 SIDEBAR_REVISION_KEY = "sidebar_revision_id"
 SIDEBAR_SYNC_TOKEN_KEY = "sidebar_scenario_sync_token"
 SIDEBAR_FLASH_KEY = "sidebar_scenario_flash"
+# 사이드바 박스 CSS 훅. 여백을 좁히는 규칙이 `app.py` 에서 이 key 를 읽는다.
+SCENARIO_BOX_KEY = "sidebar_scenario_box"
 
 
 def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
     """Load a saved revision or persist the current edits from every page."""
     resolved_path = str(database_path.resolve())
-    with st.sidebar.container(border=True):
-        st.markdown("#### :material/database: 시나리오·리비전")
+    with st.sidebar.container(border=True, key=SCENARIO_BOX_KEY):
+        # 제목 줄을 먼저 **자리만** 잡는다. 공식버전 배지는 아래에서 저장소를 읽어야
+        # 알 수 있는데, 배지 한 칸 때문에 제목을 뒤로 미루면 저장소가 죽었을 때 오류
+        # 문구 위에 제목이 없어진다.
+        title_row = st.empty()
+        _render_title_row(title_row, badge="")
         flash = st.session_state.pop(SIDEBAR_FLASH_KEY, None)
         if isinstance(flash, str):
             st.success(flash)
@@ -68,8 +75,12 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
             active_revision_id=active_revision_id,
         )
 
+        # 칸 위 글자를 접는다. 박스 제목이 이미 `시나리오·리비전` 이라 두 선택 상자
+        # 위에 같은 낱말을 한 번 더 적으면 세로만 먹고 새로 알려 주는 것이 없다.
+        # `collapsed` 는 글자를 감출 뿐 접근성 이름은 남긴다.
         selected_scenario_id = st.selectbox(
             "시나리오",
+            label_visibility="collapsed",
             options=list(scenario_by_id),
             format_func=lambda value: _scenario_label(scenario_by_id[value]),
             key=SIDEBAR_SCENARIO_KEY,
@@ -89,6 +100,7 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
         )
         selected_revision_id = st.selectbox(
             "리비전",
+            label_visibility="collapsed",
             options=list(revision_by_id),
             format_func=lambda value: (
                 f"r{revision_by_id[value].revision_no} · {revision_by_id[value].revision_name}"
@@ -101,18 +113,17 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
             selected_scenario_id == active_scenario_id
             and selected_revision_id == active_revision_id
         )
+        # 배지는 선택 상자가 말하지 않는 것(공식 발행본인지)만 말한다. 그래서 본문에
+        # 한 줄을 따로 쓰지 않고 **제목 옆**에 붙인다 — 한 줄이 통째로 줄어든다.
         if selection_is_active:
-            # 선택과 활성이 같으면 위의 두 선택 상자가 이미 이름을 보여준다. 아래에서
-            # 이름을 한 번 더 적을 이유가 없어 배지만 같은 줄에 붙인다.
-            with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-                st.caption("현재 불러온 시나리오·리비전입니다.", width="content")
-                badge = _status_badge(
+            _render_title_row(
+                title_row,
+                badge=_status_badge(
                     active_revision_id=active_revision_id,
                     official_revision_id=official.revision_id if official is not None else None,
                     official_release_no=official.release_no if official is not None else None,
-                )
-                if badge:
-                    st.markdown(badge, width="content")
+                ),
+            )
         else:
             st.caption("선택값은 아직 계산에 적용되지 않았습니다.")
 
@@ -124,14 +135,30 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
                 key="sidebar_discard_unsaved_changes",
             )
 
-        if st.button(
-            "선택 리비전 불러오기",
-            icon=":material/download:",
-            type="primary",
-            disabled=not discard_changes,
-            width="stretch",
-            key="sidebar_load_revision",
-        ):
+        # 두 동작을 한 줄에 반씩 놓는다. 세로로 쌓으면 사이드바에서 두 줄을 먹는데,
+        # 둘은 같은 층위의 동작이라 나란히 서는 것이 뜻에도 맞는다. 라벨을 짧게 줄인 것도
+        # 반 폭에 들어가야 하기 때문이다 — 무엇을 불러오고 무엇을 저장하는지는 바로 위
+        # 두 선택 상자가 말한다.
+        load_column, save_column = st.columns(2, gap="small")
+        with load_column:
+            load_clicked = st.button(
+                "불러오기",
+                icon=":material/download:",
+                type="primary",
+                disabled=not discard_changes,
+                width="stretch",
+                key="sidebar_load_revision",
+            )
+        with save_column:
+            _render_revision_save(
+                repository,
+                scenario_by_id,
+                selected_scenario_id=selected_scenario_id,
+                selected_revision_id=selected_revision_id,
+                active_scenario_id=active_scenario_id,
+                active_revision_id=active_revision_id,
+            )
+        if load_clicked:
             try:
                 snapshot = load_scenario_snapshot(resolved_path, selected_revision_id)
                 activate_persisted_snapshot(snapshot)
@@ -143,15 +170,6 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
                     f"r{snapshot.revision.revision_no}을 불러왔습니다."
                 )
                 st.rerun()
-
-        _render_revision_save(
-            repository,
-            scenario_by_id,
-            selected_scenario_id=selected_scenario_id,
-            selected_revision_id=selected_revision_id,
-            active_scenario_id=active_scenario_id,
-            active_revision_id=active_revision_id,
-        )
         if not selection_is_active:
             # 고른 것과 올라와 있는 것이 다를 때만 "지금 무엇이 올라와 있는지" 를 적는다.
             _render_active_status(
@@ -163,6 +181,18 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
             )
 
 
+def _render_title_row(slot: DeltaGenerator, *, badge: str) -> None:
+    """상자 제목과 그 옆 공식버전 배지. 배지가 없으면 제목만 그린다.
+
+    `st.empty()` 자리에 다시 그리는 것은 배지 값이 저장소를 읽은 **뒤에야** 정해지기
+    때문이다. 제목을 그때까지 미루면 저장소가 죽었을 때 오류 문구 위에 제목이 없다.
+    """
+    with slot.container(horizontal=True, vertical_alignment="center", gap="small"):
+        st.markdown("#### :material/database: 시나리오·리비전", width="content")
+        if badge:
+            st.markdown(badge, width="content")
+
+
 def _render_revision_save(
     repository: DuckDBScenarioRepository,
     scenario_by_id: dict[str, ScenarioSummary],
@@ -172,7 +202,10 @@ def _render_revision_save(
     active_scenario_id: str | None,
     active_revision_id: str | None,
 ) -> None:
-    with st.expander("신규 리비전 저장", icon=":material/save_as:"):
+    # `st.expander` 가 아니라 `st.popover` 다. expander 는 폭을 통째로 먹는 줄이라 옆
+    # 버튼과 나란히 설 수 없고, 펴면 그 아래 조회기간 상자를 밀어낸다. popover 는 버튼
+    # 모양으로 서고 내용은 띄워 올린다.
+    with st.popover("저장", icon=":material/save_as:", width="stretch"):
         if active_scenario_id is None or active_revision_id is None:
             st.info("먼저 저장된 리비전을 불러오세요.")
             return

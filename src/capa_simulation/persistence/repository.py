@@ -93,6 +93,14 @@ from capa_simulation.persistence.summaries import (
     revision_summary,
     scenario_summary,
 )
+from capa_simulation.persistence.voc_store import (
+    delete_voc_post,
+    insert_voc_post,
+    insert_voc_reply,
+    load_voc_posts,
+    load_voc_replies,
+    update_voc_post_resolved,
+)
 from capa_simulation.services.advance_load import (
     empty_advance_load,
     prepare_advance_load,
@@ -115,6 +123,7 @@ from capa_simulation.services.top5_band import (
     DEFAULT_TOP5_MIN_RATE,
     validate_top5_band,
 )
+from capa_simulation.services.voc_board import normalize_post, normalize_reply
 
 REFERENCE_TABLES: dict[str, str] = {
     "RQ_PKG_PLAN": "rq_pkg_plan",
@@ -535,6 +544,46 @@ class DuckDBScenarioRepository:
             connection.execute("DELETE FROM app_meta.global_key_process WHERE profile_id = 1")
             insert_global_key_process(connection, normalized, version=version, source=source_label)
         return self.load_global_key_process()
+
+    def list_voc_posts(self) -> pd.DataFrame:
+        """VOC 글 전체. 최신이 위다.
+
+        캐시를 두지 않는다. 게시판은 쓰기가 잦아 캐시를 두면 글마다 무효화를 손으로
+        챙겨야 하고, 한 번만 빠뜨려도 방금 쓴 글이 안 보인다. 읽는 양도 작다.
+        """
+        with self._connect() as connection:
+            return load_voc_posts(connection)
+
+    def list_voc_replies(self) -> pd.DataFrame:
+        """VOC 답글 전체. 주고받은 차례대로 오래된 것이 위다."""
+        with self._connect() as connection:
+            return load_voc_replies(connection)
+
+    def create_voc_post(self, *, category: str, title: str, body: str, author: str) -> str:
+        """글 하나를 남기고 그 id 를 돌려준다."""
+        prepared = normalize_post(category=category, title=title, body=body, author=author)
+        post_id = uuid4().hex
+        with self._write_transaction() as connection:
+            insert_voc_post(connection, post_id=post_id, **prepared)
+        return post_id
+
+    def create_voc_reply(self, *, post_id: str, body: str, author: str) -> str:
+        """답글 하나를 남기고 그 id 를 돌려준다."""
+        prepared = normalize_reply(body=body, author=author)
+        reply_id = uuid4().hex
+        with self._write_transaction() as connection:
+            insert_voc_reply(connection, reply_id=reply_id, post_id=post_id, **prepared)
+        return reply_id
+
+    def set_voc_post_resolved(self, post_id: str, *, resolved: bool) -> None:
+        """답변 완료 표시. 게시판에서 「아직 답이 없는 질문」을 걸러 보게 한다."""
+        with self._write_transaction() as connection:
+            update_voc_post_resolved(connection, post_id=post_id, resolved=resolved)
+
+    def remove_voc_post(self, post_id: str) -> None:
+        """글과 그 답글을 함께 지운다. 주인 없는 답글은 영영 보이지 않는다."""
+        with self._write_transaction() as connection:
+            delete_voc_post(connection, post_id=post_id)
 
     def load_global_summary_note(self) -> GlobalSummaryNote:
         """Load the scenario-independent HOME summary notice.

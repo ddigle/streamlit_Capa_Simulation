@@ -128,6 +128,12 @@ def store_home_figures(
         cache.pop(next(iter(cache)))
 
 
+# 성능 진단 패널을 켜는 세션 키. 사이드바 토글이 아니다 — 개발용 계측 하나가 모든
+# 사용자가 늘 보는 자리를 차지하지 않게 한다. 단계별 소요 시간의 정본은
+# `scripts/benchmark_home.py` 이고, 화면에서 봐야 할 때 이 키를 세션에 직접 넣는다.
+HOME_PERFORMANCE_KEY = "dashboard_show_performance"
+
+
 def render_home_performance(
     trace: PerformanceTrace,
     *,
