@@ -115,6 +115,29 @@ def section_title_markup(text: str) -> str:
     )
 
 
+def status_legend_markup(*, secure_threshold: float, warning_threshold: float) -> str:
+    """확보·경고·부족 세 색이 무슨 뜻인지 한 줄로 적는다.
+
+    이 앱은 확보율을 세 색으로 판정해 놓고 **그 색이 무슨 뜻인지 화면 어디에도 적지
+    않았다.** 처음 보는 사람은 회색 막대가 좋은 것인지 나쁜 것인지 알 길이 없다.
+    색만으로 뜻을 나르지 않으려면 이름과 경계 숫자가 같이 있어야 한다.
+    """
+    chips = (
+        (tokens.STATUS_SECURE, f"확보 {secure_threshold:.0%} 초과"),
+        (tokens.STATUS_WARNING, f"경고 {warning_threshold:.0%}~{secure_threshold:.0%}"),
+        (tokens.STATUS_SHORTAGE, f"부족 {warning_threshold:.0%} 미만"),
+    )
+    swatches = "".join(
+        f'<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px">'
+        f'<span style="width:11px;height:11px;border-radius:3px;background:{color};'
+        f'border:1px solid {tokens.BORDER};display:inline-block"></span>'
+        f'<span style="font-size:12px;color:{tokens.TEXT_MUTED}">{label}</span>'
+        f"</span>"
+        for color, label in chips
+    )
+    return f'<div style="line-height:1.2">{swatches}</div>'
+
+
 def render_lob_title_row(
     *,
     unapplied_months: Sequence[int],

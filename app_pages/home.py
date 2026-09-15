@@ -25,6 +25,7 @@ from capa_simulation.components.home_preference import (
     render_home_preference,
     render_lob_title_row,
     seed_comparison_selection,
+    status_legend_markup,
 )
 from capa_simulation.components.home_rendering import (
     HOME_FIGURE_SCHEMA_VERSION,
@@ -40,6 +41,9 @@ from capa_simulation.components.home_rendering import (
 from capa_simulation.components.loading_progress import LoadingProgress
 from capa_simulation.components.page_header import render_page_header_with_status
 from capa_simulation.components.past_data_management import render_past_data_management
+from capa_simulation.components.plan_comparison_dumbbell import (
+    render_plan_comparison_dumbbell,
+)
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.tab_state import stateful_tabs
 from capa_simulation.io.reference_cache import (
@@ -708,6 +712,14 @@ with main_tab:
             unapplied_months=unapplied_advance_months,
             comparison_ready=bool(comparison_scenario_id and comparison_revision_id),
         )
+        # 판정 색의 뜻과 경계 숫자. Top5 막대에 그은 기준선과 같은 값을 읽는다.
+        st.markdown(
+            status_legend_markup(
+                secure_threshold=secure_threshold,
+                warning_threshold=warning_threshold,
+            ),
+            unsafe_allow_html=True,
+        )
         render_home_figures(
             cached_figures,
             month_labels,
@@ -715,6 +727,17 @@ with main_tab:
             leading_past_month_count=leading_past_months,
             owner_tab=main_tab,
         )
+    if comparison_detail is not None:
+        # 표의 칸마다 붙는 증감은 「이 달 이 분류가 얼마나 달랐나」를 답하지만 「무엇이 가장
+        # 크게 달라졌나」는 답하지 못한다. 순서를 만드는 것이 덤벨의 몫이다.
+        with st.expander("시나리오 비교 · 차이 큰 분류", expanded=False):
+            render_plan_comparison_dumbbell(
+                production_detail,
+                comparison_detail,
+                dimensions=plan_detail_dimensions,
+                key="home_plan_comparison_dumbbell",
+                owner_tab=main_tab,
+            )
 with past_tab:
     render_past_data_management(str(DUCKDB_PATH.resolve()), past_profile)
 with preference_tab:

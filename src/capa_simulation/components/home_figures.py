@@ -862,6 +862,23 @@ def build_lob_summary_figures(
         )
         for delta_trace in top5_delta.traces:
             month_figure.add_trace(delta_trace, row=3, col=1)
+        # 판정 기준을 선으로 긋는다. 이 축은 **확보율 자체**라(막대 높이 = 자른 확보율)
+        # 기준값을 그대로 y 로 쓸 수 있다. 지금까지 이 기준은 오직 막대 **색**으로만
+        # 존재해서, 경고색 막대를 보고도 기준에서 얼마나 모자란지 눈으로 못 쟀다.
+        #
+        # 밴드 밖으로 나가는 기준은 긋지 않는다. Top5 밴드는 사용자가 바꿀 수 있어
+        # 기준이 축 위로 올라갈 수 있는데, 그때 선을 축 끝에 붙이면 「기준에 닿았다」로
+        # 잘못 읽힌다.
+        for threshold in (secure_threshold, warning_threshold):
+            if not 0 < threshold <= top5_rate_band[1]:
+                continue
+            month_figure.add_hline(
+                y=threshold,
+                row=3,
+                col=1,
+                line={"color": tokens.LINE, "width": 1, "dash": "dot"},
+                layer="above",
+            )
         for x_position, capa, rate in zip(
             top5_positions,
             # 라벨은 그려진 막대 끝에 붙어야 한다. 실제 Capa 를 쓰면 잘린 막대에서 떨어진다.
