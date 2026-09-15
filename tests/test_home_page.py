@@ -118,14 +118,16 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
 
     # 상세표 표시 여부를 고르던 자리는 탭이 가져갔고, 본문 토글은 표시 기준이다.
     # 「선행」·「실행」·「GAP」 은 Capa LOB 현황 제목 옆, 「상세」 는 계획 세부수량 제목
-    # 옆, 「EDP 포함」 은 Preference 탭에 있다. 순서는 계산이 얹히는 순서와 같다 —
-    # 선행(계획 이동) → 실행(기준정보 밖 변수) → GAP(비교 표기).
+    # 옆, 「EDP 포함」·「Past Data 포함」 은 Preference 탭의 표시 기준에 나란히 있다.
+    # 순서는 계산이 얹히는 순서와 같다 — 선행(계획 이동) → 실행(기준정보 밖 변수) →
+    # GAP(비교 표기).
     assert [widget.label for widget in app.main.toggle] == [
         "선행",
         "실행",
         "GAP",
         "상세",
         "EDP 포함",
+        "Past Data 포함",
     ]
     assert [widget.label for widget in app.sidebar.toggle] == ["HOME 성능 진단"]
     assert sorted(widget.label for widget in app.button) == [
@@ -675,3 +677,83 @@ def test_both_detail_columns_center_when_the_gap_toggle_is_off(seeded_database: 
     label_figure = app.session_state["spy_figures"]["production_detail_labels"]
     month_figure = app.session_state["spy_figures"]["production_detail_months"]
     assert label_figure.layout.height == month_figure.layout.height
+
+
+# `Past Data 포함` 토글. 켜면 과거 구간이 월 축에 붙고, 끄면 활성 시나리오의 계산 구간만
+# 남는다. 값 자체는 지워지지 않으므로 다시 켜면 그대로 돌아온다.
+
+
+def _seed_past_months(database_path: Path, months: list[int]) -> None:
+    """공용 과거 프로필에 월별 실적만 넣는다. 세 표는 한 버전을 공유하므로 함께 준다."""
+    import pandas as pd
+
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.past_data import (
+        PAST_DETAIL_COLUMNS,
+        PAST_SECUREMENT_COLUMNS,
+        empty_past_table,
+    )
+
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_past_data(
+        {
+            "월별": pd.DataFrame(
+                {
+                    "생산계획년월": months,
+                    "Density": [9.0 + index for index in range(len(months))],
+                    "Wafer Total": [120_000.0 + index for index in range(len(months))],
+                }
+            ),
+            "계획": empty_past_table(PAST_DETAIL_COLUMNS),
+            "확보율": empty_past_table(PAST_SECUREMENT_COLUMNS),
+        },
+        source="test",
+    )
+
+
+def _lob_month_labels(app: AppTest) -> list[str]:
+    """LOB 월 Figure 의 x 축 눈금 글자. 월 축에 무엇이 실렸는지가 여기 그대로 나온다."""
+    figure = app.session_state["spy_figures"]["production_lob_months"]
+    return [str(text) for text in figure.layout.xaxis.ticktext]
+
+
+def test_past_months_join_the_month_axis_while_the_toggle_is_on(tmp_path: Path) -> None:
+    """기본은 켬이다. 넣어 둔 과거 구간이 조회 범위 안이면 월 축에 그대로 붙는다."""
+    database_path = tmp_path / "scenario.duckdb"
+    # 과거 프로필은 `st.cache_data` 경계 뒤에 있다. 앱을 한 번 돌린 뒤 심으면 첫 렌더가
+    # 캐시한 빈 값이 그대로 다시 나온다. 그래서 돌리기 **전에** 심는다.
+    _seed_past_months(database_path, [202512, 202511])
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    # 첫 렌더는 공식 시나리오 프리셋이 조회기간을 덮는다. 범위는 그 뒤에 넣어야 남는다.
+    app.session_state["production_month_range_v2"] = ("2025-11", "2026-12")
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state["home_preference_include_past"] is True
+    labels = _lob_month_labels(app)
+    assert "25.11" in labels and "25.12" in labels, labels
+
+
+def test_turning_the_toggle_off_leaves_only_the_scenario_months(tmp_path: Path) -> None:
+    """끄면 과거가 화면에서 빠진다. DB 시나리오의 계산 구간만으로 화면이 구성돼야 한다."""
+    database_path = tmp_path / "scenario.duckdb"
+    _seed_past_months(database_path, [202512, 202511])
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    app.session_state["production_month_range_v2"] = ("2025-11", "2026-12")
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert "25.11" in _lob_month_labels(app)
+
+    app.session_state["home_preference_include_past"] = False
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    labels = _lob_month_labels(app)
+    assert "25.11" not in labels and "25.12" not in labels, labels
+    # 값을 지운 것이 아니라 화면에서만 뺀 것이다. 다시 켜면 그대로 돌아온다.
+    app.session_state["home_preference_include_past"] = True
+    app.run()
+    assert "25.11" in _lob_month_labels(app)

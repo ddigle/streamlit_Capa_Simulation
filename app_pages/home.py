@@ -1,6 +1,7 @@
 # Purpose: 생산계획·Wafer Capa·Bottleneck 요약과 상세표를 결합한 HOME 대시보드를 렌더링한다.
 
 
+from dataclasses import replace
 from typing import Any
 
 import pandas as pd
@@ -19,6 +20,7 @@ from capa_simulation.components.home_preference import (
     COMPARISON_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
     EXECUTION_TOGGLE_KEY,
+    PAST_DATA_TOGGLE_KEY,
     PLAN_DETAIL_CUSTOMER_KEY,
     render_home_preference,
     render_lob_title_row,
@@ -155,6 +157,10 @@ home_trace = PerformanceTrace()
 # 두 토글의 위젯은 아래 탭 안에서 그리지만 값은 계산보다 먼저 필요하다. 위젯이 `key` 로
 # 쓰는 자리를 그대로 읽는다 — 사용자가 토글을 누르면 다음 실행의 이 줄에 새 값이 들어온다.
 include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, False))
+# 기본은 **켬**이다. 끄면 과거 구간을 화면에서 빼고 활성 시나리오의 계산 결과만 남긴다.
+# 기본값은 `components/home_preference.py` 의 토글과 같아야 한다 — 갈라지면 첫 렌더와
+# 토글을 처음 누른 뒤가 서로 다른 화면이 된다.
+include_past = bool(st.session_state.get(PAST_DATA_TOGGLE_KEY, True))
 show_advance = bool(st.session_state.get(ADVANCE_TOGGLE_KEY, False))
 show_execution = bool(st.session_state.get(EXECUTION_TOGGLE_KEY, False))
 plan_detail_customer = bool(st.session_state.get(PLAN_DETAIL_CUSTOMER_KEY, False))
@@ -183,6 +189,20 @@ try:
     # 과거 구간은 계산 원천의 월 범위 밖에 있다. 원천 범위로만 자르면 넣어 둔 과거가 절대
     # 조회 범위에 들어오지 못한다. 볼 수 있는 범위를 과거 구간만큼 넓힌다.
     past_profile = load_global_past_data(str(DUCKDB_PATH.resolve()))
+    if not include_past:
+        # 행만 비우고 **컬럼과 dtype 은 그대로 둔다.** 아래 병합·와이드 변환이 컬럼을 보고
+        # 돌기 때문에 빈 프레임을 새로 만들면 그 자리에서 깨진다. 이렇게 두면 병합이 전부
+        # 무동작이 되어, 과거를 빼는 분기를 화면 코드 곳곳에 심지 않아도 된다.
+        #
+        # `version` 도 0 이 되어 Figure 캐시 키가 갈린다 — 켠 화면과 끈 화면이 같은 칸을
+        # 나눠 쓰지 않는다.
+        past_profile = replace(
+            past_profile,
+            version=0,
+            monthly=past_profile.monthly.iloc[:0],
+            plan_detail=past_profile.plan_detail.iloc[:0],
+            securement=past_profile.securement.iloc[:0],
+        )
     past_months = [int(value) for value in past_profile.monthly["생산계획년월"]]
     available_start = min([source_start, *past_months])
     available_end = max([source_end, *past_months])

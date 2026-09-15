@@ -50,6 +50,7 @@ from capa_simulation.services.execution_capacity import (
 from capa_simulation.services.month_columns import month_label
 
 EDP_TOGGLE_KEY = "home_preference_include_edp"
+PAST_DATA_TOGGLE_KEY = "home_preference_include_past"
 ADVANCE_TOGGLE_KEY = "home_show_advance"
 EXECUTION_TOGGLE_KEY = "home_show_execution"
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
@@ -196,19 +197,37 @@ def render_home_preference(
     """표시 기준 토글과 비교 시나리오 선택, Summary 공지·선행 물량·실행 Capa 입력 시트."""
     with st.container(border=True):
         st.markdown("#### :material/tune: 표시 기준")
-        # 기본은 **끔**이다. LOB 로 읽는 수치는 EDP 를 뺀 값이 기준이고, 넣은 화면을 보려면
-        # 그때 켜면 된다. 기본값을 바꿀 때는 `app_pages/home.py` 의 세션 기본값도 같이 고친다.
-        st.toggle(
-            "EDP 포함",
-            value=False,
-            key=EDP_TOGGLE_KEY,
-            persist_state="session",
-            help=(
-                "끄면 Density·Wafer 계획·Wafer Capa 와 계획 세부수량에서 EDP-TSV 제품을 "
-                "뺍니다. 설비가 받는 부하는 그대로라 확보율과 B/N 공정 순위는 바뀌지 "
-                "않습니다."
-            ),
-        )
+        edp_column, past_column = st.columns(2)
+        with edp_column:
+            # 기본은 **끔**이다. LOB 로 읽는 수치는 EDP 를 뺀 값이 기준이고, 넣은 화면을
+            # 보려면 그때 켜면 된다. 기본값을 바꿀 때는 `app_pages/home.py` 의 세션 기본값도
+            # 같이 고친다.
+            st.toggle(
+                "EDP 포함",
+                value=False,
+                key=EDP_TOGGLE_KEY,
+                persist_state="session",
+                help=(
+                    "끄면 Density·Wafer 계획·Wafer Capa 와 계획 세부수량에서 EDP-TSV 제품을 "
+                    "뺍니다. 설비가 받는 부하는 그대로라 확보율과 B/N 공정 순위는 바뀌지 "
+                    "않습니다."
+                ),
+            )
+        with past_column:
+            # 기본은 **켬**이다. 과거 이력까지 이어 보는 것이 이 화면의 기본 쓰임이고, DB
+            # 시나리오만 보고 싶을 때 끈다. 기본값을 바꿀 때는 `app_pages/home.py` 의 세션
+            # 기본값도 같이 고친다.
+            st.toggle(
+                "Past Data 포함",
+                value=True,
+                key=PAST_DATA_TOGGLE_KEY,
+                persist_state="session",
+                help=(
+                    "끄면 `Past Data` 탭에 넣어 둔 과거 구간을 화면에서 뺍니다. 그러면 "
+                    "HOME 이 활성 시나리오의 계산 결과만으로 구성됩니다. 과거 값 자체는 "
+                    "지워지지 않고 `Past Data` 탭에 그대로 남습니다."
+                ),
+            )
     _render_comparison_picker(database_path, active_scenario_id)
     _render_advance_editor(
         months=months,
