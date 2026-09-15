@@ -321,13 +321,54 @@ def _value_column(metric: MetricSpec) -> Any:
 
 
 def _trend_figure(trend: pd.DataFrame, metric: MetricSpec) -> go.Figure:
-    """기준선과 실적선. 두 선 사이를 칠해 Gap 을 면적으로도 읽게 한다."""
+    """기준선과 실적선. 두 선 사이를 칠해 Gap 을 면적으로도 읽게 한다.
+
+    **면은 방향을 가린다.** 실적선 하나에 `tonexty` 를 걸면 기준을 넘어선 달까지 미달
+    면색으로 덮인다 — 면적이 클수록 나쁘다고 읽히는 그림에서 잘한 달이 가장 나쁜 달로
+    보인다. 그래서 기준선을 두 번 깔고 `min`·`max` 로 자른 두 면을 따로 칠한다.
+    미달은 감소색, 초과는 증가색이다(`plotly_layout.delta_color()` 와 같은 규칙).
+    """
     months = [month_label(int(value)) for value in trend["생산계획년월"]]
+    standard = trend[metric.standard_column].astype(float)
+    actual = trend[metric.actual_column].astype(float)
     figure = go.Figure()
+
+    def _add_gap_area(clipped: pd.Series, fill_color: str) -> None:
+        """기준선 → 잘라 낸 실적선 순으로 두 줄을 깔아 그 사이만 칠한다.
+
+        `tonexty` 는 **바로 앞 트레이스**를 바닥으로 삼는다. 기준선을 면마다 새로 깔지
+        않으면 두 번째 면이 첫 번째 면을 바닥으로 잡아 엉뚱한 자리를 칠한다.
+        """
+        figure.add_trace(
+            go.Scatter(
+                x=months,
+                y=standard,
+                mode="lines",
+                line={"width": 0},
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=months,
+                y=clipped,
+                mode="lines",
+                line={"width": 0},
+                fill="tonexty",
+                # 면은 읽을 것이 아니라 간격의 크기만 알리는 배경이다. 선이 묻히면 안 된다.
+                fillcolor=fill_color,
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
+
+    _add_gap_area(actual.combine(standard, min), tokens.GAP_AREA_SHORTFALL)
+    _add_gap_area(actual.combine(standard, max), tokens.GAP_AREA_SURPLUS)
     figure.add_trace(
         go.Scatter(
             x=months,
-            y=trend[metric.standard_column],
+            y=standard,
             name=f"기준 {metric.name}",
             mode="lines",
             line={"color": tokens.SERIES_STANDARD, "width": 2, "dash": "dash"},
@@ -337,14 +378,13 @@ def _trend_figure(trend: pd.DataFrame, metric: MetricSpec) -> go.Figure:
     figure.add_trace(
         go.Scatter(
             x=months,
-            y=trend[metric.actual_column],
+            y=actual,
             name=f"실적 {metric.name}",
             mode="lines+markers",
-            line={"color": tokens.ACCENT, "width": 2},
+            # 실적선은 `ACCENT` 가 아니라 실적 계열색이다. `ACCENT` 는 상호작용·현재
+            # 위치 전용이고, 같은 개념을 그리는 `dynamic_capacity_dashboard` 도 이 색이다.
+            line={"color": tokens.SERIES_ACTUAL, "width": 2},
             marker={"size": 6},
-            fill="tonexty",
-            # 면은 읽을 것이 아니라 간격의 크기만 알리는 배경이다. 선이 묻히면 안 된다.
-            fillcolor=tokens.GAP_AREA_SHORTFALL,
             hovertemplate="%{x} 실적 %{y:,.3f}<extra></extra>",
         )
     )
@@ -429,10 +469,13 @@ def _gap_matrix_figure(
             z=pivot.to_numpy(),
             x=[month_label(int(value)) for value in pivot.columns],
             y=[labels.label(value) for value in pivot.index],
+            # `zmin=-limit`·`zmax=+limit` 이라 정규화 0.0 은 **가장 음수인 Gap**,
+            # 1.0 은 가장 양수인 Gap 이다. 양끝을 반대로 두면 미달 칸이 증가색으로
+            # 칠해져, 같은 앱의 `plotly_layout.delta_color()` 와 정반대를 말하게 된다.
             colorscale=[
-                [0.0, tokens.DELTA_INCREASE],
+                [0.0, tokens.DELTA_DECREASE],
                 [0.5, tokens.SURFACE],
-                [1.0, tokens.DELTA_DECREASE],
+                [1.0, tokens.DELTA_INCREASE],
             ],
             zmid=0.0,
             zmin=-limit,

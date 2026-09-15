@@ -145,7 +145,10 @@ TOP5_BAR_WIDTH = 0.15
 # 밖으로 나가 위 구획을 침범한다. 그래서 축 여유는 그 화면에서 가장 긴 라벨에서 낸다.
 TOP5_RATE_LABEL_GAP_PX = 10.0
 TOP5_RATE_LABEL_CHAR_PX = 8.6
-TOP5_RATE_LABEL_MARGIN_PX = 6.0
+# 라벨 위에 남길 빈 자리. **실측으로 맞춘 값**이다 — Plotly 가 세운 주석을 `yshift` 보다
+# 2.1px 더 띄우고 글자 상자도 `TOP5_RATE_LABEL_CHAR_PX` 추정보다 조금 좁아서, 이 상수에서
+# 약 1.5px 를 뺀 만큼이 화면에 남는다. 4.5 → 브라우저에서 잰 빈 자리 3px.
+TOP5_RATE_LABEL_MARGIN_PX = 4.5
 # 라벨이 하나도 없을 때 쓰는 글자 수. `100%` 네 글자다.
 TOP5_RATE_LABEL_MIN_CHARS = 4
 

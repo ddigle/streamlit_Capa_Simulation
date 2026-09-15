@@ -14,6 +14,7 @@ from capa_simulation.components.status_metric import (
     shortage_tone,
 )
 from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     load_page_context,
@@ -98,6 +99,10 @@ def _render_shortfall_table(
                 width="small",
                 min_value=0.0,
                 max_value=secure_threshold,
+                # 색을 비워 두면 Streamlit 이 primaryColor(=`ACCENT`)로 그린다. `ACCENT`
+                # 는 상호작용·현재 위치 전용이라, 판정 색을 읽는 표에서 그 색이 나오면
+                # 「여기가 좋다」로 뒤집혀 읽힌다. 두 구획의 판정색을 그대로 쓴다.
+                color=(tokens.STATUS_SHORTAGE if warning_section else tokens.STATUS_WARNING),
             ),
             "가용대수": st.column_config.NumberColumn(format="%.1f대", width="small"),
             "소요대수": st.column_config.NumberColumn(format="%.1f대", width="small"),

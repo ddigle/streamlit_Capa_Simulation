@@ -548,19 +548,46 @@ def test_load_input_tabs_expose_plan_and_yield_clipboard_round_trip() -> None:
     )
 
 
-def test_equipment_tab_exposes_three_rq_clipboard_inputs() -> None:
-    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+def test_equipment_tab_gives_each_rq_its_own_editor_and_clipboard() -> None:
+    """설비대수 세 RQ 는 각각 편집기와 붙여넣기 양식을 갖는다.
+
+    셋을 한 화면에 세로로 쌓지 않고 탭을 한 겹 더 두었으므로, 열린 안쪽 탭의 것만
+    그려진다. 붙여넣기만 되던 화면이 아니라는 것을 편집기 존재로 고정한다.
+    """
+    for sub_tab, table_name, editor_key in (
+        ("보유", "RQ_EQP_OWN", "capa_eqp_own_editor"),
+        ("대여", "RQ_EQP_LENT", "capa_eqp_lent_editor"),
+        ("가용", "RQ_EQP_AVBL", "capa_eqp_avbl_editor"),
+    ):
+        app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+        app.session_state["reference_data_active_tab"] = "설비대수"
+        app.session_state["equipment_count_active_tab"] = sub_tab
+        app.run()
+
+        assert not app.exception
+        assert f"{editor_key}_apply" in {button.key for button in app.button}
+        assert f"{table_name} 표 붙여넣기" in {text_area.label for text_area in app.text_area}
+
+
+def test_equipment_editor_saves_the_edited_month_to_the_scenario() -> None:
+    """시트에 직접 쓴 값이 활성 시나리오까지 간다.
+
+    필터로 좁힌 화면에서 고쳐도 걸러진 공정이 조회기간에서 지워지지 않아야 한다 —
+    `replace_month_range` 가 구간을 통째로 갈아끼우기 때문이다.
+    """
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
     app.session_state["reference_data_active_tab"] = "설비대수"
+    app.session_state["equipment_count_active_tab"] = "보유"
+    app.session_state["capa_eqp_own_editor_filter_공정"] = ["Process-B"]
     app.run()
+    assert not app.exception
+
+    app = _edit_and_apply(app, "capa_eqp_own_editor", "202608", 7.0)
 
     assert not app.exception
-    assert {text_area.label for text_area in app.text_area}.issuperset(
-        {
-            "RQ_EQP_OWN 표 붙여넣기",
-            "RQ_EQP_LENT 표 붙여넣기",
-            "RQ_EQP_AVBL 표 붙여넣기",
-        }
-    )
+    saved = app.session_state["test_month_updates"]["RQ_EQP_OWN"]
+    assert dict(zip(saved["공정"], saved["설비보유"], strict=True))["Process-B"] == 7.0
+    assert set(saved["공정"]) == {"Process-A", "Process-B"}
 
 
 def test_required_equipment_detail_exposes_route_filters() -> None:
@@ -845,25 +872,35 @@ def test_step_route_selection_still_edits_the_original_process() -> None:
     assert set(saved["공정"]) == {"Process-A"}
 
 
-def test_equipment_count_table_shows_the_display_name_while_its_paste_form_stays_original() -> None:
-    """설비대수 조회 표는 표시명이고, 같은 탭의 왕복 양식은 원본 공정명이다."""
-    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60)
+def _equipment_sub_tab_app(sub_tab: str, script: str = RENAMED_TEST_SCRIPT) -> AppTest:
+    """설비대수 탭의 안쪽 탭 하나를 연 화면."""
+    app = AppTest.from_string(script, default_timeout=60)
     app.session_state["reference_data_active_tab"] = "설비대수"
+    app.session_state["equipment_count_active_tab"] = sub_tab
     app.run()
-
     assert not app.exception
+    return app
+
+
+def test_equipment_count_table_shows_the_display_name_while_its_paste_form_stays_original() -> None:
+    """설비대수 조회 표는 표시명이고, 편집 탭의 왕복 양식은 원본 공정명이다."""
+    app = _equipment_sub_tab_app("현황")
+
     assert set(_frame_with_column(app, "공정")["공정"]) == {"가공"}
     assert app.multiselect(key="equipment_count_filter_공정").options == ["가공"]
-    for table_name in ("rq_eqp_own", "rq_eqp_lent", "rq_eqp_avbl"):
-        exported = _download_frame(app, f"{table_name}_csv_download")
-        assert exported["공정"].tolist() == ["Process-A"], table_name
+    for sub_tab, editor_key in (
+        ("보유", "capa_eqp_own_editor"),
+        ("대여", "capa_eqp_lent_editor"),
+        ("가용", "capa_eqp_avbl_editor"),
+    ):
+        editor_app = _equipment_sub_tab_app(sub_tab)
+        exported = _download_frame(editor_app, f"{editor_key}_csv_download")
+        assert exported["공정"].tolist() == ["Process-A"], sub_tab
 
 
 def test_equipment_count_filter_keeps_the_original_selection_value() -> None:
     """필터 표기만 표시명이다. 선택값이 표시명이면 `isin` 이 원본과 맞지 않아 표가 빈다."""
-    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = "설비대수"
-    app.run()
+    app = _equipment_sub_tab_app("현황")
     app.multiselect(key="equipment_count_filter_공정").select("가공")
     app.run()
 

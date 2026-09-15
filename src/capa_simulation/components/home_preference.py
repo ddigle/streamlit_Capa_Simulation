@@ -64,6 +64,15 @@ COMPARISON_REVISION_KEY = "home_preference_comparison_revision"
 ADVANCE_EDITOR_KEY = "home_preference_advance_editor"
 ADVANCE_NOTE_KEY = "home_preference_advance_note"
 DIMENSION_COLUMN = "구분"
+# 구획 제목의 글자 크기와 앞 강조 막대의 치수. `home_rendering` 의 `Summary` 상자가 같은
+# 값을 CSS 가상요소로 다시 그리므로 상수로 내보낸다 — 두 곳에 숫자를 따로 적으면 한쪽만
+# 고쳐져 막대 크기가 어긋난다.
+SECTION_TITLE_FONT_PX = 20
+SECTION_BAR_WIDTH_PX = 4
+SECTION_BAR_HEIGHT_PX = 18
+SECTION_BAR_RADIUS_PX = 2
+SECTION_BAR_GAP_PX = 8
+STATUS_LEGEND_ROW_KEY = "home_status_legend"
 
 
 def render_plan_detail_title_row(*, applied_customer: bool) -> None:
@@ -108,10 +117,29 @@ def render_section_title_row(text: str, *, key: str) -> None:
 
 
 def section_title_markup(text: str) -> str:
-    """구획 제목 한 줄. Plotly 주석이 그리던 모양을 그대로 옮긴 것이다."""
+    """구획 제목 한 줄. Plotly 주석이 그리던 모양을 그대로 옮긴 것이다.
+
+    앞의 강조 막대는 **글자가 아니라 그린 사각형**이다. `▍` 문자로 두면 막대 높이가 그
+    글자가 상속한 글자 크기를 따라가는데, 제목 글자만 20px 로 키운 이 줄에서는 막대가
+    본문 크기(작게)로 남고 `Summary` 상자처럼 제목 전체가 20px 인 곳에서는 크게 나온다.
+    같은 막대가 화면마다 다른 크기로 보이던 이유가 그것이다. px 로 못 박으면 어디에 놓든
+    같다.
+    """
     return (
-        f'<span style="color:{tokens.ACCENT}">▍</span>'
-        f'<span style="font-size:20px;font-weight:700">{text}</span>'
+        f'<span style="display:inline-flex;align-items:center;'
+        f"gap:{SECTION_BAR_GAP_PX}px;"
+        f'font-size:{SECTION_TITLE_FONT_PX}px;font-weight:700;line-height:1.2">'
+        f'<span style="{section_accent_bar_css()}"></span>'
+        f"{text}</span>"
+    )
+
+
+def section_accent_bar_css() -> str:
+    """강조 막대의 모양 선언. `st.markdown` 과 CSS 가상요소가 같은 값을 읽는다."""
+    return (
+        f"display:inline-block;flex:none;"
+        f"width:{SECTION_BAR_WIDTH_PX}px;height:{SECTION_BAR_HEIGHT_PX}px;"
+        f"border-radius:{SECTION_BAR_RADIUS_PX}px;background:{tokens.ACCENT}"
     )
 
 
@@ -142,14 +170,21 @@ def render_lob_title_row(
     *,
     unapplied_months: Sequence[int],
     comparison_ready: bool,
+    secure_threshold: float,
+    warning_threshold: float,
 ) -> None:
-    """`Capa LOB 현황` 제목과 그 옆의 「선행」·「GAP」 토글.
+    """`Capa LOB 현황` 제목과 그 옆의 「선행」·「GAP」 토글, 오른쪽 끝의 판정 색 범례.
 
     토글은 값을 바꾸기만 하고 아무것도 계산하지 않는다. 다음 실행에서 `home.py` 가 이
     키를 읽어 계산에 반영한다.
 
     비교 시나리오를 고르지 않았으면 「GAP」 을 누를 수 없다. 켤 수는 있는데 아무것도
     바뀌지 않으면 고장으로 읽힌다.
+
+    **범례가 이 줄 안에 있는 이유.** 제목 줄과 Figure 사이 간격은 스크롤바 높이를 뺀
+    나머지(`DASHBOARD_PANEL_TITLE_GAP_PX`)뿐이라 거의 0 이다. 범례를 두 줄 사이에 독립
+    블록으로 끼우면 바로 아래 월 영역 위에 얹힌 가로 스크롤바와 겹친다. 제목 줄은 이미
+    높이가 못박힌 가로 컨테이너라 여기에 넣으면 세로 자리를 새로 먹지 않는다.
     """
     with st.container(
         key="lob_title_row",
@@ -193,6 +228,16 @@ def render_lob_title_row(
                 else "Preference 탭에서 비교 시나리오를 먼저 고르세요."
             ),
         )
+        # 판정 색의 뜻과 경계 숫자. Top5 막대에 그은 기준선과 같은 값을 읽는다.
+        # 아래 CSS 의 `margin-left:auto` 가 이 칸만 오른쪽 끝으로 민다.
+        with st.container(key=STATUS_LEGEND_ROW_KEY):
+            st.markdown(
+                status_legend_markup(
+                    secure_threshold=secure_threshold,
+                    warning_threshold=warning_threshold,
+                ),
+                unsafe_allow_html=True,
+            )
     if unapplied_months:
         labels = _month_labels(unapplied_months)
         st.warning(

@@ -381,6 +381,21 @@ def format_bottleneck_process_name(value: object) -> str:
 _GAP_EPSILON = 5e-3
 
 
+def _contiguous_segments(indices: Sequence[int]) -> list[tuple[int, int]]:
+    """이어진 정수를 `(시작, 끝)` 구간으로 접는다. 끝은 포함이다.
+
+    연간 Total 열이 월 사이에 끼면 월 축이 끊긴다. 그 끊긴 자리를 건너뛰고 선을 그으려면
+    구간 목록이 필요하다.
+    """
+    segments: list[tuple[int, int]] = []
+    for index in indices:
+        if segments and index == segments[-1][1] + 1:
+            segments[-1] = (segments[-1][0], index)
+        else:
+            segments.append((index, index))
+    return segments
+
+
 def _aligned_by_label(frame: pd.DataFrame | None, month_labels: list[str]) -> pd.DataFrame | None:
     """월 축 라벨 차례로 프레임을 맞춘다. 축에 없는 칸은 결측이 된다."""
     if frame is None or "년월" not in frame.columns:
@@ -869,16 +884,28 @@ def build_lob_summary_figures(
         # 밴드 밖으로 나가는 기준은 긋지 않는다. Top5 밴드는 사용자가 바꿀 수 있어
         # 기준이 축 위로 올라갈 수 있는데, 그때 선을 축 끝에 붙이면 「기준에 닿았다」로
         # 잘못 읽힌다.
+        #
+        # 선은 **월 칸 위에만** 긋는다. 연간 Total 열은 확보율을 더하지 않아 비워 둔
+        # 칸인데 그 위로 선이 지나가면 합계에도 기준이 있는 것처럼 읽힌다. `add_hline`
+        # 은 축 전체를 가로지르므로 쓸 수 없고, 이어진 월 구간마다 선분을 따로 긋는다.
+        month_line_segments = _contiguous_segments(
+            [index for index, label in enumerate(month_labels) if label not in totals]
+        )
         for threshold in (secure_threshold, warning_threshold):
             if not 0 < threshold <= top5_rate_band[1]:
                 continue
-            month_figure.add_hline(
-                y=threshold,
-                row=3,
-                col=1,
-                line={"color": tokens.LINE, "width": 1, "dash": "dot"},
-                layer="above",
-            )
+            for segment_start, segment_end in month_line_segments:
+                month_figure.add_shape(
+                    type="line",
+                    x0=segment_start - 0.5,
+                    x1=segment_end + 0.5,
+                    y0=threshold,
+                    y1=threshold,
+                    line={"color": tokens.LINE, "width": 1, "dash": "dot"},
+                    layer="above",
+                    row=3,
+                    col=1,
+                )
         for x_position, capa, rate in zip(
             top5_positions,
             # 라벨은 그려진 막대 끝에 붙어야 한다. 실제 Capa 를 쓰면 잘린 막대에서 떨어진다.

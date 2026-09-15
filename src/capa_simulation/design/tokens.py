@@ -173,6 +173,7 @@ NAV_SHADOW: Final = _with_alpha(TEXT, 0.10)
 # 트랙과 구분돼야 하지만, 이 면은 선 두 개 사이를 채우기만 하면 되므로 같은 세기로 칠하면
 # 정작 읽어야 할 선이 면에 묻힌다.
 GAP_AREA_SHORTFALL: Final = _with_alpha(DELTA_AREA_DECREASE, 0.35)
+GAP_AREA_SURPLUS: Final = _with_alpha(DELTA_AREA_INCREASE, 0.35)
 
 # 배경 도면 위에 캔버스를 덮을 때. SPACE_CANVAS 를 바꾸면 함께 바뀐다.
 SPACE_CANVAS_OVERLAY: Final = _with_alpha(SPACE_CANVAS, 0.18)

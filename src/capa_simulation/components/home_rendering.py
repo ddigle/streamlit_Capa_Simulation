@@ -21,8 +21,12 @@ from capa_simulation.components.home_dimensions import (
     DASHBOARD_TITLE_HEIGHT_PX,
 )
 from capa_simulation.components.home_preference import (
+    SECTION_BAR_GAP_PX,
+    SECTION_TITLE_FONT_PX,
+    STATUS_LEGEND_ROW_KEY,
     render_plan_detail_title_row,
     render_section_title_row,
+    section_accent_bar_css,
 )
 from capa_simulation.components.loading_progress import LoadingStage
 from capa_simulation.components.scroll_shell import (
@@ -153,6 +157,13 @@ def dashboard_title_row_style() -> str:
     .st-key-lob_title_row,
     .st-key-plan_detail_title_row,
     .st-key-bottleneck_title_row {{ align-items: center; }}
+    /* 범례는 제목·토글과 같은 줄의 오른쪽 끝이다. 아래 월 영역 위에 얹힌 가로
+       스크롤바와 겹치지 않게 별도 블록으로 두지 않는다. */
+    .st-key-{STATUS_LEGEND_ROW_KEY} {{
+        margin-left: auto;
+        width: auto;
+        flex: 0 0 auto;
+    }}
     </style>
     """
 
@@ -165,7 +176,9 @@ def summary_notice_style() -> str:
 
     `st.expander` 의 기본 제목은 본문 글씨 크기다. 그대로 두면 바로 아래 `Capa LOB 현황`
     보다 작아 두 상자가 다른 화면에서 온 것처럼 보인다. 제목 글자와 앞의 강조 막대를
-    구획 제목(`section_title_markup`)과 같은 값으로 맞춘다.
+    구획 제목(`section_title_markup`)과 **같은 상수**로 맞춘다. 막대를 `▍` 글자로 두면
+    높이가 상속한 글자 크기를 따라가 이 상자(20px)에서만 크게 나왔다 — 사각형을 px 로
+    그리면 어느 제목 옆에 놓아도 같다.
 
     **본문은 내용만큼 자란다.** 높이를 주거나 `overflow` 를 걸면 긴 공지가 잘려 스크롤
     안에 숨는데, 공지는 접힘을 펴는 순간 전부 보여야 하는 글이다.
@@ -179,13 +192,16 @@ def summary_notice_style() -> str:
     return f"""
     <style>
     .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary p {{
-        font-size: 20px;
+        display: inline-flex;
+        align-items: center;
+        gap: {SECTION_BAR_GAP_PX}px;
+        font-size: {SECTION_TITLE_FONT_PX}px;
         font-weight: 700;
+        line-height: 1.2;
     }}
     .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary p::before {{
-        content: "▍";
-        color: {tokens.ACCENT};
-        font-weight: 400;
+        content: "";
+        {section_accent_bar_css()};
     }}
     .capa-summary-note {{
         margin: 0;

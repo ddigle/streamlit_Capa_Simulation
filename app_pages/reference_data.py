@@ -8,10 +8,7 @@ from capa_simulation.components.column_filter import render_column_filters
 from capa_simulation.components.month_editor import render_month_editor
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.reference_csv_tools import (
-    queue_reference_import_flash,
-    render_reference_clipboard_tools,
-)
+from capa_simulation.components.reference_csv_tools import queue_reference_import_flash
 from capa_simulation.components.scenario_edit_bar import render_scenario_edit_bar
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.design import tokens
@@ -65,6 +62,13 @@ TAB_NAMES = (
     "STEP 구성",
 )
 
+# 설비대수 세 RQ. 이름·화면 표기·값 컬럼·편집기 키가 네 곳에서 따로 적히면 한 군데만
+# 고쳐져 조용히 어긋난다. 한 줄로 묶어 두고 편집기·적용·왕복 CSV 가 모두 이것을 읽는다.
+EQUIPMENT_EDITORS = (
+    ("RQ_EQP_OWN", "보유", "설비보유", "capa_eqp_own_editor"),
+    ("RQ_EQP_LENT", "대여", "설비대여평가", "capa_eqp_lent_editor"),
+    ("RQ_EQP_AVBL", "가용", "가용대수", "capa_eqp_avbl_editor"),
+)
 RUN_RATE_DIMENSIONS = ["공정", "양산구분"]
 VITAL_DIMENSIONS = ["공정", "양산구분"]
 RUN_DAY_DIMENSIONS = ["공정"]
@@ -241,6 +245,7 @@ editor_keys = (
     "capa_lot_ratio_editor",
     "capa_wf_ratio_editor",
     "capa_run_day_editor",
+    *(editor_key for _, _, _, editor_key in EQUIPMENT_EDITORS),
 )
 step_widget_keys = (
     "capacity_step_mode",
@@ -299,11 +304,7 @@ equipment_edit_tables = {
     table_name: equipment_count_to_edit_table(
         equipment_month_tables[table_name], category, value_column
     )
-    for table_name, category, value_column in (
-        ("RQ_EQP_OWN", "보유", "설비보유"),
-        ("RQ_EQP_LENT", "대여", "설비대여평가"),
-        ("RQ_EQP_AVBL", "가용", "가용대수"),
-    )
+    for table_name, category, value_column, _ in EQUIPMENT_EDITORS
 }
 
 render_scenario_edit_bar(
@@ -469,52 +470,17 @@ with step_tab:
 
 with equipment_tab:
     st.caption("월간 설비대수")
-    with st.container(border=True):
-        st.markdown("#### 설비대수 RQ Excel 붙여넣기")
-        st.caption(
-            "보유·대여·가용 RQ는 각각 내려받아 값을 수정한 뒤 적용합니다. "
-            "적용값은 활성 시나리오의 다른 계산 페이지에 즉시 반영됩니다."
-        )
-        imported_equipment: dict[str, pd.DataFrame] = {}
-        for table_name, category, value_column in (
-            ("RQ_EQP_OWN", "보유", "설비보유"),
-            ("RQ_EQP_LENT", "대여", "설비대여평가"),
-            ("RQ_EQP_AVBL", "가용", "가용대수"),
-        ):
-            imported = render_reference_clipboard_tools(
-                equipment_edit_tables[table_name],
-                table_name=table_name,
-                key_columns=EQUIPMENT_DIMENSIONS,
-                file_name=f"{table_name}_{effective_start_month}_{effective_end_month}.csv",
-                key=f"{table_name.lower()}_csv",
-                expander_label=f"{category}설비 - Excel 붙여넣기",
-            )
-            if imported is not None:
-                try:
-                    imported_equipment[table_name] = equipment_count_from_edit_table(
-                        imported,
-                        category,
-                        value_column,
-                    )
-                except ValueError as exc:
-                    st.error(str(exc))
-        if imported_equipment:
-            try:
-                apply_month_updates(
-                    active_scenario,
-                    imported_equipment,
-                    effective_start_month,
-                    effective_end_month,
-                )
-            except (KeyError, ValueError) as exc:
-                st.error(str(exc))
-            else:
-                applied_table = next(iter(imported_equipment))
-                queue_reference_import_flash(
-                    f"{applied_table.lower()}_csv",
-                    f"{applied_table} 붙여넣기 데이터를 활성 시나리오에 일괄 적용했습니다.",
-                )
-                st.rerun()
+    # 세 RQ 를 한 탭에 세로로 쌓으면 편집표 하나가 500px 라 화면이 세 배로 길어진다.
+    # 다른 기준정보 탭과 **같은 편집기**를 쓰되 탭을 한 겹 더 둔다. `현황` 은 세 RQ 를
+    # 합친 조회 표라 편집 대상이 아니다 — 보유·대여를 합친 값에 숫자를 쓸 자리가 없다.
+    (
+        equipment_own_tab,
+        equipment_lent_tab,
+        equipment_available_tab,
+        equipment_overview_tab,
+    ) = stateful_tabs(("보유", "대여", "가용", "현황"), key="equipment_count_active_tab")
+
+with equipment_overview_tab:
     show_equipment_detail = st.toggle(
         "상세",
         key="equipment_count_detail",
@@ -543,9 +509,10 @@ with equipment_tab:
     # 맞지 않는다. 같은 탭의 왕복 양식은 `equipment_edit_tables` 라는 별도 프레임이라
     # 이 복사본이 붙여넣기 경로에 닿지 않는다.
     displayed_equipment_table["공정"] = process_labels.series(displayed_equipment_table["공정"])
-    # 그리는 것만 건너뛴다. 위 붙여넣기 폼·토글·필터는 위젯이라 숨은 탭에서도 그려야
-    # Streamlit 이 그 상태를 버리지 않는다.
-    if not tab_is_hidden(equipment_tab):
+    # 그리는 것만 건너뛴다. 위 토글·필터는 위젯이라 숨은 탭에서도 그려야 Streamlit 이
+    # 그 상태를 버리지 않는다. 바깥 탭과 안쪽 탭을 **둘 다** 본다 — 안쪽 탭은 바깥이
+    # 닫혀 있어도 자기 선택만 알기 때문에 그것만 보면 숨은 화면에 표를 그린다.
+    if not (tab_is_hidden(equipment_tab) or tab_is_hidden(equipment_overview_tab)):
         styled_equipment_table = displayed_equipment_table.style.set_properties(
             subset=pd.Index(equipment_dimensions),
             **{"background-color": tokens.SURFACE_CLASSIFICATION},
@@ -660,6 +627,30 @@ edited_run_day_table, apply_run_day, imported_run_day_table = render_month_edito
     value_labels=process_labels.value_labels(),
 )
 
+# 설비대수도 다른 기준정보와 **같은 편집기**를 쓴다. 값붙여넣기만 되던 화면이라 한 칸을
+# 고치려면 표 전체를 Excel 로 왕복해야 했다. 붙여넣기 양식은 편집기가 함께 그리므로
+# 기존 경로도 그대로 남는다.
+equipment_editor_results = {
+    table_name: render_month_editor(
+        equipment_sub_tab,
+        equipment_edit_tables[table_name],
+        EQUIPMENT_DIMENSIONS,
+        editor_key,
+        f"공정별 {category} 설비대수를 수정한 후 적용 버튼을 누르세요.",
+        "%,.2f",
+        0.01,
+        table_name=table_name,
+        csv_file_name=f"{table_name}_{effective_start_month}_{effective_end_month}.csv",
+        # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
+        value_labels=process_labels.value_labels(),
+    )
+    for equipment_sub_tab, (table_name, category, _, editor_key) in zip(
+        (equipment_own_tab, equipment_lent_tab, equipment_available_tab),
+        EQUIPMENT_EDITORS,
+        strict=True,
+    )
+}
+
 pending_updates: dict[str, pd.DataFrame] = {}
 update_error_tab = upeh_tab
 import_flash: tuple[str, str] | None = None
@@ -741,6 +732,25 @@ try:
             import_flash = (
                 "run_day_editor_csv",
                 "RQ_RUN_DAY 붙여넣기 데이터를 일괄 적용했습니다.",
+            )
+    for table_name, category, value_column, editor_key in EQUIPMENT_EDITORS:
+        equipment_sub_tab = {
+            "RQ_EQP_OWN": equipment_own_tab,
+            "RQ_EQP_LENT": equipment_lent_tab,
+            "RQ_EQP_AVBL": equipment_available_tab,
+        }[table_name]
+        edited_equipment, apply_equipment, imported_equipment = equipment_editor_results[table_name]
+        if not (apply_equipment or imported_equipment is not None):
+            continue
+        update_error_tab = equipment_sub_tab
+        source = imported_equipment if imported_equipment is not None else edited_equipment
+        pending_updates[table_name] = equipment_count_from_edit_table(
+            source, category, value_column
+        )
+        if imported_equipment is not None:
+            import_flash = (
+                f"{editor_key}_csv",
+                f"{table_name} 붙여넣기 데이터를 일괄 적용했습니다.",
             )
     if pending_updates:
         apply_month_updates(

@@ -25,7 +25,6 @@ from capa_simulation.components.home_preference import (
     render_home_preference,
     render_lob_title_row,
     seed_comparison_selection,
-    status_legend_markup,
 )
 from capa_simulation.components.home_rendering import (
     HOME_FIGURE_SCHEMA_VERSION,
@@ -708,17 +707,13 @@ with main_tab:
     # 제목 줄과 여섯 Figure 는 한 상자 안이다. 제목 옆 토글은 숨은 탭에서도 그려야 하므로
     # Figure 를 건너뛰는 `render_home_figures` 안으로 넣지 않고 상자만 여기서 연다.
     with home_dashboard_panel():
+        # 범례는 이 제목 줄 **안** 오른쪽 끝이다. 제목과 Figure 사이에 독립 블록으로
+        # 두면 월 영역 위에 얹힌 가로 스크롤바와 겹친다.
         render_lob_title_row(
             unapplied_months=unapplied_advance_months,
             comparison_ready=bool(comparison_scenario_id and comparison_revision_id),
-        )
-        # 판정 색의 뜻과 경계 숫자. Top5 막대에 그은 기준선과 같은 값을 읽는다.
-        st.markdown(
-            status_legend_markup(
-                secure_threshold=secure_threshold,
-                warning_threshold=warning_threshold,
-            ),
-            unsafe_allow_html=True,
+            secure_threshold=secure_threshold,
+            warning_threshold=warning_threshold,
         )
         render_home_figures(
             cached_figures,
