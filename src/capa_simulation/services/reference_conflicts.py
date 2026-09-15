@@ -8,12 +8,13 @@ import json
 import math
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from capa_simulation.io.core_data_source import CoreDataContract
 from capa_simulation.services.frame_contracts import require_columns
 
-TEMPORARY_CONFLICT_RESOLUTION = "원천 행 순서상 첫 번째 행 유지"
+TEMPORARY_CONFLICT_RESOLUTION = "값이 있는 첫 행 유지(0·빈값은 값 없음으로 본다)"
 
 CONFLICT_REPORT_META_COLUMNS = [
     "RQ테이블",
@@ -42,16 +43,60 @@ def validated_distinct(
     require_columns(frame, list(keys), table_name)
     require_non_null(frame, list(keys), table_name)
     duplicated = frame.duplicated(subset=list(keys), keep=False)
-    if duplicated.any():
-        non_keys = [column for column in frame.columns if column not in keys]
-        _collect_conflicting_duplicates(
-            frame.loc[duplicated],
-            table_name,
-            list(keys),
-            non_keys,
-            conflict_records,
-        )
-    return frame.drop_duplicates(subset=list(keys), keep="first").reset_index(drop=True)
+    if not duplicated.any():
+        return frame.reset_index(drop=True)
+    non_keys = [column for column in frame.columns if column not in keys]
+    ordered = _informative_first(frame, list(keys), non_keys)
+    _collect_conflicting_duplicates(
+        ordered.loc[ordered.duplicated(subset=list(keys), keep=False)],
+        table_name,
+        list(keys),
+        non_keys,
+        conflict_records,
+    )
+    return ordered.drop_duplicates(subset=list(keys), keep="first").reset_index(drop=True)
+
+
+def _informative_first(
+    frame: pd.DataFrame, keys: list[str], value_columns: list[str]
+) -> pd.DataFrame:
+    """업무 키가 같은 형제 행 중 값이 있는 행을 그룹 안에서 앞으로 보낸다.
+
+    업무 키는 Core Data 행을 유일하게 가르지 못한다 — 예를 들어 `RQ_UPEH` 9키에는
+    `Capa Code`·`Customer`·`CS`·`Pack Code` 가 없어 한 키에 형제 행이 여럿 온다. 예전에는
+    그중 **원천 행 순서상 첫 행**을 골랐는데, 원천이 '해당 없음' 을 0 으로 적는 탓에 0 행이
+    앞서면 형제에 실값이 남아 있어도 0 이 저장됐다. 그 0 은 `대당 Capa 0 이하` 로 조용히
+    제외돼 공정 하나가 통째로 사라졌다.
+
+    그래서 승자를 '값이 있는 첫 행' 으로 바꾼다. **값을 지어내지 않는다** — 형제가 모두
+    0 이면 결과는 종전과 같은 0 이다. 고르는 행만 달라지고 값은 원천 그대로다.
+
+    그룹의 자리(첫 등장 순서)와 그룹 간 순서는 그대로다. 접은 뒤의 행 순서가 예전과 같아야
+    `source_row_no` 와 `reference_hash` 가 흔들리지 않는다.
+    """
+    if not value_columns:
+        return frame
+    group_number = frame.groupby(keys, dropna=False, sort=False).ngroup().to_numpy()
+    usable = _usable_value_count(frame, value_columns)
+    position = np.arange(len(frame))
+    # `lexsort` 는 마지막 키가 1순위다. 그룹 → 값이 많은 행 → 원천 행 순서.
+    return frame.take(np.lexsort((position, -usable, group_number)))
+
+
+def _usable_value_count(frame: pd.DataFrame, value_columns: list[str]) -> npt.NDArray[np.int64]:
+    """행이 실제로 들고 있는 값의 개수. 숫자 컬럼의 0 과 빈 문자열은 값 없음으로 센다."""
+    counts = np.zeros(len(frame), dtype="int64")
+    for column in value_columns:
+        series = frame[column]
+        numeric = pd.to_numeric(series, errors="coerce")
+        if numeric.notna().any():
+            # 숫자로 읽히는 컬럼. 0 은 원천이 '해당 없음' 을 적는 표기라 값으로 세지 않는다.
+            usable = (numeric.notna() & numeric.ne(0)).to_numpy()
+        else:
+            text = series.astype("string").str.strip()
+            usable = (text.notna() & text.ne("")).to_numpy()
+        counts += usable.astype("int64")
+    return counts
 
 
 def _collect_conflicting_duplicates(

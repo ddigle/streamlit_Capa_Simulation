@@ -83,7 +83,7 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
         )
 
 
-def test_unit_capacity_excludes_nonpositive_wf_ratio_and_capacity() -> None:
+def test_unit_capacity_excludes_negative_wf_ratio_and_nonpositive_capacity() -> None:
     upeh = pd.DataFrame(
         {
             "생산계획년월": [202608, 202608, 202608],
@@ -119,14 +119,14 @@ def test_unit_capacity_excludes_nonpositive_wf_ratio_and_capacity() -> None:
     module = pd.DataFrame({"공정": ["Process-A", "Process-B", "Process-C"], "모듈수": 2.0})
     run_day = shared_detail[["생산계획년월", "공정"]].assign(RUN_DAY=30.0)
     lot_ratio = shared_detail.assign(**{"Lot 측정률": 1.0})
-    wf_ratio = shared_detail.assign(WF측정률=[1.0, 0.0, 1.0])
+    wf_ratio = shared_detail.assign(WF측정률=[1.0, -1.0, 1.0])
 
     result = calculate_unit_capacity(upeh, run_rate, vital, module, run_day, lot_ratio, wf_ratio)
     excluded = result.attrs["excluded_capacity_rows"]
 
     assert result["공정"].tolist() == ["Process-A"]
     assert excluded[["공정", "제외사유"]].to_dict("records") == [
-        {"공정": "Process-B", "제외사유": "WF측정률 0 이하"},
+        {"공정": "Process-B", "제외사유": "WF측정률 음수"},
         {"공정": "Process-C", "제외사유": "대당 Capa 0 이하"},
     ]
     assert {"UPEH", "ST", "CAPA_RUN_RATE", "WF측정률"}.issubset(excluded.columns)
@@ -167,8 +167,9 @@ def test_unit_capacity_excludes_unimplemented_box_and_pcb_bases() -> None:
 
 
 # `Lot 측정률` 과 `WF측정률` 은 원천 컬럼 쌍·업무키 9개·결측 기본값 1.0·분모 자리까지
-# 같은 쌍둥이 기준정보다. 아래 검증은 두 컬럼이 0 이하 값을 만났을 때도 같은 행 제외
-# 규칙을 따르고, 제외될 행 때문에 남은 기준정보 검증이 화면을 멈추지 않는지 고정한다.
+# 같은 쌍둥이 기준정보다. 아래 검증은 두 컬럼이 **0 이면 1.0 을 적용**하고 **음수일 때만**
+# 같은 행 제외 규칙을 따르며, 제외될 행 때문에 남은 기준정보 검증이 화면을 멈추지 않는지
+# 고정한다.
 
 DETAIL_KEYS = [
     "생산계획년월",
@@ -229,11 +230,48 @@ def _exclusion_records(result: pd.DataFrame) -> list[dict[str, object]]:
     return list(excluded[["공정", "제외사유"]].to_dict("records"))
 
 
-def test_nonpositive_lot_ratio_excludes_the_row_instead_of_stopping_the_page() -> None:
-    """0·음수 `Lot 측정률` 한 줄이 HOME·공정별 Capa 를 통째로 멈추면 안 된다."""
+def test_nonpositive_upeh_says_upeh_not_just_the_capacity_result() -> None:
+    """원천 접힘으로 UPEH 0 이 저장됐을 때 제외 사유가 원인을 가리켜야 한다."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["upeh"] = inputs["upeh"].assign(UPEH=[100.0, 0.0])
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result["공정"].tolist() == ["Process-A"]
+    assert _exclusion_records(result) == [{"공정": "Process-B", "제외사유": "UPEH 0 이하"}]
+
+
+def test_zero_measurement_ratios_apply_one_instead_of_excluding_the_row() -> None:
+    """측정률 0 은 빈 값과 같은 뜻이라 1.0 을 적용한다. 행을 빼지 않는다."""
     inputs = _capacity_inputs(
         ["Process-A", "Process-B", "Process-C"],
-        lot_ratio=[1.0, 0.0, -0.5],
+        lot_ratio=[1.0, 0.0, 1.0],
+        wf_ratio=[1.0, 1.0, 0.0],
+    )
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result["공정"].tolist() == ["Process-A", "Process-B", "Process-C"]
+    # 1.0 으로 나눈 것과 같으므로 세 줄의 대당 Capa 가 서로 같다.
+    assert result["대당 Capa"].tolist() == pytest.approx([EXPECTED_UNIT_CAPACITY] * 3)
+    assert _exclusion_records(result) == []
+
+
+def test_zero_on_both_measurement_ratios_of_one_row_still_applies_one() -> None:
+    """한 행에서 두 측정률이 모두 0 이어도 제외하지 않는다."""
+    inputs = _capacity_inputs(["Process-A"], lot_ratio=[0.0], wf_ratio=[0.0])
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result["대당 Capa"].tolist() == pytest.approx([EXPECTED_UNIT_CAPACITY])
+    assert _exclusion_records(result) == []
+
+
+def test_negative_lot_ratio_excludes_the_row_instead_of_stopping_the_page() -> None:
+    """음수 `Lot 측정률` 한 줄이 HOME·공정별 Capa 를 통째로 멈추면 안 된다."""
+    inputs = _capacity_inputs(
+        ["Process-A", "Process-B", "Process-C"],
+        lot_ratio=[1.0, -0.5, -1.0],
     )
 
     result = calculate_unit_capacity(**inputs)
@@ -241,47 +279,47 @@ def test_nonpositive_lot_ratio_excludes_the_row_instead_of_stopping_the_page() -
     assert result["공정"].tolist() == ["Process-A"]
     assert result["대당 Capa"].tolist() == pytest.approx([EXPECTED_UNIT_CAPACITY])
     assert _exclusion_records(result) == [
-        {"공정": "Process-B", "제외사유": "Lot 측정률 0 이하"},
-        {"공정": "Process-C", "제외사유": "Lot 측정률 0 이하"},
+        {"공정": "Process-B", "제외사유": "Lot 측정률 음수"},
+        {"공정": "Process-C", "제외사유": "Lot 측정률 음수"},
     ]
 
 
 def test_lot_ratio_exclusions_keep_the_joined_reference_values() -> None:
-    inputs = _capacity_inputs(["Process-A", "Process-B"], lot_ratio=[1.0, 0.0])
+    inputs = _capacity_inputs(["Process-A", "Process-B"], lot_ratio=[1.0, -0.5])
 
     excluded = calculate_unit_capacity(**inputs).attrs[CAPACITY_EXCLUSIONS_ATTR]
 
     assert {"UPEH", "ST", "CAPA_RUN_RATE", "Lot 측정률", "WF측정률"}.issubset(excluded.columns)
-    assert excluded["Lot 측정률"].tolist() == [0.0]
+    assert excluded["Lot 측정률"].tolist() == [-0.5]
 
 
-def test_wf_ratio_exclusion_wins_when_both_ratios_are_nonpositive_on_one_row() -> None:
+def test_wf_ratio_exclusion_wins_when_both_ratios_are_negative_on_one_row() -> None:
     """한 행이 두 조건에 다 걸려도 제외 목록에 두 번 나오면 안 된다."""
     inputs = _capacity_inputs(
         ["Process-A", "Process-B"],
-        lot_ratio=[1.0, 0.0],
-        wf_ratio=[1.0, 0.0],
+        lot_ratio=[1.0, -0.5],
+        wf_ratio=[1.0, -0.5],
     )
 
     result = calculate_unit_capacity(**inputs)
 
     assert result["공정"].tolist() == ["Process-A"]
-    assert _exclusion_records(result) == [{"공정": "Process-B", "제외사유": "WF측정률 0 이하"}]
+    assert _exclusion_records(result) == [{"공정": "Process-B", "제외사유": "WF측정률 음수"}]
 
 
 def test_both_ratios_are_excluded_when_they_fail_on_different_rows() -> None:
     inputs = _capacity_inputs(
         ["Process-A", "Process-B", "Process-C"],
-        lot_ratio=[1.0, 1.0, 0.0],
-        wf_ratio=[1.0, 0.0, 1.0],
+        lot_ratio=[1.0, 1.0, -0.5],
+        wf_ratio=[1.0, -0.5, 1.0],
     )
 
     result = calculate_unit_capacity(**inputs)
 
     assert result["공정"].tolist() == ["Process-A"]
     assert _exclusion_records(result) == [
-        {"공정": "Process-B", "제외사유": "WF측정률 0 이하"},
-        {"공정": "Process-C", "제외사유": "Lot 측정률 0 이하"},
+        {"공정": "Process-B", "제외사유": "WF측정률 음수"},
+        {"공정": "Process-C", "제외사유": "Lot 측정률 음수"},
     ]
 
 
@@ -289,14 +327,14 @@ def test_remaining_checks_ignore_rows_that_are_already_excluded() -> None:
     """제외될 행의 편중률 0 은 계산 대상이 아니므로 예외가 되면 안 된다."""
     inputs = _capacity_inputs(
         ["Process-A", "Process-B"],
-        wf_ratio=[1.0, 0.0],
+        wf_ratio=[1.0, -0.5],
         vital=[1.0, 0.0],
     )
 
     result = calculate_unit_capacity(**inputs)
 
     assert result["공정"].tolist() == ["Process-A"]
-    assert _exclusion_records(result) == [{"공정": "Process-B", "제외사유": "WF측정률 0 이하"}]
+    assert _exclusion_records(result) == [{"공정": "Process-B", "제외사유": "WF측정률 음수"}]
 
 
 # 예시 dict 의 키 이름만 뽑는다. 값 쪽 문자열은 뒤에 `:` 가 붙지 않아 걸리지 않는다.
@@ -353,7 +391,7 @@ def test_exclusions_survive_the_cache_round_trip_at_the_end_of_the_pipeline() ->
     되돌려 주므로, `attrs` 가 왕복에서 사라지면 제외 경고와 상세 표가 화면에서 통째로
     없어진다. 여기서는 그 왕복을 `pickle` 로 재현한다.
     """
-    inputs = _capacity_inputs(["Process-A", "Process-B"], lot_ratio=[1.0, 0.0])
+    inputs = _capacity_inputs(["Process-A", "Process-B"], lot_ratio=[1.0, -0.5])
     tables = {
         "RQ_UPEH": inputs["upeh"],
         "RQ_RUN_RATE": inputs["run_rate"],
@@ -417,7 +455,7 @@ def test_exclusions_survive_the_cache_round_trip_at_the_end_of_the_pipeline() ->
 
     assert unit_capacity["공정"].tolist() == ["Process-A"]
     assert _exclusion_records(unit_capacity) == [
-        {"공정": "Process-B", "제외사유": "Lot 측정률 0 이하"}
+        {"공정": "Process-B", "제외사유": "Lot 측정률 음수"}
     ]
     # 공정별 확보율 화면의 두 번째 제외 expander 가 읽는 자리도 같은 왕복을 거친다.
     assert REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR in required_equipment.attrs

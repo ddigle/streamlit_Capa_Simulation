@@ -156,8 +156,9 @@ tables = {
 
 # 제외 STEP 을 네 줄 붙여 세 건수가 모두 다른 값으로 갈리게 한다. P100 은 살아남으므로
 # 표·확보율은 계속 그려지고 제외 경고만 추가로 나온다.
-#   P200 — Lot 측정률 0. 대당 Capa 에서 빠지고, 계획에 있는 제품이라 부하량이 붙는다.
-#   P300 — WF측정률 0. 마찬가지로 대당 Capa 에서 빠지고 부하량이 붙는다.
+#   P200 — Lot 측정률 음수. 대당 Capa 에서 빠지고, 계획에 있는 제품이라 부하량이 붙는다.
+#   P300 — WF측정률 음수. 마찬가지로 대당 Capa 에서 빠지고 부하량이 붙는다.
+# 0 이 아니라 음수를 쓰는 이유: 측정률 0 은 1.0 으로 올라가 제외되지 않는다.
 #   P400 — RQ_REQB 에만 있어 대당 Capa 가 아예 없고, 계획에 있는 제품이라 부하량이 붙는다.
 #   P500 — RQ_REQB 에만 있고 RQ_PKG_PLAN 에 없는 제품이라 부하량이 0 이다.
 # 그래서 대당 Capa 제외 2건 · 소요대수 제외 4건 · 그중 부하량 발생 3건이다. 셋이 서로 다르고
@@ -170,20 +171,22 @@ if ADD_EXCLUDED_STEP:
         row.update(overrides)
         return pd.concat([frame, pd.DataFrame([row])], ignore_index=True)
 
-    lot_zero_step = {"STEP_SEQ": "P200", "MCP_SEQ": "2A"}
-    wf_zero_step = {"STEP_SEQ": "P300", "MCP_SEQ": "3A"}
+    lot_negative_step = {"STEP_SEQ": "P200", "MCP_SEQ": "2A"}
+    wf_negative_step = {"STEP_SEQ": "P300", "MCP_SEQ": "3A"}
     no_capacity_step = {"STEP_SEQ": "P400", "MCP_SEQ": "4A"}
     unplanned_step = {"STEP_SEQ": "P500", "MCP_SEQ": "5A", "제품정보": "Product-B"}
 
-    for step in (lot_zero_step, wf_zero_step):
+    for step in (lot_negative_step, wf_negative_step):
         tables["RQ_UPEH"] = clone_step(tables["RQ_UPEH"], **step)
     tables["RQ_LOT_RATIO"] = clone_step(
-        tables["RQ_LOT_RATIO"], **lot_zero_step, **{"Lot 측정률": 0.0}
+        tables["RQ_LOT_RATIO"], **lot_negative_step, **{"Lot 측정률": -0.5}
     )
-    tables["RQ_LOT_RATIO"] = clone_step(tables["RQ_LOT_RATIO"], **wf_zero_step)
-    tables["RQ_WF_RATIO"] = clone_step(tables["RQ_WF_RATIO"], **lot_zero_step)
-    tables["RQ_WF_RATIO"] = clone_step(tables["RQ_WF_RATIO"], **wf_zero_step, **{"WF측정률": 0.0})
-    for step in (lot_zero_step, wf_zero_step, no_capacity_step, unplanned_step):
+    tables["RQ_LOT_RATIO"] = clone_step(tables["RQ_LOT_RATIO"], **wf_negative_step)
+    tables["RQ_WF_RATIO"] = clone_step(tables["RQ_WF_RATIO"], **lot_negative_step)
+    tables["RQ_WF_RATIO"] = clone_step(
+        tables["RQ_WF_RATIO"], **wf_negative_step, **{"WF측정률": -0.5}
+    )
+    for step in (lot_negative_step, wf_negative_step, no_capacity_step, unplanned_step):
         tables["RQ_REQB"] = clone_step(tables["RQ_REQB"], **step)
 
 # 공정 필터를 보려면 공정이 둘 이상이어야 한다. 기본은 꺼 두어 다른 테스트의 건수 문구를
@@ -413,8 +416,8 @@ CAPACITY_TABLE_KEY = "captured_dimensions::unit_capacity_monthly_table"
 CAPACITY_PROCESS_KEY = "captured_processes::unit_capacity_monthly_table"
 
 # 제외 상세 표에 실리는 제외사유. services 쪽 상수가 바뀌면 화면 문구도 함께 깨진다.
-LOT_RATIO_EXCLUSION_REASON = "Lot 측정률 0 이하"
-WF_RATIO_EXCLUSION_REASON = "WF측정률 0 이하"
+LOT_RATIO_EXCLUSION_REASON = "Lot 측정률 음수"
+WF_RATIO_EXCLUSION_REASON = "WF측정률 음수"
 MISSING_CAPACITY_REASON = "대당 Capa 없음"
 
 
@@ -467,8 +470,8 @@ def test_capacity_standards_shows_the_excluded_capacity_rows_with_a_csv_download
         WF_RATIO_EXCLUSION_REASON,
         LOT_RATIO_EXCLUSION_REASON,
     ]
-    assert excluded["Lot 측정률"].tolist() == [1.0, 0.0]
-    assert excluded["WF측정률"].tolist() == [0.0, 1.0]
+    assert excluded["Lot 측정률"].tolist() == [1.0, -0.5]
+    assert excluded["WF측정률"].tolist() == [-0.5, 1.0]
     assert _download(app, "download_unit_capacity_exclusions_csv") == {
         "label": "CSV 다운로드",
         "file_name": "Capa_Unit_Capacity_Exclusions_202608_202608.csv",

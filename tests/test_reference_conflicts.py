@@ -1,4 +1,4 @@
-# Purpose: 충돌 판정을 벡터화한 뒤에도 보고서가 그룹 루프와 같은지 고정한다.
+# Purpose: 업무 키 충돌의 승자 선택과 보고서 계약을 고정한다.
 
 """업무 키 충돌 수집의 결과 계약.
 
@@ -10,7 +10,10 @@
 import pandas as pd
 
 from capa_simulation.io.core_data_source import load_core_data_contract
-from capa_simulation.services.reference_conflicts import validated_distinct
+from capa_simulation.services.reference_conflicts import (
+    TEMPORARY_CONFLICT_RESOLUTION,
+    validated_distinct,
+)
 
 
 def _plan_rows() -> pd.DataFrame:
@@ -102,3 +105,85 @@ def test_rows_that_differ_only_by_pack_code_are_two_plans_not_a_conflict() -> No
     assert len(distinct) == 2
     assert records == []
     assert sorted(distinct["생산수량"]) == [72.51, 119.93]
+
+
+# 업무 키가 Core Data 행을 유일하게 가르지 못해 형제 행이 접힌다. 예전 규칙("원천 행 순서상
+# 첫 행")은 원천이 '해당 없음' 을 0 으로 적을 때 실값을 버리고 0 을 저장했고, 그 0 은
+# `대당 Capa 0 이하` 로 조용히 제외돼 공정이 통째로 사라졌다. 아래가 그 회귀다.
+
+
+def _upeh_rows(first_upeh: float, second_upeh: float) -> pd.DataFrame:
+    """RQ_UPEH 9키가 같고 `Capa Code` 만 다른 형제 두 행. 키에 없는 컬럼이라 접힌다."""
+    base = {
+        "생산계획년월": 202601,
+        "Area_Name": "Main",
+        "공정": "Process-A",
+        "STEP_SEQ": "P100",
+        "MCP_SEQ": "1A",
+        "양산구분": "양산",
+        "제품정보": "P",
+        "Stack": "8H",
+        "WF 구분": "Core",
+        "소요기준": "WF",
+        "ST": None,
+    }
+    return pd.DataFrame(
+        [
+            {**base, "UPEH": first_upeh},
+            {**base, "UPEH": second_upeh},
+        ]
+    )
+
+
+def test_the_row_with_a_value_wins_even_when_the_zero_row_comes_first() -> None:
+    """0 이 앞서도 형제의 실값이 살아남아야 한다. 이것이 신고된 결함의 핵심이다."""
+    contract = load_core_data_contract()
+    records: list[dict[str, object]] = []
+
+    distinct = validated_distinct(_upeh_rows(0.0, 80672.0), "RQ_UPEH", contract, records)
+
+    assert distinct["UPEH"].tolist() == [80672.0]
+    assert records[0]["선택값"] == '{"UPEH":80672.0}'
+    # 선택 근거를 보고서가 그대로 적어야 사후에 왜 이 행이 이겼는지 알 수 있다.
+    assert records[0]["임시처리"] == TEMPORARY_CONFLICT_RESOLUTION
+    assert records[0]["선택원천행번호"] == 2
+
+
+def test_the_winner_does_not_change_when_the_value_row_already_comes_first() -> None:
+    contract = load_core_data_contract()
+    records: list[dict[str, object]] = []
+
+    distinct = validated_distinct(_upeh_rows(80672.0, 0.0), "RQ_UPEH", contract, records)
+
+    assert distinct["UPEH"].tolist() == [80672.0]
+    assert records[0]["선택원천행번호"] == 1
+
+
+def test_all_zero_siblings_still_collapse_to_zero_without_inventing_a_value() -> None:
+    """값을 지어내지 않는다. 형제가 모두 0 이면 결과도 0 이고 충돌도 아니다."""
+    contract = load_core_data_contract()
+    records: list[dict[str, object]] = []
+
+    distinct = validated_distinct(_upeh_rows(0.0, 0.0), "RQ_UPEH", contract, records)
+
+    assert distinct["UPEH"].tolist() == [0.0]
+    assert records == []
+
+
+def test_collapsed_row_order_is_unchanged_by_the_new_winner_rule() -> None:
+    """그룹의 자리는 그대로여야 한다. 흔들리면 `source_row_no`·`reference_hash` 가 바뀐다."""
+    contract = load_core_data_contract()
+    records: list[dict[str, object]] = []
+    rows = pd.concat(
+        [
+            _upeh_rows(0.0, 80672.0),
+            _upeh_rows(5.0, 5.0).assign(공정="Process-B"),
+            _upeh_rows(0.0, 7.0).assign(공정="Process-C"),
+        ],
+        ignore_index=True,
+    )
+
+    distinct = validated_distinct(rows, "RQ_UPEH", contract, records)
+
+    assert distinct["공정"].tolist() == ["Process-A", "Process-B", "Process-C"]
+    assert distinct["UPEH"].tolist() == [80672.0, 5.0, 7.0]

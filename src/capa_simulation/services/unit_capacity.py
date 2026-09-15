@@ -39,12 +39,23 @@ VITAL_KEYS = ["생산계획년월", "공정", "양산구분"]
 MODULE_KEYS = ["공정"]
 RUN_DAY_KEYS = ["생산계획년월", "공정"]
 
-# 0 이하이면 그 행만 계산에서 빼는 컬럼. 둘 다 대당 Capa 식의 분모이고 결측 기본값이
+# 음수이면 그 행만 계산에서 빼는 컬럼. 둘 다 대당 Capa 식의 분모이고 결측 기본값이
 # 1.0 인 쌍둥이 기준정보라 같은 규칙을 쓴다.
-NONPOSITIVE_EXCLUDED_COLUMNS = (
-    ("WF측정률", "WF측정률 0 이하"),
-    ("Lot 측정률", "Lot 측정률 0 이하"),
+NEGATIVE_EXCLUDED_COLUMNS = (
+    ("WF측정률", "WF측정률 음수"),
+    ("Lot 측정률", "Lot 측정률 음수"),
 )
+
+# 측정률 0 은 측정 대상이 아닌 경로로 보고 빈 값과 같이 1.0 을 적용한다. 분모라서 0 을
+# 그대로 두면 나눌 수 없어 예전에는 행을 통째로 뺐지만, 원천에서 0 과 빈 값이 같은 뜻으로
+# 들어오는 것이 확인돼 같은 규칙으로 맞췄다. 음수는 입력 오류라 그대로 제외한다.
+MEASUREMENT_RATIO_ZERO_DEFAULT = 1.0
+
+# Main 행 UPEH 가 0 이하면 대당 Capa 도 0 이 된다. 예전에는 `대당 Capa 0 이하` 로만 적혀
+# 분모·분자 어느 쪽이 문제인지 알 수 없었다. 원천 접힘으로 0 이 저장되는 일이 실제로 있어
+# (`services/reference_conflicts.py` 참조) 원인을 사유에 적는다. MI 행은 ST 가 0 이하면
+# `_prepare_performance` 가 먼저 막으므로 여기 걸리는 것은 Main 행뿐이다.
+UPEH_EXCLUSION_REASON = "UPEH 0 이하"
 
 
 def calculate_unit_capacity(
@@ -111,12 +122,18 @@ def calculate_unit_capacity(
     )
 
     # 계산 대상 행을 먼저 확정한다. 어차피 빠질 행의 다른 기준값 때문에 화면 전체가
-    # 멈추면 그 값을 고칠 편집기조차 열리지 않는다.
+    # 멈추면 그 값을 고칠 편집기조차 열리지 않는다. 0 을 1.0 으로 올리는 것이 먼저다 —
+    # 뒤에 두면 이미 뺀 행을 되살릴 수 없다.
     excluded_frames: list[pd.DataFrame] = []
-    for column, reason in NONPOSITIVE_EXCLUDED_COLUMNS:
-        nonpositive_ratio = result[column].le(0)
-        excluded_frames.append(_exclusion_rows(result, nonpositive_ratio, reason))
-        result = result.loc[~nonpositive_ratio].copy()
+    nonpositive_upeh = result["환산_UPEH"].le(0)
+    excluded_frames.append(_exclusion_rows(result, nonpositive_upeh, UPEH_EXCLUSION_REASON))
+    result = result.loc[~nonpositive_upeh].copy()
+
+    for column, reason in NEGATIVE_EXCLUDED_COLUMNS:
+        result[column] = result[column].mask(result[column].eq(0), MEASUREMENT_RATIO_ZERO_DEFAULT)
+        negative_ratio = result[column].lt(0)
+        excluded_frames.append(_exclusion_rows(result, negative_ratio, reason))
+        result = result.loc[~negative_ratio].copy()
 
     for column, table_name, keys in (
         ("편중률", "RQ_VITAL", VITAL_KEYS),
