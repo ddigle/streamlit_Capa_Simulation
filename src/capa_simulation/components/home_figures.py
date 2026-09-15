@@ -284,28 +284,26 @@ def _month_surface(
     return surface
 
 
-def _banded_capa(
+def _banded_rate_heights(
     monthly_top5: pd.DataFrame,
     rate_column: str,
-    capa_column: str,
     band: tuple[float, float],
 ) -> list[float]:
-    """밴드로 자른 확보율로 낸 막대 높이.
+    """막대 높이. **밴드로 자른 확보율 그 자체**이고 다른 것을 곱하지 않는다.
 
-    `B/N Capa = 부하량 × 확보율` 이므로 부하량이 있으면 그것을 그대로 곱한다. 없는
-    프레임(다른 화면·테스트)에서는 `Capa ÷ 확보율` 로 부하량을 되돌린다 — 확보율이 0 이면
-    되돌릴 수 없으므로 그 행은 0 이다.
+    예전에는 `부하량 × 확보율`(= B/N Capa)을 높이로 썼다. "한 달 안에서는 부하량이 같으니
+    높이가 곧 확보율에 비례한다" 는 전제였는데, Top5 는 한 달에 **서로 다른 공정 다섯 줄**
+    이라 부하량이 제각각이다. 그래서 같은 확보율도 부하량이 크면 긴 막대가 됐고, 밴드가
+    막대 길이를 묶지 못했다.
+
+    지금은 확보율만 쓴다. 그래서 **확보율이 같으면 어느 달의 어느 공정이든 막대가 같은
+    길이**다 — 180% 공정은 그 달의 LOB B/N 확보율이 100% 든 150% 든 같은 높이에 선다.
+    축 위끝도 데이터 최대가 아니라 밴드 상한이라, 다시 그려도 같은 확보율은 같은 자리다.
+
+    hover 의 Capa 숫자는 여전히 자르지 않은 실제 값이다. 자르는 것은 막대 길이뿐이다.
     """
     rates = pd.to_numeric(monthly_top5[rate_column], errors="coerce")
-    if "부하량" in monthly_top5.columns:
-        loads = pd.to_numeric(monthly_top5["부하량"], errors="coerce")
-    else:
-        capas = pd.to_numeric(monthly_top5[capa_column], errors="coerce")
-        loads = capas.divide(rates.where(rates != 0))
-    return [
-        0.0 if pd.isna(load) or pd.isna(rate) else float(load) * clamp_rate(float(rate), band)
-        for load, rate in zip(loads, rates, strict=True)
-    ]
+    return [0.0 if pd.isna(rate) else clamp_rate(float(rate), band) for rate in rates]
 
 
 def _capacity_color(rate: float, *, secure_threshold: float, warning_threshold: float) -> str:
@@ -777,16 +775,14 @@ def build_lob_summary_figures(
     )
     top5_annotations: list[dict[str, Any]] = []
     if not monthly_top5.empty:
-        # 막대 높이는 **밴드로 자른 확보율**에서 낸다. `B/N Capa = 부하량 × 확보율` 이라
-        # 한 달 안에서는 높이가 곧 확보율에 비례하는데, 한 달의 확보율이 크면 그 달이 다른
-        # 달을 눈동자로 만든다. hover 의 Capa 숫자는 자르지 않은 실제 값 그대로다.
-        top5_bar_values = _banded_capa(monthly_top5, "확보율", "B/N Capa", top5_rate_band)
+        # 막대 높이는 **밴드로 자른 확보율**이다. 부하량을 곱하지 않으므로 확보율이 같으면
+        # 달과 공정이 달라도 길이가 같다. hover 의 Capa 숫자는 자르지 않은 실제 값 그대로다.
+        top5_bar_values = _banded_rate_heights(monthly_top5, "확보율", top5_rate_band)
         top5_baseline_values = (
-            _banded_capa(monthly_top5, "기준 확보율", "기준 B/N Capa", top5_rate_band)
+            _banded_rate_heights(monthly_top5, "기준 확보율", top5_rate_band)
             if "기준 확보율" in monthly_top5.columns
             else None
         )
-        top5_peak = max([*top5_bar_values, *(top5_baseline_values or [])], default=0.0)
         # 축 위쪽은 라벨이 먹는 픽셀만큼만 비운다. 나머지는 막대가 쓴다 — 확보율 구간을
         # 잘라 여러 달이 같은 높이에 서면 그 위로 쓰지 않는 띠가 그대로 드러난다.
         #
@@ -797,7 +793,9 @@ def build_lob_summary_figures(
             max((len(_bar_rate_label(rate)) for rate in monthly_top5["확보율"]), default=0)
         )
         top5_headroom = min(top5_headroom_px / LOB_TOP5_HEIGHT_PX, 0.5)
-        top5_axis_max = max(top5_peak / (1 - top5_headroom), 1.0)
+        # 축 위끝은 **밴드 상한**이다. 데이터 최대로 잡으면 같은 확보율이 다시 그릴 때마다
+        # 다른 높이에 서서, 막대 길이를 밴드에 묶은 뜻이 없어진다.
+        top5_axis_max = top5_rate_band[1] / (1 - top5_headroom)
         wafer_capa_label_y = top5_axis_max * 0.04
         slot_offsets = {1: -0.36, 2: -0.18, 3: 0.0, 4: 0.18, 5: 0.36}
         top5_positions = [

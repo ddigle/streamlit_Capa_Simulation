@@ -106,21 +106,99 @@ def _build(band: tuple[float, float]) -> object:
 
 
 def test_bar_heights_are_cut_at_the_band() -> None:
-    """막대 높이는 `부하량 × 밴드로 자른 확보율` 이다.
+    """막대 높이는 **밴드로 자른 확보율 그 자체**다. 부하량을 곱하지 않는다.
 
     밴드가 없으면 확보율 2860% 인 공정 하나가 그 달의 다른 막대를 눈동자로 만든다.
     """
     trace = _top5_trace(_build((0.5, 2.0)))
 
-    # 30% → 50% 로 올려 5.0, 100% 는 그대로 10.0, 2860% → 200% 로 잘려 20.0.
-    assert list(trace.y) == pytest.approx([5.0, 10.0, 20.0])  # type: ignore[attr-defined]
+    # 30% → 50% 로 올리고, 100% 는 그대로, 2860% → 200% 로 자른다.
+    assert list(trace.y) == pytest.approx([0.5, 1.0, 2.0])  # type: ignore[attr-defined]
 
 
 def test_a_wider_band_lets_the_tall_bar_grow() -> None:
     """구간을 넓히면 잘리던 막대가 그만큼 자란다."""
     trace = _top5_trace(_build((0.5, 5.0)))
 
-    assert list(trace.y) == pytest.approx([5.0, 10.0, 50.0])  # type: ignore[attr-defined]
+    assert list(trace.y) == pytest.approx([0.5, 1.0, 5.0])  # type: ignore[attr-defined]
+
+
+def _two_month_frames() -> dict[str, pd.DataFrame]:
+    """부하량이 다른 두 달. 각 달에 확보율 180% 공정이 하나씩 있다."""
+    months = [202608, 202609]
+    labels = ["26.08", "26.09"]
+    loads = [10.0, 40.0]
+    density = pd.DataFrame({"생산계획년월": months, "년월": labels, "부하량": loads})
+    return {
+        "monthly_density": density,
+        "lob_summary": pd.DataFrame(
+            {
+                "생산계획년월": months,
+                "년월": labels,
+                "부하량": loads,
+                "Wafer 부하량": [1000.0, 4000.0],
+                # 두 달의 LOB B/N 확보율이 100% 와 150% 로 다르다.
+                "Wafer Capa": [1000.0, 6000.0],
+            }
+        ),
+        "bottleneck_capacity": pd.DataFrame(
+            {
+                "생산계획년월": months,
+                "년월": labels,
+                "공정": ["P1", "P1"],
+                "확보율": [1.00, 1.50],
+                "B/N Capa": [10.0, 60.0],
+            }
+        ),
+        "monthly_top5": pd.DataFrame(
+            {
+                "생산계획년월": months,
+                "년월": labels,
+                "공정": ["P9", "P9"],
+                "순위": [1, 1],
+                # 부하량이 4배 차이 난다. 예전 규칙이면 막대 길이도 4배 차이 났다.
+                "부하량": loads,
+                "확보율": [1.80, 1.80],
+                "B/N Capa": [18.0, 72.0],
+                "Wafer Capa": [1800.0, 7200.0],
+            }
+        ),
+    }
+
+
+def test_equal_rates_draw_equal_bars_even_when_loads_differ() -> None:
+    """확보율이 같으면 막대 길이가 같아야 한다. 사용자가 신고한 그 조건이다.
+
+    LOB B/N 확보율이 100% 인 달과 150% 인 달에 각각 180% 공정이 있고 부하량은 4배 차이다.
+    예전 규칙(`부하량 × 확보율`)에서는 두 막대가 18 과 72 로 갈렸다.
+    """
+    frames = _two_month_frames()
+    _, month_figure = build_lob_summary_figures(
+        lob_summary=frames["lob_summary"],
+        monthly_density=frames["monthly_density"],
+        bottleneck_capacity=frames["bottleneck_capacity"],
+        monthly_top5=frames["monthly_top5"],
+        month_labels=["26.08", "26.09"],
+        process_labels=LABELS,
+        secure_threshold=1.095,
+        warning_threshold=0.995,
+        top5_rate_band=(0.5, 2.0),
+    )
+
+    heights = list(_top5_trace(month_figure).y)  # type: ignore[attr-defined]
+    assert heights[0] == pytest.approx(heights[1])
+    assert heights == pytest.approx([1.8, 1.8])
+
+
+def test_the_axis_top_is_the_band_ceiling_not_the_data_peak() -> None:
+    """축 위끝이 데이터 최대면 다시 그릴 때마다 같은 확보율이 다른 높이에 선다."""
+    tall = _top5_trace(_build((0.5, 2.0)))
+    assert max(tall.y) == pytest.approx(2.0)  # type: ignore[attr-defined]
+
+    axis_range = _build((0.5, 2.0)).layout.yaxis2.range  # type: ignore[attr-defined]
+    # 라벨 자리만큼 위가 비므로 상한보다 크되, 상한에 묶여 있어야 한다.
+    assert axis_range[0] == pytest.approx(0.0)
+    assert 2.0 < axis_range[1] < 2.0 / (1 - 0.5)
 
 
 def test_hover_keeps_the_real_capa_not_the_cut_bar() -> None:
