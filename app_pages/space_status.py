@@ -11,6 +11,10 @@ import streamlit as st
 
 from capa_simulation.components.floor_layout_upload import render_floor_layout_editor
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.sample_data import (
+    render_pending_source,
+    render_sample_switch,
+)
 from capa_simulation.components.space_layout import (
     BUILDINGS,
     build_fab_figure,
@@ -132,11 +136,24 @@ render_page_header(
     ),
 )
 if using_sample_equipment:
-    st.info(
-        "호기 마스터가 비어 있어 생애주기·가용·운영 비가동 상태를 포함한 "
-        "임시 샘플 7대를 표시합니다. 샘플은 DuckDB에 저장되지 않으며 실제 호기 리비전이 "
-        "저장되면 자동으로 대체됩니다.",
-        icon=":material/science:",
+    # 스위치는 호기 마스터가 비었을 때만 뜻이 있다. 실데이터가 있으면 끌 것이 없다.
+    if not render_sample_switch(key="space_sample_switch", source="설비 운영 DB"):
+        render_pending_source(
+            subject="Space 현황",
+            source="설비 운영 DB",
+            expects=(
+                "호기별 **동 · 층 · X좌표 · Y좌표 · Xsize · Ysize** — 배치도의 사각형 하나가 "
+                "이 여섯 값입니다",
+                "**레이아웃표시** 플래그 — 도면에 올릴 호기를 가릅니다",
+                "동·층별 배경 도면 이미지와 캔버스 치수",
+                "생애주기 상태를 만드는 일정 여섯 개와 운영 비가동 일정",
+            ),
+        )
+        st.stop()
+    st.caption(
+        "호기 마스터가 비어 있어 생애주기·가용·운영 비가동 상태를 덮는 데모 fleet 을 "
+        "표시합니다. 샘플은 DuckDB에 저장되지 않으며 실제 호기 리비전이 저장되면 자동으로 "
+        "대체됩니다."
     )
 elif latest_snapshot is not None:
     st.caption(

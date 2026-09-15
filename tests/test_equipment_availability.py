@@ -115,7 +115,7 @@ def test_sample_units_cover_every_active_status() -> None:
 
     result = build_space_equipment_status(equipment, downtime, as_of=anchor)
 
-    assert len(result) == 7
+    # 대수는 표본 고유 수치라 못박지 않는다. 검사할 것은 **상태 색이 하나도 빠지지 않는가**다.
     assert set(result["상태"]) == {
         "입고 예정",
         "셋업 진행중",
@@ -126,8 +126,20 @@ def test_sample_units_cover_every_active_status() -> None:
         "운영 비가동",
     }
     assert equipment["분류1"].unique().tolist() == ["임시 샘플"]
-    assert downtime.loc[0, "호기"] == "SAMPLE-DOWN-01"
+    # 비가동 호기는 모두 마스터에 있어야 한다. 없으면 검증이 프레임 전체를 거부한다.
+    assert set(downtime["호기"]) <= set(equipment["호기"])
     assert set(equipment["확정상태"].dropna()) == {"계획", "확정", "완료", "지연"}
+
+
+def test_sample_fleet_spreads_across_floors_so_the_layout_is_readable() -> None:
+    """한 층에 두 대가 서 있으면 배치도가 아니라 점 두 개다."""
+    equipment = sample_equipment_master(anchor_date=date(2026, 8, 31))
+
+    floors = equipment[["동", "층"]].drop_duplicates()
+
+    assert len(floors) >= 4
+    assert equipment["동"].nunique() >= 3
+    assert equipment.groupby(["동", "층"]).size().min() >= 4
 
 
 def test_weekly_counts_use_qual_and_downtime() -> None:

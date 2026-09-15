@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
 from datetime import date
 
 import pandas as pd
@@ -69,8 +70,85 @@ def sample_equipment_baseline() -> pd.DataFrame:
     )
 
 
+# 데모 fleet 이 서는 동·층. 한 층에 몰아 두면 Space 배치도가 한 장만 차고 나머지 층은
+# 비어, 「층을 갈아 가며 본다」는 이 화면의 쓰임이 드러나지 않는다.
+_FLEET_FLOORS = (
+    ("C1", "1F"),
+    ("C1", "2F"),
+    ("C2", "2F"),
+    ("C2", "3F"),
+    ("C3", "1F"),
+    ("C4", "2F"),
+)
+# 층마다 3 × 3 격자. 캔버스 기본값 100 × 60 안에 여백을 두고 들어간다.
+_FLEET_COLUMN_X = (8.0, 38.0, 68.0)
+_FLEET_ROW_Y = (8.0, 26.0, 44.0)
+_FLEET_UNIT_SIZE = (12.0, 7.0)
+_FLEET_PROCESSES = (
+    "TC Bonding",
+    "Underfill",
+    "Mold",
+    "Die Attach",
+    "Final Test",
+    "Burn-In",
+)
+# 상태 분포. 가용이 다수여야 현실적이고, 나머지 상태가 **하나씩은** 있어야 범례의 색이
+# 전부 화면에 뜬다. 25 칸 주기를 fleet 크기와 어긋나게 두어 층마다 구성이 달라진다.
+_FLEET_KIND_CYCLE = (
+    "가용",
+    "가용",
+    "가용",
+    "셋업",
+    "가용",
+    "가용",
+    "입고예정",
+    "가용",
+    "가용",
+    "비가동",
+    "가용",
+    "반출예정",
+    "가용",
+    "가용",
+    "셋업",
+    "가용",
+    "이설예정",
+    "가용",
+    "가용",
+    "보관",
+    "가용",
+    "기존",
+    "가용",
+    "입고예정",
+    "가용",
+)
+_DOWNTIME_KINDS = ("고장", "예방보전", "개조")
+
+
+@dataclass(frozen=True)
+class _FleetSchedule:
+    """상태 하나를 일정 여섯 개로 푼 결과. 값은 기준일로부터의 일수다."""
+
+    vibration: int | None = None
+    logistics: int | None = None
+    arrival: int | None = None
+    qual: int | None = None
+    confirmation: str | None = None
+    removal: int | None = None
+    relocation: int | None = None
+    storage: str = "N"
+    existing: str = "N"
+
+
 def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
-    """Return unsaved sample units spanning every active lifecycle status."""
+    """생애주기 상태를 모두 덮는 비영속 데모 fleet.
+
+    예전에는 상태마다 한 대씩 일곱 대였다. 상태 색을 **확인**하기에는 충분했지만 Space
+    배치도·주차별 추이·생애주기 Gantt 는 그 일곱 대로는 「이 화면이 무엇을 보여 주는가」를
+    말하지 못한다. 층을 갈아 가며 보는 화면에서 한 층에 두 대가 서 있으면 배치도가 아니라
+    점 두 개다.
+
+    난수를 쓰지 않는다. 다시 열 때마다 배치가 달라지면 화면을 두고 이야기할 수가 없다.
+    """
     anchor = pd.Timestamp(anchor_date or date.today()).normalize()
     common = {
         "공정대분류": "B/N",
@@ -87,165 +165,136 @@ def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
         "비고": "화면 검토용 샘플 · DB 미저장",
         "레이아웃표시": "Y",
     }
-    specifications = (
-        # 호기, 공정, 동, 층, X, Y, 제진, 물류, 입고, Qual, 반출, 이설, 보관, 기존
-        ("SAMPLE-IN-01", "TC Bonding", "C1", "1F", 5.0, 6.0, 5, 9, 14, 25, None, None, "N", "N"),
-        (
-            "SAMPLE-SETUP-01",
-            "TC Bonding",
-            "C1",
-            "1F",
-            22.0,
-            6.0,
-            -18,
-            -14,
-            -8,
-            8,
-            None,
-            None,
-            "N",
-            "N",
-        ),
-        (
-            "SAMPLE-AVBL-01",
-            "Underfill",
-            "C2",
-            "2F",
-            5.0,
-            18.0,
-            -40,
-            -35,
-            -30,
-            -20,
-            None,
-            None,
-            "N",
-            "N",
-        ),
-        (
-            "SAMPLE-OUT-01",
-            "Underfill",
-            "C2",
-            "2F",
-            22.0,
-            18.0,
-            -50,
-            -45,
-            -40,
-            -30,
-            12,
-            None,
-            "N",
-            "N",
-        ),
-        ("SAMPLE-MOVE-01", "Mold", "C3", "1F", 5.0, 30.0, -50, -45, -40, -30, None, 18, "N", "N"),
-        (
-            "SAMPLE-STORE-01",
-            "Mold",
-            "C3",
-            "1F",
-            22.0,
-            30.0,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            "Y",
-            "N",
-        ),
-        (
-            "SAMPLE-DOWN-01",
-            "Mold",
-            "C3",
-            "1F",
-            39.0,
-            30.0,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            "N",
-            "Y",
-        ),
-    )
-    # 같은 공정에 생산성이 다른 모델이 섞인 모습을 샘플에서도 볼 수 있게 둔다. 전부 1.0
-    # 이면 빈 DB 로 여는 사람은 이 컬럼이 무엇을 하는지 알 수 없다.
-    conversion_ratio_by_equipment = {
-        "SAMPLE-SETUP-01": 1.5,
-        "SAMPLE-AVBL-01": 0.8,
-    }
-    confirmation_by_equipment = {
-        "SAMPLE-IN-01": "계획",
-        "SAMPLE-SETUP-01": "확정",
-        "SAMPLE-AVBL-01": "완료",
-        "SAMPLE-OUT-01": "완료",
-        "SAMPLE-MOVE-01": "지연",
-    }
     records: list[dict[str, object]] = []
-    for (
-        equipment_id,
-        process,
-        building,
-        floor,
-        x,
-        y,
-        vibration,
-        logistics,
-        arrival,
-        qual,
-        removal,
-        relocation,
-        storage,
-        existing,
-    ) in specifications:
+    for index, (equipment_id, building, floor, x, y) in enumerate(_fleet_slots()):
+        kind = _FLEET_KIND_CYCLE[index % len(_FLEET_KIND_CYCLE)]
+        schedule = _fleet_schedule(kind, index)
         records.append(
             {
                 "호기": equipment_id,
                 **common,
-                "공정소분류": process,
+                "공정소분류": _FLEET_PROCESSES[index % len(_FLEET_PROCESSES)],
                 "동": building,
                 "층": floor,
                 "X좌표": x,
                 "Y좌표": y,
-                "Xsize": 12.0,
-                "Ysize": 7.0,
-                "제진대일정": _offset_date(anchor, vibration),
-                "물류일정": _offset_date(anchor, logistics),
-                "입고일정": _offset_date(anchor, arrival),
-                "Qual일정": _offset_date(anchor, qual),
-                "확정상태": confirmation_by_equipment.get(equipment_id),
-                "반출일정": _offset_date(anchor, removal),
-                "이설일": _offset_date(anchor, relocation),
-                "장기보관여부": storage,
-                "기존설비여부": existing,
-                "환산비": conversion_ratio_by_equipment.get(equipment_id, DEFAULT_CONVERSION_RATIO),
+                "Xsize": _FLEET_UNIT_SIZE[0],
+                "Ysize": _FLEET_UNIT_SIZE[1],
+                "제진대일정": _offset_date(anchor, schedule.vibration),
+                "물류일정": _offset_date(anchor, schedule.logistics),
+                "입고일정": _offset_date(anchor, schedule.arrival),
+                "Qual일정": _offset_date(anchor, schedule.qual),
+                "확정상태": schedule.confirmation,
+                "반출일정": _offset_date(anchor, schedule.removal),
+                "이설일": _offset_date(anchor, schedule.relocation),
+                "장기보관여부": schedule.storage,
+                "기존설비여부": schedule.existing,
+                # 같은 공정에 생산성이 다른 모델이 섞인 모습을 샘플에서도 볼 수 있게 둔다.
+                # 전부 1.0 이면 빈 DB 로 여는 사람은 이 컬럼이 무엇을 하는지 알 수 없다.
+                "환산비": _fleet_conversion_ratio(index),
             }
         )
     return prepare_equipment_master(pd.DataFrame(records, columns=EQUIPMENT_COLUMNS))
 
 
 def sample_downtime_schedule(*, anchor_date: date | None = None) -> pd.DataFrame:
-    """Return an unsaved active downtime event for the sample equipment master."""
+    """데모 fleet 의 비가동 일정.
+
+    지금 걸려 있는 비가동뿐 아니라 **지나간 것과 앞으로 올 것**도 넣는다. 생애주기 Gantt 는
+    구간을 보여 주는 화면인데 오늘 하루짜리만 있으면 그 줄이 한 점으로 보인다.
+    """
     anchor = pd.Timestamp(anchor_date or date.today()).normalize()
-    return prepare_downtime_schedule(
-        pd.DataFrame(
-            [
+    records: list[dict[str, object]] = []
+    for index, (equipment_id, _, _, _, _) in enumerate(_fleet_slots()):
+        kind = _FLEET_KIND_CYCLE[index % len(_FLEET_KIND_CYCLE)]
+        spans: tuple[tuple[int, int], ...]
+        if kind == "비가동":
+            spans = ((-(2 + index % 5), 4 + index % 9),)
+        elif kind == "가용" and index % 7 == 3:
+            # 가용 설비에도 지나간 비가동이 있다. 그래야 Gantt 가 「지금」이 아니라 「이력」을
+            # 보여 주는 화면이 된다.
+            spans = ((-(90 + index), -(80 + index)), (45 + index % 30, 52 + index % 30))
+        else:
+            continue
+        for span_index, (begins, ends) in enumerate(spans):
+            records.append(
                 {
-                    "호기": "SAMPLE-DOWN-01",
-                    "비가동유형": "고장",
-                    "시작일": anchor - pd.Timedelta(days=2),
-                    "종료일": anchor + pd.Timedelta(days=5),
+                    "호기": equipment_id,
+                    "비가동유형": _DOWNTIME_KINDS[(index + span_index) % len(_DOWNTIME_KINDS)],
+                    "시작일": anchor + pd.Timedelta(days=begins),
+                    "종료일": anchor + pd.Timedelta(days=ends),
                     "상세사유": "화면 검토용 샘플 비가동",
                     "비고": "DB 미저장",
                 }
-            ],
-            columns=DOWNTIME_COLUMNS,
+            )
+    return prepare_downtime_schedule(pd.DataFrame(records, columns=DOWNTIME_COLUMNS))
+
+
+def _fleet_slots() -> list[tuple[str, str, str, float, float]]:
+    """호기 이름과 자리. 이름에 동·층이 들어가야 배치도와 표를 눈으로 맞출 수 있다."""
+    slots: list[tuple[str, str, str, float, float]] = []
+    for building, floor in _FLEET_FLOORS:
+        position = 0
+        for y in _FLEET_ROW_Y:
+            for x in _FLEET_COLUMN_X:
+                position += 1
+                slots.append((f"SAMPLE-{building}{floor}-{position:02d}", building, floor, x, y))
+    return slots
+
+
+def _fleet_schedule(kind: str, index: int) -> _FleetSchedule:
+    """상태 하나를 일정 여섯 개로 푼다. 검증 규칙이 요구하는 순서를 여기서 지킨다.
+
+    제진대 ≤ 물류 ≤ 입고 ≤ Qual 이어야 하고, 장기보관·기존설비가 아닌 호기는 입고·Qual·
+    확정상태가 모두 있어야 한다. 반출일정과 이설일은 함께 둘 수 없다.
+    """
+    if kind == "보관":
+        return _FleetSchedule(storage="Y")
+    if kind == "기존":
+        return _FleetSchedule(existing="Y")
+
+    if kind == "입고예정":
+        arrival = 25 + index % 40
+        return _FleetSchedule(
+            vibration=arrival - 20,
+            logistics=arrival - 10,
+            arrival=arrival,
+            qual=arrival + 25,
+            confirmation="계획",
         )
+    if kind == "셋업":
+        arrival = -(8 + index % 20)
+        return _FleetSchedule(
+            vibration=arrival - 20,
+            logistics=arrival - 10,
+            arrival=arrival,
+            qual=14 + index % 25,
+            confirmation="지연" if index % 3 == 0 else "확정",
+        )
+
+    # 나머지는 이미 Qual 을 마친 설비다. 반출·이설만 그 위에 얹는다.
+    arrival = -(120 + index * 4)
+    settled = _FleetSchedule(
+        vibration=arrival - 20,
+        logistics=arrival - 10,
+        arrival=arrival,
+        qual=arrival + 25,
+        confirmation="완료",
     )
+    if kind == "반출예정":
+        return replace(settled, removal=20 + index % 70)
+    if kind == "이설예정":
+        return replace(settled, relocation=30 + index % 60)
+    return settled
+
+
+def _fleet_conversion_ratio(index: int) -> float:
+    """환산비. 몇 대만 1.0 에서 벗어나게 두어 컬럼이 하는 일이 보이게 한다."""
+    if index % 11 == 4:
+        return 1.5
+    if index % 13 == 7:
+        return 0.8
+    return DEFAULT_CONVERSION_RATIO
 
 
 def _offset_date(anchor: pd.Timestamp, offset: int | None) -> pd.Timestamp | None:

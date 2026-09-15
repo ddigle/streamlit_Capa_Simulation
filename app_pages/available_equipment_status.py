@@ -13,6 +13,10 @@ from capa_simulation.components.equipment_lifecycle_gantt import (
     render_equipment_lifecycle_gantt,
 )
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.sample_data import (
+    render_pending_source,
+    render_sample_switch,
+)
 from capa_simulation.components.status_metric import (
     metric_row,
     render_status_metric,
@@ -212,11 +216,21 @@ baseline = st.session_state[BASELINE_DRAFT_KEY].copy()
 equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
 downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
 using_dashboard_sample = equipment.empty
+# 스위치는 **호기 마스터가 비었을 때만** 뜻이 있다. 실데이터가 있으면 끌 것이 없다.
+show_sample_fleet = (
+    render_sample_switch(key="equipment_sample_switch", source="설비 운영 DB")
+    if using_dashboard_sample
+    else True
+)
 dashboard_equipment = (
-    sample_equipment_master(anchor_date=today) if using_dashboard_sample else equipment
+    sample_equipment_master(anchor_date=today)
+    if using_dashboard_sample and show_sample_fleet
+    else equipment
 )
 dashboard_downtime = (
-    sample_downtime_schedule(anchor_date=today) if using_dashboard_sample else downtime
+    sample_downtime_schedule(anchor_date=today)
+    if using_dashboard_sample and show_sample_fleet
+    else downtime
 )
 
 with st.container(border=True):
@@ -244,11 +258,10 @@ with st.container(border=True):
 dashboard_tab, management_tab = st.tabs(["대시보드", "설비 데이터·이력 관리"])
 
 with dashboard_tab:
-    if using_dashboard_sample:
-        st.info(
-            "호기 마스터가 비어 있어 입고 예정부터 운영 비가동까지 상태별 임시 샘플 "
-            "7대를 표시합니다. 샘플은 DuckDB에 저장되지 않습니다.",
-            icon=":material/science:",
+    if using_dashboard_sample and show_sample_fleet:
+        st.caption(
+            "호기 마스터가 비어 있어 생애주기 상태를 모두 덮는 데모 fleet 을 표시합니다. "
+            "샘플은 DuckDB에 저장되지 않으며 실제 호기 리비전이 저장되면 자동으로 대체됩니다."
         )
     elif latest_snapshot is not None:
         st.caption(
@@ -330,7 +343,19 @@ with dashboard_tab:
             st.error(str(exc))
             weekly = pd.DataFrame()
 
-    if weekly.empty and start_date <= end_date:
+    if not show_sample_fleet:
+        render_pending_source(
+            subject="가용설비 현황",
+            source="설비 운영 DB",
+            expects=(
+                "호기 마스터 31컬럼 — 특히 **제진대·물류·입고·Qual·반출·이설** 여섯 일정. "
+                "이 여섯 개가 생애주기 구간과 주차별 가용대수를 모두 만듭니다",
+                "동·층·좌표·크기 — Space 배치도가 이 값으로 그려집니다",
+                "운영 비가동 일정(호기 · 유형 · 시작일 · 종료일)",
+                "공정별 **기존 보유대수** — 호기 마스터에 없는 기존 설비의 출발점입니다",
+            ),
+        )
+    elif weekly.empty and start_date <= end_date:
         st.info("집계할 기존 보유대수 또는 호기 마스터가 없습니다.")
     elif not weekly.empty:
         filtered_weekly = weekly.copy()

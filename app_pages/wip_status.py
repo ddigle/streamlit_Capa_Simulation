@@ -9,6 +9,10 @@ import streamlit as st
 
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.sample_data import (
+    render_pending_source,
+    render_sample_switch,
+)
 from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
 from capa_simulation.components.status_metric import (
     metric_row,
@@ -84,10 +88,19 @@ render_page_header(
 )
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
 process_labels = get_process_labels()
-st.info(
-    "현재 재공 값은 화면·연결 계약 검토용 결정론적 샘플입니다. 실제 재공 실적 DB의 "
-    "일자·공정·STEP·제품·보유재공·유입·Flow 컬럼 매핑은 아직 연결하지 않았습니다."
-)
+if not render_sample_switch(key="wip_status_sample_switch", source="재공 실적 DB"):
+    render_pending_source(
+        subject="표준 대비 재공 현황",
+        source="재공 실적 DB",
+        expects=(
+            "**일자 · 공정 · STEP_SEQ · 제품정보** 단위의 보유 재공",
+            "같은 단위의 **유입량**과 **Flow량** — 막대 세 개가 이 세 값입니다",
+            "집계 시점(일 마감 기준)과 STEP 코드 매핑 규칙",
+            "표준 가능량 기준선은 활성 시나리오와 설비 DB에서 이미 나옵니다 — "
+            "재공 실적만 붙이면 됩니다",
+        ),
+    )
+    st.stop()
 
 today = date.today()
 start_date = today - timedelta(days=7)
