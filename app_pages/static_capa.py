@@ -71,6 +71,7 @@ def _render_shortfall_table(
     warning_section: bool,
     key: str,
     labels: ProcessLabels,
+    secure_threshold: float,
 ) -> None:
     """화면용 프레임과 CSV 프레임을 분리한다.
 
@@ -89,7 +90,15 @@ def _render_shortfall_table(
         column_config={
             "년월": st.column_config.TextColumn(width="small"),
             "공정": st.column_config.TextColumn(width="large"),
-            "확보율": st.column_config.NumberColumn(format="percent", width="small"),
+            # 표는 확보율 오름차순이지만 62.3% 와 71.8% 의 **거리**는 숫자만으로 안 잡힌다.
+            # 칸 안 막대 하나면 위에서 몇 줄까지가 진짜 급한 구간인지 훑는 순간 보인다.
+            # 길이의 기준은 확보 기준이다 — 기준을 바꾸면 막대도 함께 움직인다.
+            "확보율": st.column_config.ProgressColumn(
+                format="percent",
+                width="small",
+                min_value=0.0,
+                max_value=secure_threshold,
+            ),
             "가용대수": st.column_config.NumberColumn(format="%.1f대", width="small"),
             "소요대수": st.column_config.NumberColumn(format="%.1f대", width="small"),
             "경고기준 필요대수": st.column_config.NumberColumn(
@@ -255,6 +264,7 @@ else:
                 warning_section=True,
                 key="static_capa_warning_shortfalls",
                 labels=process_labels,
+                secure_threshold=float(secure_threshold_percent) / 100.0,
             )
             st.caption(
                 "`경고까지 필요 + 확보까지 추가 = 총 추가 필요`입니다. 같은 설비가 여러 달에 "
@@ -293,6 +303,7 @@ else:
                 warning_section=False,
                 key="static_capa_secure_shortfalls",
                 labels=process_labels,
+                secure_threshold=float(secure_threshold_percent) / 100.0,
             )
 
     with st.expander("추가 필요대수 계산 기준", icon=":material/function:"):
