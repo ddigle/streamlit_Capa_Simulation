@@ -93,6 +93,10 @@ with pinned_connections(DUCKDB_PATH):
     group_box_selectors = _SELECTOR_JOINER.join(
         f".st-key-{group.slug}_box" for group in pages.groups
     )
+    # 링크가 하나뿐인 박스. 같은 여백을 줘도 안에 든 것이 한 줄뿐이라 위아래가 헐렁하다.
+    solo_box_selectors = _SELECTOR_JOINER.join(
+        f".st-key-{group.slug}_box" for group in pages.groups if not group.subpages
+    )
     subpage_box_selectors = _SELECTOR_JOINER.join(
         f".st-key-{slug}_subpages" for slug in subpage_slugs
     )
@@ -248,6 +252,18 @@ with pinned_connections(DUCKDB_PATH):
         .st-key-{MONTH_BOX_KEY},
         .st-key-{ADMIN_BOX_KEY} {{
             padding: 0.55rem 0.7rem;
+        }}
+        /* 링크가 하나뿐인 박스는 세로 여백을 더 줄인다. 여러 줄이 쌓인 박스에서 숨통이
+           되던 여백이, 한 줄짜리 박스에서는 그냥 빈자리로 남는다. 좌우는 그대로 둬야
+           모든 박스의 글자가 한 세로선에 선다. */
+        {solo_box_selectors} {{
+            padding-top: 0.3rem;
+            padding-bottom: 0.3rem;
+        }}
+        /* HOME 과 첫 그룹 박스 사이만 한 칸 더 띄운다. HOME 은 상자가 아니라 「돌아오는
+           자리」라 아래 목록과 같은 간격으로 붙어 있으면 목록의 첫 항목처럼 읽힌다. */
+        [data-testid="stLayoutWrapper"]:has(> .st-key-home_navigation) {{
+            margin-bottom: 0.45rem;
         }}
         /* HOME 만 상자가 없어 테두리가 바깥 끝에 붙었다. 다른 링크의 테두리는 상자 안쪽
            여백만큼 들어와 있어, 같은 링크인데 HOME 만 혼자 넓어 보였다. 같은 만큼 들여
