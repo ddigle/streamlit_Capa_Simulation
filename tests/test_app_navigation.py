@@ -26,9 +26,9 @@ EXPECTED_PAGES = [
     ("app_pages/scenario_management.py", "시나리오 관리", ":material/database:", False),
     ("app_pages/static_capa.py", "Static Capa", ":material/factory:", False),
     ("app_pages/load_conversion.py", "생산 계획", ":material/scale:", False),
-    ("app_pages/capacity_standards.py", "공정별 Capa", ":material/settings:", False),
-    ("app_pages/process_securement.py", "공정별 확보율", ":material/monitoring:", False),
-    ("app_pages/standard_target_capa.py", "표준 목표 Capa", ":material/track_changes:", False),
+    ("app_pages/reference_data.py", "기준 정보", ":material/settings:", False),
+    ("app_pages/calculation_result.py", "산출 결과", ":material/monitoring:", False),
+    ("app_pages/standard_target_capa.py", "표준 목표", ":material/track_changes:", False),
     ("app_pages/reference_integrity.py", "Dynamic Capa (구현중)", ":material/sync_alt:", False),
     (
         "app_pages/available_equipment_status.py",

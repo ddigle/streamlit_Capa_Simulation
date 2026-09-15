@@ -338,7 +338,7 @@ try:
     # 돌아야 하고, 그래서 try 안에서만 갈아끼운다.
     st.download_button = record_download_button
     st.session_state["production_month_range_v2"] = ("2026-08", "2026-08")
-    PAGE_NAME = "capacity_standards.py"
+    PAGE_NAME = "reference_data.py"
     page = Path(capa_simulation.__file__).resolve().parents[2] / "app_pages" / PAGE_NAME
     exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))
 finally:
@@ -358,11 +358,11 @@ finally:
 """
 
 PROCESS_TEST_SCRIPT = TEST_SCRIPT.replace(
-    'PAGE_NAME = "capacity_standards.py"',
-    'PAGE_NAME = "process_securement.py"',
+    'PAGE_NAME = "reference_data.py"',
+    'PAGE_NAME = "calculation_result.py"',
 )
 LOAD_TEST_SCRIPT = TEST_SCRIPT.replace(
-    'PAGE_NAME = "capacity_standards.py"',
+    'PAGE_NAME = "reference_data.py"',
     'PAGE_NAME = "load_conversion.py"',
 )
 
@@ -376,7 +376,7 @@ def _exclusion_script(page_name: str) -> str:
     """
     return (
         TEST_SCRIPT.replace(
-            'PAGE_NAME = "capacity_standards.py"',
+            'PAGE_NAME = "reference_data.py"',
             f'PAGE_NAME = "{page_name}"',
         )
         .replace("ADD_EXCLUDED_STEP = False", "ADD_EXCLUDED_STEP = True")
@@ -385,8 +385,8 @@ def _exclusion_script(page_name: str) -> str:
     )
 
 
-EXCLUSION_TEST_SCRIPT = _exclusion_script("capacity_standards.py")
-EXCLUSION_PROCESS_TEST_SCRIPT = _exclusion_script("process_securement.py")
+EXCLUSION_TEST_SCRIPT = _exclusion_script("reference_data.py")
+EXCLUSION_PROCESS_TEST_SCRIPT = _exclusion_script("calculation_result.py")
 
 # 공정 필터를 보려면 공정이 둘이어야 하고, STEP 뷰는 대당 Capa 를 실제로 돌려야 한다.
 TWO_PROCESS_TEST_SCRIPT = (
@@ -406,11 +406,17 @@ RENAMED_TWO_PROCESS_TEST_SCRIPT = _renamed(TWO_PROCESS_TEST_SCRIPT)
 RENAMED_PROCESS_TEST_SCRIPT = _renamed(PROCESS_TEST_SCRIPT)
 RENAMED_EXCLUSION_TEST_SCRIPT = _renamed(EXCLUSION_TEST_SCRIPT)
 RENAMED_EXCLUSION_PROCESS_TEST_SCRIPT = _renamed(EXCLUSION_PROCESS_TEST_SCRIPT)
+# 대당 Capa 탭은 `산출 결과` 페이지로 옮겨졌다. 그 탭을 보는 검증은 이 스크립트를 쓴다.
+TWO_PROCESS_RESULT_SCRIPT = TWO_PROCESS_TEST_SCRIPT.replace(
+    'PAGE_NAME = "reference_data.py"',
+    'PAGE_NAME = "calculation_result.py"',
+)
+RENAMED_TWO_PROCESS_RESULT_SCRIPT = _renamed(TWO_PROCESS_RESULT_SCRIPT)
 
-STEP_VIEW = "STEP별 대당 Capa"
+STEP_VIEW = "STEP별"
 STEP_VIEW_HINT = (
-    "STEP별 대당 Capa는 선택한 공정만 그립니다. 위 공정 필터에서 공정을 선택하세요. "
-    "전체 공정을 한 번에 보려면 공정 유효 Capa를 사용하세요."
+    "STEP별 대당 Capa는 선택한 공정만 그립니다. 위 공정 필터에서 공정을 "
+    "선택하세요. 전체 공정을 한 번에 보려면 공정별을 사용하세요."
 )
 CAPACITY_TABLE_KEY = "captured_dimensions::unit_capacity_monthly_table"
 CAPACITY_PROCESS_KEY = "captured_processes::unit_capacity_monthly_table"
@@ -456,8 +462,8 @@ def _exclusion_frame(app: AppTest, reason: str) -> pd.DataFrame:
     raise AssertionError(f"제외 상세 표가 없습니다: {reason}")
 
 
-def test_capacity_standards_shows_the_excluded_capacity_rows_with_a_csv_download() -> None:
-    app = AppTest.from_string(EXCLUSION_TEST_SCRIPT, default_timeout=60).run()
+def test_calculation_result_shows_the_excluded_capacity_rows_with_a_csv_download() -> None:
+    app = AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
     assert "대당 Capa 산출에서 2개 기준을 제외했습니다." in {
@@ -478,14 +484,14 @@ def test_capacity_standards_shows_the_excluded_capacity_rows_with_a_csv_download
     }
 
 
-def test_process_securement_shows_both_exclusion_expanders_with_csv_downloads() -> None:
+def test_calculation_result_shows_both_exclusion_expanders_with_csv_downloads() -> None:
     app = AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
     warnings = {warning.value for warning in app.warning}
-    assert "0 이하 기준값으로 대당 Capa 2건을 제외했습니다." in warnings
+    assert "대당 Capa 산출에서 2개 기준을 제외했습니다." in warnings
     assert "대당 Capa가 없어 소요대수 산출에서 4건을 제외했습니다 (부하량 발생 3건)." in warnings
-    assert {"제외된 대당 Capa 기준정보", "소요대수 제외 기준정보"}.issubset(
+    assert {"제외 기준정보 확인", "소요대수 제외 기준정보"}.issubset(
         {expander.label for expander in app.expander}
     )
 
@@ -497,7 +503,7 @@ def test_process_securement_shows_both_exclusion_expanders_with_csv_downloads() 
     # 사용자가 얼마나 잘리는지 안다. 계획에 없는 제품만 0 이라 경고의 괄호 안 건수와 갈린다.
     assert required_exclusions["부하량"].tolist() == [100.0, 100.0, 100.0, 0.0]
 
-    assert _download(app, "download_capacity_exclusions_csv") == {
+    assert _download(app, "download_unit_capacity_exclusions_csv") == {
         "label": "CSV 다운로드",
         "file_name": "Capa_Unit_Capacity_Exclusions_202608_202608.csv",
     }
@@ -521,7 +527,7 @@ def test_capacity_editors_show_route_keys_without_exceptions() -> None:
     }
     route_editor_tabs = {"UPEH", "Lot측정률", "WF측정률"}
     for tab_name, input_label in expected_inputs.items():
-        app.session_state["capacity_standards_active_tab"] = tab_name
+        app.session_state["reference_data_active_tab"] = tab_name
         app.run()
 
         assert not app.exception
@@ -543,7 +549,9 @@ def test_load_input_tabs_expose_plan_and_yield_clipboard_round_trip() -> None:
 
 
 def test_equipment_tab_exposes_three_rq_clipboard_inputs() -> None:
-    app = AppTest.from_string(PROCESS_TEST_SCRIPT, default_timeout=60).run()
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = "설비대수"
+    app.run()
 
     assert not app.exception
     assert {text_area.label for text_area in app.text_area}.issuperset(
@@ -598,7 +606,7 @@ def test_step_tab_widgets_render_while_the_tab_is_hidden() -> None:
 
 def test_step_unit_capacity_stays_empty_until_a_process_is_selected() -> None:
     """전 공정 STEP 을 그리면 Plotly 데이터가 폭증한다. 미선택이면 표를 만들지도 않는다."""
-    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60)
     app.session_state["unit_capacity_view_mode"] = STEP_VIEW
     app.run()
 
@@ -609,7 +617,7 @@ def test_step_unit_capacity_stays_empty_until_a_process_is_selected() -> None:
 
 
 def test_step_unit_capacity_draws_only_the_selected_process() -> None:
-    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60)
     app.session_state["unit_capacity_view_mode"] = STEP_VIEW
     app.session_state["unit_capacity_process_filter"] = ["Process-A"]
     app.run()
@@ -622,7 +630,7 @@ def test_step_unit_capacity_draws_only_the_selected_process() -> None:
 
 def test_effective_process_capacity_still_shows_every_process_without_a_filter() -> None:
     """집계된 값이라 가볍다. 전체 조망이 이 뷰의 용도이므로 미선택 동작을 바꾸지 않는다."""
-    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60).run()
+    app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
     assert app.session_state[CAPACITY_PROCESS_KEY] == ["Process-A", "Process-B"]
@@ -632,7 +640,7 @@ def test_effective_process_capacity_still_shows_every_process_without_a_filter()
 
 def test_the_process_filter_placeholder_follows_the_view() -> None:
     """`미선택 시 전체 공정` 은 STEP 뷰에서 거짓말이 된다."""
-    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60).run()
+    app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
     assert not app.exception
     assert app.multiselect(key="unit_capacity_process_filter").proto.placeholder == (
         "미선택 시 전체 공정"
@@ -667,7 +675,7 @@ def _edit_and_apply(app: AppTest, editor_key: str, month_column: str, value: flo
 def _filtered_editor_app(tab_name: str, editor_key: str, filter_column: str) -> AppTest:
     """편집기 탭 하나를 열고 공정 필터로 Process-B 만 남긴 화면."""
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["capacity_standards_active_tab"] = tab_name
+    app.session_state["reference_data_active_tab"] = tab_name
     app.session_state[f"{editor_key}_filter_{filter_column}"] = ["Process-B"]
     app.run()
     assert not app.exception
@@ -715,7 +723,7 @@ def test_run_rate_and_vital_tabs_do_not_share_their_process_filter() -> None:
     # 여유율 탭을 열면서 효율 쪽 선택을 그대로 남겨 둔다. key 가 겹치면 여유율 필터가
     # 그 선택을 그대로 집어 편집표가 Process-B 한 줄로 좁아진다.
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["capacity_standards_active_tab"] = "여유율"
+    app.session_state["reference_data_active_tab"] = "여유율"
     app.session_state["capa_run_rate_editor_filter_공정"] = ["Process-B"]
     app.run()
     assert not app.exception
@@ -738,17 +746,17 @@ def test_unit_capacity_controls_render_while_their_tab_is_hidden() -> None:
     본문을 통째로 건너뛰면 그 안의 위젯이 렌더되지 않아 Streamlit 이 선택값을 버린다.
     표시 방식·집계 수준·공정 필터 세 개가 탭을 옮길 때마다 초기화되는 것이 그 결과다.
     """
-    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60)
     app.session_state["unit_capacity_process_filter"] = ["Process-B"]
     app.run()
     assert not app.exception
     assert app.session_state[CAPACITY_PROCESS_KEY] == ["Process-B"]
 
-    app.session_state["capacity_standards_active_tab"] = "일수"
+    app.session_state["calculation_result_active_tab"] = ":material/monitoring: 확보율"
     app.run()
 
     assert not app.exception
-    assert app.segmented_control(key="unit_capacity_view_mode").value == "공정 유효 Capa"
+    assert app.segmented_control(key="unit_capacity_view_mode").value == "공정별"
     assert app.selectbox(key="unit_capacity_detail_level").value == "공정"
     assert app.multiselect(key="unit_capacity_process_filter").value == ["Process-B"]
     assert app.session_state["unit_capacity_process_filter"] == ["Process-B"]
@@ -759,7 +767,7 @@ def test_unit_capacity_controls_render_while_their_tab_is_hidden() -> None:
 def test_unfiltered_editor_apply_saves_the_same_rows_as_before() -> None:
     """필터를 만지지 않은 적용은 예전과 같아야 한다."""
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["capacity_standards_active_tab"] = "일수"
+    app.session_state["reference_data_active_tab"] = "일수"
     app.run()
     assert not app.exception
     app = _edit_and_apply(app, "capa_run_day_editor", "202608", 20.0)
@@ -777,7 +785,7 @@ def test_unfiltered_editor_apply_saves_the_same_rows_as_before() -> None:
 
 def test_capacity_exclusion_table_shows_the_display_name_while_its_csv_keeps_the_original() -> None:
     """제외 안내 목록은 화면 프레임과 CSV 프레임이 갈라져 있다."""
-    app = AppTest.from_string(RENAMED_EXCLUSION_TEST_SCRIPT, default_timeout=60).run()
+    app = AppTest.from_string(RENAMED_EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
     excluded = _exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)
@@ -787,7 +795,7 @@ def test_capacity_exclusion_table_shows_the_display_name_while_its_csv_keeps_the
     assert set(exported["공정"]) == {"Process-A"}
 
 
-def test_process_securement_exclusion_csvs_keep_the_original_process_name() -> None:
+def test_calculation_result_exclusion_csvs_keep_the_original_process_name() -> None:
     """두 제외 목록 모두 화면은 표시명, 내려받는 파일은 원본이다."""
     app = AppTest.from_string(RENAMED_EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
@@ -795,13 +803,13 @@ def test_process_securement_exclusion_csvs_keep_the_original_process_name() -> N
     assert set(_exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)["공정"]) == {"가공"}
     assert set(_exclusion_frame(app, MISSING_CAPACITY_REASON)["공정"]) == {"가공"}
 
-    for key in ("download_capacity_exclusions_csv", "download_required_exclusions_csv"):
+    for key in ("download_unit_capacity_exclusions_csv", "download_required_exclusions_csv"):
         assert set(_download_frame(app, key)["공정"]) == {"Process-A"}, key
 
 
 def test_exclusion_tables_stay_original_without_a_rename_profile() -> None:
     """매핑이 비어 있으면 화면에도 원본 공정명이 그대로 보인다."""
-    app = AppTest.from_string(EXCLUSION_TEST_SCRIPT, default_timeout=60).run()
+    app = AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
     assert set(_exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)["공정"]) == {"Process-A"}
@@ -810,7 +818,7 @@ def test_exclusion_tables_stay_original_without_a_rename_profile() -> None:
 def test_step_summary_and_route_selector_show_the_display_name() -> None:
     """STEP 구성 요약 표와 복제·삭제 대상 선택 라벨도 화면이라 표시명을 쓴다."""
     app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60)
-    app.session_state["capacity_standards_active_tab"] = "STEP 구성"
+    app.session_state["reference_data_active_tab"] = "STEP 구성"
     app.run()
 
     assert not app.exception
@@ -839,8 +847,8 @@ def test_step_route_selection_still_edits_the_original_process() -> None:
 
 def test_equipment_count_table_shows_the_display_name_while_its_paste_form_stays_original() -> None:
     """설비대수 조회 표는 표시명이고, 같은 탭의 왕복 양식은 원본 공정명이다."""
-    app = AppTest.from_string(RENAMED_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["process_securement_active_tab"] = "설비대수"
+    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = "설비대수"
     app.run()
 
     assert not app.exception
@@ -853,8 +861,8 @@ def test_equipment_count_table_shows_the_display_name_while_its_paste_form_stays
 
 def test_equipment_count_filter_keeps_the_original_selection_value() -> None:
     """필터 표기만 표시명이다. 선택값이 표시명이면 `isin` 이 원본과 맞지 않아 표가 빈다."""
-    app = AppTest.from_string(RENAMED_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["process_securement_active_tab"] = "설비대수"
+    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = "설비대수"
     app.run()
     app.multiselect(key="equipment_count_filter_공정").select("가공")
     app.run()
@@ -867,7 +875,7 @@ def test_equipment_count_filter_keeps_the_original_selection_value() -> None:
 def test_month_editor_shows_the_label_but_returns_the_original_process() -> None:
     """편집기 분류 컬럼의 값은 원본이다. 되머지 키와 저장값이 여기 걸린다."""
     app = AppTest.from_string(RENAMED_TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["capacity_standards_active_tab"] = "일수"
+    app.session_state["reference_data_active_tab"] = "일수"
     app.run()
     assert not app.exception
 
@@ -887,7 +895,7 @@ def test_month_editor_shows_the_label_but_returns_the_original_process() -> None
 def test_month_editor_paste_template_keeps_the_original_process_name() -> None:
     """편집기 아래 왕복 양식은 표시명이 닿으면 안 되는 첫 번째 자리다."""
     app = AppTest.from_string(RENAMED_TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["capacity_standards_active_tab"] = "일수"
+    app.session_state["reference_data_active_tab"] = "일수"
     app.run()
 
     assert not app.exception

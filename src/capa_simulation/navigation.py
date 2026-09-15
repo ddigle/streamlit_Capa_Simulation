@@ -54,9 +54,9 @@ SCENARIO_MANAGEMENT = PageSpec(
 STATIC_CAPA = PageSpec("app_pages/static_capa.py", "Static Capa", ":material/factory:")
 STATIC_CAPA_SUBPAGES = (
     PageSpec("app_pages/load_conversion.py", "생산 계획", ":material/scale:"),
-    PageSpec("app_pages/capacity_standards.py", "공정별 Capa", ":material/settings:"),
-    PageSpec("app_pages/process_securement.py", "공정별 확보율", ":material/monitoring:"),
-    PageSpec("app_pages/standard_target_capa.py", "표준 목표 Capa", ":material/track_changes:"),
+    PageSpec("app_pages/reference_data.py", "기준 정보", ":material/settings:"),
+    PageSpec("app_pages/calculation_result.py", "산출 결과", ":material/monitoring:"),
+    PageSpec("app_pages/standard_target_capa.py", "표준 목표", ":material/track_changes:"),
 )
 
 DYNAMIC_CAPA = PageSpec(

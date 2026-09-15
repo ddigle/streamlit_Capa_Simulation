@@ -4,21 +4,17 @@
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.components.exclusion_table import render_exclusion_table
-from capa_simulation.components.hierarchical_monthly_table import (
-    build_hierarchical_monthly_export,
-    render_hierarchical_monthly_table,
-)
+from capa_simulation.components.column_filter import render_column_filters
 from capa_simulation.components.month_editor import render_month_editor
-from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
+    render_reference_clipboard_tools,
 )
 from capa_simulation.components.scenario_edit_bar import render_scenario_edit_bar
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
-from capa_simulation.components.table_toolbar import render_table_heading
+from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     load_page_context,
@@ -39,33 +35,34 @@ from capa_simulation.services.display_order import (
     apply_display_order,
     reorder_display_columns,
 )
+from capa_simulation.services.equipment_count import (
+    DETAILED_EQUIPMENT_DIMENSIONS,
+    EQUIPMENT_DIMENSIONS,
+    build_equipment_count_table,
+    equipment_count_from_edit_table,
+    equipment_count_to_edit_table,
+)
 from capa_simulation.services.route_step_editor import (
     ROUTE_GROUP_COLUMNS,
     clone_route_step,
     delete_route_step,
 )
 from capa_simulation.services.simulation_cache import (
-    get_effective_process_capacity_table,
     get_route_step_tables,
-    get_scenario_capacity_and_demand,
     scenario_cache_key,
 )
-from capa_simulation.services.unit_capacity import (
-    CAPACITY_EXCLUSIONS_ATTR,
-    UNIT_CAPACITY_DIMENSIONS,
-    unit_capacity_to_month_table,
-)
-from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
 
+# Capa 산출에 **넣는 값만** 둔다. 산출물은 `산출 결과` 페이지가 갖는다.
+# 순서는 사용자가 정한 입력 순서다.
 TAB_NAMES = (
-    ":material/insights: 공정 유효 Capa",
-    "STEP 구성",
     "UPEH",
+    "설비대수",
     "효율",
     "여유율",
+    "일수",
     "Lot측정률",
     "WF측정률",
-    "일수",
+    "STEP 구성",
 )
 
 RUN_RATE_DIMENSIONS = ["공정", "양산구분"]
@@ -81,26 +78,27 @@ RATIO_DIMENSIONS = [
     "STEP_SEQ",
     "MCP_SEQ",
 ]
-CAPACITY_LEVEL_LABELS = {
-    "공정": "공정",
-    "양산구분": "양산",
-    "제품정보": "제품",
-    "Stack": "Stack",
-    "WF 구분": "WF 속성",
-}
-
-
 render_page_header(
-    "공정별 Capa",
+    "기준 정보",
     description=(
-        "경로별 대당 Capa와 공정 유효 Capa를 산출하고, 계산에 쓰는 기준정보를 월별로 편집합니다."
+        "Capa 산출에 쓰는 입력값을 월별로 편집합니다. 산출 결과는 `산출 결과` 페이지에 있습니다."
     ),
 )
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
 process_labels = get_process_labels()
 
-tabs = stateful_tabs(TAB_NAMES, key="capacity_standards_active_tab")
-unit_capacity_tab = tabs[0]
+# 인덱스로 받지 않는다. 순서를 바꿀 때 `tabs[N]` 을 일일이 세다 하나를 놓치면 예외가
+# 나지 않고 표가 다른 탭에 조용히 그려진다.
+(
+    upeh_tab,
+    equipment_tab,
+    run_rate_tab,
+    vital_tab,
+    run_day_tab,
+    lot_ratio_tab,
+    wf_ratio_tab,
+    step_tab,
+) = stateful_tabs(TAB_NAMES, key="reference_data_active_tab")
 
 try:
     context = load_page_context()
@@ -132,7 +130,7 @@ try:
     # default_table 을 읽기 전에 돌아가므로 만들어 봐야 버려진다 — 기본 탭에서 rerun 마다
     # 519~793ms 를 피벗·정렬에 쓰고 있었다.
     default_upeh_table = pd.DataFrame()
-    if not tab_is_hidden(tabs[2]):
+    if not tab_is_hidden(upeh_tab):
         default_upeh_table = performance_to_edit_table(filtered_upeh)
         default_upeh_table = apply_display_order(
             default_upeh_table, display_order, "공정별 Capa", "UPEH"
@@ -145,7 +143,7 @@ try:
             "UPEH",
         )
     default_run_rate_table = pd.DataFrame()
-    if not tab_is_hidden(tabs[3]):
+    if not tab_is_hidden(run_rate_tab):
         default_run_rate_table = reference_to_edit_table(
             filtered_run_rate, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "RQ_RUN_RATE"
         )
@@ -160,7 +158,7 @@ try:
             "효율",
         )
     default_vital_table = pd.DataFrame()
-    if not tab_is_hidden(tabs[4]):
+    if not tab_is_hidden(vital_tab):
         default_vital_table = reference_to_edit_table(
             filtered_vital, VITAL_DIMENSIONS, "편중률", "RQ_VITAL"
         )
@@ -175,7 +173,7 @@ try:
             "여유율",
         )
     default_run_day_table = pd.DataFrame()
-    if not tab_is_hidden(tabs[7]):
+    if not tab_is_hidden(run_day_tab):
         default_run_day_table = reference_to_edit_table(
             filtered_run_day, RUN_DAY_DIMENSIONS, "RUN_DAY", "RQ_RUN_DAY"
         )
@@ -190,7 +188,7 @@ try:
             "일수",
         )
     default_lot_ratio_table = pd.DataFrame()
-    if not tab_is_hidden(tabs[5]):
+    if not tab_is_hidden(lot_ratio_tab):
         default_lot_ratio_table = reference_to_edit_table(
             filtered_lot_ratio, RATIO_DIMENSIONS, "Lot 측정률", "RQ_LOT_RATIO"
         )
@@ -208,7 +206,7 @@ try:
             "Lot측정률",
         )
     default_wf_ratio_table = pd.DataFrame()
-    if not tab_is_hidden(tabs[6]):
+    if not tab_is_hidden(wf_ratio_tab):
         default_wf_ratio_table = reference_to_edit_table(
             filtered_wf_ratio, RATIO_DIMENSIONS, "WF측정률", "RQ_WF_RATIO"
         )
@@ -260,6 +258,54 @@ if st.session_state.get(source_token_key) != source_token:
         st.session_state.pop(widget_key, None)
     st.session_state[source_token_key] = source_token
 
+# 설비대수 세 표는 편집 왕복과 조회 표가 같은 슬라이스를 본다. 창을 갈라 두면
+# `apply_month_updates` 가 화면에 없던 월을 지운다.
+equipment_month_tables = {
+    table_name: scenario_month_table(
+        active_scenario,
+        table_name,
+        effective_start_month,
+        effective_end_month,
+    )
+    for table_name in ("RQ_EQP_OWN", "RQ_EQP_LENT", "RQ_EQP_AVBL")
+}
+available_equipment_table = build_equipment_count_table(
+    equipment_month_tables["RQ_EQP_OWN"],
+    equipment_month_tables["RQ_EQP_LENT"],
+    equipment_month_tables["RQ_EQP_AVBL"],
+    detailed=False,
+)
+detailed_equipment_table = build_equipment_count_table(
+    equipment_month_tables["RQ_EQP_OWN"],
+    equipment_month_tables["RQ_EQP_LENT"],
+    equipment_month_tables["RQ_EQP_AVBL"],
+    detailed=True,
+)
+# 표시순서 스코프 문자열은 DB 공용 프로필의 행 키다. 페이지 이름이 바뀌어도 **이 두 인자는
+# 그대로 둔다** — 안 맞으면 예외가 아니라 정렬이 조용히 사라진다.
+available_equipment_table = apply_display_order(
+    available_equipment_table,
+    display_order,
+    "공정별 확보율",
+    "설비대수",
+)
+detailed_equipment_table = apply_display_order(
+    detailed_equipment_table,
+    display_order,
+    "공정별 확보율",
+    "설비대수",
+)
+equipment_edit_tables = {
+    table_name: equipment_count_to_edit_table(
+        equipment_month_tables[table_name], category, value_column
+    )
+    for table_name, category, value_column in (
+        ("RQ_EQP_OWN", "보유", "설비보유"),
+        ("RQ_EQP_LENT", "대여", "설비대여평가"),
+        ("RQ_EQP_AVBL", "가용", "가용대수"),
+    )
+}
+
 render_scenario_edit_bar(
     active_scenario,
     reference_tables,
@@ -268,7 +314,7 @@ render_scenario_edit_bar(
     clear_session_keys=(source_token_key,),
 )
 
-with tabs[1]:
+with step_tab:
     flash_message = st.session_state.pop("capacity_step_flash", None)
     if isinstance(flash_message, str):
         st.success(flash_message)
@@ -278,7 +324,7 @@ with tabs[1]:
     )
     # 요약 표는 그림이라 숨은 탭에서는 건너뛴다. 아래 작업·경로 선택과 form 은 위젯이라
     # 항상 그린다 — 본문을 통째로 건너뛰면 탭을 오갈 때 선택값이 초기화된다.
-    if not tab_is_hidden(tabs[1]):
+    if not tab_is_hidden(step_tab):
         # `step_summary` 는 캐시된 프레임이다. 제자리에서 고치면 다음 rerun 이 표시명 프레임을
         # 계산 입력으로 받으므로 화면 복사본에만 표시명을 입힌다.
         displayed_step_summary = step_summary.rename(
@@ -421,8 +467,119 @@ with tabs[1]:
                 st.session_state.pop(source_token_key, None)
                 st.rerun()
 
+with equipment_tab:
+    st.caption("월간 설비대수")
+    with st.container(border=True):
+        st.markdown("#### 설비대수 RQ Excel 붙여넣기")
+        st.caption(
+            "보유·대여·가용 RQ는 각각 내려받아 값을 수정한 뒤 적용합니다. "
+            "적용값은 활성 시나리오의 다른 계산 페이지에 즉시 반영됩니다."
+        )
+        imported_equipment: dict[str, pd.DataFrame] = {}
+        for table_name, category, value_column in (
+            ("RQ_EQP_OWN", "보유", "설비보유"),
+            ("RQ_EQP_LENT", "대여", "설비대여평가"),
+            ("RQ_EQP_AVBL", "가용", "가용대수"),
+        ):
+            imported = render_reference_clipboard_tools(
+                equipment_edit_tables[table_name],
+                table_name=table_name,
+                key_columns=EQUIPMENT_DIMENSIONS,
+                file_name=f"{table_name}_{effective_start_month}_{effective_end_month}.csv",
+                key=f"{table_name.lower()}_csv",
+                expander_label=f"{category}설비 - Excel 붙여넣기",
+            )
+            if imported is not None:
+                try:
+                    imported_equipment[table_name] = equipment_count_from_edit_table(
+                        imported,
+                        category,
+                        value_column,
+                    )
+                except ValueError as exc:
+                    st.error(str(exc))
+        if imported_equipment:
+            try:
+                apply_month_updates(
+                    active_scenario,
+                    imported_equipment,
+                    effective_start_month,
+                    effective_end_month,
+                )
+            except (KeyError, ValueError) as exc:
+                st.error(str(exc))
+            else:
+                applied_table = next(iter(imported_equipment))
+                queue_reference_import_flash(
+                    f"{applied_table.lower()}_csv",
+                    f"{applied_table} 붙여넣기 데이터를 활성 시나리오에 일괄 적용했습니다.",
+                )
+                st.rerun()
+    show_equipment_detail = st.toggle(
+        "상세",
+        key="equipment_count_detail",
+        width=90,
+    )
+    if show_equipment_detail:
+        equipment_table = detailed_equipment_table.copy()
+        equipment_dimensions = DETAILED_EQUIPMENT_DIMENSIONS
+    else:
+        equipment_table = available_equipment_table.copy()
+        equipment_dimensions = EQUIPMENT_DIMENSIONS
+    equipment_table = render_column_filters(
+        equipment_table,
+        equipment_dimensions,
+        key_prefix="equipment_count_filter",
+        value_labels=process_labels.value_labels(),
+    )
+    equipment_month_columns = [
+        column for column in equipment_table.columns if column not in equipment_dimensions
+    ]
+    displayed_equipment_table = equipment_table.copy()
+    displayed_equipment_table[equipment_month_columns] = displayed_equipment_table[
+        equipment_month_columns
+    ].mask(displayed_equipment_table[equipment_month_columns].eq(0))
+    # 필터를 먼저 걸고 그 뒤에 표시명을 입힌다. 순서가 바뀌면 위 `isin` 이 원본 컬럼과
+    # 맞지 않는다. 같은 탭의 왕복 양식은 `equipment_edit_tables` 라는 별도 프레임이라
+    # 이 복사본이 붙여넣기 경로에 닿지 않는다.
+    displayed_equipment_table["공정"] = process_labels.series(displayed_equipment_table["공정"])
+    # 그리는 것만 건너뛴다. 위 붙여넣기 폼·토글·필터는 위젯이라 숨은 탭에서도 그려야
+    # Streamlit 이 그 상태를 버리지 않는다.
+    if not tab_is_hidden(equipment_tab):
+        styled_equipment_table = displayed_equipment_table.style.set_properties(
+            subset=pd.Index(equipment_dimensions),
+            **{"background-color": tokens.SURFACE_CLASSIFICATION},
+        )
+        st.dataframe(
+            styled_equipment_table,
+            hide_index=True,
+            width="content",
+            height=500,
+            row_height=25,
+            column_config={
+                **{
+                    column: st.column_config.TextColumn(
+                        column,
+                        alignment="center",
+                        pinned=True,
+                    )
+                    for column in equipment_dimensions
+                },
+                **{
+                    month: st.column_config.NumberColumn(
+                        month,
+                        width=80,
+                        format="%,.2f",
+                        alignment="center",
+                    )
+                    for month in equipment_month_columns
+                },
+            },
+        )
+
+
 edited_upeh_table, apply_upeh, imported_upeh_table = render_month_editor(
-    tabs[2],
+    upeh_tab,
     default_upeh_table,
     PERFORMANCE_EDITOR_DIMENSIONS,
     editor_keys[0],
@@ -435,7 +592,7 @@ edited_upeh_table, apply_upeh, imported_upeh_table = render_month_editor(
     value_labels=process_labels.value_labels(),
 )
 edited_run_rate_table, apply_run_rate, imported_run_rate_table = render_month_editor(
-    tabs[3],
+    run_rate_tab,
     default_run_rate_table,
     RUN_RATE_DIMENSIONS,
     editor_keys[1],
@@ -449,7 +606,7 @@ edited_run_rate_table, apply_run_rate, imported_run_rate_table = render_month_ed
     value_labels=process_labels.value_labels(),
 )
 edited_vital_table, apply_vital, imported_vital_table = render_month_editor(
-    tabs[4],
+    vital_tab,
     default_vital_table,
     VITAL_DIMENSIONS,
     editor_keys[2],
@@ -462,7 +619,7 @@ edited_vital_table, apply_vital, imported_vital_table = render_month_editor(
     value_labels=process_labels.value_labels(),
 )
 edited_lot_ratio_table, apply_lot_ratio, imported_lot_ratio_table = render_month_editor(
-    tabs[5],
+    lot_ratio_tab,
     default_lot_ratio_table,
     RATIO_DIMENSIONS,
     editor_keys[3],
@@ -476,7 +633,7 @@ edited_lot_ratio_table, apply_lot_ratio, imported_lot_ratio_table = render_month
     value_labels=process_labels.value_labels(),
 )
 edited_wf_ratio_table, apply_wf_ratio, imported_wf_ratio_table = render_month_editor(
-    tabs[6],
+    wf_ratio_tab,
     default_wf_ratio_table,
     RATIO_DIMENSIONS,
     editor_keys[4],
@@ -490,7 +647,7 @@ edited_wf_ratio_table, apply_wf_ratio, imported_wf_ratio_table = render_month_ed
     value_labels=process_labels.value_labels(),
 )
 edited_run_day_table, apply_run_day, imported_run_day_table = render_month_editor(
-    tabs[7],
+    run_day_tab,
     default_run_day_table,
     RUN_DAY_DIMENSIONS,
     editor_keys[5],
@@ -504,17 +661,17 @@ edited_run_day_table, apply_run_day, imported_run_day_table = render_month_edito
 )
 
 pending_updates: dict[str, pd.DataFrame] = {}
-update_error_tab = unit_capacity_tab
+update_error_tab = upeh_tab
 import_flash: tuple[str, str] | None = None
 try:
     if apply_upeh or imported_upeh_table is not None:
-        update_error_tab = tabs[2]
+        update_error_tab = upeh_tab
         source = imported_upeh_table if imported_upeh_table is not None else edited_upeh_table
         pending_updates["RQ_UPEH"] = performance_from_edit_table(source)
         if imported_upeh_table is not None:
             import_flash = ("upeh_editor_csv", "RQ_UPEH 붙여넣기 데이터를 일괄 적용했습니다.")
     if apply_run_rate or imported_run_rate_table is not None:
-        update_error_tab = tabs[3]
+        update_error_tab = run_rate_tab
         source = (
             imported_run_rate_table
             if imported_run_rate_table is not None
@@ -529,7 +686,7 @@ try:
                 "RQ_RUN_RATE 붙여넣기 데이터를 일괄 적용했습니다.",
             )
     if apply_vital or imported_vital_table is not None:
-        update_error_tab = tabs[4]
+        update_error_tab = vital_tab
         source = imported_vital_table if imported_vital_table is not None else edited_vital_table
         pending_updates["RQ_VITAL"] = reference_from_edit_table(
             source, VITAL_DIMENSIONS, "편중률", "여유율 편집값"
@@ -540,7 +697,7 @@ try:
                 "RQ_VITAL 붙여넣기 데이터를 일괄 적용했습니다.",
             )
     if apply_lot_ratio or imported_lot_ratio_table is not None:
-        update_error_tab = tabs[5]
+        update_error_tab = lot_ratio_tab
         source = (
             imported_lot_ratio_table
             if imported_lot_ratio_table is not None
@@ -558,7 +715,7 @@ try:
                 "RQ_LOT_RATIO 붙여넣기 데이터를 일괄 적용했습니다.",
             )
     if apply_wf_ratio or imported_wf_ratio_table is not None:
-        update_error_tab = tabs[6]
+        update_error_tab = wf_ratio_tab
         source = (
             imported_wf_ratio_table
             if imported_wf_ratio_table is not None
@@ -573,7 +730,7 @@ try:
                 "RQ_WF_RATIO 붙여넣기 데이터를 일괄 적용했습니다.",
             )
     if apply_run_day or imported_run_day_table is not None:
-        update_error_tab = tabs[7]
+        update_error_tab = run_day_tab
         source = (
             imported_run_day_table if imported_run_day_table is not None else edited_run_day_table
         )
@@ -600,183 +757,3 @@ except (KeyError, ValueError) as exc:
     with update_error_tab:
         st.error(str(exc))
     st.stop()
-
-# 표시 방식·집계 수준·공정 필터는 입력 위젯이라 탭이 닫혀 있어도 항상 그린다. 본문을
-# 통째로 건너뛰면 Streamlit 이 세 위젯의 상태를 버려 탭을 오갈 때마다 선택이 초기화된다.
-# 건너뛰는 것은 계산·표·CSV·Plotly 뿐이다.
-capacity_tab_hidden = tab_is_hidden(unit_capacity_tab)
-process_filter_key = "unit_capacity_process_filter"
-excluded_capacity_rows = pd.DataFrame()
-capacity_error: str | None = None
-capacity_ready = False
-process_options: list[str] = []
-if not capacity_tab_hidden:
-    try:
-        # 편집은 apply_month_updates 로 활성 시나리오에 반영되고 content_token 이 바뀐다.
-        # 그래서 활성 시나리오 표를 키로 캐시한 계산이 곧 "편집 중인 기준정보" 계산이다.
-        unit_capacity, required_equipment_for_display = get_scenario_capacity_and_demand(
-            scenario_cache_key(reference_version, active_scenario, start_month, end_month),
-            _scenario_tables=active_scenario["tables"],
-            _reference_tables=reference_tables,
-        )
-    except ValueError as exc:
-        capacity_error = str(exc)
-    else:
-        capacity_ready = True
-        excluded_capacity_rows = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
-        process_order = required_equipment_for_display[["공정"]].drop_duplicates()
-        process_order = apply_display_order(
-            process_order,
-            display_order,
-            "공정별 Capa",
-            "대당 Capa",
-        )
-        process_options = process_order["공정"].astype(str).tolist()
-
-saved_processes = st.session_state.get(process_filter_key, [])
-if not isinstance(saved_processes, list):
-    saved_processes = []
-if not capacity_ready:
-    # 옵션을 만들 계산을 돌리지 않은 렌더다. 지금 선택값을 그대로 옵션으로 두어야
-    # multiselect 가 그 선택을 버리지 않는다.
-    process_options = [str(process) for process in saved_processes]
-st.session_state[process_filter_key] = [
-    process for process in saved_processes if process in process_options
-]
-
-with unit_capacity_tab:
-    if capacity_error is not None:
-        st.error(capacity_error)
-    if not excluded_capacity_rows.empty:
-        st.warning(f"대당 Capa 산출에서 {len(excluded_capacity_rows):,}개 기준을 제외했습니다.")
-        with st.expander("제외 기준정보 확인", expanded=False):
-            render_exclusion_table(
-                excluded_capacity_rows,
-                dimensions=UNIT_CAPACITY_DIMENSIONS,
-                display_order=display_order,
-                page="공정별 Capa",
-                tab="대당 Capa",
-                labels=process_labels,
-                file_name=(
-                    "Capa_Unit_Capacity_Exclusions_"
-                    f"{effective_start_month}_{effective_end_month}.csv"
-                ),
-                key="download_unit_capacity_exclusions_csv",
-            )
-
-    with st.container(border=True):
-        view_column, level_column, process_column = st.columns([1.4, 1, 2])
-        with view_column:
-            capacity_view = st.segmented_control(
-                "표시 방식",
-                options=["공정 유효 Capa", "STEP별 대당 Capa"],
-                default="공정 유효 Capa",
-                key="unit_capacity_view_mode",
-                persist_state="page",
-            )
-        with level_column:
-            selected_level_label = st.selectbox(
-                "집계 수준",
-                options=list(CAPACITY_LEVEL_LABELS.values()),
-                index=0,
-                key="unit_capacity_detail_level",
-                disabled=capacity_view == "STEP별 대당 Capa",
-            )
-        with process_column:
-            selected_processes = st.multiselect(
-                "공정 필터",
-                options=process_options,
-                placeholder=(
-                    "공정을 선택하세요"
-                    if capacity_view == "STEP별 대당 Capa"
-                    else "미선택 시 전체 공정"
-                ),
-                key=process_filter_key,
-                # 표시만 바꾼다. 선택값은 원본이어야 아래 `isin` 이 원본 컬럼과 맞는다.
-                format_func=process_labels.format_func(),
-            )
-
-    selected_level = next(
-        level for level, label in CAPACITY_LEVEL_LABELS.items() if label == selected_level_label
-    )
-    if capacity_ready:
-        # STEP 뷰는 경로 하나하나가 행이라 전 공정을 그리면 Plotly 표가 수천 행이 된다.
-        # 미선택이면 표를 만들지도 CSV 로 인코딩하지도 않고 안내만 남긴다. 선택 해제를
-        # 허용하는 컨트롤이라 `capacity_view` 는 None 일 수 있으므로 명시 비교로 판단한다.
-        if capacity_view == "STEP별 대당 Capa" and not selected_processes:
-            st.info(
-                "STEP별 대당 Capa는 선택한 공정만 그립니다. 위 공정 필터에서 공정을 선택하세요. "
-                "전체 공정을 한 번에 보려면 공정 유효 Capa를 사용하세요."
-            )
-        else:
-            if capacity_view == "STEP별 대당 Capa":
-                unit_capacity_table = unit_capacity_to_month_table(unit_capacity)
-                classification_columns = list(UNIT_CAPACITY_DIMENSIONS)
-                output_title = "STEP별 대당 Capa"
-                output_caption = (
-                    "각 MCP_SEQ·STEP_SEQ 경로의 상세 대당 Capa입니다. "
-                    "공정 전체 Capa 판단에는 기본 공정 유효 Capa를 사용하세요."
-                )
-                file_prefix = "Capa_Step_Unit_Capacity"
-            else:
-                unit_capacity_table = get_effective_process_capacity_table(
-                    scenario_cache_key(reference_version, active_scenario, start_month, end_month),
-                    required_equipment_for_display,
-                    selected_level,
-                )
-                classification_columns = [
-                    column
-                    for column in ["공정", "소요기준", *WEIGHTED_CAPACITY_HIERARCHY[1:]]
-                    if column in unit_capacity_table.columns
-                ]
-                output_title = "공정 유효 Capa"
-                output_caption = (
-                    "중복되지 않은 원수요 부하량을 STEP별 소요대수 합계로 나눈 값입니다. "
-                    "STEP이 추가되면 소요대수는 누적되고 공정 유효 Capa는 감소합니다."
-                )
-                file_prefix = "Capa_Effective_Process_Capacity"
-            unit_capacity_table = apply_display_order(
-                unit_capacity_table,
-                display_order,
-                "공정별 Capa",
-                "대당 Capa",
-            )
-            unit_capacity_table, classification_columns = reorder_display_columns(
-                unit_capacity_table,
-                classification_columns,
-                display_order,
-                "공정별 Capa",
-                "대당 Capa",
-            )
-            if selected_processes:
-                unit_capacity_table = unit_capacity_table.loc[
-                    unit_capacity_table["공정"].isin(selected_processes)
-                ].reset_index(drop=True)
-
-            capacity_export = build_hierarchical_monthly_export(
-                unit_capacity_table,
-                classification_columns=classification_columns,
-                column_labels=COLUMN_LABELS,
-                decimal_places=0,
-            )
-            capacity_csv = capacity_export.to_csv(index=False, float_format="%.0f").encode(
-                "utf-8-sig"
-            )
-            st.caption(output_caption)
-            render_table_heading(
-                output_title,
-                csv=capacity_csv,
-                file_name=(
-                    f"{file_prefix}_{selected_level}_"
-                    f"{effective_start_month}_{effective_end_month}.csv"
-                ),
-                key="download_unit_capacity_csv",
-            )
-            render_hierarchical_monthly_table(
-                unit_capacity_table,
-                classification_columns=classification_columns,
-                column_labels=COLUMN_LABELS,
-                decimal_places=0,
-                key="unit_capacity_monthly_table",
-                value_labels=process_labels.value_labels(),
-            )
