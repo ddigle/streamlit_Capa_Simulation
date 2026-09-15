@@ -169,6 +169,12 @@ def summary_notice_style() -> str:
 
     **본문은 내용만큼 자란다.** 높이를 주거나 `overflow` 를 걸면 긴 공지가 잘려 스크롤
     안에 숨는데, 공지는 접힘을 펴는 순간 전부 보여야 하는 글이다.
+
+    본문 글자는 본문 기본 크기의 1.5배다. 공지는 화면을 지나가며 읽는 글이 아니라 펴서
+    읽는 글이라 대시보드 본문과 같은 크기면 눈에 들어오지 않는다. `em` 으로 두는 것은
+    브라우저·사용자 배율을 그대로 따라가게 하려는 것이다 — px 로 박으면 확대했을 때만
+    이 상자가 따라오지 않는다. 제목(20px)은 건드리지 않는다. 바로 아래 `Capa LOB 현황`
+    과 같은 값이라 흔들면 두 상자가 다시 어긋난다.
     """
     return f"""
     <style>
@@ -183,6 +189,7 @@ def summary_notice_style() -> str:
     }}
     .capa-summary-note {{
         margin: 0;
+        font-size: 1.5em;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         overflow: visible;
