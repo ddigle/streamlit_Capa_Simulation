@@ -5,6 +5,7 @@ import streamlit as st
 from capa_simulation.components.app_header import render_app_header
 from capa_simulation.components.month_range_picker import render_month_range_picker
 from capa_simulation.components.scenario_status import render_scenario_controls
+from capa_simulation.design import tokens
 from capa_simulation.navigation import build_navigation_pages
 from capa_simulation.page_bootstrap import bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import pinned_connections
@@ -65,6 +66,10 @@ with pinned_connections(DUCKDB_PATH):
 
     pages = build_navigation_pages()
     navigation = st.navigation(pages.ordered, position="hidden")
+    # 지금 HOME 에 있는지는 **파이썬에서** 가른다. 활성 링크에 `aria-current` 도 안정적인
+    # 클래스도 없고(emotion 해시뿐) CSS 만으로는 판정할 수 없다. `st.navigation()` 이
+    # 이번 rerun 에 그릴 페이지를 그대로 돌려주므로 그 주소를 HOME 과 맞춰 본다.
+    is_home = navigation.url_path == pages.home.url_path
 
     # 선택자도 같은 선언에서 낸다. 손으로 적으면 그룹을 더할 때 한쪽만 고치게 된다.
     group_title_selectors = _SELECTOR_JOINER.join(
@@ -74,6 +79,26 @@ with pinned_connections(DUCKDB_PATH):
         f'.st-key-{group.slug}_subpages [data-testid="stPageLink-NavLink"]'
         for group in pages.groups
         if group.subpages
+    )
+    # 지금 보고 있는 페이지가 HOME 일 때만 면을 한 단계 누르고 글자를 ACCENT 로 올린다.
+    # Streamlit 이 주는 활성 표시는 알파 0.15 의 흐린 회색 하나뿐이라 사실상 보이지 않는다.
+    #
+    # **`:hover`·`:focus-visible` 을 같은 묶음에 반드시 함께 적는다.** Streamlit 은 emotion
+    # 으로 `.st-emotion-cache-XXXX:hover {{ background-color: ... }}` 를 깔고, 그 특정도
+    # (0,2,0) 가 우리 `.st-key-home_navigation a` (0,1,1) 를 이긴다. 의사클래스를 붙이면
+    # 우리가 (0,2,1) 이 되어 이기므로 `!important` 는 필요 없다.
+    home_active_style = (
+        f"""
+        .st-key-home_navigation a,
+        .st-key-home_navigation a:hover,
+        .st-key-home_navigation a:focus-visible {{
+            background: {tokens.SURFACE_PAGE};
+        }}
+        .st-key-home_navigation a p {{
+            color: {tokens.ACCENT};
+        }}"""
+        if is_home
+        else ""
     )
     st.html(
         f"""
@@ -89,12 +114,19 @@ with pinned_connections(DUCKDB_PATH):
             font-size: 1.5rem;
             font-weight: 700;
         }}
+        /* 이 앱의 강조 문법은 ACCENT 왼쪽 세로 막대 하나다(앱 헤더 3px·metric 카드 4px).
+           HOME 에도 같은 막대를 써서 새 어휘를 늘리지 않는다. 왼쪽 모서리만 각을 세워야
+           Streamlit 이 건 radius 10px 에 막대가 휘지 않는다. */
         .st-key-home_navigation a {{
             justify-content: center;
+            border-left: 4px solid {tokens.ACCENT};
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
         }}
         .st-key-home_navigation a p {{
             text-align: center;
         }}
+{home_active_style}
 
         {group_title_selectors} {{
             font-size: 1.15rem;
