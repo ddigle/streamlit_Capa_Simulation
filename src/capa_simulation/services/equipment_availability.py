@@ -1,4 +1,4 @@
-# Purpose: Equipment input validation, weekly availability, and space status.
+# Purpose: Equipment input validation, weekly availability, lifecycle spans, and space status.
 
 """Equipment input validation, weekly availability, and space status."""
 
@@ -90,6 +90,97 @@ def _build_equipment_status_from_prepared(
     result["가용여부"] = available.astype("boolean")
     result["레이아웃반영여부"] = (result["레이아웃표시"].eq("Y") & ~exited).astype("boolean")
     return result.reset_index(drop=True)
+
+
+# 상태가 바뀔 수 있는 날은 정해져 있다. 판정이 보는 컬럼이 그것뿐이기 때문이다 —
+# `입고일정`·`Qual일정`·`반출일정`·`이설일` 은 그날 `le` 로 넘어가고, 비가동은 `시작일` 에
+# 켜져 `종료일` 다음 날 꺼진다. 다른 날에는 같은 판정이 나오므로 샘플링할 이유가 없다.
+_TIMELINE_EVENT_COLUMNS = ("입고일정", "Qual일정", "반출일정", "이설일")
+
+LIFECYCLE_SPAN_COLUMNS = ("호기", "공정소분류", "공정대분류", "상태", "시작일", "종료일")
+
+
+def build_equipment_lifecycle_spans(
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    *,
+    start_date: date,
+    end_date: date,
+) -> pd.DataFrame:
+    """호기별 생애주기 구간. 점 이벤트(일정 컬럼)를 구간으로 접는다.
+
+    **판정 규칙을 다시 적지 않는다.** 상태가 바뀔 수 있는 날마다
+    `_build_equipment_status_from_prepared` 를 그대로 부르고, 이어지는 같은 상태를 한 구간
+    으로 묶는다. 규칙을 옮겨 적으면 이 화면만 조용히 다른 이야기를 하게 된다 — 주차별
+    집계·상태 막대·Space 배치도가 모두 그 함수 하나를 본다.
+
+    끝을 여는 구간은 `end_date` 에서 자른다. 조회 범위 밖의 일은 이 화면이 답할 것이
+    아니다.
+    """
+    if start_date > end_date:
+        raise ValueError("생애주기 조회 시작일은 종료일보다 늦을 수 없습니다.")
+    prepared = prepare_equipment_master(equipment)
+    if prepared.empty:
+        return pd.DataFrame(columns=list(LIFECYCLE_SPAN_COLUMNS))
+    prepared_downtime = prepare_downtime_for_prepared_equipment(downtime, prepared)
+
+    start = pd.Timestamp(start_date)
+    end = pd.Timestamp(end_date)
+    breakpoints = _lifecycle_breakpoints(prepared, prepared_downtime, start=start, end=end)
+    process_by_unit = prepared.set_index("호기")[["공정소분류", "공정대분류"]]
+
+    open_spans: dict[str, tuple[str, pd.Timestamp]] = {}
+    rows: list[dict[str, object]] = []
+
+    def close(unit: str, status: str, began: pd.Timestamp, finished: pd.Timestamp) -> None:
+        rows.append(
+            {
+                "호기": unit,
+                "공정소분류": process_by_unit.at[unit, "공정소분류"],
+                "공정대분류": process_by_unit.at[unit, "공정대분류"],
+                "상태": status,
+                "시작일": began.date(),
+                "종료일": finished.date(),
+            }
+        )
+
+    for moment in breakpoints:
+        status_frame = _build_equipment_status_from_prepared(
+            prepared, prepared_downtime, as_of=moment
+        )
+        current = dict(zip(status_frame["호기"], status_frame["상태"], strict=True))
+        for unit, status in current.items():
+            previous = open_spans.get(str(unit))
+            if previous is not None and previous[0] == str(status):
+                continue
+            if previous is not None:
+                # 앞 구간은 이 날 **전날**까지다. 같은 날 두 상태가 겹쳐 보이면 안 된다.
+                close(str(unit), previous[0], previous[1], moment - pd.Timedelta(days=1))
+            open_spans[str(unit)] = (str(status), moment)
+    for unit, (status, began) in open_spans.items():
+        close(unit, status, began, end)
+    result = pd.DataFrame(rows, columns=list(LIFECYCLE_SPAN_COLUMNS))
+    # 길이가 0 인 구간은 같은 날 두 번 바뀐 것이다. 그리면 폭 없는 막대라 보이지 않는다.
+    result = result.loc[result["종료일"] >= result["시작일"]]
+    return result.sort_values(["호기", "시작일"]).reset_index(drop=True)
+
+
+def _lifecycle_breakpoints(
+    prepared: pd.DataFrame,
+    prepared_downtime: pd.DataFrame,
+    *,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> list[pd.Timestamp]:
+    """판정이 달라질 수 있는 날만 모은다. 조회 시작일은 항상 첫 표본이다."""
+    moments: set[pd.Timestamp] = {start}
+    for column in _TIMELINE_EVENT_COLUMNS:
+        moments.update(pd.to_datetime(prepared[column].dropna()).tolist())
+    if not prepared_downtime.empty:
+        moments.update(pd.to_datetime(prepared_downtime["시작일"].dropna()).tolist())
+        finished = pd.to_datetime(prepared_downtime["종료일"].dropna())
+        moments.update((finished + pd.Timedelta(days=1)).tolist())
+    return sorted(moment for moment in moments if start <= moment <= end)
 
 
 def build_weekly_equipment_availability(

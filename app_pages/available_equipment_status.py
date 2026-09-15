@@ -9,6 +9,9 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.equipment_lifecycle_gantt import (
+    render_equipment_lifecycle_gantt,
+)
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.status_metric import (
     metric_row,
@@ -26,6 +29,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_latest_equipment_snapshot,
 )
 from capa_simulation.services.equipment_availability import (
+    build_equipment_lifecycle_spans,
     build_equipment_status_as_of,
     build_inactive_equipment,
 )
@@ -452,6 +456,29 @@ with dashboard_tab:
             )
             st.altair_chart(status_chart, width="stretch")
             st.dataframe(status_counts, hide_index=True, width="stretch")
+
+        with st.container(border=True):
+            st.markdown("#### 호기별 생애주기 일정")
+            st.caption(
+                "위 막대가 「지금 몇 대가 어느 상태인가」를 답한다면 이 그림은 「언제 몇 "
+                "대가 쓸 수 있게 되는가」를 답합니다. 날짜 컬럼은 점이라 표로는 그 사이 "
+                "간격이 보이지 않습니다. 구간 판정은 상태 막대와 같은 규칙입니다."
+            )
+            try:
+                lifecycle_spans = build_equipment_lifecycle_spans(
+                    filtered_equipment,
+                    filtered_downtime,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                render_equipment_lifecycle_gantt(
+                    lifecycle_spans,
+                    key="equipment_lifecycle_gantt",
+                    today=today,
+                )
 
         qual_execution = unit_status.loc[unit_status["Qual일정"].notna()].copy()
         confirmation_counts = (
