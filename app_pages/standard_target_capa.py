@@ -452,7 +452,7 @@ def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessL
     # 순수 표시 상수를 그리는 안내 표다. CSV 출구가 없어 표시명을 바로 입힌다.
     with st.expander("예외 처리 공정", expanded=False):
         st.caption(
-            "아래 규칙은 표준 목표 Capa의 공정 유효 Capa와 로직 분석에만 적용됩니다. "
+            "아래 규칙은 표준 목표의 공정 유효 Capa와 로직 분석에만 적용됩니다. "
             "부하량·소요대수·확보율 원본 계산 결과는 변경하지 않습니다."
         )
         st.dataframe(
@@ -475,7 +475,7 @@ def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessL
 
 
 render_page_header(
-    "표준 목표 Capa",
+    "표준 목표",
     description=(
         "공정·제품 분류별 월간 부하 Mix를 반영한 공정 유효 Capa를 일 단위로 환산하고, "
         "주차별 가용설비를 곱해 투입 Unit 기준의 일 표준 가능량을 산출합니다."
@@ -496,7 +496,7 @@ try:
         context,
         active_scenario["tables"]["RQ_UPEH"],
         "RQ_UPEH",
-        empty_message="선택 범위에 표준 목표 Capa 기준정보가 없습니다.",
+        empty_message="선택 범위에 표준 목표 기준정보가 없습니다.",
     )
     equipment_repository = get_equipment_repository(str(EQUIPMENT_DUCKDB_PATH.resolve()))
     availability = equipment_repository.load_standard_target_availability()

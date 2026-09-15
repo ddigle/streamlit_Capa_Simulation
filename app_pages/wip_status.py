@@ -127,7 +127,7 @@ if availability.empty:
     # 없습니다" 를 던진다. 입력 표가 없는 이 화면에서는 오류가 아니라 안내여야 한다.
     st.info(
         "설비 DB에 주차별 가용대수가 없어 표준 가능량 기준선을 만들 수 없습니다. "
-        "`표준 목표 Capa`에서 주차별 가용설비를 입력하면 여기에 그대로 반영됩니다."
+        "`표준 목표` 페이지에서 주차별 가용설비를 입력하면 여기에 그대로 반영됩니다."
     )
     st.stop()
 
@@ -164,7 +164,7 @@ with st.container(border=True):
                 options=product_options,
                 key=PRODUCT_FILTER_KEY,
                 placeholder="표시할 제품 선택",
-                help="표준 목표 Capa의 공용 제품 표시순서를 따릅니다.",
+                help="표준 목표 페이지의 공용 제품 표시순서를 따릅니다.",
                 persist_state="session",
                 width=420,
             )
@@ -263,7 +263,7 @@ with st.container(border=True):
     if today_unset:
         st.warning(
             "일부 공정·주차에 가용대수가 없어 표준 가능량 기준선을 표시하지 못했습니다. "
-            "`표준 목표 Capa`에서 주차별 가용설비를 입력하면 같은 값이 반영됩니다."
+            "`표준 목표` 페이지에서 주차별 가용설비를 입력하면 같은 값이 반영됩니다."
         )
 
     lane_count = len(selected_routes[["STEP_SEQ", "공정"]].drop_duplicates())
