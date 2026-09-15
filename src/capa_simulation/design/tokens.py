@@ -159,6 +159,12 @@ def _with_alpha(hex_color: str, alpha: float) -> str:
     return f"rgba({red},{green},{blue},{alpha})"
 
 
+# 사이드바 네비게이션의 "지금 여기" 표시. 이 앱에서 그림자를 쓰는 유일한 자리다 —
+# 화면 어디에도 융기가 없기 때문에 사이드바에서만 쓰면 그 자체가 신호가 된다.
+# 링은 ACCENT 라 색이고, 그림자는 TEXT 라 깊이다. 둘을 한 토큰으로 합치지 않는다.
+NAV_ACTIVE_RING: Final = _with_alpha(ACCENT, 0.14)
+NAV_SHADOW: Final = _with_alpha(TEXT, 0.10)
+
 # 배경 도면 위에 캔버스를 덮을 때. SPACE_CANVAS 를 바꾸면 함께 바뀐다.
 SPACE_CANVAS_OVERLAY: Final = _with_alpha(SPACE_CANVAS, 0.18)
 SPACE_BORDER: Final = "#59636E"

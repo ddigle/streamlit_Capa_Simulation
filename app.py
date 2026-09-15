@@ -66,10 +66,13 @@ with pinned_connections(DUCKDB_PATH):
 
     pages = build_navigation_pages()
     navigation = st.navigation(pages.ordered, position="hidden")
-    # 지금 HOME 에 있는지는 **파이썬에서** 가른다. 활성 링크에 `aria-current` 도 안정적인
-    # 클래스도 없고(emotion 해시뿐) CSS 만으로는 판정할 수 없다. `st.navigation()` 이
-    # 이번 rerun 에 그릴 페이지를 그대로 돌려주므로 그 주소를 HOME 과 맞춰 본다.
-    is_home = navigation.url_path == pages.home.url_path
+    # 지금 어느 페이지에 있는지는 **파이썬에서** 가른다. 활성 링크에 `aria-current` 도
+    # 안정적인 클래스도 없고(emotion 해시뿐) CSS 만으로는 판정할 수 없다. `st.navigation()`
+    # 이 이번 rerun 에 그릴 페이지를 그대로 돌려주므로 그 주소로 선택자를 만든다.
+    #
+    # `href` 가 곧 `url_path` 다. HOME 은 기본 페이지라 늘 빈 문자열이고, 그것도 이 한
+    # 페이지만 가리키므로 선택자로 쓸 수 있다.
+    active_href = navigation.url_path
 
     # 선택자도 같은 선언에서 낸다. 손으로 적으면 그룹을 더할 때 한쪽만 고치게 된다.
     group_title_selectors = _SELECTOR_JOINER.join(
@@ -80,26 +83,30 @@ with pinned_connections(DUCKDB_PATH):
         for group in pages.groups
         if group.subpages
     )
-    # 지금 보고 있는 페이지가 HOME 일 때만 면을 한 단계 누르고 글자를 ACCENT 로 올린다.
-    # Streamlit 이 주는 활성 표시는 알파 0.15 의 흐린 회색 하나뿐이라 사실상 보이지 않는다.
-    #
+    # 사이드바 안의 페이지 링크 전부. 본문에도 `stPageLink` 가 있을 수 있어 사이드바로 좁힌다.
+    NAV_LINK = '[data-testid="stSidebarContent"] [data-testid="stPageLink-NavLink"]'
+    # 활성 링크 하나. `href` 는 `url_path` 그대로라 페이지마다 유일하다.
+    active_link = f'{NAV_LINK}[href="{active_href}"]'
     # **`:hover`·`:focus-visible` 을 같은 묶음에 반드시 함께 적는다.** Streamlit 은 emotion
-    # 으로 `.st-emotion-cache-XXXX:hover {{ background-color: ... }}` 를 깔고, 그 특정도
-    # (0,2,0) 가 우리 `.st-key-home_navigation a` (0,1,1) 를 이긴다. 의사클래스를 붙이면
-    # 우리가 (0,2,1) 이 되어 이기므로 `!important` 는 필요 없다.
-    home_active_style = (
-        f"""
-        .st-key-home_navigation a,
-        .st-key-home_navigation a:hover,
-        .st-key-home_navigation a:focus-visible {{
-            background: {tokens.SURFACE_PAGE};
+    # 으로 `.st-emotion-cache-XXXX:hover` 배경을 깔고, 그 특정도 (0,2,0) 가 속성 선택자
+    # 없는 우리 규칙을 이긴다. 의사클래스를 붙이면 우리가 이기므로 `!important` 는 필요 없다.
+    #
+    # 떠 있는 상태를 hover 에서도 그대로 **유지**한다. 활성 링크가 마우스에 반응해 더
+    # 움직이면 "지금 여기" 가 아니라 "누를 수 있는 것" 으로 읽힌다.
+    active_nav_style = f"""
+        {active_link},
+        {active_link}:hover,
+        {active_link}:focus-visible {{
+            background-color: {tokens.SURFACE};
+            border-color: {tokens.BORDER};
+            transform: translateY(-1px);
+            box-shadow:
+                0 0 0 3px {tokens.NAV_ACTIVE_RING},
+                0 4px 10px {tokens.NAV_SHADOW};
         }}
-        .st-key-home_navigation a p {{
+        {active_link} p {{
             color: {tokens.ACCENT};
         }}"""
-        if is_home
-        else ""
-    )
     st.html(
         f"""
         <style>
@@ -114,19 +121,30 @@ with pinned_connections(DUCKDB_PATH):
             font-size: 1.5rem;
             font-weight: 700;
         }}
-        /* 이 앱의 강조 문법은 ACCENT 왼쪽 세로 막대 하나다(앱 헤더 3px·metric 카드 4px).
-           HOME 에도 같은 막대를 써서 새 어휘를 늘리지 않는다. 왼쪽 모서리만 각을 세워야
-           Streamlit 이 건 radius 10px 에 막대가 휘지 않는다. */
         .st-key-home_navigation a {{
             justify-content: center;
-            border-left: 4px solid {tokens.ACCENT};
-            border-top-left-radius: 0;
-            border-bottom-left-radius: 0;
         }}
         .st-key-home_navigation a p {{
             text-align: center;
         }}
-{home_active_style}
+
+        /* 지금 보고 있는 페이지를 **융기**로 알린다. Streamlit 이 주는 활성 표시는 알파
+           0.15 의 흐린 회색 하나뿐이라 사실상 보이지 않는다.
+
+           이 앱에는 그림자가 이 규칙 말고 한 군데도 없다. 그래서 사이드바에서만 쓰면
+           장식이 아니라 신호가 된다 — 떠 있는 것이 지금 있는 곳이다. */
+        {NAV_LINK} {{
+            border: 1px solid transparent;
+            transition:
+                transform 140ms ease,
+                box-shadow 140ms ease,
+                background-color 140ms ease;
+        }}
+        {NAV_LINK}:hover {{
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px {tokens.NAV_SHADOW};
+        }}
+{active_nav_style}
 
         {group_title_selectors} {{
             font-size: 1.15rem;
