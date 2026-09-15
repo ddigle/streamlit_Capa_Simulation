@@ -62,6 +62,10 @@ class MetricSpec:
     value_format: str
     source: str
     description: str
+    # 소수 자릿수는 지표마다 다르다. 수율은 Gap 이 0.5%p 수준이라 한 자리로 적으면
+    # `-0.0%p` 로 뭉개져 화면이 「차이가 없다」고 거짓말한다.
+    value_decimals: int = 1
+    gap_decimals: int = 1
 
     @property
     def gap_unit(self) -> str:
@@ -89,6 +93,7 @@ UPEH_METRIC = MetricSpec(
     standard_column="기준 UPEH",
     gap_kind="ratio",
     value_format="%,.0f",
+    value_decimals=0,
     source="생산이력 DB",
     description="설비 한 대가 한 시간에 처리한 수량입니다. 기준 UPEH 는 Capa 기준정보 값입니다.",
 )
@@ -100,6 +105,8 @@ YIELD_METRIC = MetricSpec(
     value_format="percent",
     source="수율 실적 DB",
     description="투입 대비 양품 비율입니다. 기준 수율은 Capa 기준정보(RQ_YLD) 값입니다.",
+    value_decimals=2,
+    gap_decimals=2,
 )
 
 ALL_METRICS = (EFFICIENCY_METRIC, UPEH_METRIC, YIELD_METRIC)
@@ -309,7 +316,9 @@ def build_improvement_actions(metric: MetricSpec, priority: pd.DataFrame) -> pd.
                 "담당": template[1],
                 "목표월": _shift_month(DEMO_START_MONTH, DEMO_MONTH_COUNT + offset),
                 "진행": template[2],
-                "기대 효과": f"{metric.name} {recovery:.1%}{metric.gap_suffix} 회복",
+                "기대 효과": (
+                    f"{metric.name} {recovery:.{metric.gap_decimals}%}{metric.gap_suffix} 회복"
+                ),
             }
         )
     return pd.DataFrame.from_records(records, columns=list(_ACTION_COLUMNS))

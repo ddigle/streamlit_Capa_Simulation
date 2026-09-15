@@ -124,7 +124,7 @@ def _render_summary(
         st.warning(
             f"**{labels.label(worst['공정'])}** 이(가) {int(worst['연속 미달'])}개월 연속 "
             f"{metric.name} 기준 미달입니다. 기간 평균 Gap "
-            f"{float(worst['Gap']):.1%}{metric.gap_suffix}, 영향 물량 비중 "
+            f"{float(worst['Gap']):.{metric.gap_decimals}%}{metric.gap_suffix}, 영향 물량 비중 "
             f"{float(worst['영향 비중']):.0%}. 개선 필요 공정은 모두 {len(needs_action):,}개입니다."
         )
 
@@ -132,7 +132,7 @@ def _render_summary(
         st.metric(
             f"실적 {metric.name}",
             _format_value(float(overall[metric.actual_column]), metric),
-            delta=f"{float(overall['Gap']):.1%}{metric.gap_suffix}",
+            delta=f"{float(overall['Gap']):.{metric.gap_decimals}%}{metric.gap_suffix}",
             delta_description="기준 대비",
             border=True,
         )
@@ -309,8 +309,8 @@ def _render_actions(
 
 def _format_value(value: float, metric: MetricSpec) -> str:
     if metric.value_format == "percent":
-        return f"{value:.1%}"
-    return f"{value:,.0f}"
+        return f"{value:.{metric.value_decimals}%}"
+    return f"{value:,.{metric.value_decimals}f}"
 
 
 def _value_column(metric: MetricSpec) -> Any:
@@ -381,7 +381,9 @@ def _priority_figure(
                 ],
                 "line": {"color": tokens.SURFACE, "width": 1},
             },
-            text=[f"{value:.1%}{metric.gap_suffix}" for value in ordered["Gap"]],
+            text=[
+                f"{value:.{metric.gap_decimals}%}{metric.gap_suffix}" for value in ordered["Gap"]
+            ],
             textposition="outside",
             # 막대가 0 에서 **왼쪽으로** 뻗으므로 바깥 라벨도 왼쪽으로 나간다. 축 밖으로
             # 나갈 수 있게 열어 두지 않으면 가장 긴 막대의 숫자가 잘린다.
@@ -402,7 +404,13 @@ def _priority_figure(
         font={"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": 12},
         showlegend=False,
     )
-    figure.update_xaxes(title=None, gridcolor=tokens.BORDER, zeroline=True, tickformat=".0%")
+    # 눈금도 지표를 따른다. `.0%` 로 굳히면 수율 축이 전부 `0%` 로 찍힌다.
+    figure.update_xaxes(
+        title=None,
+        gridcolor=tokens.BORDER,
+        zeroline=True,
+        tickformat=f".{metric.gap_decimals}%",
+    )
     figure.update_yaxes(type="category", title=None, showgrid=False)
     return figure
 
@@ -432,8 +440,13 @@ def _gap_matrix_figure(
             xgap=1,
             ygap=1,
             hoverongaps=False,
-            colorbar={"title": f"Gap ({metric.gap_unit})", "tickformat": ".1%"},
-            hovertemplate="%{y} · %{x}<br>Gap %{z:.2%}<extra></extra>",
+            colorbar={
+                "title": f"Gap ({metric.gap_unit})",
+                "tickformat": f".{metric.gap_decimals}%",
+            },
+            hovertemplate=(
+                f"%{{y}} · %{{x}}<br>Gap %{{z:.{metric.gap_decimals + 1}%}}<extra></extra>"
+            ),
         )
     )
     figure.update_layout(
