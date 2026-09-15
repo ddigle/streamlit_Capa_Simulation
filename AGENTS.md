@@ -657,6 +657,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   근본 해법은 업무 키 승격이다 — `RQ_UPEH` 9키에는 `Capa Code`·`Customer`·`CS`·`Pack Code`가
   없어 한 키에 형제가 여럿 온다. `RQ_PKG_PLAN`이 `Pack Code`를 8번째 키로 올려 같은 문제를
   푼 선례다(커밋 `2dcbf0a`). 승격 전까지 이 선택 규칙이 데이터 유실을 막는다.
+- **분류 셀 글자는 `classification_cell_text()` 를 거쳐야 한다**(`monthly_table_base.py`).
+  Plotly `go.Table` 은 칸 글자에 `&`·`<`·`>` 가 하나라도 있으면 HTML 해석 경로로 넘어가
+  `settleDownText` 가 `getBoundingClientRect().height + 2*cellPad(16)` 을 재서 **그 행만**
+  높이를 덮어쓴다. 13px 글꼴이면 그 값이 약 35px 이라 `ROW_HEIGHT_PX`(27)보다 늘 크다 —
+  즉 이 경로에 들어간 행은 **예외 없이** 8px 커진다. 커지는 즉시 그 아래 셀이 전부 밀리는데
+  격자·그룹 경계선은 27px 균일을 전제로 paper 좌표에 박혀 있어 제자리에 남는다. 월 Figure
+  값은 숫자뿐이라 안 밀리므로 좌우가 벌어진다. 오염 행이 4개를 넘으면 누적분이 Figure
+  높이를 넘어 라벨 쪽 **마지막 행이 잘린다.**
+  `&amp;` 로 이스케이프해도 같은 경로다. 그래서 글자 자체를 전각(`＆＜＞`)으로 바꾼다.
+  같은 함수가 공백을 `U+00A0` 으로 바꾸는 것도 같은 뿌리다 — 공백이 있으면 폭을 넘을 때
+  줄바꿈이 끼어들어 행이 68px 까지 커진다. CSV 는 `restore_cell_text()` 로 원본을 돌려준다.
+  **행 높이를 35px 이상으로 올리면 이 방어가 필요 없지만 표가 30% 길어진다** — 지금은
+  치환을 택했다.
 - `frame_contracts.py`: 여러 서비스가 공유하는 필수 컬럼 검증과 업무 키 정규화를 단일
   정의한다. 소요기준(`WAFER`→`WF`)·Area_Name(`Main`·`MI`)·월(`YYYYMM`) 규칙이 여기 있다.
   계약이 서로 다른 것은 합치지 않는다.

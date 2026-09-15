@@ -33,11 +33,12 @@ from capa_simulation.components.monthly_table_base import (
     add_header_rule,
     add_month_boundaries,
     add_outer_border,
-    display_value_text,
+    classification_cell_text,
     header_boundary_ratio,
     header_label,
     month_label,
     render_split_scroll_table,
+    restore_cell_text,
     table_height_px,
     text_width_units,
 )
@@ -86,10 +87,7 @@ def _build_hierarchical_display(
 ) -> _HierarchicalDisplay:
     labels = value_labels or {}
     raw_values = [
-        [
-            display_value_text(value, labels.get(column)).replace(" ", "\u00a0")
-            for value in data[column]
-        ]
+        [classification_cell_text(value, labels.get(column)) for value in data[column]]
         for column in classification_columns
     ]
     displayed_values = [values.copy() for values in raw_values]
@@ -168,7 +166,7 @@ def build_hierarchical_monthly_export(
     display = _build_hierarchical_display(data, classification_columns)
     output: dict[str, list[object]] = {
         column_labels.get(column, column): [
-            value.replace("\u00a0", " ") for value in display.classification_values[column_index]
+            restore_cell_text(value) for value in display.classification_values[column_index]
         ]
         for column_index, column in enumerate(classification_columns)
     }

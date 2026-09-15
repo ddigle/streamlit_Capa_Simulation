@@ -30,11 +30,12 @@ from capa_simulation.components.monthly_table_base import (
     add_header_rule,
     add_month_boundaries,
     add_outer_border,
-    display_value_text,
+    classification_cell_text,
     header_boundary_ratio,
     header_label,
     month_label,
     render_split_scroll_table,
+    restore_cell_text,
     table_height_px,
     text_width_units,
 )
@@ -93,10 +94,7 @@ def _grouped_values(
 ) -> tuple[list[list[str]], list[int], list[int]]:
     column_value_labels = value_labels or {}
     dimension_values = [
-        [
-            display_value_text(value, column_value_labels.get(column)).replace(" ", "\u00a0")
-            for value in data[column]
-        ]
+        [classification_cell_text(value, column_value_labels.get(column)) for value in data[column]]
         for column in columns
     ]
     displayed_values = [values.copy() for values in dimension_values]
@@ -215,10 +213,10 @@ def _build_display_rows(
             product_totals = [0.0 for _ in month_columns]
 
         if production_ends:
-            production_label = display_value_text(
+            production_label = classification_cell_text(
                 data.iloc[row_index][classification_columns[0]],
                 column_value_labels.get(classification_columns[0]),
-            ).replace(" ", "\u00a0")
+            )
             subtotal_labels = ["" for _ in classification_columns]
             subtotal_labels[0] = f"{production_label}\u00a0Total"
             append_row(
@@ -394,7 +392,7 @@ def build_grouped_monthly_export(
         # 화면은 줄바꿈을 막으려고 U+00A0 을 쓰지만 CSV 는 진짜 공백이어야 한다. 그대로 두면
         # PKG PLAN CSV 의 제품명과 글자가 달라 Excel VLOOKUP·필터가 조용히 어긋난다.
         column_labels.get(column, column): [
-            value.replace("\u00a0", " ") for value in display.classification_values[column_index]
+            restore_cell_text(value) for value in display.classification_values[column_index]
         ]
         for column_index, column in enumerate(classification_columns)
     }

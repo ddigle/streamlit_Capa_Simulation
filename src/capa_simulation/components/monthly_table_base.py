@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Mapping, Sequence
-from typing import Any, cast
+from typing import Any, Final, cast
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -108,6 +108,42 @@ def display_value_text(value: object, labels: Mapping[str, str] | None) -> str:
     if not labels or not text:
         return text
     return apply_process_label(value, labels)
+
+
+# Plotly `go.Table` 은 칸 글자에 `&`·`<`·`>` 가 하나라도 있으면 HTML 해석 경로로 넘어가
+# **그 행만** 높이 바닥을 올린다. 브라우저 실측으로 27px → 35px 였다. 격자와 그룹 경계선은
+# 행 높이가 균일하다는 전제로 paper 좌표에 그리므로, 그런 행 하나가 그 아래 전부를 8px 씩
+# 밀어낸다. 공정 표시명에 `&` 가 둘 있으면 반 칸이 밀리고 그 상태가 표 끝까지 유지된다.
+#
+# `&amp;` 로 이스케이프해도 같은 경로를 탄다(실측). 그래서 **글자 자체를 전각으로 바꾼다** —
+# 전각 셋은 높이를 올리지 않는 것까지 확인했다. 공백을 U+00A0 으로 바꾸는 것과 같은 자리·
+# 같은 이유다: 치환은 렌더 계층에서만 하고 프레임 값은 건드리지 않는다.
+CELL_TEXT_SUBSTITUTIONS: Final[tuple[tuple[str, str], ...]] = (
+    (" ", " "),
+    ("&", "＆"),
+    ("<", "＜"),
+    (">", "＞"),
+)
+
+
+def classification_cell_text(value: object, labels: Mapping[str, str] | None) -> str:
+    """분류 셀에 그대로 넣을 글자. 행 높이를 흔드는 문자를 렌더 계층에서만 바꾼다."""
+    text = display_value_text(value, labels)
+    for source, target in CELL_TEXT_SUBSTITUTIONS:
+        text = text.replace(source, target)
+    return text
+
+
+def restore_cell_text(text: str) -> str:
+    """`classification_cell_text` 의 치환을 되돌린다. CSV 는 원본 글자여야 한다.
+
+    원본에 전각 `＆` 가 들어 있으면 반각으로 바뀐다. U+00A0 치환이 이미 같은 성질을 갖고
+    있고(진짜 NBSP 도 공백이 된다), 화면 글자를 그대로 내보내 Excel VLOOKUP 이 어긋나는
+    쪽이 더 나쁘다고 보아 같은 선택을 유지한다.
+    """
+    for source, target in CELL_TEXT_SUBSTITUTIONS:
+        text = text.replace(target, source)
+    return text
 
 
 def text_width_units(value: str) -> float:
