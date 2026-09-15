@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 import pandas as pd
@@ -9,6 +10,7 @@ import pytest
 
 from capa_simulation.components.home_figures import build_lob_summary_figures
 from capa_simulation.components.process_labels import process_labels_from_rules
+from capa_simulation.design import tokens
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
 from capa_simulation.services.top5_band import (
     DEFAULT_TOP5_MAX_RATE,
@@ -246,6 +248,40 @@ def test_the_threshold_lines_skip_the_year_total_column() -> None:
         shape.x1 <= year_total_index - 0.5 or shape.x0 >= year_total_index + 0.5
         for shape in threshold_lines
     )
+
+
+def test_the_month_header_keeps_its_fill_when_threshold_lines_are_drawn() -> None:
+    """기준선을 `add_shape` 로 넣으면 **표 머리글 면색이 사라진다.**
+
+    이 Figure 의 도형은 전부 `append_layout_items` 누적함에 모였다가 마지막에
+    `update_layout(shapes=...)` 한 번으로 들어간다. Plotly 의 `update_layout` 은 배열을
+    갈아끼우지 않고 **자리마다 병합**하므로, `add_shape` 로 먼저 들어간 기준선 N 개가
+    누적함의 앞쪽 도형 N 개를 잡아먹는다 — 머리글 띠와 첫 달 값 칸이 캔버스 색으로
+    비었던 실제 결함이다. 기준선 수가 달라져도 머리글은 남아야 한다.
+    """
+    frames = _frames()
+    months = ["26.07", "26.08", "26년", "27.01"]
+    _, month_figure = build_lob_summary_figures(
+        lob_summary=frames["lob_summary"],
+        monthly_density=frames["monthly_density"],
+        bottleneck_capacity=frames["bottleneck_capacity"],
+        monthly_top5=frames["monthly_top5"],
+        month_labels=months,
+        process_labels=LABELS,
+        secure_threshold=1.095,
+        warning_threshold=0.995,
+        year_totals={"26년": {}},
+    )
+    rects = [shape for shape in month_figure.layout.shapes if shape.type == "rect"]
+    header_fills = [shape.fillcolor for shape in rects if shape.y1 == 1.0 and shape.yref == "paper"]
+    # 값 세 줄은 칸마다 면색을 받으므로 달 수만큼 사각형이 있어야 한다. 하나라도 비면
+    # 그 칸만 캔버스 색으로 보인다.
+    value_row_counts = Counter(
+        round(float(shape.y0), 6) for shape in rects if shape.yref == "paper" and shape.y1 < 1.0
+    )
+
+    assert tokens.HEADER_BACKGROUND in header_fills
+    assert sorted(value_row_counts.values())[-3:] == [len(months)] * 3
 
 
 def test_migration_is_registered(tmp_path: Path) -> None:

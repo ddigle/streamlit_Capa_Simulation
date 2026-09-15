@@ -76,6 +76,8 @@ SECTION_BAR_HEIGHT_PX = 18
 SECTION_BAR_RADIUS_PX = 2
 SECTION_BAR_GAP_PX = 8
 STATUS_LEGEND_ROW_KEY = "home_status_legend"
+# 범례 안쪽 div 의 클래스. 높이를 물려주는 CSS 가 이 이름을 읽는다.
+STATUS_LEGEND_CLASS = "capa-status-legend"
 
 
 def render_plan_detail_title_row(*, applied_customer: bool) -> None:
@@ -166,7 +168,11 @@ def status_legend_markup(*, secure_threshold: float, warning_threshold: float) -
         f"</span>"
         for color, label in chips
     )
-    return f'<div style="line-height:1.2">{swatches}</div>'
+    # 높이를 **여기서 정하지 않는다.** 칩은 11px 사각형이고 토글은 위젯이라 줄상자 높이가
+    # 서로 다른데, 이 div 가 자기 높이를 가지면 Streamlit 이 잡은 칸 위쪽에 붙어 토글보다
+    # 아래로 처진다. 칸 높이를 그대로 물려받아 그 안에서 가운데로 모으는 일은
+    # `home_rendering.dashboard_title_row_style()` 의 CSS 가 한다.
+    return f'<div class="{STATUS_LEGEND_CLASS}">{swatches}</div>'
 
 
 def render_lob_title_row(

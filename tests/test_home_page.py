@@ -132,19 +132,21 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     ]
     # 사이드바에 토글이 없다. 성능 진단은 세션 키로만 켜는 개발용 계측이다.
     assert [widget.label for widget in app.sidebar.toggle] == []
-    assert sorted(widget.label for widget in app.button) == [
-        "Summary 저장",
-        "공정 선택창 열기",
-        "과거 구간 저장",
-        "붙여넣기 읽기",
-        "붙여넣기 읽기",
-        "붙여넣기 읽기",
-        "선행 물량 저장",
-        "실행 Capa 저장",
-        "주요공정 저장",
-        "판정 기준 적용",
-        "확보율 구간 저장",
-    ]
+    assert sorted(widget.label for widget in app.button) == sorted(
+        [
+            "Summary 저장",
+            "공정 선택 · 3 / 3",
+            "과거 구간 저장",
+            "기준 적용",
+            "붙여넣기 읽기",
+            "붙여넣기 읽기",
+            "붙여넣기 읽기",
+            "선행 물량 저장",
+            "실행 Capa 저장",
+            "주요공정 저장",
+            "확보율 구간 저장",
+        ]
+    )
     # 제목 아래 설명 문구와 계획 세부수량 CSV 는 탭 자리를 내주고 사라졌다. 남은 내려받기는
     # Past Data 탭의 양식 세 개뿐이다.
     assert [button.label for button in app.get("download_button")] == ["양식 CSV"] * 3
@@ -192,7 +194,9 @@ def test_home_reuses_cached_figures_on_an_unchanged_rerun(seeded_database: Path)
 
     assert not list(app.exception)
     assert _cache_state(app) == "적중"
-    assert "공정 선택 · 3 / 3개 포함" in [element.value for element in app.caption]
+    # 고른 수는 캡션이 아니라 버튼 라벨에 있다 — 누를지 정하는 데 필요한 숫자라 버튼과
+    # 떨어져 있을 이유가 없다.
+    assert "공정 선택 · 3 / 3" in [button.label for button in app.button]
 
 
 def _cache_state(app: AppTest) -> str:

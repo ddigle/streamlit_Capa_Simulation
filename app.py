@@ -86,8 +86,6 @@ with pinned_connections(DUCKDB_PATH):
         f".st-key-{group.slug}_navigation a p" for group in pages.groups
     )
     subpage_slugs = [group.slug for group in pages.groups if group.subpages]
-    if pages.admin_subpages:
-        subpage_slugs.append("admin_area")
     subpage_selectors = _SELECTOR_JOINER.join(
         f'.st-key-{slug}_subpages [data-testid="stPageLink-NavLink"]' for slug in subpage_slugs
     )
@@ -191,11 +189,10 @@ with pinned_connections(DUCKDB_PATH):
         {NAV_LINK} {{
             border: 1px solid transparent;
             /* 활성 막대가 설 자리. 막대가 없는 링크도 같은 여백을 가져야 라벨이 한 줄로
-               선다. 세로는 좁혀 링크가 촘촘히 쌓이게 한다. */
+               선다. 네 변을 모두 적는다 — 세 변만 적으면 나머지 한 변이 Streamlit 기본값
+               으로 남아 좌우가 어긋난다. */
             position: relative;
-            padding-left: 0.78rem;
-            padding-top: 0.28rem;
-            padding-bottom: 0.28rem;
+            padding: 0.2rem 0.5rem 0.2rem 0.75rem;
             transition:
                 transform 140ms ease,
                 box-shadow 140ms ease,
@@ -255,11 +252,12 @@ with pinned_connections(DUCKDB_PATH):
         /* HOME 만 상자가 없어 테두리가 바깥 끝에 붙었다. 다른 링크의 테두리는 상자 안쪽
            여백만큼 들어와 있어, 같은 링크인데 HOME 만 혼자 넓어 보였다. 같은 만큼 들여
            모든 링크 테두리를 한 선에 세운다. */
+        /* HOME 은 상자 안에 든 링크가 아니라 **상자 자리에 선 링크**다. 그래서 폭을
+           맞출 상대는 상자 안쪽 링크가 아니라 아래 그룹 상자들의 테두리다 — 들여쓰면
+           맨 위 칸만 혼자 짧아 보인다. 여백을 주지 않아 상자와 같은 20~300 을 쓴다. */
         .st-key-home_navigation {{
-            /* 상자 안쪽 여백(0.7rem)에 상자 테두리 1px 을 더한 값이다. 그래야 HOME 의
-               테두리가 상자 안 링크의 테두리와 **같은 선**에 선다. */
-            padding-left: calc(0.7rem + 1px);
-            padding-right: calc(0.7rem + 1px);
+            padding-left: 0;
+            padding-right: 0;
         }}
 
         /* Admin Area 는 **언제나 맨 아래**다. 페이지가 자기 사이드바 요소를 그리는 것은
@@ -328,10 +326,11 @@ with pinned_connections(DUCKDB_PATH):
     with st.sidebar.container(border=True, key=ADMIN_BOX_KEY):
         with st.container(key="admin_area_navigation"):
             st.page_link(pages.admin_area, width="stretch")
-        # VOC 는 계산 화면이 아니라 사람이 쓰는 자리다. 계산 그룹 어디에도 속하지 않아
-        # 관리 상자 아래에 둔다 — 「말할 곳」을 찾는 사람은 맨 아래를 본다.
-        with st.container(key="admin_area_subpages"):
-            for page in pages.admin_subpages:
+            # VOC 는 계산 화면이 아니라 사람이 쓰는 자리다. 계산 그룹 어디에도 속하지 않아
+            # 이 상자에 함께 세운다 — 「말할 곳」을 찾는 사람은 맨 아래를 본다. **하위가
+            # 아니라 같은 층위**다. 관리 화면과 게시판은 서로를 포함하지 않으므로 들여쓰기도
+            # 계층선도 두지 않는다.
+            for page in pages.admin_box_pages:
                 st.page_link(page, width="stretch")
 
     navigation.run()

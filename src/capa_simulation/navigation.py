@@ -99,8 +99,9 @@ ADMIN_AREA = PageSpec(
     ":material/admin_panel_settings:",
 )
 # VOC 는 계산 화면이 아니라 사람이 쓰는 자리라 계산 그룹 어디에도 속하지 않는다. 관리
-# 상자 아래에 둔다 — 쓰는 사람이 「여기가 말할 곳」을 찾을 때 맨 아래를 본다.
-ADMIN_SUBPAGES: tuple[PageSpec, ...] = (PageSpec("app_pages/voc.py", "VOC", ":material/forum:"),)
+# 상자에 **같은 층위로** 함께 세운다 — 쓰는 사람이 「여기가 말할 곳」을 찾을 때 맨 아래를
+# 본다. 하위가 아닌 이유는 관리 화면과 게시판이 서로를 포함하지 않기 때문이다.
+ADMIN_BOX_PAGES: tuple[PageSpec, ...] = (PageSpec("app_pages/voc.py", "VOC", ":material/forum:"),)
 
 
 @dataclass(frozen=True)
@@ -125,7 +126,7 @@ ALL_SPECS: tuple[PageSpec, ...] = (
     HOME,
     *(spec for group in SIDEBAR_GROUPS for spec in (group.main, *group.subpages)),
     ADMIN_AREA,
-    *ADMIN_SUBPAGES,
+    *ADMIN_BOX_PAGES,
 )
 
 
@@ -145,7 +146,8 @@ class NavigationPages:
     home: st.Page
     groups: tuple[SidebarGroup, ...]
     admin_area: st.Page
-    admin_subpages: tuple[st.Page, ...]
+    # `admin_area` 와 **같은 층위**로 한 상자에 서는 나머지 페이지들.
+    admin_box_pages: tuple[st.Page, ...]
 
     @property
     def ordered(self) -> list[st.Page]:
@@ -154,7 +156,7 @@ class NavigationPages:
             self.home,
             *(page for group in self.groups for page in (group.main, *group.subpages)),
             self.admin_area,
-            *self.admin_subpages,
+            *self.admin_box_pages,
         ]
 
 
@@ -171,5 +173,5 @@ def build_navigation_pages() -> NavigationPages:
             for group in SIDEBAR_GROUPS
         ),
         admin_area=ADMIN_AREA.to_page(),
-        admin_subpages=tuple(spec.to_page() for spec in ADMIN_SUBPAGES),
+        admin_box_pages=tuple(spec.to_page() for spec in ADMIN_BOX_PAGES),
     )

@@ -147,8 +147,12 @@ TOP5_RATE_LABEL_GAP_PX = 10.0
 TOP5_RATE_LABEL_CHAR_PX = 8.6
 # 라벨 위에 남길 빈 자리. **실측으로 맞춘 값**이다 — Plotly 가 세운 주석을 `yshift` 보다
 # 2.1px 더 띄우고 글자 상자도 `TOP5_RATE_LABEL_CHAR_PX` 추정보다 조금 좁아서, 이 상수에서
-# 약 1.5px 를 뺀 만큼이 화면에 남는다. 4.5 → 브라우저에서 잰 빈 자리 3px.
-TOP5_RATE_LABEL_MARGIN_PX = 4.5
+# 약 1.5px 를 뺀 만큼이 화면에 남는다(4.5 → 3px).
+#
+# 이 값이 곧 **축 위끝을 얼마나 밀어 올리느냐**다. 늘리면 밴드 상한에 걸린 막대가 그만큼
+# 짧아지고 칸 위쪽이 그만큼 비는데, 잘린 막대가 칸 천장에 닿아 있으면 「여기서 잘렸다」가
+# 아니라 「더 올라갈 데가 없다」로 읽힌다. 9.5 → 잘린 막대가 5px 짧아지고 빈 자리 8px.
+TOP5_RATE_LABEL_MARGIN_PX = 9.5
 # 라벨이 하나도 없을 때 쓰는 글자 수. `100%` 네 글자다.
 TOP5_RATE_LABEL_MIN_CHARS = 4
 
@@ -168,9 +172,13 @@ TOP5_BAR_OUTLINE_WIDTH_PX = 0.8
 # 막대가 크고 면색이 진해 같은 굵기면 테두리가 묻힌다.
 LOB_BAR_OUTLINE_WIDTH_PX = 1.2
 
-DASHBOARD_SECTION_GAP_PX = 16
+# 구획 사이 간격과 제목 줄 높이. 제목은 줄 **한가운데**에 서므로 제목과 표 사이에 보이는
+# 틈은 `줄 높이의 절반 + 이 간격` 이다. 44 + 16 이면 30px 이 되어 제목이 어느 표에도
+# 붙지 않고 떠 보였다. 36 + 12 로 내려 18 + 12 = 30 → 30px 를 유지하되 제목 줄 자체가
+# 얇아져 위아래 표가 가까워진다. 둘을 함께 줄여야 네 구획의 리듬이 그대로 간다.
+DASHBOARD_SECTION_GAP_PX = 12
 
-DASHBOARD_TITLE_HEIGHT_PX = 44
+DASHBOARD_TITLE_HEIGHT_PX = 36
 
 # 테두리 상자가 `Capa LOB 현황` 제목 줄과 두 칸을 함께 감쌀 때 그 사이 간격.
 # 라벨 캔버스는 월 칸 스크롤바 높이만큼 `padding-top` 으로 이미 내려와 있다. 제목 아래
@@ -195,16 +203,17 @@ KEY_PROCESS_HEADER_HEIGHT_PX = BOTTLENECK_DETAIL_HEADER_HEIGHT_PX
 
 KEY_PROCESS_ROW_HEIGHT_PX = BOTTLENECK_DETAIL_ROW_HEIGHT_PX
 
-# 칸을 행보다 낮게 그린다. 위아래에 드러나는 띠가 연간 Total·과거 구간의 면색을 보여
-# 주는 자리다 — 칸이 행을 꽉 채우면 그 열이 눌린 색이라는 것이 안 보인다.
-KEY_PROCESS_CELL_HEIGHT_PX = BOTTLENECK_DETAIL_BAR_HEIGHT_PX
-
-# 월 열 안에서 칸이 비우는 좌우 여백 비율. 세로 월 경계선이 칸에 가려지지 않게 한다.
-KEY_PROCESS_CELL_SIDE_INSET_RATIO = 0.02
+# **칸은 격자를 꽉 채운다.** 칸을 줄이고 테두리를 두르면 색이 「칩 여러 개」로 읽히지
+# 히트맵으로 읽히지 않는다. 히트맵은 색이 **면**을 이룰 때 지도가 된다 — 칸 사이를
+# 1px 만 띄워 경계를 만들고 그 틈이 곧 격자선 노릇을 한다(`산출 결과` 의 히트맵이 쓰는
+# `xgap`·`ygap` 과 같은 값이다).
+KEY_PROCESS_CELL_GAP_PX = 1.0
+KEY_PROCESS_CELL_HEIGHT_PX = KEY_PROCESS_ROW_HEIGHT_PX - 2 * KEY_PROCESS_CELL_GAP_PX
 
 # 칸 안 확보율 글자와 왼쪽 공정명 글자. 색만으로 뜻을 나르지 않으려면 칸마다 숫자가
-# 있어야 한다(색각이상·흑백 인쇄).
-KEY_PROCESS_RATE_FONT_SIZE_PX = 13
+# 있어야 한다(색각이상·흑백 인쇄). 칸을 꽉 채우고 나면 글자는 색 위에 얹히므로 한 단계
+# 줄여야 면이 글자에 잘리지 않는다.
+KEY_PROCESS_RATE_FONT_SIZE_PX = 11
 KEY_PROCESS_NAME_FONT_SIZE_PX = 13
 
 # 라벨 칸에서 공정명이 시작하는 왼쪽 여백.

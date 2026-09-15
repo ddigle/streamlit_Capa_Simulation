@@ -5,7 +5,7 @@ from pathlib import Path
 
 from capa_simulation.navigation import (
     ADMIN_AREA,
-    ADMIN_SUBPAGES,
+    ADMIN_BOX_PAGES,
     ALL_SPECS,
     CAPA_CHATBOT,
     DATA_PENDING_SUFFIX,
@@ -77,12 +77,13 @@ def test_group_membership_matches_the_sidebar_sections() -> None:
     assert DYNAMIC_CAPA.path == "app_pages/reference_integrity.py"
     # 자원 현황(설비·공간) → 실적(효율·UPEH·수율) → 그 결과가 쌓인 재공 순서다.
     assert len(DYNAMIC_CAPA_SUBPAGES) == 6
-    # 관리 기능이라 하위 페이지가 아니라 자기 박스로 사이드바 맨 아래에 있다. 그 박스의
-    # 하위가 VOC 다 — 계산 화면이 아니라 사람이 쓰는 자리라 계산 그룹 어디에도 안 맞는다.
+    # 관리 기능이라 하위 페이지가 아니라 자기 박스로 사이드바 맨 아래에 있다. 그 박스에
+    # VOC 가 **같은 층위로** 함께 선다 — 계산 화면이 아니라 사람이 쓰는 자리라 계산 그룹
+    # 어디에도 안 맞고, 관리 화면과 게시판은 서로를 포함하지도 않는다.
     assert ADMIN_AREA.path == "app_pages/admin_area.py"
-    assert [spec.path for spec in ADMIN_SUBPAGES] == ["app_pages/voc.py"]
-    assert ALL_SPECS[-len(ADMIN_SUBPAGES) - 1] is ADMIN_AREA
-    assert ALL_SPECS[-len(ADMIN_SUBPAGES) :] == ADMIN_SUBPAGES
+    assert [spec.path for spec in ADMIN_BOX_PAGES] == ["app_pages/voc.py"]
+    assert ALL_SPECS[-len(ADMIN_BOX_PAGES) - 1] is ADMIN_AREA
+    assert ALL_SPECS[-len(ADMIN_BOX_PAGES) :] == ADMIN_BOX_PAGES
 
 
 def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:

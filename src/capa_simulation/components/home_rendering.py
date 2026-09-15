@@ -23,6 +23,7 @@ from capa_simulation.components.home_dimensions import (
 from capa_simulation.components.home_preference import (
     SECTION_BAR_GAP_PX,
     SECTION_TITLE_FONT_PX,
+    STATUS_LEGEND_CLASS,
     STATUS_LEGEND_ROW_KEY,
     render_plan_detail_title_row,
     render_section_title_row,
@@ -180,10 +181,34 @@ def dashboard_title_row_style() -> str:
     .st-key-bottleneck_title_row {{ align-items: center; }}
     /* 범례는 제목·토글과 같은 줄의 오른쪽 끝이다. 아래 월 영역 위에 얹힌 가로
        스크롤바와 겹치지 않게 별도 블록으로 두지 않는다. */
-    .st-key-{STATUS_LEGEND_ROW_KEY} {{
+    /* 범례는 제목 줄의 오른쪽 끝이다. `margin-left:auto` 를 받아야 하는 것은 **flex
+       항목**이라 `.st-key-*` 한 겹 바깥의 래퍼를 겨냥한다 — 안쪽에 주면 형제가 자기
+       자신뿐이라 아무 일도 일어나지 않는다(Admin 의 `order` 와 같은 함정). */
+    [data-testid="stLayoutWrapper"]:has(> .st-key-{STATUS_LEGEND_ROW_KEY}) {{
         margin-left: auto;
         width: auto;
         flex: 0 0 auto;
+        align-self: stretch;
+    }}
+    /* 색칩을 토글 글자와 **같은 눈높이**에 세운다. Streamlit 의 마크다운 칸은 높이를
+       글줄에서 잡아 7.5px 로 주저앉고 그 위로 11px 칩이 삐져나가, 줄 가운데보다 7.5px
+       아래에 앉아 있었다. 래퍼부터 마크다운 칸까지 높이를 물려 주고 각 단계에서 가운데로
+       모은다. */
+    .st-key-{STATUS_LEGEND_ROW_KEY},
+    .st-key-{STATUS_LEGEND_ROW_KEY} [data-testid="stElementContainer"],
+    .st-key-{STATUS_LEGEND_ROW_KEY} [data-testid="stMarkdown"],
+    /* 이름 없는 emotion 한 겹. testid 가 없어 자식 선택자로 집는다 — 이 한 겹이 높이를
+       4px 로 떨어뜨려 아래 문단이 그만큼 처져 있었다. */
+    .st-key-{STATUS_LEGEND_ROW_KEY} [data-testid="stMarkdown"] > div,
+    .st-key-{STATUS_LEGEND_ROW_KEY} [data-testid="stMarkdownContainer"],
+    .st-key-{STATUS_LEGEND_ROW_KEY} .{STATUS_LEGEND_CLASS} {{
+        display: flex;
+        align-items: center;
+        height: 100%;
+        min-height: 0;
+        /* 마크다운 칸은 문단 아래 여백을 음수 margin 으로 걷어낸다. 줄 안에 세울 때는
+           그 음수가 그대로 아래로 미는 힘이 된다. */
+        margin: 0;
     }}
     </style>
     """
@@ -223,6 +248,19 @@ def summary_notice_style() -> str:
     .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary p::before {{
         content: "";
         {section_accent_bar_css()};
+    }}
+    /* 접힘 표시 꺾쇠를 감춘다. **여닫는 기능은 그대로다** — 아이콘만 숨기고 `summary`
+       자체는 건드리지 않으므로 줄 어디를 눌러도 펴진다. 다른 세 구획 제목에는 없는
+       글리프라 이 상자만 제목 옆에 군더더기가 하나 붙어 보였다. */
+    .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary
+        [data-testid="stIconMaterial"] {{
+        display: none;
+    }}
+    /* 꺾쇠 자리가 비면 제목이 가운데로 밀린다. 줄 전체를 눌러 여닫는다는 것은 손 모양
+       커서가 말한다. */
+    .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary {{
+        justify-content: flex-start;
+        cursor: pointer;
     }}
     .capa-summary-note {{
         margin: 0;

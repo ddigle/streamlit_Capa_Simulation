@@ -514,25 +514,36 @@ if warning_threshold_key not in st.session_state:
 with st.sidebar.container(border=True):
     st.markdown("#### :material/filter_alt: B/N 집계 공정")
     with st.form("dashboard_bottleneck_filter_form", border=False):
-        st.markdown("**판정 기준**")
-        secure_threshold_percent = st.number_input(
-            "확보 기준 (%)",
-            min_value=0.0,
-            step=0.1,
-            key=secure_threshold_key,
-            persist_state="session",
-        )
-        warning_threshold_percent = st.number_input(
-            "경고 기준 (%)",
-            min_value=0.0,
-            step=0.1,
-            key=warning_threshold_key,
-            persist_state="session",
-        )
-        st.form_submit_button("판정 기준 적용", width="stretch", key="dashboard_threshold_apply")
-    st.caption(f"공정 선택 · {len(included_processes)} / {len(process_options)}개 포함")
+        # 칸 위 글자 세 줄(`판정 기준`·`확보 기준 (%)`·`경고 기준 (%)`)을 지우고 두 칸을
+        # 한 줄에 반씩 놓는다. 사이드바에서 네 줄을 먹던 자리가 한 줄이 된다. 어느 칸이
+        # 무엇인지는 왼쪽이 확보·오른쪽이 경고라는 **화면 전체의 차례**(범례·색 순서와
+        # 같다)와 `help` 툴팁이 말한다. `collapsed` 는 글자만 감추고 접근성 이름은 남긴다.
+        secure_column, warning_column = st.columns(2, gap="small")
+        with secure_column:
+            secure_threshold_percent = st.number_input(
+                "확보 기준 (%)",
+                label_visibility="collapsed",
+                min_value=0.0,
+                step=0.1,
+                key=secure_threshold_key,
+                persist_state="session",
+                help="확보 기준 (%) — 이 값을 넘으면 확보 색으로 판정합니다.",
+            )
+        with warning_column:
+            warning_threshold_percent = st.number_input(
+                "경고 기준 (%)",
+                label_visibility="collapsed",
+                min_value=0.0,
+                step=0.1,
+                key=warning_threshold_key,
+                persist_state="session",
+                help="경고 기준 (%) — 이 값 아래는 부족 색으로 판정합니다.",
+            )
+        st.form_submit_button("기준 적용", width="stretch", key="dashboard_threshold_apply")
+    # 고른 수를 버튼 안에 넣어 캡션 한 줄을 없앤다. 버튼을 누를지 말지 정하는 데 필요한
+    # 숫자라 버튼과 떨어져 있을 이유가 없다.
     if st.button(
-        "공정 선택창 열기",
+        f"공정 선택 · {len(included_processes)} / {len(process_options)}",
         icon=":material/filter_list:",
         width="stretch",
         disabled=not process_options,

@@ -22,8 +22,8 @@ from capa_simulation.components.home_dimensions import (
     BOTTLENECK_DETAIL_HEADER_HEIGHT_PX,
     BOTTLENECK_DETAIL_ROW_HEIGHT_PX,
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+    KEY_PROCESS_CELL_GAP_PX,
     KEY_PROCESS_CELL_HEIGHT_PX,
-    KEY_PROCESS_CELL_SIDE_INSET_RATIO,
     KEY_PROCESS_HEADER_HEIGHT_PX,
     KEY_PROCESS_NAME_FONT_SIZE_PX,
     KEY_PROCESS_NAME_INSET_PX,
@@ -900,21 +900,31 @@ def build_lob_summary_figures(
         month_line_segments = _contiguous_segments(
             [index for index, label in enumerate(month_labels) if label not in totals]
         )
-        for threshold in (secure_threshold, warning_threshold):
-            if not 0 < threshold <= top5_rate_band[1]:
-                continue
-            for segment_start, segment_end in month_line_segments:
-                month_figure.add_shape(
-                    type="line",
-                    x0=segment_start - 0.5,
-                    x1=segment_end + 0.5,
-                    y0=threshold,
-                    y1=threshold,
-                    line={"color": tokens.LINE, "width": 1, "dash": "dot"},
-                    layer="above",
-                    row=3,
-                    col=1,
-                )
+        #
+        # **`add_shape`·`add_hline` 을 쓰지 않는다.** 그 둘은 `figure.layout.shapes` 에
+        # 곧바로 쓰는데, 이 Figure 의 나머지 도형은 전부 `append_layout_items` 누적함에
+        # 모였다가 마지막에 `update_layout(shapes=...)` 한 번으로 들어간다. Plotly 의
+        # `update_layout` 은 배열을 **갈아끼우지 않고 자리마다 병합**하므로, 먼저 들어가
+        # 있던 기준선 N 개가 누적함의 **앞쪽 도형 N 개를 잡아먹는다**. 실제로 표 머리글
+        # 면색과 첫 달 값 칸의 면색이 사라져 그 두 칸만 캔버스 색으로 보였다.
+        # 같은 누적함에 넣으면 순서도 개수도 어긋나지 않는다.
+        threshold_shapes = [
+            {
+                "type": "line",
+                "x0": segment_start - 0.5,
+                "x1": segment_end + 0.5,
+                "y0": threshold,
+                "y1": threshold,
+                "xref": "x2",
+                "yref": "y2",
+                "line": {"color": tokens.LINE, "width": 1, "dash": "dot"},
+                "layer": "above",
+            }
+            for threshold in (secure_threshold, warning_threshold)
+            if 0 < threshold <= top5_rate_band[1]
+            for segment_start, segment_end in month_line_segments
+        ]
+        append_layout_items(month_figure, shapes=threshold_shapes)
         for x_position, capa, rate in zip(
             top5_positions,
             # 라벨은 그려진 막대 끝에 붙어야 한다. 실제 Capa 를 쓰면 잘린 막대에서 떨어진다.
@@ -1733,7 +1743,10 @@ def build_key_process_heatmap_figures(
     processes = list(key_processes)
     row_count = max(len(processes), 1)
     table_height = KEY_PROCESS_HEADER_HEIGHT_PX + row_count * KEY_PROCESS_ROW_HEIGHT_PX
-    cell_length = 1.0 - 2 * KEY_PROCESS_CELL_SIDE_INSET_RATIO
+    # 칸은 열을 꽉 채우고 좌우로 1px 씩만 띈다. 그 틈이 격자선 노릇을 하므로 칸에 테두리를
+    # 두르지 않는다 — 테두리를 두르면 색이 면이 아니라 칩으로 읽힌다.
+    cell_inset = KEY_PROCESS_CELL_GAP_PX / tokens.MONTH_COLUMN_WIDTH_PX
+    cell_length = 1.0 - 2 * cell_inset
 
     def format_equipment_count(value: object) -> str:
         if bool(pd.isna(cast(Any, value))):
@@ -1768,7 +1781,7 @@ def build_key_process_heatmap_figures(
         )
         rate = row["확보율"]
         missing_rate = bool(pd.isna(cast(Any, rate)))
-        cell_bases.append(month_index + KEY_PROCESS_CELL_SIDE_INSET_RATIO)
+        cell_bases.append(month_index + cell_inset)
         cell_centers.append(center_y)
         cell_colors.append(
             tokens.SURFACE
@@ -1834,7 +1847,7 @@ def build_key_process_heatmap_figures(
             go.Bar(
                 x=[1.0] * len(cell_centers),
                 y=cell_centers,
-                base=[position - KEY_PROCESS_CELL_SIDE_INSET_RATIO for position in cell_bases],
+                base=[position - cell_inset for position in cell_bases],
                 orientation="h",
                 width=KEY_PROCESS_ROW_HEIGHT_PX,
                 marker={"color": tokens.HIT_TARGET, "line": {"width": 0}},
@@ -1848,10 +1861,9 @@ def build_key_process_heatmap_figures(
                 base=cell_bases,
                 orientation="h",
                 width=KEY_PROCESS_CELL_HEIGHT_PX,
-                marker={
-                    "color": cell_colors,
-                    "line": {"color": tokens.LINE, "width": tokens.BAR_OUTLINE_WIDTH_PX},
-                },
+                # 테두리 없음. 1px 틈이 이미 칸을 가르고, 선을 두르면 히트맵이 아니라
+                # 칸마다 테두리를 두른 표가 된다.
+                marker={"color": cell_colors, "line": {"width": 0}},
                 hoverinfo="skip",
                 showlegend=False,
             ),
@@ -1909,18 +1921,22 @@ def build_key_process_heatmap_figures(
         yaxis={**hidden_axis, "range": [0, table_height]},
     )
     header_boundary_y = 1 - KEY_PROCESS_HEADER_HEIGHT_PX / table_height
-    row_boundary_shapes = [
-        {
-            "type": "line",
-            "x0": 0,
-            "x1": 1,
-            "y0": header_boundary_y,
-            "y1": header_boundary_y,
-            "xref": "paper",
-            "yref": "paper",
-            "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX},
-            "layer": "above",
-        },
+    header_underline = {
+        "type": "line",
+        "x0": 0,
+        "x1": 1,
+        "y0": header_boundary_y,
+        "y1": header_boundary_y,
+        "xref": "paper",
+        "yref": "paper",
+        "line": {"color": tokens.BORDER_STRONG, "width": tokens.OUTER_BORDER_WIDTH_PX},
+        "layer": "above",
+    }
+    # 행 경계선은 **라벨 칸에만** 긋는다. 왼쪽은 이름이 줄줄이 선 표라 줄을 갈라야 읽히지만,
+    # 오른쪽은 히트맵이다 — 칸 사이 1px 틈이 이미 경계를 만들고, 그 위에 선을 또 그으면
+    # 색의 면이 격자에 잘려 지도가 아니라 표로 읽힌다.
+    label_row_shapes = [
+        header_underline,
         *[
             {
                 "type": "line",
@@ -1979,7 +1995,7 @@ def build_key_process_heatmap_figures(
     )
     append_layout_items(
         key_process_label_figure,
-        shapes=row_boundary_shapes,
+        shapes=label_row_shapes,
         annotations=[
             {
                 "x": 0.5,
@@ -2034,12 +2050,15 @@ def build_key_process_heatmap_figures(
                 if (surface := _month_surface(label, year_total_labels, past_month_labels))
                 != tokens.SURFACE
             ],
+            # 세로 월 경계선은 **머리글 띠 안에서만** 긋는다. 본문까지 내리면 칸 사이
+            # 틈과 겹쳐 같은 자리에 선이 두 겹으로 앉는다. 분기 경계는 네 구획이 함께 읽는
+            # 기준이라 아래에서 따로 긋는다.
             *[
                 {
                     "type": "line",
                     "x0": month_index / month_count,
                     "x1": month_index / month_count,
-                    "y0": 0,
+                    "y0": header_boundary_y,
                     "y1": 1,
                     "xref": "paper",
                     "yref": "paper",
@@ -2048,7 +2067,7 @@ def build_key_process_heatmap_figures(
                 }
                 for month_index in range(1, month_count)
             ],
-            *row_boundary_shapes,
+            header_underline,
         ],
         annotations=[
             {
