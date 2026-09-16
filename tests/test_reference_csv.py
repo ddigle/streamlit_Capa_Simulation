@@ -203,3 +203,28 @@ def test_row_mismatch_lists_keys_when_excel_is_not_the_cause() -> None:
     assert "Excel" not in message
     assert "Capa Code=DEMO-A" in message
     assert "Capa Code=DEMO-Z" in message
+
+
+def _na_template() -> pd.DataFrame:
+    """`NA` 는 지역 코드다 — pandas 기본값은 이것을 결측으로 바꾼다."""
+    return pd.DataFrame(
+        {
+            "Customer": ["NA", "NULL", "BBS"],
+            "Capa Code": ["DEMO-A", "DEMO-B", "DEMO-C"],
+            "202608": [10.0, 20.0, 30.0],
+        }
+    )
+
+
+def test_upload_reads_na_shaped_keys_as_text_like_paste_does() -> None:
+    template = _na_template()
+    key_columns = ["Customer", "Capa Code"]
+    payload = reference_edit_csv_bytes(template, key_columns)
+
+    uploaded = parse_reference_edit_csv(payload, template, key_columns, "RQ_PKG_PLAN")
+    pasted = parse_reference_edit_clipboard(
+        template.to_csv(index=False, sep="\t"), template, key_columns, "RQ_PKG_PLAN"
+    )
+
+    assert uploaded["Customer"].tolist() == ["NA", "NULL", "BBS"]
+    assert pasted["Customer"].tolist() == uploaded["Customer"].tolist()

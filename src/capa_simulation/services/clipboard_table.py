@@ -6,8 +6,21 @@ from __future__ import annotations
 
 import csv
 from io import StringIO
+from typing import Any
 
 import pandas as pd
+
+# 표를 **글자 그대로** 읽는 옵션. pandas 기본값은 `NA`·`NULL`·`None`·`N/A`·`NaN` 을 결측으로
+# 바꾸는데, 이것들은 업무 값일 수 있다 — 지역 코드 `NA`(North America) 가 결측이 되면 그
+# 행의 식별이 통째로 사라진다. 빈 칸만 결측으로 본다.
+#
+# **붙여넣기와 파일 업로드가 같은 값을 같게 읽어야 한다.** 한쪽만 고치면 같은 파일이 경로에
+# 따라 다르게 읽히므로 옵션을 여기 한 군데 두고 양쪽이 이것을 쓴다.
+TEXT_TABLE_READ_OPTIONS: dict[str, Any] = {
+    "dtype": "object",
+    "keep_default_na": False,
+    "na_values": [""],
+}
 
 
 def parse_clipboard_table(content: str, label: str) -> pd.DataFrame:
@@ -24,12 +37,9 @@ def parse_clipboard_table(content: str, label: str) -> pd.DataFrame:
     if duplicate_columns:
         raise ValueError(f"{label} 붙여넣기 컬럼명이 중복되었습니다: {duplicate_columns[:5]}")
     try:
-        result = pd.read_csv(
-            StringIO(normalized),
-            sep="\t",
-            dtype="object",
-            keep_default_na=False,
-            na_values=[""],
+        # 옵션 묶음이 `Any` 라 반환 타입이 풀린다. 받는 쪽에서 다시 묶는다.
+        result: pd.DataFrame = pd.read_csv(
+            StringIO(normalized), sep="\t", **TEXT_TABLE_READ_OPTIONS
         )
     except pd.errors.ParserError as exc:
         raise ValueError(
