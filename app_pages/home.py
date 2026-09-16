@@ -126,6 +126,7 @@ from capa_simulation.services.simulation_cache import (
 )
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import (
+    BOTTLENECK_BOX_KEY,
     show_applied_month_range,
     show_month_range_unavailable,
     show_past_months_outside_range,
@@ -511,7 +512,7 @@ if secure_threshold_key not in st.session_state:
     st.session_state[secure_threshold_key] = DEFAULT_SECURE_THRESHOLD_PERCENT
 if warning_threshold_key not in st.session_state:
     st.session_state[warning_threshold_key] = DEFAULT_WARNING_THRESHOLD_PERCENT
-with st.sidebar.container(border=True):
+with st.sidebar.container(border=True, key=BOTTLENECK_BOX_KEY):
     st.markdown("#### :material/filter_alt: B/N 집계 공정")
     with st.form("dashboard_bottleneck_filter_form", border=False):
         # 칸 위 글자 세 줄(`판정 기준`·`확보 기준 (%)`·`경고 기준 (%)`)을 지우고 두 칸을

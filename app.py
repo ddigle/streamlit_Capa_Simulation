@@ -29,6 +29,7 @@ from capa_simulation.settings import (
     format_month,
 )
 from capa_simulation.sidebar_status import (
+    BOTTLENECK_BOX_KEY,
     register_month_range_placeholder,
     show_applied_month_range,
 )
@@ -100,8 +101,25 @@ with pinned_connections(DUCKDB_PATH):
     subpage_box_selectors = _SELECTOR_JOINER.join(
         f".st-key-{slug}_subpages" for slug in subpage_slugs
     )
+    # 제목을 가진 조회 상자 셋. 상자마다 제목 `h4` 는 하나뿐이라 안쪽을 더 좁히지 않는다.
+    # 뒤에 붙일 부분까지 **선택자마다** 넣어 잇는다 — 목록을 먼저 잇고 뒤에 `h4` 를 붙이면
+    # `A, B h4` 가 되어 마지막 하나에만 걸린다.
+    _TITLED_BOXES = (SCENARIO_BOX_KEY, MONTH_BOX_KEY, BOTTLENECK_BOX_KEY)
+
+    def _box_title(tail: str) -> str:
+        return _SELECTOR_JOINER.join(f".st-key-{key} {tail}" for key in _TITLED_BOXES)
+
+    box_headings = _box_title("h4")
+    box_heading_wrappers = _box_title('[data-testid="stMarkdownContainer"]:has(> h4)')
     # 사이드바 안의 페이지 링크 전부. 본문에도 `stPageLink` 가 있을 수 있어 사이드바로 좁힌다.
     NAV_LINK = '[data-testid="stSidebarContent"] [data-testid="stPageLink-NavLink"]'
+    # HOME 링크 하나. **활성 규칙보다 특정도가 높아야** 한다 — HOME 에 있을 때 활성 규칙의
+    # `border-color`·`background-color` 가 그라데이션 테두리를 불투명하게 덮기 때문이다.
+    # 활성 선택자가 속성 셋(0,3,0)이라 여기에 요소 하나를 더해 (0,3,1) 로 올린다.
+    HOME_LINK = (
+        '[data-testid="stSidebarContent"] .st-key-home_navigation'
+        ' a[data-testid="stPageLink-NavLink"]'
+    )
     # 활성 링크 하나. `href` 는 `url_path` 그대로라 페이지마다 유일하다.
     active_link = f'{NAV_LINK}[href="{active_href}"]'
     # **`:hover`·`:focus-visible` 을 같은 묶음에 반드시 함께 적는다.** Streamlit 은 emotion
@@ -136,6 +154,9 @@ with pinned_connections(DUCKDB_PATH):
             width: 3px;
             border-radius: 2px;
             background-color: {tokens.ACCENT};
+        }}
+        {HOME_LINK}::before {{
+            content: none;
         }}"""
     st.html(
         f"""
@@ -157,32 +178,62 @@ with pinned_connections(DUCKDB_PATH):
             font-weight: 700;
         }}
         /* HOME 은 누르지 않았을 때도 보여야 한다. 다른 항목처럼 납작하게 두면 글자만
-           클 뿐 "여기로 돌아온다" 가 읽히지 않는다. 옅은 틴트와 ACCENT 테두리로 윤곽선
-           버튼을 만들고, 지금 HOME 에 있으면 아래 융기 규칙이 그 위에 얹혀 채워진 모양이
-           된다 — 윤곽선에서 채움으로 가는 단계라 둘이 경쟁하지 않는다.
+           클 뿐 "여기로 돌아온다" 가 읽히지 않는다.
+
+           테두리에만 그라데이션을 남긴다. 한 요소에 배경 두 겹을 깔고 하나는 `padding-box`
+           로 면을, 하나는 `border-box` 로 테두리를 맡기는 방식이다 — `border-color` 로는
+           그라데이션을 줄 수 없어서 테두리를 투명하게 두고 그 자리에 두 번째 배경이
+           비치게 한다. 두 배경의 차례를 바꾸면 면이 테두리를 덮는다.
 
            `:hover` 를 같이 적는 이유는 아래 활성 규칙과 같다. Streamlit 의 emotion
            `:hover` (0,2,0) 가 클래스 하나뿐인 선택자를 이긴다. */
-        .st-key-home_navigation a,
-        .st-key-home_navigation a:hover,
-        .st-key-home_navigation a:focus-visible {{
+        {HOME_LINK},
+        {HOME_LINK}:hover,
+        {HOME_LINK}:focus-visible {{
+            position: relative;
+            overflow: hidden;
             justify-content: center;
-            border-color: {tokens.ACCENT};
-            /* 단색 틴트는 「누를 수 있는 것」에서 멈춘다. 위가 진하고 아래가 밝으면 맨
-               위 칸이 「돌아오는 자리」로 읽힌다. */
-            background: linear-gradient(
-                180deg,
-                {tokens.NAV_HOME_TINT_STRONG} 0%,
-                {tokens.SURFACE} 100%
-            );
+            border: 2px solid transparent;
+            background:
+                linear-gradient({tokens.SURFACE_PAGE}, {tokens.SURFACE_PAGE}) padding-box,
+                linear-gradient(
+                    100deg,
+                    {tokens.ACCENT},
+                    {tokens.BORDER} 45%,
+                    {tokens.ACCENT}
+                ) border-box;
         }}
-        .st-key-home_navigation a p {{
+        {HOME_LINK} p {{
             text-align: center;
             color: {tokens.ACCENT};
         }}
-        /* 아이콘을 더하기 전에는 전 페이지 중 HOME 만 아이콘이 없어 맨 위가 비어 보였다. */
-        .st-key-home_navigation a [data-testid="stIconMaterial"] {{
-            color: {tokens.ACCENT};
+        /* 마우스가 스칠 때 광택 띠가 한 번 지나간다. 평소에는 왼쪽 밖에 세워 두므로
+           가만히 있는 화면에서는 아무것도 움직이지 않는다. */
+        {HOME_LINK}::after {{
+            content: "";
+            position: absolute;
+            inset: 0;
+            transform: translateX(-120%);
+            background: linear-gradient(
+                100deg,
+                transparent 0%,
+                {tokens.NAV_HOME_SHEEN} 50%,
+                transparent 100%
+            );
+        }}
+        {HOME_LINK}:hover::after {{
+            animation: capa-home-sheen 900ms ease-out 1;
+        }}
+        @keyframes capa-home-sheen {{
+            to {{
+                transform: translateX(120%);
+            }}
+        }}
+        /* 움직임을 줄여 달라고 한 사용자에게는 띠를 보내지 않는다. */
+        @media (prefers-reduced-motion: reduce) {{
+            {HOME_LINK}:hover::after {{
+                animation: none;
+            }}
         }}
 
         /* 지금 보고 있는 페이지를 **융기**로 알린다. Streamlit 이 주는 활성 표시는 알파
@@ -250,6 +301,7 @@ with pinned_connections(DUCKDB_PATH):
         {group_box_selectors},
         .st-key-{SCENARIO_BOX_KEY},
         .st-key-{MONTH_BOX_KEY},
+        .st-key-{BOTTLENECK_BOX_KEY},
         .st-key-{ADMIN_BOX_KEY} {{
             padding: 0.55rem 0.7rem;
         }}
@@ -274,6 +326,26 @@ with pinned_connections(DUCKDB_PATH):
         .st-key-home_navigation {{
             padding-left: 0;
             padding-right: 0;
+        }}
+
+        /* 제목 옆에 붙인 표기(공식버전 배지·적용기간 안내)가 제목보다 위에 떠 있었다.
+           `vertical_alignment="center"` 는 제대로 걸려 있다 — 어긋난 것은 제목 쪽이다.
+           Streamlit 의 제목은 **두 값이 짝을 이룬다**: `h4` 가 `padding: 7.5px 0 15px`
+           이고 감싸는 `stMarkdownContainer` 가 `margin-bottom: -15px` 로 그만큼 도로
+           당긴다. 세로로 쌓을 때는 서로 상쇄되지만, flex 가 가운데 맞추는 것은 **패딩까지
+           포함한 상자**라 글자만 아래로 (15-7.5)/2 만큼 밀렸다.
+           한쪽만 풀면 상자가 18-15=3px 로 찌부러져 더 어긋난다. 둘을 함께 풀어야 상자가
+           곧 글줄이 되어 두 글자가 같은 높이에 선다. 박스 안 제목에만 걸고 본문 `h4` 의
+           여백은 그대로 둔다.
+
+           옆에 표기가 없는 B/N 집계 공정 제목도 같은 규칙을 받는다. 세로로 쌓일 때 두 값은
+           서로 상쇄되지만 **위쪽 7.5px 은 남아** 그 상자만 제목이 아래로 처져 있었다. */
+        {box_headings} {{
+            padding-top: 0;
+            padding-bottom: 0;
+        }}
+        {box_heading_wrappers} {{
+            margin-bottom: 0;
         }}
 
         /* Admin Area 는 **언제나 맨 아래**다. 페이지가 자기 사이드바 요소를 그리는 것은

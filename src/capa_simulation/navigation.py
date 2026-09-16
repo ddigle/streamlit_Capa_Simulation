@@ -50,8 +50,9 @@ class PageSpec:
         )
 
 
-# 전 페이지 중 HOME 만 아이콘이 없어 사이드바 맨 위가 비어 보였다.
-HOME = PageSpec("app_pages/home.py", "HOME", ":material/home:", default=True)
+# HOME 은 목록의 한 항목이 아니라 **돌아오는 자리**다. 아이콘을 빼 다른 항목과
+# 같은 리듬에서 끄집어낸다 — 그 자리는 버튼 서식(그라데이션 테두리)이 맡는다.
+HOME = PageSpec("app_pages/home.py", "HOME", default=True)
 CAPA_CHATBOT = PageSpec(
     "app_pages/capa_chatbot.py", _implementing("Capa Chatbot"), ":material/chat:"
 )

@@ -1,4 +1,4 @@
-# Purpose: 공통 사이드바에 실제 계산에 적용된 생산계획년월 범위를 표시한다.
+# Purpose: 공통 사이드바의 적용 월 범위 표시와 페이지가 그리는 사이드바 상자의 CSS 훅.
 
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
@@ -10,6 +10,10 @@ from capa_simulation.services.month_columns import month_label
 # 그러면 한쪽의 "적용 · 범위" 가 다른 쪽 사이드바에 쓰이거나, 사라진 컨테이너에 써서
 # 아무 데도 나타나지 않는다.
 PLACEHOLDER_STATE_KEY = "sidebar_month_range_placeholder"
+
+# HOME 이 그리는 B/N 집계 공정 상자. `app.py` 의 여백 규칙이 이 key 를 읽는다 —
+# 상자를 그리는 쪽과 서식을 주는 쪽이 갈려 있어 이름을 한 곳에 둔다.
+BOTTLENECK_BOX_KEY = "sidebar_bottleneck_box"
 
 
 def register_month_range_placeholder(placeholder: DeltaGenerator) -> None:

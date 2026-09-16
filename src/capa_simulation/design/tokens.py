@@ -171,6 +171,8 @@ NAV_SHADOW: Final = _with_alpha(TEXT, 0.10)
 # HOME 버튼 그라디언트의 위쪽 끝. 아래는 `SURFACE` 로 빠진다 — 단색 틴트는 「누를 수
 # 있는 것」에서 멈추지만, 위가 진하고 아래가 밝으면 맨 위 칸이 「돌아오는 자리」로 읽힌다.
 NAV_HOME_TINT_STRONG: Final = _with_alpha(ACCENT, 0.16)
+# HOME 버튼 위를 한 번 지나는 광택 띠. 면색이 아니라 **빛**이라 SURFACE 를 흐린다.
+NAV_HOME_SHEEN: Final = _with_alpha(SURFACE, 0.85)
 
 # 기준선과 실적선 사이를 칠하는 옅은 면. 위의 `DELTA_AREA_*` 는 막대 트랙 위에 얹혀
 # 트랙과 구분돼야 하지만, 이 면은 선 두 개 사이를 채우기만 하면 되므로 같은 세기로 칠하면

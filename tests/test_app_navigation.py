@@ -23,7 +23,7 @@ APP_PATH = PROJECT_ROOT / "app.py"
 # 특성화 테스트다. 페이지가 빠지거나 제목·아이콘이 바뀌는 것을 잡기 위한 기준값이며,
 # 의도적으로 바꿀 때는 함께 갱신한다.
 EXPECTED_PAGES = [
-    ("app_pages/home.py", "HOME", ":material/home:", True),
+    ("app_pages/home.py", "HOME", None, True),
     ("app_pages/capa_chatbot.py", "Capa Chatbot (구현중)", ":material/chat:", False),
     ("app_pages/scenario_management.py", "시나리오 관리", ":material/database:", False),
     ("app_pages/static_capa.py", "Static Capa", ":material/factory:", False),
