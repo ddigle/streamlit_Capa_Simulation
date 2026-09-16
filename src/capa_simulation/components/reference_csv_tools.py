@@ -32,10 +32,12 @@ def render_reference_clipboard_tools(
         st.caption(
             "현재 조회 범위의 양식을 내려받아 Excel에서 값만 수정하세요. "
             "헤더를 포함한 전체 표를 복사해 아래에 붙여넣으면 파일 업로드 없이 적용합니다. "
-            "행·컬럼 구조는 변경할 수 없습니다."
+            "행·컬럼 구조는 변경할 수 없습니다. "
+            '분류 값 중 Excel이 숫자로 바꿔 읽는 것(예: `4.00E+02`)은 양식에서 `="…"` 로 '
+            "묶어 내려갑니다 — 그대로 두시면 됩니다."
         )
         render_csv_download(
-            data=reference_edit_csv_bytes(data),
+            data=reference_edit_csv_bytes(data, key_columns),
             file_name=file_name,
             key=f"{key}_download",
             label=CSV_TEMPLATE_LABEL,
