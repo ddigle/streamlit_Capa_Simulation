@@ -193,7 +193,11 @@ try:
     source_start, source_end = available_month_range(reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN")
     # 과거 구간은 계산 원천의 월 범위 밖에 있다. 원천 범위로만 자르면 넣어 둔 과거가 절대
     # 조회 범위에 들어오지 못한다. 볼 수 있는 범위를 과거 구간만큼 넓힌다.
-    past_profile = load_global_past_data(str(DUCKDB_PATH.resolve()))
+    # **저장된 것**과 **화면에 그릴 것**을 갈라 둔다. 아래 토글은 대시보드에서 과거를 빼는
+    # 표시 설정일 뿐 데이터를 지우는 뜻이 아닌데, 비운 프로필 하나만 들고 다니면 Past Data
+    # 탭이 그것을 「저장된 값」으로 읽어 저장할 때 덮어쓴다.
+    stored_past_profile = load_global_past_data(str(DUCKDB_PATH.resolve()))
+    past_profile = stored_past_profile
     if not include_past:
         # 행만 비우고 **컬럼과 dtype 은 그대로 둔다.** 아래 병합·와이드 변환이 컬럼을 보고
         # 돌기 때문에 빈 프레임을 새로 만들면 그 자리에서 깨진다. 이렇게 두면 병합이 전부
@@ -202,7 +206,7 @@ try:
         # `version` 도 0 이 되어 Figure 캐시 키가 갈린다 — 켠 화면과 끈 화면이 같은 칸을
         # 나눠 쓰지 않는다.
         past_profile = replace(
-            past_profile,
+            stored_past_profile,
             version=0,
             monthly=past_profile.monthly.iloc[:0],
             plan_detail=past_profile.plan_detail.iloc[:0],
@@ -773,7 +777,9 @@ with main_tab:
                 owner_tab=main_tab,
             )
 with past_tab:
-    render_past_data_management(str(DUCKDB_PATH.resolve()), past_profile)
+    # 관리 탭은 **저장된** 프로필을 받는다. 표시용으로 비운 것을 주면 화면이
+    # 「저장 0행」으로 보이고, 저장이 그 빈 값을 DB 에 되쓴다.
+    render_past_data_management(str(DUCKDB_PATH.resolve()), stored_past_profile)
 with preference_tab:
     # 선행 물량은 실제 달에만 넣는다. 화면 축에 끼운 연간 Total 칸은 입력할 자리가 아니다.
     advance_months = [int(value) for value in baseline_density["생산계획년월"]]

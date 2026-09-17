@@ -12,6 +12,7 @@ DB 원천은 적재 시점 이후의 달만 담는다. 지난 해를 함께 보�
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import pandas as pd
@@ -22,6 +23,7 @@ from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_mes
 from capa_simulation.persistence.cache import (
     clear_global_past_data_cache,
     get_scenario_repository,
+    load_global_past_data,
     past_table_csv,
 )
 from capa_simulation.persistence.models import GlobalPastData
@@ -102,7 +104,28 @@ def render_past_data_management(database_path: str, profile: GlobalPastData) -> 
         st.caption(_version_caption(profile))
     for spec in PAST_TABLE_SPECS:
         _render_table_editor(database_path, profile.version, spec, stored[spec.name], draft)
-    _render_save(database_path, stored, draft)
+    _render_save(database_path, draft)
+
+
+def merged_past_tables(
+    database_path: str,
+    draft: Mapping[str, pd.DataFrame],
+) -> dict[str, pd.DataFrame]:
+    """저장에 쓸 세 표. **저장된 값은 화면이 아니라 DB 에서 다시 읽는다.**
+
+    세 표가 한 버전을 공유하므로 한 표만 고쳐도 나머지를 함께 다시 써야 하고, 그래서 이
+    함수가 무엇을 「나머지」로 보느냐가 곧 남는 데이터다. 화면이 건넨 프로필을 믿으면
+    안 된다 — HOME 은 `Past Data 포함` 토글이 꺼졌을 때 **표시용으로 행을 비운 프로필**을
+    만들고, 그것을 그대로 쓰면 붙여넣지 않은 두 표가 빈 채로 기록되어 저장된 과거 구간이
+    사라진다. `replace_global_past_data` 는 지우고 다시 넣으므로 되돌릴 수 없다.
+    """
+    stored = load_global_past_data(database_path)
+    current = {
+        "월별": stored.monthly,
+        "계획": stored.plan_detail,
+        "확보율": stored.securement,
+    }
+    return {name: draft.get(name, frame) for name, frame in current.items()}
 
 
 def _render_table_editor(
@@ -162,7 +185,6 @@ def _render_table_editor(
 
 def _render_save(
     database_path: str,
-    stored: dict[str, pd.DataFrame],
     draft: dict[str, pd.DataFrame],
 ) -> None:
     with st.container(border=True):
@@ -179,7 +201,7 @@ def _render_save(
             # 통째로 다시 그릴 이유가 없고, 버튼을 누른 실행에 값이 함께 올라온다.
             on_change="ignore",
         )
-        pending_names = [name for name in stored if name in draft]
+        pending_names = [spec.name for spec in PAST_TABLE_SPECS if spec.name in draft]
         if st.button(
             "과거 구간 저장",
             icon=":material/save:",
@@ -187,7 +209,7 @@ def _render_save(
             width="stretch",
             disabled=not pending_names,
         ):
-            merged = {name: draft.get(name, frame) for name, frame in stored.items()}
+            merged = merged_past_tables(database_path, draft)
             try:
                 get_scenario_repository(database_path).replace_global_past_data(
                     merged, source=note.strip() or "웹 붙여넣기"

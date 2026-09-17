@@ -261,3 +261,66 @@ def test_merging_without_past_rows_changes_nothing() -> None:
     )
 
     assert list(merged["제품정보"]) == ["B", "A"]
+
+
+def _stored_profile_tables() -> dict[str, pd.DataFrame]:
+    """세 표에 모두 값이 든 상태."""
+    return {
+        "월별": _past_months(),
+        "계획": pd.DataFrame(
+            {
+                "생산계획년월": [202511, 202512],
+                "제품정보": ["DEMO-A", "DEMO-A"],
+                "Stack": ["8H", "8H"],
+                "Customer": ["DEMO-C", "DEMO-C"],
+                "생산수량": [1_000.0, 1_100.0],
+            }
+        ),
+        "확보율": pd.DataFrame(
+            {
+                "생산계획년월": [202511, 202512],
+                "공정": ["DEMO-P", "DEMO-P"],
+                "확보율": [1.02, 0.98],
+            }
+        ),
+    }
+
+
+def test_saving_one_table_keeps_the_other_two_even_when_the_screen_emptied_them(
+    tmp_path: Path,
+) -> None:
+    """`Past Data 포함` 토글을 끈 채 저장해도 저장된 과거 구간이 남아야 한다.
+
+    HOME 은 토글이 꺼지면 **표시용으로 행을 비운** 프로필을 만든다. 저장이 화면에서 받은
+    그 프로필을 「저장된 값」으로 쓰면, 붙여넣지 않은 두 표가 빈 채로 기록되어 과거 구간이
+    사라진다. `replace_global_past_data` 는 지우고 다시 넣으므로 되돌릴 수 없다 — 그래서
+    저장은 화면을 믿지 않고 DB 를 다시 읽는다.
+    """
+    from capa_simulation.components.past_data_management import merged_past_tables
+
+    database_path = str(tmp_path / "past.duckdb")
+    repository = DuckDBScenarioRepository(Path(database_path))
+    repository.initialize()
+    repository.replace_global_past_data(_stored_profile_tables(), source="테스트 초기값")
+
+    # 월별만 새로 붙여넣은 상태. 나머지 둘은 손대지 않았다.
+    draft = {"월별": _past_months().assign(Density=[8.5, 9.5, 10.5])}
+
+    merged = merged_past_tables(database_path, draft)
+
+    assert merged["월별"]["Density"].tolist() == [8.5, 9.5, 10.5]
+    assert len(merged["계획"]) == 2, "붙여넣지 않은 표가 비워졌습니다 — 과거 구간 소실"
+    assert len(merged["확보율"]) == 2, "붙여넣지 않은 표가 비워졌습니다 — 과거 구간 소실"
+
+
+def test_the_past_tab_is_given_the_stored_profile_not_the_display_filtered_one() -> None:
+    """HOME 이 관리 탭에 넘기는 것은 **저장된** 프로필이어야 한다.
+
+    표시용으로 비운 쪽을 넘기면 화면이 「저장 0행」으로 보이고, 저장이 그 빈 값을 되쓴다.
+    배선이 한 글자만 어긋나도 데이터가 사라지므로 소스에서 고정한다.
+    """
+    source = (Path(__file__).resolve().parents[1] / "app_pages" / "home.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "render_past_data_management(str(DUCKDB_PATH.resolve()), stored_past_profile)" in source
