@@ -3,10 +3,10 @@
 """Apply workbook-managed display order rules to Streamlit tables."""
 
 from dataclasses import dataclass
-from typing import Any
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import match_key, scalar_match_key
 from capa_simulation.services.product_type import (
     EDP_TOP_DIVISION,
     SOURCE_TOP_DIVISION,
@@ -35,29 +35,6 @@ class PreparedDisplayOrder:
 
 
 DisplayOrderInput = pd.DataFrame | PreparedDisplayOrder | None
-
-
-def match_key(values: "pd.Series[Any]") -> "pd.Series[str]":
-    """분류값을 **맞대어 볼 때만** 쓰는 형태로 줄인다. 앞뒤 공백을 떼고 대소문자를 없앤다.
-
-    규칙에 `Top` 이라고 적어 두면 원천의 `TOP` 에도 걸려야 한다. 예전에는 글자 그대로
-    맞춰서, 대소문자가 한 글자만 달라도 규칙이 없는 것과 똑같이 동작했다 — 그 값이 무한대로
-    밀려 화면 맨 뒤에 서는데 오류도 경고도 없다. 순서만 조용히 틀린다.
-
-    **줄인 값은 비교에만 쓰고 화면에는 원래 글자를 그대로 쓴다.** 사용자가 적은 표기가
-    화면에서 바뀌면 그것대로 놀란다.
-
-    빈 값은 빈 문자열로 내린다. `astype("string")` 이 `None` 을 `pd.NA` 로 올리는데, 그러면
-    `.eq(...)` 가 불리언이 아니라 **NA 를 품은** 불리언이 되어 `.astype(int)` 와 `.loc[]`
-    마스킹이 그 자리에서 죽는다. 사용자지정 규칙의 분류값은 비어 있을 수 없으므로(위쪽
-    누락 검사가 먼저 막는다) 빈 문자열이 실제 값과 부딪히지 않는다.
-    """
-    return values.astype("string").str.strip().str.casefold().fillna("")
-
-
-def scalar_match_key(value: object) -> str:
-    """`match_key` 의 한 값짜리. 두 곳이 같은 규칙으로 줄여야 짝이 맞는다."""
-    return str(value).strip().casefold()
 
 
 def _prepare_display_order(display_order: pd.DataFrame) -> pd.DataFrame:

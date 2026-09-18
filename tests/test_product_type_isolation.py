@@ -19,6 +19,7 @@
 """
 
 import pandas as pd
+import pytest
 
 from capa_simulation.services.load_calculator import calculate_chip_load
 from capa_simulation.services.product_type import (
@@ -127,3 +128,57 @@ def test_a_frame_without_a_product_type_keeps_the_older_behaviour() -> None:
 
     expected = 100.0 * 4.0 / 0.9 / 0.95 * (1 - 0.9)
     assert by_product == {"HBM-A": expected, "EDP-A": expected}
+
+
+# 원천은 `WF 구분` 을 **대문자 `TOP`** 으로 싣는다(2026-09-18 사용자 확인). 이 파일과
+# `product_type.py` 의 상수는 읽기 좋은 `Top` 으로 적혀 있었고, 둘을 글자 그대로 맞추던 동안
+# 아래 변환은 **운영 데이터에서 한 번도 일어나지 않았다.** 로컬 합성 표본만 `Top` 이라
+# 검사도 통과했다 — 표본이 원천과 다르면 검사가 결함을 덮는다는 실례다.
+
+
+def test_the_edp_rename_fires_on_the_real_uppercase_source() -> None:
+    from capa_simulation.services.product_type import apply_edp_wf_division
+
+    core = pd.DataFrame(
+        {
+            "제품타입": [EDP_PRODUCT_TYPE, HBM_PRODUCT_TYPE, EDP_PRODUCT_TYPE],
+            "WF 구분": ["TOP", "TOP", "Master"],
+        }
+    )
+
+    result = apply_edp_wf_division(core)
+
+    # EDP 의 TOP 만 갈라 부르고, HBM 의 TOP 은 원천 표기 그대로 남는다.
+    assert result["WF 구분"].tolist() == [EDP_TOP_DIVISION, "TOP", "Master"]
+
+
+def test_the_rename_still_fires_on_the_sample_spelling() -> None:
+    """합성 표본 표기(`Top`)도 계속 걸려야 한다 — 원천 표기가 둘 다 올 수 있다."""
+    from capa_simulation.services.product_type import apply_edp_wf_division
+
+    core = pd.DataFrame({"제품타입": [EDP_PRODUCT_TYPE], "WF 구분": ["Top"]})
+
+    assert apply_edp_wf_division(core)["WF 구분"].tolist() == [EDP_TOP_DIVISION]
+
+
+def test_a_differently_cased_product_type_still_picks_the_dummy_rule() -> None:
+    """Dummy 산식은 (제품타입, WF 구분) **두 값**에 걸린다. 한쪽만 흡수하면 규칙이 빗나간다."""
+    plan = PLAN.iloc[[0]].copy()
+    plan["제품타입"] = "hbm"
+    yields, chip = _reference("DUMMY")
+    yields = yields.loc[yields["제품정보"].eq("HBM-A")]
+    chip = chip.loc[chip["제품정보"].eq("HBM-A")]
+
+    dummy = calculate_chip_load(plan, yields, chip)["물량"].iloc[0]
+
+    # Dummy 산식은 EDS_수율로 나누지 않는다. 규칙이 걸렸다면 일반 산식보다 그만큼 작다.
+    plain_yields, plain_chip = _reference("Core")
+    plain = calculate_chip_load(
+        plan,
+        plain_yields.loc[plain_yields["제품정보"].eq("HBM-A")],
+        plain_chip.loc[plain_chip["제품정보"].eq("HBM-A")],
+    )["물량"].iloc[0]
+
+    # Dummy 산식은 `/ EDS_수율 * (1 - EDS_수율)` 을 더 곱한다. 규칙이 걸렸다면 그만큼 작다.
+    assert dummy < plain
+    assert dummy == pytest.approx(plain / 0.9 * (1 - 0.9))

@@ -71,6 +71,28 @@ def require_columns(data: pd.DataFrame, columns: Sequence[str], label: str) -> N
         raise ValueError(f"{label} 필수 컬럼이 없습니다: {', '.join(missing)}")
 
 
+def match_key(values: pd.Series) -> pd.Series:
+    """분류값을 **맞대어 볼 때만** 쓰는 형태로 줄인다. 앞뒤 공백을 떼고 대소문자를 없앤다.
+
+    원천 표기와 사람이 적은 표기가 대소문자만 다른 일이 잦다 — 원천 `WF 구분` 은 `TOP` 인데
+    표시순서 규칙에는 `Top` 이라고 적는 식이다. 글자 그대로 맞추면 규칙이 없는 것과 똑같이
+    동작하는데, 오류도 경고도 없이 순서나 파생만 조용히 틀린다.
+
+    **줄인 값은 비교에만 쓰고 저장·화면에는 원래 글자를 그대로 쓴다.** 사용자가 적은 표기나
+    원천 표기가 앱을 지나며 바뀌면 그것대로 혼란이다.
+
+    빈 값은 빈 문자열로 내린다. `astype("string")` 이 `None` 을 `pd.NA` 로 올리는데, 그러면
+    `.eq(...)` 가 불리언이 아니라 **NA 를 품은** 불리언이 되어 `.astype(int)` 와 `.loc[]`
+    마스킹이 그 자리에서 죽는다.
+    """
+    return values.astype("string").str.strip().str.casefold().fillna("")
+
+
+def scalar_match_key(value: object) -> str:
+    """`match_key` 의 한 값짜리. 두 곳이 같은 규칙으로 줄여야 짝이 맞는다."""
+    return str(value).strip().casefold()
+
+
 def normalize_demand_basis(values: pd.Series) -> pd.Series:
     """소요기준 표기를 대문자로 통일하고 `WAFER`를 `WF`로 맞춘다.
 

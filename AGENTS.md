@@ -834,9 +834,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     프레임이 되는 경계이고, 거기서 한 번 바꾸면 16개 RQ 표·부하량·소요대수·화면이 전부 같은
     값을 본다. 두 층에서 따로 바꾸면 조인 한쪽만 바뀌어 수율·Chip 이 조용히 안 붙는다.
   - 입력은 그대로 받는다. Capa 기준정보 DB·실적 DB 어디에도 `Top_e` 는 없고
-    `raw_data.core_data` 도 `Top` 그대로다. 표시순서 규칙도 입력에는 `Top` 뿐이라
+    `raw_data.core_data` 도 원천 표기 그대로다. 표시순서 규칙도 입력에는 Top 뿐이라
     `display_order._with_edp_top_rule` 이 적용 시점에 `Top_e` 규칙을 파생한다 — 없으면
     화면 맨 뒤로 조용히 밀린다.
+  - **원천 `WF 구분` 표기는 대문자 `TOP` 이다**(2026-09-18 사용자 확인). 이 파일과 문서의
+    상수는 읽기 좋은 `Top` 으로 적혀 있고, 둘을 글자 그대로 맞추던 동안 `apply_edp_wf_division`
+    은 **운영 데이터에서 한 번도 동작하지 않았다.** 로컬 합성 표본만 `Top` 이라 검사도
+    통과했다 — 표본이 원천과 다르면 검사가 결함을 덮는다. 이제 값 대조는 모두
+    `frame_contracts.match_key`(공백 제거 + casefold)를 지나고, **저장·화면에는 원천 표기를
+    그대로 쓴다.** 새로 값을 대조하는 코드를 쓸 때 `.eq(상수)` 를 바로 쓰지 않는다.
 - `src/capa_simulation/services/performance_actuals.py`
   - 효율·UPEH·수율 세 화면이 공유하는 Gap·우선순위 계산과 합성 데모. **Gap 의 뜻이 지표마다
     다르다** — 효율·수율은 `%p`, UPEH 는 비율이며 그 차이를 화면이 아니라 `MetricSpec` 이

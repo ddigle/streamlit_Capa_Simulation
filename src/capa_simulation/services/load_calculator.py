@@ -7,7 +7,11 @@ from typing import Literal
 import pandas as pd
 
 from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
-from capa_simulation.services.frame_contracts import require_columns
+from capa_simulation.services.frame_contracts import (
+    match_key,
+    require_columns,
+    scalar_match_key,
+)
 from capa_simulation.services.product_type import (
     DUMMY_DIVISIONS_BY_PRODUCT_TYPE,
     EDP_PRODUCT_TYPE,
@@ -492,20 +496,26 @@ def _dummy_mask(calculation: pd.DataFrame) -> pd.Series:
 
     `제품타입` 이 없는 프레임(제품타입 도입 이전 경로)은 예전처럼 이름만 보고 고른다.
     """
-    division = calculation["WF 구분"].astype("string").str.strip().str.casefold()
+    division = match_key(calculation["WF 구분"])
     if PRODUCT_TYPE_COLUMN not in calculation.columns:
         declared = {
-            name.casefold() for names in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.values() for name in names
+            scalar_match_key(name)
+            for names in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.values()
+            for name in names
         }
         return division.isin(declared).fillna(False)
 
-    product_type = product_type_of(calculation)
+    # 제품타입도 대소문자를 가리지 않는다. `WF 구분` 만 흡수하고 제품타입은 글자 그대로
+    # 맞추면, 원천 표기가 한 글자만 달라도 Dummy 규칙이 통째로 빗나간다.
+    product_type = match_key(product_type_of(calculation))
     mask = pd.Series(False, index=calculation.index)
     for declared_type, dummy_divisions in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.items():
         if not dummy_divisions:
             continue
-        names = {name.casefold() for name in dummy_divisions}
-        mask |= product_type.eq(declared_type) & division.isin(names).fillna(False)
+        names = {scalar_match_key(name) for name in dummy_divisions}
+        mask |= product_type.eq(scalar_match_key(declared_type)) & division.isin(names).fillna(
+            False
+        )
     return mask
 
 
