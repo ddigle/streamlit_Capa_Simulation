@@ -1,0 +1,151 @@
+# Purpose: 사내 배포 적용기의 안전 장치 — 무엇을 지우고 무엇을 남기며 언제 멈추는지 고정한다.
+
+import sys
+from pathlib import Path
+
+import pytest
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
+from apply_deploy_package import (  # noqa: E402
+    PRESERVED_PREFIXES,
+    ApplyError,
+    digest_mismatches,
+    member_problems,
+    order_problems,
+    plan_removals,
+    read_manifest,
+)
+
+
+def test_preserved_paths_are_never_removed() -> None:
+    """리뷰 기록·적용 이력·권한 설정은 사내가 만든 것이라 배포가 지우면 안 된다."""
+    tracked = [
+        "app.py",
+        "src/capa_simulation/settings.py",
+        "review/202609161506.md",
+        ".deploy/applied.json",
+        ".claude/settings.json",
+    ]
+
+    removals = plan_removals(tracked)
+
+    assert removals == ["app.py", "src/capa_simulation/settings.py"]
+    for path in tracked:
+        if path.startswith(PRESERVED_PREFIXES):
+            assert path not in removals
+
+
+def test_ignored_data_is_out_of_reach_because_only_tracked_files_are_removed() -> None:
+    """사내 DuckDB 와 `data/` 실데이터는 `git ls-files` 에 없다.
+
+    지울 대상을 추적 파일에서만 고르므로 그 둘은 애초에 후보가 아니다. `git clean -x` 를
+    쓰지 않는 이유가 이것이고, 한 글자 차이로 되돌릴 수 없는 데이터가 날아간다.
+    """
+    tracked = ["app.py", "data/input/.gitkeep"]
+
+    removals = plan_removals(tracked)
+
+    assert removals == ["app.py", "data/input/.gitkeep"]
+    assert "data/capa_simulation.duckdb" not in removals
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../escape.py",
+        "/absolute.py",
+        "app/../../escape.py",
+        "review/notes.md",
+        ".deploy/applied.json",
+    ],
+)
+def test_dangerous_archive_members_are_refused(name: str) -> None:
+    """저장소 밖을 가리키거나 사내 전용 자리를 덮는 항목은 풀기 전에 걸러진다."""
+    assert member_problems([name]), f"걸러지지 않았습니다: {name}"
+
+
+def test_case_only_duplicates_are_refused() -> None:
+    """Windows 는 대소문자를 가리지 않아 두 항목이 한 파일로 겹치고 하나가 사라진다."""
+    problems = member_problems(["app_pages/Home.py", "app_pages/home.py"])
+
+    assert any("대소문자" in problem for problem in problems)
+
+
+def test_a_normal_member_list_passes() -> None:
+    assert member_problems(["app.py", "src/capa_simulation/settings.py"]) == []
+
+
+def test_reapplying_the_same_deploy_stops() -> None:
+    problems = order_problems({"stamp": "202609161506"}, {"stamp": "202609161506"})
+
+    assert problems and problems[0].startswith("중단:")
+
+
+def test_an_older_zip_stops_so_the_repository_cannot_go_backwards() -> None:
+    """메일함에서 옛 배포를 잘못 열면 사내가 과거로 돌아간다."""
+    problems = order_problems({"stamp": "202609161506"}, {"stamp": "202609161253"})
+
+    assert problems and problems[0].startswith("중단:")
+
+
+def test_a_newer_zip_proceeds() -> None:
+    problems = order_problems({"stamp": "202609161253"}, {"stamp": "202609161506"})
+
+    assert all(not problem.startswith("중단:") for problem in problems)
+
+
+def test_a_skipped_deploy_is_reported_but_does_not_stop() -> None:
+    """건너뛴 배포는 알릴 일이지 막을 일이 아니다 — ZIP 은 늘 전체를 담는다."""
+    problems = order_problems(
+        {"stamp": "202609151706", "commit": "aaaaaaa"},
+        {"stamp": "202609161506", "previous_commit": "bbbbbbb"},
+    )
+
+    assert problems
+    assert all(not problem.startswith("중단:") for problem in problems)
+    assert any("건너뛴" in problem for problem in problems)
+
+
+def test_the_first_apply_has_nothing_to_compare_and_proceeds() -> None:
+    assert order_problems({}, {"stamp": "202609161506"}) == []
+
+
+def test_a_zip_without_a_manifest_is_refused(tmp_path: Path) -> None:
+    import zipfile
+
+    path = tmp_path / "old.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("app.py", "x = 1\n")
+
+    with zipfile.ZipFile(path) as archive:
+        with pytest.raises(ApplyError, match="송장 없이는"):
+            read_manifest(archive)
+
+
+def test_an_unknown_manifest_version_is_refused(tmp_path: Path) -> None:
+    import json
+    import zipfile
+
+    path = tmp_path / "future.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("DEPLOY_MANIFEST.json", json.dumps({"manifest_version": 99}))
+
+    with zipfile.ZipFile(path) as archive:
+        with pytest.raises(ApplyError, match="적용기를 먼저 갱신"):
+            read_manifest(archive)
+
+
+def test_digest_mismatch_names_the_file(tmp_path: Path) -> None:
+    import hashlib
+
+    # `write_text` 는 Windows 에서 `\n` 을 `\r\n` 으로 바꾼다. 적용기는 `write_bytes` 로
+    # ZIP 바이트를 그대로 쓰므로, 여기서도 바이트로 적어야 실제와 같은 비교가 된다.
+    payload = b"x = 1\n"
+    (tmp_path / "app.py").write_bytes(payload)
+    good = "sha256:" + hashlib.sha256(payload).hexdigest()
+
+    assert digest_mismatches(tmp_path, {"app.py": good}) == []
+    assert digest_mismatches(tmp_path, {"app.py": "sha256:0" * 8})[0].startswith("app.py")
+    assert "파일이 없습니다" in digest_mismatches(tmp_path, {"gone.py": good})[0]

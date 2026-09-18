@@ -25,14 +25,28 @@ Artifactory 인덱스 설정이 손으로 들어가 있고, 그 선언에서 나
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import subprocess
 import sys
 import zipfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# ZIP 안에 함께 넣는 송장. 사내는 이것을 읽어 **무엇을 받았는지** 안다 — 파일만 보내면
+# 어느 커밋인지, 온전히 왔는지, 무엇이 달라졌는지 알 길이 없다.
+MANIFEST_NAME = "DEPLOY_MANIFEST.json"
+# 매니페스트 형식이 바뀌면 올린다. 사내 적용기가 읽을 수 있는지 이 값으로 가른다.
+MANIFEST_VERSION = 1
+# 배포마다 남기는 태그. 다음 배포가 「직전 배포 이후 무엇이 바뀌었나」를 여기서 구한다.
+DEPLOY_TAG_PREFIX = "deploy/"
+
+# 사내에만 있는 자리. 여기에 해당하는 경로는 **보내지도 않고 지우지도 않는다** —
+# 리뷰 기록과 적용 이력은 사내가 만든 것이라 사외 배포가 건드리면 안 된다.
+INTERNAL_ONLY_PREFIXES: tuple[str, ...] = ("review/", ".deploy/", ".claude/")
 
 # `git ls-files` 에 없지만 운영에 필요한 파일. 공용 표시순서의 부트스트랩 입력이다.
 EXTRA_FILES: tuple[str, ...] = ("data/input/RQ_DISPLAY_ORDER.csv",)
@@ -97,15 +111,105 @@ def forbidden_entries(paths: Iterable[str]) -> list[str]:
     return flagged
 
 
-def build_archive(root: Path, paths: Sequence[str], destination: Path) -> int:
-    """ZIP 을 만들고 넣은 항목 수를 돌려준다. 없는 파일은 그 자리에서 멈춘다."""
+def git_output(root: Path, *args: str) -> str:
+    """git 한 줄 실행. 실패하면 빈 문자열 — 태그가 하나도 없는 첫 배포가 정상이다."""
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
+def previous_deploy_tag(root: Path) -> str:
+    """직전 배포 태그. 이름이 `deploy/YYYYMMDDHHMM` 이라 사전순이 곧 시간순이다."""
+    listed = git_output(root, "tag", "--list", f"{DEPLOY_TAG_PREFIX}*")
+    tags = sorted(line.strip() for line in listed.splitlines() if line.strip())
+    return tags[-1] if tags else ""
+
+
+def change_entries(root: Path, previous_tag: str) -> dict[str, list[str]]:
+    """직전 배포 이후 무엇이 바뀌었나. **손으로 적지 않고 git 이 만든다.**
+
+    손으로 적은 목록은 실제와 어긋날 수 있고, 어긋나면 사내가 그 틀린 기준으로 판단한다.
+    """
+    if not previous_tag:
+        return {}
+    listed = git_output(root, "diff", "--name-status", f"{previous_tag}..HEAD")
+    changes: dict[str, list[str]] = {}
+    for line in listed.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        # 이름이 바뀐 항목은 `R100\told\tnew` 로 온다. 옛 이름은 삭제, 새 이름은 추가로 편다.
+        status = parts[0][:1]
+        if status == "R" and len(parts) >= 3:
+            changes.setdefault("D", []).append(parts[1])
+            changes.setdefault("A", []).append(parts[2])
+            continue
+        changes.setdefault(status, []).append(parts[1])
+    return {status: sorted(paths) for status, paths in sorted(changes.items())}
+
+
+def file_digests(root: Path, paths: Iterable[str]) -> dict[str, str]:
+    """보내는 파일마다 sha256. 사내가 적용 뒤 이걸로 전량 대조한다."""
+    digests: dict[str, str] = {}
+    for path in paths:
+        digest = hashlib.sha256((root / path).read_bytes()).hexdigest()
+        digests[path] = f"sha256:{digest}"
+    return digests
+
+
+def build_manifest(root: Path, paths: Sequence[str], *, stamp: str) -> dict[str, object]:
+    """ZIP 에 함께 넣는 송장."""
+    previous_tag = previous_deploy_tag(root)
+    return {
+        "manifest_version": MANIFEST_VERSION,
+        "stamp": stamp,
+        "zip_name": f"{stamp}.zip",
+        "built_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "commit": git_output(root, "rev-parse", "HEAD"),
+        "commit_subject": git_output(root, "log", "-1", "--format=%s"),
+        "previous_deploy": previous_tag.removeprefix(DEPLOY_TAG_PREFIX),
+        "previous_commit": git_output(root, "rev-parse", previous_tag) if previous_tag else "",
+        "changes": change_entries(root, previous_tag),
+        "file_count": len(paths),
+        "files": file_digests(root, paths),
+    }
+
+
+def internal_only_entries(paths: Iterable[str]) -> list[str]:
+    """사내 전용 자리를 침범하는 경로. 하나라도 있으면 사내 기록을 덮는다."""
+    return sorted(path for path in paths if path.startswith(INTERNAL_ONLY_PREFIXES))
+
+
+def build_archive(
+    root: Path,
+    paths: Sequence[str],
+    destination: Path,
+    *,
+    manifest: Mapping[str, object] | None = None,
+) -> int:
+    """ZIP 을 만들고 넣은 항목 수를 돌려준다. 없는 파일은 그 자리에서 멈춘다.
+
+    매니페스트는 자기 자신을 해시하지 않으므로 `files` 에 들어가지 않는다.
+    """
     missing = [path for path in paths if not (root / path).is_file()]
     if missing:
         raise FileNotFoundError(f"배포 세트에 없는 파일이 있습니다: {', '.join(missing[:5])}")
+    if MANIFEST_NAME in paths:
+        raise ValueError(f"배포 세트에 {MANIFEST_NAME} 이 있습니다 — 송장과 이름이 부딪힙니다.")
     destination.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in paths:
             archive.write(root / path, arcname=path)
+        if manifest is not None:
+            archive.writestr(
+                MANIFEST_NAME,
+                json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True),
+            )
     return len(paths)
 
 
@@ -127,6 +231,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="ZIP 을 만들지 않고 보낼 목록만 출력한다.",
     )
+    parser.add_argument(
+        "--no-tag",
+        action="store_true",
+        help="배포 태그를 남기지 않는다. 시험 삼아 만들어 볼 때만 쓴다.",
+    )
     args = parser.parse_args(argv)
 
     paths = deploy_set(tracked_files(PROJECT_ROOT))
@@ -135,6 +244,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("배포하면 안 되는 파일이 세트에 있습니다:", file=sys.stderr)
         for path in flagged:
             print(f"  - {path}", file=sys.stderr)
+        return 1
+
+    # 사외에 `review/` 같은 폴더가 생기면 ZIP 에 실려 사내 리뷰 기록을 덮는다.
+    intruding = internal_only_entries(paths)
+    if intruding:
+        print("사내 전용 자리를 침범하는 파일이 세트에 있습니다:", file=sys.stderr)
+        for path in intruding:
+            print(f"  - {path}", file=sys.stderr)
+        print(f"  ({', '.join(INTERNAL_ONLY_PREFIXES)} 는 사내만 씁니다)", file=sys.stderr)
         return 1
 
     if args.list_only:
@@ -147,9 +265,41 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("ZIP 을 만들려면 --out 이 필요합니다(--list-only 는 예외).")
     stamp = args.stamp or datetime.now().strftime("%Y%m%d%H%M")
     destination = args.out / f"{stamp}.zip"
-    count = build_archive(PROJECT_ROOT, paths, destination)
+    manifest = build_manifest(PROJECT_ROOT, paths, stamp=stamp)
+    count = build_archive(PROJECT_ROOT, paths, destination, manifest=manifest)
     size = destination.stat().st_size
-    print(f"{destination} ({size:,} bytes, 엔트리 {count:,}개)")
+    print(f"{destination} ({size:,} bytes, 엔트리 {count:,}개 + 송장)")
+    commit = str(manifest["commit"])
+    previous = str(manifest["previous_deploy"])
+    print(f"출처 {commit[:7]}  {manifest['commit_subject']}")
+    if previous:
+        changes = manifest["changes"]
+        summary = (
+            ", ".join(f"{status} {len(paths_)}" for status, paths_ in sorted(changes.items()))
+            if isinstance(changes, dict) and changes
+            else "변경 없음"
+        )
+        print(f"직전 {previous} 대비 — {summary}")
+    else:
+        print("직전 배포 태그가 없습니다 — 첫 배포로 기록합니다.")
+
+    if not args.no_tag:
+        tag = f"{DEPLOY_TAG_PREFIX}{stamp}"
+        tagged = subprocess.run(
+            ["git", "tag", tag],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        if tagged.returncode == 0:
+            print(
+                f"태그 {tag} — 다음 배포가 여기서 변경 목록을 구합니다. "
+                "`git push --tags` 를 잊지 마세요."
+            )
+        else:
+            print(f"태그 {tag} 를 남기지 못했습니다: {tagged.stderr.strip()}", file=sys.stderr)
+
     print(f"제외: {', '.join(sorted(EXCLUDED_FILES))}")
     print(
         "의존성을 바꿨다면 이 ZIP 만으로는 사내에 반영되지 않습니다 — "

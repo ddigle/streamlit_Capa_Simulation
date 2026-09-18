@@ -1,5 +1,6 @@
 # Purpose: 사내 배포 세트가 무엇을 담고 무엇을 빼는지 고정한다.
 
+import json
 import sys
 import zipfile
 from pathlib import Path
@@ -115,3 +116,35 @@ def test_the_exclusion_list_is_explicit() -> None:
 def test_directory_placeholders_still_ship() -> None:
     """`data/output`·`data/temp` 는 비어 있어야 하지만 폴더 자체는 있어야 한다."""
     assert forbidden_entries(["data/output/.gitkeep", "data/temp/.gitkeep"]) == []
+
+
+def test_the_manifest_never_hashes_itself(tmp_path: Path) -> None:
+    """송장은 자기 자신을 해시할 수 없다. 세트에 같은 이름이 있으면 그 자리에서 멈춘다."""
+    from build_deploy_package import MANIFEST_NAME, build_archive
+
+    (tmp_path / MANIFEST_NAME).write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="송장과 이름이"):
+        build_archive(tmp_path, [MANIFEST_NAME], tmp_path / "out.zip")
+
+
+def test_internal_only_paths_never_ship() -> None:
+    """사외에 `review/` 가 생기면 ZIP 에 실려 사내 리뷰 기록을 덮는다."""
+    from build_deploy_package import internal_only_entries
+
+    flagged = internal_only_entries(["app.py", "review/2026.md", ".deploy/applied.json"])
+
+    assert flagged == [".deploy/applied.json", "review/2026.md"]
+
+
+def test_the_archive_carries_the_manifest_beside_the_files(tmp_path: Path) -> None:
+    from build_deploy_package import MANIFEST_NAME, build_archive
+
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    destination = tmp_path / "out" / "deploy.zip"
+
+    build_archive(tmp_path, ["app.py"], destination, manifest={"manifest_version": 1})
+
+    with zipfile.ZipFile(destination) as archive:
+        assert sorted(archive.namelist()) == ["DEPLOY_MANIFEST.json", "app.py"]
+        assert json.loads(archive.read(MANIFEST_NAME))["manifest_version"] == 1
