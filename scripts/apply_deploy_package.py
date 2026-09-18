@@ -23,6 +23,7 @@
 
     uv run python scripts/apply_deploy_package.py <내려받은 ZIP 경로>
     uv run python scripts/apply_deploy_package.py <ZIP> --dry-run
+    uv run python scripts/apply_deploy_package.py <ZIP> --reconcile-only
 """
 
 from __future__ import annotations
@@ -71,6 +72,17 @@ def git(root: Path, *args: str, check: bool = True) -> str:
 
 def tracked_files(root: Path) -> list[str]:
     listed = git(root, "ls-files")
+    return [line.strip() for line in listed.splitlines() if line.strip()]
+
+
+def untracked_files(root: Path) -> list[str]:
+    """추적되지 않고 무시되지도 않은 파일.
+
+    **적용기가 보지 못하던 자리다.** 지울 대상을 `git ls-files` 에서만 골라 왔는데, 사내에만
+    생긴 파일은 추적되지 않아 그 목록에 없다. 옛 배포의 잔해든 누가 받아 둔 산출물이든
+    조용히 쌓이고, 읽는 쪽은 그것이 살아 있는 코드인지 알 수 없어 일단 읽는다.
+    """
+    listed = git(root, "ls-files", "--others", "--exclude-standard")
     return [line.strip() for line in listed.splitlines() if line.strip()]
 
 
@@ -193,6 +205,87 @@ def plan_removals(
     )
 
 
+def reconcile(
+    tracked: Iterable[str],
+    untracked: Iterable[str],
+    expected: Iterable[str],
+    kept: Iterable[str] = (),
+    *,
+    preserved: Sequence[str] = PRESERVED_PREFIXES,
+) -> dict[str, list[str]]:
+    """사외가 보낸 목록과 사내 폴더를 대조한다.
+
+    송장의 `files` 가 **사외 기준의 정본 목록**이다. 사내 폴더를 그것과 맞대어 세 갈래로 가른다.
+
+    - `사외에서_지워짐` : 추적되는데 목록에 없다 → 사외에서 지운 파일이다. 적용이 지운다.
+    - `정체불명`        : 추적도 무시도 되지 않는데 목록에 없다 → **누구도 책임지지 않는 파일.**
+      옛 배포의 잔해일 수도, 누가 받아 둔 산출물일 수도, 사내에서 급히 만든 것일 수도 있다.
+      **함부로 지우지 않는다** — 무엇인지 모르는 채 지우는 것이 가장 위험하다. 사람에게 묻는다.
+    - `목록에만_있음`   : 목록에 있는데 사내에 없다. 적용 **전**이면 정상(ZIP 이 채운다),
+      적용 **뒤**에 남아 있으면 해제가 덜 된 것이다.
+    """
+    expected_set = set(expected)
+    kept_set = set(kept)
+    prefixes = tuple(preserved)
+
+    def owned(path: str) -> bool:
+        return path.startswith(prefixes) or path in kept_set
+
+    return {
+        "사외에서_지워짐": sorted(
+            path for path in tracked if path not in expected_set and not owned(path)
+        ),
+        "정체불명": sorted(
+            path for path in untracked if path not in expected_set and not owned(path)
+        ),
+        "목록에만_있음": sorted(expected_set - set(tracked) - set(untracked)),
+    }
+
+
+def describe_reconcile(report: Mapping[str, Sequence[str]], *, applied: bool) -> str:
+    """대조 결과와 **무엇을 물어야 하는지**를 적는다.
+
+    스크립트는 판단하지 않는다. 사실을 보여 주고, 에이전트가 사용자에게 고를 것을 내민다.
+    """
+    lines = ["", "── 사외 목록과 사내 폴더 대조 ──────────────────────────────"]
+    removed = report.get("사외에서_지워짐") or []
+    unknown = report.get("정체불명") or []
+    missing = report.get("목록에만_있음") or []
+
+    if removed:
+        lines.append(f"사외에서 지워진 파일 {len(removed)}개 — 적용이 함께 지웁니다.")
+        lines.extend(f"   - {path}" for path in removed[:15])
+        if len(removed) > 15:
+            lines.append(f"   … 외 {len(removed) - 15}개")
+
+    if unknown:
+        lines.append("")
+        lines.append(f"**사내에만 있는 정체불명 파일 {len(unknown)}개** — 손대지 않았습니다.")
+        lines.extend(f"   ? {path}" for path in unknown[:30])
+        if len(unknown) > 30:
+            lines.append(f"   … 외 {len(unknown) - 30}개")
+        lines.append("")
+        lines.append("   무엇인지 모르는 채 지우는 것이 가장 위험합니다. 사용자에게 물으세요:")
+        lines.append(
+            "     (1) 사내에서만 쓰는 것이니 그대로 둔다 → `.gitignore` 에 넣을지 함께 정한다"
+        )
+        lines.append("     (2) 사외에도 있어야 하는 것이다 → 리뷰 문서에 적어 사외가 추가하게 한다")
+        lines.append("     (3) 옛 배포의 잔해다 → 지운다")
+        lines.append("   판단이 서지 않으면 (1)로 두고 리뷰 문서에 남기는 편이 안전합니다.")
+
+    if missing:
+        label = "해제가 덜 됐습니다" if applied else "ZIP 이 채웁니다 — 정상입니다"
+        lines.append("")
+        lines.append(f"목록에 있는데 사내에 없는 파일 {len(missing)}개 — {label}.")
+        lines.extend(f"   - {path}" for path in missing[:10])
+        if len(missing) > 10:
+            lines.append(f"   … 외 {len(missing) - 10}개")
+
+    if not (removed or unknown or missing):
+        lines.append("어긋나는 파일이 없습니다.")
+    return "\n".join(lines)
+
+
 def digest_mismatches(root: Path, files: Mapping[str, object]) -> list[str]:
     mismatched: list[str] = []
     for path, expected in sorted(files.items()):
@@ -300,6 +393,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="적용만 하고 커밋하지 않는다.",
     )
+    parser.add_argument(
+        "--reconcile-only",
+        action="store_true",
+        help="적용하지 않고 사외 목록과 사내 폴더의 차이만 대조해 보여 준다.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -343,20 +441,28 @@ def _run(args: argparse.Namespace) -> int:
                 raise ApplyError(problem)
             print(problem)
 
+        kept = manifest.get("kept_on_target")
+        kept_paths = [str(item) for item in kept] if isinstance(kept, list) else []
+        tracked = tracked_files(root)
+        removals = plan_removals(tracked, members, kept_paths)
+        print(describe_plan(manifest, removals, members))
+        print(
+            describe_reconcile(
+                reconcile(tracked, untracked_files(root), files, kept_paths), applied=False
+            )
+        )
+        # 보기만 하는 길은 여기서 끝난다. **깨끗한 트리를 요구하지 않는다** — 아무것도 바꾸지
+        # 않으므로 요구할 이유가 없고, 오히려 작업 중에 대조해 보는 것이 이 기능의 쓸모다.
+        if args.dry_run or args.reconcile_only:
+            print("\n보기만 했습니다 — 아무것도 바꾸지 않았습니다.")
+            return 0
+
         dirty = dirty_entries(root)
         if dirty:
             raise ApplyError(
                 "작업트리에 미저장 변경이 있습니다. 지우고 푸는 과정이 그것을 없앱니다 — "
                 "먼저 커밋하거나 되돌리세요:\n  " + "\n  ".join(dirty[:10])
             )
-
-        kept = manifest.get("kept_on_target")
-        kept_paths = [str(item) for item in kept] if isinstance(kept, list) else []
-        removals = plan_removals(tracked_files(root), members, kept_paths)
-        print(describe_plan(manifest, removals, members))
-        if args.dry_run:
-            print("\n미리보기입니다 — 아무것도 바꾸지 않았습니다.")
-            return 0
 
         try:
             apply_archive(root, archive, members, removals)
@@ -373,6 +479,14 @@ def _run(args: argparse.Namespace) -> int:
             "되돌리고 ZIP 을 다시 받으세요:\n  - " + "\n  - ".join(mismatched[:10])
         )
     print(f"대조    {len(files):,}/{len(files):,} 해시 일치")
+    # 적용 뒤에 한 번 더 본다. 사외에서 지워진 것이 정말 없어졌는지, 정체불명 파일이 그대로
+    # 남았는지 — 사용자에게 무엇을 물어야 하는지가 여기서 정해진다.
+    print(
+        describe_reconcile(
+            reconcile(tracked_files(root), untracked_files(root), files, kept_paths),
+            applied=True,
+        )
+    )
 
     write_state(root, manifest)
     if args.no_commit:

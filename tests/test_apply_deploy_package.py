@@ -11,11 +11,13 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from apply_deploy_package import (  # noqa: E402
     PRESERVED_PREFIXES,
     ApplyError,
+    describe_reconcile,
     digest_mismatches,
     member_problems,
     order_problems,
     plan_removals,
     read_manifest,
+    reconcile,
 )
 
 
@@ -178,3 +180,44 @@ def test_nothing_is_removed_when_the_zip_matches_the_tree() -> None:
     tracked = ["app.py", "src/settings.py"]
 
     assert plan_removals(tracked, tracked) == []
+
+
+def test_reconcile_separates_what_the_deploy_owns_from_what_nobody_owns() -> None:
+    """사외 목록과 사내 폴더를 맞대어 세 갈래로 가른다.
+
+    **정체불명 칸이 이 기능의 핵심이다.** 추적도 무시도 되지 않는 파일은 지울 대상 계산에
+    아예 들어오지 않아 그동안 보이지 않았다 — 옛 배포의 잔해가 조용히 쌓이고, 읽는 쪽은
+    그것이 살아 있는 코드인지 알 수 없어 일단 읽는다.
+    """
+    report = reconcile(
+        tracked=["app.py", "src/gone.py", "review/2026.md", "pyproject.toml"],
+        untracked=[".omo/run-continuation/s1.json", "scripts/leftover.py"],
+        expected=["app.py", "docs/new.md"],
+        kept=["pyproject.toml"],
+    )
+
+    assert report["사외에서_지워짐"] == ["src/gone.py"]
+    assert report["정체불명"] == [".omo/run-continuation/s1.json", "scripts/leftover.py"]
+    assert report["목록에만_있음"] == ["docs/new.md"]
+    # 보존 자리와 「남기라고 한 것」은 어느 칸에도 들어가지 않는다.
+    assert "review/2026.md" not in sum(report.values(), [])
+    assert "pyproject.toml" not in sum(report.values(), [])
+
+
+def test_reconcile_is_quiet_when_the_folder_matches_the_list() -> None:
+    report = reconcile(tracked=["app.py"], untracked=[], expected=["app.py"])
+
+    assert all(not paths for paths in report.values())
+
+
+def test_unknown_files_are_reported_but_never_removed() -> None:
+    """무엇인지 모르는 채 지우는 것이 가장 위험하다 — 보고만 하고 사람에게 묻는다."""
+    unknown = ".omo/run-continuation/s1.json"
+    report = reconcile(tracked=["app.py"], untracked=[unknown], expected=["app.py"])
+
+    assert report["정체불명"] == [unknown]
+    assert unknown not in plan_removals(["app.py"], ["app.py"])
+
+    rendered = describe_reconcile(report, applied=False)
+    assert "손대지 않았습니다" in rendered
+    assert "사용자에게 물으세요" in rendered
