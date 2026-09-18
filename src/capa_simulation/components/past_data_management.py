@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
@@ -139,6 +140,7 @@ def _render_table_editor(
     current = stored if pending is None else pending
     with st.container(border=True):
         st.markdown(f"#### {spec.icon} {spec.title}")
+        render_flash(f"past_data_read_flash_{spec.name}")
         st.caption(spec.caption)
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.caption(
@@ -176,7 +178,10 @@ def _render_table_editor(
             except BOOTSTRAP_ERRORS as exc:
                 st.error(bootstrap_error_message(exc))
             else:
-                st.success(f"{len(draft[spec.name]):,}행을 읽었습니다. 아래에서 저장하세요.")
+                queue_flash(
+                    f"past_data_read_flash_{spec.name}",
+                    f"{len(draft[spec.name]):,}행을 읽었습니다. 아래에서 저장하세요.",
+                )
                 st.rerun()
         if not current.empty:
             with st.expander(f"현재 {len(current):,}행 확인", icon=":material/preview:"):
@@ -189,6 +194,7 @@ def _render_save(
 ) -> None:
     with st.container(border=True):
         st.markdown("#### :material/save: 과거 구간 저장")
+        render_flash("past_data_save_flash")
         st.caption(
             "세 표가 한 버전을 공유합니다. 붙여넣지 않은 표는 저장된 값 그대로 다시 "
             "기록되며, 읽어 둔 표만 새 값으로 바뀝니다."
@@ -219,7 +225,7 @@ def _render_save(
             else:
                 clear_global_past_data_cache()
                 st.session_state.pop(PAST_DRAFT_KEY, None)
-                st.success("과거 구간을 공용 설정으로 저장했습니다.")
+                queue_flash("past_data_save_flash", "과거 구간을 공용 설정으로 저장했습니다.")
                 st.rerun()
         if not pending_names:
             st.caption("읽어 둔 표가 없습니다. 위에서 붙여넣기를 먼저 읽으세요.")

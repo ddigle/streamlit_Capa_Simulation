@@ -11,6 +11,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -51,6 +52,7 @@ def render_process_rename_management(
 ) -> None:
     """Proc Rename 탭 한 장. `available_processes` 는 안내용이며 비어 있어도 편집·저장한다."""
     st.subheader("Proc Rename")
+    render_flash("process_rename_flash")
     st.caption(
         "공정 A를 화면에서만 A'로 바꿔 표시합니다. 시나리오와 분리된 공용 설정이라 "
         "여기서 저장한 표시명은 모든 시나리오에 같이 적용됩니다. 원본 공정명은 데이터와 "
@@ -145,7 +147,10 @@ def _render_clipboard_import(
             # 확인 체크는 이번 교체 한 번에만 유효하다. 폼은 제출해도 값을 비우지 않으므로
             # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
             st.session_state.pop(CLIPBOARD_CONFIRM_KEY, None)
-            st.success("붙여넣은 공정 표시명을 공용 설정으로 적용했습니다.")
+            queue_flash(
+                "process_rename_flash",
+                "붙여넣은 공정 표시명을 공용 설정으로 적용했습니다.",
+            )
             st.rerun()
 
 
@@ -206,7 +211,7 @@ def _render_direct_editor(
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:
-        st.success("공정 표시명을 공용 설정으로 저장했습니다.")
+        queue_flash("process_rename_flash", "공정 표시명을 공용 설정으로 저장했습니다.")
         st.rerun()
 
 

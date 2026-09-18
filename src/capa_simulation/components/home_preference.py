@@ -17,6 +17,7 @@ from collections.abc import Collection, Sequence
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -537,6 +538,7 @@ def _render_advance_editor(
 ) -> None:
     with st.container(border=True):
         st.markdown("#### :material/fast_forward: 선행 투입 물량")
+        render_flash("home_advance_flash")
         st.caption(
             "Capa 여유만큼 앞당겨 투입한 달에는 **+**, 그만큼 줄어드는 이후 달에는 **−** 를 "
             "억Gb 로 넣습니다. 시나리오와 분리된 공용 설정이라 모든 시나리오에 같이 "
@@ -593,7 +595,7 @@ def _render_advance_editor(
         except BOOTSTRAP_ERRORS as exc:
             st.error(bootstrap_error_message(exc))
         else:
-            st.success("선행 투입 물량을 공용 설정으로 저장했습니다.")
+            queue_flash("home_advance_flash", "선행 투입 물량을 공용 설정으로 저장했습니다.")
             st.rerun()
 
 
@@ -666,6 +668,7 @@ def _render_summary_note_editor(
     """
     with st.container(border=True):
         st.markdown("#### :material/campaign: Summary 공지")
+        render_flash("home_summary_note_flash")
         st.caption(
             "HOME `Main` 탭 맨 위에 접힌 채로 뜹니다. 여러 사람이 같은 문구를 보는 공용 "
             "프로필이라 시나리오를 바꿔도 그대로입니다. **비우고 저장하면 공지가 "
@@ -703,8 +706,9 @@ def _render_summary_note_editor(
             st.error(str(exc))
             return
         clear_global_summary_note_cache()
-        st.success(
-            "Summary 공지를 저장했습니다." if str(note).strip() else "Summary 공지를 내렸습니다."
+        queue_flash(
+            "home_summary_note_flash",
+            "Summary 공지를 저장했습니다." if str(note).strip() else "Summary 공지를 내렸습니다.",
         )
         st.rerun(scope="app")
 
@@ -729,6 +733,7 @@ def _render_top5_band_editor(
     """B/N Top5 막대가 표현하는 확보율 구간."""
     with st.container(border=True):
         st.markdown("#### :material/straighten: B/N Top5 확보율 구간")
+        render_flash("home_top5_band_flash")
         st.caption(
             "Top5 막대의 높이는 `부하량 × 확보율` 이라 한 달 안에서 확보율에 비례합니다. "
             "한 달의 확보율이 크면 그 달 막대가 다른 달을 눌러 버리므로, 막대 길이가 "
@@ -781,7 +786,7 @@ def _render_top5_band_editor(
             st.error(str(exc))
             return
         clear_global_top5_band_cache()
-        st.success("B/N Top5 확보율 구간을 저장했습니다.")
+        queue_flash("home_top5_band_flash", "B/N Top5 확보율 구간을 저장했습니다.")
         st.rerun(scope="app")
 
 
@@ -808,6 +813,7 @@ def _render_key_process_editor(
     """
     with st.container(border=True):
         st.markdown("#### :material/grid_view: 주요공정 히트맵")
+        render_flash("home_key_process_flash")
         st.caption(
             "HOME 대시보드의 `주요공정 확보율` 격자에 그릴 공정입니다. 시나리오와 분리된 "
             "공용 설정이라 모든 시나리오에 같이 적용됩니다. **고른 차례가 곧 행 순서**이고, "
@@ -849,7 +855,7 @@ def _render_key_process_editor(
             st.error(str(exc))
             return
         clear_global_key_process_cache()
-        st.success("주요공정 목록을 저장했습니다.")
+        queue_flash("home_key_process_flash", "주요공정 목록을 저장했습니다.")
         st.rerun(scope="app")
 
 
@@ -898,6 +904,7 @@ def _render_execution_editor(
     """기준정보 밖에서 생긴 변수를 확보율에 퍼센트포인트로 얹는 입력 표."""
     with st.container(border=True):
         st.markdown("#### :material/bolt: 실행 Capa 반영")
+        render_flash("home_execution_flash")
         st.caption(
             "비가동대수 증가·UPEH 실적 부진·재공 부진처럼 기준정보 밖에서 생긴 변수를 "
             "**퍼센트포인트**로 넣습니다. 확보율 105% 에 `-10` 을 넣으면 95% 가 됩니다"
@@ -967,7 +974,7 @@ def _render_execution_editor(
         except ValueError as exc:
             st.error(str(exc))
             return
-        st.success("실행 Capa 반영을 저장했습니다.")
+        queue_flash("home_execution_flash", "실행 Capa 반영을 저장했습니다.")
         st.rerun(scope="app")
 
 

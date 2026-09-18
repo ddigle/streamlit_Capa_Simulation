@@ -7,6 +7,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.io.reference_cache import apply_global_display_order
@@ -50,6 +51,7 @@ def _validated_display_order(
 
 def render_display_order_management(repository: DuckDBScenarioRepository) -> None:
     st.subheader("표시순서 관리")
+    render_flash("display_order_flash")
     st.caption(
         "표시순서는 시나리오와 분리된 공용 설정입니다. 여기서 저장한 규칙은 현재와 이후 "
         "불러오는 모든 시나리오에 동일하게 적용됩니다."
@@ -125,7 +127,10 @@ def _render_clipboard_import(
             # 확인 체크는 이번 교체 한 번에만 유효하다. 폼은 제출해도 값을 비우지 않으므로
             # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
             st.session_state.pop(CLIPBOARD_CONFIRM_KEY, None)
-            st.success("붙여넣은 표시순서를 모든 시나리오의 공용 설정으로 적용했습니다.")
+            queue_flash(
+                "display_order_flash",
+                "붙여넣은 표시순서를 모든 시나리오의 공용 설정으로 적용했습니다.",
+            )
             st.rerun()
 
 
@@ -214,7 +219,10 @@ def _render_direct_editor(
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:
-        st.success("표시순서를 모든 시나리오의 공용 설정으로 저장했습니다.")
+        queue_flash(
+            "display_order_flash",
+            "표시순서를 모든 시나리오의 공용 설정으로 저장했습니다.",
+        )
         st.rerun()
 
 
