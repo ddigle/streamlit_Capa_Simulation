@@ -75,3 +75,41 @@ def test_the_marker_note_is_what_the_sample_actually_writes() -> None:
 def test_a_frame_missing_the_baseline_columns_is_not_guessed_at() -> None:
     """컬럼이 다르면 비교할 수 없다. 조용히 통과시키되 예외를 내지 않는다."""
     assert untouched_sample_baseline_rows(pd.DataFrame({"공정": ["A"]})).empty
+
+
+# 같은 위험의 두 번째 출처 — 사용자가 내려받은 CSV 양식의 예시 한 줄. 네 컬럼이 다 차 있어
+# `prepare_equipment_baseline` 을 그냥 통과하므로, 지우지 않고 저장하면 존재하지 않는 공정이
+# 불변 리비전에 남는다. 표시용 샘플과 출처만 다르고 결과는 같다.
+
+
+def test_the_template_example_row_is_caught() -> None:
+    from io import BytesIO
+
+    from capa_simulation.services.equipment_csv import (
+        baseline_csv_template,
+        untouched_template_baseline_rows,
+    )
+
+    template = pd.read_csv(BytesIO(baseline_csv_template()), dtype="object")
+
+    assert len(untouched_template_baseline_rows(template)) == 1
+
+
+def test_an_edited_template_row_belongs_to_the_user() -> None:
+    from io import BytesIO
+
+    from capa_simulation.services.equipment_csv import (
+        baseline_csv_template,
+        untouched_template_baseline_rows,
+    )
+
+    template = pd.read_csv(BytesIO(baseline_csv_template()), dtype="object")
+    template.loc[0, "공정"] = "사내공정-A"
+
+    assert untouched_template_baseline_rows(template).empty
+
+
+def test_the_template_guard_ignores_a_frame_without_the_columns() -> None:
+    from capa_simulation.services.equipment_csv import untouched_template_baseline_rows
+
+    assert untouched_template_baseline_rows(pd.DataFrame({"공정": ["A"]})).empty

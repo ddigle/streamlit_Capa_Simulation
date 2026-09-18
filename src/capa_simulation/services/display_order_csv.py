@@ -8,7 +8,10 @@ from io import BytesIO
 
 import pandas as pd
 
-from capa_simulation.services.clipboard_table import parse_clipboard_table
+from capa_simulation.services.clipboard_table import (
+    TEXT_TABLE_READ_OPTIONS,
+    parse_clipboard_table,
+)
 from capa_simulation.services.display_order_editor import (
     DISPLAY_ORDER_COLUMNS,
     validate_display_order,
@@ -28,12 +31,9 @@ def display_order_from_csv(content: bytes) -> pd.DataFrame:
     parsed: pd.DataFrame | None = None
     for encoding in ("utf-8-sig", "cp949"):
         try:
-            parsed = pd.read_csv(
-                BytesIO(content),
-                encoding=encoding,
-                keep_default_na=False,
-                na_values=[""],
-            )
+            # 같은 표가 파일로 오든 붙여넣기로 오든 같게 읽혀야 한다. 옵션은
+            # `clipboard_table` 한 군데가 갖는다 — 여기에 손으로 베껴 두면 한쪽만 바뀐다.
+            parsed = pd.read_csv(BytesIO(content), encoding=encoding, **TEXT_TABLE_READ_OPTIONS)
         except UnicodeDecodeError:
             continue
         break

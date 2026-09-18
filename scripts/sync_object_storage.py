@@ -36,6 +36,7 @@ from capa_simulation.persistence import snapshot_export, sync_state  # noqa: E40
 from capa_simulation.services import object_storage_manifest as manifest  # noqa: E402
 from capa_simulation.services.object_storage_manifest import (  # noqa: E402
     DATASET_LABELS,
+    DatasetName,
     PullDecision,
     PushDecision,
 )
@@ -401,12 +402,41 @@ def command_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _app_is_running(dataset: DatasetName) -> str | None:
+    """앱이 이 PC 에서 이 DB 를 잡고 있으면 그 인스턴스 id.
+
+    DuckDB 파일은 프로세스 배타 잠금이라 앱이 떠 있는 동안 스냅샷을 내보내지도, 받은
+    파일로 덮지도 못한다. 막지 않으면 `duckdb.IOException` 원문이 그대로 나오고 — Windows
+    로캘에서는 한글까지 깨져 — 사용자는 원인이 "앱이 켜져 있다" 라는 것을 알 수 없다.
+
+    심장박동은 앱이 10초에 한 번 남기고 90초 지나면 죽은 것으로 본다. 끄고 바로 돌리면
+    잠깐 남아 있을 수 있으나, 그때는 안내를 보고 다시 실행하면 된다 — 조용히 실패하는
+    것보다 낫다.
+    """
+    return sync_state.live_instance(DATASET_PATHS[dataset])
+
+
+def _blocked_by_running_app(dataset: DatasetName, action: str) -> bool:
+    instance = _app_is_running(dataset)
+    if instance is None:
+        return False
+    print(
+        f"[중단] {DATASET_LABELS[dataset]} — 앱이 이 PC 에서 실행 중입니다"
+        f"(인스턴스 {instance}). DuckDB 는 프로세스 배타 잠금이라 앱을 끄지 않으면 "
+        f"{action} 할 수 없습니다."
+    )
+    return True
+
+
 def command_pull(args: argparse.Namespace) -> int:
     client = build_client(args)
     failures = 0
     for dataset in datasets(args):
         label = DATASET_LABELS[dataset]
         database_path = DATASET_PATHS[dataset]
+        if _blocked_by_running_app(dataset, "받은 파일로 덮어"):
+            failures += 1
+            continue
         head = read_head(client, dataset)
         forked = read_fork(client, dataset)
         state = local_state(dataset)
@@ -456,6 +486,9 @@ def command_push(args: argparse.Namespace) -> int:
     failures = 0
     for dataset in datasets(args):
         database_path = DATASET_PATHS[dataset]
+        if _blocked_by_running_app(dataset, "스냅샷을 내보내"):
+            failures += 1
+            continue
         head = read_head(client, dataset)
         forked = read_fork(client, dataset)
         state = local_state(dataset)

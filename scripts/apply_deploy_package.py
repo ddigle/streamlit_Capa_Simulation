@@ -49,6 +49,22 @@ PRESERVED_PREFIXES: tuple[str, ...] = ("review/", ".deploy/", ".claude/")
 # 적용했는지 사내가 스스로 적어 둔다. 보존 목록 안에 있어 배포가 지우지 않는다.
 STATE_PATH = ".deploy/applied.json"
 
+# **무슨 일이 있어도 지우지 않는 것.** 아래 `plan_removals` 는 「사외에서 없어진 파일」을
+# 추적 목록으로 가리는데, 그 전제는 운영 데이터가 `.gitignore` 에 걸려 추적되지 않는다는
+# 것이다. 사내에서 그 규칙이 지워졌거나 파일이 먼저 커밋돼 버리면 전제가 깨지고, 배포가
+# 운영 DB 를 지운다. 되돌릴 수 없는 종류라 전제에 기대지 않고 여기서 한 번 더 막는다.
+NEVER_REMOVE_SUFFIXES: tuple[str, ...] = (
+    ".duckdb",
+    ".db",
+    ".wal",
+    ".sync.json",
+    ".xlsb",
+    ".xlsx",
+    ".xlsm",
+)
+NEVER_REMOVE_NAMES: tuple[str, ...] = (".env", "secrets.toml")
+NEVER_REMOVE_PREFIXES: tuple[str, ...] = ("data/input/", "data/output/", "data/temp/")
+
 
 class ApplyError(RuntimeError):
     """멈춰야 하는 상황. 메시지를 그대로 사람에게 보여 준다."""
@@ -194,14 +210,30 @@ def plan_removals(
     2. 송장이 남기라고 한 파일(`kept`) — `pyproject.toml`·`uv.lock` 이다. 사내 Artifactory
        인덱스와 그 락은 사내 것이라 보내지 않으므로, 지우면 **복구할 길이 없다.**
     3. 사내 전용 자리(`preserved`) — 리뷰 기록·적용 이력·권한 설정.
-    4. 무시된 파일 — `git ls-files` 에 없어 애초에 후보가 아니다. 사내 DuckDB 와 `data/`
-       실데이터가 그래서 안전하고, `git clean -x` 를 쓰지 않는 이유가 이것이다.
+    4. 무시된 파일 — `git ls-files` 에 없어 애초에 후보가 아니다. `git clean -x` 를 쓰지
+       않는 이유가 이것이다.
+    5. 운영 데이터(`is_protected`) — 4번이 이미 막아 줄 것 같지만, **그것은 사내
+       `.gitignore` 가 사외와 같다는 전제**다. 규칙이 지워졌거나 파일이 먼저 커밋됐으면
+       DuckDB 가 추적 목록에 들어오고, ZIP 은 그것을 싣지 않으므로 「사외에서 없어진
+       파일」로 판정된다. 운영 DB 는 되돌릴 수 없어 전제에 기대지 않는다.
 
     남는 것이 곧 **사외에서 지워졌는데 사내에 남은 파일**이다. 그것만 지운다.
     """
     keep = set(members) | set(kept)
     return sorted(
-        path for path in tracked if path not in keep and not path.startswith(tuple(preserved))
+        path
+        for path in tracked
+        if path not in keep and not path.startswith(tuple(preserved)) and not is_protected(path)
+    )
+
+
+def is_protected(path: str) -> bool:
+    """운영 데이터라 어떤 경우에도 배포가 지우지 않는 경로인가."""
+    lowered = path.lower()
+    return (
+        lowered.endswith(NEVER_REMOVE_SUFFIXES)
+        or path.rsplit("/", 1)[-1] in NEVER_REMOVE_NAMES
+        or path.startswith(NEVER_REMOVE_PREFIXES)
     )
 
 
@@ -303,7 +335,11 @@ def digest_mismatches(root: Path, files: Mapping[str, object]) -> list[str]:
 
 
 def describe_plan(
-    manifest: Mapping[str, object], removals: Sequence[str], members: Sequence[str]
+    manifest: Mapping[str, object],
+    removals: Sequence[str],
+    members: Sequence[str],
+    *,
+    tracked: Sequence[str] = (),
 ) -> str:
     changes = manifest.get("changes")
     lines = [
@@ -336,6 +372,17 @@ def describe_plan(
     else:
         lines.append("지움    없음")
     lines.append(f"보존    {' · '.join(PRESERVED_PREFIXES)} · 무시 목록(데이터) 전부")
+    protected = sorted(path for path in tracked if is_protected(path))
+    if protected:
+        lines.append(
+            f"주의    운영 데이터 {len(protected)}개가 **git 에 추적되고 있습니다.** "
+            "지우지는 않았지만 정상이 아닙니다 —"
+        )
+        for path in protected[:8]:
+            lines.append(f"        ! {path}")
+        if len(protected) > 8:
+            lines.append(f"        … 외 {len(protected) - 8}개")
+        lines.append("        `git rm -r --cached <경로>` 로 추적만 풉니다(파일은 남습니다).")
     lines.append(f"적용    {len(members):,}개 해제")
     return "\n".join(lines)
 
@@ -445,7 +492,7 @@ def _run(args: argparse.Namespace) -> int:
         kept_paths = [str(item) for item in kept] if isinstance(kept, list) else []
         tracked = tracked_files(root)
         removals = plan_removals(tracked, members, kept_paths)
-        print(describe_plan(manifest, removals, members))
+        print(describe_plan(manifest, removals, members, tracked=tracked))
         print(
             describe_reconcile(
                 reconcile(tracked, untracked_files(root), files, kept_paths), applied=False

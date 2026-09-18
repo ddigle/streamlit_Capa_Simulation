@@ -9,7 +9,10 @@ from io import BytesIO
 
 import pandas as pd
 
-from capa_simulation.services.clipboard_table import parse_clipboard_table
+from capa_simulation.services.clipboard_table import (
+    TEXT_TABLE_READ_OPTIONS,
+    parse_clipboard_table,
+)
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
     BASELINE_KEY_COLUMNS,
@@ -161,6 +164,33 @@ def read_baseline_clipboard(content: str) -> pd.DataFrame:
     )
 
 
+def untouched_template_baseline_rows(baseline: pd.DataFrame) -> pd.DataFrame:
+    """양식에 실어 보낸 **예시 한 줄이 그대로 남은** 행만 골라낸다.
+
+    예시 행은 네 컬럼이 다 채워져 있어 `prepare_equipment_baseline` 을 그냥 통과한다. 지우지
+    않고 저장하면 존재하지 않는 공정 하나가 불변 리비전에 영구 기록되고, 호기 마스터에 붙지
+    않는 유령 공정이 총대수·가용대수·가용률에 영원히 섞인다.
+
+    `equipment_samples.untouched_sample_baseline_rows` 와 **같은 위험, 다른 출처**다. 저쪽은
+    DB 가 비었을 때 화면에 채워 준 표시용 샘플이고, 이쪽은 사용자가 내려받은 양식의 예시다.
+    한 컬럼이라도 고쳤으면 그 행은 사용자의 것이므로 걸러 내지 않는다.
+    """
+    columns = list(BASELINE_COLUMNS)
+    if baseline.empty or any(column not in baseline.columns for column in columns):
+        return baseline.iloc[0:0]
+    normalized = baseline.loc[:, columns].copy()
+    for column in ("공정", "분류", "비고"):
+        normalized[column] = normalized[column].astype("string").str.strip()
+    normalized["기존보유대수"] = pd.to_numeric(normalized["기존보유대수"], errors="coerce")
+    example = (
+        normalized["공정"].eq(SAMPLE_BASELINE_PROCESS)
+        & normalized["분류"].eq(SAMPLE_BASELINE_CATEGORY)
+        & normalized["기존보유대수"].eq(SAMPLE_BASELINE_COUNT)
+        & normalized["비고"].eq(SAMPLE_BASELINE_TEMPLATE_NOTE)
+    )
+    return baseline.loc[example.fillna(False).to_numpy()]
+
+
 def read_equipment_clipboard(
     content: str,
     *,
@@ -240,7 +270,9 @@ def _read_csv(payload: bytes, columns: tuple[str, ...], label: str) -> pd.DataFr
     last_error: UnicodeDecodeError | None = None
     for encoding in ("utf-8-sig", "cp949"):
         try:
-            frame = pd.read_csv(BytesIO(payload), encoding=encoding)
+            # 붙여넣기 경로와 같은 옵션을 쓴다. pandas 기본값은 `NA`·`N/A` 를 결측으로
+            # 바꾸므로, 같은 파일이 전송 경로에 따라 다른 결측 판정을 받는다.
+            frame = pd.read_csv(BytesIO(payload), encoding=encoding, **TEXT_TABLE_READ_OPTIONS)
             break
         except UnicodeDecodeError as exc:
             last_error = exc

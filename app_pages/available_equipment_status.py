@@ -61,6 +61,7 @@ from capa_simulation.services.equipment_csv import (
     read_baseline_clipboard,
     read_downtime_clipboard,
     read_equipment_clipboard,
+    untouched_template_baseline_rows,
 )
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
@@ -989,12 +990,19 @@ with management_tab:
     if submitted:
         # 화면을 채우려고 넣어 준 샘플이 그대로 불변 리비전에 들어가면 되돌릴 수 없다.
         # 실제 공정명과 다르면 호기 마스터에 붙지 않는 유령 공정이 총대수에 영원히 남는다.
-        leftover_samples = untouched_sample_baseline_rows(edited_baseline)
+        # 내려받은 양식의 예시 한 줄도 네 컬럼이 다 차 있어 검증을 그냥 통과한다 — 출처만
+        # 다를 뿐 같은 위험이라 함께 막는다.
+        leftover_samples = pd.concat(
+            [
+                untouched_sample_baseline_rows(edited_baseline),
+                untouched_template_baseline_rows(edited_baseline),
+            ]
+        )
     if submitted and not leftover_samples.empty:
         st.error(
-            f"기존 보유대수에 개발 샘플 행이 {len(leftover_samples)}건 그대로 남아 있습니다. "
-            "실제 값으로 고치거나 지운 뒤 저장하세요. 이 숫자는 개발용 Core Data 샘플에서 "
-            "복사한 것이라 실제 설비와 맞지 않고, 저장하면 리비전에서 지울 수 없습니다."
+            f"기존 보유대수에 지우지 않은 예시 행이 {len(leftover_samples)}건 남아 있습니다. "
+            "실제 값으로 고치거나 지운 뒤 저장하세요. 이 숫자는 개발용 샘플과 CSV 양식의 "
+            "예시라 실제 설비와 맞지 않고, 저장하면 리비전에서 지울 수 없습니다."
         )
     elif submitted:
         try:

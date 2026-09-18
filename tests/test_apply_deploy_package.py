@@ -11,6 +11,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from apply_deploy_package import (  # noqa: E402
     PRESERVED_PREFIXES,
     ApplyError,
+    describe_plan,
     describe_reconcile,
     digest_mismatches,
     member_problems,
@@ -44,12 +45,14 @@ def test_ignored_data_is_out_of_reach_because_only_tracked_files_are_removed() -
 
     지울 대상을 추적 파일에서만 고르므로 그 둘은 애초에 후보가 아니다. `git clean -x` 를
     쓰지 않는 이유가 이것이고, 한 글자 차이로 되돌릴 수 없는 데이터가 날아간다.
+
+    두 번째 겹은 `is_protected` 다 — 추적 목록에 **들어와 버린** 경우까지 막는다.
     """
     tracked = ["app.py", "data/input/.gitkeep"]
 
     removals = plan_removals(tracked)
 
-    assert removals == ["app.py", "data/input/.gitkeep"]
+    assert removals == ["app.py"]
     assert "data/capa_simulation.duckdb" not in removals
 
 
@@ -221,3 +224,54 @@ def test_unknown_files_are_reported_but_never_removed() -> None:
     rendered = describe_reconcile(report, applied=False)
     assert "손대지 않았습니다" in rendered
     assert "사용자에게 물으세요" in rendered
+
+
+# 운영 데이터는 사내 `.gitignore` 가 막아 추적 목록에 없다 — 는 것이 `plan_removals` 의
+# 전제였다. 그 규칙이 사내에서 지워지거나 파일이 먼저 커밋되면 전제가 깨지고, ZIP 이 싣지
+# 않는 DuckDB 가 「사외에서 없어진 파일」로 판정돼 지워진다. 되돌릴 수 없는 종류다.
+
+
+def test_a_tracked_operational_database_is_never_removed() -> None:
+    tracked = [
+        "app.py",
+        "data/capa_simulation.duckdb",
+        "data/equipment_availability.duckdb",
+        "data/capa_simulation.duckdb.sync.json",
+        "old_module.py",
+    ]
+
+    removals = plan_removals(tracked, members=["app.py"])
+
+    assert removals == ["old_module.py"]
+
+
+def test_tracked_real_data_and_secrets_are_never_removed() -> None:
+    tracked = [
+        ".env",
+        ".streamlit/secrets.toml",
+        "data/input/Core_Data.csv",
+        "data/output/result.csv",
+        "data/temp/scratch.csv",
+        "templates/structure_template.xlsb",
+        "gone.py",
+    ]
+
+    assert plan_removals(tracked) == ["gone.py"]
+
+
+def test_directory_placeholders_are_protected_too() -> None:
+    """`data/output/.gitkeep` 은 배포 세트에 있지만, 없더라도 지우면 폴더가 사라진다."""
+    assert plan_removals(["data/output/.gitkeep", "data/temp/.gitkeep"]) == []
+
+
+def test_the_plan_says_out_loud_that_data_is_tracked() -> None:
+    """지우지 않는 것만으로는 부족하다 — 추적되고 있다는 사실 자체가 고쳐야 할 상태다."""
+    text = describe_plan(
+        {"zip_name": "z.zip", "file_count": 1},
+        [],
+        ["app.py"],
+        tracked=["app.py", "data/capa_simulation.duckdb"],
+    )
+
+    assert "data/capa_simulation.duckdb" in text
+    assert "git rm -r --cached" in text

@@ -111,6 +111,37 @@ def test_no_source_module_is_left_unreferenced() -> None:
     )
 
 
+def test_every_page_file_is_declared_in_navigation() -> None:
+    """`app_pages/` 의 화면은 모두 `navigation` 에 등록돼 있다.
+
+    전수 렌더 검사(`tests/test_all_pages_render.py`)는 목록을 `ALL_SPECS` 에서 받는다. 그래서
+    **등록되지 않은 페이지는 애초에 검사 대상이 아니다** — 열리지 않는 화면이 아무 신호 없이
+    저장소에 남고, 배포 ZIP 에는 실려 사내로 간다. 읽는 쪽은 그것이 살아 있는 화면인 줄 알고
+    읽는다. 등록과 파일을 여기서 맞춰 둔다.
+
+    반대 방향(선언에는 있는데 파일이 없다)도 같이 본다. 그쪽은 앱이 시작조차 못 한다.
+    """
+    import sys
+
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
+    from capa_simulation.navigation import ALL_SPECS
+
+    declared = {spec.path for spec in ALL_SPECS}
+    present = {path for path in _tracked("app_pages/*.py") if not path.endswith("__init__.py")}
+
+    unregistered = sorted(present - declared)
+    missing = sorted(declared - present)
+
+    assert not unregistered, (
+        "`navigation.py` 에 등록되지 않은 화면입니다. 사이드바에 올리거나 지웁니다 — "
+        "둘 다 아니면 열 수 없는 화면이 배포본에 실립니다:\n" + "\n".join(unregistered)
+    )
+    assert not missing, (
+        "선언에는 있는데 파일이 없습니다. 이 상태로는 앱이 시작하지 못합니다:\n"
+        + "\n".join(missing)
+    )
+
+
 def test_the_top_level_stays_the_declared_set() -> None:
     """최상위에 정체불명 파일이 늘지 않는다.
 

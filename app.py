@@ -33,7 +33,7 @@ from capa_simulation.sidebar_status import (
     register_month_range_placeholder,
     show_applied_month_range,
 )
-from capa_simulation.sync_boot import enable_sync_state_if_managed
+from capa_simulation.sync_boot import enable_sync_state_if_managed, heartbeat_if_managed
 
 # CSS 선택자 여러 개를 한 규칙에 묶을 때 쓰는 구분자. 규칙 안 들여쓰기까지 붙여 둔다.
 _SELECTOR_JOINER = ",\n        "
@@ -56,6 +56,10 @@ st.set_page_config(
 # managed 모드에서만 동기화 표시를 켠다. local 모드(개발 PC·기본값)에서는 아무 일도 하지
 # 않으므로 이 호출이 있어도 동작이 바뀌지 않는다.
 enable_sync_state_if_managed()
+# 앱이 이 PC 에서 돌고 있다는 표시. DuckDB 는 프로세스 배타 잠금이라 앱이 떠 있는 동안
+# 동기화 스크립트는 DB 를 열지 못한다 — 그 사실을 사람 말로 알릴 근거가 이 기록이다.
+# 10초에 한 번만 실제로 쓴다.
+heartbeat_if_managed()
 
 # rerun 한 번 동안 시나리오 DB 인스턴스를 잡아 둔다. 사이드바가 rerun 마다 여는 연결 3개가
 # 각자 인스턴스를 다시 만들지 않게 하는 것이 전부이고, rerun 이 끝나면 풀린다.

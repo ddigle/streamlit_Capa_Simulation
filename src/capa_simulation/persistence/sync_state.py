@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 import time
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
@@ -36,6 +37,11 @@ HEARTBEAT_STALE_SECONDS: Final = 90.0
 _ENABLED: dict[Path, DatasetName] = {}
 # 심장박동을 10초에 한 번만 쓰기 위한 마지막 기록 시각(단조 시계).
 _LAST_HEARTBEAT: dict[Path, float] = {}
+# 사이드카 읽기-고치기-쓰기를 한 덩어리로 묶는다. Streamlit 은 세션마다 스크립트를 **같은
+# 프로세스의 다른 스레드**에서 돌리므로, 커밋의 `mark_dirty` 와 업로드의 `clear_dirty` 가
+# 겹치면 나중에 쓰는 쪽이 앞의 변경을 통째로 덮어 dirty 표시가 사라진다. 파일 쓰기 자체는
+# `os.replace` 라 원자적이지만, 원자적이어야 하는 것은 읽기부터 쓰기까지다.
+_STATE_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -74,9 +80,18 @@ def _registry_key(database_path: Path) -> Path:
 
 
 def enable(paths: Mapping[Path, DatasetName]) -> None:
-    """managed 모드에서 boot 가 한 번 부른다. 이 호출 전에는 어떤 파일도 만들지 않는다."""
+    """managed 모드의 등록. `app.py` 모듈 최상단이라 **모든 세션의 모든 rerun 에 불린다.**
+
+    그래서 등록 내용이 그대로면 아무것도 건드리지 않는다. `clear()` 와 `update()` 사이에는
+    `_ENABLED` 가 비어 있고, 그 틈에 다른 세션 스레드가 COMMIT 을 끝내고 `mark_dirty` 를
+    부르면 `_update` 가 등록을 못 찾아 조용히 돌아간다 — 변경 표시가 사라지고 다음 push 가
+    "올릴 것 없음" 으로 끝난다. rerun 마다 그 틈이 열릴 이유가 없다.
+    """
+    registry = {_registry_key(path): dataset for path, dataset in paths.items()}
+    if registry == _ENABLED:
+        return
     _ENABLED.clear()
-    _ENABLED.update({_registry_key(path): dataset for path, dataset in paths.items()})
+    _ENABLED.update(registry)
 
 
 def is_enabled(database_path: Path) -> bool:
@@ -136,8 +151,9 @@ def _update(database_path: Path, **changes: object) -> None:
     if dataset is None:
         return
     try:
-        state = read_state(path) or SyncState(dataset=dataset)
-        write_state(path, replace(state, **changes))  # type: ignore[arg-type]
+        with _STATE_LOCK:
+            state = read_state(path) or SyncState(dataset=dataset)
+            write_state(path, replace(state, **changes))  # type: ignore[arg-type]
     except OSError:
         # 사이드카를 못 써도 저장 자체는 성공해야 한다. 대신 `treat_as_dirty` 가
         # "모르면 변경 있음" 으로 보아 다음 push 에서 만회한다.
