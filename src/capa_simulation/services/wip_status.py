@@ -193,7 +193,7 @@ def expand_weekly_product_standard_to_daily(
     start_date: date,
     end_date: date,
 ) -> pd.DataFrame:
-    """Expand Monday-owned weekly standards across the exact requested date window."""
+    """Expand weekly standards across the exact requested date window, day by day."""
     if start_date > end_date:
         raise ValueError("조회 시작일은 종료일보다 늦을 수 없습니다.")
     weekly = aggregate_weekly_product_standard(weekly_target)
@@ -207,11 +207,13 @@ def expand_weekly_product_standard_to_daily(
         + "-W"
         + iso["week"].astype("int64").astype(str).str.zfill(2)
     )
-    monday = calendar["일자"] - pd.to_timedelta(calendar["일자"].dt.weekday, unit="D")
-    calendar["생산계획년월"] = monday.dt.year * 100 + monday.dt.month
+    # Weeknum 하나에 귀속 달은 하나뿐이므로 `생산계획년월` 은 `weekly` 쪽에서 따라온다.
+    # 여기서 달을 다시 만들면 폐기된 「월요일이 속한 달」 규칙을 재구현하게 되고, 정본
+    # (`iso_week_calendar.owning_month`, 일수가 더 많은 달)과 갈리는 연 5주는 INNER 조인이
+    # 통째로 버린다. 그 7일은 화면에 `표준 미설정` 으로 남아 가용대수 탓으로 오지목된다.
     expanded = calendar.merge(
         weekly,
-        on=["Weeknum", "생산계획년월"],
+        on="Weeknum",
         how="inner",
         validate="many_to_many",
     )

@@ -83,7 +83,13 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
         )
 
 
-def test_unit_capacity_excludes_negative_wf_ratio_and_nonpositive_capacity() -> None:
+def test_unit_capacity_names_each_excluded_row_by_its_own_cause() -> None:
+    """예전에는 `CAPA_RUN_RATE = 0` 이 `대당 Capa 0 이하` 로 뭉뚱그려졌다.
+
+    제외표는 남고 값도 보이지만, 사유가 곱의 결과만 말하면 사용자는 UPEH 쪽을 뒤진다.
+    이제 각 행은 자기 원인으로 적히고, `대당 Capa 0 이하` 는 모든 인자가 양수인데도
+    곱이 0 으로 떨어지는 경우만 받는 마지막 안전망이다.
+    """
     upeh = pd.DataFrame(
         {
             "생산계획년월": [202608, 202608, 202608],
@@ -126,8 +132,8 @@ def test_unit_capacity_excludes_negative_wf_ratio_and_nonpositive_capacity() -> 
 
     assert result["공정"].tolist() == ["Process-A"]
     assert excluded[["공정", "제외사유"]].to_dict("records") == [
+        {"공정": "Process-C", "제외사유": "CAPA_RUN_RATE 0 이하"},
         {"공정": "Process-B", "제외사유": "WF측정률 음수"},
-        {"공정": "Process-C", "제외사유": "대당 Capa 0 이하"},
     ]
     assert {"UPEH", "ST", "CAPA_RUN_RATE", "WF측정률"}.issubset(excluded.columns)
 
@@ -239,6 +245,32 @@ def test_nonpositive_upeh_says_upeh_not_just_the_capacity_result() -> None:
 
     assert result["공정"].tolist() == ["Process-A"]
     assert _exclusion_records(result) == [{"공정": "Process-B", "제외사유": "UPEH 0 이하"}]
+
+
+def test_nonpositive_run_rate_says_run_rate_not_the_capacity_result() -> None:
+    """CAPA_RUN_RATE 는 분자인데 제외 사유는 `대당 Capa 0 이하` 로만 적혀 UPEH 를 가리켰다.
+
+    편중률 0 은 하드 오류로 즉시 멈추는데 효율 0 은 조용히 빠지는 비대칭이 있었다.
+    멈추지 않는 쪽은 유지하되(원천이 "해당 없음" 을 0 으로 적는 일이 실제로 있다),
+    무엇이 0 인지는 사유가 말해야 한다.
+    """
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["run_rate"] = inputs["run_rate"].assign(CAPA_RUN_RATE=[0.8, 0.0])
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result["공정"].tolist() == ["Process-A"]
+    assert _exclusion_records(result) == [{"공정": "Process-B", "제외사유": "CAPA_RUN_RATE 0 이하"}]
+
+
+def test_a_negative_run_rate_is_excluded_for_the_same_reason() -> None:
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["run_rate"] = inputs["run_rate"].assign(CAPA_RUN_RATE=[0.8, -1.0])
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result["공정"].tolist() == ["Process-A"]
+    assert _exclusion_records(result) == [{"공정": "Process-B", "제외사유": "CAPA_RUN_RATE 0 이하"}]
 
 
 def test_zero_measurement_ratios_apply_one_instead_of_excluding_the_row() -> None:

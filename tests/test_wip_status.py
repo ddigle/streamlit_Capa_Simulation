@@ -54,7 +54,7 @@ def test_product_standard_recomputes_effective_capacity_across_production_types(
             "Weeknum": ["26-W36", "26-W36"],
             "주차시작일": [date(2026, 8, 31)] * 2,
             "주차종료일": [date(2026, 9, 6)] * 2,
-            "생산계획년월": [202608, 202608],
+            "생산계획년월": [202609, 202609],
             "공정": ["Process-A", "Process-A"],
             "소요기준": ["WF", "WF"],
             "양산구분": ["양산", "개발"],
@@ -81,6 +81,42 @@ def test_product_standard_recomputes_effective_capacity_across_production_types(
     assert product_weekly.loc[0, "일 표준 가능량"] == pytest.approx(7.5)
     assert daily["일자"].tolist() == [date(2026, 9, 1), date(2026, 9, 2)]
     assert daily["일 표준 가능량"].tolist() == pytest.approx([7.5, 7.5])
+
+
+def test_a_month_boundary_week_keeps_all_seven_days() -> None:
+    """26-W36 은 월요일이 8월, 나머지 6일이 9월이다. 귀속은 9월(일수가 더 많은 달).
+
+    확장이 달을 스스로 계산하면 폐기된 「월요일이 속한 달」 규칙이 되살아나 정본과 갈리고,
+    INNER 조인이 그 주 7일을 통째로 버린다. 그러면 화면은 `표준 미설정` 을 보여 주며
+    원인을 가용대수로 오지목한다 — 가용대수는 멀쩡하다. 그런 주가 해마다 5주씩 있다.
+    """
+    weekly = pd.DataFrame(
+        {
+            "Weeknum": ["26-W36"],
+            "주차시작일": [date(2026, 8, 31)],
+            "주차종료일": [date(2026, 9, 6)],
+            "생산계획년월": [202609],
+            "공정": ["Process-A"],
+            "소요기준": ["WF"],
+            "양산구분": ["양산"],
+            "제품정보": ["Product-A"],
+            "원수요_부하량": [100.0],
+            "STEP_소요대수": [2.0],
+            "RUN_DAY": [30.0],
+            "가용대수": [3.0],
+        }
+    )
+
+    daily = expand_weekly_product_standard_to_daily(
+        weekly,
+        date(2026, 8, 31),
+        date(2026, 9, 6),
+    )
+
+    assert len(daily) == 7
+    assert daily["일자"].tolist()[0] == date(2026, 8, 31)
+    assert daily["일자"].tolist()[-1] == date(2026, 9, 6)
+    assert daily["일 표준 가능량"].tolist() == pytest.approx([5.0] * 7)
 
 
 def test_wip_demo_is_deterministic_and_marks_flow_against_standard() -> None:
@@ -130,7 +166,7 @@ def test_weekly_standard_keeps_unset_availability_instead_of_raising() -> None:
             "Weeknum": ["26-W36", "26-W37"],
             "주차시작일": [date(2026, 8, 31), date(2026, 9, 7)],
             "주차종료일": [date(2026, 9, 6), date(2026, 9, 13)],
-            "생산계획년월": [202608, 202609],
+            "생산계획년월": [202609, 202609],
             "공정": ["Process-A", "Process-A"],
             "소요기준": ["WF", "WF"],
             "양산구분": ["양산", "양산"],

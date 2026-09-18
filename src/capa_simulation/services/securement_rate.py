@@ -163,4 +163,12 @@ def _prepare_shortfall_input(data: pd.DataFrame) -> None:
 
 
 def _ceil_positive(value: float) -> int:
-    return max(0, ceil(float(value)))
+    """올림 전에 부동소수 먼지를 턴다.
+
+    `소요대수 × 기준 − 가용대수` 는 정확히 0 이어야 할 때도 0 이 되지 않는다 — 가용 55·
+    소요 50·기준 1.1 이면 `50 * 1.1 = 55.00000000000001` 이라 차이가 1e-14 로 남고,
+    올림이 그것을 **설비 1대**로 키운다. 대수는 정수 단위라 그 1대가 곧 투자 판단 1대다.
+
+    대수는 보통 1e2 이하라 1e-9 는 업무상 의미 있는 차이를 삼키지 않는다.
+    """
+    return max(0, ceil(round(float(value), 9)))

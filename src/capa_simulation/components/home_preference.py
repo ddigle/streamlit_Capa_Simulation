@@ -443,23 +443,31 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
 
 
 def _persist_comparison_choice(database_path: str) -> None:
-    """화면에 **그려진 실제 선택**을 프로필과 대조해 다르면 남긴다.
+    """`on_change` 가 채우지 못한 **리비전 한 칸만** 뒤늦게 메운다.
 
-    `on_change` 만으로는 부족하다 — 선택 위젯의 기본값은 콜백을 부르지 않는다. 여기서는
-    위젯이 다 그려진 뒤의 세션 값을 보므로 기본값도 잡힌다.
+    선택 위젯의 기본값은 콜백을 부르지 않는다. 시나리오만 고른 순간의 콜백은 리비전
+    위젯이 생기기 전이라 `revision_id=None` 으로 저장하고, 뒤이어 잡히는 리비전 기본값은
+    세션에만 들어간다. 그 한 칸을 여기서 채운다 — 위젯이 다 그려진 뒤라 기본값이 보인다.
+
+    **그 밖의 불일치는 쓰지 않는다.** 프로필은 시나리오에 딸리지 않은 공용 값이라 다른
+    사용자도 같은 행을 쓴다. 「세션과 다르다」를 「세션이 최신이다」로 읽으면, 남이 방금
+    고른 값을 이쪽 세션의 옛 값으로 되쓰게 된다. HOME 은 `st.tabs` 라 숨은 Preference
+    탭도 매 rerun 실행되므로, 두 사람이 서로의 선택을 계속 뒤집는 핑퐁이 된다. 아무도
+    아무것도 고르지 않아도 쓰기가 일어나 `version` 이 오르고 DB 가 dirty 로 표시된다.
+
+    사용자가 실제로 고른 값은 `_save_comparison_choice` 가 맡는다. 여기는 메우는 일만 한다.
 
     **저장에 실패해도 화면을 멈추지 않는다.** 이번 화면은 세션 값으로 이미 동작하고,
     남기지 못한 것은 다음 세션에서 기본값이 안 뜨는 정도의 일이다.
     """
     scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
     revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
-    current = (
-        None if scenario_id is None else str(scenario_id),
-        None if revision_id is None else str(revision_id),
-    )
+    if scenario_id is None or revision_id is None:
+        return
+    current = (str(scenario_id), str(revision_id))
     try:
         profile = load_global_comparison_scenario(database_path)
-        if (profile.scenario_id, profile.revision_id) == current:
+        if profile.scenario_id != current[0] or profile.revision_id is not None:
             return
         get_scenario_repository(database_path).replace_global_comparison_scenario(
             current[0],

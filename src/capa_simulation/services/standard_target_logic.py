@@ -13,7 +13,11 @@ from capa_simulation.services.frame_contracts import (
     normalize_demand_basis,
     normalize_demand_basis_value,
 )
-from capa_simulation.services.iso_week_calendar import valid_weeknum, weeknum_start_date
+from capa_simulation.services.iso_week_calendar import (
+    owning_month,
+    valid_weeknum,
+    weeknum_start_date,
+)
 from capa_simulation.services.standard_target_capacity import (
     build_weekly_standard_target_capacity,
     prepare_standard_target_required_equipment,
@@ -42,7 +46,10 @@ def build_standard_target_logic_analysis(
         raise ValueError("로직 분석 소요기준을 선택해야 합니다.")
 
     week_start = weeknum_start_date(normalized_weeknum)
-    production_month = week_start.year * 100 + week_start.month
+    # 월 경계 주차의 귀속 달은 `owning_month` 하나가 정한다(일수가 더 많은 달). 여기서
+    # 월요일의 달을 다시 계산하면 화면이 제시한 선택지와 서비스가 보는 달이 갈려, 연 5주는
+    # "해당하는 데이터가 없습니다" 로 끝난다 — 데이터는 있고 딴 달을 본 것이다.
+    production_month = owning_month(week_start)
 
     required = ["생산계획년월", "공정", "소요기준", "양산구분"]
     missing = [column for column in required if column not in required_equipment.columns]

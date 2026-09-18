@@ -375,6 +375,9 @@ def _prepare_load_base(
     exclusions.append(_load_exclusion_rows(calculation.loc[yield_missing], "RQ_YLD"))
     calculation = calculation.loc[~yield_missing].drop(columns="_yield_merge")
 
+    calculation, value_exclusions = _drop_rows_missing_values(calculation)
+    exclusions.extend(value_exclusions)
+
     _validate_yield_range(calculation, "RQ_YLD")
     if calculation["Net Die"].le(0).any():
         raise ValueError("Net Die는 0보다 커야 합니다.")
@@ -383,6 +386,35 @@ def _prepare_load_base(
 
     calculation.attrs[LOAD_EXCLUSIONS_ATTR] = _merge_load_exclusions(exclusions)
     return calculation
+
+
+def _drop_rows_missing_values(
+    calculation: pd.DataFrame,
+) -> tuple[pd.DataFrame, list[tuple[tuple[object, ...], ...]]]:
+    """기준정보 행은 붙었는데 **칸이 비어 있는** 계획 행을 조인 실패와 같이 취급한다.
+
+    조인은 성공했으므로 위의 `_chip_merge`·`_yield_merge` 에 걸리지 않는다. 그대로 두면
+    수율·Net Die 가 NaN 인 채 곱셈을 지나 부하량이 NaN 이 되고, 뒤의 `groupby().sum()` 이
+    그것을 0 으로 접는다. 소요대수가 조용히 적게 나오고 확보율은 그만큼 낙관 쪽으로 틀어지는데
+    화면에는 아무 흔적도 남지 않는다.
+
+    예외를 던지지 않는 이유는 위 `LOAD_EXCLUSIONS_ATTR` 주석과 같다 — 계획 행 하나 때문에
+    페이지 전체가 멈추면 안 된다. 대신 왜 빠졌는지 목록으로 남긴다.
+    """
+    groups: list[tuple[tuple[object, ...], ...]] = []
+    missing_any = pd.Series(False, index=calculation.index)
+    for table_name, columns in (
+        ("RQ_CHIP_QTY", ["구분_Chip", "Net Die"]),
+        ("RQ_YLD", YIELD_VALUE_COLUMNS),
+    ):
+        missing = calculation[columns].isna().any(axis=1)
+        if not missing.any():
+            continue
+        groups.append(_load_exclusion_rows(calculation.loc[missing], f"{table_name} 값 없음"))
+        missing_any |= missing
+    if not missing_any.any():
+        return calculation, groups
+    return calculation.loc[~missing_any].copy(), groups
 
 
 def _load_exclusion_rows(
@@ -403,10 +435,15 @@ def _merge_load_exclusions(
     groups: list[tuple[tuple[object, ...], ...]],
 ) -> tuple[tuple[object, ...], ...]:
     merged: list[tuple[object, ...]] = []
+    seen: set[tuple[object, ...]] = set()
     for group in groups:
         for row in group:
-            if row not in merged:
-                merged.append(row)
+            # 순서는 화면에 그대로 나가므로 유지하고, 중복 판정만 집합으로 한다.
+            # 리스트 `in` 은 행 수의 제곱이라 기준정보가 통째로 빠진 배포에서 목이 됐다.
+            if row in seen:
+                continue
+            seen.add(row)
+            merged.append(row)
     return tuple(merged)
 
 

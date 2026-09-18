@@ -35,6 +35,7 @@ CAPACITY_EXCLUSIONS_ATTR = "excluded_capacity_rows"
 
 # 검증 실패 메시지에 문제 행의 업무 키를 실으려면 그 컬럼이 어떤 키로 붙었는지 알아야 한다.
 # 연결에 쓰는 키 목록과 검증이 보고하는 키 목록이 갈라지지 않게 한 곳에 둔다.
+RUN_RATE_KEYS = ["생산계획년월", "공정", "양산구분"]
 VITAL_KEYS = ["생산계획년월", "공정", "양산구분"]
 MODULE_KEYS = ["공정"]
 RUN_DAY_KEYS = ["생산계획년월", "공정"]
@@ -56,6 +57,16 @@ MEASUREMENT_RATIO_ZERO_DEFAULT = 1.0
 # (`services/reference_conflicts.py` 참조) 원인을 사유에 적는다. MI 행은 ST 가 0 이하면
 # `_prepare_performance` 가 먼저 막으므로 여기 걸리는 것은 Main 행뿐이다.
 UPEH_EXCLUSION_REASON = "UPEH 0 이하"
+
+# CAPA_RUN_RATE 는 대당 Capa 식의 **분자**다. 검사도 전용 규칙도 없는 유일한 인자여서,
+# 0·음수가 들어오면 곱이 0 이하가 되어 `대당 Capa 0 이하` 로만 적혔다 — 사용자를 UPEH 쪽으로
+# 보내는 오지목이다. 편중률 0 은 하드 오류인데 효율 0 은 조용한 제외라는 비대칭도 같이 남았다.
+#
+# 편중률처럼 하드 오류로 올리지 않는 이유는 `calculate_unit_capacity` 의 「계산 대상 행을 먼저
+# 확정한다」 주석과 같다. 원천이 "해당 없음" 을 0 으로 적는 일이 실제로 있어
+# (`services/reference_conflicts.py`) 그 한 줄 때문에 편집기조차 못 여는 쪽이 더 나쁘다.
+# 대신 무엇이 0 인지 사유에 적는다.
+RUN_RATE_EXCLUSION_REASON = "CAPA_RUN_RATE 0 이하"
 
 
 def calculate_unit_capacity(
@@ -85,7 +96,7 @@ def calculate_unit_capacity(
     result = _join_reference(
         result,
         run_rate,
-        ["생산계획년월", "공정", "양산구분"],
+        RUN_RATE_KEYS,
         "CAPA_RUN_RATE",
         "RQ_RUN_RATE",
     )
@@ -129,6 +140,10 @@ def calculate_unit_capacity(
     excluded_frames.append(_exclusion_rows(result, nonpositive_upeh, UPEH_EXCLUSION_REASON))
     result = result.loc[~nonpositive_upeh].copy()
 
+    nonpositive_run_rate = result["CAPA_RUN_RATE"].le(0)
+    excluded_frames.append(_exclusion_rows(result, nonpositive_run_rate, RUN_RATE_EXCLUSION_REASON))
+    result = result.loc[~nonpositive_run_rate].copy()
+
     for column, reason in NEGATIVE_EXCLUDED_COLUMNS:
         result[column] = result[column].mask(result[column].eq(0), MEASUREMENT_RATIO_ZERO_DEFAULT)
         negative_ratio = result[column].lt(0)
@@ -152,6 +167,9 @@ def calculate_unit_capacity(
         / result["Lot 측정률"]
         / result["WF측정률"]
     )
+    # 여기까지 온 행은 모든 인자가 양수다(UPEH·CAPA_RUN_RATE 는 위에서 뺐고, 편중률·모듈수·
+    # RUN_DAY 는 하드 오류, 측정률은 0 → 1.0). 그래서 이 제외는 언더플로 같은 경우만 받는
+    # 마지막 안전망이다 — 사유를 보고 원인을 찾을 수 없으니 여기 걸리는 것이 정상은 아니다.
     nonpositive_capacity = result["대당 Capa"].le(0)
     excluded_frames.append(_exclusion_rows(result, nonpositive_capacity, "대당 Capa 0 이하"))
     result = result.loc[~nonpositive_capacity].copy()

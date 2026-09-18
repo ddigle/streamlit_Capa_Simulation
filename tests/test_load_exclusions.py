@@ -129,6 +129,69 @@ def test_density_monthly_volume_carries_the_exclusion_list() -> None:
     assert sorted(set(load_exclusions(volume)["제품정보"])) == ["DEMO_NO_CHIP", "DEMO_NO_YLD"]
 
 
+# 조인은 붙는데 칸이 비어 있는 경우. 여기가 제일 위험했다 — 조인 실패와 달리 아무 경고도
+# 없이 부하량이 NaN 이 되고, 뒤의 `groupby().sum()` 이 그것을 0 으로 접어 소요대수가 적게
+# 나왔다. 확보율(가용/소요)은 그만큼 낙관 쪽으로 틀어지는데 제외 목록은 비어 있었다.
+BLANK_CHIP = pd.DataFrame(
+    {
+        "제품정보": ["DEMO_OK", "DEMO_BLANK_CHIP", "DEMO_BLANK_YLD"],
+        "Stack": ["8H", "8H", "8H"],
+        "WF 구분": ["Core", "Core", "Core"],
+        "구분_Chip": [4.0, 4.0, 4.0],
+        "Net Die": [100.0, None, 100.0],
+    }
+)
+BLANK_YIELD = pd.DataFrame(
+    {
+        "생산계획년월": [202601, 202601, 202601],
+        "제품정보": ["DEMO_OK", "DEMO_BLANK_CHIP", "DEMO_BLANK_YLD"],
+        "Stack": ["8H", "8H", "8H"],
+        "WF 구분": ["Core", "Core", "Core"],
+        "EDS_수율": [0.9, 0.9, None],
+        "BE_수율": [0.95, 0.95, 0.95],
+    }
+)
+BLANK_PLAN = pd.DataFrame(
+    {
+        "생산계획년월": [202601] * 3,
+        "양산구분": ["양산"] * 3,
+        "제품정보": ["DEMO_OK", "DEMO_BLANK_CHIP", "DEMO_BLANK_YLD"],
+        "Stack": ["8H"] * 3,
+        "Capa Code": ["C1", "C2", "C3"],
+        "Customer": ["DEMO_CUST"] * 3,
+        "CS": ["MP"] * 3,
+        "생산수량": [100.0, 50.0, 70.0],
+    }
+)
+
+
+def test_a_blank_reference_cell_is_excluded_and_named() -> None:
+    chip_load, _ = calculate_chip_and_wafer_loads(BLANK_PLAN, BLANK_YIELD, BLANK_CHIP)
+
+    assert sorted(set(chip_load["제품정보"])) == ["DEMO_OK"]
+    excluded = load_exclusions(chip_load)
+    assert dict(zip(excluded["제품정보"], excluded["누락 기준정보"], strict=True)) == {
+        "DEMO_BLANK_CHIP": "RQ_CHIP_QTY 값 없음",
+        "DEMO_BLANK_YLD": "RQ_YLD 값 없음",
+    }
+
+
+def test_a_blank_reference_cell_does_not_shrink_the_total_silently() -> None:
+    """빈 칸이 0 으로 접히면 합계만 줄고 아무 데도 흔적이 남지 않는다.
+
+    남은 제품의 부하량이 빈 칸 없는 계산과 **정확히 같아야** 한다. 그래야 "줄어든 만큼은
+    제외 목록에 있다" 가 성립한다.
+    """
+    only_complete = BLANK_PLAN.loc[BLANK_PLAN["제품정보"].eq("DEMO_OK")]
+
+    with_blanks, _ = calculate_chip_and_wafer_loads(BLANK_PLAN, BLANK_YIELD, BLANK_CHIP)
+    without_blanks, _ = calculate_chip_and_wafer_loads(only_complete, BLANK_YIELD, BLANK_CHIP)
+
+    assert with_blanks["물량"].sum() == without_blanks["물량"].sum()
+    assert not with_blanks["물량"].isna().any()
+    assert len(load_exclusions(with_blanks)) == 2
+
+
 def test_home_dashboard_survives_a_product_without_density() -> None:
     """HOME 은 이 함수를 그대로 쓴다. 예외가 나면 헤더와 오류 배너만 남았다."""
     from capa_simulation.services.dashboard import build_production_dashboard
