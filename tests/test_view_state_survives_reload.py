@@ -106,3 +106,63 @@ def test_switching_tabs_updates_the_memory() -> None:
         app.session_state["load_clicked"] = True
         app.run()
         assert _state(app, "open_labels") == [label]
+
+
+# 토글은 반대다 — 시나리오를 바꾸면 **풀려야** 한다. 두 규칙이 한 화면에서 함께 돌므로
+# 한쪽을 고칠 때 다른 쪽이 조용히 따라 바뀌지 않는지 여기서 같이 본다.
+TOGGLE_SCRIPT = """
+import streamlit as st
+
+from capa_simulation.components.tab_state import stateful_tabs
+
+LABELS = ("UPEH", "효율")
+
+with st.sidebar:
+    if st.session_state.get("load_clicked") is True:
+        st.session_state["load_clicked"] = False
+        # `activate_persisted_snapshot` 이 하는 일과 같다.
+        for key in st.session_state.get("stale_keys", ()):
+            st.session_state.pop(key, None)
+        st.rerun()
+
+stateful_tabs(LABELS, key="page_tab")
+st.session_state["seen_toggle"] = st.toggle(
+    "선행", value=False, key="home_show_advance", persist_state="session"
+)
+"""
+
+
+def test_a_toggle_is_released_even_though_it_persists() -> None:
+    """`persist_state="session"` 이 `pop` 을 무력화하지 않는다.
+
+    토글이 화면에서 사라져도 값이 남게 하는 것과, 시나리오를 바꿀 때 그 값을 버리는 것은
+    서로 다른 장치다. 둘이 부딪히면 토글이 영영 안 꺼지므로 실제 실행으로 확인한다.
+    """
+    app = AppTest.from_string(TOGGLE_SCRIPT)
+    app.session_state["stale_keys"] = ("home_show_advance",)
+    app.run()
+    app.session_state["home_show_advance"] = True
+    app.run()
+    assert _state(app, "seen_toggle") is True
+
+    app.session_state["load_clicked"] = True
+    app.run()
+
+    assert not app.exception
+    assert _state(app, "seen_toggle") is False, "시나리오를 바꿔도 토글이 켜진 채 남았습니다."
+
+
+def test_the_tab_survives_the_same_reload_that_releases_the_toggle() -> None:
+    """같은 한 번의 불러오기에서 토글은 풀리고 탭은 남아야 한다."""
+    app = AppTest.from_string(TOGGLE_SCRIPT)
+    app.session_state["stale_keys"] = ("home_show_advance",)
+    app.run()
+    app.session_state["page_tab"] = "효율"
+    app.session_state["home_show_advance"] = True
+    app.run()
+
+    app.session_state["load_clicked"] = True
+    app.run()
+
+    assert _state(app, "seen_toggle") is False
+    assert _state(app, remembered_tab_key("page_tab")) == "효율"
