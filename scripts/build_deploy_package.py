@@ -178,8 +178,36 @@ def build_manifest(root: Path, paths: Sequence[str], *, stamp: str) -> dict[str,
         # 보내지 않지만 **사내 것을 남겨야 하는** 파일. 적용기가 이 목록을 보고 지우지
         # 않는다 — 없으면 사내 Artifactory 인덱스와 락이 적용 때마다 사라진다.
         "kept_on_target": sorted(EXCLUDED_FILES),
+        "hygiene": hygiene_report(root, paths),
         "file_count": len(paths),
         "files": file_digests(root, paths),
+    }
+
+
+def hygiene_report(root: Path, paths: Sequence[str]) -> dict[str, object]:
+    """막지 않고 **알리기만** 하는 위생 수치.
+
+    판정이 명확한 것(고아 모듈·없는 파일 참조·정체불명 최상위 파일)은 이미
+    `tests/test_repository_hygiene.py` 가 막는다. 여기 담는 것은 그 반대 — 옳고 그름이
+    없어 검사로 만들 수 없지만 **조용히 자라는** 것들이다.
+
+    문서는 지우는 사람이 없으면 늘기만 한다. 늘어난 문서는 읽는 쪽의 비용이고, 사내는 쓸
+    수 있는 양이 적어 그 비용이 먼저 나타난다. 숫자를 송장에 실어 사내 리뷰가 추세를 보게
+    한다 — 배포를 막을 일은 아니다.
+    """
+    documents = sorted(path for path in paths if path.endswith(".md"))
+    lines = {
+        path: len((root / path).read_text(encoding="utf-8", errors="ignore").splitlines())
+        for path in documents
+    }
+    return {
+        "tracked_files": len(paths),
+        "document_count": len(documents),
+        "document_lines": sum(lines.values()),
+        "largest_documents": [
+            {"path": path, "lines": count}
+            for path, count in sorted(lines.items(), key=lambda item: -item[1])[:5]
+        ],
     }
 
 
@@ -303,6 +331,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             print(f"태그 {tag} 를 남기지 못했습니다: {tagged.stderr.strip()}", file=sys.stderr)
 
+    hygiene = manifest["hygiene"]
+    if isinstance(hygiene, dict):
+        print(
+            f"위생  파일 {hygiene['tracked_files']:,}개 · "
+            f"문서 {hygiene['document_count']}개 {hygiene['document_lines']:,}줄 "
+            "(막지 않습니다 — 추세만 봅니다)"
+        )
     print(f"제외: {', '.join(sorted(EXCLUDED_FILES))}")
     print(
         "의존성을 바꿨다면 이 ZIP 만으로는 사내에 반영되지 않습니다 — "
