@@ -82,16 +82,32 @@ uv run python scripts\apply_deploy_package.py <내려받은 ZIP 경로>
 
 이 스크립트가 하는 일:
 
-1. 작업트리가 깨끗한지 확인한다 — **더러우면 멈춘다**(미저장 변경을 지우지 않기 위해).
-2. ZIP 의 `DEPLOY_MANIFEST.json` 에서 출처 커밋을 읽어 **사내 HEAD 의 후손인지** 본다.
-   아니면 멈추고 무엇이 덮일지 보여 준다.
-3. 추적 파일을 지우고 ZIP 을 푼다. `review/` 는 남긴다.
-4. 매니페스트의 해시로 **전 파일을 대조**한다.
-5. `deploy: <SHA>` 로 커밋한다.
+1. ZIP 과 송장을 검사한다 — 형식, 저장소 밖을 가리키는 경로, 대소문자만 다른 중복,
+   사내 전용 자리를 덮으려는 항목.
+2. `.deploy/applied.json` 의 적용 이력과 대조해 **순서를 본다.** 이미 적용한 ZIP 이거나
+   과거 ZIP 이면 멈추고, 건너뛴 배포가 있으면 알리고 계속한다.
+
+   > 커밋 조상 관계는 보지 않는다 — **두 저장소는 히스토리가 서로 달라** 사내에서 사외
+   > 커밋의 조상 여부를 판정할 방법이 없다. 그래서 무엇을 어디까지 적용했는지 사내가
+   > 스스로 적어 둔다.
+3. 무엇을 지우고 무엇을 풀지 **먼저 보여 준다.** 목록 대조(3-1)도 여기서 함께 나온다.
+4. 작업트리가 깨끗한지 확인한다 — **더러우면 멈춘다**(미저장 변경을 지우지 않기 위해).
+   `--dry-run` · `--reconcile-only` 는 아무것도 바꾸지 않으므로 이 검사를 받지 않는다.
+5. 추적 파일을 지우고 ZIP 을 푼다. `review/` · `.deploy/` · `.claude/` 는 남긴다.
+6. 매니페스트의 해시로 **전 파일을 대조**한다.
+7. `deploy: <stamp>` 로 커밋하고 `.deploy/applied.json` 을 갱신한다.
+
+**처음에는 `--dry-run` 을 먼저 돌린다.** 「지움」 목록에 뜻밖의 것이 있으면 거기서 멈춘다.
 
 > **`git clean` 에 `-x` 를 붙이지 않는다.** `-x` 는 gitignore 된 파일까지 지우고, 거기에는
 > **사내 DuckDB 와 `data/input` 실데이터**가 들어 있다. 한 글자 차이로 사내 데이터가 날아간다.
 > 스크립트는 `-x` 없이 돌며, 손으로 할 때도 마찬가지다.
+
+> **운영 데이터는 추적 중이어도 지우지 않는다.** 지울 대상을 `git ls-files` 로 고르는 것은
+> *운영 데이터가 무시 목록에 걸려 있다* 는 전제 위에 있다. 사내에서 그 규칙이 지워졌거나
+> 파일이 먼저 커밋되면 전제가 깨지고 DuckDB 가 「사외에서 없어진 파일」로 판정된다.
+> 그래서 `is_protected` 가 경로만 보고 한 번 더 막고, **추적되고 있다는 사실 자체를**
+> 계획 출력이 `git rm --cached` 와 함께 알린다. 그 줄이 보이면 아래 8장으로 간다.
 
 커밋은 **둘로 나눈다** — 3단계에서 `deploy:`(받은 것 그대로), 5단계에서 `review:`(판단한 것).
 「무엇을 받았나」와 「무엇을 알아냈나」가 갈려야 나중에 되짚을 수 있다.
@@ -218,15 +234,72 @@ uv run python scriptspply_deploy_package.py <ZIP> --reconcile-only
 
 ## 7. 아직 없는 것
 
-이 문서는 절차를 먼저 적었다. 아래는 **만들어야 하는 것**이고, 생기기 전까지는 그 단계를
-사람이 손으로 한다.
-
 | 필요한 것 | 어디에 | 상태 |
 |---|---|---|
-| `DEPLOY_MANIFEST.json` 생성 · 배포 태그 | `scripts/build_deploy_package.py` | 없음 |
-| 변경 파일 목록(`git diff --name-status`) 동봉 | 같은 스크립트 | 없음 |
-| `apply_deploy_package.py` | `scripts/` | 없음 |
-| 사내 쓰기 차단 설정 | 사내 `.claude/settings.json` | 없음 |
+| `DEPLOY_MANIFEST.json` 생성 · 배포 태그 | `scripts/build_deploy_package.py` | 있음 |
+| 변경 파일 목록(`git diff --name-status`) 동봉 | 같은 스크립트 | 있음 |
+| 파일 구조 위생 추세 | 같은 스크립트 (`hygiene`) | 있음 |
+| `apply_deploy_package.py` (검사 · 지우고 풀기 · 목록 대조) | `scripts/` | 있음 |
+| 사내 쓰기 차단 설정 | `docs/internal_claude_settings.json` → 사내 `.claude/settings.json` | 사람이 한 번 복사 |
+| 사내 DB 를 사외로 보내는 길 | — | **없고, 만들지 않는다** |
 
 `apply_deploy_package.py` 는 **사내에서 도는 물건인데 사외에서 만든다.** 처음 한 번은 사람이
 사내에 옮겨 두어야 하고, 그 뒤로는 ZIP 에 실려 스스로 갱신된다.
+
+---
+
+## 8. 사내 저장소 정리 (한 번)
+
+사내 저장소에 **저장소에 있으면 안 되는 것이 커밋돼 있는** 상태가 확인됐다. 규칙은 사외에
+있고 ZIP 으로 따라가지만, **이미 커밋된 파일은 규칙만으로 빠지지 않는다** — `git rm --cached`
+가 한 번 필요하다.
+
+`git rm --cached` 는 이력을 고치지 않는다. 새 커밋에 삭제가 기록될 뿐 과거 커밋의 blob 은
+그대로고, 워킹 파일도 남는다. `git revert` 로 되돌아온다.
+
+**순서가 중요하다.** 배포를 적용하기 **전에** 한다 — 추적 중인 파일은 ZIP 에 없으므로
+「사외에서 없어진 파일」로 판정되고, 보호 대상이 아닌 것(`.omo/` 등)은 그대로 지워진다.
+
+```powershell
+# 0) 앱을 끈다. DuckDB 는 프로세스 배타 잠금이라 켜져 있으면 아무것도 못 한다.
+# 0-1) 혼자 쓰는 저장소인지 확인한다. 다른 클론이 있으면 그쪽 사람이 pull 하는 순간
+#      워킹 파일이 지워진다 — 먼저 알리고 백업하게 한다.
+
+# 1) 운영 DB 를 저장소 밖에 복사한다. 이 단계를 건너뛰지 않는다.
+New-Item -ItemType Directory -Force "$HOME/duckdb_backup"
+Copy-Item data/capa_simulation.duckdb "$HOME/duckdb_backup/"
+Copy-Item data/equipment_availability.duckdb "$HOME/duckdb_backup/"
+
+# 2) 운영 데이터 추적 해제 (파일은 남는다)
+git rm -r --cached "data/*.duckdb" "data/*.duckdb.*"
+
+# 3) 에이전트 런타임 산출물 — 남길 것이 있으면 먼저 꺼낸다
+git rm -r --cached .agents/ .omo/
+
+# 4) 도구가 흘린 임시 산출물
+git rm -r --cached idx_extract.tmp imgtmp/
+
+git status          # 파일이 워킹 트리에 남아 있는지 눈으로 확인한다
+git commit -m "저장소에 있으면 안 되는 파일의 추적을 푼다"
+
+# 5) upstream (순수 로컬 설정. 이력에 영향 없음)
+git branch -u origin/main
+```
+
+무시 규칙(`.agents/` · `.omo/` · `*.tmp` · `imgtmp/` · `data/*.duckdb`)은 사외 `.gitignore` 에
+있으므로 **다음 배포에서 저절로 복원된다.** 사내에서 `.gitignore` 를 고치지 않는다.
+
+### 미커밋 변경은 커밋하지 않는다
+
+적용기는 더러운 트리에서 멈추므로 배포 전에 비워야 한다. 다만 **사내 수정은 정본이 될 수
+없다** — 두 저장소는 서로의 원격을 볼 수 없어 합칠 방법이 없다.
+
+| 무엇인가 | 어떻게 |
+|---|---|
+| 코드 수정 | 커밋하지 않는다. `review/` 에 리뷰 문서로 내고 `git checkout -- <경로>` 로 되돌린다 |
+| 리뷰·기록물 | `review/` 로 옮겨 커밋한다. 보존 목록이라 배포가 건드리지 않는다 |
+| 판단이 안 선다 | `git stash` 보다 `review/` 아래 사본. stash 는 잊힌다 |
+
+> ZIP 에 사내 파일이 실릴 위험은 **없다.** ZIP 은 사외에서 사외 `git ls-files` 로 만든다.
+> 사내에서 사외로 나가는 것은 `review/` 의 리뷰 문서 하나뿐이고, 거기에 실데이터를 적지
+> 않는 규칙이 4장에 있다.
