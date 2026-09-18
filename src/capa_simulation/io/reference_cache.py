@@ -7,6 +7,14 @@ import streamlit as st
 
 SESSION_REFERENCE_TABLES_KEY = "persisted_reference_tables"
 SESSION_REFERENCE_VERSION_KEY = "persisted_reference_version"
+# HOME Figure 캐시 칸의 이름. **이 모듈이 소유한다** — 쓰는 곳이 셋인데(여기,
+# `scenario_activation._STALE_UI_KEYS`, `components/home_rendering`) `scenario_activation`
+# 은 `components` 를 import 할 수 없다(그 방향은 이미 반대로 나 있어 순환이 된다).
+# 이 파일은 pandas·streamlit 만 보는 잎이라 셋 다 여기서 가져올 수 있다.
+#
+# 리터럴을 세 곳에 따로 적으면 이름을 바꿀 때 한 곳만 고쳐지고, 그러면 시나리오를 바꿔도
+# 옛 칸이 남아 **남의 시나리오 그림이 그대로 뜬다.**
+HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 
 
 def get_effective_reference_tables() -> dict[str, pd.DataFrame]:
@@ -54,7 +62,7 @@ def apply_global_display_order(display_order: pd.DataFrame) -> None:
     revised = dict(saved)
     revised["RQ_DISPLAY_ORDER"] = display_order.copy(deep=True)
     st.session_state[SESSION_REFERENCE_TABLES_KEY] = revised
-    st.session_state.pop("home_dashboard_figure_cache", None)
+    st.session_state.pop(HOME_FIGURE_CACHE_KEY, None)
 
 
 def clear_persisted_reference_tables() -> None:

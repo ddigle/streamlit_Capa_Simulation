@@ -36,6 +36,7 @@ from capa_simulation.components.scroll_shell import (
 )
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
+from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
 from capa_simulation.performance import PerformanceTrace
 
 # 네 번째 요소는 시나리오 내용 토큰이다. 편집 카운터(`revision`)를 쓰면 내용이 달라도
@@ -76,8 +77,6 @@ HomeFigureCacheKey = tuple[
 ]
 
 HomeFigureSet = tuple[Any, ...]
-
-HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 
 # EDP 포함/제외 × 선행 ON/OFF 네 가지 상태를 사람이 오가며 비교한다. 3 칸이면 되돌릴
 # 때마다 차트를 다시 조립해 2 초를 쓴다. 한 칸은 Figure 여덟 개다 — 구획이 하나 늘어

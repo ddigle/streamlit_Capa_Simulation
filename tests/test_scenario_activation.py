@@ -7,6 +7,7 @@ from capa_simulation.components.home_preference import (
     EXECUTION_TOGGLE_KEY,
     PLAN_DETAIL_CUSTOMER_KEY,
 )
+from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
 from capa_simulation.scenario_activation import _STALE_UI_KEYS
 
 
@@ -48,9 +49,24 @@ def test_only_previous_scenario_values_are_dropped() -> None:
         "capacity_standards_inputs",
         "load_conversion_source_token",
         "capacity_standards_source_token",
-        "home_dashboard_figure_cache",
+        HOME_FIGURE_CACHE_KEY,
     }
 
 
 def test_the_stale_key_list_has_no_duplicates() -> None:
     assert len(set(_STALE_UI_KEYS)) == len(_STALE_UI_KEYS)
+
+
+def test_the_figure_cache_key_has_one_owner() -> None:
+    """Figure 캐시 칸의 이름은 세 곳이 쓴다. 리터럴로 흩어 두면 이름을 바꿀 때 한 곳만 고쳐진다.
+
+    그러면 시나리오를 바꿔도 옛 칸이 남아 **남의 시나리오 그림이 그대로 뜬다.**
+    소유자는 `io/reference_cache` 하나다 — pandas·streamlit 만 보는 잎이라 셋 다 여기서
+    가져올 수 있고, `components` 쪽에 두면 `scenario_activation` 이 import 하지 못한다.
+    """
+    from capa_simulation.components.home_rendering import (
+        HOME_FIGURE_CACHE_KEY as rendering_key,
+    )
+
+    assert rendering_key is HOME_FIGURE_CACHE_KEY
+    assert HOME_FIGURE_CACHE_KEY in _STALE_UI_KEYS

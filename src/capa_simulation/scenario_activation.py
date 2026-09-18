@@ -10,6 +10,7 @@ import streamlit as st
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.reference_cache import (
+    HOME_FIGURE_CACHE_KEY,
     activate_persisted_reference_tables,
     clear_persisted_reference_tables,
 )
@@ -31,9 +32,13 @@ ACTIVE_PERSISTED_REVISION_ID_KEY = "active_persisted_revision_id"
 ACTIVE_PERSISTED_SESSION_REVISION_KEY = "active_persisted_session_revision"
 OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY = "official_scenario_bootstrap_attempted"
 
-# 시나리오를 바꾸면 버려야 하는 세션 값. 여기 적힌 키는 화면 모듈이 소유하지만 문자열로
-# 적는다 — 그 모듈들이 이 파일을 거꾸로 import 하므로 상수를 가져오면 순환이 된다.
+# 시나리오를 바꾸면 버려야 하는 세션 값. 대부분은 화면 모듈이 소유하지만 문자열로 적는다 —
+# 그 모듈들이 이 파일을 거꾸로 import 하므로 상수를 가져오면 순환이 된다.
 # `tests/test_scenario_activation.py` 가 두 곳의 철자가 같은지 지킨다.
+#
+# Figure 캐시 칸만 상수로 받는다. 쓰는 곳이 셋이라 리터럴로 두면 이름을 바꿀 때 한 곳만
+# 고쳐지고, 그러면 시나리오를 바꿔도 옛 칸이 남아 남의 시나리오 그림이 그대로 뜬다.
+# `io/reference_cache` 는 pandas·streamlit 만 보는 잎이라 여기서 가져와도 순환이 없다.
 #
 # **여기에는 앞 시나리오의 값이 담긴 칸만 넣는다.** 화면 상태(탭·필터·토글)는 넣지 않는다.
 # 보던 조건은 시나리오가 바뀌어도 사용자가 계속 보려는 것이고, 지워 버리면 바꿀 때마다
@@ -44,7 +49,7 @@ _STALE_UI_KEYS = (
     "capacity_standards_inputs",
     "load_conversion_source_token",
     "capacity_standards_source_token",
-    "home_dashboard_figure_cache",
+    HOME_FIGURE_CACHE_KEY,
 )
 
 
