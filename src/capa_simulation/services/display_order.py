@@ -3,6 +3,7 @@
 """Apply workbook-managed display order rules to Streamlit tables."""
 
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 
@@ -34,6 +35,29 @@ class PreparedDisplayOrder:
 
 
 DisplayOrderInput = pd.DataFrame | PreparedDisplayOrder | None
+
+
+def match_key(values: "pd.Series[Any]") -> "pd.Series[str]":
+    """분류값을 **맞대어 볼 때만** 쓰는 형태로 줄인다. 앞뒤 공백을 떼고 대소문자를 없앤다.
+
+    규칙에 `Top` 이라고 적어 두면 원천의 `TOP` 에도 걸려야 한다. 예전에는 글자 그대로
+    맞춰서, 대소문자가 한 글자만 달라도 규칙이 없는 것과 똑같이 동작했다 — 그 값이 무한대로
+    밀려 화면 맨 뒤에 서는데 오류도 경고도 없다. 순서만 조용히 틀린다.
+
+    **줄인 값은 비교에만 쓰고 화면에는 원래 글자를 그대로 쓴다.** 사용자가 적은 표기가
+    화면에서 바뀌면 그것대로 놀란다.
+
+    빈 값은 빈 문자열로 내린다. `astype("string")` 이 `None` 을 `pd.NA` 로 올리는데, 그러면
+    `.eq(...)` 가 불리언이 아니라 **NA 를 품은** 불리언이 되어 `.astype(int)` 와 `.loc[]`
+    마스킹이 그 자리에서 죽는다. 사용자지정 규칙의 분류값은 비어 있을 수 없으므로(위쪽
+    누락 검사가 먼저 막는다) 빈 문자열이 실제 값과 부딪히지 않는다.
+    """
+    return values.astype("string").str.strip().str.casefold().fillna("")
+
+
+def scalar_match_key(value: object) -> str:
+    """`match_key` 의 한 값짜리. 두 곳이 같은 규칙으로 줄여야 짝이 맞는다."""
+    return str(value).strip().casefold()
 
 
 def _prepare_display_order(display_order: pd.DataFrame) -> pd.DataFrame:
@@ -105,8 +129,11 @@ def _with_edp_top_rule(rules: pd.DataFrame) -> pd.DataFrame:
     그래서 `WF 구분` 변환과 같은 원칙을 쓴다. 입력은 그대로 받고, 앱이 파생한다.
     `Top` 바로 다음 자리에 넣기 위해 그 그룹의 `값표시순서` 를 다시 매긴다.
     """
+    # 규칙에 적힌 표기가 `TOP`·`top` 이어도 같은 규칙으로 본다. 여기서 글자 그대로 맞추면
+    # 파생이 일어나지 않고, `Top_e` 가 규칙 없는 값이 되어 화면 맨 뒤로 조용히 밀린다.
+    rule_keys = match_key(rules["분류값"])
     target = rules["분류컬럼"].eq(WF_DIVISION_COLUMN) & rules["정렬방식"].eq("사용자지정")
-    tops = rules.loc[target & rules["분류값"].eq(SOURCE_TOP_DIVISION)]
+    tops = rules.loc[target & rule_keys.eq(SOURCE_TOP_DIVISION.casefold())]
     if tops.empty:
         return rules
 
@@ -117,7 +144,7 @@ def _with_edp_top_rule(rules: pd.DataFrame) -> pd.DataFrame:
     existing = set(
         map(
             tuple,
-            rules.loc[target & rules["분류값"].eq(EDP_TOP_DIVISION), group_keys]
+            rules.loc[target & rule_keys.eq(EDP_TOP_DIVISION.casefold()), group_keys]
             .to_numpy()
             .tolist(),
         )
@@ -131,7 +158,7 @@ def _with_edp_top_rule(rules: pd.DataFrame) -> pd.DataFrame:
     combined = pd.concat([rules, derived], ignore_index=True)
     # `Top` 과 같은 순서값을 갖게 되므로 동률이다. `Top` 다음에 오도록 보조 키를 둔 뒤
     # 그룹 안에서 1부터 다시 매긴다 — 중복 검사를 통과해야 하기 때문이다.
-    tie = combined["분류값"].eq(EDP_TOP_DIVISION).astype(int)
+    tie = match_key(combined["분류값"]).eq(EDP_TOP_DIVISION.casefold()).astype(int)
     renumber = combined["분류컬럼"].eq(WF_DIVISION_COLUMN) & combined["정렬방식"].eq("사용자지정")
     ordered = (
         combined.loc[renumber]
@@ -177,7 +204,13 @@ def apply_display_order(
     aliases = value_aliases or {}
     for column, mapping in aliases.items():
         mask = rules["분류컬럼"].eq(column)
-        rules.loc[mask, "분류값"] = rules.loc[mask, "분류값"].replace(mapping)
+        if not mask.any():
+            continue
+        # 별칭(공정 표시명 → 원본 공정명)도 대소문자를 가리지 않는다. 여기서 못 바꾸면 그 값은
+        # 원본 공정명과도 어긋난 채 남아 규칙이 통째로 헛돈다.
+        folded = {scalar_match_key(alias): value for alias, value in mapping.items()}
+        original = rules.loc[mask, "분류값"]
+        rules.loc[mask, "분류값"] = match_key(original).map(folded).fillna(original)
 
     rule_summary = rules[["정렬우선순위", "분류컬럼", "정렬방식"]].drop_duplicates()
     conflicts = rule_summary.groupby("분류컬럼").agg(
@@ -208,15 +241,18 @@ def apply_display_order(
                     "RQ_DISPLAY_ORDER의 사용자지정 규칙에 값이 누락되었습니다: "
                     f"{page}.{tab_name}.{column}"
                 )
-            duplicated = custom["분류값"].duplicated(keep=False)
+            # 중복도 맞대어 보는 형태로 판정한다. `Top` 과 `TOP` 을 따로 두면 둘 다 같은
+            # 값에 걸려 하나가 조용히 이긴다 — 어느 쪽이 이길지는 행 순서가 정한다.
+            keys = match_key(custom["분류값"])
+            duplicated = keys.duplicated(keep=False)
             if duplicated.any():
                 values = custom.loc[duplicated, "분류값"].drop_duplicates().tolist()
                 raise ValueError(
                     "RQ_DISPLAY_ORDER의 사용자지정 값이 중복되었습니다: "
                     f"{page}.{tab_name}.{column} {values}"
                 )
-            mapping = dict(zip(custom["분류값"], custom["값표시순서"], strict=True))
-            result[helper] = result[column].astype("string").map(mapping).fillna(float("inf"))
+            mapping = dict(zip(keys, custom["값표시순서"], strict=True))
+            result[helper] = match_key(result[column]).map(mapping).fillna(float("inf"))
             ascending.append(True)
         else:
             result[helper] = result[column].astype("string")
