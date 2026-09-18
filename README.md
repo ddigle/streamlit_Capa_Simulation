@@ -522,54 +522,125 @@ Repository의 쓰기를 별도 잠금과 DB 트랜잭션으로 직렬화합니�
 
 ## 초기 설정
 
-의존성 선언은 `pyproject.toml` 하나입니다. 사내는 `uv`, 개발 PC는 `pip`를 쓰지만 두 경로가
-같은 선언을 읽습니다. 개발 도구(mypy·ruff·pytest 등)는 extra가 아니라 PEP 735 의존성 그룹
-`[dependency-groups]`의 `dev`에 있습니다.
+처음 세팅하는 사람이 위에서부터 그대로 따라 하면 됩니다. **어느 환경인지부터 고르세요.**
 
-### uv (사내)
+| | 사외 (개발 PC) | 사내 (WebIDE) |
+|---|---|---|
+| 패키지 관리 | `uv` | `uv` |
+| 추가로 필요한 것 | 없음 | `bigdataquery` (사내 인덱스) |
+| 코드 수정 | 합니다 | **하지 않습니다** — `docs/dual_env_workflow.md` |
+
+의존성 선언은 `pyproject.toml` 하나이고 **양쪽이 완전히 같습니다.** 개발 도구(mypy·ruff·
+pytest)는 extra 가 아니라 PEP 735 의존성 그룹 `[dependency-groups]` 의 `dev` 에 있어
+`uv sync` 가 기본으로 함께 설치합니다.
+
+### 공통 — 0단계. 준비물 확인
+
+```powershell
+git --version
+py -3.10 --version     # 3.10.11 이 나와야 합니다
+uv --version
+```
+
+- **Python 3.10.11 64-bit 고정입니다.** 다른 마이너 버전은 씁니다만 권장하지 않습니다.
+- `uv` 가 없으면 `pip install uv` 또는 [astral.sh/uv](https://docs.astral.sh/uv/) 안내를 따릅니다.
+- `py -3.10` 이 없다면 Python 3.10.11 을 먼저 설치합니다.
+
+### 사외 (개발 PC)
+
+**1. 받기**
+
+```powershell
+git clone <저장소 주소> C:\dev\streamlit_project
+cd C:\dev\streamlit_project
+```
+
+**2. 환경 만들기**
 
 ```powershell
 uv sync
 ```
 
-`uv sync`는 `dev` 그룹을 기본으로 함께 설치합니다. 이후 명령 접두는 `uv run python ...`입니다.
+`.venv` 가 만들어지고 `dev` 그룹까지 설치됩니다. 이후 명령은 `.\.venv\Scripts\python.exe ...`
+또는 `uv run python ...` 둘 다 됩니다.
 
-사내 전용 `bigdataquery` 패키지는 `pyproject.toml`에 넣지 않습니다. 공개 인덱스에 없어
-`uv lock`이 실패하거나, 사내 인덱스에 있으면 락 파일에 사내 전용 패키지가 박히기 때문입니다.
-따로 설치합니다.
-
-```powershell
-uv pip install bigdataquery==2.5.0 --index-url `
-  https://artifactory.samsungds.net/repository/dataservice-devsecops-pypi/simple
-```
-
-`uv sync`는 락에 없는 패키지를 지우므로, 이 패키지를 넣은 뒤에는 `uv sync --inexact`를 씁니다.
-패키지가 없어도 앱은 뜹니다 — 사내 조회 화면만 안내 문구를 띄우고 멈춥니다.
-
-사내 PC의 `pyproject.toml`에 인덱스를 적어 두었다면 **배포 ZIP이 그것을 덮지 않습니다.**
-`scripts/build_deploy_package.py`가 `pyproject.toml`과 `uv.lock`을 배포 세트에서 뺍니다 —
-선언과 잠금은 짝이라 하나만 보내면 사내에서 어긋납니다. 대신 **의존성을 바꾸면 ZIP만으로는
-사내에 반영되지 않으므로** 바뀐 줄을 따로 알려 사내 파일을 손으로 맞추고 거기서 `uv lock`을
-다시 돌려야 합니다.
-
-### pip (개발 PC)
+**3. 확인**
 
 ```powershell
-py -3.10 --version
-py -3.10 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip setuptools wheel
-pip install -e . --group dev
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-`--group`은 pip 25.1부터 지원합니다. 그보다 낮으면 pip를 먼저 올립니다.
+빈 `data/` 상태에서도 앱이 뜹니다 — 시뮬레이션 DB 와 내장 데모 공식버전이 첫 실행에
+만들어집니다. Excel·Core Data CSV·사내 DB 없이 HOME 과 계산 페이지를 열 수 있습니다.
 
-PowerShell에서 가상환경 활성화 스크립트가 차단되면 조직 보안 정책에 맞게 실행
-정책을 확인합니다. 활성화하지 않고도 `.venv`의 실행 파일을 직접 사용할 수 있습니다.
+여기까지가 사외 세팅의 전부입니다.
 
-에디터가 `import streamlit`을 찾지 못한다고 표시하면 인터프리터를 `.venv`로 지정합니다.
-`pyrightconfig.json`이 `.venv`와 `src`를 알려 주지만, 편집기가 이 파일을 읽지 않으면
-인터프리터를 직접 골라야 합니다. 실행·테스트에는 영향이 없는 표시상의 문제입니다.
+### 사내 (WebIDE)
+
+사외와 **1~3단계가 같고**, 그 뒤에 두 단계가 더 있습니다.
+
+**1~3. 사외와 동일**
+
+배포 ZIP 으로 받았다면 `git clone` 대신 그 폴더에서 시작합니다. 최초 1회는 ZIP 을 손으로
+풀고, 그 다음부터는 `scripts/apply_deploy_package.py` 가 대신합니다(아래 5단계).
+
+**4. 사내 전용 패키지 넣기**
+
+```powershell
+uv pip install -r requirements-company.txt
+```
+
+`bigdataquery` 를 사내 Artifactory 인덱스에서 받습니다. 인덱스 주소는 그 파일 안에 있으니
+따로 칠 것이 없습니다.
+
+> **이 뒤로는 `uv sync` 대신 `uv sync --inexact` 를 씁니다.**
+> 그냥 `uv sync` 는 **락에 없는 패키지를 지웁니다** — `bigdataquery` 가 그렇습니다.
+> 실수로 지웠으면 위 명령을 다시 돌리면 됩니다.
+
+패키지가 없어도 앱은 뜹니다. 사내 조회(BigDataQuery) 화면만 안내 문구를 띄우고 멈춥니다.
+
+**왜 `pyproject.toml` 에 적지 않나** — uv 락파일은 universal 이라 extra·group 을 가리지
+않고 전부 해석합니다. `[project.optional-dependencies]` 에 두면 `--extra` 를 고르지 않아도
+사내 인덱스를 찾으러 가고, 닿지 못하는 개발 PC 에서는 `uv lock` 이 그 자리에서 죽습니다
+(실측: `dns error`). 파일로 빼 둔 덕분에 선언과 락이 양쪽에서 같고, 그래서 **배포 ZIP 에서
+빼야 할 파일이 없습니다.**
+
+**5. 배포 적용 도구 자리 잡기 (최초 1회)**
+
+`scripts/apply_deploy_package.py` 는 사내에서 도는데 사외에서 만듭니다. 첫 ZIP 은 손으로
+풀어야 하고, 그 다음부터는 이 스크립트가 적용을 맡습니다.
+
+```powershell
+uv run python scriptspply_deploy_package.py <내려받은 ZIP> --dry-run
+```
+
+`--dry-run` 은 아무것도 바꾸지 않고 무엇이 지워지고 덮일지만 보여 줍니다. 처음에는 꼭
+이것부터 돌려 보세요.
+
+**6. 사내 규칙 걸기 (최초 1회)**
+
+```powershell
+New-Item -ItemType Directory .claude -Force
+Copy-Item docs\internal_claude_settings.json .claude\settings.json
+New-Item -ItemType Directory review -Force
+```
+
+- `.claude/settings.json` — 사내 에이전트가 `review/` 밖을 고치지 못하게 막습니다.
+- `review/` — 리뷰 문서를 두는 자리입니다.
+- 둘 다 배포가 **보존**하므로 다음 ZIP 이 덮지 않습니다. 템플릿이 바뀌면 그때 다시 복사합니다.
+
+전체 운영 절차와 리뷰 문서 양식은 `docs/dual_env_workflow.md` 에 있습니다.
+
+### 막힐 때
+
+| 증상 | 까닭과 조치 |
+|---|---|
+| `uv lock` 이 `dns error` 로 죽는다 | `bigdataquery` 가 `pyproject.toml` 에 들어갔습니다. 빼고 `requirements-company.txt` 에 두세요. |
+| `bigdataquery` 가 사라졌다 | `uv sync` 를 그냥 돌렸습니다. 4단계를 다시 하고 이후 `--inexact` 를 씁니다. |
+| `duckdb.IOException` | 앱 서버가 떠 있는 채로 스크립트·테스트를 돌렸습니다. DuckDB 는 프로세스 배타 잠금입니다 — 앱을 끄고 다시 돌리세요. 가상환경 손상이 아닙니다. |
+| 활성화 스크립트가 차단된다 | 활성화하지 않고 `.venv\Scripts\` 의 실행 파일을 직접 쓰면 됩니다. |
+| 에디터가 `import streamlit` 을 못 찾는다 | 인터프리터를 `.venv` 로 지정하세요. 실행·테스트에는 영향이 없는 표시상의 문제입니다. |
 
 ## 실행
 

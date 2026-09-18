@@ -1,0 +1,20 @@
+# 사내에서만 설치하는 패키지.
+#
+# `pyproject.toml` 에 적지 않는 이유: uv 락파일은 universal 이라 extra·group 을 가리지 않고
+# **전부 해석한다.** `[project.optional-dependencies]` 에 두면 `--extra` 를 고르지 않아도
+# 해석 대상이 되어, 사내 인덱스에 닿지 못하는 개발 PC 에서 `uv lock` 이 그 자리에서 죽는다
+# (실제로 확인: `dns error … 알려진 호스트가 없습니다`).
+#
+# 이 파일로 빼면 `pyproject.toml` 과 `uv.lock` 이 **사내·사외에서 완전히 같아진다.** 그래서
+# 배포 ZIP 에서 빼야 할 파일이 없고, 의존성을 바꿔도 ZIP 하나로 사내에 반영된다.
+#
+# 사내 설치 (전체 절차는 README.md 의 「초기 설정」):
+#     uv sync
+#     uv pip install -r requirements-company.txt
+#
+# 그 뒤로는 `uv sync --inexact` 를 쓴다 — 그냥 `uv sync` 는 락에 없는 이 패키지를 지운다.
+# 패키지가 없어도 앱은 뜬다. 사내 조회 화면만 안내 문구를 띄우고 멈춘다.
+
+--index-url https://artifactory.samsungds.net/repository/dataservice-devsecops-pypi/simple
+
+bigdataquery==2.5.0

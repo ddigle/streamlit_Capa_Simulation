@@ -36,6 +36,7 @@ ALLOWED_TOP_LEVEL = {
     "docs/",
     "pyproject.toml",
     "pyrightconfig.json",
+    "requirements-company.txt",
     "scripts/",
     "src/",
     "tests/",

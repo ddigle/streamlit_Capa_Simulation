@@ -18,21 +18,41 @@ from build_deploy_package import (  # noqa: E402
 )
 
 
-def test_the_dependency_declaration_and_its_lock_never_ship() -> None:
-    """사내 PC 의 `pyproject.toml` 에는 삼성 Artifactory 인덱스가 손으로 들어가 있고, 그
-    선언에서 나온 `uv.lock` 에는 `bigdataquery` 가 박혀 있다.
+def test_the_dependency_declaration_and_its_lock_now_ship() -> None:
+    """선언과 잠금은 이제 **양쪽이 같아서** 함께 보낸다.
 
-    개발 PC 쪽에는 둘 다 없다 — 적어 두면 인덱스에 닿지 못하는 곳에서 `uv lock` 이 깨지기
-    때문에 일부러 뺐다. 그러니 덮어쓰면 사내 설정만 사라진다. **둘은 짝이라 함께 빼야
-    한다** — 하나만 보내면 선언과 잠금이 어긋나 `uv sync` 가 락을 다시 만들고, 그 순간
-    사내 전용 패키지가 환경에서 빠진다. 이 규칙이 주석으로만 남으면 다음 배포에서 조용히
-    다시 들어간다.
+    예전에는 사내 `pyproject.toml` 에만 Artifactory 인덱스가 손으로 들어가 있어 두 파일을
+    뺐고, 그 대가로 「의존성을 바꾸면 ZIP 만으로는 사내에 반영되지 않는다」는 예외를 지고
+    있었다. 사내 전용 패키지를 `requirements-company.txt` 로 옮긴 뒤 그 예외가 없어졌다.
+
+    되돌아가지 않도록 여기서 고정한다 — 다시 빼기 시작하면 사내 파일을 손으로 맞추는
+    일이 함께 돌아온다.
     """
     tracked = ["app.py", "pyproject.toml", "uv.lock", "src/capa_simulation/settings.py"]
 
     shipped = deploy_set(tracked, extras=())
 
-    assert shipped == ["app.py", "src/capa_simulation/settings.py"]
+    assert shipped == sorted(tracked)
+    assert EXCLUDED_FILES == frozenset()
+
+
+def test_the_company_only_package_stays_out_of_the_declaration() -> None:
+    """`bigdataquery` 가 `pyproject.toml` 로 돌아오면 개발 PC 의 `uv lock` 이 죽는다.
+
+    uv 락은 universal 이라 extra·group 을 가리지 않고 전부 해석한다. `--extra` 를 고르지
+    않아도 사내 인덱스를 찾으러 가고, 닿지 못하는 곳에서는 그 자리에서 실패한다
+    (실측: `dns error`). 그래서 선언이 아니라 별도 파일에 둔다.
+    """
+    declaration = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    requirements = PROJECT_ROOT / "requirements-company.txt"
+
+    assert "bigdataquery==" not in declaration, (
+        "사내 전용 패키지가 pyproject.toml 로 돌아왔습니다 — 개발 PC 의 `uv lock` 이 "
+        "사내 인덱스를 찾다가 실패합니다. `requirements-company.txt` 에 두세요."
+    )
+    assert "artifactory" not in declaration.lower()
+    assert requirements.is_file()
+    assert "bigdataquery==" in requirements.read_text(encoding="utf-8")
 
 
 def test_the_deploy_set_keeps_tests_and_scripts() -> None:
@@ -108,9 +128,10 @@ def test_the_archive_holds_exactly_the_set(tmp_path: Path) -> None:
         assert sorted(archive.namelist()) == ["app.py", "pkg/mod.py"]
 
 
-def test_the_exclusion_list_is_explicit() -> None:
-    """제외 목록이 늘면 배포본에서 사라지는 파일이 는다. 눈에 띄게 고정한다."""
-    assert EXCLUDED_FILES == frozenset({"pyproject.toml", "uv.lock"})
+def test_the_exclusion_list_is_empty() -> None:
+    """제외 목록이 늘면 배포본에서 사라지는 파일이 늘고, 그만큼 사내 파일을 손으로 맞춰야
+    한다. 지금은 비어 있다 — 늘어날 때 눈에 띄도록 고정한다."""
+    assert EXCLUDED_FILES == frozenset()
 
 
 def test_directory_placeholders_still_ship() -> None:
