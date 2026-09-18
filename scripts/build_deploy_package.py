@@ -175,6 +175,9 @@ def build_manifest(root: Path, paths: Sequence[str], *, stamp: str) -> dict[str,
         "previous_deploy": previous_tag.removeprefix(DEPLOY_TAG_PREFIX),
         "previous_commit": git_output(root, "rev-parse", previous_tag) if previous_tag else "",
         "changes": change_entries(root, previous_tag),
+        # 보내지 않지만 **사내 것을 남겨야 하는** 파일. 적용기가 이 목록을 보고 지우지
+        # 않는다 — 없으면 사내 Artifactory 인덱스와 락이 적용 때마다 사라진다.
+        "kept_on_target": sorted(EXCLUDED_FILES),
         "file_count": len(paths),
         "files": file_digests(root, paths),
     }

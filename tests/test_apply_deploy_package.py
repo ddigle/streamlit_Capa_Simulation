@@ -149,3 +149,32 @@ def test_digest_mismatch_names_the_file(tmp_path: Path) -> None:
     assert digest_mismatches(tmp_path, {"app.py": good}) == []
     assert digest_mismatches(tmp_path, {"app.py": "sha256:0" * 8})[0].startswith("app.py")
     assert "파일이 없습니다" in digest_mismatches(tmp_path, {"gone.py": good})[0]
+
+
+def test_files_the_zip_deliberately_omits_are_never_removed() -> None:
+    """`pyproject.toml`·`uv.lock` 은 사내 것이라 보내지 않는다 — 지우면 복구할 길이 없다.
+
+    사내 `pyproject.toml` 에는 Artifactory 인덱스가, 그 락에는 `bigdataquery` 가 들어
+    있다. ZIP 에 없다는 이유로 지우면 적용할 때마다 사내 환경이 무너진다.
+    """
+    tracked = ["app.py", "pyproject.toml", "uv.lock", "src/gone.py"]
+    members = ["app.py"]
+    kept = ["pyproject.toml", "uv.lock"]
+
+    removals = plan_removals(tracked, members, kept)
+
+    assert removals == ["src/gone.py"]
+
+
+def test_only_files_that_vanished_outside_are_removed() -> None:
+    """ZIP 이 다시 깔 파일은 지웠다 쓸 이유가 없다 — 실패 지점만 는다."""
+    tracked = ["app.py", "src/old.py"]
+    members = ["app.py", "src/new.py"]
+
+    assert plan_removals(tracked, members) == ["src/old.py"]
+
+
+def test_nothing_is_removed_when_the_zip_matches_the_tree() -> None:
+    tracked = ["app.py", "src/settings.py"]
+
+    assert plan_removals(tracked, tracked) == []

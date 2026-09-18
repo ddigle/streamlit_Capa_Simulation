@@ -168,14 +168,29 @@ def member_problems(names: Sequence[str]) -> list[str]:
 
 
 def plan_removals(
-    tracked: Iterable[str], *, preserved: Sequence[str] = PRESERVED_PREFIXES
+    tracked: Iterable[str],
+    members: Iterable[str] = (),
+    kept: Iterable[str] = (),
+    *,
+    preserved: Sequence[str] = PRESERVED_PREFIXES,
 ) -> list[str]:
-    """지울 대상 — 추적 파일에서 사내 전용 자리를 뺀 것.
+    """지울 대상 — **ZIP 이 트리를 정의하되 남기라고 한 것은 빼고.**
 
-    무시된 파일은 `git ls-files` 에 없으므로 애초에 여기 들어오지 않는다. 사내 DuckDB 와
-    `data/` 실데이터가 그래서 안전하다.
+    네 가지를 뺀다.
+
+    1. ZIP 이 다시 깔 파일(`members`) — 지웠다 쓰는 것은 같은 결과이고, 실패 지점만 는다.
+    2. 송장이 남기라고 한 파일(`kept`) — `pyproject.toml`·`uv.lock` 이다. 사내 Artifactory
+       인덱스와 그 락은 사내 것이라 보내지 않으므로, 지우면 **복구할 길이 없다.**
+    3. 사내 전용 자리(`preserved`) — 리뷰 기록·적용 이력·권한 설정.
+    4. 무시된 파일 — `git ls-files` 에 없어 애초에 후보가 아니다. 사내 DuckDB 와 `data/`
+       실데이터가 그래서 안전하고, `git clean -x` 를 쓰지 않는 이유가 이것이다.
+
+    남는 것이 곧 **사외에서 지워졌는데 사내에 남은 파일**이다. 그것만 지운다.
     """
-    return sorted(path for path in tracked if not path.startswith(tuple(preserved)))
+    keep = set(members) | set(kept)
+    return sorted(
+        path for path in tracked if path not in keep and not path.startswith(tuple(preserved))
+    )
 
 
 def digest_mismatches(root: Path, files: Mapping[str, object]) -> list[str]:
@@ -216,7 +231,17 @@ def describe_plan(
                 lines.append(f"        … 외 {len(paths) - 8}개")
     else:
         lines.append("변경    직전 배포 정보 없음 — 전체를 새로 깝니다")
-    lines.append(f"지움    추적 파일 {len(removals):,}개")
+    kept = manifest.get("kept_on_target")
+    if isinstance(kept, list) and kept:
+        lines.append(f"유지    {' · '.join(str(item) for item in kept)} (사내 것을 남깁니다)")
+    if removals:
+        lines.append(f"지움    사외에서 없어진 {len(removals):,}개")
+        for path in removals[:8]:
+            lines.append(f"        - {path}")
+        if len(removals) > 8:
+            lines.append(f"        … 외 {len(removals) - 8}개")
+    else:
+        lines.append("지움    없음")
     lines.append(f"보존    {' · '.join(PRESERVED_PREFIXES)} · 무시 목록(데이터) 전부")
     lines.append(f"적용    {len(members):,}개 해제")
     return "\n".join(lines)
@@ -325,7 +350,9 @@ def _run(args: argparse.Namespace) -> int:
                 "먼저 커밋하거나 되돌리세요:\n  " + "\n  ".join(dirty[:10])
             )
 
-        removals = plan_removals(tracked_files(root))
+        kept = manifest.get("kept_on_target")
+        kept_paths = [str(item) for item in kept] if isinstance(kept, list) else []
+        removals = plan_removals(tracked_files(root), members, kept_paths)
         print(describe_plan(manifest, removals, members))
         if args.dry_run:
             print("\n미리보기입니다 — 아무것도 바꾸지 않았습니다.")
