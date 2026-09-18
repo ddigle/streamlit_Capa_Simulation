@@ -137,6 +137,46 @@ def test_equipment_csv_merge_and_preview_replace_by_equipment_id() -> None:
     assert result.loc[result["호기"].eq("EQ-01"), "공정소분류"].item() == "Changed"
 
 
+def test_preview_reads_blank_cells_the_same_after_the_scalar_fast_path() -> None:
+    """빈 칸 판정을 `pd.Series([x]).isna()` 에서 `pd.isna(x)` 로 바꿨다.
+
+    미리보기가 칸마다 Series 를 하나씩 만들고 있었다 — 31열이라 실측 100행 944ms ·
+    500행 4.7초 · 2,000행 19초였고, 세션 키가 살아 있는 동안 **매 rerun** 다시 계산된다.
+    빠르게 만드는 것보다 **판정이 한 칸도 달라지지 않는 것**이 중요하므로 세 경우를 못박는다.
+    """
+    current = _equipment()
+    # EQ-02 는 비고가 차 있고 분류1 은 비어 있다. 두 칸을 한 행에서 함께 본다.
+    incoming = current.loc[current["호기"].eq("EQ-02")].copy()
+    incoming.loc[incoming.index[0], "비고"] = pd.NA
+    incoming.loc[incoming.index[0], "분류1"] = pd.NA
+
+    preview = build_equipment_import_preview(current, incoming)
+
+    # 값이 있던 칸이 비었다 → 변경으로 잡히고 "(빈 값)" 으로 적힌다.
+    assert preview.loc[0, "Import구분"] == "대체"
+    assert "비고" in preview.loc[0, "변경컬럼"]
+    assert "(빈 값)" in preview.loc[0, "변경내용"]
+    # 원래도 비어 있던 칸은 변경이 아니다 — 양쪽 결측은 같은 값으로 본다.
+    assert "분류1" not in preview.loc[0, "변경컬럼"]
+
+
+def test_preview_does_not_depend_on_the_incoming_index() -> None:
+    """판정 세 칸은 행 순서로 쌓는데 `insert` 는 **인덱스로 맞춰** 넣는다.
+
+    `incoming` 의 인덱스가 0 부터가 아니면(필터로 고른 행, 이어 붙인 프레임) 전부 어긋나
+    Import구분·변경컬럼·변경내용이 통째로 `<NA>` 가 된다. 지금 호출부가 우연히 0 기반이라
+    드러나지 않았을 뿐이라 여기서 못박는다.
+    """
+    current = _equipment()
+    shifted = current.iloc[[1]].copy()  # 인덱스가 [1] 이다
+    shifted.loc[shifted.index[0], "공정소분류"] = "Changed"
+
+    preview = build_equipment_import_preview(current, shifted)
+
+    assert preview.loc[0, "Import구분"] == "대체"
+    assert "공정소분류" in preview.loc[0, "변경컬럼"]
+
+
 def test_downtime_merge_and_preview_use_natural_key() -> None:
     current = _downtime()
     incoming = current.copy()

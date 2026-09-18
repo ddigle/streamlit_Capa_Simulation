@@ -589,8 +589,15 @@ with st.container(border=True):
         st.error("시작일은 종료일보다 늦을 수 없습니다.")
         st.stop()
 
-start_month = start_date.year * 100 + start_date.month
-end_month = end_date.year * 100 + end_date.month
+# 주차 계산의 월 슬라이스는 조회일이 아니라 **달력 주차의 귀속 달**이 정한다. 월 경계 주차는
+# 조회 시작·종료 달 바깥 달에 귀속될 수 있고(`iso_week_calendar.owning_month` — 일수가 더
+# 많은 달), 그 달을 슬라이스에서 빼면 사용자가 요청한 날이 든 주가 inner 조인에서 통째로
+# 사라진다. 경고도 남지 않는다 — 행 자체가 없어 결측 검사에 걸리지 않는다.
+#
+# 형제 화면 `app_pages/wip_status.py` 가 이미 이렇게 한다. 여기만 역이식이 안 됐었다.
+page_calendar = build_iso_week_calendar(start_date, end_date)
+start_month = int(page_calendar["생산계획년월"].min())
+end_month = int(page_calendar["생산계획년월"].max())
 
 try:
     # 계산 입력의 월 슬라이스는 캐시 래퍼 안에서 한다. 뒤의 주차 계산이 쓰는 두 표만 자른다.

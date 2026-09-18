@@ -58,8 +58,6 @@ ADVANCE_TOGGLE_KEY = "home_show_advance"
 EXECUTION_TOGGLE_KEY = "home_show_execution"
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
 EXECUTION_NOTE_KEY = "home_preference_execution_note"
-TOP5_MIN_KEY = "home_preference_top5_min"
-TOP5_MAX_KEY = "home_preference_top5_max"
 PLAN_DETAIL_CUSTOMER_KEY = "home_preference_plan_detail_customer"
 COMPARISON_TOGGLE_KEY = "home_show_comparison"
 COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
@@ -734,6 +732,11 @@ def _render_top5_band_editor(
         )
         st.caption(_top5_band_version_caption(top5_band_profile))
         with st.form("home_top5_band_form"):
+            # **`key` 를 두지 않는다.** 바로 위 Summary 공지와 같은 이유다 — 키가 붙은 위젯은
+            # 한 번 그려진 뒤 `value` 를 무시하고 세션 값을 쓴다. Preference 는 숨은 탭에서도
+            # 그려지므로 HOME 첫 진입의 구간이 세션에 박히고, 그 뒤 다른 사람이 바꾼 구간을
+            # 이 화면은 못 본 채 저장 한 번으로 되돌린다. 위의 `공용 버전 v…` 캡션만 새 번호로
+            # 바뀌어 화면이 스스로 모순이 된다. 값은 폼 반환값으로 받으면 된다.
             min_column, max_column = st.columns(2)
             with min_column:
                 minimum = st.number_input(
@@ -741,7 +744,6 @@ def _render_top5_band_editor(
                     value=top5_band_profile.min_rate * 100,
                     step=10.0,
                     format="%.0f",
-                    key=TOP5_MIN_KEY,
                 )
             with max_column:
                 maximum = st.number_input(
@@ -749,7 +751,6 @@ def _render_top5_band_editor(
                     value=top5_band_profile.max_rate * 100,
                     step=10.0,
                     format="%.0f",
-                    key=TOP5_MAX_KEY,
                 )
             submitted = st.form_submit_button(
                 "확보율 구간 저장",
