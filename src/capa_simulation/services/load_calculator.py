@@ -2,6 +2,7 @@
 
 """PKG and wafer monthly volume calculations."""
 
+from collections.abc import Sequence
 from typing import Literal
 
 import pandas as pd
@@ -379,7 +380,10 @@ def _prepare_load_base(
     exclusions.append(_load_exclusion_rows(calculation.loc[yield_missing], "RQ_YLD"))
     calculation = calculation.loc[~yield_missing].drop(columns="_yield_merge")
 
-    calculation, value_exclusions = _drop_rows_missing_values(calculation)
+    calculation, value_exclusions = _drop_rows_missing_values(
+        calculation,
+        (("RQ_CHIP_QTY", ["구분_Chip", "Net Die"]), ("RQ_YLD", YIELD_VALUE_COLUMNS)),
+    )
     exclusions.extend(value_exclusions)
 
     _validate_yield_range(calculation, "RQ_YLD")
@@ -394,6 +398,7 @@ def _prepare_load_base(
 
 def _drop_rows_missing_values(
     calculation: pd.DataFrame,
+    sources: Sequence[tuple[str, Sequence[str]]],
 ) -> tuple[pd.DataFrame, list[tuple[tuple[object, ...], ...]]]:
     """기준정보 행은 붙었는데 **칸이 비어 있는** 계획 행을 조인 실패와 같이 취급한다.
 
@@ -407,11 +412,8 @@ def _drop_rows_missing_values(
     """
     groups: list[tuple[tuple[object, ...], ...]] = []
     missing_any = pd.Series(False, index=calculation.index)
-    for table_name, columns in (
-        ("RQ_CHIP_QTY", ["구분_Chip", "Net Die"]),
-        ("RQ_YLD", YIELD_VALUE_COLUMNS),
-    ):
-        missing = calculation[columns].isna().any(axis=1)
+    for table_name, columns in sources:
+        missing = calculation[list(columns)].isna().any(axis=1)
         if not missing.any():
             continue
         groups.append(_load_exclusion_rows(calculation.loc[missing], f"{table_name} 값 없음"))
@@ -569,14 +571,7 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
 
     if prepared_density[DENSITY_KEYS].isna().any(axis=None):
         raise ValueError("RQ_CHIP_EQ의 연결 키에 누락값이 있습니다.")
-    if prepared_density[["구분_Chip", "구분_EQ"]].isna().any(axis=None):
-        raise ValueError("RQ_CHIP_EQ의 구분_Chip 또는 구분_EQ에 누락값이 있습니다.")
     _assert_unique(prepared_density, DENSITY_KEYS, "RQ_CHIP_EQ")
-
-    if prepared_density["구분_Chip"].le(0).any():
-        raise ValueError("RQ_CHIP_EQ.구분_Chip은 0보다 커야 합니다.")
-    if prepared_density["구분_EQ"].le(0).any():
-        raise ValueError("RQ_CHIP_EQ.구분_EQ는 0보다 커야 합니다.")
 
     calculation = prepared_plan.merge(
         prepared_density,
@@ -589,12 +584,27 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
     # Density 환산은 물론 HOME 대시보드까지 통째로 멈췄다. 용량이 발생하지 않는 제품이나
     # `구분_EQ` 미등록 신규 제품이 계획에 한 줄만 들어와도 그렇게 된다.
     density_missing = calculation["_density_merge"] != "both"
-    exclusions = _load_exclusion_rows(calculation.loc[density_missing], "RQ_CHIP_EQ")
+    exclusions = [_load_exclusion_rows(calculation.loc[density_missing], "RQ_CHIP_EQ")]
     calculation = calculation.loc[~density_missing].drop(columns="_density_merge")
+
+    # 빈 칸도 Chip·Wafer 경로와 같이 제외 목록으로 내린다.
+    calculation, value_exclusions = _drop_rows_missing_values(
+        calculation, (("RQ_CHIP_EQ", ["구분_Chip", "구분_EQ"]),)
+    )
+    exclusions.extend(value_exclusions)
+
+    # **0 이하는 제외가 아니라 오류로 둔다.** 0 은 「없는 값」이 아니라 있는 값이라
+    # `값 없음` 사유로 적으면 라벨이 거짓이 되고, 곱셈 항이라 빼도 합계가 그대로여서
+    # 「줄어든 만큼은 제외 목록에 있다」가 헐거워진다. 다만 **조인 뒤로** 옮긴다 —
+    # 계획에 없는 제품의 기준정보 한 줄 때문에 화면이 멈추던 것이 그 자리였다.
+    for column in ("구분_Chip", "구분_EQ"):
+        if calculation[column].le(0).any():
+            raise ValueError(f"RQ_CHIP_EQ.{column}은 0보다 커야 합니다.")
+
     calculation["물량"] = (
         calculation["생산수량"] * calculation["구분_Chip"] * calculation["구분_EQ"] / 100_000
     )
-    calculation.attrs[LOAD_EXCLUSIONS_ATTR] = exclusions
+    calculation.attrs[LOAD_EXCLUSIONS_ATTR] = _merge_load_exclusions(exclusions)
     return calculation
 
 

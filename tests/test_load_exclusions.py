@@ -1,6 +1,7 @@
 # Purpose: 기준정보가 없는 계획 행이 페이지를 멈추지 않고 제외 목록으로 보고되는지 고정한다.
 
 import pandas as pd
+import pytest
 
 from capa_simulation.services.load_calculator import (
     build_monthly_volume,
@@ -201,3 +202,69 @@ def test_home_dashboard_survives_a_product_without_density() -> None:
     # Density 합계는 붙는 제품만 반영한다. PKG Plan 상세는 계획 그대로라 세 제품이 남는다.
     assert not monthly.empty
     assert "DEMO_OK" in set(detail["제품정보"])
+
+
+def test_density_does_not_stop_on_a_reference_row_no_plan_uses() -> None:
+    """계획에 없는 제품의 기준정보 한 줄이 Density 환산과 HOME 을 통째로 세웠다.
+
+    빈 칸 검사가 **조인 전**에 기준정보 전체를 훑고 있었다. 계획이 쓰지도 않는 행 하나가
+    비어 있으면 그 자리에서 예외였다. 조인 뒤로 옮기면 계획이 쓰는 행만 판정에 들어온다.
+    """
+    density = pd.DataFrame(
+        {
+            "제품정보": ["DEMO_OK", "DEMO_NOBODY_PLANS"],
+            "Stack": ["8H", "8H"],
+            "WF 구분": ["Core", "Core"],
+            "구분_Chip": [4.0, 4.0],
+            "구분_EQ": [16.0, None],
+        }
+    )
+    only_planned = PLAN.loc[PLAN["제품정보"].eq("DEMO_OK")]
+
+    density_load = calculate_density_load(only_planned, density)
+
+    assert density_load["제품정보"].tolist() == ["DEMO_OK"]
+    assert load_exclusions(density_load).empty
+
+
+def test_a_blank_density_cell_is_excluded_instead_of_raising() -> None:
+    """계획이 실제로 쓰는 행의 빈 칸은 Chip·Wafer 경로와 같이 제외 목록으로 내린다."""
+    density = pd.DataFrame(
+        {
+            "제품정보": ["DEMO_OK", "DEMO_NO_YLD"],
+            "Stack": ["8H", "8H"],
+            "WF 구분": ["Core", "Core"],
+            "구분_Chip": [4.0, 4.0],
+            "구분_EQ": [16.0, None],
+        }
+    )
+
+    density_load = calculate_density_load(PLAN, density)
+
+    assert density_load["제품정보"].tolist() == ["DEMO_OK"]
+    excluded = load_exclusions(density_load)
+    assert dict(zip(excluded["제품정보"], excluded["누락 기준정보"], strict=True)) == {
+        "DEMO_NO_CHIP": "RQ_CHIP_EQ",
+        "DEMO_NO_YLD": "RQ_CHIP_EQ 값 없음",
+    }
+
+
+def test_a_nonpositive_density_value_is_still_an_error() -> None:
+    """0 은 「없는 값」이 아니라 있는 값이다.
+
+    `값 없음` 사유로 적으면 라벨이 거짓이 되고, 곱셈 항이라 빼도 합계가 그대로여서
+    「줄어든 만큼은 제외 목록에 있다」가 헐거워진다. 오류는 오류로 두되 조인 뒤에 본다.
+    """
+    density = pd.DataFrame(
+        {
+            "제품정보": ["DEMO_OK"],
+            "Stack": ["8H"],
+            "WF 구분": ["Core"],
+            "구분_Chip": [4.0],
+            "구분_EQ": [0.0],
+        }
+    )
+    only_planned = PLAN.loc[PLAN["제품정보"].eq("DEMO_OK")]
+
+    with pytest.raises(ValueError, match="구분_EQ은 0보다 커야"):
+        calculate_density_load(only_planned, density)
