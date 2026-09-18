@@ -50,6 +50,7 @@ def render_column_filters(
                     (column_labels or {}).get(column, column),
                     options=options,
                     key=filter_keys[column],
+                    persist_state="session",
                     placeholder="전체",
                     width=FILTER_WIDTH_PX,
                     format_func=ProcessLabelFormatter(labels) if labels else str,

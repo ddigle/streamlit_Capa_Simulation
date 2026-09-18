@@ -120,11 +120,18 @@ with st.container(horizontal=True, vertical_alignment="bottom", gap="medium"):
         "분류",
         options=VOC_CATEGORIES,
         key=CATEGORY_FILTER_KEY,
+        persist_state="session",
         placeholder="미선택 시 전체",
         width=260,
     )
-    st.text_input("검색", key=SEARCH_KEY, placeholder="제목·내용·작성자", width=260)
-    st.toggle("미답변만", key=OPEN_ONLY_KEY)
+    st.text_input(
+        "검색",
+        key=SEARCH_KEY,
+        persist_state="session",
+        placeholder="제목·내용·작성자",
+        width=260,
+    )
+    st.toggle("미답변만", key=OPEN_ONLY_KEY, persist_state="session")
 
 visible = posts.copy()
 selected_categories = list(st.session_state.get(CATEGORY_FILTER_KEY, []))

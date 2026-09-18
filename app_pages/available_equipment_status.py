@@ -1066,6 +1066,7 @@ with management_tab:
                     f"{revision_by_id[value].note or '메모 없음'}"
                 ),
                 key="equipment_history_revision_id_v3",
+                persist_state="session",
             )
             try:
                 historical = load_equipment_snapshot(equipment_database_path, selected_revision_id)
@@ -1078,26 +1079,31 @@ with management_tab:
                     "공정소분류",
                     historical_equipment["공정소분류"].dropna().drop_duplicates().tolist(),
                     key="equipment_history_process_filter_v3",
+                    persist_state="session",
                 )
                 history_buildings = st.multiselect(
                     "동",
                     historical_equipment["동"].dropna().drop_duplicates().tolist(),
                     key="equipment_history_building_filter_v3",
+                    persist_state="session",
                 )
                 history_floors = st.multiselect(
                     "층",
                     historical_equipment["층"].dropna().drop_duplicates().tolist(),
                     key="equipment_history_floor_filter_v3",
+                    persist_state="session",
                 )
                 history_equipment_ids = st.multiselect(
                     "호기",
                     historical_equipment["호기"].dropna().drop_duplicates().tolist(),
                     key="equipment_history_id_filter_v3",
+                    persist_state="session",
                 )
                 history_downtime_types = st.multiselect(
                     "비가동유형",
                     historical.downtime["비가동유형"].dropna().drop_duplicates().tolist(),
                     key="equipment_history_downtime_type_filter_v3",
+                    persist_state="session",
                 )
             filtered_history_equipment = historical_equipment.copy()
             for column, selected in (
@@ -1127,6 +1133,7 @@ with management_tab:
                 "비가동 일정 기간",
                 value=(start_date, end_date),
                 key="equipment_history_event_range_v3",
+                persist_state="session",
             )
             if isinstance(event_range, tuple) and len(event_range) == 2:
                 event_start, event_end = event_range

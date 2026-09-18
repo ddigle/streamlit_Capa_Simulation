@@ -234,8 +234,8 @@ def _render_catalog_form(*, configured: bool) -> None:
     st.session_state.setdefault(CATALOG_END_DATE_KEY, today)
     with st.form("bigdataquery_catalog_form"):
         with st.container(horizontal=True, gap="small"):
-            st.date_input("시작일", key=CATALOG_START_DATE_KEY, width=180)
-            st.date_input("종료일", key=CATALOG_END_DATE_KEY, width=180)
+            st.date_input("시작일", key=CATALOG_START_DATE_KEY, persist_state="session", width=180)
+            st.date_input("종료일", key=CATALOG_END_DATE_KEY, persist_state="session", width=180)
         submitted = st.form_submit_button(
             "시뮬레이션 코드 조회",
             icon=":material/search:",
@@ -302,6 +302,7 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
         keyword = st.text_input(
             "검색",
             key=CATALOG_KEYWORD_KEY,
+            persist_state="session",
             # 목록을 좁히는 필터 전용이다. 검색 칸으로 선언하면 값이 있을 때 지우기 버튼이
             # 붙어, 전체 목록으로 되돌리는 조작이 한 번에 끝난다.
             type="search",
@@ -313,6 +314,7 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
             SCOPE_OPTIONS,
             default=SCOPE_ALL,
             key=CATALOG_SCOPE_KEY,
+            persist_state="session",
             width="content",
         )
     keyword_text = keyword or ""

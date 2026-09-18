@@ -261,6 +261,7 @@ def _render_detail(
                 min_value=minimum_date,
                 max_value=maximum_date,
                 key="dynamic_capacity_start_date",
+                persist_state="session",
                 width=165,
             )
             end_date: date = st.date_input(
@@ -269,6 +270,7 @@ def _render_detail(
                 min_value=minimum_date,
                 max_value=maximum_date,
                 key="dynamic_capacity_end_date",
+                persist_state="session",
                 width=165,
             )
             process = cast(
@@ -278,6 +280,7 @@ def _render_detail(
                     process_options,
                     index=default_process_index,
                     key="dynamic_capacity_process_filter",
+                    persist_state="session",
                     width=210,
                     # 표시만 바꾼다. 선택값은 원본이라 아래 `eq`·`filter_dynamic_capacity` 가
                     # 원본 컬럼과 그대로 대조한다.
@@ -297,6 +300,7 @@ def _render_detail(
                     "제품",
                     product_options,
                     key="dynamic_capacity_product_filter",
+                    persist_state="session",
                     width=190,
                 ),
             )
@@ -312,6 +316,7 @@ def _render_detail(
                     "Stack",
                     stack_options,
                     key="dynamic_capacity_stack_filter",
+                    persist_state="session",
                     width=140,
                 ),
             )
@@ -330,6 +335,7 @@ def _render_detail(
                     "WF 속성",
                     wafer_type_options,
                     key="dynamic_capacity_wafer_type_filter",
+                    persist_state="session",
                     width=160,
                 ),
             )

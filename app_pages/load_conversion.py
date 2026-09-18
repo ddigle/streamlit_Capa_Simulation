@@ -424,10 +424,15 @@ with conversion_tab:
                 "소요기준",
                 options=demand_basis_options,
                 key="monthly_volume_basis",
+                persist_state="session",
                 width=180,
             )
-            show_detail = st.toggle("상세", key="monthly_volume_detail", width=90)
-            include_edp = st.toggle("EDP", key="monthly_volume_edp", width=90)
+            show_detail = st.toggle(
+                "상세", key="monthly_volume_detail", persist_state="session", width=90
+            )
+            include_edp = st.toggle(
+                "EDP", key="monthly_volume_edp", persist_state="session", width=90
+            )
 
     try:
         conversion_plan = filter_edp_plan(simulation_plan, include_edp)

@@ -237,6 +237,7 @@ else:
                     options=list(CAPACITY_LEVEL_LABELS.values()),
                     index=0,
                     key="unit_capacity_detail_level",
+                    persist_state="session",
                     disabled=capacity_view == "STEP별",
                 )
             with process_column:
@@ -247,6 +248,7 @@ else:
                         "공정을 선택하세요" if capacity_view == "STEP별" else "미선택 시 전체 공정"
                     ),
                     key=process_filter_key,
+                    persist_state="session",
                     # 표시만 바꾼다. 선택값은 원본이어야 아래 `isin` 이 원본 컬럼과 맞는다.
                     format_func=process_labels.format_func(),
                 )
@@ -363,6 +365,7 @@ else:
         show_detail = st.toggle(
             "상세",
             key="required_equipment_detail",
+            persist_state="session",
             width=90,
         )
         all_month_columns = [

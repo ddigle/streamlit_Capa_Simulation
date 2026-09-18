@@ -192,6 +192,7 @@ def _render_detail(
                 value=(months[0], months[-1]),
                 format_func=month_label,
                 key=f"{key_prefix}_month_range",
+                persist_state="session",
                 width=380,
             )
             selected_processes = st.multiselect(
@@ -200,6 +201,7 @@ def _render_detail(
                 placeholder="전체 공정",
                 format_func=labels.format_func(),
                 key=f"{key_prefix}_process_filter",
+                persist_state="session",
                 width=320,
             )
         product_options = [_ALL, *sorted(monthly["제품정보"].astype(str).unique().tolist())]
@@ -207,6 +209,7 @@ def _render_detail(
             "제품",
             product_options,
             key=f"{key_prefix}_product_filter",
+            persist_state="session",
             width=220,
         )
 

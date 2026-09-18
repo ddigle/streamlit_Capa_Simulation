@@ -484,6 +484,7 @@ with equipment_overview_tab:
     show_equipment_detail = st.toggle(
         "상세",
         key="equipment_count_detail",
+        persist_state="session",
         width=90,
     )
     if show_equipment_detail:

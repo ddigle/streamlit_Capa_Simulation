@@ -285,6 +285,7 @@ def render_hierarchical_monthly_table(
                 f"{index * page_size + 1:,}–{min((index + 1) * page_size, total_rows):,}행"
             ),
             key=f"{key}_page",
+            persist_state="session",
             width=180,
         )
         start_row = page_index * page_size
