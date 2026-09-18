@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 import pandas as pd
 import streamlit as st
@@ -432,7 +432,7 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
         # 콜백은 리비전 위젯이 생기기 전이라 `revision_id=None` 으로 저장하고, 뒤이어
         # 잡히는 리비전 기본값은 세션에만 들어간다. 그러면 다음 세션에서 짝이 맞지 않아
         # 「GAP」 토글이 꺼진 채로 뜨고, Preference 를 한 번 다녀와야 켜진다.
-        _persist_comparison_choice(database_path)
+        _persist_comparison_choice(database_path, revision_by_id.keys())
         if st.session_state.get(COMPARISON_REVISION_KEY) == active_revision_id:
             st.caption(
                 "지금 화면이 쓰고 있는 리비전입니다. 자기와 견주는 셈이라 증감이 모두 "
@@ -440,12 +440,20 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
             )
 
 
-def _persist_comparison_choice(database_path: str) -> None:
-    """`on_change` 가 채우지 못한 **리비전 한 칸만** 뒤늦게 메운다.
+def _persist_comparison_choice(database_path: str, revision_ids: Collection[str]) -> None:
+    """프로필의 리비전 칸이 **그 시나리오의 것이 아닐 때만** 뒤늦게 메운다.
 
     선택 위젯의 기본값은 콜백을 부르지 않는다. 시나리오만 고른 순간의 콜백은 리비전
     위젯이 생기기 전이라 `revision_id=None` 으로 저장하고, 뒤이어 잡히는 리비전 기본값은
     세션에만 들어간다. 그 한 칸을 여기서 채운다 — 위젯이 다 그려진 뒤라 기본값이 보인다.
+
+    비어 있는 것만 메우면 부족하다. 두 선택 상자가 콜백 하나를 공유해 **어느 쪽이 눌렸는지
+    모르므로**, 시나리오만 S1→S2 로 바꾸면 세션에 남아 있던 S1 의 리비전과 함께
+    `(S2, S1의 리비전)` 이 그대로 저장된다. 다음 rerun 에서 화면은 남의 리비전을 버리고
+    S2 의 기본값을 잡지만, 프로필의 칸은 비어 있지 않으므로 어긋난 짝이 DB 에 그대로 남는다.
+
+    그래서 「비었는가」가 아니라 **「그 시나리오의 리비전 집합 안에 있는가」**로 판정한다.
+    집합은 피커가 이미 읽어 둔 것을 받으므로 DB 를 더 읽지 않는다.
 
     **그 밖의 불일치는 쓰지 않는다.** 프로필은 시나리오에 딸리지 않은 공용 값이라 다른
     사용자도 같은 행을 쓴다. 「세션과 다르다」를 「세션이 최신이다」로 읽으면, 남이 방금
@@ -465,7 +473,7 @@ def _persist_comparison_choice(database_path: str) -> None:
     current = (str(scenario_id), str(revision_id))
     try:
         profile = load_global_comparison_scenario(database_path)
-        if profile.scenario_id != current[0] or profile.revision_id is not None:
+        if profile.scenario_id != current[0] or profile.revision_id in revision_ids:
             return
         get_scenario_repository(database_path).replace_global_comparison_scenario(
             current[0],

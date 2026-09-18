@@ -62,6 +62,8 @@ NEVER_REMOVE_SUFFIXES: tuple[str, ...] = (
     ".xlsx",
     ".xlsm",
 )
+# **전부 소문자로 적는다** — 대조가 `lower()` 를 거친다. 대문자를 섞어 적으면 그 항목만
+# 조용히 아무것도 막지 않는다.
 NEVER_REMOVE_NAMES: tuple[str, ...] = (".env", "secrets.toml")
 NEVER_REMOVE_PREFIXES: tuple[str, ...] = ("data/input/", "data/output/", "data/temp/")
 
@@ -229,11 +231,14 @@ def plan_removals(
 
 def is_protected(path: str) -> bool:
     """운영 데이터라 어떤 경우에도 배포가 지우지 않는 경로인가."""
+    # 확장자만 소문자로 보고 이름·접두사는 원래 철자로 보고 있었다. Windows 에서 `.ENV` 는
+    # 실제로 생기는 철자이고, 그 한 글자 차이로 이 함수가 "지워도 되는 파일" 이라고 답했다.
+    # 같은 뜻을 가진 `build_deploy_package.forbidden_entries` 는 셋 다 소문자로 본다.
     lowered = path.lower()
     return (
         lowered.endswith(NEVER_REMOVE_SUFFIXES)
-        or path.rsplit("/", 1)[-1] in NEVER_REMOVE_NAMES
-        or path.startswith(NEVER_REMOVE_PREFIXES)
+        or lowered.rsplit("/", 1)[-1] in NEVER_REMOVE_NAMES
+        or lowered.startswith(NEVER_REMOVE_PREFIXES)
     )
 
 
@@ -261,7 +266,10 @@ def reconcile(
     prefixes = tuple(preserved)
 
     def owned(path: str) -> bool:
-        return path.startswith(prefixes) or path in kept_set
+        # 운영 데이터도 「사내 것」이다. `plan_removals` 가 지우지 않기로 한 파일을 여기서
+        # 「사외에서 지워짐」으로 적으면, 같은 출력 안의 두 블록이 서로 다른 말을 한다 —
+        # 계획은 안 지운다고 하고 대조는 지울 것이라고 한다.
+        return path.startswith(prefixes) or path in kept_set or is_protected(path)
 
     return {
         "사외에서_지워짐": sorted(

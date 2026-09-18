@@ -56,9 +56,6 @@ OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY = "official_scenario_bootstrap_attempted"
 # `home_preference` 의 토글 키를 훑어 빠진 것을 잡는다 — 「실행」이 나중에 추가되면서
 # 목록에 들어오지 않아 이 규칙이 한동안 반쪽이었던 적이 있다.
 _STALE_UI_KEYS = (
-    "load_conversion_inputs",
-    "unit_capacity_result",
-    "capacity_standards_inputs",
     "load_conversion_source_token",
     "capacity_standards_source_token",
     HOME_FIGURE_CACHE_KEY,

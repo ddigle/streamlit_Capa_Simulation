@@ -31,6 +31,7 @@ REASON_COLUMN = "제외사유"
 # 같게 둔다 — 화면이 계산을 설명해야지 계산과 다른 이야기를 하면 안 된다.
 REASON_ORDER = (
     "UPEH 0 이하",
+    "CAPA_RUN_RATE 0 이하",
     "WF측정률 음수",
     "Lot 측정률 음수",
     "대당 Capa 0 이하",

@@ -69,9 +69,6 @@ def test_view_state_is_not_cleared() -> None:
 def test_only_previous_values_and_home_toggles_are_dropped() -> None:
     """목록에 남는 것은 **앞 시나리오의 값이 담긴 칸**과 HOME 토글뿐이다."""
     assert set(_STALE_UI_KEYS) - _home_toggle_keys() == {
-        "load_conversion_inputs",
-        "unit_capacity_result",
-        "capacity_standards_inputs",
         "load_conversion_source_token",
         "capacity_standards_source_token",
         HOME_FIGURE_CACHE_KEY,
@@ -95,3 +92,34 @@ def test_the_figure_cache_key_has_one_owner() -> None:
 
     assert rendering_key is HOME_FIGURE_CACHE_KEY
     assert HOME_FIGURE_CACHE_KEY in _STALE_UI_KEYS
+
+
+def test_no_key_in_the_list_is_a_fossil() -> None:
+    """목록에 **아무도 만들지 않는 칸**이 남으면 최신인 척하는 화석이 된다.
+
+    지운 화면의 세션 키 셋이 그렇게 남아 있었다. 지우는 코드는 계속 도는데 그 칸은 애초에
+    생기지 않으니 아무 일도 하지 않고, 목록만 길어 보인다. 같은 이유로 **오타도 잡힌다** —
+    철자가 한 글자 틀리면 그 칸은 어디서도 만들어지지 않는 이름이 된다.
+    `scenario_activation.py` 주석이 "검사가 철자를 지킨다" 고 적어 둔 약속이 이것이다.
+
+    토글 키는 위 검사가 AST 로 이미 보므로 여기서는 나머지만 본다. **스캔에서 `tests/` 와
+    `scenario_activation.py` 자신을 반드시 뺀다** — 안 빼면 목록에 적었다는 이유로 통과해서
+    화석이 그대로 산다.
+    """
+    literals: set[str] = set()
+    for root in (PROJECT_ROOT / "app_pages", PROJECT_ROOT / "src"):
+        for path in root.rglob("*.py"):
+            if path.name == "scenario_activation.py":
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    literals.add(node.value)
+
+    fossils = sorted(
+        key for key in set(_STALE_UI_KEYS) - _home_toggle_keys() if key not in literals
+    )
+
+    assert not fossils, (
+        "이 키를 만드는 곳이 저장소에 없습니다. 화면이 지워졌거나 철자가 틀렸습니다 — "
+        "목록에서 빼거나 철자를 맞춥니다:\n" + "\n".join(fossils)
+    )

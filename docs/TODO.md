@@ -908,7 +908,10 @@ Codex 구축분에 대한 구조 리팩토링을 진행했다. 계산 결과와 
     그룹의 `값표시순서` 를 다시 매긴다. 사용자가 직접 넣어 둔 규칙이 있으면 그것을 존중한다.
   - 이미 저장된 기준정보·리비전은 `0014_edp_top_division.sql` 이 이관한다(ref 7표 + rev 7표).
     판별은 `rq_pkg_plan.제품타입`, 계획에 없는 제품은 원천의 제품→타입 매핑으로 한 번 더.
-    운영 DB 사본에서 확인: EDP 행만 바뀌고 HBM `Top` 과 `raw_data.core_data` 는 그대로.
+    운영 DB 사본에서 확인: EDP 행만 바뀌고 HBM 의 Top 과 `raw_data.core_data` 는 그대로.
+    **단, 그 확인은 `trim("WF 구분") = 'Top'` 으로 돌았다.** 원천 표기가 대문자 `TOP` 임이
+    2026-09-18 에 확인됐으므로 이 이관이 실제로 무엇을 옮겼는지는 다시 봐야 한다 — 적용된
+    마이그레이션이라 고칠 수 없고(체크섬), 파이썬 쪽만 대소문자를 가리지 않게 바뀌었다.
   - 수치 무변화 확인: 0014 적용 사본에서 `compare_legacy_results.py` 가 변경 전과 완전히
     동일하다(Wafer 270건·Density 152건·차이율 0.0000%).
   - 소요대수 실행 확인: `Top` 5,130행 73.37대 / `Top_e` 990행 11.05대 로 갈린다.
@@ -1529,8 +1532,9 @@ Space 현황의 층 배치 캔버스가 층마다 다르다. `equipment_ops.floo
 `display_order_editor` 의 스코프 목록·`config/bootstrap_display_order.json`·운영 DB 의
 저장된 행을 함께 옮겨야 한다.
 
-**남은 것** — 세션 상태 키 `capacity_standards_inputs`·`capacity_standards_source_token`
-(`scenario_activation.py`)은 옛 이름 그대로다. 내부 식별자라 화면에 드러나지 않는다.
+**남은 것** — 세션 상태 키 `capacity_standards_source_token`(`app_pages/reference_data.py`
+가 만들고 `scenario_activation.py` 가 버린다)은 옛 화면 이름 그대로다. 내부 식별자라 화면에
+드러나지 않는다.
 
 ## 3-16. 2026-09-15 HOME 격자 확장·기준정보 편집·화면 크롬
 

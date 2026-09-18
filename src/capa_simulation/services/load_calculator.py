@@ -682,4 +682,8 @@ def filter_edp_plan(plan: pd.DataFrame, include_edp: bool) -> pd.DataFrame:
             f"({unknown.sum()}행, 예: {', '.join(examples) or '제품정보 없음'}). "
             "기준정보를 다시 등록하거나 EDP 를 포함해 조회하세요."
         )
-    return plan.loc[product_type.ne(EDP_PRODUCT_TYPE)].copy()
+    # 같은 파일의 `_dummy_mask` 와 같은 규칙으로 맞춘다. 한쪽은 대소문자를 가리지 않고
+    # 다른 쪽은 글자 그대로 맞추면, 같은 행이 Dummy 판정에서는 EDP 고 토글에서는 아니다.
+    # 위의 빈값 가드는 `product_type` 원본을 그대로 본다 — `match_key` 는 빈 값을 빈
+    # 문자열로 내리므로 `isna()` 분기가 영영 거짓이 된다.
+    return plan.loc[match_key(product_type).ne(scalar_match_key(EDP_PRODUCT_TYPE))].copy()

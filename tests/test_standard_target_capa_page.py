@@ -26,6 +26,7 @@ import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.services.month_filter import filter_month_range
 
 
 display_order = pd.DataFrame(
@@ -140,12 +141,16 @@ reference_cache.get_effective_reference_tables = lambda: reference_tables
 equipment_cache.get_equipment_repository = lambda _path: FakeEquipmentRepository()
 scenario_state.ensure_active_scenario = lambda _tables, _version: active
 scenario_state.scenario_table = lambda scenario, name: scenario["tables"][name].copy()
-scenario_state.scenario_month_table = (
-    lambda scenario, name, _start, _end: scenario["tables"][name].copy()
+# 월 인자를 버리면 화면이 어떤 달을 요청하든 결과가 같아진다. 월 슬라이스가 곧 어떤 주차가
+# 살아남는지를 정하므로(월 경계 주차는 조회일의 달 바깥에 귀속될 수 있다) 운영과 같은
+# 함수로 실제로 자른다. `tests/test_e2e_boundary_week.py` 가 그 경계를 따로 고정한다.
+scenario_state.scenario_month_table = lambda scenario, name, start, end: filter_month_range(
+    scenario["tables"][name], start, end, name
 )
-simulation_cache.get_scenario_capacity_and_demand = lambda *_args, **_kwargs: (
+# 운영에서는 이 래퍼 안에서 월 슬라이스를 한다. 키의 뒤 두 칸이 화면이 계산한 시작·종료 월이다.
+simulation_cache.get_scenario_capacity_and_demand = lambda cache_key, **_kwargs: (
     pd.DataFrame(),
-    required_equipment.copy(),
+    filter_month_range(required_equipment, cache_key[2], cache_key[3], "소요대수 상세"),
 )
 
 

@@ -26,7 +26,9 @@ import streamlit as st
 
 from capa_simulation.components.home_preference import _persist_comparison_choice
 
-_persist_comparison_choice(st.session_state["database_path"])
+_persist_comparison_choice(
+    st.session_state["database_path"], st.session_state["revision_ids"]
+)
 st.write("done")
 """
 
@@ -38,9 +40,16 @@ def _saved_profile(database: Path) -> tuple[str | None, str | None]:
     return profile.scenario_id, profile.revision_id
 
 
-def _run(database: Path, scenario_id: str, revision_id: str | None) -> AppTest:
+def _run(
+    database: Path,
+    scenario_id: str,
+    revision_id: str | None,
+    revision_ids: tuple[str, ...] = ("R1",),
+) -> AppTest:
     app = AppTest.from_string(SCRIPT)
     app.session_state["database_path"] = str(database)
+    # 피커가 읽어 둔 「그 시나리오의 리비전 집합」. 프로필의 칸이 이 안에 있으면 메우지 않는다.
+    app.session_state["revision_ids"] = revision_ids
     app.session_state[COMPARISON_SCENARIO_KEY] = scenario_id
     if revision_id is not None:
         app.session_state[COMPARISON_REVISION_KEY] = revision_id
@@ -100,3 +109,39 @@ def test_an_untouched_default_does_not_claim_an_empty_profile(tmp_path: Path) ->
     _run(database, "S1", "R1")
 
     assert _saved_profile(database) == (None, None)
+
+
+def test_a_revision_from_another_scenario_is_replaced(tmp_path: Path) -> None:
+    """시나리오만 바꾸면 **남의 리비전이 짝지어 저장된다.** 그 짝을 여기서 바로잡는다.
+
+    두 선택 상자가 콜백 하나를 공유해 어느 쪽이 눌렸는지 모른다. 시나리오를 S1→S2 로
+    바꾼 순간 세션에 남아 있던 S1 의 리비전과 함께 `(S2, S1의 리비전)` 이 저장된다.
+    다음 rerun 에서 화면은 남의 리비전을 버리고 S2 의 기본값을 잡지만, 프로필의 칸은 비어
+    있지 않으므로 「비었을 때만 메운다」로는 그 짝이 영영 남는다.
+
+    판정은 「비었는가」가 아니라 **「그 시나리오의 리비전인가」**다.
+    """
+    database = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    repository.replace_global_comparison_scenario("S2", "S1-R1", source="시나리오만 바꾼 직후")
+
+    _run(database, "S2", "S2-R1", revision_ids=("S2-R1", "S2-R2"))
+
+    assert _saved_profile(database) == ("S2", "S2-R1")
+
+
+def test_a_valid_revision_of_the_same_scenario_is_left_alone(tmp_path: Path) -> None:
+    """남이 고른 것이 **그 시나리오의 멀쩡한 리비전**이면 손대지 않는다.
+
+    위 검사만 있으면 「세션 값으로 늘 덮는다」로 고쳐도 통과한다. 그러면 오늘 없앤 핑퐁이
+    되살아나므로 반대편을 같이 못박는다.
+    """
+    database = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    repository.replace_global_comparison_scenario("S2", "S2-R2", source="다른 사용자")
+
+    _run(database, "S2", "S2-R1", revision_ids=("S2-R1", "S2-R2"))
+
+    assert _saved_profile(database) == ("S2", "S2-R2")

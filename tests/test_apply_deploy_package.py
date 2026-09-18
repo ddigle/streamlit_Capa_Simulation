@@ -14,6 +14,7 @@ from apply_deploy_package import (  # noqa: E402
     describe_plan,
     describe_reconcile,
     digest_mismatches,
+    is_protected,
     member_problems,
     order_problems,
     plan_removals,
@@ -275,3 +276,45 @@ def test_the_plan_says_out_loud_that_data_is_tracked() -> None:
 
     assert "data/capa_simulation.duckdb" in text
     assert "git rm -r --cached" in text
+
+
+def test_protection_does_not_depend_on_spelling() -> None:
+    """확장자만 소문자로 보고 이름·접두사는 원래 철자로 보고 있었다.
+
+    Windows 에서 `.ENV` 는 실제로 생기는 철자다. 그 한 글자 차이로 `is_protected` 가
+    「지워도 되는 파일」이라고 답했고, 같은 뜻을 가진 `build_deploy_package.forbidden_entries`
+    는 셋 다 소문자로 보고 있어 **한 파일이 배포에서는 금지이고 적용에서는 허용**이었다.
+    """
+    for path in (".ENV", ".Env", "data/Input/Core_Data.csv", "DATA/TEMP/x.csv", "data/DB.DuckDB"):
+        assert is_protected(path), path
+
+
+def test_the_two_deploy_scripts_agree_on_what_is_untouchable() -> None:
+    """한쪽이 「보내면 안 된다」고 한 것을 다른 쪽이 「지워도 된다」고 하면 안 된다."""
+    import sys
+
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+    from build_deploy_package import forbidden_entries
+
+    for path in (
+        ".env",
+        ".ENV",
+        ".streamlit/secrets.toml",
+        ".streamlit/Secrets.toml",
+        "data/capa_simulation.duckdb",
+        "data/output/result.csv",
+        "data/temp/scratch.csv",
+    ):
+        assert forbidden_entries([path]) == [path], path
+        assert is_protected(path), path
+
+
+def test_reconcile_does_not_call_protected_files_deleted() -> None:
+    """계획은 안 지운다고 하는데 대조는 지울 것이라고 적으면 같은 출력이 모순이다."""
+    report = reconcile(
+        ["app.py", "data/capa_simulation.duckdb", ".env", "gone.py"],
+        [],
+        ["app.py"],
+    )
+
+    assert report["사외에서_지워짐"] == ["gone.py"]
