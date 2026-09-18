@@ -83,7 +83,7 @@ def test_no_component_announces_success_and_immediately_reruns() -> None:
             body = getattr(node, "body", None)
             if not isinstance(body, list):
                 continue
-            for first, second in zip(body, body[1:]):
+            for first, second in zip(body, body[1:], strict=False):
                 if not (isinstance(first, ast.Expr) and isinstance(second, ast.Expr)):
                     continue
                 head, tail = ast.unparse(first.value), ast.unparse(second.value)
