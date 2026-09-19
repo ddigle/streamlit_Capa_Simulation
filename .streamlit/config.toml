@@ -4,8 +4,11 @@ maxUploadSize = 1024
 [browser]
 gatherUsageStats = false
 
+# `base` 를 적지 않는다. 적으면 그 테마로 못박혀 브라우저·OS 설정을 따르지 않는다.
+# 아래 `[theme]` 가 밝은 쪽, `[theme.dark]` 가 어두운 쪽이고 파이썬 토큰
+# (`design/tokens.py`)이 같은 두 팔레트를 들고 있다 — 둘이 갈라지면 Streamlit 위젯과
+# 우리 Figure 의 색이 서로 다른 테마가 된다.
 [theme]
-base = "light"
 primaryColor = "#0F766E"
 backgroundColor = "#F7F8FA"
 secondaryBackgroundColor = "#FFFFFF"
@@ -50,3 +53,31 @@ headingFontWeights = [650, 650, 600, 700, 600, 600]
 # 박스가 여럿 쌓이는 사이드바에서 각진 모서리가 가장 먼저 피로하다. 본문(10px)보다 한
 # 단계 부드럽게 둔다.
 baseRadius = "12px"
+
+# ---------------------------------------------------------------- 어두운 테마
+# 값의 근거는 `src/capa_simulation/design/tokens.py` 의 `_DARK` 에 있다. 여기 적는 것은
+# **Streamlit 자신이 그리는 것**(위젯·사이드바·알림)의 색이고, 우리 Figure 는 토큰을 본다.
+[theme.dark]
+primaryColor = "#2DD4BF"
+backgroundColor = "#131316"
+secondaryBackgroundColor = "#1C1C21"
+textColor = "#E9E9EC"
+borderColor = "#35353E"
+grayColor = "#9B9BA6"
+dataframeBorderColor = "#35353E"
+dataframeHeaderBackgroundColor = "#2B2B33"
+chartCategoricalColors = ["#D4D4D8", "#A1A1AA", "#71717A", "#52525B"]
+# 배지·알림 색. 밝은 쪽과 같은 뜻을 어두운 면에서 읽히게 옮긴다.
+greenColor = "#7FD8C9"
+greenBackgroundColor = "#17322F"
+blueColor = "#9DB8FF"
+blueBackgroundColor = "#1B2340"
+orangeColor = "#F0B37A"
+orangeBackgroundColor = "#33271A"
+
+[theme.dark.sidebar]
+backgroundColor = "#1C1C21"
+secondaryBackgroundColor = "#131316"
+textColor = "#E9E9EC"
+borderColor = "#35353E"
+primaryColor = "#2DD4BF"

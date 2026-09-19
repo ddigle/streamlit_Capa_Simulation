@@ -8,7 +8,7 @@ from capa_simulation.components.scenario_status import (
     SCENARIO_BOX_KEY,
     render_scenario_controls,
 )
-from capa_simulation.design import tokens
+from capa_simulation.design import theme, tokens
 from capa_simulation.navigation import build_navigation_pages
 from capa_simulation.page_bootstrap import bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import pinned_connections
@@ -53,6 +53,10 @@ st.set_page_config(
         "About": APP_ABOUT,
     },
 )
+# 이 실행이 쓸 테마를 먼저 정한다. **토큰을 하나라도 읽기 전**이어야 한다 — 색을 읽는
+# 쪽은 여기서 담아 둔 값을 본다. 바뀌었으면 그 세션의 Figure 캐시도 여기서 비운다.
+theme.begin_run()
+
 # managed 모드에서만 동기화 표시를 켠다. local 모드(개발 PC·기본값)에서는 아무 일도 하지
 # 않으므로 이 호출이 있어도 동작이 바뀌지 않는다.
 enable_sync_state_if_managed()

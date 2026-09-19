@@ -94,7 +94,7 @@ CONFIG_COLOR_TOKENS = {
 CONFIG_FILE = PROJECT_ROOT / ".streamlit" / "config.toml"
 
 
-def _theme_colors() -> dict[str, str]:
+def _theme_colors(section: str = "[theme]") -> dict[str, str]:
     """`config.toml` 의 최상위 `[theme]` 블록에서 색 항목만 읽는다.
 
     `tomllib` 은 3.11 부터라 이 저장소의 3.10 에서는 못 쓰고, `tomli` 는 requirements 에
@@ -106,7 +106,7 @@ def _theme_colors() -> dict[str, str]:
         stripped = line.strip()
         if stripped.startswith("["):
             # `[theme.sidebar]` 는 사이드바 전용 하위 팔레트라 본문 토큰과 다르다.
-            in_theme = stripped == "[theme]"
+            in_theme = stripped == section
             continue
         if not in_theme or "=" not in stripped:
             continue
@@ -164,3 +164,98 @@ def test_every_mapped_theme_key_exists_in_config() -> None:
     theme = _theme_colors()
 
     assert not [key for key in CONFIG_COLOR_TOKENS if key not in theme]
+
+
+# ------------------------------------------------------------------- 어두운 테마
+# Streamlit 이 그리는 것(위젯·사이드바·알림)은 `config.toml` 의 `[theme.dark]` 를 보고,
+# 우리 Figure 는 `tokens` 를 본다. 둘이 갈라지면 한 화면 안에서 **위젯만 밝고 그림만
+# 어두운** 상태가 된다. 밝은 쪽과 같은 대조를 어두운 쪽에도 건다.
+
+
+def _in_dark(name: str) -> str:
+    from capa_simulation.design import theme as theme_module
+
+    previous = theme_module.current_mode()
+    theme_module._LOCAL.mode = "dark"
+    try:
+        return str(getattr(tokens, name))
+    finally:
+        theme_module._LOCAL.mode = previous
+
+
+def test_dark_tokens_match_the_dark_theme_declared_in_config() -> None:
+    declared = _theme_colors("[theme.dark]")
+    mismatches = [
+        f"{key}={declared[key]} vs 다크 tokens.{name}={_in_dark(name)}"
+        for key, name in CONFIG_COLOR_TOKENS.items()
+        if key in declared and declared[key].upper() != _in_dark(name).upper()
+    ]
+
+    assert not mismatches, "config.toml [theme.dark] 와 다크 팔레트가 갈라졌습니다:\n" + "\n".join(
+        mismatches
+    )
+
+
+def test_the_dark_theme_block_covers_the_same_keys() -> None:
+    """한쪽에만 있는 키는 그 테마에서만 Streamlit 기본값으로 떨어져 조용히 어긋난다."""
+    light = set(_theme_colors("[theme]"))
+    dark = set(_theme_colors("[theme.dark]"))
+
+    assert not light - dark, f"어두운 테마에 없는 키: {sorted(light - dark)}"
+
+
+def test_both_palettes_declare_exactly_the_same_names() -> None:
+    """이름이 한쪽에만 있으면 그 테마에서 `AttributeError` 로 화면이 그 자리에서 죽는다."""
+    light = set(tokens._LIGHT)
+    dark = set(tokens._DARK)
+
+    assert light == dark, f"다크에만: {sorted(dark - light)}\n라이트에만: {sorted(light - dark)}"
+
+
+def test_every_token_resolves_in_both_themes() -> None:
+    """선언만 있고 값이 없는 이름을 잡는다 — `TYPE_CHECKING` 블록은 실행되지 않는다."""
+    from capa_simulation.design import theme as theme_module
+
+    declared = [name for name in dir(tokens) if name.isupper() and not name.startswith("_")]
+    assert declared, "토큰 이름을 하나도 찾지 못했습니다."
+
+    missing: list[str] = []
+    for mode in ("light", "dark"):
+        theme_module._LOCAL.mode = mode
+        for name in declared:
+            try:
+                getattr(tokens, name)
+            except AttributeError:
+                missing.append(f"{mode}.{name}")
+    theme_module._LOCAL.mode = "light"
+
+    assert not missing, "테마에서 해석되지 않는 토큰:\n" + "\n".join(missing)
+
+
+def test_the_surface_stack_flips_direction_in_the_dark_theme() -> None:
+    """어두운 바탕에서는 **위로 올라온 면이 밝다.**
+
+    같은 방향을 유지하면 합계 행이 배경에 가라앉는다. 이 뒤집힘이 다크 팔레트에서 가장
+    틀리기 쉬운 자리라 방향 자체를 고정한다.
+    """
+    from capa_simulation.design import theme as theme_module
+
+    steps = ("SURFACE_PRODUCT_TOTAL", "SURFACE_PRODUCTION_TOTAL", "SURFACE_GRAND_TOTAL")
+
+    def luminance(value: str) -> float:
+        def channel(raw: int) -> float:
+            c = raw / 255
+            return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+        red, green, blue = (channel(int(value[i : i + 2], 16)) for i in (1, 3, 5))
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+    light = [luminance(getattr(tokens, name)) for name in steps]
+    assert light[0] > light[1] > light[2], f"밝은 테마에서 어두워지지 않습니다: {light}"
+
+    theme_module._LOCAL.mode = "dark"
+    try:
+        dark = [luminance(getattr(tokens, name)) for name in steps]
+    finally:
+        theme_module._LOCAL.mode = "light"
+    assert dark[0] < dark[1] < dark[2], f"어두운 테마에서 밝아지지 않습니다: {dark}"

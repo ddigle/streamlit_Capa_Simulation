@@ -795,6 +795,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 색·서체·표 치수를 역할 이름으로 단일 정의한다. 파이썬 코드에 색 리터럴을 쓰지
     않는다. 규칙은 `docs/design_system.md` 를 따른다. Figure 공통 유틸리티는 여기가 아니라
     `components/plotly_layout.py` 에 있다.
+  - **라이트·다크 두 팔레트**(`_LIGHT`·`_DARK`)를 들고 지금 테마에 맞는 값을
+    `__getattr__`(PEP 562)로 돌려준다. 그래서 `tokens.SURFACE` 처럼 **쓰는 쪽은 한 글자도
+    바뀌지 않는다**(호출부 414곳을 다 고치는 것은 답이 아니었다).
+  - `if TYPE_CHECKING:` 블록이 이름과 타입을 알린다. 실행되지 않아 더미 값이 새지 않고
+    mypy 는 타입·오타·재대입을 그대로 잡는다. **`.pyi` 스텁은 쓸 수 없다** — mypy `files`
+    에 `src/capa_simulation` 이 있어 무시된다(실측).
+  - 별칭과 계산값(`CHART_CANVAS`·`NAV_*`·`GAP_AREA_*`)은 `_complete()` 가 팔레트에서
+    만든다. 손으로 옮겨 적으면 원 토큰과 갈라진다.
+  - 두 팔레트의 **이름이 정확히 같아야** 한다. 한쪽에만 있으면 그 테마에서 화면이 그
+    자리에서 죽는다. `tests/test_design_tokens.py` 가 이름·값·면의 층 방향을 고정한다.
+- `src/capa_simulation/design/theme.py`
+  - 지금 세션이 보고 있는 테마를 **실행 한 번에 한 번만** 정해 스레드에 담는다. 토큰
+    접근이 한 rerun 에 414번이라, 접근마다 `st.context.theme` 을 읽으면 3.83ms 가 붙고
+    한 번만 읽으면 0.05ms 다.
+  - **모듈 전역에 담지 않는다.** Streamlit 은 세션마다 다른 스레드에서 스크립트를 돌리므로,
+    전역에 두면 한 사용자의 테마가 동시에 도는 다른 세션까지 바꾼다.
+  - 테마가 바뀌면 그 세션의 Figure 캐시를 비운다. Plotly 는 색을 구워 넣어 캐시가 남으면
+    테마를 바꿔도 옛 그림이 뜬다. 프로세스 전역 캐시에는 색을 든 것이 없다(전수 확인).
+  - `app.py` 가 **토큰을 하나라도 읽기 전에** `begin_run()` 을 부른다.
 - `src/capa_simulation/components/page_header.py`
   - 모든 페이지의 제목·설명·상태 배지. `(구현중)` 은 제목에서 떼어 배지로 보여준다.
     사이드바 라벨과 같은 문자열을 써야 하며 어긋나면 테스트가 잡는다.
