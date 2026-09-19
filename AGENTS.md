@@ -817,6 +817,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/page_header.py`
   - 모든 페이지의 제목·설명·상태 배지. `(구현중)` 은 제목에서 떼어 배지로 보여준다.
     사이드바 라벨과 같은 문자열을 써야 하며 어긋나면 테스트가 잡는다.
+- `src/capa_simulation/components/theme_toggle.py`
+  - 헤더 오른쪽 **Deploy 바로 왼쪽**(`[data-testid="stToolbarActions"]`)에 밝게/어둡게
+    버튼을 얹는다. Streamlit 1.63 에는 앱 안에서 테마를 바꾸는 공개 API 가 없다 —
+    파이썬 쪽에서 우리 토큰만 뒤집으면 Plotly·표만 어두워지고 위젯·사이드바는 밝은 채로
+    남아 반쯤 어두운 화면이 된다.
+  - 그래서 **프론트엔드가 테마를 기억하는 자리**를 쓴다. `localStorage` 의
+    `stActiveTheme-<경로>-v2` 에 `"System"`·`"Light"`·`"Dark"` 중 하나를 적고 새로고침하면
+    Streamlit 크롬과 우리 토큰이 **함께** 바뀐다(`st.context.theme` 이 새 값을 보고한다).
+  - `st.html` 은 스크립트를 실행하지 않으므로 높이 0 의 `components.v1.html` iframe 에서
+    `window.parent` 에 닿는다. 슬롯을 못 찾으면 **조용히 물러난다** — 버튼이 안 생길 뿐
+    화면은 멀쩡하다.
+  - **비공식 경로다.** `data-testid` 와 `localStorage` 키 모양은 판올림에서 바뀔 수 있다.
+    Streamlit 을 올린 뒤에는 이 버튼이 보이는지 눈으로 확인한다.
 - `src/capa_simulation/components/app_header.py`
   - 화면 맨 위 띠의 면을 칠하고 앱 이름·버전·개발자·인증 정보를 모든 페이지에 표시한다.
     Streamlit 이 헤더에 위젯을 넣는 API 를 주지 않아 `stHeader`·`stSidebarHeader` 의

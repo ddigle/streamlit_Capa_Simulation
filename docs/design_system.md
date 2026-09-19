@@ -194,6 +194,9 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
     유지하면 합계 행이 배경에 가라앉는다.
   - 색이 구워진 캐시는 세션 Figure 캐시 하나뿐이라(전역 캐시 32개를 전수 확인했다)
     테마가 바뀌면 그것만 비운다.
+  - 전환은 **헤더 오른쪽 Deploy 왼쪽의 버튼**이다(`components/theme_toggle.py`). 누르면
+    Streamlit 이 테마를 기억하는 `localStorage` 값을 바꾸고 새로고침하므로 위젯과 Figure 가
+    함께 바뀐다. 아무것도 고르지 않으면 브라우저·OS 설정을 따른다.
 - **월별 표 두 컴포넌트에 아직 남은 복제**: 테두리·머리선·경계선은 `monthly_table_base`로
   합쳤고 행 경계 주입도 같은 방식(일괄 주입)이다. 남은 것은 `_classification_widths`·
   go.Table 조립·반복 접두 생략 루프 정도이며 실행 시간·화면 결함은 없다(순수 유지보수 비용).

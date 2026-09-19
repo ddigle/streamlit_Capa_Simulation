@@ -8,6 +8,7 @@ from capa_simulation.components.scenario_status import (
     SCENARIO_BOX_KEY,
     render_scenario_controls,
 )
+from capa_simulation.components.theme_toggle import render_theme_toggle
 from capa_simulation.design import theme, tokens
 from capa_simulation.navigation import build_navigation_pages
 from capa_simulation.page_bootstrap import bootstrap_error_message
@@ -368,6 +369,9 @@ with pinned_connections(DUCKDB_PATH):
         """
     )
     render_app_header()
+    # 헤더 오른쪽 Deploy 왼쪽 자리에 밝게/어둡게 버튼을 얹는다. Streamlit 이 테마를
+    # 기억하는 자리를 그대로 쓰므로 위젯과 우리 Figure 가 함께 바뀐다.
+    render_theme_toggle()
     with st.sidebar.container(key="home_navigation"):
         st.page_link(pages.home, width="stretch")
 
