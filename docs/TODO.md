@@ -1731,10 +1731,14 @@ ahead) — 배포 시점은 사용자 결정이다.
 
 **사내에서 확인할 것** — 저장된 기준정보·리비전에 `Top_e` 행이 있는가:
 
-```sql
-SELECT "WF 구분", count(*) FROM ref."RQ_CHIP_QTY" GROUP BY 1;
-SELECT "WF 구분", count(*) FROM rev."RQ_CHIP_QTY" GROUP BY 1;
+```powershell
+uv run --no-sync python scripts/inspect_wf_division.py
 ```
+
+`ref`·`rev` 라는 스키마는 없다(실제는 `ref_data`·`rev_data`, 표 이름은 소문자). 그리고
+`0013`·`0014` 가 건드린 표는 `rq_chip_qty` 하나가 아니라 **일곱 개 × 두 스키마**다. 그래서
+손 SQL 이 아니라 읽기 전용 스크립트로 센다 — 값을 찍지 않으므로 출력을 리뷰 문서에 그대로
+붙여도 실데이터가 새지 않는다.
 
 결과를 리뷰 문서로 보내면 사외가 후속 마이그레이션(대소문자를 가리지 않는 재이관)을
 만들지 판단한다. **사내에서 SQL 로 직접 고치지 않는다** — 리비전은 append-only 다.

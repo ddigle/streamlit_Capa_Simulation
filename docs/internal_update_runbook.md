@@ -51,9 +51,18 @@ Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.Path -like 
 New-Item -ItemType Directory -Force review | Out-Null
 ```
 
-그리고 `review/_permission_test.md` 에 아무 한 줄이나 써 본다. **막히면 거기서 멈추고**
-사용자에게 알린다 — `internal_claude_settings.json` 의 `Write(*.md)` deny 가 하위 경로까지
-먹는다는 뜻이고, 사외가 그 규칙을 좁혀야 한다. 확인했으면 그 파일은 지운다.
+그리고 `review/_permission_test.md` 에 아무 한 줄이나 써 본다. 잘 써지면 그 파일은 지우고
+넘어간다.
+
+**막히면 거기서 멈추고** 사용자에게 아래를 그대로 알린다 — 사외가 고쳐야 한다.
+
+> 사내 `.claude/settings.json` 의 `Edit(*.md)` deny 가 `review/` 까지 막고 있습니다.
+> 슬래시 없는 패턴은 gitignore 의미라 모든 깊이에 걸립니다. `Edit(/*.md)` 로 앵커하고
+> allow 에 `Edit(review/**)` 를 더해야 합니다. **deny 는 allow 로 뚫을 수 없으므로**
+> deny 쪽을 좁히는 것 말고는 방법이 없습니다.
+
+설정 파일이 `docs/internal_claude_settings.json` 템플릿의 최신본과 같은지도 함께 본다 —
+`.claude/` 는 배포가 덮지 않으므로 옛 템플릿이 남아 있을 수 있다.
 
 ### 1-3. 운영 데이터를 저장소 밖으로 복사한다
 
@@ -71,7 +80,25 @@ Copy-Item data\input\* $backup -Recurse -ErrorAction SilentlyContinue
 다만 적용기의 `is_protected` 는 **삭제만** 막고 덮어쓰기는 막지 않는 구조라, 규칙이 바뀌면
 조용히 덮인다 — 무시 파일이라 `git checkout -- .` 로도 돌아오지 않는다.
 
-### 1-4. 작업트리를 비운다
+### 1-4. 저장소에 있으면 안 되는 것이 커밋돼 있는지 먼저 본다
+
+**이 순서를 바꾸지 않는다.** 다음 단계(1-5)가 「수정된 파일을 되돌려라」라고 시키는데,
+운영 DuckDB 나 `data/input` 실데이터가 **추적된 상태**라면 그 되돌리기가 실데이터를 커밋된
+옛 버전으로 덮는다. 무엇이 추적 중인지 모르는 채로 1-5 에 들어가면 안 된다.
+
+```powershell
+git ls-files | Select-String -Pattern '\.duckdb|\.db$|\.wal$|^data/input/|^data/output/|^data/temp/|^\.agents/|^\.omo/|\.xlsx?$|\.xlsb$|\.tmp$'
+```
+
+**한 줄이라도 나오면 여기서 멈춘다.** `docs/dual_env_workflow.md` 8장의 정리를 먼저 끝내야
+한다(앱 종료 → DB 를 저장소 밖으로 복사 → `git rm -r --cached` → 커밋). 그 정리는 사람이
+한다 — `git rm` 은 에이전트 권한에서 막혀 있다.
+
+정리를 건너뛰고 적용하면 두 가지가 한꺼번에 일어난다. ① 그 파일들은 ZIP 에 없으므로
+「사외에서 지워진 파일」로 판정돼 적용이 지운다. ② 1-5 의 되돌리기가 그 전에 실데이터를
+덮는다.
+
+### 1-5. 작업트리를 비운다
 
 ```powershell
 git status --porcelain --untracked-files=no
@@ -83,20 +110,17 @@ git status --porcelain --untracked-files=no
 git checkout -- <경로>
 ```
 
+**경로를 하나씩 확인하고 되돌린다.** `git checkout -- .` 처럼 전체를 쓰지 않는다. 경로에
+`.duckdb`·`.wal`·`data/input`·`data/output`·`data/temp` 가 들어 있으면 **되돌리지 말고
+사용자에게 알린다** — 그것은 소스 수정이 아니라 실데이터이고, 되돌리면 운영 데이터가
+사라진다. 1-4 를 제대로 끝냈으면 이 목록에 그런 경로가 나올 수 없다.
+
+`git checkout` 은 일부러 권한 allow 에 넣지 않았다. 매번 프롬프트가 떠서 **사람이 경로를
+읽고 승인**하게 되어 있다.
+
 되돌리기 전에 그 내용이 필요하면 리뷰 문서에 코드블록으로 옮겨 적는다 — 그것은 저장소 수정이
-아니다.
-
-### 1-5. 처음 한 번이라면: 저장소 정리
-
-`docs/dual_env_workflow.md` 8장의 정리를 **아직 하지 않았다면 배포 적용보다 먼저 한다.**
-저장소에 있으면 안 되는 것이 커밋돼 있으면, 그 파일들은 ZIP 에 없으므로 「사외에서 지워진
-파일」로 판정되어 적용이 지운다. 이미 했는지 모르겠으면 확인한다.
-
-```powershell
-git ls-files | Select-String -Pattern '^\.agents/|^\.omo/|\.duckdb$|^data/input/' | Select-Object -First 20
-```
-
-한 줄이라도 나오면 8장을 먼저 끝낸다.
+아니다. 아직 커밋하지 않은 `review/*.md` 가 있으면 **먼저 `review:` 로 커밋한다.** 그러지
+않으면 이 단계에서 지워진다.
 
 ---
 
@@ -105,7 +129,7 @@ git ls-files | Select-String -Pattern '^\.agents/|^\.omo/|\.duckdb$|^data/input/
 ### 2-1. 먼저 보기만 한다
 
 ```powershell
-uv run python scripts/apply_deploy_package.py <내려받은 ZIP 경로> --dry-run
+uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로> --dry-run
 ```
 
 `--dry-run` 은 **아무것도 바꾸지 않는다.** 깨끗한 작업트리도 요구하지 않는다. 출력에서 아래를
@@ -140,7 +164,7 @@ uv run python scripts/apply_deploy_package.py <내려받은 ZIP 경로> --dry-ru
 ### 2-3. 적용한다
 
 ```powershell
-uv run python scripts/apply_deploy_package.py <내려받은 ZIP 경로>
+uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로>
 ```
 
 끝나면 `deploy: <stamp> (<사외 커밋 7자>)` 로 자동 커밋된다.
@@ -194,19 +218,26 @@ uv pip install -r requirements-company.txt
 
 앱을 한 번 띄우면 `data/capa_simulation.duckdb` 와 `data/equipment_availability.duckdb` 에
 새 마이그레이션이 적용된다. **적용된 마이그레이션은 버전 번호로 체크섬을 대조하므로, 사내에서
-SQL 파일을 고치면 앱이 시작조차 못 한다.** 오류가 나면 고치지 말고 원문을 리뷰 문서에 적는다.
+SQL 파일을 고치면 앱이 시작조차 못 한다.**
+
+**이 명령은 사용자가 친다.** 서버는 끄기 전까지 안 끝나므로 에이전트가 띄우면 세션이 거기서
+멈춘다. 그리고 브라우저로 한 번 들어가야 마이그레이션이 실제로 걸린다.
 
 ```powershell
-.\.venv\Scripts\python.exe -m streamlit run app.py
+uv run --no-sync python -m streamlit run app.py
 ```
+
+화면이 뜨는 것까지 확인하면 `Ctrl+C` 로 끈다. 오류가 나면 **고치지 말고** 리뷰 문서에 적는데,
+**원문을 그대로 붙이지 않는다** — 이 앱의 오류 문구에는 설계상 공정명·제품명 같은 식별값이
+박혀 있다. 5장의 가명화 규칙을 그대로 적용해 옮겨 적는다.
 
 ### 4-3. 네 관문을 돌린다
 
 ```powershell
-.\.venv\Scripts\python.exe -m ruff format --check .
-.\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe -m mypy
-.\.venv\Scripts\python.exe -m pytest
+uv run --no-sync python -m ruff format --check .
+uv run --no-sync python -m ruff check .
+uv run --no-sync python -m mypy
+uv run --no-sync python -m pytest
 ```
 
 **앱을 끈 뒤에 돌린다** — DuckDB 배타 잠금 때문이다. 실패가 나오면 3-2 에 해당하는지 먼저 보고,
@@ -219,10 +250,33 @@ SQL 파일을 고치면 앱이 시작조차 못 한다.** 오류가 나면 고�
 경로는 `review/<ZIP 파일명>.md` — 예: `review/202609201530.md`. 양식과 「실데이터를 적지
 않는다」 규칙은 `docs/dual_env_workflow.md` 4장에 있다. 핵심만 옮기면:
 
-- **값의 「꼴」은 남기고 식별자는 가명으로 쓴다.** 실제 Pack Code·공정명·호기 ID·고객명을
-  그대로 적지 않는다. 이 문서는 **사내에서 사외로 나가는 유일한 것**이다.
+- **값의 「꼴」은 남기고 식별자는 가명으로 쓴다.** 이 문서는 **사내에서 사외로 나가는
+  유일한 것**이다.
 - 좋음 — 「`Pack Code` 에 `4.00E+02` 꼴인 값이 2종, 5행」
 - 나쁨 — 실제 값을 그대로 적는 것
+
+**실데이터로 취급하는 것 (컬럼 이름으로)**
+
+`Customer` · `제품정보` · `Capa Code` · `CS` · `공정` · `Area_Name` · `호기` · `Pack Code` ·
+`WF 구분` · `Stack` · `양산구분` · `STEP_SEQ` · `MCP_SEQ` · 사람 이름과 사번 · 시뮬레이션
+코드와 이름 · 파일 경로 안의 위 값들.
+
+**무심코 붙여넣기 쉬운 자리** — 여기서 대부분 샌다.
+
+- 오류 원문·스택트레이스 (앱 오류 문구에 공정명·제품명이 박혀 있다)
+- `git diff`·`git log` 출력
+- SQL 결과표, DataFrame 출력
+- 화면 캡처와 그 파일 경로
+- 적용기 출력의 파일 목록
+
+**커밋 전에 스스로 한 번 돌린다.** 걸리면 그 줄을 가명으로 고친 뒤 다시 돌린다.
+
+```powershell
+Select-String -Path review\*.md -Pattern 'INTEL|AWS|BRCM|ARCM|BINTEL|HBM|DDR5|Pack ?Code *[=:] *[^ ]|[A-Z]{2,}-[0-9]{3,}'
+```
+
+한 줄도 안 나와야 한다. 이 패턴은 그물이지 보증이 아니다 — 걸리지 않아도 위 컬럼 목록을
+눈으로 한 번 훑는다.
 
 쓰고 나면 커밋한다.
 
@@ -258,22 +312,41 @@ git push
 
 ---
 
+## 6-1. 끝났다는 판정
+
+아래가 **전부** 참이면 끝이다. 하나라도 아니면 아직이다.
+
+- [ ] 적용기가 `대조 N/N 해시 일치` 를 찍고 `deploy: <stamp> (<커밋 7자>)` 로 커밋했다
+- [ ] 적용 뒤 재대조에서 `사외에서 지워진 파일`·`목록에 있는데 사내에 없는 파일` 둘 다 비었다
+- [ ] 네 관문이 전부 통과했거나, 실패한 것이 3-2 로 설명된다
+- [ ] 앱이 뜨고 마이그레이션이 걸렸다
+- [ ] 7장의 확인 항목을 전부 돌리고 결과를 리뷰 문서에 적었다
+- [ ] 리뷰 문서를 `review:` 로 커밋했고, 5장의 자가 점검이 한 줄도 잡지 않았다
+- [ ] 사용자에게 `git push` 명령을 알렸다
+
+---
+
 ## 7. 이번 배포에서 사내가 따로 확인해야 하는 것
 
-배포마다 달라지는 자리다. **사외가 ZIP 을 보낼 때 이 절을 갱신해 함께 보낸다.**
+**이 절은 `202609200959` 배포용이다.** 적용한 ZIP 의 stamp 가 이것과 다르면 이 절은 네
+것이 아니다 — 사용자에게 알리고 맞는 안내를 받는다. 배포마다 사외가 이 절을 갱신해 함께
+보낸다.
 
 - **마이그레이션 `0024`(global_key_process)·`0025`(voc_board)가 새로 적용된다.** 앱을 처음
   띄울 때 두 DB 에 걸린다. 오류가 나면 SQL 을 고치지 말고 원문을 적는다.
 - **`Top` 이관의 실제 범위** — `0013`·`0014` 마이그레이션이 `trim("WF 구분") = 'Top'` 으로
-  비교하는데 원천 표기는 대문자 `TOP` 이다. 이미 저장된 리비전에 `Top_e` 행이 있는지 센다.
+  비교하는데 원천 표기는 대문자 `TOP` 이다. 두 스키마 일곱 표를 한 번에 센다.
 
-  ```sql
-  SELECT "WF 구분", count(*) FROM ref."RQ_CHIP_QTY" GROUP BY 1;
-  SELECT "WF 구분", count(*) FROM rev."RQ_CHIP_QTY" GROUP BY 1;
+  ```powershell
+  uv run --no-sync python scripts/inspect_wf_division.py
   ```
 
-  **결과만 리뷰 문서에 적는다. 사내에서 SQL 로 고치지 않는다** — 리비전은 append-only 이고,
-  재이관이 필요하면 사외가 후속 마이그레이션을 만든다.
+  읽기 전용으로 열고 **값을 찍지 않는다** — `TOP`·`TOP_E` 개수와 「그 밖 N종 M행」만 나온다.
+  그 출력을 그대로 리뷰 문서에 붙여도 실데이터가 새지 않는다. 앱이 떠 있으면 잠겨서 못 여니
+  먼저 끈다.
+
+  **사내에서 SQL 로 고치지 않는다** — 리비전은 append-only 이고, 재이관이 필요하면 사외가
+  후속 마이그레이션을 만든다.
 - **`Pack Code` 업무 키 승격의 후속** — `0013` 이전에 저장한 리비전은 `Pack Code` 가 비어
   있어 부하량 화면이 선다. 실데이터를 **다시 등록**해야 한다. 승격 전에 내려받은 PKG PLAN CSV
   양식도 못 쓰므로 **양식을 다시 받는다.**

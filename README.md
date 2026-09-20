@@ -566,7 +566,8 @@ uv sync
 ```
 
 `.venv` 가 만들어지고 `dev` 그룹까지 설치됩니다. 이후 명령은 `.\.venv\Scripts\python.exe ...`
-또는 `uv run python ...` 둘 다 됩니다.
+또는 `uv run python ...` 둘 다 됩니다. **사내에서는 `uv run --no-sync python ...` 을 씁니다** —
+맨 `uv run` 은 돌기 전에 정확 동기화를 해서 락에 없는 `bigdataquery` 를 지웁니다.
 
 **3. 확인**
 
@@ -616,7 +617,7 @@ uv pip install -r requirements-company.txt
 풀어야 하고, 그 다음부터는 이 스크립트가 적용을 맡습니다.
 
 ```powershell
-uv run python scripts/apply_deploy_package.py <내려받은 ZIP> --dry-run
+uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP> --dry-run
 ```
 
 `--dry-run` 은 아무것도 바꾸지 않고 무엇이 지워지고 덮일지만 보여 줍니다. 처음에는 꼭

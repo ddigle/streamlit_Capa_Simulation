@@ -103,7 +103,7 @@ git push --tags
 리뷰에 적고, 사외에서는 재현되지 않는다.
 
 ```powershell
-uv run python scripts/apply_deploy_package.py <내려받은 ZIP 경로>
+uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로>
 ```
 
 이 스크립트가 하는 일:
@@ -138,6 +138,10 @@ uv run python scripts/apply_deploy_package.py <내려받은 ZIP 경로>
 > 파일이 먼저 커밋되면 전제가 깨지고 DuckDB 가 「사외에서 없어진 파일」로 판정된다.
 > 그래서 `is_protected` 가 경로만 보고 한 번 더 막고, **추적되고 있다는 사실 자체를**
 > 계획 출력이 `git rm --cached` 와 함께 알린다. 그 줄이 보이면 아래 8장으로 간다.
+
+**사내에서는 `uv run` 에 반드시 `--no-sync` 를 붙인다.** 맨 `uv run` 은 돌기 전에 환경을
+**정확 동기화**하는데, 그것이 락에 없는 `bigdataquery` 를 지운다 — `uv sync` 를 직접 친 것과
+같다. 사내 조회 화면이 그 자리에서 죽는다.
 
 **변경 목록에 `pyproject.toml` 이나 `uv.lock` 이 있으면 적용 뒤에 동기화한다.**
 
@@ -181,7 +185,7 @@ uv sync --inexact
 적용하지 않고 대조만 보려면:
 
 ```powershell
-uv run python scripts/apply_deploy_package.py <ZIP> --reconcile-only
+uv run --no-sync python scripts/apply_deploy_package.py <ZIP> --reconcile-only
 ```
 
 작업 중에도 돌릴 수 있다 — 아무것도 바꾸지 않으므로 깨끗한 작업트리를 요구하지 않는다.
