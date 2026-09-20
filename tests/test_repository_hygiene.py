@@ -35,6 +35,9 @@ ALLOWED_TOP_LEVEL = {
     "app.py",
     "app_pages/",
     "config/",
+    # 사내 GitHub Pages 로 띄우는 발표 자료(중간 보고 덱). 이미지까지 한 파일에 담은
+    # 단독 문서라 브라우저로 바로 열린다. 2026-09-20 사용자 결정으로 배포 세트에 포함한다.
+    "index.html",
     "data/",
     "docs/",
     "pyproject.toml",
