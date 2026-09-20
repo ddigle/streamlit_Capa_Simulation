@@ -97,13 +97,15 @@ with pinned_connections(DUCKDB_PATH):
     # 선택자도 같은 선언에서 낸다. 손으로 적으면 그룹을 더할 때 한쪽만 고치게 된다.
     # **하위가 있는 그룹만 상자를 갖는다.** 나머지는 평평한 링크라 걸 것이 없다.
     boxed_groups = [group for group in pages.groups if group.subpages]
-    group_box_selectors = _SELECTOR_JOINER.join(
-        f".st-key-{group.slug}_box" for group in boxed_groups
-    )
     # 상자 머리글. 전에는 상자 안 첫 링크가 그룹 이름을 달았고 지금은 확장 패널의 요약
-    # 줄이 단다. 자리는 바뀌었어도 사이드바에서 같은 무게로 읽혀야 한다.
+    # 줄이 단다. 자리는 바뀌었어도 옆 상자의 제목과 같은 무게로 읽혀야 한다.
+    #
+    # **글자는 `summary` 가 아니라 그 안의 `p` 가 정한다.** 요약 줄에 크기를 줘 봐야
+    # 안쪽 마크다운 문단이 제 값(0.875rem)으로 덮는다 — 실제로 그렇게 두었더니 그룹
+    # 이름만 12.25px 로 작고 가늘게 남았다.
     group_title_selectors = _SELECTOR_JOINER.join(
-        f".st-key-{group.slug}_box summary" for group in boxed_groups
+        f'.st-key-{group.slug}_box summary [data-testid="stMarkdownContainer"] p'
+        for group in boxed_groups
     )
     # 제목을 가진 조회 상자 셋. 상자마다 제목 `h4` 는 하나뿐이라 안쪽을 더 좁히지 않는다.
     # 뒤에 붙일 부분까지 **선택자마다** 넣어 잇는다 — 목록을 먼저 잇고 뒤에 `h4` 를 붙이면
@@ -263,25 +265,26 @@ with pinned_connections(DUCKDB_PATH):
         }}
 {active_nav_style}
 
+        /* 그룹 이름을 옆 상자의 제목(h4·1rem·700)과 같은 선에 세운다. */
         {group_title_selectors} {{
-            font-size: 1.15rem;
+            font-size: 1rem;
             font-weight: 700;
         }}
+        /* **펼친 요약 줄의 면색은 덮지 못한다 — 시도했고 안 됐다.** Streamlit 이 펼침
+           상태에만 붙이는 클래스로 흰 면을 아주 살짝 눌러 칠하는데, 선택자 특정도를 올려도
+           `!important` 를 붙여도, 브라우저에서 같은 선택자를 직접 주입해도 계산값이
+           바뀌지 않았다. 흰 면 위 1% 남짓의 차이라 접힌 그룹·다른 상자와 나란히 두면
+           거의 보이지 않는다. 여기 적어 두는 것은 **다음 사람이 같은 길을 다시 파지
+           않게** 하기 위해서다. 없애야 한다면 Streamlit 쪽 판올림을 기다리는 편이 낫다. */
 
         /* 하위를 가르던 세로선은 없앴다. 그 일을 이제 **확장 패널 자신이** 한다 —
            펼친 것과 접힌 것이 경계를 대신 말하므로, 선을 더 그으면 안쪽이 두 번
            들여써진다. */
 
-        /* 박스 위쪽만 한 단계 눌러 칠한다. 제목이 앉은 자리가 「머리칸」으로 읽혀 박스가
-           단순한 테두리가 아니라 카드가 된다. 배경은 테두리를 그리는 요소 자신에게 주므로
-           둥근 모서리에서 잘린다. */
-        {group_box_selectors} {{
-            background: linear-gradient(
-                180deg,
-                {tokens.SURFACE_PAGE} 0,
-                {tokens.SURFACE} 2.1rem
-            );
-        }}
+        /* 그룹 상자에는 배경을 칠하지 않는다. 상자였을 때는 제목 자리를 「머리칸」으로
+           읽히게 하려고 위쪽만 한 단계 눌러 칠했는데, 지금은 그 자리가 **확장 패널의
+           `summary`** 이고 Streamlit 이 이미 한 단계 눌러 칠한다. 덧칠하면 테두리를 가진
+           확장 패널 **바깥** 래퍼에 얹혀, 모서리가 각진 띠가 한 겹 더 둘러진다. */
 
         /* 사이드바를 촘촘하게. 기본 세로 간격은 본문 기준이라 박스가 예닐곱 개 쌓이는
            사이드바에서는 스크롤만 길어진다. */
@@ -291,7 +294,6 @@ with pinned_connections(DUCKDB_PATH):
         /* 세로를 반으로 줄이면 가로도 같은 비율로 줄여야 상자가 납작해 보이지 않는다.
            다만 1:1 로 맞추지는 않는다 — 글은 가로로 읽으므로 좌우에 조금 더 남긴다.
            기본 16px 대비 세로 0.52배, 가로 0.66배다. */
-        {group_box_selectors},
         .st-key-{SCENARIO_BOX_KEY},
         .st-key-{MONTH_BOX_KEY},
         .st-key-{BOTTLENECK_BOX_KEY},
