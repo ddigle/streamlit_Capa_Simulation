@@ -23,8 +23,9 @@
 
 from __future__ import annotations
 
-import streamlit as st
+import streamlit.components.v1 as components
 
+from capa_simulation.design import tokens
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 
 # 이 셋이 Streamlit 과 맞춰야 하는 계약 전부다. 한 곳에 모아 두어야 판올림에서 무엇을
@@ -54,38 +55,66 @@ _SCRIPT = """
     return parentWindow.matchMedia("(prefers-color-scheme: dark)").matches;
   }
 
+  // 주소의 조회 인자를 고친다. **`location.replace` 를 쓰지 않는다** — 이 iframe 의
+  // 샌드박스에 `allow-top-navigation` 이 없어서 다른 주소로 옮기는 것은 조용히 막힌다.
+  // 버튼이 아무 반응도 없던 이유가 그것이다. `history.replaceState` 는 이동이 아니라
+  // 주소만 고쳐 쓰는 것이라 같은 출처면 허용되고, 그다음 `reload()` 는 같은 주소를
+  // 다시 읽는 것이라 통한다.
+  function syncParam(mode) {
+    try {
+      var url = new parentWindow.URL(parentWindow.location.href);
+      if (url.searchParams.get("%(param)s") === mode) return false;
+      url.searchParams.set("%(param)s", mode);
+      parentWindow.history.replaceState(null, "", url.toString());
+      return true;
+    } catch (error) { return false; }
+  }
+
+  function paint(button, dark) {
+    // 버튼이 **가려는 쪽**의 옷을 입는다. 밝은 테마에서는 `Dark` 가 검은 알약에 흰 글자,
+    // 어두운 테마에서는 `Light` 가 흰 알약에 검은 글자다. 서로 반대라 어느 쪽에서도
+    // 배경과 붙지 않는다.
+    var fill = dark ? "%(dark_fill)s" : "%(light_fill)s";
+    var ink = dark ? "%(dark_ink)s" : "%(light_ink)s";
+    button.style.cssText = [
+      "font:inherit", "font-size:13px", "font-weight:600", "line-height:1",
+      "padding:6px 12px", "margin-right:6px", "border:1px solid " + fill,
+      "border-radius:8px", "background:" + fill, "color:" + ink,
+      "opacity:.92", "cursor:pointer", "white-space:nowrap"
+    ].join(";");
+  }
+
   function place() {
     var slot = doc.querySelector('%(slot)s');
     if (!slot) return false;            // 슬롯이 없으면 조용히 물러난다
     if (doc.getElementById("%(id)s")) return true;
 
     var dark = isDark();
+    // 파이썬이 읽는 값과 화면이 쓰는 값을 처음부터 맞춘다. `st.context.theme.type` 은
+    // 첫 로드에 틀릴 수 있어서, 여기서 한 번 맞춰 두면 그 뒤로는 어긋나지 않는다.
+    if (syncParam(dark ? "dark" : "light")) {
+      parentWindow.location.reload();
+      return true;
+    }
+
     var button = doc.createElement("button");
     button.id = "%(id)s";
     button.type = "button";
     button.textContent = dark ? "%(to_light)s" : "%(to_dark)s";
     button.title = dark ? "%(tip_light)s" : "%(tip_dark)s";
     button.setAttribute("aria-label", button.title);
-    button.style.cssText = [
-      "font:inherit", "font-size:13px", "line-height:1", "padding:6px 11px",
-      "margin-right:6px", "border:1px solid currentColor", "border-radius:8px",
-      "background:transparent", "color:inherit", "opacity:.7", "cursor:pointer",
-      "white-space:nowrap"
-    ].join(";");
+    paint(button, dark);
     button.onmouseenter = function () { button.style.opacity = "1"; };
-    button.onmouseleave = function () { button.style.opacity = ".7"; };
+    button.onmouseleave = function () { button.style.opacity = ".92"; };
     button.onclick = function () {
       var next = dark ? "Light" : "Dark";
       try {
         parentWindow.localStorage.setItem(KEY, JSON.stringify(next));
       } catch (error) { return; }
-      // 고른 값을 **URL 에도 싣는다.** `localStorage` 는 Streamlit 크롬이 읽고, 조회 인자는
-      // 파이썬이 읽는다. 파이썬 쪽이 클라이언트 추론값을 믿을 수 없어서(첫 로드와 전환
-      // 직후에 틀린다) 같은 선택을 두 곳에 적어 둔다. 주소를 바꾸면서 다시 읽으므로
-      // 새로고침을 따로 부르지 않는다.
-      var url = new parentWindow.URL(parentWindow.location.href);
-      url.searchParams.set("%(param)s", next.toLowerCase());
-      parentWindow.location.replace(url.toString());
+      // `localStorage` 는 Streamlit 크롬이 읽고 조회 인자는 파이썬이 읽는다. 같은 선택을
+      // 두 곳에 적어야 화면과 그림이 같은 테마를 본다.
+      syncParam(next.toLowerCase());
+      parentWindow.location.reload();
     };
     slot.appendChild(button);
     return true;
@@ -108,12 +137,14 @@ def render_theme_toggle() -> None:
     """헤더에 전환 버튼을 얹는다. `app.py` 가 한 번만 부른다.
 
     높이 0 의 iframe 하나를 쓴다. `st.html` 은 스크립트를 실행하지 않으므로 이 경로가
-    아니면 부모 창에 닿을 수 없다. `st.iframe` 은 HTML 문자열을 받으면 **스크립트 실행과
-    앱에 대한 동일 출처 접근을 허용**한다고 공식 문서가 적는다 — 그것이 이 버튼이 부모 창의
-    `localStorage` 에 닿는 근거다. (`st.components.v1.html` 은 2026-06-01 제거 예정이라
-    옮겼다.)
+    아니면 부모 창에 닿을 수 없다.
+
+    **`st.iframe` 으로 옮기지 않는다.** 권고는 그쪽이지만(`components.v1.html` 은
+    2026-06-01 제거 예정) 실제로 바꿔 띄워 보니 **iframe 이 DOM 에 아예 생기지 않아**
+    버튼이 사라졌다. 브라우저에서 `document.querySelectorAll('iframe').length === 0` 으로
+    확인했다. 옮기려면 그때 다시 띄워 보고 버튼이 실제로 붙는지 눈으로 봐야 한다.
     """
-    st.iframe(
+    components.html(
         _SCRIPT
         % {
             "prefix": _STORAGE_PREFIX,
@@ -125,8 +156,12 @@ def render_theme_toggle() -> None:
             "tip_light": "밝은 테마로 바꿉니다",
             "tip_dark": "어두운 테마로 바꿉니다",
             "param": THEME_QUERY_PARAM,
+            # 버튼은 **반대 테마의 옷**을 입는다. 어두운 화면에서는 밝은 팔레트의 면과
+            # 글자색을, 밝은 화면에서는 어두운 팔레트의 것을 쓴다.
+            "dark_fill": tokens.palette_value("light", "SURFACE"),
+            "dark_ink": tokens.palette_value("light", "TEXT"),
+            "light_fill": tokens.palette_value("dark", "SURFACE"),
+            "light_ink": tokens.palette_value("dark", "TEXT"),
         },
-        # `st.iframe` 은 0 을 받지 않는다(양수·`stretch`·`content` 만). `content` 로 두면
-        # srcdoc 문서의 기본 body margin 까지 재어 눈에 띄는 틈이 생기므로 1px 로 못박는다.
-        height=1,
+        height=0,
     )
