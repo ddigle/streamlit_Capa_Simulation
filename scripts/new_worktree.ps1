@@ -21,7 +21,9 @@
     작업 폴더 경로. 비우면 저장소 **옆**에 브랜치 마지막 조각 이름으로 만든다.
 
 .PARAMETER Port
-    이 폴더에서 앱을 띄울 포트. 이 값을 박은 `run.ps1` 을 폴더 안에 만든다
+    이 폴더에서 앱을 띄울 포트. **보통은 주지 않는다** — 브랜치 마지막 조각(에이전트
+    이름)에서 자동으로 정해진다(claude 8502 · codex 8503). 이 값을 박은 `run.ps1` 을
+    폴더 안에 만든다
     (8501 은 main 자리다). Windows 에서는 포트를 빠뜨리면 두 번째 인스턴스가 **오류 없이**
     첫 프로세스에 얹혀 모든 접속이 그쪽으로 간다 — 그래서 실행기를 만들어 둔다.
 
@@ -35,10 +37,19 @@ param(
 
     [string]$Path,
 
-    [int]$Port = 8502
+    # 비우면 브랜치 마지막 조각(= 에이전트 이름)에서 정한다. 위 AGENT_PORTS 를 보라.
+    [int]$Port = 0
 )
 
 $ErrorActionPreference = "Stop"
+
+# **에이전트마다 포트를 고정한다.** 브랜치 규약이 `cand/<과제>/<에이전트>` 라 마지막
+# 조각이 곧 에이전트다 — 이름과 포트를 한 자리에서 묶어 두면 둘이 같은 번호를 고를 수
+# 없다. 8501 은 통합용 main 자리라 여기에 넣지 않는다.
+$AGENT_PORTS = @{
+    "claude" = 8502
+    "codex"  = 8503
+}
 
 $repo = (git rev-parse --show-toplevel)
 if (-not $repo) { throw "git 저장소 안에서 실행하세요." }
@@ -50,6 +61,21 @@ if (-not $Path) {
     $Path = Join-Path (Split-Path $repo -Parent) "capa-$leaf"
 }
 if (Test-Path $Path) { throw "이미 있습니다: $Path" }
+
+$agent = ($Branch -split "/")[-1]
+if ($Port -eq 0) {
+    if (-not $AGENT_PORTS.ContainsKey($agent)) {
+        $known = ($AGENT_PORTS.Keys | Sort-Object) -join ", "
+        throw "브랜치 마지막 조각이 '$agent' 라 포트를 정할 수 없습니다. 아는 이름: $known. 다른 이름이면 -Port 로 직접 주거나 스크립트의 AGENT_PORTS 에 더하세요."
+    }
+    $Port = $AGENT_PORTS[$agent]
+    Write-Host "포트     : $Port (에이전트 '$agent' 에 고정된 번호)"
+}
+elseif ($AGENT_PORTS.ContainsKey($agent) -and $AGENT_PORTS[$agent] -ne $Port) {
+    # 막지는 않는다 — 같은 에이전트가 두 과제를 동시에 볼 수도 있다. 다만 조용히 넘어가면
+    # 둘이 같은 포트를 쓰다가 첫 프로세스로 접속이 몰리는 것을 아무도 모른다.
+    Write-Host "주의     : '$agent' 의 고정 포트는 $($AGENT_PORTS[$agent]) 인데 $Port 를 주었습니다."
+}
 
 Write-Host "저장소   : $repo"
 Write-Host "작업 폴더: $Path"
