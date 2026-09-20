@@ -428,7 +428,7 @@ stash@{0}: On main: bigdataquery user_name (사내 값 확인 후 반영)
 | 검증 | ruff format·check(272 파일) 통과 / mypy 143 파일 이상 없음 / pytest 전체 통과 |
 | 다음 마이그레이션 | 시뮬레이션 DB `0024`, 설비 DB `0009` (2·3 은 시뮬레이션 DB 영구 결번) |
 | 마지막 ZIP | `C:\Dev\Streamlit_Project_Dummyfile\202609200959.zip` (1,233,867 bytes, 362 파일) |
-| 메일 | **미발송.** 2026-09-20 시점에 Claude in Chrome 확장이 연결되지 않아 보내지 못했다 |
+| 메일 | 2026-09-20 발송 완료. 수신 `hoyeon.jeon@samsung.com`, 제목 `202609200959`, 보낸 편지함에서 확인함 |
 | 보류 | `stash@{0}` 에 bigdataquery `user_name` 4파일 (12-2 절, 그대로) |
 
 **`202609200959.zip` 은 `9bba7e8` 커밋 기준이고 직전 배포 `202609151052`(`d373875`) 대비
