@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.decision_summary import render_home_capacity_decision
 from capa_simulation.components.home_figures import (
     BOTTLENECK_DETAIL_RANK_LIMIT,
     build_bottleneck_detail_figures,
@@ -103,6 +104,7 @@ from capa_simulation.services.execution_capacity import (
     empty_execution_capacity,
     unmatched_execution_adjustments,
 )
+from capa_simulation.services.home_decision import build_capacity_decision
 from capa_simulation.services.month_columns import (
     build_month_axis,
     build_past_month_labels,
@@ -617,6 +619,15 @@ figure_cache_key: HomeFigureCacheKey = (
     tuple(applied_key_processes),
     key_process_profile.version,
 )
+# 결론 요약은 **캐시 밖**에서 낸다. 아래 순위 집계는 캐시가 맞으면 건너뛰지만 이 집계는
+# 같은 프레임 위의 마스크 한 번이라 건너뛸 값이 없다 — 대신 캐시 적중·미적중에서 늘 같은
+# 값이 나온다.
+capacity_decision = build_capacity_decision(
+    securement_rate,
+    included_processes=included_processes,
+    secure_threshold=secure_threshold,
+    warning_threshold=warning_threshold,
+)
 cached_figures = take_home_figures(figure_cache_key)
 figure_cache_hit = cached_figures is not None
 if cached_figures is None:
@@ -756,6 +767,18 @@ with main_tab:
     # 공지는 대시보드 상자 **밖**, 화면 맨 위다. 상자 안에 두면 스크롤되는 월 영역과 폭을
     # 나눠 가져 문구가 월 칸 너비에 갇힌다.
     render_summary_notice(summary_profile.note)
+    # 결론이 표보다 **먼저** 온다. 아래 Figure 와 같은 `securement_rate`·`included_processes`
+    # 를 읽으므로 공정 필터를 바꾸면 요약도 같이 따라온다.
+    render_home_capacity_decision(
+        capacity_decision,
+        secure_threshold=secure_threshold,
+        warning_threshold=warning_threshold,
+        # 화면 이름만 바꾼다. 저장 키는 원본 공정명 그대로다.
+        process_label=(
+            process_labels.label(capacity_decision.process) if capacity_decision.process else None
+        ),
+        filtered=len(included_processes) < len(process_options),
+    )
     # 제목 줄과 여섯 Figure 는 한 상자 안이다. 제목 옆 토글은 숨은 탭에서도 그려야 하므로
     # Figure 를 건너뛰는 `render_home_figures` 안으로 넣지 않고 상자만 여기서 연다.
     with home_dashboard_panel():

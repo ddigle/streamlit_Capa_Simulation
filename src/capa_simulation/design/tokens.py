@@ -449,7 +449,9 @@ TABLE_HEADER_HEIGHT_PX: Final = 36
 TABLE_ROW_HEIGHT_PX: Final = 27
 # `st.data_editor`·`st.dataframe` 이 그리는 월별 격자의 행 높이. 위의 Plotly 표 행(27)과
 # 그리는 엔진이 달라 값을 합치지 않는다 — 한쪽 밀도를 건드리면 다른 쪽까지 따라 움직인다.
-MONTH_GRID_ROW_HEIGHT_PX: Final = 25
+# 편집 그리드의 행 높이. HOME 의 Plotly 표·증감 주석·B/N 막대 행 높이는 **이 값과 별개**다
+# — 같이 올리면 월 축 정렬과 글자 기준선이 한꺼번에 어긋난다.
+MONTH_GRID_ROW_HEIGHT_PX: Final = 30
 MONTH_COLUMN_WIDTH_PX: Final = 100
 SCROLLBAR_HEIGHT_PX: Final = 10
 OUTER_BORDER_WIDTH_PX: Final = 1.8

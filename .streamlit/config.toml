@@ -18,14 +18,14 @@ grayColor = "#646973"
 dataframeBorderColor = "#DDE0E5"
 dataframeHeaderBackgroundColor = "#E4E7EB"
 chartCategoricalColors = ["#3F3F46", "#71717A", "#A1A1AA", "#D4D4D8"]
-baseRadius = "10px"
+baseRadius = "8px"
 buttonRadius = "8px"
 showWidgetBorder = true
 showSidebarBorder = true
-baseFontSize = 15
+baseFontSize = 14
 baseFontWeight = 400
 headingFont = "Noto Sans KR, Malgun Gothic, 'Apple SD Gothic Neo', sans-serif"
-headingFontSizes = ["40px", "24px", "20px", "17px", "15px", "13px"]
+headingFontSizes = ["30px", "24px", "19px", "16px", "14px", "13px"]
 headingFontWeights = [650, 650, 600, 600, 600, 600]
 linkUnderline = false
 # 색배지(`:green-badge[]` 등)와 알림 상자의 색. Streamlit 기본값은 zinc + teal 팔레트
@@ -57,7 +57,7 @@ primaryColor = "#0F766E"
 headingFontWeights = [650, 650, 600, 700, 600, 600]
 # 박스가 여럿 쌓이는 사이드바에서 각진 모서리가 가장 먼저 피로하다. 본문(10px)보다 한
 # 단계 부드럽게 둔다.
-baseRadius = "12px"
+baseRadius = "10px"
 
 # ---------------------------------------------------------------- 어두운 테마
 # 값의 근거는 `src/capa_simulation/design/tokens.py` 의 `_DARK` 에 있다. 여기 적는 것은

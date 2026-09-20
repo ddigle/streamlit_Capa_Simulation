@@ -51,6 +51,9 @@ RENAME_NOTICE = (
 )
 # 표시명을 그리는 분류 컬럼의 폭 한계. `SelectboxColumn` 은 원본 값으로 폭을 재므로
 # 표시명이 더 길면 잘린다.
+# 적용을 누르면 어디까지 반영되는지. 「지금 계산」과 「다시 열었을 때」는 다른 것인데
+# 버튼 글자만으로는 갈라지지 않는다.
+APPLY_NOTICE = "적용 후 계산에 반영됩니다. 보관하려면 새 리비전을 저장하세요."
 DIMENSION_MIN_WIDTH_PX = 110
 DIMENSION_MAX_WIDTH_PX = 280
 
@@ -75,6 +78,7 @@ def render_month_editor(
     month_columns = [column for column in default_table.columns if column not in dimensions]
     with tab:
         st.caption(caption)
+        _render_scope(default_table, month_columns)
         visible_table = _visible_table(default_table, dimensions, editor_key, value_labels)
         styled_table = visible_table.style.set_properties(
             subset=pd.Index(dimensions),
@@ -105,12 +109,17 @@ def render_month_editor(
                 },
             },
         )
+        merged = merge_edited_months(default_table, edited, dimensions, month_columns)
+        changed_cells, changed_rows = count_month_changes(default_table, merged, month_columns)
+        if changed_cells:
+            st.markdown(f"**변경사항 확인** &nbsp;{changed_cells:,}개 값 · {changed_rows:,}개 행")
         submitted = st.button(
             "변경사항 적용",
             icon=":material/check:",
             key=f"{editor_key}_apply",
             type="primary",
         )
+        st.caption(APPLY_NOTICE)
         if _has_display_labels(dimensions, value_labels):
             st.caption(RENAME_NOTICE)
         # 왕복 CSV·붙여넣기는 전체 표 계약이다. 여기에 걸러진 표를 넘기면 양식이 부분 표가
@@ -122,11 +131,7 @@ def render_month_editor(
             file_name=csv_file_name,
             key=f"{editor_key}_csv",
         )
-    return (
-        merge_edited_months(default_table, edited, dimensions, month_columns),
-        submitted,
-        imported,
-    )
+    return merged, submitted, imported
 
 
 def _has_display_labels(
@@ -199,6 +204,48 @@ def merge_edited_months(
     target_labels = merged.index[positions[matched]]
     merged.loc[target_labels, month_columns] = edited.loc[matched, month_columns].to_numpy()
     return merged
+
+
+def _render_scope(default_table: pd.DataFrame, month_columns: list[str]) -> None:
+    """무엇을 편집하고 있는지 한 줄. 표를 보기 전에 범위를 알려 준다.
+
+    월 이름은 표 머리글에 쓰는 컬럼명 그대로다 — 여기서만 다른 형식으로 적으면 같은
+    달을 두 이름으로 부르게 된다.
+    """
+    if not month_columns:
+        return
+    span = (
+        f"{month_columns[0]} – {month_columns[-1]}"
+        if len(month_columns) > 1
+        else str(month_columns[0])
+    )
+    st.markdown(
+        f"**편집 범위** &nbsp;{span} · {len(month_columns)}개월 · 전체 {len(default_table):,}개 행"
+    )
+
+
+def count_month_changes(
+    default_table: pd.DataFrame,
+    merged: pd.DataFrame,
+    month_columns: list[str],
+) -> tuple[int, int]:
+    """적용을 누르면 **실제로 달라지는** 칸 수와 행 수.
+
+    편집표가 아니라 `merge_edited_months` 를 거친 **전체 표**를 원본과 맞댄다. 그래야
+    필터로 가려진 행까지 셈에 들어가고, 화면마다 다른 빈칸 규칙(PKG PLAN 은 표시용
+    빈칸을 0 으로 저장하고 수율은 아니다)을 여기서 따로 알 필요가 없다 — 되머지가 이미
+    그 화면의 규칙대로 값을 써 놓았기 때문이다.
+
+    **같은 빈값끼리는 변경이 아니다.** `NaN != NaN` 이라 그냥 비교하면 손대지 않은 빈칸이
+    전부 변경으로 잡힌다.
+    """
+    columns = [column for column in month_columns if column in default_table.columns]
+    if not columns or merged.empty or not merged.index.equals(default_table.index):
+        return 0, 0
+    before = default_table[columns].apply(pd.to_numeric, errors="coerce")
+    after = merged[columns].apply(pd.to_numeric, errors="coerce")
+    differs = (before != after) & ~(before.isna() & after.isna())
+    return int(differs.to_numpy().sum()), int(differs.any(axis=1).sum())
 
 
 def _visible_table(
