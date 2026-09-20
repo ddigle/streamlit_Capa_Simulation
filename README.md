@@ -567,7 +567,13 @@ uv sync
 
 `.venv` 가 만들어지고 `dev` 그룹까지 설치됩니다. 이후 명령은 `.\.venv\Scripts\python.exe ...`
 또는 `uv run python ...` 둘 다 됩니다. **사내에서는 `uv run --no-sync python ...` 을 씁니다** —
-맨 `uv run` 은 돌기 전에 정확 동기화를 해서 락에 없는 `bigdataquery` 를 지웁니다.
+`uv run` 이 돌기 전에 하는 동기화가 락을 다시 잡고 빠진 것을 설치하는데, `--no-sync` 는 그
+일이 아예 일어나지 않게 못박습니다.
+
+> 지우는 것은 **맨 `uv sync`** 입니다. 맨 `uv run` 은 지우지 않습니다 — uv 0.12.13 에서 락에
+> 없는 패키지를 넣어 두고 재 보면 `uv sync` 만 `Uninstalled 1 package` 를 찍고, `uv run` 은
+> 락이 낡아 다시 잡는 경우에도 넣기만 합니다. `uv sync --inexact` 와 `uv run --no-sync` 는
+> 둘 다 지우지 않습니다.
 
 **3. 확인**
 
@@ -598,6 +604,18 @@ uv pip install -r requirements-company.txt
 
 `bigdataquery` 를 사내 Artifactory 인덱스에서 받습니다. 인덱스 주소는 그 파일 안에 있으니
 따로 칠 것이 없습니다.
+
+> **C-DEP WebIDE 에서는 위 한 줄이 그대로 안 됩니다.** 이 계열 이미지는 `UV_DEFAULT_INDEX`
+> 를 공개 PyPI 미러로 고정해 두어 파일 안의 `--index-url` 보다 먼저 이기고, uv 가 사내 CA
+> 를 몰라 TLS 에서도 막힙니다. 추가 인덱스로 넣고 시스템 인증서를 쓰게 하세요.
+>
+> ```bash
+> export UV_EXTRA_INDEX_URL="https://<AD 계정>:<Artifactory API 토큰>@artifactory.samsungds.net/repository/dataservice-devsecops-pypi/simple"
+> uv pip install bigdataquery==2.5.0 --system-certs
+> ```
+>
+> 설치 뒤 조회까지 되려면 로그인과 요청자 계정이 더 필요합니다 —
+> [`docs/bigdataquery_webide_setup.md`](docs/bigdataquery_webide_setup.md) 를 보세요.
 
 > **이 뒤로는 `uv sync` 대신 `uv sync --inexact` 를 씁니다.**
 > 그냥 `uv sync` 는 **락에 없는 패키지를 지웁니다** — `bigdataquery` 가 그렇습니다.

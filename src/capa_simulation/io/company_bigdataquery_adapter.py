@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -28,6 +29,9 @@ _SIMULATION_CODE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 UNCONFIGURED_MARKER: Final = "__TODO_CONFIGURE_BIGDATAQUERY__"
 # 기간을 지정하지 않은 호출이 쓰는 창. 화면에서 기간을 고르면 그 값이 이 기본값을 대신한다.
 DEFAULT_QUERY_WINDOW_DAYS: Final = 90
+# 조회 요청자의 사내 계정을 넣는 환경변수. 사람마다 다른 값이라 저장소에 두지 않는다 —
+# 배포 ZIP 을 받은 다른 사람이 남의 계정으로 조회하게 된다.
+BDQ_USER_NAME_ENV: Final = "CAPA_BDQ_USER_NAME"
 
 # ---------------------------------------------------------------------------
 # 사내 환경 설정 영역
@@ -249,12 +253,24 @@ def resolve_detail_window(
 
 
 class BigDataQueryModule(Protocol):
+    """사내 `bigdataquery` 모듈에서 우리가 쓰는 부분.
+
+    **여기 적힌 이름이 실제와 어긋나면 호출이 `TypeError` 로 죽는다.** 모듈은 `cast` 로
+    들어오므로 이 선언을 대신 확인해 주는 장치가 없다 — `cast` 는 런타임 무검사이고 이
+    Protocol 은 `isinstance` 대상이 아니며 패키지 타입 스텁도 없다.
+
+    `user_name` 의 패키지 기본값은 빈 문자열이고, 서버(Linux) 환경에서는 그 빈값을
+    `parameter user_name is necessary.` 로 거부한다. 그래서 **채울 수 있을 때만** 넘긴다 —
+    `get_data_keywords` 를 보라.
+    """
+
     def getData(
         self,
         *,
         param: str,
         convert_type: bool,
         verbose: bool,
+        user_name: str = "",
     ) -> pd.DataFrame: ...
 
 
@@ -274,11 +290,7 @@ class BigDataQueryCoreDataProvider:
         window = self.window or default_query_window()
         query = build_query(self.query_template, code, window=window)
         module = cast(BigDataQueryModule, load_bigdataquery_module())
-        frame = module.getData(
-            param=query,
-            convert_type=True,
-            verbose=True,
-        )
+        frame = call_get_data(module, query)
         if not isinstance(frame, pd.DataFrame):
             raise TypeError("bigdataquery.getData() 반환값은 pandas DataFrame이어야 합니다.")
         # 0행 방어는 반드시 rename 앞이다. 뒤에 두면 아래 MPGA TEST 예외가 먼저
@@ -367,6 +379,49 @@ def _validated_simulation_code(value: str) -> str:
     if _SIMULATION_CODE_PATTERN.fullmatch(code) is None:
         raise ValueError("시뮬레이션 코드는 영문·숫자와 '.', '_', '-'만 사용할 수 있습니다.")
     return code
+
+
+def resolve_user_name() -> str | None:
+    """조회 요청자의 사내 계정. 없으면 `None` 이고, 그러면 인자를 아예 넘기지 않는다.
+
+    **값이 없다고 여기서 멈추지 않는다.** Windows 에서는 패키지가 로그인 이름으로 요청자를
+    스스로 식별하므로 지금도 인자 없이 잘 돈다 — 여기서 막으면 도는 경로를 새로 깨는 것이다.
+    빈값을 거부하는 것은 서버(Linux) 환경뿐이고, 그때는 `call_get_data` 가 패키지의 문구를
+    받아 무엇을 채워야 하는지로 바꿔 준다.
+
+    Windows 로그인 이름으로 대신 채우지도 않는다. 사내 계정과 다르면 조용히 남의 이름이
+    붙거나 권한 오류로 되돌아오는데, 둘 다 원인이 안 보인다.
+    """
+    return os.environ.get(BDQ_USER_NAME_ENV, "").strip() or None
+
+
+def get_data_keywords(query: str) -> dict[str, object]:
+    """`getData` 에 넘길 인자. 요청자 계정은 **있을 때만** 들어간다."""
+    keywords: dict[str, object] = {"param": query, "convert_type": True, "verbose": True}
+    user_name = resolve_user_name()
+    if user_name is not None:
+        keywords["user_name"] = user_name
+    return keywords
+
+
+def call_get_data(module: BigDataQueryModule, query: str) -> object:
+    """조회 한 번. 요청자 계정을 안 넘긴 채 거부당하면 **무엇을 채워야 하는지**로 바꾼다.
+
+    패키지가 내는 `parameter user_name is necessary.` 만으로는 어느 환경변수를 넣어야
+    하는지 알 수 없다. 사내 WebIDE 에서 로그인·토큰이 모두 정상인데도 조회가 100% 막혀
+    있었고, 원인을 찾는 데 두 세션이 걸렸다.
+    """
+    try:
+        return module.getData(**get_data_keywords(query))  # type: ignore[arg-type]
+    except Exception as error:  # noqa: BLE001 - 패키지 예외 종류를 모른다. 문구만 보고 되던진다
+        if resolve_user_name() is None and "user_name" in str(error):
+            raise RuntimeError(
+                f"BigDataQuery 조회에 요청자의 사내 계정이 필요합니다. {BDQ_USER_NAME_ENV} "
+                f"환경변수에 본인 AD 계정을 넣고 새 셸에서 앱을 다시 띄우세요 — WebIDE 는 "
+                f'`export {BDQ_USER_NAME_ENV}="<AD 계정>"`, Windows 는 '
+                f'`setx {BDQ_USER_NAME_ENV} "<AD 계정>"`.'
+            ) from error
+        raise
 
 
 def load_bigdataquery_module() -> ModuleType:

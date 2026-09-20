@@ -17,7 +17,7 @@ DuckDB 파일을 WebIDE 밖의 S3 호환 스토리지(사내 구축, Dell ECS �
 | 프로필 | `hoyeon.jeon-org-system_package_mfg_team` |
 | 네임스페이스 | `org-system_package_mfg_team` — **프로필에 매여 있고 명령 인자가 아니다** |
 | 버킷 | `Capa_simulation_project` |
-| 명령 접두 | 사내는 `uv` 구성이라 **`uv run --no-sync python`** (맨 `uv run` 은 `bigdataquery` 를 지운다) — 아래 본문의 `.\.venv\Scripts\python.exe` 는 개발 PC 표기다 |
+| 명령 접두 | 사내는 `uv` 구성이라 **`uv run --no-sync python`** (재잠금·재설치를 막는 안전장치다. `bigdataquery` 를 지우는 것은 맨 `uv sync` 쪽이다) — 아래 본문의 `.\.venv\Scripts\python.exe` 는 개발 PC 표기다 |
 
 ---
 

@@ -15,6 +15,76 @@ from capa_simulation.io import company_bigdataquery_adapter as adapter
 CONTRACT_PATH = Path(__file__).resolve().parents[1] / "config" / "data_contract.json"
 
 
+def _module(get_data: object) -> SimpleNamespace:
+    return SimpleNamespace(getData=get_data)
+
+
+def test_the_requester_account_reaches_get_data(monkeypatch) -> None:
+    """환경변수에 계정이 있으면 `user_name` 으로 실려야 한다.
+
+    사내 WebIDE 에서 이 값이 안 실려 조회가 통째로 막혀 있었다 — 로그인도 토큰도 정상인데
+    `parameter user_name is necessary.` 만 돌아왔다.
+    """
+    captured: dict[str, object] = {}
+    monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, "  AD_ACCOUNT  ")
+    monkeypatch.setattr(
+        adapter.importlib,
+        "import_module",
+        lambda _: _module(lambda **kwargs: captured.update(kwargs) or pd.DataFrame({"a": [1]})),
+    )
+
+    adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    assert captured["user_name"] == "AD_ACCOUNT", "앞뒤 공백을 떼고 넘겨야 한다"
+
+
+def test_no_requester_account_means_no_argument(monkeypatch) -> None:
+    """값이 없으면 **인자를 아예 넘기지 않는다.**
+
+    Windows 에서는 패키지가 로그인 이름으로 요청자를 스스로 식별해 지금도 인자 없이 돈다.
+    빈 문자열이나 `None` 을 넣으면 그 경로를 새로 깨는데, 그렇게 넣었을 때 어떻게 되는지는
+    아무도 재지 않았다.
+    """
+    captured: dict[str, object] = {}
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.setattr(
+        adapter.importlib,
+        "import_module",
+        lambda _: _module(lambda **kwargs: captured.update(kwargs) or pd.DataFrame({"a": [1]})),
+    )
+
+    adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    assert "user_name" not in captured
+    assert set(captured) == {"param", "convert_type", "verbose"}
+
+
+def test_a_rejected_blank_account_names_the_variable_to_set(monkeypatch) -> None:
+    """서버가 빈값을 거부하면 패키지 문구 대신 채울 환경변수를 알려야 한다."""
+
+    def refuse(**_kwargs: object) -> pd.DataFrame:
+        raise ValueError("Parameter user_name is necessary.")
+
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.setattr(adapter.importlib, "import_module", lambda _: _module(refuse))
+
+    with pytest.raises(RuntimeError, match=adapter.BDQ_USER_NAME_ENV):
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+
+def test_an_unrelated_failure_is_not_disguised(monkeypatch) -> None:
+    """계정과 상관없는 실패까지 계정 안내로 바꾸면 진짜 원인이 가려진다."""
+
+    def refuse(**_kwargs: object) -> pd.DataFrame:
+        raise ValueError("table not found")
+
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.setattr(adapter.importlib, "import_module", lambda _: _module(refuse))
+
+    with pytest.raises(ValueError, match="table not found"):
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+
 def test_unconfigured_query_is_rejected_before_package_import(monkeypatch) -> None:
     imported = False
 

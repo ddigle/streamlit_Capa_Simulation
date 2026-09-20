@@ -139,9 +139,14 @@ uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로
 > 그래서 `is_protected` 가 경로만 보고 한 번 더 막고, **추적되고 있다는 사실 자체를**
 > 계획 출력이 `git rm --cached` 와 함께 알린다. 그 줄이 보이면 아래 8장으로 간다.
 
-**사내에서는 `uv run` 에 반드시 `--no-sync` 를 붙인다.** 맨 `uv run` 은 돌기 전에 환경을
-**정확 동기화**하는데, 그것이 락에 없는 `bigdataquery` 를 지운다 — `uv sync` 를 직접 친 것과
-같다. 사내 조회 화면이 그 자리에서 죽는다.
+**사내에서는 `uv run` 에 반드시 `--no-sync` 를 붙인다.** 맨 `uv run` 은 돌기 전에 락을 다시
+잡고 빠진 것을 설치한다. `--no-sync` 는 그 일이 아예 일어나지 않게 못박는 안전장치다.
+
+> **지우는 것은 맨 `uv sync` 다. 맨 `uv run` 은 지우지 않는다.** 예전에 이 문서를 포함해 네
+> 곳이 "맨 `uv run` 이 `bigdataquery` 를 지운다"고 적고 있었는데, 사내가 WebIDE 에서 반증했고
+> 사외에서도 같은 uv(0.12.13)로 재현했다 — 락에 없는 패키지를 넣어 두고 맨 `uv run` 을 돌려도
+> 남아 있고, `pyproject` 를 고쳐 락을 낡게 만든 뒤에도 넣기만 한다. 맨 `uv sync` 만
+> `Uninstalled 1 package` 를 찍는다. `--no-sync` 를 계속 쓰는 결론은 그대로다.
 
 **변경 목록에 `pyproject.toml` 이나 `uv.lock` 이 있으면 적용 뒤에 동기화한다.**
 

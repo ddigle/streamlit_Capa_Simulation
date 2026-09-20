@@ -12,6 +12,10 @@
 함께** 바뀐다(우리 쪽은 `st.context.theme` 이 새 값을 보고하므로 저절로 따라온다).
 브라우저에서 실측으로 확인한 경로다.
 
+**처음 여는 화면은 밝은 테마다.** 고르기 전의 `"System"` 은 브라우저의 `prefers-color-scheme`
+을 따르므로, OS 를 어둡게 쓰는 사람에게는 이 앱이 어두운 화면으로 처음 열린다. 그래서 첫
+로드에 `"Light"` 를 적어 둔다 — 그 뒤로는 버튼으로 고른 값이 그대로 남는다.
+
 버튼이 앉는 자리는 `[data-testid="stToolbarActions"]` 다 — Deploy 버튼 **바로 왼쪽**의
 빈 슬롯이고, React 가 툴바를 다시 그려도 주입한 노드가 살아남는 것을 확인했다.
 
@@ -48,11 +52,16 @@ _SCRIPT = """
     catch (error) { return "System"; }
   }
 
-  function isDark() {
+  // 사람이 **고른** 값만 값으로 친다. Streamlit 은 고르기 전에 `"System"` 을 넣어 두고
+  // 브라우저의 `prefers-color-scheme` 을 따르는데, 그러면 OS 를 어둡게 쓰는 사람에게 이
+  // 앱이 어두운 화면으로 처음 열린다. **처음 여는 화면은 밝은 쪽으로 못박는다.**
+  function chosen() {
     var value = stored();
-    if (value === "Dark") return true;
-    if (value === "Light") return false;
-    return parentWindow.matchMedia("(prefers-color-scheme: dark)").matches;
+    return value === "Dark" || value === "Light" ? value : null;
+  }
+
+  function isDark() {
+    return chosen() === "Dark";
   }
 
   // 주소의 조회 인자를 고친다. **`location.replace` 를 쓰지 않는다** — 이 iframe 의
@@ -90,6 +99,14 @@ _SCRIPT = """
     if (doc.getElementById("%(id)s")) return true;
 
     var dark = isDark();
+    if (chosen() === null) {
+      // 고른 적이 없으면 밝은 쪽을 **적어 둔다.** 적지 않으면 Streamlit 크롬만 OS 를 따라
+      // 어두워지고 우리 그림은 밝은 채로 남아 반쯤 어두운 화면이 된다. 아래 `syncParam` 이
+      // 같은 첫 로드에서 새로고침하므로 왕복이 늘지 않는다.
+      try {
+        parentWindow.localStorage.setItem(KEY, JSON.stringify("Light"));
+      } catch (error) { /* 저장을 못 해도 아래 조회 인자가 밝은 쪽을 정한다 */ }
+    }
     // 파이썬이 읽는 값과 화면이 쓰는 값을 처음부터 맞춘다. `st.context.theme.type` 은
     // 첫 로드에 틀릴 수 있어서, 여기서 한 번 맞춰 두면 그 뒤로는 어긋나지 않는다.
     if (syncParam(dark ? "dark" : "light")) {

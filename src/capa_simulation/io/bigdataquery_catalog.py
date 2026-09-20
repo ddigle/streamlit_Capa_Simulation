@@ -21,6 +21,7 @@ from capa_simulation.io.company_bigdataquery_adapter import (
     UNCONFIGURED_MARKER,
     BigDataQueryModule,
     QueryWindow,
+    call_get_data,
     load_bigdataquery_module,
 )
 
@@ -100,7 +101,7 @@ def fetch_simulation_catalog(
     """기간 내 시뮬레이션 코드 목록을 계약 5컬럼으로 돌려준다."""
     query = build_catalog_query(window, query_template=query_template)
     module = cast(BigDataQueryModule, load_bigdataquery_module())
-    frame = module.getData(param=query, convert_type=True, verbose=True)
+    frame = call_get_data(module, query)
     if not isinstance(frame, pd.DataFrame):
         raise TypeError("bigdataquery.getData() 반환값은 pandas DataFrame이어야 합니다.")
     missing = [column for column in CATALOG_COLUMNS if column not in frame.columns]
