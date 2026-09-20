@@ -209,14 +209,16 @@ def test_only_the_group_holding_the_current_page_is_expanded(_app: AppTest) -> N
         }, page_path
 
 
-def test_groups_without_subpages_get_no_box(_app: AppTest) -> None:
-    """묶을 것이 없는 그룹은 상자를 두지 않는다.
+def test_groups_without_subpages_are_boxed_but_not_expandable(_app: AppTest) -> None:
+    """하위가 없는 그룹도 **상자에는 들어가되 펼침 장치는 갖지 않는다.**
 
-    항목 하나짜리 상자는 테두리로 「여기 묶음이 있다」고 말해 놓고 아무것도 묶지 않는다.
+    테두리는 사이드바에서 「한 칸」이라는 뜻이라 없으면 그 둘만 맨몸으로 서서 목록이 두
+    층으로 읽힌다. 다만 펼칠 것이 없으므로 화살표까지 달면 눌러도 아무 일도 없는 장치가
+    생긴다 — 상자는 주고 확장 패널은 주지 않는다.
     """
     app = _app.run()
 
-    boxed = set(_expanded(app))
-    assert CAPA_CHATBOT.title not in boxed
-    assert SCENARIO_MANAGEMENT.title not in boxed
-    assert boxed == {STATIC_CAPA.title, DYNAMIC_CAPA.title}
+    expandable = set(_expanded(app))
+    assert expandable == {STATIC_CAPA.title, DYNAMIC_CAPA.title}
+    assert CAPA_CHATBOT.title not in expandable
+    assert SCENARIO_MANAGEMENT.title not in expandable

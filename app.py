@@ -97,6 +97,14 @@ with pinned_connections(DUCKDB_PATH):
     # 선택자도 같은 선언에서 낸다. 손으로 적으면 그룹을 더할 때 한쪽만 고치게 된다.
     # **하위가 있는 그룹만 상자를 갖는다.** 나머지는 평평한 링크라 걸 것이 없다.
     boxed_groups = [group for group in pages.groups if group.subpages]
+    # 링크 하나만 든 상자. 확장 패널과 달리 제 여백을 갖지 않으므로 아래 여백 규칙이
+    # 필요하고, 한 줄뿐이라 세로는 한 번 더 줄인다.
+    solo_box_selectors = _SELECTOR_JOINER.join(
+        f".st-key-{group.slug}_box" for group in pages.groups if not group.subpages
+    )
+    solo_title_selectors = _SELECTOR_JOINER.join(
+        f".st-key-{group.slug}_box a p" for group in pages.groups if not group.subpages
+    )
     # 상자 머리글. 전에는 상자 안 첫 링크가 그룹 이름을 달았고 지금은 확장 패널의 요약
     # 줄이 단다. 자리는 바뀌었어도 옆 상자의 제목과 같은 무게로 읽혀야 한다.
     #
@@ -180,8 +188,18 @@ with pinned_connections(DUCKDB_PATH):
 
         .st-key-home_navigation a,
         .st-key-home_navigation a p {{
-            font-size: 1.5rem;
+            /* 1.5rem 은 이 칸만 52px 로 키워 아래 상자들(35px)보다 한 뼘 높았다. 「돌아오는
+               자리」라는 것은 그라데이션 테두리가 이미 말하므로 크기까지 들 필요가 없다. */
+            font-size: 1.15rem;
             font-weight: 700;
+            line-height: 1.3;
+        }}
+        /* 글자를 줄인 만큼 칸도 납작해져 아래 상자들보다 오히려 작아졌다. 여백으로 다시
+           키우되 상자(35px)보다 한 뼘만 높은 40px 에 세운다 — 「돌아오는 자리」는 남기고
+           예전의 52px 처럼 혼자 솟지는 않는다. */
+        {HOME_LINK} {{
+            padding-top: 0.5rem;
+            padding-bottom: 0.5rem;
         }}
         /* HOME 은 누르지 않았을 때도 보여야 한다. 다른 항목처럼 납작하게 두면 글자만
            클 뿐 "여기로 돌아온다" 가 읽히지 않는다.
@@ -294,11 +312,26 @@ with pinned_connections(DUCKDB_PATH):
         /* 세로를 반으로 줄이면 가로도 같은 비율로 줄여야 상자가 납작해 보이지 않는다.
            다만 1:1 로 맞추지는 않는다 — 글은 가로로 읽으므로 좌우에 조금 더 남긴다.
            기본 16px 대비 세로 0.52배, 가로 0.66배다. */
+        {solo_box_selectors},
         .st-key-{SCENARIO_BOX_KEY},
         .st-key-{MONTH_BOX_KEY},
         .st-key-{BOTTLENECK_BOX_KEY},
         .st-key-{ADMIN_BOX_KEY} {{
             padding: 0.55rem 0.7rem;
+        }}
+        /* 링크 하나뿐인 상자는 **좌우 여백을 주지 않는다.** 그룹 상자는 안쪽 확장 패널이
+           제 들여쓰기를 갖는데 이쪽은 링크가 바로 들어가서, 상자에까지 여백을 주면 글자가
+           그룹 제목보다 10px 오른쪽으로 밀린다(실측 아이콘 42 대 32). 세로는 줄여 접힌
+           그룹과 같은 높이로 맞춘다. */
+        {solo_box_selectors} {{
+            /* 세로 0.15rem 이 접힌 그룹 상자와 같은 35px 을 만든다(실측). */
+            padding: 0.15rem 0;
+        }}
+        /* 그 링크는 그룹 제목과 **같은 층위**다. 하위 페이지가 아니라 최상위 항목이므로
+           옆 상자의 제목과 같은 무게로 읽혀야 한다. */
+        {solo_title_selectors} {{
+            font-size: 1rem;
+            font-weight: 700;
         }}
         /* HOME 과 첫 그룹 박스 사이만 한 칸 더 띄운다. HOME 은 상자가 아니라 「돌아오는
            자리」라 아래 목록과 같은 간격으로 붙어 있으면 목록의 첫 항목처럼 읽힌다. */
@@ -357,10 +390,12 @@ with pinned_connections(DUCKDB_PATH):
     # 박스 목록은 `navigation.SIDEBAR_GROUPS` 하나에서 나온다. 위 CSS 선택자도 같은 선언을
     # 읽으므로, 그룹을 더할 때 이 파일에서 고칠 것이 없다.
     for group in pages.groups:
-        # **묶을 것이 없으면 상자도 없다.** 항목 하나짜리 상자는 테두리로 「여기 묶음이
-        # 있다」고 말해 놓고 아무것도 묶지 않는다. 그런 그룹은 평평한 링크로 세운다.
+        # 하위가 없어도 **상자에 넣는다.** 묶을 것이 없으니 테두리가 필요 없다고 봤는데,
+        # 사이드바에 상자가 다섯이고 이 둘만 맨몸으로 서니 목록이 두 층으로 읽혔다.
+        # 테두리는 「묶음」만 뜻하는 것이 아니라 **한 칸**이라는 뜻이기도 하다.
         if not group.subpages:
-            st.sidebar.page_link(group.main, width="stretch")
+            with st.sidebar.container(border=True, key=f"{group.slug}_box"):
+                st.page_link(group.main, width="stretch")
             continue
         # 지금 보고 있는 페이지가 든 그룹만 편다. `url_path` 는 `st.navigation()` 이
         # 돌아야 채워지므로(그 전에는 `AttributeError`) 이 자리가 반드시 그 뒤여야 한다.
