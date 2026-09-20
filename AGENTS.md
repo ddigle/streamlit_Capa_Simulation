@@ -1744,11 +1744,33 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 각 에이전트는 `git worktree` 로 만든 자기 폴더 안에서만 일한다. 통합용 `main` 폴더에는
 들어가지 않는다.
 
+**폴더는 `scripts/new_worktree.ps1` 로 만든다.** 브랜치·`uv sync`·격리 확인을 한 번에 하고,
+격리가 깨지면 폴더를 지우지 않고 멈춘다.
+
+```powershell
+.\scripts
+ew_worktree.ps1 -Branch cand/<과제>/<에이전트> -Port 8502
+```
+
 - **`.venv` 를 공유하지 않는다.** editable 설치가 `__editable__.capa_simulation-0.1.0.pth` 에
   **절대경로**를 박아 두어, 남의 `.venv` 를 쓰면 화면은 내 코드인데 `import capa_simulation`
   은 남의 `src/` 를 읽고 **남의 DuckDB 를 연다.** 그런데 `pytest` 는 `pythonpath = ["src"]`
   로 자기 폴더를 보므로 **검증 4종이 전부 초록이다.** 아무 신호도 뜨지 않는 사고다.
   폴더마다 `uv sync` 로 제 `.venv` 를 만든다.
+
+  **이것만은 기계가 잡는다** — `scripts/check_worktree_isolation.py` 가 가상환경·editable
+  경로·실제 import 되는 패키지·DuckDB 경로 넷을 보고 하나라도 폴더 밖이면 0 이 아닌 값으로
+  끝난다. 일을 시작하기 전과 올리기 전에 한 번씩 돌린다.
+
+  ```powershell
+  .\.venv\Scripts\python.exe scripts\check_worktree_isolation.py
+  ```
+
+  **`pytest` 로 만들지 않은 이유**가 이 규칙의 핵심이다. 남의 `.venv` 를 쓴 상태에서 실제로
+  재 보면 격리 검사는 네 줄 모두 `!!` 로 종료코드 1 을 내는데 **같은 상태에서 `pytest` 는
+  14개 전부 통과하고 종료코드 0** 이다 — 테스트는 `pythonpath = ["src"]` 로 제 폴더를 보기
+  때문이다. 검사하려는 바로 그 상황을 테스트가 못 본다. 경로 주입이 없는 맨 인터프리터로
+  돌려야 한다.
 - **앱을 띄울 때 포트를 반드시 준다.** Windows 에서는 두 번째 인스턴스가 **오류 없이** 같은
   8501 에 붙어 모든 접속이 첫 프로세스로 간다(`docs/TODO.md` 3-9절 실측). main 8501 ·
   첫 에이전트 8502 · 둘째 8503.
@@ -1758,7 +1780,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   태그를 박는데 브랜치 검사가 없다. 후보 브랜치에서 만들면 미채택 코드가 사내 정본으로
   나가고 태그가 엉뚱한 커밋에 박힌다.
 
-검사 없음. 넷 다 사람이 지킨다.
+`scripts/check_worktree_isolation.py` 가 **`.venv` 공유**를 잡는다. 나머지 셋(포트·스태시·
+배포 ZIP)은 사람이 지킨다.
 
 ### 14-2. 브랜치·저작자·충돌
 

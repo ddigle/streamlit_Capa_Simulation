@@ -8,11 +8,17 @@ name: verify
 on:
   pull_request:
   push:
-    branches: [main]
+    # 후보 브랜치도 **올리는 즉시** 돈다. 병행 개발에서 이 파일의 쓸모가 거기 있다 —
+    # PR 을 열기 전에도 「내 후보가 진짜 통과했는지」를 기계가 말해 준다.
+    branches: [main, "cand/**"]
 
 # 같은 브랜치에 연달아 올리면 앞의 실행을 취소한다. 무료 한도를 아끼는 곳이 여기다.
+#
+# **브랜치 이름으로 묶는다.** `github.ref` 로 묶으면 후보 브랜치에 PR 이 열려 있을 때
+# push 와 pull_request 가 서로 다른 ref 를 갖게 되어 **같은 커밋을 두 번** 돌린다.
+# `head_ref` 는 PR 에서만, `ref_name` 은 push 에서만 차므로 둘이 한 칸을 나눠 쓴다.
 concurrency:
-  group: verify-${{ github.ref }}
+  group: verify-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
