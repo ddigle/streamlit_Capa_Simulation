@@ -616,7 +616,7 @@ uv pip install -r requirements-company.txt
 풀어야 하고, 그 다음부터는 이 스크립트가 적용을 맡습니다.
 
 ```powershell
-uv run python scriptspply_deploy_package.py <내려받은 ZIP> --dry-run
+uv run python scripts/apply_deploy_package.py <내려받은 ZIP> --dry-run
 ```
 
 `--dry-run` 은 아무것도 바꾸지 않고 무엇이 지워지고 덮일지만 보여 줍니다. 처음에는 꼭

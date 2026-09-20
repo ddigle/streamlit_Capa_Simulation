@@ -43,6 +43,13 @@ ALLOWED_TOP_LEVEL = {
     "uv.lock",
 }
 
+# **사내에만 생기는 최상위 항목.** 있어도 되고 없어도 된다. 사외에는 둘 다 없지만, 사내에서는
+# 배포 적용기가 `.deploy/applied.json` 을 쓰고 리뷰 문서가 `review/` 에 쌓여 추적으로 올라간다.
+# 위 필수 목록에 넣으면 사외에서 「선언에는 있는데 없다」로 깨지고, 아무 데도 안 적으면
+# **사내에서만** 「선언되지 않은 항목」으로 깨진다 — 사내는 그것을 진짜 결함으로 보아 리뷰에
+# 적고 사외에서는 재현되지 않는다. 이 저장소가 없애려는 바로 그 실패 유형이라 따로 둔다.
+INTERNAL_ONLY_TOP_LEVEL = {".deploy/", "review/"}
+
 
 def _tracked(pattern: str = "") -> list[str]:
     completed = subprocess.run(
@@ -150,7 +157,7 @@ def test_the_top_level_stays_the_declared_set() -> None:
     """
     top = {path.split("/")[0] + ("/" if "/" in path else "") for path in _tracked()}
 
-    unexpected = sorted(top - ALLOWED_TOP_LEVEL)
+    unexpected = sorted(top - ALLOWED_TOP_LEVEL - INTERNAL_ONLY_TOP_LEVEL)
     vanished = sorted(ALLOWED_TOP_LEVEL - top)
 
     assert not unexpected, (

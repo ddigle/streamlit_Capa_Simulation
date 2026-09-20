@@ -30,6 +30,13 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 
+# Windows 콘솔은 cp949 라 그냥 두면 이 스크립트의 한글 안내가 `UnicodeEncodeError` 로
+# 죽는다 — ZIP 은 이미 만들어진 뒤라 더 나쁘다.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # ZIP 안에 함께 넣는 송장. 사내는 이것을 읽어 **무엇을 받았는지** 안다 — 파일만 보내면
@@ -44,8 +51,17 @@ DEPLOY_TAG_PREFIX = "deploy/"
 # 리뷰 기록과 적용 이력은 사내가 만든 것이라 사외 배포가 건드리면 안 된다.
 INTERNAL_ONLY_PREFIXES: tuple[str, ...] = ("review/", ".deploy/", ".claude/")
 
-# `git ls-files` 에 없지만 운영에 필요한 파일. 공용 표시순서의 부트스트랩 입력이다.
-EXTRA_FILES: tuple[str, ...] = ("data/input/RQ_DISPLAY_ORDER.csv",)
+# `git ls-files` 에 없지만 보내야 하는 파일. **지금은 비어 있다.**
+#
+# 한때 여기에 `data/input/RQ_DISPLAY_ORDER.csv` 가 있었다. 두 가지가 잘못이었다.
+# ① 그 파일에는 실제 고객명·제품명·공정명이 들어 있고 배포는 메일로 나간다 — `.gitignore`
+#    가 일부러 뺀 값을 첨부로 내보내는 길이 된다.
+# ② **데이터 정본은 사내다.** 보내면 사내가 실데이터로 만든 표시순서를 사외 개발 PC 의
+#    사본이 매 적용마다 덮는다. 적용기의 `is_protected` 는 삭제만 막고 덮어쓰기는 막지
+#    않아, 무시 파일이라 `git checkout -- .` 로도 돌아오지 않는다.
+# 표시순서 부트스트랩은 `config/bootstrap_display_order.json` 이 맡고, 사내는 이미 자기
+# 사본을 갖고 있다.
+EXTRA_FILES: tuple[str, ...] = ()
 
 # 추적되지만 보내지 않는 파일. 지금은 비어 있다 — 사내 전용 패키지를
 # `requirements-company.txt` 로 뺀 뒤로 선언과 잠금이 양쪽에서 같아졌다.
@@ -55,7 +71,9 @@ EXCLUDED_FILES: frozenset[str] = frozenset()
 # 되돌릴 수 없는 종류라(실데이터·비밀값) 보내기 전에 다시 본다.
 FORBIDDEN_SUFFIXES: tuple[str, ...] = (".xlsb", ".xlsx", ".xlsm", ".duckdb", ".db", ".wal")
 FORBIDDEN_NAMES: tuple[str, ...] = (".env", "secrets.toml")
-FORBIDDEN_PREFIXES: tuple[str, ...] = ("data/output/", "data/temp/")
+# `data/input/` 이 여기 있는 것은 위 `EXTRA_FILES` 의 결정을 규칙으로 못 박은 것이다 —
+# 그 아래는 실데이터 자리이므로 무엇이 들어오든 보내지 않는다(`.gitkeep` 만 예외).
+FORBIDDEN_PREFIXES: tuple[str, ...] = ("data/input/", "data/output/", "data/temp/")
 
 # 위 폴더 아래여도 보내는 파일. 빈 폴더를 만들어 두는 자리표이지 데이터가 아니다.
 PLACEHOLDER_NAMES: tuple[str, ...] = (".gitkeep",)

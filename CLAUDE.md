@@ -23,6 +23,8 @@ Streamlit 구현 규칙, 변경 체크리스트) 이 파일은 그 요약과 진
 사내에서 쓸 수 있는 곳은 `review/` 뿐이고, 고쳐야 할 것은 코드가 아니라 리뷰 문서로 낸다.
 배포 ZIP 적용도 손으로 덮어쓰지 않고 `scripts/apply_deploy_package.py` 로 한다.
 
+사내에서 배포를 받아 적용하는 **한 번의 작업을 처음부터 끝까지** 적은 것은
+`docs/internal_update_runbook.md` 다 — 사내 에이전트는 그것을 그대로 따라가면 된다.
 전체 절차와 리뷰 문서 양식은 `docs/dual_env_workflow.md` 에 있다. 사내에서 작업을 시작하기
 전에 그 문서를 먼저 읽는다.
 

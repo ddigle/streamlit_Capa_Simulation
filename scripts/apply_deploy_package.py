@@ -414,6 +414,17 @@ def apply_archive(
         destination.write_bytes(archive.read(name))
 
 
+def stage_paths(root: Path, paths: Sequence[str]) -> None:
+    """준 경로만 스테이징한다. 삭제도 함께 잡히도록 `-A` 를 경로에 한정해 쓴다.
+
+    나눠 부르는 것은 명령줄 길이 때문이다. 배포 세트는 수백 개고 Windows 의 한 줄 한계는
+    32,767자라, 한 번에 넘기면 저장소가 조금만 커져도 조용히 깨진다.
+    """
+    chunk = 200
+    for start in range(0, len(paths), chunk):
+        git(root, "add", "-A", "--", *paths[start : start + chunk])
+
+
 def write_state(root: Path, manifest: Mapping[str, object]) -> None:
     path = root / STATE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -548,7 +559,12 @@ def _run(args: argparse.Namespace) -> int:
         print("커밋    건너뜀 (--no-commit)")
         return 0
 
-    git(root, "add", "-A")
+    # **`git add -A` 를 쓰지 않는다.** 그것은 바로 위에서 "손대지 않았습니다" 라고 적은
+    # 정체불명 파일까지 스테이징해 `deploy:` 커밋에 넣는다. 그러면 다음 배포에서 그 파일은
+    # "추적되는데 목록에 없는 것" 이 되어 삭제 대상으로 잡힌다 — 약속이 한 사이클만 유효해진다.
+    # 아직 커밋하지 않은 `review/*.md` 가 딸려 들어가 `deploy:` 와 `review:` 커밋이 섞이는
+    # 것도 같은 한 줄이 만든다. 이번 배포가 실제로 건드린 것만 올린다.
+    stage_paths(root, [STATE_PATH, *members, *removals])
     staged = git(root, "diff", "--cached", "--name-only")
     if not staged:
         print("커밋    바뀐 것이 없어 커밋하지 않았습니다.")

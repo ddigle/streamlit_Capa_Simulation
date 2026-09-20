@@ -1674,7 +1674,7 @@ ahead) — 배포 시점은 사용자 결정이다.
       선 아래가 비는 문제를 `:has()` 로 좁히면 넣을 수 있다.
 - [ ] 브라우저 스크린샷이 `Cannot take screenshot with 0 width` 로 계속 실패한다. 이번 세션의
       화면 검증은 전부 `javascript_tool` 의 DOM·SVG 좌표 실측으로 했다.
-- [ ] 13 commits ahead, 미푸시. 배포 시점은 사용자 결정이다.
+- [x] `d395896` 까지 `origin/main` 에 푸시했다(2026-09-20).
 
 ## 4. 현재 권장 진행 순서
 

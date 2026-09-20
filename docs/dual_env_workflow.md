@@ -59,17 +59,43 @@ git remote -v      # github.com 이면 사외, 사내 GitHub 주소면 사내
 | 3 | 사내 | ZIP 적용 → `deploy:` 커밋 | **ZIP 내려받기만** |
 | 3-1 | 사내 | 목록 대조 → 정체불명 파일 처리 | **정체불명 파일의 방향 결정** |
 | 4 | 사내 | 실데이터로 조사 | — |
-| 5 | 사내 | `review/` md 작성 → 푸시 | — |
+| 5 | 사내 | `review/` md 작성 → 커밋 | **푸시** (에이전트는 막혀 있다) |
 | 6 | 사외 | md 를 근거로 다음 개발 | md 를 사외로 옮겨 전달 |
 
-사람이 개입하는 곳은 **2번의 발송 확인**과 **3번의 ZIP 내려받기**, 그리고 **6번의 md 전달**
-네 군데뿐이다. 3-1 은 스크립트가 목록을 내밀고 사내 에이전트가 물어 오면 고르기만 하면 된다.
+사람이 개입하는 곳은 **2번의 발송 확인**, **3번의 ZIP 내려받기**, **5번의 푸시**, 그리고
+**6번의 md 전달** 네 군데다. 5번이 사람 몫인 것은 `internal_claude_settings.json` 이
+`Bash(git push*)` 를 막아 두었기 때문이다 — 사내 에이전트가 원격을 건드리지 못하게 한 것이
+설계이므로 그대로 둔다. 에이전트가 직접 올리게 하려면 그 한 줄을 사외에서 빼는 결정이
+따로 필요하다. 3-1 은 스크립트가 목록을 내밀고 사내 에이전트가 물어 오면 고르기만 하면 된다.
 6번은 md 를 대화창에 그대로 붙여넣으면 된다 — 그래서 리뷰 md 는
 **그 자체로 완결**돼야 한다(§4).
 
 ---
 
+### 2-1. 배포 ZIP 만들기 (사외, 2단계)
+
+```powershell
+.\.venv\Scripts\python.exe scriptsuild_deploy_package.py --out <ZIP 을 둘 폴더>
+git push --tags
+```
+
+`--out` 만 필수다. 파일 이름은 `YYYYMMDDHHMM.zip` 이고, 스크립트가 같은 이름의 태그
+`deploy/<stamp>` 를 HEAD 에 남긴다. **그 태그를 올리지 않으면 다음 배포가 「직전 배포 이후
+무엇이 바뀌었나」를 구하지 못한다** — 송장의 `changes` 가 빈 채로 나가고 사내는 변경 규모를
+알 수 없다. 그래서 `git push --tags` 가 빌드의 일부다.
+
+다른 인자: `--list-only`(ZIP·태그 없이 목록만, `--out` 불필요), `--stamp`(파일명 시각 고정),
+`--no-tag`(시험 삼아 만들 때만).
+
+빌드는 **커밋되지 않은 변경을 보지 않는다.** 세트는 `git ls-files` 기준이므로 작업트리에만
+있는 수정은 실리지 않는다. 만들기 전에 커밋·푸시를 끝낸다.
+
+---
+
 ## 3. 배포 적용 (3단계)
+
+> 사내에서 실제로 치는 명령을 순서대로 적은 것은 **`docs/internal_update_runbook.md`** 다.
+> 이 절은 적용기가 무엇을 왜 하는지를 적는다.
 
 **덮어쓰기가 아니라 「지우고 풀기」다.** 덮어쓰기는 파일을 더하고 바꿀 뿐 **지우지 않는다.**
 사외에서 지운 모듈이 사내에 남으면, 트리를 훑는 검사(`test_documentation_inventory` ·
@@ -77,7 +103,7 @@ git remote -v      # github.com 이면 사외, 사내 GitHub 주소면 사내
 리뷰에 적고, 사외에서는 재현되지 않는다.
 
 ```powershell
-uv run python scripts\apply_deploy_package.py <내려받은 ZIP 경로>
+uv run python scripts/apply_deploy_package.py <내려받은 ZIP 경로>
 ```
 
 이 스크립트가 하는 일:
@@ -99,6 +125,10 @@ uv run python scripts\apply_deploy_package.py <내려받은 ZIP 경로>
 
 **처음에는 `--dry-run` 을 먼저 돌린다.** 「지움」 목록에 뜻밖의 것이 있으면 거기서 멈춘다.
 
+`--no-commit` 도 있다. 파일은 적용하고 `.deploy/applied.json` 도 갱신하지만 커밋만 하지
+않는다 — **적용 이력은 이미 갱신되므로 같은 ZIP 을 다시 돌릴 수 없다.** 커밋을 손으로 나누고
+싶을 때만 쓰고, 그 경우 반드시 그 자리에서 `deploy:` 로 커밋한다.
+
 > **`git clean` 에 `-x` 를 붙이지 않는다.** `-x` 는 gitignore 된 파일까지 지우고, 거기에는
 > **사내 DuckDB 와 `data/input` 실데이터**가 들어 있다. 한 글자 차이로 사내 데이터가 날아간다.
 > 스크립트는 `-x` 없이 돌며, 손으로 할 때도 마찬가지다.
@@ -108,6 +138,16 @@ uv run python scripts\apply_deploy_package.py <내려받은 ZIP 경로>
 > 파일이 먼저 커밋되면 전제가 깨지고 DuckDB 가 「사외에서 없어진 파일」로 판정된다.
 > 그래서 `is_protected` 가 경로만 보고 한 번 더 막고, **추적되고 있다는 사실 자체를**
 > 계획 출력이 `git rm --cached` 와 함께 알린다. 그 줄이 보이면 아래 8장으로 간다.
+
+**변경 목록에 `pyproject.toml` 이나 `uv.lock` 이 있으면 적용 뒤에 동기화한다.**
+
+```powershell
+uv sync --inexact
+```
+
+**맨 `uv sync` 를 쓰지 않는다.** 락에 없는 `bigdataquery` 를 지운다 — 사내 전용 패키지라
+락에 들어갈 수 없다(README 4단계). 지워졌으면 `uv pip install -r requirements-company.txt`
+로 되돌린다.
 
 커밋은 **둘로 나눈다** — 3단계에서 `deploy:`(받은 것 그대로), 5단계에서 `review:`(판단한 것).
 「무엇을 받았나」와 「무엇을 알아냈나」가 갈려야 나중에 되짚을 수 있다.
@@ -141,7 +181,7 @@ uv run python scripts\apply_deploy_package.py <내려받은 ZIP 경로>
 적용하지 않고 대조만 보려면:
 
 ```powershell
-uv run python scriptspply_deploy_package.py <ZIP> --reconcile-only
+uv run python scripts/apply_deploy_package.py <ZIP> --reconcile-only
 ```
 
 작업 중에도 돌릴 수 있다 — 아무것도 바꾸지 않으므로 깨끗한 작업트리를 요구하지 않는다.

@@ -4,6 +4,11 @@
 `README.md`, 이 문서, `docs/TODO.md`를 읽고 실제 코드와 함께 현재 상태를 확인한다.
 구조나 핵심 계산 규칙을 변경하면 이 문서와 README도 같은 변경에서 갱신한다.
 
+> **사내(WebIDE)에서 이 문서를 읽고 있다면 `docs/dual_env_workflow.md` 와
+> `docs/internal_update_runbook.md` 를 먼저 읽는다.** 사내에서는 소스를 고치지 않고
+> `review/` 에만 쓴다. 어느 환경인지는 `git remote -v` 로 가른다 — `github.com` 이면
+> 사외다.
+
 ## 0. 소스 파일 Purpose 헤더 규칙
 
 Git으로 관리하는 Python·PowerShell 소스에는 파일 최상단에 다음 한 줄의 주석 헤더를

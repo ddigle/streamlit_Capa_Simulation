@@ -62,9 +62,18 @@ def test_the_deploy_set_keeps_tests_and_scripts() -> None:
     assert deploy_set(tracked, extras=()) == sorted(tracked)
 
 
-def test_untracked_operational_input_is_added() -> None:
-    """공용 표시순서 부트스트랩 입력은 추적되지 않지만 운영에 필요하다."""
-    assert "data/input/RQ_DISPLAY_ORDER.csv" in deploy_set(["app.py"])
+def test_real_data_input_never_ships() -> None:
+    """`data/input/` 은 실데이터 자리다. 세트에 들어오면 빌드가 멈춰야 한다.
+
+    한때 표시순서 CSV 를 `EXTRA_FILES` 로 실어 보냈는데, 그 파일에 실제 고객명·제품명이
+    들어 있고 배포는 메일로 나간다. 사내가 만든 사본을 사외 것이 덮는 문제도 있었다.
+    """
+    assert "data/input/RQ_DISPLAY_ORDER.csv" not in deploy_set(["app.py"])
+    assert forbidden_entries(["data/input/RQ_DISPLAY_ORDER.csv"]) == [
+        "data/input/RQ_DISPLAY_ORDER.csv"
+    ]
+    # 빈 폴더 자리표는 데이터가 아니라 계속 보낸다.
+    assert forbidden_entries(["data/input/.gitkeep"]) == []
 
 
 def test_the_set_is_deduplicated_and_ordered() -> None:
@@ -95,7 +104,7 @@ def test_forbidden_files_are_caught(path: str) -> None:
 
 
 def test_ordinary_files_are_not_flagged() -> None:
-    paths = ["app.py", "README.md", "data/input/RQ_DISPLAY_ORDER.csv"]
+    paths = ["app.py", "README.md", "config/bootstrap_display_order.json"]
 
     assert forbidden_entries(paths) == []
 
