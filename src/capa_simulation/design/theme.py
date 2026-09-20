@@ -45,15 +45,27 @@ def current_mode() -> Mode:
     return mode or "light"
 
 
-def _read_client_mode() -> Mode:
-    """클라이언트가 보고하는 테마.
+# 테마 선택을 싣는 조회 인자. **`st.context.theme.type` 을 믿지 않는 이유가 여기 있다.**
+# 그 값은 Streamlit 이 앱 배경색에서 추론하는 것이고, 공식 문서가 「세션에서 앱이 처음
+# 로드될 때」와 「테마를 바꾼 직후」에는 틀릴 수 있다고 적는다(streamlit#11920). 게다가
+# rerun 요청에 실려 오지 않으면 직전 값이 그대로 남는다. 그래서 밝은 테마로 쓰는 동안
+# 파이썬만 어둡다고 믿는 일이 실제로 일어났다 — 화면은 흰데 Plotly 만 검게 그려졌다.
+#
+# 버튼이 고른 값을 URL 에 실으면 매 실행에서 같은 답이 나온다. 새로고침에도 남고,
+# 즐겨찾기로 테마를 고정할 수도 있다.
+THEME_QUERY_PARAM = "theme"
 
-    **처음 로드와 테마 전환 직후에는 틀릴 수 있다.** Streamlit 이 이 값을 앱 배경색에서
-    추론하기 때문이고, 공식 문서가 그 두 순간을 명시한다(streamlit#11920). 이 앱의 테마
-    버튼은 `localStorage` 를 쓰고 새로고침하므로 그 두 순간에 정확히 걸린다 — 한 번은
-    옛 테마로 그려질 수 있고, 다음 실행에서 바로잡힌다. 그동안 잘못 그린 그림이 눌러앉지
-    않게 하는 일은 Figure 캐시 키가 맡는다.
-    """
+
+def _read_client_mode() -> Mode:
+    """이 실행이 쓸 테마. 조회 인자가 있으면 그것이 답이다."""
+    try:
+        chosen = str(st.query_params.get(THEME_QUERY_PARAM, "")).strip().lower()
+    except Exception:  # noqa: BLE001 - 런타임 밖에서는 조회 인자가 없다
+        chosen = ""
+    if chosen in ("light", "dark"):
+        return "dark" if chosen == "dark" else "light"
+    # 인자가 없으면(첫 방문·직접 연 URL) 클라이언트 추론값으로 떨어진다. 틀릴 수 있지만
+    # 버튼을 한 번 누르면 그 뒤로는 인자가 답을 정한다.
     try:
         value = st.context.theme.type
     except Exception:  # noqa: BLE001 - 런타임 밖·컨텍스트 없음 전부 밝게로 떨어뜨린다

@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from capa_simulation.design.theme import THEME_QUERY_PARAM
+
 # 이 셋이 Streamlit 과 맞춰야 하는 계약 전부다. 한 곳에 모아 두어야 판올림에서 무엇을
 # 확인해야 하는지가 분명하다.
 _STORAGE_PREFIX = "stActiveTheme-"
@@ -73,10 +75,17 @@ _SCRIPT = """
     button.onmouseenter = function () { button.style.opacity = "1"; };
     button.onmouseleave = function () { button.style.opacity = ".7"; };
     button.onclick = function () {
+      var next = dark ? "Light" : "Dark";
       try {
-        parentWindow.localStorage.setItem(KEY, JSON.stringify(dark ? "Light" : "Dark"));
+        parentWindow.localStorage.setItem(KEY, JSON.stringify(next));
       } catch (error) { return; }
-      parentWindow.location.reload();
+      // 고른 값을 **URL 에도 싣는다.** `localStorage` 는 Streamlit 크롬이 읽고, 조회 인자는
+      // 파이썬이 읽는다. 파이썬 쪽이 클라이언트 추론값을 믿을 수 없어서(첫 로드와 전환
+      // 직후에 틀린다) 같은 선택을 두 곳에 적어 둔다. 주소를 바꾸면서 다시 읽으므로
+      // 새로고침을 따로 부르지 않는다.
+      var url = new parentWindow.URL(parentWindow.location.href);
+      url.searchParams.set("%(param)s", next.toLowerCase());
+      parentWindow.location.replace(url.toString());
     };
     slot.appendChild(button);
     return true;
@@ -115,6 +124,7 @@ def render_theme_toggle() -> None:
             "to_dark": "Dark",
             "tip_light": "밝은 테마로 바꿉니다",
             "tip_dark": "어두운 테마로 바꿉니다",
+            "param": THEME_QUERY_PARAM,
         },
         # `st.iframe` 은 0 을 받지 않는다(양수·`stretch`·`content` 만). `content` 로 두면
         # srcdoc 문서의 기본 body margin 까지 재어 눈에 띄는 틈이 생기므로 1px 로 못박는다.
