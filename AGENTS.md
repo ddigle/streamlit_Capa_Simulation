@@ -512,6 +512,26 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 효율·UPEH·수율 실적 화면 **한 벌**. 세 화면이 같은 질문을 지표만 바꿔 묻기 때문에
     `MetricSpec` 만 갈아 끼운다. 요약(보고용)·상세 분석·개선과제 세 탭이고 탭은
     `stateful_tabs` 로 만든다. 조회 조건 위젯은 숨은 탭에서도 그리고 Plotly 만 건너뛴다.
+- `src/capa_simulation/components/decision_summary.py`
+  - HOME 맨 위의 **결론 → 근거 → 다음 확인** 한 묶음. 가장 낮은 확보율 공정·월을 한 줄로
+    말하고 판정 가능한 수와 구간별 미달 수를 근거로 단다. 문장은 `services/home_decision.py`
+    가 낸 값으로만 만들고 **여기서 다시 집계하지 않는다.**
+  - 구간 색은 `securement_heatmap._tier` 와 **같은 부등호**를 쓴다. 경계가 갈리면 히트맵이
+    「경고」로 칠한 칸을 요약이 「부족」이라 부른다.
+  - 표시명(`ProcessLabels.label`)은 화면 이름일 뿐이고 저장 키는 원본 공정명이다.
+- `src/capa_simulation/components/table_view_controls.py`
+  - 편집표의 **볼 컬럼**과 **행 필터**를 고르게 하고, 거른 편집분을 원본 전체에 되머지한다.
+    가용설비 현황의 세 표(기존 보유대수·호기 마스터·비가동 일정)가 쓴다.
+  - **컬럼 숨김은 무해하다.** `st.data_editor` 는 `column_config={컬럼: None}` 으로 감춘
+    컬럼의 값을 반환 프레임에 그대로 돌려준다(`AppTest` 로 실측).
+  - **행 필터는 되머지가 받쳐야 한다.** 이 표들은 편집 결과가 곧 다음 불변 리비전의 전부라,
+    거른 채로 저장하면 걸러진 행이 되돌릴 수 없이 사라진다. 필터가 걸린 동안에는
+    `num_rows="fixed"` 로 행 추가·삭제를 막고, 원본 인덱스 자리에만 편집값을 얹는다.
+  - **`merge_edited_rows` 의 `filtered` 는 호출자가 알려 줘야 한다.** 인덱스 모양으로는 알
+    수 없다 — 필터 없이 행을 지우면 `data_editor` 가 인덱스를 다시 매겨 원본과 달라지는데,
+    그것은 「거른 편집」이 아니라 「정말 지운 것」이다. 인덱스로 가르려 했더니 지운 행이
+    되살아났다(`tests/test_table_view_controls.py` 가 막는다).
+  - 보기 설정 위젯은 **`st.form` 밖**에 그려야 한다. 폼 안에 두면 저장을 눌러야 적용된다.
 - `src/capa_simulation/components/securement_heatmap.py`
   - 공정 × 월 확보율을 상태 3색 격자로 그린다. 경계는 HOME·Static Capa 와 같은 세션
     값(`dashboard_*_threshold_percent`)을 읽는다. 연속 색을 쓰지 않는 이유는 같은 확보율이
@@ -949,6 +969,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/past_data_management.py`
   - `Past Data` 탭. 세 표가 **한 버전을 공유**하므로 붙여넣기는 세션에 모아 두었다가 한
     번에 저장한다 — 부분 저장을 허용하면 어느 표가 어느 버전인지 알 수 없다.
+- `src/capa_simulation/services/home_decision.py`
+  - HOME 결론 요약이 읽는 집계. 필터가 걸린 뒤의 공정·월 확보율에서 최저값과 구간별 개수를
+    낸다. **공정 필터(`included_processes`)를 그대로 받는다** — 거르기 전 값을 말하면 화면에
+    없는 공정을 가리킨다.
+  - 정규화 차례는 `build_monthly_bottleneck_ranking` 과 같다(공백 제거 → 숫자 변환 → 결측
+    제거 → 필터). 그래야 「판정 가능한 수」가 그림이 센 것과 같다.
+  - 값이 없으면 `has_data` 가 거짓이다. 0% 로 그리면 없는 부족이 생긴다.
 - `src/capa_simulation/services/process_selection.py`
   - B/N 집계에 포함할 공정을 저장값·현재 옵션·**직전 옵션 집합**에서 정한다. 저장되는 것은
     포함 목록이라 "끈 공정" 과 "처음 보는 공정" 이 구분되지 않는다 — 직전 옵션이 그 구분을

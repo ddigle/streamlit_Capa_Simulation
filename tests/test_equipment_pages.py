@@ -1,7 +1,9 @@
 # Purpose: equipment pages 관련 정상·예외·회귀 동작을 검증한다.
 
+from datetime import date
 from pathlib import Path
 
+import pandas as pd
 from streamlit.testing.v1 import AppTest
 from test_floor_layout_profile import _png
 
@@ -37,7 +39,14 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     # 공통 헤더가 상태 접미를 제목에서 떼어 배지로 보여준다.
     assert app.title[0].value == "가용설비 현황"
     assert any("Data확보중" in element.value for element in app.markdown)
-    assert [tab.label for tab in app.tabs] == ["대시보드", "설비 데이터·이력 관리"]
+    # Capa LOB Summary 와 같은 세 칸이다 — 보는 곳(Main)·고르는 곳(Preference)·
+    # 원천을 다루는 곳(RawData)을 가른다.
+    assert [tab.label for tab in app.tabs] == [
+        ":material/dashboard: Main",
+        ":material/tune: Preference",
+        ":material/table_rows: RawData",
+    ]
+    # 조회 조건은 `Preference` 로 옮겼지만 위젯 자체는 그대로다.
     assert [widget.label for widget in app.multiselect[:4]] == [
         "라인구분",
         "활용구분",
@@ -139,3 +148,74 @@ def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_can
     assert any("적용될 캔버스: 100 × 37.5" == element.value for element in app.caption)
     assert any("c1_1f.png" in element.value for element in app.success)
     clear_equipment_repository()
+
+
+def _seeded_equipment(database_path: Path) -> None:
+    """세 표에 모두 값이 있는 DuckDB. 보기 설정은 값이 있는 표에만 붙는다."""
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.initialize()
+    equipment = empty_equipment_master()
+    equipment.loc[0] = {column: None for column in equipment.columns}
+    equipment.loc[0, "호기"] = "EQ-1"
+    equipment.loc[0, "공정소분류"] = "DEMO_PROC"
+    equipment.loc[0, "장기보관여부"] = "N"
+    equipment.loc[0, "기존설비여부"] = "Y"
+    equipment.loc[0, "레이아웃표시"] = "N"
+    downtime = empty_downtime_schedule()
+    downtime.loc[0] = {column: None for column in downtime.columns}
+    downtime.loc[0, "호기"] = "EQ-1"
+    downtime.loc[0, "비가동유형"] = "고장"
+    downtime.loc[0, "시작일"] = date(2026, 1, 1)
+    repository.save_snapshot(
+        pd.DataFrame(
+            {"공정": ["DEMO_PROC"], "분류": ["기존"], "기존보유대수": [1.0], "비고": [""]}
+        ),
+        equipment,
+        downtime,
+        note="검사용",
+    )
+    clear_equipment_repository()
+
+
+def test_the_view_controls_render_for_each_editable_table(tmp_path: Path) -> None:
+    """값이 있는 세 표에 각각 컬럼 선택과 행 필터가 붙는다.
+
+    보기 설정은 **폼 밖**이라야 한다. 폼 안에 두면 저장을 눌러야 적용돼 고르는 뜻이 없다.
+    """
+    database_path = tmp_path / "availability.duckdb"
+    _seeded_equipment(database_path)
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60).run()
+
+    assert not app.exception
+    labels = [expandable.label for expandable in app.status]
+    for table in ("기존 보유대수", "호기 마스터", "운영 비가동 일정"):
+        assert f"{table} · 표 보기 설정" in labels, table
+    # Import 도 접히는 자리가 됐다.
+    assert "Excel 붙여넣기 Import" in labels
+
+    # 「볼 컬럼」은 세 표마다 하나씩이고, 처음에는 모두 선택돼 있다.
+    column_pickers = [widget for widget in app.multiselect if widget.label == "볼 컬럼"]
+    assert len(column_pickers) == 3
+    assert all(picker.value for picker in column_pickers)
+    clear_equipment_repository()
+
+
+def test_hiding_a_column_keeps_its_values_in_the_saved_frame(tmp_path: Path) -> None:
+    """감춘 컬럼도 저장에는 그대로 들어간다.
+
+    `st.data_editor` 는 `column_config={컬럼: None}` 으로 감춘 컬럼의 값을 반환 프레임에
+    그대로 돌려준다. 값이 빠져 나가면 저장이 그 컬럼을 통째로 비운다.
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "availability.duckdb"),
+        default_timeout=60,
+    ).run()
+
+    picker = next(widget for widget in app.multiselect if widget.label == "볼 컬럼")
+    remaining = [column for column in picker.value if column != "비고"]
+    picker.set_value(remaining)
+    app.run()
+
+    assert not app.exception

@@ -22,7 +22,12 @@ from capa_simulation.components.status_metric import (
     render_status_metric,
     shortage_tone,
 )
+from capa_simulation.components.tab_state import stateful_tabs
 from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL, render_csv_download
+from capa_simulation.components.table_view_controls import (
+    merge_edited_rows,
+    render_table_view_controls,
+)
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.equipment_cache import (
@@ -74,6 +79,14 @@ from capa_simulation.services.simulation_cache import get_weekly_equipment_avail
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
 FLASH_KEY = "equipment_status_flash"
+# `Preference` 탭의 위젯 자리. `Main` 이 계산 전에 같은 칸을 읽으므로 문자열을 두 곳에
+# 적지 않는다 — 갈라지면 화면은 멀쩡한데 값만 조용히 기본값으로 돌아간다.
+START_DATE_KEY = "equipment_dashboard_start_date"
+END_DATE_KEY = "equipment_dashboard_end_date"
+LINE_TYPE_KEY = "equipment_dashboard_line_types"
+UTILIZATION_TYPE_KEY = "equipment_dashboard_utilization_types"
+LARGE_PROCESS_KEY = "equipment_dashboard_large_processes"
+SMALL_PROCESS_KEY = "equipment_dashboard_small_processes"
 BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
 EQUIPMENT_EDITOR_KEY = "equipment_master_editor_v3"
 DOWNTIME_EDITOR_KEY = "equipment_downtime_editor_v3"
@@ -237,31 +250,110 @@ dashboard_downtime = (
     else downtime
 )
 
-with st.container(border=True):
-    st.markdown("#### :material/date_range: 조회기간 설정")
-    st.caption(
-        "가용설비 현황에만 적용되는 월요일 시작 ISO Weeknum 조회기간입니다. "
-        "주차 값은 각 주 일요일 종료 시점의 상태입니다."
-    )
-    with st.container(horizontal=True, gap="small"):
-        start_date = st.date_input(
-            "시작일",
-            value=date(today.year, today.month, 1),
-            key="equipment_dashboard_start_date",
-            persist_state="session",
-            width=180,
+# 조회기간·조회조건 위젯은 `Preference` 탭 안에서 그리지만 값은 `Main` 이 계산에 먼저
+# 쓴다. **위젯이 아니라 세션 칸을 읽는다** — 닫힌 탭의 위젯은 그 회차에 만들어지지
+# 않으므로 반환값을 기다리면 `Main` 을 볼 때마다 기본값으로 되돌아간다. 위젯이 `key` 로
+# 쓰는 자리를 그대로 읽고, 사용자가 `Preference` 에서 바꾸면 다음 실행의 이 줄에 새 값이
+# 들어온다. HOME 이 쓰는 방식과 같다.
+DEFAULT_START_DATE = date(today.year, today.month, 1)
+DEFAULT_END_DATE = today + timedelta(weeks=12)
+
+
+def _session_date(key: str, default: date) -> date:
+    value = st.session_state.get(key, default)
+    return value if isinstance(value, date) else default
+
+
+def _session_list(key: str) -> list[str]:
+    value = st.session_state.get(key, [])
+    return [str(item) for item in value] if isinstance(value, (list, tuple)) else []
+
+
+start_date = _session_date(START_DATE_KEY, DEFAULT_START_DATE)
+end_date = _session_date(END_DATE_KEY, DEFAULT_END_DATE)
+selected_line_types = _session_list(LINE_TYPE_KEY)
+selected_utilization_types = _session_list(UTILIZATION_TYPE_KEY)
+selected_large_processes = _session_list(LARGE_PROCESS_KEY)
+selected_small_processes = _session_list(SMALL_PROCESS_KEY)
+
+small_process_options = sorted(
+    set(_filter_options(dashboard_equipment, "공정소분류"))
+    | set(baseline["공정"].dropna().astype(str).unique().tolist())
+)
+
+main_tab, preference_tab, rawdata_tab = stateful_tabs(
+    [
+        ":material/dashboard: Main",
+        ":material/tune: Preference",
+        ":material/table_rows: RawData",
+    ],
+    key="equipment_active_tab",
+)
+
+with preference_tab:
+    with st.container(border=True):
+        st.markdown("#### :material/date_range: 조회기간 설정")
+        st.caption(
+            "가용설비 현황에만 적용되는 월요일 시작 ISO Weeknum 조회기간입니다. "
+            "주차 값은 각 주 일요일 종료 시점의 상태입니다."
         )
-        end_date = st.date_input(
-            "종료일",
-            value=today + timedelta(weeks=12),
-            key="equipment_dashboard_end_date",
-            persist_state="session",
-            width=180,
+        with st.container(horizontal=True, gap="small"):
+            st.date_input(
+                "시작일",
+                value=DEFAULT_START_DATE,
+                key=START_DATE_KEY,
+                persist_state="session",
+                width=180,
+            )
+            st.date_input(
+                "종료일",
+                value=DEFAULT_END_DATE,
+                key=END_DATE_KEY,
+                persist_state="session",
+                width=180,
+            )
+
+    with st.container(border=True):
+        st.markdown("#### :material/filter_alt: 조회 조건")
+        with st.container(horizontal=True, gap="small"):
+            st.multiselect(
+                "라인구분",
+                options=_filter_options(dashboard_equipment, "라인구분"),
+                placeholder="전체",
+                key=LINE_TYPE_KEY,
+                persist_state="session",
+                width=220,
+            )
+            st.multiselect(
+                "활용구분",
+                options=_filter_options(dashboard_equipment, "활용구분"),
+                placeholder="전체",
+                key=UTILIZATION_TYPE_KEY,
+                persist_state="session",
+                width=220,
+            )
+            st.multiselect(
+                "공정대분류",
+                options=_filter_options(dashboard_equipment, "공정대분류"),
+                placeholder="전체",
+                key=LARGE_PROCESS_KEY,
+                persist_state="session",
+                width=260,
+            )
+            st.multiselect(
+                "공정소분류",
+                options=small_process_options,
+                placeholder="전체",
+                key=SMALL_PROCESS_KEY,
+                persist_state="session",
+                width=300,
+            )
+        st.caption(
+            "기존 보유대수에는 라인·활용·공정대분류 정보가 없으므로 공정소분류 조건만 "
+            "적용되고, 나머지 조건은 호기 마스터 설비에 적용됩니다."
         )
 
-dashboard_tab, management_tab = st.tabs(["대시보드", "설비 데이터·이력 관리"])
-
-with dashboard_tab:
+with main_tab:
     if using_dashboard_sample and show_sample_fleet:
         st.caption(
             "호기 마스터가 비어 있어 생애주기 상태를 모두 덮는 데모 fleet 을 표시합니다. "
@@ -271,50 +363,6 @@ with dashboard_tab:
         st.caption(
             f"현재 적용 이력: r{latest_snapshot.revision.revision_no} · "
             f"{latest_snapshot.revision.created_at:%Y-%m-%d %H:%M}"
-        )
-
-    small_process_options = sorted(
-        set(_filter_options(dashboard_equipment, "공정소분류"))
-        | set(baseline["공정"].dropna().astype(str).unique().tolist())
-    )
-    with st.container(border=True):
-        st.markdown("#### :material/filter_alt: 조회 조건")
-        with st.container(horizontal=True, gap="small"):
-            selected_line_types = st.multiselect(
-                "라인구분",
-                options=_filter_options(dashboard_equipment, "라인구분"),
-                placeholder="전체",
-                key="equipment_dashboard_line_types",
-                persist_state="session",
-                width=220,
-            )
-            selected_utilization_types = st.multiselect(
-                "활용구분",
-                options=_filter_options(dashboard_equipment, "활용구분"),
-                placeholder="전체",
-                key="equipment_dashboard_utilization_types",
-                persist_state="session",
-                width=220,
-            )
-            selected_large_processes = st.multiselect(
-                "공정대분류",
-                options=_filter_options(dashboard_equipment, "공정대분류"),
-                placeholder="전체",
-                key="equipment_dashboard_large_processes",
-                persist_state="session",
-                width=260,
-            )
-            selected_small_processes = st.multiselect(
-                "공정소분류",
-                options=small_process_options,
-                placeholder="전체",
-                key="equipment_dashboard_small_processes",
-                persist_state="session",
-                width=300,
-            )
-        st.caption(
-            "기존 보유대수에는 라인·활용·공정대분류 정보가 없으므로 공정소분류 조건만 "
-            "적용되고, 나머지 조건은 호기 마스터 설비에 적용됩니다."
         )
 
     filtered_equipment = _filter_equipment(
@@ -612,7 +660,7 @@ with dashboard_tab:
                     },
                 )
 
-with management_tab:
+with rawdata_tab:
     if latest_snapshot is None:
         st.info(
             "기존 보유대수 샘플은 유지하고 호기 마스터·비가동 일정은 빈 상태입니다. "
@@ -669,8 +717,9 @@ with management_tab:
             """
         )
 
-    with st.container(border=True):
-        st.markdown("#### :material/content_paste: Excel 붙여넣기 Import 미리보기")
+    # **폼 밖이다.** 미리보기·적용은 일반 버튼인데 `st.form` 안에는 제출 버튼 말고 다른
+    # 버튼을 둘 수 없다. 접을 수 있게만 바꾸고 자리는 그대로 둔다.
+    with st.expander("Excel 붙여넣기 Import", icon=":material/content_paste:", expanded=False):
         st.caption(
             "기존 보유대수는 공정 + 분류, 호기 마스터는 호기, 비가동 일정은 호기 + "
             "비가동유형 + 시작일을 중복 구분자로 사용합니다. CSV 양식을 Excel에서 열어 "
@@ -889,30 +938,96 @@ with management_tab:
     downtime_type_options = sorted(
         set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str).tolist())
     )
+    # 보기 설정은 **폼 밖**이다. 폼 안에 두면 저장을 눌러야 적용돼 고르는 뜻이 없어진다.
+    baseline_view = render_table_view_controls(
+        baseline,
+        key_prefix="equipment_baseline_view",
+        editor_key=BASELINE_EDITOR_KEY,
+        filter_columns=("공정", "분류"),
+        locked_columns=("공정", "분류", "기존보유대수"),
+        label="기존 보유대수 · 표 보기 설정",
+    )
+    equipment_view = render_table_view_controls(
+        equipment,
+        key_prefix="equipment_master_view",
+        editor_key=EQUIPMENT_EDITOR_KEY,
+        filter_columns=(
+            "공정소분류",
+            "라인구분",
+            "활용구분",
+            "공정대분류",
+            "동",
+            "층",
+            "확정상태",
+            "장기보관여부",
+            "기존설비여부",
+            "레이아웃표시",
+        ),
+        locked_columns=(
+            "호기",
+            "공정소분류",
+            "장기보관여부",
+            "기존설비여부",
+            "레이아웃표시",
+        ),
+        label="호기 마스터 · 표 보기 설정",
+    )
+    downtime_view = render_table_view_controls(
+        downtime,
+        key_prefix="equipment_downtime_view",
+        editor_key=DOWNTIME_EDITOR_KEY,
+        filter_columns=("호기", "비가동유형"),
+        locked_columns=("호기", "비가동유형", "시작일"),
+        label="운영 비가동 일정 · 표 보기 설정",
+    )
+
     with st.form("equipment_operations_form_v3", border=True):
+        # **Import 바로 아래가 이 버튼의 자리다.** 붙여넣기의 「적용」은 편집본까지만
+        # 가고 DuckDB 에는 닿지 않는다 — 그 다음에 눌러야 하는 것이 무엇인지 순서로
+        # 보이게 한다. 폼은 제출 때 안의 위젯을 한꺼번에 보내므로 버튼이 표 위에 있어도
+        # 아래 세 표의 편집이 그대로 함께 저장된다.
+        st.caption(
+            "Import 의 「확인 후 편집본에 적용」은 편집본까지입니다. "
+            "**DuckDB 에 새 리비전으로 남기려면 아래 저장을 눌러야 합니다.**"
+        )
+        with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+            revision_note = st.text_input(
+                "변경 메모",
+                placeholder="예: 신규 호기 Qual 일정 및 8월 고장 일정 반영",
+                width=520,
+            )
+            submitted = st.form_submit_button(
+                "설비 데이터 저장", icon=":material/save:", type="primary"
+            )
+
         st.markdown("#### 기존 보유대수")
         st.caption(
             "호기·Qual 이력을 관리할 실익이 없는 기존 가동설비를 공정·분류별 집계로 "
             "유지합니다. 공정 값은 호기 마스터의 공정소분류와 연결됩니다."
         )
-        edited_baseline = st.data_editor(
+        edited_baseline = merge_edited_rows(
             baseline,
-            key=BASELINE_EDITOR_KEY,
-            num_rows="dynamic",
-            hide_index=True,
-            width="stretch",
-            column_config={
-                "공정": st.column_config.TextColumn(required=True, pinned=True),
-                "분류": st.column_config.TextColumn(required=True),
-                "기존보유대수": st.column_config.NumberColumn(
-                    "기존 보유대수",
-                    min_value=0,
-                    step=0.1,
-                    format="%.1f 대",
-                    required=True,
-                ),
-                "비고": st.column_config.TextColumn(),
-            },
+            filtered=baseline_view.filtered,
+            edited=st.data_editor(
+                baseline_view.frame,
+                key=BASELINE_EDITOR_KEY,
+                num_rows=baseline_view.row_mode,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    **baseline_view.column_config,
+                    "공정": st.column_config.TextColumn(required=True, pinned=True),
+                    "분류": st.column_config.TextColumn(required=True),
+                    "기존보유대수": st.column_config.NumberColumn(
+                        "기존 보유대수",
+                        min_value=0,
+                        step=0.1,
+                        format="%.1f 대",
+                        required=True,
+                    ),
+                    "비고": st.column_config.TextColumn(),
+                },
+            ),
         )
 
         st.markdown("#### 호기 마스터")
@@ -951,13 +1066,17 @@ with management_tab:
         equipment_column_config.update(
             {column: st.column_config.DateColumn(format="YYYY-MM-DD") for column in DATE_COLUMNS}
         )
-        edited_equipment = st.data_editor(
+        edited_equipment = merge_edited_rows(
             equipment,
-            key=EQUIPMENT_EDITOR_KEY,
-            num_rows="dynamic",
-            hide_index=True,
-            width="stretch",
-            column_config=equipment_column_config,
+            filtered=equipment_view.filtered,
+            edited=st.data_editor(
+                equipment_view.frame,
+                key=EQUIPMENT_EDITOR_KEY,
+                num_rows=equipment_view.row_mode,
+                hide_index=True,
+                width="stretch",
+                column_config={**equipment_column_config, **equipment_view.column_config},
+            ),
         )
 
         st.markdown("#### 운영 비가동 일정")
@@ -965,31 +1084,28 @@ with management_tab:
             "비가동ID 없이 호기·비가동유형·시작일 조합을 일정의 고유 기준으로 사용합니다. "
             "종료일이 없으면 진행 중입니다."
         )
-        edited_downtime = st.data_editor(
+        edited_downtime = merge_edited_rows(
             downtime,
-            key=DOWNTIME_EDITOR_KEY,
-            num_rows="dynamic",
-            hide_index=True,
-            width="stretch",
-            column_config={
-                "호기": st.column_config.TextColumn(required=True, pinned=True),
-                "비가동유형": st.column_config.SelectboxColumn(
-                    options=downtime_type_options, required=True
-                ),
-                "시작일": st.column_config.DateColumn(format="YYYY-MM-DD", required=True),
-                "종료일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                "상세사유": st.column_config.TextColumn(),
-                "비고": st.column_config.TextColumn(),
-            },
+            filtered=downtime_view.filtered,
+            edited=st.data_editor(
+                downtime_view.frame,
+                key=DOWNTIME_EDITOR_KEY,
+                num_rows=downtime_view.row_mode,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    **downtime_view.column_config,
+                    "호기": st.column_config.TextColumn(required=True, pinned=True),
+                    "비가동유형": st.column_config.SelectboxColumn(
+                        options=downtime_type_options, required=True
+                    ),
+                    "시작일": st.column_config.DateColumn(format="YYYY-MM-DD", required=True),
+                    "종료일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                    "상세사유": st.column_config.TextColumn(),
+                    "비고": st.column_config.TextColumn(),
+                },
+            ),
         )
-        revision_note = st.text_input(
-            "변경 메모",
-            placeholder="예: 신규 호기 Qual 일정 및 8월 고장 일정 반영",
-        )
-        submitted = st.form_submit_button(
-            "설비 데이터 저장", icon=":material/save:", type="primary"
-        )
-
     if submitted:
         # 화면을 채우려고 넣어 준 샘플이 그대로 불변 리비전에 들어가면 되돌릴 수 없다.
         # 실제 공정명과 다르면 호기 마스터에 붙지 않는 유령 공정이 총대수에 영원히 남는다.
@@ -1153,9 +1269,17 @@ with management_tab:
                 event_start = start_date
                 event_end = end_date
             if event_start <= event_end and not filtered_history_downtime.empty:
-                overlaps = filtered_history_downtime["시작일"].dt.date.le(event_end) & (
+                # **`.dt.date` 로 비교하지 않는다.** 그 컬럼이 전부 비어 있으면 `.dt.date` 가
+                # `datetime64` 를 그대로 물고 나와 `date` 와의 비교가 `TypeError` 로 죽는다.
+                # 값이 하나라도 있으면 object 로 바뀌어 통과하므로, 「종료일이 전부 비어 있는
+                # 리비전」에서만 터진다 — 화면이 「종료일이 없으면 진행 중」이라고 허용하는
+                # 바로 그 상태다. `Timestamp` 끼리 재면 빈값은 비교가 거짓이 되고, 그 몫은
+                # 왼쪽의 `isna()` 가 이미 맡는다.
+                start_bound = pd.Timestamp(event_start)
+                end_bound = pd.Timestamp(event_end)
+                overlaps = filtered_history_downtime["시작일"].le(end_bound) & (
                     filtered_history_downtime["종료일"].isna()
-                    | filtered_history_downtime["종료일"].dt.date.ge(event_start)
+                    | filtered_history_downtime["종료일"].ge(start_bound)
                 )
                 filtered_history_downtime = filtered_history_downtime.loc[overlaps]
             st.markdown("**기존 보유대수**")
