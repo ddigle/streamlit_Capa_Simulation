@@ -181,15 +181,21 @@ def record_download_button(label, *args, **kwargs):
 # 페이지의 `from ... import get_process_labels` 가 이 가짜를 집는다.
 APPLY_RENAME = False
 original_get_process_labels = process_labels_module.get_process_labels
+# **표시명이 없는 경우에도 반드시 갈아끼운다.** 진짜 `get_process_labels` 는
+# `settings.DUCKDB_PATH` 의 **공용 프로필**을 읽는데, 그것은 시나리오가 아니라 그 PC 의 DB 에
+# 딸린 상태다. 갈아끼우지 않으면 이 테스트는 「이 PC 에는 표시명이 없다」에 기대게 되고,
+# 표시명을 실제로 쓰는 환경에서는 같은 코드에서 실패한다 — 사내 실데이터에서 그렇게 됐다.
 if APPLY_RENAME:
-    renamed = process_labels_module.process_labels_from_rules(
-        pd.DataFrame(
-            [("Process-A", "가공"), ("Pre B/D", "선다이싱")],
-            columns=["공정", "표시명"],
-        ),
-        7,
+    rename_rules = pd.DataFrame(
+        [("Process-A", "가공"), ("Pre B/D", "선다이싱")],
+        columns=["공정", "표시명"],
     )
-    process_labels_module.get_process_labels = lambda: renamed
+    rename_version = 7
+else:
+    rename_rules = pd.DataFrame(columns=["공정", "표시명"])
+    rename_version = 0
+process_profile = process_labels_module.process_labels_from_rules(rename_rules, rename_version)
+process_labels_module.get_process_labels = lambda: process_profile
 
 try:
     st.download_button = record_download_button

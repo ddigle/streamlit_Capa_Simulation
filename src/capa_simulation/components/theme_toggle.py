@@ -23,7 +23,7 @@
 
 from __future__ import annotations
 
-import streamlit.components.v1 as components
+import streamlit as st
 
 # 이 셋이 Streamlit 과 맞춰야 하는 계약 전부다. 한 곳에 모아 두어야 판올림에서 무엇을
 # 확인해야 하는지가 분명하다.
@@ -99,19 +99,24 @@ def render_theme_toggle() -> None:
     """헤더에 전환 버튼을 얹는다. `app.py` 가 한 번만 부른다.
 
     높이 0 의 iframe 하나를 쓴다. `st.html` 은 스크립트를 실행하지 않으므로 이 경로가
-    아니면 부모 창에 닿을 수 없다.
+    아니면 부모 창에 닿을 수 없다. `st.iframe` 은 HTML 문자열을 받으면 **스크립트 실행과
+    앱에 대한 동일 출처 접근을 허용**한다고 공식 문서가 적는다 — 그것이 이 버튼이 부모 창의
+    `localStorage` 에 닿는 근거다. (`st.components.v1.html` 은 2026-06-01 제거 예정이라
+    옮겼다.)
     """
-    components.html(
+    st.iframe(
         _SCRIPT
         % {
             "prefix": _STORAGE_PREFIX,
             "suffix": _STORAGE_SUFFIX,
             "slot": _TOOLBAR_SLOT,
             "id": _BUTTON_ID,
-            "to_light": "밝게",
-            "to_dark": "어둡게",
+            "to_light": "Light",
+            "to_dark": "Dark",
             "tip_light": "밝은 테마로 바꿉니다",
             "tip_dark": "어두운 테마로 바꿉니다",
         },
-        height=0,
+        # `st.iframe` 은 0 을 받지 않는다(양수·`stretch`·`content` 만). `content` 로 두면
+        # srcdoc 문서의 기본 body margin 까지 재어 눈에 띄는 틈이 생기므로 1px 로 못박는다.
+        height=1,
     )
