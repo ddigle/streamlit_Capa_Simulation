@@ -1,0 +1,74 @@
+# 검증 4종을 PR 과 main 에서 돌린다. 개발 PC 의 네 명령과 같은 순서·같은 도구다.
+#
+# 병행 개발에서 이 파일이 하는 일은 하나다 — 두 후보 브랜치 중 **무엇이 진짜 통과했는지**를
+# 사람이 아니라 기계가 말하게 하는 것. 저장소가 private + Free 라 「통과해야만 병합」을
+# 강제할 수는 없으므로, 초록·빨강을 보여 주는 데까지가 이 파일의 몫이다.
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 같은 브랜치에 연달아 올리면 앞의 실행을 취소한다. 무료 한도를 아끼는 곳이 여기다.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    # **사외(github.com)에서만 돈다.** 배포 세트는 `git ls-files` 전부라 이 파일도 사내 ZIP 에
+    # 실린다(`build_deploy_package.py` 의 `EXCLUDED_FILES` 는 일부러 비어 있다 — 선언과 잠금이
+    # 양쪽에서 같다는 계약을 지키는 자리다). 사내 GitHub 에서 Actions 가 켜져 있으면 인터넷이
+    # 없어 uv 설치 단계에서 죽고, 사내는 소스를 고칠 수 없어 그 빨간 X 를 지울 방법이 없다.
+    # 이 한 줄이 거짓이 되면 실행은 빨간 X 가 아니라 회색 skipped 로 남는다.
+    # **사외 저장소 이름을 바꾸면 이 줄도 같이 고친다.**
+    if: github.repository == 'ddigle/streamlit_Capa_Simulation'
+    runs-on: ubuntu-latest
+    # 개발 PC 에서 pytest 한 판이 약 8분이다. 러너는 2코어 공용이라 더 걸린다.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # `setup-python` 을 쓰지 않는다. 파이썬 버전의 근거가 `uv.lock` 하나여야 CI 와 개발 PC 가
+      # 어긋나지 않는다 — 저장소에 `.python-version` 이 없다.
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Python 3.10.11 고정
+        run: uv python install 3.10.11
+
+      # `--frozen` 은 락을 다시 풀지 않는다. CI 가 개발 PC 와 다른 버전을 끌어올 수 없다.
+      - name: 의존성 설치
+        run: uv sync --frozen --python 3.10.11
+
+      # 단계 이름에 번호를 붙인 것은 개발자가 아닌 사람이 Checks 탭만 보고 「어디서
+      # 멈췄나」를 읽게 하려는 것이다.
+      - name: 1/4 포맷
+        run: uv run --no-sync python -m ruff format --check .
+
+      - name: 2/4 린트
+        run: uv run --no-sync python -m ruff check .
+
+      - name: 3/4 타입
+        run: uv run --no-sync python -m mypy
+
+      - name: 4/4 테스트
+        env:
+          PYTHONIOENCODING: utf-8
+        run: uv run --no-sync python -m pytest -q
+
+      - name: 결과 한 줄
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "## 검증 4종 전부 통과" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## 검증에서 멈췄습니다 — 위 단계 중 빨간 것을 엽니다" >> "$GITHUB_STEP_SUMMARY"
+          fi

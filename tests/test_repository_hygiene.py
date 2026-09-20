@@ -23,6 +23,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # 목록을 손대지 않고 파일만 늘어나는 것이 곧 떠도는 파일이다.
 ALLOWED_TOP_LEVEL = {
     ".gitattributes",
+    # 사외 전용 CI. 배포 세트가 `git ls-files` 전부라 사내 ZIP 에도 실리는데, 워크플로 안의
+    # `if: github.repository == ...` 가 사내에서 스스로 꺼진다(`.github/workflows/ci.yml`).
+    ".github/",
     ".gitignore",
     ".streamlit/",
     "AGENTS.md",
