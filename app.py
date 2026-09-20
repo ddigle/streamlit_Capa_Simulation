@@ -41,6 +41,9 @@ _SELECTOR_JOINER = ",\n        "
 
 # 사이드바 박스 CSS 훅. 여백을 좁히는 규칙과 Admin 의 `order` 가 이 key 를 읽는다.
 MONTH_BOX_KEY = "sidebar_month_box"
+# 그룹 상자 **안**에서 그 그룹의 대표 페이지를 부르는 이름. 머리글이 이미 그룹 이름을
+# 말하므로 안에서까지 되풀이하지 않고 그 그룹 안에서의 자리로 부른다.
+GROUP_MAIN_LABEL = "현황 요약"
 ADMIN_BOX_KEY = "sidebar_admin_box"
 
 st.set_page_config(
@@ -92,23 +95,15 @@ with pinned_connections(DUCKDB_PATH):
     active_href = navigation.url_path
 
     # 선택자도 같은 선언에서 낸다. 손으로 적으면 그룹을 더할 때 한쪽만 고치게 된다.
-    group_title_selectors = _SELECTOR_JOINER.join(
-        f".st-key-{group.slug}_navigation a p" for group in pages.groups
-    )
-    subpage_slugs = [group.slug for group in pages.groups if group.subpages]
-    subpage_selectors = _SELECTOR_JOINER.join(
-        f'.st-key-{slug}_subpages [data-testid="stPageLink-NavLink"]' for slug in subpage_slugs
-    )
-    # 그룹 박스와 하위 묶음 선택자도 같은 선언에서 낸다.
+    # **하위가 있는 그룹만 상자를 갖는다.** 나머지는 평평한 링크라 걸 것이 없다.
+    boxed_groups = [group for group in pages.groups if group.subpages]
     group_box_selectors = _SELECTOR_JOINER.join(
-        f".st-key-{group.slug}_box" for group in pages.groups
+        f".st-key-{group.slug}_box" for group in boxed_groups
     )
-    # 링크가 하나뿐인 박스. 같은 여백을 줘도 안에 든 것이 한 줄뿐이라 위아래가 헐렁하다.
-    solo_box_selectors = _SELECTOR_JOINER.join(
-        f".st-key-{group.slug}_box" for group in pages.groups if not group.subpages
-    )
-    subpage_box_selectors = _SELECTOR_JOINER.join(
-        f".st-key-{slug}_subpages" for slug in subpage_slugs
+    # 상자 머리글. 전에는 상자 안 첫 링크가 그룹 이름을 달았고 지금은 확장 패널의 요약
+    # 줄이 단다. 자리는 바뀌었어도 사이드바에서 같은 무게로 읽혀야 한다.
+    group_title_selectors = _SELECTOR_JOINER.join(
+        f".st-key-{group.slug}_box summary" for group in boxed_groups
     )
     # 제목을 가진 조회 상자 셋. 상자마다 제목 `h4` 는 하나뿐이라 안쪽을 더 좁히지 않는다.
     # 뒤에 붙일 부분까지 **선택자마다** 넣어 잇는다 — 목록을 먼저 잇고 뒤에 `h4` 를 붙이면
@@ -273,20 +268,9 @@ with pinned_connections(DUCKDB_PATH):
             font-weight: 700;
         }}
 
-        /* 여백만으로는 어디까지가 하위인지 보이지 않는다. 하위가 여섯인 그룹에서 특히
-           그렇다. 들여쓰기 1rem 을 **컨테이너와 링크가 나눠 갖고** 그 경계에 선을 긋는다.
-           한쪽만 고치면 두 번 들여써져 오른쪽이 잘리므로 두 규칙을 함께 본다. */
-        {subpage_box_selectors} {{
-            border-left: 1px solid {tokens.BORDER};
-            margin-left: 0.5rem;
-            padding-left: 0.5rem;
-            /* 왼쪽으로 민 만큼 폭에서 빼지 않으면 오른쪽이 상자 안쪽 선을 넘어간다. */
-            width: calc(100% - 0.5rem);
-        }}
-        {subpage_selectors} {{
-            margin-left: 0;
-            width: 100%;
-        }}
+        /* 하위를 가르던 세로선은 없앴다. 그 일을 이제 **확장 패널 자신이** 한다 —
+           펼친 것과 접힌 것이 경계를 대신 말하므로, 선을 더 그으면 안쪽이 두 번
+           들여써진다. */
 
         /* 박스 위쪽만 한 단계 눌러 칠한다. 제목이 앉은 자리가 「머리칸」으로 읽혀 박스가
            단순한 테두리가 아니라 카드가 된다. 배경은 테두리를 그리는 요소 자신에게 주므로
@@ -313,13 +297,6 @@ with pinned_connections(DUCKDB_PATH):
         .st-key-{BOTTLENECK_BOX_KEY},
         .st-key-{ADMIN_BOX_KEY} {{
             padding: 0.55rem 0.7rem;
-        }}
-        /* 링크가 하나뿐인 박스는 세로 여백을 더 줄인다. 여러 줄이 쌓인 박스에서 숨통이
-           되던 여백이, 한 줄짜리 박스에서는 그냥 빈자리로 남는다. 좌우는 그대로 둬야
-           모든 박스의 글자가 한 세로선에 선다. */
-        {solo_box_selectors} {{
-            padding-top: 0.3rem;
-            padding-bottom: 0.3rem;
         }}
         /* HOME 과 첫 그룹 박스 사이만 한 칸 더 띄운다. HOME 은 상자가 아니라 「돌아오는
            자리」라 아래 목록과 같은 간격으로 붙어 있으면 목록의 첫 항목처럼 읽힌다. */
@@ -378,14 +355,24 @@ with pinned_connections(DUCKDB_PATH):
     # 박스 목록은 `navigation.SIDEBAR_GROUPS` 하나에서 나온다. 위 CSS 선택자도 같은 선언을
     # 읽으므로, 그룹을 더할 때 이 파일에서 고칠 것이 없다.
     for group in pages.groups:
-        with st.sidebar.container(border=True, key=f"{group.slug}_box"):
-            with st.container(key=f"{group.slug}_navigation"):
-                st.page_link(group.main, width="stretch")
-            if not group.subpages:
-                continue
-            with st.container(key=f"{group.slug}_subpages"):
-                for page in group.subpages:
-                    st.page_link(page, width="stretch")
+        # **묶을 것이 없으면 상자도 없다.** 항목 하나짜리 상자는 테두리로 「여기 묶음이
+        # 있다」고 말해 놓고 아무것도 묶지 않는다. 그런 그룹은 평평한 링크로 세운다.
+        if not group.subpages:
+            st.sidebar.page_link(group.main, width="stretch")
+            continue
+        # 지금 보고 있는 페이지가 든 그룹만 편다. `url_path` 는 `st.navigation()` 이
+        # 돌아야 채워지므로(그 전에는 `AttributeError`) 이 자리가 반드시 그 뒤여야 한다.
+        group_paths = {page.url_path for page in (group.main, *group.subpages)}
+        with st.sidebar.expander(
+            group.main.title,
+            expanded=navigation.url_path in group_paths,
+            icon=group.main.icon,
+            # `key` 는 곧 `st-key-…` 클래스다. 상자였을 때 걸어 둔 CSS 훅이 그대로 산다.
+            key=f"{group.slug}_box",
+        ):
+            st.page_link(group.main, label=GROUP_MAIN_LABEL, width="stretch")
+            for page in group.subpages:
+                st.page_link(page, width="stretch")
 
     render_scenario_controls()
 
@@ -423,7 +410,10 @@ with pinned_connections(DUCKDB_PATH):
     # 관리 기능이라 조회 컨트롤보다 아래, 사이드바에서 가장 먼 곳에 둔다. 페이지가 자기
     # 사이드바 요소를 더하는 것은 `navigation.run()` 안이라 파이썬 차례로는 뒤에 둘 수
     # 없다 — 맨 아래를 지키는 것은 위 CSS 의 `order` 다.
-    with st.sidebar.container(border=True, key=ADMIN_BOX_KEY):
+    # **테두리를 두르지 않는다.** 관리는 계산 흐름 밖이라 다른 상자와 나란히 서면 같은
+    # 층위로 읽힌다. 캡션 한 줄이 「여기부터는 성격이 다르다」를 대신 말한다.
+    with st.sidebar.container(key=ADMIN_BOX_KEY):
+        st.caption("관리")
         with st.container(key="admin_area_navigation"):
             st.page_link(pages.admin_area, width="stretch")
             # VOC 는 계산 화면이 아니라 사람이 쓰는 자리다. 계산 그룹 어디에도 속하지 않아

@@ -3,6 +3,9 @@
 import ast
 from pathlib import Path
 
+import pytest
+from streamlit.testing.v1 import AppTest
+
 from capa_simulation.navigation import (
     ADMIN_AREA,
     ADMIN_BOX_PAGES,
@@ -13,6 +16,7 @@ from capa_simulation.navigation import (
     DYNAMIC_CAPA_SUBPAGES,
     HOME,
     IMPLEMENTING_SUFFIX,
+    SCENARIO_MANAGEMENT,
     STATIC_CAPA,
     STATIC_CAPA_SUBPAGES,
 )
@@ -135,3 +139,84 @@ def test_navigation_hides_the_builtin_sidebar_widget() -> None:
     ]
 
     assert positions == ["hidden"]
+
+
+# ----------------------------------------------------------------- 그룹 접기
+#
+# `app.py` 를 **파일 그대로** 연다. `AppTest.from_string` 은 못 쓴다 — `st.Page` 의 상대
+# 경로가 주 스크립트 기준이라 임시 파일에서 열면 `app_pages/home.py` 를 못 찾는다.
+
+
+@pytest.fixture
+def _app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
+    """빈 DuckDB 를 보는 `app.py`. 내장 시드가 부트스트랩을 채운다."""
+    import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+    import capa_simulation.components.month_range_picker as month_range_picker
+    import capa_simulation.settings as settings
+
+    monkeypatch.setattr(settings, "DUCKDB_PATH", tmp_path / "scenario.duckdb")
+    monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", tmp_path / "equipment.duckdb")
+    # Components v2 위젯은 모듈 로드 때 등록되어 AppTest 인스턴스마다 살아 있지 않다.
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
+    monkeypatch.setattr(
+        month_range_picker,
+        "render_month_range_picker",
+        lambda *, start, end, min_month, max_month, key: (start, end),
+    )
+    return AppTest.from_file(str(APP_PATH), default_timeout=300)
+
+
+def _expanded(app: AppTest) -> dict[str, bool]:
+    """사이드바 그룹 상자의 펼침 상태. 상자가 없는 그룹은 여기 나오지 않는다."""
+    return {
+        element.label: element.proto.expanded
+        for element in app.sidebar
+        if type(element).__name__ == "Status"
+    }
+
+
+def test_only_the_group_holding_the_current_page_is_expanded(_app: AppTest) -> None:
+    """그룹 상자는 **지금 보고 있는 페이지가 든 것 하나만** 펴진다.
+
+    사이드바 링크는 열일곱 개고 대부분의 화면에서 그중 열 개는 지금 쓰지 않는 그룹의
+    하위다. 접히지 않으면 조회기간·관리가 스크롤 밖으로 밀린다.
+
+    **`expanded` 는 `st.navigation()` 이 돌아야 정해진다.** `page.url_path` 가 그 전에는
+    아예 없어서(`AttributeError`) 두 줄의 순서를 바꾸면 사이드바가 통째로 죽는다 —
+    그 순서를 여기서 함께 지킨다.
+    """
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    static, dynamic = STATIC_CAPA.title, DYNAMIC_CAPA.title
+    # HOME 은 어느 그룹에도 속하지 않는다. 둘 다 접힌 채로 연다.
+    assert _expanded(app) == {static: False, dynamic: False}
+
+    for page_path, opened in (
+        (STATIC_CAPA.path, static),
+        # 하위 페이지도 그 그룹을 편다 — 대표 페이지만 보는 것이 아니다.
+        (STATIC_CAPA_SUBPAGES[0].path, static),
+        (DYNAMIC_CAPA_SUBPAGES[1].path, dynamic),
+        (DYNAMIC_CAPA.path, dynamic),
+        # 어느 그룹에도 없는 페이지에서는 다시 둘 다 접힌다.
+        (CAPA_CHATBOT.path, None),
+    ):
+        app.switch_page(page_path).run()
+        assert not list(app.exception), [element.message for element in app.exception]
+        assert _expanded(app) == {
+            static: opened == static,
+            dynamic: opened == dynamic,
+        }, page_path
+
+
+def test_groups_without_subpages_get_no_box(_app: AppTest) -> None:
+    """묶을 것이 없는 그룹은 상자를 두지 않는다.
+
+    항목 하나짜리 상자는 테두리로 「여기 묶음이 있다」고 말해 놓고 아무것도 묶지 않는다.
+    """
+    app = _app.run()
+
+    boxed = set(_expanded(app))
+    assert CAPA_CHATBOT.title not in boxed
+    assert SCENARIO_MANAGEMENT.title not in boxed
+    assert boxed == {STATIC_CAPA.title, DYNAMIC_CAPA.title}
