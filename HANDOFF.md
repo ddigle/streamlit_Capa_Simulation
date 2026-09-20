@@ -427,12 +427,20 @@ stash@{0}: On main: bigdataquery user_name (사내 값 확인 후 반영)
 | 브랜치 | `main`, `origin/main` = `a8321c6` 로 로컬과 같음 (작업 트리 깨끗) |
 | 검증 | ruff format·check(272 파일) 통과 / mypy 143 파일 이상 없음 / pytest 전체 통과 |
 | 다음 마이그레이션 | 시뮬레이션 DB `0024`, 설비 DB `0009` (2·3 은 시뮬레이션 DB 영구 결번) |
-| 마지막 ZIP | `C:\Dev\Streamlit_Project_Dummyfile\202609151052.zip` (943,479 bytes, 318 파일) |
-| 메일 | 2026-09-15 발송 완료. 제목 `202609151052`, 보낸 편지함에서 확인함 |
+| 마지막 ZIP | `C:\Dev\Streamlit_Project_Dummyfile\202609200959.zip` (1,233,867 bytes, 362 파일) |
+| 메일 | **미발송.** 2026-09-20 시점에 Claude in Chrome 확장이 연결되지 않아 보내지 못했다 |
 | 보류 | `stash@{0}` 에 bigdataquery `user_name` 4파일 (12-2 절, 그대로) |
 
-**ZIP 은 `d373875` 커밋 기준이다.** 그 뒤 **56 커밋**(`3772d40`~`d395896`)은 **아직 사내에
-나가지 않았다** — B/N Top5 막대, 사이드바 융기, 페이지 재구성이 전부 여기 있다.
+**`202609200959.zip` 은 `9bba7e8` 커밋 기준이고 직전 배포 `202609151052`(`d373875`) 대비
+추가 46 · 삭제 3 · 수정 101 이다.** 기준선 태그가 하나도 없어 그동안 송장의 변경 목록이 빈
+채로 나갔는데, 이번에 `deploy/202609151052` 를 `d373875` 에 손으로 세우고 올렸다. 이후로는
+빌드가 남기는 태그를 `git push --tags` 로 함께 올린다.
+
+지워지는 화면 세 개가 들어 있다 — `app_pages/capacity_standards.py`,
+`app_pages/process_securement.py`, `tests/test_capacity_standards_page.py`.
+
+**사내 적용 절차는 `docs/internal_update_runbook.md` 를 위에서 아래로 따라간다.** 이번
+배포에서 사내가 따로 확인할 것은 그 문서 7장에 모아 두었다.
 
 ## 14. 2026-09-14 에 들어갔는데 인수인계에 없던 것
 
