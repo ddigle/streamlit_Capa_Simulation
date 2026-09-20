@@ -211,7 +211,9 @@ def test_wip_status_page_explains_an_empty_equipment_db_instead_of_erroring() ->
 
     assert not app.exception
     assert not app.error
-    assert any("주차별 가용대수가 없어" in element.value for element in app.info)
+    # 예외(빨간 오류)가 아니라 사용자가 채워야 할 입력이라 경고다. 같은 화면에서 「일부만
+    # 없다」를 알리는 자리(:292)와 색이 갈리면 심각도가 거꾸로 읽힌다.
+    assert any("주차별 가용대수가 없어" in element.value for element in app.warning)
     # 안내 뒤에 멈추므로 조회 조건과 지표는 그리지 않는다.
     assert not app.multiselect
     assert not app.metric

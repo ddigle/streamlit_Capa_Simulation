@@ -21,6 +21,7 @@ from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
     load_page_context,
     resolve_effective_months,
 )
@@ -88,7 +89,8 @@ TAB_NAMES = (
 render_page_header(
     "산출 결과",
     description=(
-        "기준 정보로 대당 Capa·소요대수·확보율을 산출하고 B/N 공정을 판정합니다. "
+        "기준 정보로 대당 Capa·소요대수·확보율을 산출합니다. 확보율이 가장 낮아 그 달의 "
+        "Capa 를 결정하는 B/N(Bottleneck·병목) 공정은 HOME 에서 판정합니다. "
         "입력값은 기준 정보 페이지에서 고칩니다."
     ),
 )
@@ -162,12 +164,11 @@ try:
         "확보율",
     )
 except BOOTSTRAP_ERRORS as exc:
-    with unit_capacity_tab:
-        st.error(str(exc))
-    with required_tab:
-        st.error(str(exc))
-    with availability_tab:
-        st.error(str(exc))
+    # 원인 하나를 세 탭에 같이 보여 준다. 문구는 한 번만 만든다.
+    bootstrap_message = bootstrap_error_message(exc)
+    for error_tab in (unit_capacity_tab, required_tab, availability_tab):
+        with error_tab:
+            st.error(bootstrap_message)
 else:
     # 표시 방식·집계 수준·공정 필터는 입력 위젯이라 탭이 닫혀 있어도 항상 그린다. 본문을
     # 통째로 건너뛰면 Streamlit 이 세 위젯의 상태를 버려 탭을 오갈 때마다 선택이 초기화된다.
@@ -364,6 +365,11 @@ else:
         st.caption("월간 소요대수 (부하량 ÷ 대당 Capa)")
         show_detail = st.toggle(
             "상세",
+            help=(
+                "끄면 Area_Name·공정 단위로 합산해 보여 주고, 켜면 양산구분·제품정보·Stack·"
+                "WF 구분·소요기준·STEP_SEQ·MCP_SEQ 까지 행을 폅니다. 합계는 같고 행 수만 "
+                "늘어납니다."
+            ),
             key="required_equipment_detail",
             persist_state="session",
             width=90,

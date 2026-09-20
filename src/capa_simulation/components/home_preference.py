@@ -128,12 +128,18 @@ def section_title_markup(text: str) -> str:
     본문 크기(작게)로 남고 `Summary` 상자처럼 제목 전체가 20px 인 곳에서는 크게 나온다.
     같은 막대가 화면마다 다른 크기로 보이던 이유가 그것이다. px 로 못 박으면 어디에 놓든
     같다.
+
+    실제 `<h2>` 가 아니라 **역할만** 붙인다. Streamlit 제목은 `padding: 7.5px 0 15px` 와
+    감싸개 `margin-bottom: -15px` 짝을 함께 끌고 와(`app.py` 의 제목 CSS) 이미 맞춰 둔 제목
+    줄 높이가 다시 어긋난다. 레벨이 2 인 것은 페이지 제목이 h1 이고 상세 B/N 구획 안에 h4 가
+    이미 있기 때문이다.
     """
     return (
-        f'<span style="display:inline-flex;align-items:center;'
+        f'<span role="heading" aria-level="2" '
+        f'style="display:inline-flex;align-items:center;'
         f"gap:{SECTION_BAR_GAP_PX}px;"
         f'font-size:{SECTION_TITLE_FONT_PX}px;font-weight:700;line-height:1.2">'
-        f'<span style="{section_accent_bar_css()}"></span>'
+        f'<span aria-hidden="true" style="{section_accent_bar_css()}"></span>'
         f"{text}</span>"
     )
 
@@ -147,22 +153,34 @@ def section_accent_bar_css() -> str:
     )
 
 
-def status_legend_markup(*, secure_threshold: float, warning_threshold: float) -> str:
+def status_legend_markup(
+    *, secure_threshold: float, warning_threshold: float, has_past: bool = False
+) -> str:
     """확보·경고·부족 세 색이 무슨 뜻인지 한 줄로 적는다.
 
     이 앱은 확보율을 세 색으로 판정해 놓고 **그 색이 무슨 뜻인지 화면 어디에도 적지
     않았다.** 처음 보는 사람은 회색 막대가 좋은 것인지 나쁜 것인지 알 길이 없다.
     색만으로 뜻을 나르지 않으려면 이름과 경계 숫자가 같이 있어야 한다.
+
+    `has_past` 는 과거 구간 열이 실제로 그려졌을 때만 켠다. 그 열도 뜻을 면색 하나로만
+    나르는데, 판정 세 색과 달리 이름이 어디에도 없었다. 과거 열이 없는 실행에서까지 칩을
+    달면 화면에 없는 것을 설명하게 된다.
     """
-    chips = (
+    chips: tuple[tuple[str, str], ...] = (
         (tokens.STATUS_SECURE, f"확보 {secure_threshold:.0%} 초과"),
         (tokens.STATUS_WARNING, f"경고 {warning_threshold:.0%}~{secure_threshold:.0%}"),
         (tokens.STATUS_SHORTAGE, f"부족 {warning_threshold:.0%} 미만"),
     )
+    if has_past:
+        chips += ((tokens.SURFACE_PAST, "과거 구간"),)
     swatches = "".join(
         f'<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px">'
+        # 테두리가 `BORDER` 가 아니라 `LINE` 인 것은 과거 구간 칩(`SURFACE_PAST`) 때문이다.
+        # 그 면색은 페이지 바탕과 1.16:1 이라 칩이 사라지는데, `BORDER` 는 바탕과 1.25:1 이라
+        # 구해 주지 못한다. `LINE` 은 9.83:1 이고, 확보 막대가 트랙 위에서 같은 이유로 이미
+        # 쓰는 선이다(`tokens.BAR_OUTLINE_WIDTH_PX` 주석).
         f'<span style="width:11px;height:11px;border-radius:3px;background:{color};'
-        f'border:1px solid {tokens.BORDER};display:inline-block"></span>'
+        f'border:1px solid {tokens.LINE};display:inline-block"></span>'
         f'<span style="font-size:12px;color:{tokens.TEXT_MUTED}">{label}</span>'
         f"</span>"
         for color, label in chips
@@ -180,6 +198,7 @@ def render_lob_title_row(
     comparison_ready: bool,
     secure_threshold: float,
     warning_threshold: float,
+    has_past: bool,
 ) -> None:
     """`Capa LOB 현황` 제목과 그 옆의 「선행」·「GAP」 토글, 오른쪽 끝의 판정 색 범례.
 
@@ -188,6 +207,8 @@ def render_lob_title_row(
 
     비교 시나리오를 고르지 않았으면 「GAP」 을 누를 수 없다. 켤 수는 있는데 아무것도
     바뀌지 않으면 고장으로 읽힌다.
+
+    `has_past` 를 받는 것은 과거 구간 칩을 그 열이 실제로 있을 때만 달기 위해서다.
 
     **범례가 이 줄 안에 있는 이유.** 제목 줄과 Figure 사이 간격은 스크롤바 높이를 뺀
     나머지(`DASHBOARD_PANEL_TITLE_GAP_PX`)뿐이라 거의 0 이다. 범례를 두 줄 사이에 독립
@@ -243,6 +264,7 @@ def render_lob_title_row(
                 status_legend_markup(
                     secure_threshold=secure_threshold,
                     warning_threshold=warning_threshold,
+                    has_past=has_past,
                 ),
                 unsafe_allow_html=True,
             )
@@ -415,7 +437,7 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
         if st.session_state.get(COMPARISON_REVISION_KEY) not in revision_by_id:
             st.session_state.pop(COMPARISON_REVISION_KEY, None)
         if not revision_by_id:
-            st.info("그 시나리오에는 리비전이 없습니다.")
+            st.info("선택한 시나리오에 저장된 리비전이 없습니다.")
             return
         active_revision_id = active_persisted_revision_id()
         st.selectbox(

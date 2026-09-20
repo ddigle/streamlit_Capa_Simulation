@@ -206,7 +206,7 @@ def _render_post(row: Any) -> None:
             else:
                 st.session_state[FLASH_KEY] = "답변을 남겼습니다."
                 st.rerun()
-        with st.container(horizontal=True, gap="small"):
+        with st.container(horizontal=True, gap="small", vertical_alignment="center"):
             if st.button(
                 "답변 완료로 표시" if not answered else "미답변으로 되돌리기",
                 key=f"voc_resolve_{post_id}",
@@ -215,13 +215,25 @@ def _render_post(row: Any) -> None:
                 repository.set_voc_post_resolved(post_id, resolved=not answered)
                 st.rerun()
             # 지우기는 확인을 한 단계 둔다. 글 하나가 사라지면 답글도 함께 사라진다.
-            if st.checkbox("삭제 확인", key=f"voc_delete_confirm_{post_id}") and st.button(
+            # 가로 줄 안의 checkbox 는 기본이 `wrap=False` 라 긴 라벨이 말줄임으로 잘린다.
+            # 잘리는 뒷부분이 바로 경고라 여기서는 접어서라도 보여야 한다.
+            if st.checkbox(
+                "삭제 확인 · 답글까지 함께 사라지며 되돌릴 수 없습니다",
+                key=f"voc_delete_confirm_{post_id}",
+                wrap=True,
+            ) and st.button(
                 "글 삭제",
                 key=f"voc_delete_{post_id}",
                 icon=":material/delete:",
             ):
+                # 지워진 뒤에는 셀 수 없다. 화면용 프레임으로 먼저 센다.
+                deleted_replies = len(post_replies)
                 repository.remove_voc_post(post_id)
-                st.session_state[FLASH_KEY] = "글을 지웠습니다."
+                st.session_state[FLASH_KEY] = (
+                    "글을 지웠습니다."
+                    if not deleted_replies
+                    else f"글과 답글 {deleted_replies}건을 지웠습니다."
+                )
                 st.rerun()
 
 

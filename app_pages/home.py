@@ -532,7 +532,10 @@ with st.sidebar.container(border=True, key=BOTTLENECK_BOX_KEY):
                 step=0.1,
                 key=secure_threshold_key,
                 persist_state="session",
-                help="확보 기준 (%) — 이 값을 넘으면 확보 색으로 판정합니다.",
+                help=(
+                    "확보 기준 (%) — 이 값을 넘으면 확보, 경고 기준과 이 값 사이는 "
+                    "경고로 판정합니다."
+                ),
             )
         with warning_column:
             warning_threshold_percent = st.number_input(
@@ -542,7 +545,9 @@ with st.sidebar.container(border=True, key=BOTTLENECK_BOX_KEY):
                 step=0.1,
                 key=warning_threshold_key,
                 persist_state="session",
-                help="경고 기준 (%) — 이 값 아래는 부족 색으로 판정합니다.",
+                help=(
+                    "경고 기준 (%) — 이 값 미만은 부족, 이 값과 확보 기준 사이는 경고로 판정합니다."
+                ),
             )
         st.form_submit_button("기준 적용", width="stretch", key="dashboard_threshold_apply")
     # 고른 수를 버튼 안에 넣어 캡션 한 줄을 없앤다. 버튼을 누를지 말지 정하는 데 필요한
@@ -557,7 +562,11 @@ with st.sidebar.container(border=True, key=BOTTLENECK_BOX_KEY):
         set_process_dialog_selection(included_processes)
         show_process_filter_dialog(process_options)
     if warning_threshold_percent > secure_threshold_percent:
-        st.warning("경고 기준은 확보 기준보다 클 수 없습니다.")
+        st.warning(
+            f"경고 기준({warning_threshold_percent:g}%)이 확보 기준"
+            f"({secure_threshold_percent:g}%)보다 큽니다. 경고 기준을 확보 기준 이하로 "
+            "낮추고 「기준 적용」을 다시 누르세요."
+        )
     if not process_options:
         st.caption("집계 가능한 공정이 없습니다.")
 
@@ -757,6 +766,7 @@ with main_tab:
             comparison_ready=bool(comparison_scenario_id and comparison_revision_id),
             secure_threshold=secure_threshold,
             warning_threshold=warning_threshold,
+            has_past=bool(past_month_labels),
         )
         render_home_figures(
             cached_figures,

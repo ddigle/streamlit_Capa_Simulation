@@ -29,14 +29,19 @@ headingFontSizes = ["40px", "24px", "20px", "17px", "15px", "13px"]
 headingFontWeights = [650, 650, 600, 600, 600, 600]
 linkUnderline = false
 # 색배지(`:green-badge[]` 등)와 알림 상자의 색. Streamlit 기본값은 zinc + teal 팔레트
-# 밖이라 14개 화면 중 아홉이 다는 배지가 앱의 첫인상을 밖으로 끌어냈다. 여기 값은
-# `st.success`/`st.info`/`st.warning` 에도 같이 걸린다.
+# 밖이라 14개 화면 중 아홉이 다는 배지가 앱의 첫인상을 밖으로 끌어냈다. 알림 상자는
+# `st.success`→green, `st.info`→blue, `st.warning`→**yellow** 를 본다(주황이 아니다).
 greenColor = "#0B5A54"
 greenBackgroundColor = "#E3EFEE"
 blueColor = "#1D4ED8"
 blueBackgroundColor = "#E5E9F7"
 orangeColor = "#B45309"
 orangeBackgroundColor = "#F6EBDC"
+# `st.warning` 은 주황이 아니라 **노랑 슬롯**을 본다(Streamlit 의 알림 kind 매핑). 값을 비워
+# 두면 팔레트 밖 순노랑으로 떠서, 배지를 정리하며 없앤 문제가 알림 상자에서만 남는다.
+# 주황과 같은 값으로 두어 `:orange-badge[]` 와 경고 상자가 같은 뜻·같은 색이 되게 한다.
+yellowColor = "#B45309"
+yellowBackgroundColor = "#F6EBDC"
 
 [theme.sidebar]
 backgroundColor = "#FFFFFF"
@@ -74,6 +79,8 @@ blueColor = "#9DB8FF"
 blueBackgroundColor = "#1B2340"
 orangeColor = "#F0B37A"
 orangeBackgroundColor = "#33271A"
+yellowColor = "#F0B37A"
+yellowBackgroundColor = "#33271A"
 
 [theme.dark.sidebar]
 backgroundColor = "#1C1C21"

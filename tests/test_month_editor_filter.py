@@ -283,9 +283,9 @@ def test_editor_tells_that_apply_saves_the_whole_table() -> None:
     assert not app.exception
     assert FILTER_NOTICE in {caption.value for caption in app.caption}
     assert "필터" in {expander.label for expander in app.expander}
-    # 필터 위젯은 숨은 탭에서 그려지지 않아 탭을 옮기면 선택이 남지 않는다. 안내가 그
-    # 사실을 말해야 한다.
-    assert "다른 탭으로 옮기면" in FILTER_NOTICE
+    # 필터 선택은 `persist_state="session"` 으로 탭을 옮겨도 남는다. 안내는 실제로
+    # 사라지는 것, 곧 아직 적용하지 않은 편집만 말해야 한다.
+    assert "탭을 옮겨도" in FILTER_NOTICE
 
 
 def test_filter_options_show_display_names_but_keep_original_values() -> None:

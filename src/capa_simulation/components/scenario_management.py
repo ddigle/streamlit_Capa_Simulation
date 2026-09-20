@@ -585,24 +585,26 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
     if not create_submitted:
         return
     try:
-        revision_source = revision_tables_for_save(active_scenario, reference_tables)
-        preset = _compatible_preset(capture_scenario_preset(revision_source), revision_source)
-        snapshot = repository.create_scenario(
-            ScenarioCreate(
-                scenario_name=scenario_name,
-                source_simulation_code=source_code,
-                source_simulation_name=source_name,
-                source_type="DUCKDB_SCENARIO_CLONE",
-                pipeline_version=CLONE_PIPELINE_VERSION,
-                source_registered_at=None,
-            ),
-            reference_tables,
-            preset,
-            source_data=None,
-            revision_tables=revision_source,
-            revision_name=revision_name,
-            note=note.strip() or None,
-        )
+        # 활성 RQ 16개를 새 데이터셋으로 통째로 복제한다. 표가 크면 몇 초가 걸린다.
+        with st.spinner("현재 활성 RQ 16개를 새 시나리오로 복제하는 중입니다..."):
+            revision_source = revision_tables_for_save(active_scenario, reference_tables)
+            preset = _compatible_preset(capture_scenario_preset(revision_source), revision_source)
+            snapshot = repository.create_scenario(
+                ScenarioCreate(
+                    scenario_name=scenario_name,
+                    source_simulation_code=source_code,
+                    source_simulation_name=source_name,
+                    source_type="DUCKDB_SCENARIO_CLONE",
+                    pipeline_version=CLONE_PIPELINE_VERSION,
+                    source_registered_at=None,
+                ),
+                reference_tables,
+                preset,
+                source_data=None,
+                revision_tables=revision_source,
+                revision_name=revision_name,
+                note=note.strip() or None,
+            )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:
@@ -633,27 +635,29 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
     if not revision_submitted:
         return
     try:
-        revision_tables = revision_tables_for_save(active_scenario, reference_tables)
-        preset = capture_scenario_preset(
-            {**reference_tables, "RQ_REQB": revision_tables["RQ_REQB"]}
-        )
-        snapshot = repository.save_revision(
-            scenario_id,
-            revision_tables,
-            preset,
-            revision_name=revision_name,
-            parent_revision_id=active_persisted_revision_id(),
-            note=note.strip() or None,
-            virtual_products=[
-                {
-                    "product": record.product,
-                    "stack": record.stack,
-                    "source_product": record.source_product,
-                    "source_stack": record.source_stack,
-                }
-                for record in cast(tuple[VirtualProductRecord, ...], session_virtual_products())
-            ],
-        )
+        # 사이드바 「저장」과 같은 일을 한다. 표가 크면 몇 초가 걸린다.
+        with st.spinner("현재 편집본을 새 리비전으로 저장하는 중입니다..."):
+            revision_tables = revision_tables_for_save(active_scenario, reference_tables)
+            preset = capture_scenario_preset(
+                {**reference_tables, "RQ_REQB": revision_tables["RQ_REQB"]}
+            )
+            snapshot = repository.save_revision(
+                scenario_id,
+                revision_tables,
+                preset,
+                revision_name=revision_name,
+                parent_revision_id=active_persisted_revision_id(),
+                note=note.strip() or None,
+                virtual_products=[
+                    {
+                        "product": record.product,
+                        "stack": record.stack,
+                        "source_product": record.source_product,
+                        "source_stack": record.source_stack,
+                    }
+                    for record in cast(tuple[VirtualProductRecord, ...], session_virtual_products())
+                ],
+            )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:

@@ -295,7 +295,7 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
         f"코드·PLAN 기준 {len(result.frame):,}건"
     )
     if result.frame.empty:
-        st.warning("이 기간에는 시뮬레이션 코드가 없습니다. 기간을 넓혀 다시 조회하세요.")
+        st.info("이 기간에는 시뮬레이션 코드가 없습니다. 기간을 넓혀 다시 조회하세요.")
         return
 
     with st.container(horizontal=True, gap="small"):
@@ -326,7 +326,7 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
         registered_codes=registered_codes,
     )
     if visible.empty:
-        st.warning("검색 조건에 맞는 코드가 없습니다.")
+        st.info("검색 조건에 맞는 코드가 없습니다.")
         return
     if len(visible) > CATALOG_BUSY_ROWS:
         st.caption("행이 많아 표 조작이 느릴 수 있습니다. 검색어로 좁히세요.")

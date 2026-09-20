@@ -14,6 +14,7 @@ from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
     load_page_context,
     resolve_effective_months,
 )
@@ -235,7 +236,7 @@ try:
         _reqb=filtered_reqb,
     )
 except BOOTSTRAP_ERRORS as exc:
-    st.error(str(exc))
+    st.error(bootstrap_error_message(exc))
     st.stop()
 
 editor_keys = (
@@ -351,7 +352,10 @@ with step_tab:
         )
 
     if step_catalog.empty:
-        st.warning("선택한 조회기간에 편집할 공정 경로 STEP이 없습니다.")
+        st.info(
+            "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다. "
+            "사이드바에서 조회기간을 넓혀 보세요."
+        )
     else:
         step_mode = st.segmented_control(
             "작업",
@@ -483,6 +487,10 @@ with equipment_tab:
 with equipment_overview_tab:
     show_equipment_detail = st.toggle(
         "상세",
+        help=(
+            "끄면 가용대수만 공정별로 보여 주고, 켜면 `구분` 열을 더해 보유·대여·가용을 "
+            "행으로 나눕니다."
+        ),
         key="equipment_count_detail",
         persist_state="session",
         width=90,
@@ -523,7 +531,7 @@ with equipment_overview_tab:
             hide_index=True,
             width="content",
             height=500,
-            row_height=25,
+            row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
             column_config={
                 **{
                     column: st.column_config.TextColumn(
@@ -551,7 +559,9 @@ edited_upeh_table, apply_upeh, imported_upeh_table = render_month_editor(
     default_upeh_table,
     PERFORMANCE_EDITOR_DIMENSIONS,
     editor_keys[0],
-    "Main은 UPEH, MI는 ST(초)를 수정합니다. 수정 후 적용 버튼을 누르세요.",
+    "표의 Area_Name 이 Main 인 행에는 UPEH 를, MI 인 행에는 ST(초)를 적습니다 — "
+    "MI 의 ST 는 3600 ÷ ST 로 시간당 처리량에 환산한 뒤 Main 과 같은 대당 Capa 식에 "
+    "들어갑니다. 수정 후 「변경사항 적용」을 누르세요.",
     "%,.2f",
     0.01,
     table_name="RQ_UPEH",
@@ -652,6 +662,27 @@ equipment_editor_results = {
     )
 }
 
+
+def _edit_flash(editor_key: str, table_name: str, *, imported: bool) -> tuple[str, str]:
+    """적용 결과를 버튼 바로 아래 같은 자리에 남긴다.
+
+    버튼으로 고친 경우에는 화면이 그대로 다시 그려질 뿐이라, 눌렸는지 어디에 반영됐는지
+    알 길이 없었다. 두 길을 가르는 것은 앞부분 한 마디뿐이고, 저장까지 가야 리비전으로
+    남는다는 사실은 양쪽 모두 같다.
+
+    **`editor_key` 는 편집기를 그릴 때 쓴 값 그대로여야 한다.** `render_month_editor` 가
+    `f"{editor_key}_csv"` 로 넘기고 그쪽이 `f"{key}_flash"` 를 읽는다. 여기에 리터럴을 다시
+    적으면 쓰는 키와 읽는 키가 갈라져 문구가 조용히 사라진다 — 실제로 `capa_` 접두어가
+    빠져 여섯 탭이 그랬다.
+    """
+    origin = "붙여넣기 데이터를" if imported else "편집값을"
+    return (
+        f"{editor_key}_csv",
+        f"{table_name} {origin} 활성 시나리오에 적용했습니다. "
+        "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요.",
+    )
+
+
 pending_updates: dict[str, pd.DataFrame] = {}
 update_error_tab = upeh_tab
 import_flash: tuple[str, str] | None = None
@@ -660,8 +691,9 @@ try:
         update_error_tab = upeh_tab
         source = imported_upeh_table if imported_upeh_table is not None else edited_upeh_table
         pending_updates["RQ_UPEH"] = performance_from_edit_table(source)
-        if imported_upeh_table is not None:
-            import_flash = ("upeh_editor_csv", "RQ_UPEH 붙여넣기 데이터를 일괄 적용했습니다.")
+        import_flash = _edit_flash(
+            editor_keys[0], "RQ_UPEH", imported=imported_upeh_table is not None
+        )
     if apply_run_rate or imported_run_rate_table is not None:
         update_error_tab = run_rate_tab
         source = (
@@ -672,22 +704,18 @@ try:
         pending_updates["RQ_RUN_RATE"] = reference_from_edit_table(
             source, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "효율 편집값"
         )
-        if imported_run_rate_table is not None:
-            import_flash = (
-                "run_rate_editor_csv",
-                "RQ_RUN_RATE 붙여넣기 데이터를 일괄 적용했습니다.",
-            )
+        import_flash = _edit_flash(
+            editor_keys[1], "RQ_RUN_RATE", imported=imported_run_rate_table is not None
+        )
     if apply_vital or imported_vital_table is not None:
         update_error_tab = vital_tab
         source = imported_vital_table if imported_vital_table is not None else edited_vital_table
         pending_updates["RQ_VITAL"] = reference_from_edit_table(
             source, VITAL_DIMENSIONS, "편중률", "여유율 편집값"
         )
-        if imported_vital_table is not None:
-            import_flash = (
-                "vital_editor_csv",
-                "RQ_VITAL 붙여넣기 데이터를 일괄 적용했습니다.",
-            )
+        import_flash = _edit_flash(
+            editor_keys[2], "RQ_VITAL", imported=imported_vital_table is not None
+        )
     if apply_lot_ratio or imported_lot_ratio_table is not None:
         update_error_tab = lot_ratio_tab
         source = (
@@ -701,11 +729,9 @@ try:
             "Lot 측정률",
             "Lot측정률 편집값",
         )
-        if imported_lot_ratio_table is not None:
-            import_flash = (
-                "lot_ratio_editor_csv",
-                "RQ_LOT_RATIO 붙여넣기 데이터를 일괄 적용했습니다.",
-            )
+        import_flash = _edit_flash(
+            editor_keys[3], "RQ_LOT_RATIO", imported=imported_lot_ratio_table is not None
+        )
     if apply_wf_ratio or imported_wf_ratio_table is not None:
         update_error_tab = wf_ratio_tab
         source = (
@@ -716,11 +742,9 @@ try:
         pending_updates["RQ_WF_RATIO"] = reference_from_edit_table(
             source, RATIO_DIMENSIONS, "WF측정률", "WF측정률 편집값"
         )
-        if imported_wf_ratio_table is not None:
-            import_flash = (
-                "wf_ratio_editor_csv",
-                "RQ_WF_RATIO 붙여넣기 데이터를 일괄 적용했습니다.",
-            )
+        import_flash = _edit_flash(
+            editor_keys[4], "RQ_WF_RATIO", imported=imported_wf_ratio_table is not None
+        )
     if apply_run_day or imported_run_day_table is not None:
         update_error_tab = run_day_tab
         source = (
@@ -729,11 +753,9 @@ try:
         pending_updates["RQ_RUN_DAY"] = reference_from_edit_table(
             source, RUN_DAY_DIMENSIONS, "RUN_DAY", "일수 편집값"
         )
-        if imported_run_day_table is not None:
-            import_flash = (
-                "run_day_editor_csv",
-                "RQ_RUN_DAY 붙여넣기 데이터를 일괄 적용했습니다.",
-            )
+        import_flash = _edit_flash(
+            editor_keys[5], "RQ_RUN_DAY", imported=imported_run_day_table is not None
+        )
     for table_name, category, value_column, editor_key in EQUIPMENT_EDITORS:
         equipment_sub_tab = {
             "RQ_EQP_OWN": equipment_own_tab,
@@ -748,11 +770,7 @@ try:
         pending_updates[table_name] = equipment_count_from_edit_table(
             source, category, value_column
         )
-        if imported_equipment is not None:
-            import_flash = (
-                f"{editor_key}_csv",
-                f"{table_name} 붙여넣기 데이터를 일괄 적용했습니다.",
-            )
+        import_flash = _edit_flash(editor_key, table_name, imported=imported_equipment is not None)
     if pending_updates:
         apply_month_updates(
             active_scenario,

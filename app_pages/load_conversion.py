@@ -21,6 +21,7 @@ from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
     load_page_context,
     resolve_effective_months,
 )
@@ -73,7 +74,7 @@ try:
     selected_start_month = context.selected_start_month
     selected_end_month = context.selected_end_month
 except BOOTSTRAP_ERRORS as exc:
-    st.error(f"기준정보를 불러오지 못했습니다: {exc}")
+    st.error(f"기준정보를 불러오지 못했습니다: {bootstrap_error_message(exc)}")
     st.stop()
 
 try:
@@ -129,14 +130,11 @@ render_scenario_edit_bar(
 )
 
 conversion_tab, pkg_plan_tab, yield_tab, product_tab = stateful_tabs(
-    [":material/insights: 환산", "PKG PLAN", "수율", "제품 등록"],
+    ["환산", "PKG PLAN", "수율", "제품 등록"],
     key="load_conversion_active_tab",
 )
 
 with pkg_plan_tab:
-    applied_flash = st.session_state.pop(plan_applied_flash_key, None)
-    if isinstance(applied_flash, str):
-        st.success(applied_flash, icon=":material/published_with_changes:")
     st.caption(
         "활성 시나리오의 월별 생산수량을 수정합니다. "
         "수정 후 적용 버튼을 눌러야 다른 페이지의 산출값에 반영됩니다. 단위: Kea"
@@ -171,7 +169,7 @@ with pkg_plan_tab:
         hide_index=True,
         width="content",
         height=500,
-        row_height=25,
+        row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
         num_rows="fixed",
         disabled=PLAN_EDITOR_DIMENSIONS,
         column_config={
@@ -205,6 +203,11 @@ with pkg_plan_tab:
             type="primary",
         )
         st.caption("적용을 누르면 환산·홈 대시보드 등 전역 계획값에 반영됩니다.")
+    # 결과는 누른 버튼 **바로 아래**다. 표(height=500) 위에 두면 누른 자리에서 500px 떨어져
+    # 반응을 못 본다. 다른 여덟 편집기의 적용 문구도 전부 버튼 아래에 붙는다.
+    applied_flash = st.session_state.pop(plan_applied_flash_key, None)
+    if isinstance(applied_flash, str):
+        st.success(applied_flash, icon=":material/published_with_changes:")
     imported_plan_table = render_reference_clipboard_tools(
         plan_editor_source,
         table_name="RQ_PKG_PLAN",
@@ -252,7 +255,8 @@ if apply_plan:
         st.session_state[plan_applied_flash_key] = (
             f"PKG PLAN을 전역 계획값에 반영했습니다. "
             f"{effective_start_month}~{effective_end_month} 구간의 환산·소요대수·확보율과 "
-            f"홈 대시보드가 이 계획으로 다시 계산됩니다."
+            f"홈 대시보드가 이 계획으로 다시 계산됩니다. "
+            "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요."
         )
         st.session_state.pop(source_token_key, None)
         st.rerun()
@@ -349,7 +353,7 @@ with yield_tab:
         hide_index=True,
         width="content",
         height=500,
-        row_height=25,
+        row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
         num_rows="fixed",
         disabled=YIELD_EDITOR_DIMENSIONS,
         column_config={
@@ -407,11 +411,12 @@ if apply_yield or imported_yield_table is not None:
         with yield_tab:
             st.error(str(exc))
     else:
-        if imported_yield_table is not None:
-            queue_reference_import_flash(
-                "rq_yield_csv",
-                "RQ_YLD 붙여넣기 데이터를 활성 시나리오에 일괄 적용했습니다.",
-            )
+        origin = "붙여넣기 데이터를" if imported_yield_table is not None else "편집값을"
+        queue_reference_import_flash(
+            "rq_yield_csv",
+            f"RQ_YLD {origin} 활성 시나리오에 적용했습니다. "
+            "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요.",
+        )
         st.session_state.pop(source_token_key, None)
         st.rerun()
 
@@ -422,16 +427,28 @@ with conversion_tab:
         with st.container(horizontal=True, vertical_alignment="bottom", gap="medium"):
             demand_basis = st.selectbox(
                 "소요기준",
+                help=(
+                    "환산 결과를 어느 단위로 볼지 고릅니다 — PKG·Chip 은 Kea, Wafer 는 매, "
+                    "Density 는 억Gb 입니다. 표 위 「단위」가 고른 값을 따라갑니다."
+                ),
                 options=demand_basis_options,
                 key="monthly_volume_basis",
                 persist_state="session",
                 width=180,
             )
             show_detail = st.toggle(
-                "상세", key="monthly_volume_detail", persist_state="session", width=90
+                "상세",
+                help="켜면 WF 구분을 분류로 더해 행을 폅니다. 합계는 같고 행 수만 늘어납니다.",
+                key="monthly_volume_detail",
+                persist_state="session",
+                width=90,
             )
             include_edp = st.toggle(
-                "EDP", key="monthly_volume_edp", persist_state="session", width=90
+                "EDP",
+                help="끄면 환산 표에서 EDP-TSV 제품을 뺍니다. 켜면 포함합니다.",
+                key="monthly_volume_edp",
+                persist_state="session",
+                width=90,
             )
 
     try:

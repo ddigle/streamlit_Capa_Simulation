@@ -200,7 +200,10 @@ try:
         saved_downtime = latest_snapshot.downtime
         revision_token = latest_snapshot.revision.revision_id
 except BOOTSTRAP_ERRORS as exc:
-    st.error(f"설비 현황을 준비하지 못했습니다: {bootstrap_error_message(exc)}")
+    st.error(
+        "설비 현황을 준비하지 못했습니다: "
+        + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+    )
     st.stop()
 
 if st.session_state.get(DRAFT_REVISION_KEY) != revision_token:
@@ -1013,7 +1016,7 @@ with management_tab:
                 note=revision_note,
             )
         except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
+            st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
         else:
             clear_equipment_snapshot_cache()
             _reset_drafts()
@@ -1026,7 +1029,10 @@ with management_tab:
     try:
         revisions = repository.list_revisions()
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"저장 이력을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        st.error(
+            "저장 이력을 읽지 못했습니다: "
+            + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+        )
         st.stop()
     with st.expander("저장 이력 및 필터 조회", icon=":material/history:", expanded=False):
         if not revisions:
@@ -1071,7 +1077,10 @@ with management_tab:
             try:
                 historical = load_equipment_snapshot(equipment_database_path, selected_revision_id)
             except BOOTSTRAP_ERRORS as exc:
-                st.error(f"선택한 이력을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+                st.error(
+                    "선택한 이력을 읽지 못했습니다: "
+                    + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+                )
                 st.stop()
             historical_equipment = historical.equipment
             with st.container(horizontal=True, gap="small"):

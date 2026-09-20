@@ -73,7 +73,7 @@ from capa_simulation.services.weekly_availability_input import (
     parse_weekly_availability_clipboard,
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
-from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
+from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
 START_DATE_KEY = STANDARD_TARGET_START_DATE_KEY
 END_DATE_KEY = STANDARD_TARGET_END_DATE_KEY
@@ -505,7 +505,9 @@ try:
     equipment_repository = get_equipment_repository(str(EQUIPMENT_DUCKDB_PATH.resolve()))
     availability = equipment_repository.load_standard_target_availability()
 except BOOTSTRAP_ERRORS as exc:
-    st.error(str(exc))
+    # 이 `try` 는 시뮬레이션 DB 와 설비 DB 를 다 연다. 어느 쪽이 잠겼는지 예외로는 가릴 수
+    # 없으므로 두 경로를 다 적는다.
+    st.error(bootstrap_error_message(exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)))
     st.stop()
 
 minimum_date = _first_day(effective_start_month)
@@ -710,7 +712,7 @@ with st.container(border=True):
             try:
                 equipment_repository.clear_standard_target_availability()
             except BOOTSTRAP_ERRORS as exc:
-                st.error(bootstrap_error_message(exc))
+                st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
             else:
                 st.rerun()
 
@@ -741,7 +743,7 @@ with st.container(border=True):
                     )
                 )
             except BOOTSTRAP_ERRORS as exc:
-                st.error(bootstrap_error_message(exc))
+                st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
             else:
                 st.success("주차별 가용설비 최신본을 저장했습니다. 서버를 재시작해도 유지됩니다.")
 

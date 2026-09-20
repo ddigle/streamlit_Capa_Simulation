@@ -7,7 +7,13 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.page_header import (
+    MATURITY_BADGES,
+    page_badges,
+    pending_badge,
+    render_page_header,
+)
+from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.sample_data import (
     render_pending_source,
@@ -51,6 +57,8 @@ from capa_simulation.services.wip_status import (
 )
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
+# 머리말 배지와 스위치·안내가 같은 이름을 보게 한다.
+SOURCE = "재공 실적 DB"
 PROCESS_FILTER_KEY = "wip_status_process_filter"
 PRODUCT_FILTER_KEY = "wip_status_product_filter"
 DEFAULT_PROCESS_COUNT = 5
@@ -85,13 +93,14 @@ render_page_header(
         "공정·제품·STEP별 보유 재공, 유입과 Flow를 일 표준 가능량과 비교합니다. "
         "가로는 STEP 순서, 세로는 제품 표시순서이며 각 셀은 동일한 11일 구간을 표시합니다."
     ),
+    badges=page_badges(MATURITY_BADGES["prototype"], pending_badge(SOURCE)),
 )
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
 process_labels = get_process_labels()
-if not render_sample_switch(key="wip_status_sample_switch", source="재공 실적 DB"):
+if not render_sample_switch(key="wip_status_sample_switch", source=SOURCE):
     render_pending_source(
         subject="표준 대비 재공 현황",
-        source="재공 실적 DB",
+        source=SOURCE,
         expects=(
             "**일자 · 공정 · STEP_SEQ · 제품정보** 단위의 보유 재공",
             "같은 단위의 **유입량**과 **Flow량** — 막대 세 개가 이 세 값입니다",
@@ -128,7 +137,7 @@ try:
         str(EQUIPMENT_DUCKDB_PATH.resolve())
     ).load_standard_target_availability()
 except BOOTSTRAP_ERRORS as exc:
-    st.error(bootstrap_error_message(exc))
+    st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
     st.stop()
 
 if route_scope.empty:
@@ -137,10 +146,17 @@ if route_scope.empty:
 
 if availability.empty:
     # 빈 표를 그대로 계산에 넣으면 prepare_weekly_availability 가 "가용설비 입력 표에 행이
-    # 없습니다" 를 던진다. 입력 표가 없는 이 화면에서는 오류가 아니라 안내여야 한다.
-    st.info(
+    # 없습니다" 를 던진다. 예외(빨간 오류)가 아니라 **사용자가 채워야 할 입력**이므로 경고다
+    # — 아래 :292 의 "일부만 없다" 와 같은 색이어야 심각도가 거꾸로 읽히지 않는다.
+    st.warning(
         "설비 DB에 주차별 가용대수가 없어 표준 가능량 기준선을 만들 수 없습니다. "
         "`표준 목표` 페이지에서 주차별 가용설비를 입력하면 여기에 그대로 반영됩니다."
+    )
+    # 링크는 `st.stop()` **앞**이어야 그려진다.
+    render_page_link(
+        "app_pages/standard_target_capa.py",
+        label="표준 목표 열기",
+        icon=":material/track_changes:",
     )
     st.stop()
 
@@ -277,6 +293,11 @@ with st.container(border=True):
         st.warning(
             "일부 공정·주차에 가용대수가 없어 표준 가능량 기준선을 표시하지 못했습니다. "
             "`표준 목표` 페이지에서 주차별 가용설비를 입력하면 같은 값이 반영됩니다."
+        )
+        render_page_link(
+            "app_pages/standard_target_capa.py",
+            label="표준 목표 열기",
+            icon=":material/track_changes:",
         )
 
     lane_count = len(selected_routes[["STEP_SEQ", "공정"]].drop_duplicates())

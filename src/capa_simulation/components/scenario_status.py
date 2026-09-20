@@ -20,7 +20,7 @@ from capa_simulation.persistence.cache import (
     get_scenario_repository,
     load_scenario_snapshot,
 )
-from capa_simulation.persistence.models import ScenarioSummary
+from capa_simulation.persistence.models import RevisionSummary, ScenarioSummary
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import (
     activate_persisted_snapshot,
@@ -89,7 +89,7 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
         revisions = repository.list_revisions(selected_scenario_id)
         revision_by_id = {revision.revision_id: revision for revision in revisions}
         if not revision_by_id:
-            st.warning("선택한 시나리오에 저장된 리비전이 없습니다.")
+            st.info("선택한 시나리오에 저장된 리비전이 없습니다.")
             return
 
         _ensure_revision_selection(
@@ -153,6 +153,7 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
             _render_revision_save(
                 repository,
                 scenario_by_id,
+                revision_by_id,
                 selected_scenario_id=selected_scenario_id,
                 selected_revision_id=selected_revision_id,
                 active_scenario_id=active_scenario_id,
@@ -196,6 +197,7 @@ def _render_title_row(slot: DeltaGenerator, *, badge: str) -> None:
 def _render_revision_save(
     repository: DuckDBScenarioRepository,
     scenario_by_id: dict[str, ScenarioSummary],
+    revision_by_id: dict[str, RevisionSummary],
     *,
     selected_scenario_id: str,
     selected_revision_id: str,
@@ -210,7 +212,31 @@ def _render_revision_save(
             st.info("먼저 저장된 리비전을 불러오세요.")
             return
         if selected_scenario_id != active_scenario_id or selected_revision_id != active_revision_id:
-            st.info("위에서 선택한 리비전을 먼저 불러온 뒤 저장하세요.")
+            # 여기서 「불러오기」를 권하면 안 된다. 저장하려던 편집이 바로 그 불러오기에
+            # 덮여 사라진다. 저장 대상이 무엇이고 무엇을 되돌리면 되는지만 말한다.
+            active_summary = scenario_by_id.get(active_scenario_id)
+            target_name = (
+                active_summary.scenario_name if active_summary is not None else "활성 시나리오"
+            )
+            # 시나리오는 그대로고 리비전만 다르게 고른 흔한 경우, 이름만 적으면 지금 고른
+            # 것과 글자가 같아 어디로 되돌려야 하는지 알 수 없다. 그 경우에만 번호를 짚어
+            # 준다 — `revision_by_id` 는 고른 시나리오의 목록이라 그때만 활성본을 갖는다.
+            active_revision = revision_by_id.get(active_revision_id)
+            target = (
+                f"「{target_name}」 r{active_revision.revision_no}"
+                if active_revision is not None
+                else f"「{target_name}」"
+            )
+            warning = (
+                "「불러오기」를 누르면 저장하지 않은 편집이 사라집니다. "
+                if has_unsaved_scenario_changes()
+                else ""
+            )
+            st.info(
+                f"저장 대상은 지금 계산에 올라와 있는 {target} 리비전입니다. "
+                f"{warning}"
+                "위 선택 상자를 그 시나리오·리비전으로 되돌리면 저장할 수 있습니다."
+            )
             return
 
         active_summary = scenario_by_id.get(active_scenario_id)
@@ -238,21 +264,25 @@ def _render_revision_save(
             return
 
         try:
-            reference_version = get_effective_reference_version()
-            reference_tables = get_effective_reference_tables()
-            active_scenario = ensure_active_scenario(reference_tables, reference_version)
-            revision_tables = revision_tables_for_save(active_scenario, reference_tables)
-            snapshot = repository.save_revision(
-                active_scenario_id,
-                revision_tables,
-                capture_scenario_preset(
-                    {**reference_tables, "RQ_REQB": revision_tables["RQ_REQB"]}
-                ),
-                revision_name=revision_name,
-                parent_revision_id=active_revision_id,
-                note=note.strip() or None,
-            )
-            activate_persisted_snapshot(snapshot)
+            # `REVISION_TABLES` 14개를 통째로 새 리비전으로 적는다(표시순서·모듈수는
+            # 시나리오에 종속되지 않는 공용 프로필이라 빠진다). 표가 크면 몇 초가 걸리고
+            # 그동안 popover 는 아무 반응이 없어 두 번 누르게 된다.
+            with st.spinner("현재 편집본을 새 리비전으로 저장하는 중입니다..."):
+                reference_version = get_effective_reference_version()
+                reference_tables = get_effective_reference_tables()
+                active_scenario = ensure_active_scenario(reference_tables, reference_version)
+                revision_tables = revision_tables_for_save(active_scenario, reference_tables)
+                snapshot = repository.save_revision(
+                    active_scenario_id,
+                    revision_tables,
+                    capture_scenario_preset(
+                        {**reference_tables, "RQ_REQB": revision_tables["RQ_REQB"]}
+                    ),
+                    revision_name=revision_name,
+                    parent_revision_id=active_revision_id,
+                    note=note.strip() or None,
+                )
+                activate_persisted_snapshot(snapshot)
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"신규 리비전을 저장하지 못했습니다: {bootstrap_error_message(exc)}")
         else:

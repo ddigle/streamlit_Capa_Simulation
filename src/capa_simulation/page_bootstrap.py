@@ -9,7 +9,9 @@ Static Capa 하위 5개 페이지가 같은 40여 줄을 각자 재구현하면�
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import duckdb
 import pandas as pd
@@ -47,17 +49,24 @@ from capa_simulation.sidebar_status import (
 BOOTSTRAP_ERRORS = (KeyError, OSError, RuntimeError, TypeError, ValueError, duckdb.Error)
 
 
-def bootstrap_error_message(exc: BaseException) -> str:
+def bootstrap_error_message(
+    exc: BaseException, *, database_paths: Sequence[Path] = (DUCKDB_PATH,)
+) -> str:
     """화면에 보여 줄 오류 문구.
 
     DuckDB 예외는 원문이 사용자에게 아무 도움이 안 된다(잠금 경로와 영어 문장, Windows
     로캘에서는 한글이 깨진다). 원인이 거의 항상 "이미 다른 창에서 실행 중" 이므로 그 안내로
     바꾼다. 나머지 예외는 서비스 계층이 이미 한국어로 만든 문장이라 그대로 쓴다.
+
+    **어느 파일이 잠겼는지는 부르는 쪽만 안다.** 이 앱은 DB 가 둘이고(시뮬레이션·설비) 한
+    `try` 가 둘 다 받는 자리도 있다. 경로를 여기에 박아 두면 설비 DB 가 잠겼을 때 사용자가
+    멀쩡한 시뮬레이션 파일을 들여다보게 된다.
     """
     if isinstance(exc, duckdb.Error):
+        files = "\n".join(f"- 파일: `{path}`" for path in database_paths)
         return (
-            "시나리오 데이터베이스를 열지 못했습니다.\n\n"
-            f"- 파일: `{DUCKDB_PATH}`\n"
+            "데이터베이스를 열지 못했습니다.\n\n"
+            f"{files}\n"
             "- 이 앱이 이미 다른 창에서 실행 중이면 그 창을 닫고 다시 시작하세요. "
             "DuckDB 는 한 번에 한 프로세스만 파일을 엽니다.\n"
             "- 그래도 같은 오류가 나면 파일 권한과 경로(네트워크 드라이브 여부)를 확인하세요."

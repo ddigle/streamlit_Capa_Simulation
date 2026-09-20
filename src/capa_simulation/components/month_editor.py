@@ -35,12 +35,13 @@ from capa_simulation.components.reference_csv_tools import render_reference_clip
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 
-# 필터 위젯은 숨은 탭에서 그려지지 않는다(아래 조기 반환). 그려지지 않은 위젯의 상태는
-# Streamlit 이 버리므로 탭을 옮기면 선택이 남지 않는다. 그 사실을 화면에도 적어 둔다.
+# 필터 위젯은 숨은 탭에서 그려지지 않는다(아래 조기 반환). 그래도 선택이 남는 것은
+# `column_filter` 의 `persist_state="session"` 덕이다. 화면에는 실제로 사라지는 것, 곧
+# 아직 적용하지 않은 편집만 적는다.
 FILTER_NOTICE = (
     "필터는 화면만 좁힙니다. 변경사항 적용은 필터와 무관하게 표 전체를 저장합니다. "
-    "필터를 바꾸면 아직 적용하지 않은 편집은 사라지고, 다른 탭으로 옮기면 필터 선택도 "
-    "초기화됩니다."
+    "필터를 바꾸면 아직 적용하지 않은 편집은 사라집니다. 필터 선택 자체는 탭을 옮겨도 "
+    "남습니다."
 )
 # 화면은 표시명이지만 아래 CSV 양식과 붙여넣기 검증은 원본 공정명 계약이다. 화면 이름을
 # 그대로 적어 붙여넣으면 분류 행 대조에서 막히므로 그 사실을 표 아래에 적는다.
@@ -85,7 +86,7 @@ def render_month_editor(
             hide_index=True,
             width="content",
             height=500,
-            row_height=25,
+            row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
             num_rows="fixed",
             disabled=dimensions,
             column_config={

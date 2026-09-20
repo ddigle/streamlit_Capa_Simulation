@@ -94,6 +94,11 @@ BOTTLENECK_NAME_INSET_RATIO = 0.07
 
 # 공정명 글자 크기 자동 축소 예산. 막대와 같은 줄에 한 줄로 들어가는 크기다.
 BOTTLENECK_NAME_WIDTH_BUDGET_PX = 80
+# **바닥을 올리면 그만큼 이름이 잘린다.** 칸에 쓸 수 있는 폭이 93px 로 정해져 있어 바닥이
+# 8 이면 11.63 폭 단위까지, 9 면 10.33 단위까지만 온전히 들어간다. 그 사이(한글 약 11자)의
+# 공정명은 바닥을 올리는 순간 전체 이름에서 말줄임으로 바뀐다. 로컬 표본은 합성이라 실제
+# 공정명의 길이 분포를 여기서 알 수 없으므로, 읽기 쉬움보다 이름이 온전한 쪽을 택한다.
+# 전체 이름은 hover 에 잘리지 않고 뜬다(`BOTTLENECK_HOVER_TEMPLATE` 의 `customdata`).
 BOTTLENECK_NAME_MIN_FONT_PX = 8
 BOTTLENECK_NAME_MAX_FONT_PX = 12
 

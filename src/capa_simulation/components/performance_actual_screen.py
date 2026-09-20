@@ -219,7 +219,7 @@ def _render_detail(
     if product != _ALL:
         view = view.loc[view["제품정보"].astype(str).eq(product)]
     if view.empty:
-        st.warning("선택한 조건에 해당하는 실적이 없습니다.")
+        st.info("선택한 조건에 해당하는 실적이 없습니다.")
         return
     # 위젯까지 그린 뒤에 나간다. 앞에서 나가면 탭을 오갈 때 조회 조건이 초기화된다.
     if tab_is_hidden(owner_tab):

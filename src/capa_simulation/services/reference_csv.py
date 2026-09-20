@@ -136,24 +136,31 @@ def validate_reference_edit_table(
     if missing_columns or extra_columns:
         details: list[str] = []
         if missing_columns:
-            details.append(f"누락 {missing_columns}")
+            details.append(f"양식에는 있는데 붙여넣은 표에 없는 열: {', '.join(missing_columns)}")
         if extra_columns:
-            details.append(f"추가 {extra_columns}")
+            details.append(f"붙여넣은 표에만 있는 열: {', '.join(extra_columns)}")
         raise ValueError(
-            f"{table_name} 입력 표 컬럼이 다운로드 양식과 다릅니다: {'; '.join(details)}"
+            f"{table_name} 입력 표의 열이 다운로드 양식과 다릅니다. {' / '.join(details)}. "
+            "「CSV 양식 다운로드」로 지금 조회기간의 양식을 다시 받아, 헤더 줄부터 전체를 "
+            "복사해 붙여넣으세요."
         )
     result = source.reindex(columns=expected_columns).copy()
 
     missing_keys = [column for column in key_columns if column not in result.columns]
     if missing_keys:
         raise ValueError(f"{table_name} 입력 표 식별 컬럼이 없습니다: {', '.join(missing_keys)}")
-    expected_keys = _normalized_keys(template, key_columns, table_name, "다운로드 양식")
-    uploaded_keys = _normalized_keys(result, key_columns, table_name, "업로드 파일")
+    expected_keys = _normalized_keys(
+        template, key_columns, table_name, "다운로드 양식", from_template=True
+    )
+    uploaded_keys = _normalized_keys(result, key_columns, table_name, "붙여넣은 표")
     duplicated = uploaded_keys.duplicated(key_columns, keep=False)
     if duplicated.any():
         examples = uploaded_keys.loc[duplicated, key_columns].drop_duplicates().head(5)
         raise ValueError(
-            f"{table_name} 입력 표 식별 행이 중복되었습니다: {examples.to_dict('records')}"
+            f"{table_name} 입력 표에 같은 분류 행이 두 번 이상 있습니다: "
+            f"{_key_examples(key_columns, pd.MultiIndex.from_frame(examples), limit=5)}. "
+            "중복된 행을 하나만 남기고 다시 붙여넣으세요. 값을 합쳐야 하면 Excel 에서 "
+            "먼저 합산한 뒤 한 행으로 붙여넣습니다."
         )
 
     expected_index = pd.MultiIndex.from_frame(expected_keys[key_columns])
@@ -261,14 +268,31 @@ def _normalized_keys(
     key_columns: list[str],
     table_name: str,
     label: str,
+    *,
+    from_template: bool = False,
 ) -> pd.DataFrame:
+    # `label` 은 화면에 적는 이름이고 `from_template` 은 처방을 가르는 값이다. 둘을 한
+    # 변수로 겸하면 라벨을 다듬는 순간 처방이 조용히 뒤집힌다.
     result = data[key_columns].copy()
     for column in key_columns:
         # 내보낼 때 씌운 `="..."` 껍데기를 벗긴다. Excel 을 거치면 껍데기 없이 값만
         # 돌아오지만, 내려받은 파일을 그대로 올리는 길도 막지 않아야 한다.
         result[column] = result[column].map(strip_excel_text_guard).astype("string").str.strip()
-    has_missing = result.isna().any(axis=None)
-    has_blank = any(result[column].eq("").any() for column in key_columns)
-    if has_missing or has_blank:
-        raise ValueError(f"{table_name} {label}의 식별 컬럼에 누락값이 있습니다.")
+    blank_columns = [
+        column
+        for column in key_columns
+        if result[column].isna().any() or result[column].eq("").any()
+    ]
+    if blank_columns:
+        # 비어 있는 쪽이 다운로드 양식이면 붙여넣기로 고칠 수 있는 것이 아니다. 같은
+        # 문장으로 안내하면 사용자가 고칠 수 없는 일을 하라고 시키는 꼴이 된다.
+        action = (
+            "이 양식은 붙여넣기로 고칠 수 없습니다. 기준정보를 다시 조회·저장하세요."
+            if from_template
+            else "빈 칸을 채우거나 그 행을 지우고 다시 붙여넣으세요."
+        )
+        raise ValueError(
+            f"{table_name} {label}에 분류 칸({', '.join(blank_columns)})이 비어 있는 행이 "
+            f"있습니다. {action}"
+        )
     return result

@@ -57,6 +57,12 @@ from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
 SELECTED_BUILDING_KEY = "space_status_selected_building"
 SELECTED_FLOOR_KEY = "space_status_selected_floor"
+# 아래 두 표의 위젯 키는 **고정이다.** 화면을 되돌렸을 때 옛 선택이 다시 읽혀 도로 끌려가는
+# 덫은 이 버전에 없다 — Streamlit 은 그 회차에 그려지지 않은 위젯의 상태를 버리고(이
+# 저장소의 탭·필터 초기화 문제가 바로 그 동작이다), 위 단계로 올라가면 아래 표는 그려지지
+# 않는다. 예외는 **같은 분기 안에서 대상만 바뀌는** 층 표 하나라, 그것만 동 이름으로 키를
+# 가른다(:439 의 층 도면과 같은 이유다).
+BUILDING_TABLE_KEY = "space_status_building_table"
 
 
 def _show_fab_overview() -> None:
@@ -67,6 +73,10 @@ def _show_fab_overview() -> None:
 def _show_building(building: str) -> None:
     st.session_state[SELECTED_BUILDING_KEY] = building
     st.session_state.pop(SELECTED_FLOOR_KEY, None)
+
+
+def _show_floor(floor: str) -> None:
+    st.session_state[SELECTED_FLOOR_KEY] = floor
 
 
 def _render_space_counts(
@@ -108,7 +118,10 @@ try:
         downtime = latest_snapshot.downtime
         using_sample_equipment = False
 except BOOTSTRAP_ERRORS as exc:
-    st.error(f"Space 설비 데이터를 준비하지 못했습니다: {bootstrap_error_message(exc)}")
+    st.error(
+        "Space 설비 데이터를 준비하지 못했습니다: "
+        + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+    )
     st.stop()
 
 building_names = {building.name for building in BUILDINGS}
@@ -304,7 +317,7 @@ with st.container(border=True):
     else:
         completed_count = int(transition_events["일정상태"].eq("완료").sum())
         planned_count = int(transition_events["일정상태"].eq("예정").sum())
-        with st.container(horizontal=True):
+        with metric_row(key="space_transition_metrics"):
             st.metric("전환 일정", f"{len(transition_events):,}건", border=True)
             st.metric("대상 호기", f"{transition_events['호기'].nunique():,}대", border=True)
             st.metric("완료", f"{completed_count:,}건", border=True)
@@ -421,7 +434,20 @@ if selected_building is None:
                 "비가동대수": inactive,
             }
         )
-    st.dataframe(pd.DataFrame(overview_rows), hide_index=True, width="stretch")
+    # 도면의 표적은 Plotly SVG 마커라 포커스를 받지 못한다. 아래 동으로 내려가는 키보드
+    # 길은 이 표다(행에 포커스를 두고 Shift+Space). 도면 클릭과 같은 자리로 이어진다.
+    building_table = st.dataframe(
+        pd.DataFrame(overview_rows),
+        hide_index=True,
+        width="stretch",
+        key=BUILDING_TABLE_KEY,
+        on_select="rerun",
+        selection_mode="single-row",
+    )
+    picked_building_rows = building_table.selection.rows
+    if picked_building_rows:
+        _show_building(str(overview_rows[picked_building_rows[0]]["동"]))
+        st.rerun()
 
 elif selected_floor is None:
     building_equipment = located_equipment.loc[located_equipment["동"].eq(selected_building)]
@@ -445,7 +471,7 @@ elif selected_floor is None:
         )
         clicked_floor = first_selected_customdata(floor_event)
         if clicked_floor in valid_floor_names and clicked_floor != selected_floor:
-            st.session_state[SELECTED_FLOOR_KEY] = clicked_floor
+            _show_floor(clicked_floor)
             st.rerun()
 
     floor_rows = []
@@ -468,7 +494,19 @@ elif selected_floor is None:
                 ),
             }
         )
-    st.dataframe(pd.DataFrame(floor_rows), hide_index=True, width="stretch")
+    # 층 도면도 같은 이유로 키보드 길이 없다. 위와 같은 표로 잇는다.
+    floor_table = st.dataframe(
+        pd.DataFrame(floor_rows),
+        hide_index=True,
+        width="stretch",
+        key=f"space_status_floor_table_{selected_building}",
+        on_select="rerun",
+        selection_mode="single-row",
+    )
+    picked_floor_rows = floor_table.selection.rows
+    if picked_floor_rows:
+        _show_floor(str(floor_rows[picked_floor_rows[0]]["층"]))
+        st.rerun()
 
 else:
     floor_equipment = (

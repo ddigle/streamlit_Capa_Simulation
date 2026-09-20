@@ -107,9 +107,13 @@ def build_capacity_trend_figure(detail: pd.DataFrame) -> go.Figure:
     """Show daily standard, effective, and production actual capacity."""
     daily = aggregate_dynamic_capacity(detail, ["일자"]).sort_values("일자", kind="stable")
     figure = go.Figure()
+    # 세 계열은 색이 아니라 **선 모양**으로 갈린다. `SERIES_EFFECTIVE` 와 `SERIES_ACTUAL`
+    # 은 서로 대비가 1.89:1 뿐이고 둘 다 무채색이라 색각이상 시뮬레이션 뒤에도 그대로다 —
+    # 명도만으로는 두 선이 겹치는 구간에서 갈리지 않는다. 실적만 실선으로 남기는 것은
+    # "실제로 일어난 것" 이라는 뜻과 맞춘 것이다.
     for column, label, color, dash in (
         ("표준 Capa", "표준 Capa", tokens.SERIES_STANDARD, "dash"),
-        ("실효 Capa", "실효 Capa", tokens.SERIES_EFFECTIVE, "solid"),
+        ("실효 Capa", "실효 Capa", tokens.SERIES_EFFECTIVE, "dot"),
         ("실적수량", "실제 실적", tokens.SERIES_ACTUAL, "solid"),
     ):
         figure.add_trace(

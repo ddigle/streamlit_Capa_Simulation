@@ -13,8 +13,9 @@
 "년월 헤더가 셀 구석에 처박힌다" 가 이것이다.
 
 **숨은 탭에서는 위젯이 아니라 그림만 건너뛴다.** 본문을 통째로 건너뛰면 그 안의
-`multiselect` 같은 위젯이 렌더되지 않아 Streamlit 이 선택값을 버린다. 탭을 오갈 때마다
-필터가 초기화되는 것이 그 결과다.
+`multiselect` 같은 위젯이 렌더되지 않아 Streamlit 이 선택값을 버린다. 본문을 건너뛸 수밖에
+없는 자리(`month_editor` 의 조기 반환)는 위젯에 `persist_state="session"` 을 줘서 그 손실을
+막는다.
 """
 
 from __future__ import annotations

@@ -48,8 +48,9 @@ def render_sample_switch(*, key: str, source: str) -> bool:
                 width="content",
                 help=(
                     "켜면 연결 후 모습을 합성 데이터로 보여 주고, 끄면 지금 상태(빈 화면과 "
-                    f"{source} 연결 대기)를 그대로 보여 줍니다. 설정은 Dynamic Capa 화면 "
-                    "전체에 함께 적용됩니다."
+                    f"{source} 연결 대기)를 그대로 보여 줍니다. 이 스위치는 이 화면 하나가 "
+                    "아니라 샘플을 쓰는 모든 화면에 함께 걸립니다 — Dynamic Capa 하위 화면들과 "
+                    "Capa Chatbot 이 같이 바뀝니다."
                 ),
             )
             if enabled:

@@ -90,7 +90,7 @@ def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:
     """사이드바 라벨과 페이지 본문 `st.title` 이 같은 표기를 써야 한다.
 
     이전에는 사이드바만 `(구현중)`·`(구현 중)`·`(DB 셋팅중)` 세 갈래였다.
-    `Capa Chatbot` 은 본문이 "화면 초안" 이라고 밝히는데도 사이드바에만 표기가 없어
+    `Capa Chatbot` 은 본문이 "인터랙티브 프로토타입" 이라고 밝히는데도 사이드바에만 표기가 없어
     가장 덜 된 화면이 완성된 것처럼 보였다.
 
     표기는 둘이다. `(구현중)` 은 아직 못 만든 화면, `(Data확보중)` 은 화면은 다 만들었고

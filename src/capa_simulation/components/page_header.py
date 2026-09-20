@@ -26,7 +26,8 @@ STATUS_SLOT_WIDTH_PX = 320
 TITLE_STATUS_COLUMN_RATIO = (2, 3)
 
 # 화면이 어느 단계인지 알려주는 배지. 본문이 이미 쓰던 어휘를 그대로 쓴다.
-# 사이드바는 `(구현중)` 한 단계만 쓰고 성숙도는 여기서만 나눈다(docs/TODO.md 결정).
+# 사이드바 접미는 둘(`(구현중)`·`(Data확보중)`)이고 본문 성숙도는 여기서 더 잘게 나눈다
+# (docs/TODO.md 3-1 [결정]).
 MATURITY_BADGES = {
     "draft": ":gray-badge[화면 초안]",
     "prototype": ":green-badge[인터랙티브 프로토타입]",

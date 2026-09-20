@@ -17,6 +17,7 @@ from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
     load_page_context,
     resolve_effective_months,
 )
@@ -156,7 +157,7 @@ render_roadmap_panel(
     roadmap="부족대수 모니터링 → Total/가용 일정 분리 → 부서별 A/Item 및 이력 관리",
 )
 
-st.subheader("확보율 기준 설비 부족 현황", divider="gray")
+st.subheader("확보율 기준 설비 부족 현황")
 st.caption("월·공정별 가용대수 ÷ 소요대수를 기준으로 최소 추가 설비대수를 정수 올림합니다.")
 
 if SECURE_THRESHOLD_KEY not in st.session_state:
@@ -233,7 +234,7 @@ try:
         secure_threshold=float(secure_threshold_percent) / 100.0,
     )
 except BOOTSTRAP_ERRORS as exc:
-    st.error(str(exc))
+    st.error(bootstrap_error_message(exc))
 else:
     with st.container(border=True):
         st.markdown("#### :material/priority_high: 경고 기준 미달")

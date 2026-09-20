@@ -19,7 +19,6 @@ from typing import cast
 
 import pandas as pd
 import streamlit as st
-from streamlit.errors import StreamlitPageNotFoundError
 
 from capa_simulation.components.dynamic_capacity_dashboard import (
     build_capacity_trend_figure,
@@ -32,6 +31,7 @@ from capa_simulation.components.page_header import (
     pending_badge,
     render_page_header,
 )
+from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.roadmap_panel import render_roadmap_panel
 from capa_simulation.components.sample_data import (
@@ -160,7 +160,10 @@ def _render_summary(
             f"{process_summary['Rundown 시간'].sum():,.1f}h",
             border=True,
         )
-    st.caption("프로토타입 판정 기준: Capa 실현률 90% 이상 정상, 80% 이상 관찰, 80% 미만 개선 필요")
+    st.caption(
+        "프로토타입 판정 기준: Capa 실현률 90% 이상 정상, 80% 이상 관찰, 80% 미만 개선 필요. "
+        "아래 `Capa 실현률` 막대의 색이 이 판정이며 정상·관찰·개선 필요 순으로 짙어집니다."
+    )
 
     overview_chart, overview_table = st.columns([1.35, 1.0], gap="medium")
     with overview_chart.container(border=True):
@@ -223,19 +226,7 @@ def _render_loss_routes() -> None:
             with column.container(border=True):
                 st.markdown(f"**{title}**")
                 st.caption(subtitle)
-                _render_route_link(page_path, icon)
-
-
-def _render_route_link(page_path: str, icon: str) -> None:
-    """`st.page_link` 는 `st.navigation` 에 등록된 페이지만 받는다.
-
-    페이지를 단독 실행하는 테스트에는 네비게이션이 없어 그대로 두면 화면 전체가 예외로
-    죽는다. 링크가 없다고 화면이 멎을 이유는 없으므로 문구로 물러선다.
-    """
-    try:
-        st.page_link(page_path, label="열기", icon=icon)
-    except StreamlitPageNotFoundError:
-        st.caption("사이드바에서 열기")
+                render_page_link(page_path, label="열기", icon=icon)
 
 
 def _render_detail(
@@ -354,7 +345,7 @@ def _render_detail(
         wafer_type=None if wafer_type == _ALL else wafer_type,
     )
     if filtered.empty:
-        st.warning("선택한 조건에 해당하는 Dynamic Capa 데이터가 없습니다.")
+        st.info("선택한 조건에 해당하는 Dynamic Capa 데이터가 없습니다.")
         return
 
     detail_summary = aggregate_dynamic_capacity(filtered, ["공정"]).iloc[0]
