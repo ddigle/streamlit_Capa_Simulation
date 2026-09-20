@@ -1124,6 +1124,12 @@ def build_lob_summary_figures(
     append_layout_items(
         label_figure,
         annotations=[
+            # 밀리지 마라 **`xanchor`·`yanchor` 를 빼면 안 된다.** 기본값 `"auto"` 는 paper 참조·
+            # 화살표 없는 주석에서 **가장 가까운 변**으로 붙는다 — 위·아래 각 1/3 구간이면
+            # `top`·`bottom` 이 되고 가운데 1/3 에서만 `middle` 이다. `B/N Top 5` 는 밴드가
+            # 아래쪽이라 `y≈0.16` 이고, 그래서 글자 높이의 절반만큼 위로 들렸다(브라우저에서
+            # 실측 −14.8px, 글자 높이 29). `생산계획 LOB` 는 가운데 구간에 들어 우연히 맞았을
+            # 뿐이다 — 밴드 높이가 바뀌면 같이 어긋난다.
             {
                 "x": 0.5,
                 "y": (lob_y_domain[0] + lob_y_domain[1]) / 2,
@@ -1131,6 +1137,8 @@ def build_lob_summary_figures(
                 "yref": "paper",
                 "text": "<b>생산계획 LOB</b>",
                 "showarrow": False,
+                "xanchor": "center",
+                "yanchor": "middle",
                 "font": {
                     "size": 20,
                     "color": tokens.TEXT,
@@ -1144,6 +1152,8 @@ def build_lob_summary_figures(
                 "yref": "paper",
                 "text": "<b>B/N Top 5</b>",
                 "showarrow": False,
+                "xanchor": "center",
+                "yanchor": "middle",
                 "font": {
                     "size": 20,
                     "color": tokens.TEXT,
@@ -1440,16 +1450,25 @@ def build_plan_detail_figures(
             previous_prefix = current_prefix
     detail_group_indices: list[int] = []
     detail_group_starts: list[int] = []
+    # 같은 제품 **안**에서 Stack 이 바뀌는 자리. 제품 경계와 겹치지 않는다 — 제품이 바뀌면
+    # 굵은 선이 이미 서므로 여기에 얇은 선을 겹쳐 그으면 두 선이 붙어 지저분해진다.
+    detail_stack_starts: list[int] = []
     previous_product: str | None = None
+    previous_stack: str | None = None
     group_index = -1
     product_values = detail_dimension_values[0] if detail_dimension_values else []
+    stack_values = detail_dimension_values[1] if len(detail_dimension_values) > 1 else []
     for row_index, product in enumerate(product_values):
+        stack = stack_values[row_index] if stack_values else None
         if row_index == 0 or product != previous_product:
             group_index += 1
             if row_index > 0:
                 detail_group_starts.append(row_index)
+        elif stack_values and stack != previous_stack:
+            detail_stack_starts.append(row_index)
         detail_group_indices.append(group_index)
         previous_product = product
+        previous_stack = stack
 
     grouped_dimension_values = [
         [_centered_cell_text(value) for value in values] for values in grouped_dimension_values
@@ -1668,21 +1687,32 @@ def build_plan_detail_figures(
             if gap
         ],
     )
-    detail_group_shapes = [
-        {
+
+    def _detail_row_rule(row_start: int, color: str, width: float) -> dict[str, object]:
+        """행 `row_start` 의 위 모서리에 놓는 가로 선. 두 Figure 가 같은 값을 쓴다."""
+        y = 1 - (detail_header_height + row_start * detail_row_height) / detail_figure_height
+        return {
             "type": "line",
             "x0": 0,
             "x1": 1,
-            "y0": 1
-            - (detail_header_height + group_start * detail_row_height) / detail_figure_height,
-            "y1": 1
-            - (detail_header_height + group_start * detail_row_height) / detail_figure_height,
+            "y0": y,
+            "y1": y,
             "xref": "paper",
             "yref": "paper",
-            "line": {"color": tokens.BORDER_STRONG, "width": tokens.GROUP_BORDER_WIDTH_PX},
+            "line": {"color": color, "width": width},
             "layer": "above",
         }
-        for group_start in detail_group_starts
+
+    # 얇은 선을 **먼저** 넣는다. 제품 경계의 굵은 선이 뒤에 와야 겹칠 때 위로 올라온다.
+    detail_group_shapes = [
+        *(
+            _detail_row_rule(stack_start, tokens.BORDER, tokens.GRID_LINE_WIDTH_PX)
+            for stack_start in detail_stack_starts
+        ),
+        *(
+            _detail_row_rule(group_start, tokens.BORDER_STRONG, tokens.GROUP_BORDER_WIDTH_PX)
+            for group_start in detail_group_starts
+        ),
     ]
     append_layout_items(detail_label_figure, shapes=detail_group_shapes)
     append_layout_items(detail_month_figure, shapes=detail_group_shapes)

@@ -55,19 +55,134 @@ def test_windows_only_font_is_never_declared_without_a_fallback() -> None:
     )
 
 
+# ----------------------------------------------------------------------- 색 계산
+# 상태색 검사에만 쓰는 최소 색 계산. `tokens.STATUS_*` 를 읽으면 **밝은 팔레트만** 검사하게
+# 된다 — 모듈 `__getattr__` 이 실행 중인 테마를 보는데, 테스트는 Streamlit 밖이라 늘
+# `light` 로 떨어진다. 그래서 아래 검사들은 `_PALETTES` 를 직접 돌며 두 팔레트를 다 본다.
+# 실제로 어두운 팔레트의 상태색 셋이 서로 구분되지 않게 망가진 적이 있는데, 그때 이
+# 파일의 검사는 전부 초록이었다.
+
+
+def _linear(color: str) -> list[float]:
+    channels = [int(color.lstrip("#")[index : index + 2], 16) / 255 for index in (0, 2, 4)]
+    return [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+
+
+def relative_luminance(color: str) -> float:
+    red, green, blue = _linear(color)
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def contrast_ratio(one: str, other: str) -> float:
+    high, low = sorted((relative_luminance(one), relative_luminance(other)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def _oklab(linear: list[float]) -> tuple[float, float, float]:
+    red, green, blue = linear
+    cube = lambda value: value ** (1 / 3) if value >= 0 else -((-value) ** (1 / 3))  # noqa: E731
+    long = cube(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue)
+    medium = cube(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue)
+    short = cube(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue)
+    return (
+        0.2104542553 * long + 0.7936177850 * medium - 0.0040720468 * short,
+        1.9779984951 * long - 2.4285922050 * medium + 0.4505937099 * short,
+        0.0259040371 * long + 0.7827717662 * medium - 0.8086757660 * short,
+    )
+
+
+# Machado, Oliveira & Fernandes (2009) 의 색각이상 변환(선형 RGB, 강도 1.0).
+CVD_MATRICES = {
+    "protan": (
+        (0.152286, 1.052583, -0.204868),
+        (0.114503, 0.786281, 0.099216),
+        (-0.003882, -0.048116, 1.051998),
+    ),
+    "deutan": (
+        (0.367322, 0.860646, -0.227968),
+        (0.280085, 0.672501, 0.047413),
+        (-0.011820, 0.042940, 0.968881),
+    ),
+}
+
+
+def _delta_e(one: str, other: str, vision: str | None = None) -> float:
+    """OKLab 유클리드 거리 ×100. `vision` 이 없으면 정상 시야."""
+
+    def prepare(color: str) -> list[float]:
+        linear = _linear(color)
+        if vision is None:
+            return linear
+        matrix = CVD_MATRICES[vision]
+        return [
+            min(1.0, max(0.0, sum(m * c for m, c in zip(row, linear, strict=True))))
+            for row in matrix
+        ]
+
+    first, second = _oklab(prepare(one)), _oklab(prepare(other))
+    return 100 * sum((a - b) ** 2 for a, b in zip(first, second, strict=True)) ** 0.5
+
+
+def _bullets(lines: list[str]) -> str:
+    """실패 목록을 줄바꿈 + 들여쓰기로 이어 붙인다."""
+    return "".join("\n  " + line for line in lines)
+
+
+STATUS_NAMES = ("STATUS_SECURE", "STATUS_WARNING", "STATUS_SHORTAGE")
+# `scripts/validate_palette.js`(dataviz) 의 문턱을 그대로 쓴다.
+CVD_TARGET = 8.0  # 색각이상(protan·deutan 중 나쁜 쪽) OKLab ΔE
+NORMAL_FLOOR = 15.0  # 정상 시야 OKLab ΔE. 이 아래면 색을 다 보는 사람도 못 가른다
+TEXT_ON_FILL_MINIMUM = 4.5  # 칸을 채운 색 위의 숫자
+
+
 def test_status_colors_keep_a_monotonic_severity_order() -> None:
-    """확보 → 경고 → 부족 순으로 어두워져야 흑백·색각이상에서 순서가 읽힌다."""
+    """확보 → 경고 → 부족 순으로 어두워져야 흑백·색각이상에서 순서가 읽힌다.
 
-    def relative_luminance(color: str) -> float:
-        channels = [int(color.lstrip("#")[index : index + 2], 16) / 255 for index in (0, 2, 4)]
-        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
-        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+    **두 팔레트를 다 본다.** 어두운 팔레트는 밝은 쪽을 그대로 어둡게 옮긴 것이 아니라
+    따로 고른 값이라, 여기서 안 보면 순서가 뒤집혀도 아무도 모른다.
+    """
+    for mode, palette in tokens._PALETTES.items():
+        secure, warning, shortage = (relative_luminance(palette[name]) for name in STATUS_NAMES)
+        assert secure > warning > shortage, (
+            f"{mode} 팔레트의 상태색 휘도가 단조 감소하지 않습니다: "
+            f"확보 {secure:.3f} · 경고 {warning:.3f} · 부족 {shortage:.3f}"
+        )
 
-    secure = relative_luminance(tokens.STATUS_SECURE)
-    warning = relative_luminance(tokens.STATUS_WARNING)
-    shortage = relative_luminance(tokens.STATUS_SHORTAGE)
 
-    assert secure > warning > shortage
+def test_status_colors_stay_apart_for_colorblind_readers() -> None:
+    """상태색 셋은 **서로** 떨어져야 한다 — 히트맵이 셋을 나란히 놓고 읽게 한다.
+
+    휘도 대비(WCAG)로는 잡히지 않는다. 회색·주황·자주는 색상이 분리를 떠받치므로 휘도비는
+    1.2:1 이어도 멀쩡히 구분되고, 반대로 휘도비가 멀어도 색각이상에서 붙을 수 있다.
+    잣대는 OKLab ΔE 이고, 눈이 아니라 계산으로 본다.
+    """
+    failures: list[str] = []
+    for mode, palette in tokens._PALETTES.items():
+        colors = [palette[name] for name in STATUS_NAMES]
+        for i in range(len(colors)):
+            for j in range(i + 1, len(colors)):
+                one, other = colors[i], colors[j]
+                label = f"{mode} {STATUS_NAMES[i]}↔{STATUS_NAMES[j]}"
+                cvd = min(_delta_e(one, other, vision) for vision in CVD_MATRICES)
+                normal = _delta_e(one, other)
+                if cvd < CVD_TARGET:
+                    failures.append(f"{label}: 색각이상 ΔE {cvd:.1f} < {CVD_TARGET}")
+                if normal < NORMAL_FLOOR:
+                    failures.append(f"{label}: 정상시야 ΔE {normal:.1f} < {NORMAL_FLOOR}")
+    assert not failures, "상태색이 서로 구분되지 않습니다:" + _bullets(failures)
+
+
+def test_status_fills_carry_readable_numbers() -> None:
+    """상태색은 칸을 채우고 그 위에 `TEXT` 가 얹힌다. 그 대비가 색 선택의 상한이다."""
+    failures: list[str] = []
+    for mode, palette in tokens._PALETTES.items():
+        for name in STATUS_NAMES:
+            ratio = contrast_ratio(palette["TEXT"], palette[name])
+            if ratio < TEXT_ON_FILL_MINIMUM:
+                failures.append(f"{mode} {name} {palette[name]} 위의 글자 {ratio:.2f}:1")
+    assert not failures, f"칸 위 숫자가 {TEXT_ON_FILL_MINIMUM}:1 에 못 미칩니다:" + _bullets(
+        failures
+    )
 
 
 def test_every_equipment_status_has_its_own_color() -> None:
