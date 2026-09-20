@@ -35,7 +35,7 @@ from capa_simulation.components.scroll_shell import (
     split_scroll_columns_style,
 )
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
-from capa_simulation.design import tokens
+from capa_simulation.design import theme, tokens
 from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
 from capa_simulation.performance import PerformanceTrace
 
@@ -98,9 +98,26 @@ HOME_LOADING_STAGES = (
 )
 
 
-def home_figure_cache() -> dict[HomeFigureCacheKey, HomeFigureSet]:
+# 캐시 칸은 **테마별로 갈린다.** Plotly Figure 는 색을 구워 넣으므로 밝은 테마에서 만든
+# 그림을 어두운 테마가 쓰면 흰 배경에 밝은 회색 글자가 얹힌다.
+#
+# 테마가 바뀔 때 통째로 비우지 않고 키로 가르는 이유는 `st.context.theme.type` 이
+# **믿을 수 없는 순간이 있기 때문**이다. Streamlit 문서가 「세션에서 앱이 처음 로드될 때」와
+# 「사용자가 테마를 바꾼 직후」에는 값이 틀릴 수 있다고 적는다(배경색에서 추론하는 값이다).
+# 이 앱의 테마 버튼은 `localStorage` 를 쓰고 새로고침하므로 **정확히 그 두 순간**에 걸린다.
+# 비우는 방식이면 그때 잘못 읽은 테마로 만든 그림이 그대로 눌러앉지만, 키로 가르면 다음
+# 실행에서 값이 바로잡히는 순간 칸이 달라져 저절로 다시 그린다.
+ThemedFigureCacheKey = tuple[str, HomeFigureCacheKey]
+
+
+def home_figure_cache() -> dict[ThemedFigureCacheKey, HomeFigureSet]:
     cached = st.session_state.setdefault(HOME_FIGURE_CACHE_KEY, {})
-    return cast(dict[HomeFigureCacheKey, HomeFigureSet], cached)
+    return cast(dict[ThemedFigureCacheKey, HomeFigureSet], cached)
+
+
+def _themed_key(cache_key: HomeFigureCacheKey) -> ThemedFigureCacheKey:
+    """이 실행의 테마를 앞에 붙인 칸 이름. 그림을 만든 팔레트와 같은 값이다."""
+    return (theme.current_mode(), cache_key)
 
 
 def take_home_figures(cache_key: HomeFigureCacheKey) -> HomeFigureSet | None:
@@ -111,9 +128,10 @@ def take_home_figures(cache_key: HomeFigureCacheKey) -> HomeFigureSet | None:
     여덟이라 축출이 실제로 일어난다.
     """
     cache = home_figure_cache()
-    figures = cache.pop(cache_key, None)
+    themed = _themed_key(cache_key)
+    figures = cache.pop(themed, None)
     if figures is not None:
-        cache[cache_key] = figures
+        cache[themed] = figures
     return figures
 
 
@@ -122,8 +140,9 @@ def store_home_figures(
     figures: HomeFigureSet,
 ) -> None:
     cache = home_figure_cache()
-    cache.pop(cache_key, None)
-    cache[cache_key] = figures
+    themed = _themed_key(cache_key)
+    cache.pop(themed, None)
+    cache[themed] = figures
     while len(cache) > HOME_FIGURE_CACHE_MAX_ENTRIES:
         cache.pop(next(iter(cache)))
 

@@ -1975,7 +1975,10 @@ def build_key_process_heatmap_figures(
 
     def name_annotation(row_index: int, text: str, color: str) -> dict[str, Any]:
         return {
-            "x": KEY_PROCESS_NAME_INSET_PX / DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+            # 구분 칸은 네 구획이 세로로 잇는 **한 열**이다. 나머지 셋(`Capa LOB 현황`
+            # 의 행 이름, `계획 세부수량` 의 분류, `상세 B/N` 의 순위)과 이 구획의 머리글까지
+            # 모두 칸 한가운데에 서므로, 여기만 왼쪽에 붙이면 한 열이 두 규칙으로 읽힌다.
+            "x": 0.5,
             "y": 1
             - (KEY_PROCESS_HEADER_HEIGHT_PX + (row_index + 0.5) * KEY_PROCESS_ROW_HEIGHT_PX)
             / table_height,
@@ -1983,7 +1986,7 @@ def build_key_process_heatmap_figures(
             "yref": "paper",
             "text": text,
             "showarrow": False,
-            "xanchor": "left",
+            "xanchor": "center",
             "yanchor": "middle",
             "font": {
                 "color": color,

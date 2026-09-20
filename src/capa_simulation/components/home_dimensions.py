@@ -213,10 +213,11 @@ KEY_PROCESS_CELL_HEIGHT_PX = KEY_PROCESS_ROW_HEIGHT_PX - 2 * KEY_PROCESS_CELL_GA
 # 칸 안 확보율 글자와 왼쪽 공정명 글자. 색만으로 뜻을 나르지 않으려면 칸마다 숫자가
 # 있어야 한다(색각이상·흑백 인쇄). 칸을 꽉 채우고 나면 글자는 색 위에 얹히므로 한 단계
 # 줄여야 면이 글자에 잘리지 않는다.
-KEY_PROCESS_RATE_FONT_SIZE_PX = 11
+KEY_PROCESS_RATE_FONT_SIZE_PX = 14
 KEY_PROCESS_NAME_FONT_SIZE_PX = 13
 
-# 라벨 칸에서 공정명이 시작하는 왼쪽 여백.
+# 공정명 말줄임 예산을 잡을 때 칸 **양쪽**에 남기는 여백. 이름은 칸 한가운데에 서므로
+# 자리는 이 값을 보지 않는다 — 좌우로 이만큼 빼고 남는 폭이 이름이 쓸 수 있는 폭이다.
 KEY_PROCESS_NAME_INSET_PX = 10
 
 LOB_TABLE_HEADER_HEIGHT_PX = 45

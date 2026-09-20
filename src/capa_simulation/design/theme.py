@@ -29,14 +29,13 @@ _LOCAL = threading.local()
 def begin_run() -> Mode:
     """rerun 첫머리에서 한 번 부른다. 이 실행이 쓸 테마를 정해 스레드에 담는다.
 
-    바뀌었으면 **그 세션의 Figure 캐시를 비운다.** Plotly Figure 는 색을 구워 넣으므로,
-    캐시가 남아 있으면 테마를 바꿔도 옛 그림이 그대로 뜬다. 프로세스 전역 캐시는 비울
-    것이 없다 — 전수로 확인했고 색을 들고 있는 것은 이 세션 캐시 하나뿐이다.
+    **Figure 캐시를 비우지 않는다.** 색을 구워 넣은 그림이 테마를 넘나들면 안 되는 것은
+    맞지만, 그것은 `home_rendering` 이 캔 이름 앞에 테마를 붙여 가른다. 비우는 방식은
+    `st.context.theme.type` 이 틀리는 순간에 오히려 해롭다 — 그때 잘못 읽은 테마로 만든
+    그림이 캐시에 눌러앉고, 값이 바로잡혀도 칸 이름이 같아 그대로 나온다.
     """
     resolved = _read_client_mode()
-    if getattr(_LOCAL, "mode", None) != resolved:
-        _LOCAL.mode = resolved
-        _clear_coloured_caches()
+    _LOCAL.mode = resolved
     return resolved
 
 
@@ -47,6 +46,14 @@ def current_mode() -> Mode:
 
 
 def _read_client_mode() -> Mode:
+    """클라이언트가 보고하는 테마.
+
+    **처음 로드와 테마 전환 직후에는 틀릴 수 있다.** Streamlit 이 이 값을 앱 배경색에서
+    추론하기 때문이고, 공식 문서가 그 두 순간을 명시한다(streamlit#11920). 이 앱의 테마
+    버튼은 `localStorage` 를 쓰고 새로고침하므로 그 두 순간에 정확히 걸린다 — 한 번은
+    옛 테마로 그려질 수 있고, 다음 실행에서 바로잡힌다. 그동안 잘못 그린 그림이 눌러앉지
+    않게 하는 일은 Figure 캐시 키가 맡는다.
+    """
     try:
         value = st.context.theme.type
     except Exception:  # noqa: BLE001 - 런타임 밖·컨텍스트 없음 전부 밝게로 떨어뜨린다
