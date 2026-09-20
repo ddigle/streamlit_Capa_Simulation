@@ -116,7 +116,7 @@ if ($isolated -ne 0) {
 Write-Host ""
 Write-Host "준비됐습니다. 이 폴더에서만 일하세요 (AGENTS 14-1)."
 Write-Host "  cd $Path"
-Write-Host "  .un.ps1          # 포트 $Port 로 뜹니다. 격리도 함께 확인합니다."
+Write-Host "  .\run.ps1          # 포트 $Port 로 뜹니다. 격리도 함께 확인합니다."
 Write-Host ""
 Write-Host "지울 때는 main 폴더에서:"
 Write-Host "  git worktree remove $Path"
