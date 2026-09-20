@@ -5,14 +5,13 @@ import plotly.graph_objects as go
 from capa_simulation.components import grouped_monthly_table as grouped
 from capa_simulation.components import hierarchical_monthly_table as hierarchical
 from capa_simulation.components.monthly_table_base import (
-    BORDER_COLOR,
     GRID_LINE_WIDTH_PX,
-    GROUP_BORDER_COLOR,
     OUTER_BORDER_WIDTH_PX,
     add_classification_boundaries,
     add_month_boundaries,
     add_outer_border,
 )
+from capa_simulation.design import tokens
 
 MONTHS = ["202601", "202602", "202603", "202604", "202605", "202606", "202607"]
 WIDTHS = [120, 160, 90, 110]
@@ -69,7 +68,7 @@ def test_outer_border_draws_only_lines() -> None:
     assert [shape["type"] for shape in _shapes(month)] == ["line"] * 3
     for shape in _shapes(label) + _shapes(month):
         assert shape["line"] == {
-            "color": GROUP_BORDER_COLOR,
+            "color": tokens.BORDER_STRONG,
             "width": OUTER_BORDER_WIDTH_PX * 2,
         }
 
@@ -134,7 +133,7 @@ def test_classification_boundaries_cover_every_column_gap() -> None:
     for shape in _shapes(figure):
         assert shape["x0"] == shape["x1"]
         assert (shape["y0"], shape["y1"]) == (0, 1)
-        assert shape["line"] == {"color": BORDER_COLOR, "width": GRID_LINE_WIDTH_PX}
+        assert shape["line"] == {"color": tokens.BORDER, "width": GRID_LINE_WIDTH_PX}
 
 
 def test_both_tables_draw_the_same_classification_boundaries() -> None:
@@ -149,7 +148,7 @@ def test_both_tables_draw_the_same_classification_boundaries() -> None:
             for shape in _shapes(figure)
             if shape["x0"] == shape["x1"]
             and shape["x0"] not in (0, 1)
-            and shape["line"]["color"] == BORDER_COLOR
+            and shape["line"]["color"] == tokens.BORDER
         ]
 
     assert dividers(grouped_label) == _shapes(expected)

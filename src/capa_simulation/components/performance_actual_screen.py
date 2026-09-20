@@ -41,11 +41,19 @@ from capa_simulation.services.performance_actuals import (
 )
 
 _ALL = "전체"
-STATUS_COLORS = {
-    "개선 필요": tokens.STATUS_SHORTAGE,
-    "관찰": tokens.STATUS_WARNING,
-    "정상": tokens.STATUS_SECURE,
+# 이름만 들고 있다가 쓸 때 조회한다. 모듈 로드 시점에 색을 받아 두면 첫 실행의 테마로
+# 굳어 사용자가 테마를 바꿔도 따라오지 않는다.
+_STATUS_TOKENS = {
+    "개선 필요": "STATUS_SHORTAGE",
+    "관찰": "STATUS_WARNING",
+    "정상": "STATUS_SECURE",
 }
+
+
+def status_color(status: str) -> str:
+    """이 실행의 팔레트에서 그 판정의 색."""
+    name = _STATUS_TOKENS.get(status)
+    return str(getattr(tokens, name)) if name else tokens.TEXT_MUTED
 
 
 def render_performance_actual_screen(
@@ -420,7 +428,8 @@ def _priority_figure(
             orientation="h",
             marker={
                 "color": [
-                    STATUS_COLORS.get(str(status), tokens.BAR_TRACK) for status in ordered["상태"]
+                    status_color(str(status)) if str(status) in _STATUS_TOKENS else tokens.BAR_TRACK
+                    for status in ordered["상태"]
                 ],
                 "line": {"color": tokens.SURFACE, "width": 1},
             },

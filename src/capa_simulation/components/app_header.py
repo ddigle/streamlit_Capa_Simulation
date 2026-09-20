@@ -43,9 +43,12 @@ _BOTTOM_LINE = (
 )
 
 # CSS 는 중괄호가 많아 f-string 으로 두면 전부 이스케이프해야 한다. 색·글자 자리에
-# 센티넬을 두고 모듈 로드 시 한 번만 치환한다.
-_HEADER_CSS = (
-    """
+# 센티넬을 두고 **그릴 때마다** 치환한다.
+#
+# **모듈 로드 시점에 치환하면 안 된다.** 토큰은 실행마다 그때의 팔레트를 보는데, 여기서
+# 받아 두면 프로세스가 처음 이 모듈을 읽은 순간의 테마로 굳는다. Streamlit 은 프로세스를
+# 유지하므로 사용자가 테마를 바꿔도 헤더만 옛 색으로 남는다.
+_HEADER_TEMPLATE = """
 /* 헤더 글자는 가상요소뿐이라 한 줄 안에서 굵기·색을 섞을 수 없다. 그래서 「머리」를
    만드는 길은 글자 구성이 아니라 **면**이다. 위가 밝고 아래로 내려앉는 2단 면에 머리
    2px ACCENT 실선 하나. 아래 사이드바 띠와 **같은 값**을 쓴다 — 부모가 다른 두 요소를
@@ -165,20 +168,26 @@ _HEADER_CSS = (
   [data-testid="stHeader"]::after {
   left: 4rem;
 }
-""".replace("__ACCENT__", tokens.ACCENT)
-    .replace("__SURFACE__", tokens.SURFACE)
-    .replace("__BAR_BORDER__", tokens.BORDER)
-    .replace("__BAR__", tokens.HEADER_BAR)
-    .replace("__APP_NAME__", APP_NAME)
-    .replace("__APP_VERSION__", f"v{APP_VERSION}")
-    .replace("__FONT_FAMILY__", tokens.FONT_FAMILY)
-    .replace("__TEXT_MUTED__", tokens.TEXT_MUTED)
-    .replace("__TEXT__", tokens.TEXT)
-    .replace("__TOP_LINE__", _TOP_LINE)
-    .replace("__BOTTOM_LINE__", _BOTTOM_LINE)
-)
+"""
+
+
+def _header_css() -> str:
+    """이 실행의 팔레트로 헤더 CSS 를 만든다."""
+    return (
+        _HEADER_TEMPLATE.replace("__ACCENT__", tokens.ACCENT)
+        .replace("__SURFACE__", tokens.SURFACE)
+        .replace("__BAR_BORDER__", tokens.BORDER)
+        .replace("__BAR__", tokens.HEADER_BAR)
+        .replace("__APP_NAME__", APP_NAME)
+        .replace("__APP_VERSION__", f"v{APP_VERSION}")
+        .replace("__FONT_FAMILY__", tokens.FONT_FAMILY)
+        .replace("__TEXT_MUTED__", tokens.TEXT_MUTED)
+        .replace("__TEXT__", tokens.TEXT)
+        .replace("__TOP_LINE__", _TOP_LINE)
+        .replace("__BOTTOM_LINE__", _BOTTOM_LINE)
+    )
 
 
 def render_app_header() -> None:
     """헤더 글을 그린다. 페이지마다 부르지 말고 `app.py` 에서 한 번만 부른다."""
-    st.html(f"<style>{_HEADER_CSS}</style>")
+    st.html(f"<style>{_header_css()}</style>")

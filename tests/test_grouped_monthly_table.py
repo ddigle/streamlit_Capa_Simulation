@@ -12,12 +12,11 @@ from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
 )
 from capa_simulation.components.monthly_table_base import (
-    CLASSIFICATION_COLOR,
-    CLASSIFICATION_GROUP_COLOR,
     HEADER_HEIGHT_PX,
     OUTER_BORDER_WIDTH_PX,
     ROW_HEIGHT_PX,
 )
+from capa_simulation.design import tokens
 from capa_simulation.design.tokens import CLASSIFICATION_PRODUCT_TOTAL
 
 
@@ -83,8 +82,8 @@ def test_display_rows_insert_product_production_and_grand_totals() -> None:
         display,
         ["양산구분", "제품정보", "Stack"],
     )
-    assert fill_colors[0][3] == CLASSIFICATION_COLOR
-    assert fill_colors[0][8] == CLASSIFICATION_GROUP_COLOR
+    assert fill_colors[0][3] == tokens.SURFACE_CLASSIFICATION
+    assert fill_colors[0][8] == tokens.SURFACE_CLASSIFICATION_GROUP
     assert fill_colors[1][3] == CLASSIFICATION_PRODUCT_TOTAL
 
 

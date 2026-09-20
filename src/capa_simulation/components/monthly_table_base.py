@@ -34,15 +34,6 @@ from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 
 # 색과 치수는 design/tokens.py 가 단일 근거다. 여기서는 표 문맥의 이름만 붙인다.
-HEADER_COLOR = tokens.HEADER_BACKGROUND
-CLASSIFICATION_COLOR = tokens.SURFACE_CLASSIFICATION
-CLASSIFICATION_GROUP_COLOR = tokens.SURFACE_CLASSIFICATION_GROUP
-SURFACE_COLOR = tokens.SURFACE
-CANVAS_COLOR = tokens.CHART_CANVAS
-GROUP_SURFACE_COLOR = tokens.SURFACE_SUBTLE
-BORDER_COLOR = tokens.BORDER
-GROUP_BORDER_COLOR = tokens.BORDER_STRONG
-TEXT_COLOR = tokens.TEXT
 TRANSPARENT_COLOR = tokens.TRANSPARENT
 
 OUTER_BORDER_WIDTH_PX = tokens.OUTER_BORDER_WIDTH_PX
@@ -201,7 +192,7 @@ def add_outer_border(figure: go.Figure, *, include_left: bool) -> None:
             y1=y1,
             xref="paper",
             yref="paper",
-            line={"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX * 2},
+            line={"color": tokens.BORDER_STRONG, "width": OUTER_BORDER_WIDTH_PX * 2},
             layer="above",
         )
 
@@ -216,7 +207,7 @@ def add_header_rule(figure: go.Figure, *, boundary_y: float) -> None:
         y1=boundary_y,
         xref="paper",
         yref="paper",
-        line={"color": GROUP_BORDER_COLOR, "width": OUTER_BORDER_WIDTH_PX},
+        line={"color": tokens.BORDER_STRONG, "width": OUTER_BORDER_WIDTH_PX},
         layer="above",
     )
 
@@ -237,7 +228,7 @@ def add_classification_boundaries(
             y1=1,
             xref="paper",
             yref="paper",
-            line={"color": BORDER_COLOR, "width": GRID_LINE_WIDTH_PX},
+            line={"color": tokens.BORDER, "width": GRID_LINE_WIDTH_PX},
             layer="above",
         )
 
@@ -260,7 +251,7 @@ def add_month_boundaries(figure: go.Figure, month_columns: Sequence[str]) -> Non
             xref="paper",
             yref="paper",
             line={
-                "color": GROUP_BORDER_COLOR if is_quarter_boundary else BORDER_COLOR,
+                "color": tokens.BORDER_STRONG if is_quarter_boundary else tokens.BORDER,
                 "width": OUTER_BORDER_WIDTH_PX if is_quarter_boundary else GRID_LINE_WIDTH_PX,
             },
             layer="above",

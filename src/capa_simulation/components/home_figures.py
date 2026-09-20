@@ -268,16 +268,21 @@ def _execution_series(frame: pd.DataFrame, column: str) -> pd.Series | None:
 
 # 과거 구간에서 바탕색이 갈아타는 짝. 키가 없는 색은 그대로 둔다 — 머리글처럼 과거·현재를
 # 나눌 이유가 없는 면까지 눌리면 월 라벨 줄이 구간마다 다른 회색으로 끊긴다.
-_PAST_SURFACES: Final[Mapping[str, str]] = {
-    tokens.SURFACE: tokens.SURFACE_PAST,
-    tokens.SURFACE_SUBTLE: tokens.SURFACE_PAST_SUBTLE,
-    tokens.SURFACE_YEAR_TOTAL: tokens.SURFACE_PAST_YEAR_TOTAL,
+# **색이 아니라 토큰 이름으로 들고 있는다.** 색으로 굳히면 모듈을 처음 읽은 순간의
+# 팔레트가 키가 되어, 테마를 바꾼 뒤에는 어떤 면색도 이 짝에 걸리지 않는다.
+_PAST_SURFACE_TOKENS: Final[Mapping[str, str]] = {
+    "SURFACE": "SURFACE_PAST",
+    "SURFACE_SUBTLE": "SURFACE_PAST_SUBTLE",
+    "SURFACE_YEAR_TOTAL": "SURFACE_PAST_YEAR_TOTAL",
 }
 
 
 def _past_surface(surface: str) -> str:
     """그 면색의 과거 구간 짝."""
-    return _PAST_SURFACES.get(surface, surface)
+    for source, past in _PAST_SURFACE_TOKENS.items():
+        if surface == getattr(tokens, source):
+            return str(getattr(tokens, past))
+    return surface
 
 
 def _month_surface(

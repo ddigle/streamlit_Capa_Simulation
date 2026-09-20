@@ -9,22 +9,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from capa_simulation.components.monthly_table_base import (
-    CANVAS_COLOR,
-    CLASSIFICATION_COLOR,
-    CLASSIFICATION_GROUP_COLOR,
     CLASSIFICATION_HORIZONTAL_PADDING_PX,
     CLASSIFICATION_MAX_WIDTH_PX,
     CLASSIFICATION_MIN_WIDTH_PX,
     CLASSIFICATION_TEXT_UNIT_PX,
-    GROUP_BORDER_COLOR,
-    GROUP_SURFACE_COLOR,
-    HEADER_COLOR,
     HEADER_HEIGHT_PX,
     MONTH_COLUMN_WIDTH_PX,
     OUTER_BORDER_WIDTH_PX,
     ROW_HEIGHT_PX,
-    SURFACE_COLOR,
-    TEXT_COLOR,
     TRANSPARENT_COLOR,
     add_classification_boundaries,
     add_header_rule,
@@ -277,7 +269,7 @@ def _add_table_grid(
             "y1": y,
             "xref": "paper",
             "yref": "paper",
-            "line": {"color": GROUP_BORDER_COLOR, "width": width},
+            "line": {"color": tokens.BORDER_STRONG, "width": width},
             "layer": "above",
         }
 
@@ -309,9 +301,9 @@ def _classification_fill_colors(
         for row_index, row_type in enumerate(display.row_types):
             if row_type == "product_total" and column_index == 0:
                 color = (
-                    CLASSIFICATION_COLOR
+                    tokens.SURFACE_CLASSIFICATION
                     if display.production_group_indices[row_index] % 2 == 0
-                    else CLASSIFICATION_GROUP_COLOR
+                    else tokens.SURFACE_CLASSIFICATION_GROUP
                 )
             elif row_type == "product_total":
                 color = tokens.CLASSIFICATION_PRODUCT_TOTAL
@@ -321,15 +313,15 @@ def _classification_fill_colors(
                 color = tokens.CLASSIFICATION_GRAND_TOTAL
             elif column_index == 0:
                 color = (
-                    CLASSIFICATION_COLOR
+                    tokens.SURFACE_CLASSIFICATION
                     if display.production_group_indices[row_index] % 2 == 0
-                    else CLASSIFICATION_GROUP_COLOR
+                    else tokens.SURFACE_CLASSIFICATION_GROUP
                 )
             else:
                 color = (
-                    CLASSIFICATION_COLOR
+                    tokens.SURFACE_CLASSIFICATION
                     if display.product_group_indices[row_index] % 2 == 0
-                    else CLASSIFICATION_GROUP_COLOR
+                    else tokens.SURFACE_CLASSIFICATION_GROUP
                 )
             column_colors.append(color)
         colors.append(column_colors)
@@ -347,9 +339,9 @@ def _month_fill_colors(display: _DisplayRows) -> list[str]:
             color = tokens.SURFACE_GRAND_TOTAL
         else:
             color = (
-                SURFACE_COLOR
+                tokens.SURFACE
                 if display.product_group_indices[row_index] % 2 == 0
-                else GROUP_SURFACE_COLOR
+                else tokens.SURFACE_SUBTLE
             )
         colors.append(color)
     return colors
@@ -444,8 +436,8 @@ def render_grouped_monthly_table(
     common_layout = {
         "height": figure_height,
         "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
-        "paper_bgcolor": CANVAS_COLOR,
-        "font": {"color": TEXT_COLOR, "family": tokens.FONT_FAMILY},
+        "paper_bgcolor": tokens.CHART_CANVAS,
+        "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
     label_figure = go.Figure(
         go.Table(
@@ -456,9 +448,9 @@ def render_grouped_monthly_table(
                     for column in classification_columns
                 ],
                 "align": "center",
-                "fill_color": HEADER_COLOR,
+                "fill_color": tokens.HEADER_BACKGROUND,
                 "line_color": TRANSPARENT_COLOR,
-                "font": {"color": TEXT_COLOR, "size": 14, "family": tokens.FONT_FAMILY},
+                "font": {"color": tokens.TEXT, "size": 14, "family": tokens.FONT_FAMILY},
                 "height": HEADER_HEIGHT_PX,
             },
             cells={
@@ -466,7 +458,7 @@ def render_grouped_monthly_table(
                 "align": "center",
                 "fill_color": classification_fill_colors,
                 "line_color": TRANSPARENT_COLOR,
-                "font": {"color": TEXT_COLOR, "size": 13, "family": tokens.FONT_FAMILY},
+                "font": {"color": tokens.TEXT, "size": 13, "family": tokens.FONT_FAMILY},
                 "height": ROW_HEIGHT_PX,
             },
         )
@@ -477,9 +469,9 @@ def render_grouped_monthly_table(
             header={
                 "values": [header_label(month_label(month)) for month in month_columns],
                 "align": "center",
-                "fill_color": HEADER_COLOR,
+                "fill_color": tokens.HEADER_BACKGROUND,
                 "line_color": TRANSPARENT_COLOR,
-                "font": {"color": TEXT_COLOR, "size": 14, "family": tokens.FONT_FAMILY},
+                "font": {"color": tokens.TEXT, "size": 14, "family": tokens.FONT_FAMILY},
                 "height": HEADER_HEIGHT_PX,
             },
             cells={
@@ -487,7 +479,7 @@ def render_grouped_monthly_table(
                 "align": "center",
                 "fill_color": [month_row_colors for _ in month_columns],
                 "line_color": TRANSPARENT_COLOR,
-                "font": {"color": TEXT_COLOR, "size": 13, "family": tokens.FONT_FAMILY},
+                "font": {"color": tokens.TEXT, "size": 13, "family": tokens.FONT_FAMILY},
                 "height": ROW_HEIGHT_PX,
             },
         )

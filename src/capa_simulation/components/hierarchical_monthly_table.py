@@ -12,22 +12,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from capa_simulation.components.monthly_table_base import (
-    CANVAS_COLOR,
-    CLASSIFICATION_COLOR,
-    CLASSIFICATION_GROUP_COLOR,
     CLASSIFICATION_HORIZONTAL_PADDING_PX,
     CLASSIFICATION_MAX_WIDTH_PX,
     CLASSIFICATION_MIN_WIDTH_PX,
     CLASSIFICATION_TEXT_UNIT_PX,
-    GROUP_BORDER_COLOR,
-    GROUP_SURFACE_COLOR,
-    HEADER_COLOR,
     HEADER_HEIGHT_PX,
     MONTH_COLUMN_WIDTH_PX,
     OUTER_BORDER_WIDTH_PX,
     ROW_HEIGHT_PX,
-    SURFACE_COLOR,
-    TEXT_COLOR,
     TRANSPARENT_COLOR,
     add_classification_boundaries,
     add_header_rule,
@@ -218,7 +210,7 @@ def _add_table_grid(
         label_start_x = cumulative_widths[changed_column] / total_classification_width
         # 최상위 그룹선은 바깥 테두리와 같은 굵기로 시작해 계층이 깊어질수록 가늘어진다.
         boundary_width = max(1.0, OUTER_BORDER_WIDTH_PX - changed_column * 0.16)
-        line = {"color": GROUP_BORDER_COLOR, "width": boundary_width}
+        line = {"color": tokens.BORDER_STRONG, "width": boundary_width}
         label_shapes.append(
             {
                 "type": "line",
@@ -304,13 +296,15 @@ def render_hierarchical_monthly_table(
     )
     classification_colors = [
         [
-            CLASSIFICATION_COLOR if group_index % 2 == 0 else CLASSIFICATION_GROUP_COLOR
+            tokens.SURFACE_CLASSIFICATION
+            if group_index % 2 == 0
+            else tokens.SURFACE_CLASSIFICATION_GROUP
             for group_index in display.top_group_indices
         ]
         for _column in classification_columns
     ]
     month_row_colors = [
-        SURFACE_COLOR if group_index % 2 == 0 else GROUP_SURFACE_COLOR
+        tokens.SURFACE if group_index % 2 == 0 else tokens.SURFACE_SUBTLE
         for group_index in display.top_group_indices
     ]
     month_values = _formatted_month_values(
@@ -323,8 +317,8 @@ def render_hierarchical_monthly_table(
     common_layout = {
         "height": figure_height,
         "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
-        "paper_bgcolor": CANVAS_COLOR,
-        "font": {"color": TEXT_COLOR, "family": tokens.FONT_FAMILY},
+        "paper_bgcolor": tokens.CHART_CANVAS,
+        "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
     label_figure = go.Figure(
         go.Table(
@@ -335,9 +329,9 @@ def render_hierarchical_monthly_table(
                     for column in classification_columns
                 ],
                 "align": "center",
-                "fill_color": HEADER_COLOR,
+                "fill_color": tokens.HEADER_BACKGROUND,
                 "line_color": TRANSPARENT_COLOR,
-                "font": {"color": TEXT_COLOR, "size": 14, "family": tokens.FONT_FAMILY},
+                "font": {"color": tokens.TEXT, "size": 14, "family": tokens.FONT_FAMILY},
                 "height": HEADER_HEIGHT_PX,
             },
             cells={
@@ -345,7 +339,7 @@ def render_hierarchical_monthly_table(
                 "align": "center",
                 "fill_color": classification_colors,
                 "line_color": TRANSPARENT_COLOR,
-                "font": {"color": TEXT_COLOR, "size": 13, "family": tokens.FONT_FAMILY},
+                "font": {"color": tokens.TEXT, "size": 13, "family": tokens.FONT_FAMILY},
                 "height": ROW_HEIGHT_PX,
             },
         )
@@ -356,9 +350,9 @@ def render_hierarchical_monthly_table(
             header={
                 "values": [header_label(month_label(month)) for month in month_columns],
                 "align": "center",
-                "fill_color": HEADER_COLOR,
+                "fill_color": tokens.HEADER_BACKGROUND,
                 "line_color": TRANSPARENT_COLOR,
-                "font": {"color": TEXT_COLOR, "size": 14, "family": tokens.FONT_FAMILY},
+                "font": {"color": tokens.TEXT, "size": 14, "family": tokens.FONT_FAMILY},
                 "height": HEADER_HEIGHT_PX,
             },
             cells={
@@ -366,7 +360,7 @@ def render_hierarchical_monthly_table(
                 "align": "center",
                 "fill_color": [month_row_colors for _month in month_columns],
                 "line_color": TRANSPARENT_COLOR,
-                "font": {"color": TEXT_COLOR, "size": 13, "family": tokens.FONT_FAMILY},
+                "font": {"color": tokens.TEXT, "size": 13, "family": tokens.FONT_FAMILY},
                 "height": ROW_HEIGHT_PX,
             },
         )

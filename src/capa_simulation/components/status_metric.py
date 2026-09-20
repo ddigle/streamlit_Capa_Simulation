@@ -27,11 +27,20 @@ from capa_simulation.design import tokens
 MetricTone = Literal["neutral", "good", "attention", "critical"]
 
 # 확보 → 경고 → 부족 과 같은 토큰을 쓴다. 표의 셀 색과 카드의 띠가 같은 뜻이어야 한다.
-TONE_COLORS: dict[str, str] = {
-    "good": tokens.ACCENT,
-    "attention": tokens.STATUS_WARNING,
-    "critical": tokens.STATUS_SHORTAGE,
+# **딕셔너리로 굳혀 두지 않는다** — 토큰은 실행마다 그때의 팔레트를 보는데 모듈 로드
+# 시점에 받아 두면 첫 실행의 테마로 고정된다.
+_TONE_TOKENS: dict[str, str] = {
+    "good": "ACCENT",
+    "attention": "STATUS_WARNING",
+    "critical": "STATUS_SHORTAGE",
 }
+
+
+def tone_color(tone: str) -> str:
+    """이 실행의 팔레트에서 그 뜻의 색."""
+    name = _TONE_TOKENS.get(tone)
+    return str(getattr(tokens, name)) if name else tokens.TEXT_MUTED
+
 
 STRIPE_WIDTH_PX = 4
 
@@ -86,10 +95,10 @@ def render_status_metric(
     `chart_data` 를 넘기면 값 아래에 추이 스파크라인이 붙는다. 한 줄에 놓인 카드 중
     일부에만 넣으면 높이가 어긋나므로 그 줄 전체에 넣거나 전부 빼야 한다.
     """
-    color = TONE_COLORS.get(tone)
-    if color is None:
+    if tone not in _TONE_TOKENS:
         _draw(label, value, help, chart_data)
         return
+    color = tone_color(tone)
     st.html(
         "\n".join(
             [
