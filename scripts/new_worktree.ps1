@@ -1,4 +1,4 @@
-# Purpose: 병행 개발용 작업 폴더를 브랜치·가상환경·격리 확인까지 한 번에 만든다.
+﻿# Purpose: 병행 개발용 작업 폴더를 브랜치·가상환경·격리 확인까지 한 번에 만든다.
 
 <#
 .SYNOPSIS
@@ -21,7 +21,9 @@
     작업 폴더 경로. 비우면 저장소 **옆**에 브랜치 마지막 조각 이름으로 만든다.
 
 .PARAMETER Port
-    이 폴더에서 앱을 띄울 포트. 안내에만 쓴다(8501 은 main 자리다).
+    이 폴더에서 앱을 띄울 포트. 이 값을 박은 `run.ps1` 을 폴더 안에 만든다
+    (8501 은 main 자리다). Windows 에서는 포트를 빠뜨리면 두 번째 인스턴스가 **오류 없이**
+    첫 프로세스에 얹혀 모든 접속이 그쪽으로 간다 — 그래서 실행기를 만들어 둔다.
 
 .EXAMPLE
     .\scripts\new_worktree.ps1 -Branch cand/home-legend/claude -Port 8502
@@ -68,6 +70,38 @@ try {
     Write-Host ""
     & (Join-Path $Path ".venv\Scripts\python.exe") (Join-Path $Path "scripts\check_worktree_isolation.py")
     $isolated = $LASTEXITCODE
+
+    # 이 폴더 전용 실행기. 포트를 박아 두어 손으로 옵션을 붙일 일이 없앤다.
+    # `.gitignore` 가 `/run.ps1` 을 무시하므로 커밋에 섞이지 않는다.
+    $runner = @'
+# 이 작업 폴더 전용 실행기. `scripts/new_worktree.ps1` 이 만들었고 git 이 무시한다.
+#
+# 포트를 여기 박아 두는 이유: Windows 에서는 포트를 빠뜨리면 두 번째 Streamlit 이
+# 오류 없이 첫 프로세스에 얹혀 모든 접속이 그쪽으로 간다. 화면에 경고가 없어서
+# 「띄웠는데 왜 내 수정이 안 보이지」가 된다.
+#
+# 이 값을 .streamlit/config.toml 에 적으면 안 된다 — 그 파일은 git 추적 대상이고
+# 배포 ZIP 에 실려 다른 폴더와 사내 PC 까지 같은 포트로 바꾼다.
+
+$ErrorActionPreference = "Stop"
+$port = __PORT__
+$python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+
+if (-not (Test-Path $python)) {
+    throw "이 폴더에 .venv 가 없습니다. 이 폴더에서 uv sync 를 먼저 돌리세요 (AGENTS 14-1)."
+}
+
+# 띄우기 전에 격리를 본다. 남의 .venv 를 쓰면 화면은 내 코드인데 남의 DuckDB 를 여는데,
+# 그 상태에서도 검증 4종은 전부 초록이라 여기서 막지 않으면 아무도 모른다.
+& $python (Join-Path $PSScriptRoot "scripts\check_worktree_isolation.py")
+if ($LASTEXITCODE -ne 0) { throw "격리가 깨졌습니다. 위 내용을 먼저 고치세요." }
+
+Write-Host ""
+Write-Host "http://localhost:$port 로 뜹니다."
+& $python -m streamlit run (Join-Path $PSScriptRoot "app.py") --server.port $port @args
+'@
+    $runner = $runner.Replace("__PORT__", $Port)
+    Set-Content -Path (Join-Path $Path "run.ps1") -Value $runner -Encoding utf8
 }
 finally {
     Pop-Location
@@ -82,7 +116,7 @@ if ($isolated -ne 0) {
 Write-Host ""
 Write-Host "준비됐습니다. 이 폴더에서만 일하세요 (AGENTS 14-1)."
 Write-Host "  cd $Path"
-Write-Host "  .\.venv\Scripts\python.exe -m streamlit run app.py --server.port $Port"
+Write-Host "  .un.ps1          # 포트 $Port 로 뜹니다. 격리도 함께 확인합니다."
 Write-Host ""
 Write-Host "지울 때는 main 폴더에서:"
 Write-Host "  git worktree remove $Path"

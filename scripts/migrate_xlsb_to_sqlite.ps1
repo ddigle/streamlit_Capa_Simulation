@@ -1,4 +1,4 @@
-# Purpose: XLSB의 RQ Excel Table을 병행 검증용 SQLite 테이블로 이관한다.
+﻿# Purpose: XLSB의 RQ Excel Table을 병행 검증용 SQLite 테이블로 이관한다.
 
 param(
     [Parameter(Mandatory = $true)]
