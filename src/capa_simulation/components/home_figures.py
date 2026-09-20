@@ -290,14 +290,19 @@ def _month_surface(
     year_totals: Container[str],
     past_month_labels: Collection[str] | None,
     *,
-    base: str = tokens.SURFACE,
+    base: str | None = None,
 ) -> str:
     """월 칸 하나의 바탕색.
 
     연간 Total 인지 먼저 보고, 그 위에 과거 여부를 얹는다. 두 성격은 서로 배타가 아니라서
     (과거만 든 해의 Total) 한쪽을 지우면 그 칸이 이웃보다 밝아져 거꾸로 읽힌다.
+
+    **`base` 의 기본값을 `tokens.SURFACE` 로 적지 않는다.** 기본 인자는 `def` 를 읽을 때
+    한 번 평가되므로 모듈이 처음 임포트된 순간의 팔레트로 굳는다. 그러면 테마를 바꿔도
+    이 색만 따라오지 않고, 프로세스가 어두운 테마로 시작했으면 밝은 테마에서 월 칸이
+    어둡게 남는다. `None` 을 받아 **부를 때** 조회한다.
     """
-    surface = tokens.SURFACE_YEAR_TOTAL if label in year_totals else base
+    surface = tokens.SURFACE_YEAR_TOTAL if label in year_totals else (base or tokens.SURFACE)
     if past_month_labels is not None and label in past_month_labels:
         return _past_surface(surface)
     return surface

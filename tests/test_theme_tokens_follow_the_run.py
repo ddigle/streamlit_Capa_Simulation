@@ -48,6 +48,19 @@ def _theme_dependent_tokens() -> set[str]:
     return {name for name in light if name in dark and light[name] != dark[name]}
 
 
+def _captured_token(node: ast.expr, theme_dependent: set[str]) -> str | None:
+    """이 식이 테마에 따라 달라지는 토큰을 읽는다면 그 이름."""
+    for sub in ast.walk(node):
+        if (
+            isinstance(sub, ast.Attribute)
+            and isinstance(sub.value, ast.Name)
+            and sub.value.id == "tokens"
+            and sub.attr in theme_dependent
+        ):
+            return sub.attr
+    return None
+
+
 def _assigned_name(node: ast.Assign | ast.AnnAssign) -> str:
     """대입 대상의 이름. 튜플 대입이나 속성 대입이면 이름이 없으므로 `?` 로 둔다."""
     targets = node.targets if isinstance(node, ast.Assign) else [node.target]
@@ -70,25 +83,45 @@ def test_no_module_level_capture_of_theme_dependent_colors() -> None:
     for path in _scanned_files():
         relative = path.relative_to(PROJECT_ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in tree.body:  # 모듈 최상위만 본다. 함수 안은 실행마다 도므로 안전하다.
-            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
-                continue
-            if node.value is None:
+
+        # 1) 모듈 최상위 대입. 함수 **안**은 실행마다 도므로 안전하다.
+        for node in tree.body:
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
                 continue
             target = _assigned_name(node)
             if (relative, target) in KNOWN_FROZEN:
                 continue
-            for sub in ast.walk(node.value):
-                if (
-                    isinstance(sub, ast.Attribute)
-                    and isinstance(sub.value, ast.Name)
-                    and sub.value.id == "tokens"
-                    and sub.attr in theme_dependent
-                ):
-                    offenders.append(f"{relative}:{node.lineno}  {target} = tokens.{sub.attr}")
-                    break
+            captured = _captured_token(node.value, theme_dependent)
+            if captured:
+                offenders.append(f"{relative}:{node.lineno}  {target} = tokens.{captured}")
+
+        # 2) 함수 기본 인자. `def` 를 읽을 때 **한 번** 평가되므로 모듈 최상위와 같다.
+        #    `_month_surface(base=tokens.SURFACE)` 가 이 틈으로 샜다 — 어두운 테마로 시작한
+        #    프로세스가 밝은 테마에서도 월 칸을 어둡게 그렸다.
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for default in [*node.args.defaults, *(d for d in node.args.kw_defaults if d)]:
+                captured = _captured_token(default, theme_dependent)
+                if captured:
+                    offenders.append(
+                        f"{relative}:{node.lineno}  {node.name}(...=tokens.{captured}) 기본 인자"
+                    )
+
+        # 3) 클래스 본문의 기본값도 클래스를 읽을 때 한 번 평가된다.
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for stmt in node.body:
+                if not isinstance(stmt, (ast.Assign, ast.AnnAssign)) or stmt.value is None:
+                    continue
+                captured = _captured_token(stmt.value, theme_dependent)
+                if captured:
+                    offenders.append(
+                        f"{relative}:{stmt.lineno}  class {node.name} 안 tokens.{captured}"
+                    )
 
     assert not offenders, (
-        "색을 모듈 로드 시점에 붙잡았습니다. 테마를 바꿔도 이 값만 따라오지 않습니다 — "
-        "함수 안으로 옮겨 실행마다 조회하세요:\n  " + "\n  ".join(offenders)
+        "색을 **한 번만** 평가되는 자리에 붙잡았습니다. 테마를 바꿔도 이 값만 따라오지 "
+        "않습니다 — 함수 본문으로 옮겨 부를 때마다 조회하세요:\n  " + "\n  ".join(offenders)
     )
