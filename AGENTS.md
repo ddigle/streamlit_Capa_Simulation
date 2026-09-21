@@ -1091,8 +1091,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - flush 를 잊으면 테두리·격자·라벨이 통째로 빠져 화면에서 바로 드러난다.
     `tests/test_plotly_layout.py` 가 그 계약을 고정한다.
   - 표 행의 면색이 모두 같으면 칸마다 사각형을 그리지 않는다. 도형 수가 그대로 비용이다.
-- `src/capa_simulation/components/home_figures.py`, `home_rendering.py`, `home_dimensions.py`
-  - HOME 의 Figure 생성기 3종, 세션 Figure 캐시와 렌더링, LOB·상세 B/N 픽셀 치수.
+- `src/capa_simulation/components/home_figures.py`, `home_figure_common.py`, `home_lob_figures.py`,
+  `home_plan_detail_figures.py`, `home_key_process_figures.py`, `home_bottleneck_figures.py`,
+  `home_rendering.py`, `home_dimensions.py`
+  - Figure 생성 코드는 **가족별로 한 모듈씩**이다 — `home_lob_figures.py`(요약 LOB·Wafer·
+    B/N Top5), `home_plan_detail_figures.py`(계획 세부수량 표), `home_key_process_figures.py`
+    (주요공정 확보율 히트맵), `home_bottleneck_figures.py`(상세 B/N 공정). 넷을 넘나드는
+    조각 — 확보율 3색 판정 `capacity_status`, 실행 반영 hover 문구, 과거·연간 Total 면색,
+    paper 좌표 격자 크롬(`_grid_*`·`_paper_*`) — 은 `home_figure_common.py` 한 곳에 있다.
+    `securement_heatmap`·`decision_summary` 의 판정도 같은 `capacity_status` 를 본다.
+  - `home_figures.py` 는 **코드를 갖지 않는 import 파사드**다. `__all__` 에 적힌 공개 이름만
+    `from x import y as y` 로 다시 내보내므로, 가족 모듈이 더 쪼개져도 페이지·테스트의
+    import 한 줄이 바뀌지 않는다. 새 공개 이름을 만들면 파사드의 재수출과 `__all__` 도
+    같이 고친다.
+  - HOME 의 Figure 생성기 4종, 세션 Figure 캐시와 렌더링, LOB·상세 B/N 픽셀 치수.
   - 상세 B/N 은 `go.Table` 이 아니라 카테시안 xy 다. 월 오프셋은 `go.Bar` 의 `base`
     로 주고, hover 표적 막대·트랙 막대·확보율 막대·공정명 텍스트 trace 네 개만 쓴다.
     hover 표적은 `HIT_TARGET` 색으로 행 전체 높이를 덮어 칸 어디서나 툴팁이 뜨게 하고,
