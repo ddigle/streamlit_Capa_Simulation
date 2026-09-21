@@ -16,14 +16,8 @@ from capa_simulation.components.home_figures import (
     build_plan_detail_figures,
 )
 from capa_simulation.components.home_preference import (
-    ADVANCE_TOGGLE_KEY,
     COMPARISON_REVISION_KEY,
     COMPARISON_SCENARIO_KEY,
-    COMPARISON_TOGGLE_KEY,
-    EDP_TOGGLE_KEY,
-    EXECUTION_TOGGLE_KEY,
-    PAST_DATA_TOGGLE_KEY,
-    PLAN_DETAIL_CUSTOMER_KEY,
     render_home_preference,
     render_lob_title_row,
     seed_comparison_selection,
@@ -33,6 +27,7 @@ from capa_simulation.components.home_rendering import (
     HOME_LOADING_STAGES,
     HOME_PERFORMANCE_KEY,
     HomeFigureCacheKey,
+    HomeFigureSet,
     home_dashboard_panel,
     render_home_figures,
     render_home_performance,
@@ -48,6 +43,15 @@ from capa_simulation.components.plan_comparison_dumbbell import (
 )
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.tab_state import stateful_tabs
+from capa_simulation.home_state import (
+    ADVANCE_TOGGLE_KEY,
+    COMPARISON_TOGGLE_KEY,
+    EDP_TOGGLE_KEY,
+    EXECUTION_TOGGLE_KEY,
+    HOME_TOGGLE_DEFAULTS,
+    PAST_DATA_TOGGLE_KEY,
+    PLAN_DETAIL_CUSTOMER_KEY,
+)
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -164,23 +168,30 @@ show_home_performance = bool(st.session_state.get(HOME_PERFORMANCE_KEY, False))
 home_trace = PerformanceTrace()
 # 두 토글의 위젯은 아래 탭 안에서 그리지만 값은 계산보다 먼저 필요하다. 위젯이 `key` 로
 # 쓰는 자리를 그대로 읽는다 — 사용자가 토글을 누르면 다음 실행의 이 줄에 새 값이 들어온다.
-include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, False))
+include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[EDP_TOGGLE_KEY]))
 # 기본은 **켬**이다. 끄면 과거 구간을 화면에서 빼고 활성 시나리오의 계산 결과만 남긴다.
-# 기본값은 `components/home_preference.py` 의 토글과 같아야 한다 — 갈라지면 첫 렌더와
-# 토글을 처음 누른 뒤가 서로 다른 화면이 된다.
-include_past = bool(st.session_state.get(PAST_DATA_TOGGLE_KEY, True))
-show_advance = bool(st.session_state.get(ADVANCE_TOGGLE_KEY, False))
-show_execution = bool(st.session_state.get(EXECUTION_TOGGLE_KEY, False))
-plan_detail_customer = bool(st.session_state.get(PLAN_DETAIL_CUSTOMER_KEY, False))
+# 토글도 `home_state` 의 같은 기본값을 읽어 첫 계산과 첫 위젯 표시를 맞춘다.
+include_past = bool(
+    st.session_state.get(PAST_DATA_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY])
+)
+show_advance = bool(
+    st.session_state.get(ADVANCE_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[ADVANCE_TOGGLE_KEY])
+)
+show_execution = bool(
+    st.session_state.get(EXECUTION_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[EXECUTION_TOGGLE_KEY])
+)
+plan_detail_customer = bool(
+    st.session_state.get(PLAN_DETAIL_CUSTOMER_KEY, HOME_TOGGLE_DEFAULTS[PLAN_DETAIL_CUSTOMER_KEY])
+)
 # 비교 대상은 공용 프로필이라 새 브라우저 세션에도 남아 있다. 세션 키를 읽기 **전에**
 # 심어야 첫 화면부터 「GAP」 토글이 켜진다 — 심는 자리가 Preference 피커 안에만 있으면
 # 탭을 한 번 다녀와야 켜진다.
 seed_comparison_selection(str(DUCKDB_PATH.resolve()))
 comparison_scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
 comparison_revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
-show_comparison = bool(st.session_state.get(COMPARISON_TOGGLE_KEY, False)) and bool(
-    comparison_scenario_id and comparison_revision_id
-)
+show_comparison = bool(
+    st.session_state.get(COMPARISON_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[COMPARISON_TOGGLE_KEY])
+) and bool(comparison_scenario_id and comparison_revision_id)
 plan_detail_dimensions = (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS if plan_detail_customer else PRODUCTION_DETAIL_DIMENSIONS
 )
@@ -587,32 +598,32 @@ past_month_labels = build_past_month_labels(month_labels, year_total_labels, gap
 # 가로 스크롤의 시작 위치도 같은 경계를 본다. 앞머리의 과거 칸을 지나야 DB 계산 구간의
 # 첫 달이 화면 왼쪽에 선다.
 leading_past_months = leading_past_column_count(month_labels, past_month_labels)
-figure_cache_key: HomeFigureCacheKey = (
-    HOME_FIGURE_SCHEMA_VERSION,
-    process_labels.version,
-    reference_version,
-    active_scenario["content_token"],
-    effective_start,
-    effective_end,
-    home_simulation_cache_key[-1],
-    tuple(included_processes),
-    float(secure_threshold_percent),
-    float(warning_threshold_percent),
-    include_edp,
-    plan_detail_customer,
+figure_cache_key = HomeFigureCacheKey(
+    schema_version=HOME_FIGURE_SCHEMA_VERSION,
+    process_label_version=process_labels.version,
+    reference_version=reference_version,
+    content_token=active_scenario["content_token"],
+    start_month=effective_start,
+    end_month=effective_end,
+    display_order_digest=home_simulation_cache_key[-1],
+    included_processes=tuple(included_processes),
+    secure_threshold_percent=float(secure_threshold_percent),
+    warning_threshold_percent=float(warning_threshold_percent),
+    include_edp=include_edp,
+    plan_detail_customer=plan_detail_customer,
     # 비교는 이 한 값으로 충분하다. 「껐다」와 「켰지만 못 붙였다」는 그림이 똑같으므로
     # 같은 키를 나눠 쓰는 것이 맞다.
-    str(applied_comparison_revision_id or ""),
-    show_advance,
-    advance_profile.version if show_advance else 0,
-    show_execution,
-    execution_profile.version if show_execution else 0,
-    top5_band_profile.version,
-    top5_band_profile.min_rate,
-    top5_band_profile.max_rate,
-    past_profile.version,
-    tuple(applied_key_processes),
-    key_process_profile.version,
+    comparison_revision_id=str(applied_comparison_revision_id or ""),
+    show_advance=show_advance,
+    advance_profile_version=advance_profile.version if show_advance else 0,
+    show_execution=show_execution,
+    execution_profile_version=execution_profile.version if show_execution else 0,
+    top5_band_version=top5_band_profile.version,
+    top5_min_rate=top5_band_profile.min_rate,
+    top5_max_rate=top5_band_profile.max_rate,
+    past_profile_version=past_profile.version,
+    key_processes=tuple(applied_key_processes),
+    key_process_profile_version=key_process_profile.version,
 )
 # 결론 요약은 **캐시 밖**에서 낸다. 아래 순위 집계는 캐시가 맞으면 건너뛰지만 이 집계는
 # 같은 프레임 위의 마스크 한 번이라 건너뛸 값이 없다 — 대신 캐시 적중·미적중에서 늘 같은
@@ -721,15 +732,15 @@ if cached_figures is None:
         past_month_labels=past_month_labels,
     )
     # 순서가 곧 화면 순서다. 주요공정 히트맵은 계획 세부수량과 상세 B/N 사이 구획이다.
-    cached_figures = (
-        label_figure,
-        month_figure,
-        detail_label_figure,
-        detail_month_figure,
-        key_process_label_figure,
-        key_process_month_figure,
-        bottleneck_detail_label_figure,
-        bottleneck_detail_month_figure,
+    cached_figures = HomeFigureSet(
+        lob_labels=label_figure,
+        lob_months=month_figure,
+        plan_detail_labels=detail_label_figure,
+        plan_detail_months=detail_month_figure,
+        key_process_labels=key_process_label_figure,
+        key_process_months=key_process_month_figure,
+        bottleneck_labels=bottleneck_detail_label_figure,
+        bottleneck_months=bottleneck_detail_month_figure,
     )
     store_home_figures(figure_cache_key, cached_figures)
     home_trace.mark("Figure 생성")
@@ -766,7 +777,7 @@ with main_tab:
         ),
         filtered=len(included_processes) < len(process_options),
     )
-    # 제목 줄과 여섯 Figure 는 한 상자 안이다. 제목 옆 토글은 숨은 탭에서도 그려야 하므로
+    # 제목 줄과 여덟 Figure 는 한 상자 안이다. 제목 옆 토글은 숨은 탭에서도 그려야 하므로
     # Figure 를 건너뛰는 `render_home_figures` 안으로 넣지 않고 상자만 여기서 연다.
     with home_dashboard_panel():
         # 범례는 이 제목 줄 **안** 오른쪽 끝이다. 제목과 Figure 사이에 독립 블록으로

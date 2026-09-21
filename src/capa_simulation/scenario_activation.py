@@ -9,6 +9,7 @@ from typing import cast
 import streamlit as st
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
+from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS
 from capa_simulation.io.reference_cache import (
     HOME_FIGURE_CACHE_KEY,
     activate_persisted_reference_tables,
@@ -32,13 +33,9 @@ ACTIVE_PERSISTED_REVISION_ID_KEY = "active_persisted_revision_id"
 ACTIVE_PERSISTED_SESSION_REVISION_KEY = "active_persisted_session_revision"
 OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY = "official_scenario_bootstrap_attempted"
 
-# 시나리오를 바꾸면 버려야 하는 세션 값. 대부분은 화면 모듈이 소유하지만 문자열로 적는다 —
-# 그 모듈들이 이 파일을 거꾸로 import 하므로 상수를 가져오면 순환이 된다.
-# `tests/test_scenario_activation.py` 가 두 곳의 철자가 같은지 지킨다.
-#
-# Figure 캐시 칸만 상수로 받는다. 쓰는 곳이 셋이라 리터럴로 두면 이름을 바꿀 때 한 곳만
-# 고쳐지고, 그러면 시나리오를 바꿔도 옛 칸이 남아 남의 시나리오 그림이 그대로 뜬다.
-# `io/reference_cache` 는 pandas·streamlit 만 보는 잎이라 여기서 가져와도 순환이 없다.
+# HOME 토글 키와 기본값은 UI 의존성이 없는 `home_state` 에서 함께 가져온다. 화면 모듈을
+# 거꾸로 import 하지 않아 순환이 없고, 키를 바꾸거나 토글을 추가해도 초기화가 함께 바뀐다.
+# Figure 캐시 키도 `io/reference_cache` 의 선언 한 곳을 쓴다.
 #
 # 담는 것은 두 가지다.
 #
@@ -59,14 +56,7 @@ _STALE_UI_KEYS = (
     "load_conversion_source_token",
     "reference_data_source_token",
     HOME_FIGURE_CACHE_KEY,
-    # HOME 토글. 상수는 `components/home_preference.py` 가 소유하지만 그 모듈이 이 파일을
-    # 거꾸로 import 하므로 문자열로 적는다.
-    "home_show_advance",
-    "home_show_execution",
-    "home_show_comparison",
-    "home_preference_plan_detail_customer",
-    "home_preference_include_edp",
-    "home_preference_include_past",
+    *HOME_TOGGLE_DEFAULTS,
 )
 
 

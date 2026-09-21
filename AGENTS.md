@@ -106,6 +106,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     순서도 `SIDEBAR_GROUPS` 가 정한다).
   - 배치가 다른 둘만 손수 그린다 — 가운데·큰 글씨의 HOME 과, 조회 컨트롤 아래 맨 밑
     상자(`ADMIN_BOX_KEY`)에 같은 층위로 세우는 `Admin Area`·VOC(`pages.admin_box_pages`)다.
+  - 사이드바 CSS 문자열은 `components/sidebar_style.py`가 탐색 그룹·활성 경로·컨테이너
+    키를 받아 만든다. 테마 초기화와 `st.html` 주입 순서는 진입점이 소유한다.
   - 모든 페이지에 필요한 전역 위젯은 `navigation.run()`보다 앞에 둔다.
   - 새 세션은 최신 공식 리비전을 전역 위젯 생성 전에 활성화하고, 사이드바에는 시나리오·
     리비전 선택, 명시적 불러오기, 현재 편집본의 신규 리비전 저장과 활성·공식·미저장 상태를
@@ -115,13 +117,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/home.py`
   - 전체 계산 결과를 조합하는 HOME 대시보드다.
   - Plotly Figure 묶음을 사용자 세션에 캐시하고 렌더링은 fragment로 분리한다.
-  - 본문은 `Main`·`Preference`·`Past Data` 세 탭이다. `Main` 이 계획·LOB·B/N Figure 여덟
-    개를 그리고 `Preference` 가 표시 기준(EDP 포함 여부·선행 투입 물량)을 받으며
-    `Past Data` 가 과거 구간 세 표를 받는다(`components/past_data_management.py`). 요약만
-    그리는 경로는 없다 — 여덟 개를 항상 만든다.
-  - **두 토글의 값은 계산보다 먼저 필요하고 위젯은 계산 뒤에 그려진다.** 페이지가
-    `components/home_preference.py` 의 세션 키를 직접 읽고 위젯은 같은 키로 만든다. 키
-    문자열을 두 곳에서 따로 적으면 조용히 끊어지므로 상수로 내보낸다.
+  - 본문은 `Main`·`Preference`·`Past Data` 세 탭이다. `Main` 이 계획·LOB·주요공정·B/N
+    Figure 여덟 개를 그리고, `Preference`는 표시 기준을 관리하며 `Past Data`는 과거 구간
+    세 표를 받는다(`components/past_data_management.py`). 요약만 그리는 경로는 없다.
+    숨은 Main에서는 Figure 렌더링을 건너뛰지만 입력 위젯의 상태는 유지한다.
+  - **토글 값은 계산보다 먼저 필요하고 위젯은 계산 뒤에 그려진다.** 페이지와 위젯이
+    `home_state.py`의 같은 키·기본값을 읽는다. 키 문자열이나 기본값을 각자 적지 않는다.
   - `EDP 포함` 을 끄면 **LOB 로 표현되는 값만** EDP 를 뺀다. `확보율 × 부하량` 꼴로 나오는
     값(Density·Wafer 계획·Wafer Capa·B/N Capa 막대·Top 5·상세 B/N 의 Wafer Capa)과 계획
     세부수량 행이 대상이다. 소요대수·확보율·B/N 공정 순위는 **바뀌지 않는다** — 설비가 받는
@@ -253,15 +254,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 대당 Capa·소요대수는 HOME 전용이 아니다. `HomeSimulationCacheKey` 의 앞 네 칸이
     `ScenarioCacheKey` 와 같은 자리라 `cache_key[:4]` 로 Static Capa 다섯 페이지와 한 칸을
     나눠 쓴다. 이 순서를 바꾸면 두 화면이 조용히 따로 계산한다.
-  - `EDP 포함` 의 기본값은 **끔**이다. 바꿀 때는 `app_pages/home.py` 의 세션 기본값과
-    위젯 `value` 를 같이 고친다 — 한쪽만 고치면 첫 화면과 위젯이 어긋난다.
+  - `EDP 포함` 의 기본값은 **끔**이다. 바꿀 때는 `home_state.HOME_TOGGLE_DEFAULTS`를
+    고친다. 첫 계산과 위젯이 이 선언 한 곳을 함께 읽는다.
   - `선행` 을 켜면 공용 선행 물량으로 변동률을 내 계획·확보율에 건다. 변동률은 **화면이
     지금 쓰는 계획** 기준이다(EDP 를 뺀 화면이면 뺀 계획). 그래야 어느 상태에서든 Capa 가
     그대로이고 Density 증감이 입력값과 정확히 같다.
   - 제목 아래 설명 문구, `계획·B/N 상세표 표시` 토글, `계획 세부수량 CSV` 는 탭이 그 자리를
     쓰면서 없앴다.
-  - 세 구획 제목(`Capa LOB 현황`·`계획 세부수량`·`상세 B/N 공정`)은 모두 Streamlit 줄로
-    그린다. 하나만 Plotly 주석으로 남기면 그 구획만 제목·표 간격이 다르다. 월 칸에는 같은
+  - 네 구획 제목(`Capa LOB 현황`·`계획 세부수량`·`주요공정 확보율`·`상세 B/N 공정`)은
+    모두 Streamlit 줄로 그린다. 하나만 Plotly 주석으로 남기면 그 구획만 제목·표 간격이 다르다. 월 칸에는 같은
     높이의 빈 줄(`*_title_spacer`)을 끼워야 두 칸의 자식 수와 높이가 맞는다.
   - Figure 바깥 테두리는 `paper` 0/1 위에 놓여 획의 절반이 캔버스 밖으로 잘린다. 네 변 모두
     보정 폭(`OUTER_BORDER_WIDTH_PX * 2`)으로 그려야 보이는 굵기가 같다 — 위쪽만 빼먹으면
@@ -608,6 +609,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/io/company_bigdataquery_adapter.py`
   - 사내 SQL과 DB 컬럼 매핑을 넣는 전용 접속부다. `bigdataquery`를 지연 import하고 반환
     DataFrame을 CSV로 저장하지 않고 공통 78컬럼 파이프라인에 전달한다.
+  - 원천 보정에 먼저 쓰는 `공정`·`모듈수`의 누락과 매핑 결과의 중복 컬럼은 보정 전에
+    거부한다. 전체 78컬럼 검증은 기존 공통 파이프라인이 맡는다.
   - 조회 기간은 호출자가 `QueryWindow` 로 준다. 종료일은 화면 라벨과 같이 포함이며
     `sql_bounds()` 가 배타 상한을 하루 밀어 흡수한다 — 포함/배타 차이를 다루는 자리는
     여기 한 곳이다. 상세 창은 목록 창으로 **좁히지 않고**(`resolve_detail_window`) 기본
@@ -659,6 +662,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기본 리비전이 된다.
   - 표준 목표 Capa의 수동 주차별 가용대수만 설비 DB의 비버전 최신값 테이블에
     공정·Weeknum 기준으로 갱신한다.
+- `src/capa_simulation/home_state.py`
+  - HOME 토글 여섯 개의 세션 키와 불변 기본값을 선언한다. UI·저장소 import 없이
+    페이지 계산·위젯·시나리오 전환 초기화가 같은 목록을 공유한다. 기존 키 문자열은 유지한다.
 - `src/capa_simulation/scenario_state.py`
   - 사용자 세션별 활성 시나리오와 `revision`(편집 카운터)·`content_token`(내용 토큰)을 관리한다.
     편집을 적용할 때마다 둘 다 갱신되며, 캐시 키에는 `content_token`만 쓴다.
@@ -724,7 +730,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `wip_status.py`: 재공 DB 연결용 일자·공정·STEP·제품·보유재공·유입·Flow 계약,
   STEP 코드 정렬, 제품별 표준 가능량 일 전개와 미연결 화면용 결정론적 재공 샘플
 - `display_order.py`: `RQ_DISPLAY_ORDER` 기반 동적 행 정렬
-- `month_filter.py`: YYYYMM 검증과 조회기간 필터
+- `month_filter.py`: YYYYMM 검증과 조회기간 필터. 원천·SQL 적재·계산 계층의 월 정규화가
+  같은 달력 검증을 공유한다(정수, 연도 1~9999, 월 1~12). 조회 UI의 2025~2030 범위와는
+  별개이며, 정수 변환 전에 검사해 잘못된 값이나 넘치는 수가 저장되지 않게 한다.
 - `capacity_reference_editor.py`: Capa 기준정보 Long/Wide 편집 변환
 - `clipboard_table.py`, `reference_csv.py`: Excel에서 복사한 헤더 포함 TSV 표 파싱과
   입력 RQ Wide 표의 컬럼·분류행 동일성 검증. 다운로드 양식은 UTF-8 CSV로 유지한다.
@@ -883,6 +891,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Streamlit 이 헤더에 위젯을 넣는 API 를 주지 않아 `stHeader`·`stSidebarHeader` 의
     가상요소에 글을 얹는다(글자만 가능, 링크·버튼 불가). 값은 `settings.py` 가 단일 근거이고
     ⋮ 메뉴의 About 과 같은 상수를 본다. `app.py` 에서 한 번만 부른다.
+- `src/capa_simulation/components/sidebar_style.py`
+  - 탐색 그룹·활성 경로·기존 컨테이너 키와 현재 테마로 사이드바 스타일 문자열을 만든다.
+    위젯 생성이나 HTML 주입은 하지 않는다. 생성된 HTML의 태그 안전성과 테마·활성 선택자를
+    `tests/test_sidebar_stylesheet.py`가 검사한다.
 - `src/capa_simulation/components/column_filter.py`
   - 분류 컬럼별 다중선택 필터와 초기화 버튼. 선택값으로 거른 프레임을 돌려준다.
     `value_labels` 는 `format_func` 로 표시만 바꾼다. 옵션 값과 세션 저장값은 원본이다.
@@ -1038,8 +1050,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     병합이 전부 무동작이 되게 한다 — 과거를 빼는 분기를 화면 코드 곳곳에 심지 않는다.
     컬럼과 dtype 은 그대로 둔다(빈 프레임을 새로 만들면 병합·와이드 변환이 그 자리에서
     깨진다). `version` 도 0 이 되어 Figure 캐시 키가 갈리므로 켠 화면과 끈 화면이 같은 칸을
-    나눠 쓰지 않는다. 토글의 기본값은 `app_pages/home.py` 의 세션 기본값과 **같아야 한다**
-    — 갈라지면 첫 렌더와 토글을 처음 누른 뒤가 다른 화면이 된다. 값 자체는 지우지 않으므로
+    나눠 쓰지 않는다. 토글과 첫 계산의 기본값은 `home_state.HOME_TOGGLE_DEFAULTS`에서
+    함께 가져온다. 값 자체는 지우지 않으므로
     `Past Data` 탭은 토글과 무관하게 계속 편집할 수 있다.
 - `src/capa_simulation/components/profile_caption.py`
   - 공용 프로필(`version`·`source`·`updated_at`)의 버전 캡션 한 줄을 만든다. 여덟 저장
@@ -1136,9 +1148,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     순위 상한 `BOTTLENECK_DETAIL_RANK_LIMIT` 은 여기서 정하고 서비스에 인자로 넘긴다.
     자르는 곳은 서비스 한 곳이고 Figure 는 받은 프레임을 다시 자르지 않는다.
   - **Figure 묶음은 정확히 여덟 개다**(요약 2 + 계획 세부수량 2 + 주요공정 히트맵 2 +
-    상세 B/N 2). 순서가 곧 화면 순서이고 `render_home_figures` 가 길이를 검사한다. 개수를
-    바꿀 때는 `HOME_FIGURE_SCHEMA_VERSION` 을 함께 올린다 — 올리지 않으면 세션 캐시에
-    남은 옛 묶음이 길이 검사에 걸려 HOME 이 예외로 죽는다.
+    상세 B/N 2). `HomeFigureSet`의 이름 있는 여덟 필드로 생성·렌더링해 위치 혼동을 막는다.
+    캐시 키도 `HomeFigureCacheKey`의 이름으로 구성하되 기존 튜플 순서·해시를 유지한다.
+    묶음 구조를 바꿀 때는 `HOME_FIGURE_SCHEMA_VERSION`도 올려 기존 세션의 옛 값을
+    다시 만들게 한다(이름 있는 묶음 전환 버전은 42). 테마 분리와 LRU 최대 8개 정책은 같다.
   - `build_key_process_heatmap_figures` 는 상세 B/N 과 **같은 머리글·행 높이**를 쓰고
     `go.Heatmap` 을 쓰지 않는다. 그 trace 는 칸 폭을 Plotly 가 정해 100px 월 격자·paper
     경계선과 맞지 않는다. 가로막대 방식이면 칠과 hover 가 한 trace 로 끝나고 색 판정도
@@ -1190,15 +1203,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     때문이다. `enable()` 전에는 파일을 하나도 만들지 않는다(개발 PC·CI 무영향). 읽지 못하는
     사이드카는 "변경 있음" 으로 본다.
 
-- `persistence/repository.py`: `DuckDBScenarioRepository` 와 쓰기 잠금·트랜잭션 경계
+- `persistence/repository.py`: `DuckDBScenarioRepository`의 입력 검증·연결·쓰기 잠금·트랜잭션 경계.
+  공용 프로필 SQL과 모델 조립은 아래 store가 열린 연결을 받아 수행하며, 커밋과 변경 신호는
+  Repository만 소유한다. 교체 실패 시 기존 행·버전이 복구되고 변경 신호를 발행하지 않는다.
 - `persistence/models.py`: Repository 가 주고받는 타입
 - `persistence/display_order_store.py`: 공용 표시순서 프로필의 검증·이관·저장
-- `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·삽입 SQL
-- `persistence/advance_load_store.py`: 공용 선행 투입 물량 프로필의 조회·삽입 SQL
-- `persistence/execution_capacity_store.py`: 공용 실행 Capa 반영 프로필의 조회·삽입 SQL
-- `persistence/key_process_store.py`: 공용 주요공정 목록 프로필의 조회·삽입 SQL(저장 차례가 곧 히트맵 행 순서)
+- `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·교체 SQL
+- `persistence/advance_load_store.py`: 공용 선행 투입 물량 프로필의 조회·교체 SQL
+- `persistence/execution_capacity_store.py`: 공용 실행 Capa 반영 프로필의 조회·교체 SQL
+- `persistence/key_process_store.py`: 공용 주요공정 목록 프로필의 조회·교체 SQL(저장 차례가 곧 히트맵 행 순서)
+- `persistence/home_profile_store.py`: HOME 공용 Top5 구간·공지·GAP 비교 대상의 조회·교체와
+  시나리오 삭제·보관 시 비교 대상 해제 SQL
 - `persistence/voc_store.py`: VOC 게시판 글·답글의 조회·삽입·삭제 SQL
-- `persistence/past_data_store.py`: 공용 과거 구간 프로필 세 표의 조회·삽입 SQL
+- `persistence/past_data_store.py`: 공용 과거 구간 프로필 세 표의 조회·교체 SQL
 - `persistence/preset_store.py`: 리비전 프리셋 저장·복원
 - `persistence/source_data_store.py`: 원천 Core Data raw 와 컬럼 프로파일
 - `persistence/summaries.py`: 조회 행을 요약 모델로 변환하고 그 요약 SELECT 투영
@@ -1206,8 +1223,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   옆에 둔다 — 투영 열 순서와 row 인덱스가 한 파일 안에서 짝을 이룬다
 - `persistence/_sql_helpers.py`: 프레임 저장·조회·값 변환과 트랜잭션 경계 공용 헬퍼. 두
   Repository 의 `_write_transaction` 과 `_migration_core` 가 `transaction()` 한 벌을 쓰고,
-  register → INSERT BY NAME → unregister 는 `insert_by_name()`, 공용 프로필 헤더는
-  `insert_profile_header()`, 표 하나의 감사 해시는 `hash_frame()`(`hash_tables` 와 같은
+  register → INSERT BY NAME → unregister 는 `insert_by_name()`, 공용 프로필 헤더 조회·삽입은
+  `load_profile_header()`·`insert_profile_header()`, 상세→헤더 삭제와 다음 버전 계산은
+  `reset_profile()`, 표 하나의 감사 해시는 `hash_frame()`(`hash_tables` 와 같은
   바이트 열, `tests/test_sql_helpers.py` 가 값을 핀한다)이 맡는다
 - `persistence/_migration_core.py`: 두 DuckDB가 공유하는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션)
@@ -1915,9 +1933,11 @@ un.ps1` 한 줄이면 된다. 모르는
   적으면 에이전트를 더할 때 한쪽만 고치게 된다).
 - `tests/test_migration_parity.py` 가 후보 브랜치에서 **`main` 에 없는 마이그레이션**의
   번호를 보고 배정 밖이면 실패한다. 두 마이그레이션 디렉터리는 번호가 독립이라 따로 본다.
-  `main` 이나 `feat/`·`fix/` 에서는 배정 대상이 아니라 건너뛴다 — 잡히는 자리는 후보 폴더와
-  `cand/**` 푸시의 CI 다. 그래서 CI 체크아웃이 **`fetch-depth: 0`** 이어야 한다. 얕은
-  복제에서는 `main` 이 없어 검사가 조용히 건너뛰어진다(초록인데 아무것도 안 본 상태다).
+  `main` 이나 `feat/`·`fix/` 에서는 배정 대상이 아니라 건너뛴다. 후보 폴더·`cand/**` 푸시와
+  후보 PR에서 검사한다. GitHub Actions의 detached HEAD에서는 `GITHUB_HEAD_REF` 또는
+  `GITHUB_REF_NAME`으로 후보를 식별하며 로컬 실행은 Git 브랜치만 본다. 비교 기준은
+  `main`, 없으면 `origin/main`이다. CI 체크아웃은 **`fetch-depth: 0`**이어야 하고,
+  후보 CI에서 기준이나 diff를 읽지 못하면 검증 누락을 숨기지 않고 실패한다.
 - **가능하면 한 주기에 한 에이전트만 마이그레이션을 만든다.** 홀짝은 그래도 겹칠 때를 위한
   안전장치이지 권장 상태가 아니다.
 - 채택되지 않은 브랜치가 번호를 이미 썼으면 **그 번호를 영구 결번으로 등록한다** — 5장의

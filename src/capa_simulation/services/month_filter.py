@@ -1,8 +1,19 @@
-# Purpose: Return the minimum and maximum valid YYYYMM values in a table.
+# Purpose: 공통 YYYYMM 유효성 검증과 원천 데이터의 조회기간 산출·필터를 제공한다.
 
 import pandas as pd
 
 MONTH_COLUMN = "생산계획년월"
+
+
+def valid_month_mask(numeric: pd.Series) -> pd.Series:
+    """숫자로 변환된 값에서 연도 1~9999·월 1~12인 YYYYMM 정수만 고른다.
+
+    정수 dtype 으로 바꾸기 전에 검사한다. 무한대·정수 범위 밖의 큰 수·누락값도
+    변환 예외 없이 False 가 되며, 오류 문구와 빈 표 정책은 각 입력 경계가 정한다.
+    UI 조회기간 제한은 달력의 유효성과 다른 정책이므로 여기 넣지 않는다.
+    """
+    bounded = numeric.where(numeric.between(101, 999912))
+    return (bounded.notna() & bounded.mod(1).eq(0) & bounded.mod(100).between(1, 12)).fillna(False)
 
 
 def available_month_range(data: pd.DataFrame, table_name: str) -> tuple[int, int]:
@@ -32,21 +43,16 @@ def _validated_months(data: pd.DataFrame, table_name: str) -> pd.Series:
         raise ValueError(f"{table_name}에 {MONTH_COLUMN} 컬럼이 없습니다.")
 
     numeric = pd.to_numeric(data[MONTH_COLUMN], errors="coerce")
-    whole_number = numeric.notna() & numeric.mod(1).eq(0)
-    integer_months = numeric.fillna(0).astype("int64")
-    calendar_month = integer_months.mod(100).between(1, 12)
-    calendar_year = integer_months.floordiv(100).between(1, 9999)
-    valid = whole_number & calendar_month & calendar_year
+    valid = valid_month_mask(numeric)
     if not valid.all():
         examples = data.loc[~valid, MONTH_COLUMN].head(5).tolist()
         raise ValueError(f"{table_name}의 {MONTH_COLUMN}은 YYYYMM 형식이어야 합니다: {examples}")
-    if integer_months.empty:
+    if numeric.empty:
         raise ValueError(f"{table_name}에 선택할 생산계획년월 데이터가 없습니다.")
-    return integer_months
+    return numeric.astype("int64")
 
 
 def _validate_month_value(month: int, label: str) -> None:
-    calendar_month = month % 100
-    calendar_year = month // 100
-    if not 1 <= calendar_year <= 9999 or not 1 <= calendar_month <= 12:
+    numeric = pd.to_numeric(pd.Series([month]), errors="coerce")
+    if not valid_month_mask(numeric).iloc[0]:
         raise ValueError(f"{label}은 YYYYMM 형식이어야 합니다: {month}")

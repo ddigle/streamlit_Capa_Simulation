@@ -176,6 +176,35 @@ def test_mpga_test_module_count_exception_normalizes_to_one() -> None:
     assert batch.frame["모듈수"].tolist() == [1, 0.94, 2, 0.955]
 
 
+@pytest.mark.parametrize("missing_column", ["공정", "모듈수"])
+def test_provider_reports_missing_columns_before_source_adjustment(
+    monkeypatch, missing_column
+) -> None:
+    frame = pd.DataFrame({"공정": ["MPGA TEST"], "모듈수": [0.955]}).drop(columns=missing_column)
+    monkeypatch.setattr(
+        adapter, "load_bigdataquery_module", lambda: _module(lambda **_kwargs: frame)
+    )
+    provider = adapter.BigDataQueryCoreDataProvider("사내 조회", column_mapping={})
+
+    with pytest.raises(ValueError, match=f"필요한 컬럼이 없습니다: {missing_column}"):
+        provider.fetch("SIM-001")
+
+
+def test_provider_reports_mapping_collisions_before_source_adjustment(monkeypatch) -> None:
+    frame = pd.DataFrame({"공정": ["MPGA TEST"], "모듈수": [0.955], "module_count": [2]})
+    monkeypatch.setattr(
+        adapter, "load_bigdataquery_module", lambda: _module(lambda **_kwargs: frame)
+    )
+    provider = adapter.BigDataQueryCoreDataProvider(
+        "사내 조회", column_mapping={"module_count": "모듈수"}
+    )
+
+    with pytest.raises(ValueError, match="중복 컬럼이 있습니다: 모듈수"):
+        provider.fetch("SIM-001")
+
+    assert frame["모듈수"].tolist() == [0.955]
+
+
 def _contract_columns() -> list[str]:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     return [column["name"] for column in contract["source"]["columns"]]

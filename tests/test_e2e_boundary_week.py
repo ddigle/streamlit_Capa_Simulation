@@ -21,6 +21,7 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.process_labels as process_labels_module
 from capa_simulation.services.iso_week_calendar import owning_month
 from capa_simulation.services.standard_target_capacity import (
     build_weekly_standard_target_capacity,
@@ -160,6 +161,7 @@ import streamlit as st
 
 import capa_simulation
 import capa_simulation.components.hierarchical_monthly_table as hierarchical_table
+import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.scenario_state as scenario_state
@@ -251,6 +253,7 @@ original_ensure_active = scenario_state.ensure_active_scenario
 original_scenario_month_table = scenario_state.scenario_month_table
 original_capacity_and_demand = simulation_cache.get_scenario_capacity_and_demand
 original_hierarchical_render = hierarchical_table.render_hierarchical_monthly_table
+original_get_process_labels = process_labels_module.get_process_labels
 
 
 class FakeEquipmentRepository:
@@ -291,6 +294,8 @@ def capture_table(data, **kwargs):
 
 
 hierarchical_table.render_hierarchical_monthly_table = capture_table
+# 공정 표시명도 조회 경계다. 기본 매핑을 주입해 로컬 시뮬레이션 DB에 접근하지 않는다.
+process_labels_module.get_process_labels = lambda: process_labels_module.ProcessLabels()
 
 try:
     st.session_state["production_month_range_v2"] = ("2026-02", "2026-03")
@@ -305,6 +310,7 @@ finally:
     scenario_state.scenario_month_table = original_scenario_month_table
     simulation_cache.get_scenario_capacity_and_demand = original_capacity_and_demand
     hierarchical_table.render_hierarchical_monthly_table = original_hierarchical_render
+    process_labels_module.get_process_labels = original_get_process_labels
 """
 
 
@@ -313,13 +319,22 @@ def _page_errors(app: AppTest) -> list[str]:
     return [element.value for element in app.error]
 
 
-def test_the_page_keeps_the_week_that_holds_the_requested_start_date() -> None:
+def test_the_page_keeps_the_week_that_holds_the_requested_start_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """조회 시작일 2026-02-01 이 든 26-W05 는 1월 귀속이다. 그래도 결과표에 나와야 한다.
 
     화면 기본 조회일은 2026-02-01 ~ 2026-03-31 이고 조회기간은 2026-02 ~ 2026-03 이다.
     월 슬라이스를 조회일의 달로만 만들면 26-W05(202601)·26-W14(202604) 가 inner 조인에서
     통째로 빠지는데, 빈칸이 아니라 **열 자체가 없다**. 경고도 남지 않는다.
     """
+
+    def unexpected_profile_load(*args: object, **kwargs: object) -> None:
+        raise AssertionError("화면 테스트는 로컬 공정 표시명 DB를 조회하면 안 됩니다.")
+
+    monkeypatch.setattr(
+        process_labels_module, "load_global_process_rename", unexpected_profile_load
+    )
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=90).run()
 
     assert not app.exception

@@ -2,7 +2,6 @@
 
 import ast
 from pathlib import Path
-from typing import get_args
 
 import pandas as pd
 from streamlit.testing.v1 import AppTest
@@ -11,7 +10,6 @@ from capa_simulation.components.grouped_monthly_table import build_grouped_month
 from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
 )
-from capa_simulation.components.home_rendering import HomeFigureCacheKey
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
@@ -382,26 +380,19 @@ def test_rename_is_not_part_of_the_calculation_cache_key() -> None:
     assert "process" not in build_home_simulation_cache_key.__code__.co_varnames
 
 
-def test_home_figure_cache_key_type_grew_by_the_rename_version() -> None:
-    """뒤에 화면 기준 여덟이 붙었다.
-
-    EDP·거래선 분류·적용된 비교 리비전·선행·선행 버전·실행·실행 버전·과거 버전, 그리고
-    **B/N Top5 확보율 구간** 셋(버전·하한·상한). 구간은 버전만으로는 부족하다 — 값이 곧
-    막대 길이라 저장하지 않고 화면에서 바꾸는 경로가 생기면 버전이 안 움직인다.
-
-    비교는 **토글과 리비전 둘이 아니라 적용된 리비전 하나**다. 「껐다」와 「켰지만 그
-    리비전을 못 붙였다」는 그림이 똑같으므로 같은 키를 나눠 쓰는 것이 맞다.
-
-    **rename 버전은 반드시 둘째 자리다.** 맨 뒤에 붙이면 표시순서 digest 를 `[-1]` 로 꺼내
-    쓰는 자리가 엉뚱한 값을 집는다.
-
-    맨 뒤의 둘은 주요공정 히트맵이다 — **실제로 그린 공정 목록**과 공용 프로필 버전.
-    고른 목록이 아니라 그린 목록인 것은 위 비교 리비전과 같은 근거다: 「고름 + 이 시나리오에
-    없어 못 그림」이 「고름」 키로 눌러앉으면 나중에 그 공정이 생겨도 빈 그림이 그대로
-    나온다. 버전도 함께 넣는 것은 집합은 같고 **차례만 바꾼** 저장을 목록 튜플이 못 잡기
-    때문이다 — 차례가 곧 행 순서다.
-    """
-    assert len(get_args(HomeFigureCacheKey)) == 23
+def _home_figure_cache_arguments() -> dict[str, str]:
+    """페이지가 키를 조립하는 근거를 필드명으로 읽는다. 위치에 의존하지 않는다."""
+    tree = ast.parse(HOME_PAGE.read_text(encoding="utf-8"))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "HomeFigureCacheKey"
+    ]
+    assert len(calls) == 1
+    assert not calls[0].args, "캐시 키는 필드명을 명시해 만들어야 합니다."
+    return {item.arg: ast.unparse(item.value) for item in calls[0].keywords if item.arg}
 
 
 def test_home_figure_cache_key_records_the_applied_comparison_not_the_requested_one() -> None:
@@ -410,38 +401,28 @@ def test_home_figure_cache_key_records_the_applied_comparison_not_the_requested_
     리비전이 지워졌거나 DB 를 잠깐 못 읽으면 비교 없이 그리는데, 그때도 키는 「GAP 켜짐」
     이라 다음 실행에서 DB 가 멀쩡해져도 그 그림이 그대로 나온다.
     """
-    tree = ast.parse(HOME_PAGE.read_text(encoding="utf-8"))
-    elements: list[str] = []
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.target.id == "figure_cache_key"
-            and isinstance(node.value, ast.Tuple)
-        ):
-            elements = [ast.unparse(item) for item in node.value.elts]
+    arguments = _home_figure_cache_arguments()
 
-    assert "str(applied_comparison_revision_id or '')" in elements
-    assert "show_comparison" not in elements
-    assert "str(comparison_revision_id or '')" not in elements
+    assert arguments["comparison_revision_id"] == "str(applied_comparison_revision_id or '')"
+    assert "show_comparison" not in arguments.values()
+    assert "str(comparison_revision_id or '')" not in arguments.values()
 
 
 def test_home_figure_cache_key_includes_the_rename_version_and_display_order_digest() -> None:
     """rename 버전은 Figure 키 원소다. 버전이 바뀔 때만 Figure 가 무효화된다."""
-    tree = ast.parse(HOME_PAGE.read_text(encoding="utf-8"))
-    elements: list[str] = []
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.target.id == "figure_cache_key"
-            and isinstance(node.value, ast.Tuple)
-        ):
-            elements = [ast.unparse(item) for item in node.value.elts]
+    arguments = _home_figure_cache_arguments()
 
-    assert "process_labels.version" in elements
-    assert "home_simulation_cache_key[-1]" in elements
-    assert "active_scenario['content_token']" in elements
+    assert arguments["process_label_version"] == "process_labels.version"
+    assert arguments["display_order_digest"] == "home_simulation_cache_key[-1]"
+    assert arguments["content_token"] == "active_scenario['content_token']"
+
+
+def test_home_figure_cache_key_records_the_applied_key_process_order() -> None:
+    """주요공정은 실제 그린 목록과 차례를 보고, 저장 버전도 함께 구분한다."""
+    arguments = _home_figure_cache_arguments()
+
+    assert arguments["key_processes"] == "tuple(applied_key_processes)"
+    assert arguments["key_process_profile_version"] == "key_process_profile.version"
 
 
 def test_content_token_is_never_reissued_for_a_rename() -> None:

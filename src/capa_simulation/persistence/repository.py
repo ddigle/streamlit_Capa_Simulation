@@ -1,6 +1,6 @@
-# Purpose: Transactional DuckDB repository for scenario-owned reference snapshots.
+# Purpose: 시나리오와 공용 프로필의 저장 명령을 검증하고 잠금·트랜잭션 경계에서 실행한다.
 
-"""Transactional DuckDB repository for scenario-owned reference snapshots."""
+"""시나리오·공용 프로필의 검증, 연결과 쓰기 트랜잭션을 소유하는 저장소."""
 
 from __future__ import annotations
 
@@ -20,37 +20,30 @@ from capa_simulation.io.core_data_source import (
     load_core_data_contract,
     normalize_core_data,
 )
-from capa_simulation.persistence import sync_state
+from capa_simulation.persistence import (
+    advance_load_store,
+    display_order_store,
+    execution_capacity_store,
+    home_profile_store,
+    key_process_store,
+    past_data_store,
+    process_rename_store,
+    sync_state,
+)
 from capa_simulation.persistence._sql_helpers import (
     connect,
     hash_tables,
     insert_frame,
     load_frame,
-    load_profile_header,
     quote,
     require_tables,
     required_text,
-    reset_profile,
     transaction,
-)
-from capa_simulation.persistence.advance_load_store import (
-    insert_global_advance_load,
-    load_global_advance_load_rows,
 )
 from capa_simulation.persistence.display_order_store import (
     display_order_frames_equal,
-    insert_global_display_order,
-    load_existing_display_order,
     load_global_display_order_rules,
     prepare_global_display_order_rules,
-)
-from capa_simulation.persistence.execution_capacity_store import (
-    insert_global_execution_capacity,
-    load_global_execution_capacity_rows,
-)
-from capa_simulation.persistence.key_process_store import (
-    insert_global_key_process,
-    load_global_key_process_rows,
 )
 from capa_simulation.persistence.migration_runner import apply_migrations
 from capa_simulation.persistence.models import (
@@ -70,19 +63,11 @@ from capa_simulation.persistence.models import (
     ScenarioSnapshot,
     ScenarioSummary,
 )
-from capa_simulation.persistence.past_data_store import (
-    PAST_TABLES,
-    insert_global_past_data,
-    load_global_past_table,
-)
+from capa_simulation.persistence.past_data_store import PAST_TABLES
 from capa_simulation.persistence.preset_store import (
     insert_preset,
     load_preset,
     validate_preset_processes,
-)
-from capa_simulation.persistence.process_rename_store import (
-    insert_global_process_rename,
-    load_global_process_rename_rules,
 )
 from capa_simulation.persistence.source_data_store import (
     insert_core_data,
@@ -106,28 +91,12 @@ from capa_simulation.persistence.voc_store import (
     load_voc_replies,
     update_voc_post_resolved,
 )
-from capa_simulation.services.advance_load import (
-    empty_advance_load,
-    prepare_advance_load,
-)
-from capa_simulation.services.execution_capacity import (
-    empty_execution_capacity,
-    prepare_execution_capacity,
-)
+from capa_simulation.services.advance_load import prepare_advance_load
+from capa_simulation.services.execution_capacity import prepare_execution_capacity
 from capa_simulation.services.key_process import normalize_key_processes
-from capa_simulation.services.past_data import (
-    empty_past_table,
-    prepare_past_table,
-)
-from capa_simulation.services.process_rename import (
-    empty_process_rename_rules,
-    prepare_process_rename_rules,
-)
-from capa_simulation.services.top5_band import (
-    DEFAULT_TOP5_MAX_RATE,
-    DEFAULT_TOP5_MIN_RATE,
-    validate_top5_band,
-)
+from capa_simulation.services.past_data import prepare_past_table
+from capa_simulation.services.process_rename import prepare_process_rename_rules
+from capa_simulation.services.top5_band import validate_top5_band
 from capa_simulation.services.voc_board import normalize_post, normalize_reply
 
 REFERENCE_TABLES: dict[str, str] = {
@@ -207,27 +176,6 @@ def _owned_tables(connection: duckdb.DuckDBPyConnection) -> list[tuple[str, str,
     return owned
 
 
-def _clear_global_comparison_scenario(
-    connection: duckdb.DuckDBPyConnection,
-    scenario_id: str,
-) -> None:
-    """공용 GAP 비교 대상이 이 시나리오를 가리키고 있으면 비운다.
-
-    `version` 을 함께 올려야 한다. 이 프로필의 캐시 키가 `version` 이므로, 올리지 않으면
-    다른 세션이 사라진 시나리오를 비교 대상으로 계속 쥐고 있는다. `revision_id` 도 같이
-    비운다 — 표의 `CHECK (revision_id IS NULL OR scenario_id IS NOT NULL)` 때문에 한쪽만
-    비우면 제약에 걸린다.
-    """
-    connection.execute(
-        """
-        UPDATE app_meta.global_comparison_scenario
-        SET scenario_id = NULL, revision_id = NULL, version = version + 1
-        WHERE scenario_id = ?
-        """,
-        [scenario_id],
-    )
-
-
 def _require_not_latest_official(
     connection: duckdb.DuckDBPyConnection,
     scenario_id: str,
@@ -274,26 +222,7 @@ class DuckDBScenarioRepository:
         """Create the shared profile once, preferring an existing revision's rules."""
         prepared_fallback = prepare_global_display_order_rules(fallback)
         with self._write_transaction() as connection:
-            existing = connection.execute(
-                "SELECT profile_id FROM app_meta.global_display_order WHERE profile_id = 1"
-            ).fetchone()
-            if existing is None:
-                migrated = load_existing_display_order(connection)
-                if migrated is None:
-                    initial = prepared_fallback
-                    source = "초기 표시순서 시드"
-                else:
-                    initial = prepare_global_display_order_rules(migrated)
-                    source = "기존 시나리오 표시순서 이관"
-                    if len(initial) < len(prepared_fallback):
-                        initial = prepared_fallback
-                        source = "초기 표시순서 시드"
-                insert_global_display_order(
-                    connection,
-                    initial,
-                    version=1,
-                    source=source,
-                )
+            display_order_store.initialize_global_display_order(connection, prepared_fallback)
         profile = self.load_global_display_order()
         prepared = prepare_global_display_order_rules(profile.rules)
         if not display_order_frames_equal(profile.rules, prepared):
@@ -306,16 +235,7 @@ class DuckDBScenarioRepository:
     def load_global_display_order(self) -> GlobalDisplayOrder:
         """Load the scenario-independent display-order profile."""
         with self._connect() as connection:
-            header = load_profile_header(connection, "global_display_order")
-            if header is None:
-                raise RuntimeError("공용 표시순서가 초기화되지 않았습니다.")
-            rules = load_global_display_order_rules(connection)
-        return GlobalDisplayOrder(
-            version=header[0],
-            source=header[1],
-            updated_at=header[2],
-            rules=rules,
-        )
+            return display_order_store.load_global_display_order(connection)
 
     def replace_global_display_order(
         self,
@@ -327,12 +247,8 @@ class DuckDBScenarioRepository:
         prepared_rules = prepare_global_display_order_rules(rules)
         source_label = required_text(source, "표시순서 변경 출처")
         with self._write_transaction() as connection:
-            version = reset_profile(connection, "global_display_order", "global_display_order_rule")
-            insert_global_display_order(
-                connection,
-                prepared_rules,
-                version=version,
-                source=source_label,
+            display_order_store.replace_global_display_order(
+                connection, prepared_rules, source=source_label
             )
         return self.load_global_display_order()
 
@@ -343,21 +259,7 @@ class DuckDBScenarioRepository:
         여기서 예외를 내면 첫 저장 전까지 모든 화면이 죽는다.
         """
         with self._connect() as connection:
-            header = load_profile_header(connection, "global_process_rename")
-            if header is None:
-                return GlobalProcessRename(
-                    version=0,
-                    source="",
-                    updated_at=None,
-                    rules=empty_process_rename_rules(),
-                )
-            rules = load_global_process_rename_rules(connection)
-        return GlobalProcessRename(
-            version=header[0],
-            source=header[1],
-            updated_at=header[2],
-            rules=rules,
-        )
+            return process_rename_store.load_global_process_rename(connection)
 
     def replace_global_process_rename(
         self,
@@ -374,14 +276,8 @@ class DuckDBScenarioRepository:
         prepared_rules = prepare_process_rename_rules(rules)
         source_label = required_text(source, "공정 표시명 변경 출처")
         with self._write_transaction() as connection:
-            version = reset_profile(
-                connection, "global_process_rename", "global_process_rename_rule"
-            )
-            insert_global_process_rename(
-                connection,
-                prepared_rules,
-                version=version,
-                source=source_label,
+            process_rename_store.replace_global_process_rename(
+                connection, prepared_rules, source=source_label
             )
         return self.load_global_process_rename()
 
@@ -392,21 +288,7 @@ class DuckDBScenarioRepository:
         정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
         """
         with self._connect() as connection:
-            header = load_profile_header(connection, "global_execution_capacity")
-            if header is None:
-                return GlobalExecutionCapacity(
-                    version=0,
-                    source="",
-                    updated_at=None,
-                    rows=empty_execution_capacity(),
-                )
-            rows = load_global_execution_capacity_rows(connection)
-        return GlobalExecutionCapacity(
-            version=header[0],
-            source=header[1],
-            updated_at=header[2],
-            rows=prepare_execution_capacity(rows),
-        )
+            return execution_capacity_store.load_global_execution_capacity(connection)
 
     def replace_global_execution_capacity(
         self,
@@ -423,11 +305,8 @@ class DuckDBScenarioRepository:
         prepared = prepare_execution_capacity(rows)
         source_label = required_text(source, "실행 Capa 반영 출처")
         with self._write_transaction() as connection:
-            version = reset_profile(
-                connection, "global_execution_capacity", "global_execution_capacity_row"
-            )
-            insert_global_execution_capacity(
-                connection, prepared, version=version, source=source_label
+            execution_capacity_store.replace_global_execution_capacity(
+                connection, prepared, source=source_label
             )
         return self.load_global_execution_capacity()
 
@@ -438,28 +317,7 @@ class DuckDBScenarioRepository:
         정상이고 그때는 서비스 기본값을 돌려준다.
         """
         with self._connect() as connection:
-            row = connection.execute(
-                """
-                SELECT min_rate, max_rate, version, source, updated_at
-                FROM app_meta.global_top5_band
-                WHERE profile_id = 1
-                """
-            ).fetchone()
-        if row is None:
-            return GlobalTop5Band(
-                version=0,
-                source="",
-                updated_at=None,
-                min_rate=DEFAULT_TOP5_MIN_RATE,
-                max_rate=DEFAULT_TOP5_MAX_RATE,
-            )
-        return GlobalTop5Band(
-            version=int(row[2]),
-            source=str(row[3]),
-            updated_at=row[4],
-            min_rate=float(row[0]),
-            max_rate=float(row[1]),
-        )
+            return home_profile_store.load_global_top5_band(connection)
 
     def replace_global_top5_band(
         self,
@@ -472,15 +330,7 @@ class DuckDBScenarioRepository:
         low, high = validate_top5_band(min_rate, max_rate)
         source_label = required_text(source, "Top5 확보율 구간 출처")
         with self._write_transaction() as connection:
-            version = reset_profile(connection, "global_top5_band")
-            connection.execute(
-                """
-                INSERT INTO app_meta.global_top5_band
-                    (profile_id, min_rate, max_rate, version, source)
-                VALUES (1, ?, ?, ?, ?)
-                """,
-                [low, high, version, source_label],
-            )
+            home_profile_store.replace_global_top5_band(connection, low, high, source=source_label)
         return self.load_global_top5_band()
 
     def load_global_key_process(self) -> GlobalKeyProcess:
@@ -490,16 +340,7 @@ class DuckDBScenarioRepository:
         정상이고, 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
         """
         with self._connect() as connection:
-            header = load_profile_header(connection, "global_key_process")
-            if header is None:
-                return GlobalKeyProcess(version=0, source="", updated_at=None, processes=())
-            processes = load_global_key_process_rows(connection)
-        return GlobalKeyProcess(
-            version=header[0],
-            source=header[1],
-            updated_at=header[2],
-            processes=normalize_key_processes(processes),
-        )
+            return key_process_store.load_global_key_process(connection)
 
     def replace_global_key_process(
         self,
@@ -515,8 +356,9 @@ class DuckDBScenarioRepository:
         normalized = normalize_key_processes(processes)
         source_label = required_text(source, "주요공정 목록 출처")
         with self._write_transaction() as connection:
-            version = reset_profile(connection, "global_key_process", "global_key_process_item")
-            insert_global_key_process(connection, normalized, version=version, source=source_label)
+            key_process_store.replace_global_key_process(
+                connection, normalized, source=source_label
+            )
         return self.load_global_key_process()
 
     def list_voc_posts(self) -> pd.DataFrame:
@@ -566,21 +408,7 @@ class DuckDBScenarioRepository:
         정상이고 그때는 빈 공지다.
         """
         with self._connect() as connection:
-            row = connection.execute(
-                """
-                SELECT note, version, source, updated_at
-                FROM app_meta.global_summary_note
-                WHERE profile_id = 1
-                """
-            ).fetchone()
-        if row is None:
-            return GlobalSummaryNote(version=0, source="", updated_at=None, note="")
-        return GlobalSummaryNote(
-            version=int(row[1]),
-            source=str(row[2]),
-            updated_at=row[3],
-            note=str(row[0]),
-        )
+            return home_profile_store.load_global_summary_note(connection)
 
     def replace_global_summary_note(self, note: str, *, source: str) -> GlobalSummaryNote:
         """Atomically replace the shared summary notice. 교체마다 version 이 오른다.
@@ -590,14 +418,7 @@ class DuckDBScenarioRepository:
         """
         source_label = required_text(source, "Summary 공지 출처")
         with self._write_transaction() as connection:
-            version = reset_profile(connection, "global_summary_note")
-            connection.execute(
-                """
-                INSERT INTO app_meta.global_summary_note (profile_id, note, version, source)
-                VALUES (1, ?, ?, ?)
-                """,
-                [note, version, source_label],
-            )
+            home_profile_store.replace_global_summary_note(connection, note, source=source_label)
         return self.load_global_summary_note()
 
     def load_global_comparison_scenario(self) -> GlobalComparisonScenario:
@@ -607,28 +428,7 @@ class DuckDBScenarioRepository:
         정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
         """
         with self._connect() as connection:
-            row = connection.execute(
-                """
-                SELECT scenario_id, revision_id, version, source, updated_at
-                FROM app_meta.global_comparison_scenario
-                WHERE profile_id = 1
-                """
-            ).fetchone()
-        if row is None:
-            return GlobalComparisonScenario(
-                version=0,
-                source="",
-                updated_at=None,
-                scenario_id=None,
-                revision_id=None,
-            )
-        return GlobalComparisonScenario(
-            version=int(row[2]),
-            source=str(row[3]),
-            updated_at=row[4],
-            scenario_id=None if row[0] is None else str(row[0]),
-            revision_id=None if row[1] is None else str(row[1]),
-        )
+            return home_profile_store.load_global_comparison_scenario(connection)
 
     def replace_global_comparison_scenario(
         self,
@@ -654,14 +454,8 @@ class DuckDBScenarioRepository:
             raise ValueError("비교 리비전만 저장할 수 없습니다. 시나리오를 함께 주세요.")
         source_label = required_text(source, "비교 대상 변경 출처")
         with self._write_transaction() as connection:
-            version = reset_profile(connection, "global_comparison_scenario")
-            connection.execute(
-                """
-                INSERT INTO app_meta.global_comparison_scenario
-                    (profile_id, scenario_id, revision_id, version, source)
-                VALUES (1, ?, ?, ?, ?)
-                """,
-                [chosen_scenario, chosen_revision, version, source_label],
+            home_profile_store.replace_global_comparison_scenario(
+                connection, chosen_scenario, chosen_revision, source=source_label
             )
         return self.load_global_comparison_scenario()
 
@@ -672,21 +466,7 @@ class DuckDBScenarioRepository:
         정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
         """
         with self._connect() as connection:
-            header = load_profile_header(connection, "global_advance_load")
-            if header is None:
-                return GlobalAdvanceLoad(
-                    version=0,
-                    source="",
-                    updated_at=None,
-                    rows=empty_advance_load(),
-                )
-            rows = load_global_advance_load_rows(connection)
-        return GlobalAdvanceLoad(
-            version=header[0],
-            source=header[1],
-            updated_at=header[2],
-            rows=prepare_advance_load(rows),
-        )
+            return advance_load_store.load_global_advance_load(connection)
 
     def replace_global_advance_load(
         self,
@@ -702,12 +482,8 @@ class DuckDBScenarioRepository:
         prepared_rows = prepare_advance_load(rows)
         source_label = required_text(source, "선행 물량 변경 출처")
         with self._write_transaction() as connection:
-            version = reset_profile(connection, "global_advance_load", "global_advance_load_month")
-            insert_global_advance_load(
-                connection,
-                prepared_rows,
-                version=version,
-                source=source_label,
+            advance_load_store.replace_global_advance_load(
+                connection, prepared_rows, source=source_label
             )
         return self.load_global_advance_load()
 
@@ -718,28 +494,7 @@ class DuckDBScenarioRepository:
         정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
         """
         with self._connect() as connection:
-            header = load_profile_header(connection, "global_past_data")
-            if header is None:
-                return GlobalPastData(
-                    version=0,
-                    source="",
-                    updated_at=None,
-                    monthly=empty_past_table(PAST_TABLES["월별"][1]),
-                    plan_detail=empty_past_table(PAST_TABLES["계획"][1]),
-                    securement=empty_past_table(PAST_TABLES["확보율"][1]),
-                )
-            loaded = {
-                name: prepare_past_table(load_global_past_table(connection, name), columns)
-                for name, (_, columns) in PAST_TABLES.items()
-            }
-        return GlobalPastData(
-            version=header[0],
-            source=header[1],
-            updated_at=header[2],
-            monthly=loaded["월별"],
-            plan_detail=loaded["계획"],
-            securement=loaded["확보율"],
-        )
+            return past_data_store.load_global_past_data(connection)
 
     def replace_global_past_data(
         self,
@@ -758,17 +513,7 @@ class DuckDBScenarioRepository:
         }
         source_label = required_text(source, "과거 구간 변경 출처")
         with self._write_transaction() as connection:
-            version = reset_profile(
-                connection,
-                "global_past_data",
-                *(table for table, _ in PAST_TABLES.values()),
-            )
-            insert_global_past_data(
-                connection,
-                dict(prepared),
-                version=version,
-                source=source_label,
-            )
+            past_data_store.replace_global_past_data(connection, prepared, source=source_label)
         return self.load_global_past_data()
 
     def create_scenario(
@@ -1081,7 +826,7 @@ class DuckDBScenarioRepository:
                 "UPDATE app_meta.dataset SET status = 'ARCHIVED' WHERE scenario_id = ?",
                 [scenario_id],
             )
-            _clear_global_comparison_scenario(connection, scenario_id)
+            home_profile_store.clear_global_comparison_scenario(connection, scenario_id)
 
     def restore_scenario(self, scenario_id: str) -> None:
         """보관을 풀어 목록으로 되돌린다."""
@@ -1340,7 +1085,7 @@ class DuckDBScenarioRepository:
                     )
             # 공용 프로필은 소유가 아니라 참조라 위 자동 발견에서 빠져 있다. 가리키고
             # 있었다면 여기서 비운다.
-            _clear_global_comparison_scenario(connection, scenario_id)
+            home_profile_store.clear_global_comparison_scenario(connection, scenario_id)
             connection.execute("DELETE FROM app_meta.scenario WHERE scenario_id = ?", [scenario_id])
 
     def count_official_releases(self, scenario_id: str) -> int:

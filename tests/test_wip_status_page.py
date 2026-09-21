@@ -1,6 +1,9 @@
 # Purpose: wip status page 관련 정상·예외·회귀 동작을 검증한다.
 
+import pytest
 from streamlit.testing.v1 import AppTest
+
+import capa_simulation.components.process_labels as process_labels_module
 
 TEST_SCRIPT = r"""
 from datetime import date, timedelta
@@ -11,6 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import capa_simulation
+import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.components.wip_status_dashboard as dashboard
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
@@ -113,6 +117,7 @@ original_scenario_month_table = scenario_state.scenario_month_table
 original_capacity_and_demand = simulation_cache.get_scenario_capacity_and_demand
 original_weekly_standard = simulation_cache.get_weekly_standard_target_capacity
 original_figure_builder = dashboard.build_wip_status_grid_figure
+original_get_process_labels = process_labels_module.get_process_labels
 
 
 # 설비 DB 가 채워진 정상 경로. 빈 표는 EMPTY_AVAILABILITY_SCRIPT 가 따로 검사한다.
@@ -158,6 +163,8 @@ def capture_figure(data, routes, products, _start_date, _end_date, process_label
 
 
 dashboard.build_wip_status_grid_figure = capture_figure
+# 공정 표시명도 조회 경계다. 기본 매핑을 주입해 로컬 시뮬레이션 DB에 접근하지 않는다.
+process_labels_module.get_process_labels = lambda: process_labels_module.ProcessLabels()
 
 try:
     PAGE_NAME = "wip_status.py"
@@ -172,6 +179,7 @@ finally:
     simulation_cache.get_scenario_capacity_and_demand = original_capacity_and_demand
     simulation_cache.get_weekly_standard_target_capacity = original_weekly_standard
     dashboard.build_wip_status_grid_figure = original_figure_builder
+    process_labels_module.get_process_labels = original_get_process_labels
 """
 
 EMPTY_AVAILABILITY_SCRIPT = TEST_SCRIPT.replace(
@@ -181,7 +189,15 @@ EMPTY_AVAILABILITY_SCRIPT = TEST_SCRIPT.replace(
 assert EMPTY_AVAILABILITY_SCRIPT != TEST_SCRIPT
 
 
-def test_wip_status_page_renders_filtered_step_product_grid() -> None:
+def test_wip_status_page_renders_filtered_step_product_grid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_profile_load(*args: object, **kwargs: object) -> None:
+        raise AssertionError("화면 테스트는 로컬 공정 표시명 DB를 조회하면 안 됩니다.")
+
+    monkeypatch.setattr(
+        process_labels_module, "load_global_process_rename", unexpected_profile_load
+    )
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception

@@ -1,15 +1,23 @@
-# Purpose: 시나리오와 분리된 공용 실행 Capa 반영 프로필의 조회·삽입 SQL을 담당한다.
+# Purpose: 시나리오와 분리된 공용 실행 Capa 반영 프로필의 조회·교체 SQL을 담당한다.
 
-"""시나리오와 분리된 공용 실행 Capa 반영 프로필의 조회·삽입 SQL."""
+"""시나리오와 분리된 공용 실행 Capa 반영 프로필의 조회·교체 SQL."""
 
 from __future__ import annotations
 
 import duckdb
 import pandas as pd
 
-from capa_simulation.persistence._sql_helpers import insert_by_name, insert_profile_header, quote
+from capa_simulation.persistence._sql_helpers import (
+    insert_by_name,
+    insert_profile_header,
+    load_profile_header,
+    quote,
+    reset_profile,
+)
+from capa_simulation.persistence.models import GlobalExecutionCapacity
 from capa_simulation.services.execution_capacity import (
     EXECUTION_CAPACITY_COLUMNS,
+    empty_execution_capacity,
     prepare_execution_capacity,
 )
 
@@ -51,3 +59,34 @@ def insert_global_execution_capacity(
         table_name="global_execution_capacity_row",
         frame=payload,
     )
+
+
+def load_global_execution_capacity(
+    connection: duckdb.DuckDBPyConnection,
+) -> GlobalExecutionCapacity:
+    """열린 연결에서 공용 프로필과 미저장 기본값을 복원한다."""
+    metadata = load_profile_header(connection, "global_execution_capacity")
+    if metadata is None:
+        return GlobalExecutionCapacity(
+            version=0,
+            source="",
+            updated_at=None,
+            rows=empty_execution_capacity(),
+        )
+    rows = load_global_execution_capacity_rows(connection)
+    return GlobalExecutionCapacity(
+        version=metadata[0],
+        source=metadata[1],
+        updated_at=metadata[2],
+        rows=prepare_execution_capacity(rows),
+    )
+
+
+def replace_global_execution_capacity(
+    connection: duckdb.DuckDBPyConnection, prepared: pd.DataFrame, *, source: str
+) -> None:
+    """검증된 프로필을 교체한다. 호출자가 잠금과 트랜잭션을 소유한다."""
+    version = reset_profile(
+        connection, "global_execution_capacity", "global_execution_capacity_row"
+    )
+    insert_global_execution_capacity(connection, prepared, version=version, source=source)

@@ -15,6 +15,7 @@ from typing import Literal, Protocol, cast
 
 import pandas as pd
 
+from capa_simulation.services.month_filter import valid_month_mask
 from capa_simulation.settings import PROJECT_ROOT
 
 # 확장자만 YAML 이고 내용도 파서도 JSON 이었다. 실제 형식에 맞춰 이름을 바꿨다.
@@ -270,16 +271,17 @@ def _numeric_series(series: pd.Series, column_name: str, *, integer: bool) -> pd
                 f"Core Data 정수 컬럼에 소수값이 있습니다: {column_name} "
                 f"({int(fractional.sum())}행)"
             )
+        if column_name == "생산계획년월":
+            # 일반 정수 컬럼은 nullable 이지만 월은 필수 달력 값이다. Int64 캐스트 전에
+            # 검사해야 너무 큰 숫자도 pandas 내부 예외 대신 기존 입력 오류로 전달된다.
+            _validate_production_month(numeric)
         return numeric.astype("Int64")
     return numeric.astype("Float64")
 
 
 def _validate_production_month(series: pd.Series) -> None:
     numeric = pd.to_numeric(series, errors="coerce")
-    valid = numeric.notna() & numeric.mod(1).eq(0)
-    values = numeric.fillna(0).astype("int64")
-    valid &= values.mod(100).between(1, 12)
-    if not valid.all():
+    if not valid_month_mask(numeric).all():
         raise ValueError("Core Data 생산계획년월은 유효한 YYYYMM 정수여야 합니다.")
 
 

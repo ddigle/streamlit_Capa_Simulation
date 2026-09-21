@@ -1,15 +1,23 @@
-# Purpose: 시나리오와 분리된 공용 공정 표시명 프로필의 조회·삽입 SQL을 담당한다.
+# Purpose: 시나리오와 분리된 공용 공정 표시명 프로필의 조회·교체 SQL을 담당한다.
 
-"""시나리오와 분리된 공용 공정 표시명 프로필의 조회·삽입 SQL."""
+"""시나리오와 분리된 공용 공정 표시명 프로필의 조회·교체 SQL."""
 
 from __future__ import annotations
 
 import duckdb
 import pandas as pd
 
-from capa_simulation.persistence._sql_helpers import insert_by_name, insert_profile_header, quote
+from capa_simulation.persistence._sql_helpers import (
+    insert_by_name,
+    insert_profile_header,
+    load_profile_header,
+    quote,
+    reset_profile,
+)
+from capa_simulation.persistence.models import GlobalProcessRename
 from capa_simulation.services.process_rename import (
     PROCESS_RENAME_COLUMNS,
+    empty_process_rename_rules,
     prepare_process_rename_rules,
 )
 
@@ -51,4 +59,36 @@ def insert_global_process_rename(
         schema="app_meta",
         table_name="global_process_rename_rule",
         frame=payload,
+    )
+
+
+def load_global_process_rename(connection: duckdb.DuckDBPyConnection) -> GlobalProcessRename:
+    """열린 연결에서 공용 프로필과 미저장 기본값을 복원한다."""
+    metadata = load_profile_header(connection, "global_process_rename")
+    if metadata is None:
+        return GlobalProcessRename(
+            version=0,
+            source="",
+            updated_at=None,
+            rules=empty_process_rename_rules(),
+        )
+    rules = load_global_process_rename_rules(connection)
+    return GlobalProcessRename(
+        version=metadata[0],
+        source=metadata[1],
+        updated_at=metadata[2],
+        rules=rules,
+    )
+
+
+def replace_global_process_rename(
+    connection: duckdb.DuckDBPyConnection, prepared_rules: pd.DataFrame, *, source: str
+) -> None:
+    """검증된 프로필을 교체한다. 호출자가 잠금과 트랜잭션을 소유한다."""
+    version = reset_profile(connection, "global_process_rename", "global_process_rename_rule")
+    insert_global_process_rename(
+        connection,
+        prepared_rules,
+        version=version,
+        source=source,
     )

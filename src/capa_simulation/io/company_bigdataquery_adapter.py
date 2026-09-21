@@ -302,6 +302,17 @@ class BigDataQueryCoreDataProvider:
                 f"조회 기간({window.label()})에 원천 데이터가 있는지 확인하세요."
             )
         renamed = frame.rename(columns=dict(self.column_mapping))
+        # 이 두 컬럼은 공통 78컬럼 검증보다 먼저 아래 원천 보정이 사용한다.
+        # 매핑 누락·충돌을 여기서 밝혀야 KeyError나 DataFrame 타입 오류로 원인이 가려지지 않는다.
+        missing = [column for column in ("공정", "모듈수") if column not in renamed.columns]
+        if missing:
+            raise ValueError(
+                f"BigDataQuery 원천 보정에 필요한 컬럼이 없습니다: {', '.join(missing)}"
+            )
+        duplicated = renamed.columns[renamed.columns.duplicated()].unique().tolist()
+        if duplicated:
+            names = ", ".join(map(str, duplicated))
+            raise ValueError(f"BigDataQuery 컬럼 매핑 결과에 중복 컬럼이 있습니다: {names}")
         # TODO: MPGA TEST 원천 모듈수 산정 규칙이 확정되면 제거
         module_count = pd.to_numeric(renamed["모듈수"], errors="coerce")
 
