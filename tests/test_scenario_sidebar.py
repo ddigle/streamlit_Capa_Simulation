@@ -1,20 +1,19 @@
 # Purpose: scenario sidebar 관련 정상·예외·회귀 동작을 검증한다.
 
+from collections.abc import Iterator
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pandas as pd
+import pytest
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.scenario_status as target
 from capa_simulation.components.scenario_status import (
     SIDEBAR_REVISION_KEY,
     SIDEBAR_SCENARIO_KEY,
 )
-
-TEST_SCRIPT = """
-from pathlib import Path
-from types import SimpleNamespace
-
-import pandas as pd
-import streamlit as st
-
-import capa_simulation.components.scenario_status as target
 
 
 def scenario(scenario_id, name, code, revision_id, revision_no):
@@ -74,9 +73,7 @@ def load_snapshot(_database_path, revision_id):
         for item in revisions
         if item.revision_id == revision_id
     )
-    selected_scenario = next(
-        item for item in SCENARIOS if item.scenario_id == selected.scenario_id
-    )
+    selected_scenario = next(item for item in SCENARIOS if item.scenario_id == selected.scenario_id)
     return SimpleNamespace(
         scenario=selected_scenario,
         revision=selected,
@@ -85,35 +82,51 @@ def load_snapshot(_database_path, revision_id):
     )
 
 
-target.get_scenario_repository = lambda _path: FakeRepository()
-target.load_scenario_snapshot = load_snapshot
-target.active_persisted_scenario_id = lambda: "scenario-1"
-target.active_persisted_revision_id = lambda: "revision-1"
-target.has_unsaved_scenario_changes = lambda: False
-target.activate_persisted_snapshot = lambda snapshot: st.session_state.__setitem__(
-    "test_activated_revision", snapshot.revision.revision_id
-)
-target.get_effective_reference_version = lambda: 1
-target.get_effective_reference_tables = lambda: {
-    "RQ_REQB": pd.DataFrame({"공정": ["공정 A"]}),
-    "RQ_DISPLAY_ORDER": pd.DataFrame(),
-}
-target.ensure_active_scenario = lambda _tables, _version: {
-    "reference_version": 1,
-    "revision": 1,
-    "tables": {},
-}
-target.revision_tables_for_save = lambda _active, tables: {
-    "RQ_REQB": tables["RQ_REQB"].copy()
-}
-target.capture_scenario_preset = lambda _tables: SimpleNamespace()
+TEST_SCRIPT = """
+from pathlib import Path
 
+import capa_simulation.components.scenario_status as target
 target.render_scenario_controls(Path("unused.duckdb"))
 """
 
 
-def test_sidebar_selects_and_loads_another_revision() -> None:
-    app = AppTest.from_string(TEST_SCRIPT).run()
+@pytest.fixture
+def sidebar_app() -> Iterator[AppTest]:
+    """callback은 스크립트보다 먼저 실행되므로 모든 rerun을 같은 patch로 감싼다."""
+    replacements = {
+        "get_scenario_repository": lambda _path: FakeRepository(),
+        "load_scenario_snapshot": load_snapshot,
+        "active_persisted_scenario_id": lambda: "scenario-1",
+        "active_persisted_revision_id": lambda: "revision-1",
+        "has_unsaved_scenario_changes": lambda: False,
+        "activate_persisted_snapshot": lambda snapshot: st.session_state.__setitem__(
+            "test_activated_revision", snapshot.revision.revision_id
+        ),
+        "get_effective_reference_version": lambda: 1,
+        "get_effective_reference_tables": lambda: {
+            "RQ_REQB": pd.DataFrame({"공정": ["공정 A"]}),
+            "RQ_DISPLAY_ORDER": pd.DataFrame(),
+        },
+        "ensure_active_scenario": lambda _tables, _version: {
+            "reference_version": 1,
+            "revision": 1,
+            "tables": {},
+        },
+        "revision_tables_for_save": lambda _active, tables: {"RQ_REQB": tables["RQ_REQB"].copy()},
+        "capture_scenario_preset": lambda _tables: SimpleNamespace(),
+    }
+    originals = {name: getattr(target, name) for name in replacements}
+    try:
+        with patch.multiple(target, **replacements):
+            yield AppTest.from_string(TEST_SCRIPT)
+    finally:
+        # 테스트 실패와 st.rerun 모두 원본 복원을 건너뛰어 다음 AppTest를 오염시키면 안 된다.
+        for name, original in originals.items():
+            assert getattr(target, name) is original, name
+
+
+def test_sidebar_selects_and_loads_another_revision(sidebar_app: AppTest) -> None:
+    app = sidebar_app.run()
 
     assert not app.exception
     assert [widget.label for widget in app.selectbox] == ["시나리오", "리비전"]
@@ -130,8 +143,8 @@ def test_sidebar_selects_and_loads_another_revision() -> None:
     assert app.session_state["test_activated_revision"] == "revision-2"
 
 
-def test_sidebar_saves_current_state_as_a_new_revision() -> None:
-    app = AppTest.from_string(TEST_SCRIPT).run()
+def test_sidebar_saves_current_state_as_a_new_revision(sidebar_app: AppTest) -> None:
+    app = sidebar_app.run()
 
     revision_name = next(widget for widget in app.text_input if widget.label == "새 리비전명")
     app = revision_name.set_value("사이드바 저장안").run()

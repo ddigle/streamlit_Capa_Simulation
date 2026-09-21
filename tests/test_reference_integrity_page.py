@@ -1,7 +1,10 @@
 # Purpose: Dynamic Capa 상위 화면이 공정 표시명을 쓰고 선택값은 원본으로 두는지 검증한다.
 
 import pandas as pd
+import pytest
 from streamlit.testing.v1 import AppTest
+
+import capa_simulation.components.process_labels as process_labels_module
 
 TEST_SCRIPT = r"""
 from pathlib import Path
@@ -21,11 +24,13 @@ st.session_state["untouched_source"] = demo_processes[1]
 
 original_get_process_labels = process_labels_module.get_process_labels
 APPLY_RENAME = False
+# 프로필이 없는 경우도 빈 매핑을 주입해야 로컬 공용 프로필을 읽거나 DB를 초기화하지 않는다.
+labels = process_labels_module.ProcessLabels()
 if APPLY_RENAME:
-    renamed = process_labels_module.process_labels_from_rules(
+    labels = process_labels_module.process_labels_from_rules(
         pd.DataFrame([(demo_processes[0], "표시공정")], columns=["공정", "표시명"]), 5
     )
-    process_labels_module.get_process_labels = lambda: renamed
+process_labels_module.get_process_labels = lambda: labels
 
 try:
     page = Path(capa_simulation.__file__).resolve().parents[2] / "app_pages"
@@ -81,7 +86,15 @@ def test_selecting_a_renamed_process_keeps_the_original_value() -> None:
     assert any("표시공정 공정의 표준 Capa부터" in caption.value for caption in app.caption)
 
 
-def test_priority_table_stays_original_without_a_rename_profile() -> None:
+def test_priority_table_stays_original_without_a_rename_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_profile_load(*args: object, **kwargs: object) -> None:
+        raise AssertionError("화면 테스트는 로컬 공정 표시명 DB를 조회하면 안 됩니다.")
+
+    monkeypatch.setattr(
+        process_labels_module, "load_global_process_rename", unexpected_profile_load
+    )
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception

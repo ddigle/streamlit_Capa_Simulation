@@ -1,9 +1,14 @@
 # Purpose: PKG PLAN 붙여넣기는 탭에만, 변경사항 적용만 전역 계획값에 반영되는지 고정한다.
 
+from collections.abc import Iterator
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from streamlit.testing.v1 import AppTest
+
+import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+import capa_simulation.components.month_range_picker as month_range_picker
 
 PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "load_conversion.py"
 
@@ -17,8 +22,6 @@ from pathlib import Path
 
 import streamlit as st
 
-import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
-import capa_simulation.components.month_range_picker as month_range_picker
 import capa_simulation.settings as settings
 
 settings.DUCKDB_PATH = Path({str(database_path)!r})
@@ -29,16 +32,31 @@ from capa_simulation.scenario_preset_state import apply_pending_scenario_preset
 bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
 apply_pending_scenario_preset()
 
-horizontal_scrollbar.render_horizontal_scrollbar = lambda *a, **k: None
-month_range_picker.render_month_range_picker = (
-    lambda *, start, end, min_month, max_month, key: (start, end)
-)
-
 exec(
     compile(Path({str(PAGE)!r}).read_text(encoding="utf-8"), {str(PAGE)!r}, "exec"),
     {{"__name__": "__main__"}},
 )
 """
+
+
+@pytest.fixture(autouse=True)
+def _isolated_custom_renderers() -> Iterator[None]:
+    """사용자 조작의 callback과 모든 rerun 동안 대역을 유지하고 테스트 뒤 원본을 복원한다."""
+    original_scrollbar = horizontal_scrollbar.render_horizontal_scrollbar
+    original_month_picker = month_range_picker.render_month_range_picker
+    try:
+        with (
+            patch.object(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None),
+            patch.object(
+                month_range_picker,
+                "render_month_range_picker",
+                lambda *, start, end, min_month, max_month, key: (start, end),
+            ),
+        ):
+            yield
+    finally:
+        assert horizontal_scrollbar.render_horizontal_scrollbar is original_scrollbar
+        assert month_range_picker.render_month_range_picker is original_month_picker
 
 
 @pytest.fixture(scope="module")

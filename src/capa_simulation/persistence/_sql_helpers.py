@@ -14,6 +14,8 @@ from uuid import uuid4
 import duckdb
 import pandas as pd
 
+from capa_simulation.services.month_filter import valid_month_mask
+
 # DuckDB 기본 블록은 256 KiB 라서 행이 2,767개뿐인 첫 부팅 DB 도 24.5 MiB 를 차지한다.
 # 16 KiB 로 만들면 같은 내용이 4.2 MiB 가 되고, 리비전 저장당 증가분도 2.5~9.5 MB 에서
 # 0.6 MB 로 줄어든다. 값은 파일 생성 시점에 각인되며 기존 파일에서는 무시된다.
@@ -230,12 +232,9 @@ def business_columns(
 
 def normalize_months(series: pd.Series, table_name: str) -> pd.Series:
     numeric = pd.to_numeric(series, errors="coerce")
-    valid = numeric.notna() & numeric.mod(1).eq(0)
-    months = numeric.fillna(0).astype("int64")
-    valid &= months.mod(100).between(1, 12)
-    if not valid.all():
+    if not valid_month_mask(numeric).all():
         raise ValueError(f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다.")
-    return months
+    return numeric.astype("int64")
 
 
 def _frame_digest_parts(frame: pd.DataFrame) -> tuple[bytes, bytes]:

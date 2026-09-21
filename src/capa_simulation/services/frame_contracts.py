@@ -13,6 +13,8 @@ from collections.abc import Sequence
 
 import pandas as pd
 
+from capa_simulation.services.month_filter import valid_month_mask
+
 # 소요기준은 공정이 어떤 부하 Unit을 쓰는지 정하며 BOX·PCB는 산식 구현 전까지 제외한다.
 DEMAND_BASES = ("PKG", "CHIP", "WF")
 # Area_Name은 대당 Capa의 UPEH/ST 분기를 결정한다.
@@ -121,12 +123,9 @@ def validate_demand_basis(values: pd.Series, label: str) -> pd.Series:
 def normalize_month_column(data: pd.DataFrame, label: str, *, column: str = "생산계획년월") -> None:
     """월 컬럼을 유효한 정수 `YYYYMM`으로 제자리 정규화한다."""
     numeric = pd.to_numeric(data[column], errors="coerce")
-    valid = numeric.notna() & numeric.mod(1).eq(0)
-    months = numeric.fillna(0).astype("int64")
-    valid &= months.mod(100).between(1, 12)
-    if not valid.all():
+    if not valid_month_mask(numeric).all():
         raise ValueError(f"{label}의 {column}은 YYYYMM 형식이어야 합니다.")
-    data[column] = months
+    data[column] = numeric.astype("int64")
 
 
 def assert_complete(data: pd.DataFrame, columns: Sequence[str], label: str) -> None:

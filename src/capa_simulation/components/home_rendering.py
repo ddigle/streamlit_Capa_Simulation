@@ -7,9 +7,10 @@ from __future__ import annotations
 import html
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, cast
+from typing import NamedTuple, cast
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
@@ -43,44 +44,52 @@ from capa_simulation.design import theme, tokens
 from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
 from capa_simulation.performance import PerformanceTrace
 
-# 네 번째 요소는 시나리오 내용 토큰이다. 편집 카운터(`revision`)를 쓰면 내용이 달라도
-# 번호가 겹쳐 예전 Figure 가 그대로 나온다. 계산 캐시와 같은 근거로 토큰을 쓴다.
-# 두 번째 요소는 공용 공정 표시명 프로필 버전이다. 표시명은 계산 입력이 아니라 라벨이므로
-# 계산 캐시 키(`build_home_simulation_cache_key`)에는 넣지 않고 여기에만 접어 넣는다.
-# 뒤의 여섯은 화면 기준이다 — EDP 포함 여부, 계획 세부수량 거래선 분류 여부, 비교 GAP
-# 표시 여부와 비교 리비전, 선행 반영 여부, 선행 물량 프로필 버전, 과거 구간 프로필 버전.
-# 버전은 선행을 켰을 때만 채우므로 껐다 켜도 같은 칸을 다시 쓰지 않는다.
-# 마지막 둘은 주요공정 히트맵이다 — **실제로 그린 공정 목록**과 공용 프로필 버전. 고른
-# 목록이 아니라 그린 목록인 것은, 고른 공정이 이 시나리오에 없어 못 그린 그림이 「고름」
-# 키로 눌러앉으면 나중에 그 공정이 생겨도 빈 그림이 그대로 나오기 때문이다. 버전도 함께
-# 넣는 것은 집합은 같고 **차례만 바꾼** 저장을 목록 튜플이 못 잡기 때문이다.
-HomeFigureCacheKey = tuple[
-    int,
-    int,
-    int,
-    str,
-    int,
-    int,
-    str,
-    tuple[str, ...],
-    float,
-    float,
-    bool,
-    bool,
-    str,
-    bool,
-    int,
-    bool,
-    int,
-    int,
-    float,
-    float,
-    int,
-    tuple[str, ...],
-    int,
-]
 
-HomeFigureSet = tuple[Any, ...]
+class HomeFigureCacheKey(NamedTuple):
+    """그림을 바꾸는 입력을 이름으로 명시하며 기존 튜플의 순서·동등성·해시를 유지한다.
+
+    내용은 편집 카운터가 아니라 `content_token` 으로 구분한다. 표시명은 계산 입력이
+    아니라 라벨이므로 계산 캐시 대신 여기서만 버전을 본다. 비교 리비전과 주요공정은
+    사용자가 고른 값이 아니라 **실제 그림에 적용된 값**이다.
+    """
+
+    schema_version: int
+    process_label_version: int
+    reference_version: int
+    content_token: str
+    start_month: int
+    end_month: int
+    display_order_digest: str
+    included_processes: tuple[str, ...]
+    secure_threshold_percent: float
+    warning_threshold_percent: float
+    include_edp: bool
+    plan_detail_customer: bool
+    comparison_revision_id: str
+    show_advance: bool
+    advance_profile_version: int
+    show_execution: bool
+    execution_profile_version: int
+    top5_band_version: int
+    top5_min_rate: float
+    top5_max_rate: float
+    past_profile_version: int
+    key_processes: tuple[str, ...]
+    key_process_profile_version: int
+
+
+class HomeFigureSet(NamedTuple):
+    """네 구획의 라벨·월 Figure 를 화면 순서대로 담는다."""
+
+    lob_labels: go.Figure
+    lob_months: go.Figure
+    plan_detail_labels: go.Figure
+    plan_detail_months: go.Figure
+    key_process_labels: go.Figure
+    key_process_months: go.Figure
+    bottleneck_labels: go.Figure
+    bottleneck_months: go.Figure
+
 
 # EDP 포함/제외 × 선행 ON/OFF 네 가지 상태를 사람이 오가며 비교한다. 3 칸이면 되돌릴
 # 때마다 차트를 다시 조립해 2 초를 쓴다. 한 칸은 Figure 여덟 개다 — 구획이 하나 늘어
@@ -88,7 +97,8 @@ HomeFigureSet = tuple[Any, ...]
 # 여덟 칸을 그대로 둔다.
 HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 
-HOME_FIGURE_SCHEMA_VERSION = 41
+# 필드명으로 읽기 전의 일반 tuple 캐시가 남은 세션에서도 새 묶음으로 다시 만든다.
+HOME_FIGURE_SCHEMA_VERSION = 42
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지
@@ -337,7 +347,7 @@ def render_summary_notice(note: str) -> None:
 
 @contextmanager
 def home_dashboard_panel() -> Iterator[None]:
-    """`Capa LOB 현황` 제목 줄과 여섯 Figure 를 함께 감싸는 테두리 상자.
+    """`Capa LOB 현황` 제목 줄과 여덟 Figure 를 함께 감싸는 테두리 상자.
 
     상자를 `render_home_figures` 안에서 열면 제목 줄만 상자 밖에 남는다. 그렇다고 제목
     줄을 그 함수 안으로 옮길 수는 없다 — 옆의 「선행」·「GAP」 토글은 숨은 탭에서도
@@ -373,10 +383,6 @@ def render_home_figures(
     """
     if tab_is_hidden(owner_tab):
         return
-    if len(figures) != 8:
-        raise ValueError("HOME Figure 묶음은 요약 2개와 상세 6개, 모두 8개여야 합니다.")
-    label_figure, month_figure = figures[:2]
-    detail_figures = figures[2:]
     visible_month_count = min(max(len(month_labels), 1), tokens.DASHBOARD_MONTH_SCROLL_THRESHOLD)
 
     # 구분 컬럼은 px 로 고정한다. 비율로 두면 창이 좁을 때 구획 제목이 잘리고, 조회
@@ -401,7 +407,7 @@ def render_home_figures(
             gap=DASHBOARD_SECTION_GAP_PX,
         ):
             st.plotly_chart(
-                label_figure,
+                figures.lob_labels,
                 width="stretch",
                 key="production_lob_labels",
                 config=static_chart_config(),
@@ -410,7 +416,7 @@ def render_home_figures(
             # 그대로 받는다. 월 칸에도 같은 높이의 빈 줄을 끼워야 행이 맞는다.
             render_plan_detail_title_row(applied_customer=applied_plan_detail_customer)
             st.plotly_chart(
-                detail_figures[0],
+                figures.plan_detail_labels,
                 width="stretch",
                 key="production_detail_labels",
                 config=static_chart_config(),
@@ -419,14 +425,14 @@ def render_home_figures(
             # 사이 간격이 넷 다 같다.
             render_section_title_row("주요공정 확보율", key="key_process_title_row")
             st.plotly_chart(
-                detail_figures[2],
+                figures.key_process_labels,
                 width="stretch",
                 key="key_process_heatmap_labels",
                 config=static_chart_config(),
             )
             render_section_title_row("상세 B/N 공정", key="bottleneck_title_row")
             st.plotly_chart(
-                detail_figures[4],
+                figures.bottleneck_labels,
                 width="stretch",
                 key="bottleneck_detail_labels",
                 config=static_chart_config(),
@@ -461,7 +467,7 @@ def render_home_figures(
                 gap=DASHBOARD_SECTION_GAP_PX,
             ):
                 st.plotly_chart(
-                    month_figure,
+                    figures.lob_months,
                     width="stretch",
                     key="production_lob_months",
                     # 드래그 확대는 Figure 축의 `fixedrange` 와 `dragmode=False` 가 막는다.
@@ -485,7 +491,7 @@ def render_home_figures(
                     border=False,
                 )
                 st.plotly_chart(
-                    detail_figures[1],
+                    figures.plan_detail_months,
                     width="stretch",
                     key="production_detail_months",
                     config=static_chart_config(),
@@ -499,7 +505,7 @@ def render_home_figures(
                 # 히트맵은 hover 로 확보율·가용/필요대수를 읽는다. `staticPlot` 은 hover
                 # 까지 끄므로 상세 B/N 월 Figure 와 같은 config 를 쓴다.
                 st.plotly_chart(
-                    detail_figures[3],
+                    figures.key_process_months,
                     width="stretch",
                     key="key_process_heatmap_months",
                     config=hover_chart_config(),
@@ -516,7 +522,7 @@ def render_home_figures(
                 # "hover" 로, `doubleClick`·`showAxisDragHandles` 는 켜짐으로 돌아가므로
                 # 셋을 직접 끈다. 드래그 확대는 Figure 축의 `fixedrange` 가 막는다.
                 st.plotly_chart(
-                    detail_figures[5],
+                    figures.bottleneck_months,
                     width="stretch",
                     key="bottleneck_detail_months",
                     config=hover_chart_config(),

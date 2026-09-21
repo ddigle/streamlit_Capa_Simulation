@@ -7,7 +7,7 @@
 
 두 컨트롤의 **값은 계산보다 먼저** 필요하고 **위젯은 계산 뒤에** 그려진다. 그래서
 `app_pages/home.py` 는 위젯이 쓰는 세션 키를 직접 읽고, 여기서는 같은 키로 위젯을 만든다.
-키 문자열이 두 곳에서 따로 적히면 조용히 끊어지므로 상수로 내보낸다.
+키와 기본값은 UI 의존성이 없는 `home_state` 에서 가져온다.
 
 제목 `Capa LOB 현황` 은 Plotly 주석이 아니라 여기서 그린다. 주석 안에는 위젯을 놓을 수
 없어 「선행」 토글을 제목 옆에 둘 수 없었다.
@@ -24,6 +24,27 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.design import tokens
+from capa_simulation.home_state import (
+    ADVANCE_TOGGLE_KEY as ADVANCE_TOGGLE_KEY,
+)
+from capa_simulation.home_state import (
+    COMPARISON_TOGGLE_KEY as COMPARISON_TOGGLE_KEY,
+)
+from capa_simulation.home_state import (
+    EDP_TOGGLE_KEY as EDP_TOGGLE_KEY,
+)
+from capa_simulation.home_state import (
+    EXECUTION_TOGGLE_KEY as EXECUTION_TOGGLE_KEY,
+)
+from capa_simulation.home_state import (
+    HOME_TOGGLE_DEFAULTS,
+)
+from capa_simulation.home_state import (
+    PAST_DATA_TOGGLE_KEY as PAST_DATA_TOGGLE_KEY,
+)
+from capa_simulation.home_state import (
+    PLAN_DETAIL_CUSTOMER_KEY as PLAN_DETAIL_CUSTOMER_KEY,
+)
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
     clear_global_advance_load_cache,
@@ -57,14 +78,8 @@ from capa_simulation.services.execution_capacity import (
 from capa_simulation.services.key_process import KEY_PROCESS_LIMIT
 from capa_simulation.services.month_columns import month_label
 
-EDP_TOGGLE_KEY = "home_preference_include_edp"
-PAST_DATA_TOGGLE_KEY = "home_preference_include_past"
-ADVANCE_TOGGLE_KEY = "home_show_advance"
-EXECUTION_TOGGLE_KEY = "home_show_execution"
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
 EXECUTION_NOTE_KEY = "home_preference_execution_note"
-PLAN_DETAIL_CUSTOMER_KEY = "home_preference_plan_detail_customer"
-COMPARISON_TOGGLE_KEY = "home_show_comparison"
 COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
 COMPARISON_REVISION_KEY = "home_preference_comparison_revision"
 ADVANCE_EDITOR_KEY = "home_preference_advance_editor"
@@ -102,7 +117,7 @@ def render_plan_detail_title_row(*, applied_customer: bool) -> None:
         st.markdown(section_title_markup("계획 세부수량"), unsafe_allow_html=True)
         st.toggle(
             "상세",
-            value=False,
+            value=HOME_TOGGLE_DEFAULTS[PLAN_DETAIL_CUSTOMER_KEY],
             key=PLAN_DETAIL_CUSTOMER_KEY,
             persist_state="session",
             help=(
@@ -110,7 +125,14 @@ def render_plan_detail_title_row(*, applied_customer: bool) -> None:
                 "길어집니다. 거래선 정렬은 Admin Area 의 표시순서 관리에서 정합니다."
             ),
         )
-    if bool(st.session_state.get(PLAN_DETAIL_CUSTOMER_KEY, False)) != applied_customer:
+    if (
+        bool(
+            st.session_state.get(
+                PLAN_DETAIL_CUSTOMER_KEY, HOME_TOGGLE_DEFAULTS[PLAN_DETAIL_CUSTOMER_KEY]
+            )
+        )
+        != applied_customer
+    ):
         st.rerun(scope="app")
 
 
@@ -228,7 +250,7 @@ def render_lob_title_row(
         st.markdown(section_title_markup("Capa LOB 현황"), unsafe_allow_html=True)
         st.toggle(
             "선행",
-            value=False,
+            value=HOME_TOGGLE_DEFAULTS[ADVANCE_TOGGLE_KEY],
             key=ADVANCE_TOGGLE_KEY,
             persist_state="session",
             help=(
@@ -239,7 +261,7 @@ def render_lob_title_row(
         )
         st.toggle(
             "실행",
-            value=False,
+            value=HOME_TOGGLE_DEFAULTS[EXECUTION_TOGGLE_KEY],
             key=EXECUTION_TOGGLE_KEY,
             persist_state="session",
             help=(
@@ -250,7 +272,7 @@ def render_lob_title_row(
         )
         st.toggle(
             "GAP",
-            value=False,
+            value=HOME_TOGGLE_DEFAULTS[COMPARISON_TOGGLE_KEY],
             key=COMPARISON_TOGGLE_KEY,
             persist_state="session",
             disabled=not comparison_ready,
@@ -303,11 +325,10 @@ def render_home_preference(
         edp_column, past_column = st.columns(2)
         with edp_column:
             # 기본은 **끔**이다. LOB 로 읽는 수치는 EDP 를 뺀 값이 기준이고, 넣은 화면을
-            # 보려면 그때 켜면 된다. 기본값을 바꿀 때는 `app_pages/home.py` 의 세션 기본값도
-            # 같이 고친다.
+            # 보려면 그때 켜면 된다. 계산 진입점도 `home_state` 의 같은 기본값을 읽는다.
             st.toggle(
                 "EDP 포함",
-                value=False,
+                value=HOME_TOGGLE_DEFAULTS[EDP_TOGGLE_KEY],
                 key=EDP_TOGGLE_KEY,
                 persist_state="session",
                 help=(
@@ -318,11 +339,10 @@ def render_home_preference(
             )
         with past_column:
             # 기본은 **켬**이다. 과거 이력까지 이어 보는 것이 이 화면의 기본 쓰임이고, DB
-            # 시나리오만 보고 싶을 때 끈다. 기본값을 바꿀 때는 `app_pages/home.py` 의 세션
-            # 기본값도 같이 고친다.
+            # 시나리오만 보고 싶을 때 끈다. 계산 진입점도 같은 기본값을 읽는다.
             st.toggle(
                 "Past Data 포함",
-                value=True,
+                value=HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY],
                 key=PAST_DATA_TOGGLE_KEY,
                 persist_state="session",
                 help=(

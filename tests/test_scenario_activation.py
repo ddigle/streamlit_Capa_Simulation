@@ -5,6 +5,7 @@ import inspect
 from pathlib import Path
 
 import capa_simulation.components.home_preference as home_preference
+from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS, PAST_DATA_TOGGLE_KEY
 from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
 from capa_simulation.scenario_activation import _STALE_UI_KEYS
 
@@ -51,6 +52,15 @@ def test_every_home_toggle_is_cleared_when_another_scenario_is_activated() -> No
     assert not missing, (
         "HOME 토글이 `_STALE_UI_KEYS` 에 없습니다. 시나리오를 바꿔도 켜진 채 남아 "
         "남의 시나리오를 전제로 켠 상태가 새 계획 위에 얹힙니다:\n" + "\n".join(missing)
+    )
+
+
+def test_every_home_toggle_has_one_shared_default() -> None:
+    """계산 진입점과 뒤에 그리는 위젯이 같은 기본 표시를 쓰며 모두 초기화된다."""
+    assert set(HOME_TOGGLE_DEFAULTS) == _home_toggle_keys()
+    assert HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY] is True
+    assert not any(
+        value for key, value in HOME_TOGGLE_DEFAULTS.items() if key != PAST_DATA_TOGGLE_KEY
     )
 
 

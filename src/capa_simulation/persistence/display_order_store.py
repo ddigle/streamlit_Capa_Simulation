@@ -11,8 +11,11 @@ from capa_simulation.persistence._sql_helpers import (
     insert_by_name,
     insert_profile_header,
     load_frame,
+    load_profile_header,
     quote,
+    reset_profile,
 )
+from capa_simulation.persistence.models import GlobalDisplayOrder
 from capa_simulation.services.display_order_editor import ensure_route_sequence_rules
 
 GLOBAL_DISPLAY_ORDER_COLUMNS = (
@@ -170,3 +173,54 @@ def insert_global_display_order(
         table_name="global_display_order_rule",
         frame=prepared,
     )
+
+
+def load_global_display_order(connection: duckdb.DuckDBPyConnection) -> GlobalDisplayOrder:
+    """열린 연결에서 공용 표시순서를 읽고 초기화 전이면 기존 오류를 전달한다."""
+    metadata = load_profile_header(connection, "global_display_order")
+    if metadata is None:
+        raise RuntimeError("공용 표시순서가 초기화되지 않았습니다.")
+    rules = load_global_display_order_rules(connection)
+    return GlobalDisplayOrder(
+        version=metadata[0],
+        source=metadata[1],
+        updated_at=metadata[2],
+        rules=rules,
+    )
+
+
+def replace_global_display_order(
+    connection: duckdb.DuckDBPyConnection, prepared_rules: pd.DataFrame, *, source: str
+) -> None:
+    """검증된 프로필을 교체한다. 호출자가 잠금과 트랜잭션을 소유한다."""
+    version = reset_profile(connection, "global_display_order", "global_display_order_rule")
+    insert_global_display_order(
+        connection,
+        prepared_rules,
+        version=version,
+        source=source,
+    )
+
+
+def initialize_global_display_order(
+    connection: duckdb.DuckDBPyConnection, prepared_fallback: pd.DataFrame
+) -> None:
+    """공용 표시순서가 없을 때 기존 리비전 또는 준비된 시드로 처음 저장한다."""
+    existing = load_profile_header(connection, "global_display_order")
+    if existing is None:
+        migrated = load_existing_display_order(connection)
+        if migrated is None:
+            initial = prepared_fallback
+            source = "초기 표시순서 시드"
+        else:
+            initial = prepare_global_display_order_rules(migrated)
+            source = "기존 시나리오 표시순서 이관"
+            if len(initial) < len(prepared_fallback):
+                initial = prepared_fallback
+                source = "초기 표시순서 시드"
+        insert_global_display_order(
+            connection,
+            initial,
+            version=1,
+            source=source,
+        )

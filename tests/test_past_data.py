@@ -2,9 +2,11 @@
 
 from pathlib import Path
 
+import duckdb
 import pandas as pd
 import pytest
 
+from capa_simulation.persistence import past_data_store, sync_state
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.past_data import (
     PAST_DETAIL_COLUMNS,
@@ -203,6 +205,71 @@ def test_the_shared_profile_round_trips_and_bumps_its_version(tmp_path: Path) ->
 
     assert cleared.version == 2
     assert cleared.monthly.empty
+
+
+def test_failed_profile_replacement_restores_all_tables_before_reporting_a_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """교체 도중 실패하면 세 표·버전이 함께 복구되고 커밋된 변경만 동기화에 보인다."""
+    repository = DuckDBScenarioRepository(tmp_path / "scenario.duckdb")
+    repository.initialize()
+    original = repository.replace_global_past_data(
+        {
+            "월별": _past_months(),
+            "계획": pd.DataFrame(
+                {
+                    "생산계획년월": [202511],
+                    "제품정보": ["A"],
+                    "Stack": ["12H"],
+                    "Customer": ["C1"],
+                    "생산수량": [100.0],
+                }
+            ),
+            "확보율": pd.DataFrame({"생산계획년월": [202511], "공정": ["P-A"], "확보율": [1.05]}),
+        },
+        source="이전 저장본",
+    )
+    cleared_tables = {
+        "월별": empty_past_table(PAST_MONTH_COLUMNS),
+        "계획": empty_past_table(PAST_DETAIL_COLUMNS),
+        "확보율": empty_past_table(PAST_SECUREMENT_COLUMNS),
+    }
+    committed_versions: list[int] = []
+
+    def record_committed_version(path: Path) -> None:
+        assert path == repository.database_path
+        committed_versions.append(repository.load_global_past_data().version)
+
+    monkeypatch.setattr(sync_state, "mark_dirty", record_committed_version)
+    insert_profile = past_data_store.insert_global_past_data
+
+    def fail_after_insert(
+        connection: duckdb.DuckDBPyConnection,
+        tables: dict[str, pd.DataFrame],
+        *,
+        version: int,
+        source: str,
+    ) -> None:
+        insert_profile(connection, tables, version=version, source=source)
+        raise RuntimeError("저장 중 오류")
+
+    with monkeypatch.context() as failure:
+        failure.setattr(past_data_store, "insert_global_past_data", fail_after_insert)
+        with pytest.raises(RuntimeError, match="저장 중 오류"):
+            repository.replace_global_past_data(cleared_tables, source="실패한 교체")
+
+    restored = repository.load_global_past_data()
+    assert restored.version == original.version
+    assert restored.source == original.source
+    assert restored.updated_at == original.updated_at
+    for field in ("monthly", "plan_detail", "securement"):
+        pd.testing.assert_frame_equal(getattr(restored, field), getattr(original, field))
+    assert committed_versions == []
+
+    saved = repository.replace_global_past_data(cleared_tables, source="성공한 교체")
+    assert saved.version == original.version + 1
+    assert saved.monthly.empty and saved.plan_detail.empty and saved.securement.empty
+    assert committed_versions == [saved.version]
 
 
 def test_merging_past_detail_keeps_the_display_order() -> None:
