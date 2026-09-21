@@ -13,6 +13,7 @@ import streamlit as st
 
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.process_labels import process_labels_from_rules
+from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
@@ -66,14 +67,7 @@ def render_process_rename_management(
         st.error(bootstrap_error_message(exc))
         return
 
-    if profile.version == 0:
-        version_caption = "공용 버전 없음 · 아직 지정한 표시명이 없습니다"
-    elif profile.updated_at is None:
-        version_caption = f"공용 버전 v{profile.version} · {profile.source}"
-    else:
-        version_caption = (
-            f"공용 버전 v{profile.version} · {profile.source} · {profile.updated_at:%Y-%m-%d %H:%M}"
-        )
+    version_caption = profile_version_caption(profile, empty="아직 지정한 표시명이 없습니다")
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         st.caption(version_caption)
         render_csv_download(

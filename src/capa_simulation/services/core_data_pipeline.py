@@ -13,6 +13,7 @@ from capa_simulation.io.core_data_source import (
     CoreDataProvider,
     normalize_core_data,
 )
+from capa_simulation.services.frame_contracts import require_columns
 from capa_simulation.services.reference_conflicts import TEMPORARY_CONFLICT_RESOLUTION
 from capa_simulation.services.reference_transformer import (
     build_reference_tables_with_conflicts,
@@ -65,10 +66,7 @@ def summarize_reference_conflicts(conflicts: pd.DataFrame) -> pd.DataFrame:
     """Summarize temporary business-key conflict resolution by RQ table."""
     if conflicts.empty:
         return pd.DataFrame(columns=CONFLICT_SUMMARY_COLUMNS)
-    required = ["RQ테이블", "충돌행수", "임시제외행수"]
-    missing = [column for column in required if column not in conflicts.columns]
-    if missing:
-        raise ValueError(f"RQ 충돌 보고서 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(conflicts, ["RQ테이블", "충돌행수", "임시제외행수"], "RQ 충돌 보고서")
     summary = (
         conflicts.groupby("RQ테이블", sort=False, as_index=False)
         .agg(

@@ -9,6 +9,7 @@ import streamlit as st
 
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
+from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.io.reference_cache import apply_global_display_order
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -30,6 +31,7 @@ from capa_simulation.services.display_order_editor import (
 
 # 전체 교체 확인 체크박스의 자리. 적용에 성공하면 비워 다음 붙여넣기가 다시 확인을 거친다.
 CLIPBOARD_CONFIRM_KEY = "global_display_order_clipboard_confirm"
+DISPLAY_ORDER_EDITOR_KEY = "display_order_editor"
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -67,9 +69,9 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
         return
 
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.caption(
-            f"공용 버전 v{profile.version} · {profile.source} · {profile.updated_at:%Y-%m-%d %H:%M}"
-        )
+        # 이 프로필만 `version == 0` 이 없다. 저장소가 1 부터 올리고 미초기화는
+        # 예외라, 공통 캡션의 「없음」 갈래에는 닿지 않는다.
+        st.caption(profile_version_caption(profile, empty="아직 저장한 표시순서가 없습니다"))
         render_csv_download(
             data=csv_bytes,
             file_name=f"RQ_DISPLAY_ORDER_v{profile.version}.csv",
@@ -188,7 +190,7 @@ def _render_direct_editor(
                     required=True,
                 ),
             },
-            key=f"display_order_editor::{selected_page}::{selected_tab}",
+            key=f"{DISPLAY_ORDER_EDITOR_KEY}::{selected_page}::{selected_tab}",
         )
         note = st.text_input("변경 메모", placeholder="예: 환산 탭 제품 표시순서 변경")
         submitted = st.form_submit_button(

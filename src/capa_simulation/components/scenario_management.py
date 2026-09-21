@@ -347,7 +347,7 @@ def _render_scenario_actions(
 
 
 def _action_button(label: str, action: str, icon: str) -> None:
-    if st.button(label, icon=icon, width="stretch", key=f"scenario_list_action_{action}"):
+    if st.button(label, icon=icon, width="stretch", key=f"{ACTION_KEY}_{action}"):
         st.session_state[ACTION_KEY] = action
         st.rerun()
 

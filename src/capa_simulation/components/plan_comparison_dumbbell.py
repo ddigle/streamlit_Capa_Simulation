@@ -24,6 +24,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from capa_simulation.components.plotly_layout import chart_canvas_layout
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 
@@ -142,9 +143,7 @@ def build_plan_comparison_dumbbell(
     figure.update_layout(
         height=len(row_labels) * ROW_HEIGHT_PX + CHART_CHROME_PX,
         margin={"l": 8, "r": 64, "t": 8, "b": 28},
-        paper_bgcolor=tokens.CHART_CANVAS,
-        plot_bgcolor=tokens.CHART_CANVAS,
-        font={"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": 12},
+        **chart_canvas_layout(font_size=12),
         legend={
             "orientation": "h",
             "yanchor": "bottom",

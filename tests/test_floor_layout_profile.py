@@ -17,7 +17,6 @@ from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_WIDTH,
     MAX_FLOOR_LAYOUT_BYTES,
     MAX_TOTAL_LAYOUT_BYTES,
-    canvas_for,
     canvas_from_pixel_size,
     image_pixel_size,
     max_canvas_extent,
@@ -51,9 +50,7 @@ def _repository(path: Path) -> DuckDBEquipmentRepository:
 
 
 def test_floor_without_a_drawing_keeps_the_default_canvas() -> None:
-    assert canvas_for(None, "C1", "1F") == (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
-    assert canvas_for({("C2", "3F"): (100.0, 37.5)}, "C1", "1F") == (100.0, 60.0)
-    assert canvas_for({("C2", "3F"): (100.0, 37.5)}, "C2", "3F") == (100.0, 37.5)
+    assert max_canvas_extent(None) == (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
     assert max_canvas_extent({("C2", "3F"): (120.0, 37.5)}) == (120.0, 60.0)
 
 

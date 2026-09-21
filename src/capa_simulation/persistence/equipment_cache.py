@@ -2,9 +2,9 @@
 
 """Streamlit cache boundary for the standalone equipment repository."""
 
-from datetime import datetime
+from dataclasses import fields
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import pandas as pd
 import streamlit as st
@@ -20,42 +20,22 @@ from capa_simulation.services.floor_layout_profile import (
 )
 
 
-class _FloorLayoutCanvasPayload(TypedDict):
-    building: str
-    floor: str
-    canvas_width: float
-    canvas_height: float
-    image_name: str | None
-    image_byte_count: int
-    updated_at: datetime
-
-
-class _FloorLayoutProfilePayload(TypedDict):
-    building: str
-    floor: str
-    canvas_width: float
-    canvas_height: float
-    image_data_uri: str | None
-    image_name: str | None
-    image_byte_count: int
-    updated_at: datetime
-
-
-class _EquipmentRevisionPayload(TypedDict):
-    revision_id: str
-    revision_no: int
-    note: str | None
-    baseline_row_count: int
-    equipment_row_count: int
-    downtime_row_count: int
-    created_at: datetime
-
-
 class _EquipmentSnapshotPayload(TypedDict):
-    revision: _EquipmentRevisionPayload
+    revision: dict[str, Any]
     baseline: pd.DataFrame
     equipment: pd.DataFrame
     downtime: pd.DataFrame
+
+
+def _payload(model: object, cls: type[Any]) -> dict[str, Any]:
+    """모델 하나를 캐시에 실을 수 있는 평범한 dict 으로 옮긴다.
+
+    필드 목록은 **이 모듈이 지금 import 한 클래스**에서 얻고 값은 인스턴스에서 `getattr`
+    로 읽는다. 핫리로드 뒤 옛 클래스의 인스턴스가 들어와도 그 클래스를 묻지 않으므로
+    캐시에 옛 클래스가 실리지 않는다. 시뮬레이션 쪽 캐시 경계와 같은 세 줄을 따로 두는
+    이유는 설비 모듈이 시나리오 Repository 를 import 하지 않기 위해서다.
+    """
+    return {field.name: getattr(model, field.name) for field in fields(cls) if field.init}
 
 
 @st.cache_resource
@@ -71,17 +51,8 @@ def _load_equipment_snapshot_payload(
     revision_id: str,
 ) -> _EquipmentSnapshotPayload:
     snapshot = get_equipment_repository(database_path).load_snapshot(revision_id)
-    revision = snapshot.revision
     return {
-        "revision": {
-            "revision_id": revision.revision_id,
-            "revision_no": revision.revision_no,
-            "note": revision.note,
-            "baseline_row_count": revision.baseline_row_count,
-            "equipment_row_count": revision.equipment_row_count,
-            "downtime_row_count": revision.downtime_row_count,
-            "created_at": revision.created_at,
-        },
+        "revision": _payload(snapshot.revision, EquipmentRevisionSummary),
         "baseline": snapshot.baseline,
         "equipment": snapshot.equipment,
         "downtime": snapshot.downtime,
@@ -91,17 +62,8 @@ def _load_equipment_snapshot_payload(
 def load_equipment_snapshot(database_path: str, revision_id: str) -> EquipmentSnapshot:
     """Load one immutable revision through a hot-reload-safe payload cache."""
     payload = _load_equipment_snapshot_payload(database_path, revision_id)
-    revision = payload["revision"]
     return EquipmentSnapshot(
-        revision=EquipmentRevisionSummary(
-            revision_id=revision["revision_id"],
-            revision_no=revision["revision_no"],
-            note=revision["note"],
-            baseline_row_count=revision["baseline_row_count"],
-            equipment_row_count=revision["equipment_row_count"],
-            downtime_row_count=revision["downtime_row_count"],
-            created_at=revision["created_at"],
-        ),
+        revision=EquipmentRevisionSummary(**payload["revision"]),
         baseline=payload["baseline"],
         equipment=payload["equipment"],
         downtime=payload["downtime"],
@@ -117,17 +79,9 @@ def load_latest_equipment_snapshot(database_path: str) -> EquipmentSnapshot | No
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
-def _load_floor_layout_summaries_payload(database_path: str) -> list[_FloorLayoutCanvasPayload]:
+def _load_floor_layout_summaries_payload(database_path: str) -> list[dict[str, Any]]:
     return [
-        {
-            "building": summary.building,
-            "floor": summary.floor,
-            "canvas_width": summary.canvas_width,
-            "canvas_height": summary.canvas_height,
-            "image_name": summary.image_name,
-            "image_byte_count": summary.image_byte_count,
-            "updated_at": summary.updated_at,
-        }
+        _payload(summary, FloorLayoutCanvas)
         for summary in get_equipment_repository(database_path).load_floor_layout_summaries()
     ]
 
@@ -137,20 +91,11 @@ def _load_floor_layout_profile_payload(
     database_path: str,
     building: str,
     floor: str,
-) -> _FloorLayoutProfilePayload | None:
+) -> dict[str, Any] | None:
     profile = get_equipment_repository(database_path).load_floor_layout_profile(building, floor)
     if profile is None:
         return None
-    return {
-        "building": profile.building,
-        "floor": profile.floor,
-        "canvas_width": profile.canvas_width,
-        "canvas_height": profile.canvas_height,
-        "image_data_uri": profile.image_data_uri,
-        "image_name": profile.image_name,
-        "image_byte_count": profile.image_byte_count,
-        "updated_at": profile.updated_at,
-    }
+    return _payload(profile, FloorLayoutProfile)
 
 
 def load_floor_layout_summaries(database_path: str) -> tuple[FloorLayoutCanvas, ...]:

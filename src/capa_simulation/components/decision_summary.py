@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from capa_simulation.components.home_figures import capacity_status
 from capa_simulation.design import tokens
 from capa_simulation.services.home_decision import CapacityDecision
 from capa_simulation.services.month_columns import month_label
@@ -21,15 +22,17 @@ NO_DATA_NOTICE = "조회기간에 판정할 확보율 데이터가 없습니다.
 
 
 def _tone(decision: CapacityDecision, *, secure_threshold: float, warning_threshold: float) -> str:
-    """최저 구간의 색. `securement_heatmap._tier` 와 같은 부등호를 쓴다."""
+    """최저 구간의 색. `home_figures.capacity_status` 와 같은 부등호를 쓴다."""
     rate = decision.rate
     if rate is None:
         return tokens.TEXT_MUTED
-    if rate > secure_threshold:
-        return tokens.STATUS_SECURE
-    if rate >= warning_threshold:
-        return tokens.STATUS_WARNING
-    return tokens.STATUS_SHORTAGE
+    # 상태 → 색 짝은 함수 안에서 만든다. 모듈 상수로 올리면 처음 임포트한 순간의 팔레트가
+    # 굳어 테마를 바꿔도 이 색만 따라오지 않는다.
+    return {
+        "secure": tokens.STATUS_SECURE,
+        "warning": tokens.STATUS_WARNING,
+        "shortage": tokens.STATUS_SHORTAGE,
+    }[capacity_status(rate, secure_threshold=secure_threshold, warning_threshold=warning_threshold)]
 
 
 def render_home_capacity_decision(

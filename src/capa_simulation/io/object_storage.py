@@ -164,7 +164,7 @@ class SubprocessCommandRunner:
         started = time.perf_counter()
         merged = {**os.environ, **env}
         try:
-            completed = subprocess.run(  # noqa: S603 - 인자는 전부 코드가 만든다(shell=False)
+            completed = subprocess.run(  # 인자는 전부 코드가 만든다(shell=False)
                 list(argv),
                 env=merged,
                 capture_output=True,

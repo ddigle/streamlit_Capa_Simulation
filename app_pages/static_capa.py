@@ -22,10 +22,9 @@ from capa_simulation.page_bootstrap import (
     resolve_effective_months,
 )
 from capa_simulation.scenario_preset_state import (
-    DEFAULT_SECURE_THRESHOLD_PERCENT,
-    DEFAULT_WARNING_THRESHOLD_PERCENT,
     SECURE_THRESHOLD_KEY,
     WARNING_THRESHOLD_KEY,
+    seed_threshold_defaults,
 )
 from capa_simulation.scenario_state import (
     scenario_month_table,
@@ -160,10 +159,7 @@ render_roadmap_panel(
 st.subheader("확보율 기준 설비 부족 현황")
 st.caption("월·공정별 가용대수 ÷ 소요대수를 기준으로 최소 추가 설비대수를 정수 올림합니다.")
 
-if SECURE_THRESHOLD_KEY not in st.session_state:
-    st.session_state[SECURE_THRESHOLD_KEY] = DEFAULT_SECURE_THRESHOLD_PERCENT
-if WARNING_THRESHOLD_KEY not in st.session_state:
-    st.session_state[WARNING_THRESHOLD_KEY] = DEFAULT_WARNING_THRESHOLD_PERCENT
+seed_threshold_defaults()
 
 with st.container(border=True):
     st.markdown("#### :material/tune: 판정 기준")
@@ -200,7 +196,7 @@ try:
     reference_version = context.reference_version
     reference_tables = context.reference_tables
     active_scenario = context.active_scenario
-    # 유효 기간은 활성 리비전의 RQ_REQB 전체에서 잡는다(process_securement 와 같다). 먼저 월로
+    # 유효 기간은 활성 리비전의 RQ_REQB 전체에서 잡는다(calculation_result 와 같다). 먼저 월로
     # 거른 표를 넘기면 같은 필터를 두 번 걸고, 선택 범위 밖일 때 이 페이지의 안내문 대신
     # month_filter 의 일반 오류가 먼저 났다.
     effective_start, effective_end = resolve_effective_months(

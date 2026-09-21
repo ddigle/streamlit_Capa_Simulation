@@ -1,6 +1,10 @@
-# Purpose: Equipment input validation, weekly availability, lifecycle spans, and space status.
+# Purpose: 설비 운영 입력의 주차별 가용대수·호기 생애주기 구간·Space 단계와 전환 이벤트를 집계한다.
 
-"""Equipment input validation, weekly availability, and space status."""
+"""설비 운영 입력의 주차 집계·생애주기·Space 상태.
+
+입력 검증은 `equipment_validation.py` 의 `prepare_*` 를 불러 쓰고, 설비 DB 가 비어 있을 때의
+화면 샘플은 `equipment_samples.py` 가 갖는다 — 이 모듈에는 둘 다 없다.
+"""
 
 from __future__ import annotations
 
@@ -21,8 +25,6 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_master,
 )
 from capa_simulation.services.iso_week_calendar import weeknum_label
-
-# Backward-compatible public name used by the Space page.
 
 
 def build_equipment_status_as_of(

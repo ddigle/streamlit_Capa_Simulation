@@ -12,6 +12,7 @@ import pandas as pd
 from capa_simulation.services.frame_contracts import (
     normalize_demand_basis,
     normalize_demand_basis_value,
+    require_columns,
 )
 from capa_simulation.services.iso_week_calendar import (
     owning_month,
@@ -52,9 +53,7 @@ def build_standard_target_logic_analysis(
     production_month = owning_month(week_start)
 
     required = ["생산계획년월", "공정", "소요기준", "양산구분"]
-    missing = [column for column in required if column not in required_equipment.columns]
-    if missing:
-        raise ValueError(f"소요대수 상세 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(required_equipment, required, "소요대수 상세")
 
     source = required_equipment.copy()
     month = pd.to_numeric(source["생산계획년월"], errors="coerce")

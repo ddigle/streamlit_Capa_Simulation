@@ -9,7 +9,11 @@ from capa_simulation.components.month_editor import render_month_editor
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.reference_csv_tools import queue_reference_import_flash
-from capa_simulation.components.scenario_edit_bar import render_scenario_edit_bar
+from capa_simulation.components.scenario_edit_bar import (
+    render_scenario_edit_bar,
+    reset_editors_on_source_change,
+    source_token,
+)
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
@@ -255,14 +259,12 @@ step_widget_keys = (
     "capacity_step_new_step",
     "capacity_step_delete_confirm",
 )
-source_token_key = "capacity_standards_source_token"
-source_token = f"duckdb:{reference_version}:{active_scenario['revision']}:{start_month}:{end_month}"
-if st.session_state.get(source_token_key) != source_token:
-    for editor_key in editor_keys:
-        st.session_state.pop(editor_key, None)
-    for widget_key in step_widget_keys:
-        st.session_state.pop(widget_key, None)
-    st.session_state[source_token_key] = source_token
+SOURCE_TOKEN_KEY = "reference_data_source_token"
+reset_editors_on_source_change(
+    SOURCE_TOKEN_KEY,
+    source_token(reference_version, active_scenario, start_month, end_month),
+    (*editor_keys, *step_widget_keys),
+)
 
 # 설비대수 세 표는 편집 왕복과 조회 표가 같은 슬라이스를 본다. 창을 갈라 두면
 # `apply_month_updates` 가 화면에 없던 월을 지운다.
@@ -313,7 +315,7 @@ render_scenario_edit_bar(
     reference_tables,
     reference_version,
     reset_key="reset_capacity_active_scenario",
-    clear_session_keys=(source_token_key,),
+    clear_session_keys=(SOURCE_TOKEN_KEY,),
 )
 
 with step_tab:
@@ -469,7 +471,7 @@ with step_tab:
                     f"수요 변형 {step_result.affected_variants:,}개 · "
                     f"RQ_REQB {step_result.affected_reqb_rows:,}행"
                 )
-                st.session_state.pop(source_token_key, None)
+                st.session_state.pop(SOURCE_TOKEN_KEY, None)
                 st.rerun()
 
 with equipment_tab:
@@ -780,7 +782,7 @@ try:
         )
         if import_flash is not None:
             queue_reference_import_flash(*import_flash)
-        st.session_state.pop(source_token_key, None)
+        st.session_state.pop(SOURCE_TOKEN_KEY, None)
         st.rerun()
 except (KeyError, ValueError) as exc:
     with update_error_tab:

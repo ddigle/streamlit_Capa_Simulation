@@ -111,7 +111,6 @@ YIELD_METRIC = MetricSpec(
 
 ALL_METRICS = (EFFICIENCY_METRIC, UPEH_METRIC, YIELD_METRIC)
 
-STATUS_ORDER = ("개선 필요", "관찰", "정상")
 
 # 공정마다 다른 결말을 준다. 전부 미달이면 우선순위 표가 아무것도 고르지 못하고, 전부
 # 양호하면 이 화면을 왜 만드는지가 안 보인다. `DEMO_PROFILES` 의 순서와 1:1 이다.
@@ -234,8 +233,8 @@ def build_gap_table(
         ["_가중_실적", "_가중_기준", "_가중치"]
     ].sum()
     result = grouped[dimensions].copy()
-    result[metric.standard_column] = _safe_divide(grouped["_가중_기준"], grouped["_가중치"])
-    result[metric.actual_column] = _safe_divide(grouped["_가중_실적"], grouped["_가중치"])
+    result[metric.standard_column] = _ratio_or_na(grouped["_가중_기준"], grouped["_가중치"])
+    result[metric.actual_column] = _ratio_or_na(grouped["_가중_실적"], grouped["_가중치"])
     result["Gap"] = gap_values(result[metric.actual_column], result[metric.standard_column], metric)
     result["생산수량"] = grouped["_가중치"]
     total_weight = float(grouped["_가중치"].sum())
@@ -247,7 +246,7 @@ def gap_values(actual: pd.Series, standard: pd.Series, metric: MetricSpec) -> pd
     """지표 사양이 정한 방식으로 차이를 낸다. 두 방식을 섞지 않는 유일한 지점이다."""
     if metric.gap_kind == "point":
         return actual - standard
-    return _safe_divide(actual, standard) - 1.0
+    return _ratio_or_na(actual, standard) - 1.0
 
 
 def build_priority_table(
@@ -374,7 +373,8 @@ def _shift_month(month: int, offset: int) -> int:
     return (total // 12) * 100 + (total % 12) + 1
 
 
-def _safe_divide(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
+def _ratio_or_na(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
+    """분모가 0이면 **결측** 으로 남긴다. `dynamic_capacity._ratio_or_zero` 와 합치지 않는다."""
     result = numerator.astype("float64") / denominator.astype("float64").replace(0.0, pd.NA)
     return result.astype("float64")
 

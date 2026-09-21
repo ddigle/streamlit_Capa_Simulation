@@ -7,6 +7,7 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 
+from capa_simulation.components.plotly_layout import chart_canvas_layout
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
 from capa_simulation.services.dynamic_capacity import aggregate_dynamic_capacity
@@ -141,9 +142,7 @@ def build_capacity_trend_figure(detail: pd.DataFrame) -> go.Figure:
 
 def _apply_common_layout(figure: go.Figure) -> None:
     figure.update_layout(
-        plot_bgcolor=tokens.CHART_CANVAS,
-        paper_bgcolor=tokens.CHART_CANVAS,
-        font={"family": tokens.FONT_FAMILY, "color": tokens.TEXT, "size": 13},
+        **chart_canvas_layout(font_size=13),
         hoverlabel={"font": {"family": tokens.FONT_FAMILY}},
     )
     figure.update_xaxes(

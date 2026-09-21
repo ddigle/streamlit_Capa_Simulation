@@ -2,7 +2,9 @@
 
 import pandas as pd
 
+from capa_simulation.services.frame_checks import assert_unique_keys, strip_text_columns
 from capa_simulation.services.frame_contracts import (
+    assert_complete,
     normalize_area_name,
     normalize_month_column,
     require_columns,
@@ -213,17 +215,17 @@ def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
     if result.empty:
         result["환산_UPEH"] = pd.Series(dtype="float64")
         return result
-    _normalize_month(result, table_name)
-    _normalize_keys(result, [key for key in PERFORMANCE_KEYS if key != "생산계획년월"])
+    normalize_month_column(result, table_name)
+    strip_text_columns(result, [key for key in PERFORMANCE_KEYS if key != "생산계획년월"])
     result["Area_Name"] = result["Area_Name"].astype("string").str.strip()
     result["소요기준"] = result["소요기준"].astype("string").str.strip().str.upper()
     result = result.loc[~result["소요기준"].isin(UNIMPLEMENTED_BASES)].copy()
     if result.empty:
         result["환산_UPEH"] = pd.Series(dtype="float64")
         return result
-    _assert_complete_keys(result, [*PERFORMANCE_KEYS, "소요기준"], table_name)
+    assert_complete(result, [*PERFORMANCE_KEYS, "소요기준"], table_name)
     result["Area_Name"] = normalize_area_name(result["Area_Name"], table_name)
-    _assert_unique(result, [*PERFORMANCE_KEYS, "소요기준"], table_name)
+    assert_unique_keys(result, [*PERFORMANCE_KEYS, "소요기준"], f"{table_name}의 연결 키가")
 
     upeh_values = pd.to_numeric(result["UPEH"], errors="coerce")
     st_values = pd.to_numeric(result["ST"], errors="coerce")
@@ -255,12 +257,12 @@ def _join_reference(
     require_columns(reference, [*keys, value_column], table_name)
     prepared = reference[[*keys, value_column]].copy()
     if "생산계획년월" in keys:
-        _normalize_month(prepared, table_name)
-    _normalize_keys(prepared, [key for key in keys if key != "생산계획년월"])
-    _assert_complete_keys(prepared, keys, table_name)
+        normalize_month_column(prepared, table_name)
+    strip_text_columns(prepared, [key for key in keys if key != "생산계획년월"])
+    assert_complete(prepared, keys, table_name)
     if "Area_Name" in keys:
         prepared["Area_Name"] = normalize_area_name(prepared["Area_Name"], table_name)
-    _assert_unique(prepared, keys, table_name)
+    assert_unique_keys(prepared, keys, f"{table_name}의 연결 키가")
     prepared[value_column] = _numeric_column(
         prepared,
         value_column,
@@ -273,29 +275,6 @@ def _join_reference(
         examples = result.loc[missing, keys].drop_duplicates().head(5).to_dict("records")
         raise ValueError(f"{table_name} 연결값이 없는 대당 Capa 기준이 있습니다: {examples}")
     return result
-
-
-def _normalize_keys(data: pd.DataFrame, keys: list[str]) -> None:
-    for key in keys:
-        data[key] = data[key].astype("string").str.strip()
-
-
-def _normalize_month(data: pd.DataFrame, table_name: str) -> None:
-    normalize_month_column(data, table_name)
-
-
-def _assert_complete_keys(data: pd.DataFrame, keys: list[str], table_name: str) -> None:
-    has_missing = any(data[key].isna().any() for key in keys)
-    has_blank = any(data[key].eq("").any() for key in keys)
-    if has_missing or has_blank:
-        raise ValueError(f"{table_name}의 연결 키에 누락값이 있습니다.")
-
-
-def _assert_unique(data: pd.DataFrame, keys: list[str], table_name: str) -> None:
-    duplicated = data.duplicated(keys, keep=False)
-    if duplicated.any():
-        examples = data.loc[duplicated, keys].drop_duplicates().head(5).to_dict("records")
-        raise ValueError(f"{table_name}의 연결 키가 중복되었습니다: {examples}")
 
 
 def _numeric_column(

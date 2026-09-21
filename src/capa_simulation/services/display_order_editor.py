@@ -35,9 +35,7 @@ def validate_display_order(source: pd.DataFrame) -> pd.DataFrame:
     """Return normalized rules or reject every incomplete/conflicting row."""
     if not isinstance(source, pd.DataFrame):
         raise TypeError("표시순서 설정은 pandas DataFrame이어야 합니다.")
-    missing = [column for column in DISPLAY_ORDER_COLUMNS if column not in source.columns]
-    if missing:
-        raise ValueError(f"표시순서 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(source, DISPLAY_ORDER_COLUMNS, "표시순서")
     selected = source.loc[:, list(DISPLAY_ORDER_COLUMNS)].dropna(how="all").reset_index(drop=True)
     normalized = transform_display_order(selected)
     if len(normalized) != len(selected):

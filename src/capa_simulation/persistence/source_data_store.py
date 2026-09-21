@@ -4,8 +4,6 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
-
 import duckdb
 import pandas as pd
 
@@ -13,7 +11,7 @@ from capa_simulation.io.core_data_source import (
     core_data_row_hashes,
     load_core_data_contract,
 )
-from capa_simulation.persistence._sql_helpers import quote
+from capa_simulation.persistence._sql_helpers import insert_by_name
 from capa_simulation.persistence.models import ScenarioCreate
 
 
@@ -73,14 +71,7 @@ def insert_core_data(
     prepared.insert(0, "row_hash", core_data_row_hashes(frame))
     prepared.insert(0, "source_row_no", range(1, len(prepared) + 1))
     prepared.insert(0, "dataset_id", dataset_id)
-    view_name = f"_incoming_core_data_{uuid4().hex}"
-    connection.register(view_name, prepared)
-    try:
-        connection.execute(
-            f"INSERT INTO raw_data.core_data BY NAME SELECT * FROM {quote(view_name)}"
-        )
-    finally:
-        connection.unregister(view_name)
+    insert_by_name(connection, schema="raw_data", table_name="core_data", frame=prepared)
     stored_count = connection.execute(
         "SELECT COUNT(*) FROM raw_data.core_data WHERE dataset_id = ?",
         [dataset_id],
@@ -96,14 +87,12 @@ def insert_source_profile(
 ) -> None:
     prepared = profile.copy()
     prepared.insert(0, "dataset_id", dataset_id)
-    view_name = f"_incoming_source_profile_{uuid4().hex}"
-    connection.register(view_name, prepared)
-    try:
-        connection.execute(
-            f"INSERT INTO raw_data.source_column_profile BY NAME SELECT * FROM {quote(view_name)}"
-        )
-    finally:
-        connection.unregister(view_name)
+    insert_by_name(
+        connection,
+        schema="raw_data",
+        table_name="source_column_profile",
+        frame=prepared,
+    )
     stored_count = connection.execute(
         "SELECT COUNT(*) FROM raw_data.source_column_profile WHERE dataset_id = ?",
         [dataset_id],

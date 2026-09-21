@@ -11,6 +11,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from capa_simulation.components.plotly_layout import chart_canvas_layout
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
 from capa_simulation.services.wip_status import (
@@ -140,9 +141,7 @@ def build_wip_status_grid_figure(
         barmode="group",
         bargap=0.18,
         bargroupgap=0.05,
-        plot_bgcolor=tokens.CHART_CANVAS,
-        paper_bgcolor=tokens.CHART_CANVAS,
-        font={"family": tokens.FONT_FAMILY, "color": tokens.TEXT, "size": 11},
+        **chart_canvas_layout(font_size=11),
         hoverlabel={"font": {"family": tokens.FONT_FAMILY}},
         hovermode="closest",
         margin={"l": 54, "r": 24, "t": 92, "b": 50},

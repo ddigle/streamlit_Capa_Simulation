@@ -9,7 +9,7 @@
 **연속 색이 아니라 상태 3색이다.** 확보율은 이 앱에서 이미 확보·경고·부족 세 상태로
 판정하고, 그 경계는 사용자가 정한다. 연속 그라데이션을 쓰면 화면마다 다른 색 체계가 두 개
 생기고, 105% 와 108% 의 미묘한 색차가 「경계를 넘었나」보다 도드라져 판정을 흐린다.
-`home_figures._capacity_color` 와 같은 색·같은 경계를 쓴다.
+`home_figures.capacity_status` 와 같은 색·같은 경계를 쓴다.
 
 색만으로 뜻을 나르지 않도록 범례(`home_preference.status_legend_markup`)를 함께 그리고,
 칸이 적을 때는 숫자도 칸 안에 적는다.
@@ -28,7 +28,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from capa_simulation.components.home_figures import capacity_status
 from capa_simulation.components.home_preference import status_legend_markup
+from capa_simulation.components.plotly_layout import chart_canvas_layout
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
@@ -47,12 +49,12 @@ SECURE_TIER = 2.0
 
 
 def _tier(rate: float, *, secure_threshold: float, warning_threshold: float) -> float:
-    """`home_figures._capacity_color` 와 같은 판정이다. 경계가 갈리면 두 화면이 다른 말을 한다."""
-    if rate > secure_threshold:
-        return SECURE_TIER
-    if rate >= warning_threshold:
-        return WARNING_TIER
-    return SHORTAGE_TIER
+    """`home_figures.capacity_status` 와 같은 판정이다. 경계가 갈리면 두 화면이 다른 말을 한다."""
+    return {
+        "secure": SECURE_TIER,
+        "warning": WARNING_TIER,
+        "shortage": SHORTAGE_TIER,
+    }[capacity_status(rate, secure_threshold=secure_threshold, warning_threshold=warning_threshold)]
 
 
 def _month_tick(column: object) -> str:
@@ -136,9 +138,7 @@ def build_securement_heatmap(
     figure.update_layout(
         height=height,
         margin={"l": 8, "r": 8, "t": 28, "b": 8},
-        paper_bgcolor=tokens.CHART_CANVAS,
-        plot_bgcolor=tokens.CHART_CANVAS,
-        font={"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": 11},
+        **chart_canvas_layout(font_size=11),
     )
     # 표와 같은 순서로 위에서 아래로 읽힌다. Plotly 의 y 축은 기본이 아래에서 위다.
     # 두 축 모두 **범주**다. `"26.07"` 은 숫자로 읽히면 26.07 이 되어 월 칸이 실수 축에

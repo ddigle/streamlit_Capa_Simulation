@@ -40,8 +40,9 @@ def test_equipment_snapshots_are_immutable_revisions(tmp_path: Path) -> None:
 
     assert first.revision.revision_no == 1
     assert second.revision.revision_no == 2
-    latest = repository.load_latest_snapshot()
-    assert latest is not None
+    latest_revision_id = repository.latest_revision_id()
+    assert latest_revision_id is not None
+    latest = repository.load_snapshot(latest_revision_id)
     assert latest.revision == second.revision
     pd.testing.assert_frame_equal(latest.equipment, second.equipment)
     pd.testing.assert_frame_equal(latest.downtime, second.downtime)

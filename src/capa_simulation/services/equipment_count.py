@@ -6,7 +6,7 @@ from capa_simulation.services.capacity_reference_editor import (
     reference_from_edit_table,
     reference_to_edit_table,
 )
-from capa_simulation.services.frame_contracts import normalize_month_column
+from capa_simulation.services.frame_contracts import normalize_month_column, require_columns
 
 EQUIPMENT_DIMENSIONS = ["공정"]
 DETAILED_EQUIPMENT_DIMENSIONS = ["공정", "구분"]
@@ -101,9 +101,7 @@ def build_equipment_count_table(
 
 def _prepare_source(data: pd.DataFrame, category: str, value_column: str) -> pd.DataFrame:
     required = ["생산계획년월", "공정", value_column]
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"{category} 설비대수 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(data, required, f"{category} 설비대수")
     result = data[required].copy().rename(columns={value_column: "대수"})
     normalize_month_column(result, f"{category} 설비대수")
     result["공정"] = result["공정"].astype("string").str.strip()

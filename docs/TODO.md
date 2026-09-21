@@ -1126,8 +1126,10 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
   위젯은 항상 그리고, 계산·표·차트만 건너뛴다". 목록은 위젯 options 라 건너뛸 수 없어
   `get_route_step_tables` 내용 토큰 캐시로 바꾸고 요약 표만 접었다. 기본 탭 warm rerun
   **2,226 → 1,147ms**. persist_state 변경 없음(위젯이 계속 그려지므로). `efb98e1`
-- [ ] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없음, 순수 유지보수
-  비용. 권장: E 시리즈 뒤로.
+- [x] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없음, 순수 유지보수
+  비용. 권장: E 시리즈 뒤로. → 2026-09-21 부분 이행: 분류 컬럼 폭 계산과 `go.Table` 두 벌
+  조립을 `monthly_table_base` 로 올렸다(Figure JSON 전후 동일). 격자 머리 여섯 호출과 반복
+  접두 생략 루프는 아직 두 모듈에 남아 있다.
 - [x] **B7 rgba 색 리터럴 검사 확장** — 남은 5곳(투명 선 2·Space 클릭·호버 표적 3)을
   `tokens.TRANSPARENT`·`tokens.HIT_TARGET` 으로 모으고 검사에 `rgba?\(` 패턴을 더했다.
   화면 값 변화 없음. `0272fa8`
@@ -1538,9 +1540,10 @@ Space 현황의 층 배치 캔버스가 층마다 다르다. `equipment_ops.floo
 `display_order_editor` 의 스코프 목록·`config/bootstrap_display_order.json`·운영 DB 의
 저장된 행을 함께 옮겨야 한다.
 
-**남은 것** — 세션 상태 키 `capacity_standards_source_token`(`app_pages/reference_data.py`
-가 만들고 `scenario_activation.py` 가 버린다)은 옛 화면 이름 그대로다. 내부 식별자라 화면에
-드러나지 않는다.
+**했다(2026-09-21)** — 옛 화면 이름 그대로였던 세션 상태 키를 `reference_data_source_token`
+으로 바꿨다(`app_pages/reference_data.py` 가 만들고 `scenario_activation.py` 의
+`_STALE_UI_KEYS` 가 버린다). 내부 식별자라 화면에 드러나지 않고, 살아 있던 브라우저 세션은
+편집기가 한 번 초기화될 뿐이다.
 
 ## 3-16. 2026-09-15 HOME 격자 확장·기준정보 편집·화면 크롬
 
@@ -1674,6 +1677,11 @@ ahead) — 배포 시점은 사용자 결정이다.
       선 아래가 비는 문제를 `:has()` 로 좁히면 넣을 수 있다.
 - [ ] 브라우저 스크린샷이 `Cannot take screenshot with 0 width` 로 계속 실패한다. 이번 세션의
       화면 검증은 전부 `javascript_tool` 의 DOM·SVG 좌표 실측으로 했다.
+- [ ] **선행 투입 역산의 결측 달(2026-09-21 리팩토링에서 드러남).** HOME 이 선행 전후를 한
+      그림에 그릴 때 쓰는 역산(`services/advance_load.revert_advance_from_securement`)은
+      변동률 표에 없는 달을 결측으로 두는데, 정방향은 그 달을 1 로 채운다. 리팩토링은 페이지
+      식을 글자 그대로 옮겨 현재 동작을 테스트로 고정했다. 정방향과 맞출지는 LOB Figure
+      출력이 달라지는 별도 결정이다.
 - [x] `d395896` 까지 `origin/main` 에 푸시했다(2026-09-20).
 
 ## 4. 현재 권장 진행 순서

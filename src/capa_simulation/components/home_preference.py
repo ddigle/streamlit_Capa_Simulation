@@ -1,6 +1,9 @@
-# Purpose: HOME 의 차트 표시 설정(EDP 포함 여부·선행 투입 물량)을 입력받아 공용 프로필에 저장한다.
+# Purpose: HOME Preference 탭의 편집기 여섯과 LOB 제목 줄을 그려 공용 프로필에 저장한다.
 
 """HOME `Preference` 탭과 `Capa LOB 현황` 제목 줄.
+
+탭에는 표시 기준 토글과 비교 시나리오·선행 투입 물량·`Summary 공지`·Top5 대역·주요공정·
+실행 Capa 편집기가 있고, 저장은 모두 공용 프로필 교체다.
 
 두 컨트롤의 **값은 계산보다 먼저** 필요하고 **위젯은 계산 뒤에** 그려진다. 그래서
 `app_pages/home.py` 는 위젯이 쓰는 세션 키를 직접 읽고, 여기서는 같은 키로 위젯을 만든다.
@@ -19,6 +22,7 @@ import streamlit as st
 
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
@@ -566,7 +570,7 @@ def _render_advance_editor(
             "억Gb 로 넣습니다. 시나리오와 분리된 공용 설정이라 모든 시나리오에 같이 "
             "적용되며, 「선행」 토글을 켠 화면에만 반영됩니다."
         )
-        st.caption(_version_caption(advance_profile))
+        st.caption(profile_version_caption(advance_profile, empty="아직 넣은 선행 물량이 없습니다"))
         if not months:
             st.info("조회기간에 계획이 있는 달이 없어 입력할 칸이 없습니다.")
             return
@@ -696,7 +700,13 @@ def _render_summary_note_editor(
             "프로필이라 시나리오를 바꿔도 그대로입니다. **비우고 저장하면 공지가 "
             "내려갑니다.** 줄바꿈은 그대로 살아납니다."
         )
-        st.caption(_summary_note_version_caption(summary_profile))
+        st.caption(
+            profile_version_caption(
+                summary_profile,
+                empty="아직 공지를 올린 적이 없습니다",
+                suffix="공지 중" if summary_profile.is_visible else "내림",
+            )
+        )
         with st.form("home_summary_note_form"):
             # **`key` 를 두지 않는다.** 키가 붙은 위젯은 한 번 그려진 뒤 `value` 를 무시하고
             # 세션 값을 쓴다. Preference 는 숨은 탭에서도 위젯을 그리므로 HOME 첫 진입의
@@ -735,18 +745,6 @@ def _render_summary_note_editor(
         st.rerun(scope="app")
 
 
-def _summary_note_version_caption(profile: GlobalSummaryNote) -> str:
-    if profile.version == 0:
-        return "공용 버전 없음 · 아직 공지를 올린 적이 없습니다"
-    state = "공지 중" if profile.is_visible else "내림"
-    if profile.updated_at is None:
-        return f"공용 버전 v{profile.version} · {profile.source} · {state}"
-    return (
-        f"공용 버전 v{profile.version} · {profile.source} · "
-        f"{profile.updated_at:%Y-%m-%d %H:%M} · {state}"
-    )
-
-
 def _render_top5_band_editor(
     *,
     top5_band_profile: GlobalTop5Band,
@@ -765,7 +763,15 @@ def _render_top5_band_editor(
             "**hover 에 뜨는 Capa 숫자는 자르지 않은 실제 값입니다.** 상세 B/N 가로막대의 "
             "구간(80~150%)은 쓰임이 달라 여기서 바뀌지 않습니다."
         )
-        st.caption(_top5_band_version_caption(top5_band_profile))
+        st.caption(
+            profile_version_caption(
+                top5_band_profile,
+                empty=(
+                    f"기본값 {top5_band_profile.min_rate:.0%}~"
+                    f"{top5_band_profile.max_rate:.0%} 을 씁니다"
+                ),
+            )
+        )
         with st.form("home_top5_band_form"):
             # **`key` 를 두지 않는다.** 바로 위 Summary 공지와 같은 이유다 — 키가 붙은 위젯은
             # 한 번 그려진 뒤 `value` 를 무시하고 세션 값을 쓴다. Preference 는 숨은 탭에서도
@@ -812,14 +818,6 @@ def _render_top5_band_editor(
         st.rerun(scope="app")
 
 
-def _top5_band_version_caption(profile: GlobalTop5Band) -> str:
-    if profile.version == 0:
-        return f"공용 버전 없음 · 기본값 {profile.min_rate:.0%}~{profile.max_rate:.0%} 을 씁니다"
-    if profile.updated_at is None:
-        return f"공용 버전 v{profile.version} · {profile.source}"
-    return f"공용 버전 v{profile.version} · {profile.source} · {profile.updated_at:%Y-%m-%d %H:%M}"
-
-
 def _render_key_process_editor(
     *,
     key_process_profile: GlobalKeyProcess,
@@ -843,7 +841,13 @@ def _render_key_process_editor(
             f"가로로 읽을 수 있습니다. 비우고 저장하면 그 구획은 안내 한 줄만 남습니다. "
             f"최대 {KEY_PROCESS_LIMIT}개."
         )
-        st.caption(_key_process_version_caption(key_process_profile))
+        st.caption(
+            profile_version_caption(
+                key_process_profile,
+                empty="아직 고른 주요공정이 없습니다",
+                detail=f"{len(key_process_profile.processes)}개 공정",
+            )
+        )
         known_options = set(process_options)
         with st.form("home_key_process_form"):
             selected = st.multiselect(
@@ -901,18 +905,6 @@ def _render_key_process_notice(
     )
 
 
-def _key_process_version_caption(profile: GlobalKeyProcess) -> str:
-    if profile.version == 0:
-        return "공용 버전 없음 · 아직 고른 주요공정이 없습니다"
-    count = f"{len(profile.processes)}개 공정"
-    if profile.updated_at is None:
-        return f"공용 버전 v{profile.version} · {count} · {profile.source}"
-    return (
-        f"공용 버전 v{profile.version} · {count} · {profile.source} · "
-        f"{profile.updated_at:%Y-%m-%d %H:%M}"
-    )
-
-
 def _render_execution_editor(
     *,
     months: Sequence[int],
@@ -933,7 +925,9 @@ def _render_execution_editor(
             "(비율 곱셈이 아닙니다). 시나리오와 분리된 공용 설정이고, 「실행」 토글을 켠 "
             "화면에만 반영됩니다. 순위도 이 값으로 다시 매겨집니다."
         )
-        st.caption(_execution_version_caption(execution_profile))
+        st.caption(
+            profile_version_caption(execution_profile, empty="아직 넣은 실행 Capa 반영이 없습니다")
+        )
         if not months or not process_options:
             st.info("조회기간에 계산된 공정이 없어 입력할 칸이 없습니다.")
             return
@@ -1054,25 +1048,3 @@ def _render_execution_notices(
             "막대 길이와 순위가 의미를 잃지 않도록 자릅니다.",
             icon=":material/vertical_align_bottom:",
         )
-
-
-def _execution_version_caption(execution_profile: GlobalExecutionCapacity) -> str:
-    if execution_profile.version == 0:
-        return "공용 버전 없음 · 아직 넣은 실행 Capa 반영이 없습니다"
-    if execution_profile.updated_at is None:
-        return f"공용 버전 v{execution_profile.version} · {execution_profile.source}"
-    return (
-        f"공용 버전 v{execution_profile.version} · {execution_profile.source} · "
-        f"{execution_profile.updated_at:%Y-%m-%d %H:%M}"
-    )
-
-
-def _version_caption(advance_profile: GlobalAdvanceLoad) -> str:
-    if advance_profile.version == 0:
-        return "공용 버전 없음 · 아직 넣은 선행 물량이 없습니다"
-    if advance_profile.updated_at is None:
-        return f"공용 버전 v{advance_profile.version} · {advance_profile.source}"
-    return (
-        f"공용 버전 v{advance_profile.version} · {advance_profile.source} · "
-        f"{advance_profile.updated_at:%Y-%m-%d %H:%M}"
-    )

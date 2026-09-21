@@ -12,27 +12,22 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from capa_simulation.components.monthly_table_base import (
-    CLASSIFICATION_HORIZONTAL_PADDING_PX,
-    CLASSIFICATION_MAX_WIDTH_PX,
-    CLASSIFICATION_MIN_WIDTH_PX,
-    CLASSIFICATION_TEXT_UNIT_PX,
     HEADER_HEIGHT_PX,
-    MONTH_COLUMN_WIDTH_PX,
     OUTER_BORDER_WIDTH_PX,
     ROW_HEIGHT_PX,
-    TRANSPARENT_COLOR,
     add_classification_boundaries,
     add_header_rule,
     add_month_boundaries,
     add_outer_border,
+    build_split_table_figures,
     classification_cell_text,
+    classification_widths,
     header_boundary_ratio,
     header_label,
     month_label,
     render_split_scroll_table,
     restore_cell_text,
     table_height_px,
-    text_width_units,
 )
 from capa_simulation.components.plotly_layout import append_layout_items, flush_layout_items
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
@@ -46,30 +41,6 @@ class _HierarchicalDisplay:
     classification_values: list[list[str]]
     top_group_indices: list[int]
     group_boundaries: list[tuple[int, int]]
-
-
-def _classification_widths(
-    values: list[list[str]],
-    columns: list[str],
-    labels: Mapping[str, str],
-) -> list[int]:
-    widths: list[int] = []
-    for column_index, column in enumerate(columns):
-        texts = [labels.get(column, column), *values[column_index]]
-        max_units = max((text_width_units(text) for text in texts), default=4.0)
-        widths.append(
-            max(
-                CLASSIFICATION_MIN_WIDTH_PX,
-                min(
-                    CLASSIFICATION_MAX_WIDTH_PX,
-                    round(
-                        max_units * CLASSIFICATION_TEXT_UNIT_PX
-                        + CLASSIFICATION_HORIZONTAL_PADDING_PX
-                    ),
-                ),
-            )
-        )
-    return widths
 
 
 def _build_hierarchical_display(
@@ -289,7 +260,7 @@ def render_hierarchical_monthly_table(
     if tab_is_hidden(owner_tab):
         return
     display = _build_hierarchical_display(data, classification_columns, value_labels)
-    classification_widths = _classification_widths(
+    column_widths = classification_widths(
         display.classification_values,
         classification_columns,
         column_labels,
@@ -313,66 +284,23 @@ def render_hierarchical_monthly_table(
         decimal_places,
         value_format,
     )
-    figure_height = HEADER_HEIGHT_PX + max(len(data), 1) * ROW_HEIGHT_PX
-    common_layout = {
-        "height": figure_height,
-        "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
-        "paper_bgcolor": tokens.CHART_CANVAS,
-        "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
-    }
-    label_figure = go.Figure(
-        go.Table(
-            columnwidth=classification_widths,
-            header={
-                "values": [
-                    header_label(column_labels.get(column, column))
-                    for column in classification_columns
-                ],
-                "align": "center",
-                "fill_color": tokens.HEADER_BACKGROUND,
-                "line_color": TRANSPARENT_COLOR,
-                "font": {"color": tokens.TEXT, "size": 14, "family": tokens.FONT_FAMILY},
-                "height": HEADER_HEIGHT_PX,
-            },
-            cells={
-                "values": display.classification_values,
-                "align": "center",
-                "fill_color": classification_colors,
-                "line_color": TRANSPARENT_COLOR,
-                "font": {"color": tokens.TEXT, "size": 13, "family": tokens.FONT_FAMILY},
-                "height": ROW_HEIGHT_PX,
-            },
-        )
+    label_figure, month_figure = build_split_table_figures(
+        classification_headers=[
+            header_label(column_labels.get(column, column)) for column in classification_columns
+        ],
+        classification_values=display.classification_values,
+        classification_fill_colors=classification_colors,
+        column_widths=column_widths,
+        month_headers=[header_label(month_label(month)) for month in month_columns],
+        month_values=month_values,
+        month_row_colors=month_row_colors,
+        row_count=len(data),
     )
-    month_figure = go.Figure(
-        go.Table(
-            columnwidth=[1.0] * len(month_columns),
-            header={
-                "values": [header_label(month_label(month)) for month in month_columns],
-                "align": "center",
-                "fill_color": tokens.HEADER_BACKGROUND,
-                "line_color": TRANSPARENT_COLOR,
-                "font": {"color": tokens.TEXT, "size": 14, "family": tokens.FONT_FAMILY},
-                "height": HEADER_HEIGHT_PX,
-            },
-            cells={
-                "values": month_values,
-                "align": "center",
-                "fill_color": [month_row_colors for _month in month_columns],
-                "line_color": TRANSPARENT_COLOR,
-                "font": {"color": tokens.TEXT, "size": 13, "family": tokens.FONT_FAMILY},
-                "height": ROW_HEIGHT_PX,
-            },
-        )
-    )
-    label_figure.update_layout(**common_layout)
-    month_figure_width = len(month_columns) * MONTH_COLUMN_WIDTH_PX
-    month_figure.update_layout(**common_layout, width=month_figure_width, autosize=False)
     _add_table_grid(
         label_figure=label_figure,
         month_figure=month_figure,
         display=display,
-        classification_widths=classification_widths,
+        classification_widths=column_widths,
         month_columns=month_columns,
         row_count=len(data),
     )
@@ -381,7 +309,7 @@ def render_hierarchical_monthly_table(
         key=key,
         label_figure=label_figure,
         month_figure=month_figure,
-        classification_widths=classification_widths,
+        classification_widths=column_widths,
         month_count=len(month_columns),
         owner_tab=owner_tab,
     )

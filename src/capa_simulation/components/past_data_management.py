@@ -19,6 +19,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
@@ -36,6 +37,8 @@ from capa_simulation.services.past_data import (
     past_table_from_clipboard,
 )
 
+HOME_PAST_FORM_KEY = "home_past_form"
+HOME_PAST_DOWNLOAD_KEY = "home_past_download"
 PAST_CLIPBOARD_KEY = "home_past_clipboard"
 PAST_NOTE_KEY = "home_past_note"
 PAST_DRAFT_KEY = "home_past_draft"
@@ -102,7 +105,7 @@ def render_past_data_management(database_path: str, profile: GlobalPastData) -> 
             "이어 그립니다. **계산 결과가 있는 달은 계산이 이깁니다** — 적재 범위가 뒤로 "
             "넘어가도 입력을 지울 필요가 없습니다."
         )
-        st.caption(_version_caption(profile))
+        st.caption(profile_version_caption(profile, empty="아직 넣은 과거 구간이 없습니다"))
     for spec in PAST_TABLE_SPECS:
         _render_table_editor(database_path, profile.version, spec, stored[spec.name], draft)
     _render_save(database_path, draft)
@@ -157,10 +160,10 @@ def _render_table_editor(
                     stored if not stored.empty else past_sample_rows(spec.columns),
                 ),
                 file_name=f"PAST_{spec.name}.csv",
-                key=f"home_past_download_{spec.name}",
+                key=f"{HOME_PAST_DOWNLOAD_KEY}_{spec.name}",
                 label="양식 CSV",
             )
-        with st.form(f"home_past_form_{spec.name}", border=False):
+        with st.form(f"{HOME_PAST_FORM_KEY}_{spec.name}", border=False):
             clipboard = st.text_area(
                 f"{spec.title} 붙여넣기",
                 key=f"{PAST_CLIPBOARD_KEY}_{spec.name}",
@@ -229,11 +232,3 @@ def _render_save(
                 st.rerun()
         if not pending_names:
             st.caption("읽어 둔 표가 없습니다. 위에서 붙여넣기를 먼저 읽으세요.")
-
-
-def _version_caption(profile: GlobalPastData) -> str:
-    if profile.version == 0:
-        return "공용 버전 없음 · 아직 넣은 과거 구간이 없습니다"
-    if profile.updated_at is None:
-        return f"공용 버전 v{profile.version} · {profile.source}"
-    return f"공용 버전 v{profile.version} · {profile.source} · {profile.updated_at:%Y-%m-%d %H:%M}"

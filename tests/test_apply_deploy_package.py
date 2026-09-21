@@ -294,7 +294,9 @@ def test_the_two_deploy_scripts_agree_on_what_is_untouchable() -> None:
     import sys
 
     sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
-    from build_deploy_package import forbidden_entries
+    from build_deploy_package import INTERNAL_ONLY_PREFIXES, forbidden_entries
+
+    assert set(INTERNAL_ONLY_PREFIXES) == set(PRESERVED_PREFIXES)
 
     for path in (
         ".env",

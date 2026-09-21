@@ -60,7 +60,7 @@ def _read_client_mode() -> Mode:
     """이 실행이 쓸 테마. 조회 인자가 있으면 그것이 답이다."""
     try:
         chosen = str(st.query_params.get(THEME_QUERY_PARAM, "")).strip().lower()
-    except Exception:  # noqa: BLE001 - 런타임 밖에서는 조회 인자가 없다
+    except Exception:  # 런타임 밖에서는 조회 인자가 없다
         chosen = ""
     if chosen in ("light", "dark"):
         return "dark" if chosen == "dark" else "light"
@@ -68,17 +68,6 @@ def _read_client_mode() -> Mode:
     # 버튼을 한 번 누르면 그 뒤로는 인자가 답을 정한다.
     try:
         value = st.context.theme.type
-    except Exception:  # noqa: BLE001 - 런타임 밖·컨텍스트 없음 전부 밝게로 떨어뜨린다
+    except Exception:  # 런타임 밖·컨텍스트 없음 전부 밝게로 떨어뜨린다
         return "light"
     return "dark" if value == "dark" else "light"
-
-
-def _clear_coloured_caches() -> None:
-    # 늦게 import 한다. 이 모듈은 `tokens` 가 부르는 잎이라 컴포넌트를 먼저 끌어오면
-    # 색 하나 읽으려다 화면 계층 전체가 따라 올라온다.
-    from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
-
-    try:
-        st.session_state.pop(HOME_FIGURE_CACHE_KEY, None)
-    except Exception:  # noqa: BLE001 - 세션이 없는 자리(스크립트·테스트)에서는 비울 것도 없다
-        return

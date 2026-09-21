@@ -39,6 +39,31 @@ STANDARD_TARGET_DETAIL_LEVEL_KEY = "standard_target_detail_level"
 STANDARD_TARGET_OUTPUT_METRIC_KEY = "standard_target_output_metric"
 
 
+def seed_threshold_defaults() -> None:
+    """판정 기준 두 칸의 기본값을 아직 비어 있을 때만 세션에 심는다.
+
+    HOME 과 Static Capa 가 같은 세션 키를 공유한다. 어느 쪽을 먼저 열든 같은 값에서
+    출발해야 하므로 심는 절차도 키·기본값 옆인 여기 한 곳에 둔다.
+    """
+    if SECURE_THRESHOLD_KEY not in st.session_state:
+        st.session_state[SECURE_THRESHOLD_KEY] = DEFAULT_SECURE_THRESHOLD_PERCENT
+    if WARNING_THRESHOLD_KEY not in st.session_state:
+        st.session_state[WARNING_THRESHOLD_KEY] = DEFAULT_WARNING_THRESHOLD_PERCENT
+
+
+def session_threshold(key: str, default_percent: float) -> float:
+    """세션의 판정 기준(%)을 비율로 바꾼다. 아직 아무도 위젯을 그리지 않았으면 기본값이다.
+
+    `_session_number` 와 달리 값이 이상해도 예외를 던지지 않는다. 저장을 막아야 하는
+    자리와 달리, 결과를 **읽어서 그리기만 하는** 화면이 기준 한 칸 때문에 멈추면 안 된다.
+    """
+    value = st.session_state.get(key, default_percent)
+    try:
+        return float(value) / 100.0
+    except (TypeError, ValueError):
+        return default_percent / 100.0
+
+
 def capture_scenario_preset(reference_tables: Mapping[str, pd.DataFrame]) -> ScenarioPreset:
     """Build a validated persistent preset from the current user session."""
     start_month, end_month = _current_month_range()

@@ -70,10 +70,10 @@ from capa_simulation.persistence.cache import (
 )
 from capa_simulation.scenario_activation import active_persisted_scenario_id
 from capa_simulation.scenario_preset_state import (
-    DEFAULT_SECURE_THRESHOLD_PERCENT,
-    DEFAULT_WARNING_THRESHOLD_PERCENT,
+    PROCESS_SELECTION_KEY,
     SECURE_THRESHOLD_KEY,
     WARNING_THRESHOLD_KEY,
+    seed_threshold_defaults,
 )
 from capa_simulation.scenario_state import (
     ensure_active_scenario,
@@ -83,6 +83,7 @@ from capa_simulation.services.advance_load import (
     apply_advance_to_securement,
     apply_advance_to_wafer,
     build_advance_load_ratio,
+    revert_advance_from_securement,
     unapplicable_advance_months,
 )
 from capa_simulation.services.dashboard import (
@@ -389,32 +390,31 @@ process_options = sorted(
 applied_key_processes = [
     process for process in key_process_profile.processes if process in set(process_options)
 ]
-process_selection_key = "dashboard_bottleneck_process_selection"
-process_dialog_draft_key = "dashboard_bottleneck_process_dialog_draft"
-process_dialog_editor_key = "dashboard_bottleneck_process_dialog_editor"
-process_seen_key = "dashboard_bottleneck_process_seen"
-if process_selection_key not in st.session_state:
+PROCESS_DIALOG_DRAFT_KEY = "dashboard_bottleneck_process_dialog_draft"
+PROCESS_DIALOG_EDITOR_KEY = "dashboard_bottleneck_process_dialog_editor"
+PROCESS_SEEN_KEY = "dashboard_bottleneck_process_seen"
+if PROCESS_SELECTION_KEY not in st.session_state:
     # 예전 사이드바 토글 키(dashboard_bottleneck_process_{공정})를 읽던 이관 코드였다.
     # 그 토글은 70ad6d0 에서 지워져 항상 기본값 True — 곧 전체 목록이다.
-    st.session_state[process_selection_key] = list(process_options)
+    st.session_state[PROCESS_SELECTION_KEY] = list(process_options)
 else:
-    saved_processes = st.session_state[process_selection_key]
+    saved_processes = st.session_state[PROCESS_SELECTION_KEY]
     if isinstance(saved_processes, list):
         # 저장된 것은 **포함 목록**이라 "사용자가 끈 공정" 과 "처음 보는 공정" 이 구분되지
         # 않는다. 직전 실행의 옵션 집합을 함께 들고 있다가, 그때 없던 공정만 새 공정으로
         # 보아 포함한다. 시나리오를 바꾸거나 과거 구간을 넣어 공정이 늘었을 때 그것들이
         # 조용히 빠지면 B/N 이 틀린다.
-        st.session_state[process_selection_key] = resolve_included_processes(
+        st.session_state[PROCESS_SELECTION_KEY] = resolve_included_processes(
             saved_processes,
             process_options,
-            st.session_state.get(process_seen_key),
+            st.session_state.get(PROCESS_SEEN_KEY),
         )
-st.session_state[process_seen_key] = list(process_options)
+st.session_state[PROCESS_SEEN_KEY] = list(process_options)
 
 
 def set_process_dialog_selection(processes: list[str]) -> None:
-    st.session_state[process_dialog_draft_key] = list(processes)
-    st.session_state.pop(process_dialog_editor_key, None)
+    st.session_state[PROCESS_DIALOG_DRAFT_KEY] = list(processes)
+    st.session_state.pop(PROCESS_DIALOG_EDITOR_KEY, None)
 
 
 @st.dialog(
@@ -424,7 +424,7 @@ def set_process_dialog_selection(processes: list[str]) -> None:
     on_dismiss="rerun",
 )
 def show_process_filter_dialog(options: list[str]) -> None:
-    draft_selection = st.session_state.get(process_dialog_draft_key, [])
+    draft_selection = st.session_state.get(PROCESS_DIALOG_DRAFT_KEY, [])
     if not isinstance(draft_selection, list):
         draft_selection = []
     selected_set = {str(process) for process in draft_selection if process in options}
@@ -452,7 +452,7 @@ def show_process_filter_dialog(options: list[str]) -> None:
             "적용값 복원",
             icon=":material/undo:",
             on_click=set_process_dialog_selection,
-            args=(list(st.session_state[process_selection_key]),),
+            args=(list(st.session_state[PROCESS_SELECTION_KEY]),),
             key="dashboard_bottleneck_process_restore",
         )
 
@@ -485,7 +485,7 @@ def show_process_filter_dialog(options: list[str]) -> None:
     with st.form("dashboard_bottleneck_process_dialog_form", border=False):
         edited_selection = st.data_editor(
             selection_frame,
-            key=process_dialog_editor_key,
+            key=PROCESS_DIALOG_EDITOR_KEY,
             hide_index=True,
             disabled=[column for column in selection_frame.columns if column != "포함"],
             num_rows="fixed",
@@ -502,22 +502,17 @@ def show_process_filter_dialog(options: list[str]) -> None:
         )
     if apply_selection:
         included_mask = edited_selection["포함"].fillna(False).astype(bool)
-        st.session_state[process_selection_key] = (
+        st.session_state[PROCESS_SELECTION_KEY] = (
             edited_selection.loc[included_mask, "공정"].astype(str).tolist()
         )
-        st.session_state.pop(process_dialog_draft_key, None)
+        st.session_state.pop(PROCESS_DIALOG_DRAFT_KEY, None)
         st.rerun()
 
 
-included_processes = list(st.session_state[process_selection_key])
+included_processes = list(st.session_state[PROCESS_SELECTION_KEY])
 # 키와 기본값은 리비전 프리셋 소유다. Static Capa 본문의 같은 컨트롤과 세션 상태를
 # 공유하므로 여기서 문자열을 다시 적으면 조용히 끊어진다.
-secure_threshold_key = SECURE_THRESHOLD_KEY
-warning_threshold_key = WARNING_THRESHOLD_KEY
-if secure_threshold_key not in st.session_state:
-    st.session_state[secure_threshold_key] = DEFAULT_SECURE_THRESHOLD_PERCENT
-if warning_threshold_key not in st.session_state:
-    st.session_state[warning_threshold_key] = DEFAULT_WARNING_THRESHOLD_PERCENT
+seed_threshold_defaults()
 with st.sidebar.container(border=True, key=BOTTLENECK_BOX_KEY):
     st.markdown("#### :material/filter_alt: B/N 집계 공정")
     with st.form("dashboard_bottleneck_filter_form", border=False):
@@ -532,7 +527,7 @@ with st.sidebar.container(border=True, key=BOTTLENECK_BOX_KEY):
                 label_visibility="collapsed",
                 min_value=0.0,
                 step=0.1,
-                key=secure_threshold_key,
+                key=SECURE_THRESHOLD_KEY,
                 persist_state="session",
                 help=(
                     "확보 기준 (%) — 이 값을 넘으면 확보, 경고 기준과 이 값 사이는 "
@@ -545,7 +540,7 @@ with st.sidebar.container(border=True, key=BOTTLENECK_BOX_KEY):
                 label_visibility="collapsed",
                 min_value=0.0,
                 step=0.1,
-                key=warning_threshold_key,
+                key=WARNING_THRESHOLD_KEY,
                 persist_state="session",
                 help=(
                     "경고 기준 (%) — 이 값 미만은 부족, 이 값과 확보 기준 사이는 경고로 판정합니다."
@@ -652,17 +647,9 @@ if cached_figures is None:
         monthly_wafer,
         monthly_bottlenecks,
     )
-    # 선행 전후를 한 그림에 함께 그리려면 기존값이 있어야 한다. 순위는 선행에 따라 바뀌지
-    # 않으므로(월마다 같은 수를 곱한다) B/N 공정은 그대로 두고 확보율만 되돌린다.
-    #
-    # 나누는 것은 `확보율` 이 맞다. 실행 Capa 반영은 선행보다 **앞**에서 끝나므로 여기서
-    # 되돌리는 것은 곱셈 한 겹뿐이다 — 선행 전 값은 「실행까지 반영된 원데이터」다.
     baseline_lob_summary: pd.DataFrame | None = None
     if advance_ratio is not None:
-        baseline_bottlenecks = monthly_bottlenecks.copy()
-        baseline_bottlenecks["확보율"] = monthly_bottlenecks["확보율"] / baseline_bottlenecks[
-            "생산계획년월"
-        ].map(advance_ratio.set_index("생산계획년월")["변동률"])
+        baseline_bottlenecks = revert_advance_from_securement(monthly_bottlenecks, advance_ratio)
         baseline_lob_summary = build_production_lob_summary(
             baseline_density,
             baseline_wafer,

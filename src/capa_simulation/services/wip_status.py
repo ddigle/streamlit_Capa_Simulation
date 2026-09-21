@@ -11,9 +11,11 @@ from typing import cast
 
 import pandas as pd
 
+from capa_simulation.services.frame_checks import assert_unique_keys
 from capa_simulation.services.frame_contracts import (
     assert_one_demand_basis_per_process,
     normalize_demand_basis,
+    require_columns,
 )
 
 WIP_ROUTE_COLUMNS = ["공정", "STEP_SEQ", "제품정보", "소요기준"]
@@ -60,9 +62,7 @@ def step_sort_key(value: object) -> tuple[int, int, int, int, str]:
 
 def build_wip_route_scope(required_equipment: pd.DataFrame) -> pd.DataFrame:
     """Return unique process/STEP/product routes suitable for WIP DB queries."""
-    missing = [column for column in WIP_ROUTE_COLUMNS if column not in required_equipment.columns]
-    if missing:
-        raise ValueError(f"재공 경로 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(required_equipment, WIP_ROUTE_COLUMNS, "재공 경로")
 
     result = required_equipment[WIP_ROUTE_COLUMNS].copy()
     for column in WIP_ROUTE_COLUMNS:
@@ -105,9 +105,7 @@ def aggregate_weekly_product_standard(weekly_target: pd.DataFrame) -> pd.DataFra
         "RUN_DAY",
         "가용대수",
     ]
-    missing = [column for column in required if column not in weekly_target.columns]
-    if missing:
-        raise ValueError(f"표준 목표 Capa 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(weekly_target, required, "표준 목표 Capa")
     if weekly_target.empty:
         return pd.DataFrame(
             columns=[
@@ -304,9 +302,7 @@ def build_wip_history_demo(
 
 
 def _prepare_daily_standard(data: pd.DataFrame) -> pd.DataFrame:
-    missing = [column for column in DAILY_STANDARD_COLUMNS if column not in data.columns]
-    if missing:
-        raise ValueError(f"일 표준 가능량 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(data, DAILY_STANDARD_COLUMNS, "일 표준 가능량")
     result = data[DAILY_STANDARD_COLUMNS].copy()
     if result.empty:
         return result
@@ -329,10 +325,7 @@ def _prepare_daily_standard(data: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("일 표준 가능량은 0 이상의 숫자 또는 빈값이어야 합니다.")
     result["일 표준 가능량"] = numeric.astype("float64")
     keys = ["일자", "공정", "제품정보", "소요기준"]
-    duplicated = result.duplicated(keys, keep=False)
-    if duplicated.any():
-        examples = result.loc[duplicated, keys].drop_duplicates().head(5).to_dict("records")
-        raise ValueError(f"일 표준 가능량의 연결 키가 중복되었습니다: {examples}")
+    assert_unique_keys(result, keys, "일 표준 가능량의 연결 키가")
     return result
 
 

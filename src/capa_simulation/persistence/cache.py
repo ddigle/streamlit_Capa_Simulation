@@ -1,10 +1,15 @@
-# Purpose: Streamlit cache boundary for the shared DuckDB repository configuration.
+# Purpose: 시나리오 스냅샷과 시나리오 독립 공용 프로필의 Streamlit 캐시 경계다.
 
-"""Streamlit cache boundary for the shared DuckDB repository configuration."""
+"""시뮬레이션 DuckDB 읽기의 Streamlit 캐시 경계.
 
-from datetime import date, datetime
+저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 아홉 종
+(표시순서·공정 표시명·비교 시나리오·선행·Summary 공지·Top5 대역·주요공정·실행 Capa·
+과거 구간)을 여기서만 캐시한다.
+"""
+
+from dataclasses import fields
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import pandas as pd
 import streamlit as st
@@ -28,118 +33,22 @@ from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.past_data import past_table_to_csv
 
 
-class _ScenarioSummaryPayload(TypedDict):
-    scenario_id: str
-    dataset_id: str
-    scenario_name: str
-    source_simulation_code: str
-    source_simulation_name: str
-    source_type: str
-    status: str
-    active_revision_id: str
-    active_revision_no: int
-    created_at: datetime
-    updated_at: datetime
-
-
-class _RevisionSummaryPayload(TypedDict):
-    revision_id: str
-    scenario_id: str
-    revision_no: int
-    revision_name: str
-    parent_revision_id: str | None
-    note: str | None
-    reference_hash: str
-    created_at: datetime
-
-
-class _ScenarioPresetPayload(TypedDict):
-    start_month: int
-    end_month: int
-    included_processes: tuple[str, ...]
-    secure_threshold: float
-    warning_threshold: float
-    schema_version: int
-    standard_target_processes: tuple[str, ...]
-    standard_target_start_date: date | None
-    standard_target_end_date: date | None
-    standard_target_show_detail: bool
-    standard_target_detail_level: str
-    standard_target_output_metric: str
-
-
 class _ScenarioSnapshotPayload(TypedDict):
-    scenario: _ScenarioSummaryPayload
-    revision: _RevisionSummaryPayload
-    preset: _ScenarioPresetPayload
+    scenario: dict[str, Any]
+    revision: dict[str, Any]
+    preset: dict[str, Any]
     tables: dict[str, pd.DataFrame]
 
 
-class _GlobalDisplayOrderPayload(TypedDict):
-    version: int
-    source: str
-    updated_at: datetime
-    rules: pd.DataFrame
+def _payload(model: object, cls: type[Any]) -> dict[str, Any]:
+    """모델 하나를 캐시에 실을 수 있는 평범한 dict 으로 옮긴다.
 
-
-class _GlobalProcessRenamePayload(TypedDict):
-    version: int
-    source: str
-    updated_at: datetime | None
-    rules: pd.DataFrame
-
-
-class _GlobalComparisonScenarioPayload(TypedDict):
-    version: int
-    source: str
-    updated_at: datetime | None
-    scenario_id: str | None
-    revision_id: str | None
-
-
-class _GlobalAdvanceLoadPayload(TypedDict):
-    version: int
-    source: str
-    updated_at: datetime | None
-    rows: pd.DataFrame
-
-
-class _GlobalSummaryNotePayload(TypedDict):
-    version: int
-    source: str
-    updated_at: datetime | None
-    note: str
-
-
-class _GlobalTop5BandPayload(TypedDict):
-    version: int
-    source: str
-    updated_at: datetime | None
-    min_rate: float
-    max_rate: float
-
-
-class _GlobalKeyProcessPayload(TypedDict):
-    version: int
-    source: str
-    updated_at: datetime | None
-    processes: tuple[str, ...]
-
-
-class _GlobalExecutionCapacityPayload(TypedDict):
-    version: int
-    source: str
-    updated_at: datetime | None
-    rows: pd.DataFrame
-
-
-class _GlobalPastDataPayload(TypedDict):
-    version: int
-    source: str
-    updated_at: datetime | None
-    monthly: pd.DataFrame
-    plan_detail: pd.DataFrame
-    securement: pd.DataFrame
+    필드 목록은 **이 모듈이 지금 import 한 클래스**에서 얻고 값은 인스턴스에서 `getattr`
+    로 읽는다. 핫리로드 뒤 옛 클래스의 인스턴스가 들어와도 그 클래스를 묻지 않으므로
+    캐시에 옛 클래스가 실리지 않는다. `asdict` 는 DataFrame 까지 깊은 복사하므로 쓰지
+    않는다.
+    """
+    return {field.name: getattr(model, field.name) for field in fields(cls) if field.init}
 
 
 @st.cache_resource
@@ -154,47 +63,10 @@ def get_scenario_repository(database_path: str) -> DuckDBScenarioRepository:
 
 def _snapshot_to_payload(snapshot: ScenarioSnapshot) -> _ScenarioSnapshotPayload:
     """Detach cache data from reload-sensitive application model instances."""
-    scenario = snapshot.scenario
-    revision = snapshot.revision
-    preset = snapshot.preset
     return {
-        "scenario": {
-            "scenario_id": scenario.scenario_id,
-            "dataset_id": scenario.dataset_id,
-            "scenario_name": scenario.scenario_name,
-            "source_simulation_code": scenario.source_simulation_code,
-            "source_simulation_name": scenario.source_simulation_name,
-            "source_type": scenario.source_type,
-            "status": scenario.status,
-            "active_revision_id": scenario.active_revision_id,
-            "active_revision_no": scenario.active_revision_no,
-            "created_at": scenario.created_at,
-            "updated_at": scenario.updated_at,
-        },
-        "revision": {
-            "revision_id": revision.revision_id,
-            "scenario_id": revision.scenario_id,
-            "revision_no": revision.revision_no,
-            "revision_name": revision.revision_name,
-            "parent_revision_id": revision.parent_revision_id,
-            "note": revision.note,
-            "reference_hash": revision.reference_hash,
-            "created_at": revision.created_at,
-        },
-        "preset": {
-            "start_month": preset.start_month,
-            "end_month": preset.end_month,
-            "included_processes": preset.included_processes,
-            "secure_threshold": preset.secure_threshold,
-            "warning_threshold": preset.warning_threshold,
-            "schema_version": preset.schema_version,
-            "standard_target_processes": preset.standard_target_processes,
-            "standard_target_start_date": preset.standard_target_start_date,
-            "standard_target_end_date": preset.standard_target_end_date,
-            "standard_target_show_detail": preset.standard_target_show_detail,
-            "standard_target_detail_level": preset.standard_target_detail_level,
-            "standard_target_output_metric": preset.standard_target_output_metric,
-        },
+        "scenario": _payload(snapshot.scenario, ScenarioSummary),
+        "revision": _payload(snapshot.revision, RevisionSummary),
+        "preset": _payload(snapshot.preset, ScenarioPreset),
         "tables": dict(snapshot.tables),
     }
 
@@ -233,25 +105,14 @@ def load_scenario_plan(database_path: str, revision_id: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _load_global_display_order_payload(database_path: str) -> _GlobalDisplayOrderPayload:
+def _load_global_display_order_payload(database_path: str) -> dict[str, Any]:
     profile = get_scenario_repository(database_path).load_global_display_order()
-    return {
-        "version": profile.version,
-        "source": profile.source,
-        "updated_at": profile.updated_at,
-        "rules": profile.rules,
-    }
+    return _payload(profile, GlobalDisplayOrder)
 
 
 def load_global_display_order(database_path: str) -> GlobalDisplayOrder:
     """Share the display order without caching its reload-sensitive model class."""
-    payload = _load_global_display_order_payload(database_path)
-    return GlobalDisplayOrder(
-        version=payload["version"],
-        source=payload["source"],
-        updated_at=payload["updated_at"],
-        rules=payload["rules"],
-    )
+    return GlobalDisplayOrder(**_load_global_display_order_payload(database_path))
 
 
 def clear_global_display_order_cache() -> None:
@@ -266,51 +127,25 @@ def clear_scenario_snapshot_cache() -> None:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _load_global_process_rename_payload(database_path: str) -> _GlobalProcessRenamePayload:
+def _load_global_process_rename_payload(database_path: str) -> dict[str, Any]:
     profile = get_scenario_repository(database_path).load_global_process_rename()
-    return {
-        "version": profile.version,
-        "source": profile.source,
-        "updated_at": profile.updated_at,
-        "rules": profile.rules,
-    }
+    return _payload(profile, GlobalProcessRename)
 
 
 def load_global_process_rename(database_path: str) -> GlobalProcessRename:
     """Share the process display-name profile without caching its model class."""
-    payload = _load_global_process_rename_payload(database_path)
-    return GlobalProcessRename(
-        version=payload["version"],
-        source=payload["source"],
-        updated_at=payload["updated_at"],
-        rules=payload["rules"],
-    )
+    return GlobalProcessRename(**_load_global_process_rename_payload(database_path))
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _load_global_comparison_scenario_payload(
-    database_path: str,
-) -> _GlobalComparisonScenarioPayload:
+def _load_global_comparison_scenario_payload(database_path: str) -> dict[str, Any]:
     profile = get_scenario_repository(database_path).load_global_comparison_scenario()
-    return {
-        "version": profile.version,
-        "source": profile.source,
-        "updated_at": profile.updated_at,
-        "scenario_id": profile.scenario_id,
-        "revision_id": profile.revision_id,
-    }
+    return _payload(profile, GlobalComparisonScenario)
 
 
 def load_global_comparison_scenario(database_path: str) -> GlobalComparisonScenario:
     """Share the comparison-target profile without caching its model class."""
-    payload = _load_global_comparison_scenario_payload(database_path)
-    return GlobalComparisonScenario(
-        version=payload["version"],
-        source=payload["source"],
-        updated_at=payload["updated_at"],
-        scenario_id=payload["scenario_id"],
-        revision_id=payload["revision_id"],
-    )
+    return GlobalComparisonScenario(**_load_global_comparison_scenario_payload(database_path))
 
 
 def clear_global_comparison_scenario_cache() -> None:
@@ -323,47 +158,25 @@ def clear_global_comparison_scenario_cache() -> None:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _load_global_advance_load_payload(database_path: str) -> _GlobalAdvanceLoadPayload:
+def _load_global_advance_load_payload(database_path: str) -> dict[str, Any]:
     profile = get_scenario_repository(database_path).load_global_advance_load()
-    return {
-        "version": profile.version,
-        "source": profile.source,
-        "updated_at": profile.updated_at,
-        "rows": profile.rows,
-    }
+    return _payload(profile, GlobalAdvanceLoad)
 
 
 def load_global_advance_load(database_path: str) -> GlobalAdvanceLoad:
     """Share the advance-load profile without caching its model class."""
-    payload = _load_global_advance_load_payload(database_path)
-    return GlobalAdvanceLoad(
-        version=payload["version"],
-        source=payload["source"],
-        updated_at=payload["updated_at"],
-        rows=payload["rows"],
-    )
+    return GlobalAdvanceLoad(**_load_global_advance_load_payload(database_path))
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _load_global_summary_note_payload(database_path: str) -> _GlobalSummaryNotePayload:
+def _load_global_summary_note_payload(database_path: str) -> dict[str, Any]:
     profile = get_scenario_repository(database_path).load_global_summary_note()
-    return {
-        "version": profile.version,
-        "source": profile.source,
-        "updated_at": profile.updated_at,
-        "note": profile.note,
-    }
+    return _payload(profile, GlobalSummaryNote)
 
 
 def load_global_summary_note(database_path: str) -> GlobalSummaryNote:
     """Share the HOME summary notice without caching its model class."""
-    payload = _load_global_summary_note_payload(database_path)
-    return GlobalSummaryNote(
-        version=payload["version"],
-        source=payload["source"],
-        updated_at=payload["updated_at"],
-        note=payload["note"],
-    )
+    return GlobalSummaryNote(**_load_global_summary_note_payload(database_path))
 
 
 def clear_global_summary_note_cache() -> None:
@@ -376,27 +189,14 @@ def clear_global_summary_note_cache() -> None:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _load_global_top5_band_payload(database_path: str) -> _GlobalTop5BandPayload:
+def _load_global_top5_band_payload(database_path: str) -> dict[str, Any]:
     profile = get_scenario_repository(database_path).load_global_top5_band()
-    return {
-        "version": profile.version,
-        "source": profile.source,
-        "updated_at": profile.updated_at,
-        "min_rate": profile.min_rate,
-        "max_rate": profile.max_rate,
-    }
+    return _payload(profile, GlobalTop5Band)
 
 
 def load_global_top5_band(database_path: str) -> GlobalTop5Band:
     """Share the Top 5 band without caching its model class."""
-    payload = _load_global_top5_band_payload(database_path)
-    return GlobalTop5Band(
-        version=payload["version"],
-        source=payload["source"],
-        updated_at=payload["updated_at"],
-        min_rate=payload["min_rate"],
-        max_rate=payload["max_rate"],
-    )
+    return GlobalTop5Band(**_load_global_top5_band_payload(database_path))
 
 
 def clear_global_top5_band_cache() -> None:
@@ -409,25 +209,14 @@ def clear_global_top5_band_cache() -> None:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _load_global_key_process_payload(database_path: str) -> _GlobalKeyProcessPayload:
+def _load_global_key_process_payload(database_path: str) -> dict[str, Any]:
     profile = get_scenario_repository(database_path).load_global_key_process()
-    return {
-        "version": profile.version,
-        "source": profile.source,
-        "updated_at": profile.updated_at,
-        "processes": profile.processes,
-    }
+    return _payload(profile, GlobalKeyProcess)
 
 
 def load_global_key_process(database_path: str) -> GlobalKeyProcess:
     """Share the key-process list without caching its model class."""
-    payload = _load_global_key_process_payload(database_path)
-    return GlobalKeyProcess(
-        version=payload["version"],
-        source=payload["source"],
-        updated_at=payload["updated_at"],
-        processes=payload["processes"],
-    )
+    return GlobalKeyProcess(**_load_global_key_process_payload(database_path))
 
 
 def clear_global_key_process_cache() -> None:
@@ -440,53 +229,25 @@ def clear_global_key_process_cache() -> None:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _load_global_execution_capacity_payload(
-    database_path: str,
-) -> _GlobalExecutionCapacityPayload:
+def _load_global_execution_capacity_payload(database_path: str) -> dict[str, Any]:
     profile = get_scenario_repository(database_path).load_global_execution_capacity()
-    return {
-        "version": profile.version,
-        "source": profile.source,
-        "updated_at": profile.updated_at,
-        "rows": profile.rows,
-    }
+    return _payload(profile, GlobalExecutionCapacity)
 
 
 def load_global_execution_capacity(database_path: str) -> GlobalExecutionCapacity:
     """Share the execution-capacity profile without caching its model class."""
-    payload = _load_global_execution_capacity_payload(database_path)
-    return GlobalExecutionCapacity(
-        version=payload["version"],
-        source=payload["source"],
-        updated_at=payload["updated_at"],
-        rows=payload["rows"],
-    )
+    return GlobalExecutionCapacity(**_load_global_execution_capacity_payload(database_path))
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _load_global_past_data_payload(database_path: str) -> _GlobalPastDataPayload:
+def _load_global_past_data_payload(database_path: str) -> dict[str, Any]:
     profile = get_scenario_repository(database_path).load_global_past_data()
-    return {
-        "version": profile.version,
-        "source": profile.source,
-        "updated_at": profile.updated_at,
-        "monthly": profile.monthly,
-        "plan_detail": profile.plan_detail,
-        "securement": profile.securement,
-    }
+    return _payload(profile, GlobalPastData)
 
 
 def load_global_past_data(database_path: str) -> GlobalPastData:
     """Share the past-period profile without caching its model class."""
-    payload = _load_global_past_data_payload(database_path)
-    return GlobalPastData(
-        version=payload["version"],
-        source=payload["source"],
-        updated_at=payload["updated_at"],
-        monthly=payload["monthly"],
-        plan_detail=payload["plan_detail"],
-        securement=payload["securement"],
-    )
+    return GlobalPastData(**_load_global_past_data_payload(database_path))
 
 
 @st.cache_data(show_spinner=False, max_entries=8)

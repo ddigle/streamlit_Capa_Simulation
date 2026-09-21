@@ -17,7 +17,14 @@ import duckdb
 import pandas as pd
 
 from capa_simulation.persistence import sync_state
-from capa_simulation.persistence._sql_helpers import as_datetime, connect
+from capa_simulation.persistence._sql_helpers import (
+    as_datetime,
+    as_int,
+    connect,
+    hash_frame,
+    insert_by_name,
+    transaction,
+)
 from capa_simulation.persistence.equipment_migration_runner import apply_equipment_migrations
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
@@ -128,9 +135,9 @@ class DuckDBEquipmentRepository:
         )
         prepared_downtime = prepare_downtime_for_prepared_equipment(downtime, prepared_equipment)
         normalized_note = note.strip() if note and note.strip() else None
-        baseline_hash = _frame_hash(prepared_baseline)
-        equipment_hash = _frame_hash(prepared_equipment)
-        downtime_hash = _frame_hash(prepared_downtime)
+        baseline_hash = hash_frame(prepared_baseline)
+        equipment_hash = hash_frame(prepared_equipment)
+        downtime_hash = hash_frame(prepared_downtime)
         revision_id = str(uuid4())
         with self._write_transaction() as connection:
             row = connection.execute(
@@ -159,12 +166,6 @@ class DuckDBEquipmentRepository:
             _insert_baseline(connection, revision_id, prepared_baseline)
             _insert_equipment(connection, revision_id, prepared_equipment)
             _insert_downtime(connection, revision_id, prepared_downtime)
-        return self.load_snapshot(revision_id)
-
-    def load_latest_snapshot(self) -> EquipmentSnapshot | None:
-        revision_id = self.latest_revision_id()
-        if revision_id is None:
-            return None
         return self.load_snapshot(revision_id)
 
     def latest_revision_id(self) -> str | None:
@@ -436,14 +437,8 @@ class DuckDBEquipmentRepository:
 
     @contextmanager
     def _write_transaction(self) -> Iterator[duckdb.DuckDBPyConnection]:
-        with _WRITE_LOCK, self._connect() as connection:
-            connection.execute("BEGIN TRANSACTION")
-            try:
-                yield connection
-                connection.execute("COMMIT")
-            except Exception:
-                connection.execute("ROLLBACK")
-                raise
+        with _WRITE_LOCK, self._connect() as connection, transaction(connection):
+            yield connection
         # COMMIT 이 끝나고 연결이 닫힌 뒤에만 표시한다. `sync_state` 는 등록되지 않은
         # 환경에서 아무 파일도 만들지 않으므로 개발 PC·CI 동작은 그대로다.
         sync_state.mark_dirty(self._database_path)
@@ -682,7 +677,13 @@ def _insert_baseline(
             "비고": "note",
         }
     )
-    _insert_snapshot(connection, "equipment_ops.baseline_snapshot", revision_id, incoming)
+    _insert_snapshot(
+        connection,
+        schema="equipment_ops",
+        table_name="baseline_snapshot",
+        revision_id=revision_id,
+        frame=incoming,
+    )
 
 
 def _insert_equipment(
@@ -727,9 +728,10 @@ def _insert_equipment(
     )
     _insert_snapshot(
         connection,
-        "equipment_ops.equipment_master_snapshot",
-        revision_id,
-        incoming,
+        schema="equipment_ops",
+        table_name="equipment_master_snapshot",
+        revision_id=revision_id,
+        frame=incoming,
     )
 
 
@@ -750,14 +752,17 @@ def _insert_downtime(
     )
     _insert_snapshot(
         connection,
-        "equipment_ops.downtime_schedule_snapshot",
-        revision_id,
-        incoming,
+        schema="equipment_ops",
+        table_name="downtime_schedule_snapshot",
+        revision_id=revision_id,
+        frame=incoming,
     )
 
 
 def _insert_snapshot(
     connection: duckdb.DuckDBPyConnection,
+    *,
+    schema: str,
     table_name: str,
     revision_id: str,
     frame: pd.DataFrame,
@@ -767,37 +772,16 @@ def _insert_snapshot(
     incoming = frame.copy()
     incoming.insert(0, "source_row_no", range(1, len(incoming) + 1))
     incoming.insert(0, "revision_id", revision_id)
-    view_name = f"_incoming_{uuid4().hex}"
-    connection.register(view_name, incoming)
-    try:
-        connection.execute(f"INSERT INTO {table_name} BY NAME SELECT * FROM {view_name}")
-    finally:
-        connection.unregister(view_name)
-
-
-def _frame_hash(frame: pd.DataFrame) -> str:
-    digest = hashlib.sha256()
-    digest.update("\x1f".join(str(column) for column in frame.columns).encode("utf-8"))
-    digest.update(pd.util.hash_pandas_object(frame, index=False).to_numpy(dtype="uint64").tobytes())
-    return digest.hexdigest()
+    insert_by_name(connection, schema=schema, table_name=table_name, frame=incoming)
 
 
 def _revision_summary(row: Sequence[object]) -> EquipmentRevisionSummary:
-    created_at = row[6]
-    if not isinstance(created_at, datetime):
-        raise TypeError("DuckDB 설비 이력 시각이 datetime이 아닙니다.")
     return EquipmentRevisionSummary(
         revision_id=str(row[0]),
-        revision_no=_as_int(row[1], "리비전 번호"),
+        revision_no=as_int(row[1], "리비전 번호"),
         note=str(row[2]) if row[2] is not None else None,
-        baseline_row_count=_as_int(row[3], "기존 보유대수 행 수"),
-        equipment_row_count=_as_int(row[4], "호기 마스터 행 수"),
-        downtime_row_count=_as_int(row[5], "비가동 일정 행 수"),
-        created_at=created_at,
+        baseline_row_count=as_int(row[3], "기존 보유대수 행 수"),
+        equipment_row_count=as_int(row[4], "호기 마스터 행 수"),
+        downtime_row_count=as_int(row[5], "비가동 일정 행 수"),
+        created_at=as_datetime(row[6]),
     )
-
-
-def _as_int(value: object, label: str) -> int:
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise TypeError(f"DuckDB {label}가 정수가 아닙니다.")
-    return value

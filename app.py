@@ -74,7 +74,7 @@ heartbeat_if_managed()
 with pinned_connections(DUCKDB_PATH):
     try:
         bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
-    except Exception as exc:  # noqa: BLE001 - 어떤 실패든 원인을 읽을 수 있게 바꿔야 한다
+    except Exception as exc:  # 어떤 실패든 원인을 읽을 수 있게 바꿔야 한다
         # DuckDB 파일은 프로세스 배타 잠금이다. 서버가 이미 떠 있는데 한 번 더 실행하면
         # 화면이 한 줄도 그려지기 전에 예외가 그대로 노출되고, Windows 로캘 탓에 원본
         # 메시지의 한글이 깨져 나온다. 사용자가 원인을 알 방법이 없어 안내로 바꾼다.

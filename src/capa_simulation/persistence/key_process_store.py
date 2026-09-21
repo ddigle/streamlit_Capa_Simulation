@@ -5,12 +5,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from uuid import uuid4
 
 import duckdb
 import pandas as pd
 
-from capa_simulation.persistence._sql_helpers import quote
+from capa_simulation.persistence._sql_helpers import insert_by_name, insert_profile_header
 
 
 def load_global_key_process_rows(connection: duckdb.DuckDBPyConnection) -> list[str]:
@@ -37,13 +36,7 @@ def insert_global_key_process(
 
     캐시 키가 version 을 보므로 '전체 해제' 도 버전이 올라야 무효화된다.
     """
-    connection.execute(
-        """
-        INSERT INTO app_meta.global_key_process (profile_id, version, source)
-        VALUES (1, ?, ?)
-        """,
-        [version, source],
-    )
+    insert_profile_header(connection, "global_key_process", version=version, source=source)
     if not processes:
         return
     payload = pd.DataFrame(
@@ -53,11 +46,9 @@ def insert_global_key_process(
             "표시순서": range(len(processes)),
         }
     )
-    view_name = f"_incoming_global_key_process_{uuid4().hex}"
-    connection.register(view_name, payload)
-    try:
-        connection.execute(
-            f"INSERT INTO app_meta.global_key_process_item BY NAME SELECT * FROM {quote(view_name)}"
-        )
-    finally:
-        connection.unregister(view_name)
+    insert_by_name(
+        connection,
+        schema="app_meta",
+        table_name="global_key_process_item",
+        frame=payload,
+    )

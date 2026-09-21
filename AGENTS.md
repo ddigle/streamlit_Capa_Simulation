@@ -99,9 +99,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 
 - `app.py`
   - 유일한 실행 진입점이다.
-  - `st.navigation` 페이지 목록을 독립 `Capa Chatbot`·`시나리오 관리`, `Static Capa`와
-    `Dynamic Capa` 상위 영역으로 구분하고 공통 사이드바와 조회기간을 관리한다.
-  - `시나리오 관리`는 Capa Chatbot과 Static Capa 사이의 독립 사이드바 그룹에 배치한다.
+  - 페이지 목록과 사이드바 박스는 `navigation.py` 의 `SIDEBAR_GROUPS` 선언에서 받아
+    그리기만 한다. 박스 컨테이너 key 와 CSS 선택자도 같은 선언에서 나온다. 공통 사이드바와
+    조회기간은 여기서 관리한다.
+  - `시나리오 관리`는 Capa Chatbot과 Static Capa 사이의 독립 사이드바 그룹에 배치한다(그
+    순서도 `SIDEBAR_GROUPS` 가 정한다).
+  - 배치가 다른 둘만 손수 그린다 — 가운데·큰 글씨의 HOME 과, 조회 컨트롤 아래 맨 밑
+    상자(`ADMIN_BOX_KEY`)에 같은 층위로 세우는 `Admin Area`·VOC(`pages.admin_box_pages`)다.
   - 모든 페이지에 필요한 전역 위젯은 `navigation.run()`보다 앞에 둔다.
   - 새 세션은 최신 공식 리비전을 전역 위젯 생성 전에 활성화하고, 사이드바에는 시나리오·
     리비전 선택, 명시적 불러오기, 현재 편집본의 신규 리비전 저장과 활성·공식·미저장 상태를
@@ -111,9 +115,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/home.py`
   - 전체 계산 결과를 조합하는 HOME 대시보드다.
   - Plotly Figure 묶음을 사용자 세션에 캐시하고 렌더링은 fragment로 분리한다.
-  - 본문은 `Main`·`Preference` 두 탭이다. `Main` 이 계획·LOB·B/N Figure 여섯 개를 그리고
-    `Preference` 가 표시 기준(EDP 포함 여부·선행 투입 물량)을 받는다. 요약만 그리는 경로는
-    없다 — 여섯 개를 항상 만든다.
+  - 본문은 `Main`·`Preference`·`Past Data` 세 탭이다. `Main` 이 계획·LOB·B/N Figure 여덟
+    개를 그리고 `Preference` 가 표시 기준(EDP 포함 여부·선행 투입 물량)을 받으며
+    `Past Data` 가 과거 구간 세 표를 받는다(`components/past_data_management.py`). 요약만
+    그리는 경로는 없다 — 여덟 개를 항상 만든다.
   - **두 토글의 값은 계산보다 먼저 필요하고 위젯은 계산 뒤에 그려진다.** 페이지가
     `components/home_preference.py` 의 세션 키를 직접 읽고 위젯은 같은 키로 만든다. 키
     문자열을 두 곳에서 따로 적으면 조용히 끊어지므로 상수로 내보낸다.
@@ -304,14 +309,6 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     어차피 돈다. 막는 것은 월별 표로 펼치는 두 함수와 그 뒤의 CSV·Plotly 뿐이다.
   - 대당 Capa 제외 표는 `대당 Capa` 탭 하나가 그린다. 두 탭이 한 페이지에 오면서 같은 표를
     같은 파일명으로 두 번 내리게 돼 `소요대수` 쪽에서는 걷어냈다.
-- HOME `Preference` 의 `표시 기준` 에는 토글 둘이 나란히 있다. `EDP 포함` 은 기본 **끔**,
-  `Past Data 포함` 은 기본 **켬**이다. 끄면 공용 과거 프로필의 세 표를 **행만 비운
-  사본**으로 바꿔 아래 병합이 전부 무동작이 되게 한다 — 과거를 빼는 분기를 화면 코드
-  곳곳에 심지 않는다. 컬럼과 dtype 은 그대로 둔다(빈 프레임을 새로 만들면 병합·와이드
-  변환이 그 자리에서 깨진다). `version` 도 0 이 되어 Figure 캐시 키가 갈리므로 켠 화면과
-  끈 화면이 같은 칸을 나눠 쓰지 않는다. 토글의 기본값은 `app_pages/home.py` 의 세션
-  기본값과 **같아야 한다** — 갈라지면 첫 렌더와 토글을 처음 누른 뒤가 다른 화면이 된다.
-  값 자체는 지우지 않으므로 `Past Data` 탭은 토글과 무관하게 계속 편집할 수 있다.
 - `app_pages/capa_chatbot.py`
   - 활성 시나리오의 Capa 데이터 조회와 부족 공정 분석을 위한 대화형 화면이다.
   - **LLM 을 붙이기 전에 정할 것은 모델이 아니라 답변의 모양이다.** 결론 · 근거 표 ·
@@ -342,7 +339,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     링크는 공용 `components/page_link.py` 를 쓴다.
   - 현재 수치는 결정론적 데모이고 샘플 스위치로 끌 수 있다.
 - `app_pages/available_equipment_status.py`
-  - `대시보드`, `설비 데이터·이력 관리` 탭을 제공한다.
+  - `Main`·`Preference`·`RawData` 세 탭이다(`stateful_tabs`, key `equipment_active_tab`).
   - 기존 보유대수, Qual 확정상태를 포함한 31컬럼 호기 마스터와 운영 비가동 일정을 DuckDB 불변 리비전으로
     저장하고 공정소분류별 주차 단위 총대수·가용대수·비가동대수와 상태를 집계한다.
   - 대시보드 조회 조건은 라인구분·활용구분·공정대분류·공정소분류 순으로 제공하며,
@@ -357,7 +354,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - Import 확정 시에는 해당 `*_EDITOR_KEY` 를 반드시 `pop` 한다. `st.data_editor` 의 세션
     상태는 값이 아니라 **행 인덱스 기준 delta** 라, 남은 옛 delta 가 새 프레임 위에 다시
     얹히면 Import 가 조용히 되돌려진다.
-  - 데이터·이력 관리 탭의 접힌 운영 지침에서 기존 보유대수·호기 마스터·비가동 일정의
+  - `RawData` 탭의 접힌 운영 지침에서 기존 보유대수·호기 마스터·비가동 일정의
     역할 구분, Import부터 리비전 저장까지의 절차와 적용 제한을 안내한다.
   - 대시보드에 **호기별 생애주기 일정 Gantt** 를 둔다. 상태 막대는 「지금 몇 대가 어느
     상태인가」를, Gantt 는 「언제 몇 대가 쓸 수 있게 되는가」를 답한다.
@@ -381,14 +378,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - Dynamic Capa의 Space 현황 페이지다.
   - `FAB 전체(C5 독립, C1~C4 연결) → 동별 층 → 층 상세 배치`의 3단계 Plotly 클릭 탐색을 제공한다.
   - 가용설비 현황의 최신 호기 리비전을 사용하고 설비별 X/Y 좌표와 X/Y 크기로 배치한다.
-  - 기준일의 생애주기 상태와 운영 비가동을 색으로 구분한다. 실제 층 이미지와 Space
-    Capa 연결은 미구현이다.
+  - 기준일의 생애주기 상태와 운영 비가동을 색으로 구분한다. 층 배경 도면은
+    `components/floor_layout_upload.py` 로 올려 `background_image` 로 깐다. Space Capa
+    연결은 미구현이다.
   - 호기 마스터가 비었을 때만 샘플 스위치가 뜬다. 실데이터가 있으면 끌 것이 없다.
   - 지정 기간의 단계 완료일을 호기별 전환 이벤트로 펼쳐 완료·예정 건수, 이전·전환 단계,
     전환일과 기준일 대비 일수를 조회하는 실행관리 현황을 제공한다.
 - `app_pages/admin_area.py`
   - 사이드바 맨 아래 자기 박스에 있는 관리 화면이다. 화면 표기·정렬순서 같은 운영 관리
-    설정을 탭으로 모은다. `Proc Rename` 과 `표시순서 관리` 두 탭이다.
+    설정을 탭으로 모은다. `Proc Rename`·`표시순서 관리`·`원천 품질` 세 탭이고 이름은
+    `TAB_NAMES` 에 모아 둔다. 세 번째는 `components/source_quality.py` 를 그린다.
   - 거래선 정렬은 따로 만들지 않는다. `표시순서 관리` 에 `분류컬럼 = Customer` 규칙을
     `부하량`·`PKG PLAN` 범위로 넣으면 걸린다 — `apply_display_order` 는 데이터에 없는
     분류컬럼 규칙을 건너뛰므로 같은 규칙이 `계획 세부수량 상세` 를 끈 화면에서는 아무
@@ -538,10 +537,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     화면마다 다른 색 체계로 보이면 판정이 흐려지기 때문이다. 주요 공정별 최초 부족 월을
     적는 `shortage_summary` 도 여기 있다. **두 축 모두 범주**여야 한다 — `"26.07"` 을
     숫자로 두면 월 칸이 실수 축에 눌려 붙는다.
-  - **HOME 의 `주요공정 확보율` 격자와는 다른 화면이다.** 이쪽은 `산출 결과` 안에서 66공정을
-    한 화면에 넣으려고 칸 폭을 Plotly 에 맡긴 반응형이고, HOME 쪽은
+  - **HOME 의 `주요공정 확보율` 격자와는 다른 화면이다.** 이쪽은 `산출 결과` 안에서 공정
+    전부를 한 화면에 넣으려고 칸 폭을 Plotly 에 맡긴 반응형이고, HOME 쪽은
     `home_figures.build_key_process_heatmap_figures` 가 100px 월 격자에 맞춰 직접 그린다.
     둘을 합치려 들면 한쪽의 칸 폭 계약이 깨진다. 공유하는 것은 **판정 경계의 뜻**뿐이다.
+- `src/capa_simulation/components/exclusion_table.py`
+  - 계산에서 제외된 기준정보 목록을 그리는 **단일 렌더러**다. `산출 결과` 의 두 제외
+    표(`제외 기준정보 확인`·`소요대수 제외 기준정보`)가 이 함수 하나로 같은 모양을 그린다.
+  - **화면은 표시명, 파일은 원본이다.** `st.dataframe` 에는 표시명을 입힌 복사본을 주고
+    CSV 에는 원본 공정명 프레임을 그대로 준다 — 이 표의 CSV 는 `Core_Data` 나 왕복 양식에서
+    원본을 찾아 고치는 데 쓴다.
+  - 입력 프레임은 캐시된 계산 결과의 `attrs` 유래라 **제자리에서 고치지 않는다.** 고치면
+    캐시가 오염된다.
 - `src/capa_simulation/components/exclusion_waterfall.py`
   - 후보 경로 → 사유별 차감 → 남은 경로. 사유의 순서는 `services/unit_capacity.py` 가
     실제로 걸러 내는 차례와 같아야 한다. 한 행이 두 사유에 걸리면 앞의 사유가 가져가므로
@@ -663,6 +670,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「조회·집계 설정」은 공통 위젯 생성 전에 대기 프리셋으로 복원한다. 세션 키 문자열과
     조회·집계 설정 기본값의 선언 자리는 `scenario_preset_state.py`·
     `persistence/models.py` 이며 페이지는 import 해서 쓴다.
+  - 판정 기준 기본값 심기(`seed_threshold_defaults`)와 %→비율 읽기(`session_threshold`)도
+    `scenario_preset_state.py` 가 소유한다. `session_threshold` 는 `_session_number` 와 달리
+    값이 이상해도 예외 없이 기본값으로 떨어진다 — 읽어서 그리기만 하는 화면이 기준 한 칸
+    때문에 멈추면 안 된다.
   - 새 세션에서는 최신 공식 리비전을 한 번 자동 활성화한다.
 - `src/capa_simulation/sync_boot.py`
   - `mode` 가 managed 일 때만 `sync_state` 에 두 DB 경로를 등록한다. 설정을 읽지 못하면
@@ -681,8 +692,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `unit_capacity.py`: Main/MI 환산 UPEH와 대당 Capa
 - `weighted_unit_capacity.py`: 중복되지 않은 원수요 부하량과 STEP별 소요대수 합으로
   공정별 대당 Capa를 만들며 기존 부하량 가중평균 조회 함수도 호환용으로 유지
-- `standard_target_capacity.py`: ER 제외 월간 공정별 대당 Capa의 일 환산, ISO 주차 캘린더,
-  수동 가용대수 표 계약과 주차별 일 표준 가능량
+- `standard_target_capacity.py`: ER 제외 월간 공정별 대당 Capa의 일 환산, 주차별 일 표준
+  가능량과 PKG 기준 역산(`add_pkg_equivalent_standard_target`). 주차 캘린더는
+  `iso_week_calendar.py`, 수동 가용대수 표 계약은 `weekly_availability_input.py` 를 쓴다
 - `route_step_editor.py`: MCP·STEP 고유 조합 수와 네 경로 테이블의 일괄 복제·삭제
 - `process_rename.py`: 공용 공정 표시명의 값 정규화(앞뒤 공백·U+00A0), 1:1 검증과
   CSV·붙여넣기 직렬화. **치환은 여기 없다** — 표시명을 실제로 갈아 끼우는 헬퍼는
@@ -690,11 +702,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `required_equipment.py`: RQ_REQB 경로 연결과 소요대수
 - `securement_rate.py`: 공정별 확보율과 경고·확보 기준별 최소 정수 추가 필요대수
 - `equipment_count.py`: 보유·대여·가용 설비대수 표
-- `equipment_availability.py`: 기존 보유대수, 31컬럼 호기 일정과 운영 비가동 검증,
-  월요일 시작 주차별 총대수·가용대수·비가동대수, 비가동 호기, Space 단계와 기간별 단계
-  전환 이벤트 원천. 설비 DB가 비어 있을 때 사용하는 개발용 Core Data 기반 30개 공정
-  보유대수 샘플과 호기 마스터가 비었을 때만 대시보드에 표시하는 단계별 임시 호기 샘플을
-  제공한다. 임시 호기와 비가동 샘플은 DB에 저장하지 않는다.
+- `equipment_availability.py`: 월요일 시작 주차별 총대수·가용대수·비가동대수, 호기별
+  생애주기 구간, 비가동 호기, Space 단계와 기간별 단계 전환 이벤트 원천. 입력 검증은
+  `equipment_validation.py` 의 `prepare_*` 를 불러 쓰고, 설비 DB가 비어 있을 때의 화면
+  샘플은 `equipment_samples.py` 가 갖는다 — 이 파일에는 둘 다 없다.
   주차 집계는 정규화한 설비·비가동 입력을 전체 기간에 재사용하고 주차별 공정 집계를
   `groupby`·`crosstab`으로 한 번에 만든다.
 - `equipment_csv.py`: 기존 보유대수·호기 마스터·비가동 일정 **세 표 모두**의 CSV 양식
@@ -718,9 +729,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `clipboard_table.py`, `reference_csv.py`: Excel에서 복사한 헤더 포함 TSV 표 파싱과
   입력 RQ Wide 표의 컬럼·분류행 동일성 검증. 다운로드 양식은 UTF-8 CSV로 유지한다.
 - `reference_transformer.py`: XLSB의 `Q_Core_Data`와 15개 Core 파생 Power Query를
-  pandas로 대체하고, 수동 입력 `RQ_DISPLAY_ORDER`를 검증한다. Core 파생 RQ의 동일
-  업무 키 값 충돌은 **값이 있는 첫 행**을 임시 적용해 전체 변환을 계속하며 테이블·업무 키·
-  후보값·선택값·원천행 번호가 포함된 충돌 보고서를 함께 반환한다.
+  pandas로 대체한다. 수동 입력 `RQ_DISPLAY_ORDER` 는 `display_order_editor` 의
+  `transform_display_order` 로 넘긴다. Core 파생 RQ의 동일 업무 키 값 충돌은 **값이 있는
+  첫 행**을 임시 적용해 전체 변환을 계속하며 테이블·업무 키·후보값·선택값·원천행 번호가
+  포함된 충돌 보고서를 함께 반환한다.
   `제품정보`의 원천값은 raw에 보존하고 RQ 파생 전 모든 언더바를 공백으로 바꾼 뒤 연속
   공백을 하나로 축약하여 BigDataQuery와 기존 화면 분류 키를 통일한다.
 - `core_data_pipeline.py`: CSV·BigDataQuery 공급자 결과를 동일한 정규화·RQ 변환
@@ -766,6 +778,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `frame_contracts.py`: 여러 서비스가 공유하는 필수 컬럼 검증과 업무 키 정규화를 단일
   정의한다. 소요기준(`WAFER`→`WF`)·Area_Name(`Main`·`MI`)·월(`YYYYMM`) 규칙이 여기 있다.
   계약이 서로 다른 것은 합치지 않는다.
+- `frame_checks.py`: 중복 연결 키 검사(`assert_unique_keys` — 겹친 키 조합을 최대 5건 함께
+  싣고, 주어와 조사는 호출부가 넘긴다)와 텍스트 키 strip(`strip_text_columns` — 제자리 변경)의
+  단일 정의. 본래 `frame_contracts.py` 에 있어야 할 같은 종류의 규칙이지만 그 파일이 병행
+  개발 주기의 단일 선언 지점(14-5)이라 임시로 여기 두었다. **다음 주기에 `frame_contracts.py`
+  로 합친다** — 그때까지 새 공용 검증을 여기에 더 쌓지 않는다.
 - `virtual_product.py`: 기존 제품의 기준정보를 새 제품 키로 복제해 가상 제품을 등록한다.
   제품 키(`제품정보`+`Stack`)를 가진 8개 테이블만 복제하고 공정 기준 테이블은 건드리지
   않는다. 계획 수량은 0으로 시작한다. 원본 계획을 복제하면 총 수요가 조용히 두 배가 된다.
@@ -808,11 +825,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 ### 화면 공통 계층
 
 - `src/capa_simulation/navigation.py`
-  - 사이드바 페이지 목록을 `PageSpec` 선언으로 관리하고 `st.Page` 묶음을 만든다.
-  - 페이지 추가·제목 변경은 여기서만 한다. 미구현 표기는 `IMPLEMENTING_SUFFIX` 하나를 쓴다.
+  - 사이드바 페이지 목록을 `PageSpec` 선언으로 관리하고 `st.Page` 묶음을 만든다. 최상위
+    박스는 `SIDEBAR_GROUPS`(`SidebarGroupSpec`), 맨 아래 관리 상자는 `ADMIN_AREA` 와
+    `ADMIN_BOX_PAGES` 가 선언한다 — 새 그룹도 여기 한 줄이면 끝나고 `app.py` 는 그 선언을
+    그린다.
+  - 페이지 추가·제목 변경은 여기서만 한다. 상태 접미는 `IMPLEMENTING_SUFFIX`(구현중)·
+    `DATA_PENDING_SUFFIX`(Data확보중) 둘이고, `page_header.py` 가 같은 상수로 배지를 만든다.
 - `src/capa_simulation/page_bootstrap.py`
   - 계산 페이지 공통 진입 절차다. 활성 리비전·표시순서·활성 시나리오·조회기간을 준비하고
     원천과 겹치는 유효 구간을 확정한다. 페이지는 `BOOTSTRAP_ERRORS` 를 잡는다.
+  - `date_range_value` 로 범위 날짜 입력의 세 반환 형태(두 날짜·한 날짜·`date` 하나)를,
+    `prune_list_selection` 으로 계산 결과가 옵션인 다중 선택의 옛 값을 페이지 공통으로
+    정리한다. 키 리터럴은 페이지가 소유하고 헬퍼는 변수로 받는다.
 - `src/capa_simulation/settings.py`, `sidebar_status.py`
   - 앱 이름·경로·조회기간 상수와 사이드바의 적용 조회기간 표시.
 - `src/capa_simulation/design/tokens.py`
@@ -839,8 +863,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     테마를 바꿔도 옛 그림이 뜬다. 프로세스 전역 캐시에는 색을 든 것이 없다(전수 확인).
   - `app.py` 가 **토큰을 하나라도 읽기 전에** `begin_run()` 을 부른다.
 - `src/capa_simulation/components/page_header.py`
-  - 모든 페이지의 제목·설명·상태 배지. `(구현중)` 은 제목에서 떼어 배지로 보여준다.
-    사이드바 라벨과 같은 문자열을 써야 하며 어긋나면 테스트가 잡는다.
+  - 모든 페이지의 제목·설명·상태 배지. 두 상태 접미(`(구현중)`·`(Data확보중)`)는 제목에서
+    떼어 배지로 보여준다. 사이드바 라벨과 같은 문자열을 써야 하며 어긋나면 테스트가 잡는다.
 - `src/capa_simulation/components/theme_toggle.py`
   - 헤더 오른쪽 **Deploy 바로 왼쪽**(`[data-testid="stToolbarActions"]`)에 밝게/어둡게
     버튼을 얹는다. Streamlit 1.63 에는 앱 안에서 테마를 바꾸는 공개 API 가 없다 —
@@ -879,6 +903,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/scenario_edit_bar.py`
   - 편집 페이지 상단의 "활성 시나리오 · 수정본 N" 과 원본 초기화 버튼.
     초기화할 때 함께 비울 세션 키는 페이지가 넘긴다.
+  - `source_token` 이 기준정보 버전·리비전·조회기간을 한 문자열로 묶고
+    `reset_editors_on_source_change` 가 원본이 바뀐 실행에서 편집기·임시 상태를 비운다.
+    토큰 세션 키 리터럴은 각 페이지가 소유한다(`load_conversion_source_token`·
+    `reference_data_source_token`).
 - `src/capa_simulation/components/roadmap_panel.py`
   - 업무 활용 목적·담당 부서별 Action Item·로드맵 한 줄을 **접어 둔 상자**(기본 닫힘)에
     그린다. Static Capa 와 Dynamic Capa 가 공유한다. 두 화면 모두 제목 바로 아래 첫
@@ -928,7 +956,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 표 제목·부가 설명·CSV 내보내기 한 줄. `st.download_button` 은 여기서만 부른다.
     라벨에 아이콘을 섞지 않고 `label` 인자를 쓴다. 어기면 테스트가 잡는다.
 - `src/capa_simulation/components/monthly_table_base.py`
-  - 두 월별 표가 공유하는 상수·텍스트 폭 계산과 고정 분류 + 스크롤 월 껍데기.
+  - 두 월별 표가 공유하는 상수·텍스트 폭 계산과 고정 분류 + 스크롤 월 껍데기. 분류 컬럼
+    폭(`classification_widths`)과 `go.Table` 두 벌 + 공통 layout 조립
+    (`build_split_table_figures`)도 여기 있다. 행 모델과 면색 규칙만 표마다 다르다.
 - `src/capa_simulation/components/scroll_shell.py`
   - 가로 스크롤 상자와 그 안의 고정 폭 캔버스. 월별 표·HOME·재공 현황이 함께 쓴다.
     컨테이너 key 가 `.st-key-<key>` 클래스가 되므로 이름을 바꾸면 CSS 가 끊어진다.
@@ -995,11 +1025,29 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/home_preference.py`
   - HOME `Preference` 탭과 `Capa LOB 현황` 제목 줄. 제목은 Plotly 주석이 아니라 여기서
     그린다 — 주석 안에는 위젯을 놓을 수 없어 「선행」 토글을 제목 옆에 둘 수 없었다.
+  - 탭 안의 편집기는 여섯이다 — 비교 시나리오 선택, 선행 투입 물량, `Summary 공지`,
+    Top5 대역, 주요공정, 실행 Capa. 모두 공용 프로필에 저장하고, 저장 상태를 적는 버전
+    캡션은 `profile_caption.py` 를 쓴다.
   - 선행 물량 저장은 **표에 보이는 달만** 갈아 끼운다(`merge_advance_load_edits`). 조회기간을
     좁힌 채 저장한 사람이 보이지 않는 달의 입력을 모르는 새 날리면 안 된다.
   - `Summary 공지` 는 **빈 문구도 저장한다.** 공지를 내리는 것도 결정이고, 그때도 version
     이 올라야 다른 세션의 캐시가 풀린다. 저장 화면은 「미저장」과 「내림」을 구분해
     보여 준다 — 화면에서는 둘 다 아무것도 뜨지 않지만 뜻이 다르다.
+  - `표시 기준` 에는 토글 둘이 나란히 있다. `EDP 포함` 은 기본 **끔**, `Past Data 포함` 은
+    기본 **켬**이다. 끄면 공용 과거 프로필의 세 표를 **행만 비운 사본**으로 바꿔 아래
+    병합이 전부 무동작이 되게 한다 — 과거를 빼는 분기를 화면 코드 곳곳에 심지 않는다.
+    컬럼과 dtype 은 그대로 둔다(빈 프레임을 새로 만들면 병합·와이드 변환이 그 자리에서
+    깨진다). `version` 도 0 이 되어 Figure 캐시 키가 갈리므로 켠 화면과 끈 화면이 같은 칸을
+    나눠 쓰지 않는다. 토글의 기본값은 `app_pages/home.py` 의 세션 기본값과 **같아야 한다**
+    — 갈라지면 첫 렌더와 토글을 처음 누른 뒤가 다른 화면이 된다. 값 자체는 지우지 않으므로
+    `Past Data` 탭은 토글과 무관하게 계속 편집할 수 있다.
+- `src/capa_simulation/components/profile_caption.py`
+  - 공용 프로필(`version`·`source`·`updated_at`)의 버전 캡션 한 줄을 만든다. 여덟 저장
+    화면이 같은 템플릿을 따로 적고 있어 한 곳만 고치면 화면끼리 문구가 갈렸다. `empty` 는
+    미저장 문구, `detail` 은 출처 **앞**(「3개 공정」), `suffix` 는 **맨 뒤**(「공지 중」)다.
+  - 모델을 import 하지 않는다. 읽기 전용 `@property` Protocol 로 세 필드만 요구한다 —
+    평범한 속성 주석은 불변이라 `GlobalDisplayOrder.updated_at: datetime` 이
+    `datetime | None` 에 맞지 않아 mypy strict 가 거절한다.
 - `src/capa_simulation/services/advance_load.py`
   - 선행 투입 물량 정규화와 월별 Capa 부하 변동률. `변동률 = 기존 계획 ÷ 선행 반영 계획`
     이고 확보율에 곱하고 Wafer 는 나눈다. 그래서 `계획 × 확보율` 인 Capa 가 **정확히
@@ -1008,6 +1056,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 선행 반영 계획이 0 이하가 되는 달은 변동률을 낼 수 없다. 그 달만 미적용으로 두고
     화면이 알린다 — 한 달의 과한 입력으로 대시보드 전체가 사라지면 어디가 잘못됐는지
     볼 수 없다.
+  - 역산(`revert_advance_from_securement`)도 여기다. 선행 전후를 한 그림에 그릴 때 선행
+    반영 확보율을 변동률로 **나눠** 선행 전 값을 되돌린다. 정방향과 달리 변동률 표에 없는
+    달을 1 로 채우지 않아 그 달은 결측이 된다 — 맞추는 것은 화면 출력이 바뀌는 별도 결정이다.
 - `src/capa_simulation/services/execution_capacity.py`
   - 실행 Capa 반영의 값 정규화와 확보율 증감 적용. `조정 확보율 = 기준 확보율 + 증감/100`
     (**퍼센트포인트 차감**)이고, 조정이 한 건도 없어도 `기준 확보율`·`확보율 증감`·
@@ -1063,8 +1114,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - flush 를 잊으면 테두리·격자·라벨이 통째로 빠져 화면에서 바로 드러난다.
     `tests/test_plotly_layout.py` 가 그 계약을 고정한다.
   - 표 행의 면색이 모두 같으면 칸마다 사각형을 그리지 않는다. 도형 수가 그대로 비용이다.
-- `src/capa_simulation/components/home_figures.py`, `home_rendering.py`, `home_dimensions.py`
-  - HOME 의 Figure 생성기 3종, 세션 Figure 캐시와 렌더링, LOB·상세 B/N 픽셀 치수.
+- `src/capa_simulation/components/home_figures.py`, `home_figure_common.py`, `home_lob_figures.py`,
+  `home_plan_detail_figures.py`, `home_key_process_figures.py`, `home_bottleneck_figures.py`,
+  `home_rendering.py`, `home_dimensions.py`
+  - Figure 생성 코드는 **가족별로 한 모듈씩**이다 — `home_lob_figures.py`(요약 LOB·Wafer·
+    B/N Top5), `home_plan_detail_figures.py`(계획 세부수량 표), `home_key_process_figures.py`
+    (주요공정 확보율 히트맵), `home_bottleneck_figures.py`(상세 B/N 공정). 넷을 넘나드는
+    조각 — 확보율 3색 판정 `capacity_status`, 실행 반영 hover 문구, 과거·연간 Total 면색,
+    paper 좌표 격자 크롬(`_grid_*`·`_paper_*`) — 은 `home_figure_common.py` 한 곳에 있다.
+    `securement_heatmap`·`decision_summary` 의 판정도 같은 `capacity_status` 를 본다.
+  - `home_figures.py` 는 **코드를 갖지 않는 import 파사드**다. `__all__` 에 적힌 공개 이름만
+    `from x import y as y` 로 다시 내보내므로, 가족 모듈이 더 쪼개져도 페이지·테스트의
+    import 한 줄이 바뀌지 않는다. 새 공개 이름을 만들면 파사드의 재수출과 `__all__` 도
+    같이 고친다.
+  - HOME 의 Figure 생성기 4종, 세션 Figure 캐시와 렌더링, LOB·상세 B/N 픽셀 치수.
   - 상세 B/N 은 `go.Table` 이 아니라 카테시안 xy 다. 월 오프셋은 `go.Bar` 의 `base`
     로 주고, hover 표적 막대·트랙 막대·확보율 막대·공정명 텍스트 trace 네 개만 쓴다.
     hover 표적은 `HIT_TARGET` 색으로 행 전체 높이를 덮어 칸 어디서나 툴팁이 뜨게 하고,
@@ -1087,11 +1150,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 네 구획의 제목 줄과 그 짝인 빈 줄은 `dashboard_title_row_style()` 이 높이를 못박는다.
     **한 줄이라도 빠지면 그 아래 구획 전부가 어긋나고, 증상은 그 구획이 아니라 아래
     구획에서 먼저 보인다.**
-  - **B/N Top 5 축의 위쪽 여유는 비율이 아니라 픽셀이다**(`TOP5_AXIS_HEADROOM_PX`).
+  - **B/N Top 5 축의 위쪽 여유는 비율이 아니라 픽셀이다**
+    (`home_dimensions.top5_axis_headroom_px(가장 긴 라벨 글자 수)`).
     세워 둔 확보율 라벨이 먹는 만큼만 비우고 남는 높이는 전부 막대가 쓴다. 예전의
     `봉우리 × 1.8` 은 위쪽 44% 를 늘 비웠는데, 확보율 구간을 상한에서 잘라 여러 달이 같은
     높이에 서면 그 띠가 그대로 드러난다. 라벨을 띄우는 `yshift` 와 여유 계산은 **같은
-    상수**를 본다 — 갈라지면 라벨이 비워 둔 자리 밖으로 나가 잘린다.
+    상수**(`home_dimensions.TOP5_RATE_LABEL_GAP_PX`)를 본다 — 갈라지면 라벨이 비워 둔 자리
+    밖으로 나가 잘린다.
   - 가로 스크롤은 **DB 계산 구간의 첫 달**에서 시작한다. 앞머리의 과거 칸 수
     (`leading_past_column_count`)를 픽셀로 바꿔 스크롤바에 넘긴다 — 왼쪽 끝은 지난
     이력이라 화면을 열자마자 보이는 것이 계획이 아니게 된다.
@@ -1136,13 +1201,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/past_data_store.py`: 공용 과거 구간 프로필 세 표의 조회·삽입 SQL
 - `persistence/preset_store.py`: 리비전 프리셋 저장·복원
 - `persistence/source_data_store.py`: 원천 Core Data raw 와 컬럼 프로파일
-- `persistence/summaries.py`: 조회 행을 요약 모델로 변환
-- `persistence/_sql_helpers.py`: 프레임 저장·조회와 값 변환 공용 헬퍼
+- `persistence/summaries.py`: 조회 행을 요약 모델로 변환하고 그 요약 SELECT 투영
+  (`SCENARIO_SUMMARY_SELECT`·`REVISION_SUMMARY_SELECT`·`OFFICIAL_RELEASE_SELECT`)을 매퍼
+  옆에 둔다 — 투영 열 순서와 row 인덱스가 한 파일 안에서 짝을 이룬다
+- `persistence/_sql_helpers.py`: 프레임 저장·조회·값 변환과 트랜잭션 경계 공용 헬퍼. 두
+  Repository 의 `_write_transaction` 과 `_migration_core` 가 `transaction()` 한 벌을 쓰고,
+  register → INSERT BY NAME → unregister 는 `insert_by_name()`, 공용 프로필 헤더는
+  `insert_profile_header()`, 표 하나의 감사 해시는 `hash_frame()`(`hash_tables` 와 같은
+  바이트 열, `tests/test_sql_helpers.py` 가 값을 핀한다)이 맡는다
 - `persistence/_migration_core.py`: 두 DuckDB가 공유하는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션)
 - `persistence/migration_runner.py`, `equipment_migration_runner.py`: 각 DB의 패키지·스키마를
   그 엔진에 묶는 진입점
-- `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷과 공용 표시순서의 Streamlit 캐시 경계
+- `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷과 공용 프로필 아홉 종
+  (표시순서·공정 표시명·비교 시나리오·선행·Summary 공지·Top5 대역·주요공정·실행 Capa·과거
+  구간)의 Streamlit 캐시 경계. 설비 쪽은 설비 스냅샷과 층 도면 프로필이다
 - `persistence/equipment_repository.py`: 설비 운영 입력의 불변 전체 스냅샷 저장소
 
 ## 4. 기준정보 테이블 계약
@@ -1569,8 +1642,9 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - 비싼 계산을 탭 내부에서 직접 반복하지 않는다. 먼저 캐시된 결과를 만들고 탭은 표시만
   담당하게 한다.
 - 숨은 탭에서도 입력 위젯은 항상 그리고 계산·표·차트만 건너뛴다. 본문을 `st.stop()` 으로
-  통째로 접으면 Streamlit 이 그려지지 않은 위젯의 값을 버린다. `app_pages/reference_data.py`
-  의 대당 Capa 탭이 `capacity_ready` 플래그로 이 둘을 가른다.
+  통째로 접으면 Streamlit 이 그려지지 않은 위젯의 값을 버린다.
+  `app_pages/calculation_result.py` 의 대당 Capa 탭이 `unit_capacity_tab_hidden` 으로 이
+  둘을 가른다.
 - **옵션을 계산 결과에서 얻는 위젯**은 닫힌 탭에서 옵션을 만들 수 없다. 이때 옵션을 빈
   리스트로 두면 위젯을 그려도 선택값이 버려지므로, 계산을 건너뛴 렌더에서는 **현재 선택값을
   그대로 옵션으로 둔다**(공정 필터 `unit_capacity_process_filter` 가 그 방식이다).
@@ -1607,6 +1681,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - hover 가 필요한 Figure 만 `staticPlot` 을 끄고 같은 캔버스의 다른 Figure 설정은
   건드리지 않는다. 끄면 `displayModeBar`·`doubleClick`·`showAxisDragHandles` 가
   기본값으로 돌아가므로 셋을 직접 끄고, 드래그 확대는 축 양쪽 `fixedrange` 로 막는다.
+  그 세 키는 `components/plotly_layout.hover_chart_config()` 가 돌려주고, 조작이 아예 없는
+  그림은 `static_chart_config()` 를 쓴다.
 
 ## 10. 로컬 파일과 보안
 

@@ -24,6 +24,38 @@ TRANSPARENT_COLOR = tokens.TRANSPARENT
 _PENDING_LAYOUT_ITEMS = "_capa_pending_layout_items"
 
 
+def static_chart_config() -> dict[str, Any]:
+    """조작이 없는 그림의 `st.plotly_chart` config. 결과표·라벨 Figure 가 쓴다.
+
+    부를 때마다 새 dict 를 만든다. 모듈 상수 하나를 돌려주면 호출부가 그것을 고칠 때
+    다른 화면까지 같이 바뀐다.
+    """
+    return {"displayModeBar": False, "staticPlot": True}
+
+
+def hover_chart_config() -> dict[str, Any]:
+    """hover 는 살리고 나머지 조작만 끄는 config.
+
+    `staticPlot` 은 hover 까지 함께 끈다. 빼면 `displayModeBar` 기본값이 "hover" 로,
+    `doubleClick`·`showAxisDragHandles` 는 켜짐으로 돌아가므로 셋을 직접 끈다. 드래그
+    확대는 Figure 축의 `fixedrange` 가 막는다.
+    """
+    return {"displayModeBar": False, "doubleClick": False, "showAxisDragHandles": False}
+
+
+def chart_canvas_layout(*, font_size: int) -> dict[str, Any]:
+    """캔버스 두 배경색과 기본 서체. **토큰은 부를 때 읽는다.**
+
+    모듈 상수나 기본 인자로 굳히면 그 값만 프로세스가 처음 읽은 테마에 남는다
+    (`tests/test_theme_tokens_follow_the_run.py`).
+    """
+    return {
+        "paper_bgcolor": tokens.CHART_CANVAS,
+        "plot_bgcolor": tokens.CHART_CANVAS,
+        "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": font_size},
+    }
+
+
 def _pending_layout_items(figure: go.Figure) -> dict[str, list[dict[str, Any]]]:
     """그 Figure 의 누적함. 처음 열 때 이미 들어 있던 항목을 평범한 dict 로 옮겨 온다."""
     pending = getattr(figure, _PENDING_LAYOUT_ITEMS, None)

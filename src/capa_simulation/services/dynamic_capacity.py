@@ -269,12 +269,12 @@ def aggregate_dynamic_capacity(
 
 
 def _add_derived_rates(data: pd.DataFrame) -> None:
-    data["Capa 실현률"] = _safe_divide(data["실적수량"], data["표준 Capa"])
-    data["설비 성능 실현률"] = _safe_divide(data["실효 Capa"], data["표준 Capa"])
-    data["가용 Capa 활용률"] = _safe_divide(data["실적수량"], data["실효 Capa"])
+    data["Capa 실현률"] = _ratio_or_zero(data["실적수량"], data["표준 Capa"])
+    data["설비 성능 실현률"] = _ratio_or_zero(data["실효 Capa"], data["표준 Capa"])
+    data["가용 Capa 활용률"] = _ratio_or_zero(data["실적수량"], data["실효 Capa"])
     data["효율 Gap"] = data["실적 효율"] - data["표준 효율"]
-    data["UPEH Gap"] = _safe_divide(data["실적 UPEH"], data["표준 UPEH"]) - 1.0
-    data["재공부족 미활용률"] = _safe_divide(data["재공부족 미활용 Capa"], data["실효 Capa"])
+    data["UPEH Gap"] = _ratio_or_zero(data["실적 UPEH"], data["표준 UPEH"]) - 1.0
+    data["재공부족 미활용률"] = _ratio_or_zero(data["재공부족 미활용 Capa"], data["실효 Capa"])
 
 
 def _weighted_average(values: pd.Series, weights: pd.Series) -> float:
@@ -288,7 +288,8 @@ def _weighted_average(values: pd.Series, weights: pd.Series) -> float:
     )
 
 
-def _safe_divide(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
+def _ratio_or_zero(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
+    """분모가 0이면 **0** 으로 내린다. `performance_actuals._ratio_or_na` 와 합치지 않는다."""
     return numerator.div(denominator.where(denominator.ne(0))).fillna(0.0)
 
 

@@ -2,6 +2,7 @@
 
 import pandas as pd
 
+from capa_simulation.services.frame_checks import assert_unique_keys, strip_text_columns
 from capa_simulation.services.frame_contracts import (
     assert_complete,
     normalize_area_name,
@@ -101,7 +102,7 @@ def _prepare_reqb(reqb: pd.DataFrame) -> pd.DataFrame:
     require_columns(reqb, REQB_COLUMNS, "RQ_REQB")
     prepared_reqb = reqb[REQB_COLUMNS].copy()
     normalize_month_column(prepared_reqb, "RQ_REQB")
-    _normalize_text(prepared_reqb, REQB_TEXT_COLUMNS)
+    strip_text_columns(prepared_reqb, REQB_TEXT_COLUMNS)
     prepared_reqb["소요기준"] = prepared_reqb["소요기준"].str.upper()
     prepared_reqb = prepared_reqb.loc[~prepared_reqb["소요기준"].isin(UNIMPLEMENTED_BASES)].copy()
     if prepared_reqb.empty:
@@ -191,7 +192,7 @@ def _build_loads(
     require_columns(plan, plan_columns, "RQ_PKG_PLAN")
     prepared_plan = plan.copy()
     normalize_month_column(prepared_plan, "RQ_PKG_PLAN")
-    _normalize_text(
+    strip_text_columns(
         prepared_plan,
         ["양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS"],
     )
@@ -230,7 +231,7 @@ def _build_loads(
         load_frames.append(wafer)
 
     loads = pd.concat(load_frames, ignore_index=True)[[*LOAD_KEYS, "부하량"]]
-    _normalize_text(loads, [key for key in LOAD_KEYS if key not in {"생산계획년월", "소요기준"}])
+    strip_text_columns(loads, [key for key in LOAD_KEYS if key not in {"생산계획년월", "소요기준"}])
     loads["소요기준"] = validate_demand_basis(loads["소요기준"], "부하량")
     return loads.groupby(LOAD_KEYS, as_index=False, dropna=False)[["부하량"]].sum()
 
@@ -239,20 +240,12 @@ def _prepare_capacities(data: pd.DataFrame) -> pd.DataFrame:
     require_columns(data, [*CAPACITY_KEYS, "대당 Capa"], "대당 Capa")
     result = data[[*CAPACITY_KEYS, "대당 Capa"]].copy()
     normalize_month_column(result, "대당 Capa")
-    _normalize_text(
+    strip_text_columns(
         result,
         [key for key in CAPACITY_KEYS if key not in {"생산계획년월", "소요기준"}],
     )
     result["Area_Name"] = normalize_area_name(result["Area_Name"], "대당 Capa")
     result["소요기준"] = validate_demand_basis(result["소요기준"], "대당 Capa")
     result["대당 Capa"] = to_numeric_strict(result["대당 Capa"], "대당 Capa")
-    duplicated = result.duplicated(CAPACITY_KEYS, keep=False)
-    if duplicated.any():
-        examples = result.loc[duplicated, CAPACITY_KEYS].drop_duplicates().head(5)
-        raise ValueError(f"대당 Capa 연결 키가 중복되었습니다: {examples.to_dict('records')}")
+    assert_unique_keys(result, CAPACITY_KEYS, "대당 Capa 연결 키가")
     return result
-
-
-def _normalize_text(data: pd.DataFrame, columns: list[str]) -> None:
-    for column in columns:
-        data[column] = data[column].astype("string").str.strip()

@@ -57,7 +57,7 @@ OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY = "official_scenario_bootstrap_attempted"
 # 목록에 들어오지 않아 이 규칙이 한동안 반쪽이었던 적이 있다.
 _STALE_UI_KEYS = (
     "load_conversion_source_token",
-    "capacity_standards_source_token",
+    "reference_data_source_token",
     HOME_FIGURE_CACHE_KEY,
     # HOME 토글. 상수는 `components/home_preference.py` 가 소유하지만 그 모듈이 이 파일을
     # 거꾸로 import 하므로 문자열로 적는다.

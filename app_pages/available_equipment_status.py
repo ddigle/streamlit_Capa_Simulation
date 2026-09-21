@@ -29,7 +29,11 @@ from capa_simulation.components.table_view_controls import (
     render_table_view_controls,
 )
 from capa_simulation.design import tokens
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
+    date_range_value,
+)
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_snapshot_cache,
     get_equipment_repository,
@@ -1260,14 +1264,7 @@ with rawdata_tab:
                 key="equipment_history_event_range_v3",
                 persist_state="session",
             )
-            if isinstance(event_range, tuple) and len(event_range) == 2:
-                event_start, event_end = event_range
-            elif isinstance(event_range, date):
-                event_start = event_range
-                event_end = event_range
-            else:
-                event_start = start_date
-                event_end = end_date
+            event_start, event_end = date_range_value(event_range, (start_date, end_date))
             if event_start <= event_end and not filtered_history_downtime.empty:
                 # **`.dt.date` 로 비교하지 않는다.** 그 컬럼이 전부 비어 있으면 `.dt.date` 가
                 # `datetime64` 를 그대로 물고 나와 `date` 와의 비교가 `TypeError` 로 죽는다.

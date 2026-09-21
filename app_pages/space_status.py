@@ -30,7 +30,11 @@ from capa_simulation.components.space_layout import (
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
+    date_range_value,
+)
 from capa_simulation.persistence.equipment_cache import (
     load_floor_layout_canvases,
     load_floor_layout_profile,
@@ -273,15 +277,9 @@ with st.container(border=True):
             )
             st.form_submit_button("조회", icon=":material/search:", type="primary")
 
-    if isinstance(transition_range, tuple) and len(transition_range) == 2:
-        transition_start = transition_range[0]
-        transition_end = transition_range[1]
-    elif isinstance(transition_range, date):
-        transition_start = transition_range
-        transition_end = transition_range
-    else:
-        transition_start = as_of - timedelta(days=14)
-        transition_end = as_of + timedelta(days=14)
+    transition_start, transition_end = date_range_value(
+        transition_range, (as_of - timedelta(days=14), as_of + timedelta(days=14))
+    )
 
     try:
         transition_events = build_milestone_transition_events(

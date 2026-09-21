@@ -15,7 +15,11 @@ from capa_simulation.components.reference_csv_tools import (
     queue_reference_import_flash,
     render_reference_clipboard_tools,
 )
-from capa_simulation.components.scenario_edit_bar import render_scenario_edit_bar
+from capa_simulation.components.scenario_edit_bar import (
+    render_scenario_edit_bar,
+    reset_editors_on_source_change,
+    source_token,
+)
 from capa_simulation.components.tab_state import stateful_tabs
 from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.design import tokens
@@ -102,31 +106,27 @@ except ValueError as exc:
     st.error(str(exc))
     st.stop()
 
-plan_editor_key = "pkg_plan_editor"
-yield_editor_key = "yield_editor"
-source_token_key = "load_conversion_source_token"
+PLAN_EDITOR_KEY = "pkg_plan_editor"
+YIELD_EDITOR_KEY = "yield_editor"
+SOURCE_TOKEN_KEY = "load_conversion_source_token"
 # 붙여넣기 결과는 곧바로 전역에 반영하지 않고 이 키에 담아 PKG PLAN 탭에만 보여준다.
 # 사용자가 "변경사항 적용" 을 눌러야 활성 시나리오로 넘어간다.
-plan_staged_key = "pkg_plan_staged_paste"
-plan_applied_flash_key = "pkg_plan_applied_flash"
-product_registered_flash_key = "virtual_product_registered_flash"
-source_token = (
-    f"duckdb:{reference_version}:{active_scenario['revision']}:"
-    f"{effective_start_month}:{effective_end_month}"
+PLAN_STAGED_KEY = "pkg_plan_staged_paste"
+PLAN_APPLIED_FLASH_KEY = "pkg_plan_applied_flash"
+PRODUCT_REGISTERED_FLASH_KEY = "virtual_product_registered_flash"
+# 원본이 바뀌면 아직 적용하지 않은 붙여넣기는 행·월 구성이 맞지 않으므로 함께 버린다.
+reset_editors_on_source_change(
+    SOURCE_TOKEN_KEY,
+    source_token(reference_version, active_scenario, effective_start_month, effective_end_month),
+    (PLAN_EDITOR_KEY, YIELD_EDITOR_KEY, PLAN_STAGED_KEY),
 )
-if st.session_state.get(source_token_key) != source_token:
-    st.session_state.pop(plan_editor_key, None)
-    st.session_state.pop(yield_editor_key, None)
-    # 원본이 바뀌면 아직 적용하지 않은 붙여넣기는 행·월 구성이 맞지 않으므로 버린다.
-    st.session_state.pop(plan_staged_key, None)
-    st.session_state[source_token_key] = source_token
 
 render_scenario_edit_bar(
     active_scenario,
     reference_tables,
     reference_version,
     reset_key="reset_load_active_scenario",
-    clear_session_keys=(source_token_key, plan_staged_key),
+    clear_session_keys=(SOURCE_TOKEN_KEY, PLAN_STAGED_KEY),
 )
 
 conversion_tab, pkg_plan_tab, yield_tab, product_tab = stateful_tabs(
@@ -140,14 +140,14 @@ with pkg_plan_tab:
         "수정 후 적용 버튼을 눌러야 다른 페이지의 산출값에 반영됩니다. 단위: Kea"
     )
     # 붙여넣기한 표가 있으면 그것을 편집 대상으로 보여준다. 아직 전역에는 반영되지 않았다.
-    staged_plan_table = st.session_state.get(plan_staged_key)
+    staged_plan_table = st.session_state.get(PLAN_STAGED_KEY)
     if isinstance(staged_plan_table, pd.DataFrame) and not set(PLAN_EDITOR_DIMENSIONS).issubset(
         staged_plan_table.columns
     ):
         # `source_token` 은 원본의 버전·기간만 보고 격자 스키마는 보지 않는다. 그래서 행
         # 차원이 늘어난 뒤에도(예: `Pack Code` 업무 키 승격) 옛 스키마로 붙여넣어 둔 표가
         # 세션에 남아 편집 원본이 되고, 아래 `set_properties` 가 `KeyError` 로 죽는다.
-        st.session_state.pop(plan_staged_key, None)
+        st.session_state.pop(PLAN_STAGED_KEY, None)
         staged_plan_table = None
     plan_editor_source = (
         staged_plan_table if isinstance(staged_plan_table, pd.DataFrame) else default_plan_table
@@ -165,7 +165,7 @@ with pkg_plan_tab:
     )
     edited_plan_table = st.data_editor(
         styled_plan_table,
-        key=plan_editor_key,
+        key=PLAN_EDITOR_KEY,
         hide_index=True,
         width="content",
         height=500,
@@ -205,7 +205,7 @@ with pkg_plan_tab:
         st.caption("적용을 누르면 환산·홈 대시보드 등 전역 계획값에 반영됩니다.")
     # 결과는 누른 버튼 **바로 아래**다. 표(height=500) 위에 두면 누른 자리에서 500px 떨어져
     # 반응을 못 본다. 다른 여덟 편집기의 적용 문구도 전부 버튼 아래에 붙는다.
-    applied_flash = st.session_state.pop(plan_applied_flash_key, None)
+    applied_flash = st.session_state.pop(PLAN_APPLIED_FLASH_KEY, None)
     if isinstance(applied_flash, str):
         st.success(applied_flash, icon=":material/published_with_changes:")
     imported_plan_table = render_reference_clipboard_tools(
@@ -226,9 +226,9 @@ if imported_plan_table is not None:
         with pkg_plan_tab:
             st.error(str(exc))
     else:
-        st.session_state[plan_staged_key] = imported_plan_table
+        st.session_state[PLAN_STAGED_KEY] = imported_plan_table
         # 편집기 위젯이 이전 표의 편집 상태를 덮어쓰지 않도록 초기화한다.
-        st.session_state.pop(plan_editor_key, None)
+        st.session_state.pop(PLAN_EDITOR_KEY, None)
         queue_reference_import_flash(
             "rq_pkg_plan_csv",
             "붙여넣기 표를 PKG PLAN 탭에 반영했습니다. "
@@ -251,18 +251,18 @@ if apply_plan:
         with pkg_plan_tab:
             st.error(str(exc))
     else:
-        st.session_state.pop(plan_staged_key, None)
-        st.session_state[plan_applied_flash_key] = (
+        st.session_state.pop(PLAN_STAGED_KEY, None)
+        st.session_state[PLAN_APPLIED_FLASH_KEY] = (
             f"PKG PLAN을 전역 계획값에 반영했습니다. "
             f"{effective_start_month}~{effective_end_month} 구간의 환산·소요대수·확보율과 "
             f"홈 대시보드가 이 계획으로 다시 계산됩니다. "
             "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요."
         )
-        st.session_state.pop(source_token_key, None)
+        st.session_state.pop(SOURCE_TOKEN_KEY, None)
         st.rerun()
 
 with product_tab:
-    registered_flash = st.session_state.pop(product_registered_flash_key, None)
+    registered_flash = st.session_state.pop(PRODUCT_REGISTERED_FLASH_KEY, None)
     if isinstance(registered_flash, str):
         st.success(registered_flash, icon=":material/library_add:")
     st.caption(
@@ -311,9 +311,9 @@ with product_tab:
             else:
                 apply_table_updates(active_scenario, updates)
                 remember_virtual_product(VirtualProductRecord.from_request(request))
-                st.session_state.pop(plan_staged_key, None)
-                st.session_state.pop(source_token_key, None)
-                st.session_state[product_registered_flash_key] = (
+                st.session_state.pop(PLAN_STAGED_KEY, None)
+                st.session_state.pop(SOURCE_TOKEN_KEY, None)
+                st.session_state[PRODUCT_REGISTERED_FLASH_KEY] = (
                     f"가상 제품 {request.normalized().product} · "
                     f"{request.normalized().stack} 을 등록했습니다. "
                     f"기준정보 {len(updates)}종을 복제했습니다. "
@@ -349,7 +349,7 @@ with yield_tab:
     )
     edited_yield_table = st.data_editor(
         styled_yield_table,
-        key=yield_editor_key,
+        key=YIELD_EDITOR_KEY,
         hide_index=True,
         width="content",
         height=500,
@@ -417,7 +417,7 @@ if apply_yield or imported_yield_table is not None:
             f"RQ_YLD {origin} 활성 시나리오에 적용했습니다. "
             "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요.",
         )
-        st.session_state.pop(source_token_key, None)
+        st.session_state.pop(SOURCE_TOKEN_KEY, None)
         st.rerun()
 
 with conversion_tab:

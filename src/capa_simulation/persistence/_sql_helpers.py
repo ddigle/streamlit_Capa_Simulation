@@ -1,6 +1,6 @@
-# Purpose: DuckDB 프레임 저장·조회와 값 변환에 쓰는 공용 헬퍼를 제공한다.
+# Purpose: DuckDB 프레임 저장·조회·값 변환과 트랜잭션 경계에 쓰는 공용 헬퍼를 제공한다.
 
-"""DuckDB 프레임 저장·조회와 값 변환에 쓰는 공용 헬퍼를 제공한다."""
+"""DuckDB 프레임 저장·조회·값 변환과 트랜잭션 경계에 쓰는 공용 헬퍼를 제공한다."""
 
 from __future__ import annotations
 
@@ -60,6 +60,94 @@ def pinned_connections(*database_paths: Path) -> Iterator[None]:
             pin.close()
 
 
+@contextmanager
+def transaction(connection: duckdb.DuckDBPyConnection) -> Iterator[None]:
+    """쓰기 한 묶음을 트랜잭션 경계로 감싼다. 예외가 나면 되돌리고 그대로 올린다.
+
+    두 Repository 의 쓰기 경계와 마이그레이션 적용이 같은 한 벌을 쓴다 — 경계가 여러 벌로
+    갈려 있으면 한쪽만 고쳐져도 아무 데서도 드러나지 않는다.
+    """
+    connection.execute("BEGIN TRANSACTION")
+    try:
+        yield
+        connection.execute("COMMIT")
+    except Exception:
+        connection.execute("ROLLBACK")
+        raise
+
+
+def insert_by_name(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    schema: str,
+    table_name: str,
+    frame: pd.DataFrame,
+) -> None:
+    """임시 뷰 하나를 걸어 컬럼 이름으로 넣고, 무슨 일이 있어도 뷰를 되돌린다.
+
+    뷰 이름이 겹치면 같은 연결의 다른 적재가 엉키므로 호출마다 uuid 로 만든다.
+    """
+    view_name = f"_incoming_{uuid4().hex}"
+    connection.register(view_name, frame)
+    try:
+        connection.execute(
+            f"INSERT INTO {quote(schema)}.{quote(table_name)} BY NAME "
+            f"SELECT * FROM {quote(view_name)}"
+        )
+    finally:
+        connection.unregister(view_name)
+
+
+def insert_profile_header(
+    connection: duckdb.DuckDBPyConnection,
+    table: str,
+    *,
+    version: int,
+    source: str,
+) -> None:
+    """시나리오와 분리된 공용 프로필의 헤더 한 행을 넣는다."""
+    connection.execute(
+        f"INSERT INTO app_meta.{quote(table)} (profile_id, version, source) VALUES (1, ?, ?)",
+        [version, source],
+    )
+
+
+def load_profile_header(
+    connection: duckdb.DuckDBPyConnection,
+    table: str,
+) -> tuple[int, str, datetime] | None:
+    """공용 프로필 헤더 한 행(version·source·updated_at). 한 번도 저장하지 않았으면 None."""
+    row = connection.execute(
+        f"""
+        SELECT version, source, updated_at
+        FROM app_meta.{quote(table)}
+        WHERE profile_id = 1
+        """
+    ).fetchone()
+    if row is None:
+        return None
+    return int(row[0]), str(row[1]), row[2]
+
+
+def reset_profile(
+    connection: duckdb.DuckDBPyConnection,
+    header_table: str,
+    *detail_tables: str,
+) -> int:
+    """공용 프로필의 현재본을 지우고 다음 version 을 돌려준다. 쓰기 트랜잭션 안에서만 부른다.
+
+    상세 표를 먼저, 헤더를 나중에 지운다. 헤더 INSERT 는 호출자가 그대로 쥐고 있으므로
+    행 0건(전체 해제) 저장에서도 version 은 올라간다.
+    """
+    row = connection.execute(
+        f"SELECT version FROM app_meta.{quote(header_table)} WHERE profile_id = 1"
+    ).fetchone()
+    for table in detail_tables:
+        connection.execute(f"DELETE FROM app_meta.{quote(table)} WHERE profile_id = 1")
+    connection.execute(f"DELETE FROM app_meta.{quote(header_table)} WHERE profile_id = 1")
+    return 1 if row is None else int(row[0]) + 1
+
+
 def insert_frame(
     connection: duckdb.DuckDBPyConnection,
     *,
@@ -87,15 +175,7 @@ def insert_frame(
         prepared["생산계획년월"] = normalize_months(prepared["생산계획년월"], logical_name)
     prepared.insert(0, "source_row_no", range(1, len(prepared) + 1))
     prepared.insert(0, owner_column, owner_id)
-    view_name = f"_incoming_{uuid4().hex}"
-    connection.register(view_name, prepared)
-    try:
-        connection.execute(
-            f"INSERT INTO {quote(schema)}.{quote(table_name)} BY NAME "
-            f"SELECT * FROM {quote(view_name)}"
-        )
-    finally:
-        connection.unregister(view_name)
+    insert_by_name(connection, schema=schema, table_name=table_name, frame=prepared)
     stored_count = connection.execute(
         f"SELECT COUNT(*) FROM {quote(schema)}.{quote(table_name)} WHERE {quote(owner_column)} = ?",
         [owner_id],
@@ -158,15 +238,31 @@ def normalize_months(series: pd.Series, table_name: str) -> pd.Series:
     return months
 
 
+def _frame_digest_parts(frame: pd.DataFrame) -> tuple[bytes, bytes]:
+    """해시에 먹이는 바이트 두 토막(컬럼 이름, 행 값).
+
+    저장된 `reference_hash`·설비 해시가 이 순서로 만들어진 감사값이므로 바꾸지 않는다.
+    """
+    return (
+        "\x1f".join(str(column) for column in frame.columns).encode("utf-8"),
+        pd.util.hash_pandas_object(frame, index=False).to_numpy(dtype="uint64").tobytes(),
+    )
+
+
 def hash_tables(tables: Mapping[str, pd.DataFrame], names: Sequence[str]) -> str:
     digest = hashlib.sha256()
     for name in sorted(names):
-        frame = tables[name]
         digest.update(name.encode("utf-8"))
-        digest.update("\x1f".join(str(column) for column in frame.columns).encode("utf-8"))
-        digest.update(
-            pd.util.hash_pandas_object(frame, index=False).to_numpy(dtype="uint64").tobytes()
-        )
+        for part in _frame_digest_parts(tables[name]):
+            digest.update(part)
+    return digest.hexdigest()
+
+
+def hash_frame(frame: pd.DataFrame) -> str:
+    """표 하나의 감사 해시. `hash_tables` 와 같은 바이트 열을 쓴다."""
+    digest = hashlib.sha256()
+    for part in _frame_digest_parts(frame):
+        digest.update(part)
     return digest.hexdigest()
 
 

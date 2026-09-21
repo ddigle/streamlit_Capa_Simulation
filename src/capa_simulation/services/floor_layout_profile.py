@@ -89,13 +89,6 @@ class FloorLayoutProfile:
         return self.canvas_width, self.canvas_height
 
 
-def canvas_for(canvases: FloorCanvasMap | None, building: str, floor: str) -> CanvasSize:
-    """도면 프로필이 없는 층은 기본 캔버스를 돌려준다."""
-    if not canvases:
-        return DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT
-    return canvases.get((building, floor), (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT))
-
-
 def max_canvas_extent(canvases: FloorCanvasMap | None) -> CanvasSize:
     """모든 층을 하나의 편집기 상한으로 덮을 때 쓰는 최대 폭·높이."""
     width = DEFAULT_CANVAS_WIDTH

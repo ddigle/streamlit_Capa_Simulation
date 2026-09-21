@@ -1,12 +1,12 @@
-# Purpose: Apply workbook-managed display order rules to Streamlit tables.
+# Purpose: 공용 표시순서 프로필(`RQ_DISPLAY_ORDER`) 규칙을 화면 표 정렬에 적용한다.
 
-"""Apply workbook-managed display order rules to Streamlit tables."""
+"""공용 표시순서 프로필의 `RQ_DISPLAY_ORDER` 규칙을 화면 표 정렬에 적용한다."""
 
 from dataclasses import dataclass
 
 import pandas as pd
 
-from capa_simulation.services.frame_contracts import match_key, scalar_match_key
+from capa_simulation.services.frame_contracts import match_key, require_columns, scalar_match_key
 from capa_simulation.services.product_type import (
     EDP_TOP_DIVISION,
     SOURCE_TOP_DIVISION,
@@ -38,11 +38,7 @@ DisplayOrderInput = pd.DataFrame | PreparedDisplayOrder | None
 
 
 def _prepare_display_order(display_order: pd.DataFrame) -> pd.DataFrame:
-    missing = [
-        column for column in DISPLAY_ORDER_RULE_COLUMNS if column not in display_order.columns
-    ]
-    if missing:
-        raise ValueError(f"RQ_DISPLAY_ORDER 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(display_order, DISPLAY_ORDER_RULE_COLUMNS, "RQ_DISPLAY_ORDER")
 
     if all(column in display_order.columns for column in DISPLAY_ORDER_SCOPE_COLUMNS):
         prepared = display_order[[*DISPLAY_ORDER_SCOPE_COLUMNS, *DISPLAY_ORDER_RULE_COLUMNS]].copy()

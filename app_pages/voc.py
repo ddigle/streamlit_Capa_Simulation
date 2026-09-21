@@ -27,6 +27,13 @@ from capa_simulation.services.voc_board import VOC_CATEGORIES
 from capa_simulation.settings import DUCKDB_PATH
 
 AUTHOR_KEY = "voc_author"
+# 글마다 하나씩 생기는 위젯이라 키에 글 번호를 붙인다. 접두를 리터럴로 흩어 두면
+# 겹침 검사(`tests/test_session_key_collisions.py`)가 기준 키를 보지 못한다.
+REPLY_FORM_KEY = "voc_reply_form"
+REPLY_BODY_KEY = "voc_reply_body"
+RESOLVE_KEY = "voc_resolve"
+DELETE_CONFIRM_KEY = "voc_delete_confirm"
+DELETE_KEY = "voc_delete"
 CATEGORY_FILTER_KEY = "voc_category_filter"
 OPEN_ONLY_KEY = "voc_open_only"
 SEARCH_KEY = "voc_search"
@@ -181,13 +188,13 @@ def _render_post(row: Any) -> None:
                 with st.chat_message("assistant", avatar=":material/reply:"):
                     st.caption(f"{reply['author']} · {_timestamp(reply['created_at'])}")
                     st.text(str(reply["body"]))
-        with st.form(f"voc_reply_form_{post_id}", clear_on_submit=True):
+        with st.form(f"{REPLY_FORM_KEY}_{post_id}", clear_on_submit=True):
             reply_body = st.text_area(
                 "답변",
                 height=100,
                 placeholder="답변을 적어 주세요.",
                 max_chars=4000,
-                key=f"voc_reply_body_{post_id}",
+                key=f"{REPLY_BODY_KEY}_{post_id}",
             )
             reply_submitted = st.form_submit_button(
                 "답변 남기기", icon=":material/reply:", type="primary"
@@ -209,7 +216,7 @@ def _render_post(row: Any) -> None:
         with st.container(horizontal=True, gap="small", vertical_alignment="center"):
             if st.button(
                 "답변 완료로 표시" if not answered else "미답변으로 되돌리기",
-                key=f"voc_resolve_{post_id}",
+                key=f"{RESOLVE_KEY}_{post_id}",
                 icon=":material/task_alt:",
             ):
                 repository.set_voc_post_resolved(post_id, resolved=not answered)
@@ -219,11 +226,11 @@ def _render_post(row: Any) -> None:
             # 잘리는 뒷부분이 바로 경고라 여기서는 접어서라도 보여야 한다.
             if st.checkbox(
                 "삭제 확인 · 답글까지 함께 사라지며 되돌릴 수 없습니다",
-                key=f"voc_delete_confirm_{post_id}",
+                key=f"{DELETE_CONFIRM_KEY}_{post_id}",
                 wrap=True,
             ) and st.button(
                 "글 삭제",
-                key=f"voc_delete_{post_id}",
+                key=f"{DELETE_KEY}_{post_id}",
                 icon=":material/delete:",
             ):
                 # 지워진 뒤에는 셀 수 없다. 화면용 프레임으로 먼저 센다.

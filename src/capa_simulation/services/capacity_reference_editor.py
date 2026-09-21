@@ -2,7 +2,9 @@
 
 import pandas as pd
 
+from capa_simulation.services.frame_checks import assert_unique_keys, strip_text_columns
 from capa_simulation.services.frame_contracts import (
+    assert_complete,
     normalize_area_name,
     require_columns,
 )
@@ -31,9 +33,9 @@ def reference_to_edit_table(
     require_columns(data, required, table_name)
     prepared = data[required].copy()
     prepared["생산계획년월"] = _month_values(prepared["생산계획년월"], table_name)
-    _normalize_dimensions(prepared, dimensions)
-    _assert_complete(prepared, ["생산계획년월", *dimensions], table_name)
-    _assert_unique(prepared, ["생산계획년월", *dimensions], table_name)
+    strip_text_columns(prepared, dimensions)
+    assert_complete(prepared, ["생산계획년월", *dimensions], table_name)
+    assert_unique_keys(prepared, ["생산계획년월", *dimensions], f"{table_name}의 월별 연결 키가")
     prepared[value_column] = pd.to_numeric(prepared[value_column], errors="coerce")
 
     result = prepared.pivot(
@@ -64,7 +66,7 @@ def reference_from_edit_table(
         raise ValueError(f"{table_name}의 월 컬럼은 YYYYMM 형식이어야 합니다: {invalid_months}")
 
     prepared = edit_table.copy()
-    _normalize_dimensions(prepared, dimensions)
+    strip_text_columns(prepared, dimensions)
     result = prepared.melt(
         id_vars=dimensions,
         value_vars=month_columns,
@@ -122,22 +124,3 @@ def _month_values(values: pd.Series, table_name: str) -> pd.Series:
     if not result.mod(100).between(1, 12).all():
         raise ValueError(f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다.")
     return result
-
-
-def _normalize_dimensions(data: pd.DataFrame, dimensions: list[str]) -> None:
-    for column in dimensions:
-        data[column] = data[column].astype("string").str.strip()
-
-
-def _assert_complete(data: pd.DataFrame, columns: list[str], table_name: str) -> None:
-    has_missing = any(data[column].isna().any() for column in columns)
-    has_blank = any(data[column].eq("").any() for column in columns)
-    if has_missing or has_blank:
-        raise ValueError(f"{table_name}의 편집 테이블 식별 컬럼에 누락값이 있습니다.")
-
-
-def _assert_unique(data: pd.DataFrame, keys: list[str], table_name: str) -> None:
-    duplicated = data.duplicated(keys, keep=False)
-    if duplicated.any():
-        examples = data.loc[duplicated, keys].drop_duplicates().head(5).to_dict("records")
-        raise ValueError(f"{table_name}의 월별 연결 키가 중복되었습니다: {examples}")

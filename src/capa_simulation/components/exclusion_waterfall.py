@@ -22,6 +22,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from capa_simulation.components.plotly_layout import chart_canvas_layout
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 
@@ -84,9 +85,7 @@ def build_exclusion_waterfall(
     figure.update_layout(
         height=300,
         margin={"l": 8, "r": 8, "t": 24, "b": 8},
-        paper_bgcolor=tokens.CHART_CANVAS,
-        plot_bgcolor=tokens.CHART_CANVAS,
-        font={"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": 12},
+        **chart_canvas_layout(font_size=12),
         showlegend=False,
     )
     figure.update_yaxes(
