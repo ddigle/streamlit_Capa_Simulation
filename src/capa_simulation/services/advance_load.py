@@ -210,3 +210,25 @@ def apply_advance_to_securement(
     if "기준 확보율" in result.columns:
         result["기준 확보율"] = pd.to_numeric(result["기준 확보율"], errors="coerce") * scale
     return result
+
+
+def revert_advance_from_securement(
+    securement_rate: pd.DataFrame,
+    ratio: pd.DataFrame,
+) -> pd.DataFrame:
+    """선행 반영 확보율을 변동률로 나눠 선행 전 확보율로 되돌린다.
+
+    선행 전후를 한 그림에 함께 그리려면 기존값이 있어야 한다. 순위는 선행에 따라 바뀌지
+    않으므로(월마다 같은 수를 곱한다) B/N 공정은 그대로 두고 확보율만 되돌린다.
+
+    나누는 것은 `확보율` 이 맞다. 실행 Capa 반영은 선행보다 **앞**에서 끝나므로 여기서
+    되돌리는 것은 곱셈 한 겹뿐이다 — 선행 전 값은 「실행까지 반영된 원데이터」다.
+
+    변동률 표에 없는 달은 결측이 된다. 정방향(`apply_advance_to_securement`)과 달리 1 로
+    채우지 않는다 — 그 정합화는 화면 출력이 바뀌는 별도 결정이다.
+    """
+    result = securement_rate.copy()
+    result["확보율"] = securement_rate["확보율"] / result["생산계획년월"].map(
+        ratio.set_index("생산계획년월")["변동률"]
+    )
+    return result

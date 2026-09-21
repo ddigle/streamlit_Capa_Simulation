@@ -83,6 +83,7 @@ from capa_simulation.services.advance_load import (
     apply_advance_to_securement,
     apply_advance_to_wafer,
     build_advance_load_ratio,
+    revert_advance_from_securement,
     unapplicable_advance_months,
 )
 from capa_simulation.services.dashboard import (
@@ -646,17 +647,9 @@ if cached_figures is None:
         monthly_wafer,
         monthly_bottlenecks,
     )
-    # 선행 전후를 한 그림에 함께 그리려면 기존값이 있어야 한다. 순위는 선행에 따라 바뀌지
-    # 않으므로(월마다 같은 수를 곱한다) B/N 공정은 그대로 두고 확보율만 되돌린다.
-    #
-    # 나누는 것은 `확보율` 이 맞다. 실행 Capa 반영은 선행보다 **앞**에서 끝나므로 여기서
-    # 되돌리는 것은 곱셈 한 겹뿐이다 — 선행 전 값은 「실행까지 반영된 원데이터」다.
     baseline_lob_summary: pd.DataFrame | None = None
     if advance_ratio is not None:
-        baseline_bottlenecks = monthly_bottlenecks.copy()
-        baseline_bottlenecks["확보율"] = monthly_bottlenecks["확보율"] / baseline_bottlenecks[
-            "생산계획년월"
-        ].map(advance_ratio.set_index("생산계획년월")["변동률"])
+        baseline_bottlenecks = revert_advance_from_securement(monthly_bottlenecks, advance_ratio)
         baseline_lob_summary = build_production_lob_summary(
             baseline_density,
             baseline_wafer,

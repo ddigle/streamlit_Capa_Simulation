@@ -14,6 +14,7 @@ from capa_simulation.services.advance_load import (
     empty_advance_load,
     merge_advance_load_edits,
     prepare_advance_load,
+    revert_advance_from_securement,
     unapplicable_advance_months,
 )
 
@@ -218,3 +219,52 @@ def test_a_month_outside_the_ratio_keeps_its_own_values() -> None:
         float(applied_wafer.loc[applied_wafer["생산계획년월"].eq(202602), "Wafer 부하량"].iloc[0])
         == 2000.0
     )
+
+
+def test_reverting_the_advance_returns_the_original_securement_rate() -> None:
+    """선행 전후를 한 그림에 그리려면 역산이 원래 확보율을 그대로 돌려줘야 한다."""
+    monthly_density = pd.DataFrame({"생산계획년월": [202601, 202603], "부하량": [50.0, 80.0]})
+    ratio = build_advance_load_ratio(
+        monthly_density, pd.DataFrame({"생산계획년월": [202601], "선행 물량": [10.0]})
+    )
+    securement = pd.DataFrame(
+        {
+            "생산계획년월": [202601, 202603],
+            "공정": ["A", "B"],
+            "확보율": [1.5, 1.2],
+            "기준 확보율": [1.6, 1.3],
+        }
+    )
+
+    reverted = revert_advance_from_securement(apply_advance_to_securement(securement, ratio), ratio)
+
+    assert reverted["확보율"].tolist() == pytest.approx(securement["확보율"].tolist())
+    assert reverted["공정"].tolist() == ["A", "B"]
+    # 역산은 `확보율` 한 겹만 되돌린다. `기준 확보율` 은 정방향의 곱셈이 남은 채로 둔다.
+    assert reverted["기준 확보율"].tolist() == pytest.approx(
+        apply_advance_to_securement(securement, ratio)["기준 확보율"].tolist()
+    )
+
+
+def test_reverting_a_month_outside_the_ratio_leaves_a_missing_rate() -> None:
+    """변동률 표에 없는 달은 역산에서 결측이 된다 — 지금 화면이 그리는 값을 고정한다.
+
+    정방향은 없는 달을 1 로 채우지만 역산은 채우지 않는다. 이 비대칭을 맞추는 것은 화면
+    출력이 달라지는 별도 결정이라 여기서는 현재 동작을 그대로 묶어 둔다.
+    """
+    monthly_density = pd.DataFrame({"생산계획년월": [202601, 202603], "부하량": [50.0, 80.0]})
+    ratio = build_advance_load_ratio(
+        monthly_density, pd.DataFrame({"생산계획년월": [202601], "선행 물량": [10.0]})
+    )
+    securement = pd.DataFrame(
+        {
+            "생산계획년월": [202601, 202602, 202603],
+            "공정": ["A", "A", "A"],
+            "확보율": [1.5, 1.4, 1.2],
+        }
+    )
+
+    reverted = revert_advance_from_securement(securement, ratio)
+
+    assert bool(reverted.loc[reverted["생산계획년월"].eq(202602), "확보율"].isna().all())
+    assert not bool(reverted.loc[reverted["생산계획년월"].ne(202602), "확보율"].isna().any())
