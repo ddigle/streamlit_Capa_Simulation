@@ -944,7 +944,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 표 제목·부가 설명·CSV 내보내기 한 줄. `st.download_button` 은 여기서만 부른다.
     라벨에 아이콘을 섞지 않고 `label` 인자를 쓴다. 어기면 테스트가 잡는다.
 - `src/capa_simulation/components/monthly_table_base.py`
-  - 두 월별 표가 공유하는 상수·텍스트 폭 계산과 고정 분류 + 스크롤 월 껍데기.
+  - 두 월별 표가 공유하는 상수·텍스트 폭 계산과 고정 분류 + 스크롤 월 껍데기. 분류 컬럼
+    폭(`classification_widths`)과 `go.Table` 두 벌 + 공통 layout 조립
+    (`build_split_table_figures`)도 여기 있다. 행 모델과 면색 규칙만 표마다 다르다.
 - `src/capa_simulation/components/scroll_shell.py`
   - 가로 스크롤 상자와 그 안의 고정 폭 캔버스. 월별 표·HOME·재공 현황이 함께 쓴다.
     컨테이너 key 가 `.st-key-<key>` 클래스가 되므로 이름을 바꾸면 CSS 가 끊어진다.
@@ -1016,6 +1018,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `Summary 공지` 는 **빈 문구도 저장한다.** 공지를 내리는 것도 결정이고, 그때도 version
     이 올라야 다른 세션의 캐시가 풀린다. 저장 화면은 「미저장」과 「내림」을 구분해
     보여 준다 — 화면에서는 둘 다 아무것도 뜨지 않지만 뜻이 다르다.
+- `src/capa_simulation/components/profile_caption.py`
+  - 공용 프로필(`version`·`source`·`updated_at`)의 버전 캡션 한 줄을 만든다. 여덟 저장
+    화면이 같은 템플릿을 따로 적고 있어 한 곳만 고치면 화면끼리 문구가 갈렸다. `empty` 는
+    미저장 문구, `detail` 은 출처 **앞**(「3개 공정」), `suffix` 는 **맨 뒤**(「공지 중」)다.
+  - 모델을 import 하지 않는다. 읽기 전용 `@property` Protocol 로 세 필드만 요구한다 —
+    평범한 속성 주석은 불변이라 `GlobalDisplayOrder.updated_at: datetime` 이
+    `datetime | None` 에 맞지 않아 mypy strict 가 거절한다.
 - `src/capa_simulation/services/advance_load.py`
   - 선행 투입 물량 정규화와 월별 Capa 부하 변동률. `변동률 = 기존 계획 ÷ 선행 반영 계획`
     이고 확보율에 곱하고 Wafer 는 나눈다. 그래서 `계획 × 확보율` 인 Capa 가 **정확히
@@ -1629,6 +1638,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - hover 가 필요한 Figure 만 `staticPlot` 을 끄고 같은 캔버스의 다른 Figure 설정은
   건드리지 않는다. 끄면 `displayModeBar`·`doubleClick`·`showAxisDragHandles` 가
   기본값으로 돌아가므로 셋을 직접 끄고, 드래그 확대는 축 양쪽 `fixedrange` 로 막는다.
+  그 세 키는 `components/plotly_layout.hover_chart_config()` 가 돌려주고, 조작이 아예 없는
+  그림은 `static_chart_config()` 를 쓴다.
 
 ## 10. 로컬 파일과 보안
 

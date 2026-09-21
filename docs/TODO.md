@@ -1126,8 +1126,10 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
   위젯은 항상 그리고, 계산·표·차트만 건너뛴다". 목록은 위젯 options 라 건너뛸 수 없어
   `get_route_step_tables` 내용 토큰 캐시로 바꾸고 요약 표만 접었다. 기본 탭 warm rerun
   **2,226 → 1,147ms**. persist_state 변경 없음(위젯이 계속 그려지므로). `efb98e1`
-- [ ] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없음, 순수 유지보수
-  비용. 권장: E 시리즈 뒤로.
+- [x] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없음, 순수 유지보수
+  비용. 권장: E 시리즈 뒤로. → 2026-09-21 부분 이행: 분류 컬럼 폭 계산과 `go.Table` 두 벌
+  조립을 `monthly_table_base` 로 올렸다(Figure JSON 전후 동일). 격자 머리 여섯 호출과 반복
+  접두 생략 루프는 아직 두 모듈에 남아 있다.
 - [x] **B7 rgba 색 리터럴 검사 확장** — 남은 5곳(투명 선 2·Space 클릭·호버 표적 3)을
   `tokens.TRANSPARENT`·`tokens.HIT_TARGET` 으로 모으고 검사에 `rgba?\(` 패턴을 더했다.
   화면 값 변화 없음. `0272fa8`

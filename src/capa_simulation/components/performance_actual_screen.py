@@ -22,6 +22,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from capa_simulation.components.plotly_layout import chart_canvas_layout
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.sample_data import (
     render_pending_source,
@@ -402,9 +403,7 @@ def _trend_figure(trend: pd.DataFrame, metric: MetricSpec) -> go.Figure:
     figure.update_layout(
         height=280,
         margin={"l": 8, "r": 8, "t": 8, "b": 8},
-        paper_bgcolor=tokens.CHART_CANVAS,
-        plot_bgcolor=tokens.CHART_CANVAS,
-        font={"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": 12},
+        **chart_canvas_layout(font_size=12),
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.0, "x": 0.0},
         hovermode="x unified",
     )
@@ -451,9 +450,7 @@ def _priority_figure(
         height=280,
         # 라벨이 나가는 쪽은 왼쪽이다. 여백을 오른쪽에 주면 잘린 채로 남는다.
         margin={"l": 56, "r": 16, "t": 8, "b": 8},
-        paper_bgcolor=tokens.CHART_CANVAS,
-        plot_bgcolor=tokens.CHART_CANVAS,
-        font={"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": 12},
+        **chart_canvas_layout(font_size=12),
         showlegend=False,
     )
     # 눈금도 지표를 따른다. `.0%` 로 굳히면 수율 축이 전부 `0%` 로 찍힌다.
@@ -507,9 +504,7 @@ def _gap_matrix_figure(
     figure.update_layout(
         height=max(240, len(pivot.index) * 34 + 90),
         margin={"l": 8, "r": 8, "t": 8, "b": 8},
-        paper_bgcolor=tokens.CHART_CANVAS,
-        plot_bgcolor=tokens.CHART_CANVAS,
-        font={"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": 12},
+        **chart_canvas_layout(font_size=12),
     )
     figure.update_xaxes(type="category", title=None, side="top")
     figure.update_yaxes(type="category", autorange="reversed", title=None)

@@ -16,13 +16,14 @@ Space 배치도·상태 막대와 같은 값이다.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from capa_simulation.components.plotly_layout import chart_canvas_layout
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.services.equipment_contract import EQUIPMENT_STATUSES
@@ -89,9 +90,7 @@ def build_equipment_lifecycle_gantt(
             MAX_CHART_HEIGHT_PX, max(220, len(drawn_units) * ROW_HEIGHT_PX + CHART_CHROME_PX)
         ),
         margin={"l": 8, "r": 8, "t": 8, "b": 8},
-        paper_bgcolor=tokens.CHART_CANVAS,
-        plot_bgcolor=tokens.CHART_CANVAS,
-        font={"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": 11},
+        **chart_canvas_layout(font_size=11),
         legend={
             "title": None,
             "orientation": "h",
@@ -129,8 +128,3 @@ def render_equipment_lifecycle_gantt(
             f"호기 이름 순으로 {max_units:,}대만 그렸습니다. 나머지 {hidden_units:,}대는 "
             "조회 조건을 좁혀서 보세요."
         )
-
-
-def default_lifecycle_window(today: date) -> tuple[date, date]:
-    """기본 조회 창. 지난 반 년과 앞으로 한 해다 — 설비 일정이 놓이는 범위다."""
-    return today - timedelta(days=182), today + timedelta(days=365)

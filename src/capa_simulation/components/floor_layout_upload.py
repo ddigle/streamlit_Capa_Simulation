@@ -28,6 +28,9 @@ from capa_simulation.services.floor_layout_profile import (
     image_pixel_size,
 )
 
+# 이 화면의 위젯 키는 모두 이 접두에서 파생한다. 리터럴 접두를 자리마다 다시
+# 적으면 다른 모듈과 겹쳐도 `test_session_key_collisions` 가 볼 축이 없다.
+FLOOR_LAYOUT_WIDGET_KEY = "space_floor_layout"
 UPLOAD_NONCE_KEY = "space_floor_layout_upload_nonce"
 
 
@@ -54,7 +57,7 @@ def render_floor_layout_editor(
         uploaded = st.file_uploader(
             "배치 도면 이미지",
             type=sorted(ALLOWED_IMAGE_EXTENSIONS),
-            key=f"space_floor_layout_uploader_{building}_{floor}_{nonce}",
+            key=f"{FLOOR_LAYOUT_WIDGET_KEY}_uploader_{building}_{floor}_{nonce}",
         )
         payload = uploaded.getvalue() if uploaded is not None else None
         pixel_size = image_pixel_size(payload) if payload else None
@@ -73,7 +76,7 @@ def render_floor_layout_editor(
         auto_canvas = st.checkbox(
             "도면 종횡비로 캔버스 자동 계산",
             value=True,
-            key=f"space_floor_layout_auto_{building}_{floor}",
+            key=f"{FLOOR_LAYOUT_WIDGET_KEY}_auto_{building}_{floor}",
             help="끄면 폭·높이를 이 층에 맞게 직접 입력합니다.",
         )
         # 자동 계산이 켜져 있거나 새 도면이 올라오면 위젯 key 를 바꿔 계산값을 그대로 보여준다.
@@ -86,7 +89,7 @@ def render_floor_layout_editor(
                 value=suggested[0],
                 step=1.0,
                 disabled=auto_canvas,
-                key=f"space_floor_layout_width_{building}_{floor}_{canvas_scope}",
+                key=f"{FLOOR_LAYOUT_WIDGET_KEY}_width_{building}_{floor}_{canvas_scope}",
                 width=160,
             )
             manual_height = st.number_input(
@@ -96,7 +99,7 @@ def render_floor_layout_editor(
                 value=suggested[1],
                 step=1.0,
                 disabled=auto_canvas,
-                key=f"space_floor_layout_height_{building}_{floor}_{canvas_scope}",
+                key=f"{FLOOR_LAYOUT_WIDGET_KEY}_height_{building}_{floor}_{canvas_scope}",
                 width=160,
             )
         target_width = suggested[0] if auto_canvas else float(manual_width)
@@ -120,7 +123,7 @@ def render_floor_layout_editor(
             shrink_confirmed = st.checkbox(
                 "이탈 호기를 알고도 이 캔버스로 저장",
                 value=False,
-                key=f"space_floor_layout_shrink_{building}_{floor}",
+                key=f"{FLOOR_LAYOUT_WIDGET_KEY}_shrink_{building}_{floor}",
             )
 
         with st.container(horizontal=True, gap="small"):
@@ -129,13 +132,13 @@ def render_floor_layout_editor(
                 icon=":material/save:",
                 type="primary",
                 disabled=not shrink_confirmed,
-                key=f"space_floor_layout_save_{building}_{floor}",
+                key=f"{FLOOR_LAYOUT_WIDGET_KEY}_save_{building}_{floor}",
             )
             delete_clicked = st.button(
                 "도면·캔버스 삭제",
                 icon=":material/delete:",
                 disabled=profile is None,
-                key=f"space_floor_layout_delete_{building}_{floor}",
+                key=f"{FLOOR_LAYOUT_WIDGET_KEY}_delete_{building}_{floor}",
             )
 
     if save_clicked:

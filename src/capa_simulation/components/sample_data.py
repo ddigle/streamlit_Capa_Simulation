@@ -30,11 +30,6 @@ SAMPLE_TOGGLE_KEY = "dynamic_capa_sample_data"
 SAMPLE_TOGGLE_LABEL = "샘플 데이터"
 
 
-def sample_data_enabled() -> bool:
-    """지금 샘플을 보여 줄지. 위젯을 그리기 **전**에도 읽을 수 있어야 한다."""
-    return bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
-
-
 def render_sample_switch(*, key: str, source: str) -> bool:
     """스위치 한 줄. `source` 는 연결되면 이 자리를 채울 원천의 이름이다."""
     if SAMPLE_TOGGLE_KEY not in st.session_state:

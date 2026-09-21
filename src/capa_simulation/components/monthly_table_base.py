@@ -10,6 +10,10 @@
 그리므로 여기로 합쳤다. 행 그룹 가로선만 표 구조가 달라 각 모듈에 남긴다. `grouped` 는
 부분합 3단(제품·생산·총계)을 고정 폭으로, `hierarchical` 은 계층 깊이에 따라 폭을
 줄여 가며 긋는다.
+
+분류 컬럼 폭(`classification_widths`)과 `go.Table` 두 벌 조립(`build_split_table_figures`)도
+같은 이유로 여기 있다. 행 모델과 면색 규칙만 표마다 다르고, 그 결과를 받아 Figure 를
+만드는 절차는 한 벌이면 된다.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ import streamlit as st
 # 테스트가 스크롤바를 갈아끼울 수 있도록 이름이 아니라 모듈을 잡는다. 이름을 직접
 # import 하면 여기서 잡은 바인딩이 교체를 무시한다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+from capa_simulation.components.plotly_layout import static_chart_config
 from capa_simulation.components.process_labels import apply_process_label
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
@@ -32,6 +37,7 @@ from capa_simulation.components.scroll_shell import (
 )
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
+from capa_simulation.services.month_columns import month_label as service_month_label
 
 # 색과 치수는 design/tokens.py 가 단일 근거다. 여기서는 표 문맥의 이름만 붙인다.
 TRANSPARENT_COLOR = tokens.TRANSPARENT
@@ -144,11 +150,44 @@ def text_width_units(value: str) -> float:
     )
 
 
+def classification_widths(
+    values: list[list[str]],
+    columns: list[str],
+    labels: Mapping[str, str],
+) -> list[int]:
+    """분류 컬럼마다 머리글과 값 중 가장 긴 글자에 맞춘 px 폭.
+
+    두 표가 같은 셈을 따로 갖고 있었다. 폭이 갈리면 왼쪽 고정 영역과 월 영역의 경계가
+    표마다 다른 자리에 서고, 스크롤 폭 계산도 함께 어긋난다.
+    """
+    widths: list[int] = []
+    for column_index, column in enumerate(columns):
+        texts = [labels.get(column, column), *values[column_index]]
+        max_units = max((text_width_units(text) for text in texts), default=4.0)
+        widths.append(
+            max(
+                CLASSIFICATION_MIN_WIDTH_PX,
+                min(
+                    CLASSIFICATION_MAX_WIDTH_PX,
+                    round(
+                        max_units * CLASSIFICATION_TEXT_UNIT_PX
+                        + CLASSIFICATION_HORIZONTAL_PADDING_PX
+                    ),
+                ),
+            )
+        )
+    return widths
+
+
 def month_label(month: str) -> str:
-    """`YYYYMM`을 화면 표기 `YY.MM`으로 바꾼다."""
+    """`YYYYMM`을 화면 표기 `YY.MM`으로 바꾼다.
+
+    서식 자체는 `services/month_columns.month_label` 하나가 정한다. 여기는 월 축이 아닌
+    칸(연간 Total 등)도 섞여 들어오는 자리라 `YYYYMM` 이 아니면 받은 글자를 그대로 둔다.
+    """
     normalized = str(month).strip()
     if len(normalized) == 6 and normalized.isdigit():
-        return f"{normalized[2:4]}.{normalized[4:6]}"
+        return service_month_label(int(normalized))
     return normalized
 
 
@@ -258,6 +297,79 @@ def add_month_boundaries(figure: go.Figure, month_columns: Sequence[str]) -> Non
         )
 
 
+def build_split_table_figures(
+    *,
+    classification_headers: list[str],
+    classification_values: list[list[str]],
+    classification_fill_colors: list[list[str]],
+    column_widths: list[int],
+    month_headers: list[str],
+    month_values: list[list[str]],
+    month_row_colors: list[str],
+    row_count: int,
+) -> tuple[go.Figure, go.Figure]:
+    """고정 분류 영역과 월 영역의 `go.Table` 한 쌍을 만든다.
+
+    두 표가 같은 `go.Table` 두 벌과 같은 `common_layout` 을 각자 적고 있었고, 높이 식만
+    `table_height_px` 와 따로 한 번 더 적혀 있었다. 여기 한 곳에서 만든다.
+
+    **색은 이 함수 안에서 읽는다.** 모듈 상수로 올리면 프로세스가 처음 읽은 테마에 굳는다.
+    """
+    common_layout: dict[str, Any] = {
+        "height": table_height_px(row_count),
+        "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
+        "paper_bgcolor": tokens.CHART_CANVAS,
+        "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
+    }
+    header_style: dict[str, Any] = {
+        "align": "center",
+        "fill_color": tokens.HEADER_BACKGROUND,
+        "line_color": TRANSPARENT_COLOR,
+        "font": {"color": tokens.TEXT, "size": 14, "family": tokens.FONT_FAMILY},
+        "height": HEADER_HEIGHT_PX,
+    }
+    cell_font: dict[str, Any] = {
+        "color": tokens.TEXT,
+        "size": 13,
+        "family": tokens.FONT_FAMILY,
+    }
+    label_figure = go.Figure(
+        go.Table(
+            columnwidth=column_widths,
+            header={"values": classification_headers, **header_style},
+            cells={
+                "values": classification_values,
+                "align": "center",
+                "fill_color": classification_fill_colors,
+                "line_color": TRANSPARENT_COLOR,
+                "font": cell_font,
+                "height": ROW_HEIGHT_PX,
+            },
+        )
+    )
+    month_figure = go.Figure(
+        go.Table(
+            columnwidth=[1.0] * len(month_headers),
+            header={"values": month_headers, **header_style},
+            cells={
+                "values": month_values,
+                "align": "center",
+                "fill_color": [month_row_colors for _ in month_headers],
+                "line_color": TRANSPARENT_COLOR,
+                "font": cell_font,
+                "height": ROW_HEIGHT_PX,
+            },
+        )
+    )
+    label_figure.update_layout(**common_layout)
+    month_figure.update_layout(
+        **common_layout,
+        width=len(month_headers) * MONTH_COLUMN_WIDTH_PX,
+        autosize=False,
+    )
+    return label_figure, month_figure
+
+
 def render_split_scroll_table(
     *,
     key: str,
@@ -309,7 +421,7 @@ def render_split_scroll_table(
                 label_figure,
                 key=f"{key}_labels",
                 width="stretch",
-                config={"displayModeBar": False, "staticPlot": True},
+                config=static_chart_config(),
             )
     with month_column:
         with st.container(key=f"{key}_month_region", gap=None):
@@ -327,5 +439,5 @@ def render_split_scroll_table(
                     month_figure,
                     key=f"{key}_months",
                     width="stretch",
-                    config={"displayModeBar": False, "staticPlot": True},
+                    config=static_chart_config(),
                 )

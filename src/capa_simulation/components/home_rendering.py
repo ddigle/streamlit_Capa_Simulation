@@ -30,6 +30,10 @@ from capa_simulation.components.home_preference import (
     section_accent_bar_css,
 )
 from capa_simulation.components.loading_progress import LoadingStage
+from capa_simulation.components.plotly_layout import (
+    hover_chart_config,
+    static_chart_config,
+)
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
@@ -400,7 +404,7 @@ def render_home_figures(
                 label_figure,
                 width="stretch",
                 key="production_lob_labels",
-                config={"displayModeBar": False, "staticPlot": True},
+                config=static_chart_config(),
             )
             # `계획 세부수량` 제목과 「상세」 토글. 제목이 Plotly 주석으로 쓰던 자리를
             # 그대로 받는다. 월 칸에도 같은 높이의 빈 줄을 끼워야 행이 맞는다.
@@ -409,7 +413,7 @@ def render_home_figures(
                 detail_figures[0],
                 width="stretch",
                 key="production_detail_labels",
-                config={"displayModeBar": False, "staticPlot": True},
+                config=static_chart_config(),
             )
             # `주요공정 확보율` 제목. 네 구획이 같은 줄 컴포넌트를 쓰므로 제목과 표
             # 사이 간격이 넷 다 같다.
@@ -418,14 +422,14 @@ def render_home_figures(
                 detail_figures[2],
                 width="stretch",
                 key="key_process_heatmap_labels",
-                config={"displayModeBar": False, "staticPlot": True},
+                config=static_chart_config(),
             )
             render_section_title_row("상세 B/N 공정", key="bottleneck_title_row")
             st.plotly_chart(
                 detail_figures[4],
                 width="stretch",
                 key="bottleneck_detail_labels",
-                config={"displayModeBar": False, "staticPlot": True},
+                config=static_chart_config(),
             )
     with month_column:
         # 라벨 영역은 월 영역 위에 얹힌 스크롤바 높이만큼 내려야 행이 맞는다.
@@ -484,7 +488,7 @@ def render_home_figures(
                     detail_figures[1],
                     width="stretch",
                     key="production_detail_months",
-                    config={"displayModeBar": False, "staticPlot": True},
+                    config=static_chart_config(),
                 )
                 # 라벨 칸의 `주요공정 확보율` 제목 줄과 짝이 되는 빈 줄.
                 st.container(
@@ -498,11 +502,7 @@ def render_home_figures(
                     detail_figures[3],
                     width="stretch",
                     key="key_process_heatmap_months",
-                    config={
-                        "displayModeBar": False,
-                        "doubleClick": False,
-                        "showAxisDragHandles": False,
-                    },
+                    config=hover_chart_config(),
                 )
                 # 라벨 칸의 `상세 B/N 공정` 제목 줄과 짝이 되는 빈 줄.
                 st.container(
@@ -519,9 +519,5 @@ def render_home_figures(
                     detail_figures[5],
                     width="stretch",
                     key="bottleneck_detail_months",
-                    config={
-                        "displayModeBar": False,
-                        "doubleClick": False,
-                        "showAxisDragHandles": False,
-                    },
+                    config=hover_chart_config(),
                 )
