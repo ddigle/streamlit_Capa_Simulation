@@ -126,6 +126,8 @@ src/capa_simulation/navigation.py
                                사이드바 페이지 목록 선언
 src/capa_simulation/page_bootstrap.py
                                계산 페이지 공통 진입 절차(활성 리비전·조회기간)
+src/capa_simulation/home_state.py
+                               HOME 토글의 세션 키·기본값 계약(UI 의존성 없음)
 src/capa_simulation/design/    색·서체·표 치수 토큰
 src/capa_simulation/components/ Streamlit 커스텀 UI 컴포넌트와 Figure 생성기
 src/capa_simulation/io/        Core Data 어댑터와 DuckDB 활성 기준정보 경계

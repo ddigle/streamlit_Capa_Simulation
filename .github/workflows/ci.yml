@@ -41,7 +41,13 @@ jobs:
         with:
           # **얕은 복제면 안 된다.** `tests/test_migration_parity.py` 가 후보 브랜치의 새
           # 마이그레이션을 가리려고 `main` 과의 merge-base 를 본다. 기본값(depth 1)에서는
-          # `main` 이 없어 그 검사가 조용히 건너뛰어진다 — 초록인데 아무것도 안 본 상태다.
+          # 갈림점까지의 이력이 없어 그 검사가 아무것도 가리지 못한다.
+          #
+          # **그러나 이 한 줄로는 부족하다.** `fetch-depth: 0` 은 이력을 전부 받지만
+          # **로컬 `main` 브랜치를 만들지 않는다** — 로컬 브랜치는 체크아웃한 것 하나뿐이라
+          # `git merge-base main HEAD` 는 `fatal: Not a valid object name main` 로 실패한다.
+          # 그래서 검사 쪽이 `origin/main` 폴백을 갖고, CI 안에서 기준을 못 찾으면 skip 이
+          # 아니라 fail 한다. 둘이 짝이다 — 한쪽만 있으면 초록인데 아무것도 안 본 상태가 된다.
           fetch-depth: 0
 
       # `setup-python` 을 쓰지 않는다. 파이썬 버전의 근거가 `uv.lock` 하나여야 CI 와 개발 PC 가
