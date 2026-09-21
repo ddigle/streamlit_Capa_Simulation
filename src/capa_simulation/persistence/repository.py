@@ -26,9 +26,11 @@ from capa_simulation.persistence._sql_helpers import (
     hash_tables,
     insert_frame,
     load_frame,
+    load_profile_header,
     quote,
     require_tables,
     required_text,
+    reset_profile,
     transaction,
 )
 from capa_simulation.persistence.advance_load_store import (
@@ -304,20 +306,14 @@ class DuckDBScenarioRepository:
     def load_global_display_order(self) -> GlobalDisplayOrder:
         """Load the scenario-independent display-order profile."""
         with self._connect() as connection:
-            metadata = connection.execute(
-                """
-                SELECT version, source, updated_at
-                FROM app_meta.global_display_order
-                WHERE profile_id = 1
-                """
-            ).fetchone()
-            if metadata is None:
+            header = load_profile_header(connection, "global_display_order")
+            if header is None:
                 raise RuntimeError("공용 표시순서가 초기화되지 않았습니다.")
             rules = load_global_display_order_rules(connection)
         return GlobalDisplayOrder(
-            version=int(metadata[0]),
-            source=str(metadata[1]),
-            updated_at=metadata[2],
+            version=header[0],
+            source=header[1],
+            updated_at=header[2],
             rules=rules,
         )
 
@@ -331,14 +327,7 @@ class DuckDBScenarioRepository:
         prepared_rules = prepare_global_display_order_rules(rules)
         source_label = required_text(source, "표시순서 변경 출처")
         with self._write_transaction() as connection:
-            row = connection.execute(
-                "SELECT version FROM app_meta.global_display_order WHERE profile_id = 1"
-            ).fetchone()
-            version = 1 if row is None else int(row[0]) + 1
-            connection.execute(
-                "DELETE FROM app_meta.global_display_order_rule WHERE profile_id = 1"
-            )
-            connection.execute("DELETE FROM app_meta.global_display_order WHERE profile_id = 1")
+            version = reset_profile(connection, "global_display_order", "global_display_order_rule")
             insert_global_display_order(
                 connection,
                 prepared_rules,
@@ -354,14 +343,8 @@ class DuckDBScenarioRepository:
         여기서 예외를 내면 첫 저장 전까지 모든 화면이 죽는다.
         """
         with self._connect() as connection:
-            metadata = connection.execute(
-                """
-                SELECT version, source, updated_at
-                FROM app_meta.global_process_rename
-                WHERE profile_id = 1
-                """
-            ).fetchone()
-            if metadata is None:
+            header = load_profile_header(connection, "global_process_rename")
+            if header is None:
                 return GlobalProcessRename(
                     version=0,
                     source="",
@@ -370,9 +353,9 @@ class DuckDBScenarioRepository:
                 )
             rules = load_global_process_rename_rules(connection)
         return GlobalProcessRename(
-            version=int(metadata[0]),
-            source=str(metadata[1]),
-            updated_at=metadata[2],
+            version=header[0],
+            source=header[1],
+            updated_at=header[2],
             rules=rules,
         )
 
@@ -391,14 +374,9 @@ class DuckDBScenarioRepository:
         prepared_rules = prepare_process_rename_rules(rules)
         source_label = required_text(source, "공정 표시명 변경 출처")
         with self._write_transaction() as connection:
-            row = connection.execute(
-                "SELECT version FROM app_meta.global_process_rename WHERE profile_id = 1"
-            ).fetchone()
-            version = 1 if row is None else int(row[0]) + 1
-            connection.execute(
-                "DELETE FROM app_meta.global_process_rename_rule WHERE profile_id = 1"
+            version = reset_profile(
+                connection, "global_process_rename", "global_process_rename_rule"
             )
-            connection.execute("DELETE FROM app_meta.global_process_rename WHERE profile_id = 1")
             insert_global_process_rename(
                 connection,
                 prepared_rules,
@@ -414,14 +392,8 @@ class DuckDBScenarioRepository:
         정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
         """
         with self._connect() as connection:
-            metadata = connection.execute(
-                """
-                SELECT version, source, updated_at
-                FROM app_meta.global_execution_capacity
-                WHERE profile_id = 1
-                """
-            ).fetchone()
-            if metadata is None:
+            header = load_profile_header(connection, "global_execution_capacity")
+            if header is None:
                 return GlobalExecutionCapacity(
                     version=0,
                     source="",
@@ -430,9 +402,9 @@ class DuckDBScenarioRepository:
                 )
             rows = load_global_execution_capacity_rows(connection)
         return GlobalExecutionCapacity(
-            version=int(metadata[0]),
-            source=str(metadata[1]),
-            updated_at=metadata[2],
+            version=header[0],
+            source=header[1],
+            updated_at=header[2],
             rows=prepare_execution_capacity(rows),
         )
 
@@ -451,15 +423,8 @@ class DuckDBScenarioRepository:
         prepared = prepare_execution_capacity(rows)
         source_label = required_text(source, "실행 Capa 반영 출처")
         with self._write_transaction() as connection:
-            current = connection.execute(
-                "SELECT version FROM app_meta.global_execution_capacity WHERE profile_id = 1"
-            ).fetchone()
-            version = 1 if current is None else int(current[0]) + 1
-            connection.execute(
-                "DELETE FROM app_meta.global_execution_capacity_row WHERE profile_id = 1"
-            )
-            connection.execute(
-                "DELETE FROM app_meta.global_execution_capacity WHERE profile_id = 1"
+            version = reset_profile(
+                connection, "global_execution_capacity", "global_execution_capacity_row"
             )
             insert_global_execution_capacity(
                 connection, prepared, version=version, source=source_label
@@ -507,11 +472,7 @@ class DuckDBScenarioRepository:
         low, high = validate_top5_band(min_rate, max_rate)
         source_label = required_text(source, "Top5 확보율 구간 출처")
         with self._write_transaction() as connection:
-            current = connection.execute(
-                "SELECT version FROM app_meta.global_top5_band WHERE profile_id = 1"
-            ).fetchone()
-            version = 1 if current is None else int(current[0]) + 1
-            connection.execute("DELETE FROM app_meta.global_top5_band WHERE profile_id = 1")
+            version = reset_profile(connection, "global_top5_band")
             connection.execute(
                 """
                 INSERT INTO app_meta.global_top5_band
@@ -529,20 +490,14 @@ class DuckDBScenarioRepository:
         정상이고, 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
         """
         with self._connect() as connection:
-            metadata = connection.execute(
-                """
-                SELECT version, source, updated_at
-                FROM app_meta.global_key_process
-                WHERE profile_id = 1
-                """
-            ).fetchone()
-            if metadata is None:
+            header = load_profile_header(connection, "global_key_process")
+            if header is None:
                 return GlobalKeyProcess(version=0, source="", updated_at=None, processes=())
             processes = load_global_key_process_rows(connection)
         return GlobalKeyProcess(
-            version=int(metadata[0]),
-            source=str(metadata[1]),
-            updated_at=metadata[2],
+            version=header[0],
+            source=header[1],
+            updated_at=header[2],
             processes=normalize_key_processes(processes),
         )
 
@@ -560,12 +515,7 @@ class DuckDBScenarioRepository:
         normalized = normalize_key_processes(processes)
         source_label = required_text(source, "주요공정 목록 출처")
         with self._write_transaction() as connection:
-            current = connection.execute(
-                "SELECT version FROM app_meta.global_key_process WHERE profile_id = 1"
-            ).fetchone()
-            version = 1 if current is None else int(current[0]) + 1
-            connection.execute("DELETE FROM app_meta.global_key_process_item WHERE profile_id = 1")
-            connection.execute("DELETE FROM app_meta.global_key_process WHERE profile_id = 1")
+            version = reset_profile(connection, "global_key_process", "global_key_process_item")
             insert_global_key_process(connection, normalized, version=version, source=source_label)
         return self.load_global_key_process()
 
@@ -640,11 +590,7 @@ class DuckDBScenarioRepository:
         """
         source_label = required_text(source, "Summary 공지 출처")
         with self._write_transaction() as connection:
-            current = connection.execute(
-                "SELECT version FROM app_meta.global_summary_note WHERE profile_id = 1"
-            ).fetchone()
-            version = 1 if current is None else int(current[0]) + 1
-            connection.execute("DELETE FROM app_meta.global_summary_note WHERE profile_id = 1")
+            version = reset_profile(connection, "global_summary_note")
             connection.execute(
                 """
                 INSERT INTO app_meta.global_summary_note (profile_id, note, version, source)
@@ -708,13 +654,7 @@ class DuckDBScenarioRepository:
             raise ValueError("비교 리비전만 저장할 수 없습니다. 시나리오를 함께 주세요.")
         source_label = required_text(source, "비교 대상 변경 출처")
         with self._write_transaction() as connection:
-            row = connection.execute(
-                "SELECT version FROM app_meta.global_comparison_scenario WHERE profile_id = 1"
-            ).fetchone()
-            version = 1 if row is None else int(row[0]) + 1
-            connection.execute(
-                "DELETE FROM app_meta.global_comparison_scenario WHERE profile_id = 1"
-            )
+            version = reset_profile(connection, "global_comparison_scenario")
             connection.execute(
                 """
                 INSERT INTO app_meta.global_comparison_scenario
@@ -732,14 +672,8 @@ class DuckDBScenarioRepository:
         정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
         """
         with self._connect() as connection:
-            metadata = connection.execute(
-                """
-                SELECT version, source, updated_at
-                FROM app_meta.global_advance_load
-                WHERE profile_id = 1
-                """
-            ).fetchone()
-            if metadata is None:
+            header = load_profile_header(connection, "global_advance_load")
+            if header is None:
                 return GlobalAdvanceLoad(
                     version=0,
                     source="",
@@ -748,9 +682,9 @@ class DuckDBScenarioRepository:
                 )
             rows = load_global_advance_load_rows(connection)
         return GlobalAdvanceLoad(
-            version=int(metadata[0]),
-            source=str(metadata[1]),
-            updated_at=metadata[2],
+            version=header[0],
+            source=header[1],
+            updated_at=header[2],
             rows=prepare_advance_load(rows),
         )
 
@@ -768,14 +702,7 @@ class DuckDBScenarioRepository:
         prepared_rows = prepare_advance_load(rows)
         source_label = required_text(source, "선행 물량 변경 출처")
         with self._write_transaction() as connection:
-            row = connection.execute(
-                "SELECT version FROM app_meta.global_advance_load WHERE profile_id = 1"
-            ).fetchone()
-            version = 1 if row is None else int(row[0]) + 1
-            connection.execute(
-                "DELETE FROM app_meta.global_advance_load_month WHERE profile_id = 1"
-            )
-            connection.execute("DELETE FROM app_meta.global_advance_load WHERE profile_id = 1")
+            version = reset_profile(connection, "global_advance_load", "global_advance_load_month")
             insert_global_advance_load(
                 connection,
                 prepared_rows,
@@ -791,14 +718,8 @@ class DuckDBScenarioRepository:
         정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
         """
         with self._connect() as connection:
-            metadata = connection.execute(
-                """
-                SELECT version, source, updated_at
-                FROM app_meta.global_past_data
-                WHERE profile_id = 1
-                """
-            ).fetchone()
-            if metadata is None:
+            header = load_profile_header(connection, "global_past_data")
+            if header is None:
                 return GlobalPastData(
                     version=0,
                     source="",
@@ -812,9 +733,9 @@ class DuckDBScenarioRepository:
                 for name, (_, columns) in PAST_TABLES.items()
             }
         return GlobalPastData(
-            version=int(metadata[0]),
-            source=str(metadata[1]),
-            updated_at=metadata[2],
+            version=header[0],
+            source=header[1],
+            updated_at=header[2],
             monthly=loaded["월별"],
             plan_detail=loaded["계획"],
             securement=loaded["확보율"],
@@ -837,13 +758,11 @@ class DuckDBScenarioRepository:
         }
         source_label = required_text(source, "과거 구간 변경 출처")
         with self._write_transaction() as connection:
-            row = connection.execute(
-                "SELECT version FROM app_meta.global_past_data WHERE profile_id = 1"
-            ).fetchone()
-            version = 1 if row is None else int(row[0]) + 1
-            for table, _ in PAST_TABLES.values():
-                connection.execute(f"DELETE FROM app_meta.{quote(table)} WHERE profile_id = 1")
-            connection.execute("DELETE FROM app_meta.global_past_data WHERE profile_id = 1")
+            version = reset_profile(
+                connection,
+                "global_past_data",
+                *(table for table, _ in PAST_TABLES.values()),
+            )
             insert_global_past_data(
                 connection,
                 dict(prepared),

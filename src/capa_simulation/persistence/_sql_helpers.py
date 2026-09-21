@@ -112,6 +112,42 @@ def insert_profile_header(
     )
 
 
+def load_profile_header(
+    connection: duckdb.DuckDBPyConnection,
+    table: str,
+) -> tuple[int, str, datetime] | None:
+    """공용 프로필 헤더 한 행(version·source·updated_at). 한 번도 저장하지 않았으면 None."""
+    row = connection.execute(
+        f"""
+        SELECT version, source, updated_at
+        FROM app_meta.{quote(table)}
+        WHERE profile_id = 1
+        """
+    ).fetchone()
+    if row is None:
+        return None
+    return int(row[0]), str(row[1]), row[2]
+
+
+def reset_profile(
+    connection: duckdb.DuckDBPyConnection,
+    header_table: str,
+    *detail_tables: str,
+) -> int:
+    """공용 프로필의 현재본을 지우고 다음 version 을 돌려준다. 쓰기 트랜잭션 안에서만 부른다.
+
+    상세 표를 먼저, 헤더를 나중에 지운다. 헤더 INSERT 는 호출자가 그대로 쥐고 있으므로
+    행 0건(전체 해제) 저장에서도 version 은 올라간다.
+    """
+    row = connection.execute(
+        f"SELECT version FROM app_meta.{quote(header_table)} WHERE profile_id = 1"
+    ).fetchone()
+    for table in detail_tables:
+        connection.execute(f"DELETE FROM app_meta.{quote(table)} WHERE profile_id = 1")
+    connection.execute(f"DELETE FROM app_meta.{quote(header_table)} WHERE profile_id = 1")
+    return 1 if row is None else int(row[0]) + 1
+
+
 def insert_frame(
     connection: duckdb.DuckDBPyConnection,
     *,
