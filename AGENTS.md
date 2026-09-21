@@ -1141,8 +1141,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/past_data_store.py`: 공용 과거 구간 프로필 세 표의 조회·삽입 SQL
 - `persistence/preset_store.py`: 리비전 프리셋 저장·복원
 - `persistence/source_data_store.py`: 원천 Core Data raw 와 컬럼 프로파일
-- `persistence/summaries.py`: 조회 행을 요약 모델로 변환
-- `persistence/_sql_helpers.py`: 프레임 저장·조회와 값 변환 공용 헬퍼
+- `persistence/summaries.py`: 조회 행을 요약 모델로 변환하고 그 요약 SELECT 투영
+  (`SCENARIO_SUMMARY_SELECT`·`REVISION_SUMMARY_SELECT`·`OFFICIAL_RELEASE_SELECT`)을 매퍼
+  옆에 둔다 — 투영 열 순서와 row 인덱스가 한 파일 안에서 짝을 이룬다
+- `persistence/_sql_helpers.py`: 프레임 저장·조회·값 변환과 트랜잭션 경계 공용 헬퍼. 두
+  Repository 의 `_write_transaction` 과 `_migration_core` 가 `transaction()` 한 벌을 쓰고,
+  register → INSERT BY NAME → unregister 는 `insert_by_name()`, 공용 프로필 헤더는
+  `insert_profile_header()`, 표 하나의 감사 해시는 `hash_frame()`(`hash_tables` 와 같은
+  바이트 열, `tests/test_sql_helpers.py` 가 값을 핀한다)이 맡는다
 - `persistence/_migration_core.py`: 두 DuckDB가 공유하는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션)
 - `persistence/migration_runner.py`, `equipment_migration_runner.py`: 각 DB의 패키지·스키마를

@@ -29,6 +29,7 @@ from capa_simulation.persistence._sql_helpers import (
     quote,
     require_tables,
     required_text,
+    transaction,
 )
 from capa_simulation.persistence.advance_load_store import (
     insert_global_advance_load,
@@ -89,6 +90,8 @@ from capa_simulation.persistence.source_data_store import (
 )
 from capa_simulation.persistence.summaries import (
     OFFICIAL_RELEASE_SELECT,
+    REVISION_SUMMARY_SELECT,
+    SCENARIO_SUMMARY_SELECT,
     official_release_summary,
     revision_summary,
     scenario_summary,
@@ -221,6 +224,27 @@ def _clear_global_comparison_scenario(
         """,
         [scenario_id],
     )
+
+
+def _require_not_latest_official(
+    connection: duckdb.DuckDBPyConnection,
+    scenario_id: str,
+    action: str,
+) -> None:
+    """최신 공식버전이 가리키는 시나리오면 막는다. `action` 은 문구의 동사다."""
+    latest_official = connection.execute(
+        """
+        SELECT scenario_id
+        FROM app_meta.official_release
+        ORDER BY release_no DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    if latest_official is not None and str(latest_official[0]) == scenario_id:
+        raise ValueError(
+            f"현재 최신 공식버전의 시나리오는 {action}할 수 없습니다. "
+            "다른 공식버전을 먼저 지정하세요."
+        )
 
 
 _WRITE_LOCK = threading.RLock()
@@ -1107,17 +1131,9 @@ class DuckDBScenarioRepository:
         where_clause = "" if include_archived else "WHERE s.status = 'ACTIVE'"
         with self._connect() as connection:
             rows = connection.execute(
-                f"""
-                SELECT s.scenario_id, d.dataset_id, s.scenario_name,
-                       s.source_simulation_code, s.source_simulation_name,
-                       d.source_type, s.status, s.active_revision_id,
-                       r.revision_no, s.created_at, s.updated_at
-                FROM app_meta.scenario s
-                JOIN app_meta.dataset d ON d.scenario_id = s.scenario_id
-                JOIN app_meta.scenario_revision r ON r.revision_id = s.active_revision_id
-                {where_clause}
-                ORDER BY s.list_order NULLS LAST, s.updated_at DESC, s.scenario_name
-                """
+                SCENARIO_SUMMARY_SELECT
+                + f" {where_clause}"
+                + " ORDER BY s.list_order NULLS LAST, s.updated_at DESC, s.scenario_name"
             ).fetchall()
         return [scenario_summary(row) for row in rows]
 
@@ -1130,19 +1146,7 @@ class DuckDBScenarioRepository:
         `scripts/compact_duckdb.py` 로 재구축한다.
         """
         with self._write_transaction() as connection:
-            latest_official = connection.execute(
-                """
-                SELECT scenario_id
-                FROM app_meta.official_release
-                ORDER BY release_no DESC
-                LIMIT 1
-                """
-            ).fetchone()
-            if latest_official is not None and str(latest_official[0]) == scenario_id:
-                raise ValueError(
-                    "현재 최신 공식버전의 시나리오는 보관할 수 없습니다. "
-                    "다른 공식버전을 먼저 지정하세요."
-                )
+            _require_not_latest_official(connection, scenario_id, "보관")
             changed = connection.execute(
                 """
                 UPDATE app_meta.scenario
@@ -1212,13 +1216,7 @@ class DuckDBScenarioRepository:
     def list_revisions(self, scenario_id: str) -> list[RevisionSummary]:
         with self._connect() as connection:
             rows = connection.execute(
-                """
-                SELECT revision_id, scenario_id, revision_no, revision_name,
-                       parent_revision_id, note, reference_hash, created_at
-                FROM app_meta.scenario_revision
-                WHERE scenario_id = ?
-                ORDER BY revision_no DESC
-                """,
+                REVISION_SUMMARY_SELECT + " WHERE scenario_id = ? ORDER BY revision_no DESC",
                 [scenario_id],
             ).fetchall()
         return [revision_summary(row) for row in rows]
@@ -1324,15 +1322,8 @@ class DuckDBScenarioRepository:
     def load_revision(self, revision_id: str) -> ScenarioSnapshot:
         with self._connect() as connection:
             scenario_row = connection.execute(
-                """
-                SELECT s.scenario_id, d.dataset_id, s.scenario_name,
-                       s.source_simulation_code, s.source_simulation_name,
-                       d.source_type, s.status, s.active_revision_id,
-                       active_revision.revision_no, s.created_at, s.updated_at
-                FROM app_meta.scenario s
-                JOIN app_meta.dataset d ON d.scenario_id = s.scenario_id
-                JOIN app_meta.scenario_revision active_revision
-                  ON active_revision.revision_id = s.active_revision_id
+                SCENARIO_SUMMARY_SELECT
+                + """
                 JOIN app_meta.scenario_revision selected_revision
                   ON selected_revision.scenario_id = s.scenario_id
                 WHERE selected_revision.revision_id = ?
@@ -1343,12 +1334,7 @@ class DuckDBScenarioRepository:
                 raise KeyError(f"리비전을 찾을 수 없습니다: {revision_id}")
             scenario = scenario_summary(scenario_row)
             revision_row = connection.execute(
-                """
-                SELECT revision_id, scenario_id, revision_no, revision_name,
-                       parent_revision_id, note, reference_hash, created_at
-                FROM app_meta.scenario_revision
-                WHERE revision_id = ?
-                """,
+                REVISION_SUMMARY_SELECT + " WHERE revision_id = ?",
                 [revision_id],
             ).fetchone()
             if revision_row is None:
@@ -1409,19 +1395,7 @@ class DuckDBScenarioRepository:
             if owner_row is None:
                 raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
             dataset_id = str(owner_row[0])
-            latest_official = connection.execute(
-                """
-                SELECT scenario_id
-                FROM app_meta.official_release
-                ORDER BY release_no DESC
-                LIMIT 1
-                """
-            ).fetchone()
-            if latest_official is not None and str(latest_official[0]) == scenario_id:
-                raise ValueError(
-                    "현재 최신 공식버전의 시나리오는 삭제할 수 없습니다. "
-                    "다른 공식버전을 먼저 지정하세요."
-                )
+            _require_not_latest_official(connection, scenario_id, "삭제")
             revision_ids = [
                 str(row[0])
                 for row in connection.execute(
@@ -1538,14 +1512,8 @@ class DuckDBScenarioRepository:
 
     @contextmanager
     def _write_transaction(self) -> Iterator[duckdb.DuckDBPyConnection]:
-        with _WRITE_LOCK, self._connect() as connection:
-            connection.execute("BEGIN TRANSACTION")
-            try:
-                yield connection
-                connection.execute("COMMIT")
-            except Exception:
-                connection.execute("ROLLBACK")
-                raise
+        with _WRITE_LOCK, self._connect() as connection, transaction(connection):
+            yield connection
         # COMMIT 이 끝나고 연결이 닫힌 뒤에만 표시한다. `sync_state` 는 등록되지 않은
         # 환경에서 아무 파일도 만들지 않으므로 개발 PC·CI 동작은 그대로다.
         sync_state.mark_dirty(self._database_path)

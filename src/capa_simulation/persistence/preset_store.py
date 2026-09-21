@@ -9,6 +9,7 @@ from datetime import date, datetime
 import duckdb
 import pandas as pd
 
+from capa_simulation.persistence._sql_helpers import insert_by_name
 from capa_simulation.persistence.models import (
     DEFAULT_STANDARD_TARGET_DETAIL_LEVEL,
     DEFAULT_STANDARD_TARGET_OUTPUT_METRIC,
@@ -61,16 +62,12 @@ def insert_preset(
                 "display_order": range(1, len(preset.included_processes) + 1),
             }
         )
-        connection.register("_incoming_preset_process", process_rows)
-        try:
-            connection.execute(
-                """
-                INSERT INTO app_meta.scenario_preset_process BY NAME
-                SELECT * FROM _incoming_preset_process
-                """
-            )
-        finally:
-            connection.unregister("_incoming_preset_process")
+        insert_by_name(
+            connection,
+            schema="app_meta",
+            table_name="scenario_preset_process",
+            frame=process_rows,
+        )
     if preset.standard_target_processes:
         standard_target_rows = pd.DataFrame(
             {
@@ -79,16 +76,12 @@ def insert_preset(
                 "display_order": range(1, len(preset.standard_target_processes) + 1),
             }
         )
-        connection.register("_incoming_standard_target_process", standard_target_rows)
-        try:
-            connection.execute(
-                """
-                INSERT INTO app_meta.scenario_preset_standard_target_process BY NAME
-                SELECT * FROM _incoming_standard_target_process
-                """
-            )
-        finally:
-            connection.unregister("_incoming_standard_target_process")
+        insert_by_name(
+            connection,
+            schema="app_meta",
+            table_name="scenario_preset_standard_target_process",
+            frame=standard_target_rows,
+        )
 
 
 def load_preset(

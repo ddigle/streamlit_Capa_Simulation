@@ -18,6 +18,8 @@ from importlib.resources import files
 
 import duckdb
 
+from capa_simulation.persistence._sql_helpers import transaction
+
 
 @dataclass(frozen=True)
 class Migration:
@@ -93,8 +95,7 @@ def apply_migrations_to(
                 )
             continue
 
-        connection.execute("BEGIN TRANSACTION")
-        try:
+        with transaction(connection):
             connection.execute(migration.sql)
             connection.execute(
                 f"""
@@ -103,10 +104,6 @@ def apply_migrations_to(
                 """,
                 [migration.version, migration.name, migration.checksum],
             )
-            connection.execute("COMMIT")
-        except Exception:
-            connection.execute("ROLLBACK")
-            raise
         newly_applied.append(migration.version)
 
     return tuple(newly_applied)

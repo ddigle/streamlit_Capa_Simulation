@@ -4,12 +4,10 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
-
 import duckdb
 import pandas as pd
 
-from capa_simulation.persistence._sql_helpers import quote
+from capa_simulation.persistence._sql_helpers import insert_by_name, insert_profile_header, quote
 from capa_simulation.services.past_data import (
     PAST_DETAIL_COLUMNS,
     PAST_MONTH_COLUMNS,
@@ -52,24 +50,11 @@ def insert_global_past_data(
 
     캐시 키가 version 을 보므로 '전체 해제' 도 버전이 올라야 무효화된다.
     """
-    connection.execute(
-        """
-        INSERT INTO app_meta.global_past_data (profile_id, version, source)
-        VALUES (1, ?, ?)
-        """,
-        [version, source],
-    )
+    insert_profile_header(connection, "global_past_data", version=version, source=source)
     for name, (table, columns) in PAST_TABLES.items():
         prepared = prepare_past_table(tables[name], columns)
         if prepared.empty:
             continue
         payload = prepared.loc[:, list(columns)].copy()
         payload.insert(0, "profile_id", 1)
-        view_name = f"_incoming_{table}_{uuid4().hex}"
-        connection.register(view_name, payload)
-        try:
-            connection.execute(
-                f"INSERT INTO app_meta.{quote(table)} BY NAME SELECT * FROM {quote(view_name)}"
-            )
-        finally:
-            connection.unregister(view_name)
+        insert_by_name(connection, schema="app_meta", table_name=table, frame=payload)

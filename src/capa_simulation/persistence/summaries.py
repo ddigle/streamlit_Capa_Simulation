@@ -13,6 +13,16 @@ from capa_simulation.persistence.models import (
     ScenarioSummary,
 )
 
+SCENARIO_SUMMARY_SELECT = """
+    SELECT s.scenario_id, d.dataset_id, s.scenario_name,
+           s.source_simulation_code, s.source_simulation_name,
+           d.source_type, s.status, s.active_revision_id,
+           r.revision_no, s.created_at, s.updated_at
+    FROM app_meta.scenario s
+    JOIN app_meta.dataset d ON d.scenario_id = s.scenario_id
+    JOIN app_meta.scenario_revision r ON r.revision_id = s.active_revision_id
+"""
+
 
 def scenario_summary(row: Sequence[object]) -> ScenarioSummary:
     return ScenarioSummary(
@@ -54,6 +64,13 @@ def official_release_summary(row: Sequence[object]) -> OfficialReleaseSummary:
         revision_name=str(row[9]),
         published_at=as_datetime(row[10]),
     )
+
+
+REVISION_SUMMARY_SELECT = """
+    SELECT revision_id, scenario_id, revision_no, revision_name,
+           parent_revision_id, note, reference_hash, created_at
+    FROM app_meta.scenario_revision
+"""
 
 
 def revision_summary(row: Sequence[object]) -> RevisionSummary:

@@ -11,6 +11,8 @@ from datetime import date, datetime
 
 import pandas as pd
 
+from capa_simulation.persistence._sql_helpers import required_text
+
 # 표준 목표 Capa 조회·집계 설정의 저장 기본값. 화면 옵션 목록은 페이지가 소유하고,
 # 값이 비었을 때 되돌아갈 기본값만 프리셋과 함께 여기에 둔다.
 DEFAULT_STANDARD_TARGET_DETAIL_LEVEL = "제품정보"
@@ -182,13 +184,6 @@ def _date_text(value: date | None) -> str | None:
     return None if value is None else value.isoformat()
 
 
-def _required_text(value: str, label: str) -> str:
-    normalized = value.strip()
-    if not normalized:
-        raise ValueError(f"{label}은(는) 비어 있을 수 없습니다.")
-    return normalized
-
-
 @dataclass(frozen=True)
 class ScenarioPreset:
     """Reproducible sidebar filters stored with one immutable revision."""
@@ -303,7 +298,7 @@ class ScenarioCreate:
             ("source_type", "원천 유형"),
             ("pipeline_version", "파이프라인 버전"),
         ):
-            object.__setattr__(self, field_name, _required_text(getattr(self, field_name), label))
+            object.__setattr__(self, field_name, required_text(getattr(self, field_name), label))
         if self.source_row_count < 0:
             raise ValueError("원천 행 수는 0 이상이어야 합니다.")
 

@@ -4,12 +4,10 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
-
 import duckdb
 import pandas as pd
 
-from capa_simulation.persistence._sql_helpers import quote
+from capa_simulation.persistence._sql_helpers import insert_by_name, insert_profile_header, quote
 from capa_simulation.services.execution_capacity import (
     EXECUTION_CAPACITY_COLUMNS,
     prepare_execution_capacity,
@@ -42,23 +40,14 @@ def insert_global_execution_capacity(
     캐시 키가 version 을 보므로 '전체 해제' 도 버전이 올라야 무효화된다.
     """
     prepared = prepare_execution_capacity(rows)
-    connection.execute(
-        """
-        INSERT INTO app_meta.global_execution_capacity (profile_id, version, source)
-        VALUES (1, ?, ?)
-        """,
-        [version, source],
-    )
+    insert_profile_header(connection, "global_execution_capacity", version=version, source=source)
     if prepared.empty:
         return
     payload = prepared.loc[:, list(EXECUTION_CAPACITY_COLUMNS)].copy()
     payload.insert(0, "profile_id", 1)
-    view_name = f"_incoming_global_execution_capacity_{uuid4().hex}"
-    connection.register(view_name, payload)
-    try:
-        connection.execute(
-            f"INSERT INTO app_meta.global_execution_capacity_row BY NAME "
-            f"SELECT * FROM {quote(view_name)}"
-        )
-    finally:
-        connection.unregister(view_name)
+    insert_by_name(
+        connection,
+        schema="app_meta",
+        table_name="global_execution_capacity_row",
+        frame=payload,
+    )

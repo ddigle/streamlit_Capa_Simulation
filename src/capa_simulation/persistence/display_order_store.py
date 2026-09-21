@@ -4,12 +4,16 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
-
 import duckdb
 import pandas as pd
 
-from capa_simulation.persistence._sql_helpers import load_frame, quote
+from capa_simulation.persistence._sql_helpers import (
+    insert_by_name,
+    insert_profile_header,
+    load_frame,
+    quote,
+)
+from capa_simulation.services.display_order_editor import ensure_route_sequence_rules
 
 GLOBAL_DISPLAY_ORDER_COLUMNS = (
     "페이지 구분",
@@ -41,8 +45,6 @@ def validate_global_display_order_frame(frame: pd.DataFrame) -> None:
 
 def prepare_global_display_order_rules(frame: pd.DataFrame) -> pd.DataFrame:
     validate_global_display_order_frame(frame)
-    from capa_simulation.services.display_order_editor import ensure_route_sequence_rules
-
     return ensure_route_sequence_rules(frame)
 
 
@@ -158,22 +160,13 @@ def insert_global_display_order(
     source: str,
 ) -> None:
     validate_global_display_order_frame(rules)
-    connection.execute(
-        """
-        INSERT INTO app_meta.global_display_order (profile_id, version, source)
-        VALUES (1, ?, ?)
-        """,
-        [version, source],
-    )
+    insert_profile_header(connection, "global_display_order", version=version, source=source)
     prepared = rules.loc[:, list(GLOBAL_DISPLAY_ORDER_COLUMNS)].copy()
     prepared.insert(0, "source_row_no", range(1, len(prepared) + 1))
     prepared.insert(0, "profile_id", 1)
-    view_name = f"_incoming_global_display_order_{uuid4().hex}"
-    connection.register(view_name, prepared)
-    try:
-        connection.execute(
-            f"INSERT INTO app_meta.global_display_order_rule BY NAME "
-            f"SELECT * FROM {quote(view_name)}"
-        )
-    finally:
-        connection.unregister(view_name)
+    insert_by_name(
+        connection,
+        schema="app_meta",
+        table_name="global_display_order_rule",
+        frame=prepared,
+    )
