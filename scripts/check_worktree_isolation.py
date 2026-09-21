@@ -93,7 +93,7 @@ def main() -> int:
     try:
         import capa_simulation
         from capa_simulation import settings
-    except Exception as error:  # noqa: BLE001 - 어떤 실패든 원인을 그대로 보여 준다
+    except Exception as error:  # 어떤 실패든 원인을 그대로 보여 준다
         print(f"  !! import 실패: {type(error).__name__}: {error}")
         return 1
 

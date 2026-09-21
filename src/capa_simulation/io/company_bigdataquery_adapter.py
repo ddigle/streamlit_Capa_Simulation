@@ -413,7 +413,7 @@ def call_get_data(module: BigDataQueryModule, query: str) -> object:
     """
     try:
         return module.getData(**get_data_keywords(query))  # type: ignore[arg-type]
-    except Exception as error:  # noqa: BLE001 - 패키지 예외 종류를 모른다. 문구만 보고 되던진다
+    except Exception as error:  # 패키지 예외 종류를 모른다. 문구만 보고 되던진다
         if resolve_user_name() is None and "user_name" in str(error):
             raise RuntimeError(
                 f"BigDataQuery 조회에 요청자의 사내 계정이 필요합니다. {BDQ_USER_NAME_ENV} "

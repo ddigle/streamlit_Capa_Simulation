@@ -532,7 +532,7 @@ def _run(args: argparse.Namespace) -> int:
 
         try:
             apply_archive(root, archive, members, removals)
-        except Exception as exc:  # noqa: BLE001 - 어떤 실패든 되돌리는 법을 알려야 한다
+        except Exception as exc:  # 어떤 실패든 되돌리는 법을 알려야 한다
             raise ApplyError(
                 f"적용 중 멈췄습니다: {exc}\n"
                 "인덱스는 건드리지 않았습니다. `git checkout -- .` 로 되돌리세요."
