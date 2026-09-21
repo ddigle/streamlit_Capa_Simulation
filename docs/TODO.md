@@ -1538,9 +1538,10 @@ Space 현황의 층 배치 캔버스가 층마다 다르다. `equipment_ops.floo
 `display_order_editor` 의 스코프 목록·`config/bootstrap_display_order.json`·운영 DB 의
 저장된 행을 함께 옮겨야 한다.
 
-**남은 것** — 세션 상태 키 `capacity_standards_source_token`(`app_pages/reference_data.py`
-가 만들고 `scenario_activation.py` 가 버린다)은 옛 화면 이름 그대로다. 내부 식별자라 화면에
-드러나지 않는다.
+**했다(2026-09-21)** — 옛 화면 이름 그대로였던 세션 상태 키를 `reference_data_source_token`
+으로 바꿨다(`app_pages/reference_data.py` 가 만들고 `scenario_activation.py` 의
+`_STALE_UI_KEYS` 가 버린다). 내부 식별자라 화면에 드러나지 않고, 살아 있던 브라우저 세션은
+편집기가 한 번 초기화될 뿐이다.
 
 ## 3-16. 2026-09-15 HOME 격자 확장·기준정보 편집·화면 크롬
 

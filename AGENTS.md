@@ -663,6 +663,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「조회·집계 설정」은 공통 위젯 생성 전에 대기 프리셋으로 복원한다. 세션 키 문자열과
     조회·집계 설정 기본값의 선언 자리는 `scenario_preset_state.py`·
     `persistence/models.py` 이며 페이지는 import 해서 쓴다.
+  - 판정 기준 기본값 심기(`seed_threshold_defaults`)와 %→비율 읽기(`session_threshold`)도
+    `scenario_preset_state.py` 가 소유한다. `session_threshold` 는 `_session_number` 와 달리
+    값이 이상해도 예외 없이 기본값으로 떨어진다 — 읽어서 그리기만 하는 화면이 기준 한 칸
+    때문에 멈추면 안 된다.
   - 새 세션에서는 최신 공식 리비전을 한 번 자동 활성화한다.
 - `src/capa_simulation/sync_boot.py`
   - `mode` 가 managed 일 때만 `sync_state` 에 두 DB 경로를 등록한다. 설정을 읽지 못하면
@@ -818,6 +822,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/page_bootstrap.py`
   - 계산 페이지 공통 진입 절차다. 활성 리비전·표시순서·활성 시나리오·조회기간을 준비하고
     원천과 겹치는 유효 구간을 확정한다. 페이지는 `BOOTSTRAP_ERRORS` 를 잡는다.
+  - `date_range_value` 로 범위 날짜 입력의 세 반환 형태(두 날짜·한 날짜·`date` 하나)를,
+    `prune_list_selection` 으로 계산 결과가 옵션인 다중 선택의 옛 값을 페이지 공통으로
+    정리한다. 키 리터럴은 페이지가 소유하고 헬퍼는 변수로 받는다.
 - `src/capa_simulation/settings.py`, `sidebar_status.py`
   - 앱 이름·경로·조회기간 상수와 사이드바의 적용 조회기간 표시.
 - `src/capa_simulation/design/tokens.py`
@@ -884,6 +891,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/scenario_edit_bar.py`
   - 편집 페이지 상단의 "활성 시나리오 · 수정본 N" 과 원본 초기화 버튼.
     초기화할 때 함께 비울 세션 키는 페이지가 넘긴다.
+  - `source_token` 이 기준정보 버전·리비전·조회기간을 한 문자열로 묶고
+    `reset_editors_on_source_change` 가 원본이 바뀐 실행에서 편집기·임시 상태를 비운다.
+    토큰 세션 키 리터럴은 각 페이지가 소유한다(`load_conversion_source_token`·
+    `reference_data_source_token`).
 - `src/capa_simulation/components/roadmap_panel.py`
   - 업무 활용 목적·담당 부서별 Action Item·로드맵 한 줄을 **접어 둔 상자**(기본 닫힘)에
     그린다. Static Capa 와 Dynamic Capa 가 공유한다. 두 화면 모두 제목 바로 아래 첫

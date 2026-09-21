@@ -30,6 +30,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     load_page_context,
+    prune_list_selection,
     resolve_effective_months,
 )
 from capa_simulation.persistence.equipment_cache import get_equipment_repository
@@ -61,6 +62,7 @@ from capa_simulation.services.simulation_cache import (
 from capa_simulation.services.standard_target_capacity import (
     PKG_EQUIVALENT_COLUMN,
     STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES,
+    exclude_er_required_equipment,
     prepare_standard_target_required_equipment,
     standard_target_exception_row_count,
     weekly_standard_target_to_wide,
@@ -614,12 +616,7 @@ try:
     )
     standard_target_exception_rows = standard_target_exception_row_count(required_equipment)
     required_equipment = prepare_standard_target_required_equipment(required_equipment)
-    full_reqb = active_scenario["tables"]["RQ_REQB"]
-    if "양산구분" not in full_reqb.columns:
-        raise ValueError("RQ_REQB에 양산구분 컬럼이 없습니다.")
-    production_reqb = full_reqb.loc[
-        ~full_reqb["양산구분"].astype("string").str.strip().str.upper().eq("ER")
-    ].reset_index(drop=True)
+    production_reqb = exclude_er_required_equipment(active_scenario["tables"]["RQ_REQB"])
 except (KeyError, ValueError) as exc:
     st.error(str(exc))
     st.stop()
@@ -632,18 +629,8 @@ process_order = apply_display_order(
     "목표 Capa",
 )
 process_options = process_order["공정"].astype(str).tolist()
-public_default = st.session_state.get(STANDARD_TARGET_PROCESS_DEFAULT_KEY, [])
-if not isinstance(public_default, list):
-    public_default = []
-public_default = [process for process in public_default if process in process_options]
-st.session_state[STANDARD_TARGET_PROCESS_DEFAULT_KEY] = public_default
-
-saved_processes = st.session_state.get(PROCESS_FILTER_KEY)
-if not isinstance(saved_processes, list):
-    saved_processes = public_default.copy()
-st.session_state[PROCESS_FILTER_KEY] = [
-    process for process in saved_processes if process in process_options
-]
+public_default = prune_list_selection(STANDARD_TARGET_PROCESS_DEFAULT_KEY, process_options)
+prune_list_selection(PROCESS_FILTER_KEY, process_options, default=public_default)
 
 
 def _restore_public_process_default() -> None:

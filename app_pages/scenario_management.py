@@ -9,6 +9,7 @@ from capa_simulation.components.bigdataquery_registration import (
 )
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.scenario_management import render_scenario_management
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.settings import DUCKDB_PATH
 
@@ -20,8 +21,8 @@ render_page_header(
 try:
     database_path = str(DUCKDB_PATH.resolve())
     repository = get_scenario_repository(database_path)
-except Exception as exc:
-    st.error(f"시나리오 저장소를 준비하지 못했습니다: {exc}")
+except BOOTSTRAP_ERRORS as exc:
+    st.error("시나리오 저장소를 준비하지 못했습니다: " + bootstrap_error_message(exc))
     st.stop()
 
 # 두 탭을 항상 그린다. 예전에는 열린 탭만 그렸는데(`if tab.open`), 그러면 다른 탭을 잠깐 여는

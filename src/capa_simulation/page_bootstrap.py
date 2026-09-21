@@ -1,4 +1,4 @@
-# Purpose: 계산 페이지가 공통으로 거치는 활성 리비전·표시순서·조회기간 준비를 제공한다.
+# Purpose: 페이지 공통의 활성 리비전·표시순서·조회기간 준비와 위젯 상태 정규화를 제공한다.
 
 """Shared entry sequence for the calculation pages.
 
@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
+from typing import cast
 
 import duckdb
 import pandas as pd
@@ -97,6 +99,38 @@ def selected_month_range() -> tuple[int, int]:
         value = default
     start_label, end_label = (str(value[0]), str(value[1]))
     return int(start_label.replace("-", "")), int(end_label.replace("-", ""))
+
+
+def date_range_value(value: object, default: tuple[date, date]) -> tuple[date, date]:
+    """범위 모드 `st.date_input` 의 반환값을 시작·종료 두 날짜로 읽는다.
+
+    같은 위젯이 세 가지를 돌려준다 — 두 날짜가 다 정해지면 길이 2 튜플, 사용자가 시작일만
+    누른 중간 상태에서는 길이 1 튜플, 단일 날짜 모드에서는 `date` 하나다. 페이지마다 이
+    세 갈래를 다시 적으면 한쪽만 고쳐져 화면끼리 기간 해석이 갈린다.
+    """
+    if isinstance(value, tuple) and len(value) == 2:
+        return cast("tuple[date, date]", value)
+    if isinstance(value, date):
+        return value, value
+    return default
+
+
+def prune_list_selection(
+    key: str, options: Sequence[str], *, default: Sequence[str] = ()
+) -> list[str]:
+    """저장된 다중 선택에서 지금 옵션에 없는 값을 떨어내고 세션에 되쓴다.
+
+    옵션이 계산 결과라 시나리오·조회기간이 바뀌면 목록이 통째로 달라진다. 옛 선택을
+    그대로 두면 `st.multiselect` 가 옵션에 없는 기본값을 받아 오류를 내거나 조용히 빈
+    화면을 그린다. 아직 아무것도 고르지 않은 세션에는 `default` 를 심는다.
+    """
+    allowed = set(options)
+    saved = st.session_state.get(key)
+    if not isinstance(saved, list):
+        saved = list(default)
+    pruned = [str(value) for value in saved if str(value) in allowed]
+    st.session_state[key] = pruned
+    return pruned
 
 
 def load_page_context() -> PageContext:

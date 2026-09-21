@@ -23,6 +23,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     load_page_context,
+    prune_list_selection,
     resolve_effective_months,
 )
 from capa_simulation.scenario_preset_state import (
@@ -30,6 +31,7 @@ from capa_simulation.scenario_preset_state import (
     DEFAULT_WARNING_THRESHOLD_PERCENT,
     SECURE_THRESHOLD_KEY,
     WARNING_THRESHOLD_KEY,
+    session_threshold,
 )
 from capa_simulation.scenario_state import scenario_month_table
 from capa_simulation.services.display_order import (
@@ -59,16 +61,6 @@ from capa_simulation.services.unit_capacity import (
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
 
 KEY_PROCESS_FILTER_KEY = "securement_heatmap_key_processes"
-
-
-def _threshold(key: str, default_percent: float) -> float:
-    """세션의 판정 기준(%)을 비율로 바꾼다. 아직 아무도 위젯을 그리지 않았으면 기본값이다."""
-    value = st.session_state.get(key, default_percent)
-    try:
-        return float(value) / 100.0
-    except (TypeError, ValueError):
-        return default_percent / 100.0
-
 
 CAPACITY_LEVEL_LABELS = {
     "공정": "공정",
@@ -188,12 +180,7 @@ else:
         "대당 Capa",
     )
     process_options = process_order["공정"].astype(str).tolist()
-    saved_processes = st.session_state.get(process_filter_key, [])
-    if not isinstance(saved_processes, list):
-        saved_processes = []
-    st.session_state[process_filter_key] = [
-        process for process in saved_processes if process in process_options
-    ]
+    prune_list_selection(process_filter_key, process_options)
 
     with unit_capacity_tab:
         if not capacity_exclusions.empty:
@@ -433,8 +420,10 @@ else:
         # 판정 기준은 리비전 프리셋이 소유하는 **세션 공용 값**이다. 이 페이지는 위젯을
         # 두지 않고 HOME·Static Capa 가 정한 경계를 그대로 읽는다 — 같은 확보율이 화면마다
         # 다른 색으로 보이면 안 된다.
-        secure_threshold = _threshold(SECURE_THRESHOLD_KEY, DEFAULT_SECURE_THRESHOLD_PERCENT)
-        warning_threshold = _threshold(WARNING_THRESHOLD_KEY, DEFAULT_WARNING_THRESHOLD_PERCENT)
+        secure_threshold = session_threshold(SECURE_THRESHOLD_KEY, DEFAULT_SECURE_THRESHOLD_PERCENT)
+        warning_threshold = session_threshold(
+            WARNING_THRESHOLD_KEY, DEFAULT_WARNING_THRESHOLD_PERCENT
+        )
         displayed_securement_table = render_column_filters(
             securement_table,
             SECUREMENT_DIMENSIONS,
@@ -469,12 +458,7 @@ else:
         # 66행을 훑어서 알 것이 아니다. 지정은 위의 표 필터와 따로 둔다 — 표는 값을 뒤지는
         # 화면이고 이 그림은 관리 대상만 남겨 두고 보는 화면이라 쓰임이 다르다.
         key_process_options = securement_table[SECUREMENT_DIMENSIONS[0]].astype(str).tolist()
-        saved_key_processes = st.session_state.get(KEY_PROCESS_FILTER_KEY, [])
-        if not isinstance(saved_key_processes, list):
-            saved_key_processes = []
-        st.session_state[KEY_PROCESS_FILTER_KEY] = [
-            process for process in saved_key_processes if process in key_process_options
-        ]
+        prune_list_selection(KEY_PROCESS_FILTER_KEY, key_process_options)
         with st.expander("주요 공정 × 월 히트맵", expanded=False):
             selected_key_processes = st.multiselect(
                 "주요 공정",

@@ -28,6 +28,8 @@ from capa_simulation.services.chatbot_samples import SampleAnswer, build_sample_
 
 SOURCE = "LLM API · Capa 데이터"
 TRANSCRIPT_KEY = "capa_chatbot_transcript"
+# 추천 질문 버튼은 개수만큼 생긴다. 접두를 상수로 두어야 겹침 검사가 기준 키를 본다.
+EXAMPLE_KEY = "capa_chatbot_example"
 
 
 def _render_answer(answer: SampleAnswer) -> None:
@@ -101,7 +103,7 @@ with chat_column:
             for index, question in enumerate(questions):
                 if st.button(
                     question,
-                    key=f"capa_chatbot_example_{index}",
+                    key=f"{EXAMPLE_KEY}_{index}",
                     disabled=question in st.session_state[TRANSCRIPT_KEY],
                 ):
                     st.session_state[TRANSCRIPT_KEY].append(question)

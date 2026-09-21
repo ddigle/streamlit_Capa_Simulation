@@ -70,7 +70,7 @@ def test_only_previous_values_and_home_toggles_are_dropped() -> None:
     """목록에 남는 것은 **앞 시나리오의 값이 담긴 칸**과 HOME 토글뿐이다."""
     assert set(_STALE_UI_KEYS) - _home_toggle_keys() == {
         "load_conversion_source_token",
-        "capacity_standards_source_token",
+        "reference_data_source_token",
         HOME_FIGURE_CACHE_KEY,
     }
 

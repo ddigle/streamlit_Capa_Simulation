@@ -33,7 +33,11 @@ from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
 )
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
+    prune_list_selection,
+)
 from capa_simulation.persistence.equipment_cache import get_equipment_repository
 from capa_simulation.scenario_state import (
     ensure_active_scenario,
@@ -63,14 +67,6 @@ PROCESS_FILTER_KEY = "wip_status_process_filter"
 PRODUCT_FILTER_KEY = "wip_status_product_filter"
 DEFAULT_PROCESS_COUNT = 5
 DEFAULT_PRODUCT_COUNT = 4
-
-
-def _initialize_filter_state(key: str, options: list[str], default_count: int) -> None:
-    saved = st.session_state.get(key)
-    if not isinstance(saved, list):
-        st.session_state[key] = options[:default_count]
-        return
-    st.session_state[key] = [str(value) for value in saved if str(value) in options]
 
 
 def _products_in_display_order(
@@ -165,8 +161,12 @@ product_options = _products_in_display_order(
     route_scope,
     reference_tables["RQ_DISPLAY_ORDER"],
 )
-_initialize_filter_state(PROCESS_FILTER_KEY, process_options, DEFAULT_PROCESS_COUNT)
-_initialize_filter_state(PRODUCT_FILTER_KEY, product_options, DEFAULT_PRODUCT_COUNT)
+prune_list_selection(
+    PROCESS_FILTER_KEY, process_options, default=process_options[:DEFAULT_PROCESS_COUNT]
+)
+prune_list_selection(
+    PRODUCT_FILTER_KEY, product_options, default=product_options[:DEFAULT_PRODUCT_COUNT]
+)
 
 with st.container(border=True):
     st.markdown("#### :material/filter_alt: 조회 조건")
