@@ -43,12 +43,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# **에이전트마다 포트를 고정한다.** 브랜치 규약이 `cand/<과제>/<에이전트>` 라 마지막
-# 조각이 곧 에이전트다 — 이름과 포트를 한 자리에서 묶어 두면 둘이 같은 번호를 고를 수
-# 없다. 8501 은 통합용 main 자리라 여기에 넣지 않는다.
-$AGENT_PORTS = @{
-    "claude" = 8502
-    "codex"  = 8503
+# **에이전트마다 고정으로 갖는 것은 `config/parallel_agents.json` 이 갖는다.** 포트는 여기서,
+# 마이그레이션 번호 홀짝은 `tests/test_migration_parity.py` 가 같은 파일에서 읽는다 — 두 곳에
+# 각자 적어 두면 에이전트를 더할 때 한쪽만 고치게 되고, 그 어긋남은 둘이 같은 포트를 쓰거나
+# 같은 번호를 만드는 것으로 나타난다(둘 다 오류가 나지 않는다).
+#
+# 브랜치 규약이 `cand/<과제>/<에이전트>` 라 마지막 조각이 곧 에이전트다. 8501 은 통합용
+# main 자리라 선언에 넣지 않는다.
+$configPath = Join-Path (git rev-parse --show-toplevel) "config/parallel_agents.json"
+if (-not (Test-Path $configPath)) { throw "선언 파일이 없습니다: $configPath" }
+$agentSpec = (Get-Content $configPath -Raw -Encoding UTF8 | ConvertFrom-Json).agents
+$AGENT_PORTS = @{}
+foreach ($name in $agentSpec.PSObject.Properties.Name) {
+    $AGENT_PORTS[$name] = [int]$agentSpec.$name.port
 }
 
 $repo = (git rev-parse --show-toplevel)

@@ -38,6 +38,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          # **얕은 복제면 안 된다.** `tests/test_migration_parity.py` 가 후보 브랜치의 새
+          # 마이그레이션을 가리려고 `main` 과의 merge-base 를 본다. 기본값(depth 1)에서는
+          # `main` 이 없어 그 검사가 조용히 건너뛰어진다 — 초록인데 아무것도 안 본 상태다.
+          fetch-depth: 0
 
       # `setup-python` 을 쓰지 않는다. 파이썬 버전의 근거가 `uv.lock` 하나여야 CI 와 개발 PC 가
       # 어긋나지 않는다 — 저장소에 `.python-version` 이 없다.
