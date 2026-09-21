@@ -10,6 +10,8 @@ from datetime import date
 import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
+from capa_simulation.services.frame_checks import assert_unique_keys
+from capa_simulation.services.frame_contracts import require_columns
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar, valid_weeknum
 
 WEEKLY_AVAILABILITY_COLUMNS = ["공정", "Weeknum", "가용대수"]
@@ -69,9 +71,7 @@ def prepare_weekly_availability(
     - `services/standard_target_capacity.py` — 저장된 값을 계산에 넘길 뿐이고, 붙지 않는
       공정 행은 조인에서 그대로 떨어진다.
     """
-    missing = [column for column in WEEKLY_AVAILABILITY_COLUMNS if column not in data.columns]
-    if missing:
-        raise ValueError(f"가용설비 입력 표 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(data, WEEKLY_AVAILABILITY_COLUMNS, "가용설비 입력 표")
 
     result = data[WEEKLY_AVAILABILITY_COLUMNS].copy()
     result = result.dropna(how="all").reset_index(drop=True)
@@ -108,10 +108,5 @@ def prepare_weekly_availability(
         raise ValueError("가용설비 입력 표의 가용대수는 0 이상이어야 합니다.")
     result["가용대수"] = available.astype("float64")
 
-    duplicated = result.duplicated(["공정", "Weeknum"], keep=False)
-    if duplicated.any():
-        examples = result.loc[duplicated, ["공정", "Weeknum"]].drop_duplicates().head(5)
-        raise ValueError(
-            f"가용설비 입력 표의 공정·Weeknum이 중복되었습니다: {examples.to_dict('records')}"
-        )
+    assert_unique_keys(result, ["공정", "Weeknum"], "가용설비 입력 표의 공정·Weeknum이")
     return result.sort_values(["공정", "Weeknum"], ignore_index=True)

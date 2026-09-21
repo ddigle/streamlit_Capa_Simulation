@@ -12,6 +12,8 @@ import pandas as pd
 from capa_simulation.services.frame_contracts import (
     normalize_demand_basis,
     normalize_demand_basis_value,
+    normalize_month_column,
+    require_columns,
 )
 
 ROUTE_GROUP_COLUMNS = (
@@ -255,17 +257,9 @@ def _prepare_route_tables(tables: Mapping[str, pd.DataFrame]) -> dict[str, pd.Da
 
 
 def _prepare(data: pd.DataFrame, required: tuple[str, ...], table_name: str) -> pd.DataFrame:
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"{table_name} STEP 편집 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(data, required, f"{table_name} STEP 편집")
     result = data.copy(deep=True)
-    numeric_months = pd.to_numeric(result["생산계획년월"], errors="coerce")
-    valid_months = numeric_months.notna() & numeric_months.mod(1).eq(0)
-    months = numeric_months.fillna(0).astype("int64")
-    valid_months &= months.mod(100).between(1, 12)
-    if not valid_months.all():
-        raise ValueError(f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다.")
-    result["생산계획년월"] = months
+    normalize_month_column(result, table_name)
     text_columns = [column for column in required if column != "생산계획년월"]
     for column in text_columns:
         result[column] = result[column].astype("string").str.strip()

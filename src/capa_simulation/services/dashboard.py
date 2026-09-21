@@ -291,9 +291,7 @@ def build_bottleneck_capacity(
         (monthly_density, density_required, "월별 부하량"),
         (monthly_bottlenecks, bottleneck_required, "월별 B/N"),
     ):
-        missing = [column for column in required if column not in data.columns]
-        if missing:
-            raise ValueError(f"{label} 필수 컬럼이 없습니다: {', '.join(missing)}")
+        require_columns(data, required, label)
 
     carried = [*bottleneck_required, *_passthrough(monthly_bottlenecks)]
     result = monthly_density[density_required].merge(
@@ -346,9 +344,7 @@ def build_monthly_bottleneck_top5_from_ranking(
         result["기준 B/N Capa"] = result["부하량"] * result["기준 확보율"]
     if monthly_wafer is not None:
         wafer_required = ["생산계획년월", "Wafer 부하량"]
-        wafer_missing = [column for column in wafer_required if column not in monthly_wafer.columns]
-        if wafer_missing:
-            raise ValueError(f"월별 Wafer 필수 컬럼이 없습니다: {', '.join(wafer_missing)}")
+        require_columns(monthly_wafer, wafer_required, "월별 Wafer")
         result = result.merge(
             monthly_wafer[wafer_required],
             on="생산계획년월",
@@ -399,9 +395,7 @@ def build_monthly_bottleneck_details_from_ranking(
     prepared = ranking.loc[ranking["순위"].le(rank_limit), [*required, *extra]].copy()
 
     wafer_required = ["생산계획년월", "Wafer 부하량"]
-    wafer_missing = [column for column in wafer_required if column not in monthly_wafer.columns]
-    if wafer_missing:
-        raise ValueError(f"월별 Wafer 필수 컬럼이 없습니다: {', '.join(wafer_missing)}")
+    require_columns(monthly_wafer, wafer_required, "월별 Wafer")
     result = prepared.merge(
         monthly_wafer[wafer_required],
         on="생산계획년월",

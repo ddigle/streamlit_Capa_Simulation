@@ -28,6 +28,7 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_master,
 )
 from capa_simulation.services.floor_layout_profile import FloorCanvasMap
+from capa_simulation.services.frame_contracts import require_columns
 
 SAMPLE_EQUIPMENT_ID = "SAM01"
 SAMPLE_EQUIPMENT_MANAGER = "홍길동"
@@ -288,9 +289,7 @@ def _select_columns(
     columns: tuple[str, ...],
     label: str,
 ) -> pd.DataFrame:
-    missing = [column for column in columns if column not in frame.columns]
-    if missing:
-        raise ValueError(f"{label} 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(frame, columns, label)
     return frame.loc[:, columns]
 
 

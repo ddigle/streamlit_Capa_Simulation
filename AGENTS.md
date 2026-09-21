@@ -766,6 +766,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `frame_contracts.py`: 여러 서비스가 공유하는 필수 컬럼 검증과 업무 키 정규화를 단일
   정의한다. 소요기준(`WAFER`→`WF`)·Area_Name(`Main`·`MI`)·월(`YYYYMM`) 규칙이 여기 있다.
   계약이 서로 다른 것은 합치지 않는다.
+- `frame_checks.py`: 중복 연결 키 검사(`assert_unique_keys` — 겹친 키 조합을 최대 5건 함께
+  싣고, 주어와 조사는 호출부가 넘긴다)와 텍스트 키 strip(`strip_text_columns` — 제자리 변경)의
+  단일 정의. 본래 `frame_contracts.py` 에 있어야 할 같은 종류의 규칙이지만 그 파일이 병행
+  개발 주기의 단일 선언 지점(14-5)이라 임시로 여기 두었다. **다음 주기에 `frame_contracts.py`
+  로 합친다** — 그때까지 새 공용 검증을 여기에 더 쌓지 않는다.
 - `virtual_product.py`: 기존 제품의 기준정보를 새 제품 키로 복제해 가상 제품을 등록한다.
   제품 키(`제품정보`+`Stack`)를 가진 8개 테이블만 복제하고 공정 기준 테이블은 건드리지
   않는다. 계획 수량은 0으로 시작한다. 원본 계획을 복제하면 총 수요가 조용히 두 배가 된다.

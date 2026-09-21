@@ -8,6 +8,7 @@ from typing import Literal
 import pandas as pd
 
 from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
+from capa_simulation.services.frame_checks import assert_unique_keys, strip_text_columns
 from capa_simulation.services.frame_contracts import (
     match_key,
     require_columns,
@@ -93,12 +94,7 @@ def plan_to_edit_table(plan: pd.DataFrame, display_order: DisplayOrderInput = No
         )
 
     duplicate_keys = [*PLAN_EDITOR_DIMENSIONS, "생산계획년월"]
-    duplicated = prepared.duplicated(duplicate_keys, keep=False)
-    if duplicated.any():
-        example = (
-            prepared.loc[duplicated, duplicate_keys].drop_duplicates().head(5).to_dict("records")
-        )
-        raise ValueError(f"RQ_PKG_PLAN의 월별 계획 키가 중복되었습니다: {example}")
+    assert_unique_keys(prepared, duplicate_keys, "RQ_PKG_PLAN의 월별 계획 키가")
 
     result = prepared.pivot(
         index=PLAN_EDITOR_DIMENSIONS,
@@ -188,7 +184,7 @@ def yield_to_edit_table(
         raise ValueError("RQ_YLD의 연결 키에 누락값이 있습니다.")
     if prepared[YIELD_VALUE_COLUMNS].isna().any(axis=None):
         raise ValueError("RQ_YLD의 EDS_수율 또는 BE_수율에 누락값이 있습니다.")
-    _assert_unique(prepared, YIELD_KEYS, "RQ_YLD")
+    assert_unique_keys(prepared, YIELD_KEYS, "RQ_YLD 연결 키가")
     _validate_yield_range(prepared, "RQ_YLD")
 
     long_yield = prepared.melt(
@@ -269,9 +265,13 @@ def yield_from_edit_table(yield_table: pd.DataFrame) -> pd.DataFrame:
 
 
 def _normalize_text(data: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """텍스트 키를 strip 한 **복사본**을 돌려준다.
+
+    호출부가 넘기는 것은 `plan[required]` 같은 열 슬라이스이거나 호출부가 계속 쓰는
+    프레임이다. 제자리에서 고치면 원본을 함께 바꾸거나 슬라이스 경고를 낸다.
+    """
     normalized = data.copy()
-    for column in columns:
-        normalized[column] = normalized[column].astype("string").str.strip()
+    strip_text_columns(normalized, columns)
     return normalized
 
 
@@ -284,13 +284,6 @@ def _to_numeric(data: pd.DataFrame, columns: list[str], table_name: str) -> pd.D
         if invalid.any():
             raise ValueError(f"{table_name}.{column}에 숫자가 아닌 값이 있습니다.")
     return converted
-
-
-def _assert_unique(data: pd.DataFrame, keys: list[str], table_name: str) -> None:
-    duplicated = data.duplicated(keys, keep=False)
-    if duplicated.any():
-        example = data.loc[duplicated, keys].drop_duplicates().head(5).to_dict("records")
-        raise ValueError(f"{table_name} 연결 키가 중복되었습니다: {example}")
 
 
 def _validate_yield_range(data: pd.DataFrame, table_name: str) -> None:
@@ -355,8 +348,8 @@ def _prepare_load_base(
     prepared_chip = _normalize_text(chip_qty[CHIP_REQUIRED_COLUMNS], CHIP_KEYS)
     prepared_chip = _to_numeric(prepared_chip, ["구분_Chip", "Net Die"], "RQ_CHIP_QTY")
 
-    _assert_unique(prepared_yield, YIELD_KEYS, "RQ_YLD")
-    _assert_unique(prepared_chip, CHIP_KEYS, "RQ_CHIP_QTY")
+    assert_unique_keys(prepared_yield, YIELD_KEYS, "RQ_YLD 연결 키가")
+    assert_unique_keys(prepared_chip, CHIP_KEYS, "RQ_CHIP_QTY 연결 키가")
 
     expanded = prepared_plan.merge(
         prepared_chip,
@@ -571,7 +564,7 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
 
     if prepared_density[DENSITY_KEYS].isna().any(axis=None):
         raise ValueError("RQ_CHIP_EQ의 연결 키에 누락값이 있습니다.")
-    _assert_unique(prepared_density, DENSITY_KEYS, "RQ_CHIP_EQ")
+    assert_unique_keys(prepared_density, DENSITY_KEYS, "RQ_CHIP_EQ 연결 키가")
 
     calculation = prepared_plan.merge(
         prepared_density,

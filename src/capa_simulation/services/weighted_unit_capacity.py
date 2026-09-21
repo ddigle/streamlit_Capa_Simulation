@@ -4,7 +4,9 @@
 
 import pandas as pd
 
+from capa_simulation.services.frame_checks import strip_text_columns
 from capa_simulation.services.frame_contracts import (
+    assert_complete,
     assert_one_demand_basis_per_process,
     normalize_demand_basis,
     normalize_month_column,
@@ -75,13 +77,13 @@ def effective_process_capacity_long(
         )
 
     result = required_equipment[required].copy()
-    _normalize_month(result)
+    normalize_month_column(result, "소요대수 상세")
     text_columns = [
         column for column in DEMAND_ID_COLUMNS if column not in {"생산계획년월", "소요기준"}
     ]
-    _normalize_text(result, text_columns)
+    strip_text_columns(result, text_columns)
     result["소요기준"] = normalize_demand_basis(result["소요기준"])
-    _assert_complete_keys(result, DEMAND_ID_COLUMNS)
+    assert_complete(result, DEMAND_ID_COLUMNS, "소요대수 상세")
     _assert_one_basis_per_process(result)
 
     result["부하량"] = _numeric(result["부하량"], "부하량")
@@ -144,12 +146,13 @@ def weighted_unit_capacity_to_month_table(
         return pd.DataFrame(columns=display_dimensions)
 
     result = required_equipment[required].copy()
-    _normalize_month(result)
-    _normalize_text(result, WEIGHTED_CAPACITY_HIERARCHY)
+    normalize_month_column(result, "소요대수 상세")
+    strip_text_columns(result, WEIGHTED_CAPACITY_HIERARCHY)
     result["소요기준"] = normalize_demand_basis(result["소요기준"])
-    _assert_complete_keys(
+    assert_complete(
         result,
         ["생산계획년월", *WEIGHTED_CAPACITY_HIERARCHY, "소요기준"],
+        "소요대수 상세",
     )
 
     _assert_one_basis_per_process(result)
@@ -181,22 +184,6 @@ def weighted_unit_capacity_to_month_table(
     table = table.rename(columns={column: str(int(column)) for column in raw_month_columns})
     month_columns = sorted(column for column in table.columns if column not in display_dimensions)
     return table[[*display_dimensions, *month_columns]]
-
-
-def _normalize_month(data: pd.DataFrame) -> None:
-    normalize_month_column(data, "소요대수 상세")
-
-
-def _normalize_text(data: pd.DataFrame, columns: list[str]) -> None:
-    for column in columns:
-        data[column] = data[column].astype("string").str.strip()
-
-
-def _assert_complete_keys(data: pd.DataFrame, columns: list[str]) -> None:
-    has_missing = any(data[column].isna().any() for column in columns)
-    has_blank = any(data[column].eq("").any() for column in columns)
-    if has_missing or has_blank:
-        raise ValueError("소요대수 상세의 연결 키에 누락값이 있습니다.")
 
 
 def _numeric(series: pd.Series, label: str) -> pd.Series:

@@ -8,10 +8,12 @@ from datetime import date
 
 import pandas as pd
 
+from capa_simulation.services.frame_checks import assert_unique_keys
 from capa_simulation.services.frame_contracts import (
     assert_complete,
     normalize_demand_basis,
     normalize_month_column,
+    require_columns,
     to_numeric_strict,
 )
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
@@ -127,9 +129,7 @@ def add_pkg_equivalent_standard_target(
     display_dimensions = ["공정", "소요기준", *hierarchy_dimensions[1:]]
     group_keys = ["생산계획년월", *display_dimensions]
     target_required = [*group_keys, "원수요_부하량", "일 표준 가능량"]
-    missing_target = [column for column in target_required if column not in weekly_target.columns]
-    if missing_target:
-        raise ValueError(f"표준 목표 Capa 필수 컬럼이 없습니다: {', '.join(missing_target)}")
+    require_columns(weekly_target, target_required, "표준 목표 Capa")
 
     result = weekly_target.copy()
     if result.empty:
@@ -138,9 +138,7 @@ def add_pkg_equivalent_standard_target(
 
     source = prepare_standard_target_required_equipment(required_equipment)
     source_required = [*DEMAND_ID_COLUMNS, "부하량"]
-    missing_source = [column for column in source_required if column not in source.columns]
-    if missing_source:
-        raise ValueError(f"소요대수 상세 필수 컬럼이 없습니다: {', '.join(missing_source)}")
+    require_columns(source, source_required, "소요대수 상세")
     source = source[source_required].copy()
     normalize_month_column(source, "소요대수 상세")
     source_text_columns = [
@@ -191,9 +189,7 @@ def weekly_standard_target_to_wide(
 ) -> pd.DataFrame:
     """Pivot one weekly metric into Weeknum columns for Plotly display."""
     required = ["Weeknum", "주차시작일", *classification_columns, value_column]
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"표준 목표 Capa 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(data, required, "표준 목표 Capa")
     if data.empty:
         return pd.DataFrame(columns=classification_columns)
 
@@ -203,15 +199,11 @@ def weekly_standard_target_to_wide(
         .sort_values("주차시작일")["Weeknum"]
         .tolist()
     )
-    duplicated = data.duplicated([*classification_columns, "Weeknum"], keep=False)
-    if duplicated.any():
-        examples = (
-            data.loc[duplicated, [*classification_columns, "Weeknum"]]
-            .drop_duplicates()
-            .head(5)
-            .to_dict("records")
-        )
-        raise ValueError(f"표준 목표 Capa의 분류·Weeknum이 중복되었습니다: {examples}")
+    assert_unique_keys(
+        data,
+        [*classification_columns, "Weeknum"],
+        "표준 목표 Capa의 분류·Weeknum이",
+    )
     wide = data.pivot(
         index=classification_columns,
         columns="Weeknum",
@@ -223,8 +215,7 @@ def weekly_standard_target_to_wide(
 
 def exclude_er_required_equipment(data: pd.DataFrame) -> pd.DataFrame:
     """Exclude engineering-run demand before standard Capa aggregation."""
-    if "양산구분" not in data.columns:
-        raise ValueError("소요대수 상세 필수 컬럼이 없습니다: 양산구분")
+    require_columns(data, ["양산구분"], "소요대수 상세")
     production_mask = ~data["양산구분"].astype("string").str.strip().str.upper().eq("ER")
     return data.loc[production_mask].reset_index(drop=True)
 
@@ -243,10 +234,7 @@ def standard_target_exception_row_count(data: pd.DataFrame) -> int:
 
 
 def _standard_target_exception_mask(data: pd.DataFrame) -> pd.Series:
-    required = ["공정", "WF 구분"]
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"소요대수 상세 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(data, ["공정", "WF 구분"], "소요대수 상세")
     process = data["공정"].astype("string").str.strip().str.upper()
     wf_type = data["WF 구분"].astype("string").str.strip().str.upper()
     excluded_processes = {
@@ -257,9 +245,7 @@ def _standard_target_exception_mask(data: pd.DataFrame) -> pd.Series:
 
 def _prepare_run_day(data: pd.DataFrame) -> pd.DataFrame:
     required = ["생산계획년월", "공정", "RUN_DAY"]
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"RQ_RUN_DAY 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(data, required, "RQ_RUN_DAY")
     result = data[required].copy()
     normalize_month_column(result, "RQ_RUN_DAY")
     result["공정"] = result["공정"].astype("string").str.strip()
@@ -269,23 +255,13 @@ def _prepare_run_day(data: pd.DataFrame) -> pd.DataFrame:
     if run_day.isna().any() or run_day.le(0).any():
         raise ValueError("RQ_RUN_DAY의 RUN_DAY는 0보다 큰 숫자여야 합니다.")
     result["RUN_DAY"] = run_day.astype("float64")
-    duplicated = result.duplicated(["생산계획년월", "공정"], keep=False)
-    if duplicated.any():
-        examples = (
-            result.loc[duplicated, ["생산계획년월", "공정"]]
-            .drop_duplicates()
-            .head(5)
-            .to_dict("records")
-        )
-        raise ValueError(f"RQ_RUN_DAY의 생산계획년월·공정이 중복되었습니다: {examples}")
+    assert_unique_keys(result, ["생산계획년월", "공정"], "RQ_RUN_DAY의 생산계획년월·공정이")
     return result
 
 
 def _prepare_pkg_plan_for_equivalent(data: pd.DataFrame) -> pd.DataFrame:
     required = [*PKG_PLAN_KEYS, "생산수량"]
-    missing = [column for column in required if column not in data.columns]
-    if missing:
-        raise ValueError(f"RQ_PKG_PLAN 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(data, required, "RQ_PKG_PLAN")
 
     result = data[required].copy()
     normalize_month_column(result, "RQ_PKG_PLAN")

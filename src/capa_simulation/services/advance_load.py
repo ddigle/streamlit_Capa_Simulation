@@ -28,6 +28,8 @@ from collections.abc import Sequence
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import require_columns
+
 ADVANCE_LOAD_COLUMNS = ("생산계획년월", "선행 물량")
 
 # 표의 구분 칸에 적는 이름. 입력 시트와 안내 문구가 같은 낱말을 써야 한다.
@@ -124,9 +126,7 @@ def build_advance_load_ratio(
     한 달의 과한 입력 때문에 대시보드 전체가 사라지면 어디가 잘못됐는지 볼 수 없기 때문이다.
     """
     required = ["생산계획년월", "부하량"]
-    missing = [column for column in required if column not in monthly_density.columns]
-    if missing:
-        raise ValueError(f"월별 부하량 필수 컬럼이 없습니다: {', '.join(missing)}")
+    require_columns(monthly_density, required, "월별 부하량")
     prepared = prepare_advance_load(advance_load)
     result = monthly_density[required].copy()
     result["생산계획년월"] = pd.to_numeric(result["생산계획년월"], errors="coerce").astype("int64")
@@ -175,8 +175,7 @@ def apply_advance_to_wafer(
     ratio: pd.DataFrame,
 ) -> pd.DataFrame:
     """`Wafer 부하량` 을 변동률로 나눈다. Density 와 같은 비율로 함께 움직인다."""
-    if "Wafer 부하량" not in monthly_wafer.columns:
-        raise ValueError("월별 Wafer 필수 컬럼이 없습니다: Wafer 부하량")
+    require_columns(monthly_wafer, ["Wafer 부하량"], "월별 Wafer")
     result = monthly_wafer.copy()
     # 변동률 표에 없는 달은 1 로 둔다 — 선행을 넣지 않은 달과 같은 취급이다.
     factor = ratio.set_index("생산계획년월")["변동률"]
@@ -200,8 +199,7 @@ def apply_advance_to_securement(
     없는 달을 가질 수 있다 — 과거 구간을 공정별 확보율에만 넣고 월별 실적에는 넣지 않은
     경우가 그렇다. 없는 달을 결측으로 곱하면 그 달 확보율이 통째로 사라진다.
     """
-    if "확보율" not in securement_rate.columns:
-        raise ValueError("확보율 필수 컬럼이 없습니다: 확보율")
+    require_columns(securement_rate, ["확보율"], "확보율")
     result = securement_rate.copy()
     factor = ratio.set_index("생산계획년월")["변동률"]
     months = pd.to_numeric(result["생산계획년월"], errors="coerce").astype("int64")
