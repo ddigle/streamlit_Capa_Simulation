@@ -1,4 +1,4 @@
-# Purpose: 공정별 확보율·소요대수 결과와 보유·대여·가용 설비대수 입력을 제공한다.
+# Purpose: 기준 정보로 산출한 대당 Capa·소요대수·확보율을 탭 셋과 제외 표로 보여 준다.
 
 import pandas as pd
 import streamlit as st

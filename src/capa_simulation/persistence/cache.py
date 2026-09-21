@@ -1,6 +1,11 @@
-# Purpose: Streamlit cache boundary for the shared DuckDB repository configuration.
+# Purpose: 시나리오 스냅샷과 시나리오 독립 공용 프로필의 Streamlit 캐시 경계다.
 
-"""Streamlit cache boundary for the shared DuckDB repository configuration."""
+"""시뮬레이션 DuckDB 읽기의 Streamlit 캐시 경계.
+
+저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 아홉 종
+(표시순서·공정 표시명·비교 시나리오·선행·Summary 공지·Top5 대역·주요공정·실행 Capa·
+과거 구간)을 여기서만 캐시한다.
+"""
 
 from dataclasses import fields
 from pathlib import Path

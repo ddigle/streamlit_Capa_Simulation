@@ -1,6 +1,6 @@
-# Purpose: Apply workbook-managed display order rules to Streamlit tables.
+# Purpose: 공용 표시순서 프로필(`RQ_DISPLAY_ORDER`) 규칙을 화면 표 정렬에 적용한다.
 
-"""Apply workbook-managed display order rules to Streamlit tables."""
+"""공용 표시순서 프로필의 `RQ_DISPLAY_ORDER` 규칙을 화면 표 정렬에 적용한다."""
 
 from dataclasses import dataclass
 
