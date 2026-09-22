@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
@@ -72,6 +73,8 @@ DRAFT_REVISION_KEY = "equipment_draft_revision_v4"
 SAVE_BUTTON_LABEL = "설비 데이터 저장"
 # 업로드 변환 결과를 실어 두는 칸. 위젯 키가 아니라 이 파일이 만든 이름이다.
 UPLOAD_PROBE_KEY = "_test_upload_probe"
+XLSX_PROBE_KEY = "_test_xlsx_probe"
+XLSX_GUARD_KEY = "_test_xlsx_guard_message"
 
 # 미리보기 한 번의 상한. 붙여넣기 미리보기는 세션 키가 살아 있는 동안 **매 rerun 다시**
 # 계산되므로, 사용자가 옆 위젯을 건드릴 때마다 이 시간을 다시 기다린다. 칸마다 1원소
@@ -605,3 +608,80 @@ def test_each_uploaded_template_reaches_the_editor_through_the_paste_path(
     # 그대로다(`test_the_untouched_template_row_reaches_the_editor_but_not_the_revision`).
     _save(app)
     assert any("예시 행이" in element.value for element in app.error)
+
+
+def _xlsx_probe_script(database_path: Path, workbook_path: Path) -> str:
+    """xlsx 변환 결과와 **가드가 꺼졌을 때의 메시지**를 세션에 실어 둔다.
+
+    `XLSX_AVAILABLE` 은 페이지 이름공간의 이름이라, 그 사전에 다시 넣으면 변환 함수가 보는
+    전역이 바뀐다 — 사내에 휠이 없는 환경을 화면을 다시 그리지 않고 흉내 내는 가장 짧은
+    길이다(이미 그려진 화면에는 영향이 없다).
+    """
+    return f"""
+from pathlib import Path
+import streamlit as st
+import capa_simulation.settings as settings
+
+settings.EQUIPMENT_DUCKDB_PATH = Path({str(database_path)!r})
+page_source = Path({str(EQUIPMENT_PAGE)!r}).read_text(encoding="utf-8")
+page = {{"__name__": "__main__"}}
+exec(compile(page_source, {str(EQUIPMENT_PAGE)!r}, "exec"), page)
+payload = Path({str(workbook_path)!r}).read_bytes()
+st.session_state[{XLSX_PROBE_KEY!r}] = page["_xlsx_bytes_to_clipboard"](payload)
+page["XLSX_AVAILABLE"] = False
+try:
+    page["_xlsx_bytes_to_clipboard"](payload)
+except ValueError as exc:
+    st.session_state[{XLSX_GUARD_KEY!r}] = str(exc)
+"""
+
+
+def test_an_uploaded_workbook_reads_like_the_same_table_in_csv(tmp_path: Path) -> None:
+    """xlsx 로 올린 표와 같은 내용의 CSV 로 올린 표가 **같은 글**이 되어야 한다.
+
+    `pd.read_excel` 을 쓰지 않는 이유가 이 테스트다. pandas 를 거치면 날짜 셀이
+    `2026-10-01 00:00:00`, 정수 셀이 `30.0` 이 되어 검증에서 막힌다. 빈 칸·서식만 남은
+    오른쪽 열도 함께 잰다 — `read_only` 시트는 기억하는 넓이로 행을 채운다.
+    """
+    openpyxl = pytest.importorskip("openpyxl")
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.append(["호기", "비가동유형", "시작일", "종료일", "상세사유", "비고"])
+    sheet.append(["SAM01", "고장", datetime(2026, 10, 1), None, "사유 기록", 30])
+    workbook_path = tmp_path / "업로드표.xlsx"
+    workbook.save(workbook_path)
+
+    app = AppTest.from_string(
+        _xlsx_probe_script(tmp_path / "xlsx_upload.duckdb", workbook_path), default_timeout=90
+    ).run()
+
+    assert not app.exception
+    same_table_as_csv = (
+        "호기,비가동유형,시작일,종료일,상세사유,비고\nSAM01,고장,2026-10-01,,사유 기록,30"
+    ).encode("utf-8-sig")
+    assert app.session_state[XLSX_PROBE_KEY] == _as_clipboard_text(same_table_as_csv).replace(
+        "\r\n", "\n"
+    )
+
+
+def test_the_xlsx_path_says_what_is_missing_instead_of_raising_import_error(
+    tmp_path: Path,
+) -> None:
+    """휠이 없는 환경에서는 `ImportError` 가 아니라 **읽을 수 있는 한 줄**이 나와야 한다.
+
+    사내에 openpyxl 이 없을 수 있다는 것이 이 기능의 전제다. 그때 업로더는 CSV 만 받지만,
+    어떤 경로로든 xlsx 변환에 닿으면 화면이 죽지 않고 무엇이 없어서 안 되는지 말해야 한다.
+    """
+    openpyxl = pytest.importorskip("openpyxl")
+    workbook = openpyxl.Workbook()
+    workbook.active.append(["호기"])
+    workbook_path = tmp_path / "guard.xlsx"
+    workbook.save(workbook_path)
+
+    app = AppTest.from_string(
+        _xlsx_probe_script(tmp_path / "xlsx_guard.duckdb", workbook_path), default_timeout=90
+    ).run()
+
+    assert not app.exception
+    assert "openpyxl" in app.session_state[XLSX_GUARD_KEY]
+    assert "CSV" in app.session_state[XLSX_GUARD_KEY]

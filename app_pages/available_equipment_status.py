@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import csv
 from collections.abc import Callable, Mapping, Sequence
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from functools import partial
-from io import StringIO
+from io import BytesIO, StringIO
 from typing import Any
 
 import altair as alt
@@ -112,6 +112,16 @@ from capa_simulation.services.simulation_cache import (
     scenario_cache_key,
 )
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
+
+# **openpyxl 은 선택 의존이다.** 사내 WebIDE 는 인터넷이 없어 휠 반입이 따로 걸릴 수 있는데,
+# import 실패가 페이지를 죽이면 이 화면은 사내에서 영영 못 쓴다. 없으면 xlsx 만 잠그고
+# 붙여넣기·CSV 업로드·저장은 그대로 연다(정의서 2-4 ②).
+try:
+    import openpyxl  # type: ignore[import-untyped]
+except ImportError:  # pragma: no cover - 휠이 없는 환경에서만 도는 가지
+    XLSX_AVAILABLE = False
+else:
+    XLSX_AVAILABLE = True
 
 FLASH_KEY = "equipment_status_flash"
 # 탭 라벨은 `stateful_tabs` 의 기억값에 그대로 묶인다 — 문자열을 두 곳에 적으면 기억이
@@ -431,12 +441,71 @@ def _csv_bytes_to_clipboard(data: bytes) -> str:
     있으면 따옴표로 감싼다(`QUOTE_MINIMAL`). 읽는 쪽이 `pd.read_csv(sep="\\t")` 라 그
     규칙까지 같아야 왕복이 닫힌다.
     """
-    rows = list(csv.reader(StringIO(_decode_table_bytes(data), newline="")))
+    return _rows_to_clipboard(list(csv.reader(StringIO(_decode_table_bytes(data), newline=""))))
+
+
+def _rows_to_clipboard(rows: list[list[str]]) -> str:
+    """셀 표 하나를 붙여넣기 칸에 든 글과 같은 탭 구분 문자열로 잇는다.
+
+    CSV 와 xlsx 가 **같은 끝단**을 쓴다. 여기서 갈리면 같은 표가 파일 형식에 따라 다른
+    글이 되고, 그 차이는 검증까지 가서야 드러난다. 통째로 빈 줄은 버린다 —
+    `parse_clipboard_table` 이 `dropna(how="all")` 로 같은 줄을 버리므로 행 번호가 어긋나지
+    않게 여기서 미리 맞춘다.
+    """
     buffer = StringIO()
     csv.writer(buffer, delimiter="\t", lineterminator="\n").writerows(
         row for row in rows if any(cell.strip() for cell in row)
     )
     return buffer.getvalue().strip("\r\n")
+
+
+def _xlsx_cell_text(value: object) -> str:
+    """엑셀 셀 하나를 붙여넣기 칸에 들어갈 글자로 바꾼다.
+
+    **`pd.read_excel` 을 쓰지 않는 이유가 이 함수다.** pandas 를 거치면 날짜가
+    `2026-10-01 00:00:00` 이 되고 정수 `30` 이 `30.0` 이 된다. 그 글자가 그대로 검증에
+    들어가 「날짜 형식이어야 합니다」·「기존보유대수는 0 이상의 숫자」에서 막힌다.
+
+    `True`/`False` 는 `Y`/`N` 으로 바꾸지 않는다 — Excel 의 논리값을 업무 값으로 읽는 것은
+    추측이고, 그대로 두면 검증이 허용값 오류로 그 행을 짚어 준다.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, datetime | date):
+        return f"{value:%Y-%m-%d}"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _xlsx_bytes_to_clipboard(data: bytes) -> str:
+    """xlsx 첫 시트를 붙여넣기 칸에 든 글과 같은 탭 구분 문자열로 바꾼다.
+
+    `read_only=True` 는 시트가 기억하는 **넓이**로 행을 채우므로, 서식만 남은 빈 열이
+    오른쪽에 붙어 오는 일이 흔하다. 그대로 두면 탭이 남아 `Unnamed: 31` 같은 컬럼이 생겨
+    「양식의 헤더를 그대로 쓰라」는 오류가 난다 — 헤더 줄의 마지막 값이 있는 칸까지로 폭을
+    자르고 짧은 행은 빈 칸으로 채운다.
+    """
+    if not XLSX_AVAILABLE:
+        raise ValueError(
+            "xlsx 는 openpyxl 이 있는 환경에서만 읽을 수 있습니다. CSV 로 올려 주세요."
+        )
+    workbook = openpyxl.load_workbook(BytesIO(data), read_only=True, data_only=True)
+    try:
+        sheet = workbook.worksheets[0]
+        rows = [
+            [_xlsx_cell_text(value) for value in row] for row in sheet.iter_rows(values_only=True)
+        ]
+    finally:
+        workbook.close()
+    while rows and not any(cell.strip() for cell in rows[0]):
+        rows.pop(0)
+    if not rows:
+        return ""
+    width = len(rows[0])
+    while width and not rows[0][width - 1].strip():
+        width -= 1
+    return _rows_to_clipboard([[*row[:width], *[""] * (width - len(row[:width]))] for row in rows])
 
 
 def _ingest_upload(floor_canvases: dict[tuple[str, str], tuple[float, float]]) -> None:
@@ -450,8 +519,14 @@ def _ingest_upload(floor_canvases: dict[tuple[str, str], tuple[float, float]]) -
         return
     target = UPLOAD_TARGETS[str(st.session_state[UPLOAD_TARGET_KEY])]
     clipboard_key, import_key, error_key = IMPORT_SLOTS[target]
+    name = str(getattr(uploaded, "name", ""))
     try:
-        text = _csv_bytes_to_clipboard(bytes(uploaded.getvalue()))
+        data = bytes(uploaded.getvalue())
+        text = (
+            _xlsx_bytes_to_clipboard(data)
+            if name.lower().endswith(".xlsx")
+            else _csv_bytes_to_clipboard(data)
+        )
     except ValueError as exc:
         # 콜백에서 터지면 화면이 통째로 traceback 이 된다. 다른 오류와 같은 자리에 적는다.
         st.session_state[clipboard_key] = ""
@@ -1803,8 +1878,8 @@ with rawdata_tab:
                 persist_state="session",
             )
             st.file_uploader(
-                "CSV 파일",
-                type=["csv"],
+                "CSV · xlsx 파일" if XLSX_AVAILABLE else "CSV 파일",
+                type=["csv", "xlsx"] if XLSX_AVAILABLE else ["csv"],
                 key=UPLOAD_FILE_KEY,
                 on_change=_ingest_upload,
                 args=(floor_canvases,),
@@ -1813,6 +1888,8 @@ with rawdata_tab:
             "내려받은 CSV 양식을 Excel 에서 채워 그대로 올려도 됩니다. 올린 표는 아래 "
             "붙여넣기 칸에 들어가 같은 검사를 거칩니다."
         )
+        if not XLSX_AVAILABLE:
+            st.caption("xlsx 는 `openpyxl` 이 있는 환경에서만 받습니다 — 지금은 CSV 만 받습니다.")
 
         baseline_import_col, equipment_import_col, downtime_import_col = st.columns(3)
         with baseline_import_col:
