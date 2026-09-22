@@ -32,6 +32,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # 순회 테스트가 곧바로 실패하므로 조용히 어긋날 수는 없다.
 MAIN_QUESTION_KEY = "equipment_main_question_v1"
 SMALL_PROCESS_KEY = "equipment_dashboard_small_processes"
+BASELINE_CLIPBOARD_KEY = "equipment_baseline_clipboard_v4"
+MASTER_CLIPBOARD_KEY = "equipment_master_clipboard_v4"
+DOWNTIME_CLIPBOARD_KEY = "equipment_downtime_clipboard_v4"
 ASOF_MONTH_KEY = "equipment_main_asof_month_v1"
 DOWNTIME_VIEW_KEY = "equipment_main_downtime_view_v1"
 QUESTION_DOWNTIME = "어디가 비가동인가"
@@ -283,8 +286,13 @@ def test_the_downtime_month_view_catches_what_the_sunday_samples_miss(tmp_path: 
     assert rendered["비가동 시작"].le(rendered["비가동 종료"]).all()
 
 
-def test_baseline_paste_import_needs_a_preview_before_it_applies(tmp_path: Path) -> None:
-    """기존 보유대수도 호기 마스터·비가동 일정과 같은 미리보기 → 확정 순서를 탄다."""
+def test_baseline_paste_import_previews_itself_before_it_applies(tmp_path: Path) -> None:
+    """기존 보유대수도 호기 마스터·비가동 일정과 같은 미리보기 → 확정 순서를 탄다.
+
+    **미리보기 버튼이 없어졌다.** 붙여넣고 칸을 벗어나면 `on_change` 가 그 자리에서
+    검사한다 — `set_value().run()` 이 브라우저의 blur 와 같은 자리에서 그 콜백을 부른다.
+    확인하는 것(미리보기가 서고 그 다음에야 편집본에 닿는다)은 그대로다.
+    """
     page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
     app = AppTest.from_string(
         _page_script(page_path, tmp_path / "baseline_import.duckdb"),
@@ -296,10 +304,10 @@ def test_baseline_paste_import_needs_a_preview_before_it_applies(tmp_path: Path)
         "호기 마스터 표 붙여넣기",
         "비가동 일정 표 붙여넣기",
     ]
+    assert "equipment_baseline_clipboard_preview_v4" not in [button.key for button in app.button]
 
     app.text_area[0].set_value("공정\t분류\t기존보유대수\t비고\nProcess-X\t전체\t7\t증설")
     app.run()
-    app.button("equipment_baseline_clipboard_preview_v4").click().run()
 
     assert not app.exception
     assert any(element.value == "**기존 보유대수 Import 확인**" for element in app.markdown)
@@ -309,6 +317,77 @@ def test_baseline_paste_import_needs_a_preview_before_it_applies(tmp_path: Path)
     assert not app.exception
     assert any("기존 보유대수 붙여넣기 데이터 1행" in element.value for element in app.success)
     assert "Process-X" in app.session_state["equipment_baseline_draft_v3"]["공정"].tolist()
+    # 적용한 글은 칸에서 사라진다. 남아 있으면 옆 위젯을 건드릴 때마다 같은 표가 다시
+    # 검사되고, 다음 표를 붙여넣기 전에 먼저 지워야 한다.
+    assert app.text_area[0].value == ""
+
+
+def _master_paste_with_a_bad_row(rows: int, bad_row: int) -> str:
+    """데모 fleet 을 붙여넣기 글로 만들고 `bad_row`(1-based) 의 확정상태를 허용값 밖으로 바꾼다."""
+    master = sample_equipment_master(anchor_date=date.today()).head(rows)
+    lines = str(master.to_csv(sep="\t", index=False)).strip("\r\n").splitlines()
+    cells = lines[bad_row].split("\t")
+    cells[lines[0].split("\t").index("확정상태")] = "없는상태"
+    lines[bad_row] = "\t".join(cells)
+    return "\n".join(lines)
+
+
+def test_a_bad_paste_pins_the_verdict_columns_and_locks_the_apply_button(
+    tmp_path: Path,
+) -> None:
+    """오류가 있으면 어느 행이 왜 틀렸는지 표 앞에 붙고 적용은 눌리지 않는다."""
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "bad_paste.duckdb"),
+        default_timeout=90,
+    ).run()
+
+    app.text_area(MASTER_CLIPBOARD_KEY).set_value(_master_paste_with_a_bad_row(3, 2)).run()
+
+    assert not app.exception
+    assert app.button("confirm_equipment_import_v3").disabled
+    assert any("1행에 오류" in element.value for element in app.error), [
+        element.value for element in app.error
+    ]
+    verdict_tables = [
+        frame.value for frame in app.dataframe if list(frame.value.columns[:2]) == ["검증", "행"]
+    ]
+    assert len(verdict_tables) == 1, [list(frame.value.columns[:2]) for frame in app.dataframe]
+    # 오류 행이 맨 위로 올라온다.
+    assert int(verdict_tables[0]["행"].iloc[0]) == 2
+
+
+def test_the_three_import_targets_download_their_error_rows_under_their_own_keys(
+    tmp_path: Path,
+) -> None:
+    """세 대상의 오류 행 내려받기 키가 서로 달라야 한다.
+
+    키 하나를 셋이 나눠 쓰면 대상을 바꿀 때마다 「이미 쓰인 키」로 화면이 죽거나, 더 나쁘게는
+    옆 대상의 오류 행이 내려받힌다. 셋을 차례로 붙여넣어 나온 키가 서로 다른지 본다.
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    pastes = {
+        BASELINE_CLIPBOARD_KEY: "공정\t분류\t기존보유대수\t비고\nProcess-X\t전체\t일곱\t증설",
+        MASTER_CLIPBOARD_KEY: _master_paste_with_a_bad_row(2, 1),
+        DOWNTIME_CLIPBOARD_KEY: (
+            "호기\t비가동유형\t시작일\t종료일\t상세사유\t비고\nNO-SUCH-UNIT\t고장\t2026-01-01\t\t\t"
+        ),
+    }
+
+    seen: list[str] = []
+    for text_area_key, clipboard in pastes.items():
+        app = AppTest.from_string(
+            _page_script(page_path, tmp_path / f"{text_area_key}.duckdb"),
+            default_timeout=90,
+        ).run()
+        app.text_area(text_area_key).set_value(clipboard).run()
+
+        assert not app.exception, text_area_key
+        assert app.error, text_area_key
+        seen += [button.key for button in app.download_button if "error_rows" in str(button.key)]
+
+    assert len(seen) == 3, seen
+    assert len(set(seen)) == 3, seen
 
 
 def test_page_reseeds_drafts_for_a_session_opened_before_the_baseline_table(

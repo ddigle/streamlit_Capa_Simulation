@@ -5,8 +5,8 @@
 이 파일은 두 층을 함께 본다.
 
 * **화면 왕복(AppTest)** — 빈 설비 DB 로 `app_pages/available_equipment_status.py` 를 실제로
-  실행해 `양식 → 붙여넣기 → 미리보기 → 편집본 적용 → 저장`을 누른다. 양식의 예시 한 줄을
-  그대로 저장하려 하면 막히고, 값을 고치면 새 리비전이 생긴다.
+  실행해 `양식 → 붙여넣기(칸을 벗어나면 자동 검사) → 편집본 적용 → 저장`을 누른다. 양식의
+  예시 한 줄을 그대로 저장하려 하면 막히고, 값을 고치면 새 리비전이 생긴다.
 * **서비스 계층** — 화면에서 재기 어려운 세 가지를 직접 잰다. 미리보기 비용의 상한,
   인덱스가 0 부터가 아닌 프레임의 판정, 그리고 CSV 와 붙여넣기의 빈 칸 판정 동등성.
 
@@ -58,12 +58,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 EQUIPMENT_PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 
 BASELINE_CLIPBOARD_KEY = "equipment_baseline_clipboard_v4"
-BASELINE_PREVIEW_KEY = "equipment_baseline_clipboard_preview_v4"
 BASELINE_CONFIRM_KEY = "confirm_baseline_import_v3"
 BASELINE_TEMPLATE_DOWNLOAD_KEY = "equipment_baseline_template_download_v3"
 BASELINE_DRAFT_KEY = "equipment_baseline_draft_v3"
 MASTER_CLIPBOARD_KEY = "equipment_master_clipboard_v4"
-MASTER_PREVIEW_KEY = "equipment_master_clipboard_preview_v4"
 MASTER_CONFIRM_KEY = "confirm_equipment_import_v3"
 MASTER_DRAFT_KEY = "equipment_master_draft_v3"
 DRAFT_REVISION_KEY = "equipment_draft_revision_v4"
@@ -138,13 +136,16 @@ def _paste_and_apply(
     clipboard: str,
     *,
     text_area_key: str = BASELINE_CLIPBOARD_KEY,
-    preview_key: str = BASELINE_PREVIEW_KEY,
     confirm_key: str = BASELINE_CONFIRM_KEY,
 ) -> None:
-    """붙여넣기 → 미리보기 → 확인 후 편집본에 적용까지 화면이 요구하는 순서 그대로."""
+    """붙여넣기 → 확인 후 편집본에 적용까지 화면이 요구하는 순서 그대로.
+
+    **「미리보기」 버튼이 없어졌다.** 붙여넣고 칸을 벗어나면 `on_change` 가 그 자리에서
+    검사하고 미리보기를 세운다 — `set_value().run()` 이 브라우저의 blur 와 같은 자리에서
+    그 콜백을 부른다. 이 왕복이 고정하는 것(미리보기를 거쳐야 편집본에 닿는다)은 그대로다.
+    """
     app.text_area(text_area_key).set_value(clipboard)
     app.run()
-    app.button(preview_key).click().run()
     assert not app.exception
     app.button(confirm_key).click().run()
     assert not app.exception
@@ -285,7 +286,6 @@ def test_the_untouched_master_template_row_is_stopped_at_save(tmp_path: Path) ->
         app,
         _as_clipboard_text(equipment_csv_template()),
         text_area_key=MASTER_CLIPBOARD_KEY,
-        preview_key=MASTER_PREVIEW_KEY,
         confirm_key=MASTER_CONFIRM_KEY,
     )
 

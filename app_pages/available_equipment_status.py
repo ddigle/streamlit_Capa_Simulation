@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Any
 
@@ -14,6 +15,13 @@ from capa_simulation.components.availability_gap_panel import (
     render_availability_gap_panel,
 )
 from capa_simulation.components.cutoff_management import render_cutoff_management
+from capa_simulation.components.equipment_import_preview import (
+    PINNED_COLUMNS,
+    ImportPreviewResult,
+    attribute_row_errors,
+    build_preview_table,
+    render_import_errors,
+)
 from capa_simulation.components.equipment_lifecycle_gantt import (
     render_equipment_lifecycle_gantt,
 )
@@ -30,6 +38,7 @@ from capa_simulation.components.status_metric import (
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL, render_csv_download
 from capa_simulation.components.table_view_controls import (
+    TableView,
     merge_edited_rows,
     render_table_view_controls,
 )
@@ -121,6 +130,33 @@ DRAFT_REVISION_KEY = "equipment_draft_revision_v4"
 BASELINE_IMPORT_KEY = "baseline_import_preview_rows_v3"
 EQUIPMENT_IMPORT_KEY = "equipment_import_preview_rows_v3"
 DOWNTIME_IMPORT_KEY = "downtime_import_preview_rows_v3"
+# 붙여넣기 칸. 기존 리터럴을 상수로 올린 것이라 **값은 그대로**다 — 바꾸면 열려 있던
+# 세션의 붙여넣은 글이 사라진다.
+BASELINE_CLIPBOARD_KEY = "equipment_baseline_clipboard_v4"
+EQUIPMENT_CLIPBOARD_KEY = "equipment_master_clipboard_v4"
+DOWNTIME_CLIPBOARD_KEY = "equipment_downtime_clipboard_v4"
+# 파싱이 실패한 붙여넣기의 판정(`ImportPreviewResult`). 성공한 붙여넣기는 여전히
+# `*_IMPORT_KEY` 에 **DataFrame** 으로 들어간다 — 적용 경로의 계약이 그것이다.
+BASELINE_IMPORT_ERROR_KEY = "baseline_import_row_errors_v1"
+EQUIPMENT_IMPORT_ERROR_KEY = "equipment_import_row_errors_v1"
+DOWNTIME_IMPORT_ERROR_KEY = "downtime_import_row_errors_v1"
+# 오류 행 내려받기 버튼은 세 대상이 한 화면에 올 수 있으므로 키가 셋이어야 한다.
+BASELINE_ERROR_DOWNLOAD_KEY = "equipment_baseline_import_error_rows_v1"
+EQUIPMENT_ERROR_DOWNLOAD_KEY = "equipment_master_import_error_rows_v1"
+DOWNTIME_ERROR_DOWNLOAD_KEY = "equipment_downtime_import_error_rows_v1"
+# 적용 콜백이 `merge_*` 에서 받은 오류. 콜백은 `st.error` 를 부를 수 없어 본문에 넘긴다.
+IMPORT_APPLY_ERROR_KEY = "equipment_import_apply_error_v1"
+# 붙여넣기 대상 셋. 콜백 하나가 이 이름으로 자기 칸을 찾는다.
+TARGET_BASELINE = "baseline"
+TARGET_EQUIPMENT = "equipment"
+TARGET_DOWNTIME = "downtime"
+# 대상 → (붙여넣기 칸, 성공 칸, 오류 칸). 한 번에 하나만 살아 있어야 하므로 콜백이 이
+# 표를 돌며 나머지 둘을 지운다.
+IMPORT_SLOTS: dict[str, tuple[str, str, str]] = {
+    TARGET_BASELINE: (BASELINE_CLIPBOARD_KEY, BASELINE_IMPORT_KEY, BASELINE_IMPORT_ERROR_KEY),
+    TARGET_EQUIPMENT: (EQUIPMENT_CLIPBOARD_KEY, EQUIPMENT_IMPORT_KEY, EQUIPMENT_IMPORT_ERROR_KEY),
+    TARGET_DOWNTIME: (DOWNTIME_CLIPBOARD_KEY, DOWNTIME_IMPORT_KEY, DOWNTIME_IMPORT_ERROR_KEY),
+}
 
 # **Main 이 답하는 질문 여섯.** 라벨이 곧 pill 의 값이고 세션에 그대로 저장되므로 문구를
 # 바꾸면 기억값이 옵션에서 빠진다 — 그때는 아래 재선택 규칙이 마지막 달처럼 되돌린다.
@@ -209,8 +245,222 @@ def _reset_drafts() -> None:
         BASELINE_IMPORT_KEY,
         EQUIPMENT_IMPORT_KEY,
         DOWNTIME_IMPORT_KEY,
+        BASELINE_IMPORT_ERROR_KEY,
+        EQUIPMENT_IMPORT_ERROR_KEY,
+        DOWNTIME_IMPORT_ERROR_KEY,
+        IMPORT_APPLY_ERROR_KEY,
     ):
         st.session_state.pop(key, None)
+
+
+def _clipboard_parser(
+    target: str,
+    floor_canvases: dict[tuple[str, str], tuple[float, float]],
+) -> Callable[[str], pd.DataFrame]:
+    """붙여넣기 문자열 하나만 받는 파서로 묶는다.
+
+    **편집본 프레임은 여기서 잡지 않고 호출될 때 세션에서 읽는다.** `args=` 로 묶어 넘기면
+    콜백이 만들어지던 회차의 편집본이 그대로 굳어, 방금 적용한 행이 다음 검사에서 없는
+    것으로 읽힌다. `floor_canvases` 는 DB 스냅샷이라 회차 사이에 바뀌지 않아 묶어도 된다.
+
+    호기 마스터는 읽기만으로 끝나지 않는다 — 적용에서 도는 `merge_equipment_rows` ·
+    `merge_downtime_rows` 까지 같이 돌려야 「편집본과 합쳤을 때 비로소 드러나는 잘못」
+    (좌표 상한, 비가동이 매달린 호기가 사라지는 경우)이 미리보기 자리에서 잡힌다.
+    """
+    if target == TARGET_BASELINE:
+        return read_baseline_clipboard
+
+    if target == TARGET_EQUIPMENT:
+
+        def parse_equipment(text: str) -> pd.DataFrame:
+            incoming = read_equipment_clipboard(text, floor_canvases=floor_canvases)
+            merged = merge_equipment_rows(
+                st.session_state[EQUIPMENT_DRAFT_KEY],
+                incoming,
+                floor_canvases=floor_canvases,
+            )
+            merge_downtime_rows(
+                st.session_state[DOWNTIME_DRAFT_KEY],
+                empty_downtime_schedule(),
+                equipment=merged,
+            )
+            return incoming
+
+        return parse_equipment
+
+    def parse_downtime(text: str) -> pd.DataFrame:
+        return read_downtime_clipboard(text, equipment=st.session_state[EQUIPMENT_DRAFT_KEY])
+
+    return parse_downtime
+
+
+def _scan_clipboard(
+    target: str,
+    floor_canvases: dict[tuple[str, str], tuple[float, float]],
+) -> None:
+    """붙여넣은 글을 칸을 벗어나는 순간 검사한다.
+
+    **`st.rerun()` 을 부르지 않는다.** `on_change` 콜백이 끝나면 Streamlit 이 이미 한 번
+    다시 돌린다 — 여기서 또 부르면 그 회차가 통째로 버려지고 화면이 두 번 그려진다.
+    """
+    clipboard_key, import_key, error_key = IMPORT_SLOTS[target]
+    # 한 번에 하나만 살아 있게 한다. 셋이 동시에 서면 어느 표에 적용하는 버튼인지 화면이
+    # 말하지 못한다(지금 동작 그대로).
+    for other, (_, other_import, other_error) in IMPORT_SLOTS.items():
+        if other != target:
+            st.session_state.pop(other_import, None)
+            st.session_state.pop(other_error, None)
+    st.session_state.pop(IMPORT_APPLY_ERROR_KEY, None)
+
+    text = str(st.session_state.get(clipboard_key) or "")
+    if not text.strip():
+        st.session_state.pop(import_key, None)
+        st.session_state.pop(error_key, None)
+        return
+
+    result = attribute_row_errors(text, _clipboard_parser(target, floor_canvases))
+    if result.frame is not None:
+        st.session_state[import_key] = result.frame
+        st.session_state.pop(error_key, None)
+    else:
+        st.session_state[error_key] = result
+        st.session_state.pop(import_key, None)
+
+
+def _clear_import(target: str) -> None:
+    """미리보기와 **붙여넣은 글**을 함께 비운다.
+
+    적용을 마친 글이 칸에 남아 있으면 옆 위젯을 건드릴 때마다 같은 표가 다시 검사되고,
+    다음 표를 붙여넣으려면 먼저 지워야 한다 — 30행 입력에서 가장 자주 걸리던 자리다.
+    """
+    clipboard_key, import_key, error_key = IMPORT_SLOTS[target]
+    st.session_state.pop(import_key, None)
+    st.session_state.pop(error_key, None)
+    st.session_state.pop(IMPORT_APPLY_ERROR_KEY, None)
+    st.session_state[clipboard_key] = ""
+
+
+def _apply_baseline_import() -> None:
+    incoming = st.session_state.get(BASELINE_IMPORT_KEY)
+    if not isinstance(incoming, pd.DataFrame):
+        return
+    try:
+        merged = merge_baseline_rows(st.session_state[BASELINE_DRAFT_KEY], incoming)
+    except ValueError as exc:
+        st.session_state[IMPORT_APPLY_ERROR_KEY] = str(exc)
+        return
+    st.session_state[BASELINE_DRAFT_KEY] = merged
+    st.session_state.pop(BASELINE_EDITOR_KEY, None)
+    _clear_import(TARGET_BASELINE)
+    st.session_state[FLASH_KEY] = (
+        f"기존 보유대수 붙여넣기 데이터 {len(incoming):,}행을 편집본에 "
+        "적용했습니다. 아직 DuckDB에는 저장되지 않았습니다. 손대지 않은 개발 "
+        "샘플 행이 남아 있으면 저장 전에 고치거나 지워야 합니다."
+    )
+
+
+def _apply_equipment_import(
+    floor_canvases: dict[tuple[str, str], tuple[float, float]],
+) -> None:
+    incoming = st.session_state.get(EQUIPMENT_IMPORT_KEY)
+    if not isinstance(incoming, pd.DataFrame):
+        return
+    try:
+        merged_equipment = merge_equipment_rows(
+            st.session_state[EQUIPMENT_DRAFT_KEY], incoming, floor_canvases=floor_canvases
+        )
+        merged_downtime = merge_downtime_rows(
+            st.session_state[DOWNTIME_DRAFT_KEY],
+            empty_downtime_schedule(),
+            equipment=merged_equipment,
+        )
+    except ValueError as exc:
+        st.session_state[IMPORT_APPLY_ERROR_KEY] = str(exc)
+        return
+    st.session_state[EQUIPMENT_DRAFT_KEY] = merged_equipment
+    st.session_state[DOWNTIME_DRAFT_KEY] = merged_downtime
+    st.session_state.pop(EQUIPMENT_EDITOR_KEY, None)
+    st.session_state.pop(DOWNTIME_EDITOR_KEY, None)
+    _clear_import(TARGET_EQUIPMENT)
+    st.session_state[FLASH_KEY] = (
+        f"호기 마스터 붙여넣기 데이터 {len(incoming):,}행을 편집본에 "
+        "적용했습니다. 아직 DuckDB에는 저장되지 않았습니다."
+    )
+
+
+def _apply_downtime_import() -> None:
+    incoming = st.session_state.get(DOWNTIME_IMPORT_KEY)
+    if not isinstance(incoming, pd.DataFrame):
+        return
+    try:
+        merged = merge_downtime_rows(
+            st.session_state[DOWNTIME_DRAFT_KEY],
+            incoming,
+            equipment=st.session_state[EQUIPMENT_DRAFT_KEY],
+        )
+    except ValueError as exc:
+        st.session_state[IMPORT_APPLY_ERROR_KEY] = str(exc)
+        return
+    st.session_state[DOWNTIME_DRAFT_KEY] = merged
+    st.session_state.pop(DOWNTIME_EDITOR_KEY, None)
+    _clear_import(TARGET_DOWNTIME)
+    st.session_state[FLASH_KEY] = (
+        f"비가동 일정 붙여넣기 데이터 {len(incoming):,}행을 편집본에 "
+        "적용했습니다. 아직 DuckDB에는 저장되지 않았습니다."
+    )
+
+
+def _table_view_popover(
+    data: pd.DataFrame,
+    *,
+    title: str,
+    key_prefix: str,
+    editor_key: str,
+    filter_columns: tuple[str, ...],
+    locked_columns: tuple[str, ...],
+) -> TableView:
+    """표 보기 설정 하나를 popover 안으로 접는다.
+
+    셋을 세로로 쌓으면 편집표가 화면 한참 아래로 밀린다. 세 표의 설정을 **한 줄**에 세우고
+    누를 때만 펴면 붙여넣기 바로 아래가 편집표 자리가 된다. popover 본문은 서버에서 늘
+      그려지므로 「볼 컬럼」 선택값과 편집표 키 무효화는 접힌 동안에도 그대로 돈다.
+    """
+    label = f"{title} · 표 보기 설정"
+
+    def controls() -> TableView:
+        return render_table_view_controls(
+            data,
+            key_prefix=key_prefix,
+            editor_key=editor_key,
+            filter_columns=filter_columns,
+            locked_columns=locked_columns,
+            label=label,
+        )
+
+    if data.empty:
+        # 빈 표에는 보기 설정이 없다 — `render_table_view_controls` 가 아무것도 그리지 않고
+        # 돌아간다. popover 를 세우면 눌러도 빈 껍데기만 나온다.
+        return controls()
+    with st.popover(title, icon=":material/view_column:"):
+        return controls()
+
+
+def _render_import_error_preview(result: ImportPreviewResult, *, download_key: str) -> None:
+    """오류 요약·행 목록·내려받기 아래에 **판정을 붙인 원문 표**를 그린다.
+
+    `검증`·`행` 두 컬럼을 고정해 31컬럼을 가로로 밀어도 「몇 행이 왜 틀렸는가」가 화면에
+    남는다. 검증을 통과하지 못한 표라 `build_*_import_preview`(신규·대체 판정)는 만들 수
+    없고, 검증 없이 읽은 원문(`raw_frame`)에 판정만 얹는다.
+    """
+    render_import_errors(result, key=download_key)
+    if result.raw_frame is None:
+        return
+    st.dataframe(
+        build_preview_table(result.raw_frame, result),
+        hide_index=True,
+        width="stretch",
+        column_config={column: st.column_config.Column(pinned=True) for column in PINNED_COLUMNS},
+    )
 
 
 def _import_summary(preview: pd.DataFrame) -> None:
@@ -378,9 +628,13 @@ if st.session_state.get(DRAFT_REVISION_KEY) != revision_token:
     st.session_state[EQUIPMENT_DRAFT_KEY] = saved_equipment.copy()
     st.session_state[DOWNTIME_DRAFT_KEY] = saved_downtime.copy()
     st.session_state[DRAFT_REVISION_KEY] = revision_token
-    st.session_state.pop(BASELINE_IMPORT_KEY, None)
-    st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
-    st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
+    for _clipboard_key, _import_key, _error_key in IMPORT_SLOTS.values():
+        st.session_state.pop(_import_key, None)
+        st.session_state.pop(_error_key, None)
+        # 여기는 위젯이 만들어지기 **전**이라 붙여넣기 칸도 비울 수 있다. 저장으로 리비전이
+        # 바뀌었는데 옛 글이 칸에 남아 있으면 다음 회차에 다시 검사된다.
+        st.session_state.pop(_clipboard_key, None)
+    st.session_state.pop(IMPORT_APPLY_ERROR_KEY, None)
 # 세 표 모두 편집본을 본다. 대시보드가 저장본만 보면 붙여넣기 직후 기존 보유대수만
 # 옛 값으로 남아 총대수·가용률이 호기 마스터와 어긋난다.
 baseline = st.session_state[BASELINE_DRAFT_KEY].copy()
@@ -1141,51 +1395,9 @@ with rawdata_tab:
             "저장하면 세 입력 전체가 새 불변 리비전으로 보관됩니다."
         )
 
-    with st.expander("운영 지침", icon=":material/menu_book:", expanded=False):
-        st.markdown(
-            """
-#### 입력 데이터 구분
-
-- **기존 보유대수**: 호기별 일정·상태를 관리할 필요가 없는 오래된 가동설비를
-  `공정소분류별 집계 대수`로 관리합니다. 전 조회기간에 보유·가용 설비로 반영됩니다.
-- **호기 마스터**: 입고·Qual 일정, Qual 확정상태, 반출·이설, 개별 비가동 또는
-  Space 배치를 관리할 설비를 호기별로 등록합니다. 오래된 설비라도 개별 관리가 필요하면
-  호기 마스터에 등록하고 `기존설비여부=Y`로 지정합니다.
-- **비가동 일정**: 호기 마스터에 등록된 설비의 개발대여·공사·고장·이설 기간을
-  호기별로 관리합니다.
-
-#### 운영 절차
-
-1. 웹에서 직접 행을 편집하거나 기존 보유대수·호기 마스터·비가동 일정 Excel 표를
-   붙여넣습니다.
-2. 붙여넣기 Import 시 신규·대체 행과 변경 컬럼을 미리 확인합니다.
-3. `확인 후 편집본에 적용`으로 현재 편집본에 반영합니다.
-4. 하단의 `설비 데이터 저장`을 눌러야 DuckDB에 새 불변 리비전으로 영구 저장됩니다.
-
-#### 적용 시 유의사항
-
-- 기존 보유대수에는 호기명이 없으므로 개별 비가동 일정과 Space 배치를 적용할 수 없습니다.
-- 일반 신규 설비는 입고일정·Qual일정·확정상태가 필요합니다.
-- 가용대수는 Qual일정을 기준으로 계산하며, 확정상태는 Qual 실행 모니터링에만 사용합니다.
-- Space 표시는 `레이아웃표시=Y`와 동·층·X/Y좌표·X/Ysize 입력이 필요합니다.
-- 설비 운영 가용대수는 현재 시뮬레이션 Capa 산출 데이터와 분리되어 있습니다.
-
-#### 상태 판정 기준
-
-- **입고 예정**: 입고일정 전이며, 제진대·물류 일정도 이 상태의 선행 일정으로 관리
-- **셋업 진행중**: 입고일정 이상, Qual일정 미만
-- **가용**: Qual일정 이상 또는 기존설비 Y
-- **확정상태**: Qual 일정만 계획·확정·완료·지연으로 실행관리하며 가용 판정에는 미사용
-- **반출 예정 / 이설 예정**: 일정이 등록됐고 실행일 전
-- **보관 설비**: 장기보관여부 Y
-- **운영 비가동**: 개발대여·공사·고장·이설 등 비가동 일정 활성
-- **반출 완료 / 이설 완료**: 실행일부터 보유·가용·레이아웃에서 제외
-            """
-        )
-
-    # **폼 밖이다.** 미리보기·적용은 일반 버튼인데 `st.form` 안에는 제출 버튼 말고 다른
-    # 버튼을 둘 수 없다. 접을 수 있게만 바꾸고 자리는 그대로 둔다.
-    with st.expander("Excel 붙여넣기 Import", icon=":material/content_paste:", expanded=False):
+    # **폼 밖이다.** 적용·취소는 일반 버튼인데 `st.form` 안에는 제출 버튼 말고 다른
+    # 버튼을 둘 수 없다. 처음 여는 사람이 가장 먼저 할 일이 여기라 펴 둔다.
+    with st.expander("Excel 붙여넣기 Import", icon=":material/content_paste:", expanded=True):
         st.caption(
             "기존 보유대수는 공정 + 분류, 호기 마스터는 호기, 비가동 일정은 호기 + "
             "비가동유형 + 시작일을 중복 구분자로 사용합니다. CSV 양식을 Excel에서 열어 "
@@ -1194,102 +1406,82 @@ with rawdata_tab:
             "신규/대체 행과 변경 컬럼을 확인한 뒤 편집본에 적용하며, 실제 DuckDB 저장은 "
             "아래 저장 버튼에서 한 번 더 수행합니다."
         )
+        st.caption("**붙여넣은 뒤 표 밖을 클릭하면 바로 검사합니다.**")
         baseline_import_col, equipment_import_col, downtime_import_col = st.columns(3)
         with baseline_import_col:
-            baseline_clipboard = st.text_area(
+            # 「미리보기」 버튼이 없다. 붙여넣고 칸을 벗어나면 `on_change` 가 그 자리에서
+            # 검사한다 — 30행 입력에서 사람이 눌러야 하던 클릭 하나가 여기서 사라진다.
+            st.text_area(
                 "기존 보유대수 표 붙여넣기",
-                key="equipment_baseline_clipboard_v4",
-                height=220,
+                key=BASELINE_CLIPBOARD_KEY,
+                height=140,
                 placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
+                on_change=_scan_clipboard,
+                args=(TARGET_BASELINE, floor_canvases),
             )
-            with st.container(horizontal=True):
-                render_csv_download(
-                    data=baseline_csv_template(),
-                    file_name="equipment_baseline_template.csv",
-                    key="equipment_baseline_template_download_v3",
-                    label=CSV_TEMPLATE_LABEL,
-                )
-                preview_baseline_import = st.button(
-                    "미리보기",
-                    icon=":material/preview:",
-                    disabled=not baseline_clipboard.strip(),
-                    key="equipment_baseline_clipboard_preview_v4",
-                )
+            render_csv_download(
+                data=baseline_csv_template(),
+                file_name="equipment_baseline_template.csv",
+                key="equipment_baseline_template_download_v3",
+                label=CSV_TEMPLATE_LABEL,
+            )
         with equipment_import_col:
-            equipment_clipboard = st.text_area(
+            st.text_area(
                 "호기 마스터 표 붙여넣기",
-                key="equipment_master_clipboard_v4",
-                height=220,
+                key=EQUIPMENT_CLIPBOARD_KEY,
+                height=140,
                 placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
+                on_change=_scan_clipboard,
+                args=(TARGET_EQUIPMENT, floor_canvases),
             )
-            with st.container(horizontal=True):
-                render_csv_download(
-                    data=equipment_csv_template(),
-                    file_name="equipment_master_template.csv",
-                    key="equipment_master_template_download_v3",
-                    label=CSV_TEMPLATE_LABEL,
-                )
-                preview_equipment_import = st.button(
-                    "미리보기",
-                    icon=":material/preview:",
-                    disabled=not equipment_clipboard.strip(),
-                    key="equipment_master_clipboard_preview_v4",
-                )
+            render_csv_download(
+                data=equipment_csv_template(),
+                file_name="equipment_master_template.csv",
+                key="equipment_master_template_download_v3",
+                label=CSV_TEMPLATE_LABEL,
+            )
         with downtime_import_col:
-            downtime_clipboard = st.text_area(
+            st.text_area(
                 "비가동 일정 표 붙여넣기",
-                key="equipment_downtime_clipboard_v4",
-                height=220,
+                key=DOWNTIME_CLIPBOARD_KEY,
+                height=140,
                 placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
+                on_change=_scan_clipboard,
+                args=(TARGET_DOWNTIME, floor_canvases),
             )
-            with st.container(horizontal=True):
-                render_csv_download(
-                    data=downtime_csv_template(),
-                    file_name="equipment_downtime_template.csv",
-                    key="equipment_downtime_template_download_v3",
-                    label=CSV_TEMPLATE_LABEL,
-                )
-                preview_downtime_import = st.button(
-                    "미리보기",
-                    icon=":material/preview:",
-                    disabled=not downtime_clipboard.strip(),
-                    key="equipment_downtime_clipboard_preview_v4",
-                )
+            render_csv_download(
+                data=downtime_csv_template(),
+                file_name="equipment_downtime_template.csv",
+                key="equipment_downtime_template_download_v3",
+                label=CSV_TEMPLATE_LABEL,
+            )
 
-        if preview_baseline_import:
-            try:
-                incoming = read_baseline_clipboard(baseline_clipboard)
-            except ValueError as exc:
-                st.error(str(exc))
-            else:
-                st.session_state[BASELINE_IMPORT_KEY] = incoming
-                st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
-                st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
-                st.rerun()
-        if preview_equipment_import:
-            try:
-                incoming = read_equipment_clipboard(
-                    equipment_clipboard, floor_canvases=floor_canvases
+        # 적용 콜백이 `merge_*` 에서 받은 오류. 콜백 안에서는 `st.error` 가 화면에 닿지
+        # 않으므로 세션 칸을 거쳐 여기서 알린다.
+        apply_error = st.session_state.get(IMPORT_APPLY_ERROR_KEY)
+        if isinstance(apply_error, str):
+            st.error(apply_error)
+
+        baseline_errors = st.session_state.get(BASELINE_IMPORT_ERROR_KEY)
+        if isinstance(baseline_errors, ImportPreviewResult):
+            st.markdown("**기존 보유대수 Import 확인**")
+            _render_import_error_preview(baseline_errors, download_key=BASELINE_ERROR_DOWNLOAD_KEY)
+            with st.container(horizontal=True):
+                st.button(
+                    "확인 후 편집본에 적용",
+                    type="primary",
+                    icon=":material/check:",
+                    key="confirm_baseline_import_v3",
+                    disabled=True,
+                    help="오류 행을 고쳐 다시 붙여넣어야 적용할 수 있습니다.",
                 )
-                merged = merge_equipment_rows(equipment, incoming, floor_canvases=floor_canvases)
-                merge_downtime_rows(downtime, empty_downtime_schedule(), equipment=merged)
-            except ValueError as exc:
-                st.error(str(exc))
-            else:
-                st.session_state[EQUIPMENT_IMPORT_KEY] = incoming
-                st.session_state.pop(BASELINE_IMPORT_KEY, None)
-                st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
-                st.rerun()
-        if preview_downtime_import:
-            try:
-                incoming = read_downtime_clipboard(downtime_clipboard, equipment=equipment)
-            except ValueError as exc:
-                st.error(str(exc))
-            else:
-                st.session_state[DOWNTIME_IMPORT_KEY] = incoming
-                st.session_state.pop(BASELINE_IMPORT_KEY, None)
-                st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
-                st.rerun()
+                st.button(
+                    "취소",
+                    icon=":material/close:",
+                    key="cancel_baseline_import_v3",
+                    on_click=_clear_import,
+                    args=(TARGET_BASELINE,),
+                )
 
         incoming_baseline = st.session_state.get(BASELINE_IMPORT_KEY)
         if isinstance(incoming_baseline, pd.DataFrame):
@@ -1298,31 +1490,43 @@ with rawdata_tab:
             _import_summary(baseline_preview)
             st.dataframe(baseline_preview, hide_index=True, width="stretch")
             with st.container(horizontal=True):
-                confirm = st.button(
+                st.button(
                     "확인 후 편집본에 적용",
                     type="primary",
                     icon=":material/check:",
                     key="confirm_baseline_import_v3",
+                    on_click=_apply_baseline_import,
                 )
-                cancel = st.button("취소", icon=":material/close:", key="cancel_baseline_import_v3")
-            if confirm:
-                try:
-                    merged_baseline = merge_baseline_rows(baseline, incoming_baseline)
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    st.session_state[BASELINE_DRAFT_KEY] = merged_baseline
-                    st.session_state.pop(BASELINE_EDITOR_KEY, None)
-                    st.session_state.pop(BASELINE_IMPORT_KEY, None)
-                    st.session_state[FLASH_KEY] = (
-                        f"기존 보유대수 붙여넣기 데이터 {len(incoming_baseline):,}행을 편집본에 "
-                        "적용했습니다. 아직 DuckDB에는 저장되지 않았습니다. 손대지 않은 개발 "
-                        "샘플 행이 남아 있으면 저장 전에 고치거나 지워야 합니다."
-                    )
-                    st.rerun()
-            if cancel:
-                st.session_state.pop(BASELINE_IMPORT_KEY, None)
-                st.rerun()
+                st.button(
+                    "취소",
+                    icon=":material/close:",
+                    key="cancel_baseline_import_v3",
+                    on_click=_clear_import,
+                    args=(TARGET_BASELINE,),
+                )
+
+        equipment_errors = st.session_state.get(EQUIPMENT_IMPORT_ERROR_KEY)
+        if isinstance(equipment_errors, ImportPreviewResult):
+            st.markdown("**호기 마스터 Import 확인**")
+            _render_import_error_preview(
+                equipment_errors, download_key=EQUIPMENT_ERROR_DOWNLOAD_KEY
+            )
+            with st.container(horizontal=True):
+                st.button(
+                    "확인 후 편집본에 적용",
+                    type="primary",
+                    icon=":material/check:",
+                    key="confirm_equipment_import_v3",
+                    disabled=True,
+                    help="오류 행을 고쳐 다시 붙여넣어야 적용할 수 있습니다.",
+                )
+                st.button(
+                    "취소",
+                    icon=":material/close:",
+                    key="cancel_equipment_import_v3",
+                    on_click=_clear_import,
+                    args=(TARGET_EQUIPMENT,),
+                )
 
         incoming_equipment = st.session_state.get(EQUIPMENT_IMPORT_KEY)
         if isinstance(incoming_equipment, pd.DataFrame):
@@ -1331,41 +1535,42 @@ with rawdata_tab:
             _import_summary(equipment_preview)
             st.dataframe(equipment_preview, hide_index=True, width="stretch")
             with st.container(horizontal=True):
-                confirm = st.button(
+                st.button(
                     "확인 후 편집본에 적용",
                     type="primary",
                     icon=":material/check:",
                     key="confirm_equipment_import_v3",
+                    on_click=_apply_equipment_import,
+                    args=(floor_canvases,),
                 )
-                cancel = st.button(
-                    "취소", icon=":material/close:", key="cancel_equipment_import_v3"
+                st.button(
+                    "취소",
+                    icon=":material/close:",
+                    key="cancel_equipment_import_v3",
+                    on_click=_clear_import,
+                    args=(TARGET_EQUIPMENT,),
                 )
-            if confirm:
-                try:
-                    merged_equipment = merge_equipment_rows(
-                        equipment, incoming_equipment, floor_canvases=floor_canvases
-                    )
-                    merged_downtime = merge_downtime_rows(
-                        downtime,
-                        empty_downtime_schedule(),
-                        equipment=merged_equipment,
-                    )
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    st.session_state[EQUIPMENT_DRAFT_KEY] = merged_equipment
-                    st.session_state[DOWNTIME_DRAFT_KEY] = merged_downtime
-                    st.session_state.pop(EQUIPMENT_EDITOR_KEY, None)
-                    st.session_state.pop(DOWNTIME_EDITOR_KEY, None)
-                    st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
-                    st.session_state[FLASH_KEY] = (
-                        f"호기 마스터 붙여넣기 데이터 {len(incoming_equipment):,}행을 편집본에 "
-                        "적용했습니다. 아직 DuckDB에는 저장되지 않았습니다."
-                    )
-                    st.rerun()
-            if cancel:
-                st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
-                st.rerun()
+
+        downtime_errors = st.session_state.get(DOWNTIME_IMPORT_ERROR_KEY)
+        if isinstance(downtime_errors, ImportPreviewResult):
+            st.markdown("**비가동 일정 Import 확인**")
+            _render_import_error_preview(downtime_errors, download_key=DOWNTIME_ERROR_DOWNLOAD_KEY)
+            with st.container(horizontal=True):
+                st.button(
+                    "확인 후 편집본에 적용",
+                    type="primary",
+                    icon=":material/check:",
+                    key="confirm_downtime_import_v3",
+                    disabled=True,
+                    help="오류 행을 고쳐 다시 붙여넣어야 적용할 수 있습니다.",
+                )
+                st.button(
+                    "취소",
+                    icon=":material/close:",
+                    key="cancel_downtime_import_v3",
+                    on_click=_clear_import,
+                    args=(TARGET_DOWNTIME,),
+                )
 
         incoming_downtime = st.session_state.get(DOWNTIME_IMPORT_KEY)
         if isinstance(incoming_downtime, pd.DataFrame):
@@ -1374,78 +1579,68 @@ with rawdata_tab:
             _import_summary(downtime_preview)
             st.dataframe(downtime_preview, hide_index=True, width="stretch")
             with st.container(horizontal=True):
-                confirm = st.button(
+                st.button(
                     "확인 후 편집본에 적용",
                     type="primary",
                     icon=":material/check:",
                     key="confirm_downtime_import_v3",
+                    on_click=_apply_downtime_import,
                 )
-                cancel = st.button("취소", icon=":material/close:", key="cancel_downtime_import_v3")
-            if confirm:
-                try:
-                    merged_downtime = merge_downtime_rows(
-                        downtime, incoming_downtime, equipment=equipment
-                    )
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    st.session_state[DOWNTIME_DRAFT_KEY] = merged_downtime
-                    st.session_state.pop(DOWNTIME_EDITOR_KEY, None)
-                    st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
-                    st.session_state[FLASH_KEY] = (
-                        f"비가동 일정 붙여넣기 데이터 {len(incoming_downtime):,}행을 편집본에 "
-                        "적용했습니다. 아직 DuckDB에는 저장되지 않았습니다."
-                    )
-                    st.rerun()
-            if cancel:
-                st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
-                st.rerun()
+                st.button(
+                    "취소",
+                    icon=":material/close:",
+                    key="cancel_downtime_import_v3",
+                    on_click=_clear_import,
+                    args=(TARGET_DOWNTIME,),
+                )
 
     downtime_type_options = sorted(
         set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str).tolist())
     )
     # 보기 설정은 **폼 밖**이다. 폼 안에 두면 저장을 눌러야 적용돼 고르는 뜻이 없어진다.
-    baseline_view = render_table_view_controls(
-        baseline,
-        key_prefix="equipment_baseline_view",
-        editor_key=BASELINE_EDITOR_KEY,
-        filter_columns=("공정", "분류"),
-        locked_columns=("공정", "분류", "기존보유대수"),
-        label="기존 보유대수 · 표 보기 설정",
-    )
-    equipment_view = render_table_view_controls(
-        equipment,
-        key_prefix="equipment_master_view",
-        editor_key=EQUIPMENT_EDITOR_KEY,
-        filter_columns=(
-            "공정소분류",
-            "라인구분",
-            "활용구분",
-            "공정대분류",
-            "동",
-            "층",
-            "확정상태",
-            "장기보관여부",
-            "기존설비여부",
-            "레이아웃표시",
-        ),
-        locked_columns=(
-            "호기",
-            "공정소분류",
-            "장기보관여부",
-            "기존설비여부",
-            "레이아웃표시",
-        ),
-        label="호기 마스터 · 표 보기 설정",
-    )
-    downtime_view = render_table_view_controls(
-        downtime,
-        key_prefix="equipment_downtime_view",
-        editor_key=DOWNTIME_EDITOR_KEY,
-        filter_columns=("호기", "비가동유형"),
-        locked_columns=("호기", "비가동유형", "시작일"),
-        label="운영 비가동 일정 · 표 보기 설정",
-    )
+    # 세로로 쌓지 않고 한 줄에 세운다 — 편집표가 붙여넣기 바로 아래에 오게 하는 자리다.
+    with st.container(horizontal=True, gap="small"):
+        baseline_view = _table_view_popover(
+            baseline,
+            title="기존 보유대수",
+            key_prefix="equipment_baseline_view",
+            editor_key=BASELINE_EDITOR_KEY,
+            filter_columns=("공정", "분류"),
+            locked_columns=("공정", "분류", "기존보유대수"),
+        )
+        equipment_view = _table_view_popover(
+            equipment,
+            title="호기 마스터",
+            key_prefix="equipment_master_view",
+            editor_key=EQUIPMENT_EDITOR_KEY,
+            filter_columns=(
+                "공정소분류",
+                "라인구분",
+                "활용구분",
+                "공정대분류",
+                "동",
+                "층",
+                "확정상태",
+                "장기보관여부",
+                "기존설비여부",
+                "레이아웃표시",
+            ),
+            locked_columns=(
+                "호기",
+                "공정소분류",
+                "장기보관여부",
+                "기존설비여부",
+                "레이아웃표시",
+            ),
+        )
+        downtime_view = _table_view_popover(
+            downtime,
+            title="운영 비가동 일정",
+            key_prefix="equipment_downtime_view",
+            editor_key=DOWNTIME_EDITOR_KEY,
+            filter_columns=("호기", "비가동유형"),
+            locked_columns=("호기", "비가동유형", "시작일"),
+        )
 
     with st.form("equipment_operations_form_v3", border=True):
         # **Import 바로 아래가 이 버튼의 자리다.** 붙여넣기의 「적용」은 편집본까지만
@@ -1747,3 +1942,45 @@ with rawdata_tab:
             st.dataframe(filtered_history_equipment, hide_index=True, width="stretch")
             st.markdown("**비가동 일정**")
             st.dataframe(filtered_history_downtime, hide_index=True, width="stretch")
+
+    with st.expander("운영 지침", icon=":material/menu_book:", expanded=False):
+        st.markdown(
+            """
+#### 입력 데이터 구분
+
+- **기존 보유대수**: 호기별 일정·상태를 관리할 필요가 없는 오래된 가동설비를
+  `공정소분류별 집계 대수`로 관리합니다. 전 조회기간에 보유·가용 설비로 반영됩니다.
+- **호기 마스터**: 입고·Qual 일정, Qual 확정상태, 반출·이설, 개별 비가동 또는
+  Space 배치를 관리할 설비를 호기별로 등록합니다. 오래된 설비라도 개별 관리가 필요하면
+  호기 마스터에 등록하고 `기존설비여부=Y`로 지정합니다.
+- **비가동 일정**: 호기 마스터에 등록된 설비의 개발대여·공사·고장·이설 기간을
+  호기별로 관리합니다.
+
+#### 운영 절차
+
+1. 웹에서 직접 행을 편집하거나 기존 보유대수·호기 마스터·비가동 일정 Excel 표를
+   붙여넣습니다.
+2. 붙여넣기 Import 시 신규·대체 행과 변경 컬럼을 미리 확인합니다.
+3. `확인 후 편집본에 적용`으로 현재 편집본에 반영합니다.
+4. 하단의 `설비 데이터 저장`을 눌러야 DuckDB에 새 불변 리비전으로 영구 저장됩니다.
+
+#### 적용 시 유의사항
+
+- 기존 보유대수에는 호기명이 없으므로 개별 비가동 일정과 Space 배치를 적용할 수 없습니다.
+- 일반 신규 설비는 입고일정·Qual일정·확정상태가 필요합니다.
+- 가용대수는 Qual일정을 기준으로 계산하며, 확정상태는 Qual 실행 모니터링에만 사용합니다.
+- Space 표시는 `레이아웃표시=Y`와 동·층·X/Y좌표·X/Ysize 입력이 필요합니다.
+- 설비 운영 가용대수는 현재 시뮬레이션 Capa 산출 데이터와 분리되어 있습니다.
+
+#### 상태 판정 기준
+
+- **입고 예정**: 입고일정 전이며, 제진대·물류 일정도 이 상태의 선행 일정으로 관리
+- **셋업 진행중**: 입고일정 이상, Qual일정 미만
+- **가용**: Qual일정 이상 또는 기존설비 Y
+- **확정상태**: Qual 일정만 계획·확정·완료·지연으로 실행관리하며 가용 판정에는 미사용
+- **반출 예정 / 이설 예정**: 일정이 등록됐고 실행일 전
+- **보관 설비**: 장기보관여부 Y
+- **운영 비가동**: 개발대여·공사·고장·이설 등 비가동 일정 활성
+- **반출 완료 / 이설 완료**: 실행일부터 보유·가용·레이아웃에서 제외
+            """
+        )
