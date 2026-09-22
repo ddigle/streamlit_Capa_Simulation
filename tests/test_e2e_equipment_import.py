@@ -5,7 +5,7 @@
 이 파일은 두 층을 함께 본다.
 
 * **화면 왕복(AppTest)** — 빈 설비 DB 로 `app_pages/available_equipment_status.py` 를 실제로
-  실행해 `양식 → 붙여넣기 → 미리보기 → 편집본 적용 → 저장`을 누른다. 양식의 예시 한 줄을
+  실행해 `양식 → 붙여넣기 → 미리보기 → 확인 후 리비전 저장`을 누른다. 양식의 예시 한 줄을
   그대로 저장하려 하면 막히고, 값을 고치면 새 리비전이 생긴다.
 * **서비스 계층** — 화면에서 재기 어려운 세 가지를 직접 잰다. 미리보기 비용의 상한,
   인덱스가 0 부터가 아닌 프레임의 판정, 그리고 CSV 와 붙여넣기의 빈 칸 판정 동등성.
@@ -27,7 +27,7 @@ import pytest
 from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL
+from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.clipboard_table import TEXT_TABLE_READ_OPTIONS
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
@@ -39,7 +39,6 @@ from capa_simulation.services.equipment_csv import (
     SAMPLE_BASELINE_COUNT,
     SAMPLE_BASELINE_PROCESS,
     SAMPLE_BASELINE_TEMPLATE_NOTE,
-    SAMPLE_EQUIPMENT_ID,
     baseline_csv_template,
     build_baseline_import_preview,
     build_equipment_import_preview,
@@ -57,36 +56,34 @@ from capa_simulation.services.equipment_validation import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 EQUIPMENT_PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 
-BASELINE_CLIPBOARD_KEY = "equipment_baseline_clipboard_v4"
-BASELINE_PREVIEW_KEY = "equipment_baseline_clipboard_preview_v4"
-BASELINE_CONFIRM_KEY = "confirm_baseline_import_v3"
-BASELINE_TEMPLATE_DOWNLOAD_KEY = "equipment_baseline_template_download_v3"
+IMPORT_TARGET_KEY = "equipment_import_target_v1"
+CLIPBOARD_KEY = "equipment_import_clipboard_v1"
+PREVIEW_KEY = "equipment_import_preview_v1"
+IMPORT_SAVE_KEY = "equipment_import_save_v1"
 BASELINE_DRAFT_KEY = "equipment_baseline_draft_v3"
-MASTER_CLIPBOARD_KEY = "equipment_master_clipboard_v4"
-MASTER_PREVIEW_KEY = "equipment_master_clipboard_preview_v4"
-MASTER_CONFIRM_KEY = "confirm_equipment_import_v3"
 MASTER_DRAFT_KEY = "equipment_master_draft_v3"
 DRAFT_REVISION_KEY = "equipment_draft_revision_v4"
-SAVE_BUTTON_LABEL = "설비 데이터 저장"
 
-# 미리보기 한 번의 상한. 붙여넣기 미리보기는 세션 키가 살아 있는 동안 **매 rerun 다시**
-# 계산되므로, 사용자가 옆 위젯을 건드릴 때마다 이 시간을 다시 기다린다. 칸마다 1원소
+# 미리보기 한 번의 상한. 이전 UI는 미리보기를 매 rerun 다시 계산했고, 현재 UI는 검토
+# 요청 시에만 만든다. 어느 동선에서도 행 수가 늘 때 지연이 급증하면 안 된다. 칸마다 1원소
 # Series 를 만들어 결측을 재던 구현은 31열 기준 행당 수 ms 가 들어 200행이 1초를 넘었다.
 # 상한은 지금 구현(행당 1ms 미만)에 한참 여유를 두면서도 그 구현은 반드시 넘도록 잡는다.
 PREVIEW_BUDGET_PER_200_ROWS_SECONDS = 1.0
 
 
 def _page_script(database_path: Path) -> str:
-    """설비 DB 경로만 갈아끼워 화면을 그대로 실행하는 AppTest 스크립트.
+    """두 DB 경로를 임시 폴더로 격리해 화면을 실행하는 AppTest 스크립트.
 
     `tests/conftest.py` 가 테스트마다 `settings` 의 경로를 되돌리므로 여기서는 덮어쓰기만
     한다. 다른 테스트 파일에서 같은 도우미를 가져오지 않는다 — 이 파일 혼자 성립해야 한다.
     """
+    simulation_database_path = database_path.with_name(f"{database_path.stem}_simulation.duckdb")
     return f"""
 from pathlib import Path
 import capa_simulation.settings as settings
 
 settings.EQUIPMENT_DUCKDB_PATH = Path({str(database_path)!r})
+settings.DUCKDB_PATH = Path({str(simulation_database_path)!r})
 page_source = Path({str(EQUIPMENT_PAGE)!r}).read_text(encoding="utf-8")
 exec(compile(page_source, {str(EQUIPMENT_PAGE)!r}, "exec"), {{"__name__": "__main__"}})
 """
@@ -121,40 +118,30 @@ def _user_baseline() -> pd.DataFrame:
 
 
 def _seed_user_drafts(app: AppTest) -> None:
-    """샘플 30행 대신 사용자 값이 들어 있는 상태에서 화면을 연다.
-
-    빈 DB 로 그냥 열면 화면이 `sample_equipment_baseline()` 30행을 채워 주고, 저장 가드가
-    그 30행까지 함께 잡아 건수만 봐서는 **양식 예시 한 줄이 잡혔는지** 알 수 없다. 저장본이
-    없을 때의 리비전 표식은 `"empty"` 라, 그 값을 미리 넣어 두면 씨뿌리기가 건너뛴다.
-    """
+    """이미 다른 공정 값을 편집한 상태에서도 Import 저장이 그 값을 보존해야 한다."""
     app.session_state[DRAFT_REVISION_KEY] = "empty"
     app.session_state[BASELINE_DRAFT_KEY] = _user_baseline()
     app.session_state[MASTER_DRAFT_KEY] = empty_equipment_master()
     app.session_state["equipment_downtime_draft_v3"] = empty_downtime_schedule()
 
 
-def _paste_and_apply(
+def _preview_import(
     app: AppTest,
     clipboard: str,
     *,
-    text_area_key: str = BASELINE_CLIPBOARD_KEY,
-    preview_key: str = BASELINE_PREVIEW_KEY,
-    confirm_key: str = BASELINE_CONFIRM_KEY,
+    target: str = "기존 보유대수",
 ) -> None:
-    """붙여넣기 → 미리보기 → 확인 후 편집본에 적용까지 화면이 요구하는 순서 그대로."""
-    app.text_area(text_area_key).set_value(clipboard)
+    """입력 대상을 고르고 붙여넣은 뒤 변경 미리보기까지만 진행한다."""
+    app.selectbox(IMPORT_TARGET_KEY).set_value(target).run()
+    app.text_area(CLIPBOARD_KEY).set_value(clipboard)
     app.run()
-    app.button(preview_key).click().run()
-    assert not app.exception
-    app.button(confirm_key).click().run()
+    app.button(PREVIEW_KEY).click().run()
     assert not app.exception
 
 
 def _save(app: AppTest) -> None:
-    """폼 제출 버튼에는 `key` 가 없어 라벨로 찾는다."""
-    buttons = [button for button in app.button if button.label == SAVE_BUTTON_LABEL]
-    assert len(buttons) == 1, f"저장 버튼을 하나로 특정하지 못했습니다: {len(buttons)}개"
-    buttons[0].click().run()
+    """미리보기를 확인한 사용자가 불변 리비전 저장을 확정한다."""
+    app.button(IMPORT_SAVE_KEY).click().run()
 
 
 def _template_row(count: str) -> str:
@@ -173,34 +160,39 @@ def _template_row(count: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_the_untouched_template_row_reaches_the_editor_but_not_the_revision(
+def test_the_untouched_template_row_can_be_previewed_but_not_saved(
     tmp_path: Path,
 ) -> None:
-    """양식을 열어 아무것도 고치지 않고 붙여넣으면 편집본까지는 들어가고 저장에서 막힌다.
+    """양식을 그대로 붙여넣으면 변경 내용은 보여 주고 저장 확정에서 예시 행을 막는다.
 
     예시 행은 네 컬럼이 다 차 있어 `prepare_equipment_baseline` 을 그냥 통과한다. 그래서
-    붙여넣기·미리보기·적용은 전부 정상으로 보이고, 마지막 저장 한 번만이 이것을 걸러낸다.
+    붙여넣기·미리보기는 정상이며, 마지막 저장이 이것을 걸러낸다.
     리비전은 불변이라 한 번 들어가면 지울 수 없다 — 막는 자리가 여기뿐이다.
     """
-    app = AppTest.from_string(_page_script(tmp_path / "template_guard.duckdb"), default_timeout=90)
+    database_path = tmp_path / "template_guard.duckdb"
+    app = AppTest.from_string(_page_script(database_path), default_timeout=90)
     _seed_user_drafts(app)
     app.run()
 
     assert not app.exception
     # 사용자가 실제로 내려받는 버튼이 이 화면에 있다는 것까지 함께 묶어 둔다.
     # 없는 키를 찾으면 `KeyError` 라, 이 한 줄이 곧 존재 검사다.
-    assert app.download_button(BASELINE_TEMPLATE_DOWNLOAD_KEY).label == CSV_TEMPLATE_LABEL
+    app.selectbox(IMPORT_TARGET_KEY).set_value("기존 보유대수").run()
+    assert (
+        app.download_button("equipment_baseline_template_download_v3").label == "기존 보유대수 양식"
+    )
 
-    _paste_and_apply(app, _as_clipboard_text(baseline_csv_template()))
+    _preview_import(app, _as_clipboard_text(baseline_csv_template()))
 
     draft = app.session_state[BASELINE_DRAFT_KEY]
-    assert SAMPLE_BASELINE_PROCESS in draft["공정"].tolist()
+    assert SAMPLE_BASELINE_PROCESS not in draft["공정"].tolist()
 
     _save(app)
 
     assert not app.exception
     assert any("예시 행이 1건" in element.value for element in app.error)
     assert not any("설비 운영 데이터 r" in element.value for element in app.success)
+    assert not DuckDBEquipmentRepository(database_path).list_revisions()
 
 
 def test_an_edited_count_turns_the_template_row_into_a_saved_revision(tmp_path: Path) -> None:
@@ -209,32 +201,32 @@ def test_an_edited_count_turns_the_template_row_into_a_saved_revision(tmp_path: 
     가드가 네 컬럼 전부 일치를 요구하는 이유가 여기다. 예시와 같은 공정명을 쓰는 것이 실제로
     맞는 현장이라면 저장 자체가 불가능해서는 안 된다.
     """
-    app = AppTest.from_string(_page_script(tmp_path / "template_fix.duckdb"), default_timeout=90)
+    database_path = tmp_path / "template_fix.duckdb"
+    app = AppTest.from_string(_page_script(database_path), default_timeout=90)
     _seed_user_drafts(app)
     app.run()
 
-    _paste_and_apply(app, _as_clipboard_text(baseline_csv_template()))
+    _preview_import(app, _as_clipboard_text(baseline_csv_template()))
     _save(app)
     assert any("예시 행이" in element.value for element in app.error)
 
     # Excel 에서 대수만 고쳐 다시 복사한다. 자연키(공정 + 분류)가 같아 그 행을 대체한다.
     header = "\t".join(BASELINE_COLUMNS)
     corrected = str(SAMPLE_BASELINE_COUNT + 5)
-    _paste_and_apply(app, f"{header}\n{_template_row(corrected)}")
-
-    draft = app.session_state[BASELINE_DRAFT_KEY]
-    assert len(draft) == len(_user_baseline()) + 1
-    assert draft.loc[draft["공정"].eq(SAMPLE_BASELINE_PROCESS), "기존보유대수"].tolist() == [
-        float(corrected)
-    ]
-
+    _preview_import(app, f"{header}\n{_template_row(corrected)}")
     _save(app)
 
     assert not app.exception
     assert not app.error
     assert any("설비 운영 데이터 r1" in element.value for element in app.success)
-    # 저장 뒤에는 화면이 더 이상 「샘플을 유지한다」고 말하지 않고 리비전을 편집한다고 말한다.
-    assert any("최근 저장본 r1" in element.value for element in app.caption)
+    repository = DuckDBEquipmentRepository(database_path)
+    revisions = repository.list_revisions()
+    assert len(revisions) == 1
+    saved = repository.load_snapshot(revisions[0].revision_id)
+    assert len(saved.baseline) == len(_user_baseline()) + 1
+    assert saved.baseline.loc[
+        saved.baseline["공정"].eq(SAMPLE_BASELINE_PROCESS), "기존보유대수"
+    ].tolist() == [float(corrected)]
 
 
 def test_a_paste_that_only_repeats_the_template_process_name_is_still_the_user_s_row(
@@ -251,7 +243,7 @@ def test_a_paste_that_only_repeats_the_template_process_name_is_still_the_user_s
 
     header = "\t".join(BASELINE_COLUMNS)
     row = "\t".join([SAMPLE_BASELINE_PROCESS, "임대", str(SAMPLE_BASELINE_COUNT), "실제 집계"])
-    _paste_and_apply(app, f"{header}\n{row}")
+    _preview_import(app, f"{header}\n{row}")
     _save(app)
 
     assert not app.exception
@@ -281,15 +273,13 @@ def test_the_untouched_master_template_row_is_stopped_at_save(tmp_path: Path) ->
     _seed_user_drafts(app)
     app.run()
 
-    _paste_and_apply(
+    _preview_import(
         app,
         _as_clipboard_text(equipment_csv_template()),
-        text_area_key=MASTER_CLIPBOARD_KEY,
-        preview_key=MASTER_PREVIEW_KEY,
-        confirm_key=MASTER_CONFIRM_KEY,
+        target="호기 마스터",
     )
 
-    assert app.session_state[MASTER_DRAFT_KEY]["호기"].tolist() == [SAMPLE_EQUIPMENT_ID]
+    assert app.session_state[MASTER_DRAFT_KEY].empty
 
     _save(app)
 

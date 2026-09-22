@@ -328,7 +328,7 @@ def render_equipment_explorer(
                             "입고일정",
                             "Qual일정",
                             "반출일정",
-                            "이설일정",
+                            "이설일",
                         ],
                     )
             elif view == "생애주기 일정":

@@ -1,4 +1,4 @@
-# Purpose: equipment pages 관련 정상·예외·회귀 동작을 검증한다.
+# Purpose: 설비·Space 페이지의 초기 진입과 입력·보기 설정·저장 동작을 검증한다.
 
 from datetime import date
 from pathlib import Path
@@ -17,12 +17,25 @@ from capa_simulation.services.equipment_contract import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _open_tab(app: AppTest, name: str) -> AppTest:
+    label = next(tab.label for tab in app.tabs if tab.label.endswith(f" {name}"))
+    app.session_state["equipment_active_tab"] = label
+    return app.run()
+
+
 def _page_script(page_path: Path, database_path: Path) -> str:
+    """두 DB 경로를 테스트 전용 폴더로 묶고 실제 페이지를 실행한다.
+
+    Static/Dynamic 비교가 시뮬레이션 경계를 사용하므로 설비 DB만 바꾸면 충분하지 않다.
+    설정은 tests/conftest.py의 autouse fixture가 테스트 종료 후 복원한다.
+    """
+    simulation_database_path = database_path.with_name(f"{database_path.stem}_simulation.duckdb")
     return f"""
 from pathlib import Path
 import capa_simulation.settings as settings
 
 settings.EQUIPMENT_DUCKDB_PATH = Path({str(database_path)!r})
+settings.DUCKDB_PATH = Path({str(simulation_database_path)!r})
 page_source = Path({str(page_path)!r}).read_text(encoding="utf-8")
 exec(compile(page_source, {str(page_path)!r}, "exec"), {{"__name__": "__main__"}})
 """
@@ -39,27 +52,23 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     # 공통 헤더가 상태 접미를 제목에서 떼어 배지로 보여준다.
     assert app.title[0].value == "가용설비 현황"
     assert any("Data확보중" in element.value for element in app.markdown)
-    # 보는 곳(Main)·고르는 곳(Preference)·원천을 다루는 곳(RawData)을 가르고,
-    # 가운데 둘은 월별 Dynamic 가용대수를 위한 것이다 — Cut-off 를 적는 곳과 기준정보와
-    # 맞대어 보는 곳. 라벨은 `stateful_tabs` 의 기억값에 묶이므로 바꾸면 여기도 고친다.
-    assert [tab.label for tab in app.tabs] == [
+    # Cut-off는 Preference에서 입력한다. RawData 안의 입력표 탭은 최상위 목록과 별개다.
+    assert [tab.label for tab in app.tabs[:4]] == [
         ":material/dashboard: Main",
-        ":material/schedule: Cut-off",
         ":material/compare_arrows: Static/Dynamic",
         ":material/tune: Preference",
         ":material/table_rows: RawData",
     ]
-    # 조회 조건은 `Preference` 로 옮겼지만 위젯 자체는 그대로다.
-    # **차례로 집지 않는다.** Cut-off 탭의 보기 설정도 multiselect 라서, 탭을 더하거나
-    # 옮길 때마다 앞자리가 밀린다. 라벨로 고른다.
-    filter_labels = [
+    filter_labels = {
         widget.label
         for widget in app.multiselect
         if widget.label in {"라인구분", "활용구분", "공정대분류", "공정소분류"}
-    ]
-    assert filter_labels == ["라인구분", "활용구분", "공정대분류", "공정소분류"]
-    assert "운영 지침" in [expandable.label for expandable in app.status]
-    assert any(markdown.value == "#### Qual 확정상태 실행관리" for markdown in app.markdown)
+    }
+    assert filter_labels == {"라인구분", "활용구분", "공정대분류", "공정소분류"}
+    assert any(button.label == "설비 데이터 입력" for button in app.button)
+    assert app.session_state["equipment_baseline_draft_v3"].empty
+    assert app.session_state["equipment_master_draft_v3"].empty
+    assert not any("Qual 확정상태 실행관리" in item.value for item in app.markdown)
 
     def _filter(label: str) -> object:
         return next(widget for widget in app.multiselect if widget.label == label)
@@ -71,32 +80,38 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     assert not app.exception
 
 
-def test_baseline_paste_import_needs_a_preview_before_it_applies(tmp_path: Path) -> None:
-    """기존 보유대수도 호기 마스터·비가동 일정과 같은 미리보기 → 확정 순서를 탄다."""
+def test_baseline_paste_import_needs_a_preview_before_it_saves(tmp_path: Path) -> None:
+    """붙여넣기·미리보기는 저장하지 않고, 확인하면 불변 리비전에 한 번에 저장한다."""
     page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    database_path = tmp_path / "baseline_import.duckdb"
     app = AppTest.from_string(
-        _page_script(page_path, tmp_path / "baseline_import.duckdb"),
+        _page_script(page_path, database_path),
         default_timeout=60,
     ).run()
-
-    assert [widget.label for widget in app.text_area] == [
-        "기존 보유대수 표 붙여넣기",
-        "호기 마스터 표 붙여넣기",
-        "비가동 일정 표 붙여넣기",
-    ]
-
-    app.text_area[0].set_value("공정\t분류\t기존보유대수\t비고\nProcess-X\t전체\t7\t증설")
+    _open_tab(app, "RawData")
+    app.selectbox("equipment_import_target_v1").set_value("기존 보유대수").run()
+    app.text_area("equipment_import_clipboard_v1").set_value(
+        "공정\t분류\t기존보유대수\t비고\nProcess-X\t전체\t7\t증설"
+    )
     app.run()
-    app.button("equipment_baseline_clipboard_preview_v4").click().run()
+    repository = DuckDBEquipmentRepository(database_path)
+    assert not repository.list_revisions()
+    assert app.session_state["equipment_baseline_draft_v3"].empty
+    app.button("equipment_import_preview_v1").click().run()
+    assert not app.exception
+    assert not repository.list_revisions()
+    assert app.session_state["equipment_baseline_draft_v3"].empty
+    app.button("equipment_import_save_v1").click().run()
 
     assert not app.exception
-    assert any(element.value == "**기존 보유대수 Import 확인**" for element in app.markdown)
-
-    app.button("confirm_baseline_import_v3").click().run()
-
-    assert not app.exception
-    assert any("기존 보유대수 붙여넣기 데이터 1행" in element.value for element in app.success)
-    assert "Process-X" in app.session_state["equipment_baseline_draft_v3"]["공정"].tolist()
+    assert not app.error
+    revisions = repository.list_revisions()
+    assert len(revisions) == 1
+    saved = repository.load_snapshot(revisions[0].revision_id)
+    assert saved.baseline["공정"].tolist() == ["Process-X"]
+    assert saved.baseline["기존보유대수"].tolist() == [7.0]
+    assert saved.equipment.empty
+    assert saved.downtime.empty
 
 
 def test_page_reseeds_drafts_for_a_session_opened_before_the_baseline_table(
@@ -121,7 +136,8 @@ def test_page_reseeds_drafts_for_a_session_opened_before_the_baseline_table(
 
     assert not app.exception
     assert "equipment_baseline_draft_v3" in app.session_state
-    assert not app.session_state["equipment_baseline_draft_v3"].empty
+    # 빈 DB의 편집본은 비어 있어야 한다. 조회용 샘플은 초안에 섞지 않는다.
+    assert app.session_state["equipment_baseline_draft_v3"].empty
 
 
 def test_space_page_opens_with_empty_database(tmp_path: Path) -> None:
@@ -169,6 +185,7 @@ def _seeded_equipment(database_path: Path) -> None:
     equipment.loc[0, "장기보관여부"] = "N"
     equipment.loc[0, "기존설비여부"] = "Y"
     equipment.loc[0, "레이아웃표시"] = "N"
+    equipment.loc[0, "담당자"] = "숨김 컬럼 보존"
     downtime = empty_downtime_schedule()
     downtime.loc[0] = {column: None for column in downtime.columns}
     downtime.loc[0, "호기"] = "EQ-1"
@@ -176,7 +193,12 @@ def _seeded_equipment(database_path: Path) -> None:
     downtime.loc[0, "시작일"] = date(2026, 1, 1)
     repository.save_snapshot(
         pd.DataFrame(
-            {"공정": ["DEMO_PROC"], "분류": ["기존"], "기존보유대수": [1.0], "비고": [""]}
+            {
+                "공정": ["DEMO_PROC"],
+                "분류": ["기존"],
+                "기존보유대수": [1.0],
+                "비고": ["숨겨도 유지할 값"],
+            }
         ),
         equipment,
         downtime,
@@ -188,7 +210,7 @@ def _seeded_equipment(database_path: Path) -> None:
 def test_the_view_controls_render_for_each_editable_table(tmp_path: Path) -> None:
     """값이 있는 세 표에 각각 컬럼 선택과 행 필터가 붙는다.
 
-    보기 설정은 **폼 밖**이라야 한다. 폼 안에 두면 저장을 눌러야 적용돼 고르는 뜻이 없다.
+    보기 적용과 리비전 저장은 별개다. 필터 변경만으로 불변 리비전을 만들지 않는다.
     """
     database_path = tmp_path / "availability.duckdb"
     _seeded_equipment(database_path)
@@ -199,14 +221,9 @@ def test_the_view_controls_render_for_each_editable_table(tmp_path: Path) -> Non
     labels = [expandable.label for expandable in app.status]
     for table in ("기존 보유대수", "호기 마스터", "운영 비가동 일정"):
         assert f"{table} · 표 보기 설정" in labels, table
-    # Import 도 접히는 자리가 됐다.
-    assert "Excel 붙여넣기 Import" in labels
-
-    # 「볼 컬럼」은 편집표마다 하나씩이고, 처음에는 모두 선택돼 있다.
-    # 넷인 것은 RawData 의 세 표에 Cut-off 탭의 표가 더해졌기 때문이다.
-    column_pickers = [widget for widget in app.multiselect if widget.label == "볼 컬럼"]
-    assert len(column_pickers) == 4
-    assert all(picker.value for picker in column_pickers)
+    # 다른 탭이 붙어도 각 입력표의 키로 찾는다.
+    for prefix in ("equipment_baseline_view", "equipment_master_view", "equipment_downtime_view"):
+        assert app.multiselect(f"{prefix}_columns").value
     clear_equipment_repository()
 
 
@@ -216,15 +233,29 @@ def test_hiding_a_column_keeps_its_values_in_the_saved_frame(tmp_path: Path) -> 
     `st.data_editor` 는 `column_config={컬럼: None}` 으로 감춘 컬럼의 값을 반환 프레임에
     그대로 돌려준다. 값이 빠져 나가면 저장이 그 컬럼을 통째로 비운다.
     """
+    database_path = tmp_path / "availability.duckdb"
+    _seeded_equipment(database_path)
     page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
     app = AppTest.from_string(
-        _page_script(page_path, tmp_path / "availability.duckdb"),
+        _page_script(page_path, database_path),
         default_timeout=60,
     ).run()
-
-    picker = next(widget for widget in app.multiselect if widget.label == "볼 컬럼")
+    _open_tab(app, "RawData")
+    picker = app.multiselect("equipment_baseline_view_columns")
     remaining = [column for column in picker.value if column != "비고"]
     picker.set_value(remaining)
-    app.run()
+    app.button("equipment_view_apply_v1").click().run()
+    _open_tab(app, "Main")
+    _open_tab(app, "RawData")
+    assert app.multiselect("equipment_baseline_view_columns").value == remaining
+    app.button("equipment_edit_save_v1").click().run()
 
     assert not app.exception
+    assert not app.error
+    repository = DuckDBEquipmentRepository(database_path)
+    revisions = repository.list_revisions()
+    assert len(revisions) == 2
+    saved = repository.load_snapshot(revisions[0].revision_id)
+    assert saved.baseline["비고"].tolist() == ["숨겨도 유지할 값"]
+    assert saved.equipment["담당자"].tolist() == ["숨김 컬럼 보존"]
+    assert saved.downtime["호기"].tolist() == ["EQ-1"]
