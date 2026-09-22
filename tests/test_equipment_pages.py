@@ -12,7 +12,10 @@ from test_floor_layout_profile import _png
 
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-from capa_simulation.services.equipment_availability import build_inactive_equipment
+from capa_simulation.services.equipment_availability import (
+    build_equipment_lifecycle_spans,
+    build_inactive_equipment,
+)
 from capa_simulation.services.equipment_contract import (
     empty_downtime_schedule,
     empty_equipment_master,
@@ -248,17 +251,35 @@ def test_the_downtime_month_view_catches_what_the_sunday_samples_miss(tmp_path: 
     month_end = (
         date(year + 1, 1, 1) if month_no == 12 else date(year, month_no + 1, 1)
     ) - timedelta(days=1)
-    sunday_units: set[str] = set()
+    # 화면이 쓰는 것과 **같은 시점 집합**을 여기서도 만들어 결과를 맞댄다. 상위집합만
+    # 보면 union 이 일요일만 재도록 퇴화해도 통과한다 — 그것이 바로 이 보기가 고치려던
+    # 잘못이다.
+    spans = build_equipment_lifecycle_spans(
+        fleet, fleet_downtime, start_date=month_start, end_date=month_end
+    )
+    moments = {month_start} | {min(max(value, month_start), month_end) for value in spans["시작일"]}
     sunday = month_start + timedelta(days=(6 - month_start.weekday()) % 7)
+    sunday_units: set[str] = set()
     while sunday <= month_end:
+        moments.add(sunday)
         sunday_units |= {
             str(unit)
             for unit in build_inactive_equipment(fleet, fleet_downtime, as_of=sunday)["호기"]
         }
         sunday += timedelta(days=7)
+    expected: set[str] = set()
+    for moment in sorted(moments):
+        expected |= {
+            str(unit)
+            for unit in build_inactive_equipment(fleet, fleet_downtime, as_of=moment)["호기"]
+        }
 
     assert sunday_units, "일요일 표본이 비면 상위집합 검사가 아무것도 안 잰다"
-    assert sunday_units <= {str(unit) for unit in rendered["호기"]}
+    assert set(rendered["호기"]) == expected
+    assert sunday_units <= expected
+    # 데모 fleet 에는 주중에 들어와 주말 전에 끝나는 비가동이 있다. 이 줄이 깨지면 union 이
+    # 일요일 표본으로 퇴화했거나 데모 데이터가 바뀐 것이다.
+    assert sunday_units < expected
     assert rendered["비가동 시작"].le(rendered["비가동 종료"]).all()
 
 
