@@ -1144,6 +1144,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     알 수 없다 — 호기 마스터가 채워질수록 이 항목이 줄고 안분되는 항목이 는다.
   - `span_date_range` 를 함께 둔다. Cut-off 가 크면 구간이 앞으로 크게 밀리므로 조회기간
     만큼만 호기 구간을 만들면 첫 달이 **오류 없이** 모자라게 세어진다.
+> **진행 중 과제**: 가용설비 현황 화면 개편은 경쟁 개발 2주기로 돌고 있다 —
+> [설비 UI 개편 과제 정의서](docs/task_equipment_ui_2026-09-22.md). 채택 뒤 그 파일을
+> 지우고 이 줄도 같이 지운다.
+
 - `src/capa_simulation/services/securement_cross_check.py`
   - 같은 소요대수에 Static(`RQ_EQP_AVBL`)과 Dynamic(일할 환산) 가용대수를 각각 나눠
     확보율 두 벌을 낸다. **기준정보 가용대수를 교차검증하는 자리다.**
