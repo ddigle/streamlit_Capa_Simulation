@@ -259,3 +259,45 @@ def test_hiding_a_column_keeps_its_values_in_the_saved_frame(tmp_path: Path) -> 
     assert saved.baseline["비고"].tolist() == ["숨겨도 유지할 값"]
     assert saved.equipment["담당자"].tolist() == ["숨김 컬럼 보존"]
     assert saved.downtime["호기"].tolist() == ["EQ-1"]
+
+
+def test_the_empty_page_lists_the_three_inputs_with_counts_and_links(tmp_path: Path) -> None:
+    """저장본이 없으면 첫 화면이 세 데이터를 건수와 함께 짚고 각각 갈 곳을 준다.
+
+    한 줄 + 버튼 하나로는 **무엇이 없어서 비어 있는지**를 알 수 없다. 데모 fleet 이 가득
+    차 보이는 화면이라 더 그렇다. 대수는 적지 않는다 — Main 총대수는 다른 산식이다.
+    """
+    database_path = tmp_path / "first_data.duckdb"
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.initialize()
+    repository.save_process_cutoff(pd.DataFrame({"공정": ["DEMO_PROC"], "Cutoff일수": [3]}))
+    clear_equipment_repository()
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60).run()
+
+    assert not app.exception
+    rendered = [element.value for element in app.markdown]
+    assert "✗ **호기 마스터** 0건" in rendered
+    assert "✗ **운영 비가동 일정** 0건" in rendered
+    # 저장된 것은 ✓ 로 구분한다. 세 줄 중 이 줄만 tmp DB 에 따라 값이 달라진다.
+    assert "✓ **공정별 Cut-off** 1건" in rendered
+    app.button("equipment_first_data_cut_v1").click().run()
+
+    assert not app.exception
+    assert app.session_state["equipment_active_tab"] == ":material/tune: Preference"
+    clear_equipment_repository()
+
+
+def test_the_first_data_checklist_disappears_once_a_revision_exists(tmp_path: Path) -> None:
+    """저장본이 생기면 목록을 그리지 않는다. 첫 행동 안내와 같은 조건이다."""
+    database_path = tmp_path / "availability.duckdb"
+    _seeded_equipment(database_path)
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60).run()
+
+    assert not app.exception
+    labels = [button.label for button in app.button]
+    assert "설비 데이터 입력" not in labels
+    assert "RawData 에서 붙여넣기" not in labels
+    assert "Preference 에서 보기" not in labels
+    clear_equipment_repository()
