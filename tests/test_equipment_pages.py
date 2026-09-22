@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -12,9 +12,14 @@ from test_floor_layout_profile import _png
 
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.services.equipment_availability import build_inactive_equipment
 from capa_simulation.services.equipment_contract import (
     empty_downtime_schedule,
     empty_equipment_master,
+)
+from capa_simulation.services.equipment_samples import (
+    sample_downtime_schedule,
+    sample_equipment_master,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +29,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # 순회 테스트가 곧바로 실패하므로 조용히 어긋날 수는 없다.
 MAIN_QUESTION_KEY = "equipment_main_question_v1"
 SMALL_PROCESS_KEY = "equipment_dashboard_small_processes"
+ASOF_MONTH_KEY = "equipment_main_asof_month_v1"
+DOWNTIME_VIEW_KEY = "equipment_main_downtime_view_v1"
+QUESTION_DOWNTIME = "어디가 비가동인가"
+DOWNTIME_VIEW_MONTH = "그 달 전체"
+DOWNTIME_VIEW_WEEK = "기준 주차 시점"
 # 질문 하나에 답 하나. 표지는 **그 질문의 기본 보기**가 그리는 제목이다.
 QUESTION_MARKERS = {
     "지금 몇 대가 어느 상태인가": "#### 호기 생애주기 상태 모니터링",
@@ -162,6 +172,94 @@ def test_the_main_tab_answers_one_question_at_a_time(tmp_path: Path) -> None:
             if other_question != question:
                 assert other_marker not in text, (question, other_question)
     clear_equipment_repository()
+
+
+def _demo_fleet() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """화면이 쓰는 것과 같은 데모 fleet. 앵커가 `date.today()` 라 테스트도 오늘로 맞춘다."""
+    return sample_equipment_master(anchor_date=date.today()), sample_downtime_schedule(
+        anchor_date=date.today()
+    )
+
+
+def _last_week_end() -> date:
+    """기본 조회기간(`이 달 1일` ~ `오늘+12주`)의 마지막 주차 종료일(일요일).
+
+    `build_weekly_equipment_availability` 가 `end_date` 가 든 주의 월요일까지 돌므로 그 주의
+    일요일이 마지막 주차 종료일이다.
+    """
+    end_date = date.today() + timedelta(weeks=12)
+    last_monday = end_date - timedelta(days=end_date.weekday())
+    return last_monday + timedelta(days=6)
+
+
+def _rendered(app: AppTest, column: str) -> pd.DataFrame:
+    """그 컬럼을 가진 표를 집는다. **차례로 집지 않는다** — 표가 늘면 앞자리가 밀린다."""
+    return next(frame.value for frame in app.dataframe if column in frame.value.columns)
+
+
+def test_the_downtime_question_keeps_the_old_as_of_table_as_one_of_its_views(
+    tmp_path: Path,
+) -> None:
+    """「기준 주차 시점」 보기는 **옛 표와 완전히 같다.**
+
+    보기를 셋으로 늘리면서 한 시점을 찍어 보던 자리를 잃으면 안 된다. 같은 술어·같은
+    as_of 로 서비스가 내는 프레임과 화면이 그린 프레임이 같은지 본다.
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "downtime_week.duckdb"), default_timeout=90
+    )
+    app.session_state[MAIN_QUESTION_KEY] = QUESTION_DOWNTIME
+    app.session_state[DOWNTIME_VIEW_KEY] = DOWNTIME_VIEW_WEEK
+    app.run()
+
+    assert not app.exception
+    fleet, fleet_downtime = _demo_fleet()
+    expected = build_inactive_equipment(fleet, fleet_downtime, as_of=_last_week_end())
+    assert not expected.empty, "데모 fleet 에 비가동 호기가 없으면 이 테스트가 아무것도 안 잰다"
+    rendered = _rendered(app, "상태")
+    assert set(rendered["호기"]) == set(expected["호기"])
+    assert list(rendered.columns) == list(expected.columns)
+
+
+def test_the_downtime_month_view_catches_what_the_sunday_samples_miss(tmp_path: Path) -> None:
+    """「그 달 전체」는 일요일 표본의 **상위집합**이다.
+
+    주차 종료일만 재면 주중에 시작해 주말 전에 끝난 비가동이 통째로 빠진다. 구간이 바뀌는
+    날짜마다 다시 재므로 일요일에 걸린 호기는 전부 들어 있고, 그보다 더 잡을 수 있다.
+    개수는 고정하지 않는다 — 데모 fleet 은 `date.today()` 를 앵커로 만들어진다.
+    """
+    month = f"{date.today() + timedelta(days=30):%Y-%m}"
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "downtime_month.duckdb"), default_timeout=90
+    )
+    app.session_state[MAIN_QUESTION_KEY] = QUESTION_DOWNTIME
+    app.session_state[DOWNTIME_VIEW_KEY] = DOWNTIME_VIEW_MONTH
+    app.session_state[ASOF_MONTH_KEY] = month
+    app.run()
+
+    assert not app.exception
+    rendered = _rendered(app, "비가동 시작")
+
+    fleet, fleet_downtime = _demo_fleet()
+    year, month_no = (int(part) for part in month.split("-"))
+    month_start = date(year, month_no, 1)
+    month_end = (
+        date(year + 1, 1, 1) if month_no == 12 else date(year, month_no + 1, 1)
+    ) - timedelta(days=1)
+    sunday_units: set[str] = set()
+    sunday = month_start + timedelta(days=(6 - month_start.weekday()) % 7)
+    while sunday <= month_end:
+        sunday_units |= {
+            str(unit)
+            for unit in build_inactive_equipment(fleet, fleet_downtime, as_of=sunday)["호기"]
+        }
+        sunday += timedelta(days=7)
+
+    assert sunday_units, "일요일 표본이 비면 상위집합 검사가 아무것도 안 잰다"
+    assert sunday_units <= {str(unit) for unit in rendered["호기"]}
+    assert rendered["비가동 시작"].le(rendered["비가동 종료"]).all()
 
 
 def test_baseline_paste_import_needs_a_preview_before_it_applies(tmp_path: Path) -> None:

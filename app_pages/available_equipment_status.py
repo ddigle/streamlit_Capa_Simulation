@@ -146,12 +146,16 @@ STATUS_VIEW_KEY = "equipment_main_status_view_v1"
 TIMELINE_VIEW_KEY = "equipment_main_timeline_view_v1"
 QUAL_STATUS_KEY = "equipment_main_qual_status_v1"
 PROCESS_SORT_KEY = "equipment_main_process_sort_v1"
+DOWNTIME_VIEW_KEY = "equipment_main_downtime_view_v1"
 STATUS_VIEW_CHART = "막대"
 STATUS_VIEW_TABLE = "표"
 TIMELINE_VIEW_TREND = "합계 추이(주차)"
 TIMELINE_VIEW_GANTT = "호기별 타임라인"
 PROCESS_SORT_INACTIVE = "비가동 많은 순"
 PROCESS_SORT_NAME = "공정명 순"
+DOWNTIME_VIEW_MONTH = "그 달 전체"
+DOWNTIME_VIEW_WEEK = "기준 주차 시점"
+DOWNTIME_VIEW_SOURCE = "비가동 일정 원본"
 
 
 def _filter_equipment(
@@ -246,6 +250,67 @@ def _asof_week(weekly: pd.DataFrame, month: str) -> pd.DataFrame:
     scoped = weekly.loc[weekly["주차종료일"].map(_month_label).eq(month)]
     week_start = (scoped if not scoped.empty else weekly)["주차시작일"].max()
     return weekly.loc[weekly["주차시작일"].eq(week_start)]
+
+
+def _month_bounds(month: str) -> tuple[date, date]:
+    """`YYYY-MM` 라벨의 첫날과 마지막 날."""
+    year, month_no = (int(part) for part in month.split("-"))
+    first = date(year, month_no, 1)
+    last = date(year + 1, 1, 1) if month_no == 12 else date(year, month_no + 1, 1)
+    return first, last - timedelta(days=1)
+
+
+def _month_evaluation_moments(
+    spans: pd.DataFrame, *, month_start: date, month_end: date
+) -> list[date]:
+    """그 달 안에서 **판정이 달라질 수 있는 날**. 월초 ∪ 구간 시작일 ∪ 주차 종료일.
+
+    주차 종료일만 재면 월요일에 시작해 토요일에 끝난 비가동이 통째로 빠진다. 구간 시작일은
+    `build_equipment_lifecycle_spans` 가 이미 「상태가 바뀔 수 있는 날」로 뽑아 둔 것이라
+    여기서 규칙을 다시 적지 않아도 된다.
+    """
+    moments = {month_start}
+    for value in spans["시작일"]:
+        moment = value if isinstance(value, date) else pd.Timestamp(value).date()
+        moments.add(min(max(moment, month_start), month_end))
+    sunday = month_start + timedelta(days=(6 - month_start.weekday()) % 7)
+    while sunday <= month_end:
+        moments.add(sunday)
+        sunday += timedelta(days=7)
+    return sorted(moments)
+
+
+def _inactive_equipment_in_month(
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    *,
+    moments: list[date],
+) -> pd.DataFrame:
+    """그 달 안에서 **한 번이라도** 비가동이었던 호기.
+
+    상태 이름 화이트리스트로 고르지 않는다 — 「반출 예정」이 셋업을 덮는 호기가 통째로
+    빠진다. 오늘 표와 같은 술어(`build_inactive_equipment` = 보유 & ~가용)를 시점마다 다시
+    물어 `호기` 로 union 하고, 그 호기가 비가동으로 잡힌 시점의 최소·최대를 덧붙인다.
+    """
+    rows: dict[str, pd.Series] = {}
+    caught: dict[str, list[date]] = {}
+    empty: pd.DataFrame | None = None
+    for moment in moments:
+        frame = build_inactive_equipment(equipment, downtime, as_of=moment)
+        if empty is None:
+            empty = frame.iloc[0:0]
+        for _, row in frame.iterrows():
+            unit = str(row["호기"])
+            caught.setdefault(unit, []).append(moment)
+            rows.setdefault(unit, row)
+    result = (
+        pd.DataFrame(list(rows.values())).reset_index(drop=True)
+        if rows
+        else (empty if empty is not None else pd.DataFrame())
+    )
+    result.insert(1, "비가동 시작", [min(caught[unit]) for unit in rows])
+    result.insert(2, "비가동 종료", [max(caught[unit]) for unit in rows])
+    return result
 
 
 def _format_equipment_count(value: float) -> str:
@@ -599,6 +664,17 @@ with main_tab:
                 key=TIMELINE_VIEW_KEY,
                 persist_state="session",
             )
+        elif question == QUESTION_DOWNTIME:
+            if DOWNTIME_VIEW_KEY not in st.session_state:
+                st.session_state[DOWNTIME_VIEW_KEY] = DOWNTIME_VIEW_MONTH
+            st.segmented_control(
+                "보기",
+                options=(DOWNTIME_VIEW_MONTH, DOWNTIME_VIEW_WEEK, DOWNTIME_VIEW_SOURCE),
+                selection_mode="single",
+                required=True,
+                key=DOWNTIME_VIEW_KEY,
+                persist_state="session",
+            )
         elif question == QUESTION_QUAL:
             if QUAL_STATUS_KEY not in st.session_state:
                 st.session_state[QUAL_STATUS_KEY] = []
@@ -855,27 +931,94 @@ with main_tab:
                         st.altair_chart(chart, width="stretch")
 
             elif question == QUESTION_DOWNTIME:
-                inactive_equipment = build_inactive_equipment(
-                    filtered_equipment, filtered_downtime, as_of=asof_week_end
-                )
+                downtime_view_mode = str(st.session_state[DOWNTIME_VIEW_KEY])
+                month_start, month_end = _month_bounds(selected_month)
                 with st.container(border=True):
                     st.markdown("#### 비가동 설비호기")
-                    st.caption(
-                        f"{asof_week_end:%Y-%m-%d} 기준 보유 중이지만 가용이 아닌 "
-                        "셋업·보관·운영 비가동 호기입니다."
-                    )
-                    if inactive_equipment.empty:
-                        st.success("해당 주차에 비가동 설비호기가 없습니다.")
-                    else:
-                        st.dataframe(
-                            inactive_equipment,
-                            hide_index=True,
-                            width="stretch",
-                            column_config={
-                                column: st.column_config.DateColumn(column, format="YYYY-MM-DD")
-                                for column in DATE_COLUMNS
-                            },
+                    if downtime_view_mode == DOWNTIME_VIEW_WEEK:
+                        # **옛 표 그대로다.** 한 시점을 찍어 보는 자리를 잃지 않는다.
+                        inactive_equipment = build_inactive_equipment(
+                            filtered_equipment, filtered_downtime, as_of=asof_week_end
                         )
+                        st.caption(
+                            f"{asof_week_end:%Y-%m-%d} 기준 보유 중이지만 가용이 아닌 "
+                            "셋업·보관·운영 비가동 호기입니다."
+                        )
+                        if inactive_equipment.empty:
+                            st.success("해당 주차에 비가동 설비호기가 없습니다.")
+                        else:
+                            st.dataframe(
+                                inactive_equipment,
+                                hide_index=True,
+                                width="stretch",
+                                column_config={
+                                    column: st.column_config.DateColumn(column, format="YYYY-MM-DD")
+                                    for column in DATE_COLUMNS
+                                },
+                            )
+                    elif downtime_view_mode == DOWNTIME_VIEW_SOURCE:
+                        # **`.dt.date` 로 비교하지 않는다.** 종료일이 전부 비어 있는 편집본에서
+                        # `datetime64` 가 그대로 나와 `date` 와의 비교가 `TypeError` 로 죽는다.
+                        starts = pd.to_datetime(filtered_downtime["시작일"], errors="coerce")
+                        ends = pd.to_datetime(filtered_downtime["종료일"], errors="coerce")
+                        overlaps = starts.le(pd.Timestamp(month_end)) & (
+                            ends.isna() | ends.ge(pd.Timestamp(month_start))
+                        )
+                        source_rows = filtered_downtime.loc[overlaps]
+                        st.caption(
+                            f"{selected_month} 과 겹치는 **운영 비가동 일정 원본 행**입니다. "
+                            "위 두 보기가 센 것이 어느 줄에서 나왔는지를 여기서 봅니다."
+                        )
+                        if source_rows.empty:
+                            st.success("그 달과 겹치는 비가동 일정이 없습니다.")
+                        else:
+                            st.dataframe(
+                                source_rows,
+                                hide_index=True,
+                                width="stretch",
+                                column_config={
+                                    column: st.column_config.DateColumn(column, format="YYYY-MM-DD")
+                                    for column in ("시작일", "종료일")
+                                },
+                            )
+                    else:
+                        try:
+                            month_spans = build_equipment_lifecycle_spans(
+                                filtered_equipment,
+                                filtered_downtime,
+                                start_date=month_start,
+                                end_date=month_end,
+                            )
+                        except ValueError as exc:
+                            st.error(str(exc))
+                        else:
+                            moments = _month_evaluation_moments(
+                                month_spans, month_start=month_start, month_end=month_end
+                            )
+                            inactive_in_month = _inactive_equipment_in_month(
+                                filtered_equipment, filtered_downtime, moments=moments
+                            )
+                            st.caption(
+                                f"{selected_month} 안에서 **한 번이라도** 비가동이었던 호기입니다. "
+                                f"구간이 바뀌는 날짜마다 재었습니다(시점 {len(moments)}개). "
+                                "주차 종료일만 보면 주중에 시작해 주말 전에 끝난 비가동이 "
+                                "빠집니다. "
+                                "원천 행은 「비가동 일정 원본」 보기에 있습니다."
+                            )
+                            if inactive_in_month.empty:
+                                st.success("그 달에 비가동 설비호기가 없습니다.")
+                            else:
+                                st.dataframe(
+                                    inactive_in_month,
+                                    hide_index=True,
+                                    width="stretch",
+                                    column_config={
+                                        column: st.column_config.DateColumn(
+                                            column, format="YYYY-MM-DD"
+                                        )
+                                        for column in (*DATE_COLUMNS, "비가동 시작", "비가동 종료")
+                                    },
+                                )
 
             elif question == QUESTION_QUAL:
                 # Qual 은 「지금 어디까지 왔나」라 조회기간의 마지막 주차로 본다 — 기준 월을
