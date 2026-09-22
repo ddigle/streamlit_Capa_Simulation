@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import csv
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, timedelta
 from functools import partial
+from io import StringIO
 from typing import Any
 
 import altair as alt
@@ -156,6 +158,17 @@ IMPORT_APPLY_ERROR_KEY = "equipment_import_apply_error_v1"
 TARGET_BASELINE = "baseline"
 TARGET_EQUIPMENT = "equipment"
 TARGET_DOWNTIME = "downtime"
+# 파일 업로드. **업로더의 키는 세션에서 절대 쓰지 않는다** — Streamlit 이 막는다. 적용·취소는
+# 붙여넣기 칸만 비우고, 업로더에 옛 파일 이름이 남는 것은 그대로 둔다.
+UPLOAD_TARGET_KEY = "equipment_upload_target_v1"
+UPLOAD_FILE_KEY = "equipment_upload_file_v1"
+# 화면 라벨 → 붙여넣기 대상. 라벨은 한국어로 바꿀 수 있어야 하고 대상 이름은 계약이라
+# 같은 문자열을 쓰지 않는다(`_GAP_SECTIONS` 와 같은 방식).
+UPLOAD_TARGETS: dict[str, str] = {
+    "기존 보유대수": TARGET_BASELINE,
+    "호기 마스터": TARGET_EQUIPMENT,
+    "비가동 일정": TARGET_DOWNTIME,
+}
 # 대상 → (붙여넣기 칸, 성공 칸, 오류 칸). 한 번에 하나만 살아 있어야 하므로 콜백이 이
 # 표를 돌며 나머지 둘을 지운다.
 IMPORT_SLOTS: dict[str, tuple[str, str, str]] = {
@@ -390,6 +403,70 @@ def _scan_clipboard(
     else:
         st.session_state[import_key] = frame
         st.session_state.pop(error_key, None)
+
+
+def _decode_table_bytes(data: bytes) -> str:
+    """업로드한 파일을 글자로 푼다. UTF-8(BOM 포함) 먼저, 안 되면 CP949.
+
+    사내에서 Excel 이 저장하는 CSV 는 대개 CP949 다. `services/equipment_csv.py` 의 CSV
+    읽기가 같은 순서로 같은 둘을 본다 — 경로마다 다른 인코딩을 받으면 같은 파일이 다르게
+    읽힌다.
+    """
+    for encoding in ("utf-8-sig", "cp949"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("업로드한 파일의 인코딩은 UTF-8 또는 CP949 여야 합니다.")
+
+
+def _csv_bytes_to_clipboard(data: bytes) -> str:
+    """CSV 파일을 **붙여넣기 칸에 든 글과 똑같은** 탭 구분 문자열로 바꾼다.
+
+    **pandas 로 읽지 않는다.** `read_csv` → `to_csv` 왕복은 앞자리 0 을 지우고 `30` 을
+    `30.0` 으로 만든다. 그 값이 그대로 검증에 들어가므로 파일로 올린 표와 붙여넣은 표가
+    다른 판정을 받는다. `csv` 모듈로 셀을 있는 그대로 읽어 탭으로 잇는다.
+
+    줄 끝은 `\\n` 이다 — 브라우저의 붙여넣기 칸에 든 글이 그렇다. 셀 안에 탭이나 줄바꿈이
+    있으면 따옴표로 감싼다(`QUOTE_MINIMAL`). 읽는 쪽이 `pd.read_csv(sep="\\t")` 라 그
+    규칙까지 같아야 왕복이 닫힌다.
+    """
+    rows = list(csv.reader(StringIO(_decode_table_bytes(data), newline="")))
+    buffer = StringIO()
+    csv.writer(buffer, delimiter="\t", lineterminator="\n").writerows(
+        row for row in rows if any(cell.strip() for cell in row)
+    )
+    return buffer.getvalue().strip("\r\n")
+
+
+def _ingest_upload(floor_canvases: dict[tuple[str, str], tuple[float, float]]) -> None:
+    """올린 파일을 붙여넣기 칸에 풀어 **같은 미리보기 경로**로 보낸다.
+
+    업로드가 따로 검증·미리보기를 갖지 않는 것이 중요하다. 길이 둘이면 파일로 올린 표만
+    통과하는 자리가 생기고, 그 차이는 저장에서야 드러난다.
+    """
+    uploaded = st.session_state.get(UPLOAD_FILE_KEY)
+    if uploaded is None:
+        return
+    target = UPLOAD_TARGETS[str(st.session_state[UPLOAD_TARGET_KEY])]
+    clipboard_key, import_key, error_key = IMPORT_SLOTS[target]
+    try:
+        text = _csv_bytes_to_clipboard(bytes(uploaded.getvalue()))
+    except ValueError as exc:
+        # 콜백에서 터지면 화면이 통째로 traceback 이 된다. 다른 오류와 같은 자리에 적는다.
+        st.session_state[clipboard_key] = ""
+        st.session_state.pop(import_key, None)
+        st.session_state[error_key] = ImportPreviewResult(
+            frame=None,
+            row_errors=[],
+            frame_error=str(exc),
+            row_count=0,
+            source_text="",
+            raw_frame=None,
+        )
+        return
+    st.session_state[clipboard_key] = text
+    _scan_clipboard(target, floor_canvases)
 
 
 def _clear_import(target: str) -> None:
@@ -1710,6 +1787,33 @@ with rawdata_tab:
             "아래 저장 버튼에서 한 번 더 수행합니다."
         )
         st.caption("**붙여넣은 뒤 표 밖을 클릭하면 바로 검사합니다.**")
+
+        # 붙여넣기가 안 되는 자리가 있다. 원격 화면이나 사내 브라우저에서 Ctrl+V 가 막히면
+        # 지금까지는 이 화면에 표를 넣을 길이 아예 없었다. 파일은 붙여넣기 칸을 채워 **같은**
+        # 검사·미리보기·적용을 거친다 — 길이 하나 늘어도 검증은 하나다.
+        if UPLOAD_TARGET_KEY not in st.session_state:
+            st.session_state[UPLOAD_TARGET_KEY] = next(iter(UPLOAD_TARGETS))
+        with st.container(horizontal=True, vertical_alignment="bottom", gap="medium"):
+            st.segmented_control(
+                "업로드 대상",
+                options=tuple(UPLOAD_TARGETS),
+                selection_mode="single",
+                required=True,
+                key=UPLOAD_TARGET_KEY,
+                persist_state="session",
+            )
+            st.file_uploader(
+                "CSV 파일",
+                type=["csv"],
+                key=UPLOAD_FILE_KEY,
+                on_change=_ingest_upload,
+                args=(floor_canvases,),
+            )
+        st.caption(
+            "내려받은 CSV 양식을 Excel 에서 채워 그대로 올려도 됩니다. 올린 표는 아래 "
+            "붙여넣기 칸에 들어가 같은 검사를 거칩니다."
+        )
+
         baseline_import_col, equipment_import_col, downtime_import_col = st.columns(3)
         with baseline_import_col:
             # 「미리보기」 버튼이 없다. 붙여넣고 칸을 벗어나면 `on_change` 가 그 자리에서

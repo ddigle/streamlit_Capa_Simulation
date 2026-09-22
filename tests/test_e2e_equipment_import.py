@@ -43,6 +43,7 @@ from capa_simulation.services.equipment_csv import (
     baseline_csv_template,
     build_baseline_import_preview,
     build_equipment_import_preview,
+    downtime_csv_template,
     equipment_csv_template,
     read_baseline_clipboard,
     read_baseline_csv,
@@ -64,8 +65,13 @@ BASELINE_DRAFT_KEY = "equipment_baseline_draft_v3"
 MASTER_CLIPBOARD_KEY = "equipment_master_clipboard_v4"
 MASTER_CONFIRM_KEY = "confirm_equipment_import_v3"
 MASTER_DRAFT_KEY = "equipment_master_draft_v3"
+DOWNTIME_CLIPBOARD_KEY = "equipment_downtime_clipboard_v4"
+DOWNTIME_CONFIRM_KEY = "confirm_downtime_import_v3"
+DOWNTIME_DRAFT_KEY = "equipment_downtime_draft_v3"
 DRAFT_REVISION_KEY = "equipment_draft_revision_v4"
 SAVE_BUTTON_LABEL = "설비 데이터 저장"
+# 업로드 변환 결과를 실어 두는 칸. 위젯 키가 아니라 이 파일이 만든 이름이다.
+UPLOAD_PROBE_KEY = "_test_upload_probe"
 
 # 미리보기 한 번의 상한. 붙여넣기 미리보기는 세션 키가 살아 있는 동안 **매 rerun 다시**
 # 계산되므로, 사용자가 옆 위젯을 건드릴 때마다 이 시간을 다시 기다린다. 칸마다 1원소
@@ -87,6 +93,33 @@ import capa_simulation.settings as settings
 settings.EQUIPMENT_DUCKDB_PATH = Path({str(database_path)!r})
 page_source = Path({str(EQUIPMENT_PAGE)!r}).read_text(encoding="utf-8")
 exec(compile(page_source, {str(EQUIPMENT_PAGE)!r}, "exec"), {{"__name__": "__main__"}})
+"""
+
+
+def _upload_probe_script(database_path: Path) -> str:
+    """화면을 그대로 실행하고 **업로드 변환 함수의 결과**를 세션에 실어 둔다.
+
+    `AppTest` 는 `st.file_uploader` 에 파일을 얹을 수 없고(업로더의 키는 세션에 쓸 수도
+    없다), `app_pages` 는 패키지가 아니라 함수를 import 할 수도 없다. 같은 프로세스에서
+    도는 스크립트 안에서 `exec` 한 이름공간을 위젯이 아닌 세션 칸에 두면 테스트가 그
+    함수를 부른 결과를 그대로 받는다. 업로드 콜백이 이 변환 말고 더 하는 일은 붙여넣기 칸에
+    넣고 `_scan_clipboard` 를 부르는 것뿐이라, 그 뒤는 붙여넣기 경로와 같은 길이다.
+    """
+    return f"""
+from pathlib import Path
+import streamlit as st
+import capa_simulation.settings as settings
+
+settings.EQUIPMENT_DUCKDB_PATH = Path({str(database_path)!r})
+page_source = Path({str(EQUIPMENT_PAGE)!r}).read_text(encoding="utf-8")
+page = {{"__name__": "__main__"}}
+exec(compile(page_source, {str(EQUIPMENT_PAGE)!r}, "exec"), page)
+convert = page["_csv_bytes_to_clipboard"]
+st.session_state[{UPLOAD_PROBE_KEY!r}] = {{
+    "baseline": convert(page["baseline_csv_template"]()),
+    "equipment": convert(page["equipment_csv_template"]()),
+    "downtime": convert(page["downtime_csv_template"]()),
+}}
 """
 
 
@@ -499,3 +532,76 @@ def test_the_31_column_master_reads_the_same_on_both_paths() -> None:
     assert from_csv.loc[0, "분류1"] == "NA"
     assert pd.isna(from_csv.loc[0, "반출일정"])
     assert pd.isna(from_csv.loc[0, "비고"])
+
+
+# ---------------------------------------------------------------------------
+# 5. 파일 업로드가 붙여넣기와 같은 글을 만든다
+# ---------------------------------------------------------------------------
+
+
+def test_the_upload_builds_the_very_text_a_paste_would_hold(tmp_path: Path) -> None:
+    """내려받은 양식을 올린 것과 Excel 에서 복사해 붙여넣은 것이 **같은 글**이어야 한다.
+
+    업로드가 따로 파싱·검증을 갖지 않는 것이 이 개편의 전제다. 파일은 붙여넣기 칸을 채우고
+    그 뒤는 같은 길을 간다 — 그래서 변환 결과가 한 글자라도 다르면 「파일로는 되는데
+    붙여넣으면 안 된다」가 생긴다.
+
+    **줄 끝은 `\n` 으로 맞춘다.** 비교 대상인 `_as_clipboard_text` 는 pandas `to_csv` 라
+    Windows 에서 `os.linesep`(=`\r\n`)을 쓰는데, 브라우저의 `st.text_area` 에 든 글은
+    `\n` 이다. 화면이 실제로 받는 쪽에 맞추고 비교에서 그 차이만 지운다(파서는 `read_csv`
+    라 둘 다 같은 표로 읽는다).
+    """
+    app = AppTest.from_string(
+        _upload_probe_script(tmp_path / "upload_equivalence.duckdb"), default_timeout=90
+    ).run()
+
+    assert not app.exception
+    converted = app.session_state[UPLOAD_PROBE_KEY]
+    for name, payload in (
+        ("baseline", baseline_csv_template()),
+        ("equipment", equipment_csv_template()),
+        ("downtime", downtime_csv_template()),
+    ):
+        assert converted[name] == _as_clipboard_text(payload).replace("\r\n", "\n"), name
+
+
+def test_each_uploaded_template_reaches_the_editor_through_the_paste_path(
+    tmp_path: Path,
+) -> None:
+    """세 양식 모두 올린 그대로 미리보기를 거쳐 편집본에 닿는다.
+
+    비가동 일정 양식은 호기 마스터의 예시 호기를 참조하므로 순서가 정해져 있다 — 마스터를
+    먼저 넣지 않으면 붙여넣기 단계에서 막힌다. 그 순서까지 한 번에 돌려 둔다.
+    """
+    app = AppTest.from_string(
+        _upload_probe_script(tmp_path / "upload_chain.duckdb"), default_timeout=90
+    )
+    _seed_user_drafts(app)
+    app.run()
+
+    assert not app.exception
+    converted = app.session_state[UPLOAD_PROBE_KEY]
+
+    _paste_and_apply(
+        app,
+        converted["equipment"],
+        text_area_key=MASTER_CLIPBOARD_KEY,
+        confirm_key=MASTER_CONFIRM_KEY,
+    )
+    assert app.session_state[MASTER_DRAFT_KEY]["호기"].tolist() == [SAMPLE_EQUIPMENT_ID]
+
+    _paste_and_apply(
+        app,
+        converted["downtime"],
+        text_area_key=DOWNTIME_CLIPBOARD_KEY,
+        confirm_key=DOWNTIME_CONFIRM_KEY,
+    )
+    assert app.session_state[DOWNTIME_DRAFT_KEY]["호기"].tolist() == [SAMPLE_EQUIPMENT_ID]
+
+    _paste_and_apply(app, converted["baseline"])
+    assert SAMPLE_BASELINE_PROCESS in app.session_state[BASELINE_DRAFT_KEY]["공정"].tolist()
+
+    # 기존 보유대수 양식의 예시 한 줄은 **저장에서** 막힌다. 올리는 길이 늘어도 그 가드는
+    # 그대로다(`test_the_untouched_template_row_reaches_the_editor_but_not_the_revision`).
+    _save(app)
+    assert any("예시 행이" in element.value for element in app.error)
