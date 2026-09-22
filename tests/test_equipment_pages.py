@@ -390,6 +390,99 @@ def test_the_three_import_targets_download_their_error_rows_under_their_own_keys
     assert len(set(seen)) == 3, seen
 
 
+def test_the_empty_database_opens_with_a_getting_started_card(tmp_path: Path) -> None:
+    """빈 DB 의 첫 화면이 **무엇부터 해야 하는지** 말한다(평가 기준 1).
+
+    데모 fleet 이 가득 차 보여 이미 붙은 화면처럼 읽히는 것이 이 카드가 고치는 것이다.
+    적는 것은 **DuckDB 에 저장된 건수**뿐이고, Main 의 총대수와 다른 산식으로 낸 대수는
+    적지 않는다 — 두 수가 첫 화면에 나란히 서면 어느 쪽이 맞는지부터 따져야 한다.
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "onboarding.duckdb"),
+        default_timeout=90,
+    ).run()
+
+    assert not app.exception
+    assert any("이 화면은 아직 비어 있습니다" in element.value for element in app.markdown)
+    text = _page_text(app)
+    for line in ("호기 마스터", "운영 비가동 일정", "공정별 Cut-off"):
+        assert line in text, line
+    keys = [button.key for button in app.button]
+    for slug in ("master", "downtime", "cutoff"):
+        assert f"onboarding_go_{slug}_v1" in keys, slug
+    # 카드의 지우기 버튼도 편집본의 예시 행을 없앤다(6단계 콜백 재사용, 다른 키).
+    app.button("onboarding_purge_sample_rows_v1").click().run()
+
+    assert not app.exception
+    assert app.session_state["equipment_baseline_draft_v3"].empty
+
+
+def test_the_getting_started_card_lands_on_the_tab_its_button_names(tmp_path: Path) -> None:
+    """카드의 버튼은 그 탭을 **실제로 연다.**
+
+    RawData·Preference 본문은 어느 탭이 열려 있든 그려지므로 「그 탭의 요소가 있다」로는
+    아무것도 증명되지 않는다. 탭 위젯 값과 **Main 의 답이 사라졌는지**를 함께 본다.
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    for slug, expected in (
+        ("master", ":material/table_rows: RawData"),
+        ("cutoff", ":material/tune: Preference"),
+    ):
+        app = AppTest.from_string(
+            _page_script(page_path, tmp_path / f"land_{slug}.duckdb"),
+            default_timeout=90,
+        ).run()
+        assert QUESTION_MARKERS["지금 몇 대가 어느 상태인가"] in _page_text(app), slug
+
+        app.button(f"onboarding_go_{slug}_v1").click().run()
+
+        assert not app.exception, slug
+        assert app.session_state["equipment_active_tab"] == expected, slug
+        assert app.session_state["equipment_active_tab__remembered"] == expected, slug
+        # Main 이 닫혔으면 그 답은 그려지지 않는다.
+        assert QUESTION_MARKERS["지금 몇 대가 어느 상태인가"] not in _page_text(app), slug
+    clear_equipment_repository()
+
+
+def test_a_saved_revision_takes_the_getting_started_card_away(tmp_path: Path) -> None:
+    """저장본이 하나라도 생기면 카드는 그리지 않는다."""
+    database_path = tmp_path / "seeded_onboarding.duckdb"
+    _seeded_equipment(database_path)
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=90).run()
+
+    assert not app.exception
+    assert not any("이 화면은 아직 비어 있습니다" in element.value for element in app.markdown)
+    assert "onboarding_go_master_v1" not in [button.key for button in app.button]
+    clear_equipment_repository()
+
+
+def test_turning_the_sample_switch_off_leaves_only_the_pending_source_panel(
+    tmp_path: Path,
+) -> None:
+    """고를 것이 없는 화면에 고르는 틀을 세우지 않는다.
+
+    호기 마스터가 비어 있고 샘플을 끄면 여섯 질문은 전부 빈 답으로 이어진다. 질문 pills 와
+    조회 조건을 그리지 않고, 무엇이 이 자리를 채우는지만 적는다.
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "sample_off.duckdb"),
+        default_timeout=90,
+    )
+    app.session_state["dynamic_capa_sample_data"] = False
+    app.run()
+
+    assert not app.exception
+    text = _page_text(app)
+    assert "#### :material/pending: 가용설비 현황" in text
+    for marker in QUESTION_MARKERS.values():
+        assert marker not in text, marker
+    assert MAIN_QUESTION_KEY not in [widget.key for widget in app.get("pills")]
+    assert SMALL_PROCESS_KEY not in [widget.key for widget in app.multiselect]
+
+
 def test_the_leftover_sample_rows_are_announced_and_cleared_in_one_click(
     tmp_path: Path,
 ) -> None:

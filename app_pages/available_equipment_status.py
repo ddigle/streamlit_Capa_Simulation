@@ -35,7 +35,11 @@ from capa_simulation.components.status_metric import (
     render_status_metric,
     shortage_tone,
 )
-from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
+from capa_simulation.components.tab_state import (
+    remembered_tab_key,
+    stateful_tabs,
+    tab_is_hidden,
+)
 from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL, render_csv_download
 from capa_simulation.components.table_view_controls import (
     TableView,
@@ -466,6 +470,86 @@ def _render_sample_purge(leftover: pd.DataFrame, baseline: pd.DataFrame, *, key:
     )
 
 
+def _go_to_tab(label: str) -> None:
+    """다음 회차에 그 탭이 열린 채로 서게 한다.
+
+    이 버튼들은 `stateful_tabs` **보다 위**에서 그려지므로, 콜백 시점에는 탭 위젯이 아직
+    만들어지지 않았다 — 그래서 키에 직접 써도 된다. `stateful_tabs` 는 위젯 값이 사라진
+    회차를 위해 기억 칸을 따로 두므로 그쪽도 같이 맞춘다.
+    """
+    st.session_state[EQUIPMENT_TAB_KEY] = label
+    st.session_state[remembered_tab_key(EQUIPMENT_TAB_KEY)] = label
+
+
+def _render_onboarding_card(
+    *,
+    saved_equipment: pd.DataFrame,
+    saved_downtime: pd.DataFrame,
+    stored_cutoff: pd.DataFrame,
+    leftover: pd.DataFrame,
+    showing_sample: bool,
+) -> None:
+    """저장본이 하나도 없을 때 **무엇부터 해야 하는지**를 첫 화면에 적는다.
+
+    빈 DB 로 이 화면을 열면 데모 fleet 이 가득 차 보여 이미 붙은 화면처럼 읽힌다. 실제로
+    DuckDB 에 저장된 것은 세 줄에 적힌 건수뿐이다.
+
+    **대수는 적지 않는다.** 이 카드가 말하는 것은 「저장된 것이 몇 건이냐」이고, Main 의
+    총대수는 데모 fleet 과 기존 보유대수를 합친 다른 산식이다. 두 수가 첫 화면에 나란히
+    서면 어느 쪽이 맞는지부터 따져야 한다.
+    """
+    with st.container(border=True):
+        st.markdown("#### :material/rocket_launch: 이 화면은 아직 비어 있습니다")
+        if showing_sample:
+            st.caption(
+                "지금 보이는 fleet 은 데모(합성값)입니다 — DuckDB 에는 아무것도 저장돼 있지 "
+                "않습니다. 아래 셋을 채우면 같은 화면이 실데이터로 바뀝니다."
+            )
+        else:
+            st.caption(
+                "DuckDB 에 저장된 설비 리비전이 없습니다. 아래 셋을 채우면 같은 화면이 "
+                "실데이터로 바뀝니다."
+            )
+        rows: tuple[tuple[str, int, str, str, str], ...] = (
+            ("호기 마스터", len(saved_equipment), "RawData 에서 붙여넣기", TAB_RAWDATA, "master"),
+            (
+                "운영 비가동 일정",
+                len(saved_downtime),
+                "RawData 에서 붙여넣기",
+                TAB_RAWDATA,
+                "downtime",
+            ),
+            (
+                "공정별 Cut-off",
+                len(stored_cutoff),
+                "Preference 에서 보기",
+                TAB_PREFERENCE,
+                "cutoff",
+            ),
+        )
+        for title, count, action, tab_label, slug in rows:
+            with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
+                mark = "✓" if count else "✗"
+                st.markdown(f"{mark} **{title}** {count:,}건")
+                st.button(
+                    action,
+                    icon=":material/arrow_forward:",
+                    key=f"onboarding_go_{slug}_v1",
+                    on_click=_go_to_tab,
+                    args=(tab_label,),
+                )
+        if not leftover.empty:
+            st.caption(
+                f"기존 보유대수에 손대지 않은 예시 행 {len(leftover):,}건이 있어 저장이 막힙니다."
+            )
+            st.button(
+                f"예시 행 {len(leftover):,}건 지우기",
+                icon=":material/delete_sweep:",
+                key="onboarding_purge_sample_rows_v1",
+                on_click=_purge_sample_baseline_rows,
+            )
+
+
 def _table_view_popover(
     data: pd.DataFrame,
     *,
@@ -760,6 +844,17 @@ small_process_options = sorted(
     | set(baseline["공정"].dropna().astype(str).unique().tolist())
 )
 
+if latest_snapshot is None:
+    # **탭 밖이다.** 어느 탭을 보고 있든 「아직 아무것도 저장돼 있지 않다」와 다음 행동이
+    # 같은 자리에 있어야 한다. 저장본이 하나라도 생기면 이 카드는 그리지 않는다.
+    _render_onboarding_card(
+        saved_equipment=saved_equipment,
+        saved_downtime=saved_downtime,
+        stored_cutoff=stored_cutoff,
+        leftover=_leftover_sample_rows(baseline),
+        showing_sample=using_dashboard_sample and show_sample_fleet,
+    )
+
 main_tab, preference_tab, rawdata_tab = stateful_tabs(
     [TAB_MAIN, TAB_PREFERENCE, TAB_RAWDATA],
     key=EQUIPMENT_TAB_KEY,
@@ -821,196 +916,14 @@ with main_tab:
             f"{latest_snapshot.revision.created_at:%Y-%m-%d %H:%M}"
         )
     st.caption(f"조회기간 {start_date:%Y-%m-%d} ~ {end_date:%Y-%m-%d} · Preference 에서 바꿉니다")
-
-    filtered_equipment = _filter_equipment(
-        dashboard_equipment,
-        line_types=selected_line_types,
-        utilization_types=selected_utilization_types,
-        large_processes=selected_large_processes,
-        small_processes=selected_small_processes,
-    )
-    filtered_downtime = _downtime_for_equipment(dashboard_downtime, filtered_equipment)
-    filtered_baseline = baseline.copy()
-    if selected_small_processes:
-        filtered_baseline = filtered_baseline.loc[
-            filtered_baseline["공정"].isin(selected_small_processes)
-        ].copy()
-
-    # **주차 집계는 질문과 무관하게 항상 낸다.** 기준 월 목록이 이 결과에서 나오고, 캐시된
-    # 함수라 같은 입력에서 두 번 계산되지 않는다.
-    if start_date > end_date:
-        st.error("설비 대시보드 시작일은 종료일보다 늦을 수 없습니다.")
-        weekly = pd.DataFrame()
-    else:
-        try:
-            weekly = get_weekly_equipment_availability(
-                filtered_baseline,
-                filtered_equipment,
-                filtered_downtime,
-                start_date=start_date,
-                end_date=end_date,
-            )
-        except ValueError as exc:
-            st.error(str(exc))
-            weekly = pd.DataFrame()
-
-    # **`default=` 를 주지 않는다.** `key` 로 세션에 값이 있는 위젯에 `default=` 를 함께
-    # 주면 매 회차 「created with a default value but also had its value set via the
-    # Session State API」 경고가 뜬다. 기본값은 세션에 심고 위젯은 그 칸만 본다.
-    if MAIN_QUESTION_KEY not in st.session_state:
-        st.session_state[MAIN_QUESTION_KEY] = QUESTION_STATUS
-    st.pills(
-        "무엇을 볼까요",
-        options=MAIN_QUESTIONS,
-        selection_mode="single",
-        required=True,
-        key=MAIN_QUESTION_KEY,
-        persist_state="session",
-        label_visibility="collapsed",
-        width="stretch",
-    )
-    question = str(st.session_state[MAIN_QUESTION_KEY])
-
-    month_options = _asof_month_options(weekly)
-    if month_options:
-        remembered_month = st.session_state.get(ASOF_MONTH_KEY)
-        if not isinstance(remembered_month, str) or remembered_month not in month_options:
-            # 기억값이 옵션에 없으면 **렌더 전에** 갈아 끼운다. 위젯을 만든 뒤에 고치면
-            # 이미 만들어진 위젯의 키를 본문에서 쓰는 꼴이라 예외가 난다.
-            st.session_state[ASOF_MONTH_KEY] = month_options[-1]
-
-    # 옵션 줄. 왼쪽은 고른 질문 전용이고 오른쪽 둘은 여섯 질문이 함께 쓰는 조회 조건이다.
-    # **선택되지 않은 질문의 옵션 위젯은 그리지 않는다** — 값은 `persist_state` 가 지킨다.
-    with st.container(horizontal=True, border=True, vertical_alignment="bottom", gap="medium"):
-        if question in _MONTH_QUESTIONS and month_options:
-            st.pills(
-                "기준 월",
-                options=month_options,
-                selection_mode="single",
-                required=True,
-                key=ASOF_MONTH_KEY,
-                persist_state="session",
-                help="그 달에 **주차 종료일이 드는** 마지막 주차 시점으로 봅니다.",
-            )
-        if question == QUESTION_STATUS:
-            if STATUS_VIEW_KEY not in st.session_state:
-                st.session_state[STATUS_VIEW_KEY] = STATUS_VIEW_CHART
-            st.segmented_control(
-                "보기",
-                options=(STATUS_VIEW_CHART, STATUS_VIEW_TABLE),
-                selection_mode="single",
-                required=True,
-                key=STATUS_VIEW_KEY,
-                persist_state="session",
-            )
-        elif question == QUESTION_SCHEDULE:
-            if TIMELINE_VIEW_KEY not in st.session_state:
-                st.session_state[TIMELINE_VIEW_KEY] = TIMELINE_VIEW_TREND
-            st.segmented_control(
-                "보기",
-                options=(TIMELINE_VIEW_TREND, TIMELINE_VIEW_GANTT),
-                selection_mode="single",
-                required=True,
-                key=TIMELINE_VIEW_KEY,
-                persist_state="session",
-            )
-        elif question == QUESTION_DOWNTIME:
-            if DOWNTIME_VIEW_KEY not in st.session_state:
-                st.session_state[DOWNTIME_VIEW_KEY] = DOWNTIME_VIEW_MONTH
-            st.segmented_control(
-                "보기",
-                options=(DOWNTIME_VIEW_MONTH, DOWNTIME_VIEW_WEEK, DOWNTIME_VIEW_SOURCE),
-                selection_mode="single",
-                required=True,
-                key=DOWNTIME_VIEW_KEY,
-                persist_state="session",
-            )
-        elif question == QUESTION_QUAL:
-            if QUAL_STATUS_KEY not in st.session_state:
-                st.session_state[QUAL_STATUS_KEY] = []
-            st.pills(
-                "확정상태",
-                options=list(QUAL_CONFIRMATION_STATUSES),
-                selection_mode="multi",
-                key=QUAL_STATUS_KEY,
-                persist_state="session",
-                help="고르지 않으면 전체입니다.",
-            )
-        elif question == QUESTION_GAP:
-            if GAP_SECTION_KEY not in st.session_state:
-                st.session_state[GAP_SECTION_KEY] = GAP_SECTION_CHART
-            st.segmented_control(
-                "보기",
-                options=(GAP_SECTION_CHART, GAP_SECTION_BREAKDOWN, GAP_SECTION_CROSSCHECK),
-                selection_mode="single",
-                required=True,
-                key=GAP_SECTION_KEY,
-                persist_state="session",
-            )
-        elif question == QUESTION_PROCESS:
-            if PROCESS_SORT_KEY not in st.session_state:
-                st.session_state[PROCESS_SORT_KEY] = PROCESS_SORT_INACTIVE
-            st.segmented_control(
-                "정렬",
-                options=(PROCESS_SORT_INACTIVE, PROCESS_SORT_NAME),
-                selection_mode="single",
-                required=True,
-                key=PROCESS_SORT_KEY,
-                persist_state="session",
-            )
-        # 공정소분류는 **탭을 옮기지 않고** 좁히는 자리라 옵션 줄에 펴 둔다. 나머지 셋은
-        # 처음 여는 사람이 거의 쓰지 않아 popover 안에 접고, 몇 개가 걸렸는지만 라벨에 적는다.
-        st.multiselect(
-            "공정소분류",
-            options=small_process_options,
-            placeholder="전체",
-            key=SMALL_PROCESS_KEY,
-            persist_state="session",
-            width=300,
+    if not show_sample_fleet:
+        # **고를 것이 없는 화면에 고르는 틀을 세우지 않는다.** 원천이 붙기 전에는
+        # 질문 여섯 개가 전부 빈 답으로 이어진다 — 무엇이 이 자리를 채우는지만 적는다.
+        st.caption(
+            "샘플 스위치를 켜면 여섯 질문으로 보는 화면이 그대로 나타납니다. 지금은 원천 대기 "
+            "상태라 질문과 조회 조건을 그리지 않습니다."
         )
-        active_conditions = sum(
-            1
-            for values in (
-                selected_line_types,
-                selected_utilization_types,
-                selected_large_processes,
-            )
-            if values
-        )
-        with st.popover(f"조회 조건 ({active_conditions})", icon=":material/filter_alt:"):
-            st.multiselect(
-                "라인구분",
-                options=_filter_options(dashboard_equipment, "라인구분"),
-                placeholder="전체",
-                key=LINE_TYPE_KEY,
-                persist_state="session",
-                width=220,
-            )
-            st.multiselect(
-                "활용구분",
-                options=_filter_options(dashboard_equipment, "활용구분"),
-                placeholder="전체",
-                key=UTILIZATION_TYPE_KEY,
-                persist_state="session",
-                width=220,
-            )
-            st.multiselect(
-                "공정대분류",
-                options=_filter_options(dashboard_equipment, "공정대분류"),
-                placeholder="전체",
-                key=LARGE_PROCESS_KEY,
-                persist_state="session",
-                width=260,
-            )
-            st.caption(
-                "기존 보유대수에는 라인·활용·공정대분류 정보가 없으므로 공정소분류 조건만 "
-                "적용되고, 나머지 조건은 호기 마스터 설비에 적용됩니다."
-            )
-
-    # 숨은 탭에서는 위젯만 그리고 답은 그리지 않는다. 본문을 통째로 접으면 위 위젯의
-    # 선택값이 버려지고, 답을 그리면 보이지도 않는 Plotly·Altair 를 매 회차 만든다.
-    if not tab_is_hidden(main_tab):
-        if not show_sample_fleet:
+        if not tab_is_hidden(main_tab):
             render_pending_source(
                 subject="가용설비 현황",
                 source="설비 운영 DB",
@@ -1022,131 +935,204 @@ with main_tab:
                     "공정별 **기존 보유대수** — 호기 마스터에 없는 기존 설비의 출발점입니다",
                 ),
             )
-        elif weekly.empty and start_date <= end_date:
-            st.info("집계할 기존 보유대수 또는 호기 마스터가 없습니다.")
-        elif not weekly.empty:
-            selected_month = str(st.session_state.get(ASOF_MONTH_KEY, month_options[-1]))
-            asof_week = _asof_week(weekly, selected_month)
-            asof_week_end = asof_week["주차종료일"].max()
-            asof_weeknum = str(asof_week["Weeknum"].iloc[0])
+    else:
+        filtered_equipment = _filter_equipment(
+            dashboard_equipment,
+            line_types=selected_line_types,
+            utilization_types=selected_utilization_types,
+            large_processes=selected_large_processes,
+            small_processes=selected_small_processes,
+        )
+        filtered_downtime = _downtime_for_equipment(dashboard_downtime, filtered_equipment)
+        filtered_baseline = baseline.copy()
+        if selected_small_processes:
+            filtered_baseline = filtered_baseline.loc[
+                filtered_baseline["공정"].isin(selected_small_processes)
+            ].copy()
 
+        # **주차 집계는 질문과 무관하게 항상 낸다.** 기준 월 목록이 이 결과에서 나오고, 캐시된
+        # 함수라 같은 입력에서 두 번 계산되지 않는다.
+        if start_date > end_date:
+            st.error("설비 대시보드 시작일은 종료일보다 늦을 수 없습니다.")
+            weekly = pd.DataFrame()
+        else:
+            try:
+                weekly = get_weekly_equipment_availability(
+                    filtered_baseline,
+                    filtered_equipment,
+                    filtered_downtime,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            except ValueError as exc:
+                st.error(str(exc))
+                weekly = pd.DataFrame()
+
+        # **`default=` 를 주지 않는다.** `key` 로 세션에 값이 있는 위젯에 `default=` 를 함께
+        # 주면 매 회차 「created with a default value but also had its value set via the
+        # Session State API」 경고가 뜬다. 기본값은 세션에 심고 위젯은 그 칸만 본다.
+        if MAIN_QUESTION_KEY not in st.session_state:
+            st.session_state[MAIN_QUESTION_KEY] = QUESTION_STATUS
+        st.pills(
+            "무엇을 볼까요",
+            options=MAIN_QUESTIONS,
+            selection_mode="single",
+            required=True,
+            key=MAIN_QUESTION_KEY,
+            persist_state="session",
+            label_visibility="collapsed",
+            width="stretch",
+        )
+        question = str(st.session_state[MAIN_QUESTION_KEY])
+
+        month_options = _asof_month_options(weekly)
+        if month_options:
+            remembered_month = st.session_state.get(ASOF_MONTH_KEY)
+            if not isinstance(remembered_month, str) or remembered_month not in month_options:
+                # 기억값이 옵션에 없으면 **렌더 전에** 갈아 끼운다. 위젯을 만든 뒤에 고치면
+                # 이미 만들어진 위젯의 키를 본문에서 쓰는 꼴이라 예외가 난다.
+                st.session_state[ASOF_MONTH_KEY] = month_options[-1]
+
+        # 옵션 줄. 왼쪽은 고른 질문 전용이고 오른쪽 둘은 여섯 질문이 함께 쓰는 조회 조건이다.
+        # **선택되지 않은 질문의 옵션 위젯은 그리지 않는다** — 값은 `persist_state` 가 지킨다.
+        with st.container(horizontal=True, border=True, vertical_alignment="bottom", gap="medium"):
+            if question in _MONTH_QUESTIONS and month_options:
+                st.pills(
+                    "기준 월",
+                    options=month_options,
+                    selection_mode="single",
+                    required=True,
+                    key=ASOF_MONTH_KEY,
+                    persist_state="session",
+                    help="그 달에 **주차 종료일이 드는** 마지막 주차 시점으로 봅니다.",
+                )
             if question == QUESTION_STATUS:
-                trend = (
-                    weekly.groupby(["주차시작일", "Weeknum"], as_index=False)[
-                        ["가용대수", "비가동대수"]
-                    ]
-                    .sum()
-                    .sort_values("주차시작일")
+                if STATUS_VIEW_KEY not in st.session_state:
+                    st.session_state[STATUS_VIEW_KEY] = STATUS_VIEW_CHART
+                st.segmented_control(
+                    "보기",
+                    options=(STATUS_VIEW_CHART, STATUS_VIEW_TABLE),
+                    selection_mode="single",
+                    required=True,
+                    key=STATUS_VIEW_KEY,
+                    persist_state="session",
                 )
-                total_count = float(asof_week["총대수"].sum())
-                available_count = float(asof_week["가용대수"].sum())
-                inactive_count = float(asof_week["비가동대수"].sum())
-                # 카드마다 자기 주차 추이를 스파크라인으로 함께 보여준다. 한 주 값만으로는
-                # 늘고 있는지 줄고 있는지 알 수 없어 아래 차트를 열어야 했다. 네 장 모두에
-                # 넣어야 카드 높이가 어긋나지 않는다.
-                weekly_total = trend["가용대수"] + trend["비가동대수"]
-                weekly_rate = (trend["가용대수"] / weekly_total.where(weekly_total.ne(0))).fillna(
-                    0.0
-                )
-                st.caption(f"{selected_month} 마지막 주 기준 · {asof_weeknum}")
-                with metric_row(key="equipment_weekly_metrics"):
-                    st.metric(
-                        "총대수",
-                        _format_equipment_count(total_count),
-                        chart_data=weekly_total,
-                        chart_type="area",
-                        border=True,
-                    )
-                    st.metric(
-                        "가용대수",
-                        _format_equipment_count(available_count),
-                        chart_data=trend["가용대수"],
-                        chart_type="area",
-                        border=True,
-                    )
-                    render_status_metric(
-                        "비가동대수",
-                        _format_equipment_count(inactive_count),
-                        key="equipment_inactive_count",
-                        tone=shortage_tone(int(inactive_count > 0)),
-                        chart_data=trend["비가동대수"],
-                    )
-                    st.metric(
-                        "가용률",
-                        f"{available_count / total_count if total_count else 0:.1%}",
-                        chart_data=weekly_rate,
-                        chart_type="area",
-                        border=True,
-                    )
-
-                unit_status = build_equipment_status_as_of(
-                    filtered_equipment, filtered_downtime, as_of=asof_week_end
-                )
-                status_counts = (
-                    unit_status["상태"]
-                    .value_counts()
-                    .reindex(EQUIPMENT_STATUSES, fill_value=0)
-                    .rename_axis("상태")
-                    .rename("호기대수")
-                    .reset_index()
-                )
-                with st.container(border=True):
-                    st.markdown("#### 호기 생애주기 상태 모니터링")
-                    st.caption(
-                        "상태는 호기별로 하나만 부여합니다. 반출·이설 예정 호기는 실행일 전까지 "
-                        "보유·가용 산정에 포함되며, 기존 보유대수 집계는 호기 상태에서 제외됩니다."
-                    )
-                    if st.session_state[STATUS_VIEW_KEY] == STATUS_VIEW_TABLE:
-                        st.dataframe(status_counts, hide_index=True, width="stretch")
-                    else:
-                        status_chart = (
-                            alt.Chart(status_counts)
-                            .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
-                            .encode(
-                                y=alt.Y(
-                                    "상태:N",
-                                    sort=list(EQUIPMENT_STATUSES),
-                                    axis=alt.Axis(title=None, labelFontSize=13),
-                                ),
-                                x=alt.X(
-                                    "호기대수:Q",
-                                    axis=alt.Axis(title=None, tickMinStep=1, labelFontSize=13),
-                                ),
-                                color=alt.Color(
-                                    "상태:N", scale=_equipment_status_scale(), legend=None
-                                ),
-                                tooltip=("상태:N", "호기대수:Q"),
-                            )
-                            .properties(height=300)
-                        )
-                        st.altair_chart(status_chart, width="stretch")
-
             elif question == QUESTION_SCHEDULE:
-                if st.session_state[TIMELINE_VIEW_KEY] == TIMELINE_VIEW_GANTT:
-                    with st.container(border=True):
-                        st.markdown("#### 호기별 생애주기 일정")
-                        st.caption(
-                            "날짜 컬럼은 점이라 표로는 그 사이 간격이 보이지 않습니다. "
-                            "구간 판정은 「지금 몇 대가 어느 상태인가」의 상태 막대와 같은 "
-                            "규칙입니다."
-                        )
-                        try:
-                            lifecycle_spans = build_equipment_lifecycle_spans(
-                                filtered_equipment,
-                                filtered_downtime,
-                                start_date=start_date,
-                                end_date=end_date,
-                            )
-                        except ValueError as exc:
-                            st.error(str(exc))
-                        else:
-                            render_equipment_lifecycle_gantt(
-                                lifecycle_spans,
-                                key="equipment_lifecycle_gantt",
-                                today=today,
-                                owner_tab=main_tab,
-                            )
-                else:
+                if TIMELINE_VIEW_KEY not in st.session_state:
+                    st.session_state[TIMELINE_VIEW_KEY] = TIMELINE_VIEW_TREND
+                st.segmented_control(
+                    "보기",
+                    options=(TIMELINE_VIEW_TREND, TIMELINE_VIEW_GANTT),
+                    selection_mode="single",
+                    required=True,
+                    key=TIMELINE_VIEW_KEY,
+                    persist_state="session",
+                )
+            elif question == QUESTION_DOWNTIME:
+                if DOWNTIME_VIEW_KEY not in st.session_state:
+                    st.session_state[DOWNTIME_VIEW_KEY] = DOWNTIME_VIEW_MONTH
+                st.segmented_control(
+                    "보기",
+                    options=(DOWNTIME_VIEW_MONTH, DOWNTIME_VIEW_WEEK, DOWNTIME_VIEW_SOURCE),
+                    selection_mode="single",
+                    required=True,
+                    key=DOWNTIME_VIEW_KEY,
+                    persist_state="session",
+                )
+            elif question == QUESTION_QUAL:
+                if QUAL_STATUS_KEY not in st.session_state:
+                    st.session_state[QUAL_STATUS_KEY] = []
+                st.pills(
+                    "확정상태",
+                    options=list(QUAL_CONFIRMATION_STATUSES),
+                    selection_mode="multi",
+                    key=QUAL_STATUS_KEY,
+                    persist_state="session",
+                    help="고르지 않으면 전체입니다.",
+                )
+            elif question == QUESTION_GAP:
+                if GAP_SECTION_KEY not in st.session_state:
+                    st.session_state[GAP_SECTION_KEY] = GAP_SECTION_CHART
+                st.segmented_control(
+                    "보기",
+                    options=(GAP_SECTION_CHART, GAP_SECTION_BREAKDOWN, GAP_SECTION_CROSSCHECK),
+                    selection_mode="single",
+                    required=True,
+                    key=GAP_SECTION_KEY,
+                    persist_state="session",
+                )
+            elif question == QUESTION_PROCESS:
+                if PROCESS_SORT_KEY not in st.session_state:
+                    st.session_state[PROCESS_SORT_KEY] = PROCESS_SORT_INACTIVE
+                st.segmented_control(
+                    "정렬",
+                    options=(PROCESS_SORT_INACTIVE, PROCESS_SORT_NAME),
+                    selection_mode="single",
+                    required=True,
+                    key=PROCESS_SORT_KEY,
+                    persist_state="session",
+                )
+            # 공정소분류는 **탭을 옮기지 않고** 좁히는 자리라 옵션 줄에 펴 둔다. 나머지 셋은
+            # 처음 여는 사람이 거의 쓰지 않아 popover 안에 접고, 몇 개가 걸렸는지만 라벨에 적는다.
+            st.multiselect(
+                "공정소분류",
+                options=small_process_options,
+                placeholder="전체",
+                key=SMALL_PROCESS_KEY,
+                persist_state="session",
+                width=300,
+            )
+            active_conditions = sum(
+                1
+                for values in (
+                    selected_line_types,
+                    selected_utilization_types,
+                    selected_large_processes,
+                )
+                if values
+            )
+            with st.popover(f"조회 조건 ({active_conditions})", icon=":material/filter_alt:"):
+                st.multiselect(
+                    "라인구분",
+                    options=_filter_options(dashboard_equipment, "라인구분"),
+                    placeholder="전체",
+                    key=LINE_TYPE_KEY,
+                    persist_state="session",
+                    width=220,
+                )
+                st.multiselect(
+                    "활용구분",
+                    options=_filter_options(dashboard_equipment, "활용구분"),
+                    placeholder="전체",
+                    key=UTILIZATION_TYPE_KEY,
+                    persist_state="session",
+                    width=220,
+                )
+                st.multiselect(
+                    "공정대분류",
+                    options=_filter_options(dashboard_equipment, "공정대분류"),
+                    placeholder="전체",
+                    key=LARGE_PROCESS_KEY,
+                    persist_state="session",
+                    width=260,
+                )
+                st.caption(
+                    "기존 보유대수에는 라인·활용·공정대분류 정보가 없으므로 공정소분류 조건만 "
+                    "적용되고, 나머지 조건은 호기 마스터 설비에 적용됩니다."
+                )
+
+        # 숨은 탭에서는 위젯만 그리고 답은 그리지 않는다. 본문을 통째로 접으면 위 위젯의
+        # 선택값이 버려지고, 답을 그리면 보이지도 않는 Plotly·Altair 를 매 회차 만든다.
+        if not tab_is_hidden(main_tab):
+            if weekly.empty and start_date <= end_date:
+                st.info("집계할 기존 보유대수 또는 호기 마스터가 없습니다.")
+            elif not weekly.empty:
+                selected_month = str(st.session_state.get(ASOF_MONTH_KEY, month_options[-1]))
+                asof_week = _asof_week(weekly, selected_month)
+                asof_week_end = asof_week["주차종료일"].max()
+                asof_weeknum = str(asof_week["Weeknum"].iloc[0])
+
+                if question == QUESTION_STATUS:
                     trend = (
                         weekly.groupby(["주차시작일", "Weeknum"], as_index=False)[
                             ["가용대수", "비가동대수"]
@@ -1154,290 +1140,416 @@ with main_tab:
                         .sum()
                         .sort_values("주차시작일")
                     )
-                    trend_long = trend.melt(
-                        id_vars=["주차시작일", "Weeknum"],
-                        value_vars=["가용대수", "비가동대수"],
-                        var_name="상태",
-                        value_name="대수",
+                    total_count = float(asof_week["총대수"].sum())
+                    available_count = float(asof_week["가용대수"].sum())
+                    inactive_count = float(asof_week["비가동대수"].sum())
+                    # 카드마다 자기 주차 추이를 스파크라인으로 함께 보여준다. 한 주 값만으로는
+                    # 늘고 있는지 줄고 있는지 알 수 없어 아래 차트를 열어야 했다. 네 장 모두에
+                    # 넣어야 카드 높이가 어긋나지 않는다.
+                    weekly_total = trend["가용대수"] + trend["비가동대수"]
+                    weekly_rate = (
+                        trend["가용대수"] / weekly_total.where(weekly_total.ne(0))
+                    ).fillna(0.0)
+                    st.caption(f"{selected_month} 마지막 주 기준 · {asof_weeknum}")
+                    with metric_row(key="equipment_weekly_metrics"):
+                        st.metric(
+                            "총대수",
+                            _format_equipment_count(total_count),
+                            chart_data=weekly_total,
+                            chart_type="area",
+                            border=True,
+                        )
+                        st.metric(
+                            "가용대수",
+                            _format_equipment_count(available_count),
+                            chart_data=trend["가용대수"],
+                            chart_type="area",
+                            border=True,
+                        )
+                        render_status_metric(
+                            "비가동대수",
+                            _format_equipment_count(inactive_count),
+                            key="equipment_inactive_count",
+                            tone=shortage_tone(int(inactive_count > 0)),
+                            chart_data=trend["비가동대수"],
+                        )
+                        st.metric(
+                            "가용률",
+                            f"{available_count / total_count if total_count else 0:.1%}",
+                            chart_data=weekly_rate,
+                            chart_type="area",
+                            border=True,
+                        )
+
+                    unit_status = build_equipment_status_as_of(
+                        filtered_equipment, filtered_downtime, as_of=asof_week_end
+                    )
+                    status_counts = (
+                        unit_status["상태"]
+                        .value_counts()
+                        .reindex(EQUIPMENT_STATUSES, fill_value=0)
+                        .rename_axis("상태")
+                        .rename("호기대수")
+                        .reset_index()
                     )
                     with st.container(border=True):
-                        st.markdown("#### 주차별 설비 현황")
-                        chart = (
-                            alt.Chart(trend_long)
-                            .mark_bar()
-                            .encode(
-                                x=alt.X(
-                                    "Weeknum:N",
-                                    sort=trend["Weeknum"].tolist(),
-                                    axis=alt.Axis(title=None, labelAngle=0, labelFontSize=14),
-                                ),
-                                y=alt.Y(
-                                    "sum(대수):Q",
-                                    stack="zero",
-                                    axis=alt.Axis(title=None, labelFontSize=14),
-                                ),
-                                color=alt.Color(
-                                    "상태:N",
-                                    scale=_equipment_status_scale(),
-                                    legend=alt.Legend(title=None, labelFontSize=14),
-                                ),
-                                tooltip=(
-                                    alt.Tooltip("Weeknum:N", title="Weeknum"),
-                                    alt.Tooltip("상태:N", title="상태"),
-                                    alt.Tooltip("대수:Q", title="대수", format=".1f"),
-                                ),
-                            )
-                            .properties(height=360)
+                        st.markdown("#### 호기 생애주기 상태 모니터링")
+                        st.caption(
+                            "상태는 호기별로 하나만 부여합니다. 반출·이설 예정 호기는 "
+                            "실행일 전까지 보유·가용 산정에 포함되며, 기존 보유대수 집계는 "
+                            "호기 상태에서 제외됩니다."
                         )
-                        st.altair_chart(chart, width="stretch")
+                        if st.session_state[STATUS_VIEW_KEY] == STATUS_VIEW_TABLE:
+                            st.dataframe(status_counts, hide_index=True, width="stretch")
+                        else:
+                            status_chart = (
+                                alt.Chart(status_counts)
+                                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+                                .encode(
+                                    y=alt.Y(
+                                        "상태:N",
+                                        sort=list(EQUIPMENT_STATUSES),
+                                        axis=alt.Axis(title=None, labelFontSize=13),
+                                    ),
+                                    x=alt.X(
+                                        "호기대수:Q",
+                                        axis=alt.Axis(title=None, tickMinStep=1, labelFontSize=13),
+                                    ),
+                                    color=alt.Color(
+                                        "상태:N", scale=_equipment_status_scale(), legend=None
+                                    ),
+                                    tooltip=("상태:N", "호기대수:Q"),
+                                )
+                                .properties(height=300)
+                            )
+                            st.altair_chart(status_chart, width="stretch")
 
-            elif question == QUESTION_DOWNTIME:
-                downtime_view_mode = str(st.session_state[DOWNTIME_VIEW_KEY])
-                month_start, month_end = _month_bounds(selected_month)
-                with st.container(border=True):
-                    st.markdown("#### 비가동 설비호기")
-                    if downtime_view_mode == DOWNTIME_VIEW_WEEK:
-                        # **옛 표 그대로다.** 한 시점을 찍어 보는 자리를 잃지 않는다.
-                        inactive_equipment = build_inactive_equipment(
-                            filtered_equipment, filtered_downtime, as_of=asof_week_end
-                        )
-                        st.caption(
-                            f"{asof_week_end:%Y-%m-%d} 기준 보유 중이지만 가용이 아닌 "
-                            "셋업·보관·운영 비가동 호기입니다."
-                        )
-                        if inactive_equipment.empty:
-                            st.success("해당 주차에 비가동 설비호기가 없습니다.")
-                        else:
-                            st.dataframe(
-                                inactive_equipment,
-                                hide_index=True,
-                                width="stretch",
-                                column_config={
-                                    column: st.column_config.DateColumn(column, format="YYYY-MM-DD")
-                                    for column in DATE_COLUMNS
-                                },
+                elif question == QUESTION_SCHEDULE:
+                    if st.session_state[TIMELINE_VIEW_KEY] == TIMELINE_VIEW_GANTT:
+                        with st.container(border=True):
+                            st.markdown("#### 호기별 생애주기 일정")
+                            st.caption(
+                                "날짜 컬럼은 점이라 표로는 그 사이 간격이 보이지 않습니다. "
+                                "구간 판정은 「지금 몇 대가 어느 상태인가」의 상태 막대와 같은 "
+                                "규칙입니다."
                             )
-                    elif downtime_view_mode == DOWNTIME_VIEW_SOURCE:
-                        # **`.dt.date` 로 비교하지 않는다.** 종료일이 전부 비어 있는 편집본에서
-                        # `datetime64` 가 그대로 나와 `date` 와의 비교가 `TypeError` 로 죽는다.
-                        starts = pd.to_datetime(filtered_downtime["시작일"], errors="coerce")
-                        ends = pd.to_datetime(filtered_downtime["종료일"], errors="coerce")
-                        overlaps = starts.le(pd.Timestamp(month_end)) & (
-                            ends.isna() | ends.ge(pd.Timestamp(month_start))
-                        )
-                        source_rows = filtered_downtime.loc[overlaps]
-                        st.caption(
-                            f"{selected_month} 과 겹치는 **운영 비가동 일정 원본 행**입니다. "
-                            "위 두 보기가 센 것이 어느 줄에서 나왔는지를 여기서 봅니다."
-                        )
-                        if source_rows.empty:
-                            st.success("그 달과 겹치는 비가동 일정이 없습니다.")
-                        else:
-                            st.dataframe(
-                                source_rows,
-                                hide_index=True,
-                                width="stretch",
-                                column_config={
-                                    column: st.column_config.DateColumn(column, format="YYYY-MM-DD")
-                                    for column in ("시작일", "종료일")
-                                },
-                            )
+                            try:
+                                lifecycle_spans = build_equipment_lifecycle_spans(
+                                    filtered_equipment,
+                                    filtered_downtime,
+                                    start_date=start_date,
+                                    end_date=end_date,
+                                )
+                            except ValueError as exc:
+                                st.error(str(exc))
+                            else:
+                                render_equipment_lifecycle_gantt(
+                                    lifecycle_spans,
+                                    key="equipment_lifecycle_gantt",
+                                    today=today,
+                                    owner_tab=main_tab,
+                                )
                     else:
-                        try:
-                            month_spans = build_equipment_lifecycle_spans(
-                                filtered_equipment,
-                                filtered_downtime,
-                                start_date=month_start,
-                                end_date=month_end,
+                        trend = (
+                            weekly.groupby(["주차시작일", "Weeknum"], as_index=False)[
+                                ["가용대수", "비가동대수"]
+                            ]
+                            .sum()
+                            .sort_values("주차시작일")
+                        )
+                        trend_long = trend.melt(
+                            id_vars=["주차시작일", "Weeknum"],
+                            value_vars=["가용대수", "비가동대수"],
+                            var_name="상태",
+                            value_name="대수",
+                        )
+                        with st.container(border=True):
+                            st.markdown("#### 주차별 설비 현황")
+                            chart = (
+                                alt.Chart(trend_long)
+                                .mark_bar()
+                                .encode(
+                                    x=alt.X(
+                                        "Weeknum:N",
+                                        sort=trend["Weeknum"].tolist(),
+                                        axis=alt.Axis(title=None, labelAngle=0, labelFontSize=14),
+                                    ),
+                                    y=alt.Y(
+                                        "sum(대수):Q",
+                                        stack="zero",
+                                        axis=alt.Axis(title=None, labelFontSize=14),
+                                    ),
+                                    color=alt.Color(
+                                        "상태:N",
+                                        scale=_equipment_status_scale(),
+                                        legend=alt.Legend(title=None, labelFontSize=14),
+                                    ),
+                                    tooltip=(
+                                        alt.Tooltip("Weeknum:N", title="Weeknum"),
+                                        alt.Tooltip("상태:N", title="상태"),
+                                        alt.Tooltip("대수:Q", title="대수", format=".1f"),
+                                    ),
+                                )
+                                .properties(height=360)
                             )
-                        except ValueError as exc:
-                            st.error(str(exc))
-                        else:
-                            moments = _month_evaluation_moments(
-                                month_spans, month_start=month_start, month_end=month_end
-                            )
-                            inactive_in_month = _inactive_equipment_in_month(
-                                filtered_equipment, filtered_downtime, moments=moments
+                            st.altair_chart(chart, width="stretch")
+
+                elif question == QUESTION_DOWNTIME:
+                    downtime_view_mode = str(st.session_state[DOWNTIME_VIEW_KEY])
+                    month_start, month_end = _month_bounds(selected_month)
+                    with st.container(border=True):
+                        st.markdown("#### 비가동 설비호기")
+                        if downtime_view_mode == DOWNTIME_VIEW_WEEK:
+                            # **옛 표 그대로다.** 한 시점을 찍어 보는 자리를 잃지 않는다.
+                            inactive_equipment = build_inactive_equipment(
+                                filtered_equipment, filtered_downtime, as_of=asof_week_end
                             )
                             st.caption(
-                                f"{selected_month} 안에서 **한 번이라도** 비가동이었던 호기입니다. "
-                                f"구간이 바뀌는 날짜마다 재었습니다(시점 {len(moments)}개). "
-                                "주차 종료일만 보면 주중에 시작해 주말 전에 끝난 비가동이 "
-                                "빠집니다. "
-                                "원천 행은 「비가동 일정 원본」 보기에 있습니다."
+                                f"{asof_week_end:%Y-%m-%d} 기준 보유 중이지만 가용이 아닌 "
+                                "셋업·보관·운영 비가동 호기입니다."
                             )
-                            if inactive_in_month.empty:
-                                st.success("그 달에 비가동 설비호기가 없습니다.")
+                            if inactive_equipment.empty:
+                                st.success("해당 주차에 비가동 설비호기가 없습니다.")
                             else:
                                 st.dataframe(
-                                    inactive_in_month,
+                                    inactive_equipment,
                                     hide_index=True,
                                     width="stretch",
                                     column_config={
                                         column: st.column_config.DateColumn(
                                             column, format="YYYY-MM-DD"
                                         )
-                                        for column in (*DATE_COLUMNS, "비가동 시작", "비가동 종료")
+                                        for column in DATE_COLUMNS
                                     },
                                 )
-
-            elif question == QUESTION_QUAL:
-                # Qual 은 「지금 어디까지 왔나」라 조회기간의 마지막 주차로 본다 — 기준 월을
-                # 거슬러 올라가면 그때의 계획을 보는 것이라 실행관리의 뜻이 달라진다.
-                last_week_end = weekly["주차종료일"].max()
-                unit_status = build_equipment_status_as_of(
-                    filtered_equipment, filtered_downtime, as_of=last_week_end
-                )
-                qual_execution = unit_status.loc[unit_status["Qual일정"].notna()].copy()
-                selected_confirmations = _session_list(QUAL_STATUS_KEY)
-                if selected_confirmations:
-                    qual_execution = qual_execution.loc[
-                        qual_execution["확정상태"].isin(selected_confirmations)
-                    ]
-                confirmation_counts = (
-                    qual_execution["확정상태"]
-                    .value_counts()
-                    .reindex(QUAL_CONFIRMATION_STATUSES, fill_value=0)
-                    .rename_axis("확정상태")
-                    .rename("호기대수")
-                    .reset_index()
-                )
-                with st.container(border=True):
-                    st.markdown("#### Qual 확정상태 실행관리")
-                    st.caption(
-                        "확정상태는 Qual 일정의 계획·확정·완료·지연만 관리합니다. "
-                        "가용대수는 기존 규칙대로 Qual일정을 기준으로 계산합니다."
-                    )
-                    with metric_row(key="equipment_qual_confirmation_metrics"):
-                        st.metric("Qual 대상", f"{len(qual_execution):,}대", border=True)
-                        for confirmation_status in QUAL_CONFIRMATION_STATUSES:
-                            count = int(
-                                confirmation_counts.loc[
-                                    confirmation_counts["확정상태"].eq(confirmation_status),
-                                    "호기대수",
-                                ].sum()
+                        elif downtime_view_mode == DOWNTIME_VIEW_SOURCE:
+                            # **`.dt.date` 로 비교하지 않는다.** 종료일이 전부 비어 있는 편집본에서
+                            # `datetime64` 가 그대로 나와 `date` 와의 비교가 `TypeError` 로 죽는다.
+                            starts = pd.to_datetime(filtered_downtime["시작일"], errors="coerce")
+                            ends = pd.to_datetime(filtered_downtime["종료일"], errors="coerce")
+                            overlaps = starts.le(pd.Timestamp(month_end)) & (
+                                ends.isna() | ends.ge(pd.Timestamp(month_start))
                             )
-                            st.metric(confirmation_status, f"{count:,}대", border=True)
-                    if not qual_execution.empty:
-                        st.dataframe(
-                            qual_execution.loc[
-                                :,
-                                [
-                                    "호기",
-                                    "공정대분류",
-                                    "공정소분류",
-                                    "Qual일정",
-                                    "확정상태",
-                                    "상태",
-                                ],
-                            ].sort_values(["Qual일정", "호기"]),
-                            hide_index=True,
-                            width="stretch",
-                            column_config={
-                                "Qual일정": st.column_config.DateColumn(format="YYYY-MM-DD")
-                            },
-                        )
+                            source_rows = filtered_downtime.loc[overlaps]
+                            st.caption(
+                                f"{selected_month} 과 겹치는 **운영 비가동 일정 원본 행**입니다. "
+                                "위 두 보기가 센 것이 어느 줄에서 나왔는지를 여기서 봅니다."
+                            )
+                            if source_rows.empty:
+                                st.success("그 달과 겹치는 비가동 일정이 없습니다.")
+                            else:
+                                st.dataframe(
+                                    source_rows,
+                                    hide_index=True,
+                                    width="stretch",
+                                    column_config={
+                                        column: st.column_config.DateColumn(
+                                            column, format="YYYY-MM-DD"
+                                        )
+                                        for column in ("시작일", "종료일")
+                                    },
+                                )
+                        else:
+                            try:
+                                month_spans = build_equipment_lifecycle_spans(
+                                    filtered_equipment,
+                                    filtered_downtime,
+                                    start_date=month_start,
+                                    end_date=month_end,
+                                )
+                            except ValueError as exc:
+                                st.error(str(exc))
+                            else:
+                                moments = _month_evaluation_moments(
+                                    month_spans, month_start=month_start, month_end=month_end
+                                )
+                                inactive_in_month = _inactive_equipment_in_month(
+                                    filtered_equipment, filtered_downtime, moments=moments
+                                )
+                                st.caption(
+                                    f"{selected_month} 안에서 **한 번이라도** 비가동이었던 "
+                                    "호기입니다. "
+                                    f"구간이 바뀌는 날짜마다 재었습니다(시점 {len(moments)}개). "
+                                    "주차 종료일만 보면 주중에 시작해 주말 전에 끝난 비가동이 "
+                                    "빠집니다. "
+                                    "원천 행은 「비가동 일정 원본」 보기에 있습니다."
+                                )
+                                if inactive_in_month.empty:
+                                    st.success("그 달에 비가동 설비호기가 없습니다.")
+                                else:
+                                    st.dataframe(
+                                        inactive_in_month,
+                                        hide_index=True,
+                                        width="stretch",
+                                        column_config={
+                                            column: st.column_config.DateColumn(
+                                                column, format="YYYY-MM-DD"
+                                            )
+                                            for column in (
+                                                *DATE_COLUMNS,
+                                                "비가동 시작",
+                                                "비가동 종료",
+                                            )
+                                        },
+                                    )
 
-            elif question == QUESTION_PROCESS:
-                breakdown_columns = (
-                    "공정소분류",
-                    "기존보유대수",
-                    "추가설비대수",
-                    "총대수",
-                    "가용대수",
-                    "비가동대수",
-                    *STATUS_COUNT_COLUMNS.values(),
-                )
-                if st.session_state[PROCESS_SORT_KEY] == PROCESS_SORT_NAME:
-                    breakdown = asof_week.loc[:, breakdown_columns].sort_values("공정소분류")
-                else:
-                    breakdown = asof_week.loc[:, breakdown_columns].sort_values(
-                        ["비가동대수", "공정소분류"], ascending=[False, True]
+                elif question == QUESTION_QUAL:
+                    # Qual 은 「지금 어디까지 왔나」라 조회기간의 마지막 주차로 본다 — 기준 월을
+                    # 거슬러 올라가면 그때의 계획을 보는 것이라 실행관리의 뜻이 달라진다.
+                    last_week_end = weekly["주차종료일"].max()
+                    unit_status = build_equipment_status_as_of(
+                        filtered_equipment, filtered_downtime, as_of=last_week_end
                     )
-                with st.container(border=True):
-                    st.markdown("#### 공정소분류별 현황")
-                    st.caption(f"{selected_month} 마지막 주 기준 · {asof_weeknum}")
-                    st.dataframe(breakdown, hide_index=True, width="stretch")
-
-            elif question == QUESTION_GAP:
-                # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지는 설비 DB 만 열고
-                # 활성 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 답 안에서
-                # 알리고 나머지 다섯 질문과 RawData 를 막지 않는다 — 페이지가 통째로 죽으면
-                # Cut-off 를 적으러 들어올 수도 없다. **이 질문을 고르지 않으면 시뮬레이션
-                # DB 를 아예 열지 않는다.**
-                static_availability: pd.DataFrame | None = None
-                gap_required_equipment: pd.DataFrame | None = None
-                static_error: str | None = None
-                try:
-                    gap_context = load_page_context()
-                    static_availability = gap_context.reference_tables["RQ_EQP_AVBL"]
-                    # 소요대수는 확보율을 맞대려고 받는다. 다섯 페이지가 같은 키로 한 번만
-                    # 계산하므로 여기서 다시 계산되지 않는다.
-                    _, gap_required_equipment = get_scenario_capacity_and_demand(
-                        scenario_cache_key(
-                            gap_context.reference_version,
-                            gap_context.active_scenario,
-                            gap_context.selected_start_month,
-                            gap_context.selected_end_month,
-                        ),
-                        _scenario_tables=gap_context.active_scenario["tables"],
-                        _reference_tables=gap_context.reference_tables,
+                    qual_execution = unit_status.loc[unit_status["Qual일정"].notna()].copy()
+                    selected_confirmations = _session_list(QUAL_STATUS_KEY)
+                    if selected_confirmations:
+                        qual_execution = qual_execution.loc[
+                            qual_execution["확정상태"].isin(selected_confirmations)
+                        ]
+                    confirmation_counts = (
+                        qual_execution["확정상태"]
+                        .value_counts()
+                        .reindex(QUAL_CONFIRMATION_STATUSES, fill_value=0)
+                        .rename_axis("확정상태")
+                        .rename("호기대수")
+                        .reset_index()
                     )
-                except BOOTSTRAP_ERRORS as exc:
-                    static_error = bootstrap_error_message(
-                        exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
-                    )
-
-                gap_months = _months_between(start_date, end_date)
-                # Cut-off 가 크면 그 달의 W/D 구간이 앞으로 밀린다. 조회기간만큼만 구간을
-                # 만들면 첫 달이 조용히 모자라게 세어지므로, 필요한 만큼 앞에서부터 다시 만든다.
-                required_span = span_date_range(gap_months, stored_cutoff)
-                span_start = min(start_date, required_span[0]) if required_span else start_date
-                span_end = max(end_date, required_span[1]) if required_span else end_date
-                try:
-                    gap_spans = build_equipment_lifecycle_spans(
-                        dashboard_equipment,
-                        dashboard_downtime,
-                        start_date=span_start,
-                        end_date=span_end,
-                    )
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    # 호기별 환산비. 월 Total Capa 축(`환산대수`)만 이 값을 곱한다 — 대수를
-                    # 세는 축은 그대로다. 값이 없는 호기는 기준 모델과 같다고 보고 1.0 이다.
-                    gap_ratios = {
-                        str(unit).strip(): float(ratio)
-                        for unit, ratio in zip(
-                            dashboard_equipment.get("호기", []),
-                            dashboard_equipment.get("환산비", []),
-                            strict=False,
-                        )
-                        if pd.notna(ratio)
-                    }
                     with st.container(border=True):
-                        # **숫자 체계가 다르다는 것을 여기서 말한다.** 같은 달을 두 축이
-                        # 다르게 말하는 것이 정상인데, 그 이유가 화면에 없으면 어느 쪽이
-                        # 틀렸다고 읽힌다.
+                        st.markdown("#### Qual 확정상태 실행관리")
                         st.caption(
-                            "앞의 다섯 질문은 **일요일 시점의 표본**이라 대수가 정수이고, "
-                            "이 답은 **W/D 일할**이라 소수입니다 — 그 달에 며칠 있었는지로 "
-                            "1대를 쪼개 셉니다. 같은 달을 다르게 말하는 것이 정상입니다. "
-                            "이 답은 기준정보와 맞대는 자리라 위 조회 조건 대신 아래 "
-                            "`공정` 으로 좁힙니다."
+                            "확정상태는 Qual 일정의 계획·확정·완료·지연만 관리합니다. "
+                            "가용대수는 기존 규칙대로 Qual일정을 기준으로 계산합니다."
                         )
-                        render_availability_gap_panel(
-                            spans=gap_spans,
-                            baseline=baseline,
-                            cutoff=stored_cutoff,
-                            months=gap_months,
-                            static_availability=static_availability,
-                            static_error=static_error,
-                            span_bounds=(span_start, span_end),
-                            conversion_ratios=gap_ratios,
-                            required_equipment=gap_required_equipment,
-                            section=_GAP_SECTIONS[str(st.session_state[GAP_SECTION_KEY])],
+                        with metric_row(key="equipment_qual_confirmation_metrics"):
+                            st.metric("Qual 대상", f"{len(qual_execution):,}대", border=True)
+                            for confirmation_status in QUAL_CONFIRMATION_STATUSES:
+                                count = int(
+                                    confirmation_counts.loc[
+                                        confirmation_counts["확정상태"].eq(confirmation_status),
+                                        "호기대수",
+                                    ].sum()
+                                )
+                                st.metric(confirmation_status, f"{count:,}대", border=True)
+                        if not qual_execution.empty:
+                            st.dataframe(
+                                qual_execution.loc[
+                                    :,
+                                    [
+                                        "호기",
+                                        "공정대분류",
+                                        "공정소분류",
+                                        "Qual일정",
+                                        "확정상태",
+                                        "상태",
+                                    ],
+                                ].sort_values(["Qual일정", "호기"]),
+                                hide_index=True,
+                                width="stretch",
+                                column_config={
+                                    "Qual일정": st.column_config.DateColumn(format="YYYY-MM-DD")
+                                },
+                            )
+
+                elif question == QUESTION_PROCESS:
+                    breakdown_columns = (
+                        "공정소분류",
+                        "기존보유대수",
+                        "추가설비대수",
+                        "총대수",
+                        "가용대수",
+                        "비가동대수",
+                        *STATUS_COUNT_COLUMNS.values(),
+                    )
+                    if st.session_state[PROCESS_SORT_KEY] == PROCESS_SORT_NAME:
+                        breakdown = asof_week.loc[:, breakdown_columns].sort_values("공정소분류")
+                    else:
+                        breakdown = asof_week.loc[:, breakdown_columns].sort_values(
+                            ["비가동대수", "공정소분류"], ascending=[False, True]
                         )
+                    with st.container(border=True):
+                        st.markdown("#### 공정소분류별 현황")
+                        st.caption(f"{selected_month} 마지막 주 기준 · {asof_weeknum}")
+                        st.dataframe(breakdown, hide_index=True, width="stretch")
+
+                elif question == QUESTION_GAP:
+                    # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지는 설비 DB 만 열고
+                    # 활성 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 답 안에서
+                    # 알리고 나머지 다섯 질문과 RawData 를 막지 않는다 — 페이지가 통째로 죽으면
+                    # Cut-off 를 적으러 들어올 수도 없다. **이 질문을 고르지 않으면 시뮬레이션
+                    # DB 를 아예 열지 않는다.**
+                    static_availability: pd.DataFrame | None = None
+                    gap_required_equipment: pd.DataFrame | None = None
+                    static_error: str | None = None
+                    try:
+                        gap_context = load_page_context()
+                        static_availability = gap_context.reference_tables["RQ_EQP_AVBL"]
+                        # 소요대수는 확보율을 맞대려고 받는다. 다섯 페이지가 같은 키로 한 번만
+                        # 계산하므로 여기서 다시 계산되지 않는다.
+                        _, gap_required_equipment = get_scenario_capacity_and_demand(
+                            scenario_cache_key(
+                                gap_context.reference_version,
+                                gap_context.active_scenario,
+                                gap_context.selected_start_month,
+                                gap_context.selected_end_month,
+                            ),
+                            _scenario_tables=gap_context.active_scenario["tables"],
+                            _reference_tables=gap_context.reference_tables,
+                        )
+                    except BOOTSTRAP_ERRORS as exc:
+                        static_error = bootstrap_error_message(
+                            exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
+                        )
+
+                    gap_months = _months_between(start_date, end_date)
+                    # Cut-off 가 크면 그 달의 W/D 구간이 앞으로 밀린다. 조회기간만큼만 구간을
+                    # 만들면 첫 달이 조용히 모자라게 세어지므로, 필요한 만큼 앞에서부터 다시 만든다.
+                    required_span = span_date_range(gap_months, stored_cutoff)
+                    span_start = min(start_date, required_span[0]) if required_span else start_date
+                    span_end = max(end_date, required_span[1]) if required_span else end_date
+                    try:
+                        gap_spans = build_equipment_lifecycle_spans(
+                            dashboard_equipment,
+                            dashboard_downtime,
+                            start_date=span_start,
+                            end_date=span_end,
+                        )
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    else:
+                        # 호기별 환산비. 월 Total Capa 축(`환산대수`)만 이 값을 곱한다 — 대수를
+                        # 세는 축은 그대로다. 값이 없는 호기는 기준 모델과 같다고 보고 1.0 이다.
+                        gap_ratios = {
+                            str(unit).strip(): float(ratio)
+                            for unit, ratio in zip(
+                                dashboard_equipment.get("호기", []),
+                                dashboard_equipment.get("환산비", []),
+                                strict=False,
+                            )
+                            if pd.notna(ratio)
+                        }
+                        with st.container(border=True):
+                            # **숫자 체계가 다르다는 것을 여기서 말한다.** 같은 달을 두 축이
+                            # 다르게 말하는 것이 정상인데, 그 이유가 화면에 없으면 어느 쪽이
+                            # 틀렸다고 읽힌다.
+                            st.caption(
+                                "앞의 다섯 질문은 **일요일 시점의 표본**이라 대수가 정수이고, "
+                                "이 답은 **W/D 일할**이라 소수입니다 — 그 달에 며칠 있었는지로 "
+                                "1대를 쪼개 셉니다. 같은 달을 다르게 말하는 것이 정상입니다. "
+                                "이 답은 기준정보와 맞대는 자리라 위 조회 조건 대신 아래 "
+                                "`공정` 으로 좁힙니다."
+                            )
+                            render_availability_gap_panel(
+                                spans=gap_spans,
+                                baseline=baseline,
+                                cutoff=stored_cutoff,
+                                months=gap_months,
+                                static_availability=static_availability,
+                                static_error=static_error,
+                                span_bounds=(span_start, span_end),
+                                conversion_ratios=gap_ratios,
+                                required_equipment=gap_required_equipment,
+                                section=_GAP_SECTIONS[str(st.session_state[GAP_SECTION_KEY])],
+                            )
 
 with rawdata_tab:
     if latest_snapshot is None:
