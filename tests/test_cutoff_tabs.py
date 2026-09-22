@@ -1,4 +1,4 @@
-# Purpose: Cut-off 탭과 Static/Dynamic 탭이 빈 DB·값 있는 DB 에서 그려지는지 검사한다.
+# Purpose: Preference 의 Cut-off 본문과 Static/Dynamic 이 빈 DB·값 있는 DB 에서 그려지는지 검사한다.
 
 """탭을 늘리면 **화면이 죽는 자리가 타입 검사에 안 걸린다.**
 

@@ -96,6 +96,13 @@ from capa_simulation.services.simulation_cache import (
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
 FLASH_KEY = "equipment_status_flash"
+# 탭 라벨은 `stateful_tabs` 의 기억값에 그대로 묶인다 — 문자열을 두 곳에 적으면 기억이
+# 조용히 끊긴다. 선언은 여기 한 곳이다.
+TAB_MAIN = ":material/dashboard: Main"
+TAB_GAP = ":material/compare_arrows: Static/Dynamic"
+TAB_PREFERENCE = ":material/tune: Preference"
+TAB_RAWDATA = ":material/table_rows: RawData"
+EQUIPMENT_TAB_KEY = "equipment_active_tab"
 # `Preference` 탭의 위젯 자리. `Main` 이 계산 전에 같은 칸을 읽으므로 문자열을 두 곳에
 # 적지 않는다 — 갈라지면 화면은 멀쩡한데 값만 조용히 기본값으로 돌아간다.
 START_DATE_KEY = "equipment_dashboard_start_date"
@@ -229,6 +236,10 @@ try:
         saved_equipment = latest_snapshot.equipment
         saved_downtime = latest_snapshot.downtime
         revision_token = latest_snapshot.revision.revision_id
+    # **한 회차에 한 번만 읽는다.** Cut-off 편집 본문은 `Preference` 안이라 화면 순서상
+    # 맨 뒤인데, 월별 Dynamic 가용대수는 그보다 먼저 그려진다. 여기서 읽어 양쪽에 같은
+    # 값을 넘기면 어느 쪽이 먼저 그려지든 같은 수를 본다.
+    stored_cutoff = repository.load_process_cutoff()
 except BOOTSTRAP_ERRORS as exc:
     st.error(
         "설비 현황을 준비하지 못했습니다: "
@@ -313,15 +324,14 @@ small_process_options = sorted(
     | set(baseline["공정"].dropna().astype(str).unique().tolist())
 )
 
-main_tab, cutoff_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
+main_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
     [
-        ":material/dashboard: Main",
-        ":material/schedule: Cut-off",
-        ":material/compare_arrows: Static/Dynamic",
-        ":material/tune: Preference",
-        ":material/table_rows: RawData",
+        TAB_MAIN,
+        TAB_GAP,
+        TAB_PREFERENCE,
+        TAB_RAWDATA,
     ],
-    key="equipment_active_tab",
+    key=EQUIPMENT_TAB_KEY,
 )
 
 with preference_tab:
@@ -387,11 +397,15 @@ with preference_tab:
             "적용되고, 나머지 조건은 호기 마스터 설비에 적용됩니다."
         )
 
-with cutoff_tab:
-    stored_cutoff = render_cutoff_management(
-        repository,
-        equipment_processes=processes_in(dashboard_equipment, baseline),
-    )
+    # **Cut-off 는 「고르는 곳」이다.** 한 번 적고 나면 다시 들어올 일이 드문 기준값이라
+    # 탭 하나를 상시 차지할 자리가 아니었다. 조회기간·조회 조건과 같은 성격이라 여기로
+    # 모은다 — 저장 경로와 계약은 그대로다(`equipment_ops.process_cutoff`, 전체 교체).
+    with st.container(border=True):
+        render_cutoff_management(
+            repository,
+            equipment_processes=processes_in(dashboard_equipment, baseline),
+            stored=stored_cutoff,
+        )
 
 with gap_tab:
     # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지 탭은 설비 DB 만 열고 활성

@@ -1,14 +1,14 @@
-# Purpose: 공정별 Cut-off 입력 표를 그리고 저장하는 탭 본문을 담당한다.
+# Purpose: 공정별 Cut-off 입력 표를 그리고 저장하는 Preference 본문을 담당한다.
 
-"""공정별 Cut-off 편집 탭.
+"""공정별 Cut-off 편집 본문(`Preference` 탭 안).
 
 Cut-off 는 「그 공정 이후의 공정~입고까지 TAT 누적 합」이지만 저장소에 TAT 도 공정
 선후관계도 없어 **사람이 적는 원장**이다(`services/process_cutoff.py`).
 
 **이 표에 없는 공정은 월별 가용대수 산출에서 빠진다.** 0 을 적은 것과 다르다 — 0 은
 「달력 월 그대로」이고, 없는 것은 「아직 기준을 못 정했으니 세지 말라」다. 그래서 설비는
-있는데 Cut-off 를 안 적은 공정을 **화면에 반드시 드러낸다.** 조용히 빠지면 옆 탭의 합이
-이유 없이 작아 보이고, 그 원인을 화면 어디서도 찾을 수 없다.
+있는데 Cut-off 를 안 적은 공정을 **화면에 반드시 드러낸다.** 조용히 빠지면 Dynamic
+가용대수의 합이 이유 없이 작아 보이고, 그 원인을 화면 어디서도 찾을 수 없다.
 
 저장은 리비전을 만들지 않고 표를 통째로 갈아 끼운다(`0009`). 행을 지우는 것이 곧
 「그 공정을 빼라」는 편집이라, 들어온 키만 덮는 방식으로는 그 뜻을 표현할 수 없다.
@@ -49,14 +49,21 @@ def render_cutoff_management(
     repository: DuckDBEquipmentRepository,
     *,
     equipment_processes: list[str],
+    stored: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Cut-off 탭을 그리고 **현재 저장된 값**을 돌려준다.
+    """Cut-off 본문을 그리고 **현재 저장된 값**을 돌려준다.
 
-    돌려주는 것이 편집 중인 값이 아니라 저장된 값인 것은, 옆 탭의 GAP 계산이 저장되지
-    않은 초안으로 숫자를 내면 안 되기 때문이다. 화면에 보이는 수와 계산에 쓰인 수가
+    돌려주는 것이 편집 중인 값이 아니라 저장된 값인 것은, GAP 계산이 저장되지 않은
+    초안으로 숫자를 내면 안 되기 때문이다. 화면에 보이는 수와 계산에 쓰인 수가
     달라지는 것이 가장 나쁜 종류의 어긋남이다.
+
+    `stored` 는 **호출자가 이미 읽어 둔 저장본**이다. 이 본문은 `Preference` 안에 있어
+    화면 순서상 맨 뒤인데, 앞에서 답을 그리는 자리들이 같은 값을 먼저 필요로 한다 —
+    페이지가 최상단에서 한 번 읽어 넘기면 같은 회차에 DuckDB 를 두 번 열지 않는다.
+    `None` 이면 스스로 읽는다.
     """
-    stored = repository.load_process_cutoff()
+    # **`or` 를 쓰지 않는다.** 빈 프레임은 거짓이라 저장된 「0건」이 조용히 다시 읽힌다.
+    stored = repository.load_process_cutoff() if stored is None else stored
 
     st.markdown("#### :material/schedule: 공정별 Cut-off")
     st.caption(_HELP)
