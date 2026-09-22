@@ -55,7 +55,8 @@ def render_availability_gap_panel(
     st.markdown("#### :material/compare_arrows: Static · Dynamic 가용대수 비교")
     st.caption(
         "Static 은 기준정보(RQ_EQP_AVBL)의 월별 가용대수이고, Dynamic 은 호기 마스터의 "
-        "일정과 비가동을 공정별 Cut-off 로 안분한 값입니다. GAP 이 음수면 기준정보가 "
+        "일정과 비가동을 공정별 Cut-off 로 **일할 계산**한 값입니다 — 그 달에 며칠 있었는지로 "
+        "1대를 쪼개 셉니다. GAP 이 음수면 기준정보가 "
         "실제 확보보다 낙관적이라는 뜻입니다."
     )
 

@@ -9,6 +9,9 @@
 
 GAP 은 막대 위에 숫자로 적는다. 부호만 보고 색을 고른다 — 좋고 나쁨이 아니라 방향이다.
 
+**화면 라벨은 「일할」이다.** 코드와 문서는 계속 「안분」이라 적지만 범례·설명은 사용자가
+고른 말을 쓴다 — 같은 뜻이다(날짜 비율로 나눠 세는 것).
+
 ## 색은 재서 골랐다
 
 쌓이는 두 조각(`기존보유` 회색 · `가용` 강조색)이 **서로 붙어 있는 유일한 쌍**이라
@@ -88,7 +91,7 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
     figure.add_bar(
         x=labels,
         y=available,
-        name="가용(안분)",
+        name="가용(일할)",
         marker={"color": tokens.ACCENT, "line": {"color": tokens.SURFACE, "width": 2}},
         offsetgroup="dynamic",
         legendgroup="dynamic",
