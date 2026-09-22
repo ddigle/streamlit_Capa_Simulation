@@ -185,6 +185,13 @@ def _render_securement_cross_check(
         st.warning(f"확보율을 맞대지 못했습니다 — {exc}")
         return
 
+    if check.months:
+        st.caption(
+            f"맞대어 본 달: {month_label(check.months[0])} ~ {month_label(check.months[-1])} "
+            f"({len(check.months)}개월). **설비 조회기간이 덮는 달로 좁혔습니다** — "
+            "시나리오 조회기간이 더 넓어도 그 달의 설비 상태를 만들지 않았으면 맞댈 수 "
+            "없습니다. Preference 탭에서 기간을 넓히면 늘어납니다."
+        )
     if check.fallback_processes:
         st.caption(
             f"Cut-off 가 없어 Static 값으로 채운 공정 {len(check.fallback_processes)}개는 "
@@ -201,8 +208,20 @@ def _render_securement_cross_check(
         st.info("아직 맞대어 볼 수 있는 공정이 없습니다. Cut-off 를 적으면 여기에 나타납니다.")
         return
 
+    # **확보율 두 값을 같이 보인다.** 차이만 보이면 「29.5 차이」가 무슨 뜻인지 알 수 없다 —
+    # 확보율은 비율이라 소요대수가 작은 공정에서 차이가 크게 나온다.
     display = compared.loc[
-        :, ["생산계획년월", "공정", "소요대수", "Static가용대수", "Dynamic가용대수", "확보율차이"]
+        :,
+        [
+            "생산계획년월",
+            "공정",
+            "소요대수",
+            "Static가용대수",
+            "Dynamic가용대수",
+            "Static확보율",
+            "Dynamic확보율",
+            "확보율차이",
+        ],
     ].copy()
     display["생산계획년월"] = display["생산계획년월"].map(month_label)
     st.dataframe(display.round(3), hide_index=True, width="stretch")

@@ -122,3 +122,44 @@ def test_an_empty_monthly_frame_gives_an_empty_availability() -> None:
     )
 
     assert dynamic_available_equipment(empty).empty
+
+
+def two_month_frame(values: dict[tuple[int, str], float], column: str) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "생산계획년월": [month for month, _ in values],
+            "공정": [process for _, process in values],
+            column: list(values.values()),
+        }
+    )
+
+
+def test_months_the_dynamic_side_does_not_cover_are_left_out() -> None:
+    """**설비 조회기간과 시나리오 조회기간은 다른 위젯이다.**
+
+    좁히지 않으면 시나리오 쪽에만 있는 달에서 모든 공정이 Static 으로 채워지고, 그
+    공정들이 「Cut-off 가 없다」로 잘못 보고된다 — 실제로는 Cut-off 가 다 적혀 있다.
+    """
+    static = two_month_frame({(202609, "A"): 10.0, (202610, "A"): 10.0}, "가용대수")
+    required = two_month_frame({(202609, "A"): 20.0, (202610, "A"): 20.0}, "소요대수")
+    # Dynamic 은 10월만 덮는다.
+    dynamic = frame({"A": 8.0}, "가용대수")
+
+    check = build_securement_cross_check(static, dynamic, required)
+
+    assert check.months == [202610]
+    assert check.fallback_processes == [], "10월은 Dynamic 이 덮으므로 채울 것이 없다"
+    assert check.compared_processes == ["A"]
+    assert set(check.rows["생산계획년월"]) == {202610}
+
+
+def test_a_genuinely_missing_process_is_still_reported() -> None:
+    """달을 좁혀도 그 달에 Cut-off 가 없는 공정은 여전히 채움으로 잡혀야 한다."""
+    static = two_month_frame({(MONTH, "A"): 10.0, (MONTH, "B"): 6.0}, "가용대수")
+    required = two_month_frame({(MONTH, "A"): 20.0, (MONTH, "B"): 12.0}, "소요대수")
+    dynamic = frame({"A": 8.0}, "가용대수")
+
+    check = build_securement_cross_check(static, dynamic, required)
+
+    assert check.months == [MONTH]
+    assert check.fallback_processes == ["B"]

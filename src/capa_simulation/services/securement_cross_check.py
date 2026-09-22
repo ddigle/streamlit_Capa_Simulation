@@ -66,6 +66,9 @@ class CrossCheck:
     fallback_processes: list[str] = field(default_factory=list)
     """Cut-off 가 없어 Dynamic 을 Static 으로 채운 공정. 그 행은 차이가 늘 0 이다."""
 
+    months: list[int] = field(default_factory=list)
+    """실제로 맞대어 본 달. Dynamic 이 덮는 달로 좁힌 결과다."""
+
     @property
     def compared_processes(self) -> list[str]:
         """실제로 두 값을 맞대어 본 공정."""
@@ -99,7 +102,17 @@ def build_securement_cross_check(
     """같은 소요대수에 두 가용대수를 각각 나눈 결과.
 
     **어느 DB 도 열지 않는다.** 프레임 셋을 받아 하나를 돌려준다.
+
+    **Dynamic 이 덮는 달로 좁혀서 맞댄다.** 설비 화면의 조회기간(날짜)과 시나리오
+    조회기간(월)은 서로 다른 위젯이라 범위가 어긋난다. 좁히지 않으면 시나리오 쪽에만
+    있는 달에서 모든 공정이 Static 으로 채워지고, 그 공정들이 「Cut-off 가 없다」로
+    잘못 보고된다 — 실제로는 그 달에 설비 상태를 안 만들었을 뿐이다.
     """
+    months = _dynamic_months(dynamic_available)
+    if months:
+        static_available = _only_months(static_available, months)
+        required_equipment = _only_months(required_equipment, months)
+
     static_rate = calculate_securement_rate(static_available, required_equipment)
     filled, fallback = _fill_missing_from_static(dynamic_available, static_available, static_rate)
     dynamic_rate = calculate_securement_rate(filled, required_equipment)
@@ -114,7 +127,25 @@ def build_securement_cross_check(
     result["확보율차이"] = result["Dynamic확보율"] - result["Static확보율"]
     result["Static대체"] = result["공정"].isin(fallback)
     result = result.sort_values(["생산계획년월", "공정"]).reset_index(drop=True)
-    return CrossCheck(rows=result.loc[:, list(CROSS_CHECK_COLUMNS)], fallback_processes=fallback)
+    return CrossCheck(
+        rows=result.loc[:, list(CROSS_CHECK_COLUMNS)],
+        fallback_processes=fallback,
+        months=sorted(months),
+    )
+
+
+def _dynamic_months(dynamic_available: pd.DataFrame) -> set[int]:
+    if dynamic_available.empty or "생산계획년월" not in dynamic_available.columns:
+        return set()
+    months = pd.to_numeric(dynamic_available["생산계획년월"], errors="coerce").dropna()
+    return {int(month) for month in months}
+
+
+def _only_months(frame: pd.DataFrame, months: set[int]) -> pd.DataFrame:
+    if frame.empty or "생산계획년월" not in frame.columns:
+        return frame
+    numeric = pd.to_numeric(frame["생산계획년월"], errors="coerce")
+    return frame.loc[numeric.isin(months)]
 
 
 def _fill_missing_from_static(
