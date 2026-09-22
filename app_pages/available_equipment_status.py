@@ -410,6 +410,62 @@ def _apply_downtime_import() -> None:
     )
 
 
+def _leftover_sample_rows(baseline: pd.DataFrame) -> pd.DataFrame:
+    """손대지 않은 예시 행. 개발용 샘플과 CSV 양식의 예시를 한자리에서 센다.
+
+    저장 가드가 잡는 것과 **정확히 같은 두 함수**를 쓴다. 화면이 미리 알리는 건수와 저장이
+    막는 건수가 갈리면 「지웠는데도 막힌다」가 된다.
+    """
+    return pd.concat(
+        [
+            untouched_sample_baseline_rows(baseline),
+            untouched_template_baseline_rows(baseline),
+        ]
+    )
+
+
+def _purge_sample_baseline_rows() -> None:
+    """예시 행만 편집본에서 뺀다.
+
+    **본문이 아니라 콜백에서 한다.** 본문에서 `BASELINE_EDITOR_KEY` 를 pop 하면 그 회차에
+    `st.data_editor` 가 이미 만들어져 있어 예외가 난다. 지우는 대상은 두 함수가 잡은
+    인덱스뿐이라, 같은 공정명을 쓰지만 값을 고친 행은 그대로 남는다.
+    """
+    draft = st.session_state[BASELINE_DRAFT_KEY]
+    leftover = _leftover_sample_rows(draft)
+    if leftover.empty:
+        return
+    remaining = draft.loc[~draft.index.isin(leftover.index)].reset_index(drop=True)
+    st.session_state[BASELINE_DRAFT_KEY] = remaining
+    st.session_state.pop(BASELINE_EDITOR_KEY, None)
+    st.session_state[FLASH_KEY] = (
+        f"기존 보유대수의 예시 행 {len(leftover):,}건을 편집본에서 지웠습니다. "
+        "아직 DuckDB 에는 저장되지 않았습니다."
+    )
+
+
+def _render_sample_purge(leftover: pd.DataFrame, baseline: pd.DataFrame, *, key: str) -> None:
+    """예시 행이 남아 있다고 알리고 한 번에 지운다.
+
+    저장을 눌러야 알던 것을 **누르기 전에** 말한다. 빈 DB 로 처음 연 사람은 화면이 채워 준
+    샘플 30행을 자기 값으로 오해한 채 30행을 붙여넣고, 저장에서 60행 중 30행이 막힌다.
+    """
+    total = float(pd.to_numeric(baseline["기존보유대수"], errors="coerce").fillna(0).sum())
+    dropped = float(pd.to_numeric(leftover["기존보유대수"], errors="coerce").fillna(0).sum())
+    st.warning(f"기존 보유대수에 손대지 않은 예시 행 {len(leftover):,}건 — **저장이 막힙니다.**")
+    st.button(
+        f"예시 행 {len(leftover):,}건 지우기",
+        icon=":material/delete_sweep:",
+        key=key,
+        on_click=_purge_sample_baseline_rows,
+    )
+    st.caption(
+        f"기존 보유대수 {_format_equipment_count(total)} → "
+        f"{_format_equipment_count(total - dropped)}, 저장 전 편집본만 바뀝니다. "
+        "**편집표에서 아직 저장하지 않은 수정은 사라집니다.**"
+    )
+
+
 def _table_view_popover(
     data: pd.DataFrame,
     *,
@@ -1395,6 +1451,15 @@ with rawdata_tab:
             "저장하면 세 입력 전체가 새 불변 리비전으로 보관됩니다."
         )
 
+    # **저장을 누르기 전에 말한다.** 이 화면에서 저장이 막히는 이유는 거의 이것 하나인데,
+    # 지금까지는 30행을 붙여넣고 저장을 누른 뒤에야 알 수 있었다. 편집본을 보는 것이라
+    # 매 회차 다시 센다 — 편집표에서 예시 행을 손으로 고치면 그 자리에서 사라진다.
+    leftover_baseline_samples = _leftover_sample_rows(baseline)
+    if not leftover_baseline_samples.empty:
+        _render_sample_purge(
+            leftover_baseline_samples, baseline, key="purge_sample_baseline_rows_top_v1"
+        )
+
     # **폼 밖이다.** 적용·취소는 일반 버튼인데 `st.form` 안에는 제출 버튼 말고 다른
     # 버튼을 둘 수 없다. 처음 여는 사람이 가장 먼저 할 일이 여기라 펴 둔다.
     with st.expander("Excel 붙여넣기 Import", icon=":material/content_paste:", expanded=True):
@@ -1772,18 +1837,22 @@ with rawdata_tab:
         # 실제 공정명과 다르면 호기 마스터에 붙지 않는 유령 공정이 총대수에 영원히 남는다.
         # 내려받은 양식의 예시 한 줄도 네 컬럼이 다 차 있어 검증을 그냥 통과한다 — 출처만
         # 다를 뿐 같은 위험이라 함께 막는다.
-        leftover_samples = pd.concat(
-            [
-                untouched_sample_baseline_rows(edited_baseline),
-                untouched_template_baseline_rows(edited_baseline),
-            ]
-        )
+        leftover_samples = _leftover_sample_rows(edited_baseline)
     if submitted and not leftover_samples.empty:
         st.error(
             f"기존 보유대수에 지우지 않은 예시 행이 {len(leftover_samples)}건 남아 있습니다. "
             "실제 값으로 고치거나 지운 뒤 저장하세요. 이 숫자는 개발용 샘플과 CSV 양식의 "
             "예시라 실제 설비와 맞지 않고, 저장하면 리비전에서 지울 수 없습니다."
         )
+        # 막아 놓고 고칠 길을 주지 않으면 편집표에서 한 줄씩 지워야 한다. 같은 동작의
+        # 버튼을 여기에도 둔다 — 위 경고를 못 보고 저장부터 누른 사람의 자리다.
+        st.button(
+            f"예시 행 {len(leftover_samples):,}건 지우기",
+            icon=":material/delete_sweep:",
+            key="purge_sample_baseline_rows_save_v1",
+            on_click=_purge_sample_baseline_rows,
+        )
+        st.caption("편집표에서 아직 저장하지 않은 수정은 사라집니다.")
     elif submitted:
         try:
             saved = repository.save_snapshot(

@@ -390,6 +390,60 @@ def test_the_three_import_targets_download_their_error_rows_under_their_own_keys
     assert len(set(seen)) == 3, seen
 
 
+def test_the_leftover_sample_rows_are_announced_and_cleared_in_one_click(
+    tmp_path: Path,
+) -> None:
+    """빈 DB 는 예시 30행으로 열린다 — 그것이 저장을 막는다는 것을 **누르기 전에** 말한다.
+
+    지금까지는 30행을 붙여넣고 저장을 누른 뒤에야 「예시 행이 30건 남아 있습니다」를 받았고,
+    고치는 길은 편집표에서 한 줄씩 지우는 것뿐이었다.
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "leftover.duckdb"),
+        default_timeout=90,
+    ).run()
+
+    assert not app.exception
+    seeded = len(app.session_state["equipment_baseline_draft_v3"])
+    assert seeded > 0
+    assert any(f"예시 행 {seeded:,}건" in element.value for element in app.warning), [
+        element.value for element in app.warning
+    ]
+
+    app.button("purge_sample_baseline_rows_top_v1").click().run()
+
+    assert not app.exception
+    assert app.session_state["equipment_baseline_draft_v3"].empty
+    # 지우고 나면 경고도 버튼도 사라진다.
+    assert not [element for element in app.warning if "예시 행" in element.value]
+    assert "purge_sample_baseline_rows_top_v1" not in [button.key for button in app.button]
+    assert any("예시 행" in element.value for element in app.success)
+
+
+def test_the_save_time_error_offers_the_same_purge_under_its_own_key(tmp_path: Path) -> None:
+    """저장부터 누른 사람도 그 자리에서 고칠 수 있어야 한다. 키는 위 버튼과 달라야 한다."""
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "leftover_save.duckdb"),
+        default_timeout=90,
+    ).run()
+
+    save = next(button for button in app.button if button.label == "설비 데이터 저장")
+    save.click().run()
+
+    assert not app.exception
+    assert any("예시 행이" in element.value for element in app.error)
+    keys = [button.key for button in app.button]
+    assert "purge_sample_baseline_rows_save_v1" in keys
+    assert "purge_sample_baseline_rows_top_v1" in keys
+
+    app.button("purge_sample_baseline_rows_save_v1").click().run()
+
+    assert not app.exception
+    assert app.session_state["equipment_baseline_draft_v3"].empty
+
+
 def test_page_reseeds_drafts_for_a_session_opened_before_the_baseline_table(
     tmp_path: Path,
 ) -> None:
