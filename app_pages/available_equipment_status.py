@@ -88,7 +88,11 @@ from capa_simulation.services.monthly_equipment_availability import (
     processes_in,
     span_date_range,
 )
-from capa_simulation.services.simulation_cache import get_weekly_equipment_availability
+from capa_simulation.services.simulation_cache import (
+    get_scenario_capacity_and_demand,
+    get_weekly_equipment_availability,
+    scenario_cache_key,
+)
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
 FLASH_KEY = "equipment_status_flash"
@@ -394,10 +398,23 @@ with gap_tab:
     # 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 탭 안에서 알리고, 다른
     # 탭을 막지 않는다 — 페이지가 통째로 죽으면 Cut-off 를 적으러 들어올 수도 없다.
     static_availability: pd.DataFrame | None = None
+    gap_required_equipment: pd.DataFrame | None = None
     static_error: str | None = None
     try:
         gap_context = load_page_context()
         static_availability = gap_context.reference_tables["RQ_EQP_AVBL"]
+        # 소요대수는 확보율을 맞대려고 받는다. 다섯 페이지가 같은 키로 한 번만 계산하므로
+        # 여기서 다시 계산되지 않는다.
+        _, gap_required_equipment = get_scenario_capacity_and_demand(
+            scenario_cache_key(
+                gap_context.reference_version,
+                gap_context.active_scenario,
+                gap_context.selected_start_month,
+                gap_context.selected_end_month,
+            ),
+            _scenario_tables=gap_context.active_scenario["tables"],
+            _reference_tables=gap_context.reference_tables,
+        )
     except BOOTSTRAP_ERRORS as exc:
         static_error = bootstrap_error_message(
             exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
@@ -439,6 +456,7 @@ with gap_tab:
             static_error=static_error,
             span_bounds=(span_start, span_end),
             conversion_ratios=gap_ratios,
+            required_equipment=gap_required_equipment,
         )
 
 with main_tab:

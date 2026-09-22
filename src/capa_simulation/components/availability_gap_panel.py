@@ -29,6 +29,10 @@ from capa_simulation.services.monthly_equipment_availability import (
     processes_in,
     span_date_range,
 )
+from capa_simulation.services.securement_cross_check import (
+    build_securement_cross_check,
+    dynamic_available_equipment,
+)
 
 __all__ = ["PROCESS_FILTER_KEY", "render_availability_gap_panel"]
 
@@ -46,6 +50,7 @@ def render_availability_gap_panel(
     static_error: str | None = None,
     span_bounds: tuple[date, date] | None = None,
     conversion_ratios: Mapping[str, float] | None = None,
+    required_equipment: pd.DataFrame | None = None,
 ) -> None:
     """비교 탭 본문.
 
@@ -140,6 +145,72 @@ def render_availability_gap_panel(
     )
     if not processes_in(spans, baseline):
         st.caption("호기 마스터와 기존보유대수가 모두 비어 있어 Dynamic 이 0 입니다.")
+
+    _render_securement_cross_check(
+        monthly=monthly,
+        static_availability=static,
+        required_equipment=required_equipment,
+        process=process,
+    )
+
+
+def _render_securement_cross_check(
+    *,
+    monthly: pd.DataFrame,
+    static_availability: pd.DataFrame,
+    required_equipment: pd.DataFrame | None,
+    process: str | None,
+) -> None:
+    """같은 소요대수에 두 가용대수를 각각 나눈 확보율.
+
+    **HOME·B/N 은 그대로 Static 을 본다.** 여기는 기준정보 값을 교차검증하는 자리이고,
+    값이 믿을 만해지고 Cut-off 가 채워진 뒤에 전역 전환을 정한다.
+    """
+    st.markdown("---")
+    st.markdown("##### :material/fact_check: 확보율 교차검증")
+    if required_equipment is None or required_equipment.empty:
+        st.info("소요대수를 읽지 못해 확보율을 맞댈 수 없습니다.")
+        return
+    if static_availability.empty:
+        st.info("Static 가용대수가 없어 맞댈 대상이 없습니다.")
+        return
+
+    try:
+        check = build_securement_cross_check(
+            static_availability,
+            dynamic_available_equipment(monthly),
+            required_equipment,
+        )
+    except (KeyError, ValueError) as exc:
+        st.warning(f"확보율을 맞대지 못했습니다 — {exc}")
+        return
+
+    if check.fallback_processes:
+        st.caption(
+            f"Cut-off 가 없어 Static 값으로 채운 공정 {len(check.fallback_processes)}개는 "
+            "**차이가 늘 0** 입니다 — 맞대어 본 것이 아니라 같은 값을 두 번 본 자리입니다. "
+            f"실제로 비교한 공정은 {len(check.compared_processes)}개입니다."
+        )
+
+    rows = check.rows
+    if process is not None:
+        rows = rows.loc[rows["공정"] == process]
+    # 채운 자리는 비교가 아니므로 기본으로 감춘다. 위 캡션이 개수를 이미 알린다.
+    compared = rows.loc[~rows["Static대체"]]
+    if compared.empty:
+        st.info("아직 맞대어 볼 수 있는 공정이 없습니다. Cut-off 를 적으면 여기에 나타납니다.")
+        return
+
+    display = compared.loc[
+        :, ["생산계획년월", "공정", "소요대수", "Static가용대수", "Dynamic가용대수", "확보율차이"]
+    ].copy()
+    display["생산계획년월"] = display["생산계획년월"].map(month_label)
+    st.dataframe(display.round(3), hide_index=True, width="stretch")
+    st.caption(
+        "`확보율차이` 가 음수면 기준정보의 Static 가용대수가 실제 확보보다 큽니다 — "
+        "그만큼 확보율이 낙관적으로 잡혀 있었다는 뜻입니다. "
+        "Dynamic 가용대수는 호기별 환산비를 반영한 축입니다."
+    )
 
 
 def _render_unmatched(dynamic_only: list[str], static_only: list[str]) -> None:

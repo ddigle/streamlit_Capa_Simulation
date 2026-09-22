@@ -1144,6 +1144,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     알 수 없다 — 호기 마스터가 채워질수록 이 항목이 줄고 안분되는 항목이 는다.
   - `span_date_range` 를 함께 둔다. Cut-off 가 크면 구간이 앞으로 크게 밀리므로 조회기간
     만큼만 호기 구간을 만들면 첫 달이 **오류 없이** 모자라게 세어진다.
+- `src/capa_simulation/services/securement_cross_check.py`
+  - 같은 소요대수에 Static(`RQ_EQP_AVBL`)과 Dynamic(일할 환산) 가용대수를 각각 나눠
+    확보율 두 벌을 낸다. **기준정보 가용대수를 교차검증하는 자리다.**
+  - **`calculate_securement_rate` 를 고치지 않는다.** 그 함수가 가용대수 프레임을 인자로
+    받으므로 프레임만 두 벌 만들어 두 번 부른다 — 산식이 한 곳에 남아야 두 숫자가 같은
+    잣대로 나온다.
+  - Cut-off 를 안 적은 공정은 `소요대수 > 0` 인데 가용대수 행이 없어 원 함수가 예외를
+    던진다. 그래서 **Static 값으로 채우고 채운 공정 목록을 함께 돌려준다**
+    (`fallback_processes`). 예외로 멈추면 나머지 비교도 못 보기 때문이고, 목록을 주는
+    것은 **채운 자리가 비교가 아니라 같은 값을 두 번 본 것**이라 화면이 반드시 구분을
+    드러내야 하기 때문이다. 화면은 채운 행을 표에서 감추고 개수만 알린다.
+  - 분자는 기본이 환산대수다. 소요대수가 `부하량 ÷ 대당 Capa` 로 나온 능력 기준 대수라
+    분자도 같은 잣대여야 한다.
+  - **HOME·B/N 은 여전히 Static 을 본다.** 전역 전환은 하지 않았다 — 캐시 키가
+    `(reference_version, content_token, 조회기간)` 뿐이라 설비 DB·Cut-off 가 바뀌어도
+    안 깨지고, Cut-off 미기재 공정에서 계산이 멈춘다. 둘을 풀기 전에는 비교만 한다.
 - `src/capa_simulation/services/availability_gap.py`
   - Static(`RQ_EQP_AVBL`)과 Dynamic 을 한 표로 맞대어 GAP 을 낸다. 프레임 둘을 받아 하나를
     돌려주는 순수 함수다.
