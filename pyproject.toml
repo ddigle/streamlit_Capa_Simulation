@@ -13,6 +13,10 @@ dependencies = [
     # streamlit 이 그 의존을 끊으면 가용설비·Space 화면이 ImportError 로 죽는다.
     "altair>=5,<7",
     "duckdb==1.5.5",
+    # 가용설비 RawData 의 xlsx 업로드 전용. 순수 파이썬 휠 하나(약 250KB)에 전이 의존은
+    # et-xmlfile 뿐이라 사내 반입이 가볍다. 화면은 import 가드를 두어, 사내에 이것이 없으면
+    # 업로드가 CSV 만 받고 나머지 기능은 그대로 열린다.
+    "openpyxl>=3.1,<4",
     "pandas>=2.2,<3",
     "plotly>=5.24,<7",
     # 코드가 아직 import 하지 않는다. docs/TODO.md 의 domain/schemas.py 구현에 쓴다.
