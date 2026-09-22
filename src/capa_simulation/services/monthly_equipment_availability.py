@@ -30,11 +30,26 @@
 나머지 여덟은 **왜 못 쓰는지**를 보여 주는 참고 행이다. 화면은 `부호` 로 늘고 주는 것을
 표시하되 `가용반영` 이 참인 행만 소계에 넣는다. 여덟을 합계에 넣으면 아직 들어오지도
 않은 설비가 가용대수로 세어진다.
+
+## 대수와 환산대수는 다른 질문이다
+
+같은 공정 안에서도 모델마다 생산성이 달라, 호기 마스터는 `환산비`(기준 1.0)를 갖는다.
+그래서 이 모듈은 **두 값을 함께** 낸다.
+
+- `대수` — 호기를 센 것. 「몇 대인가」에 답한다. 환산비를 보지 않는다.
+- `환산대수` — 기여도에 그 호기의 환산비를 곱한 것. **월 Total Capa 를 낼 때 이쪽을 쓴다.**
+
+환산비 1.5 인 호기가 3월에 15일 기여하면 `1.5 x 15/31 = 0.726` 이 `환산대수` 이고,
+`대수` 는 `15/31 = 0.484` 다. 설비 대수를 세는 화면에서 환산비를 곱하면 「열 대가 있다」가
+「열다섯 대가 있다」가 되어 버린다 — 그래서 한 숫자로 합치지 않는다.
+
+`기존보유` 는 호기 단위가 아니라 `(공정, 분류)` 집계 대수라 환산비를 걸 데가 없다. 두 값이
+같다 — 1.0 을 곱한 것과 같고, 호기 마스터가 채워질수록 이 비대칭이 줄어든다.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -57,7 +72,15 @@ __all__ = [
 
 _ONE_DAY = timedelta(days=1)
 
-MONTHLY_AVAILABILITY_COLUMNS = ("생산계획년월", "공정", "분류", "대수", "부호", "가용반영")
+MONTHLY_AVAILABILITY_COLUMNS = (
+    "생산계획년월",
+    "공정",
+    "분류",
+    "대수",
+    "환산대수",
+    "부호",
+    "가용반영",
+)
 
 
 @dataclass(frozen=True)
@@ -107,6 +130,7 @@ def empty_monthly_availability() -> pd.DataFrame:
             "공정": pd.Series(dtype="string"),
             "분류": pd.Series(dtype="string"),
             "대수": pd.Series(dtype="float64"),
+            "환산대수": pd.Series(dtype="float64"),
             "부호": pd.Series(dtype="int64"),
             "가용반영": pd.Series(dtype="bool"),
         }
@@ -142,6 +166,8 @@ def build_monthly_equipment_availability(
     baseline: pd.DataFrame,
     cutoff: pd.DataFrame,
     months: Sequence[int],
+    *,
+    conversion_ratios: Mapping[str, float] | None = None,
 ) -> pd.DataFrame:
     """월별·공정별·분류별 기여 대수.
 
@@ -159,18 +185,21 @@ def build_monthly_equipment_availability(
 
     rows: list[dict[str, object]] = []
     rows += _baseline_rows(baseline, windows)
-    rows += _prorated_rows(spans, windows)
+    rows += _prorated_rows(spans, windows, conversion_ratios or {})
     if not rows:
         return empty_monthly_availability()
 
     result = pd.DataFrame(rows)
-    result = result.groupby(["생산계획년월", "공정", "분류"], as_index=False).agg({"대수": "sum"})
+    result = result.groupby(["생산계획년월", "공정", "분류"], as_index=False).agg(
+        {"대수": "sum", "환산대수": "sum"}
+    )
     result["부호"] = result["분류"].map(lambda name: _BY_NAME[str(name)].sign)
     result["가용반영"] = result["분류"].map(lambda name: _BY_NAME[str(name)].counts_as_available)
     result["생산계획년월"] = result["생산계획년월"].astype("int64")
     result["공정"] = result["공정"].astype("string")
     result["분류"] = result["분류"].astype("string")
     result["대수"] = result["대수"].astype("float64")
+    result["환산대수"] = result["환산대수"].astype("float64")
     order = {category.name: index for index, category in enumerate(CATEGORIES)}
     result = result.sort_values(
         by=["생산계획년월", "공정", "분류"],
@@ -199,27 +228,33 @@ def _baseline_rows(
                     "공정": str(process),
                     "분류": BASELINE_CATEGORY.name,
                     "대수": float(total),
+                    # 기존보유는 호기 단위가 아니라 집계 대수라 환산비를 걸 데가 없다.
+                    # 그대로 둔다 — 1.0 을 곱한 것과 같다.
+                    "환산대수": float(total),
                 }
             )
     return rows
 
 
 def _prorated_rows(
-    spans: pd.DataFrame, windows: dict[str, tuple[WdWindow, ...]]
+    spans: pd.DataFrame,
+    windows: dict[str, tuple[WdWindow, ...]],
+    conversion_ratios: Mapping[str, float],
 ) -> list[dict[str, object]]:
     if spans.empty:
         return []
     rows: list[dict[str, object]] = []
     # `itertuples` 는 한글 컬럼명을 그대로 속성으로 주지만 이름이 겹치면 말없이 `_3` 으로
-    # 바꾼다. 필요한 네 컬럼만 짝지어 도는 편이 빠르고 그 위험도 없다.
+    # 바꾼다. 필요한 다섯 컬럼만 짝지어 도는 편이 빠르고 그 위험도 없다.
     columns = zip(
+        spans["호기"],
         spans["공정소분류"],
         spans["상태"],
         spans["시작일"],
         spans["종료일"],
         strict=True,
     )
-    for raw_process, raw_status, raw_start, raw_end in columns:
+    for raw_unit, raw_process, raw_status, raw_start, raw_end in columns:
         process = str(raw_process or "").strip()
         month_windows = windows.get(process)
         if not month_windows:
@@ -227,6 +262,7 @@ def _prorated_rows(
         category = _BY_NAME.get(str(raw_status))
         if category is None or not category.prorated:
             continue
+        ratio = float(conversion_ratios.get(str(raw_unit or "").strip(), 1.0))
         # 상태는 바뀐 날 **다음 날**부터다. 구간 양 끝을 같이 밀어야 서로 맞물린 채 남는다.
         began = _as_date(raw_start) + _ONE_DAY
         finished = _as_date(raw_end) + _ONE_DAY
@@ -239,6 +275,7 @@ def _prorated_rows(
                         "공정": process,
                         "분류": category.name,
                         "대수": contribution,
+                        "환산대수": contribution * ratio,
                     }
                 )
     return rows
@@ -251,12 +288,21 @@ def _as_date(value: object) -> date:
 
 
 def available_subtotal(monthly: pd.DataFrame) -> pd.DataFrame:
-    """월·공정별 Dynamic 가용 소계. `가용반영` 이 참인 분류만 더한다."""
+    """월·공정별 Dynamic 가용 소계. `가용반영` 이 참인 분류만 더한다.
+
+    **두 축을 같이 낸다.** `Dynamic가용대수` 는 대수를 센 것이고
+    `Dynamic가용환산대수` 는 호기별 환산비를 곱한 것이다. 「몇 대인가」와 「얼마나
+    만드나」는 다른 질문이라 한 숫자로 합칠 수 없다.
+    """
     if monthly.empty:
-        return pd.DataFrame({"생산계획년월": [], "공정": [], "Dynamic가용대수": []})
+        return pd.DataFrame(
+            {"생산계획년월": [], "공정": [], "Dynamic가용대수": [], "Dynamic가용환산대수": []}
+        )
     included = monthly.loc[monthly["가용반영"]]
-    subtotal = included.groupby(["생산계획년월", "공정"], as_index=False).agg({"대수": "sum"})
-    return subtotal.rename(columns={"대수": "Dynamic가용대수"})
+    subtotal = included.groupby(["생산계획년월", "공정"], as_index=False).agg(
+        {"대수": "sum", "환산대수": "sum"}
+    )
+    return subtotal.rename(columns={"대수": "Dynamic가용대수", "환산대수": "Dynamic가용환산대수"})
 
 
 def processes_in(spans: pd.DataFrame, baseline: pd.DataFrame) -> list[str]:

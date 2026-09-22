@@ -16,6 +16,7 @@ import pytest
 
 from capa_simulation.services.availability_gap import (
     DYNAMIC_SUBTOTAL_ROW,
+    DYNAMIC_WEIGHTED_ROW,
     GAP_ROW,
     STATIC_ROW,
     build_availability_gap,
@@ -108,7 +109,13 @@ def test_the_matrix_puts_months_in_columns_and_orders_the_rows() -> None:
     matrix = gap_matrix(comparison.rows, PROCESS)
 
     assert list(matrix.columns) == ["202610"]
-    assert list(matrix.index)[-3:] == [DYNAMIC_SUBTOTAL_ROW, STATIC_ROW, GAP_ROW]
+    # 환산 소계는 GAP **아래**다 — GAP 계산에 들어가지 않는다는 것을 자리로도 보인다.
+    assert list(matrix.index)[-4:] == [
+        DYNAMIC_SUBTOTAL_ROW,
+        STATIC_ROW,
+        GAP_ROW,
+        DYNAMIC_WEIGHTED_ROW,
+    ]
     assert matrix.loc[GAP_ROW, "202610"] == -4.0
 
 
@@ -175,3 +182,33 @@ def test_a_table_of_only_blank_rows_saves_as_empty() -> None:
     blanks = pd.DataFrame({"공정": ["A", "B"], "Cutoff일수": [None, None], "비고": [None, None]})
 
     assert prepare_process_cutoff(blanks).empty
+
+
+def test_the_weighted_subtotal_is_reported_but_left_out_of_the_gap() -> None:
+    """환산 소계는 보이되 GAP 에 안 들어간다 — Static 은 대수라 단위가 어긋난다."""
+    spans = pd.DataFrame(
+        {
+            "호기": ["EQ-1"],
+            "공정소분류": [PROCESS],
+            "상태": ["가용"],
+            "시작일": [date(2020, 1, 1)],
+            "종료일": [date(2030, 1, 1)],
+        }
+    )
+    baseline = pd.DataFrame(
+        {"공정": pd.Series(dtype="string"), "기존보유대수": pd.Series(dtype="float64")}
+    )
+    cutoff = prepare_process_cutoff(
+        pd.DataFrame({"공정": [PROCESS], "Cutoff일수": [0.0], "비고": [None]})
+    )
+    monthly = build_monthly_equipment_availability(
+        spans, baseline, cutoff, MONTHS, conversion_ratios={"EQ-1": 1.5}
+    )
+
+    comparison = build_availability_gap(monthly, static_for(4.0), MONTHS)
+    matrix = gap_matrix(comparison.rows, PROCESS)
+
+    assert matrix.loc[DYNAMIC_SUBTOTAL_ROW, "202610"] == 1.0
+    assert matrix.loc[DYNAMIC_WEIGHTED_ROW, "202610"] == 1.5
+    # GAP 은 대수끼리다: 1.0 - 4.0 = -3.0 (환산 1.5 를 쓰면 -2.5 가 되어 틀린다)
+    assert matrix.loc[GAP_ROW, "202610"] == -3.0

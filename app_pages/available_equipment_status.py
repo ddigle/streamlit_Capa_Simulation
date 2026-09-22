@@ -419,6 +419,17 @@ with gap_tab:
     except ValueError as exc:
         st.error(str(exc))
     else:
+        # 호기별 환산비. 월 Total Capa 축(`환산대수`)만 이 값을 곱한다 — 대수를 세는
+        # 축은 그대로다. 값이 없는 호기는 기준 모델과 같다고 보고 1.0 이다.
+        gap_ratios = {
+            str(unit).strip(): float(ratio)
+            for unit, ratio in zip(
+                dashboard_equipment.get("호기", []),
+                dashboard_equipment.get("환산비", []),
+                strict=False,
+            )
+            if pd.notna(ratio)
+        }
         render_availability_gap_panel(
             spans=gap_spans,
             baseline=baseline,
@@ -427,6 +438,7 @@ with gap_tab:
             static_availability=static_availability,
             static_error=static_error,
             span_bounds=(span_start, span_end),
+            conversion_ratios=gap_ratios,
         )
 
 with main_tab:

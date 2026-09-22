@@ -21,12 +21,17 @@ Static 의 `공정` 은 원본 공정명이고 Dynamic 의 `공정소분류` 는
 
 한 `(월, 공정)` 마다 이렇게 쌓인다.
 
-    분류 행 열 개      기존보유 / 가용 / 운영 비가동 / ... (부호와 가용반영 플래그를 가짐)
-    Dynamic 가용 소계  `가용반영` 이 참인 분류만 더한 값
-    Static 가용대수    기준정보에서 그대로
-    GAP                Dynamic 소계 - Static
+    분류 행 열 개          기존보유 / 가용 / 운영 비가동 / ... (부호와 가용반영 플래그)
+    Dynamic 가용 소계      `가용반영` 이 참인 분류만 더한 값
+    Static 가용대수        기준정보에서 그대로
+    GAP                    Dynamic 소계 - Static
+    Dynamic 가용 소계(환산) 같은 소계에 호기별 환산비를 곱한 값
 
 `GAP` 이 음수면 기준정보가 실제 확보보다 낙관적이라는 뜻이다.
+
+**환산 소계는 GAP 에 들어가지 않는다.** Static 은 `설비보유 - 설비대여평가` 로 나온
+**대수**라, 생산성을 곱한 환산대수와 맞대면 단위가 어긋난다. 그 행은 월 Total Capa 를
+낼 때 쓰는 축이고, GAP 은 대수끼리 비교한다.
 """
 
 from __future__ import annotations
@@ -43,6 +48,7 @@ from capa_simulation.services.monthly_equipment_availability import (
 
 __all__ = [
     "DYNAMIC_SUBTOTAL_ROW",
+    "DYNAMIC_WEIGHTED_ROW",
     "GAP_COMPARISON_COLUMNS",
     "GAP_ROW",
     "GapComparison",
@@ -50,17 +56,20 @@ __all__ = [
     "ROW_KIND_GAP",
     "ROW_KIND_STATIC",
     "ROW_KIND_SUBTOTAL",
+    "ROW_KIND_WEIGHTED",
     "STATIC_ROW",
     "build_availability_gap",
     "gap_matrix",
 ]
 
 DYNAMIC_SUBTOTAL_ROW = "Dynamic 가용 소계"
+DYNAMIC_WEIGHTED_ROW = "Dynamic 가용 소계 (환산비 반영)"
 STATIC_ROW = "Static 가용대수"
 GAP_ROW = "GAP (Dynamic - Static)"
 
 ROW_KIND_CATEGORY = "분류"
 ROW_KIND_SUBTOTAL = "소계"
+ROW_KIND_WEIGHTED = "환산소계"
 ROW_KIND_STATIC = "Static"
 ROW_KIND_GAP = "GAP"
 
@@ -72,6 +81,9 @@ _ROW_ORDER = {
     ROW_KIND_SUBTOTAL: 1,
     ROW_KIND_STATIC: 2,
     ROW_KIND_GAP: 3,
+    # 환산 소계는 GAP 아래에 둔다. **GAP 계산에 들어가지 않는다** — Static 은 대수를
+    # 센 값(`설비보유 - 설비대여평가`)이라 환산대수와 맞대면 단위가 어긋난다.
+    ROW_KIND_WEIGHTED: 4,
 }
 
 
@@ -147,6 +159,16 @@ def build_availability_gap(
     gap = _gap_rows(subtotal, static, wanted)
     if gap is not None:
         pieces.append(gap)
+
+    weighted = _labelled(
+        subtotal.rename(columns={"Dynamic가용환산대수": "대수"})
+        if subtotal is not None and "Dynamic가용환산대수" in subtotal.columns
+        else None,
+        row=DYNAMIC_WEIGHTED_ROW,
+        kind=ROW_KIND_WEIGHTED,
+    )
+    if weighted is not None:
+        pieces.append(weighted)
 
     rows = pd.concat(pieces, ignore_index=True) if pieces else _empty_rows()
     rows = _sorted(rows)

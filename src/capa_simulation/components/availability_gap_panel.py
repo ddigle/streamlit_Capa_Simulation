@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 
 import pandas as pd
@@ -44,6 +45,7 @@ def render_availability_gap_panel(
     static_availability: pd.DataFrame | None,
     static_error: str | None = None,
     span_bounds: tuple[date, date] | None = None,
+    conversion_ratios: Mapping[str, float] | None = None,
 ) -> None:
     """비교 탭 본문.
 
@@ -75,7 +77,9 @@ def render_availability_gap_panel(
             "Preference 탭에서 시작일을 앞당기세요."
         )
 
-    monthly = build_monthly_equipment_availability(spans, baseline, cutoff, months)
+    monthly = build_monthly_equipment_availability(
+        spans, baseline, cutoff, months, conversion_ratios=conversion_ratios
+    )
     # **`or` 를 쓰지 않는다.** 프레임에 `or` 를 걸면 `__bool__` 이 불려
     # 「truth value of a DataFrame is ambiguous」로 죽는다. 빈 프레임도 거짓이라
     # 값이 있는 쪽에서만 터지는데, 그 경로가 곧 실제 화면이다.
@@ -125,6 +129,10 @@ def render_availability_gap_panel(
     display = matrix.copy()
     display.columns = pd.Index([month_label(int(column)) for column in display.columns], name="월")
     st.dataframe(display.round(2), width="stretch")
+    st.caption(
+        "**「환산비 반영」 행은 GAP 에 들어가지 않습니다.** Static 은 설비를 센 대수라 "
+        "환산대수와 맞대면 단위가 어긋납니다 — 그 행은 월 Total Capa 를 낼 때 쓰는 축입니다."
+    )
     st.caption(
         "「Dynamic 가용 소계」에 들어가는 것은 `기존보유` 와 `가용` 둘뿐입니다. "
         "나머지 분류는 왜 못 쓰는지를 보여 주는 참고 행이라 소계에 더하지 않습니다 — "

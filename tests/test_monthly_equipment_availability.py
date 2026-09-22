@@ -196,3 +196,64 @@ def test_a_full_year_unit_contributes_exactly_one_each_month(months: list[int]) 
     )
 
     assert round(float(frame["대수"].sum()), 6) == 1.0
+
+
+def test_the_conversion_ratio_applies_to_the_weighted_count_only() -> None:
+    """사용자 예시: 환산비 1.5 호기가 3월에 15일 기여 → `1.5 x 15/31`.
+
+    **대수는 그대로다.** 「몇 대인가」에 환산비를 곱하면 열 대가 열다섯 대가 된다.
+    """
+    # 3월 W/D 를 달력 3월과 맞추려고 Cut-off 0 을 쓴다(3/1~3/31, 31일).
+    # 3/17 부터 가용 → 3/17~3/31 = 15일.
+    unit_spans = spans([("EQ-1", "가용", date(2026, 3, 16), date(2026, 12, 31))])
+
+    frame = build_monthly_equipment_availability(
+        unit_spans,
+        empty_baseline(),
+        cutoff_table(0),
+        [202603],
+        conversion_ratios={"EQ-1": 1.5},
+    )
+
+    row = frame.loc[frame["분류"] == "가용"].iloc[0]
+    assert round(float(row["대수"]), 4) == round(15 / 31, 4)
+    assert round(float(row["환산대수"]), 4) == round(1.5 * 15 / 31, 4)
+    assert round(float(row["환산대수"]), 3) == 0.726
+
+
+def test_a_unit_without_a_declared_ratio_counts_as_one() -> None:
+    """환산비를 안 준 호기는 1.0 이다 — 기준 모델과 같다고 본다."""
+    unit_spans = spans([("EQ-1", "가용", date(2020, 1, 1), date(2030, 1, 1))])
+
+    frame = build_monthly_equipment_availability(
+        unit_spans, empty_baseline(), cutoff_table(0), [202603], conversion_ratios={}
+    )
+
+    row = frame.loc[frame["분류"] == "가용"].iloc[0]
+    assert float(row["대수"]) == float(row["환산대수"]) == 1.0
+
+
+def test_the_baseline_has_no_ratio_to_apply() -> None:
+    """기존보유는 집계 대수라 환산비를 걸 데가 없다 — 두 값이 같다."""
+    baseline = pd.DataFrame({"공정": [PROCESS], "기존보유대수": [10.0]})
+
+    frame = build_monthly_equipment_availability(
+        spans([]), baseline, cutoff_table(0), [202603], conversion_ratios={"EQ-1": 1.5}
+    )
+
+    row = frame.loc[frame["분류"] == "기존보유"].iloc[0]
+    assert float(row["대수"]) == float(row["환산대수"]) == 10.0
+
+
+def test_the_subtotal_reports_both_axes() -> None:
+    unit_spans = spans([("EQ-1", "가용", date(2020, 1, 1), date(2030, 1, 1))])
+    baseline = pd.DataFrame({"공정": [PROCESS], "기존보유대수": [4.0]})
+
+    frame = build_monthly_equipment_availability(
+        unit_spans, baseline, cutoff_table(0), [202603], conversion_ratios={"EQ-1": 2.0}
+    )
+    subtotal = available_subtotal(frame)
+
+    # 대수 = 기존보유 4 + 가용 1 = 5, 환산 = 4 + (1 x 2.0) = 6
+    assert float(subtotal["Dynamic가용대수"].iloc[0]) == 5.0
+    assert float(subtotal["Dynamic가용환산대수"].iloc[0]) == 6.0
