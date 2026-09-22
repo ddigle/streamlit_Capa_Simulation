@@ -1,291 +1,63 @@
-# Purpose: 설비 마스터·비가동 이력을 편집하고 주차별 가용설비 및 변경 리비전 대시보드를 제공한다.
+# Purpose: 설비 조회·월별 비교·Cut-off 설정·입력 작업을 연결하고 저장본과 데모의 경계를 관리한다.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
-from typing import Any
+from datetime import date
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.components.availability_gap_panel import (
-    render_availability_gap_panel,
-)
+from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
 from capa_simulation.components.cutoff_management import render_cutoff_management
-from capa_simulation.components.equipment_lifecycle_gantt import (
-    render_equipment_lifecycle_gantt,
+from capa_simulation.components.equipment_data_workspace import (
+    BASELINE_DRAFT_KEY,
+    BASELINE_IMPORT_KEY,
+    DOWNTIME_DRAFT_KEY,
+    DOWNTIME_IMPORT_KEY,
+    DRAFT_REVISION_KEY,
+    EQUIPMENT_DRAFT_KEY,
+    EQUIPMENT_IMPORT_KEY,
+    FLASH_KEY,
+    render_equipment_data_workspace,
+)
+from capa_simulation.components.equipment_explorer import (
+    render_equipment_explorer,
+    render_equipment_period,
 )
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.sample_data import (
-    render_pending_source,
-    render_sample_switch,
-)
-from capa_simulation.components.status_metric import (
-    metric_row,
-    render_status_metric,
-    shortage_tone,
-)
-from capa_simulation.components.tab_state import stateful_tabs
-from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL, render_csv_download
-from capa_simulation.components.table_view_controls import (
-    merge_edited_rows,
-    render_table_view_controls,
-)
-from capa_simulation.design import tokens
+from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
+from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
-    date_range_value,
     load_page_context,
 )
 from capa_simulation.persistence.equipment_cache import (
-    clear_equipment_snapshot_cache,
     get_equipment_repository,
-    load_equipment_snapshot,
     load_floor_layout_canvases,
     load_latest_equipment_snapshot,
 )
-from capa_simulation.services.equipment_availability import (
-    build_equipment_lifecycle_spans,
-    build_equipment_status_as_of,
-    build_inactive_equipment,
-)
+from capa_simulation.services.equipment_availability import build_equipment_lifecycle_spans
 from capa_simulation.services.equipment_contract import (
-    DATE_COLUMNS,
-    DOWNTIME_TYPES,
-    EQUIPMENT_STATUSES,
-    QUAL_CONFIRMATION_STATUSES,
-    STATUS_COUNT_COLUMNS,
-    VALID_BUILDINGS,
-    VALID_FLOORS,
     empty_downtime_schedule,
+    empty_equipment_baseline,
     empty_equipment_master,
-)
-from capa_simulation.services.equipment_csv import (
-    baseline_csv_template,
-    build_baseline_import_preview,
-    build_downtime_import_preview,
-    build_equipment_import_preview,
-    downtime_csv_template,
-    equipment_csv_template,
-    merge_baseline_rows,
-    merge_downtime_rows,
-    merge_equipment_rows,
-    read_baseline_clipboard,
-    read_downtime_clipboard,
-    read_equipment_clipboard,
-    untouched_template_baseline_rows,
 )
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_baseline,
     sample_equipment_master,
-    untouched_sample_baseline_rows,
 )
 from capa_simulation.services.floor_layout_profile import max_canvas_extent
-from capa_simulation.services.monthly_equipment_availability import (
-    processes_in,
-    span_date_range,
-)
+from capa_simulation.services.monthly_equipment_availability import processes_in, span_date_range
 from capa_simulation.services.simulation_cache import (
     get_scenario_capacity_and_demand,
-    get_weekly_equipment_availability,
     scenario_cache_key,
 )
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
-FLASH_KEY = "equipment_status_flash"
-# `Preference` 탭의 위젯 자리. `Main` 이 계산 전에 같은 칸을 읽으므로 문자열을 두 곳에
-# 적지 않는다 — 갈라지면 화면은 멀쩡한데 값만 조용히 기본값으로 돌아간다.
-START_DATE_KEY = "equipment_dashboard_start_date"
-END_DATE_KEY = "equipment_dashboard_end_date"
-LINE_TYPE_KEY = "equipment_dashboard_line_types"
-UTILIZATION_TYPE_KEY = "equipment_dashboard_utilization_types"
-LARGE_PROCESS_KEY = "equipment_dashboard_large_processes"
-SMALL_PROCESS_KEY = "equipment_dashboard_small_processes"
-BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
-EQUIPMENT_EDITOR_KEY = "equipment_master_editor_v3"
-DOWNTIME_EDITOR_KEY = "equipment_downtime_editor_v3"
-BASELINE_DRAFT_KEY = "equipment_baseline_draft_v3"
-EQUIPMENT_DRAFT_KEY = "equipment_master_draft_v3"
-DOWNTIME_DRAFT_KEY = "equipment_downtime_draft_v3"
-DRAFT_REVISION_KEY = "equipment_draft_revision_v4"
-BASELINE_IMPORT_KEY = "baseline_import_preview_rows_v3"
-EQUIPMENT_IMPORT_KEY = "equipment_import_preview_rows_v3"
-DOWNTIME_IMPORT_KEY = "downtime_import_preview_rows_v3"
-
-
-def _filter_equipment(
-    data: pd.DataFrame,
-    *,
-    line_types: list[str],
-    utilization_types: list[str],
-    large_processes: list[str],
-    small_processes: list[str],
-) -> pd.DataFrame:
-    filtered = data
-    for column, selected_values in (
-        ("라인구분", line_types),
-        ("활용구분", utilization_types),
-        ("공정대분류", large_processes),
-        ("공정소분류", small_processes),
-    ):
-        if selected_values:
-            filtered = filtered.loc[filtered[column].isin(selected_values)]
-    return filtered.copy()
-
-
-def _filter_options(data: pd.DataFrame, column: str) -> list[str]:
-    return sorted(data[column].dropna().astype(str).unique().tolist())
-
-
-def _downtime_for_equipment(downtime: pd.DataFrame, equipment: pd.DataFrame) -> pd.DataFrame:
-    return downtime.loc[downtime["호기"].isin(equipment["호기"])].copy()
-
-
-def _reset_drafts() -> None:
-    for key in (
-        BASELINE_EDITOR_KEY,
-        EQUIPMENT_EDITOR_KEY,
-        DOWNTIME_EDITOR_KEY,
-        BASELINE_DRAFT_KEY,
-        EQUIPMENT_DRAFT_KEY,
-        DOWNTIME_DRAFT_KEY,
-        DRAFT_REVISION_KEY,
-        BASELINE_IMPORT_KEY,
-        EQUIPMENT_IMPORT_KEY,
-        DOWNTIME_IMPORT_KEY,
-    ):
-        st.session_state.pop(key, None)
-
-
-def _import_summary(preview: pd.DataFrame) -> None:
-    with st.container(horizontal=True):
-        st.metric("Import 행", f"{len(preview):,}건", border=True)
-        st.metric("신규", f"{int(preview['Import구분'].eq('신규').sum()):,}건", border=True)
-        st.metric(
-            "기존 대체",
-            f"{int(preview['Import구분'].eq('대체').sum()):,}건",
-            border=True,
-        )
-
-
-def _equipment_status_scale() -> alt.Scale:
-    """설비 상태 9종에 고정 색을 준다.
-
-    scale 을 생략하면 Altair 가 config.toml 의 chartCategoricalColors 4색을 순환해
-    5~9번째 상태가 앞의 것과 같은 색으로 그려진다.
-    """
-    return alt.Scale(
-        domain=list(tokens.EQUIPMENT_STAGE_COLORS),
-        range=list(tokens.EQUIPMENT_STAGE_COLORS.values()),
-    )
-
-
-def _qual_status_scale() -> alt.Scale:
-    """Qual 확정상태 4종에 고정 색을 준다."""
-    return alt.Scale(
-        domain=list(tokens.QUAL_CONFIRMATION_COLORS),
-        range=list(tokens.QUAL_CONFIRMATION_COLORS.values()),
-    )
-
-
-def _format_equipment_count(value: float) -> str:
-    """대수를 적는다. 주중에 상태가 바뀌면 소수가 나오므로 정수일 때만 소수점을 뗀다.
-
-    설비 751대를 "751.0대" 로 적으면 계산이 어긋난 것처럼 읽힌다.
-    """
-    return f"{value:,.0f}대" if float(value).is_integer() else f"{value:,.1f}대"
-
-
-render_page_header(
-    "가용설비 현황 (Data확보중)",
-    description=(
-        "기존 보유대수와 31개 컬럼 호기 마스터, 운영 비가동 일정을 설비 전용 DuckDB "
-        "불변 리비전으로 관리합니다."
-    ),
-)
-flash = st.session_state.pop(FLASH_KEY, None)
-if isinstance(flash, str):
-    st.success(flash)
-
-today = date.today()
-try:
-    equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
-    repository = get_equipment_repository(equipment_database_path)
-    # 층마다 캔버스가 달라 편집기 상한은 전 층 최댓값으로 열어 두고, 층별 범위는 붙여넣기·
-    # 저장 시점에 호기 마스터 검증이 잡는다.
-    floor_canvases = load_floor_layout_canvases(equipment_database_path)
-    max_canvas_width, max_canvas_height = max_canvas_extent(floor_canvases)
-    latest_snapshot = load_latest_equipment_snapshot(equipment_database_path)
-    if latest_snapshot is None:
-        saved_baseline = sample_equipment_baseline()
-        saved_equipment = empty_equipment_master()
-        saved_downtime = empty_downtime_schedule()
-        revision_token = "empty"
-    else:
-        saved_baseline = latest_snapshot.baseline
-        saved_equipment = latest_snapshot.equipment
-        saved_downtime = latest_snapshot.downtime
-        revision_token = latest_snapshot.revision.revision_id
-except BOOTSTRAP_ERRORS as exc:
-    st.error(
-        "설비 현황을 준비하지 못했습니다: "
-        + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
-    )
-    st.stop()
-
-if st.session_state.get(DRAFT_REVISION_KEY) != revision_token:
-    st.session_state[BASELINE_DRAFT_KEY] = saved_baseline.copy()
-    st.session_state[EQUIPMENT_DRAFT_KEY] = saved_equipment.copy()
-    st.session_state[DOWNTIME_DRAFT_KEY] = saved_downtime.copy()
-    st.session_state[DRAFT_REVISION_KEY] = revision_token
-    st.session_state.pop(BASELINE_IMPORT_KEY, None)
-    st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
-    st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
-# 세 표 모두 편집본을 본다. 대시보드가 저장본만 보면 붙여넣기 직후 기존 보유대수만
-# 옛 값으로 남아 총대수·가용률이 호기 마스터와 어긋난다.
-baseline = st.session_state[BASELINE_DRAFT_KEY].copy()
-equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
-downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
-using_dashboard_sample = equipment.empty
-# 스위치는 **호기 마스터가 비었을 때만** 뜻이 있다. 실데이터가 있으면 끌 것이 없다.
-show_sample_fleet = (
-    render_sample_switch(key="equipment_sample_switch", source="설비 운영 DB")
-    if using_dashboard_sample
-    else True
-)
-dashboard_equipment = (
-    sample_equipment_master(anchor_date=today)
-    if using_dashboard_sample and show_sample_fleet
-    else equipment
-)
-dashboard_downtime = (
-    sample_downtime_schedule(anchor_date=today)
-    if using_dashboard_sample and show_sample_fleet
-    else downtime
-)
-
-# 조회기간·조회조건 위젯은 `Preference` 탭 안에서 그리지만 값은 `Main` 이 계산에 먼저
-# 쓴다. **위젯이 아니라 세션 칸을 읽는다** — 닫힌 탭의 위젯은 그 회차에 만들어지지
-# 않으므로 반환값을 기다리면 `Main` 을 볼 때마다 기본값으로 되돌아간다. 위젯이 `key` 로
-# 쓰는 자리를 그대로 읽고, 사용자가 `Preference` 에서 바꾸면 다음 실행의 이 줄에 새 값이
-# 들어온다. HOME 이 쓰는 방식과 같다.
-DEFAULT_START_DATE = date(today.year, today.month, 1)
-DEFAULT_END_DATE = today + timedelta(weeks=12)
-
-
-def _session_date(key: str, default: date) -> date:
-    value = st.session_state.get(key, default)
-    return value if isinstance(value, date) else default
-
 
 def _months_between(start: date, end: date) -> list[int]:
-    """`start` 가 든 달부터 `end` 가 든 달까지 `YYYYMM` 목록.
-
-    조회기간은 날짜 두 개인데 Static 가용대수는 월 단위다. 두 축을 맞추는 자리가 여기다.
-    """
     if start > end:
         return []
     months: list[int] = []
@@ -296,1094 +68,191 @@ def _months_between(start: date, end: date) -> list[int]:
     return months
 
 
-def _session_list(key: str) -> list[str]:
-    value = st.session_state.get(key, [])
-    return [str(item) for item in value] if isinstance(value, (list, tuple)) else []
+def _open_input() -> None:
+    st.session_state["equipment_active_tab"] = ":material/table_rows: RawData"
 
 
-start_date = _session_date(START_DATE_KEY, DEFAULT_START_DATE)
-end_date = _session_date(END_DATE_KEY, DEFAULT_END_DATE)
-selected_line_types = _session_list(LINE_TYPE_KEY)
-selected_utilization_types = _session_list(UTILIZATION_TYPE_KEY)
-selected_large_processes = _session_list(LARGE_PROCESS_KEY)
-selected_small_processes = _session_list(SMALL_PROCESS_KEY)
+render_page_header("가용설비 현황 (Data확보중)")
+flash = st.session_state.pop(FLASH_KEY, None)
+if isinstance(flash, str):
+    st.success(flash)
 
-small_process_options = sorted(
-    set(_filter_options(dashboard_equipment, "공정소분류"))
-    | set(baseline["공정"].dropna().astype(str).unique().tolist())
-)
+today = date.today()
+try:
+    equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
+    repository = get_equipment_repository(equipment_database_path)
+    floor_canvases = load_floor_layout_canvases(equipment_database_path)
+    max_extent = max_canvas_extent(floor_canvases)
+    latest_snapshot = load_latest_equipment_snapshot(equipment_database_path)
+    if latest_snapshot is None:
+        saved_baseline = empty_equipment_baseline()
+        saved_equipment = empty_equipment_master()
+        saved_downtime = empty_downtime_schedule()
+        revision_token = "empty"
+    else:
+        saved_baseline = latest_snapshot.baseline
+        saved_equipment = latest_snapshot.equipment
+        saved_downtime = latest_snapshot.downtime
+        revision_token = latest_snapshot.revision.revision_id
+except BOOTSTRAP_ERRORS as exc:
+    st.error(
+        "설비 현황을 준비하지 못했습니다. "
+        + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+    )
+    st.stop()
 
-main_tab, cutoff_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
+if st.session_state.get(DRAFT_REVISION_KEY) != revision_token:
+    st.session_state[BASELINE_DRAFT_KEY] = saved_baseline.copy()
+    st.session_state[EQUIPMENT_DRAFT_KEY] = saved_equipment.copy()
+    st.session_state[DOWNTIME_DRAFT_KEY] = saved_downtime.copy()
+    st.session_state[DRAFT_REVISION_KEY] = revision_token
+    for preview_key in (BASELINE_IMPORT_KEY, EQUIPMENT_IMPORT_KEY, DOWNTIME_IMPORT_KEY):
+        st.session_state.pop(preview_key, None)
+baseline = st.session_state[BASELINE_DRAFT_KEY].copy()
+equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
+downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
+using_dashboard_sample = equipment.empty
+
+first_action = st.empty()
+sample_notice = st.empty()
+main_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
     [
         ":material/dashboard: Main",
-        ":material/schedule: Cut-off",
         ":material/compare_arrows: Static/Dynamic",
         ":material/tune: Preference",
         ":material/table_rows: RawData",
     ],
     key="equipment_active_tab",
 )
+if latest_snapshot is None and not tab_is_hidden(main_tab):
+    with first_action.container(horizontal=True, vertical_alignment="center"):
+        st.markdown("**처음 사용하시나요?** 호기 마스터를 붙여넣어 첫 데이터를 저장하세요.")
+        st.button("설비 데이터 입력", icon=":material/add:", type="primary", on_click=_open_input)
+show_sample_fleet = bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
+if using_dashboard_sample and (not tab_is_hidden(main_tab) or not tab_is_hidden(gap_tab)):
+    with sample_notice.container():
+        show_sample_fleet = render_sample_switch(
+            key="equipment_sample_switch", source="설비 운영 DB"
+        )
+# 합성값은 조회에만 사용한다. 첫 편집본에 샘플을 섞으면 실제 첫 저장을 막는다.
+dashboard_equipment = (
+    sample_equipment_master(anchor_date=today)
+    if using_dashboard_sample and show_sample_fleet
+    else equipment
+)
+dashboard_downtime = (
+    sample_downtime_schedule(anchor_date=today)
+    if using_dashboard_sample and show_sample_fleet
+    else downtime
+)
+dashboard_baseline = (
+    sample_equipment_baseline()
+    if latest_snapshot is None and baseline.empty and using_dashboard_sample and show_sample_fleet
+    else baseline
+)
+
+with main_tab:
+    if not tab_is_hidden(main_tab):
+        if using_dashboard_sample and not show_sample_fleet:
+            st.info(
+                "등록된 호기가 없습니다. RawData에서 호기 마스터를 입력하거나 "
+                "샘플 데이터를 켜서 화면을 살펴보세요."
+            )
+        else:
+            render_equipment_explorer(
+                baseline=dashboard_baseline,
+                equipment=dashboard_equipment,
+                downtime=dashboard_downtime,
+                today=today,
+                owner_tab=main_tab,
+            )
 
 with preference_tab:
-    with st.container(border=True):
-        st.markdown("#### :material/date_range: 조회기간 설정")
-        st.caption(
-            "가용설비 현황에만 적용되는 월요일 시작 ISO Weeknum 조회기간입니다. "
-            "주차 값은 각 주 일요일 종료 시점의 상태입니다."
-        )
-        with st.container(horizontal=True, gap="small"):
-            st.date_input(
-                "시작일",
-                value=DEFAULT_START_DATE,
-                key=START_DATE_KEY,
-                persist_state="session",
-                width=180,
-            )
-            st.date_input(
-                "종료일",
-                value=DEFAULT_END_DATE,
-                key=END_DATE_KEY,
-                persist_state="session",
-                width=180,
-            )
-
-    with st.container(border=True):
-        st.markdown("#### :material/filter_alt: 조회 조건")
-        with st.container(horizontal=True, gap="small"):
-            st.multiselect(
-                "라인구분",
-                options=_filter_options(dashboard_equipment, "라인구분"),
-                placeholder="전체",
-                key=LINE_TYPE_KEY,
-                persist_state="session",
-                width=220,
-            )
-            st.multiselect(
-                "활용구분",
-                options=_filter_options(dashboard_equipment, "활용구분"),
-                placeholder="전체",
-                key=UTILIZATION_TYPE_KEY,
-                persist_state="session",
-                width=220,
-            )
-            st.multiselect(
-                "공정대분류",
-                options=_filter_options(dashboard_equipment, "공정대분류"),
-                placeholder="전체",
-                key=LARGE_PROCESS_KEY,
-                persist_state="session",
-                width=260,
-            )
-            st.multiselect(
-                "공정소분류",
-                options=small_process_options,
-                placeholder="전체",
-                key=SMALL_PROCESS_KEY,
-                persist_state="session",
-                width=300,
-            )
-        st.caption(
-            "기존 보유대수에는 라인·활용·공정대분류 정보가 없으므로 공정소분류 조건만 "
-            "적용되고, 나머지 조건은 호기 마스터 설비에 적용됩니다."
-        )
-
-with cutoff_tab:
-    stored_cutoff = render_cutoff_management(
-        repository,
-        equipment_processes=processes_in(dashboard_equipment, baseline),
+    # 입력 폼을 계속 생성해 탭 왕복 중 미제출 편집을 보존한다.
+    render_cutoff_management(
+        repository, equipment_processes=processes_in(dashboard_equipment, dashboard_baseline)
     )
 
 with gap_tab:
-    # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지 탭은 설비 DB 만 열고 활성
-    # 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 탭 안에서 알리고, 다른
-    # 탭을 막지 않는다 — 페이지가 통째로 죽으면 Cut-off 를 적으러 들어올 수도 없다.
-    static_availability: pd.DataFrame | None = None
-    gap_required_equipment: pd.DataFrame | None = None
-    static_error: str | None = None
-    try:
-        gap_context = load_page_context()
-        static_availability = gap_context.reference_tables["RQ_EQP_AVBL"]
-        # 소요대수는 확보율을 맞대려고 받는다. 다섯 페이지가 같은 키로 한 번만 계산하므로
-        # 여기서 다시 계산되지 않는다.
-        _, gap_required_equipment = get_scenario_capacity_and_demand(
-            scenario_cache_key(
-                gap_context.reference_version,
-                gap_context.active_scenario,
-                gap_context.selected_start_month,
-                gap_context.selected_end_month,
-            ),
-            _scenario_tables=gap_context.active_scenario["tables"],
-            _reference_tables=gap_context.reference_tables,
-        )
-    except BOOTSTRAP_ERRORS as exc:
-        static_error = bootstrap_error_message(
-            exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
-        )
-
-    gap_months = _months_between(start_date, end_date)
-    # Cut-off 가 크면 그 달의 W/D 구간이 앞으로 밀린다. 조회기간만큼만 구간을 만들면 첫 달이
-    # 조용히 모자라게 세어지므로, 필요한 만큼 앞에서부터 다시 만든다.
-    required_span = span_date_range(gap_months, stored_cutoff)
-    span_start = min(start_date, required_span[0]) if required_span else start_date
-    span_end = max(end_date, required_span[1]) if required_span else end_date
-    try:
-        gap_spans = build_equipment_lifecycle_spans(
-            dashboard_equipment,
-            dashboard_downtime,
-            start_date=span_start,
-            end_date=span_end,
-        )
-    except ValueError as exc:
-        st.error(str(exc))
-    else:
-        # 호기별 환산비. 월 Total Capa 축(`환산대수`)만 이 값을 곱한다 — 대수를 세는
-        # 축은 그대로다. 값이 없는 호기는 기준 모델과 같다고 보고 1.0 이다.
-        gap_ratios = {
-            str(unit).strip(): float(ratio)
-            for unit, ratio in zip(
-                dashboard_equipment.get("호기", []),
-                dashboard_equipment.get("환산비", []),
-                strict=False,
-            )
-            if pd.notna(ratio)
-        }
-        render_availability_gap_panel(
-            spans=gap_spans,
-            baseline=baseline,
-            cutoff=stored_cutoff,
-            months=gap_months,
-            static_availability=static_availability,
-            static_error=static_error,
-            span_bounds=(span_start, span_end),
-            conversion_ratios=gap_ratios,
-            required_equipment=gap_required_equipment,
-        )
-
-with main_tab:
-    if using_dashboard_sample and show_sample_fleet:
-        st.caption(
-            "호기 마스터가 비어 있어 생애주기 상태를 모두 덮는 데모 fleet 을 표시합니다. "
-            "샘플은 DuckDB에 저장되지 않으며 실제 호기 리비전이 저장되면 자동으로 대체됩니다."
-        )
-    elif latest_snapshot is not None:
-        st.caption(
-            f"현재 적용 이력: r{latest_snapshot.revision.revision_no} · "
-            f"{latest_snapshot.revision.created_at:%Y-%m-%d %H:%M}"
-        )
-
-    filtered_equipment = _filter_equipment(
-        dashboard_equipment,
-        line_types=selected_line_types,
-        utilization_types=selected_utilization_types,
-        large_processes=selected_large_processes,
-        small_processes=selected_small_processes,
-    )
-    filtered_downtime = _downtime_for_equipment(dashboard_downtime, filtered_equipment)
-    filtered_baseline = baseline.copy()
-    if selected_small_processes:
-        filtered_baseline = filtered_baseline.loc[
-            filtered_baseline["공정"].isin(selected_small_processes)
-        ].copy()
-
-    if start_date > end_date:
-        st.error("설비 대시보드 시작일은 종료일보다 늦을 수 없습니다.")
-        weekly = pd.DataFrame()
-    else:
+    if not tab_is_hidden(gap_tab):
+        with st.container(horizontal=True, gap="small"):
+            start_date, end_date = render_equipment_period(today=today)
+        stored_cutoff = repository.load_process_cutoff()
+        # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지 탭은 설비 DB 만 열고 활성
+        # 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 탭 안에서 알리고, 다른
+        # 탭을 막지 않는다 — 페이지가 통째로 죽으면 Cut-off 를 적으러 들어올 수도 없다.
+        static_availability: pd.DataFrame | None = None
+        gap_required_equipment: pd.DataFrame | None = None
+        static_error: str | None = None
         try:
-            weekly = get_weekly_equipment_availability(
-                filtered_baseline,
-                filtered_equipment,
-                filtered_downtime,
-                start_date=start_date,
-                end_date=end_date,
+            gap_context = load_page_context()
+            static_availability = gap_context.reference_tables["RQ_EQP_AVBL"]
+            # 소요대수는 확보율을 맞대려고 받는다. 다섯 페이지가 같은 키로 한 번만 계산하므로
+            # 여기서 다시 계산되지 않는다.
+            _, gap_required_equipment = get_scenario_capacity_and_demand(
+                scenario_cache_key(
+                    gap_context.reference_version,
+                    gap_context.active_scenario,
+                    gap_context.selected_start_month,
+                    gap_context.selected_end_month,
+                ),
+                _scenario_tables=gap_context.active_scenario["tables"],
+                _reference_tables=gap_context.reference_tables,
+            )
+        except BOOTSTRAP_ERRORS as exc:
+            static_error = bootstrap_error_message(
+                exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
+            )
+
+        gap_months = _months_between(start_date, end_date)
+        # Cut-off 가 크면 그 달의 W/D 구간이 앞으로 밀린다. 조회기간만큼만 구간을 만들면 첫 달이
+        # 조용히 모자라게 세어지므로, 필요한 만큼 앞에서부터 다시 만든다.
+        required_span = span_date_range(gap_months, stored_cutoff)
+        span_start = min(start_date, required_span[0]) if required_span else start_date
+        span_end = max(end_date, required_span[1]) if required_span else end_date
+        try:
+            gap_spans = build_equipment_lifecycle_spans(
+                dashboard_equipment,
+                dashboard_downtime,
+                start_date=span_start,
+                end_date=span_end,
             )
         except ValueError as exc:
             st.error(str(exc))
-            weekly = pd.DataFrame()
-
-    if not show_sample_fleet:
-        render_pending_source(
-            subject="가용설비 현황",
-            source="설비 운영 DB",
-            expects=(
-                "호기 마스터 31컬럼 — 특히 **제진대·물류·입고·Qual·반출·이설** 여섯 일정. "
-                "이 여섯 개가 생애주기 구간과 주차별 가용대수를 모두 만듭니다",
-                "동·층·좌표·크기 — Space 배치도가 이 값으로 그려집니다",
-                "운영 비가동 일정(호기 · 유형 · 시작일 · 종료일)",
-                "공정별 **기존 보유대수** — 호기 마스터에 없는 기존 설비의 출발점입니다",
-            ),
-        )
-    elif weekly.empty and start_date <= end_date:
-        st.info("집계할 기존 보유대수 또는 호기 마스터가 없습니다.")
-    elif not weekly.empty:
-        filtered_weekly = weekly.copy()
-        latest_week_start = filtered_weekly["주차시작일"].max()
-        latest_week = filtered_weekly.loc[filtered_weekly["주차시작일"].eq(latest_week_start)]
-        latest_week_end = latest_week["주차종료일"].max()
-        total_count = float(latest_week["총대수"].sum())
-        available_count = float(latest_week["가용대수"].sum())
-        inactive_count = float(latest_week["비가동대수"].sum())
-        trend = (
-            filtered_weekly.groupby(["주차시작일", "Weeknum"], as_index=False)[
-                ["가용대수", "비가동대수"]
-            ]
-            .sum()
-            .sort_values("주차시작일")
-        )
-        # 카드마다 자기 주차 추이를 스파크라인으로 함께 보여준다. 마지막 주 값만으로는
-        # 늘고 있는지 줄고 있는지 알 수 없어 아래 차트를 열어야 했다. 네 장 모두에 넣어야
-        # 카드 높이가 어긋나지 않는다.
-        weekly_total = trend["가용대수"] + trend["비가동대수"]
-        weekly_rate = (trend["가용대수"] / weekly_total.where(weekly_total.ne(0))).fillna(0.0)
-        st.caption(f"조회 마지막 주 기준 · {latest_week['Weeknum'].iloc[0]}")
-        with metric_row(key="equipment_weekly_metrics"):
-            st.metric(
-                "총대수",
-                _format_equipment_count(total_count),
-                chart_data=weekly_total,
-                chart_type="area",
-                border=True,
-            )
-            st.metric(
-                "가용대수",
-                _format_equipment_count(available_count),
-                chart_data=trend["가용대수"],
-                chart_type="area",
-                border=True,
-            )
-            render_status_metric(
-                "비가동대수",
-                _format_equipment_count(inactive_count),
-                key="equipment_inactive_count",
-                tone=shortage_tone(int(inactive_count > 0)),
-                chart_data=trend["비가동대수"],
-            )
-            st.metric(
-                "가용률",
-                f"{available_count / total_count if total_count else 0:.1%}",
-                chart_data=weekly_rate,
-                chart_type="area",
-                border=True,
-            )
-        trend_long = trend.melt(
-            id_vars=["주차시작일", "Weeknum"],
-            value_vars=["가용대수", "비가동대수"],
-            var_name="상태",
-            value_name="대수",
-        )
-        with st.container(border=True):
-            st.markdown("#### 주차별 설비 현황")
-            chart = (
-                alt.Chart(trend_long)
-                .mark_bar()
-                .encode(
-                    x=alt.X(
-                        "Weeknum:N",
-                        sort=trend["Weeknum"].tolist(),
-                        axis=alt.Axis(title=None, labelAngle=0, labelFontSize=14),
-                    ),
-                    y=alt.Y(
-                        "sum(대수):Q",
-                        stack="zero",
-                        axis=alt.Axis(title=None, labelFontSize=14),
-                    ),
-                    color=alt.Color(
-                        "상태:N",
-                        scale=_equipment_status_scale(),
-                        legend=alt.Legend(title=None, labelFontSize=14),
-                    ),
-                    tooltip=(
-                        alt.Tooltip("Weeknum:N", title="Weeknum"),
-                        alt.Tooltip("상태:N", title="상태"),
-                        alt.Tooltip("대수:Q", title="대수", format=".1f"),
-                    ),
+        else:
+            # 호기별 환산비. 월 Total Capa 축(`환산대수`)만 이 값을 곱한다 — 대수를 세는
+            # 축은 그대로다. 값이 없는 호기는 기준 모델과 같다고 보고 1.0 이다.
+            gap_ratios = {
+                str(unit).strip(): float(ratio)
+                for unit, ratio in zip(
+                    dashboard_equipment.get("호기", []),
+                    dashboard_equipment.get("환산비", []),
+                    strict=False,
                 )
-                .properties(height=360)
-            )
-            st.altair_chart(chart, width="stretch")
-
-        unit_status = build_equipment_status_as_of(
-            filtered_equipment, filtered_downtime, as_of=latest_week_end
-        )
-        status_counts = (
-            unit_status["상태"]
-            .value_counts()
-            .reindex(EQUIPMENT_STATUSES, fill_value=0)
-            .rename_axis("상태")
-            .rename("호기대수")
-            .reset_index()
-        )
-        with st.container(border=True):
-            st.markdown("#### 호기 생애주기 상태 모니터링")
-            st.caption(
-                "상태는 호기별로 하나만 부여합니다. 반출·이설 예정 호기는 실행일 전까지 "
-                "보유·가용 산정에 포함되며, 기존 보유대수 집계는 호기 상태에서 제외됩니다."
-            )
-            status_chart = (
-                alt.Chart(status_counts)
-                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
-                .encode(
-                    y=alt.Y(
-                        "상태:N",
-                        sort=list(EQUIPMENT_STATUSES),
-                        axis=alt.Axis(title=None, labelFontSize=13),
-                    ),
-                    x=alt.X(
-                        "호기대수:Q",
-                        axis=alt.Axis(title=None, tickMinStep=1, labelFontSize=13),
-                    ),
-                    color=alt.Color("상태:N", scale=_equipment_status_scale(), legend=None),
-                    tooltip=("상태:N", "호기대수:Q"),
-                )
-                .properties(height=300)
-            )
-            st.altair_chart(status_chart, width="stretch")
-            st.dataframe(status_counts, hide_index=True, width="stretch")
-
-        with st.container(border=True):
-            st.markdown("#### 호기별 생애주기 일정")
-            st.caption(
-                "위 막대가 「지금 몇 대가 어느 상태인가」를 답한다면 이 그림은 「언제 몇 "
-                "대가 쓸 수 있게 되는가」를 답합니다. 날짜 컬럼은 점이라 표로는 그 사이 "
-                "간격이 보이지 않습니다. 구간 판정은 상태 막대와 같은 규칙입니다."
-            )
-            try:
-                lifecycle_spans = build_equipment_lifecycle_spans(
-                    filtered_equipment,
-                    filtered_downtime,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-            except ValueError as exc:
-                st.error(str(exc))
-            else:
-                render_equipment_lifecycle_gantt(
-                    lifecycle_spans,
-                    key="equipment_lifecycle_gantt",
-                    today=today,
-                )
-
-        qual_execution = unit_status.loc[unit_status["Qual일정"].notna()].copy()
-        confirmation_counts = (
-            qual_execution["확정상태"]
-            .value_counts()
-            .reindex(QUAL_CONFIRMATION_STATUSES, fill_value=0)
-            .rename_axis("확정상태")
-            .rename("호기대수")
-            .reset_index()
-        )
-        with st.container(border=True):
-            st.markdown("#### Qual 확정상태 실행관리")
-            st.caption(
-                "확정상태는 Qual 일정의 계획·확정·완료·지연만 관리합니다. "
-                "가용대수는 기존 규칙대로 Qual일정을 기준으로 계산합니다."
-            )
-            with metric_row(key="equipment_qual_confirmation_metrics"):
-                st.metric("Qual 대상", f"{len(qual_execution):,}대", border=True)
-                for confirmation_status in QUAL_CONFIRMATION_STATUSES:
-                    count = int(
-                        confirmation_counts.loc[
-                            confirmation_counts["확정상태"].eq(confirmation_status),
-                            "호기대수",
-                        ].sum()
-                    )
-                    st.metric(confirmation_status, f"{count:,}대", border=True)
-            confirmation_chart = (
-                alt.Chart(confirmation_counts)
-                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
-                .encode(
-                    y=alt.Y(
-                        "확정상태:N",
-                        sort=list(QUAL_CONFIRMATION_STATUSES),
-                        axis=alt.Axis(title=None, labelFontSize=13),
-                    ),
-                    x=alt.X(
-                        "호기대수:Q",
-                        axis=alt.Axis(title=None, tickMinStep=1, labelFontSize=13),
-                    ),
-                    color=alt.Color("확정상태:N", scale=_qual_status_scale(), legend=None),
-                    tooltip=("확정상태:N", "호기대수:Q"),
-                )
-                .properties(height=180)
-            )
-            st.altair_chart(confirmation_chart, width="stretch")
-            if not qual_execution.empty:
-                st.dataframe(
-                    qual_execution.loc[
-                        :,
-                        [
-                            "호기",
-                            "공정대분류",
-                            "공정소분류",
-                            "Qual일정",
-                            "확정상태",
-                            "상태",
-                        ],
-                    ].sort_values(["Qual일정", "호기"]),
-                    hide_index=True,
-                    width="stretch",
-                    column_config={"Qual일정": st.column_config.DateColumn(format="YYYY-MM-DD")},
-                )
-
-        breakdown_columns = (
-            "공정소분류",
-            "기존보유대수",
-            "추가설비대수",
-            "총대수",
-            "가용대수",
-            "비가동대수",
-            *STATUS_COUNT_COLUMNS.values(),
-        )
-        with st.container(border=True):
-            st.markdown("#### 공정소분류별 현황")
-            st.dataframe(
-                latest_week.loc[:, breakdown_columns].sort_values(
-                    ["비가동대수", "공정소분류"], ascending=[False, True]
-                ),
-                hide_index=True,
-                width="stretch",
+                if pd.notna(ratio)
+            }
+            render_availability_gap_panel(
+                spans=gap_spans,
+                baseline=dashboard_baseline,
+                cutoff=stored_cutoff,
+                months=gap_months,
+                static_availability=static_availability,
+                static_error=static_error,
+                span_bounds=(span_start, span_end),
+                conversion_ratios=gap_ratios,
+                required_equipment=gap_required_equipment,
+                owner_tab=gap_tab,
             )
 
-        inactive_equipment = build_inactive_equipment(
-            filtered_equipment, filtered_downtime, as_of=latest_week_end
-        )
-        with st.container(border=True):
-            st.markdown("#### 비가동 설비호기")
-            st.caption(
-                f"{latest_week_end:%Y-%m-%d} 기준 보유 중이지만 가용이 아닌 "
-                "셋업·보관·운영 비가동 호기입니다."
-            )
-            if inactive_equipment.empty:
-                st.success("해당 주차에 비가동 설비호기가 없습니다.")
-            else:
-                st.dataframe(
-                    inactive_equipment,
-                    hide_index=True,
-                    width="stretch",
-                    column_config={
-                        column: st.column_config.DateColumn(column, format="YYYY-MM-DD")
-                        for column in DATE_COLUMNS
-                    },
-                )
 
 with rawdata_tab:
-    if latest_snapshot is None:
-        st.info(
-            "기존 보유대수 샘플은 유지하고 호기 마스터·비가동 일정은 빈 상태입니다. "
-            "웹에서 행을 추가하거나 Excel 표를 붙여넣은 뒤 첫 리비전을 저장하세요."
-        )
-    else:
-        st.caption(
-            f"최근 저장본 r{latest_snapshot.revision.revision_no}을 편집합니다. "
-            "저장하면 세 입력 전체가 새 불변 리비전으로 보관됩니다."
-        )
-
-    with st.expander("운영 지침", icon=":material/menu_book:", expanded=False):
-        st.markdown(
-            """
-#### 입력 데이터 구분
-
-- **기존 보유대수**: 호기별 일정·상태를 관리할 필요가 없는 오래된 가동설비를
-  `공정소분류별 집계 대수`로 관리합니다. 전 조회기간에 보유·가용 설비로 반영됩니다.
-- **호기 마스터**: 입고·Qual 일정, Qual 확정상태, 반출·이설, 개별 비가동 또는
-  Space 배치를 관리할 설비를 호기별로 등록합니다. 오래된 설비라도 개별 관리가 필요하면
-  호기 마스터에 등록하고 `기존설비여부=Y`로 지정합니다.
-- **비가동 일정**: 호기 마스터에 등록된 설비의 개발대여·공사·고장·이설 기간을
-  호기별로 관리합니다.
-
-#### 운영 절차
-
-1. 웹에서 직접 행을 편집하거나 기존 보유대수·호기 마스터·비가동 일정 Excel 표를
-   붙여넣습니다.
-2. 붙여넣기 Import 시 신규·대체 행과 변경 컬럼을 미리 확인합니다.
-3. `확인 후 편집본에 적용`으로 현재 편집본에 반영합니다.
-4. 하단의 `설비 데이터 저장`을 눌러야 DuckDB에 새 불변 리비전으로 영구 저장됩니다.
-
-#### 적용 시 유의사항
-
-- 기존 보유대수에는 호기명이 없으므로 개별 비가동 일정과 Space 배치를 적용할 수 없습니다.
-- 일반 신규 설비는 입고일정·Qual일정·확정상태가 필요합니다.
-- 가용대수는 Qual일정을 기준으로 계산하며, 확정상태는 Qual 실행 모니터링에만 사용합니다.
-- Space 표시는 `레이아웃표시=Y`와 동·층·X/Y좌표·X/Ysize 입력이 필요합니다.
-- 설비 운영 가용대수는 현재 시뮬레이션 Capa 산출 데이터와 분리되어 있습니다.
-            """
-        )
-
-    with st.expander("상태 판정 기준", icon=":material/rule:", expanded=False):
-        st.markdown(
-            """
-- **입고 예정**: 입고일정 전이며, 제진대·물류 일정도 이 상태의 선행 일정으로 관리
-- **셋업 진행중**: 입고일정 이상, Qual일정 미만
-- **가용**: Qual일정 이상 또는 기존설비 Y
-- **확정상태**: Qual 일정만 계획·확정·완료·지연으로 실행관리하며 가용 판정에는 미사용
-- **반출 예정 / 이설 예정**: 일정이 등록됐고 실행일 전
-- **보관 설비**: 장기보관여부 Y
-- **운영 비가동**: 개발대여·공사·고장·이설 등 비가동 일정 활성
-- **반출 완료 / 이설 완료**: 실행일부터 보유·가용·레이아웃에서 제외
-            """
-        )
-
-    # **폼 밖이다.** 미리보기·적용은 일반 버튼인데 `st.form` 안에는 제출 버튼 말고 다른
-    # 버튼을 둘 수 없다. 접을 수 있게만 바꾸고 자리는 그대로 둔다.
-    with st.expander("Excel 붙여넣기 Import", icon=":material/content_paste:", expanded=False):
-        st.caption(
-            "기존 보유대수는 공정 + 분류, 호기 마스터는 호기, 비가동 일정은 호기 + "
-            "비가동유형 + 시작일을 중복 구분자로 사용합니다. CSV 양식을 Excel에서 열어 "
-            "수정한 뒤 헤더를 포함한 전체 표를 복사해 붙여넣으세요. 화면 표시 이름이 아니라 "
-            "양식의 헤더를 그대로 써야 하며, 기존 보유대수는 쉼표 없는 숫자로 적습니다. "
-            "신규/대체 행과 변경 컬럼을 확인한 뒤 편집본에 적용하며, 실제 DuckDB 저장은 "
-            "아래 저장 버튼에서 한 번 더 수행합니다."
-        )
-        baseline_import_col, equipment_import_col, downtime_import_col = st.columns(3)
-        with baseline_import_col:
-            baseline_clipboard = st.text_area(
-                "기존 보유대수 표 붙여넣기",
-                key="equipment_baseline_clipboard_v4",
-                height=220,
-                placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
-            )
-            with st.container(horizontal=True):
-                render_csv_download(
-                    data=baseline_csv_template(),
-                    file_name="equipment_baseline_template.csv",
-                    key="equipment_baseline_template_download_v3",
-                    label=CSV_TEMPLATE_LABEL,
-                )
-                preview_baseline_import = st.button(
-                    "미리보기",
-                    icon=":material/preview:",
-                    disabled=not baseline_clipboard.strip(),
-                    key="equipment_baseline_clipboard_preview_v4",
-                )
-        with equipment_import_col:
-            equipment_clipboard = st.text_area(
-                "호기 마스터 표 붙여넣기",
-                key="equipment_master_clipboard_v4",
-                height=220,
-                placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
-            )
-            with st.container(horizontal=True):
-                render_csv_download(
-                    data=equipment_csv_template(),
-                    file_name="equipment_master_template.csv",
-                    key="equipment_master_template_download_v3",
-                    label=CSV_TEMPLATE_LABEL,
-                )
-                preview_equipment_import = st.button(
-                    "미리보기",
-                    icon=":material/preview:",
-                    disabled=not equipment_clipboard.strip(),
-                    key="equipment_master_clipboard_preview_v4",
-                )
-        with downtime_import_col:
-            downtime_clipboard = st.text_area(
-                "비가동 일정 표 붙여넣기",
-                key="equipment_downtime_clipboard_v4",
-                height=220,
-                placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
-            )
-            with st.container(horizontal=True):
-                render_csv_download(
-                    data=downtime_csv_template(),
-                    file_name="equipment_downtime_template.csv",
-                    key="equipment_downtime_template_download_v3",
-                    label=CSV_TEMPLATE_LABEL,
-                )
-                preview_downtime_import = st.button(
-                    "미리보기",
-                    icon=":material/preview:",
-                    disabled=not downtime_clipboard.strip(),
-                    key="equipment_downtime_clipboard_preview_v4",
-                )
-
-        if preview_baseline_import:
-            try:
-                incoming = read_baseline_clipboard(baseline_clipboard)
-            except ValueError as exc:
-                st.error(str(exc))
-            else:
-                st.session_state[BASELINE_IMPORT_KEY] = incoming
-                st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
-                st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
-                st.rerun()
-        if preview_equipment_import:
-            try:
-                incoming = read_equipment_clipboard(
-                    equipment_clipboard, floor_canvases=floor_canvases
-                )
-                merged = merge_equipment_rows(equipment, incoming, floor_canvases=floor_canvases)
-                merge_downtime_rows(downtime, empty_downtime_schedule(), equipment=merged)
-            except ValueError as exc:
-                st.error(str(exc))
-            else:
-                st.session_state[EQUIPMENT_IMPORT_KEY] = incoming
-                st.session_state.pop(BASELINE_IMPORT_KEY, None)
-                st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
-                st.rerun()
-        if preview_downtime_import:
-            try:
-                incoming = read_downtime_clipboard(downtime_clipboard, equipment=equipment)
-            except ValueError as exc:
-                st.error(str(exc))
-            else:
-                st.session_state[DOWNTIME_IMPORT_KEY] = incoming
-                st.session_state.pop(BASELINE_IMPORT_KEY, None)
-                st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
-                st.rerun()
-
-        incoming_baseline = st.session_state.get(BASELINE_IMPORT_KEY)
-        if isinstance(incoming_baseline, pd.DataFrame):
-            st.markdown("**기존 보유대수 Import 확인**")
-            baseline_preview = build_baseline_import_preview(baseline, incoming_baseline)
-            _import_summary(baseline_preview)
-            st.dataframe(baseline_preview, hide_index=True, width="stretch")
-            with st.container(horizontal=True):
-                confirm = st.button(
-                    "확인 후 편집본에 적용",
-                    type="primary",
-                    icon=":material/check:",
-                    key="confirm_baseline_import_v3",
-                )
-                cancel = st.button("취소", icon=":material/close:", key="cancel_baseline_import_v3")
-            if confirm:
-                try:
-                    merged_baseline = merge_baseline_rows(baseline, incoming_baseline)
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    st.session_state[BASELINE_DRAFT_KEY] = merged_baseline
-                    st.session_state.pop(BASELINE_EDITOR_KEY, None)
-                    st.session_state.pop(BASELINE_IMPORT_KEY, None)
-                    st.session_state[FLASH_KEY] = (
-                        f"기존 보유대수 붙여넣기 데이터 {len(incoming_baseline):,}행을 편집본에 "
-                        "적용했습니다. 아직 DuckDB에는 저장되지 않았습니다. 손대지 않은 개발 "
-                        "샘플 행이 남아 있으면 저장 전에 고치거나 지워야 합니다."
-                    )
-                    st.rerun()
-            if cancel:
-                st.session_state.pop(BASELINE_IMPORT_KEY, None)
-                st.rerun()
-
-        incoming_equipment = st.session_state.get(EQUIPMENT_IMPORT_KEY)
-        if isinstance(incoming_equipment, pd.DataFrame):
-            st.markdown("**호기 마스터 Import 확인**")
-            equipment_preview = build_equipment_import_preview(equipment, incoming_equipment)
-            _import_summary(equipment_preview)
-            st.dataframe(equipment_preview, hide_index=True, width="stretch")
-            with st.container(horizontal=True):
-                confirm = st.button(
-                    "확인 후 편집본에 적용",
-                    type="primary",
-                    icon=":material/check:",
-                    key="confirm_equipment_import_v3",
-                )
-                cancel = st.button(
-                    "취소", icon=":material/close:", key="cancel_equipment_import_v3"
-                )
-            if confirm:
-                try:
-                    merged_equipment = merge_equipment_rows(
-                        equipment, incoming_equipment, floor_canvases=floor_canvases
-                    )
-                    merged_downtime = merge_downtime_rows(
-                        downtime,
-                        empty_downtime_schedule(),
-                        equipment=merged_equipment,
-                    )
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    st.session_state[EQUIPMENT_DRAFT_KEY] = merged_equipment
-                    st.session_state[DOWNTIME_DRAFT_KEY] = merged_downtime
-                    st.session_state.pop(EQUIPMENT_EDITOR_KEY, None)
-                    st.session_state.pop(DOWNTIME_EDITOR_KEY, None)
-                    st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
-                    st.session_state[FLASH_KEY] = (
-                        f"호기 마스터 붙여넣기 데이터 {len(incoming_equipment):,}행을 편집본에 "
-                        "적용했습니다. 아직 DuckDB에는 저장되지 않았습니다."
-                    )
-                    st.rerun()
-            if cancel:
-                st.session_state.pop(EQUIPMENT_IMPORT_KEY, None)
-                st.rerun()
-
-        incoming_downtime = st.session_state.get(DOWNTIME_IMPORT_KEY)
-        if isinstance(incoming_downtime, pd.DataFrame):
-            st.markdown("**비가동 일정 Import 확인**")
-            downtime_preview = build_downtime_import_preview(downtime, incoming_downtime)
-            _import_summary(downtime_preview)
-            st.dataframe(downtime_preview, hide_index=True, width="stretch")
-            with st.container(horizontal=True):
-                confirm = st.button(
-                    "확인 후 편집본에 적용",
-                    type="primary",
-                    icon=":material/check:",
-                    key="confirm_downtime_import_v3",
-                )
-                cancel = st.button("취소", icon=":material/close:", key="cancel_downtime_import_v3")
-            if confirm:
-                try:
-                    merged_downtime = merge_downtime_rows(
-                        downtime, incoming_downtime, equipment=equipment
-                    )
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    st.session_state[DOWNTIME_DRAFT_KEY] = merged_downtime
-                    st.session_state.pop(DOWNTIME_EDITOR_KEY, None)
-                    st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
-                    st.session_state[FLASH_KEY] = (
-                        f"비가동 일정 붙여넣기 데이터 {len(incoming_downtime):,}행을 편집본에 "
-                        "적용했습니다. 아직 DuckDB에는 저장되지 않았습니다."
-                    )
-                    st.rerun()
-            if cancel:
-                st.session_state.pop(DOWNTIME_IMPORT_KEY, None)
-                st.rerun()
-
-    downtime_type_options = sorted(
-        set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str).tolist())
+    # 입력 위젯은 숨은 탭에서도 유지한다. editor delta가 사라지면 안 된다.
+    render_equipment_data_workspace(
+        repository=repository,
+        latest_snapshot=latest_snapshot,
+        baseline=baseline,
+        equipment=equipment,
+        downtime=downtime,
+        floor_canvases=floor_canvases,
+        max_extent=max_extent,
     )
-    # 보기 설정은 **폼 밖**이다. 폼 안에 두면 저장을 눌러야 적용돼 고르는 뜻이 없어진다.
-    baseline_view = render_table_view_controls(
-        baseline,
-        key_prefix="equipment_baseline_view",
-        editor_key=BASELINE_EDITOR_KEY,
-        filter_columns=("공정", "분류"),
-        locked_columns=("공정", "분류", "기존보유대수"),
-        label="기존 보유대수 · 표 보기 설정",
-    )
-    equipment_view = render_table_view_controls(
-        equipment,
-        key_prefix="equipment_master_view",
-        editor_key=EQUIPMENT_EDITOR_KEY,
-        filter_columns=(
-            "공정소분류",
-            "라인구분",
-            "활용구분",
-            "공정대분류",
-            "동",
-            "층",
-            "확정상태",
-            "장기보관여부",
-            "기존설비여부",
-            "레이아웃표시",
-        ),
-        locked_columns=(
-            "호기",
-            "공정소분류",
-            "장기보관여부",
-            "기존설비여부",
-            "레이아웃표시",
-        ),
-        label="호기 마스터 · 표 보기 설정",
-    )
-    downtime_view = render_table_view_controls(
-        downtime,
-        key_prefix="equipment_downtime_view",
-        editor_key=DOWNTIME_EDITOR_KEY,
-        filter_columns=("호기", "비가동유형"),
-        locked_columns=("호기", "비가동유형", "시작일"),
-        label="운영 비가동 일정 · 표 보기 설정",
-    )
-
-    with st.form("equipment_operations_form_v3", border=True):
-        # **Import 바로 아래가 이 버튼의 자리다.** 붙여넣기의 「적용」은 편집본까지만
-        # 가고 DuckDB 에는 닿지 않는다 — 그 다음에 눌러야 하는 것이 무엇인지 순서로
-        # 보이게 한다. 폼은 제출 때 안의 위젯을 한꺼번에 보내므로 버튼이 표 위에 있어도
-        # 아래 세 표의 편집이 그대로 함께 저장된다.
-        st.caption(
-            "Import 의 「확인 후 편집본에 적용」은 편집본까지입니다. "
-            "**DuckDB 에 새 리비전으로 남기려면 아래 저장을 눌러야 합니다.**"
-        )
-        with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-            revision_note = st.text_input(
-                "변경 메모",
-                placeholder="예: 신규 호기 Qual 일정 및 8월 고장 일정 반영",
-                width=520,
-            )
-            submitted = st.form_submit_button(
-                "설비 데이터 저장", icon=":material/save:", type="primary"
-            )
-
-        st.markdown("#### 기존 보유대수")
-        st.caption(
-            "호기·Qual 이력을 관리할 실익이 없는 기존 가동설비를 공정·분류별 집계로 "
-            "유지합니다. 공정 값은 호기 마스터의 공정소분류와 연결됩니다."
-        )
-        edited_baseline = merge_edited_rows(
-            baseline,
-            filtered=baseline_view.filtered,
-            edited=st.data_editor(
-                baseline_view.frame,
-                key=BASELINE_EDITOR_KEY,
-                num_rows=baseline_view.row_mode,
-                hide_index=True,
-                width="stretch",
-                column_config={
-                    **baseline_view.column_config,
-                    "공정": st.column_config.TextColumn(required=True, pinned=True),
-                    "분류": st.column_config.TextColumn(required=True),
-                    "기존보유대수": st.column_config.NumberColumn(
-                        "기존 보유대수",
-                        min_value=0,
-                        step=0.1,
-                        format="%.1f 대",
-                        required=True,
-                    ),
-                    "비고": st.column_config.TextColumn(),
-                },
-            ),
-        )
-
-        st.markdown("#### 호기 마스터")
-        st.caption(
-            "일반 신규 호기는 입고일정·Qual일정이 필수입니다. 장기보관 또는 기존설비 Y는 "
-            "두 일정이 없어도 됩니다. 확정상태는 Qual 실행관리 전용이며, 레이아웃표시 Y는 "
-            "위치와 좌표·크기가 모두 필요합니다. 환산비는 같은 공정에 생산성이 다른 모델이 "
-            "섞일 때 **한 대가 몇 대 몫을 하는지**입니다 — 기준 모델이 1이고 비우면 1로 "
-            "채워집니다. 아직 Capa 가용대수에는 반영되지 않고 이력으로만 쌓입니다."
-        )
-        equipment_column_config: dict[str, Any] = {
-            "호기": st.column_config.TextColumn(required=True, pinned=True),
-            "공정소분류": st.column_config.TextColumn(required=True),
-            "동": st.column_config.SelectboxColumn(options=list(VALID_BUILDINGS)),
-            "층": st.column_config.SelectboxColumn(options=list(VALID_FLOORS)),
-            "X좌표": st.column_config.NumberColumn(
-                min_value=0.0, max_value=max_canvas_width, step=1.0
-            ),
-            "Y좌표": st.column_config.NumberColumn(
-                min_value=0.0, max_value=max_canvas_height, step=1.0
-            ),
-            "Xsize": st.column_config.NumberColumn(
-                min_value=0.1, max_value=max_canvas_width, step=1.0
-            ),
-            "Ysize": st.column_config.NumberColumn(
-                min_value=0.1, max_value=max_canvas_height, step=1.0
-            ),
-            "확정상태": st.column_config.SelectboxColumn(options=list(QUAL_CONFIRMATION_STATUSES)),
-            "장기보관여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),
-            "기존설비여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),
-            "레이아웃표시": st.column_config.SelectboxColumn(options=["Y", "N"], required=True),
-            # 하한을 0 이 아니라 그 위로 둔다. 0 은 「이 설비는 없는 셈」이라는 뜻이 되는데
-            # 그것은 비가동 일정이 맡는 일이다. 비워 두면 기준 모델(1.0)로 채워진다.
-            "환산비": st.column_config.NumberColumn(min_value=0.01, step=0.1, format="%.2f"),
-        }
-        equipment_column_config.update(
-            {column: st.column_config.DateColumn(format="YYYY-MM-DD") for column in DATE_COLUMNS}
-        )
-        edited_equipment = merge_edited_rows(
-            equipment,
-            filtered=equipment_view.filtered,
-            edited=st.data_editor(
-                equipment_view.frame,
-                key=EQUIPMENT_EDITOR_KEY,
-                num_rows=equipment_view.row_mode,
-                hide_index=True,
-                width="stretch",
-                column_config={**equipment_column_config, **equipment_view.column_config},
-            ),
-        )
-
-        st.markdown("#### 운영 비가동 일정")
-        st.caption(
-            "비가동ID 없이 호기·비가동유형·시작일 조합을 일정의 고유 기준으로 사용합니다. "
-            "종료일이 없으면 진행 중입니다."
-        )
-        edited_downtime = merge_edited_rows(
-            downtime,
-            filtered=downtime_view.filtered,
-            edited=st.data_editor(
-                downtime_view.frame,
-                key=DOWNTIME_EDITOR_KEY,
-                num_rows=downtime_view.row_mode,
-                hide_index=True,
-                width="stretch",
-                column_config={
-                    **downtime_view.column_config,
-                    "호기": st.column_config.TextColumn(required=True, pinned=True),
-                    "비가동유형": st.column_config.SelectboxColumn(
-                        options=downtime_type_options, required=True
-                    ),
-                    "시작일": st.column_config.DateColumn(format="YYYY-MM-DD", required=True),
-                    "종료일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                    "상세사유": st.column_config.TextColumn(),
-                    "비고": st.column_config.TextColumn(),
-                },
-            ),
-        )
-    if submitted:
-        # 화면을 채우려고 넣어 준 샘플이 그대로 불변 리비전에 들어가면 되돌릴 수 없다.
-        # 실제 공정명과 다르면 호기 마스터에 붙지 않는 유령 공정이 총대수에 영원히 남는다.
-        # 내려받은 양식의 예시 한 줄도 네 컬럼이 다 차 있어 검증을 그냥 통과한다 — 출처만
-        # 다를 뿐 같은 위험이라 함께 막는다.
-        leftover_samples = pd.concat(
-            [
-                untouched_sample_baseline_rows(edited_baseline),
-                untouched_template_baseline_rows(edited_baseline),
-            ]
-        )
-    if submitted and not leftover_samples.empty:
-        st.error(
-            f"기존 보유대수에 지우지 않은 예시 행이 {len(leftover_samples)}건 남아 있습니다. "
-            "실제 값으로 고치거나 지운 뒤 저장하세요. 이 숫자는 개발용 샘플과 CSV 양식의 "
-            "예시라 실제 설비와 맞지 않고, 저장하면 리비전에서 지울 수 없습니다."
-        )
-    elif submitted:
-        try:
-            saved = repository.save_snapshot(
-                edited_baseline,
-                edited_equipment,
-                edited_downtime,
-                note=revision_note,
-            )
-        except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
-        else:
-            clear_equipment_snapshot_cache()
-            _reset_drafts()
-            st.session_state[FLASH_KEY] = (
-                f"설비 운영 데이터 r{saved.revision.revision_no}을 저장했습니다. "
-                "가용설비와 Space 현황에 반영됩니다."
-            )
-            st.rerun()
-
-    try:
-        revisions = repository.list_revisions()
-    except BOOTSTRAP_ERRORS as exc:
-        st.error(
-            "저장 이력을 읽지 못했습니다: "
-            + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
-        )
-        st.stop()
-    with st.expander("저장 이력 및 필터 조회", icon=":material/history:", expanded=False):
-        if not revisions:
-            st.caption("저장된 설비 운영 이력이 없습니다.")
-        else:
-            history = pd.DataFrame(
-                [
-                    {
-                        "리비전": f"r{revision.revision_no}",
-                        "저장시각": revision.created_at,
-                        "기존대수행": revision.baseline_row_count,
-                        "호기행": revision.equipment_row_count,
-                        "비가동행": revision.downtime_row_count,
-                        "변경메모": revision.note,
-                    }
-                    for revision in revisions
-                ]
-            )
-            st.dataframe(
-                history,
-                hide_index=True,
-                width="stretch",
-                # 메모 없는 리비전에 리터럴 "None" 이 찍혔다. 같은 화면의 선택 상자는
-                # 이미 "메모 없음" 을 쓴다.
-                placeholder="메모 없음",
-                column_config={
-                    "저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm")
-                },
-            )
-            revision_by_id = {revision.revision_id: revision for revision in revisions}
-            selected_revision_id = st.selectbox(
-                "조회 리비전",
-                options=list(revision_by_id),
-                format_func=lambda value: (
-                    f"r{revision_by_id[value].revision_no} · "
-                    f"{revision_by_id[value].created_at:%Y-%m-%d %H:%M} · "
-                    f"{revision_by_id[value].note or '메모 없음'}"
-                ),
-                key="equipment_history_revision_id_v3",
-                persist_state="session",
-            )
-            try:
-                historical = load_equipment_snapshot(equipment_database_path, selected_revision_id)
-            except BOOTSTRAP_ERRORS as exc:
-                st.error(
-                    "선택한 이력을 읽지 못했습니다: "
-                    + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
-                )
-                st.stop()
-            historical_equipment = historical.equipment
-            with st.container(horizontal=True, gap="small"):
-                history_processes = st.multiselect(
-                    "공정소분류",
-                    historical_equipment["공정소분류"].dropna().drop_duplicates().tolist(),
-                    key="equipment_history_process_filter_v3",
-                    persist_state="session",
-                )
-                history_buildings = st.multiselect(
-                    "동",
-                    historical_equipment["동"].dropna().drop_duplicates().tolist(),
-                    key="equipment_history_building_filter_v3",
-                    persist_state="session",
-                )
-                history_floors = st.multiselect(
-                    "층",
-                    historical_equipment["층"].dropna().drop_duplicates().tolist(),
-                    key="equipment_history_floor_filter_v3",
-                    persist_state="session",
-                )
-                history_equipment_ids = st.multiselect(
-                    "호기",
-                    historical_equipment["호기"].dropna().drop_duplicates().tolist(),
-                    key="equipment_history_id_filter_v3",
-                    persist_state="session",
-                )
-                history_downtime_types = st.multiselect(
-                    "비가동유형",
-                    historical.downtime["비가동유형"].dropna().drop_duplicates().tolist(),
-                    key="equipment_history_downtime_type_filter_v3",
-                    persist_state="session",
-                )
-            filtered_history_equipment = historical_equipment.copy()
-            for column, selected in (
-                ("공정소분류", history_processes),
-                ("동", history_buildings),
-                ("층", history_floors),
-                ("호기", history_equipment_ids),
-            ):
-                if selected:
-                    filtered_history_equipment = filtered_history_equipment.loc[
-                        filtered_history_equipment[column].isin(selected)
-                    ]
-            filtered_history_downtime = historical.downtime.copy()
-            if history_equipment_ids:
-                filtered_history_downtime = filtered_history_downtime.loc[
-                    filtered_history_downtime["호기"].isin(history_equipment_ids)
-                ]
-            elif history_processes or history_buildings or history_floors:
-                filtered_history_downtime = _downtime_for_equipment(
-                    filtered_history_downtime, filtered_history_equipment
-                )
-            if history_downtime_types:
-                filtered_history_downtime = filtered_history_downtime.loc[
-                    filtered_history_downtime["비가동유형"].isin(history_downtime_types)
-                ]
-            event_range = st.date_input(
-                "비가동 일정 기간",
-                value=(start_date, end_date),
-                key="equipment_history_event_range_v3",
-                persist_state="session",
-            )
-            event_start, event_end = date_range_value(event_range, (start_date, end_date))
-            if event_start <= event_end and not filtered_history_downtime.empty:
-                # **`.dt.date` 로 비교하지 않는다.** 그 컬럼이 전부 비어 있으면 `.dt.date` 가
-                # `datetime64` 를 그대로 물고 나와 `date` 와의 비교가 `TypeError` 로 죽는다.
-                # 값이 하나라도 있으면 object 로 바뀌어 통과하므로, 「종료일이 전부 비어 있는
-                # 리비전」에서만 터진다 — 화면이 「종료일이 없으면 진행 중」이라고 허용하는
-                # 바로 그 상태다. `Timestamp` 끼리 재면 빈값은 비교가 거짓이 되고, 그 몫은
-                # 왼쪽의 `isna()` 가 이미 맡는다.
-                start_bound = pd.Timestamp(event_start)
-                end_bound = pd.Timestamp(event_end)
-                overlaps = filtered_history_downtime["시작일"].le(end_bound) & (
-                    filtered_history_downtime["종료일"].isna()
-                    | filtered_history_downtime["종료일"].ge(start_bound)
-                )
-                filtered_history_downtime = filtered_history_downtime.loc[overlaps]
-            st.markdown("**기존 보유대수**")
-            st.dataframe(historical.baseline, hide_index=True, width="stretch")
-            st.markdown("**호기 마스터**")
-            st.dataframe(filtered_history_equipment, hide_index=True, width="stretch")
-            st.markdown("**비가동 일정**")
-            st.dataframe(filtered_history_downtime, hide_index=True, width="stretch")

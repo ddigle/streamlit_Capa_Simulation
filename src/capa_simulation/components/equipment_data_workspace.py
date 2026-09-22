@@ -1,0 +1,636 @@
+# Purpose: 설비 세 입력의 검토·편집·이력 조회를 한 작업 공간에서 연결하고 전체 리비전을 저장한다.
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+from typing import Any
+
+import pandas as pd
+import streamlit as st
+
+from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.table_view_controls import (
+    TableView,
+    merge_edited_rows,
+    render_table_view_controls,
+)
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
+    date_range_value,
+)
+from capa_simulation.persistence.equipment_cache import (
+    clear_equipment_snapshot_cache,
+    load_equipment_snapshot,
+)
+from capa_simulation.persistence.equipment_repository import (
+    DuckDBEquipmentRepository,
+    EquipmentSnapshot,
+)
+from capa_simulation.services.equipment_contract import (
+    DATE_COLUMNS,
+    DOWNTIME_TYPES,
+    QUAL_CONFIRMATION_STATUSES,
+    VALID_BUILDINGS,
+    VALID_FLOORS,
+    empty_downtime_schedule,
+)
+from capa_simulation.services.equipment_csv import (
+    baseline_csv_template,
+    build_baseline_import_preview,
+    build_downtime_import_preview,
+    build_equipment_import_preview,
+    downtime_csv_template,
+    equipment_csv_template,
+    merge_baseline_rows,
+    merge_downtime_rows,
+    merge_equipment_rows,
+    read_baseline_clipboard,
+    read_baseline_csv,
+    read_downtime_clipboard,
+    read_downtime_csv,
+    read_equipment_clipboard,
+    read_equipment_csv,
+    untouched_template_baseline_rows,
+)
+from capa_simulation.services.equipment_samples import untouched_sample_baseline_rows
+from capa_simulation.services.equipment_validation import (
+    prepare_downtime_for_prepared_equipment,
+    prepare_equipment_baseline,
+    prepare_equipment_master,
+)
+from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap
+
+FLASH_KEY = "equipment_status_flash"
+BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
+EQUIPMENT_EDITOR_KEY = "equipment_master_editor_v3"
+DOWNTIME_EDITOR_KEY = "equipment_downtime_editor_v3"
+BASELINE_DRAFT_KEY = "equipment_baseline_draft_v3"
+EQUIPMENT_DRAFT_KEY = "equipment_master_draft_v3"
+DOWNTIME_DRAFT_KEY = "equipment_downtime_draft_v3"
+DRAFT_REVISION_KEY = "equipment_draft_revision_v4"
+BASELINE_IMPORT_KEY = "baseline_import_preview_rows_v3"
+EQUIPMENT_IMPORT_KEY = "equipment_import_preview_rows_v3"
+DOWNTIME_IMPORT_KEY = "downtime_import_preview_rows_v3"
+WORKSPACE_FORM_KEY = "equipment_data_workspace_form_v1"
+TARGET_KEY = "equipment_import_target_v1"
+CLIPBOARD_KEY = "equipment_import_clipboard_v1"
+UPLOAD_KEY = "equipment_import_upload_v1"
+PREVIEW_BUTTON_KEY = "equipment_import_preview_v1"
+IMPORT_SAVE_BUTTON_KEY = "equipment_import_save_v1"
+EDIT_SAVE_BUTTON_KEY = "equipment_edit_save_v1"
+VIEW_APPLY_BUTTON_KEY = "equipment_view_apply_v1"
+PREVIEW_KEY = "equipment_workspace_preview_v1"
+BUFFER_KEY = "equipment_workspace_buffers_v1"
+_REVISION_KEY = "equipment_workspace_revision_v1"
+_ERROR_KEY = "equipment_workspace_error_v1"
+_NOTICE_KEY = "equipment_workspace_notice_v1"
+_NOTE_KEY = "equipment_workspace_note_v1"
+_EDITOR_KEYS = (BASELINE_EDITOR_KEY, EQUIPMENT_EDITOR_KEY, DOWNTIME_EDITOR_KEY)
+_TARGETS = ("호기 마스터", "기존 보유대수", "비가동 일정")
+Frames = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
+
+
+@dataclass(frozen=True)
+class ImportReview:
+    """검토 화면이 사용한 원문과 세 편집본을 최종 저장 후보에 묶는다."""
+
+    target: str
+    payload: str | bytes
+    source: Frames
+    candidate: Frames
+    changes: pd.DataFrame
+
+    def matches(self, target: str, payload: str | bytes, source: Frames) -> bool:
+        return (
+            self.target == target
+            and self.payload == payload
+            and all(left.equals(right) for left, right in zip(self.source, source, strict=True))
+        )
+
+
+def _clear_editors() -> None:
+    for key in _EDITOR_KEYS:
+        st.session_state.pop(key, None)
+        st.session_state.pop(f"{key}_applied_view", None)
+
+
+def reset_equipment_drafts() -> None:
+    """새 저장본으로 돌아갈 때 페이지 draft와 작업 공간의 입력·delta를 함께 비운다."""
+    _clear_editors()
+    for key in (
+        BASELINE_DRAFT_KEY,
+        EQUIPMENT_DRAFT_KEY,
+        DOWNTIME_DRAFT_KEY,
+        DRAFT_REVISION_KEY,
+        BASELINE_IMPORT_KEY,
+        EQUIPMENT_IMPORT_KEY,
+        DOWNTIME_IMPORT_KEY,
+        BUFFER_KEY,
+        PREVIEW_KEY,
+        _REVISION_KEY,
+        _ERROR_KEY,
+        _NOTICE_KEY,
+        _NOTE_KEY,
+        CLIPBOARD_KEY,
+        UPLOAD_KEY,
+    ):
+        st.session_state.pop(key, None)
+
+
+def _copy_frames(frames: Frames) -> Frames:
+    return frames[0].copy(), frames[1].copy(), frames[2].copy()
+
+
+def _remember_edits(frames: Frames) -> None:
+    # 검증 실패한 값도 수정할 수 있어야 한다. 화면 계산이 읽는 draft에는 올리지 않는다.
+    st.session_state[BUFFER_KEY] = _copy_frames(frames)
+    _clear_editors()
+
+
+def build_import_review(
+    target: str,
+    payload: str | bytes,
+    source: Frames,
+    *,
+    floor_canvases: FloorCanvasMap,
+) -> ImportReview:
+    """기존 입력 서비스를 통해 원문을 검증하고 다른 표를 포함한 저장 후보를 만든다."""
+    baseline, equipment, downtime = source
+    if target == "호기 마스터":
+        incoming = (
+            read_equipment_csv(payload, floor_canvases=floor_canvases)
+            if isinstance(payload, bytes)
+            else read_equipment_clipboard(payload, floor_canvases=floor_canvases)
+        )
+        changes = build_equipment_import_preview(equipment, incoming)
+        equipment = merge_equipment_rows(equipment, incoming, floor_canvases=floor_canvases)
+        downtime = merge_downtime_rows(downtime, empty_downtime_schedule(), equipment=equipment)
+        baseline = prepare_equipment_baseline(baseline)
+    elif target == "기존 보유대수":
+        incoming = (
+            read_baseline_csv(payload)
+            if isinstance(payload, bytes)
+            else read_baseline_clipboard(payload)
+        )
+        changes = build_baseline_import_preview(baseline, incoming)
+        baseline = merge_baseline_rows(baseline, incoming)
+        equipment = prepare_equipment_master(equipment, floor_canvases=floor_canvases)
+        downtime = prepare_downtime_for_prepared_equipment(downtime, equipment)
+    elif target == "비가동 일정":
+        equipment = prepare_equipment_master(equipment, floor_canvases=floor_canvases)
+        incoming = (
+            read_downtime_csv(payload, equipment=equipment)
+            if isinstance(payload, bytes)
+            else read_downtime_clipboard(payload, equipment=equipment)
+        )
+        changes = build_downtime_import_preview(downtime, incoming)
+        downtime = merge_downtime_rows(downtime, incoming, equipment=equipment)
+        baseline = prepare_equipment_baseline(baseline)
+    else:
+        raise ValueError("등록할 표를 다시 선택하세요.")
+    return ImportReview(
+        target, payload, _copy_frames(source), (baseline, equipment, downtime), changes
+    )
+
+
+def _save_snapshot(repository: DuckDBEquipmentRepository, frames: Frames, note: str) -> None:
+    leftovers = pd.concat(
+        [untouched_sample_baseline_rows(frames[0]), untouched_template_baseline_rows(frames[0])]
+    )
+    if not leftovers.empty:
+        raise ValueError(
+            f"기존 보유대수에 지우지 않은 예시 행이 {len(leftovers)}건 남아 있습니다. "
+            "실제 값으로 고치거나 지운 뒤 저장하세요."
+        )
+    saved = repository.save_snapshot(*frames, note=note)
+    clear_equipment_snapshot_cache()
+    reset_equipment_drafts()
+    st.session_state[FLASH_KEY] = (
+        f"설비 운영 데이터 r{saved.revision.revision_no}을 저장했습니다. "
+        "가용설비와 Space 현황에 반영됩니다."
+    )
+
+
+def _editor_view(
+    data: pd.DataFrame,
+    *,
+    key: str,
+    prefix: str,
+    filters: tuple[str, ...],
+    locked: tuple[str, ...],
+    label: str,
+) -> TableView:
+    requested = render_table_view_controls(
+        data,
+        key_prefix=prefix,
+        # 보기를 바꾼 제출에도 이전 화면의 행 위치로 delta를 먼저 해석해야 한다.
+        editor_key=f"{key}_requested_view",
+        filter_columns=filters,
+        locked_columns=locked,
+        label=label,
+    )
+    view_key = f"{key}_applied_view"
+    applied = st.session_state.get(view_key)
+    if not isinstance(applied, TableView):
+        applied = requested
+        st.session_state[view_key] = applied
+    return applied
+
+
+def _render_editors(frames: Frames, max_extent: CanvasSize) -> Frames:
+    baseline, equipment, downtime = frames
+    master_tab, baseline_tab, downtime_tab = st.tabs(list(_TARGETS))
+    with master_tab:
+        st.caption(
+            "신규 호기는 입고·Qual 일정이 필요합니다. 기존설비 또는 장기보관 Y는 두 일정 없이 "
+            "등록할 수 있습니다. 레이아웃표시 Y는 위치·좌표·크기도 입력하세요."
+        )
+        equipment_view = _editor_view(
+            equipment,
+            key=EQUIPMENT_EDITOR_KEY,
+            prefix="equipment_master_view",
+            filters=(
+                "공정소분류",
+                "라인구분",
+                "활용구분",
+                "공정대분류",
+                "동",
+                "층",
+                "확정상태",
+                "장기보관여부",
+                "기존설비여부",
+                "레이아웃표시",
+            ),
+            locked=("호기", "공정소분류", "장기보관여부", "기존설비여부", "레이아웃표시"),
+            label="호기 마스터 · 표 보기 설정",
+        )
+        config: dict[str, Any] = {
+            "호기": st.column_config.TextColumn(required=True, pinned=True),
+            "공정소분류": st.column_config.TextColumn(required=True),
+            "동": st.column_config.SelectboxColumn(options=list(VALID_BUILDINGS)),
+            "층": st.column_config.SelectboxColumn(options=list(VALID_FLOORS)),
+            "X좌표": st.column_config.NumberColumn(
+                min_value=0.0, max_value=max_extent[0], step=1.0
+            ),
+            "Y좌표": st.column_config.NumberColumn(
+                min_value=0.0, max_value=max_extent[1], step=1.0
+            ),
+            "Xsize": st.column_config.NumberColumn(
+                min_value=0.1, max_value=max_extent[0], step=1.0
+            ),
+            "Ysize": st.column_config.NumberColumn(
+                min_value=0.1, max_value=max_extent[1], step=1.0
+            ),
+            "확정상태": st.column_config.SelectboxColumn(options=list(QUAL_CONFIRMATION_STATUSES)),
+            "장기보관여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),
+            "기존설비여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),
+            "레이아웃표시": st.column_config.SelectboxColumn(options=["Y", "N"], required=True),
+            "환산비": st.column_config.NumberColumn(min_value=0.01, step=0.1, format="%.2f"),
+        }
+        config.update(
+            {column: st.column_config.DateColumn(format="YYYY-MM-DD") for column in DATE_COLUMNS}
+        )
+        edited_equipment = merge_edited_rows(
+            equipment,
+            st.data_editor(
+                equipment_view.frame,
+                key=EQUIPMENT_EDITOR_KEY,
+                num_rows=equipment_view.row_mode,
+                hide_index=True,
+                width="stretch",
+                column_config={**config, **equipment_view.column_config},
+            ),
+            filtered=equipment_view.filtered,
+        )
+        st.caption(
+            "환산비는 기준 모델 1대 대비 생산성입니다. 비우면 1입니다. "
+            "주차별 설비대수에는 적용하지 않으며 월별 환산대수·확보율 교차검증에 반영합니다."
+        )
+    with baseline_tab:
+        st.caption("호기별 일정 관리가 필요 없는 기존 설비를 공정·분류별 대수로 입력합니다.")
+        baseline_view = _editor_view(
+            baseline,
+            key=BASELINE_EDITOR_KEY,
+            prefix="equipment_baseline_view",
+            filters=("공정", "분류"),
+            locked=("공정", "분류", "기존보유대수"),
+            label="기존 보유대수 · 표 보기 설정",
+        )
+        edited_baseline = merge_edited_rows(
+            baseline,
+            st.data_editor(
+                baseline_view.frame,
+                key=BASELINE_EDITOR_KEY,
+                num_rows=baseline_view.row_mode,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "공정": st.column_config.TextColumn(required=True, pinned=True),
+                    "분류": st.column_config.TextColumn(required=True),
+                    "기존보유대수": st.column_config.NumberColumn(
+                        "기존 보유대수",
+                        min_value=0,
+                        step=0.1,
+                        format="%.1f 대",
+                        required=True,
+                    ),
+                    "비고": st.column_config.TextColumn(),
+                    **baseline_view.column_config,
+                },
+            ),
+            filtered=baseline_view.filtered,
+        )
+    with downtime_tab:
+        st.caption("등록된 호기의 비가동을 입력합니다. 종료일이 비어 있으면 진행 중입니다.")
+        downtime_view = _editor_view(
+            downtime,
+            key=DOWNTIME_EDITOR_KEY,
+            prefix="equipment_downtime_view",
+            filters=("호기", "비가동유형"),
+            locked=("호기", "비가동유형", "시작일"),
+            label="운영 비가동 일정 · 표 보기 설정",
+        )
+        types = sorted(set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str)))
+        edited_downtime = merge_edited_rows(
+            downtime,
+            st.data_editor(
+                downtime_view.frame,
+                key=DOWNTIME_EDITOR_KEY,
+                num_rows=downtime_view.row_mode,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "호기": st.column_config.TextColumn(required=True, pinned=True),
+                    "비가동유형": st.column_config.SelectboxColumn(options=types, required=True),
+                    "시작일": st.column_config.DateColumn(format="YYYY-MM-DD", required=True),
+                    "종료일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                    **downtime_view.column_config,
+                },
+            ),
+            filtered=downtime_view.filtered,
+        )
+    return edited_baseline, edited_equipment, edited_downtime
+
+
+def _render_history(repository: DuckDBEquipmentRepository) -> None:
+    revisions = repository.list_revisions()
+    if not revisions:
+        st.info("첫 리비전을 저장하면 이곳에서 저장 시점별 데이터를 확인할 수 있습니다.")
+        return
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "리비전": f"r{item.revision_no}",
+                    "저장시각": item.created_at,
+                    "기존대수행": item.baseline_row_count,
+                    "호기행": item.equipment_row_count,
+                    "비가동행": item.downtime_row_count,
+                    "변경메모": item.note,
+                }
+                for item in revisions
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+        placeholder="메모 없음",
+        column_config={"저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm")},
+    )
+    by_id = {item.revision_id: item for item in revisions}
+    selected_id = st.selectbox(
+        "조회 리비전",
+        options=list(by_id),
+        key="equipment_history_revision_id_v3",
+        format_func=lambda value: (
+            f"r{by_id[value].revision_no} · {by_id[value].note or '메모 없음'}"
+        ),
+    )
+    historical = load_equipment_snapshot(str(repository.database_path), selected_id)
+    equipment = historical.equipment
+    downtime = historical.downtime
+    filters: dict[str, list[str]] = {}
+    with st.expander("조회 조건", expanded=False):
+        with st.container(horizontal=True, gap="small"):
+            for column, suffix in (
+                ("공정소분류", "process"),
+                ("동", "building"),
+                ("층", "floor"),
+                ("호기", "id"),
+            ):
+                filters[column] = st.multiselect(
+                    column,
+                    equipment[column].dropna().drop_duplicates().tolist(),
+                    key=f"equipment_history_{suffix}_filter_v3",
+                )
+            downtime_types = st.multiselect(
+                "비가동유형",
+                downtime["비가동유형"].dropna().drop_duplicates().tolist(),
+                key="equipment_history_downtime_type_filter_v3",
+            )
+        today = date.today()
+        event_start = downtime["시작일"].min()
+        event_end = downtime["종료일"].max()
+        first_date = pd.Timestamp(event_start).date() if pd.notna(event_start) else today
+        last_date = pd.Timestamp(event_end).date() if pd.notna(event_end) else today
+        default_range = (first_date, max(today, first_date, last_date))
+        event_range = st.date_input(
+            "비가동 일정 기간",
+            value=default_range,
+            key="equipment_history_event_range_v3",
+        )
+    for column, selected in filters.items():
+        if selected:
+            equipment = equipment.loc[equipment[column].isin(selected)]
+    if any(filters.values()):
+        downtime = downtime.loc[downtime["호기"].isin(equipment["호기"])]
+    if downtime_types:
+        downtime = downtime.loc[downtime["비가동유형"].isin(downtime_types)]
+    start, end = date_range_value(event_range, default_range)
+    if start > end:
+        st.error("조회 시작일이 종료일보다 늦습니다. 기간을 다시 선택하세요.")
+    elif not downtime.empty:
+        downtime = downtime.loc[
+            downtime["시작일"].le(pd.Timestamp(end))
+            & (downtime["종료일"].isna() | downtime["종료일"].ge(pd.Timestamp(start)))
+        ]
+    st.caption(
+        "조회 조건을 바꾼 뒤 ‘이력 조회’를 누르세요. 조회는 편집본과 저장 이력을 바꾸지 않습니다."
+    )
+    for label, frame in (
+        ("기존 보유대수", historical.baseline),
+        ("호기 마스터", equipment),
+        ("비가동 일정", downtime),
+    ):
+        with st.expander(label, expanded=True):
+            st.dataframe(frame, hide_index=True, width="stretch")
+
+
+def render_equipment_data_workspace(
+    *,
+    repository: DuckDBEquipmentRepository,
+    latest_snapshot: EquipmentSnapshot | None,
+    baseline: pd.DataFrame,
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    floor_canvases: FloorCanvasMap,
+    max_extent: CanvasSize,
+) -> None:
+    """입력·직접 편집·조회 중 한 작업을 표시하고 세 표를 한 리비전으로 저장한다."""
+    revision_token = latest_snapshot.revision.revision_id if latest_snapshot else "empty"
+    if st.session_state.get(_REVISION_KEY) != revision_token:
+        _clear_editors()
+        st.session_state[BUFFER_KEY] = _copy_frames((baseline, equipment, downtime))
+        st.session_state[_REVISION_KEY] = revision_token
+        st.session_state.pop(PREVIEW_KEY, None)
+    frames: Frames = st.session_state[BUFFER_KEY]
+    if latest_snapshot is None:
+        st.info(
+            "아직 저장된 설비 데이터가 없습니다. 호기 마스터를 붙여넣고 "
+            "변경 내용을 확인해 첫 리비전을 저장하세요."
+        )
+    else:
+        st.caption(
+            f"최근 저장본 r{latest_snapshot.revision.revision_no} · "
+            "저장할 때 세 표 전체가 새 리비전으로 보관됩니다."
+        )
+    error = st.session_state.pop(_ERROR_KEY, None)
+    if isinstance(error, str):
+        st.error(error)
+    notice = st.session_state.pop(_NOTICE_KEY, None)
+    if isinstance(notice, str):
+        st.info(notice)
+    with st.expander("입력 양식과 작성 기준", expanded=False):
+        st.caption(
+            "Excel에서 헤더를 포함해 복사하거나 CSV 파일을 올리세요. "
+            "같은 키는 대체하고 다른 행은 유지합니다."
+        )
+        for column, label, payload, filename, key in zip(
+            st.columns(3),
+            _TARGETS,
+            (equipment_csv_template(), baseline_csv_template(), downtime_csv_template()),
+            (
+                "equipment_master_template.csv",
+                "equipment_baseline_template.csv",
+                "equipment_downtime_template.csv",
+            ),
+            (
+                "equipment_master_template_download_v3",
+                "equipment_baseline_template_download_v3",
+                "equipment_downtime_template_download_v3",
+            ),
+            strict=True,
+        ):
+            with column:
+                render_csv_download(
+                    data=payload, file_name=filename, key=key, label=f"{label} 양식"
+                )
+        st.markdown(
+            "- **호기 마스터**: 호기 번호로 구분합니다. Qual 확정상태는 실행 모니터링이며 "
+            "가용 판정은 Qual 일정 기준입니다.\n"
+            "- **기존 보유대수**: 공정 + 분류로 구분합니다. "
+            "개별 비가동과 Space 배치는 적용하지 않습니다.\n"
+            "- **비가동 일정**: 호기 + 비가동유형 + 시작일로 구분합니다. 먼저 호기를 등록하세요.\n"
+            "- 입력한 운영 설비대수는 시뮬레이션 Capa 산출 데이터와 분리되어 있습니다."
+        )
+    pending = st.session_state.get(PREVIEW_KEY)
+    with st.form(WORKSPACE_FORM_KEY, border=False, enter_to_submit=False):
+        # 전환은 브라우저에서만 한다. 폼의 다른 탭도 계속 생성해 미제출 delta를 유지한다.
+        input_tab, edit_tab, history_tab = st.tabs(["입력", "직접 편집", "저장 이력"])
+        with input_tab:
+            target = st.selectbox("등록할 표", _TARGETS, key=TARGET_KEY)
+            paste_column, upload_column = st.columns([3, 2])
+            with paste_column:
+                clipboard = st.text_area(
+                    "Excel 표 붙여넣기",
+                    key=CLIPBOARD_KEY,
+                    height=200,
+                    placeholder="헤더를 포함한 전체 표를 Ctrl+V로 붙여넣으세요.",
+                )
+            with upload_column:
+                uploaded = st.file_uploader("또는 CSV 파일 업로드", type=["csv"], key=UPLOAD_KEY)
+                st.caption("붙여넣기와 파일 중 하나를 사용하세요.")
+            preview_clicked = st.form_submit_button(
+                "변경 미리보기",
+                key=PREVIEW_BUTTON_KEY,
+                icon=":material/preview:",
+            )
+            if isinstance(pending, ImportReview):
+                st.markdown(f"**{pending.target} · 저장할 변경 {len(pending.changes):,}행**")
+                with st.container(horizontal=True):
+                    st.metric("신규", f"{int(pending.changes['Import구분'].eq('신규').sum()):,}건")
+                    st.metric(
+                        "기존 대체", f"{int(pending.changes['Import구분'].eq('대체').sum()):,}건"
+                    )
+                st.dataframe(pending.changes, hide_index=True, width="stretch")
+                st.caption(
+                    f"저장 후: 기존 보유대수 {len(pending.candidate[0]):,}행 · "
+                    f"호기 {len(pending.candidate[1]):,}행 · 비가동 {len(pending.candidate[2]):,}행"
+                )
+            import_save_clicked = st.form_submit_button(
+                "확인 후 리비전 저장",
+                key=IMPORT_SAVE_BUTTON_KEY,
+                type="primary",
+                disabled=not isinstance(pending, ImportReview),
+                icon=":material/save:",
+            )
+        with edit_tab:
+            st.caption("표를 바꿔도 입력은 유지됩니다. 보기 설정을 바꾼 뒤 ‘보기 적용’을 누르세요.")
+            edited = _render_editors(frames, max_extent)
+            view_clicked = st.form_submit_button("보기 적용", key=VIEW_APPLY_BUTTON_KEY)
+            edit_save_clicked = st.form_submit_button(
+                "설비 데이터 저장",
+                key=EDIT_SAVE_BUTTON_KEY,
+                type="primary",
+                icon=":material/save:",
+            )
+        with history_tab:
+            try:
+                _render_history(repository)
+            except BOOTSTRAP_ERRORS as exc:
+                st.error(
+                    "저장 이력을 읽지 못했습니다: "
+                    + bootstrap_error_message(exc, database_paths=(repository.database_path,))
+                )
+            history_clicked = st.form_submit_button("이력 조회", key="equipment_history_apply_v1")
+        note = st.text_input("변경 메모", key=_NOTE_KEY, placeholder="예: 10월 신규 호기 30대 등록")
+    if not any(
+        (preview_clicked, import_save_clicked, edit_save_clicked, view_clicked, history_clicked)
+    ):
+        return
+    _remember_edits(edited)
+    try:
+        if preview_clicked or import_save_clicked:
+            if clipboard.strip() and uploaded is not None:
+                raise ValueError(
+                    "붙여넣기와 CSV 파일이 함께 있습니다. "
+                    "사용할 입력 하나만 남기고 다시 미리보세요."
+                )
+            content: str | bytes = uploaded.getvalue() if uploaded is not None else clipboard
+            if not content.strip():
+                raise ValueError("Excel 표를 붙여넣거나 CSV 파일을 올린 뒤 미리보세요.")
+            if (
+                import_save_clicked
+                and isinstance(pending, ImportReview)
+                and pending.matches(target, content, edited)
+            ):
+                _save_snapshot(repository, pending.candidate, note)
+            else:
+                st.session_state[PREVIEW_KEY] = build_import_review(
+                    target, content, edited, floor_canvases=floor_canvases
+                )
+                if import_save_clicked:
+                    st.session_state[_NOTICE_KEY] = (
+                        "입력 또는 편집본이 바뀌어 미리보기를 갱신했습니다. "
+                        "변경 내용을 확인한 뒤 다시 저장하세요."
+                    )
+        elif edit_save_clicked:
+            _save_snapshot(repository, edited, note)
+    except BOOTSTRAP_ERRORS as exc:
+        if preview_clicked or import_save_clicked:
+            st.session_state.pop(PREVIEW_KEY, None)
+        st.session_state[_ERROR_KEY] = bootstrap_error_message(
+            exc, database_paths=(repository.database_path,)
+        )
+    st.rerun()

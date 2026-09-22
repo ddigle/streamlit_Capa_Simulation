@@ -113,7 +113,7 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
     top = max([*dynamic, *static, 0.0]) or 1.0
     annotations = [
         {
-            "x": label,
+            "x": index,
             "y": max(dynamic_value, static_value),
             "text": f"{gap:+.2f}",
             "showarrow": False,
@@ -126,8 +126,8 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
                 "family": tokens.FONT_FAMILY_NUMERIC,
             },
         }
-        for label, gap, dynamic_value, static_value in zip(
-            labels, gaps, dynamic, static, strict=True
+        for index, (gap, dynamic_value, static_value) in enumerate(
+            zip(gaps, dynamic, static, strict=True)
         )
     ]
 
@@ -145,7 +145,15 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
         },
         annotations=annotations,
     )
-    figure.update_xaxes(fixedrange=True, showgrid=False, linecolor=tokens.BORDER)
+    # 월 라벨을 수로 추론하면 26.10이 26.1로 줄고 연도 경계의 간격도 달라진다.
+    figure.update_xaxes(
+        type="category",
+        categoryorder="array",
+        categoryarray=labels,
+        fixedrange=True,
+        showgrid=False,
+        linecolor=tokens.BORDER,
+    )
     figure.update_yaxes(
         fixedrange=True,
         title_text="대수",
