@@ -1,5 +1,8 @@
 # Purpose: equipment pages 관련 정상·예외·회귀 동작을 검증한다.
 
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 
@@ -15,6 +18,64 @@ from capa_simulation.services.equipment_contract import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# 페이지는 스크립트로 실행되므로(`app_pages` 는 패키지가 아니다) 상수를 import 할 수 없다.
+# 이 파일이 이미 `"equipment_baseline_draft_v3"` 를 그렇게 적고 있고, 값이 갈리면 아래
+# 순회 테스트가 곧바로 실패하므로 조용히 어긋날 수는 없다.
+MAIN_QUESTION_KEY = "equipment_main_question_v1"
+SMALL_PROCESS_KEY = "equipment_dashboard_small_processes"
+# 질문 하나에 답 하나. 표지는 **그 질문의 기본 보기**가 그리는 제목이다.
+QUESTION_MARKERS = {
+    "지금 몇 대가 어느 상태인가": "#### 호기 생애주기 상태 모니터링",
+    "언제 몇 대가 쓸 수 있게 되나": "#### 주차별 설비 현황",
+    "어디가 비가동인가": "#### 비가동 설비호기",
+    "Qual 은 어디까지 왔나": "#### Qual 확정상태 실행관리",
+    "공정별로는 어떤가": "#### 공정소분류별 현황",
+    "기준정보와 맞나 (Static·Dynamic)": "#### 기준정보와 맞나",
+}
+
+
+class _StreamlitLog(logging.Handler):
+    """Streamlit 이 **`st.warning` 이 아니라 파이썬 로거로** 내는 경고를 모은다."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+@contextmanager
+def _streamlit_warnings() -> Iterator[_StreamlitLog]:
+    """위젯에 `default=` 와 `key` 를 같이 준 자리를 기계로 잡는 덫.
+
+    「created with a default value but also had its value set via the Session State API」는
+    화면에 뜨지 않고 서버 로그에만 남는다 — `app.warning` 으로는 영영 안 걸린다. Streamlit
+    의 모듈 로거는 `propagate=False` 라 `caplog` 도 못 받으므로 직접 붙인다.
+    """
+    handler = _StreamlitLog()
+    loggers = [
+        logging.getLogger(name)
+        for name in list(logging.root.manager.loggerDict)
+        if name == "streamlit" or name.startswith("streamlit.")
+    ]
+    for logger in loggers:
+        logger.addHandler(handler)
+    try:
+        yield handler
+    finally:
+        for logger in loggers:
+            logger.removeHandler(handler)
+
+
+def _page_text(app: AppTest) -> str:
+    """화면에 적힌 글 전부. 표지가 있는지·없는지를 이걸로 잰다."""
+    return "\n".join(
+        str(element.value)
+        for group in (app.markdown, app.caption, app.info, app.success)
+        for element in group
+    )
 
 
 def _page_script(page_path: Path, database_path: Path) -> str:
@@ -49,17 +110,18 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
         ":material/tune: Preference",
         ":material/table_rows: RawData",
     ]
-    # 조회 조건은 `Preference` 로 옮겼지만 위젯 자체는 그대로다.
-    # **차례로 집지 않는다.** Cut-off 탭의 보기 설정도 multiselect 라서, 탭을 더하거나
-    # 옮길 때마다 앞자리가 밀린다. 라벨로 고른다.
-    filter_labels = [
+    # 조회 조건 넷은 `Preference` 에서 **Main 의 옵션 줄**로 옮겼다. 공정소분류만 펴 두고
+    # 나머지 셋은 popover 안이라 **그리는 차례가 화면 순서와 다르다** — 순서가 아니라
+    # 집합으로 본다. 넷 다 살아 있는지와, 손이 제일 자주 가는 공정소분류가 Main 에서
+    # 바로 눌리는지(키로 확인)가 이 단언이 지키는 것이다.
+    filter_labels = {
         widget.label
         for widget in app.multiselect
         if widget.label in {"라인구분", "활용구분", "공정대분류", "공정소분류"}
-    ]
-    assert filter_labels == ["라인구분", "활용구분", "공정대분류", "공정소분류"]
+    }
+    assert filter_labels == {"라인구분", "활용구분", "공정대분류", "공정소분류"}
+    assert SMALL_PROCESS_KEY in [widget.key for widget in app.multiselect]
     assert "운영 지침" in [expandable.label for expandable in app.status]
-    assert any(markdown.value == "#### Qual 확정상태 실행관리" for markdown in app.markdown)
 
     def _filter(label: str) -> object:
         return next(widget for widget in app.multiselect if widget.label == label)
@@ -69,6 +131,37 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     app.run()
 
     assert not app.exception
+
+
+def test_the_main_tab_answers_one_question_at_a_time(tmp_path: Path) -> None:
+    """여섯 질문이 **한 번에 하나만** 그려진다.
+
+    옛 화면은 여섯 구획을 세로로 쌓아 「어느 게 내가 찾던 양식인지」부터 찾아야 했다.
+    질문을 고르면 그 답 하나만 서고 나머지 다섯의 표지는 화면 어디에도 없어야 한다 —
+    없어야 계산도 건너뛴 것이다.
+
+    `default=` 와 `key` 를 같이 준 위젯이 있으면 매 회차 경고가 뜨는데 화면에는 안 보인다.
+    로거를 직접 받아 그 자리를 같이 잡는다.
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    database_path = tmp_path / "one_question.duckdb"
+    for question, marker in QUESTION_MARKERS.items():
+        app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=90)
+        app.session_state[MAIN_QUESTION_KEY] = question
+        with _streamlit_warnings() as log:
+            app.run()
+
+        assert not app.exception, (question, app.exception)
+        assert not [message for message in log.messages if "default value" in message], (
+            question,
+            log.messages,
+        )
+        text = _page_text(app)
+        assert marker in text, question
+        for other_question, other_marker in QUESTION_MARKERS.items():
+            if other_question != question:
+                assert other_marker not in text, (question, other_question)
+    clear_equipment_repository()
 
 
 def test_baseline_paste_import_needs_a_preview_before_it_applies(tmp_path: Path) -> None:
