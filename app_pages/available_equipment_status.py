@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, timedelta
+from functools import partial
 from typing import Any
 
 import altair as alt
@@ -186,6 +187,8 @@ STATUS_VIEW_KEY = "equipment_main_status_view_v1"
 TIMELINE_VIEW_KEY = "equipment_main_timeline_view_v1"
 QUAL_STATUS_KEY = "equipment_main_qual_status_v1"
 PROCESS_SORT_KEY = "equipment_main_process_sort_v1"
+# Q5 표의 행 선택 상태(`{"selection": {"rows": [...]}}`). 값을 읽는 것은 콜백뿐이다.
+PROCESS_TABLE_KEY = "equipment_main_process_table_v1"
 DOWNTIME_VIEW_KEY = "equipment_main_downtime_view_v1"
 GAP_SECTION_KEY = "equipment_main_gap_section_v1"
 STATUS_VIEW_CHART = "막대"
@@ -479,6 +482,51 @@ def _go_to_tab(label: str) -> None:
     """
     st.session_state[EQUIPMENT_TAB_KEY] = label
     st.session_state[remembered_tab_key(EQUIPMENT_TAB_KEY)] = label
+
+
+def _drill_into_process(process: str) -> None:
+    """그 공정 하나만 「어디가 비가동인가」로 넘긴다.
+
+    **기준 월은 그대로 둔다.** 「10월 공정별 현황」에서 고른 행이 다른 달의 비가동으로
+    넘어가면 같은 질문을 다시 골라야 한다. `DOWNTIME_VIEW_KEY` 도 건드리지 않는다 —
+    사용자가 마지막에 고른 보기가 그 자리에 그대로 있어야 한다.
+
+    **콜백이라서 쓸 수 있다.** 본문에서 `MAIN_QUESTION_KEY`·`SMALL_PROCESS_KEY` 에 쓰면
+    그 회차에 이미 만들어진 pills·multiselect 때문에 예외가 난다.
+    """
+    st.session_state[MAIN_QUESTION_KEY] = QUESTION_DOWNTIME
+    st.session_state[SMALL_PROCESS_KEY] = [process]
+
+
+def _selected_row_index(state: object) -> int | None:
+    """`st.dataframe` 의 선택 상태에서 고른 행의 **자리**를 꺼낸다. 없으면 `None`.
+
+    선택을 푸는 것도 같은 콜백을 부르므로 빈 선택이 정상 입력이다. 상태 모양을 하나씩
+    확인하는 것은 위젯이 그려지지 않은 회차에 옛 값이나 빈 칸이 올 수 있기 때문이다.
+    """
+    if not isinstance(state, Mapping):
+        return None
+    selection = state.get("selection")
+    if not isinstance(selection, Mapping):
+        return None
+    rows = selection.get("rows")
+    if not isinstance(rows, Sequence) or isinstance(rows, str) or not rows:
+        return None
+    first = rows[0]
+    return first if isinstance(first, int) else None
+
+
+def _select_process_row(processes: Sequence[str]) -> None:
+    """Q5 표에서 고른 행의 공정으로 드릴다운한다.
+
+    `processes` 는 **직전 회차에 그려진 그 표**의 공정 목록이다. 선택은 그때 화면에 있던
+    표를 가리키므로 그 회차의 순서로 풀어야 맞다(`st.dataframe` 은 `args=` 를 받지 않아
+    `functools.partial` 로 묶는다). 정렬을 바꾸면 표가 다시 그려지고 목록도 함께 바뀐다.
+    """
+    index = _selected_row_index(st.session_state.get(PROCESS_TABLE_KEY))
+    if index is None or not 0 <= index < len(processes):
+        return
+    _drill_into_process(str(processes[index]))
 
 
 def _render_onboarding_card(
@@ -1469,7 +1517,23 @@ with main_tab:
                     with st.container(border=True):
                         st.markdown("#### 공정소분류별 현황")
                         st.caption(f"{selected_month} 마지막 주 기준 · {asof_weeknum}")
-                        st.dataframe(breakdown, hide_index=True, width="stretch")
+                        st.caption(
+                            "행을 고르면 「어디가 비가동인가」로 그 공정만 봅니다 — "
+                            "기준 월은 그대로입니다."
+                        )
+                        # 표 자체는 그대로다(같은 컬럼·같은 정렬). 더한 것은 행 선택 하나뿐이라
+                        # 같은 입력에서 같은 숫자가 그대로 선다.
+                        st.dataframe(
+                            breakdown,
+                            hide_index=True,
+                            width="stretch",
+                            key=PROCESS_TABLE_KEY,
+                            selection_mode="single-row",
+                            on_select=partial(
+                                _select_process_row,
+                                breakdown["공정소분류"].astype(str).tolist(),
+                            ),
+                        )
 
                 elif question == QUESTION_GAP:
                     # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지는 설비 DB 만 열고

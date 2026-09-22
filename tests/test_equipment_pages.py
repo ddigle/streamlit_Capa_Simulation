@@ -38,8 +38,12 @@ DOWNTIME_CLIPBOARD_KEY = "equipment_downtime_clipboard_v4"
 ASOF_MONTH_KEY = "equipment_main_asof_month_v1"
 DOWNTIME_VIEW_KEY = "equipment_main_downtime_view_v1"
 QUESTION_DOWNTIME = "어디가 비가동인가"
+QUESTION_PROCESS = "공정별로는 어떤가"
 DOWNTIME_VIEW_MONTH = "그 달 전체"
 DOWNTIME_VIEW_WEEK = "기준 주차 시점"
+# 페이지 이름공간을 실어 두는 칸과, 행 선택 자리를 대신하는 버튼. 둘 다 이 파일 전용이다.
+NAMESPACE_KEY = "_test_page_namespace"
+DRILL_BUTTON_KEY = "_test_drill_button"
 # 질문 하나에 답 하나. 표지는 **그 질문의 기본 보기**가 그리는 제목이다.
 QUESTION_MARKERS = {
     "지금 몇 대가 어느 상태인가": "#### 호기 생애주기 상태 모니터링",
@@ -105,6 +109,30 @@ settings.EQUIPMENT_DUCKDB_PATH = Path({str(database_path)!r})
 page_source = Path({str(page_path)!r}).read_text(encoding="utf-8")
 exec(compile(page_source, {str(page_path)!r}, "exec"), {{"__name__": "__main__"}})
 """
+
+
+def _probe_script(page_path: Path, database_path: Path, probe: str) -> str:
+    """페이지를 그대로 실행하고 **그 이름공간을 세션에 얹어** 테스트가 함수를 직접 부른다.
+
+    `app_pages` 는 패키지가 아니라(`_page_script` 의 주석) 페이지의 콜백을 import 할 수 없다.
+    AppTest 는 같은 프로세스에서 도므로, `exec` 한 이름공간을 위젯이 아닌 세션 칸에 두면
+    테스트가 그 안의 함수·상수를 그대로 쓸 수 있다. 임시 DuckDB 로 갈아끼우는 것은 같다.
+
+    `probe` 는 페이지가 다 그려진 **뒤에** 도는 줄들이다. 그 회차에 이미 만들어진 위젯의
+    키에는 쓸 수 없으므로(Streamlit 이 막는다) 그 위젯이 그려지지 않는 상태를 골라 부른다.
+    """
+    page_source = f"""
+from pathlib import Path
+import streamlit as st
+import capa_simulation.settings as settings
+
+settings.EQUIPMENT_DUCKDB_PATH = Path({str(database_path)!r})
+source = Path({str(page_path)!r}).read_text(encoding="utf-8")
+page = {{"__name__": "__main__"}}
+exec(compile(source, {str(page_path)!r}, "exec"), page)
+st.session_state[{NAMESPACE_KEY!r}] = page
+"""
+    return page_source + probe + "\n"
 
 
 def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> None:
@@ -284,6 +312,128 @@ def test_the_downtime_month_view_catches_what_the_sunday_samples_miss(tmp_path: 
     # 일요일 표본으로 퇴화했거나 데모 데이터가 바뀐 것이다.
     assert sunday_units < expected
     assert rendered["비가동 시작"].le(rendered["비가동 종료"]).all()
+
+
+def _inactive_units_in_month(
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    month: str,
+) -> set[str]:
+    """화면의 「그 달 전체」와 **같은 시점 집합**으로 그 달의 비가동 호기를 센다."""
+    year, month_no = (int(part) for part in month.split("-"))
+    month_start = date(year, month_no, 1)
+    month_end = (
+        date(year + 1, 1, 1) if month_no == 12 else date(year, month_no + 1, 1)
+    ) - timedelta(days=1)
+    spans = build_equipment_lifecycle_spans(
+        equipment, downtime, start_date=month_start, end_date=month_end
+    )
+    moments = {month_start} | {min(max(value, month_start), month_end) for value in spans["시작일"]}
+    sunday = month_start + timedelta(days=(6 - month_start.weekday()) % 7)
+    while sunday <= month_end:
+        moments.add(sunday)
+        sunday += timedelta(days=7)
+    units: set[str] = set()
+    for moment in sorted(moments):
+        units |= {
+            str(unit)
+            for unit in build_inactive_equipment(equipment, downtime, as_of=moment)["호기"]
+        }
+    return units
+
+
+def test_the_row_selection_callback_moves_the_question_and_keeps_the_month(
+    tmp_path: Path,
+) -> None:
+    """Q5 행 선택 콜백은 **질문과 공정만** 바꾸고 기준 월은 그대로 둔다.
+
+    `AppTest` 는 표의 행을 고를 수 없다. 그래서 콜백을 함수로 검사한다 — 샘플 스위치를 끈
+    회차에는 질문 pills·공정소분류 multiselect·Q5 표가 **하나도 그려지지 않아**, 그 키들에
+    쓰는 콜백을 스크립트 안에서 그대로 부를 수 있다(그려진 위젯의 키는 본문에서 못 쓴다).
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    month = f"{date.today() + timedelta(days=30):%Y-%m}"
+    probe = (
+        "st.session_state[page['PROCESS_TABLE_KEY']] = {'selection': {'rows': [1]}}\n"
+        "page['_select_process_row'](['Mold', 'Die Attach', 'Underfill'])"
+    )
+    app = AppTest.from_string(
+        _probe_script(page_path, tmp_path / "drill_callback.duckdb", probe),
+        default_timeout=90,
+    )
+    app.session_state["dynamic_capa_sample_data"] = False
+    app.session_state[ASOF_MONTH_KEY] = month
+    app.run()
+
+    assert not app.exception
+    assert app.session_state[MAIN_QUESTION_KEY] == QUESTION_DOWNTIME
+    assert app.session_state[SMALL_PROCESS_KEY] == ["Die Attach"]
+    # 기준 월은 콜백이 손대지 않는다. 고른 달이 따라오지 않으면 드릴다운이 아니다.
+    assert app.session_state[ASOF_MONTH_KEY] == month
+
+
+def test_an_empty_row_selection_changes_nothing(tmp_path: Path) -> None:
+    """선택을 푸는 것도 같은 콜백을 부른다 — 그때는 아무 일도 없어야 한다."""
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    probe = (
+        "st.session_state[page['PROCESS_TABLE_KEY']] = {'selection': {'rows': []}}\n"
+        "page['_select_process_row'](['Mold', 'Die Attach'])\n"
+        "st.session_state['_probe_index'] = ["
+        "page['_selected_row_index']({'selection': {'rows': [2]}}),"
+        "page['_selected_row_index']({'selection': {'rows': []}}),"
+        "page['_selected_row_index'](None),"
+        "]"
+    )
+    app = AppTest.from_string(
+        _probe_script(page_path, tmp_path / "drill_empty.duckdb", probe),
+        default_timeout=90,
+    )
+    app.session_state["dynamic_capa_sample_data"] = False
+    app.session_state[MAIN_QUESTION_KEY] = QUESTION_PROCESS
+    app.run()
+
+    assert not app.exception
+    assert app.session_state[MAIN_QUESTION_KEY] == QUESTION_PROCESS
+    assert app.session_state["_probe_index"] == [2, None, None]
+
+
+def test_the_process_table_row_lands_on_that_process_downtime(tmp_path: Path) -> None:
+    """고른 행 하나가 「어디가 비가동인가」의 그 공정 표로 이어진다.
+
+    콜백을 버튼에 걸어 **화면이 실제로 도는 길**을 잰다(행 선택 자리만 버튼으로 대신한다).
+    기대 호기는 같은 서비스 함수로 이 테스트가 다시 계산한다 — 데모 fleet 은 `date.today()`
+    를 앵커로 만들어져 호기 이름을 고정하면 달력에 따라 깨진다.
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    month = f"{date.today() + timedelta(days=30):%Y-%m}"
+    probe = (
+        f"st.button('드릴다운', key={DRILL_BUTTON_KEY!r}, "
+        "on_click=page['_drill_into_process'], args=('Die Attach',))"
+    )
+    app = AppTest.from_string(
+        _probe_script(page_path, tmp_path / "drill_table.duckdb", probe),
+        default_timeout=90,
+    )
+    app.session_state[MAIN_QUESTION_KEY] = QUESTION_PROCESS
+    app.session_state[ASOF_MONTH_KEY] = month
+    app.run()
+
+    assert not app.exception
+    assert "행을 고르면" in _page_text(app)
+
+    app.button(DRILL_BUTTON_KEY).click().run()
+
+    assert not app.exception
+    assert app.session_state[MAIN_QUESTION_KEY] == QUESTION_DOWNTIME
+    assert app.session_state[ASOF_MONTH_KEY] == month
+    fleet, fleet_downtime = _demo_fleet()
+    picked = fleet.loc[fleet["공정소분류"].eq("Die Attach")]
+    expected = _inactive_units_in_month(
+        picked, fleet_downtime.loc[fleet_downtime["호기"].isin(picked["호기"])], month
+    )
+    assert expected, "데모 fleet 의 Die Attach 에 비가동이 없으면 이 테스트가 아무것도 안 잰다"
+    rendered = _rendered(app, "비가동 시작")
+    assert set(rendered["호기"]) == expected
 
 
 def test_baseline_paste_import_previews_itself_before_it_applies(tmp_path: Path) -> None:
