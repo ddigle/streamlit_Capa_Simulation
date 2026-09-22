@@ -467,6 +467,15 @@ def test_turning_the_sample_switch_off_leaves_only_the_pending_source_panel(
     조회 조건을 그리지 않고, 무엇이 이 자리를 채우는지만 적는다.
     """
     page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    # 켠 채로 한 번 연다. 질문 pills 가 **원래 잡히는 위젯**이라는 것을 먼저 고정하지
+    # 않으면, 아래의 「없다」는 단언이 찾는 법이 틀려도 통과한다.
+    switched_on = AppTest.from_string(
+        _page_script(page_path, tmp_path / "sample_on.duckdb"),
+        default_timeout=90,
+    ).run()
+
+    assert MAIN_QUESTION_KEY in [widget.key for widget in switched_on.pills]
+
     app = AppTest.from_string(
         _page_script(page_path, tmp_path / "sample_off.duckdb"),
         default_timeout=90,
@@ -479,7 +488,7 @@ def test_turning_the_sample_switch_off_leaves_only_the_pending_source_panel(
     assert "#### :material/pending: 가용설비 현황" in text
     for marker in QUESTION_MARKERS.values():
         assert marker not in text, marker
-    assert MAIN_QUESTION_KEY not in [widget.key for widget in app.get("pills")]
+    assert MAIN_QUESTION_KEY not in [widget.key for widget in app.pills]
     assert SMALL_PROCESS_KEY not in [widget.key for widget in app.multiselect]
 
 
