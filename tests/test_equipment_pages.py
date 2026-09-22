@@ -22,6 +22,7 @@ from capa_simulation.services.equipment_contract import (
 )
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
+    sample_equipment_baseline,
     sample_equipment_master,
 )
 
@@ -505,6 +506,77 @@ def test_a_bad_paste_pins_the_verdict_columns_and_locks_the_apply_button(
     assert len(verdict_tables) == 1, [list(frame.value.columns[:2]) for frame in app.dataframe]
     # 오류 행이 맨 위로 올라온다.
     assert int(verdict_tables[0]["행"].iloc[0]) == 2
+
+
+def _master_paste(rows: int) -> str:
+    """데모 fleet 을 그대로 붙여넣기 글로 만든다(전부 통과하는 표)."""
+    master = sample_equipment_master(anchor_date=date.today()).head(rows)
+    return "\n".join(str(master.to_csv(sep="\t", index=False)).strip("\r\n").splitlines())
+
+
+def test_a_missing_required_cell_lands_on_its_own_row(tmp_path: Path) -> None:
+    """필수값이 빈 행은 **그 행에** 붙는다.
+
+    원래 메시지는 「호기 마스터의 공정소분류에 누락값이 있습니다」 한 줄이고 예시조차 없어,
+    30행을 붙여넣은 사람은 눈으로 빈 칸을 찾아야 했다.
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "missing_cell.duckdb"),
+        default_timeout=90,
+    ).run()
+
+    lines = _master_paste(3).splitlines()
+    cells = lines[3].split("\t")
+    cells[lines[0].split("\t").index("공정소분류")] = ""
+    lines[3] = "\t".join(cells)
+
+    app.text_area(MASTER_CLIPBOARD_KEY).set_value("\n".join(lines)).run()
+
+    assert not app.exception
+    assert any("1행에 오류" in element.value for element in app.error), [
+        element.value for element in app.error
+    ]
+    assert any("3행" in element.value and "공정소분류" in element.value for element in app.markdown)
+    assert app.button("confirm_equipment_import_v3").disabled
+
+
+def test_a_fault_that_only_the_merge_sees_stays_a_card(tmp_path: Path) -> None:
+    """편집본과 합쳐야 드러나는 잘못은 **행 목록 없이 카드**로 알린다.
+
+    붙여넣은 행은 한 줄씩도 전체로도 통과하는데 전체 검사가 터지는 경우가 있다 — 편집표에서
+    손댄 행이 merge 대상 프레임에 함께 들어가기 때문이다. 어느 한 행의 잘못이 아니므로 행에
+    붙이면 엉뚱한 줄을 가리킨다.
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    fleet = sample_equipment_master(anchor_date=date.today())
+    # 편집표에서 확정상태를 지운 채 두고 새 표를 붙여넣는 상황. 이 행은 붙여넣은 글에 없다.
+    edited = fleet.head(1).copy()
+    edited["호기"] = ["DRAFT-ONLY-1"]
+    edited["확정상태"] = ["없는상태"]
+
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "merge_only.duckdb"),
+        default_timeout=90,
+    )
+    app.session_state["equipment_draft_revision_v4"] = "empty"
+    app.session_state["equipment_baseline_draft_v3"] = sample_equipment_baseline()
+    app.session_state["equipment_master_draft_v3"] = edited
+    app.session_state["equipment_downtime_draft_v3"] = empty_downtime_schedule()
+    app.run()
+
+    app.text_area(MASTER_CLIPBOARD_KEY).set_value(_master_paste(2)).run()
+
+    assert not app.exception
+    assert any("확정상태는" in element.value for element in app.error), [
+        element.value for element in app.error
+    ]
+    # 행 목록도, 행에 붙은 판정도 없다. 붙여넣은 두 행은 둘 다 멀쩡하다.
+    assert not any("행에 오류" in element.value for element in app.error)
+    assert "행을 넘나드는 규칙이라 어느 한 행의 잘못이 아닙니다." in [
+        element.value for element in app.caption
+    ]
+    assert app.button("confirm_equipment_import_v3").disabled
 
 
 def test_the_three_import_targets_download_their_error_rows_under_their_own_keys(

@@ -21,6 +21,7 @@ from capa_simulation.components.equipment_import_preview import (
     ImportPreviewResult,
     attribute_row_errors,
     build_preview_table,
+    parse_raw_rows,
     render_import_errors,
 )
 from capa_simulation.components.equipment_lifecycle_gantt import (
@@ -264,7 +265,7 @@ def _clipboard_parser(
     target: str,
     floor_canvases: dict[tuple[str, str], tuple[float, float]],
 ) -> Callable[[str], pd.DataFrame]:
-    """붙여넣기 문자열 하나만 받는 파서로 묶는다.
+    """붙여넣기 전체를 **적용과 똑같이** 검사하는 파서. 통과하면 그 미리보기가 곧 적용본이다.
 
     **편집본 프레임은 여기서 잡지 않고 호출될 때 세션에서 읽는다.** `args=` 로 묶어 넘기면
     콜백이 만들어지던 회차의 편집본이 그대로 굳어, 방금 적용한 행이 다음 검사에서 없는
@@ -272,7 +273,10 @@ def _clipboard_parser(
 
     호기 마스터는 읽기만으로 끝나지 않는다 — 적용에서 도는 `merge_equipment_rows` ·
     `merge_downtime_rows` 까지 같이 돌려야 「편집본과 합쳤을 때 비로소 드러나는 잘못」
-    (좌표 상한, 비가동이 매달린 호기가 사라지는 경우)이 미리보기 자리에서 잡힌다.
+    (편집표에서 손댄 행, 매달린 데 없는 비가동)이 미리보기 자리에서 잡힌다.
+
+    **이 파서는 전체를 한 번 볼 때만 쓴다.** 행 하나를 판정하는 데 쓰면 merge 까지 행마다
+    다시 도므로 30행에 두 배가 든다(`_row_parser`).
     """
     if target == TARGET_BASELINE:
         return read_baseline_clipboard
@@ -301,6 +305,56 @@ def _clipboard_parser(
     return parse_downtime
 
 
+def _row_parser(
+    target: str,
+    floor_canvases: dict[tuple[str, str], tuple[float, float]],
+) -> Callable[[str], pd.DataFrame]:
+    """행 하나를 판정할 때 쓰는 **가벼운 파서**. 읽기 검증까지만 한다.
+
+    행 귀속은 헤더 + 한 줄을 파서에 다시 넘겨 그 행만의 잘못을 가리는 일이다. 거기에
+    편집본과의 merge 까지 얹으면 **그 행과 상관없는 비용**이 행마다 붙는다(호기 마스터
+    30행·오류 2행에서 4.1초 → 2.3초). 행을 넘나드는 규칙은 어차피 전체 검사가 이미 한 번
+    봤고, 그 메시지는 `_attribute_scan_error` 가 카드로 돌려준다.
+
+    기존 보유대수·비가동 일정은 파서가 하나뿐이라 전체 검사와 같은 것을 쓴다.
+    """
+    if target == TARGET_EQUIPMENT:
+
+        def parse_equipment_row(text: str) -> pd.DataFrame:
+            return read_equipment_clipboard(text, floor_canvases=floor_canvases)
+
+        return parse_equipment_row
+
+    return _clipboard_parser(target, floor_canvases)
+
+
+def _attribute_scan_error(
+    target: str,
+    text: str,
+    heavy_error: ValueError,
+    floor_canvases: dict[tuple[str, str], tuple[float, float]],
+) -> ImportPreviewResult:
+    """전체 검사가 실패한 붙여넣기를 가벼운 파서로 **행에 귀속**한다.
+
+    행마다 다 통과하고 가벼운 전체 검사도 통과하면, 잘못은 읽기 층이 아니라 merge 층의
+    교차 규칙이다(편집본에 이미 있는 행과 합쳤을 때만 드러난다). 그때는 어느 한 행의
+    잘못이 아니므로 행 목록 없이 **전체 메시지를 카드로** 돌린다.
+    """
+    attributed = attribute_row_errors(text, _row_parser(target, floor_canvases))
+    if attributed.row_errors or attributed.frame is None:
+        return attributed
+    return ImportPreviewResult(
+        frame=None,
+        row_errors=[],
+        frame_error=str(heavy_error),
+        row_count=attributed.row_count,
+        source_text=text,
+        # 검증을 통과한 프레임이 아니라 **원문 표**를 싣는다. `prepare_*` 가 버린 안내 행
+        # 때문에 자리가 밀리면 미리보기의 행 번호가 붙여넣은 줄과 어긋난다.
+        raw_frame=parse_raw_rows(text),
+    )
+
+
 def _scan_clipboard(
     target: str,
     floor_canvases: dict[tuple[str, str], tuple[float, float]],
@@ -309,6 +363,9 @@ def _scan_clipboard(
 
     **`st.rerun()` 을 부르지 않는다.** `on_change` 콜백이 끝나면 Streamlit 이 이미 한 번
     다시 돌린다 — 여기서 또 부르면 그 회차가 통째로 버려지고 화면이 두 번 그려진다.
+
+    순서는 **전체 한 번 → 실패했을 때만 행 귀속**이다. 통과가 보통이고 그때는 파서를 한 번만
+    부른다. 행마다 무거운 파서를 다시 도는 것이 30행 입력에서 가장 오래 기다리던 자리였다.
     """
     clipboard_key, import_key, error_key = IMPORT_SLOTS[target]
     # 한 번에 하나만 살아 있게 한다. 셋이 동시에 서면 어느 표에 적용하는 버튼인지 화면이
@@ -325,13 +382,14 @@ def _scan_clipboard(
         st.session_state.pop(error_key, None)
         return
 
-    result = attribute_row_errors(text, _clipboard_parser(target, floor_canvases))
-    if result.frame is not None:
-        st.session_state[import_key] = result.frame
-        st.session_state.pop(error_key, None)
-    else:
-        st.session_state[error_key] = result
+    try:
+        frame = _clipboard_parser(target, floor_canvases)(text)
+    except ValueError as exc:
+        st.session_state[error_key] = _attribute_scan_error(target, text, exc, floor_canvases)
         st.session_state.pop(import_key, None)
+    else:
+        st.session_state[import_key] = frame
+        st.session_state.pop(error_key, None)
 
 
 def _clear_import(target: str) -> None:
