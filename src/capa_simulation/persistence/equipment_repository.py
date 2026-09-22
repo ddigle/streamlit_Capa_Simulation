@@ -52,6 +52,10 @@ from capa_simulation.services.floor_layout_profile import (
     require_total_layout_budget,
     to_data_uri,
 )
+from capa_simulation.services.process_cutoff import (
+    empty_process_cutoff,
+    prepare_process_cutoff,
+)
 from capa_simulation.services.weekly_availability_input import prepare_weekly_availability
 
 _WRITE_LOCK = threading.RLock()
@@ -278,6 +282,54 @@ class DuckDBEquipmentRepository:
         """Delete the current weekly availability without creating a revision."""
         with self._write_transaction() as connection:
             connection.execute("DELETE FROM equipment_ops.standard_target_weekly_availability")
+
+    def save_process_cutoff(self, data: pd.DataFrame) -> pd.DataFrame:
+        """공정별 Cut-off 를 **통째로 갈아 끼운다.** 리비전을 만들지 않는다.
+
+        0005 의 주차별 가용대수는 들어온 키만 지우고 다시 넣는 부분 upsert 인데, 여기는
+        전체 삭제 후 삽입이다. **이 표는 목록 자체가 계약**이기 때문이다 — 행을 지우는
+        것이 「그 공정을 산출에서 빼라」는 뜻이라 부분 upsert 로는 그 편집을 표현할
+        방법이 없다.
+        """
+        prepared = prepare_process_cutoff(data)
+        incoming = prepared.rename(
+            columns={
+                "공정": "process_name",
+                "제품구분": "product_scope",
+                "Cutoff일수": "cutoff_days",
+                "비고": "note",
+            }
+        )
+        with self._write_transaction() as connection:
+            connection.execute("DELETE FROM equipment_ops.process_cutoff")
+            if not incoming.empty:
+                insert_by_name(
+                    connection,
+                    schema="equipment_ops",
+                    table_name="process_cutoff",
+                    frame=incoming,
+                )
+        return self.load_process_cutoff()
+
+    def load_process_cutoff(self) -> pd.DataFrame:
+        """저장된 공정별 Cut-off. 한 번도 저장하지 않았으면 빈 계약 프레임."""
+        with self._connect() as connection:
+            result = connection.execute(
+                """
+                SELECT process_name AS "공정", product_scope AS "제품구분",
+                       cutoff_days AS "Cutoff일수", note AS "비고"
+                FROM equipment_ops.process_cutoff
+                ORDER BY process_name, product_scope
+                """
+            ).fetchdf()
+        if result.empty:
+            return empty_process_cutoff()
+        return prepare_process_cutoff(result)
+
+    def clear_process_cutoff(self) -> None:
+        """공정별 Cut-off 를 모두 지운다. 리비전을 만들지 않는다."""
+        with self._write_transaction() as connection:
+            connection.execute("DELETE FROM equipment_ops.process_cutoff")
 
     def save_floor_layout_image(
         self,

@@ -25,7 +25,7 @@ from capa_simulation.persistence.equipment_repository import (
 
 def _repository(path: Path) -> DuckDBEquipmentRepository:
     repository = DuckDBEquipmentRepository(path)
-    assert repository.initialize() == (1, 2, 3, 4, 5, 6, 7, 8)
+    assert repository.initialize() == (1, 2, 3, 4, 5, 6, 7, 8, 9)
     assert repository.initialize() == ()
     return repository
 
@@ -186,7 +186,7 @@ def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (3, 4, 5, 6, 7, 8)
+    assert repository.initialize() == (3, 4, 5, 6, 7, 8, 9)
     snapshot = repository.load_snapshot("legacy-r1")
 
     assert snapshot.equipment.loc[0, "호기"] == "EQ-LEGACY"
@@ -201,3 +201,44 @@ def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
         "상세사유",
         "비고",
     ]
+
+
+def test_process_cutoff_round_trips_and_replaces_the_whole_table(tmp_path: Path) -> None:
+    """Cut-off 는 통째로 갈아 끼운다 — 행을 지우는 것이 「산출에서 빼라」는 뜻이다."""
+    repository = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")
+    repository.initialize()
+
+    assert repository.load_process_cutoff().empty
+
+    saved = repository.save_process_cutoff(
+        pd.DataFrame(
+            {
+                "공정": ["DEMO_ATTACH", "DEMO_MOLD"],
+                "Cutoff일수": [15.0, 7.5],
+                "비고": ["표준", None],
+            }
+        )
+    )
+    assert list(saved["공정"]) == ["DEMO_ATTACH", "DEMO_MOLD"]
+    assert list(saved["Cutoff일수"]) == [15.0, 7.5]
+    assert set(saved["제품구분"]) == {"*"}
+
+    # 한 행만 다시 저장하면 나머지는 사라져야 한다(부분 upsert 가 아니다).
+    replaced = repository.save_process_cutoff(
+        pd.DataFrame({"공정": ["DEMO_MOLD"], "Cutoff일수": [9.0], "비고": [None]})
+    )
+    assert list(replaced["공정"]) == ["DEMO_MOLD"]
+    assert list(replaced["Cutoff일수"]) == [9.0]
+
+    repository.clear_process_cutoff()
+    assert repository.load_process_cutoff().empty
+
+
+def test_process_cutoff_refuses_a_negative_value(tmp_path: Path) -> None:
+    repository = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")
+    repository.initialize()
+
+    with pytest.raises(ValueError, match="음수"):
+        repository.save_process_cutoff(
+            pd.DataFrame({"공정": ["DEMO_ATTACH"], "Cutoff일수": [-1.0], "비고": [None]})
+        )
