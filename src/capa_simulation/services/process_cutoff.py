@@ -83,7 +83,8 @@ def build_process_cutoff_template(processes: Iterable[str]) -> pd.DataFrame:
         {
             "공정": pd.Series(names, dtype="string"),
             "제품구분": pd.Series([ALL_PRODUCTS] * len(names), dtype="string"),
-            "Cutoff일수": pd.Series([pd.NA] * len(names), dtype="float64"),
+            # `pd.NA` 는 float 시리즈에 못 들어간다(TypeError). 빈 칸은 NaN 으로 둔다.
+            "Cutoff일수": pd.Series([float("nan")] * len(names), dtype="float64"),
             "비고": pd.Series([pd.NA] * len(names), dtype="string"),
         }
     )

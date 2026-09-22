@@ -1,0 +1,84 @@
+# Purpose: Cut-off 탭과 Static/Dynamic 탭이 빈 DB·값 있는 DB 에서 그려지는지 검사한다.
+
+"""탭을 늘리면 **화면이 죽는 자리가 타입 검사에 안 걸린다.**
+
+세션 키 겹침, 탭 언패킹, 폼 안의 위젯 배치, 활성 시나리오가 없을 때의 예외 — 넷 다
+`mypy` 와 `ruff` 를 통과한 채로 화면에서만 터진다. 실제로 이 파일을 쓰다가
+`pd.Series([pd.NA] * n, dtype="float64")` 가 `TypeError` 로 죽는 것을 잡았다.
+
+이 페이지는 **활성 시나리오가 없어도 열리는 유일한 계산 계열 화면**이다. Static 을 읽는
+탭이 생겼으므로, 그 탭이 못 읽어도 나머지가 살아 있어야 한다.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+from streamlit.testing.v1 import AppTest
+from test_equipment_pages import _page_script
+
+from capa_simulation.persistence.equipment_cache import clear_equipment_repository
+from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+
+
+def _run(database_path: Path) -> AppTest:
+    return AppTest.from_string(_page_script(PAGE, database_path), default_timeout=120).run()
+
+
+def test_the_cutoff_tab_renders_on_an_empty_database(tmp_path: Path) -> None:
+    app = _run(tmp_path / "availability.duckdb")
+
+    assert not app.exception
+    labels = [button.label for button in app.button]
+    assert "Cut-off 저장" in labels, labels
+    assert "설비 공정으로 채우기" in labels, labels
+    clear_equipment_repository()
+
+
+def test_the_gap_tab_asks_for_a_cutoff_before_it_computes(tmp_path: Path) -> None:
+    """Cut-off 가 없으면 Dynamic 을 낼 수 없다. 조용히 0 을 보이지 않고 이유를 말한다."""
+    app = _run(tmp_path / "availability.duckdb")
+
+    notices = " ".join(str(item.value) for item in app.info)
+    assert "Cut-off" in notices, notices
+    clear_equipment_repository()
+
+
+def test_a_saved_cutoff_lets_the_gap_tab_draw(tmp_path: Path) -> None:
+    """Cut-off 를 저장하면 비교 탭이 공정 선택과 그림을 낸다."""
+    database_path = tmp_path / "availability.duckdb"
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.initialize()
+    repository.save_process_cutoff(
+        pd.DataFrame({"공정": ["Die Attach"], "Cutoff일수": [15.0], "비고": [None]})
+    )
+
+    app = _run(database_path)
+
+    assert not app.exception
+    selectbox_labels = [widget.label for widget in app.selectbox]
+    assert "공정" in selectbox_labels, selectbox_labels
+    clear_equipment_repository()
+
+
+def test_a_process_without_a_cutoff_is_surfaced_not_silently_dropped(tmp_path: Path) -> None:
+    """빠진 공정을 화면이 말해야 한다 — 조용히 빠지면 옆 탭 합이 이유 없이 작아진다."""
+    app = _run(tmp_path / "availability.duckdb")
+
+    warnings = " ".join(str(item.value) for item in app.warning)
+    assert "Cut-off 를 적지 않은 공정" in warnings, warnings
+    clear_equipment_repository()
+
+
+def test_the_cutoff_editor_has_its_own_view_controls(tmp_path: Path) -> None:
+    """편집표에는 컬럼 선택·행 필터가 붙는다. 다른 편집표와 세션 키가 겹치면 안 된다."""
+    app = _run(tmp_path / "availability.duckdb")
+
+    keys = [widget.key for widget in app.multiselect]
+    assert "equipment_cutoff_view_v1_columns" in keys, keys
+    assert len(keys) == len(set(keys)), keys
+    clear_equipment_repository()

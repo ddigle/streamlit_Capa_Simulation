@@ -340,7 +340,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     링크는 공용 `components/page_link.py` 를 쓴다.
   - 현재 수치는 결정론적 데모이고 샘플 스위치로 끌 수 있다.
 - `app_pages/available_equipment_status.py`
-  - `Main`·`Preference`·`RawData` 세 탭이다(`stateful_tabs`, key `equipment_active_tab`).
+  - `Main`·`Cut-off`·`Static/Dynamic`·`Preference`·`RawData` 다섯 탭이다
+    (`stateful_tabs`, key `equipment_active_tab`).
+  - `Cut-off` 는 공정별 표준 납기(일)를 적는 원장이다. **TAT 와 공정 선후관계가 저장소에
+    없어 파생할 수 없고 사람이 적는다.** 리비전을 만들지 않고 표를 통째로 갈아 끼운다
+    (`0009`, `equipment_ops.process_cutoff`) — 행을 지우는 것이 곧 「그 공정을 산출에서
+    빼라」는 편집이라 부분 upsert 로는 뜻을 표현할 수 없다. 키에 `product_scope` 를 미리
+    열어 두었고 지금은 모두 `'*'` 다.
+  - `Static/Dynamic` 은 기준정보 `RQ_EQP_AVBL`(Static)과 호기 일정 안분(Dynamic)을 맞대어
+    GAP 을 낸다. **이 페이지에서 시뮬레이션 DB 를 여는 유일한 탭**이고, 못 읽어도 그 탭
+    안에서만 알린다 — 이 페이지는 활성 시나리오 없이도 열리는 유일한 계산 계열 화면이라
+    통째로 막으면 Cut-off 를 적으러 들어올 수도 없다.
+  - 월별 Dynamic 가용대수는 `(전월 말일 - cutoff, 당월 말일 - cutoff]` 반열린 구간과 겹친
+    일수로 안분한다(`services/wd_window.py`). 구간 길이는 늘 그 달의 달력일수이고 열두
+    구간의 합이 365일이어야 한다. **가용 소계에 드는 분류는 `기존보유`·`가용` 둘뿐이고**
+    나머지 여덟은 왜 못 쓰는지를 보여 주는 참고 행이다 — 호기 상태는 서로 배타적이라 모두
+    더하면 가용대수가 아니라 보유 호기-일수가 된다.
   - 기존 보유대수, Qual 확정상태를 포함한 31컬럼 호기 마스터와 운영 비가동 일정을 DuckDB 불변 리비전으로
     저장하고 공정소분류별 주차 단위 총대수·가용대수·비가동대수와 상태를 집계한다.
   - 대시보드 조회 조건은 라인구분·활용구분·공정대분류·공정소분류 순으로 제공하며,
@@ -1091,6 +1106,42 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     같은 목록(`VOC_CATEGORIES`)을 본다.
   - 작성자는 로그인 이름이 아니라 직접 적는 이름이다. 이 앱에는 인증이 없으므로 서버가
     보증하는 척하지 않고, 답을 돌려줄 정도만 남긴다.
+- `src/capa_simulation/services/wd_window.py`
+  - 공정별 Cut-off 를 받아 한 달이 실제로 잡는 W/D 날짜 구간을 만든다.
+  - 구간은 **반열린**이다 — `(전월 말일 - cutoff, 당월 말일 - cutoff]`. 이것이 숫자를
+    정한다. 9/30 Qual 설비의 10월 기여가 16일(0.52대)이 되는 것은 앞 경계가 앞 달 몫이기
+    때문이고, 양 끝을 포함으로 세면 17일이 되어 어긋난다.
+  - **연간 365일(윤년 366)이 유일한 안전장치다.** 구간 길이는 Cut-off 와 무관하게 늘 그
+    달의 달력일수이므로 열두 구간이 한 해를 빈틈도 겹침도 없이 덮어야 한다. 어긋나면
+    어느 달이 두 번 세어지거나 빠진 것인데 화면에 오류로 뜨지 않는다.
+  - 분모는 달력일이다. 공정별 `RUN_DAY` 를 쓰면 설비 DB 가 시뮬레이션 DB 를 읽게 된다.
+  - 소수점 Cut-off 는 **내림**한다. 반올림하면 같은 값이 달마다 다른 길이를 내어 위
+    불변조건이 깨진다.
+- `src/capa_simulation/services/process_cutoff.py`
+  - 공정별 Cut-off 입력 표의 계약·검증과 계산이 쓰는 조회 사전.
+  - **없는 공정과 0 을 적은 공정은 다르다.** 0 은 「달력 월 그대로」이고, 없는 것은 「아직
+    기준을 못 정했으니 세지 말라」다. 없는 공정은 산출에서 빠지므로 화면이
+    `missing_cutoff_processes` 로 반드시 드러낸다.
+  - `제품구분` 은 나중에 제품 축이 붙을 자리다. 지금은 모두 `*` 이고, 부르는 쪽이 사전
+    하나만 보도록 `cutoff_lookup` 한 곳에 가둬 두었다.
+- `src/capa_simulation/services/monthly_equipment_availability.py`
+  - 호기 생애주기 구간을 W/D 구간에 일수로 안분해 월별·공정별·분류별 기여 대수를 만든다.
+    **어느 DB 도 열지 않는다** — 두 DB 를 읽는 것은 페이지의 몫이다.
+  - **상태가 바뀐 날은 그 상태의 첫날이 아니다.** 일정이 `D` 에 완료되면 다음 날부터
+    기여한다. 구간 양 끝을 똑같이 밀어야 서로 맞물린 채 남는다.
+  - **가용 소계에 드는 분류는 `기존보유`·`가용` 둘뿐이다.** 호기 상태 아홉은 서로
+    배타적이라 모두 더하면 가용대수가 아니라 보유 호기-일수가 된다. 나머지 여덟은 왜 못
+    쓰는지를 보여 주는 참고 행이라 `가용반영` 플래그로 가른다.
+  - `기존보유` 는 안분하지 않는다. `baseline_snapshot` 에 날짜가 없어 언제부터 있었는지
+    알 수 없다 — 호기 마스터가 채워질수록 이 항목이 줄고 안분되는 항목이 는다.
+  - `span_date_range` 를 함께 둔다. Cut-off 가 크면 구간이 앞으로 크게 밀리므로 조회기간
+    만큼만 호기 구간을 만들면 첫 달이 **오류 없이** 모자라게 세어진다.
+- `src/capa_simulation/services/availability_gap.py`
+  - Static(`RQ_EQP_AVBL`)과 Dynamic 을 한 표로 맞대어 GAP 을 낸다. 프레임 둘을 받아 하나를
+    돌려주는 순수 함수다.
+  - **두 DB 의 공정명이 같은 이름 공간이라는 것을 강제하는 장치가 없다.** 그래서 한쪽에만
+    있는 공정을 `dynamic_only`·`static_only` 로 돌려주고 화면이 드러낸다 — 조용히
+    떨어지면 GAP 이 이유 없이 커 보인다.
 - `src/capa_simulation/services/key_process.py`
   - HOME `주요공정 확보율` 히트맵이 그릴 공정 목록의 상한(`KEY_PROCESS_LIMIT`)과 정규화.
   - **고른 차례가 곧 행 순서다.** 확보율로 다시 정렬하지 않는다 — 매달 행이 뛰어다니면
@@ -1117,6 +1168,24 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     직접 적으면 단계를 더하고 뺄 때 누적값이 어긋나고 화면에서만 드러난다.
   - 누적 퍼센트는 단계 수 균등 분할이 아니라 **측정한 소요 시간 비율**로 정한다. HOME 은
     차트 생성이 대부분을 쓴다(`HOME_LOADING_STAGES`).
+- `src/capa_simulation/components/cutoff_management.py`
+  - 가용설비 현황 `Cut-off` 탭 본문. 편집표·저장·CSV 왕복과 **빠진 공정 안내**.
+  - 저장된 값을 돌려준다(편집 중인 초안이 아니다). 옆 탭의 GAP 이 저장 안 된 값으로 숫자를
+    내면 화면에 보이는 수와 계산에 쓰인 수가 달라진다 — 가장 나쁜 종류의 어긋남이다.
+- `src/capa_simulation/components/availability_gap_panel.py`
+  - 가용설비 현황 `Static/Dynamic` 탭 본문. 필터·그림·분해 표와 맞대지 못한 공정 안내.
+  - **이 페이지에서 시뮬레이션 DB 를 여는 유일한 자리**다. 못 읽어도 이 탭 안에서만
+    알린다 — 이 페이지는 활성 시나리오 없이도 열리는 유일한 계산 계열 화면이라 통째로
+    막으면 Cut-off 를 적으러 들어올 수조차 없다.
+  - Cut-off 때문에 조회기간이 모자라면 경고한다. 그러지 않으면 첫 달이 조용히 작아진다.
+- `src/capa_simulation/components/availability_gap_figure.py`
+  - Static 대 Dynamic 월별 비교 Figure.
+  - **그림은 비교를, 표가 분해를 맡는다.** 분류가 열이라 열 가지 색을 쓰면 서로 구분되지
+    않는다 — 색으로 정체를 가르는 것은 여덟 계열이 한계다. 그림에는 가용 소계를 이루는
+    둘만 쌓고 Static 을 옆에 세운다.
+  - 색은 재서 골랐다. 붙어 있는 유일한 쌍(`기존보유`·`가용`)이 OKLab 에서 색각 이상 ΔE
+    19.5·일반 23.7 로 기준(8/15)을 넘는다. Static 막대는 자리가 달라 색으로 가를 필요가
+    없고 바탕 대비가 1.4:1 로 낮아 **어두운 테두리와 아래 숫자 표**가 그 몫을 대신한다.
 - `src/capa_simulation/components/plotly_layout.py`
   - 제목 주석·외곽 테두리·분기 경계·고정 행 등 Figure 그리기 공통 유틸리티.
   - **레이아웃 항목은 모았다가 한 번에 넣는다.** `append_layout_items` 는 누적만 하고

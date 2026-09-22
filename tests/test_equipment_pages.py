@@ -39,25 +39,33 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     # 공통 헤더가 상태 접미를 제목에서 떼어 배지로 보여준다.
     assert app.title[0].value == "가용설비 현황"
     assert any("Data확보중" in element.value for element in app.markdown)
-    # Capa LOB Summary 와 같은 세 칸이다 — 보는 곳(Main)·고르는 곳(Preference)·
-    # 원천을 다루는 곳(RawData)을 가른다.
+    # 보는 곳(Main)·고르는 곳(Preference)·원천을 다루는 곳(RawData)을 가르고,
+    # 가운데 둘은 월별 Dynamic 가용대수를 위한 것이다 — Cut-off 를 적는 곳과 기준정보와
+    # 맞대어 보는 곳. 라벨은 `stateful_tabs` 의 기억값에 묶이므로 바꾸면 여기도 고친다.
     assert [tab.label for tab in app.tabs] == [
         ":material/dashboard: Main",
+        ":material/schedule: Cut-off",
+        ":material/compare_arrows: Static/Dynamic",
         ":material/tune: Preference",
         ":material/table_rows: RawData",
     ]
     # 조회 조건은 `Preference` 로 옮겼지만 위젯 자체는 그대로다.
-    assert [widget.label for widget in app.multiselect[:4]] == [
-        "라인구분",
-        "활용구분",
-        "공정대분류",
-        "공정소분류",
+    # **차례로 집지 않는다.** Cut-off 탭의 보기 설정도 multiselect 라서, 탭을 더하거나
+    # 옮길 때마다 앞자리가 밀린다. 라벨로 고른다.
+    filter_labels = [
+        widget.label
+        for widget in app.multiselect
+        if widget.label in {"라인구분", "활용구분", "공정대분류", "공정소분류"}
     ]
+    assert filter_labels == ["라인구분", "활용구분", "공정대분류", "공정소분류"]
     assert "운영 지침" in [expandable.label for expandable in app.status]
     assert any(markdown.value == "#### Qual 확정상태 실행관리" for markdown in app.markdown)
 
-    app.multiselect[0].set_value(["Line-A"])
-    app.multiselect[1].set_value(["양산"])
+    def _filter(label: str) -> object:
+        return next(widget for widget in app.multiselect if widget.label == label)
+
+    _filter("라인구분").set_value(["Line-A"])
+    _filter("활용구분").set_value(["양산"])
     app.run()
 
     assert not app.exception
@@ -194,9 +202,10 @@ def test_the_view_controls_render_for_each_editable_table(tmp_path: Path) -> Non
     # Import 도 접히는 자리가 됐다.
     assert "Excel 붙여넣기 Import" in labels
 
-    # 「볼 컬럼」은 세 표마다 하나씩이고, 처음에는 모두 선택돼 있다.
+    # 「볼 컬럼」은 편집표마다 하나씩이고, 처음에는 모두 선택돼 있다.
+    # 넷인 것은 RawData 의 세 표에 Cut-off 탭의 표가 더해졌기 때문이다.
     column_pickers = [widget for widget in app.multiselect if widget.label == "볼 컬럼"]
-    assert len(column_pickers) == 3
+    assert len(column_pickers) == 4
     assert all(picker.value for picker in column_pickers)
     clear_equipment_repository()
 

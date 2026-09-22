@@ -9,6 +9,10 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.availability_gap_panel import (
+    render_availability_gap_panel,
+)
+from capa_simulation.components.cutoff_management import render_cutoff_management
 from capa_simulation.components.equipment_lifecycle_gantt import (
     render_equipment_lifecycle_gantt,
 )
@@ -33,6 +37,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     date_range_value,
+    load_page_context,
 )
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_snapshot_cache,
@@ -79,8 +84,12 @@ from capa_simulation.services.equipment_samples import (
     untouched_sample_baseline_rows,
 )
 from capa_simulation.services.floor_layout_profile import max_canvas_extent
+from capa_simulation.services.monthly_equipment_availability import (
+    processes_in,
+    span_date_range,
+)
 from capa_simulation.services.simulation_cache import get_weekly_equipment_availability
-from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
+from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
 FLASH_KEY = "equipment_status_flash"
 # `Preference` 탭의 위젯 자리. `Main` 이 계산 전에 같은 칸을 읽으므로 문자열을 두 곳에
@@ -268,6 +277,21 @@ def _session_date(key: str, default: date) -> date:
     return value if isinstance(value, date) else default
 
 
+def _months_between(start: date, end: date) -> list[int]:
+    """`start` 가 든 달부터 `end` 가 든 달까지 `YYYYMM` 목록.
+
+    조회기간은 날짜 두 개인데 Static 가용대수는 월 단위다. 두 축을 맞추는 자리가 여기다.
+    """
+    if start > end:
+        return []
+    months: list[int] = []
+    year, month = start.year, start.month
+    while (year, month) <= (end.year, end.month):
+        months.append(year * 100 + month)
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return months
+
+
 def _session_list(key: str) -> list[str]:
     value = st.session_state.get(key, [])
     return [str(item) for item in value] if isinstance(value, (list, tuple)) else []
@@ -285,9 +309,11 @@ small_process_options = sorted(
     | set(baseline["공정"].dropna().astype(str).unique().tolist())
 )
 
-main_tab, preference_tab, rawdata_tab = stateful_tabs(
+main_tab, cutoff_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
     [
         ":material/dashboard: Main",
+        ":material/schedule: Cut-off",
+        ":material/compare_arrows: Static/Dynamic",
         ":material/tune: Preference",
         ":material/table_rows: RawData",
     ],
@@ -355,6 +381,52 @@ with preference_tab:
         st.caption(
             "기존 보유대수에는 라인·활용·공정대분류 정보가 없으므로 공정소분류 조건만 "
             "적용되고, 나머지 조건은 호기 마스터 설비에 적용됩니다."
+        )
+
+with cutoff_tab:
+    stored_cutoff = render_cutoff_management(
+        repository,
+        equipment_processes=processes_in(dashboard_equipment, baseline),
+    )
+
+with gap_tab:
+    # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지 탭은 설비 DB 만 열고 활성
+    # 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 탭 안에서 알리고, 다른
+    # 탭을 막지 않는다 — 페이지가 통째로 죽으면 Cut-off 를 적으러 들어올 수도 없다.
+    static_availability: pd.DataFrame | None = None
+    static_error: str | None = None
+    try:
+        gap_context = load_page_context()
+        static_availability = gap_context.reference_tables["RQ_EQP_AVBL"]
+    except BOOTSTRAP_ERRORS as exc:
+        static_error = bootstrap_error_message(
+            exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
+        )
+
+    gap_months = _months_between(start_date, end_date)
+    # Cut-off 가 크면 그 달의 W/D 구간이 앞으로 밀린다. 조회기간만큼만 구간을 만들면 첫 달이
+    # 조용히 모자라게 세어지므로, 필요한 만큼 앞에서부터 다시 만든다.
+    required_span = span_date_range(gap_months, stored_cutoff)
+    span_start = min(start_date, required_span[0]) if required_span else start_date
+    span_end = max(end_date, required_span[1]) if required_span else end_date
+    try:
+        gap_spans = build_equipment_lifecycle_spans(
+            dashboard_equipment,
+            dashboard_downtime,
+            start_date=span_start,
+            end_date=span_end,
+        )
+    except ValueError as exc:
+        st.error(str(exc))
+    else:
+        render_availability_gap_panel(
+            spans=gap_spans,
+            baseline=baseline,
+            cutoff=stored_cutoff,
+            months=gap_months,
+            static_availability=static_availability,
+            static_error=static_error,
+            span_bounds=(span_start, span_end),
         )
 
 with main_tab:
