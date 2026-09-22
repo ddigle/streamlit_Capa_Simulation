@@ -62,11 +62,15 @@ def render_table_view_controls(
     filter_columns: Sequence[str],
     locked_columns: Sequence[str] = (),
     label: str = "표 보기 설정",
+    expanded: bool = False,
 ) -> TableView:
     """컬럼 선택과 행 필터를 그리고 그 결과를 돌려준다.
 
     `locked_columns` 는 감출 수 없는 컬럼이다 — 키와 필수 입력이 화면에서 사라지면
     사용자가 무엇을 고치고 있는지 알 수 없고, 새 행을 만들 수도 없다.
+
+    `expanded` 는 이 설정이 **이미 한 번 접혀 있는 자리**(popover 안)에 들어갈 때 편다.
+    접힌 것을 또 접으면 「볼 컬럼」 하나를 고르는 데 두 번을 눌러야 한다.
     """
     if data.empty:
         return TableView(data)
@@ -76,7 +80,7 @@ def render_table_view_controls(
     hideable = [column for column in columns if column not in locked]
     shown_key = f"{key_prefix}_columns"
 
-    with st.expander(label, icon=":material/view_column:", expanded=False):
+    with st.expander(label, icon=":material/view_column:", expanded=expanded):
         shown = st.multiselect(
             "볼 컬럼",
             options=hideable,

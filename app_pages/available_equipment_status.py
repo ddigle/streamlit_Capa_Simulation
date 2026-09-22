@@ -612,6 +612,9 @@ def _table_view_popover(
     셋을 세로로 쌓으면 편집표가 화면 한참 아래로 밀린다. 세 표의 설정을 **한 줄**에 세우고
     누를 때만 펴면 붙여넣기 바로 아래가 편집표 자리가 된다. popover 본문은 서버에서 늘
       그려지므로 「볼 컬럼」 선택값과 편집표 키 무효화는 접힌 동안에도 그대로 돈다.
+
+    안쪽 expander 는 `expanded=True` 로 편다. popover 가 이미 접는 자리라, 그 안에서 또
+    접으면 컬럼 하나를 감추는 데 두 번을 눌러야 한다.
     """
     label = f"{title} · 표 보기 설정"
 
@@ -623,6 +626,7 @@ def _table_view_popover(
             filter_columns=filter_columns,
             locked_columns=locked_columns,
             label=label,
+            expanded=True,
         )
 
     if data.empty:

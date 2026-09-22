@@ -555,6 +555,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그것은 「거른 편집」이 아니라 「정말 지운 것」이다. 인덱스로 가르려 했더니 지운 행이
     되살아났다(`tests/test_table_view_controls.py` 가 막는다).
   - 보기 설정 위젯은 **`st.form` 밖**에 그려야 한다. 폼 안에 두면 저장을 눌러야 적용된다.
+  - `expanded=True` 는 이 설정이 **이미 접힌 자리**(가용설비 RawData 의 popover)에 들어갈 때
+    쓴다 — 접힌 것을 또 접으면 컬럼 하나를 감추는 데 두 번을 눌러야 한다.
 - `src/capa_simulation/components/securement_heatmap.py`
   - 공정 × 월 확보율을 상태 3색 격자로 그린다. 경계는 HOME·Static Capa 와 같은 세션
     값(`dashboard_*_threshold_percent`)을 읽는다. 연속 색을 쓰지 않는 이유는 같은 확보율이
