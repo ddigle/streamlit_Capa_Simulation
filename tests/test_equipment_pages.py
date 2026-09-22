@@ -41,7 +41,9 @@ QUESTION_MARKERS = {
     "어디가 비가동인가": "#### 비가동 설비호기",
     "Qual 은 어디까지 왔나": "#### Qual 확정상태 실행관리",
     "공정별로는 어떤가": "#### 공정소분류별 현황",
-    "기준정보와 맞나 (Static·Dynamic)": "#### 기준정보와 맞나",
+    "기준정보와 맞나 (Static·Dynamic)": (
+        "#### :material/compare_arrows: Static · Dynamic 가용대수 비교"
+    ),
 }
 
 
@@ -110,13 +112,11 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     # 공통 헤더가 상태 접미를 제목에서 떼어 배지로 보여준다.
     assert app.title[0].value == "가용설비 현황"
     assert any("Data확보중" in element.value for element in app.markdown)
-    # 보는 곳(Main)·고르는 곳(Preference)·원천을 다루는 곳(RawData)을 가르고, 기준정보와
-    # 맞대어 보는 곳만 따로 둔다. **Cut-off 탭은 `Preference` 안으로 들어갔다** — 한 번
-    # 적고 마는 기준값이라 탭 하나를 상시 차지할 자리가 아니었다(정의서 2-2).
+    # 보는 곳(Main)·고르는 곳(Preference)·원천을 다루는 곳(RawData) 셋뿐이다. Cut-off 는
+    # `Preference` 로, Static/Dynamic 은 Main 의 여섯 번째 질문으로 들어갔다(정의서 2-2·2-3).
     # 라벨은 `stateful_tabs` 의 기억값에 묶이므로 바꾸면 여기도 고친다.
     assert [tab.label for tab in app.tabs] == [
         ":material/dashboard: Main",
-        ":material/compare_arrows: Static/Dynamic",
         ":material/tune: Preference",
         ":material/table_rows: RawData",
     ]

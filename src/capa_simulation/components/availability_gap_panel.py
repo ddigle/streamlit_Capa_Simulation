@@ -1,10 +1,10 @@
-# Purpose: Static·Dynamic 가용대수 비교 탭의 필터·그림·분해 표를 그린다.
+# Purpose: Static·Dynamic 가용대수 비교의 필터·그림·분해 표를 그린다.
 
-"""Static 대 Dynamic 가용대수 비교 탭.
+"""Static 대 Dynamic 가용대수 비교 (`Main` 의 여섯 번째 질문).
 
-이 탭만 **시뮬레이션 DB** 를 본다. 나머지 탭은 설비 운영 DB 만 열며, 이 페이지는 활성
+이 답만 **시뮬레이션 DB** 를 본다. 페이지의 나머지는 설비 운영 DB 만 열며, 이 화면은 활성
 시나리오가 없어도 열리는 유일한 계산 계열 화면이다. 그래서 Static 을 못 읽는 상황
-(시나리오 없음·DB 잠김)은 **이 탭 안에서만** 알리고 다른 탭을 막지 않는다 — 페이지가
+(시나리오 없음·DB 잠김)은 **이 답 안에서만** 알리고 나머지 질문을 막지 않는다 — 페이지가
 통째로 죽으면 Cut-off 를 적으러 들어올 수조차 없다.
 
 그림은 비교를, 표가 분해를 맡는다(`components/availability_gap_figure.py`).
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date
+from typing import Literal
 
 import pandas as pd
 import streamlit as st
@@ -34,10 +35,13 @@ from capa_simulation.services.securement_cross_check import (
     dynamic_available_equipment,
 )
 
-__all__ = ["PROCESS_FILTER_KEY", "render_availability_gap_panel"]
+__all__ = ["PROCESS_FILTER_KEY", "GapSection", "render_availability_gap_panel"]
 
 PROCESS_FILTER_KEY = "equipment_gap_process_filter_v1"
 _ALL_PROCESSES = "전체 합계"
+
+#: 이 패널이 내놓는 조각. 호출자가 하나만 골라 그릴 수 있다.
+GapSection = Literal["chart", "breakdown", "crosscheck"]
 
 
 def render_availability_gap_panel(
@@ -51,14 +55,23 @@ def render_availability_gap_panel(
     span_bounds: tuple[date, date] | None = None,
     conversion_ratios: Mapping[str, float] | None = None,
     required_equipment: pd.DataFrame | None = None,
+    section: GapSection | None = None,
 ) -> None:
-    """비교 탭 본문.
+    """비교 본문.
 
     `spans` 는 `build_equipment_lifecycle_spans` 의 결과다. **호출자는 그 구간을
     `span_date_range` 가 알려 주는 범위로 만들어 넘겨야 한다** — Cut-off 가 크면 그 달의
     W/D 구간이 앞으로 크게 밀려, 조회기간만큼만 만든 구간으로는 첫 달이 조용히 모자라게
     세어진다. 그 범위를 여기서도 다시 재어 어긋나면 알린다.
+
+    `section` 은 **세로로 쌓여 있던 셋 중 하나만** 그리라는 뜻이다. `None` 이면 지금까지처럼
+    전부 그린다. 머리말·경고·`공정` 선택은 어느 조각에도 딸려야 하므로 가르지 않는다 —
+    그것들은 답이 아니라 이 답을 읽는 조건이다.
     """
+
+    def shows(candidate: GapSection) -> bool:
+        return section is None or section == candidate
+
     st.markdown("#### :material/compare_arrows: Static · Dynamic 가용대수 비교")
     st.caption(
         "Static 은 기준정보(RQ_EQP_AVBL)의 월별 가용대수이고, Dynamic 은 호기 마스터의 "
@@ -101,6 +114,9 @@ def render_availability_gap_panel(
         "공정",
         options=options,
         key=PROCESS_FILTER_KEY,
+        # 이 선택은 답을 바꾸는 조회 조건이라 **화면에서 사라져도 살아남아야 한다.**
+        # 다른 질문을 잠깐 보고 돌아오면 고른 공정이 「전체 합계」로 돌아가 있었다.
+        persist_state="session",
         help="전체 합계는 **양쪽에 다 있는 공정만** 더합니다. 한쪽에만 있는 공정은 "
         "이름을 골라 따로 봅니다.",
     )
@@ -125,33 +141,38 @@ def render_availability_gap_panel(
         st.info("표시할 값이 없습니다.")
         return
 
-    st.plotly_chart(
-        build_availability_gap_figure(matrix),
-        width="stretch",
-        config=hover_chart_config(),
-    )
+    if shows("chart"):
+        st.plotly_chart(
+            build_availability_gap_figure(matrix),
+            width="stretch",
+            config=hover_chart_config(),
+        )
 
-    display = matrix.copy()
-    display.columns = pd.Index([month_label(int(column)) for column in display.columns], name="월")
-    st.dataframe(display.round(2), width="stretch")
-    st.caption(
-        "**「환산비 반영」 행은 GAP 에 들어가지 않습니다.** Static 은 설비를 센 대수라 "
-        "환산대수와 맞대면 단위가 어긋납니다 — 그 행은 월 Total Capa 를 낼 때 쓰는 축입니다."
-    )
-    st.caption(
-        "「Dynamic 가용 소계」에 들어가는 것은 `기존보유` 와 `가용` 둘뿐입니다. "
-        "나머지 분류는 왜 못 쓰는지를 보여 주는 참고 행이라 소계에 더하지 않습니다 — "
-        "호기 상태는 서로 배타적이라 모두 더하면 가용대수가 아니라 보유 호기-일수가 됩니다."
-    )
-    if not processes_in(spans, baseline):
-        st.caption("호기 마스터와 기존보유대수가 모두 비어 있어 Dynamic 이 0 입니다.")
+    if shows("breakdown"):
+        display = matrix.copy()
+        display.columns = pd.Index(
+            [month_label(int(column)) for column in display.columns], name="월"
+        )
+        st.dataframe(display.round(2), width="stretch")
+        st.caption(
+            "**「환산비 반영」 행은 GAP 에 들어가지 않습니다.** Static 은 설비를 센 대수라 "
+            "환산대수와 맞대면 단위가 어긋납니다 — 그 행은 월 Total Capa 를 낼 때 쓰는 축입니다."
+        )
+        st.caption(
+            "「Dynamic 가용 소계」에 들어가는 것은 `기존보유` 와 `가용` 둘뿐입니다. "
+            "나머지 분류는 왜 못 쓰는지를 보여 주는 참고 행이라 소계에 더하지 않습니다 — "
+            "호기 상태는 서로 배타적이라 모두 더하면 가용대수가 아니라 보유 호기-일수가 됩니다."
+        )
+        if not processes_in(spans, baseline):
+            st.caption("호기 마스터와 기존보유대수가 모두 비어 있어 Dynamic 이 0 입니다.")
 
-    _render_securement_cross_check(
-        monthly=monthly,
-        static_availability=static,
-        required_equipment=required_equipment,
-        process=process,
-    )
+    if shows("crosscheck"):
+        _render_securement_cross_check(
+            monthly=monthly,
+            static_availability=static,
+            required_equipment=required_equipment,
+            process=process,
+        )
 
 
 def _render_securement_cross_check(

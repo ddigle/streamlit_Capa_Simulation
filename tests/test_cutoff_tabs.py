@@ -1,13 +1,13 @@
 # Purpose: Preference 의 Cut-off 본문과 Static/Dynamic 이 빈 DB·값 있는 DB 에서 그려지는지 검사한다.
 
-"""탭을 늘리면 **화면이 죽는 자리가 타입 검사에 안 걸린다.**
+"""탭·질문을 늘리면 **화면이 죽는 자리가 타입 검사에 안 걸린다.**
 
 세션 키 겹침, 탭 언패킹, 폼 안의 위젯 배치, 활성 시나리오가 없을 때의 예외 — 넷 다
 `mypy` 와 `ruff` 를 통과한 채로 화면에서만 터진다. 실제로 이 파일을 쓰다가
 `pd.Series([pd.NA] * n, dtype="float64")` 가 `TypeError` 로 죽는 것을 잡았다.
 
 이 페이지는 **활성 시나리오가 없어도 열리는 유일한 계산 계열 화면**이다. Static 을 읽는
-탭이 생겼으므로, 그 탭이 못 읽어도 나머지가 살아 있어야 한다.
+자리는 Main 의 여섯 번째 질문이고, 그 답이 못 읽어도 나머지가 살아 있어야 한다.
 """
 
 from __future__ import annotations
@@ -34,10 +34,22 @@ from capa_simulation.services.process_cutoff import prepare_process_cutoff
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+# 페이지는 스크립트로 실행되어 상수를 import 할 수 없다. 값이 갈리면 아래 두 건이 곧바로
+# 실패하므로 조용히 어긋나지 않는다.
+MAIN_QUESTION_KEY = "equipment_main_question_v1"
+QUESTION_GAP = "기준정보와 맞나 (Static·Dynamic)"
 
 
-def _run(database_path: Path) -> AppTest:
-    return AppTest.from_string(_page_script(PAGE, database_path), default_timeout=120).run()
+def _run(database_path: Path, *, question: str | None = None) -> AppTest:
+    """`question` 을 주면 Main 의 그 질문을 고른 채로 연다.
+
+    Static·Dynamic 은 이제 탭이 아니라 Main 의 여섯 번째 질문이라, **고르지 않으면 아예
+    계산되지 않는다.** 그 답을 검사하는 자리는 질문을 넣고 열어야 한다.
+    """
+    app = AppTest.from_string(_page_script(PAGE, database_path), default_timeout=120)
+    if question is not None:
+        app.session_state[MAIN_QUESTION_KEY] = question
+    return app.run()
 
 
 def test_the_cutoff_tab_renders_on_an_empty_database(tmp_path: Path) -> None:
@@ -50,17 +62,17 @@ def test_the_cutoff_tab_renders_on_an_empty_database(tmp_path: Path) -> None:
     clear_equipment_repository()
 
 
-def test_the_gap_tab_asks_for_a_cutoff_before_it_computes(tmp_path: Path) -> None:
+def test_the_gap_answer_asks_for_a_cutoff_before_it_computes(tmp_path: Path) -> None:
     """Cut-off 가 없으면 Dynamic 을 낼 수 없다. 조용히 0 을 보이지 않고 이유를 말한다."""
-    app = _run(tmp_path / "availability.duckdb")
+    app = _run(tmp_path / "availability.duckdb", question=QUESTION_GAP)
 
     notices = " ".join(str(item.value) for item in app.info)
     assert "Cut-off" in notices, notices
     clear_equipment_repository()
 
 
-def test_a_saved_cutoff_lets_the_gap_tab_draw(tmp_path: Path) -> None:
-    """Cut-off 를 저장하면 비교 탭이 공정 선택과 그림을 낸다."""
+def test_a_saved_cutoff_lets_the_gap_answer_draw(tmp_path: Path) -> None:
+    """Cut-off 를 저장하면 비교 본문이 공정 선택과 그림을 낸다."""
     database_path = tmp_path / "availability.duckdb"
     repository = DuckDBEquipmentRepository(database_path)
     repository.initialize()
@@ -68,7 +80,7 @@ def test_a_saved_cutoff_lets_the_gap_tab_draw(tmp_path: Path) -> None:
         pd.DataFrame({"공정": ["Die Attach"], "Cutoff일수": [15.0], "비고": [None]})
     )
 
-    app = _run(database_path)
+    app = _run(database_path, question=QUESTION_GAP)
 
     assert not app.exception
     selectbox_labels = [widget.label for widget in app.selectbox]
@@ -77,7 +89,7 @@ def test_a_saved_cutoff_lets_the_gap_tab_draw(tmp_path: Path) -> None:
 
 
 def test_a_process_without_a_cutoff_is_surfaced_not_silently_dropped(tmp_path: Path) -> None:
-    """빠진 공정을 화면이 말해야 한다 — 조용히 빠지면 옆 탭 합이 이유 없이 작아진다."""
+    """빠진 공정을 화면이 말해야 한다 — 조용히 빠지면 Dynamic 합이 이유 없이 작아진다."""
     app = _run(tmp_path / "availability.duckdb")
 
     warnings = " ".join(str(item.value) for item in app.warning)

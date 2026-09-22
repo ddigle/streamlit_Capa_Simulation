@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.availability_gap_panel import (
+    GapSection,
     render_availability_gap_panel,
 )
 from capa_simulation.components.cutoff_management import render_cutoff_management
@@ -99,7 +100,6 @@ FLASH_KEY = "equipment_status_flash"
 # 탭 라벨은 `stateful_tabs` 의 기억값에 그대로 묶인다 — 문자열을 두 곳에 적으면 기억이
 # 조용히 끊긴다. 선언은 여기 한 곳이다.
 TAB_MAIN = ":material/dashboard: Main"
-TAB_GAP = ":material/compare_arrows: Static/Dynamic"
 TAB_PREFERENCE = ":material/tune: Preference"
 TAB_RAWDATA = ":material/table_rows: RawData"
 EQUIPMENT_TAB_KEY = "equipment_active_tab"
@@ -147,6 +147,7 @@ TIMELINE_VIEW_KEY = "equipment_main_timeline_view_v1"
 QUAL_STATUS_KEY = "equipment_main_qual_status_v1"
 PROCESS_SORT_KEY = "equipment_main_process_sort_v1"
 DOWNTIME_VIEW_KEY = "equipment_main_downtime_view_v1"
+GAP_SECTION_KEY = "equipment_main_gap_section_v1"
 STATUS_VIEW_CHART = "막대"
 STATUS_VIEW_TABLE = "표"
 TIMELINE_VIEW_TREND = "합계 추이(주차)"
@@ -156,6 +157,16 @@ PROCESS_SORT_NAME = "공정명 순"
 DOWNTIME_VIEW_MONTH = "그 달 전체"
 DOWNTIME_VIEW_WEEK = "기준 주차 시점"
 DOWNTIME_VIEW_SOURCE = "비가동 일정 원본"
+GAP_SECTION_CHART = "월별 비교(그림)"
+GAP_SECTION_BREAKDOWN = "분류 분해(표)"
+GAP_SECTION_CROSSCHECK = "확보율 교차검증"
+# 화면 라벨을 패널이 아는 이름으로 옮긴다. 라벨은 한국어로 바꿀 수 있어야 하고 패널의
+# 인자는 계약이라 같은 문자열을 쓰지 않는다.
+_GAP_SECTIONS: dict[str, GapSection] = {
+    GAP_SECTION_CHART: "chart",
+    GAP_SECTION_BREAKDOWN: "breakdown",
+    GAP_SECTION_CROSSCHECK: "crosscheck",
+}
 
 
 def _filter_equipment(
@@ -439,13 +450,8 @@ small_process_options = sorted(
     | set(baseline["공정"].dropna().astype(str).unique().tolist())
 )
 
-main_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
-    [
-        TAB_MAIN,
-        TAB_GAP,
-        TAB_PREFERENCE,
-        TAB_RAWDATA,
-    ],
+main_tab, preference_tab, rawdata_tab = stateful_tabs(
+    [TAB_MAIN, TAB_PREFERENCE, TAB_RAWDATA],
     key=EQUIPMENT_TAB_KEY,
 )
 
@@ -488,72 +494,6 @@ with preference_tab:
             repository,
             equipment_processes=processes_in(dashboard_equipment, baseline),
             stored=stored_cutoff,
-        )
-
-with gap_tab:
-    # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지 탭은 설비 DB 만 열고 활성
-    # 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 탭 안에서 알리고, 다른
-    # 탭을 막지 않는다 — 페이지가 통째로 죽으면 Cut-off 를 적으러 들어올 수도 없다.
-    static_availability: pd.DataFrame | None = None
-    gap_required_equipment: pd.DataFrame | None = None
-    static_error: str | None = None
-    try:
-        gap_context = load_page_context()
-        static_availability = gap_context.reference_tables["RQ_EQP_AVBL"]
-        # 소요대수는 확보율을 맞대려고 받는다. 다섯 페이지가 같은 키로 한 번만 계산하므로
-        # 여기서 다시 계산되지 않는다.
-        _, gap_required_equipment = get_scenario_capacity_and_demand(
-            scenario_cache_key(
-                gap_context.reference_version,
-                gap_context.active_scenario,
-                gap_context.selected_start_month,
-                gap_context.selected_end_month,
-            ),
-            _scenario_tables=gap_context.active_scenario["tables"],
-            _reference_tables=gap_context.reference_tables,
-        )
-    except BOOTSTRAP_ERRORS as exc:
-        static_error = bootstrap_error_message(
-            exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
-        )
-
-    gap_months = _months_between(start_date, end_date)
-    # Cut-off 가 크면 그 달의 W/D 구간이 앞으로 밀린다. 조회기간만큼만 구간을 만들면 첫 달이
-    # 조용히 모자라게 세어지므로, 필요한 만큼 앞에서부터 다시 만든다.
-    required_span = span_date_range(gap_months, stored_cutoff)
-    span_start = min(start_date, required_span[0]) if required_span else start_date
-    span_end = max(end_date, required_span[1]) if required_span else end_date
-    try:
-        gap_spans = build_equipment_lifecycle_spans(
-            dashboard_equipment,
-            dashboard_downtime,
-            start_date=span_start,
-            end_date=span_end,
-        )
-    except ValueError as exc:
-        st.error(str(exc))
-    else:
-        # 호기별 환산비. 월 Total Capa 축(`환산대수`)만 이 값을 곱한다 — 대수를 세는
-        # 축은 그대로다. 값이 없는 호기는 기준 모델과 같다고 보고 1.0 이다.
-        gap_ratios = {
-            str(unit).strip(): float(ratio)
-            for unit, ratio in zip(
-                dashboard_equipment.get("호기", []),
-                dashboard_equipment.get("환산비", []),
-                strict=False,
-            )
-            if pd.notna(ratio)
-        }
-        render_availability_gap_panel(
-            spans=gap_spans,
-            baseline=baseline,
-            cutoff=stored_cutoff,
-            months=gap_months,
-            static_availability=static_availability,
-            static_error=static_error,
-            span_bounds=(span_start, span_end),
-            conversion_ratios=gap_ratios,
-            required_equipment=gap_required_equipment,
         )
 
 with main_tab:
@@ -685,6 +625,17 @@ with main_tab:
                 key=QUAL_STATUS_KEY,
                 persist_state="session",
                 help="고르지 않으면 전체입니다.",
+            )
+        elif question == QUESTION_GAP:
+            if GAP_SECTION_KEY not in st.session_state:
+                st.session_state[GAP_SECTION_KEY] = GAP_SECTION_CHART
+            st.segmented_control(
+                "보기",
+                options=(GAP_SECTION_CHART, GAP_SECTION_BREAKDOWN, GAP_SECTION_CROSSCHECK),
+                selection_mode="single",
+                required=True,
+                key=GAP_SECTION_KEY,
+                persist_state="session",
             )
         elif question == QUESTION_PROCESS:
             if PROCESS_SORT_KEY not in st.session_state:
@@ -1099,12 +1050,84 @@ with main_tab:
                     st.dataframe(breakdown, hide_index=True, width="stretch")
 
             elif question == QUESTION_GAP:
-                with st.container(border=True):
-                    st.markdown("#### 기준정보와 맞나")
-                    st.info(
-                        "기준정보(Static) 와 호기 마스터(Dynamic) 를 맞대어 보는 자리는 아직 "
-                        "**Static/Dynamic 탭**에 있습니다. 다음 단계에서 이 질문 안으로 옮깁니다."
+                # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지는 설비 DB 만 열고
+                # 활성 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 답 안에서
+                # 알리고 나머지 다섯 질문과 RawData 를 막지 않는다 — 페이지가 통째로 죽으면
+                # Cut-off 를 적으러 들어올 수도 없다. **이 질문을 고르지 않으면 시뮬레이션
+                # DB 를 아예 열지 않는다.**
+                static_availability: pd.DataFrame | None = None
+                gap_required_equipment: pd.DataFrame | None = None
+                static_error: str | None = None
+                try:
+                    gap_context = load_page_context()
+                    static_availability = gap_context.reference_tables["RQ_EQP_AVBL"]
+                    # 소요대수는 확보율을 맞대려고 받는다. 다섯 페이지가 같은 키로 한 번만
+                    # 계산하므로 여기서 다시 계산되지 않는다.
+                    _, gap_required_equipment = get_scenario_capacity_and_demand(
+                        scenario_cache_key(
+                            gap_context.reference_version,
+                            gap_context.active_scenario,
+                            gap_context.selected_start_month,
+                            gap_context.selected_end_month,
+                        ),
+                        _scenario_tables=gap_context.active_scenario["tables"],
+                        _reference_tables=gap_context.reference_tables,
                     )
+                except BOOTSTRAP_ERRORS as exc:
+                    static_error = bootstrap_error_message(
+                        exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
+                    )
+
+                gap_months = _months_between(start_date, end_date)
+                # Cut-off 가 크면 그 달의 W/D 구간이 앞으로 밀린다. 조회기간만큼만 구간을
+                # 만들면 첫 달이 조용히 모자라게 세어지므로, 필요한 만큼 앞에서부터 다시 만든다.
+                required_span = span_date_range(gap_months, stored_cutoff)
+                span_start = min(start_date, required_span[0]) if required_span else start_date
+                span_end = max(end_date, required_span[1]) if required_span else end_date
+                try:
+                    gap_spans = build_equipment_lifecycle_spans(
+                        dashboard_equipment,
+                        dashboard_downtime,
+                        start_date=span_start,
+                        end_date=span_end,
+                    )
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    # 호기별 환산비. 월 Total Capa 축(`환산대수`)만 이 값을 곱한다 — 대수를
+                    # 세는 축은 그대로다. 값이 없는 호기는 기준 모델과 같다고 보고 1.0 이다.
+                    gap_ratios = {
+                        str(unit).strip(): float(ratio)
+                        for unit, ratio in zip(
+                            dashboard_equipment.get("호기", []),
+                            dashboard_equipment.get("환산비", []),
+                            strict=False,
+                        )
+                        if pd.notna(ratio)
+                    }
+                    with st.container(border=True):
+                        # **숫자 체계가 다르다는 것을 여기서 말한다.** 같은 달을 두 축이
+                        # 다르게 말하는 것이 정상인데, 그 이유가 화면에 없으면 어느 쪽이
+                        # 틀렸다고 읽힌다.
+                        st.caption(
+                            "앞의 다섯 질문은 **일요일 시점의 표본**이라 대수가 정수이고, "
+                            "이 답은 **W/D 일할**이라 소수입니다 — 그 달에 며칠 있었는지로 "
+                            "1대를 쪼개 셉니다. 같은 달을 다르게 말하는 것이 정상입니다. "
+                            "이 답은 기준정보와 맞대는 자리라 위 조회 조건 대신 아래 "
+                            "`공정` 으로 좁힙니다."
+                        )
+                        render_availability_gap_panel(
+                            spans=gap_spans,
+                            baseline=baseline,
+                            cutoff=stored_cutoff,
+                            months=gap_months,
+                            static_availability=static_availability,
+                            static_error=static_error,
+                            span_bounds=(span_start, span_end),
+                            conversion_ratios=gap_ratios,
+                            required_equipment=gap_required_equipment,
+                            section=_GAP_SECTIONS[str(st.session_state[GAP_SECTION_KEY])],
+                        )
 
 with rawdata_tab:
     if latest_snapshot is None:
