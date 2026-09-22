@@ -1,4 +1,4 @@
-# Purpose: Static·Dynamic 가용대수 비교 탭의 필터·그림·분해 표를 그린다.
+# Purpose: Static·Dynamic 비교에서 선택한 가용대수·분류 내역·확보율 결과 하나를 그린다.
 
 """Static 대 Dynamic 가용대수 비교 탭.
 
@@ -7,7 +7,7 @@
 (시나리오 없음·DB 잠김)은 **이 탭 안에서만** 알리고 다른 탭을 막지 않는다 — 페이지가
 통째로 죽으면 Cut-off 를 적으러 들어올 수조차 없다.
 
-그림은 비교를, 표가 분해를 맡는다(`components/availability_gap_figure.py`).
+가용대수 그림·분류별 표·확보율 교차검증 중 선택한 결과만 그린다.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from capa_simulation.components.availability_gap_figure import (
     month_label,
 )
 from capa_simulation.components.plotly_layout import hover_chart_config
+from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.services.availability_gap import build_availability_gap, gap_matrix
 from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_availability,
@@ -34,10 +35,12 @@ from capa_simulation.services.securement_cross_check import (
     dynamic_available_equipment,
 )
 
-__all__ = ["PROCESS_FILTER_KEY", "render_availability_gap_panel"]
+__all__ = ["PROCESS_FILTER_KEY", "RESULT_VIEW_KEY", "render_availability_gap_panel"]
 
 PROCESS_FILTER_KEY = "equipment_gap_process_filter_v1"
+RESULT_VIEW_KEY = "equipment_gap_result_view_v1"
 _ALL_PROCESSES = "전체 합계"
+_RESULT_VIEWS = ("가용대수 비교", "분류별 내역", "확보율 교차검증")
 
 
 def render_availability_gap_panel(
@@ -51,6 +54,7 @@ def render_availability_gap_panel(
     span_bounds: tuple[date, date] | None = None,
     conversion_ratios: Mapping[str, float] | None = None,
     required_equipment: pd.DataFrame | None = None,
+    owner_tab: OpenTab | None = None,
 ) -> None:
     """비교 탭 본문.
 
@@ -58,7 +62,11 @@ def render_availability_gap_panel(
     `span_date_range` 가 알려 주는 범위로 만들어 넘겨야 한다** — Cut-off 가 크면 그 달의
     W/D 구간이 앞으로 크게 밀려, 조회기간만큼만 만든 구간으로는 첫 달이 조용히 모자라게
     세어진다. 그 범위를 여기서도 다시 재어 어긋나면 알린다.
+    숨은 탭은 계산과 렌더링을 건너뛰고, 두 선택값은 세션에 남긴다.
     """
+    if tab_is_hidden(owner_tab):
+        return
+
     st.markdown("#### :material/compare_arrows: Static · Dynamic 가용대수 비교")
     st.caption(
         "Static 은 기준정보(RQ_EQP_AVBL)의 월별 가용대수이고, Dynamic 은 호기 마스터의 "
@@ -79,7 +87,7 @@ def render_availability_gap_panel(
         st.warning(
             f"Cut-off 때문에 {required[0]:%Y-%m-%d} 부터의 설비 상태가 필요한데 "
             f"조회기간이 {span_bounds[0]:%Y-%m-%d} 부터입니다. 첫 달이 모자라게 세어집니다 — "
-            "Preference 탭에서 시작일을 앞당기세요."
+            "조회기간의 시작일을 앞당기세요."
         )
 
     monthly = build_monthly_equipment_availability(
@@ -96,15 +104,38 @@ def render_availability_gap_panel(
 
     _render_unmatched(comparison.dynamic_only, comparison.static_only)
 
+    result_view = st.segmented_control(
+        "조회 결과",
+        options=_RESULT_VIEWS,
+        default=_RESULT_VIEWS[0],
+        required=True,
+        key=RESULT_VIEW_KEY,
+        persist_state="session",
+    )
     options = [_ALL_PROCESSES, *sorted(set(comparison.rows["공정"].dropna().astype(str)))]
+    if (
+        PROCESS_FILTER_KEY in st.session_state
+        and st.session_state[PROCESS_FILTER_KEY] not in options
+    ):
+        st.session_state.pop(PROCESS_FILTER_KEY)
     selected = st.selectbox(
         "공정",
         options=options,
         key=PROCESS_FILTER_KEY,
+        persist_state="session",
         help="전체 합계는 **양쪽에 다 있는 공정만** 더합니다. 한쪽에만 있는 공정은 "
         "이름을 골라 따로 봅니다.",
     )
     process = None if selected == _ALL_PROCESSES else selected
+
+    if result_view == "확보율 교차검증":
+        _render_securement_cross_check(
+            monthly=monthly,
+            static_availability=static,
+            required_equipment=required_equipment,
+            process=process,
+        )
+        return
 
     if process is None:
         # **한쪽에만 있는 공정을 합계에서 뺀다.** 넣으면 「Cut-off 를 아직 안 적었다」가
@@ -125,11 +156,16 @@ def render_availability_gap_panel(
         st.info("표시할 값이 없습니다.")
         return
 
-    st.plotly_chart(
-        build_availability_gap_figure(matrix),
-        width="stretch",
-        config=hover_chart_config(),
-    )
+    if not processes_in(spans, baseline):
+        st.caption("호기 마스터와 기존보유대수가 모두 비어 있어 Dynamic 이 0 입니다.")
+
+    if result_view == "가용대수 비교":
+        st.plotly_chart(
+            build_availability_gap_figure(matrix),
+            width="stretch",
+            config=hover_chart_config(),
+        )
+        return
 
     display = matrix.copy()
     display.columns = pd.Index([month_label(int(column)) for column in display.columns], name="월")
@@ -142,15 +178,6 @@ def render_availability_gap_panel(
         "「Dynamic 가용 소계」에 들어가는 것은 `기존보유` 와 `가용` 둘뿐입니다. "
         "나머지 분류는 왜 못 쓰는지를 보여 주는 참고 행이라 소계에 더하지 않습니다 — "
         "호기 상태는 서로 배타적이라 모두 더하면 가용대수가 아니라 보유 호기-일수가 됩니다."
-    )
-    if not processes_in(spans, baseline):
-        st.caption("호기 마스터와 기존보유대수가 모두 비어 있어 Dynamic 이 0 입니다.")
-
-    _render_securement_cross_check(
-        monthly=monthly,
-        static_availability=static,
-        required_equipment=required_equipment,
-        process=process,
     )
 
 
@@ -166,7 +193,6 @@ def _render_securement_cross_check(
     **HOME·B/N 은 그대로 Static 을 본다.** 여기는 기준정보 값을 교차검증하는 자리이고,
     값이 믿을 만해지고 Cut-off 가 채워진 뒤에 전역 전환을 정한다.
     """
-    st.markdown("---")
     st.markdown("##### :material/fact_check: 확보율 교차검증")
     if required_equipment is None or required_equipment.empty:
         st.info("소요대수를 읽지 못해 확보율을 맞댈 수 없습니다.")
@@ -190,7 +216,7 @@ def _render_securement_cross_check(
             f"맞대어 본 달: {month_label(check.months[0])} ~ {month_label(check.months[-1])} "
             f"({len(check.months)}개월). **설비 조회기간이 덮는 달로 좁혔습니다** — "
             "시나리오 조회기간이 더 넓어도 그 달의 설비 상태를 만들지 않았으면 맞댈 수 "
-            "없습니다. Preference 탭에서 기간을 넓히면 늘어납니다."
+            "없습니다. 조회기간을 넓히면 늘어납니다."
         )
     if check.fallback_processes:
         st.caption(
