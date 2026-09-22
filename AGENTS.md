@@ -340,17 +340,28 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     링크는 공용 `components/page_link.py` 를 쓴다.
   - 현재 수치는 결정론적 데모이고 샘플 스위치로 끌 수 있다.
 - `app_pages/available_equipment_status.py`
-  - `Main`·`Cut-off`·`Static/Dynamic`·`Preference`·`RawData` 다섯 탭이다
-    (`stateful_tabs`, key `equipment_active_tab`).
-  - `Cut-off` 는 공정별 표준 납기(일)를 적는 원장이다. **TAT 와 공정 선후관계가 저장소에
-    없어 파생할 수 없고 사람이 적는다.** 리비전을 만들지 않고 표를 통째로 갈아 끼운다
+  - `Main`·`Preference`·`RawData` 세 탭이다(`stateful_tabs`, key `equipment_active_tab`).
+  - **Main 은 질문 하나를 고르는 틀이다.** 여섯 질문(`MAIN_QUESTIONS`, `st.pills`)을 한 줄에
+    세우고 **고른 질문의 답 하나만** 그린다 — 나머지 다섯은 그리지도 계산하지도 않는다.
+    질문 전용 옵션과 조회 조건(라인·활용·공정대분류·공정소분류)이 그 아래 한 줄에 선다.
+    기준 월은 Q1·Q3·Q5 가 공유해 「10월」을 한 번만 고른다. Q3 「어디가 비가동인가」는 보기
+    셋(그 달 전체·기준 주차 시점·비가동 일정 원본)을 갖고, 기본인 「그 달 전체」는 구간이
+    바뀌는 날짜마다 다시 재어 주차 종료일 표본이 놓치는 비가동을 잡는다. Q5 「공정별로는
+    어떤가」는 표의 행을 고르면 **기준 월을 그대로 둔 채** Q3 로 그 공정만 넘긴다.
+    Q6 은 고를 때만 시뮬레이션 DB 를 연다.
+  - 위젯 기본값은 **세션에 심고 `default=` 를 주지 않는다.** 둘을 같이 주면 매 회차
+    「created with a default value but also had its value set via the Session State API」
+    경고가 서버 로그에만 남는다(`tests/test_equipment_pages.py` 가 로거로 잡는다).
+  - Cut-off(`Preference` 안의 본문)는 공정별 표준 납기(일)를 적는 원장이다. **TAT 와 공정
+    선후관계가 저장소에 없어 파생할 수 없고 사람이 적는다.** 리비전을 만들지 않고 표를 통째로 갈아 끼운다
     (`0009`, `equipment_ops.process_cutoff`) — 행을 지우는 것이 곧 「그 공정을 산출에서
     빼라」는 편집이라 부분 upsert 로는 뜻을 표현할 수 없다. 키에 `product_scope` 를 미리
     열어 두었고 지금은 모두 `'*'` 다.
-  - `Static/Dynamic` 은 기준정보 `RQ_EQP_AVBL`(Static)과 호기 일정 안분(Dynamic)을 맞대어
-    GAP 을 낸다. **이 페이지에서 시뮬레이션 DB 를 여는 유일한 탭**이고, 못 읽어도 그 탭
-    안에서만 알린다 — 이 페이지는 활성 시나리오 없이도 열리는 유일한 계산 계열 화면이라
-    통째로 막으면 Cut-off 를 적으러 들어올 수도 없다.
+  - 여섯 번째 질문 「기준정보와 맞나 (Static·Dynamic)」 은 기준정보 `RQ_EQP_AVBL`(Static)과
+    호기 일정 안분(Dynamic)을 맞대어 GAP 을 낸다. **이 페이지에서 시뮬레이션 DB 를 여는
+    유일한 자리**이고 그 질문을 고를 때만 연다. 못 읽어도 그 답 안에서만 알린다 — 이
+    페이지는 활성 시나리오 없이도 열리는 유일한 계산 계열 화면이라 통째로 막으면 Cut-off 를
+    적으러 들어올 수도 없다. 세 구획(그림·분해 표·확보율 교차검증)은 보기 하나씩 그린다.
   - 월별 Dynamic 가용대수는 `(전월 말일 - cutoff, 당월 말일 - cutoff]` 반열린 구간과 겹친
     일수로 안분한다(`services/wd_window.py`). 구간 길이는 늘 그 달의 달력일수이고 열두
     구간의 합이 365일이어야 한다. **가용 소계에 드는 분류는 `기존보유`·`가용` 둘뿐이고**
@@ -380,10 +391,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     얹히면 Import 가 조용히 되돌려진다.
   - `RawData` 탭의 접힌 운영 지침에서 기존 보유대수·호기 마스터·비가동 일정의
     역할 구분, Import부터 리비전 저장까지의 절차와 적용 제한을 안내한다.
-  - 대시보드에 **호기별 생애주기 일정 Gantt** 를 둔다. 상태 막대는 「지금 몇 대가 어느
-    상태인가」를, Gantt 는 「언제 몇 대가 쓸 수 있게 되는가」를 답한다.
+  - **붙여넣기에는 미리보기 버튼이 없다.** 칸을 벗어나면 `on_change` 가 그 자리에서
+    검사한다. 전체가 실패하면 가벼운 파서로 행에 귀속하고(`components/
+    equipment_import_preview.py`), 편집본과 합쳐야 드러나는 잘못은 행 목록 없이 카드로
+    알린다. 저장을 막는 예시 행은 누르기 전에 알리고 한 번에 지운다.
+  - **파일 업로드는 붙여넣기 칸을 채운다.** CSV 는 `csv` 모듈로(앞자리 0·정수 표기를 지키려
+    pandas 왕복을 쓰지 않는다), xlsx 는 `openpyxl` 로 직접 읽어 탭 구분 글로 바꾼 뒤 같은
+    검사 경로를 탄다. `openpyxl` 은 **선택 의존**이라 import 가드(`XLSX_AVAILABLE`) 뒤에
+    있고, 없으면 업로더가 CSV 만 받는다. 업로더의 키는 세션에서 쓰지 않는다(Streamlit 이
+    막는다) — 적용·취소는 붙여넣기 칸만 비운다.
+  - 저장본이 하나도 없으면 탭 **밖**에 「시작하기」 카드가 선다. 적는 것은 DuckDB 에 저장된
+    건수뿐이고 대수는 적지 않는다 — Main 의 총대수는 데모 fleet 을 합친 다른 산식이다.
+  - **호기별 생애주기 일정 Gantt** 는 「언제 몇 대가 쓸 수 있게 되나」의 `호기별 타임라인`
+    보기다. 같은 질문의 다른 보기인 주차별 누적 막대가 합계 추이를 답하고, 상태 막대는
+    「지금 몇 대가 어느 상태인가」가 답한다.
   - 호기 마스터가 비었을 때만 샘플 스위치가 뜬다. 실데이터가 있으면 끌 것이 없다.
-  - 시뮬레이션 DB, 활성 시나리오, `RQ_*` 기준정보와 공통 시뮬레이션 조회기간을 읽지 않는다.
+  - 시뮬레이션 DB, 활성 시나리오, `RQ_*` 기준정보와 공통 시뮬레이션 조회기간은 **여섯 번째
+    질문에서만** 읽는다. 나머지 다섯 질문과 두 탭은 설비 전용 DB·조회기간만 본다.
 - `app_pages/actual_efficiency.py`, `app_pages/actual_upeh.py`, `app_pages/yield_actual.py`
   - Dynamic Capa의 실적 비교·개선관리 하위 페이지 셋이다. **화면은 한 벌뿐**이고
     (`components/performance_actual_screen.py`) 이 파일들은 `MetricSpec` 과 머리말 문구만
@@ -1195,7 +1219,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 누적 퍼센트는 단계 수 균등 분할이 아니라 **측정한 소요 시간 비율**로 정한다. HOME 은
     차트 생성이 대부분을 쓴다(`HOME_LOADING_STAGES`).
 - `src/capa_simulation/components/cutoff_management.py`
-  - 가용설비 현황 `Cut-off` 탭 본문. 편집표·저장·CSV 왕복과 **빠진 공정 안내**.
+  - 가용설비 현황 `Preference` 안의 Cut-off 본문. 편집표·저장·CSV 왕복과 **빠진 공정 안내**.
   - 저장된 값을 돌려준다(편집 중인 초안이 아니다). 옆 탭의 GAP 이 저장 안 된 값으로 숫자를
     내면 화면에 보이는 수와 계산에 쓰인 수가 달라진다 — 가장 나쁜 종류의 어긋남이다.
 - `src/capa_simulation/components/equipment_import_preview.py`
@@ -1207,8 +1231,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 한 행씩은 다 통과하는데 전체가 실패하면 행을 넘나드는 규칙(호기 중복 등)이다. 행 목록
     없이 프레임 오류로 알린다. 칸 안에 줄바꿈이 있어 줄 수와 행 수가 어긋나면 귀속하지 않는다.
 - `src/capa_simulation/components/availability_gap_panel.py`
-  - 가용설비 현황 `Static/Dynamic` 탭 본문. 필터·그림·분해 표와 맞대지 못한 공정 안내.
-  - **이 페이지에서 시뮬레이션 DB 를 여는 유일한 자리**다. 못 읽어도 이 탭 안에서만
+  - 가용설비 현황 Main 의 여섯 번째 질문 본문. 필터·그림·분해 표와 맞대지 못한 공정 안내를
+    갖고, `section=` 으로 **한 구획만** 그린다(그림·분해 표·확보율 교차검증).
+  - **이 페이지에서 시뮬레이션 DB 를 여는 유일한 자리**다. 못 읽어도 이 답 안에서만
     알린다 — 이 페이지는 활성 시나리오 없이도 열리는 유일한 계산 계열 화면이라 통째로
     막으면 Cut-off 를 적으러 들어올 수조차 없다.
   - Cut-off 때문에 조회기간이 모자라면 경고한다. 그러지 않으면 첫 달이 조용히 작아진다.
