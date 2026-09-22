@@ -146,15 +146,20 @@ _HIDDEN_AXIS: Final[Mapping[str, object]] = {
 }
 
 
-def _paper_hrule(y: float, *, color: str, width: float, layer: str = "above") -> dict[str, Any]:
-    """paper 좌표 전폭 가로선 하나. 네 구획의 머리글 밑줄·행 경계가 모두 이 꼴이다.
+def _paper_hrule(
+    y: float, *, color: str, width: float, layer: str = "above", x0: float = 0.0
+) -> dict[str, Any]:
+    """paper 좌표 가로선 하나. 네 구획의 머리글 밑줄·행 경계가 모두 이 꼴이다.
+
+    `x0` 를 주면 그 자리부터 긋는다. 왼쪽 분류 칸을 **가로지르지 않아야** 하는 선이
+    있다 — 계획 세부수량의 Stack 경계가 제품 칸을 지나가면 제품 묶음이 끊겨 보인다.
 
     색·굵기·층을 기본값으로 두지 않는다 — 자리마다 다르고, `tokens.*` 를 기본 인자에
     적으면 `def` 를 읽는 순간의 팔레트로 굳는다.
     """
     return {
         "type": "line",
-        "x0": 0,
+        "x0": x0,
         "x1": 1,
         "y0": y,
         "y1": y,

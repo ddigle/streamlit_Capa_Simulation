@@ -173,6 +173,11 @@ def build_plan_detail_figures(
     다시 적을 것이 없다.
     """
     dimensions = list(detail_dimensions or PRODUCTION_DETAIL_DIMENSIONS)
+    detail_dimension_widths = [DETAIL_DIMENSION_WIDTHS.get(column, 1.0) for column in dimensions]
+    # 제품 칸이 끝나는 자리(paper 0~1). **폭에서 계산한다** — `상세` 를 켜면 거래선이
+    # 붙어 분모가 2.0 에서 3.0 으로 바뀌는데, 숫자를 박아 두면 그때 선이 엉뚱한 칸
+    # 경계로 밀린다. 실제로 그렇게 밀려 있었다.
+    detail_product_boundary = detail_dimension_widths[0] / sum(detail_dimension_widths)
     # 조회 범위의 모든 달을 컬럼으로 유지한다. 세부 데이터에 없는 달을 빼면 컬럼 수가
     # 줄어드는데 Figure 폭은 `len(month_labels)` 로 잡으므로, 컬럼 폭이 100px 그리드보다
     # 넓어져 헤더가 뒤로 갈수록 밀린다. 요약표와 월이 세로로 어긋나기도 한다.
@@ -238,7 +243,7 @@ def build_plan_detail_figures(
     detail_figure_height = detail_header_height + max(len(displayed_detail), 1) * detail_row_height
     detail_label_figure = go.Figure(
         go.Table(
-            columnwidth=[DETAIL_DIMENSION_WIDTHS.get(column, 1.0) for column in dimensions],
+            columnwidth=detail_dimension_widths,
             header={
                 "values": [
                     f"<b>{DETAIL_DIMENSION_HEADERS.get(column, column)}</b>"
@@ -365,8 +370,8 @@ def build_plan_detail_figures(
             detail_header_shape,
             {
                 "type": "line",
-                "x0": 1.4 / 2.0,
-                "x1": 1.4 / 2.0,
+                "x0": detail_product_boundary,
+                "x1": detail_product_boundary,
                 "y0": 0,
                 "y1": 1,
                 "xref": "paper",
@@ -414,23 +419,31 @@ def build_plan_detail_figures(
         ],
     )
 
-    def _detail_row_rule(row_start: int, color: str, width: float) -> dict[str, Any]:
-        """행 `row_start` 의 위 모서리에 놓는 가로 선. 두 Figure 가 같은 값을 쓴다."""
+    def _detail_row_rule(
+        row_start: int, color: str, width: float, *, x0: float = 0.0
+    ) -> dict[str, Any]:
+        """행 `row_start` 의 위 모서리에 놓는 가로 선."""
         y = 1 - (detail_header_height + row_start * detail_row_height) / detail_figure_height
-        return _paper_hrule(y, color=color, width=width)
+        return _paper_hrule(y, color=color, width=width, x0=x0)
 
-    # 얇은 선을 **먼저** 넣는다. 제품 경계의 굵은 선이 뒤에 와야 겹칠 때 위로 올라온다.
-    detail_group_shapes = [
-        *(
-            _detail_row_rule(stack_start, tokens.BORDER, tokens.GRID_LINE_WIDTH_PX)
-            for stack_start in detail_stack_starts
-        ),
-        *(
-            _detail_row_rule(group_start, tokens.BORDER_STRONG, tokens.GROUP_BORDER_WIDTH_PX)
-            for group_start in detail_group_starts
-        ),
-    ]
-    append_layout_items(detail_label_figure, shapes=detail_group_shapes)
-    append_layout_items(detail_month_figure, shapes=detail_group_shapes)
+    def _detail_group_shapes(stack_x0: float) -> list[dict[str, Any]]:
+        """얇은 선을 **먼저** 넣는다. 제품 경계의 굵은 선이 뒤에 와야 겹칠 때 위로 올라온다."""
+        return [
+            *(
+                _detail_row_rule(stack_start, tokens.BORDER, tokens.GRID_LINE_WIDTH_PX, x0=stack_x0)
+                for stack_start in detail_stack_starts
+            ),
+            *(
+                _detail_row_rule(group_start, tokens.BORDER_STRONG, tokens.GROUP_BORDER_WIDTH_PX)
+                for group_start in detail_group_starts
+            ),
+        ]
+
+    # **두 Figure 가 다른 선을 받는다.** 제품 경계(굵은 선)는 둘 다 전폭이지만, Stack
+    # 경계(얇은 선)는 분류 칸에서 제품 칸을 비우고 그 오른쪽부터 긋는다. 제품이 바뀌지
+    # 않았는데 제품 칸까지 선이 지나가면 그 제품 묶음이 끊겨 보인다 — 굵은 선과 얇은 선이
+    # 같은 굵기로 읽혀 계층이 사라진다. 월 칸에는 나눌 분류가 없으므로 전폭이다.
+    append_layout_items(detail_label_figure, shapes=_detail_group_shapes(detail_product_boundary))
+    append_layout_items(detail_month_figure, shapes=_detail_group_shapes(0.0))
     flush_layout_items(detail_label_figure, detail_month_figure)
     return detail_label_figure, detail_month_figure
