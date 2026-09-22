@@ -16,6 +16,11 @@ Cut-off 는 「그 공정 이후의 공정~입고(마지막 공정)까지 TAT �
 조용히 빠지면 화면의 합이 이유 없이 작아 보이므로 부르는 쪽이 빠진 공정을 반드시
 드러내야 한다(`missing_cutoff_processes`).
 
+그래서 **빈 칸으로 저장한 행은 떨어뜨린다.** 거부하지 않는 것은 화면이 공정 목록으로
+빈 행을 한꺼번에 만들어 주기 때문이다 — 거부하면 서른 칸을 다 채우기 전까지 아무것도
+저장할 수 없다. 다만 **적었는데 숫자가 아닌 것**은 막는다. 그건 사용자가 적었다고
+믿는 값이 조용히 사라지는 경우다.
+
 `제품구분` 은 **나중에 제품 축이 붙을 자리**다. 지금은 모든 행이 `ALL_PRODUCTS`(`*`)
 이고 화면도 그것만 만든다. 표준 대비 재공 현황에 차수별 표준 Capa 를 넣을 때 같은
 공정 안에서 제품별로 Cut-off 가 갈리는데, 키를 미리 열어 두지 않으면 그때 표를 다시
@@ -141,11 +146,23 @@ def prepare_process_cutoff(
     if blank.any():
         raise ValueError(f"공정별 Cut-off 표의 공정이 비어 있습니다: {int(blank.sum())}행")
 
+    # **빈 칸은 오류가 아니라 「아직 안 정했다」다.** 그 공정은 산출에서 빠질 뿐이다.
+    # 그래서 비운 행은 떨어뜨리고 저장한다 — 거부하면 「설비 공정으로 채우기」가 만든 빈
+    # 행 전부를 채우기 전까지 아무것도 저장할 수 없어 두 기능이 서로를 막는다.
+    #
+    # 다만 **적었는데 숫자가 아닌 것**은 다르다. `abc` 를 적고 저장이 조용히 넘어가면
+    # 사용자는 적었다고 믿는데 그 공정만 계산에서 사라진다. 그건 막는다.
+    raw = result["Cutoff일수"]
+    blank = raw.isna() | raw.astype("string").str.strip().isin(["", "None", "nan"])
     days = pd.to_numeric(result["Cutoff일수"], errors="coerce")
-    missing = days.isna()
-    if missing.any():
-        examples = result.loc[missing, "공정"].head(5).tolist()
-        raise ValueError(f"공정별 Cut-off 표의 Cutoff일수가 비었거나 숫자가 아닙니다: {examples}")
+    garbled = days.isna() & ~blank
+    if garbled.any():
+        examples = result.loc[garbled, "공정"].head(5).tolist()
+        raise ValueError(f"공정별 Cut-off 표의 Cutoff일수가 숫자가 아닙니다: {examples}")
+    result = result.loc[~blank].reset_index(drop=True)
+    days = days.loc[~blank].reset_index(drop=True)
+    if result.empty:
+        return empty_process_cutoff()
     if (days < 0).any():
         examples = result.loc[days < 0, "공정"].head(5).tolist()
         raise ValueError(f"Cutoff일수는 음수일 수 없습니다: {examples}")

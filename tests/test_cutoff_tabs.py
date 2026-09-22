@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +21,16 @@ from test_equipment_pages import _page_script
 
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.services.availability_gap import (
+    DYNAMIC_SUBTOTAL_ROW,
+    GAP_ROW,
+    build_availability_gap,
+    gap_matrix,
+)
+from capa_simulation.services.monthly_equipment_availability import (
+    build_monthly_equipment_availability,
+)
+from capa_simulation.services.process_cutoff import prepare_process_cutoff
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
@@ -82,3 +93,39 @@ def test_the_cutoff_editor_has_its_own_view_controls(tmp_path: Path) -> None:
     assert "equipment_cutoff_view_v1_columns" in keys, keys
     assert len(keys) == len(set(keys)), keys
     clear_equipment_repository()
+
+
+def test_the_panel_accepts_a_real_static_frame(tmp_path: Path) -> None:
+    """**Static 이 실제로 있는 경로**를 밟는다.
+
+    `static_availability or pd.DataFrame()` 이 프레임에 `or` 를 걸어
+    「truth value of a DataFrame is ambiguous」로 죽던 자리다. `None` 일 때는 멀쩡해서
+    AppTest 가 시뮬레이션 DB 를 못 읽는 동안 그 버그가 통과했다 — 실제 화면에서만 터졌다.
+    """
+    from capa_simulation.components import availability_gap_panel
+
+    spans = pd.DataFrame(
+        {
+            "호기": ["EQ-1"],
+            "공정소분류": ["Die Attach"],
+            "상태": ["가용"],
+            "시작일": [date(2020, 1, 1)],
+            "종료일": [date(2030, 1, 1)],
+        }
+    )
+    baseline = pd.DataFrame({"공정": ["Die Attach"], "기존보유대수": [3.0]})
+    cutoff = prepare_process_cutoff(
+        pd.DataFrame({"공정": ["Die Attach"], "Cutoff일수": [15.0], "비고": [None]})
+    )
+    static = pd.DataFrame({"생산계획년월": [202610], "공정": ["Die Attach"], "가용대수": [6.0]})
+
+    monthly = build_monthly_equipment_availability(spans, baseline, cutoff, [202610])
+    comparison = build_availability_gap(monthly, static, [202610])
+    matrix = gap_matrix(comparison.rows, "Die Attach")
+
+    # 소계 = 기존보유 3 + 가용 1 = 4, Static 6 → GAP -2
+    assert matrix.loc[DYNAMIC_SUBTOTAL_ROW, "202610"] == 4.0
+    assert matrix.loc[GAP_ROW, "202610"] == -2.0
+    # Figure 가 실제로 만들어지는지도 본다 — 빈 행이 섞여도 죽지 않아야 한다.
+    figure = availability_gap_panel.build_availability_gap_figure(matrix)
+    assert len(figure.data) == 3

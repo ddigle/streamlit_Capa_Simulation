@@ -145,3 +145,33 @@ def test_a_static_table_missing_a_column_is_refused() -> None:
 
     with pytest.raises(ValueError, match="필수 컬럼"):
         build_availability_gap(monthly_for(1), broken, MONTHS)
+
+
+def test_a_blank_cutoff_row_is_dropped_not_refused() -> None:
+    """화면이 공정 목록으로 빈 행을 한꺼번에 만든다 — 거부하면 아무것도 저장할 수 없다."""
+    partly_filled = pd.DataFrame(
+        {
+            "공정": ["Die Attach", "Mold", "Saw"],
+            "Cutoff일수": [15.0, None, float("nan")],
+            "비고": [None, None, None],
+        }
+    )
+
+    prepared = prepare_process_cutoff(partly_filled)
+
+    assert list(prepared["공정"]) == ["Die Attach"]
+    assert list(prepared["Cutoff일수"]) == [15.0]
+
+
+def test_a_non_numeric_cutoff_is_still_refused() -> None:
+    """적었는데 숫자가 아니면 막는다. 조용히 빠지면 적었다고 믿는 값이 사라진다."""
+    typo = pd.DataFrame({"공정": ["Die Attach"], "Cutoff일수": ["열닷새"], "비고": [None]})
+
+    with pytest.raises(ValueError, match="숫자가 아닙니다"):
+        prepare_process_cutoff(typo)
+
+
+def test_a_table_of_only_blank_rows_saves_as_empty() -> None:
+    blanks = pd.DataFrame({"공정": ["A", "B"], "Cutoff일수": [None, None], "비고": [None, None]})
+
+    assert prepare_process_cutoff(blanks).empty

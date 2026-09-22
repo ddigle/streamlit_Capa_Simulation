@@ -75,7 +75,11 @@ def render_availability_gap_panel(
         )
 
     monthly = build_monthly_equipment_availability(spans, baseline, cutoff, months)
-    comparison = build_availability_gap(monthly, static_availability or pd.DataFrame(), months)
+    # **`or` 를 쓰지 않는다.** 프레임에 `or` 를 걸면 `__bool__` 이 불려
+    # 「truth value of a DataFrame is ambiguous」로 죽는다. 빈 프레임도 거짓이라
+    # 값이 있는 쪽에서만 터지는데, 그 경로가 곧 실제 화면이다.
+    static = pd.DataFrame() if static_availability is None else static_availability
+    comparison = build_availability_gap(monthly, static, months)
 
     if static_error:
         st.warning(f"Static 가용대수를 읽지 못해 Dynamic 만 표시합니다 — {static_error}")
@@ -87,11 +91,26 @@ def render_availability_gap_panel(
         "공정",
         options=options,
         key=PROCESS_FILTER_KEY,
-        help="전체 합계는 공정별 값을 그대로 더한 것입니다. GAP 도 더하면 GAP 입니다.",
+        help="전체 합계는 **양쪽에 다 있는 공정만** 더합니다. 한쪽에만 있는 공정은 "
+        "이름을 골라 따로 봅니다.",
     )
     process = None if selected == _ALL_PROCESSES else selected
 
-    matrix = gap_matrix(comparison.rows, process)
+    if process is None:
+        # **한쪽에만 있는 공정을 합계에서 뺀다.** 넣으면 「Cut-off 를 아직 안 적었다」가
+        # 「수백 대 모자라다」로 읽힌다 — 경고 한 줄로는 그 인상을 못 지운다. 공정을
+        # 직접 고르면 한쪽짜리도 그대로 보이므로 감추는 것이 아니다.
+        excluded = set(comparison.dynamic_only) | set(comparison.static_only)
+        scoped = comparison.rows.loc[~comparison.rows["공정"].isin(excluded)]
+        if excluded:
+            st.caption(
+                f"전체 합계에서 한쪽에만 있는 공정 {len(excluded)}개를 뺐습니다. "
+                "그 공정은 위 목록에서 이름을 골라 따로 봅니다."
+            )
+    else:
+        scoped = comparison.rows
+
+    matrix = gap_matrix(scoped, process)
     if matrix.empty:
         st.info("표시할 값이 없습니다.")
         return
