@@ -49,9 +49,8 @@ secondaryBackgroundColor = "#F7F8FA"
 textColor = "#20242B"
 borderColor = "#E6E9ED"
 primaryColor = "#0F766E"
-# 사이드바 안에서 크기를 정하는 경로가 둘이었다 — 그룹 제목은 `app.py` 가 주입한
-# CSS(1.15rem/700), `시나리오·리비전`·`조회기간` 머리글은 테마의 h4(17px/600). 두 줄이
-# 다른 선에 서 있어 위계가 어긋나 보였다. h4 만 굵기를 올려 같은 선에 세운다.
+# 사이드바 상자 머리글은 `components/sidebar_style.py` 가 주입한 CSS 가 정한다(1rem/700).
+# 여기 h4 는 본문 쪽에만 남는데, 굵기를 같은 선에 두어 두 경로가 갈려 보이지 않게 한다.
 # **이 블록은 토큰 대조 테스트에서 제외돼 있다** — 값이 갈라져도 조용히 통과하므로
 # `design/tokens.py` 와 손으로 맞춘다.
 headingFontWeights = [650, 650, 600, 700, 600, 600]
