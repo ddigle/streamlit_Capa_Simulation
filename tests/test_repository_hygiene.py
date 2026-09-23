@@ -39,9 +39,15 @@ ALLOWED_TOP_LEVEL = {
     # 단독 문서라 브라우저로 바로 열린다. 2026-09-20 사용자 결정으로 배포 세트에 포함한다.
     "index.html",
     "data/",
+    # 사내 WebIDE 의 CI/CD 가 읽는 이미지 정의. 이 폴더가 없어 Docker Build 단계에서
+    # 파이프라인이 실패했다(2026-09-23 사내 확인). 배포 세트에 반드시 실려야 한다.
+    "docker/",
     "docs/",
     "pyproject.toml",
     "pyrightconfig.json",
+    # `uv.lock` 에서 뽑은 그림자. 컨테이너가 `uv` 없이 설치할 수 있는 유일한 길이다.
+    # `tests/test_requirements_export.py` 가 락과의 어긋남을 막는다.
+    "requirements.txt",
     "requirements-company.txt",
     "scripts/",
     "src/",

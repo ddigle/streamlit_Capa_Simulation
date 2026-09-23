@@ -120,6 +120,8 @@ data/equipment_availability.duckdb
 주요 디렉터리:
 
 ```text
+docker/Dockerfile-prod         사내 WebIDE CI/CD 가 읽는 운영 이미지 정의
+requirements.txt               `uv.lock` 에서 뽑은 컨테이너용 고정 목록(자동 생성)
 app.py                         Streamlit 실행 진입점과 공통 사이드바
 app_pages/                     페이지별 UI
 src/capa_simulation/navigation.py

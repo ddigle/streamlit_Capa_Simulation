@@ -1,0 +1,15 @@
+FROM artifactory.samsungds.net/devops-template-ahub-docker/baseimage/python:3.10-odbc2.8
+
+ENV PATH $HOME/.local/bin:$PATH
+
+RUN sudo mkdir /project
+COPY . /project/
+RUN sudo chown -R $DSUSER:$DSUSER /project
+
+RUN pip install -U pip
+RUN pip install -U setuptools
+RUN pip install -r /project/requirements.txt --no-cache-dir
+
+WORKDIR /project
+
+CMD ["streamlit", "run", "app.py", "--server.port", "8080"]
