@@ -137,6 +137,7 @@ from capa_simulation.sidebar_status import (
     show_applied_month_range,
     show_month_range_unavailable,
     show_past_months_outside_range,
+    sidebar_expander,
 )
 
 
@@ -524,8 +525,16 @@ included_processes = list(st.session_state[PROCESS_SELECTION_KEY])
 # 키와 기본값은 리비전 프리셋 소유다. Static Capa 본문의 같은 컨트롤과 세션 상태를
 # 공유하므로 여기서 문자열을 다시 적으면 조용히 끊어진다.
 seed_threshold_defaults()
-with st.sidebar.container(border=True, key=BOTTLENECK_BOX_KEY):
-    st.markdown("#### :material/filter_alt: B/N 집계 공정")
+# 이 상자만 **기본이 펼침**이다. B/N 기준은 HOME 에서만 쓰고 이 상자도 HOME 에만
+# 있으니, 들어오자마자 보이는 것이 자연스럽다. 접으면 세션 동안 접힌 채로 남는다 —
+# 다른 페이지에 갔다 오면 그 회차에 만들어지지 않은 위젯이라 값이 버려지므로
+# `sidebar_expander` 가 위젯이 아닌 칸에 적어 둔 것을 되돌린다.
+with sidebar_expander(
+    "B/N 집계 공정",
+    key=BOTTLENECK_BOX_KEY,
+    icon=":material/filter_alt:",
+    default=True,
+):
     with st.form("dashboard_bottleneck_filter_form", border=False):
         # 칸 위 글자 세 줄(`판정 기준`·`확보 기준 (%)`·`경고 기준 (%)`)을 지우고 두 칸을
         # 한 줄에 반씩 놓는다. 사이드바에서 네 줄을 먹던 자리가 한 줄이 된다. 어느 칸이

@@ -36,15 +36,23 @@ from capa_simulation.sidebar_status import (
     BOTTLENECK_BOX_KEY,
     register_month_range_placeholder,
     show_applied_month_range,
+    sidebar_expander,
 )
 from capa_simulation.sync_boot import enable_sync_state_if_managed, heartbeat_if_managed
 
-# 사이드바 박스 CSS 훅. 여백을 좁히는 규칙과 Admin 의 `order` 가 이 key 를 읽는다.
+# 사이드바 박스 key 이자 CSS 훅. 확장 패널의 펼침 상태도 이 key 로 오가고, Admin 의
+# `order` 와 요약 줄 서식이 같은 이름을 읽는다.
 MONTH_BOX_KEY = "sidebar_month_box"
+# 조회기간 상자의 **요약 줄 위에 얹는** 적용 기간 한 줄. 상자 안이 아니라 바로 앞에 선
+# 빈 칸이고, 접히든 펴지든 자리가 흔들리지 않게 CSS 가 그 칸을 요약 줄로 민다.
+MONTH_APPLIED_BOX_KEY = "sidebar_month_applied_box"
 # 그룹 상자 **안**에서 그 그룹의 대표 페이지를 부르는 이름. 머리글이 이미 그룹 이름을
 # 말하므로 안에서까지 되풀이하지 않고 그 그룹 안에서의 자리로 부른다.
 GROUP_MAIN_LABEL = "현황 요약"
 ADMIN_BOX_KEY = "sidebar_admin_box"
+# 직전 회차가 그린 페이지 주소. 그룹 상자는 **페이지가 바뀐 회차에만** 「지금 보는 페이지가
+# 든 그룹」으로 되돌리고, 같은 페이지 안에서는 사용자가 여닫은 대로 둔다.
+SIDEBAR_PAGE_KEY = "sidebar_last_page"
 
 st.set_page_config(
     page_title=APP_NAME,
@@ -100,6 +108,7 @@ with pinned_connections(DUCKDB_PATH):
             active_href,
             scenario_box_key=SCENARIO_BOX_KEY,
             month_box_key=MONTH_BOX_KEY,
+            month_applied_key=MONTH_APPLIED_BOX_KEY,
             bottleneck_box_key=BOTTLENECK_BOX_KEY,
             admin_box_key=ADMIN_BOX_KEY,
         )
@@ -113,6 +122,16 @@ with pinned_connections(DUCKDB_PATH):
 
     # 박스 목록은 `navigation.SIDEBAR_GROUPS` 하나에서 나온다. 위 CSS 선택자도 같은 선언을
     # 읽으므로, 그룹을 더할 때 이 파일에서 고칠 것이 없다.
+    #
+    # **`expanded=` 는 처음 그릴 때만 읽힌다.** 링크로 페이지를 옮기는 것은 새로고침이 아니라
+    # 같은 화면 안의 rerun 이라, 프런트엔드는 이미 그려 둔 확장 패널의 여닫힘을 그대로 두고
+    # 바뀐 `expanded` 값을 무시한다(브라우저 실측 — Static Capa 에서 Dynamic Capa 로 옮겨도
+    # Static 이 펴진 채 남고 Dynamic 은 접힌 채였다. `main` 도 같았다). 「지금 보는 페이지가
+    # 든 그룹만 편다」는 규칙을 실제로 지키려면 `key` 로 위젯을 만들고 **페이지가 바뀐
+    # 회차에만** 세션 값을 그 규칙대로 되돌려야 한다. 같은 페이지 안에서 사용자가 여닫은
+    # 것은 그대로 남는다 — 매 회차 덮어쓰면 방금 누른 클릭을 지운다.
+    page_changed = st.session_state.get(SIDEBAR_PAGE_KEY) != navigation.url_path
+    st.session_state[SIDEBAR_PAGE_KEY] = navigation.url_path
     for group in pages.groups:
         # 하위가 없어도 **상자에 넣는다.** 묶을 것이 없으니 테두리가 필요 없다고 봤는데,
         # 사이드바에 상자가 다섯이고 이 둘만 맨몸으로 서니 목록이 두 층으로 읽혔다.
@@ -124,12 +143,15 @@ with pinned_connections(DUCKDB_PATH):
         # 지금 보고 있는 페이지가 든 그룹만 편다. `url_path` 는 `st.navigation()` 이
         # 돌아야 채워지므로(그 전에는 `AttributeError`) 이 자리가 반드시 그 뒤여야 한다.
         group_paths = {page.url_path for page in (group.main, *group.subpages)}
+        # `key` 는 곧 `st-key-…` 클래스다. 상자였을 때 걸어 둔 CSS 훅이 그대로 산다.
+        group_key = f"{group.slug}_box"
+        if page_changed or group_key not in st.session_state:
+            st.session_state[group_key] = navigation.url_path in group_paths
         with st.sidebar.expander(
             group.main.title,
-            expanded=navigation.url_path in group_paths,
             icon=group.main.icon,
-            # `key` 는 곧 `st-key-…` 클래스다. 상자였을 때 걸어 둔 CSS 훅이 그대로 산다.
-            key=f"{group.slug}_box",
+            key=group_key,
+            on_change="rerun",
         ):
             st.page_link(group.main, label=GROUP_MAIN_LABEL, width="stretch")
             for page in group.subpages:
@@ -137,14 +159,16 @@ with pinned_connections(DUCKDB_PATH):
 
     render_scenario_controls()
 
-    with st.sidebar.container(border=True, key=MONTH_BOX_KEY):
-        # 적용 범위는 제목 **옆**이다. 아래에 한 줄로 두면 두 칸짜리 피커 밑에 글줄이
-        # 하나 더 붙어 상자가 세 줄이 된다. 자리는 여기서 잡고, 값은 페이지가 계산을
-        # 끝낸 뒤 `show_applied_month_range` 가 채운다 — 좁혀진 범위는 그때 정해진다.
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            # 다른 화면과 같은 낱말을 쓴다. 여기만 "조회 기간" 으로 띄어져 있었다.
-            st.markdown("#### :material/date_range: 조회기간", width="content")
-            register_month_range_placeholder(st.empty())
+    # 적용 범위는 상자를 **접어도** 보여야 하는 한 조각이다. 그런데 그 값은 페이지가
+    # 계산을 끝낸 뒤(`navigation.run()` 안의 `resolve_effective_months`)에야 정해지고,
+    # 페이지가 `st.stop()` 하면 `navigation.run()` 뒤의 코드는 아예 돌지 않는다 — 그
+    # 뒤에 그리면 상자를 통째로 잃는다. 확장 패널의 제목은 문자열 하나라 나중에 다시
+    # 쓸 수도 없다. 그래서 자리표시자 기제는 그대로 두고 **자리만** 상자 바로 앞으로
+    # 옮기고, 요약 줄 위로 얹는 일은 CSS 가 한다. 접히든 펴지든 이 칸은 늘 같은 자리다.
+    with st.sidebar.container(key=MONTH_APPLIED_BOX_KEY):
+        register_month_range_placeholder(st.empty())
+    # 다른 화면과 같은 낱말을 쓴다. 여기만 "조회 기간" 으로 띄어져 있었다.
+    with sidebar_expander("조회기간", key=MONTH_BOX_KEY, icon=":material/date_range:"):
         default_month_range = (
             format_month(MONTH_SELECTION_START),
             format_month(MONTH_SELECTION_END),
@@ -181,10 +205,10 @@ with pinned_connections(DUCKDB_PATH):
     # 관리 기능이라 조회 컨트롤보다 아래, 사이드바에서 가장 먼 곳에 둔다. 페이지가 자기
     # 사이드바 요소를 더하는 것은 `navigation.run()` 안이라 파이썬 차례로는 뒤에 둘 수
     # 없다 — 맨 아래를 지키는 것은 위 CSS 의 `order` 다.
-    # **테두리를 두르지 않는다.** 관리는 계산 흐름 밖이라 다른 상자와 나란히 서면 같은
-    # 층위로 읽힌다. 캡션 한 줄이 「여기부터는 성격이 다르다」를 대신 말한다.
-    with st.sidebar.container(key=ADMIN_BOX_KEY):
-        st.caption("관리")
+    # **접는 장치는 다른 상자와 같게 주되 테두리는 여전히 두르지 않는다.** 관리는 계산
+    # 흐름 밖이라 다른 상자와 똑같이 서면 같은 층위로 읽힌다. 양식을 통일하면서 그 구분을
+    # 없애지 않고 **테두리와 글자색**에 맡겼다 — 여는 방법은 같고 층위만 다르다.
+    with sidebar_expander("관리", key=ADMIN_BOX_KEY):
         with st.container(key="admin_area_navigation"):
             st.page_link(pages.admin_area, width="stretch")
             # VOC 는 계산 화면이 아니라 사람이 쓰는 자리다. 계산 그룹 어디에도 속하지 않아
