@@ -17,6 +17,9 @@
 - `--no-dev` — 컨테이너는 앱만 띄운다. ruff·mypy·pytest 를 넣을 이유가 없다.
 - `--no-emit-project` — 빼지 않으면 첫 줄이 `-e .` 이 된다. `Dockerfile-prod` 는
   `WORKDIR` 을 잡기 **전에** `pip install` 을 돌아 그때 `.` 이 `/` 를 가리킨다.
+  **그 대신 프로젝트 자신이 설치되지 않으므로** `Dockerfile-prod` 가 `PYTHONPATH` 로
+  `src` 를 넣어야 한다. 빠뜨리면 컨테이너가 `No module named 'capa_simulation'` 로 죽는다
+  (사내 운영 링크에서 실제로 겪었다). 아래 검사가 그 한 줄을 지킨다.
 - `-o` 를 쓰지 않는다 — uv 가 명령줄을 헤더에 적어서, 출력 경로가 바뀌면 파일이 달라진다.
 """
 
@@ -75,6 +78,23 @@ def test_the_dockerfile_installs_that_file() -> None:
     assert "pip install -r /project/requirements.txt" in dockerfile, (
         "Dockerfile-prod 가 /project/requirements.txt 를 설치하지 않습니다. "
         "경로를 바꿨다면 이 검사도 같이 고치세요."
+    )
+
+
+def test_the_dockerfile_puts_src_on_the_path() -> None:
+    """`--no-emit-project` 가 만든 구멍을 `PYTHONPATH` 가 메우는지 본다.
+
+    이 저장소는 `src` 레이아웃이다. 개발 PC 는 editable 설치가, pytest 는
+    `pyproject.toml` 의 `pythonpath` 가 `src` 를 넣어 주지만 **컨테이너에는 둘 다 없다.**
+    그래서 이 한 줄이 없으면 이미지는 잘 만들어지고 CI 도 통과한 뒤 **앱을 열 때**
+    `No module named 'capa_simulation'` 로 죽는다 — 빌드가 아니라 운영에서 드러난다.
+    """
+    dockerfile = (PROJECT_ROOT / "docker" / "Dockerfile-prod").read_text(encoding="utf-8")
+
+    assert "ENV PYTHONPATH=/project/src" in dockerfile, (
+        "Dockerfile-prod 에 `ENV PYTHONPATH=/project/src` 가 없습니다. "
+        "`requirements.txt` 가 프로젝트 자신을 설치하지 않으므로 이 줄이 없으면 "
+        "컨테이너에서 `import capa_simulation` 이 실패합니다."
     )
 
 

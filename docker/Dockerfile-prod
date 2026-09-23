@@ -12,4 +12,16 @@ RUN pip install -r /project/requirements.txt --no-cache-dir
 
 WORKDIR /project
 
+# `src` 레이아웃이라 이 한 줄이 없으면 앱이 못 뜬다.
+# `import capa_simulation` 은 `/project/src` 아래를 봐야 하는데, 개발 PC 는 editable
+# 설치(`__editable__.capa_simulation-0.1.0.pth`)가 그 경로를 넣어 주고 pytest 는
+# `pyproject.toml` 의 `pythonpath = ["src"]` 가 넣어 준다. 컨테이너에는 둘 다 없다 —
+# `requirements.txt` 는 `--no-emit-project` 로 뽑아 **프로젝트 자신을 설치하지 않는다**
+# (그래야 `WORKDIR` 앞의 `pip install` 이 `/` 를 패키지로 보지 않는다).
+# 그 결과 `sys.path` 에는 `/project` 만 들어가고 `No module named 'capa_simulation'` 이 난다.
+ENV PYTHONPATH=/project/src
+
+# 컨테이너에는 브라우저도 입력도 없다. 첫 실행 이메일 안내와 브라우저 열기를 끈다.
+ENV STREAMLIT_SERVER_HEADLESS=true
+
 CMD ["streamlit", "run", "app.py", "--server.port", "8080"]

@@ -22,6 +22,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # 최상위에 있어도 되는 것. 새 항목이 늘면 이 목록을 함께 고치며 「왜 필요한가」를 정한다.
 # 목록을 손대지 않고 파일만 늘어나는 것이 곧 떠도는 파일이다.
 ALLOWED_TOP_LEVEL = {
+    # `docker/Dockerfile-prod` 의 `COPY . /project/` 가 빌드 컨텍스트를 통째로 담는다.
+    # 실데이터·비밀값·`.venv` 가 이미지에 실리는 것을 막는 자리라 `docker/` 안이 아니라
+    # 최상위에 있어야 한다 — Docker 는 컨텍스트 뿌리에서만 이 파일을 읽는다.
+    ".dockerignore",
     ".gitattributes",
     # 사외 전용 CI. 배포 세트가 `git ls-files` 전부라 사내 ZIP 에도 실리는데, 워크플로 안의
     # `if: github.repository == ...` 가 사내에서 스스로 꺼진다(`.github/workflows/ci.yml`).
