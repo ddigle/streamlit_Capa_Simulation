@@ -983,7 +983,10 @@ class DuckDBScenarioRepository:
             ).fetchone()
         return official_release_summary(row) if row is not None else None
 
-    def load_revision(self, revision_id: str) -> ScenarioSnapshot:
+    def load_revision(
+        self, revision_id: str, *, apply_global_display_order: bool = True
+    ) -> ScenarioSnapshot:
+        """일반 조회는 공용 표시순서를, 파생 시나리오 입력은 저장된 원본을 읽는다."""
         with self._connect() as connection:
             scenario_row = connection.execute(
                 SCENARIO_SUMMARY_SELECT
@@ -1027,7 +1030,7 @@ class DuckDBScenarioRepository:
             global_profile = connection.execute(
                 "SELECT profile_id FROM app_meta.global_display_order WHERE profile_id = 1"
             ).fetchone()
-            if global_profile is not None:
+            if apply_global_display_order and global_profile is not None:
                 tables["RQ_DISPLAY_ORDER"] = load_global_display_order_rules(connection)
         return ScenarioSnapshot(
             scenario=scenario,

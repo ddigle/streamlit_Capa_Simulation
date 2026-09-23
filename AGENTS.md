@@ -109,6 +109,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 사이드바 CSS 문자열은 `components/sidebar_style.py`가 탐색 그룹·활성 경로·컨테이너
     키를 받아 만든다. 테마 초기화와 `st.html` 주입 순서는 진입점이 소유한다.
   - 모든 페이지에 필요한 전역 위젯은 `navigation.run()`보다 앞에 둔다.
+  - 공통 월 선택기는 기본 조회기간과 활성 기준정보의 실제 월 범위의 합집합을 허용한다
+    (`services/scenario_month_bounds.py`). 기간을 좁히거나 페이지를 왕복해도 기본 범위
+    밖의 저장된 월을 다시 고를 수 있어야 한다. 연도 오류를 판정하는 기능은 아니다.
   - 새 세션은 최신 공식 리비전을 전역 위젯 생성 전에 활성화하고, 사이드바에는 시나리오·
     리비전 선택, 명시적 불러오기, 현재 편집본의 신규 리비전 저장과 활성·공식·미저장 상태를
     제공한다. 이름 변경·공식 발행·삭제·신규 시나리오 생성은 독립 관리 페이지에 둔다.
@@ -1328,6 +1331,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/scenario_management.py`,
   `bigdataquery_registration.py`
   - 시나리오 관리 페이지의 두 탭 UI.
+  - 파생 시나리오의 원본 리비전 선택과 신규 저장 폼은 `components/scenario_transform.py`,
+    월 축이 있는 12표·없는 4표의 복사와 검증은 `services/scenario_transform.py`가 맡는다.
+    저장은 새 데이터셋과 초기 리비전을 만들며 현재 활성 편집본을 바꾸지 않는다.
   - `bigdataquery_registration.py` 는 2단계다. 목록 위젯은 반드시 `st.form` 밖의
     `st.dataframe(on_select="rerun", selection_mode="single-row")` 이고(폼 안에서는 제출
     전까지 선택이 서버에 오지 않아 예외 없이 조용히 실패한다), 목록을 등록 폼보다 **위**에
@@ -1352,6 +1358,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/repository.py`: `DuckDBScenarioRepository`의 입력 검증·연결·쓰기 잠금·트랜잭션 경계.
   공용 프로필 SQL과 모델 조립은 아래 store가 열린 연결을 받아 수행하며, 커밋과 변경 신호는
   Repository만 소유한다. 교체 실패 시 기존 행·버전이 복구되고 변경 신호를 발행하지 않는다.
+  `load_revision(..., apply_global_display_order=False)`는 파생 입력용 저장 원본을 읽는다.
+  기본 조회는 계속 공용 표시순서를 적용하며, 캐시도 이 플래그로 두 결과를 구분한다.
 - `persistence/models.py`: Repository 가 주고받는 타입
 - `persistence/display_order_store.py`: 공용 표시순서 프로필의 검증·이관·저장
 - `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·교체 SQL

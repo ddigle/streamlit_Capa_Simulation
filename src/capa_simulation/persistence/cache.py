@@ -84,14 +84,21 @@ def _snapshot_from_payload(payload: _ScenarioSnapshotPayload) -> ScenarioSnapsho
 def _load_scenario_snapshot_payload(
     database_path: str,
     revision_id: str,
+    apply_global_display_order: bool = True,
 ) -> _ScenarioSnapshotPayload:
-    snapshot = get_scenario_repository(database_path).load_revision(revision_id)
+    snapshot = get_scenario_repository(database_path).load_revision(
+        revision_id, apply_global_display_order=apply_global_display_order
+    )
     return _snapshot_to_payload(snapshot)
 
 
-def load_scenario_snapshot(database_path: str, revision_id: str) -> ScenarioSnapshot:
+def load_scenario_snapshot(
+    database_path: str, revision_id: str, *, apply_global_display_order: bool = True
+) -> ScenarioSnapshot:
     """Share an immutable revision without caching its reload-sensitive model class."""
-    return _snapshot_from_payload(_load_scenario_snapshot_payload(database_path, revision_id))
+    return _snapshot_from_payload(
+        _load_scenario_snapshot_payload(database_path, revision_id, apply_global_display_order)
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
@@ -101,7 +108,8 @@ def load_scenario_plan(database_path: str, revision_id: str) -> pd.DataFrame:
     `st.cache_data` 는 적중해도 저장된 피클을 매번 역직렬화한다. 샘플 관측으로 스냅샷
     전체는 5.1MB·64.6ms 인데 그중 계획은 0.04MB·0.4ms 다.
     """
-    return _load_scenario_snapshot_payload(database_path, revision_id)["tables"]["RQ_PKG_PLAN"]
+    payload = _load_scenario_snapshot_payload(database_path, revision_id, True)
+    return payload["tables"]["RQ_PKG_PLAN"]
 
 
 @st.cache_data(show_spinner=False, max_entries=4)

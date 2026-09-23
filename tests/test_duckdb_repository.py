@@ -373,7 +373,9 @@ def test_snapshot_cache_serializes_plain_payload_after_model_reload(
     stale_display_order = StaleDisplayOrder()
 
     class FakeRepository:
-        def load_revision(self, _revision_id: str) -> StaleSnapshot:
+        def load_revision(
+            self, _revision_id: str, *, apply_global_display_order: bool = True
+        ) -> StaleSnapshot:
             return stale_snapshot
 
         def load_global_display_order(self) -> StaleDisplayOrder:

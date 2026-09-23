@@ -11,6 +11,7 @@ from capa_simulation.components.scenario_status import (
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
 from capa_simulation.components.theme_toggle import render_theme_toggle
 from capa_simulation.design import theme
+from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.navigation import build_navigation_pages
 from capa_simulation.page_bootstrap import bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import pinned_connections
@@ -20,6 +21,7 @@ from capa_simulation.scenario_preset_state import (
     MONTH_RANGE_KEY,
     apply_pending_scenario_preset,
 )
+from capa_simulation.services.scenario_month_bounds import scenario_month_bounds
 from capa_simulation.settings import (
     APP_ABOUT,
     APP_BUG_REPORT_URL,
@@ -150,11 +152,21 @@ with pinned_connections(DUCKDB_PATH):
         current_month_range = st.session_state.get(MONTH_RANGE_KEY, default_month_range)
         if not isinstance(current_month_range, (list, tuple)) or len(current_month_range) != 2:
             current_month_range = default_month_range
+        try:
+            month_source_tables = get_effective_reference_tables()
+        except RuntimeError:
+            # 공식·활성 리비전이 없는 저장소에서도 관리 화면과 기본 조회기간은 연다.
+            month_source_tables = {}
+        minimum_month, maximum_month = scenario_month_bounds(
+            month_source_tables, MONTH_SELECTION_START, MONTH_SELECTION_END
+        )
+        # 현재 선택만 보면 기간을 좁힌 다음 바깥 월을 다시 고를 수 없다. 활성 표의 실제
+        # 월을 기준으로 넓혀 Shift 등으로 2031년 이후를 저장해도 계속 조회할 수 있게 한다.
         selected_start_label, selected_end_label = render_month_range_picker(
             start=str(current_month_range[0]),
             end=str(current_month_range[1]),
-            min_month=default_month_range[0],
-            max_month=default_month_range[1],
+            min_month=format_month(minimum_month),
+            max_month=format_month(maximum_month),
             key=MONTH_PICKER_KEY,
         )
         st.session_state[MONTH_RANGE_KEY] = (
