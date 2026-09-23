@@ -10,8 +10,11 @@ from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.equipment_data_workspace import (
+    BUFFER_KEY,
     CLIPBOARD_KEY,
+    DROP_EXAMPLE_ROWS_KEY,
     EQUIPMENT_EDITOR_KEY,
+    EXAMPLE_DROP_BUTTON_KEY,
     IMPORT_SAVE_BUTTON_KEY,
     PREVIEW_BUTTON_KEY,
     PREVIEW_KEY,
@@ -20,11 +23,19 @@ from capa_simulation.components.equipment_data_workspace import (
 )
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_contract import (
+    BASELINE_COLUMNS,
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
     empty_downtime_schedule,
     empty_equipment_baseline,
 )
+from capa_simulation.services.equipment_csv import (
+    SAMPLE_BASELINE_CATEGORY,
+    SAMPLE_BASELINE_COUNT,
+    SAMPLE_BASELINE_PROCESS,
+    SAMPLE_BASELINE_TEMPLATE_NOTE,
+)
+from capa_simulation.services.equipment_samples import sample_equipment_baseline
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_schedule,
     prepare_equipment_baseline,
@@ -227,3 +238,80 @@ def test_csv_review_and_future_open_downtime_history(tmp_path: Path) -> None:
     start, end = app.date_input("equipment_history_event_range_v3").value
     assert start == future
     assert end >= start
+
+
+def _baseline_template_text() -> str:
+    """양식을 Excel 로 열어 헤더째 복사한 것과 같은 탭 구분 텍스트. 예시 한 줄만 들어 있다."""
+    row = (
+        SAMPLE_BASELINE_PROCESS,
+        SAMPLE_BASELINE_CATEGORY,
+        str(SAMPLE_BASELINE_COUNT),
+        SAMPLE_BASELINE_TEMPLATE_NOTE,
+    )
+    return "\t".join(BASELINE_COLUMNS) + "\n" + "\t".join(row)
+
+
+def test_the_template_example_row_is_flagged_before_save_and_cleared_in_one_click(
+    tmp_path: Path,
+) -> None:
+    """저장을 누르기 전에 알리고, 한 번 눌러 지우면 그대로 저장까지 간다.
+
+    **지운 것이 되돌아오면 안 된다.** 후보에서만 빼면 재검토가 원문을 다시 읽어 예시 줄을
+    또 넣는다. 세션 플래그가 `build_import_review` 를 merge 전에 거르게 만든다.
+    """
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    _preview(app, _baseline_template_text(), target="기존 보유대수")
+
+    assert any("예시 행 1건" in warning.value for warning in app.warning)
+    assert app.button(EXAMPLE_DROP_BUTTON_KEY).label == "예시 행 1건 지우기"
+    app.button(EXAMPLE_DROP_BUTTON_KEY).click().run()
+
+    assert not app.exception
+    assert not any("예시 행" in warning.value for warning in app.warning)
+    assert any("예시 행 1건을 빼고" in info.value for info in app.info)
+    assert app.session_state[PREVIEW_KEY].candidate[0].empty
+    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
+
+    assert not app.exception
+    assert not app.error
+    repository = _repository(path)
+    revisions = repository.list_revisions()
+    assert len(revisions) == 1
+    assert repository.load_snapshot(revisions[0].revision_id).baseline.empty
+
+
+def test_saving_the_template_example_row_without_dropping_it_is_still_blocked(
+    tmp_path: Path,
+) -> None:
+    """예방형 안내를 더해도 **저장 검증은 그대로다.** 지우지 않고 저장하면 막힌다."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    _preview(app, _baseline_template_text(), target="기존 보유대수")
+    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
+
+    assert not app.exception
+    assert any("예시 행이 1건" in error.value for error in app.error)
+    assert not _repository(path).list_revisions()
+
+
+def test_a_sample_row_left_in_the_edit_buffer_is_flagged_and_cleared(tmp_path: Path) -> None:
+    """붙여넣기가 아니라 편집 버퍼에 남은 개발용 샘플도 같은 두 함수가 잡는다.
+
+    빈 DB 로 처음 연 사람은 화면이 채워 준 샘플을 자기 값으로 오해한 채 저장을 누른다.
+    """
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    _, equipment, downtime = app.session_state[BUFFER_KEY]
+    sample = sample_equipment_baseline()
+    app.session_state[BUFFER_KEY] = (sample, equipment, downtime)
+    app.run()
+
+    assert not app.exception
+    assert any(f"예시 행 {len(sample):,}건" in warning.value for warning in app.warning)
+    app.button(EXAMPLE_DROP_BUTTON_KEY).click().run()
+
+    assert not app.exception
+    assert not any("예시 행" in warning.value for warning in app.warning)
+    assert app.session_state[BUFFER_KEY][0].empty
+    assert app.session_state[DROP_EXAMPLE_ROWS_KEY] is True

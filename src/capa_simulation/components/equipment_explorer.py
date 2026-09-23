@@ -18,6 +18,8 @@ from capa_simulation.services.equipment_availability import (
     build_equipment_lifecycle_spans,
     build_equipment_status_as_of,
     build_inactive_equipment,
+    build_inactive_equipment_in_month,
+    inactive_equipment_moments,
 )
 from capa_simulation.services.equipment_contract import (
     DATE_COLUMNS,
@@ -29,6 +31,7 @@ from capa_simulation.services.simulation_cache import get_weekly_equipment_avail
 
 QUESTION_KEY = "equipment_explorer_question"
 AS_OF_KEY = "equipment_explorer_as_of"
+INACTIVE_VIEW_KEY = "equipment_explorer_inactive_view"
 START_DATE_KEY = "equipment_dashboard_start_date"
 END_DATE_KEY = "equipment_dashboard_end_date"
 SMALL_PROCESS_KEY = "equipment_dashboard_small_processes"
@@ -36,6 +39,8 @@ LINE_TYPE_KEY = "equipment_dashboard_line_types"
 UTILIZATION_TYPE_KEY = "equipment_dashboard_utilization_types"
 LARGE_PROCESS_KEY = "equipment_dashboard_large_processes"
 QUESTIONS = ("가용대수", "호기 현황", "비가동 호기", "Qual 일정")
+_INACTIVE_COLUMNS = ("호기", "공정소분류", "상태", "입고일정", "Qual일정", "반출일정", "이설일")
+_INACTIVE_MONTH_COLUMNS = ("호기", "비가동 시작", "비가동 종료", *_INACTIVE_COLUMNS[1:])
 
 
 def render_equipment_period(*, today: date) -> tuple[date, date]:
@@ -74,7 +79,7 @@ def _table(frame: pd.DataFrame, *, columns: list[str] | None = None) -> None:
         column_order=columns,
         column_config={
             column: st.column_config.DateColumn(format="YYYY-MM-DD")
-            for column in DATE_COLUMNS
+            for column in (*DATE_COLUMNS, "비가동 시작", "비가동 종료")
             if column in frame.columns
         },
     )
@@ -220,6 +225,14 @@ def render_equipment_explorer(
                     persist_state="session",
                     width=200,
                 )
+            elif question == "비가동 호기":
+                view = st.selectbox(
+                    "보기",
+                    ["기준일 시점", "그 달 전체"],
+                    key=INACTIVE_VIEW_KEY,
+                    persist_state="session",
+                    width=200,
+                )
             elif question == "Qual 일정":
                 view = st.selectbox(
                     "보기",
@@ -309,28 +322,33 @@ def render_equipment_explorer(
                     view=view,
                     expression=expression,
                 )
+            elif question == "비가동 호기" and view == "그 달 전체":
+                # 기준일이 든 달을 본다. 기준 월을 따로 고르게 하면 축이 둘이 된다.
+                moments = inactive_equipment_moments(filtered, filtered_downtime, month=as_of)
+                inactive = build_inactive_equipment_in_month(
+                    filtered, filtered_downtime, month=as_of, moments=moments
+                )
+                st.markdown(f"#### 비가동 호기 · {as_of:%Y-%m} 달 전체 · {len(inactive):,}대")
+                st.caption(
+                    "기준일이 든 달 안에서 한 번이라도 보유 중이면서 가용이 아니었던 "
+                    f"호기입니다. 구간이 바뀌는 날 {len(moments)}개 시점을 다시 재어 "
+                    "합칩니다 — 상태 이름으로 고르지 않습니다."
+                )
+                if inactive.empty:
+                    st.success("기준일이 든 달과 조건에 비가동 호기가 없습니다.")
+                else:
+                    _table(inactive, columns=list(_INACTIVE_MONTH_COLUMNS))
             elif question == "비가동 호기":
                 inactive = build_inactive_equipment(filtered, filtered_downtime, as_of=as_of)
                 st.markdown(f"#### 비가동 호기 · {as_of:%Y-%m-%d} · {len(inactive):,}대")
                 st.caption(
                     "선택한 기준일에 보유 중이지만 가용이 아닌 호기입니다. "
-                    "월중 누적 이력이 아닙니다."
+                    "달 전체는 보기에서 고릅니다."
                 )
                 if inactive.empty:
                     st.success("선택한 기준일과 조건에 비가동 호기가 없습니다.")
                 else:
-                    _table(
-                        inactive,
-                        columns=[
-                            "호기",
-                            "공정소분류",
-                            "상태",
-                            "입고일정",
-                            "Qual일정",
-                            "반출일정",
-                            "이설일",
-                        ],
-                    )
+                    _table(inactive, columns=list(_INACTIVE_COLUMNS))
             elif view == "생애주기 일정":
                 st.markdown("#### 호기별 생애주기 일정")
                 spans = build_equipment_lifecycle_spans(

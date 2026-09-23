@@ -56,6 +56,9 @@ from capa_simulation.services.simulation_cache import (
 )
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
+TAB_PREFERENCE = ":material/tune: Preference"
+TAB_RAWDATA = ":material/table_rows: RawData"
+
 
 def _months_between(start: date, end: date) -> list[int]:
     if start > end:
@@ -68,8 +71,30 @@ def _months_between(start: date, end: date) -> list[int]:
     return months
 
 
+def _open_tab(label: str) -> None:
+    st.session_state["equipment_active_tab"] = label
+
+
 def _open_input() -> None:
-    st.session_state["equipment_active_tab"] = ":material/table_rows: RawData"
+    _open_tab(TAB_RAWDATA)
+
+
+def _render_first_data_checklist(counts: tuple[int, int, int]) -> None:
+    """저장된 것이 무엇인지 건수로 짚고 각각 갈 곳을 준다. **대수는 적지 않는다** — Main 의
+    총대수는 데모 fleet 을 섞은 다른 산식이라, 두 수가 첫 화면에 나란히 서면 어느 쪽이
+    맞는지부터 따져야 한다. Cut-off 는 저장본이 없는 이 자리에서만 한 번 더 읽는다.
+    """
+    steps = (
+        ("호기 마스터", "RawData 에서 붙여넣기", TAB_RAWDATA, "equipment_first_data_master_v1"),
+        ("운영 비가동 일정", "RawData 에서 붙여넣기", TAB_RAWDATA, "equipment_first_data_down_v1"),
+        ("공정별 Cut-off", "Preference 에서 보기", TAB_PREFERENCE, "equipment_first_data_cut_v1"),
+    )
+    for (title, action, label, key), count in zip(steps, counts, strict=True):
+        with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
+            st.markdown(f"{'✓' if count else '✗'} **{title}** {count:,}건")
+            st.button(
+                action, icon=":material/arrow_forward:", key=key, on_click=_open_tab, args=(label,)
+            )
 
 
 render_page_header("가용설비 현황 (Data확보중)")
@@ -119,15 +144,20 @@ main_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
     [
         ":material/dashboard: Main",
         ":material/compare_arrows: Static/Dynamic",
-        ":material/tune: Preference",
-        ":material/table_rows: RawData",
+        TAB_PREFERENCE,
+        TAB_RAWDATA,
     ],
     key="equipment_active_tab",
 )
 if latest_snapshot is None and not tab_is_hidden(main_tab):
-    with first_action.container(horizontal=True, vertical_alignment="center"):
-        st.markdown("**처음 사용하시나요?** 호기 마스터를 붙여넣어 첫 데이터를 저장하세요.")
-        st.button("설비 데이터 입력", icon=":material/add:", type="primary", on_click=_open_input)
+    with first_action.container():
+        with st.container(horizontal=True, vertical_alignment="center"):
+            st.markdown("**처음 사용하시나요?** 호기 마스터를 붙여넣어 첫 데이터를 저장하세요.")
+            st.button(
+                "설비 데이터 입력", icon=":material/add:", type="primary", on_click=_open_input
+            )
+        cutoff = repository.load_process_cutoff()
+        _render_first_data_checklist((len(saved_equipment), len(saved_downtime), len(cutoff)))
 show_sample_fleet = bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
 if using_dashboard_sample and (not tab_is_hidden(main_tab) or not tab_is_hidden(gap_tab)):
     with sample_notice.container():

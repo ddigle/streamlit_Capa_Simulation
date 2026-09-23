@@ -6,6 +6,7 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.equipment_explorer import (
     AS_OF_KEY,
+    INACTIVE_VIEW_KEY,
     QUESTION_KEY,
     SMALL_PROCESS_KEY,
 )
@@ -151,3 +152,53 @@ def test_hidden_main_preserves_the_question_date_and_process_selection() -> None
     assert app.multiselect(SMALL_PROCESS_KEY).value == ["Die Attach"]
     assert app.date_input(AS_OF_KEY).value == date(2026, 10, 8)
     assert app.dataframe[0].value["호기"].tolist() == ["EQ-QUAL"]
+
+
+def test_the_month_view_catches_what_the_chosen_day_misses() -> None:
+    """10월 11일에는 비가동 호기가 하나도 없지만, 10월 안에는 둘이 있었다.
+
+    「그 달 전체」는 기준일이 든 달을 본다. 기준 월을 따로 고르는 위젯을 만들지 않는다 —
+    조회 축이 둘이 되면 화면이 어느 쪽을 답하는지 알 수 없어진다.
+    """
+    app = _app()
+    app.segmented_control(QUESTION_KEY).set_value("비가동 호기").run()
+
+    assert app.selectbox(INACTIVE_VIEW_KEY).value == "기준일 시점"
+
+    app.date_input(AS_OF_KEY).set_value(date(2026, 10, 11)).run()
+
+    assert not app.dataframe
+    assert any("비가동 호기가 없습니다" in item.value for item in app.success)
+
+    app.selectbox(INACTIVE_VIEW_KEY).set_value("그 달 전체").run()
+
+    _assert_one_result(app)
+    assert set(app.dataframe[0].value["호기"]) == {"EQ-REPAIR", "EQ-QUAL"}
+    assert list(app.dataframe[0].value.columns[:3]) == ["호기", "비가동 시작", "비가동 종료"]
+    assert any("2026-10 달 전체" in item.value for item in app.markdown)
+    assert app.date_input(AS_OF_KEY).value == date(2026, 10, 11)
+
+    # 조건에 맞는 호기가 없으면 표가 아니라 안내 한 줄이다. 빈 표에도 컬럼은 그대로 있다.
+    app.multiselect(SMALL_PROCESS_KEY).set_value(["Other"]).run()
+
+    assert not app.exception
+    assert not app.dataframe
+    assert any("기준일이 든 달과 조건에" in item.value for item in app.success)
+
+
+def test_hidden_main_preserves_the_inactive_view_selection() -> None:
+    app = _app()
+    app.segmented_control(QUESTION_KEY).set_value("비가동 호기").run()
+    app.selectbox(INACTIVE_VIEW_KEY).set_value("그 달 전체").run()
+    app.session_state["equipment_explorer_test_tab"] = "Settings"
+    app.run()
+
+    assert not app.exception
+    assert not app.dataframe
+
+    app.session_state["equipment_explorer_test_tab"] = "Main"
+    app.run()
+
+    _assert_one_result(app)
+    assert app.selectbox(INACTIVE_VIEW_KEY).value == "그 달 전체"
+    assert "비가동 시작" in app.dataframe[0].value.columns

@@ -83,6 +83,8 @@ EDIT_SAVE_BUTTON_KEY = "equipment_edit_save_v1"
 VIEW_APPLY_BUTTON_KEY = "equipment_view_apply_v1"
 PREVIEW_KEY = "equipment_workspace_preview_v1"
 BUFFER_KEY = "equipment_workspace_buffers_v1"
+DROP_EXAMPLE_ROWS_KEY = "equipment_workspace_drop_examples_v1"
+EXAMPLE_DROP_BUTTON_KEY = "equipment_workspace_drop_examples_button_v1"
 _REVISION_KEY = "equipment_workspace_revision_v1"
 _ERROR_KEY = "equipment_workspace_error_v1"
 _NOTICE_KEY = "equipment_workspace_notice_v1"
@@ -129,6 +131,7 @@ def reset_equipment_drafts() -> None:
         DOWNTIME_IMPORT_KEY,
         BUFFER_KEY,
         PREVIEW_KEY,
+        DROP_EXAMPLE_ROWS_KEY,
         _REVISION_KEY,
         _ERROR_KEY,
         _NOTICE_KEY,
@@ -149,14 +152,80 @@ def _remember_edits(frames: Frames) -> None:
     _clear_editors()
 
 
+def _example_baseline_rows(baseline: pd.DataFrame) -> pd.DataFrame:
+    """손대지 않은 예시 행. 저장 가드가 잡는 것과 **정확히 같은 두 함수**로 센다.
+
+    화면이 미리 알리는 건수와 저장이 막는 건수가 갈리면 「지웠는데도 막힌다」가 된다.
+    """
+    return pd.concat(
+        [untouched_sample_baseline_rows(baseline), untouched_template_baseline_rows(baseline)]
+    )
+
+
+def _without_example_rows(baseline: pd.DataFrame) -> pd.DataFrame:
+    leftovers = _example_baseline_rows(baseline)
+    if leftovers.empty:
+        return baseline
+    return baseline.loc[~baseline.index.isin(leftovers.index)].reset_index(drop=True)
+
+
+def _example_row_count(frames: Frames, pending: object) -> int:
+    """저장이 막을 예시 행 수.
+
+    검토 후보가 있으면 **그쪽만** 센다. `candidate[0]` 은 버퍼를 merge 한 결과라 버퍼의
+    예시 행을 이미 품고 있어, 둘을 더하면 같은 행을 두 번 세고 지운 뒤에도 수가 남는다.
+    """
+    baseline = pending.candidate[0] if isinstance(pending, ImportReview) else frames[0]
+    return len(_example_baseline_rows(baseline))
+
+
+def _drop_example_rows(*, floor_canvases: FloorCanvasMap) -> None:
+    """예시 행을 편집본과 검토 후보에서 **함께** 뺀다.
+
+    후보에서만 빼면 되돌아온다 — 원문이 그대로라 재검토(`matches()` 가 깨질 때)가 원문을
+    다시 읽고 예시 줄을 또 넣는다. 그래서 세션 플래그를 남겨 이후의 모든
+    `build_import_review` 가 merge 전에 같은 행을 뺀 채 돌게 한다.
+
+    **저장 검증은 건드리지 않는다.** 이것은 저장을 눌러야 알던 것을 누르기 전에 말하고
+    한 번에 지우는 길일 뿐이다. 콜백은 위젯이 만들어지기 전에 돌므로 editor 키를 비우는
+    것이 안전하고, `st.rerun` 은 부르지 않는다 — `on_click` 이 이미 한 회차를 돌린다.
+    """
+    frames: Frames = st.session_state[BUFFER_KEY]
+    pending = st.session_state.get(PREVIEW_KEY)
+    removed = _example_row_count(frames, pending)
+    st.session_state[DROP_EXAMPLE_ROWS_KEY] = True
+    _remember_edits((_without_example_rows(frames[0]), frames[1], frames[2]))
+    if isinstance(pending, ImportReview):
+        try:
+            st.session_state[PREVIEW_KEY] = build_import_review(
+                pending.target,
+                pending.payload,
+                st.session_state[BUFFER_KEY],
+                floor_canvases=floor_canvases,
+                drop_examples=True,
+            )
+        except BOOTSTRAP_ERRORS as exc:
+            st.session_state.pop(PREVIEW_KEY, None)
+            st.session_state[_ERROR_KEY] = str(exc)
+            return
+    st.session_state[_NOTICE_KEY] = (
+        f"예시 행 {removed:,}건을 빼고 검토했습니다. 저장 검증은 그대로 돕니다."
+    )
+
+
 def build_import_review(
     target: str,
     payload: str | bytes,
     source: Frames,
     *,
     floor_canvases: FloorCanvasMap,
+    drop_examples: bool = False,
 ) -> ImportReview:
-    """기존 입력 서비스를 통해 원문을 검증하고 다른 표를 포함한 저장 후보를 만든다."""
+    """기존 입력 서비스를 통해 원문을 검증하고 다른 표를 포함한 저장 후보를 만든다.
+
+    `drop_examples` 는 「예시 행 지우기」를 누른 뒤의 재검토다. 원문은 그대로 두고 merge
+    **전에** 예시 줄만 빼므로 지운 행이 재검토에서 되살아나지 않는다.
+    """
     baseline, equipment, downtime = source
     if target == "호기 마스터":
         incoming = (
@@ -174,6 +243,8 @@ def build_import_review(
             if isinstance(payload, bytes)
             else read_baseline_clipboard(payload)
         )
+        if drop_examples:
+            incoming = _without_example_rows(incoming)
         changes = build_baseline_import_preview(baseline, incoming)
         baseline = merge_baseline_rows(baseline, incoming)
         equipment = prepare_equipment_master(equipment, floor_canvases=floor_canvases)
@@ -196,9 +267,7 @@ def build_import_review(
 
 
 def _save_snapshot(repository: DuckDBEquipmentRepository, frames: Frames, note: str) -> None:
-    leftovers = pd.concat(
-        [untouched_sample_baseline_rows(frames[0]), untouched_template_baseline_rows(frames[0])]
-    )
+    leftovers = _example_baseline_rows(frames[0])
     if not leftovers.empty:
         raise ValueError(
             f"기존 보유대수에 지우지 않은 예시 행이 {len(leftovers)}건 남아 있습니다. "
@@ -501,6 +570,22 @@ def render_equipment_data_workspace(
     notice = st.session_state.pop(_NOTICE_KEY, None)
     if isinstance(notice, str):
         st.info(notice)
+    pending = st.session_state.get(PREVIEW_KEY)
+    # **저장을 누르기 전에 말한다.** 30행을 다 붙여넣고 저장에서 막히는 것과, 들어오자마자
+    # 아는 것은 다르다. 폼 밖이라 일반 버튼이 되고 콜백이 그 자리에서 지운다.
+    example_rows = _example_row_count(frames, pending)
+    if example_rows:
+        st.warning(
+            f"기존 보유대수에 손대지 않은 예시 행 {example_rows:,}건 — 저장이 막힙니다"
+            "(양식의 예시 줄이거나 개발용 샘플입니다)."
+        )
+        st.button(
+            f"예시 행 {example_rows:,}건 지우기",
+            icon=":material/delete_sweep:",
+            key=EXAMPLE_DROP_BUTTON_KEY,
+            on_click=_drop_example_rows,
+            kwargs={"floor_canvases": floor_canvases},
+        )
     with st.expander("입력 양식과 작성 기준", expanded=False):
         st.caption(
             "Excel에서 헤더를 포함해 복사하거나 CSV 파일을 올리세요. "
@@ -534,7 +619,6 @@ def render_equipment_data_workspace(
             "- **비가동 일정**: 호기 + 비가동유형 + 시작일로 구분합니다. 먼저 호기를 등록하세요.\n"
             "- 입력한 운영 설비대수는 시뮬레이션 Capa 산출 데이터와 분리되어 있습니다."
         )
-    pending = st.session_state.get(PREVIEW_KEY)
     with st.form(WORKSPACE_FORM_KEY, border=False, enter_to_submit=False):
         # 전환은 브라우저에서만 한다. 폼의 다른 탭도 계속 생성해 미제출 delta를 유지한다.
         input_tab, edit_tab, history_tab = st.tabs(["입력", "직접 편집", "저장 이력"])
@@ -568,6 +652,8 @@ def render_equipment_data_workspace(
                     f"저장 후: 기존 보유대수 {len(pending.candidate[0]):,}행 · "
                     f"호기 {len(pending.candidate[1]):,}행 · 비가동 {len(pending.candidate[2]):,}행"
                 )
+                if st.session_state.get(DROP_EXAMPLE_ROWS_KEY, False):
+                    st.caption("예시 행은 빼고 검토했습니다.")
             import_save_clicked = st.form_submit_button(
                 "확인 후 리비전 저장",
                 key=IMPORT_SAVE_BUTTON_KEY,
@@ -618,7 +704,11 @@ def render_equipment_data_workspace(
                 _save_snapshot(repository, pending.candidate, note)
             else:
                 st.session_state[PREVIEW_KEY] = build_import_review(
-                    target, content, edited, floor_canvases=floor_canvases
+                    target,
+                    content,
+                    edited,
+                    floor_canvases=floor_canvases,
+                    drop_examples=bool(st.session_state.get(DROP_EXAMPLE_ROWS_KEY, False)),
                 )
                 if import_save_clicked:
                     st.session_state[_NOTICE_KEY] = (
