@@ -345,20 +345,13 @@ def build_sidebar_stylesheet(
             pointer-events: none;
         }}
 
-        /* 관리는 **계산 흐름 밖**이다. 접는 장치는 다른 상자와 같게 주되 테두리를 지우고
-           요약 줄 글자를 캡션 색으로 눌러 층위를 가른다 — 캡션 한 줄이 하던 말을 이제
-           테두리 없음과 글자색이 한다. */
-        .st-key-{admin_box_key} details {{
-            border: none;
-            background: transparent;
-        }}
-        .st-key-{admin_box_key} summary [data-testid="stMarkdownContainer"] p {{
-            color: {tokens.TEXT_MUTED};
-        }}
+        /* `Preference` 상자에 서식 예외를 두지 않는다. 테두리도 요약 줄 글자도 다른
+           상자와 같다 — 계산 흐름 밖이라는 것은 서식이 아니라 **맨 아래라는 자리**가
+           말한다(바로 아래 `order`). 여기에 규칙을 더하면 그 자리가 뜻을 잃는다. */
 
-        /* Admin Area 는 **언제나 맨 아래**다. 페이지가 자기 사이드바 요소를 그리는 것은
+        /* `Preference` 는 **언제나 맨 아래**다. 페이지가 자기 사이드바 요소를 그리는 것은
            `navigation.run()` 안이라 파이썬 차례로는 뒤에 둘 수 없다 — HOME 의 「B/N 집계
-           공정」 상자가 그래서 Admin 아래에 붙었다. 세로 흐름에서 자리만 마지막으로 민다.
+           공정」 상자가 그래서 이 상자 아래에 붙었다. 세로 흐름에서 자리만 마지막으로 민다.
            `order` 는 **flex 항목**이 받아야 한다. 상자(`st.container`)였을 때는 `.st-key-*`
            가 그 한 겹 안쪽이라 바깥 래퍼에 줘야 했는데, **확장 패널은 `.st-key-*` 요소
            자신이 flex 항목**이다(프런트엔드가 확장 패널일 때만 래퍼에 그 클래스를 붙인다).

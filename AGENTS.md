@@ -109,7 +109,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그리기만 한다. 박스 컨테이너 key 와 CSS 선택자도 같은 선언에서 나온다. 공통 사이드바와
     조회기간은 여기서 관리한다.
   - **사이드바 상자는 하나의 양식이다.** 하위를 가진 페이지 그룹과 조회 컨트롤 넷
-    (시나리오·리비전, 조회기간, B/N 집계 공정, 관리)이 모두 `st.expander` 다. 컨트롤 넷은
+    (시나리오·리비전, 조회기간, B/N 집계 공정, Preference)이 모두 `st.expander` 다. 컨트롤 넷은
     `sidebar_status.sidebar_expander` 로 만들어 펼침 상태를 세션 동안 기억하며, B/N 만
     기본이 펼침이고 나머지는 접힘이다. 페이지 그룹도 `key` 로 만든다 — `expanded=` 는
     처음 그릴 때만 읽혀 링크로 페이지를 옮겨도 여닫힘이 따라오지 않으므로(실측), **페이지가
@@ -123,8 +123,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     순서도 `SIDEBAR_GROUPS` 가 정한다).
   - 배치가 다른 둘만 손수 그린다 — 가운데·큰 글씨의 HOME 과, 조회 컨트롤 아래 맨 밑
     상자(`ADMIN_BOX_KEY`)에 같은 층위로 세우는 `Admin Area`·VOC(`pages.admin_box_pages`)다.
-    관리 상자는 **계산 흐름 밖**이라 같은 접힘 장치를 갖되 테두리가 없고 요약 줄 글자가
-    캡션 색이다. 그 구분은 CSS 가 맡는다.
+    그 상자의 라벨은 `Preference`, 아이콘은 `:material/tune:` 다 — 앱이 이미 같은 낱말에
+    그 아이콘을 쓴다. **서식 예외는 없다.** 테두리도 요약 줄 글자도 페이지 그룹과 같고,
+    계산 흐름 밖이라는 것은 CSS `order` 가 지키는 맨 아래라는 자리만으로 말한다. 상수
+    `ADMIN_BOX_KEY` 는 그대로다 — 상자에 서는 것은 여전히 `Admin Area` 와 VOC 다.
   - 사이드바 CSS 문자열은 `components/sidebar_style.py`가 탐색 그룹·활성 경로·컨테이너
     키를 받아 만든다. 테마 초기화와 `st.html` 주입 순서는 진입점이 소유한다.
   - 모든 페이지에 필요한 전역 위젯은 `navigation.run()`보다 앞에 둔다.
@@ -944,7 +946,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 
 - `src/capa_simulation/navigation.py`
   - 사이드바 페이지 목록을 `PageSpec` 선언으로 관리하고 `st.Page` 묶음을 만든다. 최상위
-    박스는 `SIDEBAR_GROUPS`(`SidebarGroupSpec`), 맨 아래 관리 상자는 `ADMIN_AREA` 와
+    박스는 `SIDEBAR_GROUPS`(`SidebarGroupSpec`), 맨 아래 `Preference` 상자는 `ADMIN_AREA` 와
     `ADMIN_BOX_PAGES` 가 선언한다 — 새 그룹도 여기 한 줄이면 끝나고 `app.py` 는 그 선언을
     그린다.
   - 페이지 추가·제목 변경은 여기서만 한다. 상태 접미는 `IMPLEMENTING_SUFFIX`(구현중)·
@@ -1013,12 +1015,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     위젯 생성이나 HTML 주입은 하지 않는다. 생성된 HTML의 태그 안전성과 테마·활성 선택자를
     `tests/test_sidebar_stylesheet.py`가 검사한다.
   - 상자 제목은 모두 확장 패널의 요약 줄이라 **한 규칙**(1rem·700)이 그룹과 컨트롤 넷을
-    함께 건다. 여기서만 하는 세 가지가 더 있다 — 시나리오 배지를 요약 줄 오른쪽 끝으로
-    미는 것, 적용 기간 자리표시자를 높이 0 으로 눌러 요약 줄 위에 얹는 것(좌표는 모듈
-    상수 넷에 모여 있다), 관리 상자의 테두리를 지우고 글자를 캡션 색으로 누르는 것이다.
+    함께 건다. 여기서만 하는 두 가지가 더 있다 — 시나리오 배지를 요약 줄 오른쪽 끝으로
+    미는 것과, 적용 기간 자리표시자를 높이 0 으로 눌러 요약 줄 위에 얹는 것(좌표는 모듈
+    상수 넷에 모여 있다)이다. 오른쪽 좌표는 요약 줄의 안쪽 여백과 같아야 배지와 끝이 맞는다.
   - **`order` 를 받는 요소가 상자와 확장 패널이 다르다.** `st.container` 는 `.st-key-*` 가
     바깥 래퍼 한 겹 안이고, 확장 패널은 `.st-key-*` 요소 자신이 세로 블록의 직접 자식이다.
-    관리 상자를 맨 아래에 고정하는 규칙은 둘 다 건다.
+    `Preference` 상자를 맨 아래에 고정하는 규칙은 둘 다 건다.
 - `src/capa_simulation/components/column_filter.py`
   - 분류 컬럼별 다중선택 필터와 초기화 버튼. 선택값으로 거른 프레임을 돌려준다.
     `value_labels` 는 `format_func` 로 표시만 바꾼다. 옵션 값과 세션 저장값은 원본이다.

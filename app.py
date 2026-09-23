@@ -205,10 +205,13 @@ with pinned_connections(DUCKDB_PATH):
     # 관리 기능이라 조회 컨트롤보다 아래, 사이드바에서 가장 먼 곳에 둔다. 페이지가 자기
     # 사이드바 요소를 더하는 것은 `navigation.run()` 안이라 파이썬 차례로는 뒤에 둘 수
     # 없다 — 맨 아래를 지키는 것은 위 CSS 의 `order` 다.
-    # **접는 장치는 다른 상자와 같게 주되 테두리는 여전히 두르지 않는다.** 관리는 계산
-    # 흐름 밖이라 다른 상자와 똑같이 서면 같은 층위로 읽힌다. 양식을 통일하면서 그 구분을
-    # 없애지 않고 **테두리와 글자색**에 맡겼다 — 여는 방법은 같고 층위만 다르다.
-    with sidebar_expander("관리", key=ADMIN_BOX_KEY):
+    # **다른 상자와 완전히 같은 양식이다.** 테두리도 요약 줄 글자도 아이콘도 페이지
+    # 그룹과 같게 둔다 — 계산 흐름 밖이라는 것은 서식이 아니라 위 `order` 가 지키는
+    # 맨 아래라는 자리가 말한다. 아이콘이 `tune` 인 것은 이 앱이 이미 `Preference` 라는
+    # 낱말에 그 아이콘을 쓰고 있어서다(HOME·가용설비 현황의 같은 이름 탭).
+    # 상자 이름과 그 안의 `Admin Area` 는 다른 것을 가리킨다 — 상자는 「앱을 어떻게
+    # 쓸지」이고 `Admin Area` 는 그 안의 한 화면이다. 상수 `ADMIN_BOX_KEY` 는 그대로다.
+    with sidebar_expander("Preference", key=ADMIN_BOX_KEY, icon=":material/tune:"):
         with st.container(key="admin_area_navigation"):
             st.page_link(pages.admin_area, width="stretch")
             # VOC 는 계산 화면이 아니라 사람이 쓰는 자리다. 계산 그룹 어디에도 속하지 않아
