@@ -15,6 +15,7 @@ from capa_simulation.services.scenario_transform import (
     format_month_range,
     scenario_months,
 )
+from capa_simulation.services.scenario_virtual_products import virtual_product_records
 from capa_simulation.services.scenario_year_shift import shift_scenario_years
 
 
@@ -59,11 +60,15 @@ def _render_shift(repository: DuckDBScenarioRepository, database_path: str) -> N
     if years == 0:
         st.caption("이동할 연수를 입력하면 새 시나리오로 저장할 수 있습니다.")
         return
+    virtual_products = virtual_product_records(
+        repository.list_virtual_products(source.revision.revision_id)
+    )
     provenance = (
         f"연도 Shift\n원본: {source_description(source)}\n이동 연수: {years:+d}년\n"
         f"이동 전: {format_month_range(scenario_months(original))}\n"
         f"이동 후: {format_month_range(scenario_months(shifted))}\n"
-        "변경: 12개 표의 생산계획년월 연도만 이동\n월 없는 4표 및 나머지 값: 원본 유지"
+        "변경: 12개 표의 생산계획년월 연도만 이동\n월 없는 4표 및 나머지 값: 원본 유지\n"
+        f"가상제품 복제 이력: 원본 {len(virtual_products)}건 보존"
     )
     render_derived_save(
         repository,
@@ -74,4 +79,5 @@ def _render_shift(repository: DuckDBScenarioRepository, database_path: str) -> N
         default_name=f"{source.scenario.scenario_name} · {years:+d}년 Shift",
         key="scenario_shift",
         request=(source.revision.revision_id, str(years)),
+        virtual_products=virtual_products,
     )

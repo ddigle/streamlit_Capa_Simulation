@@ -1,5 +1,6 @@
 # Purpose: 연도 Shift 화면의 전후 미리보기·저장 차단과 원본 및 활성 편집본 보존을 검증한다.
 
+from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
@@ -15,6 +16,7 @@ from capa_simulation.scenario_activation import (
 )
 from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
+from capa_simulation.services.virtual_product import VirtualProductRecord, records_to_frame
 
 
 @pytest.fixture
@@ -63,6 +65,49 @@ def _save_button(app: AppTest):
 
 def _ranges(app: AppTest) -> dict[str, str]:
     return {item.label: item.value for item in app.metric}
+
+
+def test_shift_preserves_selected_revision_history_and_can_shift_it_again(source) -> None:
+    repository, database, original = source
+    record = VirtualProductRecord("Product-A", "8H", "복제 원본", "12H")
+    original = repository.save_revision(
+        original.scenario.scenario_id,
+        original.tables,
+        original.preset,
+        revision_name="복제 이력 포함",
+        parent_revision_id=original.revision.revision_id,
+        virtual_products=[asdict(record)],
+    )
+    expected = repository.list_virtual_products(original.revision.revision_id)
+    app = _app(database, original)
+    app.number_input(key="scenario_shift_years").set_value(1).run()
+    preview = next(item.value for item in app.dataframe if "원본 제품정보" in item.value)
+    pd.testing.assert_frame_equal(preview, records_to_frame((record,)))
+    app.text_input(key="scenario_shift_name").set_value("이력 보존 Shift")
+    _save_button(app).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    created = next(
+        item for item in repository.list_scenarios() if item.scenario_name == "이력 보존 Shift"
+    )
+    pd.testing.assert_frame_equal(
+        repository.list_virtual_products(created.active_revision_id), expected
+    )
+    pd.testing.assert_frame_equal(
+        repository.list_virtual_products(original.revision.revision_id), expected
+    )
+    assert len(repository.list_revisions(original.scenario.scenario_id)) == 2
+
+    app.selectbox(key="shift_source_scenario").set_value(created.scenario_id).run()
+    app.number_input(key="scenario_shift_years").set_value(-2).run()
+    app.text_input(key="scenario_shift_name").set_value("이력 재보존 Shift")
+    _save_button(app).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    shifted_again = next(
+        item for item in repository.list_scenarios() if item.scenario_name == "이력 재보존 Shift"
+    )
+    pd.testing.assert_frame_equal(
+        repository.list_virtual_products(shifted_again.active_revision_id), expected
+    )
 
 
 def test_zero_shift_has_preview_but_no_save_and_invalid_shift_recovers(source) -> None:
