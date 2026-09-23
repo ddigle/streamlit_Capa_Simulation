@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import zipfile
@@ -251,6 +252,43 @@ def build_archive(
     return len(paths)
 
 
+# 런북 7장은 **그 배포 하나**를 위한 안내다. 첫 줄이 자기 stamp 를 선언한다.
+RUNBOOK = Path("docs/internal_update_runbook.md")
+RUNBOOK_STAMP_PATTERN = re.compile(r"이 절은 stamp `(\d{12})` 배포용이다")
+
+
+def runbook_stamp_mismatch(stamp: str) -> bool:
+    """런북 7장이 다른 배포를 가리키면 막는다. 막는 쪽이 옳다는 근거가 있다.
+
+    2026-09-23 배포(`202609231559`)가 7장의 stamp 를 `202609210815` 로 둔 채 나갔다.
+    내용은 그 배포 기준으로 이미 갱신돼 있었는데 헤더만 남아, **사내가 「이 절은 내 것이
+    아니다」로 읽을 수 있는 상태**로 도착했다(사내 리뷰 지적). 7장 스스로가 「stamp 가
+    다르면 네 것이 아니다」라고 적어 두었으므로 이 어긋남은 안내를 통째로 무력화한다.
+
+    경고가 아니라 **실패**로 둔다. 빌드는 다시 하면 되지만, 잘못된 안내가 실린 ZIP 은
+    이미 메일로 나간 뒤다.
+    """
+    path = PROJECT_ROOT / RUNBOOK
+    if not path.exists():
+        return False
+    found = RUNBOOK_STAMP_PATTERN.search(path.read_text(encoding="utf-8"))
+    if found is None:
+        print(f"{RUNBOOK} 7장에서 stamp 선언을 찾지 못했습니다.", file=sys.stderr)
+        print("  형식: 이 절은 stamp `YYYYMMDDHHMM` 배포용이다", file=sys.stderr)
+        return True
+    declared = found.group(1)
+    if declared == stamp:
+        return False
+    print(f"{RUNBOOK} 7장이 다른 배포를 가리킵니다.", file=sys.stderr)
+    print(f"  7장 선언 {declared} · 지금 만드는 것 {stamp}", file=sys.stderr)
+    print("  7장을 이번 배포 기준으로 고치고 그 stamp 를 --stamp 로 넘기세요.", file=sys.stderr)
+    print(
+        "  **stamp 를 먼저 정하고** 문서에 적은 뒤 빌드합니다 — 순서를 바꾸면 또 어긋납니다.",
+        file=sys.stderr,
+    )
+    return True
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="사내 배포 ZIP 을 만든다.")
     parser.add_argument(
@@ -302,6 +340,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.out is None:
         parser.error("ZIP 을 만들려면 --out 이 필요합니다(--list-only 는 예외).")
     stamp = args.stamp or datetime.now().strftime("%Y%m%d%H%M")
+    if runbook_stamp_mismatch(stamp):
+        return 1
     destination = args.out / f"{stamp}.zip"
     manifest = build_manifest(PROJECT_ROOT, paths, stamp=stamp)
     count = build_archive(PROJECT_ROOT, paths, destination, manifest=manifest)

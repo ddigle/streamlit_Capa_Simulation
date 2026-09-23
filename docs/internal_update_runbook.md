@@ -198,6 +198,20 @@ uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로
 `INTERNAL_ONLY_TOP_LEVEL` 로 선언돼 있어 통과한다. 그래도 실패하면 **그 사실 자체를 리뷰
 문서에 적는다.**
 
+### 3-3. 루트의 `requirements.txt` 는 사내 WebIDE 컨테이너 전용이다
+
+**손으로 적는 파일이 아니라 `uv.lock` 의 그림자다.** 개발 PC 와 CI 는 `uv sync` 로 잠금을
+보지만, 사내 WebIDE 의 CI/CD 는 `docker/Dockerfile-prod` 로 이미지를 만들고 그 안에서
+`pip install -r requirements.txt` 를 돈다. 둘이 갈라지면 **사내 컨테이너만 조용히 다른
+버전을 쓴다** — 화면에 오류가 나지 않고 계산 결과만 달라질 수 있다.
+
+- **사내에서 이 파일을 고치지 않는다.** `tests/test_requirements_export.py` 가 `uv.lock`
+  과 대조하므로 고치면 검증에서 걸린다. 사외가 `uv export` 로 다시 뽑는다.
+- **`uv sync` 를 이 파일로 대신하지 않는다.** 개발용 도구(ruff·mypy·pytest)가 빠져 있다.
+- 이 파일에는 프로젝트 자신(`-e .`)이 **일부러 빠져 있다.** 그래서 컨테이너는
+  `Dockerfile-prod` 의 `ENV PYTHONPATH=/project/src` 로 `src` 를 찾는다. 둘은 한 쌍이라
+  한쪽만 보고 판단하지 않는다.
+
 ---
 
 ## 4. 적용 뒤 할 일
