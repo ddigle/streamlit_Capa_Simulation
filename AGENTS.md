@@ -29,6 +29,12 @@ Git으로 관리하는 Python·PowerShell 소스에는 파일 최상단에 다�
   않는다. 목적과 문서화 출처는 `docs/migration_catalog.md`에서 관리한다. 신규 SQL은 최초
   생성 시 `--` 형식의 `Purpose` 한 줄과 카탈로그 항목을 함께 작성하며, 적용 후에는 헤더도
   수정하지 않고 후속 번호의 마이그레이션을 추가한다.
+  - **새 마이그레이션을 쓰는 중에는 pytest 를 돌린 뒤 그 파일을 고치지 않는다.** 검사가
+    도는 동안 개발 DuckDB 에 그 번호가 적용되므로, 그다음 한 글자만 고쳐도 온 검사가
+    「이미 적용된 마이그레이션이 변경되었습니다」로 죽는다. 아직 **어디에도 배포하지 않은**
+    번호라면 개발 DB 에서 그 행만 지우고 다시 적용하면 된다 —
+    `DELETE FROM app_meta.schema_migration WHERE version = <번호>`. 한 번이라도 배포한
+    번호에는 쓰지 않는다. 후속 번호를 쓰는 것이 그때의 유일한 길이다.
 - 새 소스 파일도 같은 헤더를 포함해야 한다. `tests/test_source_metadata.py`가 Python·
   PowerShell `Purpose`의 누락·빈 항목과 모든 SQL의 카탈로그 등록을 검사하므로 기본
   검증 명령에 포함된 pytest를 반드시 통과시킨다.
