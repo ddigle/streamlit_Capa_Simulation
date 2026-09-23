@@ -289,8 +289,9 @@ def test_the_control_boxes_open_collapsed_on_the_first_run(_app: AppTest) -> Non
     assert boxes[SCENARIO_BOX_KEY] is False
     assert boxes[_app_constant("MONTH_BOX_KEY")] is False
     assert boxes[_app_constant("ADMIN_BOX_KEY")] is False
-    # B/N 만 기본이 펼침이다. HOME 에서만 쓰는 상자이고 HOME 에만 있다.
-    assert boxes[BOTTLENECK_BOX_KEY] is True
+    # B/N 도 접힌다. 기준은 한 번 정해 두고 보는 값이라 들어오자마자 펴 둘 이유가 없다 —
+    # 넷이 다 접혀야 사이드바 첫 화면이 「어디로 갈까」만 말한다.
+    assert boxes[BOTTLENECK_BOX_KEY] is False
 
 
 def test_an_opened_control_box_stays_open_across_reruns(_app: AppTest) -> None:
