@@ -29,12 +29,10 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from capa_simulation.design import tokens  # noqa: E402
 
-# 모듈 로드 때 컴포넌트 자체를 등록하는 자리. `st.components.v2.component` 는 CSS 를 등록
-# 시점에 굳히므로 실행마다 다시 만들 수 없다. 스크롤바 손잡이 한 색이라 화면을 못 읽게
-# 하지는 않는다 — 여기 남겨 두어 **잊히지 않게** 한다. 고칠 때 이 줄을 지운다.
-KNOWN_FROZEN = {
-    ("src/capa_simulation/components/horizontal_scrollbar.py", "_SCROLLBAR_CSS"),
-}
+# **면제는 비워 둔다.** 등록 시점에 굳는 자리(컴포넌트 CSS 등)는 색을 CSS 에서 빼고
+# 실행마다 넘기는 값으로 옮긴다 — `horizontal_scrollbar` 가 그 본보기다. 면제를 다시
+# 늘리면 굳은 색이 검사를 통과하고, 그 색은 프로세스를 처음 연 테마의 것이 된다.
+KNOWN_FROZEN: set[tuple[str, str]] = set()
 
 
 def _theme_dependent_tokens() -> set[str]:

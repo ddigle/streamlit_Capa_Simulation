@@ -19,10 +19,12 @@ _SCROLLBAR_HTML = """
 </div>
 """
 
-# CSS 는 중괄호가 많아 f-string 으로 두면 전부 이스케이프해야 한다.
-# 색 자리에 센티넬을 두고 모듈 로드 시 한 번만 토큰으로 치환한다.
-_SCROLLBAR_CSS = (
-    """
+# **여기에 색을 적지 않는다.** `st.components.v2.component` 는 등록 시점의 CSS 를 그대로
+# 쓰고 등록은 프로세스당 한 번이라, 토큰을 여기서 읽으면 이 모듈을 처음 읽은 테마의 색이
+# 프로세스가 죽을 때까지 남는다. 새로고침도 테마 전환도 듣지 않고, 여럿이 쓰는 서버에서는
+# 먼저 들어온 세션의 테마가 모두의 막대 색을 정한다. 색은 이름만 두고 값은 실행마다
+# `data` 로 들어와 아래 JS 가 트랙에 얹는다.
+_SCROLLBAR_CSS = """
 :host {
   display: block;
   width: 100%;
@@ -34,7 +36,7 @@ _SCROLLBAR_CSS = (
   width: 100%;
   overflow: hidden;
   border-radius: 999px;
-  background: __SCROLLBAR_TRACK__;
+  background: var(--capa-scrollbar-track);
   cursor: pointer;
   touch-action: none;
   user-select: none;
@@ -45,19 +47,19 @@ _SCROLLBAR_CSS = (
   inset-block: 0;
   inset-inline-start: 0;
   box-sizing: border-box;
-  border: 2px solid __SCROLLBAR_TRACK__;
+  border: 2px solid var(--capa-scrollbar-track);
   border-radius: 999px;
-  background: __SCROLLBAR_THUMB__;
+  background: var(--capa-scrollbar-thumb);
   cursor: grab;
   will-change: transform;
 }
 
 .capa-scrollbar-thumb:hover {
-  background: __SCROLLBAR_THUMB_HOVER__;
+  background: var(--capa-scrollbar-thumb-hover);
 }
 
 .capa-scrollbar-track.is-dragging .capa-scrollbar-thumb {
-  background: __SCROLLBAR_THUMB_ACTIVE__;
+  background: var(--capa-scrollbar-thumb-active);
   cursor: grabbing;
 }
 
@@ -65,17 +67,23 @@ _SCROLLBAR_CSS = (
   outline: 2px solid var(--st-primary-color);
   outline-offset: 2px;
 }
-""".replace("__SCROLLBAR_TRACK__", tokens.SCROLLBAR_TRACK)
-    .replace("__SCROLLBAR_THUMB__", tokens.SCROLLBAR_THUMB)
-    .replace("__SCROLLBAR_THUMB_HOVER__", tokens.SCROLLBAR_THUMB_HOVER)
-    .replace("__SCROLLBAR_THUMB_ACTIVE__", tokens.SCROLLBAR_THUMB_ACTIVE)
-)
+"""
 
 _SCROLLBAR_JS = """
 export default function(component) {
   const { data, parentElement } = component
   const track = parentElement.querySelector('.capa-scrollbar-track')
   const thumb = parentElement.querySelector('.capa-scrollbar-thumb')
+  // 색은 CSS 가 아니라 `data` 로 들어온다 — 컴포넌트 CSS 는 등록 시점에 굳어 테마를
+  // 따라오지 못한다. 손잡이는 트랙의 자식이라 여기 얹은 속성을 그대로 물려받는다.
+  // **아래 이른 반환보다 먼저 얹는다.** CSS 쪽 `var()` 에 폴백을 두지 않았으므로 값이
+  // 없으면 막대가 투명해진다 — 손잡이를 못 찾아 물러나는 경로에서도 트랙은 보여야 한다.
+  if (track) {
+    track.style.setProperty('--capa-scrollbar-track', String(data?.trackColor || ''))
+    track.style.setProperty('--capa-scrollbar-thumb', String(data?.thumbColor || ''))
+    track.style.setProperty('--capa-scrollbar-thumb-hover', String(data?.thumbHoverColor || ''))
+    track.style.setProperty('--capa-scrollbar-thumb-active', String(data?.thumbActiveColor || ''))
+  }
   if (!track || !thumb) return
 
   // **Streamlit 은 `data` 가 바뀌면 앞 인스턴스를 정리하지 않고 이 모듈을 다시 실행한다.**
@@ -305,6 +313,12 @@ def render_horizontal_scrollbar(
             "height": height,
             "minThumbWidth": min_thumb_width,
             "initialOffsetPx": float(initial_offset_px),
+            # 토큰을 **여기서** 읽는다. 실행마다 도는 자리라야 테마를 따라온다 —
+            # 모듈 최상위에서 읽으면 처음 읽은 테마의 색이 프로세스에 굳는다.
+            "trackColor": tokens.SCROLLBAR_TRACK,
+            "thumbColor": tokens.SCROLLBAR_THUMB,
+            "thumbHoverColor": tokens.SCROLLBAR_THUMB_HOVER,
+            "thumbActiveColor": tokens.SCROLLBAR_THUMB_ACTIVE,
         },
         width="stretch",
         height=height,

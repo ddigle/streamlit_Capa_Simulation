@@ -135,6 +135,30 @@ def test_a_data_change_tears_down_the_previous_instance() -> None:
     assert _SCROLLBAR_JS.count("pendingInitialOffset = false") >= 2
 
 
+def test_the_scrollbar_colors_follow_the_run(monkeypatch: Any) -> None:
+    """색이 실행마다 다시 정해진다.
+
+    컴포넌트 CSS 는 등록 시점에 굳는다. 색을 거기 두었더니 **프로세스를 처음 연 테마**가
+    모두의 막대 색을 정했다 — 밝은 화면에 검은 막대가 남고 새로고침도 듣지 않았다.
+    그래서 색은 CSS 가 아니라 `data` 로 실어 보낸다.
+
+    비공개 `theme._LOCAL` 을 만지는 것은 `tests/test_design_tokens.py` 가 `_PALETTES` 를
+    직접 도는 것과 같은 이유다 — 테마를 고정하는 공개 창구가 없다.
+    """
+    from capa_simulation.design import theme, tokens
+
+    for mode in ("light", "dark"):
+        monkeypatch.setattr(theme._LOCAL, "mode", mode, raising=False)
+        sent: list[dict[str, Any]] = []
+        _stub_component(monkeypatch, sent)
+        render_horizontal_scrollbar(target_selector=".target", height=12, key="k")
+
+        assert sent[0]["trackColor"] == tokens.palette_value(mode, "SCROLLBAR_TRACK")
+        assert sent[0]["thumbColor"] == tokens.palette_value(mode, "SCROLLBAR_THUMB")
+        assert sent[0]["thumbHoverColor"] == tokens.palette_value(mode, "SCROLLBAR_THUMB_HOVER")
+        assert sent[0]["thumbActiveColor"] == tokens.palette_value(mode, "SCROLLBAR_THUMB_ACTIVE")
+
+
 def _stub_component(monkeypatch: Any, sent: list[dict[str, Any]]) -> None:
     import capa_simulation.components.horizontal_scrollbar as bar
 
