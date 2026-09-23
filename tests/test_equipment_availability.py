@@ -8,11 +8,17 @@ import pytest
 from capa_simulation.services.equipment_availability import (
     build_equipment_status_as_of,
     build_inactive_equipment,
+    build_inactive_equipment_in_month,
     build_milestone_transition_events,
     build_space_equipment_status,
     build_weekly_equipment_availability,
+    inactive_equipment_moments,
 )
-from capa_simulation.services.equipment_contract import EQUIPMENT_COLUMNS
+from capa_simulation.services.equipment_contract import (
+    EQUIPMENT_COLUMNS,
+    empty_downtime_schedule,
+    empty_equipment_master,
+)
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_baseline,
@@ -340,3 +346,149 @@ def test_cached_weekly_availability_matches_direct_call() -> None:
     assert not get_weekly_equipment_availability(baseline, narrowed, downtime, **window).equals(
         cached
     )
+
+
+def _october_fleet() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """2026년 10월 fleet. 1일이 목요일이라 그 달의 일요일은 4·11·18·25일뿐이다.
+
+    - `EQ-WEEKDAY` 는 월요일에 시작해 토요일에 끝나는 비가동이다. 일요일 표본 사이에 숨는다.
+    - `EQ-REMOVAL` 은 셋업 중인데 반출일정이 적혀 있어 상태가 내내 「반출 예정」이다.
+      이름으로 고르는 집계도, 상태 이름으로 묶은 생애주기 구간도 이 호기를 잃는다.
+    - `EQ-CARRY` 는 9월에 시작해 10월 초에 끝난다. 월초 시점이 잡아야 한다.
+    - `EQ-NEIGHBOR` 는 11월에만 비가동이다. 10월에는 빠져야 한다.
+    """
+    template = {
+        **_equipment().iloc[0].to_dict(),
+        "기존설비여부": "Y",
+        "제진대일정": None,
+        "물류일정": None,
+        "입고일정": None,
+        "Qual일정": None,
+        "확정상태": None,
+    }
+    rows = [
+        {**template, "호기": "EQ-WEEKDAY"},
+        {**template, "호기": "EQ-CARRY"},
+        {**template, "호기": "EQ-NEIGHBOR"},
+        {
+            **template,
+            "호기": "EQ-REMOVAL",
+            "기존설비여부": "N",
+            "입고일정": "2026-10-05",
+            "Qual일정": "2026-10-09",
+            "반출일정": "2026-11-30",
+            "확정상태": "계획",
+        },
+    ]
+    equipment = pd.DataFrame(rows, columns=EQUIPMENT_COLUMNS)
+    downtime = pd.DataFrame(
+        {
+            "호기": ["EQ-WEEKDAY", "EQ-CARRY", "EQ-NEIGHBOR"],
+            "비가동유형": ["고장", "고장", "고장"],
+            "시작일": ["2026-10-05", "2026-09-28", "2026-11-02"],
+            "종료일": ["2026-10-10", "2026-10-02", "2026-11-06"],
+            "상세사유": [None, None, None],
+            "비고": [None, None, None],
+        }
+    )
+    return equipment, downtime
+
+
+def _sunday_union(equipment: pd.DataFrame, downtime: pd.DataFrame) -> set[str]:
+    """그 달의 일요일만 재었을 때 잡히는 호기. 주차별 집계가 보던 시점이다."""
+    units: set[str] = set()
+    for day in (4, 11, 18, 25):
+        frame = build_inactive_equipment(equipment, downtime, as_of=date(2026, 10, day))
+        units |= {str(unit) for unit in frame["호기"]}
+    return units
+
+
+def test_month_view_catches_a_weekday_downtime_the_sunday_samples_miss() -> None:
+    """10-05(월)~10-10(토) 비가동은 일요일 표본 둘(4·11일) 사이에 통째로 숨는다."""
+    equipment, downtime = _october_fleet()
+
+    result = build_inactive_equipment_in_month(equipment, downtime, month=date(2026, 10, 15))
+
+    assert "EQ-WEEKDAY" in set(result["호기"])
+    assert "EQ-WEEKDAY" not in _sunday_union(equipment, downtime)
+
+
+def test_month_view_catches_a_setup_unit_whose_status_name_is_masked_by_removal() -> None:
+    """반출일정이 적히면 입고 전·셋업 중·Qual 후가 모두 「반출 예정」 한 이름이다.
+
+    그래서 상태 이름 화이트리스트도, 상태 이름으로 묶은 생애주기 구간의 시작일도 이 호기의
+    셋업 구간(10-05~10-08)을 알려 주지 못한다. 시점은 판정이 보는 날짜 컬럼에서 나와야 한다.
+    """
+    equipment, downtime = _october_fleet()
+    month = date(2026, 10, 15)
+    moments = inactive_equipment_moments(equipment, downtime, month=month)
+
+    result = build_inactive_equipment_in_month(equipment, downtime, month=month).set_index("호기")
+
+    assert "EQ-REMOVAL" in result.index
+    assert result.at["EQ-REMOVAL", "상태"] == "반출 예정"
+    # 이름이 그대로인 채 판정만 바뀌는 날(입고일·Qual일)이 시점에 들어 있다.
+    assert {date(2026, 10, 5), date(2026, 10, 9)} <= set(moments)
+
+
+def test_month_view_ignores_a_unit_that_is_idle_only_in_a_neighbouring_month() -> None:
+    equipment, downtime = _october_fleet()
+
+    units = set(
+        build_inactive_equipment_in_month(equipment, downtime, month=date(2026, 10, 15))["호기"]
+    )
+
+    assert "EQ-NEIGHBOR" not in units
+    # 9월에 시작해 10월로 넘어온 비가동은 월초 시점이 잡는다.
+    assert "EQ-CARRY" in units
+
+
+def test_month_view_reports_the_first_and_last_moment_each_unit_was_caught() -> None:
+    equipment, downtime = _october_fleet()
+    month = date(2026, 10, 15)
+    caught: dict[str, list[date]] = {}
+    for moment in inactive_equipment_moments(equipment, downtime, month=month):
+        for unit in build_inactive_equipment(equipment, downtime, as_of=moment)["호기"]:
+            caught.setdefault(str(unit), []).append(moment)
+
+    result = build_inactive_equipment_in_month(equipment, downtime, month=month).set_index("호기")
+
+    assert caught
+    for unit, days in caught.items():
+        assert result.at[unit, "비가동 시작"] == min(days)
+        assert result.at[unit, "비가동 종료"] == max(days)
+    # 두 컬럼은 호기 바로 뒤 1·2번째 자리다.
+    assert list(result.columns[:2]) == ["비가동 시작", "비가동 종료"]
+
+
+def test_month_view_matches_a_direct_union_over_the_same_moments() -> None:
+    """결과는 같은 시점 집합으로 시점 표를 직접 union 한 것과 호기 집합이 같다."""
+    equipment, downtime = _october_fleet()
+    month = date(2026, 10, 15)
+    expected: set[str] = set()
+    for moment in inactive_equipment_moments(equipment, downtime, month=month):
+        frame = build_inactive_equipment(equipment, downtime, as_of=moment)
+        expected |= {str(unit) for unit in frame["호기"]}
+
+    result = build_inactive_equipment_in_month(equipment, downtime, month=month)
+
+    assert expected
+    assert {str(unit) for unit in result["호기"]} == expected
+
+
+def test_month_view_degrades_to_an_empty_table_for_an_empty_fleet() -> None:
+    """호기 마스터가 비면 시점은 월초와 일요일로 줄고 결과는 같은 컬럼의 빈 표다."""
+    equipment, downtime = empty_equipment_master(), empty_downtime_schedule()
+    month = date(2026, 10, 15)
+
+    result = build_inactive_equipment_in_month(equipment, downtime, month=month)
+
+    assert result.empty
+    assert list(result.columns[1:3]) == ["비가동 시작", "비가동 종료"]
+    assert inactive_equipment_moments(equipment, downtime, month=month) == [
+        date(2026, 10, 1),
+        date(2026, 10, 4),
+        date(2026, 10, 11),
+        date(2026, 10, 18),
+        date(2026, 10, 25),
+    ]

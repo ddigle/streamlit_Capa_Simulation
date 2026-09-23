@@ -8,7 +8,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+from collections.abc import Sequence
+from datetime import date, timedelta
 from typing import cast
 
 import pandas as pd
@@ -100,6 +101,7 @@ def _build_equipment_status_from_prepared(
 _TIMELINE_EVENT_COLUMNS = ("입고일정", "Qual일정", "반출일정", "이설일")
 
 LIFECYCLE_SPAN_COLUMNS = ("호기", "공정소분류", "공정대분류", "상태", "시작일", "종료일")
+_MOMENT_COLUMN = "_시점"
 
 
 def build_equipment_lifecycle_spans(
@@ -266,6 +268,103 @@ def build_inactive_equipment(
     if status.empty:
         return status
     return status.loc[status["보유여부"] & ~status["가용여부"]].reset_index(drop=True)
+
+
+def _month_bounds(month: date) -> tuple[date, date]:
+    """그 달의 첫날과 마지막 날. 기준일 아무 날짜나 받는다."""
+    first = date(month.year, month.month, 1)
+    next_first = (
+        date(month.year + 1, 1, 1) if month.month == 12 else date(month.year, month.month + 1, 1)
+    )
+    return first, next_first - timedelta(days=1)
+
+
+def inactive_equipment_moments(
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    *,
+    month: date,
+) -> list[date]:
+    """그 달 안에서 **판정이 달라질 수 있는 날**. 월초 ∪ 구간이 바뀌는 날 ∪ 일요일.
+
+    일요일만 재면 월요일에 시작해 토요일에 끝난 비가동이 통째로 빠진다. 그래서 상태가
+    바뀔 수 있는 날을 `_lifecycle_breakpoints` 에서 그대로 받아 온다 — 판정이 보는 컬럼이
+    그것뿐이라 그 사이의 날에는 같은 답이 나온다. 여기서 규칙을 다시 적지 않는다.
+
+    **생애주기 구간(`build_equipment_lifecycle_spans`)의 시작일을 쓰지 않는다.** 그 구간은
+    **상태 이름으로 묶은** 것이라 이름이 그대로인 채 판정만 바뀌는 날을 잃는다 —
+    반출일정이 적힌 호기는 입고 전·셋업 중·Qual 후가 모두 「반출 예정」 한 구간이라 입고일
+    ·Qual일에 경계가 생기지 않는다. 그 호기의 비가동 구간이 한 주보다 짧고 일요일을 비껴
+    가면 이름 화이트리스트와 똑같이 통째로 빠진다.
+
+    호기 마스터가 비면 월초와 일요일만 남는다. 그 시점들로 재도 결과는 빈 표라 화면이
+    답을 못 내는 일은 없다.
+    """
+    month_start, month_end = _month_bounds(month)
+    moments = {month_start}
+    prepared = prepare_equipment_master(equipment)
+    if not prepared.empty:
+        prepared_downtime = prepare_downtime_for_prepared_equipment(downtime, prepared)
+        moments.update(
+            breakpoint.date()
+            for breakpoint in _lifecycle_breakpoints(
+                prepared,
+                prepared_downtime,
+                start=pd.Timestamp(month_start),
+                end=pd.Timestamp(month_end),
+            )
+        )
+    sunday = month_start + timedelta(days=(6 - month_start.weekday()) % 7)
+    while sunday <= month_end:
+        moments.add(sunday)
+        sunday += timedelta(days=7)
+    return sorted(moments)
+
+
+def build_inactive_equipment_in_month(
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    *,
+    month: date,
+    moments: Sequence[date] | None = None,
+) -> pd.DataFrame:
+    """그 달 안에서 **한 번이라도** 비가동이었던 호기.
+
+    **상태 이름 화이트리스트로 고르지 않는다.** 상태는 호기당 하나뿐이고 사다리 아래쪽이
+    위쪽을 덮는다 — 셋업 중인 호기에 반출일정이 적혀 있으면 상태는 「반출 예정」이 되므로
+    「운영 비가동」·「셋업 진행중」을 이름으로 골라 세는 집계는 그 호기를 통째로 잃는다.
+    이름 목록은 사다리가 한 칸 늘 때마다 조용히 틀려지기도 한다. 그래서 시점 표와 **같은
+    술어**(`build_inactive_equipment` = 보유 & ~가용)를 `inactive_equipment_moments` 의
+    시점마다 다시 물어 `호기` 로 union 한다.
+
+    `month` 는 그 달의 아무 날짜라도 된다(기준일을 그대로 넘긴다). `moments` 를 주면 그
+    시점 집합을 그대로 쓴다 — 화면이 캡션에 적는 시점 개수와 실제로 잰 시점이 어긋나지
+    않게 하려는 것이다.
+
+    결과는 시점 표와 같은 컬럼 앞에 `비가동 시작`·`비가동 종료`를 붙인 것이다. 이 둘은
+    구간의 실제 시작·끝이 아니라 **그 호기가 비가동으로 잡힌 시점의 최소·최대**다.
+    """
+    if moments is None:
+        moments = inactive_equipment_moments(equipment, downtime, month=month)
+    sampled = sorted(set(moments)) or [_month_bounds(month)[0]]
+    stacked = pd.concat(
+        [
+            build_inactive_equipment(equipment, downtime, as_of=moment).assign(
+                **{_MOMENT_COLUMN: moment}
+            )
+            for moment in sampled
+        ],
+        ignore_index=True,
+    )
+    caught = stacked.groupby("호기")[_MOMENT_COLUMN].agg(["min", "max"])
+    result = (
+        stacked.drop_duplicates("호기", keep="first")
+        .drop(columns=[_MOMENT_COLUMN])
+        .reset_index(drop=True)
+    )
+    result.insert(1, "비가동 시작", result["호기"].map(caught["min"]))
+    result.insert(2, "비가동 종료", result["호기"].map(caught["max"]))
+    return result.sort_values(["비가동 시작", "호기"], kind="stable").reset_index(drop=True)
 
 
 def build_space_equipment_status(
