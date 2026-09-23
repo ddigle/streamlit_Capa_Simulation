@@ -22,6 +22,7 @@ from capa_simulation.navigation import (
     STATIC_CAPA,
     STATIC_CAPA_SUBPAGES,
 )
+from capa_simulation.sidebar_status import BOTTLENECK_BOX_KEY, remembered_box_key
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
@@ -269,8 +270,9 @@ def test_groups_without_subpages_are_boxed_but_not_expandable(_app: AppTest) -> 
 
 # ------------------------------------------------------- 조회 컨트롤 상자 접기
 #
-# 페이지 그룹과 **같은 양식**으로 접는다. 셋 다 `st.expander` 이고 `key` 로 펼침 상태가
-# 세션에 남는다. 확인할 것은 둘이다 — 첫 화면에서 접혀 있는가, 세션 값으로 펼 수 있는가.
+# 페이지 그룹과 **같은 양식**으로 접는다. 넷 다 `st.expander` 이고 `key` 로 펼침 상태가
+# 세션에 남는다. 확인할 것은 셋이다 — 첫 화면에서 접혀 있는가, 세션 값으로 펼 수 있는가,
+# HOME 에만 있는 B/N 상자가 페이지를 왕복해도 제 상태를 기억하는가.
 
 
 def test_the_control_boxes_open_collapsed_on_the_first_run(_app: AppTest) -> None:
@@ -286,6 +288,8 @@ def test_the_control_boxes_open_collapsed_on_the_first_run(_app: AppTest) -> Non
     assert boxes[SCENARIO_BOX_KEY] is False
     assert boxes[_app_constant("MONTH_BOX_KEY")] is False
     assert boxes[_app_constant("ADMIN_BOX_KEY")] is False
+    # B/N 만 기본이 펼침이다. HOME 에서만 쓰는 상자이고 HOME 에만 있다.
+    assert boxes[BOTTLENECK_BOX_KEY] is True
 
 
 def test_an_opened_control_box_stays_open_across_reruns(_app: AppTest) -> None:
@@ -300,3 +304,25 @@ def test_an_opened_control_box_stays_open_across_reruns(_app: AppTest) -> None:
     # 페이지를 옮겨도 그대로다. 세 상자는 어느 페이지에서나 `app.py` 가 그린다.
     app.switch_page(CAPA_CHATBOT.path).run()
     assert _control_boxes(app)[SCENARIO_BOX_KEY] is True
+
+
+def test_the_bottleneck_box_remembers_its_state_across_a_page_round_trip(_app: AppTest) -> None:
+    """HOME 에만 있는 상자라 **기억 칸**이 없으면 왕복할 때마다 펼침으로 되돌아간다.
+
+    Streamlit 은 한 회차에 만들어지지 않은 위젯의 값을 버린다. 다른 페이지에 있는 동안
+    이 상자는 아예 그려지지 않으므로, 위젯 값만 믿으면 접어 둔 사람이 HOME 에 돌아올
+    때마다 다시 접어야 한다.
+    """
+    app = _app.run()
+    app.session_state[BOTTLENECK_BOX_KEY] = False
+    app.run()
+    assert _control_boxes(app)[BOTTLENECK_BOX_KEY] is False
+
+    app.switch_page(CAPA_CHATBOT.path).run()
+    assert BOTTLENECK_BOX_KEY not in _control_boxes(app)
+    # 위젯 값은 버려져도 기억 칸은 남는다.
+    assert app.session_state[remembered_box_key(BOTTLENECK_BOX_KEY)][0] is False
+
+    app.switch_page(HOME.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _control_boxes(app)[BOTTLENECK_BOX_KEY] is False
