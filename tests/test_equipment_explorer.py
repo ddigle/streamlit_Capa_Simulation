@@ -178,6 +178,13 @@ def test_the_month_view_catches_what_the_chosen_day_misses() -> None:
     assert any("2026-10 달 전체" in item.value for item in app.markdown)
     assert app.date_input(AS_OF_KEY).value == date(2026, 10, 11)
 
+    # 조건에 맞는 호기가 없으면 표가 아니라 안내 한 줄이다. 빈 표에도 컬럼은 그대로 있다.
+    app.multiselect(SMALL_PROCESS_KEY).set_value(["Other"]).run()
+
+    assert not app.exception
+    assert not app.dataframe
+    assert any("기준일이 든 달과 조건에" in item.value for item in app.success)
+
 
 def test_hidden_main_preserves_the_inactive_view_selection() -> None:
     app = _app()
