@@ -1206,9 +1206,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     만큼만 호기 구간을 만들면 첫 달이 **오류 없이** 모자라게 세어진다.
 > **진행 중 과제 하나.** 끝나면 정의서 파일과 이 줄을 같이 지운다.
 >
-> - [시나리오 월 머지와 연도 Shift](docs/task_scenario_merge_shift_2026-09-23.md) —
->   BDQ 시나리오가 27년까지만 있거나 통째로 1년 늦게 찍히는 경우를 사용자가 직접
->   합치고 밀 수 있게 한다.
+> - [사이드바 양식 통일](docs/task_sidebar_unify_2026-09-23.md) — 시나리오·리비전,
+>   조회기간, B/N 집계 공정, 관리 넷을 페이지 그룹과 같은 접히는 양식으로 맞춘다.
 
 - `src/capa_simulation/services/securement_cross_check.py`
   - 같은 소요대수에 Static(`RQ_EQP_AVBL`)과 Dynamic(일할 환산) 가용대수를 각각 나눠
