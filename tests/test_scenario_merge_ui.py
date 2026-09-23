@@ -1,4 +1,4 @@
-# Purpose: 월 머지 화면의 미리보기·겹침 차단과 원본을 보존하는 신규 저장 흐름을 검증한다.
+# Purpose: 월 머지의 출처 미리보기·겹침 선택과 원본을 보존하는 신규 저장 흐름을 검증한다.
 
 from dataclasses import asdict
 from pathlib import Path
@@ -162,7 +162,7 @@ def test_preview_reports_monthless_differences_and_does_not_save(sources) -> Non
     assert comparison.loc["RQ_DISPLAY_ORDER", "비교"] == "다름 · 베이스 유지"
     assert any("베이스 값만" in warning.value for warning in app.warning)
     assert set(_preview(app)["결과 월 수"]) == {3}
-    assert set(_preview(app)["추가 행 수"]) == {2}
+    assert set(_preview(app)["행 수 증감"]) == {2}
     assert len(repository.list_scenarios()) == 2
     assert not _save_button(app).disabled
 
@@ -182,6 +182,121 @@ def test_overlapping_months_block_save_until_the_source_changes(sources) -> None
     assert not app.exception
     assert not app.error
     assert set(_preview(app)["결과 월 수"]) == {3}
+
+
+def _overlapping_donor(repository, donor):
+    tables = dict(donor.tables)
+    tables.update(
+        {
+            name: frame
+            for name, frame in _monthly_tables([202701, 202801, 202802]).items()
+            if name in MONTHLY_TABLES
+        }
+    )
+    tables["RQ_PKG_PLAN"] = tables["RQ_PKG_PLAN"].assign(생산수량=900.0)
+    saved = repository.save_revision(
+        donor.scenario.scenario_id,
+        tables,
+        donor.preset,
+        revision_name="2027 겹침",
+        parent_revision_id=donor.revision.revision_id,
+    )
+    return repository.load_revision(saved.revision.revision_id, apply_global_display_order=False)
+
+
+def _source_rows(app):
+    return next(
+        item.value for item in app.dataframe if "사용할 시나리오" in item.value.columns
+    ).set_index("월")
+
+
+def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(sources) -> None:
+    repository, database, base, donor = sources
+    donor = _overlapping_donor(repository, donor)
+    app = _app(database, base, donor)
+    sentinel = {"revision": 17, "content_token": "편집 유지", "tables": {"사용자 값": 42}}
+    app.session_state[ACTIVE_SCENARIO_KEY] = sentinel
+    assert app.segmented_control[0].value == "reject"
+    assert _source_rows(app).loc["2027-01", "겹침"] == "겹침"
+    assert _source_rows(app).loc["2027-01", "선택 출처"] == "미선택 · 저장 차단"
+    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+
+    for policy, label, quantity in (("base", "베이스", 100.0), ("donor", "덧붙일 쪽", 900.0)):
+        app.segmented_control[0].set_value(policy).run()
+        assert not app.exception, [item.message for item in app.exception]
+        assert not app.error
+        assert not _save_button(app).disabled
+        preview = _source_rows(app)
+        assert preview.loc["2027-01", "선택 출처"] == label
+        assert preview.loc["2028-01", "선택 출처"] == "덧붙일 쪽"
+        assert (
+            preview.loc["2027-01", "사용할 시나리오"]
+            == (base if policy == "base" else donor).scenario.scenario_name
+        )
+        app.text_input(key="scenario_merge_name").set_value(f"겹침 {policy} 결과")
+        _save_button(app).click().run()
+        assert not app.exception, [item.message for item in app.exception]
+        created = next(
+            s for s in repository.list_scenarios() if s.scenario_name == f"겹침 {policy} 결과"
+        )
+        saved = repository.load_revision(
+            created.active_revision_id, apply_global_display_order=False
+        )
+        assert (
+            saved.tables["RQ_PKG_PLAN"].set_index("생산계획년월").loc[202701, "생산수량"]
+            == quantity
+        )
+        assert f"2027-01: {label}" in saved.revision.note
+        for name in MONTHLY_TABLES:
+            expected = (
+                donor.tables[name]
+                if policy == "donor"
+                else pd.concat(
+                    [
+                        base.tables[name],
+                        donor.tables[name].loc[donor.tables[name]["생산계획년월"].ne(202701)],
+                    ],
+                    ignore_index=True,
+                )
+            )
+            pd.testing.assert_frame_equal(
+                saved.tables[name].sort_values("생산계획년월").reset_index(drop=True),
+                expected.sort_values("생산계획년월").reset_index(drop=True),
+            )
+        for name in NON_MONTHLY_TABLES:
+            pd.testing.assert_frame_equal(saved.tables[name], base.tables[name])
+        assert _save_button(app).disabled
+        assert app.session_state[ACTIVE_SCENARIO_KEY] == sentinel
+
+    # 같은 월 범위에서도 처리 기준을 바꾸면 새 저장이 가능하고 차단으로 되돌릴 수도 있다.
+    app.segmented_control[0].set_value("reject").run()
+    assert app.error
+    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    app.segmented_control[0].set_value("donor").run()
+    app.selectbox(key=f"merge_end_{donor.revision.revision_id}").set_value(202801).run()
+    assert app.segmented_control[0].value == "reject"
+    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    assert len(repository.list_scenarios()) == 4
+    for source in (base, donor):
+        reloaded = repository.load_revision(
+            source.revision.revision_id, apply_global_display_order=False
+        )
+        for name, frame in source.tables.items():
+            pd.testing.assert_frame_equal(reloaded.tables[name], frame)
+
+
+def test_overlap_choice_never_overrides_virtual_history_conflict(sources) -> None:
+    repository, database, base, donor = sources
+    donor = _overlapping_donor(repository, donor)
+    base = _with_history(repository, base, (VirtualProductRecord("Product-A", "8H", "A", "8H"),))
+    donor = _with_history(repository, donor, (VirtualProductRecord("Product-A", "8H", "B", "8H"),))
+    app = _app(database, base, donor)
+    for policy in ("base", "donor"):
+        app.segmented_control[0].set_value(policy).run()
+        assert not app.exception
+        assert any("가상제품 복제 이력이 충돌" in item.value for item in app.error)
+        assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    assert len(repository.list_scenarios()) == 2
 
 
 def test_save_keeps_originals_and_active_draft_and_refreshes_changed_range(sources) -> None:
@@ -232,7 +347,7 @@ def test_save_keeps_originals_and_active_draft_and_refreshes_changed_range(sourc
     app.selectbox(key=f"merge_start_{donor.revision.revision_id}").set_value(202802).run()
     assert not app.exception
     assert set(_preview(app)["결과 월 수"]) == {2}
-    assert set(_preview(app)["추가 행 수"]) == {1}
+    assert set(_preview(app)["행 수 증감"]) == {1}
     assert not _save_button(app).disabled
     assert len(repository.list_scenarios()) == 3
 

@@ -473,7 +473,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     → ③ 자동 입력된 등록 폼 확인·저장의 2단계다.
   - 작업은 「목록 관리」·「현재 활성 RQ 복제」·「리비전 저장」·「월 머지」·「연도 Shift」다.
   - 「월 머지」는 저장된 베이스·덧붙일 리비전과 덧붙일 월 범위를 고른다. 겹치는 월은
-    저장을 차단하고, 결과 12표의 실제 월 집합을 비교해 중간 누락도 차단한다.
+    기본적으로 저장을 차단하되, 목록을 보고 겹치는 월 전체에 베이스·덧붙일 쪽 중 하나를
+    선택할 수 있다. 해당 월의 12표 전체를 선택한 쪽으로 사용하며 행을 섞지 않는다.
+    원본 리비전·범위를 바꾸면 차단 기본값으로 돌아간다. 저장 전에 월별 출처·시나리오·
+    리비전을 표시하고, 결과 12표의 실제 월 집합을 비교해 중간 누락도 차단한다.
     월 없는 `RQ_CHIP_EQ`·`RQ_CHIP_QTY`·`RQ_MODULE`·`RQ_DISPLAY_ORDER`는 베이스를 유지하며
     양쪽 행 수와 값 차이를 저장 전에 표시한다. 원본과 현재 활성 편집본은 바꾸지 않는다.
     가상제품 이력은 월이 없으므로 양쪽 선택 리비전의 전체 기록을 보존한다. 같은
@@ -1350,7 +1353,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     복제 원본 충돌을 검사한다. `create_scenario(virtual_products=...)`가 기존 이력 표에
     초기 리비전·16표와 같은 트랜잭션으로 기록하고 저장 폼은 보존할 이력을 미리 보여 준다.
   - `components/scenario_month_merge.py`는 무월 표 비교와 머지 미리보기·저장을,
-    `services/scenario_month_merge.py`는 월 겹침·결과 축 검증과 표 병합을 맡는다.
+    `services/scenario_month_merge.py`는 월별 출처 계획·겹침 정책·결과 축 검증과 표 병합을 맡는다.
   - `components/scenario_year_shift.py`는 사용자 지정 연수와 전후 범위·저장을,
     `services/scenario_year_shift.py`는 원본을 보존하는 연도 이동·유효 범위 검증을 맡는다.
   - `bigdataquery_registration.py` 는 2단계다. 목록 위젯은 반드시 `st.form` 밖의
