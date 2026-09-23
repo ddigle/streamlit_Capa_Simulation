@@ -1,4 +1,4 @@
-# Purpose: 시나리오 목록 관리, 활성 RQ 복제 저장, 리비전 저장 UI를 한 곳에서 그린다.
+# Purpose: 시나리오 목록·저장 관리와 월 머지·연도 Shift 작업을 선택해 그린다.
 
 """시나리오 목록 관리·복제 저장·리비전 저장 화면.
 
@@ -15,6 +15,8 @@ from typing import cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.scenario_month_merge import render_scenario_month_merge
+from capa_simulation.components.scenario_year_shift import render_scenario_year_shift
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -49,7 +51,13 @@ from capa_simulation.services.virtual_product import VirtualProductRecord
 CLONE_PIPELINE_VERSION = "duckdb-rq-snapshot-v3"
 FLASH_KEY = "scenario_management_flash"
 MODE_KEY = "scenario_page_mode"
-MODES = ("목록 관리", "현재 활성 RQ 복제", "리비전 저장")
+MODES = (
+    "목록 관리",
+    "현재 활성 RQ 복제",
+    "리비전 저장",
+    "월 머지",
+    "연도 Shift",
+)
 LIST_EDITOR_KEY = "scenario_list_editor"
 ACTION_KEY = "scenario_list_action"
 ACTION_OWNER_KEY = "scenario_list_action_owner"
@@ -87,6 +95,10 @@ def render_scenario_management(
         _render_clone(repository)
     elif mode == "리비전 저장":
         _render_revision_save(repository)
+    elif mode == "월 머지":
+        render_scenario_month_merge(repository, database_path)
+    elif mode == "연도 Shift":
+        render_scenario_year_shift(repository, database_path)
 
 
 def _render_store_status(

@@ -109,6 +109,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 사이드바 CSS 문자열은 `components/sidebar_style.py`가 탐색 그룹·활성 경로·컨테이너
     키를 받아 만든다. 테마 초기화와 `st.html` 주입 순서는 진입점이 소유한다.
   - 모든 페이지에 필요한 전역 위젯은 `navigation.run()`보다 앞에 둔다.
+  - 공통 월 선택기는 기본 조회기간과 활성 기준정보의 실제 월 범위의 합집합을 허용한다
+    (`services/scenario_month_bounds.py`). 기간을 좁히거나 페이지를 왕복해도 기본 범위
+    밖의 저장된 월을 다시 고를 수 있어야 한다. 연도 오류를 판정하는 기능은 아니다.
   - 새 세션은 최신 공식 리비전을 전역 위젯 생성 전에 활성화하고, 사이드바에는 시나리오·
     리비전 선택, 명시적 불러오기, 현재 편집본의 신규 리비전 저장과 활성·공식·미저장 상태를
     제공한다. 이름 변경·공식 발행·삭제·신규 시나리오 생성은 독립 관리 페이지에 둔다.
@@ -480,7 +483,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     탭 전환에 rerun 을 걸지 않는다.
   - `BigDataQuery 등록` 은 ① 기간으로 시뮬레이션 코드 목록 조회 → ② 목록에서 한 행 선택
     → ③ 자동 입력된 등록 폼 확인·저장의 2단계다.
-  - 작업은 「목록 관리」·「현재 활성 RQ 복제」·「리비전 저장」 셋이다.
+  - 작업은 「목록 관리」·「현재 활성 RQ 복제」·「리비전 저장」·「월 머지」·「연도 Shift」다.
+  - 「월 머지」는 저장된 베이스·덧붙일 리비전과 덧붙일 월 범위를 고른다. 겹치는 월은
+    기본적으로 저장을 차단하되, 목록을 보고 겹치는 월 전체에 베이스·덧붙일 쪽 중 하나를
+    선택할 수 있다. 해당 월의 12표 전체를 선택한 쪽으로 사용하며 행을 섞지 않는다.
+    원본 리비전·범위를 바꾸면 차단 기본값으로 돌아간다. 저장 전에 월별 출처·시나리오·
+    리비전을 표시하고, 결과 12표의 실제 월 집합을 비교해 중간 누락도 차단한다.
+    월 없는 `RQ_CHIP_EQ`·`RQ_CHIP_QTY`·`RQ_MODULE`·`RQ_DISPLAY_ORDER`는 베이스를 유지하며
+    양쪽 행 수와 값 차이를 저장 전에 표시한다. 원본과 현재 활성 편집본은 바꾸지 않는다.
+    가상제품 이력은 월이 없으므로 양쪽 선택 리비전의 전체 기록을 보존한다. 같은
+    `제품정보 + Stack`의 복제 원본 제품·Stack이 같으면 한 건으로 합치고 다르면 저장을 막는다.
+    구현·검증 근거는 `docs/scenario_merge_shift_implementation.md`에 정리한다.
+  - 「연도 Shift」는 저장 리비전의 12개 월표에서 연도만 사용자가 지정한 정수만큼 옮긴다.
+    자동 오류 판정·추천은 없고 0년으로 시작한다. 전후 범위를 나란히 보여 주며 월 번호와
+    무월 4표·나머지 값은 보존한다. 결과는 `normalize_month_column`과 같은 연도 1~9999
+    범위로 검증해 새 시나리오로 저장한다. 머지와 서비스·UI·테스트를 분리한다.
+    선택한 원본 리비전의 가상제품 복제 이력도 변경 없이 새 초기 리비전에 보존한다.
   - 리비전 선택은 지금 보고 있는 시나리오라면 **활성 리비전**을 미리 고른다. 목록은 최신
     리비전이 먼저 오는데, 화면과 다른 것이 골라져 있으면 "같은 것을 다시 불러왔다" 고
     여기면서 실은 다른 리비전을 올리게 된다.
@@ -1349,6 +1367,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/scenario_management.py`,
   `bigdataquery_registration.py`
   - 시나리오 관리 페이지의 두 탭 UI.
+  - 파생 시나리오의 원본 리비전 선택과 신규 저장 폼은 `components/scenario_transform.py`,
+    월 축이 있는 12표·없는 4표의 복사와 검증은 `services/scenario_transform.py`가 맡는다.
+    저장은 새 데이터셋과 초기 리비전을 만들며 현재 활성 편집본을 바꾸지 않는다.
+    `services/scenario_virtual_products.py`는 가상제품 복제 이력을 변환하고 같은 제품·Stack의
+    복제 원본 충돌을 검사한다. `create_scenario(virtual_products=...)`가 기존 이력 표에
+    초기 리비전·16표와 같은 트랜잭션으로 기록하고 저장 폼은 보존할 이력을 미리 보여 준다.
+  - `components/scenario_month_merge.py`는 무월 표 비교와 머지 미리보기·저장을,
+    `services/scenario_month_merge.py`는 월별 출처 계획·겹침 정책·결과 축 검증과 표 병합을 맡는다.
+  - `components/scenario_year_shift.py`는 사용자 지정 연수와 전후 범위·저장을,
+    `services/scenario_year_shift.py`는 원본을 보존하는 연도 이동·유효 범위 검증을 맡는다.
   - `bigdataquery_registration.py` 는 2단계다. 목록 위젯은 반드시 `st.form` 밖의
     `st.dataframe(on_select="rerun", selection_mode="single-row")` 이고(폼 안에서는 제출
     전까지 선택이 서버에 오지 않아 예외 없이 조용히 실패한다), 목록을 등록 폼보다 **위**에
@@ -1373,6 +1401,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/repository.py`: `DuckDBScenarioRepository`의 입력 검증·연결·쓰기 잠금·트랜잭션 경계.
   공용 프로필 SQL과 모델 조립은 아래 store가 열린 연결을 받아 수행하며, 커밋과 변경 신호는
   Repository만 소유한다. 교체 실패 시 기존 행·버전이 복구되고 변경 신호를 발행하지 않는다.
+  `load_revision(..., apply_global_display_order=False)`는 파생 입력용 저장 원본을 읽는다.
+  기본 조회는 계속 공용 표시순서를 적용하며, 캐시도 이 플래그로 두 결과를 구분한다.
 - `persistence/models.py`: Repository 가 주고받는 타입
 - `persistence/display_order_store.py`: 공용 표시순서 프로필의 검증·이관·저장
 - `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·교체 SQL
