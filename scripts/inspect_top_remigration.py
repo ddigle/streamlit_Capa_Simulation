@@ -54,8 +54,10 @@ TABLES: tuple[str, ...] = (
 )
 
 # `core_data_derivation.build_q_core_data` 의 `제품정보` 정리를 SQL 로 옮긴 것. 파생 표기와
-# 원천 표기를 맞대려면 같은 규칙으로 줄여야 한다. `chr(160)` 은 RE2 가 NBSP 유니코드 이스케이프를
-# 받지 않아 따로 바꾼다.
+# 원천 표기를 맞대려면 같은 규칙으로 줄여야 한다. `chr(160)` 은 RE2 의 `\s` 가 ASCII 공백만
+# 뜻해 NBSP 를 잡지 못하기 때문에 따로 바꾼다 — 파이썬 `re` 는 잡으므로 그 한 글자에서 갈린다.
+# **`0026_edp_top_division_retry.sql` 이 쓰는 식과 글자까지 같아야 한다.** 여기서 잰 수와
+# 실제로 바뀌는 수가 갈리면 「크게 다르면 멈춘다」는 사전 점검이 쓸모없어진다.
 NORMALIZED_PRODUCT = (
     "trim(regexp_replace("
     "replace(replace(replace(\"제품정보\", chr(160), ' '), '*_', ' '), '_', ' '), "
@@ -135,31 +137,92 @@ def _conflicting_types(connection: duckdb.DuckDBPyConnection) -> None:
 
 
 def _would_change(connection: duckdb.DuckDBPyConnection) -> None:
+    """`0026` 이 실제로 바꿀 행을 **두 형태 모두** 센다.
+
+    `0026` 은 표마다 두 번 훑는다 — 계획(`rq_pkg_plan`)의 `제품타입` 으로 한 번, 계획에
+    없는 제품을 원천 매핑으로 한 번. **여기서 계획 형태만 세면 실제보다 적게 나온다.**
+    2026-09-21 사내 모의 계산 40,484행이 그렇게 나온 수다.
+
+    두 형태를 따로 찍고 합계도 찍는다. 합계가 `0026` 적용 뒤 실제 변경분과 같아야 한다.
+    """
     print("4) 재이관이 실제로 바꿀 행 수 (모의 계산 — 아무것도 쓰지 않는다)")
+    print(
+        "   계획 = `rq_pkg_plan.제품타입` 으로 찾는 행 / 원천 = 계획에 없어 원천 매핑으로 찾는 행"
+    )
+    print()
+    plan_total = 0
     grand = 0
     for schema, scope in (("ref_data", "dataset_id"), ("rev_data", "revision_id")):
         for table in TABLES:
-            count = _scalar(
-                connection,
-                f"SELECT count(*) FROM {schema}.{table} AS target WHERE "
-                f"upper(trim(target.\"WF 구분\")) = 'TOP' AND EXISTS ("
-                f"  SELECT 1 FROM {schema}.rq_pkg_plan AS plan"
-                f"  WHERE plan.{scope} = target.{scope}"
-                f'    AND plan."제품정보" = target."제품정보"'
-                f'    AND plan."제품타입" IS NOT NULL'
-                f'  GROUP BY plan.{scope}, plan."제품정보"'
-                f'  HAVING count(DISTINCT upper(trim(plan."제품타입"))) = 1'
-                f"     AND min(upper(trim(plan.\"제품타입\"))) = 'EDP-TSV')",
+            plan_count = _scalar(connection, _plan_form_sql(schema, table, scope))
+            both_count = _scalar(connection, _either_form_sql(schema, table, scope))
+            plan_total += plan_count
+            grand += both_count
+            extra = both_count - plan_count
+            print(
+                f"    {schema}.{table:14} 계획 {plan_count:>9,}  "
+                f"원천 +{extra:>8,}  합 {both_count:>9,}"
             )
-            grand += count
-            print(f"    {schema}.{table:14} {count:>10,}행")
         print()
-    print(f"    합계 {grand:,}행이 `TOP` 에서 `Top_e` 로 바뀐다")
+    print(f"    계획 형태만 {plan_total:,}행 — 2026-09-21 사내 모의 계산(40,484)과 맞대는 수")
+    print(
+        f"    합계 {grand:,}행이 `TOP` 에서 `Top_e` 로 바뀐다 — "
+        "**적용 뒤 실제 변경분이 이 수여야 한다**"
+    )
     if grand == 0:
-        print("    0 이다. 로컬 합성 DB 에서는 정상이다 — 남은 `TOP` 이 HBM 제품이고 EDP 는")
-        print("    이미 `0014` 가 바꿨기 때문이다. **사내에서 0 이면 전제가 틀린 것이므로**")
-        print("    재이관 SQL 을 쓰지 말고 1~3 번 결과를 먼저 본다.")
+        print()
+        print("    0 이다. **로컬 합성 DB 에서는 정상이다** — 표본이 파생 규칙이 생긴 뒤에")
+        print("    만들어져 EDP 행이 처음부터 `Top_e` 이고, 남은 `TOP` 은 HBM 이다.")
+        print("    (`0014` 가 바꿔서가 아니다 — `0014` 는 로컬에서도 0행이었다.)")
+        print("    **사내에서 0 이면 전제가 틀린 것이므로** 재이관을 적용하지 말고")
+        print("    1~3 번 결과를 먼저 리뷰 문서로 낸다.")
     print()
+
+
+def _plan_form_sql(schema: str, table: str, scope: str) -> str:
+    """`0026` 의 첫 번째 형태 — 계획의 `제품타입` 으로 찾는다."""
+    return (
+        f"SELECT count(*) FROM {schema}.{table} AS target WHERE "
+        f"upper(trim(target.\"WF 구분\")) = 'TOP' AND {_plan_exists(schema, scope)}"
+    )
+
+
+def _either_form_sql(schema: str, table: str, scope: str) -> str:
+    """`0026` 의 두 형태 중 **하나라도** 걸리는 행. 두 UPDATE 는 같은 행을 겹쳐 집는다."""
+    return (
+        f"SELECT count(*) FROM {schema}.{table} AS target WHERE "
+        f"upper(trim(target.\"WF 구분\")) = 'TOP' "
+        f"AND ({_plan_exists(schema, scope)} OR {_source_exists()})"
+    )
+
+
+def _plan_exists(schema: str, scope: str) -> str:
+    """`0026` 의 `_edp_plan_products` 뷰와 같은 조건 — 한 타입뿐인 EDP-TSV 제품만."""
+    return (
+        f"EXISTS (SELECT 1 FROM {schema}.rq_pkg_plan AS plan "
+        f"  WHERE plan.{scope} = target.{scope} "
+        '    AND plan."제품정보" = target."제품정보" '
+        '    AND plan."제품타입" IS NOT NULL AND trim(plan."제품타입") <> \'\' '
+        f'  GROUP BY plan.{scope}, plan."제품정보" '
+        '  HAVING count(DISTINCT upper(trim(plan."제품타입"))) = 1 '
+        "     AND min(upper(trim(plan.\"제품타입\"))) = 'EDP-TSV')"
+    )
+
+
+def _source_exists() -> str:
+    """`0026` 의 `_edp_source_products` 뷰와 같은 조건.
+
+    **파생과 같은 규칙으로 줄여서** 맞댄다 — `0014` 가 여기서 또 빗나갔다.
+    """
+    return (
+        'target."제품정보" IN ('
+        f"  SELECT {NORMALIZED_PRODUCT} "
+        "  FROM raw_data.core_data "
+        '  WHERE "제품타입" IS NOT NULL AND trim("제품타입") <> \'\' '
+        "  GROUP BY 1 "
+        '  HAVING count(DISTINCT upper(trim("제품타입"))) = 1 '
+        "     AND min(upper(trim(\"제품타입\"))) = 'EDP-TSV')"
+    )
 
 
 def main() -> int:
