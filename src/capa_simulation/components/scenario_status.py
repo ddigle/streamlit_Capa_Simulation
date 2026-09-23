@@ -31,35 +31,50 @@ from capa_simulation.scenario_activation import (
 from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.scenario_state import ensure_active_scenario
 from capa_simulation.settings import DUCKDB_PATH
+from capa_simulation.sidebar_status import sidebar_expander
 
 SIDEBAR_SCENARIO_KEY = "sidebar_scenario_id"
 SIDEBAR_REVISION_KEY = "sidebar_revision_id"
 SIDEBAR_SYNC_TOKEN_KEY = "sidebar_scenario_sync_token"
 SIDEBAR_FLASH_KEY = "sidebar_scenario_flash"
-# 사이드바 박스 CSS 훅. 여백을 좁히는 규칙이 `app.py` 에서 이 key 를 읽는다.
+# 사이드바 박스 key 이자 CSS 훅. 확장 패널의 펼침 상태도 이 key 로 오간다.
 SCENARIO_BOX_KEY = "sidebar_scenario_box"
+SCENARIO_BOX_TITLE = "시나리오·리비전"
+# `시나리오 관리` 페이지가 `:material/database:` 를 쓴다. 사이드바에 같은 아이콘이 둘
+# 나란히 서면 어느 것이 페이지이고 어느 것이 컨트롤인지 갈리지 않는다. `database` 는
+# 저장소(관리 페이지)를 뜻하고, 여기는 **지금 보고 있는 한 겹**이라 `layers` 다.
+SCENARIO_BOX_ICON = ":material/layers:"
 
 
 def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
     """Load a saved revision or persist the current edits from every page."""
     resolved_path = str(database_path.resolve())
-    with st.sidebar.container(border=True, key=SCENARIO_BOX_KEY):
-        # 제목 줄을 먼저 **자리만** 잡는다. 공식버전 배지는 아래에서 저장소를 읽어야
-        # 알 수 있는데, 배지 한 칸 때문에 제목을 뒤로 미루면 저장소가 죽었을 때 오류
-        # 문구 위에 제목이 없어진다.
-        title_row = st.empty()
-        _render_title_row(title_row, badge="")
-        flash = st.session_state.pop(SIDEBAR_FLASH_KEY, None)
-        if isinstance(flash, str):
-            st.success(flash)
+    # 플래시는 상자를 세우기 **전에** 꺼낸다. 저장소를 못 읽는 회차에도 한 번 보여 주고
+    # 지워야 다음 rerun 까지 남지 않는다.
+    flash = st.session_state.pop(SIDEBAR_FLASH_KEY, None)
+    active_scenario_id = active_persisted_scenario_id()
+    active_revision_id = active_persisted_revision_id()
 
-        try:
-            repository = get_scenario_repository(resolved_path)
-            scenarios = repository.list_scenarios()
-            official = repository.latest_official_release()
-        except BOOTSTRAP_ERRORS as exc:
+    try:
+        repository = get_scenario_repository(resolved_path)
+        scenarios = repository.list_scenarios()
+        official = repository.latest_official_release()
+    except BOOTSTRAP_ERRORS as exc:
+        # 접힌 줄의 배지는 저장소를 읽어야 정해진다. 못 읽으면 배지 없이 제목만 세우고
+        # 원인은 상자 안에서 말한다 — 상자까지 사라지면 다시 펴 볼 자리도 없어진다.
+        with _scenario_box(badge=""):
+            _show_flash(flash)
             st.error(f"시나리오 저장소를 읽지 못했습니다: {bootstrap_error_message(exc)}")
-            return
+        return
+
+    with _scenario_box(
+        badge=_summary_badge(
+            active_revision_id=active_revision_id,
+            official_revision_id=official.revision_id if official is not None else None,
+            official_release_no=official.release_no if official is not None else None,
+        )
+    ):
+        _show_flash(flash)
 
         if not scenarios:
             st.info("저장된 활성 시나리오가 없습니다.")
@@ -67,8 +82,6 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
             return
 
         scenario_by_id = {scenario.scenario_id: scenario for scenario in scenarios}
-        active_scenario_id = active_persisted_scenario_id()
-        active_revision_id = active_persisted_revision_id()
         _synchronize_active_selection(
             scenario_by_id,
             active_scenario_id=active_scenario_id,
@@ -113,23 +126,15 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
             selected_scenario_id == active_scenario_id
             and selected_revision_id == active_revision_id
         )
-        # 배지는 선택 상자가 말하지 않는 것(공식 발행본인지)만 말한다. 그래서 본문에
-        # 한 줄을 따로 쓰지 않고 **제목 옆**에 붙인다 — 한 줄이 통째로 줄어든다.
-        if selection_is_active:
-            _render_title_row(
-                title_row,
-                badge=_status_badge(
-                    active_revision_id=active_revision_id,
-                    official_revision_id=official.revision_id if official is not None else None,
-                    official_release_no=official.release_no if official is not None else None,
-                ),
-            )
-        else:
+        # 배지는 선택 상자가 말하지 않는 것(공식 발행본인지·미저장인지)만 말한다. 그 자리는
+        # 이제 **요약 줄**이다 — 상자를 접어도 지금 무엇이 올라와 있는지가 남아야 한다.
+        if not selection_is_active:
             st.caption("선택값은 아직 계산에 적용되지 않았습니다.")
 
         discard_changes = True
         if has_unsaved_scenario_changes():
-            st.markdown(":orange-badge[저장하지 않은 변경 있음]")
+            # 같은 배지를 요약 줄이 이미 달고 있다. 본문에 한 번 더 적으면 한 상자 안에
+            # 같은 문구가 두 번 나온다.
             discard_changes = st.checkbox(
                 "변경을 버리고 불러오기",
                 key="sidebar_discard_unsaved_changes",
@@ -182,16 +187,40 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
             )
 
 
-def _render_title_row(slot: DeltaGenerator, *, badge: str) -> None:
-    """상자 제목과 그 옆 공식버전 배지. 배지가 없으면 제목만 그린다.
+def _show_flash(flash: object) -> None:
+    if isinstance(flash, str):
+        st.success(flash)
 
-    `st.empty()` 자리에 다시 그리는 것은 배지 값이 저장소를 읽은 **뒤에야** 정해지기
-    때문이다. 제목을 그때까지 미루면 저장소가 죽었을 때 오류 문구 위에 제목이 없다.
+
+def _scenario_box(*, badge: str) -> DeltaGenerator:
+    """접히는 시나리오 상자. 요약 줄에는 제목과 상태 배지 하나만 남는다.
+
+    확장 패널의 제목은 **문자열 하나**라 `st.empty()` 자리에 나중에 다시 그릴 수 없다.
+    그래서 배지는 상자를 세우기 전에 저장소를 읽어 정한다. 오른쪽 끝으로 미는 것은
+    `components/sidebar_style.py` 의 CSS 다 — 라벨 안에서는 좌우로 밀 수 없다.
     """
-    with slot.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.markdown("#### :material/database: 시나리오·리비전", width="content")
-        if badge:
-            st.markdown(badge, width="content")
+    label = f"{SCENARIO_BOX_TITLE} {badge}" if badge else SCENARIO_BOX_TITLE
+    return sidebar_expander(label, key=SCENARIO_BOX_KEY, icon=SCENARIO_BOX_ICON)
+
+
+def _summary_badge(
+    *,
+    active_revision_id: str | None,
+    official_revision_id: str | None,
+    official_release_no: int | None,
+) -> str:
+    """요약 줄에 다는 배지. 접힌 줄이 말할 수 있는 것은 이 한 조각뿐이다.
+
+    미저장 변경은 본문이 아니라 여기서 알린다. 접힌 상태에서는 본문의 주황 배지가 보이지
+    않아, 저장하지 않은 편집을 안은 채로 다른 화면을 도는 일이 생긴다.
+    """
+    if has_unsaved_scenario_changes():
+        return ":orange-badge[미저장 변경]"
+    return _status_badge(
+        active_revision_id=active_revision_id,
+        official_revision_id=official_revision_id,
+        official_release_no=official_release_no,
+    )
 
 
 def _render_revision_save(
@@ -300,9 +329,9 @@ def _status_badge(
 ) -> str:
     """활성 리비전의 상태 배지를 고른다.
 
-    미저장 변경이 있으면 빈 문자열을 준다. 그 상태는 바로 아래 "변경을 버리고 불러오기"
-    체크박스 위에서 이미 같은 배지로 알리고 있어서, 여기서 또 적으면 같은 문구가 한 상자
-    안에 두 번 나온다.
+    미저장 변경이 있으면 빈 문자열을 준다. 그 상태는 요약 줄이 `미저장 변경` 으로 이미
+    알리고 있어서, 본문 아래쪽 활성 상태 안내에서 또 적으면 같은 상자 안에 같은 문구가
+    두 번 나온다.
     """
     if has_unsaved_scenario_changes():
         return ""

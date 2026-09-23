@@ -35,6 +35,7 @@ def _style_block(active_href: str = "") -> str:
         active_href,
         scenario_box_key="test_scenario",
         month_box_key="test_month",
+        month_applied_key="test_month_applied",
         bottleneck_box_key="test_bottleneck",
         admin_box_key="test_admin",
     ).strip()

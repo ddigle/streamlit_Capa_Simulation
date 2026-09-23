@@ -1,4 +1,4 @@
-# Purpose: 공통 사이드바의 적용 월 범위 표시와 페이지가 그리는 사이드바 상자의 CSS 훅.
+# Purpose: 공통 사이드바의 적용 월 범위 표시와, 접힘 상태를 기억하는 사이드바 상자를 만든다.
 
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
@@ -11,9 +11,50 @@ from capa_simulation.services.month_columns import month_label
 # 아무 데도 나타나지 않는다.
 PLACEHOLDER_STATE_KEY = "sidebar_month_range_placeholder"
 
-# HOME 이 그리는 B/N 집계 공정 상자. `app.py` 의 여백 규칙이 이 key 를 읽는다 —
+# HOME 이 그리는 B/N 집계 공정 상자. `app.py` 의 CSS 규칙이 이 key 를 읽는다 —
 # 상자를 그리는 쪽과 서식을 주는 쪽이 갈려 있어 이름을 한 곳에 둔다.
 BOTTLENECK_BOX_KEY = "sidebar_bottleneck_box"
+
+
+def remembered_box_key(key: str) -> str:
+    """상자 위젯 키에 딸린 **위젯이 아닌** 기억 칸의 이름."""
+    return f"{key}__remembered"
+
+
+def sidebar_expander(
+    label: str,
+    *,
+    key: str,
+    icon: str | None = None,
+    default: bool = False,
+) -> DeltaGenerator:
+    """페이지 그룹과 같은 양식으로 접히는 사이드바 상자. 펼침 상태를 세션 동안 기억한다.
+
+    `key` 와 `on_change="rerun"` 을 함께 줘야 확장 패널이 위젯이 되어 서버가
+    `st.session_state[key]` 로 펼침 상태를 읽고 쓸 수 있다(실측). `expanded=` 는 주지
+    않는다 — 세션 값과 둘을 같이 주면 Streamlit 이 경고를 남긴다.
+
+    **위젯 값만으로는 모자라는 자리가 둘이다.** 하나는 HOME 만 그리는 B/N 상자다.
+    다른 페이지에 갔다 오면 그 회차에 만들어지지 않은 위젯이라 값이 버려진다. 다른
+    하나는 라벨에 배지를 단 시나리오 상자다 — **라벨이 위젯 id 계산에 들어가서**
+    배지가 바뀌는 순간(미저장 편집이 생기거나 리비전을 불러올 때) 위젯이 통째로 새로
+    만들어지고 펼침 상태가 기본값으로 돌아간다. 둘 다 실측으로 확인했다.
+
+    그래서 위젯이 아닌 칸에 `(펼침, 라벨)` 을 적어 두고 **값이 사라졌거나 라벨이 바뀐
+    회차에만** 되돌려 놓는다. 매 회차 덮어쓰면 방금 누른 사용자의 클릭을 지운다.
+    """
+    memory = remembered_box_key(key)
+    remembered = st.session_state.get(memory)
+    expanded, remembered_label = (
+        (bool(remembered[0]), str(remembered[1]))
+        if isinstance(remembered, tuple) and len(remembered) == 2
+        else (default, label)
+    )
+    if key not in st.session_state or remembered_label != label:
+        st.session_state[key] = expanded
+    box = st.sidebar.expander(label, key=key, icon=icon, on_change="rerun")
+    st.session_state[memory] = (bool(st.session_state[key]), label)
+    return box
 
 
 def register_month_range_placeholder(placeholder: DeltaGenerator) -> None:
@@ -47,13 +88,19 @@ def show_past_months_outside_range(first_past_month: int) -> None:
     볼 수 있는 범위는 과거 구간만큼 자동으로 넓어지지만 **고른 범위는 그대로다**. 그래서
     과거를 저장해도 조회기간 시작월을 내리지 않으면 그 달이 표에 나타나지 않는데, 화면만
     보면 넣은 값이 사라진 것처럼 보인다. 어디까지 내려야 하는지 함께 적는다.
+
+    **이 줄이 서는 자리는 상자 제목 줄 위 한 줄이다.** 폭이 제목과 펼침 화살표 사이뿐이라
+    긴 문장은 말줄임으로 잘린다. 화면에는 짧은 쪽을 내고 원문은 `help` 로 넘긴다.
     """
     placeholder = _placeholder()
     if placeholder is None:
         return
     placeholder.caption(
-        f":material/info: 과거 구간이 조회기간 밖에 있습니다 · 시작월을 "
-        f"{month_label(first_past_month)} 로 내리면 보입니다"
+        f":material/info: 과거 구간 밖 · 시작월 {month_label(first_past_month)} 로",
+        help=(
+            f"넣어 둔 과거 구간이 조회기간 밖에 있습니다. 시작월을 "
+            f"{month_label(first_past_month)} 로 내리면 보입니다."
+        ),
     )
 
 

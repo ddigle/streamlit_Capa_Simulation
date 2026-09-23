@@ -10,6 +10,17 @@ from capa_simulation.navigation import SidebarGroup, SidebarGroupSpec
 # 규칙 안 들여쓰기도 선택자 사이에 유지한다.
 _SELECTOR_JOINER = ",\n        "
 
+# 사이드바 세로 블록의 칸 사이. 적용 기간 오버레이가 이 값을 그대로 상쇄해야 요약 줄
+# 위에 올라앉으므로 두 곳이 같은 상수를 본다.
+_SIDEBAR_BLOCK_GAP = "0.42rem"
+# **적용 기간 오버레이의 좌표 네 개를 여기 모아 둔다.** 요약 줄 위에 글자를 얹는 일이라
+# 브라우저에서 재서 고치게 되는데, 규칙 안에 흩어 두면 어디를 고쳐야 하는지 매번 찾는다.
+# 위: 요약 줄(약 2.4rem) 안에서 글줄을 세로 가운데로. 오른쪽: 펼침 화살표를 비운 폭.
+# 왼쪽: 「조회기간」 제목 뒤. 왼쪽이 있어야 긴 문구가 제목을 덮지 않고 말줄임이 된다.
+_APPLIED_OVERLAY_TOP = "0.62rem"
+_APPLIED_OVERLAY_RIGHT = "2.2rem"
+_APPLIED_OVERLAY_LEFT = "7.5rem"
+
 
 def build_sidebar_stylesheet(
     groups: Sequence[SidebarGroup | SidebarGroupSpec],
@@ -17,6 +28,7 @@ def build_sidebar_stylesheet(
     *,
     scenario_box_key: str,
     month_box_key: str,
+    month_applied_key: str,
     bottleneck_box_key: str,
     admin_box_key: str,
 ) -> str:
@@ -35,26 +47,23 @@ def build_sidebar_stylesheet(
     solo_title_selectors = _SELECTOR_JOINER.join(
         f".st-key-{group.slug}_box a p" for group in groups if not group.subpages
     )
-    # 상자 머리글. 전에는 상자 안 첫 링크가 그룹 이름을 달았고 지금은 확장 패널의 요약
-    # 줄이 단다. 자리는 바뀌었어도 옆 상자의 제목과 같은 무게로 읽혀야 한다.
+    # 상자 머리글. 전에는 상자 안 첫 링크나 `h4` 제목이 이름을 달았고 지금은 **전부**
+    # 확장 패널의 요약 줄이 단다. 페이지 그룹과 조회 컨트롤 넷이 한 양식이라 같은 규칙
+    # 하나를 본다 — 무게가 갈리면 통일한 뜻이 없어진다.
     #
     # **글자는 `summary` 가 아니라 그 안의 `p` 가 정한다.** 요약 줄에 크기를 줘 봐야
     # 안쪽 마크다운 문단이 제 값(0.875rem)으로 덮는다 — 실제로 그렇게 두었더니 그룹
     # 이름만 12.25px 로 작고 가늘게 남았다.
-    group_title_selectors = _SELECTOR_JOINER.join(
-        f'.st-key-{group.slug}_box summary [data-testid="stMarkdownContainer"] p'
-        for group in boxed_groups
+    summary_box_keys = (
+        *(f"{group.slug}_box" for group in boxed_groups),
+        scenario_box_key,
+        month_box_key,
+        bottleneck_box_key,
+        admin_box_key,
     )
-    # 제목을 가진 조회 상자 셋. 상자마다 제목 `h4` 는 하나뿐이라 안쪽을 더 좁히지 않는다.
-    # 뒤에 붙일 부분까지 **선택자마다** 넣어 잇는다 — 목록을 먼저 잇고 뒤에 `h4` 를 붙이면
-    # `A, B h4` 가 되어 마지막 하나에만 걸린다.
-    _TITLED_BOXES = (scenario_box_key, month_box_key, bottleneck_box_key)
-
-    def _box_title(tail: str) -> str:
-        return _SELECTOR_JOINER.join(f".st-key-{key} {tail}" for key in _TITLED_BOXES)
-
-    box_headings = _box_title("h4")
-    box_heading_wrappers = _box_title('[data-testid="stMarkdownContainer"]:has(> h4)')
+    group_title_selectors = _SELECTOR_JOINER.join(
+        f'.st-key-{key} summary [data-testid="stMarkdownContainer"] p' for key in summary_box_keys
+    )
     # 사이드바 안의 페이지 링크 전부. 본문에도 `stPageLink` 가 있을 수 있어 사이드바로 좁힌다.
     NAV_LINK = '[data-testid="stSidebarContent"] [data-testid="stPageLink-NavLink"]'
     # HOME 링크 하나. **활성 규칙보다 특정도가 높아야** 한다 — HOME 에 있을 때 활성 규칙의
@@ -236,20 +245,13 @@ def build_sidebar_stylesheet(
         /* 사이드바를 촘촘하게. 기본 세로 간격은 본문 기준이라 박스가 예닐곱 개 쌓이는
            사이드바에서는 스크롤만 길어진다. */
         [data-testid="stSidebarContent"] [data-testid="stVerticalBlock"] {{
-            gap: 0.42rem;
+            gap: {_SIDEBAR_BLOCK_GAP};
         }}
-        /* 세로를 반으로 줄이면 가로도 같은 비율로 줄여야 상자가 납작해 보이지 않는다.
-           다만 1:1 로 맞추지는 않는다 — 글은 가로로 읽으므로 좌우에 조금 더 남긴다.
-           기본 16px 대비 세로 0.52배, 가로 0.66배다. */
-        {solo_box_selectors},
-        .st-key-{scenario_box_key},
-        .st-key-{month_box_key},
-        .st-key-{bottleneck_box_key},
-        .st-key-{admin_box_key} {{
-            padding: 0.55rem 0.7rem;
-        }}
-        /* 링크 하나뿐인 상자는 **좌우 여백을 주지 않는다.** 그룹 상자는 안쪽 확장 패널이
-           제 들여쓰기를 갖는데 이쪽은 링크가 바로 들어가서, 상자에까지 여백을 주면 글자가
+        /* 조회 컨트롤 넷에 주던 `padding: 0.55rem 0.7rem` 은 없앴다. 상자였을 때는 안쪽
+           위젯을 들여놓는 여백이었는데, 확장 패널은 제 여백을 갖는다 — 남겨 두면 그 여백이
+           **요약 줄과 테두리까지** 밀어 접힌 줄이 그룹 상자보다 안쪽으로 들어간다. */
+        /* 링크 하나뿐인 상자는 **좌우 여백을 주지 않는다.** 그룹 상자는 확장 패널이 제
+           들여쓰기를 갖는데 이쪽은 링크가 바로 들어가서, 상자에까지 여백을 주면 글자가
            그룹 제목보다 10px 오른쪽으로 밀린다(실측 아이콘 42 대 32). 세로는 줄여 접힌
            그룹과 같은 높이로 맞춘다. */
         {solo_box_selectors} {{
@@ -278,32 +280,71 @@ def build_sidebar_stylesheet(
             padding-right: 0;
         }}
 
-        /* 제목 옆에 붙인 표기(공식버전 배지·적용기간 안내)가 제목보다 위에 떠 있었다.
-           `vertical_alignment="center"` 는 제대로 걸려 있다 — 어긋난 것은 제목 쪽이다.
-           Streamlit 의 제목은 **두 값이 짝을 이룬다**: `h4` 가 `padding: 7.5px 0 15px`
-           이고 감싸는 `stMarkdownContainer` 가 `margin-bottom: -15px` 로 그만큼 도로
-           당긴다. 세로로 쌓을 때는 서로 상쇄되지만, flex 가 가운데 맞추는 것은 **패딩까지
-           포함한 상자**라 글자만 아래로 (15-7.5)/2 만큼 밀렸다.
-           한쪽만 풀면 상자가 18-15=3px 로 찌부러져 더 어긋난다. 둘을 함께 풀어야 상자가
-           곧 글줄이 되어 두 글자가 같은 높이에 선다. 박스 안 제목에만 걸고 본문 `h4` 의
-           여백은 그대로 둔다.
-
-           옆에 표기가 없는 B/N 집계 공정 제목도 같은 규칙을 받는다. 세로로 쌓일 때 두 값은
-           서로 상쇄되지만 **위쪽 7.5px 은 남아** 그 상자만 제목이 아래로 처져 있었다. */
-        {box_headings} {{
-            padding-top: 0;
-            padding-bottom: 0;
+        /* 공식버전 배지는 요약 줄의 **오른쪽 끝**이다. 제목은 다른 상자의 페이지명과 같은
+           왼쪽 끝에 남는다. 확장 패널의 제목은 문자열 하나라 그 안에서 좌우로 밀 수 없어
+           여기서 민다 — 요약 줄의 마크다운 문단을 flex 로 펴고 배지만 오른쪽으로 보낸다.
+           제목 길이가 달라져도 배지 자리는 흔들리지 않는다. */
+        .st-key-{scenario_box_key} summary [data-testid="stMarkdownContainer"] p {{
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
         }}
-        {box_heading_wrappers} {{
-            margin-bottom: 0;
+        .st-key-{scenario_box_key} summary [data-testid="stMarkdownContainer"] p
+            > [data-testid="stMarkdownBadge"] {{
+            margin-left: auto;
+        }}
+
+        /* 적용 기간을 조회기간 상자의 **요약 줄 위로 얹는다.** 그 값은 페이지가 계산을
+           끝낸 뒤에야 정해져 제목 문자열에 넣을 수 없다(`app.py` 가 이유를 적어 뒀다).
+           자리표시자는 상자 **바로 앞**에 서고, 이 규칙이 그 칸의 높이를 0 으로 눌러
+           세로 흐름에서 지운 뒤 글자만 요약 줄 위로 내린다. 접히든 펴지든 요약 줄은 늘
+           이 칸 바로 아래라 자리가 흔들리지 않는다. 칸 사이 간격만큼 도로 당겨야 글자가
+           요약 줄 한가운데에 선다. */
+        [data-testid="stLayoutWrapper"]:has(> .st-key-{month_applied_key}) {{
+            position: relative;
+            z-index: 2;
+            height: 0;
+            min-height: 0;
+            margin-bottom: -{_SIDEBAR_BLOCK_GAP};
+            overflow: visible;
+            /* 요약 줄을 누르는 일이 더 잦다. 글자 칸 말고는 클릭이 그대로 통과한다. */
+            pointer-events: none;
+        }}
+        [data-testid="stLayoutWrapper"]:has(> .st-key-{month_applied_key})
+            [data-testid="stCaptionContainer"] {{
+            position: absolute;
+            top: {_APPLIED_OVERLAY_TOP};
+            right: {_APPLIED_OVERLAY_RIGHT};
+            left: {_APPLIED_OVERLAY_LEFT};
+            margin: 0;
+            text-align: right;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            /* `help` 툴팁이 떠야 해서 글자 칸만 클릭을 받는다. */
+            pointer-events: auto;
+        }}
+
+        /* 관리는 **계산 흐름 밖**이다. 접는 장치는 다른 상자와 같게 주되 테두리를 지우고
+           요약 줄 글자를 캡션 색으로 눌러 층위를 가른다 — 캡션 한 줄이 하던 말을 이제
+           테두리 없음과 글자색이 한다. */
+        .st-key-{admin_box_key} details {{
+            border: none;
+            background: transparent;
+        }}
+        .st-key-{admin_box_key} summary [data-testid="stMarkdownContainer"] p {{
+            color: {tokens.TEXT_MUTED};
         }}
 
         /* Admin Area 는 **언제나 맨 아래**다. 페이지가 자기 사이드바 요소를 그리는 것은
            `navigation.run()` 안이라 파이썬 차례로는 뒤에 둘 수 없다 — HOME 의 「B/N 집계
            공정」 상자가 그래서 Admin 아래에 붙었다. 세로 흐름에서 자리만 마지막으로 민다.
-           `order` 는 **flex 항목**이 받아야 한다. `.st-key-*` 는 그 한 겹 안쪽이라 거기에
-           주면 아무 일도 일어나지 않는다(형제가 자기 자신뿐이다). */
-        [data-testid="stLayoutWrapper"]:has(> .st-key-{admin_box_key}) {{
+           `order` 는 **flex 항목**이 받아야 한다. 상자(`st.container`)였을 때는 `.st-key-*`
+           가 그 한 겹 안쪽이라 바깥 래퍼에 줘야 했는데, **확장 패널은 `.st-key-*` 요소
+           자신이 flex 항목**이다(프런트엔드가 확장 패널일 때만 래퍼에 그 클래스를 붙인다).
+           둘 다 적어 둔다 — 맞는 쪽이 걸리고 나머지는 헛돌 뿐이다. */
+        [data-testid="stLayoutWrapper"]:has(> .st-key-{admin_box_key}),
+        .st-key-{admin_box_key} {{
             order: 99;
         }}
         </style>
