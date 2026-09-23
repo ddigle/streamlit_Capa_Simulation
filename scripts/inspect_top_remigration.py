@@ -121,13 +121,17 @@ def _conflicting_types(connection: duckdb.DuckDBPyConnection) -> None:
     mixed = _scalar(
         connection,
         'SELECT count(*) FROM (SELECT dataset_id, "제품정보" FROM ref_data.rq_pkg_plan '
-        'WHERE "제품타입" IS NOT NULL GROUP BY dataset_id, "제품정보" '
+        'WHERE "제품타입" IS NOT NULL AND trim("제품타입") <> \'\' '
+        'GROUP BY dataset_id, "제품정보" '
         'HAVING count(DISTINCT upper(trim("제품타입"))) > 1)',
     )
     print(f"    한 데이터셋 안에서 `제품타입` 이 갈리는 제품 {mixed:,}종")
+    # 빈 문자열도 센다. `0026` 이 `IS NULL` 과 `trim(...) = ''` 을 같이 거르므로 여기서
+    # `IS NULL` 만 보면 사전 점검과 마이그레이션의 조건이 갈린다.
     unset = _scalar(
         connection,
-        'SELECT count(*) FROM raw_data.core_data WHERE "제품타입" IS NULL',
+        "SELECT count(*) FROM raw_data.core_data "
+        'WHERE "제품타입" IS NULL OR trim("제품타입") = \'\'',
     )
     print(f"    원천에 `제품타입` 이 비어 있는 행 {unset:,}개")
     if mixed or unset:
@@ -171,9 +175,9 @@ def _would_change(connection: duckdb.DuckDBPyConnection) -> None:
     )
     if grand == 0:
         print()
-        print("    0 이다. **로컬 합성 DB 에서는 정상이다** — 표본이 파생 규칙이 생긴 뒤에")
-        print("    만들어져 EDP 행이 처음부터 `Top_e` 이고, 남은 `TOP` 은 HBM 이다.")
-        print("    (`0014` 가 바꿔서가 아니다 — `0014` 는 로컬에서도 0행이었다.)")
+        print("    0 이다. **로컬 합성 DB 에서는 정상이다** — 표본의 `WF 구분` 이 원천과")
+        print("    달리 `Top` 이라 `0014` 가 로컬에서는 실제로 바꿨고, 남은 `TOP` 은 HBM 이다.")
+        print("    (표본이 원천과 달라 검사가 결함을 덮은 바로 그 자리다.)")
         print("    **사내에서 0 이면 전제가 틀린 것이므로** 재이관을 적용하지 말고")
         print("    1~3 번 결과를 먼저 리뷰 문서로 낸다.")
     print()
