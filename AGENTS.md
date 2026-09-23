@@ -1343,6 +1343,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 파생 시나리오의 원본 리비전 선택과 신규 저장 폼은 `components/scenario_transform.py`,
     월 축이 있는 12표·없는 4표의 복사와 검증은 `services/scenario_transform.py`가 맡는다.
     저장은 새 데이터셋과 초기 리비전을 만들며 현재 활성 편집본을 바꾸지 않는다.
+    `services/scenario_virtual_products.py`는 가상제품 복제 이력을 변환하고 같은 제품·Stack의
+    복제 원본 충돌을 검사한다. `create_scenario(virtual_products=...)`가 기존 이력 표에
+    초기 리비전·16표와 같은 트랜잭션으로 기록하고 저장 폼은 보존할 이력을 미리 보여 준다.
   - `components/scenario_month_merge.py`는 무월 표 비교와 머지 미리보기·저장을,
     `services/scenario_month_merge.py`는 월 겹침·결과 축 검증과 표 병합을 맡는다.
   - `components/scenario_year_shift.py`는 사용자 지정 연수와 전후 범위·저장을,

@@ -1,6 +1,6 @@
 # Purpose: 파생 시나리오의 저장 리비전 선택과 원본을 유지하는 신규 저장 폼을 제공한다.
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from uuid import uuid4
 
 import pandas as pd
@@ -21,6 +21,7 @@ from capa_simulation.services.scenario_transform import (
     month_axis,
     scenario_months,
 )
+from capa_simulation.services.virtual_product import VirtualProductRecord, records_to_frame
 
 
 def render_source_selector(
@@ -99,6 +100,7 @@ def render_derived_save(
     default_name: str,
     key: str,
     request: tuple[str, ...],
+    virtual_products: tuple[VirtualProductRecord, ...] = (),
 ) -> None:
     """저장 성공을 세션에 남기고 같은 제출의 중복 저장과 활성 편집본 교체를 피한다."""
     blocked = revision_block_reason(tables)
@@ -120,6 +122,9 @@ def render_derived_save(
         "현재 활성 편집본과 원본 시나리오는 유지합니다. 새 시나리오의 조회기간·포함공정은 "
         "결과 전체이며, 확보·경고 기준은 원본(머지는 베이스)을 따릅니다."
     )
+    if virtual_products:
+        with st.expander(f"함께 저장할 가상제품 복제 이력 · {len(virtual_products)}건"):
+            st.dataframe(records_to_frame(virtual_products), hide_index=True, width="stretch")
     with st.expander("저장될 출처 메모"):
         st.text(provenance)
     with st.form(f"{key}_save_form"):
@@ -153,6 +158,7 @@ def render_derived_save(
             preset,
             revision_name="초기 리비전",
             note=provenance + (f"\n사용자 메모: {note.strip()}" if note.strip() else ""),
+            virtual_products=[asdict(record) for record in virtual_products],
         )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))

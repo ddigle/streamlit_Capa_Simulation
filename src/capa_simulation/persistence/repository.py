@@ -526,6 +526,7 @@ class DuckDBScenarioRepository:
         revision_tables: Mapping[str, pd.DataFrame] | None = None,
         revision_name: str = "초기 리비전",
         note: str | None = None,
+        virtual_products: Sequence[Mapping[str, str]] = (),
     ) -> ScenarioSnapshot:
         require_tables(reference_tables, tuple(REFERENCE_TABLES), "기준정보")
         revision_source = dict(reference_tables)
@@ -634,6 +635,7 @@ class DuckDBScenarioRepository:
                 reference_hash=reference_hash,
                 revision_tables=revision_source,
                 preset=preset,
+                virtual_products=virtual_products,
             )
             connection.execute(
                 "UPDATE app_meta.dataset SET status = 'READY' WHERE dataset_id = ?",
