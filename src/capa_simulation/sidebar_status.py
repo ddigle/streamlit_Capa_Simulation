@@ -90,17 +90,15 @@ def show_past_months_outside_range(first_past_month: int) -> None:
     보면 넣은 값이 사라진 것처럼 보인다. 어디까지 내려야 하는지 함께 적는다.
 
     **이 줄이 서는 자리는 상자 제목 줄 위 한 줄이다.** 폭이 제목과 펼침 화살표 사이뿐이라
-    긴 문장은 말줄임으로 잘린다. 화면에는 짧은 쪽을 내고 원문은 `help` 로 넘긴다.
+    긴 문장은 말줄임으로 잘린다. 화면에는 짧은 쪽만 낸다 — 이 글자 칸은 클릭을 요약 줄로
+    통과시키므로(`sidebar_style.py`) `help` 툴팁을 달아도 마우스가 닿지 못한다. 어디까지
+    내려야 하는지는 짧은 문구가 이미 말한다.
     """
     placeholder = _placeholder()
     if placeholder is None:
         return
     placeholder.caption(
         f":material/info: 과거 구간 밖 · 시작월 {month_label(first_past_month)} 로",
-        help=(
-            f"넣어 둔 과거 구간이 조회기간 밖에 있습니다. 시작월을 "
-            f"{month_label(first_past_month)} 로 내리면 보입니다."
-        ),
     )
 
 

@@ -284,13 +284,22 @@ def build_sidebar_stylesheet(
            왼쪽 끝에 남는다. 확장 패널의 제목은 문자열 하나라 그 안에서 좌우로 밀 수 없어
            여기서 민다 — 요약 줄의 마크다운 문단을 flex 로 펴고 배지만 오른쪽으로 보낸다.
            제목 길이가 달라져도 배지 자리는 흔들리지 않는다. */
+        /* 마크다운 컨테이너는 요약 줄에서 **글자 폭만큼만** 차지한다(실측 147px, 라벨
+           칸은 216px). 그 안의 문단을 flex 로 펴 봐야 오른쪽 끝이 글자 끝이라 배지가
+           제목에 붙은 채로 남는다 — 컨테이너를 먼저 라벨 칸 끝까지 늘린다. */
+        .st-key-{scenario_box_key} summary [data-testid="stMarkdownContainer"] {{
+            flex: 1 1 auto;
+            width: 100%;
+            min-width: 0;
+        }}
         .st-key-{scenario_box_key} summary [data-testid="stMarkdownContainer"] p {{
             display: flex;
             align-items: center;
             gap: 0.4rem;
         }}
+        /* 배지는 `stMarkdownBadge` **클래스**를 단 span 이다(테스트 id 가 아니다 — 실측). */
         .st-key-{scenario_box_key} summary [data-testid="stMarkdownContainer"] p
-            > [data-testid="stMarkdownBadge"] {{
+            > .stMarkdownBadge {{
             margin-left: auto;
         }}
 
@@ -316,13 +325,19 @@ def build_sidebar_stylesheet(
             top: {_APPLIED_OVERLAY_TOP};
             right: {_APPLIED_OVERLAY_RIGHT};
             left: {_APPLIED_OVERLAY_LEFT};
+            /* Streamlit 이 캡션 칸에 폭 100% 를 준다. 그대로 두면 왼쪽 좌표에서 칸 전체
+               폭(실측 260px)이 다시 펼쳐져 오른쪽 좌표를 무시하고 사이드바 밖으로 넘친다.
+               폭을 풀어야 왼쪽·오른쪽 두 좌표가 칸을 정한다. */
+            width: auto !important;
+            max-width: none;
             margin: 0;
             text-align: right;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            /* `help` 툴팁이 떠야 해서 글자 칸만 클릭을 받는다. */
-            pointer-events: auto;
+            /* 요약 줄을 누르는 일이 툴팁을 보는 일보다 잦다. 글자 칸도 클릭을 통과시켜
+               요약 줄 어디를 눌러도 상자가 열린다 — `help` 툴팁은 그 대가로 뜨지 않는다. */
+            pointer-events: none;
         }}
 
         /* 관리는 **계산 흐름 밖**이다. 접는 장치는 다른 상자와 같게 주되 테두리를 지우고
