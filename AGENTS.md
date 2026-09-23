@@ -471,12 +471,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     탭 전환에 rerun 을 걸지 않는다.
   - `BigDataQuery 등록` 은 ① 기간으로 시뮬레이션 코드 목록 조회 → ② 목록에서 한 행 선택
     → ③ 자동 입력된 등록 폼 확인·저장의 2단계다.
-  - 작업은 「목록 관리」·「현재 활성 RQ 복제」·「리비전 저장」·「월 머지」다.
+  - 작업은 「목록 관리」·「현재 활성 RQ 복제」·「리비전 저장」·「월 머지」·「연도 Shift」다.
   - 「월 머지」는 저장된 베이스·덧붙일 리비전과 덧붙일 월 범위를 고른다. 겹치는 월은
     저장을 차단하고, 결과 12표의 실제 월 집합을 비교해 중간 누락도 차단한다.
     월 없는 `RQ_CHIP_EQ`·`RQ_CHIP_QTY`·`RQ_MODULE`·`RQ_DISPLAY_ORDER`는 베이스를 유지하며
     양쪽 행 수와 값 차이를 저장 전에 표시한다. 원본과 현재 활성 편집본은 바꾸지 않는다.
     구현·검증 근거는 `docs/scenario_merge_shift_implementation.md`에 정리한다.
+  - 「연도 Shift」는 저장 리비전의 12개 월표에서 연도만 사용자가 지정한 정수만큼 옮긴다.
+    자동 오류 판정·추천은 없고 0년으로 시작한다. 전후 범위를 나란히 보여 주며 월 번호와
+    무월 4표·나머지 값은 보존한다. 결과는 `normalize_month_column`과 같은 연도 1~9999
+    범위로 검증해 새 시나리오로 저장한다. 머지와 서비스·UI·테스트를 분리한다.
   - 리비전 선택은 지금 보고 있는 시나리오라면 **활성 리비전**을 미리 고른다. 목록은 최신
     리비전이 먼저 오는데, 화면과 다른 것이 골라져 있으면 "같은 것을 다시 불러왔다" 고
     여기면서 실은 다른 리비전을 올리게 된다.
@@ -1341,6 +1345,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     저장은 새 데이터셋과 초기 리비전을 만들며 현재 활성 편집본을 바꾸지 않는다.
   - `components/scenario_month_merge.py`는 무월 표 비교와 머지 미리보기·저장을,
     `services/scenario_month_merge.py`는 월 겹침·결과 축 검증과 표 병합을 맡는다.
+  - `components/scenario_year_shift.py`는 사용자 지정 연수와 전후 범위·저장을,
+    `services/scenario_year_shift.py`는 원본을 보존하는 연도 이동·유효 범위 검증을 맡는다.
   - `bigdataquery_registration.py` 는 2단계다. 목록 위젯은 반드시 `st.form` 밖의
     `st.dataframe(on_select="rerun", selection_mode="single-row")` 이고(폼 안에서는 제출
     전까지 선택이 서버에 오지 않아 예외 없이 조용히 실패한다), 목록을 등록 폼보다 **위**에
