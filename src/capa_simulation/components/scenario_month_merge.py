@@ -20,6 +20,10 @@ from capa_simulation.services.scenario_transform import (
     format_month_range,
     scenario_months,
 )
+from capa_simulation.services.scenario_virtual_products import (
+    merge_virtual_product_records,
+    virtual_product_records,
+)
 
 
 def render_scenario_month_merge(repository: DuckDBScenarioRepository, database_path: str) -> None:
@@ -88,12 +92,25 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     preview["추가 행 수"] = preview["결과 행 수"] - preview["베이스 행 수"]
     with st.expander("12개 월표 미리보기", expanded=True):
         st.dataframe(preview, hide_index=True, width="stretch")
+    base_history = virtual_product_records(
+        repository.list_virtual_products(base.revision.revision_id)
+    )
+    donor_history = virtual_product_records(
+        repository.list_virtual_products(donor.revision.revision_id)
+    )
+    if base_history or donor_history:
+        st.caption(
+            "가상제품 복제 이력에는 월이 없으므로 선택한 두 리비전의 전체 이력을 보존합니다. "
+            "같은 제품·Stack의 복제 원본이 다르면 저장할 수 없습니다."
+        )
+    virtual_products = merge_virtual_product_records(base_history, donor_history)
     differences = comparison.loc[comparison["비교"].ne("같음"), "표"].tolist()
     provenance = (
         f"월 머지\n베이스: {source_description(base)}\n덧붙일 쪽: {source_description(donor)}\n"
         f"덧붙인 월 범위: {format_month(start)} ~ {format_month(end)} (양 끝 포함)\n"
         "겹치는 월: 저장 차단\n월 없는 4표: 베이스 유지\n"
-        f"두 원본의 무월 표 차이: {', '.join(differences) if differences else '없음'}"
+        f"두 원본의 무월 표 차이: {', '.join(differences) if differences else '없음'}\n"
+        f"가상제품 복제 이력: {len(virtual_products)}건 보존 (동일 이력 중복 제거, 원본 충돌 차단)"
     )
     render_derived_save(
         repository,
@@ -104,4 +121,5 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
         default_name=f"{base.scenario.scenario_name} · 월 머지",
         key="scenario_merge",
         request=(base.revision.revision_id, donor.revision.revision_id, str(start), str(end)),
+        virtual_products=virtual_products,
     )

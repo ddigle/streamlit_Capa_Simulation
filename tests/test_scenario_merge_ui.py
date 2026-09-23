@@ -1,5 +1,6 @@
 # Purpose: 월 머지 화면의 미리보기·겹침 차단과 원본을 보존하는 신규 저장 흐름을 검증한다.
 
+from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
@@ -12,6 +13,7 @@ from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import ACTIVE_PERSISTED_REVISION_ID_KEY
 from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
+from capa_simulation.services.virtual_product import VirtualProductRecord, records_to_frame
 
 
 def _monthly_tables(months: list[int]) -> dict[str, pd.DataFrame]:
@@ -71,6 +73,82 @@ def _save_button(app: AppTest):
 
 def _preview(app: AppTest) -> pd.DataFrame:
     return next(item.value for item in app.dataframe if "결과 월 수" in item.value.columns)
+
+
+def _with_history(repository, source, records):
+    return repository.save_revision(
+        source.scenario.scenario_id,
+        source.tables,
+        source.preset,
+        revision_name="복제 이력 포함",
+        parent_revision_id=source.revision.revision_id,
+        virtual_products=[asdict(record) for record in records],
+    )
+
+
+def test_merge_preserves_both_histories_and_deduplicates_same_origin(sources) -> None:
+    repository, database, base, donor = sources
+    shared = VirtualProductRecord("Product-A", "8H", "원본 A", "8H")
+    extra = VirtualProductRecord("Product-A", "12H", "원본 B", "8H")
+    base = _with_history(repository, base, (shared,))
+    donor = _with_history(repository, donor, (shared, extra))
+    base_history = repository.list_virtual_products(base.revision.revision_id)
+    donor_history = repository.list_virtual_products(donor.revision.revision_id)
+    app = _app(database, base, donor)
+    app.selectbox(key=f"merge_start_{donor.revision.revision_id}").set_value(202802).run()
+    preview = next(item.value for item in app.dataframe if "원본 제품정보" in item.value.columns)
+    pd.testing.assert_frame_equal(preview, records_to_frame((shared, extra)))
+    app.text_input(key="scenario_merge_name").set_value("이력 포함 머지")
+    _save_button(app).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    created = next(s for s in repository.list_scenarios() if s.scenario_name == "이력 포함 머지")
+    expected = (
+        records_to_frame((shared, extra)).sort_values(["제품정보", "Stack"]).reset_index(drop=True)
+    )
+    pd.testing.assert_frame_equal(
+        repository.list_virtual_products(created.active_revision_id), expected
+    )
+    pd.testing.assert_frame_equal(
+        repository.list_virtual_products(base.revision.revision_id), base_history
+    )
+    pd.testing.assert_frame_equal(
+        repository.list_virtual_products(donor.revision.revision_id), donor_history
+    )
+    assert len(repository.list_revisions(base.scenario.scenario_id)) == 2
+    assert len(repository.list_revisions(donor.scenario.scenario_id)) == 2
+
+
+@pytest.mark.parametrize("origin", [("다른 제품", "8H"), ("원본 A", "12H")])
+def test_history_conflict_blocks_save_and_revision_change_recovers(sources, origin) -> None:
+    repository, database, base, donor = sources
+    base_record = VirtualProductRecord("Product-A", "8H", "원본 A", "8H")
+    base = _with_history(repository, base, (base_record,))
+    conflicting = _with_history(
+        repository, donor, (VirtualProductRecord("Product-A", "8H", *origin),)
+    )
+    app = _app(database, base, conflicting)
+    assert any("가상제품 복제 이력이 충돌" in error.value for error in app.error)
+    assert any("Product-A · 8H" in error.value for error in app.error)
+    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    assert len(repository.list_scenarios()) == 2
+    app.selectbox(key=f"merge_start_{conflicting.revision.revision_id}").set_value(202802).run()
+    assert any("가상제품 복제 이력이 충돌" in error.value for error in app.error)
+    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    app.selectbox(key=f"merge_donor_revision_{donor.scenario.scenario_id}").set_value(
+        donor.revision.revision_id
+    ).run()
+    assert not app.exception
+    assert not app.error
+    app.text_input(key="scenario_merge_name").set_value("충돌 없는 리비전 머지")
+    _save_button(app).click().run()
+    assert not app.exception
+    created = next(
+        s for s in repository.list_scenarios() if s.scenario_name == "충돌 없는 리비전 머지"
+    )
+    pd.testing.assert_frame_equal(
+        repository.list_virtual_products(created.active_revision_id),
+        records_to_frame((base_record,)),
+    )
 
 
 def test_preview_reports_monthless_differences_and_does_not_save(sources) -> None:
