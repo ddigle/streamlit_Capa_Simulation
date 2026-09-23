@@ -326,3 +326,35 @@ def test_the_bottleneck_box_remembers_its_state_across_a_page_round_trip(_app: A
     app.switch_page(HOME.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _control_boxes(app)[BOTTLENECK_BOX_KEY] is False
+
+
+def test_group_boxes_follow_the_page_only_when_the_page_changes(_app: AppTest) -> None:
+    """그룹 상자는 **페이지가 바뀐 회차에만** 규칙대로 되돌리고, 그 안에서는 사용자 뜻대로 둔다.
+
+    `expanded=` 는 처음 그릴 때만 읽힌다. 링크로 페이지를 옮기는 것은 새로고침이 아니라
+    같은 화면 안의 rerun 이라, 프런트엔드는 이미 그려 둔 확장 패널의 여닫힘을 그대로 두고
+    바뀐 값을 무시한다(브라우저 실측). 그래서 `key` 로 위젯을 만들고 세션 값을 페이지가
+    바뀔 때만 「지금 보는 페이지가 든 그룹」으로 쓴다 — 매 회차 덮어쓰면 방금 누른 클릭을
+    지우고, 한 번도 안 쓰면 옮겨도 따라오지 않는다.
+    """
+    static, dynamic = STATIC_CAPA.title, DYNAMIC_CAPA.title
+    static_key = next(f"{group.slug}_box" for group in SIDEBAR_GROUPS if group.main is STATIC_CAPA)
+
+    app = _app.run()
+    app.switch_page(STATIC_CAPA.path).run()
+    assert _expanded(app)[static] is True
+
+    # 같은 페이지에서 사용자가 접었다. 다음 rerun 이 도로 펴면 안 된다.
+    app.session_state[static_key] = False
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _expanded(app)[static] is False
+
+    # 다른 그룹의 페이지로 옮기면 규칙이 다시 선다 — Static 은 접히고 Dynamic 이 펴진다.
+    app.switch_page(DYNAMIC_CAPA.path).run()
+    assert _expanded(app) == {static: False, dynamic: True}
+
+    # 거기서 사용자가 Static 을 펴 두면, 같은 페이지의 rerun 은 그것도 존중한다.
+    app.session_state[static_key] = True
+    app.run()
+    assert _expanded(app) == {static: True, dynamic: True}

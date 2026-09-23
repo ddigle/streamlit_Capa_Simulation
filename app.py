@@ -50,6 +50,9 @@ MONTH_APPLIED_BOX_KEY = "sidebar_month_applied_box"
 # 말하므로 안에서까지 되풀이하지 않고 그 그룹 안에서의 자리로 부른다.
 GROUP_MAIN_LABEL = "현황 요약"
 ADMIN_BOX_KEY = "sidebar_admin_box"
+# 직전 회차가 그린 페이지 주소. 그룹 상자는 **페이지가 바뀐 회차에만** 「지금 보는 페이지가
+# 든 그룹」으로 되돌리고, 같은 페이지 안에서는 사용자가 여닫은 대로 둔다.
+SIDEBAR_PAGE_KEY = "sidebar_last_page"
 
 st.set_page_config(
     page_title=APP_NAME,
@@ -119,6 +122,16 @@ with pinned_connections(DUCKDB_PATH):
 
     # 박스 목록은 `navigation.SIDEBAR_GROUPS` 하나에서 나온다. 위 CSS 선택자도 같은 선언을
     # 읽으므로, 그룹을 더할 때 이 파일에서 고칠 것이 없다.
+    #
+    # **`expanded=` 는 처음 그릴 때만 읽힌다.** 링크로 페이지를 옮기는 것은 새로고침이 아니라
+    # 같은 화면 안의 rerun 이라, 프런트엔드는 이미 그려 둔 확장 패널의 여닫힘을 그대로 두고
+    # 바뀐 `expanded` 값을 무시한다(브라우저 실측 — Static Capa 에서 Dynamic Capa 로 옮겨도
+    # Static 이 펴진 채 남고 Dynamic 은 접힌 채였다. `main` 도 같았다). 「지금 보는 페이지가
+    # 든 그룹만 편다」는 규칙을 실제로 지키려면 `key` 로 위젯을 만들고 **페이지가 바뀐
+    # 회차에만** 세션 값을 그 규칙대로 되돌려야 한다. 같은 페이지 안에서 사용자가 여닫은
+    # 것은 그대로 남는다 — 매 회차 덮어쓰면 방금 누른 클릭을 지운다.
+    page_changed = st.session_state.get(SIDEBAR_PAGE_KEY) != navigation.url_path
+    st.session_state[SIDEBAR_PAGE_KEY] = navigation.url_path
     for group in pages.groups:
         # 하위가 없어도 **상자에 넣는다.** 묶을 것이 없으니 테두리가 필요 없다고 봤는데,
         # 사이드바에 상자가 다섯이고 이 둘만 맨몸으로 서니 목록이 두 층으로 읽혔다.
@@ -130,12 +143,15 @@ with pinned_connections(DUCKDB_PATH):
         # 지금 보고 있는 페이지가 든 그룹만 편다. `url_path` 는 `st.navigation()` 이
         # 돌아야 채워지므로(그 전에는 `AttributeError`) 이 자리가 반드시 그 뒤여야 한다.
         group_paths = {page.url_path for page in (group.main, *group.subpages)}
+        # `key` 는 곧 `st-key-…` 클래스다. 상자였을 때 걸어 둔 CSS 훅이 그대로 산다.
+        group_key = f"{group.slug}_box"
+        if page_changed or group_key not in st.session_state:
+            st.session_state[group_key] = navigation.url_path in group_paths
         with st.sidebar.expander(
             group.main.title,
-            expanded=navigation.url_path in group_paths,
             icon=group.main.icon,
-            # `key` 는 곧 `st-key-…` 클래스다. 상자였을 때 걸어 둔 CSS 훅이 그대로 산다.
-            key=f"{group.slug}_box",
+            key=group_key,
+            on_change="rerun",
         ):
             st.page_link(group.main, label=GROUP_MAIN_LABEL, width="stretch")
             for page in group.subpages:
