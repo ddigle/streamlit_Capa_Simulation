@@ -44,6 +44,7 @@ from capa_simulation.services.equipment_count import (
     equipment_count_from_edit_table,
     equipment_count_to_edit_table,
 )
+from capa_simulation.services.reference_csv import count_removed_values
 from capa_simulation.services.route_step_editor import (
     ROUTE_GROUP_COLUMNS,
     clone_route_step,
@@ -665,7 +666,9 @@ equipment_editor_results = {
 }
 
 
-def _edit_flash(editor_key: str, table_name: str, *, imported: bool) -> tuple[str, str]:
+def _edit_flash(
+    editor_key: str, table_name: str, *, imported: bool, removed: int = 0
+) -> tuple[str, str]:
     """적용 결과를 버튼 바로 아래 같은 자리에 남긴다.
 
     버튼으로 고친 경우에는 화면이 그대로 다시 그려질 뿐이라, 눌렸는지 어디에 반영됐는지
@@ -678,11 +681,29 @@ def _edit_flash(editor_key: str, table_name: str, *, imported: bool) -> tuple[st
     빠져 여섯 탭이 그랬다.
     """
     origin = "붙여넣기 데이터를" if imported else "편집값을"
+    # 지워진 칸은 **오류가 아니라 정당한 편집**이라 막지 않는다. 다만 붙여넣기는 격자와
+    # 달리 적용 전에 변경 수를 보여 주지 않아, 한 열이 통째로 비어 와도 조용히 지나간다.
+    # 그 경로는 부하량을 그대로 둔 채 대당 Capa 만 잃어 확보율이 낙관 쪽으로 기운다.
+    removal = ""
+    if removed:
+        removal = f"값이 지워진 칸 {removed:,}개는 계산에서 빠집니다. "
     return (
         f"{editor_key}_csv",
         f"{table_name} {origin} 활성 시나리오에 적용했습니다. "
+        f"{removal}"
         "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요.",
     )
+
+
+def _removed_values(
+    template: pd.DataFrame,
+    imported_table: pd.DataFrame | None,
+    dimensions: list[str],
+) -> int:
+    """붙여넣기로 비워진 칸 수. 격자 편집은 이미 적용 전에 변경 수를 보여 준다."""
+    if imported_table is None:
+        return 0
+    return count_removed_values(template, imported_table, dimensions)
 
 
 pending_updates: dict[str, pd.DataFrame] = {}
@@ -694,7 +715,12 @@ try:
         source = imported_upeh_table if imported_upeh_table is not None else edited_upeh_table
         pending_updates["RQ_UPEH"] = performance_from_edit_table(source)
         import_flash = _edit_flash(
-            editor_keys[0], "RQ_UPEH", imported=imported_upeh_table is not None
+            editor_keys[0],
+            "RQ_UPEH",
+            imported=imported_upeh_table is not None,
+            removed=_removed_values(
+                default_upeh_table, imported_upeh_table, PERFORMANCE_EDITOR_DIMENSIONS
+            ),
         )
     if apply_run_rate or imported_run_rate_table is not None:
         update_error_tab = run_rate_tab
@@ -707,7 +733,12 @@ try:
             source, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "효율 편집값"
         )
         import_flash = _edit_flash(
-            editor_keys[1], "RQ_RUN_RATE", imported=imported_run_rate_table is not None
+            editor_keys[1],
+            "RQ_RUN_RATE",
+            imported=imported_run_rate_table is not None,
+            removed=_removed_values(
+                default_run_rate_table, imported_run_rate_table, RUN_RATE_DIMENSIONS
+            ),
         )
     if apply_vital or imported_vital_table is not None:
         update_error_tab = vital_tab
@@ -716,7 +747,10 @@ try:
             source, VITAL_DIMENSIONS, "편중률", "여유율 편집값"
         )
         import_flash = _edit_flash(
-            editor_keys[2], "RQ_VITAL", imported=imported_vital_table is not None
+            editor_keys[2],
+            "RQ_VITAL",
+            imported=imported_vital_table is not None,
+            removed=_removed_values(default_vital_table, imported_vital_table, VITAL_DIMENSIONS),
         )
     if apply_lot_ratio or imported_lot_ratio_table is not None:
         update_error_tab = lot_ratio_tab
@@ -732,7 +766,12 @@ try:
             "Lot측정률 편집값",
         )
         import_flash = _edit_flash(
-            editor_keys[3], "RQ_LOT_RATIO", imported=imported_lot_ratio_table is not None
+            editor_keys[3],
+            "RQ_LOT_RATIO",
+            imported=imported_lot_ratio_table is not None,
+            removed=_removed_values(
+                default_lot_ratio_table, imported_lot_ratio_table, RATIO_DIMENSIONS
+            ),
         )
     if apply_wf_ratio or imported_wf_ratio_table is not None:
         update_error_tab = wf_ratio_tab
@@ -745,7 +784,12 @@ try:
             source, RATIO_DIMENSIONS, "WF측정률", "WF측정률 편집값"
         )
         import_flash = _edit_flash(
-            editor_keys[4], "RQ_WF_RATIO", imported=imported_wf_ratio_table is not None
+            editor_keys[4],
+            "RQ_WF_RATIO",
+            imported=imported_wf_ratio_table is not None,
+            removed=_removed_values(
+                default_wf_ratio_table, imported_wf_ratio_table, RATIO_DIMENSIONS
+            ),
         )
     if apply_run_day or imported_run_day_table is not None:
         update_error_tab = run_day_tab
@@ -756,7 +800,12 @@ try:
             source, RUN_DAY_DIMENSIONS, "RUN_DAY", "일수 편집값"
         )
         import_flash = _edit_flash(
-            editor_keys[5], "RQ_RUN_DAY", imported=imported_run_day_table is not None
+            editor_keys[5],
+            "RQ_RUN_DAY",
+            imported=imported_run_day_table is not None,
+            removed=_removed_values(
+                default_run_day_table, imported_run_day_table, RUN_DAY_DIMENSIONS
+            ),
         )
     for table_name, category, value_column, editor_key in EQUIPMENT_EDITORS:
         equipment_sub_tab = {
@@ -772,7 +821,14 @@ try:
         pending_updates[table_name] = equipment_count_from_edit_table(
             source, category, value_column
         )
-        import_flash = _edit_flash(editor_key, table_name, imported=imported_equipment is not None)
+        import_flash = _edit_flash(
+            editor_key,
+            table_name,
+            imported=imported_equipment is not None,
+            removed=_removed_values(
+                equipment_edit_tables[table_name], imported_equipment, EQUIPMENT_DIMENSIONS
+            ),
+        )
     if pending_updates:
         apply_month_updates(
             active_scenario,

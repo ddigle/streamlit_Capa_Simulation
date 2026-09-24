@@ -174,12 +174,93 @@ def validate_reference_edit_table(
     order["__csv_row_order"] = range(len(order))
     result[key_columns] = uploaded_keys[key_columns]
     result = result.merge(order, on=key_columns, how="left", validate="one_to_one")
-    return (
+    result = (
         result.sort_values("__csv_row_order", kind="stable")
         .drop(columns="__csv_row_order")
         .reindex(columns=expected_columns)
         .reset_index(drop=True)
     )
+    assert_numeric_edit_values(result, key_columns, table_name)
+    return result
+
+
+def _is_blank(value: object) -> bool:
+    """빈 칸인가. 빈 칸은 오류가 아니라 **그 달 행이 없다**는 뜻이다."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return True
+    return isinstance(value, str) and not value.strip()
+
+
+def assert_numeric_edit_values(
+    table: pd.DataFrame,
+    key_columns: list[str],
+    table_name: str,
+) -> None:
+    """값 칸이 숫자이거나 비어 있어야 한다. **숫자로 못 읽는 값은 행을 지운다.**
+
+    적용은 Wide→Long 복원이고 그 마지막 줄이
+    `to_numeric(errors="coerce")` → `dropna` 다(`capacity_reference_editor.py`). 숫자로 못
+    읽는 칸은 결측이 되고 **그 행이 통째로 사라진다.** 오류도 경고도 없이 「적용했습니다」만
+    뜨는데, 그 경로는 부하량을 그대로 둔 채 대당 Capa 만 잃어 소요대수가 과소·확보율이
+    과대로 기운다. 조용히 낙관 쪽으로 틀리는 종류다.
+
+    격자 편집기는 월 컬럼이 `NumberColumn` 이라 글자를 애초에 받지 않는다. **붙여넣기만
+    이 문을 지나므로** 여기서 막는다.
+
+    `1,200` 처럼 읽을 수 있어 보이는 것도 받지 않는다. 쉼표를 천 단위로 볼지 소수점으로
+    볼지는 지역 설정이 정하고, 앱이 골라 주면 그 선택이 화면 어디에도 남지 않는다.
+    """
+    value_columns = [column for column in table.columns if column not in key_columns]
+    offenders: list[str] = []
+    for column in value_columns:
+        for position, value in table[column].items():
+            if _is_blank(value):
+                continue
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                continue
+            try:
+                float(str(value).strip())
+            except ValueError:
+                keys = " / ".join(f"{key}={table.at[position, key]}" for key in key_columns)
+                offenders.append(f"{column} 칸 '{value}' ({keys})")
+                if len(offenders) >= 5:
+                    break
+        if len(offenders) >= 5:
+            break
+    if not offenders:
+        return
+    raise ValueError(
+        f"{table_name} 입력 표의 값 칸에 숫자로 읽을 수 없는 값이 있습니다: "
+        f"{'; '.join(offenders)}. 그대로 적용하면 **그 행이 계산에서 사라집니다.** "
+        "Excel 에서 천 단위 쉼표(`1,200`)·지수 표기(`1.2E+03`)·`-`·`N/A` 를 지우고 "
+        "숫자만 남기세요. 그 달에 값이 없어야 하면 칸을 **비워** 두세요."
+    )
+
+
+def count_removed_values(
+    template: pd.DataFrame,
+    submitted: pd.DataFrame,
+    key_columns: list[str],
+) -> int:
+    """양식에는 값이 있는데 붙여넣은 표에서는 빈 칸이 된 자리 수.
+
+    **오류가 아니다** — 그 달을 지우는 것은 정당한 편집이다. 다만 붙여넣기는 격자와 달리
+    적용 전에 변경 수를 보여 주지 않아(`month_editor.count_month_changes` 는 격자 표만
+    센다) 한 열이 통째로 비어 온 것도 조용히 지나간다. 적용 뒤 문구로 알린다.
+    """
+    value_columns = [
+        column
+        for column in template.columns
+        if column not in key_columns and column in submitted.columns
+    ]
+    if not value_columns or len(template) != len(submitted):
+        return 0
+    removed = 0
+    for column in value_columns:
+        before = template[column].map(_is_blank).to_numpy()
+        after = submitted[column].map(_is_blank).to_numpy()
+        removed += int((~before & after).sum())
+    return removed
 
 
 def _row_mismatch_message(

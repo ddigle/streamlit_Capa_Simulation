@@ -10,6 +10,7 @@ from capa_simulation.services.equipment_count import (
     equipment_count_to_edit_table,
 )
 from capa_simulation.services.reference_csv import (
+    count_removed_values,
     parse_reference_edit_clipboard,
     parse_reference_edit_csv,
     reference_edit_csv_bytes,
@@ -228,3 +229,77 @@ def test_upload_reads_na_shaped_keys_as_text_like_paste_does() -> None:
 
     assert uploaded["Customer"].tolist() == ["NA", "NULL", "BBS"]
     assert pasted["Customer"].tolist() == uploaded["Customer"].tolist()
+
+
+# --------------------------------------------------- 값 칸 검증 (숫자 아니면 행이 사라진다)
+
+
+def _paste(template: pd.DataFrame, modified: pd.DataFrame) -> pd.DataFrame:
+    return parse_reference_edit_csv(
+        reference_edit_csv_bytes(modified),
+        template,
+        ["공정", "양산구분"],
+        "RQ_RUN_RATE",
+    )
+
+
+def test_a_non_numeric_value_cell_is_refused_instead_of_deleting_the_row() -> None:
+    """숫자로 못 읽는 값은 적용 단계에서 **행을 통째로 지운다.** 그 앞에서 막는다.
+
+    적용은 Wide→Long 복원이고 마지막이 `to_numeric(coerce)` → `dropna` 다. 막지 않으면
+    「적용했습니다」만 뜨고 그 경로의 대당 Capa 가 사라져 확보율이 낙관 쪽으로 기운다.
+    """
+    template = _template()
+    modified = template.copy().astype({"202608": "object"})
+    modified.loc[0, "202608"] = "12O"
+
+    with pytest.raises(ValueError) as error:
+        _paste(template, modified)
+
+    message = str(error.value)
+    assert "12O" in message
+    assert "사라집니다" in message
+    # 어느 행인지 말해 줘야 Excel 에서 찾을 수 있다.
+    assert "Process-B" in message
+
+
+def test_excel_thousand_separators_are_refused_rather_than_guessed() -> None:
+    """`1,200` 은 읽을 수 있어 보이지만 받지 않는다.
+
+    쉼표가 천 단위인지 소수점인지는 지역 설정이 정한다. 앱이 골라 주면 그 선택이 화면
+    어디에도 남지 않는다.
+    """
+    template = _template()
+    modified = template.copy().astype({"202609": "object"})
+    modified.loc[1, "202609"] = "1,200"
+
+    with pytest.raises(ValueError, match="1,200"):
+        _paste(template, modified)
+
+
+def test_a_blank_value_cell_stays_allowed() -> None:
+    """빈 칸은 오류가 아니다 — 그 달 행이 없다는 뜻이고 정당한 편집이다."""
+    template = _template()
+    modified = template.copy().astype({"202608": "object"})
+    modified.loc[0, "202608"] = None
+
+    result = _paste(template, modified)
+
+    assert pd.isna(result.loc[0, "202608"])
+
+
+def test_removed_values_are_counted_so_the_apply_message_can_say_it() -> None:
+    """붙여넣기는 격자와 달리 적용 전에 변경 수를 보여 주지 않는다.
+
+    한 열이 통째로 비어 와도 조용히 지나가므로, 적용 뒤에라도 몇 칸이 빠졌는지 알린다.
+    """
+    template = _template()
+    submitted = template.copy().astype({"202608": "object", "202609": "object"})
+    submitted.loc[0, "202608"] = None
+    submitted.loc[1, "202609"] = "   "
+
+    assert count_removed_values(template, submitted, ["공정", "양산구분"]) == 2
+    # 새로 채운 칸은 삭제가 아니다.
+    filled = template.copy()
+    filled.loc[0, "202608"] = 0.99
+    assert count_removed_values(template, filled, ["공정", "양산구분"]) == 0
