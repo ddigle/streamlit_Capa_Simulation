@@ -1277,10 +1277,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     알 수 없다 — 호기 마스터가 채워질수록 이 항목이 줄고 안분되는 항목이 는다.
   - `span_date_range` 를 함께 둔다. Cut-off 가 크면 구간이 앞으로 크게 밀리므로 조회기간
     만큼만 호기 구간을 만들면 첫 달이 **오류 없이** 모자라게 세어진다.
-> **진행 중 과제 하나.** 끝나면 정의서 파일과 이 줄을 같이 지운다.
+> **진행 중 과제 둘. 이번 주기는 경쟁이 아니라 분업이다** — 둘이 서로 다른 과제를 맡고
+> 건드리는 파일도 갈린다. 끝나면 정의서 파일과 이 줄을 같이 지운다.
 >
-> - [사이드바 양식 통일](docs/task_sidebar_unify_2026-09-23.md) — 시나리오·리비전,
->   조회기간, B/N 집계 공정, 관리 넷을 페이지 그룹과 같은 접히는 양식으로 맞춘다.
+> - [B/N 집계 공정 바둑판 선택](docs/task_bn_process_picker_2026-09-24.md) (codex) —
+>   체크박스 표를 공정명 버튼 바둑판으로 바꾸고 확보율이 모자란 공정을 위로 올린다.
+>   주로 `app_pages/home.py` 의 `show_process_filter_dialog`.
+> - [가용설비 세 표 현재 데이터 내보내기](docs/task_equipment_csv_export_2026-09-24.md)
+>   (claude) — 빈 양식만 받던 자리에 지금 입력된 데이터를 받는 길을 낸다. 주로
+>   `services/equipment_csv.py` 와 `components/equipment_data_workspace.py`.
 
 - `src/capa_simulation/services/securement_cross_check.py`
   - 같은 소요대수에 Static(`RQ_EQP_AVBL`)과 Dynamic(일할 환산) 가용대수를 각각 나눠
