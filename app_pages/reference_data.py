@@ -44,6 +44,11 @@ from capa_simulation.services.equipment_count import (
     equipment_count_from_edit_table,
     equipment_count_to_edit_table,
 )
+from capa_simulation.services.reference_consistency import (
+    added_performance_keys,
+    describe_missing_ratio_rows,
+    missing_ratio_rows,
+)
 from capa_simulation.services.reference_csv import count_removed_values
 from capa_simulation.services.route_step_editor import (
     ROUTE_GROUP_COLUMNS,
@@ -714,6 +719,20 @@ try:
         update_error_tab = upeh_tab
         source = imported_upeh_table if imported_upeh_table is not None else edited_upeh_table
         pending_updates["RQ_UPEH"] = performance_from_edit_table(source)
+        # 빈 월 칸을 채우는 것은 값 수정이 아니라 **경로를 하나 더 만드는 일**이다. 대당
+        # Capa 는 그 행마다 측정률 두 표를 조인하고 없으면 멈추므로, 여기서 막지 않으면
+        # 저장은 정상으로 끝나고 HOME 을 열 때 터진다(2026-09-23 사내에서 실제로 겪었다).
+        # **이번 편집이 새로 만든 조합만** 본다 — 이미 어긋나 있던 것까지 막으면 상관없는
+        # 칸을 고치려던 사람이 자기가 만들지 않은 문제에 걸린다.
+        _added_keys = added_performance_keys(
+            reference_tables["RQ_UPEH"], pending_updates["RQ_UPEH"]
+        )
+        _missing_ratios = missing_ratio_rows(
+            _added_keys,
+            {name: reference_tables[name] for name in ("RQ_LOT_RATIO", "RQ_WF_RATIO")},
+        )
+        if _missing_ratios:
+            raise ValueError(describe_missing_ratio_rows(_missing_ratios))
         import_flash = _edit_flash(
             editor_keys[0],
             "RQ_UPEH",

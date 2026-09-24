@@ -845,9 +845,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `month_filter.py`: YYYYMM 검증과 조회기간 필터. 원천·SQL 적재·계산 계층의 월 정규화가
   같은 달력 검증을 공유한다(정수, 연도 1~9999, 월 1~12). 조회 UI의 2025~2030 범위와는
   별개이며, 정수 변환 전에 검사해 잘못된 값이나 넘치는 수가 저장되지 않게 한다.
-- `capacity_reference_editor.py`: Capa 기준정보 Long/Wide 편집 변환
+- `capacity_reference_editor.py`: Capa 기준정보 Long/Wide 편집 변환. **빈 칸은 「값이 빈
+  행」이 아니라 「행 없음」이다** — Wide→Long 복원이 `to_numeric(coerce)` → `dropna` 로
+  끝나므로, 빈 칸을 채우면 행이 하나 생기고 값을 지우면 행이 하나 사라진다.
 - `clipboard_table.py`, `reference_csv.py`: Excel에서 복사한 헤더 포함 TSV 표 파싱과
   입력 RQ Wide 표의 컬럼·분류행 동일성 검증. 다운로드 양식은 UTF-8 CSV로 유지한다.
+  **값 칸도 본다** — 숫자로 못 읽는 값은 위 `dropna` 가 행을 지우므로 막고(천 단위 쉼표도
+  지역 설정에 따라 뜻이 갈려 받지 않는다), 빈 칸은 정당한 편집이라 막지 않고 개수만 세어
+  적용 문구로 알린다. 격자 편집기는 `NumberColumn` 과 변경 수 표시가 이미 그 일을 한다.
+- `reference_consistency.py`: 기준정보 편집이 **다른 표의 행을 빠뜨렸는지** 저장 전에
+  가린다. `RQ_UPEH` 에 새로 생긴 (경로 + 월) 조합 중 `RQ_LOT_RATIO`·`RQ_WF_RATIO` 에
+  짝이 없는 것을 찾아 두 표를 **함께** 보고한다 — Lot 만 채우면 다음 조인에서 WF 로 같은
+  오류가 이어진다. **이번 편집이 새로 만든 조합만 본다**(이미 어긋나 있던 것까지 막으면
+  상관없는 칸을 고치려던 사람이 되돌릴 길까지 잃는다). 줄이는 규칙은
+  `unit_capacity._join_reference` 와 같아야 한다 — 다르면 없는 결손을 만든다.
 - `reference_transformer.py`: XLSB의 `Q_Core_Data`와 15개 Core 파생 Power Query를
   pandas로 대체한다. 수동 입력 `RQ_DISPLAY_ORDER` 는 `display_order_editor` 의
   `transform_display_order` 로 넘긴다. Core 파생 RQ의 동일 업무 키 값 충돌은 **값이 있는
