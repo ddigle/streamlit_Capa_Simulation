@@ -11,6 +11,7 @@ from capa_simulation.services.required_equipment import (
 )
 from capa_simulation.services.simulation_cache import get_capacity_and_demand
 from capa_simulation.services.unit_capacity import (
+    CAPACITY_ASSUMPTIONS_ATTR,
     CAPACITY_EXCLUSIONS_ATTR,
     MODULE_KEYS,
     RUN_DAY_KEYS,
@@ -491,3 +492,62 @@ def test_exclusions_survive_the_cache_round_trip_at_the_end_of_the_pipeline() ->
     ]
     # 공정별 확보율 화면의 두 번째 제외 expander 가 읽는 자리도 같은 왕복을 거친다.
     assert REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR in required_equipment.attrs
+
+
+# ------------------------------------- 측정률 행 부재: 멈추지 않고 1.0 으로 잇되 **센다**
+
+
+def test_a_missing_ratio_row_no_longer_stops_the_whole_page() -> None:
+    """빈 UPEH 를 채우면 측정률 짝이 없어 화면이 통째로 섰다(2026-09-23 사내).
+
+    측정률은 **중립값이 있는** 기준정보다. 빈 값과 `0` 은 이미 1.0 으로 결정돼 있고
+    (`MEASUREMENT_RATIO_ZERO_DEFAULT`), 행 부재만 하드 오류로 남아 있었다. 같은 선 안으로
+    들인다 — 어차피 빠질 행 하나 때문에 그 값을 고칠 편집기조차 못 여는 쪽이 더 나쁘다.
+    """
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["lot_ratio"] = inputs["lot_ratio"].iloc[:1]
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result["공정"].tolist() == ["Process-A", "Process-B"]
+    # 1.0 은 분모이므로 값이 그대로다 — 짝이 있던 행과 같은 대당 Capa 가 나온다.
+    assert result["대당 Capa"].tolist() == pytest.approx(
+        [EXPECTED_UNIT_CAPACITY, EXPECTED_UNIT_CAPACITY]
+    )
+
+
+def test_the_assumed_rows_are_counted_so_the_screen_can_say_it() -> None:
+    """**세지 않고 메우면 조용히 틀린다.**
+
+    측정률은 대당 Capa 의 분모다. 실제가 1 보다 작은 경로에 1.0 을 쓰면 대당 Capa 과대 →
+    소요대수 과소 → 확보율 과대로 **낙관 쪽**으로만 기운다. 그 사실이 화면에 닿아야 완화가
+    「경고하고 계속」이지 「조용히 계속」이 아니다.
+    """
+    inputs = _capacity_inputs(["Process-A", "Process-B", "Process-C"])
+    inputs["lot_ratio"] = inputs["lot_ratio"].iloc[:1]
+    inputs["wf_ratio"] = inputs["wf_ratio"].iloc[:2]
+
+    assumed = calculate_unit_capacity(**inputs).attrs[CAPACITY_ASSUMPTIONS_ATTR]
+
+    assert assumed == {"RQ_LOT_RATIO": 2, "RQ_WF_RATIO": 1}
+
+
+def test_no_missing_rows_leaves_the_assumption_report_empty() -> None:
+    """없는 날에 자리를 차지하면 다음에는 아무도 안 읽는다."""
+    result = calculate_unit_capacity(**_capacity_inputs(["Process-A"]))
+
+    assert result.attrs[CAPACITY_ASSUMPTIONS_ATTR] == {}
+
+
+def test_tables_without_a_neutral_default_still_stop_hard() -> None:
+    """가동률·편중률·모듈수·가동일수에는 중립값이 없다.
+
+    1.0 을 넣으면 「가동률 100%」 같은 거짓 주장이 되고, 기준정보가 통째로 빠진 배포에서도
+    숫자가 나와 버린다. 완화는 측정률 둘에만 적용한다.
+    """
+    for table in ("run_rate", "vital", "module", "run_day"):
+        inputs = _capacity_inputs(["Process-A", "Process-B"])
+        inputs[table] = inputs[table].iloc[:1]
+
+        with pytest.raises(ValueError, match="연결값이 없는 대당 Capa 기준이 있습니다"):
+            calculate_unit_capacity(**inputs)

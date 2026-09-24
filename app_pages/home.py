@@ -7,6 +7,9 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.capacity_assumption_notice import (
+    render_capacity_assumption_notice,
+)
 from capa_simulation.components.decision_summary import render_home_capacity_decision
 from capa_simulation.components.home_figures import (
     BOTTLENECK_DETAIL_RANK_LIMIT,
@@ -262,6 +265,7 @@ try:
         production_detail,
         monthly_wafer,
         securement_rate,
+        assumed_capacity_defaults,
     ) = get_home_simulation(
         cache_key=home_simulation_cache_key,
         _tables=active_scenario["tables"],
@@ -774,6 +778,9 @@ with main_tab:
     # 공지는 대시보드 상자 **밖**, 화면 맨 위다. 상자 안에 두면 스크롤되는 월 영역과 폭을
     # 나눠 가져 문구가 월 칸 너비에 갇힌다.
     render_summary_notice(summary_profile.note)
+    # 가정을 결론보다 **먼저** 말한다. 측정률을 1.0 으로 메운 경로가 있으면 확보율이
+    # 실제보다 높게 나오므로, 아래 결론을 읽기 전에 그 사실을 알아야 한다.
+    render_capacity_assumption_notice(assumed_capacity_defaults)
     # 결론이 표보다 **먼저** 온다. 아래 Figure 와 같은 `securement_rate`·`included_processes`
     # 를 읽으므로 공정 필터를 바꾸면 요약도 같이 따라온다.
     render_home_capacity_decision(

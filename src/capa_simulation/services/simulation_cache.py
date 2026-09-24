@@ -34,7 +34,10 @@ from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
 )
-from capa_simulation.services.unit_capacity import calculate_unit_capacity
+from capa_simulation.services.unit_capacity import (
+    CAPACITY_ASSUMPTIONS_ATTR,
+    calculate_unit_capacity,
+)
 from capa_simulation.services.weighted_unit_capacity import (
     effective_process_capacity_to_month_table,
 )
@@ -225,7 +228,7 @@ def get_home_simulation(
     _tables: Mapping[str, pd.DataFrame],
     _display_order: pd.DataFrame,
     _reference_tables: Mapping[str, pd.DataFrame],
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, int]]:
     """Reuse HOME results while hashing only ``cache_key`` on warm reruns.
 
     월 슬라이스는 이 안에서 한다. 호출자가 미리 잘라서 넘기면 캐시가 적중해도 표 열 개를
@@ -253,15 +256,19 @@ def get_home_simulation(
     # 같은 자리라, 같은 시나리오·월 범위면 Static Capa 다섯 페이지와 한 번만 계산한다.
     # 표시순서가 바뀌어도(이 키의 다섯째 칸) 소요대수는 그대로 살아남는다.
     scenario_key: ScenarioCacheKey = cache_key[:4]
-    _, required_equipment = get_scenario_capacity_and_demand(
+    unit_capacity, required_equipment = get_scenario_capacity_and_demand(
         scenario_key,
         _scenario_tables=_tables,
         _reference_tables=_reference_tables,
     )
+    # 측정률 행이 없어 중립값으로 이어 간 건수. **프레임이 아니라 이 수를 꺼내서 돌려준다** —
+    # `attrs` 는 병합·슬라이스를 지나며 사라지고, HOME 은 대당 Capa 프레임 자체를 쓰지 않는다.
+    # 세어 놓고 화면에 닿지 않으면 완화가 곧 조용히 틀리는 경로가 된다.
+    assumed_defaults: dict[str, int] = dict(unit_capacity.attrs.get(CAPACITY_ASSUMPTIONS_ATTR, {}))
     _, wafer_load = calculate_chip_and_wafer_loads(_plan, _yield_data, _chip_qty)
     monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
     securement_rate = get_securement_rate(scenario_key, _available_equipment, required_equipment)
-    return monthly_density, production_detail, monthly_wafer, securement_rate
+    return monthly_density, production_detail, monthly_wafer, securement_rate, assumed_defaults
 
 
 @st.cache_data(show_spinner=False, max_entries=8)

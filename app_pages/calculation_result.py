@@ -3,6 +3,9 @@
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.capacity_assumption_notice import (
+    render_capacity_assumption_notice,
+)
 from capa_simulation.components.column_filter import render_column_filters
 from capa_simulation.components.exclusion_table import render_exclusion_table
 from capa_simulation.components.exclusion_waterfall import render_exclusion_waterfall
@@ -54,6 +57,7 @@ from capa_simulation.services.simulation_cache import (
     scenario_cache_key,
 )
 from capa_simulation.services.unit_capacity import (
+    CAPACITY_ASSUMPTIONS_ATTR,
     CAPACITY_EXCLUSIONS_ATTR,
     UNIT_CAPACITY_DIMENSIONS,
     unit_capacity_to_month_table,
@@ -126,6 +130,7 @@ try:
         _reference_tables=reference_tables,
     )
     capacity_exclusions = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
+    capacity_assumptions = unit_capacity.attrs.get(CAPACITY_ASSUMPTIONS_ATTR, {})
     required_exclusions = required_equipment.attrs.get(
         REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR, pd.DataFrame()
     )
@@ -183,6 +188,7 @@ else:
     prune_list_selection(process_filter_key, process_options)
 
     with unit_capacity_tab:
+        render_capacity_assumption_notice(capacity_assumptions)
         if not capacity_exclusions.empty:
             st.warning(f"대당 Capa 산출에서 {len(capacity_exclusions):,}개 기준을 제외했습니다.")
             # 표는 「무엇이 빠졌나」를 답하고 워터폴은 「얼마나·어디서 빠졌나」를 답한다.
