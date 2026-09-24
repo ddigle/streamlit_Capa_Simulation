@@ -300,7 +300,7 @@ def test_a_product_only_in_the_past_lands_where_the_display_order_says() -> None
     past = pd.DataFrame({"제품정보": ["A"], "Stack": ["4H"], "25.12": [5.0]})
     order = pd.DataFrame(
         [
-            ["부하량", "PKG PLAN", 1, "제품정보", "오름차순", None, None, "Y"],
+            ["생산 계획", "PKG PLAN", 1, "제품정보", "오름차순", None, None, "Y"],
         ],
         columns=[
             "페이지 구분",

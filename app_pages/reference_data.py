@@ -37,6 +37,16 @@ from capa_simulation.services.display_order import (
     apply_display_order,
     reorder_display_columns,
 )
+from capa_simulation.services.display_order_scopes import (
+    PAGE_REFERENCE,
+    TAB_EQUIPMENT_COUNT,
+    TAB_LOT_RATIO,
+    TAB_RUN_DAY,
+    TAB_RUN_RATE,
+    TAB_UPEH,
+    TAB_VITAL,
+    TAB_WF_RATIO,
+)
 from capa_simulation.services.equipment_count import (
     DETAILED_EQUIPMENT_DIMENSIONS,
     EQUIPMENT_DIMENSIONS,
@@ -148,14 +158,14 @@ try:
     if not tab_is_hidden(upeh_tab):
         default_upeh_table = performance_to_edit_table(filtered_upeh)
         default_upeh_table = apply_display_order(
-            default_upeh_table, display_order, "공정별 Capa", "UPEH"
+            default_upeh_table, display_order, PAGE_REFERENCE, TAB_UPEH
         )
         default_upeh_table, _ = reorder_display_columns(
             default_upeh_table,
             PERFORMANCE_EDITOR_DIMENSIONS,
             display_order,
-            "공정별 Capa",
-            "UPEH",
+            PAGE_REFERENCE,
+            TAB_UPEH,
         )
     default_run_rate_table = pd.DataFrame()
     if not tab_is_hidden(run_rate_tab):
@@ -163,14 +173,14 @@ try:
             filtered_run_rate, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "RQ_RUN_RATE"
         )
         default_run_rate_table = apply_display_order(
-            default_run_rate_table, display_order, "공정별 Capa", "효율"
+            default_run_rate_table, display_order, PAGE_REFERENCE, TAB_RUN_RATE
         )
         default_run_rate_table, _ = reorder_display_columns(
             default_run_rate_table,
             RUN_RATE_DIMENSIONS,
             display_order,
-            "공정별 Capa",
-            "효율",
+            PAGE_REFERENCE,
+            TAB_RUN_RATE,
         )
     default_vital_table = pd.DataFrame()
     if not tab_is_hidden(vital_tab):
@@ -178,14 +188,14 @@ try:
             filtered_vital, VITAL_DIMENSIONS, "편중률", "RQ_VITAL"
         )
         default_vital_table = apply_display_order(
-            default_vital_table, display_order, "공정별 Capa", "여유율"
+            default_vital_table, display_order, PAGE_REFERENCE, TAB_VITAL
         )
         default_vital_table, _ = reorder_display_columns(
             default_vital_table,
             VITAL_DIMENSIONS,
             display_order,
-            "공정별 Capa",
-            "여유율",
+            PAGE_REFERENCE,
+            TAB_VITAL,
         )
     default_run_day_table = pd.DataFrame()
     if not tab_is_hidden(run_day_tab):
@@ -193,14 +203,14 @@ try:
             filtered_run_day, RUN_DAY_DIMENSIONS, "RUN_DAY", "RQ_RUN_DAY"
         )
         default_run_day_table = apply_display_order(
-            default_run_day_table, display_order, "공정별 Capa", "일수"
+            default_run_day_table, display_order, PAGE_REFERENCE, TAB_RUN_DAY
         )
         default_run_day_table, _ = reorder_display_columns(
             default_run_day_table,
             RUN_DAY_DIMENSIONS,
             display_order,
-            "공정별 Capa",
-            "일수",
+            PAGE_REFERENCE,
+            TAB_RUN_DAY,
         )
     default_lot_ratio_table = pd.DataFrame()
     if not tab_is_hidden(lot_ratio_tab):
@@ -210,15 +220,15 @@ try:
         default_lot_ratio_table = apply_display_order(
             default_lot_ratio_table,
             display_order,
-            "공정별 Capa",
-            "Lot측정률",
+            PAGE_REFERENCE,
+            TAB_LOT_RATIO,
         )
         default_lot_ratio_table, _ = reorder_display_columns(
             default_lot_ratio_table,
             RATIO_DIMENSIONS,
             display_order,
-            "공정별 Capa",
-            "Lot측정률",
+            PAGE_REFERENCE,
+            TAB_LOT_RATIO,
         )
     default_wf_ratio_table = pd.DataFrame()
     if not tab_is_hidden(wf_ratio_tab):
@@ -228,15 +238,15 @@ try:
         default_wf_ratio_table = apply_display_order(
             default_wf_ratio_table,
             display_order,
-            "공정별 Capa",
-            "WF측정률",
+            PAGE_REFERENCE,
+            TAB_WF_RATIO,
         )
         default_wf_ratio_table, _ = reorder_display_columns(
             default_wf_ratio_table,
             RATIO_DIMENSIONS,
             display_order,
-            "공정별 Capa",
-            "WF측정률",
+            PAGE_REFERENCE,
+            TAB_WF_RATIO,
         )
     # STEP 구성 탭의 요약·목록. 목록은 작업·경로 선택 위젯의 options 라 탭이 닫혀 있어도
     # 있어야 한다(숨은 탭에서는 그림만 건너뛴다). 그래서 건너뛰는 대신 내용 토큰으로 캐시한다.
@@ -300,14 +310,14 @@ detailed_equipment_table = build_equipment_count_table(
 available_equipment_table = apply_display_order(
     available_equipment_table,
     display_order,
-    "공정별 확보율",
-    "설비대수",
+    PAGE_REFERENCE,
+    TAB_EQUIPMENT_COUNT,
 )
 detailed_equipment_table = apply_display_order(
     detailed_equipment_table,
     display_order,
-    "공정별 확보율",
-    "설비대수",
+    PAGE_REFERENCE,
+    TAB_EQUIPMENT_COUNT,
 )
 equipment_edit_tables = {
     table_name: equipment_count_to_edit_table(

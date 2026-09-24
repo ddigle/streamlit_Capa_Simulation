@@ -44,6 +44,10 @@ from capa_simulation.scenario_state import (
     scenario_month_table,
 )
 from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.display_order_scopes import (
+    PAGE_STANDARD_TARGET,
+    TAB_TARGET_CAPACITY,
+)
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
     get_scenario_capacity_and_demand,
@@ -77,8 +81,8 @@ def _products_in_display_order(
     ordered = apply_display_order(
         products,
         display_order,
-        "표준 목표 Capa",
-        "목표 Capa",
+        PAGE_STANDARD_TARGET,
+        TAB_TARGET_CAPACITY,
     )
     return ordered["제품정보"].astype(str).tolist()
 

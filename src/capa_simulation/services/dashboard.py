@@ -5,6 +5,10 @@ from collections.abc import Sequence
 import pandas as pd
 
 from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.display_order_scopes import (
+    PAGE_PLAN,
+    TAB_PKG_PLAN,
+)
 from capa_simulation.services.frame_contracts import require_columns
 from capa_simulation.services.load_calculator import (
     calculate_density_load,
@@ -78,7 +82,7 @@ def build_production_dashboard(
     detail = detail.rename(columns={month: _month_label(int(month)) for month in raw_month_columns})
     month_columns = [_month_label(int(month)) for month in sorted(raw_month_columns)]
     detail = detail[[*dimensions, *month_columns]]
-    detail = apply_display_order(detail, display_order, "부하량", "PKG PLAN")
+    detail = apply_display_order(detail, display_order, PAGE_PLAN, TAB_PKG_PLAN)
     return monthly, detail
 
 
@@ -158,7 +162,7 @@ def align_detail_with_comparison(
     keys = pd.concat(
         [current[dimensions], comparison[dimensions]], ignore_index=True
     ).drop_duplicates()
-    keys = apply_display_order(keys, display_order, "부하량", "PKG PLAN").reset_index(drop=True)
+    keys = apply_display_order(keys, display_order, PAGE_PLAN, TAB_PKG_PLAN).reset_index(drop=True)
     aligned_current = keys.merge(current, on=dimensions, how="left", validate="one_to_one")
     aligned_comparison = keys.merge(comparison, on=dimensions, how="left", validate="one_to_one")
     return aligned_current, aligned_comparison

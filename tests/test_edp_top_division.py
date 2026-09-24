@@ -111,7 +111,7 @@ def test_every_rq_table_sees_the_same_name() -> None:
 def _order_rules(values: list[str]) -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "페이지 구분": ["부하량"] * len(values),
+            "페이지 구분": ["생산 계획"] * len(values),
             "탭 구분": ["환산"] * len(values),
             "정렬우선순위": [1] * len(values),
             "분류컬럼": ["WF 구분"] * len(values),
@@ -127,7 +127,9 @@ def test_the_display_rule_for_top_e_is_derived_next_to_top() -> None:
     """표시순서는 입력이라 `Top_e` 규칙이 없다. 없으면 화면 맨 뒤로 조용히 밀린다."""
     data = pd.DataFrame({"WF 구분": ["Master", "Top_e", "Top", "Core"]})
 
-    ordered = apply_display_order(data, _order_rules(["Top", "Core", "Master"]), "부하량", "환산")
+    ordered = apply_display_order(
+        data, _order_rules(["Top", "Core", "Master"]), "생산 계획", "환산"
+    )
 
     assert ordered["WF 구분"].tolist() == ["Top", "Top_e", "Core", "Master"]
 
@@ -136,6 +138,6 @@ def test_a_hand_written_top_e_rule_is_not_duplicated() -> None:
     """사용자가 직접 넣어 두었으면 그 순서를 존중한다. 파생이 덮으면 안 된다."""
     data = pd.DataFrame({"WF 구분": ["Top_e", "Top", "Core"]})
 
-    ordered = apply_display_order(data, _order_rules(["Top", "Core", "Top_e"]), "부하량", "환산")
+    ordered = apply_display_order(data, _order_rules(["Top", "Core", "Top_e"]), "생산 계획", "환산")
 
     assert ordered["WF 구분"].tolist() == ["Top", "Core", "Top_e"]

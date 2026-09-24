@@ -91,7 +91,7 @@ def test_display_order_csv_rejects_changed_columns() -> None:
 def test_route_sequence_rules_are_added_as_the_final_hierarchy() -> None:
     source = pd.DataFrame(
         {
-            "페이지 구분": ["공정별 확보율", "공정별 확보율", "공정별 확보율"],
+            "페이지 구분": ["산출 결과", "산출 결과", "산출 결과"],
             "탭 구분": ["소요대수", "소요대수", "소요대수"],
             "정렬우선순위": [1, 2, 3],
             "분류컬럼": ["Area_Name", "공정", "제품정보"],
@@ -119,7 +119,7 @@ def test_classification_columns_follow_rules_but_keep_route_keys_last() -> None:
     source = ensure_route_sequence_rules(
         pd.DataFrame(
             {
-                "페이지 구분": ["공정별 확보율", "공정별 확보율"],
+                "페이지 구분": ["산출 결과", "산출 결과"],
                 "탭 구분": ["소요대수", "소요대수"],
                 "정렬우선순위": [1, 2],
                 "분류컬럼": ["Area_Name", "공정"],
@@ -134,7 +134,7 @@ def test_classification_columns_follow_rules_but_keep_route_keys_last() -> None:
     result = classification_columns_in_display_order(
         ["공정", "STEP_SEQ", "MCP_SEQ", "제품정보", "Area_Name"],
         source,
-        "공정별 확보율",
+        "산출 결과",
         "소요대수",
     )
 

@@ -849,6 +849,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   Dynamic Capa 손실 분석, 시간 가중 집계, 필터와 미연결 화면용 결정론적 데모 데이터
 - `wip_status.py`: 재공 DB 연결용 일자·공정·STEP·제품·보유재공·유입·Flow 계약,
   STEP 코드 정렬, 제품별 표준 가능량 일 전개와 미연결 화면용 결정론적 재공 샘플
+- `display_order_scopes.py`: 표시순서 규칙이 **어느 페이지·어느 탭**에 걸리는지를 한 곳에서
+  선언한다. 호출부는 리터럴 대신 이 상수만 쓴다.
+  - 전에는 구분자가 `apply_display_order(...)` 일곱 곳에 리터럴로 흩어져 있었고, 화면
+    이름이 바뀌는 동안 따라오지 않아 **어느 것도 실제 페이지 이름이 아니게 됐다**
+    (2026-09-24). 어긋나도 오류가 나지 않는다 — 규칙이 어느 탭에도 안 걸려 **정렬만 조용히
+    기본값으로 돌아간다.**
+  - **`표준 목표` 는 `표준 대비 재공 현황` 과 규칙 한 벌을 함께 쓴다**(2026-09-24 사용자
+    결정 A안). 두 화면이 같은 목표 Capa 축을 보므로, 나누면 순서가 조용히 갈라진다.
+  - `LEGACY_SCOPE_RENAMES` 는 `0027_display_order_scope_rename.sql`·
+    `config/bootstrap_display_order.json` 과 **같은 대응**이어야 한다. 셋이 갈라지면 저장된
+    규칙이 갈 곳을 잃는다. `tests/test_display_order_scopes.py` 가 셋을 함께 본다.
 - `display_order.py`: `RQ_DISPLAY_ORDER` 기반 동적 행 정렬
 - `month_filter.py`: YYYYMM 검증과 조회기간 필터. 원천·SQL 적재·계산 계층의 월 정규화가
   같은 달력 검증을 공유한다(정수, 연도 1~9999, 월 1~12). 조회 UI의 2025~2030 범위와는

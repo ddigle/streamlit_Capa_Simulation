@@ -31,7 +31,7 @@ months = calendar["생산계획년월"].drop_duplicates().astype(int).tolist()
 
 display_order = pd.DataFrame(
     {
-        "페이지 구분": ["표준 목표 Capa", "표준 목표 Capa"],
+        "페이지 구분": ["표준 목표", "표준 목표"],
         "탭 구분": ["목표 Capa", "목표 Capa"],
         "정렬우선순위": [1, 1],
         "분류컬럼": ["제품정보", "제품정보"],

@@ -20,7 +20,7 @@ repository.initialize()
 repository.initialize_global_display_order(
     pd.DataFrame(
         {{
-            "페이지 구분": ["부하량", "부하량"],
+            "페이지 구분": ["생산 계획", "생산 계획"],
             "탭 구분": ["환산", "환산"],
             "정렬우선순위": [1, 1],
             "분류컬럼": ["양산구분", "양산구분"],

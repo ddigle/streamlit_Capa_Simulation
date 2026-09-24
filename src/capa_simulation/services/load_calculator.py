@@ -8,6 +8,12 @@ from typing import Literal
 import pandas as pd
 
 from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
+from capa_simulation.services.display_order_scopes import (
+    PAGE_PLAN,
+    TAB_CONVERSION,
+    TAB_PKG_PLAN,
+    TAB_YIELD,
+)
 from capa_simulation.services.frame_checks import assert_unique_keys, strip_text_columns
 from capa_simulation.services.frame_contracts import (
     match_key,
@@ -111,7 +117,7 @@ def plan_to_edit_table(plan: pd.DataFrame, display_order: DisplayOrderInput = No
         [column for column in result.columns if column not in PLAN_EDITOR_DIMENSIONS]
     )
     result = result[[*PLAN_EDITOR_DIMENSIONS, *month_columns]]
-    return apply_display_order(result, display_order, "부하량", "PKG PLAN")
+    return apply_display_order(result, display_order, PAGE_PLAN, TAB_PKG_PLAN)
 
 
 def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
@@ -211,8 +217,8 @@ def yield_to_edit_table(
     return apply_display_order(
         result,
         display_order,
-        "부하량",
-        "수율",
+        PAGE_PLAN,
+        TAB_YIELD,
         value_aliases={"수율 구분": YIELD_DISPLAY_NAMES},
     )
 
@@ -622,7 +628,7 @@ def _pivot_monthly(
         values="물량",
     ).fillna(0)
     pivoted.columns = [str(int(month)) for month in pivoted.columns]
-    return apply_display_order(pivoted.reset_index(), display_order, "부하량", "환산")
+    return apply_display_order(pivoted.reset_index(), display_order, PAGE_PLAN, TAB_CONVERSION)
 
 
 def build_monthly_volume(

@@ -41,6 +41,12 @@ from capa_simulation.services.display_order import (
     apply_display_order,
     reorder_display_columns,
 )
+from capa_simulation.services.display_order_scopes import (
+    PAGE_CALCULATION,
+    TAB_REQUIRED,
+    TAB_SECUREMENT,
+    TAB_UNIT_CAPACITY,
+)
 from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
@@ -138,15 +144,15 @@ try:
     required_table = apply_display_order(
         required_table,
         display_order,
-        "공정별 확보율",
-        "소요대수",
+        PAGE_CALCULATION,
+        TAB_REQUIRED,
     )
     required_table, required_detail_dimensions = reorder_display_columns(
         required_table,
         RESULT_DIMENSIONS,
         display_order,
-        "공정별 확보율",
-        "소요대수",
+        PAGE_CALCULATION,
+        TAB_REQUIRED,
     )
     securement_rate = get_securement_rate(
         capacity_cache_key,
@@ -157,8 +163,8 @@ try:
     securement_table = apply_display_order(
         securement_table,
         display_order,
-        "공정별 확보율",
-        "확보율",
+        PAGE_CALCULATION,
+        TAB_SECUREMENT,
     )
 except BOOTSTRAP_ERRORS as exc:
     # 원인 하나를 세 탭에 같이 보여 준다. 문구는 한 번만 만든다.
@@ -181,8 +187,8 @@ else:
     process_order = apply_display_order(
         process_order,
         display_order,
-        "공정별 Capa",
-        "대당 Capa",
+        PAGE_CALCULATION,
+        TAB_UNIT_CAPACITY,
     )
     process_options = process_order["공정"].astype(str).tolist()
     prune_list_selection(process_filter_key, process_options)
@@ -204,8 +210,8 @@ else:
                     capacity_exclusions,
                     dimensions=UNIT_CAPACITY_DIMENSIONS,
                     display_order=display_order,
-                    page="공정별 Capa",
-                    tab="대당 Capa",
+                    page=PAGE_CALCULATION,
+                    tab=TAB_UNIT_CAPACITY,
                     labels=process_labels,
                     file_name=(
                         f"Capa_Unit_Capacity_Exclusions_{effective_start}_{effective_end}.csv"
@@ -289,15 +295,15 @@ else:
                 unit_capacity_table = apply_display_order(
                     unit_capacity_table,
                     display_order,
-                    "공정별 Capa",
-                    "대당 Capa",
+                    PAGE_CALCULATION,
+                    TAB_UNIT_CAPACITY,
                 )
                 unit_capacity_table, classification_columns = reorder_display_columns(
                     unit_capacity_table,
                     classification_columns,
                     display_order,
-                    "공정별 Capa",
-                    "대당 Capa",
+                    PAGE_CALCULATION,
+                    TAB_UNIT_CAPACITY,
                 )
                 if selected_processes:
                     unit_capacity_table = unit_capacity_table.loc[
@@ -347,8 +353,8 @@ else:
                     required_exclusions,
                     dimensions=RESULT_DIMENSIONS,
                     display_order=display_order,
-                    page="공정별 확보율",
-                    tab="소요대수",
+                    page=PAGE_CALCULATION,
+                    tab=TAB_REQUIRED,
                     labels=process_labels,
                     file_name=(
                         f"Capa_Required_Equipment_Exclusions_{effective_start}_{effective_end}.csv"

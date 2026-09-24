@@ -51,6 +51,10 @@ from capa_simulation.scenario_state import (
     scenario_month_table,
 )
 from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.display_order_scopes import (
+    PAGE_STANDARD_TARGET,
+    TAB_TARGET_CAPACITY,
+)
 from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
@@ -625,8 +629,8 @@ process_order = production_reqb[["공정"]].drop_duplicates()
 process_order = apply_display_order(
     process_order,
     display_order,
-    "표준 목표 Capa",
-    "목표 Capa",
+    PAGE_STANDARD_TARGET,
+    TAB_TARGET_CAPACITY,
 )
 process_options = process_order["공정"].astype(str).tolist()
 public_default = prune_list_selection(STANDARD_TARGET_PROCESS_DEFAULT_KEY, process_options)
@@ -853,8 +857,8 @@ else:
         output_table = apply_display_order(
             output_table,
             display_order,
-            "표준 목표 Capa",
-            "목표 Capa",
+            PAGE_STANDARD_TARGET,
+            TAB_TARGET_CAPACITY,
         )
         output_export = build_hierarchical_monthly_export(
             output_table,

@@ -18,6 +18,10 @@ import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
 from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
+from capa_simulation.services.display_order_scopes import (
+    PAGE_PLAN,
+    TAB_PKG_PLAN,
+)
 from capa_simulation.services.month_columns import month_label
 
 PAST_MONTH_COLUMNS = ("생산계획년월", "Density", "Wafer Total")
@@ -255,4 +259,4 @@ def merge_past_plan_detail(
         .sum(numeric_only=True)
         .reset_index(drop=True)
     )
-    return apply_display_order(merged, display_order, "부하량", "PKG PLAN")
+    return apply_display_order(merged, display_order, PAGE_PLAN, TAB_PKG_PLAN)

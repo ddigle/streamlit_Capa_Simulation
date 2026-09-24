@@ -83,7 +83,7 @@ def _wf_division_rules(values: list[str]) -> pd.DataFrame:
     """부하량·환산 탭의 `WF 구분` 사용자지정 규칙."""
     return pd.DataFrame(
         {
-            "페이지 구분": ["부하량"] * len(values),
+            "페이지 구분": ["생산 계획"] * len(values),
             "탭 구분": ["환산"] * len(values),
             "정렬우선순위": [1] * len(values),
             "분류컬럼": [WF_DIVISION_COLUMN] * len(values),
@@ -239,10 +239,10 @@ def test_the_rule_order_is_kept_whatever_case_the_rule_is_written_in() -> None:
     data = pd.DataFrame({WF_DIVISION_COLUMN: ["Master", EDP_TOP_DIVISION, SOURCE_TOP, "Core"]})
 
     as_written = apply_display_order(
-        data, _wf_division_rules(["Top", "Core", "Master"]), "부하량", "환산"
+        data, _wf_division_rules(["Top", "Core", "Master"]), "생산 계획", "환산"
     )
     as_source = apply_display_order(
-        data, _wf_division_rules(["TOP", "Core", "Master"]), "부하량", "환산"
+        data, _wf_division_rules(["TOP", "Core", "Master"]), "생산 계획", "환산"
     )
 
     assert as_written[WF_DIVISION_COLUMN].tolist() == as_source[WF_DIVISION_COLUMN].tolist()
@@ -282,4 +282,4 @@ def test_a_case_only_duplicate_stops_the_screen_today() -> None:
     data = pd.DataFrame({WF_DIVISION_COLUMN: [SOURCE_TOP, "Core"]})
 
     with pytest.raises(ValueError, match="사용자지정 값이 중복"):
-        apply_display_order(data, profile, "부하량", "환산")
+        apply_display_order(data, profile, "생산 계획", "환산")

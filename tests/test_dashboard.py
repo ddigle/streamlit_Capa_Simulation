@@ -119,7 +119,7 @@ def test_customer_order_comes_from_the_shared_display_order_profile() -> None:
     )
     display_order = pd.DataFrame(
         {
-            "페이지 구분": ["부하량", "부하량"],
+            "페이지 구분": ["생산 계획", "생산 계획"],
             "탭 구분": ["PKG PLAN", "PKG PLAN"],
             "정렬우선순위": [3, 3],
             "분류컬럼": ["Customer", "Customer"],
@@ -165,7 +165,7 @@ def test_production_dashboard_uses_pkg_plan_display_order() -> None:
     )
     display_order = pd.DataFrame(
         {
-            "페이지 구분": ["부하량"] * 4,
+            "페이지 구분": ["생산 계획"] * 4,
             "탭 구분": ["PKG PLAN"] * 4,
             "정렬우선순위": [1, 1, 2, 2],
             "분류컬럼": ["제품정보", "제품정보", "Stack", "Stack"],

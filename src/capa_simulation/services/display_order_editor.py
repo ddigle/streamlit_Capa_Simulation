@@ -8,6 +8,15 @@ from collections.abc import Mapping
 
 import pandas as pd
 
+from capa_simulation.services.display_order_scopes import (
+    PAGE_CALCULATION,
+    PAGE_REFERENCE,
+    TAB_LOT_RATIO,
+    TAB_REQUIRED,
+    TAB_UNIT_CAPACITY,
+    TAB_UPEH,
+    TAB_WF_RATIO,
+)
 from capa_simulation.services.frame_contracts import require_columns
 
 DISPLAY_ORDER_COLUMNS = (
@@ -23,11 +32,11 @@ DISPLAY_ORDER_COLUMNS = (
 DISPLAY_ORDER_RULE_COLUMNS = DISPLAY_ORDER_COLUMNS[2:]
 ROUTE_SEQUENCE_COLUMNS = ("STEP_SEQ", "MCP_SEQ")
 ROUTE_SEQUENCE_SCOPES = (
-    ("공정별 Capa", "대당 Capa"),
-    ("공정별 Capa", "UPEH"),
-    ("공정별 Capa", "Lot측정률"),
-    ("공정별 Capa", "WF측정률"),
-    ("공정별 확보율", "소요대수"),
+    (PAGE_CALCULATION, TAB_UNIT_CAPACITY),
+    (PAGE_REFERENCE, TAB_UPEH),
+    (PAGE_REFERENCE, TAB_LOT_RATIO),
+    (PAGE_REFERENCE, TAB_WF_RATIO),
+    (PAGE_CALCULATION, TAB_REQUIRED),
 )
 
 
