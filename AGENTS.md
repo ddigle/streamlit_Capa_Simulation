@@ -843,6 +843,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   하나라도 값이 있으면 행을 남기므로 안내 행이 그대로 누락값 오류가 된다. 양식 예시의 비고
   상수는 `SAMPLE_BASELINE_TEMPLATE_NOTE` 다. `equipment_samples.py` 의
   `SAMPLE_BASELINE_NOTE` 는 저장 가드가 보는 개발 샘플 표식이라 이름을 나눈다.
+  **현재 데이터 내보내기**(`equipment_csv_bytes`·`baseline_csv_bytes`·`downtime_csv_bytes`)는
+  읽는 쪽 계약(`*_COLUMNS`)과 같은 이름·차례로 적고 날짜를 `YYYY-MM-DD` 로 낸다 — 내보낸
+  파일을 고치지 않고 그대로 붙여넣어도 통과하는 것이 계약이다. 식별 컬럼(호기·공정·분류·
+  비가동유형)의 값 중 Excel 이 바꿔 놓을 것만 `="…"` 로 묶고(`reference_csv.py` 와 같은
+  판정), 읽는 쪽 `_select_columns` 가 그 껍데기를 벗긴다. 좌표·대수·환산비·날짜는 묶지
+  않는다 — 숫자로 읽히는 것이 맞고 한국어 Excel 은 날짜를 그대로 돌려준다(실측). 빈 표는
+  헤더 한 줄만 나간다.
 - `dashboard.py`: HOME 월별 집계, B/N 단일 월별 순위에서 파생하는 Top 1·Top 5·순위 상한을
   인자로 받는 상세, Wafer Capa
 - `dynamic_capacity.py`: 표준 Capa에 실적 효율·UPEH·Rundown·생산실적을 순차 반영하는
@@ -1359,6 +1366,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     비워 중복 적용을 막는다. 저장 성공 때만 캐시와 조회용 draft까지 함께 초기화한다.
   - 내부 작업·표 탭은 form 안의 브라우저 전환이라 모두 생성한다. 숨은 조회 결과를
     건너뛰는 Main·Static/Dynamic과 달리 미제출 입력이 없어지지 않도록 유지하는 경계다.
+  - 「입력 양식과 작성 기준」에는 빈 양식 셋 아래에 **현재 데이터** 내려받기 셋이 같은 차례로
+    선다. 내보내는 것은 저장된 리비전이 아니라 **편집 버퍼**(「직접 편집」 표가 보여 주는
+    편집본)이고 캡션이 「저장본 rN · 저장하지 않은 변경 포함/저장본과 같음」으로 그것을
+    말한다 — 저장본과 다른지는 내보낼 바이트를 비교해 판단한다. 파일 이름은
+    `equipment_master_r3_20260924.csv` 꼴이고 편집본이면 `_edited` 가 붙는다. 내보내기는
+    읽기만 하며 파일은 브라우저 다운로드로만 나간다.
 - `src/capa_simulation/components/cutoff_management.py`
   - 가용설비 현황 `Preference`의 Cut-off 설정. 편집표·저장·CSV 왕복과 **빠진 공정 안내**.
   - 저장된 값을 돌려준다(편집 중인 초안이 아니다). 옆 탭의 GAP 이 저장 안 된 값으로 숫자를

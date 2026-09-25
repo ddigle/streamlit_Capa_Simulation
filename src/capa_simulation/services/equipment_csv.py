@@ -29,6 +29,10 @@ from capa_simulation.services.equipment_validation import (
 )
 from capa_simulation.services.floor_layout_profile import FloorCanvasMap
 from capa_simulation.services.frame_contracts import require_columns
+from capa_simulation.services.reference_csv import (
+    excel_text_guard_needed,
+    strip_excel_text_guard,
+)
 
 SAMPLE_EQUIPMENT_ID = "SAM01"
 SAMPLE_EQUIPMENT_MANAGER = "홍길동"
@@ -132,6 +136,57 @@ def downtime_csv_template() -> bytes:
             columns=DOWNTIME_COLUMNS,
         )
     )
+
+
+# 내보낼 때 Excel 텍스트 가드를 씌우는 컬럼. 기준 정보 쪽과 같은 원칙이다 — **식별에 쓰는
+# 컬럼만** 지킨다. 행을 가르는 값이 `0123` → `123` 으로 바뀌면 같은 행이 새 행으로 들어와
+# 표 전체가 어긋나지만, 좌표·대수·환산비는 숫자로 읽히는 것이 맞고 날짜는 Excel 이 그대로
+# 돌려준다(한국어 Excel 로 실측). 그래서 숫자·날짜 컬럼에는 씌우지 않는다.
+EQUIPMENT_GUARDED_COLUMNS: tuple[str, ...] = ("호기",)
+BASELINE_GUARDED_COLUMNS: tuple[str, ...] = BASELINE_KEY_COLUMNS
+DOWNTIME_GUARDED_COLUMNS: tuple[str, ...] = ("호기", "비가동유형")
+
+
+def equipment_csv_bytes(equipment: pd.DataFrame) -> bytes:
+    """호기 마스터 **현재 데이터** 그대로. 다시 붙여넣으면 통과하는 것이 이 함수의 계약이다."""
+    return _export_csv_bytes(equipment, EQUIPMENT_COLUMNS, EQUIPMENT_GUARDED_COLUMNS)
+
+
+def baseline_csv_bytes(baseline: pd.DataFrame) -> bytes:
+    """기존 보유대수 **현재 데이터** 그대로."""
+    return _export_csv_bytes(baseline, BASELINE_COLUMNS, BASELINE_GUARDED_COLUMNS)
+
+
+def downtime_csv_bytes(downtime: pd.DataFrame) -> bytes:
+    """비가동 일정 **현재 데이터** 그대로."""
+    return _export_csv_bytes(downtime, DOWNTIME_COLUMNS, DOWNTIME_GUARDED_COLUMNS)
+
+
+def _export_csv_bytes(
+    frame: pd.DataFrame,
+    columns: tuple[str, ...],
+    guarded_columns: tuple[str, ...],
+) -> bytes:
+    """읽는 쪽 계약(`columns`)과 같은 이름·차례로 내보낸다.
+
+    - 컬럼은 계약 차례로 다시 세운다. 편집본에 없는 컬럼은 빈 칸으로 나간다 — 계약에 없는
+      컬럼을 실어 보내면 읽는 쪽이 버리므로 애초에 싣지 않는다.
+    - 날짜는 `YYYY-MM-DD` 다. 준비된 프레임의 날짜 컬럼은 `datetime64` 라 그냥 두면
+      `2026-09-01 00:00:00` 처럼 시각까지 붙어 나갈 수 있다.
+    - 빈 프레임은 헤더 한 줄만 나간다. 그 파일을 그대로 붙여넣으면 0행으로 읽힌다.
+    - 식별 컬럼의 값 중 Excel 이 바꿔 놓을 것만 `="…"` 로 묶는다. 읽는 쪽(`_select_columns`)이
+      그 껍데기를 벗기므로 고치지 않고 그대로 되돌려도 통과한다.
+    """
+    exported = frame.reindex(columns=list(columns)).copy()
+    for column in guarded_columns:
+        exported[column] = exported[column].map(_guard_excel_text)
+    return exported.to_csv(index=False, date_format="%Y-%m-%d").encode("utf-8-sig")
+
+
+def _guard_excel_text(value: object) -> object:
+    if not isinstance(value, str) or not excel_text_guard_needed(value):
+        return value
+    return f'="{value}"'
 
 
 def read_baseline_csv(payload: bytes) -> pd.DataFrame:
@@ -290,7 +345,12 @@ def _select_columns(
     label: str,
 ) -> pd.DataFrame:
     require_columns(frame, columns, label)
-    return frame.loc[:, columns]
+    selected = frame.loc[:, columns].copy()
+    # 내보내기가 식별 컬럼에 씌운 `="…"` 껍데기를 벗긴다. Excel 을 거친 값은 이미 벗겨져
+    # 오고, 고치지 않고 그대로 되돌린 파일만 껍데기를 달고 온다 — 어느 쪽이든 같은 값이다.
+    for column in columns:
+        selected[column] = selected[column].map(strip_excel_text_guard)
+    return selected
 
 
 def _merge_by_keys(
