@@ -315,3 +315,103 @@ def test_a_sample_row_left_in_the_edit_buffer_is_flagged_and_cleared(tmp_path: P
     assert not any("예시 행" in warning.value for warning in app.warning)
     assert app.session_state[BUFFER_KEY][0].empty
     assert app.session_state[DROP_EXAMPLE_ROWS_KEY] is True
+
+
+# ------------------------------------------------------------- 현재 데이터 내려받기
+
+
+def test_current_data_downloads_stand_beside_the_templates_and_name_their_basis(
+    tmp_path: Path,
+) -> None:
+    """세 표의 「현재 데이터」 버튼이 양식 옆에 서고, 파일 이름이 저장본 번호를 말한다.
+
+    저장본과 같은 편집본이면 캡션이 「저장본과 같음」이고 이름에 `_edited` 가 없다. 빈 표도
+    막지 않는다 — 헤더만 든 파일이 곧 정확한 컬럼 차례의 양식이다.
+    """
+    from capa_simulation.components.equipment_data_workspace import current_data_file_name
+
+    repository = _repository(tmp_path / "equipment.duckdb")
+    saved = repository.save_snapshot(
+        empty_equipment_baseline(),
+        _master(["EQ-01", "EQ-02"]),
+        empty_downtime_schedule(),
+        note="현재 데이터 내보내기 검사",
+    )
+    app = _app(tmp_path / "equipment.duckdb")
+
+    labels = [button.label for button in app.download_button]
+    assert "호기 마스터 현재 데이터 · 2행" in labels
+    assert "기존 보유대수 현재 데이터 · 0행" in labels
+    assert "비가동 일정 현재 데이터 · 0행" in labels
+    # 양식 버튼 셋은 그대로 남는다.
+    assert sum(label.endswith("양식") for label in labels) == 3
+    captions = " ".join(str(item.value) for item in app.caption)
+    assert f"저장본 r{saved.revision.revision_no}" in captions
+    assert "저장본과 같음" in captions
+
+    name = current_data_file_name(
+        "equipment_master", latest_snapshot=saved, edited=False, today=date(2026, 9, 24)
+    )
+    assert name == f"equipment_master_r{saved.revision.revision_no}_20260924.csv"
+    edited_name = current_data_file_name(
+        "equipment_master", latest_snapshot=None, edited=True, today=date(2026, 9, 24)
+    )
+    assert edited_name == "equipment_master_r0_edited_20260924.csv"
+
+
+def test_pasting_the_exported_current_data_back_round_trips_through_the_workspace(
+    tmp_path: Path,
+) -> None:
+    """내려받은 것을 고치지 않고 그대로 붙여넣어도 통과한다 — 이 기능의 합격선이다.
+
+    내보낸 CSV 를 탭 구분 글로 바꿔(Excel 에서 복사하면 그 모양이다) 미리보기까지 돌리면
+    「기존 대체」만 나오고 신규가 없다. 저장 후 표도 그대로다.
+    """
+    import csv
+    import io
+
+    from capa_simulation.services.equipment_csv import equipment_csv_bytes
+
+    repository = _repository(tmp_path / "equipment.duckdb")
+    master = _master(["EQ-01", "EQ-02", "EQ-03"])
+    repository.save_snapshot(
+        empty_equipment_baseline(), master, empty_downtime_schedule(), note="원본"
+    )
+    app = _app(tmp_path / "equipment.duckdb")
+
+    rows = list(csv.reader(io.StringIO(equipment_csv_bytes(master).decode("utf-8-sig"))))
+    pasted = "\n".join("\t".join(row) for row in rows)
+    _preview(app, pasted)
+    review = app.session_state[PREVIEW_KEY]
+    assert review.changes["Import구분"].eq("대체").sum() == 3
+    assert review.changes["Import구분"].eq("신규").sum() == 0
+
+    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
+    assert not app.exception
+    latest = repository.load_snapshot(repository.latest_revision_id())
+    assert latest.revision.revision_no == 2
+    assert_frame_equal(
+        latest.equipment.reset_index(drop=True), master.reset_index(drop=True), check_dtype=False
+    )
+
+
+def test_current_data_downloads_say_when_the_buffer_differs_from_the_saved_revision(
+    tmp_path: Path,
+) -> None:
+    """편집 버퍼가 저장본과 다르면 캡션이 「저장하지 않은 변경 포함」으로 바뀌고 버튼 행 수도
+    버퍼를 따른다. 내보내는 것이 저장본이 아니라 **지금 보는 편집본**임을 화면이 말한다."""
+    repository = _repository(tmp_path / "equipment.duckdb")
+    repository.save_snapshot(
+        empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
+    )
+    app = _app(tmp_path / "equipment.duckdb")
+    assert "저장본과 같음" in " ".join(str(item.value) for item in app.caption)
+
+    baseline, _equipment_frame, downtime = app.session_state[BUFFER_KEY]
+    app.session_state[BUFFER_KEY] = (baseline, _master(["EQ-01", "EQ-99"]), downtime)
+    app.run()
+    assert not app.exception
+
+    captions = " ".join(str(item.value) for item in app.caption)
+    assert "저장하지 않은 변경 포함" in captions
+    assert "호기 마스터 현재 데이터 · 2행" in [button.label for button in app.download_button]

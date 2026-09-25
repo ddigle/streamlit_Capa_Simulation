@@ -8,7 +8,12 @@ from test_equipment_availability import _downtime, _equipment
 
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
+    DOWNTIME_COLUMNS,
+    EQUIPMENT_COLUMNS,
     QUAL_CONFIRMATION_STATUSES,
+    empty_downtime_schedule,
+    empty_equipment_baseline,
+    empty_equipment_master,
 )
 from capa_simulation.services.equipment_csv import (
     EQUIPMENT_CHOICE_ROWS,
@@ -20,11 +25,14 @@ from capa_simulation.services.equipment_csv import (
     SAMPLE_EQUIPMENT_ID,
     SAMPLE_EQUIPMENT_MANAGER,
     SAMPLE_EQUIPMENT_NOTE,
+    baseline_csv_bytes,
     baseline_csv_template,
     build_baseline_import_preview,
     build_downtime_import_preview,
     build_equipment_import_preview,
+    downtime_csv_bytes,
     downtime_csv_template,
+    equipment_csv_bytes,
     equipment_csv_template,
     merge_baseline_rows,
     merge_downtime_rows,
@@ -36,7 +44,11 @@ from capa_simulation.services.equipment_csv import (
     read_equipment_clipboard,
     read_equipment_csv,
 )
-from capa_simulation.services.equipment_validation import prepare_equipment_baseline
+from capa_simulation.services.equipment_validation import (
+    prepare_downtime_schedule,
+    prepare_equipment_baseline,
+    prepare_equipment_master,
+)
 
 BASELINE_HEADER = "\t".join(BASELINE_COLUMNS)
 
@@ -303,3 +315,94 @@ def test_out_of_canvas_coordinates_are_rejected_at_paste_and_import_time() -> No
             _equipment().iloc[1:],
             floor_canvases=canvases,
         )
+
+
+# ------------------------------------------------------------- 현재 데이터 내보내기
+#
+# 합격선은 **왕복**이다. 내보낸 파일을 고치지 않고 그대로 다시 읽으면 같은 표가 나와야
+# 하고, 그러려면 컬럼 이름·차례가 읽는 쪽 계약과 같아야 한다.
+
+
+def _assert_same_table(left: pd.DataFrame, right: pd.DataFrame) -> None:
+    """값이 같은지만 본다. Excel 을 거치면 `8.0` 이 `8` 로 돌아와 dtype 이 int 로 갈리는데
+    그것은 이 앱이 붙여넣기에서 늘 받아 온 모양이라 같은 표로 친다."""
+    pd.testing.assert_frame_equal(
+        left.reset_index(drop=True), right.reset_index(drop=True), check_dtype=False
+    )
+
+
+def test_exported_equipment_csv_round_trips_unchanged() -> None:
+    equipment = prepare_equipment_master(_equipment())
+
+    payload = equipment_csv_bytes(equipment)
+    header = payload.decode("utf-8-sig").splitlines()[0]
+
+    assert header.split(",") == list(EQUIPMENT_COLUMNS)
+    _assert_same_table(read_equipment_csv(payload), equipment)
+
+
+def test_exported_downtime_csv_round_trips_unchanged() -> None:
+    equipment = prepare_equipment_master(_equipment())
+    downtime = prepare_downtime_schedule(_downtime(), equipment=equipment)
+
+    payload = downtime_csv_bytes(downtime)
+    header = payload.decode("utf-8-sig").splitlines()[0]
+
+    assert header.split(",") == list(DOWNTIME_COLUMNS)
+    _assert_same_table(read_downtime_csv(payload, equipment=equipment), downtime)
+
+
+def test_exported_baseline_csv_round_trips_unchanged() -> None:
+    baseline = _baseline_rows()
+
+    payload = baseline_csv_bytes(baseline)
+    header = payload.decode("utf-8-sig").splitlines()[0]
+
+    assert header.split(",") == list(BASELINE_COLUMNS)
+    _assert_same_table(read_baseline_csv(payload), baseline)
+
+
+def test_exported_dates_are_plain_days_not_timestamps() -> None:
+    """준비된 프레임의 날짜는 `datetime64` 다. 시각까지 붙어 나가면 Excel 이 날짜로 안 읽는다."""
+    equipment = prepare_equipment_master(_equipment())
+
+    text = equipment_csv_bytes(equipment).decode("utf-8-sig")
+
+    assert "00:00:00" not in text
+    assert "2026-" in text
+
+
+def test_export_guards_identifier_values_excel_would_rewrite_and_reading_strips_them() -> None:
+    """`0123` 같은 호기는 Excel 이 `123` 으로 바꾼다. 식별 컬럼만 `="…"` 로 묶어 내보내고,
+    고치지 않고 그대로 되돌린 파일은 읽는 쪽이 껍데기를 벗겨 같은 값으로 읽는다."""
+    equipment = prepare_equipment_master(_equipment())
+    equipment.loc[equipment.index[0], "호기"] = "0123"
+
+    payload = equipment_csv_bytes(equipment)
+    text = payload.decode("utf-8-sig")
+
+    # CSV 안에서는 큰따옴표가 겹쳐 `"=""0123"""` 로 적힌다. Excel 은 그것을 문자열을 돌려주는
+    # 수식으로 읽어 `0123` 을 보여 주고, pandas 는 껍데기 `="0123"` 으로 되돌린다.
+    assert '"=""0123"""' in text
+    # 숫자·날짜 컬럼은 묶지 않는다 — 숫자로 읽히는 것이 맞고 날짜는 Excel 이 그대로 돌려준다.
+    assert text.count('=""') == 1
+    assert read_equipment_csv(payload)["호기"].iloc[0] == "0123"
+    _assert_same_table(read_equipment_csv(payload), equipment)
+
+
+def test_exporting_an_empty_table_gives_a_header_only_file_that_reads_back_empty() -> None:
+    """빈 표는 버튼을 막지 않는다. 헤더만 든 파일이 곧 정확한 컬럼 차례의 양식이다."""
+    equipment = prepare_equipment_master(empty_equipment_master())
+
+    for payload, columns, back in (
+        (equipment_csv_bytes(equipment), EQUIPMENT_COLUMNS, read_equipment_csv),
+        (baseline_csv_bytes(empty_equipment_baseline()), BASELINE_COLUMNS, read_baseline_csv),
+        (
+            downtime_csv_bytes(empty_downtime_schedule()),
+            DOWNTIME_COLUMNS,
+            lambda data: read_downtime_csv(data, equipment=equipment),
+        ),
+    ):
+        lines = payload.decode("utf-8-sig").splitlines()
+        assert lines == [",".join(columns)]
+        assert back(payload).empty

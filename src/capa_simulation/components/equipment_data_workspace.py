@@ -37,11 +37,14 @@ from capa_simulation.services.equipment_contract import (
     empty_downtime_schedule,
 )
 from capa_simulation.services.equipment_csv import (
+    baseline_csv_bytes,
     baseline_csv_template,
     build_baseline_import_preview,
     build_downtime_import_preview,
     build_equipment_import_preview,
+    downtime_csv_bytes,
     downtime_csv_template,
+    equipment_csv_bytes,
     equipment_csv_template,
     merge_baseline_rows,
     merge_downtime_rows,
@@ -150,6 +153,92 @@ def _remember_edits(frames: Frames) -> None:
     # 검증 실패한 값도 수정할 수 있어야 한다. 화면 계산이 읽는 draft에는 올리지 않는다.
     st.session_state[BUFFER_KEY] = _copy_frames(frames)
     _clear_editors()
+
+
+def current_data_file_name(
+    table_slug: str,
+    *,
+    latest_snapshot: EquipmentSnapshot | None,
+    edited: bool,
+    today: date,
+) -> str:
+    """`equipment_master_r3_20260924.csv` 꼴. 무엇을 기준으로 한 파일인지 이름이 말한다.
+
+    월 범위가 없는 표라 기준 정보 쪽(`RQ_UPEH_<시작>_<끝>.csv`)처럼 범위를 담을 수 없다.
+    대신 **어느 저장본에서 출발했는지**(`r3`, 저장본이 없으면 `r0`)와 **언제 받았는지**를
+    담고, 저장하지 않은 변경이 섞여 있으면 `_edited` 를 붙인다 — 같은 날 받은 두 파일이
+    저장본인지 편집본인지 이름만 보고 갈리게 하기 위해서다.
+    """
+    revision_no = latest_snapshot.revision.revision_no if latest_snapshot is not None else 0
+    suffix = "_edited" if edited else ""
+    return f"{table_slug}_r{revision_no}{suffix}_{today:%Y%m%d}.csv"
+
+
+def _render_current_data_downloads(
+    frames: Frames,
+    *,
+    saved: Frames,
+    latest_snapshot: EquipmentSnapshot | None,
+) -> None:
+    """세 표의 **현재 데이터**를 내려받는 버튼 셋. 양식 버튼 아래에 같은 차례로 선다.
+
+    내보내는 것은 **편집 버퍼**(「직접 편집」 표가 보여 주는 편집본)이지 저장된 리비전이
+    아니다. 사용자가 「지금 보는 것」을 받아야 Excel 에서 고쳐 되돌리는 왕복이 맞아떨어지고,
+    저장본과 같을 때는 둘이 같은 파일이다. 다만 표 안에서 고치는 중인 값은 「보기 적용」·
+    「변경 미리보기」·저장 중 하나를 눌러야 버퍼에 들어오므로, 그 사실을 캡션이 말한다.
+    저장본과 다른지는 **내보낼 바이트를 비교**해 판단한다 — 파일이 달라질 때만 「편집본」이다.
+
+    내보내기는 읽기만 한다. 버퍼·미리보기·저장 상태를 건드리지 않고, 파일은 브라우저
+    다운로드로만 나간다(저장소 안에 쓰지 않는다).
+    """
+    buffered_baseline, buffered_equipment, buffered_downtime = frames
+    saved_baseline, saved_equipment, saved_downtime = saved
+    payloads = (
+        equipment_csv_bytes(buffered_equipment),
+        baseline_csv_bytes(buffered_baseline),
+        downtime_csv_bytes(buffered_downtime),
+    )
+    edited = payloads != (
+        equipment_csv_bytes(saved_equipment),
+        baseline_csv_bytes(saved_baseline),
+        downtime_csv_bytes(saved_downtime),
+    )
+    basis = (
+        f"저장본 r{latest_snapshot.revision.revision_no}"
+        if latest_snapshot is not None
+        else "저장본 없음"
+    )
+    state = "저장하지 않은 변경 포함" if edited else "저장본과 같음"
+    st.caption(
+        f"현재 데이터 · {basis} · {state}. 「직접 편집」 표에 보이는 편집본을 그대로 "
+        "내려받습니다. 표 안에서 고치는 중인 값은 「보기 적용」을 누른 뒤에 들어갑니다. "
+        "고치지 않고 그대로 붙여넣어도 통과합니다."
+    )
+    today = date.today()
+    for column, label, payload, slug, key, frame in zip(
+        st.columns(3),
+        _TARGETS,
+        payloads,
+        ("equipment_master", "equipment_baseline", "equipment_downtime"),
+        (
+            "equipment_master_current_download_v1",
+            "equipment_baseline_current_download_v1",
+            "equipment_downtime_current_download_v1",
+        ),
+        (buffered_equipment, buffered_baseline, buffered_downtime),
+        strict=True,
+    ):
+        with column:
+            # 빈 표도 막지 않는다. 헤더만 든 파일이 곧 정확한 컬럼 차례의 양식이고, 그대로
+            # 붙여넣으면 0행으로 읽혀 아무것도 바꾸지 않는다.
+            render_csv_download(
+                data=payload,
+                file_name=current_data_file_name(
+                    slug, latest_snapshot=latest_snapshot, edited=edited, today=today
+                ),
+                key=key,
+                label=f"{label} 현재 데이터 · {len(frame):,}행",
+            )
 
 
 def _example_baseline_rows(baseline: pd.DataFrame) -> pd.DataFrame:
@@ -611,6 +700,9 @@ def render_equipment_data_workspace(
                 render_csv_download(
                     data=payload, file_name=filename, key=key, label=f"{label} 양식"
                 )
+        _render_current_data_downloads(
+            frames, saved=(baseline, equipment, downtime), latest_snapshot=latest_snapshot
+        )
         st.markdown(
             "- **호기 마스터**: 호기 번호로 구분합니다. Qual 확정상태는 실행 모니터링이며 "
             "가용 판정은 Qual 일정 기준입니다.\n"
