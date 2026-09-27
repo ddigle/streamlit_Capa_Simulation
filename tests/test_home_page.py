@@ -14,7 +14,7 @@ from capa_simulation.components.home_dimensions import (
     LOB_VALUE_FONT_SIZE_PX,
 )
 from capa_simulation.design import tokens
-from capa_simulation.scenario_preset_state import WARNING_THRESHOLD_KEY
+from capa_simulation.scenario_preset_state import PROCESS_SELECTION_KEY, WARNING_THRESHOLD_KEY
 
 # cwd 가 아니라 이 파일 위치를 기준으로 잡는다. tests/ 안에서 pytest 를 돌려도 같은 페이지를 연다.
 HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
@@ -24,13 +24,18 @@ HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
 # 바꾸고, 의도하지 않았다면 리팩토링이 무언가를 깨뜨린 것이다.
 
 
-def _home_script(database_path: Path) -> str:
+def _home_script(database_path: Path, *, retain_process_dialog: bool = False) -> str:
     """app.py의 전역 준비 단계만 재현한 뒤 HOME 페이지를 실행한다.
 
     AppTest에는 plotly_chart 접근자가 없어 st.plotly_chart를 감싸 호출별 trace 수와
     config를 session_state에 기록한다. Components v2 위젯은 모듈 import 시점에 한 번 등록되므로
     AppTest 인스턴스를 새로 만들면 레지스트리에 남아 있지 않다. 가로 스크롤바는
     특성화 대상이 아니므로 호출 횟수만 세는 스텁으로 대체한다.
+
+    AppTest는 매 실행마다 fragment 저장소를 새로 만들어 dialog 내부 클릭도 전체 실행으로
+    취급한다. 공정 선택 검증에서만 실제 HOME 함수와 인자를 보관해 dialog를 재호출한다.
+    적용으로 초안이 제거되면 HOME 전체 실행으로 돌아간다. 실제 fragment 격리는 브라우저
+    검증 몫이고, 여기서는 원본 콜백·초안·적용 동작을 대체하지 않는다.
     """
     return f"""
 from pathlib import Path
@@ -79,8 +84,33 @@ def _spy_scrollbar(*_args, **_kwargs):
 st.plotly_chart = _spy_plotly_chart
 horizontal_scrollbar.render_horizontal_scrollbar = _spy_scrollbar
 try:
-    page_source = Path({str(HOME_PAGE)!r}).read_text(encoding="utf-8")
-    exec(compile(page_source, {str(HOME_PAGE)!r}, "exec"), {{"__name__": "__main__"}})
+    if (
+        {retain_process_dialog!r}
+        and "test_process_dialog_function" in st.session_state
+        and "dashboard_bottleneck_process_dialog_draft" in st.session_state
+    ):
+        st.session_state["test_process_dialog_function"](
+            *st.session_state["test_process_dialog_arguments"]
+        )
+    else:
+        page_source = Path({str(HOME_PAGE)!r}).read_text(encoding="utf-8")
+        namespace = {{"__name__": "__main__"}}
+        exec(compile(page_source, {str(HOME_PAGE)!r}, "exec"), namespace)
+        if {retain_process_dialog!r}:
+            st.session_state["test_process_dialog_function"] = namespace[
+                "show_process_filter_dialog"
+            ]
+            st.session_state["test_process_dialog_arguments"] = (
+                namespace["process_options"],
+                namespace["build_process_picker_summary"](
+                    namespace["securement_rate"], namespace["process_options"],
+                    start_month=namespace["effective_start"],
+                    end_month=namespace["effective_end"],
+                    secure_threshold=namespace["secure_threshold_percent"] / 100.0,
+                ),
+                namespace["secure_threshold_percent"],
+                namespace["effective_start"], namespace["effective_end"],
+            )
 finally:
     st.plotly_chart = _original_plotly_chart
     horizontal_scrollbar.render_horizontal_scrollbar = _original_scrollbar
@@ -97,6 +127,192 @@ def _run(seeded_database: Path) -> AppTest:
     app = AppTest.from_string(_home_script(seeded_database), default_timeout=300).run()
     assert not list(app.exception)
     return app
+
+
+def _run_process_dialog_app(database_path: Path) -> AppTest:
+    app = AppTest.from_string(
+        _home_script(database_path, retain_process_dialog=True), default_timeout=300
+    ).run()
+    assert not list(app.exception)
+    return app
+
+
+def test_process_picker_buttons_show_aliases_but_only_apply_original_keys(tmp_path: Path) -> None:
+    from capa_simulation.persistence.cache import clear_global_process_rename_cache
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database = tmp_path / "process_picker.duckdb"
+    app = _run_process_dialog_app(database)
+    original_selection = list(app.session_state[PROCESS_SELECTION_KEY])
+    process = original_selection[0]
+    alias = "화면에서만 쓰는 긴 공정 표시명"
+    repository = DuckDBScenarioRepository(database)
+    repository.replace_global_process_rename(
+        pd.DataFrame({"공정": [process], "표시명": [alias]}), source="공정 선택 UI 검증"
+    )
+    clear_global_process_rename_cache()
+    app.run()
+    app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
+    assert not app.exception
+    assert app.button(key=f"home_bn_process_tile_{process}").label == alias
+    assert process in app.button(key=f"home_bn_process_tile_{process}").help
+
+    app.button(key=f"home_bn_process_tile_{process}").click().run()
+    assert not app.exception
+    draft = app.session_state["dashboard_bottleneck_process_dialog_draft"]
+    assert process not in draft
+    assert alias not in draft
+    assert app.session_state[PROCESS_SELECTION_KEY] == original_selection
+
+    app.button(key=f"home_bn_process_tile_{process}").click().run()
+    assert not app.exception
+    assert set(app.session_state["dashboard_bottleneck_process_dialog_draft"]) == set(
+        original_selection
+    )
+    app.button(key=f"home_bn_process_tile_{process}").click().run()
+    app.button(key="dashboard_bottleneck_process_restore").click().run()
+    assert not app.exception
+    assert app.session_state["dashboard_bottleneck_process_dialog_draft"] == original_selection
+    assert app.session_state[PROCESS_SELECTION_KEY] == original_selection
+
+    app.button(key=f"home_bn_process_tile_{process}").click().run()
+    app.button(key="dashboard_bottleneck_process_apply").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    expected = [item for item in original_selection if item != process]
+    assert app.session_state[PROCESS_SELECTION_KEY] == expected
+    assert "dashboard_bottleneck_process_dialog_draft" not in app.session_state
+    assert app.button(key="dashboard_bottleneck_process_dialog_open").label == (
+        f"공정 선택 · {len(expected)} / {len(original_selection)}"
+    )
+    assert alias not in app.session_state[PROCESS_SELECTION_KEY]
+    assert len(app.session_state["spy_traces"]) == 8
+
+
+def test_process_picker_bulk_actions_restore_applied_values_and_apply_empty_or_all(
+    tmp_path: Path,
+) -> None:
+    app = _run_process_dialog_app(tmp_path / "bulk_picker.duckdb")
+    options = list(app.session_state[PROCESS_SELECTION_KEY])
+    applied = options[:1]
+    app.session_state[PROCESS_SELECTION_KEY] = applied
+    app.run()
+    app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
+
+    app.button(key="dashboard_bottleneck_process_all_on").click().run()
+    assert not app.exception
+    assert app.session_state["dashboard_bottleneck_process_dialog_draft"] == options
+    assert app.session_state[PROCESS_SELECTION_KEY] == applied
+    app.button(key="dashboard_bottleneck_process_restore").click().run()
+    assert app.session_state["dashboard_bottleneck_process_dialog_draft"] == applied
+
+    app.button(key="dashboard_bottleneck_process_all_off").click().run()
+    assert not app.exception
+    assert app.session_state["dashboard_bottleneck_process_dialog_draft"] == []
+    assert app.session_state[PROCESS_SELECTION_KEY] == applied
+    app.button(key="dashboard_bottleneck_process_apply").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[PROCESS_SELECTION_KEY] == []
+    assert (
+        app.button(key="dashboard_bottleneck_process_dialog_open").label
+        == f"공정 선택 · 0 / {len(options)}"
+    )
+
+    app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
+    app.button(key="dashboard_bottleneck_process_all_on").click().run()
+    app.button(key="dashboard_bottleneck_process_restore").click().run()
+    assert app.session_state["dashboard_bottleneck_process_dialog_draft"] == []
+    app.button(key="dashboard_bottleneck_process_all_on").click().run()
+    app.button(key="dashboard_bottleneck_process_apply").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[PROCESS_SELECTION_KEY] == options
+    assert app.button(key="dashboard_bottleneck_process_dialog_open").label == (
+        f"공정 선택 · {len(options)} / {len(options)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "group_rate,other_rate,group_title,group_first",
+    [
+        (0.8, 1.3, "확보 기준 미만", True),
+        (1.3, 0.8, "기준 이상", False),
+        (float("nan"), 0.8, "확보율 없음", False),
+    ],
+)
+def test_process_picker_preserves_shared_order_within_each_securement_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    group_rate: float,
+    other_rate: float,
+    group_title: str,
+    group_first: bool,
+) -> None:
+    from capa_simulation.persistence.cache import (
+        clear_global_display_order_cache,
+        clear_global_process_rename_cache,
+    )
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services import simulation_cache
+    from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
+
+    database = tmp_path / "ordered_picker.duckdb"
+    app = _run_process_dialog_app(database)
+    originals = sorted(app.session_state[PROCESS_SELECTION_KEY])
+    assert len(originals) == 3
+    configured_order = list(reversed(originals))
+    group_members = [configured_order[0], configured_order[2]]
+    other = configured_order[1]
+    repository = DuckDBScenarioRepository(database)
+    repository.replace_global_display_order(
+        pd.DataFrame(
+            {
+                "페이지 구분": [PAGE_CALCULATION] * 3,
+                "탭 구분": [TAB_SECUREMENT] * 3,
+                "정렬우선순위": [1] * 3,
+                "분류컬럼": ["공정"] * 3,
+                "정렬방식": ["사용자지정"] * 3,
+                "분류값": configured_order,
+                "값표시순서": [1, 2, 3],
+                "활성여부": ["Y"] * 3,
+            }
+        ),
+        source="공정 선택 구역별 표시순서 검증",
+    )
+    aliases = {process: f"화면 표시 {index}" for index, process in enumerate(originals)}
+    repository.replace_global_process_rename(
+        pd.DataFrame({"공정": originals, "표시명": [aliases[item] for item in originals]}),
+        source="공정 선택 원본 키 검증",
+    )
+    clear_global_display_order_cache()
+    clear_global_process_rename_cache()
+    original_simulation = simulation_cache.get_home_simulation
+
+    def simulation_with_group_rates(*args, **kwargs):
+        result = list(original_simulation(*args, **kwargs))
+        securement = result[3].copy()
+        # 계산식은 실제 경로를 쓰고, 선택 UI의 세 구역을 만들 최종 확보율만 고정한다.
+        rates = {process: group_rate for process in group_members}
+        rates[other] = other_rate
+        securement["확보율"] = securement["공정"].map(rates)
+        result[3] = securement
+        return tuple(result)
+
+    monkeypatch.setattr(simulation_cache, "get_home_simulation", simulation_with_group_rates)
+    # 공용 프로필은 활성화 때 세션 기준정보로 읽힌다. 저장한 순서를 새 세션에서 불러온다.
+    app = _run_process_dialog_app(database)
+    app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    expected_order = [*group_members, other] if group_first else [other, *group_members]
+    tiles = [button for button in app.button if str(button.key).startswith("home_bn_process_tile_")]
+    assert [button.key for button in tiles] == [
+        f"home_bn_process_tile_{process}" for process in expected_order
+    ]
+    assert [button.label for button in tiles] == [aliases[process] for process in expected_order]
+    assert f"**{group_title} · 2**" in [item.value for item in app.markdown]
+
+    app.button(key="dashboard_bottleneck_process_apply").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[PROCESS_SELECTION_KEY] == configured_order
+    assert not set(aliases.values()).intersection(app.session_state[PROCESS_SELECTION_KEY])
 
 
 def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: Path) -> None:

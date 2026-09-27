@@ -1,9 +1,9 @@
-# Purpose: Expand the local Core Data sample through a target month.
+# Purpose: 기존 합성 계획을 확장하고 이름별 고정 편차를 가진 공정 기준정보 CSV를 재생성한다.
 
-"""Expand the local Core Data sample through a target month.
+"""기존 합성 계획과 공정 기준정보를 목표 월까지 확장한다.
 
-The script keeps existing plan rows, extends the latest plan mix, and rebuilds
-process-reference rows so the whole Streamlit calculation chain can be tested.
+기존 계획은 보존하고 마지막 달의 제품 구성을 연장한다. 공정별 높이 차이는
+고정 기준정보에서, 월별 추세는 계획에서 만들어 반복 실행 결과를 동일하게 유지한다.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import csv
 import hashlib
 import math
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -39,44 +39,120 @@ class ProcessSpec:
     lent: float
 
 
-PROCESS_SPECS = (
-    ProcessSpec("Pre B/D", "Main", "CHIP", 76000, 0.86, 1.04, 4, 1.00, 1.00, 46, 2),
+# 처리량의 단위 크기는 유지하되 합성 계획에 비해 과도했던 병렬 모듈·보유대수를 낮춘다.
+# 이는 데모 화면용 기준값이며 실제 설비의 사양이나 필요대수가 아니다.
+_BASE_PROCESS_SPECS = (
+    ProcessSpec("Pre B/D", "Main", "CHIP", 76000, 0.86, 1.04, 1, 1.00, 1.00, 5, 0),
     ProcessSpec("Wafer_Sorter", "Main", "WF", 42, 0.82, 1.05, 1, 1.00, 0.98, 18, 1),
-    ProcessSpec("AVI-CoW", "MI", "WF", 5.0, 0.90, 1.04, 1, 0.98, 0.97, 21, 0),
+    ProcessSpec("AVI-CoW", "MI", "WF", 5.0, 0.90, 1.04, 1, 0.98, 0.97, 1, 0),
     ProcessSpec("Laser Grooving", "Main", "WF", 33, 0.83, 1.06, 2, 1.00, 1.00, 16, 1),
     ProcessSpec("Wafer Grinding", "Main", "WF", 28, 0.80, 1.08, 2, 0.99, 0.98, 14, 1),
     ProcessSpec("Wafer Mount", "Main", "WF", 48, 0.88, 1.03, 1, 1.00, 1.00, 12, 0),
-    ProcessSpec("Wafer Saw", "MI", "WF", 7.2, 0.84, 1.07, 2, 0.97, 0.96, 19, 2),
-    ProcessSpec("Plasma Clean", "Main", "CHIP", 92000, 0.89, 1.03, 4, 1.00, 1.00, 25, 1),
-    ProcessSpec("DAF Attach", "Main", "CHIP", 68000, 0.82, 1.06, 4, 0.98, 0.99, 35, 3),
-    ProcessSpec("Die Attach", "MI", "CHIP", 0.045, 0.78, 1.10, 4, 0.96, 0.97, 42, 4),
-    ProcessSpec("TC Bonding", "Main", "CHIP", 54000, 0.76, 1.12, 4, 0.95, 0.96, 51, 5),
-    ProcessSpec("Mass Reflow", "Main", "CHIP", 105000, 0.91, 1.03, 6, 1.00, 1.00, 18, 1),
-    ProcessSpec("Underfill", "MI", "CHIP", 0.052, 0.81, 1.08, 4, 0.97, 0.98, 38, 3),
-    ProcessSpec("Mold", "Main", "CHIP", 83000, 0.84, 1.06, 4, 0.99, 0.99, 27, 2),
-    ProcessSpec("Cure", "Main", "CHIP", 120000, 0.92, 1.02, 8, 1.00, 1.00, 13, 0),
-    ProcessSpec("Laser Marking", "MI", "CHIP", 0.035, 0.87, 1.04, 2, 1.00, 1.00, 15, 1),
-    ProcessSpec("Ball Attach", "Main", "CHIP", 74000, 0.83, 1.07, 4, 0.98, 0.98, 32, 3),
-    ProcessSpec("Flux Clean", "Main", "CHIP", 98000, 0.88, 1.04, 4, 1.00, 1.00, 17, 1),
-    ProcessSpec("Singulation", "MI", "CHIP", 0.041, 0.79, 1.09, 3, 0.96, 0.97, 29, 3),
-    ProcessSpec("Package Sorter", "Main", "CHIP", 112000, 0.90, 1.03, 4, 1.00, 1.00, 20, 1),
-    ProcessSpec("Burn-In", "Main", "CHIP", 61000, 0.75, 1.11, 6, 0.94, 0.95, 48, 6),
-    ProcessSpec("Final Test", "MI", "CHIP", 0.058, 0.77, 1.10, 4, 0.95, 0.96, 44, 5),
-    ProcessSpec("AVI-PKG", "Main", "CHIP", 88000, 0.86, 1.05, 3, 0.99, 0.99, 23, 2),
-    ProcessSpec("O/S Test", "Main", "CHIP", 97000, 0.89, 1.04, 3, 1.00, 1.00, 18, 1),
-    ProcessSpec("Taping", "MI", "CHIP", 0.032, 0.85, 1.05, 2, 1.00, 1.00, 16, 1),
-    ProcessSpec("Packing", "Main", "CHIP", 125000, 0.92, 1.02, 4, 1.00, 1.00, 12, 0),
-    ProcessSpec("X-Ray", "Main", "CHIP", 57000, 0.80, 1.09, 2, 0.95, 0.96, 26, 3),
+    ProcessSpec("Wafer Saw", "MI", "WF", 7.2, 0.84, 1.07, 1, 0.97, 0.96, 1, 0),
+    ProcessSpec("Plasma Clean", "Main", "CHIP", 92000, 0.89, 1.03, 1, 1.00, 1.00, 3, 0),
+    ProcessSpec("DAF Attach", "Main", "CHIP", 68000, 0.82, 1.06, 1, 0.98, 0.99, 4, 0),
+    ProcessSpec("Die Attach", "MI", "CHIP", 0.045, 0.78, 1.10, 1, 0.96, 0.97, 4, 0),
+    ProcessSpec("TC Bonding", "Main", "CHIP", 54000, 0.76, 1.12, 1, 0.95, 0.96, 5, 0),
+    ProcessSpec("Mass Reflow", "Main", "CHIP", 105000, 0.91, 1.03, 1, 1.00, 1.00, 3, 0),
+    ProcessSpec("Underfill", "MI", "CHIP", 0.052, 0.81, 1.08, 1, 0.97, 0.98, 4, 0),
+    ProcessSpec("Mold", "Main", "CHIP", 83000, 0.84, 1.06, 1, 0.99, 0.99, 3, 0),
+    ProcessSpec("Cure", "Main", "CHIP", 120000, 0.92, 1.02, 1, 1.00, 1.00, 2, 0),
+    ProcessSpec("Laser Marking", "MI", "CHIP", 0.035, 0.87, 1.04, 1, 1.00, 1.00, 2, 0),
+    ProcessSpec("Ball Attach", "Main", "CHIP", 74000, 0.83, 1.07, 1, 0.98, 0.98, 4, 0),
+    ProcessSpec("Flux Clean", "Main", "CHIP", 98000, 0.88, 1.04, 1, 1.00, 1.00, 2, 0),
+    ProcessSpec("Singulation", "MI", "CHIP", 0.041, 0.79, 1.09, 1, 0.96, 0.97, 3, 0),
+    ProcessSpec("Package Sorter", "Main", "CHIP", 112000, 0.90, 1.03, 1, 1.00, 1.00, 3, 0),
+    ProcessSpec("Burn-In", "Main", "CHIP", 61000, 0.75, 1.11, 1, 0.94, 0.95, 5, 0),
+    ProcessSpec("Final Test", "MI", "CHIP", 0.058, 0.77, 1.10, 1, 0.95, 0.96, 5, 0),
+    ProcessSpec("AVI-PKG", "Main", "CHIP", 88000, 0.86, 1.05, 1, 0.99, 0.99, 3, 0),
+    ProcessSpec("O/S Test", "Main", "CHIP", 97000, 0.89, 1.04, 1, 1.00, 1.00, 2, 0),
+    ProcessSpec("Taping", "MI", "CHIP", 0.032, 0.85, 1.05, 1, 1.00, 1.00, 2, 0),
+    ProcessSpec("Packing", "Main", "CHIP", 125000, 0.92, 1.02, 1, 1.00, 1.00, 2, 0),
+    ProcessSpec("X-Ray", "Main", "CHIP", 57000, 0.80, 1.09, 1, 0.95, 0.96, 4, 0),
     ProcessSpec("SAM", "MI", "CHIP", 0.650, 0.78, 1.10, 2, 0.94, 0.95, 22, 3),
-    ProcessSpec("Warpage", "Main", "CHIP", 69000, 0.84, 1.07, 2, 0.97, 0.98, 19, 2),
-    ProcessSpec("Shipping Inspection", "Main", "CHIP", 118000, 0.93, 1.02, 3, 1.00, 1.00, 10, 0),
+    ProcessSpec("Warpage", "Main", "CHIP", 69000, 0.84, 1.07, 1, 0.97, 0.98, 3, 0),
+    ProcessSpec("Shipping Inspection", "Main", "CHIP", 118000, 0.93, 1.02, 1, 1.00, 1.00, 2, 0),
+)
+
+# 일반 후공정 이름을 직접 고르고 유사 공정의 단위·계산 경로를 이어받는다.
+# 표시 폭 검증을 위해 약어부터 긴 검사 이름까지 섞되 제품·고객 식별값은 넣지 않는다.
+_PROCESS_VARIANTS = (
+    ("Wafer Incoming Inspection", "Wafer_Sorter"),
+    ("Back Grinding Tape Lamination", "Wafer Mount"),
+    ("Wafer Thinning", "Wafer Grinding"),
+    ("Stress Relief Polish", "Wafer Grinding"),
+    ("Wafer Debond", "Wafer Mount"),
+    ("UV Release", "Wafer Mount"),
+    ("Die Expansion", "Wafer Mount"),
+    ("Wafer Surface Treatment", "Laser Grooving"),
+    ("Protective Film Lamination", "Wafer Mount"),
+    ("Wafer Edge Inspection", "AVI-CoW"),
+    ("Backside Surface Inspection", "AVI-CoW"),
+    ("Wafer Thickness Measurement", "Wafer Saw"),
+    ("Die Crack Inspection", "AVI-CoW"),
+    ("Wafer Map Verification", "AVI-CoW"),
+    ("Die Cleaning", "Plasma Clean"),
+    ("Adhesive Dispense", "Mold"),
+    ("Epoxy Dispense", "Mold"),
+    ("Flip Chip Placement", "TC Bonding"),
+    ("Thermal Compression Prebond", "TC Bonding"),
+    ("Copper Pillar Reflow", "Mass Reflow"),
+    ("Compression Mold", "Mold"),
+    ("Transfer Mold", "Mold"),
+    ("Post Mold Cure", "Cure"),
+    ("Solder Ball Inspection", "AVI-PKG"),
+    ("Package Cleaning", "Flux Clean"),
+    ("Lid Attach", "DAF Attach"),
+    ("Heat Spreader Attach", "DAF Attach"),
+    ("Substrate Bake", "Cure"),
+    ("Bump Co-Planarity Check", "Warpage"),
+    ("Reel Sealing", "Packing"),
+    ("Tray Loading", "Package Sorter"),
+    ("Wire Bond", "Die Attach"),
+    ("Electrical Continuity Inspection", "Final Test"),
+    ("Fine Pitch Interconnect Inspection", "Final Test"),
+    ("Micro Bump Alignment Verification", "Die Attach"),
+    ("Acoustic Delamination Inspection", "SAM"),
+    ("Laser Package Trimming", "Singulation"),
+    ("Post Singulation Edge Inspection", "Laser Marking"),
+    ("Mark Readback", "Laser Marking"),
+    ("Tape Pocket Inspection", "Taping"),
+)
+
+
+def stable_fraction(*values: str) -> float:
+    digest = hashlib.sha256("|".join(values).encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") / 0xFFFFFFFF
+
+
+def varied_process_spec(spec: ProcessSpec) -> ProcessSpec:
+    """공정명·인자별 해시로 처리량과 가동률에 월과 무관한 편차를 준다."""
+    throughput = 0.65 + 0.70 * stable_fraction(spec.name, "throughput")
+    run_rate = 0.90 + 0.16 * stable_fraction(spec.name, "run-rate")
+    return replace(
+        spec,
+        # MI는 초 단위 ST이므로 처리량 배율을 반대로 걸어 Main과 뜻을 맞춘다.
+        performance=(
+            spec.performance * throughput if spec.area == "Main" else spec.performance / throughput
+        ),
+        run_rate=spec.run_rate * run_rate,
+    )
+
+
+_BASE_BY_NAME = {spec.name: spec for spec in _BASE_PROCESS_SPECS}
+PROCESS_SPECS = tuple(
+    varied_process_spec(spec)
+    for spec in (
+        *_BASE_PROCESS_SPECS,
+        *(replace(_BASE_BY_NAME[source], name=name) for name, source in _PROCESS_VARIANTS),
+    )
 )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("input", type=Path)
-    parser.add_argument("--end-month", type=int, default=202712)
+    parser.add_argument("--end-month", type=int, default=202812)
     parser.add_argument("--backup-dir", type=Path)
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -94,11 +170,6 @@ def month_sequence(start: int, end: int) -> list[int]:
         values.append(current)
         current = next_month(current)
     return values
-
-
-def stable_fraction(*values: str) -> float:
-    digest = hashlib.sha256("|".join(values).encode("utf-8")).digest()
-    return int.from_bytes(digest[:4], "big") / 0xFFFFFFFF
 
 
 def scaled_number(value: str, factor: float) -> str:
@@ -186,16 +257,13 @@ def process_rows(plan_rows: list[dict[str, str]]) -> list[dict[str, str]]:
         month = int(plan[PLAN_MONTH])
         production_class = "양산" if plan["CS"] in {"MP", "CS"} else "ER"
         days = calendar.monthrange(month // 100, month % 100)[1]
-        month_index = (month // 100 - 2026) * 12 + month % 100 - 7
         wf_type = plan["WF 구분"]
         product_modifier = 0.93 + stable_fraction(plan["제품정보"], plan["Stack"], wf_type) * 0.14
 
         for index, spec in enumerate(PROCESS_SPECS, start=1):
             row = dict(plan)
-            monthly_wave = 1.0 + 0.035 * math.sin((month_index + index) * math.pi / 6.0)
-            performance = spec.performance * monthly_wave * product_modifier
-            owned = max(1.0, spec.owned + month_index * (0.08 + index % 4 * 0.03))
-            lent = min(owned - 0.5, spec.lent + (1 if (month_index + index) % 9 == 0 else 0))
+            # 달력 일수 외 기준정보는 고정한다. 공정별 월 위상을 넣으면 추세가 갈린다.
+            performance = spec.performance * product_modifier
             run_rate = spec.run_rate * (0.94 if production_class == "ER" else 1.0)
 
             row[PLAN_FLAG] = "N"
@@ -218,9 +286,9 @@ def process_rows(plan_rows: list[dict[str, str]]) -> list[dict[str, str]]:
             row["모듈수"] = str(spec.module)
             row["Side반영률"] = "1"
             row["편중률"] = f"{spec.vital:.4f}"
-            row["설비보유"] = f"{owned:.3f}"
+            row["설비보유"] = f"{spec.owned:.3f}"
             row["설비대수변화관리"] = "0"
-            row["설비대여평가"] = f"{lent:.3f}"
+            row["설비대여평가"] = f"{spec.lent:.3f}"
             row["설비대여평가항목"] = "샘플"
             row["설비대여평가DESC"] = "프로토타입 시뮬레이션"
             row["MCP_Chip_Ratio"] = "1"
