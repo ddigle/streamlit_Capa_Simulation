@@ -794,6 +794,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/scenario_state.py`
   - 사용자 세션별 활성 시나리오와 `revision`(편집 카운터)·`content_token`(내용 토큰)을 관리한다.
     편집을 적용할 때마다 둘 다 갱신되며, 캐시 키에는 `content_token`만 쓴다.
+  - **편집 없는 상태의 토큰은 리비전에서 나온 고정값이다**(`_pristine_content_token`). 저장
+    리비전을 올리거나 원본으로 초기화하면 `reference_version` 으로 정해지는 같은 토큰을 받아,
+    같은 공식버전을 여는 모든 세션이 계산 캐시를 나눠 쓴다. 세션마다 uuid 를 새로 발급하던
+    때는 새로고침할 때마다 HOME 계산이 처음부터 다시 돌았다. 편집이 들어가면 uuid 로 갈라진다.
   - 선택한 월 범위만 원자적으로 교체한다.
   - HOME처럼 계산용 월 범위만 필요한 경로는 전체 시나리오 복사 없이 선택 행만 복사한다.
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py`
@@ -1591,7 +1595,9 @@ session state에 별도 복사하지 말고 활성 시나리오의 editable tabl
    결과는 서버 캐시, 웹 편집값은 `st.session_state`의 활성 시나리오다.
 3. **편집 적용마다 `revision`을 올리고 `content_token`을 재발급한다.** 편집 UI(위젯 초기화·
    미저장 감지)는 `revision`을, 계산·Figure 캐시 키는 `content_token`을 본다 — `revision`
-   번호는 내용이 달라도 겹칠 수 있다(세션 편집 0,1,2… 와 저장 리비전 번호).
+   번호는 내용이 달라도 겹칠 수 있다(세션 편집 0,1,2… 와 저장 리비전 번호). 편집 없는
+   상태(리비전 활성화·원본 초기화)는 리비전에서 나온 고정 토큰이라 세션끼리 캐시를 나눈다
+   — 리비전은 append-only 라 같은 리비전이면 내용이 같다.
 4. **계산 함수는 가능한 순수 함수로 유지한다.** 서비스 함수 내부에 UI 상태 접근을 넣지
    않는다. Streamlit 캐시는 정해진 경계 모듈에만 둔다 — `services/simulation_cache.py`,
    `persistence/cache.py`·`equipment_cache.py`(불변 리비전 스냅샷과 공용 표시순서·설비
