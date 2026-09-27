@@ -318,6 +318,17 @@ STEP·MCP 키 도입 전에 첫 행 선택 방식으로 저장한 사내 검증 
 .\.venv\Scripts\python.exe scripts\bootstrap_initial_duckdb_scenario.py --replace-existing
 ```
 
+합성 데모 CSV 자체를 다시 만들었으면 위 명령은 거부됩니다 — 원천 코드는 불변이라 같은
+코드에 다른 원천 데이터를 저장하지 않습니다. 새 원천 코드로 적재하면 새 시나리오가 공식
+발행되고 기존 시나리오는 그대로 남습니다. 생성기는 앞서 자기가 연장한 계획을 걷어내고
+원본 계획부터 다시 연장하므로, 이미 연장된 파일에 다시 돌려도 결과가 같습니다.
+실행 중인 앱이 DB 를 잠그고 있으므로 적재 전에 앱을 먼저 내립니다.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\generate_sample_core_data.py data\input\Core_Data.csv
+.\.venv\Scripts\python.exe scripts\bootstrap_initial_duckdb_scenario.py --source-code <새 원천 코드> --scenario-name <시나리오 이름>
+```
+
 사내 조회에 쓰는
 `src/capa_simulation/io/company_bigdataquery_adapter.py`의 `QUERY_TEMPLATE`과
 `SOURCE_COLUMN_MAPPING`은 실제 원천 테이블의 SQL·컬럼명으로 이미 채워져 있고, 남은

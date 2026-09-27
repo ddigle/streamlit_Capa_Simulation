@@ -2,8 +2,10 @@
 
 """기존 합성 계획과 공정 기준정보를 목표 월까지 확장한다.
 
-기존 계획은 보존하고 마지막 달의 제품 구성을 연장한다. 공정별 높이 차이는
-고정 기준정보에서, 월별 추세는 계획에서 만들어 반복 실행 결과를 동일하게 유지한다.
+원본 계획은 보존하고 **원본의** 마지막 달의 제품 구성을 연장한다. 이 스크립트가 앞서
+연장해 둔 행은 걷어내고 다시 만들므로, 이미 연장된 파일에 다시 돌려도 결과가 같다.
+공정별 높이 차이는 고정 기준정보에서, 월별 추세는 계획에서 만들어 반복 실행 결과를
+동일하게 유지한다.
 """
 
 from __future__ import annotations
@@ -186,12 +188,29 @@ def row_id(prefix: str, *values: str) -> str:
     return prefix + hashlib.sha256("|".join(values).encode("utf-8")).hexdigest()[:28].upper()
 
 
-def extend_plans(plan_rows: list[dict[str, str]], end_month: int) -> list[dict[str, str]]:
-    latest_month = max(int(row[PLAN_MONTH]) for row in plan_rows)
-    if latest_month >= end_month:
-        return plan_rows
+def plan_group_key(row: dict[str, str]) -> tuple[str, str, str, str, str]:
+    return (row["제품정보"], row["Stack"], row["Capa Code"], row["Customer"], row["CS"])
 
-    source_rows = [row for row in plan_rows if int(row[PLAN_MONTH]) == latest_month]
+
+def is_extended_plan(row: dict[str, str]) -> bool:
+    """이 스크립트가 연장해 만든 계획 행인가. PLAN ID 를 같은 식으로 다시 만들어 맞대 본다."""
+    return row["PLAN ID"] == row_id("PLAN", row[PLAN_MONTH], *plan_group_key(row))
+
+
+def extend_plans(plan_rows: list[dict[str, str]], end_month: int) -> list[dict[str, str]]:
+    # 연장분 위에 다시 연장하면 그 마지막 달이 새 원점이 되어 믹스가 한 번 더 곱해지고
+    # 계절 위상·성장도 처음부터 다시 걸린다 — 그 달에 계단이 생긴다. 그래서 연장분을
+    # 걷어내고 원본의 마지막 달부터 다시 만든다. 식이 같으니 있던 연장분은 같은 값으로
+    # 되살아난다. 목표 월이 입력보다 이르면 입력 범위를 줄이지 않는다.
+    original_rows = [row for row in plan_rows if not is_extended_plan(row)]
+    if not original_rows:
+        raise ValueError("No original plan rows were found")
+    end_month = max(end_month, *(int(row[PLAN_MONTH]) for row in plan_rows))
+    latest_month = max(int(row[PLAN_MONTH]) for row in original_rows)
+    if latest_month >= end_month:
+        return original_rows
+
+    source_rows = [row for row in original_rows if int(row[PLAN_MONTH]) == latest_month]
     quantity_columns = (
         "생산수량",
         "Plan_Chip(K개)",
@@ -203,17 +222,11 @@ def extend_plans(plan_rows: list[dict[str, str]], end_month: int) -> list[dict[s
         "일 필요",
         "소요대수",
     )
-    extended = list(plan_rows)
+    extended = list(original_rows)
     for offset, month in enumerate(month_sequence(next_month(latest_month), end_month), start=1):
         seasonal = 1.0 + 0.055 * math.sin(offset * math.pi / 3.0)
         for source in source_rows:
-            group_key = (
-                source["제품정보"],
-                source["Stack"],
-                source["Capa Code"],
-                source["Customer"],
-                source["CS"],
-            )
+            group_key = plan_group_key(source)
             mix = 0.92 + stable_fraction(*group_key) * 0.18
             growth = 1.0 + 0.018 * offset
             factor = seasonal * growth * mix
