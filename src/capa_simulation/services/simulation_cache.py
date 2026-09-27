@@ -3,7 +3,9 @@
 """Shared content-addressed caches for simulation calculations."""
 
 import hashlib
-from collections.abc import Mapping
+import threading
+from collections import OrderedDict
+from collections.abc import Hashable, Mapping
 from datetime import date
 
 import pandas as pd
@@ -43,6 +45,52 @@ from capa_simulation.services.weighted_unit_capacity import (
 )
 
 HomeSimulationCacheKey = tuple[int, str, int, int, str]
+
+# 세션끼리 나누는 HOME Figure 묶음의 칸 수. 한 칸은 pickle 로 약 0.3MB 다(70공정·30개월
+# 샘플 관측) — 32칸이면 10MB 안쪽이다.
+SHARED_HOME_FIGURE_MAX_ENTRIES = 32
+
+
+class SharedBlobStore:
+    """프로세스 공용 LRU. 값은 pickle 바이트로 둔다.
+
+    객체를 그대로 나누면 한 세션이 꺼낸 Figure 를 고칠 때 다른 세션 화면이 바뀐다. 바이트로
+    두면 꺼내는 쪽마다 제 사본을 받는다. 세션은 여러 스레드에서 돌므로 잠금으로 감싼다.
+    """
+
+    def __init__(self, max_entries: int) -> None:
+        self._max_entries = max_entries
+        self._lock = threading.Lock()
+        self._items: OrderedDict[Hashable, bytes] = OrderedDict()
+
+    def get(self, key: Hashable) -> bytes | None:
+        with self._lock:
+            blob = self._items.get(key)
+            if blob is not None:
+                self._items.move_to_end(key)
+            return blob
+
+    def put(self, key: Hashable, blob: bytes) -> None:
+        with self._lock:
+            self._items[key] = blob
+            self._items.move_to_end(key)
+            while len(self._items) > self._max_entries:
+                self._items.popitem(last=False)
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._items)
+
+
+@st.cache_resource(show_spinner=False)
+def shared_home_figure_store() -> SharedBlobStore:
+    """HOME Figure 묶음을 세션끼리 나누는 저장소. 키가 내용 전체를 말하므로 비울 일이 없다.
+
+    키는 (테마, `HomeFigureCacheKey`) 다. 편집 없는 리비전(`pristine-` 토큰)의 그림만
+    들어온다 — 새로고침한 세션이 Figure 생성(0.74초)을 건너뛰고 복원(0.28초)만 치른다.
+    """
+    return SharedBlobStore(SHARED_HOME_FIGURE_MAX_ENTRIES)
+
 
 # 활성 시나리오 내용과 월 범위를 대표하는 키. 아래 키 전용 캐시들이 공유한다.
 ScenarioCacheKey = tuple[int, str, int, int]

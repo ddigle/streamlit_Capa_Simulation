@@ -820,6 +820,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 주요 계산 함수의 content-addressed `st.cache_data` 래퍼다.
   - HOME 전체 계산 그래프는 reference version·`content_token`·조회기간·표시순서 해시의 명시적 경량 키로 조회해 warm
     rerun의 대형 DataFrame 해싱을 피하고, 하위 계산 캐시는 다른 페이지와 계속 공유한다.
+  - `shared_home_figure_store()`(`st.cache_resource`)는 HOME Figure 묶음을 세션끼리 나누는
+    프로세스 공용 LRU 다. **값은 pickle 바이트**로 둔다 — 객체를 그대로 나누면 한 세션이
+    꺼낸 Figure 를 고칠 때 남의 화면이 바뀐다. 편집 없는 리비전(`pristine-` 토큰)의 그림만
+    들어오고, 키가 내용 전체를 말하므로 비우지 않는다.
 
 ### 계산 서비스
 
@@ -1432,7 +1436,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `from x import y as y` 로 다시 내보내므로, 가족 모듈이 더 쪼개져도 페이지·테스트의
     import 한 줄이 바뀌지 않는다. 새 공개 이름을 만들면 파사드의 재수출과 `__all__` 도
     같이 고친다.
-  - HOME 의 Figure 생성기 4종, 세션 Figure 캐시와 렌더링, LOB·상세 B/N 픽셀 치수.
+  - HOME 의 Figure 생성기 4종, Figure 캐시와 렌더링, LOB·상세 B/N 픽셀 치수.
+  - Figure 캐시는 두 겹이다. 세션 칸(`take_home_figures`)을 먼저 보고, 비었으면 같은 키로
+    다른 세션이 만든 묶음을 공용 저장소에서 복원한다(새로고침한 세션이 Figure 생성을
+    건너뛴다). 편집 중인 세션의 그림은 공용 저장소에 넣지 않는다 — 남이 쓸 일이 없고
+    남의 칸만 밀어낸다.
   - 상세 B/N 은 `go.Table` 이 아니라 카테시안 xy 다. 월 오프셋은 `go.Bar` 의 `base`
     로 주고, hover 표적 막대·트랙 막대·확보율 막대·공정명 텍스트 trace 네 개만 쓴다.
     hover 표적은 `HIT_TARGET` 색으로 행 전체 높이를 덮어 칸 어디서나 툴팁이 뜨게 하고,

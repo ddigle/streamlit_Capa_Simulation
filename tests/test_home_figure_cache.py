@@ -1,4 +1,4 @@
-# Purpose: HOME Figure 캐시의 내용·테마·스키마 분리와 최근 사용 순서·튜플 호환성을 검증한다.
+# Purpose: HOME Figure 캐시의 내용·테마·스키마 분리, 최근 사용 순서와 세션 공유를 검증한다.
 
 import plotly.graph_objects as go
 import pytest
@@ -13,6 +13,7 @@ from capa_simulation.components.home_rendering import (
     store_home_figures,
     take_home_figures,
 )
+from capa_simulation.services.simulation_cache import SharedBlobStore
 
 
 @pytest.fixture
@@ -153,3 +154,67 @@ def test_figure_cache_evicts_the_least_recently_read_entry(
     assert take_home_figures(keys[1]) is None
     assert take_home_figures(keys[0]) is figures
     assert take_home_figures(keys[-1]) is figures
+
+
+@pytest.fixture
+def shared_store(monkeypatch: pytest.MonkeyPatch) -> SharedBlobStore:
+    store = SharedBlobStore(4)
+    monkeypatch.setattr(home_rendering, "shared_home_figure_store", lambda: store)
+    return store
+
+
+def _new_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(home_rendering.st, "session_state", {})
+
+
+def test_a_new_session_reuses_the_figures_drawn_for_the_same_revision(
+    cache_key: HomeFigureCacheKey,
+    figures: HomeFigureSet,
+    shared_store: SharedBlobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """새로고침은 새 세션이다. 같은 리비전이면 그림을 다시 만들지 않는다."""
+    pristine = cache_key._replace(content_token="pristine-3")
+    store_home_figures(pristine, figures)
+
+    _new_session(monkeypatch)
+    recalled = take_home_figures(pristine)
+
+    assert recalled is not None
+    assert len(recalled) == len(figures)
+    assert pristine in {key for _, key in home_figure_cache()}
+
+
+def test_an_edited_session_keeps_its_figures_to_itself(
+    cache_key: HomeFigureCacheKey,
+    figures: HomeFigureSet,
+    shared_store: SharedBlobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """편집 토큰의 그림은 남이 쓸 일이 없다. 공용 칸에 넣으면 남의 칸만 밀어낸다."""
+    store_home_figures(cache_key, figures)
+
+    _new_session(monkeypatch)
+
+    assert len(shared_store) == 0
+    assert take_home_figures(cache_key) is None
+
+
+def test_a_shared_recall_is_a_copy_that_cannot_repaint_another_session(
+    cache_key: HomeFigureCacheKey,
+    figures: HomeFigureSet,
+    shared_store: SharedBlobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pristine = cache_key._replace(content_token="pristine-3")
+    store_home_figures(pristine, figures)
+    _new_session(monkeypatch)
+    first = take_home_figures(pristine)
+    assert first is not None
+    first.lob_labels.update_layout(title_text="이 세션만 고친 제목")
+
+    _new_session(monkeypatch)
+    second = take_home_figures(pristine)
+
+    assert second is not None
+    assert second.lob_labels.layout.title.text is None

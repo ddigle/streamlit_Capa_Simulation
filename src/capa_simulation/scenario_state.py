@@ -44,6 +44,10 @@ class ActiveScenario(TypedDict):
     tables: dict[str, pd.DataFrame]
 
 
+# 편집 없는 상태의 토큰 접두어. uuid hex 에 나올 수 없는 글자라 편집 토큰과 겹치지 않는다.
+PRISTINE_TOKEN_PREFIX = "pristine-"
+
+
 def _new_content_token() -> str:
     return uuid4().hex
 
@@ -55,9 +59,14 @@ def _pristine_content_token(reference_version: int) -> str:
     14표가 같다. 세션마다 uuid 를 새로 발급하면 같은 공식버전을 여는데도 새로고침할
     때마다 계산 캐시가 빗나가 전체를 다시 계산했다(샘플 관측, 70공정: 새로고침 6.2초 중
     계산 4.1초). 편집이 들어가면 `_new_content_token()` 으로 갈라지므로 편집본과 섞이지
-    않는다. 접두어는 uuid hex 와 겹치지 않게 한다.
+    않는다.
     """
-    return f"pristine-{reference_version}"
+    return f"{PRISTINE_TOKEN_PREFIX}{reference_version}"
+
+
+def is_pristine_content_token(token: str) -> bool:
+    """편집 없는 리비전 상태의 토큰인가. 이런 상태의 결과만 세션끼리 나눌 값어치가 있다."""
+    return token.startswith(PRISTINE_TOKEN_PREFIX)
 
 
 def ensure_active_scenario(

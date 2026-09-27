@@ -1,10 +1,11 @@
-# Purpose: HOME Figure 세션 캐시와 화면 렌더링·성능 표시를 담당한다.
+# Purpose: HOME Figure 캐시(세션·세션 공용)와 화면 렌더링·성능 표시를 담당한다.
 
-"""Session-scoped figure cache and rendering for the HOME dashboard."""
+"""Session and shared figure caches and rendering for the HOME dashboard."""
 
 from __future__ import annotations
 
 import html
+import pickle
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import NamedTuple, cast
@@ -43,6 +44,8 @@ from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import theme, tokens
 from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
 from capa_simulation.performance import PerformanceTrace
+from capa_simulation.scenario_state import is_pristine_content_token
+from capa_simulation.services.simulation_cache import shared_home_figure_store
 
 
 class HomeFigureCacheKey(NamedTuple):
@@ -144,8 +147,15 @@ def take_home_figures(cache_key: HomeFigureCacheKey) -> HomeFigureSet | None:
     cache = home_figure_cache()
     themed = _themed_key(cache_key)
     figures = cache.pop(themed, None)
+    if figures is None and is_pristine_content_token(cache_key.content_token):
+        # 세션 칸이 비었으면 다른 세션이 같은 리비전으로 만든 그림을 본다. 새로고침한
+        # 세션이 Figure 생성을 건너뛴다. 세션 칸에도 넣어 같은 세션의 다음 실행은 복원도
+        # 건너뛴다.
+        blob = shared_home_figure_store().get(themed)
+        if blob is not None:
+            figures = cast(HomeFigureSet, pickle.loads(blob))
     if figures is not None:
-        cache[themed] = figures
+        _remember(cache, themed, figures)
     return figures
 
 
@@ -155,6 +165,20 @@ def store_home_figures(
 ) -> None:
     cache = home_figure_cache()
     themed = _themed_key(cache_key)
+    _remember(cache, themed, figures)
+    # 편집 중인 세션의 그림은 남이 쓸 일이 없다. 공용 칸에 넣으면 남의 칸만 밀어낸다.
+    if is_pristine_content_token(cache_key.content_token):
+        shared_home_figure_store().put(
+            themed, pickle.dumps(figures, protocol=pickle.HIGHEST_PROTOCOL)
+        )
+
+
+def _remember(
+    cache: dict[ThemedFigureCacheKey, HomeFigureSet],
+    themed: ThemedFigureCacheKey,
+    figures: HomeFigureSet,
+) -> None:
+    """가장 최근에 쓴 칸으로 넣고 넘치는 칸을 오래된 것부터 버린다."""
     cache.pop(themed, None)
     cache[themed] = figures
     while len(cache) > HOME_FIGURE_CACHE_MAX_ENTRIES:
