@@ -65,7 +65,10 @@ def build_process_picker_summary(
             minimum_rate=minimum_rate,
             minimum_month=minimum_month,
             valid_month_count=int(rows["생산계획년월"].nunique()),
-            group="shortfall" if minimum_rate < secure_threshold else "sufficient",
+            # HOME 의 `capacity_status` 와 같은 부등호다 — 확보는 기준 **초과**다. 기준과
+            # 같은 값을 여기서만 충족으로 두면 HOME 결론이 「기준 미달」이라 세는 공정이
+            # 아래 구역에 숨는다.
+            group="sufficient" if minimum_rate > secure_threshold else "shortfall",
         )
     return tuple(
         summaries.get(process, ProcessPickerItem(process, None, None, 0, "unavailable"))

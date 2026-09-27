@@ -394,6 +394,31 @@ try:
         monthly_density = apply_advance_to_density(monthly_density, advance_ratio)
         monthly_wafer = apply_advance_to_wafer(monthly_wafer, advance_ratio)
         securement_rate = apply_advance_to_securement(securement_rate, advance_ratio)
+    # 확보율 표와 같은 공용 순서를 먼저 정한 뒤, 선택 dialog가 부족 여부로만 구역을 나눈다.
+    # 표시명은 정렬 키나 세션값으로 쓰지 않는다. 규칙 밖의 공정은 기존 이름순으로 남는다.
+    # 이 try 안에 둔다 — 잘못 저장된 표시순서 규칙에 `apply_display_order` 가 ValueError 를
+    # 내면, 밖에서는 안내 대신 traceback 으로 HOME 전체가 멈추고 진행 막대도 남는다.
+    process_options = (
+        apply_display_order(
+            pd.DataFrame(
+                {
+                    "공정": sorted(
+                        securement_rate["공정"]
+                        .astype("string")
+                        .str.strip()
+                        .dropna()
+                        .unique()
+                        .tolist()
+                    )
+                }
+            ),
+            reference_tables["RQ_DISPLAY_ORDER"],
+            PAGE_CALCULATION,
+            TAB_SECUREMENT,
+        )["공정"]
+        .astype(str)
+        .tolist()
+    )
     home_trace.mark("HOME 계산 파이프라인")
     loading.advance()
 except BOOTSTRAP_ERRORS as exc:
@@ -402,24 +427,6 @@ except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))
     st.stop()
 
-# 확보율 표와 같은 공용 순서를 먼저 정한 뒤, 선택 dialog가 부족 여부로만 구역을 나눈다.
-# 표시명은 정렬 키나 세션값으로 쓰지 않는다. 규칙 밖의 공정은 기존 이름순으로 남는다.
-process_options = (
-    apply_display_order(
-        pd.DataFrame(
-            {
-                "공정": sorted(
-                    securement_rate["공정"].astype("string").str.strip().dropna().unique().tolist()
-                )
-            }
-        ),
-        reference_tables["RQ_DISPLAY_ORDER"],
-        PAGE_CALCULATION,
-        TAB_SECUREMENT,
-    )["공정"]
-    .astype(str)
-    .tolist()
-)
 # 히트맵이 **실제로 그릴** 목록. 고른 공정이 이 시나리오·조회기간에 없으면 건너뛰되
 # 프로필에서 지우지는 않는다 — 공용 설정이라 다른 시나리오에는 그 공정이 있다.
 # `resolve_included_processes` 를 쓰지 않는다. 그쪽의 「직전 옵션에 없던 공정은 새 공정

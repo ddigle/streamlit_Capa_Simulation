@@ -1200,7 +1200,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     통째로 덮인다. `seen=None`(기준 없음)과 `seen=[]`(직전에 옵션이 없었다)은 다르다.
 - `src/capa_simulation/services/process_picker.py`
   - 최종 월별 확보율을 조회기간의 최소값·최초 동률 월·유효 월 수로 요약한다. 확보 기준
-    미만·기준 이상·판정 없음으로 구분하되 입력 옵션 순서와 원본 공정 키를 보존한다.
+    미달·기준 초과·판정 없음으로 구분하되 입력 옵션 순서와 원본 공정 키를 보존한다.
+    경계는 HOME `capacity_status` 와 같다 — 기준과 같은 값은 미달 쪽이다.
     소요대수나 가용대수로 확보율을 다시 계산하지 않는다.
 - `src/capa_simulation/components/process_picker.py`
   - 요약을 세 구역의 168px 공정 버튼으로 그린다. 구역 안에서는 받은 순서를 유지하고
@@ -1305,12 +1306,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     만큼만 호기 구간을 만들면 첫 달이 **오류 없이** 모자라게 세어진다.
 > **진행 중 과제** — 끝나면 해당 정의서 파일과 항목을 같이 지운다.
 >
-> - [데모 데이터 70공정·28년·편차](docs/task_demo_data_scale_2026-09-27.md) (codex, 이어서)
->   — 위 과제의 합격 조건이 「60~70개에서 쓸 만한가」인데 합성 데모가 30공정이라 그 지점을
->   볼 수 없다. `scripts/generate_sample_core_data.py` 만 고치고 **결정적이어야 한다.**
-> - [가용설비 세 표 현재 데이터 내보내기](docs/task_equipment_csv_export_2026-09-24.md)
->   (claude) — 빈 양식만 받던 자리에 지금 입력된 데이터를 받는 길을 낸다. 주로
->   `services/equipment_csv.py` 와 `components/equipment_data_workspace.py`.
+> - 지금은 없다.
 
 - `src/capa_simulation/services/securement_cross_check.py`
   - 같은 소요대수에 Static(`RQ_EQP_AVBL`)과 Dynamic(일할 환산) 가용대수를 각각 나눠
@@ -1912,7 +1908,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   해당 페이지·탭 범위의 마지막 우선순위로 자동 보강한다.
 - 지원 정렬방식은 `사용자지정`, `오름차순`, `내림차순`이다.
 - 공정 표시명(Proc Rename) 규칙은 한 문장이다 — **화면은 표시명, 파일은 원본.**
-  화면에서 사람이 읽는 공정명은 빠짐없이 표시명이고, 적용 계층은 다섯이다.
+  화면에서 사람이 읽는 공정명은 빠짐없이 표시명이고, 적용 계층은 여섯이다.
   ① 월별 표의 분류 값(`value_labels=`, 치환은 `components/` 안에서만 한다),
   ② `multiselect`·`selectbox` 의 `format_func=`(값은 절대 바꾸지 않는다),
   ③ Figure 라벨(LOB 공정명 annotation·hover, 상세 B/N 이름·hover, 재공 격자 제목,
@@ -1920,8 +1916,9 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   ④ `st.dataframe` 조회 표(제외·누락 안내 목록, STEP 구성 요약, 설비대수 표시 표,
   예외 처리 공정 안내, Dynamic Capa 관리 우선순위)와 화면용 안내 문구,
   ⑤ `st.data_editor` 분류 컬럼의 `st.column_config.SelectboxColumn(format_func=)` 라벨.
-  편집기 두 벌(월별 편집기, HOME 의 B/N 공정 선택)의 표기는 같다 — 분류 컬럼은 언제나
-  한 컬럼이고 표시용 컬럼을 따로 두지 않는다. HOME 이 적용 시 되쓰는 값도 원본 `공정` 이다.
+  월별 편집기의 분류 컬럼은 언제나 한 컬럼이고 표시용 컬럼을 따로 두지 않는다.
+  ⑥ 버튼 라벨·`help`(HOME 의 B/N 공정 선택 바둑판). 글자와 도움말만 표시명이고 콜백
+  인자(`args=`)·위젯 키·적용 때 되쓰는 값은 원본 `공정` 이다.
 - ④ 에서 CSV 출구가 있는 표는 **화면 프레임과 CSV 프레임을 나눈다.** 화면 복사본에만
   표시명을 입히고 내보내는 프레임은 원본 그대로다(`components/exclusion_table.py`,
   `app_pages/static_capa.py` 가 그 모양이다). 계산 결과의 `attrs` 유래 프레임은
@@ -2045,7 +2042,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 `data/input/Core_Data.csv` 와 거기서 적재된 `data/capa_simulation.duckdb` 는 **실제 운영
 데이터가 아니라 합성 데모 표본**이다. 공정 목록·소요기준(WF/CHIP)·성능·수율은
 `scripts/generate_sample_core_data.py` 의 `PROCESS_SPECS` 리터럴에 사람이 써 넣은 값이고,
-행의 팬아웃(계획 1행 × 공정 30행)도 `process_rows()` 가 계획 행을 전 공정에 복제해서
+행의 팬아웃(계획 1행 × 전 공정)도 `process_rows()` 가 계획 행을 전 공정에 복제해서
 생기는 구조적 산물이다. `equipment_samples.py`, `dynamic_capacity.py` 의 `DemoProfile`,
 `builtin_seed.py` 도 같다.
 

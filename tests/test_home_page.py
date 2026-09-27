@@ -154,6 +154,13 @@ def test_process_picker_buttons_show_aliases_but_only_apply_original_keys(tmp_pa
     app.run()
     app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
     assert not app.exception
+    # 여는 첫 렌더만 페이지의 호출부 인자로 그려진다(이후는 하네스가 다시 부른다). 거기서
+    # 옵션이 표시명으로 바뀌면 적용된 공정이 OFF 로 보이므로, 적용값이 모두 ON 인지 본다.
+    assert {
+        str(button.key).removeprefix("home_bn_process_tile_")
+        for button in app.button
+        if str(button.key).startswith("home_bn_process_tile_") and button.proto.type == "primary"
+    } == set(original_selection)
     assert app.button(key=f"home_bn_process_tile_{process}").label == alias
     assert process in app.button(key=f"home_bn_process_tile_{process}").help
 
@@ -233,8 +240,8 @@ def test_process_picker_bulk_actions_restore_applied_values_and_apply_empty_or_a
 @pytest.mark.parametrize(
     "group_rate,other_rate,group_title,group_first",
     [
-        (0.8, 1.3, "확보 기준 미만", True),
-        (1.3, 0.8, "기준 이상", False),
+        (0.8, 1.3, "확보 기준 미달", True),
+        (1.3, 0.8, "기준 초과", False),
         (float("nan"), 0.8, "확보율 없음", False),
     ],
 )
@@ -313,6 +320,48 @@ def test_process_picker_preserves_shared_order_within_each_securement_group(
     assert not app.exception, [item.message for item in app.exception]
     assert app.session_state[PROCESS_SELECTION_KEY] == configured_order
     assert not set(aliases.values()).intersection(app.session_state[PROCESS_SELECTION_KEY])
+
+
+def test_a_broken_securement_display_order_shows_an_error_instead_of_a_traceback(
+    tmp_path: Path,
+) -> None:
+    """공정 옵션 정렬이 HOME 의 `BOOTSTRAP_ERRORS` 경계 안에 있어야 한다.
+
+    저장 검증은 사용자지정 값 중복을 정확 일치로 보고 적용은 대소문자를 무시하고 본다.
+    그래서 대소문자만 다른 두 값이 저장을 통과한다. 정렬이 경계 밖이면 그 규칙 하나로
+    HOME 전체가 traceback 을 남기고 멈춘다.
+    """
+    from capa_simulation.persistence.cache import clear_global_display_order_cache
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
+
+    database = tmp_path / "broken_order.duckdb"
+    app = _run_process_dialog_app(database)
+    process = sorted(app.session_state[PROCESS_SELECTION_KEY])[0]
+    assert process.upper() != process.lower()
+    DuckDBScenarioRepository(database).replace_global_display_order(
+        pd.DataFrame(
+            {
+                "페이지 구분": [PAGE_CALCULATION] * 2,
+                "탭 구분": [TAB_SECUREMENT] * 2,
+                "정렬우선순위": [1] * 2,
+                "분류컬럼": ["공정"] * 2,
+                "정렬방식": ["사용자지정"] * 2,
+                "분류값": [process.upper(), process.lower()],
+                "값표시순서": [1, 2],
+                "활성여부": ["Y"] * 2,
+            }
+        ),
+        source="대소문자만 다른 표시순서 규칙",
+    )
+    clear_global_display_order_cache()
+
+    app = AppTest.from_string(
+        _home_script(database, retain_process_dialog=True), default_timeout=300
+    ).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("중복" in item.value for item in app.error)
 
 
 def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: Path) -> None:

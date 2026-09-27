@@ -77,17 +77,20 @@ def test_nan_infinite_and_absent_months_do_not_become_zero_or_shortfall() -> Non
 
 
 @pytest.mark.parametrize("threshold", [0.0, 1.0, 1.095])
-def test_equal_threshold_is_sufficient_and_only_strictly_lower_is_shortfall(threshold) -> None:
+def test_equal_threshold_is_shortfall_like_home_and_only_strictly_higher_is_sufficient(
+    threshold,
+) -> None:
+    """HOME 은 기준과 같은 확보율을 경고(기준 미달)로 센다. 선택 화면도 같아야 한다."""
     frame = _frame(
         [
             (202601, "동일", threshold),
-            (202601, "이상", threshold + 0.01),
+            (202601, "초과", threshold + 0.01),
             (202601, "미만", threshold - 0.01),
         ]
     )
 
-    assert [item.group for item in _summary(frame, ["동일", "이상", "미만"], threshold)] == [
-        "sufficient",
+    assert [item.group for item in _summary(frame, ["동일", "초과", "미만"], threshold)] == [
+        "shortfall",
         "sufficient",
         "shortfall",
     ]

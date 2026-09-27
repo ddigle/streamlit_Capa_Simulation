@@ -22,6 +22,8 @@ from capa_simulation.services.equipment_validation import (
 # 샘플 행임을 표시하는 비고. 저장 직전에 이 표식으로 손대지 않은 행을 가려낸다.
 SAMPLE_BASELINE_NOTE = "Core Data 개발 샘플"
 
+# 예전 생성기 `PROCESS_SPECS.owned` 를 옮겨 적은 고정값이다. 지금 생성기와는 맞춰지지
+# 않는다 — 맞출지 끊을지는 docs/TODO.md 에 남겼다.
 SAMPLE_BASELINE_COUNTS = (
     ("Pre B/D", 46.0),
     ("Wafer_Sorter", 18.0),
@@ -57,7 +59,7 @@ SAMPLE_BASELINE_COUNTS = (
 
 
 def sample_equipment_baseline() -> pd.DataFrame:
-    """Return a detached baseline copied from the development Core Data sample."""
+    """Return a detached baseline frozen from an earlier development Core Data sample."""
     return pd.DataFrame(
         {
             "공정": pd.Series([process for process, _ in SAMPLE_BASELINE_COUNTS], dtype="string"),
@@ -305,9 +307,9 @@ def untouched_sample_baseline_rows(baseline: pd.DataFrame) -> pd.DataFrame:
     """편집기에 채워 준 샘플 그대로인 행만 골라낸다.
 
     `sample_equipment_baseline()` 은 설비 DB 가 비었을 때 **화면 표시용**으로만 채워 넣는
-    값인데, 그대로 저장하면 불변 리비전에 영구 기록된다. 그 숫자는
-    `scripts/generate_sample_core_data.py` 의 `PROCESS_SPECS` 에 손으로 적힌 `owned`
-    필드이고 공정명도 그 리터럴이 정한 30개다. 실제 공정명이 다르면 호기 마스터와 절대
+    값인데, 그대로 저장하면 불변 리비전에 영구 기록된다. 그 숫자는 예전
+    `scripts/generate_sample_core_data.py` 의 `PROCESS_SPECS.owned` 를 옮겨 적은 고정
+    리터럴이고 공정명도 그 리터럴이 정한 것이다. 실제 공정명이 다르면 호기 마스터와 절대
     붙지 않는 유령 공정이 총대수·가용대수·가용률에 영원히 섞인다.
 
     값을 하나라도 고쳤으면 그 행은 사용자의 것이므로 걸러 내지 않는다. **네 컬럼이 모두
