@@ -2,7 +2,6 @@
 
 
 from dataclasses import replace
-from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -45,6 +44,7 @@ from capa_simulation.components.plan_comparison_dumbbell import (
     render_plan_comparison_dumbbell,
 )
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.process_picker import render_process_picker
 from capa_simulation.components.tab_state import stateful_tabs
 from capa_simulation.home_state import (
     ADVANCE_TOGGLE_KEY,
@@ -106,6 +106,8 @@ from capa_simulation.services.dashboard import (
     build_production_lob_summary,
     build_year_totals,
 )
+from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
 from capa_simulation.services.execution_capacity import (
     apply_execution_adjustment,
     clamped_execution_adjustments,
@@ -125,6 +127,10 @@ from capa_simulation.services.past_data import (
     merge_past_months,
     merge_past_plan_detail,
     past_plan_detail_to_wide,
+)
+from capa_simulation.services.process_picker import (
+    ProcessPickerItem,
+    build_process_picker_summary,
 )
 from capa_simulation.services.process_selection import resolve_included_processes
 from capa_simulation.services.simulation_cache import (
@@ -396,8 +402,23 @@ except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))
     st.stop()
 
-process_options = sorted(
-    securement_rate["공정"].astype("string").str.strip().dropna().unique().tolist()
+# 확보율 표와 같은 공용 순서를 먼저 정한 뒤, 선택 dialog가 부족 여부로만 구역을 나눈다.
+# 표시명은 정렬 키나 세션값으로 쓰지 않는다. 규칙 밖의 공정은 기존 이름순으로 남는다.
+process_options = (
+    apply_display_order(
+        pd.DataFrame(
+            {
+                "공정": sorted(
+                    securement_rate["공정"].astype("string").str.strip().dropna().unique().tolist()
+                )
+            }
+        ),
+        reference_tables["RQ_DISPLAY_ORDER"],
+        PAGE_CALCULATION,
+        TAB_SECUREMENT,
+    )["공정"]
+    .astype(str)
+    .tolist()
 )
 # 히트맵이 **실제로 그릴** 목록. 고른 공정이 이 시나리오·조회기간에 없으면 건너뛰되
 # 프로필에서 지우지는 않는다 — 공용 설정이라 다른 시나리오에는 그 공정이 있다.
@@ -407,7 +428,6 @@ applied_key_processes = [
     process for process in key_process_profile.processes if process in set(process_options)
 ]
 PROCESS_DIALOG_DRAFT_KEY = "dashboard_bottleneck_process_dialog_draft"
-PROCESS_DIALOG_EDITOR_KEY = "dashboard_bottleneck_process_dialog_editor"
 PROCESS_SEEN_KEY = "dashboard_bottleneck_process_seen"
 if PROCESS_SELECTION_KEY not in st.session_state:
     # 예전 사이드바 토글 키(dashboard_bottleneck_process_{공정})를 읽던 이관 코드였다.
@@ -430,7 +450,15 @@ st.session_state[PROCESS_SEEN_KEY] = list(process_options)
 
 def set_process_dialog_selection(processes: list[str]) -> None:
     st.session_state[PROCESS_DIALOG_DRAFT_KEY] = list(processes)
-    st.session_state.pop(PROCESS_DIALOG_EDITOR_KEY, None)
+
+
+def toggle_process_dialog_selection(process: str) -> None:
+    selected = list(st.session_state.get(PROCESS_DIALOG_DRAFT_KEY, []))
+    if process in selected:
+        selected.remove(process)
+    else:
+        selected.append(process)
+    set_process_dialog_selection(selected)
 
 
 @st.dialog(
@@ -439,15 +467,23 @@ def set_process_dialog_selection(processes: list[str]) -> None:
     icon=":material/filter_alt:",
     on_dismiss="rerun",
 )
-def show_process_filter_dialog(options: list[str]) -> None:
+def show_process_filter_dialog(
+    options: list[str],
+    items: tuple[ProcessPickerItem, ...],
+    threshold_percent: float,
+    start_month: int,
+    end_month: int,
+) -> None:
     draft_selection = st.session_state.get(PROCESS_DIALOG_DRAFT_KEY, [])
     if not isinstance(draft_selection, list):
         draft_selection = []
     selected_set = {str(process) for process in draft_selection if process in options}
 
+    st.markdown(f"**선택 {len(selected_set)} / {len(options)}** · 체크된 버튼이 ON입니다.")
     st.caption(
-        "B/N 공정과 Capa 집계에 포함할 공정을 선택합니다. 표의 검색 기능으로 공정명을 "
-        "찾을 수 있으며, 적용 전까지 기존 대시보드 조건은 유지됩니다."
+        f"{month_label(start_month)}–{month_label(end_month)} · 확보 기준 "
+        f"{threshold_percent:g}% · 유효한 월 중 최저 확보율로 구분합니다. "
+        "공정 위에 마우스를 올리면 전체 이름과 확보율을 볼 수 있습니다."
     )
     with st.container(horizontal=True, gap="small"):
         st.button(
@@ -472,57 +508,28 @@ def show_process_filter_dialog(options: list[str]) -> None:
             key="dashboard_bottleneck_process_restore",
         )
 
-    # 분류 컬럼은 월별 편집기와 같은 모양이다 — `SelectboxColumn` 이 옵션의 `value` 와
-    # `label` 을 나눠 가져 셀에 보이는 글자만 표시명이 된다. 값은 반드시 원본 `공정` 이다.
+    # 버튼에 보이는 글자만 표시명이며 콜백과 선택값은 반드시 원본 `공정` 이다.
     # 값을 표시명으로 바꾸면 아래 세션 되쓰기가 옵션에 없는 값을 만들어 대시보드가 오류
     # 없이 텅 빈다.
-    selection_frame = pd.DataFrame(
-        {
-            "포함": [process in selected_set for process in options],
-            "공정": list(options),
-        }
+    render_process_picker(
+        items,
+        selected_set,
+        format_func=process_labels.format_func(),
+        on_toggle=toggle_process_dialog_selection,
     )
-    column_config: dict[str, Any] = {
-        "포함": st.column_config.CheckboxColumn(
-            "포함",
-            help="B/N 집계에 포함하려면 선택합니다.",
-            width="small",
-        ),
-        "공정": st.column_config.TextColumn("공정", width="large"),
-    }
-    if process_labels:
-        # 옵션에 없는 값은 셀이 빈칸으로 그려진다. 표의 값 전체를 옵션에 넣는다.
-        column_config["공정"] = st.column_config.SelectboxColumn(
-            "공정",
-            options=list(options),
-            format_func=process_labels.format_func(),
-            width="large",
-        )
-    with st.form("dashboard_bottleneck_process_dialog_form", border=False):
-        edited_selection = st.data_editor(
-            selection_frame,
-            key=PROCESS_DIALOG_EDITOR_KEY,
-            hide_index=True,
-            disabled=[column for column in selection_frame.columns if column != "포함"],
-            num_rows="fixed",
-            width="stretch",
-            height=520,
-            row_height=34,
-            column_config=column_config,
-        )
-        apply_selection = st.form_submit_button(
-            "선택 공정 적용",
-            type="primary",
-            icon=":material/check:",
-            width="stretch",
-        )
-    if apply_selection:
-        included_mask = edited_selection["포함"].fillna(False).astype(bool)
-        st.session_state[PROCESS_SELECTION_KEY] = (
-            edited_selection.loc[included_mask, "공정"].astype(str).tolist()
-        )
+    st.caption("선택 공정 적용을 눌러야 대시보드에 반영됩니다. 닫으면 초안은 버립니다.")
+    if st.button(
+        "선택 공정 적용",
+        key="dashboard_bottleneck_process_apply",
+        type="primary",
+        icon=":material/check:",
+        width="stretch",
+    ):
+        st.session_state[PROCESS_SELECTION_KEY] = [
+            process for process in options if process in selected_set
+        ]
         st.session_state.pop(PROCESS_DIALOG_DRAFT_KEY, None)
-        st.rerun()
+        st.rerun(scope="app")
 
 
 included_processes = list(st.session_state[PROCESS_SELECTION_KEY])
@@ -581,7 +588,19 @@ with sidebar_expander(
         key="dashboard_bottleneck_process_dialog_open",
     ):
         set_process_dialog_selection(included_processes)
-        show_process_filter_dialog(process_options)
+        show_process_filter_dialog(
+            process_options,
+            build_process_picker_summary(
+                securement_rate,
+                process_options,
+                start_month=effective_start,
+                end_month=effective_end,
+                secure_threshold=secure_threshold_percent / 100.0,
+            ),
+            secure_threshold_percent,
+            effective_start,
+            effective_end,
+        )
     if warning_threshold_percent > secure_threshold_percent:
         st.warning(
             f"경고 기준({warning_threshold_percent:g}%)이 확보 기준"

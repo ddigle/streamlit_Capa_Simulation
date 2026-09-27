@@ -491,8 +491,8 @@ def test_month_editor_selectbox_options_cover_every_value_in_the_table() -> None
     assert values == set(frame["공정"])
 
 
-def test_home_process_dialog_uses_one_selectbox_column_with_original_values() -> None:
-    """HOME 의 B/N 공정 선택도 월별 편집기와 같은 한 컬럼 표기다.
+def test_home_process_dialog_buttons_keep_original_callback_and_selection_values() -> None:
+    """공정 버튼은 표시명을 그리지만 콜백과 적용 목록은 원본 공정 키를 사용한다.
 
     값은 원본 `공정` 이어야 한다. 선택값이 세션·프리셋에 저장되고 `isin` 대조에 쓰이므로
     표시명이 들어가면 대시보드가 오류 없이 텅 빈다.
@@ -505,11 +505,25 @@ def test_home_process_dialog_uses_one_selectbox_column_with_original_values() ->
     )
     body = ast.unparse(function)
 
-    assert "st.column_config.SelectboxColumn" in body
+    assert "render_process_picker(" in body
     assert "format_func=process_labels.format_func()" in body
-    # 표시명 전용 컬럼을 따로 만들면 편집기 두 벌의 표기가 갈린다.
-    assert "'표시명'" not in body
-    assert "edited_selection.loc[included_mask, '공정']" in body
+    assert "on_toggle=toggle_process_dialog_selection" in body
+    assert "st.data_editor" not in body
+    assert "[process for process in options if process in selected_set]" in body
+
+    renderer_path = PROJECT_ROOT / "src/capa_simulation/components/process_picker.py"
+    renderer = ast.parse(renderer_path.read_text(encoding="utf-8"))
+    button = next(
+        node
+        for node in ast.walk(renderer)
+        if isinstance(node, ast.Call) and ast.unparse(node.func) == "st.button"
+    )
+    keywords = {keyword.arg: ast.unparse(keyword.value) for keyword in button.keywords}
+    assert ast.unparse(button.args[0]) == "label"
+    assert "label = format_func(item.process)" in ast.unparse(renderer)
+    assert keywords["on_click"] == "on_toggle"
+    assert keywords["args"] == "(item.process,)"
+    assert "{item.process}" in keywords["key"]
 
 
 # ------------------------------------------- Dynamic Capa Figure 는 표시명을 쓴다
