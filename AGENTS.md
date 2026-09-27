@@ -1290,6 +1290,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 > - [B/N 집계 공정 바둑판 선택](docs/task_bn_process_picker_2026-09-24.md) (codex) —
 >   체크박스 표를 공정명 버튼 바둑판으로 바꾸고 확보율이 모자란 공정을 위로 올린다.
 >   주로 `app_pages/home.py` 의 `show_process_filter_dialog`.
+> - [데모 데이터 70공정·28년·편차](docs/task_demo_data_scale_2026-09-27.md) (codex, 이어서)
+>   — 위 과제의 합격 조건이 「60~70개에서 쓸 만한가」인데 합성 데모가 30공정이라 그 지점을
+>   볼 수 없다. `scripts/generate_sample_core_data.py` 만 고치고 **결정적이어야 한다.**
 > - [가용설비 세 표 현재 데이터 내보내기](docs/task_equipment_csv_export_2026-09-24.md)
 >   (claude) — 빈 양식만 받던 자리에 지금 입력된 데이터를 받는 길을 낸다. 주로
 >   `services/equipment_csv.py` 와 `components/equipment_data_workspace.py`.
