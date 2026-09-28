@@ -10,6 +10,7 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.scenario_status as target
+from capa_simulation.components.capacity_gate import GateVerdict
 from capa_simulation.components.scenario_status import (
     SIDEBAR_REVISION_KEY,
     SIDEBAR_SCENARIO_KEY,
@@ -114,6 +115,11 @@ def sidebar_app() -> Iterator[AppTest]:
         },
         "revision_tables_for_save": lambda _active, tables: {"RQ_REQB": tables["RQ_REQB"].copy()},
         "capture_scenario_preset": lambda _tables: SimpleNamespace(),
+        # 저장 검사는 따로 검증한다(`test_capacity_gate.py`). 여기서는 판정을 세션에서 읽어
+        # 화면이 그 판정대로 움직이는지만 본다.
+        "revision_save_verdict": lambda *_args: st.session_state.get(
+            "test_save_verdict", GateVerdict(True)
+        ),
     }
     originals = {name: getattr(target, name) for name in replacements}
     try:
@@ -154,3 +160,32 @@ def test_sidebar_saves_current_state_as_a_new_revision(sidebar_app: AppTest) -> 
     assert not app.exception
     assert app.session_state["test_saved_revision_name"] == "사이드바 저장안"
     assert app.session_state["test_activated_revision"] == "revision-3"
+
+
+def _save(app: AppTest, name: str) -> AppTest:
+    revision_name = next(widget for widget in app.text_input if widget.label == "새 리비전명")
+    app = revision_name.set_value(name).run()
+    save_button = next(button for button in app.button if button.label == "신규 리비전 저장")
+    return save_button.click().run()
+
+
+def test_a_save_the_gate_refuses_writes_nothing(sidebar_app: AppTest) -> None:
+    """편집이 계산을 깨뜨렸으면 저장하지 않고 그 이유를 그 자리에서 말한다."""
+    app = sidebar_app
+    app.session_state["test_save_verdict"] = GateVerdict(False, "이번 편집이 깨뜨린 것입니다")
+    app = _save(app.run(), "깨진 저장안")
+
+    assert not app.exception
+    assert "test_saved_revision_name" not in app.session_state
+    assert any("이번 편집이 깨뜨린" in error.value for error in app.error)
+
+
+def test_a_save_with_an_old_error_is_kept_and_warned(sidebar_app: AppTest) -> None:
+    """편집 전부터 있던 오류는 저장을 막지 않는다. 대신 발행이 막힌다고 저장 뒤에 알린다."""
+    app = sidebar_app
+    app.session_state["test_save_verdict"] = GateVerdict(True, "공식버전으로 지정할 수 없습니다")
+    app = _save(app.run(), "고치는 중")
+
+    assert not app.exception
+    assert app.session_state["test_saved_revision_name"] == "고치는 중"
+    assert any("공식버전으로 지정할 수 없습니다" in warning.value for warning in app.warning)

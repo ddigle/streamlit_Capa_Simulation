@@ -39,7 +39,7 @@ class ActiveScenario(TypedDict):
     # 미저장 변경을 감지하는 카운터여서 서로 다른 내용이 같은 번호를 가질 수 있다.
     # (세션 편집은 0,1,2... 로 올라가고 저장 리비전을 불러오면 그 번호가 그대로 들어온다.)
     # 계산 캐시 키에는 반드시 이 토큰을 쓴다. 편집이 없는 상태는 리비전에서 나온 고정
-    # 토큰이라(`_pristine_content_token`) 세션이 달라도 같은 내용이면 캐시를 나눠 쓴다.
+    # 토큰이라(`pristine_content_token`) 세션이 달라도 같은 내용이면 캐시를 나눠 쓴다.
     content_token: str
     tables: dict[str, pd.DataFrame]
 
@@ -52,7 +52,7 @@ def _new_content_token() -> str:
     return uuid4().hex
 
 
-def _pristine_content_token(reference_version: int) -> str:
+def pristine_content_token(reference_version: int) -> str:
     """저장 리비전을 편집 없이 올린 상태의 토큰. 내용이 리비전 하나로 정해지므로 고정한다.
 
     `reference_version` 은 리비전 ID 에서 나오고 리비전은 append-only 라, 같은 값이면 편집
@@ -100,7 +100,7 @@ def reset_active_scenario(
     scenario: ActiveScenario = {
         "reference_version": reference_version,
         "revision": previous_revision + 1,
-        "content_token": _pristine_content_token(reference_version),
+        "content_token": pristine_content_token(reference_version),
         "tables": {
             name: reference_tables[name].copy(deep=True) for name in EDITABLE_SCENARIO_TABLES
         },
@@ -144,7 +144,7 @@ def activate_scenario_tables(
     scenario: ActiveScenario = {
         "reference_version": reference_version,
         "revision": revision,
-        "content_token": _pristine_content_token(reference_version),
+        "content_token": pristine_content_token(reference_version),
         "tables": {
             name: reference_tables[name].copy(deep=True) for name in EDITABLE_SCENARIO_TABLES
         },

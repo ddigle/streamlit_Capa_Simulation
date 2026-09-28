@@ -660,6 +660,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     전부를 한 화면에 넣으려고 칸 폭을 Plotly 에 맡긴 반응형이고, HOME 쪽은
     `home_figures.build_key_process_heatmap_figures` 가 100px 월 격자에 맞춰 직접 그린다.
     둘을 합치려 들면 한쪽의 칸 폭 계약이 깨진다. 공유하는 것은 **판정 경계의 뜻**뿐이다.
+- `src/capa_simulation/components/capacity_gate.py`
+  - 리비전 저장·공식 발행 **전에** 시나리오 전체 기간 Capa 계산을 한 번 돌린다. 계산
+    페이지만 막으면 오류는 HOME 을 연 사람 — 대개 고칠 수 없는 사람 — 이 처음 본다. 쓰는
+    순간과 보는 순간이 갈라지면 쓸 때 통과한 것이 볼 때 터지는 일이 쌓인다.
+  - **저장:** 편집본이 계산되지 않는데 편집 전 리비전은 계산되면 막는다(이 편집이
+    깨뜨렸다). 편집 전부터 계산되지 않았으면 저장은 허락하고 「공식버전으로 지정할 수
+    없다」고 경고한다 — 막으면 오류가 여럿일 때 하나씩 고쳐 가며 저장할 길이 없다.
+  - **발행:** 계산되지 않는 리비전은 막는다. 공식버전은 모두의 첫 화면이다.
+  - 계산 페이지와 **같은 캐시 칸**을 쓴다(`reference_version_for_revision` +
+    `pristine_content_token`). 발행이 통과하면 그 리비전의 HOME 계산이 이미 데워져 있다.
+  - BigDataQuery 등록·내장 시드 부트스트랩·기간 병합·연도 이동은 검사하지 않는다 — 들어온
+    원천을 앱 안에서 고칠 길을 막지 않기 위해서다. 새 저장·발행 경로를 만들면
+    `tests/test_capacity_gate.py` 의 쓰기 경로 목록에 더한다(검사가 쓰기보다 먼저인지 본다).
 - `src/capa_simulation/components/capacity_assumption_notice.py`
   - 측정률 행이 없어 **중립값 1.0 으로 이어 간 건수**를 한 줄로 말한다. HOME 과 `산출 결과`
     둘 다 같은 문구를 쓴다.
@@ -797,7 +810,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/scenario_state.py`
   - 사용자 세션별 활성 시나리오와 `revision`(편집 카운터)·`content_token`(내용 토큰)을 관리한다.
     편집을 적용할 때마다 둘 다 갱신되며, 캐시 키에는 `content_token`만 쓴다.
-  - **편집 없는 상태의 토큰은 리비전에서 나온 고정값이다**(`_pristine_content_token`). 저장
+  - **편집 없는 상태의 토큰은 리비전에서 나온 고정값이다**(`pristine_content_token`). 저장
     리비전을 올리거나 원본으로 초기화하면 `reference_version` 으로 정해지는 같은 토큰을 받아,
     같은 공식버전을 여는 모든 세션이 계산 캐시를 나눠 쓴다. 세션마다 uuid 를 새로 발급하던
     때는 새로고침할 때마다 HOME 계산이 처음부터 다시 돌았다. 편집이 들어가면 uuid 로 갈라진다.

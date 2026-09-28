@@ -10,6 +10,7 @@ from pathlib import Path
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation.components.capacity_gate import revision_save_verdict
 from capa_simulation.components.scenario_management import revision_tables_for_save
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
@@ -37,6 +38,8 @@ SIDEBAR_SCENARIO_KEY = "sidebar_scenario_id"
 SIDEBAR_REVISION_KEY = "sidebar_revision_id"
 SIDEBAR_SYNC_TOKEN_KEY = "sidebar_scenario_sync_token"
 SIDEBAR_FLASH_KEY = "sidebar_scenario_flash"
+# 성공 알림과 함께 띄울 경고. 저장은 됐지만 남은 계산 오류가 있을 때 쓴다.
+SIDEBAR_FLASH_WARNING_KEY = "sidebar_scenario_flash_warning"
 # 사이드바 박스 key 이자 CSS 훅. 확장 패널의 펼침 상태도 이 key 로 오간다.
 SCENARIO_BOX_KEY = "sidebar_scenario_box"
 SCENARIO_BOX_TITLE = "시나리오·리비전"
@@ -190,6 +193,9 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
 def _show_flash(flash: object) -> None:
     if isinstance(flash, str):
         st.success(flash)
+    warning = st.session_state.pop(SIDEBAR_FLASH_WARNING_KEY, None)
+    if isinstance(warning, str):
+        st.warning(warning, icon=":material/warning:")
 
 
 def _scenario_box(*, badge: str) -> DeltaGenerator:
@@ -300,6 +306,12 @@ def _render_revision_save(
                 reference_version = get_effective_reference_version()
                 reference_tables = get_effective_reference_tables()
                 active_scenario = ensure_active_scenario(reference_tables, reference_version)
+                verdict = revision_save_verdict(
+                    reference_version, active_scenario, reference_tables
+                )
+                if not verdict.allowed:
+                    st.error(verdict.message)
+                    return
                 revision_tables = revision_tables_for_save(active_scenario, reference_tables)
                 snapshot = repository.save_revision(
                     active_scenario_id,
@@ -318,6 +330,8 @@ def _render_revision_save(
             st.session_state[SIDEBAR_FLASH_KEY] = (
                 f"신규 리비전 r{snapshot.revision.revision_no}을 저장했습니다."
             )
+            if verdict.message:
+                st.session_state[SIDEBAR_FLASH_WARNING_KEY] = verdict.message
             st.rerun()
 
 

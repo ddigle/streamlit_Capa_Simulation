@@ -39,6 +39,14 @@ def get_effective_reference_version() -> int:
     raise RuntimeError("활성 DuckDB 리비전 버전이 없습니다.")
 
 
+def reference_version_for_revision(revision_id: str) -> int:
+    """리비전 ID 에서 나오는 기준정보 버전. 계산 캐시 키의 첫 칸이다.
+
+    세션 활성화와 공식 발행 검사가 같은 값을 써야 검사가 데운 캐시를 HOME 이 그대로 쓴다.
+    """
+    return int(revision_id.replace("-", "")[:15], 16)
+
+
 def activate_persisted_reference_tables(
     reference_tables: dict[str, pd.DataFrame],
     revision_id: str,
@@ -48,7 +56,7 @@ def activate_persisted_reference_tables(
         isinstance(frame, pd.DataFrame) for frame in reference_tables.values()
     ):
         raise ValueError("활성화할 DuckDB 기준정보가 올바르지 않습니다.")
-    version = int(revision_id.replace("-", "")[:15], 16)
+    version = reference_version_for_revision(revision_id)
     st.session_state[SESSION_REFERENCE_TABLES_KEY] = reference_tables
     st.session_state[SESSION_REFERENCE_VERSION_KEY] = version
     return version

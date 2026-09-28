@@ -15,6 +15,7 @@ from typing import cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
 from capa_simulation.components.scenario_month_merge import render_scenario_month_merge
 from capa_simulation.components.scenario_year_shift import render_scenario_year_shift
 from capa_simulation.io.reference_cache import (
@@ -50,6 +51,8 @@ from capa_simulation.services.virtual_product import VirtualProductRecord
 
 CLONE_PIPELINE_VERSION = "duckdb-rq-snapshot-v3"
 FLASH_KEY = "scenario_management_flash"
+# 성공 알림과 함께 띄울 경고. 저장은 됐지만 남은 계산 오류가 있을 때 쓴다.
+FLASH_WARNING_KEY = "scenario_management_flash_warning"
 MODE_KEY = "scenario_page_mode"
 MODES = (
     "목록 관리",
@@ -108,6 +111,9 @@ def _render_store_status(
     flash = st.session_state.pop(FLASH_KEY, None)
     if isinstance(flash, str):
         st.success(flash)
+    warning = st.session_state.pop(FLASH_WARNING_KEY, None)
+    if isinstance(warning, str):
+        st.warning(warning, icon=":material/warning:")
     official = repository.latest_official_release()
     with st.container(border=True):
         st.markdown("#### :material/database: 저장소 상태")
@@ -353,7 +359,7 @@ def _render_scenario_actions(
         if action == "rename":
             _render_rename(repository, summary)
         elif action == "official":
-            _render_official(repository, summary, selected_revision_id)
+            _render_official(repository, database_path, summary, selected_revision_id)
         elif action == "archive":
             _render_archive(repository, summary)
 
@@ -397,6 +403,7 @@ def _render_rename(repository: DuckDBScenarioRepository, summary: ScenarioSummar
 
 def _render_official(
     repository: DuckDBScenarioRepository,
+    database_path: str,
     summary: ScenarioSummary,
     revision_id: str,
 ) -> None:
@@ -412,6 +419,13 @@ def _render_official(
         )
     if official_submitted:
         try:
+            # 공식버전은 모두의 첫 화면이다. 계산이 안 되는 리비전을 지정하면 모두의 HOME 이
+            # 멈춘다. 검사는 HOME 과 같은 캐시 칸을 써서, 통과하면 HOME 이 이미 데워져 있다.
+            with st.spinner("공식버전으로 지정할 수 있는지 Capa 계산을 확인하는 중입니다..."):
+                verdict = official_publish_verdict(database_path, revision_id)
+            if not verdict.allowed:
+                st.error(verdict.message)
+                return
             release = repository.publish_official_revision(
                 summary.scenario_id,
                 revision_id,
@@ -649,6 +663,12 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
     try:
         # 사이드바 「저장」과 같은 일을 한다. 표가 크면 몇 초가 걸린다.
         with st.spinner("현재 편집본을 새 리비전으로 저장하는 중입니다..."):
+            verdict = revision_save_verdict(
+                get_effective_reference_version(), active_scenario, reference_tables
+            )
+            if not verdict.allowed:
+                st.error(verdict.message)
+                return
             revision_tables = revision_tables_for_save(active_scenario, reference_tables)
             preset = capture_scenario_preset(
                 {**reference_tables, "RQ_REQB": revision_tables["RQ_REQB"]}
@@ -682,6 +702,8 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
                 "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
             )
         st.session_state[FLASH_KEY] = message
+        if verdict.message:
+            st.session_state[FLASH_WARNING_KEY] = verdict.message
         st.rerun()
 
 
