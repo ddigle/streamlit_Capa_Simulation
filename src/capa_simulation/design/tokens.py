@@ -322,6 +322,10 @@ def _complete(palette: dict[str, Any]) -> dict[str, Any]:
     filled["NAV_HOME_TINT_STRONG"] = _with_alpha(palette["ACCENT"], 0.16)
     # HOME 버튼 위를 한 번 지나는 광택 띠. 면색이 아니라 **빛**이라 SURFACE 를 흐린다.
     filled["NAV_HOME_SHEEN"] = _with_alpha(palette["SURFACE"], 0.85)
+    # 사이드바 조회 조건 상자(시나리오·리비전, 조회기간, B/N 집계 공정)의 옅은 면. 다른 화면
+    # 으로 가는 목록 상자와 같은 모양으로 서되 「지금 화면의 계산 조건」이라는 것을 면으로
+    # 말한다. 0.12 는 제안서 시안의 세기다(2026-09-28 사용자: 해 보고 별로면 되돌린다).
+    filled["NAV_CONTROL_TINT"] = _with_alpha(palette["ACCENT"], 0.12)
     # 기준선과 실적선 사이를 칠하는 옅은 면. `DELTA_AREA_*` 는 막대 트랙 위에 얹혀 트랙과
     # 구분돼야 하지만, 이 면은 선 두 개 사이를 채우기만 하면 되므로 같은 세기로 칠하면
     # 정작 읽어야 할 선이 면에 묻힌다.
@@ -372,6 +376,7 @@ if TYPE_CHECKING:
     HEADER_BAR: Final[str] = ""
     LINE: Final[str] = ""
     NAV_ACTIVE_RING: Final[str] = ""
+    NAV_CONTROL_TINT: Final[str] = ""
     NAV_HOME_SHEEN: Final[str] = ""
     NAV_HOME_TINT: Final[str] = ""
     NAV_HOME_TINT_STRONG: Final[str] = ""

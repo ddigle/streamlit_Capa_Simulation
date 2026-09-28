@@ -123,6 +123,18 @@ def build_sidebar_stylesheet(
     condition_icon_selectors = _SELECTOR_JOINER.join(
         f'.st-key-{key} summary [data-testid="stExpanderIcon"]' for key in condition_box_keys
     )
+    # 면은 **안쪽 확장 패널**에 칠한다. 바깥 `.st-key-*` 래퍼에 칠하면 모서리가 각진 띠가
+    # 한 겹 더 둘러진다(아래 「그룹 상자에는 배경을 칠하지 않는다」).
+    condition_face_selectors = _SELECTOR_JOINER.join(
+        f".st-key-{key} details" for key in condition_box_keys
+    )
+    condition_summary_selectors = _SELECTOR_JOINER.join(
+        f".st-key-{key} details > summary:not(:hover):not(:focus-visible)"
+        for key in condition_box_keys
+    )
+    condition_alert_selectors = _SELECTOR_JOINER.join(
+        f'.st-key-{key} details [data-testid="stAlert"]' for key in condition_box_keys
+    )
     # 사이드바 안의 페이지 링크 전부. 본문에도 `stPageLink` 가 있을 수 있어 사이드바로 좁힌다.
     NAV_LINK = '[data-testid="stSidebarContent"] [data-testid="stPageLink-NavLink"]'
     # HOME 링크 하나. **활성 규칙보다 특정도가 높아야** 한다 — HOME 에 있을 때 활성 규칙의
@@ -390,6 +402,29 @@ def build_sidebar_stylesheet(
            서되, 눌러서 바꾸는 것이 화면이 아니라 **지금 화면의 계산 조건**이라는 표시다. */
         {condition_icon_selectors} {{
             color: {tokens.ACCENT};
+        }}
+        /* 조건 상자 셋에 옅은 `ACCENT` 면을 깐다. 요약 줄과 펼친 몸이 **한 장의 면**으로
+           읽히도록, Streamlit 이 펼친 요약 줄에 까는 제 면은 걷는다(덮이는 것을 실측했다 —
+           위 「펼친 요약 줄의 면색은 덮을 수 있다」). 마우스를 올리거나 키보드로 닿았을 때는
+           걷지 않는다 — 그 순간 면이 바뀌는 것이 「누를 수 있다」는 신호다. */
+        {condition_face_selectors} {{
+            background-color: {tokens.NAV_CONTROL_TINT};
+        }}
+        {condition_summary_selectors} {{
+            background-color: transparent;
+        }}
+        /* 상자 안 알림(저장 검사 오류·경고 등)은 제 면이 반투명이라 청록과 섞인다. 오류
+           글자 대비가 밝게 4.57 → 3.89, 어둡게 4.51 → 3.71 로 떨어졌다(실측). 알림 밑에
+           `SURFACE` 를 한 장 깔아 면 밖과 같은 색으로 읽히게 한다. 모서리는 알림 면의
+           모서리(실측 10px)와 같게 둔다. */
+        {condition_alert_selectors} {{
+            background-color: {tokens.SURFACE};
+            border-radius: 10px;
+        }}
+        /* 면 위에서는 공식버전 배지의 경계가 흐려진다. 1px 윤곽으로 배지를 세운다. */
+        .st-key-{scenario_box_key} summary .stMarkdownBadge {{
+            outline: 1px solid {tokens.BORDER};
+            outline-offset: -1px;
         }}
         /* HOME 과 첫 그룹 박스 사이만 한 칸 더 띄운다. HOME 은 상자가 아니라 「돌아오는
            자리」라 아래 목록과 같은 간격으로 붙어 있으면 목록의 첫 항목처럼 읽힌다. */
