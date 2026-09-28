@@ -73,6 +73,7 @@ from capa_simulation.services.equipment_csv import (
     untouched_template_baseline_rows,
 )
 from capa_simulation.services.equipment_samples import untouched_sample_baseline_rows
+from capa_simulation.services.equipment_units import module_group_warnings
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_baseline,
@@ -518,7 +519,8 @@ def _deletion_message(plan: DeletionPlan) -> str:
     samples = ", ".join(plan.sample_keys())
     more = " 외" if count > len(plan.sample_keys()) else ""
     if plan.target == EQUIPMENT_TARGET:
-        head = f"호기 {count:,}대를 편집본에서 지웁니다"
+        # 행 수다. 모듈 설비는 한 대가 여러 행이라 「대」로 적으면 넷이 네 대로 읽힌다.
+        head = f"호기 {count:,}행을 편집본에서 지웁니다"
         if plan.cascaded_downtime_count:
             head += f" — 이 호기의 비가동 일정 {plan.cascaded_downtime_count:,}건도 함께 지웁니다"
     elif plan.target == BASELINE_TARGET:
@@ -642,6 +644,7 @@ def _render_editors(
                 "장기보관여부",
                 "기존설비여부",
                 "레이아웃표시",
+                "모체호기",
             ),
             locked=("호기", "공정소분류", "장기보관여부", "기존설비여부", "레이아웃표시"),
             label="호기 마스터 · 표 보기 설정",
@@ -670,6 +673,12 @@ def _render_editors(
             # `step` 을 주지 않는다. Streamlit 은 step 의 소수 자릿수만큼 입력을 **잘라** 저장한다
             # (step=0.1 이면 0.25 → 0.2). 모듈 행의 0.25·0.125 가 그대로 들어가야 한다.
             "환산비": st.column_config.NumberColumn(min_value=0.01),
+            "모체호기": st.column_config.TextColumn(
+                help=(
+                    "모듈 행을 설비 한 대로 묶는 설비 ID 입니다(APW01A~D → APW01). "
+                    "비모듈 설비는 비웁니다."
+                )
+            ),
         }
         config.update(
             {column: st.column_config.DateColumn(format="YYYY-MM-DD") for column in DATE_COLUMNS}
@@ -685,7 +694,9 @@ def _render_editors(
         equipment_action = _selection_buttons("master")
         st.caption(
             "환산비는 기준 모델 1대 대비 생산성입니다. 비우면 1입니다. "
-            "주차별 설비대수에는 적용하지 않으며 월별 환산대수·확보율 교차검증에 반영합니다."
+            "주차별 설비대수에는 적용하지 않으며 월별 환산대수·확보율 교차검증에 반영합니다. "
+            "모듈로 관리하는 설비는 모듈마다 한 행을 두고 모체호기에 같은 설비 ID 를, "
+            "환산비에 1 ÷ 모듈수(4모듈이면 0.25)를 적습니다 — 대수는 묶음을 1대로 셉니다."
         )
     with baseline_tab:
         st.caption("호기별 일정 관리가 필요 없는 기존 설비를 공정·분류별 대수로 입력합니다.")
@@ -916,6 +927,11 @@ def render_equipment_data_workspace(
             on_click=_drop_example_rows,
             kwargs={"floor_canvases": floor_canvases},
         )
+    # 저장은 막지 않는다. 묶음의 환산비가 모두 1 이면 능력이 모듈 수만큼 부풀려진다.
+    # 미리보기 중이면 **저장될 후보**를 본다 — 편집본만 보면 저장한 뒤에야 경고가 뜬다.
+    master = pending.candidate[1] if isinstance(pending, ImportReview) else frames[1]
+    for message in module_group_warnings(master):
+        st.warning(message, icon=":material/view_module:")
     with st.expander("입력 양식과 작성 기준", expanded=False):
         st.caption(
             "Excel에서 헤더를 포함해 복사하거나 CSV 파일을 올리세요. "
@@ -949,6 +965,10 @@ def render_equipment_data_workspace(
             "가용 판정은 Qual 일정 기준입니다.\n"
             "- **기존 보유대수**: 공정 + 분류로 구분합니다. "
             "개별 비가동과 Space 배치는 적용하지 않습니다.\n"
+            "- **모체호기**: 모듈로 관리하는 설비(CoW Bonder 등)만 적습니다. 모듈 행마다 같은 "
+            "설비 ID 를 적으면 대수는 1대로 세고, 능력은 모듈 행의 환산비(4모듈이면 0.25)를 "
+            "더합니다. 한 설비의 모듈은 공정·라인·활용구분·동·층이 같아야 합니다. "
+            "비워 두면 행 하나가 설비 한 대입니다.\n"
             "- **비가동 일정**: 호기 + 비가동유형 + 시작일로 구분합니다. 먼저 호기를 등록하세요.\n"
             "- 입력한 운영 설비대수는 시뮬레이션 Capa 산출 데이터와 분리되어 있습니다."
         )

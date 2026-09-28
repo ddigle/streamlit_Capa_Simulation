@@ -17,13 +17,16 @@ from capa_simulation.services.equipment_contract import (
     DOWNTIME_KEY_COLUMNS,
     EQUIPMENT_COLUMNS,
     FLAG_COLUMNS,
+    PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
     REFERENCE_TEXT_COLUMNS,
+    UNIT_CONSISTENT_COLUMNS,
     VALID_BUILDINGS,
     VALID_FLOORS,
     empty_downtime_schedule,
     empty_equipment_baseline,
     empty_equipment_master,
+    with_optional_equipment_columns,
 )
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
@@ -58,11 +61,12 @@ def prepare_equipment_master(
     *,
     floor_canvases: FloorCanvasMap | None = None,
 ) -> pd.DataFrame:
-    """호기 마스터 31컬럼 계약을 정규화하고 검증한다.
+    """호기 마스터 32컬럼 계약을 정규화하고 검증한다. 선택 컬럼(모체호기)은 없으면 빈 칸이다.
 
     `floor_canvases` 를 넘기면 층별 캔버스 폭·높이를 상한으로 좌표를 검사한다. 넘기지
     않으면 상한 검사를 건너뛴다 — 이미 저장된 리비전은 캔버스가 줄어든 뒤에도 열려야 한다.
     """
+    data = with_optional_equipment_columns(data)
     require_columns(data, EQUIPMENT_COLUMNS, "호기 마스터")
     result = data.loc[:, EQUIPMENT_COLUMNS].copy()
     result = _drop_blank_rows(result, ("호기",))
@@ -73,10 +77,12 @@ def prepare_equipment_master(
     for column in REFERENCE_TEXT_COLUMNS + ("동", "층"):
         result[column] = _optional_text(result[column])
     result["확정상태"] = _optional_text(result["확정상태"])
+    result[PARENT_EQUIPMENT_COLUMN] = _optional_text(result[PARENT_EQUIPMENT_COLUMN])
     duplicated = result["호기"].duplicated(keep=False)
     if duplicated.any():
         examples = result.loc[duplicated, "호기"].drop_duplicates().head(5).tolist()
         raise ValueError(f"호기는 중복될 수 없습니다: {examples}")
+    _validate_unit_groups(result)
 
     for column in FLAG_COLUMNS:
         result[column] = result[column].astype("string").str.strip().str.upper()
@@ -132,6 +138,36 @@ def prepare_equipment_master(
             examples = result.loc[before_arrival, "호기"].head(5).tolist()
             raise ValueError(f"{exit_column}은 입고일정보다 빠를 수 없습니다: {examples}")
     return result.reset_index(drop=True)
+
+
+def _validate_unit_groups(result: pd.DataFrame) -> None:
+    """모체호기로 묶은 모듈 행이 한 설비로 셀 수 있는 모양인지 본다.
+
+    - 모체호기는 다른 행의 호기와 같을 수 없다. 설비 행(APW01)과 모듈 행(APW01A~D)을 함께
+      두면 같은 설비가 두 번 세어진다.
+    - 한 설비의 모듈 행끼리 공정·라인·활용·동·층이 같아야 한다. 화면 필터가 이 값들로
+      행을 거르므로, 다르면 필터가 설비를 쪼개 지분 합이 1 이 아니게 된다.
+    """
+    parents = result[PARENT_EQUIPMENT_COLUMN]
+    named = parents.notna()
+    if not named.any():
+        return
+    # 자기 호기를 적은 것은 무해하다(묶음 1행 = 지분 1). 다른 행의 호기를 가리킬 때만 막는다.
+    units = result["호기"].astype("string")
+    colliding = named & parents.isin(set(units)) & parents.ne(units)
+    if colliding.any():
+        examples = parents.loc[colliding].drop_duplicates().head(5).tolist()
+        raise ValueError(
+            "모체호기는 다른 행의 호기와 같을 수 없습니다 — 설비 행과 모듈 행을 함께 두면 "
+            f"같은 설비가 두 번 세어집니다. 설비 행을 지우고 모듈 행만 남기세요: {examples}"
+        )
+    keys = parents.where(named, result["호기"])
+    for column in UNIT_CONSISTENT_COLUMNS:
+        values = result[column].astype("string").fillna("")
+        mixed = values.groupby(keys).nunique().gt(1)
+        if mixed.any():
+            examples = mixed.loc[mixed].index.tolist()[:5]
+            raise ValueError(f"같은 모체호기의 모듈 행은 {column} 이 같아야 합니다: {examples}")
 
 
 def prepare_downtime_schedule(

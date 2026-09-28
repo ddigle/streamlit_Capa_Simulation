@@ -95,7 +95,7 @@ def test_select_by_an_unapplied_filter_then_delete_confirm_and_undo(tmp_path: Pa
     app.button(key=DELETE_SELECTED_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
     warning = " ".join(item.value for item in app.warning)
-    assert "호기 9대" in warning and "비가동 일정 4건도 함께" in warning
+    assert "호기 9행" in warning and "비가동 일정 4건도 함께" in warning
     assert len(_machines(app)) == 54  # 확정 전에는 아무것도 빠지지 않는다
 
     app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()

@@ -11,6 +11,11 @@ import plotly.graph_objects as go
 
 from capa_simulation.components.plotly_layout import append_layout_items, flush_layout_items
 from capa_simulation.design import tokens
+from capa_simulation.services.equipment_units import (
+    UNIT_SHARE_COLUMN,
+    format_unit_count,
+    unit_total,
+)
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
     DEFAULT_CANVAS_WIDTH,
@@ -55,20 +60,41 @@ def floors_for(building: str) -> list[FloorSpec]:
     return [floor for floor in FLOORS if floor.building == building]
 
 
-def equipment_counts(equipment: pd.DataFrame) -> tuple[int, int, int]:
+def _unit_shares(equipment: pd.DataFrame) -> pd.Series:
+    """행마다 설비지분. 상태 판정을 거치지 않은 표(지분 컬럼이 없는 표)는 행 하나가 한 대다."""
+    if UNIT_SHARE_COLUMN in equipment.columns:
+        return equipment[UNIT_SHARE_COLUMN].astype("float64").fillna(1.0)
+    return pd.Series(1.0, index=equipment.index, dtype="float64")
+
+
+def equipment_unit_total(equipment: pd.DataFrame) -> float:
+    """행이 아니라 설비 대수. 모체호기로 묶은 모듈 행 넷이 한 대다."""
+    return unit_total(_unit_shares(equipment))
+
+
+def equipment_counts(equipment: pd.DataFrame) -> tuple[float, float, float]:
+    """가용·설치·전환 진행·비가동 대수. 행을 세지 않고 설비지분을 더한다.
+
+    모듈 하나가 비가동이면 그 설비는 가용 0.75 · 비가동 0.25 로 갈린다.
+    """
     if equipment.empty or "상태" not in equipment.columns:
-        return 0, 0, 0
-    production = int(equipment["가용여부"].fillna(False).sum())
-    inactive = int(equipment["상태"].isin(["보관 설비", "운영 비가동"]).sum())
-    progress = len(equipment) - production - inactive
+        return 0.0, 0.0, 0.0
+    shares = _unit_shares(equipment)
+    available = equipment["가용여부"].fillna(False).astype(bool)
+    inactive_rows = equipment["상태"].isin(["보관 설비", "운영 비가동"])
+    # 셋 다 **직접 더한다.** 합계에서 둘을 빼면 반올림 끝자리가 -0.0 으로 남아 표에
+    # 「-0」이 찍힌다(3모듈 설비의 1/3 지분).
+    production = unit_total(shares.where(available, 0.0))
+    inactive = unit_total(shares.where(inactive_rows, 0.0))
+    progress = unit_total(shares.where(~available & ~inactive_rows, 0.0))
     return production, progress, inactive
 
 
-def building_counts(equipment: pd.DataFrame, building: str) -> tuple[int, int, int]:
+def building_counts(equipment: pd.DataFrame, building: str) -> tuple[float, float, float]:
     return equipment_counts(equipment.loc[equipment["동"].eq(building)])
 
 
-def fab_counts(equipment: pd.DataFrame) -> tuple[int, int, int]:
+def fab_counts(equipment: pd.DataFrame) -> tuple[float, float, float]:
     return equipment_counts(equipment)
 
 
@@ -94,8 +120,10 @@ def build_fab_figure(equipment: pd.DataFrame) -> go.Figure:
             x=building.x + building.width / 2,
             y=0.5 + building.height / 2,
             text=(
-                f"<b>{building.name}</b><br>가용 {production}대<br>진행 {progress}대<br>"
-                f"비가동 {inactive}대<br><span style='font-size:10px'>클릭하여 상세 보기</span>"
+                f"<b>{building.name}</b><br>가용 {format_unit_count(production)}대<br>"
+                f"진행 {format_unit_count(progress)}대<br>"
+                f"비가동 {format_unit_count(inactive)}대<br>"
+                "<span style='font-size:10px'>클릭하여 상세 보기</span>"
             ),
             showarrow=False,
             font={"size": 14, "color": tokens.SPACE_TEXT},
@@ -166,8 +194,8 @@ def build_floor_figure(equipment: pd.DataFrame, building: str) -> go.Figure:
             x=5.0,
             y=(y0 + y1) / 2,
             text=(
-                f"<b>{building} {floor.floor}</b>　가용 {production}대　"
-                f"진행 {progress}대　비가동 {inactive}대"
+                f"<b>{building} {floor.floor}</b>　가용 {format_unit_count(production)}대　"
+                f"진행 {format_unit_count(progress)}대　비가동 {format_unit_count(inactive)}대"
             ),
             showarrow=False,
             font={"size": 15, "color": tokens.SPACE_TEXT},

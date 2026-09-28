@@ -20,6 +20,13 @@ from capa_simulation.services.equipment_contract import (
     TRANSITION_EVENT_COLUMNS,
     WEEKLY_COLUMNS,
 )
+from capa_simulation.services.equipment_units import (
+    UNIT_COUNT_DECIMALS,
+    UNIT_KEY_COLUMN,
+    UNIT_SHARE_COLUMN,
+    held_unit_shares,
+    unit_keys,
+)
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_baseline,
@@ -59,6 +66,8 @@ def _build_equipment_status_from_prepared(
             ("가용여부", "boolean"),
             ("레이아웃반영여부", "boolean"),
             ("비가동유형", "string"),
+            (UNIT_KEY_COLUMN, "string"),
+            (UNIT_SHARE_COLUMN, "float64"),
         ):
             result[column] = pd.Series(dtype=dtype)
         return result
@@ -92,6 +101,11 @@ def _build_equipment_status_from_prepared(
     result["보유여부"] = owned.astype("boolean")
     result["가용여부"] = available.astype("boolean")
     result["레이아웃반영여부"] = (result["레이아웃표시"].eq("Y") & ~exited).astype("boolean")
+    # 지분은 **이 시점의 보유**로 매긴다. 모듈을 떼어 반출해도 남은 모듈이 한 대를 채우고,
+    # 입고 전 모듈은 형제가 보유 중인 동안 0 이다.
+    keys = unit_keys(result)
+    result[UNIT_KEY_COLUMN] = keys
+    result[UNIT_SHARE_COLUMN] = held_unit_shares(keys, owned)
     return result.reset_index(drop=True)
 
 
@@ -110,8 +124,14 @@ def build_equipment_lifecycle_spans(
     *,
     start_date: date,
     end_date: date,
+    with_unit_share: bool = False,
 ) -> pd.DataFrame:
     """호기별 생애주기 구간. 점 이벤트(일정 컬럼)를 구간으로 접는다.
+
+    `with_unit_share` 를 켜면 `설비지분` 컬럼을 붙이고, **지분이 바뀌는 날에도** 구간을
+    끊는다. 모듈 형제의 입고·반출로 지분이 바뀌면 상태는 그대로여도 대수 축 몫이 달라지기
+    때문이다. 월별 대수(`monthly_equipment_availability`)가 켜서 쓴다. 끄면(기본) 상태가
+    바뀔 때만 끊어 생애주기 Gantt 가 지금처럼 그린다.
 
     **판정 규칙을 다시 적지 않는다.** 상태가 바뀔 수 있는 날마다
     `_build_equipment_status_from_prepared` 를 그대로 부르고, 이어지는 같은 상태를 한 구간
@@ -123,9 +143,10 @@ def build_equipment_lifecycle_spans(
     """
     if start_date > end_date:
         raise ValueError("생애주기 조회 시작일은 종료일보다 늦을 수 없습니다.")
+    columns = [*LIFECYCLE_SPAN_COLUMNS, *((UNIT_SHARE_COLUMN,) if with_unit_share else ())]
     prepared = prepare_equipment_master(equipment)
     if prepared.empty:
-        return pd.DataFrame(columns=list(LIFECYCLE_SPAN_COLUMNS))
+        return pd.DataFrame(columns=columns)
     prepared_downtime = prepare_downtime_for_prepared_equipment(downtime, prepared)
 
     start = pd.Timestamp(start_date)
@@ -133,37 +154,47 @@ def build_equipment_lifecycle_spans(
     breakpoints = _lifecycle_breakpoints(prepared, prepared_downtime, start=start, end=end)
     process_by_unit = prepared.set_index("호기")[["공정소분류", "공정대분류"]]
 
-    open_spans: dict[str, tuple[str, pd.Timestamp]] = {}
+    open_spans: dict[str, tuple[str, float, pd.Timestamp]] = {}
     rows: list[dict[str, object]] = []
 
-    def close(unit: str, status: str, began: pd.Timestamp, finished: pd.Timestamp) -> None:
-        rows.append(
-            {
-                "호기": unit,
-                "공정소분류": process_by_unit.at[unit, "공정소분류"],
-                "공정대분류": process_by_unit.at[unit, "공정대분류"],
-                "상태": status,
-                "시작일": began.date(),
-                "종료일": finished.date(),
-            }
-        )
+    def close(
+        unit: str, status: str, share: float, began: pd.Timestamp, finished: pd.Timestamp
+    ) -> None:
+        row: dict[str, object] = {
+            "호기": unit,
+            "공정소분류": process_by_unit.at[unit, "공정소분류"],
+            "공정대분류": process_by_unit.at[unit, "공정대분류"],
+            "상태": status,
+            "시작일": began.date(),
+            "종료일": finished.date(),
+        }
+        if with_unit_share:
+            row[UNIT_SHARE_COLUMN] = share
+        rows.append(row)
 
     for moment in breakpoints:
         status_frame = _build_equipment_status_from_prepared(
             prepared, prepared_downtime, as_of=moment
         )
-        current = dict(zip(status_frame["호기"], status_frame["상태"], strict=True))
-        for unit, status in current.items():
+        shares = (
+            status_frame[UNIT_SHARE_COLUMN].round(UNIT_COUNT_DECIMALS + 3)
+            if with_unit_share
+            else pd.Series(1.0, index=status_frame.index)
+        )
+        for unit, status, share in zip(
+            status_frame["호기"], status_frame["상태"], shares, strict=True
+        ):
+            state = (str(status), float(share))
             previous = open_spans.get(str(unit))
-            if previous is not None and previous[0] == str(status):
+            if previous is not None and previous[:2] == state:
                 continue
             if previous is not None:
                 # 앞 구간은 이 날 **전날**까지다. 같은 날 두 상태가 겹쳐 보이면 안 된다.
-                close(str(unit), previous[0], previous[1], moment - pd.Timedelta(days=1))
-            open_spans[str(unit)] = (str(status), moment)
-    for unit, (status, began) in open_spans.items():
-        close(unit, status, began, end)
-    result = pd.DataFrame(rows, columns=list(LIFECYCLE_SPAN_COLUMNS))
+                close(str(unit), *previous[:2], previous[2], moment - pd.Timedelta(days=1))
+            open_spans[str(unit)] = (*state, moment)
+    for unit, (status, share, began) in open_spans.items():
+        close(unit, status, share, began, end)
+    result = pd.DataFrame(rows, columns=columns)
     # 길이가 0 인 구간은 같은 날 두 번 바뀐 것이다. 그리면 폭 없는 막대라 보이지 않는다.
     result = result.loc[result["종료일"] >= result["시작일"]]
     return result.sort_values(["호기", "시작일"]).reset_index(drop=True)
@@ -223,19 +254,32 @@ def build_weekly_equipment_availability(
             prepared_downtime,
             as_of=week_end,
         )
-        status_summary = status.groupby("공정소분류", observed=True).agg(
-            보유호기=("보유여부", "sum"),
-            가용호기=("가용여부", "sum"),
+        # 행을 세지 않고 설비지분을 더한다. 모듈 행 넷이 한 대로, 모듈 하나의 PM 이 0.25대로
+        # 잡힌다. 그래서 정수로 자르지 않는다 — 자르면 0.75 가 0 이 된다.
+        share = status[UNIT_SHARE_COLUMN].astype("float64")
+        weighted = status.assign(
+            _보유=status["보유여부"].fillna(False).astype("float64") * share,
+            _가용=status["가용여부"].fillna(False).astype("float64") * share,
         )
-        status_counts = pd.crosstab(status["공정소분류"], status["상태"])
+        status_summary = weighted.groupby("공정소분류", observed=True).agg(
+            보유호기=("_보유", "sum"),
+            가용호기=("_가용", "sum"),
+        )
+        status_counts = (
+            weighted.groupby(["공정소분류", "상태"], observed=True)[UNIT_SHARE_COLUMN]
+            .sum()
+            .unstack(fill_value=0)
+            if not weighted.empty
+            else pd.DataFrame()
+        )
         for process in processes.tolist():
             base_count = float(baseline_counts.get(process, 0.0))
             if process in status_summary.index:
-                owned_count = int(cast(float, status_summary.at[process, "보유호기"]))
-                available_units = int(cast(float, status_summary.at[process, "가용호기"]))
+                owned_count = _unit_count(status_summary.at[process, "보유호기"])
+                available_units = _unit_count(status_summary.at[process, "가용호기"])
             else:
-                owned_count = 0
-                available_units = 0
+                owned_count = 0.0
+                available_units = 0.0
             row: dict[str, object] = {
                 "Weeknum": weeknum,
                 "주차시작일": week_start.date(),
@@ -245,16 +289,22 @@ def build_weekly_equipment_availability(
                 "추가설비대수": owned_count,
                 "총대수": base_count + owned_count,
                 "가용대수": base_count + available_units,
-                "비가동대수": owned_count - available_units,
+                # `+ 0.0` 은 음수 0 을 지운다(지분 합끼리 빼면 -0.0 이 남을 수 있다).
+                "비가동대수": round(owned_count - available_units, UNIT_COUNT_DECIMALS) + 0.0,
             }
             for status_name, column in STATUS_COUNT_COLUMNS.items():
                 row[column] = (
-                    int(cast(float, status_counts.at[process, status_name]))
+                    _unit_count(status_counts.at[process, status_name])
                     if process in status_counts.index and status_name in status_counts.columns
-                    else 0
+                    else 0.0
                 )
             rows.append(row)
     return pd.DataFrame(rows, columns=WEEKLY_COLUMNS)
+
+
+def _unit_count(value: object) -> float:
+    """대수 축 한 칸. 지분 합의 부동소수 끝자리를 버린다(1/3 × 3 = 1)."""
+    return round(float(cast(float, value)), UNIT_COUNT_DECIMALS)
 
 
 def build_inactive_equipment(
@@ -392,7 +442,8 @@ def build_milestone_transition_events(
     prepared = prepare_equipment_master(equipment)
     if prepared.empty:
         return pd.DataFrame(columns=TRANSITION_EVENT_COLUMNS)
-    identity_columns = ["호기", "공정대분류", "공정소분류", "동", "층", "확정상태"]
+    prepared = prepared.assign(**{UNIT_KEY_COLUMN: unit_keys(prepared)})
+    identity_columns = ["호기", "공정대분류", "공정소분류", "동", "층", "확정상태", UNIT_KEY_COLUMN]
     date_columns = [column for column, _ in SCHEDULE_STAGES]
     events = prepared.melt(
         id_vars=identity_columns,

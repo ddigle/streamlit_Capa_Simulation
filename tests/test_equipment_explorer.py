@@ -126,7 +126,7 @@ def test_each_question_and_representation_replaces_the_previous_result() -> None
     _assert_one_result(app)
     app.segmented_control("equipment_explorer_expression_확정상태 분포").set_value("표").run()
     _assert_one_result(app)
-    counts = app.dataframe[0].value.set_index("확정상태")["호기대수"]
+    counts = app.dataframe[0].value.set_index("확정상태")["설비대수"]
     assert counts["계획"] == 1
     assert counts.sum() == 1
 

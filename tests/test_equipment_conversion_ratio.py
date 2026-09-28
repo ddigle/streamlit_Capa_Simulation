@@ -27,15 +27,20 @@ from capa_simulation.services.equipment_contract import (
     CONVERSION_RATIO_COLUMN,
     DEFAULT_CONVERSION_RATIO,
     EQUIPMENT_COLUMNS,
+    PARENT_EQUIPMENT_COLUMN,
     empty_equipment_master,
 )
 from capa_simulation.services.equipment_validation import prepare_equipment_master
 
 
-def test_the_column_sits_at_the_very_end_of_the_contract() -> None:
-    """중간에 끼우면 기존 붙여넣기 표의 열이 통째로 한 칸씩 밀린다."""
-    assert EQUIPMENT_COLUMNS[-1] == CONVERSION_RATIO_COLUMN
-    assert len(EQUIPMENT_COLUMNS) == 31
+def test_the_column_keeps_its_place_at_the_end_of_the_contract() -> None:
+    """중간에 끼우면 기존 붙여넣기 표의 열이 통째로 한 칸씩 밀린다.
+
+    뒤에 붙은 것은 선택 컬럼 `모체호기` 하나뿐이다 — 31열 양식은 그대로 읽힌다.
+    """
+    assert EQUIPMENT_COLUMNS[-2] == CONVERSION_RATIO_COLUMN
+    assert EQUIPMENT_COLUMNS[-1] == PARENT_EQUIPMENT_COLUMN
+    assert len(EQUIPMENT_COLUMNS) == 32
 
 
 def test_the_empty_frame_types_it_as_a_number() -> None:

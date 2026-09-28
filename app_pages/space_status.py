@@ -22,6 +22,7 @@ from capa_simulation.components.space_layout import (
     build_floor_layout_figure,
     building_counts,
     equipment_counts,
+    equipment_unit_total,
     fab_counts,
     first_selected_customdata,
     floors_for,
@@ -53,6 +54,13 @@ from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_master,
 )
+from capa_simulation.services.equipment_units import (
+    UNIT_COUNT_DECIMALS,
+    UNIT_KEY_COLUMN,
+    format_unit_count,
+    placed_unit_rows,
+    unit_transitions,
+)
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
     DEFAULT_CANVAS_WIDTH,
@@ -83,24 +91,36 @@ def _show_floor(floor: str) -> None:
     st.session_state[SELECTED_FLOOR_KEY] = floor
 
 
+def _units(value: float) -> str:
+    return f"{format_unit_count(value)}대"
+
+
 def _render_space_counts(
-    counts: tuple[int, int, int],
+    counts: tuple[float, float, float],
     *,
     key: str,
-    leading: Sequence[tuple[str, int | str]] = (),
+    leading: Sequence[tuple[str, str]] = (),
 ) -> None:
     """세 단계 화면이 공통으로 쓰는 `가용 / 설치·전환 진행 / 비가동` 카드 줄.
 
-    앞에 화면별 카드를 끼울 수 있다. 세 장은 정수를 그대로 넘기고 서식은 `format` 에
-    맡긴다 — 문자열을 미리 만들면 천단위 구분이 자리마다 갈린다.
+    앞에 화면별 카드를 끼울 수 있다. 대수는 설비지분 합이라 모듈 설비가 있으면 소수가
+    나온다(`%,d` 서식은 0.75 를 0 으로 자른다). 그래서 카드 값은 모두 `format_unit_count`
+    한 곳에서 만든 문자열이다 — 천단위 구분도 그 함수가 똑같이 붙인다.
     """
     production, progress, inactive = counts
     with metric_row(key=key):
         for label, value in leading:
             st.metric(label, value, border=True)
-        st.metric("가용", production, format="%,d대", border=True)
-        st.metric("설치·전환 진행", progress, format="%,d대", border=True)
-        st.metric("비가동", inactive, format="%,d대", border=True)
+        st.metric("가용", _units(production), border=True)
+        st.metric("설치·전환 진행", _units(progress), border=True)
+        st.metric("비가동", _units(inactive), border=True)
+
+
+# 동·층 표의 대수 칸. 설비지분 합이라 모듈 설비가 있으면 소수가 나온다.
+_UNIT_COUNT_COLUMNS = {
+    column: st.column_config.NumberColumn(format="localized")
+    for column in ("가용대수", "진행대수", "비가동대수")
+}
 
 
 today = date.today()
@@ -225,7 +245,16 @@ located_equipment = space_equipment.loc[
     & space_equipment[["X좌표", "Y좌표", "Xsize", "Ysize"]].notna().all(axis=1)
     & has_supported_location
 ].copy()
-unlocated_count = len(space_equipment) - len(located_equipment)
+# 그리는 행(located)과 세는 행(counted)을 가른다 — 배치는 설비 단위다. 상태·단계 필터는
+# 일부러 설비를 쪼갠다(모듈 하나가 PM 이면 0.75). 여기서 되돌리지 않는다.
+counted_equipment = placed_unit_rows(space_equipment, located_equipment)
+unlocated_count = (
+    round(
+        equipment_unit_total(space_equipment) - equipment_unit_total(counted_equipment),
+        UNIT_COUNT_DECIMALS,
+    )
+    + 0.0
+)
 
 with st.container(border=True):
     st.markdown("#### :material/event_available: 기간 내 설비 단계 전환 현황")
@@ -313,21 +342,20 @@ with st.container(border=True):
     if transition_events.empty:
         st.info("선택한 조건에 해당하는 설비 단계 전환 일정이 없습니다.")
     else:
-        completed_count = int(transition_events["일정상태"].eq("완료").sum())
-        planned_count = int(transition_events["일정상태"].eq("예정").sum())
+        # 건수는 **설비 단위**로 센다(`unit_transitions`). 아래 목록은 행 그대로 둔다.
+        unit_events = unit_transitions(transition_events)
+        completed_count = int(unit_events["일정상태"].eq("완료").sum())
+        planned_count = int(unit_events["일정상태"].eq("예정").sum())
+        confirmed_count = int(unit_events["Qual확정"].sum())
         with metric_row(key="space_transition_metrics"):
-            st.metric("전환 일정", f"{len(transition_events):,}건", border=True)
-            st.metric("대상 호기", f"{transition_events['호기'].nunique():,}대", border=True)
+            st.metric("전환 일정", f"{len(unit_events):,}건", border=True)
+            st.metric("대상 설비", f"{unit_events[UNIT_KEY_COLUMN].nunique():,}대", border=True)
             st.metric("완료", f"{completed_count:,}건", border=True)
             st.metric("예정", f"{planned_count:,}건", border=True)
-            st.metric(
-                "Qual 확정·완료",
-                (f"{int(transition_events['확정상태'].isin(['확정', '완료']).sum()):,}건"),
-                border=True,
-            )
+            st.metric("Qual 확정·완료", f"{confirmed_count:,}건", border=True)
 
         transition_summary = (
-            transition_events.groupby(["전환단계", "일정상태"], observed=True)
+            unit_events.groupby(["전환단계", "일정상태"], observed=True)
             .size()
             .rename("전환건수")
             .reset_index()
@@ -355,6 +383,8 @@ with st.container(border=True):
             .properties(height=210)
         )
         st.altair_chart(transition_chart, width="stretch")
+        # 설비키는 모듈 행이 있을 때만 보인다. 비모듈 행은 호기와 같은 값이라 칸만 는다.
+        has_modules = bool(transition_events[UNIT_KEY_COLUMN].ne(transition_events["호기"]).any())
         st.dataframe(
             transition_events,
             hide_index=True,
@@ -362,6 +392,7 @@ with st.container(border=True):
             column_config={
                 "호기": st.column_config.TextColumn(pinned=True),
                 "전환일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                UNIT_KEY_COLUMN: st.column_config.TextColumn("설비") if has_modules else None,
             },
         )
         st.caption(
@@ -397,18 +428,18 @@ with st.container(horizontal=True, gap="small", vertical_alignment="center"):
         )
 
 if selected_building is None:
-    production_count, progress_count, inactive_count = fab_counts(located_equipment)
+    production_count, progress_count, inactive_count = fab_counts(counted_equipment)
     _render_space_counts(
         (production_count, progress_count, inactive_count),
         key="space_fab_counts",
-        leading=(("배치 호기", len(located_equipment)),),
+        leading=(("배치 설비", _units(equipment_unit_total(counted_equipment))),),
     )
-    st.metric("레이아웃 제외·미지정", unlocated_count, format="%,d대", border=True)
+    st.metric("레이아웃 제외·미지정", _units(unlocated_count), border=True)
 
     with st.container(border=True):
         st.markdown("#### :material/domain: S.PKG FAB 전체 배치")
         building_event = st.plotly_chart(
-            build_fab_figure(located_equipment),
+            build_fab_figure(counted_equipment),
             key="space_status_fab_chart",
             on_select="rerun",
             selection_mode="points",
@@ -422,7 +453,7 @@ if selected_building is None:
 
     overview_rows = []
     for building in BUILDINGS:
-        production, progress, inactive = building_counts(located_equipment, building.name)
+        production, progress, inactive = building_counts(counted_equipment, building.name)
         overview_rows.append(
             {
                 "동": building.name,
@@ -438,6 +469,7 @@ if selected_building is None:
         pd.DataFrame(overview_rows),
         hide_index=True,
         width="stretch",
+        column_config=_UNIT_COUNT_COLUMNS,
         key=BUILDING_TABLE_KEY,
         on_select="rerun",
         selection_mode="single-row",
@@ -448,7 +480,7 @@ if selected_building is None:
         st.rerun()
 
 elif selected_floor is None:
-    building_equipment = located_equipment.loc[located_equipment["동"].eq(selected_building)]
+    building_equipment = counted_equipment.loc[counted_equipment["동"].eq(selected_building)]
     production_count, progress_count, inactive_count = equipment_counts(building_equipment)
     building_floors = floors_for(selected_building)
     _render_space_counts(
@@ -460,7 +492,7 @@ elif selected_floor is None:
     with st.container(border=True):
         st.markdown(f"#### :material/apartment: {selected_building}동 층별 현황")
         floor_event = st.plotly_chart(
-            build_floor_figure(located_equipment, selected_building),
+            build_floor_figure(counted_equipment, selected_building),
             key=f"space_status_floor_chart_{selected_building}",
             on_select="rerun",
             selection_mode="points",
@@ -497,6 +529,7 @@ elif selected_floor is None:
         pd.DataFrame(floor_rows),
         hide_index=True,
         width="stretch",
+        column_config=_UNIT_COUNT_COLUMNS,
         key=f"space_status_floor_table_{selected_building}",
         on_select="rerun",
         selection_mode="single-row",
@@ -532,7 +565,12 @@ else:
             + ", ".join(map(str, invalid_rows))
         )
 
-    production_count, progress_count, inactive_count = equipment_counts(floor_equipment)
+    production_count, progress_count, inactive_count = equipment_counts(
+        counted_equipment.loc[
+            counted_equipment["동"].eq(selected_building)
+            & counted_equipment["층"].eq(selected_floor)
+        ]
+    )
     _render_space_counts(
         (production_count, progress_count, inactive_count),
         key="space_floor_counts",

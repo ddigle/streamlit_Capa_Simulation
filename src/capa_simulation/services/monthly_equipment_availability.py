@@ -7,9 +7,9 @@
 구간 `(9/15, 10/16]` 에 16일만 걸치므로 `1대 x 16/31 = 0.52대` 를 기여한다.
 
 기존 주차별 집계(`build_weekly_equipment_availability`)와 **다른 질문에 답한다.** 그쪽은
-「그 주 일요일에 몇 대가 가용인가」라는 시점 표본이라 정수만 나오고, 여기는 「이 달
-생산에 며칠씩 보탰나」라서 소수가 나온다. 그래서 같은 달을 두 화면이 다르게 말할 수
-있고, 그것이 정상이다.
+「그 주 일요일에 몇 대가 가용인가」라는 시점 표본이라 모듈 설비가 없으면 정수이고
+(모듈 하나가 멈추면 0.25 같은 소수), 여기는 「이 달 생산에 며칠씩 보탰나」라서 소수가
+나온다. 그래서 같은 달을 두 화면이 다르게 말할 수 있고, 그것이 정상이다.
 
 **상태가 바뀌는 날은 그 상태의 첫날이 아니다.** 일정이 `D` 에 완료되면 설비는 `D` 의
 경계 시각 이후, 곧 다음 날부터 기여한다. `build_equipment_lifecycle_spans` 는 상태가
@@ -36,7 +36,9 @@
 같은 공정 안에서도 모델마다 생산성이 달라, 호기 마스터는 `환산비`(기준 1.0)를 갖는다.
 그래서 이 모듈은 **두 값을 함께** 낸다.
 
-- `대수` — 호기를 센 것. 「몇 대인가」에 답한다. 환산비를 보지 않는다.
+- `대수` — 설비를 센 것. 「몇 대인가」에 답한다. 환산비를 보지 않는다. 모듈 행은
+  `설비지분`(그 시점 보유 중인 모듈 수로 나눈 몫)을 곱해 설비 한 대로 모인다
+  (`services/equipment_units.py`). 구간에 지분 컬럼이 없으면 행 하나를 한 대로 본다.
 - `환산대수` — 기여도에 그 호기의 환산비를 곱한 것. **월 Total Capa 를 낼 때 이쪽을 쓴다.**
 
 환산비 1.5 인 호기가 3월에 15일 기여하면 `1.5 x 15/31 = 0.726` 이 `환산대수` 이고,
@@ -55,6 +57,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from capa_simulation.services.equipment_units import UNIT_SHARE_COLUMN
 from capa_simulation.services.process_cutoff import cutoff_lookup
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
@@ -244,17 +247,23 @@ def _prorated_rows(
     if spans.empty:
         return []
     rows: list[dict[str, object]] = []
+    shares = (
+        spans[UNIT_SHARE_COLUMN]
+        if UNIT_SHARE_COLUMN in spans.columns
+        else pd.Series(1.0, index=spans.index)
+    )
     # `itertuples` 는 한글 컬럼명을 그대로 속성으로 주지만 이름이 겹치면 말없이 `_3` 으로
-    # 바꾼다. 필요한 다섯 컬럼만 짝지어 도는 편이 빠르고 그 위험도 없다.
+    # 바꾼다. 필요한 컬럼만 짝지어 도는 편이 빠르고 그 위험도 없다.
     columns = zip(
         spans["호기"],
         spans["공정소분류"],
         spans["상태"],
         spans["시작일"],
         spans["종료일"],
+        shares,
         strict=True,
     )
-    for raw_unit, raw_process, raw_status, raw_start, raw_end in columns:
+    for raw_unit, raw_process, raw_status, raw_start, raw_end, raw_share in columns:
         process = str(raw_process or "").strip()
         month_windows = windows.get(process)
         if not month_windows:
@@ -274,7 +283,7 @@ def _prorated_rows(
                         "생산계획년월": window.year_month,
                         "공정": process,
                         "분류": category.name,
-                        "대수": contribution,
+                        "대수": contribution * float(raw_share),
                         "환산대수": contribution * ratio,
                     }
                 )

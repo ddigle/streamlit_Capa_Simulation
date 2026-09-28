@@ -80,14 +80,15 @@ def _incoming_baseline(process: str, category: str, count: float, note: str) -> 
     )
 
 
-def test_equipment_csv_template_round_trips_with_31_columns() -> None:
+def test_equipment_csv_template_round_trips_with_32_columns() -> None:
     result = read_equipment_csv(equipment_csv_template())
 
-    assert len(result.columns) == 31
+    assert len(result.columns) == 32
     assert "사업부" not in result.columns
     assert result.columns.tolist()[5:7] == ["투자기준", "담당자"]
-    # 환산비는 **맨 끝**이다. 중간에 끼우면 기존 붙여넣기 표의 열이 통째로 한 칸씩 밀린다.
-    assert result.columns.tolist()[-1] == "환산비"
+    # 새 컬럼은 **맨 끝**에만 붙는다. 중간에 끼우면 기존 붙여넣기 표의 열이 통째로 한 칸씩
+    # 밀린다.
+    assert result.columns.tolist()[-2:] == ["환산비", "모체호기"]
     assert len(result) == 1
     assert result.loc[0, "호기"] == SAMPLE_EQUIPMENT_ID
     assert result.loc[0, "담당자"] == SAMPLE_EQUIPMENT_MANAGER

@@ -24,8 +24,16 @@ from capa_simulation.services.equipment_availability import (
 from capa_simulation.services.equipment_contract import (
     DATE_COLUMNS,
     EQUIPMENT_STATUSES,
+    PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
     STATUS_COUNT_COLUMNS,
+)
+from capa_simulation.services.equipment_units import (
+    UNIT_COUNT_DECIMALS,
+    UNIT_KEY_COLUMN,
+    UNIT_SHARE_COLUMN,
+    format_unit_count,
+    static_unit_shares,
 )
 from capa_simulation.services.simulation_cache import get_weekly_equipment_availability
 
@@ -68,7 +76,34 @@ def _options(frame: pd.DataFrame, column: str) -> list[str]:
 
 
 def _count(value: float) -> str:
-    return f"{value:,.0f}" if value.is_integer() else f"{value:,.1f}"
+    return format_unit_count(value)
+
+
+def _rows_label(frame: pd.DataFrame, *, partial: bool = False) -> str:
+    """표 제목의 대수. 모듈 행이 섞이면 행 수와 설비 수가 달라 둘 다 적는다.
+
+    `partial` 은 행이 설비의 일부 모듈일 수 있는 표(비가동)다 — 모듈 하나가 멈춘 설비를
+    「비가동 1대」로 읽히지 않게 「걸침」이라 적는다.
+    """
+    rows = len(frame)
+    # 행 수와 설비 수가 같은지로 가르지 않는다. 설비마다 모듈 하나씩 멈춘 표는 둘이 같아도
+    # 모듈 행이다 — 그것이 바로 「비가동 1대」로 읽히면 안 되는 경우다.
+    if UNIT_KEY_COLUMN not in frame.columns or not frame[UNIT_KEY_COLUMN].ne(frame["호기"]).any():
+        return f"{rows:,}대"
+    units = int(frame[UNIT_KEY_COLUMN].nunique())
+    return f"호기 행 {rows:,} · 설비 {units:,}대" + ("에 걸침" if partial else "")
+
+
+def _with_parent(columns: Sequence[str], frame: pd.DataFrame) -> list[str]:
+    """모듈 행이 있을 때만 `호기` 옆에 `모체호기` 를 보인다. 비모듈 표에는 빈 칸만 늘어난다."""
+    result = list(columns)
+    if (
+        PARENT_EQUIPMENT_COLUMN in frame.columns
+        and frame[PARENT_EQUIPMENT_COLUMN].notna().any()
+        and "호기" in result
+    ):
+        result.insert(result.index("호기") + 1, PARENT_EQUIPMENT_COLUMN)
+    return result
 
 
 def _table(frame: pd.DataFrame, *, columns: list[str] | None = None) -> None:
@@ -91,13 +126,13 @@ def _count_chart(frame: pd.DataFrame, column: str, colors: dict[str, str]) -> No
         .mark_bar(cornerRadiusTopRight=3, cornerRadiusBottomRight=3)
         .encode(
             y=alt.Y(f"{column}:N", sort=list(colors), title=None),
-            x=alt.X("호기대수:Q", title="호기 (대)", axis=alt.Axis(tickMinStep=1)),
+            x=alt.X("설비대수:Q", title="설비 (대)", axis=alt.Axis(tickMinStep=1)),
             color=alt.Color(
                 f"{column}:N",
                 scale=alt.Scale(domain=list(colors), range=list(colors.values())),
                 legend=None,
             ),
-            tooltip=[f"{column}:N", "호기대수:Q"],
+            tooltip=[f"{column}:N", alt.Tooltip("설비대수:Q", format=",.2~f")],
         )
         .properties(height=max(160, len(colors) * 30))
     )
@@ -180,12 +215,15 @@ def _availability(
                 ),
                 legend=alt.Legend(title=None, orient="top"),
             ),
-            tooltip=["Weeknum:N", "상태:N", alt.Tooltip("대수:Q", format=".1f")],
+            tooltip=["Weeknum:N", "상태:N", alt.Tooltip("대수:Q", format=",.2~f")],
         )
         .properties(height=300)
     )
     st.altair_chart(chart, width="stretch")
-    st.caption("각 주 일요일의 상태입니다. 기존 보유대수를 포함하며 환산비는 적용하지 않습니다.")
+    st.caption(
+        "각 주 일요일의 상태입니다. 기존 보유대수를 포함하며 환산비는 적용하지 않습니다. "
+        "모체호기로 묶은 모듈 행은 합쳐 1대로 세고, 모듈 하나가 멈추면 그 몫만 비가동입니다."
+    )
 
 
 def render_equipment_explorer(
@@ -328,7 +366,8 @@ def render_equipment_explorer(
                 inactive = build_inactive_equipment_in_month(
                     filtered, filtered_downtime, month=as_of, moments=moments
                 )
-                st.markdown(f"#### 비가동 호기 · {as_of:%Y-%m} 달 전체 · {len(inactive):,}대")
+                label = _rows_label(inactive, partial=True)
+                st.markdown(f"#### 비가동 호기 · {as_of:%Y-%m} 달 전체 · {label}")
                 st.caption(
                     "기준일이 든 달 안에서 한 번이라도 보유 중이면서 가용이 아니었던 "
                     f"호기입니다. 구간이 바뀌는 날 {len(moments)}개 시점을 다시 재어 "
@@ -337,10 +376,12 @@ def render_equipment_explorer(
                 if inactive.empty:
                     st.success("기준일이 든 달과 조건에 비가동 호기가 없습니다.")
                 else:
-                    _table(inactive, columns=list(_INACTIVE_MONTH_COLUMNS))
+                    _table(inactive, columns=_with_parent(_INACTIVE_MONTH_COLUMNS, inactive))
             elif question == "비가동 호기":
                 inactive = build_inactive_equipment(filtered, filtered_downtime, as_of=as_of)
-                st.markdown(f"#### 비가동 호기 · {as_of:%Y-%m-%d} · {len(inactive):,}대")
+                st.markdown(
+                    f"#### 비가동 호기 · {as_of:%Y-%m-%d} · {_rows_label(inactive, partial=True)}"
+                )
                 st.caption(
                     "선택한 기준일에 보유 중이지만 가용이 아닌 호기입니다. "
                     "달 전체는 보기에서 고릅니다."
@@ -348,7 +389,7 @@ def render_equipment_explorer(
                 if inactive.empty:
                     st.success("선택한 기준일과 조건에 비가동 호기가 없습니다.")
                 else:
-                    _table(inactive, columns=list(_INACTIVE_COLUMNS))
+                    _table(inactive, columns=_with_parent(_INACTIVE_COLUMNS, inactive))
             elif view == "생애주기 일정":
                 st.markdown("#### 호기별 생애주기 일정")
                 spans = build_equipment_lifecycle_spans(
@@ -360,8 +401,14 @@ def render_equipment_explorer(
             else:
                 status = build_equipment_status_as_of(filtered, filtered_downtime, as_of=as_of)
                 states: Sequence[str]
+                # 분포는 행이 아니라 설비를 센다. 생애주기 상태는 그 시점 보유로 매긴 지분을,
+                # Qual 은 보유와 상관없는 계획이라 고정 지분(1 ÷ 모듈 수)을 쓴다. 고정 지분은
+                # Qual일정이 빈 형제까지 넣어 **거르기 전에** 매긴다.
+                shares = status[UNIT_SHARE_COLUMN]
                 if question == "Qual 일정":
+                    shares = static_unit_shares(status[UNIT_KEY_COLUMN])
                     status = status.loc[status["Qual일정"].notna()].copy()
+                    shares = shares.loc[status.index]
                     st.markdown(f"#### Qual 확정상태 실행관리 · {as_of:%Y-%m-%d}")
                     st.caption(
                         "계획·확정·완료·지연을 관리합니다. 가용대수는 Qual일정으로 판정합니다."
@@ -374,13 +421,15 @@ def render_equipment_explorer(
                     if view == "호기 목록":
                         _table(
                             status.sort_values(["Qual일정", "호기"]),
-                            columns=["호기", "공정소분류", "Qual일정", "확정상태", "상태"],
+                            columns=_with_parent(
+                                ["호기", "공정소분류", "Qual일정", "확정상태", "상태"], status
+                            ),
                         )
                         return
                 else:
                     st.markdown(f"#### 호기 생애주기 상태 · {as_of:%Y-%m-%d}")
                     st.caption(
-                        f"호기 마스터 {len(status):,}대 · 집계형 기존 보유대수는 제외됩니다."
+                        f"호기 마스터 {_rows_label(status)} · 집계형 기존 보유대수는 제외됩니다."
                     )
                     column, states, colors = (
                         "상태",
@@ -389,15 +438,19 @@ def render_equipment_explorer(
                     )
                     if view == "호기 목록":
                         _table(
-                            status, columns=["호기", "공정소분류", "상태", "입고일정", "Qual일정"]
+                            status,
+                            columns=_with_parent(
+                                ["호기", "공정소분류", "상태", "입고일정", "Qual일정"], status
+                            ),
                         )
                         return
                 counts = (
-                    status[column]
-                    .value_counts()
-                    .reindex(states, fill_value=0)
+                    shares.groupby(status[column])
+                    .sum()
+                    .reindex(states, fill_value=0.0)
+                    .round(UNIT_COUNT_DECIMALS)
                     .rename_axis(column)
-                    .rename("호기대수")
+                    .rename("설비대수")
                     .reset_index()
                 )
                 if expression == "표":

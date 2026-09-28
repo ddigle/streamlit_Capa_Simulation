@@ -241,11 +241,13 @@ with gap_tab:
         span_start = min(start_date, required_span[0]) if required_span else start_date
         span_end = max(end_date, required_span[1]) if required_span else end_date
         try:
+            # 지분이 바뀌는 날에도 구간을 끊는다. 대수 축이 모듈 행을 설비 한 대로 센다.
             gap_spans = build_equipment_lifecycle_spans(
                 dashboard_equipment,
                 dashboard_downtime,
                 start_date=span_start,
                 end_date=span_end,
+                with_unit_share=True,
             )
         except ValueError as exc:
             st.error(str(exc))

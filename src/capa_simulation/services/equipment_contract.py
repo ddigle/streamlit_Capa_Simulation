@@ -44,6 +44,7 @@ EQUIPMENT_COLUMNS = (
     "비고",
     "레이아웃표시",
     "환산비",
+    "모체호기",
 )
 
 DOWNTIME_COLUMNS = ("호기", "비가동유형", "시작일", "종료일", "상세사유", "비고")
@@ -108,6 +109,9 @@ TRANSITION_EVENT_COLUMNS = (
     "확정상태",
     "일정상태",
     "기준일대비",
+    # 모듈 행 넷이 같은 날 같은 단계로 넘어가면 설비 한 대의 전환 한 건이다. 건수·대상 대수는
+    # 이 키로 센다.
+    "설비키",
 )
 
 DOWNTIME_TYPES = ("개발대여", "공사", "고장", "이설", "기타")
@@ -149,12 +153,13 @@ COORDINATE_COLUMNS = ("X좌표", "Y좌표", "Xsize", "Ysize")
 #     환산비 1.5 모델 2대 + 환산비 1.0 모델 2대
 #       → 설비대수 4대, 가용대수 5대
 #
-# **설비대수와 가용대수를 가르는 값이다.** 설비대수는 세는 것이고 가용대수는 더하는 것이다.
-# **월별 Dynamic 가용대수의 `환산대수` 가 이 값을 본다**
-# (`services/monthly_equipment_availability.py`). 월 Total Capa 를 낼 때 쓰는 축이다.
-# 대수를 세는 축(`대수`)은 이 값을 곱하지 않는다 — 「몇 대인가」에 환산비를 곱하면
-# 열 대가 열다섯 대가 된다. 주차별 집계(`build_weekly_equipment_availability`)도
-# 호기를 정수로 세므로 여전히 보지 않는다.
+# **능력 축의 값이다.** 「몇 대 몫을 하나」에 답하는 `환산대수` 와 확보율 교차검증이 이
+# 값을 곱한다(`services/monthly_equipment_availability.py`). 「몇 대인가」에 답하는 대수 축은
+# 곱하지 않는다 — 환산비를 곱하면 열 대가 열다섯 대가 된다. 대수 축은 대신 `설비지분` 을
+# 곱한다(`services/equipment_units.py`).
+#
+# 모듈 행(아래 `모체호기`)에는 「그 행이 기준 설비 몇 대 몫인가」를 적는다. 4모듈 설비의
+# 모듈 행은 1 ÷ 4 = 0.25 이고, 모듈 생산성이 기준과 다르면 곱한다(0.25 × 1.2 = 0.30).
 #
 # 빈 칸은 1.0 이다. 대부분의 공정은 모델이 하나뿐이라 적을 것이 없고, 그때 빈 칸을 0 으로
 # 읽으면 그 설비가 통째로 사라진다.
@@ -163,6 +168,34 @@ CONVERSION_RATIO_COLUMN = "환산비"
 DEFAULT_CONVERSION_RATIO = 1.0
 
 NUMERIC_COLUMNS = (*COORDINATE_COLUMNS, CONVERSION_RATIO_COLUMN)
+
+# ---------------------------------------------------------------------- 모체호기
+# 모듈로 관리하는 공정(CoW Bonder 등)은 설비 한 대를 모듈마다 한 행으로 적고, 같은
+# 설비의 행에 설비 ID 를 똑같이 적어 묶는다(APW01A~D → 모체호기 APW01). 비모듈 공정은
+# 비워 둔다 — 행 하나가 설비 한 대다. 대수 축은 이 묶음을 한 대로 센다
+# (`services/equipment_units.py`).
+#
+# **선택 컬럼이다.** 이 컬럼이 없던 파일·리비전·편집본은 모두 빈 칸으로 읽는다
+# (`with_optional_equipment_columns`). 계약 맨 끝에 둔다 — 중간에 끼우면 붙여넣기 열이 밀린다.
+PARENT_EQUIPMENT_COLUMN = "모체호기"
+
+OPTIONAL_EQUIPMENT_COLUMNS = (PARENT_EQUIPMENT_COLUMN,)
+
+# 한 설비의 모듈 행끼리 같아야 하는 컬럼. 화면 필터가 이 값들로 행을 거르므로, 다르면
+# 필터가 설비 하나를 쪼개 지분 합이 1 이 아니게 된다.
+UNIT_CONSISTENT_COLUMNS = ("공정소분류", "공정대분류", "라인구분", "활용구분", "동", "층")
+
+
+def with_optional_equipment_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """선택 컬럼이 없는 호기 마스터에 빈 칸으로 채워 넣는다. 원본은 건드리지 않는다."""
+    missing = [column for column in OPTIONAL_EQUIPMENT_COLUMNS if column not in frame.columns]
+    if not missing:
+        return frame
+    filled = frame.copy()
+    for column in missing:
+        filled[column] = pd.Series(pd.NA, index=frame.index, dtype="string")
+    return filled
+
 
 FLAG_COLUMNS = ("장기보관여부", "기존설비여부", "레이아웃표시")
 

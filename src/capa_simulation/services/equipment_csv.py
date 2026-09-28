@@ -21,6 +21,8 @@ from capa_simulation.services.equipment_contract import (
     DOWNTIME_COLUMNS,
     DOWNTIME_KEY_COLUMNS,
     EQUIPMENT_COLUMNS,
+    OPTIONAL_EQUIPMENT_COLUMNS,
+    PARENT_EQUIPMENT_COLUMN,
 )
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_schedule,
@@ -112,6 +114,8 @@ def equipment_csv_template() -> bytes:
                     "레이아웃표시": "N",
                     # 기준 모델이 1 이다. 비워 두면 검증이 1 로 채운다.
                     "환산비": "1",
+                    # 모듈로 관리하는 설비만 적는다(APW01A~D → APW01). 비모듈은 비운다.
+                    PARENT_EQUIPMENT_COLUMN: "",
                 },
                 *EQUIPMENT_CHOICE_ROWS,
             ],
@@ -142,7 +146,7 @@ def downtime_csv_template() -> bytes:
 # 컬럼만** 지킨다. 행을 가르는 값이 `0123` → `123` 으로 바뀌면 같은 행이 새 행으로 들어와
 # 표 전체가 어긋나지만, 좌표·대수·환산비는 숫자로 읽히는 것이 맞고 날짜는 Excel 이 그대로
 # 돌려준다(한국어 Excel 로 실측). 그래서 숫자·날짜 컬럼에는 씌우지 않는다.
-EQUIPMENT_GUARDED_COLUMNS: tuple[str, ...] = ("호기",)
+EQUIPMENT_GUARDED_COLUMNS: tuple[str, ...] = ("호기", PARENT_EQUIPMENT_COLUMN)
 BASELINE_GUARDED_COLUMNS: tuple[str, ...] = BASELINE_KEY_COLUMNS
 DOWNTIME_GUARDED_COLUMNS: tuple[str, ...] = ("호기", "비가동유형")
 
@@ -200,7 +204,7 @@ def read_equipment_csv(
 ) -> pd.DataFrame:
     """`floor_canvases` 를 넘기면 읽는 즉시 층별 캔버스 좌표 상한까지 검사한다."""
     return prepare_equipment_master(
-        _read_csv(payload, EQUIPMENT_COLUMNS, "호기 마스터"),
+        _read_csv(payload, EQUIPMENT_COLUMNS, "호기 마스터", optional=OPTIONAL_EQUIPMENT_COLUMNS),
         floor_canvases=floor_canvases,
     )
 
@@ -257,7 +261,10 @@ def read_equipment_clipboard(
     """`floor_canvases` 를 넘기면 붙여넣기 시점에 층별 캔버스 좌표 상한까지 검사한다."""
     return prepare_equipment_master(
         _select_columns(
-            parse_clipboard_table(content, "호기 마스터"), EQUIPMENT_COLUMNS, "호기 마스터"
+            parse_clipboard_table(content, "호기 마스터"),
+            EQUIPMENT_COLUMNS,
+            "호기 마스터",
+            optional=OPTIONAL_EQUIPMENT_COLUMNS,
         ),
         floor_canvases=floor_canvases,
     )
@@ -322,7 +329,13 @@ def build_downtime_import_preview(
     return _build_import_preview(current, incoming, DOWNTIME_KEY_COLUMNS)
 
 
-def _read_csv(payload: bytes, columns: tuple[str, ...], label: str) -> pd.DataFrame:
+def _read_csv(
+    payload: bytes,
+    columns: tuple[str, ...],
+    label: str,
+    *,
+    optional: tuple[str, ...] = (),
+) -> pd.DataFrame:
     if not payload:
         raise ValueError(f"{label} CSV 파일이 비어 있습니다.")
     last_error: UnicodeDecodeError | None = None
@@ -331,19 +344,46 @@ def _read_csv(payload: bytes, columns: tuple[str, ...], label: str) -> pd.DataFr
             # 붙여넣기 경로와 같은 옵션을 쓴다. pandas 기본값은 `NA`·`N/A` 를 결측으로
             # 바꾸므로, 같은 파일이 전송 경로에 따라 다른 결측 판정을 받는다.
             frame = pd.read_csv(BytesIO(payload), encoding=encoding, **TEXT_TABLE_READ_OPTIONS)
+            # 붙여넣기 경로처럼 머리글 앞뒤 공백을 뗀다. Excel 이 저장한 「모체호기 」가
+            # 없는 열로 읽히면 선택 컬럼은 조용히 빈 칸이 된다.
+            frame.columns = [str(column).strip() for column in frame.columns]
             break
         except UnicodeDecodeError as exc:
             last_error = exc
     else:
         raise ValueError(f"{label} CSV 인코딩은 UTF-8 또는 CP949여야 합니다.") from last_error
-    return _select_columns(frame, columns, label)
+    return _select_columns(frame, columns, label, optional=optional)
 
 
 def _select_columns(
     frame: pd.DataFrame,
     columns: tuple[str, ...],
     label: str,
+    *,
+    optional: tuple[str, ...] = (),
 ) -> pd.DataFrame:
+    """계약 컬럼만 계약 차례로 고른다.
+
+    `optional` 은 없어도 되는 컬럼이다. 없으면 빈 칸으로 채운다 — 그 컬럼이 생기기 전의 양식
+    (`모체호기` 가 없는 31열)도 그대로 읽힌다. 다만 **대체 행의 그 칸은 빈 값으로 바뀐다.**
+    미리보기가 「변경컬럼」에 그 칸을 적어 알린다.
+    """
+    missing = [column for column in optional if column not in frame.columns]
+    # 이름이 조금 틀린 선택 컬럼(「모체 호기」·「모체호기(선택)」)을 빈 칸으로 읽으면 모듈
+    # 행이 모두 따로 세어진다. 필수 컬럼은 이름이 틀리면 막히는데 선택 컬럼만 조용하면 안 된다.
+    for column in missing:
+        lookalikes = [
+            str(header)
+            for header in frame.columns
+            if header not in columns and column in "".join(str(header).split())
+        ]
+        if lookalikes:
+            raise ValueError(
+                f"{label}의 {column} 열 이름이 다릅니다: {lookalikes} — 머리글을 "
+                f"「{column}」로 고치세요."
+            )
+    if missing:
+        frame = frame.reindex(columns=[*frame.columns, *missing])
     require_columns(frame, columns, label)
     selected = frame.loc[:, columns].copy()
     # 내보내기가 식별 컬럼에 씌운 `="…"` 껍데기를 벗긴다. Excel 을 거친 값은 이미 벗겨져

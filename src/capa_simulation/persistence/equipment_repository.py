@@ -598,7 +598,8 @@ def _load_equipment_master(
                existing_equipment_flag AS "기존설비여부",
                equipment_history AS "호기이력", note AS "비고",
                layout_display_flag AS "레이아웃표시",
-               COALESCE(conversion_ratio, 1.0) AS "환산비"
+               COALESCE(conversion_ratio, 1.0) AS "환산비",
+               parent_equipment_id AS "모체호기"
         FROM equipment_ops.equipment_master_snapshot
         WHERE revision_id = ? ORDER BY source_row_no
         """,
@@ -776,6 +777,7 @@ def _insert_equipment(
             "비고": "note",
             "레이아웃표시": "layout_display_flag",
             "환산비": "conversion_ratio",
+            "모체호기": "parent_equipment_id",
         }
     )
     _insert_snapshot(

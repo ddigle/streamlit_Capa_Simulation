@@ -114,7 +114,7 @@ def render_floor_layout_editor(
         shrink_confirmed = True
         if outside_rows:
             st.warning(
-                f"이 캔버스에서는 {building} {floor} 호기 {len(outside_rows)}대가 범위를 "
+                f"이 캔버스에서는 {building} {floor} 호기 {len(outside_rows)}행이 범위를 "
                 "벗어납니다. 이대로 저장하면 **가용설비 현황**의 호기 마스터 저장이 전부 "
                 "막힙니다 — 저장은 마스터 전체를 한 번에 검증하므로 다른 동·층만 고쳐도 같은 "
                 "오류가 납니다. 가용설비 현황에서 이 층 좌표를 먼저 고치세요.",

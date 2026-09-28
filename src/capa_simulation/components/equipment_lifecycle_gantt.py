@@ -125,6 +125,6 @@ def render_equipment_lifecycle_gantt(
     if hidden_units:
         # 자른 것을 적지 않으면 「이게 전부」로 읽힌다.
         st.caption(
-            f"호기 이름 순으로 {max_units:,}대만 그렸습니다. 나머지 {hidden_units:,}대는 "
+            f"호기 이름 순으로 {max_units:,}행만 그렸습니다. 나머지 {hidden_units:,}행은 "
             "조회 조건을 좁혀서 보세요."
         )
