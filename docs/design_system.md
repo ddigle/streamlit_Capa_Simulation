@@ -213,13 +213,15 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
 
 | 등급 | 반경 | 굵기 | 쓰는 곳 |
 |---|---|---|---|
-| 넓음 `WIDE` | 8px | 40px 이상 | HOME 생산계획 LOB(70px) |
+| 넓음 `WIDE` | 8px | 40px 이상 | HOME 생산계획 LOB(70px), 가용설비 주차별 설비 현황(Altair, 17주에 53px), Space 전환 단계(Altair, 70px 고정) |
 | 중간 `MEDIUM` | 5px | 20~40px | Dynamic Capa 공정별 Capa 실현 수준(가로, 25px) |
 | 좁음 `NARROW` | 3px | 20px 미만 | HOME B/N Top 5(15px) |
 
 - 반경은 trace 마다 **스칼라**로 준다. plotly.js 3.7 은 점마다 다른 반경 배열을 조용히
   버리고 직각으로 그린다. `layout.barcornerradius` 는 쓰지 않는다 — 증감 조각·hover 표적까지
   둥글어진다.
+- Altair 쌓인 막대는 Vega-Lite 가 막대 전체를 둥근 틀로 잘라 그려 조각 사이 이음매가 네모로
+  남는다. Plotly 는 부호마다 가장 바깥의 0 아닌 조각만 둥글린다.
 - `base` 로 띄운 막대(상세 B/N 공정, 주요공정 확보율 칸, 호기 생애주기 Gantt)와 Waterfall 에는
   주지 않는다. 앞의 셋은 네 모서리가 모두 둥근 알약이 되고, Waterfall 은 반경을 받지 않는다.
 - **입체감(광택·그림자·그라데이션)은 넣지 않았다**(2026-09-28). 이 앱의 막대 색은 확보·경고·

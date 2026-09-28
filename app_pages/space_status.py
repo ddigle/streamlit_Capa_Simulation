@@ -75,6 +75,8 @@ SELECTED_FLOOR_KEY = "space_status_selected_floor"
 # 않는다. 예외는 **같은 분기 안에서 대상만 바뀌는** 층 표 하나라, 그것만 동 이름으로 키를
 # 가른다(:439 의 층 도면과 같은 이유다).
 BUILDING_TABLE_KEY = "space_status_building_table"
+# 전환 단계 차트의 막대 폭(px). 단계는 여섯이 전부라 좁은 창에서도 칸이 이보다 넓다.
+_TRANSITION_BAR_SIZE_PX = 70
 
 
 def _show_fab_overview() -> None:
@@ -362,7 +364,15 @@ with st.container(border=True):
         )
         transition_chart = (
             alt.Chart(transition_summary)
-            .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+            # 단계가 여섯뿐이라 폭을 두지 않으면 막대 하나가 400px 이 넘게 퍼져 둥근 머리가
+            # 보이지 않는다. HOME 생산계획 LOB 막대와 같은 70px 로 세운다(단계 여섯이면 좁은
+            # 창에서도 칸이 그보다 넓다). 굵기가 넓음 등급이라 반경 8px. 쌓인 막대는 Vega-Lite 가
+            # 막대 전체를 잘라 둥글리므로 이음매는 네모로 남는다(브라우저 실측).
+            .mark_bar(
+                size=_TRANSITION_BAR_SIZE_PX,
+                cornerRadiusTopLeft=tokens.BAR_CORNER_RADIUS_WIDE_PX,
+                cornerRadiusTopRight=tokens.BAR_CORNER_RADIUS_WIDE_PX,
+            )
             .encode(
                 x=alt.X(
                     "전환단계:N",

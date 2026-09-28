@@ -202,7 +202,10 @@ def _availability(
     )
     chart = (
         alt.Chart(long)
-        .mark_bar()
+        .mark_bar(
+            cornerRadiusTopLeft=tokens.BAR_CORNER_RADIUS_WIDE_PX,
+            cornerRadiusTopRight=tokens.BAR_CORNER_RADIUS_WIDE_PX,
+        )
         .encode(
             x=alt.X(
                 "Weeknum:N", sort=trend["Weeknum"].tolist(), axis=alt.Axis(title=None, labelAngle=0)
