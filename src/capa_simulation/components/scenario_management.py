@@ -220,6 +220,16 @@ def _render_scenario_list_editor(
         },
         index=pd.Index([scenario.scenario_id for scenario in scenarios], name="scenario_id"),
     )
+    # 작업 줄은 표 **위**다(2026-09-29 — 적용 버튼은 표 위). 버튼 값은 표보다 먼저 만들어도
+    # 누른 회차에 표의 편집값이 그대로 들어온다.
+    order_clicked = st.button(
+        "순서 저장",
+        icon=":material/swap_vert:",
+        help=(
+            f"`{ORDER_COLUMN}` 숫자를 고쳐 누적 순서를 바꿉니다. 저장하면 표에 보이는 차례대로 "
+            "1번부터 다시 매깁니다."
+        ),
+    )
     edited = st.data_editor(
         table,
         key=LIST_EDITOR_KEY,
@@ -247,13 +257,8 @@ def _render_scenario_list_editor(
         },
         disabled=["시나리오명", "원천 코드", "활성 리비전", "공식버전", "최근 수정"],
     )
-    with st.container(horizontal=True, vertical_alignment="center"):
-        if st.button("순서 저장", icon=":material/swap_vert:"):
-            _save_list_order(repository, edited)
-        st.caption(
-            f"`{ORDER_COLUMN}` 숫자를 고쳐 누적 순서를 바꿉니다. 저장하면 표에 보이는 "
-            "차례대로 1번부터 다시 매깁니다."
-        )
+    if order_clicked:
+        _save_list_order(repository, edited)
     return edited
 
 
@@ -407,7 +412,6 @@ def _render_official(
     summary: ScenarioSummary,
     revision_id: str,
 ) -> None:
-    st.caption("공식 지정은 기존 리비전을 변경하지 않고 발행 이력을 새로 추가합니다.")
     with st.form("scenario_official_form"):
         release_name = st.text_input("공식버전명", value=f"{summary.scenario_name} 공식안")
         release_note = st.text_area("공식 지정 메모", height=80)
@@ -465,12 +469,7 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
         "보관하면 목록에서 숨겨지고 새 리비전 저장·공식버전 지정이 막힙니다. 데이터는 "
         "그대로 남아 아래 「보관된 시나리오」에서 되돌릴 수 있습니다."
     )
-    # 사용자가 보관을 고르는 이유가 용량이면 잘못 고른 것이다. 그 사실을 화면에서 말한다.
-    st.caption(
-        "보관은 파일 크기를 줄이지 않습니다 — 행이 그대로 남으므로 오히려 지운 경우보다 "
-        "크게 유지됩니다. 용량을 줄이려면 영구 삭제한 뒤 `scripts/compact_duckdb.py` 로 "
-        "재구축하세요."
-    )
+    # 보관이 파일 크기를 줄이지 않는다는 것(용량 목적이면 영구 삭제 + compact)은 Guide 가 말한다.
     confirmed = st.checkbox(
         f"{summary.scenario_name} 을 보관합니다",
         key=ARCHIVE_CONFIRM_KEY,
@@ -550,11 +549,6 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     release_count = repository.count_official_releases(summary.scenario_id)
     if release_count:
         st.warning(f"이 시나리오의 공식 발행 이력 {release_count}건도 함께 사라집니다.")
-    st.caption(
-        "DuckDB 는 지운 페이지를 파일에 되돌려주지 않습니다. 행은 사라져도 파일 크기는 "
-        "줄지 않고 삭제 기록만큼 오히려 조금 늘어납니다. 파일을 실제로 줄이려면 앱을 내린 "
-        "뒤 `scripts/compact_duckdb.py` 로 재구축하세요."
-    )
     typed = st.text_input(
         "영구 삭제하려면 시나리오명을 그대로 입력하세요",
         key=DELETE_CONFIRM_KEY,
@@ -595,7 +589,6 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             f"신규 시나리오의 기준 표시순서를 준비하지 못했습니다: {bootstrap_error_message(exc)}"
         )
         return
-    st.info("현재 활성 RQ 16개와 프리셋을 독립 데이터셋으로 물리 복제합니다.")
     with st.form("scenario_create_form"):
         scenario_name = st.text_input("시나리오명")
         source_code = st.text_input("원천 시뮬레이션 코드")

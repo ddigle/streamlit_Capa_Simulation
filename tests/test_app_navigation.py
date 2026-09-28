@@ -557,9 +557,20 @@ def _common_boxes(app: AppTest) -> set[str]:
 
 def test_a_screen_that_reads_no_common_condition_shows_none(_app: AppTest) -> None:
     app = _app.run()
-    app.switch_page(ADMIN_BOX_PAGES[0].path).run()
+    app.switch_page(CAPA_CHATBOT.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == set()
+
+
+def test_a_screen_with_only_its_own_card_keeps_the_heading(_app: AppTest) -> None:
+    """VOC 는 공통 조건을 읽지 않지만 글 목록 필터가 자기 조건 카드라 제목은 선다."""
+    app = _app.run()
+    app.switch_page(ADMIN_BOX_PAGES[0].path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == {"heading"}
+    assert {"voc_category_filter", "voc_open_only"} <= {
+        widget.key for widget in (*app.sidebar.multiselect, *app.sidebar.toggle)
+    }
 
 
 def test_a_screen_that_reads_only_the_scenario_shows_only_its_box(_app: AppTest) -> None:

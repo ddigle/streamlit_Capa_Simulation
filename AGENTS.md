@@ -604,6 +604,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 보유 공정 목록은 안내·편집 보조라 활성 시나리오가 없으면 빈 목록으로 낮추고
     화면을 멈추지 않는다. 공용 표시명 저장 자체는 시나리오와 무관하다.
   - 나중에 관리자 권한으로만 열도록 제한할 자리다. 지금은 숨김 플래그를 두지 않는다.
+  - 사이드바는 시나리오 상자만 선다(공정 목록·원천 품질이 활성 시나리오를 읽는다). 설명은
+    Guide(`guides/admin_area.md`)다. 두 편집 탭의 Excel 붙여넣기는 작업 줄의 팝업이고 팝업 칸은
+    페이지에 하나(`components/admin_dialog.py`)다 — 탭이 닫혀도 매 회차 그리므로 탭마다 칸을
+    두면 한 회차에 팝업이 둘 뜰 수 있다. 값(`PASTE_DIALOG`)이 탭을 가른다.
 - `app_pages/voc.py`
   - `Admin Area` 상자 아래의 자유 게시판. 질문·개선 요청·오류 신고를 남기고 답을 주고받는다.
   - **계산에 닿지 않는다.** 시나리오도 조회기간도 읽지 않고 `load_page_context()` 를 부르지
@@ -615,6 +619,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 게시판 읽기에 `@st.cache_data` 를 두지 않는다. 쓰기가 잦아 글마다 무효화를 손으로
     챙겨야 하고 한 번만 빠뜨려도 방금 쓴 글이 안 보인다. 읽는 양도 작다.
   - 작성자 이름은 폼 **밖**이다. 폼 안에 두면 글을 올릴 때마다 지워져 매번 다시 적어야 한다.
+  - 글 목록 필터(분류·검색·미답변만)는 사이드바 조건 카드 `VOC 필터` 다(2026-09-29). 공통 조건은
+    읽지 않지만 카드가 있어 「조회 조건」 제목은 선다. 설명은 Guide(`guides/voc.md`)다.
 - `app_pages/scenario_management.py`
   - `시나리오 관리`·`BigDataQuery 등록` 두 탭을 제공한다. `표시순서 관리` 는 운영 관리
     설정이라 Admin Area 로 옮겼다. 두 탭은 항상 그린다(열린 탭만 그리면 다른 탭을 여는 순간 form 입력값이 사라진다). `BigDataQuery
@@ -624,6 +630,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `BigDataQuery 등록` 은 ① 기간으로 시뮬레이션 코드 목록 조회 → ② 목록에서 한 행 선택
     → ③ 자동 입력된 등록 폼 확인·저장의 2단계다.
   - 작업은 「목록 관리」·「현재 활성 RQ 복제」·「리비전 저장」·「월 머지」·「연도 Shift」다.
+    목록 관리의 `순서 저장` 은 표 **위**다(2026-09-29). 탭 라벨에 아이콘을 단다. 보관·영구
+    삭제가 파일 크기를 줄이지 않는다는 것, 공식 지정·복제·BigDataQuery 두 단계의 설명은 Guide
+    (`guides/scenario_management.md`)다 — 되돌릴 수 없다는 경고와 확인 입력은 그 자리에 남긴다.
   - 「월 머지」는 저장된 베이스·덧붙일 리비전과 덧붙일 월 범위를 고른다. 겹치는 월은
     기본적으로 저장을 차단하되, 목록을 보고 겹치는 월 전체에 베이스·덧붙일 쪽 중 하나를
     선택할 수 있다. 해당 월의 12표 전체를 선택한 쪽으로 사용하며 행을 섞지 않는다.
@@ -1259,6 +1268,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `render_page_guide` 를 부른 페이지만 보이게 하는 규칙을 더한다 — 그 규칙은 그 페이지의
     요소라 다른 페이지로 옮기면 Streamlit 이 걷어 간다. 비공식 경로(툴바 슬롯·숨은 버튼
     선택자)라 판올림 뒤 버튼이 뜨고 눌리는지 본다.
+  - 가이드가 있는 화면(2026-09-29): HOME·Static Capa·생산 계획·기준 정보·산출 결과·표준 목표·
+    시나리오 관리·가용설비 현황·Space 현황·Admin Area·VOC. 본문에서 뺀 설명을 옮긴 것이라 각
+    화면 테스트가 옮긴 핵심 문구가 Guide 에 있는지 대조한다(`test_*_guide_carries_*`).
+- `src/capa_simulation/components/admin_dialog.py`
+  - Admin Area 편집 탭들이 함께 쓰는 팝업 칸(`admin_area_open_dialog`) 하나를 여닫는 콜백.
+    탭이 닫혀도 매 회차 그리므로 칸이 탭마다 있으면 한 회차에 팝업이 둘 뜰 수 있다.
 - `src/capa_simulation/components/app_header.py`
   - 화면 맨 위 띠의 면을 칠하고 앱 이름·버전·개발자·인증 정보를 모든 페이지에 표시한다.
     Streamlit 이 헤더에 위젯을 넣는 API 를 주지 않아 `stHeader`·`stSidebarHeader` 의
@@ -1297,12 +1312,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `ProcessLabels.version` 은 HOME Figure 캐시 키 원소로 쓴다. 계산 캐시 키와
     `content_token` 은 건드리지 않는다.
 - `src/capa_simulation/components/process_rename_management.py`
-  - Admin Area 의 `Proc Rename` 탭. 공용 공정 표시명의 CSV 다운로드·Excel 붙여넣기·
-    직접 편집과 저장을 담당한다. 저장은 공용 프로필 교체이며 리비전을 만들지 않는다.
+  - Admin Area 의 `Proc Rename` 탭. 공용 공정 표시명의 CSV 다운로드·Excel 붙여넣기(작업 줄
+    팝업)·직접 편집과 저장을 담당한다. 저장 버튼·변경 메모는 편집표 **위**다. 저장은 공용 프로필
+    교체이며 리비전을 만들지 않는다.
 - `src/capa_simulation/components/display_order_management.py`
   - Admin Area 의 `표시순서 관리` 탭. 공용 표시순서 규칙의 검증·CSV 다운로드·Excel 표
-    붙여넣기·범위별 직접 편집과 원자 교체를 담당한다. 저장은 공용 프로필 교체이며
-    리비전을 만들지 않는다.
+    붙여넣기(작업 줄 팝업)·범위별 직접 편집과 원자 교체를 담당한다. 저장 버튼·변경 메모는
+    편집표 **위**다. 저장은 공용 프로필 교체이며 리비전을 만들지 않는다.
 - `src/capa_simulation/components/scenario_edit_bar.py`
   - 편집 화면이 보는 원본의 토큰(`source_token`)과 원본이 바뀌면 편집기를 비우는 절차.
     본문 맨 위의 "활성 시나리오 · 수정본 N" 줄과 원본 초기화 버튼은 없앴다(2026-09-29 사용자

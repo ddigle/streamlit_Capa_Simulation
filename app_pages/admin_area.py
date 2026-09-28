@@ -7,6 +7,7 @@ import streamlit as st
 from capa_simulation.components.display_order_management import (
     render_display_order_management,
 )
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_rename_management import (
     render_process_rename_management,
@@ -27,10 +28,8 @@ TAB_NAMES = (
     ":material/fact_check: 원천 품질",
 )
 
-render_page_header(
-    "Admin Area",
-    description="화면 표기·정렬순서 같은 운영 관리 설정을 한곳에 모읍니다.",
-)
+render_page_header("Admin Area")
+render_page_guide("admin_area", title="Admin Area")
 
 try:
     database_path = str(DUCKDB_PATH.resolve())
@@ -61,10 +60,6 @@ with process_rename_tab:
 with display_order_tab:
     render_display_order_management(repository)
 with source_quality_tab:
-    st.caption(
-        "활성 시나리오의 원천 78컬럼이 애초에 성한 데이터인지 **계산 전에** 봅니다. "
-        "비어 있는 컬럼과 값이 하나뿐인 상수 컬럼이 위로 옵니다."
-    )
     # 원천이 없는 시나리오(복제본 등)가 정상이다. 그때 화면을 멈추지 않는다.
     scenario_id = active_persisted_scenario_id()
     if scenario_id is None:

@@ -44,7 +44,9 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
     # 내려받기는 표시명 양식과 표시순서 양식 둘이다.
     assert len(app.get("download_button")) == 2
     assert len(app.get("file_uploader")) == 0
-    assert any(area.label == "공정 표시명 표 붙여넣기" for area in app.text_area)
+    # 붙여넣기는 작업 줄의 팝업이다 — 닫혀 있는 동안 본문을 차지하지 않는다.
+    assert not any(area.label == "공정 표시명 표 붙여넣기" for area in app.text_area)
+    assert app.button(key="admin_area_process_rename_open_paste")
     assert any("공용 버전 없음" in caption.value for caption in app.caption)
 
 
@@ -84,6 +86,8 @@ st.text(
 
 
 def _submit_clipboard(app: AppTest, pasted: str) -> AppTest:
+    """작업 줄의 「Excel 붙여넣기」 팝업을 열고, 붙여넣고, 전체 교체를 확인해 적용한다."""
+    app.button(key="admin_area_process_rename_open_paste").click().run(timeout=60)
     app.text_area("admin_area_process_rename_clipboard").set_value(pasted)
     app.checkbox("admin_area_process_rename_clipboard_confirm").check()
     next(button for button in app.button if button.label == "붙여넣기 표시명 적용").click()

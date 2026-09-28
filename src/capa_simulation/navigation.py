@@ -218,6 +218,8 @@ ADMIN_BOX_PAGES: tuple[PageSpec, ...] = (
         ":material/forum:",
         reads_scenario=False,
         reads_period=False,
+        # 글 목록 필터(분류·검색·미답변만)가 자기 조건 카드다.
+        has_condition_cards=True,
     ),
 )
 

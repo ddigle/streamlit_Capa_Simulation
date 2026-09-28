@@ -125,12 +125,8 @@ def render_bigdataquery_registration(
 ) -> None:
     # 리셋 소비는 반드시 첫 줄이다. 위젯을 만든 뒤에는 그 key 를 지울 수 없다.
     _consume_reset_request()
+    # 두 단계(① 기간으로 코드 찾기 ② 등록 정보 확인·저장)와 저장이 하는 일은 Guide 가 말한다.
     st.subheader("BigDataQuery 시나리오 등록")
-    st.caption(
-        "① 기간으로 시뮬레이션 코드를 찾고 ② 고른 코드의 등록 정보를 확인·수정해 저장합니다. "
-        "저장은 CSV 파일 없이 typed raw 와 RQ 16개를 한 트랜잭션으로 넣고, 내려받은 전체 "
-        "생산계획년월과 전체 B/N 공정을 활성화합니다."
-    )
     flash = st.session_state.pop(REGISTRATION_FLASH_KEY, None)
     if isinstance(flash, str) and flash:
         st.success(flash)

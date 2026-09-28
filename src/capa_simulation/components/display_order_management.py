@@ -7,6 +7,11 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.admin_dialog import (
+    admin_dialog_is_open,
+    close_admin_dialog,
+    open_admin_dialog,
+)
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.profile_caption import profile_version_caption
@@ -29,6 +34,8 @@ from capa_simulation.services.display_order_editor import (
     validate_display_order,
 )
 
+# 이 탭의 붙여넣기 팝업. Admin Area 의 팝업 칸은 하나라 값이 탭을 가른다.
+PASTE_DIALOG = "display_order_paste"
 # 전체 교체 확인 체크박스의 자리. 적용에 성공하면 비워 다음 붙여넣기가 다시 확인을 거친다.
 CLIPBOARD_CONFIRM_KEY = "global_display_order_clipboard_confirm"
 DISPLAY_ORDER_EDITOR_KEY = "display_order_editor"
@@ -53,11 +60,6 @@ def _validated_display_order(
 
 def render_display_order_management(repository: DuckDBScenarioRepository) -> None:
     st.subheader("표시순서 관리")
-    render_flash("display_order_flash")
-    st.caption(
-        "표시순서는 시나리오와 분리된 공용 설정입니다. 여기서 저장한 규칙은 현재와 이후 "
-        "불러오는 모든 시나리오에 동일하게 적용됩니다."
-    )
     database_path = str(repository.database_path)
     try:
         profile = load_global_display_order(database_path)
@@ -77,63 +79,70 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
             file_name=f"RQ_DISPLAY_ORDER_v{profile.version}.csv",
             key="display_order_download",
         )
+        st.button(
+            "Excel 붙여넣기",
+            icon=":material/content_paste:",
+            key="display_order_open_paste",
+            on_click=open_admin_dialog,
+            args=(PASTE_DIALOG,),
+        )
+    render_flash("display_order_flash")
 
-    _render_clipboard_import(repository, display_order)
+    if admin_dialog_is_open(PASTE_DIALOG):
+        _clipboard_dialog(repository, display_order)
     _render_direct_editor(repository, display_order)
 
 
-def _render_clipboard_import(
+@st.dialog("Excel 붙여넣기 · 표시순서", width="large", on_dismiss=close_admin_dialog)
+def _clipboard_dialog(
     repository: DuckDBScenarioRepository,
     current: pd.DataFrame,
 ) -> None:
-    with st.expander("Excel 붙여넣기 일괄 적용", icon=":material/content_paste:"):
-        st.caption(
-            "다운로드한 양식을 Excel에서 수정한 뒤 헤더를 포함한 전체 표를 복사해 "
-            "붙여넣으세요. 적용하면 현재 공용 표시순서 전체가 교체되며 시나리오 "
-            "리비전은 생성하지 않습니다."
+    # 적용이 무엇을 바꾸는지는 누르기 전에 알아야 해 팝업 안에 남긴다.
+    st.caption("적용하면 현재 공용 표시순서 **전체**가 교체됩니다(시나리오 리비전은 만들지 않음).")
+    with st.form("global_display_order_clipboard_form", border=False):
+        clipboard_text = st.text_area(
+            "표시순서 표 붙여넣기",
+            key="global_display_order_clipboard",
+            height=220,
+            placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
         )
-        with st.form("global_display_order_clipboard_form", border=False):
-            clipboard_text = st.text_area(
-                "표시순서 표 붙여넣기",
-                key="global_display_order_clipboard",
-                height=220,
-                placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
-            )
-            confirmed = st.checkbox(
-                "현재 공용 표시순서 전체 교체를 확인했습니다.",
-                key=CLIPBOARD_CONFIRM_KEY,
-            )
-            submitted = st.form_submit_button(
-                "붙여넣기 표시순서 적용",
-                icon=":material/content_paste:",
-                type="primary",
-                width="stretch",
-            )
-        if not submitted:
+        confirmed = st.checkbox(
+            "현재 공용 표시순서 전체 교체를 확인했습니다.",
+            key=CLIPBOARD_CONFIRM_KEY,
+        )
+        submitted = st.form_submit_button(
+            "붙여넣기 표시순서 적용",
+            icon=":material/content_paste:",
+            type="primary",
+            width="stretch",
+        )
+    if not submitted:
+        return
+    if not clipboard_text.strip():
+        st.error("적용할 표시순서 표를 Excel에서 복사해 붙여넣으세요.")
+        return
+    if not confirmed:
+        st.error("전체 교체 확인을 선택하세요.")
+        return
+    try:
+        imported = display_order_from_clipboard(clipboard_text)
+        if imported.equals(current):
+            st.info("붙여넣은 표시순서가 현재 공용 설정과 동일합니다.")
             return
-        if not clipboard_text.strip():
-            st.error("적용할 표시순서 표를 Excel에서 복사해 붙여넣으세요.")
-            return
-        if not confirmed:
-            st.error("전체 교체 확인을 선택하세요.")
-            return
-        try:
-            imported = display_order_from_clipboard(clipboard_text)
-            if imported.equals(current):
-                st.info("붙여넣은 표시순서가 현재 공용 설정과 동일합니다.")
-                return
-            _save_global_display_order(repository, imported, source="Excel 붙여넣기")
-        except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
-        else:
-            # 확인 체크는 이번 교체 한 번에만 유효하다. 폼은 제출해도 값을 비우지 않으므로
-            # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
-            st.session_state.pop(CLIPBOARD_CONFIRM_KEY, None)
-            queue_flash(
-                "display_order_flash",
-                "붙여넣은 표시순서를 모든 시나리오의 공용 설정으로 적용했습니다.",
-            )
-            st.rerun()
+        _save_global_display_order(repository, imported, source="Excel 붙여넣기")
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
+    else:
+        # 확인 체크는 이번 교체 한 번에만 유효하다. 폼은 제출해도 값을 비우지 않으므로
+        # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
+        st.session_state.pop(CLIPBOARD_CONFIRM_KEY, None)
+        queue_flash(
+            "display_order_flash",
+            "붙여넣은 표시순서를 모든 시나리오의 공용 설정으로 적용했습니다.",
+        )
+        close_admin_dialog()
+        st.rerun()
 
 
 def _render_direct_editor(
@@ -165,13 +174,19 @@ def _render_direct_editor(
     scope_rules = display_order.loc[scope_mask, list(DISPLAY_ORDER_RULE_COLUMNS)].reset_index(
         drop=True
     )
-    st.caption(
-        "정렬우선순위는 행 그룹 정렬과 왼쪽 분류컬럼 배치 순서에 함께 적용됩니다. "
-        "사용자지정은 분류값마다 값표시순서를 입력하고, 오름차순·내림차순은 한 행만 "
-        "유지하세요. 경로 상세가 있는 탭의 STEP_SEQ·MCP_SEQ는 항상 마지막 계층으로 "
-        "유지됩니다."
-    )
     with st.form("display_order_edit_form"):
+        # 작업 줄(메모·저장)은 표 **위**다. 정렬 규칙을 쓰는 법은 Admin Area Guide 가 말한다.
+        with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+            note = st.text_input(
+                "변경 메모",
+                placeholder="예: 환산 탭 제품 표시순서 변경",
+                key="display_order_note",
+            )
+            submitted = st.form_submit_button(
+                "공용 표시순서 저장",
+                icon=":material/save:",
+                type="primary",
+            )
         edited = st.data_editor(
             scope_rules,
             hide_index=True,
@@ -191,13 +206,6 @@ def _render_direct_editor(
                 ),
             },
             key=f"{DISPLAY_ORDER_EDITOR_KEY}::{selected_page}::{selected_tab}",
-        )
-        note = st.text_input("변경 메모", placeholder="예: 환산 탭 제품 표시순서 변경")
-        submitted = st.form_submit_button(
-            "공용 표시순서 저장",
-            icon=":material/save:",
-            type="primary",
-            width="stretch",
         )
     if not submitted:
         return

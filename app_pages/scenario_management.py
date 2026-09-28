@@ -7,16 +7,15 @@ import streamlit as st
 from capa_simulation.components.bigdataquery_registration import (
     render_bigdataquery_registration,
 )
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.scenario_management import render_scenario_management
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.settings import DUCKDB_PATH
 
-render_page_header(
-    "시나리오 관리",
-    description="DuckDB 시나리오·리비전·공식버전과 BigDataQuery 등록을 관리합니다.",
-)
+render_page_header("시나리오 관리")
+render_page_guide("scenario_management", title="시나리오 관리")
 
 try:
     database_path = str(DUCKDB_PATH.resolve())
@@ -31,7 +30,10 @@ except BOOTSTRAP_ERRORS as exc:
 # 제출로만 돈다 — 숨은 탭을 다시 그리는 비용은 검색으로 좁힌 뷰의 직렬화뿐이다. 그 비용보다
 # 탭을 오갈 때 폼 입력(기간 2개 + 등록 폼 6개)이 사라지는 쪽이 훨씬 나쁘다. 그래서 탭
 # 전환에 rerun 을 걸 이유도 없다.
-management_tab, query_tab = st.tabs(["시나리오 관리", "BigDataQuery 등록"])
+# 탭 이름 앞 아이콘은 그 탭이 하는 일이다(탭 목록 개선안 B).
+management_tab, query_tab = st.tabs(
+    [":material/database: 시나리오 관리", ":material/cloud_download: BigDataQuery 등록"]
+)
 
 with management_tab:
     render_scenario_management(repository, database_path)

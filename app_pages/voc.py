@@ -20,11 +20,13 @@ from typing import Any, cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.services.voc_board import VOC_CATEGORIES
 from capa_simulation.settings import DUCKDB_PATH
+from capa_simulation.sidebar_status import condition_card
 
 AUTHOR_KEY = "voc_author"
 # 글마다 하나씩 생기는 위젯이라 키에 글 번호를 붙인다. 접두를 리터럴로 흩어 두면
@@ -39,13 +41,8 @@ OPEN_ONLY_KEY = "voc_open_only"
 SEARCH_KEY = "voc_search"
 FLASH_KEY = "voc_flash"
 
-render_page_header(
-    "VOC",
-    description=(
-        "질문·개선 요청·오류 신고를 자유롭게 남기고 답을 주고받는 게시판입니다. "
-        "시나리오나 조회기간과 무관하게 남아 있습니다."
-    ),
-)
+render_page_header("VOC")
+render_page_guide("voc", title="VOC")
 
 flash = st.session_state.pop(FLASH_KEY, None)
 if isinstance(flash, str):
@@ -122,21 +119,20 @@ with st.container(border=True):
 
 st.divider()
 
-with st.container(horizontal=True, vertical_alignment="bottom", gap="medium"):
+# 글 목록을 거르는 조건은 사이드바 조건 카드다(2026-09-29 사용자 결정 — 필터는 사이드바).
+with condition_card("VOC 필터", name="voc", icon=":material/filter_alt:"):
     st.multiselect(
         "분류",
         options=VOC_CATEGORIES,
         key=CATEGORY_FILTER_KEY,
         persist_state="session",
         placeholder="미선택 시 전체",
-        width=260,
     )
     st.text_input(
         "검색",
         key=SEARCH_KEY,
         persist_state="session",
         placeholder="제목·내용·작성자",
-        width=260,
     )
     st.toggle("미답변만", key=OPEN_ONLY_KEY, persist_state="session")
 

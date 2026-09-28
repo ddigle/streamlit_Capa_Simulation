@@ -39,6 +39,10 @@ render_display_order_management(repository)
     assert not app.exception
     assert len(app.get("download_button")) == 1
     assert len(app.get("file_uploader")) == 0
+    # 붙여넣기는 작업 줄의 팝업이다.
+    assert not any(widget.label == "표시순서 표 붙여넣기" for widget in app.text_area)
+    app.button(key="display_order_open_paste").click().run(timeout=30)
+    assert not app.exception
     assert any(widget.label == "표시순서 표 붙여넣기" for widget in app.text_area)
     assert len(app.dataframe) == 1
     assert any("공용 버전 v1" in caption.value for caption in app.caption)
