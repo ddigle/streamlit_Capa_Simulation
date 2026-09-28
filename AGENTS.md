@@ -119,6 +119,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 적용 기간은 조회기간 상자 **바로 앞**의 자리표시자(`MONTH_APPLIED_BOX_KEY`)에 페이지가
     채우고 CSS 가 요약 줄 위로 얹는다. 그 값은 `navigation.run()` 안에서야 정해지고 페이지가
     `st.stop()` 하면 그 뒤 코드가 돌지 않으므로, 상자 뒤에 그리면 상자를 통째로 잃는다.
+  - 조회 컨트롤 세 상자(시나리오·리비전, 조회기간, B/N 집계 공정) 위에 **구역 제목 한 줄**
+    (「조회 조건 · 계산 화면에 적용」)을 세운다. 위의 그룹은 다른 화면으로 가는 목록이고 이
+    셋은 지금 화면의 계산 조건이라는 경계다. 선언은 `navigation.SIDEBAR_SECTIONS`, 그리기는
+    `sidebar_status.render_sidebar_section`, 서식은 `sidebar_style.py` 가 같은 선언에서 낸다.
+    시나리오 상자 **앞**에서 부른다 — 적용 기간 자리표시자와 조회기간 상자 사이에 두지
+    않는다. 두 이웃 관계는 `tests/test_app_navigation.py` 가 칸의 차례로 지킨다.
   - `시나리오 관리`는 Capa Chatbot과 Static Capa 사이의 독립 사이드바 그룹에 배치한다(그
     순서도 `SIDEBAR_GROUPS` 가 정한다).
   - 배치가 다른 둘만 손수 그린다 — 가운데·큰 글씨의 HOME 과, 조회 컨트롤 아래 맨 밑
@@ -1072,7 +1078,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 사이드바 페이지 목록을 `PageSpec` 선언으로 관리하고 `st.Page` 묶음을 만든다. 최상위
     박스는 `SIDEBAR_GROUPS`(`SidebarGroupSpec`), 맨 아래 `Support` 상자는 `ADMIN_AREA` 와
     `ADMIN_BOX_PAGES` 가 선언한다 — 새 그룹도 여기 한 줄이면 끝나고 `app.py` 는 그 선언을
-    그린다.
+    그린다. 상자 무리 위의 구역 제목은 `SIDEBAR_SECTIONS`(`SidebarSectionSpec`)가 선언하고,
+    `section.key` 가 컨테이너 key 와 CSS 선택자의 단일 근거다.
   - 페이지 추가·제목 변경은 여기서만 한다. 상태 접미는 `IMPLEMENTING_SUFFIX`(구현중)·
     `DATA_PENDING_SUFFIX`(Data확보중) 둘이고, `page_header.py` 가 같은 상수로 배지를 만든다.
 - `src/capa_simulation/page_bootstrap.py`
@@ -1083,6 +1090,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     정리한다. 키 리터럴은 페이지가 소유하고 헬퍼는 변수로 받는다.
 - `src/capa_simulation/settings.py`, `sidebar_status.py`
   - 앱 이름·경로·조회기간 상수와 사이드바의 적용 조회기간 표시.
+  - `sidebar_status.render_sidebar_section` 이 구역 제목 한 줄을 그린다. 가로 컨테이너가
+    돌려준 부모에 직접 쓴다 — `st.sidebar.*` 는 `with` 문맥을 따르지 않는다.
   - `sidebar_status.sidebar_expander` 가 **접힘 상태를 기억하는 사이드바 상자**를 만든다.
     `key` 와 `on_change="rerun"` 을 함께 줘야 확장 패널이 위젯이 되어 서버가 펼침 상태를
     읽고 쓴다. `expanded=` 는 주지 않는다 — 세션 값과 함께 주면 Streamlit 이 경고를 남긴다.
@@ -1142,6 +1151,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     함께 건다. 여기서만 하는 두 가지가 더 있다 — 시나리오 배지를 요약 줄 오른쪽 끝으로
     미는 것과, 적용 기간 자리표시자를 높이 0 으로 눌러 요약 줄 위에 얹는 것(좌표는 모듈
     상수 넷에 모여 있다)이다. 오른쪽 좌표는 요약 줄의 안쪽 여백과 같아야 배지와 끝이 맞는다.
+  - 구역 제목의 선택자는 인자가 아니라 `navigation.SIDEBAR_SECTIONS` 에서 낸다. 빌더에
+    **필수 인자를 더하지 않는다** — `tests/test_sidebar_stylesheet.py` 의 `_style_block` 이
+    그 호출 모양을 고정한다.
   - **`order` 를 받는 요소가 상자와 확장 패널이 다르다.** `st.container` 는 `.st-key-*` 가
     바깥 래퍼 한 겹 안이고, 확장 패널은 `.st-key-*` 요소 자신이 세로 블록의 직접 자식이다.
     `Support` 상자를 맨 아래에 고정하는 규칙은 둘 다 건다.

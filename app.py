@@ -12,7 +12,7 @@ from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
 from capa_simulation.components.theme_toggle import render_theme_toggle
 from capa_simulation.design import theme
 from capa_simulation.io.reference_cache import get_effective_reference_tables
-from capa_simulation.navigation import build_navigation_pages
+from capa_simulation.navigation import CONDITIONS_SECTION, build_navigation_pages
 from capa_simulation.page_bootstrap import bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
@@ -35,6 +35,7 @@ from capa_simulation.settings import (
 from capa_simulation.sidebar_status import (
     BOTTLENECK_BOX_KEY,
     register_month_range_placeholder,
+    render_sidebar_section,
     show_applied_month_range,
     sidebar_expander,
 )
@@ -157,6 +158,10 @@ with pinned_connections(DUCKDB_PATH):
             for page in group.subpages:
                 st.page_link(page, width="stretch")
 
+    # 여기서부터 세 상자는 다른 화면으로 가는 목록이 아니라 **지금 화면의 계산 조건**이다.
+    # 그 경계에 구역 제목 한 줄을 세운다. 시나리오 상자 **앞**이어야 한다 — 아래 적용 기간
+    # 자리표시자와 조회기간 상자 사이에 끼면 자리표시자가 제 상자의 요약 줄에 얹히지 못한다.
+    render_sidebar_section(CONDITIONS_SECTION)
     render_scenario_controls()
 
     # 적용 범위는 상자를 **접어도** 보여야 하는 한 조각이다. 그런데 그 값은 페이지가

@@ -1,8 +1,9 @@
-# Purpose: 공통 사이드바의 적용 월 범위 표시와, 접힘 상태를 기억하는 사이드바 상자를 만든다.
+# Purpose: 사이드바의 구역 제목·적용 월 범위 표시와, 접힘 상태를 기억하는 상자를 만든다.
 
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation.navigation import SidebarSectionSpec
 from capa_simulation.services.month_columns import month_label
 
 # 자리표시자는 **세션 상태**에 둔다. 모듈 전역에 두면 같은 서버 프로세스의 모든 세션이
@@ -55,6 +56,24 @@ def sidebar_expander(
     box = st.sidebar.expander(label, key=key, icon=icon, on_change="rerun")
     st.session_state[memory] = (bool(st.session_state[key]), label)
     return box
+
+
+def render_sidebar_section(section: SidebarSectionSpec) -> None:
+    """상자 무리 위에 구역 제목 한 줄을 세운다. 제목은 왼쪽, 뜻풀이는 오른쪽 끝이다.
+
+    컨테이너가 돌려준 부모에 **직접** 쓴다. `st.sidebar.*` 는 `with` 문맥을 따르지 않아
+    `with` 로 감싼 채 `st.sidebar.caption` 을 부르면 글자가 컨테이너 밖으로 새고, 빈
+    컨테이너는 화면에 그려지지도 않는다. 서식은 `sidebar_style.py` 가 `section.key` 로 건다.
+    """
+    heading = st.sidebar.container(
+        key=section.key,
+        horizontal=True,
+        horizontal_alignment="distribute",
+        vertical_alignment="bottom",
+    )
+    heading.caption(section.title, width="content")
+    if section.hint:
+        heading.caption(section.hint, width="content")
 
 
 def register_month_range_placeholder(placeholder: DeltaGenerator) -> None:

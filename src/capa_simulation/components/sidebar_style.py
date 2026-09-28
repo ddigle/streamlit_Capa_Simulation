@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from capa_simulation.design import tokens
-from capa_simulation.navigation import SidebarGroup, SidebarGroupSpec
+from capa_simulation.navigation import SIDEBAR_SECTIONS, SidebarGroup, SidebarGroupSpec
 
 # 규칙 안 들여쓰기도 선택자 사이에 유지한다.
 _SELECTOR_JOINER = ",\n        "
@@ -68,6 +68,20 @@ def build_sidebar_stylesheet(
     )
     group_title_selectors = _SELECTOR_JOINER.join(
         f'.st-key-{key} summary [data-testid="stMarkdownContainer"] p' for key in summary_box_keys
+    )
+    # 구역 제목 줄. 선택자는 `navigation.SIDEBAR_SECTIONS` 선언에서 나온다 — 인자로 받지
+    # 않는다. 제목을 그리는 쪽(`sidebar_status.render_sidebar_section`)도 같은 선언을 본다.
+    section_selectors = _SELECTOR_JOINER.join(
+        f".st-key-{section.key}" for section in SIDEBAR_SECTIONS
+    )
+    section_text_selectors = _SELECTOR_JOINER.join(
+        f'.st-key-{section.key} [data-testid="stCaptionContainer"] p'
+        for section in SIDEBAR_SECTIONS
+    )
+    section_title_selectors = _SELECTOR_JOINER.join(
+        f'.st-key-{section.key} > [data-testid="stElementContainer"]:first-child'
+        ' [data-testid="stCaptionContainer"] p'
+        for section in SIDEBAR_SECTIONS
     )
     # 사이드바 안의 페이지 링크 전부. 본문에도 `stPageLink` 가 있을 수 있어 사이드바로 좁힌다.
     NAV_LINK = '[data-testid="stSidebarContent"] [data-testid="stPageLink-NavLink"]'
@@ -230,6 +244,25 @@ def build_sidebar_stylesheet(
         {group_title_selectors} {{
             font-size: 1rem;
             font-weight: 700;
+        }}
+        /* 구역 제목은 상자가 아니라 **경계 표시**다. 위 목록과는 한 뼘 떼고 아래 상자에는
+           붙여, 제목이 어느 무리의 것인지 자리로 읽히게 한다. 글자는 상자 제목(1rem)보다
+           한참 작은 보조색이라 상자와 무게를 다투지 않는다. 좌우 0.3rem 은 상자 테두리
+           안쪽에 글자를 세우는 값이다. */
+        {section_selectors} {{
+            margin-top: 0.55rem;
+            margin-bottom: -0.12rem;
+            padding: 0 0.3rem;
+        }}
+        {section_text_selectors} {{
+            font-size: 0.75rem;
+            line-height: 1.25;
+            color: {tokens.TEXT_MUTED};
+        }}
+        {section_title_selectors} {{
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
         }}
         /* **펼친 요약 줄의 면색은 덮을 수 있다.** Streamlit 이 펼침 상태에만 붙이는 클래스로
            요약 줄에 면을 아주 살짝 눌러 칠한다(실측 RGB 밝게 251·252·253, 어둡게

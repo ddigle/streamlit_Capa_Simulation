@@ -12,6 +12,7 @@ from capa_simulation.navigation import (
     ADMIN_BOX_PAGES,
     ALL_SPECS,
     CAPA_CHATBOT,
+    CONDITIONS_SECTION,
     DATA_PENDING_SUFFIX,
     DYNAMIC_CAPA,
     DYNAMIC_CAPA_SUBPAGES,
@@ -360,3 +361,66 @@ def test_group_boxes_follow_the_page_only_when_the_page_changes(_app: AppTest) -
     app.session_state[static_key] = True
     app.run()
     assert _expanded(app) == {static: True, dynamic: True}
+
+
+# ------------------------------------------------------------ 사이드바 칸의 차례
+#
+# 사이드바의 **이웃 관계**가 뜻을 나르는 자리가 둘이다. 둘 다 파이썬 호출 차례가 정하고,
+# 어긋나도 예외 없이 화면만 틀어진다 — 칸의 차례를 AppTest 로 직접 본다.
+
+
+def _sidebar_keys(app: AppTest) -> list[str]:
+    """사이드바 **최상위** 칸의 key 를 화면 차례대로. key 가 없는 칸은 빈 문자열이다.
+
+    `for element in app.sidebar` 는 상자 안까지 내려가 이웃을 가를 수 없어 최상위만 본다.
+    key 를 준 컨테이너와 확장 패널은 id 끝이 그 key 다.
+    """
+    keys: list[str] = []
+    for node in app.sidebar.children.values():
+        identifier = str(getattr(getattr(node, "proto", None), "id", "") or "")
+        keys.append(identifier.rsplit("-", 1)[-1] if identifier else "")
+    return keys
+
+
+@pytest.mark.parametrize("page_path", [HOME.path, CAPA_CHATBOT.path])
+def test_the_conditions_heading_stands_right_before_the_scenario_box(
+    _app: AppTest, page_path: str
+) -> None:
+    """「조회 조건」 제목은 시나리오 상자 **바로 앞**이다.
+
+    제목은 그 아래 세 상자(시나리오·리비전, 조회기간, B/N 집계 공정)가 다른 화면으로 가는
+    목록이 아니라 지금 화면의 계산 조건이라고 말한다. 뒤로 밀리면 시나리오 상자가 목록
+    쪽에 붙어 읽히고, 조회기간 앞으로 가면 적용 기간 자리표시자가 제 상자에서 떨어진다.
+    """
+    app = _app.run()
+    if page_path != HOME.path:
+        app.switch_page(page_path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    keys = _sidebar_keys(app)
+    heading = keys.index(CONDITIONS_SECTION.key)
+    assert keys[heading + 1] == SCENARIO_BOX_KEY, keys
+    # 선언한 두 글자가 실제로 들어 있다. 빈 컨테이너는 화면에 그려지지도 않는다.
+    heading_block = list(app.sidebar.children.values())[heading]
+    captions = [element.value for element in heading_block if type(element).__name__ == "Caption"]
+    assert captions == [CONDITIONS_SECTION.title, CONDITIONS_SECTION.hint]
+
+
+@pytest.mark.parametrize("page_path", [HOME.path, CAPA_CHATBOT.path])
+def test_the_applied_range_placeholder_stands_right_before_the_month_box(
+    _app: AppTest, page_path: str
+) -> None:
+    """적용 기간 자리표시자는 조회기간 상자 **바로 앞** 형제다.
+
+    CSS 가 그 칸의 높이를 0 으로 눌러 바로 아래 요약 줄 위에 글자를 얹는다. 사이에 다른
+    칸이 끼면 글자가 그 칸 위에 앉는다. 상자 **뒤**로 옮기면 페이지가 `st.stop()` 한 회차에
+    자리표시자가 아예 그려지지 않는다(`app.py` 가 이유를 적었다).
+    """
+    app = _app.run()
+    if page_path != HOME.path:
+        app.switch_page(page_path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    keys = _sidebar_keys(app)
+    placeholder = keys.index(_app_constant("MONTH_APPLIED_BOX_KEY"))
+    assert keys[placeholder + 1] == _app_constant("MONTH_BOX_KEY"), keys

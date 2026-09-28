@@ -1,4 +1,4 @@
-# Purpose: 사이드바 페이지 목록을 선언형 데이터로 정의하고 st.Page 묶음을 만든다.
+# Purpose: 사이드바 페이지 목록과 구역 제목을 선언형 데이터로 정의하고 st.Page 묶음을 만든다.
 
 """Declarative page inventory for the sidebar navigation.
 
@@ -122,6 +122,29 @@ SIDEBAR_GROUPS: tuple[SidebarGroupSpec, ...] = (
     SidebarGroupSpec("static_capa", STATIC_CAPA, STATIC_CAPA_SUBPAGES),
     SidebarGroupSpec("dynamic_capa", DYNAMIC_CAPA, DYNAMIC_CAPA_SUBPAGES),
 )
+
+
+@dataclass(frozen=True)
+class SidebarSectionSpec:
+    """사이드바 구역 제목 한 줄의 선언. `slug` 가 컨테이너 key 와 CSS 선택자의 단일 근거다."""
+
+    slug: str
+    title: str
+    # 제목 오른쪽의 짧은 뜻풀이. 이 구역의 상자가 **무엇에 걸리는지**를 말한다.
+    hint: str = ""
+
+    @property
+    def key(self) -> str:
+        return f"sidebar_section_{self.slug}"
+
+
+# 상자는 모두 한 모양이라 모양으로는 용도를 가르지 못한다. 위의 그룹은 **다른 화면으로
+# 가는 목록**이고, 아래 세 상자(시나리오·리비전, 조회기간, B/N 집계 공정)는 **지금 화면의
+# 계산에 걸리는 조건**이다. 그 경계에 제목 한 줄을 세운다. B/N 은 HOME 에만 그려지지만
+# 기준 값은 Static Capa 판정 기준과 같은 세션 칸이라 같은 구역에 둔다(2026-09-28 사용자 결정).
+# 맨 아래 `Support` 는 다시 목록이므로 제목 대신 앞 간격으로 이 구역과 떨어진다.
+CONDITIONS_SECTION = SidebarSectionSpec("conditions", "조회 조건", "계산 화면에 적용")
+SIDEBAR_SECTIONS: tuple[SidebarSectionSpec, ...] = (CONDITIONS_SECTION,)
 
 ALL_SPECS: tuple[PageSpec, ...] = (
     HOME,
