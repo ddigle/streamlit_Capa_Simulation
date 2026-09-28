@@ -140,8 +140,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그 상자의 라벨은 `Support`, 아이콘은 `:material/support:` 다. `Preference` 는 HOME·가용설비
     현황 본문 탭(그 화면의 표시 설정, `tune`)의 이름이라 이 상자에 쓰지 않는다 — 같은 낱말과
     아이콘이 링크 목록을 설정으로 읽게 했다. **서식 예외는 없다.** 테두리도 요약 줄 글자도
-    페이지 그룹과 같고, 계산 흐름 밖이라는 것은 CSS `order` 가 지키는 맨 아래라는 자리만으로
-    말한다. 상수
+    페이지 그룹과 같고, 계산 흐름 밖이라는 것은 CSS `order` 가 지키는 맨 아래라는 자리와 그 앞
+    간격(0.9rem — 조회 조건 구역을 제목 없이 닫는다)으로 말한다. 상수
     `ADMIN_BOX_KEY` 는 그대로다 — 상자에 서는 것은 여전히 `Admin Area` 와 VOC 다.
   - 사이드바 CSS 문자열은 `components/sidebar_style.py`가 탐색 그룹·활성 경로·컨테이너
     키를 받아 만든다. 테마 초기화와 `st.html` 주입 순서는 진입점이 소유한다.
@@ -1169,7 +1169,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그 호출 모양을 고정한다.
   - **`order` 를 받는 요소가 상자와 확장 패널이 다르다.** `st.container` 는 `.st-key-*` 가
     바깥 래퍼 한 겹 안이고, 확장 패널은 `.st-key-*` 요소 자신이 세로 블록의 직접 자식이다.
-    `Support` 상자를 맨 아래에 고정하는 규칙은 둘 다 건다.
+    `Support` 상자를 맨 아래에 고정하는 규칙은 둘 다 건다. 앞 간격도 **같은 규칙**에 둔다.
 - `src/capa_simulation/components/column_filter.py`
   - 분류 컬럼별 다중선택 필터와 초기화 버튼. 선택값으로 거른 프레임을 돌려준다.
     `value_labels` 는 `format_func` 로 표시만 바꾼다. 옵션 값과 세션 저장값은 원본이다.

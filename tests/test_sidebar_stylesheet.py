@@ -123,3 +123,21 @@ def test_box_markers_follow_the_declarations(active_href: str) -> None:
     assert off_rules == [[f'.st-key-{key} {link}[href="{active_href}"]::after' for key in solo]]
     # HOME 광택 띠는 그대로 남는다.
     assert '.st-key-home_navigation a[data-testid="stPageLink-NavLink"]::after' in block
+
+
+def test_the_support_box_sits_last_and_apart() -> None:
+    """`Support` 상자는 **맨 아래**이고 **앞에 간격**을 둔다. 두 선언이 한 규칙에 있다.
+
+    파이썬 차례로는 HOME 의 B/N 상자가 이 상자 뒤에 그려진다(`navigation.run()` 안). 그래서
+    맨 아래를 지키는 것은 `order` 뿐이다. 간격은 계산 조건 구역을 닫는다 — 없으면 목록인
+    `Support` 가 조건 구역의 네 번째 상자로 읽힌다. flex 항목이 상자와 확장 패널에서 다르므로
+    두 선택자를 함께 건다.
+    """
+    block = _style_block()
+    (rule,) = _rules_with(block, "order: 99;")
+    assert rule == [
+        '[data-testid="stLayoutWrapper"]:has(> .st-key-test_admin)',
+        ".st-key-test_admin",
+    ]
+    # 간격은 **같은 규칙**에 있다 — 따로 두면 한쪽 선택자만 고치는 일이 생긴다.
+    assert _rules_with(block, "margin-top: 0.9rem;") == [rule]
