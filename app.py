@@ -219,6 +219,14 @@ with pinned_connections(DUCKDB_PATH):
     # 질문·요청·오류 신고를 받는 VOC — 은 모두 앱을 쓰는 사람을 돕는 자리다. 아이콘은
     # 사이드바에서 아무도 쓰지 않는 `support` 다. 상수 `ADMIN_BOX_KEY` 는 그대로다 — 값을
     # 바꾸면 세션이 기억하던 펼침 상태만 새 칸으로 갈린다.
+    # 이 상자 안의 화면(Admin Area·VOC)으로 **들어온 회차에만** 상자를 편다. 접혀 있으면
+    # 「지금 여기」 표시가 상자 안에 가려져 사이드바 어디에도 지금 자리가 보이지 않는다.
+    # 떠날 때 억지로 접지 않는다 — 조회 컨트롤 상자는 사용자가 여닫은 대로 기억한다
+    # (`sidebar_expander`). 위젯을 만들기 **전**에 써야 한다. 만든 뒤에 쓰면 Streamlit 이
+    # 예외를 낸다.
+    support_paths = {pages.admin_area.url_path, *(page.url_path for page in pages.admin_box_pages)}
+    if page_changed and navigation.url_path in support_paths:
+        st.session_state[ADMIN_BOX_KEY] = True
     with sidebar_expander("Support", key=ADMIN_BOX_KEY, icon=":material/support:"):
         with st.container(key="admin_area_navigation"):
             st.page_link(pages.admin_area, width="stretch")

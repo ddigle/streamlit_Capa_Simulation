@@ -424,3 +424,34 @@ def test_the_applied_range_placeholder_stands_right_before_the_month_box(
     keys = _sidebar_keys(app)
     placeholder = keys.index(_app_constant("MONTH_APPLIED_BOX_KEY"))
     assert keys[placeholder + 1] == _app_constant("MONTH_BOX_KEY"), keys
+
+
+def test_the_support_box_opens_on_entering_its_pages_and_never_forces_closed(
+    _app: AppTest,
+) -> None:
+    """`Support` 상자는 안의 화면(Admin Area·VOC)으로 **들어온 회차에만** 펴진다.
+
+    접혀 있으면 그 화면의 「지금 여기」 표시가 상자 안에 가려져 사이드바 어디에도 지금
+    자리가 보이지 않는다. 떠날 때는 접지 않는다 — 조회 컨트롤 상자는 사용자가 여닫은 대로
+    기억하는 규칙이라, 억지로 접으면 편 채로 두려던 사람의 뜻을 지운다. 같은 페이지 안에서
+    사용자가 접은 것도 그대로 둔다.
+    """
+    support_key = _app_constant("ADMIN_BOX_KEY")
+    app = _app.run()
+    assert _control_boxes(app)[support_key] is False
+
+    app.switch_page(ADMIN_AREA.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _control_boxes(app)[support_key] is True
+
+    # 떠나도 접지 않는다.
+    app.switch_page(CAPA_CHATBOT.path).run()
+    assert _control_boxes(app)[support_key] is True
+
+    # 다른 쪽 화면(VOC)으로 들어와 사용자가 접으면, 같은 페이지의 다음 회차도 접힌 채다.
+    app.switch_page(ADMIN_BOX_PAGES[0].path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _control_boxes(app)[support_key] is True
+    app.session_state[support_key] = False
+    app.run()
+    assert _control_boxes(app)[support_key] is False
