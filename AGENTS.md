@@ -1868,6 +1868,27 @@ STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를
 소요기준은 대소문자를 정규화하며 `WAFER`는 `WF`로 통일한다. 현재 지원 값은 `PKG`,
 `CHIP`, `WF`다.
 
+**소요기준 `PKG` 는 Buffer 로만 센다**(2026-09-28 사용자 설명). PKG 공정은 Buffer 위에
+Core·Top·Dummy 를 쌓고(스택) Mold·MPGA Saw 로 PKG Chip 단위까지 자른 **뒤의** 공정이라
+Wafer 가 아니라 PKG Chip 을 투입한다.
+
+- 부하량에 수율을 걸지 않는다. EDS·BE 불량 Die 는 이미 걸러졌다 — 부하량은 생산수량 그대로다.
+- 스택된 Chip 은 Buffer 에 쌓여 있으므로 `RQ_REQB` PKG 행 가운데 WF 구분이 Buffer 인 행에만
+  부하량을 붙인다. Core·Top·Dummy 등 다른 행은 계산에서 빼고 `PKG 기준은 Buffer 로만 계수`
+  사유로 제외 목록에 남긴다 — 조용히 0 으로 두면 「계획이 없어 0」과 갈리지 않는다.
+- PKG 부하량에는 WF 구분이 없어 `RQ_REQB` 와 WF 구분 없이 잇는다(`_attach_loads`). 예전에는
+  부하량에 `WF 구분 = "PKG"` 를 얹어 이었는데 실제 `RQ_REQB` 의 PKG 행은 `BUFFER` 같은 실제
+  분류값을 실어 연결이 늘 실패했고, PKG 기준 소요대수가 **말없이 0** 이었다(사내 버그 보고
+  2026-09-28). 픽스처가 REQB·대당 Capa 를 모두 `"PKG"` 로 맞춰 그 가정을 가렸으므로
+  테스트 픽스처의 PKG 행 WF 구분은 실데이터처럼 `BUFFER` 로 둔다.
+- Buffer 판정은 이름만 본다. `RQ_REQB` 에는 제품타입이 없고 `Buffer` 는 HBM 에만 있는 이름이라
+  `Top` 처럼 두 제품군에 걸리지 않는다. 대소문자는 가리지 않는다.
+- 이 규칙은 **Stack 이후 Wafer 단위 공정(WF 기준, Mold Wafer 등)에 Buffer 만 들어온다**는
+  2026-09-05 설명과 같은 배경이다. 그쪽은 `RQ_REQB` 에 Buffer 행만 있어 산식을 바꿀 것이
+  없었고(일반 Wafer 식, 수율 적용), PKG 쪽은 부하량 쪽이 WF 구분을 잘못 달고 있었다.
+- 환산 탭(`load_calculator.build_monthly_volume`)의 `WF 구분 = "PKG"` 는 표시용 분류
+  라벨이라 `RQ_REQB` 와 잇지 않는다. 그대로 둔다.
+
 Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지하되 실제 추가 설비는 정수로
 올림한다.
 

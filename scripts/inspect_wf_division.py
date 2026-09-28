@@ -14,6 +14,11 @@ SQL 로 직접 고치는 것을 막으려는 것이다 — 리비전은 append-o
 꼴)만 따로 세고 나머지는 **개수만** 보고한다. 리뷰 문서는 사내에서 사외로 나가는 유일한
 것이라 여기서 값이 새면 그대로 밖으로 나간다.
 
+**소요기준 PKG 절.** PKG 기준 소요대수는 `RQ_REQB` 의 Buffer 행에만 붙는다(2026-09-28).
+EDP-TSV 제품의 PKG 행이 어떤 WF 구분을 싣는지는 사외가 모른다 — Buffer 가 아니면 그 행은
+제외 목록으로 간다. 그래서 PKG 행을 제품타입별로 나눠 이미 코드에 적힌 분류명만 따로 세고,
+나머지는 개수만 센다.
+
 사용:
 
     uv run --no-sync python scripts/inspect_wf_division.py
@@ -51,6 +56,10 @@ SCHEMAS: tuple[str, ...] = ("ref_data", "rev_data")
 # 세어야 할 것만 이름으로 가른다. 그 밖의 값은 개수만 센다 — 값이 곧 실데이터다.
 WATCHED: tuple[str, ...] = ("TOP", "TOP_E")
 
+# PKG 절에서 따로 세는 이름. 모두 `services/product_type.py` 에 이미 적힌 분류명이다.
+PKG_WATCHED: tuple[str, ...] = ("BUFFER", "CORE", "TOP", "TOP_E", "DUMMY", "MASTER", "SLAVE")
+PRODUCT_TYPES: tuple[str, ...] = ("HBM", "EDP-TSV")
+
 
 def _counts(connection: duckdb.DuckDBPyConnection, schema: str, table: str) -> str:
     try:
@@ -75,6 +84,64 @@ def _counts(connection: duckdb.DuckDBPyConnection, schema: str, table: str) -> s
     return f"    {schema}.{table:14} {summary} · 그 밖 {other_values}종 {other_rows:,}행"
 
 
+def _pkg_counts(connection: duckdb.DuckDBPyConnection, schema: str) -> list[str]:
+    """소요기준 PKG 인 `RQ_REQB` 행을 제품타입 × WF 구분으로 센다.
+
+    제품타입은 `RQ_PKG_PLAN` 에서 제품정보로 붙인다(`RQ_REQB` 에는 없다). 한 제품의 비지 않은
+    제품타입이 하나로 모일 때만 그 값을 쓴다(`0026` 과 같은 규칙). 빈 타입뿐이면 `빈 타입`,
+    둘 이상이면 `타입 갈림`, 계획에 없는 제품은 `계획에 없음` 으로 따로 센다 — `any_value` 로
+    하나를 고르면 빈 문자열이 뽑혀 EDP-TSV 행이 EDP-TSV 줄에서 빠진다.
+
+    `rev_data` 는 모든 리비전의 행을 더한 수다.
+    """
+    try:
+        rows = connection.execute(
+            f"""
+            WITH types AS (
+                SELECT "제품정보",
+                    CASE count(DISTINCT upper(trim("제품타입")))
+                            FILTER (WHERE trim(coalesce("제품타입", '')) <> '')
+                        WHEN 1 THEN max(upper(trim("제품타입")))
+                            FILTER (WHERE trim(coalesce("제품타입", '')) <> '')
+                        WHEN 0 THEN '빈 타입'
+                        ELSE '타입 갈림'
+                    END AS t
+                FROM {schema}.rq_pkg_plan GROUP BY 1
+            )
+            SELECT coalesce(types.t, '계획에 없음') AS t, upper(trim(r."WF 구분")) AS k, count(*)
+            FROM {schema}.rq_reqb AS r LEFT JOIN types USING ("제품정보")
+            WHERE upper(trim(r."소요기준")) = 'PKG'
+            GROUP BY 1, 2
+            """
+        ).fetchall()
+    except duckdb.Error as exc:
+        first_line = str(exc).splitlines()[0] if str(exc).strip() else exc.__class__.__name__
+        return [f"    {schema}  읽지 못함 — {first_line}"]
+    if not rows:
+        return [f"    {schema}  소요기준 PKG 행 없음"]
+
+    by_type: dict[str, dict[str, int]] = {}
+    for product_type, key, count in rows:
+        known = (*PRODUCT_TYPES, "빈 타입", "타입 갈림", "계획에 없음")
+        name = str(product_type) if product_type in known else "그 밖 제품타입"
+        bucket = by_type.setdefault(name, {})
+        division = str(key or "")
+        label = division if division in PKG_WATCHED else "_other"
+        bucket[label] = bucket.get(label, 0) + int(count)
+        if label == "_other":
+            bucket["_other_kinds"] = bucket.get("_other_kinds", 0) + 1
+    lines = []
+    for name, bucket in by_type.items():
+        watched = " · ".join(f"{key}={bucket[key]:,}" for key in PKG_WATCHED if bucket.get(key))
+        other = (
+            f" · 그 밖 {bucket['_other_kinds']}종 {bucket['_other']:,}행"
+            if "_other" in bucket
+            else ""
+        )
+        lines.append(f"    {schema}  {name:10} {watched or '(따로 세는 이름 없음)'}{other}")
+    return lines
+
+
 def main() -> int:
     if not DUCKDB_PATH.exists():
         print(f"DB 파일이 없습니다: {DUCKDB_PATH}")
@@ -93,11 +160,19 @@ def main() -> int:
             for table in TABLES:
                 print(_counts(connection, schema, table))
             print()
+        print("소요기준 PKG 인 `RQ_REQB` 행의 WF 구분 (제품타입별)")
+        print()
+        for schema in SCHEMAS:
+            for line in _pkg_counts(connection, schema):
+                print(line)
+        print()
     finally:
         connection.close()
 
     print("읽는 법 — `TOP_E` 가 0 이 아니면 그 표에는 이관이 걸렸다는 뜻이다.")
     print("`TOP` 이 남아 있으면 대소문자 때문에 건너뛴 행이다. 두 숫자를 리뷰 문서에 적는다.")
+    print("PKG 절 — PKG 소요대수는 BUFFER 행에만 붙는다. EDP-TSV 줄에 BUFFER 가 아닌 값이")
+    print("있으면 그 행은 제외 목록으로 간다. PKG 절 출력을 그대로 리뷰 문서에 옮긴다.")
     print("**여기서 고치지 않는다.** 재이관은 사외가 후속 마이그레이션으로 만든다.")
     return 0
 

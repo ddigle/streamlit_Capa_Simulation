@@ -48,6 +48,7 @@ from capa_simulation.services.display_order_scopes import (
     TAB_UNIT_CAPACITY,
 )
 from capa_simulation.services.required_equipment import (
+    PKG_UNCOUNTED_REASON,
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
     required_equipment_to_month_table,
@@ -342,12 +343,23 @@ else:
         # 대당 Capa 제외 표는 **대당 Capa 탭**이 그린다. 두 탭이 한 페이지에 있게 된
         # 뒤로는 같은 표를 같은 파일명으로 두 번 내리는 것이라 여기서는 걷어냈다.
         if not required_exclusions.empty:
-            positive_load_exclusions = required_exclusions.loc[required_exclusions["부하량"].gt(0)]
-            st.warning(
-                "대당 Capa가 없어 소요대수 산출에서 "
-                f"{len(required_exclusions):,}건을 제외했습니다"
-                f" (부하량 발생 {len(positive_load_exclusions):,}건)."
-            )
+            # 사유가 둘이다. 대당 Capa 가 없는 것은 기준정보를 고칠 일이고, PKG 의 Buffer 외
+            # 행은 규칙대로 세지 않은 것이다 — 한 문장에 섞으면 고칠 것이 없는데 고치러 간다.
+            uncounted_pkg = required_exclusions["제외사유"].eq(PKG_UNCOUNTED_REASON)
+            capacity_missing = required_exclusions.loc[~uncounted_pkg]
+            if not capacity_missing.empty:
+                positive_load_exclusions = capacity_missing.loc[capacity_missing["부하량"].gt(0)]
+                st.warning(
+                    "대당 Capa가 없어 소요대수 산출에서 "
+                    f"{len(capacity_missing):,}건을 제외했습니다"
+                    f" (부하량 발생 {len(positive_load_exclusions):,}건)."
+                )
+            if uncounted_pkg.any():
+                st.info(
+                    "소요기준 PKG 는 Buffer 로만 셉니다. Core·Top·Dummy 등 "
+                    f"{int(uncounted_pkg.sum()):,}건은 Buffer 에 쌓여 있어 소요대수에 넣지 "
+                    "않았습니다."
+                )
             with st.expander("소요대수 제외 기준정보", expanded=False):
                 render_exclusion_table(
                     required_exclusions,

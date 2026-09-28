@@ -75,6 +75,14 @@
 - [x] 수율의 고유 키를 `생산계획년월 + 제품정보 + Stack + WF 구분`으로 확정했다.
 - [x] Chip 구성 수 컬럼명은 `구분_Chip`으로 확정하고 `WF 구분`별 Chip·Wafer 부하량 산출에 반영했다. `CHIP`와 `Chip수`는 동일한 원천 값이며 `Chip수`는 쿼리에서 비활성화했다. `구분EQ`는 Core·Top·Master·Slave 등 용량이 발생하는 `WF 구분`에 대한 Chip당 용량으로 사용한다.
 - [x] 공정별 사용 부하 Unit은 `RQ_REQB.소요기준`으로 제공한다. `PKG`·`CHIP`·`WF` 를 구현했고 `BOX`·`PCB` 는 산식 확정 전까지 대당 Capa·소요대수 계산에서 제외한다 (`frame_contracts.DEMAND_BASES`, `unit_capacity.UNIMPLEMENTED_BASES`).
+- [x] **소요기준 PKG 는 Buffer 로만 센다**(2026-09-28 사용자 설명·사내 버그 보고). 스택·Mold·
+  MPGA Saw 이후 PKG Chip 단위로 투입하는 공정이라 부하량은 생산수량 그대로(수율 미적용)이고,
+  스택된 Chip 은 Buffer 에 쌓여 있어 `RQ_REQB` 의 Buffer 행에만 부하량을 붙인다. 부하량에
+  `WF 구분 = "PKG"` 를 얹어 잇던 탓에 실제 `BUFFER` 행과 연결되지 않아 PKG 기준 소요대수가
+  늘 0 이던 결함을 고쳤다. Core·Top·Dummy 행은 사유를 달아 제외 목록에 남긴다.
+- [ ] EDP-TSV 제품의 PKG 기준 `RQ_REQB` 행이 어떤 WF 구분을 싣는지 사내에서 확인한다
+  (`scripts/inspect_wf_division.py` 의 PKG 절). Buffer 가 아닌 값이면 그 행은 지금 제외
+  목록으로 간다 — 셀 WF 구분을 제품타입별로 선언해야 하는지 그때 정한다.
 - [결정] **매핑하지 않는다**(2026-09-05 확정). Stack(Buffer 위 Core·Top·Dummy Bonding) 이 끝난 Wafer 는 따로 이름을 붙이지 않고 Buffer 로 남으므로, 그 이후 Wafer 단위 투입 공정의 부하량 데이터에 Buffer 만 들어오는 것이 정상이다. 특별한 분류나 매핑 없이 그대로 반영한다. 다만 Capa 해석과 이후 구조 설계에서 이 배경을 전제로 삼는다. **현 데이터와의 차이는 3-5 절에 기록했다.**
 - [ ] `PCB수(K매)`의 원천 공식 또는 PCB당 Unit·수율·보정 기준을 확인한다. **BOX·PCB 는 제외가 아니라 `추가 예정` 이다**(2026-09-05 확정). 현재 원천에는 PCB수 값이 46,500행 중 124행뿐이고 그 값도 상수 하나라 역산이 불가능하다.
 

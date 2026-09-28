@@ -46,7 +46,7 @@ tables = {
             "양산구분": ["양산"],
             "제품정보": ["Product-A"],
             "Stack": ["8H"],
-            "WF 구분": ["PKG"],
+            "WF 구분": ["BUFFER"],
             "소요기준": ["PKG"],
             "UPEH": [100.0],
             "ST": [None],
@@ -81,7 +81,7 @@ tables = {
             "양산구분": ["양산"],
             "제품정보": ["Product-A"],
             "Stack": ["8H"],
-            "WF 구분": ["PKG"],
+            "WF 구분": ["BUFFER"],
             "Lot 측정률": [1.0],
         }
     ),
@@ -95,7 +95,7 @@ tables = {
             "양산구분": ["양산"],
             "제품정보": ["Product-A"],
             "Stack": ["8H"],
-            "WF 구분": ["PKG"],
+            "WF 구분": ["BUFFER"],
             "WF측정률": [1.0],
         }
     ),
@@ -117,7 +117,7 @@ tables = {
             "생산계획년월": [202608],
             "제품정보": ["Product-A"],
             "Stack": ["8H"],
-            "WF 구분": ["PKG"],
+            "WF 구분": ["BUFFER"],
             "EDS_수율": [1.0],
             "BE_수율": [1.0],
         }
@@ -133,7 +133,7 @@ tables = {
             "Capa Code": ["CAPA-A"],
             "Customer": ["Customer-A"],
             "CS": ["MP"],
-            "WF 구분": ["PKG"],
+            "WF 구분": ["BUFFER"],
             "STEP_SEQ": ["P100"],
             "MCP_SEQ": ["1A"],
             "소요기준": ["PKG"],
@@ -188,6 +188,16 @@ if ADD_EXCLUDED_STEP:
     )
     for step in (lot_negative_step, wf_negative_step, no_capacity_step, unplanned_step):
         tables["RQ_REQB"] = clone_step(tables["RQ_REQB"], **step)
+
+# 소요기준 PKG 의 Buffer 가 아닌 행 하나. 계산에서 빠지되 「대당 Capa 가 없어」 경고가 아니라
+# 안내로 따로 알려야 한다 — 고칠 기준정보가 없는데 고치러 가게 하면 안 된다. 기본은 꺼 둔다.
+ADD_UNCOUNTED_PKG_ROW = False
+if ADD_UNCOUNTED_PKG_ROW:
+    core_row = tables["RQ_REQB"].iloc[0].to_dict()
+    core_row.update({"WF 구분": "CORE", "STEP_SEQ": "P600", "MCP_SEQ": "6A"})
+    tables["RQ_REQB"] = pd.concat(
+        [tables["RQ_REQB"], pd.DataFrame([core_row])], ignore_index=True
+    )
 
 # 공정 필터를 보려면 공정이 둘 이상이어야 한다. 기본은 꺼 두어 다른 테스트의 건수 문구를
 # 건드리지 않는다.
@@ -316,7 +326,7 @@ if STUB_CALCULATIONS:
             "Capa Code": ["CAPA-A"],
             "Customer": ["Customer-A"],
             "CS": ["MP"],
-            "WF 구분": ["PKG"],
+            "WF 구분": ["BUFFER"],
             "STEP_SEQ": ["P100"],
             "MCP_SEQ": ["1A"],
             "소요기준": ["PKG"],
@@ -394,6 +404,21 @@ def _exclusion_script(page_name: str) -> str:
 
 EXCLUSION_TEST_SCRIPT = _exclusion_script("reference_data.py")
 EXCLUSION_PROCESS_TEST_SCRIPT = _exclusion_script("calculation_result.py")
+# 위 제외 STEP 넷에 PKG 의 Core 행 하나를 더한다. 캐시 키가 되는 토큰도 따로 둔다.
+PKG_UNCOUNTED_TEST_SCRIPT = EXCLUSION_PROCESS_TEST_SCRIPT.replace(
+    "ADD_UNCOUNTED_PKG_ROW = False", "ADD_UNCOUNTED_PKG_ROW = True"
+).replace('"test-capacity-exclusion-page"', '"test-capacity-pkg-uncounted-page"')
+# 제외 STEP 없이 PKG 의 Core 행만 — 「대당 Capa 가 없어」 경고가 뜨면 안 된다.
+PKG_ONLY_UNCOUNTED_TEST_SCRIPT = (
+    TEST_SCRIPT.replace('PAGE_NAME = "reference_data.py"', 'PAGE_NAME = "calculation_result.py"')
+    .replace("ADD_UNCOUNTED_PKG_ROW = False", "ADD_UNCOUNTED_PKG_ROW = True")
+    .replace("STUB_CALCULATIONS = True", "STUB_CALCULATIONS = False")
+    .replace('"test-capacity-standards-page"', '"test-capacity-pkg-only-page"')
+)
+PKG_UNCOUNTED_NOTICE = (
+    "소요기준 PKG 는 Buffer 로만 셉니다. Core·Top·Dummy 등 1건은 Buffer 에 쌓여 있어 "
+    "소요대수에 넣지 않았습니다."
+)
 
 # 공정 필터를 보려면 공정이 둘이어야 하고, STEP 뷰는 대당 Capa 를 실제로 돌려야 한다.
 TWO_PROCESS_TEST_SCRIPT = (
@@ -945,3 +970,26 @@ def test_month_editor_paste_template_keeps_the_original_process_name() -> None:
     assert not app.exception
     exported = _download_frame(app, "capa_run_day_editor_csv_download")
     assert exported["공정"].tolist() == ["Process-A", "Process-B"]
+
+
+def test_uncounted_pkg_rows_are_a_notice_not_a_capacity_warning() -> None:
+    """PKG 의 Buffer 가 아닌 행은 고칠 것이 없다. 대당 Capa 경고 건수에 섞이면 안 된다."""
+    app = AppTest.from_string(PKG_UNCOUNTED_TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert "대당 Capa가 없어 소요대수 산출에서 4건을 제외했습니다 (부하량 발생 3건)." in {
+        warning.value for warning in app.warning
+    }
+    assert PKG_UNCOUNTED_NOTICE in {info.value for info in app.info}
+    excluded = _exclusion_frame(app, "PKG 기준은 Buffer 로만 계수")
+    uncounted = excluded.loc[excluded["제외사유"].eq("PKG 기준은 Buffer 로만 계수")]
+    assert uncounted["STEP_SEQ"].tolist() == ["P600"]
+    assert uncounted["부하량"].tolist() == [0.0]
+
+
+def test_only_uncounted_pkg_rows_raise_no_capacity_warning() -> None:
+    app = AppTest.from_string(PKG_ONLY_UNCOUNTED_TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert not any("대당 Capa가 없어" in warning.value for warning in app.warning)
+    assert PKG_UNCOUNTED_NOTICE in {info.value for info in app.info}
