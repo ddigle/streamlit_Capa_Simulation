@@ -18,6 +18,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from test_load_conversion_plan_apply import _isolated_custom_renderers, _script  # noqa: F401
 
+import capa_simulation.components.tab_marks as tab_marks
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY, load_guide
 from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, remembered_box_key
 
@@ -62,14 +63,14 @@ def test_the_card_shows_only_on_the_conversion_tab_and_remembers_it_was_opened(
     app.session_state[CARD_KEY] = True
     app.run()
 
-    app.session_state[TAB_KEY] = "PKG PLAN"
+    app.session_state[TAB_KEY] = ":material/edit_calendar: PKG PLAN"
     app.run()
     assert not list(app.exception)
     assert "monthly_volume_basis" not in _card_widgets(app)
     # 안 그려진 동안에도 편 상태를 기억한다.
     assert app.session_state[remembered_box_key(CARD_KEY)][0] is True
 
-    app.session_state[TAB_KEY] = "환산"
+    app.session_state[TAB_KEY] = ":material/calculate: 환산"
     app.run()
     assert "monthly_volume_basis" in _card_widgets(app)
     assert app.session_state[CARD_KEY] is True
@@ -167,3 +168,22 @@ def test_the_guide_explains_every_card_setting_and_action() -> None:
         "신규 리비전 저장",
     ):
         assert label in guide, label
+
+
+def test_a_tab_with_an_unapplied_paste_or_edit_gets_a_dot(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """붙여넣고 아직 적용하지 않은 표가 있으면 PKG PLAN 탭에 점이 찍힌다(탭 목록 개선안 C)."""
+    from test_load_conversion_plan_apply import _clipboard_text, _paste
+
+    marked: list[set[str]] = []
+    monkeypatch.setattr(
+        tab_marks,
+        "mark_pending_tabs",
+        lambda key, labels, pending: marked.append(set(pending)) if key == TAB_KEY else None,
+    )
+    app = _app(database)
+    assert marked[-1] == set()
+
+    _paste(app, _clipboard_text(app, scale=0.5))
+    assert marked[-1] == {":material/edit_calendar: PKG PLAN"}

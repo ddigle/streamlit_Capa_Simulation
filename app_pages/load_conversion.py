@@ -33,6 +33,7 @@ from capa_simulation.components.scenario_edit_bar import (
     reset_editors_on_source_change,
     source_token,
 )
+from capa_simulation.components.tab_marks import editor_has_edits, mark_pending_tabs
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.design import tokens
@@ -142,9 +143,28 @@ reset_editors_on_source_change(
 # 사이드바 시나리오 상자의 배지가 이미 말하고, 편집을 버리는 「편집 되돌리기」도 그 상자에
 # 있다(모든 화면의 편집을 버리는 시나리오 단위 동작이다). 되돌리면 리비전 번호가 올라
 # 위 `source_token` 이 바뀌므로 이 화면의 편집표·붙여넣기 대기분도 다음 회차에 함께 비워진다.
-conversion_tab, pkg_plan_tab, yield_tab = stateful_tabs(
-    ["환산", "PKG PLAN", "수율"],
-    key="load_conversion_active_tab",
+# 탭 이름 앞 아이콘은 탭이 하는 일이다 — 환산은 계산해 보는 곳, PKG PLAN·수율은 값을 고치는
+# 곳이다(2026-09-29 사용자 결정, 탭 목록 개선안 B).
+TAB_KEY = "load_conversion_active_tab"
+TAB_CONVERSION = ":material/calculate: 환산"
+TAB_PKG_PLAN = ":material/edit_calendar: PKG PLAN"
+TAB_YIELD = ":material/percent: 수율"
+TAB_LABELS = (TAB_CONVERSION, TAB_PKG_PLAN, TAB_YIELD)
+conversion_tab, pkg_plan_tab, yield_tab = stateful_tabs(TAB_LABELS, key=TAB_KEY)
+# 적용하지 않은 편집이나 붙여넣고 아직 적용하지 않은 표가 남은 탭에 점을 찍는다(개선안 C). 다른
+# 탭으로 옮겨도 「저 탭에 아직 적용할 것이 있다」가 보인다.
+mark_pending_tabs(
+    TAB_KEY,
+    TAB_LABELS,
+    {
+        *(
+            [TAB_PKG_PLAN]
+            if editor_has_edits(PLAN_EDITOR_KEY)
+            or isinstance(st.session_state.get(PLAN_STAGED_KEY), pd.DataFrame)
+            else []
+        ),
+        *([TAB_YIELD] if editor_has_edits(YIELD_EDITOR_KEY) else []),
+    },
 )
 
 

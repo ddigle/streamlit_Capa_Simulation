@@ -138,6 +138,10 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
 `st.success`→`greenColor`, `st.info`→`blueColor`, `st.warning`→`yellowColor` 다. 경고를
 주황으로 만드는 것은 `orangeColor` 가 아니라 `yellowColor` 이므로 둘을 같은 값으로 둔다.
 
+**적용·저장하지 않은 편집**도 같은 주황이다 — 사이드바 시나리오 상자의 `미저장 변경` 배지
+(`:orange-badge[]`)와, 적용하지 않은 편집이 남은 탭 이름 옆의 점(`tokens.PENDING_MARK`,
+`orangeColor` 와 같은 값)이 한 뜻이다.
+
 ## 3. 상태색은 휘도가 단조 감소해야 한다
 
 확보 → 경고 → 부족 순으로 **어두워진다**. 색만으로 심각도를 인코딩하면 흑백 출력과

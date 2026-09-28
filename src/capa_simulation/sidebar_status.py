@@ -99,6 +99,11 @@ def register_month_range_placeholder(placeholder: DeltaGenerator) -> None:
     st.session_state[PLACEHOLDER_STATE_KEY] = placeholder
 
 
+def forget_month_range_placeholder() -> None:
+    """조회기간 상자를 세우지 않는 화면에서 앞 화면이 등록한 자리표시자를 지운다."""
+    st.session_state.pop(PLACEHOLDER_STATE_KEY, None)
+
+
 def _placeholder() -> DeltaGenerator | None:
     registered = st.session_state.get(PLACEHOLDER_STATE_KEY)
     if isinstance(registered, DeltaGenerator):

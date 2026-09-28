@@ -27,6 +27,7 @@ from capa_simulation.components.equipment_explorer import (
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
+from capa_simulation.navigation import EQUIPMENT_GAP_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -72,7 +73,7 @@ def _months_between(start: date, end: date) -> list[int]:
 
 
 def _open_tab(label: str) -> None:
-    st.session_state["equipment_active_tab"] = label
+    st.session_state[EQUIPMENT_TAB_KEY] = label
 
 
 def _open_input() -> None:
@@ -143,11 +144,11 @@ sample_notice = st.empty()
 main_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
     [
         ":material/dashboard: Main",
-        ":material/compare_arrows: Static/Dynamic",
+        EQUIPMENT_GAP_TAB,
         TAB_PREFERENCE,
         TAB_RAWDATA,
     ],
-    key="equipment_active_tab",
+    key=EQUIPMENT_TAB_KEY,
 )
 if latest_snapshot is None and not tab_is_hidden(main_tab):
     with first_action.container():

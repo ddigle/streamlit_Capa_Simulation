@@ -1,13 +1,19 @@
 # Purpose: 확보·경고 기준별 부족 공정과 추가 필요대수를 Static Capa 현황판에 표시한다.
 
+"""Static Capa 현황 요약 — 판정 기준은 사이드바 조건 카드, 설명은 Guide(2026-09-29 사용자 결정).
+
+본문에는 두 결과 상자(경고 기준 미달·확보 기준 추가 확보)만 남는다. 이 화면의 목적·담당 부서
+흐름과 추가 필요대수 계산식은 `guides/static_capa.md` 가 말한다.
+"""
+
 from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
-from capa_simulation.components.roadmap_panel import render_roadmap_panel
 from capa_simulation.components.status_metric import (
     metric_row,
     render_status_metric,
@@ -36,6 +42,7 @@ from capa_simulation.services.simulation_cache import (
     get_securement_rate,
     scenario_cache_key,
 )
+from capa_simulation.sidebar_status import condition_card
 
 
 def _display_shortfalls(data: pd.DataFrame, *, warning_section: bool) -> pd.DataFrame:
@@ -133,59 +140,39 @@ def _render_shortfall_table(
 
 process_labels = get_process_labels()
 
-render_page_header(
-    "Static Capa",
-    description="생산계획과 투자 기준정보를 기반으로 미래 구간의 Capa 과부족을 판단합니다.",
-)
-
-render_roadmap_panel(
-    purpose=(
-        "Capa 기준정보(투자 기준)로 부족대수를 산출한 뒤 Total 대수와 가용 일정을 분리해 "
-        "투자 또는 실행 Action Item으로 연결합니다."
-    ),
-    owners=(
-        (
-            "GO팀 · 투자 판단",
-            "Total 설비가 부족한 공정은 산출 부족대수를 투자 검토 기준으로 활용",
-        ),
-        (
-            "기술팀 · 실행 개선",
-            "투자는 완료됐지만 가용 일정이 부족하면 Setup 단축·생산성 향상 A/Item으로 전환",
-        ),
-    ),
-    roadmap="부족대수 모니터링 → Total/가용 일정 분리 → 부서별 A/Item 및 이력 관리",
-)
-
-st.subheader("확보율 기준 설비 부족 현황")
-st.caption("월·공정별 가용대수 ÷ 소요대수를 기준으로 최소 추가 설비대수를 정수 올림합니다.")
+render_page_header("Static Capa")
+render_page_guide("static_capa", title="Static Capa")
 
 seed_threshold_defaults()
 
-with st.container(border=True):
-    st.markdown("#### :material/tune: 판정 기준")
+# 판정 기준은 이 화면이 읽는 조건이라 사이드바 조건 카드다. HOME 의 B/N 집계 공정 상자와 **같은
+# 세션 키**를 쓴다 — 한쪽에서 바꾸면 다른 쪽도 같은 기준으로 판정한다. 두 칸을 한 줄에 반씩
+# 놓고 칸 위 글자는 접는다(B/N 상자와 같은 모양). 어느 칸이 무엇인지는 왼쪽이 확보·오른쪽이
+# 경고라는 화면 전체의 차례와 `help` 가 말한다.
+with condition_card("판정 기준", name="static_capa", icon=":material/rule:"):
     with st.form("static_capa_shortfall_threshold_form", border=False):
-        with st.container(horizontal=True, gap="small", vertical_alignment="bottom"):
+        secure_column, warning_column = st.columns(2, gap="small")
+        with secure_column:
             secure_threshold_percent = st.number_input(
                 "확보 기준 (%)",
+                label_visibility="collapsed",
                 min_value=0.0,
                 step=0.1,
                 key=SECURE_THRESHOLD_KEY,
                 persist_state="session",
-                width=170,
+                help="확보 기준 (%)",
             )
+        with warning_column:
             warning_threshold_percent = st.number_input(
                 "경고 기준 (%)",
+                label_visibility="collapsed",
                 min_value=0.0,
                 step=0.1,
                 key=WARNING_THRESHOLD_KEY,
                 persist_state="session",
-                width=170,
+                help="경고 기준 (%)",
             )
-            st.form_submit_button("판정 기준 적용", type="primary", width="content")
-    st.caption(
-        "경고 기준 미달은 물리적 Capa 부족으로 우선 관리하고, 경고 이상·확보 기준 미달은 "
-        "추가 확보 계획 대상으로 구분합니다."
-    )
+        st.form_submit_button("판정 기준 적용", type="primary", width="stretch")
 
 if warning_threshold_percent > secure_threshold_percent:
     st.error("경고 기준은 확보 기준보다 클 수 없습니다.")
@@ -233,8 +220,7 @@ except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))
 else:
     with st.container(border=True):
-        st.markdown("#### :material/priority_high: 경고 기준 미달")
-        st.markdown(":red-badge[집중 관리] 물리적 Capa가 계획을 받치지 못하는 공정·월입니다.")
+        st.markdown("#### :material/priority_high: 경고 기준 미달 :red-badge[집중 관리]")
         with metric_row(key="static_capa_warning_metrics"):
             render_status_metric(
                 "미달 공정·월",
@@ -268,17 +254,9 @@ else:
                 labels=process_labels,
                 secure_threshold=float(secure_threshold_percent) / 100.0,
             )
-            st.caption(
-                "`경고까지 필요 + 확보까지 추가 = 총 추가 필요`입니다. 같은 설비가 여러 달에 "
-                "재사용될 수 있으므로 기간 전체 대수를 단순 합산하지 않습니다."
-            )
 
     with st.container(border=True):
-        st.markdown("#### :material/trending_up: 확보 기준 추가 확보")
-        st.markdown(
-            ":orange-badge[계획 관리] 경고 기준은 충족했지만 확보 기준까지 여유 설비가 필요한 "
-            "공정·월입니다."
-        )
+        st.markdown("#### :material/trending_up: 확보 기준 추가 확보 :orange-badge[계획 관리]")
         with metric_row(key="static_capa_secure_metrics"):
             render_status_metric(
                 "추가 확보 공정·월",
@@ -307,13 +285,3 @@ else:
                 labels=process_labels,
                 secure_threshold=float(secure_threshold_percent) / 100.0,
             )
-
-    with st.expander("추가 필요대수 계산 기준", icon=":material/function:"):
-        st.markdown(
-            "- **경고 기준 필요대수** = `ceil(max(소요대수 × 경고 기준 − 가용대수, 0))`\n"
-            "- **확보목표 총 필요대수** = `ceil(max(소요대수 × 확보 기준 − 가용대수, 0))`\n"
-            "- **확보 기준 추가대수** = `확보목표 총 필요대수 − 경고 기준 필요대수`\n"
-            "\n"
-            "올림 전에 차이를 소수점 9자리로 반올림한다. `50 × 1.1` 이 `55.00000000000001` 이 "
-            "되는 식의 부동소수 먼지가 없는 1대를 만들어 내기 때문이다."
-        )

@@ -18,6 +18,8 @@ from capa_simulation.navigation import (
     DATA_PENDING_SUFFIX,
     DYNAMIC_CAPA,
     DYNAMIC_CAPA_SUBPAGES,
+    EQUIPMENT_GAP_TAB,
+    EQUIPMENT_TAB_KEY,
     HOME,
     IMPLEMENTING_SUFFIX,
     SCENARIO_MANAGEMENT,
@@ -308,8 +310,8 @@ def test_an_opened_control_box_stays_open_across_reruns(_app: AppTest) -> None:
 
     assert _control_boxes(app)[SCENARIO_BOX_KEY] is True
 
-    # 페이지를 옮겨도 그대로다. 세 상자는 어느 페이지에서나 `app.py` 가 그린다.
-    app.switch_page(CAPA_CHATBOT.path).run()
+    # 페이지를 옮겨도 그대로다. 공통 상자는 그 조건을 읽는 페이지에서 `app.py` 가 그린다.
+    app.switch_page(SCENARIO_MANAGEMENT.path).run()
     assert _control_boxes(app)[SCENARIO_BOX_KEY] is True
 
 
@@ -325,7 +327,7 @@ def test_the_bottleneck_box_remembers_its_state_across_a_page_round_trip(_app: A
     app.run()
     assert _control_boxes(app)[BOTTLENECK_BOX_KEY] is False
 
-    app.switch_page(CAPA_CHATBOT.path).run()
+    app.switch_page(SCENARIO_MANAGEMENT.path).run()
     assert BOTTLENECK_BOX_KEY not in _control_boxes(app)
     # 위젯 값은 버려져도 기억 칸은 남는다.
     assert app.session_state[remembered_box_key(BOTTLENECK_BOX_KEY)][0] is False
@@ -386,7 +388,7 @@ def _sidebar_keys(app: AppTest) -> list[str]:
     return keys
 
 
-@pytest.mark.parametrize("page_path", [HOME.path, CAPA_CHATBOT.path])
+@pytest.mark.parametrize("page_path", [HOME.path, SCENARIO_MANAGEMENT.path])
 def test_the_conditions_heading_stands_right_before_the_scenario_box(
     _app: AppTest, page_path: str
 ) -> None:
@@ -410,7 +412,7 @@ def test_the_conditions_heading_stands_right_before_the_scenario_box(
     assert captions == [CONDITIONS_SECTION.title, CONDITIONS_SECTION.hint]
 
 
-@pytest.mark.parametrize("page_path", [HOME.path, CAPA_CHATBOT.path])
+@pytest.mark.parametrize("page_path", [HOME.path, SCENARIO_MANAGEMENT.path])
 def test_the_applied_range_placeholder_stands_right_before_the_month_box(
     _app: AppTest, page_path: str
 ) -> None:
@@ -492,12 +494,12 @@ def _run_with_range(app: AppTest, start: str, end: str) -> AppTest:
 
 
 def test_the_range_says_applied_only_where_the_screen_read_it(_app: AppTest) -> None:
-    """HOME 은 「✓ 적용」, 조회기간을 읽지 않는 Capa Chatbot 은 중립 「선택」이다."""
+    """HOME 은 「✓ 적용」, 범위를 저장할 때 담기만 하는 시나리오 관리는 중립 「선택」이다."""
     app = _run_with_range(_app, "2026-01", "2026-03")
     assert not list(app.exception), [element.message for element in app.exception]
     assert _range_caption(app) == ":material/check_circle: 적용 · 26.01–26.03"
 
-    app.switch_page(CAPA_CHATBOT.path).run()
+    app.switch_page(SCENARIO_MANAGEMENT.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _range_caption(app) == "선택 · 26.01–26.03"
 
@@ -532,3 +534,68 @@ def test_a_stopped_calculation_withdraws_applied(
             errors,
         )
         assert _range_caption(app) == ":material/block: 계산 멈춤", page_path
+
+
+# ------------------------------------------------ 화면이 읽는 공통 조건만 세운다
+#
+# 사이드바 「조회 조건」은 지금 화면이 **실제로 읽는** 조건만 모은다(2026-09-29 사용자 결정).
+# 무엇을 읽는지는 `navigation.PageSpec` 의 선언이 말하고 `app.py` 가 그대로 따른다.
+
+
+def _common_boxes(app: AppTest) -> set[str]:
+    keys = set(_sidebar_keys(app))
+    return {
+        name
+        for name, key in (
+            ("heading", CONDITIONS_SECTION.key),
+            ("scenario", SCENARIO_BOX_KEY),
+            ("period", _app_constant("MONTH_BOX_KEY")),
+        )
+        if key in keys
+    }
+
+
+def test_a_screen_that_reads_no_common_condition_shows_none(_app: AppTest) -> None:
+    app = _app.run()
+    app.switch_page(ADMIN_BOX_PAGES[0].path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == set()
+
+
+def test_a_screen_that_reads_only_the_scenario_shows_only_its_box(_app: AppTest) -> None:
+    app = _app.run()
+    app.switch_page(ADMIN_AREA.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == {"heading", "scenario"}
+
+
+def test_hidden_boxes_keep_their_choice_for_the_screens_that_read_them(_app: AppTest) -> None:
+    """상자를 세우지 않은 동안에도 고른 범위는 남는다 — 돌아오면 그 범위로 계산한다."""
+    app = _run_with_range(_app, "2026-01", "2026-03")
+    app.switch_page(ADMIN_BOX_PAGES[0].path).run()
+    assert app.session_state[MONTH_RANGE_KEY] == ("2026-01", "2026-03")
+
+    app.switch_page(HOME.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _range_caption(app) == ":material/check_circle: 적용 · 26.01–26.03"
+
+
+def test_a_tab_scoped_screen_shows_the_common_boxes_only_on_that_tab(_app: AppTest) -> None:
+    """가용설비 현황은 `Static/Dynamic` 탭만 활성 시나리오·조회기간을 읽는다."""
+    equipment = DYNAMIC_CAPA_SUBPAGES[0]
+    assert equipment.condition_tabs is not None
+    app = _app.run()
+    app.switch_page(equipment.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == set()
+
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_GAP_TAB
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == {"heading", "scenario", "period"}
+
+
+def test_every_declared_condition_tab_is_a_real_label() -> None:
+    """선언한 탭 라벨이 페이지의 실제 탭과 어긋나면 그 탭에서도 상자가 영영 서지 않는다."""
+    source = (PROJECT_ROOT / DYNAMIC_CAPA_SUBPAGES[0].path).read_text(encoding="utf-8")
+    assert "EQUIPMENT_GAP_TAB," in source and "key=EQUIPMENT_TAB_KEY" in source

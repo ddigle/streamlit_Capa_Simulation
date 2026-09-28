@@ -62,6 +62,9 @@ _LIGHT: Final[dict[str, Any]] = {
     "TEXT_MUTED": "#646973",  # grayColor
     "LINE": "#3F3F46",  # 표 격자·계열선. 강조색과 역할이 다르다
     "ACCENT": "#0F766E",  # primaryColor. 버튼·포커스 등 상호작용 표시
+    # 적용하지 않은 편집이 남은 탭 옆의 점. 사이드바 `미저장 변경` 배지(`:orange-badge[]`)와
+    # 같은 뜻이라 `.streamlit/config.toml` 의 `orangeColor` 와 같은 값이다.
+    "PENDING_MARK": "#B45309",
     # ------------------------------------------------------------------- 부분합 면
     # 환산 결과표의 제품 Total → 양산구분 Total → 전체 합계로 갈수록 짙어진다.
     "SURFACE_PRODUCT_TOTAL": "#F0F1F2",
@@ -209,6 +212,7 @@ _DARK: Final[dict[str, Any]] = {
     "LINE": "#C6C6CE",
     # teal-700 은 어두운 면에서 3:1 을 못 넘는다. 한 단계 올린다.
     "ACCENT": "#2DD4BF",
+    "PENDING_MARK": "#F0B37A",  # `[theme.dark]` 의 `orangeColor`
     # 합계 3단도 위로 갈수록 밝다. 같은 방향을 유지하면 합계 행이 배경에 가라앉는다.
     "SURFACE_PRODUCT_TOTAL": "#26262C",
     "CLASSIFICATION_PRODUCT_TOTAL": "#33333C",
@@ -381,6 +385,7 @@ if TYPE_CHECKING:
     NAV_HOME_TINT: Final[str] = ""
     NAV_HOME_TINT_STRONG: Final[str] = ""
     NAV_SHADOW: Final[str] = ""
+    PENDING_MARK: Final[str] = ""
     QUAL_CONFIRMATION_COLORS: Final[dict[str, str]] = {}
     SCHEDULE_DONE: Final[str] = ""
     SCHEDULE_PLANNED: Final[str] = ""

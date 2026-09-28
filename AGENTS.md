@@ -146,9 +146,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     탭·페이지를 오가도 편 채다. 본문에는 결과와 그 결과에 대한 행동(적용·붙여넣기·등록)과 상태
     알림만 남기고 설명은 Guide(`components/page_guide.py`)로 옮긴다. **쓰기 작업(붙여넣기·
     등록)은 조건 카드에 넣지 않는다** — 「사이드바 = 보는 조건」이 흐려진다. 작업은 표 위
-    작업 줄의 버튼과 팝업이다. 지금 적용한 화면은 `생산 계획` 하나(샘플)이고, HOME 의 B/N
-    집계 공정 상자가 사실상 같은 역할이다. 화면이 읽지 않는 공통 조건(예: 가용설비 현황의
-    시뮬레이션 조회기간)을 감추는 규칙은 다음 단계다.
+    작업 줄의 버튼과 팝업이다. HOME 의 B/N 집계 공정 상자도 같은 역할이다.
+  - **공통 상자(시나리오·리비전, 조회기간)도 그 화면이 읽을 때만 선다**(2026-09-29 사용자
+    결정). 무엇을 읽는지는 `navigation.PageSpec` 의 `reads_scenario`·`reads_period` 가 선언하고
+    `app.py` 가 그대로 따른다 — 선언은 화면 코드가 실제로 읽는 것(전수 조사)이다. 한 탭만 읽는
+    화면(가용설비 현황의 `Static/Dynamic`)은 `condition_tabs` 로 그 탭을 적고, `app.py` 가 열린
+    탭(세션의 탭 값, 없으면 `stateful_tabs` 의 기억 칸)을 보고 가른다. 공통 조건을 하나도 읽지
+    않아도 조건 카드가 있으면 `has_condition_cards` 로 구역 제목을 세운다. 세우지 않은 상자의
+    선택은 사라지지 않는다(시나리오 선택은 `persist_state`, 조회기간은 `MONTH_RANGE_KEY`).
+    세우지 않은 회차에는 적용 기간 자리표시자도 지운다(`forget_month_range_placeholder`).
+  - **탭 이름 앞에는 탭이 하는 일을 말하는 아이콘을 단다**(`:material/…:` 라벨, 개선안 B).
+    적용하지 않은 편집이나 붙여넣기가 남은 탭에는 이름 옆에 주황 점을 찍는다
+    (`components/tab_marks.py`, 개선안 C). 점은 **라벨이 아니라 CSS** 다 — 라벨은 `st.tabs` 의
+    위젯 id 에 들어가 붙였다 떼면 열린 탭 기억이 흔들린다.
   - `시나리오 관리`는 Capa Chatbot과 Static Capa 사이의 독립 사이드바 그룹에 배치한다(그
     순서도 `SIDEBAR_GROUPS` 가 정한다).
   - 배치가 다른 둘만 손수 그린다 — 가운데·큰 글씨의 HOME 과, 조회 컨트롤 아래 맨 밑
@@ -415,8 +425,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     제공한다.
   - 경고 기준 미달 행은 경고 기준까지 필요한 대수와 확보 기준까지의 추가 대수를 함께
     표시하고, 경고 이상·확보 기준 미달 행은 확보 기준 추가대수로 별도 관리한다.
-  - 상단 안내는 기준정보 기반 부족대수를 Total 설비 부족 투자(GO팀)와 투자 후 가용 일정
-    미확보에 대한 Setup 단축·생산성 향상(기술팀)으로 분기하는 업무 로드맵을 설명한다.
+  - 판정 기준(확보·경고 %)은 사이드바 조건 카드 `판정 기준` 이다. HOME B/N 집계 공정 상자와
+    같은 세션 키를 쓴다. 업무 로드맵(GO팀 투자 판단·기술팀 실행 개선)과 추가 필요대수 계산식은
+    Guide(`guides/static_capa.md`)로 옮겼고 본문에는 두 결과 상자만 남는다.
 - `app_pages/reference_integrity.py`
   - `Dynamic Capa (구현중)` 상위 페이지이며 전체 공정 실현률·관리 우선순위를 요약하고 공정·제품·
     Stack·WF 속성 필터로 표준/실효/실적 Capa와 손실 원인을 비교하는 프로토타입을 제공한다.
@@ -1307,6 +1318,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 열린 탭을 서버가 알게 하는 `stateful_tabs` 와 판정용 `tab_is_hidden`. 차트가 든 탭은
     반드시 이것으로 만든다. 숨겨진 탭 안에서 Plotly 표를 그리면 글자 폭 측정이 0 이라
     헤더가 셀 가운데를 벗어난다. 어기면 테스트가 잡는다.
+- `src/capa_simulation/components/tab_marks.py`
+  - 적용하지 않은 편집이 남은 탭 이름 옆의 주황 점(`mark_pending_tabs`)과 편집표에 고친 것이
+    남았는지의 판정(`editor_has_edits`). 점은 `st-key-<탭 key>` 묶음의 n 번째 `stTab` 에 얹는
+    CSS 라 탭 안의 탭은 고르지 않는다. 비공식 선택자라 판올림에서 바뀌면 점만 안 보인다.
+    색은 사이드바 `미저장 변경` 배지와 같은 `PENDING_MARK`(`orangeColor`)다.
 - `src/capa_simulation/components/status_metric.py`
   - 조치가 필요한 지표에 상태색 왼쪽 띠를 붙인 metric 카드. 색은 확보 상태색 토큰을
     그대로 쓴다. 색을 붙일 근거가 없으면 `tone="neutral"` 로 두어 기존 카드와 같게 둔다.
