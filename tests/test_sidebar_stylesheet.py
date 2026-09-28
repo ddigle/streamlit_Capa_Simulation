@@ -81,3 +81,45 @@ def test_stylesheet_reads_the_active_page_and_theme_on_each_build(
     assert '[href=""]::before' not in dynamic
     assert f"background-color: {tokens.SURFACE};" in dynamic
     assert dynamic != home
+
+
+def _rules_with(block: str, declaration: str) -> list[list[str]]:
+    """`declaration` 을 몸에 가진 규칙마다 그 선택자 목록. 주석은 걷어 내고 읽는다."""
+    without_comments = re.sub(r"/\*.*?\*/", "", block, flags=re.S)
+    rules: list[list[str]] = []
+    for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", without_comments):
+        selectors, body = match.group(1), match.group(2)
+        if declaration in body:
+            rules.append([part.strip() for part in selectors.split(",") if part.strip()])
+    return rules
+
+
+@pytest.mark.parametrize("active_href", ["", "capa_chatbot"])
+def test_box_markers_follow_the_declarations(active_href: str) -> None:
+    """상자 오른쪽 끝 표식이 **선언에서 나온 상자 전부**에, 그리고 **그 상자에만** 걸린다.
+
+    표식이 빠진 상자는 다시 「누르면 무슨 일이 일어나는지」를 말하지 못한다. 그룹을 더하거나
+    조회 컨트롤을 늘릴 때 한쪽만 고치면 예외 없이 표식만 사라지므로 선언과 대조한다.
+    `→` 규칙이 상자 key 밖으로 새면 HOME 링크의 `::after` 광택 띠를 덮거나(표식 규칙) 지운다
+    (HOME 의 `href` 는 빈 문자열이라 「지금 보는 링크에서는 뺀다」 규칙이 HOME 에 걸린다).
+    """
+    block = _style_block(active_href)
+    boxed = [f"{group.slug}_box" for group in SIDEBAR_GROUPS if group.subpages]
+    solo = [f"{group.slug}_box" for group in SIDEBAR_GROUPS if not group.subpages]
+    expanding = [*boxed, "test_scenario", "test_month", "test_bottleneck", "test_admin"]
+
+    (expand_rule,) = _rules_with(block, 'content: "expand_more" / "";')
+    assert expand_rule == [f".st-key-{key} details > summary::after" for key in expanding]
+    # 합자 이름만 적은 폴백 선언이 같은 규칙에 먼저 있다.
+    assert _rules_with(block, 'content: "expand_more";') == [expand_rule]
+
+    link = 'a[data-testid="stPageLink-NavLink"]'
+    (arrow_rule,) = _rules_with(block, 'content: "arrow_forward" / "";')
+    assert arrow_rule == [f".st-key-{key} {link}::after" for key in solo]
+
+    off_rules = [
+        rule for rule in _rules_with(block, "content: none;") if any("[href=" in s for s in rule)
+    ]
+    assert off_rules == [[f'.st-key-{key} {link}[href="{active_href}"]::after' for key in solo]]
+    # HOME 광택 띠는 그대로 남는다.
+    assert '.st-key-home_navigation a[data-testid="stPageLink-NavLink"]::after' in block

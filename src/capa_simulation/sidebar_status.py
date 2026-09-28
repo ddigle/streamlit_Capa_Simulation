@@ -108,26 +108,26 @@ def show_past_months_outside_range(first_past_month: int) -> None:
     과거를 저장해도 조회기간 시작월을 내리지 않으면 그 달이 표에 나타나지 않는데, 화면만
     보면 넣은 값이 사라진 것처럼 보인다. 어디까지 내려야 하는지 함께 적는다.
 
-    **이 줄이 서는 자리는 상자 제목 줄 위 한 줄이다.** 폭이 제목과 펼침 화살표 사이뿐이라
-    긴 문장은 말줄임으로 잘린다. 화면에는 짧은 쪽만 낸다 — 이 글자 칸은 클릭을 요약 줄로
-    통과시키므로(`sidebar_style.py`) `help` 툴팁을 달아도 마우스가 닿지 못한다. 어디까지
-    내려야 하는지는 짧은 문구가 이미 말한다.
+    **이 줄이 서는 자리는 상자 제목 줄 위 한 줄이다.** 폭이 제목과 펼침 표식 사이뿐(실측
+    107px)이라 긴 문장은 말줄임으로 잘린다. 화면에는 짧은 쪽만 낸다 — 이 글자 칸은 클릭을
+    요약 줄로 통과시키므로(`sidebar_style.py`) `help` 툴팁을 달아도 마우스가 닿지 못한다.
+    어디까지 내려야 하는지는 짧은 문구가 이미 말한다(실측 95px).
     """
     placeholder = _placeholder()
     if placeholder is None:
         return
-    placeholder.caption(
-        f":material/info: 과거 구간 밖 · 시작월 {month_label(first_past_month)} 로",
-    )
+    placeholder.caption(f":material/info: 과거 밖 · {month_label(first_past_month)}부터")
 
 
 def show_month_range_unavailable() -> None:
     """선택 범위에 데이터가 없어 계산이 서지 않았음을 같은 자리에 알린다.
 
     자리표시자는 rerun 을 넘어 남는다. 실패한 rerun 에서 아무것도 쓰지 않으면 직전에 성공한
-    범위가 "적용" 으로 계속 보여 본문 오류와 어긋난다.
+    범위가 "적용" 으로 계속 보여 본문 오류와 어긋난다. 글자는 짧게 둔다 — 자리가 107px 뿐이라
+    전에 쓰던 「적용 안 됨 · 선택 범위에 데이터 없음」은 반도 보이지 않았다. 적용되지 않았다는
+    것은 아이콘이, 어느 범위에 데이터가 있는지는 본문 오류가 말한다.
     """
     placeholder = _placeholder()
     if placeholder is None:
         return
-    placeholder.caption(":material/block: 적용 안 됨 · 선택 범위에 데이터 없음")
+    placeholder.caption(":material/block: 데이터 없음")

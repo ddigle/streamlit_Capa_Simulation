@@ -13,17 +13,29 @@ _SELECTOR_JOINER = ",\n        "
 # 사이드바 세로 블록의 칸 사이. 적용 기간 오버레이가 이 값을 그대로 상쇄해야 요약 줄
 # 위에 올라앉으므로 두 곳이 같은 상수를 본다.
 _SIDEBAR_BLOCK_GAP = "0.42rem"
+# **상자 오른쪽 끝의 표식.** 상자가 모두 한 모양이라, 누르면 무슨 일이 일어나는지를
+# 오른쪽 끝 기호가 늘 보이게 말한다. 곧바로 다른 화면으로 가는 링크 상자는 `→`
+# (`arrow_forward`), 이 자리에서 펼쳐지는 확장 패널은 `⌄`(`expand_more`, 펴면 뒤집힌다).
+# 이 Streamlit 의 확장 패널은 제 아이콘을 **제목 왼쪽**에만 그리고 오른쪽은 비워 둔다(실측
+# `stExpanderIcon` 32–46). 기호는 Streamlit 이 이미 불러 둔 Material Symbols 합자로 그린다.
+_MARKER_FONT = '"Material Symbols Rounded"'
+_LINK_MARKER_SIZE = "16px"
+_SUMMARY_MARKER_SIZE = "18px"
+# 요약 줄 오른쪽 안쪽 여백(실측 10.5px = 0.75rem)과 표식 앞 틈. 적용 기간 오버레이의 오른쪽
+# 좌표가 이 셋을 더한 값이다.
+_SUMMARY_PADDING_RIGHT = "0.75rem"
+_SUMMARY_MARKER_GAP = "0.25rem"
 # **적용 기간 오버레이의 좌표 네 개를 여기 모아 둔다.** 요약 줄 위에 글자를 얹는 일이라
 # 브라우저에서 재서 고치게 되는데, 규칙 안에 흩어 두면 어디를 고쳐야 하는지 매번 찾는다.
 # 위: 요약 줄(약 2.4rem) 안에서 글줄을 세로 가운데로.
-# 오른쪽: **요약 줄의 오른쪽 안쪽 여백과 같은 값**이라야 윗줄의 공식버전 배지와 오른쪽
-# 끝이 맞는다. 배지는 요약 줄 라벨 칸의 오른쪽 끝에 서는데(실측 269, 줄 끝 279) 그 차이가
-# 곧 `summary` 의 `padding-right`(실측 10.5px = 0.75rem)다. 「펼침 화살표를 비운다」고
-# 넓게 잡으면 안 된다 — 이 Streamlit 은 펼침 아이콘을 **제목 왼쪽**에 그리고(실측
-# `stExpanderIcon` 32–46) 오른쪽에는 아무것도 없어서, 비운 만큼 두 줄이 어긋난다.
+# 오른쪽: **윗줄의 공식버전 배지와 오른쪽 끝이 맞아야** 한다. 배지는 요약 줄에서 펼침 표식
+# 바로 앞에 서므로 요약 줄 오른쪽 여백 + 표식 + 표식 앞 틈 만큼 들어와 있고, 상자 테두리와
+# 배지 칸 안쪽이 1px 씩 더 든다(실측 배지 끝이 상자 끝에서 34px). 표식을 바꾸면 따라온다.
 # 왼쪽: 「조회기간」 제목 뒤. 왼쪽이 있어야 긴 문구가 제목을 덮지 않고 말줄임이 된다.
 _APPLIED_OVERLAY_TOP = "0.62rem"
-_APPLIED_OVERLAY_RIGHT = "0.75rem"
+_APPLIED_OVERLAY_RIGHT = (
+    f"calc({_SUMMARY_PADDING_RIGHT} + {_SUMMARY_MARKER_SIZE} + {_SUMMARY_MARKER_GAP} + 2px)"
+)
 _APPLIED_OVERLAY_LEFT = "7.5rem"
 
 
@@ -82,6 +94,34 @@ def build_sidebar_stylesheet(
         f'.st-key-{section.key} > [data-testid="stElementContainer"]:first-child'
         ' [data-testid="stCaptionContainer"] p'
         for section in SIDEBAR_SECTIONS
+    )
+    # 곧바로 이동하는 링크 상자의 `→`. **그 상자 key 로 좁힌다** — 사이드바 링크 전체에 걸면
+    # HOME 링크가 `::after` 로 그리는 광택 띠를 덮는다.
+    solo_link_markers = [
+        f'.st-key-{group.slug}_box a[data-testid="stPageLink-NavLink"]'
+        for group in groups
+        if not group.subpages
+    ]
+    solo_link_marker_selectors = _SELECTOR_JOINER.join(
+        f"{link}::after" for link in solo_link_markers
+    )
+    # 지금 보고 있는 단독 링크에는 `→` 를 달지 않는다 — 가는 곳이 바로 여기다. 이것도 상자
+    # key 로 좁힌다. HOME 의 `href` 는 빈 문자열이라 넓게 쓰면 HOME 에서 광택 띠를 지운다.
+    solo_link_active_selectors = _SELECTOR_JOINER.join(
+        f'{link}[href="{active_href}"]::after' for link in solo_link_markers
+    )
+    # 이 자리에서 펼쳐지는 상자 전부의 `⌄`. 페이지 그룹이든 조회 조건이든 `Support` 든 눌러서
+    # 일어나는 일이 같으므로 같은 표식이다.
+    summary_marker_selectors = _SELECTOR_JOINER.join(
+        f".st-key-{key} details > summary::after" for key in summary_box_keys
+    )
+    summary_marker_open_selectors = _SELECTOR_JOINER.join(
+        f".st-key-{key} details[open] > summary::after" for key in summary_box_keys
+    )
+    # 계산에 걸리는 조건 상자 셋. 구역 제목 아래에 서고 아이콘을 `ACCENT` 로 칠한다.
+    condition_box_keys = (scenario_box_key, month_box_key, bottleneck_box_key)
+    condition_icon_selectors = _SELECTOR_JOINER.join(
+        f'.st-key-{key} summary [data-testid="stExpanderIcon"]' for key in condition_box_keys
     )
     # 사이드바 안의 페이지 링크 전부. 본문에도 `stPageLink` 가 있을 수 있어 사이드바로 좁힌다.
     NAV_LINK = '[data-testid="stSidebarContent"] [data-testid="stPageLink-NavLink"]'
@@ -303,6 +343,53 @@ def build_sidebar_stylesheet(
         {solo_title_selectors} {{
             font-size: 1rem;
             font-weight: 700;
+        }}
+
+        /* **누르면 무슨 일이 일어나는지를 오른쪽 끝 표식이 늘 말한다.** 상자는 모두 한
+           모양이라 모양으로는 가를 수 없다. `→` 는 곧바로 다른 화면으로 간다, `⌄` 는 이
+           자리에서 펼쳐진다(펴면 뒤집힌다). 마우스를 올려야 보이는 신호는 신호가 아니다.
+
+           `content` 는 두 번 적는다. 뒤의 것은 대체 텍스트를 비운 판이라 스크린리더가
+           합자 이름(「expand_more」)을 링크 이름에 섞어 읽지 않는다. 그 문법을 모르는
+           브라우저는 뒤의 선언을 버리고 앞의 것을 쓴다. */
+        {solo_link_marker_selectors} {{
+            content: "arrow_forward";
+            content: "arrow_forward" / "";
+            font-family: {_MARKER_FONT};
+            font-size: {_LINK_MARKER_SIZE};
+            font-weight: 400;
+            line-height: 1;
+            margin-left: auto;
+            padding-left: 0.3rem;
+            color: {tokens.TEXT_MUTED};
+        }}
+        {solo_link_active_selectors} {{
+            content: none;
+        }}
+        {summary_marker_selectors} {{
+            content: "expand_more";
+            content: "expand_more" / "";
+            font-family: {_MARKER_FONT};
+            font-size: {_SUMMARY_MARKER_SIZE};
+            font-weight: 400;
+            line-height: 1;
+            margin-left: auto;
+            padding-left: {_SUMMARY_MARKER_GAP};
+            color: {tokens.TEXT_MUTED};
+            transition: transform 150ms ease;
+        }}
+        {summary_marker_open_selectors} {{
+            transform: rotate(180deg);
+        }}
+        @media (prefers-reduced-motion: reduce) {{
+            {summary_marker_selectors} {{
+                transition: none;
+            }}
+        }}
+        /* 계산에 걸리는 조건 상자는 왼쪽 아이콘이 `ACCENT` 다. 위 목록 상자와 같은 모양으로
+           서되, 눌러서 바꾸는 것이 화면이 아니라 **지금 화면의 계산 조건**이라는 표시다. */
+        {condition_icon_selectors} {{
+            color: {tokens.ACCENT};
         }}
         /* HOME 과 첫 그룹 박스 사이만 한 칸 더 띄운다. HOME 은 상자가 아니라 「돌아오는
            자리」라 아래 목록과 같은 간격으로 붙어 있으면 목록의 첫 항목처럼 읽힌다. */
