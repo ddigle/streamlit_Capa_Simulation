@@ -238,6 +238,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`build_execution_delta_bars`).
   - **조정이 한 건도 없으면 Figure 구성이 조정 전과 같아야 한다.** 빈 trace 를 늘 끼우거나
     테두리 굵기를 배열로 바꾸면 그 계약이 깨진다 — 둘 다 조정이 있을 때만 한다.
+    `tests/test_bar_corner_radius.py` 가 조정 컬럼이 있되 0건인 입력과 컬럼이 없는 입력의
+    Figure JSON 이 같은지 본다.
+  - **조정한 달의 값 막대는 머리가 네모다.** 값 막대는 머리가 둥근데(아래 HOME Figure 절),
+    overlay 에서 값 막대 윗끝이 결과 윤곽보다 반경만큼 낮지 않으면 둥근 모서리가 파여 보인다.
+    그 달의 머리는 증감 조각이 맡는다. 반경은 점마다 줄 수 없어(plotly.js 가 배열을 버린다)
+    조정이 있을 때만 값 trace 를 둘로 가른다(`value_bar_traces` — 조정 없는 달 둥근 머리,
+    조정한 달 반경 0, 둘째 trace 는 같은 `legendgroup`·`showlegend=False`).
   - `확보율 = 가용대수 ÷ 소요대수` **항등식은 깨진다.** 조정 사유가 비가동·UPEH·재공으로
     제각각이라 어느 항으로 되돌릴지 코드가 정할 수 없다. 가용·소요대수는 기준정보 값
     그대로 두고, 차이의 출처는 hover 의 「실행 반영 ±n%p · 비고」 줄이 밝힌다.
@@ -1130,6 +1137,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     에 `src/capa_simulation` 이 있어 무시된다(실측).
   - 별칭과 계산값(`CHART_CANVAS`·`NAV_*`·`GAP_AREA_*`)은 `_complete()` 가 팔레트에서
     만든다. 손으로 옮겨 적으면 원 토큰과 갈라진다.
+  - 색이 아닌 치수(표 행 높이·월 칸 폭·막대 테두리 굵기·막대 둥근 머리 반경 세 등급
+    `BAR_CORNER_RADIUS_{WIDE,MEDIUM,NARROW}_PX`)는 팔레트 밖 모듈 상수다. 테마를 타지 않는다.
   - 두 팔레트의 **이름이 정확히 같아야** 한다. 한쪽에만 있으면 그 테마에서 화면이 그
     자리에서 죽는다. `tests/test_design_tokens.py` 가 이름·값·면의 층 방향을 고정한다.
 - `src/capa_simulation/design/theme.py`
@@ -1570,8 +1579,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **Figure 묶음은 정확히 여덟 개다**(요약 2 + 계획 세부수량 2 + 주요공정 히트맵 2 +
     상세 B/N 2). `HomeFigureSet`의 이름 있는 여덟 필드로 생성·렌더링해 위치 혼동을 막는다.
     캐시 키도 `HomeFigureCacheKey`의 이름으로 구성하되 기존 튜플 순서·해시를 유지한다.
-    묶음 구조를 바꿀 때는 `HOME_FIGURE_SCHEMA_VERSION`도 올려 기존 세션의 옛 값을
-    다시 만들게 한다(이름 있는 묶음 전환 버전은 42). 테마 분리와 LRU 최대 8개 정책은 같다.
+    묶음 구조나 **그림 모양**(막대 폭·둥근 머리처럼 Figure 에 구워지는 것)을 바꿀 때는
+    `HOME_FIGURE_SCHEMA_VERSION`도 올려 기존 세션의 옛 값을 다시 만들게 한다. 편집 없는
+    리비전의 그림은 세션 공용 저장소에도 들어가고 그 토큰이 리비전에서 나온 고정값이라,
+    올리지 않으면 새 세션·다른 사용자까지 옛 그림을 받는다(이름 있는 묶음 42, 막대 둥근
+    머리·LOB 폭 43). 테마 분리와 LRU 최대 8개 정책은 같다.
+  - **값 막대만 머리가 둥글다.** 생산계획 LOB 의 B/N 막대는 `tokens.BAR_CORNER_RADIUS_WIDE_PX`
+    (8px), B/N Top 5 는 `BAR_CORNER_RADIUS_NARROW_PX`(3px)를 trace 의 `marker.cornerradius`
+    스칼라로 준다. `layout.barcornerradius` 는 쓰지 않는다 — 그림 전체 기본값이 되어 증감
+    조각·결과 윤곽까지 둥글어진다. 상세 B/N·주요공정 칸은 `base` 로 띄운 막대라 반경을 주면
+    네 모서리가 둥근 알약이 되므로 주지 않는다. LOB 막대 폭은 월 칸의 0.70(70px)이다 —
+    막대 안 확보율 글자가 56px 아래에서 90° 누워 Density 값과 겹친다.
   - `build_key_process_heatmap_figures` 는 상세 B/N 과 **같은 머리글·행 높이**를 쓰고
     `go.Heatmap` 을 쓰지 않는다. 그 trace 는 칸 폭을 Plotly 가 정해 100px 월 격자·paper
     경계선과 맞지 않는다. 가로막대 방식이면 칠과 hover 가 한 trace 로 끝나고 색 판정도

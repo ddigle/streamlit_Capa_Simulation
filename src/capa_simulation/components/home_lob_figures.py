@@ -73,6 +73,8 @@ class ExecutionDeltaBars(NamedTuple):
     drawn: list[float]
     outline_widths: list[float]
     traces: list[go.Bar]
+    # 점마다 조정 전후가 다른가. 값 막대의 머리를 둥글릴지 가르는 근거다(`value_bar_traces`).
+    adjusted: list[bool]
 
 
 def build_execution_delta_bars(
@@ -108,11 +110,13 @@ def build_execution_delta_bars(
     delta_notes: list[str] = []
     grew_positions: list[float] = []
     grew_heights: list[float] = []
+    adjusted: list[bool] = []
     for index, value in enumerate(numeric_values):
         baseline = numeric_baselines[index]
         grew = baseline < value
         drawn.append(min(baseline, value))
         outline_widths.append(0.0 if grew else outline_width)
+        adjusted.append(baseline != value)
         if baseline != value:
             delta_positions.append(positions[index])
             delta_bases.append(min(baseline, value))
@@ -151,7 +155,81 @@ def build_execution_delta_bars(
                 showlegend=False,
             )
         )
-    return ExecutionDeltaBars(drawn=drawn, outline_widths=outline_widths, traces=traces)
+    return ExecutionDeltaBars(
+        drawn=drawn, outline_widths=outline_widths, traces=traces, adjusted=adjusted
+    )
+
+
+def value_bar_traces(
+    *,
+    name: str,
+    adjusted: Sequence[bool],
+    corner_radius: float,
+    x: Sequence[float],
+    y: Sequence[float],
+    customdata: pd.DataFrame,
+    colors: Sequence[str],
+    line_widths: Sequence[float] | float,
+    text: Sequence[str] | None = None,
+    showlegend: bool | None = None,
+    **common: Any,
+) -> list[go.Bar]:
+    """값 막대를 **머리가 둥근 달**과 **실행 조정한 달(네모 머리)** 로 가른다.
+
+    반경은 trace 마다 스칼라로만 먹는다 — plotly.js 는 점마다 다른 반경 배열을 조용히 버리고
+    직각으로 그린다. 조정한 달은 값 막대 위에 증감 조각과 결과 윤곽이 서는데, overlay 에서
+    값 막대 윗끝이 결과 윤곽보다 반경만큼 낮지 않으면 둥근 모서리가 파여 보인다(통합 실측:
+    LOB |증감| < 8px, Top5 < 3px). 그 달의 머리는 증감 조각이 맡으므로 값 막대는 네모로 둔다.
+
+    조정이 한 건도 없으면 trace 는 **하나**다. 그래서 조정 0건의 Figure 는 조정 전과 같다.
+    둘로 가를 때는 점마다 딸린 배열(customdata·text·색·테두리 굵기)을 같이 가르고, 둘째
+    trace 는 범례에 따로 서지 않게 같은 `legendgroup` 으로 묶는다.
+    """
+    groups: list[tuple[bool | None, float]] = (
+        [(False, corner_radius), (True, 0)] if any(adjusted) else [(None, corner_radius)]
+    )
+    # 자리로 고른다. pandas Series 가 섞여 들어와도 색인이 아니라 차례로 집도록 먼저 목록으로 편다.
+    columns: dict[str, list[Any]] = {"x": list(x), "y": list(y), "color": list(colors)}
+    if text is not None:
+        columns["text"] = list(text)
+    if not isinstance(line_widths, (int, float)):
+        columns["line_width"] = list(line_widths)
+    traces: list[go.Bar] = []
+    for wanted, radius in groups:
+        keep = [
+            index
+            for index in range(len(columns["x"]))
+            if wanted is None or bool(adjusted[index]) == wanted
+        ]
+        if not keep:
+            continue
+        chosen = {key: [values[index] for index in keep] for key, values in columns.items()}
+        widths = chosen.get("line_width", line_widths)
+        extra: dict[str, Any] = {}
+        if "text" in chosen:
+            extra["text"] = chosen["text"]
+        second = wanted is True
+        if second:
+            extra["showlegend"] = False
+        elif showlegend is not None:
+            extra["showlegend"] = showlegend
+        traces.append(
+            go.Bar(
+                name=name,
+                legendgroup=name,
+                x=chosen["x"],
+                y=chosen["y"],
+                customdata=customdata.iloc[keep],
+                marker={
+                    "color": chosen["color"],
+                    "line": {"color": tokens.LINE, "width": widths},
+                    "cornerradius": radius,
+                },
+                **extra,
+                **common,
+            )
+        )
+    return traces
 
 
 def _execution_series(frame: pd.DataFrame, column: str) -> pd.Series | None:
@@ -502,53 +580,48 @@ def build_lob_summary_figures(
             width=LOB_BAR_WIDTH,
             outline_width=LOB_BAR_OUTLINE_WIDTH_PX,
         )
-        month_figure.add_trace(
-            go.Bar(
-                name="B/N 공정",
-                x=bottleneck_positions,
-                y=bottleneck_delta.drawn,
-                width=LOB_BAR_WIDTH,
-                customdata=bottleneck_capacity[["년월", "확보율"]].assign(
-                    공정=labels.series(bottleneck_capacity["공정"])
-                ),
-                text=_bottleneck_rate_labels(bottleneck_capacity, baseline_lob_summary),
-                textposition="inside",
-                insidetextanchor="start",
-                # 값은 `_bar_rate_text` 가 span 으로 키운다. 여기 크기는 줄 간격을 정한다.
-                textfont={
-                    "color": tokens.TEXT,
-                    "size": tokens.DELTA_FONT_SIZE_PX,
-                    "family": tokens.FONT_FAMILY_NUMERIC,
-                },
-                marker={
-                    "color": [
-                        _capacity_color(
-                            rate,
-                            secure_threshold=secure_threshold,
-                            warning_threshold=warning_threshold,
-                        )
-                        for rate in bottleneck_capacity["확보율"]
-                    ],
-                    "line": {
-                        "color": tokens.LINE,
-                        # 조정이 없으면 굵기가 모두 같다. 그때는 스칼라로 남겨 Figure
-                        # 규격이 조정 전과 다르지 않게 한다.
-                        "width": (
-                            bottleneck_delta.outline_widths
-                            if bottleneck_delta.traces
-                            else LOB_BAR_OUTLINE_WIDTH_PX
-                        ),
-                    },
-                },
-                hovertemplate=(
-                    "%{customdata[0]} · B/N %{customdata[2]}"
-                    "<br>Capa %{y:,.2f} 억Gb"
-                    "<br>확보율 %{customdata[1]:.1%}<extra></extra>"
-                ),
+        # 값 막대의 머리를 둥글린다(굵기 70px — 넓음 등급). 실행 조정한 달은 네모로 남는다.
+        for value_trace in value_bar_traces(
+            name="B/N 공정",
+            adjusted=bottleneck_delta.adjusted,
+            corner_radius=tokens.BAR_CORNER_RADIUS_WIDE_PX,
+            x=bottleneck_positions,
+            y=bottleneck_delta.drawn,
+            customdata=bottleneck_capacity[["년월", "확보율"]].assign(
+                공정=labels.series(bottleneck_capacity["공정"])
             ),
-            row=2,
-            col=1,
-        )
+            colors=[
+                _capacity_color(
+                    rate,
+                    secure_threshold=secure_threshold,
+                    warning_threshold=warning_threshold,
+                )
+                for rate in bottleneck_capacity["확보율"]
+            ],
+            # 조정이 없으면 굵기가 모두 같다. 그때는 스칼라로 남겨 Figure 규격이 조정 전과
+            # 다르지 않게 한다.
+            line_widths=(
+                bottleneck_delta.outline_widths
+                if bottleneck_delta.traces
+                else LOB_BAR_OUTLINE_WIDTH_PX
+            ),
+            text=_bottleneck_rate_labels(bottleneck_capacity, baseline_lob_summary),
+            width=LOB_BAR_WIDTH,
+            textposition="inside",
+            insidetextanchor="start",
+            # 값은 `_bar_rate_text` 가 span 으로 키운다. 여기 크기는 줄 간격을 정한다.
+            textfont={
+                "color": tokens.TEXT,
+                "size": tokens.DELTA_FONT_SIZE_PX,
+                "family": tokens.FONT_FAMILY_NUMERIC,
+            },
+            hovertemplate=(
+                "%{customdata[0]} · B/N %{customdata[2]}"
+                "<br>Capa %{y:,.2f} 억Gb"
+                "<br>확보율 %{customdata[1]:.1%}<extra></extra>"
+            ),
+        ):
+            month_figure.add_trace(value_trace, row=2, col=1)
         for delta_trace in bottleneck_delta.traces:
             month_figure.add_trace(delta_trace, row=2, col=1)
     if baseline_lob_summary is not None:
@@ -639,47 +712,42 @@ def build_lob_summary_figures(
             width=TOP5_BAR_WIDTH,
             outline_width=TOP5_BAR_OUTLINE_WIDTH_PX,
         )
-        month_figure.add_trace(
-            go.Bar(
-                name="B/N Capa Top 5",
-                x=top5_positions,
-                y=top5_delta.drawn,
-                width=TOP5_BAR_WIDTH,
-                # 막대 길이는 잘렸어도 hover 숫자는 실제 Capa 다. `%{y}` 를 쓰면 잘린
-                # 값이 그대로 뜬다.
-                customdata=monthly_top5[
-                    ["년월", "공정", "확보율", "Wafer Capa", "B/N Capa"]
-                ].assign(공정=labels.series(monthly_top5["공정"])),
-                marker={
-                    "color": [
-                        _capacity_color(
-                            rate,
-                            secure_threshold=secure_threshold,
-                            warning_threshold=warning_threshold,
-                        )
-                        for rate in monthly_top5["확보율"]
-                    ],
-                    "line": {
-                        "color": tokens.LINE,
-                        "width": (
-                            top5_delta.outline_widths
-                            if top5_delta.traces
-                            else TOP5_BAR_OUTLINE_WIDTH_PX
-                        ),
-                    },
-                },
-                hovertemplate=(
-                    "%{customdata[0]} · %{customdata[1]}"
-                    "<br>Capa %{customdata[4]:,.2f} 억Gb"
-                    "<br>확보율 %{customdata[2]:.1%}"
-                    "<br>Wafer Capa %{customdata[3]:,.0f} 매"
-                    "<extra></extra>"
-                ),
-                showlegend=False,
+        # 머리를 둥글린다. 막대가 15px 로 가늘어 좁음 등급(3px)이다 — 넓음 반경이면 머리 전체가
+        # 반원이 된다. 밴드 상한에서 잘린 막대도 같은 머리다(3px 라 「잘렸다」는 모양은 거의
+        # 같다). 실행 조정한 달은 네모로 남는다.
+        for value_trace in value_bar_traces(
+            name="B/N Capa Top 5",
+            adjusted=top5_delta.adjusted,
+            corner_radius=tokens.BAR_CORNER_RADIUS_NARROW_PX,
+            x=top5_positions,
+            y=top5_delta.drawn,
+            # 막대 길이는 잘렸어도 hover 숫자는 실제 Capa 다. `%{y}` 를 쓰면 잘린
+            # 값이 그대로 뜬다.
+            customdata=monthly_top5[["년월", "공정", "확보율", "Wafer Capa", "B/N Capa"]].assign(
+                공정=labels.series(monthly_top5["공정"])
             ),
-            row=3,
-            col=1,
-        )
+            colors=[
+                _capacity_color(
+                    rate,
+                    secure_threshold=secure_threshold,
+                    warning_threshold=warning_threshold,
+                )
+                for rate in monthly_top5["확보율"]
+            ],
+            line_widths=(
+                top5_delta.outline_widths if top5_delta.traces else TOP5_BAR_OUTLINE_WIDTH_PX
+            ),
+            width=TOP5_BAR_WIDTH,
+            hovertemplate=(
+                "%{customdata[0]} · %{customdata[1]}"
+                "<br>Capa %{customdata[4]:,.2f} 억Gb"
+                "<br>확보율 %{customdata[2]:.1%}"
+                "<br>Wafer Capa %{customdata[3]:,.0f} 매"
+                "<extra></extra>"
+            ),
+            showlegend=False,
+        ):
+            month_figure.add_trace(value_trace, row=3, col=1)
         for delta_trace in top5_delta.traces:
             month_figure.add_trace(delta_trace, row=3, col=1)
         # 판정 기준을 선으로 긋는다. 이 축은 **확보율 자체**라(막대 높이 = 자른 확보율)

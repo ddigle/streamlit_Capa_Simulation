@@ -119,12 +119,17 @@ def lower_delta_row_height(value_font_size: int) -> int:
 # 149px~618px 사이를 오가며 제목이 잘리거나 빈 여백이 생겼다.
 DASHBOARD_LABEL_COLUMN_WIDTH_PX = 260
 
-# 생산계획 LOB 의 B/N 막대 폭과 그 근거가 되는 `bargap`.
+# 생산계획 LOB 의 B/N 막대 폭과 `bargap`.
 # Plotly 는 폭을 안 주면 `1 - bargap`(= 0.84) 으로 그린다. 그보다 좁게 두려면 값을 명시해야
 # 하고, 증감 영역 trace 도 **같은 값**을 써야 한다 — overlay 모드에서는 trace 마다 제 x
 # 위치만 보고 폭을 정하므로, 조정된 달이 흩어져 있으면 자동 폭이 몇 배로 튄다.
+#
+# 폭은 월 칸(100px)의 0.70 = 70px 다. 막대 안의 확보율 글자는 폭이 모자라면 Plotly 가 90°
+# 눕혀 Density 값·점과 겹친다. 굵은 세 자리(`202%`, 잉크 49.5px)는 56px 아래에서 눕고, 전의
+# 63px 에서는 다섯 자리(`1250%`)가 누웠다(제안서 실측). 70px 이면 다섯 자리도 가로로 든다.
+# **56px 아래로 줄이지 않는다** — `tests/test_bar_corner_radius.py` 가 지킨다.
 LOB_BARGAP = 0.16
-LOB_BAR_WIDTH = (1 - LOB_BARGAP) * 0.75
+LOB_BAR_WIDTH = 0.70
 
 # Top5 세로 막대의 폭과 테두리. overlay 모드에서 증감 trace 가 같은 폭을 **명시**해야
 # 조정된 달이 흩어져 있을 때 폭이 제각각으로 튀지 않는다. 두 곳에 따로 적으면 조용히 갈린다.

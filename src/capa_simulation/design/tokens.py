@@ -468,6 +468,14 @@ GROUP_BORDER_WIDTH_PX: Final = 1.4
 # 1.17:1 뿐이라 막대의 끝이 어디인지 이 선이 정한다. 격자선보다 굵어야 셀 안에서
 # 막대가 격자에 묻히지 않는다.
 BAR_OUTLINE_WIDTH_PX: Final = 1.0
+# 막대의 값 쪽 끝(세로 막대의 위, 가로 막대의 오른쪽)을 둥글리는 반경. **막대 굵기로 등급을
+# 고른다** — 같은 반경도 가는 막대에서는 머리 전체가 반원이 된다. 넓음(굵기 40px 이상)은
+# 앱 테마 `baseRadius` 와 같은 8px, 좁음(20px 미만)은 Altair 두 곳이 이미 쓰던 3px, 그 사이가
+# 5px 다. 색이 아니라 치수라 테마를 타지 않는다. 가로 격자·base 로 띄운 막대(상세 B/N·
+# 주요공정 칸)에는 쓰지 않는다 — 네 모서리가 모두 둥근 알약이 된다.
+BAR_CORNER_RADIUS_WIDE_PX: Final = 8
+BAR_CORNER_RADIUS_MEDIUM_PX: Final = 5
+BAR_CORNER_RADIUS_NARROW_PX: Final = 3
 CLASSIFICATION_MIN_WIDTH_PX: Final = 84
 CLASSIFICATION_MAX_WIDTH_PX: Final = 220
 CLASSIFICATION_TEXT_UNIT_PX: Final = 15
