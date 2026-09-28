@@ -1,5 +1,7 @@
 # Purpose: UPEH/ST와 효율·여유율·모듈·일수·측정률로 경로별 대당 Capa를 계산한다.
 
+from typing import NamedTuple
+
 import pandas as pd
 
 from capa_simulation.services.frame_checks import assert_unique_keys, strip_text_columns
@@ -38,6 +40,25 @@ CAPACITY_EXCLUSIONS_ATTR = "excluded_capacity_rows"
 # 측정률은 분모라 실제가 1 보다 작으면 대당 Capa 과소 → 소요대수 과대 → 확보율 과소(보수 쪽),
 # 1 보다 크면 그 반대(낙관 쪽)로 틀린다.
 CAPACITY_ASSUMPTIONS_ATTR = "assumed_capacity_defaults"
+# 같은 가정이 걸린 달. 건수만 말하면 어느 달 칸을 채워야 하는지 다시 찾아야 한다.
+# 대당 Capa 는 시나리오 전체 기간을 한 번에 계산하므로 조회기간 밖의 달도 들어 있다.
+CAPACITY_ASSUMED_MONTHS_ATTR = "assumed_capacity_months"
+
+
+class CapacityAssumptions(NamedTuple):
+    """측정률을 1.0 으로 메운 경로 수와 그 달. 화면 알림이 둘 다 말한다."""
+
+    counts: dict[str, int]
+    months: dict[str, tuple[int, ...]]
+
+
+def capacity_assumptions(unit_capacity: pd.DataFrame) -> CapacityAssumptions:
+    """대당 Capa 프레임의 `attrs` 에서 가정을 꺼낸다. 없으면 빈 묶음이다."""
+    return CapacityAssumptions(
+        counts=dict(unit_capacity.attrs.get(CAPACITY_ASSUMPTIONS_ATTR, {})),
+        months=dict(unit_capacity.attrs.get(CAPACITY_ASSUMED_MONTHS_ATTR, {})),
+    )
+
 
 # 검증 실패 메시지에 문제 행의 업무 키를 실으려면 그 컬럼이 어떤 키로 붙었는지 알아야 한다.
 # 연결에 쓰는 키 목록과 검증이 보고하는 키 목록이 갈라지지 않게 한 곳에 둔다.
@@ -97,9 +118,11 @@ def calculate_unit_capacity(
         )
         empty_result.attrs[CAPACITY_EXCLUSIONS_ATTR] = pd.DataFrame()
         empty_result.attrs[CAPACITY_ASSUMPTIONS_ATTR] = {}
+        empty_result.attrs[CAPACITY_ASSUMED_MONTHS_ATTR] = {}
         return empty_result
 
     assumed: dict[str, int] = {}
+    assumed_months: dict[str, set[int]] = {}
     result = performance
     result = _join_reference(
         result,
@@ -131,6 +154,7 @@ def calculate_unit_capacity(
         "RQ_LOT_RATIO",
         missing_value_default=1.0,
         assumed=assumed,
+        assumed_months=assumed_months,
     )
     result = _join_reference(
         result,
@@ -140,6 +164,7 @@ def calculate_unit_capacity(
         "RQ_WF_RATIO",
         missing_value_default=1.0,
         assumed=assumed,
+        assumed_months=assumed_months,
     )
 
     # 계산 대상 행을 먼저 확정한다. 어차피 빠질 행의 다른 기준값 때문에 화면 전체가
@@ -191,6 +216,9 @@ def calculate_unit_capacity(
     )
     output.attrs[CAPACITY_EXCLUSIONS_ATTR] = pd.concat(excluded_frames, ignore_index=True)
     output.attrs[CAPACITY_ASSUMPTIONS_ATTR] = assumed
+    output.attrs[CAPACITY_ASSUMED_MONTHS_ATTR] = {
+        table: tuple(sorted(months)) for table, months in assumed_months.items()
+    }
     return output
 
 
@@ -263,6 +291,7 @@ def _join_reference(
     *,
     missing_value_default: float | None = None,
     assumed: dict[str, int] | None = None,
+    assumed_months: dict[str, set[int]] | None = None,
 ) -> pd.DataFrame:
     """기준정보 한 표를 붙인다. **연결값이 없을 때의 처리가 표마다 다르다.**
 
@@ -306,6 +335,9 @@ def _join_reference(
     result[value_column] = result[value_column].fillna(missing_value_default)
     if assumed is not None:
         assumed[table_name] = assumed.get(table_name, 0) + int(missing.sum())
+    if assumed_months is not None and "생산계획년월" in result.columns:
+        months = pd.to_numeric(result.loc[missing, "생산계획년월"], errors="coerce").dropna()
+        assumed_months.setdefault(table_name, set()).update(int(month) for month in months)
     return result
 
 

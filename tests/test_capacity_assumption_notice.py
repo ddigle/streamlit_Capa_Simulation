@@ -39,3 +39,13 @@ def test_nothing_assumed_draws_nothing() -> None:
     """없는 날에 자리를 차지하면 다음에는 아무도 안 읽는다."""
     assert assumption_message({}) == ""
     assert assumption_message({"RQ_LOT_RATIO": 0, "RQ_WF_RATIO": 0}) == ""
+
+
+def test_the_message_names_the_months_and_says_it_covers_the_scenario() -> None:
+    """시나리오 전체를 한 번에 계산하므로 보는 기간 밖의 달도 센다. 달이 없으면 찾을 수 없다."""
+    months = (202701, 202702, 202703, 202704, 202705, 202706, 202707, 202708)
+    message = assumption_message({"RQ_LOT_RATIO": 8}, {"RQ_LOT_RATIO": months})
+
+    assert "시나리오 전체 기준" in message
+    assert "Lot측정률 8건(2027-01, 2027-02" in message
+    assert "외 2개월" in message

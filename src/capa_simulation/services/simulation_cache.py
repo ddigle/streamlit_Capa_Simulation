@@ -7,6 +7,7 @@ import threading
 from collections import OrderedDict
 from collections.abc import Hashable, Mapping
 from datetime import date
+from typing import NamedTuple
 
 import pandas as pd
 import streamlit as st
@@ -26,7 +27,7 @@ from capa_simulation.services.load_calculator import (
     calculate_chip_and_wafer_loads,
     filter_edp_plan,
 )
-from capa_simulation.services.month_filter import filter_month_range
+from capa_simulation.services.month_filter import MONTH_COLUMN, filter_month_range
 from capa_simulation.services.required_equipment import (
     calculate_required_equipment,
 )
@@ -37,8 +38,9 @@ from capa_simulation.services.standard_target_capacity import (
     build_weekly_standard_target_capacity,
 )
 from capa_simulation.services.unit_capacity import (
-    CAPACITY_ASSUMPTIONS_ATTR,
+    CapacityAssumptions,
     calculate_unit_capacity,
+    capacity_assumptions,
 )
 from capa_simulation.services.weighted_unit_capacity import (
     effective_process_capacity_to_month_table,
@@ -276,7 +278,7 @@ def get_home_simulation(
     _tables: Mapping[str, pd.DataFrame],
     _display_order: pd.DataFrame,
     _reference_tables: Mapping[str, pd.DataFrame],
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, int]]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, CapacityAssumptions]:
     """Reuse HOME results while hashing only ``cache_key`` on warm reruns.
 
     월 슬라이스는 이 안에서 한다. 호출자가 미리 잘라서 넘기면 캐시가 적중해도 표 열 개를
@@ -309,10 +311,10 @@ def get_home_simulation(
         _scenario_tables=_tables,
         _reference_tables=_reference_tables,
     )
-    # 측정률 행이 없어 중립값으로 이어 간 건수. **프레임이 아니라 이 수를 꺼내서 돌려준다** —
-    # `attrs` 는 병합·슬라이스를 지나며 사라지고, HOME 은 대당 Capa 프레임 자체를 쓰지 않는다.
-    # 세어 놓고 화면에 닿지 않으면 완화가 곧 조용히 틀리는 경로가 된다.
-    assumed_defaults: dict[str, int] = dict(unit_capacity.attrs.get(CAPACITY_ASSUMPTIONS_ATTR, {}))
+    # 측정률 행이 없어 중립값으로 이어 간 건수와 달. **프레임이 아니라 이 값을 꺼내서
+    # 돌려준다** — `attrs` 는 병합·슬라이스를 지나며 사라지고, HOME 은 대당 Capa 프레임
+    # 자체를 쓰지 않는다. 시나리오 전체 기간 기준이다(조회기간 밖의 달도 센다).
+    assumed_defaults = capacity_assumptions(unit_capacity)
     _, wafer_load = calculate_chip_and_wafer_loads(_plan, _yield_data, _chip_qty)
     monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
     securement_rate = get_securement_rate(scenario_key, _available_equipment, required_equipment)
@@ -496,31 +498,171 @@ def get_capacity_and_demand(
     return unit_capacity, required_equipment
 
 
+# 시나리오 전체 기간 계산 결과의 칸 수. 70공정·30개월 합성 표본에서 한 칸이 pickle 로 약
+# 16MB 다(샘플 관측) — 4칸이면 64MB 안쪽이다. 칸은 (리비전, 내용) 하나에 하나라 넉넉하다.
+FULL_CAPACITY_MAX_ENTRIES = 4
+
+# 시나리오 내용만 대표하는 키. 월 범위가 없다 — 조회기간은 이 결과를 잘라 쓴다.
+FullScenarioCacheKey = tuple[int, str]
+
+
+class CapacityOutcome(NamedTuple):
+    """전체 기간 계산의 결과 또는 실패.
+
+    **실패도 캐시한다.** 예외는 캐시되지 않아, 오류가 난 시나리오를 여는 실행마다 몇 초짜리
+    계산을 처음부터 다시 돌게 된다.
+    """
+
+    unit_capacity: pd.DataFrame | None
+    required_equipment: pd.DataFrame | None
+    error: str | None
+
+
+def _capacity_tables(
+    scenario_tables: Mapping[str, pd.DataFrame],
+    reference_tables: Mapping[str, pd.DataFrame],
+    month_range: tuple[int, int] | None,
+) -> dict[str, pd.DataFrame]:
+    """계산 입력 표. `month_range` 가 없으면 전체 기간이다. 어느 쪽이든 사본을 넘긴다."""
+    tables = {
+        name: (
+            _copied(scenario_tables[name])
+            if month_range is None
+            else filter_month_range(scenario_tables[name], *month_range, name)
+        )
+        for name in (*CAPACITY_INPUT_TABLES, *DEMAND_INPUT_TABLES)
+        if name not in MONTHLESS_INPUT_TABLES
+    }
+    tables.update({name: reference_tables[name] for name in REFERENCE_INPUT_TABLES})
+    # 월 축이 없는 시나리오 표는 슬라이스가 복사를 만들지 않으므로 여기서 복사한다.
+    tables.update({name: _copied(scenario_tables[name]) for name in SCENARIO_MONTHLESS_TABLES})
+    return tables
+
+
+def _copied(frame: pd.DataFrame) -> pd.DataFrame:
+    # 세션이 들고 있는 표를 계산에 그대로 넘기지 않는다. 계산 쪽이 입력을 고치면 세션의
+    # 편집본이 바뀌는데 토큰은 그대로라, 캐시와 내용이 갈라진다.
+    return frame.copy(deep=True)
+
+
+def _capacity_outcome(tables: Mapping[str, pd.DataFrame]) -> CapacityOutcome:
+    try:
+        unit_capacity, required_equipment = get_capacity_and_demand(tables)
+    except ValueError as exc:
+        # 기준정보 계약 위반만 결과로 담는다. 다른 예외는 코드 결함이라 그대로 올린다.
+        return CapacityOutcome(None, None, str(exc))
+    return CapacityOutcome(unit_capacity, required_equipment, None)
+
+
+@st.cache_data(show_spinner=False, max_entries=FULL_CAPACITY_MAX_ENTRIES)
+def get_full_capacity_outcome(
+    cache_key: FullScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> CapacityOutcome:
+    """시나리오 **전체 기간**의 대당 Capa 와 소요대수. 조회기간은 이 결과를 잘라 쓴다.
+
+    월끼리 섞이는 계산이 없어(누적·이월·보간 없음) 자른 결과가 그 기간만 계산한 결과와
+    같다 — 70공정 합성 표본 세 기간에서 행 차례까지 확인했다. 그래서 조회기간을 바꿔도 다시
+    계산하지 않는다(처음 보는 기간마다 1.8~2.4초가 들었다, 샘플 관측).
+
+    **어느 달이든 기준정보 오류가 있으면 결과 대신 오류를 담는다.** 보지 않는 달의 오류를
+    그 달을 열 때까지 미루지 않기 위해서다(2026-09-28 사용자 결정). 리비전 저장·공식 발행
+    검사도 같은 결과를 본다.
+
+    `cache_key` 는 (reference_version, content_token) 이다. 두 표 묶음은 그 키를 만든 바로
+    그 활성 시나리오·기준정보여야 한다 — `get_scenario_capacity_and_demand` 와 같은 계약이다.
+    """
+    del cache_key
+    return _capacity_outcome(_capacity_tables(_scenario_tables, _reference_tables, None))
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_period_capacity_error(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> str | None:
+    """전체 계산이 실패했을 때만 부른다. 그 오류가 조회기간 **안**에도 있는지 가른다."""
+    _, _, start_month, end_month = cache_key
+    tables = _capacity_tables(_scenario_tables, _reference_tables, (start_month, end_month))
+    return _capacity_outcome(tables).error
+
+
+def outside_period_error(start_month: int, end_month: int, error: str) -> str:
+    """조회기간 밖의 달 때문에 멈췄다고 말한다. 보는 기간이 고장 났다고 읽히지 않게 한다."""
+    return (
+        f"조회기간({_month_text(start_month)}~{_month_text(end_month)}) 밖의 달에 기준정보 "
+        "오류가 있어 계산을 멈췄습니다. Capa 는 시나리오 전체 기간을 한 번에 계산하므로 어느 "
+        "달이든 고쳐야 풀립니다 — 기준 정보 페이지에서 고친 뒤 새 리비전으로 저장하세요. "
+        f"오류: {error}"
+    )
+
+
+def _month_text(month: int) -> str:
+    return f"{month // 100}-{month % 100:02d}"
+
+
+def slice_capacity_months(frame: pd.DataFrame, start_month: int, end_month: int) -> pd.DataFrame:
+    """전체 기간 결과를 조회기간으로 자른다. `attrs` 도 같은 기준으로 다시 붙인다.
+
+    월 컬럼이 있는 프레임(제외 목록)은 같이 자른다 — 화면은 보는 기간의 제외만 보여야
+    한다. 나머지(측정률 가정 건수·달)는 시나리오 전체 값 그대로 둔다(사용자 결정).
+    """
+    sliced = _month_rows(frame, start_month, end_month)
+    sliced.attrs = {
+        name: (
+            _month_rows(value, start_month, end_month)
+            if isinstance(value, pd.DataFrame) and MONTH_COLUMN in value.columns
+            else value
+        )
+        for name, value in frame.attrs.items()
+    }
+    return sliced
+
+
+def _month_rows(frame: pd.DataFrame, start_month: int, end_month: int) -> pd.DataFrame:
+    months = pd.to_numeric(frame[MONTH_COLUMN], errors="coerce")
+    return frame.loc[months.between(start_month, end_month)].reset_index(drop=True)
+
+
 @st.cache_data(show_spinner=False, max_entries=16)
 def get_scenario_capacity_and_demand(
     cache_key: ScenarioCacheKey,
     _scenario_tables: Mapping[str, pd.DataFrame],
     _reference_tables: Mapping[str, pd.DataFrame],
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """활성 시나리오의 대당 Capa 와 소요대수. 키만 해시하고 월 슬라이스는 안에서 한다.
+    """활성 시나리오의 대당 Capa 와 소요대수를 조회기간으로 잘라 준다. 키만 해시한다.
 
     다섯 페이지가 get_capacity_and_demand 에 프레임 11개를 넘겨 st.cache_data 가 내용을
     해시했다 — 적중해도 105ms(하위 두 캐시 66+95ms). 여기서는 (reference_version,
-    content_token, start, end) 만 해시해 결과 언피클 ~50ms 만 남는다. 슬라이스도 안에서
-    하므로 적중 시 페이지가 미리 자르던 표 9~12개(~50ms)도 사라진다.
+    content_token, start, end) 만 해시해 결과 언피클만 남는다.
+
+    계산은 **시나리오 전체 기간**으로 한 번 하고(`get_full_capacity_outcome`) 여기서 자른다.
+    어느 달이든 기준정보 오류가 있으면 **조회기간과 상관없이 멈춘다.** 오류가 조회기간 안에도
+    있으면 그 오류를 그대로, 밖에만 있으면 「조회기간 밖」이라고 말한다 — 보는 기간이 고장
+    났다고 읽히지 않게.
 
     `_scenario_tables` 는 키의 content_token 을 발급한 바로 그 active_scenario["tables"]
     여야 한다. 다른 객체를 넘기면 옛 표가 새 토큰에 묶인다.
     """
-    _, _, start_month, end_month = cache_key
-    tables = {
-        name: filter_month_range(_scenario_tables[name], start_month, end_month, name)
-        for name in (*CAPACITY_INPUT_TABLES, *DEMAND_INPUT_TABLES)
-        if name not in MONTHLESS_INPUT_TABLES
-    }
-    tables.update({name: _reference_tables[name] for name in REFERENCE_INPUT_TABLES})
-    # 월 축이 없는 시나리오 표는 슬라이스가 복사를 만들지 않으므로 여기서 복사한다.
-    tables.update(
-        {name: _scenario_tables[name].copy(deep=True) for name in SCENARIO_MONTHLESS_TABLES}
+    reference_version, content_token, start_month, end_month = cache_key
+    outcome = get_full_capacity_outcome(
+        (reference_version, content_token),
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
     )
-    return get_capacity_and_demand(tables)
+    if outcome.error is not None:
+        period_error = get_period_capacity_error(
+            cache_key,
+            _scenario_tables=_scenario_tables,
+            _reference_tables=_reference_tables,
+        )
+        if period_error is not None:
+            raise ValueError(period_error)
+        raise ValueError(outside_period_error(start_month, end_month, outcome.error))
+    assert outcome.unit_capacity is not None and outcome.required_equipment is not None
+    return (
+        slice_capacity_months(outcome.unit_capacity, start_month, end_month),
+        slice_capacity_months(outcome.required_equipment, start_month, end_month),
+    )

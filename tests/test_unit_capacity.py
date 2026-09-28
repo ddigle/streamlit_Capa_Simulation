@@ -11,6 +11,7 @@ from capa_simulation.services.required_equipment import (
 )
 from capa_simulation.services.simulation_cache import get_capacity_and_demand
 from capa_simulation.services.unit_capacity import (
+    CAPACITY_ASSUMED_MONTHS_ATTR,
     CAPACITY_ASSUMPTIONS_ATTR,
     CAPACITY_EXCLUSIONS_ATTR,
     MODULE_KEYS,
@@ -18,6 +19,7 @@ from capa_simulation.services.unit_capacity import (
     UNIT_CAPACITY_DIMENSIONS,
     VITAL_KEYS,
     calculate_unit_capacity,
+    capacity_assumptions,
     unit_capacity_to_month_table,
 )
 
@@ -530,6 +532,18 @@ def test_the_assumed_rows_are_counted_so_the_screen_can_say_it() -> None:
     assumed = calculate_unit_capacity(**inputs).attrs[CAPACITY_ASSUMPTIONS_ATTR]
 
     assert assumed == {"RQ_LOT_RATIO": 2, "RQ_WF_RATIO": 1}
+
+
+def test_the_assumed_months_are_kept_so_the_screen_can_name_them() -> None:
+    """건수만 말하면 어느 달 칸을 채울지 다시 찾아야 한다. 시나리오 전체를 한 번에 계산하므로
+    조회기간 밖의 달이면 왜 떴는지도 모른다."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["lot_ratio"] = inputs["lot_ratio"].iloc[:1]
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result.attrs[CAPACITY_ASSUMED_MONTHS_ATTR] == {"RQ_LOT_RATIO": (202608,)}
+    assert capacity_assumptions(result).counts == {"RQ_LOT_RATIO": 1}
 
 
 def test_no_missing_rows_leaves_the_assumption_report_empty() -> None:

@@ -63,9 +63,9 @@ from capa_simulation.services.simulation_cache import (
     scenario_cache_key,
 )
 from capa_simulation.services.unit_capacity import (
-    CAPACITY_ASSUMPTIONS_ATTR,
     CAPACITY_EXCLUSIONS_ATTR,
     UNIT_CAPACITY_DIMENSIONS,
+    capacity_assumptions,
     unit_capacity_to_month_table,
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
@@ -136,7 +136,7 @@ try:
         _reference_tables=reference_tables,
     )
     capacity_exclusions = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
-    capacity_assumptions = unit_capacity.attrs.get(CAPACITY_ASSUMPTIONS_ATTR, {})
+    assumptions = capacity_assumptions(unit_capacity)
     required_exclusions = required_equipment.attrs.get(
         REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR, pd.DataFrame()
     )
@@ -194,7 +194,7 @@ else:
     prune_list_selection(process_filter_key, process_options)
 
     with unit_capacity_tab:
-        render_capacity_assumption_notice(capacity_assumptions)
+        render_capacity_assumption_notice(assumptions)
         if not capacity_exclusions.empty:
             st.warning(f"대당 Capa 산출에서 {len(capacity_exclusions):,}개 기준을 제외했습니다.")
             # 표는 「무엇이 빠졌나」를 답하고 워터폴은 「얼마나·어디서 빠졌나」를 답한다.
