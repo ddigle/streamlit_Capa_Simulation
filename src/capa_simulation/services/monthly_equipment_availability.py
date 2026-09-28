@@ -47,6 +47,14 @@
 
 `기존보유` 는 호기 단위가 아니라 `(공정, 분류)` 집계 대수라 환산비를 걸 데가 없다. 두 값이
 같다 — 1.0 을 곱한 것과 같고, 호기 마스터가 채워질수록 이 비대칭이 줄어든다.
+
+## 대수 표와 호기 목록은 같은 줄에서 나온다
+
+`build_monthly_equipment_availability` 는 호기(와 기존보유)마다 만든 기여 줄을
+`(월, 공정, 분류)` 로 더한 것이고, `build_monthly_equipment_contributions` 는 같은 줄을
+호기 단위로만 모은 것이다. 두 함수가 줄을 **따로 만들지 않는다**(`_raw_rows`) — 따로 만들면
+「표에는 3.5대인데 목록은 5행」이 조용히 생긴다. 목록의 `대수` 를 같은 칸끼리 더하면 표의
+값이다.
 """
 
 from __future__ import annotations
@@ -57,17 +65,19 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from capa_simulation.services.equipment_units import UNIT_SHARE_COLUMN
+from capa_simulation.services.equipment_units import UNIT_KEY_COLUMN, UNIT_SHARE_COLUMN
 from capa_simulation.services.process_cutoff import cutoff_lookup
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
 __all__ = [
     "MONTHLY_AVAILABILITY_COLUMNS",
+    "MONTHLY_CONTRIBUTION_COLUMNS",
     "AvailabilityCategory",
     "BASELINE_CATEGORY",
     "CATEGORIES",
     "available_subtotal",
     "build_monthly_equipment_availability",
+    "build_monthly_equipment_contributions",
     "empty_monthly_availability",
     "processes_in",
     "span_date_range",
@@ -83,6 +93,21 @@ MONTHLY_AVAILABILITY_COLUMNS = (
     "환산대수",
     "부호",
     "가용반영",
+)
+
+# 호기 목록 한 줄. `호기` 가 비면 기존보유 줄이고 `기존보유분류` 가 그 분류들이다.
+# `기여일수` 는 그 달 W/D 구간(`구간일수`)과 겹친 날 수다 — 기존보유는 안분하지 않아 비운다.
+MONTHLY_CONTRIBUTION_COLUMNS = (
+    "생산계획년월",
+    "공정",
+    "분류",
+    "호기",
+    "설비키",
+    "기존보유분류",
+    "기여일수",
+    "구간일수",
+    "대수",
+    "환산대수",
 )
 
 
@@ -182,13 +207,7 @@ def build_monthly_equipment_availability(
     **어느 DB 도 열지 않는다.** 프레임 셋을 받아 프레임 하나를 돌려주는 순수 함수라,
     시뮬레이션 DB 와 설비 DB 를 각각 읽는 것은 페이지의 몫이다.
     """
-    windows = _windows_for(months, cutoff)
-    if not windows:
-        return empty_monthly_availability()
-
-    rows: list[dict[str, object]] = []
-    rows += _baseline_rows(baseline, windows)
-    rows += _prorated_rows(spans, windows, conversion_ratios or {})
+    rows = _raw_rows(spans, baseline, cutoff, months, conversion_ratios)
     if not rows:
         return empty_monthly_availability()
 
@@ -211,25 +230,107 @@ def build_monthly_equipment_availability(
     return result.loc[:, list(MONTHLY_AVAILABILITY_COLUMNS)].reset_index(drop=True)
 
 
+def build_monthly_equipment_contributions(
+    spans: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    months: Sequence[int],
+    *,
+    conversion_ratios: Mapping[str, float] | None = None,
+) -> pd.DataFrame:
+    """월별 분류 대수를 이루는 **호기별 기여**. 분류별 내역의 호기 목록이 이것을 보인다.
+
+    `build_monthly_equipment_availability` 와 같은 줄(`_raw_rows`)을 쓰고 호기 단위로만
+    모은다 — 한 달 안에서 지분이 바뀌어 구간이 끊긴 호기도 한 줄이다. 그래서 같은
+    `(월, 공정, 분류)` 의 `대수` 를 더하면 대수 표의 값이다.
+    """
+    rows = _raw_rows(spans, baseline, cutoff, months, conversion_ratios)
+    if not rows:
+        return _empty_contributions()
+    raw = pd.DataFrame(rows)
+    keys = ["생산계획년월", "공정", "분류", "호기", "설비키", "기존보유분류", "구간일수"]
+    for column in ("호기", "설비키", "기존보유분류"):
+        raw[column] = raw[column].fillna("")
+    result = raw.groupby(keys, as_index=False, sort=False).agg(
+        {"기여일수": "sum", "대수": "sum", "환산대수": "sum"}
+    )
+    for column in ("호기", "설비키", "기존보유분류"):
+        result[column] = result[column].replace("", pd.NA).astype("string")
+    baseline_rows = result["호기"].isna()
+    result["기여일수"] = result["기여일수"].astype("Int64").mask(baseline_rows)
+    result["생산계획년월"] = result["생산계획년월"].astype("int64")
+    result["구간일수"] = result["구간일수"].astype("int64")
+    order = {category.name: index for index, category in enumerate(CATEGORIES)}
+    result = result.sort_values(
+        by=["생산계획년월", "공정", "분류", "호기"],
+        key=lambda column: column.map(order) if column.name == "분류" else column,
+        na_position="first",
+        kind="stable",
+    )
+    return result.loc[:, list(MONTHLY_CONTRIBUTION_COLUMNS)].reset_index(drop=True)
+
+
+def _empty_contributions() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "생산계획년월": pd.Series(dtype="int64"),
+            "공정": pd.Series(dtype="string"),
+            "분류": pd.Series(dtype="string"),
+            "호기": pd.Series(dtype="string"),
+            "설비키": pd.Series(dtype="string"),
+            "기존보유분류": pd.Series(dtype="string"),
+            "기여일수": pd.Series(dtype="Int64"),
+            "구간일수": pd.Series(dtype="int64"),
+            "대수": pd.Series(dtype="float64"),
+            "환산대수": pd.Series(dtype="float64"),
+        }
+    )
+
+
+def _raw_rows(
+    spans: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    months: Sequence[int],
+    conversion_ratios: Mapping[str, float] | None,
+) -> list[dict[str, object]]:
+    """대수 표와 호기 목록이 함께 쓰는 기여 줄. 두 결과가 갈라지지 않게 여기서만 만든다."""
+    windows = _windows_for(months, cutoff)
+    if not windows:
+        return []
+    return [
+        *_baseline_rows(baseline, windows),
+        *_prorated_rows(spans, windows, conversion_ratios or {}),
+    ]
+
+
 def _baseline_rows(
     baseline: pd.DataFrame, windows: dict[str, tuple[WdWindow, ...]]
 ) -> list[dict[str, object]]:
     """기존보유는 안분하지 않는다 — 날짜가 없어 어느 달에 얼마나 있었는지 알 수 없다."""
     if baseline.empty or "공정" not in baseline.columns:
         return []
-    counts = (
-        baseline.groupby(baseline["공정"].astype("string").str.strip())["기존보유대수"]
-        .sum()
-        .to_dict()
-    )
+    process = baseline["공정"].astype("string").str.strip()
+    counts = baseline.groupby(process)["기존보유대수"].sum().to_dict()
+    # 목록이 「어느 기존보유인가」를 말하도록 분류 이름을 붙인다. 합계는 공정 단위 그대로다.
+    labels: dict[str, str] = {}
+    if "분류" in baseline.columns:
+        for name, group in baseline.groupby(process)["분류"]:
+            values = [str(value).strip() for value in group.dropna() if str(value).strip()]
+            labels[str(name)] = " · ".join(dict.fromkeys(values))
     rows: list[dict[str, object]] = []
-    for process, total in counts.items():
-        for window in windows.get(str(process), ()):
+    for process_name, total in counts.items():
+        for window in windows.get(str(process_name), ()):
             rows.append(
                 {
                     "생산계획년월": window.year_month,
-                    "공정": str(process),
+                    "공정": str(process_name),
                     "분류": BASELINE_CATEGORY.name,
+                    "호기": None,
+                    "설비키": None,
+                    "기존보유분류": labels.get(str(process_name)) or "전체",
+                    "기여일수": 0,
+                    "구간일수": window.days,
                     "대수": float(total),
                     # 기존보유는 호기 단위가 아니라 집계 대수라 환산비를 걸 데가 없다.
                     # 그대로 둔다 — 1.0 을 곱한 것과 같다.
@@ -252,6 +353,7 @@ def _prorated_rows(
         if UNIT_SHARE_COLUMN in spans.columns
         else pd.Series(1.0, index=spans.index)
     )
+    unit_keys = spans[UNIT_KEY_COLUMN] if UNIT_KEY_COLUMN in spans.columns else spans["호기"]
     # `itertuples` 는 한글 컬럼명을 그대로 속성으로 주지만 이름이 겹치면 말없이 `_3` 으로
     # 바꾼다. 필요한 컬럼만 짝지어 도는 편이 빠르고 그 위험도 없다.
     columns = zip(
@@ -261,9 +363,10 @@ def _prorated_rows(
         spans["시작일"],
         spans["종료일"],
         shares,
+        unit_keys,
         strict=True,
     )
-    for raw_unit, raw_process, raw_status, raw_start, raw_end, raw_share in columns:
+    for raw_unit, raw_process, raw_status, raw_start, raw_end, raw_share, raw_key in columns:
         process = str(raw_process or "").strip()
         month_windows = windows.get(process)
         if not month_windows:
@@ -275,14 +378,21 @@ def _prorated_rows(
         # 상태는 바뀐 날 **다음 날**부터다. 구간 양 끝을 같이 밀어야 서로 맞물린 채 남는다.
         began = _as_date(raw_start) + _ONE_DAY
         finished = _as_date(raw_end) + _ONE_DAY
+        unit = str(raw_unit or "").strip()
         for window in month_windows:
-            contribution = window.contribution(began, finished)
-            if contribution:
+            overlap = window.overlap_days(began, finished)
+            if overlap:
+                contribution = overlap / window.days
                 rows.append(
                     {
                         "생산계획년월": window.year_month,
                         "공정": process,
                         "분류": category.name,
+                        "호기": unit,
+                        "설비키": str(raw_key or unit).strip(),
+                        "기존보유분류": None,
+                        "기여일수": overlap,
+                        "구간일수": window.days,
                         "대수": contribution * float(raw_share),
                         "환산대수": contribution * ratio,
                     }

@@ -7,7 +7,13 @@ import json
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation.components.availability_gap_panel import PROCESS_FILTER_KEY, RESULT_VIEW_KEY
+from capa_simulation.components.availability_gap_panel import (
+    DETAIL_CATEGORY_KEY,
+    DETAIL_MODE_KEY,
+    PROCESS_FILTER_KEY,
+    RESULT_VIEW_KEY,
+    matrix_table_key,
+)
 from capa_simulation.services.availability_gap import (
     DYNAMIC_SUBTOTAL_ROW,
     DYNAMIC_WEIGHTED_ROW,
@@ -232,3 +238,123 @@ def test_removed_process_returns_to_total_without_losing_the_result_choice() -> 
     assert app.selectbox(key=PROCESS_FILTER_KEY).value == "전체 합계"
     assert app.segmented_control(key=RESULT_VIEW_KEY).value == "분류별 내역"
     assert app.dataframe[0].value.loc[DYNAMIC_SUBTOTAL_ROW, "26.10"] == 4.0
+
+
+# ------------------------------------------------------------------ 호기 목록
+
+
+def test_the_unit_list_shows_every_contribution_behind_the_counts() -> None:
+    """「호기 목록」은 대수 표의 칸을 이루는 호기별 기여다. 같은 칸을 더하면 표의 값이다."""
+    app = _run()
+    _select_view(app, "분류별 내역")
+    matrix = app.dataframe[0].value
+    assert app.segmented_control(key=DETAIL_MODE_KEY).value == "대수"
+
+    app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
+    assert not app.exception
+    units = app.dataframe[0].value
+    # Probe 는 한쪽에만 있어 표에서 빠진다 — 목록도 같은 범위다.
+    assert set(units["공정"]) == {"Die Attach", "Etch"}
+    assert {"월", "분류", "호기", "기여일수", "대수", "환산대수"} <= set(units.columns)
+    assert set(units.loc[units["분류"].eq("기존보유"), "호기"]) == {"기존보유 · 전체"}
+    for category in ("기존보유", "가용"):
+        listed = units.loc[units["분류"].eq(category), "대수"].sum()
+        assert listed == pytest.approx(matrix.loc[category, "26.10"])
+    assert any(button.label == "CSV 다운로드" for button in app.get("download_button"))
+
+    app.multiselect(key=DETAIL_CATEGORY_KEY).set_value(["가용"]).run()
+    assert set(app.dataframe[0].value["분류"]) == {"가용"}
+
+
+def test_a_clicked_cell_lists_its_units_and_adds_up_to_the_cell() -> None:
+    app = _run()
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
+    _select_view(app, "분류별 내역")
+    rows = list(app.dataframe[0].value.index)
+    key = matrix_table_key("Die Attach", [202610], rows)
+
+    app.session_state[key] = {
+        "selection": {"rows": [], "columns": [], "cells": [[rows.index("가용"), "26.10"]]}
+    }
+    app.run()
+    assert not app.exception
+    assert len(app.dataframe) == 2
+    cell = app.dataframe[1].value
+    assert cell["호기"].tolist() == ["EQ-1"]
+    assert cell["대수"].sum() == pytest.approx(app.dataframe[0].value.loc["가용", "26.10"])
+
+    # 소계 칸은 소계에 드는 분류(기존보유·가용)를 모아 보인다.
+    app.session_state[key] = {
+        "selection": {
+            "rows": [],
+            "columns": [],
+            "cells": [[rows.index(DYNAMIC_SUBTOTAL_ROW), "26.10"]],
+        }
+    }
+    app.run()
+    subtotal = app.dataframe[1].value
+    assert set(subtotal["분류"]) == {"기존보유", "가용"}
+    assert subtotal["대수"].sum() == pytest.approx(4.0)
+
+    # Static·GAP 은 기준정보라 목록 대신 안내가 뜬다.
+    app.session_state[key] = {
+        "selection": {"rows": [], "columns": [], "cells": [[rows.index(STATIC_ROW), "26.10"]]}
+    }
+    app.run()
+    assert len(app.dataframe) == 1
+    assert "호기 목록이 없습니다" in " ".join(item.value for item in app.info)
+
+
+def test_a_click_does_not_follow_the_table_into_another_scope() -> None:
+    """선택은 (행 위치, 열 이름)으로 남는다. 공정을 바꾸면 같은 위치가 다른 분류다.
+
+    범위마다 표의 키가 달라 전에 누른 칸이 새 표로 따라오지 않는다(브라우저 실측: 따라오면
+    누르지 않은 분류의 호기가 떴다).
+    """
+    app = _run()
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
+    _select_view(app, "분류별 내역")
+    rows = list(app.dataframe[0].value.index)
+    die_attach = matrix_table_key("Die Attach", [202610], rows)
+    app.session_state[die_attach] = {
+        "selection": {"rows": [], "columns": [], "cells": [[rows.index("가용"), "26.10"]]}
+    }
+    app.run()
+    assert len(app.dataframe) == 2
+
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Etch").run()
+    assert not app.exception
+    etch_rows = list(app.dataframe[0].value.index)
+    assert matrix_table_key("Etch", [202610], etch_rows) != die_attach
+    assert len(app.dataframe) == 1
+
+
+def test_the_unit_list_keeps_full_precision_so_thirds_add_up_to_one() -> None:
+    """모듈 셋이 1/3 씩이면 0.333 으로 잘라 더해 0.999 가 되면 안 된다. 표시만 세 자리다."""
+    from io import StringIO
+
+    import pandas as pd
+
+    from capa_simulation.components.availability_gap_panel import _unit_table
+
+    thirds = pd.DataFrame(
+        {
+            "생산계획년월": [202610] * 3,
+            "공정": ["Bonder"] * 3,
+            "분류": ["가용"] * 3,
+            "호기": ["APW01A", "APW01B", "APW01C"],
+            "설비키": ["APW01"] * 3,
+            "기존보유분류": pd.Series([pd.NA] * 3, dtype="string"),
+            "기여일수": [31] * 3,
+            "구간일수": [31] * 3,
+            "대수": [1 / 3] * 3,
+            "환산대수": [1 / 3] * 3,
+        }
+    )
+
+    table = _unit_table(thirds, with_month=True)
+
+    assert table["대수"].sum() == pytest.approx(1.0, abs=1e-12)
+    exported = pd.read_csv(StringIO(table.to_csv(index=False)))
+    assert exported["대수"].sum() == pytest.approx(1.0, abs=1e-12)
+    assert "설비" in table.columns

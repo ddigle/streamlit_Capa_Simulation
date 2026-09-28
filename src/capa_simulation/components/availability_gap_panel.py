@@ -8,11 +8,17 @@
 통째로 죽으면 Cut-off 를 적으러 들어올 수조차 없다.
 
 가용대수 그림·분류별 표·확보율 교차검증 중 선택한 결과만 그린다.
+
+**분류별 내역은 대수 뒤의 호기를 보인다.** `표시` 를 `호기 목록` 으로 바꾸면 같은 조건의
+호기별 기여가 긴 표로 펼쳐지고(CSV), `대수` 표에서 칸 하나를 누르면 그 칸의 호기만 아래에
+뜬다. 목록은 대수 표와 **같은 기여 줄**(`build_monthly_equipment_contributions`)에서 나와
+같은 칸을 더하면 표의 값이다.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import hashlib
+from collections.abc import Mapping, Sequence
 from datetime import date
 
 import pandas as pd
@@ -24,9 +30,18 @@ from capa_simulation.components.availability_gap_figure import (
 )
 from capa_simulation.components.plotly_layout import hover_chart_config
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
-from capa_simulation.services.availability_gap import build_availability_gap, gap_matrix
+from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.services.availability_gap import (
+    DYNAMIC_SUBTOTAL_ROW,
+    DYNAMIC_WEIGHTED_ROW,
+    build_availability_gap,
+    gap_matrix,
+)
+from capa_simulation.services.equipment_units import format_unit_count
 from capa_simulation.services.monthly_equipment_availability import (
+    CATEGORIES,
     build_monthly_equipment_availability,
+    build_monthly_equipment_contributions,
     processes_in,
     span_date_range,
 )
@@ -35,12 +50,34 @@ from capa_simulation.services.securement_cross_check import (
     dynamic_available_equipment,
 )
 
-__all__ = ["PROCESS_FILTER_KEY", "RESULT_VIEW_KEY", "render_availability_gap_panel"]
+__all__ = [
+    "DETAIL_CATEGORY_KEY",
+    "DETAIL_MODE_KEY",
+    "MATRIX_TABLE_KEY",
+    "PROCESS_FILTER_KEY",
+    "RESULT_VIEW_KEY",
+    "matrix_table_key",
+    "render_availability_gap_panel",
+]
 
 PROCESS_FILTER_KEY = "equipment_gap_process_filter_v1"
 RESULT_VIEW_KEY = "equipment_gap_result_view_v1"
+DETAIL_MODE_KEY = "equipment_gap_detail_mode_v1"
+DETAIL_CATEGORY_KEY = "equipment_gap_detail_category_v1"
+MATRIX_TABLE_KEY = "equipment_gap_matrix_table_v1"
 _ALL_PROCESSES = "전체 합계"
 _RESULT_VIEWS = ("가용대수 비교", "분류별 내역", "확보율 교차검증")
+_DETAIL_MODES = ("대수", "호기 목록")
+_CATEGORY_NAMES = tuple(category.name for category in CATEGORIES)
+# 목록의 대수 표시 자릿수. **값은 반올림하지 않는다** — 1/3 지분 셋을 0.333 으로 잘라 더하면
+# 0.999 가 되어 「같은 칸을 더하면 표의 값」이 깨진다. CSV 도 반올림 없이 나간다.
+_UNIT_NUMBER_FORMAT = {
+    column: st.column_config.NumberColumn(format="%.3f") for column in ("대수", "환산대수")
+}
+# 소계 두 행을 누르면 소계에 드는 분류의 호기를 보인다. Static·GAP 은 기준정보라 목록이 없다.
+_SUBTOTAL_CATEGORIES = tuple(
+    category.name for category in CATEGORIES if category.counts_as_available
+)
 
 
 def render_availability_gap_panel(
@@ -167,9 +204,50 @@ def render_availability_gap_panel(
         )
         return
 
+    detail_mode = st.segmented_control(
+        "표시",
+        options=_DETAIL_MODES,
+        default=_DETAIL_MODES[0],
+        required=True,
+        key=DETAIL_MODE_KEY,
+        persist_state="session",
+        help=(
+            "호기 목록은 대수 표의 각 칸을 이루는 호기별 기여입니다. "
+            "같은 칸을 더하면 표의 값입니다."
+        ),
+    )
+    # 전체 합계는 표와 같은 공정만 본다 — 한쪽에만 있는 공정을 뺀 범위다.
+    scope = {process} if process is not None else set(scoped["공정"].dropna().astype(str))
+    if detail_mode == "호기 목록":
+        _render_unit_list(
+            _scoped_contributions(spans, baseline, cutoff, months, conversion_ratios, scope)
+        )
+        return
+
     display = matrix.copy()
-    display.columns = pd.Index([month_label(int(column)) for column in display.columns], name="월")
-    st.dataframe(display.round(2), width="stretch")
+    month_by_label = {month_label(int(column)): int(column) for column in display.columns}
+    display.columns = pd.Index(list(month_by_label), name="월")
+    # 칸 하나를 누르면 그 칸의 호기를 아래에 보인다. 선택은 (행 위치, 열 이름)으로 남으므로
+    # 공정·기간이 바뀌면 같은 위치가 다른 분류를 가리킨다 — 키에 범위를 넣어 표를 새로 만든다.
+    event = st.dataframe(
+        display.round(2),
+        width="stretch",
+        key=matrix_table_key(process, months, list(display.index)),
+        on_select="rerun",
+        selection_mode="single-cell",
+    )
+    st.caption("칸을 누르면 그 달·분류에 든 호기를 아래에 보여 줍니다.")
+    cells = list(event.selection.cells) if event is not None else []
+    if cells:
+        position, column = cells[0]
+        if column in month_by_label and 0 <= int(position) < len(display):
+            _render_cell_units(
+                row=str(display.index[int(position)]),
+                month=month_by_label[column],
+                contributions=_scoped_contributions(
+                    spans, baseline, cutoff, months, conversion_ratios, scope
+                ),
+            )
     st.caption(
         "**「환산비 반영」 행은 GAP 에 들어가지 않습니다.** Static 은 설비를 센 대수라 "
         "환산대수와 맞대면 단위가 어긋납니다 — 그 행은 월 Total Capa 를 낼 때 쓰는 축입니다."
@@ -178,6 +256,120 @@ def render_availability_gap_panel(
         "「Dynamic 가용 소계」에 들어가는 것은 `기존보유` 와 `가용` 둘뿐입니다. "
         "나머지 분류는 왜 못 쓰는지를 보여 주는 참고 행이라 소계에 더하지 않습니다 — "
         "호기 상태는 서로 배타적이라 모두 더하면 가용대수가 아니라 보유 호기-일수가 됩니다."
+    )
+
+
+def matrix_table_key(process: str | None, months: Sequence[int], rows: Sequence[str]) -> str:
+    """분류별 대수 표의 위젯 키. **범위가 바뀌면 키도 바뀐다.**
+
+    칸 선택은 (행 위치, 열 이름)으로 남고 Streamlit 은 표 내용이 바뀌어도 선택을 들고
+    있다. 공정을 바꾸면 전에 누른 위치가 **다른 분류**를 가리켜 누르지 않은 칸의 호기가
+    뜬다(브라우저 실측). 빈 선택을 코드로 밀어 넣는 방법은 첫 번째 변경에만 먹는다 — 화면이
+    같은 선택 값을 두 번째부터 무시한다. 그래서 범위마다 다른 표로 만든다. 같은 범위 안에서는
+    키가 그대로라 누른 칸이 rerun 을 지나도 남는다.
+    """
+    scope = repr((process, tuple(int(month) for month in months), tuple(rows)))
+    digest = hashlib.sha1(scope.encode("utf-8")).hexdigest()[:10]
+    return f"{MATRIX_TABLE_KEY}_{digest}"
+
+
+def _scoped_contributions(
+    spans: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    months: list[int],
+    conversion_ratios: Mapping[str, float] | None,
+    scope: set[str],
+) -> pd.DataFrame:
+    """표와 같은 범위의 호기별 기여. 목록을 볼 때만 만든다 — 대수 표만 보면 들지 않는 비용이다."""
+    contributions = build_monthly_equipment_contributions(
+        spans, baseline, cutoff, months, conversion_ratios=conversion_ratios
+    )
+    return contributions.loc[contributions["공정"].astype(str).isin(scope)].reset_index(drop=True)
+
+
+def _unit_table(rows: pd.DataFrame, *, with_month: bool) -> pd.DataFrame:
+    """화면에 얹는 호기 목록. 기존보유 줄은 호기 자리에 그 분류를 적는다.
+
+    설비키는 모듈 행이 있을 때만 보인다(비모듈은 호기와 같은 값이라 칸만 는다).
+    """
+    table = rows.copy()
+    is_baseline = table["호기"].isna()
+    table["호기"] = (
+        table["호기"]
+        .astype("string")
+        .mask(is_baseline, "기존보유 · " + table["기존보유분류"].astype("string").fillna("전체"))
+    )
+    columns = ["공정", "분류", "호기"]
+    if bool(table["설비키"].notna().any() and table["설비키"].ne(rows["호기"]).fillna(False).any()):
+        table = table.rename(columns={"설비키": "설비"})
+        columns.append("설비")
+    columns += ["기여일수", "구간일수", "대수", "환산대수"]
+    if with_month:
+        table.insert(0, "월", table["생산계획년월"].map(lambda month: month_label(int(month))))
+        columns.insert(0, "월")
+    return table.loc[:, columns]
+
+
+def _render_cell_units(*, row: str, month: int, contributions: pd.DataFrame) -> None:
+    """누른 칸 하나의 호기. 소계 행이면 소계에 드는 분류를 모아 보인다."""
+    if row in _CATEGORY_NAMES:
+        categories: tuple[str, ...] = (row,)
+    elif row in (DYNAMIC_SUBTOTAL_ROW, DYNAMIC_WEIGHTED_ROW):
+        categories = _SUBTOTAL_CATEGORIES
+    else:
+        st.info(f"「{row}」는 기준정보 값이라 호기 목록이 없습니다. 분류나 소계 칸을 누르세요.")
+        return
+    rows = contributions.loc[
+        contributions["생산계획년월"].eq(month) & contributions["분류"].isin(categories)
+    ]
+    axis = "환산대수" if row == DYNAMIC_WEIGHTED_ROW else "대수"
+    total = float(rows[axis].sum())
+    st.markdown(
+        f"##### {month_label(month)} · {row} · {len(rows):,}행 · 합계 {format_unit_count(total)}"
+    )
+    if rows.empty:
+        st.caption("이 칸에 기여한 호기가 없습니다.")
+        return
+    st.dataframe(
+        _unit_table(rows, with_month=False),
+        hide_index=True,
+        width="stretch",
+        column_config=_UNIT_NUMBER_FORMAT,
+    )
+    st.caption(
+        f"`{axis}` 를 더하면 위 표의 같은 칸입니다. 기여일수는 그 달 W/D 구간(구간일수)과 겹친 "
+        "날 수이고, 모듈 행은 그 기여에 설비지분을 곱해 설비 한 대로 모입니다."
+    )
+
+
+def _render_unit_list(contributions: pd.DataFrame) -> None:
+    """같은 조건의 호기별 기여를 긴 표 하나로. 분류로 좁히고 CSV 로 내려받는다."""
+    if contributions.empty:
+        st.info("표시할 호기가 없습니다.")
+        return
+    present = [name for name in _CATEGORY_NAMES if name in set(contributions["분류"].astype(str))]
+    chosen = st.multiselect(
+        "분류",
+        options=present,
+        placeholder="전체 분류",
+        key=DETAIL_CATEGORY_KEY,
+        persist_state="session",
+        width=420,
+    )
+    rows = contributions.loc[contributions["분류"].isin(chosen)] if chosen else contributions
+    table = _unit_table(rows, with_month=True)
+    st.dataframe(table, hide_index=True, width="stretch", column_config=_UNIT_NUMBER_FORMAT)
+    months = sorted(int(month) for month in rows["생산계획년월"].unique())
+    stamp = f"{months[0]}_{months[-1]}" if months else "empty"
+    render_csv_download(
+        data=table.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"Dynamic_가용대수_호기목록_{stamp}.csv",
+        key="download_equipment_gap_unit_list_csv",
+    )
+    st.caption(
+        "같은 월·분류의 `대수` 를 더하면 `대수` 표의 값입니다. 기여일수는 그 달 W/D 구간과 겹친 "
+        "날 수이고, 기존보유는 안분하지 않아 비어 있습니다."
     )
 
 

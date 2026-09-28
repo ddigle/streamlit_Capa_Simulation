@@ -257,3 +257,61 @@ def test_the_subtotal_reports_both_axes() -> None:
     # 대수 = 기존보유 4 + 가용 1 = 5, 환산 = 4 + (1 x 2.0) = 6
     assert float(subtotal["Dynamic가용대수"].iloc[0]) == 5.0
     assert float(subtotal["Dynamic가용환산대수"].iloc[0]) == 6.0
+
+
+# ------------------------------------------------------------------ 호기 목록
+
+
+def test_the_unit_list_adds_up_to_the_count_table_cell_by_cell() -> None:
+    """목록은 대수 표와 같은 기여 줄에서 나온다 — 같은 칸을 더하면 표의 값이다.
+
+    모듈(달 중간에 형제가 반출돼 지분이 0.25 → 1/3), 비가동, 기존보유(분류 둘)를 섞는다.
+    """
+    from test_equipment_units import _modules, _pm
+
+    from capa_simulation.services.equipment_availability import build_equipment_lifecycle_spans
+    from capa_simulation.services.monthly_equipment_availability import (
+        build_monthly_equipment_contributions,
+    )
+
+    frame = _modules(APW01D={"반출일정": "2026-05-10"})
+    unit_spans = build_equipment_lifecycle_spans(
+        frame,
+        _pm(),
+        start_date=date(2025, 12, 1),
+        end_date=date(2026, 7, 31),
+        with_unit_share=True,
+    )
+    cutoff = pd.DataFrame({"공정": ["DEMO_Bonder"], "제품구분": ["*"], "Cutoff일수": [0]})
+    baseline = pd.DataFrame(
+        {"공정": ["DEMO_Bonder"] * 2, "분류": ["A", "B"], "기존보유대수": [1.5, 2.0]}
+    )
+    ratios = dict(zip(frame["호기"], frame["환산비"], strict=True))
+    months = [202602, 202603, 202605, 202606]
+
+    table = build_monthly_equipment_availability(
+        unit_spans, baseline, cutoff, months, conversion_ratios=ratios
+    )
+    units = build_monthly_equipment_contributions(
+        unit_spans, baseline, cutoff, months, conversion_ratios=ratios
+    )
+
+    summed = units.groupby(["생산계획년월", "공정", "분류"], as_index=False)[
+        ["대수", "환산대수"]
+    ].sum()
+    joined = table.merge(summed, on=["생산계획년월", "공정", "분류"], suffixes=("", "_목록"))
+    assert len(joined) == len(table) == len(summed)
+    assert joined["대수"].tolist() == pytest.approx(joined["대수_목록"].tolist())
+    assert joined["환산대수"].tolist() == pytest.approx(joined["환산대수_목록"].tolist())
+
+    # 한 달 안에서 구간이 끊긴 모듈도 한 줄이다. 5월의 A 는 0.25 로 10일, 1/3 로 21일.
+    may_a = units.loc[units["생산계획년월"].eq(202605) & units["호기"].eq("APW01A")]
+    assert len(may_a) == 1
+    assert may_a["기여일수"].item() == 31
+    assert may_a["대수"].item() == pytest.approx(10 / 31 * 0.25 + 21 / 31 / 3)
+    assert set(units["설비키"].dropna()) == {"APW01", "DA01"}
+    # 기존보유는 공정 단위 한 줄이고, 어느 분류를 더했는지 적는다.
+    held = units.loc[units["분류"].eq("기존보유") & units["생산계획년월"].eq(202603)]
+    assert held["기존보유분류"].tolist() == ["A · B"]
+    assert held["대수"].tolist() == [3.5]
+    assert held["기여일수"].isna().all()

@@ -128,7 +128,7 @@ def build_equipment_lifecycle_spans(
 ) -> pd.DataFrame:
     """호기별 생애주기 구간. 점 이벤트(일정 컬럼)를 구간으로 접는다.
 
-    `with_unit_share` 를 켜면 `설비지분` 컬럼을 붙이고, **지분이 바뀌는 날에도** 구간을
+    `with_unit_share` 를 켜면 `설비지분`·`설비키` 컬럼을 붙이고, **지분이 바뀌는 날에도** 구간을
     끊는다. 모듈 형제의 입고·반출로 지분이 바뀌면 상태는 그대로여도 대수 축 몫이 달라지기
     때문이다. 월별 대수(`monthly_equipment_availability`)가 켜서 쓴다. 끄면(기본) 상태가
     바뀔 때만 끊어 생애주기 Gantt 가 지금처럼 그린다.
@@ -143,7 +143,10 @@ def build_equipment_lifecycle_spans(
     """
     if start_date > end_date:
         raise ValueError("생애주기 조회 시작일은 종료일보다 늦을 수 없습니다.")
-    columns = [*LIFECYCLE_SPAN_COLUMNS, *((UNIT_SHARE_COLUMN,) if with_unit_share else ())]
+    columns = [
+        *LIFECYCLE_SPAN_COLUMNS,
+        *((UNIT_SHARE_COLUMN, UNIT_KEY_COLUMN) if with_unit_share else ()),
+    ]
     prepared = prepare_equipment_master(equipment)
     if prepared.empty:
         return pd.DataFrame(columns=columns)
@@ -195,6 +198,9 @@ def build_equipment_lifecycle_spans(
     for unit, (status, share, began) in open_spans.items():
         close(unit, status, share, began, end)
     result = pd.DataFrame(rows, columns=columns)
+    if with_unit_share:
+        key_by_unit = dict(zip(prepared["호기"], unit_keys(prepared), strict=True))
+        result[UNIT_KEY_COLUMN] = result["호기"].map(key_by_unit)
     # 길이가 0 인 구간은 같은 날 두 번 바뀐 것이다. 그리면 폭 없는 막대라 보이지 않는다.
     result = result.loc[result["종료일"] >= result["시작일"]]
     return result.sort_values(["호기", "시작일"]).reset_index(drop=True)
