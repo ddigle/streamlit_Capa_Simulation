@@ -57,6 +57,33 @@ def month_label(year_month: int) -> str:
     return f"{text[2:4]}.{text[4:6]}"
 
 
+# 쌓인 두 조각 사이를 가르는 흰 테두리 굵기.
+_STACK_OUTLINE_WIDTH_PX = 2.0
+# 월 수와 막대 폭을 잇는 실측값. 넉 달일 때 막대 하나가 118px 이었다(1600px 창, 그림 폭
+# 1265px). 폭은 월 수에 반비례하므로 막대 폭 ≈ 472 / 월 수 다 — 12개월이면 약 39px, 30개월이면
+# 약 16px. 창이 좁으면 모두 같은 비율로 줄 뿐이라 등급의 경계만 조금 앞당겨진다.
+_BAR_SPAN_PX = 472.0
+
+
+def _corner_radius(month_count: int) -> int:
+    """막대 굵기 등급(`tokens.BAR_CORNER_RADIUS_*_PX`)을 월 수로 고른다.
+
+    폭의 비율(`"15%"`)로 주면 넉 달일 때 118px 막대에 18px 반경이 걸려 다른 차트보다 훨씬
+    둥글었다(실측). 등급은 넓은 막대에서도 8px 에서 멈춘다.
+    """
+    bar_width = _BAR_SPAN_PX / max(month_count, 1)
+    if bar_width >= 40:
+        return tokens.BAR_CORNER_RADIUS_WIDE_PX
+    if bar_width >= 20:
+        return tokens.BAR_CORNER_RADIUS_MEDIUM_PX
+    return tokens.BAR_CORNER_RADIUS_NARROW_PX
+
+
+def _stack_outline(values: list[float]) -> list[float]:
+    """점마다 테두리 굵기. 높이 0 인 조각은 0 이다 — 둥근 머리 위에 납작한 뚜껑을 그리지 않게."""
+    return [0.0 if value == 0 else _STACK_OUTLINE_WIDTH_PX for value in values]
+
+
 def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
     """월을 가로축에 둔 비교 그림.
 
@@ -71,6 +98,7 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
         return figure
 
     labels = [month_label(int(month)) for month in months]
+    corner_radius = _corner_radius(len(months))
     baseline = _row(matrix, BASELINE_CATEGORY.name, months)
     available = _row(matrix, _AVAILABLE_CATEGORY, months)
     static = _row(matrix, STATIC_ROW, months)
@@ -79,11 +107,20 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
 
     # Dynamic 은 두 조각을 쌓고, Static 은 그 옆에 따로 세운다. `offsetgroup` 이 달라야
     # 쌓기와 나란히 놓기가 한 그림에서 같이 산다.
+    #
+    # 머리는 둥글다. 막대 폭이 조회 월 수로 바뀌므로 반경 등급도 월 수로 고른다
+    # (`_corner_radius`). 쌓인 막대는 Plotly 가 가장 바깥의 0 아닌 조각만 둥글린다 — 그래서
+    # **높이 0 조각은 테두리를 긋지 않는다.** 그 조각은 둥근 머리 바로 위에 앉아 흰 테두리만
+    # 납작한 뚜껑처럼 남는다. 범례 아이콘이 서로 맞도록 반경은 세 계열에 모두 준다.
     figure.add_bar(
         x=labels,
         y=baseline,
         name="기존보유",
-        marker={"color": tokens.BORDER_STRONG, "line": {"color": tokens.SURFACE, "width": 2}},
+        marker={
+            "color": tokens.BORDER_STRONG,
+            "line": {"color": tokens.SURFACE, "width": _stack_outline(baseline)},
+            "cornerradius": corner_radius,
+        },
         offsetgroup="dynamic",
         legendgroup="dynamic",
         hovertemplate="기존보유 %{y:.2f}대<extra></extra>",
@@ -92,7 +129,11 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
         x=labels,
         y=available,
         name="가용(일할)",
-        marker={"color": tokens.ACCENT, "line": {"color": tokens.SURFACE, "width": 2}},
+        marker={
+            "color": tokens.ACCENT,
+            "line": {"color": tokens.SURFACE, "width": _stack_outline(available)},
+            "cornerradius": corner_radius,
+        },
         offsetgroup="dynamic",
         legendgroup="dynamic",
         hovertemplate="가용 %{y:.2f}대<extra></extra>",
@@ -104,6 +145,7 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
         marker={
             "color": tokens.SURFACE_GRAND_TOTAL,
             "line": {"color": tokens.TEXT, "width": 1.5},
+            "cornerradius": corner_radius,
         },
         offsetgroup="static",
         legendgroup="static",

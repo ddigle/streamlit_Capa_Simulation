@@ -19,10 +19,13 @@ from typing import Any
 import pandas as pd
 import plotly.graph_objects as go
 
+from capa_simulation.components.availability_gap_figure import build_availability_gap_figure
 from capa_simulation.components.dynamic_capacity_dashboard import build_process_comparison_figure
 from capa_simulation.components.home_dimensions import LOB_BAR_WIDTH
 from capa_simulation.components.home_figures import build_lob_summary_figures
 from capa_simulation.design import tokens
+from capa_simulation.services.availability_gap import DYNAMIC_SUBTOTAL_ROW, GAP_ROW, STATIC_ROW
+from capa_simulation.services.monthly_equipment_availability import BASELINE_CATEGORY
 
 MONTHS = [202601, 202602, 202603]
 LABELS = ["26.01", "26.02", "26.03"]
@@ -189,3 +192,49 @@ def test_dynamic_capacity_bars_round_their_ends() -> None:
     assert [trace.marker.cornerradius for trace in figure.data] == [
         tokens.BAR_CORNER_RADIUS_MEDIUM_PX
     ] * 2
+
+
+def _gap_figure(month_count: int, *, empty_available_month: int | None = None) -> go.Figure:
+    months = [str(202601 + index) for index in range(month_count)]
+    available = [0.0 if index == empty_available_month else 1.0 for index in range(month_count)]
+    matrix = pd.DataFrame(
+        [
+            [3.0] * month_count,
+            available,
+            [3.0 + value for value in available],
+            [4.0] * month_count,
+            [value - 1.0 for value in available],
+        ],
+        index=[BASELINE_CATEGORY.name, "가용", DYNAMIC_SUBTOTAL_ROW, STATIC_ROW, GAP_ROW],
+        columns=months,
+    )
+    return build_availability_gap_figure(matrix)
+
+
+def test_the_availability_gap_bars_grade_their_heads_by_month_count() -> None:
+    """가용설비 Static/Dynamic 비교는 막대 폭이 조회 월 수로 바뀐다(실측 넉 달 118px).
+
+    반경 등급을 월 수로 고른다 — 넉 달이면 넓음, 열두 달이면 중간, 서른 달이면 좁음. 범례
+    아이콘이 맞도록 세 계열 모두 같은 반경이다. 폭의 비율 반경은 넓은 막대에서 18px 까지
+    커져 쓰지 않는다.
+    """
+    for month_count, radius in (
+        (4, tokens.BAR_CORNER_RADIUS_WIDE_PX),
+        (12, tokens.BAR_CORNER_RADIUS_MEDIUM_PX),
+        (30, tokens.BAR_CORNER_RADIUS_NARROW_PX),
+    ):
+        figure = _gap_figure(month_count)
+        assert figure.layout.barcornerradius is None
+        assert [trace.marker.cornerradius for trace in figure.data] == [radius] * 3, month_count
+
+
+def test_an_empty_stack_segment_draws_no_flat_cap() -> None:
+    """쌓인 막대에서 높이 0 조각은 테두리를 긋지 않는다.
+
+    Plotly 는 가장 바깥의 0 아닌 조각을 둥글린다. 높이 0 조각은 그 둥근 머리 바로 위에 앉아
+    흰 테두리만 납작한 뚜껑처럼 남는다.
+    """
+    baseline, available, _static = _gap_figure(2, empty_available_month=1).data
+
+    assert list(available.marker.line.width) == [2.0, 0.0]
+    assert list(baseline.marker.line.width) == [2.0, 2.0]
