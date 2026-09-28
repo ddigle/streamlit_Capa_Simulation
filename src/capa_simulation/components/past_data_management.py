@@ -21,7 +21,11 @@ import streamlit as st
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    PAGE_DIALOG_SUFFIX,
+    bootstrap_error_message,
+)
 from capa_simulation.persistence.cache import (
     clear_global_past_data_cache,
     get_scenario_repository,
@@ -42,6 +46,9 @@ HOME_PAST_DOWNLOAD_KEY = "home_past_download"
 PAST_CLIPBOARD_KEY = "home_past_clipboard"
 PAST_NOTE_KEY = "home_past_note"
 PAST_DRAFT_KEY = "home_past_draft"
+# 지금 열린 붙여넣기 팝업의 표 이름. HOME 한 화면에 팝업 칸은 하나다(`PAGE_DIALOG_SUFFIX` —
+# 페이지를 떠나면 `forget_page_dialogs` 가 비운다).
+PAST_DIALOG_KEY = f"home{PAGE_DIALOG_SUFFIX}"
 
 
 @dataclass(frozen=True)
@@ -52,6 +59,7 @@ class PastTableSpec:
     title: str
     icon: str
     columns: tuple[str, ...]
+    # 무엇을 넣는 표인지. 본문이 아니라 붙여넣기 팝업에 적는다 — 넣을 때 읽는 글이다.
     caption: str
 
 
@@ -91,7 +99,11 @@ PAST_TABLE_SPECS = (
 
 
 def render_past_data_management(database_path: str, profile: GlobalPastData) -> None:
-    """세 표의 양식 내려받기·붙여넣기와 한 번의 저장."""
+    """세 표의 양식 내려받기·붙여넣기(팝업)와 한 번의 저장(맨 위 작업 줄).
+
+    저장은 세 표가 한 버전을 공유해 **한 번**이다. 붙여넣기 결과는 대기로 쌓이고 맨 위
+    `과거 구간 저장` 이 한꺼번에 기록한다(2026-09-29 — 저장 버튼을 표들 아래에서 위로).
+    """
     stored = {
         "월별": profile.monthly,
         "계획": profile.plan_detail,
@@ -100,15 +112,14 @@ def render_past_data_management(database_path: str, profile: GlobalPastData) -> 
     draft = st.session_state.setdefault(PAST_DRAFT_KEY, {})
     with st.container(border=True):
         st.markdown("#### :material/history: 과거 구간")
-        st.caption(
-            "DB 원천은 적재 시점 이후의 달만 담습니다. 지난 구간은 여기에 넣으면 화면이 "
-            "이어 그립니다. **계산 결과가 있는 달은 계산이 이깁니다** — 적재 범위가 뒤로 "
-            "넘어가도 입력을 지울 필요가 없습니다."
-        )
         st.caption(profile_version_caption(profile, empty="아직 넣은 과거 구간이 없습니다"))
+        _render_save(database_path, draft)
     for spec in PAST_TABLE_SPECS:
         _render_table_editor(database_path, profile.version, spec, stored[spec.name], draft)
-    _render_save(database_path, draft)
+    opened = st.session_state.get(PAST_DIALOG_KEY)
+    for spec in PAST_TABLE_SPECS:
+        if spec.name == opened:
+            _paste_dialog(spec, draft)
 
 
 def merged_past_tables(
@@ -132,6 +143,14 @@ def merged_past_tables(
     return {name: draft.get(name, frame) for name, frame in current.items()}
 
 
+def _open_paste(name: str) -> None:
+    st.session_state[PAST_DIALOG_KEY] = name
+
+
+def _close_paste() -> None:
+    st.session_state.pop(PAST_DIALOG_KEY, None)
+
+
 def _render_table_editor(
     database_path: str,
     version: int,
@@ -143,12 +162,15 @@ def _render_table_editor(
     current = stored if pending is None else pending
     with st.container(border=True):
         st.markdown(f"#### {spec.icon} {spec.title}")
-        render_flash(f"past_data_read_flash_{spec.name}")
-        st.caption(spec.caption)
+        # 작업 줄: 붙여넣기(팝업)·양식 내려받기와 저장·대기 행 수. 여는 버튼은 콜백으로 연다 —
+        # 한 회차에 팝업이 둘 뜨지 않는다.
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.caption(
-                f"저장 {len(stored):,}행"
-                + ("" if pending is None else f" · 대기 {len(pending):,}행")
+            st.button(
+                "Excel 붙여넣기",
+                icon=":material/content_paste:",
+                key=f"{PAST_CLIPBOARD_KEY}_{spec.name}_open",
+                on_click=_open_paste,
+                args=(spec.name,),
             )
             render_csv_download(
                 # 탭이 닫혀 있어도 그리므로 인코딩을 HOME 의 매 실행에 얹지 않는다.
@@ -163,72 +185,89 @@ def _render_table_editor(
                 key=f"{HOME_PAST_DOWNLOAD_KEY}_{spec.name}",
                 label="양식 CSV",
             )
+            st.caption(
+                f"저장 {len(stored):,}행"
+                + ("" if pending is None else f" · 대기 {len(pending):,}행")
+            )
+        render_flash(f"past_data_read_flash_{spec.name}")
+        if not current.empty:
+            with st.expander(f"현재 {len(current):,}행 확인", icon=":material/preview:"):
+                st.dataframe(current, hide_index=True, width="stretch", height=240)
+
+
+def _paste_dialog(spec: PastTableSpec, draft: dict[str, pd.DataFrame]) -> None:
+    """표 하나를 붙여넣어 **대기**로 읽는다. 기록은 맨 위 `과거 구간 저장` 이 한다."""
+
+    @st.dialog(f"Excel 붙여넣기 · {spec.title}", width="large", on_dismiss=_close_paste)
+    def _body() -> None:
+        st.caption(spec.caption)
         with st.form(f"{HOME_PAST_FORM_KEY}_{spec.name}", border=False):
             clipboard = st.text_area(
                 f"{spec.title} 붙여넣기",
                 key=f"{PAST_CLIPBOARD_KEY}_{spec.name}",
-                height=150,
+                height=180,
                 placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
             )
             submitted = st.form_submit_button(
                 "붙여넣기 읽기",
                 icon=":material/content_paste:",
-                width="stretch",
+                type="primary",
             )
-        if submitted:
-            try:
-                draft[spec.name] = past_table_from_clipboard(clipboard, spec.columns)
-            except BOOTSTRAP_ERRORS as exc:
-                st.error(bootstrap_error_message(exc))
-            else:
-                queue_flash(
-                    f"past_data_read_flash_{spec.name}",
-                    f"{len(draft[spec.name]):,}행을 읽었습니다. 아래에서 저장하세요.",
-                )
-                st.rerun()
-        if not current.empty:
-            with st.expander(f"현재 {len(current):,}행 확인", icon=":material/preview:"):
-                st.dataframe(current, hide_index=True, width="stretch", height=240)
+        if not submitted:
+            return
+        try:
+            draft[spec.name] = past_table_from_clipboard(clipboard, spec.columns)
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(bootstrap_error_message(exc))
+            return
+        queue_flash(
+            f"past_data_read_flash_{spec.name}",
+            f"{len(draft[spec.name]):,}행을 읽었습니다. 맨 위 「과거 구간 저장」을 누르세요.",
+        )
+        _close_paste()
+        st.rerun()
+
+    _body()
 
 
 def _render_save(
     database_path: str,
     draft: dict[str, pd.DataFrame],
 ) -> None:
-    with st.container(border=True):
-        st.markdown("#### :material/save: 과거 구간 저장")
-        render_flash("past_data_save_flash")
-        st.caption(
-            "세 표가 한 버전을 공유합니다. 붙여넣지 않은 표는 저장된 값 그대로 다시 "
-            "기록되며, 읽어 둔 표만 새 값으로 바뀝니다."
-        )
+    """맨 위 작업 줄 — 변경 메모와 `과거 구간 저장`. 읽어 둔 표가 없으면 저장이 잠긴다."""
+    pending_names = [spec.name for spec in PAST_TABLE_SPECS if spec.name in draft]
+    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
         note = st.text_input(
             "변경 메모",
             placeholder="예: 25년 실적 반영",
             key=PAST_NOTE_KEY,
-            # 이 값은 바로 아래 저장 버튼을 누를 때만 읽는다. Enter·포커스 이탈로 HOME 을
-            # 통째로 다시 그릴 이유가 없고, 버튼을 누른 실행에 값이 함께 올라온다.
+            # 이 값은 옆 저장 버튼을 누를 때만 읽는다. Enter·포커스 이탈로 HOME 을 통째로
+            # 다시 그릴 이유가 없고, 버튼을 누른 실행에 값이 함께 올라온다.
             on_change="ignore",
         )
-        pending_names = [spec.name for spec in PAST_TABLE_SPECS if spec.name in draft]
-        if st.button(
+        save = st.button(
             "과거 구간 저장",
             icon=":material/save:",
             type="primary",
-            width="stretch",
             disabled=not pending_names,
-        ):
-            merged = merged_past_tables(database_path, draft)
-            try:
-                get_scenario_repository(database_path).replace_global_past_data(
-                    merged, source=note.strip() or "웹 붙여넣기"
-                )
-            except BOOTSTRAP_ERRORS as exc:
-                st.error(bootstrap_error_message(exc))
-            else:
-                clear_global_past_data_cache()
-                st.session_state.pop(PAST_DRAFT_KEY, None)
-                queue_flash("past_data_save_flash", "과거 구간을 공용 설정으로 저장했습니다.")
-                st.rerun()
-        if not pending_names:
-            st.caption("읽어 둔 표가 없습니다. 위에서 붙여넣기를 먼저 읽으세요.")
+            help=(
+                None
+                if pending_names
+                else "읽어 둔 표가 없습니다. 아래 표의 「Excel 붙여넣기」로 먼저 읽으세요."
+            ),
+        )
+    render_flash("past_data_save_flash")
+    if not save:
+        return
+    merged = merged_past_tables(database_path, draft)
+    try:
+        get_scenario_repository(database_path).replace_global_past_data(
+            merged, source=note.strip() or "웹 붙여넣기"
+        )
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
+        return
+    clear_global_past_data_cache()
+    st.session_state.pop(PAST_DRAFT_KEY, None)
+    queue_flash("past_data_save_flash", "과거 구간을 공용 설정으로 저장했습니다.")
+    st.rerun()

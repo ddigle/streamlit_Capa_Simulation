@@ -21,6 +21,7 @@ from capa_simulation.components.home_preference import (
     COMPARISON_REVISION_KEY,
     COMPARISON_SCENARIO_KEY,
     render_home_preference,
+    render_home_view_card,
     render_lob_title_row,
     seed_comparison_selection,
 )
@@ -38,6 +39,7 @@ from capa_simulation.components.home_rendering import (
     take_home_figures,
 )
 from capa_simulation.components.loading_progress import LoadingProgress
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header_with_status
 from capa_simulation.components.past_data_management import render_past_data_management
 from capa_simulation.components.plan_comparison_dumbbell import (
@@ -45,7 +47,7 @@ from capa_simulation.components.plan_comparison_dumbbell import (
 )
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.process_picker import render_process_picker
-from capa_simulation.components.tab_state import stateful_tabs
+from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.home_state import (
     ADVANCE_TOGGLE_KEY,
     COMPARISON_TOGGLE_KEY,
@@ -172,13 +174,15 @@ def _owned_comparison_revision(
 # 밀려 보던 자리가 흔들린다. 줄 높이는 제목이 잡으므로 막대가 사라져도 아래가 움직이지 않고,
 # 어느 탭을 보고 있든 같은 자리에서 읽힌다.
 loading = LoadingProgress(render_page_header_with_status("Capa LOB Summary"), HOME_LOADING_STAGES)
+render_page_guide("home", title="HOME")
 # 성능 진단은 **위젯이 아니라 세션 스위치**다. 사이드바에 토글을 두면 모든 사용자가 늘
 # 보는 자리를 개발용 계측 하나가 차지한다. 단계별 소요 시간은 `scripts/benchmark_home.py`
 # 로 재는 것이 정본이고, 화면에서 봐야 할 때만 이 키를 세션에 직접 넣는다.
 show_home_performance = bool(st.session_state.get(HOME_PERFORMANCE_KEY, False))
 home_trace = PerformanceTrace()
-# 두 토글의 위젯은 아래 탭 안에서 그리지만 값은 계산보다 먼저 필요하다. 위젯이 `key` 로
-# 쓰는 자리를 그대로 읽는다 — 사용자가 토글을 누르면 다음 실행의 이 줄에 새 값이 들어온다.
+# 토글의 위젯은 아래(탭을 만든 뒤) 사이드바 `LOB 표시 조건` 카드에서 그리지만 값은 계산보다
+# 먼저 필요하다. 위젯이 `key` 로 쓰는 자리를 그대로 읽는다 — 사용자가 토글을 누르면 다음 실행의
+# 이 줄에 새 값이 들어온다. 카드가 서지 않는 회차(다른 탭)에도 값은 `persist_state` 가 지킨다.
 include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[EDP_TOGGLE_KEY]))
 # 기본은 **켬**이다. 끄면 과거 구간을 화면에서 빼고 활성 시나리오의 계산 결과만 남긴다.
 # 토글도 `home_state` 의 같은 기본값을 읽어 첫 계산과 첫 위젯 표시를 맞춘다.
@@ -495,12 +499,19 @@ def show_process_filter_dialog(
     selected_set = {str(process) for process in draft_selection if process in options}
 
     st.markdown(f"**선택 {len(selected_set)} / {len(options)}** · 체크된 버튼이 ON입니다.")
+    # 기간·기준은 상태다. 판정 규칙(유효한 월 중 최저 확보율)과 hover 는 Guide 가 말한다.
     st.caption(
-        f"{month_label(start_month)}–{month_label(end_month)} · 확보 기준 "
-        f"{threshold_percent:g}% · 유효한 월 중 최저 확보율로 구분합니다. "
-        "공정 위에 마우스를 올리면 전체 이름과 확보율을 볼 수 있습니다."
+        f"{month_label(start_month)}–{month_label(end_month)} · 확보 기준 {threshold_percent:g}%"
     )
+    # 적용은 타일 목록 **위** 작업 줄이다 — 공정이 많으면 목록 아래 버튼이 팝업 밖으로 밀린다.
     with st.container(horizontal=True, gap="small"):
+        apply_selection = st.button(
+            "선택 공정 적용",
+            key="dashboard_bottleneck_process_apply",
+            type="primary",
+            icon=":material/check:",
+            help="눌러야 대시보드에 반영됩니다. 닫으면 고른 초안은 버립니다.",
+        )
         st.button(
             "전체 ON",
             icon=":material/select_all:",
@@ -532,14 +543,7 @@ def show_process_filter_dialog(
         format_func=process_labels.format_func(),
         on_toggle=toggle_process_dialog_selection,
     )
-    st.caption("선택 공정 적용을 눌러야 대시보드에 반영됩니다. 닫으면 초안은 버립니다.")
-    if st.button(
-        "선택 공정 적용",
-        key="dashboard_bottleneck_process_apply",
-        type="primary",
-        icon=":material/check:",
-        width="stretch",
-    ):
+    if apply_selection:
         st.session_state[PROCESS_SELECTION_KEY] = [
             process for process in options if process in selected_set
         ]
@@ -808,6 +812,9 @@ main_tab, preference_tab, past_tab = stateful_tabs(
     ],
     key="home_active_tab",
 )
+# 보는 조건은 사이드바 조건 카드다(2026-09-29 사용자 결정). 그 조건이 걸리는 Main 탭에서만 선다.
+if not tab_is_hidden(main_tab):
+    render_home_view_card(comparison_ready=bool(comparison_scenario_id and comparison_revision_id))
 with main_tab:
     # 공지는 대시보드 상자 **밖**, 화면 맨 위다. 상자 안에 두면 스크롤되는 월 영역과 폭을
     # 나눠 가져 문구가 월 칸 너비에 갇힌다.
@@ -834,7 +841,6 @@ with main_tab:
         # 두면 월 영역 위에 얹힌 가로 스크롤바와 겹친다.
         render_lob_title_row(
             unapplied_months=unapplied_advance_months,
-            comparison_ready=bool(comparison_scenario_id and comparison_revision_id),
             secure_threshold=secure_threshold,
             warning_threshold=warning_threshold,
             has_past=bool(past_month_labels),
@@ -842,7 +848,6 @@ with main_tab:
         render_home_figures(
             cached_figures,
             month_labels,
-            applied_plan_detail_customer=plan_detail_customer,
             leading_past_month_count=leading_past_months,
             owner_tab=main_tab,
         )

@@ -27,7 +27,6 @@ from capa_simulation.components.home_preference import (
     SECTION_TITLE_FONT_PX,
     STATUS_LEGEND_CLASS,
     STATUS_LEGEND_ROW_KEY,
-    render_plan_detail_title_row,
     render_section_title_row,
     section_accent_bar_css,
 )
@@ -238,7 +237,7 @@ def dashboard_title_row_style() -> str:
     .st-key-plan_detail_title_row,
     .st-key-key_process_title_row,
     .st-key-bottleneck_title_row {{ align-items: center; }}
-    /* 범례는 제목·토글과 같은 줄의 오른쪽 끝이다. 아래 월 영역 위에 얹힌 가로
+    /* 범례는 제목과 같은 줄의 오른쪽 끝이다. 아래 월 영역 위에 얹힌 가로
        스크롤바와 겹치지 않게 별도 블록으로 두지 않는다. */
     /* 범례는 제목 줄의 오른쪽 끝이다. `margin-left:auto` 를 받아야 하는 것은 **flex
        항목**이라 `.st-key-*` 한 겹 바깥의 래퍼를 겨냥한다 — 안쪽에 주면 형제가 자기
@@ -394,7 +393,6 @@ def render_home_figures(
     figures: HomeFigureSet,
     month_labels: list[str],
     *,
-    applied_plan_detail_customer: bool = False,
     leading_past_month_count: int = 0,
     owner_tab: OpenTab | None = None,
 ) -> None:
@@ -404,9 +402,8 @@ def render_home_figures(
     놓지 못하고, 상세 세 Figure 는 `staticPlot` 이라 탭을 열어도 다시 그리지 않는다.
     어긋난 머리글이 그대로 남는다.
 
-    여기서 건너뛰는 위젯은 「상세」 토글 하나뿐이고 `persist_state="session"` 이라 값이
-    살아남는다. 선행·GAP 토글은 이 함수 밖이라 숨어도 계속 그려진다 — 테두리 상자는
-    `home_dashboard_panel()` 이 한 단계 위에서 열어 그 제목 줄까지 함께 감싼다.
+    이 안에는 위젯이 없다 — 보는 조건은 사이드바 `LOB 표시 조건` 카드다. 테두리 상자는
+    `home_dashboard_panel()` 이 한 단계 위에서 열어 제목 줄까지 함께 감싼다.
     """
     if tab_is_hidden(owner_tab):
         return
@@ -439,9 +436,9 @@ def render_home_figures(
                 key="production_lob_labels",
                 config=static_chart_config(),
             )
-            # `계획 세부수량` 제목과 「상세」 토글. 제목이 Plotly 주석으로 쓰던 자리를
-            # 그대로 받는다. 월 칸에도 같은 높이의 빈 줄을 끼워야 행이 맞는다.
-            render_plan_detail_title_row(applied_customer=applied_plan_detail_customer)
+            # `계획 세부수량` 제목. 제목이 Plotly 주석으로 쓰던 자리를 그대로 받는다. 월 칸에도
+            # 같은 높이의 빈 줄을 끼워야 행이 맞는다. 「상세」 토글은 사이드바 조건 카드다.
+            render_section_title_row("계획 세부수량", key="plan_detail_title_row")
             st.plotly_chart(
                 figures.plan_detail_labels,
                 width="stretch",

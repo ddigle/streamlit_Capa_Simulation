@@ -186,9 +186,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 전체 계산 결과를 조합하는 HOME 대시보드다.
   - Plotly Figure 묶음을 사용자 세션에 캐시하고 렌더링은 fragment로 분리한다.
   - 본문은 `Main`·`Preference`·`Past Data` 세 탭이다. `Main` 이 계획·LOB·주요공정·B/N
-    Figure 여덟 개를 그리고, `Preference`는 표시 기준을 관리하며 `Past Data`는 과거 구간
-    세 표를 받는다(`components/past_data_management.py`). 요약만 그리는 경로는 없다.
-    숨은 Main에서는 Figure 렌더링을 건너뛰지만 입력 위젯의 상태는 유지한다.
+    Figure 여덟 개를 그리고, `Preference`는 공용 프로필 편집기(비교 시나리오·선행·Summary·
+    Top5·주요공정·실행 Capa)를 두며 `Past Data`는 과거 구간 세 표를 받는다
+    (`components/past_data_management.py`). 요약만 그리는 경로는 없다.
+  - **보는 조건 토글 여섯(선행·실행·GAP·상세·EDP 포함·Past Data 포함)은 사이드바 조건 카드
+    `LOB 표시 조건`**(`home_preference.render_home_view_card`, Main 탭이 열렸을 때만)이다
+    (2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 에 흩어져 있었다).
+    설명(토글 툴팁·편집기 캡션·과거 구간 규칙)은 Guide(`guides/home.md`)다. B/N 공정 선택
+    팝업의 `선택 공정 적용` 은 타일 목록 위 작업 줄이다.
   - **토글 값은 계산보다 먼저 필요하고 위젯은 계산 뒤에 그려진다.** 페이지와 위젯이
     `home_state.py`의 같은 키·기본값을 읽는다. 키 문자열이나 기본값을 각자 적지 않는다.
   - `EDP 포함` 을 끄면 **LOB 로 표현되는 값만** EDP 를 뺀다. `확보율 × 부하량` 꼴로 나오는
@@ -196,13 +201,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세부수량 행이 대상이다. 소요대수·확보율·B/N 공정 순위는 **바뀌지 않는다** — 설비가 받는
     부하는 EDP 를 포함한 전체 계획이다. 그래서 설비 수요를 다시 돌리지 않고
     `get_home_lob_without_edp` 로 부하량 쪽만 다시 만든다.
-  - `계획 세부수량` 제목과 「상세」 토글도 Plotly 주석이 아니라 Streamlit 이 그린다. 그
-    줄은 두 칸이 나란한 캔버스 **안**이라 월 칸에도 같은 높이의 빈 줄을 끼워야 행이 맞는다
+  - `계획 세부수량` 제목도 Plotly 주석이 아니라 Streamlit 이 그린다(`render_section_title_row`).
+    그 줄은 두 칸이 나란한 캔버스 **안**이라 월 칸에도 같은 높이의 빈 줄을 끼워야 행이 맞는다
     (`plan_detail_title_row`·`plan_detail_title_spacer`, 둘 다 CSS 로 높이를 못박는다).
-    빈 컨테이너는 Streamlit 이 아예 그리지 않으므로 빈 줄에는 높이를 준다.
-  - 그 줄은 fragment 안이라 토글을 눌러도 fragment 만 다시 돈다. 그러면 Figure 가 옛것
-    그대로이므로 지금 그림이 쓴 값과 달라지면 `st.rerun(scope="app")` 으로 앱 전체를
-    다시 돌린다.
+    빈 컨테이너는 Streamlit 이 아예 그리지 않으므로 빈 줄에는 높이를 준다. 「상세」 토글은
+    사이드바 카드라 fragment 밖이다 — 누르면 앱 전체가 다시 돌아 Figure 도 새로 만든다.
   - 「상세」 를 켜면 제품·Stack 아래에 `Customer` 를 분류로 더한다. `Customer`
     는 `RQ_PKG_PLAN` 의 1급 컬럼이라 조인이 아니라 묶는 키 하나가 늘어나는 것뿐이다.
     머리글과 칸 폭은 `DETAIL_DIMENSION_HEADERS`·`DETAIL_DIMENSION_WIDTHS` 에서 끌어오므로
@@ -1420,6 +1423,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/past_data_management.py`
   - `Past Data` 탭. 세 표가 **한 버전을 공유**하므로 붙여넣기는 세션에 모아 두었다가 한
     번에 저장한다 — 부분 저장을 허용하면 어느 표가 어느 버전인지 알 수 없다.
+  - 붙여넣기는 표마다 작업 줄의 `Excel 붙여넣기` **팝업**(`PAST_DIALOG_KEY` =
+    `home_open_dialog`)이고, 한 번의 `과거 구간 저장`(메모와 함께)은 표들 **위** 첫 상자다
+    (2026-09-29). 표 설명은 팝업 안과 Guide 에 있다.
 - `src/capa_simulation/services/home_decision.py`
   - HOME 결론 요약이 읽는 집계. 필터가 걸린 뒤의 공정·월 확보율에서 최저값과 구간별 개수를
     낸다. **공정 필터(`included_processes`)를 그대로 받는다** — 거르기 전 값을 말하면 화면에
@@ -1454,8 +1460,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시작 위치**가 함께 보는 근거다. 뒤의 것은 **연속된 앞머리만** 센다 — 중간에 낀 과거
     칸까지 세면 건너뛴 뒤의 열 순서가 어긋난다.
 - `src/capa_simulation/components/home_preference.py`
-  - HOME `Preference` 탭과 `Capa LOB 현황` 제목 줄. 제목은 Plotly 주석이 아니라 여기서
-    그린다 — 주석 안에는 위젯을 놓을 수 없어 「선행」 토글을 제목 옆에 둘 수 없었다.
+  - HOME 사이드바 `LOB 표시 조건` 카드(`render_home_view_card`), `Capa LOB 현황` 제목 줄
+    (제목·판정 색 범례), `Preference` 탭. 토글은 모두 이 모듈에 둔다 —
+    `tests/test_scenario_activation.py` 가 여기서 토글 키를 AST 로 모은다.
+  - 편집기의 저장 버튼(과 변경 메모)은 편집 칸 **위**이고, 저장 결과 알림은 그 바로 아래다.
   - 탭 안의 편집기는 여섯이다 — 비교 시나리오 선택, 선행 투입 물량, `Summary 공지`,
     Top5 대역, 주요공정, 실행 Capa. 모두 공용 프로필에 저장하고, 저장 상태를 적는 버전
     캡션은 `profile_caption.py` 를 쓴다.
@@ -1464,7 +1472,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `Summary 공지` 는 **빈 문구도 저장한다.** 공지를 내리는 것도 결정이고, 그때도 version
     이 올라야 다른 세션의 캐시가 풀린다. 저장 화면은 「미저장」과 「내림」을 구분해
     보여 준다 — 화면에서는 둘 다 아무것도 뜨지 않지만 뜻이 다르다.
-  - `표시 기준` 에는 토글 둘이 나란히 있다. `EDP 포함` 은 기본 **끔**, `Past Data 포함` 은
+  - 카드의 `EDP 포함` 은 기본 **끔**, `Past Data 포함` 은
     기본 **켬**이다. 끄면 공용 과거 프로필의 세 표를 **행만 비운 사본**으로 바꿔 아래
     병합이 전부 무동작이 되게 한다 — 과거를 빼는 분기를 화면 코드 곳곳에 심지 않는다.
     컬럼과 dtype 은 그대로 둔다(빈 프레임을 새로 만들면 병합·와이드 변환이 그 자리에서

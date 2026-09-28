@@ -1,16 +1,15 @@
-# Purpose: HOME Preference 탭의 편집기 여섯과 LOB 제목 줄을 그려 공용 프로필에 저장한다.
+# Purpose: HOME 의 LOB 표시 조건 카드·제목 줄과 Preference 탭 편집기를 그려 공용 프로필에 저장한다.
 
-"""HOME `Preference` 탭과 `Capa LOB 현황` 제목 줄.
+"""HOME 사이드바 `LOB 표시 조건` 카드, `Capa LOB 현황` 제목 줄, `Preference` 탭.
 
-탭에는 표시 기준 토글과 비교 시나리오·선행 투입 물량·`Summary 공지`·Top5 대역·주요공정·
-실행 Capa 편집기가 있고, 저장은 모두 공용 프로필 교체다.
+**화면을 보는 조건(선행·실행·GAP·상세·EDP·Past Data)은 사이드바 조건 카드**다(2026-09-29
+사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 상자에 흩어져 있었다). 탭에는 비교
+시나리오·선행 투입 물량·`Summary 공지`·Top5 대역·주요공정·실행 Capa 편집기가 있고, 저장은 모두
+공용 프로필 교체다. 저장 버튼은 편집 칸 **위**다. 설명은 Guide(`guides/home.md`)다.
 
-두 컨트롤의 **값은 계산보다 먼저** 필요하고 **위젯은 계산 뒤에** 그려진다. 그래서
-`app_pages/home.py` 는 위젯이 쓰는 세션 키를 직접 읽고, 여기서는 같은 키로 위젯을 만든다.
-키와 기본값은 UI 의존성이 없는 `home_state` 에서 가져온다.
-
-제목 `Capa LOB 현황` 은 Plotly 주석이 아니라 여기서 그린다. 주석 안에는 위젯을 놓을 수
-없어 「선행」 토글을 제목 옆에 둘 수 없었다.
+토글 **값은 계산보다 먼저** 필요하고 **위젯은 계산 뒤에** 그려진다. 그래서 `app_pages/home.py`
+는 위젯이 쓰는 세션 키를 직접 읽고, 여기서는 같은 키로 위젯을 만든다. 키와 기본값은 UI
+의존성이 없는 `home_state` 에서 가져온다.
 """
 
 from __future__ import annotations
@@ -77,6 +76,7 @@ from capa_simulation.services.execution_capacity import (
 )
 from capa_simulation.services.key_process import KEY_PROCESS_LIMIT
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.sidebar_status import condition_card
 
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
 EXECUTION_NOTE_KEY = "home_preference_execution_note"
@@ -98,48 +98,10 @@ STATUS_LEGEND_ROW_KEY = "home_status_legend"
 STATUS_LEGEND_CLASS = "capa-status-legend"
 
 
-def render_plan_detail_title_row(*, applied_customer: bool) -> None:
-    """`계획 세부수량` 제목과 그 옆의 「상세」 토글.
-
-    이 줄은 두 칸이 나란한 캔버스 **안**에서 그려진다. 제목이 Plotly 주석으로 있던 44px 을
-    그대로 받아 쓰되 월 칸에도 같은 높이의 빈 줄을 끼워야 행이 맞는다.
-
-    캔버스는 fragment 안이라 여기서 토글을 누르면 fragment 만 다시 돈다. 그러면 Figure 는
-    옛것 그대로다. `applied_customer` 는 지금 그림이 만들어질 때 쓴 값이고, 그것과 달라지면
-    앱 전체를 다시 돌린다.
-    """
-    with st.container(
-        key="plan_detail_title_row",
-        horizontal=True,
-        vertical_alignment="center",
-        gap="medium",
-    ):
-        st.markdown(section_title_markup("계획 세부수량"), unsafe_allow_html=True)
-        st.toggle(
-            "상세",
-            value=HOME_TOGGLE_DEFAULTS[PLAN_DETAIL_CUSTOMER_KEY],
-            key=PLAN_DETAIL_CUSTOMER_KEY,
-            persist_state="session",
-            help=(
-                "제품·Stack 아래에 거래선을 분류로 더합니다. 거래선 수만큼 행이 늘어 표가 "
-                "길어집니다. 거래선 정렬은 Admin Area 의 표시순서 관리에서 정합니다."
-            ),
-        )
-    if (
-        bool(
-            st.session_state.get(
-                PLAN_DETAIL_CUSTOMER_KEY, HOME_TOGGLE_DEFAULTS[PLAN_DETAIL_CUSTOMER_KEY]
-            )
-        )
-        != applied_customer
-    ):
-        st.rerun(scope="app")
-
-
 def render_section_title_row(text: str, *, key: str) -> None:
-    """위젯 없는 구획 제목 줄. 토글이 붙는 줄들과 같은 높이·같은 모양이다.
+    """구획 제목 줄. `Capa LOB 현황` 줄과 같은 높이·같은 모양이다.
 
-    세 구획의 제목이 같은 컴포넌트로 그려져야 제목과 표 사이 간격이 하나로 맞는다.
+    네 구획의 제목이 같은 컴포넌트로 그려져야 제목과 표 사이 간격이 하나로 맞는다.
     하나만 Plotly 주석으로 남겨 두면 그 구획만 간격이 다르다.
     """
     with st.container(key=key, horizontal=True, vertical_alignment="center", gap="medium"):
@@ -218,21 +180,66 @@ def status_legend_markup(
     return f'<div class="{STATUS_LEGEND_CLASS}">{swatches}</div>'
 
 
+def render_home_view_card(*, comparison_ready: bool) -> None:
+    """사이드바 조건 카드 `LOB 표시 조건`. Main 탭이 열렸을 때만 선다(2026-09-29 사용자 결정).
+
+    토글은 값을 바꾸기만 하고 아무것도 계산하지 않는다. 다음 실행에서 `home.py` 가 이 키를
+    읽어 계산에 반영한다. 안 그려진 회차(다른 탭)에도 값은 `persist_state` 가 지킨다.
+
+    비교 시나리오를 고르지 않았으면 「GAP」 을 누를 수 없다. 켤 수는 있는데 아무것도 바뀌지
+    않으면 고장으로 읽힌다 — 그래서 막힌 까닭만은 툴팁으로 남긴다. 각 토글의 뜻은 Guide 다.
+    """
+    with condition_card("LOB 표시 조건", name="home"):
+        st.toggle(
+            "선행",
+            value=HOME_TOGGLE_DEFAULTS[ADVANCE_TOGGLE_KEY],
+            key=ADVANCE_TOGGLE_KEY,
+            persist_state="session",
+        )
+        st.toggle(
+            "실행",
+            value=HOME_TOGGLE_DEFAULTS[EXECUTION_TOGGLE_KEY],
+            key=EXECUTION_TOGGLE_KEY,
+            persist_state="session",
+        )
+        st.toggle(
+            "GAP",
+            value=HOME_TOGGLE_DEFAULTS[COMPARISON_TOGGLE_KEY],
+            key=COMPARISON_TOGGLE_KEY,
+            persist_state="session",
+            disabled=not comparison_ready,
+            help=None if comparison_ready else "Preference 탭에서 비교 시나리오를 먼저 고르세요.",
+        )
+        st.toggle(
+            "상세",
+            value=HOME_TOGGLE_DEFAULTS[PLAN_DETAIL_CUSTOMER_KEY],
+            key=PLAN_DETAIL_CUSTOMER_KEY,
+            persist_state="session",
+        )
+        # 기본은 **끔**이다. LOB 로 읽는 수치는 EDP 를 뺀 값이 기준이다.
+        st.toggle(
+            "EDP 포함",
+            value=HOME_TOGGLE_DEFAULTS[EDP_TOGGLE_KEY],
+            key=EDP_TOGGLE_KEY,
+            persist_state="session",
+        )
+        # 기본은 **켬**이다. 과거 이력까지 이어 보는 것이 이 화면의 기본 쓰임이다.
+        st.toggle(
+            "Past Data 포함",
+            value=HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY],
+            key=PAST_DATA_TOGGLE_KEY,
+            persist_state="session",
+        )
+
+
 def render_lob_title_row(
     *,
     unapplied_months: Sequence[int],
-    comparison_ready: bool,
     secure_threshold: float,
     warning_threshold: float,
     has_past: bool,
 ) -> None:
-    """`Capa LOB 현황` 제목과 그 옆의 「선행」·「GAP」 토글, 오른쪽 끝의 판정 색 범례.
-
-    토글은 값을 바꾸기만 하고 아무것도 계산하지 않는다. 다음 실행에서 `home.py` 가 이
-    키를 읽어 계산에 반영한다.
-
-    비교 시나리오를 고르지 않았으면 「GAP」 을 누를 수 없다. 켤 수는 있는데 아무것도
-    바뀌지 않으면 고장으로 읽힌다.
+    """`Capa LOB 현황` 제목과 오른쪽 끝의 판정 색 범례.
 
     `has_past` 를 받는 것은 과거 구간 칩을 그 열이 실제로 있을 때만 달기 위해서다.
 
@@ -248,41 +255,6 @@ def render_lob_title_row(
         gap="medium",
     ):
         st.markdown(section_title_markup("Capa LOB 현황"), unsafe_allow_html=True)
-        st.toggle(
-            "선행",
-            value=HOME_TOGGLE_DEFAULTS[ADVANCE_TOGGLE_KEY],
-            key=ADVANCE_TOGGLE_KEY,
-            persist_state="session",
-            help=(
-                "Preference 탭에 넣은 선행 투입 물량을 계획과 확보율에 반영합니다. "
-                "설비가 늘어난 것이 아니므로 Capa 는 그대로이고 계획과 확보율만 "
-                "반비례로 움직입니다."
-            ),
-        )
-        st.toggle(
-            "실행",
-            value=HOME_TOGGLE_DEFAULTS[EXECUTION_TOGGLE_KEY],
-            key=EXECUTION_TOGGLE_KEY,
-            persist_state="session",
-            help=(
-                "Preference 탭에 넣은 실행 Capa 반영을 확보율에 얹습니다. 기준정보 밖에서 "
-                "생긴 변수(비가동·UPEH·재공)를 퍼센트포인트로 차감·가산하며, B/N 순위도 "
-                "그 값으로 다시 매깁니다. 가용대수·소요대수는 기준정보 값 그대로입니다."
-            ),
-        )
-        st.toggle(
-            "GAP",
-            value=HOME_TOGGLE_DEFAULTS[COMPARISON_TOGGLE_KEY],
-            key=COMPARISON_TOGGLE_KEY,
-            persist_state="session",
-            disabled=not comparison_ready,
-            help=(
-                "Preference 탭에서 고른 비교 시나리오 대비 증감을 Density·Wafer 계획·"
-                "계획 세부수량 값 **아래**에 적습니다. 선행 증감은 값 위에 적습니다."
-                if comparison_ready
-                else "Preference 탭에서 비교 시나리오를 먼저 고르세요."
-            ),
-        )
         # 판정 색의 뜻과 경계 숫자. Top5 막대에 그은 기준선과 같은 값을 읽는다.
         # 아래 CSS 의 `margin-left:auto` 가 이 칸만 오른쪽 끝으로 민다.
         with st.container(key=STATUS_LEGEND_ROW_KEY):
@@ -319,38 +291,10 @@ def render_home_preference(
     database_path: str,
     active_scenario_id: str | None,
 ) -> None:
-    """표시 기준 토글과 비교 시나리오 선택, Summary 공지·선행 물량·실행 Capa 입력 시트."""
-    with st.container(border=True):
-        st.markdown("#### :material/tune: 표시 기준")
-        edp_column, past_column = st.columns(2)
-        with edp_column:
-            # 기본은 **끔**이다. LOB 로 읽는 수치는 EDP 를 뺀 값이 기준이고, 넣은 화면을
-            # 보려면 그때 켜면 된다. 계산 진입점도 `home_state` 의 같은 기본값을 읽는다.
-            st.toggle(
-                "EDP 포함",
-                value=HOME_TOGGLE_DEFAULTS[EDP_TOGGLE_KEY],
-                key=EDP_TOGGLE_KEY,
-                persist_state="session",
-                help=(
-                    "끄면 Density·Wafer 계획·Wafer Capa 와 계획 세부수량에서 EDP-TSV 제품을 "
-                    "뺍니다. 설비가 받는 부하는 그대로라 확보율과 B/N 공정 순위는 바뀌지 "
-                    "않습니다."
-                ),
-            )
-        with past_column:
-            # 기본은 **켬**이다. 과거 이력까지 이어 보는 것이 이 화면의 기본 쓰임이고, DB
-            # 시나리오만 보고 싶을 때 끈다. 계산 진입점도 같은 기본값을 읽는다.
-            st.toggle(
-                "Past Data 포함",
-                value=HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY],
-                key=PAST_DATA_TOGGLE_KEY,
-                persist_state="session",
-                help=(
-                    "끄면 `Past Data` 탭에 넣어 둔 과거 구간을 화면에서 뺍니다. 그러면 "
-                    "HOME 이 활성 시나리오의 계산 결과만으로 구성됩니다. 과거 값 자체는 "
-                    "지워지지 않고 `Past Data` 탭에 그대로 남습니다."
-                ),
-            )
+    """비교 시나리오 선택과 Summary 공지·선행 물량·Top5 대역·주요공정·실행 Capa 입력 시트.
+
+    보는 조건(EDP·Past Data 포함 등)은 사이드바 `LOB 표시 조건` 카드다(`render_home_view_card`).
+    """
     _render_comparison_picker(database_path, active_scenario_id)
     _render_advance_editor(
         months=months,
@@ -417,11 +361,6 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
     """
     with st.container(border=True):
         st.markdown("#### :material/compare_arrows: 비교 시나리오")
-        st.caption(
-            "고른 리비전에서 **계획만** 가져와 현재 기준정보로 환산해 비교합니다. 수율·Chip "
-            "기준정보가 그 사이 바뀌었어도 그것은 계획 변동이 아니므로 환산에 쓰는 표는 "
-            "현재 것을 씁니다."
-        )
         repository = get_scenario_repository(database_path)
         seed_comparison_selection(database_path)
         try:
@@ -584,12 +523,6 @@ def _render_advance_editor(
 ) -> None:
     with st.container(border=True):
         st.markdown("#### :material/fast_forward: 선행 투입 물량")
-        render_flash("home_advance_flash")
-        st.caption(
-            "Capa 여유만큼 앞당겨 투입한 달에는 **+**, 그만큼 줄어드는 이후 달에는 **−** 를 "
-            "억Gb 로 넣습니다. 시나리오와 분리된 공용 설정이라 모든 시나리오에 같이 "
-            "적용되며, 「선행」 토글을 켠 화면에만 반영됩니다."
-        )
         st.caption(profile_version_caption(advance_profile, empty="아직 넣은 선행 물량이 없습니다"))
         if not months:
             st.info("조회기간에 계획이 있는 달이 없어 입력할 칸이 없습니다.")
@@ -600,6 +533,19 @@ def _render_advance_editor(
             columns=[DIMENSION_COLUMN, *month_labels],
         )
         with st.form("home_advance_load_form"):
+            # 작업 줄(메모·저장)은 표 **위**다 — 표를 고친 뒤 버튼을 찾지 않게 한다.
+            with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+                note = st.text_input(
+                    "변경 메모",
+                    placeholder="예: 26.07 선행 투입분 반영",
+                    key=ADVANCE_NOTE_KEY,
+                )
+                submitted = st.form_submit_button(
+                    "선행 물량 저장",
+                    icon=":material/save:",
+                    type="primary",
+                )
+            render_flash("home_advance_flash")
             edited = st.data_editor(
                 table,
                 key=ADVANCE_EDITOR_KEY,
@@ -614,17 +560,6 @@ def _render_advance_editor(
                         for label in month_labels
                     },
                 },
-            )
-            note = st.text_input(
-                "변경 메모",
-                placeholder="예: 26.07 선행 투입분 반영",
-                key=ADVANCE_NOTE_KEY,
-            )
-            submitted = st.form_submit_button(
-                "선행 물량 저장",
-                icon=":material/save:",
-                type="primary",
-                width="stretch",
             )
         if not submitted:
             _render_out_of_range_notice(months, advance_profile)
@@ -714,12 +649,6 @@ def _render_summary_note_editor(
     """
     with st.container(border=True):
         st.markdown("#### :material/campaign: Summary 공지")
-        render_flash("home_summary_note_flash")
-        st.caption(
-            "HOME `Main` 탭 맨 위에 접힌 채로 뜹니다. 여러 사람이 같은 문구를 보는 공용 "
-            "프로필이라 시나리오를 바꿔도 그대로입니다. **비우고 저장하면 공지가 "
-            "내려갑니다.** 줄바꿈은 그대로 살아납니다."
-        )
         st.caption(
             profile_version_caption(
                 summary_profile,
@@ -728,6 +657,12 @@ def _render_summary_note_editor(
             )
         )
         with st.form("home_summary_note_form"):
+            submitted = st.form_submit_button(
+                "Summary 저장",
+                icon=":material/save:",
+                type="primary",
+            )
+            render_flash("home_summary_note_flash")
             # **`key` 를 두지 않는다.** 키가 붙은 위젯은 한 번 그려진 뒤 `value` 를 무시하고
             # 세션 값을 쓴다. Preference 는 숨은 탭에서도 위젯을 그리므로 HOME 첫 진입의
             # 공지(대개 빈 문구)가 세션에 박히고, 그 뒤 다른 사람이 올린 공지를 이 화면은
@@ -737,12 +672,6 @@ def _render_summary_note_editor(
                 value=summary_profile.note,
                 height=180,
                 placeholder="예: 9월 물량 확정 전 잠정 계획입니다. B/N 은 SAM 기준.",
-            )
-            submitted = st.form_submit_button(
-                "Summary 저장",
-                icon=":material/save:",
-                type="primary",
-                width="stretch",
             )
         if not submitted:
             return
@@ -773,16 +702,6 @@ def _render_top5_band_editor(
     """B/N Top5 막대가 표현하는 확보율 구간."""
     with st.container(border=True):
         st.markdown("#### :material/straighten: B/N Top5 확보율 구간")
-        render_flash("home_top5_band_flash")
-        st.caption(
-            "Top5 막대의 높이는 `부하량 × 확보율` 이라 한 달 안에서 확보율에 비례합니다. "
-            "한 달의 확보율이 크면 그 달 막대가 다른 달을 눌러 버리므로, 막대 길이가 "
-            "표현할 구간을 여기서 정합니다. 구간 밖의 확보율은 **경계값 길이로 그립니다** "
-            "— 하한 아래는 하한 길이, 상한 위는 상한 길이라 상한에 걸린 달끼리는 막대가 "
-            "같은 높이입니다. "
-            "**hover 에 뜨는 Capa 숫자는 자르지 않은 실제 값입니다.** 상세 B/N 가로막대의 "
-            "구간(80~150%)은 쓰임이 달라 여기서 바뀌지 않습니다."
-        )
         st.caption(
             profile_version_caption(
                 top5_band_profile,
@@ -793,6 +712,12 @@ def _render_top5_band_editor(
             )
         )
         with st.form("home_top5_band_form"):
+            submitted = st.form_submit_button(
+                "확보율 구간 저장",
+                icon=":material/save:",
+                type="primary",
+            )
+            render_flash("home_top5_band_flash")
             # **`key` 를 두지 않는다.** 바로 위 Summary 공지와 같은 이유다 — 키가 붙은 위젯은
             # 한 번 그려진 뒤 `value` 를 무시하고 세션 값을 쓴다. Preference 는 숨은 탭에서도
             # 그려지므로 HOME 첫 진입의 구간이 세션에 박히고, 그 뒤 다른 사람이 바꾼 구간을
@@ -813,12 +738,6 @@ def _render_top5_band_editor(
                     step=10.0,
                     format="%.0f",
                 )
-            submitted = st.form_submit_button(
-                "확보율 구간 저장",
-                icon=":material/save:",
-                type="primary",
-                width="stretch",
-            )
         if not submitted:
             return
         try:
@@ -853,14 +772,6 @@ def _render_key_process_editor(
     """
     with st.container(border=True):
         st.markdown("#### :material/grid_view: 주요공정 히트맵")
-        render_flash("home_key_process_flash")
-        st.caption(
-            "HOME 대시보드의 `주요공정 확보율` 격자에 그릴 공정입니다. 시나리오와 분리된 "
-            "공용 설정이라 모든 시나리오에 같이 적용됩니다. **고른 차례가 곧 행 순서**이고, "
-            "확보율로 다시 정렬하지 않습니다 — 그래야 「이 공정이 언제부터 부족해지나」를 "
-            f"가로로 읽을 수 있습니다. 비우고 저장하면 그 구획은 안내 한 줄만 남습니다. "
-            f"최대 {KEY_PROCESS_LIMIT}개."
-        )
         st.caption(
             profile_version_caption(
                 key_process_profile,
@@ -870,6 +781,12 @@ def _render_key_process_editor(
         )
         known_options = set(process_options)
         with st.form("home_key_process_form"):
+            submitted = st.form_submit_button(
+                "주요공정 저장",
+                icon=":material/save:",
+                type="primary",
+            )
+            render_flash("home_key_process_flash")
             selected = st.multiselect(
                 "주요 공정",
                 options=list(process_options),
@@ -878,13 +795,8 @@ def _render_key_process_editor(
                 ],
                 format_func=process_labels.format_func(),
                 max_selections=KEY_PROCESS_LIMIT,
-                placeholder="공정을 고르세요",
-            )
-            submitted = st.form_submit_button(
-                "주요공정 저장",
-                icon=":material/save:",
-                type="primary",
-                width="stretch",
+                # 몇 개까지 되는지는 고르기 전에 알아야 해 자리 글자에 둔다.
+                placeholder=f"공정을 고르세요 (최대 {KEY_PROCESS_LIMIT}개)",
             )
         if not submitted:
             _render_key_process_notice(key_process_profile, known_options, process_labels)
@@ -938,13 +850,6 @@ def _render_execution_editor(
     """기준정보 밖에서 생긴 변수를 확보율에 퍼센트포인트로 얹는 입력 표."""
     with st.container(border=True):
         st.markdown("#### :material/bolt: 실행 Capa 반영")
-        render_flash("home_execution_flash")
-        st.caption(
-            "비가동대수 증가·UPEH 실적 부진·재공 부진처럼 기준정보 밖에서 생긴 변수를 "
-            "**퍼센트포인트**로 넣습니다. 확보율 105% 에 `-10` 을 넣으면 95% 가 됩니다"
-            "(비율 곱셈이 아닙니다). 시나리오와 분리된 공용 설정이고, 「실행」 토글을 켠 "
-            "화면에만 반영됩니다. 순위도 이 값으로 다시 매겨집니다."
-        )
         st.caption(
             profile_version_caption(execution_profile, empty="아직 넣은 실행 Capa 반영이 없습니다")
         )
@@ -953,6 +858,19 @@ def _render_execution_editor(
             return
         table = _execution_editor_frame(execution_profile)
         with st.form("home_execution_capacity_form"):
+            # 작업 줄(메모·저장)은 표 **위**다.
+            with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+                note = st.text_input(
+                    "변경 메모",
+                    placeholder="예: 26.07 Wafer Mount 비가동 3대",
+                    key=EXECUTION_NOTE_KEY,
+                )
+                submitted = st.form_submit_button(
+                    "실행 Capa 저장",
+                    icon=":material/save:",
+                    type="primary",
+                )
+            render_flash("home_execution_flash")
             edited = st.data_editor(
                 table,
                 key=EXECUTION_EDITOR_KEY,
@@ -983,17 +901,6 @@ def _render_execution_editor(
                     ),
                     "비고": st.column_config.TextColumn("비고", width="medium"),
                 },
-            )
-            note = st.text_input(
-                "변경 메모",
-                placeholder="예: 26.07 Wafer Mount 비가동 3대",
-                key=EXECUTION_NOTE_KEY,
-            )
-            submitted = st.form_submit_button(
-                "실행 Capa 저장",
-                icon=":material/save:",
-                type="primary",
-                width="stretch",
             )
         if not submitted:
             _render_execution_notices(unmatched, clamped, process_labels)

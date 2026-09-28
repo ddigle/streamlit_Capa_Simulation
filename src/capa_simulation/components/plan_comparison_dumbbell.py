@@ -182,8 +182,6 @@ def render_plan_comparison_dumbbell(
         st.info("두 시나리오의 계획 물량이 같습니다.")
         return
     st.plotly_chart(figure, width="stretch", key=key, config={"staticPlot": False})
-    st.caption(
-        f"조회 기간 **합계** 기준이고 차이가 큰 순으로 최대 {top_n}개만 그립니다. "
-        "한쪽 시나리오에만 있는 분류는 다른 쪽을 0 으로 봅니다 — 빠진 계획이 길이로 "
-        "드러나야 합니다. 월별 모양은 위의 계획 세부수량 표가 답합니다."
-    )
+    # 그림의 틀(무엇을 몇 개)만 적는다. 읽는 법(한쪽에만 있는 분류는 0, 월별 모양은 표)은
+    # HOME Guide 가 말한다.
+    st.caption(f"조회 기간 합계 · 차이 큰 순 최대 {top_n}개")

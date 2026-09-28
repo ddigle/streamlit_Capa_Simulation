@@ -382,12 +382,14 @@ DuckDB는 `data/capa_simulation.duckdb`, 설비 운영 전용 DuckDB는
   「공식버전으로 지정할 수 없습니다」라고 경고합니다(여러 오류를 하나씩 고쳐 저장할 수
   있게). 계산되지 않는 리비전은 공식버전으로 지정할 수 없습니다 — 공식버전은 모든
   사용자가 처음 여는 화면이기 때문입니다. BigDataQuery 등록은 검사하지 않습니다.
-- HOME 본문은 `Main`·`Preference` 두 탭입니다. `Main`이 계획·LOB·B/N Figure를 모두 그리고,
-  `Preference`가 표시 기준을 받습니다.
-- `Preference`의 `EDP 포함`을 끄면 LOB로 표현되는 값(Density·Wafer 계획·Wafer Capa·B/N Capa
+- HOME 본문은 `Main`·`Preference`·`Past Data` 세 탭입니다. `Main`이 계획·LOB·B/N Figure를
+  모두 그리고, `Preference`가 공용 설정(비교 시나리오·선행·Summary·Top5·주요공정·실행 Capa)을
+  받습니다. 보는 조건 토글(`선행`·`실행`·`GAP`·`상세`·`EDP 포함`·`Past Data 포함`)은 사이드바
+  `LOB 표시 조건` 카드에 있습니다(Main 탭에서만). 설명은 헤더의 `Guide` 입니다.
+- `EDP 포함`을 끄면 LOB로 표현되는 값(Density·Wafer 계획·Wafer Capa·B/N Capa
   막대·Top 5·상세 B/N의 Wafer Capa)과 계획 세부수량에서 EDP-TSV를 뺍니다. 설비가 받는 부하는
   전체 계획 그대로라 **확보율과 B/N 공정 순위는 바뀌지 않습니다.**
-- `계획 세부수량` 제목 옆 `상세` 토글을 켜면 제품·Stack 아래에 거래선을
+- `LOB 표시 조건` 의 `상세` 토글을 켜면 제품·Stack 아래에 거래선을
   분류로 더합니다. 거래선 수만큼 행이 늘어 표가 길어집니다. 거래선 정렬은
   `Admin Area → 표시순서 관리`에 `분류컬럼 = Customer` 규칙을 `부하량`·`PKG PLAN` 범위로
   넣으면 걸리며, 상세를 끈 화면에서는 같은 규칙이 아무 일도 하지 않습니다.
@@ -400,13 +402,14 @@ DuckDB는 `data/capa_simulation.duckdb`, 설비 운영 전용 DuckDB는
   확보율 숫자를 함께 적습니다. 연간 Total 열은 비웁니다 — 확보율의 연평균은 부하량 가중이
   필요한데 이 화면에 그 근거가 없습니다.
 - `Past Data` 탭에 과거 구간을 넣으면 화면이 이어 그립니다. 월별 Density·Wafer Total,
-  계획 세부수량, 확보율 세 표를 CSV 양식으로 내려받아 Excel에서 채운 뒤 붙여넣습니다.
+  계획 세부수량, 확보율 세 표를 CSV 양식으로 내려받아 Excel에서 채운 뒤 표마다 `Excel
+  붙여넣기` 팝업에 붙여넣고, 맨 위 `과거 구간 저장` 으로 한 번에 저장합니다.
   Wafer Capa와 B/N Capa는 확보율을 곱해 만들고 B/N 순위는 확보율 오름차순이라 따로 넣지
   않습니다. **계산 결과가 있는 달은 계산이 이깁니다.** 과거 달에는 `선행`만 걸립니다.
 - 1~12월이 모두 조회범위 안에 있는 해는 그 해 12월 오른쪽에 `27년` 같은 연간 Total 열이
   붙습니다. Density·Wafer 계획·계획 세부수량만 합계를 적고 Wafer Capa·생산계획 LOB·
   B/N Top 5·상세 B/N은 비웁니다. 월별 Capa의 단순 합은 연간 Capa가 아니기 때문입니다.
-- `Preference`에서 비교 시나리오와 리비전을 고르고 `Capa LOB 현황` 제목 옆 `GAP` 토글을
+- `Preference`에서 비교 시나리오와 리비전을 고르고 `LOB 표시 조건` 의 `GAP` 토글을
   켜면 Density·Wafer 계획·계획 세부수량 값 **아래**에 비교 대비 증감을 적습니다. 고른
   리비전에서 **계획만** 가져오고 환산에 쓰는 표는 현재 것을 씁니다.
   비교 시나리오에만 있는 제품·Stack 조합도 행으로 남겨 사라진 제품이 보이게 합니다.
@@ -446,8 +449,8 @@ DuckDB는 `data/capa_simulation.duckdb`, 설비 운영 전용 DuckDB는
 - HOME은 페이지 제목 오른쪽에 진행 막대를 띄워 지금 어느 단계이고 몇 퍼센트인지 알립니다.
   제목 줄 안이라 막대가 사라져도 아래 차트가 밀리지 않습니다. 누적 퍼센트는 단계 수를
   균등 분할한 값이 아니라 측정한 소요 시간 비율입니다.
-- B/N 임계값과 포함 공정은 폼의 `조건 적용`을 누를 때 한 번에 반영됩니다.
-- HOME `Preference` 의 `Past Data 포함` 토글은 **기본이 켬**입니다. 끄면 `Past Data` 탭에
+- B/N 임계값은 사이드바 `B/N 집계 공정` 의 `기준 적용`, 포함 공정은 `공정 선택` 팝업의 `선택 공정 적용` 을 누를 때 반영됩니다.
+- HOME `LOB 표시 조건` 의 `Past Data 포함` 토글은 **기본이 켬**입니다. 끄면 `Past Data` 탭에
   넣어 둔 과거 구간을 화면에서 빼고 활성 시나리오의 계산 결과만으로 화면을 구성합니다.
   과거 값 자체는 지워지지 않고 `Past Data` 탭에 그대로 남습니다.
 - HOME 단계별 소요시간은 `scripts/benchmark_home.py` 로 잽니다. 화면에서 봐야 할 때만

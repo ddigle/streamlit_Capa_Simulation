@@ -382,12 +382,10 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     assert app.session_state["spy_traces"] == [0, 1, 1, 1, 3, 1, 3, 4]
     assert app.session_state["spy_scrollbars"] == 1
 
-    # 상세표 표시 여부를 고르던 자리는 탭이 가져갔고, 본문 토글은 표시 기준이다.
-    # 「선행」·「실행」·「GAP」 은 Capa LOB 현황 제목 옆, 「상세」 는 계획 세부수량 제목
-    # 옆, 「EDP 포함」·「Past Data 포함」 은 Preference 탭의 표시 기준에 나란히 있다.
-    # 순서는 계산이 얹히는 순서와 같다 — 선행(계획 이동) → 실행(기준정보 밖 변수) →
-    # GAP(비교 표기).
-    assert [widget.label for widget in app.main.toggle] == [
+    # 보는 조건 토글은 모두 사이드바 `LOB 표시 조건` 카드다(2026-09-29 사용자 결정 — 전에는
+    # 제목 줄과 Preference 의 표시 기준에 흩어져 있었다). 순서는 계산이 얹히는 순서와 같다 —
+    # 선행(계획 이동) → 실행(기준정보 밖 변수) → GAP(비교 표기) → 보는 폭(상세·EDP·Past).
+    assert [widget.label for widget in app.sidebar.toggle] == [
         "선행",
         "실행",
         "GAP",
@@ -395,17 +393,19 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
         "EDP 포함",
         "Past Data 포함",
     ]
-    # 사이드바에 토글이 없다. 성능 진단은 세션 키로만 켜는 개발용 계측이다.
-    assert [widget.label for widget in app.sidebar.toggle] == []
+    assert [widget.label for widget in app.main.toggle] == []
+    # 붙여넣기는 표마다 작업 줄의 팝업이고, 저장은 Past Data 맨 위 한 곳이다. `Guide` 는
+    # 툴바 버튼이 누르는 숨은 버튼이다.
     assert sorted(widget.label for widget in app.button) == sorted(
         [
+            "Excel 붙여넣기",
+            "Excel 붙여넣기",
+            "Excel 붙여넣기",
+            "Guide",
             "Summary 저장",
             "공정 선택 · 3 / 3",
             "과거 구간 저장",
             "기준 적용",
-            "붙여넣기 읽기",
-            "붙여넣기 읽기",
-            "붙여넣기 읽기",
             "선행 물량 저장",
             "실행 Capa 저장",
             "주요공정 저장",
@@ -1036,3 +1036,36 @@ def test_turning_the_toggle_off_leaves_only_the_scenario_months(tmp_path: Path) 
     app.session_state["home_preference_include_past"] = True
     app.run()
     assert "25.11" in _lob_month_labels(app)
+
+
+def test_the_home_guide_carries_what_left_the_body() -> None:
+    """토글 툴팁·Preference·Past Data 의 설명은 Guide 로 옮겼다."""
+    from capa_simulation.components.page_guide import load_guide
+
+    guide = load_guide("home")
+    for text in (
+        "LOB 표시 조건",
+        "반비례",
+        "퍼센트포인트",
+        "EDP-TSV",
+        "거래선",
+        "계산이 이깁니다",
+        "한 버전",
+        "고른 차례가 곧 행 순서",
+        "hover 의 Capa 숫자는 자르지 않은 실제 값",
+        "비우고 저장하면 공지가 내려갑니다",
+        "유효한 월 중 최저 확보율",
+    ):
+        assert text in guide, text
+
+
+def test_past_data_paste_opens_in_a_popup_and_save_sits_on_top(seeded_database: Path) -> None:
+    """붙여넣기 칸은 본문을 차지하지 않고, 저장은 표들 위 한 곳이다."""
+    app = _run(seeded_database)
+    assert not [area for area in app.text_area if area.label.endswith("붙여넣기")]
+
+    app.button(key="home_past_clipboard_월별_open").click().run()
+    assert not app.exception
+    assert [area.label for area in app.text_area if area.label.endswith("붙여넣기")] == [
+        "월별 Density · Wafer Total 붙여넣기"
+    ]
