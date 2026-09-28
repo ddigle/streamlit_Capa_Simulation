@@ -146,13 +146,13 @@ def test_bigdataquery_conflict_preview_labels_only_the_screen_copy() -> None:
 def test_round_trip_paste_templates_keep_the_original_process_name() -> None:
     """왕복 CSV·클립보드 양식은 다시 DB 로 들어간다. 여기에 표시명이 새면 안 된다."""
     from capa_simulation.components.reference_csv_tools import (
-        render_reference_clipboard_tools,
+        render_reference_clipboard_form,
     )
     from capa_simulation.services.weekly_availability_input import (
         build_weekly_availability_template,
     )
 
-    for builder in (render_reference_clipboard_tools, build_weekly_availability_template):
+    for builder in (render_reference_clipboard_form, build_weekly_availability_template):
         source = Path(builder.__code__.co_filename).read_text(encoding="utf-8")
         assert "process_labels" not in source, builder.__name__
         assert "표시명" not in source, builder.__name__

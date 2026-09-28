@@ -1,12 +1,29 @@
 # Purpose: Capa 산출에 쓰는 입력값과 STEP 구성을 월별로 편집한다.
 
+"""기준 정보 — 조건 카드·Guide·작업 줄 양식(2026-09-29 사용자 결정, 생산 계획이 샘플).
+
+- 표 필터와 설비대수 현황의 「상세」는 사이드바 조건 카드 `표 조건` 이다. 모든 탭이 같은 카드를
+  써서 한 번 편 카드는 탭을 옮겨도 편 채다.
+- 작업 버튼(변경사항 적용·Excel 붙여넣기·편집 취소, STEP 추가·삭제)은 표 **위**다. 붙여넣기와
+  STEP 추가·삭제는 팝업이다.
+- 설명은 Guide(`guides/reference_data.md`)다.
+- **적용하지 않은 편집이 남은 표는 탭이 닫혀도 그린다**(`month_editor`) — 전에는 탭을 옮기는
+  순간 편집이 사라졌다. 그런 탭 이름 옆에는 주황 점이 찍힌다.
+"""
+
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import pandas as pd
 import streamlit as st
-from streamlit.delta_generator import DeltaGenerator
 
-from capa_simulation.components.column_filter import render_column_filters
-from capa_simulation.components.month_editor import editor_notice, render_month_editor
+from capa_simulation.components.column_filter import render_column_filter_controls
+from capa_simulation.components.month_editor import (
+    FILTER_CARD_LABEL,
+    editor_notice,
+    render_month_editor,
+)
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.reference_csv_tools import queue_reference_import_flash
@@ -14,10 +31,12 @@ from capa_simulation.components.scenario_edit_bar import (
     reset_editors_on_source_change,
     source_token,
 )
-from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
+from capa_simulation.components.tab_marks import editor_has_edits, mark_pending_tabs
+from capa_simulation.components.tab_state import OpenTab, stateful_tabs, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
+    PAGE_DIALOG_SUFFIX,
     bootstrap_error_message,
     load_page_context,
     resolve_effective_months,
@@ -69,19 +88,41 @@ from capa_simulation.services.simulation_cache import (
     get_route_step_tables,
     scenario_cache_key,
 )
+from capa_simulation.sidebar_status import condition_card
 
 # Capa 산출에 **넣는 값만** 둔다. 산출물은 `산출 결과` 페이지가 갖는다.
 # 순서는 사용자가 정한 입력 순서다.
+# 이름 앞 아이콘은 그 탭이 다루는 값이다(탭 목록 개선안 B). 라벨은 위젯 값이라 테스트·기억
+# 칸이 이 문자열을 그대로 쓴다.
 TAB_NAMES = (
-    "UPEH",
-    "설비대수",
-    "효율",
-    "여유율",
-    "일수",
-    "Lot측정률",
-    "WF측정률",
-    "STEP 구성",
+    ":material/timer: UPEH",
+    ":material/precision_manufacturing: 설비대수",
+    ":material/speed: 효율",
+    ":material/donut_small: 여유율",
+    ":material/calendar_month: 일수",
+    ":material/stacks: Lot측정률",
+    ":material/album: WF측정률",
+    ":material/route: STEP 구성",
 )
+TAB_KEY = "reference_data_active_tab"
+EQUIPMENT_TAB_NAMES = (
+    ":material/inventory: 보유",
+    ":material/swap_horiz: 대여",
+    ":material/check_circle: 가용",
+    ":material/table_view: 현황",
+)
+EQUIPMENT_TAB_KEY = "equipment_count_active_tab"
+# 조건 카드 이름(사이드바 `표 조건`). 모든 탭이 하나를 쓴다.
+CARD_NAME = "reference_data"
+# 지금 열린 팝업: 편집표 key(붙여넣기) 또는 `STEP_DIALOG`. 한 칸이라 한 회차에 팝업은 하나다.
+DIALOG_KEY = f"reference_data{PAGE_DIALOG_SUFFIX}"
+STEP_DIALOG = "step"
+EDITOR_UPEH = "capa_upeh_editor"
+EDITOR_RUN_RATE = "capa_run_rate_editor"
+EDITOR_VITAL = "capa_vital_editor"
+EDITOR_LOT_RATIO = "capa_lot_ratio_editor"
+EDITOR_WF_RATIO = "capa_wf_ratio_editor"
+EDITOR_RUN_DAY = "capa_run_day_editor"
 
 # 설비대수 세 RQ. 이름·화면 표기·값 컬럼·편집기 키가 네 곳에서 따로 적히면 한 군데만
 # 고쳐져 조용히 어긋난다. 한 줄로 묶어 두고 편집기·적용·왕복 CSV 가 모두 이것을 읽는다.
@@ -103,12 +144,8 @@ RATIO_DIMENSIONS = [
     "STEP_SEQ",
     "MCP_SEQ",
 ]
-render_page_header(
-    "기준 정보",
-    description=(
-        "Capa 산출에 쓰는 입력값을 월별로 편집합니다. 산출된 값은 산출 결과 페이지에 있습니다."
-    ),
-)
+render_page_header("기준 정보")
+render_page_guide("reference_data", title="기준 정보")
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
 process_labels = get_process_labels()
 
@@ -123,7 +160,13 @@ process_labels = get_process_labels()
     lot_ratio_tab,
     wf_ratio_tab,
     step_tab,
-) = stateful_tabs(TAB_NAMES, key="reference_data_active_tab")
+) = stateful_tabs(TAB_NAMES, key=TAB_KEY)
+
+
+def _editor_needed(tab: OpenTab, editor_key: str) -> bool:
+    """편집표를 그릴 회차인가 — 탭이 열렸거나, 닫혔어도 적용하지 않은 편집이 남았다."""
+    return not tab_is_hidden(tab) or editor_has_edits(editor_key)
+
 
 try:
     context = load_page_context()
@@ -151,11 +194,11 @@ try:
     filtered_yield = scenario_month_table(active_scenario, "RQ_YLD", start_month, end_month)
     filtered_reqb = scenario_month_table(active_scenario, "RQ_REQB", start_month, end_month)
 
-    # 편집표 여섯 개는 자기 탭이 열려 있을 때만 만든다. 숨은 탭에서는 month_editor 가
-    # default_table 을 읽기 전에 돌아가므로 만들어 봐야 버려진다 — 기본 탭에서 rerun 마다
-    # 519~793ms 를 피벗·정렬에 쓰고 있었다.
+    # 편집표 여섯 개는 자기 탭이 열려 있거나 **적용하지 않은 편집이 남았을 때만** 만든다.
+    # 그 밖의 닫힌 탭에서는 month_editor 가 default_table 을 읽기 전에 돌아가므로 만들어 봐야
+    # 버려진다 — 기본 탭에서 rerun 마다 519~793ms 를 피벗·정렬에 쓰고 있었다.
     default_upeh_table = pd.DataFrame()
-    if not tab_is_hidden(upeh_tab):
+    if _editor_needed(upeh_tab, EDITOR_UPEH):
         default_upeh_table = performance_to_edit_table(filtered_upeh)
         default_upeh_table = apply_display_order(
             default_upeh_table, display_order, PAGE_REFERENCE, TAB_UPEH
@@ -168,7 +211,7 @@ try:
             TAB_UPEH,
         )
     default_run_rate_table = pd.DataFrame()
-    if not tab_is_hidden(run_rate_tab):
+    if _editor_needed(run_rate_tab, EDITOR_RUN_RATE):
         default_run_rate_table = reference_to_edit_table(
             filtered_run_rate, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "RQ_RUN_RATE"
         )
@@ -183,7 +226,7 @@ try:
             TAB_RUN_RATE,
         )
     default_vital_table = pd.DataFrame()
-    if not tab_is_hidden(vital_tab):
+    if _editor_needed(vital_tab, EDITOR_VITAL):
         default_vital_table = reference_to_edit_table(
             filtered_vital, VITAL_DIMENSIONS, "편중률", "RQ_VITAL"
         )
@@ -198,7 +241,7 @@ try:
             TAB_VITAL,
         )
     default_run_day_table = pd.DataFrame()
-    if not tab_is_hidden(run_day_tab):
+    if _editor_needed(run_day_tab, EDITOR_RUN_DAY):
         default_run_day_table = reference_to_edit_table(
             filtered_run_day, RUN_DAY_DIMENSIONS, "RUN_DAY", "RQ_RUN_DAY"
         )
@@ -213,7 +256,7 @@ try:
             TAB_RUN_DAY,
         )
     default_lot_ratio_table = pd.DataFrame()
-    if not tab_is_hidden(lot_ratio_tab):
+    if _editor_needed(lot_ratio_tab, EDITOR_LOT_RATIO):
         default_lot_ratio_table = reference_to_edit_table(
             filtered_lot_ratio, RATIO_DIMENSIONS, "Lot 측정률", "RQ_LOT_RATIO"
         )
@@ -231,7 +274,7 @@ try:
             TAB_LOT_RATIO,
         )
     default_wf_ratio_table = pd.DataFrame()
-    if not tab_is_hidden(wf_ratio_tab):
+    if _editor_needed(wf_ratio_tab, EDITOR_WF_RATIO):
         default_wf_ratio_table = reference_to_edit_table(
             filtered_wf_ratio, RATIO_DIMENSIONS, "WF측정률", "RQ_WF_RATIO"
         )
@@ -260,12 +303,12 @@ except BOOTSTRAP_ERRORS as exc:
     st.stop()
 
 editor_keys = (
-    "capa_upeh_editor",
-    "capa_run_rate_editor",
-    "capa_vital_editor",
-    "capa_lot_ratio_editor",
-    "capa_wf_ratio_editor",
-    "capa_run_day_editor",
+    EDITOR_UPEH,
+    EDITOR_RUN_RATE,
+    EDITOR_VITAL,
+    EDITOR_LOT_RATIO,
+    EDITOR_WF_RATIO,
+    EDITOR_RUN_DAY,
     *(editor_key for _, _, _, editor_key in EQUIPMENT_EDITORS),
 )
 step_widget_keys = (
@@ -280,6 +323,38 @@ reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
     source_token(reference_version, active_scenario, start_month, end_month),
     (*editor_keys, *step_widget_keys),
+)
+
+# 적용하지 않은 편집이 남은 탭에 점을 찍는다(탭 목록 개선안 C). 원본이 바뀌어 편집표를 비운
+# **뒤**에 정해야 비워진 편집에 점이 남지 않는다. 설비대수는 안쪽 탭(보유·대여·가용)에도 찍는다.
+_pending_editors = {key for key in editor_keys if editor_has_edits(key)}
+mark_pending_tabs(
+    TAB_KEY,
+    TAB_NAMES,
+    {
+        label
+        for label, keys in (
+            (TAB_NAMES[0], {EDITOR_UPEH}),
+            (TAB_NAMES[1], {editor_key for _, _, _, editor_key in EQUIPMENT_EDITORS}),
+            (TAB_NAMES[2], {EDITOR_RUN_RATE}),
+            (TAB_NAMES[3], {EDITOR_VITAL}),
+            (TAB_NAMES[4], {EDITOR_RUN_DAY}),
+            (TAB_NAMES[5], {EDITOR_LOT_RATIO}),
+            (TAB_NAMES[6], {EDITOR_WF_RATIO}),
+        )
+        if keys & _pending_editors
+    },
+)
+mark_pending_tabs(
+    EQUIPMENT_TAB_KEY,
+    EQUIPMENT_TAB_NAMES,
+    {
+        label
+        for label, (_, _, _, editor_key) in zip(
+            EQUIPMENT_TAB_NAMES[:3], EQUIPMENT_EDITORS, strict=True
+        )
+        if editor_key in _pending_editors
+    },
 )
 
 # 설비대수 세 표는 편집 왕복과 조회 표가 같은 슬라이스를 본다. 창을 갈라 두면
@@ -326,19 +401,157 @@ equipment_edit_tables = {
     for table_name, category, value_column, _ in EQUIPMENT_EDITORS
 }
 
-# 「활성 시나리오 · 수정본 N」 줄과 원본 초기화 버튼은 사이드바 시나리오 상자로 옮겼다
-# (미저장 배지 + 「편집 되돌리기」). 되돌리면 리비전 번호가 올라 `source_token` 이 바뀌므로
-# 이 화면의 편집표도 다음 회차에 함께 비워진다.
+
+def _close_dialog() -> None:
+    st.session_state.pop(DIALOG_KEY, None)
+
+
+def _open_dialog(name: str) -> None:
+    st.session_state[DIALOG_KEY] = name
+
+
+@st.dialog("STEP 추가·삭제", width="large", on_dismiss=_close_dialog)
+def _step_dialog() -> None:
+    """고른 경로 STEP 을 복제하거나 지운다. 조회기간의 모든 연결 수요에 함께 반영한다."""
+    step_mode = st.segmented_control(
+        "작업",
+        options=["STEP 추가", "STEP 삭제"],
+        default="STEP 추가",
+        key="capacity_step_mode",
+        persist_state="page",
+        # 선택 해제를 허용하면 step_mode가 None이 되어 아래 분기가 `STEP 삭제`로
+        # 넘어간다.
+        required=True,
+    )
+    route_options = list(range(len(step_catalog)))
+
+    def route_label(index: int) -> str:
+        # 표시 문자열만 만든다. 선택값은 정수 인덱스이고 아래에서 다시 `step_catalog` 의
+        # 원본 행을 읽어 STEP 복제·삭제에 넘기므로 값 경로에는 표시명이 닿지 않는다.
+        row = step_catalog.iloc[index]
+        return (
+            f"{process_labels.label(row['공정'])} · {row['제품정보']} · "
+            f"{row['Stack']} · {row['WF 구분']} · "
+            f"{row['Area_Name']} · {row['소요기준']} · "
+            f"MCP {row['MCP_SEQ']} / STEP {row['STEP_SEQ']} · {row['적용월수']}개월"
+        )
+
+    selected_route_index = st.selectbox(
+        "복제 원본 또는 삭제 대상 STEP",
+        options=route_options,
+        format_func=route_label,
+        key="capacity_step_route",
+        persist_state="page",
+    )
+    selected_route_row = step_catalog.iloc[int(selected_route_index)]
+    # 몇 개의 수요 변형이 함께 바뀌는지는 누르기 전에 보여야 하는 상태다.
+    st.caption(
+        f"함께 처리하는 수요 변형(Capa Code·Customer·CS) "
+        f"{int(selected_route_row['수요 변형 수']):,}개"
+    )
+
+    with st.form("capacity_step_change_form", border=False):
+        if step_mode == "STEP 추가":
+            new_mcp_seq = st.text_input(
+                "신규 MCP_SEQ",
+                placeholder="실제 MCP_SEQ 입력",
+                key="capacity_step_new_mcp",
+            )
+            new_step_seq = st.text_input(
+                "신규 STEP_SEQ",
+                placeholder="실제 STEP_SEQ 입력",
+                key="capacity_step_new_step",
+            )
+            step_submitted = st.form_submit_button(
+                "STEP 일괄 추가",
+                icon=":material/add:",
+                type="primary",
+            )
+            delete_confirmed = False
+        else:
+            delete_confirmed = st.checkbox(
+                "선택한 STEP을 조회기간의 모든 연결 수요에서 삭제합니다.",
+                key="capacity_step_delete_confirm",
+            )
+            step_submitted = st.form_submit_button(
+                "STEP 일괄 삭제",
+                icon=":material/delete:",
+                type="primary",
+            )
+            new_mcp_seq = ""
+            new_step_seq = ""
+
+    if not step_submitted:
+        return
+    route = {column: selected_route_row[column] for column in ROUTE_GROUP_COLUMNS}
+    route_tables = {
+        "RQ_REQB": filtered_reqb,
+        "RQ_UPEH": filtered_upeh,
+        "RQ_LOT_RATIO": filtered_lot_ratio,
+        "RQ_WF_RATIO": filtered_wf_ratio,
+    }
+    try:
+        if step_mode == "STEP 추가":
+            step_result = clone_route_step(
+                route_tables,
+                route,
+                source_mcp_seq=str(selected_route_row["MCP_SEQ"]),
+                source_step_seq=str(selected_route_row["STEP_SEQ"]),
+                new_mcp_seq=new_mcp_seq,
+                new_step_seq=new_step_seq,
+            )
+            action_label = "추가"
+        elif delete_confirmed:
+            step_result = delete_route_step(
+                route_tables,
+                route,
+                mcp_seq=str(selected_route_row["MCP_SEQ"]),
+                step_seq=str(selected_route_row["STEP_SEQ"]),
+            )
+            action_label = "삭제"
+        else:
+            raise ValueError("STEP 삭제 확인이 필요합니다.")
+        apply_month_updates(
+            active_scenario,
+            step_result.replacements,
+            effective_start_month,
+            effective_end_month,
+        )
+    except (KeyError, ValueError) as exc:
+        st.error(str(exc))
+        return
+    months_label = ", ".join(str(month) for month in step_result.affected_months)
+    st.session_state["capacity_step_flash"] = (
+        f"STEP을 {action_label}했습니다. 적용월 {months_label} · "
+        f"수요 변형 {step_result.affected_variants:,}개 · "
+        f"RQ_REQB {step_result.affected_reqb_rows:,}행"
+    )
+    st.session_state.pop(SOURCE_TOKEN_KEY, None)
+    _close_dialog()
+    st.rerun()
+
+
 with step_tab:
+    if step_catalog.empty:
+        st.info(
+            "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다. "
+            "사이드바에서 조회기간을 넓혀 보세요."
+        )
+    else:
+        # 작업 줄은 표 위다. 추가·삭제는 가끔 하는 쓰기라 팝업으로 연다.
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.button(
+                "STEP 추가·삭제",
+                icon=":material/edit_road:",
+                key="open_capacity_step_dialog",
+                type="primary",
+                on_click=_open_dialog,
+                args=(STEP_DIALOG,),
+            )
     flash_message = st.session_state.pop("capacity_step_flash", None)
     if isinstance(flash_message, str):
         st.success(flash_message)
-    st.caption(
-        "STEP 수는 같은 공정·제품 경로 안의 MCP_SEQ·STEP_SEQ 고유 조합 수입니다. "
-        "추가·삭제는 조회기간 안에서 RQ_REQB·UPEH·Lot/WF 측정률에 함께 반영됩니다."
-    )
-    # 요약 표는 그림이라 숨은 탭에서는 건너뛴다. 아래 작업·경로 선택과 form 은 위젯이라
-    # 항상 그린다 — 본문을 통째로 건너뛰면 탭을 오갈 때 선택값이 초기화된다.
+    # 요약 표는 그림이라 숨은 탭에서는 건너뛴다.
     if not tab_is_hidden(step_tab):
         # `step_summary` 는 캐시된 프레임이다. 제자리에서 고치면 다음 rerun 이 표시명 프레임을
         # 계산 입력으로 받으므로 화면 복사본에만 표시명을 입힌다.
@@ -364,129 +577,10 @@ with step_tab:
             key="capacity_step_summary",
         )
 
-    if step_catalog.empty:
-        st.info(
-            "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다. "
-            "사이드바에서 조회기간을 넓혀 보세요."
-        )
-    else:
-        step_mode = st.segmented_control(
-            "작업",
-            options=["STEP 추가", "STEP 삭제"],
-            default="STEP 추가",
-            key="capacity_step_mode",
-            persist_state="page",
-            # 선택 해제를 허용하면 step_mode가 None이 되어 아래 분기가 `STEP 삭제`로
-            # 넘어간다.
-            required=True,
-        )
-        route_options = list(range(len(step_catalog)))
-
-        def route_label(index: int) -> str:
-            # 표시 문자열만 만든다. 선택값은 정수 인덱스이고 아래에서 다시 `step_catalog` 의
-            # 원본 행을 읽어 STEP 복제·삭제에 넘기므로 값 경로에는 표시명이 닿지 않는다.
-            row = step_catalog.iloc[index]
-            return (
-                f"{process_labels.label(row['공정'])} · {row['제품정보']} · "
-                f"{row['Stack']} · {row['WF 구분']} · "
-                f"{row['Area_Name']} · {row['소요기준']} · "
-                f"MCP {row['MCP_SEQ']} / STEP {row['STEP_SEQ']} · {row['적용월수']}개월"
-            )
-
-        selected_route_index = st.selectbox(
-            "복제 원본 또는 삭제 대상 STEP",
-            options=route_options,
-            format_func=route_label,
-            key="capacity_step_route",
-            persist_state="page",
-        )
-        selected_route_row = step_catalog.iloc[int(selected_route_index)]
-        st.info(
-            "기본 일괄 적용: 선택한 원본 STEP에 연결된 "
-            f"Capa Code·Customer·CS 수요 변형 {int(selected_route_row['수요 변형 수']):,}개를 "
-            "모두 함께 처리합니다."
-        )
-
-        with st.form("capacity_step_change_form"):
-            if step_mode == "STEP 추가":
-                new_mcp_seq = st.text_input(
-                    "신규 MCP_SEQ",
-                    placeholder="실제 MCP_SEQ 입력",
-                    key="capacity_step_new_mcp",
-                )
-                new_step_seq = st.text_input(
-                    "신규 STEP_SEQ",
-                    placeholder="실제 STEP_SEQ 입력",
-                    key="capacity_step_new_step",
-                )
-                step_submitted = st.form_submit_button(
-                    "STEP 일괄 추가",
-                    icon=":material/add:",
-                    type="primary",
-                )
-                delete_confirmed = False
-            else:
-                delete_confirmed = st.checkbox(
-                    "선택한 STEP을 조회기간의 모든 연결 수요에서 삭제합니다.",
-                    key="capacity_step_delete_confirm",
-                )
-                step_submitted = st.form_submit_button(
-                    "STEP 일괄 삭제",
-                    icon=":material/delete:",
-                    type="primary",
-                )
-                new_mcp_seq = ""
-                new_step_seq = ""
-
-        if step_submitted:
-            route = {column: selected_route_row[column] for column in ROUTE_GROUP_COLUMNS}
-            route_tables = {
-                "RQ_REQB": filtered_reqb,
-                "RQ_UPEH": filtered_upeh,
-                "RQ_LOT_RATIO": filtered_lot_ratio,
-                "RQ_WF_RATIO": filtered_wf_ratio,
-            }
-            try:
-                if step_mode == "STEP 추가":
-                    step_result = clone_route_step(
-                        route_tables,
-                        route,
-                        source_mcp_seq=str(selected_route_row["MCP_SEQ"]),
-                        source_step_seq=str(selected_route_row["STEP_SEQ"]),
-                        new_mcp_seq=new_mcp_seq,
-                        new_step_seq=new_step_seq,
-                    )
-                    action_label = "추가"
-                elif delete_confirmed:
-                    step_result = delete_route_step(
-                        route_tables,
-                        route,
-                        mcp_seq=str(selected_route_row["MCP_SEQ"]),
-                        step_seq=str(selected_route_row["STEP_SEQ"]),
-                    )
-                    action_label = "삭제"
-                else:
-                    raise ValueError("STEP 삭제 확인이 필요합니다.")
-                apply_month_updates(
-                    active_scenario,
-                    step_result.replacements,
-                    effective_start_month,
-                    effective_end_month,
-                )
-            except (KeyError, ValueError) as exc:
-                st.error(str(exc))
-            else:
-                months_label = ", ".join(str(month) for month in step_result.affected_months)
-                st.session_state["capacity_step_flash"] = (
-                    f"STEP을 {action_label}했습니다. 적용월 {months_label} · "
-                    f"수요 변형 {step_result.affected_variants:,}개 · "
-                    f"RQ_REQB {step_result.affected_reqb_rows:,}행"
-                )
-                st.session_state.pop(SOURCE_TOKEN_KEY, None)
-                st.rerun()
+    if not step_catalog.empty and st.session_state.get(DIALOG_KEY) == STEP_DIALOG:
+        _step_dialog()
 
 with equipment_tab:
-    st.caption("월간 설비대수")
     # 세 RQ 를 한 탭에 세로로 쌓으면 편집표 하나가 500px 라 화면이 세 배로 길어진다.
     # 다른 기준정보 탭과 **같은 편집기**를 쓰되 탭을 한 겹 더 둔다. `현황` 은 세 RQ 를
     # 합친 조회 표라 편집 대상이 아니다 — 보유·대여를 합친 값에 숫자를 쓸 자리가 없다.
@@ -495,46 +589,42 @@ with equipment_tab:
         equipment_lent_tab,
         equipment_available_tab,
         equipment_overview_tab,
-    ) = stateful_tabs(("보유", "대여", "가용", "현황"), key="equipment_count_active_tab")
+    ) = stateful_tabs(EQUIPMENT_TAB_NAMES, key=EQUIPMENT_TAB_KEY)
 
-with equipment_overview_tab:
-    show_equipment_detail = st.toggle(
-        "상세",
-        help=(
-            "끄면 가용대수만 공정별로 보여 주고, 켜면 `구분` 열을 더해 보유·대여·가용을 "
-            "행으로 나눕니다."
-        ),
-        key="equipment_count_detail",
-        persist_state="session",
-        width=90,
-    )
-    if show_equipment_detail:
-        equipment_table = detailed_equipment_table.copy()
-        equipment_dimensions = DETAILED_EQUIPMENT_DIMENSIONS
-    else:
-        equipment_table = available_equipment_table.copy()
-        equipment_dimensions = EQUIPMENT_DIMENSIONS
-    equipment_table = render_column_filters(
-        equipment_table,
-        equipment_dimensions,
-        key_prefix="equipment_count_filter",
-        value_labels=process_labels.value_labels(),
-    )
-    equipment_month_columns = [
-        column for column in equipment_table.columns if column not in equipment_dimensions
-    ]
-    displayed_equipment_table = equipment_table.copy()
-    displayed_equipment_table[equipment_month_columns] = displayed_equipment_table[
-        equipment_month_columns
-    ].mask(displayed_equipment_table[equipment_month_columns].eq(0))
-    # 필터를 먼저 걸고 그 뒤에 표시명을 입힌다. 순서가 바뀌면 위 `isin` 이 원본 컬럼과
-    # 맞지 않는다. 같은 탭의 왕복 양식은 `equipment_edit_tables` 라는 별도 프레임이라
-    # 이 복사본이 붙여넣기 경로에 닿지 않는다.
-    displayed_equipment_table["공정"] = process_labels.series(displayed_equipment_table["공정"])
-    # 그리는 것만 건너뛴다. 위 토글·필터는 위젯이라 숨은 탭에서도 그려야 Streamlit 이
-    # 그 상태를 버리지 않는다. 바깥 탭과 안쪽 탭을 **둘 다** 본다 — 안쪽 탭은 바깥이
-    # 닫혀 있어도 자기 선택만 알기 때문에 그것만 보면 숨은 화면에 표를 그린다.
-    if not (tab_is_hidden(equipment_tab) or tab_is_hidden(equipment_overview_tab)):
+# `현황` 은 보는 표다. 「상세」와 필터는 사이드바 `표 조건` 카드이고, 바깥·안쪽 탭이 **둘 다**
+# 열렸을 때만 선다 — 안쪽 탭은 바깥이 닫혀 있어도 자기 선택만 알기 때문이다. 선택은
+# `persist_state` 로 남는다.
+if not (tab_is_hidden(equipment_tab) or tab_is_hidden(equipment_overview_tab)):
+    with condition_card(FILTER_CARD_LABEL, name=CARD_NAME, icon=":material/filter_alt:"):
+        show_equipment_detail = st.toggle(
+            "상세",
+            key="equipment_count_detail",
+            persist_state="session",
+        )
+        if show_equipment_detail:
+            equipment_table = detailed_equipment_table.copy()
+            equipment_dimensions = DETAILED_EQUIPMENT_DIMENSIONS
+        else:
+            equipment_table = available_equipment_table.copy()
+            equipment_dimensions = EQUIPMENT_DIMENSIONS
+        equipment_table = render_column_filter_controls(
+            equipment_table,
+            equipment_dimensions,
+            key_prefix="equipment_count_filter",
+            value_labels=process_labels.value_labels(),
+        )
+    with equipment_overview_tab:
+        equipment_month_columns = [
+            column for column in equipment_table.columns if column not in equipment_dimensions
+        ]
+        displayed_equipment_table = equipment_table.copy()
+        displayed_equipment_table[equipment_month_columns] = displayed_equipment_table[
+            equipment_month_columns
+        ].mask(displayed_equipment_table[equipment_month_columns].eq(0))
+        # 필터를 먼저 걸고 그 뒤에 표시명을 입힌다. 순서가 바뀌면 위 `isin` 이 원본 컬럼과
+        # 맞지 않는다. 같은 탭의 왕복 양식은 `equipment_edit_tables` 라는 별도 프레임이라
+        # 이 복사본이 붙여넣기 경로에 닿지 않는다.
+        displayed_equipment_table["공정"] = process_labels.series(displayed_equipment_table["공정"])
         styled_equipment_table = displayed_equipment_table.style.set_properties(
             subset=pd.Index(equipment_dimensions),
             **{"background-color": tokens.SURFACE_CLASSIFICATION},
@@ -567,113 +657,17 @@ with equipment_overview_tab:
         )
 
 
-edited_upeh_table, apply_upeh, imported_upeh_table = render_month_editor(
-    upeh_tab,
-    default_upeh_table,
-    PERFORMANCE_EDITOR_DIMENSIONS,
-    editor_keys[0],
-    "표의 Area_Name 이 Main 인 행에는 UPEH 를, MI 인 행에는 ST(초)를 적습니다 — "
-    "MI 의 ST 는 3600 ÷ ST 로 시간당 처리량에 환산한 뒤 Main 과 같은 대당 Capa 식에 "
-    "들어갑니다. 수정 후 「변경사항 적용」을 누르세요.",
-    "%,.2f",
-    0.01,
-    table_name="RQ_UPEH",
-    csv_file_name=f"RQ_UPEH_{effective_start_month}_{effective_end_month}.csv",
-    # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
-    value_labels=process_labels.value_labels(),
-)
-edited_run_rate_table, apply_run_rate, imported_run_rate_table = render_month_editor(
-    run_rate_tab,
-    default_run_rate_table,
-    RUN_RATE_DIMENSIONS,
-    editor_keys[1],
-    "공정·양산별 효율을 수정한 후 적용 버튼을 누르세요.",
-    "percent",
-    0.001,
-    max_value=1.0,
-    table_name="RQ_RUN_RATE",
-    csv_file_name=f"RQ_RUN_RATE_{effective_start_month}_{effective_end_month}.csv",
-    # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
-    value_labels=process_labels.value_labels(),
-)
-edited_vital_table, apply_vital, imported_vital_table = render_month_editor(
-    vital_tab,
-    default_vital_table,
-    VITAL_DIMENSIONS,
-    editor_keys[2],
-    "공정·양산별 여유율을 수정한 후 적용 버튼을 누르세요.",
-    "percent",
-    0.001,
-    table_name="RQ_VITAL",
-    csv_file_name=f"RQ_VITAL_{effective_start_month}_{effective_end_month}.csv",
-    # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
-    value_labels=process_labels.value_labels(),
-)
-edited_lot_ratio_table, apply_lot_ratio, imported_lot_ratio_table = render_month_editor(
-    lot_ratio_tab,
-    default_lot_ratio_table,
-    RATIO_DIMENSIONS,
-    editor_keys[3],
-    "분류별 Lot측정률을 수정한 후 적용 버튼을 누르세요.",
-    "percent",
-    0.001,
-    max_value=1.0,
-    table_name="RQ_LOT_RATIO",
-    csv_file_name=f"RQ_LOT_RATIO_{effective_start_month}_{effective_end_month}.csv",
-    # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
-    value_labels=process_labels.value_labels(),
-)
-edited_wf_ratio_table, apply_wf_ratio, imported_wf_ratio_table = render_month_editor(
-    wf_ratio_tab,
-    default_wf_ratio_table,
-    RATIO_DIMENSIONS,
-    editor_keys[4],
-    "분류별 WF측정률을 수정한 후 적용 버튼을 누르세요.",
-    "percent",
-    0.001,
-    max_value=1.0,
-    table_name="RQ_WF_RATIO",
-    csv_file_name=f"RQ_WF_RATIO_{effective_start_month}_{effective_end_month}.csv",
-    # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
-    value_labels=process_labels.value_labels(),
-)
-edited_run_day_table, apply_run_day, imported_run_day_table = render_month_editor(
-    run_day_tab,
-    default_run_day_table,
-    RUN_DAY_DIMENSIONS,
-    editor_keys[5],
-    "공정별 가동일수를 수정한 후 적용 버튼을 누르세요.",
-    "%,.0f",
-    1.0,
-    table_name="RQ_RUN_DAY",
-    csv_file_name=f"RQ_RUN_DAY_{effective_start_month}_{effective_end_month}.csv",
-    # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
-    value_labels=process_labels.value_labels(),
-)
+# `eq=False` — 표(DataFrame)를 품어 값 비교가 뜻이 없다. 같은 편집표인지는 객체로 가른다.
+@dataclass(frozen=True, eq=False)
+class _Editor:
+    """편집표 하나의 적용 규칙. 격자 적용과 팝업 붙여넣기가 같은 규칙을 탄다."""
 
-# 설비대수도 다른 기준정보와 **같은 편집기**를 쓴다. 값붙여넣기만 되던 화면이라 한 칸을
-# 고치려면 표 전체를 Excel 로 왕복해야 했다. 붙여넣기 양식은 편집기가 함께 그리므로
-# 기존 경로도 그대로 남는다.
-equipment_editor_results = {
-    table_name: render_month_editor(
-        equipment_sub_tab,
-        equipment_edit_tables[table_name],
-        EQUIPMENT_DIMENSIONS,
-        editor_key,
-        f"공정별 {category} 설비대수를 수정한 후 적용 버튼을 누르세요.",
-        "%,.2f",
-        0.01,
-        table_name=table_name,
-        csv_file_name=f"{table_name}_{effective_start_month}_{effective_end_month}.csv",
-        # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
-        value_labels=process_labels.value_labels(),
-    )
-    for equipment_sub_tab, (table_name, category, _, editor_key) in zip(
-        (equipment_own_tab, equipment_lent_tab, equipment_available_tab),
-        EQUIPMENT_EDITORS,
-        strict=True,
-    )
-}
+    table_name: str
+    editor_key: str
+    tab: OpenTab
+    dimensions: list[str]
+    template: pd.DataFrame
+    to_rows: Callable[[pd.DataFrame], pd.DataFrame]
 
 
 def _edit_flash(
@@ -685,10 +679,9 @@ def _edit_flash(
     알 길이 없었다. 두 길을 가르는 것은 앞부분 한 마디뿐이고, 저장까지 가야 리비전으로
     남는다는 사실은 양쪽 모두 같다.
 
-    **자리가 둘이라 키도 둘이다.** 표 위 `변경사항 적용` 의 결과는 `f"{editor_key}_apply"` —
-    `render_month_editor` 가 작업 줄 아래에서 꺼낸다. 표 아래 붙여넣기 폼의 결과는
-    `f"{editor_key}_csv"` — 붙여넣기 도구가 폼 옆에서 꺼낸다. 붙여넣기 결과에는 「지워진 칸」
-    경고가 실려 폼 옆에서 보여야 한다(표 위로 올리면 폼을 보던 사람에게 안 보인다).
+    **자리는 하나다.** 표 위 `변경사항 적용` 도, 팝업 붙여넣기도 결과는 작업 줄 바로 아래
+    (`f"{editor_key}_apply"` — `render_month_editor` 가 꺼낸다)다. 붙여넣기 팝업은 적용하면
+    닫히므로 그 결과(「지워진 칸」 경고 포함)도 작업 줄 아래에서 본다.
 
     **`editor_key` 는 편집기를 그릴 때 쓴 값 그대로여야 한다.** 여기에 리터럴을 다시 적으면
     쓰는 키와 읽는 키가 갈라져 문구가 조용히 사라진다 — 실제로 `capa_` 접두어가 빠져 여섯
@@ -702,7 +695,7 @@ def _edit_flash(
     if removed:
         removal = f"값이 지워진 칸 {removed:,}개는 계산에서 빠집니다. "
     return (
-        f"{editor_key}_csv" if imported else f"{editor_key}_apply",
+        f"{editor_key}_apply",
         f"{table_name} {origin} 활성 시나리오에 적용했습니다. "
         f"{removal}"
         "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요.",
@@ -720,174 +713,184 @@ def _removed_values(
     return count_removed_values(template, imported_table, dimensions)
 
 
-pending_updates: dict[str, pd.DataFrame] = {}
-update_error_tab = upeh_tab
-# 표 위 `변경사항 적용` 에서 난 오류는 그 버튼 바로 아래 자리에 쓴다(`editor_notice`). 표 아래
-# 붙여넣기에서 난 오류는 예전처럼 탭 끝, 곧 붙여넣기 폼 옆이다 — 결과는 누른 자리에서 보인다.
-update_error_notice: DeltaGenerator | None = None
+def _upeh_rows(table: pd.DataFrame) -> pd.DataFrame:
+    rows = performance_from_edit_table(table)
+    # 빈 월 칸을 채우는 것은 값 수정이 아니라 **경로를 하나 더 만드는 일**이다. 대당
+    # Capa 는 그 행마다 측정률 두 표를 조인하고 없으면 멈추므로, 여기서 막지 않으면
+    # 저장은 정상으로 끝나고 HOME 을 열 때 터진다(2026-09-23 사내에서 실제로 겪었다).
+    # **이번 편집이 새로 만든 조합만** 본다 — 이미 어긋나 있던 것까지 막으면 상관없는
+    # 칸을 고치려던 사람이 자기가 만들지 않은 문제에 걸린다.
+    missing = missing_ratio_rows(
+        added_performance_keys(reference_tables["RQ_UPEH"], rows),
+        {name: reference_tables[name] for name in ("RQ_LOT_RATIO", "RQ_WF_RATIO")},
+    )
+    if missing:
+        raise ValueError(describe_missing_ratio_rows(missing))
+    return rows
 
 
-def _grid_notice(editor_key: str, imported: pd.DataFrame | None) -> DeltaGenerator | None:
-    return None if imported is not None else editor_notice(editor_key)
+def _apply_edit(editor: _Editor, source: pd.DataFrame, *, imported: bool) -> None:
+    """편집값 또는 붙여넣은 표를 활성 시나리오에 적용하고 완료 알림을 남긴다.
+
+    막히면 `KeyError`/`ValueError` 를 던진다. 적용이 끝나면 원본 토큰을 지워 다음 회차에 이
+    화면의 편집표가 새 원본으로 다시 선다. rerun 은 부르는 쪽이 한다.
+    """
+    rows = editor.to_rows(source)
+    flash = _edit_flash(
+        editor.editor_key,
+        editor.table_name,
+        imported=imported,
+        removed=_removed_values(editor.template, source if imported else None, editor.dimensions),
+    )
+    apply_month_updates(
+        active_scenario,
+        {editor.table_name: rows},
+        effective_start_month,
+        effective_end_month,
+    )
+    queue_reference_import_flash(*flash)
+    st.session_state.pop(SOURCE_TOKEN_KEY, None)
 
 
-import_flash: tuple[str, str] | None = None
-try:
-    if apply_upeh or imported_upeh_table is not None:
-        update_error_tab = upeh_tab
-        update_error_notice = _grid_notice(editor_keys[0], imported_upeh_table)
-        source = imported_upeh_table if imported_upeh_table is not None else edited_upeh_table
-        pending_updates["RQ_UPEH"] = performance_from_edit_table(source)
-        # 빈 월 칸을 채우는 것은 값 수정이 아니라 **경로를 하나 더 만드는 일**이다. 대당
-        # Capa 는 그 행마다 측정률 두 표를 조인하고 없으면 멈추므로, 여기서 막지 않으면
-        # 저장은 정상으로 끝나고 HOME 을 열 때 터진다(2026-09-23 사내에서 실제로 겪었다).
-        # **이번 편집이 새로 만든 조합만** 본다 — 이미 어긋나 있던 것까지 막으면 상관없는
-        # 칸을 고치려던 사람이 자기가 만들지 않은 문제에 걸린다.
-        _added_keys = added_performance_keys(
-            reference_tables["RQ_UPEH"], pending_updates["RQ_UPEH"]
-        )
-        _missing_ratios = missing_ratio_rows(
-            _added_keys,
-            {name: reference_tables[name] for name in ("RQ_LOT_RATIO", "RQ_WF_RATIO")},
-        )
-        if _missing_ratios:
-            raise ValueError(describe_missing_ratio_rows(_missing_ratios))
-        import_flash = _edit_flash(
-            editor_keys[0],
-            "RQ_UPEH",
-            imported=imported_upeh_table is not None,
-            removed=_removed_values(
-                default_upeh_table, imported_upeh_table, PERFORMANCE_EDITOR_DIMENSIONS
-            ),
-        )
-    if apply_run_rate or imported_run_rate_table is not None:
-        update_error_tab = run_rate_tab
-        update_error_notice = _grid_notice(editor_keys[1], imported_run_rate_table)
-        source = (
-            imported_run_rate_table
-            if imported_run_rate_table is not None
-            else edited_run_rate_table
-        )
-        pending_updates["RQ_RUN_RATE"] = reference_from_edit_table(
-            source, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "효율 편집값"
-        )
-        import_flash = _edit_flash(
-            editor_keys[1],
-            "RQ_RUN_RATE",
-            imported=imported_run_rate_table is not None,
-            removed=_removed_values(
-                default_run_rate_table, imported_run_rate_table, RUN_RATE_DIMENSIONS
-            ),
-        )
-    if apply_vital or imported_vital_table is not None:
-        update_error_tab = vital_tab
-        update_error_notice = _grid_notice(editor_keys[2], imported_vital_table)
-        source = imported_vital_table if imported_vital_table is not None else edited_vital_table
-        pending_updates["RQ_VITAL"] = reference_from_edit_table(
-            source, VITAL_DIMENSIONS, "편중률", "여유율 편집값"
-        )
-        import_flash = _edit_flash(
-            editor_keys[2],
-            "RQ_VITAL",
-            imported=imported_vital_table is not None,
-            removed=_removed_values(default_vital_table, imported_vital_table, VITAL_DIMENSIONS),
-        )
-    if apply_lot_ratio or imported_lot_ratio_table is not None:
-        update_error_tab = lot_ratio_tab
-        update_error_notice = _grid_notice(editor_keys[3], imported_lot_ratio_table)
-        source = (
-            imported_lot_ratio_table
-            if imported_lot_ratio_table is not None
-            else edited_lot_ratio_table
-        )
-        pending_updates["RQ_LOT_RATIO"] = reference_from_edit_table(
-            source,
-            RATIO_DIMENSIONS,
-            "Lot 측정률",
-            "Lot측정률 편집값",
-        )
-        import_flash = _edit_flash(
-            editor_keys[3],
-            "RQ_LOT_RATIO",
-            imported=imported_lot_ratio_table is not None,
-            removed=_removed_values(
-                default_lot_ratio_table, imported_lot_ratio_table, RATIO_DIMENSIONS
-            ),
-        )
-    if apply_wf_ratio or imported_wf_ratio_table is not None:
-        update_error_tab = wf_ratio_tab
-        update_error_notice = _grid_notice(editor_keys[4], imported_wf_ratio_table)
-        source = (
-            imported_wf_ratio_table
-            if imported_wf_ratio_table is not None
-            else edited_wf_ratio_table
-        )
-        pending_updates["RQ_WF_RATIO"] = reference_from_edit_table(
-            source, RATIO_DIMENSIONS, "WF측정률", "WF측정률 편집값"
-        )
-        import_flash = _edit_flash(
-            editor_keys[4],
-            "RQ_WF_RATIO",
-            imported=imported_wf_ratio_table is not None,
-            removed=_removed_values(
-                default_wf_ratio_table, imported_wf_ratio_table, RATIO_DIMENSIONS
-            ),
-        )
-    if apply_run_day or imported_run_day_table is not None:
-        update_error_tab = run_day_tab
-        update_error_notice = _grid_notice(editor_keys[5], imported_run_day_table)
-        source = (
-            imported_run_day_table if imported_run_day_table is not None else edited_run_day_table
-        )
-        pending_updates["RQ_RUN_DAY"] = reference_from_edit_table(
-            source, RUN_DAY_DIMENSIONS, "RUN_DAY", "일수 편집값"
-        )
-        import_flash = _edit_flash(
-            editor_keys[5],
-            "RQ_RUN_DAY",
-            imported=imported_run_day_table is not None,
-            removed=_removed_values(
-                default_run_day_table, imported_run_day_table, RUN_DAY_DIMENSIONS
-            ),
-        )
-    for table_name, category, value_column, editor_key in EQUIPMENT_EDITORS:
-        equipment_sub_tab = {
-            "RQ_EQP_OWN": equipment_own_tab,
-            "RQ_EQP_LENT": equipment_lent_tab,
-            "RQ_EQP_AVBL": equipment_available_tab,
-        }[table_name]
-        edited_equipment, apply_equipment, imported_equipment = equipment_editor_results[table_name]
-        if not (apply_equipment or imported_equipment is not None):
-            continue
-        update_error_tab = equipment_sub_tab
-        update_error_notice = _grid_notice(editor_key, imported_equipment)
-        source = imported_equipment if imported_equipment is not None else edited_equipment
-        pending_updates[table_name] = equipment_count_from_edit_table(
-            source, category, value_column
-        )
-        import_flash = _edit_flash(
-            editor_key,
-            table_name,
-            imported=imported_equipment is not None,
-            removed=_removed_values(
-                equipment_edit_tables[table_name], imported_equipment, EQUIPMENT_DIMENSIONS
-            ),
-        )
-    if pending_updates:
-        apply_month_updates(
-            active_scenario,
-            pending_updates,
-            effective_start_month,
-            effective_end_month,
-        )
-        if import_flash is not None:
-            queue_reference_import_flash(*import_flash)
-        st.session_state.pop(SOURCE_TOKEN_KEY, None)
-        st.rerun()
-except (KeyError, ValueError) as exc:
-    if update_error_notice is not None:
-        update_error_notice.error(str(exc))
-    else:
-        with update_error_tab:
-            st.error(str(exc))
-    st.stop()
+def _paste_into(editor: _Editor) -> Callable[[pd.DataFrame], None]:
+    def paste(table: pd.DataFrame) -> None:
+        _apply_edit(editor, table, imported=True)
+
+    return paste
+
+
+EDITORS = (
+    _Editor(
+        "RQ_UPEH",
+        EDITOR_UPEH,
+        upeh_tab,
+        PERFORMANCE_EDITOR_DIMENSIONS,
+        default_upeh_table,
+        _upeh_rows,
+    ),
+    _Editor(
+        "RQ_RUN_RATE",
+        EDITOR_RUN_RATE,
+        run_rate_tab,
+        RUN_RATE_DIMENSIONS,
+        default_run_rate_table,
+        lambda table: reference_from_edit_table(
+            table, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "효율 편집값"
+        ),
+    ),
+    _Editor(
+        "RQ_VITAL",
+        EDITOR_VITAL,
+        vital_tab,
+        VITAL_DIMENSIONS,
+        default_vital_table,
+        lambda table: reference_from_edit_table(table, VITAL_DIMENSIONS, "편중률", "여유율 편집값"),
+    ),
+    _Editor(
+        "RQ_LOT_RATIO",
+        EDITOR_LOT_RATIO,
+        lot_ratio_tab,
+        RATIO_DIMENSIONS,
+        default_lot_ratio_table,
+        lambda table: reference_from_edit_table(
+            table, RATIO_DIMENSIONS, "Lot 측정률", "Lot측정률 편집값"
+        ),
+    ),
+    _Editor(
+        "RQ_WF_RATIO",
+        EDITOR_WF_RATIO,
+        wf_ratio_tab,
+        RATIO_DIMENSIONS,
+        default_wf_ratio_table,
+        lambda table: reference_from_edit_table(
+            table, RATIO_DIMENSIONS, "WF측정률", "WF측정률 편집값"
+        ),
+    ),
+    _Editor(
+        "RQ_RUN_DAY",
+        EDITOR_RUN_DAY,
+        run_day_tab,
+        RUN_DAY_DIMENSIONS,
+        default_run_day_table,
+        lambda table: reference_from_edit_table(
+            table, RUN_DAY_DIMENSIONS, "RUN_DAY", "일수 편집값"
+        ),
+    ),
+)
+
+
+def _equipment_rows(category: str, value_column: str) -> Callable[[pd.DataFrame], pd.DataFrame]:
+    def to_rows(table: pd.DataFrame) -> pd.DataFrame:
+        return equipment_count_from_edit_table(table, category, value_column)
+
+    return to_rows
+
+
+# 설비대수도 다른 기준정보와 **같은 편집기**를 쓴다. 값붙여넣기만 되던 화면이라 한 칸을
+# 고치려면 표 전체를 Excel 로 왕복해야 했다.
+EQUIPMENT_EDITOR_SPECS = tuple(
+    _Editor(
+        table_name,
+        editor_key,
+        equipment_sub_tab,
+        EQUIPMENT_DIMENSIONS,
+        equipment_edit_tables[table_name],
+        _equipment_rows(category, value_column),
+    )
+    for equipment_sub_tab, (table_name, category, value_column, editor_key) in zip(
+        (equipment_own_tab, equipment_lent_tab, equipment_available_tab),
+        EQUIPMENT_EDITORS,
+        strict=True,
+    )
+)
+# 편집기의 값 형식. (숫자 형식, 한 칸 증분, 최댓값)
+EDITOR_FORMATS: dict[str, tuple[str, float, float | None]] = {
+    "RQ_UPEH": ("%,.2f", 0.01, None),
+    "RQ_RUN_RATE": ("percent", 0.001, 1.0),
+    "RQ_VITAL": ("percent", 0.001, None),
+    "RQ_LOT_RATIO": ("percent", 0.001, 1.0),
+    "RQ_WF_RATIO": ("percent", 0.001, 1.0),
+    "RQ_RUN_DAY": ("%,.0f", 1.0, None),
+    "RQ_EQP_OWN": ("%,.2f", 0.01, None),
+    "RQ_EQP_LENT": ("%,.2f", 0.01, None),
+    "RQ_EQP_AVBL": ("%,.2f", 0.01, None),
+}
+
+editor_results: list[tuple[_Editor, pd.DataFrame, bool]] = []
+for editor in (*EDITORS, *EQUIPMENT_EDITOR_SPECS):
+    number_format, step, max_value = EDITOR_FORMATS[editor.table_name]
+    is_equipment = editor in EQUIPMENT_EDITOR_SPECS
+    edited_table, applied = render_month_editor(
+        editor.tab,
+        editor.template,
+        editor.dimensions,
+        editor.editor_key,
+        number_format,
+        step,
+        max_value=max_value,
+        table_name=editor.table_name,
+        csv_file_name=f"{editor.table_name}_{effective_start_month}_{effective_end_month}.csv",
+        dialog_key=DIALOG_KEY,
+        on_paste=_paste_into(editor),
+        card_name=CARD_NAME,
+        # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
+        value_labels=process_labels.value_labels(),
+        outer_tab=equipment_tab if is_equipment else None,
+    )
+    editor_results.append((editor, edited_table, applied))
+
+for editor, edited_table, applied in editor_results:
+    if not applied:
+        continue
+    try:
+        _apply_edit(editor, edited_table, imported=False)
+    except (KeyError, ValueError) as exc:
+        # 표 위 `변경사항 적용` 에서 난 오류는 그 버튼 바로 아래 자리에 쓴다.
+        notice = editor_notice(editor.editor_key)
+        if notice is not None:
+            notice.error(str(exc))
+        else:
+            with editor.tab:
+                st.error(str(exc))
+        st.stop()
+    st.rerun()

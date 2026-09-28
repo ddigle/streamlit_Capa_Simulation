@@ -1,9 +1,14 @@
 # Purpose: 분류 컬럼 다중선택 필터와 초기화 버튼을 한 모양으로 제공한다.
 
-"""Shared expander with per-column multiselect filters.
+"""Shared per-column multiselect filters.
 
-공정별 확보율의 세 탭이 같은 블록을 각자 복제하고 있었다. 초기화 버튼, 가로로 늘어선
-multiselect, 선택값으로 프레임을 거르는 절차가 같고 대상 컬럼만 달랐다.
+공정별 확보율의 세 탭이 같은 블록을 각자 복제하고 있었다. 초기화 버튼, 늘어선 multiselect,
+선택값으로 프레임을 거르는 절차가 같고 대상 컬럼만 달랐다.
+
+두 모양이 있다. 본문 표 위의 접는 틀(`render_column_filters`)과, 사이드바 조건 카드 안에 세로로
+쌓는 모양(`render_column_filter_controls`, 2026-09-29 사용자 결정 — 필터는 사이드바 조건 카드).
+카드는 그 탭이 열렸을 때만 서므로, 닫힌 탭의 표를 걸러야 할 때는 위젯 없이 세션에 남은 선택만
+읽는다(`apply_column_filters`). 선택은 `persist_state="session"` 이라 위젯이 없는 회차에도 남는다.
 """
 
 from __future__ import annotations
@@ -66,6 +71,70 @@ def render_column_filters(
                     select_all=True,
                 )
 
+    filtered = data
+    for column, selected in selections.items():
+        if selected:
+            filtered = filtered.loc[filtered[column].isin(selected)]
+    return filtered.copy()
+
+
+def column_filter_key(key_prefix: str, column: str) -> str:
+    return f"{key_prefix}_{column}"
+
+
+def apply_column_filters(
+    data: pd.DataFrame,
+    columns: Sequence[str],
+    *,
+    key_prefix: str,
+) -> pd.DataFrame:
+    """세션에 남은 선택으로만 거른다. 위젯을 그리지 않는 회차(카드가 없는 탭)에 쓴다."""
+    filtered = data
+    for column in columns:
+        selected = st.session_state.get(column_filter_key(key_prefix, column))
+        if isinstance(selected, list) and selected and column in filtered.columns:
+            filtered = filtered.loc[filtered[column].isin(selected)]
+    return filtered.copy()
+
+
+def render_column_filter_controls(
+    data: pd.DataFrame,
+    columns: Sequence[str],
+    *,
+    key_prefix: str,
+    column_labels: Mapping[str, str] | None = None,
+    value_labels: Mapping[str, Mapping[str, str]] | None = None,
+    disabled: bool = False,
+) -> pd.DataFrame:
+    """조건 카드 안에 필터를 **세로로** 쌓고 거른 프레임을 돌려준다(접는 틀 없음).
+
+    사이드바 폭이라 가로로 늘어놓지 않는다. `disabled` 는 필터를 바꾸면 사라질 것(적용하지
+    않은 편집)이 있을 때 부르는 쪽이 잠그는 데 쓴다 — 선택은 그대로 걸린다.
+    """
+    filter_keys = {column: column_filter_key(key_prefix, column) for column in columns}
+    if st.button(
+        "필터 초기화",
+        key=f"{key_prefix}_reset",
+        icon=":material/filter_alt_off:",
+        width="stretch",
+        disabled=disabled,
+    ):
+        for filter_key in filter_keys.values():
+            st.session_state[filter_key] = []
+    selections: dict[str, list[str]] = {}
+    for column in columns:
+        options = data[column].dropna().drop_duplicates().tolist()
+        labels = (value_labels or {}).get(column)
+        selections[column] = st.multiselect(
+            (column_labels or {}).get(column, column),
+            options=options,
+            key=filter_keys[column],
+            persist_state="session",
+            placeholder="전체",
+            format_func=ProcessLabelFormatter(labels) if labels else str,
+            select_all=True,
+            disabled=disabled,
+        )
     filtered = data
     for column, selected in selections.items():
         if selected:

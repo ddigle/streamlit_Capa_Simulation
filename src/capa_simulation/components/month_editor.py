@@ -22,39 +22,48 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 from streamlit.elements.lib.column_types import ColumnConfig
 
-from capa_simulation.components.column_filter import render_column_filters
+from capa_simulation.components.column_filter import (
+    apply_column_filters,
+    render_column_filter_controls,
+)
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.process_labels import ProcessLabelFormatter
-from capa_simulation.components.reference_csv_tools import render_reference_clipboard_tools
+from capa_simulation.components.reference_csv_tools import render_reference_clipboard_form
+from capa_simulation.components.tab_marks import editor_has_edits
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
+from capa_simulation.sidebar_status import condition_card
 
-# 필터 위젯은 숨은 탭에서 그려지지 않는다(아래 조기 반환). 그래도 선택이 남는 것은
-# `column_filter` 의 `persist_state="session"` 덕이다. 화면에는 실제로 사라지는 것, 곧
-# 아직 적용하지 않은 편집만 적는다.
-FILTER_NOTICE = (
-    "필터는 화면만 좁힙니다. 변경사항 적용은 필터와 무관하게 표 전체를 저장합니다. "
-    "필터를 바꾸면 아직 적용하지 않은 편집은 사라집니다. 필터 선택 자체는 탭을 옮겨도 "
-    "남습니다."
+# 사이드바 조건 카드. 필터는 본문이 아니라 여기 선다(2026-09-29 사용자 결정 — 필터·조건은
+# 사이드바). 카드 이름은 페이지가 주며, 모든 탭이 **같은 카드**를 쓴다 — 한 번 편 카드는 탭을
+# 옮겨도 편 채로 남는다.
+FILTER_CARD_LABEL = "표 조건"
+# 필터를 바꾸면 보이는 행이 바뀌어 적용하지 않은 편집을 버려야 한다(편집 델타가 행 위치 기반).
+# 그래서 고친 것이 남아 있으면 필터를 잠근다 — 조용히 버리는 것보다 낫다.
+FILTER_LOCKED_NOTICE = (
+    "적용하지 않은 편집이 있어 필터를 잠갔습니다. 적용하거나 「편집 취소」를 누른 뒤 바꾸세요."
 )
-# 화면은 표시명이지만 아래 CSV 양식과 붙여넣기 검증은 원본 공정명 계약이다. 화면 이름을
-# 그대로 적어 붙여넣으면 분류 행 대조에서 막히므로 그 사실을 표 아래에 적는다.
+# 화면은 표시명이지만 CSV 양식과 붙여넣기 검증은 원본 공정명 계약이다. 붙여넣기 팝업에만 적는다.
 RENAME_NOTICE = (
     "분류 컬럼은 화면 표시명으로 보입니다. CSV 양식과 붙여넣기는 원본 공정명 계약이므로 "
     "양식을 내려받아 그 이름 그대로 수정하세요."
 )
+PASTE_DROPS_EDITS_NOTICE = (
+    "이 표에 적용하지 않은 편집이 있습니다. 붙여넣기를 적용하면 그 편집은 버려집니다 — 먼저 "
+    "「변경사항 적용」을 누르거나, 고친 값을 붙여넣을 표에 함께 담으세요."
+)
+# 적용을 누르면 어디까지 반영되는지. 동작을 좌우하는 안내라 Guide 로만 보내지 않고 버튼
+# 툴팁에 남긴다(생산 계획과 같다).
+APPLY_NOTICE = "적용 후 계산에 반영됩니다. 보관하려면 새 리비전을 저장하세요."
 # 표시명을 그리는 분류 컬럼의 폭 한계. `SelectboxColumn` 은 원본 값으로 폭을 재므로
 # 표시명이 더 길면 잘린다.
-# 적용을 누르면 어디까지 반영되는지. 「지금 계산」과 「다시 열었을 때」는 다른 것인데
-# 버튼 글자만으로는 갈라지지 않는다.
-APPLY_NOTICE = "적용 후 계산에 반영됩니다. 보관하려면 새 리비전을 저장하세요."
 DIMENSION_MIN_WIDTH_PX = 110
 DIMENSION_MAX_WIDTH_PX = 280
 
@@ -64,7 +73,6 @@ def render_month_editor(
     default_table: pd.DataFrame,
     dimensions: list[str],
     editor_key: str,
-    caption: str,
     number_format: str,
     step: float,
     min_value: float = 0.0,
@@ -72,17 +80,41 @@ def render_month_editor(
     *,
     table_name: str,
     csv_file_name: str,
+    dialog_key: str,
+    on_paste: Callable[[pd.DataFrame], None],
+    card_name: str,
     value_labels: Mapping[str, Mapping[str, str]] | None = None,
-) -> tuple[pd.DataFrame, bool, pd.DataFrame | None]:
-    if tab_is_hidden(tab):
+    outer_tab: OpenTab | None = None,
+) -> tuple[pd.DataFrame, bool]:
+    """월 편집표 하나. 돌려주는 것은 (되머지한 전체 표, 적용 버튼이 눌렸는가) 다.
+
+    **적용하지 않은 편집이 남은 표는 탭이 닫혀도 그린다.** `st.data_editor` 는 그리지 않은
+    회차에 편집 상태를 잃는다 — 전에는 닫힌 탭을 건너뛰어, 고친 뒤 다른 탭을 누르는 순간 편집이
+    조용히 사라졌다. 편집이 없는 닫힌 탭은 예전처럼 건너뛴다(그리는 비용 때문에).
+
+    `outer_tab` 은 탭 안의 탭(설비대수 › 보유 등)의 바깥 탭이다. 안쪽 탭은 바깥이 닫혀도 제
+    선택만 알아서, 바깥을 함께 봐야 지금 화면에 보이는지 안다.
+
+    **붙여넣기는 팝업 안에서 끝난다.** 팝업은 fragment 라 안에서 제출하면 팝업 함수만 다시 돈다
+    — 결과를 페이지로 돌려줄 길이 없으므로 `on_paste` 가 검증·적용하고, 막히면
+    `KeyError`/`ValueError` 를 던진다. 팝업이 그 글을 팝업 안에 쓴다.
+    """
+    open_now = not (tab_is_hidden(tab) or tab_is_hidden(outer_tab))
+    pending = editor_has_edits(editor_key)
+    if not open_now and not pending:
         # 지난 회차의 알림 자리는 이번 화면에 없다. 남겨 두면 거기 쓴 오류가 사라진다.
         st.session_state.pop(_notice_key(editor_key), None)
-        return pd.DataFrame(), False, None
+        return pd.DataFrame(), False
     month_columns = [column for column in default_table.columns if column not in dimensions]
+    visible_table = _visible_table(
+        default_table,
+        dimensions,
+        editor_key,
+        value_labels,
+        card_name=card_name if open_now else None,
+        locked=pending,
+    )
     with tab:
-        st.caption(caption)
-        _render_scope(default_table, month_columns)
-        visible_table = _visible_table(default_table, dimensions, editor_key, value_labels)
         # 작업 줄은 표 **위**다. 표가 높이 500px 이라 아래에 두면 고친 뒤 버튼이 화면 밖이어서
         # 적용하지 않고 넘어가기 쉽다(2026-09-28 사용자 지적). 버튼 값은 표보다 먼저 만들어도
         # 누른 회차에 표의 편집값이 그대로 들어온다. 변경 개수는 표를 그린 뒤에야 알므로 자리만
@@ -93,13 +125,31 @@ def render_month_editor(
                 icon=":material/check:",
                 key=f"{editor_key}_apply",
                 type="primary",
+                help=APPLY_NOTICE,
             )
+            # 여는 버튼은 **콜백**으로 연다 — 콜백은 스크립트보다 먼저 돌아 한 회차에 팝업이 둘
+            # 뜨지 않는다(생산 계획과 같은 규칙).
+            st.button(
+                "Excel 붙여넣기",
+                icon=":material/content_paste:",
+                key=f"{editor_key}_open_paste",
+                on_click=_open_paste,
+                args=(dialog_key, editor_key),
+            )
+            if pending:
+                st.button(
+                    "편집 취소",
+                    icon=":material/undo:",
+                    key=f"{editor_key}_discard",
+                    on_click=_discard_edits,
+                    args=(editor_key,),
+                    help="이 표에서 적용하지 않은 편집을 버립니다.",
+                )
             change_slot = st.empty()
-            st.caption(APPLY_NOTICE)
-        # **결과는 누른 자리에서 보인다.** 이 버튼의 성공·오류는 작업 줄 바로 아래 자리에 쓴다 —
-        # 표 아래에 두면 500px 떨어진다. 붙여넣기(표 아래 폼)의 결과는 폼 옆에서 붙여넣기
-        # 도구가 꺼낸다. 그래서 알림 키가 둘이다(`reference_data._edit_flash`). 오류는 적용이
-        # 표 뒤에서 도므로 이 자리를 세션에 적어 두고 페이지가 거기에 쓴다(`editor_notice`).
+        _render_scope(default_table, visible_table, month_columns)
+        # **결과는 누른 자리에서 보인다.** 적용·붙여넣기의 성공과 적용 오류는 작업 줄 바로 아래
+        # 자리에 쓴다. 오류는 적용이 표 뒤에서 도므로 이 자리를 세션에 적어 두고 페이지가 거기에
+        # 쓴다(`editor_notice`).
         notice = st.empty()
         st.session_state[_notice_key(editor_key)] = notice
         applied_flash = st.session_state.pop(f"{editor_key}_apply_flash", None)
@@ -140,18 +190,69 @@ def render_month_editor(
             change_slot.markdown(
                 f"**변경사항 확인** &nbsp;{changed_cells:,}개 값 · {changed_rows:,}개 행"
             )
-        if _has_display_labels(dimensions, value_labels):
-            st.caption(RENAME_NOTICE)
-        # 왕복 CSV·붙여넣기는 전체 표 계약이다. 여기에 걸러진 표를 넘기면 양식이 부분 표가
-        # 되고, 그 부분 표는 검증을 통과해 나머지 공정을 조회기간에서 지운다.
-        imported = render_reference_clipboard_tools(
+    if open_now and st.session_state.get(dialog_key) == editor_key:
+        # 왕복 CSV·붙여넣기는 전체 표 계약이다. 걸러진 표를 넘기면 양식이 부분 표가 되고, 그
+        # 부분 표는 검증을 통과해 나머지 공정을 조회기간에서 지운다.
+        _paste_dialog(
             default_table,
             table_name=table_name,
-            key_columns=dimensions,
+            dimensions=dimensions,
             file_name=csv_file_name,
+            editor_key=editor_key,
+            dialog_key=dialog_key,
+            on_paste=on_paste,
+            rename_notice=_has_display_labels(dimensions, value_labels),
+        )
+    return merged, submitted
+
+
+def _open_paste(dialog_key: str, editor_key: str) -> None:
+    st.session_state[dialog_key] = editor_key
+
+
+def _discard_edits(editor_key: str) -> None:
+    st.session_state.pop(editor_key, None)
+
+
+def _paste_dialog(
+    data: pd.DataFrame,
+    *,
+    table_name: str,
+    dimensions: list[str],
+    file_name: str,
+    editor_key: str,
+    dialog_key: str,
+    on_paste: Callable[[pd.DataFrame], None],
+    rename_notice: bool,
+) -> None:
+    def _close() -> None:
+        st.session_state.pop(dialog_key, None)
+
+    @st.dialog(f"Excel 붙여넣기 · {table_name}", width="large", on_dismiss=_close)
+    def _body() -> None:
+        # 붙여넣기를 적용하면 원본이 바뀌어 표의 편집 상태를 비운다. 버리기 전에 말한다.
+        if editor_has_edits(editor_key):
+            st.warning(PASTE_DROPS_EDITS_NOTICE)
+        if rename_notice:
+            st.caption(RENAME_NOTICE)
+        imported = render_reference_clipboard_form(
+            data,
+            table_name=table_name,
+            key_columns=dimensions,
+            file_name=file_name,
             key=f"{editor_key}_csv",
         )
-    return merged, submitted, imported
+        if imported is None:
+            return
+        try:
+            on_paste(imported)
+        except (KeyError, ValueError) as exc:
+            st.error(str(exc))
+            return
+        _close()
+        st.rerun()
+
+    _body()
 
 
 def _notice_key(editor_key: str) -> str:
@@ -240,11 +341,14 @@ def merge_edited_months(
     return merged
 
 
-def _render_scope(default_table: pd.DataFrame, month_columns: list[str]) -> None:
+def _render_scope(
+    default_table: pd.DataFrame, visible_table: pd.DataFrame, month_columns: list[str]
+) -> None:
     """무엇을 편집하고 있는지 한 줄. 표를 보기 전에 범위를 알려 준다.
 
     월 이름은 표 머리글에 쓰는 컬럼명 그대로다 — 여기서만 다른 형식으로 적으면 같은
-    달을 두 이름으로 부르게 된다.
+    달을 두 이름으로 부르게 된다. 필터가 행을 줄였으면 그 사실도 적는다 — 필터는 사이드바
+    카드에 있어 접혀 있으면 본문만 보고는 행이 빠진 까닭을 알 수 없다.
     """
     if not month_columns:
         return
@@ -253,8 +357,14 @@ def _render_scope(default_table: pd.DataFrame, month_columns: list[str]) -> None
         if len(month_columns) > 1
         else str(month_columns[0])
     )
+    filtered = (
+        f" · :material/filter_alt: 필터로 {len(visible_table):,}개 행 표시"
+        if len(visible_table) != len(default_table)
+        else ""
+    )
     st.markdown(
-        f"**편집 범위** &nbsp;{span} · {len(month_columns)}개월 · 전체 {len(default_table):,}개 행"
+        f"**편집 범위** &nbsp;{span} · {len(month_columns)}개월 · "
+        f"전체 {len(default_table):,}개 행{filtered}"
     )
 
 
@@ -287,22 +397,36 @@ def _visible_table(
     dimensions: list[str],
     editor_key: str,
     value_labels: Mapping[str, Mapping[str, str]] | None,
+    *,
+    card_name: str | None,
+    locked: bool,
 ) -> pd.DataFrame:
     """화면에 그릴 행만 남긴 표. 필터를 걸 수 없는 표는 원본 그대로다.
+
+    필터 위젯은 사이드바 조건 카드에 선다(`card_name`). 탭이 닫혀 카드를 세우지 않는 회차
+    (`card_name=None` — 적용하지 않은 편집 때문에 닫힌 탭의 표를 그리는 경우)에는 세션에 남은
+    선택만 읽는다. `locked` 면 카드의 필터를 잠근다.
 
     `value_labels` 는 필터 옵션의 **표시**에만 쓴다. 선택값·거른 프레임·편집표·왕복 CSV 는
     모두 원본 공정명이다. 표시명 조회는 페이지가 하고 이 모듈은 받은 매핑만 넘긴다.
     """
     if default_table.empty or any(column not in default_table.columns for column in dimensions):
         return default_table
-    visible = render_column_filters(
-        default_table,
-        dimensions,
-        key_prefix=f"{editor_key}_filter",
-        column_labels=COLUMN_LABELS,
-        value_labels=value_labels,
-    )
-    st.caption(FILTER_NOTICE)
+    key_prefix = f"{editor_key}_filter"
+    if card_name is None:
+        visible = apply_column_filters(default_table, dimensions, key_prefix=key_prefix)
+    else:
+        with condition_card(FILTER_CARD_LABEL, name=card_name, icon=":material/filter_alt:"):
+            visible = render_column_filter_controls(
+                default_table,
+                dimensions,
+                key_prefix=key_prefix,
+                column_labels=COLUMN_LABELS,
+                value_labels=value_labels,
+                disabled=locked,
+            )
+            if locked:
+                st.caption(FILTER_LOCKED_NOTICE)
     # data_editor 의 편집 델타는 행 '위치' 기반이라 보이는 행 집합이 바뀌면 남아 있던 편집이
     # 다른 행에 붙는다. 위젯을 만들기 전에 버려야 그 오염이 저장까지 가지 않는다.
     signature_key = f"{editor_key}_filter_rows"

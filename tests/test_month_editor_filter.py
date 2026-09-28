@@ -12,7 +12,12 @@ from io import BytesIO
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation.components.month_editor import FILTER_NOTICE, merge_edited_months
+from capa_simulation.components.month_editor import (
+    FILTER_LOCKED_NOTICE,
+    PASTE_DROPS_EDITS_NOTICE,
+    merge_edited_months,
+)
+from capa_simulation.components.page_guide import load_guide
 
 RUN_DAY_TABLE = pd.DataFrame(
     {
@@ -75,20 +80,27 @@ def record_download_button(label, *args, **kwargs):
     return original_download_button(label, *args, **kwargs)
 
 
+def record_paste(imported):
+    # 붙여넣기는 팝업 안에서 끝난다. 페이지가 줄 적용 함수 대신 받은 표를 적어 둔다.
+    st.session_state["returned_imported"] = imported
+
+
 tabs = stateful_tabs(["편집"], key="editor_test_tab")
 try:
     # streamlit 모듈 자체를 바꾸는 패치라 원복이 반드시 돌아야 한다.
     st.download_button = record_download_button
-    edited, submitted, imported = month_editor.render_month_editor(
+    edited, submitted = month_editor.render_month_editor(
         tabs[0],
         table,
         dimensions,
         "demo_editor",
-        "설명",
         "%,.0f",
         1.0,
         table_name="RQ_DEMO",
         csv_file_name="demo.csv",
+        dialog_key="demo_open_dialog",
+        on_paste=record_paste,
+        card_name="demo",
         value_labels=labels.value_labels(),
     )
 finally:
@@ -96,10 +108,14 @@ finally:
 
 st.session_state["returned_table"] = edited
 st.session_state["returned_submitted"] = submitted
-st.session_state["returned_imported"] = imported
 """
 
 RATIO_SCRIPT = EDITOR_SCRIPT.replace('TABLE_NAME = "RUN_DAY"', 'TABLE_NAME = "RATIO"')
+# 탭이 둘인 화면. 닫힌 탭의 편집표가 편집을 지키는지 본다.
+TWO_TAB_SCRIPT = EDITOR_SCRIPT.replace(
+    'tabs = stateful_tabs(["편집"], key="editor_test_tab")',
+    'tabs = stateful_tabs(["편집", "다른"], key="editor_test_tab")',
+)
 
 EDITOR_KEY = "demo_editor"
 
@@ -202,7 +218,11 @@ def test_unfiltered_editor_keeps_the_previous_round_trip() -> None:
 
 
 def test_changing_the_filter_drops_the_edit_that_was_not_applied() -> None:
-    """편집 델타는 행 위치라 보이는 행이 바뀌면 다른 행에 붙는다. 그래서 버린다."""
+    """편집 델타는 행 위치라 보이는 행이 바뀌면 다른 행에 붙는다. 그래서 버린다.
+
+    화면에서는 편집이 남은 동안 필터가 잠겨 이 길로 들어설 수 없다(아래 테스트). 그래도 세션
+    값이 바뀌는 길(프리셋 복원 등)이 남아 있어, 엉뚱한 행에 붙이는 대신 버리는 안전망을 지킨다.
+    """
     app = AppTest.from_string(EDITOR_SCRIPT, default_timeout=60).run()
     app.session_state[f"{EDITOR_KEY}_filter_공정"] = ["Process-B"]
     app.run()
@@ -221,7 +241,7 @@ TEMPLATE_DOWNLOAD_KEY = f"{EDITOR_KEY}_csv_download"
 
 
 def _template_bytes(app: AppTest) -> bytes:
-    """`render_reference_clipboard_tools` 가 실제로 내보낸 양식 CSV 바이트."""
+    """붙여넣기 팝업이 실제로 내보낸 양식 CSV 바이트."""
     captured = app.session_state["captured_download_data"]
     assert TEMPLATE_DOWNLOAD_KEY in captured, f"양식 버튼이 없습니다: {sorted(captured)}"
     return bytes(captured[TEMPLATE_DOWNLOAD_KEY])
@@ -233,13 +253,16 @@ def _filtered_to_one_process(app: AppTest) -> AppTest:
     assert not app.exception
     # 화면 표가 실제로 좁아져 있어야 CSV 가 전체라는 것이 뜻을 가진다.
     assert app.dataframe[0].value["공정"].tolist() == ["Process-B"]
+    # 양식과 붙여넣기는 작업 줄의 「Excel 붙여넣기」 팝업 안이다.
+    app.button(key=f"{EDITOR_KEY}_open_paste").click().run()
+    assert not app.exception
     return app
 
 
 def test_the_csv_template_covers_every_process_while_the_filter_narrows_the_screen() -> None:
     """양식 CSV 가 부분 표가 되면 행 집합 검증을 그대로 통과해 나머지 공정을 지운다.
 
-    `render_reference_clipboard_tools` 에 넘기는 표는 반드시 필터 이전의 전체 표다.
+    붙여넣기 팝업에 넘기는 표는 반드시 필터 이전의 전체 표다.
     되머지와 같은 등급의 데이터 손실 경로라 바이트를 직접 디코드해 고정한다.
     """
     app = AppTest.from_string(EDITOR_SCRIPT, default_timeout=60).run()
@@ -276,16 +299,66 @@ def test_the_pasted_template_still_applies_to_every_process_while_filtered() -> 
     assert imported["공정"].tolist() == ["Process-A", "Process-B", "Process-C"]
 
 
-def test_editor_tells_that_apply_saves_the_whole_table() -> None:
-    """필터를 저장 범위로 오해하면 곧바로 데이터 사고가 된다. 화면에 적어 둔다."""
+def test_the_filters_live_in_the_sidebar_card_and_the_scope_says_they_narrow() -> None:
+    """필터는 사이드바 조건 카드다. 접혀 있으면 본문만 보고는 행이 빠진 까닭을 모르므로,
+    편집 범위 줄이 필터로 줄어든 행 수를 말한다. 필터가 보기만 좁힌다는 뜻은 Guide 가 말한다."""
     app = AppTest.from_string(EDITOR_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    assert f"{EDITOR_KEY}_filter_공정" in {widget.key for widget in app.sidebar.multiselect}
+    assert f"{EDITOR_KEY}_filter_공정" not in {widget.key for widget in app.main.multiselect}
+
+    app = _filtered_to_one_process(app)
+    scope = next(item.value for item in app.markdown if item.value.startswith("**편집 범위**"))
+    assert "필터로 1개 행 표시" in scope and "전체 3개 행" in scope
+    guide = load_guide("reference_data")
+    assert "필터는 화면만 좁힙니다" in guide and "표 **전체**" in guide
+
+
+def test_a_pending_edit_locks_the_filters_and_can_be_discarded() -> None:
+    """고친 것이 남은 동안 필터를 바꾸면 편집을 버려야 한다 — 그래서 잠그고 까닭을 적는다."""
+    app = AppTest.from_string(EDITOR_SCRIPT, default_timeout=60).run()
+    _edit(app, 0, "202608", 15.0)
+    app.run()
 
     assert not app.exception
-    assert FILTER_NOTICE in {caption.value for caption in app.caption}
-    assert "필터" in {expander.label for expander in app.expander}
-    # 필터 선택은 `persist_state="session"` 으로 탭을 옮겨도 남는다. 안내는 실제로
-    # 사라지는 것, 곧 아직 적용하지 않은 편집만 말해야 한다.
-    assert "탭을 옮겨도" in FILTER_NOTICE
+    assert app.multiselect(key=f"{EDITOR_KEY}_filter_공정").disabled
+    assert FILTER_LOCKED_NOTICE in {caption.value for caption in app.sidebar.caption}
+
+    app.button(key=f"{EDITOR_KEY}_discard").click().run()
+    assert not app.exception
+    assert not app.multiselect(key=f"{EDITOR_KEY}_filter_공정").disabled
+    assert app.session_state["returned_table"]["202608"].tolist() == [31.0, 30.0, 29.0]
+
+
+def test_an_edit_survives_switching_to_another_tab() -> None:
+    """닫힌 탭의 편집표를 건너뛰면 편집 상태가 버려진다. 편집이 남은 표는 닫혀도 그린다.
+
+    브라우저는 앞 회차에 있던 위젯의 상태를 다음 회차에 다시 보낸다. 그 회차에 위젯을 그리지
+    않으면 Streamlit 이 상태를 버리고 브라우저도 그 위젯을 지운다 — 그래서 **닫힌 탭에서도
+    편집표가 그려졌는가**가 편집이 살아남는가와 같다. AppTest 는 편집 상태를 스스로 다시 보내지
+    않아 테스트가 브라우저처럼 넣어 준다.
+    """
+    app = AppTest.from_string(TWO_TAB_SCRIPT, default_timeout=60).run()
+    _edit(app, 1, "202608", 15.0)
+    app.run()
+
+    app.session_state["editor_test_tab"] = "다른"
+    _edit(app, 1, "202608", 15.0)
+    app.run()
+    assert not app.exception
+    assert len(app.dataframe) == 1
+    assert app.session_state["returned_table"]["202608"].tolist() == [31.0, 15.0, 29.0]
+    # 닫힌 탭에서는 카드를 세우지 않는다 — 사이드바는 지금 보는 탭의 조건만이다.
+    assert f"{EDITOR_KEY}_filter_공정" not in {widget.key for widget in app.sidebar.multiselect}
+
+
+def test_a_closed_tab_without_edits_skips_its_editor() -> None:
+    """고친 것이 없는 닫힌 탭은 예전처럼 건너뛴다 — 피벗·그리기 비용 때문이다."""
+    app = AppTest.from_string(TWO_TAB_SCRIPT, default_timeout=60).run()
+    app.session_state["editor_test_tab"] = "다른"
+    app.run()
+    assert not app.exception
+    assert len(app.dataframe) == 0
 
 
 def test_filter_options_show_display_names_but_keep_original_values() -> None:
@@ -305,3 +378,13 @@ def test_filter_options_show_display_names_but_keep_original_values() -> None:
         "Process-B",
         "Process-C",
     ]
+
+
+def test_the_paste_popup_warns_before_it_drops_unapplied_edits() -> None:
+    """붙여넣기를 적용하면 표의 편집이 비워진다. 고친 것이 남았으면 팝업이 먼저 말한다."""
+    app = AppTest.from_string(EDITOR_SCRIPT, default_timeout=60).run()
+    _edit(app, 0, "202608", 15.0)
+    app.button(key=f"{EDITOR_KEY}_open_paste").click().run()
+
+    assert not app.exception
+    assert PASTE_DROPS_EDITS_NOTICE in {warning.value for warning in app.warning}

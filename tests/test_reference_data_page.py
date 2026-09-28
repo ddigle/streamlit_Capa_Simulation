@@ -1,8 +1,11 @@
 # Purpose: capacity standards page 관련 정상·예외·회귀 동작을 검증한다.
 
+import ast
 from io import BytesIO
+from pathlib import Path
 
 import pandas as pd
+import pytest
 from streamlit.testing.v1 import AppTest
 
 TEST_SCRIPT = r"""
@@ -461,6 +464,47 @@ WF_RATIO_EXCLUSION_REASON = "WF측정률 음수"
 MISSING_CAPACITY_REASON = "대당 Capa 없음"
 
 
+REFERENCE_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "reference_data.py"
+
+
+def _page_labels(name: str) -> dict[str, str]:
+    """페이지의 탭 라벨 튜플을 **아이콘 뺀 이름 → 라벨** 로. 라벨은 위젯 값이라 그대로 써야 한다."""
+    for node in ast.parse(REFERENCE_PAGE.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == name for target in node.targets
+        ):
+            labels = ast.literal_eval(node.value)
+            return {label.split(" ", 1)[1]: label for label in labels}
+    raise AssertionError(f"{name} 가 없습니다.")
+
+
+REF_TAB = _page_labels("TAB_NAMES")
+EQP_TAB = _page_labels("EQUIPMENT_TAB_NAMES")
+TAB_EDITORS = {
+    "UPEH": "capa_upeh_editor",
+    "효율": "capa_run_rate_editor",
+    "여유율": "capa_vital_editor",
+    "Lot측정률": "capa_lot_ratio_editor",
+    "WF측정률": "capa_wf_ratio_editor",
+    "일수": "capa_run_day_editor",
+}
+
+
+def _open_paste(app: AppTest, editor_key: str) -> AppTest:
+    """작업 줄의 「Excel 붙여넣기」 로 그 표의 붙여넣기 팝업을 연다."""
+    app.button(key=f"{editor_key}_open_paste").click().run()
+    assert not app.exception
+    return app
+
+
+def _open_step_dialog(app: AppTest) -> AppTest:
+    app.session_state["reference_data_active_tab"] = REF_TAB["STEP 구성"]
+    app.run()
+    app.button(key="open_capacity_step_dialog").click().run()
+    assert not app.exception
+    return app
+
+
 def _download(app: AppTest, key: str) -> dict[str, str]:
     """`render_csv_download` 가 실제로 그린 버튼 하나를 키로 찾는다."""
     labels = {button.key: button.label for button in app.download_button}
@@ -561,10 +605,13 @@ def test_capacity_editors_show_route_keys_without_exceptions() -> None:
     }
     route_editor_tabs = {"UPEH", "Lot측정률", "WF측정률"}
     for tab_name, input_label in expected_inputs.items():
-        app.session_state["reference_data_active_tab"] = tab_name
+        app.session_state["reference_data_active_tab"] = REF_TAB[tab_name]
         app.run()
-
         assert not app.exception
+        # 붙여넣기 칸은 본문이 아니라 작업 줄의 팝업이다.
+        assert input_label not in {text_area.label for text_area in app.text_area}
+        app = _open_paste(app, TAB_EDITORS[tab_name])
+
         assert input_label in {text_area.label for text_area in app.text_area}
         if tab_name in route_editor_tabs:
             assert any(
@@ -600,12 +647,13 @@ def test_equipment_tab_gives_each_rq_its_own_editor_and_clipboard() -> None:
         ("가용", "RQ_EQP_AVBL", "capa_eqp_avbl_editor"),
     ):
         app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
-        app.session_state["reference_data_active_tab"] = "설비대수"
-        app.session_state["equipment_count_active_tab"] = sub_tab
+        app.session_state["reference_data_active_tab"] = REF_TAB["설비대수"]
+        app.session_state["equipment_count_active_tab"] = EQP_TAB[sub_tab]
         app.run()
 
         assert not app.exception
         assert f"{editor_key}_apply" in {button.key for button in app.button}
+        app = _open_paste(app, editor_key)
         assert f"{table_name} 표 붙여넣기" in {text_area.label for text_area in app.text_area}
 
 
@@ -616,8 +664,8 @@ def test_equipment_editor_saves_the_edited_month_to_the_scenario() -> None:
     `replace_month_range` 가 구간을 통째로 갈아끼우기 때문이다.
     """
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = "설비대수"
-    app.session_state["equipment_count_active_tab"] = "보유"
+    app.session_state["reference_data_active_tab"] = REF_TAB["설비대수"]
+    app.session_state["equipment_count_active_tab"] = EQP_TAB["보유"]
     app.session_state["capa_eqp_own_editor_filter_공정"] = ["Process-B"]
     app.run()
     assert not app.exception
@@ -649,7 +697,7 @@ def test_required_equipment_detail_exposes_route_filters() -> None:
 
 
 def test_step_editor_clones_the_selected_route_in_one_submit() -> None:
-    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    app = _open_step_dialog(AppTest.from_string(TEST_SCRIPT, default_timeout=60).run())
 
     new_mcp = next(widget for widget in app.text_input if widget.label == "신규 MCP_SEQ")
     app = new_mcp.set_value("2A").run()
@@ -662,12 +710,16 @@ def test_step_editor_clones_the_selected_route_in_one_submit() -> None:
     assert app.session_state["test_step_reqb_rows"] == 2
 
 
-def test_step_tab_widgets_render_while_the_tab_is_hidden() -> None:
-    """숨은 탭에서는 그림만 건너뛴다. 위젯까지 건너뛰면 탭을 오갈 때 선택값이 초기화된다."""
-    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+def test_step_changes_open_in_a_popup_from_the_action_row() -> None:
+    """STEP 추가·삭제는 가끔 하는 쓰기라 본문이 아니라 표 위 작업 줄의 팝업이다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["STEP 구성"]
+    app.run()
 
     assert not app.exception
-    # 기본 탭은 유효 Capa 다. STEP 구성 탭의 경로 선택은 닫혀 있어도 그려져야 한다.
+    assert "capacity_step_route" not in {widget.key for widget in app.selectbox}
+    app.button(key="open_capacity_step_dialog").click().run()
+    assert not app.exception
     assert app.selectbox(key="capacity_step_route").options
 
 
@@ -742,7 +794,7 @@ def _edit_and_apply(app: AppTest, editor_key: str, month_column: str, value: flo
 def _filtered_editor_app(tab_name: str, editor_key: str, filter_column: str) -> AppTest:
     """편집기 탭 하나를 열고 공정 필터로 Process-B 만 남긴 화면."""
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = tab_name
+    app.session_state["reference_data_active_tab"] = REF_TAB[tab_name]
     app.session_state[f"{editor_key}_filter_{filter_column}"] = ["Process-B"]
     app.run()
     assert not app.exception
@@ -823,7 +875,7 @@ def test_run_rate_and_vital_tabs_do_not_share_their_process_filter() -> None:
     # 여유율 탭을 열면서 효율 쪽 선택을 그대로 남겨 둔다. key 가 겹치면 여유율 필터가
     # 그 선택을 그대로 집어 편집표가 Process-B 한 줄로 좁아진다.
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = "여유율"
+    app.session_state["reference_data_active_tab"] = REF_TAB["여유율"]
     app.session_state["capa_run_rate_editor_filter_공정"] = ["Process-B"]
     app.run()
     assert not app.exception
@@ -867,7 +919,7 @@ def test_unit_capacity_controls_render_while_their_tab_is_hidden() -> None:
 def test_unfiltered_editor_apply_saves_the_same_rows_as_before() -> None:
     """필터를 만지지 않은 적용은 예전과 같아야 한다."""
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = "일수"
+    app.session_state["reference_data_active_tab"] = REF_TAB["일수"]
     app.run()
     assert not app.exception
     app = _edit_and_apply(app, "capa_run_day_editor", "202608", 20.0)
@@ -918,12 +970,14 @@ def test_exclusion_tables_stay_original_without_a_rename_profile() -> None:
 def test_step_summary_and_route_selector_show_the_display_name() -> None:
     """STEP 구성 요약 표와 복제·삭제 대상 선택 라벨도 화면이라 표시명을 쓴다."""
     app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = "STEP 구성"
+    app.session_state["reference_data_active_tab"] = REF_TAB["STEP 구성"]
     app.run()
 
     assert not app.exception
     summary = _frame_with_column(app, "STEP 수")
     assert set(summary["공정"]) == {"가공"}
+    app.button(key="open_capacity_step_dialog").click().run()
+    assert not app.exception
     assert all(
         option.startswith("가공 · ") for option in app.selectbox(key="capacity_step_route").options
     )
@@ -931,7 +985,7 @@ def test_step_summary_and_route_selector_show_the_display_name() -> None:
 
 def test_step_route_selection_still_edits_the_original_process() -> None:
     """선택 라벨이 표시명이어도 STEP 복제는 원본 경로에 그대로 적용된다."""
-    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
+    app = _open_step_dialog(AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run())
 
     new_mcp = next(widget for widget in app.text_input if widget.label == "신규 MCP_SEQ")
     app = new_mcp.set_value("2A").run()
@@ -948,8 +1002,8 @@ def test_step_route_selection_still_edits_the_original_process() -> None:
 def _equipment_sub_tab_app(sub_tab: str, script: str = RENAMED_TEST_SCRIPT) -> AppTest:
     """설비대수 탭의 안쪽 탭 하나를 연 화면."""
     app = AppTest.from_string(script, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = "설비대수"
-    app.session_state["equipment_count_active_tab"] = sub_tab
+    app.session_state["reference_data_active_tab"] = REF_TAB["설비대수"]
+    app.session_state["equipment_count_active_tab"] = EQP_TAB[sub_tab]
     app.run()
     assert not app.exception
     return app
@@ -966,7 +1020,7 @@ def test_equipment_count_table_shows_the_display_name_while_its_paste_form_stays
         ("대여", "capa_eqp_lent_editor"),
         ("가용", "capa_eqp_avbl_editor"),
     ):
-        editor_app = _equipment_sub_tab_app(sub_tab)
+        editor_app = _open_paste(_equipment_sub_tab_app(sub_tab), editor_key)
         exported = _download_frame(editor_app, f"{editor_key}_csv_download")
         assert exported["공정"].tolist() == ["Process-A"], sub_tab
 
@@ -985,7 +1039,7 @@ def test_equipment_count_filter_keeps_the_original_selection_value() -> None:
 def test_month_editor_shows_the_label_but_returns_the_original_process() -> None:
     """편집기 분류 컬럼의 값은 원본이다. 되머지 키와 저장값이 여기 걸린다."""
     app = AppTest.from_string(RENAMED_TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = "일수"
+    app.session_state["reference_data_active_tab"] = REF_TAB["일수"]
     app.run()
     assert not app.exception
 
@@ -1003,12 +1057,13 @@ def test_month_editor_shows_the_label_but_returns_the_original_process() -> None
 
 
 def test_month_editor_paste_template_keeps_the_original_process_name() -> None:
-    """편집기 아래 왕복 양식은 표시명이 닿으면 안 되는 첫 번째 자리다."""
+    """붙여넣기 팝업의 왕복 양식은 표시명이 닿으면 안 되는 첫 번째 자리다."""
     app = AppTest.from_string(RENAMED_TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = "일수"
+    app.session_state["reference_data_active_tab"] = REF_TAB["일수"]
     app.run()
 
     assert not app.exception
+    app = _open_paste(app, "capa_run_day_editor")
     exported = _download_frame(app, "capa_run_day_editor_csv_download")
     assert exported["공정"].tolist() == ["Process-A", "Process-B"]
 
@@ -1034,3 +1089,60 @@ def test_only_uncounted_pkg_rows_raise_no_capacity_warning() -> None:
     assert not app.exception
     assert not any("대당 Capa가 없어" in warning.value for warning in app.warning)
     assert PKG_UNCOUNTED_NOTICE in {info.value for info in app.info}
+
+
+# ------------------------------------------ 조건 카드 · 미적용 점 · Guide (2026-09-29)
+
+
+def test_the_edited_tab_gets_a_pending_dot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """적용하지 않은 편집이 남은 탭 이름 옆에 점이 찍힌다. 편집이 없으면 아무 탭에도 없다."""
+    import capa_simulation.components.tab_marks as tab_marks
+
+    marked: dict[str, set[str]] = {}
+    monkeypatch.setattr(
+        tab_marks,
+        "mark_pending_tabs",
+        lambda key, labels, pending: marked.__setitem__(key, set(pending)),
+    )
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["일수"]
+    app.run()
+    assert not app.exception
+    assert marked["reference_data_active_tab"] == set()
+
+    app.session_state["capa_run_day_editor"] = {
+        "edited_rows": {0: {"202608": 20.0}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    app.run()
+    assert not app.exception
+    assert marked["reference_data_active_tab"] == {REF_TAB["일수"]}
+
+
+def test_the_table_filters_and_the_overview_detail_live_in_the_sidebar_card() -> None:
+    app = _filtered_editor_app("일수", "capa_run_day_editor", "공정")
+    assert "capa_run_day_editor_filter_공정" in {widget.key for widget in app.sidebar.multiselect}
+    assert not app.main.multiselect
+
+    app = _equipment_sub_tab_app("현황")
+    assert "equipment_count_detail" in {widget.key for widget in app.sidebar.toggle}
+    assert "equipment_count_filter_공정" in {widget.key for widget in app.sidebar.multiselect}
+    assert not app.main.toggle
+
+
+def test_the_guide_carries_what_left_the_body() -> None:
+    from capa_simulation.components.page_guide import load_guide
+
+    guide = load_guide("reference_data")
+    for text in (
+        "3600 ÷ ST",
+        "STEP 수는 같은 공정·제품 경로 안의",
+        "필터는 화면만 좁힙니다",
+        "편집 취소",
+        "Excel 붙여넣기",
+        "STEP 추가·삭제",
+        "신규 리비전 저장",
+        "주황 점",
+    ):
+        assert text in guide, text

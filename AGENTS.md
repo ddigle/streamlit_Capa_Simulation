@@ -389,13 +389,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 탭은 인덱스가 아니라 **이름으로 받는다**(`upeh_tab` 등). `tabs[N]` 로 세면 순서를 바꿀 때
     하나를 놓쳐도 예외가 나지 않고 표가 다른 탭에 조용히 그려진다.
   - `STEP 구성`은 선택한 경로를 실제 MCP·STEP 식별값으로 복제하거나 삭제하고 연결된
-    모든 Capa Code·Customer·CS 변형을 `RQ_REQB`·UPEH·Lot/WF 측정률에 함께 반영한다.
+    모든 Capa Code·Customer·CS 변형을 `RQ_REQB`·UPEH·Lot/WF 측정률에 함께 반영한다. 작업은
+    요약 표 위 작업 줄의 `STEP 추가·삭제` **팝업**이다(가끔 하는 쓰기). 팝업은 fragment 라
+    적용·알림·rerun 을 팝업 안에서 끝낸다.
   - `설비대수` 탭에서 보유·대여·가용 RQ를 각각 월별 Wide CSV로 내려받고 활성 시나리오에
     일괄 적용한다. **슬라이스와 적용이 같은 창**(`effective_*_month`)이어야 한다 — 갈라 두면
-    `apply_month_updates` 가 화면에 없던 월을 지운다. 조회 표만 숨은 탭에서 건너뛰고
-    붙여넣기 폼·토글·필터는 위젯이라 계속 그린다.
-  - 편집 탭에는 그 탭의 분류 컬럼 필터가 붙는다. **필터는 보기만 좁히고 적용은 표 전체를
-    저장한다** — 자세한 계약은 `components/month_editor.py` 항목에 있다.
+    `apply_month_updates` 가 화면에 없던 월을 지운다. `현황` 조회 표의 「상세」와 필터는
+    사이드바 `표 조건` 카드이고 바깥·안쪽 탭이 둘 다 열렸을 때만 선다.
+  - 편집 탭의 분류 컬럼 필터는 사이드바 조건 카드 `표 조건`(카드 이름 `reference_data`, 모든
+    탭이 한 카드)이다. **필터는 보기만 좁히고 적용은 표 전체를 저장한다** — 자세한 계약은
+    `components/month_editor.py` 항목에 있다. 설명(UPEH 의 MI=ST 규칙, STEP 수 정의, 필터·
+    붙여넣기 규칙)은 Guide(`guides/reference_data.md`)다(2026-09-29 사용자 결정).
+  - 격자 적용과 팝업 붙여넣기는 **같은 적용 규칙**(`_Editor.to_rows` → `_apply_edit`)을 탄다.
+    UPEH 는 이번 편집이 새로 만든 경로에 측정률 행이 없으면 막는다(`_upeh_rows`).
+  - 탭 라벨은 아이콘을 단 `TAB_NAMES`·`EQUIPMENT_TAB_NAMES` 이고, 적용하지 않은 편집이 남은
+    탭(설비대수는 안쪽 탭도)에 주황 점을 찍는다 — 원본 토큰으로 편집표를 비운 **뒤**에 정한다.
   - 대형 월별 편집기는 상태 추적 탭으로 구성해 선택된 탭만 렌더링하며, 탭 전환 시 rerun한다.
 - `app_pages/calculation_result.py` (화면 이름 `산출 결과`)
   - 계산 순서 그대로 `대당 Capa` · `소요대수` · `확보율` 탭을 제공한다. 언패킹은 위치
@@ -660,8 +668,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     조건과 현재 조회범위에서 제외된 상세 행 수를 표시한다.
 - `src/capa_simulation/components/reference_csv_tools.py`
   - 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 다운로드·Excel 표 붙여넣기 폼과 적용 결과
-    알림을 공통 제공한다. `render_reference_clipboard_form` 은 접는 틀·알림 없이 양식과
-    붙여넣기 칸만 그린다 — 팝업 안에서 쓴다(`생산 계획`).
+    알림을 공통 제공한다. 붙여넣기는 모두 팝업이다 — `render_reference_clipboard_form` 이
+    양식과 붙여넣기 칸만 그린다(`생산 계획`, `기준 정보` 월 편집표).
 - `src/capa_simulation/components/horizontal_scrollbar.py`
   - HOME 월별 영역과 동기화되는 픽셀 단위 커스텀 가로 스크롤바를 제공한다.
   - 네이티브 스크롤바가 아닌 Streamlit Custom Components v2로 구현한다.
@@ -1250,6 +1258,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/column_filter.py`
   - 분류 컬럼별 다중선택 필터와 초기화 버튼. 선택값으로 거른 프레임을 돌려준다.
     `value_labels` 는 `format_func` 로 표시만 바꾼다. 옵션 값과 세션 저장값은 원본이다.
+  - 모양이 둘이다 — 본문 접는 틀(`render_column_filters`)과 사이드바 조건 카드 안에 세로로
+    쌓는 `render_column_filter_controls`(`disabled` 로 잠글 수 있다). 카드가 없는 회차(닫힌
+    탭)에는 `apply_column_filters` 가 세션에 남은 선택만 읽어 거른다.
 - `src/capa_simulation/components/process_labels.py`
   - 원본 공정명을 화면 표시명으로 바꾸는 **유일한 지점**이다. `공정` 은 1급 조인 키라
     데이터에서 바꾸지 않고 표시 직전에만 라벨을 갈아 끼운다. `services/` 는 이 모듈을
@@ -1346,10 +1357,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     자리(`st.empty`)만 먼저 잡는다.
   - **결과는 누른 자리에서 보인다.** 버튼 바로 아래 알림 자리를 세션에 적어 두고
     (`editor_notice(editor_key)`), 적용 성공(`f"{editor_key}_apply_flash"`)과 **오류**를 거기
-    쓴다 — 적용은 표 뒤에서 도므로 페이지(`reference_data.py`)가 그 자리를 받아 쓴다. 표 아래
-    붙여넣기 폼의 결과(`f"{editor_key}_csv_flash"`, 「지워진 칸 N개」 경고 포함)와 오류는 폼
-    옆에 남는다. 두 키를 가르는 곳은 `reference_data._edit_flash` 다. 숨은 탭에서는 자리를
-    버린다 — 지난 회차의 자리에 쓰면 오류가 사라진다.
+    쓴다 — 적용은 표 뒤에서 도므로 페이지(`reference_data.py`)가 그 자리를 받아 쓴다. 붙여넣기
+    결과(「지워진 칸 N개」 경고 포함)도 같은 자리다 — 팝업은 적용하면 닫힌다. 숨은 탭에서는
+    자리를 버린다 — 지난 회차의 자리에 쓰면 오류가 사라진다.
+  - **작업 줄**: `변경사항 적용`(툴팁 `APPLY_NOTICE`) · `Excel 붙여넣기`(팝업) · `편집 취소`(고친
+    것이 있을 때만, 그 표의 편집 상태만 버린다) · 변경 개수. 붙여넣기 팝업은 **fragment** 라
+    결과를 페이지로 돌려줄 수 없다 — 페이지가 준 `on_paste` 가 팝업 안에서 검증·적용하고,
+    막히면 `KeyError`/`ValueError` 를 던져 팝업 안에 오류를 쓴다. 팝업은 페이지 한 칸
+    (`dialog_key`, `PAGE_DIALOG_SUFFIX`)으로 열고 콜백으로 연다. 적용하지 않은 편집이 있으면
+    팝업이 「붙여넣으면 버려진다」를 먼저 말한다.
+  - **적용하지 않은 편집이 남은 표는 탭이 닫혀도 그린다**(2026-09-29). `st.data_editor` 는
+    그리지 않은 회차에 편집 상태를 잃는다 — 전에는 닫힌 탭을 건너뛰어, 고친 뒤 다른 탭을
+    누르면 편집이 조용히 사라졌다(브라우저에서 재현·수정 확인). 편집이 없는 닫힌 탭은 여전히
+    건너뛴다. `outer_tab` 은 탭 안의 탭의 바깥 탭이다.
+  - **필터는 사이드바 조건 카드**(`FILTER_CARD_LABEL` = `표 조건`, 이름은 페이지가 준다)다. 열린
+    탭만 카드를 세우고, 닫힌 탭의 표는 세션 선택으로 거른다. **적용하지 않은 편집이 있으면
+    필터를 잠근다**(`FILTER_LOCKED_NOTICE`) — 보이는 행이 바뀌면 편집이 다른 행에 붙기 때문이다.
+    필터로 행이 줄면 `편집 범위` 줄이 `필터로 N개 행 표시` 를 덧붙인다.
   - **필터는 보기만 좁히고 저장은 전체다.** 분류 컬럼 필터(`render_column_filters`)는 화면에
     그릴 행만 줄이고, 돌려주는 표는 언제나 원본과 행 수·행 순서가 같은 전체 표다. 편집값은
     `merge_edited_months` 가 그 탭의 `dimensions` 를 키로 원본에 되머지한다. 되머지를 지우고
@@ -1361,7 +1385,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     다른 행에 붙으므로, 필터 선택이 달라지면 `data_editor` 를 만들기 전에 `editor_key` 를
     세션에서 버린다. `editor_key` 자체에 필터를 섞지 않는다 — 페이지가 고정 키 목록으로
     세션을 청소하는 경로가 그 키를 못 찾는다.
-  - 왕복 CSV·붙여넣기(`render_reference_clipboard_tools`)에는 **필터 이전의 전체 표**를
+  - 왕복 CSV·붙여넣기 팝업(`render_reference_clipboard_form`)에는 **필터 이전의 전체 표**를
     넘긴다. 양식이 부분 표가 되면 그 부분 표가 행 집합 검증을 통과해 나머지 공정을 지운다.
   - 공정 표시명은 페이지가 조회해 `value_labels=` 로 넘기고 필터 옵션 표기에만 쓴다. 이
     모듈은 `process_labels` 를 import 하지 않는다.
@@ -2266,7 +2290,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - 편집 탭의 분류 필터 상태는 `f"{editor_key}_filter_{column}"` 로 갈린다. 효율과 여유율은
   `dimensions` 가 완전히 같아 이 key 가 유일한 분리 장치다 — 새 편집 탭에 `editor_key` 를
   재사용하지 않는다.
-- **`components/month_editor.py` 가 `render_reference_clipboard_tools` 에 넘기는 첫 인자와
+- **`components/month_editor.py` 가 붙여넣기 팝업(`render_reference_clipboard_form`)에 넘기는 첫 인자와
   `key_columns` 는 반드시 필터 이전의 전체 표다.** 필터된 프레임을 넘기면 양식 CSV 가 부분
   표가 되고, 그 부분 표는 `services/reference_csv.py` 의 행 집합 검증을 통과해 조회기간의
   나머지 공정을 지운다. `tests/test_month_editor_filter.py` 가 다운로드 바이트를 실제로
