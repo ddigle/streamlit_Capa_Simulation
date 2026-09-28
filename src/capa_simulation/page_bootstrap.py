@@ -1,4 +1,4 @@
-# Purpose: 페이지 공통의 활성 리비전·표시순서·조회기간 준비와 위젯 상태 정규화를 제공한다.
+# Purpose: 계산 페이지 공통의 리비전·표시순서·조회기간 준비, Capa 계산 호출, 위젯 상태 정규화.
 
 """Shared entry sequence for the calculation pages.
 
