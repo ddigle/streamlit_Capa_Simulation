@@ -132,12 +132,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기준정보 오류로도 멈추므로 「✓ 적용」과 본문 「계산을 멈췄습니다」가 함께 뜨면 안 된다.
     자리가 107px 뿐이라 까닭은 본문이 말하고 여기는 짧게 둔다. 그 값은 `navigation.run()` 안에서야 정해지고 페이지가
     `st.stop()` 하면 그 뒤 코드가 돌지 않으므로, 상자 뒤에 그리면 상자를 통째로 잃는다.
-  - 조회 컨트롤 세 상자(시나리오·리비전, 조회기간, B/N 집계 공정) 위에 **구역 제목 한 줄**
-    (「조회 조건 · 계산 화면에 적용」)을 세운다. 위의 그룹은 다른 화면으로 가는 목록이고 이
-    셋은 지금 화면의 계산 조건이라는 경계다. 선언은 `navigation.SIDEBAR_SECTIONS`, 그리기는
-    `sidebar_status.render_sidebar_section`, 서식은 `sidebar_style.py` 가 같은 선언에서 낸다.
-    시나리오 상자 **앞**에서 부른다 — 적용 기간 자리표시자와 조회기간 상자 사이에 두지
-    않는다. 두 이웃 관계는 `tests/test_app_navigation.py` 가 칸의 차례로 지킨다.
+  - 조회 조건 상자들(시나리오·리비전, 조회기간, 그리고 화면마다의 **조건 카드**) 위에 **구역
+    제목 한 줄**(「조회 조건 · 이 화면에 적용」)을 세운다. 위의 그룹은 다른 화면으로 가는
+    목록이고 이 상자들은 지금 화면이 읽는 조건이라는 경계다. 선언은
+    `navigation.SIDEBAR_SECTIONS`, 그리기는 `sidebar_status.render_sidebar_section`, 서식은
+    `sidebar_style.py` 가 같은 선언에서 낸다. 시나리오 상자 **앞**에서 부른다 — 적용 기간
+    자리표시자와 조회기간 상자 사이에 두지 않는다. 두 이웃 관계는
+    `tests/test_app_navigation.py` 가 칸의 차례로 지킨다.
+  - **사이드바 「조회 조건」은 지금 화면이 실제로 읽는 조건만 모으는 한 곳이다**(2026-09-28
+    사용자 결정 — 페이지 본문과 사이드바 두 곳에서 조건을 만지면 용도가 겹쳐 혼선이 났다).
+    화면 고유의 필터·표시 설정은 본문이 아니라 **조건 카드**(`sidebar_status.condition_card`)
+    로 둔다. 탭에 딸린 카드는 그 탭이 열렸을 때만 서고, **기본은 접힘**, 한 번 편 카드는
+    탭·페이지를 오가도 편 채다. 본문에는 결과와 그 결과에 대한 행동(적용·붙여넣기·등록)과 상태
+    알림만 남기고 설명은 Guide(`components/page_guide.py`)로 옮긴다. **쓰기 작업(붙여넣기·
+    등록)은 조건 카드에 넣지 않는다** — 「사이드바 = 보는 조건」이 흐려진다. 작업은 표 위
+    작업 줄의 버튼과 팝업이다. 지금 적용한 화면은 `생산 계획` 하나(샘플)이고, HOME 의 B/N
+    집계 공정 상자가 사실상 같은 역할이다. 화면이 읽지 않는 공통 조건(예: 가용설비 현황의
+    시뮬레이션 조회기간)을 감추는 규칙은 다음 단계다.
   - `시나리오 관리`는 Capa Chatbot과 Static Capa 사이의 독립 사이드바 그룹에 배치한다(그
     순서도 `SIDEBAR_GROUPS` 가 정한다).
   - 배치가 다른 둘만 손수 그린다 — 가운데·큰 글씨의 HOME 과, 조회 컨트롤 아래 맨 밑
@@ -342,11 +353,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     단계별 시간과 Figure 캐시 적중 여부만 표시한다. 그 상자(`BOTTLENECK_BOX_KEY`)는
     **HOME 만 그리는** 접히는 상자다. 다른 페이지에 갔다 오면 그 회차에 만들어지지 않은
     위젯이라 값이 버려지므로 `sidebar_expander` 의 기억 칸이 펼침 상태를 되돌린다.
-- `app_pages/load_conversion.py`
-  - `환산`, `PKG PLAN`, `수율`, `제품 등록` 탭을 제공한다. 제품 등록은 기존 제품의 기준정보 8표를
-    새 제품 키로 복제하는 가상 제품 등록이다(`services/virtual_product.py`).
-  - 계획과 수율 편집값을 활성 시나리오에 반영한다.
-  - PKG PLAN과 수율의 현재 월별 Wide 표를 CSV로 내려받아 값만 일괄 수정·적용한다.
+- `app_pages/load_conversion.py` (화면 이름 `생산 계획`)
+  - 사이드바 조건 카드 + Guide 를 처음 적용한 샘플 화면이다(2026-09-28 사용자 결정).
+  - `환산`, `PKG PLAN`, `수율` 세 탭. **환산 조건**(소요기준·상세·EDP)은 사이드바 조건 카드
+    (`condition_card_load_conversion`)이고 환산 탭이 열렸을 때만 서며, 환산 계산도 그때만 한다.
+    설명 문구는 `guides/load_conversion.md` 로 옮겼다.
+  - **작업 줄은 표 위다** — `[변경사항 적용] [Excel 붙여넣기] [가상 제품 등록]`(수율은 앞 둘).
+    적용 버튼이 높이 500px 표 아래에 있으면 고친 뒤 보이지 않아 적용을 건너뛰었다(사용자 지적).
+    적용 완료·오류 알림도 작업 줄 바로 아래다. 「적용해야 반영」 안내는 버튼 툴팁이다.
+  - **붙여넣기와 가상 제품 등록은 팝업**(`st.dialog`)이다. 열림 상태를 세션
+    (`load_conversion_open_dialog`)에 두고 그 동안 매 회차 팝업 함수를 부른다. 닫기는
+    `on_dismiss`, 성공은 팝업이 지운다. **여는 버튼은 `on_click` 콜백**이다 — 버튼 값으로 열면
+    앞 탭의 팝업을 그린 뒤 뒤 탭의 팝업을 또 그려 「팝업은 한 번에 하나」로 멈춘다(재현됨).
+    닫지 않고 페이지를 떠나면(브라우저 뒤로 가기) `on_dismiss` 가 불리지 않으므로, 페이지가
+    바뀐 회차에 `app.py` 가 `page_bootstrap.forget_page_dialogs` 로 `*_open_dialog` 키를 버린다.
+  - 적용하지 않은 PKG PLAN 붙여넣기가 있을 때 가상 제품을 등록하면 그 표는 버려진다(행 구성이
+    맞지 않는다). 등록 팝업이 먼저 경고하고 완료 알림에도 적는다.
+  - PKG PLAN 붙여넣기는 탭에만 올리고 전역 반영은 `PKG PLAN 변경사항 적용` 한 곳이다. 수율
+    붙여넣기는 바로 적용한다. 가상 제품 등록은 기존 제품의 기준정보 8표를 새 제품 키로
+    복제하고 계획은 0 으로 시작한다(`services/virtual_product.py`).
 - `app_pages/reference_data.py` (화면 이름 `기준 정보`)
   - **Capa 산출에 넣는 값만 둔다.** 산출물은 `app_pages/calculation_result.py` 가 갖는다.
     탭 순서는 `UPEH` · `설비대수` · `효율` · `여유율` · `일수` · `Lot측정률` · `WF측정률` ·
@@ -624,7 +649,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     조건과 현재 조회범위에서 제외된 상세 행 수를 표시한다.
 - `src/capa_simulation/components/reference_csv_tools.py`
   - 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 다운로드·Excel 표 붙여넣기 폼과 적용 결과
-    알림을 공통 제공한다.
+    알림을 공통 제공한다. `render_reference_clipboard_form` 은 접는 틀·알림 없이 양식과
+    붙여넣기 칸만 그린다 — 팝업 안에서 쓴다(`생산 계획`).
 - `src/capa_simulation/components/horizontal_scrollbar.py`
   - HOME 월별 영역과 동기화되는 픽셀 단위 커스텀 가로 스크롤바를 제공한다.
   - 네이티브 스크롤바가 아닌 Streamlit Custom Components v2로 구현한다.
@@ -1127,6 +1153,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     을 위젯 아닌 칸에 적어 두고 **값이 사라졌거나 라벨이 바뀐 회차에만** 되돌린다. 매 회차
     덮어쓰면 방금 누른 클릭을 지운다. **라벨은 위젯 id 계산에 들어간다** — 배지가 붙은
     라벨은 배지가 바뀔 때마다 위젯이 새로 만들어진다.
+  - `sidebar_status.condition_card` 는 화면 고유 조건을 모으는 사이드바 상자다. 같은 기억
+    상자(`sidebar_expander`)라 기본 접힘·연 상태 기억을 그대로 받는다. key 는
+    `condition_card_<이름>` 이고 `sidebar_style.py` 가 **이 접두어 하나로** 모든 카드에 조건
+    상자 서식(청록 면·`ACCENT` 아이콘·`⌄`)을 건다 — 카드를 더할 때 서식 쪽을 고치지 않는다.
+    페이지가 그리는 요소라 파이썬 차례로는 `Support` 뒤지만 CSS `order` 가 `Support` 를 민다.
 - `src/capa_simulation/design/tokens.py`
   - 색·서체·표 치수를 역할 이름으로 단일 정의한다. 파이썬 코드에 색 리터럴을 쓰지
     않는다. 규칙은 `docs/design_system.md` 를 따른다. Figure 공통 유틸리티는 여기가 아니라
@@ -1169,6 +1200,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     화면은 멀쩡하다.
   - **비공식 경로다.** `data-testid` 와 `localStorage` 키 모양은 판올림에서 바뀔 수 있다.
     Streamlit 을 올린 뒤에는 이 버튼이 보이는지 눈으로 확인한다.
+  - `extra_scripts` 로 같은 툴바에 버튼을 얹는 다른 스크립트(Guide)를 함께 싣는다. iframe 을
+    따로 두지 않는다 — 높이 0 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다.
+- `src/capa_simulation/components/page_guide.py`
+  - 헤더 테마 버튼 **바로 왼쪽**의 `Guide` 버튼과 화면별 사용 안내 대화상자(2026-09-28 사용자
+    결정 — 설명 문구를 본문에서 빼고 Guide 로). 원문은 `guides/<페이지 파일 이름>.md` 다.
+  - 툴바에 스크립트로 끼운 버튼은 누른 신호를 파이썬으로 보내지 못한다. 그래서 페이지가
+    본문에 **숨긴 Streamlit 버튼**(`page_guide_trigger`)을 두고, 툴바 버튼이 그것을 대신
+    누른다. 파이썬은 버튼 값을 읽어 `st.dialog` 로 가이드를 연다(Streamlit 이 그려 표·강조를 쓴다).
+  - **가이드가 없는 화면에서는 버튼이 보이지 않는다.** `app.py` 가 기본으로 감추고
+    `render_page_guide` 를 부른 페이지만 보이게 하는 규칙을 더한다 — 그 규칙은 그 페이지의
+    요소라 다른 페이지로 옮기면 Streamlit 이 걷어 간다. 비공식 경로(툴바 슬롯·숨은 버튼
+    선택자)라 판올림 뒤 버튼이 뜨고 눌리는지 본다.
 - `src/capa_simulation/components/app_header.py`
   - 화면 맨 위 띠의 면을 칠하고 앱 이름·버전·개발자·인증 정보를 모든 페이지에 표시한다.
     Streamlit 이 헤더에 위젯을 넣는 API 를 주지 않아 `stHeader`·`stSidebarHeader` 의
@@ -1276,6 +1319,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     인자는 비율이라 창이 좁으면 분류 이름이 잘렸다.
 - `src/capa_simulation/components/month_editor.py`
   - 월별 Wide 기준정보를 탭 안에서 편집하는 `data_editor` 와 분류 컬럼 표시 라벨.
+  - **`변경사항 적용` 과 변경 개수는 표 위다**(2026-09-28 사용자 지적 — 표가 높이 500px 이라
+    아래 두면 고친 뒤 버튼이 화면 밖이어서 적용을 건너뛴다). 버튼 값은 표보다 먼저 만들어도
+    누른 회차에 편집값이 그대로 들어온다. 변경 개수는 표를 그린 뒤에야 알므로 작업 줄에
+    자리(`st.empty`)만 먼저 잡는다.
+  - **결과는 누른 자리에서 보인다.** 버튼 바로 아래 알림 자리를 세션에 적어 두고
+    (`editor_notice(editor_key)`), 적용 성공(`f"{editor_key}_apply_flash"`)과 **오류**를 거기
+    쓴다 — 적용은 표 뒤에서 도므로 페이지(`reference_data.py`)가 그 자리를 받아 쓴다. 표 아래
+    붙여넣기 폼의 결과(`f"{editor_key}_csv_flash"`, 「지워진 칸 N개」 경고 포함)와 오류는 폼
+    옆에 남는다. 두 키를 가르는 곳은 `reference_data._edit_flash` 다. 숨은 탭에서는 자리를
+    버린다 — 지난 회차의 자리에 쓰면 오류가 사라진다.
   - **필터는 보기만 좁히고 저장은 전체다.** 분류 컬럼 필터(`render_column_filters`)는 화면에
     그릴 행만 줄이고, 돌려주는 표는 언제나 원본과 행 수·행 순서가 같은 전체 표다. 편집값은
     `merge_edited_months` 가 그 탭의 `dimensions` 를 키로 원본에 되머지한다. 되머지를 지우고

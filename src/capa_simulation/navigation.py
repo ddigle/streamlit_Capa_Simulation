@@ -139,11 +139,11 @@ class SidebarSectionSpec:
 
 
 # 상자는 모두 한 모양이라 모양으로는 용도를 가르지 못한다. 위의 그룹은 **다른 화면으로
-# 가는 목록**이고, 아래 세 상자(시나리오·리비전, 조회기간, B/N 집계 공정)는 **지금 화면의
-# 계산에 걸리는 조건**이다. 그 경계에 제목 한 줄을 세운다. B/N 은 HOME 에만 그려지지만
-# 기준 값은 Static Capa 판정 기준과 같은 세션 칸이라 같은 구역에 둔다(2026-09-28 사용자 결정).
-# 맨 아래 `Support` 는 다시 목록이므로 제목 대신 앞 간격으로 이 구역과 떨어진다.
-CONDITIONS_SECTION = SidebarSectionSpec("conditions", "조회 조건", "계산 화면에 적용")
+# 가는 목록**이고, 아래 상자들(시나리오·리비전, 조회기간, 그리고 화면마다의 조건 카드 —
+# HOME 의 B/N 집계 공정, 생산 계획의 환산 조건 등)은 **지금 화면이 읽는 조건**이다. 그 경계에
+# 제목 한 줄을 세운다. 화면마다 카드가 달라지므로 뜻풀이는 「이 화면에 적용」이다(2026-09-28
+# 사용자 결정). 맨 아래 `Support` 는 다시 목록이므로 제목 대신 앞 간격으로 이 구역과 떨어진다.
+CONDITIONS_SECTION = SidebarSectionSpec("conditions", "조회 조건", "이 화면에 적용")
 SIDEBAR_SECTIONS: tuple[SidebarSectionSpec, ...] = (CONDITIONS_SECTION,)
 
 ALL_SPECS: tuple[PageSpec, ...] = (

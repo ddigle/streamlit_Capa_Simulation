@@ -1,4 +1,4 @@
-# Purpose: 상단 헤더의 Deploy 왼쪽에 밝게/어둡게 전환 버튼을 얹는다.
+# Purpose: 상단 헤더의 Deploy 왼쪽에 밝게/어둡게 전환 버튼(과 넘겨받은 툴바 버튼)을 얹는다.
 
 """테마 전환 버튼을 Streamlit 헤더 안에 넣는다.
 
@@ -26,6 +26,8 @@
 """
 
 from __future__ import annotations
+
+from collections.abc import Sequence
 
 import streamlit.components.v1 as components
 
@@ -150,8 +152,12 @@ _SCRIPT = """
 """
 
 
-def render_theme_toggle() -> None:
+def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
     """헤더에 전환 버튼을 얹는다. `app.py` 가 한 번만 부른다.
+
+    `extra_scripts` 는 같은 툴바에 버튼을 얹는 **다른 스크립트**다(`page_guide` 의 Guide 버튼).
+    iframe 을 따로 두지 않고 여기에 함께 싣는다 — 높이 0 iframe 도 본문 맨 위에 요소 간격 한
+    칸을 먹어서, 하나 더 두면 모든 화면이 그만큼 내려간다.
 
     높이 0 의 iframe 하나를 쓴다. `st.html` 은 스크립트를 실행하지 않으므로 이 경로가
     아니면 부모 창에 닿을 수 없다.
@@ -179,6 +185,7 @@ def render_theme_toggle() -> None:
             "dark_ink": tokens.palette_value("light", "TEXT"),
             "light_fill": tokens.palette_value("dark", "SURFACE"),
             "light_ink": tokens.palette_value("dark", "TEXT"),
-        },
+        }
+        + "".join(f"<script>{script}</script>" for script in extra_scripts),
         height=0,
     )

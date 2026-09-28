@@ -1,4 +1,4 @@
-# Purpose: 사이드바의 구역 제목·적용 월 범위 표시와, 접힘 상태를 기억하는 상자를 만든다.
+# Purpose: 사이드바의 구역 제목·적용 월 범위 표시와, 접힘 상태를 기억하는 상자·조건 카드를 만든다.
 
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
@@ -15,6 +15,10 @@ PLACEHOLDER_STATE_KEY = "sidebar_month_range_placeholder"
 # HOME 이 그리는 B/N 집계 공정 상자. `app.py` 의 CSS 규칙이 이 key 를 읽는다 —
 # 상자를 그리는 쪽과 서식을 주는 쪽이 갈려 있어 이름을 한 곳에 둔다.
 BOTTLENECK_BOX_KEY = "sidebar_bottleneck_box"
+
+# 화면 조건 카드의 key 접두어. `sidebar_style.py` 가 이 접두어 하나로 모든 카드에 조건 상자
+# 서식을 건다 — 페이지가 카드를 더할 때 서식 쪽에 적을 것이 없다.
+CONDITION_CARD_PREFIX = "condition_card_"
 
 
 def remembered_box_key(key: str) -> str:
@@ -56,6 +60,21 @@ def sidebar_expander(
     box = st.sidebar.expander(label, key=key, icon=icon, on_change="rerun")
     st.session_state[memory] = (bool(st.session_state[key]), label)
     return box
+
+
+def condition_card(label: str, *, name: str, icon: str = ":material/tune:") -> DeltaGenerator:
+    """그 화면이 **실제로 읽는 고유 조건**을 모으는 사이드바 상자(2026-09-28 사용자 결정).
+
+    사이드바 「조회 조건」 구역은 지금 화면의 조건을 모으는 한 곳이다. 공통 조건(시나리오·
+    리비전, 조회기간) 아래에 그 화면만의 설정(소요기준·상세 같은 것)이 이 카드로 선다.
+    본문에는 결과와 그 결과에 대한 행동만 남는다.
+
+    **기본은 접힘이고, 한 번 편 카드는 탭·페이지를 오가도 편 채로 남는다.** 탭에 딸린 카드는
+    그 탭이 열렸을 때만 그려지는데, 안 그려진 회차에는 위젯 값이 버려지므로
+    `sidebar_expander` 의 기억 칸이 되돌린다. 페이지가 그리는 요소라 파이썬 차례로는
+    `Support` 뒤에 붙지만 CSS 의 `order` 가 `Support` 를 맨 아래로 민다.
+    """
+    return sidebar_expander(label, key=f"{CONDITION_CARD_PREFIX}{name}", icon=icon)
 
 
 def render_sidebar_section(section: SidebarSectionSpec) -> None:

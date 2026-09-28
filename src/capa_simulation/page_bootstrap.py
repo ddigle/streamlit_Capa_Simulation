@@ -1,4 +1,4 @@
-# Purpose: 계산 페이지 공통의 리비전·표시순서·조회기간 준비, Capa 계산 호출, 위젯 상태 정규화.
+# Purpose: 계산 페이지 공통의 리비전·표시순서·조회기간 준비, Capa 계산 호출, 위젯·팝업 상태 정규화.
 
 """Shared entry sequence for the calculation pages.
 
@@ -51,6 +51,18 @@ from capa_simulation.sidebar_status import (
 # 열어 둔 DB)이나 스키마 오류가 원문 트레이스백으로, Windows 에서는 한글까지 깨진 채
 # 그대로 노출됐다. 페이지·컴포넌트는 각자 튜플을 만들지 말고 이것을 쓴다.
 BOOTSTRAP_ERRORS = (KeyError, OSError, RuntimeError, TypeError, ValueError, duckdb.Error)
+
+# 페이지가 연 팝업(`st.dialog`)의 열림 상태 키는 이 접미어로 끝난다. 팝업은 열림 상태가 세션에
+# 있는 동안 매 회차 다시 그리는데, 닫지 않은 채(브라우저 뒤로 가기 등) 페이지를 떠나면
+# `on_dismiss` 가 불리지 않아 상태가 남고, 돌아왔을 때 요청하지 않은 팝업이 뜬다. 그래서
+# 페이지가 바뀐 회차에 `app.py` 가 이 접미어의 키를 모두 버린다(`forget_page_dialogs`).
+PAGE_DIALOG_SUFFIX = "_open_dialog"
+
+
+def forget_page_dialogs() -> None:
+    """페이지가 바뀐 회차에 부른다. 떠난 페이지의 팝업 열림 상태를 버린다."""
+    for key in [key for key in st.session_state if str(key).endswith(PAGE_DIALOG_SUFFIX)]:
+        st.session_state.pop(key, None)
 
 
 def bootstrap_error_message(

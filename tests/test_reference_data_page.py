@@ -251,6 +251,8 @@ scenario_state.scenario_table = lambda scenario, name: scenario["tables"][name].
 
 
 def capture_month_updates(_scenario, replacements, _start, _end):
+    if st.session_state.get("test_fail_month_updates"):
+        raise ValueError("PROBE_APPLY_ERROR")
     if "RQ_REQB" in replacements:
         st.session_state["test_step_reqb_rows"] = len(replacements["RQ_REQB"])
     # 적용 버튼은 `st.rerun()` 을 부르고 AppTest 는 그 rerun 에서 버튼값을 되돌리지 않아
@@ -572,12 +574,18 @@ def test_capacity_editors_show_route_keys_without_exceptions() -> None:
 
 
 def test_load_input_tabs_expose_plan_and_yield_clipboard_round_trip() -> None:
+    """붙여넣기는 표 위 작업 줄의 「Excel 붙여넣기」 팝업이다. 팝업은 한 번에 하나다."""
     app = AppTest.from_string(LOAD_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert {text_area.label for text_area in app.text_area}.issuperset(
-        {"RQ_PKG_PLAN 표 붙여넣기", "RQ_YLD 표 붙여넣기"}
-    )
+    # 닫혀 있는 동안에는 붙여넣기 칸이 본문을 차지하지 않는다.
+    assert not app.text_area
+    app.button(key="open_plan_paste").click().run()
+    assert not app.exception
+    assert {text_area.label for text_area in app.text_area} == {"RQ_PKG_PLAN 표 붙여넣기"}
+    app.button(key="open_yield_paste").click().run()
+    assert not app.exception
+    assert {text_area.label for text_area in app.text_area} == {"RQ_YLD 표 붙여넣기"}
 
 
 def test_equipment_tab_gives_each_rq_its_own_editor_and_clipboard() -> None:
@@ -752,6 +760,39 @@ def test_filtered_run_day_editor_keeps_the_process_the_filter_hid() -> None:
         "Process-A": 31.0,
         "Process-B": 15.0,
     }
+
+
+def _walk(node: object) -> list[object]:
+    """화면 요소를 그려진 차례대로 편다."""
+    found: list[object] = []
+    for child in getattr(node, "children", {}).values():
+        found.append(child)
+        found.extend(_walk(child))
+    return found
+
+
+def test_an_apply_error_shows_right_under_the_button_above_the_sheet() -> None:
+    """표 위 「변경사항 적용」 이 막힌 까닭은 그 버튼 바로 아래 뜬다 — 500px 표 아래가 아니다.
+
+    버튼만 표 위로 올리고 오류 자리를 그대로 두면 누른 자리에서 아무 일도 없어 보여 적용된
+    줄 안다(2026-09-28 리뷰에서 재현).
+    """
+    app = _filtered_editor_app("일수", "capa_run_day_editor", "공정")
+    app.session_state["test_fail_month_updates"] = True
+    app = _edit_and_apply(app, "capa_run_day_editor", "202608", 15.0)
+
+    elements = _walk(app.main)
+    error = next(
+        index
+        for index, node in enumerate(elements)
+        if getattr(node, "type", None) == "error" and "PROBE_APPLY_ERROR" in str(node.value)
+    )
+    sheet = next(
+        index
+        for index, node in enumerate(elements)
+        if getattr(node, "key", None) == "capa_run_day_editor"
+    )
+    assert error < sheet
 
 
 def test_filtered_upeh_editor_keeps_the_process_the_filter_hid() -> None:

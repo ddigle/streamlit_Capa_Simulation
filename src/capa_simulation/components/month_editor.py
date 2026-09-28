@@ -26,6 +26,7 @@ from collections.abc import Mapping
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation.components.column_filter import render_column_filters
@@ -74,12 +75,36 @@ def render_month_editor(
     value_labels: Mapping[str, Mapping[str, str]] | None = None,
 ) -> tuple[pd.DataFrame, bool, pd.DataFrame | None]:
     if tab_is_hidden(tab):
+        # 지난 회차의 알림 자리는 이번 화면에 없다. 남겨 두면 거기 쓴 오류가 사라진다.
+        st.session_state.pop(_notice_key(editor_key), None)
         return pd.DataFrame(), False, None
     month_columns = [column for column in default_table.columns if column not in dimensions]
     with tab:
         st.caption(caption)
         _render_scope(default_table, month_columns)
         visible_table = _visible_table(default_table, dimensions, editor_key, value_labels)
+        # 작업 줄은 표 **위**다. 표가 높이 500px 이라 아래에 두면 고친 뒤 버튼이 화면 밖이어서
+        # 적용하지 않고 넘어가기 쉽다(2026-09-28 사용자 지적). 버튼 값은 표보다 먼저 만들어도
+        # 누른 회차에 표의 편집값이 그대로 들어온다. 변경 개수는 표를 그린 뒤에야 알므로 자리만
+        # 먼저 잡아 두고 뒤에서 채운다.
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            submitted = st.button(
+                "변경사항 적용",
+                icon=":material/check:",
+                key=f"{editor_key}_apply",
+                type="primary",
+            )
+            change_slot = st.empty()
+            st.caption(APPLY_NOTICE)
+        # **결과는 누른 자리에서 보인다.** 이 버튼의 성공·오류는 작업 줄 바로 아래 자리에 쓴다 —
+        # 표 아래에 두면 500px 떨어진다. 붙여넣기(표 아래 폼)의 결과는 폼 옆에서 붙여넣기
+        # 도구가 꺼낸다. 그래서 알림 키가 둘이다(`reference_data._edit_flash`). 오류는 적용이
+        # 표 뒤에서 도므로 이 자리를 세션에 적어 두고 페이지가 거기에 쓴다(`editor_notice`).
+        notice = st.empty()
+        st.session_state[_notice_key(editor_key)] = notice
+        applied_flash = st.session_state.pop(f"{editor_key}_apply_flash", None)
+        if isinstance(applied_flash, str):
+            notice.success(applied_flash)
         styled_table = visible_table.style.set_properties(
             subset=pd.Index(dimensions),
             **{"background-color": tokens.SURFACE_CLASSIFICATION},
@@ -112,14 +137,9 @@ def render_month_editor(
         merged = merge_edited_months(default_table, edited, dimensions, month_columns)
         changed_cells, changed_rows = count_month_changes(default_table, merged, month_columns)
         if changed_cells:
-            st.markdown(f"**변경사항 확인** &nbsp;{changed_cells:,}개 값 · {changed_rows:,}개 행")
-        submitted = st.button(
-            "변경사항 적용",
-            icon=":material/check:",
-            key=f"{editor_key}_apply",
-            type="primary",
-        )
-        st.caption(APPLY_NOTICE)
+            change_slot.markdown(
+                f"**변경사항 확인** &nbsp;{changed_cells:,}개 값 · {changed_rows:,}개 행"
+            )
         if _has_display_labels(dimensions, value_labels):
             st.caption(RENAME_NOTICE)
         # 왕복 CSV·붙여넣기는 전체 표 계약이다. 여기에 걸러진 표를 넘기면 양식이 부분 표가
@@ -132,6 +152,20 @@ def render_month_editor(
             key=f"{editor_key}_csv",
         )
     return merged, submitted, imported
+
+
+def _notice_key(editor_key: str) -> str:
+    return f"{editor_key}__notice"
+
+
+def editor_notice(editor_key: str) -> DeltaGenerator | None:
+    """이 편집표의 작업 줄 바로 아래 알림 자리. 이번 회차에 그 편집표를 그렸을 때만 있다.
+
+    적용은 표를 다 그린 뒤 페이지가 처리하므로 오류를 쓸 자리를 따로 받아야 한다. 없으면
+    (숨은 탭 등) `None` 이고 부르는 쪽은 예전처럼 탭 끝에 쓴다.
+    """
+    slot = st.session_state.get(_notice_key(editor_key))
+    return slot if isinstance(slot, DeltaGenerator) else None
 
 
 def _has_display_labels(

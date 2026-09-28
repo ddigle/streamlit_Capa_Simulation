@@ -6,9 +6,13 @@ from collections.abc import Sequence
 
 from capa_simulation.design import tokens
 from capa_simulation.navigation import SIDEBAR_SECTIONS, SidebarGroup, SidebarGroupSpec
+from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
 
 # 규칙 안 들여쓰기도 선택자 사이에 유지한다.
 _SELECTOR_JOINER = ",\n        "
+# 화면 조건 카드 전부. 페이지마다 카드 이름이 달라 key 를 인자로 받을 수 없으므로 접두어로
+# 고른다 — Streamlit 은 `key` 를 `st-key-<key>` 클래스로 단다.
+_CONDITION_CARDS = f'[class*="st-key-{CONDITION_CARD_PREFIX}"]'
 
 # 사이드바 세로 블록의 칸 사이. 적용 기간 오버레이가 이 값을 그대로 상쇄해야 요약 줄
 # 위에 올라앉으므로 두 곳이 같은 상수를 본다.
@@ -78,8 +82,10 @@ def build_sidebar_stylesheet(
         bottleneck_box_key,
         admin_box_key,
     )
+    # 조건 카드도 같은 양식이다. key 대신 접두어 선택자 하나로 모든 카드를 부른다.
+    summary_roots = (*(f".st-key-{key}" for key in summary_box_keys), _CONDITION_CARDS)
     group_title_selectors = _SELECTOR_JOINER.join(
-        f'.st-key-{key} summary [data-testid="stMarkdownContainer"] p' for key in summary_box_keys
+        f'{root} summary [data-testid="stMarkdownContainer"] p' for root in summary_roots
     )
     # 구역 제목 줄. 선택자는 `navigation.SIDEBAR_SECTIONS` 선언에서 나온다 — 인자로 받지
     # 않는다. 제목을 그리는 쪽(`sidebar_status.render_sidebar_section`)도 같은 선언을 본다.
@@ -113,27 +119,28 @@ def build_sidebar_stylesheet(
     # 이 자리에서 펼쳐지는 상자 전부의 `⌄`. 페이지 그룹이든 조회 조건이든 `Support` 든 눌러서
     # 일어나는 일이 같으므로 같은 표식이다.
     summary_marker_selectors = _SELECTOR_JOINER.join(
-        f".st-key-{key} details > summary::after" for key in summary_box_keys
+        f"{root} details > summary::after" for root in summary_roots
     )
     summary_marker_open_selectors = _SELECTOR_JOINER.join(
-        f".st-key-{key} details[open] > summary::after" for key in summary_box_keys
+        f"{root} details[open] > summary::after" for root in summary_roots
     )
-    # 계산에 걸리는 조건 상자 셋. 구역 제목 아래에 서고 아이콘을 `ACCENT` 로 칠한다.
-    condition_box_keys = (scenario_box_key, month_box_key, bottleneck_box_key)
+    # 지금 화면이 읽는 조건 상자들 — 공통 둘과 HOME 의 B/N, 그리고 화면마다의 조건 카드.
+    # 구역 제목 아래에 서고 아이콘을 `ACCENT` 로 칠한다.
+    condition_roots = (
+        *(f".st-key-{key}" for key in (scenario_box_key, month_box_key, bottleneck_box_key)),
+        _CONDITION_CARDS,
+    )
     condition_icon_selectors = _SELECTOR_JOINER.join(
-        f'.st-key-{key} summary [data-testid="stExpanderIcon"]' for key in condition_box_keys
+        f'{root} summary [data-testid="stExpanderIcon"]' for root in condition_roots
     )
     # 면은 **안쪽 확장 패널**에 칠한다. 바깥 `.st-key-*` 래퍼에 칠하면 모서리가 각진 띠가
     # 한 겹 더 둘러진다(아래 「그룹 상자에는 배경을 칠하지 않는다」).
-    condition_face_selectors = _SELECTOR_JOINER.join(
-        f".st-key-{key} details" for key in condition_box_keys
-    )
+    condition_face_selectors = _SELECTOR_JOINER.join(f"{root} details" for root in condition_roots)
     condition_summary_selectors = _SELECTOR_JOINER.join(
-        f".st-key-{key} details > summary:not(:hover):not(:focus-visible)"
-        for key in condition_box_keys
+        f"{root} details > summary:not(:hover):not(:focus-visible)" for root in condition_roots
     )
     condition_alert_selectors = _SELECTOR_JOINER.join(
-        f'.st-key-{key} details [data-testid="stAlert"]' for key in condition_box_keys
+        f'{root} details [data-testid="stAlert"]' for root in condition_roots
     )
     # 사이드바 안의 페이지 링크 전부. 본문에도 `stPageLink` 가 있을 수 있어 사이드바로 좁힌다.
     NAV_LINK = '[data-testid="stSidebarContent"] [data-testid="stPageLink-NavLink"]'

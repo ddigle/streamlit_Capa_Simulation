@@ -3,9 +3,10 @@
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.column_filter import render_column_filters
-from capa_simulation.components.month_editor import render_month_editor
+from capa_simulation.components.month_editor import editor_notice, render_month_editor
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.reference_csv_tools import queue_reference_import_flash
@@ -684,16 +685,20 @@ equipment_editor_results = {
 def _edit_flash(
     editor_key: str, table_name: str, *, imported: bool, removed: int = 0
 ) -> tuple[str, str]:
-    """적용 결과를 버튼 바로 아래 같은 자리에 남긴다.
+    """적용 결과를 **누른 자리** 바로 아래에 남긴다.
 
     버튼으로 고친 경우에는 화면이 그대로 다시 그려질 뿐이라, 눌렸는지 어디에 반영됐는지
     알 길이 없었다. 두 길을 가르는 것은 앞부분 한 마디뿐이고, 저장까지 가야 리비전으로
     남는다는 사실은 양쪽 모두 같다.
 
-    **`editor_key` 는 편집기를 그릴 때 쓴 값 그대로여야 한다.** `render_month_editor` 가
-    `f"{editor_key}_csv"` 로 넘기고 그쪽이 `f"{key}_flash"` 를 읽는다. 여기에 리터럴을 다시
-    적으면 쓰는 키와 읽는 키가 갈라져 문구가 조용히 사라진다 — 실제로 `capa_` 접두어가
-    빠져 여섯 탭이 그랬다.
+    **자리가 둘이라 키도 둘이다.** 표 위 `변경사항 적용` 의 결과는 `f"{editor_key}_apply"` —
+    `render_month_editor` 가 작업 줄 아래에서 꺼낸다. 표 아래 붙여넣기 폼의 결과는
+    `f"{editor_key}_csv"` — 붙여넣기 도구가 폼 옆에서 꺼낸다. 붙여넣기 결과에는 「지워진 칸」
+    경고가 실려 폼 옆에서 보여야 한다(표 위로 올리면 폼을 보던 사람에게 안 보인다).
+
+    **`editor_key` 는 편집기를 그릴 때 쓴 값 그대로여야 한다.** 여기에 리터럴을 다시 적으면
+    쓰는 키와 읽는 키가 갈라져 문구가 조용히 사라진다 — 실제로 `capa_` 접두어가 빠져 여섯
+    탭이 그랬다.
     """
     origin = "붙여넣기 데이터를" if imported else "편집값을"
     # 지워진 칸은 **오류가 아니라 정당한 편집**이라 막지 않는다. 다만 붙여넣기는 격자와
@@ -703,7 +708,7 @@ def _edit_flash(
     if removed:
         removal = f"값이 지워진 칸 {removed:,}개는 계산에서 빠집니다. "
     return (
-        f"{editor_key}_csv",
+        f"{editor_key}_csv" if imported else f"{editor_key}_apply",
         f"{table_name} {origin} 활성 시나리오에 적용했습니다. "
         f"{removal}"
         "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요.",
@@ -723,10 +728,20 @@ def _removed_values(
 
 pending_updates: dict[str, pd.DataFrame] = {}
 update_error_tab = upeh_tab
+# 표 위 `변경사항 적용` 에서 난 오류는 그 버튼 바로 아래 자리에 쓴다(`editor_notice`). 표 아래
+# 붙여넣기에서 난 오류는 예전처럼 탭 끝, 곧 붙여넣기 폼 옆이다 — 결과는 누른 자리에서 보인다.
+update_error_notice: DeltaGenerator | None = None
+
+
+def _grid_notice(editor_key: str, imported: pd.DataFrame | None) -> DeltaGenerator | None:
+    return None if imported is not None else editor_notice(editor_key)
+
+
 import_flash: tuple[str, str] | None = None
 try:
     if apply_upeh or imported_upeh_table is not None:
         update_error_tab = upeh_tab
+        update_error_notice = _grid_notice(editor_keys[0], imported_upeh_table)
         source = imported_upeh_table if imported_upeh_table is not None else edited_upeh_table
         pending_updates["RQ_UPEH"] = performance_from_edit_table(source)
         # 빈 월 칸을 채우는 것은 값 수정이 아니라 **경로를 하나 더 만드는 일**이다. 대당
@@ -753,6 +768,7 @@ try:
         )
     if apply_run_rate or imported_run_rate_table is not None:
         update_error_tab = run_rate_tab
+        update_error_notice = _grid_notice(editor_keys[1], imported_run_rate_table)
         source = (
             imported_run_rate_table
             if imported_run_rate_table is not None
@@ -771,6 +787,7 @@ try:
         )
     if apply_vital or imported_vital_table is not None:
         update_error_tab = vital_tab
+        update_error_notice = _grid_notice(editor_keys[2], imported_vital_table)
         source = imported_vital_table if imported_vital_table is not None else edited_vital_table
         pending_updates["RQ_VITAL"] = reference_from_edit_table(
             source, VITAL_DIMENSIONS, "편중률", "여유율 편집값"
@@ -783,6 +800,7 @@ try:
         )
     if apply_lot_ratio or imported_lot_ratio_table is not None:
         update_error_tab = lot_ratio_tab
+        update_error_notice = _grid_notice(editor_keys[3], imported_lot_ratio_table)
         source = (
             imported_lot_ratio_table
             if imported_lot_ratio_table is not None
@@ -804,6 +822,7 @@ try:
         )
     if apply_wf_ratio or imported_wf_ratio_table is not None:
         update_error_tab = wf_ratio_tab
+        update_error_notice = _grid_notice(editor_keys[4], imported_wf_ratio_table)
         source = (
             imported_wf_ratio_table
             if imported_wf_ratio_table is not None
@@ -822,6 +841,7 @@ try:
         )
     if apply_run_day or imported_run_day_table is not None:
         update_error_tab = run_day_tab
+        update_error_notice = _grid_notice(editor_keys[5], imported_run_day_table)
         source = (
             imported_run_day_table if imported_run_day_table is not None else edited_run_day_table
         )
@@ -846,6 +866,7 @@ try:
         if not (apply_equipment or imported_equipment is not None):
             continue
         update_error_tab = equipment_sub_tab
+        update_error_notice = _grid_notice(editor_key, imported_equipment)
         source = imported_equipment if imported_equipment is not None else edited_equipment
         pending_updates[table_name] = equipment_count_from_edit_table(
             source, category, value_column
@@ -870,6 +891,9 @@ try:
         st.session_state.pop(SOURCE_TOKEN_KEY, None)
         st.rerun()
 except (KeyError, ValueError) as exc:
-    with update_error_tab:
-        st.error(str(exc))
+    if update_error_notice is not None:
+        update_error_notice.error(str(exc))
+    else:
+        with update_error_tab:
+            st.error(str(exc))
     st.stop()

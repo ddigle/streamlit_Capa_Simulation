@@ -4,6 +4,7 @@ import streamlit as st
 
 from capa_simulation.components.app_header import render_app_header
 from capa_simulation.components.month_range_picker import render_month_range_picker
+from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
 from capa_simulation.components.scenario_status import (
     SCENARIO_BOX_KEY,
     render_scenario_controls,
@@ -13,7 +14,7 @@ from capa_simulation.components.theme_toggle import render_theme_toggle
 from capa_simulation.design import theme
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.navigation import CONDITIONS_SECTION, build_navigation_pages
-from capa_simulation.page_bootstrap import bootstrap_error_message
+from capa_simulation.page_bootstrap import bootstrap_error_message, forget_page_dialogs
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
 from capa_simulation.scenario_preset_state import (
@@ -116,8 +117,10 @@ with pinned_connections(DUCKDB_PATH):
     )
     render_app_header()
     # 헤더 오른쪽 Deploy 왼쪽 자리에 밝게/어둡게 버튼을 얹는다. Streamlit 이 테마를
-    # 기억하는 자리를 그대로 쓰므로 위젯과 우리 Figure 가 함께 바뀐다.
-    render_theme_toggle()
+    # 기억하는 자리를 그대로 쓰므로 위젯과 우리 Figure 가 함께 바뀐다. 그 왼쪽의 `Guide`
+    # 버튼도 같은 iframe 에 싣는다. 기본은 감춰 두고 가이드를 단 페이지만 보이게 한다.
+    render_guide_base_style()
+    render_theme_toggle(extra_scripts=(guide_toolbar_script(),))
     with st.sidebar.container(key="home_navigation"):
         st.page_link(pages.home, width="stretch")
 
@@ -133,6 +136,9 @@ with pinned_connections(DUCKDB_PATH):
     # 것은 그대로 남는다 — 매 회차 덮어쓰면 방금 누른 클릭을 지운다.
     page_changed = st.session_state.get(SIDEBAR_PAGE_KEY) != navigation.url_path
     st.session_state[SIDEBAR_PAGE_KEY] = navigation.url_path
+    if page_changed:
+        # 떠난 페이지의 팝업 열림 상태를 버린다. 닫지 않고 떠나면 돌아왔을 때 팝업이 저절로 뜬다.
+        forget_page_dialogs()
     for group in pages.groups:
         # 하위가 없어도 **상자에 넣는다.** 묶을 것이 없으니 테두리가 필요 없다고 봤는데,
         # 사이드바에 상자가 다섯이고 이 둘만 맨몸으로 서니 목록이 두 층으로 읽혔다.

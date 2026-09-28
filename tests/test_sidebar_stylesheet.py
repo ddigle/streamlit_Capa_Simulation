@@ -23,6 +23,7 @@ import pytest
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
 from capa_simulation.design import theme, tokens
 from capa_simulation.navigation import SIDEBAR_GROUPS
+from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
 
 # `<style>` 여는 태그와 닫는 태그만 허용한다. 그 밖의 `<...>` 는 살균기가 태그로 읽는다.
 ALLOWED = {"<style>", "</style>"}
@@ -109,7 +110,11 @@ def test_box_markers_follow_the_declarations(active_href: str) -> None:
     expanding = [*boxed, "test_scenario", "test_month", "test_bottleneck", "test_admin"]
 
     (expand_rule,) = _rules_with(block, 'content: "expand_more" / "";')
-    assert expand_rule == [f".st-key-{key} details > summary::after" for key in expanding]
+    # 화면 조건 카드는 페이지마다 이름이 달라 key 대신 접두어 선택자 하나로 걸린다.
+    assert expand_rule == [
+        *(f".st-key-{key} details > summary::after" for key in expanding),
+        f'[class*="st-key-{CONDITION_CARD_PREFIX}"] details > summary::after',
+    ]
     # 합자 이름만 적은 폴백 선언이 같은 규칙에 먼저 있다.
     assert _rules_with(block, 'content: "expand_more";') == [expand_rule]
 
@@ -123,6 +128,25 @@ def test_box_markers_follow_the_declarations(active_href: str) -> None:
     assert off_rules == [[f'.st-key-{key} {link}[href="{active_href}"]::after' for key in solo]]
     # HOME 광택 띠는 그대로 남는다.
     assert '.st-key-home_navigation a[data-testid="stPageLink-NavLink"]::after' in block
+
+
+def test_condition_cards_wear_the_condition_box_face() -> None:
+    """화면 조건 카드는 공통 조건 상자와 같은 청록 면·`ACCENT` 아이콘이다.
+
+    카드 key 가 페이지마다 달라 서식이 접두어 하나에 걸린다. 그 선택자가 빠지면 카드만 목록
+    상자처럼 보여 「이 화면의 조건」이라는 구역의 뜻이 흐려진다.
+    """
+    block = _style_block()
+    card = f'[class*="st-key-{CONDITION_CARD_PREFIX}"]'
+
+    (face_rule,) = _rules_with(block, f"background-color: {tokens.NAV_CONTROL_TINT};")
+    assert f"{card} details" in face_rule
+    (icon_rule,) = [
+        rule
+        for rule in _rules_with(block, f"color: {tokens.ACCENT};")
+        if any("stExpanderIcon" in selector for selector in rule)
+    ]
+    assert f'{card} summary [data-testid="stExpanderIcon"]' in icon_rule
 
 
 def test_the_support_box_sits_last_and_apart() -> None:

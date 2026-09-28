@@ -89,6 +89,27 @@ def _clipboard_text(app: AppTest, *, scale: float) -> str:
     return wide.to_csv(index=False, sep="	")
 
 
+def _paste(app: AppTest, text: str) -> None:
+    """작업 줄의 「Excel 붙여넣기」 팝업을 열고 붙여넣어 일괄 적용한다."""
+    app.button(key="open_plan_paste").click().run()
+    app.text_area(key="rq_pkg_plan_csv_clipboard").set_value(text)
+    for button in app.button:
+        if "붙여넣기 일괄 적용" in str(button.label):
+            button.click().run()
+            break
+
+
+def _register(app: AppTest, product: str, stack: str) -> None:
+    """작업 줄의 「가상 제품 등록」 팝업을 열고 등록한다."""
+    app.button(key="open_virtual_product").click().run()
+    app.text_input(key="virtual_product_name").set_value(product)
+    app.text_input(key="virtual_product_stack").set_value(stack)
+    for button in app.button:
+        if "가상 제품 등록" in str(button.label) and button.key != "open_virtual_product":
+            button.click().run()
+            break
+
+
 def test_paste_stages_into_the_tab_without_touching_the_global_plan(
     seeded_database: Path,
 ) -> None:
@@ -97,12 +118,11 @@ def test_paste_stages_into_the_tab_without_touching_the_global_plan(
     before_total = _plan_total(app)
     before_token = app.session_state["active_scenario"]["content_token"]
 
-    app.text_area(key="rq_pkg_plan_csv_clipboard").set_value(_clipboard_text(app, scale=0.5))
-    for button in app.button:
-        if "붙여넣기 일괄 적용" in str(button.label):
-            button.click().run()
-            break
+    _paste(app, _clipboard_text(app, scale=0.5))
     assert not list(app.exception)
+    # 붙여넣기에 성공하면 팝업이 닫히고 완료 알림은 작업 줄 아래에 뜬다.
+    assert "load_conversion_open_dialog" not in app.session_state
+    assert any("PKG PLAN 탭에 반영했습니다" in item.value for item in app.success)
 
     # 탭에만 반영된다: 전역 계획값과 토큰은 그대로다.
     assert _plan_total(app) == pytest.approx(before_total)
@@ -116,15 +136,8 @@ def test_apply_button_publishes_the_staged_plan_globally(seeded_database: Path) 
     before_total = _plan_total(app)
     before_token = app.session_state["active_scenario"]["content_token"]
 
-    app.text_area(key="rq_pkg_plan_csv_clipboard").set_value(_clipboard_text(app, scale=0.5))
-    for button in app.button:
-        if "붙여넣기 일괄 적용" in str(button.label):
-            button.click().run()
-            break
-    for button in app.button:
-        if "PKG PLAN 변경사항 적용" in str(button.label):
-            button.click().run()
-            break
+    _paste(app, _clipboard_text(app, scale=0.5))
+    app.button(key="apply_pkg_plan_changes").click().run()
     assert not list(app.exception)
 
     assert _plan_total(app) == pytest.approx(before_total * 0.5)
@@ -135,7 +148,7 @@ def test_apply_button_publishes_the_staged_plan_globally(seeded_database: Path) 
 def test_virtual_product_registration_adds_the_key_to_every_clone_table(
     seeded_database: Path,
 ) -> None:
-    """제품 등록 탭이 8개 기준정보에 새 제품 키를 넣고 계획은 0으로 시작해야 한다."""
+    """가상 제품 등록 팝업이 8개 기준정보에 새 제품 키를 넣고 계획은 0으로 시작해야 한다."""
     from capa_simulation.services.virtual_product import (
         available_source_products,
         clone_table_names,
@@ -148,13 +161,11 @@ def test_virtual_product_registration_adds_the_key_to_every_clone_table(
     source = available_source_products(tables).iloc[0]
     clone_tables = clone_table_names(tables)
 
-    app.text_input(key="virtual_product_name").set_value("DEMO_VIRTUAL_X")
-    app.text_input(key="virtual_product_stack").set_value(str(source["Stack"]))
-    for button in app.button:
-        if "가상 제품 등록" in str(button.label):
-            button.click().run()
-            break
+    _register(app, "DEMO_VIRTUAL_X", str(source["Stack"]))
     assert not list(app.exception)
+    # 등록하면 팝업이 닫히고, 다음 할 일(계획 수량 입력)을 알림이 작업 줄 아래에서 말한다.
+    assert "load_conversion_open_dialog" not in app.session_state
+    assert any("DEMO_VIRTUAL_X" in item.value for item in app.success)
 
     updated = app.session_state["active_scenario"]
     assert updated["content_token"] != before_token
@@ -178,12 +189,7 @@ def test_registered_virtual_product_appears_in_the_plan_editor(
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     source = available_source_products(app.session_state["active_scenario"]["tables"]).iloc[0]
 
-    app.text_input(key="virtual_product_name").set_value("DEMO_VIRTUAL_Y")
-    app.text_input(key="virtual_product_stack").set_value(str(source["Stack"]))
-    for button in app.button:
-        if "가상 제품 등록" in str(button.label):
-            button.click().run()
-            break
+    _register(app, "DEMO_VIRTUAL_Y", str(source["Stack"]))
     assert not list(app.exception)
 
     scenario = app.session_state["active_scenario"]
