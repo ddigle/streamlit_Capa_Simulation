@@ -38,7 +38,11 @@ def build_process_comparison_figure(
             y=axis_processes,
             x=prepared["설비 성능 실현률"],
             orientation="h",
-            marker={"color": tokens.SERIES_EFFECTIVE},
+            # 막대 굵기 25px 라 중간 등급이다. 가로 막대라 값 쪽인 오른쪽 끝이 둥글다.
+            marker={
+                "color": tokens.SERIES_EFFECTIVE,
+                "cornerradius": tokens.BAR_CORNER_RADIUS_MEDIUM_PX,
+            },
             text=prepared["설비 성능 실현률"],
             texttemplate="%{text:.1%}",
             textposition="outside",
@@ -52,7 +56,11 @@ def build_process_comparison_figure(
             y=axis_processes,
             x=prepared["Capa 실현률"],
             orientation="h",
-            marker={"color": colors, "line": {"color": tokens.SERIES_STANDARD, "width": 1}},
+            marker={
+                "color": colors,
+                "line": {"color": tokens.SERIES_STANDARD, "width": 1},
+                "cornerradius": tokens.BAR_CORNER_RADIUS_MEDIUM_PX,
+            },
             text=prepared["Capa 실현률"],
             texttemplate="<b>%{text:.1%}</b>",
             textposition="outside",

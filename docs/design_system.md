@@ -214,7 +214,7 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
 | 등급 | 반경 | 굵기 | 쓰는 곳 |
 |---|---|---|---|
 | 넓음 `WIDE` | 8px | 40px 이상 | HOME 생산계획 LOB(70px) |
-| 중간 `MEDIUM` | 5px | 20~40px | 아직 없음 |
+| 중간 `MEDIUM` | 5px | 20~40px | Dynamic Capa 공정별 Capa 실현 수준(가로, 25px) |
 | 좁음 `NARROW` | 3px | 20px 미만 | HOME B/N Top 5(15px) |
 
 - 반경은 trace 마다 **스칼라**로 준다. plotly.js 3.7 은 점마다 다른 반경 배열을 조용히

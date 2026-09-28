@@ -19,6 +19,7 @@ from typing import Any
 import pandas as pd
 import plotly.graph_objects as go
 
+from capa_simulation.components.dynamic_capacity_dashboard import build_process_comparison_figure
 from capa_simulation.components.home_dimensions import LOB_BAR_WIDTH
 from capa_simulation.components.home_figures import build_lob_summary_figures
 from capa_simulation.design import tokens
@@ -170,3 +171,21 @@ def test_the_lob_bar_is_wide_enough_for_a_level_rate_label() -> None:
     누우면 Density 값과 겹친다. 폭을 줄이려면 글자 크기를 먼저 정한다.
     """
     assert LOB_BAR_WIDTH * tokens.MONTH_COLUMN_WIDTH_PX >= 56
+
+
+def test_dynamic_capacity_bars_round_their_ends() -> None:
+    """Dynamic Capa 공정별 비교는 가로 group 막대(25px)라 중간 등급이다."""
+    summary = pd.DataFrame(
+        {
+            "공정": ["A", "B"],
+            "설비 성능 실현률": [0.9, 0.8],
+            "Capa 실현률": [0.85, 1.1],
+            "상태": ["정상", "관찰"],
+        }
+    )
+    figure = build_process_comparison_figure(summary)
+
+    assert figure.layout.barcornerradius is None
+    assert [trace.marker.cornerradius for trace in figure.data] == [
+        tokens.BAR_CORNER_RADIUS_MEDIUM_PX
+    ] * 2
