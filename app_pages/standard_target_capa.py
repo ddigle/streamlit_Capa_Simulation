@@ -32,6 +32,7 @@ from capa_simulation.page_bootstrap import (
     load_page_context,
     prune_list_selection,
     resolve_effective_months,
+    scenario_capacity_and_demand,
 )
 from capa_simulation.persistence.equipment_cache import get_equipment_repository
 from capa_simulation.persistence.models import (
@@ -59,7 +60,6 @@ from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
     get_pkg_equivalent_standard_target,
-    get_scenario_capacity_and_demand,
     get_weekly_standard_target_capacity,
     scenario_cache_key,
 )
@@ -613,10 +613,10 @@ try:
         name: scenario_month_table(active_scenario, name, start_month, end_month)
         for name in ("RQ_RUN_DAY", "RQ_PKG_PLAN")
     }
-    unit_capacity, required_equipment = get_scenario_capacity_and_demand(
+    unit_capacity, required_equipment = scenario_capacity_and_demand(
         scenario_cache_key(reference_version, active_scenario, start_month, end_month),
-        _scenario_tables=active_scenario["tables"],
-        _reference_tables=reference_tables,
+        scenario_tables=active_scenario["tables"],
+        reference_tables=reference_tables,
     )
     standard_target_exception_rows = standard_target_exception_row_count(required_equipment)
     required_equipment = prepare_standard_target_required_equipment(required_equipment)

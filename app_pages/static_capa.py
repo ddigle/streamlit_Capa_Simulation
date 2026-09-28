@@ -20,6 +20,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     load_page_context,
     resolve_effective_months,
+    scenario_capacity_and_demand,
 )
 from capa_simulation.scenario_preset_state import (
     SECURE_THRESHOLD_KEY,
@@ -32,7 +33,6 @@ from capa_simulation.scenario_state import (
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.securement_rate import build_securement_shortfall_tables
 from capa_simulation.services.simulation_cache import (
-    get_scenario_capacity_and_demand,
     get_securement_rate,
     scenario_cache_key,
 )
@@ -209,10 +209,10 @@ try:
     capacity_cache_key = scenario_cache_key(
         reference_version, active_scenario, effective_start, effective_end
     )
-    unit_capacity, required_equipment = get_scenario_capacity_and_demand(
+    unit_capacity, required_equipment = scenario_capacity_and_demand(
         capacity_cache_key,
-        _scenario_tables=active_scenario["tables"],
-        _reference_tables=reference_tables,
+        scenario_tables=active_scenario["tables"],
+        reference_tables=reference_tables,
     )
     securement_rate = get_securement_rate(
         capacity_cache_key,

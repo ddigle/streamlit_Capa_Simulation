@@ -87,11 +87,25 @@ def _placeholder() -> DeltaGenerator | None:
     return None
 
 
+def show_selected_month_range(start_month: int, end_month: int) -> None:
+    """고른 범위를 **중립 문구**로 알린다. 이 화면이 그 범위를 읽었다는 뜻이 아니다.
+
+    공통 사이드바가 모든 페이지에서 먼저 쓴다. 조회기간을 실제로 읽는 화면만 그 뒤에
+    `show_applied_month_range` 로 「✓ 적용」을 덮는다. 전에는 여기서도 「✓ 적용」을 써서
+    조회기간과 무관한 화면(Admin Area·VOC·Capa Chatbot 등)에서도 「적용」이 떴다.
+    """
+    placeholder = _placeholder()
+    if placeholder is None:
+        return
+    placeholder.caption(f"선택 · {month_label(start_month)}–{month_label(end_month)}")
+
+
 def show_applied_month_range(start_month: int, end_month: int) -> None:
-    """계산에 실제로 쓰인 월 범위를 사이드바에 알린다.
+    """**이 화면이 이 범위를 읽었다**고 알린다. 계산에 실제로 쓰인 월 범위다.
 
     사용자가 고른 범위에 데이터가 없으면 `resolve_effective_months` 가 범위를 좁힌다.
-    좁혀졌다는 사실을 알리지 않으면 화면 숫자가 왜 다른지 알 수 없다.
+    좁혀졌다는 사실을 알리지 않으면 화면 숫자가 왜 다른지 알 수 없다. 범위를 읽은 뒤
+    계산이 멈추면 `show_calculation_stopped` 가 이 표시를 거둔다.
     """
     placeholder = _placeholder()
     if placeholder is None:
@@ -117,6 +131,20 @@ def show_past_months_outside_range(first_past_month: int) -> None:
     if placeholder is None:
         return
     placeholder.caption(f":material/info: 과거 밖 · {month_label(first_past_month)}부터")
+
+
+def show_calculation_stopped() -> None:
+    """범위는 읽었지만 계산이 멈췄다고 같은 자리에 알린다. 「✓ 적용」을 거둔다.
+
+    Capa 는 시나리오 전체 기간을 한 번에 계산하므로 **조회기간 밖의 달**의 기준정보
+    오류로도 멈춘다(`simulation_cache.get_scenario_capacity_and_demand`). 그때 사이드바가
+    「✓ 적용」인 채 본문이 「계산을 멈췄습니다」를 말하면 둘이 어긋난다. 까닭은 본문 오류가
+    말한다 — 자리가 107px 뿐이라 여기는 멈췄다는 사실만 적는다.
+    """
+    placeholder = _placeholder()
+    if placeholder is None:
+        return
+    placeholder.caption(":material/block: 계산 멈춤")
 
 
 def show_month_range_unavailable() -> None:

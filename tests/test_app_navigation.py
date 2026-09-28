@@ -1,8 +1,10 @@
 # Purpose: 사이드바 페이지 인벤토리와 네비게이션 설정을 고정한다.
 
 import ast
+from dataclasses import replace
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -23,6 +25,8 @@ from capa_simulation.navigation import (
     STATIC_CAPA,
     STATIC_CAPA_SUBPAGES,
 )
+from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
+from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.sidebar_status import BOTTLENECK_BOX_KEY, remembered_box_key
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -455,3 +459,76 @@ def test_the_support_box_opens_on_entering_its_pages_and_never_forces_closed(
     app.session_state[support_key] = False
     app.run()
     assert _control_boxes(app)[support_key] is False
+
+
+# --------------------------------------------------- 조회기간 요약 줄의 선택·적용
+#
+# 「✓ 적용」은 **이 화면이 이 범위를 읽었다**는 뜻이다. 공통 사이드바는 고른 범위를 중립
+# 「선택」으로만 적고, 조회기간을 읽는 화면(`resolve_effective_months`·HOME)이 「✓ 적용」으로
+# 덮는다. 범위를 읽은 뒤 계산이 멈추면 「계산 멈춤」으로 거둔다.
+
+
+def _range_caption(app: AppTest) -> str:
+    """조회기간 요약 줄 위에 얹히는 한 줄(적용 기간 자리표시자)의 글자."""
+    placeholder_key = _app_constant("MONTH_APPLIED_BOX_KEY")
+    (block,) = [
+        node
+        for node in app.sidebar.children.values()
+        if str(getattr(getattr(node, "proto", None), "id", "") or "").endswith(placeholder_key)
+    ]
+    (caption,) = [element.value for element in block if type(element).__name__ == "Caption"]
+    return str(caption)
+
+
+def _run_with_range(app: AppTest, start: str, end: str) -> AppTest:
+    """첫 회차를 돌린 **뒤** 조회기간을 좁혀 다시 돌린다.
+
+    첫 회차는 공식 시나리오를 올리며 그 프리셋의 조회기간(시나리오 전체)을 세션에 심는다.
+    먼저 심어 두면 그 값에 덮인다.
+    """
+    app.run()
+    app.session_state[MONTH_RANGE_KEY] = (start, end)
+    return app.run()
+
+
+def test_the_range_says_applied_only_where_the_screen_read_it(_app: AppTest) -> None:
+    """HOME 은 「✓ 적용」, 조회기간을 읽지 않는 Capa Chatbot 은 중립 「선택」이다."""
+    app = _run_with_range(_app, "2026-01", "2026-03")
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _range_caption(app) == ":material/check_circle: 적용 · 26.01–26.03"
+
+    app.switch_page(CAPA_CHATBOT.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _range_caption(app) == "선택 · 26.01–26.03"
+
+
+def test_a_stopped_calculation_withdraws_applied(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """조회기간 **밖** 달의 기준정보 오류로 계산이 멈추면 「✓ 적용」 대신 「계산 멈춤」이다.
+
+    Capa 는 시나리오 전체 기간을 한 번에 계산해 보지 않는 달의 오류로도 멈춘다. 사이드바가
+    「✓ 적용」인 채 본문이 「계산을 멈췄습니다」를 말하면 둘이 어긋난다. 내장 시드에서
+    마지막 달의 가동률을 빼 실제 계산을 멈춘다(가동률은 중립값이 없어 하드 오류다).
+    """
+    import capa_simulation.application_bootstrap as application_bootstrap
+
+    seed = build_builtin_seed_dataset()
+    run_rate = seed.reference_tables["RQ_RUN_RATE"]
+    months = pd.to_numeric(run_rate["생산계획년월"])
+    broken_tables = dict(seed.reference_tables)
+    broken_tables["RQ_RUN_RATE"] = run_rate.loc[months.ne(int(months.max()))].reset_index(drop=True)
+    broken_seed = replace(seed, reference_tables=broken_tables)
+    monkeypatch.setattr(application_bootstrap, "build_builtin_seed_dataset", lambda: broken_seed)
+
+    app = _run_with_range(_app, "2026-01", "2026-03")
+    for page_path in (HOME.path, STATIC_CAPA.path):
+        if page_path != HOME.path:
+            app.switch_page(page_path).run()
+        assert not list(app.exception), [element.message for element in app.exception]
+        errors = [str(element.value) for element in app.error]
+        assert any("밖의 달에 기준정보 오류가 있어 계산을 멈췄습니다" in e for e in errors), (
+            page_path,
+            errors,
+        )
+        assert _range_caption(app) == ":material/block: 계산 멈춤", page_path

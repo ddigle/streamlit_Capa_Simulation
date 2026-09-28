@@ -9,7 +9,7 @@ Static Capa 하위 5개 페이지가 같은 40여 줄을 각자 재구현하면�
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -23,6 +23,7 @@ import streamlit as st
 # import 하면 여기서 잡은 바인딩이 교체를 무시하므로 호출 시점에 모듈에서 찾는다.
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.scenario_state as scenario_state
+import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.display_order import (
@@ -39,6 +40,7 @@ from capa_simulation.settings import (
 )
 from capa_simulation.sidebar_status import (
     show_applied_month_range,
+    show_calculation_stopped,
     show_month_range_unavailable,
 )
 
@@ -172,3 +174,29 @@ def resolve_effective_months(
         )
     show_applied_month_range(effective_start_month, effective_end_month)
     return effective_start_month, effective_end_month
+
+
+def scenario_capacity_and_demand(
+    cache_key: simulation_cache.ScenarioCacheKey,
+    *,
+    scenario_tables: Mapping[str, pd.DataFrame],
+    reference_tables: Mapping[str, pd.DataFrame],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """활성 시나리오의 대당 Capa·소요대수. 계산이 멈추면 사이드바의 「✓ 적용」을 거둔다.
+
+    `resolve_effective_months` 가 먼저 「✓ 적용」을 쓴 뒤에 부르는 자리다. 계산은 시나리오 전체
+    기간으로 하므로 조회기간 밖 달의 기준정보 오류로도 멈추는데(ValueError), 그때 사이드바가
+    「✓ 적용」인 채로 남으면 본문 「계산을 멈췄습니다」와 어긋난다. 예외는 그대로 다시 던진다 —
+    본문에 무엇을 보일지는 페이지가 정한다.
+
+    계산 함수는 **부를 때** 모듈에서 찾는다. 페이지 테스트가 그 속성을 바꿔 계산을 흉내 낸다.
+    """
+    try:
+        return simulation_cache.get_scenario_capacity_and_demand(
+            cache_key,
+            _scenario_tables=scenario_tables,
+            _reference_tables=reference_tables,
+        )
+    except ValueError:
+        show_calculation_stopped()
+        raise

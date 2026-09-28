@@ -36,7 +36,7 @@ from capa_simulation.sidebar_status import (
     BOTTLENECK_BOX_KEY,
     register_month_range_placeholder,
     render_sidebar_section,
-    show_applied_month_range,
+    show_selected_month_range,
     sidebar_expander,
 )
 from capa_simulation.sync_boot import enable_sync_state_if_managed, heartbeat_if_managed
@@ -202,7 +202,10 @@ with pinned_connections(DUCKDB_PATH):
             selected_start_label,
             selected_end_label,
         )
-        show_applied_month_range(
+        # 여기서는 **고른 범위**만 중립으로 적는다. 조회기간을 실제로 읽는 화면이 그 뒤에
+        # 「✓ 적용」으로 덮는다(`resolve_effective_months`·HOME). 조회기간과 무관한 화면에서는
+        # 이 문구가 그대로 남는다.
+        show_selected_month_range(
             int(selected_start_label.replace("-", "")),
             int(selected_end_label.replace("-", "")),
         )

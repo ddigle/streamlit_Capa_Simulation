@@ -144,6 +144,7 @@ from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import (
     BOTTLENECK_BOX_KEY,
     show_applied_month_range,
+    show_calculation_stopped,
     show_month_range_unavailable,
     show_past_months_outside_range,
     sidebar_expander,
@@ -266,18 +267,25 @@ try:
         display_order=reference_tables["RQ_DISPLAY_ORDER"],
     )
     home_trace.mark("캐시 키 생성")
-    (
-        monthly_density,
-        production_detail,
-        monthly_wafer,
-        securement_rate,
-        assumed_capacity_defaults,
-    ) = get_home_simulation(
-        cache_key=home_simulation_cache_key,
-        _tables=active_scenario["tables"],
-        _display_order=reference_tables["RQ_DISPLAY_ORDER"],
-        _reference_tables=reference_tables,
-    )
+    try:
+        (
+            monthly_density,
+            production_detail,
+            monthly_wafer,
+            securement_rate,
+            assumed_capacity_defaults,
+        ) = get_home_simulation(
+            cache_key=home_simulation_cache_key,
+            _tables=active_scenario["tables"],
+            _display_order=reference_tables["RQ_DISPLAY_ORDER"],
+            _reference_tables=reference_tables,
+        )
+    except ValueError:
+        # 바로 위에서 사이드바에 「✓ 적용」을 썼다. Capa 는 시나리오 전체 기간으로 계산해
+        # 조회기간 밖 달의 기준정보 오류로도 멈추므로, 그때 「✓ 적용」을 거둬야 본문
+        # 「계산을 멈췄습니다」와 어긋나지 않는다. 본문 안내는 아래 `except` 가 그대로 한다.
+        show_calculation_stopped()
+        raise
     if not include_edp:
         # LOB 로 표현되는 값만 EDP 를 뺀다. 확보율과 B/N 공정 순위는 설비가 받는 전체
         # 부하 기준이라 그대로 둔다.
