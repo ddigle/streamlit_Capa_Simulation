@@ -39,12 +39,10 @@ from capa_simulation.components.reference_csv_tools import render_reference_clip
 from capa_simulation.components.tab_marks import editor_has_edits
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
-from capa_simulation.sidebar_status import condition_card
+from capa_simulation.sidebar_status import table_card
 
-# 사이드바 조건 카드. 필터는 본문이 아니라 여기 선다(2026-09-29 사용자 결정 — 필터·조건은
-# 사이드바). 카드 이름은 페이지가 주며, 모든 탭이 **같은 카드**를 쓴다 — 한 번 편 카드는 탭을
-# 옮겨도 편 채로 남는다.
-FILTER_CARD_LABEL = "표 조건"
+# 필터는 본문이 아니라 사이드바 조건 카드 `표 조건`(`sidebar_status.table_card`)에 선다
+# (2026-09-29 사용자 결정 — 필터·조건은 사이드바). 카드 이름은 페이지가 준다.
 # 필터를 바꾸면 보이는 행이 바뀌어 적용하지 않은 편집을 버려야 한다(편집 델타가 행 위치 기반).
 # 그래서 고친 것이 남아 있으면 필터를 잠근다 — 조용히 버리는 것보다 낫다.
 FILTER_LOCKED_NOTICE = (
@@ -416,7 +414,7 @@ def _visible_table(
     if card_name is None:
         visible = apply_column_filters(default_table, dimensions, key_prefix=key_prefix)
     else:
-        with condition_card(FILTER_CARD_LABEL, name=card_name, icon=":material/filter_alt:"):
+        with table_card(card_name):
             visible = render_column_filter_controls(
                 default_table,
                 dimensions,

@@ -1,5 +1,13 @@
 # Purpose: 공정 제품 Mix와 주차별 가용대수로 일 표준 가능량을 산출·분석·다운로드한다.
 
+"""표준 목표 — 조건 카드·Guide·작업 줄 양식(2026-09-29 사용자 결정, 생산 계획이 샘플).
+
+- 표시 항목·기간·공정 필터·상세·PKG 기준(로직 분석이면 고르는 일곱 칸)은 사이드바 조건 카드
+  `표준 목표 조건` 이다. 카드는 계산이 멈추는 회차에도 먼저 선다.
+- 주차별 가용설비 입력은 결과 상자 위 작업 줄이다 — 붙여넣기·입력 초기화는 팝업, 양식은 내려받기.
+- 설명(산식·세션 적용 범위·예외 처리 규칙)은 Guide(`guides/standard_target_capa.md`)다.
+"""
+
 from __future__ import annotations
 
 from calendar import monthrange
@@ -10,12 +18,15 @@ from typing import cast
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
 )
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import (
     ProcessLabels,
@@ -24,10 +35,11 @@ from capa_simulation.components.process_labels import (
 from capa_simulation.components.table_toolbar import (
     CSV_TEMPLATE_LABEL,
     render_csv_download,
-    table_heading_row,
+    render_table_heading,
 )
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
+    PAGE_DIALOG_SUFFIX,
     bootstrap_error_message,
     load_page_context,
     prune_list_selection,
@@ -80,6 +92,7 @@ from capa_simulation.services.weekly_availability_input import (
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
+from capa_simulation.sidebar_status import condition_card
 
 START_DATE_KEY = STANDARD_TARGET_START_DATE_KEY
 END_DATE_KEY = STANDARD_TARGET_END_DATE_KEY
@@ -88,6 +101,12 @@ SHOW_DETAIL_KEY = STANDARD_TARGET_SHOW_DETAIL_KEY
 DETAIL_LEVEL_KEY = STANDARD_TARGET_DETAIL_LEVEL_KEY
 OUTPUT_METRIC_KEY = STANDARD_TARGET_OUTPUT_METRIC_KEY
 PKG_BASIS_KEY = "standard_target_pkg_basis"
+# 사이드바 조건 카드와 팝업. 팝업은 한 칸이라 한 회차에 하나다.
+CARD_NAME = "standard_target"
+DIALOG_KEY = f"standard_target{PAGE_DIALOG_SUFFIX}"
+PASTE_DIALOG = "availability_paste"
+CLEAR_DIALOG = "availability_clear"
+AVAILABILITY_FLASH_KEY = "standard_target_availability_flash"
 
 DETAIL_LEVEL_LABELS = {
     "제품정보": "제품",
@@ -161,7 +180,6 @@ def _required_selectbox(
         placeholder=f"{label} 선택",
         key=key,
         disabled=disabled,
-        width=190,
         # 표시만 바꾼다. 아래 필터가 원본 컬럼과 문자열로 대조하므로 값은 원본이어야 한다.
         format_func=format_func,
     )
@@ -183,12 +201,11 @@ def _render_logic_analysis(
     end_date: date,
     process_order: list[str],
     process_labels: ProcessLabels,
+    *,
+    filters: DeltaGenerator,
 ) -> None:
+    """한 공정·주차의 산출 근거. 고르는 칸(`filters`)은 사이드바 조건 카드 안이다."""
     st.subheader("일 표준 가능량 로직 분석")
-    st.caption(
-        "필터를 순서대로 모두 선택하면 공정·주차 한 건의 종합값과 이를 구성한 "
-        "제품·Stack·WF 속성별 부하 Mix를 계산합니다. 다른 공정·주차의 분석값은 만들지 않습니다."
-    )
 
     calendar = build_iso_week_calendar(start_date, end_date)
     source_months = pd.to_numeric(required_equipment["생산계획년월"], errors="coerce")
@@ -199,8 +216,7 @@ def _render_logic_analysis(
         .tolist()
     )
 
-    filter_row = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
-    with filter_row:
+    with filters:
         weeknum = _required_selectbox(
             "Weeknum",
             week_options,
@@ -408,11 +424,9 @@ def _render_logic_analysis(
         )
 
     st.markdown("#### 제품·WF 속성별 Mix 산출 근거")
-    st.caption(
-        "공정별 대당 Capa는 분류별 Capa의 단순 평균이 아닙니다. 각 분류의 부하량 비중을 "
-        "유효 Capa의 역수에 적용한 조화가중 결과이며, 이는 전체 부하량을 STEP 소요대수 "
-        "합으로 나눈 값과 같습니다. 선택한 분류는 `●`로 표시합니다."
-    )
+    # 조화가중(부하량 비중 × 유효 Capa 역수)이라는 읽는 법은 Guide 가 말한다. `●` 가 무엇인지는
+    # 표를 보는 그 자리에서 알아야 해 한 줄로 남긴다.
+    st.caption("`●` 선택한 분류")
     contribution_display = contributions.copy()
     contribution_display.insert(0, "선택", selected_mask.map({True: "●", False: ""}))
     contribution_display["부하량 비중"] *= 100
@@ -461,10 +475,6 @@ def _render_logic_analysis(
 def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessLabels) -> None:
     # 순수 표시 상수를 그리는 안내 표다. CSV 출구가 없어 표시명을 바로 입힌다.
     with st.expander("예외 처리 공정", expanded=False):
-        st.caption(
-            "아래 규칙은 표준 목표의 공정별 대당 Capa와 로직 분석에만 적용됩니다. "
-            "부하량·소요대수·확보율 원본 계산 결과는 변경하지 않습니다."
-        )
         st.dataframe(
             pd.DataFrame(
                 [
@@ -484,13 +494,8 @@ def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessL
         )
 
 
-render_page_header(
-    "표준 목표",
-    description=(
-        "공정·제품 분류별 월간 부하 Mix를 반영한 공정별 대당 Capa를 일 단위로 환산하고, "
-        "주차별 가용설비를 곱해 투입 Unit 기준의 일 표준 가능량을 산출합니다."
-    ),
-)
+render_page_header("표준 목표")
+render_page_guide("standard_target_capa", title="표준 목표")
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
 process_labels = get_process_labels()
 
@@ -544,17 +549,25 @@ if st.session_state.get(DETAIL_LEVEL_KEY) not in DETAIL_LEVEL_LABELS:
 if not isinstance(st.session_state.get(SHOW_DETAIL_KEY), bool):
     st.session_state[SHOW_DETAIL_KEY] = False
 
-with st.container(border=True):
-    st.markdown("#### :material/tune: 조회·집계 설정")
-    date_row = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
-    with date_row:
+# 조건 카드는 한 번 만들고 두 번 들어간다 — 공정 필터의 선택지는 계산이 끝나야 나온다. 카드
+# 안의 차례가 곧 보는 순서다(무엇을 볼지 → 언제 → 어느 공정 → 어떻게 나눠 볼지).
+card = condition_card("표준 목표 조건", name=CARD_NAME)
+with card:
+    output_metric = st.segmented_control(
+        "표시 항목",
+        options=OUTPUT_OPTIONS,
+        key=OUTPUT_METRIC_KEY,
+        persist_state="session",
+    )
+    if output_metric is None:
+        output_metric = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
+    with st.container(horizontal=True, gap="small"):
         start_date = st.date_input(
             "시작일",
             min_value=minimum_date,
             max_value=maximum_date,
             key=START_DATE_KEY,
             persist_state="session",
-            width=180,
         )
         end_date = st.date_input(
             "종료일",
@@ -562,26 +575,7 @@ with st.container(border=True):
             max_value=maximum_date,
             key=END_DATE_KEY,
             persist_state="session",
-            width=180,
         )
-        show_detail = st.toggle(
-            "상세",
-            help="켜면 제품 분류별로 표시하고, 끄면 공정별 제품 Mix 가중 단일값을 표시합니다.",
-            key=SHOW_DETAIL_KEY,
-            persist_state="session",
-            width=90,
-        )
-        if show_detail:
-            detail_level = st.selectbox(
-                "제품 분류 수준",
-                options=list(DETAIL_LEVEL_LABELS),
-                format_func=lambda value: DETAIL_LEVEL_LABELS[value],
-                key=DETAIL_LEVEL_KEY,
-                persist_state="session",
-                width=230,
-            )
-        else:
-            detail_level = "공정"
     if date_clamped:
         st.caption(
             ":orange-badge[조정됨] 조회일이 현재 조회기간 밖이라 "
@@ -589,13 +583,9 @@ with st.container(border=True):
         )
     if date_reordered:
         st.caption(":orange-badge[조정됨] 시작일이 종료일보다 늦어 종료일을 시작일에 맞췄습니다.")
-    st.caption(
-        "조회·집계 설정 변경은 현재 사용자 세션에만 적용됩니다. 현재 설정은 신규 리비전을 "
-        "저장할 때 다음 공용 기본값으로 보존됩니다."
-    )
-    if start_date > end_date:
-        st.error("시작일은 종료일보다 늦을 수 없습니다.")
-        st.stop()
+if start_date > end_date:
+    st.error("시작일은 종료일보다 늦을 수 없습니다.")
+    st.stop()
 
 # 주차 계산의 월 슬라이스는 조회일이 아니라 **달력 주차의 귀속 달**이 정한다. 월 경계 주차는
 # 조회 시작·종료 달 바깥 달에 귀속될 수 있고(`iso_week_calendar.owning_month` — 일수가 더
@@ -641,7 +631,7 @@ def _restore_public_process_default() -> None:
     st.session_state[PROCESS_FILTER_KEY] = public_default.copy()
 
 
-with st.container(border=True):
+with card:
     selected_processes = st.multiselect(
         "공정 필터",
         options=process_options,
@@ -654,59 +644,71 @@ with st.container(border=True):
     effective_public_default = set(public_default or process_options)
     effective_selection = set(selected_processes or process_options)
     has_temporary_override = effective_selection != effective_public_default
-    filter_status = st.container(horizontal=True, vertical_alignment="center", gap="small")
-    with filter_status:
-        default_label = "전체 공정" if not public_default else f"{len(public_default):,}개 공정"
-        st.caption(f"리비전 공용 기본값 · {default_label}", width="content")
-        if has_temporary_override:
-            st.markdown(":orange-badge[개인 임시 변경]")
-            st.button(
-                "공용 기본값으로 복원",
-                icon=":material/restart_alt:",
-                key="restore_standard_target_process_default",
-                on_click=_restore_public_process_default,
-                width="content",
-            )
-        else:
-            st.markdown(":green-badge[공용 기본값 적용]")
-    st.caption(
-        "공정 필터 변경은 현재 사용자 세션에만 적용됩니다. 현재 선택값은 신규 리비전을 "
-        "저장할 때 다음 공용 기본값으로 보존됩니다."
+    # 지금 선택이 리비전 공용 기본값인지 개인 임시 변경인지 한 줄로 말한다. 카드 폭이 좁아
+    # 배지와 글을 따로 세우면 두 줄로 흩어진다.
+    default_label = "전체 공정" if not public_default else f"{len(public_default):,}개 공정"
+    status_badge = (
+        ":orange-badge[개인 임시 변경]"
+        if has_temporary_override
+        else ":green-badge[공용 기본값 적용]"
     )
+    st.caption(f"{status_badge} 리비전 공용 기본값 · {default_label}")
+    if has_temporary_override:
+        st.button(
+            "공용 기본값으로 복원",
+            icon=":material/restart_alt:",
+            key="restore_standard_target_process_default",
+            on_click=_restore_public_process_default,
+            width="stretch",
+        )
+    # 로직 분석은 한 건을 고르는 화면이라 상세·분류 수준·PKG 기준이 뜻이 없다. 세우지 않은
+    # 회차에도 값은 `persist_state` 와 리비전 프리셋이 지킨다.
+    detail_level = "공정"
+    pkg_basis = False
+    if output_metric != "로직 분석":
+        show_detail = st.toggle(
+            "상세",
+            key=SHOW_DETAIL_KEY,
+            persist_state="session",
+        )
+        if show_detail:
+            detail_level = st.selectbox(
+                "제품 분류 수준",
+                options=list(DETAIL_LEVEL_LABELS),
+                format_func=lambda value: DETAIL_LEVEL_LABELS[value],
+                key=DETAIL_LEVEL_KEY,
+                persist_state="session",
+            )
+        if output_metric == "일 표준 가능량":
+            pkg_basis = st.toggle(
+                "PKG 기준",
+                key=PKG_BASIS_KEY,
+                persist_state="session",
+            )
+    logic_filters = st.container()
 
 target_processes = selected_processes or process_options
 template = build_weekly_availability_template(target_processes, start_date, end_date)
 template_csv = template.to_csv(index=False).encode("utf-8-sig")
-weekly_output_container = st.container(border=True)
 
-with st.container(border=True):
-    st.subheader("주차별 가용설비 입력")
-    st.caption(
-        "CSV 양식을 내려받아 Excel에서 `공정`, `Weeknum`, `가용대수`를 수정하세요. "
-        "헤더를 포함한 전체 표를 복사해 아래에 붙여넣으면 파일 업로드 없이 적용합니다. "
-        "적용값은 설비 DuckDB에 저장되며 별도 버전은 생성하지 않습니다."
+
+def _close_dialog() -> None:
+    st.session_state.pop(DIALOG_KEY, None)
+
+
+def _open_dialog(name: str) -> None:
+    st.session_state[DIALOG_KEY] = name
+
+
+@st.dialog("가용설비 붙여넣기", width="large", on_dismiss=_close_dialog)
+def _paste_dialog() -> None:
+    """주차별 가용설비 표를 붙여넣어 설비 DB 최신본으로 저장한다(리비전은 만들지 않는다)."""
+    render_csv_download(
+        data=template_csv,
+        file_name=f"Weekly_Available_Equipment_{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv",
+        key="dialog_standard_target_availability_template",
+        label=CSV_TEMPLATE_LABEL,
     )
-    action_row = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
-    with action_row:
-        render_csv_download(
-            data=template_csv,
-            file_name=f"Weekly_Available_Equipment_{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv",
-            key="download_standard_target_availability_template",
-            label=CSV_TEMPLATE_LABEL,
-        )
-        if st.button(
-            "입력 초기화",
-            icon=":material/delete:",
-            key="clear_standard_target_availability",
-            width="content",
-        ):
-            try:
-                equipment_repository.clear_standard_target_availability()
-            except BOOTSTRAP_ERRORS as exc:
-                st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
-            else:
-                st.rerun()
-
     with st.form("standard_target_availability_clipboard", border=False):
         clipboard_text = st.text_area(
             "가용설비 표 붙여넣기",
@@ -719,31 +721,92 @@ with st.container(border=True):
             icon=":material/content_paste:",
             type="primary",
         )
-    if import_submitted:
-        if not clipboard_text.strip():
-            st.error("적용할 가용설비 표를 Excel에서 복사해 붙여넣으세요.")
-        else:
-            try:
-                availability = equipment_repository.save_standard_target_availability(
-                    # 보유 공정 목록은 이 화면이 소유한다. 표시명을 그대로 적어 붙여넣거나
-                    # 오타가 난 공정은 여기서 막지 않으면 아무 계산에도 붙지 않는 행으로
-                    # 조용히 저장된다. 필터와 무관하게 전체 공정을 허용한다.
-                    parse_weekly_availability_clipboard(
-                        clipboard_text,
-                        known_processes=process_options,
-                    )
-                )
-            except BOOTSTRAP_ERRORS as exc:
-                st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
-            else:
-                st.success("주차별 가용설비 최신본을 저장했습니다. 서버를 재시작해도 유지됩니다.")
+    if not import_submitted:
+        return
+    if not clipboard_text.strip():
+        st.error("적용할 가용설비 표를 Excel에서 복사해 붙여넣으세요.")
+        return
+    try:
+        equipment_repository.save_standard_target_availability(
+            # 보유 공정 목록은 이 화면이 소유한다. 표시명을 그대로 적어 붙여넣거나 오타가 난
+            # 공정은 여기서 막지 않으면 아무 계산에도 붙지 않는 행으로 조용히 저장된다. 필터와
+            # 무관하게 전체 공정을 허용한다.
+            parse_weekly_availability_clipboard(clipboard_text, known_processes=process_options)
+        )
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
+        return
+    queue_flash(
+        AVAILABILITY_FLASH_KEY,
+        "주차별 가용설비 최신본을 저장했습니다. 서버를 재시작해도 유지됩니다.",
+    )
+    _close_dialog()
+    st.rerun()
+
+
+@st.dialog("입력 초기화", width="small", on_dismiss=_close_dialog)
+def _clear_dialog() -> None:
+    """저장된 주차별 가용설비를 모두 지운다. 되돌릴 수 없어 한 번 더 묻는다."""
+    st.warning("저장된 주차별 가용설비를 모두 지웁니다. 되돌릴 수 없습니다.")
+    confirmed = st.checkbox("지우는 것을 확인합니다.", key="standard_target_clear_confirm")
+    if not st.button(
+        "입력 초기화",
+        icon=":material/delete:",
+        key="clear_standard_target_availability",
+        type="primary",
+        disabled=not confirmed,
+    ):
+        return
+    try:
+        equipment_repository.clear_standard_target_availability()
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
+        return
+    queue_flash(AVAILABILITY_FLASH_KEY, "주차별 가용설비 입력을 비웠습니다.")
+    _close_dialog()
+    st.rerun()
+
+
+weekly_output_container = st.container(border=True)
+with weekly_output_container:
+    # 결과 상자 맨 위 작업 줄. 결과를 만드는 입력(주차별 가용설비)이 여기서 들어간다. 붙여넣기와
+    # 초기화는 가끔 하는 쓰기라 팝업이고, 여는 버튼은 콜백으로 연다 — 한 회차에 팝업이 둘 뜨지
+    # 않는다.
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        st.button(
+            "가용설비 붙여넣기",
+            icon=":material/content_paste:",
+            key="open_standard_target_availability_paste",
+            type="primary",
+            on_click=_open_dialog,
+            args=(PASTE_DIALOG,),
+        )
+        render_csv_download(
+            data=template_csv,
+            file_name=f"Weekly_Available_Equipment_{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv",
+            key="download_standard_target_availability_template",
+            label=CSV_TEMPLATE_LABEL,
+        )
+        st.button(
+            "입력 초기화",
+            icon=":material/delete:",
+            key="open_standard_target_availability_clear",
+            on_click=_open_dialog,
+            args=(CLEAR_DIALOG,),
+            disabled=availability.empty,
+        )
+    render_flash(AVAILABILITY_FLASH_KEY)
+if st.session_state.get(DIALOG_KEY) == PASTE_DIALOG:
+    _paste_dialog()
+elif st.session_state.get(DIALOG_KEY) == CLEAR_DIALOG:
+    _clear_dialog()
 
 _render_standard_target_exceptions(standard_target_exception_rows, process_labels)
 
 if availability.empty:
     with weekly_output_container:
         st.subheader("주차별 일 표준 가능량")
-        st.info("주차별 일 표준 가능량을 보려면 가용설비 입력값을 적용하세요.")
+        st.info("주차별 일 표준 가능량을 보려면 위 「가용설비 붙여넣기」로 가용설비를 입력하세요.")
     st.stop()
 
 filtered_required_equipment = required_equipment
@@ -751,16 +814,6 @@ if selected_processes:
     filtered_required_equipment = required_equipment.loc[
         required_equipment["공정"].isin(selected_processes)
     ].reset_index(drop=True)
-
-with weekly_output_container:
-    output_metric = st.segmented_control(
-        "표시 항목",
-        options=OUTPUT_OPTIONS,
-        key=OUTPUT_METRIC_KEY,
-        persist_state="session",
-    )
-    if output_metric is None:
-        output_metric = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
 
 if output_metric == "로직 분석":
     with weekly_output_container:
@@ -772,6 +825,7 @@ if output_metric == "로직 분석":
             end_date=end_date,
             process_order=target_processes,
             process_labels=process_labels,
+            filters=logic_filters,
         )
 else:
     try:
@@ -805,11 +859,11 @@ else:
                 displayed_missing = missing_availability.copy()
                 displayed_missing["공정"] = process_labels.series(displayed_missing["공정"])
                 if process_labels:
-                    # 이 표가 가리키는 입력은 위 `주차별 가용설비 CSV 양식`이고 그 양식과
+                    # 이 표가 가리키는 입력은 작업 줄의 `주차별 가용설비 CSV 양식`이고 그 양식과
                     # 붙여넣기 파서는 원본 공정명을 요구한다. 화면 이름을 그대로 적어
                     # 붙여넣지 않도록 여기서 알린다.
                     st.caption(
-                        "공정은 화면 표시명입니다. 붙여넣기에 쓸 원본 공정명은 위 "
+                        "공정은 화면 표시명입니다. 붙여넣기에 쓸 원본 공정명은 작업 줄의 "
                         "`주차별 가용설비 CSV 양식`에서 확인하세요."
                     )
                 st.dataframe(displayed_missing, hide_index=True, width="stretch")
@@ -819,9 +873,6 @@ else:
         "소요기준",
         *WEIGHTED_CAPACITY_HIERARCHY[1 : WEIGHTED_CAPACITY_HIERARCHY.index(detail_level) + 1],
     ]
-    pkg_basis = output_metric == "일 표준 가능량" and bool(
-        st.session_state.get(PKG_BASIS_KEY, False)
-    )
     output_value_column = output_metric
     output_title = output_metric
     decimal_places = OUTPUT_METRICS[output_metric]
@@ -867,8 +918,7 @@ else:
             decimal_places=decimal_places,
         )
         output_csv = output_export.to_csv(index=False).encode("utf-8-sig")
-
-        with table_heading_row(
+        render_table_heading(
             f"주차별 {output_title}",
             csv=output_csv,
             file_name=(
@@ -876,31 +926,7 @@ else:
                 f"{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv"
             ),
             key="download_standard_target_result",
-        ):
-            if output_metric == "일 표준 가능량":
-                st.toggle(
-                    "PKG 기준",
-                    key=PKG_BASIS_KEY,
-                    help=(
-                        "현재 공정·제품 Mix의 PKG PLAN 대비 투입 Unit 부하량 비율로 "
-                        "일 표준 가능량을 PKG Kea로 역산합니다."
-                    ),
-                    persist_state="session",
-                    width=110,
-                )
-        calculation_caption = (
-            "대당 일 Capa = 월간 공정별 대당 Capa ÷ RUN_DAY · "
-            "일 표준 가능량 = 대당 일 Capa × 주차별 가용대수 · "
         )
-        if pkg_basis:
-            calculation_caption += (
-                "PKG 환산 = 일 표준 가능량 × 동일 Mix PKG PLAN ÷ 원수요 부하량 · "
-            )
-        calculation_caption += (
-            "ER은 항상 제외하며 상세 OFF는 공정별 제품 Mix 가중 단일값을 표시합니다. · "
-            "월 경계 주차는 그 주에 더 많은 날이 들어간 달의 기준을 적용합니다."
-        )
-        st.caption(calculation_caption)
         render_hierarchical_monthly_table(
             output_table,
             classification_columns=classification_columns,

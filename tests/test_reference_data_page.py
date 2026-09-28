@@ -452,9 +452,22 @@ RENAMED_TWO_PROCESS_RESULT_SCRIPT = _renamed(TWO_PROCESS_RESULT_SCRIPT)
 
 STEP_VIEW = "STEP별"
 STEP_VIEW_HINT = (
-    "STEP별 대당 Capa는 선택한 공정만 그립니다. 위 공정 필터에서 공정을 "
+    "STEP별 대당 Capa는 선택한 공정만 그립니다. 사이드바 「표 조건」의 공정 필터에서 공정을 "
     "선택하세요. 전체 공정을 한 번에 보려면 공정별을 사용하세요."
 )
+CALC_TAB_KEY = "calculation_result_active_tab"
+REQUIRED_TAB = ":material/precision_manufacturing: 소요대수"
+SECUREMENT_TAB = ":material/monitoring: 확보율"
+
+
+def _open_calc_tab(app: AppTest, label: str) -> AppTest:
+    """산출 결과의 탭 하나를 연다. 표·조건 카드는 열린 탭 것만 그린다."""
+    app.session_state[CALC_TAB_KEY] = label
+    app.run()
+    assert not app.exception
+    return app
+
+
 CAPACITY_TABLE_KEY = "captured_dimensions::unit_capacity_monthly_table"
 CAPACITY_PROCESS_KEY = "captured_processes::unit_capacity_monthly_table"
 
@@ -566,25 +579,28 @@ def test_calculation_result_shows_both_exclusion_expanders_with_csv_downloads() 
     app = AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    warnings = {warning.value for warning in app.warning}
-    assert "대당 Capa 산출에서 2개 기준을 제외했습니다." in warnings
-    assert "대당 Capa가 없어 소요대수 산출에서 4건을 제외했습니다 (부하량 발생 3건)." in warnings
-    assert {"제외 기준정보 확인", "소요대수 제외 기준정보"}.issubset(
-        {expander.label for expander in app.expander}
-    )
-
+    assert "대당 Capa 산출에서 2개 기준을 제외했습니다." in {
+        warning.value for warning in app.warning
+    }
+    assert "제외 기준정보 확인" in {expander.label for expander in app.expander}
     capacity_exclusions = _exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)
     assert capacity_exclusions["STEP_SEQ"].tolist() == ["P300", "P200"]
+    assert _download(app, "download_unit_capacity_exclusions_csv") == {
+        "label": "CSV 다운로드",
+        "file_name": "Capa_Unit_Capacity_Exclusions_202608_202608.csv",
+    }
+
+    # 소요대수 탭의 제외 알림은 그 탭을 열어야 그린다.
+    app = _open_calc_tab(app, REQUIRED_TAB)
+    assert "대당 Capa가 없어 소요대수 산출에서 4건을 제외했습니다 (부하량 발생 3건)." in {
+        warning.value for warning in app.warning
+    }
+    assert "소요대수 제외 기준정보" in {expander.label for expander in app.expander}
     required_exclusions = _exclusion_frame(app, MISSING_CAPACITY_REASON)
     assert required_exclusions["STEP_SEQ"].tolist() == ["P200", "P300", "P400", "P500"]
     # 제외된 STEP 은 대당 Capa 가 없을 뿐 부하량은 붙는다. 그 값이 화면에 남아야
     # 사용자가 얼마나 잘리는지 안다. 계획에 없는 제품만 0 이라 경고의 괄호 안 건수와 갈린다.
     assert required_exclusions["부하량"].tolist() == [100.0, 100.0, 100.0, 0.0]
-
-    assert _download(app, "download_unit_capacity_exclusions_csv") == {
-        "label": "CSV 다운로드",
-        "file_name": "Capa_Unit_Capacity_Exclusions_202608_202608.csv",
-    }
     assert _download(app, "download_required_exclusions_csv") == {
         "label": "CSV 다운로드",
         "file_name": "Capa_Required_Equipment_Exclusions_202608_202608.csv",
@@ -679,10 +695,10 @@ def test_equipment_editor_saves_the_edited_month_to_the_scenario() -> None:
 
 
 def test_required_equipment_detail_exposes_route_filters() -> None:
-    app = AppTest.from_string(PROCESS_TEST_SCRIPT, default_timeout=60).run()
+    app = _open_calc_tab(AppTest.from_string(PROCESS_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB)
 
-    assert not app.exception
-    required_detail = next(toggle for toggle in app.toggle if toggle.label == "상세")
+    # 「상세」와 필터는 사이드바 `표 조건` 카드다.
+    required_detail = next(toggle for toggle in app.sidebar.toggle if toggle.label == "상세")
     app = required_detail.set_value(True).run()
 
     assert not app.exception
@@ -892,28 +908,23 @@ def test_run_rate_and_vital_tabs_do_not_share_their_process_filter() -> None:
     }
 
 
-def test_unit_capacity_controls_render_while_their_tab_is_hidden() -> None:
-    """숨은 탭에서는 계산·표·CSV·Plotly 만 건너뛴다.
-
-    본문을 통째로 건너뛰면 그 안의 위젯이 렌더되지 않아 Streamlit 이 선택값을 버린다.
-    표시 방식·집계 수준·공정 필터 세 개가 탭을 옮길 때마다 초기화되는 것이 그 결과다.
-    """
+def test_unit_capacity_controls_keep_their_choice_across_tabs() -> None:
+    """조건 카드는 열린 탭 것만 선다. 닫힌 동안 위젯은 없어도 선택은 `persist_state` 로 남는다."""
     app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60)
     app.session_state["unit_capacity_process_filter"] = ["Process-B"]
     app.run()
     assert not app.exception
     assert app.session_state[CAPACITY_PROCESS_KEY] == ["Process-B"]
+    assert "unit_capacity_process_filter" in {widget.key for widget in app.sidebar.multiselect}
 
-    app.session_state["calculation_result_active_tab"] = ":material/monitoring: 확보율"
-    app.run()
-
-    assert not app.exception
-    assert app.segmented_control(key="unit_capacity_view_mode").value == "공정별"
-    assert app.selectbox(key="unit_capacity_detail_level").value == "공정"
-    assert app.multiselect(key="unit_capacity_process_filter").value == ["Process-B"]
-    assert app.session_state["unit_capacity_process_filter"] == ["Process-B"]
-    # 계산 결과를 쓰는 표·CSV 는 그대로 건너뛴다.
+    app = _open_calc_tab(app, SECUREMENT_TAB)
+    # 확보율 탭의 카드에는 대당 Capa 조건이 없다. 계산 결과를 쓰는 표·CSV 도 건너뛴다.
+    assert "unit_capacity_process_filter" not in {widget.key for widget in app.multiselect}
     assert "download_unit_capacity_csv" not in {button.key for button in app.download_button}
+
+    app = _open_calc_tab(app, ":material/insights: 대당 Capa")
+    assert app.multiselect(key="unit_capacity_process_filter").value == ["Process-B"]
+    assert app.selectbox(key="unit_capacity_detail_level").value == "공정"
 
 
 def test_unfiltered_editor_apply_saves_the_same_rows_as_before() -> None:
@@ -953,10 +964,17 @@ def test_calculation_result_exclusion_csvs_keep_the_original_process_name() -> N
 
     assert not app.exception
     assert set(_exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)["공정"]) == {"가공"}
-    assert set(_exclusion_frame(app, MISSING_CAPACITY_REASON)["공정"]) == {"가공"}
+    required_app = _open_calc_tab(
+        AppTest.from_string(RENAMED_EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60),
+        REQUIRED_TAB,
+    )
+    assert set(_exclusion_frame(required_app, MISSING_CAPACITY_REASON)["공정"]) == {"가공"}
 
-    for key in ("download_unit_capacity_exclusions_csv", "download_required_exclusions_csv"):
-        assert set(_download_frame(app, key)["공정"]) == {"Process-A"}, key
+    assert set(_download_frame(app, "download_unit_capacity_exclusions_csv")["공정"]) == {
+        "Process-A"
+    }
+    app = _open_calc_tab(app, REQUIRED_TAB)
+    assert set(_download_frame(app, "download_required_exclusions_csv")["공정"]) == {"Process-A"}
 
 
 def test_exclusion_tables_stay_original_without_a_rename_profile() -> None:
@@ -1070,9 +1088,9 @@ def test_month_editor_paste_template_keeps_the_original_process_name() -> None:
 
 def test_uncounted_pkg_rows_are_a_notice_not_a_capacity_warning() -> None:
     """PKG 의 Buffer 가 아닌 행은 고칠 것이 없다. 대당 Capa 경고 건수에 섞이면 안 된다."""
-    app = AppTest.from_string(PKG_UNCOUNTED_TEST_SCRIPT, default_timeout=60).run()
-
-    assert not app.exception
+    app = _open_calc_tab(
+        AppTest.from_string(PKG_UNCOUNTED_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
+    )
     assert "대당 Capa가 없어 소요대수 산출에서 4건을 제외했습니다 (부하량 발생 3건)." in {
         warning.value for warning in app.warning
     }
@@ -1084,9 +1102,9 @@ def test_uncounted_pkg_rows_are_a_notice_not_a_capacity_warning() -> None:
 
 
 def test_only_uncounted_pkg_rows_raise_no_capacity_warning() -> None:
-    app = AppTest.from_string(PKG_ONLY_UNCOUNTED_TEST_SCRIPT, default_timeout=60).run()
-
-    assert not app.exception
+    app = _open_calc_tab(
+        AppTest.from_string(PKG_ONLY_UNCOUNTED_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
+    )
     assert not any("대당 Capa가 없어" in warning.value for warning in app.warning)
     assert PKG_UNCOUNTED_NOTICE in {info.value for info in app.info}
 
@@ -1144,5 +1162,21 @@ def test_the_guide_carries_what_left_the_body() -> None:
         "STEP 추가·삭제",
         "신규 리비전 저장",
         "주황 점",
+    ):
+        assert text in guide, text
+
+
+def test_calculation_result_guide_carries_what_left_the_body() -> None:
+    from capa_simulation.components.page_guide import load_guide
+
+    guide = load_guide("calculation_result")
+    for text in (
+        "B/N(Bottleneck·병목) 공정",
+        "중복되지 않은 원수요 부하량을 STEP별 소요대수 합계로 나눈 값",
+        "`부하량 ÷ 대당 Capa`",
+        "`가용대수 ÷ 소요대수`",
+        "경로 수",
+        "히트맵 주요 공정",
+        "칸 안 숫자와 hover 는 자르지 않은 확보율",
     ):
         assert text in guide, text

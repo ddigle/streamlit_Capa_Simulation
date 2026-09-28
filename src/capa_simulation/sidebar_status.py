@@ -19,6 +19,11 @@ BOTTLENECK_BOX_KEY = "sidebar_bottleneck_box"
 # 화면 조건 카드의 key 접두어. `sidebar_style.py` 가 이 접두어 하나로 모든 카드에 조건 상자
 # 서식을 건다 — 페이지가 카드를 더할 때 서식 쪽에 적을 것이 없다.
 CONDITION_CARD_PREFIX = "condition_card_"
+# 표를 보는 조건(필터·상세·집계 수준)을 모으는 카드의 이름과 아이콘. 탭이 여럿인 화면은 모든
+# 탭이 **한 카드**를 쓰고 안의 내용만 열린 탭 것으로 바뀐다 — 한 번 편 카드는 탭을 옮겨도 편
+# 채로 남는다(2026-09-28 사용자 결정).
+TABLE_CARD_LABEL = "표 조건"
+TABLE_CARD_ICON = ":material/filter_alt:"
 
 
 def remembered_box_key(key: str) -> str:
@@ -75,6 +80,11 @@ def condition_card(label: str, *, name: str, icon: str = ":material/tune:") -> D
     `Support` 뒤에 붙지만 CSS 의 `order` 가 `Support` 를 맨 아래로 민다.
     """
     return sidebar_expander(label, key=f"{CONDITION_CARD_PREFIX}{name}", icon=icon)
+
+
+def table_card(name: str) -> DeltaGenerator:
+    """표 조건 카드(`표 조건`). `name` 은 화면마다 하나다."""
+    return condition_card(TABLE_CARD_LABEL, name=name, icon=TABLE_CARD_ICON)
 
 
 def render_sidebar_section(section: SidebarSectionSpec) -> None:

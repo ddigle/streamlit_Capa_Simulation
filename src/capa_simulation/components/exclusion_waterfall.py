@@ -111,9 +111,5 @@ def render_exclusion_waterfall(
     figure = build_exclusion_waterfall(exclusions, remaining_rows)
     if figure is None:
         return
+    # 읽는 법(경로 수 기준, 두 사유에 걸리면 먼저 판정한 사유)은 `산출 결과` Guide 가 말한다.
     st.plotly_chart(figure, width="stretch", key=key, config={"staticPlot": False})
-    st.caption(
-        "경로 수 기준입니다. 한 경로가 두 사유에 걸리면 먼저 판정한 사유가 가져가므로 "
-        "막대 합은 제외 목록 건수와 같습니다. 물량이 큰 경로와 작은 경로를 같은 1로 세는 "
-        "점은 감안해 읽으세요."
-    )

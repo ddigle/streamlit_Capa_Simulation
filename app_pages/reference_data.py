@@ -18,11 +18,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.column_filter import render_column_filter_controls
-from capa_simulation.components.month_editor import (
-    FILTER_CARD_LABEL,
-    editor_notice,
-    render_month_editor,
-)
+from capa_simulation.components.month_editor import editor_notice, render_month_editor
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
@@ -88,7 +84,7 @@ from capa_simulation.services.simulation_cache import (
     get_route_step_tables,
     scenario_cache_key,
 )
-from capa_simulation.sidebar_status import condition_card
+from capa_simulation.sidebar_status import table_card
 
 # Capa 산출에 **넣는 값만** 둔다. 산출물은 `산출 결과` 페이지가 갖는다.
 # 순서는 사용자가 정한 입력 순서다.
@@ -595,7 +591,7 @@ with equipment_tab:
 # 열렸을 때만 선다 — 안쪽 탭은 바깥이 닫혀 있어도 자기 선택만 알기 때문이다. 선택은
 # `persist_state` 로 남는다.
 if not (tab_is_hidden(equipment_tab) or tab_is_hidden(equipment_overview_tab)):
-    with condition_card(FILTER_CARD_LABEL, name=CARD_NAME, icon=":material/filter_alt:"):
+    with table_card(CARD_NAME):
         show_equipment_detail = st.toggle(
             "상세",
             key="equipment_count_detail",

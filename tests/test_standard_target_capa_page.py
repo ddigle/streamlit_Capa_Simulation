@@ -235,12 +235,16 @@ def test_standard_target_page_renders_weeknum_plotly_table() -> None:
         "26-W35",
     ]
     assert app.session_state["captured_classification_columns"] == ["공정", "소요기준"]
-    assert any(widget.label == "공정 필터" for widget in app.multiselect)
-    assert any(widget.label == "가용설비 표 붙여넣기" for widget in app.text_area)
-    assert any(widget.label == "PKG 기준" for widget in app.toggle)
+    # 조회·집계 설정은 사이드바 조건 카드다(2026-09-29 사용자 결정).
+    assert any(widget.label == "공정 필터" for widget in app.sidebar.multiselect)
+    assert any(widget.label == "PKG 기준" for widget in app.sidebar.toggle)
+    assert not app.main.multiselect and not app.main.toggle
     assert "예외 처리 공정" in [expandable.label for expandable in app.expander]
-    subheaders = [element.value for element in app.subheader]
-    assert subheaders.index("주차별 일 표준 가능량") < subheaders.index("주차별 가용설비 입력")
+    # 가용설비 입력은 결과 상자 위 작업 줄의 팝업이다. 닫혀 있는 동안 본문에 붙여넣기 칸이 없다.
+    assert not app.text_area
+    app.button(key="open_standard_target_availability_paste").click().run()
+    assert not app.exception
+    assert any(widget.label == "가용설비 표 붙여넣기" for widget in app.text_area)
 
     process_filter = app.multiselect(key=STANDARD_TARGET_PROCESS_SELECTION_KEY)
     assert process_filter.value == []
@@ -424,3 +428,33 @@ def test_missing_availability_table_shows_the_display_name_with_a_source_notice(
     missing = _frame_with_value(app, "공정", "가공")
     assert missing["Weeknum"].tolist() == ["26-W33"]
     assert any("주차별 가용설비 CSV 양식" in caption.value for caption in app.caption)
+
+
+def test_clearing_the_availability_asks_first() -> None:
+    """입력 초기화는 되돌릴 수 없다. 팝업에서 확인해야 버튼이 눌린다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    app.button(key="open_standard_target_availability_clear").click().run()
+
+    assert not app.exception
+    assert app.button(key="clear_standard_target_availability").disabled
+    app.checkbox(key="standard_target_clear_confirm").check().run()
+    assert not app.exception
+    assert not app.button(key="clear_standard_target_availability").disabled
+
+
+def test_standard_target_guide_carries_what_left_the_body() -> None:
+    from capa_simulation.components.page_guide import load_guide
+
+    guide = load_guide("standard_target_capa")
+    for text in (
+        "대당 일 Capa** = 월간 공정별 대당 Capa ÷ `RUN_DAY`",
+        "일 표준 가능량** = 대당 일 Capa × 주차별 가용대수",
+        "PKG 환산",
+        "ER 은 항상 제외",
+        "월 경계 주차",
+        "조화가중",
+        "지금 사용자 세션에만",
+        "설비 DuckDB",
+        "예외 처리 공정",
+    ):
+        assert text in guide, text
