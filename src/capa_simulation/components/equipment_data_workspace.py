@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -27,6 +28,20 @@ from capa_simulation.persistence.equipment_cache import (
 from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
     EquipmentSnapshot,
+)
+from capa_simulation.services.equipment_bulk_delete import (
+    BASELINE_TARGET,
+    DOWNTIME_TARGET,
+    EQUIPMENT_TARGET,
+    TARGET_LAYOUT,
+    DeletionPlan,
+    RowKey,
+    apply_deletion,
+    checked_keys,
+    matching_keys,
+    plan_deletion,
+    restore_rows,
+    row_keys,
 )
 from capa_simulation.services.equipment_contract import (
     DATE_COLUMNS,
@@ -92,6 +107,17 @@ _REVISION_KEY = "equipment_workspace_revision_v1"
 _ERROR_KEY = "equipment_workspace_error_v1"
 _NOTICE_KEY = "equipment_workspace_notice_v1"
 _NOTE_KEY = "equipment_workspace_note_v1"
+# 일괄 삭제. 선택은 행 번호가 아니라 업무 키로 기억한다(`services/equipment_bulk_delete`).
+SELECT_COLUMN = "선택"
+SELECTION_KEY = "equipment_workspace_selection_v1"
+PENDING_DELETE_KEY = "equipment_workspace_pending_delete_v1"
+LAST_REMOVED_KEY = "equipment_workspace_last_removed_v1"
+CONFIRM_DELETE_BUTTON_KEY = "equipment_delete_confirm_v1"
+CANCEL_DELETE_BUTTON_KEY = "equipment_delete_cancel_v1"
+UNDO_DELETE_BUTTON_KEY = "equipment_delete_undo_v1"
+SELECT_MATCHING = "select_matching"
+SELECT_CLEAR = "select_clear"
+DELETE_SELECTED = "delete_selected"
 _EDITOR_KEYS = (BASELINE_EDITOR_KEY, EQUIPMENT_EDITOR_KEY, DOWNTIME_EDITOR_KEY)
 _TARGETS = ("호기 마스터", "기존 보유대수", "비가동 일정")
 Frames = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
@@ -141,6 +167,9 @@ def reset_equipment_drafts() -> None:
         _NOTE_KEY,
         CLIPBOARD_KEY,
         UPLOAD_KEY,
+        SELECTION_KEY,
+        PENDING_DELETE_KEY,
+        LAST_REMOVED_KEY,
     ):
         st.session_state.pop(key, None)
 
@@ -379,7 +408,8 @@ def _editor_view(
     filters: tuple[str, ...],
     locked: tuple[str, ...],
     label: str,
-) -> TableView:
+) -> tuple[TableView, TableView]:
+    """(화면에 적용된 보기, 방금 고른 보기). 둘은 「보기 적용」 전까지 다를 수 있다."""
     requested = render_table_view_controls(
         data,
         key_prefix=prefix,
@@ -394,10 +424,202 @@ def _editor_view(
     if not isinstance(applied, TableView):
         applied = requested
         st.session_state[view_key] = applied
-    return applied
+    return applied, requested
 
 
-def _render_editors(frames: Frames, max_extent: CanvasSize) -> Frames:
+@dataclass(frozen=True)
+class EditorResult:
+    """직접 편집 탭이 한 번 제출될 때 돌려주는 것.
+
+    `frames` 에는 **선택 칸이 없다.** 편집본·저장·미리보기 대조가 모두 이 세 표를 그대로
+    쓰므로, 화면에만 있는 칸이 섞이면 대조(`ImportReview.matches`)가 조용히 어긋난다.
+    """
+
+    frames: Frames
+    checked: Mapping[str, frozenset[RowKey]]
+    filters: Mapping[str, Mapping[str, tuple[str, ...]]]
+    action: tuple[str, str] | None
+
+
+def _selectable_editor(
+    original: pd.DataFrame,
+    view: TableView,
+    *,
+    key: str,
+    target: str,
+    column_config: Mapping[str, Any],
+    selection: frozenset[RowKey],
+) -> tuple[pd.DataFrame, frozenset[RowKey]]:
+    """맨 앞에 선택 칸을 붙여 편집표를 그리고, 선택 칸을 뗀 편집 결과와 고른 키를 돌려준다."""
+    display = view.frame.copy()
+    # dtype 을 못박는다. 빈 표에서 목록으로 넣으면 float 칸이 되어 체크박스와 맞지 않는다.
+    chosen = [row in selection for row in row_keys(view.frame, target)] or [False] * len(display)
+    display.insert(0, SELECT_COLUMN, pd.Series(chosen, index=display.index, dtype="bool"))
+    result = st.data_editor(
+        display,
+        key=key,
+        num_rows=view.row_mode,
+        hide_index=True,
+        width="stretch",
+        column_config={
+            SELECT_COLUMN: st.column_config.CheckboxColumn(
+                "선택",
+                default=False,
+                pinned=True,
+                help="일괄 삭제할 행을 고릅니다. 필터를 걸어도 고를 수 있고, 저장되지 않습니다.",
+            ),
+            **column_config,
+            **view.column_config,
+        },
+    )
+    checked = checked_keys(result, SELECT_COLUMN, target)
+    edited = merge_edited_rows(
+        original, result.drop(columns=[SELECT_COLUMN]), filtered=view.filtered
+    )
+    return edited, checked
+
+
+def _selection_buttons(slug: str) -> str | None:
+    """표 아래 세 버튼. 폼 안이라 모두 제출 버튼이고, 누른 것의 이름을 돌려준다."""
+    with st.container(horizontal=True, gap="small"):
+        matching = st.form_submit_button(
+            "필터에 맞는 행 모두 선택",
+            key=f"equipment_{slug}_select_matching_v1",
+            icon=":material/checklist:",
+        )
+        clear = st.form_submit_button(
+            "선택 해제", key=f"equipment_{slug}_select_clear_v1", icon=":material/deselect:"
+        )
+        delete = st.form_submit_button(
+            "선택 행 삭제", key=f"equipment_{slug}_delete_selected_v1", icon=":material/delete:"
+        )
+    st.caption(
+        "「필터에 맞는 행 모두 선택」은 보기를 적용했든 안 했든 **지금 고른 필터 조건**으로 "
+        "고릅니다. 삭제는 확인한 뒤 편집본에만 반영되고, ‘설비 데이터 저장’을 눌러야 새 "
+        "리비전이 됩니다. ‘보기 적용’을 누르면 선택이 풀립니다."
+    )
+    if matching:
+        return SELECT_MATCHING
+    if clear:
+        return SELECT_CLEAR
+    if delete:
+        return DELETE_SELECTED
+    return None
+
+
+def _current_selection() -> dict[str, frozenset[RowKey]]:
+    saved = st.session_state.get(SELECTION_KEY)
+    return dict(saved) if isinstance(saved, dict) else {}
+
+
+def _deletion_message(plan: DeletionPlan) -> str:
+    """무엇이 얼마나 빠지는지. 호기를 지우면 딸려 빠지는 비가동 일정 수를 반드시 말한다."""
+    count = plan.target_count
+    samples = ", ".join(plan.sample_keys())
+    more = " 외" if count > len(plan.sample_keys()) else ""
+    if plan.target == EQUIPMENT_TARGET:
+        head = f"호기 {count:,}대를 편집본에서 지웁니다"
+        if plan.cascaded_downtime_count:
+            head += f" — 이 호기의 비가동 일정 {plan.cascaded_downtime_count:,}건도 함께 지웁니다"
+    elif plan.target == BASELINE_TARGET:
+        head = f"기존 보유대수 {count:,}행을 편집본에서 지웁니다"
+    else:
+        head = f"비가동 일정 {count:,}건을 편집본에서 지웁니다"
+    return (
+        f"{head}. 대상: {samples}{more}. 확정해도 ‘설비 데이터 저장’을 눌러야 새 리비전에 "
+        "반영됩니다."
+    )
+
+
+def _render_bulk_delete_status(frames: Frames) -> tuple[bool, bool, bool]:
+    """확인 대기 중인 삭제와 방금 한 삭제를 편집표 위에 말한다. (확정, 취소, 되돌리기)."""
+    confirm = cancel = undo = False
+    pending = st.session_state.get(PENDING_DELETE_KEY)
+    if isinstance(pending, tuple) and len(pending) == 2:
+        target, keys = pending
+        # 계획은 **지금 편집본**으로 다시 세운다. 대기하는 동안 편집이 있었으면 수가 바뀐다.
+        plan = plan_deletion(frames, target, keys)
+        if plan.target_count:
+            st.warning(_deletion_message(plan), icon=":material/delete:")
+            with st.container(horizontal=True, gap="small"):
+                confirm = st.form_submit_button(
+                    "삭제 확정",
+                    key=CONFIRM_DELETE_BUTTON_KEY,
+                    type="primary",
+                    icon=":material/delete_forever:",
+                )
+                cancel = st.form_submit_button(
+                    "취소", key=CANCEL_DELETE_BUTTON_KEY, icon=":material/close:"
+                )
+    removed = st.session_state.get(LAST_REMOVED_KEY)
+    if isinstance(removed, tuple):
+        count = sum(len(frame) for frame in removed)
+        st.info(
+            f"방금 편집본에서 {count:,}행을 지웠습니다. 저장하기 전까지 되돌릴 수 있습니다.",
+            icon=":material/undo:",
+        )
+        undo = st.form_submit_button(
+            "방금 삭제 되돌리기", key=UNDO_DELETE_BUTTON_KEY, icon=":material/undo:"
+        )
+    return confirm, cancel, undo
+
+
+def _apply_bulk_actions(
+    editor: EditorResult,
+    *,
+    confirm: bool,
+    undo: bool,
+    view_applied: bool,
+) -> None:
+    """선택·삭제·되돌리기를 편집본에 반영한다. `_remember_edits` 뒤에 부른다.
+
+    **확인 대기는 어떤 제출이든 한 번 쓰고 버린다.** 삭제 버튼이 다시 세우지 않는 한 남지
+    않는다 — 확인 상자가 누른 순간보다 오래 살아 있으면 나중에 다른 뜻으로 눌린다.
+    """
+    frames: Frames = st.session_state[BUFFER_KEY]
+    pending = st.session_state.pop(PENDING_DELETE_KEY, None)
+    # 편집표에서 켠 선택은 다른 제출을 지나도 남는다. 보기를 바꾸면 풀린다.
+    selection: dict[str, frozenset[RowKey]] = {} if view_applied else dict(editor.checked)
+    if editor.action is not None:
+        action, target = editor.action
+        position, _ = TARGET_LAYOUT[target]
+        if action == SELECT_MATCHING:
+            selection[target] = matching_keys(frames[position], editor.filters[target], target)
+        elif action == SELECT_CLEAR:
+            selection[target] = frozenset()
+        elif action == DELETE_SELECTED:
+            keys = selection.get(target, frozenset())
+            if keys:
+                st.session_state[PENDING_DELETE_KEY] = (target, keys)
+            else:
+                st.session_state[_NOTICE_KEY] = (
+                    "선택한 행이 없습니다. 표의 ‘선택’ 칸을 켜거나 "
+                    "‘필터에 맞는 행 모두 선택’을 누른 뒤 지우세요."
+                )
+    elif confirm and isinstance(pending, tuple):
+        target, keys = pending
+        plan = plan_deletion(frames, target, keys)
+        st.session_state[BUFFER_KEY] = apply_deletion(frames, plan)
+        st.session_state[LAST_REMOVED_KEY] = plan.removed
+        selection[target] = frozenset()
+        st.session_state[_NOTICE_KEY] = _deletion_message(plan).replace("지웁니다", "지웠습니다", 1)
+    elif undo:
+        removed = st.session_state.pop(LAST_REMOVED_KEY, None)
+        if isinstance(removed, tuple):
+            restored, skipped = restore_rows(frames, removed)
+            st.session_state[BUFFER_KEY] = restored
+            message = "방금 지운 행을 편집본에 되살렸습니다."
+            if skipped:
+                message += f" 그 사이 같은 키가 다시 생긴 {skipped:,}행은 건너뛰었습니다."
+            st.session_state[_NOTICE_KEY] = message
+    st.session_state[SELECTION_KEY] = selection
+
+
+def _render_editors(
+    frames: Frames,
+    max_extent: CanvasSize,
+    selection: Mapping[str, frozenset[RowKey]],
+) -> EditorResult:
     baseline, equipment, downtime = frames
     master_tab, baseline_tab, downtime_tab = st.tabs(list(_TARGETS))
     with master_tab:
@@ -405,7 +627,7 @@ def _render_editors(frames: Frames, max_extent: CanvasSize) -> Frames:
             "신규 호기는 입고·Qual 일정이 필요합니다. 기존설비 또는 장기보관 Y는 두 일정 없이 "
             "등록할 수 있습니다. 레이아웃표시 Y는 위치·좌표·크기도 입력하세요."
         )
-        equipment_view = _editor_view(
+        equipment_view, equipment_requested = _editor_view(
             equipment,
             key=EQUIPMENT_EDITOR_KEY,
             prefix="equipment_master_view",
@@ -450,25 +672,22 @@ def _render_editors(frames: Frames, max_extent: CanvasSize) -> Frames:
         config.update(
             {column: st.column_config.DateColumn(format="YYYY-MM-DD") for column in DATE_COLUMNS}
         )
-        edited_equipment = merge_edited_rows(
+        edited_equipment, equipment_checked = _selectable_editor(
             equipment,
-            st.data_editor(
-                equipment_view.frame,
-                key=EQUIPMENT_EDITOR_KEY,
-                num_rows=equipment_view.row_mode,
-                hide_index=True,
-                width="stretch",
-                column_config={**config, **equipment_view.column_config},
-            ),
-            filtered=equipment_view.filtered,
+            equipment_view,
+            key=EQUIPMENT_EDITOR_KEY,
+            target=EQUIPMENT_TARGET,
+            column_config=config,
+            selection=selection.get(EQUIPMENT_TARGET, frozenset()),
         )
+        equipment_action = _selection_buttons("master")
         st.caption(
             "환산비는 기준 모델 1대 대비 생산성입니다. 비우면 1입니다. "
             "주차별 설비대수에는 적용하지 않으며 월별 환산대수·확보율 교차검증에 반영합니다."
         )
     with baseline_tab:
         st.caption("호기별 일정 관리가 필요 없는 기존 설비를 공정·분류별 대수로 입력합니다.")
-        baseline_view = _editor_view(
+        baseline_view, baseline_requested = _editor_view(
             baseline,
             key=BASELINE_EDITOR_KEY,
             prefix="equipment_baseline_view",
@@ -476,33 +695,29 @@ def _render_editors(frames: Frames, max_extent: CanvasSize) -> Frames:
             locked=("공정", "분류", "기존보유대수"),
             label="기존 보유대수 · 표 보기 설정",
         )
-        edited_baseline = merge_edited_rows(
+        edited_baseline, baseline_checked = _selectable_editor(
             baseline,
-            st.data_editor(
-                baseline_view.frame,
-                key=BASELINE_EDITOR_KEY,
-                num_rows=baseline_view.row_mode,
-                hide_index=True,
-                width="stretch",
-                column_config={
-                    "공정": st.column_config.TextColumn(required=True, pinned=True),
-                    "분류": st.column_config.TextColumn(required=True),
-                    "기존보유대수": st.column_config.NumberColumn(
-                        "기존 보유대수",
-                        min_value=0,
-                        step=0.1,
-                        format="%.1f 대",
-                        required=True,
-                    ),
-                    "비고": st.column_config.TextColumn(),
-                    **baseline_view.column_config,
-                },
-            ),
-            filtered=baseline_view.filtered,
+            baseline_view,
+            key=BASELINE_EDITOR_KEY,
+            target=BASELINE_TARGET,
+            column_config={
+                "공정": st.column_config.TextColumn(required=True, pinned=True),
+                "분류": st.column_config.TextColumn(required=True),
+                "기존보유대수": st.column_config.NumberColumn(
+                    "기존 보유대수",
+                    min_value=0,
+                    step=0.1,
+                    format="%.1f 대",
+                    required=True,
+                ),
+                "비고": st.column_config.TextColumn(),
+            },
+            selection=selection.get(BASELINE_TARGET, frozenset()),
         )
+        baseline_action = _selection_buttons("baseline")
     with downtime_tab:
         st.caption("등록된 호기의 비가동을 입력합니다. 종료일이 비어 있으면 진행 중입니다.")
-        downtime_view = _editor_view(
+        downtime_view, downtime_requested = _editor_view(
             downtime,
             key=DOWNTIME_EDITOR_KEY,
             prefix="equipment_downtime_view",
@@ -511,25 +726,46 @@ def _render_editors(frames: Frames, max_extent: CanvasSize) -> Frames:
             label="운영 비가동 일정 · 표 보기 설정",
         )
         types = sorted(set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str)))
-        edited_downtime = merge_edited_rows(
+        edited_downtime, downtime_checked = _selectable_editor(
             downtime,
-            st.data_editor(
-                downtime_view.frame,
-                key=DOWNTIME_EDITOR_KEY,
-                num_rows=downtime_view.row_mode,
-                hide_index=True,
-                width="stretch",
-                column_config={
-                    "호기": st.column_config.TextColumn(required=True, pinned=True),
-                    "비가동유형": st.column_config.SelectboxColumn(options=types, required=True),
-                    "시작일": st.column_config.DateColumn(format="YYYY-MM-DD", required=True),
-                    "종료일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                    **downtime_view.column_config,
-                },
-            ),
-            filtered=downtime_view.filtered,
+            downtime_view,
+            key=DOWNTIME_EDITOR_KEY,
+            target=DOWNTIME_TARGET,
+            column_config={
+                "호기": st.column_config.TextColumn(required=True, pinned=True),
+                "비가동유형": st.column_config.SelectboxColumn(options=types, required=True),
+                "시작일": st.column_config.DateColumn(format="YYYY-MM-DD", required=True),
+                "종료일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+            },
+            selection=selection.get(DOWNTIME_TARGET, frozenset()),
         )
-    return edited_baseline, edited_equipment, edited_downtime
+        downtime_action = _selection_buttons("downtime")
+    action = next(
+        (
+            (name, target)
+            for name, target in (
+                (equipment_action, EQUIPMENT_TARGET),
+                (baseline_action, BASELINE_TARGET),
+                (downtime_action, DOWNTIME_TARGET),
+            )
+            if name is not None
+        ),
+        None,
+    )
+    return EditorResult(
+        frames=(edited_baseline, edited_equipment, edited_downtime),
+        checked={
+            EQUIPMENT_TARGET: equipment_checked,
+            BASELINE_TARGET: baseline_checked,
+            DOWNTIME_TARGET: downtime_checked,
+        },
+        filters={
+            EQUIPMENT_TARGET: equipment_requested.filters,
+            BASELINE_TARGET: baseline_requested.filters,
+            DOWNTIME_TARGET: downtime_requested.filters,
+        },
+        action=action,
+    )
 
 
 def _render_history(repository: DuckDBEquipmentRepository) -> None:
@@ -642,6 +878,9 @@ def render_equipment_data_workspace(
         st.session_state[BUFFER_KEY] = _copy_frames((baseline, equipment, downtime))
         st.session_state[_REVISION_KEY] = revision_token
         st.session_state.pop(PREVIEW_KEY, None)
+        # 선택·삭제 대기·되돌리기는 옛 편집본의 것이다. 새 저장본 위에서 쓰이면 안 된다.
+        for key in (SELECTION_KEY, PENDING_DELETE_KEY, LAST_REMOVED_KEY):
+            st.session_state.pop(key, None)
     frames: Frames = st.session_state[BUFFER_KEY]
     if latest_snapshot is None:
         st.info(
@@ -755,7 +994,9 @@ def render_equipment_data_workspace(
             )
         with edit_tab:
             st.caption("표를 바꿔도 입력은 유지됩니다. 보기 설정을 바꾼 뒤 ‘보기 적용’을 누르세요.")
-            edited = _render_editors(frames, max_extent)
+            confirm_delete, cancel_delete, undo_delete = _render_bulk_delete_status(frames)
+            editor = _render_editors(frames, max_extent, _current_selection())
+            edited = editor.frames
             view_clicked = st.form_submit_button("보기 적용", key=VIEW_APPLY_BUTTON_KEY)
             edit_save_clicked = st.form_submit_button(
                 "설비 데이터 저장",
@@ -774,10 +1015,26 @@ def render_equipment_data_workspace(
             history_clicked = st.form_submit_button("이력 조회", key="equipment_history_apply_v1")
         note = st.text_input("변경 메모", key=_NOTE_KEY, placeholder="예: 10월 신규 호기 30대 등록")
     if not any(
-        (preview_clicked, import_save_clicked, edit_save_clicked, view_clicked, history_clicked)
+        (
+            preview_clicked,
+            import_save_clicked,
+            edit_save_clicked,
+            view_clicked,
+            history_clicked,
+            editor.action is not None,
+            confirm_delete,
+            cancel_delete,
+            undo_delete,
+        )
     ):
         return
     _remember_edits(edited)
+    _apply_bulk_actions(
+        editor,
+        confirm=confirm_delete,
+        undo=undo_delete,
+        view_applied=view_clicked,
+    )
     try:
         if preview_clicked or import_save_clicked:
             if clipboard.strip() and uploaded is not None:

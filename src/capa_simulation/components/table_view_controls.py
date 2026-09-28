@@ -42,6 +42,9 @@ class TableView:
     hidden_columns: tuple[str, ...] = ()
     filtered: bool = False
     column_config: Mapping[str, None] = field(default_factory=dict)
+    # 고른 필터 조건(비어 있지 않은 것만). 보기를 「적용」하기 전의 조건으로도 행을 고를 수
+    # 있게 밖으로 낸다 — 설비 표의 「필터에 맞는 행 모두 선택」이 쓴다.
+    filters: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def row_mode(self) -> Literal["fixed", "dynamic"]:
@@ -125,6 +128,7 @@ def render_table_view_controls(
         hidden_columns=hidden,
         filtered=filtered,
         column_config={column: None for column in hidden},
+        filters={column: tuple(chosen) for column, chosen in selections.items() if chosen},
     )
 
 
