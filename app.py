@@ -207,11 +207,14 @@ with pinned_connections(DUCKDB_PATH):
     # 없다 — 맨 아래를 지키는 것은 위 CSS 의 `order` 다.
     # **다른 상자와 완전히 같은 양식이다.** 테두리도 요약 줄 글자도 아이콘도 페이지
     # 그룹과 같게 둔다 — 계산 흐름 밖이라는 것은 서식이 아니라 위 `order` 가 지키는
-    # 맨 아래라는 자리가 말한다. 아이콘이 `tune` 인 것은 이 앱이 이미 `Preference` 라는
-    # 낱말에 그 아이콘을 쓰고 있어서다(HOME·가용설비 현황의 같은 이름 탭).
-    # 상자 이름과 그 안의 `Admin Area` 는 다른 것을 가리킨다 — 상자는 「앱을 어떻게
-    # 쓸지」이고 `Admin Area` 는 그 안의 한 화면이다. 상수 `ADMIN_BOX_KEY` 는 그대로다.
-    with sidebar_expander("Preference", key=ADMIN_BOX_KEY, icon=":material/tune:"):
+    # 맨 아래라는 자리가 말한다.
+    # 이름은 `Support` 다. 전에는 `Preference` 였는데 HOME·가용설비 현황 본문의 같은 이름
+    # 탭(그 화면의 표시 설정, 아이콘 `tune`)과 낱말·아이콘이 모두 겹쳐, 링크 목록인 이
+    # 상자를 설정으로 읽게 했다. 안에 선 두 화면 — 공용 설정을 고치는 `Admin Area` 와
+    # 질문·요청·오류 신고를 받는 VOC — 은 모두 앱을 쓰는 사람을 돕는 자리다. 아이콘은
+    # 사이드바에서 아무도 쓰지 않는 `support` 다. 상수 `ADMIN_BOX_KEY` 는 그대로다 — 값을
+    # 바꾸면 세션이 기억하던 펼침 상태만 새 칸으로 갈린다.
+    with sidebar_expander("Support", key=ADMIN_BOX_KEY, icon=":material/support:"):
         with st.container(key="admin_area_navigation"):
             st.page_link(pages.admin_area, width="stretch")
             # VOC 는 계산 화면이 아니라 사람이 쓰는 자리다. 계산 그룹 어디에도 속하지 않아

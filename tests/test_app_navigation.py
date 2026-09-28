@@ -179,7 +179,7 @@ _EXPANDER_ELEMENTS = {"Status", "Expander"}
 def _expanded(app: AppTest) -> dict[str, bool]:
     """사이드바 **그룹 상자**의 펼침 상태. 상자가 없는 그룹은 여기 나오지 않는다.
 
-    조회 컨트롤 넷(시나리오·조회기간·B/N·Preference)도 같은 확장 패널이 되면서 사이드바의
+    조회 컨트롤 넷(시나리오·조회기간·B/N·Support)도 같은 확장 패널이 되면서 사이드바의
     확장 패널이 여덟 개로 늘었다. 이 헬퍼가 말하는 것은 「지금 보는 페이지가 든 그룹만
     편다」는 **그룹 규칙 하나**이므로, 그룹 제목을 단 것만 센다. 하위가 없는 그룹의
     제목도 함께 본다 — 그쪽에 펼침 장치가 생기는 것도 이 헬퍼가 잡아야 한다.
@@ -224,7 +224,7 @@ def test_only_the_group_holding_the_current_page_is_expanded(_app: AppTest) -> N
     """그룹 상자는 **지금 보고 있는 페이지가 든 것 하나만** 펴진다.
 
     사이드바 링크는 열일곱 개고 대부분의 화면에서 그중 열 개는 지금 쓰지 않는 그룹의
-    하위다. 접히지 않으면 조회기간·Preference 가 스크롤 밖으로 밀린다.
+    하위다. 접히지 않으면 조회기간·Support 가 스크롤 밖으로 밀린다.
 
     **`expanded` 는 `st.navigation()` 이 돌아야 정해진다.** `page.url_path` 가 그 전에는
     아예 없어서(`AttributeError`) 두 줄의 순서를 바꾸면 사이드바가 통째로 죽는다 —
@@ -277,7 +277,7 @@ def test_groups_without_subpages_are_boxed_but_not_expandable(_app: AppTest) -> 
 
 
 def test_the_control_boxes_open_collapsed_on_the_first_run(_app: AppTest) -> None:
-    """시나리오·조회기간·Preference 는 **접힌 채로** 열린다.
+    """시나리오·조회기간·Support 는 **접힌 채로** 열린다.
 
     사이드바가 길어지는 것을 막는 것이 이 과제의 목적이라, 기본값이 펼침이면 고치기 전과
     같아진다. 접어도 공식버전 배지와 적용 기간은 요약 줄에 남으므로 잃는 정보가 없다.
