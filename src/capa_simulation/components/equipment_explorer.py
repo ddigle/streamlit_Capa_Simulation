@@ -51,6 +51,10 @@ _INACTIVE_COLUMNS = ("호기", "공정소분류", "상태", "입고일정", "Qua
 _INACTIVE_MONTH_COLUMNS = ("호기", "비가동 시작", "비가동 종료", *_INACTIVE_COLUMNS[1:])
 
 
+# 주차별 설비 현황의 막대 폭을 주 수와 잇는 실측값(1600px 창에서 17주일 때 막대 53px).
+_WEEKLY_BAR_SPAN_PX = 903.0
+
+
 def render_equipment_period(*, today: date) -> tuple[date, date]:
     """Main 추이와 월별 비교가 함께 쓰는 조회기간 위젯."""
     start = st.date_input(
@@ -200,12 +204,12 @@ def _availability(
         var_name="상태",
         value_name="대수",
     )
+    # 막대 폭은 조회기간의 주 수로 정해진다(실측 17주에 53px — 폭 ≈ 903 / 주 수). 기간은
+    # 사용자가 정하므로 반경 등급도 주 수로 고른다 — 한 해를 고르면 막대가 17px 로 가늘어진다.
+    corner_radius = tokens.bar_corner_radius(_WEEKLY_BAR_SPAN_PX / max(len(trend), 1))
     chart = (
         alt.Chart(long)
-        .mark_bar(
-            cornerRadiusTopLeft=tokens.BAR_CORNER_RADIUS_WIDE_PX,
-            cornerRadiusTopRight=tokens.BAR_CORNER_RADIUS_WIDE_PX,
-        )
+        .mark_bar(cornerRadiusTopLeft=corner_radius, cornerRadiusTopRight=corner_radius)
         .encode(
             x=alt.X(
                 "Weeknum:N", sort=trend["Weeknum"].tolist(), axis=alt.Axis(title=None, labelAngle=0)

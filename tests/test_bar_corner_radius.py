@@ -238,3 +238,12 @@ def test_an_empty_stack_segment_draws_no_flat_cap() -> None:
 
     assert list(available.marker.line.width) == [2.0, 0.0]
     assert list(baseline.marker.line.width) == [2.0, 2.0]
+
+
+def test_width_grades_have_one_home() -> None:
+    """폭이 기간으로 바뀌는 막대(가용설비 두 차트)는 한 함수로 등급을 고른다."""
+    assert tokens.bar_corner_radius(118) == tokens.BAR_CORNER_RADIUS_WIDE_PX
+    assert tokens.bar_corner_radius(40) == tokens.BAR_CORNER_RADIUS_WIDE_PX
+    assert tokens.bar_corner_radius(39) == tokens.BAR_CORNER_RADIUS_MEDIUM_PX
+    assert tokens.bar_corner_radius(20) == tokens.BAR_CORNER_RADIUS_MEDIUM_PX
+    assert tokens.bar_corner_radius(17) == tokens.BAR_CORNER_RADIUS_NARROW_PX

@@ -476,6 +476,21 @@ BAR_OUTLINE_WIDTH_PX: Final = 1.0
 BAR_CORNER_RADIUS_WIDE_PX: Final = 8
 BAR_CORNER_RADIUS_MEDIUM_PX: Final = 5
 BAR_CORNER_RADIUS_NARROW_PX: Final = 3
+
+
+def bar_corner_radius(bar_width_px: float) -> int:
+    """막대 굵기에 맞는 반경 등급. 40px 이상 넓음, 20px 이상 중간, 그 아래 좁음.
+
+    막대 폭이 조회 기간(월·주 수)으로 바뀌는 차트가 쓴다. 폭의 비율 반경(`"15%"`)은 넓은
+    막대에서 8px 를 훌쩍 넘어(넉 달 118px 막대에 17.7px, 실측) 쓰지 않는다.
+    """
+    if bar_width_px >= 40:
+        return BAR_CORNER_RADIUS_WIDE_PX
+    if bar_width_px >= 20:
+        return BAR_CORNER_RADIUS_MEDIUM_PX
+    return BAR_CORNER_RADIUS_NARROW_PX
+
+
 CLASSIFICATION_MIN_WIDTH_PX: Final = 84
 CLASSIFICATION_MAX_WIDTH_PX: Final = 220
 CLASSIFICATION_TEXT_UNIT_PX: Final = 15

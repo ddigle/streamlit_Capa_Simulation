@@ -66,17 +66,8 @@ _BAR_SPAN_PX = 472.0
 
 
 def _corner_radius(month_count: int) -> int:
-    """막대 굵기 등급(`tokens.BAR_CORNER_RADIUS_*_PX`)을 월 수로 고른다.
-
-    폭의 비율(`"15%"`)로 주면 넉 달일 때 118px 막대에 18px 반경이 걸려 다른 차트보다 훨씬
-    둥글었다(실측). 등급은 넓은 막대에서도 8px 에서 멈춘다.
-    """
-    bar_width = _BAR_SPAN_PX / max(month_count, 1)
-    if bar_width >= 40:
-        return tokens.BAR_CORNER_RADIUS_WIDE_PX
-    if bar_width >= 20:
-        return tokens.BAR_CORNER_RADIUS_MEDIUM_PX
-    return tokens.BAR_CORNER_RADIUS_NARROW_PX
+    """막대 굵기 등급을 월 수로 고른다. 등급 경계는 `tokens.bar_corner_radius` 한 곳이 정한다."""
+    return tokens.bar_corner_radius(_BAR_SPAN_PX / max(month_count, 1))
 
 
 def _stack_outline(values: list[float]) -> list[float]:
