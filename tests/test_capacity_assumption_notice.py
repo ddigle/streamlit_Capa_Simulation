@@ -3,8 +3,8 @@
 """**메운 것을 말하지 않으면 완화가 곧 조용한 오류다.**
 
 측정률 행이 없을 때 계산을 멈추는 대신 중립값 1.0 으로 이어 가기로 했다. 그 대가로
-오차가 한 방향으로만 난다 — 측정률은 대당 Capa 의 분모라 실제가 1 보다 작으면 대당 Capa
-과대 → 소요대수 과소 → **확보율 과대**다. 여유 있어 보이는 쪽으로만 틀린다.
+숫자가 틀린다 — 측정률은 대당 Capa 의 분모라 실제가 1 보다 작으면 대당 Capa 과소 →
+소요대수 과대 → **확보율 과소**(보수 쪽)이고, 1 보다 크면 그 반대다.
 
 그래서 이 문구는 장식이 아니라 완화의 **조건**이다. 문구가 사라지면 완화는 「경고하고
 계속」이 아니라 「조용히 계속」이 된다.
@@ -24,10 +24,15 @@ def test_the_message_names_the_tab_the_user_must_open() -> None:
 
 
 def test_the_message_says_which_way_the_number_is_wrong() -> None:
-    """방향을 말하지 않으면 보는 사람이 그대로 낙관으로 기운다."""
+    """방향을 말하지 않으면 보는 사람이 숫자를 그대로 믿는다.
+
+    예전 문구는 방향이 거꾸로였다(「1 보다 작으면 높게」). 식은 측정률로 **나누므로** 1 보다
+    작은 실제값을 1.0 으로 메우면 대당 Capa 가 작아져 확보율은 낮게 나온다.
+    """
     message = assumption_message({"RQ_LOT_RATIO": 1})
 
-    assert "확보율이 실제보다 높게" in message
+    assert "1 보다 작으면 **확보율이 실제보다 낮게**" in message
+    assert "높게" not in message.split("1 보다 크면")[0]
 
 
 def test_nothing_assumed_draws_nothing() -> None:

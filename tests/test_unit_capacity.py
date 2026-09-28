@@ -519,9 +519,9 @@ def test_a_missing_ratio_row_no_longer_stops_the_whole_page() -> None:
 def test_the_assumed_rows_are_counted_so_the_screen_can_say_it() -> None:
     """**세지 않고 메우면 조용히 틀린다.**
 
-    측정률은 대당 Capa 의 분모다. 실제가 1 보다 작은 경로에 1.0 을 쓰면 대당 Capa 과대 →
-    소요대수 과소 → 확보율 과대로 **낙관 쪽**으로만 기운다. 그 사실이 화면에 닿아야 완화가
-    「경고하고 계속」이지 「조용히 계속」이 아니다.
+    측정률은 대당 Capa 의 분모다. 실제가 1 보다 작은 경로에 1.0 을 쓰면 대당 Capa 과소 →
+    소요대수 과대 → 확보율 과소(보수 쪽)이고, 1 보다 크면 그 반대다. 어느 쪽이든 그 사실이
+    화면에 닿아야 완화가 「경고하고 계속」이지 「조용히 계속」이 아니다.
     """
     inputs = _capacity_inputs(["Process-A", "Process-B", "Process-C"])
     inputs["lot_ratio"] = inputs["lot_ratio"].iloc[:1]

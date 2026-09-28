@@ -805,7 +805,7 @@ with main_tab:
     # 나눠 가져 문구가 월 칸 너비에 갇힌다.
     render_summary_notice(summary_profile.note)
     # 가정을 결론보다 **먼저** 말한다. 측정률을 1.0 으로 메운 경로가 있으면 확보율이
-    # 실제보다 높게 나오므로, 아래 결론을 읽기 전에 그 사실을 알아야 한다.
+    # 실제와 다르게 나오므로(측정률이 1 보다 작으면 낮게), 아래 결론을 읽기 전에 알아야 한다.
     render_capacity_assumption_notice(assumed_capacity_defaults)
     # 결론이 표보다 **먼저** 온다. 아래 Figure 와 같은 `securement_rate`·`included_processes`
     # 를 읽으므로 공정 필터를 바꾸면 요약도 같이 따라온다.

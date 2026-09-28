@@ -34,8 +34,9 @@ UNIT_CAPACITY_DIMENSIONS = [
 ]
 UNIMPLEMENTED_BASES = {"BOX", "PCB"}
 CAPACITY_EXCLUSIONS_ATTR = "excluded_capacity_rows"
-# 측정률 행이 없어 중립값 1.0 으로 이어 간 건수. **세지 않고 메우면 조용히 틀린다** —
-# 그 오차는 대당 Capa 과대 → 소요대수 과소 → 확보율 과대로 낙관 쪽이다.
+# 측정률 행이 없어 중립값 1.0 으로 이어 간 건수. **세지 않고 메우면 조용히 틀린다.**
+# 측정률은 분모라 실제가 1 보다 작으면 대당 Capa 과소 → 소요대수 과대 → 확보율 과소(보수 쪽),
+# 1 보다 크면 그 반대(낙관 쪽)로 틀린다.
 CAPACITY_ASSUMPTIONS_ATTR = "assumed_capacity_defaults"
 
 # 검증 실패 메시지에 문제 행의 업무 키를 실으려면 그 컬럼이 어떤 키로 붙었는지 알아야 한다.
@@ -276,8 +277,9 @@ def _join_reference(
     숫자가 나와 버린다.
 
     가정한 건수는 `assumed` 에 쌓아 화면이 말하게 한다. **세지 않고 메우면 (c) 가 아니라
-    (b) 가 된다** — 조용히 틀리는 경로를 하나 더 여는 것이고, 그 오차는 대당 Capa 과대 →
-    소요대수 과소 → 확보율 과대로 **낙관 쪽**이다.
+    (b) 가 된다** — 조용히 틀리는 경로를 하나 더 여는 것이다. 측정률은 분모라 실제가
+    1 보다 작으면(표본은 모두 그렇다) 대당 Capa 과소 → 소요대수 과대 → 확보율 과소로
+    **보수 쪽**이고, 1 보다 큰 경로에서만 낙관 쪽이다.
     """
     require_columns(reference, [*keys, value_column], table_name)
     prepared = reference[[*keys, value_column]].copy()
