@@ -667,7 +667,9 @@ def _render_editors(
             "장기보관여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),
             "기존설비여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),
             "레이아웃표시": st.column_config.SelectboxColumn(options=["Y", "N"], required=True),
-            "환산비": st.column_config.NumberColumn(min_value=0.01, step=0.1, format="%.2f"),
+            # `step` 을 주지 않는다. Streamlit 은 step 의 소수 자릿수만큼 입력을 **잘라** 저장한다
+            # (step=0.1 이면 0.25 → 0.2). 모듈 행의 0.25·0.125 가 그대로 들어가야 한다.
+            "환산비": st.column_config.NumberColumn(min_value=0.01),
         }
         config.update(
             {column: st.column_config.DateColumn(format="YYYY-MM-DD") for column in DATE_COLUMNS}

@@ -173,3 +173,29 @@ def test_the_future_availability_sum_is_not_wired_yet(tmp_path: Path) -> None:
 
     assert CONVERSION_RATIO_COLUMN not in weekly.columns
     assert (weekly["가용대수"] % 1 == 0).all(), "가용대수가 아직 정수여야 한다"
+
+
+def test_the_grid_does_not_truncate_the_ratio() -> None:
+    """직접 편집 표의 환산비 칸에 `step` 을 주면 그 소수 자릿수만큼 입력이 잘린다.
+
+    step=0.1 이던 때 모듈 행의 0.25 가 0.2 로 저장되어 설비 1대의 능력이 0.8 이 됐다(사내 실측).
+    Streamlit 번들이 `fixedDecimals = step 의 소수 자릿수` 로 편집값을 자른다.
+    """
+    import ast
+
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src/capa_simulation/components/equipment_data_workspace.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    calls = [
+        value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Dict)
+        for key, value in zip(node.keys, node.values, strict=True)
+        if isinstance(key, ast.Constant) and key.value == "환산비"
+    ]
+    assert calls, "환산비 칸 설정을 찾지 못했습니다 — 화면 구조가 바뀌었으면 이 검사부터 고칩니다."
+    for call in calls:
+        assert isinstance(call, ast.Call)
+        assert "step" not in {keyword.arg for keyword in call.keywords}
