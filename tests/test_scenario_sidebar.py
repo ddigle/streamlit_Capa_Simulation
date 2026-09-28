@@ -99,7 +99,10 @@ def sidebar_app() -> Iterator[AppTest]:
         "load_scenario_snapshot": load_snapshot,
         "active_persisted_scenario_id": lambda: "scenario-1",
         "active_persisted_revision_id": lambda: "revision-1",
-        "has_unsaved_scenario_changes": lambda: False,
+        "has_unsaved_scenario_changes": lambda: bool(st.session_state.get("test_unsaved", False)),
+        "reset_active_scenario": lambda _tables, version: st.session_state.__setitem__(
+            "test_reset_to_version", version
+        ),
         "activate_persisted_snapshot": lambda snapshot: st.session_state.__setitem__(
             "test_activated_revision", snapshot.revision.revision_id
         ),
@@ -160,6 +163,26 @@ def test_sidebar_saves_current_state_as_a_new_revision(sidebar_app: AppTest) -> 
     assert not app.exception
     assert app.session_state["test_saved_revision_name"] == "사이드바 저장안"
     assert app.session_state["test_activated_revision"] == "revision-3"
+
+
+def test_discarding_edits_lives_in_the_scenario_box_only_when_there_are_edits(
+    sidebar_app: AppTest,
+) -> None:
+    """「편집 되돌리기」는 모든 화면의 편집을 버리는 시나리오 단위 동작이다.
+
+    본문 맨 위의 「활성 시나리오 · 수정본 N · 전체 입력 원본으로 초기화」 줄을 없애고 이
+    상자로 옮겼다(2026-09-29 사용자 결정). 버릴 것이 없으면 서지 않는다.
+    """
+    app = sidebar_app.run()
+    assert "sidebar_reset_active_scenario" not in {button.key for button in app.button}
+
+    app.session_state["test_unsaved"] = True
+    app.run()
+    app.button(key="sidebar_reset_active_scenario").click().run()
+
+    assert not app.exception
+    assert app.session_state["test_reset_to_version"] == 1
+    assert "저장하지 않은 편집을 버렸습니다." in {item.value for item in app.success}
 
 
 def _save(app: AppTest, name: str) -> AppTest:

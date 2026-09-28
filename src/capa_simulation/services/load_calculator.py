@@ -91,8 +91,8 @@ def plan_to_edit_table(plan: pd.DataFrame, display_order: DisplayOrderInput = No
     empty_columns = [column for column in identity_columns if prepared[column].isna().any()]
     if empty_columns:
         # 어느 컬럼이 비었는지 적어야 한다. `Pack Code` 승격 이전에 저장한 리비전은 그
-        # 컬럼이 NULL 이라 여기서 멈추는데, 부하량 페이지는 격자 생성이 시나리오 편집보다
-        # 앞이라 페이지 전체가 서고 "전체 입력 원본으로 초기화" 버튼도 보이지 않는다.
+        # 컬럼이 NULL 이라 여기서 멈추고 생산 계획 페이지 전체가 선다. 사이드바 「편집
+        # 되돌리기」로도 풀리지 않는다 — 되돌아가는 원본 리비전 자체가 그 모양이다.
         raise ValueError(
             "RQ_PKG_PLAN의 편집 테이블 식별 컬럼에 누락값이 있습니다: "
             f"{', '.join(empty_columns)}. 그 컬럼이 비어 있는 옛 리비전은 BigDataQuery 에서 "

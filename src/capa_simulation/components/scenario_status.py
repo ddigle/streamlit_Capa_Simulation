@@ -1,4 +1,4 @@
-# Purpose: Sidebar controls for loading and revising persisted scenarios.
+# Purpose: Sidebar controls for loading, revising, and discarding edits of persisted scenarios.
 
 """Sidebar controls for loading and revising persisted scenarios."""
 
@@ -30,7 +30,7 @@ from capa_simulation.scenario_activation import (
     has_unsaved_scenario_changes,
 )
 from capa_simulation.scenario_preset_state import capture_scenario_preset
-from capa_simulation.scenario_state import ensure_active_scenario
+from capa_simulation.scenario_state import ensure_active_scenario, reset_active_scenario
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import sidebar_expander
 
@@ -167,6 +167,23 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
                 active_scenario_id=active_scenario_id,
                 active_revision_id=active_revision_id,
             )
+        # 저장하지 않은 편집을 버리고 올라와 있는 리비전으로 되돌린다. 전에는 편집 화면 본문
+        # 맨 위(「활성 시나리오 · 수정본 N」 줄)에 있었는데, 이 동작은 **모든 화면의 편집**을
+        # 버리는 시나리오 단위라 불러오기·저장 곁이 제자리다(2026-09-29 사용자 결정 — 본문은
+        # 제목·탭·탭 내용만 남긴다). 버릴 것이 있을 때만 선다.
+        if has_unsaved_scenario_changes():
+            if st.button(
+                "편집 되돌리기",
+                icon=":material/restart_alt:",
+                width="stretch",
+                key="sidebar_reset_active_scenario",
+                help="저장하지 않은 모든 화면의 편집을 버리고 올라와 있는 리비전으로 되돌립니다.",
+            ):
+                reset_active_scenario(
+                    get_effective_reference_tables(), get_effective_reference_version()
+                )
+                st.session_state[SIDEBAR_FLASH_KEY] = "저장하지 않은 편집을 버렸습니다."
+                st.rerun()
         if load_clicked:
             try:
                 snapshot = load_scenario_snapshot(resolved_path, selected_revision_id)

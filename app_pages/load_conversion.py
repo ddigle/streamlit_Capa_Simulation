@@ -30,7 +30,6 @@ from capa_simulation.components.reference_csv_tools import (
     render_reference_clipboard_form,
 )
 from capa_simulation.components.scenario_edit_bar import (
-    render_scenario_edit_bar,
     reset_editors_on_source_change,
     source_token,
 )
@@ -139,14 +138,10 @@ reset_editors_on_source_change(
     (PLAN_EDITOR_KEY, YIELD_EDITOR_KEY, PLAN_STAGED_KEY),
 )
 
-render_scenario_edit_bar(
-    active_scenario,
-    reference_tables,
-    reference_version,
-    reset_key="reset_load_active_scenario",
-    clear_session_keys=(SOURCE_TOKEN_KEY, PLAN_STAGED_KEY),
-)
-
+# 본문은 제목 · 탭 · 탭 내용만이다. 「활성 시나리오 · 수정본 N」 줄은 없앴다 — 미저장 여부는
+# 사이드바 시나리오 상자의 배지가 이미 말하고, 편집을 버리는 「편집 되돌리기」도 그 상자에
+# 있다(모든 화면의 편집을 버리는 시나리오 단위 동작이다). 되돌리면 리비전 번호가 올라
+# 위 `source_token` 이 바뀌므로 이 화면의 편집표·붙여넣기 대기분도 다음 회차에 함께 비워진다.
 conversion_tab, pkg_plan_tab, yield_tab = stateful_tabs(
     ["환산", "PKG PLAN", "수율"],
     key="load_conversion_active_tab",

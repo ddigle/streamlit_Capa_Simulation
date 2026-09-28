@@ -402,9 +402,9 @@ def test_edited_yield_recalculates_chip_volume() -> None:
 def test_a_plan_without_pack_code_names_the_empty_column_and_asks_for_reregistration() -> None:
     """0013 이전 리비전은 `Pack Code` 가 NULL 이라 격자를 만들 수 없다.
 
-    부하량 페이지는 격자 생성이 시나리오 편집 바보다 앞이라 여기서 멈추면 페이지 전체가
-    서고 "전체 입력 원본으로 초기화" 버튼도 보이지 않는다. 어느 컬럼이 비었는지와 무엇을
-    해야 하는지가 문구에 없으면 사용자가 빠져나올 길이 없다.
+    여기서 멈추면 생산 계획 페이지 전체가 서고, 사이드바 「편집 되돌리기」로도 풀리지 않는다
+    (되돌아가는 원본 리비전 자체가 그 모양이다). 어느 컬럼이 비었는지와 무엇을 해야 하는지가
+    문구에 없으면 사용자가 빠져나올 길이 없다.
     """
     plan = pd.DataFrame(
         {

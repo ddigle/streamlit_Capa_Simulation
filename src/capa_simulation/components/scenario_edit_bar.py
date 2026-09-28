@@ -1,19 +1,19 @@
-# Purpose: 편집 페이지 상단의 활성 시나리오 상태와 원본 초기화 버튼을 한 모양으로 그린다.
+# Purpose: 편집 페이지가 보는 원본을 토큰으로 식별하고, 원본이 바뀌면 편집기 상태를 비운다.
 
-"""Shared "활성 시나리오 · 수정본 N" bar with the reset control.
+"""편집 화면(생산 계획·기준 정보)이 함께 쓰는 원본 식별과 편집기 초기화.
 
-부하량과 공정별 Capa 가 같은 줄을 각자 복제하고 있었다. 편집 중인 표가 원본에서
-얼마나 떨어져 있는지 알리고 되돌릴 수 있게 하는 자리이므로 두 화면이 같아야 한다.
+예전에는 본문 맨 위에 「활성 시나리오 · 수정본 N」 줄과 원본 초기화 버튼도 그렸다. 그 줄은
+사이드바 시나리오 상자의 미저장 배지와 같은 말을 했고, 초기화는 모든 화면의 편집을 버리는
+시나리오 단위 동작이라 사이드바 「편집 되돌리기」로 옮겼다(2026-09-29 사용자 결정).
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
-import pandas as pd
 import streamlit as st
 
-from capa_simulation.scenario_state import ActiveScenario, reset_active_scenario
+from capa_simulation.scenario_state import ActiveScenario
 
 
 def source_token(
@@ -42,30 +42,3 @@ def reset_editors_on_source_change(token_key: str, token: str, editor_keys: Sequ
         st.session_state.pop(key, None)
     st.session_state[token_key] = token
     return True
-
-
-def render_scenario_edit_bar(
-    active_scenario: ActiveScenario,
-    reference_tables: dict[str, pd.DataFrame],
-    reference_version: int,
-    *,
-    reset_key: str,
-    clear_session_keys: Sequence[str] = (),
-) -> None:
-    """편집본 상태 한 줄과 원본 초기화 버튼을 그린다.
-
-    `clear_session_keys` 는 초기화할 때 함께 비울 세션 키다. 페이지마다 붙잡고 있는
-    임시 상태(편집기 위젯, 붙여넣기 대기분)가 달라서 인자로 받는다.
-    """
-    revision = active_scenario["revision"]
-    with st.container(horizontal=True, vertical_alignment="center"):
-        st.caption(f"활성 시나리오 · 수정본 {revision}")
-        if st.button(
-            "전체 입력 원본으로 초기화",
-            icon=":material/restart_alt:",
-            key=reset_key,
-        ):
-            reset_active_scenario(reference_tables, reference_version)
-            for key in clear_session_keys:
-                st.session_state.pop(key, None)
-            st.rerun()

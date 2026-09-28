@@ -11,7 +11,6 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.reference_csv_tools import queue_reference_import_flash
 from capa_simulation.components.scenario_edit_bar import (
-    render_scenario_edit_bar,
     reset_editors_on_source_change,
     source_token,
 )
@@ -327,14 +326,9 @@ equipment_edit_tables = {
     for table_name, category, value_column, _ in EQUIPMENT_EDITORS
 }
 
-render_scenario_edit_bar(
-    active_scenario,
-    reference_tables,
-    reference_version,
-    reset_key="reset_capacity_active_scenario",
-    clear_session_keys=(SOURCE_TOKEN_KEY,),
-)
-
+# 「활성 시나리오 · 수정본 N」 줄과 원본 초기화 버튼은 사이드바 시나리오 상자로 옮겼다
+# (미저장 배지 + 「편집 되돌리기」). 되돌리면 리비전 번호가 올라 `source_token` 이 바뀌므로
+# 이 화면의 편집표도 다음 회차에 함께 비워진다.
 with step_tab:
     flash_message = st.session_state.pop("capacity_step_flash", None)
     if isinstance(flash_message, str):
