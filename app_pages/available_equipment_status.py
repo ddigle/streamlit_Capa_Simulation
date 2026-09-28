@@ -24,10 +24,11 @@ from capa_simulation.components.equipment_explorer import (
     render_equipment_explorer,
     render_equipment_period,
 )
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
-from capa_simulation.navigation import EQUIPMENT_GAP_TAB, EQUIPMENT_TAB_KEY
+from capa_simulation.navigation import EQUIPMENT_GAP_TAB, EQUIPMENT_MAIN_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -56,6 +57,7 @@ from capa_simulation.services.simulation_cache import (
     scenario_cache_key,
 )
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
+from capa_simulation.sidebar_status import condition_card
 
 TAB_PREFERENCE = ":material/tune: Preference"
 TAB_RAWDATA = ":material/table_rows: RawData"
@@ -99,6 +101,7 @@ def _render_first_data_checklist(counts: tuple[int, int, int]) -> None:
 
 
 render_page_header("가용설비 현황 (Data확보중)")
+render_page_guide("available_equipment_status", title="가용설비 현황")
 flash = st.session_state.pop(FLASH_KEY, None)
 if isinstance(flash, str):
     st.success(flash)
@@ -143,7 +146,7 @@ first_action = st.empty()
 sample_notice = st.empty()
 main_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
     [
-        ":material/dashboard: Main",
+        EQUIPMENT_MAIN_TAB,
         EQUIPMENT_GAP_TAB,
         TAB_PREFERENCE,
         TAB_RAWDATA,
@@ -182,6 +185,16 @@ dashboard_baseline = (
     else baseline
 )
 
+# 조회 조건은 사이드바 조건 카드 `설비 조회 조건` 이다(2026-09-29 사용자 결정). Main·
+# Static/Dynamic 두 탭이 **한 카드**를 쓰고 안의 내용만 열린 탭 것이다 — 한 번 편 카드는 탭을
+# 옮겨도 편 채로 남는다(카드를 세우는 탭은 `navigation` 의 `card_labels` 선언과 같아야 한다).
+# Preference(Cut-off)·RawData 의 표 보기 설정은 그 표의 입력 폼과 한 몸이라 본문에 둔다.
+conditions_card = (
+    condition_card("설비 조회 조건", name="equipment")
+    if not tab_is_hidden(main_tab) or not tab_is_hidden(gap_tab)
+    else None
+)
+
 with main_tab:
     if not tab_is_hidden(main_tab):
         if using_dashboard_sample and not show_sample_fleet:
@@ -196,6 +209,7 @@ with main_tab:
                 downtime=dashboard_downtime,
                 today=today,
                 owner_tab=main_tab,
+                conditions=conditions_card,
             )
 
 with preference_tab:
@@ -206,8 +220,9 @@ with preference_tab:
 
 with gap_tab:
     if not tab_is_hidden(gap_tab):
-        with st.container(horizontal=True, gap="small"):
-            start_date, end_date = render_equipment_period(today=today)
+        assert conditions_card is not None
+        with conditions_card:
+            start_date, end_date = render_equipment_period(today=today, width="stretch")
         stored_cutoff = repository.load_process_cutoff()
         # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지 탭은 설비 DB 만 열고 활성
         # 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 탭 안에서 알리고, 다른
@@ -275,6 +290,7 @@ with gap_tab:
                 conversion_ratios=gap_ratios,
                 required_equipment=gap_required_equipment,
                 owner_tab=gap_tab,
+                conditions=conditions_card,
             )
 
 

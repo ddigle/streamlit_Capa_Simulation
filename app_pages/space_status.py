@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.floor_layout_upload import render_floor_layout_editor
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import (
     render_pending_source,
@@ -66,6 +67,7 @@ from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_WIDTH,
 )
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
+from capa_simulation.sidebar_status import condition_card
 
 SELECTED_BUILDING_KEY = "space_status_selected_building"
 SELECTED_FLOOR_KEY = "space_status_selected_floor"
@@ -167,13 +169,8 @@ if not isinstance(selected_floor, str) or selected_floor not in valid_floor_name
     selected_floor = None
     st.session_state.pop(SELECTED_FLOOR_KEY, None)
 
-render_page_header(
-    "Space 현황 (Data확보중)",
-    description=(
-        "가용설비 현황과 동일한 설비 전용 DuckDB 리비전에서 호기 생애주기·비가동 상태와 "
-        "Space 좌표를 조회합니다."
-    ),
-)
+render_page_header("Space 현황 (Data확보중)")
+render_page_guide("space_status", title="Space 현황")
 if using_sample_equipment:
     # 스위치는 호기 마스터가 비었을 때만 뜻이 있다. 실데이터가 있으면 끌 것이 없다.
     if not render_sample_switch(key="space_sample_switch", source="설비 운영 DB"):
@@ -189,44 +186,38 @@ if using_sample_equipment:
             ),
         )
         st.stop()
-    st.caption(
-        "호기 마스터가 비어 있어 생애주기·가용·운영 비가동 상태를 덮는 데모 fleet 을 "
-        "표시합니다. 샘플은 DuckDB에 저장되지 않으며 실제 호기 리비전이 저장되면 자동으로 "
-        "대체됩니다."
-    )
+    st.caption("호기 마스터가 비어 있어 데모 fleet 을 표시합니다.")
 elif latest_snapshot is not None:
     st.caption(
         f"적용 이력 r{latest_snapshot.revision.revision_no} · "
         f"{latest_snapshot.revision.created_at:%Y-%m-%d %H:%M}"
     )
 
-with st.container(border=True):
-    st.markdown("#### :material/event: Space 기준일·필터")
-    with st.container(horizontal=True, gap="small"):
-        as_of = st.date_input(
-            "기준일",
-            value=today,
-            key="space_status_as_of",
-            persist_state="session",
-            width=180,
-        )
-        all_status = build_space_equipment_status(equipment, downtime, as_of=as_of)
-        selected_processes = st.multiselect(
-            "공정소분류",
-            options=all_status["공정소분류"].dropna().drop_duplicates().tolist(),
-            placeholder="전체",
-            key="space_status_process_filter",
-            persist_state="session",
-            width=240,
-        )
-        selected_stages = st.multiselect(
-            "단계",
-            options=all_status["상태"].dropna().drop_duplicates().tolist(),
-            placeholder="전체",
-            key="space_status_stage_filter",
-            persist_state="session",
-            width=220,
-        )
+# 기준일·필터와 단계 전환 조회 조건은 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자
+# 결정). 기준일이 먼저다 — 공정·단계 선택지와 전환 조회기간의 기본값이 그 날에서 나온다.
+space_card = condition_card("Space 조건", name="space")
+with space_card:
+    as_of = st.date_input(
+        "기준일",
+        value=today,
+        key="space_status_as_of",
+        persist_state="session",
+    )
+    all_status = build_space_equipment_status(equipment, downtime, as_of=as_of)
+    selected_processes = st.multiselect(
+        "공정소분류",
+        options=all_status["공정소분류"].dropna().drop_duplicates().tolist(),
+        placeholder="전체",
+        key="space_status_process_filter",
+        persist_state="session",
+    )
+    selected_stages = st.multiselect(
+        "단계",
+        options=all_status["상태"].dropna().drop_duplicates().tolist(),
+        placeholder="전체",
+        key="space_status_stage_filter",
+        persist_state="session",
+    )
 
 space_equipment = all_status.copy()
 if selected_processes:
@@ -258,55 +249,49 @@ unlocated_count = (
     + 0.0
 )
 
+transition_process_options = equipment["공정소분류"].dropna().drop_duplicates().tolist()
+transition_stage_options = [label for _, label in MILESTONES]
+with space_card:
+    st.caption("단계 전환 현황")
+    # 다섯 조건을 한 번에 바꿔 보는 조회라 폼으로 묶는다 — 칸마다 다시 그리지 않는다.
+    with st.form("space_transition_event_filter_form", border=False):
+        transition_range = st.date_input(
+            "전환 조회기간",
+            value=(as_of - timedelta(days=14), as_of + timedelta(days=14)),
+            key="space_transition_event_range",
+            persist_state="session",
+        )
+        transition_processes = st.multiselect(
+            "공정소분류",
+            options=transition_process_options,
+            placeholder="전체",
+            key="space_transition_process_filter",
+            persist_state="session",
+        )
+        transition_stages = st.multiselect(
+            "전환단계",
+            options=transition_stage_options,
+            placeholder="전체",
+            key="space_transition_stage_filter",
+            persist_state="session",
+        )
+        transition_schedule_status = st.selectbox(
+            "일정상태",
+            options=("전체", "완료", "예정"),
+            key="space_transition_status_filter",
+            persist_state="session",
+        )
+        transition_confirmation_statuses = st.multiselect(
+            "Qual 확정상태",
+            options=list(QUAL_CONFIRMATION_STATUSES),
+            placeholder="전체",
+            key="space_transition_confirmation_filter",
+            persist_state="session",
+        )
+        st.form_submit_button("조회", icon=":material/search:", type="primary", width="stretch")
+
 with st.container(border=True):
     st.markdown("#### :material/event_available: 기간 내 설비 단계 전환 현황")
-    st.caption(
-        "선택 기간에 제진대·물류·입고·Qual·반출·이설 일정이 등록된 호기를 취합합니다. "
-        "Space 기준일 이전 일정은 데이터상 완료, 이후 일정은 예정으로 구분합니다."
-    )
-    transition_process_options = equipment["공정소분류"].dropna().drop_duplicates().tolist()
-    transition_stage_options = [label for _, label in MILESTONES]
-    with st.form("space_transition_event_filter_form", border=False):
-        with st.container(horizontal=True, gap="small"):
-            transition_range = st.date_input(
-                "전환 조회기간",
-                value=(as_of - timedelta(days=14), as_of + timedelta(days=14)),
-                key="space_transition_event_range",
-                persist_state="session",
-                width=260,
-            )
-            transition_processes = st.multiselect(
-                "공정소분류",
-                options=transition_process_options,
-                placeholder="전체",
-                key="space_transition_process_filter",
-                persist_state="session",
-                width=240,
-            )
-            transition_stages = st.multiselect(
-                "전환단계",
-                options=transition_stage_options,
-                placeholder="전체",
-                key="space_transition_stage_filter",
-                persist_state="session",
-                width=230,
-            )
-            transition_schedule_status = st.selectbox(
-                "일정상태",
-                options=("전체", "완료", "예정"),
-                key="space_transition_status_filter",
-                persist_state="session",
-                width=150,
-            )
-            transition_confirmation_statuses = st.multiselect(
-                "Qual 확정상태",
-                options=list(QUAL_CONFIRMATION_STATUSES),
-                placeholder="전체",
-                key="space_transition_confirmation_filter",
-                persist_state="session",
-                width=210,
-            )
-            st.form_submit_button("조회", icon=":material/search:", type="primary")
 
     transition_start, transition_end = date_range_value(
         transition_range, (as_of - timedelta(days=14), as_of + timedelta(days=14))
@@ -404,10 +389,6 @@ with st.container(border=True):
                 "전환일": st.column_config.DateColumn(format="YYYY-MM-DD"),
                 UNIT_KEY_COLUMN: st.column_config.TextColumn("설비") if has_modules else None,
             },
-        )
-        st.caption(
-            "완료 판정은 현재 호기 마스터에 입력된 완료일과 Space 기준일의 비교 결과입니다. "
-            "현장 실행이 지연되거나 일정이 변경되면 가용설비 현황에서 날짜를 갱신하세요."
         )
 
 with st.container(horizontal=True, gap="small", vertical_alignment="center"):
@@ -589,9 +570,12 @@ else:
 
     with st.container(border=True):
         st.markdown(f"#### :material/map: {selected_building} {selected_floor} 상세 레이아웃")
-        st.caption(
-            "Xsize·Ysize로 블럭 크기를 반영하고 호기의 입고·셋업·가용·반출·이설·보관·"
-            "운영 비가동 상태를 색상으로 구분합니다."
+        # 작업 줄은 레이아웃 **위**다. 도면·캔버스 편집은 가끔 하는 쓰기라 팝업이다.
+        render_floor_layout_editor(
+            database_path=equipment_database_path,
+            building=selected_building,
+            floor=selected_floor,
+            floor_equipment=floor_equipment,
         )
         st.plotly_chart(
             build_floor_layout_figure(
@@ -607,12 +591,6 @@ else:
             key=f"space_status_layout_chart_{selected_building}_{selected_floor}",
             width="stretch",
             config={"displayModeBar": False, "scrollZoom": False},
-        )
-        render_floor_layout_editor(
-            database_path=equipment_database_path,
-            building=selected_building,
-            floor=selected_floor,
-            floor_equipment=floor_equipment,
         )
     st.dataframe(
         floor_equipment,

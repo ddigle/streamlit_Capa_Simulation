@@ -19,10 +19,12 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
+from contextlib import AbstractContextManager, nullcontext
 from datetime import date
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.availability_gap_figure import (
     build_availability_gap_figure,
@@ -92,6 +94,7 @@ def render_availability_gap_panel(
     conversion_ratios: Mapping[str, float] | None = None,
     required_equipment: pd.DataFrame | None = None,
     owner_tab: OpenTab | None = None,
+    conditions: DeltaGenerator | None = None,
 ) -> None:
     """비교 탭 본문.
 
@@ -100,17 +103,16 @@ def render_availability_gap_panel(
     W/D 구간이 앞으로 크게 밀려, 조회기간만큼만 만든 구간으로는 첫 달이 조용히 모자라게
     세어진다. 그 범위를 여기서도 다시 재어 어긋나면 알린다.
     숨은 탭은 계산과 렌더링을 건너뛰고, 두 선택값은 세션에 남긴다.
+
+    조회 조건 위젯(조회 결과·공정·표시·분류)은 `conditions`(사이드바 조건 카드)에 선다
+    (2026-09-29). 주지 않으면 본문 제자리에 그린다 — 홀로 띄우는 테스트가 쓴다. 읽는 법(Static·
+    Dynamic 의 뜻, 소계에 드는 분류)은 가용설비 현황 Guide 다.
     """
     if tab_is_hidden(owner_tab):
         return
+    controls = conditions if conditions is not None else nullcontext()
 
     st.markdown("#### :material/compare_arrows: Static · Dynamic 가용대수 비교")
-    st.caption(
-        "Static 은 기준정보(RQ_EQP_AVBL)의 월별 가용대수이고, Dynamic 은 호기 마스터의 "
-        "일정과 비가동을 공정별 Cut-off 로 **일할 계산**한 값입니다 — 그 달에 며칠 있었는지로 "
-        "1대를 쪼개 셉니다. GAP 이 음수면 기준정보가 "
-        "실제 확보보다 낙관적이라는 뜻입니다."
-    )
 
     if cutoff.empty:
         st.info("공정별 Cut-off 를 먼저 적어야 Dynamic 가용대수를 낼 수 있습니다.")
@@ -141,28 +143,27 @@ def render_availability_gap_panel(
 
     _render_unmatched(comparison.dynamic_only, comparison.static_only)
 
-    result_view = st.segmented_control(
-        "조회 결과",
-        options=_RESULT_VIEWS,
-        default=_RESULT_VIEWS[0],
-        required=True,
-        key=RESULT_VIEW_KEY,
-        persist_state="session",
-    )
     options = [_ALL_PROCESSES, *sorted(set(comparison.rows["공정"].dropna().astype(str)))]
     if (
         PROCESS_FILTER_KEY in st.session_state
         and st.session_state[PROCESS_FILTER_KEY] not in options
     ):
         st.session_state.pop(PROCESS_FILTER_KEY)
-    selected = st.selectbox(
-        "공정",
-        options=options,
-        key=PROCESS_FILTER_KEY,
-        persist_state="session",
-        help="전체 합계는 **양쪽에 다 있는 공정만** 더합니다. 한쪽에만 있는 공정은 "
-        "이름을 골라 따로 봅니다.",
-    )
+    with controls:
+        result_view = st.segmented_control(
+            "조회 결과",
+            options=_RESULT_VIEWS,
+            default=_RESULT_VIEWS[0],
+            required=True,
+            key=RESULT_VIEW_KEY,
+            persist_state="session",
+        )
+        selected = st.selectbox(
+            "공정",
+            options=options,
+            key=PROCESS_FILTER_KEY,
+            persist_state="session",
+        )
     process = None if selected == _ALL_PROCESSES else selected
 
     if result_view == "확보율 교차검증":
@@ -183,7 +184,7 @@ def render_availability_gap_panel(
         if excluded:
             st.caption(
                 f"전체 합계에서 한쪽에만 있는 공정 {len(excluded)}개를 뺐습니다. "
-                "그 공정은 위 목록에서 이름을 골라 따로 봅니다."
+                "그 공정은 조회 조건의 `공정` 에서 이름을 골라 따로 봅니다."
             )
     else:
         scoped = comparison.rows
@@ -204,23 +205,21 @@ def render_availability_gap_panel(
         )
         return
 
-    detail_mode = st.segmented_control(
-        "표시",
-        options=_DETAIL_MODES,
-        default=_DETAIL_MODES[0],
-        required=True,
-        key=DETAIL_MODE_KEY,
-        persist_state="session",
-        help=(
-            "호기 목록은 대수 표의 각 칸을 이루는 호기별 기여입니다. "
-            "같은 칸을 더하면 표의 값입니다."
-        ),
-    )
+    with controls:
+        detail_mode = st.segmented_control(
+            "표시",
+            options=_DETAIL_MODES,
+            default=_DETAIL_MODES[0],
+            required=True,
+            key=DETAIL_MODE_KEY,
+            persist_state="session",
+        )
     # 전체 합계는 표와 같은 공정만 본다 — 한쪽에만 있는 공정을 뺀 범위다.
     scope = {process} if process is not None else set(scoped["공정"].dropna().astype(str))
     if detail_mode == "호기 목록":
         _render_unit_list(
-            _scoped_contributions(spans, baseline, cutoff, months, conversion_ratios, scope)
+            _scoped_contributions(spans, baseline, cutoff, months, conversion_ratios, scope),
+            controls=controls,
         )
         return
 
@@ -248,15 +247,6 @@ def render_availability_gap_panel(
                     spans, baseline, cutoff, months, conversion_ratios, scope
                 ),
             )
-    st.caption(
-        "**「환산비 반영」 행은 GAP 에 들어가지 않습니다.** Static 은 설비를 센 대수라 "
-        "환산대수와 맞대면 단위가 어긋납니다 — 그 행은 월 Total Capa 를 낼 때 쓰는 축입니다."
-    )
-    st.caption(
-        "「Dynamic 가용 소계」에 들어가는 것은 `기존보유` 와 `가용` 둘뿐입니다. "
-        "나머지 분류는 왜 못 쓰는지를 보여 주는 참고 행이라 소계에 더하지 않습니다 — "
-        "호기 상태는 서로 배타적이라 모두 더하면 가용대수가 아니라 보유 호기-일수가 됩니다."
-    )
 
 
 def matrix_table_key(process: str | None, months: Sequence[int], rows: Sequence[str]) -> str:
@@ -337,26 +327,24 @@ def _render_cell_units(*, row: str, month: int, contributions: pd.DataFrame) -> 
         width="stretch",
         column_config=_UNIT_NUMBER_FORMAT,
     )
-    st.caption(
-        f"`{axis}` 를 더하면 위 표의 같은 칸입니다. 기여일수는 그 달 W/D 구간(구간일수)과 겹친 "
-        "날 수이고, 모듈 행은 그 기여에 설비지분을 곱해 설비 한 대로 모입니다."
-    )
 
 
-def _render_unit_list(contributions: pd.DataFrame) -> None:
+def _render_unit_list(
+    contributions: pd.DataFrame, *, controls: AbstractContextManager[object]
+) -> None:
     """같은 조건의 호기별 기여를 긴 표 하나로. 분류로 좁히고 CSV 로 내려받는다."""
     if contributions.empty:
         st.info("표시할 호기가 없습니다.")
         return
     present = [name for name in _CATEGORY_NAMES if name in set(contributions["분류"].astype(str))]
-    chosen = st.multiselect(
-        "분류",
-        options=present,
-        placeholder="전체 분류",
-        key=DETAIL_CATEGORY_KEY,
-        persist_state="session",
-        width=420,
-    )
+    with controls:
+        chosen = st.multiselect(
+            "분류",
+            options=present,
+            placeholder="전체 분류",
+            key=DETAIL_CATEGORY_KEY,
+            persist_state="session",
+        )
     rows = contributions.loc[contributions["분류"].isin(chosen)] if chosen else contributions
     table = _unit_table(rows, with_month=True)
     st.dataframe(table, hide_index=True, width="stretch", column_config=_UNIT_NUMBER_FORMAT)
@@ -366,10 +354,6 @@ def _render_unit_list(contributions: pd.DataFrame) -> None:
         data=table.to_csv(index=False).encode("utf-8-sig"),
         file_name=f"Dynamic_가용대수_호기목록_{stamp}.csv",
         key="download_equipment_gap_unit_list_csv",
-    )
-    st.caption(
-        "같은 월·분류의 `대수` 를 더하면 `대수` 표의 값입니다. 기여일수는 그 달 W/D 구간과 겹친 "
-        "날 수이고, 기존보유는 안분하지 않아 비어 있습니다."
     )
 
 
@@ -443,11 +427,6 @@ def _render_securement_cross_check(
     ].copy()
     display["생산계획년월"] = display["생산계획년월"].map(month_label)
     st.dataframe(display.round(3), hide_index=True, width="stretch")
-    st.caption(
-        "`확보율차이` 가 음수면 기준정보의 Static 가용대수가 실제 확보보다 큽니다 — "
-        "그만큼 확보율이 낙관적으로 잡혀 있었다는 뜻입니다. "
-        "Dynamic 가용대수는 호기별 환산비를 반영한 축입니다."
-    )
 
 
 def _render_unmatched(dynamic_only: list[str], static_only: list[str]) -> None:

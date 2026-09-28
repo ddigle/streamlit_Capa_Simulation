@@ -39,8 +39,12 @@ class ConditionTabs:
 
     # 그 화면 `stateful_tabs` 의 key. 열린 탭 라벨이 세션의 이 칸에 있다.
     key: str
+    # 기억이 없을 때(처음 들어온 회차) 열리는 첫 탭 라벨.
+    first: str
     # 공통 조건을 읽는 탭 라벨.
     labels: frozenset[str]
+    # 조건 카드를 세우는 탭 라벨. 비워 두면(`None`) 카드가 있는 화면의 모든 탭이다.
+    card_labels: frozenset[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -66,10 +70,17 @@ class PageSpec:
     condition_tabs: ConditionTabs | None = None
 
     def reads_common_conditions_on(self, active_tab: str | None) -> bool:
-        """지금 열린 탭(`None` 은 첫 탭)에서 이 화면이 공통 조건을 읽는가."""
+        """지금 열린 탭(`None` 은 탭을 가르지 않는 화면)에서 이 화면이 공통 조건을 읽는가."""
         if self.condition_tabs is None:
             return True
         return active_tab in self.condition_tabs.labels
+
+    def has_cards_on(self, active_tab: str | None) -> bool:
+        """지금 열린 탭에서 이 화면이 조건 카드를 세우는가. 제목 줄만 남는 빈 구역을 막는다."""
+        if not self.has_condition_cards:
+            return False
+        tabs = self.condition_tabs
+        return tabs is None or tabs.card_labels is None or active_tab in tabs.card_labels
 
     def to_page(self) -> st.Page:
         return st.Page(
@@ -144,6 +155,7 @@ DYNAMIC_CAPA = PageSpec(
 # 가용설비 현황의 탭. 공통 조건을 읽는 탭이 하나뿐이라 사이드바(`app.py`)가 열린 탭을 봐야 하고,
 # 그래서 라벨을 여기 한 곳에 둔다 — 페이지도 이 이름을 읽는다.
 EQUIPMENT_TAB_KEY = "equipment_active_tab"
+EQUIPMENT_MAIN_TAB = ":material/dashboard: Main"
 EQUIPMENT_GAP_TAB = ":material/compare_arrows: Static/Dynamic"
 # 순서는 사용자가 정한 조회 흐름이다 — 설비·공간 같은 **자원 현황**을 먼저 보고, 효율·
 # UPEH·수율 **실적**을 지나, 마지막에 그 결과가 쌓인 재공을 본다.
@@ -153,15 +165,23 @@ DYNAMIC_CAPA_SUBPAGES = (
         "app_pages/available_equipment_status.py",
         _data_pending("가용설비 현황"),
         ":material/precision_manufacturing:",
-        condition_tabs=ConditionTabs(EQUIPMENT_TAB_KEY, frozenset({EQUIPMENT_GAP_TAB})),
+        condition_tabs=ConditionTabs(
+            EQUIPMENT_TAB_KEY,
+            first=EQUIPMENT_MAIN_TAB,
+            labels=frozenset({EQUIPMENT_GAP_TAB}),
+            # `설비 조회 조건` 카드는 Main·Static/Dynamic 에만 선다.
+            card_labels=frozenset({EQUIPMENT_MAIN_TAB, EQUIPMENT_GAP_TAB}),
+        ),
+        has_condition_cards=True,
     ),
-    # 설비 DB 와 자기 기준일만 본다.
+    # 설비 DB 와 자기 기준일만 본다. 기준일·필터는 자기 조건 카드(`Space 조건`)다.
     PageSpec(
         "app_pages/space_status.py",
         _data_pending("Space 현황"),
         ":material/grid_view:",
         reads_scenario=False,
         reads_period=False,
+        has_condition_cards=True,
     ),
     *(
         PageSpec(path, _implementing(title), icon, reads_scenario=False, reads_period=False)

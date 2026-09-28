@@ -65,7 +65,7 @@ def active_condition_tab(spec: PageSpec) -> str | None:
     사이드바는 페이지보다 먼저 그려진다. 그래도 탭을 누른 회차에는 위젯 값이 이미 세션에
     들어와 있고, 다른 화면에 갔다 온 회차에는 위젯 값이 버려졌어도 `stateful_tabs` 가 적어 둔
     기억 칸이 남아 있다 — 페이지가 그 기억으로 탭을 되돌리므로 여기서도 같은 칸을 본다.
-    둘 다 없으면 첫 탭이다(`None`).
+    둘 다 없으면 첫 탭이다.
     """
     if spec.condition_tabs is None:
         return None
@@ -73,7 +73,7 @@ def active_condition_tab(spec: PageSpec) -> str | None:
     for value in (st.session_state.get(key), st.session_state.get(remembered_tab_key(key))):
         if isinstance(value, str):
             return value
-    return None
+    return spec.condition_tabs.first
 
 
 st.set_page_config(
@@ -193,12 +193,11 @@ with pinned_connections(DUCKDB_PATH):
     # 시나리오 선택 상자는 `persist_state` 로, 조회기간은 위젯이 아닌 `MONTH_RANGE_KEY` 로
     # 남아 그 조건을 읽는 화면으로 돌아오면 그대로 선다.
     current_spec = pages.spec_for(navigation.url_path)
-    reads_common_here = current_spec is None or current_spec.reads_common_conditions_on(
-        active_condition_tab(current_spec)
-    )
+    active_tab = None if current_spec is None else active_condition_tab(current_spec)
+    reads_common_here = current_spec is None or current_spec.reads_common_conditions_on(active_tab)
     shows_scenario = reads_common_here and (current_spec is None or current_spec.reads_scenario)
     shows_period = reads_common_here and (current_spec is None or current_spec.reads_period)
-    has_cards = current_spec is not None and current_spec.has_condition_cards
+    has_cards = current_spec is not None and current_spec.has_cards_on(active_tab)
     if shows_scenario or shows_period or has_cards:
         render_sidebar_section(CONDITIONS_SECTION)
     if shows_scenario:

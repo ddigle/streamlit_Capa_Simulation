@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date, timedelta
+from typing import Literal
 
 import altair as alt
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.equipment_lifecycle_gantt import (
     render_equipment_lifecycle_gantt,
@@ -55,21 +57,23 @@ _INACTIVE_MONTH_COLUMNS = ("호기", "비가동 시작", "비가동 종료", *_I
 _WEEKLY_BAR_SPAN_PX = 903.0
 
 
-def render_equipment_period(*, today: date) -> tuple[date, date]:
-    """Main 추이와 월별 비교가 함께 쓰는 조회기간 위젯."""
+def render_equipment_period(
+    *, today: date, width: int | Literal["stretch"] = 180
+) -> tuple[date, date]:
+    """Main 추이와 월별 비교가 함께 쓰는 조회기간 위젯. 사이드바 카드에서는 `width="stretch"`."""
     start = st.date_input(
         "시작일",
         value=date(today.year, today.month, 1),
         key=START_DATE_KEY,
         persist_state="session",
-        width=180,
+        width=width,
     )
     end = st.date_input(
         "종료일",
         value=today + timedelta(weeks=12),
         key=END_DATE_KEY,
         persist_state="session",
-        width=180,
+        width=width,
     )
     assert isinstance(start, date) and isinstance(end, date)
     return start, end
@@ -226,11 +230,8 @@ def _availability(
         )
         .properties(height=300)
     )
+    # 읽는 법(각 주 일요일 상태, 환산비 미적용, 모체호기 묶음)은 가용설비 현황 Guide 가 말한다.
     st.altair_chart(chart, width="stretch")
-    st.caption(
-        "각 주 일요일의 상태입니다. 기존 보유대수를 포함하며 환산비는 적용하지 않습니다. "
-        "모체호기로 묶은 모듈 행은 합쳐 1대로 세고, 모듈 하나가 멈추면 그 몫만 비가동입니다."
-    )
 
 
 def render_equipment_explorer(
@@ -240,10 +241,20 @@ def render_equipment_explorer(
     downtime: pd.DataFrame,
     today: date,
     owner_tab: OpenTab | None = None,
+    conditions: DeltaGenerator | None = None,
 ) -> None:
+    """Main 탭. 조회 조건 위젯은 `conditions`(사이드바 조건 카드)에 선다(2026-09-29).
+
+    `conditions` 를 주지 않으면 예전처럼 본문 상자 안에 그린다 — 컴포넌트를 홀로 띄우는
+    테스트가 쓴다. 조건의 차례가 곧 묻는 차례다(볼 내용 → 보기 → 공정 → 기간·기준일 → 추가
+    조건 → 표현). 설명은 가용설비 현황 Guide 다.
+    """
     if tab_is_hidden(owner_tab):
         return
-    with st.container(border=True):
+    in_card = conditions is not None
+    settings = conditions if conditions is not None else st.container(border=True)
+    control_width: int | Literal["stretch"] = "stretch" if in_card else 200
+    with settings:
         question = st.segmented_control(
             "볼 내용",
             QUESTIONS,
@@ -253,14 +264,14 @@ def render_equipment_explorer(
             persist_state="session",
         )
         view = ""
-        with st.container(horizontal=True, gap="small"):
+        with st.container(horizontal=not in_card, gap="small"):
             if question == "가용대수":
                 view = st.selectbox(
                     "보기",
                     ["주차별 추이", "공정별 내역"],
                     key="equipment_explorer_availability_view",
                     persist_state="session",
-                    width=200,
+                    width=control_width,
                 )
             elif question == "호기 현황":
                 view = st.selectbox(
@@ -268,7 +279,7 @@ def render_equipment_explorer(
                     ["상태 분포", "호기 목록", "생애주기 일정"],
                     key="equipment_explorer_unit_view",
                     persist_state="session",
-                    width=200,
+                    width=control_width,
                 )
             elif question == "비가동 호기":
                 view = st.selectbox(
@@ -276,7 +287,7 @@ def render_equipment_explorer(
                     ["기준일 시점", "그 달 전체"],
                     key=INACTIVE_VIEW_KEY,
                     persist_state="session",
-                    width=200,
+                    width=control_width,
                 )
             elif question == "Qual 일정":
                 view = st.selectbox(
@@ -284,7 +295,7 @@ def render_equipment_explorer(
                     ["호기 목록", "확정상태 분포"],
                     key="equipment_explorer_qual_view",
                     persist_state="session",
-                    width=200,
+                    width=control_width,
                 )
             process_options = sorted(
                 set(_options(equipment, "공정소분류")) | set(_options(baseline, "공정"))
@@ -295,21 +306,29 @@ def render_equipment_explorer(
                 placeholder="전체 공정 · 검색 가능",
                 key=SMALL_PROCESS_KEY,
                 persist_state="session",
-                width=300,
+                width="stretch" if in_card else 300,
             )
             uses_period = question == "가용대수" or view == "생애주기 일정"
             start = end = today
             as_of = today
             if uses_period:
-                start, end = render_equipment_period(today=today)
+                start, end = render_equipment_period(
+                    today=today, width="stretch" if in_card else 180
+                )
             else:
                 chosen = st.date_input(
-                    "기준일", value=today, key=AS_OF_KEY, persist_state="session", width=180
+                    "기준일",
+                    value=today,
+                    key=AS_OF_KEY,
+                    persist_state="session",
+                    width="stretch" if in_card else 180,
                 )
                 assert isinstance(chosen, date)
                 as_of = chosen
-        with st.expander("추가 조건 · 라인 / 활용 / 공정대분류"):
-            with st.container(horizontal=True, gap="small"):
+        # 카드 안에는 접는 틀을 한 겹 더 두지 않는다 — 카드가 이미 접힌다.
+        extra = st.container() if in_card else st.expander("추가 조건 · 라인 / 활용 / 공정대분류")
+        with extra:
+            with st.container(horizontal=not in_card, gap="small"):
                 filters = [("공정소분류", selected)]
                 for column, key in (
                     ("라인구분", LINE_TYPE_KEY),
@@ -322,24 +341,9 @@ def render_equipment_explorer(
                         placeholder="전체",
                         key=key,
                         persist_state="session",
-                        width=240,
+                        width="stretch" if in_card else 240,
                     )
                     filters.append((column, values))
-            st.caption(
-                "기존 보유대수에는 공정소분류만 적용됩니다. 나머지 조건은 호기 마스터에 적용됩니다."
-            )
-        active_filters = [f"{name}: {', '.join(values)}" for name, values in filters if values]
-        if active_filters:
-            st.caption(" · ".join(active_filters))
-        filtered = equipment
-        for column, values in filters:
-            if values:
-                filtered = filtered.loc[filtered[column].isin(values)]
-        filtered = filtered.copy()
-        filtered_downtime = downtime.loc[downtime["호기"].isin(filtered["호기"])].copy()
-        filtered_baseline = (
-            baseline.loc[baseline["공정"].isin(selected)].copy() if selected else baseline
-        )
         expression = "표"
         if view in ("주차별 추이", "상태 분포", "확정상태 분포"):
             expression = (
@@ -353,6 +357,20 @@ def render_equipment_explorer(
                 )
                 or "차트"
             )
+    # 무엇으로 걸렀는지는 본문에도 한 줄 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
+    active_filters = [f"{name}: {', '.join(values)}" for name, values in filters if values]
+    if active_filters:
+        st.caption(":material/filter_alt: " + " · ".join(active_filters))
+    filtered = equipment
+    for column, values in filters:
+        if values:
+            filtered = filtered.loc[filtered[column].isin(values)]
+    filtered = filtered.copy()
+    filtered_downtime = downtime.loc[downtime["호기"].isin(filtered["호기"])].copy()
+    filtered_baseline = (
+        baseline.loc[baseline["공정"].isin(selected)].copy() if selected else baseline
+    )
+    with st.container(border=True):
         if uses_period and start > end:
             st.error("시작일은 종료일보다 늦을 수 없습니다.")
             return
@@ -389,10 +407,6 @@ def render_equipment_explorer(
                 st.markdown(
                     f"#### 비가동 호기 · {as_of:%Y-%m-%d} · {_rows_label(inactive, partial=True)}"
                 )
-                st.caption(
-                    "선택한 기준일에 보유 중이지만 가용이 아닌 호기입니다. "
-                    "달 전체는 보기에서 고릅니다."
-                )
                 if inactive.empty:
                     st.success("선택한 기준일과 조건에 비가동 호기가 없습니다.")
                 else:
@@ -417,9 +431,6 @@ def render_equipment_explorer(
                     status = status.loc[status["Qual일정"].notna()].copy()
                     shares = shares.loc[status.index]
                     st.markdown(f"#### Qual 확정상태 실행관리 · {as_of:%Y-%m-%d}")
-                    st.caption(
-                        "계획·확정·완료·지연을 관리합니다. 가용대수는 Qual일정으로 판정합니다."
-                    )
                     column, states, colors = (
                         "확정상태",
                         QUAL_CONFIRMATION_STATUSES,

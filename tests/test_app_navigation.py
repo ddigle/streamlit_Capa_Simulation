@@ -587,12 +587,19 @@ def test_a_tab_scoped_screen_shows_the_common_boxes_only_on_that_tab(_app: AppTe
     app = _app.run()
     app.switch_page(equipment.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
-    assert _common_boxes(app) == set()
+    # Main 은 공통 조건을 읽지 않지만 자기 조건 카드(`설비 조회 조건`)가 있어 제목은 선다.
+    assert _common_boxes(app) == {"heading"}
 
     app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_GAP_TAB
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == {"heading", "scenario", "period"}
+
+    # RawData 는 카드도 공통 조건도 없다 — 제목만 남는 빈 구역을 세우지 않는다.
+    app.session_state[EQUIPMENT_TAB_KEY] = ":material/table_rows: RawData"
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == set()
 
 
 def test_every_declared_condition_tab_is_a_real_label() -> None:

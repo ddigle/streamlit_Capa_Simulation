@@ -168,6 +168,10 @@ def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_can
     app.run()
 
     assert not app.exception
+    # 도면·캔버스 편집은 레이아웃 위 작업 줄의 팝업이다 — 닫혀 있는 동안 본문을 차지하지 않는다.
+    assert len(app.get("file_uploader")) == 0
+    app.button(key="space_floor_layout_open_C1_1F").click().run()
+    assert not app.exception
     assert len(app.get("file_uploader")) == 1
     assert any("적용될 캔버스: 100 × 37.5" == element.value for element in app.caption)
     assert any("c1_1f.png" in element.value for element in app.success)

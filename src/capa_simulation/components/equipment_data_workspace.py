@@ -481,7 +481,10 @@ def _selectable_editor(
 
 
 def _selection_buttons(slug: str) -> str | None:
-    """표 아래 세 버튼. 폼 안이라 모두 제출 버튼이고, 누른 것의 이름을 돌려준다."""
+    """표 **위** 세 버튼(2026-09-29 — 작업 버튼은 표 위). 폼 안이라 모두 제출 버튼이고, 누른
+    것의 이름을 돌려준다. 버튼 값은 표보다 먼저 만들어도 같은 제출의 편집·선택이 함께 들어온다.
+    필터·삭제·저장의 관계는 가용설비 현황 Guide 가 말한다.
+    """
     with st.container(horizontal=True, gap="small"):
         matching = st.form_submit_button(
             "필터에 맞는 행 모두 선택",
@@ -494,11 +497,6 @@ def _selection_buttons(slug: str) -> str | None:
         delete = st.form_submit_button(
             "선택 행 삭제", key=f"equipment_{slug}_delete_selected_v1", icon=":material/delete:"
         )
-    st.caption(
-        "「필터에 맞는 행 모두 선택」은 보기를 적용했든 안 했든 **지금 고른 필터 조건**으로 "
-        "고릅니다. 삭제는 확인한 뒤 편집본에만 반영되고, ‘설비 데이터 저장’을 눌러야 새 "
-        "리비전이 됩니다. ‘보기 적용’을 누르면 선택이 풀립니다."
-    )
     if matching:
         return SELECT_MATCHING
     if clear:
@@ -625,10 +623,6 @@ def _render_editors(
     baseline, equipment, downtime = frames
     master_tab, baseline_tab, downtime_tab = st.tabs(list(_TARGETS))
     with master_tab:
-        st.caption(
-            "신규 호기는 입고·Qual 일정이 필요합니다. 기존설비 또는 장기보관 Y는 두 일정 없이 "
-            "등록할 수 있습니다. 레이아웃표시 Y는 위치·좌표·크기도 입력하세요."
-        )
         equipment_view, equipment_requested = _editor_view(
             equipment,
             key=EQUIPMENT_EDITOR_KEY,
@@ -683,6 +677,7 @@ def _render_editors(
         config.update(
             {column: st.column_config.DateColumn(format="YYYY-MM-DD") for column in DATE_COLUMNS}
         )
+        equipment_action = _selection_buttons("master")
         edited_equipment, equipment_checked = _selectable_editor(
             equipment,
             equipment_view,
@@ -691,15 +686,7 @@ def _render_editors(
             column_config=config,
             selection=selection.get(EQUIPMENT_TARGET, frozenset()),
         )
-        equipment_action = _selection_buttons("master")
-        st.caption(
-            "환산비는 기준 모델 1대 대비 생산성입니다. 비우면 1입니다. "
-            "주차별 설비대수에는 적용하지 않으며 월별 환산대수·확보율 교차검증에 반영합니다. "
-            "모듈로 관리하는 설비는 모듈마다 한 행을 두고 모체호기에 같은 설비 ID 를, "
-            "환산비에 1 ÷ 모듈수(4모듈이면 0.25)를 적습니다 — 대수는 묶음을 1대로 셉니다."
-        )
     with baseline_tab:
-        st.caption("호기별 일정 관리가 필요 없는 기존 설비를 공정·분류별 대수로 입력합니다.")
         baseline_view, baseline_requested = _editor_view(
             baseline,
             key=BASELINE_EDITOR_KEY,
@@ -708,6 +695,7 @@ def _render_editors(
             locked=("공정", "분류", "기존보유대수"),
             label="기존 보유대수 · 표 보기 설정",
         )
+        baseline_action = _selection_buttons("baseline")
         edited_baseline, baseline_checked = _selectable_editor(
             baseline,
             baseline_view,
@@ -727,9 +715,7 @@ def _render_editors(
             },
             selection=selection.get(BASELINE_TARGET, frozenset()),
         )
-        baseline_action = _selection_buttons("baseline")
     with downtime_tab:
-        st.caption("등록된 호기의 비가동을 입력합니다. 종료일이 비어 있으면 진행 중입니다.")
         downtime_view, downtime_requested = _editor_view(
             downtime,
             key=DOWNTIME_EDITOR_KEY,
@@ -739,6 +725,7 @@ def _render_editors(
             label="운영 비가동 일정 · 표 보기 설정",
         )
         types = sorted(set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str)))
+        downtime_action = _selection_buttons("downtime")
         edited_downtime, downtime_checked = _selectable_editor(
             downtime,
             downtime_view,
@@ -752,7 +739,6 @@ def _render_editors(
             },
             selection=selection.get(DOWNTIME_TARGET, frozenset()),
         )
-        downtime_action = _selection_buttons("downtime")
     action = next(
         (
             (name, target)
@@ -932,11 +918,9 @@ def render_equipment_data_workspace(
     master = pending.candidate[1] if isinstance(pending, ImportReview) else frames[1]
     for message in module_group_warnings(master):
         st.warning(message, icon=":material/view_module:")
-    with st.expander("입력 양식과 작성 기준", expanded=False):
-        st.caption(
-            "Excel에서 헤더를 포함해 복사하거나 CSV 파일을 올리세요. "
-            "같은 키는 대체하고 다른 행은 유지합니다."
-        )
+    # 표마다 무엇을 키로 대체하는지·모체호기·환산비 같은 작성 기준은 Guide 가 말한다. 여기는
+    # 내려받기만 남긴다.
+    with st.expander("입력 양식 · 현재 데이터 내려받기", expanded=False):
         for column, label, payload, filename, key in zip(
             st.columns(3),
             _TARGETS,
@@ -960,19 +944,10 @@ def render_equipment_data_workspace(
         _render_current_data_downloads(
             frames, saved=(baseline, equipment, downtime), latest_snapshot=latest_snapshot
         )
-        st.markdown(
-            "- **호기 마스터**: 호기 번호로 구분합니다. Qual 확정상태는 실행 모니터링이며 "
-            "가용 판정은 Qual 일정 기준입니다.\n"
-            "- **기존 보유대수**: 공정 + 분류로 구분합니다. "
-            "개별 비가동과 Space 배치는 적용하지 않습니다.\n"
-            "- **모체호기**: 모듈로 관리하는 설비(CoW Bonder 등)만 적습니다. 모듈 행마다 같은 "
-            "설비 ID 를 적으면 대수는 1대로 세고, 능력은 모듈 행의 환산비(4모듈이면 0.25)를 "
-            "더합니다. 한 설비의 모듈은 공정·라인·활용구분·동·층이 같아야 합니다. "
-            "비워 두면 행 하나가 설비 한 대입니다.\n"
-            "- **비가동 일정**: 호기 + 비가동유형 + 시작일로 구분합니다. 먼저 호기를 등록하세요.\n"
-            "- 입력한 운영 설비대수는 시뮬레이션 Capa 산출 데이터와 분리되어 있습니다."
-        )
     with st.form(WORKSPACE_FORM_KEY, border=False, enter_to_submit=False):
+        # 두 저장(입력·직접 편집)이 같이 쓰는 메모라 탭 **위**에 둔다 — 저장 버튼이 표 위로
+        # 올라가면서 메모만 폼 맨 아래에 남으면 적지 않고 저장하기 쉽다.
+        note = st.text_input("변경 메모", key=_NOTE_KEY, placeholder="예: 10월 신규 호기 30대 등록")
         # 전환은 브라우저에서만 한다. 폼의 다른 탭도 계속 생성해 미제출 delta를 유지한다.
         input_tab, edit_tab, history_tab = st.tabs(["입력", "직접 편집", "저장 이력"])
         with input_tab:
@@ -987,12 +962,20 @@ def render_equipment_data_workspace(
                 )
             with upload_column:
                 uploaded = st.file_uploader("또는 CSV 파일 업로드", type=["csv"], key=UPLOAD_KEY)
-                st.caption("붙여넣기와 파일 중 하나를 사용하세요.")
-            preview_clicked = st.form_submit_button(
-                "변경 미리보기",
-                key=PREVIEW_BUTTON_KEY,
-                icon=":material/preview:",
-            )
+            # 작업 줄은 미리보기 표 **위**다 — 저장 버튼이 긴 변경 표 아래로 밀리지 않게 한다.
+            with st.container(horizontal=True, gap="small"):
+                preview_clicked = st.form_submit_button(
+                    "변경 미리보기",
+                    key=PREVIEW_BUTTON_KEY,
+                    icon=":material/preview:",
+                )
+                import_save_clicked = st.form_submit_button(
+                    "확인 후 리비전 저장",
+                    key=IMPORT_SAVE_BUTTON_KEY,
+                    type="primary",
+                    disabled=not isinstance(pending, ImportReview),
+                    icon=":material/save:",
+                )
             if isinstance(pending, ImportReview):
                 st.markdown(f"**{pending.target} · 저장할 변경 {len(pending.changes):,}행**")
                 with st.container(horizontal=True):
@@ -1007,25 +990,19 @@ def render_equipment_data_workspace(
                 )
                 if st.session_state.get(DROP_EXAMPLE_ROWS_KEY, False):
                     st.caption("예시 행은 빼고 검토했습니다.")
-            import_save_clicked = st.form_submit_button(
-                "확인 후 리비전 저장",
-                key=IMPORT_SAVE_BUTTON_KEY,
-                type="primary",
-                disabled=not isinstance(pending, ImportReview),
-                icon=":material/save:",
-            )
         with edit_tab:
-            st.caption("표를 바꿔도 입력은 유지됩니다. 보기 설정을 바꾼 뒤 ‘보기 적용’을 누르세요.")
+            # 작업 줄은 세 표 **위**다(2026-09-29). 아래 두면 고친 뒤 버튼이 화면 밖이었다.
+            with st.container(horizontal=True, gap="small"):
+                edit_save_clicked = st.form_submit_button(
+                    "설비 데이터 저장",
+                    key=EDIT_SAVE_BUTTON_KEY,
+                    type="primary",
+                    icon=":material/save:",
+                )
+                view_clicked = st.form_submit_button("보기 적용", key=VIEW_APPLY_BUTTON_KEY)
             confirm_delete, cancel_delete, undo_delete = _render_bulk_delete_status(frames)
             editor = _render_editors(frames, max_extent, _current_selection())
             edited = editor.frames
-            view_clicked = st.form_submit_button("보기 적용", key=VIEW_APPLY_BUTTON_KEY)
-            edit_save_clicked = st.form_submit_button(
-                "설비 데이터 저장",
-                key=EDIT_SAVE_BUTTON_KEY,
-                type="primary",
-                icon=":material/save:",
-            )
         with history_tab:
             try:
                 _render_history(repository)
@@ -1035,7 +1012,6 @@ def render_equipment_data_workspace(
                     + bootstrap_error_message(exc, database_paths=(repository.database_path,))
                 )
             history_clicked = st.form_submit_button("이력 조회", key="equipment_history_apply_v1")
-        note = st.text_input("변경 메모", key=_NOTE_KEY, placeholder="예: 10월 신규 호기 30대 등록")
     if not any(
         (
             preview_clicked,

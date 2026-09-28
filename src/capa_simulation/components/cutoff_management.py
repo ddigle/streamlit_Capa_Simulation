@@ -19,6 +19,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import (
     merge_edited_rows,
@@ -37,12 +38,7 @@ CUTOFF_DRAFT_KEY = "equipment_cutoff_draft_v1"
 _EDITOR_KEY = "equipment_cutoff_editor_v1"
 _FORM_KEY = "equipment_cutoff_form_v1"
 _VIEW_PREFIX = "equipment_cutoff_view_v1"
-_NOTE_KEY = "equipment_cutoff_note_v1"
-
-_HELP = (
-    "Cut-off 는 그 공정을 끝낸 물건이 입고되기까지의 표준 납기(일)입니다. "
-    "소수점을 적을 수 있지만 지금은 날짜 단위까지만 계산하므로 내림해서 씁니다."
-)
+_FLASH_KEY = "equipment_cutoff_flash_v1"
 
 
 def render_cutoff_management(
@@ -58,8 +54,8 @@ def render_cutoff_management(
     """
     stored = repository.load_process_cutoff()
 
+    # Cut-off 의 뜻(표준 납기 일수, 소수는 내림)은 가용설비 현황 Guide 가 말한다.
     st.markdown("#### :material/schedule: 공정별 Cut-off")
-    st.caption(_HELP)
 
     missing = missing_cutoff_processes(equipment_processes, stored)
     if missing:
@@ -89,6 +85,8 @@ def render_cutoff_management(
             st.session_state[CUTOFF_DRAFT_KEY] = build_process_cutoff_template(
                 equipment_processes
             ).loc[:, PROCESS_CUTOFF_EDIT_COLUMNS]
+            # 편집 델타는 행 위치다. 표를 새로 깔면서 옛 델타를 남기면 다른 공정에 붙는다.
+            st.session_state.pop(_EDITOR_KEY, None)
             st.rerun()
         # 왕복 CSV 는 다른 설비 표와 같은 인코딩을 쓴다 — Excel 이 BOM 없이는 한글을 깬다.
         render_csv_download(
@@ -109,7 +107,9 @@ def render_cutoff_management(
         submitted = st.form_submit_button(
             "Cut-off 저장", icon=":material/save:", type="primary", width="content"
         )
-        st.text_input("변경 메모", key=_NOTE_KEY, placeholder="선택")
+        # 저장 결과는 누른 버튼 바로 아래다. 저장 뒤 rerun 을 건너 살아남게 flash 로 남긴다 —
+        # `st.success` 뒤에 곧바로 `st.rerun()` 을 부르면 한 번도 보이지 않는다.
+        render_flash(_FLASH_KEY)
         edited = st.data_editor(
             view.frame,
             key=_EDITOR_KEY,
@@ -142,7 +142,8 @@ def render_cutoff_management(
                 if not saved.empty
                 else build_process_cutoff_template([]).loc[:, PROCESS_CUTOFF_EDIT_COLUMNS]
             )
-            st.success(f"공정별 Cut-off {len(saved)}건을 저장했습니다.")
+            st.session_state.pop(_EDITOR_KEY, None)
+            queue_flash(_FLASH_KEY, f"공정별 Cut-off {len(saved)}건을 저장했습니다.")
             st.rerun()
 
     return stored
