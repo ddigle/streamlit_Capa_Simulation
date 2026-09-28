@@ -81,7 +81,9 @@ def checked_keys(edited: pd.DataFrame, select_column: str, target: str) -> froze
     """편집표가 돌려준 프레임에서 선택 칸이 켜진 행의 키. 손대지 않은 칸은 `None` 으로 온다."""
     if edited.empty or select_column not in edited.columns:
         return frozenset()
-    checked = edited[select_column].fillna(False).astype(bool)
+    # `fillna` 를 object 칸에 먼저 걸면 pandas 가 dtype 을 몰래 내린다(다음 major 에서 동작이
+    # 바뀐다고 경고한다). 참인 칸만 고르면 None·NaN·NA 는 저절로 거짓이다.
+    checked = edited[select_column].eq(True).fillna(False).astype(bool)
     keys = row_keys(edited.loc[checked], target)
     return frozenset(key for key in keys if any(key))
 

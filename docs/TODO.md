@@ -80,9 +80,10 @@
   스택된 Chip 은 Buffer 에 쌓여 있어 `RQ_REQB` 의 Buffer 행에만 부하량을 붙인다. 부하량에
   `WF 구분 = "PKG"` 를 얹어 잇던 탓에 실제 `BUFFER` 행과 연결되지 않아 PKG 기준 소요대수가
   늘 0 이던 결함을 고쳤다. Core·Top·Dummy 행은 사유를 달아 제외 목록에 남긴다.
-- [ ] EDP-TSV 제품의 PKG 기준 `RQ_REQB` 행이 어떤 WF 구분을 싣는지 사내에서 확인한다
-  (`scripts/inspect_wf_division.py` 의 PKG 절). Buffer 가 아닌 값이면 그 행은 지금 제외
-  목록으로 간다 — 셀 WF 구분을 제품타입별로 선언해야 하는지 그때 정한다.
+- [x] EDP-TSV 제품의 PKG 기준 `RQ_REQB` 행을 사내에서 확인했다(리뷰 `202609281727`). 소요기준
+  PKG 행은 **HBM 에만 있고 모두 BUFFER** 다(ref_data·rev_data 모두). EDP-TSV 의 PKG 행은 없다 —
+  그래서 `PKG 기준은 Buffer 로만 계수` 제외 행은 0건이고, 재현 시나리오의 PKG 소요대수가 0 에서
+  회복했다. EDP-TSV 에 PKG 행이 생기면 Buffer 가 아닌 값은 제외 목록으로 드러나므로 그때 정한다.
 - [결정] **매핑하지 않는다**(2026-09-05 확정). Stack(Buffer 위 Core·Top·Dummy Bonding) 이 끝난 Wafer 는 따로 이름을 붙이지 않고 Buffer 로 남으므로, 그 이후 Wafer 단위 투입 공정의 부하량 데이터에 Buffer 만 들어오는 것이 정상이다. 특별한 분류나 매핑 없이 그대로 반영한다. 다만 Capa 해석과 이후 구조 설계에서 이 배경을 전제로 삼는다. **현 데이터와의 차이는 3-5 절에 기록했다.**
 - [ ] `PCB수(K매)`의 원천 공식 또는 PCB당 Unit·수율·보정 기준을 확인한다. **BOX·PCB 는 제외가 아니라 `추가 예정` 이다**(2026-09-05 확정). 현재 원천에는 PCB수 값이 46,500행 중 124행뿐이고 그 값도 상수 하나라 역산이 불가능하다.
 
