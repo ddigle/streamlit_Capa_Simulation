@@ -486,11 +486,16 @@ def test_missing_availability_table_shows_the_display_name_with_a_source_notice(
 
 
 def test_clearing_the_availability_asks_first() -> None:
-    """입력 초기화는 되돌릴 수 없다. 팝업에서 확인해야 버튼이 눌린다."""
+    """입력 초기화는 되돌릴 수 없다. 팝업에서 확인해야 버튼이 눌린다.
+
+    지우는 범위가 지금 필터·기간이 아니라 전체라는 것도 팝업이 말한다(2026-09-29 리뷰).
+    """
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
     app.button(key="open_standard_target_availability_clear").click().run()
 
     assert not app.exception
+    warnings = [item.value for item in app.warning]
+    assert any("모든 공정·모든 주차" in text and "필터·기간 밖" in text for text in warnings)
     assert app.button(key="clear_standard_target_availability").disabled
     app.checkbox(key="standard_target_clear_confirm").check().run()
     assert not app.exception
@@ -511,5 +516,11 @@ def test_standard_target_guide_carries_what_left_the_body() -> None:
         "지금 사용자 세션에만",
         "설비 DuckDB",
         "예외 처리 공정",
+        # 입력 초기화는 필터·기간 밖까지 전부 지운다(2026-09-29 리뷰).
+        "모든 공정·모든 주차",
+        "양식 밖 값은 되살릴 수",
+        "미설정으로 되돌리는 방법은 아직 없습니다",
     ):
         assert text in guide, text
+    # 예전 권고 — 따라 하면 필터·기간 밖 저장값이 되돌릴 수 없게 사라졌다.
+    assert "입력 초기화** 뒤 다시 붙여넣" not in guide
