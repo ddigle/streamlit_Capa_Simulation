@@ -1,9 +1,10 @@
-# Purpose: PKG PLAN 붙여넣기는 탭에만, 변경사항 적용만 전역 계획값에 반영되는지 고정한다.
+# Purpose: 생산 계획 화면의 PKG PLAN·수율 적용·붙여넣기·가상 제품 등록 동작을 고정한다.
 
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -166,6 +167,8 @@ def test_virtual_product_registration_adds_the_key_to_every_clone_table(
     # 등록하면 팝업이 닫히고, 다음 할 일(계획 수량 입력)을 알림이 작업 줄 아래에서 말한다.
     assert "load_conversion_open_dialog" not in app.session_state
     assert any("DEMO_VIRTUAL_X" in item.value for item in app.success)
+    # 복제된 계획 달이 조회기간 안이면 새 제품은 표에 바로 선다 — 입력하라고 말한다.
+    assert any("아래 표에서 계획 수량을 입력하세요" in item.value for item in app.success)
 
     updated = app.session_state["active_scenario"]
     assert updated["content_token"] != before_token
@@ -204,3 +207,250 @@ def test_registered_virtual_product_appears_in_the_plan_editor(
     )
 
     assert "DEMO_VIRTUAL_Y" in set(grid["제품정보"])
+
+
+# --- 2026-09-29 횡전개 감사: 수율 원천 한 행이 화면 전체를 세우지 않는다 ---------------------
+
+
+def _inject(app: AppTest, name: str, frame: pd.DataFrame, token: str) -> None:
+    """활성 시나리오의 한 표를 바꿔 끼운다(원천이 그렇게 들어온 세션을 흉내 낸다)."""
+    scenario = app.session_state["active_scenario"]
+    updated = dict(scenario)
+    updated["tables"] = {**scenario["tables"], name: frame}
+    updated["revision"] = scenario["revision"] + 1
+    updated["content_token"] = token
+    app.session_state["active_scenario"] = updated
+    app.run()
+
+
+def _yield_rows(app: AppTest) -> pd.DataFrame:
+    return pd.DataFrame(app.session_state["active_scenario"]["tables"]["RQ_YLD"]).reset_index(
+        drop=True
+    )
+
+
+def _yield_values(frame: pd.DataFrame, product: str, month: int) -> list[float]:
+    """그 제품·달 수율 행의 [EDS, BE]. 행이 없으면 빈 목록."""
+    months = pd.to_numeric(frame["생산계획년월"])
+    row = frame.loc[frame["제품정보"].eq(product) & months.eq(month), ["EDS_수율", "BE_수율"]]
+    return [float(value) for value in row.to_numpy().ravel()]
+
+
+def _widget_key(app: AppTest, key: str) -> str:
+    """편집표가 지금 서 있는 세대 키(`editor_state.editor_widget_key` 와 같은 규칙)."""
+    generation_key = f"{key}__generation"
+    generation = app.session_state[generation_key] if generation_key in app.session_state else 0
+    return key if not generation else f"{key}__g{generation}"
+
+
+def _button_keys(app: AppTest) -> set[str]:
+    return {button.key for button in app.button if button.key}
+
+
+def test_an_empty_or_zero_yield_value_no_longer_stops_the_whole_page(
+    seeded_database: Path,
+) -> None:
+    """RQ_YLD 한 행의 BE 가 비었거나 EDS 가 0 이어도 PKG PLAN·수율·등록이 선다.
+
+    예전에는 `yield_to_edit_table` 이 표 전체를 거부하고 그 오류가 `plan_to_edit_table` 과 같은
+    `try` 에서 `st.stop()` 해 화면 전체가 섰다. 그 행은 표에서 빼 「편집 불가」로 보이고, 무관한
+    칸을 고쳐 적용해도 원본 그대로 남아야 한다.
+    """
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    source = _yield_rows(app)
+    months = pd.to_numeric(source["생산계획년월"])
+    broken = source.copy()
+    broken.loc[broken["제품정보"].eq("DEMO PRODUCT A") & months.eq(202603), "BE_수율"] = None
+    broken.loc[broken["제품정보"].eq("DEMO PRODUCT B") & months.eq(202604), "EDS_수율"] = 0.0
+    _inject(app, "RQ_YLD", broken, "broken-yield")
+
+    assert not list(app.exception)
+    assert not [item.value for item in app.error if "RQ_YLD" in item.value]
+    assert {
+        "apply_pkg_plan_changes",
+        "open_plan_paste",
+        "open_virtual_product",
+        "apply_yield_changes",
+        "open_yield_paste",
+    } <= _button_keys(app)
+    assert any("표에서 뺐습니다" in item.value for item in app.warning)
+
+    # 뺀 행과 무관한 칸(첫 행의 202601)을 고쳐 적용한다. 브라우저는 회차마다 편집표의 편집을
+    # 다시 보내므로(AppTest 는 편집표 상태를 되보내지 않는다) 적용을 누르는 회차에도 넣는다.
+    edit = {"edited_rows": {0: {"202601": 0.5}}, "added_rows": [], "deleted_rows": []}
+    app.session_state[_widget_key(app, "yield_editor")] = edit
+    app.run()
+    app.session_state[_widget_key(app, "yield_editor")] = edit
+    app.button(key="apply_yield_changes").click().run()
+    assert not list(app.exception)
+    assert any("활성 시나리오에 적용했습니다" in item.value for item in app.success)
+
+    applied = _yield_rows(app)
+    assert len(applied) == len(source)
+    eds_a, be_a = _yield_values(applied, "DEMO PRODUCT A", 202603)
+    assert eds_a == pytest.approx(0.96) and pd.isna(be_a)
+    assert _yield_values(applied, "DEMO PRODUCT B", 202604)[0] == 0.0
+    january = _yield_values(applied, "DEMO PRODUCT A", 202601) + _yield_values(
+        applied, "DEMO PRODUCT B", 202601
+    )
+    assert january.count(0.5) == 1
+
+
+def test_a_yield_source_that_cannot_build_a_table_stops_only_the_yield_tab(
+    seeded_database: Path,
+) -> None:
+    """연결 키가 겹쳐 수율 표를 세울 수 없으면 수율 탭에만 오류가 뜨고 PKG PLAN 은 선다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    source = _yield_rows(app)
+    _inject(app, "RQ_YLD", pd.concat([source, source.iloc[[0]]]), "duplicated-yield")
+
+    assert not list(app.exception)
+    assert any("수율 표를 만들지 못했습니다" in item.value for item in app.error)
+    keys = _button_keys(app)
+    assert {"apply_pkg_plan_changes", "open_plan_paste", "open_virtual_product"} <= keys
+    assert not {"apply_yield_changes", "open_yield_paste"} & keys
+
+
+def _yield_clipboard_text(app: AppTest, *, blank: tuple[str, str] | None = None) -> str:
+    """지금 수율 편집표를 붙여넣기 문자열로 만든다. `blank=(제품, 월)` 이면 그 달 EDS·BE 를
+    비운다."""
+    from capa_simulation.scenario_state import scenario_month_table
+    from capa_simulation.services.load_calculator import (
+        split_editable_yield_rows,
+        yield_to_edit_table,
+    )
+
+    start_label, end_label = app.session_state["production_month_range_v2"]
+    # 화면이 양식을 만드는 것과 같이, 값이 잘못된 행을 뺀 표다.
+    editable, _ = split_editable_yield_rows(
+        scenario_month_table(
+            app.session_state["active_scenario"],
+            "RQ_YLD",
+            int(str(start_label).replace("-", "")),
+            int(str(end_label).replace("-", "")),
+        )
+    )
+    wide = yield_to_edit_table(editable)
+    if blank is not None:
+        product, month = blank
+        wide[month] = wide[month].astype(object)
+        wide.loc[wide["제품정보"].eq(product), month] = ""
+    return wide.to_csv(index=False, sep="\t")
+
+
+def _paste_yield(app: AppTest, text: str) -> None:
+    """작업 줄의 수율 「Excel 붙여넣기」 팝업을 열고 붙여넣어 적용한다(수율은 바로 적용된다)."""
+    app.button(key="open_yield_paste").click().run()
+    app.text_area(key="rq_yield_csv_clipboard").set_value(text)
+    for button in app.button:
+        if "붙여넣기 일괄 적용" in str(button.label):
+            button.click().run()
+            break
+
+
+def test_blanking_a_month_in_the_yield_paste_says_the_row_was_removed(
+    seeded_database: Path,
+) -> None:
+    """한 (키, 월)의 EDS·BE 를 둘 다 비워 붙여넣으면 그 달 수율 행이 지워진다 — 완료 문구가 말한다.
+
+    예전에는 말없이 지워지고 그 계획은 환산에서 빠졌다(알림은 환산 탭 경고뿐).
+    """
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    before = len(_yield_rows(app))
+
+    _paste_yield(app, _yield_clipboard_text(app, blank=("DEMO PRODUCT A", "202605")))
+    assert not list(app.exception)
+
+    assert len(_yield_rows(app)) == before - 1
+    messages = [item.value for item in app.success]
+    assert any("2칸을 비워 그 달 수율 행을 지웠습니다" in message for message in messages)
+    assert any("환산에서 빠집니다" in message for message in messages)
+
+
+def test_a_yield_paste_that_blanks_nothing_adds_no_removal_note(seeded_database: Path) -> None:
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+
+    _paste_yield(app, _yield_clipboard_text(app))
+    assert not list(app.exception)
+
+    messages = [item.value for item in app.success]
+    assert any("활성 시나리오에 적용했습니다" in message for message in messages)
+    assert not any("지웠습니다" in message for message in messages)
+
+
+def test_a_yield_paste_keeps_the_locked_rows_and_does_not_count_them_as_removed(
+    seeded_database: Path,
+) -> None:
+    """붙여넣기도 편집 불가 행을 되붙인다. 양식에서 이미 빈칸인 그 달은 「지운 칸」이 아니다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    source = _yield_rows(app)
+    months = pd.to_numeric(source["생산계획년월"])
+    broken = source.copy()
+    broken.loc[broken["제품정보"].eq("DEMO PRODUCT A") & months.eq(202603), "BE_수율"] = None
+    _inject(app, "RQ_YLD", broken, "broken-yield-paste")
+
+    _paste_yield(app, _yield_clipboard_text(app))
+    assert not list(app.exception)
+
+    applied = _yield_rows(app)
+    assert len(applied) == len(source)
+    eds, be = _yield_values(applied, "DEMO PRODUCT A", 202603)
+    assert eds == pytest.approx(0.96) and pd.isna(be)
+    messages = [item.value for item in app.success]
+    assert any("활성 시나리오에 적용했습니다" in message for message in messages)
+    assert not any("지웠습니다" in message for message in messages)
+
+
+def test_registering_a_product_planned_only_outside_the_period_says_to_widen_it(
+    seeded_database: Path,
+) -> None:
+    """원본 제품의 계획이 조회기간 밖에만 있으면 새 제품은 PKG PLAN 표에 행이 없다.
+
+    완료 문구가 「아래 표에서 입력하세요」라고 거짓을 말하던 것을, 조회기간을 넓혀야 한다는 말과
+    복제된 계획 달로 바꾼다(2026-09-29 횡전개 감사).
+    """
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    plan = pd.DataFrame(app.session_state["active_scenario"]["tables"]["RQ_PKG_PLAN"])
+    months = pd.to_numeric(plan["생산계획년월"])
+    first_half_only = plan.loc[~(plan["제품정보"].eq("DEMO PRODUCT A") & months.ge(202607))]
+    _inject(app, "RQ_PKG_PLAN", first_half_only.reset_index(drop=True), "first-half-plan")
+    app.session_state["production_month_range_v2"] = ("2026-07", "2026-12")
+    app.run()
+
+    # 후보 첫 제품이 DEMO PRODUCT A(8H)다.
+    _register(app, "DEMO_VIRTUAL_Z", "8H")
+    assert not list(app.exception)
+
+    messages = [item.value for item in app.success if "DEMO_VIRTUAL_Z" in item.value]
+    assert messages
+    assert "조회기간을 넓혀야 PKG PLAN 표에 나타납니다" in messages[0]
+    assert "202601" in messages[0]
+    assert "아래 표에서 계획 수량을 입력하세요" not in messages[0]
+
+
+def test_a_space_only_cell_in_the_plan_paste_reads_as_zero(seeded_database: Path) -> None:
+    """공백 한 칸(`' '`)만 든 붙여넣기 칸은 빈칸 — 0 수량이다.
+
+    검증 단계는 빈칸으로 통과시키고 변환(`plan_from_edit_table`)은 「숫자가 아닌 값」으로 표 전체를
+    거부했으며 어느 칸인지도 알리지 않았다(2026-09-29 횡전개 감사).
+    """
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    rows = _clipboard_text(app, scale=1.0).splitlines()
+    header = rows[0].split("\t")
+    first = rows[1].split("\t")
+    first[header.index("202601")] = " "
+    rows[1] = "\t".join(first)
+
+    _paste(app, "\n".join(rows))
+    assert not list(app.exception)
+    assert not [item.value for item in app.error]
+    assert "pkg_plan_staged_paste" in app.session_state
+
+    app.button(key="apply_pkg_plan_changes").click().run()
+    assert not list(app.exception)
+    plan = pd.DataFrame(app.session_state["active_scenario"]["tables"]["RQ_PKG_PLAN"])
+    product = first[header.index("제품정보")]
+    january = plan.loc[
+        plan["제품정보"].eq(product) & pd.to_numeric(plan["생산계획년월"]).eq(202601), "생산수량"
+    ]
+    assert january.astype(float).tolist() == [0.0]

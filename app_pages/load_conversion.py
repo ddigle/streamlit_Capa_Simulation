@@ -64,21 +64,28 @@ from capa_simulation.scenario_state import (
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
     YIELD_EDITOR_DIMENSIONS,
+    YIELD_KEYS,
+    YIELD_LOCK_REASON_COLUMN,
+    YIELD_VALUE_COLUMNS,
     DemandBasis,
     attach_plan_attributes,
     filter_edp_plan,
     load_exclusions,
     plan_from_edit_table,
     plan_to_edit_table,
+    restore_locked_yield_rows,
+    split_editable_yield_rows,
     yield_from_edit_table,
     yield_to_edit_table,
 )
+from capa_simulation.services.reference_csv import count_removed_values
 from capa_simulation.services.simulation_cache import get_monthly_volume
 from capa_simulation.services.virtual_product import (
     VirtualProductRecord,
     VirtualProductRequest,
     available_source_products,
     clone_product,
+    cloned_plan_months,
     records_to_frame,
 )
 from capa_simulation.sidebar_status import condition_card
@@ -121,10 +128,22 @@ try:
         effective_end_month,
     )
     default_plan_table = plan_to_edit_table(filtered_plan, prepared_display_order)
-    default_yield_table = yield_to_edit_table(filtered_yield, prepared_display_order)
 except ValueError as exc:
     st.error(str(exc))
     st.stop()
+
+# 수율 표는 따로 세운다. 예전에는 위 `try` 에 함께 있어 RQ_YLD 한 행의 값이 비었거나 0 이면
+# PKG PLAN 편집·붙여넣기·가상 제품 등록·환산 탭까지 전부 섰다(2026-09-29 횡전개 감사). 값이
+# 잘못된 행은 표에서 빼 「편집 불가」로 보이고 적용 때 원본 그대로 되붙인다. 연결 키 결측·중복처럼
+# 표를 세울 수 없는 오류는 수율 탭 안에만 띄운다.
+yield_build_error: str | None = None
+default_yield_table: pd.DataFrame | None = None
+locked_yield_rows = pd.DataFrame(columns=[*YIELD_KEYS, *YIELD_VALUE_COLUMNS])
+try:
+    editable_yield, locked_yield_rows = split_editable_yield_rows(filtered_yield)
+    default_yield_table = yield_to_edit_table(editable_yield, prepared_display_order)
+except ValueError as exc:
+    yield_build_error = str(exc)
 
 PLAN_EDITOR_KEY = "pkg_plan_editor"
 YIELD_EDITOR_KEY = "yield_editor"
@@ -218,6 +237,28 @@ def _render_flashes(*keys: str) -> None:
             st.success(message, icon=":material/published_with_changes:")
 
 
+def _render_locked_yield_rows(locked: pd.DataFrame) -> None:
+    """원천 값이 비었거나 범위 밖이라 수율 표에서 뺀 행을 알린다.
+
+    말없이 빼면 그 달 칸이 원천에 행이 없는 달과 똑같이 빈칸으로 보인다. 목록에는 까닭(`사유`)을
+    함께 싣는다 — 계산은 값 없는 행을 환산의 「제외한 계획」으로 내리므로 두 목록이 이어진다.
+    """
+    if locked.empty:
+        return
+    st.warning(
+        f"원천 수율 값이 비었거나 0 이하·100% 초과인 {len(locked):,}행은 표에서 뺐습니다(편집 "
+        "불가). 적용해도 원본 그대로 남습니다 — 표에 그 제품 행이 있으면 그 달 칸에 EDS·BE 를 "
+        "모두 넣어 적용해 고칠 수 있습니다.",
+        icon=":material/lock:",
+    )
+    with st.expander("편집 불가 수율 행", icon=":material/rule:"):
+        st.dataframe(
+            locked[[*YIELD_KEYS, *YIELD_VALUE_COLUMNS, YIELD_LOCK_REASON_COLUMN]],
+            hide_index=True,
+            width="stretch",
+        )
+
+
 @st.dialog("Excel 붙여넣기 · PKG PLAN", width="large", on_dismiss=_close_dialog)
 def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     """붙여넣은 표는 PKG PLAN 탭에만 올린다. 전역 반영은 「변경사항 적용」 한 곳이다."""
@@ -255,17 +296,21 @@ def _discard_plan_edits() -> None:
     st.session_state.pop(PLAN_STAGED_KEY, None)
 
 
-def _apply_yield(table: pd.DataFrame, origin: str) -> None:
-    """수율 편집값이나 붙여넣은 표를 활성 시나리오에 바로 적용한다(수율은 대기 칸이 없다)."""
+def _apply_yield(table: pd.DataFrame, origin: str, *, note: str = "") -> None:
+    """수율 편집값이나 붙여넣은 표를 활성 시나리오에 바로 적용한다(수율은 대기 칸이 없다).
+
+    표에서 뺀 「편집 불가」 행은 여기서 원본 그대로 되붙인다 — 편집표와 붙여넣기가 모두 이
+    길을 지난다. 되붙이지 않으면 기간 교체가 그 행을 지운다.
+    """
     apply_month_updates(
         active_scenario,
-        {"RQ_YLD": yield_from_edit_table(table)},
+        {"RQ_YLD": restore_locked_yield_rows(yield_from_edit_table(table), locked_yield_rows)},
         effective_start_month,
         effective_end_month,
     )
     queue_reference_import_flash(
         YIELD_PASTE_KEY,
-        f"RQ_YLD {origin} 활성 시나리오에 적용했습니다. "
+        f"RQ_YLD {origin} 활성 시나리오에 적용했습니다.{note} "
         "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요.",
     )
     mark_own_change(OWN_CHANGE_KEY, (YIELD_EDITOR_KEY,))
@@ -285,8 +330,16 @@ def _yield_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     )
     if imported is None:
         return
+    # 한 (키, 월)의 EDS·BE 를 둘 다 비우면 그 달 수율 행이 지워지고 그 계획은 환산에서 빠진다.
+    # 붙여넣기는 적용 전에 변경 수를 보여 주지 않아 말없이 지나갔다(2026-09-29 횡전개 감사).
+    removed = count_removed_values(source, imported, YIELD_EDITOR_DIMENSIONS)
+    note = (
+        f" {removed:,}칸을 비워 그 달 수율 행을 지웠습니다 — 해당 계획은 환산에서 빠집니다."
+        if removed
+        else ""
+    )
     try:
-        _apply_yield(imported, "붙여넣기 데이터를")
+        _apply_yield(imported, "붙여넣기 데이터를", note=note)
     except ValueError as exc:
         st.error(str(exc))
         return
@@ -366,10 +419,25 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
     remember_virtual_product(VirtualProductRecord.from_request(request))
     # 복제는 계획·수율 두 표에 행을 더한다 — 두 편집표와 붙여넣기 대기를 비운다.
     mark_own_change(OWN_CHANGE_KEY, (PLAN_EDITOR_KEY, YIELD_EDITOR_KEY, PLAN_STAGED_KEY))
+    # 복제된 계획은 원본의 달을 따른다. 그 달이 모두 조회기간 밖이면 새 제품은 PKG PLAN 표에
+    # 행이 없어 「아래 표에서 입력」이 거짓이 된다(2026-09-29 횡전개 감사). 기간 달을 0 행으로
+    # 채워 주지 않는 것은 그 달의 수율 기준이 없어 넣은 수량이 환산에서 빠지기 때문이다.
+    plan_months = cloned_plan_months(updates, request)
+    shown_months = ", ".join(str(month) for month in plan_months[:6]) + (
+        f" 외 {len(plan_months) - 6}개월" if len(plan_months) > 6 else ""
+    )
+    plan_row_hint = (
+        " 아래 표에서 계획 수량을 입력하세요."
+        if any(effective_start_month <= month <= effective_end_month for month in plan_months)
+        else (
+            " 복제된 계획이 모두 조회기간 밖이라 지금 PKG PLAN 표에는 없습니다 — 조회기간을 "
+            f"넓혀야 PKG PLAN 표에 나타납니다(복제된 계획 달: {shown_months or '없음'})."
+        )
+    )
     st.session_state[PRODUCT_REGISTERED_FLASH_KEY] = (
         f"가상 제품 {request.normalized().product} · {request.normalized().stack} 을 "
-        f"등록했습니다. 기준정보 {len(updates)}종을 복제했습니다. 아래 표에서 계획 수량을 "
-        "입력하세요."
+        f"등록했습니다. 기준정보 {len(updates)}종을 복제했습니다."
+        + plan_row_hint
         + (" 적용하지 않았던 붙여넣기 표는 버렸습니다 — 다시 붙여넣으세요." if staged_paste else "")
         + (
             f" 적용하지 않았던 {'·'.join(dropped_edits)} 표 편집도 버렸습니다."
@@ -516,88 +584,102 @@ if apply_plan:
         st.rerun()
 
 with yield_tab:
-    yield_pending = editor_has_edits(YIELD_EDITOR_KEY)
-    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        apply_yield = st.button(
-            "수율 변경사항 적용",
-            icon=":material/check:",
-            key="apply_yield_changes",
-            type="primary",
-            help=YIELD_APPLY_HELP,
-            disabled=not yield_pending,
+    if default_yield_table is None:
+        # 표를 세울 수 없는 원천(연결 키 결측·중복 등)이면 이 탭만 멈춘다. 붙여넣기 양식도 이
+        # 표라 팝업을 열 수 없다 — 열려 있던 기억은 지워 원천을 고친 뒤 저절로 뜨지 않게 한다.
+        if _dialog_is_open(YIELD_PASTE_DIALOG):
+            _close_dialog()
+        st.error(
+            f"수율 표를 만들지 못했습니다: {yield_build_error} 원천 RQ_YLD 를 고치기 전까지 이 "
+            "탭만 멈춥니다 — PKG PLAN 편집과 가상 제품 등록은 그대로 쓸 수 있습니다.",
+            icon=":material/error:",
         )
-        st.button(
-            "Excel 붙여넣기",
-            icon=":material/content_paste:",
-            key="open_yield_paste",
-            on_click=_open_dialog,
-            args=(YIELD_PASTE_DIALOG,),
-        )
-        if yield_pending:
-            st.button(
-                "편집 취소",
-                icon=":material/undo:",
-                key="discard_yield_edits",
-                on_click=discard_editor,
-                args=(YIELD_EDITOR_KEY,),
-                help="수율 표에서 적용하지 않은 편집을 버립니다.",
+    else:
+        yield_pending = editor_has_edits(YIELD_EDITOR_KEY)
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            apply_yield = st.button(
+                "수율 변경사항 적용",
+                icon=":material/check:",
+                key="apply_yield_changes",
+                type="primary",
+                help=YIELD_APPLY_HELP,
+                disabled=not yield_pending,
             )
-    yield_notice = st.empty()
-    _render_flashes(f"{YIELD_PASTE_KEY}_flash")
-    if _dialog_is_open(YIELD_PASTE_DIALOG):
-        _yield_paste_dialog(
-            default_yield_table,
-            f"RQ_YLD_{effective_start_month}_{effective_end_month}.csv",
+            st.button(
+                "Excel 붙여넣기",
+                icon=":material/content_paste:",
+                key="open_yield_paste",
+                on_click=_open_dialog,
+                args=(YIELD_PASTE_DIALOG,),
+            )
+            if yield_pending:
+                st.button(
+                    "편집 취소",
+                    icon=":material/undo:",
+                    key="discard_yield_edits",
+                    on_click=discard_editor,
+                    args=(YIELD_EDITOR_KEY,),
+                    help="수율 표에서 적용하지 않은 편집을 버립니다.",
+                )
+        yield_notice = st.empty()
+        _render_flashes(f"{YIELD_PASTE_KEY}_flash")
+        _render_locked_yield_rows(locked_yield_rows)
+        if _dialog_is_open(YIELD_PASTE_DIALOG):
+            _yield_paste_dialog(
+                default_yield_table,
+                f"RQ_YLD_{effective_start_month}_{effective_end_month}.csv",
+            )
+        yield_month_columns = [
+            column
+            for column in default_yield_table.columns
+            if column not in YIELD_EDITOR_DIMENSIONS
+        ]
+        styled_yield_table = default_yield_table.style.set_properties(
+            subset=pd.Index(YIELD_EDITOR_DIMENSIONS),
+            **{"background-color": tokens.SURFACE_CLASSIFICATION},
         )
-    yield_month_columns = [
-        column for column in default_yield_table.columns if column not in YIELD_EDITOR_DIMENSIONS
-    ]
-    styled_yield_table = default_yield_table.style.set_properties(
-        subset=pd.Index(YIELD_EDITOR_DIMENSIONS),
-        **{"background-color": tokens.SURFACE_CLASSIFICATION},
-    )
-    edited_yield_table = st.data_editor(
-        styled_yield_table,
-        key=editor_widget_key(YIELD_EDITOR_KEY),
-        hide_index=True,
-        width="content",
-        height=500,
-        row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
-        num_rows="fixed",
-        disabled=YIELD_EDITOR_DIMENSIONS,
-        column_config={
-            **{
-                column: st.column_config.TextColumn(
-                    COLUMN_LABELS.get(column, column),
-                    width=(PRODUCT_COLUMN_WIDTH_PX if column == "제품정보" else None),
-                    alignment="center",
-                    pinned=True,
-                )
-                for column in YIELD_EDITOR_DIMENSIONS
+        edited_yield_table = st.data_editor(
+            styled_yield_table,
+            key=editor_widget_key(YIELD_EDITOR_KEY),
+            hide_index=True,
+            width="content",
+            height=500,
+            row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
+            num_rows="fixed",
+            disabled=YIELD_EDITOR_DIMENSIONS,
+            column_config={
+                **{
+                    column: st.column_config.TextColumn(
+                        COLUMN_LABELS.get(column, column),
+                        width=(PRODUCT_COLUMN_WIDTH_PX if column == "제품정보" else None),
+                        alignment="center",
+                        pinned=True,
+                    )
+                    for column in YIELD_EDITOR_DIMENSIONS
+                },
+                **{
+                    month: st.column_config.NumberColumn(
+                        month,
+                        width=80,
+                        min_value=0.0,
+                        max_value=1.0,
+                        step=0.001,
+                        format="percent",
+                        alignment="center",
+                    )
+                    for month in yield_month_columns
+                },
             },
-            **{
-                month: st.column_config.NumberColumn(
-                    month,
-                    width=80,
-                    min_value=0.0,
-                    max_value=1.0,
-                    step=0.001,
-                    format="percent",
-                    alignment="center",
-                )
-                for month in yield_month_columns
-            },
-        },
-    )
+        )
+        if apply_yield:
+            try:
+                _apply_yield(edited_yield_table, "편집값을")
+            except ValueError as exc:
+                yield_notice.error(str(exc))
+            else:
+                st.rerun()
 
 simulation_yield = filtered_yield
-if apply_yield:
-    try:
-        _apply_yield(edited_yield_table, "편집값을")
-    except ValueError as exc:
-        yield_notice.error(str(exc))
-    else:
-        st.rerun()
 
 # 환산 조건은 환산 탭이 열렸을 때만 사이드바에 선다. 다른 탭에서는 쓰지 않는 조건이라 세우면
 # 「사이드바 = 이 화면의 조건」이 흐려진다. 안 그려진 회차에도 선택은 `persist_state` 가,

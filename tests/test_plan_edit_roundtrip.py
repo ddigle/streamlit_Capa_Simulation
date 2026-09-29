@@ -163,3 +163,22 @@ def test_attaching_is_a_no_op_when_the_source_has_no_attributes() -> None:
     long_plan = plan_from_edit_table(_wide([{"제품정보": "DEMO_P1", "202601": 10.0}]))
 
     assert attach_plan_attributes(long_plan, source).equals(long_plan)
+
+
+def test_a_space_only_cell_reads_as_an_empty_quantity() -> None:
+    """공백 한 칸(`' '`)은 빈칸과 같다 — 0 수량으로 읽는다.
+
+    붙여넣기 검증은 `' '` 를 빈칸으로 통과시키는데 변환은 「숫자가 아닌 값」으로 표 전체를
+    거부했고 어느 칸인지도 알리지 않았다(2026-09-29 횡전개 감사).
+    """
+    spaced = plan_from_edit_table(_wide([{"202601": " ", "202602": 20.0}]))
+    empty = plan_from_edit_table(_wide([{"202601": None, "202602": 20.0}]))
+
+    assert spaced["생산수량"].tolist() == [0.0, 20.0]
+    pd.testing.assert_frame_equal(spaced, empty)
+
+
+def test_a_non_numeric_plan_cell_is_still_rejected() -> None:
+    """공백만 빈칸으로 읽는다. 글자가 든 칸은 여전히 거부한다."""
+    with pytest.raises(ValueError, match="숫자가 아닌 값"):
+        plan_from_edit_table(_wide([{"202601": "N/A"}]))

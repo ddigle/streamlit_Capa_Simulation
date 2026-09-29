@@ -140,6 +140,27 @@ def clone_product(
     return updates
 
 
+def cloned_plan_months(
+    updates: Mapping[str, pd.DataFrame], request: VirtualProductRequest
+) -> tuple[int, ...]:
+    """복제로 새 제품에 생긴 계획 달(YYYYMM)을 오름차순으로 돌려준다.
+
+    복제된 계획은 원본의 달을 그대로 따른다. 원본 계획이 조회기간 밖에만 있으면 새 제품은
+    PKG PLAN 표(조회기간만 보인다)에 행이 없어 수량을 넣을 수 없고, 붙여넣기도 양식에 없는
+    행이라 거부된다. 화면이 그것을 알리는 데 쓴다(2026-09-29 횡전개 감사).
+    """
+    plan = updates.get("RQ_PKG_PLAN")
+    if plan is None or "생산계획년월" not in plan.columns:
+        return ()
+    normalized = request.normalized()
+    mine = (
+        plan["제품정보"].astype("string").str.strip().eq(normalized.product)
+        & plan["Stack"].astype("string").str.strip().eq(normalized.stack)
+    ).fillna(False)
+    months = pd.to_numeric(plan.loc[mine.astype(bool), "생산계획년월"], errors="coerce").dropna()
+    return tuple(sorted({int(month) for month in months}))
+
+
 def _existing_product_keys(tables: Mapping[str, pd.DataFrame]) -> set[tuple[str, str]]:
     keys: set[tuple[str, str]] = set()
     for name in clone_table_names(tables):

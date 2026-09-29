@@ -61,6 +61,8 @@ YIELD_EDITOR_DIMENSIONS = ["수율 구분", "제품정보", "Stack", "WF 구분"
 YIELD_VALUE_COLUMNS = ["EDS_수율", "BE_수율"]
 YIELD_DISPLAY_NAMES = {"EDS_수율": "EDS", "BE_수율": "BE"}
 YIELD_INTERNAL_NAMES = {display: internal for internal, display in YIELD_DISPLAY_NAMES.items()}
+# 편집표에서 뺀 수율 행에 붙는 까닭 컬럼(`split_editable_yield_rows`).
+YIELD_LOCK_REASON_COLUMN = "사유"
 CHIP_KEYS = ["제품정보", "Stack", "WF 구분"]
 CHIP_REQUIRED_COLUMNS = [*CHIP_KEYS, "구분_Chip", "Net Die"]
 DENSITY_KEYS = ["제품정보", "Stack", "WF 구분"]
@@ -141,6 +143,7 @@ def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
     long_plan["생산계획년월"] = pd.to_numeric(long_plan["생산계획년월"], errors="raise").astype(
         "Int64"
     )
+    long_plan["생산수량"] = _blank_text_to_na(long_plan["생산수량"])
     long_plan = _to_numeric(long_plan, ["생산수량"], "PKG PLAN 편집값")
     long_plan["생산수량"] = long_plan["생산수량"].fillna(0.0)
     if long_plan["생산수량"].lt(0).any():
@@ -250,6 +253,7 @@ def yield_from_edit_table(yield_table: pd.DataFrame) -> pd.DataFrame:
     long_yield["생산계획년월"] = pd.to_numeric(long_yield["생산계획년월"], errors="raise").astype(
         "Int64"
     )
+    long_yield["수율"] = _blank_text_to_na(long_yield["수율"])
     long_yield = _to_numeric(long_yield, ["수율"], "수율 편집값")
     long_yield = long_yield.dropna(subset=["수율"])
 
@@ -270,6 +274,74 @@ def yield_from_edit_table(yield_table: pd.DataFrame) -> pd.DataFrame:
     return result[YIELD_REQUIRED_COLUMNS].sort_values(YIELD_KEYS).reset_index(drop=True)
 
 
+def split_editable_yield_rows(yield_data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """수율 편집표에 실을 행과 실을 수 없는 행(값 결측·0 이하·100% 초과)으로 가른다.
+
+    `yield_to_edit_table` 은 값 칸 하나만 비었거나 0 이어도 표 전체를 거부한다. 생산 계획
+    화면은 그 오류로 PKG PLAN 편집·붙여넣기·가상 제품 등록·환산까지 멈췄다 — 계산은 같은 행을
+    제외 목록으로 내리고 이어 가는데 화면만 섰다(2026-09-29 횡전개 감사).
+
+    그런 행을 빈칸으로 표에 실으면 적용의 `dropna` 가 원천 행을 지우고, 0 을 받아 주면 수율로
+    나누는 계산이 무한대가 된다. 그래서 **(월, 제품, Stack, WF 구분) 행 단위로** 표에서 빼고,
+    적용 때 `restore_locked_yield_rows` 가 원본 그대로 되붙인다. 판정은 `_validate_yield_range`
+    와 같다 — 그보다 좁으면 `1.2` 같은 값이 여전히 화면을 세운다.
+
+    연결 키 결측·중복은 행 하나의 값 문제가 아니라 표 구조의 문제라 가르지 않고 그대로 던진다.
+
+    Returns:
+        (편집표에 실을 행, 뺀 행). 뺀 행은 원본 컬럼 그대로에 `사유` 컬럼을 더한다.
+    """
+    require_columns(yield_data, YIELD_REQUIRED_COLUMNS, "RQ_YLD")
+    keys = _normalize_text(yield_data[YIELD_KEYS], YIELD_KEYS[1:])
+    keys["생산계획년월"] = pd.to_numeric(keys["생산계획년월"], errors="coerce").astype("Int64")
+    if keys.isna().any(axis=None):
+        raise ValueError("RQ_YLD의 연결 키에 누락값이 있습니다.")
+    assert_unique_keys(keys, YIELD_KEYS, "RQ_YLD 연결 키가")
+
+    problems: list[list[str]] = [[] for _ in range(len(yield_data))]
+    for column in YIELD_VALUE_COLUMNS:
+        raw = yield_data[column]
+        numeric = pd.to_numeric(raw, errors="coerce")
+        label = YIELD_DISPLAY_NAMES[column]
+        for flagged, text in (
+            (raw.isna(), "값 없음"),
+            (raw.notna() & numeric.isna(), "숫자 아님"),
+            (numeric.le(0), "0 이하"),
+            (numeric.gt(1), "100% 초과"),
+        ):
+            for position in flagged.fillna(False).astype(bool).to_numpy().nonzero()[0]:
+                problems[position].append(f"{label} {text}")
+    # 위치로 가른다 — 원천 인덱스가 겹쳐도(이어 붙인 프레임) 라벨 정렬에 기대지 않는다.
+    reasons = [", ".join(found) for found in problems]
+    locked_mask = pd.Series(reasons).ne("").to_numpy()
+    locked = yield_data.loc[locked_mask].copy()
+    locked[YIELD_LOCK_REASON_COLUMN] = [reason for reason in reasons if reason]
+    return yield_data.loc[~locked_mask].copy(), locked
+
+
+def restore_locked_yield_rows(edited: pd.DataFrame, locked: pd.DataFrame) -> pd.DataFrame:
+    """편집표에서 뺀 수율 행을 적용 결과(`yield_from_edit_table`)에 원본 값 그대로 되붙인다.
+
+    뺀 행의 달은 표에서 빈칸으로 보인다. 그 칸을 그대로 두면 원본이 남고, 사용자가 EDS·BE 를
+    **둘 다** 채웠으면 채운 값이 이긴다 — 되붙이면 같은 연결 키가 두 번 들어간다. 하나만
+    채웠으면 `yield_from_edit_table` 이 「둘 다 필요」로 이미 막는다.
+
+    값 범위는 다시 검사하지 않는다. 뺀 행은 정의상 범위 밖이고, 그 값을 고치지 않고 남겨
+    두는 것이 이 함수의 일이다(계산은 결측을 제외 목록으로 내린다).
+    """
+    if locked.empty:
+        return edited
+    kept = _normalize_text(locked[YIELD_REQUIRED_COLUMNS], YIELD_KEYS[1:])
+    kept["생산계획년월"] = pd.to_numeric(kept["생산계획년월"], errors="coerce").astype("Int64")
+    edited_keys = pd.MultiIndex.from_frame(edited[YIELD_KEYS])
+    overridden = pd.MultiIndex.from_frame(kept[YIELD_KEYS]).isin(edited_keys)
+    kept = kept.loc[~overridden]
+    if kept.empty:
+        return edited
+    combined = pd.concat([edited[YIELD_REQUIRED_COLUMNS], kept], ignore_index=True)
+    return combined.sort_values(YIELD_KEYS).reset_index(drop=True)
+
+
 def _normalize_text(data: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     """텍스트 키를 strip 한 **복사본**을 돌려준다.
 
@@ -279,6 +351,17 @@ def _normalize_text(data: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     normalized = data.copy()
     strip_text_columns(normalized, columns)
     return normalized
+
+
+def _blank_text_to_na(values: pd.Series) -> pd.Series:
+    """공백만 든 글자 칸을 빈칸(NA)으로 내린다 — `reference_csv._is_blank` 와 같은 판정.
+
+    붙여넣기 검증(`assert_numeric_edit_values`)은 `' '` 를 빈칸으로 통과시키는데, 여기서
+    그대로 `_to_numeric` 에 넣으면 「숫자가 아닌 값」으로 표 전체가 거부되고 어느 칸인지도
+    알리지 않았다(2026-09-29 횡전개 감사). 검증과 변환이 빈칸을 같은 뜻으로 읽게 한다.
+    """
+    blank = values.map(lambda value: isinstance(value, str) and not value.strip())
+    return values.mask(blank.astype(bool))
 
 
 def _to_numeric(data: pd.DataFrame, columns: list[str], table_name: str) -> pd.DataFrame:

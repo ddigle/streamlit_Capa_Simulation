@@ -12,6 +12,7 @@ from capa_simulation.services.virtual_product import (
     available_source_products,
     clone_product,
     clone_table_names,
+    cloned_plan_months,
 )
 
 
@@ -165,3 +166,23 @@ def test_blank_key_is_rejected() -> None:
 def test_unknown_source_is_rejected() -> None:
     with pytest.raises(ValueError, match="복제 원본 제품을 찾을 수 없습니다"):
         clone_product(_tables(), VirtualProductRequest("DEMO_MISSING", "8H", "DEMO_NEW", "8H"))
+
+
+def test_cloned_plan_months_are_the_new_products_plan_months() -> None:
+    """화면이 「새 제품이 지금 조회기간의 PKG PLAN 표에 나타나는가」를 이 달로 판단한다.
+
+    원본 계획이 조회기간 밖에만 있으면 새 제품은 표에 행이 없어 입력할 수 없다(2026-09-29
+    횡전개 감사). 원본의 달이 아니라 **새 제품** 행의 달을 돌려줘야 한다.
+    """
+    tables = _tables()
+    tables["RQ_PKG_PLAN"] = pd.concat(
+        [
+            tables["RQ_PKG_PLAN"],
+            tables["RQ_PKG_PLAN"].iloc[[0]].assign(제품정보="DEMO_OTHER", 생산계획년월=202612),
+        ],
+        ignore_index=True,
+    )
+    updates = clone_product(tables, _request())
+
+    assert cloned_plan_months(updates, _request()) == (202601, 202602)
+    assert cloned_plan_months({}, _request()) == ()
