@@ -51,6 +51,7 @@ from capa_simulation.services.bigdataquery_catalog_view import (
     CatalogRow,
     build_display_frame,
     catalog_row_at,
+    code_registration_span,
     filter_catalog,
     first_registration_dates,
     normalize_catalog,
@@ -74,6 +75,8 @@ CATALOG_APPLIED_KEY = "bigdataquery_catalog_applied_signature"
 # 폼의 코드를 목록에서 골랐을 때 그 코드가 목록에 보인 (가장 이른, 가장 늦은) 원천 등록일.
 # 상세 조회 기간 두 칸의 기본값을 정한 근거로 안내에 적는다.
 CATALOG_FORM_REGISTERED_SPAN_KEY = "bigdataquery_catalog_form_registered_span"
+# 목록에서 골라 채운 (코드, 시작일, 종료일). 코드만 바꿔 적은 채 그 창으로 조회하는 것을 막는다.
+CATALOG_FORM_PICKED_WINDOW_KEY = "bigdataquery_catalog_form_picked_window"
 CATALOG_LIST_NONCE_KEY = "bigdataquery_catalog_list_nonce"
 CATALOG_LAST_LIST_KEY = "bigdataquery_catalog_last_list_key"
 CATALOG_RESET_REQUEST_KEY = "bigdataquery_catalog_reset_request"
@@ -124,11 +127,15 @@ class CatalogResult:
 
 @dataclass(frozen=True)
 class CatalogPick:
-    """목록에서 고른 행과, 그 행을 찾아낸 조회 기간과, 그 코드의 가장 이른 원천 등록일."""
+    """목록에서 고른 행과, 그 행을 찾아낸 조회 기간과, 그 **코드**가 목록에 보인 원천 등록일 범위.
+
+    등록일 범위는 PLAN 을 가리지 않는다 — 상세 조회가 코드 전체를 받기 때문이다.
+    """
 
     row: CatalogRow
     window: QueryWindow
     first_registered_on: date | None = None
+    last_registered_on: date | None = None
 
 
 def render_bigdataquery_registration(
@@ -372,13 +379,15 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
     if selected is not None:
         row = catalog_row_at(visible, selected)
         if row is not None:
+            span = code_registration_span(
+                result.frame, result.first_registered, row.simulation_code
+            )
             _apply_pick(
                 CatalogPick(
                     row=row,
                     window=result.window,
-                    first_registered_on=result.first_registered.get(
-                        (row.simulation_code, row.plan_code)
-                    ),
+                    first_registered_on=None if span is None else span[0],
+                    last_registered_on=None if span is None else span[1],
                 )
             )
     elif last_key == list_key:
@@ -404,12 +413,15 @@ def _apply_pick(pick: CatalogPick) -> None:
     prefill = registration_prefill(pick.row, catalog_window_label=pick.window.label())
     # 목록 정리는 (코드, PLAN) 의 최신 행만 남기므로 행의 등록일이 가장 늦은 날이고, 가장 이른
     # 날은 정리 전에 따로 구해 둔 것이다. 둘 사이가 벌어졌으면 등록 뒤에도 적재가 이어진 코드다.
-    last = _registered_day(pick.row.registered_at)
+    last = pick.last_registered_on or _registered_day(pick.row.registered_at)
     first = pick.first_registered_on or last
     span = None if first is None else (first, last or first)
     window = None if span is None else registration_detail_window(*span)
     st.session_state[CATALOG_APPLIED_KEY] = pick.row.signature
     st.session_state[CATALOG_FORM_REGISTERED_SPAN_KEY] = span
+    st.session_state[CATALOG_FORM_PICKED_WINDOW_KEY] = (
+        None if window is None else (pick.row.simulation_code, window.start_date, window.end_date)
+    )
     st.session_state[FORM_DETAIL_START_KEY] = None if window is None else window.start_date
     st.session_state[FORM_DETAIL_END_KEY] = None if window is None else window.end_date
     st.session_state[FORM_CODE_KEY] = prefill.simulation_code
@@ -446,6 +458,7 @@ def _consume_reset_request() -> None:
         CATALOG_PICK_KEY,
         CATALOG_APPLIED_KEY,
         CATALOG_FORM_REGISTERED_SPAN_KEY,
+        CATALOG_FORM_PICKED_WINDOW_KEY,
         FORM_DETAIL_START_KEY,
         FORM_DETAIL_END_KEY,
         *FORM_DEFAULTS,
@@ -488,8 +501,12 @@ def _render_registration_form(
         )
         today = datetime.now().date()
         with st.container(horizontal=True, gap="small"):
+            # `value=None` 이라야 칸을 비울 수 있다(Streamlit 은 처음 값이 None 인 날짜 칸에만
+            # 지우기 단추를 준다). 목록에서 한 번 고른 뒤에도 비워 등록시점 규칙으로 돌아갈 수
+            # 있어야 한다 — 값은 세션이 들고 있으므로 이 인자는 처음 값으로 쓰이지 않는다.
             st.date_input(
                 "상세 조회 시작일",
+                value=None,
                 key=FORM_DETAIL_START_KEY,
                 max_value=today,
                 persist_state="session",
@@ -497,6 +514,7 @@ def _render_registration_form(
             )
             st.date_input(
                 "상세 조회 종료일",
+                value=None,
                 key=FORM_DETAIL_END_KEY,
                 max_value=today,
                 persist_state="session",
@@ -536,7 +554,7 @@ def _save_scenario(
     except ValueError as exc:
         st.error(bootstrap_error_message(exc))
         return
-    window = _submitted_detail_window(registered_at)
+    window = _submitted_detail_window(registered_at, simulation_code=simulation_code)
     if window is None:
         return
     # 실제로 조회한 기간을 리비전 메모에 남긴다. 기간을 넓혀 다시 받은 리비전과 기본 창으로 받은
@@ -606,6 +624,21 @@ def _registered_day(text: str) -> date | None:
     return parsed.date() if parsed is not None else None
 
 
+def _window_belongs_to_another_code(simulation_code: str, start: date, end: date) -> bool:
+    """두 칸이 목록에서 고른 코드의 기본 창 그대로인데 폼의 코드만 다른 코드로 바뀌었는가.
+
+    고른 뒤 코드 칸만 고쳐 적으면 앞 코드의 등록일 창으로 오류 없이 조회돼, 창 밖 적재분이 빠진
+    원천이 말없이 저장됐다(2026-09-29 리뷰). 사용자가 날짜를 한 칸이라도 고쳤으면 그 기간을
+    믿는다 — 막는 것은 「손대지 않은 남의 기본값」뿐이다.
+    """
+    picked = st.session_state.get(CATALOG_FORM_PICKED_WINDOW_KEY)
+    if not isinstance(picked, tuple) or len(picked) != 3:
+        return False
+    code, picked_start, picked_end = picked
+    typed = simulation_code.strip()
+    return bool(typed) and typed != code and (start, end) == (picked_start, picked_end)
+
+
 def _detail_window_caption() -> str:
     """상세 조회 기간 두 칸 위의 안내.
 
@@ -625,7 +658,9 @@ def _detail_window_caption() -> str:
     return f"{rule} 고른 코드의 원천 등록일: {seen}."
 
 
-def _submitted_detail_window(registered_at: datetime | None) -> QueryWindow | None:
+def _submitted_detail_window(
+    registered_at: datetime | None, *, simulation_code: str = ""
+) -> QueryWindow | None:
     """저장 때 조회할 상세 기간. 두 칸이 우선이고, 둘 다 비었으면 원천 DB 등록시점으로 정한다.
 
     예전에는 기본 90일 ∪ 목록 기간 ∪ 등록일 7일 전~오늘을 모두 덮어, 옛 코드일수록 창이 길어져
@@ -637,6 +672,13 @@ def _submitted_detail_window(registered_at: datetime | None) -> QueryWindow | No
     if isinstance(start, date) and isinstance(end, date):
         if start > end:
             st.error("상세 조회 시작일은 종료일보다 늦을 수 없습니다.")
+            return None
+        if _window_belongs_to_another_code(simulation_code, start, end):
+            st.error(
+                "상세 조회 기간이 목록에서 고른 **다른 코드**의 원천 등록일로 채워진 그대로입니다. "
+                "코드를 바꿨으면 두 칸을 비워 「원천 DB 등록시점」 기준으로 조회하거나, 이 코드에 "
+                "맞는 날짜로 고치세요."
+            )
             return None
         return QueryWindow(start_date=start, end_date=end)
     if isinstance(start, date) or isinstance(end, date):

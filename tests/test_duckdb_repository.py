@@ -923,7 +923,7 @@ def test_same_simulation_code_rejects_changed_raw_snapshot(tmp_path: Path) -> No
         source_data=original,
     )
 
-    with pytest.raises(ValueError, match="원천 코드는 불변"):
+    with pytest.raises(ValueError, match="원천 코드는 불변") as caught:
         repository.create_scenario(
             _metadata("Changed"),
             build_reference_tables(changed, display_order),
@@ -932,6 +932,9 @@ def test_same_simulation_code_rejects_changed_raw_snapshot(tmp_path: Path) -> No
         )
 
     assert len(repository.list_scenarios()) == 1
+    # 상세 조회 기간을 바꿔 다시 받으려는 사람에게 「새 리비전」은 답이 아니다.
+    # 다시 받는 길(보관 뒤 영구 삭제)을 함께 적는다.
+    assert "보관한 뒤 영구 삭제" in str(caught.value)
 
 
 def test_same_simulation_code_can_be_physically_copied_when_raw_is_identical(

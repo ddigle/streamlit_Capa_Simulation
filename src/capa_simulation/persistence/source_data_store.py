@@ -52,9 +52,14 @@ def validate_immutable_source_code(
     ).fetchall()
     existing_hashes = {str(row[0]) for row in rows}
     if existing_hashes and source_data_hash not in existing_hashes:
+        # 보관본도 원천을 가지므로 여기서 함께 본다. 상세 조회 기간을 바꿔 같은 코드를 다시 받는
+        # 사람은 이 문구를 만난다 — 「새 리비전」은 원천을 다시 받지 않으니 다시 받는 길도 적는다
+        # (2026-09-29 리뷰).
         raise ValueError(
             "동일 시뮬레이션 코드에 다른 원천 데이터가 이미 저장되어 있습니다. "
-            "원천 코드는 불변이므로 기존 시나리오에서 새 리비전을 저장하세요."
+            "원천 코드는 불변이므로 기존 시나리오에서 새 리비전을 저장하세요. 상세 조회 기간을 "
+            "바꿔 원천을 다시 받아야 하면 이 코드로 저장된 시나리오를 모두 보관한 뒤 영구 삭제하고 "
+            "등록하세요(보관만으로는 풀리지 않고, 그 리비전도 함께 지워집니다)."
         )
 
 

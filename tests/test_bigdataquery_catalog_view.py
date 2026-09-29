@@ -226,6 +226,38 @@ def test_view_token_is_stable_across_calls() -> None:
     assert view.view_token("a", "b") != view.view_token("b", "a")
 
 
+def test_the_code_registration_span_ignores_the_plan() -> None:
+    """상세 조회는 PLAN 을 가리지 않고 코드 전체를 받는다.
+
+    그래서 기본 창도 그 코드의 모든 PLAN 줄 등록일을 덮는다.
+    """
+    frame = pd.DataFrame(
+        {
+            "simulation_name": ["알파", "알파", "베타"],
+            "simulation_code": ["DEMO-A", "DEMO-A", "DEMO-B"],
+            "plan_name": ["P", "Q", "R"],
+            "plan_code": ["P1", "Q1", "R1"],
+            "regist_data": [
+                "2026-03-10 00:00:00",
+                "2026-04-02 09:00:00",
+                "2026-01-01 00:00:00",
+            ],
+        }
+    )
+    catalog = view.normalize_catalog(frame)
+    first = {("DEMO-A", "P1"): date(2026, 3, 1), ("DEMO-B", "R1"): date(2025, 12, 1)}
+
+    assert view.code_registration_span(catalog, first, "DEMO-A") == (
+        date(2026, 3, 1),
+        date(2026, 4, 2),
+    )
+    assert view.code_registration_span(catalog, {}, "DEMO-A") == (
+        date(2026, 3, 10),
+        date(2026, 4, 2),
+    )
+    assert view.code_registration_span(catalog, first, "DEMO-Z") is None
+
+
 def test_first_registration_dates_keep_the_earliest_day_per_code_and_plan() -> None:
     """정리는 최신 1행만 남기지만 상세 조회 창은 가장 이른 적재부터 덮어야 한다."""
     frame = pd.DataFrame(

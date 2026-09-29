@@ -9,7 +9,7 @@ Streamlit 을 import 하지 않고 세션 상태도 만지지 않는다. 화면�
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from typing import Final
@@ -158,6 +158,34 @@ def first_registration_dates(frame: pd.DataFrame) -> dict[tuple[str, str], date]
         if key not in earliest or day < earliest[key]:
             earliest[key] = day
     return earliest
+
+
+def code_registration_span(
+    catalog: pd.DataFrame,
+    first_registered: Mapping[tuple[str, str], date],
+    simulation_code: str,
+) -> tuple[date, date] | None:
+    """한 시뮬레이션 코드가 목록에 보인 (가장 이른, 가장 늦은) 원천 등록일.
+
+    **PLAN 을 가리지 않는다.**
+
+    상세 SQL 은 PLAN 조건 없이 그 코드의 행을 모두 받는다. 기본 창을 고른 줄(코드, PLAN)의
+    등록일로만 잡으면 같은 코드의 다른 PLAN 줄 적재분이 창 밖으로 말없이 빠진다(2026-09-29
+    리뷰). 가장 늦은 날은 정리된 목록(PLAN 마다 최신 1행)에서, 가장 이른 날은 정리 전에 구해 둔
+    `first_registration_dates` 에서 모은다. 읽을 수 있는 등록일이 하나도 없으면 None.
+    """
+    days: list[date] = [
+        day for (code, _plan), day in first_registered.items() if code == simulation_code
+    ]
+    if not catalog.empty and {"simulation_code", "regist_data"} <= set(catalog.columns):
+        same_code = catalog["simulation_code"].astype("string").str.strip().eq(simulation_code)
+        for text in catalog.loc[same_code, "regist_data"]:
+            formatted = format_registered_at(text)
+            if formatted:
+                days.append(datetime.strptime(formatted, REGISTERED_AT_FORMAT).date())
+    if not days:
+        return None
+    return min(days), max(days)
 
 
 def catalog_rows(catalog: pd.DataFrame) -> list[CatalogRow]:

@@ -265,7 +265,9 @@ import streamlit as st
 from capa_simulation.components import bigdataquery_registration as registration
 
 registered = st.session_state.get("__registered_at__")
-window = registration._submitted_detail_window(registered)
+window = registration._submitted_detail_window(
+    registered, simulation_code=st.session_state.get("__code__", "")
+)
 st.session_state["__window__"] = None if window is None else window.label()
 """
 
@@ -307,3 +309,62 @@ def test_the_submitted_detail_window(
         assert not errors
     else:
         assert error in errors
+
+
+@pytest.mark.parametrize(
+    ("code", "end", "blocked"),
+    [
+        # 목록에서 고른 코드 그대로면 그 창을 쓴다.
+        ("DEMO-A-001", date(2026, 9, 5), False),
+        # 코드만 바꿔 적고 날짜는 손대지 않았다 — 남의 등록일 창이라 막는다.
+        ("DEMO-Z-999", date(2026, 9, 5), True),
+        # 코드를 바꾸고 날짜도 고쳤다 — 사용자가 정한 기간을 믿는다.
+        ("DEMO-Z-999", date(2026, 9, 20), False),
+    ],
+)
+def test_a_picked_window_is_not_reused_silently_for_another_code(
+    code: str, end: date, blocked: bool
+) -> None:
+    """목록에서 고른 뒤 코드 칸만 고쳐 적으면 앞 코드의 등록일 창으로 오류 없이 조회됐다.
+
+    2026-09-29 리뷰 — 손대지 않은 남의 기본 창만 막고, 사용자가 고친 기간은 믿는다.
+    """
+    app = AppTest.from_string(SUBMIT_SCRIPT)
+    app.session_state[registration.CATALOG_FORM_PICKED_WINDOW_KEY] = (
+        "DEMO-A-001",
+        date(2026, 8, 26),
+        date(2026, 9, 5),
+    )
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 8, 26)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = end
+    app.session_state["__registered_at__"] = None
+    app.session_state["__code__"] = code
+    app.run()
+
+    assert not app.exception
+    errors = " ".join(item.value for item in app.error)
+    assert ("다른 코드" in errors) is blocked
+    assert (app.session_state["__window__"] is None) is blocked
+
+
+MULTI_PLAN_SCRIPT = STEP_SCRIPT.replace(
+    "registration._apply_pick(registration.CatalogPick(row=row, window=WINDOW))",
+    "registration._apply_pick(registration.CatalogPick(row=row, window=WINDOW, "
+    "first_registered_on=date(2026, 7, 1), last_registered_on=date(2026, 9, 10)))",
+)
+
+
+def test_a_pick_covers_every_plan_row_of_the_same_code() -> None:
+    """고른 줄의 등록일이 아니라 그 코드의 모든 PLAN 줄 등록일 범위로 기본 창을 채운다."""
+    app = AppTest.from_string(MULTI_PLAN_SCRIPT)
+    app.session_state["__pick_row__"] = 0
+    app.run()
+
+    assert not app.exception
+    assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value == date(2026, 6, 24)
+    assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value == date(2026, 9, 13)
+    assert app.session_state[registration.CATALOG_FORM_PICKED_WINDOW_KEY] == (
+        "DEMO-A-001",
+        date(2026, 6, 24),
+        date(2026, 9, 13),
+    )

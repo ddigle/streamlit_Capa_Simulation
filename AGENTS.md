@@ -957,6 +957,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     first_registration_dates` — 목록 정리는 최신 1행만 남기므로 정리 전에 구한다) ~ 가장 늦은 날(목록
     행)을 덮는다. 두 칸이 비면 폼의 `원천 DB 등록시점` 으로 같은 규칙을 쓰고, 그것도 없으면 저장을
     막는다 — 넓은 기본 창(`default_query_window` 90일)을 조용히 쓰지 않는다. 창 끝은 오늘을 넘지 않는다.
+    기본 창의 등록일 범위는 **PLAN 을 가리지 않는다**(`code_registration_span` — 상세 SQL 이 코드
+    전체를 받는다). 두 칸은 `value=None` 이라 비울 수 있고, 목록에서 채운 창을 손대지 않은 채 코드만
+    바꿔 적으면 막는다(`_window_belongs_to_another_code`). **같은 코드를 다른 창으로 다시 받으면 원천
+    코드 불변 검사(`validate_immutable_source_code`, 보관본 포함)에 막힌다** — 다시 받으려면 그 코드의
+    시나리오를 보관·영구 삭제해야 한다. 기본 창이 좁을수록 첫 등록이 원천 일부만 받을 위험이 커서
+    Guide 는 「계속 수정되는 시뮬레이션은 처음부터 넉넉히」를 권한다.
     예전 합집합 규칙(90일 ∪ 목록 기간 ∪ 등록일 7일 전~오늘)은 옛 코드일수록 창이 길어 느렸다.
   - 0행 결과는 `rename` 이전에 막는다. 뒤에 두면 MPGA TEST 예외가 `KeyError` 로 먼저 터진다.
 - `src/capa_simulation/io/object_storage.py`
