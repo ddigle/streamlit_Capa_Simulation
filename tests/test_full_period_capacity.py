@@ -74,6 +74,28 @@ def test_an_error_outside_the_period_still_stops_and_says_so(
     assert "RQ_RUN_RATE" in str(caught.value)
 
 
+def test_an_empty_ratio_table_does_not_hide_the_real_error_outside_the_period(
+    tables: dict[str, pd.DataFrame],
+) -> None:
+    """측정률 표가 통째로 비어도(1.0 가정 — 정당한 상태) 조회기간 검사가 진짜 원인을 올린다.
+
+    조회기간 검사가 빈 측정률 표까지 `filter_month_range` 로 자르다 「선택할 생산계획년월
+    데이터가 없습니다」를 던져, 모든 계산 화면이 가동률 결손 대신 그 문구를 보였다(2026-09-29
+    리뷰).
+    """
+    months = _months(tables)
+    broken = _without_month(tables, months[-1])
+    broken["RQ_LOT_RATIO"] = tables["RQ_LOT_RATIO"].iloc[0:0].copy()
+
+    with pytest.raises(ValueError, match=r"조회기간\(.+\) 밖의 달에 기준정보 오류") as caught:
+        sc.get_scenario_capacity_and_demand(
+            _key(months[0], months[-2]), _scenario_tables=broken, _reference_tables=broken
+        )
+
+    assert "RQ_RUN_RATE" in str(caught.value)
+    assert "선택할 생산계획년월" not in str(caught.value)
+
+
 def test_an_out_of_range_yield_outside_the_period_names_the_row_and_the_yield_tab(
     tables: dict[str, pd.DataFrame],
 ) -> None:

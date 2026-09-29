@@ -523,11 +523,16 @@ def _capacity_tables(
     reference_tables: Mapping[str, pd.DataFrame],
     month_range: tuple[int, int] | None,
 ) -> dict[str, pd.DataFrame]:
-    """계산 입력 표. `month_range` 가 없으면 전체 기간이다. 어느 쪽이든 사본을 넘긴다."""
+    """계산 입력 표. `month_range` 가 없으면 전체 기간이다. 어느 쪽이든 사본을 넘긴다.
+
+    **행이 없는 표는 자르지 않는다.** `filter_month_range` 는 빈 표를 「선택할 년월이 없다」로
+    던지는데, 측정률 표는 비어도 계산이 1.0 가정으로 도는 정당한 상태다. 자르다 던지면 조회기간
+    검사가 진짜 원인 대신 그 문구를 올려 모든 계산 화면이 엉뚱한 곳을 가리켰다(2026-09-29 리뷰).
+    """
     tables = {
         name: (
             _copied(scenario_tables[name])
-            if month_range is None
+            if month_range is None or scenario_tables[name].empty
             else filter_month_range(scenario_tables[name], *month_range, name)
         )
         for name in (*CAPACITY_INPUT_TABLES, *DEMAND_INPUT_TABLES)
