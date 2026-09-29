@@ -391,3 +391,193 @@ def test_the_past_tab_is_given_the_stored_profile_not_the_display_filtered_one()
     )
 
     assert "render_past_data_management(str(DUCKDB_PATH.resolve()), stored_past_profile)" in source
+
+
+# 붙여넣기의 빈칸·못 읽는 글자(2026-09-29 빈칸 횡전개). 이전에는 값 칸을
+# `to_numeric(errors="coerce")` 뒤 0 으로 채우고 년월은 못 읽으면 말없이 떨궜다. 저장은 그 표를
+# 지우고 다시 넣으므로 떨어진 행은 저장하는 순간 사라지고, 0 이 된 값은 B/N 을 비관 쪽으로
+# 틀리게 했다. 컬럼마다 빈칸 규칙이 다르다 — 계획 세부수량의 `생산수량` 만 빈칸 = 0 이다.
+
+_SECUREMENT_HEADER = "생산계획년월\t공정\t확보율\n"
+_MONTH_HEADER = "생산계획년월\tDensity\tWafer Total\n"
+_DETAIL_HEADER = "생산계획년월\t제품정보\tStack\tCustomer\t생산수량\n"
+
+
+def test_a_blank_or_percent_securement_is_refused_with_the_row_it_came_from() -> None:
+    """확보율 빈칸·`105%` 가 0 이 되면 그 공정이 그 달 B/N 1위가 되고 B/N Capa 가 0 이 된다.
+
+    어느 행인지(년월 · 공정) 적어야 사용자가 Excel 에서 찾아 고친다.
+    """
+    content = _SECUREMENT_HEADER + "202511\tP-A\t1.05\n202512\tP-A\t\n202512\tP-B\t105%\n"
+
+    with pytest.raises(ValueError) as caught:
+        past_table_from_clipboard(content, PAST_SECUREMENT_COLUMNS)
+
+    message = str(caught.value)
+    assert "202512 · P-A → 빈칸" in message
+    assert "202512 · P-B → '105%'" in message
+    assert "B/N 1위" in message
+    assert "`1.05`" in message
+
+
+def test_a_blank_securement_cannot_reach_the_store_through_the_repository(
+    tmp_path: Path,
+) -> None:
+    """붙여넣기만이 아니라 저장 경로도 같은 규칙이다. 0019 의 `확보율` 은 NOT NULL 이다."""
+    repository = DuckDBScenarioRepository(tmp_path / "scenario.duckdb")
+    repository.initialize()
+    stored = repository.replace_global_past_data(_stored_profile_tables(), source="기존")
+
+    with pytest.raises(ValueError, match="빈칸"):
+        repository.replace_global_past_data(
+            {
+                **_stored_profile_tables(),
+                "확보율": pd.DataFrame(
+                    {"생산계획년월": [202511], "공정": ["DEMO-P"], "확보율": [float("nan")]}
+                ),
+            },
+            source="빈칸",
+        )
+
+    kept = repository.load_global_past_data()
+    assert kept.version == stored.version
+    pd.testing.assert_frame_equal(kept.securement, stored.securement)
+
+
+@pytest.mark.parametrize(
+    ("row", "column", "shown"),
+    [
+        ("202511\t\t180000", "Density", "202511 → 빈칸"),
+        ("202511\t8.0\t", "Wafer Total", "202511 → 빈칸"),
+        ("202511\t8.0\t180,000", "Wafer Total", "202511 → '180,000'"),
+    ],
+)
+def test_a_blank_or_comma_formatted_monthly_value_is_refused(
+    row: str, column: str, shown: str
+) -> None:
+    """Density·Wafer Total 이 0 이 되면 그 달 B/N Capa·Wafer Capa 가 0 이 된다.
+
+    천 단위 쉼표는 기준정보 붙여넣기와 같은 까닭으로 받지 않는다 — 쉼표가 천 단위인지
+    소수점인지는 지역 설정이 정한다(`test_reference_csv.py` 의
+    `test_excel_thousand_separators_are_refused_rather_than_guessed`).
+    """
+    with pytest.raises(ValueError) as caught:
+        past_table_from_clipboard(_MONTH_HEADER + row + "\n", PAST_MONTH_COLUMNS)
+
+    message = str(caught.value)
+    assert f"{column} 칸" in message
+    assert shown in message
+    if "," in row:
+        assert "쉼표 없이" in message
+    else:
+        assert "빈칸은 0 으로 읽지 않습니다" in message
+
+
+_MISFORMATTED_MONTH_ROWS = {
+    "확보율": (PAST_SECUREMENT_COLUMNS, _SECUREMENT_HEADER, "\tP-A\t1.05"),
+    "월별": (PAST_MONTH_COLUMNS, _MONTH_HEADER, "\t8.0\t180000"),
+    "계획": (PAST_DETAIL_COLUMNS, _DETAIL_HEADER, "\tDEMO-A\t12H\tC1\t100"),
+}
+
+
+@pytest.mark.parametrize("table", sorted(_MISFORMATTED_MONTH_ROWS))
+@pytest.mark.parametrize("month", ["2025-11", "2025/11", "2025-11-01", "25.11"])
+def test_a_month_written_in_another_format_is_refused_rather_than_dropped(
+    table: str, month: str
+) -> None:
+    """년월로 못 읽는 행이 말없이 떨어지면 저장하는 순간 그 표에서 사라진다.
+
+    이전에는 `2025-11` 은 떨어지고(0행이 되어도 오류 없음) `25.11` 만 YYYYMM 오류로 막혀 규칙이
+    일관되지 않았다. 이제 원문이 비어 있지 않은데 년월로 못 읽으면 모두 원문과 함께 막는다.
+    """
+    columns, header, rest = _MISFORMATTED_MONTH_ROWS[table]
+    content = header + "202512" + rest + "\n" + month + rest + "\n"
+
+    with pytest.raises(ValueError, match="YYYYMM") as caught:
+        past_table_from_clipboard(content, columns)
+
+    assert f"'{month}'" in str(caught.value)
+
+
+def test_a_row_with_a_blank_month_is_still_left_out() -> None:
+    """년월이 **빈** 행만 지금처럼 떨군다. 어느 달인지 알 수 없는 행이다."""
+    content = _SECUREMENT_HEADER + "202511\tP-A\t1.05\n\tP-B\t0.9\n202512\tP-A\t 1.10 \n"
+
+    parsed = past_table_from_clipboard(content, PAST_SECUREMENT_COLUMNS)
+
+    assert parsed["생산계획년월"].tolist() == [202511, 202512]
+    # 앞뒤 공백은 지우고 읽는다 — 글자로 막을 까닭이 없다.
+    assert parsed["확보율"].tolist() == pytest.approx([1.05, 1.10])
+
+
+def test_a_blank_plan_quantity_reads_as_zero_but_a_comma_is_refused() -> None:
+    """계획 세부수량은 빈칸 = 0 을 유지한다 — 거래선을 합쳐 접을 때 합계가 같다.
+
+    못 읽는 글자(`1,200`)만 막는다. 0 이 되면 그 거래선 수량이 말없이 빠진다.
+    """
+    blank = _DETAIL_HEADER + "202511\tDEMO-A\t12H\tC1\t\n202511\tDEMO-A\t12H\tC2\t800\n"
+
+    parsed = past_table_from_clipboard(blank, PAST_DETAIL_COLUMNS)
+
+    assert parsed["생산수량"].tolist() == pytest.approx([0.0, 800.0])
+
+    comma = _DETAIL_HEADER + "202511\tDEMO-A\t12H\tC1\t1,200\n"
+    with pytest.raises(ValueError) as caught:
+        past_table_from_clipboard(comma, PAST_DETAIL_COLUMNS)
+
+    message = str(caught.value)
+    assert "202511 · DEMO-A · 12H · C1 → '1,200'" in message
+    assert "쉼표 없이" in message
+
+
+_PAST_COMPONENT_SCRIPT = """
+from capa_simulation.components.past_data_management import render_past_data_management
+from capa_simulation.persistence.cache import load_global_past_data
+
+database_path = r"__DATABASE__"
+render_past_data_management(database_path, load_global_past_data(database_path))
+"""
+
+
+@pytest.mark.parametrize(
+    ("pasted", "shown"),
+    [
+        (_SECUREMENT_HEADER + "2025-11\tDEMO-P\t1.05\n2025-12\tDEMO-P\t0.98\n", "'2025-11'"),
+        (_SECUREMENT_HEADER + "202511\tDEMO-P\t\n202512\tDEMO-P\t0.98\n", "202511 · DEMO-P"),
+    ],
+)
+def test_a_paste_the_dialog_cannot_read_queues_nothing_so_save_cannot_wipe_the_table(
+    tmp_path: Path, pasted: str, shown: str
+) -> None:
+    """못 읽는 붙여넣기는 팝업에 행 예시와 함께 오류로 남고 대기에 들어가지 않는다.
+
+    이전에는 `2025-11` 행이 모두 떨어져 「0행을 읽었습니다」가 대기로 쌓였고, 그대로 저장하면
+    저장된 확보율 표가 통째로 비워졌다(되돌릴 수 없음).
+    """
+    from streamlit.testing.v1 import AppTest
+
+    from capa_simulation.components.past_data_management import PAST_DRAFT_KEY
+
+    database_path = tmp_path / "past.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    stored = repository.replace_global_past_data(_stored_profile_tables(), source="기존")
+    app = AppTest.from_string(
+        _PAST_COMPONENT_SCRIPT.replace("__DATABASE__", str(database_path))
+    ).run(timeout=60)
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    app.button(key="home_past_clipboard_확보율_open").click().run(timeout=60)
+    app.text_area(key="home_past_clipboard_확보율").set_value(pasted)
+    next(button for button in app.button if button.label == "붙여넣기 읽기").click()
+    app.run(timeout=60)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    errors = [element.value for element in app.error]
+    assert any(shown in message for message in errors), errors
+    assert "확보율" not in app.session_state[PAST_DRAFT_KEY]
+    save = next(button for button in app.button if button.label == "과거 구간 저장")
+    assert save.disabled
+    kept = repository.load_global_past_data()
+    assert kept.version == stored.version
+    pd.testing.assert_frame_equal(kept.securement, stored.securement)

@@ -14,7 +14,9 @@ B/N 순위는 확보율 오름차순이다. 그래서 공정명을 따로 받지
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
 from capa_simulation.services.display_order import DisplayOrderInput, apply_display_order
@@ -39,6 +41,21 @@ _TABLE_NAMES = {
     PAST_DETAIL_COLUMNS: "과거 계획 세부수량",
     PAST_SECUREMENT_COLUMNS: "과거 공정별 확보율",
 }
+# 값 칸의 빈칸을 무엇으로 읽는가 — 컬럼마다 따로 정한다(2026-09-29 빈칸 횡전개).
+#  - `생산수량`(계획 세부수량): 빈칸 = 0. 거래선 행을 합쳐 접을 때 빈칸과 0 의 합계가 같다.
+#  - `Density`·`Wafer Total`·`확보율`: 빈칸을 **막는다.** 0 으로 읽으면 그 달의 B/N Capa·
+#    Wafer Capa 가 0 이 되고, 확보율은 그 공정이 그 달 B/N 1위가 된다 — 오류 없이 비관 쪽으로
+#    틀린다. DB 도 세 컬럼 모두 NOT NULL 이다(0019).
+# 숫자로 못 읽는 글자(`105%`·`180,000`)는 어느 컬럼이든 막는다. 새 값 컬럼을 더하면 여기에
+# 규칙을 적어야 읽힌다(없으면 KeyError).
+_BLANK_AS_ZERO: dict[str, bool] = {
+    "Density": False,
+    "Wafer Total": False,
+    "생산수량": True,
+    "확보율": False,
+}
+# 못 읽는 칸 예시는 이만큼만 적는다. 사용자가 어느 행인지 찾을 수 있으면 된다.
+_EXAMPLE_LIMIT = 3
 
 
 def empty_past_table(columns: tuple[str, ...]) -> pd.DataFrame:
@@ -51,12 +68,126 @@ def empty_past_table(columns: tuple[str, ...]) -> pd.DataFrame:
     )
 
 
+def _read_numbers(raw: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """칸을 숫자로 읽어 (숫자, 빈칸, 못 읽은 칸) 을 돌려준다.
+
+    `pd.to_numeric(errors="coerce")` 만 쓰면 못 읽는 글자가 빈칸과 똑같은 결측이 되어 「비워
+    둔 칸」과 「`105%`·`180,000` 처럼 적은 칸」을 가를 수 없다. 그래서 원문이 비었는지를
+    먼저 본다. 앞뒤 공백(줄바꿈 없는 공백 포함)은 지우고 읽는다.
+
+    DB 에서 읽은 표처럼 이미 숫자인 컬럼은 결측만 빈칸으로 본다. 불러오기가 예외를 내면
+    HOME 이 열리지 않는데, 0019 가 값 컬럼을 모두 NOT NULL 로 두어 저장된 표는 여기서 막히지
+    않는다.
+    """
+    if is_numeric_dtype(raw):
+        numbers = raw.astype("float64")
+        return numbers, numbers.isna(), pd.Series(False, index=raw.index)
+    text = raw.astype("string").str.strip().fillna("")
+    blank = text.eq("").astype(bool)
+    numbers = pd.to_numeric(text.astype(object).where(~blank), errors="coerce").astype("float64")
+    # `inf`·`1e400` 도 글자로는 숫자지만 값으로는 못 쓴다.
+    unreadable = ~blank & ~pd.Series(np.isfinite(numbers.to_numpy()), index=raw.index)
+    return numbers, blank, unreadable
+
+
+def _row_examples(
+    frame: pd.DataFrame,
+    mask: pd.Series,
+    labels: list[str],
+    detail: pd.Series | None = None,
+) -> str:
+    """막힌 행 몇 개를 「키 · 키 → 무엇」 꼴로 적는다. 사용자가 Excel 에서 그 행을 찾는 글이다."""
+    lines: list[str] = []
+    for position in mask[mask].index[:_EXAMPLE_LIMIT]:
+        line = " · ".join(str(frame.at[position, column]) for column in labels)
+        lines.append(line if detail is None else f"{line} → {detail.at[position]}")
+    rest = int(mask.sum()) - len(lines)
+    return "; ".join(lines) + (f" 외 {rest}행" if rest > 0 else "")
+
+
+def _quoted(raw: pd.Series) -> pd.Series:
+    """사용자가 적은 원문 그대로를 따옴표로 감싼다."""
+    return raw.astype("string").fillna("").map(lambda value: f"'{value}'")
+
+
+def _read_months(
+    prepared: pd.DataFrame, keys: list[str], table_name: str
+) -> tuple[pd.Series, pd.Series]:
+    """생산계획년월을 (숫자, 빈 행) 으로 읽는다. 비어 있지 않은데 못 읽으면 막는다.
+
+    `25.11`·`202511.5` 는 숫자로는 읽히지만 정수로 자르면 다른 달이 되므로 함께 막는다.
+    """
+    raw = prepared["생산계획년월"]
+    months, blank, unreadable = _read_numbers(raw)
+    unreadable = unreadable | (~blank & months.mod(1).ne(0))
+    if unreadable.any():
+        labelled = prepared.assign(**{"생산계획년월": _quoted(raw)})
+        raise ValueError(
+            f"{table_name}의 생산계획년월을 YYYYMM 숫자로 읽을 수 없습니다: "
+            f"{_row_examples(labelled, unreadable, keys)}. "
+            "`202511` 처럼 여섯 자리 숫자로 적으세요 — `2025-11`·`2025/11`·날짜 서식은 받지 "
+            "않습니다. 못 읽는 행을 빼고 읽으면 저장할 때 그 행이 지워집니다."
+        )
+    return months, blank
+
+
+def _value_rule(column: str, *, unreadable_text: bool, blank_refused: bool) -> str:
+    """값 칸 오류 문구 끝의 안내 — 막힌 까닭에 맞는 것만 적는다."""
+    rules: list[str] = []
+    if unreadable_text:
+        rules.append(
+            "천 단위 쉼표 없이 숫자만 적으세요(`180,000` → `180000`) — 쉼표는 지역 설정마다 천 "
+            "단위인지 소수점인지 달라 받지 않습니다."
+        )
+        if column == "확보율":
+            rules.append("확보율은 소수로 적습니다(`105%` → `1.05`).")
+    if blank_refused:
+        consequence = {
+            "Density": "그 달 B/N Capa 가 0 이 됩니다",
+            "Wafer Total": "그 달 Wafer Capa 가 0 이 됩니다",
+            "확보율": "그 공정이 그 달 B/N 1위가 되고 B/N Capa 가 0 이 됩니다",
+        }[column]
+        rules.append(
+            f"빈칸은 0 으로 읽지 않습니다 — 0 이면 {consequence}. 값이 없는 달은 그 행을 빼고 "
+            "붙여넣으세요."
+        )
+    return " ".join(rules)
+
+
+def _read_values(
+    prepared: pd.DataFrame, column: str, keys: list[str], table_name: str
+) -> pd.Series:
+    """값 칸 하나를 `_BLANK_AS_ZERO` 규칙대로 읽는다. 막히는 칸은 행 예시와 함께 알린다."""
+    raw = prepared[column]
+    values, blank, unreadable = _read_numbers(raw)
+    blank_refused = blank & (not _BLANK_AS_ZERO[column])
+    refused = unreadable | blank_refused
+    if refused.any():
+        detail = _quoted(raw).where(~blank, "빈칸")
+        rule = _value_rule(
+            column,
+            unreadable_text=bool(unreadable.any()),
+            blank_refused=bool(blank_refused.any()),
+        )
+        raise ValueError(
+            f"{table_name}의 {column} 칸을 숫자로 읽을 수 없습니다: "
+            f"{_row_examples(prepared, refused, keys, detail)}. {rule}"
+        )
+    return values.fillna(0.0).astype("float64")
+
+
 def prepare_past_table(frame: pd.DataFrame, columns: tuple[str, ...]) -> pd.DataFrame:
     """저장·계산 공용 정규화. 컬럼 계약과 키 중복을 검사한다.
 
     빈 문자열로 들어온 분류값은 빈 칸 그대로 둔다. `Stack` 이나 `Customer` 가 없는 과거
     자료가 있을 수 있고, 그것을 막으면 넣을 방법이 사라진다. 중복만 막는다 — 같은 키가
     두 번 들어오면 어느 값이 맞는지 알 수 없다.
+
+    **못 읽는 칸을 말없이 버리거나 0 으로 만들지 않는다**(2026-09-29 빈칸 횡전개). 저장은
+    그 표를 지우고 다시 넣으므로, 붙여넣기에서 떨어진 행은 저장하는 순간 사라진다.
+    - 생산계획년월이 **빈** 행만 떨군다. 비어 있지 않은데 `YYYYMM` 숫자로 못 읽는 행
+      (`2025-11`·`2025/11`·`2025-11-01`·`25.11`)은 예시와 함께 막는다.
+    - 값 칸의 빈칸은 `_BLANK_AS_ZERO` 가 컬럼마다 정한 대로 읽고, 숫자로 못 읽는 글자는 막는다.
     """
     table_name = _TABLE_NAMES[columns]
     if not isinstance(frame, pd.DataFrame):
@@ -76,9 +207,11 @@ def prepare_past_table(frame: pd.DataFrame, columns: tuple[str, ...]) -> pd.Data
     for column in columns:
         if column in _TEXT_COLUMNS:
             prepared[column] = prepared[column].astype("string").fillna("").str.strip()
-        else:
-            prepared[column] = pd.to_numeric(prepared[column], errors="coerce")
-    prepared = prepared.dropna(subset=["생산계획년월"])
+    keys = _KEY_COLUMNS[columns]
+    months, blank_months = _read_months(prepared, keys, table_name)
+    prepared["생산계획년월"] = months
+    # 년월이 **빈** 행만 떨군다(지금까지와 같다) — 어느 달인지 알 수 없는 행이다.
+    prepared = prepared.loc[~blank_months]
     if prepared.empty:
         return empty_past_table(columns)
     prepared["생산계획년월"] = prepared["생산계획년월"].astype("int64")
@@ -92,8 +225,7 @@ def prepare_past_table(frame: pd.DataFrame, columns: tuple[str, ...]) -> pd.Data
         column for column in columns if column != "생산계획년월" and column not in _TEXT_COLUMNS
     ]
     for column in value_columns:
-        prepared[column] = prepared[column].fillna(0.0).astype("float64")
-    keys = _KEY_COLUMNS[columns]
+        prepared[column] = _read_values(prepared, column, keys, table_name)
     duplicated = prepared.duplicated(subset=keys)
     if duplicated.any():
         first = prepared.loc[duplicated, keys].astype("string").agg(" · ".join, axis=1)

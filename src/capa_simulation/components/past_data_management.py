@@ -77,7 +77,7 @@ PAST_TABLE_SPECS = (
         columns=PAST_MONTH_COLUMNS,
         caption=(
             "Density 는 억Gb, Wafer Total 은 매입니다. Wafer Capa 와 B/N Capa 는 확보율을 "
-            "곱해 만들므로 따로 넣지 않습니다."
+            "곱해 만들므로 따로 넣지 않습니다. 빈칸·천 단위 쉼표(`180,000`)는 받지 않습니다."
         ),
     ),
     PastTableSpec(
@@ -87,7 +87,7 @@ PAST_TABLE_SPECS = (
         columns=PAST_DETAIL_COLUMNS,
         caption=(
             "제품·Stack·거래선별 월 수량입니다. 화면에서 `계획 세부수량 상세`를 끄면 "
-            "거래선을 합쳐 접어 보여 줍니다."
+            "거래선을 합쳐 접어 보여 줍니다. 빈칸은 0 으로 읽습니다."
         ),
     ),
     PastTableSpec(
@@ -96,7 +96,8 @@ PAST_TABLE_SPECS = (
         icon=":material/percent:",
         columns=PAST_SECUREMENT_COLUMNS,
         caption=(
-            "공정별 월 확보율입니다(1.05 = 105%). **확보율 오름차순이 곧 B/N 순위**라 "
+            "공정별 월 확보율입니다(1.05 = 105% — `105%`·빈칸은 받지 않습니다). "
+            "**확보율 오름차순이 곧 B/N 순위**라 "
             "B/N 공정명을 따로 넣지 않습니다. 가용대수·소요대수는 받지 않으므로 상세 "
             "B/N 의 그 두 칸은 과거 구간에서 빕니다."
         ),
