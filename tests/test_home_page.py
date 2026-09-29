@@ -1061,8 +1061,11 @@ def test_the_home_guide_carries_what_left_the_body() -> None:
         "hover 의 Capa 숫자는 자르지 않은 실제 값",
         "비우고 저장하면 공지가 내려갑니다",
         "유효한 월 중 최저 확보율",
+        # 년월 셀을 병합한 Past Data 는 막힌다(2026-09-29 리뷰).
+        "병합을 풀고",
     ):
         assert text in guide, text
+    assert "년월이 **빈** 행만 읽지 않고 넘어갑니다" not in guide
 
 
 def test_past_data_paste_opens_in_a_popup_and_save_sits_on_top(seeded_database: Path) -> None:

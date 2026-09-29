@@ -499,15 +499,92 @@ def test_a_month_written_in_another_format_is_refused_rather_than_dropped(
     assert f"'{month}'" in str(caught.value)
 
 
-def test_a_row_with_a_blank_month_is_still_left_out() -> None:
-    """년월이 **빈** 행만 지금처럼 떨군다. 어느 달인지 알 수 없는 행이다."""
-    content = _SECUREMENT_HEADER + "202511\tP-A\t1.05\n\tP-B\t0.9\n202512\tP-A\t 1.10 \n"
+def test_only_a_row_blank_in_every_cell_is_left_out() -> None:
+    """**모든 칸이 빈** 행만 떨군다. 공백만 든 칸도 빈칸이다."""
+    content = _SECUREMENT_HEADER + "202511\tP-A\t1.05\n \t \t \n202512\tP-A\t 1.10 \n"
 
     parsed = past_table_from_clipboard(content, PAST_SECUREMENT_COLUMNS)
 
     assert parsed["생산계획년월"].tolist() == [202511, 202512]
     # 앞뒤 공백은 지우고 읽는다 — 글자로 막을 까닭이 없다.
     assert parsed["확보율"].tolist() == pytest.approx([1.05, 1.10])
+
+
+# Excel 에서 년월 셀을 병합한 표(2026-09-29 리뷰). 첫 행에만 년월이 있고 이어진 행은 빈칸이다 —
+# 이전에는 이어진 행을 말없이 떨궈 「1행을 읽었습니다」 뒤 저장이 그 행을 표에서 지웠다.
+_MERGED_MONTH_ROWS = {
+    "확보율": (
+        PAST_SECUREMENT_COLUMNS,
+        _SECUREMENT_HEADER + "202511\tP-A\t1.05\n\tP-B\t0.90\n\tP-C\t1.20\n",
+        ["빈칸 · P-B · 0.90", "빈칸 · P-C · 1.20"],
+    ),
+    "월별": (
+        PAST_MONTH_COLUMNS,
+        _MONTH_HEADER + "202511\t8.0\t180000\n\t9.0\t\n",
+        ["빈칸 · 9.0 · 빈칸"],
+    ),
+    "계획": (
+        PAST_DETAIL_COLUMNS,
+        # 값이 빈칸이어도 분류가 찼으면 막는다 — 계획 세부수량의 빈칸 = 0 규칙과 별개다.
+        _DETAIL_HEADER + "202511\tDEMO-A\t12H\tC1\t100\n\tDEMO-A\t12H\tC2\t\n",
+        ["빈칸 · DEMO-A · 12H · C2 · 빈칸"],
+    ),
+}
+
+
+@pytest.mark.parametrize("table", sorted(_MERGED_MONTH_ROWS))
+def test_a_row_with_only_its_month_blank_is_refused_with_the_row_it_came_from(
+    table: str,
+) -> None:
+    columns, content, shown = _MERGED_MONTH_ROWS[table]
+
+    with pytest.raises(ValueError) as caught:
+        past_table_from_clipboard(content, columns)
+
+    message = str(caught.value)
+    assert f"생산계획년월이 빈 행이 {len(shown)}개" in message
+    for example in shown:
+        assert example in message
+    assert "병합을 풀고 모든 행에 년월을 채워" in message
+
+
+def test_a_blank_month_row_with_values_cannot_reach_the_store_through_the_repository(
+    tmp_path: Path,
+) -> None:
+    """저장 경로도 같은 규칙이다 — 년월이 빈 행을 떨군 채 표를 통째로 바꾸지 않는다."""
+    repository = DuckDBScenarioRepository(tmp_path / "scenario.duckdb")
+    repository.initialize()
+    stored = repository.replace_global_past_data(_stored_profile_tables(), source="기존")
+
+    with pytest.raises(ValueError, match="생산계획년월이 빈 행"):
+        repository.replace_global_past_data(
+            {
+                **_stored_profile_tables(),
+                "확보율": pd.DataFrame(
+                    {
+                        "생산계획년월": [202511, None],
+                        "공정": ["DEMO-P", "DEMO-Q"],
+                        "확보율": [1.02, 0.5],
+                    }
+                ),
+            },
+            source="병합 셀",
+        )
+
+    kept = repository.load_global_past_data()
+    assert kept.version == stored.version
+    pd.testing.assert_frame_equal(kept.securement, stored.securement)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [_SECUREMENT_HEADER, _SECUREMENT_HEADER + " \t \t \n"],
+    ids=["header-only", "blank-rows-only"],
+)
+def test_a_paste_that_reads_no_rows_is_refused(content: str) -> None:
+    """0행을 대기로 쌓으면 저장 한 번에 그 표가 통째로 비워진다(되돌릴 수 없음)."""
+    with pytest.raises(ValueError, match="읽은 행이 없습니다"):
+        past_table_from_clipboard(content, PAST_SECUREMENT_COLUMNS)
 
 
 def test_a_blank_plan_quantity_reads_as_zero_but_a_comma_is_refused() -> None:
@@ -544,7 +621,16 @@ render_past_data_management(database_path, load_global_past_data(database_path))
     [
         (_SECUREMENT_HEADER + "2025-11\tDEMO-P\t1.05\n2025-12\tDEMO-P\t0.98\n", "'2025-11'"),
         (_SECUREMENT_HEADER + "202511\tDEMO-P\t\n202512\tDEMO-P\t0.98\n", "202511 · DEMO-P"),
+        # 년월 셀을 병합한 표 — 이어진 행이 떨어져 저장이 그 공정을 지웠다(2026-09-29 리뷰).
+        (
+            _SECUREMENT_HEADER + "202511\tDEMO-P\t1.05\n\tDEMO-Q\t0.90\n",
+            "빈칸 · DEMO-Q · 0.90",
+        ),
+        # 년월 열이 모두 빈 표·머리글만 — 0행 대기가 저장을 켜 표를 비웠다.
+        (_SECUREMENT_HEADER + "\tDEMO-P\t1.05\n\tDEMO-Q\t0.90\n", "빈 행이 2개"),
+        (_SECUREMENT_HEADER, "읽은 행이 없습니다"),
     ],
+    ids=["dashed-month", "blank-value", "merged-month", "all-months-blank", "header-only"],
 )
 def test_a_paste_the_dialog_cannot_read_queues_nothing_so_save_cannot_wipe_the_table(
     tmp_path: Path, pasted: str, shown: str

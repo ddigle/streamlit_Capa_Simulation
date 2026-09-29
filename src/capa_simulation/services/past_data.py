@@ -131,6 +131,37 @@ def _read_months(
     return months, blank
 
 
+def _drop_blank_month_rows(
+    prepared: pd.DataFrame, blank_months: pd.Series, table_name: str
+) -> pd.DataFrame:
+    """년월이 빈 행을 가른다 — **모든 칸이 빈 행만** 떨구고, 다른 칸이 찬 행은 막는다.
+
+    Excel 에서 년월 셀을 병합한 표(첫 행에만 `202511`, 이어진 행은 빈칸)를 붙여넣으면 이어진
+    행은 값·분류가 다 있는데 년월만 빈다. 그 행을 떨구면 「N행을 읽었습니다」 뒤 저장이 그 행을
+    표에서 지운다 — 확보율이면 B/N 1위가 말없이 바뀐다(2026-09-29 리뷰). 어느 달인지 알 수
+    없으니 추측해 채우지도 않는다.
+    """
+    others = [column for column in prepared.columns if column != "생산계획년월"]
+    filled = pd.Series(False, index=prepared.index)
+    for column in others:
+        if column in _TEXT_COLUMNS:
+            filled |= prepared[column].ne("")
+        else:
+            filled |= ~_read_numbers(prepared[column])[1]
+    orphan = blank_months & filled
+    if orphan.any():
+        labelled = prepared.assign(**{"생산계획년월": ""}).astype("string")
+        labelled = labelled.apply(lambda column: column.str.strip()).fillna("")
+        labelled = labelled.mask(labelled.eq(""), "빈칸")
+        raise ValueError(
+            f"{table_name}에 생산계획년월이 빈 행이 {int(orphan.sum()):,}개 있습니다: "
+            f"{_row_examples(labelled, orphan, list(prepared.columns))}. Excel 에서 년월 셀을 "
+            "병합했다면 병합을 풀고 모든 행에 년월을 채워 다시 붙여넣으세요 — 년월 없는 행을 빼고 "
+            "읽으면 저장할 때 그 행이 지워집니다."
+        )
+    return prepared.loc[~blank_months].copy()
+
+
 def _value_rule(column: str, *, unreadable_text: bool, blank_refused: bool) -> str:
     """값 칸 오류 문구 끝의 안내 — 막힌 까닭에 맞는 것만 적는다."""
     rules: list[str] = []
@@ -185,8 +216,8 @@ def prepare_past_table(frame: pd.DataFrame, columns: tuple[str, ...]) -> pd.Data
 
     **못 읽는 칸을 말없이 버리거나 0 으로 만들지 않는다**(2026-09-29 빈칸 횡전개). 저장은
     그 표를 지우고 다시 넣으므로, 붙여넣기에서 떨어진 행은 저장하는 순간 사라진다.
-    - 생산계획년월이 **빈** 행만 떨군다. 비어 있지 않은데 `YYYYMM` 숫자로 못 읽는 행
-      (`2025-11`·`2025/11`·`2025-11-01`·`25.11`)은 예시와 함께 막는다.
+    - **모든 칸이 빈** 행만 떨군다. 년월만 빈 행(Excel 병합 셀)과 비어 있지 않은데 `YYYYMM`
+      숫자로 못 읽는 행(`2025-11`·`2025/11`·`2025-11-01`·`25.11`)은 예시와 함께 막는다.
     - 값 칸의 빈칸은 `_BLANK_AS_ZERO` 가 컬럼마다 정한 대로 읽고, 숫자로 못 읽는 글자는 막는다.
     """
     table_name = _TABLE_NAMES[columns]
@@ -209,9 +240,8 @@ def prepare_past_table(frame: pd.DataFrame, columns: tuple[str, ...]) -> pd.Data
             prepared[column] = prepared[column].astype("string").fillna("").str.strip()
     keys = _KEY_COLUMNS[columns]
     months, blank_months = _read_months(prepared, keys, table_name)
-    prepared["생산계획년월"] = months
-    # 년월이 **빈** 행만 떨군다(지금까지와 같다) — 어느 달인지 알 수 없는 행이다.
-    prepared = prepared.loc[~blank_months]
+    prepared = _drop_blank_month_rows(prepared, blank_months, table_name)
+    prepared["생산계획년월"] = months.loc[prepared.index]
     if prepared.empty:
         return empty_past_table(columns)
     prepared["생산계획년월"] = prepared["생산계획년월"].astype("int64")
@@ -249,9 +279,21 @@ def past_table_to_csv(frame: pd.DataFrame, columns: tuple[str, ...]) -> bytes:
 
 
 def past_table_from_clipboard(content: str, columns: tuple[str, ...]) -> pd.DataFrame:
-    """Excel 에서 복사한 머리글 포함 표를 읽는다."""
-    parsed = parse_clipboard_table(content, _TABLE_NAMES[columns])
-    return prepare_past_table(parsed, columns)
+    """Excel 에서 복사한 머리글 포함 표를 읽는다.
+
+    **읽은 행이 없으면 막는다**(2026-09-29 리뷰). 저장은 표를 통째로 바꾸므로 0행을 대기로
+    쌓으면 저장 한 번에 그 표가 비워진다 — 머리글만 복사했거나 행이 모두 빈 붙여넣기다. 표를
+    비우는 기능은 따로 두지 않았다.
+    """
+    table_name = _TABLE_NAMES[columns]
+    parsed = parse_clipboard_table(content, table_name)
+    prepared = prepare_past_table(parsed, columns)
+    if prepared.empty:
+        raise ValueError(
+            f"{table_name} 붙여넣기에서 읽은 행이 없습니다. 머리글 아래 데이터 행까지 함께 "
+            "복사하세요 — 0행을 저장하면 저장된 표가 통째로 지워지므로 받지 않습니다."
+        )
+    return prepared
 
 
 def past_sample_rows(columns: tuple[str, ...]) -> pd.DataFrame:
