@@ -74,6 +74,30 @@ def test_an_error_outside_the_period_still_stops_and_says_so(
     assert "RQ_RUN_RATE" in str(caught.value)
 
 
+def test_an_out_of_range_yield_outside_the_period_names_the_row_and_the_yield_tab(
+    tables: dict[str, pd.DataFrame],
+) -> None:
+    """보지 않는 달의 범위 밖 수율도 멈춘다 — 오류문이 그 행과 고칠 곳(생산 계획 → 수율 탭)을
+    가리키고, 감싸는 문구가 「기준 정보 페이지」로 엇갈리게 보내지 않는다(2026-09-29 리뷰)."""
+    months = _months(tables)
+    broken = dict(tables)
+    yields = tables["RQ_YLD"].copy()
+    last = pd.to_numeric(yields["생산계획년월"]).eq(months[-1])
+    product = str(yields.loc[last, "제품정보"].iloc[0])
+    yields.loc[last & yields["제품정보"].eq(product), "EDS_수율"] = 0.0
+    broken["RQ_YLD"] = yields
+
+    with pytest.raises(ValueError, match="밖의 달에 기준정보 오류") as caught:
+        sc.get_scenario_capacity_and_demand(
+            _key(months[0], months[-2]), _scenario_tables=broken, _reference_tables=broken
+        )
+
+    message = str(caught.value)
+    assert f"{months[-1]} · {product}" in message
+    assert "생산 계획 → 수율 탭" in message
+    assert "기준 정보 페이지에서 고친" not in message
+
+
 def test_an_error_inside_the_period_is_reported_as_it_is(tables: dict[str, pd.DataFrame]) -> None:
     """보는 기간 안의 오류는 「밖」이라고 말하면 안 된다 — 고칠 곳을 엉뚱하게 가리킨다."""
     months = _months(tables)

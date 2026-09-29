@@ -134,14 +134,17 @@ except ValueError as exc:
 
 # 수율 표는 따로 세운다. 예전에는 위 `try` 에 함께 있어 RQ_YLD 한 행의 값이 비었거나 0 이면
 # PKG PLAN 편집·붙여넣기·가상 제품 등록·환산 탭까지 전부 섰다(2026-09-29 횡전개 감사). 값이
-# 잘못된 행은 표에서 빼 「편집 불가」로 보이고 적용 때 원본 그대로 되붙인다. 연결 키 결측·중복처럼
-# 표를 세울 수 없는 오류는 수율 탭 안에만 띄운다.
+# 잘못된 행은 「편집 불가」로 알리고 표에는 그 달 칸을 빈칸으로 싣는다 — 제품의 모든 달이
+# 잠겨도 행이 남아 여기서 고칠 수 있다(2026-09-29 리뷰). 적용 때 빈칸은 원본 그대로 되붙인다.
+# 연결 키 결측·중복처럼 표를 세울 수 없는 오류는 수율 탭 안에만 띄운다.
 yield_build_error: str | None = None
 default_yield_table: pd.DataFrame | None = None
 locked_yield_rows = pd.DataFrame(columns=[*YIELD_KEYS, *YIELD_VALUE_COLUMNS])
 try:
     editable_yield, locked_yield_rows = split_editable_yield_rows(filtered_yield)
-    default_yield_table = yield_to_edit_table(editable_yield, prepared_display_order)
+    default_yield_table = yield_to_edit_table(
+        editable_yield, prepared_display_order, locked=locked_yield_rows
+    )
 except ValueError as exc:
     yield_build_error = str(exc)
 
@@ -238,17 +241,20 @@ def _render_flashes(*keys: str) -> None:
 
 
 def _render_locked_yield_rows(locked: pd.DataFrame) -> None:
-    """원천 값이 비었거나 범위 밖이라 수율 표에서 뺀 행을 알린다.
+    """원천 값이 비었거나 범위 밖이라 수율 표에서 값을 뺀 행을 알린다.
 
     말없이 빼면 그 달 칸이 원천에 행이 없는 달과 똑같이 빈칸으로 보인다. 목록에는 까닭(`사유`)을
-    함께 싣는다 — 계산은 값 없는 행을 환산의 「제외한 계획」으로 내리므로 두 목록이 이어진다.
+    함께 싣는다. 계산에서 두 경우는 다르다 — 값 없는 행은 환산의 「제외한 계획」으로 내려가고,
+    0 이하·100% 초과 행은 Chip·Wafer 환산과 HOME·소요대수·확보율을 멈춘다(2026-09-28 사용자
+    결정). 예전 문구는 둘 다 원본대로 남는다고만 해 계산이 서는 것을 알리지 않았다(2026-09-29 리뷰).
     """
     if locked.empty:
         return
     st.warning(
-        f"원천 수율 값이 비었거나 0 이하·100% 초과인 {len(locked):,}행은 표에서 뺐습니다(편집 "
-        "불가). 적용해도 원본 그대로 남습니다 — 표에 그 제품 행이 있으면 그 달 칸에 EDS·BE 를 "
-        "모두 넣어 적용해 고칠 수 있습니다.",
+        f"원천 수율 값이 비었거나 0 이하·100% 초과인 {len(locked):,}행은 표에서 값을 뺐습니다"
+        "(편집 불가 — 그 달 칸이 빈칸으로 보입니다). 값이 빈 행은 환산에서 빠지고, 0 이하·100% "
+        "초과 행은 Chip·Wafer 환산과 HOME·소요대수·확보율 계산을 멈춥니다. 그 달 칸에 EDS·BE 를 "
+        "모두 넣어 적용하면 고쳐집니다 — 비워 두면 원본 그대로 남습니다.",
         icon=":material/lock:",
     )
     with st.expander("편집 불가 수율 행", icon=":material/rule:"):

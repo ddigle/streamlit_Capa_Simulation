@@ -63,6 +63,14 @@ YIELD_DISPLAY_NAMES = {"EDS_수율": "EDS", "BE_수율": "BE"}
 YIELD_INTERNAL_NAMES = {display: internal for internal, display in YIELD_DISPLAY_NAMES.items()}
 # 편집표에서 뺀 수율 행에 붙는 까닭 컬럼(`split_editable_yield_rows`).
 YIELD_LOCK_REASON_COLUMN = "사유"
+# 범위 밖 수율 오류에 적는 예시 칸 수. 사용자가 어느 행인지 찾을 수 있으면 된다.
+YIELD_RANGE_EXAMPLE_LIMIT = 5
+# 계산 경로의 범위 밖 수율 오류 끝에 붙이는 고치는 곳. 기준정보 오류는 보지 않는 달이어도 계산을
+# 멈춘다(2026-09-28 사용자 결정) — 대신 어디를 고칠지 알린다.
+YIELD_RANGE_FIX_HINT = (
+    "생산 계획 → 수율 탭에서 그 달의 EDS·BE 를 둘 다 고쳐 적용하세요 — 그 칸은 수율 표에서 "
+    "빈칸으로 보입니다. 그 달이 조회기간 밖이면 사이드바 조회기간을 넓혀야 수율 탭에 나옵니다."
+)
 CHIP_KEYS = ["제품정보", "Stack", "WF 구분"]
 CHIP_REQUIRED_COLUMNS = [*CHIP_KEYS, "구분_Chip", "Net Die"]
 DENSITY_KEYS = ["제품정보", "Stack", "WF 구분"]
@@ -179,9 +187,18 @@ def attach_plan_attributes(long_plan: pd.DataFrame, source_plan: pd.DataFrame) -
 
 
 def yield_to_edit_table(
-    yield_data: pd.DataFrame, display_order: DisplayOrderInput = None
+    yield_data: pd.DataFrame,
+    display_order: DisplayOrderInput = None,
+    *,
+    locked: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Pivot Long yield data into editable EDS/BE rows with month columns."""
+    """Pivot Long yield data into editable EDS/BE rows with month columns.
+
+    `locked` 는 `split_editable_yield_rows` 가 뺀 행이다. 그 (제품, Stack, WF 구분) 행과 달 열을
+    **빈칸으로** 싣는다 — 제품의 모든 달이 잠기면 표에 그 제품 행이 없어 이 화면에서 고칠 길이
+    없었다(2026-09-29 리뷰). 빈칸은 적용 때 `restore_locked_yield_rows` 가 원본으로 되붙이고,
+    EDS·BE 를 둘 다 채우면 채운 값이 이긴다. 붙여넣기 양식도 이 표라 같은 행이 실린다.
+    """
     require_columns(yield_data, YIELD_REQUIRED_COLUMNS, "RQ_YLD")
     prepared = _normalize_text(yield_data[YIELD_REQUIRED_COLUMNS], YIELD_KEYS[1:])
     prepared["생산계획년월"] = pd.to_numeric(prepared["생산계획년월"], errors="coerce").astype(
@@ -195,6 +212,9 @@ def yield_to_edit_table(
         raise ValueError("RQ_YLD의 EDS_수율 또는 BE_수율에 누락값이 있습니다.")
     assert_unique_keys(prepared, YIELD_KEYS, "RQ_YLD 연결 키가")
     _validate_yield_range(prepared, "RQ_YLD")
+    if locked is not None and not locked.empty:
+        prepared = pd.concat([prepared, _locked_yield_placeholders(locked)], ignore_index=True)
+        assert_unique_keys(prepared, YIELD_KEYS, "RQ_YLD 연결 키가")
 
     long_yield = prepared.melt(
         id_vars=YIELD_KEYS,
@@ -224,6 +244,18 @@ def yield_to_edit_table(
         TAB_YIELD,
         value_aliases={"수율 구분": YIELD_DISPLAY_NAMES},
     )
+
+
+def _locked_yield_placeholders(locked: pd.DataFrame) -> pd.DataFrame:
+    """뺀 수율 행의 연결 키에 EDS·BE 를 빈칸으로 둔 행. 편집표에 빈칸 칸으로 실린다."""
+    require_columns(locked, YIELD_KEYS, "편집 불가 수율 행")
+    placeholders = _normalize_text(locked[YIELD_KEYS], YIELD_KEYS[1:])
+    placeholders["생산계획년월"] = pd.to_numeric(
+        placeholders["생산계획년월"], errors="coerce"
+    ).astype("Int64")
+    for column in YIELD_VALUE_COLUMNS:
+        placeholders[column] = pd.Series(float("nan"), index=placeholders.index, dtype="float64")
+    return placeholders[YIELD_REQUIRED_COLUMNS]
 
 
 def yield_from_edit_table(yield_table: pd.DataFrame) -> pd.DataFrame:
@@ -278,13 +310,19 @@ def split_editable_yield_rows(yield_data: pd.DataFrame) -> tuple[pd.DataFrame, p
     """수율 편집표에 실을 행과 실을 수 없는 행(값 결측·0 이하·100% 초과)으로 가른다.
 
     `yield_to_edit_table` 은 값 칸 하나만 비었거나 0 이어도 표 전체를 거부한다. 생산 계획
-    화면은 그 오류로 PKG PLAN 편집·붙여넣기·가상 제품 등록·환산까지 멈췄다 — 계산은 같은 행을
-    제외 목록으로 내리고 이어 가는데 화면만 섰다(2026-09-29 횡전개 감사).
+    화면은 그 오류로 PKG PLAN 편집·붙여넣기·가상 제품 등록·환산까지 멈췄다(2026-09-29 횡전개
+    감사). 이 화면은 그 값을 **고치는 곳**이라 서면 안 된다.
 
-    그런 행을 빈칸으로 표에 실으면 적용의 `dropna` 가 원천 행을 지우고, 0 을 받아 주면 수율로
-    나누는 계산이 무한대가 된다. 그래서 **(월, 제품, Stack, WF 구분) 행 단위로** 표에서 빼고,
-    적용 때 `restore_locked_yield_rows` 가 원본 그대로 되붙인다. 판정은 `_validate_yield_range`
-    와 같다 — 그보다 좁으면 `1.2` 같은 값이 여전히 화면을 세운다.
+    계산은 두 경우가 다르다(2026-09-29 리뷰). 값이 **빈** 행은 `_drop_rows_missing_values` 가
+    환산의 제외 목록으로 내리고 이어 간다. **0 이하·100% 초과** 행은 `_prepare_load_base` 가
+    Chip·Wafer 환산과 HOME·소요대수·확보율을 행 예시와 함께 멈춘다 — 기준정보 오류는 숨기지
+    않는다(2026-09-28 사용자 결정). 어느 쪽이든 고치는 길은 이 표다.
+
+    그런 행을 원본 값 그대로 표에 실으면 값 검사가 표 전체를 거부하고, 빈칸으로 실어 그대로
+    적용하면 적용의 `dropna` 가 원천 행을 지운다. 그래서 **(월, 제품, Stack, WF 구분) 행
+    단위로** 값을 표에서 빼고(`yield_to_edit_table(locked=...)` 가 그 칸을 빈칸으로 싣는다), 적용
+    때 `restore_locked_yield_rows` 가 원본 그대로 되붙인다. 판정은 `_validate_yield_range` 와
+    같다 — 그보다 좁으면 `1.2` 같은 값이 여전히 화면을 세운다.
 
     연결 키 결측·중복은 행 하나의 값 문제가 아니라 표 구조의 문제라 가르지 않고 그대로 던진다.
 
@@ -327,7 +365,8 @@ def restore_locked_yield_rows(edited: pd.DataFrame, locked: pd.DataFrame) -> pd.
     채웠으면 `yield_from_edit_table` 이 「둘 다 필요」로 이미 막는다.
 
     값 범위는 다시 검사하지 않는다. 뺀 행은 정의상 범위 밖이고, 그 값을 고치지 않고 남겨
-    두는 것이 이 함수의 일이다(계산은 결측을 제외 목록으로 내린다).
+    두는 것이 이 함수의 일이다. 계산은 결측 행을 제외 목록으로 내리지만 0 이하·100% 초과 행에서는
+    멈춘다(`_prepare_load_base`) — 남긴 값은 사용자가 이 표의 빈칸을 채워 고칠 때까지 오류로 남는다.
     """
     if locked.empty:
         return edited
@@ -375,15 +414,42 @@ def _to_numeric(data: pd.DataFrame, columns: list[str], table_name: str) -> pd.D
     return converted
 
 
-def _validate_yield_range(data: pd.DataFrame, table_name: str) -> None:
-    invalid_rate = (
-        data["EDS_수율"].le(0)
-        | data["EDS_수율"].gt(1)
-        | data["BE_수율"].le(0)
-        | data["BE_수율"].gt(1)
+def _validate_yield_range(data: pd.DataFrame, table_name: str, *, fix_hint: str = "") -> None:
+    """수율이 0 초과 100% 이하인지 본다. 막을 때는 **어느 행인지** 건수와 예시로 알린다.
+
+    예전 문구는 「RQ_YLD의 수율은 0 초과 100% 이하여야 합니다.」뿐이라 HOME·소요대수·확보율이
+    멈춰도 어느 제품·달인지 찾을 길이 없었다(2026-09-29 리뷰). 계산 경로의 프레임은 계획 행으로
+    펼쳐져 같은 수율 행이 거래선·Capa Code 수만큼 겹치므로 수율 연결 키로 줄여 센다. 부르는
+    쪽은 모두 `생산계획년월` 을 `Int64` 로 맞춰 넘긴다.
+    """
+    cells: list[pd.DataFrame] = []
+    for column in YIELD_VALUE_COLUMNS:
+        values = data[column]
+        invalid = values.le(0) | values.gt(1)
+        if not bool(invalid.any()):
+            continue
+        found = data.loc[invalid, YIELD_KEYS].copy()
+        found["구분"] = YIELD_DISPLAY_NAMES[column]
+        found["값"] = values.loc[invalid].astype("float64")
+        cells.append(found)
+    if not cells:
+        return
+    invalid_cells = pd.concat(cells, ignore_index=True).drop_duplicates()
+    invalid_rows = invalid_cells[YIELD_KEYS].drop_duplicates()
+    examples = [
+        f"{month} · {product} · {stack} · {division} → {kind} {value:.4g}({value * 100:.4g}%)"
+        for month, product, stack, division, kind, value in invalid_cells.head(
+            YIELD_RANGE_EXAMPLE_LIMIT
+        ).itertuples(index=False)
+    ]
+    rest = len(invalid_cells) - len(examples)
+    message = (
+        f"{table_name}의 수율은 0 초과 100% 이하여야 합니다: {len(invalid_rows):,}행, "
+        f"예시(년월 · 제품 · Stack · WF 구분) {'; '.join(examples)}"
+        + (f" 외 {rest:,}칸" if rest > 0 else "")
+        + "."
     )
-    if invalid_rate.any():
-        raise ValueError(f"{table_name}의 수율은 0 초과 100% 이하여야 합니다.")
+    raise ValueError(f"{message} {fix_hint}" if fix_hint else message)
 
 
 def _prepare_plan(plan: pd.DataFrame) -> pd.DataFrame:
@@ -468,7 +534,7 @@ def _prepare_load_base(
     )
     exclusions.extend(value_exclusions)
 
-    _validate_yield_range(calculation, "RQ_YLD")
+    _validate_yield_range(calculation, "RQ_YLD", fix_hint=YIELD_RANGE_FIX_HINT)
     if calculation["Net Die"].le(0).any():
         raise ValueError("Net Die는 0보다 커야 합니다.")
     if calculation["구분_Chip"].lt(0).any():

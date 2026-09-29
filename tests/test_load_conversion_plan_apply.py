@@ -273,7 +273,7 @@ def test_an_empty_or_zero_yield_value_no_longer_stops_the_whole_page(
         "apply_yield_changes",
         "open_yield_paste",
     } <= _button_keys(app)
-    assert any("표에서 뺐습니다" in item.value for item in app.warning)
+    assert any("표에서 값을 뺐습니다" in item.value for item in app.warning)
 
     # 뺀 행과 무관한 칸(첫 행의 202601)을 고쳐 적용한다. 브라우저는 회차마다 편집표의 편집을
     # 다시 보내므로(AppTest 는 편집표 상태를 되보내지 않는다) 적용을 누르는 회차에도 넣는다.
@@ -311,18 +311,24 @@ def test_a_yield_source_that_cannot_build_a_table_stops_only_the_yield_tab(
     assert not {"apply_yield_changes", "open_yield_paste"} & keys
 
 
-def _yield_clipboard_text(app: AppTest, *, blank: tuple[str, str] | None = None) -> str:
+def _yield_clipboard_text(
+    app: AppTest,
+    *,
+    blank: tuple[str, str] | None = None,
+    fill: tuple[str, float, float] | None = None,
+) -> str:
     """지금 수율 편집표를 붙여넣기 문자열로 만든다. `blank=(제품, 월)` 이면 그 달 EDS·BE 를
-    비운다."""
+    비우고, `fill=(제품, EDS, BE)` 이면 그 제품의 모든 달을 그 값으로 채운다."""
     from capa_simulation.scenario_state import scenario_month_table
     from capa_simulation.services.load_calculator import (
+        YIELD_EDITOR_DIMENSIONS,
         split_editable_yield_rows,
         yield_to_edit_table,
     )
 
     start_label, end_label = app.session_state["production_month_range_v2"]
-    # 화면이 양식을 만드는 것과 같이, 값이 잘못된 행을 뺀 표다.
-    editable, _ = split_editable_yield_rows(
+    # 화면이 양식을 만드는 것과 같이, 값이 잘못된 행은 그 달 칸을 빈칸으로 실은 표다.
+    editable, locked = split_editable_yield_rows(
         scenario_month_table(
             app.session_state["active_scenario"],
             "RQ_YLD",
@@ -330,11 +336,16 @@ def _yield_clipboard_text(app: AppTest, *, blank: tuple[str, str] | None = None)
             int(str(end_label).replace("-", "")),
         )
     )
-    wide = yield_to_edit_table(editable)
+    wide = yield_to_edit_table(editable, locked=locked)
     if blank is not None:
         product, month = blank
         wide[month] = wide[month].astype(object)
         wide.loc[wide["제품정보"].eq(product), month] = ""
+    if fill is not None:
+        product, eds, be = fill
+        months = [column for column in wide.columns if column not in YIELD_EDITOR_DIMENSIONS]
+        for kind, value in (("EDS", eds), ("BE", be)):
+            wide.loc[wide["제품정보"].eq(product) & wide["수율 구분"].eq(kind), months] = value
     return wide.to_csv(index=False, sep="\t")
 
 
@@ -399,6 +410,109 @@ def test_a_yield_paste_keeps_the_locked_rows_and_does_not_count_them_as_removed(
     messages = [item.value for item in app.success]
     assert any("활성 시나리오에 적용했습니다" in message for message in messages)
     assert not any("지웠습니다" in message for message in messages)
+
+
+# --- 2026-09-29 리뷰: 범위 밖 수율은 계산을 멈추되 어느 행인지 알리고, 이 화면에서 고칠 수 있다 ---
+
+
+def _break_every_month(app: AppTest, product: str, token: str) -> pd.DataFrame:
+    """그 제품의 모든 달 EDS 를 0 으로 바꿔 끼운다 — 편집표에서 그 제품 값이 전부 빠진다."""
+    source = _yield_rows(app)
+    broken = source.copy()
+    broken.loc[broken["제품정보"].eq(product), "EDS_수율"] = 0.0
+    _inject(app, "RQ_YLD", broken, token)
+    return source
+
+
+def _yield_grid(app: AppTest) -> pd.DataFrame:
+    """화면에 선 수율 편집표(세대 키와 무관하게 `수율 구분` 컬럼으로 찾는다)."""
+    grids = [frame.value for frame in app.dataframe if "수율 구분" in frame.value.columns]
+    assert len(grids) == 1, len(grids)
+    return grids[0].reset_index(drop=True)
+
+
+def test_an_out_of_range_yield_names_the_row_where_the_conversion_stops(
+    seeded_database: Path,
+) -> None:
+    """Wafer 환산이 EDS=0 한 행에서 멈출 때 오류문이 그 년월·제품과 고치는 곳을 말한다.
+
+    멈추는 것은 그대로다(2026-09-28 사용자 결정). 예전 문구는 「RQ_YLD의 수율은 0 초과 100%
+    이하여야 합니다.」뿐이었다.
+    """
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300)
+    app.session_state["monthly_volume_basis"] = "Wafer"
+    app.run()
+    source = _yield_rows(app)
+    months = pd.to_numeric(source["생산계획년월"])
+    broken = source.copy()
+    broken.loc[broken["제품정보"].eq("DEMO PRODUCT B") & months.eq(202604), "EDS_수율"] = 0.0
+    _inject(app, "RQ_YLD", broken, "out-of-range-yield")
+
+    assert not list(app.exception)
+    errors = [item.value for item in app.error if "RQ_YLD" in item.value]
+    assert len(errors) == 1, errors
+    assert "202604 · DEMO PRODUCT B" in errors[0]
+    assert "EDS 0(0%)" in errors[0]
+    assert "수율 탭에서 그 달의 EDS·BE 를 둘 다 고쳐 적용하세요" in errors[0]
+    warnings = [item.value for item in app.warning if "편집 불가" in item.value]
+    assert warnings and "HOME·소요대수·확보율 계산을 멈춥니다" in warnings[0]
+
+
+def test_a_product_locked_in_every_month_can_be_fixed_from_the_yield_grid(
+    seeded_database: Path,
+) -> None:
+    """모든 달이 잠긴 제품도 편집표에 빈칸 행으로 나오고, 둘 다 채워 적용하면 환산이 돈다.
+
+    예전에는 그 제품 행이 표에 없어 이 화면에서 고칠 길이 없었고 Wafer 환산은 계속 멈췄다.
+    """
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300)
+    app.session_state["monthly_volume_basis"] = "Wafer"
+    app.run()
+    source = _break_every_month(app, "DEMO PRODUCT B", "locked-every-month")
+    assert any("RQ_YLD" in item.value for item in app.error)
+
+    grid = _yield_grid(app)
+    b_rows = grid.loc[grid["제품정보"].eq("DEMO PRODUCT B")]
+    assert sorted(b_rows["수율 구분"]) == ["BE", "EDS"]
+    months = [column for column in grid.columns if str(column).isdigit()]
+    assert b_rows[months].isna().all(axis=None)
+
+    edit = {
+        "edited_rows": {
+            int(index): {month: (0.9 if kind == "EDS" else 0.95) for month in months}
+            for index, kind in b_rows["수율 구분"].items()
+        },
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    app.session_state[_widget_key(app, "yield_editor")] = edit
+    app.run()
+    app.session_state[_widget_key(app, "yield_editor")] = edit
+    app.button(key="apply_yield_changes").click().run()
+
+    assert not list(app.exception)
+    assert not [item.value for item in app.error if "RQ_YLD" in item.value]
+    applied = _yield_rows(app)
+    assert len(applied) == len(source)
+    fixed = applied.loc[applied["제품정보"].eq("DEMO PRODUCT B"), ["EDS_수율", "BE_수율"]]
+    assert fixed.to_numpy().tolist() == [[0.9, 0.95]] * len(fixed)
+
+
+def test_a_yield_paste_can_overwrite_a_product_locked_in_every_month(
+    seeded_database: Path,
+) -> None:
+    """붙여넣기 양식에도 그 제품 행이 빈칸으로 실려, 채워 붙여넣으면 고쳐진다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    source = _break_every_month(app, "DEMO PRODUCT B", "locked-every-month-paste")
+
+    _paste_yield(app, _yield_clipboard_text(app, fill=("DEMO PRODUCT B", 0.9, 0.95)))
+
+    assert not list(app.exception)
+    assert any("활성 시나리오에 적용했습니다" in item.value for item in app.success)
+    applied = _yield_rows(app)
+    assert len(applied) == len(source)
+    fixed = applied.loc[applied["제품정보"].eq("DEMO PRODUCT B"), ["EDS_수율", "BE_수율"]]
+    assert fixed.to_numpy().tolist() == [[0.9, 0.95]] * len(fixed)
 
 
 def test_registering_a_product_planned_only_outside_the_period_says_to_widen_it(
