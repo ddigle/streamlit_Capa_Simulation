@@ -311,40 +311,63 @@ def test_the_submitted_detail_window(
         assert error in errors
 
 
+PICKED_A = registration.PickedFields(
+    code="DEMO-A-001",
+    start=date(2026, 8, 26),
+    end=date(2026, 9, 5),
+    registered_at="2026-09-02 03:04:05",
+)
+
+
 @pytest.mark.parametrize(
-    ("code", "end", "blocked"),
+    ("code", "start", "end", "registered_text", "blocked"),
     [
         # 목록에서 고른 코드 그대로면 그 창을 쓴다.
-        ("DEMO-A-001", date(2026, 9, 5), False),
+        ("DEMO-A-001", date(2026, 8, 26), date(2026, 9, 5), "2026-09-02 03:04:05", None),
         # 코드만 바꿔 적고 날짜는 손대지 않았다 — 남의 등록일 창이라 막는다.
-        ("DEMO-Z-999", date(2026, 9, 5), True),
+        ("DEMO-Z-999", date(2026, 8, 26), date(2026, 9, 5), "", "원천 등록일로 채워진"),
         # 코드를 바꾸고 날짜도 고쳤다 — 사용자가 정한 기간을 믿는다.
-        ("DEMO-Z-999", date(2026, 9, 20), False),
+        ("DEMO-Z-999", date(2026, 8, 26), date(2026, 9, 20), "", None),
+        # 날짜를 고쳤어도 등록시점이 남의 값 그대로면 막는다 — 저장 메타데이터가 된다.
+        ("DEMO-Z-999", date(2026, 8, 26), date(2026, 9, 20), "2026-09-02 03:04:05", "등록시점"),
+        # 안내대로 두 칸을 비웠는데 등록시점이 남의 값이면, 같은 남의 창이 다시 만들어진다 — 막는다.
+        ("DEMO-Z-999", None, None, "2026-09-02 03:04:05", "등록시점"),
+        # 두 칸을 비우고 이 코드의 등록시점을 적으면 그 기준으로 조회한다.
+        ("DEMO-Z-999", None, None, "2026-06-10 00:00:00", None),
     ],
 )
 def test_a_picked_window_is_not_reused_silently_for_another_code(
-    code: str, end: date, blocked: bool
+    code: str,
+    start: date | None,
+    end: date | None,
+    registered_text: str,
+    blocked: str | None,
 ) -> None:
     """목록에서 고른 뒤 코드 칸만 고쳐 적으면 앞 코드의 등록일 창으로 오류 없이 조회됐다.
 
     2026-09-29 리뷰 — 손대지 않은 남의 기본 창만 막고, 사용자가 고친 기간은 믿는다.
     """
+    from datetime import datetime
+
     app = AppTest.from_string(SUBMIT_SCRIPT)
-    app.session_state[registration.CATALOG_FORM_PICKED_WINDOW_KEY] = (
-        "DEMO-A-001",
-        date(2026, 8, 26),
-        date(2026, 9, 5),
-    )
-    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 8, 26)
+    app.session_state[registration.CATALOG_FORM_PICKED_WINDOW_KEY] = PICKED_A
+    app.session_state[registration.FORM_DETAIL_START_KEY] = start
     app.session_state[registration.FORM_DETAIL_END_KEY] = end
-    app.session_state["__registered_at__"] = None
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = registered_text
+    app.session_state["__registered_at__"] = (
+        datetime.fromisoformat(registered_text) if registered_text else None
+    )
     app.session_state["__code__"] = code
     app.run()
 
     assert not app.exception
     errors = " ".join(item.value for item in app.error)
-    assert ("다른 코드" in errors) is blocked
-    assert (app.session_state["__window__"] is None) is blocked
+    if blocked is None:
+        assert not errors
+        assert app.session_state["__window__"] is not None
+    else:
+        assert "다른 코드" in errors and blocked in errors
+        assert app.session_state["__window__"] is None
 
 
 MULTI_PLAN_SCRIPT = STEP_SCRIPT.replace(
@@ -364,7 +387,77 @@ def test_a_pick_covers_every_plan_row_of_the_same_code() -> None:
     assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value == date(2026, 6, 24)
     assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value == date(2026, 9, 13)
     assert app.session_state[registration.CATALOG_FORM_PICKED_WINDOW_KEY] == (
-        "DEMO-A-001",
-        date(2026, 6, 24),
-        date(2026, 9, 13),
+        registration.PickedFields(
+            code="DEMO-A-001",
+            start=date(2026, 6, 24),
+            end=date(2026, 9, 13),
+            registered_at="2026-09-02 03:04:05",
+        )
+    )
+
+
+def test_the_detail_dates_stay_clearable_after_a_pick() -> None:
+    """고른 뒤에도 두 칸을 비울 수 있어야 등록시점 규칙으로 돌아간다.
+
+    Streamlit 은 처음 값(`value`)이 None 인 날짜 칸에만 지우기 단추를 준다 — `proto.default` 가
+    비어 있어야 한다. `value=None` 을 빼면 값은 같아 보여도 칸을 비울 수 없게 된다.
+    """
+    app = _run(__pick_row__=0)
+
+    for key, expected in (
+        (registration.FORM_DETAIL_START_KEY, date(2026, 8, 26)),
+        (registration.FORM_DETAIL_END_KEY, date(2026, 9, 5)),
+    ):
+        widget = app.date_input(key=key)
+        assert widget.value == expected
+        assert list(widget.proto.default) == []
+
+
+def test_the_selection_builds_the_span_from_every_plan_row_of_the_whole_catalog() -> None:
+    """목록 선택은 정리된 목록 전체의 같은 코드 줄로 등록일 범위를 낸다.
+
+    검색으로 좁힌 행(`visible`)으로 구하면 필터가 범위를 줄인다.
+    """
+    from datetime import datetime
+
+    import pandas as pd
+
+    from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
+    from capa_simulation.services.bigdataquery_catalog_view import (
+        catalog_row_at,
+        filter_catalog,
+        normalize_catalog,
+    )
+
+    catalog = normalize_catalog(
+        pd.DataFrame(
+            {
+                "simulation_name": ["알파", "알파", "베타"],
+                "simulation_code": ["DEMO-A-001", "DEMO-A-001", "DEMO-B-002"],
+                "plan_name": ["PLAN 하나", "PLAN 둘", "PLAN 셋"],
+                "plan_code": ["DEMO-PLAN-1", "DEMO-PLAN-2", "DEMO-PLAN-3"],
+                "regist_data": [
+                    "2026-09-02 03:04:05",
+                    "2026-07-15 00:00:00",
+                    "2026-09-01 01:02:03",
+                ],
+            }
+        )
+    )
+    result = registration.CatalogResult(
+        frame=catalog,
+        window=QueryWindow(start_date=date(2026, 6, 1), end_date=date(2026, 9, 8)),
+        queried_at=datetime(2026, 9, 8, 10, 0, 0),
+        token="demo",
+        first_registered={("DEMO-A-001", "DEMO-PLAN-2"): date(2026, 7, 1)},
+    )
+    visible = filter_catalog(catalog, keyword="하나", scope="전체", registered_codes=frozenset())
+    row = catalog_row_at(visible, 0)
+    assert row is not None and row.plan_code == "DEMO-PLAN-1"
+
+    pick = registration.catalog_pick(result, row)
+
+    assert (pick.first_registered_on, pick.last_registered_on) == (
+        date(2026, 7, 1),
+        date(2026, 9, 2),
     )

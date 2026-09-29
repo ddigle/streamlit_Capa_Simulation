@@ -75,7 +75,8 @@ CATALOG_APPLIED_KEY = "bigdataquery_catalog_applied_signature"
 # 폼의 코드를 목록에서 골랐을 때 그 코드가 목록에 보인 (가장 이른, 가장 늦은) 원천 등록일.
 # 상세 조회 기간 두 칸의 기본값을 정한 근거로 안내에 적는다.
 CATALOG_FORM_REGISTERED_SPAN_KEY = "bigdataquery_catalog_form_registered_span"
-# 목록에서 골라 채운 (코드, 시작일, 종료일). 코드만 바꿔 적은 채 그 창으로 조회하는 것을 막는다.
+# 목록에서 골라 폼에 채운 코드·상세 조회 기간·원천 등록시점(`PickedFields`). 코드만 바꿔 적은 채
+# 앞 코드의 값으로 조회·저장하는 것을 막는다.
 CATALOG_FORM_PICKED_WINDOW_KEY = "bigdataquery_catalog_form_picked_window"
 CATALOG_LIST_NONCE_KEY = "bigdataquery_catalog_list_nonce"
 CATALOG_LAST_LIST_KEY = "bigdataquery_catalog_last_list_key"
@@ -136,6 +137,16 @@ class CatalogPick:
     window: QueryWindow
     first_registered_on: date | None = None
     last_registered_on: date | None = None
+
+
+@dataclass(frozen=True)
+class PickedFields:
+    """목록에서 고른 행이 폼에 채운, **그 코드에 딸린** 값. 코드 칸만 바뀌면 남의 값이 된다."""
+
+    code: str
+    start: date | None
+    end: date | None
+    registered_at: str
 
 
 def render_bigdataquery_registration(
@@ -379,17 +390,7 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
     if selected is not None:
         row = catalog_row_at(visible, selected)
         if row is not None:
-            span = code_registration_span(
-                result.frame, result.first_registered, row.simulation_code
-            )
-            _apply_pick(
-                CatalogPick(
-                    row=row,
-                    window=result.window,
-                    first_registered_on=None if span is None else span[0],
-                    last_registered_on=None if span is None else span[1],
-                )
-            )
+            _apply_pick(catalog_pick(result, row))
     elif last_key == list_key:
         # 위젯 key 가 그대로인데 선택이 비었다 = 같은 행을 다시 눌러 해제했다.
         # key 가 바뀐 런의 빈 선택은 검색 변경이므로 선택을 유지한다.
@@ -403,6 +404,21 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
     ):
         _request_reset()
         st.rerun()
+
+
+def catalog_pick(result: CatalogResult, row: CatalogRow) -> CatalogPick:
+    """목록에서 고른 행을 폼에 채울 선택으로 만든다.
+
+    등록일 범위는 **정리된 목록 전체**(`result.frame`)에서 그 코드의 모든 PLAN 줄로 구한다 — 검색·
+    표시 범위로 좁힌 `visible` 로 구하면 필터가 범위를 줄인다. 상세 조회는 PLAN 을 가리지 않는다.
+    """
+    span = code_registration_span(result.frame, result.first_registered, row.simulation_code)
+    return CatalogPick(
+        row=row,
+        window=result.window,
+        first_registered_on=None if span is None else span[0],
+        last_registered_on=None if span is None else span[1],
+    )
 
 
 def _apply_pick(pick: CatalogPick) -> None:
@@ -419,8 +435,11 @@ def _apply_pick(pick: CatalogPick) -> None:
     window = None if span is None else registration_detail_window(*span)
     st.session_state[CATALOG_APPLIED_KEY] = pick.row.signature
     st.session_state[CATALOG_FORM_REGISTERED_SPAN_KEY] = span
-    st.session_state[CATALOG_FORM_PICKED_WINDOW_KEY] = (
-        None if window is None else (pick.row.simulation_code, window.start_date, window.end_date)
+    st.session_state[CATALOG_FORM_PICKED_WINDOW_KEY] = PickedFields(
+        code=pick.row.simulation_code,
+        start=None if window is None else window.start_date,
+        end=None if window is None else window.end_date,
+        registered_at=prefill.registered_at,
     )
     st.session_state[FORM_DETAIL_START_KEY] = None if window is None else window.start_date
     st.session_state[FORM_DETAIL_END_KEY] = None if window is None else window.end_date
@@ -624,19 +643,18 @@ def _registered_day(text: str) -> date | None:
     return parsed.date() if parsed is not None else None
 
 
-def _window_belongs_to_another_code(simulation_code: str, start: date, end: date) -> bool:
-    """두 칸이 목록에서 고른 코드의 기본 창 그대로인데 폼의 코드만 다른 코드로 바뀌었는가.
+def _picked_for_another_code(simulation_code: str) -> PickedFields | None:
+    """폼의 코드가 목록에서 고른 코드와 다르면 그때 채운 값을 돌려준다(같거나 고른 적 없으면 None).
 
-    고른 뒤 코드 칸만 고쳐 적으면 앞 코드의 등록일 창으로 오류 없이 조회돼, 창 밖 적재분이 빠진
-    원천이 말없이 저장됐다(2026-09-29 리뷰). 사용자가 날짜를 한 칸이라도 고쳤으면 그 기간을
-    믿는다 — 막는 것은 「손대지 않은 남의 기본값」뿐이다.
+    고른 뒤 코드 칸만 고쳐 적으면 앞 코드의 등록일 창·등록시점으로 오류 없이 조회돼, 창 밖
+    적재분이 빠진 원천이 남의 등록시점을 달고 저장됐다(2026-09-29·30 리뷰). 사용자가 고친 값은
+    믿는다 — 막는 것은 「손대지 않은 남의 값」뿐이다.
     """
     picked = st.session_state.get(CATALOG_FORM_PICKED_WINDOW_KEY)
-    if not isinstance(picked, tuple) or len(picked) != 3:
-        return False
-    code, picked_start, picked_end = picked
+    if not isinstance(picked, PickedFields):
+        return None
     typed = simulation_code.strip()
-    return bool(typed) and typed != code and (start, end) == (picked_start, picked_end)
+    return picked if typed and typed != picked.code else None
 
 
 def _detail_window_caption() -> str:
@@ -669,15 +687,26 @@ def _submitted_detail_window(
     """
     start = st.session_state.get(FORM_DETAIL_START_KEY)
     end = st.session_state.get(FORM_DETAIL_END_KEY)
+    other = _picked_for_another_code(simulation_code)
+    if other is not None:
+        typed_at = str(st.session_state.get(FORM_REGISTERED_AT_KEY, "")).strip()
+        if other.registered_at.strip() and typed_at == other.registered_at.strip():
+            # 등록시점은 저장 메타데이터(`source_registered_at`)이기도 하다. 날짜 두 칸을 고쳤어도
+            # 남의 등록시점이 이 코드의 원천 등록시점으로 저장되면 안 된다.
+            st.error(
+                "「원천 DB 등록시점」이 목록에서 고른 **다른 코드**의 값 그대로입니다. 코드를 "
+                "바꿨으면 이 코드의 등록시점으로 고치거나 비우세요."
+            )
+            return None
     if isinstance(start, date) and isinstance(end, date):
         if start > end:
             st.error("상세 조회 시작일은 종료일보다 늦을 수 없습니다.")
             return None
-        if _window_belongs_to_another_code(simulation_code, start, end):
+        if other is not None and (start, end) == (other.start, other.end):
             st.error(
                 "상세 조회 기간이 목록에서 고른 **다른 코드**의 원천 등록일로 채워진 그대로입니다. "
-                "코드를 바꿨으면 두 칸을 비워 「원천 DB 등록시점」 기준으로 조회하거나, 이 코드에 "
-                "맞는 날짜로 고치세요."
+                "코드를 바꿨으면 두 칸을 이 코드에 맞는 날짜로 고치거나, 두 칸을 비우고 「원천 DB "
+                "등록시점」을 이 코드의 값으로 적으세요."
             )
             return None
         return QueryWindow(start_date=start, end_date=end)
