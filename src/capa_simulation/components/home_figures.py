@@ -40,6 +40,9 @@ from capa_simulation.components.home_figure_common import (
     capacity_status as capacity_status,
 )
 from capa_simulation.components.home_key_process_figures import (
+    KEY_PROCESS_ABSENT_NOTICE as KEY_PROCESS_ABSENT_NOTICE,
+)
+from capa_simulation.components.home_key_process_figures import (
     KEY_PROCESS_EMPTY_NOTICE as KEY_PROCESS_EMPTY_NOTICE,
 )
 from capa_simulation.components.home_key_process_figures import (
@@ -64,6 +67,7 @@ __all__ = [
     "BOTTLENECK_NAME_INSET_RATIO",
     "BOTTLENECK_NAME_MIN_FONT_PX",
     "ExecutionDeltaBars",
+    "KEY_PROCESS_ABSENT_NOTICE",
     "KEY_PROCESS_EMPTY_NOTICE",
     "bottleneck_bar_ratio",
     "bottleneck_name_layout",

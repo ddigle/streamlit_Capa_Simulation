@@ -1174,3 +1174,85 @@ def test_a_preset_with_a_duplicate_name_is_refused(tmp_path: Path) -> None:
     _save_preset(app, "A 그룹", ["DEMO_Final_Test"])
 
     assert any("같은 이름의 프리셋" in item.value for item in app.error)
+
+
+def _preset_app(tmp_path: Path, presets: list[tuple[str, list[str]]]) -> tuple[AppTest, Any]:
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database_path = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_key_process_presets(presets, source="테스트")
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    return app, repository
+
+
+def test_saving_a_preset_keeps_processes_this_screen_does_not_have(tmp_path: Path) -> None:
+    """이 시나리오·조회기간에 없는 공정도 저장에서 살아남는다(2026-09-29 리뷰에서 재현).
+
+    공용 프리셋이라 다른 시나리오에는 있는 공정이다. 전에는 선택지에서 빠져 이름만 바꿔도 지워졌고,
+    공정이 모두 없는 프리셋은 「공정을 하나 이상 고르세요」로 이름조차 못 바꿨다.
+    """
+    app, repository = _preset_app(
+        tmp_path,
+        [("A 그룹", ["ELSEWHERE", "DEMO_Chip_Attach"]), ("B 그룹", ["ONLY_ELSEWHERE"])],
+    )
+    target = "home_key_process_preset_edit"
+    app.selectbox(key=target).set_value("A 그룹").run()
+    _save_preset_name_only(app, "A 그룹(개정)")
+    assert repository.load_global_key_process().presets[0] == (
+        "A 그룹(개정)",
+        ("ELSEWHERE", "DEMO_Chip_Attach"),
+    )
+
+    app.selectbox(key=target).set_value("B 그룹").run()
+    _save_preset_name_only(app, "B 그룹(개정)")
+    assert not [item.value for item in app.error]
+    assert repository.load_global_key_process().presets[1] == ("B 그룹(개정)", ("ONLY_ELSEWHERE",))
+
+
+def _save_preset_name_only(app: AppTest, name: str) -> None:
+    next(widget for widget in app.text_input if widget.label == "프리셋 이름").set_value(name)
+    next(button for button in app.button if button.label == "프리셋 저장").click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+
+def test_renaming_the_viewed_preset_from_preference_carries_the_view_on_return(
+    tmp_path: Path,
+) -> None:
+    """보던 프리셋의 이름을 Preference 에서 두 번 바꾸고 Main 으로 돌아오면 첫 화면부터 새 이름이다.
+
+    카드가 서지 않는 Preference 탭에서 옮긴 선택이 쌓이기만 해, 돌아온 첫 화면이 기본 프리셋을
+    그리고 두 번째 이름 변경은 아예 따라가지 못했다(2026-09-29 리뷰에서 재현).
+    """
+    app, _ = _preset_app(
+        tmp_path, [("A 그룹", ["DEMO_Chip_Attach"]), ("B 그룹", ["DEMO_Final_Test"])]
+    )
+    app.selectbox(key="home_key_process_preset").set_value("B 그룹").run()
+    app.session_state["home_active_tab"] = ":material/tune: Preference"
+    app.run()
+
+    app.selectbox(key="home_key_process_preset_edit").set_value("B 그룹").run()
+    _save_preset_name_only(app, "B2")
+    _save_preset_name_only(app, "B3")
+
+    app.session_state["home_active_tab"] = ":material/dashboard: Main"
+    app.run()
+    assert not list(app.exception)
+    assert app.selectbox(key="home_key_process_preset").value == "B3"
+    assert any("주요공정 확보율 · B3" in item.value for item in app.markdown)
+
+
+def test_a_preset_absent_from_this_screen_says_so_instead_of_asking_to_choose(
+    tmp_path: Path,
+) -> None:
+    """프리셋의 공정이 이 화면에 하나도 없으면 격자는 「고르세요」가 아니라 없다고 말한다."""
+    from capa_simulation.components.home_figures import KEY_PROCESS_ABSENT_NOTICE
+
+    app, _ = _preset_app(tmp_path, [("다른 라인", ["ONLY_ELSEWHERE"])])
+
+    labels = app.session_state["spy_figures"]["key_process_heatmap_labels"]
+    assert KEY_PROCESS_ABSENT_NOTICE in json.dumps(labels.to_plotly_json(), ensure_ascii=False)
+    card = " ".join(item.value for item in app.sidebar.caption)
+    assert "그릴 공정 없음" in card and "이 화면에 없음: ONLY_ELSEWHERE" in card

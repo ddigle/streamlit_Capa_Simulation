@@ -787,10 +787,21 @@ def _queue_selection(key: str, value: str) -> None:
     st.session_state[f"{key}__pending"] = value
 
 
+def apply_pending_key_process_preset() -> None:
+    """이름을 바꿔 둔 보는 선택을 넣는다. HOME 이 볼 프리셋을 정하기 **전**, 카드보다 먼저 부른다.
+
+    카드는 Main 탭에서만 서므로 카드 안에서만 넣으면 Preference 탭에 있는 동안 쌓이기만 한다. 그러면
+    돌아온 첫 화면이 옛 이름으로 기본 프리셋을 그리고, 두 번 연달아 바꾸면 두 번째가 따라가지 못했다
+    (2026-09-29 리뷰에서 재현).
+    """
+    _apply_pending_selection(KEY_PROCESS_PRESET_KEY)
+
+
 def render_key_process_preset_card(
     profile: GlobalKeyProcess,
     *,
     process_labels: ProcessLabels,
+    process_options: Sequence[str],
 ) -> None:
     """사이드바 조건 카드 `주요공정 히트맵` — 볼 프리셋을 고른다(2026-09-29 사용자 요청).
 
@@ -816,9 +827,14 @@ def render_key_process_preset_card(
             persist_state="session",
         )
         processes = profile.processes_of(chosen)
-        st.caption(
-            f"{len(processes)}개 공정 · " + " · ".join(process_labels.label(p) for p in processes)
-        )
+        known = set(process_options)
+        shown = [process_labels.label(p) for p in processes if p in known]
+        absent = [process_labels.label(p) for p in processes if p not in known]
+        caption = f"{len(shown)}개 공정 · " + " · ".join(shown) if shown else "그릴 공정 없음"
+        if absent:
+            # 공용 프리셋이라 다른 시나리오에는 있는 공정이다. 세어 넣으면 격자와 수가 맞지 않는다.
+            caption += " · 이 화면에 없음: " + ", ".join(absent)
+        st.caption(caption)
 
 
 def _render_key_process_editor(
@@ -865,6 +881,11 @@ def _render_key_process_editor(
         is_new = target == NEW_KEY_PROCESS_PRESET
         current = () if is_new else profile.processes_of(target)
         known_options = set(process_options)
+        # 이 시나리오·조회기간에 없는 공정도 **선택지에 남긴다**(표시만 「이 화면에 없음」). 빼 두면
+        # 저장이 그 공정을 공용 프리셋에서 조용히 지웠고, 공정이 모두 없는 프리셋은 이름조차 못
+        # 바꿨다(2026-09-29 리뷰에서 재현). 빼려면 목록에서 직접 지운다.
+        absent = [process for process in current if process not in known_options]
+        base_format = process_labels.format_func()
         with st.form("home_key_process_form"):
             # 작업 줄(저장·이름)은 위다. 버튼이 왼쪽이다.
             with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
@@ -885,15 +906,19 @@ def _render_key_process_editor(
                 render_flash("home_key_process_flash")
             selected = st.multiselect(
                 "공정",
-                options=list(process_options),
-                default=[process for process in current if process in known_options],
-                format_func=process_labels.format_func(),
+                options=[*process_options, *absent],
+                default=list(current),
+                format_func=lambda process: (
+                    base_format(process)
+                    if process in known_options
+                    else f"{base_format(process)} · 이 화면에 없음"
+                ),
                 max_selections=KEY_PROCESS_LIMIT,
                 # 몇 개까지 되는지는 고르기 전에 알아야 해 자리 글자에 둔다. 고른 차례가 행 순서다.
                 placeholder=f"공정을 고르세요 (최대 {KEY_PROCESS_LIMIT}개 · 고른 차례가 행 순서)",
             )
         if not is_new:
-            _render_key_process_notice(current, known_options, process_labels)
+            _render_key_process_notice(absent, process_labels)
             _render_key_process_preset_actions(profile, target, database_path)
         if not submitted:
             return
@@ -972,23 +997,20 @@ def _render_key_process_preset_actions(
     st.rerun(scope="app")
 
 
-def _render_key_process_notice(
-    processes: Sequence[str],
-    known_options: set[str],
-    process_labels: ProcessLabels,
-) -> None:
+def _render_key_process_notice(absent: Sequence[str], process_labels: ProcessLabels) -> None:
     """이 프리셋에 저장돼 있으나 이번 화면에서는 그릴 수 없는 공정을 알린다.
 
     **프리셋에서 지우지 않는다.** 공용 설정이라 다른 시나리오·조회기간에는 그 공정이
-    있고, 여기서 조용히 걷어내면 그 화면의 히트맵이 함께 비어 버린다.
+    있고, 여기서 조용히 걷어내면 그 화면의 히트맵이 함께 비어 버린다. 선택지에 「이 화면에
+    없음」으로 남아 있어 저장해도 그대로 남고, 빼려면 목록에서 직접 지운다.
     """
-    missing = [process for process in processes if process not in known_options]
-    if not missing:
+    if not absent:
         return
-    names = ", ".join(process_labels.label(process) for process in missing)
+    names = ", ".join(process_labels.label(process) for process in absent)
     st.caption(
         f":material/info: 이번 시나리오·조회기간에 없어 그리지 않는 공정: {names}. "
-        "공용 설정이라 프리셋에는 그대로 남고, 해당 공정이 있는 화면에서는 그려집니다."
+        "공용 설정이라 저장해도 프리셋에 그대로 남고, 해당 공정이 있는 화면에서는 그려집니다. "
+        "빼려면 목록에서 지우세요."
     )
 
 

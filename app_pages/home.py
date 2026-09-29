@@ -12,6 +12,8 @@ from capa_simulation.components.capacity_assumption_notice import (
 from capa_simulation.components.decision_summary import render_home_capacity_decision
 from capa_simulation.components.home_figures import (
     BOTTLENECK_DETAIL_RANK_LIMIT,
+    KEY_PROCESS_ABSENT_NOTICE,
+    KEY_PROCESS_EMPTY_NOTICE,
     build_bottleneck_detail_figures,
     build_key_process_heatmap_figures,
     build_lob_summary_figures,
@@ -21,6 +23,7 @@ from capa_simulation.components.home_preference import (
     COMPARISON_REVISION_KEY,
     COMPARISON_SCENARIO_KEY,
     KEY_PROCESS_PRESET_KEY,
+    apply_pending_key_process_preset,
     render_home_preference,
     render_home_view_card,
     render_key_process_preset_card,
@@ -448,6 +451,9 @@ except BOOTSTRAP_ERRORS as exc:
 # 이니 포함」 규칙은 B/N 집계용이고, 주요공정은 명시적 선택이라 자동으로 들어오면 안 된다.
 # 어느 프리셋을 그릴지는 사이드바 `주요공정 히트맵` 카드가 정한다(세션의 보는 조건). 카드는
 # 아래에서 그려지지만 값은 세션에 있으므로 여기서 읽는다 — 고르면 다시 돌아 이 줄부터 새 값이다.
+# Preference 에서 이름을 바꿔 둔 선택을 **여기서** 먼저 넣는다. 카드 안에서만 넣으면 카드가 서지
+# 않는 회차(Preference 탭)에는 쌓이기만 하고, 돌아온 첫 화면이 옛 이름을 읽어 기본 프리셋을 그렸다.
+apply_pending_key_process_preset()
 key_process_preset = resolve_preset_name(
     key_process_profile.preset_names, st.session_state.get(KEY_PROCESS_PRESET_KEY)
 )
@@ -791,6 +797,11 @@ if cached_figures is None:
         process_labels=process_labels,
         year_total_labels=year_total_labels,
         past_month_labels=past_month_labels,
+        empty_notice=(
+            KEY_PROCESS_ABSENT_NOTICE
+            if key_process_profile.processes_of(key_process_preset)
+            else KEY_PROCESS_EMPTY_NOTICE
+        ),
     )
     # 순서가 곧 화면 순서다. 주요공정 히트맵은 계획 세부수량과 상세 B/N 사이 구획이다.
     cached_figures = HomeFigureSet(
@@ -825,7 +836,9 @@ main_tab, preference_tab, past_tab = stateful_tabs(
 # 보는 조건은 사이드바 조건 카드다(2026-09-29 사용자 결정). 그 조건이 걸리는 Main 탭에서만 선다.
 if not tab_is_hidden(main_tab):
     render_home_view_card(comparison_ready=bool(comparison_scenario_id and comparison_revision_id))
-    render_key_process_preset_card(key_process_profile, process_labels=process_labels)
+    render_key_process_preset_card(
+        key_process_profile, process_labels=process_labels, process_options=process_options
+    )
 with main_tab:
     # 공지는 대시보드 상자 **밖**, 화면 맨 위다. 상자 안에 두면 스크롤되는 월 영역과 폭을
     # 나눠 가져 문구가 월 칸 너비에 갇힌다.

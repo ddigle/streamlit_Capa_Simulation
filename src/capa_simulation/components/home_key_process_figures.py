@@ -64,6 +64,8 @@ KEY_PROCESS_HOVER_TEMPLATE = (
 )
 
 KEY_PROCESS_EMPTY_NOTICE = "Preference 탭에서 주요 공정을 고르세요"
+# 프리셋에 공정은 있는데 이 시나리오·조회기간에 하나도 없을 때. 「고르세요」는 거짓 안내다.
+KEY_PROCESS_ABSENT_NOTICE = "고른 프리셋의 공정이 이 시나리오·조회기간에 없습니다"
 
 
 def _key_process_name_markup(value: object) -> str:
@@ -91,8 +93,12 @@ def build_key_process_heatmap_figures(
     process_labels: ProcessLabels | None = None,
     year_total_labels: Sequence[str] = (),
     past_month_labels: Collection[str] | None = None,
+    empty_notice: str = KEY_PROCESS_EMPTY_NOTICE,
 ) -> tuple[go.Figure, go.Figure]:
     """고른 주요 공정의 월별 확보율을 색 격자로 그린 Figure 한 쌍을 만든다.
+
+    그릴 공정이 없으면 `empty_notice` 한 줄을 남긴다 — 프리셋이 없을 때와 프리셋의 공정이 이
+    화면에 없을 때 할 일이 달라 부르는 쪽이 고른다.
 
     **행 축이 공정이라는 점이 상세 B/N 과 다르다.** 상세 B/N 의 행은 순위라 같은 줄이
     매달 다른 공정이고, 그래서 「이 공정이 언제부터 무너지나」를 가로로 읽을 수 없다.
@@ -274,7 +280,7 @@ def build_key_process_heatmap_figures(
             for row_index, process in enumerate(processes)
         ]
         if processes
-        else [name_annotation(0, KEY_PROCESS_EMPTY_NOTICE, tokens.TEXT_MUTED)]
+        else [name_annotation(0, empty_notice, tokens.TEXT_MUTED)]
     )
     append_layout_items(
         key_process_label_figure,
