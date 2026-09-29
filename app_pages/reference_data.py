@@ -74,6 +74,8 @@ from capa_simulation.services.equipment_count import (
 )
 from capa_simulation.services.reference_consistency import (
     added_performance_keys,
+    cleared_keys_in_use,
+    describe_cleared_keys_in_use,
     describe_missing_ratio_rows,
     missing_ratio_rows,
 )
@@ -181,17 +183,33 @@ try:
         "RQ_UPEH",
         empty_message="선택 범위에 공정별 Capa 기준정보가 없습니다.",
     )
-    filtered_upeh = scenario_month_table(active_scenario, "RQ_UPEH", start_month, end_month)
-    filtered_run_rate = scenario_month_table(active_scenario, "RQ_RUN_RATE", start_month, end_month)
-    filtered_vital = scenario_month_table(active_scenario, "RQ_VITAL", start_month, end_month)
-    filtered_run_day = scenario_month_table(active_scenario, "RQ_RUN_DAY", start_month, end_month)
-    filtered_lot_ratio = scenario_month_table(
-        active_scenario, "RQ_LOT_RATIO", start_month, end_month
+    # 편집표·STEP 목록은 **적용과 같은 기간**(선택기간 ∩ UPEH 기준정보 범위)으로 자른다. 적용은
+    # 그 기간만 갈아끼우므로(`apply_month_updates`), 편집표를 선택기간으로 자르면 UPEH 에 없는
+    # 달이 선택기간에 드는 순간 모든 적용이 「편집값에 선택 범위 밖의 년월이 있습니다」로
+    # 막혔다(2026-09-29 버그 보고 횡전개). 설비대수 세 표·부하량 환산 화면과 같은 규칙이다.
+    filtered_upeh = scenario_month_table(
+        active_scenario, "RQ_UPEH", effective_start_month, effective_end_month
     )
-    filtered_wf_ratio = scenario_month_table(active_scenario, "RQ_WF_RATIO", start_month, end_month)
+    filtered_run_rate = scenario_month_table(
+        active_scenario, "RQ_RUN_RATE", effective_start_month, effective_end_month
+    )
+    filtered_vital = scenario_month_table(
+        active_scenario, "RQ_VITAL", effective_start_month, effective_end_month
+    )
+    filtered_run_day = scenario_month_table(
+        active_scenario, "RQ_RUN_DAY", effective_start_month, effective_end_month
+    )
+    filtered_lot_ratio = scenario_month_table(
+        active_scenario, "RQ_LOT_RATIO", effective_start_month, effective_end_month
+    )
+    filtered_wf_ratio = scenario_month_table(
+        active_scenario, "RQ_WF_RATIO", effective_start_month, effective_end_month
+    )
     filtered_plan = scenario_month_table(active_scenario, "RQ_PKG_PLAN", start_month, end_month)
     filtered_yield = scenario_month_table(active_scenario, "RQ_YLD", start_month, end_month)
-    filtered_reqb = scenario_month_table(active_scenario, "RQ_REQB", start_month, end_month)
+    filtered_reqb = scenario_month_table(
+        active_scenario, "RQ_REQB", effective_start_month, effective_end_month
+    )
 
     # 편집표 여섯 개는 자기 탭이 열려 있거나 **적용하지 않은 편집이 남았을 때만** 만든다.
     # 그 밖의 닫힌 탭에서는 month_editor 가 default_table 을 읽기 전에 돌아가므로 만들어 봐야
@@ -293,7 +311,9 @@ try:
     # STEP 구성 탭의 요약·목록. 목록은 작업·경로 선택 위젯의 options 라 탭이 닫혀 있어도
     # 있어야 한다(숨은 탭에서는 그림만 건너뛴다). 그래서 건너뛰는 대신 내용 토큰으로 캐시한다.
     step_summary, step_catalog = get_route_step_tables(
-        scenario_cache_key(reference_version, active_scenario, start_month, end_month),
+        scenario_cache_key(
+            reference_version, active_scenario, effective_start_month, effective_end_month
+        ),
         _upeh=filtered_upeh,
         _reqb=filtered_reqb,
     )
@@ -323,7 +343,7 @@ SOURCE_TOKEN_KEY = "reference_data_source_token"
 OWN_CHANGE_KEY = "reference_data_own_change"
 reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
-    source_token(reference_version, active_scenario, start_month, end_month),
+    source_token(reference_version, active_scenario, effective_start_month, effective_end_month),
     editor_keys,
     other_keys=step_widget_keys,
     own_change_key=OWN_CHANGE_KEY,
@@ -694,10 +714,29 @@ if not (tab_is_hidden(equipment_tab) or tab_is_hidden(equipment_overview_tab)):
         )
 
 
+# 붙여넣기로 비운 칸이 어떻게 되는지는 **표마다 다르다**(2026-09-29 버그 보고 횡전개). 전에는
+# 모든 표에 「계산에서 빠집니다」라고 적었는데 그것은 UPEH(경로가 빠진다)에서만 사실이다.
+REMOVED_DROPS = "값이 지워진 칸 {count:,}개는 계산에서 빠집니다. "
+# 측정률은 행이 없으면 1.0 으로 가정한다(`unit_capacity._join_reference`).
+REMOVED_RATIO = "값이 지워진 칸 {count:,}개는 측정률 1.0 으로 계산합니다. "
+# 효율·여유율·일수는 UPEH 경로가 쓰는 칸을 비우면 적용이 막힌다(`cleared_keys_in_use`). 적용까지
+# 온 빈칸은 쓰는 경로가 없는 칸뿐이다.
+REMOVED_UNUSED = (
+    "값이 지워진 칸 {count:,}개는 행을 지웠습니다 — 쓰는 UPEH 경로가 없어 계산은 그대로입니다. "
+)
+# 설비대수는 빈칸을 0 대로 저장한다(`equipment_count_from_edit_table`).
+REMOVED_EQUIPMENT = "빈칸 {count:,}개는 0 대로 저장했습니다. "
+
+
 # `eq=False` — 표(DataFrame)를 품어 값 비교가 뜻이 없다. 같은 편집표인지는 객체로 가른다.
 @dataclass(frozen=True, eq=False)
 class _Editor:
-    """편집표 하나의 적용 규칙. 격자 적용과 팝업 붙여넣기가 같은 규칙을 탄다."""
+    """편집표 하나의 적용 규칙. 격자 적용과 팝업 붙여넣기가 같은 규칙을 탄다.
+
+    `removed_notice` 는 붙여넣기로 비운 칸을 알리는 문구(`{count}` 자리)다. `blank_is_zero` 인
+    표(설비대수)는 양식의 0 이 「원래 없던 조합」이라, 0 인 칸을 비운 것은 바뀐 것이 없어 세지
+    않는다.
+    """
 
     table_name: str
     editor_key: str
@@ -705,10 +744,17 @@ class _Editor:
     dimensions: list[str]
     template: pd.DataFrame
     to_rows: Callable[[pd.DataFrame], pd.DataFrame]
+    removed_notice: str = REMOVED_DROPS
+    blank_is_zero: bool = False
 
 
 def _edit_flash(
-    editor_key: str, table_name: str, *, imported: bool, removed: int = 0
+    editor_key: str,
+    table_name: str,
+    *,
+    imported: bool,
+    removed: int = 0,
+    removed_notice: str = REMOVED_DROPS,
 ) -> tuple[str, str]:
     """적용 결과를 **누른 자리** 바로 아래에 남긴다.
 
@@ -725,12 +771,13 @@ def _edit_flash(
     탭이 그랬다.
     """
     origin = "붙여넣기 데이터를" if imported else "편집값을"
-    # 지워진 칸은 **오류가 아니라 정당한 편집**이라 막지 않는다. 다만 붙여넣기는 격자와
-    # 달리 적용 전에 변경 수를 보여 주지 않아, 한 열이 통째로 비어 와도 조용히 지나간다.
-    # 그 경로는 부하량을 그대로 둔 채 대당 Capa 만 잃어 확보율이 낙관 쪽으로 기운다.
+    # 지워진 칸은 대개 **오류가 아니라 정당한 편집**이다(효율·여유율·일수에서 UPEH 경로가 쓰는
+    # 칸은 적용 전에 막힌다). 다만 붙여넣기는 격자와 달리 적용 전에 변경 수를 보여 주지 않아, 한
+    # 열이 통째로 비어 와도 조용히 지나간다. 그래서 그 칸이 무엇이 됐는지를 표마다 맞는 말로
+    # 알린다 — UPEH 는 경로가 빠져 부하량을 그대로 둔 채 대당 Capa 만 잃는다.
     removal = ""
     if removed:
-        removal = f"값이 지워진 칸 {removed:,}개는 계산에서 빠집니다. "
+        removal = removed_notice.format(count=removed)
     return (
         f"{editor_key}_apply",
         f"{table_name} {origin} 활성 시나리오에 적용했습니다. "
@@ -739,31 +786,64 @@ def _edit_flash(
     )
 
 
-def _removed_values(
-    template: pd.DataFrame,
-    imported_table: pd.DataFrame | None,
-    dimensions: list[str],
-) -> int:
+def _removed_values(editor: _Editor, imported_table: pd.DataFrame | None) -> int:
     """붙여넣기로 비워진 칸 수. 격자 편집은 이미 적용 전에 변경 수를 보여 준다."""
     if imported_table is None:
         return 0
-    return count_removed_values(template, imported_table, dimensions)
+    template = editor.template
+    if editor.blank_is_zero:
+        # 양식의 0 은 원래 없던 조합이다. 비워 붙여도 0 대로 저장돼 바뀐 것이 없다.
+        month_columns = [column for column in template.columns if column not in editor.dimensions]
+        template = template.copy()
+        template[month_columns] = template[month_columns].mask(template[month_columns].eq(0))
+    return count_removed_values(template, imported_table, editor.dimensions)
 
 
 def _upeh_rows(table: pd.DataFrame) -> pd.DataFrame:
-    rows = performance_from_edit_table(table)
-    # 빈 월 칸을 채우는 것은 값 수정이 아니라 **경로를 하나 더 만드는 일**이다. 대당
-    # Capa 는 그 행마다 측정률 두 표를 조인하고 없으면 멈추므로, 여기서 막지 않으면
-    # 저장은 정상으로 끝나고 HOME 을 열 때 터진다(2026-09-23 사내에서 실제로 겪었다).
-    # **이번 편집이 새로 만든 조합만** 본다 — 이미 어긋나 있던 것까지 막으면 상관없는
-    # 칸을 고치려던 사람이 자기가 만들지 않은 문제에 걸린다.
+    # 원본(편집표를 만든 같은 기간의 시나리오 `RQ_UPEH`)을 넘겨 **고치지 않은 것은 원본 그대로**
+    # 돌려받는다 — Main 행의 ST·MI 행의 UPEH, 값이 빈 실재 행, `Area_Name` 표기(2026-09-29).
+    rows = performance_from_edit_table(table, filtered_upeh)
+    # 빈 월 칸을 채우는 것은 값 수정이 아니라 **경로를 하나 더 만드는 일**이다. 측정률 행이
+    # 없으면 계산은 1.0 으로 가정해 이어 가지만(40a09b8), 새 경로는 측정률을 먼저 갖추게 한다
+    # (정책 — 2026-09-23 사내에서 겪은 일로 들어온 검사). **이번 편집이 새로 만든 조합만** 본다
+    # — 이미 어긋나 있던 것까지 막으면 상관없는 칸을 고치려던 사람이 자기가 만들지 않은 문제에
+    # 걸린다. 비교 기준은 **적용 전 활성 시나리오**다. 저장 리비전과 맞대면 이 세션에서 먼저
+    # 적용한 STEP 추가·측정률 입력이 안 보여, STEP 을 더한 뒤에는 UPEH 어느 칸을 고쳐도
+    # 막혔고 안내대로 측정률을 채워도 저장 전에는 풀리지 않았다(2026-09-29).
     missing = missing_ratio_rows(
-        added_performance_keys(reference_tables["RQ_UPEH"], rows),
-        {name: reference_tables[name] for name in ("RQ_LOT_RATIO", "RQ_WF_RATIO")},
+        added_performance_keys(filtered_upeh, rows),
+        {name: active_scenario["tables"][name] for name in ("RQ_LOT_RATIO", "RQ_WF_RATIO")},
     )
     if missing:
         raise ValueError(describe_missing_ratio_rows(missing))
     return rows
+
+
+def _required_rows(
+    table_name: str,
+    label: str,
+    dimensions: list[str],
+    value_column: str,
+    source: pd.DataFrame,
+) -> Callable[[pd.DataFrame], pd.DataFrame]:
+    """효율·여유율·일수의 적용 행. **UPEH 경로가 쓰는 칸을 비우면 막는다.**
+
+    세 표에는 측정률의 1.0 같은 중립값이 없다. 경로가 쓰는 (키, 월) 칸을 비우면 적용은 성공으로
+    알리고 행이 지워지는데, 그 뒤 계산 전체가 「… 연결값이 없는 대당 Capa 기준이 있습니다」로
+    멈췄다(2026-09-29 버그 보고 횡전개). 쓰는 경로가 없는 칸을 지우는 것은 그대로 둔다.
+    `source` 는 편집표를 만든 같은 기간의 원본이다.
+    """
+
+    def to_rows(table: pd.DataFrame) -> pd.DataFrame:
+        rows = reference_from_edit_table(table, dimensions, value_column, f"{label} 편집값")
+        cleared = cleared_keys_in_use(
+            table_name, source, rows, value_column, active_scenario["tables"]["RQ_UPEH"]
+        )
+        if not cleared.empty:
+            raise ValueError(describe_cleared_keys_in_use(label, table_name, cleared))
+        return rows
+
+    return to_rows
 
 
 def _apply_edit(editor: _Editor, source: pd.DataFrame, *, imported: bool) -> None:
@@ -777,7 +857,8 @@ def _apply_edit(editor: _Editor, source: pd.DataFrame, *, imported: bool) -> Non
         editor.editor_key,
         editor.table_name,
         imported=imported,
-        removed=_removed_values(editor.template, source if imported else None, editor.dimensions),
+        removed=_removed_values(editor, source if imported else None),
+        removed_notice=editor.removed_notice,
     )
     apply_month_updates(
         active_scenario,
@@ -814,9 +895,10 @@ EDITORS = (
         run_rate_tab,
         RUN_RATE_DIMENSIONS,
         default_run_rate_table,
-        lambda table: reference_from_edit_table(
-            table, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "효율 편집값"
+        _required_rows(
+            "RQ_RUN_RATE", "효율", RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", filtered_run_rate
         ),
+        REMOVED_UNUSED,
     ),
     _Editor(
         "RQ_VITAL",
@@ -824,7 +906,8 @@ EDITORS = (
         vital_tab,
         VITAL_DIMENSIONS,
         default_vital_table,
-        lambda table: reference_from_edit_table(table, VITAL_DIMENSIONS, "편중률", "여유율 편집값"),
+        _required_rows("RQ_VITAL", "여유율", VITAL_DIMENSIONS, "편중률", filtered_vital),
+        REMOVED_UNUSED,
     ),
     _Editor(
         "RQ_LOT_RATIO",
@@ -835,6 +918,7 @@ EDITORS = (
         lambda table: reference_from_edit_table(
             table, RATIO_DIMENSIONS, "Lot 측정률", "Lot측정률 편집값"
         ),
+        REMOVED_RATIO,
     ),
     _Editor(
         "RQ_WF_RATIO",
@@ -845,6 +929,7 @@ EDITORS = (
         lambda table: reference_from_edit_table(
             table, RATIO_DIMENSIONS, "WF측정률", "WF측정률 편집값"
         ),
+        REMOVED_RATIO,
     ),
     _Editor(
         "RQ_RUN_DAY",
@@ -852,9 +937,8 @@ EDITORS = (
         run_day_tab,
         RUN_DAY_DIMENSIONS,
         default_run_day_table,
-        lambda table: reference_from_edit_table(
-            table, RUN_DAY_DIMENSIONS, "RUN_DAY", "일수 편집값"
-        ),
+        _required_rows("RQ_RUN_DAY", "일수", RUN_DAY_DIMENSIONS, "RUN_DAY", filtered_run_day),
+        REMOVED_UNUSED,
     ),
 )
 
@@ -876,6 +960,8 @@ EQUIPMENT_EDITOR_SPECS = tuple(
         EQUIPMENT_DIMENSIONS,
         equipment_edit_tables[table_name],
         _equipment_rows(category, value_column),
+        REMOVED_EQUIPMENT,
+        blank_is_zero=True,
     )
     for equipment_sub_tab, (table_name, category, value_column, editor_key) in zip(
         (equipment_own_tab, equipment_lent_tab, equipment_available_tab),

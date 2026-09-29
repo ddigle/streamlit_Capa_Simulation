@@ -1,23 +1,27 @@
 # Purpose: 기준정보 편집이 계산에 필요한 다른 표의 행을 빠뜨렸는지 저장 전에 가린다.
 
-"""**저장은 되는데 화면에서 터지는 일**을 저장 경계에서 막는다.
+"""표 하나를 고친 적용이 **다른 표와 어긋나는 것**을 적용 경계에서 가린다.
 
-`RQ_UPEH` 의 빈 월 칸에 값을 넣으면 Long 테이블에 행이 하나 생긴다. 값을 고치는 일이
-아니라 **경로를 하나 더 만드는 일**이다(`capacity_reference_editor.reference_from_edit_table`
-가 빈 칸을 `dropna` 로 버리므로, 빈 칸은 「값이 빈 행」이 아니라 「행 없음」이다).
+편집표의 빈 칸은 「값이 빈 행」이 아니라 「행 없음」이다(`capacity_reference_editor.
+reference_from_edit_table` 가 빈 칸을 `dropna` 로 버린다). 그래서 칸을 채우면 행이 생기고,
+비우면 행이 사라진다. 대당 Capa 는 `RQ_UPEH` 한 행마다 여섯 표를 왼쪽 조인하는데
+(`unit_capacity._join_reference`), 연결값이 없을 때의 처리가 표마다 다르다.
 
-그런데 대당 Capa 는 `RQ_UPEH` 한 행마다 여섯 표를 왼쪽 조인하고 **첫 결손에서 즉시
-멈춘다**(`unit_capacity._join_reference`). 측정률 두 표에 그 (경로 + 월) 행이 없으면
-저장은 정상으로 끝나고 **HOME 을 열 때** 「RQ_LOT_RATIO 연결값이 없는 대당 Capa 기준이
-있습니다」로 터진다. 실제로 사내에서 그렇게 됐다(2026-09-23).
+- **측정률 두 표** — 행이 없으면 1.0 으로 가정해 이어 가고 화면이 알린다(40a09b8). 그래도
+  UPEH 의 빈 달을 채워 **경로를 새로 만드는** 편집은 측정률 행을 먼저 갖추게 한다(정책 —
+  2026-09-23 사내에서 저장 뒤 계산이 멈춘 일로 들어온 검사다. 멈춤은 40a09b8 로 가정·알림이
+  됐지만, 새 경로를 가정값으로 시작하게 두지 않는다). `added_performance_keys`·
+  `missing_ratio_rows`.
+- **효율·여유율·일수** — 중립값이 없다. 경로가 쓰는 칸을 비우면 계산 전체가 「… 연결값이 없는
+  대당 Capa 기준이 있습니다」로 멈춘다(2026-09-29 버그 보고 횡전개). `cleared_keys_in_use`.
 
-저장 경계에는 표 사이 정합성을 보는 검사가 없었다 — UPEH 탭은 `RQ_UPEH` 하나만 갱신한다.
-여기서 그 검사를 한다.
-
-**이번 편집이 새로 만든 조합만 본다.** 이미 어긋나 있던 것까지 막으면, 상관없는 칸 하나를
+**이번 편집이 만든 것만 본다.** 이미 어긋나 있던 것까지 막으면, 상관없는 칸 하나를
 고치려던 사람이 자기가 만들지 않은 문제에 걸려 아무것도 못 하게 된다.
 
-**측정률 두 표를 함께 본다.** Lot 만 채우면 바로 다음 조인에서 `RQ_WF_RATIO` 로 같은
+**비교 기준은 활성 시나리오다.** 저장 리비전과 맞대면 이 세션에서 먼저 적용한 STEP 추가·
+측정률 입력이 보이지 않아, 안내대로 채워도 저장하기 전에는 풀리지 않았다(2026-09-29).
+
+**측정률 두 표를 함께 본다.** Lot 만 채우면 바로 다음 적용에서 `RQ_WF_RATIO` 로 같은
 문구가 이어진다 — 한 번에 알려 주지 않으면 사용자가 같은 일을 두 번 겪는다.
 """
 
@@ -27,10 +31,22 @@ import pandas as pd
 
 from capa_simulation.services.frame_checks import strip_text_columns
 from capa_simulation.services.frame_contracts import normalize_area_name, normalize_month_column
-from capa_simulation.services.unit_capacity import PERFORMANCE_KEYS
+from capa_simulation.services.unit_capacity import (
+    PERFORMANCE_KEYS,
+    RUN_DAY_KEYS,
+    RUN_RATE_KEYS,
+    UNIMPLEMENTED_BASES,
+    VITAL_KEYS,
+)
 
 # 측정률 두 표. 대당 Capa 가 `PERFORMANCE_KEYS` 로 붙이는 것이 이 둘뿐이라 한 곳에 둔다.
 RATIO_TABLES: tuple[str, ...] = ("RQ_LOT_RATIO", "RQ_WF_RATIO")
+# 중립값이 없는 표와 대당 Capa 가 붙이는 키. 경로가 쓰는 칸이 비면 계산 전체가 멈춘다.
+REQUIRED_TABLE_KEYS: dict[str, list[str]] = {
+    "RQ_RUN_RATE": RUN_RATE_KEYS,
+    "RQ_VITAL": VITAL_KEYS,
+    "RQ_RUN_DAY": RUN_DAY_KEYS,
+}
 
 
 def _performance_keys(data: pd.DataFrame, table_name: str) -> pd.DataFrame:
@@ -111,10 +127,76 @@ def describe_missing_ratio_rows(missing: dict[str, pd.DataFrame], limit: int = 3
             f"「{labels.get(table_name, table_name)}」 탭에 {len(gap):,}건 — "
             f"{'; '.join(examples)}{more}"
         )
+    # 측정률 행이 없으면 계산은 멈추지 않고 1.0 으로 가정해 이어 간다(40a09b8). 전에는 「계산
+    # 화면을 열 때 … 멈춥니다」라고 적었는데 그 뒤로는 거짓이다. 막는 것은 정책이다 — 새로 만든
+    # 경로를 가정값으로 시작하게 두지 않는다.
     return (
-        "UPEH 에 새로 만든 경로의 측정률 행이 없습니다. 이대로 적용하면 저장은 되지만 "
-        "**계산 화면을 열 때 「연결값이 없는 대당 Capa 기준이 있습니다」로 멈춥니다.** "
+        "UPEH 에 새로 만든 경로의 측정률 행이 없습니다. 새 경로는 측정률을 먼저 갖춘 뒤에 "
+        "만듭니다 — 이대로 두면 계산이 그 경로의 측정률을 1.0 으로 가정합니다. "
         + " / ".join(parts)
-        + ". 그 탭에서 같은 행의 같은 달 칸에 값을 넣은 뒤 다시 적용하세요 — "
-        "측정 대상이 아닌 경로라면 `1` 이 중립값입니다."
+        + ". 그 탭에서 같은 행의 같은 달 칸에 값을 넣고 「변경사항 적용」을 누른 뒤 UPEH 를 "
+        "다시 적용하세요 — 측정 대상이 아닌 경로라면 `1` 이 중립값입니다."
+    )
+
+
+def _required_keys(data: pd.DataFrame, keys: list[str], table_name: str) -> pd.DataFrame:
+    """조인과 같은 규칙(월 정수·공백 제거)으로 줄인 키."""
+    result = data[keys].copy()
+    normalize_month_column(result, table_name)
+    strip_text_columns(result, [key for key in keys if key != "생산계획년월"])
+    return result.drop_duplicates().reset_index(drop=True)
+
+
+def cleared_keys_in_use(
+    table_name: str,
+    before: pd.DataFrame,
+    after: pd.DataFrame,
+    value_column: str,
+    upeh: pd.DataFrame,
+) -> pd.DataFrame:
+    """이번 편집이 값을 지운 (월 + 키) 가운데 `RQ_UPEH` 경로가 쓰는 것.
+
+    효율·여유율·일수(`REQUIRED_TABLE_KEYS`)에만 쓴다. `before` 는 편집표를 만든 원본(같은
+    기간), `after` 는 적용할 행이다. **원본에 값이 있던 칸만** 센다 — 처음부터 비어 있던
+    칸은 이번 편집이 만든 문제가 아니다. `RQ_UPEH` 는 적용 전 활성 시나리오 것이고, 계산이
+    쓰지 않는 소요기준(`UNIMPLEMENTED_BASES`)의 행은 빼고 본다 — 그 행은 조인 전에 빠진다.
+    """
+    keys = REQUIRED_TABLE_KEYS[table_name]
+    empty = pd.DataFrame(columns=keys)
+    if before.empty:
+        return empty
+    had_value = pd.to_numeric(before[value_column], errors="coerce").notna()
+    old = _required_keys(before.loc[had_value], keys, table_name)
+    if old.empty:
+        return empty
+    new = _required_keys(after, keys, table_name)
+    marked = old.merge(new, on=keys, how="left", indicator=True)
+    cleared = marked.loc[marked["_merge"].eq("left_only"), keys]
+    if cleared.empty or upeh.empty:
+        return empty
+    bases = upeh["소요기준"].astype("string").str.strip().str.upper()
+    used = _required_keys(upeh.loc[~bases.isin(UNIMPLEMENTED_BASES).fillna(False)], keys, "RQ_UPEH")
+    return (
+        cleared.merge(used, on=keys, how="inner")
+        .sort_values(keys, kind="stable")
+        .reset_index(drop=True)
+    )
+
+
+def describe_cleared_keys_in_use(
+    label: str, table_name: str, cleared: pd.DataFrame, limit: int = 3
+) -> str:
+    """어느 칸(월·키)인지, 왜 막는지, 어떻게 풀지를 적는다."""
+    examples = []
+    for _, row in cleared.head(limit).iterrows():
+        path = " / ".join(
+            f"{key}={row[key]}" for key in REQUIRED_TABLE_KEYS[table_name] if key != "생산계획년월"
+        )
+        examples.append(f"{row['생산계획년월']} · {path}")
+    more = f" 외 {len(cleared) - limit:,}건" if len(cleared) > limit else ""
+    return (
+        f"「{label}」 표에서 값을 지운 칸 {len(cleared):,}개를 UPEH 경로가 씁니다 — "
+        f"{'; '.join(examples)}{more}. {label}에는 중립값이 없어 비우면 계산 전체가 "
+        f"「{table_name} 연결값이 없는 대당 Capa 기준이 있습니다」로 멈춥니다. 그 칸에 값을 "
+        "넣거나, 그 경로를 먼저 UPEH 에서 비운 뒤 지우세요."
     )

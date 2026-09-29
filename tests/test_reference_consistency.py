@@ -17,6 +17,8 @@ import pandas as pd
 
 from capa_simulation.services.reference_consistency import (
     added_performance_keys,
+    cleared_keys_in_use,
+    describe_cleared_keys_in_use,
     describe_missing_ratio_rows,
     missing_ratio_rows,
 )
@@ -140,3 +142,69 @@ def test_whitespace_and_month_shape_do_not_create_false_gaps() -> None:
     missing = missing_ratio_rows(added, _tables(lot, [_row(202608), _row(202609)]))
 
     assert missing == {}
+
+
+def test_the_missing_ratio_message_matches_the_one_point_zero_assumption() -> None:
+    """측정률 행이 없으면 계산은 멈추지 않고 1.0 으로 가정한다(40a09b8).
+
+    그 뒤로도 문구가 「계산 화면을 열 때 … 멈춥니다」였다. 막는 것은 정책으로 남기되(새 경로는
+    측정률을 먼저 갖춘다) 이유는 지금 동작대로 말한다.
+    """
+    before = _upeh([_row(202608)])
+    after = _upeh([_row(202608), _row(202609)])
+    missing = missing_ratio_rows(
+        added_performance_keys(before, after), _tables([_row(202608)], [_row(202608)])
+    )
+
+    message = describe_missing_ratio_rows(missing)
+
+    assert "멈춥니다" not in message
+    assert "1.0 으로 가정" in message
+
+
+def _run_rate(values: dict[tuple[int, str], float | None]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"생산계획년월": month, "공정": process, "양산구분": "양산", "CAPA_RUN_RATE": value}
+            for (month, process), value in values.items()
+        ]
+    )
+
+
+def test_clearing_a_cell_an_upeh_path_uses_is_reported() -> None:
+    """효율·여유율·일수는 중립값이 없어, 경로가 쓰는 칸을 비우면 계산 전체가 멈춘다(결함 4).
+
+    **쓰는 경로가 없는 칸을 비우는 것은 막지 않는다.** 처음부터 비어 있던 칸도 이번 편집이 만든
+    문제가 아니라 세지 않는다.
+    """
+    before = _run_rate(
+        {
+            (202608, "Process-A"): 0.9,
+            (202609, "Process-A"): 0.9,
+            (202608, "Process-B"): 0.9,
+            (202609, "Process-B"): None,
+        }
+    )
+    # A 의 202609 와 B 의 202608 을 비웠다. B 의 202609 는 처음부터 비어 있었다.
+    after = _run_rate({(202608, "Process-A"): 0.9})
+    upeh = _upeh([_row(202608), _row(202609), _row(202609, "Process-B")])
+
+    cleared = cleared_keys_in_use("RQ_RUN_RATE", before, after, "CAPA_RUN_RATE", upeh)
+
+    assert cleared.to_dict("records") == [
+        {"생산계획년월": 202609, "공정": "Process-A", "양산구분": "양산"}
+    ]
+    message = describe_cleared_keys_in_use("효율", "RQ_RUN_RATE", cleared)
+    assert "「효율」 표에서 값을 지운 칸 1개" in message
+    assert "202609 · 공정=Process-A / 양산구분=양산" in message
+    assert "RQ_RUN_RATE 연결값이 없는 대당 Capa 기준" in message
+
+
+def test_a_path_the_calculation_skips_does_not_hold_a_cell() -> None:
+    """BOX·PCB 소요기준 행은 조인 전에 빠진다. 그 행만 쓰는 칸은 비워도 계산이 멈추지 않는다."""
+    before = _run_rate({(202608, "Process-A"): 0.9})
+    after = before.head(0)
+    upeh = _upeh([_row(202608)])
+    upeh["소요기준"] = " box "
+
+    assert cleared_keys_in_use("RQ_RUN_RATE", before, after, "CAPA_RUN_RATE", upeh).empty

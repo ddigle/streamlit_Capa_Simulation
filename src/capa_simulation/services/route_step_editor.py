@@ -325,15 +325,24 @@ def _clone_ratio_rows(
     target_pair: tuple[str, str],
     table_name: str,
 ) -> pd.DataFrame:
-    source_keys = source_upeh[list(PERFORMANCE_ROUTE_COLUMNS)].drop_duplicates()
-    source_key_set = _row_key_set(source_keys, PERFORMANCE_ROUTE_COLUMNS)
-    source_mask = _key_membership_mask(ratio, PERFORMANCE_ROUTE_COLUMNS, source_key_set)
+    """복제 원본 경로의 측정률 행을 새 MCP/STEP 으로 복제한다.
+
+    **원본에 측정률 행이 없는 (경로, 월)은 건너뛴다**(2026-09-29 버그 보고 횡전개). 계산은 그
+    부재를 1.0 으로 가정해 이어 가고 알린다(`unit_capacity._join_reference`) — 전에는 여기서만
+    「복제 원본 STEP에 연결된 … 행이 없습니다」로 막아, 계산이 멀쩡히 도는 경로를 복제할 수
+    없었다. 복제본도 「행 없음 = 1.0 가정」을 그대로 물려받는다.
+
+    원본 행은 `Area_Name` 대소문자를 가리지 않고 찾는다 — 계산의 조인이 그렇게 맞대므로
+    (`normalize_area_name`), 여기서만 `MAIN`·`Main` 을 다르게 보면 있는 행을 「없음」으로 건너뛴다.
+    """
+    source_key_set = _row_key_set(
+        _route_match_keys(source_upeh).drop_duplicates(), PERFORMANCE_ROUTE_COLUMNS
+    )
+    source_mask = _key_membership_mask(
+        _route_match_keys(ratio), PERFORMANCE_ROUTE_COLUMNS, source_key_set
+    )
     source_ratio = ratio.loc[source_mask].copy()
-    found_keys = _row_key_set(source_ratio, PERFORMANCE_ROUTE_COLUMNS)
-    missing_keys = source_key_set - found_keys
-    if missing_keys:
-        raise ValueError(f"복제 원본 STEP에 연결된 {table_name} 행이 없습니다.")
-    if source_ratio.duplicated(list(PERFORMANCE_ROUTE_COLUMNS), keep=False).any():
+    if _route_match_keys(source_ratio).duplicated(keep=False).any():
         raise ValueError(f"복제 원본 STEP의 {table_name} 경로가 중복되어 있습니다.")
 
     cloned = source_ratio.copy()
@@ -345,6 +354,13 @@ def _clone_ratio_rows(
         existing_target_keys,
     )
     return _append_like(ratio, cloned.loc[target_is_new])
+
+
+def _route_match_keys(data: pd.DataFrame) -> pd.DataFrame:
+    """측정률 행을 찾는 키. `_prepare` 가 공백은 이미 걷었고 `Area_Name` 대소문자만 접는다."""
+    keys = data.loc[:, list(PERFORMANCE_ROUTE_COLUMNS)].copy()
+    keys["Area_Name"] = keys["Area_Name"].astype("string").str.casefold()
+    return keys
 
 
 def _assert_not_last_step(

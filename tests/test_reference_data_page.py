@@ -816,7 +816,9 @@ def test_the_process_filter_placeholder_follows_the_view() -> None:
     )
 
 
-def _edit_and_apply(app: AppTest, editor_key: str, month_column: str, value: float) -> AppTest:
+def _edit_and_apply(
+    app: AppTest, editor_key: str, month_column: str, value: float | None
+) -> AppTest:
     """셀 하나를 고치고 곧바로 「변경사항 적용」 을 누른다.
 
     편집 델타는 **보이는 표 안의 행 위치**로 기록되므로 필터를 건 다음에 넣어야 한다.
@@ -1253,3 +1255,195 @@ def test_the_step_popup_warns_before_it_drops_unapplied_upeh_edits() -> None:
 
     assert not app.exception
     assert any("UPEH 표에 적용하지 않은 편집" in item.value for item in app.warning)
+
+
+# ---------------------------- 빈칸·적용 기준 횡전개 (2026-09-29 설비대수 빈칸 버그 보고)
+
+
+def _real_apply(script: str, old_token: str, new_token: str) -> str:
+    """적용이 활성 시나리오에 **실제로** 쓰이는 스크립트.
+
+    기본 하네스는 적용을 가로채 첫 교체만 적어 둔다. 적용 뒤의 적용(STEP 추가 → UPEH 적용)을
+    보려면 원래 `apply_month_updates` 가 세션의 시나리오를 갈아끼우고 다음 회차가 그것을 읽어야
+    한다. 적용은 세션 상태만 바꾸므로 DB 는 열리지 않는다. 계산 캐시 키가 되는 토큰은 따로 둔다.
+    """
+    return (
+        script.replace(
+            "scenario_state.ensure_active_scenario = lambda _tables, _version: active",
+            "scenario_state.ensure_active_scenario = lambda _tables, _version: (\n"
+            "    st.session_state.get(scenario_state.ACTIVE_SCENARIO_KEY) or active\n"
+            ")",
+        )
+        .replace("scenario_state.apply_month_updates = capture_month_updates", "pass")
+        .replace(f'"{old_token}"', f'"{new_token}"')
+    )
+
+
+REAL_APPLY_TEST_SCRIPT = _real_apply(
+    TEST_SCRIPT, "test-capacity-standards-page", "test-capacity-real-apply-page"
+)
+# UPEH 에 없는 달(202609)이 다른 표에만 있다 — UPEH 202609 열을 통째로 비워 저장한 리비전과 같은
+# 모양이다. 선택기간은 08–09 라 적용 기간(선택기간 ∩ UPEH 범위)은 08 뿐이다.
+_WINDOW_EXTRA = """
+for _name, _row in (
+    ("RQ_RUN_DAY", {"생산계획년월": 202609, "공정": "Process-A", "RUN_DAY": 30.0}),
+    (
+        "RQ_RUN_RATE",
+        {"생산계획년월": 202609, "공정": "Process-A", "양산구분": "양산", "CAPA_RUN_RATE": 0.9},
+    ),
+    ("RQ_REQB", {**tables["RQ_REQB"].iloc[0].to_dict(), "생산계획년월": 202609}),
+):
+    tables[_name] = pd.concat([tables[_name], pd.DataFrame([_row])], ignore_index=True)
+"""
+WINDOW_TEST_SCRIPT = (
+    TEST_SCRIPT.replace("\nactive = {", _WINDOW_EXTRA + "\nactive = {", 1)
+    .replace(
+        'st.session_state["production_month_range_v2"] = ("2026-08", "2026-08")',
+        'st.session_state["production_month_range_v2"] = ("2026-08", "2026-09")',
+    )
+    .replace('"test-capacity-standards-page"', '"test-capacity-window-page"')
+)
+
+
+def _scenario_table(app: AppTest, name: str) -> pd.DataFrame:
+    frame: pd.DataFrame = app.session_state["active_scenario"]["tables"][name]
+    return frame
+
+
+def _add_step(app: AppTest, mcp_seq: str, step_seq: str) -> AppTest:
+    app = _open_step_dialog(app)
+    app = next(w for w in app.text_input if w.label == "신규 MCP_SEQ").set_value(mcp_seq).run()
+    app = next(w for w in app.text_input if w.label == "신규 STEP_SEQ").set_value(step_seq).run()
+    app = next(b for b in app.button if b.label == "STEP 일괄 추가").click().run()
+    assert not app.exception
+    return app
+
+
+def _paste(app: AppTest, editor_key: str, text: str) -> AppTest:
+    app = _open_paste(app, editor_key)
+    app.text_area(key=f"{editor_key}_csv_clipboard").set_value(text)
+    app = next(b for b in app.button if b.label == "붙여넣기 일괄 적용").click().run()
+    assert not app.exception
+    return app
+
+
+def test_upeh_apply_after_a_step_add_checks_against_the_active_scenario() -> None:
+    """UPEH 적용 검사는 **적용 전 활성 시나리오**와 맞댄다(결함 1).
+
+    저장 리비전과 맞대면 이 세션에서 먼저 한 STEP 추가가 안 보인다. 새 STEP 의 UPEH 행을 모두
+    「새로 만든 경로」로 보고 그 측정률 행(복제로 시나리오에는 있다)을 저장 리비전에서 찾다 못해,
+    STEP 을 더한 뒤에는 상관없는 UPEH 칸 하나도 적용할 수 없었다(2026-09-29).
+    """
+    app = AppTest.from_string(REAL_APPLY_TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    app = _add_step(app, "2A", "P200")
+    assert sorted(_scenario_table(app, "RQ_UPEH")["STEP_SEQ"]) == ["P100", "P200"]
+    assert sorted(_scenario_table(app, "RQ_LOT_RATIO")["STEP_SEQ"]) == ["P100", "P200"]
+
+    app.session_state["reference_data_active_tab"] = REF_TAB["UPEH"]
+    app.run()
+    app = _edit_and_apply(app, "capa_upeh_editor", "202608", 120.0)
+
+    assert not app.exception
+    assert [error.value for error in app.error] == []
+    assert 120.0 in _scenario_table(app, "RQ_UPEH")["UPEH"].tolist()
+
+
+def test_reference_editors_use_the_same_window_as_the_apply() -> None:
+    """편집표·STEP 목록은 적용과 같은 기간(선택기간 ∩ UPEH 범위)이다(결함 3).
+
+    편집표를 선택기간으로 자르면 UPEH 에 없는 달의 행이 편집값에 섞여, 적용이 그 기간만
+    갈아끼우는 `replace_month_range` 에서 「편집값에 선택 범위 밖의 년월이 있습니다」로 모든 적용이
+    막혔다. STEP 추가도 UPEH 가 없는 달의 수요를 복제하려다 멈췄다.
+    """
+    app = AppTest.from_string(WINDOW_TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["일수"]
+    app.run()
+    assert not app.exception
+    app = _edit_and_apply(app, "capa_run_day_editor", "202608", 20.0)
+
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_RUN_DAY"]
+    assert set(saved["생산계획년월"]) == {202608}
+    assert saved["RUN_DAY"].tolist() == [20.0]
+
+    app = _add_step(AppTest.from_string(WINDOW_TEST_SCRIPT, default_timeout=60).run(), "2A", "P200")
+    assert [error.value for error in app.error] == []
+    # 202608 의 원본 한 행과 그 복제 한 행. 202609 수요는 적용 기간 밖이라 건드리지 않는다.
+    assert app.session_state["test_step_reqb_rows"] == 2
+
+
+def test_clearing_a_run_rate_cell_an_upeh_path_uses_is_blocked() -> None:
+    """효율·여유율·일수에는 중립값이 없다. 경로가 쓰는 칸을 비우면 적용 전에 막는다(결함 4).
+
+    전에는 적용이 성공으로 알리고 행을 지웠고, 그 뒤 계산 전체가 「RQ_RUN_RATE 연결값이 없는
+    대당 Capa 기준이 있습니다」로 멈췄다.
+    """
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["효율"]
+    app.run()
+    assert not app.exception
+    app = _edit_and_apply(app, "capa_run_rate_editor", "202608", None)
+
+    assert not app.exception
+    errors = [str(error.value) for error in app.error]
+    assert any(
+        "UPEH 경로가 씁니다" in error and "202608" in error and "Process-A" in error
+        for error in errors
+    ), errors
+    assert "test_month_updates" not in app.session_state
+
+
+def test_clearing_a_run_day_cell_by_paste_is_blocked_the_same_way() -> None:
+    """붙여넣기도 격자와 같은 규칙을 탄다 — 팝업 안에 막힌 까닭을 쓴다."""
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["일수"]
+    app.run()
+    assert not app.exception
+    app = _paste(app, "capa_run_day_editor", "공정\t202608\nProcess-A\t\nProcess-B\t31\n")
+
+    errors = [str(error.value) for error in app.error]
+    assert any("「일수」 표에서 값을 지운 칸 1개" in error for error in errors), errors
+    assert "test_month_updates" not in app.session_state
+
+
+RATIO_PASTE_HEADER = (
+    "공정\tArea_Name\t양산구분\t제품정보\tStack\tWF 구분\tSTEP_SEQ\tMCP_SEQ\t202608\n"
+)
+
+
+def _ratio_paste_row(process: str, value: str) -> str:
+    return f"{process}\tMain\t양산\tProduct-A\t8H\tBUFFER\tP100\t1A\t{value}\n"
+
+
+def test_the_paste_notice_says_what_happened_to_the_cleared_cells() -> None:
+    """붙여넣기 완료 문구는 표마다 맞는 말이다(결함 5).
+
+    전에는 모든 표가 「값이 지워진 칸 N개는 계산에서 빠집니다」였다. 측정률은 1.0 으로 가정해
+    계산하고, 설비대수는 0 대로 저장한다 — 설비는 원래 없던 조합(양식의 0)을 비운 것은 세지 않는다.
+    """
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["Lot측정률"]
+    app.run()
+    app = _paste(
+        app,
+        "capa_lot_ratio_editor",
+        RATIO_PASTE_HEADER + _ratio_paste_row("Process-A", "") + _ratio_paste_row("Process-B", "1"),
+    )
+    notices = [str(item.value) for item in app.success]
+    assert any("값이 지워진 칸 1개는 측정률 1.0 으로 계산합니다" in item for item in notices), (
+        notices
+    )
+    assert not any("계산에서 빠집니다" in item for item in notices)
+
+    # 보유 2 대를 비우면 0 대로 저장한다.
+    app = _equipment_sub_tab_app("보유", TWO_PROCESS_TEST_SCRIPT)
+    app = _paste(app, "capa_eqp_own_editor", "공정\t202608\nProcess-A\t\nProcess-B\t2\n")
+    notices = [str(item.value) for item in app.success]
+    assert any("빈칸 1개는 0 대로 저장했습니다" in item for item in notices), notices
+
+    # 대여는 두 공정 모두 0 대다. 0 인 칸을 비운 것은 바뀐 것이 없어 세지 않는다.
+    app = _equipment_sub_tab_app("대여", TWO_PROCESS_TEST_SCRIPT)
+    app = _paste(app, "capa_eqp_lent_editor", "공정\t202608\nProcess-A\t\nProcess-B\t\n")
+    notices = [str(item.value) for item in app.success]
+    assert notices and not any("빈칸" in item or "지워진 칸" in item for item in notices), notices
