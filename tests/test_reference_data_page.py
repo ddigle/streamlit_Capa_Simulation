@@ -1447,3 +1447,213 @@ def test_the_paste_notice_says_what_happened_to_the_cleared_cells() -> None:
     app = _paste(app, "capa_eqp_lent_editor", "공정\t202608\nProcess-A\t\nProcess-B\t\n")
     notices = [str(item.value) for item in app.success]
     assert notices and not any("빈칸" in item or "지워진 칸" in item for item in notices), notices
+
+
+# ---------------------------- 2026-09-29 2차 리뷰: 새 경로의 효율, 쓰는 칸의 0, 빈 측정률 표
+
+# 픽스처의 `tables` 에 행을 더하는 도우미. 첫 행을 복제해 일부 컬럼만 바꾼다.
+_ADD_ROW = """
+def _add(name, **overrides):
+    row = tables[name].iloc[0].to_dict()
+    row.update(overrides)
+    tables[name] = pd.concat([tables[name], pd.DataFrame([row])], ignore_index=True)
+"""
+
+
+def _with_tables(script: str, extra: str, old_token: str, new_token: str) -> str:
+    """시나리오를 만들기 전에 `tables` 를 고친 스크립트. 계산 캐시 토큰도 따로 둔다."""
+    return script.replace("\nactive = {", _ADD_ROW + extra + "\nactive = {", 1).replace(
+        f'"{old_token}"', f'"{new_token}"'
+    )
+
+
+# 개발 경로 P200 이 202609 에만 있어 UPEH 편집표에 202609 열이 선다. 양산 경로 P100 의 202609
+# 칸은 비어 있고, 그 달의 측정률·여유율·일수는 갖췄지만 **효율 (202609, Process-A, 양산) 행만
+# 없다.** 채우기 전에는 어느 경로도 그 효율 행을 쓰지 않으므로 계산은 멀쩡하다.
+NEW_PATH_TEST_SCRIPT = _with_tables(
+    REAL_APPLY_TEST_SCRIPT,
+    """
+for _name in ("RQ_UPEH", "RQ_LOT_RATIO", "RQ_WF_RATIO", "RQ_REQB"):
+    _add(_name, 생산계획년월=202609, 양산구분="개발", STEP_SEQ="P200", MCP_SEQ="2A")
+for _name in ("RQ_LOT_RATIO", "RQ_WF_RATIO", "RQ_VITAL", "RQ_RUN_DAY"):
+    _add(_name, 생산계획년월=202609)
+_add("RQ_RUN_RATE", 생산계획년월=202609, 양산구분="개발")
+_add("RQ_VITAL", 생산계획년월=202609, 양산구분="개발")
+""",
+    "test-capacity-real-apply-page",
+    "test-capacity-new-path-page",
+).replace(
+    'st.session_state["production_month_range_v2"] = ("2026-08", "2026-08")',
+    'st.session_state["production_month_range_v2"] = ("2026-08", "2026-09")',
+)
+
+
+def _scenario_unit_capacity(app: AppTest) -> pd.DataFrame:
+    """세션의 활성 시나리오로 대당 Capa 를 실제로 돌린다. 멈추면 `ValueError` 가 난다."""
+    from capa_simulation.services.unit_capacity import calculate_unit_capacity
+
+    tables = app.session_state["active_scenario"]["tables"]
+    return calculate_unit_capacity(
+        tables["RQ_UPEH"],
+        tables["RQ_RUN_RATE"],
+        tables["RQ_VITAL"],
+        pd.DataFrame({"공정": ["Process-A"], "모듈수": [1.0]}),
+        tables["RQ_RUN_DAY"],
+        tables["RQ_LOT_RATIO"],
+        tables["RQ_WF_RATIO"],
+    )
+
+
+def _open_filtered(app: AppTest, tab_name: str, filter_key: str, values: list[str]) -> AppTest:
+    """탭 하나를 열고 필터로 한 행만 남긴다 — 편집 델타는 보이는 행 위치 기반이다."""
+    app.session_state["reference_data_active_tab"] = REF_TAB[tab_name]
+    app.session_state[filter_key] = values
+    app.run()
+    assert not app.exception
+    return app
+
+
+def test_filling_an_upeh_month_without_a_run_rate_row_is_blocked_until_it_is_filled() -> None:
+    """UPEH 의 빈 달을 채울 때 효율 행도 본다(2026-09-29 2차 리뷰 결함 A).
+
+    측정률만 보던 검사가 효율·여유율·일수를 보지 않아, 효율 행이 없는 달을 채우면 적용은
+    성공하고 계산 전체가 「RQ_RUN_RATE 연결값이 없는 대당 Capa 기준이 있습니다」로 멈췄다. 안내대로
+    효율 탭에서 먼저 채우면 저장하지 않아도 풀리고, 그 뒤 계산은 멈추지 않는다.
+    """
+    app = AppTest.from_string(NEW_PATH_TEST_SCRIPT, default_timeout=60)
+    app = _open_filtered(app, "UPEH", "capa_upeh_editor_filter_양산구분", ["양산"])
+    app = _edit_and_apply(app, "capa_upeh_editor", "202609", 100.0)
+
+    assert not app.exception
+    errors = [str(error.value) for error in app.error]
+    assert any(
+        "「효율」 탭에 1건 — 202609 · 공정=Process-A / 양산구분=양산" in error
+        and "RQ_RUN_RATE 연결값이 없는 대당 Capa 기준이 있습니다" in error
+        for error in errors
+    ), errors
+    assert "active_scenario" not in app.session_state
+
+    app = _open_filtered(app, "효율", "capa_run_rate_editor_filter_양산구분", ["양산"])
+    app = _edit_and_apply(app, "capa_run_rate_editor", "202609", 0.9)
+    assert [error.value for error in app.error] == []
+
+    app.session_state["reference_data_active_tab"] = REF_TAB["UPEH"]
+    app.run()
+    app = _edit_and_apply(app, "capa_upeh_editor", "202609", 100.0)
+
+    assert [error.value for error in app.error] == []
+    upeh = _scenario_table(app, "RQ_UPEH")
+    assert sorted(upeh.loc[upeh["STEP_SEQ"].eq("P100"), "생산계획년월"]) == [202608, 202609]
+    capacity = _scenario_unit_capacity(app)
+    assert set(capacity.loc[capacity["STEP_SEQ"].eq("P100"), "생산계획년월"]) == {202608, 202609}
+
+
+def test_a_zero_in_a_vital_cell_an_upeh_path_uses_is_blocked() -> None:
+    """여유율·일수는 쓰는 칸의 0 도 막는다(결함 B). 전에는 비우기만 막고 0 은 적용·저장됐다.
+
+    그 뒤 계산 전체가 「RQ_VITAL의 편중률 값은 0보다 커야 합니다」로 멈췄다.
+    """
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["여유율"]
+    app.run()
+    app = _edit_and_apply(app, "capa_vital_editor", "202608", 0.0)
+
+    assert not app.exception
+    errors = [str(error.value) for error in app.error]
+    assert any(
+        "「여유율」 표에 0 이하 값을 넣은 칸 1개" in error
+        and "202608 · 공정=Process-A / 양산구분=양산 (넣은 값 0)" in error
+        and "RQ_VITAL의 편중률 값은 0보다 커야 합니다" in error
+        for error in errors
+    ), errors
+    assert "test_month_updates" not in app.session_state
+
+
+def test_a_zero_in_a_run_day_cell_by_paste_is_blocked_the_same_way() -> None:
+    """붙여넣기도 격자와 같은 `to_rows` 를 지난다 — 팝업 안에 막힌 까닭을 쓴다."""
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["일수"]
+    app.run()
+    app = _paste(app, "capa_run_day_editor", "공정\t202608\nProcess-A\t0\nProcess-B\t31\n")
+
+    errors = [str(error.value) for error in app.error]
+    assert any(
+        "「일수」 표에 0 이하 값을 넣은 칸 1개" in error
+        and "RQ_RUN_DAY의 RUN_DAY 값은 0보다 커야 합니다" in error
+        for error in errors
+    ), errors
+    assert "test_month_updates" not in app.session_state
+
+
+def test_a_zero_in_a_cell_no_upeh_path_uses_is_still_allowed() -> None:
+    """쓰는 경로가 없는 칸의 0 은 계산을 멈추지 않는다 — 막는 범위는 계산과 같다."""
+    script = _with_tables(
+        TEST_SCRIPT,
+        '_add("RQ_VITAL", 양산구분="개발")\n',
+        "test-capacity-standards-page",
+        "test-capacity-unused-zero-page",
+    )
+    app = AppTest.from_string(script, default_timeout=60)
+    app = _open_filtered(app, "여유율", "capa_vital_editor_filter_양산구분", ["개발"])
+    app = _edit_and_apply(app, "capa_vital_editor", "202608", 0.0)
+
+    assert [error.value for error in app.error] == []
+    saved = app.session_state["test_month_updates"]["RQ_VITAL"]
+    assert dict(zip(saved["양산구분"], saved["편중률"], strict=True)) == {"양산": 1.0, "개발": 0.0}
+
+
+def test_emptying_a_ratio_table_keeps_the_page_open() -> None:
+    """측정률 표를 통째로 비워도 화면이 서지 않는다(결함 C).
+
+    전에는 적용 뒤 화면 전체가 「RQ_LOT_RATIO에 선택할 생산계획년월 데이터가 없습니다」로 섰다.
+    계산은 빈 측정률 표를 1.0 가정으로 이어 가고, 붙여넣기 문구도 그렇게 안내한다.
+    """
+    app = AppTest.from_string(REAL_APPLY_TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["Lot측정률"]
+    app.run()
+    app = _edit_and_apply(app, "capa_lot_ratio_editor", "202608", None)
+
+    assert not app.exception
+    assert [error.value for error in app.error] == []
+    assert _scenario_table(app, "RQ_LOT_RATIO").empty
+    assert any(
+        "이 기간에 Lot측정률 행이 없어 모든 경로를 측정률 1.0 으로 계산합니다" in item.value
+        for item in app.info
+    )
+    assert not any("편집 범위" in item.value for item in app.markdown)
+
+    # 다른 탭은 그대로 동작한다 — WF 표는 행이 있고, UPEH 의 있던 칸은 고칠 수 있다.
+    app.session_state["reference_data_active_tab"] = REF_TAB["WF측정률"]
+    app.run()
+    assert any("전체 1개 행" in item.value for item in app.markdown)
+    assert not any("행이 없어" in item.value for item in app.info)
+    app.session_state["reference_data_active_tab"] = REF_TAB["UPEH"]
+    app.run()
+    app = _edit_and_apply(app, "capa_upeh_editor", "202608", 150.0)
+    assert [error.value for error in app.error] == []
+    assert _scenario_table(app, "RQ_UPEH")["UPEH"].tolist() == [150.0]
+
+
+def test_a_scenario_without_ratio_rows_opens_every_tab() -> None:
+    """원천에 측정률 행이 전혀 없는 시나리오도 연다 — 표시명 프로필이 있어도, 붙여넣기·STEP 도."""
+    script = _with_tables(
+        _renamed(REAL_APPLY_TEST_SCRIPT),
+        'for _name in ("RQ_LOT_RATIO", "RQ_WF_RATIO"):\n'
+        "    tables[_name] = tables[_name].head(0)\n",
+        "test-capacity-real-apply-page",
+        "test-capacity-no-ratio-page",
+    )
+    app = AppTest.from_string(script, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["WF측정률"]
+    app.run()
+
+    assert not app.exception
+    assert [error.value for error in app.error] == []
+    assert any("이 기간에 WF측정률 행이 없어" in item.value for item in app.info)
+    app = _open_paste(app, "capa_wf_ratio_editor")
+    assert [error.value for error in app.error] == []
+
+    app = _add_step(AppTest.from_string(script, default_timeout=60).run(), "2A", "P200")
+    assert [error.value for error in app.error] == []
+    assert sorted(_scenario_table(app, "RQ_UPEH")["STEP_SEQ"]) == ["P100", "P200"]
+    assert _scenario_table(app, "RQ_LOT_RATIO").empty

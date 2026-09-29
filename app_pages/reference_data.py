@@ -41,6 +41,7 @@ from capa_simulation.page_bootstrap import (
     resolve_effective_months,
 )
 from capa_simulation.scenario_state import (
+    ActiveScenario,
     apply_month_updates,
     scenario_month_table,
 )
@@ -73,11 +74,17 @@ from capa_simulation.services.equipment_count import (
     equipment_count_to_edit_table,
 )
 from capa_simulation.services.reference_consistency import (
+    POSITIVE_REQUIRED_COLUMNS,
+    RATIO_TABLES,
+    REQUIRED_TABLE_KEYS,
     added_performance_keys,
     cleared_keys_in_use,
     describe_cleared_keys_in_use,
-    describe_missing_ratio_rows,
+    describe_missing_path_rows,
+    describe_nonpositive_keys_in_use,
     missing_ratio_rows,
+    missing_required_rows,
+    nonpositive_keys_in_use,
 )
 from capa_simulation.services.reference_csv import count_removed_values
 from capa_simulation.services.route_step_editor import (
@@ -169,6 +176,24 @@ def _editor_needed(tab: OpenTab, editor_key: str) -> bool:
     return not tab_is_hidden(tab) or editor_has_edits(editor_key)
 
 
+def _ratio_month_table(
+    scenario: ActiveScenario, table_name: str, start_month: int, end_month: int
+) -> pd.DataFrame:
+    """측정률 표의 편집 기간 조각. **표가 통째로 비었으면 같은 컬럼의 빈 표다.**
+
+    `scenario_month_table`(→ `month_filter`)은 행이 하나도 없는 표를 「… 선택할 생산계획년월
+    데이터가 없습니다」로 막는다. 측정률은 행이 없으면 1.0 으로 가정하는 표라
+    (`unit_capacity._join_reference`) 비어도 계산은 이어 가는데, 모든 칸을 비워 적용하거나
+    원천에 측정률 행이 없으면 이 화면 전체가 그 오류로 섰다(2026-09-29 2차 리뷰). 다른 호출자는
+    빈 표를 오류로 기대할 수 있어 공용 함수의 뜻은 두고 여기서만 가른다. 비지 않은 표는 그대로
+    `scenario_month_table` 을 지나 월 형식 오류가 계속 드러난다.
+    """
+    table = scenario["tables"].get(table_name)
+    if table is not None and table.empty and "생산계획년월" in table.columns:
+        return table.head(0).copy()
+    return scenario_month_table(scenario, table_name, start_month, end_month)
+
+
 try:
     context = load_page_context()
     reference_version = context.reference_version
@@ -199,10 +224,10 @@ try:
     filtered_run_day = scenario_month_table(
         active_scenario, "RQ_RUN_DAY", effective_start_month, effective_end_month
     )
-    filtered_lot_ratio = scenario_month_table(
+    filtered_lot_ratio = _ratio_month_table(
         active_scenario, "RQ_LOT_RATIO", effective_start_month, effective_end_month
     )
-    filtered_wf_ratio = scenario_month_table(
+    filtered_wf_ratio = _ratio_month_table(
         active_scenario, "RQ_WF_RATIO", effective_start_month, effective_end_month
     )
     filtered_plan = scenario_month_table(active_scenario, "RQ_PKG_PLAN", start_month, end_month)
@@ -810,12 +835,22 @@ def _upeh_rows(table: pd.DataFrame) -> pd.DataFrame:
     # 걸린다. 비교 기준은 **적용 전 활성 시나리오**다. 저장 리비전과 맞대면 이 세션에서 먼저
     # 적용한 STEP 추가·측정률 입력이 안 보여, STEP 을 더한 뒤에는 UPEH 어느 칸을 고쳐도
     # 막혔고 안내대로 측정률을 채워도 저장 전에는 풀리지 않았다(2026-09-29).
-    missing = missing_ratio_rows(
+    scenario_tables = active_scenario["tables"]
+    missing_ratio = missing_ratio_rows(
         added_performance_keys(filtered_upeh, rows),
-        {name: active_scenario["tables"][name] for name in ("RQ_LOT_RATIO", "RQ_WF_RATIO")},
+        {name: scenario_tables[name] for name in RATIO_TABLES},
     )
-    if missing:
-        raise ValueError(describe_missing_ratio_rows(missing))
+    # 효율·여유율·일수도 본다. 측정률(없으면 1.0 가정)만 보고 이 셋을 보지 않아, 효율 행이 없는
+    # 달을 채우면 적용은 성공하고 계산 전체가 「RQ_RUN_RATE 연결값이 없는 …」로 멈췄다
+    # (2026-09-29 2차 리뷰). 측정률 결손과 **한 오류문**으로 알린다 — 따로 알리면 하나를 채운 뒤
+    # 다음 적용에서 다른 표로 같은 일을 또 겪는다.
+    missing_required = missing_required_rows(
+        filtered_upeh,
+        rows,
+        {name: scenario_tables[name] for name in REQUIRED_TABLE_KEYS},
+    )
+    if missing_ratio or missing_required:
+        raise ValueError(describe_missing_path_rows(missing_ratio, missing_required))
     return rows
 
 
@@ -831,16 +866,29 @@ def _required_rows(
     세 표에는 측정률의 1.0 같은 중립값이 없다. 경로가 쓰는 (키, 월) 칸을 비우면 적용은 성공으로
     알리고 행이 지워지는데, 그 뒤 계산 전체가 「… 연결값이 없는 대당 Capa 기준이 있습니다」로
     멈췄다(2026-09-29 버그 보고 횡전개). 쓰는 경로가 없는 칸을 지우는 것은 그대로 둔다.
-    `source` 는 편집표를 만든 같은 기간의 원본이다.
+    여유율·일수는 쓰는 칸의 **0 이하 값**도 같은 식으로 막는다(아래). `source` 는 편집표를 만든
+    같은 기간의 원본이다. 격자 적용과 붙여넣기가 모두 이 함수를 지난다.
     """
 
     def to_rows(table: pd.DataFrame) -> pd.DataFrame:
         rows = reference_from_edit_table(table, dimensions, value_column, f"{label} 편집값")
-        cleared = cleared_keys_in_use(
-            table_name, source, rows, value_column, active_scenario["tables"]["RQ_UPEH"]
-        )
+        upeh = active_scenario["tables"]["RQ_UPEH"]
+        problems: list[str] = []
+        cleared = cleared_keys_in_use(table_name, source, rows, value_column, upeh)
         if not cleared.empty:
-            raise ValueError(describe_cleared_keys_in_use(label, table_name, cleared))
+            problems.append(describe_cleared_keys_in_use(label, table_name, cleared))
+        # 여유율·일수는 0 이하도 계산 전체를 「… 0보다 커야 합니다」로 멈춘다. 편집기는 0 을
+        # 받아(`min_value` 0) 비우기만 막던 동안 쓰는 칸의 0 이 적용·저장됐다(2026-09-29 2차
+        # 리뷰). 쓰는 경로가 없는 칸의 0 은 계산이 멈추지 않으므로 둔다 — 막는 범위를 계산과
+        # 같게 하려고 편집기의 하한은 올리지 않는다. 효율 0 은 그 경로만 제외라 여기 없다.
+        if table_name in POSITIVE_REQUIRED_COLUMNS:
+            nonpositive = nonpositive_keys_in_use(table_name, source, rows, value_column, upeh)
+            if not nonpositive.empty:
+                problems.append(
+                    describe_nonpositive_keys_in_use(label, table_name, value_column, nonpositive)
+                )
+        if problems:
+            raise ValueError(" ".join(problems))
         return rows
 
     return to_rows
@@ -981,6 +1029,21 @@ EDITOR_FORMATS: dict[str, tuple[str, float, float | None]] = {
     "RQ_EQP_LENT": ("%,.2f", 0.01, None),
     "RQ_EQP_AVBL": ("%,.2f", 0.01, None),
 }
+
+# 측정률 표에 이 기간 행이 없으면 편집표가 0 행이다(모든 칸을 비워 적용했거나 원천에 행이 없다).
+# 계산은 1.0 으로 이어 가므로 오류가 아니지만, 빈 표만 보이면 무엇으로 계산되는지 알 수 없다.
+# 이 편집표는 행을 더할 수 없다(원래 한계) — 무엇이 계산되는지만 알린다(2026-09-29 2차 리뷰).
+RATIO_EMPTY_NOTICE = (
+    "이 기간에 {label} 행이 없어 모든 경로를 측정률 1.0 으로 계산합니다. 이 표에서는 행을 더할 수 "
+    "없습니다."
+)
+for ratio_tab, ratio_rows, ratio_label in (
+    (lot_ratio_tab, filtered_lot_ratio, "Lot측정률"),
+    (wf_ratio_tab, filtered_wf_ratio, "WF측정률"),
+):
+    if ratio_rows.empty and not tab_is_hidden(ratio_tab):
+        with ratio_tab:
+            st.info(RATIO_EMPTY_NOTICE.format(label=ratio_label))
 
 editor_results: list[tuple[_Editor, pd.DataFrame, bool]] = []
 for editor in (*EDITORS, *EQUIPMENT_EDITOR_SPECS):
