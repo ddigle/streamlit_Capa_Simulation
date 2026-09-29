@@ -20,8 +20,10 @@ from capa_simulation.components.home_figures import (
 from capa_simulation.components.home_preference import (
     COMPARISON_REVISION_KEY,
     COMPARISON_SCENARIO_KEY,
+    KEY_PROCESS_PRESET_KEY,
     render_home_preference,
     render_home_view_card,
+    render_key_process_preset_card,
     render_lob_title_row,
     seed_comparison_selection,
 )
@@ -117,6 +119,7 @@ from capa_simulation.services.execution_capacity import (
     unmatched_execution_adjustments,
 )
 from capa_simulation.services.home_decision import build_capacity_decision
+from capa_simulation.services.key_process import resolve_preset_name
 from capa_simulation.services.month_columns import (
     build_month_axis,
     build_past_month_labels,
@@ -443,8 +446,15 @@ except BOOTSTRAP_ERRORS as exc:
 # 프로필에서 지우지는 않는다 — 공용 설정이라 다른 시나리오에는 그 공정이 있다.
 # `resolve_included_processes` 를 쓰지 않는다. 그쪽의 「직전 옵션에 없던 공정은 새 공정
 # 이니 포함」 규칙은 B/N 집계용이고, 주요공정은 명시적 선택이라 자동으로 들어오면 안 된다.
+# 어느 프리셋을 그릴지는 사이드바 `주요공정 히트맵` 카드가 정한다(세션의 보는 조건). 카드는
+# 아래에서 그려지지만 값은 세션에 있으므로 여기서 읽는다 — 고르면 다시 돌아 이 줄부터 새 값이다.
+key_process_preset = resolve_preset_name(
+    key_process_profile.preset_names, st.session_state.get(KEY_PROCESS_PRESET_KEY)
+)
 applied_key_processes = [
-    process for process in key_process_profile.processes if process in set(process_options)
+    process
+    for process in key_process_profile.processes_of(key_process_preset)
+    if process in set(process_options)
 ]
 PROCESS_DIALOG_DRAFT_KEY = "dashboard_bottleneck_process_dialog_draft"
 PROCESS_SEEN_KEY = "dashboard_bottleneck_process_seen"
@@ -815,6 +825,7 @@ main_tab, preference_tab, past_tab = stateful_tabs(
 # 보는 조건은 사이드바 조건 카드다(2026-09-29 사용자 결정). 그 조건이 걸리는 Main 탭에서만 선다.
 if not tab_is_hidden(main_tab):
     render_home_view_card(comparison_ready=bool(comparison_scenario_id and comparison_revision_id))
+    render_key_process_preset_card(key_process_profile, process_labels=process_labels)
 with main_tab:
     # 공지는 대시보드 상자 **밖**, 화면 맨 위다. 상자 안에 두면 스크롤되는 월 영역과 폭을
     # 나눠 가져 문구가 월 칸 너비에 갇힌다.
@@ -850,6 +861,11 @@ with main_tab:
             month_labels,
             leading_past_month_count=leading_past_months,
             owner_tab=main_tab,
+            key_process_title=(
+                f"주요공정 확보율 · {key_process_preset}"
+                if key_process_preset
+                else "주요공정 확보율"
+            ),
         )
     if comparison_detail is not None:
         # 표의 칸마다 붙는 증감은 「이 달 이 분류가 얼마나 달랐나」를 답하지만 「무엇이 가장

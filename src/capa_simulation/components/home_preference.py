@@ -74,7 +74,11 @@ from capa_simulation.services.execution_capacity import (
     empty_execution_capacity,
     prepare_execution_capacity,
 )
-from capa_simulation.services.key_process import KEY_PROCESS_LIMIT
+from capa_simulation.services.key_process import (
+    KEY_PROCESS_LIMIT,
+    PRESET_NAME_LIMIT,
+    normalize_preset_name,
+)
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.sidebar_status import condition_card
 
@@ -84,6 +88,11 @@ COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
 COMPARISON_REVISION_KEY = "home_preference_comparison_revision"
 ADVANCE_EDITOR_KEY = "home_preference_advance_editor"
 ADVANCE_NOTE_KEY = "home_preference_advance_note"
+# 주요공정 히트맵 프리셋. 사이드바에서 고른 프리셋(세션의 보는 조건)과 Preference 에서 고치는
+# 프리셋은 다른 칸이다 — 고치려고 고른 것이 보는 화면을 바꾸면 안 된다.
+KEY_PROCESS_PRESET_KEY = "home_key_process_preset"
+KEY_PROCESS_EDIT_TARGET_KEY = "home_key_process_preset_edit"
+NEW_KEY_PROCESS_PRESET = "＋ 새 프리셋"
 DIMENSION_COLUMN = "구분"
 # 구획 제목의 글자 크기와 앞 강조 막대의 치수. `home_rendering` 의 `Summary` 상자가 같은
 # 값을 CSS 가상요소로 다시 그리므로 상수로 내보낸다 — 두 곳에 숫자를 따로 적으면 한쪽만
@@ -767,6 +776,51 @@ def _render_top5_band_editor(
         st.rerun(scope="app")
 
 
+def _apply_pending_selection(key: str) -> None:
+    """저장 뒤에 고를 값을 위젯을 만들기 **전**에 넣는다(만든 뒤에는 세션에 쓸 수 없다)."""
+    pending = st.session_state.pop(f"{key}__pending", None)
+    if isinstance(pending, str):
+        st.session_state[key] = pending
+
+
+def _queue_selection(key: str, value: str) -> None:
+    st.session_state[f"{key}__pending"] = value
+
+
+def render_key_process_preset_card(
+    profile: GlobalKeyProcess,
+    *,
+    process_labels: ProcessLabels,
+) -> None:
+    """사이드바 조건 카드 `주요공정 히트맵` — 볼 프리셋을 고른다(2026-09-29 사용자 요청).
+
+    B/N 집계 공정과 **따로** 서는 카드다. B/N 집계는 판정에 넣을 공정이고, 이것은 히트맵이
+    **보여 줄** 행이다. 고른 값은 이 세션의 보는 조건이라 공용 프로필에 쓰지 않는다 — 프리셋
+    자체만 공용이다.
+    아직 고르지 않았거나 고른 프리셋이 지워졌으면 첫 프리셋(기본)이다.
+    """
+    with condition_card("주요공정 히트맵", name="home_key_process", icon=":material/grid_view:"):
+        names = list(profile.preset_names)
+        if not names:
+            st.caption(
+                "아직 프리셋이 없습니다. `Preference` 탭의 「주요공정 히트맵 프리셋」에서 만드세요."
+            )
+            return
+        _apply_pending_selection(KEY_PROCESS_PRESET_KEY)
+        if st.session_state.get(KEY_PROCESS_PRESET_KEY) not in names:
+            st.session_state.pop(KEY_PROCESS_PRESET_KEY, None)
+        chosen = st.selectbox(
+            "프리셋",
+            options=names,
+            key=KEY_PROCESS_PRESET_KEY,
+            persist_state="session",
+        )
+        processes = profile.processes_of(chosen)
+        st.caption(
+            f"{len(processes)}개 공정 · " + " · ".join(process_labels.label(p) for p in processes)
+        )
+
+
 def _render_key_process_editor(
     *,
     key_process_profile: GlobalKeyProcess,
@@ -774,50 +828,88 @@ def _render_key_process_editor(
     process_labels: ProcessLabels,
     database_path: str,
 ) -> None:
-    """HOME `주요공정 확보율` 격자에 그릴 공정을 고르는 시트.
+    """HOME `주요공정 확보율` 격자의 **프리셋**을 만들고 고치는 시트(2026-09-29 사용자 요청).
 
-    **위젯에 `key` 를 두지 않는다.** `Preference` 탭은 숨어 있어도 본문이 그려지므로,
-    `key` 를 두면 첫 진입의 값(대개 빈 목록)이 세션에 박히고 그 뒤 다른 사람이 저장한
-    목록을 이 화면은 영영 못 본 채 저장 한 번으로 덮어쓴다. 값은 폼 반환값으로 받는다.
+    「A 그룹은 A·B·C·D, B 그룹은 D·E·F·G」처럼 이름 붙인 공정 묶음을 공용 프로필에 여럿 둔다.
+    보는 사람은 HOME 사이드바 `주요공정 히트맵` 카드에서 그중 하나를 고른다. **맨 앞 프리셋이
+    기본**이다 — 새로 연 화면이 그것을 본다(`기본으로` 가 맨 앞으로 옮긴다).
+
+    저장은 언제나 **묶음 전체**의 교체다(version+1). 이름을 바꾸면 사이드바에서 그 프리셋을
+    고르고 있던 선택도 새 이름으로 옮긴다.
+
+    **공정·이름 위젯에 `key` 를 두지 않는다.** `Preference` 탭은 숨어 있어도 그려지므로 `key` 를
+    두면 첫 진입 값이 세션에 박혀 다른 사람이 저장한 프리셋을 영영 못 본다. 고칠 프리셋이 바뀌면
+    기본값이 바뀌어 위젯이 새로 선다.
     """
+    profile = key_process_profile
     with st.container(border=True):
-        st.markdown("#### :material/grid_view: 주요공정 히트맵")
+        st.markdown("#### :material/grid_view: 주요공정 히트맵 프리셋")
         st.caption(
             profile_version_caption(
-                key_process_profile,
-                empty="아직 고른 주요공정이 없습니다",
-                detail=f"{len(key_process_profile.processes)}개 공정",
+                profile,
+                empty="아직 만든 프리셋이 없습니다",
+                detail=f"{len(profile.presets)}개 프리셋",
             )
         )
+        names = list(profile.preset_names)
+        targets = [*names, NEW_KEY_PROCESS_PRESET]
+        _apply_pending_selection(KEY_PROCESS_EDIT_TARGET_KEY)
+        if st.session_state.get(KEY_PROCESS_EDIT_TARGET_KEY) not in targets:
+            st.session_state[KEY_PROCESS_EDIT_TARGET_KEY] = targets[0]
+        target = st.selectbox(
+            "고칠 프리셋",
+            options=targets,
+            key=KEY_PROCESS_EDIT_TARGET_KEY,
+            format_func=lambda name: f"{name} · 기본" if names and name == names[0] else str(name),
+        )
+        is_new = target == NEW_KEY_PROCESS_PRESET
+        current = () if is_new else profile.processes_of(target)
         known_options = set(process_options)
         with st.form("home_key_process_form"):
-            submitted = st.form_submit_button(
-                "주요공정 저장",
-                icon=":material/save:",
-                type="primary",
-            )
+            # 작업 줄(저장·이름)은 위다. 버튼이 왼쪽이다.
+            with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+                submitted = st.form_submit_button(
+                    "프리셋 저장",
+                    icon=":material/save:",
+                    type="primary",
+                )
+                name = st.text_input(
+                    "프리셋 이름",
+                    value="" if is_new else target,
+                    max_chars=PRESET_NAME_LIMIT,
+                    placeholder="예: A 그룹",
+                )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
             with notice:
                 render_flash("home_key_process_flash")
             selected = st.multiselect(
-                "주요 공정",
+                "공정",
                 options=list(process_options),
-                default=[
-                    process for process in key_process_profile.processes if process in known_options
-                ],
+                default=[process for process in current if process in known_options],
                 format_func=process_labels.format_func(),
                 max_selections=KEY_PROCESS_LIMIT,
-                # 몇 개까지 되는지는 고르기 전에 알아야 해 자리 글자에 둔다.
-                placeholder=f"공정을 고르세요 (최대 {KEY_PROCESS_LIMIT}개)",
+                # 몇 개까지 되는지는 고르기 전에 알아야 해 자리 글자에 둔다. 고른 차례가 행 순서다.
+                placeholder=f"공정을 고르세요 (최대 {KEY_PROCESS_LIMIT}개 · 고른 차례가 행 순서)",
             )
+        if not is_new:
+            _render_key_process_notice(current, known_options, process_labels)
+            _render_key_process_preset_actions(profile, target, database_path)
         if not submitted:
-            _render_key_process_notice(key_process_profile, known_options, process_labels)
             return
         try:
-            get_scenario_repository(database_path).replace_global_key_process(
-                selected,
-                source="웹 직접 편집",
+            new_name = normalize_preset_name(name)
+            entry = (new_name, tuple(selected))
+            presets = (
+                [*profile.presets, entry]
+                if is_new
+                else [
+                    entry if preset == target else (preset, processes)
+                    for preset, processes in profile.presets
+                ]
+            )
+            get_scenario_repository(database_path).replace_global_key_process_presets(
+                presets, source="웹 직접 편집"
             )
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
@@ -826,27 +918,77 @@ def _render_key_process_editor(
             notice.error(str(exc))
             return
         clear_global_key_process_cache()
-        queue_flash("home_key_process_flash", "주요공정 목록을 저장했습니다.")
+        _queue_selection(KEY_PROCESS_EDIT_TARGET_KEY, new_name)
+        if not is_new and st.session_state.get(KEY_PROCESS_PRESET_KEY) == target:
+            _queue_selection(KEY_PROCESS_PRESET_KEY, new_name)
+        queue_flash("home_key_process_flash", f"프리셋 「{new_name}」을 저장했습니다.")
         st.rerun(scope="app")
 
 
+def _render_key_process_preset_actions(
+    profile: GlobalKeyProcess, target: str, database_path: str
+) -> None:
+    """고르고 있는 프리셋의 `기본으로`·`삭제`. 둘 다 묶음 전체를 다시 쓴다."""
+    names = list(profile.preset_names)
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        make_default = st.button(
+            "기본으로",
+            icon=":material/vertical_align_top:",
+            key="home_key_process_preset_default",
+            disabled=names[0] == target,
+            help="맨 앞 프리셋이 새로 연 HOME 이 처음 보는 프리셋입니다.",
+        )
+        # 라벨에 이름을 넣어 프리셋마다 다른 칸이 되게 한다 — 다른 프리셋으로 옮기면 체크가 풀린다.
+        confirmed = st.checkbox(f"「{target}」 삭제 확인")
+        delete = st.button(
+            "프리셋 삭제",
+            icon=":material/delete:",
+            key="home_key_process_preset_delete",
+            disabled=not confirmed,
+        )
+    if not (make_default or delete):
+        return
+    if make_default:
+        presets = [
+            *(entry for entry in profile.presets if entry[0] == target),
+            *(entry for entry in profile.presets if entry[0] != target),
+        ]
+        message = f"「{target}」을 기본 프리셋으로 옮겼습니다."
+    else:
+        presets = [entry for entry in profile.presets if entry[0] != target]
+        message = f"프리셋 「{target}」을 지웠습니다."
+    try:
+        get_scenario_repository(database_path).replace_global_key_process_presets(
+            presets, source="웹 직접 편집"
+        )
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
+        return
+    except ValueError as exc:
+        st.error(str(exc))
+        return
+    clear_global_key_process_cache()
+    queue_flash("home_key_process_flash", message)
+    st.rerun(scope="app")
+
+
 def _render_key_process_notice(
-    profile: GlobalKeyProcess,
+    processes: Sequence[str],
     known_options: set[str],
     process_labels: ProcessLabels,
 ) -> None:
-    """저장돼 있으나 이번 화면에서는 그릴 수 없는 공정을 알린다.
+    """이 프리셋에 저장돼 있으나 이번 화면에서는 그릴 수 없는 공정을 알린다.
 
-    **프로필에서 지우지 않는다.** 공용 설정이라 다른 시나리오·조회기간에는 그 공정이
+    **프리셋에서 지우지 않는다.** 공용 설정이라 다른 시나리오·조회기간에는 그 공정이
     있고, 여기서 조용히 걷어내면 그 화면의 히트맵이 함께 비어 버린다.
     """
-    missing = [process for process in profile.processes if process not in known_options]
+    missing = [process for process in processes if process not in known_options]
     if not missing:
         return
     names = ", ".join(process_labels.label(process) for process in missing)
     st.caption(
-        f":material/info: 이번 시나리오·조회기간에 없어 그리지 않은 공정: {names}. "
-        "공용 설정이라 저장은 그대로 남고, 해당 공정이 있는 화면에서는 그려집니다."
+        f":material/info: 이번 시나리오·조회기간에 없어 그리지 않는 공정: {names}. "
+        "공용 설정이라 프리셋에는 그대로 남고, 해당 공정이 있는 화면에서는 그려집니다."
     )
 
 

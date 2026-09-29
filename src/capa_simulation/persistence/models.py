@@ -96,13 +96,14 @@ class GlobalTop5Band:
 
 @dataclass(frozen=True)
 class GlobalKeyProcess:
-    """Scenario-independent list of key processes for the HOME securement heatmap.
+    """Scenario-independent key-process presets for the HOME securement heatmap.
 
-    프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`,
-    `updated_at=None`, 빈 목록이다.
+    **이름 붙은 프리셋 여럿**이다(2026-09-29 사용자 요청 — 「A 그룹은 A·B·C·D, B 그룹은
+    D·E·F·G」). `presets` 는 `(이름, 공정들)` 의 차례 있는 묶음이고 **첫 프리셋이 기본**이다 —
+    HOME 사이드바에서 아직 고르지 않은 세션이 그것을 본다. 한 공정이 여러 프리셋에 들 수 있다.
 
-    **빈 목록은 「하나도 안 고름」이라는 결정**이라 미저장과 화면은 같지만 저장 쪽은
-    누가 언제 비웠는지 보여 줄 수 있어야 한다. 그래서 0건도 version 이 올라간다.
+    프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`, `updated_at=None`,
+    빈 묶음이다. 프리셋을 모두 지운 저장도 version 이 오른다 — 캐시가 version 을 본다.
 
     `rows: pd.DataFrame` 이 아니라 tuple 인 것은 이 값이 그대로 Figure 캐시 키의 원소가
     되기 때문이다. 프레임으로 두면 rerun 마다 tuple 로 되만드는 코드가 호출부에 흩어진다.
@@ -111,7 +112,15 @@ class GlobalKeyProcess:
     version: int
     source: str
     updated_at: datetime | None
-    processes: tuple[str, ...]
+    presets: tuple[tuple[str, tuple[str, ...]], ...]
+
+    @property
+    def preset_names(self) -> tuple[str, ...]:
+        return tuple(name for name, _ in self.presets)
+
+    def processes_of(self, name: str | None) -> tuple[str, ...]:
+        """그 프리셋의 공정. 없는 이름이면 빈 묶음이다."""
+        return next((processes for preset, processes in self.presets if preset == name), ())
 
 
 @dataclass(frozen=True)

@@ -394,6 +394,7 @@ def render_home_figures(
     *,
     leading_past_month_count: int = 0,
     owner_tab: OpenTab | None = None,
+    key_process_title: str = "주요공정 확보율",
 ) -> None:
     """대시보드 여덟 Figure. **숨은 탭에서는 그리지 않는다.**
 
@@ -446,7 +447,8 @@ def render_home_figures(
             )
             # `주요공정 확보율` 제목. 네 구획이 같은 줄 컴포넌트를 쓰므로 제목과 표
             # 사이 간격이 넷 다 같다.
-            render_section_title_row("주요공정 확보율", key="key_process_title_row")
+            # 제목에 지금 보는 프리셋 이름을 단다 — 사이드바 카드가 접혀 있어도 무엇을 보는지 안다.
+            render_section_title_row(key_process_title, key="key_process_title_row")
             st.plotly_chart(
                 figures.key_process_labels,
                 width="stretch",

@@ -19,7 +19,10 @@ from capa_simulation.design import tokens
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.key_process import (
     KEY_PROCESS_LIMIT,
+    KEY_PROCESS_PRESET_LIMIT,
+    normalize_key_process_presets,
     normalize_key_processes,
+    resolve_preset_name,
 )
 
 MONTH_LABELS = ["26.01", "26.02", "26년", "27.01"]
@@ -135,22 +138,95 @@ def test_a_process_missing_from_the_scenario_is_skipped_without_failing() -> Non
     assert set(month_figure.data[2].text) == {"130%", "80%", "105%"}
 
 
-def test_the_profile_round_trips_and_an_empty_save_still_bumps_the_version(
+def test_presets_round_trip_in_order_and_removing_all_still_bumps_the_version(
     tmp_path: Path,
 ) -> None:
-    """0건(전체 해제)도 정상 저장이다. 버전이 올라야 다른 세션의 캐시가 풀린다."""
+    """이름 붙은 프리셋 여럿이 차례대로 돌아온다(첫 프리셋이 기본). 한 공정이 둘에 들 수 있다.
+
+    모두 지운 저장도 정상이다 — 버전이 올라야 다른 세션의 캐시가 풀린다.
+    """
     repository = DuckDBScenarioRepository(tmp_path / "scenario.duckdb")
     repository.initialize()
 
     assert repository.load_global_key_process().version == 0
+    assert repository.load_global_key_process().presets == ()
 
-    saved = repository.replace_global_key_process(["DEMO-B", "DEMO-A"], source="테스트")
-    assert saved.processes == ("DEMO-B", "DEMO-A")
+    saved = repository.replace_global_key_process_presets(
+        [("A 그룹", ["DEMO-B", "DEMO-A"]), ("B 그룹", ["DEMO-A", "DEMO-C"])], source="테스트"
+    )
+    assert saved.presets == (("A 그룹", ("DEMO-B", "DEMO-A")), ("B 그룹", ("DEMO-A", "DEMO-C")))
+    assert saved.preset_names == ("A 그룹", "B 그룹")
+    assert saved.processes_of("B 그룹") == ("DEMO-A", "DEMO-C")
+    assert saved.processes_of("없는 프리셋") == ()
     assert saved.version == 1
 
-    cleared = repository.replace_global_key_process([], source="테스트")
-    assert cleared.processes == ()
+    cleared = repository.replace_global_key_process_presets([], source="테스트")
+    assert cleared.presets == ()
     assert cleared.version == 2
+
+
+def test_preset_rules_refuse_duplicates_empty_presets_and_blank_names() -> None:
+    with pytest.raises(ValueError, match="같은 이름"):
+        normalize_key_process_presets([("A", ["P1"]), (" A ", ["P2"])])
+    with pytest.raises(ValueError, match="하나 이상"):
+        normalize_key_process_presets([("A", [])])
+    with pytest.raises(ValueError, match="이름"):
+        normalize_key_process_presets([("  ", ["P1"])])
+    with pytest.raises(ValueError, match="최대"):
+        normalize_key_process_presets(
+            [(f"P{index}", ["X"]) for index in range(KEY_PROCESS_PRESET_LIMIT + 1)]
+        )
+
+
+def test_the_chosen_preset_falls_back_to_the_first_one() -> None:
+    """고르지 않았거나 고른 프리셋이 지워졌으면 첫 프리셋(기본)이다."""
+    assert resolve_preset_name(("A", "B"), "B") == "B"
+    assert resolve_preset_name(("A", "B"), "지워진 것") == "A"
+    assert resolve_preset_name(("A", "B"), None) == "A"
+    assert resolve_preset_name((), "A") is None
+
+
+def test_the_migration_moves_the_old_single_list_into_a_default_preset() -> None:
+    """0028 은 0024 의 단일 목록을 「기본」 프리셋으로 옮긴다. 두 번 돌려도 같다."""
+    import duckdb
+
+    root = Path(__file__).resolve().parents[1] / "src/capa_simulation/persistence/migrations"
+    connection = duckdb.connect()
+    connection.execute("CREATE SCHEMA app_meta")
+    connection.execute((root / "0024_global_key_process.sql").read_text(encoding="utf-8"))
+    connection.execute(
+        """
+        INSERT INTO app_meta.global_key_process_item VALUES
+            (1, 'DEMO-B', 0), (1, 'DEMO-A', 1)
+        """
+    )
+    migration = (root / "0028_global_key_process_preset.sql").read_text(encoding="utf-8")
+    connection.execute(migration)
+    connection.execute(migration)
+
+    presets = connection.execute(
+        'SELECT "프리셋", "프리셋순서" FROM app_meta.global_key_process_preset'
+    ).fetchall()
+    items = connection.execute(
+        'SELECT "공정" FROM app_meta.global_key_process_preset_item '
+        'WHERE "프리셋" = \'기본\' ORDER BY "표시순서"'
+    ).fetchall()
+    assert presets == [("기본", 0)]
+    assert [row[0] for row in items] == ["DEMO-B", "DEMO-A"]
+
+
+def test_the_migration_makes_no_preset_from_an_empty_list() -> None:
+    import duckdb
+
+    root = Path(__file__).resolve().parents[1] / "src/capa_simulation/persistence/migrations"
+    connection = duckdb.connect()
+    connection.execute("CREATE SCHEMA app_meta")
+    connection.execute((root / "0024_global_key_process.sql").read_text(encoding="utf-8"))
+    connection.execute((root / "0028_global_key_process_preset.sql").read_text(encoding="utf-8"))
+
+    assert connection.execute(
+        "SELECT count(*) FROM app_meta.global_key_process_preset"
+    ).fetchone() == (0,)
 
 
 def test_migration_is_registered() -> None:
@@ -159,3 +235,4 @@ def test_migration_is_registered() -> None:
     catalog = (root / "docs/migration_catalog.md").read_text(encoding="utf-8")
 
     assert "0024_global_key_process.sql" in catalog
+    assert "0028_global_key_process_preset.sql" in catalog

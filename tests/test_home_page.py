@@ -1,5 +1,6 @@
 # Purpose: HOME 대시보드가 내장 시드 시나리오에서 렌더링되는 현재 동작을 고정한다.
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -412,7 +413,7 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
             "기준 적용",
             "선행 물량 저장",
             "실행 Capa 저장",
-            "주요공정 저장",
+            "프리셋 저장",
             "확보율 구간 저장",
         ]
     )
@@ -1074,3 +1075,102 @@ def test_past_data_paste_opens_in_a_popup_and_save_sits_on_top(seeded_database: 
     assert [area.label for area in app.text_area if area.label.endswith("붙여넣기")] == [
         "월별 Density · Wafer Total 붙여넣기"
     ]
+
+
+def test_the_sidebar_picks_a_key_process_preset_and_the_heatmap_follows(tmp_path: Path) -> None:
+    """주요공정 히트맵은 사이드바 `주요공정 히트맵` 카드에서 고른 프리셋의 공정을 그린다.
+
+    2026-09-29 사용자 요청 — 「A 그룹은 A·B·C·D, B 그룹은 D·E·F·G」를 공용 프로필에 저장해 두고
+    B/N 집계 공정과 따로 골라 본다. 고르지 않은 세션은 첫 프리셋(기본)이다. 제목에 프리셋 이름이
+    붙어 카드가 접혀 있어도 무엇을 보는지 안다.
+    """
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database_path = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    # 프로필은 `st.cache_data` 경계 뒤에 있어 앱을 돌리기 **전에** 심는다.
+    repository.replace_global_key_process_presets(
+        [("A 그룹", ["DEMO_Chip_Attach"]), ("B 그룹", ["DEMO_Final_Test", "DEMO_Wafer_Inspect"])],
+        source="테스트",
+    )
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    preset = app.selectbox(key="home_key_process_preset")
+    assert preset.options == ["A 그룹", "B 그룹"]
+    assert preset.value == "A 그룹"
+    assert any("주요공정 확보율 · A 그룹" in item.value for item in app.markdown)
+    labels = app.session_state["spy_figures"]["key_process_heatmap_labels"]
+    assert "DEMO_Chip_Attach" in json.dumps(labels.to_plotly_json(), ensure_ascii=False)
+
+    preset.set_value("B 그룹").run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert any("주요공정 확보율 · B 그룹" in item.value for item in app.markdown)
+    labels = app.session_state["spy_figures"]["key_process_heatmap_labels"]
+    text = json.dumps(labels.to_plotly_json(), ensure_ascii=False)
+    assert "DEMO_Final_Test" in text and "DEMO_Wafer_Inspect" in text
+    assert "DEMO_Chip_Attach" not in text
+
+
+def _save_preset(app: AppTest, name: str, processes: list[str]) -> None:
+    next(widget for widget in app.text_input if widget.label == "프리셋 이름").set_value(name)
+    next(widget for widget in app.multiselect if widget.label == "공정").set_value(processes)
+    next(button for button in app.button if button.label == "프리셋 저장").click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+
+def test_presets_are_made_renamed_promoted_and_deleted_from_preference(tmp_path: Path) -> None:
+    """Preference 의 「주요공정 히트맵 프리셋」 — 만들기·이름 바꾸기·기본으로·삭제.
+
+    저장은 늘 묶음 전체의 교체이고, 맨 앞 프리셋이 새 세션의 기본이다. 이름을 바꾸면 사이드바에서
+    그 프리셋을 보고 있던 선택도 새 이름으로 옮긴다.
+    """
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+    repository = DuckDBScenarioRepository(database_path)
+    target = "home_key_process_preset_edit"
+    assert app.selectbox(key=target).value == "＋ 새 프리셋"
+
+    _save_preset(app, "A 그룹", ["DEMO_Chip_Attach"])
+    assert repository.load_global_key_process().presets == (("A 그룹", ("DEMO_Chip_Attach",)),)
+    assert app.selectbox(key=target).value == "A 그룹"
+    assert app.selectbox(key="home_key_process_preset").value == "A 그룹"
+
+    app.selectbox(key=target).set_value("＋ 새 프리셋").run()
+    _save_preset(app, "B 그룹", ["DEMO_Final_Test"])
+    assert repository.load_global_key_process().preset_names == ("A 그룹", "B 그룹")
+
+    # 사이드바에서 A 를 보는 중에 A 의 이름을 바꾸면 사이드바 선택도 따라간다.
+    app.selectbox(key=target).set_value("A 그룹").run()
+    _save_preset(app, "A 그룹(개정)", ["DEMO_Chip_Attach", "DEMO_Wafer_Inspect"])
+    assert repository.load_global_key_process().presets[0] == (
+        "A 그룹(개정)",
+        ("DEMO_Chip_Attach", "DEMO_Wafer_Inspect"),
+    )
+    assert app.selectbox(key="home_key_process_preset").value == "A 그룹(개정)"
+
+    # B 를 기본으로 올린다.
+    app.selectbox(key=target).set_value("B 그룹").run()
+    app.button(key="home_key_process_preset_default").click().run()
+    assert repository.load_global_key_process().preset_names == ("B 그룹", "A 그룹(개정)")
+
+    # 삭제는 확인을 체크해야 열린다.
+    assert app.button(key="home_key_process_preset_delete").disabled
+    next(box for box in app.checkbox if box.label == "「B 그룹」 삭제 확인").check().run()
+    app.button(key="home_key_process_preset_delete").click().run()
+    assert not list(app.exception)
+    assert repository.load_global_key_process().preset_names == ("A 그룹(개정)",)
+
+
+def test_a_preset_with_a_duplicate_name_is_refused(tmp_path: Path) -> None:
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    _save_preset(app, "A 그룹", ["DEMO_Chip_Attach"])
+    app.selectbox(key="home_key_process_preset_edit").set_value("＋ 새 프리셋").run()
+    _save_preset(app, "A 그룹", ["DEMO_Final_Test"])
+
+    assert any("같은 이름의 프리셋" in item.value for item in app.error)

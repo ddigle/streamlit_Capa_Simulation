@@ -1,4 +1,4 @@
-# Purpose: HOME 주요공정 히트맵이 그릴 공정 목록의 상한과 정규화를 담당한다.
+# Purpose: HOME 주요공정 히트맵이 그릴 공정 목록·프리셋의 상한과 정규화를 담당한다.
 
 """주요공정 목록.
 
@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 # 히트맵 행 수의 상한. 구획 높이(행당 29px)와 주석 수를 여기 하나로 묶어 둔다.
 KEY_PROCESS_LIMIT = 15
@@ -40,3 +40,52 @@ def normalize_key_processes(values: Iterable[str]) -> tuple[str, ...]:
     if len(normalized) > KEY_PROCESS_LIMIT:
         raise ValueError(f"주요공정은 최대 {KEY_PROCESS_LIMIT}개까지 고를 수 있습니다.")
     return tuple(normalized)
+
+
+# 프리셋(2026-09-29 사용자 요청). 「A 그룹은 A·B·C·D, B 그룹은 D·E·F·G」처럼 이름 붙인 공정 묶음을
+# 여럿 저장해 두고 HOME 사이드바에서 골라 본다. 한 공정이 여러 프리셋에 들어갈 수 있다.
+KEY_PROCESS_PRESET_LIMIT = 20
+PRESET_NAME_LIMIT = 30
+
+Preset = tuple[str, tuple[str, ...]]
+
+
+def normalize_preset_name(value: str) -> str:
+    """프리셋 이름. 앞뒤 공백을 떼고, 비었거나 너무 길면 막는다."""
+    name = str(value).strip()
+    if not name:
+        raise ValueError("프리셋 이름을 적으세요.")
+    if len(name) > PRESET_NAME_LIMIT:
+        raise ValueError(f"프리셋 이름은 {PRESET_NAME_LIMIT}자까지입니다.")
+    return name
+
+
+def normalize_key_process_presets(
+    presets: Iterable[tuple[str, Iterable[str]]],
+) -> tuple[Preset, ...]:
+    """저장 전 프리셋 묶음 정규화. 차례를 지키고 이름 중복·빈 프리셋·상한을 막는다.
+
+    **빈 프리셋은 막는다.** 단일 목록 시절의 「전체 해제」는 이제 프리셋을 지우는 것이다 —
+    이름만 있고 공정이 없는 프리셋은 고르면 히트맵이 비어 고장으로 읽힌다.
+    """
+    normalized: list[Preset] = []
+    seen: set[str] = set()
+    for raw_name, raw_processes in presets:
+        name = normalize_preset_name(raw_name)
+        if name in seen:
+            raise ValueError(f"같은 이름의 프리셋이 이미 있습니다: {name}")
+        processes = normalize_key_processes(raw_processes)
+        if not processes:
+            raise ValueError(f"프리셋 「{name}」에 공정을 하나 이상 고르세요.")
+        seen.add(name)
+        normalized.append((name, processes))
+    if len(normalized) > KEY_PROCESS_PRESET_LIMIT:
+        raise ValueError(f"프리셋은 최대 {KEY_PROCESS_PRESET_LIMIT}개까지 저장할 수 있습니다.")
+    return tuple(normalized)
+
+
+def resolve_preset_name(names: Sequence[str], chosen: object) -> str | None:
+    """지금 볼 프리셋. 고른 것이 없거나 지워졌으면 **첫 프리셋(기본)** 이다. 없으면 None."""
+    if isinstance(chosen, str) and chosen in names:
+        return chosen
+    return names[0] if names else None

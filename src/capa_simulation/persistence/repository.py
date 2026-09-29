@@ -93,7 +93,7 @@ from capa_simulation.persistence.voc_store import (
 )
 from capa_simulation.services.advance_load import prepare_advance_load
 from capa_simulation.services.execution_capacity import prepare_execution_capacity
-from capa_simulation.services.key_process import normalize_key_processes
+from capa_simulation.services.key_process import normalize_key_process_presets
 from capa_simulation.services.past_data import prepare_past_table
 from capa_simulation.services.process_rename import prepare_process_rename_rules
 from capa_simulation.services.top5_band import validate_top5_band
@@ -342,21 +342,22 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return key_process_store.load_global_key_process(connection)
 
-    def replace_global_key_process(
+    def replace_global_key_process_presets(
         self,
-        processes: Sequence[str],
+        presets: Sequence[tuple[str, Sequence[str]]],
         *,
         source: str,
     ) -> GlobalKeyProcess:
-        """Atomically replace the shared key-process list.
+        """Atomically replace every shared key-process preset.
 
-        **0건(전체 해제)도 정상 저장이며 version 은 올라간다** — 캐시 키가 version 을
-        보므로 해제도 올라가야 다른 세션의 히트맵이 무효화된다.
+        화면은 프리셋 하나를 고쳐도 **묶음 전체**를 넘긴다 — 차례(첫 프리셋이 기본)와 이름
+        중복을 한 자리에서 검사하려면 전체가 있어야 한다. 0개(모두 지움)도 정상 저장이며
+        version 은 올라간다.
         """
-        normalized = normalize_key_processes(processes)
-        source_label = required_text(source, "주요공정 목록 출처")
+        normalized = normalize_key_process_presets(presets)
+        source_label = required_text(source, "주요공정 프리셋 출처")
         with self._write_transaction() as connection:
-            key_process_store.replace_global_key_process(
+            key_process_store.replace_global_key_process_presets(
                 connection, normalized, source=source_label
             )
         return self.load_global_key_process()

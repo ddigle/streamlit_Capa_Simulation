@@ -1559,8 +1559,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_scenario_activation.py` 가 여기서 토글 키를 AST 로 모은다.
   - 편집기의 저장 버튼(과 변경 메모)은 편집 칸 **위**이고, 저장 결과 알림은 그 바로 아래다.
   - 탭 안의 편집기는 여섯이다 — 비교 시나리오 선택, 선행 투입 물량, `Summary 공지`,
-    Top5 대역, 주요공정, 실행 Capa. 모두 공용 프로필에 저장하고, 저장 상태를 적는 버전
-    캡션은 `profile_caption.py` 를 쓴다.
+    Top5 대역, 주요공정 히트맵 프리셋, 실행 Capa. 모두 공용 프로필에 저장하고, 저장 상태를 적는
+    버전 캡션은 `profile_caption.py` 를 쓴다.
+  - **주요공정 히트맵은 이름 붙은 프리셋 여럿이다**(2026-09-29 사용자 요청, 마이그레이션 0028).
+    Preference 의 `고칠 프리셋`(＋ 새 프리셋)·이름·공정으로 만들고 고치며, 저장·`기본으로`·삭제는
+    모두 **묶음 전체의 교체**(`replace_global_key_process_presets`, version+1)다 — 차례와 이름 중복을
+    한 자리에서 검사한다. 맨 앞이 기본 프리셋이다. 보는 쪽은 사이드바 조건 카드 `주요공정 히트맵`
+    (`render_key_process_preset_card`, Main 탭에서만)의 `프리셋` 선택이고 그 값(`home_key_process_preset`)
+    은 **세션의 보는 조건**이라 공용 프로필에 쓰지 않는다. 고르지 않았거나 지워졌으면 첫 프리셋이다
+    (`resolve_preset_name`). 고치려고 고른 프리셋(`home_key_process_preset_edit`)과 보는 프리셋은 다른
+    칸이다. 이름을 바꾸면 보는 선택도 새 이름으로 옮긴다(위젯을 만든 뒤에는 쓸 수 없어 `__pending`
+    칸에 두고 다음 회차 위젯 앞에서 넣는다). 격자 제목에 프리셋 이름이 붙는다.
   - 선행 물량 저장은 **표에 보이는 달만** 갈아 끼운다(`merge_advance_load_edits`). 조회기간을
     좁힌 채 저장한 사람이 보이지 않는 달의 입력을 모르는 새 날리면 안 된다.
   - `Summary 공지` 는 **빈 문구도 저장한다.** 공지를 내리는 것도 결정이고, 그때도 version
@@ -1674,7 +1683,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     있는 공정을 `dynamic_only`·`static_only` 로 돌려주고 화면이 드러낸다 — 조용히
     떨어지면 GAP 이 이유 없이 커 보인다.
 - `src/capa_simulation/services/key_process.py`
-  - HOME `주요공정 확보율` 히트맵이 그릴 공정 목록의 상한(`KEY_PROCESS_LIMIT`)과 정규화.
+  - HOME `주요공정 확보율` 히트맵이 그릴 공정 목록의 상한(`KEY_PROCESS_LIMIT`)과 정규화, 프리셋
+    규칙(`normalize_key_process_presets` — 이름 필수·중복 금지·빈 프리셋 금지·20개까지)과 볼 프리셋
+    고르기(`resolve_preset_name` — 없으면 첫 프리셋).
   - **고른 차례가 곧 행 순서다.** 확보율로 다시 정렬하지 않는다 — 매달 행이 뛰어다니면
     「이 공정이 언제부터 무너지나」를 가로로 읽을 수 없다.
   - 빈 목록은 오류가 아니라 「하나도 고르지 않는다」는 결정이다. 그때 HOME 은 그 구획을
@@ -1925,7 +1936,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·교체 SQL
 - `persistence/advance_load_store.py`: 공용 선행 투입 물량 프로필의 조회·교체 SQL
 - `persistence/execution_capacity_store.py`: 공용 실행 Capa 반영 프로필의 조회·교체 SQL
-- `persistence/key_process_store.py`: 공용 주요공정 목록 프로필의 조회·교체 SQL(저장 차례가 곧 히트맵 행 순서)
+- `persistence/key_process_store.py`: 공용 주요공정 프리셋 프로필의 조회·교체 SQL(헤더는 0024, 프리셋은 0028 의 두 표. 프리셋 차례의 맨 앞이 기본, 공정 차례가 곧 히트맵 행 순서)
 - `persistence/home_profile_store.py`: HOME 공용 Top5 구간·공지·GAP 비교 대상의 조회·교체와
   시나리오 삭제·보관 시 비교 대상 해제 SQL
 - `persistence/voc_store.py`: VOC 게시판 글·답글의 조회·삽입·삭제 SQL
