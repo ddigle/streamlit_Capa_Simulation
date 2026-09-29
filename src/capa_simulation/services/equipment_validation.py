@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
@@ -267,8 +269,67 @@ def _validate_locations_and_coordinates(
         | result["Y좌표"].add(result["Ysize"]).gt(limit_height)
     )
     if outside.any():
-        examples = result.loc[outside, "호기"].head(5).tolist()
-        raise ValueError(f"Space 블럭이 층 캔버스 범위를 벗어났습니다: {examples}")
+        raise ValueError(_outside_canvas_message(result, outside, complete, floor_canvases))
+
+
+def _outside_canvas_message(
+    result: pd.DataFrame,
+    outside: pd.Series,
+    complete: pd.Series,
+    floor_canvases: FloorCanvasMap,
+) -> str:
+    """캔버스를 벗어난 호기를 동·층별로 묶어 **원인과 고칠 곳**까지 적는다.
+
+    누가 층 캔버스를 줄여 두면, 뒤에 다른 사람이 무관한 기존보유대수 한 칸만 고쳐 저장해도
+    호기 마스터 전체 검증이 이 오류로 막힌다. 예전 문구는 호기 이름만 적어서 원인이 캔버스
+    라는 것도, 어디서 고치는지도 알 수 없었다(2026-09-29 버그 보고). 검사 범위는 그대로
+    두고(바뀐 행만 보면 검증이 약해진다) 문구만 넓힌다 — 층 이름·캔버스 크기·그 층 호기를
+    담는 데 필요한 크기·해결 방법.
+    """
+    floors: list[str] = []
+    outside_rows = result.loc[outside]
+    for (raw_building, raw_floor), rows in outside_rows.groupby(
+        ["동", "층"], dropna=False, sort=True
+    ):
+        building, floor = _text_or_none(raw_building), _text_or_none(raw_floor)
+        unplaced = building is None or floor is None
+        stored = None if unplaced else floor_canvases.get((str(building), str(floor)))
+        width, height = (
+            stored if stored is not None else (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
+        )
+        on_floor = complete & _same_value(result["동"], building) & _same_value(result["층"], floor)
+        need_width = max(
+            width, float(result.loc[on_floor, "X좌표"].add(result.loc[on_floor, "Xsize"]).max())
+        )
+        need_height = max(
+            height, float(result.loc[on_floor, "Y좌표"].add(result.loc[on_floor, "Ysize"]).max())
+        )
+        label = "동·층 미지정" if unplaced else f"{building} {floor}"
+        source = "" if stored is not None else "(저장된 캔버스 없음 · 기본값)"
+        examples = rows["호기"].head(5).tolist()
+        floors.append(
+            f"{label} 캔버스 {width:g} × {height:g}{source} — 이 층 호기를 모두 담으려면 "
+            f"{need_width:g} × {need_height:g} 이상: {examples}"
+        )
+    return (
+        "Space 블럭이 층 캔버스 범위를 벗어났습니다 — 그 동·층의 캔버스가 호기 좌표보다 "
+        f"좁습니다. {'; '.join(floors[:3])}. 호기 마스터 저장은 모든 호기를 한 번에 검증하므로 "
+        "그 층과 무관한 칸만 고쳐도 같은 오류로 막힙니다. Space 현황의 그 동·층 상세 레이아웃에서 "
+        "「도면·캔버스 편집」으로 캔버스를 넓히거나, 가용설비 현황에서 그 호기의 X좌표·Y좌표·"
+        "Xsize·Ysize 를 고치세요."
+    )
+
+
+def _text_or_none(value: Any) -> str | None:
+    """groupby 키를 글자로 바꾼다. 결측(`dropna=False` 가 남긴 NA)은 `None` 이다."""
+    return None if pd.isna(value) else str(value)
+
+
+def _same_value(column: pd.Series, value: str | None) -> pd.Series:
+    """`value` 가 `None` 이면 결측 행을, 아니면 같은 값인 행을 참으로 돌려준다."""
+    if value is None:
+        return column.isna()
+    return column.eq(value).fillna(False).astype(bool)
 
 
 def _canvas_limits(

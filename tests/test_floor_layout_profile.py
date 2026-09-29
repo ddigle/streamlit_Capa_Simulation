@@ -12,6 +12,7 @@ from test_equipment_availability import _baseline, _downtime, _equipment
 
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services import floor_layout_profile
+from capa_simulation.services.equipment_validation import prepare_equipment_master
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
     DEFAULT_CANVAS_WIDTH,
@@ -141,6 +142,53 @@ def test_saving_equipment_uses_the_floor_canvas_and_loading_stays_readable(
 
     reloaded = repository.load_snapshot(saved.revision.revision_id)
     assert reloaded.equipment["호기"].tolist() == ["EQ-01", "EQ-02"]
+
+
+def test_shrunk_canvas_error_on_an_unrelated_save_names_the_floor_canvas_and_the_fix(
+    tmp_path: Path,
+) -> None:
+    """캔버스를 줄인 뒤 무관한 칸만 고친 저장이 막히면, 원인과 고칠 곳이 문구에 있어야 한다.
+
+    예전 문구는 `Space 블럭이 층 캔버스 범위를 벗어났습니다: ['EQ-02']` 뿐이라, 기존보유대수
+    한 칸만 고친 사람은 원인이 남이 줄인 캔버스라는 것을 알 수 없었다(2026-09-29 버그 보고).
+    검사는 그대로 마스터 전체에 건다 — 바뀐 행만 보면 검증이 약해진다.
+    """
+    repository = _repository(tmp_path / "equipment.duckdb")
+    first = repository.save_snapshot(_baseline(), _equipment(), _downtime())
+    repository.save_floor_layout_canvas("C1", "1F", 40.0, 60.0)
+    baseline = first.baseline.copy()
+    baseline.loc[0, "기존보유대수"] = 3.0
+
+    with pytest.raises(ValueError) as caught:
+        repository.save_snapshot(baseline, first.equipment, first.downtime)
+
+    message = str(caught.value)
+    assert message.startswith("Space 블럭이 층 캔버스 범위를 벗어났습니다")
+    # 층 이름·지금 캔버스·이 층 호기를 담는 데 필요한 크기(EQ-02 는 30+12=42)·이탈 호기
+    assert "C1 1F 캔버스 40 × 60" in message
+    assert "42 × 60 이상" in message
+    assert "['EQ-02']" in message
+    assert "무관한 칸만 고쳐도" in message
+    assert "Space 현황" in message
+    assert "「도면·캔버스 편집」" in message
+    assert "X좌표·Y좌표·Xsize·Ysize" in message
+    assert len(repository.list_revisions()) == 1
+
+
+def test_canvas_error_says_when_the_floor_has_no_saved_canvas() -> None:
+    """저장된 캔버스가 없는 층은 기본 캔버스로 잰다. 그 사실을 문구가 말해야 한다."""
+    equipment = _equipment()
+    equipment.loc[1, "X좌표"] = 95
+
+    with pytest.raises(ValueError) as caught:
+        prepare_equipment_master(equipment, floor_canvases={})
+
+    message = str(caught.value)
+    assert (
+        f"C1 1F 캔버스 {DEFAULT_CANVAS_WIDTH:g} × {DEFAULT_CANVAS_HEIGHT:g}"
+        "(저장된 캔버스 없음 · 기본값)"
+    ) in message
+    assert f"107 × {DEFAULT_CANVAS_HEIGHT:g} 이상" in message
 
 
 def test_wide_canvas_allows_coordinates_beyond_the_default_range(tmp_path: Path) -> None:
