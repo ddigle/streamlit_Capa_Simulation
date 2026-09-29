@@ -576,13 +576,15 @@ with card:
             key=END_DATE_KEY,
             persist_state="session",
         )
-    if date_clamped:
-        st.caption(
-            ":orange-badge[조정됨] 조회일이 현재 조회기간 밖이라 "
-            f"{minimum_date:%Y-%m-%d} ~ {maximum_date:%Y-%m-%d} 안으로 맞췄습니다."
-        )
-    if date_reordered:
-        st.caption(":orange-badge[조정됨] 시작일이 종료일보다 늦어 종료일을 시작일에 맞췄습니다.")
+# 날짜를 맞춘 사실은 본문에 알린다. 카드는 기본으로 접혀 있어 그 안에 두면 저장된 날짜가
+# 바뀐 줄 모른다.
+if date_clamped:
+    st.caption(
+        ":orange-badge[조정됨] 조회일이 현재 조회기간 밖이라 "
+        f"{minimum_date:%Y-%m-%d} ~ {maximum_date:%Y-%m-%d} 안으로 맞췄습니다."
+    )
+if date_reordered:
+    st.caption(":orange-badge[조정됨] 시작일이 종료일보다 늦어 종료일을 시작일에 맞췄습니다.")
 if start_date > end_date:
     st.error("시작일은 종료일보다 늦을 수 없습니다.")
     st.stop()
@@ -864,7 +866,7 @@ else:
                     # 붙여넣지 않도록 여기서 알린다.
                     st.caption(
                         "공정은 화면 표시명입니다. 붙여넣기에 쓸 원본 공정명은 작업 줄의 "
-                        "`주차별 가용설비 CSV 양식`에서 확인하세요."
+                        "「CSV 양식 다운로드」에서 확인하세요."
                     )
                 st.dataframe(displayed_missing, hide_index=True, width="stretch")
 

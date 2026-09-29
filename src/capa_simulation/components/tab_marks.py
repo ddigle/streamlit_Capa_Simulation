@@ -18,26 +18,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Sequence
 
 import streamlit as st
 
 from capa_simulation.design import tokens
-
-# `st.data_editor` 가 세션에 남기는 편집 상태의 세 칸. 하나라도 차 있으면 고친 것이 있다.
-_EDIT_PARTS = ("edited_rows", "added_rows", "deleted_rows")
-
-
-def editor_has_edits(key: str) -> bool:
-    """이 편집표에 적용하지 않은 편집이 남았는가.
-
-    편집표의 상태는 위젯 값이라 **그리기 전에도** 세션에서 읽힌다 — 페이지가 탭을 만든 직후,
-    표를 그리기 전에 점을 정할 수 있다. 한 번도 그리지 않은 편집표는 칸이 없어 `False` 다.
-    """
-    state = st.session_state.get(key)
-    if not isinstance(state, Mapping):
-        return False
-    return any(bool(state.get(part)) for part in _EDIT_PARTS)
 
 
 def pending_tabs_style(key: str, labels: Sequence[str], pending: Collection[str]) -> str:

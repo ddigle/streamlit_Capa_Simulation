@@ -1320,7 +1320,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     붙여넣기(작업 줄 팝업)·범위별 직접 편집과 원자 교체를 담당한다. 저장 버튼·변경 메모는
     편집표 **위**다. 저장은 공용 프로필 교체이며 리비전을 만들지 않는다.
 - `src/capa_simulation/components/scenario_edit_bar.py`
-  - 편집 화면이 보는 원본의 토큰(`source_token`)과 원본이 바뀌면 편집기를 비우는 절차.
+  - 편집 화면이 보는 원본의 토큰(`source_token`)과 원본이 바뀌면 편집기를 비우는 절차
+    (`reset_editors_on_source_change` — 편집표는 `discard_editor`, 그 밖의 상태는 `other_keys`
+    로 칸만 지운다). **화면이 스스로 적용한 편집**은 `mark_own_change` 로 적어 두고, 다음 회차에
+    원본 토큰이 바뀌어도 그 적용이 건드린 편집표만 비운다 — 전에는 한 표를 적용하면 다른 탭의
+    적용하지 않은 편집까지 모두 사라졌다(2026-09-29 리뷰에서 재현). 생산 계획·기준 정보가 쓴다.
     본문 맨 위의 "활성 시나리오 · 수정본 N" 줄과 원본 초기화 버튼은 없앴다(2026-09-29 사용자
     결정 — 본문은 제목·탭·탭 내용만). 미저장 여부는 사이드바 시나리오 상자의 배지가, 편집을
     버리는 동작은 같은 상자의 `편집 되돌리기`(미저장일 때만)가 맡는다
@@ -1373,9 +1377,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 열린 탭을 서버가 알게 하는 `stateful_tabs` 와 판정용 `tab_is_hidden`. 차트가 든 탭은
     반드시 이것으로 만든다. 숨겨진 탭 안에서 Plotly 표를 그리면 글자 폭 측정이 0 이라
     헤더가 셀 가운데를 벗어난다. 어기면 테스트가 잡는다.
+- `src/capa_simulation/components/editor_state.py`
+  - 편집표(`st.data_editor`)에 고친 것이 남았는가(`editor_has_edits`)와 편집을 **브라우저까지**
+    버리는 초기화(`discard_editor`). 키가 있는 `num_rows="fixed"` 편집표는 세션 칸을 지워도
+    브라우저가 옛 편집을 다음 회차에 다시 보낸다(2026-09-29 리뷰에서 브라우저로 재현 — 취소한
+    편집이 되살아나 나중 적용에 섞였다). 그래서 편집표마다 세대 번호를 두고 위젯 키에 붙인다
+    (`editor_widget_key`, 세대 0 은 원래 키). 편집표는 `key=editor_widget_key(키)` 로 그리고,
+    버릴 때는 세션을 직접 `pop` 하지 않고 `discard_editor` 를 부른다.
 - `src/capa_simulation/components/tab_marks.py`
-  - 적용하지 않은 편집이 남은 탭 이름 옆의 주황 점(`mark_pending_tabs`)과 편집표에 고친 것이
-    남았는지의 판정(`editor_has_edits`). 점은 `st-key-<탭 key>` 묶음의 n 번째 `stTab` 에 얹는
+  - 적용하지 않은 편집이 남은 탭 이름 옆의 주황 점(`mark_pending_tabs`). 판정은
+    `editor_state.editor_has_edits` 다. 점은 `st-key-<탭 key>` 묶음의 n 번째 `stTab` 에 얹는
     CSS 라 탭 안의 탭은 고르지 않는다. 비공식 선택자라 판올림에서 바뀌면 점만 안 보인다.
     색은 사이드바 `미저장 변경` 배지와 같은 `PENDING_MARK`(`orangeColor`)다.
 - `src/capa_simulation/components/status_metric.py`

@@ -175,17 +175,18 @@ def _render_direct_editor(
         drop=True
     )
     with st.form("display_order_edit_form"):
-        # 작업 줄(메모·저장)은 표 **위**다. 정렬 규칙을 쓰는 법은 Admin Area Guide 가 말한다.
+        # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다(오른쪽 끝은 표 도구 막대에 가린다).
+        # 정렬 규칙을 쓰는 법은 Admin Area Guide 가 말한다.
         with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-            note = st.text_input(
-                "변경 메모",
-                placeholder="예: 환산 탭 제품 표시순서 변경",
-                key="display_order_note",
-            )
             submitted = st.form_submit_button(
                 "공용 표시순서 저장",
                 icon=":material/save:",
                 type="primary",
+            )
+            note = st.text_input(
+                "변경 메모",
+                placeholder="예: 환산 탭 제품 표시순서 변경",
+                key="display_order_note",
             )
         edited = st.data_editor(
             scope_rules,

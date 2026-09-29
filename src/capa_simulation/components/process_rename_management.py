@@ -178,17 +178,17 @@ def _render_direct_editor(
         empty_process_rename_rules() if current.empty else prepare_process_rename_rules(current)
     )
     with st.form("admin_area_process_rename_edit_form"):
-        # 작업 줄(메모·저장)은 표 **위**다.
+        # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다(오른쪽 끝은 표 도구 막대에 가린다).
         with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-            note = st.text_input(
-                "변경 메모",
-                placeholder="예: LOB 차트 공정명 축약",
-                key="admin_area_process_rename_note",
-            )
             submitted = st.form_submit_button(
                 "공용 공정 표시명 저장",
                 icon=":material/save:",
                 type="primary",
+            )
+            note = st.text_input(
+                "변경 메모",
+                placeholder="예: LOB 차트 공정명 축약",
+                key="admin_area_process_rename_note",
             )
         edited = st.data_editor(
             editable,

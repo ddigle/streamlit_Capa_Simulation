@@ -110,6 +110,18 @@ st.session_state["returned_table"] = edited
 st.session_state["returned_submitted"] = submitted
 """
 
+
+def editor_widget_key_in(app: AppTest, key: str) -> str:
+    """앱이 지금 편집표를 그리는 위젯 키(`editor_state.editor_widget_key` 와 같은 규칙).
+
+    필터가 바뀌거나 편집을 버리면 편집표가 새 세대 키로 선다. 브라우저는 그 키로 편집을
+    보내므로 테스트도 같은 키에 넣는다.
+    """
+    generation_key = f"{key}__generation"
+    generation = app.session_state[generation_key] if generation_key in app.session_state else 0
+    return key if not generation else f"{key}__g{generation}"
+
+
 RATIO_SCRIPT = EDITOR_SCRIPT.replace('TABLE_NAME = "RUN_DAY"', 'TABLE_NAME = "RATIO"')
 # 탭이 둘인 화면. 닫힌 탭의 편집표가 편집을 지키는지 본다.
 TWO_TAB_SCRIPT = EDITOR_SCRIPT.replace(
@@ -125,7 +137,7 @@ def _edit(app: AppTest, row: int, column: str, value: float) -> None:
 
     편집 델타는 **보이는 표 안의 행 위치**로 기록된다 — 필터가 걸리면 걸러진 표의 위치다.
     """
-    app.session_state[EDITOR_KEY] = {
+    app.session_state[editor_widget_key_in(app, EDITOR_KEY)] = {
         "edited_rows": {row: {column: value}},
         "added_rows": [],
         "deleted_rows": [],
@@ -388,3 +400,27 @@ def test_the_paste_popup_warns_before_it_drops_unapplied_edits() -> None:
 
     assert not app.exception
     assert PASTE_DROPS_EDITS_NOTICE in {warning.value for warning in app.warning}
+
+
+def test_discarding_moves_the_editor_to_a_new_widget_so_resent_edits_are_ignored() -> None:
+    """「편집 취소」는 세션 칸만 지우지 않고 편집표를 새 위젯으로 세운다.
+
+    세션만 지우면 브라우저가 옛 편집을 다음 회차에 다시 보내 취소한 편집이 되살아났다
+    (2026-09-29 리뷰에서 브라우저로 재현). 옛 키로 편집이 다시 와도 새 편집표에는 붙지 않는다.
+    """
+    app = AppTest.from_string(EDITOR_SCRIPT, default_timeout=60).run()
+    _edit(app, 0, "202608", 15.0)
+    app.run()
+    app.button(key=f"{EDITOR_KEY}_discard").click().run()
+    assert not app.exception
+    assert app.session_state[f"{EDITOR_KEY}__generation"] == 1
+
+    # 브라우저가 옛 위젯 키로 편집을 다시 보낸 회차
+    app.session_state[EDITOR_KEY] = {
+        "edited_rows": {0: {"202608": 15.0}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    app.run()
+    assert not app.exception
+    assert app.session_state["returned_table"]["202608"].tolist() == [31.0, 30.0, 29.0]

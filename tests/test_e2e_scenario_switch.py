@@ -130,8 +130,8 @@ def _session_value(app: AppTest, key: str) -> Any:
 def _toggle_values(app: AppTest) -> dict[str, Any]:
     """토글을 **화면이 읽는 방식으로** 읽는다 — 칸이 없으면 기본값이다.
 
-    「상세」 토글만 `render_home_figures` 안에 있어 숨은 탭에서는 위젯이 그려지지 않는다.
-    전환이 그 칸을 버리고 나면 Main 을 열기 전까지 칸 자체가 없는데, `app_pages/home.py` 는
+    여섯 토글은 사이드바 `LOB 표시 조건` 카드라 Main 이 아닌 탭에서는 위젯이 그려지지 않는다.
+    전환이 칸을 버리고 나면 Main 을 열기 전까지 칸 자체가 없는데, `app_pages/home.py` 는
     그 자리를 `st.session_state.get(키, 기본값)` 으로 읽으므로 없는 것이 곧 기본값이다.
     없는 칸을 「풀리지 않았다」로 세면 실제와 다른 실패가 된다.
     """
@@ -377,8 +377,9 @@ def test_the_released_toggles_are_still_released_back_on_the_main_tab(
 ) -> None:
     """Main 으로 돌아와 여섯 위젯이 다시 그려져도 기본값이다.
 
-    전환 회차의 화면은 Preference 탭이라 「상세」 토글의 칸이 아예 없었다. 그 칸이 다시
+    전환 회차의 화면은 Preference 탭이라 토글 칸(사이드바 카드)이 아예 없었다. 그 칸이 다시
     생기는 자리가 여기이므로, 풀린 것이 **위젯 값으로도** 풀렸는지는 여기서만 확인된다.
+    Main 에서 카드의 위젯을 직접 켠 채 전환하는 흔한 경우는 아래 따로 본다.
     그래서 칸이 있는지부터 본다 — 없는 칸을 기본값으로 읽으면 이 검사가 저절로 통과한다.
     """
     missing = [key for key in TOGGLE_DEFAULTS if key not in switch.drawn_toggle_keys]
@@ -473,3 +474,40 @@ def test_the_hidden_tab_draws_nothing_during_the_switch(switch: SwitchObservatio
     매 전환에 그리게 된다.
     """
     assert switch.numbers_during_switch == ()
+
+
+def test_toggles_flipped_in_the_card_on_main_are_released_by_a_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """가장 흔한 경우 — Main 에서 사이드바 카드의 토글을 켠 채 다른 리비전을 불러온다.
+
+    위의 모듈 시나리오는 Preference 탭에서 세션 값을 직접 바꾸므로 **그려진 위젯 값**이 풀리는지는
+    보지 않는다. 여기서는 카드의 위젯으로 켜고, 불러오기 뒤 같은 위젯이 기본값으로 서는지 본다.
+    """
+    database = tmp_path / "scenario.duckdb"
+    _, other = _seed_two_revisions(database)
+    monkeypatch.setattr(settings, "DUCKDB_PATH", database)
+    monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", tmp_path / "equipment.duckdb")
+    monkeypatch.setattr(month_range_picker, "render_month_range_picker", _month_range_stub)
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
+    monkeypatch.setattr(
+        scenario_status,
+        "render_scenario_controls",
+        functools.partial(scenario_status.render_scenario_controls, database_path=database),
+    )
+    app = AppTest.from_file(str(APP_PATH), default_timeout=600)
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    for key, default in TOGGLE_DEFAULTS.items():
+        app.toggle(key=key).set_value(not default)
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    flipped = {key: not default for key, default in TOGGLE_DEFAULTS.items()}
+    # GAP 은 비교 대상이 없으면 잠겨 계산에는 안 걸리지만 위젯 값은 켠 그대로다.
+    assert {toggle.key: toggle.value for toggle in app.sidebar.toggle} == flipped
+
+    app.session_state[SIDEBAR_REVISION_KEY] = other
+    app.button(LOAD_BUTTON_KEY).click().run()
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert {toggle.key: toggle.value for toggle in app.sidebar.toggle} == dict(TOGGLE_DEFAULTS)

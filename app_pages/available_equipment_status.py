@@ -194,6 +194,16 @@ conditions_card = (
     if not tab_is_hidden(main_tab) or not tab_is_hidden(gap_tab)
     else None
 )
+# 호기가 없고 샘플도 끈 Main 에는 고를 조건이 없다. 빈 카드 대신 까닭을 한 줄 적는다 — 카드를
+# 아예 빼면 사이드바에 「조회 조건」 제목만 덩그러니 남는다.
+if (
+    conditions_card is not None
+    and not tab_is_hidden(main_tab)
+    and using_dashboard_sample
+    and not show_sample_fleet
+):
+    with conditions_card:
+        st.caption("조회할 호기가 없습니다. RawData 에서 입력하거나 샘플 데이터를 켜세요.")
 
 with main_tab:
     if not tab_is_hidden(main_tab):

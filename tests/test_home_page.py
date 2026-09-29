@@ -823,8 +823,9 @@ def test_the_dashboard_is_not_drawn_while_its_tab_is_hidden(seeded_database: Pat
 def test_the_detail_toggle_survives_a_hidden_tab(seeded_database: Path) -> None:
     """닫힌 동안 위젯을 그리지 않아도 값은 남아야 한다.
 
-    「상세」 토글은 그림과 함께 건너뛰는 유일한 위젯이다. `persist_state="session"` 이
-    그 값을 붙들어 주는데, 그것이 깨지면 탭을 오갈 때마다 분류가 초기화된다.
+    보는 조건 토글 여섯은 사이드바 `LOB 표시 조건` 카드라 Main 이 아닌 탭에서는 그리지 않는다.
+    `persist_state="session"` 이 그 값을 붙들어 주는데, 그것이 깨지면 탭을 오갈 때마다 분류가
+    초기화된다.
     """
     app = _run(seeded_database)
     app.session_state["home_preference_plan_detail_customer"] = True

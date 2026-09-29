@@ -237,14 +237,6 @@ def _render_save(
     """맨 위 작업 줄 — 변경 메모와 `과거 구간 저장`. 읽어 둔 표가 없으면 저장이 잠긴다."""
     pending_names = [spec.name for spec in PAST_TABLE_SPECS if spec.name in draft]
     with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-        note = st.text_input(
-            "변경 메모",
-            placeholder="예: 25년 실적 반영",
-            key=PAST_NOTE_KEY,
-            # 이 값은 옆 저장 버튼을 누를 때만 읽는다. Enter·포커스 이탈로 HOME 을 통째로
-            # 다시 그릴 이유가 없고, 버튼을 누른 실행에 값이 함께 올라온다.
-            on_change="ignore",
-        )
         save = st.button(
             "과거 구간 저장",
             icon=":material/save:",
@@ -255,6 +247,14 @@ def _render_save(
                 if pending_names
                 else "읽어 둔 표가 없습니다. 아래 표의 「Excel 붙여넣기」로 먼저 읽으세요."
             ),
+        )
+        note = st.text_input(
+            "변경 메모",
+            placeholder="예: 25년 실적 반영",
+            key=PAST_NOTE_KEY,
+            # 이 값은 옆 저장 버튼을 누를 때만 읽는다. Enter·포커스 이탈로 HOME 을 통째로
+            # 다시 그릴 이유가 없고, 버튼을 누른 실행에 값이 함께 올라온다.
+            on_change="ignore",
         )
     render_flash("past_data_save_flash")
     if not save:

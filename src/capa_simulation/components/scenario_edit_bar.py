@@ -13,6 +13,7 @@ from collections.abc import Sequence
 
 import streamlit as st
 
+from capa_simulation.components.editor_state import discard_editor
 from capa_simulation.scenario_state import ActiveScenario
 
 
@@ -30,15 +31,50 @@ def source_token(
     return f"duckdb:{reference_version}:{active_scenario['revision']}:{start_month}:{end_month}"
 
 
-def reset_editors_on_source_change(token_key: str, token: str, editor_keys: Sequence[str]) -> bool:
+def mark_own_change(own_change_key: str, keys: Sequence[str]) -> None:
+    """이 화면이 방금 **스스로** 적용한 편집을 적어 둔다. 적용한 뒤 `st.rerun()` 직전에 부른다.
+
+    적용은 활성 리비전을 올려 원본 토큰을 바꾼다. 그대로 두면 다음 회차에 **모든** 편집표가
+    비워져, 다른 탭에서 고치고 아직 적용하지 않은 편집까지 조용히 사라진다(2026-09-29 리뷰에서
+    재현). 여기 적은 편집표·상태만 버리고 나머지는 그대로 두게 한다. `keys` 는 이 적용으로 행
+    구성이 바뀐 편집표와 함께 비울 상태다.
+    """
+    st.session_state[own_change_key] = list(keys)
+
+
+def reset_editors_on_source_change(
+    token_key: str,
+    token: str,
+    editor_keys: Sequence[str],
+    *,
+    other_keys: Sequence[str] = (),
+    own_change_key: str | None = None,
+) -> bool:
     """원본이 바뀌었으면 편집기·임시 상태를 비우고 새 토큰을 기록한다. 바뀌었으면 True.
+
+    편집표(`editor_keys`)는 `discard_editor` 로 **브라우저까지** 버린다 — 세션 칸만 지우면
+    브라우저가 옛 편집을 다시 보낸다. 편집표가 아닌 상태(`other_keys` — 붙여넣기 대기, 선택
+    위젯)는 칸만 지운다.
+
+    바뀐 원본이 이 화면 자신의 적용이면(`mark_own_change`) 적어 둔 것만 비운다.
 
     `token_key` 는 페이지가 소유한다 — 두 편집 화면이 한 칸을 나눠 쓰면 한쪽을 열었다는
     이유로 다른 쪽 편집기가 안 갈린다.
     """
+    own = st.session_state.pop(own_change_key, None) if own_change_key else None
+    if isinstance(own, list):
+        for key in own:
+            if key in editor_keys:
+                discard_editor(key)
+            else:
+                st.session_state.pop(key, None)
+        st.session_state[token_key] = token
+        return True
     if st.session_state.get(token_key) == token:
         return False
     for key in editor_keys:
+        discard_editor(key)
+    for key in other_keys:
         st.session_state.pop(key, None)
     st.session_state[token_key] = token
     return True

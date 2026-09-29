@@ -834,8 +834,8 @@ with main_tab:
         ),
         filtered=len(included_processes) < len(process_options),
     )
-    # 제목 줄과 여덟 Figure 는 한 상자 안이다. 제목 옆 토글은 숨은 탭에서도 그려야 하므로
-    # Figure 를 건너뛰는 `render_home_figures` 안으로 넣지 않고 상자만 여기서 연다.
+    # 제목 줄과 여덟 Figure 는 한 상자 안이다. 제목 줄(제목·범례)은 fragment 인
+    # `render_home_figures` 밖에서 그리므로 상자만 여기서 연다.
     with home_dashboard_panel():
         # 범례는 이 제목 줄 **안** 오른쪽 끝이다. 제목과 Figure 사이에 독립 블록으로
         # 두면 월 영역 위에 얹힌 가로 스크롤바와 겹친다.

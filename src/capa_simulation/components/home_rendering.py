@@ -375,10 +375,9 @@ def render_summary_notice(note: str) -> None:
 def home_dashboard_panel() -> Iterator[None]:
     """`Capa LOB 현황` 제목 줄과 여덟 Figure 를 함께 감싸는 테두리 상자.
 
-    상자를 `render_home_figures` 안에서 열면 제목 줄만 상자 밖에 남는다. 그렇다고 제목
-    줄을 그 함수 안으로 옮길 수는 없다 — 옆의 「선행」·「GAP」 토글은 숨은 탭에서도
-    그려져야 하는데(그리지 않으면 값이 날아간다) 그 함수는 숨은 탭에서 통째로 건너뛴다.
-    그래서 상자만 한 단계 위로 올리고 제목 줄과 Figure 를 나란히 받는다.
+    상자를 `render_home_figures` 안에서 열면 제목 줄만 상자 밖에 남는다. 제목 줄(제목·범례)은
+    fragment 밖에서 그리므로 상자만 한 단계 위로 올리고 제목 줄과 Figure 를 나란히 받는다.
+    보는 조건 토글은 제목 줄이 아니라 사이드바 `LOB 표시 조건` 카드다.
 
     `gap` 이 `DASHBOARD_SECTION_GAP_PX` 가 아닌 이유는 상수 주석에 적었다 — 라벨 캔버스가
     스크롤바 높이만큼 이미 내려와 있어 남는 몫만 여기서 준다.

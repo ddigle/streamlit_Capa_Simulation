@@ -18,16 +18,18 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.column_filter import render_column_filter_controls
+from capa_simulation.components.editor_state import editor_has_edits
 from capa_simulation.components.month_editor import editor_notice, render_month_editor
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.reference_csv_tools import queue_reference_import_flash
 from capa_simulation.components.scenario_edit_bar import (
+    mark_own_change,
     reset_editors_on_source_change,
     source_token,
 )
-from capa_simulation.components.tab_marks import editor_has_edits, mark_pending_tabs
+from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import OpenTab, stateful_tabs, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
@@ -315,10 +317,15 @@ step_widget_keys = (
     "capacity_step_delete_confirm",
 )
 SOURCE_TOKEN_KEY = "reference_data_source_token"
+# 이 화면이 스스로 적용한 편집(표 하나·STEP). 원본이 바뀌어도 그 적용이 건드린 표만 비운다 —
+# 다른 탭에서 고치고 아직 적용하지 않은 편집은 남는다.
+OWN_CHANGE_KEY = "reference_data_own_change"
 reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
     source_token(reference_version, active_scenario, start_month, end_month),
-    (*editor_keys, *step_widget_keys),
+    editor_keys,
+    other_keys=step_widget_keys,
+    own_change_key=OWN_CHANGE_KEY,
 )
 
 # 적용하지 않은 편집이 남은 탭에 점을 찍는다(탭 목록 개선안 C). 원본이 바뀌어 편집표를 비운
@@ -522,7 +529,11 @@ def _step_dialog() -> None:
         f"수요 변형 {step_result.affected_variants:,}개 · "
         f"RQ_REQB {step_result.affected_reqb_rows:,}행"
     )
-    st.session_state.pop(SOURCE_TOKEN_KEY, None)
+    # STEP 을 더하거나 빼면 UPEH·측정률 두 표의 행이 바뀐다 — 그 편집표와 STEP 선택만 비운다.
+    mark_own_change(
+        OWN_CHANGE_KEY,
+        (EDITOR_UPEH, EDITOR_LOT_RATIO, EDITOR_WF_RATIO, *step_widget_keys),
+    )
     _close_dialog()
     st.rerun()
 
@@ -728,8 +739,8 @@ def _upeh_rows(table: pd.DataFrame) -> pd.DataFrame:
 def _apply_edit(editor: _Editor, source: pd.DataFrame, *, imported: bool) -> None:
     """편집값 또는 붙여넣은 표를 활성 시나리오에 적용하고 완료 알림을 남긴다.
 
-    막히면 `KeyError`/`ValueError` 를 던진다. 적용이 끝나면 원본 토큰을 지워 다음 회차에 이
-    화면의 편집표가 새 원본으로 다시 선다. rerun 은 부르는 쪽이 한다.
+    막히면 `KeyError`/`ValueError` 를 던진다. 적용이 끝나면 `mark_own_change` 로 다음 회차에 **이
+    표만** 새 원본으로 다시 선다(다른 탭의 적용하지 않은 편집은 남는다). rerun 은 부르는 쪽이 한다.
     """
     rows = editor.to_rows(source)
     flash = _edit_flash(
@@ -745,7 +756,8 @@ def _apply_edit(editor: _Editor, source: pd.DataFrame, *, imported: bool) -> Non
         effective_end_month,
     )
     queue_reference_import_flash(*flash)
-    st.session_state.pop(SOURCE_TOKEN_KEY, None)
+    # 적용한 이 표만 새 원본으로 다시 세운다. 다른 탭의 적용하지 않은 편집은 그대로 둔다.
+    mark_own_change(OWN_CHANGE_KEY, (editor.editor_key,))
 
 
 def _paste_into(editor: _Editor) -> Callable[[pd.DataFrame], None]:

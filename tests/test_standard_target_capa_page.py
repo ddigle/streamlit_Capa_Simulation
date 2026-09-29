@@ -427,7 +427,7 @@ def test_missing_availability_table_shows_the_display_name_with_a_source_notice(
     assert "누락 공정·주차 확인" in {expander.label for expander in app.expander}
     missing = _frame_with_value(app, "공정", "가공")
     assert missing["Weeknum"].tolist() == ["26-W33"]
-    assert any("주차별 가용설비 CSV 양식" in caption.value for caption in app.caption)
+    assert any("CSV 양식 다운로드" in caption.value for caption in app.caption)
 
 
 def test_clearing_the_availability_asks_first() -> None:

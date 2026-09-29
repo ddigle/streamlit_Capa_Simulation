@@ -33,10 +33,14 @@ from capa_simulation.components.column_filter import (
     apply_column_filters,
     render_column_filter_controls,
 )
+from capa_simulation.components.editor_state import (
+    discard_editor,
+    editor_has_edits,
+    editor_widget_key,
+)
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.process_labels import ProcessLabelFormatter
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_form
-from capa_simulation.components.tab_marks import editor_has_edits
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.sidebar_status import table_card
@@ -159,7 +163,8 @@ def render_month_editor(
         )
         edited = st.data_editor(
             styled_table,
-            key=editor_key,
+            # 편집을 버릴 때마다 바뀌는 위젯 키다 — 세션만 지우면 브라우저가 옛 편집을 다시 보낸다.
+            key=editor_widget_key(editor_key),
             hide_index=True,
             width="content",
             height=500,
@@ -209,7 +214,7 @@ def _open_paste(dialog_key: str, editor_key: str) -> None:
 
 
 def _discard_edits(editor_key: str) -> None:
-    st.session_state.pop(editor_key, None)
+    discard_editor(editor_key)
 
 
 def _paste_dialog(
@@ -429,7 +434,9 @@ def _visible_table(
     # 다른 행에 붙는다. 위젯을 만들기 전에 버려야 그 오염이 저장까지 가지 않는다.
     signature_key = f"{editor_key}_filter_rows"
     signature = hash(tuple(visible.index))
-    if st.session_state.get(signature_key) != signature:
-        st.session_state.pop(editor_key, None)
-        st.session_state[signature_key] = signature
+    previous = st.session_state.get(signature_key)
+    # 처음 적는 회차는 바뀐 것이 아니다 — 거기서 버리면 편집표가 처음부터 새 세대로 선다.
+    if previous is not None and previous != signature:
+        discard_editor(editor_key)
+    st.session_state[signature_key] = signature
     return visible

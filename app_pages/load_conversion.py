@@ -18,6 +18,11 @@ from typing import cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.editor_state import (
+    discard_editor,
+    editor_has_edits,
+    editor_widget_key,
+)
 from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
     render_grouped_monthly_table,
@@ -30,10 +35,11 @@ from capa_simulation.components.reference_csv_tools import (
     render_reference_clipboard_form,
 )
 from capa_simulation.components.scenario_edit_bar import (
+    mark_own_change,
     reset_editors_on_source_change,
     source_token,
 )
-from capa_simulation.components.tab_marks import editor_has_edits, mark_pending_tabs
+from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.design import tokens
@@ -132,11 +138,16 @@ YIELD_PASTE_KEY = "rq_yield_csv"
 # 버튼에 남긴다(2026-09-28 사용자 결정).
 PLAN_APPLY_HELP = "누르면 환산·소요대수·확보율과 홈 대시보드가 이 계획으로 다시 계산됩니다."
 YIELD_APPLY_HELP = "누르면 환산수량과 다른 페이지의 산출값이 이 수율로 다시 계산됩니다."
-# 원본이 바뀌면 아직 적용하지 않은 붙여넣기는 행·월 구성이 맞지 않으므로 함께 버린다.
+# 원본이 바뀌면 아직 적용하지 않은 붙여넣기는 행·월 구성이 맞지 않으므로 함께 버린다. 이 화면이
+# 스스로 적용한 것이면(`mark_own_change`) 그 탭의 편집표만 비운다 — 수율을 적용했다고 PKG PLAN
+# 에서 고치고 아직 적용하지 않은 값까지 사라지면 안 된다.
+OWN_CHANGE_KEY = "load_conversion_own_change"
 reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
     source_token(reference_version, active_scenario, effective_start_month, effective_end_month),
-    (PLAN_EDITOR_KEY, YIELD_EDITOR_KEY, PLAN_STAGED_KEY),
+    (PLAN_EDITOR_KEY, YIELD_EDITOR_KEY),
+    other_keys=(PLAN_STAGED_KEY,),
+    own_change_key=OWN_CHANGE_KEY,
 )
 
 # 본문은 제목 · 탭 · 탭 내용만이다. 「활성 시나리오 · 수정본 N」 줄은 없앴다 — 미저장 여부는
@@ -215,8 +226,8 @@ def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
         st.error(str(exc))
         return
     st.session_state[PLAN_STAGED_KEY] = imported
-    # 편집기 위젯이 이전 표의 편집 상태를 덮어쓰지 않도록 초기화한다.
-    st.session_state.pop(PLAN_EDITOR_KEY, None)
+    # 편집기 위젯이 이전 표의 편집 상태를 덮어쓰지 않도록 브라우저까지 비운다.
+    discard_editor(PLAN_EDITOR_KEY)
     queue_reference_import_flash(
         PLAN_PASTE_KEY,
         "붙여넣기 표를 PKG PLAN 탭에 반영했습니다. "
@@ -239,7 +250,7 @@ def _apply_yield(table: pd.DataFrame, origin: str) -> None:
         f"RQ_YLD {origin} 활성 시나리오에 적용했습니다. "
         "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요.",
     )
-    st.session_state.pop(SOURCE_TOKEN_KEY, None)
+    mark_own_change(OWN_CHANGE_KEY, (YIELD_EDITOR_KEY,))
 
 
 @st.dialog("Excel 붙여넣기 · 수율", width="large", on_dismiss=_close_dialog)
@@ -321,8 +332,8 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
         return
     apply_table_updates(scenario, updates)
     remember_virtual_product(VirtualProductRecord.from_request(request))
-    st.session_state.pop(PLAN_STAGED_KEY, None)
-    st.session_state.pop(SOURCE_TOKEN_KEY, None)
+    # 복제는 계획·수율 두 표에 행을 더한다 — 두 편집표와 붙여넣기 대기를 비운다.
+    mark_own_change(OWN_CHANGE_KEY, (PLAN_EDITOR_KEY, YIELD_EDITOR_KEY, PLAN_STAGED_KEY))
     st.session_state[PRODUCT_REGISTERED_FLASH_KEY] = (
         f"가상 제품 {request.normalized().product} · {request.normalized().stack} 을 "
         f"등록했습니다. 기준정보 {len(updates)}종을 복제했습니다. 아래 표에서 계획 수량을 "
@@ -397,7 +408,7 @@ with pkg_plan_tab:
     )
     edited_plan_table = st.data_editor(
         styled_plan_table,
-        key=PLAN_EDITOR_KEY,
+        key=editor_widget_key(PLAN_EDITOR_KEY),
         hide_index=True,
         width="content",
         height=500,
@@ -451,7 +462,7 @@ if apply_plan:
             f"홈 대시보드가 이 계획으로 다시 계산됩니다. "
             "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요."
         )
-        st.session_state.pop(SOURCE_TOKEN_KEY, None)
+        mark_own_change(OWN_CHANGE_KEY, (PLAN_EDITOR_KEY, PLAN_STAGED_KEY))
         st.rerun()
 
 with yield_tab:
@@ -486,7 +497,7 @@ with yield_tab:
     )
     edited_yield_table = st.data_editor(
         styled_yield_table,
-        key=YIELD_EDITOR_KEY,
+        key=editor_widget_key(YIELD_EDITOR_KEY),
         hide_index=True,
         width="content",
         height=500,

@@ -81,6 +81,8 @@ def test_only_previous_values_and_home_toggles_are_dropped() -> None:
     assert set(_STALE_UI_KEYS) - _home_toggle_keys() == {
         "load_conversion_source_token",
         "reference_data_source_token",
+        "load_conversion_own_change",
+        "reference_data_own_change",
         HOME_FIGURE_CACHE_KEY,
     }
 

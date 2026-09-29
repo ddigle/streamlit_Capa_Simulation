@@ -503,6 +503,17 @@ TAB_EDITORS = {
 }
 
 
+def editor_widget_key_in(app: AppTest, key: str) -> str:
+    """앱이 지금 편집표를 그리는 위젯 키(`editor_state.editor_widget_key` 와 같은 규칙).
+
+    필터가 바뀌거나 편집을 버리면 편집표가 새 세대 키로 선다. 브라우저는 그 키로 편집을
+    보내므로 테스트도 같은 키에 넣는다.
+    """
+    generation_key = f"{key}__generation"
+    generation = app.session_state[generation_key] if generation_key in app.session_state else 0
+    return key if not generation else f"{key}__g{generation}"
+
+
 def _open_paste(app: AppTest, editor_key: str) -> AppTest:
     """작업 줄의 「Excel 붙여넣기」 로 그 표의 붙여넣기 팝업을 연다."""
     app.button(key=f"{editor_key}_open_paste").click().run()
@@ -797,7 +808,7 @@ def _edit_and_apply(app: AppTest, editor_key: str, month_column: str, value: flo
     AppTest 는 세션에 직접 넣은 data_editor 값을 다음 run 한 번만 들고 있어, 편집과 클릭을
     같은 run 에 태운다.
     """
-    app.session_state[editor_key] = {
+    app.session_state[editor_widget_key_in(app, editor_key)] = {
         "edited_rows": {0: {month_column: value}},
         "added_rows": [],
         "deleted_rows": [],
@@ -858,7 +869,7 @@ def test_an_apply_error_shows_right_under_the_button_above_the_sheet() -> None:
     sheet = next(
         index
         for index, node in enumerate(elements)
-        if getattr(node, "key", None) == "capa_run_day_editor"
+        if getattr(node, "key", None) == editor_widget_key_in(app, "capa_run_day_editor")
     )
     assert error < sheet
 
@@ -1128,7 +1139,7 @@ def test_the_edited_tab_gets_a_pending_dot(monkeypatch: pytest.MonkeyPatch) -> N
     assert not app.exception
     assert marked["reference_data_active_tab"] == set()
 
-    app.session_state["capa_run_day_editor"] = {
+    app.session_state[editor_widget_key_in(app, "capa_run_day_editor")] = {
         "edited_rows": {0: {"202608": 20.0}},
         "added_rows": [],
         "deleted_rows": [],
@@ -1180,3 +1191,32 @@ def test_calculation_result_guide_carries_what_left_the_body() -> None:
         "칸 안 숫자와 hover 는 자르지 않은 확보율",
     ):
         assert text in guide, text
+
+
+def test_applying_one_table_keeps_another_tabs_unapplied_edits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """한 표를 적용해도 다른 탭에서 고치고 아직 적용하지 않은 편집은 버리지 않는다.
+
+    적용은 활성 리비전을 올려 원본 토큰을 바꾼다. 전에는 그 토큰 변화가 **모든** 편집표를 비워
+    UPEH 에서 고친 값이 일수를 적용하는 순간 조용히 사라졌다(2026-09-29 리뷰에서 재현). 이제
+    적용한 표만 새 세대로 세운다.
+    """
+
+    def generation(app: AppTest, key: str) -> int:
+        slot = f"{key}__generation"
+        return int(app.session_state[slot]) if slot in app.session_state else 0
+
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["일수"]
+    app.run()
+    assert not app.exception
+    before = {key: generation(app, key) for key in ("capa_run_day_editor", "capa_upeh_editor")}
+    app = _edit_and_apply(app, "capa_run_day_editor", "202608", 20.0)
+    app.run()
+
+    assert not app.exception
+    # 적용한 표는 새 세대로 섰고, 다른 탭의 편집표는 그대로다.
+    assert generation(app, "capa_run_day_editor") > before["capa_run_day_editor"]
+    assert generation(app, "capa_upeh_editor") == before["capa_upeh_editor"]
+    assert "reference_data_own_change" not in app.session_state

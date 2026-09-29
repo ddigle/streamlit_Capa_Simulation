@@ -55,6 +55,8 @@ OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY = "official_scenario_bootstrap_attempted"
 _STALE_UI_KEYS = (
     "load_conversion_source_token",
     "reference_data_source_token",
+    "load_conversion_own_change",
+    "reference_data_own_change",
     HOME_FIGURE_CACHE_KEY,
     *HOME_TOGGLE_DEFAULTS,
 )

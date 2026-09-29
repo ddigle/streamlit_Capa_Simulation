@@ -533,19 +533,23 @@ def _render_advance_editor(
             columns=[DIMENSION_COLUMN, *month_labels],
         )
         with st.form("home_advance_load_form"):
-            # 작업 줄(메모·저장)은 표 **위**다 — 표를 고친 뒤 버튼을 찾지 않게 한다.
+            # 작업 줄(저장·메모)은 표 **위**다 — 표를 고친 뒤 버튼을 찾지 않게 한다. 버튼이
+            # 왼쪽이다 — 오른쪽 끝에 두면 표 위에 떠오르는 도구 막대(보기·내려받기·검색)에 가린다.
             with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-                note = st.text_input(
-                    "변경 메모",
-                    placeholder="예: 26.07 선행 투입분 반영",
-                    key=ADVANCE_NOTE_KEY,
-                )
                 submitted = st.form_submit_button(
                     "선행 물량 저장",
                     icon=":material/save:",
                     type="primary",
                 )
-            render_flash("home_advance_flash")
+                note = st.text_input(
+                    "변경 메모",
+                    placeholder="예: 26.07 선행 투입분 반영",
+                    key=ADVANCE_NOTE_KEY,
+                )
+            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
+            notice = st.container()
+            with notice:
+                render_flash("home_advance_flash")
             edited = st.data_editor(
                 table,
                 key=ADVANCE_EDITOR_KEY,
@@ -574,7 +578,7 @@ def _render_advance_editor(
                 source=note.strip() or "웹 직접 편집",
             )
         except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
+            notice.error(bootstrap_error_message(exc))
         else:
             queue_flash("home_advance_flash", "선행 투입 물량을 공용 설정으로 저장했습니다.")
             st.rerun()
@@ -662,7 +666,10 @@ def _render_summary_note_editor(
                 icon=":material/save:",
                 type="primary",
             )
-            render_flash("home_summary_note_flash")
+            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
+            notice = st.container()
+            with notice:
+                render_flash("home_summary_note_flash")
             # **`key` 를 두지 않는다.** 키가 붙은 위젯은 한 번 그려진 뒤 `value` 를 무시하고
             # 세션 값을 쓴다. Preference 는 숨은 탭에서도 위젯을 그리므로 HOME 첫 진입의
             # 공지(대개 빈 문구)가 세션에 박히고, 그 뒤 다른 사람이 올린 공지를 이 화면은
@@ -681,10 +688,10 @@ def _render_summary_note_editor(
                 source="웹 직접 편집",
             )
         except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
-            st.error(str(exc))
+            notice.error(str(exc))
             return
         clear_global_summary_note_cache()
         queue_flash(
@@ -717,7 +724,10 @@ def _render_top5_band_editor(
                 icon=":material/save:",
                 type="primary",
             )
-            render_flash("home_top5_band_flash")
+            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
+            notice = st.container()
+            with notice:
+                render_flash("home_top5_band_flash")
             # **`key` 를 두지 않는다.** 바로 위 Summary 공지와 같은 이유다 — 키가 붙은 위젯은
             # 한 번 그려진 뒤 `value` 를 무시하고 세션 값을 쓴다. Preference 는 숨은 탭에서도
             # 그려지므로 HOME 첫 진입의 구간이 세션에 박히고, 그 뒤 다른 사람이 바꾼 구간을
@@ -747,10 +757,10 @@ def _render_top5_band_editor(
                 source="웹 직접 편집",
             )
         except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
-            st.error(str(exc))
+            notice.error(str(exc))
             return
         clear_global_top5_band_cache()
         queue_flash("home_top5_band_flash", "B/N Top5 확보율 구간을 저장했습니다.")
@@ -786,7 +796,10 @@ def _render_key_process_editor(
                 icon=":material/save:",
                 type="primary",
             )
-            render_flash("home_key_process_flash")
+            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
+            notice = st.container()
+            with notice:
+                render_flash("home_key_process_flash")
             selected = st.multiselect(
                 "주요 공정",
                 options=list(process_options),
@@ -807,10 +820,10 @@ def _render_key_process_editor(
                 source="웹 직접 편집",
             )
         except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
-            st.error(str(exc))
+            notice.error(str(exc))
             return
         clear_global_key_process_cache()
         queue_flash("home_key_process_flash", "주요공정 목록을 저장했습니다.")
@@ -858,19 +871,22 @@ def _render_execution_editor(
             return
         table = _execution_editor_frame(execution_profile)
         with st.form("home_execution_capacity_form"):
-            # 작업 줄(메모·저장)은 표 **위**다.
+            # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다(오른쪽 끝은 표 도구 막대에 가린다).
             with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-                note = st.text_input(
-                    "변경 메모",
-                    placeholder="예: 26.07 Wafer Mount 비가동 3대",
-                    key=EXECUTION_NOTE_KEY,
-                )
                 submitted = st.form_submit_button(
                     "실행 Capa 저장",
                     icon=":material/save:",
                     type="primary",
                 )
-            render_flash("home_execution_flash")
+                note = st.text_input(
+                    "변경 메모",
+                    placeholder="예: 26.07 Wafer Mount 비가동 3대",
+                    key=EXECUTION_NOTE_KEY,
+                )
+            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
+            notice = st.container()
+            with notice:
+                render_flash("home_execution_flash")
             edited = st.data_editor(
                 table,
                 key=EXECUTION_EDITOR_KEY,
@@ -912,10 +928,10 @@ def _render_execution_editor(
                 source=note.strip() or "웹 직접 편집",
             )
         except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
-            st.error(str(exc))
+            notice.error(str(exc))
             return
         queue_flash("home_execution_flash", "실행 Capa 반영을 저장했습니다.")
         st.rerun(scope="app")

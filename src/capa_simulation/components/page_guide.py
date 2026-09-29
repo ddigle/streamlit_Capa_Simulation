@@ -33,6 +33,7 @@ from pathlib import Path
 import streamlit as st
 
 from capa_simulation.design import tokens
+from capa_simulation.page_bootstrap import forget_page_dialogs
 
 GUIDE_TRIGGER_KEY = "page_guide_trigger"
 BUTTON_ID = "capa-guide-button"
@@ -139,7 +140,9 @@ def render_page_guide(page: str, *, title: str) -> None:
     """
     body = load_guide(page)
     st.html(_SHOW_STYLE)
-    if st.button("Guide", key=GUIDE_TRIGGER_KEY):
+    # 누르면 이 화면에 열려 있던 팝업 칸을 먼저 비운다 — 팝업은 한 회차에 하나뿐이라, 붙여넣기
+    # 팝업이 열린 채 Guide 를 열면 Streamlit 이 멈춘다. 콜백은 스크립트보다 먼저 돈다.
+    if st.button("Guide", key=GUIDE_TRIGGER_KEY, on_click=forget_page_dialogs):
         _open_guide(title, body)
 
 
