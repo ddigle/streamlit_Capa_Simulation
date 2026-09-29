@@ -211,7 +211,6 @@ def test_prefill_never_leaves_a_required_field_empty() -> None:
     prefill = view.registration_prefill(
         row,
         catalog_window_label="2026-09-01 ~ 2026-09-08",
-        detail_window_label="2026-06-10 ~ 2026-09-08",
     )
 
     assert prefill.source_name == "DEMO-A-001"

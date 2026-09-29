@@ -284,25 +284,21 @@ def test_build_query_without_a_window_keeps_the_default_window() -> None:
     assert "impala_insert_time" in query
 
 
-def test_resolve_detail_window_never_narrows_the_default_window() -> None:
-    """목록 기간으로 상세를 좁히면 그 코드의 원천 행이 잘린 채 저장된다."""
-    today = date(2026, 9, 8)
-    one_day = adapter.QueryWindow(start_date=today, end_date=today)
+def test_the_detail_window_defaults_to_a_few_days_around_the_registration_date() -> None:
+    """상세 조회 기본 창은 원천 등록일 7일 전 ~ 3일 뒤다(2026-09-29 사용자 결정 A+B).
 
-    widened = adapter.resolve_detail_window(one_day, today=today)
-    default = adapter.default_query_window(today=today)
+    예전에는 기본 90일 ∪ 목록 기간 ∪ 등록일 7일 전~오늘이라 옛 코드일수록 창이 길어져 사내
+    조회가 오래 걸렸다. 몇 달 전 코드도 이제 등록일 앞뒤 11일치만 읽는다.
+    """
+    today = date(2026, 9, 29)
+    registered = date(2026, 3, 10)
 
-    assert widened.start_date == default.start_date
-    assert widened.end_date == default.end_date
+    window = adapter.registration_detail_window(registered, today=today)
 
-    older = adapter.QueryWindow(
-        start_date=today - timedelta(days=200), end_date=today - timedelta(days=190)
-    )
-    stretched = adapter.resolve_detail_window(older, today=today)
-
-    assert stretched.start_date == older.start_date
-    assert stretched.end_date == default.end_date
-    assert adapter.resolve_detail_window(None, today=today).start_date == default.start_date
+    assert window.start_date == registered - timedelta(days=adapter.DETAIL_WINDOW_DAYS_BEFORE)
+    assert window.end_date == registered + timedelta(days=adapter.DETAIL_WINDOW_DAYS_AFTER)
+    assert (adapter.DETAIL_WINDOW_DAYS_BEFORE, adapter.DETAIL_WINDOW_DAYS_AFTER) == (7, 3)
+    assert window.days == 11
 
 
 def test_provider_passes_the_window_into_the_query(monkeypatch) -> None:
@@ -375,21 +371,23 @@ def test_valid_simulation_code_predicate_matches_the_validator() -> None:
     assert adapter.is_valid_simulation_code("   ") is False
 
 
-def test_detail_window_reaches_back_to_the_registration_date() -> None:
-    """원천 등록일이 있으면 그 7일 전부터 덮는다(2026-09-29 사용자 결정 B).
+def test_the_detail_window_covers_every_registration_the_catalog_saw() -> None:
+    """목록에 같은 코드의 등록일이 여러 날 보였으면 기본 창이 그 사이를 자르지 않는다."""
+    window = adapter.registration_detail_window(
+        date(2026, 3, 1), date(2026, 3, 20), today=date(2026, 9, 29)
+    )
 
-    목록 기간은 코드를 찾아낸 기간일 뿐이다. 코드의 행이 여러 날에 걸쳐 적재됐고 목록 기간이
-    최근 적재분만 잡았으면, 옛 적재분이 오류 없이 빠진 채 저장됐다.
-    """
+    assert window.start_date == date(2026, 2, 22)
+    assert window.end_date == date(2026, 3, 23)
+
+
+def test_the_detail_window_never_ends_after_today() -> None:
+    """날짜 입력의 상한이 오늘이다. 등록일이 어제거나 (시계가 어긋나) 내일이어도 창이 선다."""
     today = date(2026, 9, 29)
-    recent = adapter.QueryWindow(start_date=today - timedelta(days=3), end_date=today)
-    registered = date(2026, 3, 2)
 
-    window = adapter.resolve_detail_window(recent, registered_on=registered, today=today)
+    yesterday = adapter.registration_detail_window(today - timedelta(days=1), today=today)
+    tomorrow = adapter.registration_detail_window(today + timedelta(days=1), today=today)
 
-    margin = timedelta(days=adapter.REGISTRATION_WINDOW_MARGIN_DAYS)
-    assert window.start_date == registered - margin
-    assert window.end_date == today
-    # 등록일이 기본 창 안이면 창은 그대로다 — 좁히지 않는다.
-    inside = adapter.resolve_detail_window(None, registered_on=today, today=today)
-    assert inside == adapter.default_query_window(today=today)
+    assert yesterday.start_date == today - timedelta(days=8)
+    assert yesterday.end_date == today
+    assert tomorrow.start_date <= tomorrow.end_date <= today

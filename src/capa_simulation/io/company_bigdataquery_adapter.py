@@ -29,9 +29,12 @@ _SIMULATION_CODE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 UNCONFIGURED_MARKER: Final = "__TODO_CONFIGURE_BIGDATAQUERY__"
 # 기간을 지정하지 않은 호출이 쓰는 창. 화면에서 기간을 고르면 그 값이 이 기본값을 대신한다.
 DEFAULT_QUERY_WINDOW_DAYS: Final = 90
-# 상세 조회 창을 원천 등록일에서 이만큼 앞당긴다. `impala_insert_time`(적재 시각)은 보통 등록일
-# 이후지만 적재 배치·시간대 차이로 하루 이틀 앞설 수 있어 여유를 둔다.
-REGISTRATION_WINDOW_MARGIN_DAYS: Final = 7
+# 상세 조회 기본 창 — 원천 등록일 앞뒤 며칠(2026-09-29 사용자 결정). 적재 시각
+# (`impala_insert_time`)은 보통 등록일 뒤지만 적재 배치·시간대 차이로 앞설 수 있어 앞쪽을 더 둔다.
+# 창이 길수록 사내 조회가 오래 걸려 기본은 좁게 두고, 등록 뒤에도 계속 수정·재적재되는
+# 시뮬레이션은 등록 화면에서 기간을 넓혀 조회한다.
+DETAIL_WINDOW_DAYS_BEFORE: Final = 7
+DETAIL_WINDOW_DAYS_AFTER: Final = 3
 # 조회 요청자의 사내 계정을 넣는 환경변수. 사람마다 다른 값이라 저장소에 두지 않는다 —
 # 배포 ZIP 을 받은 다른 사람이 남의 계정으로 조회하게 된다.
 BDQ_USER_NAME_ENV: Final = "CAPA_BDQ_USER_NAME"
@@ -234,35 +237,25 @@ def default_query_window(
     return QueryWindow(start_date=end_date - timedelta(days=days), end_date=end_date)
 
 
-def resolve_detail_window(
-    catalog_window: QueryWindow | None,
+def registration_detail_window(
+    first_registered_on: date,
+    last_registered_on: date | None = None,
     *,
-    registered_on: date | None = None,
     today: date | None = None,
 ) -> QueryWindow:
-    """상세 조회 창. 목록에서 고른 기간으로 **좁히지 않는다**.
+    """상세 조회 기본 창 — 원천 등록일 `DETAIL_WINDOW_DAYS_BEFORE` 일 전 ~
+    `DETAIL_WINDOW_DAYS_AFTER` 일 뒤(2026-09-29 사용자 결정 A+B).
 
-    상세 SQL 은 기간과 `catb_sim_info_id` 를 AND 로 묶어 그 코드의 *행* 을 자른다. 목록
-    기간이 하루면 그 코드의 하루치 행만 저장돼 원천이 잘린 시나리오가 조용히 남는다.
-    그래서 기본 창과 목록 창의 합집합을 쓴다 — 선택이 없으면 기본 창과 정확히 같고,
-    기본 창보다 오래된 코드를 골랐을 때만 아래로 넓어진다(넓히지 않으면 0행이다).
-
-    **원천 등록일(`registered_on`)이 있으면 그 `REGISTRATION_WINDOW_MARGIN_DAYS` 일 전까지
-    내린다**(2026-09-29 사용자 결정 B). 목록 기간은 그 코드를 *찾아낸* 기간일 뿐이라, 코드의 행이
-    여러 날에 걸쳐 적재됐고 목록 기간이 최근 적재분만 잡았으면 옛 적재분이 오류 없이 빠진 채
-    저장됐다. 등록일은 그 시뮬레이션이 만들어진 날이라 적재는 그 뒤에 일어난다 — 목록 기간이
-    얼마나 좁든 그 코드의 적재분 전체를 덮는다. 끝은 여전히 오늘이다(재적재분까지).
+    상세 SQL 은 기간과 `catb_sim_info_id` 를 AND 로 묶어 그 코드의 *행* 을 자르므로 창 밖에
+    적재된 행은 오류 없이 빠진다. 그래도 창을 넓게 잡으면 사내 조회가 오래 걸려 기본은 등록일
+    앞뒤로 좁게 두고, 등록 뒤에도 계속 수정·재적재된 시뮬레이션은 사용자가 화면에서 넓힌다.
+    목록에 같은 코드의 등록일이 여러 날 보였으면(`last_registered_on`) 그 사이도 덮는다 — 이미
+    보인 적재분을 기본값이 자르지 않게 한다. 끝은 오늘을 넘지 않는다(날짜 입력의 상한).
     """
-    default = default_query_window(today=today)
-    start_date = default.start_date
-    end_date = default.end_date
-    if catalog_window is not None:
-        start_date = min(start_date, catalog_window.start_date)
-        end_date = max(end_date, catalog_window.end_date)
-    if registered_on is not None:
-        start_date = min(
-            start_date, registered_on - timedelta(days=REGISTRATION_WINDOW_MARGIN_DAYS)
-        )
+    last = max(first_registered_on, last_registered_on or first_registered_on)
+    end_cap = today or datetime.now().date()
+    start_date = min(first_registered_on - timedelta(days=DETAIL_WINDOW_DAYS_BEFORE), end_cap)
+    end_date = max(start_date, min(last + timedelta(days=DETAIL_WINDOW_DAYS_AFTER), end_cap))
     return QueryWindow(start_date=start_date, end_date=end_date)
 
 
@@ -313,7 +306,8 @@ class BigDataQueryCoreDataProvider:
         if frame.empty:
             raise ValueError(
                 f"시뮬레이션 코드 {code} 의 조회 결과가 0행입니다. "
-                f"조회 기간({window.label()})에 원천 데이터가 있는지 확인하세요."
+                f"조회 기간({window.label()})에 원천 데이터가 있는지 확인하세요 — 원천 등록일과 "
+                "기간이 어긋났으면 상세 조회 기간을 넓혀 다시 조회하세요."
             )
         renamed = frame.rename(columns=dict(self.column_mapping))
         # 이 두 컬럼은 공통 78컬럼 검증보다 먼저 아래 원천 보정이 사용한다.

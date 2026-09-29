@@ -1,5 +1,7 @@
 # Purpose: bigdataquery registration 관련 정상·예외·회귀 동작을 검증한다.
 
+from datetime import date
+
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -155,6 +157,30 @@ def test_reset_clears_the_pick_and_the_form_on_the_next_run() -> None:
     assert not app.exception
     assert app.session_state[registration.FORM_CODE_KEY] == ""
     assert registration.CATALOG_PICK_KEY not in app.session_state
+    assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value is None
+    assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value is None
+
+
+def test_picking_a_code_fills_the_detail_window_around_its_registration_date() -> None:
+    """고른 코드의 원천 등록일 7일 전 ~ 3일 뒤로 두 칸을 채운다(2026-09-29 사용자 결정 A+B)."""
+    app = _run(__pick_row__=0)
+
+    assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value == date(2026, 8, 26)
+    assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value == date(2026, 9, 5)
+    captions = " ".join(item.value for item in app.caption)
+    assert "고른 코드의 원천 등록일: 2026-09-02." in captions
+
+
+def test_a_widened_detail_window_survives_the_same_pick() -> None:
+    """등록 뒤에도 계속 수정된 코드는 사용자가 넓힌다.
+
+    같은 행이 선택된 채 도는 다음 런이 넓힌 기간을 기본값으로 되돌리지 않는다.
+    """
+    app = _run(__pick_row__=0)
+    app.date_input(key=registration.FORM_DETAIL_END_KEY).set_value(date(2026, 9, 20)).run()
+
+    assert not app.exception
+    assert app.session_state[registration.FORM_DETAIL_END_KEY] == date(2026, 9, 20)
 
 
 @pytest.mark.parametrize(
@@ -210,28 +236,74 @@ OLD_CODE_SCRIPT = (
 )
 
 
-def test_picking_an_old_code_reaches_the_detail_window_back_to_its_first_registration() -> None:
-    """목록 기간이 최근 일주일이어도 상세 조회는 그 코드의 가장 이른 등록일 7일 전부터다.
+def test_an_old_code_seen_on_several_days_gets_a_window_across_all_of_them() -> None:
+    """목록 기간이 최근 일주일이어도 상세 기본 창은 그 코드의 등록일에 맞춰진다.
 
-    2026-09-29 사용자 결정 B — 코드의 행이 여러 날에 걸쳐 적재됐으면 목록 기간으로는 옛 적재분을
-    잡지 못해 원천이 잘린 채 저장됐다.
+    목록 정리는 최신 행(2025-11-02)만 남기고 가장 이른 등록일(2025-10-01)은 따로 들고 온다.
+    기본 창이 그 사이를 자르면 이미 목록에 보인 적재분이 오류 없이 빠진다.
     """
     app = AppTest.from_string(OLD_CODE_SCRIPT)
-    app.session_state["__pick_row__"] = 0
+    # 목록은 최신 등록순이라 2025-11-02 에 등록된 DEMO-A 가 둘째 행이다.
+    app.session_state["__pick_row__"] = 1
     app.run()
     assert not app.exception
 
+    assert app.session_state[registration.FORM_CODE_KEY] == "DEMO-A-001"
+    assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value == date(2025, 9, 24)
+    assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value == date(2025, 11, 5)
     captions = " ".join(item.value for item in app.caption)
-    assert "상세 조회 기간: 2025-09-24 ~" in captions
-    assert "원천 등록일 2025-10-01" in captions
-    assert "상세 조회기간 2025-09-24 ~" in app.text_area[0].value
+    assert "고른 코드의 원천 등록일: 2025-10-01 ~ 2025-11-02." in captions
+    # 메모의 상세 조회기간은 저장할 때 실제로 조회한 기간으로 붙는다(칸을 고칠 수 있어서).
+    assert "상세 조회기간" not in app.text_area[0].value
 
 
-def test_a_typed_registration_date_widens_the_window_for_a_code_typed_by_hand() -> None:
-    """목록에서 고르지 않고 코드를 적은 사람도 원천 등록시점을 채우면 창이 그만큼 내려간다."""
-    app = _run()
-    app.text_input(key=registration.FORM_REGISTERED_AT_KEY).set_value("2025-06-10 00:00:00").run()
+SUBMIT_SCRIPT = """
+from datetime import date, datetime
+
+import streamlit as st
+
+from capa_simulation.components import bigdataquery_registration as registration
+
+registered = st.session_state.get("__registered_at__")
+window = registration._submitted_detail_window(registered)
+st.session_state["__window__"] = None if window is None else window.label()
+"""
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "registered_at", "expected", "error"),
+    [
+        # 두 칸이 우선이다 — 등록 뒤 계속 수정된 코드는 사용자가 넓힌 기간 그대로 조회한다.
+        (date(2025, 1, 1), date(2025, 12, 31), None, "2025-01-01 ~ 2025-12-31", None),
+        # 둘 다 비었으면 원천 DB 등록시점 7일 전 ~ 3일 뒤(코드를 직접 적은 경우).
+        (None, None, "2025-06-10", "2025-06-03 ~ 2025-06-13", None),
+        # 기간을 모르는 채로 넓은 기본 창을 조용히 쓰지 않는다.
+        (None, None, None, None, "원천 DB 등록시점"),
+        (date(2025, 1, 1), None, "2025-06-10", None, "둘 다 비우세요"),
+        (date(2025, 2, 1), date(2025, 1, 1), None, None, "늦을 수 없습니다"),
+    ],
+)
+def test_the_submitted_detail_window(
+    start: date | None,
+    end: date | None,
+    registered_at: str | None,
+    expected: str | None,
+    error: str | None,
+) -> None:
+    from datetime import datetime
+
+    app = AppTest.from_string(SUBMIT_SCRIPT)
+    app.session_state[registration.FORM_DETAIL_START_KEY] = start
+    app.session_state[registration.FORM_DETAIL_END_KEY] = end
+    app.session_state["__registered_at__"] = (
+        None if registered_at is None else datetime.fromisoformat(registered_at)
+    )
+    app.run()
 
     assert not app.exception
-    captions = " ".join(item.value for item in app.caption)
-    assert "상세 조회 기간: 2025-06-03 ~" in captions
+    assert app.session_state["__window__"] == expected
+    errors = " ".join(item.value for item in app.error)
+    if error is None:
+        assert not errors
+    else:
+        assert error in errors

@@ -253,7 +253,6 @@ def registration_prefill(
     row: CatalogRow,
     *,
     catalog_window_label: str,
-    detail_window_label: str,
 ) -> RegistrationPrefill:
     """고른 행으로 등록 폼 여섯 칸을 채운다.
 
@@ -268,11 +267,7 @@ def registration_prefill(
         revision_name=_DEFAULT_REVISION_NAME,
         registered_at=row.registered_at,
         # PLAN 을 담을 필드가 저장 계약에 없어 리비전 메모가 유일한 자유 서식 자리다.
-        note=(
-            f"원천 PLAN {row.plan_name}({row.plan_code})"
-            f" · 목록 조회기간 {catalog_window_label}"
-            f" · 상세 조회기간 {detail_window_label}"
-        ),
+        note=(f"원천 PLAN {row.plan_name}({row.plan_code}) · 목록 조회기간 {catalog_window_label}"),
     )
 
 

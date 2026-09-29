@@ -30,12 +30,13 @@ from capa_simulation.io.bigdataquery_catalog import (
     is_bigdataquery_catalog_configured,
 )
 from capa_simulation.io.company_bigdataquery_adapter import (
-    REGISTRATION_WINDOW_MARGIN_DAYS,
+    DETAIL_WINDOW_DAYS_AFTER,
+    DETAIL_WINDOW_DAYS_BEFORE,
     BigDataQueryCoreDataProvider,
     QueryWindow,
     is_bigdataquery_adapter_configured,
     is_bigdataquery_package_available,
-    resolve_detail_window,
+    registration_detail_window,
 )
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import load_global_display_order
@@ -70,9 +71,9 @@ REGISTRATION_FLASH_KEY = "bigdataquery_registration_flash"
 CATALOG_RESULT_KEY = "bigdataquery_catalog_result"
 CATALOG_PICK_KEY = "bigdataquery_catalog_pick"
 CATALOG_APPLIED_KEY = "bigdataquery_catalog_applied_signature"
-CATALOG_FORM_WINDOW_KEY = "bigdataquery_catalog_form_window"
-# 폼의 코드를 목록에서 골랐을 때 그 코드의 가장 이른 원천 등록일. 상세 조회 창의 시작을 내린다.
-CATALOG_FORM_REGISTERED_ON_KEY = "bigdataquery_catalog_form_registered_on"
+# 폼의 코드를 목록에서 골랐을 때 그 코드가 목록에 보인 (가장 이른, 가장 늦은) 원천 등록일.
+# 상세 조회 기간 두 칸의 기본값을 정한 근거로 안내에 적는다.
+CATALOG_FORM_REGISTERED_SPAN_KEY = "bigdataquery_catalog_form_registered_span"
 CATALOG_LIST_NONCE_KEY = "bigdataquery_catalog_list_nonce"
 CATALOG_LAST_LIST_KEY = "bigdataquery_catalog_last_list_key"
 CATALOG_RESET_REQUEST_KEY = "bigdataquery_catalog_reset_request"
@@ -88,6 +89,9 @@ FORM_SCENARIO_NAME_KEY = "bigdataquery_form_scenario_name"
 FORM_REVISION_NAME_KEY = "bigdataquery_form_revision_name"
 FORM_REGISTERED_AT_KEY = "bigdataquery_form_registered_at"
 FORM_NOTE_KEY = "bigdataquery_form_note"
+# 상세 조회 기간(포함). 둘 다 비면 `원천 DB 등록시점` 으로 기본 창을 정한다.
+FORM_DETAIL_START_KEY = "bigdataquery_form_detail_start"
+FORM_DETAIL_END_KEY = "bigdataquery_form_detail_end"
 FORM_DEFAULTS: Final[dict[str, str]] = {
     FORM_CODE_KEY: "",
     FORM_SOURCE_NAME_KEY: "",
@@ -114,7 +118,7 @@ class CatalogResult:
     window: QueryWindow
     queried_at: datetime
     token: str
-    # (코드, PLAN) 마다 목록에 보인 가장 이른 원천 등록일. 상세 조회 창의 시작을 정한다.
+    # (코드, PLAN) 마다 목록에 보인 가장 이른 원천 등록일. 상세 조회 기본 창의 시작을 정한다.
     first_registered: Mapping[tuple[str, str], date] = field(default_factory=dict)
 
 
@@ -397,15 +401,17 @@ def _apply_pick(pick: CatalogPick) -> None:
     if st.session_state.get(CATALOG_APPLIED_KEY) == pick.row.signature:
         # 같은 행이 계속 선택돼 있을 뿐이다. 사용자가 고친 값을 덮지 않는다.
         return
-    registered_on = pick.first_registered_on or _registered_day(pick.row.registered_at)
-    prefill = registration_prefill(
-        pick.row,
-        catalog_window_label=pick.window.label(),
-        detail_window_label=resolve_detail_window(pick.window, registered_on=registered_on).label(),
-    )
+    prefill = registration_prefill(pick.row, catalog_window_label=pick.window.label())
+    # 목록 정리는 (코드, PLAN) 의 최신 행만 남기므로 행의 등록일이 가장 늦은 날이고, 가장 이른
+    # 날은 정리 전에 따로 구해 둔 것이다. 둘 사이가 벌어졌으면 등록 뒤에도 적재가 이어진 코드다.
+    last = _registered_day(pick.row.registered_at)
+    first = pick.first_registered_on or last
+    span = None if first is None else (first, last or first)
+    window = None if span is None else registration_detail_window(*span)
     st.session_state[CATALOG_APPLIED_KEY] = pick.row.signature
-    st.session_state[CATALOG_FORM_WINDOW_KEY] = pick.window
-    st.session_state[CATALOG_FORM_REGISTERED_ON_KEY] = registered_on
+    st.session_state[CATALOG_FORM_REGISTERED_SPAN_KEY] = span
+    st.session_state[FORM_DETAIL_START_KEY] = None if window is None else window.start_date
+    st.session_state[FORM_DETAIL_END_KEY] = None if window is None else window.end_date
     st.session_state[FORM_CODE_KEY] = prefill.simulation_code
     st.session_state[FORM_SOURCE_NAME_KEY] = prefill.source_name
     st.session_state[FORM_SCENARIO_NAME_KEY] = prefill.scenario_name
@@ -439,8 +445,9 @@ def _consume_reset_request() -> None:
     for key in (
         CATALOG_PICK_KEY,
         CATALOG_APPLIED_KEY,
-        CATALOG_FORM_WINDOW_KEY,
-        CATALOG_FORM_REGISTERED_ON_KEY,
+        CATALOG_FORM_REGISTERED_SPAN_KEY,
+        FORM_DETAIL_START_KEY,
+        FORM_DETAIL_END_KEY,
         *FORM_DEFAULTS,
     ):
         st.session_state.pop(key, None)
@@ -455,22 +462,13 @@ def _render_registration_form(
 ) -> None:
     for key, value in FORM_DEFAULTS.items():
         st.session_state.setdefault(key, value)
+    st.session_state.setdefault(FORM_DETAIL_START_KEY, None)
+    st.session_state.setdefault(FORM_DETAIL_END_KEY, None)
     pick = _stored_pick()
     unsavable = pick is not None and not pick.row.savable
     if unsavable:
         st.error(UNSAVABLE_REASON)
-    detail_window = _detail_window()
-    registered_on = _form_registered_on()
-    st.caption(
-        f"상세 조회 기간: {detail_window.label()} — 목록 기간으로 좁히지 않고 기본 창과 합쳐 "
-        "사용합니다."
-        + (
-            f" 원천 등록일 {registered_on:%Y-%m-%d} 의 "
-            f"{REGISTRATION_WINDOW_MARGIN_DAYS}일 전부터 덮습니다."
-            if registered_on is not None
-            else ""
-        )
-    )
+    st.caption(_detail_window_caption())
     with st.form("bigdataquery_registration_form"):
         st.text_input("조회할 시뮬레이션 코드", key=FORM_CODE_KEY)
         st.text_input("원천 시뮬레이션명", key=FORM_SOURCE_NAME_KEY)
@@ -488,6 +486,22 @@ def _render_registration_form(
                 "등록시점은 YYYY-MM-DD HH:MM:SS 형식으로 입력하세요.",
             ),
         )
+        today = datetime.now().date()
+        with st.container(horizontal=True, gap="small"):
+            st.date_input(
+                "상세 조회 시작일",
+                key=FORM_DETAIL_START_KEY,
+                max_value=today,
+                persist_state="session",
+                width=180,
+            )
+            st.date_input(
+                "상세 조회 종료일",
+                key=FORM_DETAIL_END_KEY,
+                max_value=today,
+                persist_state="session",
+                width=180,
+            )
         st.text_area("등록 메모", key=FORM_NOTE_KEY, height=90)
         submitted = st.form_submit_button(
             "DB 조회 후 시나리오 저장",
@@ -519,13 +533,26 @@ def _save_scenario(
     note = str(st.session_state.get(FORM_NOTE_KEY, ""))
     try:
         registered_at = _optional_datetime(str(st.session_state.get(FORM_REGISTERED_AT_KEY, "")))
+    except ValueError as exc:
+        st.error(bootstrap_error_message(exc))
+        return
+    window = _submitted_detail_window(registered_at)
+    if window is None:
+        return
+    # 실제로 조회한 기간을 리비전 메모에 남긴다. 기간을 넓혀 다시 받은 리비전과 기본 창으로 받은
+    # 리비전이 어떻게 다른지 나중에 알 수 있어야 한다.
+    note = " · ".join(part for part in (note.strip(), f"상세 조회기간 {window.label()}") if part)
+    try:
         display_order = load_global_display_order(database_path).rules
         provider = BigDataQueryCoreDataProvider(
             simulation_name=source_name,
             source_registered_at=registered_at,
-            window=_detail_window(),
+            window=window,
         )
-        with st.spinner("사내 DB에서 Core Data를 조회하고 검증하는 중입니다..."):
+        with st.spinner(
+            f"사내 DB에서 Core Data를 조회하고 검증하는 중입니다 — 상세 조회 {window.label()}"
+            f"({window.days}일)..."
+        ):
             prepared = fetch_core_data_dataset(provider, simulation_code, display_order)
             _store_reference_conflict_report(
                 prepared.reference_conflicts,
@@ -545,7 +572,7 @@ def _save_scenario(
                 preset,
                 source_data=prepared.source_data,
                 revision_name=revision_name,
-                note=note.strip() or None,
+                note=note,
             )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
@@ -579,31 +606,50 @@ def _registered_day(text: str) -> date | None:
     return parsed.date() if parsed is not None else None
 
 
-def _form_registered_on() -> date | None:
-    """상세 조회 창을 내릴 원천 등록일. 목록에서 고른 코드의 가장 이른 등록일과 폼의 등록시점 중
-    이른 쪽이다 — 코드를 직접 적은 사람도 등록시점을 채우면 창이 그만큼 내려간다.
+def _detail_window_caption() -> str:
+    """상세 조회 기간 두 칸 위의 안내.
+
+    폼 안 날짜는 저장 전까지 rerun 하지 않으므로 고른 값이 아니라 규칙과 근거를 적는다.
     """
-    stored = st.session_state.get(CATALOG_FORM_REGISTERED_ON_KEY)
-    candidates = [stored] if isinstance(stored, date) else []
-    typed = _registered_day(str(st.session_state.get(FORM_REGISTERED_AT_KEY, "")))
-    if typed is not None:
-        candidates.append(typed)
-    return min(candidates) if candidates else None
+    rule = (
+        f"상세 조회 기간 — 목록에서 코드를 고르면 원천 등록일 {DETAIL_WINDOW_DAYS_BEFORE}일 전 ~ "
+        f"{DETAIL_WINDOW_DAYS_AFTER}일 뒤로 채웁니다. 두 칸을 비우면 `원천 DB 등록시점` 으로 같은 "
+        "규칙을 씁니다. 등록 뒤에도 원천이 계속 수정·재적재됐으면 종료일을 늘리세요 — 기간이 "
+        "길수록 조회가 오래 걸립니다."
+    )
+    span = st.session_state.get(CATALOG_FORM_REGISTERED_SPAN_KEY)
+    if not isinstance(span, tuple) or len(span) != 2:
+        return rule
+    first, last = span
+    seen = f"{first:%Y-%m-%d}" if first == last else f"{first:%Y-%m-%d} ~ {last:%Y-%m-%d}"
+    return f"{rule} 고른 코드의 원천 등록일: {seen}."
 
 
-def _detail_window() -> QueryWindow:
-    """상세 조회 창 — 기본 창 ∪ 목록 기간 ∪ 원천 등록일부터(`resolve_detail_window`)."""
-    return resolve_detail_window(_form_detail_window(), registered_on=_form_registered_on())
+def _submitted_detail_window(registered_at: datetime | None) -> QueryWindow | None:
+    """저장 때 조회할 상세 기간. 두 칸이 우선이고, 둘 다 비었으면 원천 DB 등록시점으로 정한다.
 
-
-def _form_detail_window() -> QueryWindow | None:
-    """폼에 들어 있는 코드를 찾아낸 목록 조회 기간.
-
-    현재 선택이 아니라 폼 내용을 따라간다 — 재조회로 선택이 풀려도 폼에 남은 코드는
-    그 코드를 찾아낸 기간으로 조회되어야 한다.
+    예전에는 기본 90일 ∪ 목록 기간 ∪ 등록일 7일 전~오늘을 모두 덮어, 옛 코드일수록 창이 길어져
+    조회가 오래 걸렸다(2026-09-29 사용자 결정 A+B — 기본은 등록일 앞뒤로 좁게, 필요하면 넓힌다).
+    기간을 모르는 채로 넓은 기본 창을 조용히 쓰지 않는다 — 둘 다 없으면 막고 무엇을 채울지 알린다.
     """
-    stored = st.session_state.get(CATALOG_FORM_WINDOW_KEY)
-    return stored if isinstance(stored, QueryWindow) else None
+    start = st.session_state.get(FORM_DETAIL_START_KEY)
+    end = st.session_state.get(FORM_DETAIL_END_KEY)
+    if isinstance(start, date) and isinstance(end, date):
+        if start > end:
+            st.error("상세 조회 시작일은 종료일보다 늦을 수 없습니다.")
+            return None
+        return QueryWindow(start_date=start, end_date=end)
+    if isinstance(start, date) or isinstance(end, date):
+        st.error("상세 조회 시작일과 종료일을 모두 지정하거나 둘 다 비우세요.")
+        return None
+    if registered_at is None:
+        st.error(
+            "상세 조회 기간을 지정하거나 `원천 DB 등록시점` 을 적으세요 — 두 칸을 비워 두면 그 "
+            f"등록일 {DETAIL_WINDOW_DAYS_BEFORE}일 전 ~ {DETAIL_WINDOW_DAYS_AFTER}일 뒤로 "
+            "조회합니다."
+        )
+        return None
+    return registration_detail_window(registered_at.date())
 
 
 def _store_reference_conflict_report(conflicts: pd.DataFrame, simulation_code: str) -> None:
