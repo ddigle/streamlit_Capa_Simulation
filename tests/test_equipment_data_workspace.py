@@ -197,7 +197,12 @@ def test_editor_change_after_review_requires_review_again(tmp_path: Path) -> Non
     )
     app = _app(path)
     _preview(app, _master(["NEW"]).to_csv(index=False, sep="\t"))
-    app.session_state[EQUIPMENT_EDITOR_KEY] = {
+    # 편집표는 저장본을 처음 읽은 회차에 새 세대로 섰다(`editor_state.discard_editor`). 브라우저가
+    # 그 키로 편집을 보내므로 테스트도 지금 세대의 키에 넣는다.
+    generation_key = f"{EQUIPMENT_EDITOR_KEY}__generation"
+    generation = app.session_state[generation_key] if generation_key in app.session_state else 0
+    widget_key = f"{EQUIPMENT_EDITOR_KEY}__g{generation}" if generation else EQUIPMENT_EDITOR_KEY
+    app.session_state[widget_key] = {
         "edited_rows": {0: {"비고": "검토 뒤 수정"}},
         "added_rows": [],
         "deleted_rows": [],

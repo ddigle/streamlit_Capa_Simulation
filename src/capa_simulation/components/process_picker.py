@@ -81,7 +81,7 @@ def tile_tooltip_style(tooltips: Sequence[str]) -> str:
     border-radius: 6px;
     background: {tokens.SURFACE};
     color: {tokens.TEXT};
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+    box-shadow: 0 4px 12px {tokens.NAV_SHADOW};
     font-size: 0.75rem;
     line-height: 1.35;
     white-space: pre-line;
