@@ -19,6 +19,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import (
@@ -86,7 +87,8 @@ def render_cutoff_management(
                 equipment_processes
             ).loc[:, PROCESS_CUTOFF_EDIT_COLUMNS]
             # 편집 델타는 행 위치다. 표를 새로 깔면서 옛 델타를 남기면 다른 공정에 붙는다.
-            st.session_state.pop(_EDITOR_KEY, None)
+            # 세션 칸만 지우면 브라우저가 옛 편집을 다시 보내므로 위젯 키를 바꾼다.
+            discard_editor(_EDITOR_KEY)
             st.rerun()
         # 왕복 CSV 는 다른 설비 표와 같은 인코딩을 쓴다 — Excel 이 BOM 없이는 한글을 깬다.
         render_csv_download(
@@ -112,7 +114,7 @@ def render_cutoff_management(
         render_flash(_FLASH_KEY)
         edited = st.data_editor(
             view.frame,
-            key=_EDITOR_KEY,
+            key=editor_widget_key(_EDITOR_KEY),
             num_rows=view.row_mode,
             width="stretch",
             hide_index=True,
@@ -142,7 +144,7 @@ def render_cutoff_management(
                 if not saved.empty
                 else build_process_cutoff_template([]).loc[:, PROCESS_CUTOFF_EDIT_COLUMNS]
             )
-            st.session_state.pop(_EDITOR_KEY, None)
+            discard_editor(_EDITOR_KEY)
             queue_flash(_FLASH_KEY, f"공정별 Cut-off {len(saved)}건을 저장했습니다.")
             st.rerun()
 

@@ -168,13 +168,13 @@ def build_plan_detail_figures(
 ) -> tuple[go.Figure, go.Figure]:
     """분류별 계획 세부수량 Figure 한 쌍을 만든다.
 
-    `detail_dimensions` 는 왼쪽 분류 칸을 정한다. 기본은 제품·Stack 이고 `상세` 를 켜면
+    `detail_dimensions` 는 왼쪽 분류 칸을 정한다. 기본은 제품·Stack 이고 `상세 계획` 을 켜면
     거래선이 더해진다. 머리글과 칸 폭은 컬럼 이름에서 끌어오므로 분류가 늘어도 여기서
     다시 적을 것이 없다.
     """
     dimensions = list(detail_dimensions or PRODUCTION_DETAIL_DIMENSIONS)
     detail_dimension_widths = [DETAIL_DIMENSION_WIDTHS.get(column, 1.0) for column in dimensions]
-    # 제품 칸이 끝나는 자리(paper 0~1). **폭에서 계산한다** — `상세` 를 켜면 거래선이
+    # 제품 칸이 끝나는 자리(paper 0~1). **폭에서 계산한다** — `상세 계획` 을 켜면 거래선이
     # 붙어 분모가 2.0 에서 3.0 으로 바뀌는데, 숫자를 박아 두면 그때 선이 엉뚱한 칸
     # 경계로 밀린다. 실제로 그렇게 밀려 있었다.
     detail_product_boundary = detail_dimension_widths[0] / sum(detail_dimension_widths)
@@ -238,7 +238,7 @@ def build_plan_detail_figures(
     detail_row_height = lower_delta_row_height(DETAIL_VALUE_FONT_SIZE_PX)
     detail_header_height = table_row_height(DETAIL_HEADER_FONT_SIZE_PX)
     # 제목 자리를 Figure 가 갖지 않는다. `계획 세부수량` 은 Plotly 주석이 아니라 Streamlit
-    # 이 그려서 그 옆에 「상세」 토글을 둔다. 두 칸 모두 같은 높이의 줄을 끼우므로 여백을
+    # 이 그려서 그 옆에 「상세 계획」 토글을 둔다. 두 칸 모두 같은 높이의 줄을 끼우므로 여백을
     # 남겨 두면 표 위에 빈 띠만 생긴다.
     detail_figure_height = detail_header_height + max(len(displayed_detail), 1) * detail_row_height
     detail_label_figure = go.Figure(

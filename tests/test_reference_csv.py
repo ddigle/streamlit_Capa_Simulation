@@ -93,6 +93,47 @@ def test_equipment_count_csv_round_trip_validates_nonnegative_values() -> None:
         equipment_count_from_edit_table(edit, "가용", "가용대수")
 
 
+def test_equipment_count_apply_survives_a_missing_process_month_combo() -> None:
+    """원천에 없는 `(공정, 월)` 이 있어도 아무것도 안 고친 적용이 막히지 않는다(09-29 버그 보고).
+
+    원천은 그 달 행이 **없다**(값이 비어 있는 것이 아니다 — 사내 실데이터로 확인). 피벗하면 그
+    자리가 빈칸이었고, 적용이 표 전체를 숫자로 다시 검사해 「숫자를 입력해야 합니다」로 멈췄다.
+    그 자리는 0 대이고, 편집기를 거쳐 명시적 0 으로 저장된다.
+    """
+    source = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202609],
+            "공정": ["Process-A", "Process-B"],  # Process-B 는 202608 행이 원래 없다
+            "가용대수": [2.0, 3.0],
+        }
+    )
+    edit = equipment_count_to_edit_table(source, "가용", "가용대수")
+
+    assert edit.set_index("공정").loc["Process-B", "202608"] == 0.0
+    restored = equipment_count_from_edit_table(edit, "가용", "가용대수")
+
+    by_key = restored.set_index(["공정", "생산계획년월"])["가용대수"]
+    assert by_key[("Process-B", 202608)] == 0.0
+    assert by_key[("Process-A", 202609)] == 0.0
+    assert by_key[("Process-A", 202608)] == 2.0
+
+
+def test_equipment_count_blank_cell_is_zero_but_text_is_still_refused() -> None:
+    """편집표에서 지운 칸·붙여넣은 빈칸은 0 대다. 숫자로 못 읽는 글자는 여전히 막는다."""
+    source = pd.DataFrame(
+        {"생산계획년월": [202608, 202609], "공정": ["Process-A"] * 2, "가용대수": [2.0, 3.0]}
+    )
+    edit = equipment_count_to_edit_table(source, "가용", "가용대수").astype({"202609": "object"})
+    edit.loc[0, "202609"] = "  "
+
+    restored = equipment_count_from_edit_table(edit, "가용", "가용대수")
+    assert restored["가용대수"].tolist() == [2.0, 0.0]
+
+    edit.loc[0, "202609"] = "3대"
+    with pytest.raises(ValueError, match="숫자를 입력해야"):
+        equipment_count_from_edit_table(edit, "가용", "가용대수")
+
+
 def _plan_template() -> pd.DataFrame:
     """Pack Code 에 Excel 이 숫자로 읽는 값이 섞인 격자."""
     return pd.DataFrame(

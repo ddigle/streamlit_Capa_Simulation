@@ -424,3 +424,17 @@ def test_discarding_moves_the_editor_to_a_new_widget_so_resent_edits_are_ignored
     app.run()
     assert not app.exception
     assert app.session_state["returned_table"]["202608"].tolist() == [31.0, 30.0, 29.0]
+
+
+def test_apply_opens_only_when_something_was_edited() -> None:
+    """고친 것이 없으면 「변경사항 적용」을 누를 수 없다.
+
+    누르면 같은 값으로 리비전만 올라 사이드바가 `미저장 변경` 을 켰다(2026-09-29 2차 리뷰).
+    """
+    app = AppTest.from_string(EDITOR_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    assert app.button(key=f"{EDITOR_KEY}_apply").disabled
+
+    _edit(app, 0, "202608", 15.0)
+    app.run()
+    assert not app.button(key=f"{EDITOR_KEY}_apply").disabled

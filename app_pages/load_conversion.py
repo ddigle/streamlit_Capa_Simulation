@@ -27,6 +27,7 @@ from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
     render_grouped_monthly_table,
 )
+from capa_simulation.components.month_editor import PASTE_DROPS_EDITS_NOTICE
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
@@ -36,6 +37,7 @@ from capa_simulation.components.reference_csv_tools import (
 )
 from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
+    register_pending_edits,
     reset_editors_on_source_change,
     source_token,
 )
@@ -149,6 +151,14 @@ reset_editors_on_source_change(
     other_keys=(PLAN_STAGED_KEY,),
     own_change_key=OWN_CHANGE_KEY,
 )
+# 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표와 붙여넣기
+# 대기분을 알린다. 붙여넣기 대기분은 화면을 옮겨도 남는다.
+register_pending_edits(
+    "load_conversion.py",
+    "생산 계획",
+    {PLAN_EDITOR_KEY: "PKG PLAN", YIELD_EDITOR_KEY: "수율"},
+    staged={PLAN_STAGED_KEY: "PKG PLAN 붙여넣기"},
+)
 
 # 본문은 제목 · 탭 · 탭 내용만이다. 「활성 시나리오 · 수정본 N」 줄은 없앴다 — 미저장 여부는
 # 사이드바 시나리오 상자의 배지가 이미 말하고, 편집을 버리는 「편집 되돌리기」도 그 상자에
@@ -211,6 +221,9 @@ def _render_flashes(*keys: str) -> None:
 @st.dialog("Excel 붙여넣기 · PKG PLAN", width="large", on_dismiss=_close_dialog)
 def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     """붙여넣은 표는 PKG PLAN 탭에만 올린다. 전역 반영은 「변경사항 적용」 한 곳이다."""
+    # 붙여넣은 표가 편집 대상이 되며 표의 편집을 버린다. 버리기 전에 말한다(기준 정보와 같다).
+    if editor_has_edits(PLAN_EDITOR_KEY):
+        st.warning(PASTE_DROPS_EDITS_NOTICE)
     imported = render_reference_clipboard_form(
         source,
         table_name="RQ_PKG_PLAN",
@@ -237,6 +250,11 @@ def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     st.rerun()
 
 
+def _discard_plan_edits() -> None:
+    discard_editor(PLAN_EDITOR_KEY)
+    st.session_state.pop(PLAN_STAGED_KEY, None)
+
+
 def _apply_yield(table: pd.DataFrame, origin: str) -> None:
     """수율 편집값이나 붙여넣은 표를 활성 시나리오에 바로 적용한다(수율은 대기 칸이 없다)."""
     apply_month_updates(
@@ -255,6 +273,9 @@ def _apply_yield(table: pd.DataFrame, origin: str) -> None:
 
 @st.dialog("Excel 붙여넣기 · 수율", width="large", on_dismiss=_close_dialog)
 def _yield_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
+    # 붙여넣기는 곧바로 적용되어 수율 표를 새로 세운다 — 표의 편집은 버려진다.
+    if editor_has_edits(YIELD_EDITOR_KEY):
+        st.warning(PASTE_DROPS_EDITS_NOTICE)
     imported = render_reference_clipboard_form(
         source,
         table_name="RQ_YLD",
@@ -290,6 +311,17 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
         st.warning(
             "적용하지 않은 PKG PLAN 붙여넣기가 있습니다. 등록하면 버려집니다 — 먼저 "
             "「PKG PLAN 변경사항 적용」을 누르거나, 등록한 뒤 다시 붙여넣으세요."
+        )
+    # 두 표에 행이 더해지므로 표에서 고치고 적용하지 않은 편집도 버려진다(2026-09-29 2차 리뷰).
+    dropped_edits = [
+        name
+        for key, name in ((PLAN_EDITOR_KEY, "PKG PLAN"), (YIELD_EDITOR_KEY, "수율"))
+        if editor_has_edits(key)
+    ]
+    if dropped_edits:
+        st.warning(
+            f"{'·'.join(dropped_edits)} 표에 적용하지 않은 편집이 있습니다. 등록하면 버려집니다 "
+            "— 먼저 그 표의 「변경사항 적용」을 누르세요."
         )
     with st.form("virtual_product_form", border=False):
         selected_source = st.selectbox(
@@ -339,6 +371,11 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
         f"등록했습니다. 기준정보 {len(updates)}종을 복제했습니다. 아래 표에서 계획 수량을 "
         "입력하세요."
         + (" 적용하지 않았던 붙여넣기 표는 버렸습니다 — 다시 붙여넣으세요." if staged_paste else "")
+        + (
+            f" 적용하지 않았던 {'·'.join(dropped_edits)} 표 편집도 버렸습니다."
+            if dropped_edits
+            else ""
+        )
     )
     _close_dialog()
     st.rerun()
@@ -360,13 +397,16 @@ with pkg_plan_tab:
     )
     # 작업 줄은 표 **위**다. 버튼 값은 표보다 먼저 만들어도 누른 회차에 표의 편집값이 그대로
     # 들어온다(편집값은 위젯 상태라 그리는 차례와 상관없다).
+    plan_pending = editor_has_edits(PLAN_EDITOR_KEY) or isinstance(staged_plan_table, pd.DataFrame)
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        # 고친 것이 없으면 누를 수 없다. 같은 값으로 리비전만 올라 `미저장 변경` 이 켜진다.
         apply_plan = st.button(
             "PKG PLAN 변경사항 적용",
             icon=":material/check:",
             key="apply_pkg_plan_changes",
             type="primary",
             help=PLAN_APPLY_HELP,
+            disabled=not plan_pending,
         )
         # 여는 버튼은 **콜백**으로 연다. 콜백은 스크립트보다 먼저 돌아 열린 팝업이 회차 시작부터
         # 하나로 정해진다 — 버튼 값으로 열면 앞 탭의 팝업을 그린 뒤 뒤 탭의 팝업을 또 그려
@@ -385,6 +425,16 @@ with pkg_plan_tab:
             on_click=_open_dialog,
             args=(VIRTUAL_PRODUCT_DIALOG,),
         )
+        # 적용하지 않은 편집·붙여넣기 대기분을 버리는 자리. 사이드바 「편집 되돌리기」는 **적용한**
+        # 변경이 있을 때만 서서, 붙여넣기만 해 둔 표는 버릴 길이 없었다(2026-09-29 2차 리뷰).
+        if plan_pending:
+            st.button(
+                "편집 취소",
+                icon=":material/undo:",
+                key="discard_pkg_plan_edits",
+                on_click=_discard_plan_edits,
+                help="PKG PLAN 표에서 적용하지 않은 편집과 붙여넣기 대기분을 버립니다.",
+            )
     # 적용이 막힌 까닭도 작업 줄 바로 아래다 — 적용 처리는 표 뒤에서 돌지만 알림은 여기 선다.
     plan_notice = st.empty()
     _render_flashes(PLAN_APPLIED_FLASH_KEY, f"{PLAN_PASTE_KEY}_flash", PRODUCT_REGISTERED_FLASH_KEY)
@@ -466,6 +516,7 @@ if apply_plan:
         st.rerun()
 
 with yield_tab:
+    yield_pending = editor_has_edits(YIELD_EDITOR_KEY)
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         apply_yield = st.button(
             "수율 변경사항 적용",
@@ -473,6 +524,7 @@ with yield_tab:
             key="apply_yield_changes",
             type="primary",
             help=YIELD_APPLY_HELP,
+            disabled=not yield_pending,
         )
         st.button(
             "Excel 붙여넣기",
@@ -481,6 +533,15 @@ with yield_tab:
             on_click=_open_dialog,
             args=(YIELD_PASTE_DIALOG,),
         )
+        if yield_pending:
+            st.button(
+                "편집 취소",
+                icon=":material/undo:",
+                key="discard_yield_edits",
+                on_click=discard_editor,
+                args=(YIELD_EDITOR_KEY,),
+                help="수율 표에서 적용하지 않은 편집을 버립니다.",
+            )
     yield_notice = st.empty()
     _render_flashes(f"{YIELD_PASTE_KEY}_flash")
     if _dialog_is_open(YIELD_PASTE_DIALOG):

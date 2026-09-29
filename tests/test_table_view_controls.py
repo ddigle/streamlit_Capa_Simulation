@@ -75,3 +75,36 @@ def test_hidden_columns_become_a_column_config_of_none() -> None:
     view = TableView(_fleet(), hidden_columns=("비고",), column_config={"비고": None})
 
     assert view.column_config == {"비고": None}
+
+
+def _view_app() -> None:
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components.editor_state import editor_widget_key
+    from capa_simulation.components.table_view_controls import render_table_view_controls
+
+    fleet = pd.DataFrame({"호기": ["E1", "E2", "E3"], "공정소분류": ["가", "나", "가"]})
+    render_table_view_controls(
+        fleet, key_prefix="view_test", editor_key="view_test_editor", filter_columns=["공정소분류"]
+    )
+    st.session_state["seen_editor_key"] = editor_widget_key("view_test_editor")
+
+
+def test_changing_the_visible_rows_rebuilds_the_editor_but_the_first_render_does_not() -> None:
+    """보이는 행이 바뀌면 편집표를 **새 위젯으로** 세운다 — 세션 칸만 지우면 브라우저가 옛 편집을
+    행 위치 그대로 다시 보내 다른 행에 붙는다(2026-09-29 2차 리뷰). 처음 그리는 회차에는 버릴
+    것이 없어 그대로다.
+    """
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_function(_view_app).run()
+    assert not app.exception
+    assert app.session_state["seen_editor_key"] == "view_test_editor"
+
+    app.run()
+    assert app.session_state["seen_editor_key"] == "view_test_editor"
+
+    app.multiselect(key="view_test_filter_공정소분류").set_value(["가"]).run()
+    assert not app.exception
+    assert app.session_state["seen_editor_key"] == "view_test_editor__g1"

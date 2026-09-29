@@ -14,8 +14,10 @@ from typing import cast
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
+from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.scenario_month_merge import render_scenario_month_merge
 from capa_simulation.components.scenario_year_shift import render_scenario_year_shift
 from capa_simulation.io.reference_cache import (
@@ -230,9 +232,14 @@ def _render_scenario_list_editor(
             "1번부터 다시 매깁니다."
         ),
     )
+    # 저장이 실패하면 누른 버튼 바로 아래에 알린다. 표를 그린 뒤에 저장하므로 자리를 먼저 잡는다.
+    order_notice = st.container()
+    # 표를 다시 세울 때(순서 저장·보관·되돌리기·삭제 뒤)는 세션 칸만 지우면 브라우저가 옛
+    # 편집(「선택」 체크·순서 숫자)을 행 위치 그대로 다시 보낸다 — 행이 바뀐 표에서는 **다른
+    # 시나리오**가 골라진다. 그래서 위젯 키를 바꾼다(`components/editor_state.py`).
     edited = st.data_editor(
         table,
-        key=LIST_EDITOR_KEY,
+        key=editor_widget_key(LIST_EDITOR_KEY),
         num_rows="fixed",
         hide_index=True,
         width="stretch",
@@ -258,7 +265,7 @@ def _render_scenario_list_editor(
         disabled=["시나리오명", "원천 코드", "활성 리비전", "공식버전", "최근 수정"],
     )
     if order_clicked:
-        _save_list_order(repository, edited)
+        _save_list_order(repository, edited, order_notice)
     return edited
 
 
@@ -276,16 +283,18 @@ def _official_label(
     return f"v{release_no}"
 
 
-def _save_list_order(repository: DuckDBScenarioRepository, edited: pd.DataFrame) -> None:
+def _save_list_order(
+    repository: DuckDBScenarioRepository, edited: pd.DataFrame, notice: DeltaGenerator
+) -> None:
     # 같은 숫자를 적어도 막지 않는다. 안정 정렬이라 지금 보이는 차례가 그대로 유지된다.
     ordered = edited.sort_values(ORDER_COLUMN, kind="stable").index.tolist()
     try:
         repository.reorder_scenarios([str(scenario_id) for scenario_id in ordered])
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        notice.error(bootstrap_error_message(exc))
         return
     st.session_state[FLASH_KEY] = "시나리오 누적 순서를 저장했습니다."
-    st.session_state.pop(LIST_EDITOR_KEY, None)
+    discard_editor(LIST_EDITOR_KEY)
     st.rerun()
 
 
@@ -491,7 +500,8 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
     st.session_state[FLASH_KEY] = f"{summary.scenario_name} 을 보관했습니다."
-    for key in (LIST_EDITOR_KEY, ACTION_KEY, ACTION_OWNER_KEY, ARCHIVE_CONFIRM_KEY):
+    discard_editor(LIST_EDITOR_KEY)
+    for key in (ACTION_KEY, ACTION_OWNER_KEY, ARCHIVE_CONFIRM_KEY):
         st.session_state.pop(key, None)
     st.rerun()
 
@@ -539,8 +549,8 @@ def _restore_scenario(
         return
     clear_scenario_snapshot_cache()
     st.session_state[FLASH_KEY] = f"{summary.scenario_name} 을 목록으로 되돌렸습니다."
-    for key in (LIST_EDITOR_KEY, ARCHIVED_SELECT_KEY):
-        st.session_state.pop(key, None)
+    discard_editor(LIST_EDITOR_KEY)
+    st.session_state.pop(ARCHIVED_SELECT_KEY, None)
     st.rerun()
 
 
@@ -570,8 +580,8 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
     st.session_state[FLASH_KEY] = f"{summary.scenario_name} 을 영구 삭제했습니다."
+    discard_editor(LIST_EDITOR_KEY)
     for key in (
-        LIST_EDITOR_KEY,
         ACTION_KEY,
         ACTION_OWNER_KEY,
         DELETE_CONFIRM_KEY,

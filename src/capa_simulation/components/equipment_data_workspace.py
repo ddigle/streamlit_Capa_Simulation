@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import (
     TableView,
@@ -143,8 +144,10 @@ class ImportReview:
 
 
 def _clear_editors() -> None:
+    # 세션 칸만 지우면 브라우저가 옛 편집을 다시 보낸다. 위젯 키를 바꿔 새 편집표로 세운다
+    # (`components/editor_state.py`).
     for key in _EDITOR_KEYS:
-        st.session_state.pop(key, None)
+        discard_editor(key)
         st.session_state.pop(f"{key}_applied_view", None)
 
 
@@ -458,7 +461,7 @@ def _selectable_editor(
     display.insert(0, SELECT_COLUMN, pd.Series(chosen, index=display.index, dtype="bool"))
     result = st.data_editor(
         display,
-        key=key,
+        key=editor_widget_key(key),
         num_rows=view.row_mode,
         hide_index=True,
         width="stretch",

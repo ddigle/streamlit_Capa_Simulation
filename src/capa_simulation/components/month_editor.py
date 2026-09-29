@@ -122,12 +122,15 @@ def render_month_editor(
         # 누른 회차에 표의 편집값이 그대로 들어온다. 변경 개수는 표를 그린 뒤에야 알므로 자리만
         # 먼저 잡아 두고 뒤에서 채운다.
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            # 고친 것이 없으면 누를 수 없다. 누르면 같은 값으로 리비전만 올라 사이드바가
+            # `미저장 변경` 을 켠다(2026-09-29 2차 리뷰).
             submitted = st.button(
                 "변경사항 적용",
                 icon=":material/check:",
                 key=f"{editor_key}_apply",
                 type="primary",
                 help=APPLY_NOTICE,
+                disabled=not pending,
             )
             # 여는 버튼은 **콜백**으로 연다 — 콜백은 스크립트보다 먼저 돌아 한 회차에 팝업이 둘
             # 뜨지 않는다(생산 계획과 같은 규칙).

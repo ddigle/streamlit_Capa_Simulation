@@ -1,10 +1,13 @@
 # Purpose: Streamlit 앱의 공식 시나리오 활성화, 공통 사이드바·조회기간과 페이지 탐색을 구성한다.
 
+from pathlib import Path
+
 import streamlit as st
 
 from capa_simulation.components.app_header import render_app_header
 from capa_simulation.components.month_range_picker import render_month_range_picker
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
+from capa_simulation.components.scenario_edit_bar import pending_edit_labels
 from capa_simulation.components.scenario_status import (
     SCENARIO_BOX_KEY,
     render_scenario_controls,
@@ -198,10 +201,15 @@ with pinned_connections(DUCKDB_PATH):
     shows_scenario = reads_common_here and (current_spec is None or current_spec.reads_scenario)
     shows_period = reads_common_here and (current_spec is None or current_spec.reads_period)
     has_cards = current_spec is not None and current_spec.has_cards_on(active_tab)
+    # 이 화면에 적용하지 않은 편집이 남았는가. 저장·불러오기·기간 변경은 그 편집을 버린다 —
+    # 적용하지 않은 편집은 시나리오에 들어 있지 않다(`scenario_edit_bar.register_pending_edits`).
+    pending_edits = pending_edit_labels(
+        None if current_spec is None else Path(current_spec.path).name
+    )
     if shows_scenario or shows_period or has_cards:
         render_sidebar_section(CONDITIONS_SECTION)
     if shows_scenario:
-        render_scenario_controls()
+        render_scenario_controls(pending_edits=pending_edits)
 
     # 적용 범위는 상자를 **접어도** 보여야 하는 한 조각이다. 그런데 그 값은 페이지가
     # 계산을 끝낸 뒤(`navigation.run()` 안의 `resolve_effective_months`)에야 정해지고,
@@ -229,6 +237,13 @@ with pinned_connections(DUCKDB_PATH):
             minimum_month, maximum_month = scenario_month_bounds(
                 month_source_tables, MONTH_SELECTION_START, MONTH_SELECTION_END
             )
+            if pending_edits:
+                # 편집표의 월 칸은 기간이 정한다. 기간을 바꾸면 적용하지 않은 편집이 버려진다.
+                st.caption(
+                    ":orange-badge[적용 전 편집] 기간을 바꾸면 "
+                    + ", ".join(pending_edits)
+                    + " 의 적용하지 않은 편집이 사라집니다."
+                )
             # 현재 선택만 보면 기간을 좁힌 다음 바깥 월을 다시 고를 수 없다. 활성 표의 실제
             # 월을 기준으로 넓혀 Shift 등으로 2031년 이후를 저장해도 계속 조회할 수 있게 한다.
             selected_start_label, selected_end_label = render_month_range_picker(

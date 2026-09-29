@@ -63,3 +63,43 @@ def test_the_shared_token_cannot_collide_with_an_edit_token(session: SimpleNames
     pristine = _activate(7)["content_token"]
 
     assert not all(character in "0123456789abcdef" for character in pristine)
+
+
+def test_discarding_edits_leaves_nothing_unsaved(
+    session: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사이드바 「편집 되돌리기」 뒤에는 미저장이 아니다(2026-09-29 2차 리뷰에서 재현한 결함).
+
+    되돌리기는 표를 올라와 있는 리비전의 표로 갈아 끼우면서 `revision` 을 올린다. 그 번호를 저장
+    표시에 적지 않으면 내용이 저장본과 같은데도 미저장으로 읽혀 버튼·배지·불러오기 잠금이 남는다.
+    """
+    from capa_simulation import scenario_activation
+
+    monkeypatch.setattr(scenario_activation, "st", session)
+    pristine = _activate(7)
+    session.session_state[scenario_activation.ACTIVE_PERSISTED_SESSION_REVISION_KEY] = pristine[
+        "revision"
+    ]
+    scenario_state.apply_table_updates(pristine, {"RQ_CHIP_QTY": TABLES["RQ_CHIP_QTY"]})
+    assert scenario_activation.has_unsaved_scenario_changes()
+
+    reset = scenario_activation.discard_unsaved_scenario_changes(TABLES, 7)
+
+    assert not scenario_activation.has_unsaved_scenario_changes()
+    assert reset["content_token"] == pristine["content_token"]
+    # 편집 UI 는 번호로 새로 선다 — 되돌리기가 번호를 되감지는 않는다.
+    assert reset["revision"] > pristine["revision"]
+
+
+def test_discarding_without_a_saved_revision_invents_no_saved_mark(
+    session: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장본이 없는 세션(내장 시드)에는 되돌아갈 저장본이 없다. 저장 표시를 새로 만들지 않는다."""
+    from capa_simulation import scenario_activation
+
+    monkeypatch.setattr(scenario_activation, "st", session)
+    _activate(7)
+
+    scenario_activation.discard_unsaved_scenario_changes(TABLES, 7)
+
+    assert scenario_activation.ACTIVE_PERSISTED_SESSION_REVISION_KEY not in session.session_state

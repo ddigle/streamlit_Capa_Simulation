@@ -13,6 +13,12 @@
 호기별 기여가 긴 표로 펼쳐지고(CSV), `대수` 표에서 칸 하나를 누르면 그 칸의 호기만 아래에
 뜬다. 목록은 대수 표와 **같은 기여 줄**(`build_monthly_equipment_contributions`)에서 나와
 같은 칸을 더하면 표의 값이다.
+
+**분류별 내역은 호기 마스터의 컬럼으로 호기를 좁혀 더할 수 있다**(`호기 필터`, 2026-09-29 사용자
+요청). 공정처럼 조건 카드에서 컬럼(라인구분·모델·동 …)과 값을 고르면 **그 호기만** 분류대로
+다시 더한다 — 대수 표·칸의 호기·호기 목록이 모두 같은 호기 집합을 본다. 필터가 걸리면
+`기존보유`(호기 마스터 밖의 집계 대수)와 `Static`·`GAP`(기준정보의 공정 단위 값)은 호기 속성이
+없어 표에서 뺀다 — 걸러진 Dynamic 을 거르지 않은 Static 과 맞대면 GAP 이 거짓말을 한다.
 """
 
 from __future__ import annotations
@@ -36,6 +42,8 @@ from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.services.availability_gap import (
     DYNAMIC_SUBTOTAL_ROW,
     DYNAMIC_WEIGHTED_ROW,
+    ROW_KIND_GAP,
+    ROW_KIND_STATIC,
     build_availability_gap,
     gap_matrix,
 )
@@ -58,7 +66,10 @@ __all__ = [
     "MATRIX_TABLE_KEY",
     "PROCESS_FILTER_KEY",
     "RESULT_VIEW_KEY",
+    "UNIT_FILTER_COLUMNS",
+    "UNIT_FILTER_COLUMNS_KEY",
     "matrix_table_key",
+    "unit_filter_key",
     "render_availability_gap_panel",
 ]
 
@@ -67,6 +78,29 @@ RESULT_VIEW_KEY = "equipment_gap_result_view_v1"
 DETAIL_MODE_KEY = "equipment_gap_detail_mode_v1"
 DETAIL_CATEGORY_KEY = "equipment_gap_detail_category_v1"
 MATRIX_TABLE_KEY = "equipment_gap_matrix_table_v1"
+UNIT_FILTER_COLUMNS_KEY = "equipment_gap_unit_filter_columns_v1"
+_UNIT_FILTER_KEY_PREFIX = "equipment_gap_unit_filter_v1"
+# 분류별 내역을 더할 호기를 좁히는 호기 마스터 컬럼. 공정(`공정소분류`)은 위 `공정` 이 맡는다.
+# 날짜·좌표·환산비처럼 호기마다 다른 연속값은 고를 값이 아니라 뺀다.
+UNIT_FILTER_COLUMNS = (
+    "공정대분류",
+    "라인구분",
+    "활용구분",
+    "투자기준",
+    "담당자",
+    "Maker",
+    "모델",
+    "분류1",
+    "분류2",
+    "분류3",
+    "동",
+    "층",
+    "확정상태",
+    "장기보관여부",
+    "기존설비여부",
+    "모체호기",
+    "호기",
+)
 _ALL_PROCESSES = "전체 합계"
 _RESULT_VIEWS = ("가용대수 비교", "분류별 내역", "확보율 교차검증")
 _DETAIL_MODES = ("대수", "호기 목록")
@@ -95,6 +129,7 @@ def render_availability_gap_panel(
     required_equipment: pd.DataFrame | None = None,
     owner_tab: OpenTab | None = None,
     conditions: DeltaGenerator | None = None,
+    units: pd.DataFrame | None = None,
 ) -> None:
     """비교 탭 본문.
 
@@ -104,9 +139,12 @@ def render_availability_gap_panel(
     세어진다. 그 범위를 여기서도 다시 재어 어긋나면 알린다.
     숨은 탭은 계산과 렌더링을 건너뛰고, 두 선택값은 세션에 남긴다.
 
-    조회 조건 위젯(조회 결과·공정·표시·분류)은 `conditions`(사이드바 조건 카드)에 선다
-    (2026-09-29). 주지 않으면 본문 제자리에 그린다 — 홀로 띄우는 테스트가 쓴다. 읽는 법(Static·
-    Dynamic 의 뜻, 소계에 드는 분류)은 가용설비 현황 Guide 다.
+    거르는 조건(공정·분류)은 `conditions`(사이드바 조건 카드)에 선다. 주지 않으면 본문 제자리에
+    그린다 — 홀로 띄우는 테스트가 쓴다. `units` 는 `spans` 를 만든 호기 마스터이고, 주면 분류별
+    내역에 `호기 필터` 가 선다. **무엇을 볼지 고르는 전환(조회 결과·표시)은 본문이다**
+    — 탭 안의 하위 탭과 같은 것이라 카드에 넣으면 지금 어느 결과를 보는지 본문에서 사라진다
+    (2026-09-29 사용자 결정). 읽는 법(Static·Dynamic 의 뜻, 소계에 드는 분류)은 가용설비 현황
+    Guide 다.
     """
     if tab_is_hidden(owner_tab):
         return
@@ -143,6 +181,14 @@ def render_availability_gap_panel(
 
     _render_unmatched(comparison.dynamic_only, comparison.static_only)
 
+    result_view = st.segmented_control(
+        "조회 결과",
+        options=_RESULT_VIEWS,
+        default=_RESULT_VIEWS[0],
+        required=True,
+        key=RESULT_VIEW_KEY,
+        persist_state="session",
+    )
     options = [_ALL_PROCESSES, *sorted(set(comparison.rows["공정"].dropna().astype(str)))]
     if (
         PROCESS_FILTER_KEY in st.session_state
@@ -150,14 +196,6 @@ def render_availability_gap_panel(
     ):
         st.session_state.pop(PROCESS_FILTER_KEY)
     with controls:
-        result_view = st.segmented_control(
-            "조회 결과",
-            options=_RESULT_VIEWS,
-            default=_RESULT_VIEWS[0],
-            required=True,
-            key=RESULT_VIEW_KEY,
-            persist_state="session",
-        )
         selected = st.selectbox(
             "공정",
             options=options,
@@ -205,20 +243,39 @@ def render_availability_gap_panel(
         )
         return
 
-    with controls:
-        detail_mode = st.segmented_control(
-            "표시",
-            options=_DETAIL_MODES,
-            default=_DETAIL_MODES[0],
-            required=True,
-            key=DETAIL_MODE_KEY,
-            persist_state="session",
-        )
+    detail_mode = st.segmented_control(
+        "표시",
+        options=_DETAIL_MODES,
+        default=_DETAIL_MODES[0],
+        required=True,
+        key=DETAIL_MODE_KEY,
+        persist_state="session",
+    )
     # 전체 합계는 표와 같은 공정만 본다 — 한쪽에만 있는 공정을 뺀 범위다.
     scope = {process} if process is not None else set(scoped["공정"].dropna().astype(str))
+    chosen_units: set[str] | None = None
+    if units is not None:
+        with controls:
+            chosen_units, applied = _render_unit_filters(units, scope)
+        if chosen_units is not None:
+            # 무엇으로 걸렀는지는 본문에도 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
+            st.caption(
+                ":material/filter_alt: 호기 필터 · "
+                + " · ".join(applied)
+                + f" — 호기 {len(chosen_units):,}개만 더합니다. 기존보유·Static·GAP 은 호기 "
+                "속성이 없어 뺐습니다."
+            )
+            matrix = _unit_filtered_matrix(
+                spans, cutoff, months, conversion_ratios, scope, chosen_units, process
+            )
+            if matrix.empty:
+                st.info("호기 필터에 든 호기가 조회기간에 더할 대수가 없습니다.")
+                return
     if detail_mode == "호기 목록":
         _render_unit_list(
-            _scoped_contributions(spans, baseline, cutoff, months, conversion_ratios, scope),
+            _scoped_contributions(
+                spans, baseline, cutoff, months, conversion_ratios, scope, chosen_units
+            ),
             controls=controls,
         )
         return
@@ -244,7 +301,7 @@ def render_availability_gap_panel(
                 row=str(display.index[int(position)]),
                 month=month_by_label[column],
                 contributions=_scoped_contributions(
-                    spans, baseline, cutoff, months, conversion_ratios, scope
+                    spans, baseline, cutoff, months, conversion_ratios, scope, chosen_units
                 ),
             )
 
@@ -270,12 +327,142 @@ def _scoped_contributions(
     months: list[int],
     conversion_ratios: Mapping[str, float] | None,
     scope: set[str],
+    chosen_units: set[str] | None = None,
 ) -> pd.DataFrame:
-    """표와 같은 범위의 호기별 기여. 목록을 볼 때만 만든다 — 대수 표만 보면 들지 않는 비용이다."""
+    """표와 같은 범위의 호기별 기여. 목록을 볼 때만 만든다 — 대수 표만 보면 들지 않는 비용이다.
+
+    `chosen_units` 가 있으면 그 호기만 남긴다. 기존보유 줄은 `호기` 가 비어 함께 빠진다 — 호기
+    필터를 건 대수 표(`_unit_filtered_matrix`)와 같은 범위다.
+    """
     contributions = build_monthly_equipment_contributions(
         spans, baseline, cutoff, months, conversion_ratios=conversion_ratios
     )
-    return contributions.loc[contributions["공정"].astype(str).isin(scope)].reset_index(drop=True)
+    kept = contributions["공정"].astype(str).isin(scope)
+    if chosen_units is not None:
+        kept &= contributions["호기"].isin(chosen_units).fillna(False).astype(bool)
+    return contributions.loc[kept].reset_index(drop=True)
+
+
+def unit_filter_key(column: str) -> str:
+    """호기 필터 한 컬럼의 값 선택 칸."""
+    return f"{_UNIT_FILTER_KEY_PREFIX}_{column}"
+
+
+def _text_values(values: pd.Series) -> pd.Series:
+    """필터가 대조하는 문자열. 호기 마스터는 자유 텍스트라 앞뒤 공백을 떼고 빈 칸은 값이 없다."""
+    text = values.astype("string").str.strip()
+    return text.mask(text.eq(""))
+
+
+def _reset_unit_filters(columns: Sequence[str]) -> None:
+    st.session_state[UNIT_FILTER_COLUMNS_KEY] = []
+    for column in columns:
+        st.session_state[unit_filter_key(column)] = []
+
+
+def _drop_unchosen_values(columns: Sequence[str]) -> None:
+    # 컬럼을 빼면 그 컬럼의 값 선택도 버린다. 남기면 다시 고를 때 잊은 조건이 되살아난다.
+    chosen = st.session_state.get(UNIT_FILTER_COLUMNS_KEY) or []
+    for column in columns:
+        if column not in chosen:
+            st.session_state[unit_filter_key(column)] = []
+
+
+def _render_unit_filters(units: pd.DataFrame, scope: set[str]) -> tuple[set[str] | None, list[str]]:
+    """분류별 내역을 더할 호기를 호기 마스터의 컬럼으로 좁힌다. 걸린 값이 없으면 `None`.
+
+    컬럼을 먼저 고르고 그 컬럼의 값만 세운다 — 열일곱 컬럼을 다 세우면 사이드바가 필터로
+    덮인다. 값 목록은 지금 범위(공정)의 호기에서 나오되, 이미 고른 값은 범위를 옮겨도 남긴다
+    (다른 공정을 봤다 돌아와도 선택이 그대로다). 호기 마스터에 없는 값만 떨군다.
+    """
+    columns = [column for column in UNIT_FILTER_COLUMNS if column in units.columns]
+    present = {column: _text_values(units[column]) for column in columns}
+    offered = [column for column in columns if present[column].notna().any()]
+    saved_columns = st.session_state.get(UNIT_FILTER_COLUMNS_KEY)
+    if isinstance(saved_columns, list):
+        st.session_state[UNIT_FILTER_COLUMNS_KEY] = [
+            column for column in saved_columns if column in offered
+        ]
+    st.markdown("**호기 필터**")
+    chosen_columns = st.multiselect(
+        "필터할 컬럼",
+        options=offered,
+        key=UNIT_FILTER_COLUMNS_KEY,
+        persist_state="session",
+        placeholder="컬럼 선택 · 라인구분·모델·동 …",
+        on_change=_drop_unchosen_values,
+        args=(columns,),
+    )
+    if not chosen_columns:
+        return None, []
+    in_scope = (
+        _text_values(units["공정소분류"]).isin(scope).fillna(False).astype(bool)
+        if "공정소분류" in units.columns
+        else pd.Series(False, index=units.index)
+    )
+    kept = pd.Series(True, index=units.index)
+    applied: list[str] = []
+    for column in chosen_columns:
+        key = unit_filter_key(column)
+        known = set(present[column].dropna())
+        saved = st.session_state.get(key)
+        selected_before = (
+            [value for value in saved if value in known] if isinstance(saved, list) else []
+        )
+        st.session_state[key] = selected_before
+        options = list(
+            dict.fromkeys([*sorted(present[column].loc[in_scope].dropna()), *selected_before])
+        )
+        selected = st.multiselect(
+            column,
+            options=options,
+            key=key,
+            persist_state="session",
+            placeholder="전체",
+            select_all=True,
+        )
+        if selected:
+            kept &= present[column].isin(selected).fillna(False).astype(bool)
+            applied.append(f"{column}: {', '.join(selected)}")
+    st.button(
+        "호기 필터 초기화",
+        icon=":material/filter_alt_off:",
+        key="equipment_gap_unit_filter_reset_v1",
+        width="stretch",
+        on_click=_reset_unit_filters,
+        args=(columns,),
+    )
+    if not applied:
+        return None, []
+    unit_ids = _text_values(units["호기"]).loc[kept]
+    return set(unit_ids.dropna()), applied
+
+
+def _unit_filtered_matrix(
+    spans: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    months: list[int],
+    conversion_ratios: Mapping[str, float] | None,
+    scope: set[str],
+    chosen_units: set[str],
+    process: str | None,
+) -> pd.DataFrame:
+    """호기 필터에 든 호기만 분류대로 다시 더한 행렬.
+
+    대수 표와 같은 길(`build_monthly_equipment_availability` → `build_availability_gap` →
+    `gap_matrix`)을 걷되 구간을 그 호기로 좁히고 기존보유를 넣지 않는다. Static 을 주지 않으면
+    GAP 이 「Dynamic - 0」으로 나오므로 Static·GAP 행을 함께 뺀다.
+    """
+    unit_ids = _text_values(spans["호기"])
+    chosen_spans = spans.loc[unit_ids.isin(chosen_units).fillna(False).astype(bool)]
+    monthly = build_monthly_equipment_availability(
+        chosen_spans, pd.DataFrame(), cutoff, months, conversion_ratios=conversion_ratios
+    )
+    rows = build_availability_gap(monthly, pd.DataFrame(), months).rows
+    rows = rows.loc[
+        rows["공정"].astype(str).isin(scope) & ~rows["행종류"].isin((ROW_KIND_STATIC, ROW_KIND_GAP))
+    ]
+    return gap_matrix(rows, process)
 
 
 def _unit_table(rows: pd.DataFrame, *, with_month: bool) -> pd.DataFrame:

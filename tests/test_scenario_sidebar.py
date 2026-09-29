@@ -86,8 +86,12 @@ def load_snapshot(_database_path, revision_id):
 TEST_SCRIPT = """
 from pathlib import Path
 
+import streamlit as st
+
 import capa_simulation.components.scenario_status as target
-target.render_scenario_controls(Path("unused.duckdb"))
+target.render_scenario_controls(
+    Path("unused.duckdb"), pending_edits=st.session_state.get("test_pending_edits", [])
+)
 """
 
 
@@ -100,7 +104,7 @@ def sidebar_app() -> Iterator[AppTest]:
         "active_persisted_scenario_id": lambda: "scenario-1",
         "active_persisted_revision_id": lambda: "revision-1",
         "has_unsaved_scenario_changes": lambda: bool(st.session_state.get("test_unsaved", False)),
-        "reset_active_scenario": lambda _tables, version: st.session_state.__setitem__(
+        "discard_unsaved_scenario_changes": lambda _tables, version: st.session_state.__setitem__(
             "test_reset_to_version", version
         ),
         "activate_persisted_snapshot": lambda snapshot: st.session_state.__setitem__(
@@ -212,3 +216,39 @@ def test_a_save_with_an_old_error_is_kept_and_warned(sidebar_app: AppTest) -> No
     assert not app.exception
     assert app.session_state["test_saved_revision_name"] == "고치는 중"
     assert any("공식버전으로 지정할 수 없습니다" in warning.value for warning in app.warning)
+
+
+def test_unapplied_edits_gate_both_load_and_save(sidebar_app: AppTest) -> None:
+    """적용하지 않은 편집은 시나리오에 없다 — 저장에 실리지 않고 저장·불러오기에 사라진다.
+
+    2026-09-29 2차 리뷰가 브라우저로 재현했다: UPEH 를 고친 채 「신규 리비전 저장」을 누르면 저장
+    알림이 뜨는데 그 편집은 저장에도 없이 사라졌다. 두 동작 모두 한 번 더 묻는다.
+    """
+    app = sidebar_app
+    app.session_state["test_pending_edits"] = ["기준 정보 · UPEH"]
+    app = app.run()
+    assert not app.exception
+
+    notices = " ".join(item.value for item in app.caption) + " ".join(
+        item.value for item in app.warning
+    )
+    assert "기준 정보 · UPEH" in notices
+    # 불러오기는 「변경을 버리고 불러오기」를 체크해야 열린다.
+    assert app.button(key="sidebar_load_revision").disabled
+    app = app.checkbox(key="sidebar_discard_unsaved_changes").check().run()
+    assert not app.button(key="sidebar_load_revision").disabled
+
+    # 저장은 「적용하지 않은 편집을 버리고 저장」을 체크해야 열린다.
+    save_button = next(button for button in app.button if button.label == "신규 리비전 저장")
+    assert save_button.disabled
+    app = app.checkbox(key="sidebar_save_discards_pending_edits").check().run()
+    save_button = next(button for button in app.button if button.label == "신규 리비전 저장")
+    assert not save_button.disabled
+
+
+def test_without_unapplied_edits_nothing_extra_is_asked(sidebar_app: AppTest) -> None:
+    app = sidebar_app.run()
+
+    assert not app.exception
+    assert not app.button(key="sidebar_load_revision").disabled
+    assert "sidebar_save_discards_pending_edits" not in {box.key for box in app.checkbox}

@@ -18,7 +18,7 @@ from capa_simulation.services.month_columns import month_label, year_total_label
 
 PRODUCTION_DETAIL_DIMENSIONS = ["제품정보", "Stack"]
 
-# `상세` 를 켜면 거래선을 가장 아래 분류로 더한다. `Customer` 는 `RQ_PKG_PLAN` 의 1급
+# `상세 계획` 을 켜면 거래선을 가장 아래 분류로 더한다. `Customer` 는 `RQ_PKG_PLAN` 의 1급
 # 컬럼이라 조인이 아니라 묶는 키 하나가 늘어나는 것뿐이다.
 PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS = [*PRODUCTION_DETAIL_DIMENSIONS, "Customer"]
 

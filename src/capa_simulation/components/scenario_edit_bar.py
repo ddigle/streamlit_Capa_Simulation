@@ -9,12 +9,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import streamlit as st
 
-from capa_simulation.components.editor_state import discard_editor
+from capa_simulation.components.editor_state import discard_editor, editor_has_edits
 from capa_simulation.scenario_state import ActiveScenario
+
+# 화면마다 「적용하지 않은 편집이 남을 수 있는 곳」의 목록. 사이드바가 저장·불러오기 전에 읽는다.
+_PENDING_REGISTRY_KEY = "scenario_pending_edit_registry"
 
 
 def source_token(
@@ -29,6 +32,47 @@ def source_token(
     페이지마다 같은 f-string 을 다시 적으면 한쪽만 구성 요소가 늘어 편집기가 안 갈린다.
     """
     return f"duckdb:{reference_version}:{active_scenario['revision']}:{start_month}:{end_month}"
+
+
+def register_pending_edits(
+    page: str,
+    title: str,
+    editors: Mapping[str, str],
+    staged: Mapping[str, str] | None = None,
+) -> None:
+    """이 화면의 편집표(`editors`: 키 → 이름)와 붙여넣기 대기(`staged`: 키 → 이름)를 적어 둔다.
+
+    **적용하지 않은 편집은 시나리오에 들어 있지 않다.** 그래서 사이드바 「신규 리비전 저장」은 그
+    편집을 저장하지 못하고, 저장·불러오기가 원본을 바꾸는 순간 편집표와 함께 사라진다(2026-09-29
+    2차 리뷰에서 브라우저로 재현). 사이드바는 페이지보다 먼저 그려지므로 **앞 회차에 적어 둔**
+    목록을 읽는다 — `pending_edit_labels`.
+
+    `page` 는 그 화면의 파일 이름이다(`app_pages/<page>`). 편집표의 편집은 위젯 상태라 다른
+    화면으로 옮기면 버려지므로 지금 화면의 것만 센다. 붙여넣기 대기는 위젯이 아닌 세션 칸이라
+    화면을 옮겨도 남으므로 어느 화면에서나 센다.
+    """
+    registry = dict(st.session_state.get(_PENDING_REGISTRY_KEY) or {})
+    registry[page] = (title, dict(editors), dict(staged or {}))
+    st.session_state[_PENDING_REGISTRY_KEY] = registry
+
+
+def pending_edit_labels(current_page: str | None) -> list[str]:
+    """적용하지 않은 편집이 남은 곳 — 「기준 정보 · UPEH」. 없으면 빈 목록이다."""
+    registry = st.session_state.get(_PENDING_REGISTRY_KEY)
+    if not isinstance(registry, dict):
+        return []
+    labels: list[str] = []
+    for page, (title, editors, staged) in registry.items():
+        if page == current_page:
+            labels += [
+                f"{title} · {name}" for key, name in editors.items() if editor_has_edits(key)
+            ]
+        labels += [
+            f"{title} · {name}"
+            for key, name in staged.items()
+            if st.session_state.get(key) is not None
+        ]
+    return labels
 
 
 def mark_own_change(own_change_key: str, keys: Sequence[str]) -> None:

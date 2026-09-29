@@ -144,9 +144,12 @@ STATIC_CAPA_SUBPAGES = (
     ),
 )
 
+# 그룹 머리 라벨에는 `(구현중)` 을 달지 않는다(2026-09-29 사용자 결정). 하위 화면이 저마다
+# `(Data확보중)`·`(구현중)` 을 달고 있어 머리에 또 달면 그룹 전체가 안 된 것처럼 읽힌다. 이
+# 화면 자신의 성숙도는 본문 헤더의 배지(프로토타입·연결 대기)가 말한다.
 DYNAMIC_CAPA = PageSpec(
     "app_pages/reference_integrity.py",
-    _implementing("Dynamic Capa"),
+    "Dynamic Capa",
     ":material/sync_alt:",
     url_path="dynamic_capa",
     reads_scenario=False,

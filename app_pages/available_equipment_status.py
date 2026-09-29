@@ -301,6 +301,8 @@ with gap_tab:
                 required_equipment=gap_required_equipment,
                 owner_tab=gap_tab,
                 conditions=conditions_card,
+                # 분류별 내역의 `호기 필터` 가 이 표의 컬럼으로 호기를 좁힌다. 구간과 같은 표다.
+                units=dashboard_equipment,
             )
 
 

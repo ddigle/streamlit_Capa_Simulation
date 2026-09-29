@@ -286,7 +286,7 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
         app.run()
         failures.extend(f"전환 뒤 Main 탭: {element.message}" for element in app.exception)
         numbers_after = tuple(_DRAWN_FIGURES)
-        # Main 에서는 여섯 토글이 모두 다시 그려진다. 숨은 탭에서 칸이 없던 「상세」까지
+        # Main 에서는 여섯 토글이 모두 다시 그려진다. 숨은 탭에서 칸이 없던 「상세 계획」까지
         # 실제 위젯 값으로 확인할 수 있는 자리가 여기다.
         toggles_after_main = _toggle_values(app)
         drawn_toggle_keys = tuple(str(toggle.key) for toggle in app.toggle)

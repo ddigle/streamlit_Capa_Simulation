@@ -550,17 +550,10 @@ if not isinstance(st.session_state.get(SHOW_DETAIL_KEY), bool):
     st.session_state[SHOW_DETAIL_KEY] = False
 
 # 조건 카드는 한 번 만들고 두 번 들어간다 — 공정 필터의 선택지는 계산이 끝나야 나온다. 카드
-# 안의 차례가 곧 보는 순서다(무엇을 볼지 → 언제 → 어느 공정 → 어떻게 나눠 볼지).
+# 안의 차례가 곧 보는 순서다(언제 → 어느 공정 → 어떻게 나눠 볼지). 무엇을 볼지(`표시 항목`)는
+# 본문 결과 상자 맨 위다.
 card = condition_card("표준 목표 조건", name=CARD_NAME)
 with card:
-    output_metric = st.segmented_control(
-        "표시 항목",
-        options=OUTPUT_OPTIONS,
-        key=OUTPUT_METRIC_KEY,
-        persist_state="session",
-    )
-    if output_metric is None:
-        output_metric = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
     with st.container(horizontal=True, gap="small"):
         start_date = st.date_input(
             "시작일",
@@ -632,6 +625,21 @@ prune_list_selection(PROCESS_FILTER_KEY, process_options, default=public_default
 def _restore_public_process_default() -> None:
     st.session_state[PROCESS_FILTER_KEY] = public_default.copy()
 
+
+# 결과 상자. 맨 위가 작업 줄(아래에서 채운다)이고 그 아래가 **무엇을 볼지**(`표시 항목`)다 —
+# 로직 분석까지 결과를 통째로 바꾸는 전환이라 하위 탭과 같은 것이고, 카드가 아니라 본문이다
+# (2026-09-29 사용자 결정). 카드의 상세·PKG 기준이 이 값을 보므로 카드보다 먼저 그린다.
+weekly_output_container = st.container(border=True)
+with weekly_output_container:
+    action_row = st.container()
+    output_metric = st.segmented_control(
+        "표시 항목",
+        options=OUTPUT_OPTIONS,
+        key=OUTPUT_METRIC_KEY,
+        persist_state="session",
+    )
+    if output_metric is None:
+        output_metric = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
 
 with card:
     selected_processes = st.multiselect(
@@ -711,6 +719,11 @@ def _paste_dialog() -> None:
         key="dialog_standard_target_availability_template",
         label=CSV_TEMPLATE_LABEL,
     )
+    # 덮어쓰기라는 것은 누르기 전에 알아야 한다 — Guide 로만 보내지 않는다(2026-09-29 2차 리뷰).
+    st.caption(
+        "같은 공정·Weeknum 의 가용대수는 붙여넣은 값으로 덮어씁니다. 설비 DB 에 최신본 하나만 "
+        "남아 이전 값으로 되돌릴 수 없습니다."
+    )
     with st.form("standard_target_availability_clipboard", border=False):
         clipboard_text = st.text_area(
             "가용설비 표 붙여넣기",
@@ -769,8 +782,7 @@ def _clear_dialog() -> None:
     st.rerun()
 
 
-weekly_output_container = st.container(border=True)
-with weekly_output_container:
+with action_row:
     # 결과 상자 맨 위 작업 줄. 결과를 만드는 입력(주차별 가용설비)이 여기서 들어간다. 붙여넣기와
     # 초기화는 가끔 하는 쓰기라 팝업이고, 여는 버튼은 콜백으로 연다 — 한 회차에 팝업이 둘 뜨지
     # 않는다.

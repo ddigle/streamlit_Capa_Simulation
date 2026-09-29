@@ -784,6 +784,21 @@ def test_effective_process_capacity_still_shows_every_process_without_a_filter()
     assert "download_unit_capacity_csv" in {button.key for button in app.download_button}
 
 
+def test_the_view_mode_sits_in_the_body_and_the_filters_in_the_card() -> None:
+    """`표시 방식`(공정별·STEP별)은 탭 안의 하위 보기라 본문 표 위다(2026-09-29 사용자 결정).
+
+    카드에 넣으면 지금 어느 표를 보는지 본문에서 사라진다. 집계 수준·공정 필터는 거르는 조건이라
+    `표 조건` 카드에 남는다.
+    """
+    app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert "unit_capacity_view_mode" in {widget.key for widget in app.main.segmented_control}
+    assert not app.sidebar.segmented_control
+    assert "unit_capacity_process_filter" in {widget.key for widget in app.sidebar.multiselect}
+    assert "unit_capacity_detail_level" in {widget.key for widget in app.sidebar.selectbox}
+
+
 def test_the_process_filter_placeholder_follows_the_view() -> None:
     """`미선택 시 전체 공정` 은 STEP 뷰에서 거짓말이 된다."""
     app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
@@ -806,13 +821,15 @@ def _edit_and_apply(app: AppTest, editor_key: str, month_column: str, value: flo
 
     편집 델타는 **보이는 표 안의 행 위치**로 기록되므로 필터를 건 다음에 넣어야 한다.
     AppTest 는 세션에 직접 넣은 data_editor 값을 다음 run 한 번만 들고 있어, 편집과 클릭을
-    같은 run 에 태운다.
+    같은 run 에 태운다. 적용 버튼은 고친 것이 있는 회차에만 열리므로(고친 것이 없으면 잠긴다)
+    먼저 편집을 넣고 한 번 돌려 버튼을 연 뒤, 같은 편집을 다시 넣고 누른다 — 브라우저에서
+    칸을 고치면 한 번 다시 돌고 그다음에 누르는 것과 같다.
     """
-    app.session_state[editor_widget_key_in(app, editor_key)] = {
-        "edited_rows": {0: {month_column: value}},
-        "added_rows": [],
-        "deleted_rows": [],
-    }
+    key = editor_widget_key_in(app, editor_key)
+    edit = {"edited_rows": {0: {month_column: value}}, "added_rows": [], "deleted_rows": []}
+    app.session_state[key] = edit
+    app.run()
+    app.session_state[key] = edit
     apply_button = next(button for button in app.button if button.key == f"{editor_key}_apply")
     apply_button.click()
     return app.run()
@@ -1220,3 +1237,19 @@ def test_applying_one_table_keeps_another_tabs_unapplied_edits(
     assert generation(app, "capa_run_day_editor") > before["capa_run_day_editor"]
     assert generation(app, "capa_upeh_editor") == before["capa_upeh_editor"]
     assert "reference_data_own_change" not in app.session_state
+
+
+def test_the_step_popup_warns_before_it_drops_unapplied_upeh_edits() -> None:
+    """STEP 을 더하거나 빼면 UPEH·측정률 표의 행이 바뀌어 그 표의 편집이 버려진다. 먼저 말한다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    app.session_state["reference_data_active_tab"] = REF_TAB["STEP 구성"]
+    app.run()
+    app.session_state[editor_widget_key_in(app, "capa_upeh_editor")] = {
+        "edited_rows": {0: {"202608": 1.0}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    app.button(key="open_capacity_step_dialog").click().run()
+
+    assert not app.exception
+    assert any("UPEH 표에 적용하지 않은 편집" in item.value for item in app.warning)

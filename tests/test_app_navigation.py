@@ -45,7 +45,7 @@ EXPECTED_PAGES = [
     ("app_pages/reference_data.py", "기준 정보", ":material/settings:", False),
     ("app_pages/calculation_result.py", "산출 결과", ":material/monitoring:", False),
     ("app_pages/standard_target_capa.py", "표준 목표", ":material/track_changes:", False),
-    ("app_pages/reference_integrity.py", "Dynamic Capa (구현중)", ":material/sync_alt:", False),
+    ("app_pages/reference_integrity.py", "Dynamic Capa", ":material/sync_alt:", False),
     (
         "app_pages/available_equipment_status.py",
         "가용설비 현황 (Data확보중)",
@@ -110,8 +110,11 @@ def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:
     표기는 둘이다. `(구현중)` 은 아직 못 만든 화면, `(Data확보중)` 은 화면은 다 만들었고
     연결할 데이터만 기다리는 화면이다. 사용자에게 뜻이 다르므로 갈라 둔다.
     """
-    for spec in (CAPA_CHATBOT, DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES):
+    for spec in (CAPA_CHATBOT, *DYNAMIC_CAPA_SUBPAGES):
         assert spec.title.endswith((IMPLEMENTING_SUFFIX, DATA_PENDING_SUFFIX)), spec.path
+    # `Dynamic Capa` 그룹 머리는 표기를 달지 않는다(2026-09-29 사용자 결정) — 하위 화면이 각자
+    # 표기를 달고 있어 머리에도 달면 그룹 전체가 안 된 것처럼 읽힌다. 성숙도는 본문 배지가 말한다.
+    assert not DYNAMIC_CAPA.title.endswith((IMPLEMENTING_SUFFIX, DATA_PENDING_SUFFIX))
     # 사이드바 라벨과 본문 제목이 같아야 한다는 계약은 표기 유무와 무관하다. `Admin Area`
     # 는 이미 쓰는 관리 화면이라 표기를 달지 않지만 두 제목은 여전히 같아야 한다.
     for spec in (CAPA_CHATBOT, DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES, ADMIN_AREA):

@@ -239,6 +239,12 @@ def test_standard_target_page_renders_weeknum_plotly_table() -> None:
     assert any(widget.label == "공정 필터" for widget in app.sidebar.multiselect)
     assert any(widget.label == "PKG 기준" for widget in app.sidebar.toggle)
     assert not app.main.multiselect and not app.main.toggle
+    # 무엇을 볼지(`표시 항목`)는 결과를 통째로 바꾸는 하위 보기라 본문 결과 상자다 — 카드가 접혀
+    # 있어도 지금 어느 결과인지 보인다(2026-09-29 사용자 결정).
+    assert [widget.key for widget in app.main.segmented_control] == [
+        "standard_target_output_metric"
+    ]
+    assert not app.sidebar.segmented_control
     assert "예외 처리 공정" in [expandable.label for expandable in app.expander]
     # 가용설비 입력은 결과 상자 위 작업 줄의 팝업이다. 닫혀 있는 동안 본문에 붙여넣기 칸이 없다.
     assert not app.text_area

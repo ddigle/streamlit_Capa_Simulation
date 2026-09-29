@@ -436,7 +436,7 @@ def render_home_figures(
                 config=static_chart_config(),
             )
             # `계획 세부수량` 제목. 제목이 Plotly 주석으로 쓰던 자리를 그대로 받는다. 월 칸에도
-            # 같은 높이의 빈 줄을 끼워야 행이 맞는다. 「상세」 토글은 사이드바 조건 카드다.
+            # 같은 높이의 빈 줄을 끼워야 행이 맞는다. 「상세 계획」 토글은 사이드바 조건 카드다.
             render_section_title_row("계획 세부수량", key="plan_detail_title_row")
             st.plotly_chart(
                 figures.plan_detail_labels,

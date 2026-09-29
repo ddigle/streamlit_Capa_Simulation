@@ -127,7 +127,7 @@ with st.sidebar:
 
 stateful_tabs(LABELS, key="page_tab")
 st.session_state["seen_toggle"] = st.toggle(
-    "선행", value=False, key="home_show_advance", persist_state="session"
+    "선행 전망", value=False, key="home_show_advance", persist_state="session"
 )
 """
 

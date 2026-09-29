@@ -52,7 +52,7 @@ def test_production_dashboard_groups_pkg_plan_by_product_and_stack() -> None:
 
 
 def test_production_dashboard_can_split_the_detail_by_customer() -> None:
-    """`상세` 를 켜면 제품·Stack 아래에 거래선이 분류로 더해진다.
+    """`상세 계획` 을 켜면 제품·Stack 아래에 거래선이 분류로 더해진다.
 
     `Customer` 는 `RQ_PKG_PLAN` 의 1급 컬럼이라 조인이 아니라 묶는 키 하나가 늘어난다.
     같은 제품·Stack 이라도 거래선이 다르면 행이 갈라져야 한다.
@@ -96,7 +96,7 @@ def test_customer_order_comes_from_the_shared_display_order_profile() -> None:
     """거래선 정렬은 표시순서 관리에 `Customer` 규칙을 넣으면 그대로 걸린다.
 
     `apply_display_order` 는 데이터에 없는 분류컬럼 규칙을 건너뛴다. 그래서 같은 규칙이
-    `상세` 를 끈 화면에서는 아무 일도 하지 않고, 켠 화면에서만 거래선 순서를 정한다.
+    `상세 계획` 을 끈 화면에서는 아무 일도 하지 않고, 켠 화면에서만 거래선 순서를 정한다.
     """
     plan = pd.DataFrame(
         {

@@ -243,18 +243,17 @@ def render_equipment_explorer(
     owner_tab: OpenTab | None = None,
     conditions: DeltaGenerator | None = None,
 ) -> None:
-    """Main 탭. 조회 조건 위젯은 `conditions`(사이드바 조건 카드)에 선다(2026-09-29).
+    """Main 탭. 거르는 조건(공정·기간·기준일·추가 조건)은 `conditions`(사이드바 조건 카드)다.
 
-    `conditions` 를 주지 않으면 예전처럼 본문 상자 안에 그린다 — 컴포넌트를 홀로 띄우는
-    테스트가 쓴다. 조건의 차례가 곧 묻는 차례다(볼 내용 → 보기 → 공정 → 기간·기준일 → 추가
-    조건 → 표현). 설명은 가용설비 현황 Guide 다.
+    **무엇을 볼지 고르는 전환(볼 내용·보기·표현)은 본문이다.** 탭 안의 하위 탭과 같은 것이라
+    카드에 넣으면 지금 무엇을 보는지 본문에서 사라진다(2026-09-29 사용자 결정). `conditions` 를
+    주지 않으면 조건도 본문 상자에 그린다 — 컴포넌트를 홀로 띄우는 테스트가 쓴다. 설명은 가용설비
+    현황 Guide 다.
     """
     if tab_is_hidden(owner_tab):
         return
     in_card = conditions is not None
-    settings = conditions if conditions is not None else st.container(border=True)
-    control_width: int | Literal["stretch"] = "stretch" if in_card else 200
-    with settings:
+    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
         question = st.segmented_control(
             "볼 내용",
             QUESTIONS,
@@ -264,39 +263,54 @@ def render_equipment_explorer(
             persist_state="session",
         )
         view = ""
+        if question == "가용대수":
+            view = st.selectbox(
+                "보기",
+                ["주차별 추이", "공정별 내역"],
+                key="equipment_explorer_availability_view",
+                persist_state="session",
+                width=200,
+            )
+        elif question == "호기 현황":
+            view = st.selectbox(
+                "보기",
+                ["상태 분포", "호기 목록", "생애주기 일정"],
+                key="equipment_explorer_unit_view",
+                persist_state="session",
+                width=200,
+            )
+        elif question == "비가동 호기":
+            view = st.selectbox(
+                "보기",
+                ["기준일 시점", "그 달 전체"],
+                key=INACTIVE_VIEW_KEY,
+                persist_state="session",
+                width=200,
+            )
+        elif question == "Qual 일정":
+            view = st.selectbox(
+                "보기",
+                ["호기 목록", "확정상태 분포"],
+                key="equipment_explorer_qual_view",
+                persist_state="session",
+                width=200,
+            )
+        expression = "표"
+        if view in ("주차별 추이", "상태 분포", "확정상태 분포"):
+            expression = (
+                st.segmented_control(
+                    "표현",
+                    ["차트", "표"],
+                    default="차트",
+                    required=True,
+                    key=f"equipment_explorer_expression_{view}",
+                    persist_state="session",
+                )
+                or "차트"
+            )
+    settings = conditions if conditions is not None else st.container(border=True)
+    with settings:
         with st.container(horizontal=not in_card, gap="small"):
-            if question == "가용대수":
-                view = st.selectbox(
-                    "보기",
-                    ["주차별 추이", "공정별 내역"],
-                    key="equipment_explorer_availability_view",
-                    persist_state="session",
-                    width=control_width,
-                )
-            elif question == "호기 현황":
-                view = st.selectbox(
-                    "보기",
-                    ["상태 분포", "호기 목록", "생애주기 일정"],
-                    key="equipment_explorer_unit_view",
-                    persist_state="session",
-                    width=control_width,
-                )
-            elif question == "비가동 호기":
-                view = st.selectbox(
-                    "보기",
-                    ["기준일 시점", "그 달 전체"],
-                    key=INACTIVE_VIEW_KEY,
-                    persist_state="session",
-                    width=control_width,
-                )
-            elif question == "Qual 일정":
-                view = st.selectbox(
-                    "보기",
-                    ["호기 목록", "확정상태 분포"],
-                    key="equipment_explorer_qual_view",
-                    persist_state="session",
-                    width=control_width,
-                )
             process_options = sorted(
                 set(_options(equipment, "공정소분류")) | set(_options(baseline, "공정"))
             )
@@ -344,19 +358,6 @@ def render_equipment_explorer(
                         width="stretch" if in_card else 240,
                     )
                     filters.append((column, values))
-        expression = "표"
-        if view in ("주차별 추이", "상태 분포", "확정상태 분포"):
-            expression = (
-                st.segmented_control(
-                    "표현",
-                    ["차트", "표"],
-                    default="차트",
-                    required=True,
-                    key=f"equipment_explorer_expression_{view}",
-                    persist_state="session",
-                )
-                or "차트"
-            )
     # 무엇으로 걸렀는지는 본문에도 한 줄 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
     active_filters = [f"{name}: {', '.join(values)}" for name, values in filters if values]
     if active_filters:

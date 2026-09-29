@@ -240,9 +240,10 @@ else:
                 )
 
     if open_tab is unit_capacity_tab:
-        with table_card(CARD_NAME):
-            # 탭 이름이 이미 `대당 Capa` 라 선택지에서는 그 낱말을 뺀다. 두 값은 집계 단위가
-            # 다른 것이지 다른 지표가 아니다.
+        with unit_capacity_tab:
+            # 표시 방식은 이 탭 안의 하위 보기라 카드가 아니라 본문 표 위다(2026-09-29 사용자
+            # 결정). 탭 이름이 이미 `대당 Capa` 라 선택지에서는 그 낱말을 뺀다. 두 값은 집계
+            # 단위가 다른 것이지 다른 지표가 아니다.
             capacity_view = st.segmented_control(
                 "표시 방식",
                 options=["공정별", "STEP별"],
@@ -250,6 +251,7 @@ else:
                 key="unit_capacity_view_mode",
                 persist_state="page",
             )
+        with table_card(CARD_NAME):
             selected_level_label = st.selectbox(
                 "집계 수준",
                 options=list(CAPACITY_LEVEL_LABELS.values()),

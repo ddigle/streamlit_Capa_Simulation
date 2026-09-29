@@ -162,7 +162,10 @@ def test_process_picker_buttons_show_aliases_but_only_apply_original_keys(tmp_pa
         if str(button.key).startswith("home_bn_process_tile_") and button.proto.type == "primary"
     } == set(original_selection)
     assert app.button(key=f"home_bn_process_tile_{process}").label == alias
-    assert process in app.button(key=f"home_bn_process_tile_{process}").help
+    # 설명 풍선은 `help` 가 아니라 CSS `:hover` 다 — 누른 뒤 다시 그려지는 동안 마우스가 떠나면
+    # `help` 풍선이 열린 채 남았다(2026-09-29 사용자 신고). 원본 공정명은 그 풍선에 있다.
+    assert not app.button(key=f"home_bn_process_tile_{process}").help
+    assert any(f"원본 공정: {process}" in element.proto.body for element in app.get("html"))
 
     app.button(key=f"home_bn_process_tile_{process}").click().run()
     assert not app.exception
@@ -384,12 +387,13 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
 
     # 보는 조건 토글은 모두 사이드바 `LOB 표시 조건` 카드다(2026-09-29 사용자 결정 — 전에는
     # 제목 줄과 Preference 의 표시 기준에 흩어져 있었다). 순서는 계산이 얹히는 순서와 같다 —
-    # 선행(계획 이동) → 실행(기준정보 밖 변수) → GAP(비교 표기) → 보는 폭(상세·EDP·Past).
+    # 선행 전망(계획 이동) → 실행 Loss(기준정보 밖 변수) → GAP(비교 표기) → 보는 폭(상세 계획·EDP·
+    # Past). 라벨은 2026-09-29 사용자 결정이다.
     assert [widget.label for widget in app.sidebar.toggle] == [
-        "선행",
-        "실행",
+        "선행 전망",
+        "실행 Loss",
         "GAP",
-        "상세",
+        "상세 계획",
         "EDP 포함",
         "Past Data 포함",
     ]

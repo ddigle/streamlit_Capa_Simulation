@@ -187,3 +187,46 @@ def test_a_tab_with_an_unapplied_paste_or_edit_gets_a_dot(
 
     _paste(app, _clipboard_text(app, scale=0.5))
     assert marked[-1] == {":material/edit_calendar: PKG PLAN"}
+
+
+def test_plan_apply_waits_for_a_change_and_cancel_drops_a_staged_paste(database: Path) -> None:
+    """고친 것이 없으면 적용을 누를 수 없고, 붙여넣기만 해 둔 표는 「편집 취소」로 버린다.
+
+    적용은 같은 값이어도 리비전을 올려 사이드바에 `미저장 변경` 을 켰다. 붙여넣기 대기분은
+    사이드바 「편집 되돌리기」가 **적용한** 변경이 있을 때만 서서 버릴 길이 없었다(2026-09-29 2차
+    리뷰).
+    """
+    from test_load_conversion_plan_apply import _clipboard_text, _paste
+
+    app = _app(database)
+    assert app.button(key="apply_pkg_plan_changes").disabled
+    assert "discard_pkg_plan_edits" not in {button.key for button in app.button}
+
+    _paste(app, _clipboard_text(app, scale=0.5))
+    assert not app.button(key="apply_pkg_plan_changes").disabled
+
+    app.button(key="discard_pkg_plan_edits").click().run()
+    assert not list(app.exception)
+    assert "pkg_plan_staged_paste" not in app.session_state
+    assert app.button(key="apply_pkg_plan_changes").disabled
+
+
+def test_registering_warns_before_it_drops_unapplied_table_edits(database: Path) -> None:
+    """가상 제품은 PKG PLAN·수율 두 표에 행을 더한다 — 표에서 고친 편집도 버려지니 먼저 말한다."""
+    app = _app(database)
+    # 조회기간(프리셋 2026-01~12)의 첫 달을 고친 것으로 둔다. 원본을 처음 읽은 회차에 편집표가
+    # 새 세대로 섰으므로 지금 세대의 위젯 키에 넣는다.
+    generation = (
+        app.session_state["yield_editor__generation"]
+        if "yield_editor__generation" in app.session_state
+        else 0
+    )
+    app.session_state[f"yield_editor__g{generation}" if generation else "yield_editor"] = {
+        "edited_rows": {0: {"202601": 0.5}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    app.button(key="open_virtual_product").click().run()
+
+    assert not list(app.exception)
+    assert any("수율 표에 적용하지 않은 편집" in item.value for item in app.warning)

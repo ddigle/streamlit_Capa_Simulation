@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import streamlit as st
@@ -27,10 +27,11 @@ from capa_simulation.scenario_activation import (
     activate_persisted_snapshot,
     active_persisted_revision_id,
     active_persisted_scenario_id,
+    discard_unsaved_scenario_changes,
     has_unsaved_scenario_changes,
 )
 from capa_simulation.scenario_preset_state import capture_scenario_preset
-from capa_simulation.scenario_state import ensure_active_scenario, reset_active_scenario
+from capa_simulation.scenario_state import ensure_active_scenario
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import sidebar_expander
 
@@ -49,8 +50,15 @@ SCENARIO_BOX_TITLE = "시나리오·리비전"
 SCENARIO_BOX_ICON = ":material/layers:"
 
 
-def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
-    """Load a saved revision or persist the current edits from every page."""
+def render_scenario_controls(
+    database_path: Path = DUCKDB_PATH, *, pending_edits: Sequence[str] = ()
+) -> None:
+    """Load a saved revision or persist the current edits from every page.
+
+    `pending_edits` 는 이 화면에 **적용하지 않은** 편집이 남은 곳이다(`「기준 정보 · UPEH」`).
+    그 편집은 시나리오에 들어 있지 않아 저장에 실리지 않고, 저장·불러오기가 원본을 바꾸는 순간
+    사라진다. 그래서 둘 다 한 번 더 묻는다(2026-09-29 2차 리뷰).
+    """
     resolved_path = str(database_path.resolve())
     # 플래시는 상자를 세우기 **전에** 꺼낸다. 저장소를 못 읽는 회차에도 한 번 보여 주고
     # 지워야 다음 rerun 까지 남지 않는다.
@@ -135,7 +143,9 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
             st.caption("선택값은 아직 계산에 적용되지 않았습니다.")
 
         discard_changes = True
-        if has_unsaved_scenario_changes():
+        if pending_edits:
+            st.caption(_pending_edits_notice(pending_edits))
+        if has_unsaved_scenario_changes() or pending_edits:
             # 같은 배지를 요약 줄이 이미 달고 있다. 본문에 한 번 더 적으면 한 상자 안에
             # 같은 문구가 두 번 나온다.
             discard_changes = st.checkbox(
@@ -166,6 +176,7 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
                 selected_revision_id=selected_revision_id,
                 active_scenario_id=active_scenario_id,
                 active_revision_id=active_revision_id,
+                pending_edits=pending_edits,
             )
         # 저장하지 않은 편집을 버리고 올라와 있는 리비전으로 되돌린다. 전에는 편집 화면 본문
         # 맨 위(「활성 시나리오 · 수정본 N」 줄)에 있었는데, 이 동작은 **모든 화면의 편집**을
@@ -179,7 +190,7 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
                 key="sidebar_reset_active_scenario",
                 help="저장하지 않은 모든 화면의 편집을 버리고 올라와 있는 리비전으로 되돌립니다.",
             ):
-                reset_active_scenario(
+                discard_unsaved_scenario_changes(
                     get_effective_reference_tables(), get_effective_reference_version()
                 )
                 st.session_state[SIDEBAR_FLASH_KEY] = "저장하지 않은 편집을 버렸습니다."
@@ -205,6 +216,15 @@ def render_scenario_controls(database_path: Path = DUCKDB_PATH) -> None:
                 official_revision_id=official.revision_id if official is not None else None,
                 official_release_no=official.release_no if official is not None else None,
             )
+
+
+def _pending_edits_notice(pending_edits: Sequence[str]) -> str:
+    """적용하지 않은 편집이 어디에 남았고 저장·불러오기가 그것을 어떻게 하는지 한 줄로."""
+    return (
+        ":orange-badge[적용 전 편집] "
+        + ", ".join(pending_edits)
+        + " 의 적용하지 않은 편집은 저장에 들어가지 않고, 저장·불러오기를 하면 사라집니다."
+    )
 
 
 def _show_flash(flash: object) -> None:
@@ -255,6 +275,7 @@ def _render_revision_save(
     selected_revision_id: str,
     active_scenario_id: str | None,
     active_revision_id: str | None,
+    pending_edits: Sequence[str] = (),
 ) -> None:
     # `st.expander` 가 아니라 `st.popover` 다. expander 는 폭을 통째로 먹는 줄이라 옆
     # 버튼과 나란히 설 수 없고, 펴면 그 아래 조회기간 상자를 밀어낸다. popover 는 버튼
@@ -296,6 +317,15 @@ def _render_revision_save(
             st.warning("현재 활성 시나리오 정보를 찾지 못했습니다.")
             return
         st.caption(f"저장 대상 · {active_summary.scenario_name}")
+        # 적용하지 않은 편집은 저장에 실리지 않고 저장하는 순간 사라진다. 확인 칸은 폼 **밖**이다 —
+        # 폼 안의 칸은 제출해야 값이 올라와 저장 버튼을 잠글 수 없다.
+        dropping_confirmed = True
+        if pending_edits:
+            st.warning(_pending_edits_notice(pending_edits) + " 먼저 「변경사항 적용」을 누르세요.")
+            dropping_confirmed = st.checkbox(
+                "적용하지 않은 편집을 버리고 저장",
+                key="sidebar_save_discards_pending_edits",
+            )
         with st.form("sidebar_revision_save_form", clear_on_submit=True):
             revision_name = st.text_input(
                 "새 리비전명",
@@ -311,6 +341,7 @@ def _render_revision_save(
                 "신규 리비전 저장",
                 icon=":material/save_as:",
                 width="stretch",
+                disabled=not dropping_confirmed,
             )
         if not submitted:
             return

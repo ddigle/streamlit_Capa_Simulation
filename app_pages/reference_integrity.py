@@ -538,7 +538,7 @@ def _render_guide() -> None:
 process_labels = get_process_labels()
 
 render_page_header(
-    "Dynamic Capa (구현중)",
+    "Dynamic Capa",
     description=(
         "표준 Capa와 실적 효율·UPEH·생산실적을 연결해 Capa 손실 원인과 개선 우선순위를 분석합니다."
     ),

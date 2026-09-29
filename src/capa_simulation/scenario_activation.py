@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import cast
 
+import pandas as pd
 import streamlit as st
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
@@ -26,6 +27,7 @@ from capa_simulation.scenario_state import (
     ActiveScenario,
     activate_scenario_tables,
     clear_active_scenario,
+    reset_active_scenario,
 )
 
 ACTIVE_PERSISTED_SCENARIO_ID_KEY = "active_persisted_scenario_id"
@@ -50,7 +52,7 @@ OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY = "official_scenario_bootstrap_attempted"
 # 닿지 않으므로, 지우면 시나리오를 바꿀 때마다 보던 자리를 다시 찾아야 한다.
 #
 # 「HOME 의 토글 전부」를 손으로 세지 않는다. `tests/test_scenario_activation.py` 가
-# `home_preference` 의 토글 키를 훑어 빠진 것을 잡는다 — 「실행」이 나중에 추가되면서
+# `home_preference` 의 토글 키를 훑어 빠진 것을 잡는다 — 「실행 Loss」가 나중에 추가되면서
 # 목록에 들어오지 않아 이 규칙이 한동안 반쪽이었던 적이 있다.
 _STALE_UI_KEYS = (
     "load_conversion_source_token",
@@ -121,6 +123,23 @@ def active_persisted_scenario_id() -> str | None:
 def active_persisted_revision_id() -> str | None:
     value = st.session_state.get(ACTIVE_PERSISTED_REVISION_ID_KEY)
     return value if isinstance(value, str) else None
+
+
+def discard_unsaved_scenario_changes(
+    reference_tables: dict[str, pd.DataFrame], reference_version: int
+) -> ActiveScenario:
+    """저장하지 않은 편집을 버리고 올라와 있는 리비전으로 되돌린다. 되돌린 뒤에는 미저장이 아니다.
+
+    `reset_active_scenario` 는 표를 올라와 있는 리비전의 표로 갈아 끼우되 `revision` 을 올린다 —
+    편집 UI 가 그 번호로 새로 선다. 그 번호를 **저장 표시에도 적어야** 「편집 되돌리기」를 누른 뒤
+    미저장 배지·버튼·불러오기 잠금이 풀린다. 적지 않으면 내용은 저장본과 같은데 번호가 달라 계속
+    미저장으로 읽힌다(2026-09-29 2차 리뷰에서 재현). 저장본이 없는 세션(내장 시드)은 표시를 만들지
+    않는다 — 거기엔 되돌아갈 저장본이 없다.
+    """
+    active = reset_active_scenario(reference_tables, reference_version)
+    if isinstance(st.session_state.get(ACTIVE_PERSISTED_SESSION_REVISION_KEY), int):
+        st.session_state[ACTIVE_PERSISTED_SESSION_REVISION_KEY] = active["revision"]
+    return active
 
 
 def has_unsaved_scenario_changes() -> bool:

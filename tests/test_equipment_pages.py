@@ -65,6 +65,11 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
         if widget.label in {"라인구분", "활용구분", "공정대분류", "공정소분류"}
     }
     assert filter_labels == {"라인구분", "활용구분", "공정대분류", "공정소분류"}
+    # 거르는 조건은 사이드바 카드, 무엇을 볼지(볼 내용·보기·표현)는 본문이다(2026-09-29 결정).
+    assert {widget.label for widget in app.sidebar.multiselect} >= filter_labels
+    assert "볼 내용" in {widget.label for widget in app.main.segmented_control}
+    assert "보기" in {widget.label for widget in app.main.selectbox}
+    assert not app.sidebar.segmented_control
     assert any(button.label == "설비 데이터 입력" for button in app.button)
     assert app.session_state["equipment_baseline_draft_v3"].empty
     assert app.session_state["equipment_master_draft_v3"].empty

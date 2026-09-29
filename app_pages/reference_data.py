@@ -26,6 +26,7 @@ from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.reference_csv_tools import queue_reference_import_flash
 from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
+    register_pending_edits,
     reset_editors_on_source_change,
     source_token,
 )
@@ -327,6 +328,20 @@ reset_editors_on_source_change(
     other_keys=step_widget_keys,
     own_change_key=OWN_CHANGE_KEY,
 )
+# 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표를 알린다.
+register_pending_edits(
+    "reference_data.py",
+    "기준 정보",
+    {
+        EDITOR_UPEH: "UPEH",
+        EDITOR_RUN_RATE: "효율",
+        EDITOR_VITAL: "여유율",
+        EDITOR_LOT_RATIO: "Lot측정률",
+        EDITOR_WF_RATIO: "WF측정률",
+        EDITOR_RUN_DAY: "일수",
+        **{editor_key: f"설비대수 {label}" for _, label, _, editor_key in EQUIPMENT_EDITORS},
+    },
+)
 
 # 적용하지 않은 편집이 남은 탭에 점을 찍는다(탭 목록 개선안 C). 원본이 바뀌어 편집표를 비운
 # **뒤**에 정해야 비워진 편집에 점이 남지 않는다. 설비대수는 안쪽 탭(보유·대여·가용)에도 찍는다.
@@ -416,6 +431,21 @@ def _open_dialog(name: str) -> None:
 @st.dialog("STEP 추가·삭제", width="large", on_dismiss=_close_dialog)
 def _step_dialog() -> None:
     """고른 경로 STEP 을 복제하거나 지운다. 조회기간의 모든 연결 수요에 함께 반영한다."""
+    # STEP 을 더하거나 빼면 UPEH·측정률 표의 행이 바뀌어 그 표의 적용하지 않은 편집이 버려진다.
+    dropped_edits = [
+        name
+        for key, name in (
+            (EDITOR_UPEH, "UPEH"),
+            (EDITOR_LOT_RATIO, "Lot측정률"),
+            (EDITOR_WF_RATIO, "WF측정률"),
+        )
+        if editor_has_edits(key)
+    ]
+    if dropped_edits:
+        st.warning(
+            f"{'·'.join(dropped_edits)} 표에 적용하지 않은 편집이 있습니다. STEP 을 바꾸면 "
+            "버려집니다 — 먼저 그 표의 「변경사항 적용」을 누르세요."
+        )
     step_mode = st.segmented_control(
         "작업",
         options=["STEP 추가", "STEP 삭제"],
@@ -757,7 +787,9 @@ def _apply_edit(editor: _Editor, source: pd.DataFrame, *, imported: bool) -> Non
     )
     queue_reference_import_flash(*flash)
     # 적용한 이 표만 새 원본으로 다시 세운다. 다른 탭의 적용하지 않은 편집은 그대로 둔다.
-    mark_own_change(OWN_CHANGE_KEY, (editor.editor_key,))
+    # STEP 팝업의 선택도 비운다 — 경로 선택은 목록의 순번이라, UPEH 한 행을 비우면 경로가 빠져
+    # 뒤 순번이 당겨지고 다음에 열 때 다른 경로가 골라져 있다(2026-09-29 2차 리뷰).
+    mark_own_change(OWN_CHANGE_KEY, (editor.editor_key, *step_widget_keys))
 
 
 def _paste_into(editor: _Editor) -> Callable[[pd.DataFrame], None]:

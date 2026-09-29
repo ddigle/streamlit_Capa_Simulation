@@ -191,13 +191,13 @@ def render_home_view_card(*, comparison_ready: bool) -> None:
     """
     with condition_card("LOB 표시 조건", name="home"):
         st.toggle(
-            "선행",
+            "선행 전망",
             value=HOME_TOGGLE_DEFAULTS[ADVANCE_TOGGLE_KEY],
             key=ADVANCE_TOGGLE_KEY,
             persist_state="session",
         )
         st.toggle(
-            "실행",
+            "실행 Loss",
             value=HOME_TOGGLE_DEFAULTS[EXECUTION_TOGGLE_KEY],
             key=EXECUTION_TOGGLE_KEY,
             persist_state="session",
@@ -211,7 +211,7 @@ def render_home_view_card(*, comparison_ready: bool) -> None:
             help=None if comparison_ready else "Preference 탭에서 비교 시나리오를 먼저 고르세요.",
         )
         st.toggle(
-            "상세",
+            "상세 계획",
             value=HOME_TOGGLE_DEFAULTS[PLAN_DETAIL_CUSTOMER_KEY],
             key=PLAN_DETAIL_CUSTOMER_KEY,
             persist_state="session",

@@ -49,6 +49,12 @@ PAST_DRAFT_KEY = "home_past_draft"
 # 지금 열린 붙여넣기 팝업의 표 이름. HOME 한 화면에 팝업 칸은 하나다(`PAGE_DIALOG_SUFFIX` —
 # 페이지를 떠나면 `forget_page_dialogs` 가 비운다).
 PAST_DIALOG_KEY = f"home{PAGE_DIALOG_SUFFIX}"
+# 저장은 읽어 둔 표로 저장된 그 표를 **지우고 다시 넣는다**(`replace_global_past_data`). 새 달만
+# 붙여넣고 저장하면 이전 달이 사라진다. 누르기 전에 알아야 해 팝업과 저장 버튼에 남긴다.
+PAST_REPLACE_NOTICE = (
+    "저장하면 이 표는 붙여넣은 내용으로 통째로 바뀝니다 — 붙여넣지 않은 달·행은 지워지고 되돌릴 수 "
+    "없습니다. 기존 행을 남기려면 함께 붙여넣으세요."
+)
 
 
 @dataclass(frozen=True)
@@ -201,6 +207,8 @@ def _paste_dialog(spec: PastTableSpec, draft: dict[str, pd.DataFrame]) -> None:
     @st.dialog(f"Excel 붙여넣기 · {spec.title}", width="large", on_dismiss=_close_paste)
     def _body() -> None:
         st.caption(spec.caption)
+        # 되돌릴 수 없는 덮어쓰기라는 것은 누르기 전에 알아야 한다 — Guide 로만 보내지 않는다.
+        st.caption(PAST_REPLACE_NOTICE)
         with st.form(f"{HOME_PAST_FORM_KEY}_{spec.name}", border=False):
             clipboard = st.text_area(
                 f"{spec.title} 붙여넣기",
@@ -243,7 +251,7 @@ def _render_save(
             type="primary",
             disabled=not pending_names,
             help=(
-                None
+                PAST_REPLACE_NOTICE
                 if pending_names
                 else "읽어 둔 표가 없습니다. 아래 표의 「Excel 붙여넣기」로 먼저 읽으세요."
             ),
@@ -255,6 +263,11 @@ def _render_save(
             # 이 값은 옆 저장 버튼을 누를 때만 읽는다. Enter·포커스 이탈로 HOME 을 통째로
             # 다시 그릴 이유가 없고, 버튼을 누른 실행에 값이 함께 올라온다.
             on_change="ignore",
+        )
+    if pending_names:
+        st.caption(
+            f":orange-badge[덮어쓰기] 읽어 둔 표({'·'.join(pending_names)})가 저장된 그 표를 "
+            "통째로 바꿉니다. 되돌릴 수 없습니다."
         )
     render_flash("past_data_save_flash")
     if not save:
