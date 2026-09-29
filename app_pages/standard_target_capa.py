@@ -698,7 +698,12 @@ with card:
     logic_filters = st.container()
 
 target_processes = selected_processes or process_options
-template = build_weekly_availability_template(target_processes, start_date, end_date)
+# 양식은 저장된 값을 채워 내려 준다. 저장값이 없는 칸은 빈칸이고, 붙여넣기는 빈칸을 「그대로
+# 둠」으로 읽는다 — 0 으로 채워 내려 주면 일부만 고쳐 되붙일 때 다른 공정·주차가 0 대로
+# 덮인다(2026-09-29 버그 보고).
+template = build_weekly_availability_template(
+    target_processes, start_date, end_date, saved=availability
+)
 template_csv = template.to_csv(index=False).encode("utf-8-sig")
 
 
@@ -720,9 +725,12 @@ def _paste_dialog() -> None:
         label=CSV_TEMPLATE_LABEL,
     )
     # 덮어쓰기라는 것은 누르기 전에 알아야 한다 — Guide 로만 보내지 않는다(2026-09-29 2차 리뷰).
+    # 빈칸이 「그대로 둠」이라는 것도 여기서 말한다. 0 은 「0 대」로 저장되어 뜻이 다르다.
     st.caption(
-        "같은 공정·Weeknum 의 가용대수는 붙여넣은 값으로 덮어씁니다. 설비 DB 에 최신본 하나만 "
-        "남아 이전 값으로 되돌릴 수 없습니다."
+        "양식에는 지금 저장된 가용대수가 채워져 있습니다. 값을 적은 공정·Weeknum 만 붙여넣은 "
+        "값으로 덮어쓰고, 가용대수를 비운 칸은 저장된 값(없으면 미설정)을 그대로 둡니다 — "
+        "0 을 적으면 「0 대」로 저장됩니다. 설비 DB 에 최신본 하나만 남아 이전 값으로 되돌릴 수 "
+        "없습니다."
     )
     with st.form("standard_target_availability_clipboard", border=False):
         clipboard_text = st.text_area(

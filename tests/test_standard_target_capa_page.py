@@ -131,6 +131,8 @@ class FakeEquipmentRepository:
         return availability.copy()
 
     def save_standard_target_availability(self, data):
+        # 붙여넣기 팝업이 저장소에 무엇을 넘겼는지 보려고 잡아 둔다.
+        st.session_state["captured_saved_availability"] = data.copy()
         return data.copy()
 
     def clear_standard_target_availability(self):
@@ -423,6 +425,53 @@ def test_weekly_availability_template_keeps_the_original_process_name() -> None:
     )
 
     assert set(template["공정"]) == {"Process-A", "Process-B"}
+
+
+def test_weekly_availability_template_carries_saved_counts_and_blanks_the_rest() -> None:
+    """작업 줄 양식은 저장된 가용대수를 싣고, 저장값이 없는 공정·주차는 빈칸이다.
+
+    예전에는 모든 칸이 0.0 이라, 한 공정만 고쳐 통째로 되붙이면 다른 공정이 0 대로 덮였다
+    (2026-09-29 버그 보고). 가짜 저장소는 Process-A 의 26-W32~W36 만 2 대를 갖고 있다.
+    """
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    template = pd.read_csv(
+        BytesIO(
+            bytes(
+                app.session_state["captured_download_data"][
+                    "download_standard_target_availability_template"
+                ]
+            )
+        ),
+        encoding="utf-8-sig",
+        dtype="object",
+    )
+    saved_weeks = {"26-W32", "26-W33", "26-W34", "26-W35", "26-W36"}
+    saved_cells = template["공정"].eq("Process-A") & template["Weeknum"].isin(saved_weeks)
+    assert saved_cells.sum() == len(saved_weeks)
+    assert template.loc[saved_cells, "가용대수"].eq("2.0").all()
+    # 저장값이 없는 칸(Process-B 전부, 조회 범위에 걸친 저장 밖 주차)은 0 이 아니라 빈칸이다.
+    assert template["공정"].eq("Process-B").any()
+    assert template.loc[~saved_cells, "가용대수"].isna().all()
+
+
+def test_availability_paste_keeps_blank_cells_and_says_so_before_applying() -> None:
+    """팝업은 빈칸이 「그대로 둠」이라고 먼저 알리고, 빈칸 행은 저장소로 넘기지 않는다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    app.button(key="open_standard_target_availability_paste").click().run()
+
+    assert not app.exception
+    assert any("비운 칸은 저장된 값" in caption.value for caption in app.caption)
+    app.text_area(key="standard_target_availability_clipboard_text").set_value(
+        "공정\tWeeknum\t가용대수\nProcess-A\t26-W32\t\nProcess-B\t26-W32\t3\n"
+    )
+    next(button for button in app.button if button.label == "붙여넣기 적용").click().run()
+
+    assert not app.exception
+    assert not app.error
+    saved = app.session_state["captured_saved_availability"]
+    assert saved.to_dict("records") == [{"공정": "Process-B", "Weeknum": "26-W32", "가용대수": 3.0}]
 
 
 def test_missing_availability_table_shows_the_display_name_with_a_source_notice() -> None:

@@ -68,6 +68,11 @@ def test_iso_week_calendar_gives_the_boundary_week_to_the_month_with_more_days()
 
 
 def test_availability_template_preserves_process_order() -> None:
+    """저장값이 없으면 가용대수는 0.0 이 아니라 빈칸(NaN)이다.
+
+    예전에는 0.0 을 고정했다. 그 양식을 일부만 고쳐 되붙이면 다른 공정·주차가 0 대로 덮였다
+    (2026-09-29 버그 보고) — 붙여넣기가 빈칸을 「그대로 둠」으로 읽도록 바뀌며 양식도 빈칸이다.
+    """
     result = build_weekly_availability_template(
         ["Process-B", "Process-A", "Process-B"],
         date(2026, 8, 3),
@@ -76,7 +81,58 @@ def test_availability_template_preserves_process_order() -> None:
 
     assert result["공정"].tolist() == ["Process-B", "Process-A"]
     assert result["Weeknum"].tolist() == ["26-W32", "26-W32"]
-    assert result["가용대수"].tolist() == [0.0, 0.0]
+    assert result["가용대수"].isna().all()
+
+
+def test_availability_template_carries_saved_counts_and_leaves_the_rest_blank() -> None:
+    """양식은 저장값을 채워 내려 준다. 저장값이 없는 칸만 빈칸이다(CSV 에서도 빈 칸)."""
+    saved = pd.DataFrame(
+        {
+            "공정": pd.Series(["Process-A", "Process-A", "Process-Z"], dtype="string"),
+            "Weeknum": pd.Series(["26-W32", "26-W33", "26-W32"], dtype="string"),
+            "가용대수": [2.0, 0.0, 9.0],
+        }
+    )
+
+    result = build_weekly_availability_template(
+        ["Process-A", "Process-B"],
+        date(2026, 8, 3),
+        date(2026, 8, 16),
+        saved=saved,
+    )
+
+    counts = {
+        (process, weeknum): count
+        for process, weeknum, count in result[["공정", "Weeknum", "가용대수"]].itertuples(
+            index=False, name=None
+        )
+    }
+    assert counts[("Process-A", "26-W32")] == 2.0
+    # 저장된 0 은 「0 대」라 빈칸이 아니라 0 으로 내려와야 한다.
+    assert counts[("Process-A", "26-W33")] == 0.0
+    assert pd.isna(counts[("Process-B", "26-W32")])
+    assert pd.isna(counts[("Process-B", "26-W33")])
+    # 양식 공정에 없는 저장값(Process-Z)은 행을 만들지 않는다.
+    assert set(result["공정"]) == {"Process-A", "Process-B"}
+    csv_lines = result.to_csv(index=False).splitlines()
+    assert "Process-B,26-W32,2026-08-03,2026-08-09," in csv_lines
+
+
+def test_availability_template_pasted_back_as_is_changes_nothing() -> None:
+    """저장값이 채워진 양식을 그대로 되붙이면 저장값 행만 다시 들어가고 빈칸은 떨어진다."""
+    saved = pd.DataFrame({"공정": ["Process-A"], "Weeknum": ["26-W32"], "가용대수": [2.0]})
+    template = build_weekly_availability_template(
+        ["Process-A", "Process-B"], date(2026, 8, 3), date(2026, 8, 9), saved=saved
+    )
+
+    result = parse_weekly_availability_clipboard(
+        template.to_csv(sep="\t", index=False),
+        known_processes=["Process-A", "Process-B"],
+    )
+
+    assert result.to_dict("records") == [
+        {"공정": "Process-A", "Weeknum": "26-W32", "가용대수": 2.0}
+    ]
 
 
 def test_weekly_availability_clipboard_is_validated() -> None:
@@ -85,6 +141,62 @@ def test_weekly_availability_clipboard_is_validated() -> None:
     assert result.to_dict("records") == [
         {"공정": "Process-A", "Weeknum": "26-W32", "가용대수": 2.5}
     ]
+
+
+def test_availability_clipboard_drops_blank_count_rows() -> None:
+    """가용대수 빈칸은 「그대로 둠」이다 — 저장이 upsert 라 떨어뜨린 키는 저장값이 남는다.
+
+    예전에는 빈칸을 「숫자가 아닌 값 또는 누락값」으로 거부해, 모르는 칸을 적을 방법이 0
+    뿐이었다(2026-09-29 버그 보고). 공백만 든 칸도 빈칸이다. 적은 0 은 0 대로 남는다.
+    """
+    result = parse_weekly_availability_clipboard(
+        "공정\tWeeknum\t가용대수\n"
+        "Process-A\t26-W32\t\n"
+        "Process-A\t26-W33\t   \n"
+        "Process-B\t26-W32\t0\n"
+        "Process-B\t26-W33\t3\n",
+        known_processes=["Process-A", "Process-B"],
+    )
+
+    assert result.to_dict("records") == [
+        {"공정": "Process-B", "Weeknum": "26-W32", "가용대수": 0.0},
+        {"공정": "Process-B", "Weeknum": "26-W33", "가용대수": 3.0},
+    ]
+
+
+def test_availability_clipboard_rejects_unreadable_counts() -> None:
+    """빈칸과 달리 못 읽는 글자는 막는다. 적었다고 믿는 값이 조용히 버려지면 안 된다."""
+    with pytest.raises(ValueError, match=r"숫자가 아닙니다: \['Process-A 26-W33'\]"):
+        parse_weekly_availability_clipboard(
+            "공정\tWeeknum\t가용대수\nProcess-A\t26-W32\t\nProcess-A\t26-W33\tabc\n"
+        )
+
+
+def test_availability_clipboard_with_only_blank_counts_has_nothing_to_apply() -> None:
+    """빈 양식을 그대로 붙여넣으면 아무것도 저장하지 않고 멈춘다."""
+    template = build_weekly_availability_template(
+        ["Process-A", "Process-B"], date(2026, 8, 3), date(2026, 8, 16)
+    )
+
+    with pytest.raises(ValueError, match="적용할 값이 없습니다"):
+        parse_weekly_availability_clipboard(
+            template.to_csv(sep="\t", index=False),
+            known_processes=["Process-A", "Process-B"],
+        )
+
+
+def test_availability_outside_the_paste_path_still_rejects_blank_counts() -> None:
+    """빈칸 드롭은 붙여넣기만의 규칙이다. 되읽기·계산 경로는 빈칸을 예전처럼 막는다."""
+    source = pd.DataFrame(
+        {
+            "공정": ["Process-A", "Process-A"],
+            "Weeknum": ["26-W32", "26-W33"],
+            "가용대수": [1.0, None],
+        }
+    )
+
+    with pytest.raises(ValueError, match="누락값"):
+        prepare_weekly_availability(source)
 
 
 def test_weekly_target_uses_daily_effective_capacity_and_availability() -> None:

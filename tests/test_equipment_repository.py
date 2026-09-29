@@ -1,5 +1,6 @@
 # Purpose: equipment repository 관련 정상·예외·회귀 동작을 검증한다.
 
+from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -20,6 +21,10 @@ from capa_simulation.persistence.equipment_migration_runner import (
 from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
     EquipmentSnapshot,
+)
+from capa_simulation.services.weekly_availability_input import (
+    build_weekly_availability_template,
+    parse_weekly_availability_clipboard,
 )
 
 
@@ -133,6 +138,52 @@ def test_standard_target_availability_keeps_only_latest_unversioned_copy(
     assert len(repository.list_revisions()) == 0
     repository.clear_standard_target_availability()
     assert repository.load_standard_target_availability().empty
+
+
+def test_pasting_a_template_edited_for_one_process_keeps_the_other_saved_process(
+    tmp_path: Path,
+) -> None:
+    """양식을 받아 한 공정만 채워 통째로 붙여넣어도 다른 공정의 저장값은 그대로다.
+
+    예전 양식은 모든 칸을 0.0 으로 내려 줘서, 이 흐름에서 이미 넣어 둔 Process-A 가 0 대로
+    덮였다(2026-09-29 버그 보고). 지금 양식은 저장값을 싣고 나머지는 빈칸이며, 붙여넣기는
+    빈칸 행을 떨어뜨려 upsert 가 그 키를 건드리지 않는다.
+    """
+    repository = _repository(tmp_path / "equipment.duckdb")
+    processes = ["Process-A", "Process-B", "Process-C"]
+    repository.save_standard_target_availability(
+        pd.DataFrame(
+            {
+                "공정": ["Process-A", "Process-A"],
+                "Weeknum": ["26-W02", "26-W03"],
+                "가용대수": [5.0, 4.0],
+            }
+        )
+    )
+
+    template = build_weekly_availability_template(
+        processes,
+        date(2026, 1, 5),
+        date(2026, 1, 18),
+        saved=repository.load_standard_target_availability(),
+    )
+    edited = template.copy()
+    edited.loc[edited["공정"].eq("Process-B"), "가용대수"] = 3.0
+    repository.save_standard_target_availability(
+        parse_weekly_availability_clipboard(
+            edited.to_csv(sep="\t", index=False), known_processes=processes
+        )
+    )
+
+    stored = repository.load_standard_target_availability()
+    assert stored.to_dict("records") == [
+        {"공정": "Process-A", "Weeknum": "26-W02", "가용대수": 5.0},
+        {"공정": "Process-A", "Weeknum": "26-W03", "가용대수": 4.0},
+        {"공정": "Process-B", "Weeknum": "26-W02", "가용대수": 3.0},
+        {"공정": "Process-B", "Weeknum": "26-W03", "가용대수": 3.0},
+    ]
+    # 아무도 적지 않은 Process-C 는 0 대가 아니라 미설정(행 없음)으로 남는다.
+    assert "Process-C" not in set(stored["공정"])
 
 
 def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
