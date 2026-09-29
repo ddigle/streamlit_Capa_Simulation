@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 import numpy as np
 import pandas as pd
@@ -225,3 +225,26 @@ def test_view_token_is_stable_across_calls() -> None:
     """내장 `hash()` 는 프로세스마다 값이 달라 위젯 key 에 쓸 수 없다."""
     assert view.view_token("a", "b") == view.view_token("a", "b")
     assert view.view_token("a", "b") != view.view_token("b", "a")
+
+
+def test_first_registration_dates_keep_the_earliest_day_per_code_and_plan() -> None:
+    """정리는 최신 1행만 남기지만 상세 조회 창은 가장 이른 적재부터 덮어야 한다."""
+    frame = pd.DataFrame(
+        {
+            "simulation_name": ["알파", "알파", "알파", "베타"],
+            "simulation_code": ["DEMO-A", "DEMO-A", "DEMO-A", "DEMO-B"],
+            "plan_name": ["P", "P", "P", "Q"],
+            "plan_code": ["P1", "P1", "P1", "Q1"],
+            "regist_data": [
+                "2026-09-02 03:04:05",
+                "2026-03-01 00:00:00",
+                "읽을 수 없음",
+                "2026-08-15 10:00:00",
+            ],
+        }
+    )
+
+    earliest = view.first_registration_dates(frame)
+
+    assert earliest == {("DEMO-A", "P1"): date(2026, 3, 1), ("DEMO-B", "Q1"): date(2026, 8, 15)}
+    assert view.normalize_catalog(frame).loc[0, "regist_data"] == "2026-09-02 03:04:05"

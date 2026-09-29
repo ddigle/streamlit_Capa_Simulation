@@ -934,6 +934,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `sql_bounds()` 가 배타 상한을 하루 밀어 흡수한다 — 포함/배타 차이를 다루는 자리는
     여기 한 곳이다. 상세 창은 목록 창으로 **좁히지 않고**(`resolve_detail_window`) 기본
     90일 창과 합집합을 쓴다. 좁히면 그 코드의 원천 행이 잘린 시나리오가 조용히 저장된다.
+  - **원천 등록일이 있으면 그 7일 전까지 내린다**(`registered_on`, `REGISTRATION_WINDOW_MARGIN_DAYS`,
+    2026-09-29 사용자 결정 B). 두 SQL 은 생산계획 월이 아니라 `impala_insert_time`(적재 시각)으로
+    거르고, 목록 기간은 코드를 *찾아낸* 기간일 뿐이라 코드의 행이 여러 날에 걸쳐 적재됐으면 옛
+    적재분이 오류 없이 빠졌다. 목록에서 고르면 그 (코드, PLAN) 의 **가장 이른** 등록일
+    (`bigdataquery_catalog_view.first_registration_dates` — 목록 정리는 최신 1행만 남기므로 정리 전에
+    구한다)을, 코드를 직접 적으면 폼의 `원천 DB 등록시점` 을 쓴다(둘 다 있으면 이른 쪽). 등록일이
+    없고 코드를 직접 적으면 여전히 최근 90일이다.
   - 0행 결과는 `rename` 이전에 막는다. 뒤에 두면 MPGA TEST 예외가 `KeyError` 로 먼저 터진다.
 - `src/capa_simulation/io/object_storage.py`
   - 사내 S3 호환 오브젝트 스토리지(Dell ECS 추정)에 `aws` CLI 로 붙는 유일한 경계다.

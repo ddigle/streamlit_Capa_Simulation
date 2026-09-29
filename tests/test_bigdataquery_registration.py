@@ -186,3 +186,52 @@ def test_catalog_list_key_changes_with_the_visible_rows() -> None:
     assert base != registration.catalog_list_key("token", 0, "", "미등록만")
     assert base != registration.catalog_list_key("other", 0, "", "전체")
     assert base == registration.catalog_list_key("token", 0, "", "전체")
+
+
+OLD_CODE_SCRIPT = (
+    STEP_SCRIPT.replace(
+        '"regist_data": ["2026-09-02 03:04:05", "2026-09-01 01:02:03"],',
+        '"regist_data": ["2025-11-02 03:04:05", "2026-09-01 01:02:03"],',
+    )
+    .replace(
+        """        token="demo-token",
+    ),
+)""",
+        """        token="demo-token",
+        first_registered={("DEMO-A-001", "DEMO-PLAN-1"): date(2025, 10, 1)},
+    ),
+)""",
+    )
+    .replace(
+        "registration._apply_pick(registration.CatalogPick(row=row, window=WINDOW))",
+        "registration._apply_pick(registration.CatalogPick(row=row, window=WINDOW, "
+        "first_registered_on=date(2025, 10, 1)))",
+    )
+)
+
+
+def test_picking_an_old_code_reaches_the_detail_window_back_to_its_first_registration() -> None:
+    """목록 기간이 최근 일주일이어도 상세 조회는 그 코드의 가장 이른 등록일 7일 전부터다.
+
+    2026-09-29 사용자 결정 B — 코드의 행이 여러 날에 걸쳐 적재됐으면 목록 기간으로는 옛 적재분을
+    잡지 못해 원천이 잘린 채 저장됐다.
+    """
+    app = AppTest.from_string(OLD_CODE_SCRIPT)
+    app.session_state["__pick_row__"] = 0
+    app.run()
+    assert not app.exception
+
+    captions = " ".join(item.value for item in app.caption)
+    assert "상세 조회 기간: 2025-09-24 ~" in captions
+    assert "원천 등록일 2025-10-01" in captions
+    assert "상세 조회기간 2025-09-24 ~" in app.text_area[0].value
+
+
+def test_a_typed_registration_date_widens_the_window_for_a_code_typed_by_hand() -> None:
+    """목록에서 고르지 않고 코드를 적은 사람도 원천 등록시점을 채우면 창이 그만큼 내려간다."""
+    app = _run()
+    app.text_input(key=registration.FORM_REGISTERED_AT_KEY).set_value("2025-06-10 00:00:00").run()
+
+    assert not app.exception
+    captions = " ".join(item.value for item in app.caption)
+    assert "상세 조회 기간: 2025-06-03 ~" in captions

@@ -29,6 +29,9 @@ _SIMULATION_CODE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 UNCONFIGURED_MARKER: Final = "__TODO_CONFIGURE_BIGDATAQUERY__"
 # 기간을 지정하지 않은 호출이 쓰는 창. 화면에서 기간을 고르면 그 값이 이 기본값을 대신한다.
 DEFAULT_QUERY_WINDOW_DAYS: Final = 90
+# 상세 조회 창을 원천 등록일에서 이만큼 앞당긴다. `impala_insert_time`(적재 시각)은 보통 등록일
+# 이후지만 적재 배치·시간대 차이로 하루 이틀 앞설 수 있어 여유를 둔다.
+REGISTRATION_WINDOW_MARGIN_DAYS: Final = 7
 # 조회 요청자의 사내 계정을 넣는 환경변수. 사람마다 다른 값이라 저장소에 두지 않는다 —
 # 배포 ZIP 을 받은 다른 사람이 남의 계정으로 조회하게 된다.
 BDQ_USER_NAME_ENV: Final = "CAPA_BDQ_USER_NAME"
@@ -234,6 +237,7 @@ def default_query_window(
 def resolve_detail_window(
     catalog_window: QueryWindow | None,
     *,
+    registered_on: date | None = None,
     today: date | None = None,
 ) -> QueryWindow:
     """상세 조회 창. 목록에서 고른 기간으로 **좁히지 않는다**.
@@ -242,14 +246,24 @@ def resolve_detail_window(
     기간이 하루면 그 코드의 하루치 행만 저장돼 원천이 잘린 시나리오가 조용히 남는다.
     그래서 기본 창과 목록 창의 합집합을 쓴다 — 선택이 없으면 기본 창과 정확히 같고,
     기본 창보다 오래된 코드를 골랐을 때만 아래로 넓어진다(넓히지 않으면 0행이다).
+
+    **원천 등록일(`registered_on`)이 있으면 그 `REGISTRATION_WINDOW_MARGIN_DAYS` 일 전까지
+    내린다**(2026-09-29 사용자 결정 B). 목록 기간은 그 코드를 *찾아낸* 기간일 뿐이라, 코드의 행이
+    여러 날에 걸쳐 적재됐고 목록 기간이 최근 적재분만 잡았으면 옛 적재분이 오류 없이 빠진 채
+    저장됐다. 등록일은 그 시뮬레이션이 만들어진 날이라 적재는 그 뒤에 일어난다 — 목록 기간이
+    얼마나 좁든 그 코드의 적재분 전체를 덮는다. 끝은 여전히 오늘이다(재적재분까지).
     """
     default = default_query_window(today=today)
-    if catalog_window is None:
-        return default
-    return QueryWindow(
-        start_date=min(default.start_date, catalog_window.start_date),
-        end_date=max(default.end_date, catalog_window.end_date),
-    )
+    start_date = default.start_date
+    end_date = default.end_date
+    if catalog_window is not None:
+        start_date = min(start_date, catalog_window.start_date)
+        end_date = max(end_date, catalog_window.end_date)
+    if registered_on is not None:
+        start_date = min(
+            start_date, registered_on - timedelta(days=REGISTRATION_WINDOW_MARGIN_DAYS)
+        )
+    return QueryWindow(start_date=start_date, end_date=end_date)
 
 
 class BigDataQueryModule(Protocol):

@@ -373,3 +373,23 @@ def test_valid_simulation_code_predicate_matches_the_validator() -> None:
     assert adapter.is_valid_simulation_code("DEMO-A_001.2") is True
     assert adapter.is_valid_simulation_code("DEMO 공백") is False
     assert adapter.is_valid_simulation_code("   ") is False
+
+
+def test_detail_window_reaches_back_to_the_registration_date() -> None:
+    """원천 등록일이 있으면 그 7일 전부터 덮는다(2026-09-29 사용자 결정 B).
+
+    목록 기간은 코드를 찾아낸 기간일 뿐이다. 코드의 행이 여러 날에 걸쳐 적재됐고 목록 기간이
+    최근 적재분만 잡았으면, 옛 적재분이 오류 없이 빠진 채 저장됐다.
+    """
+    today = date(2026, 9, 29)
+    recent = adapter.QueryWindow(start_date=today - timedelta(days=3), end_date=today)
+    registered = date(2026, 3, 2)
+
+    window = adapter.resolve_detail_window(recent, registered_on=registered, today=today)
+
+    margin = timedelta(days=adapter.REGISTRATION_WINDOW_MARGIN_DAYS)
+    assert window.start_date == registered - margin
+    assert window.end_date == today
+    # 등록일이 기본 창 안이면 창은 그대로다 — 좁히지 않는다.
+    inside = adapter.resolve_detail_window(None, registered_on=today, today=today)
+    assert inside == adapter.default_query_window(today=today)

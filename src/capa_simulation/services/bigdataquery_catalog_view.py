@@ -137,6 +137,29 @@ def normalize_catalog(frame: pd.DataFrame) -> pd.DataFrame:
     return normalized.reset_index(drop=True)
 
 
+def first_registration_dates(frame: pd.DataFrame) -> dict[tuple[str, str], date]:
+    """(시뮬레이션 코드, PLAN 코드) 마다 목록 결과에 보인 **가장 이른** 원천 등록일.
+
+    `normalize_catalog` 는 코드·PLAN 당 **최신** 1행만 남긴다(`reg_date` 가 행 단위 적재시각이면
+    코드 하나가 수천 행으로 펼쳐진다). 상세 조회 창은 반대로 가장 이른 날부터 덮어야 옛 적재분이
+    빠지지 않는다 — 그래서 정리 전 프레임에서 따로 구한다. 읽지 못하는 등록시각은 건너뛴다.
+    """
+    earliest: dict[tuple[str, str], date] = {}
+    if frame.empty or not set(CATALOG_COLUMNS) <= set(frame.columns):
+        return earliest
+    codes = frame["simulation_code"].astype("string").fillna("").str.strip()
+    plans = frame["plan_code"].astype("string").fillna("").str.strip()
+    for code, plan, value in zip(codes, plans, frame["regist_data"], strict=True):
+        text = format_registered_at(value)
+        if not text:
+            continue
+        day = datetime.strptime(text, REGISTERED_AT_FORMAT).date()
+        key = (str(code), str(plan))
+        if key not in earliest or day < earliest[key]:
+            earliest[key] = day
+    return earliest
+
+
 def catalog_rows(catalog: pd.DataFrame) -> list[CatalogRow]:
     """계약 프레임을 행 객체로 바꾼다. 행 수·순서를 그대로 유지한다."""
     return [

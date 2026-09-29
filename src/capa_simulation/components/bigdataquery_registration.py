@@ -14,7 +14,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any, Final, cast
 
@@ -29,6 +30,7 @@ from capa_simulation.io.bigdataquery_catalog import (
     is_bigdataquery_catalog_configured,
 )
 from capa_simulation.io.company_bigdataquery_adapter import (
+    REGISTRATION_WINDOW_MARGIN_DAYS,
     BigDataQueryCoreDataProvider,
     QueryWindow,
     is_bigdataquery_adapter_configured,
@@ -49,6 +51,7 @@ from capa_simulation.services.bigdataquery_catalog_view import (
     build_display_frame,
     catalog_row_at,
     filter_catalog,
+    first_registration_dates,
     normalize_catalog,
     registration_prefill,
     row_position,
@@ -68,6 +71,8 @@ CATALOG_RESULT_KEY = "bigdataquery_catalog_result"
 CATALOG_PICK_KEY = "bigdataquery_catalog_pick"
 CATALOG_APPLIED_KEY = "bigdataquery_catalog_applied_signature"
 CATALOG_FORM_WINDOW_KEY = "bigdataquery_catalog_form_window"
+# 폼의 코드를 목록에서 골랐을 때 그 코드의 가장 이른 원천 등록일. 상세 조회 창의 시작을 내린다.
+CATALOG_FORM_REGISTERED_ON_KEY = "bigdataquery_catalog_form_registered_on"
 CATALOG_LIST_NONCE_KEY = "bigdataquery_catalog_list_nonce"
 CATALOG_LAST_LIST_KEY = "bigdataquery_catalog_last_list_key"
 CATALOG_RESET_REQUEST_KEY = "bigdataquery_catalog_reset_request"
@@ -109,14 +114,17 @@ class CatalogResult:
     window: QueryWindow
     queried_at: datetime
     token: str
+    # (코드, PLAN) 마다 목록에 보인 가장 이른 원천 등록일. 상세 조회 창의 시작을 정한다.
+    first_registered: Mapping[tuple[str, str], date] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class CatalogPick:
-    """목록에서 고른 행과, 그 행을 찾아낸 조회 기간."""
+    """목록에서 고른 행과, 그 행을 찾아낸 조회 기간과, 그 코드의 가장 이른 원천 등록일."""
 
     row: CatalogRow
     window: QueryWindow
+    first_registered_on: date | None = None
 
 
 def render_bigdataquery_registration(
@@ -265,6 +273,7 @@ def _run_catalog_query(window: QueryWindow) -> None:
         ):
             frame = fetch_simulation_catalog(window)
             catalog = normalize_catalog(frame)
+            first_registered = first_registration_dates(frame)
             queried_at = datetime.now()
             # 세션 대입을 spinner 블록 안에서 끝낸다. 블록을 빠져나가는 첫 `st` 호출이
             # 탭 전환 rerun 으로 터지면 조회 결과가 통째로 버려진다.
@@ -273,6 +282,7 @@ def _run_catalog_query(window: QueryWindow) -> None:
                 window=window,
                 queried_at=queried_at,
                 token=view_token(window.label(), queried_at.isoformat(timespec="microseconds")),
+                first_registered=first_registered,
             )
             # 결과셋이 바뀌었으니 선택만 버린다. 폼에 적힌 값은 건드리지 않는다.
             _clear_pick()
@@ -358,7 +368,15 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
     if selected is not None:
         row = catalog_row_at(visible, selected)
         if row is not None:
-            _apply_pick(CatalogPick(row=row, window=result.window))
+            _apply_pick(
+                CatalogPick(
+                    row=row,
+                    window=result.window,
+                    first_registered_on=result.first_registered.get(
+                        (row.simulation_code, row.plan_code)
+                    ),
+                )
+            )
     elif last_key == list_key:
         # 위젯 key 가 그대로인데 선택이 비었다 = 같은 행을 다시 눌러 해제했다.
         # key 가 바뀐 런의 빈 선택은 검색 변경이므로 선택을 유지한다.
@@ -379,13 +397,15 @@ def _apply_pick(pick: CatalogPick) -> None:
     if st.session_state.get(CATALOG_APPLIED_KEY) == pick.row.signature:
         # 같은 행이 계속 선택돼 있을 뿐이다. 사용자가 고친 값을 덮지 않는다.
         return
+    registered_on = pick.first_registered_on or _registered_day(pick.row.registered_at)
     prefill = registration_prefill(
         pick.row,
         catalog_window_label=pick.window.label(),
-        detail_window_label=resolve_detail_window(pick.window).label(),
+        detail_window_label=resolve_detail_window(pick.window, registered_on=registered_on).label(),
     )
     st.session_state[CATALOG_APPLIED_KEY] = pick.row.signature
     st.session_state[CATALOG_FORM_WINDOW_KEY] = pick.window
+    st.session_state[CATALOG_FORM_REGISTERED_ON_KEY] = registered_on
     st.session_state[FORM_CODE_KEY] = prefill.simulation_code
     st.session_state[FORM_SOURCE_NAME_KEY] = prefill.source_name
     st.session_state[FORM_SCENARIO_NAME_KEY] = prefill.scenario_name
@@ -420,6 +440,7 @@ def _consume_reset_request() -> None:
         CATALOG_PICK_KEY,
         CATALOG_APPLIED_KEY,
         CATALOG_FORM_WINDOW_KEY,
+        CATALOG_FORM_REGISTERED_ON_KEY,
         *FORM_DEFAULTS,
     ):
         st.session_state.pop(key, None)
@@ -438,10 +459,17 @@ def _render_registration_form(
     unsavable = pick is not None and not pick.row.savable
     if unsavable:
         st.error(UNSAVABLE_REASON)
-    detail_window = resolve_detail_window(_form_detail_window())
+    detail_window = _detail_window()
+    registered_on = _form_registered_on()
     st.caption(
-        f"상세 조회 기간: {detail_window.label()} — 목록 기간으로 좁히지 않고 "
-        "기본 창과 합쳐 사용합니다."
+        f"상세 조회 기간: {detail_window.label()} — 목록 기간으로 좁히지 않고 기본 창과 합쳐 "
+        "사용합니다."
+        + (
+            f" 원천 등록일 {registered_on:%Y-%m-%d} 의 "
+            f"{REGISTRATION_WINDOW_MARGIN_DAYS}일 전부터 덮습니다."
+            if registered_on is not None
+            else ""
+        )
     )
     with st.form("bigdataquery_registration_form"):
         st.text_input("조회할 시뮬레이션 코드", key=FORM_CODE_KEY)
@@ -495,7 +523,7 @@ def _save_scenario(
         provider = BigDataQueryCoreDataProvider(
             simulation_name=source_name,
             source_registered_at=registered_at,
-            window=resolve_detail_window(_form_detail_window()),
+            window=_detail_window(),
         )
         with st.spinner("사내 DB에서 Core Data를 조회하고 검증하는 중입니다..."):
             prepared = fetch_core_data_dataset(provider, simulation_code, display_order)
@@ -540,6 +568,32 @@ def _stored_result() -> CatalogResult | None:
 def _stored_pick() -> CatalogPick | None:
     stored = st.session_state.get(CATALOG_PICK_KEY)
     return stored if isinstance(stored, CatalogPick) else None
+
+
+def _registered_day(text: str) -> date | None:
+    """폼·목록의 원천 등록시각 문자열에서 날짜만. 못 읽으면 None — 저장 경로가 따로 검증한다."""
+    try:
+        parsed = _optional_datetime(text)
+    except ValueError:
+        return None
+    return parsed.date() if parsed is not None else None
+
+
+def _form_registered_on() -> date | None:
+    """상세 조회 창을 내릴 원천 등록일. 목록에서 고른 코드의 가장 이른 등록일과 폼의 등록시점 중
+    이른 쪽이다 — 코드를 직접 적은 사람도 등록시점을 채우면 창이 그만큼 내려간다.
+    """
+    stored = st.session_state.get(CATALOG_FORM_REGISTERED_ON_KEY)
+    candidates = [stored] if isinstance(stored, date) else []
+    typed = _registered_day(str(st.session_state.get(FORM_REGISTERED_AT_KEY, "")))
+    if typed is not None:
+        candidates.append(typed)
+    return min(candidates) if candidates else None
+
+
+def _detail_window() -> QueryWindow:
+    """상세 조회 창 — 기본 창 ∪ 목록 기간 ∪ 원천 등록일부터(`resolve_detail_window`)."""
+    return resolve_detail_window(_form_detail_window(), registered_on=_form_registered_on())
 
 
 def _form_detail_window() -> QueryWindow | None:
