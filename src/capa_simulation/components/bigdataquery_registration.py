@@ -89,7 +89,7 @@ FORM_SCENARIO_NAME_KEY = "bigdataquery_form_scenario_name"
 FORM_REVISION_NAME_KEY = "bigdataquery_form_revision_name"
 FORM_REGISTERED_AT_KEY = "bigdataquery_form_registered_at"
 FORM_NOTE_KEY = "bigdataquery_form_note"
-# 상세 조회 기간(포함). 둘 다 비면 `원천 DB 등록시점` 으로 기본 창을 정한다.
+# 상세 조회 기간(포함). 둘 다 비면 「원천 DB 등록시점」으로 기본 창을 정한다.
 FORM_DETAIL_START_KEY = "bigdataquery_form_detail_start"
 FORM_DETAIL_END_KEY = "bigdataquery_form_detail_end"
 FORM_DEFAULTS: Final[dict[str, str]] = {
@@ -613,7 +613,7 @@ def _detail_window_caption() -> str:
     """
     rule = (
         f"상세 조회 기간 — 목록에서 코드를 고르면 원천 등록일 {DETAIL_WINDOW_DAYS_BEFORE}일 전 ~ "
-        f"{DETAIL_WINDOW_DAYS_AFTER}일 뒤로 채웁니다. 두 칸을 비우면 `원천 DB 등록시점` 으로 같은 "
+        f"{DETAIL_WINDOW_DAYS_AFTER}일 뒤로 채웁니다. 두 칸을 비우면 「원천 DB 등록시점」으로 같은 "
         "규칙을 씁니다. 등록 뒤에도 원천이 계속 수정·재적재됐으면 종료일을 늘리세요 — 기간이 "
         "길수록 조회가 오래 걸립니다."
     )
@@ -644,7 +644,7 @@ def _submitted_detail_window(registered_at: datetime | None) -> QueryWindow | No
         return None
     if registered_at is None:
         st.error(
-            "상세 조회 기간을 지정하거나 `원천 DB 등록시점` 을 적으세요 — 두 칸을 비워 두면 그 "
+            "상세 조회 기간을 지정하거나 「원천 DB 등록시점」을 적으세요 — 두 칸을 비워 두면 그 "
             f"등록일 {DETAIL_WINDOW_DAYS_BEFORE}일 전 ~ {DETAIL_WINDOW_DAYS_AFTER}일 뒤로 "
             "조회합니다."
         )
