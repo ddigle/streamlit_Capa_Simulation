@@ -540,6 +540,9 @@ with pkg_plan_tab:
         row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
         num_rows="fixed",
         disabled=PLAN_EDITOR_DIMENSIONS,
+        # 위에서 가린 0 칸은 빈칸으로 그린다. 빈칸 표시를 주지 않으면 Streamlit 이 그 칸마다
+        # "None" 글자를 그린다(2026-10-01 브라우저 E2E).
+        placeholder="",
         column_config={
             **{
                 column: st.column_config.TextColumn(
@@ -630,6 +633,8 @@ with yield_tab:
             row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
             num_rows="fixed",
             disabled=YIELD_EDITOR_DIMENSIONS,
+            # 편집 불가 행의 달 칸과 원천에 행이 없는 달은 빈칸이다 — "None" 글자가 아니다.
+            placeholder="",
             column_config={
                 **{
                     column: st.column_config.TextColumn(

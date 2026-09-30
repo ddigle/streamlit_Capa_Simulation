@@ -702,3 +702,17 @@ def test_applying_one_table_leaves_only_the_other_tables_edit_pending(
         app.run()
         assert app.session_state[PRE_PAGE_LOG_KEY][-1] == [other_label]
 
+
+def test_blank_cells_in_both_editors_show_as_blank_not_none(seeded_database: Path) -> None:
+    """PKG PLAN 의 0 칸과 수율의 편집 불가 칸은 빈칸으로 싣는다 — "None" 글자가 아니다.
+
+    빈칸 표시(`placeholder`)를 주지 않으면 Streamlit 은 빈 칸에 "None" 을 그린다(2026-10-01
+    브라우저 E2E). 가이드는 그 칸을 「빈칸」이라고 설명한다.
+    """
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+
+    for key in ("pkg_plan_editor", "yield_editor"):
+        proto = _editor_node(app, key).proto
+        assert proto.HasField("placeholder"), key
+        assert proto.placeholder == "", key
