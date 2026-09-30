@@ -826,6 +826,42 @@ def test_scenario_can_be_renamed_without_changing_revision(tmp_path: Path) -> No
     assert renamed.active_revision_id == snapshot.revision.revision_id
 
 
+def test_a_second_scenario_with_the_same_name_is_refused(tmp_path: Path) -> None:
+    """같은 이름이 둘이면 사이드바·보관함에서 가릴 수 없다(2026-10-01 사용자 결정).
+
+    보관본도 센다 — 되돌리면 목록에 같은 이름이 둘이 된다. 앞뒤 공백은 떼고 대조한다.
+    """
+    repository = _repository(tmp_path / "scenario.duckdb")
+    preset = ScenarioPreset(202608, 202608, ("Process-A",))
+    first = repository.create_scenario(_metadata("같은 이름"), _reference_tables(), preset)
+
+    with pytest.raises(ValueError, match="같은 이름의 시나리오가 이미 있습니다"):
+        repository.create_scenario(_metadata(" 같은 이름 "), _reference_tables(), preset)
+
+    repository.archive_scenario(first.scenario.scenario_id)
+    with pytest.raises(ValueError, match="같은 이름의 시나리오가 이미 있습니다"):
+        repository.create_scenario(_metadata("같은 이름"), _reference_tables(), preset)
+    # 막힌 시도는 아무것도 남기지 않는다.
+    assert len(repository.list_scenarios(include_archived=True)) == 1
+
+
+def test_renaming_onto_another_scenario_name_is_refused_but_keeping_it_is_not(
+    tmp_path: Path,
+) -> None:
+    repository = _repository(tmp_path / "scenario.duckdb")
+    preset = ScenarioPreset(202608, 202608, ("Process-A",))
+    taken = repository.create_scenario(_metadata("먼저 쓴 이름"), _reference_tables(), preset)
+    other = repository.create_scenario(_metadata("다른 이름"), _reference_tables(), preset)
+    repository.archive_scenario(taken.scenario.scenario_id)
+
+    with pytest.raises(ValueError, match="같은 이름의 시나리오가 이미 있습니다"):
+        repository.rename_scenario(other.scenario.scenario_id, "먼저 쓴 이름")
+
+    # 지금 이름 그대로 저장하는 것은 자기 자신과 겹칠 뿐이다.
+    kept = repository.rename_scenario(other.scenario.scenario_id, "다른 이름")
+    assert kept.scenario_name == "다른 이름"
+
+
 def test_latest_official_release_is_append_only_and_loadable(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "scenario.duckdb")
     first = repository.create_scenario(

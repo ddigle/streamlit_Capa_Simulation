@@ -1,4 +1,4 @@
-# Purpose: 시나리오 관리 페이지의 폼 구성·목록 작업·보관함 펼침 유지를 AppTest 로 고정한다.
+# Purpose: 시나리오 관리 페이지의 폼 구성·목록 작업·보관함 펼침·복제 저장을 AppTest 로 고정한다.
 
 from pathlib import Path
 
@@ -6,7 +6,11 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from test_all_pages_render import _page_script
 
-from capa_simulation.components.scenario_management import ARCHIVED_EXPANDER_KEY, FLASH_KEY
+from capa_simulation.components.scenario_management import (
+    ARCHIVED_EXPANDER_KEY,
+    FLASH_KEY,
+    MODE_KEY,
+)
 from capa_simulation.persistence.models import ScenarioCreate, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
@@ -126,3 +130,62 @@ def test_archived_box_keeps_its_identity_when_the_flash_disappears(tmp_path: Pat
     assert not app.exception
     assert not any("보관했습니다" in item.value for item in app.success)
     assert app.main.get_by_key(ARCHIVED_EXPANDER_KEY)._block_id == flashed
+
+
+def _clone_inputs(app: AppTest) -> dict[str, str]:
+    """복제 폼 칸의 (라벨 → 값). BigDataQuery 탭에도 같은 라벨이 있어 키로 가린다."""
+    return {
+        widget.label: str(widget.value)
+        for widget in [*app.text_input, *app.text_area]
+        if str(widget.key or "").startswith("scenario_create_")
+    }
+
+
+def _fill_clone(app: AppTest, name: str, code: str) -> None:
+    for widget in app.text_input:
+        if not str(widget.key or "").startswith("scenario_create_"):
+            continue
+        if widget.label == "시나리오명":
+            widget.set_value(name)
+        elif widget.label == "원천 시뮬레이션 코드":
+            widget.set_value(code)
+        elif widget.label == "원천 시뮬레이션명":
+            widget.set_value("복제 원천")
+    next(button for button in app.button if button.label == "신규 시나리오 저장").click()
+    app.run()
+    assert not app.exception
+
+
+def test_clone_form_clears_after_saving_and_refuses_a_taken_name(tmp_path: Path) -> None:
+    """저장한 값이 폼에 남으면 한 번 더 눌러 같은 시나리오가 또 생겼다(2026-10-01 재현).
+
+    성공하면 폼이 비고, 같은 이름을 다시 적으면 저장소가 막는다. 막힌 입력은 고쳐 쓰도록
+    남는다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    app.segmented_control(key=MODE_KEY).set_value("현재 활성 RQ 복제").run()
+    assert not app.exception
+
+    _fill_clone(app, "복제 A", "CLONE-A")
+    assert any("복제 A을 저장했습니다" in item.value for item in app.success)
+    assert _clone_inputs(app) == {
+        "시나리오명": "",
+        "원천 시뮬레이션 코드": "",
+        "원천 시뮬레이션명": "",
+        "초기 리비전명": "초기 리비전",
+        "메모": "",
+    }
+
+    _fill_clone(app, "복제 A", "CLONE-B")
+    assert any("같은 이름의 시나리오가 이미 있습니다" in item.value for item in app.error)
+    assert _clone_inputs(app)["시나리오명"] == "복제 A"
+    names = [
+        scenario.scenario_name
+        for scenario in DuckDBScenarioRepository(database_path).list_scenarios(
+            include_archived=True
+        )
+    ]
+    assert names.count("복제 A") == 1

@@ -72,6 +72,8 @@ ARCHIVED_SELECT_KEY = "scenario_list_archived_id"
 # 접힘 칸의 key. 위젯이 아니라 브라우저가 펼침을 기억하는 이름이다(`_render_archived_scenarios`).
 ARCHIVED_EXPANDER_KEY = "scenario_list_archived_expander"
 IDENTIFIER_EXPANDER_KEY = "scenario_store_identifier_expander"
+# 복제 폼 입력칸의 세대. 저장에 성공하면 올라 다음 회차에 빈 폼으로 선다(`clone_field_key`).
+CLONE_FORM_GENERATION_KEY = "scenario_create_form_generation"
 REVISION_SELECT_KEY = "scenario_list_revision_id"
 SELECT_COLUMN = "선택"
 ORDER_COLUMN = "순서"
@@ -602,6 +604,18 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     st.rerun()
 
 
+def clone_field_key(field: str) -> str:
+    """복제 폼 한 칸의 위젯 키. 저장에 성공할 때마다 세대가 바뀐다.
+
+    **저장한 값이 폼에 남으면 한 번 더 눌러 같은 시나리오가 또 생긴다**(2026-10-01 브라우저
+    재현). `clear_on_submit` 은 이름 중복 같은 **실패**에도 입력을 지워 쓰지 않는다. 세션 칸만
+    지우면 브라우저가 옛 값을 다시 보내므로(`components/editor_state.py` 와 같은 사정) 성공한
+    회차에만 키를 바꿔 새 빈 칸으로 세운다.
+    """
+    generation = int(st.session_state.get(CLONE_FORM_GENERATION_KEY, 0))
+    return f"scenario_create_{field}_g{generation}"
+
+
 def _render_clone(repository: DuckDBScenarioRepository) -> None:
     try:
         reference_tables, active_scenario = _current_reference_context()
@@ -611,11 +625,14 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
         )
         return
     with st.form("scenario_create_form"):
-        scenario_name = st.text_input("시나리오명")
-        source_code = st.text_input("원천 시뮬레이션 코드")
-        source_name = st.text_input("원천 시뮬레이션명")
-        revision_name = st.text_input("초기 리비전명", value="초기 리비전")
-        note = st.text_area("메모", height=100)
+        # 이름은 보관본을 포함해 겹칠 수 없다 — 검사는 저장소가 한다(`create_scenario`).
+        scenario_name = st.text_input("시나리오명", key=clone_field_key("name"))
+        source_code = st.text_input("원천 시뮬레이션 코드", key=clone_field_key("source_code"))
+        source_name = st.text_input("원천 시뮬레이션명", key=clone_field_key("source_name"))
+        revision_name = st.text_input(
+            "초기 리비전명", value="초기 리비전", key=clone_field_key("revision_name")
+        )
+        note = st.text_area("메모", height=100, key=clone_field_key("note"))
         create_submitted = st.form_submit_button(
             "신규 시나리오 저장",
             icon=":material/save:",
@@ -650,6 +667,9 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
     else:
         activate_persisted_snapshot(snapshot)
         st.session_state[FLASH_KEY] = f"{snapshot.scenario.scenario_name}을 저장했습니다."
+        st.session_state[CLONE_FORM_GENERATION_KEY] = (
+            int(st.session_state.get(CLONE_FORM_GENERATION_KEY, 0)) + 1
+        )
         st.rerun()
 
 

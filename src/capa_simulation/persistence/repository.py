@@ -197,6 +197,39 @@ def _require_not_latest_official(
         )
 
 
+DUPLICATE_SCENARIO_NAME_MESSAGE = "같은 이름의 시나리오가 이미 있습니다. 이름을 바꿔 저장하세요."
+
+
+def _require_unique_scenario_name(
+    connection: duckdb.DuckDBPyConnection,
+    scenario_name: str,
+    *,
+    except_scenario_id: str | None = None,
+) -> None:
+    """같은 이름의 시나리오가 있으면 막는다(2026-10-01 사용자 결정 — 이름 중복 금지).
+
+    사이드바·보관함 선택지·영구 삭제 확인이 모두 이름만 보여 주어, 같은 이름이 둘이면 어느
+    쪽을 고르는지 가릴 수 없다. **보관본까지 본다** — BigDataQuery 등록의 이름 검사
+    (`list_scenarios(include_archived=True)`)와 같은 범위다. 보관본을 되돌리면 목록에 같은
+    이름이 둘이 된다. 대조는 앞뒤 공백을 뗀 값의 완전 일치다(`required_text` 가 이미 뗀다).
+
+    DB 제약(UNIQUE)이 아니라 쓰기 트랜잭션 안의 검사로 둔다. 이 규칙 전에 만든 DB 에는 같은
+    이름이 이미 있을 수 있어 제약을 걸면 마이그레이션이 그 DB 에서 멈춘다. `except_scenario_id`
+    는 이름 수정에서 자기 자신을 빼는 자리다 — 지금 이름 그대로 저장해도 막히지 않는다.
+    """
+    duplicate = connection.execute(
+        """
+        SELECT 1
+        FROM app_meta.scenario
+        WHERE scenario_name = ? AND scenario_id IS DISTINCT FROM ?
+        LIMIT 1
+        """,
+        [scenario_name, except_scenario_id],
+    ).fetchone()
+    if duplicate is not None:
+        raise ValueError(DUPLICATE_SCENARIO_NAME_MESSAGE)
+
+
 _WRITE_LOCK = threading.RLock()
 
 
@@ -562,6 +595,7 @@ class DuckDBScenarioRepository:
         )
 
         with self._write_transaction() as connection:
+            _require_unique_scenario_name(connection, metadata.scenario_name)
             if source_data_hash is not None:
                 validate_immutable_source_code(
                     connection,
@@ -892,6 +926,7 @@ class DuckDBScenarioRepository:
         """Rename mutable scenario metadata without changing immutable revisions."""
         label = required_text(scenario_name, "시나리오명")
         with self._write_transaction() as connection:
+            _require_unique_scenario_name(connection, label, except_scenario_id=scenario_id)
             changed = connection.execute(
                 """
                 UPDATE app_meta.scenario
