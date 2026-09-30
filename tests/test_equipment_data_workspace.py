@@ -11,9 +11,11 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.equipment_data_workspace import (
     _NOTICE_KEY,
+    BASELINE_EDITOR_KEY,
     BUFFER_KEY,
     CLIPBOARD_KEY,
     DOWNLOADS_EXPANDER_KEY,
+    DOWNTIME_EDITOR_KEY,
     DROP_EXAMPLE_ROWS_KEY,
     EDITOR_TABS_KEY,
     EQUIPMENT_EDITOR_KEY,
@@ -465,3 +467,25 @@ def test_inner_tabs_keep_their_identity_when_a_notice_appears_above_the_form(
     assert not app.exception
     assert any("선택한 행이 없습니다" in item.value for item in app.info)
     assert _keyed_blocks(app) == quiet
+
+
+def test_blank_cells_in_the_direct_editors_render_empty_not_none(tmp_path: Path) -> None:
+    """결측 칸은 빈칸이다. 기본값(`placeholder=None`)이면 Streamlit 이 "None" 글자를 그린다."""
+    repository = _repository(tmp_path / "equipment.duckdb")
+    repository.save_snapshot(
+        empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
+    )
+    app = _app(tmp_path / "equipment.duckdb")
+    assert not app.exception
+    editors = [
+        node
+        for node in app.main
+        if getattr(node, "type", None) == "dataframe"
+        and str(getattr(node, "key", "") or "").startswith(
+            (EQUIPMENT_EDITOR_KEY, BASELINE_EDITOR_KEY, DOWNTIME_EDITOR_KEY)
+        )
+    ]
+    assert len(editors) == 3
+    for editor in editors:
+        assert editor.proto.HasField("placeholder")
+        assert editor.proto.placeholder == ""

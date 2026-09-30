@@ -471,6 +471,9 @@ def _selectable_editor(
         num_rows=view.row_mode,
         hide_index=True,
         width="stretch",
+        # 빈 칸은 빈칸으로 보인다. 주지 않으면 Streamlit 이 결측값을 회색 "None" 글자로 그려
+        # 「종료일이 비어 있으면 진행 중」 같은 작성 기준의 빈칸이 값처럼 읽힌다(2026-10-01).
+        placeholder="",
         column_config={
             SELECT_COLUMN: st.column_config.CheckboxColumn(
                 "선택",
