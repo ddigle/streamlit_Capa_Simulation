@@ -154,3 +154,22 @@ def test_blank_values_are_not_offered_and_a_chosen_column_with_no_value_filters_
     assert app.multiselect(key=unit_filter_key("모델")).options == ["M-1", "M-2"]
     # 컬럼만 고르고 값을 안 고르면 아무것도 거르지 않는다.
     assert _matrix(app).loc[DYNAMIC_SUBTOTAL_ROW, "26.10"] == 11.0
+
+
+def test_the_caption_counts_only_the_units_inside_the_chosen_process() -> None:
+    """캡션의 호기 수는 표에 실제로 더해진 호기 수다.
+
+    Line-A 는 EQ-1(Die Attach)·EQ-3(Etch) 둘인데, 공정을 Die Attach 로 고르면 더해지는 것은
+    EQ-1 하나다. 범위 밖 호기까지 세면 「호기 2개」로 적혀 표와 어긋났다(2026-10-01 재현: 동=C1
+    18대 중 Die Attach 3대).
+    """
+    app = _run()
+    _filter(app, "라인구분", ["Line-A"])
+    captions = " ".join(caption.value for caption in app.caption)
+    assert "호기 2개만 더합니다" in captions
+
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
+    assert not app.exception
+    captions = " ".join(caption.value for caption in app.caption)
+    assert "호기 1개만 더합니다" in captions
+    assert _matrix(app).loc["가용", "26.10"] == 1.0

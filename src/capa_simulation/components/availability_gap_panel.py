@@ -443,7 +443,9 @@ def _render_unit_filters(units: pd.DataFrame, scope: set[str]) -> tuple[set[str]
     )
     if not applied:
         return None, []
-    unit_ids = _text_values(units["호기"]).loc[kept]
+    # 공정 범위 안의 호기만 돌려준다. 표는 어차피 범위로 다시 좁히지만, 본문 캡션이 이 수를
+    # 「호기 N개만 더합니다」로 적는다 — 범위 밖 호기까지 세면 그 수가 표와 어긋났다(2026-10-01).
+    unit_ids = _text_values(units["호기"]).loc[kept & in_scope]
     return set(unit_ids.dropna()), applied
 
 
