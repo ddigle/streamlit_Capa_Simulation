@@ -70,6 +70,45 @@ def test_bootstrap_errors_cover_every_failure_the_entry_sequence_can_raise() -> 
     assert issubclass(duckdb.IOException, BOOTSTRAP_ERRORS)
 
 
+def test_database_error_message_follows_who_holds_the_lock() -> None:
+    """잠금을 쥔 쪽에 맞는 조치를 권한다(E2E G1-D0).
+
+    이 앱 자신이 쥔 잠금에 「다른 창을 닫으라」고 하면 틀린 조치다 — 한 서버가 모든 창을
+    받으므로 닫을 창이 없고, 새로고침이면 이어진다.
+    """
+    import os
+    from pathlib import Path
+
+    import duckdb
+
+    def lock_error(pid: int) -> duckdb.IOException:
+        return duckdb.IOException(
+            'IO Error: Cannot open file "x.duckdb": ???\r\n\n'
+            f"File is already open in \nC:\\Python310\\python.exe (PID {pid})"
+        )
+
+    own = page_bootstrap.bootstrap_error_message(lock_error(os.getpid()))
+    assert "새로고침" in own
+    assert "닫을 필요는 없습니다" in own
+    assert "다른 창에서 실행 중" not in own
+
+    other_pid = os.getpid() + 1
+    other = page_bootstrap.bootstrap_error_message(lock_error(other_pid))
+    assert f"PID {other_pid}" in other
+    assert "브라우저 창·탭 여러 개로 여는 것은 원인이 아닙니다" in other
+
+    generic = page_bootstrap.bootstrap_error_message(duckdb.CatalogException("no table"))
+    assert "파일 권한과 경로" in generic
+    assert "다른 창에서 실행 중" not in generic
+
+    # 어느 파일인지는 부르는 쪽이 정한다.
+    equipment = Path("equipment_availability.duckdb")
+    assert f"`{equipment}`" in page_bootstrap.bootstrap_error_message(
+        lock_error(other_pid), database_paths=(equipment,)
+    )
+    assert page_bootstrap.bootstrap_error_message(ValueError("한국어 문장")) == "한국어 문장"
+
+
 def test_month_range_falls_back_when_the_widget_state_is_missing_or_broken(monkeypatch) -> None:
     """`st.session_state` 전역을 교체하면 AppTest 기반 페이지 테스트를 오염시킨다.
 
