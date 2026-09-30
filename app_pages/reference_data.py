@@ -373,7 +373,8 @@ reset_editors_on_source_change(
     other_keys=step_widget_keys,
     own_change_key=OWN_CHANGE_KEY,
 )
-# 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표를 알린다.
+# 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표를 알린다. 방금
+# 적용한 표는 사이드바가 빼고 센다(`OWN_CHANGE_KEY`).
 register_pending_edits(
     "reference_data.py",
     "기준 정보",
@@ -386,6 +387,7 @@ register_pending_edits(
         EDITOR_RUN_DAY: "일수",
         **{editor_key: f"설비대수 {label}" for _, label, _, editor_key in EQUIPMENT_EDITORS},
     },
+    own_change_key=OWN_CHANGE_KEY,
 )
 
 # 적용하지 않은 편집이 남은 탭에 점을 찍는다(탭 목록 개선안 C). 원본이 바뀌어 편집표를 비운

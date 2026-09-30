@@ -174,12 +174,13 @@ reset_editors_on_source_change(
     own_change_key=OWN_CHANGE_KEY,
 )
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표와 붙여넣기
-# 대기분을 알린다. 붙여넣기 대기분은 화면을 옮겨도 남는다.
+# 대기분을 알린다. 붙여넣기 대기분은 화면을 옮겨도 남는다. 방금 적용한 표는 사이드바가 빼고 센다.
 register_pending_edits(
     "load_conversion.py",
     "생산 계획",
     {PLAN_EDITOR_KEY: "PKG PLAN", YIELD_EDITOR_KEY: "수율"},
     staged={PLAN_STAGED_KEY: "PKG PLAN 붙여넣기"},
+    own_change_key=OWN_CHANGE_KEY,
 )
 
 # 본문은 제목 · 탭 · 탭 내용만이다. 「활성 시나리오 · 수정본 N」 줄은 없앴다 — 미저장 여부는

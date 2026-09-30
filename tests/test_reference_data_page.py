@@ -906,6 +906,44 @@ def test_filtered_upeh_editor_keeps_the_process_the_filter_hid() -> None:
     }
 
 
+PENDING_PROBE_KEY = "test_pre_page_pending_edits"
+# 회차마다 페이지 **앞에서** 「적용 전 편집」 목록을 적어 둔다. `app.py` 는 사이드바 캡션과 저장
+# 팝업의 경고·잠금을 `navigation.run()` 전에 부른 이 함수의 값으로 그린다 — 같은 차례를 흉내 낸다.
+PENDING_PROBE_SCRIPT = TWO_PROCESS_TEST_SCRIPT.replace(
+    '    PAGE_NAME = "reference_data.py"\n',
+    "    from capa_simulation.components.scenario_edit_bar import pending_edit_labels\n"
+    f"    st.session_state.setdefault({PENDING_PROBE_KEY!r}, []).append(\n"
+    "        pending_edit_labels('reference_data.py')\n"
+    "    )\n"
+    '    PAGE_NAME = "reference_data.py"\n',
+    1,
+)
+
+
+def test_the_sidebar_does_not_count_the_table_just_applied_as_pending() -> None:
+    """「변경사항 적용」 다음 회차에 사이드바는 방금 적용한 표를 「적용 전 편집」으로 세지 않는다.
+
+    적용은 `st.rerun()` 으로 끝나고, 다음 회차에는 사이드바가 페이지보다 먼저 돈다. 그 표를 버리는
+    일은 페이지 본문에서 뒤에 돌아, 한 회차 동안 사이드바와 저장 팝업이 방금 적용한 UPEH 를 「적용
+    전 편집」으로 띄우고 「신규 리비전 저장」을 잠갔다(2026-10-01 브라우저 E2E 에서 재현).
+    """
+    app = AppTest.from_string(PENDING_PROBE_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["UPEH"]
+    app.run()
+    assert not app.exception
+    runs_before = len(app.session_state[PENDING_PROBE_KEY])
+
+    app = _edit_and_apply(app, "capa_upeh_editor", "202608", 55.0)
+
+    assert not app.exception
+    assert "RQ_UPEH" in app.session_state["test_month_updates"]
+    log = app.session_state[PENDING_PROBE_KEY][runs_before:]
+    # 고친 뒤 회차에는 그 편집이 보인다 — 이 탐침이 편집을 읽고 있다는 뜻이다.
+    assert log[0] == ["기준 정보 · UPEH"]
+    # 적용 뒤 회차(사용자가 보는 사이드바)에는 남은 적용 전 편집이 없다.
+    assert log[-1] == []
+
+
 def test_run_rate_and_vital_tabs_do_not_share_their_process_filter() -> None:
     """두 탭은 `dimensions` 가 `공정`·`양산구분` 으로 완전히 같다.
 

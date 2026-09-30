@@ -39,6 +39,8 @@ def register_pending_edits(
     title: str,
     editors: Mapping[str, str],
     staged: Mapping[str, str] | None = None,
+    *,
+    own_change_key: str | None = None,
 ) -> None:
     """이 화면의 편집표(`editors`: 키 → 이름)와 붙여넣기 대기(`staged`: 키 → 이름)를 적어 둔다.
 
@@ -50,27 +52,42 @@ def register_pending_edits(
     `page` 는 그 화면의 파일 이름이다(`app_pages/<page>`). 편집표의 편집은 위젯 상태라 다른
     화면으로 옮기면 버려지므로 지금 화면의 것만 센다. 붙여넣기 대기는 위젯이 아닌 세션 칸이라
     화면을 옮겨도 남으므로 어느 화면에서나 센다.
+
+    `own_change_key` 는 그 화면이 `mark_own_change` 에 넘기는 칸이다. 사이드바가 방금 적용한 표를
+    빼고 세는 데 쓴다(`pending_edit_labels`).
     """
     registry = dict(st.session_state.get(_PENDING_REGISTRY_KEY) or {})
-    registry[page] = (title, dict(editors), dict(staged or {}))
+    registry[page] = (title, dict(editors), dict(staged or {}), own_change_key)
     st.session_state[_PENDING_REGISTRY_KEY] = registry
 
 
 def pending_edit_labels(current_page: str | None) -> list[str]:
-    """적용하지 않은 편집이 남은 곳 — 「기준 정보 · UPEH」. 없으면 빈 목록이다."""
+    """적용하지 않은 편집이 남은 곳 — 「기준 정보 · UPEH」. 없으면 빈 목록이다.
+
+    **방금 적용한 표는 세지 않는다.** 적용한 회차는 `st.rerun()` 으로 끝나고, 다음 회차에는 이
+    함수(사이드바)가 페이지보다 먼저 돈다. 그 편집표를 버리는 일(`reset_editors_on_source_change`)
+    은 페이지 본문에서 뒤에 도므로, 그 사이에는 적용한 편집이 아직 위젯 상태에 남아 있다. 그것을
+    세면 사이드바와 저장 팝업이 방금 적용한 표를 「적용 전 편집」으로 띄우고, 버릴 것도 없는 확인
+    체크를 요구하며 「신규 리비전 저장」을 잠갔다(2026-10-01 브라우저 E2E 에서 재현). 페이지가
+    `mark_own_change` 로 적어 둔 표·붙여넣기 대기는 그 적용이 버릴 것이므로 뺀다.
+    """
     registry = st.session_state.get(_PENDING_REGISTRY_KEY)
     if not isinstance(registry, dict):
         return []
     labels: list[str] = []
-    for page, (title, editors, staged) in registry.items():
+    for page, (title, editors, staged, own_change_key) in registry.items():
+        just_applied = st.session_state.get(own_change_key) if own_change_key else None
+        skipped = set(just_applied) if isinstance(just_applied, list) else set()
         if page == current_page:
             labels += [
-                f"{title} · {name}" for key, name in editors.items() if editor_has_edits(key)
+                f"{title} · {name}"
+                for key, name in editors.items()
+                if key not in skipped and editor_has_edits(key)
             ]
         labels += [
             f"{title} · {name}"
             for key, name in staged.items()
-            if st.session_state.get(key) is not None
+            if key not in skipped and st.session_state.get(key) is not None
         ]
     return labels
 
@@ -81,7 +98,8 @@ def mark_own_change(own_change_key: str, keys: Sequence[str]) -> None:
     적용은 활성 리비전을 올려 원본 토큰을 바꾼다. 그대로 두면 다음 회차에 **모든** 편집표가
     비워져, 다른 탭에서 고치고 아직 적용하지 않은 편집까지 조용히 사라진다(2026-09-29 리뷰에서
     재현). 여기 적은 편집표·상태만 버리고 나머지는 그대로 두게 한다. `keys` 는 이 적용으로 행
-    구성이 바뀐 편집표와 함께 비울 상태다.
+    구성이 바뀐 편집표와 함께 비울 상태다. 페이지보다 먼저 도는 사이드바도 이 목록을 읽어, 버리기
+    전인 그 표를 「적용 전 편집」으로 세지 않는다(`pending_edit_labels`).
     """
     st.session_state[own_change_key] = list(keys)
 
