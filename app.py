@@ -193,6 +193,7 @@ with pinned_connections(DUCKDB_PATH):
             icon=group.main.icon,
             key=group_key,
             on_change=on_box_toggle,
+            args=(group_key,),
         ):
             st.page_link(group.main, label=GROUP_MAIN_LABEL, width="stretch")
             for page in group.subpages:

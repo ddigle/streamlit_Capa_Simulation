@@ -59,24 +59,48 @@ def render_box_toggle_sink() -> None:
     앞에서** 불러야 한다 — 이번 실행에 등록되지 않은 프래그먼트는 겨눌 수 없다."""
 
 
-def on_box_toggle(key: str | None = None, label: str | None = None) -> None:
+def on_box_toggle(key: str, label: str | None = None) -> None:
     """상자 여닫기 콜백. 기억 칸을 적고, 할 수 있으면 빈 프래그먼트만 다시 돌린다.
 
     프래그먼트만 도는 회차에는 `sidebar_expander` 본체가 돌지 않으므로 `(펼침, 라벨)` 기억 칸을
-    여기서 적는다 — 적지 않으면 여닫은 뒤 페이지를 옮기거나 배지가 바뀔 때 옛 상태로 돌아간다.
-    직전 실행이 끝나지 않았거나 프래그먼트를 찾지 못하면(AppTest 는 실행마다 프래그먼트 저장소가
-    새로 생긴다) 그냥 돌아가 앱 전체 재실행으로 둔다. `st.rerun` 이 던지는 재실행 예외는 잡지
-    않는다.
+    여기서 적는다 — 적지 않으면 여닫은 뒤 페이지를 옮기거나 배지가 바뀔 때 옛 상태로 돌아간다
+    (라벨이 없는 페이지 그룹은 기억 칸을 쓰지 않는다). 아래 경우에는 그냥 돌아가 앱 전체 재실행으로
+    둔다: 직전 실행이 끝나지 않았을 때, **이번 상호작용에서 이 상자 말고 다른 위젯도 바뀌었을 때**,
+    프래그먼트를 찾지 못할 때(AppTest 는 실행마다 프래그먼트 저장소가 새로 생긴다). `st.rerun` 이
+    던지는 재실행 예외는 잡지 않는다.
     """
-    if key is not None and label is not None:
+    if label is not None:
         st.session_state[remembered_box_key(key)] = (bool(st.session_state.get(key)), label)
     state = st.session_state.get(APP_RUN_STATE_KEY)
     if not isinstance(state, dict) or not state.get("complete"):
+        return
+    if not _only_this_widget_changed(key):
         return
     try:
         st.rerun(SIDEBAR_TOGGLE_FRAGMENT_KEY)
     except StreamlitAPIException:
         return
+
+
+def _only_this_widget_changed(key: str) -> bool:
+    """이번 상호작용에서 값이 바뀐 위젯이 `key` 하나뿐인가. 판정하지 못하면 False 다.
+
+    입력칸에 글을 쓰다 사이드바 상자를 누르면 입력칸의 값과 상자의 여닫기가 **한 상호작용으로
+    합쳐져** 도착한다. 그때 프래그먼트만 다시 돌리면 입력칸 값은 세션에 들어가지만 본문은 그 값으로
+    다시 그려지지 않는다 — 탭을 누르고 30ms 안에 상자를 누르면 탭만 바뀌고 본문이 빈 채 남았다
+    (2026-09-30 브라우저 실측). Streamlit 은 이것을 공개 API 로 알려 주지 않아 세션 상태 내부
+    (`_widget_changed`)를 읽는다 — 버전은 `streamlit==1.63.0` 으로 고정돼 있고, 내부가 바뀌어 읽지
+    못하면 앱 전체 재실행(지금까지의 동작)으로 물러난다.
+    """
+    try:
+        from streamlit.runtime.state.session_state_proxy import get_session_state
+
+        session = get_session_state()._state
+        own = session._get_widget_id(key)
+        changed = {wid for wid in session._new_widget_state if session._widget_changed(wid)}
+    except Exception:  # noqa: BLE001 — 내부가 바뀌면 안전한 쪽(앱 전체 재실행)으로 물러난다
+        return False
+    return changed == {own}
 
 
 def remembered_box_key(key: str) -> str:
