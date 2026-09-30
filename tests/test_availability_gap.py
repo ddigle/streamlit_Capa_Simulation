@@ -247,3 +247,35 @@ def test_the_weighted_subtotal_is_reported_but_left_out_of_the_gap() -> None:
     assert matrix.loc[DYNAMIC_WEIGHTED_ROW, "202610"] == 1.5
     # GAP 은 대수끼리다: 1.0 - 4.0 = -3.0 (환산 1.5 를 쓰면 -2.5 가 되어 틀린다)
     assert matrix.loc[GAP_ROW, "202610"] == -3.0
+
+
+def test_a_month_the_static_side_has_no_data_for_gets_no_gap() -> None:
+    """설비 조회기간이 시나리오보다 넓은 달은 Static 자료가 아예 없다 — GAP 을 내지 않는다.
+
+    이름이 맞는 공정이라도 그 달 Static 표에 어느 공정도 없으면 「대수 없음」이 아니라 「맞댈
+    자료 없음」이다(2026-10-01 최종 재점검: 시나리오 밖 달에 GAP = +Dynamic 이 찍혔다).
+    """
+    months = [202610, 202611]
+    spans = pd.DataFrame(
+        {
+            "호기": ["EQ-0", "EQ-1"],
+            "공정소분류": [PROCESS, PROCESS],
+            "상태": ["가용", "가용"],
+            "시작일": [date(2020, 1, 1)] * 2,
+            "종료일": [date(2030, 1, 1)] * 2,
+        }
+    )
+    baseline = pd.DataFrame(
+        {"공정": pd.Series(dtype="string"), "기존보유대수": pd.Series(dtype="float64")}
+    )
+    cutoff_table = prepare_process_cutoff(
+        pd.DataFrame({"공정": [PROCESS], "Cutoff일수": [0.0], "비고": [None]})
+    )
+    monthly = build_monthly_equipment_availability(spans, baseline, cutoff_table, months)
+    static = pd.DataFrame({"생산계획년월": [202610], "공정": [PROCESS], "가용대수": [5.0]})
+
+    comparison = build_availability_gap(monthly, static, months)
+
+    gap = comparison.rows.loc[comparison.rows["행"] == GAP_ROW]
+    assert set(gap["생산계획년월"]) == {202610}
+    assert float(gap["대수"].iloc[0]) == -3.0

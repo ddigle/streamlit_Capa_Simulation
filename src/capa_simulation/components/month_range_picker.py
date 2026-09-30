@@ -132,11 +132,16 @@ export default function(component) {
     memo.timer = 0
   }
 
-  const emitRange = (changedField) => {
+  // `settled` 는 타이머가 보내는 경우다 — 사용자가 아직 치는 중일 수 있다. 그때는 시작 > 종료를
+  // 반대쪽 칸을 당겨 맞추지 않고 보내지도 않는다. 월 칸에 `1` 을 치면 두 번째 숫자를 기다리는
+  // 동안 값이 이미 1월이라, 타이머가 먼저 보내면 시작 월이 1월로 끌려 내려간 채 남았다
+  // (2026-10-01 최종 재점검). 확정(Enter·다른 월 칸으로 이동·달력 선택)에서만 맞춘다.
+  const emitRange = (changedField, settled = false) => {
     cancelPending()
     let start = startInput.value
     let end = endInput.value
     if (!isMonth(start) || !isMonth(end)) return
+    if (settled && start > end) return
 
     if (start > end) {
       if (changedField === 'start') {
@@ -162,7 +167,7 @@ export default function(component) {
       cancelPending()
       if (!isMonth(input.value)) return
       if (Date.now() - (input.__capaKeyAt || 0) < TYPING_WINDOW_MS) {
-        memo.timer = setTimeout(() => emitRange(field), SETTLE_MS)
+        memo.timer = setTimeout(() => emitRange(field, true), SETTLE_MS)
       } else {
         emitRange(field)
       }

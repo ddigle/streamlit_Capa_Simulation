@@ -230,7 +230,10 @@ def _gap_rows(
 
     한쪽짜리 공정의 없는 쪽을 0 으로 보면 공정명 불일치가 대수 차이로 읽힌다(모듈 docstring,
     2026-10-01 결정). 양쪽에 다 있는 공정 안에서 어느 달 값이 한쪽에 없으면 그 달은 0 으로
-    본다 — 이름이 맞는 공정의 빈 달은 그 달 대수가 없다는 뜻이다.
+    본다 — 이름이 맞는 공정의 빈 달은 그 달 대수가 없다는 뜻이다. **다만 한쪽에 그 달 자료가
+    아예 없으면(설비 조회기간이 시나리오 기간보다 넓은 달 등) 그 달은 GAP 을 내지 않는다** —
+    그 달은 「대수가 없다」가 아니라 「맞댈 자료가 없다」다. 전에는 시나리오 밖 달에 Static 0 을
+    두고 GAP = +Dynamic 을 냈다(2026-10-01 최종 재점검).
     """
     left = (
         subtotal.rename(columns={"Dynamic가용대수": "dynamic"})
@@ -244,7 +247,9 @@ def _gap_rows(
     )
     if left.empty and right.empty:
         return None
+    both_months = _months_of(left) & _months_of(right)
     merged = left.merge(right, on=["생산계획년월", "공정"], how="outer")
+    merged = merged.loc[merged["생산계획년월"].isin(both_months)]
     merged = merged.loc[merged["공정"].astype("string").str.strip().isin(matched)].copy()
     merged["dynamic"] = merged["dynamic"].fillna(0.0)
     merged["static"] = merged["static"].fillna(0.0)
@@ -257,6 +262,13 @@ def _gap_rows(
     merged["부호"] = 1
     merged["가용반영"] = False
     return merged.loc[:, list(GAP_COMPARISON_COLUMNS)]
+
+
+def _months_of(frame: pd.DataFrame) -> set[int]:
+    """그 쪽에 자료가 있는 달(어느 공정이든)."""
+    if frame.empty:
+        return set()
+    return {int(month) for month in pd.to_numeric(frame["생산계획년월"], errors="coerce").dropna()}
 
 
 def _sorted(rows: pd.DataFrame) -> pd.DataFrame:
