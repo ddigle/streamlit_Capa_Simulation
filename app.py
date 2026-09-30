@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import streamlit as st
+from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
 from capa_simulation.components.app_header import render_app_header
 from capa_simulation.components.month_range_picker import render_month_range_picker
@@ -39,8 +40,12 @@ from capa_simulation.settings import (
 )
 from capa_simulation.sidebar_status import (
     BOTTLENECK_BOX_KEY,
+    SIDEBAR_TOGGLE_SINK_KEY,
+    begin_app_run,
     forget_month_range_placeholder,
+    on_box_toggle,
     register_month_range_placeholder,
+    render_box_toggle_sink,
     render_sidebar_section,
     show_selected_month_range,
     sidebar_expander,
@@ -90,6 +95,12 @@ st.set_page_config(
         "About": APP_ABOUT,
     },
 )
+# 사이드바 상자를 여닫을 때 앱 전체 대신 다시 도는 빈 프래그먼트와, 이번 실행이 끝까지
+# 돌았는지의 표지(`sidebar_status.on_box_toggle`). 프래그먼트는 `st.stop()` 이 걸릴 수 있는
+# 어떤 곳보다도 앞에서 등록한다.
+app_run = begin_app_run()
+with st.container(key=SIDEBAR_TOGGLE_SINK_KEY):
+    render_box_toggle_sink()
 # 이 실행이 쓸 테마를 먼저 정한다. **토큰을 하나라도 읽기 전**이어야 한다 — 색을 읽는
 # 쪽은 여기서 담아 둔 값을 본다. 바뀌었으면 그 세션의 Figure 캐시도 여기서 비운다.
 theme.begin_run()
@@ -181,7 +192,7 @@ with pinned_connections(DUCKDB_PATH):
             group.main.title,
             icon=group.main.icon,
             key=group_key,
-            on_change="rerun",
+            on_change=on_box_toggle,
         ):
             st.page_link(group.main, label=GROUP_MAIN_LABEL, width="stretch")
             for page in group.subpages:
@@ -299,4 +310,11 @@ with pinned_connections(DUCKDB_PATH):
             for page in pages.admin_box_pages:
                 st.page_link(page, width="stretch")
 
-    navigation.run()
+    # 끝까지 돈 실행 뒤에만 상자 여닫기가 본문을 건너뛴다. 페이지가 `st.stop()` 으로 멈춘 것도
+    # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다.
+    try:
+        navigation.run()
+    except StopException:
+        app_run["complete"] = True
+        raise
+    app_run["complete"] = True

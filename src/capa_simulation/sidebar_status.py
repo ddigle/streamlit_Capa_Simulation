@@ -2,6 +2,7 @@
 
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
+from streamlit.errors import StreamlitAPIException
 
 from capa_simulation.navigation import SidebarSectionSpec
 from capa_simulation.services.month_columns import month_label
@@ -26,6 +27,58 @@ TABLE_CARD_LABEL = "표 조건"
 TABLE_CARD_ICON = ":material/filter_alt:"
 
 
+# **상자를 접고 펼 때는 본문을 다시 돌리지 않는다**(2026-09-30 사용자 지적 — 접고 펼 때마다 본문이
+# 로딩됐다). 상자는 서버가 펼침 상태를 알아야 해서(현재 페이지 그룹 자동 펼침·배지가 바뀌어도
+# 펼침 유지·조건 카드의 탭·페이지 왕복 기억) 상태를 추적하는 위젯이고, Streamlit 1.63 에서 상태를
+# 추적하는 확장 패널은 여닫을 때마다 앱 전체를 다시 돌린다. 그래서 여닫기 콜백이
+# `st.rerun(<프래그먼트 key>)` 로 **아무것도 그리지 않는 이 프래그먼트만** 다시 돌려 앱 전체
+# 재실행을 대신한다(위젯 콜백에서만 쓰는 공식 API). 펼침 값은 그대로 세션에 들어온다.
+SIDEBAR_TOGGLE_FRAGMENT_KEY = "sidebar_box_toggle"
+# 그 프래그먼트를 담는 본문 컨테이너. 빈 칸이 본문 간격을 먹지 않게 CSS 가 숨긴다.
+SIDEBAR_TOGGLE_SINK_KEY = "sidebar_box_toggle_sink"
+# 이번 전체 실행이 끝까지 돌았는가. 실행 도중에 상자를 누르면 그 요청이 진행 중인 실행을 끊고
+# 프래그먼트 재실행으로 바뀌어 본문이 반쯤 그려진 채 남는다(실측). 끝나지 않은 실행 뒤에는
+# 콜백이 물러나 평소처럼 앱 전체를 다시 돌린다. **세션 대입이 아니라 이 dict 를 고친다** —
+# `st.stop()` 이 걸린 동안의 세션 대입은 다시 멈춤 예외를 낸다(실측).
+APP_RUN_STATE_KEY = "sidebar_app_run_state"
+
+
+def begin_app_run() -> dict[str, bool]:
+    """앱 실행 맨 앞에서 「이번 실행은 아직 끝나지 않았다」로 표시하고 그 표지를 돌려준다."""
+    state = st.session_state.get(APP_RUN_STATE_KEY)
+    if not isinstance(state, dict):
+        state = {}
+        st.session_state[APP_RUN_STATE_KEY] = state
+    state["complete"] = False
+    return state
+
+
+@st.fragment(key=SIDEBAR_TOGGLE_FRAGMENT_KEY)
+def render_box_toggle_sink() -> None:
+    """상자 여닫기 콜백이 다시 돌리는 빈 프래그먼트. 매 실행 **`st.stop()` 이 걸릴 수 있는 곳보다
+    앞에서** 불러야 한다 — 이번 실행에 등록되지 않은 프래그먼트는 겨눌 수 없다."""
+
+
+def on_box_toggle(key: str | None = None, label: str | None = None) -> None:
+    """상자 여닫기 콜백. 기억 칸을 적고, 할 수 있으면 빈 프래그먼트만 다시 돌린다.
+
+    프래그먼트만 도는 회차에는 `sidebar_expander` 본체가 돌지 않으므로 `(펼침, 라벨)` 기억 칸을
+    여기서 적는다 — 적지 않으면 여닫은 뒤 페이지를 옮기거나 배지가 바뀔 때 옛 상태로 돌아간다.
+    직전 실행이 끝나지 않았거나 프래그먼트를 찾지 못하면(AppTest 는 실행마다 프래그먼트 저장소가
+    새로 생긴다) 그냥 돌아가 앱 전체 재실행으로 둔다. `st.rerun` 이 던지는 재실행 예외는 잡지
+    않는다.
+    """
+    if key is not None and label is not None:
+        st.session_state[remembered_box_key(key)] = (bool(st.session_state.get(key)), label)
+    state = st.session_state.get(APP_RUN_STATE_KEY)
+    if not isinstance(state, dict) or not state.get("complete"):
+        return
+    try:
+        st.rerun(SIDEBAR_TOGGLE_FRAGMENT_KEY)
+    except StreamlitAPIException:
+        return
+
+
 def remembered_box_key(key: str) -> str:
     """상자 위젯 키에 딸린 **위젯이 아닌** 기억 칸의 이름."""
     return f"{key}__remembered"
@@ -40,9 +93,10 @@ def sidebar_expander(
 ) -> DeltaGenerator:
     """페이지 그룹과 같은 양식으로 접히는 사이드바 상자. 펼침 상태를 세션 동안 기억한다.
 
-    `key` 와 `on_change="rerun"` 을 함께 줘야 확장 패널이 위젯이 되어 서버가
-    `st.session_state[key]` 로 펼침 상태를 읽고 쓸 수 있다(실측). `expanded=` 는 주지
-    않는다 — 세션 값과 둘을 같이 주면 Streamlit 이 경고를 남긴다.
+    `key` 와 상태를 추적하는 `on_change` 를 함께 줘야 확장 패널이 위젯이 되어 서버가
+    `st.session_state[key]` 로 펼침 상태를 읽고 쓸 수 있다(실측). `on_change` 는 `"rerun"` 이
+    아니라 `on_box_toggle` 콜백이다 — 여닫을 때 본문을 다시 돌리지 않는다(2026-09-30).
+    `expanded=` 는 주지 않는다 — 세션 값과 둘을 같이 주면 Streamlit 이 경고를 남긴다.
 
     **위젯 값만으로는 모자라는 자리가 둘이다.** 하나는 HOME 만 그리는 B/N 상자다.
     다른 페이지에 갔다 오면 그 회차에 만들어지지 않은 위젯이라 값이 버려진다. 다른
@@ -62,7 +116,7 @@ def sidebar_expander(
     )
     if key not in st.session_state or remembered_label != label:
         st.session_state[key] = expanded
-    box = st.sidebar.expander(label, key=key, icon=icon, on_change="rerun")
+    box = st.sidebar.expander(label, key=key, icon=icon, on_change=on_box_toggle, args=(key, label))
     st.session_state[memory] = (bool(st.session_state[key]), label)
     return box
 

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 from capa_simulation.design import tokens
 from capa_simulation.navigation import SIDEBAR_SECTIONS, SidebarGroup, SidebarGroupSpec
-from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
+from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, SIDEBAR_TOGGLE_SINK_KEY
 
 # 규칙 안 들여쓰기도 선택자 사이에 유지한다.
 _SELECTOR_JOINER = ",\n        "
@@ -528,6 +528,12 @@ def build_sidebar_stylesheet(
         .st-key-{admin_box_key} {{
             order: 99;
             margin-top: 0.9rem;
+        }}
+        /* 상자 여닫기 콜백이 다시 돌리는 빈 프래그먼트의 본문 칸. 아무것도 그리지 않지만 칸이
+           서면 본문 맨 위에 간격이 하나 생긴다(`sidebar_status.SIDEBAR_TOGGLE_SINK_KEY`). */
+        [data-testid="stLayoutWrapper"]:has(> .st-key-{SIDEBAR_TOGGLE_SINK_KEY}),
+        .st-key-{SIDEBAR_TOGGLE_SINK_KEY} {{
+            display: none !important;
         }}
         </style>
         """
