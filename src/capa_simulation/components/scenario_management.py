@@ -69,6 +69,9 @@ ACTION_OWNER_KEY = "scenario_list_action_owner"
 DELETE_CONFIRM_KEY = "scenario_list_delete_confirm"
 ARCHIVE_CONFIRM_KEY = "scenario_list_archive_confirm"
 ARCHIVED_SELECT_KEY = "scenario_list_archived_id"
+# 접힘 칸의 key. 위젯이 아니라 브라우저가 펼침을 기억하는 이름이다(`_render_archived_scenarios`).
+ARCHIVED_EXPANDER_KEY = "scenario_list_archived_expander"
+IDENTIFIER_EXPANDER_KEY = "scenario_store_identifier_expander"
 REVISION_SELECT_KEY = "scenario_list_revision_id"
 SELECT_COLUMN = "선택"
 ORDER_COLUMN = "순서"
@@ -125,7 +128,7 @@ def _render_store_status(
             st.write(_active_scenario_line(repository, scenarios, active_id, active_revision_id))
             # UUID 는 사람이 읽을 것이 아니라 장애를 신고할 때 적어 보낼 값이다. 상태 줄에
             # 그대로 두면 정작 어느 시나리오인지가 안 읽혀 접어 둔다.
-            with st.expander("식별자", icon=":material/tag:"):
+            with st.expander("식별자", icon=":material/tag:", key=IDENTIFIER_EXPANDER_KEY):
                 st.caption(f"시나리오 ID `{active_id}`")
                 st.caption(f"리비전 ID `{active_revision_id}`")
         else:
@@ -515,7 +518,15 @@ def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
     ]
     if not archived:
         return
-    with st.expander(f"보관된 시나리오 {len(archived)}건", icon=":material/inventory_2:"):
+    # **key 는 펼침을 지키려고 준다**(2026-10-01). 위의 일회성 알림(보관·순서 저장 완료)이
+    # 사라지는 회차에 이 칸의 자리가 밀려 새로 마운트되고, key 가 없으면 접혀 이름을 적던
+    # 영구 삭제 버튼이 가려졌다(브라우저 실측). `on_change` 없는 key 라 위젯이 아니고, id 가
+    # 제목을 보지 않아 건수가 바뀌어도 같은 칸이다.
+    with st.expander(
+        f"보관된 시나리오 {len(archived)}건",
+        icon=":material/inventory_2:",
+        key=ARCHIVED_EXPANDER_KEY,
+    ):
         by_id = {scenario.scenario_id: scenario for scenario in archived}
         selected_id = st.selectbox(
             "보관본",
