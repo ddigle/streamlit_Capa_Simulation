@@ -258,21 +258,17 @@ LOB_TOP5_HEIGHT_PX = 150
 LOB_TOP5_LABEL_ZONE_PX = 130
 
 # 띠 안의 공정명. 축 0 에서 `YSHIFT` 만큼 내려 위 끝을 걸고, 띠 아래 끝에서 `BOTTOM_GAP` 을
-# 남긴다. **Plotly 는 주석을 자르지 못한다** — 예전에는 이 띠가 그림 아래 여백이라 그림 끝이
-# 긴 이름을 잘라 주었지만, 지금은 그 아래에 도넛 행이 있어 넘친 글자가 도넛 위에 얹힌다.
-# 그래서 넘칠 이름은 미리 줄이고 전체 이름은 hover 로 준다.
-#
-# `CHAR_PX` 는 좁은 글자(라틴·숫자) 한 자의 세로 길이다. 15px 에서 실측 6.2~7.2px 였다
-# (`Compression Mold` 16자 114.8px). 한글·전각은 두 자로 센다.
+# 남긴다. **Plotly 는 주석을 자르지 못한다** — 이 띠 아래에 도넛 행이 있어 넘친 글자가 도넛
+# 위에 얹힌다. 그래서 넘칠 이름은 미리 줄이고 전체 이름은 hover 로 준다. 폭은 공정명 서체
+# (Calibri)로 잰다(`home_figure_common._calibri_width_units`).
+TOP5_PROCESS_LABEL_FONT_SIZE_PX = 15
 TOP5_PROCESS_LABEL_YSHIFT_PX = 8.0
 TOP5_PROCESS_LABEL_BOTTOM_GAP_PX = 6.0
-TOP5_PROCESS_LABEL_CHAR_PX = 7.2
 
 
-def top5_process_label_budget() -> int:
-    """공정명 한 줄에 드는 좁은 글자 수. 한글·전각은 둘로 센다."""
-    room = LOB_TOP5_LABEL_ZONE_PX - TOP5_PROCESS_LABEL_YSHIFT_PX - TOP5_PROCESS_LABEL_BOTTOM_GAP_PX
-    return int(room // TOP5_PROCESS_LABEL_CHAR_PX)
+def top5_process_label_room_px() -> float:
+    """세운 공정명 한 줄이 쓸 수 있는 길이(px)."""
+    return LOB_TOP5_LABEL_ZONE_PX - TOP5_PROCESS_LABEL_YSHIFT_PX - TOP5_PROCESS_LABEL_BOTTOM_GAP_PX
 
 
 # `제품별 비중` 행. 칸이 **정사각형**이어야 도넛이 칸 가운데에 제 크기로 선다 — 그래서 행
@@ -290,6 +286,10 @@ LOB_PRODUCT_SHARE_HOLE = 0.58
 # 조각 사이 틈. dataviz 규칙의 「채움 사이 2px 바탕 틈」이다. 선 색은 그 칸의 바탕이라 틈이
 # 오려 낸 자리로 보인다.
 LOB_PRODUCT_SHARE_GAP_PX = 2
+
+# 0 이 아닌 조각을 그리는 최소 크기(비율). 지름 80px 에서 바깥 호 약 6px 로, 양옆 틈(1px 씩)을
+# 빼고도 조각이 보이고 짚인다. 이보다 작은 조각은 hover 에 실제 비중을 적는다.
+LOB_PRODUCT_SHARE_MIN_DRAWN_SHARE = 0.025
 
 # 그림 아래 여백. 예전에는 B/N Top 5 공정명이 이 여백(130px)에 드리웠지만, 그 아래에 도넛
 # 행이 들어오면서 공정명 띠가 그림 영역 안으로 들어갔다. Plotly 의 도넛은 paper 좌표 0~1

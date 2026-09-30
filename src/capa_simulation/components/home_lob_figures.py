@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import math
-import unicodedata
 from collections.abc import Collection, Mapping, Sequence
 from typing import Any, NamedTuple, cast
 
@@ -19,6 +18,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from capa_simulation.components.home_dimensions import (
+    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     LOB_BAR_OUTLINE_WIDTH_PX,
     LOB_BAR_WIDTH,
     LOB_BARGAP,
@@ -30,6 +30,7 @@ from capa_simulation.components.home_dimensions import (
     LOB_PRODUCT_SHARE_GAP_PX,
     LOB_PRODUCT_SHARE_HOLE,
     LOB_PRODUCT_SHARE_INSET_PX,
+    LOB_PRODUCT_SHARE_MIN_DRAWN_SHARE,
     LOB_PRODUCT_SHARE_ROW_HEIGHT_PX,
     LOB_PRODUCT_SHARE_TOP_Y,
     LOB_TABLE_HEIGHT_PX,
@@ -40,19 +41,23 @@ from capa_simulation.components.home_dimensions import (
     LOB_VALUE_FONT_SIZE_PX,
     TOP5_BAR_OUTLINE_WIDTH_PX,
     TOP5_BAR_WIDTH,
+    TOP5_PROCESS_LABEL_FONT_SIZE_PX,
     TOP5_PROCESS_LABEL_YSHIFT_PX,
     TOP5_RATE_LABEL_GAP_PX,
     TOP5_WAFER_LABEL_XSHIFT_PX,
     top5_axis_headroom_px,
-    top5_process_label_budget,
+    top5_process_label_room_px,
 )
 from capa_simulation.components.home_figure_common import (
+    _calibri_width_units,
     _capacity_color,
     _column_surface_rects,
     _execution_delta_note,
+    _fit_to_units,
     _month_surface,
     _paper_hrule,
     _paper_month_lines,
+    _text_width_units,
 )
 from capa_simulation.components.plotly_layout import (
     add_figure_outer_border,
@@ -79,20 +84,31 @@ from capa_simulation.services.top5_band import (
 LOB_BAR_LABEL_FONT_SIZE_PX = 22
 
 
-# `제품별 비중` 구분 칸. 제목 한 줄 아래에 두 칸짜리 범례가 최대 세 줄 선다(조각 상한 6).
+# `제품별 비중` 구분 칸. 제목 한 줄 아래에 두 칸짜리 범례가 선다. 조각은 `기타` 를 넣어 여섯
+# 까지지만, 계산 구간 제품이 여섯이고 과거 구간에만 있는 제품이 `기타` 로 접히면 일곱이 되므로
+# 네 줄까지 받는다.
 PRODUCT_SHARE_TITLE_FONT_SIZE_PX = 20
 PRODUCT_SHARE_UNIT_FONT_SIZE_PX = 14
 PRODUCT_SHARE_LEGEND_FONT_SIZE_PX = 13
 _PRODUCT_SHARE_TITLE_LINE_PX = 24
 _PRODUCT_SHARE_LEGEND_GAP_PX = 6
+# 줄 간격. 세 줄까지는 18px, 네 줄이면 16px 로 좁혀 100px 칸 안에 넣는다.
 _PRODUCT_SHARE_LEGEND_ROW_PX = 18
+_PRODUCT_SHARE_LEGEND_TIGHT_ROW_PX = 16
 _PRODUCT_SHARE_LEGEND_COLUMNS = 2
-_PRODUCT_SHARE_LEGEND_MAX_ROWS = 3
-# 범례 두 칸의 왼쪽 끝(구분 칸 폭 비율). 260px 칸에서 16px·138px 다.
+_PRODUCT_SHARE_LEGEND_MAX_ROWS = 4
+# 범례 두 칸의 왼쪽 끝(구분 칸 폭 비율). 260px 칸에서 16px·138px 이고 두 칸 폭이 같다.
 _PRODUCT_SHARE_LEGEND_X = (0.06, 0.53)
-# 범례 이름의 폭 예산. 한글·전각은 2, 나머지는 1 로 센다 — 13px 에서 약 105px 로, 한 칸
-# (약 122px)에서 색 네모를 뺀 자리다. 넘으면 말줄임표를 달고 전체 이름은 hover 로 준다.
-_PRODUCT_SHARE_NAME_BUDGET = 15
+# 한 칸 오른쪽 끝에 남기는 틈. 왼쪽 칸 이름은 오른쪽 칸의 색 네모와, 오른쪽 칸 이름은 구분 칸
+# 테두리와 이만큼 떨어진다.
+_PRODUCT_SHARE_LEGEND_GUTTER_PX = 6
+_PRODUCT_SHARE_LEGEND_SWATCH = "■ "
+# hover 글자 크기와 줄 수. 도넛이 그림 맨 아래에 붙어 있어(아래 여백 0) 6시 방향 조각의 hover
+# 는 기준점 아래로 18px 남짓밖에 자리가 없다 — Plotly 는 pie hover 를 그림 안으로 밀어 넣지
+# 않고 잘라 버린다. **두 줄**과 이 크기면 그 안에 든다. 줄을 늘리지 않는다.
+_PRODUCT_SHARE_HOVER_FONT_SIZE_PX = 12
+# `기타` hover 에 이름을 적는 제품 수. 나머지는 「외 N」으로 줄인다(둘째 줄에 함께 적는다).
+_PRODUCT_SHARE_HOVER_MEMBERS = 3
 # 단위별 hover 수량 표기. Wafer 는 매 → K, PKG 생산수량은 이미 K(Kea) 단위다.
 _PRODUCT_SHARE_SCALE = {PRODUCT_SHARE_BASIS_WAFER: 1_000.0}
 
@@ -104,23 +120,20 @@ def _product_color(slot: int | None) -> str:
     return str(tokens.PRODUCT_SHARE_COLORS[slot])
 
 
-def _display_width(text: str) -> int:
-    return sum(2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1 for char in text)
+def _legend_name_budget_units() -> float:
+    """범례 이름 한 칸의 폭 예산(글자 크기 1px 기준). 색 네모와 틈을 뺀 자리다.
 
-
-def _fit_name(name: str, budget: int = _PRODUCT_SHARE_NAME_BUDGET) -> str:
-    """`budget`(좁은 글자 수, 한글·전각은 2)에 드는 이름. 잘랐으면 말줄임표를 단다."""
-    if _display_width(name) <= budget:
-        return name
-    kept: list[str] = []
-    width = 0
-    for char in name:
-        char_width = _display_width(char)
-        if width + char_width > budget - 1:
-            break
-        kept.append(char)
-        width += char_width
-    return "".join(kept).rstrip() + "…"
+    `_text_width_units`(반각 0.6·전각 1.0)가 이 범례 서체(Noto Sans KR 13px)의 대문자·숫자
+    실측(0.56~0.62em)과 맞는다. 글자 수로 어림하면 대문자·숫자 이름이 옆 칸의 색 네모를 덮거나
+    구분 칸 테두리 밖에서 잘린다(말줄임표까지 잘려 줄였다는 표시도 사라진다).
+    """
+    column_px = (
+        _PRODUCT_SHARE_LEGEND_X[1] - _PRODUCT_SHARE_LEGEND_X[0]
+    ) * DASHBOARD_LABEL_COLUMN_WIDTH_PX
+    text_px = column_px - _PRODUCT_SHARE_LEGEND_GUTTER_PX
+    return text_px / PRODUCT_SHARE_LEGEND_FONT_SIZE_PX - _text_width_units(
+        _PRODUCT_SHARE_LEGEND_SWATCH
+    )
 
 
 def _share_amount(value: float, basis: str) -> str:
@@ -128,18 +141,37 @@ def _share_amount(value: float, basis: str) -> str:
 
 
 def _product_share_hover(cell: ProductShareCell, basis: str) -> list[str]:
-    """조각마다 hover 글자. 분모(그 칸 합계)를 함께 적어 `Wafer 계획` 행과 맞대어 본다."""
+    """조각마다 hover 두 줄. 둘째 줄에 분모(그 칸 합계)를 적어 `Wafer 계획` 행과 맞대어 본다.
+
+    `기타` 는 무엇이 모였는지 둘째 줄에 잇는다 — 접었다고 정보를 지우지 않는다. 과거 구간 칸은
+    그 수량이 `과거 계획 세부수량` 입력값이라는 것을 적는다(계산 구간과 정의가 다를 수 있다).
+    """
+    source = " · 과거 입력값" if cell.past else ""
     texts: list[str] = []
     for piece in cell.slices:
-        lines = [
-            f"{cell.label} · {piece.product}",
-            f"비중 {piece.share:.1%}",
-            f"{basis} {_share_amount(piece.value, basis)} / {_share_amount(cell.total, basis)}",
-        ]
-        # `기타` 는 무엇이 모였는지 적는다. 접었다고 정보를 지우지 않는다.
-        lines.extend(f"· {name} {value / cell.total:.1%}" for name, value in piece.members)
-        texts.append("<br>".join(lines))
+        amounts = (
+            f"{basis} {_share_amount(piece.value, basis)} / "
+            f"{_share_amount(cell.total, basis)}{source}"
+        )
+        if piece.members:
+            listed = ", ".join(
+                f"{name} {value / cell.total:.1%}"
+                for name, value in piece.members[:_PRODUCT_SHARE_HOVER_MEMBERS]
+            )
+            rest = len(piece.members) - _PRODUCT_SHARE_HOVER_MEMBERS
+            amounts += f" · {listed}" + (f" 외 {rest}" if rest > 0 else "")
+        texts.append(f"{cell.label} · {piece.product} {piece.share:.1%}<br>{amounts}")
     return texts
+
+
+def _drawn_values(cell: ProductShareCell) -> list[float]:
+    """그릴 조각 크기. 0 이 아닌 조각은 **최소 `LOB_PRODUCT_SHARE_MIN_DRAWN_SHARE`** 로 그린다.
+
+    지름 80px 도넛에서 1% 안팎의 조각은 바깥 호가 2px 남짓이라 조각 사이 2px 틈에 통째로
+    묻힌다 — 범례에는 있는데 도넛에서 보이지도 짚이지도 않는다. 그 조각만 최소 크기로 키워
+    그리고, 정확한 비중은 hover 가 적는다(hover 는 이 값이 아니라 `share` 를 읽는다).
+    """
+    return [max(piece.share, LOB_PRODUCT_SHARE_MIN_DRAWN_SHARE) for piece in cell.slices]
 
 
 def product_share_traces(
@@ -171,7 +203,7 @@ def product_share_traces(
             go.Pie(
                 name=label,
                 labels=[piece.product for piece in cell.slices],
-                values=[piece.value for piece in cell.slices],
+                values=_drawn_values(cell),
                 sort=False,
                 direction="clockwise",
                 rotation=0,
@@ -187,6 +219,7 @@ def product_share_traces(
                 },
                 hovertext=_product_share_hover(cell, basis),
                 hovertemplate="%{hovertext}<extra></extra>",
+                hoverlabel={"font": {"size": _PRODUCT_SHARE_HOVER_FONT_SIZE_PX}},
                 showlegend=False,
             )
         )
@@ -226,10 +259,12 @@ def _product_share_label_annotations(
     limit = _PRODUCT_SHARE_LEGEND_COLUMNS * _PRODUCT_SHARE_LEGEND_MAX_ROWS
     shown = entries[:limit]
     rows = math.ceil(len(shown) / _PRODUCT_SHARE_LEGEND_COLUMNS)
+    row_px = _PRODUCT_SHARE_LEGEND_ROW_PX if rows <= 3 else _PRODUCT_SHARE_LEGEND_TIGHT_ROW_PX
     block = _PRODUCT_SHARE_TITLE_LINE_PX + (
-        _PRODUCT_SHARE_LEGEND_GAP_PX + rows * _PRODUCT_SHARE_LEGEND_ROW_PX if rows else 0
+        _PRODUCT_SHARE_LEGEND_GAP_PX + rows * row_px if rows else 0
     )
     top_px = (LOB_PRODUCT_SHARE_ROW_HEIGHT_PX - block) / 2
+    name_budget = _legend_name_budget_units()
 
     def paper_y(offset_px: float) -> float:
         return row_top - offset_px / LOB_PLOT_AREA_HEIGHT_PX
@@ -257,7 +292,7 @@ def _product_share_label_annotations(
     ]
     for position, (name, slot) in enumerate(shown):
         row, column = divmod(position, _PRODUCT_SHARE_LEGEND_COLUMNS)
-        fitted = _fit_name(name)
+        fitted = _fit_to_units(name, name_budget, _text_width_units)
         single = len(shown) == 1
         annotations.append(
             {
@@ -266,13 +301,16 @@ def _product_share_label_annotations(
                     top_px
                     + _PRODUCT_SHARE_TITLE_LINE_PX
                     + _PRODUCT_SHARE_LEGEND_GAP_PX
-                    + (row + 0.5) * _PRODUCT_SHARE_LEGEND_ROW_PX
+                    + (row + 0.5) * row_px
                 ),
                 "xref": "paper",
                 "yref": "paper",
                 # 이름은 본문 글자색이고 색 네모만 제품색이다 — 글자에 계열색을 입히면 밝은
-                # 계열(노랑)에서 읽히지 않는다.
-                "text": f'<span style="color:{_product_color(slot)}">■</span> {fitted}',
+                # 계열에서 읽히지 않는다.
+                "text": (
+                    f'<span style="color:{_product_color(slot)}">'
+                    f"{_PRODUCT_SHARE_LEGEND_SWATCH.strip()}</span> {fitted}"
+                ),
                 "hovertext": name if fitted != name else None,
                 "showarrow": False,
                 "xanchor": "center" if single else "left",
@@ -1095,10 +1133,11 @@ def build_lob_summary_figures(
             )
         # 공정명은 띠(`LOB_TOP5_LABEL_ZONE_PX`) 안에서 끝나야 한다 — 넘치면 아래 도넛 위에
         # 얹힌다(`top5_process_label_budget` 설명). 줄인 이름은 hover 가 전체를 보여 준다.
-        process_budget = top5_process_label_budget()
+        # 서체가 Calibri 라 그 서체로 잰 폭 모형을 쓴다(`_calibri_width_units`).
+        process_budget = top5_process_label_room_px() / TOP5_PROCESS_LABEL_FONT_SIZE_PX
         for x_position, process in zip(top5_positions, monthly_top5["공정"], strict=True):
             process_label = labels.label(process)
-            fitted_label = _fit_name(process_label, process_budget)
+            fitted_label = _fit_to_units(process_label, process_budget, _calibri_width_units)
             top5_annotations.append(
                 {
                     "x": x_position,
@@ -1114,7 +1153,7 @@ def build_lob_summary_figures(
                     "yshift": -TOP5_PROCESS_LABEL_YSHIFT_PX,
                     "showarrow": False,
                     "font": {
-                        "size": 15,
+                        "size": TOP5_PROCESS_LABEL_FONT_SIZE_PX,
                         "color": tokens.TEXT_MUTED,
                         "family": tokens.FONT_FAMILY_NUMERIC,
                     },

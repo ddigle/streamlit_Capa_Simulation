@@ -413,8 +413,9 @@ try:
         plan_detail_dimensions,
         reference_tables["RQ_DISPLAY_ORDER"],
     )
-    # 과거 구간은 제품별 PKG 만 있다(Wafer 는 월 합계뿐). EDP 를 가릴 컬럼도 없어 두 쪽에
-    # 같은 행을 잇는다.
+    # 과거 구간은 제품별 PKG 만 있다(Wafer 는 월 합계뿐). 그리는 수량에는 잇되, 색 칸을 정하는
+    # 목록(`product_volume_with_edp`)에는 섞지 않고 따로 넘긴다 — 과거 전용 제품이 계산 구간
+    # 제품의 칸을 밀어내지 않게(`assign_product_slots`).
     past_products = past_product_volume(
         past_profile.plan_detail,
         start_month=effective_start,
@@ -422,7 +423,6 @@ try:
         exclude_months=calculated_months,
     )
     product_volume = combine_product_volume(product_volume, past_products)
-    product_volume_with_edp = combine_product_volume(product_volume_with_edp, past_products)
     # 실행 Capa 반영은 **원데이터 기준**이다. 기준정보 밖에서 생긴 변수(비가동·UPEH·
     # 재공)를 원 확보율에 퍼센트포인트로 얹은 뒤, 선행은 그렇게 조정된 값 위에 변동률을
     # 곱한다. 조정이 없어도 부른다 — `기준 확보율`·`확보율 증감`·`실행 비고` 세 컬럼이
@@ -775,12 +775,17 @@ if cached_figures is None:
             baseline_wafer,
             baseline_bottlenecks,
         )
-    # 색 칸은 화면에 보이는 기간(과거 포함)의 EDP 포함 제품 목록에서 한 번 정한다. 모든
-    # 도넛·단위·EDP 토글이 같은 배정을 쓴다 — 같은 제품은 어디서나 같은 색이다.
+    # 색 칸은 화면에 보이는 기간의 EDP 포함 계산 구간 제품이 먼저, 과거 구간에만 있는 제품이
+    # 그 뒤에서 받는다. 모든 도넛·단위·EDP·Past Data 토글이 같은 배정을 쓴다 — 같은 제품은
+    # 어디서나 같은 색이다.
     product_share_cells = build_product_share_cells(
         product_volume,
         product_share_basis,
-        assign_product_slots(product_volume_with_edp, reference_tables["RQ_DISPLAY_ORDER"]),
+        assign_product_slots(
+            product_volume_with_edp,
+            reference_tables["RQ_DISPLAY_ORDER"],
+            past_volume=past_products,
+        ),
         month_labels=month_labels,
         year_total_labels=year_total_labels,
     )

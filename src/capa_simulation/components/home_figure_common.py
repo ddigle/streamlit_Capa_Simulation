@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import html
 import unicodedata
-from collections.abc import Collection, Container, Mapping, Sequence
+from collections.abc import Callable, Collection, Container, Mapping, Sequence
 from typing import Any, Final, Literal, cast
 
 import pandas as pd
@@ -479,6 +479,53 @@ def _text_width_units(text: str) -> float:
         1.0 if unicodedata.east_asian_width(character) in {"F", "W", "A"} else 0.6
         for character in text
     )
+
+
+def _calibri_width_units(text: str) -> float:
+    """`FONT_FAMILY_NUMERIC`(Calibri) 의 렌더 폭(글자 크기 1px 기준).
+
+    Calibri 는 좁은 서체라 `_text_width_units` 의 반각 0.6 으로 세면 대소문자가 섞인 이름이
+    실제보다 25% 가량 길게 잡혀, 들어가는 이름까지 줄어든다. 글자 무리별 폭은 15px 실측으로
+    맞췄다 — `Compression Mold` 114.8px(모형 114.8), `COMPRESSION MOLD` 132.6px(모형 134.3).
+    전각·Ambiguous 는 한글 face 로 그려지므로 `_text_width_units` 와 같이 1.0 이다.
+    """
+    total = 0.0
+    for character in text:
+        if unicodedata.east_asian_width(character) in {"F", "W", "A"}:
+            total += 1.0
+        elif character == " ":
+            total += 0.25
+        elif character.isupper() or character.isdigit():
+            total += 0.58
+        elif character.islower():
+            total += 0.48
+        else:
+            total += 0.45
+    return total
+
+
+def _fit_to_units(
+    text: str,
+    unit_budget: float,
+    width: Callable[[str], float],
+) -> str:
+    """폭 예산에 들면 그대로, 넘으면 말줄임까지 예산 안에 들도록 줄인다.
+
+    `_truncate_to_units` 와 달리 말줄임 자신의 폭을 **여기서** 뺀다 — 서체마다 폭 모형
+    (`width`)이 달라 말줄임의 폭도 그 모형으로 재야 하기 때문이다.
+    """
+    if width(text) <= unit_budget:
+        return text
+    budget = unit_budget - width(BOTTLENECK_NAME_ELLIPSIS)
+    kept: list[str] = []
+    used = 0.0
+    for character in text:
+        character_units = width(character)
+        if used + character_units > budget:
+            break
+        kept.append(character)
+        used += character_units
+    return "".join(kept).rstrip() + BOTTLENECK_NAME_ELLIPSIS
 
 
 def _truncate_to_units(text: str, unit_budget: float) -> str:

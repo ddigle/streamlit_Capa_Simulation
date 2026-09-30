@@ -6,11 +6,21 @@ import pytest
 from capa_simulation.components.home_dimensions import (
     LOB_PLOT_AREA_HEIGHT_PX,
     LOB_PRODUCT_SHARE_INSET_PX,
+    LOB_PRODUCT_SHARE_MIN_DRAWN_SHARE,
     LOB_PRODUCT_SHARE_ROW_HEIGHT_PX,
     LOB_PRODUCT_SHARE_TOP_Y,
-    top5_process_label_budget,
+    TOP5_PROCESS_LABEL_FONT_SIZE_PX,
+    top5_process_label_room_px,
+)
+from capa_simulation.components.home_figure_common import (
+    _calibri_width_units,
+    _text_width_units,
 )
 from capa_simulation.components.home_figures import build_lob_summary_figures
+from capa_simulation.components.home_lob_figures import (
+    PRODUCT_SHARE_LEGEND_FONT_SIZE_PX,
+    _legend_name_budget_units,
+)
 from capa_simulation.design import tokens
 from capa_simulation.services.display_order_scopes import PAGE_PLAN, TAB_PKG_PLAN
 from capa_simulation.services.product_share import (
@@ -339,39 +349,207 @@ def test_the_row_stays_even_without_data() -> None:
     assert any("제품별 비중" in str(item.text) for item in label_figure.layout.annotations)
 
 
-def test_long_top5_process_names_end_inside_their_band_above_the_donuts() -> None:
-    """Plotly 는 주석을 자르지 못한다. 띠를 넘칠 공정명은 줄이고 전체 이름은 hover 로 준다."""
-    long_name = "DEMO Post Singulation Edge Inspection"
+def _top5_figure(names: list[str]):
     density = pd.DataFrame({"생산계획년월": [202609], "년월": ["26.09"], "부하량": [1.5]})
     top5 = pd.DataFrame(
         {
-            "생산계획년월": [202609, 202609],
-            "년월": ["26.09", "26.09"],
-            "순위": [1, 2],
-            "공정": [long_name, "DEMO SAW"],
-            "확보율": [0.9, 1.0],
-            "Wafer Capa": [11_000.0, 12_000.0],
-            "B/N Capa": [1.2, 1.3],
+            "생산계획년월": [202609] * len(names),
+            "년월": ["26.09"] * len(names),
+            "순위": list(range(1, len(names) + 1)),
+            "공정": names,
+            "확보율": [0.9] * len(names),
+            "Wafer Capa": [11_000.0] * len(names),
+            "B/N Capa": [1.2] * len(names),
         }
     )
     _, month_figure = build_lob_summary_figures(
         monthly_density=density,
         monthly_top5=top5,
-        bottleneck_capacity=density.assign(공정="DEMO SAW", 확보율=0.9, **{"B/N Capa": 1.2}),
+        bottleneck_capacity=density.assign(공정=names[0], 확보율=0.9, **{"B/N Capa": 1.2}),
         lob_summary=density.assign(**{"Wafer 부하량": 12_000.0, "Wafer Capa": 11_000.0}),
         month_labels=["26.09"],
         secure_threshold=1.095,
         warning_threshold=0.995,
     )
-    rotated = {
+    return {
         str(item.hovertext or item.text): item
         for item in month_figure.layout.annotations
         if item.textangle == -90 and item.yanchor == "top"
     }
 
+
+def test_long_top5_process_names_end_inside_their_band_above_the_donuts() -> None:
+    """Plotly 는 주석을 자르지 못한다. 띠를 넘칠 공정명은 줄이고 전체 이름은 hover 로 준다.
+
+    폭은 공정명 서체(Calibri)로 잰다. 대문자는 소문자보다 넓어, 글자 수로 어림하면 대문자
+    이름이 띠를 넘어 도넛 행에 닿는다(리뷰 실측: `COMPRESSION MOLD` 132.6px, 띠 116px).
+    """
+    room_units = top5_process_label_room_px() / TOP5_PROCESS_LABEL_FONT_SIZE_PX
+    long_name = "DEMO Post Singulation Edge Inspection"
+    rotated = _top5_figure([long_name, "DEMO SAW", "COMPRESSION MOLD", "Compression Mold"])
+
     shortened = rotated[long_name]
     assert shortened.text.endswith("…")
-    assert len(shortened.text) <= top5_process_label_budget()
+    assert _calibri_width_units(shortened.text) <= room_units
     assert long_name.startswith(shortened.text[:-1].rstrip())
+    assert rotated["COMPRESSION MOLD"].text.endswith("…")
+    # 대소문자가 섞인 같은 이름은 띠에 든다(실측 114.8px) — 필요 없이 줄이지 않는다.
+    assert rotated["Compression Mold"].text == "Compression Mold"
     assert rotated["DEMO SAW"].text == "DEMO SAW"
     assert rotated["DEMO SAW"].hovertext is None
+
+
+def test_the_calibri_model_matches_the_measured_label_lengths() -> None:
+    """모형이 실측(15px Calibri)과 3% 안으로 맞는다. 모형을 고치면 이 값부터 다시 잰다."""
+    for text, measured_px in (("Compression Mold", 114.8), ("COMPRESSION MOLD", 132.6)):
+        modelled = _calibri_width_units(text) * 15
+        assert modelled == pytest.approx(measured_px, rel=0.03), text
+
+
+def test_legend_names_fit_their_column_whatever_the_letter_case() -> None:
+    """대문자·숫자 이름도 옆 칸 색 네모나 구분 칸 테두리를 넘지 않는다."""
+    long_names = ["DEMO4E 12H SE-AB", "DEMO-DDR5-16GB-X", "데모고대역폭메모리제품"]
+    plan = _plan([(202609, name, "양산", 10.0 * (i + 1)) for i, name in enumerate(long_names)])
+    wafer = _wafer([(202609, name, "양산", 100.0 * (i + 1)) for i, name in enumerate(long_names)])
+    volume = build_product_volume(plan, wafer)
+    cells = build_product_share_cells(
+        volume, "Wafer", assign_product_slots(volume), month_labels=["26.09"]
+    )
+    label_figure, _ = _figures(cells, ["26.09"])
+    entries = [item for item in label_figure.layout.annotations if "■</span>" in str(item.text)]
+    budget = _legend_name_budget_units()
+
+    assert len(entries) == 3
+    for entry in entries:
+        name = str(entry.text).split("</span> ", 1)[1]
+        assert _text_width_units(name) <= budget + 1e-9, name
+        if entry.hovertext:
+            assert name.endswith("…")
+    # 예산은 칸 폭(260px 의 47%)에서 틈 6px 와 색 네모를 뺀 자리다.
+    assert budget * PRODUCT_SHARE_LEGEND_FONT_SIZE_PX < 0.47 * 260
+
+
+def test_a_tiny_slice_is_drawn_wide_enough_to_see_and_point_at() -> None:
+    """1% 안팎의 조각은 조각 사이 2px 틈에 묻힌다. 최소 크기로 그리고 hover 는 실제 비중이다."""
+    plan = _plan([(202609, "DEMO_BIG", "양산", 995.0), (202609, "DEMO_TINY", "양산", 5.0)])
+    wafer = _wafer([(202609, "DEMO_BIG", "양산", 9_950.0), (202609, "DEMO_TINY", "양산", 50.0)])
+    volume = build_product_volume(plan, wafer)
+    cells = build_product_share_cells(
+        volume, "PKG", assign_product_slots(volume), month_labels=["26.09"]
+    )
+    _, month_figure = _figures(cells, ["26.09"], basis="PKG")
+    pie = _pies(month_figure)[0]
+    drawn = dict(zip(pie.labels, pie.values, strict=True))
+
+    assert drawn["DEMO_TINY"] == LOB_PRODUCT_SHARE_MIN_DRAWN_SHARE
+    assert drawn["DEMO_BIG"] == pytest.approx(0.995)
+    tiny_hover = next(text for text in pie.hovertext if "DEMO_TINY" in text)
+    assert "0.5%" in tiny_hover
+
+
+def test_hover_is_two_lines_so_the_bottom_slices_are_not_clipped() -> None:
+    """도넛이 그림 맨 아래에 붙어 있어 6시 방향 조각의 hover 는 자리가 좁다 — 두 줄로 묶는다."""
+    products = [f"DEMO_{index}" for index in range(PRODUCT_SHARE_SLOT_COUNT + 3)]
+    plan = _plan([(202609, name, "양산", 10.0 * (i + 1)) for i, name in enumerate(products)])
+    wafer = _wafer([(202609, name, "양산", 100.0 * (i + 1)) for i, name in enumerate(products)])
+    volume = build_product_volume(plan, wafer)
+    cells = build_product_share_cells(
+        volume, "Wafer", assign_product_slots(volume), month_labels=["26.09"]
+    )
+    _, month_figure = _figures(cells, ["26.09"])
+    pie = _pies(month_figure)[0]
+
+    assert all(text.count("<br>") == 1 for text in pie.hovertext)
+    other = next(text for text in pie.hovertext if OTHER_PRODUCT_LABEL in text)
+    assert "외 1" in other  # 접힌 넷 중 셋만 이름을 적는다
+
+
+def _past(rows: list[tuple[int, str, float]]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "생산계획년월": [month for month, _, _ in rows],
+            "제품정보": [name for _, name, _ in rows],
+            "Stack": ["12H"] * len(rows),
+            "Customer": ["DEMO-CUST"] * len(rows),
+            "생산수량": [value for _, _, value in rows],
+        }
+    )
+
+
+def test_past_only_products_never_push_the_calculated_products_colors() -> None:
+    """Past Data 를 켜고 꺼도 계산 구간 제품의 색이 그대로다.
+
+    과거 전용 제품을 한 목록에 섞어 표시순서로 세우면 그 제품이 앞에 끼어 계산 구간 제품이 한
+    칸씩 밀린다(리뷰 재현: 표시순서가 앞선 과거 제품 하나로 세 제품의 색이 바뀌었다).
+    """
+    display_order = pd.DataFrame(
+        {
+            "페이지 구분": [PAGE_PLAN] * 4,
+            "탭 구분": [TAB_PKG_PLAN] * 4,
+            "정렬우선순위": [1] * 4,
+            "분류컬럼": ["제품정보"] * 4,
+            "정렬방식": ["사용자지정"] * 4,
+            "분류값": ["DEMO_OLD", "DEMO_A", "DEMO_B", "DEMO_C"],
+            "값표시순서": [1, 2, 3, 4],
+            "활성여부": ["Y"] * 4,
+        }
+    )
+    volume = _volume()
+    past = past_product_volume(
+        _past([(202608, "DEMO_OLD", 50.0), (202608, "DEMO_A", 10.0)]),
+        start_month=202608,
+        end_month=202610,
+        exclude_months={202609, 202610},
+    )
+
+    without_past = assign_product_slots(volume, display_order)
+    with_past = assign_product_slots(volume, display_order, past_volume=past)
+
+    for product in ("DEMO_A", "DEMO_B", "DEMO_C"):
+        assert with_past.slot[product] == without_past.slot[product], product
+    assert with_past.slot["DEMO_OLD"] == 3  # 계산 구간 제품 뒤
+
+
+def test_past_only_products_fold_before_any_calculated_product_does() -> None:
+    names = [f"DEMO_{index}" for index in range(PRODUCT_SHARE_SLOT_COUNT)]
+    plan = _plan([(202609, name, "양산", 10.0) for name in names])
+    wafer = _wafer([(202609, name, "양산", 100.0) for name in names])
+    volume = build_product_volume(plan, wafer)
+    past = past_product_volume(
+        _past([(202608, "DEMO_PAST", 999.0)]),
+        start_month=202608,
+        end_month=202609,
+        exclude_months={202609},
+    )
+
+    slots = assign_product_slots(volume, past_volume=past)
+
+    assert slots.order == tuple(names)
+    assert slots.folded == frozenset({"DEMO_PAST"})
+
+
+def test_past_pkg_cells_are_marked_and_never_summed_with_calculated_months() -> None:
+    """과거 PKG 는 `과거 계획 세부수량` 입력 그대로다. 양산+ER 을 더한 계산 달과 한 해로 더하지
+    않고, hover 에 입력값임을 적는다."""
+    months = list(range(202601, 202613))
+    labels = [f"26.{month % 100:02d}" for month in months]
+    plan = _plan([(month, "DEMO_A", "ER", 10.0) for month in months[6:]])
+    wafer = _wafer([(month, "DEMO_A", "ER", 100.0) for month in months[6:]])
+    past = past_product_volume(
+        _past([(month, "DEMO_A", 5.0) for month in months[:6]]),
+        start_month=202601,
+        end_month=202612,
+        exclude_months=set(months[6:]),
+    )
+    volume = combine_product_volume(build_product_volume(plan, wafer), past)
+    slots = assign_product_slots(volume)
+    cells = build_product_share_cells(
+        volume, "PKG", slots, month_labels=[*labels, "26년"], year_total_labels=["26년"]
+    )
+
+    assert cells["26.01"].past and not cells["26.07"].past
+    assert "26년" not in cells
+    _, month_figure = _figures(cells, labels, basis="PKG")
+    hovers = {pie.name: pie.hovertext[0] for pie in _pies(month_figure)}
+    assert "과거 입력값" in hovers["26.01"]
+    assert "과거 입력값" not in hovers["26.07"]
