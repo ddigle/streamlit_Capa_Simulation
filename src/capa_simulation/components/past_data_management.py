@@ -129,6 +129,14 @@ def render_past_data_management(database_path: str, profile: GlobalPastData) -> 
             _paste_dialog(spec, draft)
 
 
+def past_data_has_pending() -> bool:
+    """붙여넣기로 읽어 두고 아직 저장하지 않은 표가 있는가. HOME 이 Past Data 탭에 점을 찍는다.
+
+    읽기와 저장 모두 끝나면 곧바로 다시 돌므로(`st.rerun`) 탭을 만드는 회차의 값이 곧 지금 상태다.
+    """
+    return bool(st.session_state.get(PAST_DRAFT_KEY))
+
+
 def merged_past_tables(
     database_path: str,
     draft: Mapping[str, pd.DataFrame],

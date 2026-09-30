@@ -1080,6 +1080,42 @@ def test_past_data_paste_opens_in_a_popup_and_save_sits_on_top(seeded_database: 
     ]
 
 
+def test_a_past_data_paste_waiting_to_be_saved_puts_a_dot_on_its_tab(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """읽어 두고 저장하지 않은 과거 구간이 있으면 Past Data 탭 이름 옆에 점이 찍힌다.
+
+    다른 화면의 미적용 점과 같은 규칙이다. 전에는 「대기 N행」이 남아도 점이 없었다(2026-10-01
+    브라우저 점검). 저장하면 점이 사라진다.
+    """
+    import capa_simulation.components.tab_marks as tab_marks
+
+    marked: dict[str, set[str]] = {}
+    monkeypatch.setattr(
+        tab_marks,
+        "mark_pending_tabs",
+        lambda key, labels, pending: marked.__setitem__(key, set(pending)),
+    )
+    app = AppTest.from_string(_home_script(tmp_path / "scenario.duckdb"), default_timeout=300)
+    app.run()
+    assert not app.exception
+    assert marked["home_active_tab"] == set()
+
+    app.button(key="home_past_clipboard_확보율_open").click().run()
+    app.text_area(key="home_past_clipboard_확보율").set_value(
+        "생산계획년월\t공정\t확보율\n202511\tDEMO_P\t1.05\n"
+    )
+    next(button for button in app.button if button.label == "붙여넣기 읽기").click()
+    app.run()
+    assert not app.exception
+    assert marked["home_active_tab"] == {":material/history: Past Data"}
+
+    next(button for button in app.button if button.label == "과거 구간 저장").click()
+    app.run()
+    assert not app.exception
+    assert marked["home_active_tab"] == set()
+
+
 def test_the_sidebar_picks_a_key_process_preset_and_the_heatmap_follows(tmp_path: Path) -> None:
     """주요공정 히트맵은 사이드바 `주요공정 히트맵` 카드에서 고른 프리셋의 공정을 그린다.
 

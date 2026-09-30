@@ -46,12 +46,16 @@ from capa_simulation.components.home_rendering import (
 from capa_simulation.components.loading_progress import LoadingProgress
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header_with_status
-from capa_simulation.components.past_data_management import render_past_data_management
+from capa_simulation.components.past_data_management import (
+    past_data_has_pending,
+    render_past_data_management,
+)
 from capa_simulation.components.plan_comparison_dumbbell import (
     render_plan_comparison_dumbbell,
 )
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.process_picker import render_process_picker
+from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.home_state import (
     ADVANCE_TOGGLE_KEY,
@@ -825,14 +829,14 @@ loading.advance()
 
 # 차트가 든 탭은 `stateful_tabs` 로 만든다. `key` 와 `on_change="rerun"` 이 있어야 서버가
 # 어느 탭이 열렸는지 알고, 숨은 채로 그려 머리글이 밀리는 것을 막을 수 있다.
-main_tab, preference_tab, past_tab = stateful_tabs(
-    [
-        ":material/dashboard: Main",
-        ":material/tune: Preference",
-        ":material/history: Past Data",
-    ],
-    key="home_active_tab",
-)
+HOME_TAB_KEY = "home_active_tab"
+PAST_TAB = ":material/history: Past Data"
+HOME_TAB_LABELS = (":material/dashboard: Main", ":material/tune: Preference", PAST_TAB)
+main_tab, preference_tab, past_tab = stateful_tabs(HOME_TAB_LABELS, key=HOME_TAB_KEY)
+# 붙여넣기로 읽고 아직 저장하지 않은 과거 구간이 남으면 Past Data 탭 이름 옆에 점을 찍는다 — 다른
+# 화면의 미적용 점과 같은 규칙이다(2026-10-01 브라우저 점검: 대기가 남아도 점이 없었다). 찍을
+# 것이 없어도 매 회차 부른다 — 저장한 다음 회차에 앞 회차의 점을 덮는다.
+mark_pending_tabs(HOME_TAB_KEY, HOME_TAB_LABELS, {PAST_TAB} if past_data_has_pending() else set())
 # 보는 조건은 사이드바 조건 카드다(2026-09-29 사용자 결정). 그 조건이 걸리는 Main 탭에서만 선다.
 if not tab_is_hidden(main_tab):
     render_home_view_card(comparison_ready=bool(comparison_scenario_id and comparison_revision_id))
