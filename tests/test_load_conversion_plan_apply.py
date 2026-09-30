@@ -1,12 +1,16 @@
 # Purpose: 생산 계획 화면의 PKG PLAN·수율 적용·붙여넣기·가상 제품 등록 동작을 고정한다.
 
+import json
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from streamlit.proto.WidgetStates_pb2 import WidgetState, WidgetStates
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Dataframe, ElementTree
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.month_range_picker as month_range_picker
@@ -568,3 +572,147 @@ def test_a_space_only_cell_in_the_plan_paste_reads_as_zero(seeded_database: Path
         plan["제품정보"].eq(product) & pd.to_numeric(plan["생산계획년월"]).eq(202601), "생산수량"
     ]
     assert january.astype(float).tolist() == [0.0]
+
+
+# --- 2026-10-01 브라우저 E2E: 한 표를 적용한 직후 회차에 사이드바가 보는 「적용 전 편집」 ---------
+
+PRE_PAGE_LOG_KEY = "test_pre_page_pending_edits"
+PLAN_CELL_EDIT = {"edited_rows": {0: {"202602": 200.0}}, "added_rows": [], "deleted_rows": []}
+YIELD_CELL_EDIT = {"edited_rows": {0: {"202603": 0.9}}, "added_rows": [], "deleted_rows": []}
+
+
+def _sidebar_probe_script(database_path: Path) -> str:
+    """회차마다 페이지 **앞에서** 「적용 전 편집」 목록을 적어 두는 스크립트.
+
+    `app.py` 는 `pending_edit_labels` 를 `navigation.run()` 전에 부르고, 사이드바 캡션과 저장
+    팝업의 경고·확인 체크·잠금이 그 값으로 그려진다. 같은 차례에서 같은 함수를 불러 남긴다.
+    """
+    return _script(database_path).replace(
+        "apply_pending_scenario_preset()\n",
+        "apply_pending_scenario_preset()\n"
+        "from capa_simulation.components.scenario_edit_bar import pending_edit_labels\n"
+        f"st.session_state.setdefault({PRE_PAGE_LOG_KEY!r}, []).append(\n"
+        "    pending_edit_labels('load_conversion.py')\n"
+        ")\n",
+        1,
+    )
+
+
+@contextmanager
+def _browser_held_edits() -> Iterator[dict[str, str]]:
+    """브라우저가 들고 있다가 사용자 조작마다 다시 보내는 편집표 상태를 흉내 낸다.
+
+    AppTest 는 편집표의 편집을 되보내지 않고(위 수율 테스트의 주석), 세션에 넣은 값은 사용자 키
+    칸이라 `st.rerun()` 회차에 그리지 않은 위젯 상태를 Streamlit 이 지우는 동작도 드러나지 않는다.
+    그래서 돌려준 사전(요소 id → 편집 상태 JSON)을 AppTest 가 보내는 위젯 상태에 덧붙인다 —
+    브라우저가 보내는 것과 같은 자리다. `ElementTree.get_widget_states` 는 Streamlit 테스트 도구의
+    내부 이름이라, Streamlit 을 올린 뒤 이 테스트가 깨지면 여기부터 본다.
+    """
+    held: dict[str, str] = {}
+    original = ElementTree.get_widget_states
+
+    def with_held_edits(tree: ElementTree) -> WidgetStates:
+        states = original(tree)
+        for element_id, value in held.items():
+            states.widgets.append(WidgetState(id=element_id, string_value=value))
+        return states
+
+    with patch.object(ElementTree, "get_widget_states", with_held_edits):
+        yield held
+
+
+def _editor_node(app: AppTest, key: str) -> Dataframe:
+    """편집표가 지금 서 있는 세대 키의 요소."""
+    widget_key = _widget_key(app, key)
+    nodes: list[object] = [app.main]
+    while nodes:
+        node = nodes.pop()
+        if isinstance(node, Dataframe) and node.key == widget_key:
+            return node
+        nodes.extend(getattr(node, "children", {}).values())
+    raise AssertionError(f"{widget_key} 편집표가 그려지지 않았습니다.")
+
+
+@pytest.mark.parametrize(
+    ("applied", "applied_edit", "apply_button", "other", "other_edit", "other_label"),
+    [
+        (
+            "pkg_plan_editor",
+            PLAN_CELL_EDIT,
+            "apply_pkg_plan_changes",
+            "yield_editor",
+            YIELD_CELL_EDIT,
+            "생산 계획 · 수율",
+        ),
+        (
+            "yield_editor",
+            YIELD_CELL_EDIT,
+            "apply_yield_changes",
+            "pkg_plan_editor",
+            PLAN_CELL_EDIT,
+            "생산 계획 · PKG PLAN",
+        ),
+    ],
+)
+def test_applying_one_table_leaves_only_the_other_tables_edit_pending(
+    seeded_database: Path,
+    applied: str,
+    applied_edit: dict[str, object],
+    apply_button: str,
+    other: str,
+    other_edit: dict[str, object],
+    other_label: str,
+) -> None:
+    """한 표를 적용한 다음 회차에 사이드바가 보는 목록은 **다른 표의 적용 전 편집** 뿐이다.
+
+    두 결함이 겹쳐 있었다(2026-10-01 브라우저 E2E). 사이드바는 페이지보다 먼저 돌아, 방금 적용한
+    표를 그 회차 동안 「적용 전 편집」으로 세고 저장을 잠갔다. 또 PKG PLAN 적용은 수율 편집표를
+    그리기 **전에** `st.rerun()` 해, Streamlit 이 그 회차에 그리지 않은 수율 편집 상태를 서버에서
+    지웠다 — 수율 점과 저장 경고가 사라졌고, 그때 누른 「신규 리비전 저장」은 다음 조작에 브라우저가
+    되보낸 편집 때문에 잠긴 버튼이 되어 말없이 무시됐다.
+    """
+    with _browser_held_edits() as browser:
+        app = AppTest.from_string(_sidebar_probe_script(seeded_database), default_timeout=300)
+        app.run()
+        assert not list(app.exception)
+        browser[_editor_node(app, other).proto.id] = json.dumps(other_edit)
+        app.run()
+        assert app.session_state[PRE_PAGE_LOG_KEY][-1] == [other_label]
+        applied_id = _editor_node(app, applied).proto.id
+        browser[applied_id] = json.dumps(applied_edit)
+        app.run()
+        before_token = app.session_state["active_scenario"]["content_token"]
+        runs_before = len(app.session_state[PRE_PAGE_LOG_KEY])
+
+        app.button(key=apply_button).click().run()
+        # 적용한 표는 새 세대 키로 다시 선다 — 브라우저에서 옛 요소와 그 편집이 사라진다.
+        browser.pop(applied_id)
+        assert not list(app.exception)
+        assert app.session_state["active_scenario"]["content_token"] != before_token
+
+        # 누른 회차와 적용 뒤 `st.rerun()` 회차. 사용자가 보는 사이드바는 뒤 회차의 것이다.
+        runs = app.session_state[PRE_PAGE_LOG_KEY][runs_before:]
+        assert len(runs) == 2
+        assert runs[-1] == [other_label]
+        # 다른 표의 편집은 서버에도 그대로 남아 탭 점·작업 줄이 계속 선다.
+        assert app.session_state[_widget_key(app, other)]["edited_rows"]
+        assert not app.session_state[_widget_key(app, applied)]["edited_rows"]
+
+        # 다음 조작에서도 목록이 바뀌지 않는다 — 저장을 누른 회차에 경고가 새로 솟지 않는다.
+        app.run()
+        assert app.session_state[PRE_PAGE_LOG_KEY][-1] == [other_label]
+
+
+def test_blank_cells_in_both_editors_show_as_blank_not_none(seeded_database: Path) -> None:
+    """PKG PLAN 의 0 칸과 수율의 편집 불가 칸은 빈칸으로 싣는다 — "None" 글자가 아니다.
+
+    빈칸 표시(`placeholder`)를 주지 않으면 Streamlit 은 빈 칸에 "None" 을 그린다(2026-10-01
+    브라우저 E2E). 가이드는 그 칸을 「빈칸」이라고 설명한다.
+    """
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+
+    for key in ("pkg_plan_editor", "yield_editor"):
+        proto = _editor_node(app, key).proto
+        assert proto.HasField("placeholder"), key
+        assert proto.placeholder == "", key

@@ -168,7 +168,7 @@ def render_scenario_controls(
                 key="sidebar_load_revision",
             )
         with save_column:
-            _render_revision_save(
+            save_refusal = _render_revision_save(
                 repository,
                 scenario_by_id,
                 revision_by_id,
@@ -178,6 +178,12 @@ def render_scenario_controls(
                 active_revision_id=active_revision_id,
                 pending_edits=pending_edits,
             )
+        # 저장을 막은 까닭은 팝업 밖, 이 줄 바로 아래에도 쓴다. 누른 회차에 이 상자의 줄이 바뀌면
+        # (적용 전 편집 경고가 새로 서면) 팝업이 새 요소로 다시 서며 닫혀 안의 알림이 가려진다
+        # (2026-10-01 브라우저 E2E). `st.rerun()` 으로 플래시를 띄우지 않는 것은, 페이지 편집표를
+        # 그리기 전에 끝난 회차라 Streamlit 이 그 편집 상태를 서버에서 지우기 때문이다.
+        if save_refusal is not None:
+            st.warning(save_refusal, icon=":material/block:")
         # 저장하지 않은 편집을 버리고 올라와 있는 리비전으로 되돌린다. 전에는 편집 화면 본문
         # 맨 위(「활성 시나리오 · 수정본 N」 줄)에 있었는데, 이 동작은 **모든 화면의 편집**을
         # 버리는 시나리오 단위라 불러오기·저장 곁이 제자리다(2026-09-29 사용자 결정 — 본문은
@@ -224,6 +230,16 @@ def _pending_edits_notice(pending_edits: Sequence[str]) -> str:
         ":orange-badge[적용 전 편집] "
         + ", ".join(pending_edits)
         + " 의 적용하지 않은 편집은 저장에 들어가지 않고, 저장·불러오기를 하면 사라집니다."
+    )
+
+
+def _pending_save_refusal(pending_edits: Sequence[str]) -> str:
+    """적용 전 편집을 버린다는 확인 없이 누른 저장을 막았을 때의 알림. 무엇을 하면 되는지까지."""
+    return (
+        "신규 리비전을 저장하지 않았습니다. "
+        + ", ".join(pending_edits)
+        + " 에 적용하지 않은 편집이 있습니다 — 먼저 「변경사항 적용」을 누르거나, 그 편집을 버려도"
+        " 되면 「적용하지 않은 편집을 버리고 저장」을 체크한 뒤 리비전명을 다시 적어 저장하세요."
     )
 
 
@@ -276,14 +292,18 @@ def _render_revision_save(
     active_scenario_id: str | None,
     active_revision_id: str | None,
     pending_edits: Sequence[str] = (),
-) -> None:
+) -> str | None:
+    """저장 팝업. 돌려주는 것은 저장을 막은 까닭이다 — 막지 않았으면 `None`.
+
+    부르는 쪽이 그 까닭을 팝업 밖에도 한 번 더 쓴다(`render_scenario_controls`).
+    """
     # `st.expander` 가 아니라 `st.popover` 다. expander 는 폭을 통째로 먹는 줄이라 옆
     # 버튼과 나란히 설 수 없고, 펴면 그 아래 조회기간 상자를 밀어낸다. popover 는 버튼
     # 모양으로 서고 내용은 띄워 올린다.
     with st.popover("저장", icon=":material/save_as:", width="stretch"):
         if active_scenario_id is None or active_revision_id is None:
             st.info("먼저 저장된 리비전을 불러오세요.")
-            return
+            return None
         if selected_scenario_id != active_scenario_id or selected_revision_id != active_revision_id:
             # 여기서 「불러오기」를 권하면 안 된다. 저장하려던 편집이 바로 그 불러오기에
             # 덮여 사라진다. 저장 대상이 무엇이고 무엇을 되돌리면 되는지만 말한다.
@@ -310,15 +330,15 @@ def _render_revision_save(
                 f"{warning}"
                 "위 선택 상자를 그 시나리오·리비전으로 되돌리면 저장할 수 있습니다."
             )
-            return
+            return None
 
         active_summary = scenario_by_id.get(active_scenario_id)
         if active_summary is None:
             st.warning("현재 활성 시나리오 정보를 찾지 못했습니다.")
-            return
+            return None
         st.caption(f"저장 대상 · {active_summary.scenario_name}")
-        # 적용하지 않은 편집은 저장에 실리지 않고 저장하는 순간 사라진다. 확인 칸은 폼 **밖**이다 —
-        # 폼 안의 칸은 제출해야 값이 올라와 저장 버튼을 잠글 수 없다.
+        # 적용하지 않은 편집은 저장에 실리지 않고 저장하는 순간 사라진다. 그래서 그 편집을 버린다는
+        # 확인 칸을 체크해야 저장한다. 확인 칸은 폼 **밖**이라 체크가 곧바로 세션에 남는다.
         dropping_confirmed = True
         if pending_edits:
             st.warning(_pending_edits_notice(pending_edits) + " 먼저 「변경사항 적용」을 누르세요.")
@@ -337,14 +357,21 @@ def _render_revision_save(
                 height=80,
                 key="sidebar_revision_note",
             )
+            # **저장 버튼은 잠그지 않는다**(2026-10-01 브라우저 E2E). 잠긴 버튼으로 온 제출은
+            # Streamlit 이 서버에서 버려 `submitted` 가 그냥 False 가 된다. 보여 준 회차에는 적용 전
+            # 편집이 없어 켜져 있던 버튼이, 누른 회차에 브라우저가 편집을 되보내 잠기면 저장이 알림
+            # 없이 무시됐다(리비전명만 지워졌다). 누른 회차의 목록으로 판정해 막고 알린다.
             submitted = st.form_submit_button(
                 "신규 리비전 저장",
                 icon=":material/save_as:",
                 width="stretch",
-                disabled=not dropping_confirmed,
             )
         if not submitted:
-            return
+            return None
+        if not dropping_confirmed:
+            refusal = _pending_save_refusal(pending_edits)
+            st.warning(refusal, icon=":material/block:")
+            return refusal
 
         try:
             # `REVISION_TABLES` 14개를 통째로 새 리비전으로 적는다(표시순서·모듈수는
@@ -359,7 +386,7 @@ def _render_revision_save(
                 )
                 if not verdict.allowed:
                     st.error(verdict.message)
-                    return
+                    return None
                 revision_tables = revision_tables_for_save(active_scenario, reference_tables)
                 snapshot = repository.save_revision(
                     active_scenario_id,
@@ -374,6 +401,7 @@ def _render_revision_save(
                 activate_persisted_snapshot(snapshot)
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"신규 리비전을 저장하지 못했습니다: {bootstrap_error_message(exc)}")
+            return None
         else:
             st.session_state[SIDEBAR_FLASH_KEY] = (
                 f"신규 리비전 r{snapshot.revision.revision_no}을 저장했습니다."

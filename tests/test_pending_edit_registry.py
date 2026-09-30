@@ -67,6 +67,60 @@ def test_a_discarded_editor_no_longer_counts(session: SimpleNamespace) -> None:
     assert scenario_edit_bar.pending_edit_labels("reference_data.py") == []
 
 
+def test_the_table_the_page_just_applied_is_not_named(session: SimpleNamespace) -> None:
+    """적용한 회차 다음 회차에는 사이드바가 **페이지보다 먼저** 돈다(2026-10-01 브라우저 E2E).
+
+    그때는 방금 적용한 편집표가 아직 버려지지 않아 옛 편집이 세션에 남아 있다. 그것을 「적용 전
+    편집」으로 세면 저장 팝업이 버릴 것도 없는 확인 체크를 요구하며 저장을 잠갔다. 페이지가
+    `mark_own_change` 로 적어 둔 표와 붙여넣기 대기는 빼고, 다른 표의 적용 전 편집은 그대로 센다.
+    """
+    scenario_edit_bar.register_pending_edits(
+        "reference_data.py",
+        "기준 정보",
+        {"upeh_editor": "UPEH", "run_day_editor": "일수"},
+        own_change_key="reference_own_change",
+    )
+    scenario_edit_bar.register_pending_edits(
+        "load_conversion.py",
+        "생산 계획",
+        {"plan_editor": "PKG PLAN"},
+        staged={"plan_staged": "PKG PLAN 붙여넣기"},
+        own_change_key="plan_own_change",
+    )
+    session.session_state["upeh_editor"] = EDIT
+    session.session_state["run_day_editor"] = EDIT
+    session.session_state["plan_staged"] = object()
+    scenario_edit_bar.mark_own_change("reference_own_change", ("upeh_editor",))
+    scenario_edit_bar.mark_own_change("plan_own_change", ("plan_editor", "plan_staged"))
+
+    assert scenario_edit_bar.pending_edit_labels("reference_data.py") == ["기준 정보 · 일수"]
+    assert scenario_edit_bar.pending_edit_labels("home.py") == []
+
+    # 페이지가 그 적용을 처리하면(표를 버리고 표시를 지우면) 다시 평소대로 센다.
+    scenario_edit_bar.reset_editors_on_source_change(
+        "reference_token",
+        "new",
+        ("upeh_editor", "run_day_editor"),
+        own_change_key="reference_own_change",
+    )
+    session.session_state["upeh_editor__g1"] = EDIT
+
+    assert scenario_edit_bar.pending_edit_labels("reference_data.py") == [
+        "기준 정보 · UPEH",
+        "기준 정보 · 일수",
+    ]
+
+
+def test_a_record_written_before_own_change_keys_still_reads(session: SimpleNamespace) -> None:
+    """서버를 띄운 채 코드를 바꾸면 세션에 옛 세 칸짜리 기록이 남는다. 사이드바는 멈추지 않는다."""
+    session.session_state["scenario_pending_edit_registry"] = {
+        "reference_data.py": ("기준 정보", {"upeh_editor": "UPEH"}, {}),
+    }
+    session.session_state["upeh_editor"] = EDIT
+
+    assert scenario_edit_bar.pending_edit_labels("reference_data.py") == ["기준 정보 · UPEH"]
+
+
 def test_each_page_registers_under_its_own_file_name() -> None:
     """사이드바는 지금 화면의 파일 이름으로 찾는다. 페이지가 다른 이름으로 적으면 조용히 꺼진다."""
     found = {}

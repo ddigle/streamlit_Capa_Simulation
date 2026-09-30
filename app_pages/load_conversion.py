@@ -174,12 +174,13 @@ reset_editors_on_source_change(
     own_change_key=OWN_CHANGE_KEY,
 )
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표와 붙여넣기
-# 대기분을 알린다. 붙여넣기 대기분은 화면을 옮겨도 남는다.
+# 대기분을 알린다. 붙여넣기 대기분은 화면을 옮겨도 남는다. 방금 적용한 표는 사이드바가 빼고 센다.
 register_pending_edits(
     "load_conversion.py",
     "생산 계획",
     {PLAN_EDITOR_KEY: "PKG PLAN", YIELD_EDITOR_KEY: "수율"},
     staged={PLAN_STAGED_KEY: "PKG PLAN 붙여넣기"},
+    own_change_key=OWN_CHANGE_KEY,
 )
 
 # 본문은 제목 · 탭 · 탭 내용만이다. 「활성 시나리오 · 수정본 N」 줄은 없앴다 — 미저장 여부는
@@ -539,6 +540,9 @@ with pkg_plan_tab:
         row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
         num_rows="fixed",
         disabled=PLAN_EDITOR_DIMENSIONS,
+        # 위에서 가린 0 칸은 빈칸으로 그린다. 빈칸 표시를 주지 않으면 Streamlit 이 그 칸마다
+        # "None" 글자를 그린다(2026-10-01 브라우저 E2E).
+        placeholder="",
         column_config={
             **{
                 column: st.column_config.TextColumn(
@@ -564,30 +568,6 @@ with pkg_plan_tab:
     )
 
 simulation_plan = filtered_plan
-
-if apply_plan:
-    try:
-        updated_plan = attach_plan_attributes(
-            plan_from_edit_table(edited_plan_table), simulation_plan
-        )
-        apply_month_updates(
-            active_scenario,
-            {"RQ_PKG_PLAN": updated_plan},
-            effective_start_month,
-            effective_end_month,
-        )
-    except ValueError as exc:
-        plan_notice.error(str(exc))
-    else:
-        st.session_state.pop(PLAN_STAGED_KEY, None)
-        st.session_state[PLAN_APPLIED_FLASH_KEY] = (
-            f"PKG PLAN을 전역 계획값에 반영했습니다. "
-            f"{effective_start_month}~{effective_end_month} 구간의 환산·소요대수·확보율과 "
-            f"홈 대시보드가 이 계획으로 다시 계산됩니다. "
-            "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요."
-        )
-        mark_own_change(OWN_CHANGE_KEY, (PLAN_EDITOR_KEY, PLAN_STAGED_KEY))
-        st.rerun()
 
 with yield_tab:
     if default_yield_table is None:
@@ -653,6 +633,8 @@ with yield_tab:
             row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
             num_rows="fixed",
             disabled=YIELD_EDITOR_DIMENSIONS,
+            # 편집 불가 행의 달 칸과 원천에 행이 없는 달은 빈칸이다 — "None" 글자가 아니다.
+            placeholder="",
             column_config={
                 **{
                     column: st.column_config.TextColumn(
@@ -684,6 +666,36 @@ with yield_tab:
                 yield_notice.error(str(exc))
             else:
                 st.rerun()
+
+# PKG PLAN 적용은 **두 편집표를 모두 그린 뒤**에 한다. 적용은 `st.rerun()` 으로 끝나는데,
+# Streamlit 은 그것을 정상 완료로 보고 그 회차에 그리지 않은 위젯의 상태를 서버에서 지운다. 예전에는
+# 이 블록이 수율 표보다 앞이라, 수율에 적용하지 않은 편집이 있는 채 PKG PLAN 을 적용하면 그 편집이
+# 서버에서 사라져 수율 탭 점과 사이드바 경고가 꺼졌다. 그때 누른 「신규 리비전 저장」은 다음 조작에
+# 브라우저가 되보낸 편집 때문에 잠긴 버튼이 되어 말없이 무시됐다(2026-10-01 브라우저 E2E). 오류
+# 알림은 작업 줄 아래 자리(`plan_notice`)에 쓰므로 여기서 처리해도 누른 자리에 뜬다.
+if apply_plan:
+    try:
+        updated_plan = attach_plan_attributes(
+            plan_from_edit_table(edited_plan_table), simulation_plan
+        )
+        apply_month_updates(
+            active_scenario,
+            {"RQ_PKG_PLAN": updated_plan},
+            effective_start_month,
+            effective_end_month,
+        )
+    except ValueError as exc:
+        plan_notice.error(str(exc))
+    else:
+        st.session_state.pop(PLAN_STAGED_KEY, None)
+        st.session_state[PLAN_APPLIED_FLASH_KEY] = (
+            f"PKG PLAN을 전역 계획값에 반영했습니다. "
+            f"{effective_start_month}~{effective_end_month} 구간의 환산·소요대수·확보율과 "
+            f"홈 대시보드가 이 계획으로 다시 계산됩니다. "
+            "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요."
+        )
+        mark_own_change(OWN_CHANGE_KEY, (PLAN_EDITOR_KEY, PLAN_STAGED_KEY))
+        st.rerun()
 
 simulation_yield = filtered_yield
 
