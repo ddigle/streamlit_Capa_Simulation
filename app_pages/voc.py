@@ -22,6 +22,7 @@ import streamlit as st
 
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.remembered_expander import remembered_expander
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.services.voc_board import VOC_CATEGORIES
@@ -31,6 +32,7 @@ from capa_simulation.sidebar_status import condition_card
 AUTHOR_KEY = "voc_author"
 # 글마다 하나씩 생기는 위젯이라 키에 글 번호를 붙인다. 접두를 리터럴로 흩어 두면
 # 겹침 검사(`tests/test_session_key_collisions.py`)가 기준 키를 보지 못한다.
+POST_EXPANDER_KEY = "voc_post_expander"
 REPLY_FORM_KEY = "voc_reply_form"
 REPLY_BODY_KEY = "voc_reply_body"
 RESOLVE_KEY = "voc_resolve"
@@ -176,7 +178,9 @@ def _render_post(row: Any) -> None:
         f"[{row['category']}] {row['title']} · {row['author']} · "
         f"{_timestamp(row['created_at'])} · 답변 {len(post_replies)}"
     )
-    with st.expander(summary, expanded=False):
+    # 편 글은 답변을 남긴 뒤에도 편 채로 둔다. 라벨의 답변 수가 바뀌면 `key` 없는 상자는 새로
+    # 만들어져 접혔다 — 「답변 완료로 표시」를 누르려면 다시 펴야 했다(2026-10-01 브라우저 점검).
+    with remembered_expander(summary, key=f"{POST_EXPANDER_KEY}_{post_id}"):
         st.markdown(state)
         # `st.markdown` 이 아니라 `st.text` 다. 사용자가 적는 자유 글이라 `#`·`-`·`*` 가
         # 제목과 목록으로 바뀌면 쓴 사람이 의도하지 않은 모양이 된다.
