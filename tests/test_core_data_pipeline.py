@@ -173,6 +173,45 @@ def test_area_name_is_normalized_before_rq_derivation() -> None:
         assert prepared.reference_tables[table_name].loc[0, "Area_Name"] == "Main"
 
 
+def test_cs_codes_map_to_the_two_production_classes_after_trimming_and_casing() -> None:
+    """MP·CS 는 양산, ER 은 ER — 앞뒤 공백·소문자는 맞춘 뒤 대조하고 CS 키도 그 값으로 남긴다."""
+    source = pd.concat([_core_data_row()] * 4, ignore_index=True)
+    source["생산계획년월"] = [202608, 202609, 202610, 202611]
+    source["CS"] = ["MP", " cs ", "er", "ER "]
+
+    tables = build_reference_tables(source, _display_order())
+
+    plan = tables["RQ_PKG_PLAN"].sort_values("생산계획년월")
+    assert plan["CS"].tolist() == ["MP", "CS", "ER", "ER"]
+    assert plan["양산구분"].tolist() == ["양산", "양산", "ER", "ER"]
+
+
+@pytest.mark.parametrize(
+    ("codes", "expected"),
+    [
+        # 새 코드는 코드 이름과 행 수(계획 행 수)를 알린다 — 사내 1월 시나리오의 `CB`(2026-09-30).
+        (["MP", "CB", "CB"], "`CB` 2행(계획 2행)"),
+        # 빈 CS 도 같은 문구로 알린다.
+        (["MP", "", "ER"], "`(빈값)` 1행(계획 1행)"),
+    ],
+)
+def test_an_unmapped_cs_code_is_named_before_any_table_is_built(
+    codes: list[str], expected: str
+) -> None:
+    """예전에는 첫 표 검사에서 「업무 키에 null 또는 빈값이 있습니다: 양산구분」으로만 멈췄다."""
+    source = pd.concat([_core_data_row()] * len(codes), ignore_index=True)
+    source["생산계획년월"] = [202608 + index for index in range(len(codes))]
+    source["CS"] = pd.array(codes, dtype="string")
+
+    with pytest.raises(ValueError, match="양산구분\\(양산·ER\\) 규칙에 없는") as caught:
+        build_reference_tables(source, _display_order())
+
+    message = str(caught.value)
+    assert expected in message
+    assert "MP, CS, ER" in message
+    assert "업무 키에 null" not in message
+
+
 def test_conflicting_business_keys_keep_first_values_and_report_all_tables() -> None:
     source = pd.concat([_core_data_row(), _core_data_row()], ignore_index=True)
     source.loc[1, "생산수량"] = 200.0

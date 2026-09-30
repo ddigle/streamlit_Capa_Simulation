@@ -14,6 +14,7 @@ from capa_simulation.io.core_data_source import (
 )
 from capa_simulation.services.core_data_derivation import (
     build_q_core_data,
+    reject_unmapped_cs_codes,
 )
 from capa_simulation.services.display_order_editor import transform_display_order
 from capa_simulation.services.reference_conflicts import (
@@ -47,6 +48,9 @@ def build_reference_tables_with_conflicts(
     """Build all RQ tables and collect conflicting business keys without stopping."""
     selected_contract = contract or load_core_data_contract()
     core = build_q_core_data(source, selected_contract)
+    # 규칙 밖 CS 코드는 표를 만들기 전에 코드 이름과 함께 막는다 — 표 검사까지 가면 「양산구분이
+    # 비었다」로만 멈춘다.
+    reject_unmapped_cs_codes(core)
     conflict_records: list[dict[str, object]] = []
     tables = {
         "RQ_PKG_PLAN": _rq_pkg_plan(core, selected_contract, conflict_records),
