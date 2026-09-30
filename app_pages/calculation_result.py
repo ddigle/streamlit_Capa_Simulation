@@ -24,6 +24,7 @@ from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.remembered_expander import remembered_expander
 from capa_simulation.components.securement_heatmap import (
     render_securement_heatmap,
     shortage_summary,
@@ -81,6 +82,7 @@ from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HI
 from capa_simulation.sidebar_status import table_card
 
 KEY_PROCESS_FILTER_KEY = "securement_heatmap_key_processes"
+HEATMAP_EXPANDER_KEY = "securement_heatmap_expander"
 # 사이드바 `표 조건` 카드 이름. 세 탭이 한 카드를 쓴다.
 CARD_NAME = "calculation_result"
 # STEP 뷰에서 공정을 고르지 않았을 때. 필터가 사이드바 카드에 있으므로 자리를 말한다.
@@ -497,7 +499,9 @@ else:
             )
             # 표는 숫자를 답하고 히트맵은 모양을 답한다. 「주요 공정이 **언제** 무너지나」는
             # 66행을 훑어서 알 것이 아니다.
-            with st.expander("주요 공정 × 월 히트맵", expanded=False):
+            # 편 상자는 다른 탭에 갔다 와도 편 채다. 닫힌 탭의 본문은 그리지 않으므로 `key` 없는
+            # 상자는 돌아올 때 새로 만들어져 접혔다(2026-10-01 브라우저 점검).
+            with remembered_expander("주요 공정 × 월 히트맵", key=HEATMAP_EXPANDER_KEY):
                 heatmap_table = securement_table
                 if selected_key_processes:
                     heatmap_table = securement_table.loc[
