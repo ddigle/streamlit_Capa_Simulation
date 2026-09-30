@@ -111,6 +111,16 @@ def test_the_table_the_page_just_applied_is_not_named(session: SimpleNamespace) 
     ]
 
 
+def test_a_record_written_before_own_change_keys_still_reads(session: SimpleNamespace) -> None:
+    """서버를 띄운 채 코드를 바꾸면 세션에 옛 세 칸짜리 기록이 남는다. 사이드바는 멈추지 않는다."""
+    session.session_state["scenario_pending_edit_registry"] = {
+        "reference_data.py": ("기준 정보", {"upeh_editor": "UPEH"}, {}),
+    }
+    session.session_state["upeh_editor"] = EDIT
+
+    assert scenario_edit_bar.pending_edit_labels("reference_data.py") == ["기준 정보 · UPEH"]
+
+
 def test_each_page_registers_under_its_own_file_name() -> None:
     """사이드바는 지금 화면의 파일 이름으로 찾는다. 페이지가 다른 이름으로 적으면 조용히 꺼진다."""
     found = {}

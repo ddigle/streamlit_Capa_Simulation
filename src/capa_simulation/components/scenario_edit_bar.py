@@ -75,7 +75,10 @@ def pending_edit_labels(current_page: str | None) -> list[str]:
     if not isinstance(registry, dict):
         return []
     labels: list[str] = []
-    for page, (title, editors, staged, own_change_key) in registry.items():
+    for page, (title, editors, staged, *rest) in registry.items():
+        # 서버를 띄운 채 코드를 바꾸면 세션에 `own_change_key` 가 없는 세 칸짜리 기록이 남아 있다.
+        # 여기서 풀다 멈추면 페이지가 새로 적기 전에 사이드바가 매 회차 멈춘다.
+        own_change_key = rest[0] if rest else None
         just_applied = st.session_state.get(own_change_key) if own_change_key else None
         skipped = set(just_applied) if isinstance(just_applied, list) else set()
         if page == current_page:
