@@ -635,7 +635,13 @@ def _render_securement_cross_check(
     # 채운 자리는 비교가 아니므로 기본으로 감춘다. 위 캡션이 개수를 이미 알린다.
     compared = rows.loc[~rows["Static대체"]]
     if compared.empty:
-        st.info("아직 맞대어 볼 수 있는 공정이 없습니다. Cut-off 를 적으면 여기에 나타납니다.")
+        # Cut-off 를 다 적어도 공정명이 기준정보와 다르면 비어 있다 — 그때는 이름이 까닭이다.
+        remedy = (
+            "Cut-off 를 적고 공정명을 기준정보와 맞추면"
+            if check.dynamic_only_processes
+            else "Cut-off 를 적으면"
+        )
+        st.info(f"아직 맞대어 볼 수 있는 공정이 없습니다. {remedy} 여기에 나타납니다.")
         return
 
     # **확보율 두 값을 같이 보인다.** 차이만 보이면 「29.5 차이」가 무슨 뜻인지 알 수 없다 —

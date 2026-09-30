@@ -438,3 +438,8 @@ def test_the_cross_check_leaves_out_a_process_missing_from_the_reference() -> No
     assert not app.dataframe
     infos = " ".join(item.value for item in app.info)
     assert "「Wire Bond」는 기준정보(Static)에 없는 공정이라 확보율을 맞대지 않습니다" in infos
+
+    # 맞댈 공정이 없을 때 이름이 어긋난 공정이 있으면 이름도 까닭으로 든다.
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
+    infos = " ".join(item.value for item in app.info)
+    assert "공정명을 기준정보와 맞추면" in infos
