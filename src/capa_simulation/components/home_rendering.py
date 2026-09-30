@@ -78,6 +78,9 @@ class HomeFigureCacheKey(NamedTuple):
     past_profile_version: int
     key_processes: tuple[str, ...]
     key_process_profile_version: int
+    # `제품별 비중` 행의 단위. 제품별 수량 자체는 위의 내용 토큰·기간·EDP·선행·과거 칸이 이미
+    # 가른다 — 단위만 새로 갈린다.
+    product_share_basis: str
 
 
 class HomeFigureSet(NamedTuple):
@@ -102,8 +105,9 @@ HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 # 캐시에 든 옛 그림을 버리게 하는 번호. 묶음 구조뿐 아니라 **그림 모양**(막대 폭·둥근 머리
 # 처럼 Figure 에 구워지는 것)을 바꿀 때도 올린다. 편집 없는 리비전의 그림은 세션 공용
 # 저장소에도 들어가고 그 토큰은 리비전에서 나온 고정값이라, 올리지 않으면 새 세션과 다른
-# 사용자까지 옛 그림을 받는다. 42 는 이름 있는 묶음, 43 은 막대 둥근 머리·LOB 폭 70px.
-HOME_FIGURE_SCHEMA_VERSION = 43
+# 사용자까지 옛 그림을 받는다. 42 는 이름 있는 묶음, 43 은 막대 둥근 머리·LOB 폭 70px,
+# 44 는 `제품별 비중` 도넛 행과 `B/N Top 5` 구분 글자의 세로 가운데.
+HOME_FIGURE_SCHEMA_VERSION = 44
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지

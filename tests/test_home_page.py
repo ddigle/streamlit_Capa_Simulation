@@ -15,6 +15,7 @@ from capa_simulation.components.home_dimensions import (
     LOB_VALUE_FONT_SIZE_PX,
 )
 from capa_simulation.design import tokens
+from capa_simulation.home_state import PRODUCT_SHARE_BASIS_KEY
 from capa_simulation.scenario_preset_state import PROCESS_SELECTION_KEY, WARNING_THRESHOLD_KEY
 
 # cwd 가 아니라 이 파일 위치를 기준으로 잡는다. tests/ 안에서 pytest 를 돌려도 같은 페이지를 연다.
@@ -381,9 +382,10 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
 
     # 그리는 차례다 — 라벨 칸 넷을 먼저, 그 다음 월 칸 넷. 요약 라벨은 trace 0(격자와
     # 글자가 전부 layout 항목이다), 나머지 라벨 셋은 `go.Table` 하나씩이다. 월 칸은
-    # 요약 3, 계획 세부수량 1, 주요공정 히트맵 3(hover 표적 막대·칸 막대·확보율 글자),
+    # 요약 16(표·꺾은선·막대 3 + 제품별 비중 도넛 13 — 12개월과 26년 Total 칸마다 하나),
+    # 계획 세부수량 1, 주요공정 히트맵 3(hover 표적 막대·칸 막대·확보율 글자),
     # B/N 상세 4(hover 표적·트랙·확보율 막대·공정명)다. 값이 커지면 trace 를 늘린 것이다.
-    assert app.session_state["spy_traces"] == [0, 1, 1, 1, 3, 1, 3, 4]
+    assert app.session_state["spy_traces"] == [0, 1, 1, 1, 16, 1, 3, 4]
     assert app.session_state["spy_scrollbars"] == 1
 
     # 보는 조건 토글은 모두 사이드바 `LOB 표시 조건` 카드다(2026-09-29 사용자 결정 — 전에는
@@ -433,7 +435,7 @@ def test_home_puts_the_charts_in_a_main_tab_next_to_preference(seeded_database: 
         ":material/history: Past Data",
     ]
     # 차트는 Main 탭 안에서만 그린다.
-    assert app.session_state["spy_traces"] == [0, 1, 1, 1, 3, 1, 3, 4]
+    assert app.session_state["spy_traces"] == [0, 1, 1, 1, 16, 1, 3, 4]
 
 
 def test_the_bottleneck_detail_chart_keeps_hover_on(seeded_database: Path) -> None:
@@ -816,7 +818,7 @@ def test_the_dashboard_is_not_drawn_while_its_tab_is_hidden(seeded_database: Pat
     있으면 정확히 그 상황이 된다.
     """
     app = _run(seeded_database)
-    assert app.session_state["spy_traces"] == [0, 1, 1, 1, 3, 1, 3, 4]
+    assert app.session_state["spy_traces"] == [0, 1, 1, 1, 16, 1, 3, 4]
 
     app.session_state["home_active_tab"] = ":material/tune: Preference"
     app.run()
@@ -904,8 +906,10 @@ def test_the_lob_panel_border_closes_on_the_bottom_edge(seeded_database: Path) -
     ]
     assert horizontals, "가로선이 하나도 없다"
     # 패널 맨 아랫줄에는 테두리와 구획 격자선이 함께 놓인다. 굵은 쪽이 테두리다.
+    # 아래 여백이 있으면 그 여백까지 감싸야 해 음수이고, 도넛 행이 그림 영역 맨 아래에 붙은
+    # 지금은 여백이 0 이라 0 이다. 어느 쪽이든 아래 식이 그림 높이와 같아야 한다.
     bottom_y = min(shape.y0 for shape in horizontals)
-    assert bottom_y < 0, "아래 테두리가 그림 영역 안에 머물러 아래 여백을 감싸지 못한다"
+    assert bottom_y <= 0, "아래 테두리가 그림 영역 안에 머물러 맨 아랫줄에 닿지 못한다"
 
     bottom_px = LOB_TOP_MARGIN_PX + plot_area * (1 - bottom_y)
     assert bottom_px == pytest.approx(figure.layout.height)
@@ -936,6 +940,48 @@ def test_the_chart_rows_share_the_table_rows_label_color(seeded_database: Path) 
     missing = [name for name in row_names if name not in colors]
     assert not missing, missing
     assert {colors[name] for name in row_names} == {tokens.TEXT}
+    # `제품별 비중` 은 이름 뒤에 단위를 흐린 글자로 붙인다. 이름 자체는 같은 본문색이다.
+    share_title = next(text for text in colors if text.startswith("<b>제품별 비중</b>"))
+    assert colors[share_title] == tokens.TEXT
+
+
+def test_the_product_share_row_follows_the_unit_picked_in_the_sidebar(
+    seeded_database: Path,
+) -> None:
+    """단위는 사이드바 `LOB 표시 조건` 카드에서 고른다. 기본은 Wafer 다.
+
+    Wafer 도넛의 분모는 같은 표의 `Wafer 계획` 이다 — 칸마다 hover 에 적은 분모가 그 행의
+    값과 같다. 단위를 바꾸면 Figure 캐시 키가 갈려 새 그림이 선다.
+    """
+    app = _run(seeded_database)
+    picker = app.segmented_control(key=PRODUCT_SHARE_BASIS_KEY)
+    assert picker.label == "제품별 비중 단위"
+    assert picker.value == "Wafer"
+    assert list(picker.options) == ["Wafer", "PKG"]
+
+    months = app.session_state["spy_figures"]["production_lob_months"]
+    pies = [trace for trace in months.data if trace.type == "pie"]
+    assert pies, "도넛이 하나도 없다"
+    for pie in pies:
+        assert sum(pie.values) > 0
+        assert all("Wafer " in text for text in pie.hovertext)
+    labels = app.session_state["spy_figures"]["production_lob_labels"]
+    assert any(
+        "제품별 비중" in str(item.text) and ">Wafer<" in str(item.text)
+        for item in labels.layout.annotations
+    )
+
+    picker.set_value("PKG").run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    labels = app.session_state["spy_figures"]["production_lob_labels"]
+    assert any(
+        "제품별 비중" in str(item.text) and ">PKG<" in str(item.text)
+        for item in labels.layout.annotations
+    )
+    months = app.session_state["spy_figures"]["production_lob_months"]
+    pies = [trace for trace in months.data if trace.type == "pie"]
+    assert pies and all("PKG " in text for pie in pies for text in pie.hovertext)
 
 
 def test_both_detail_columns_center_when_the_gap_toggle_is_off(seeded_database: Path) -> None:

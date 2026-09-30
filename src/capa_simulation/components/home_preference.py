@@ -2,8 +2,9 @@
 
 """HOME 사이드바 `LOB 표시 조건` 카드, `Capa LOB 현황` 제목 줄, `Preference` 탭.
 
-**화면을 보는 조건(선행·실행·GAP·상세·EDP·Past Data)은 사이드바 조건 카드**다(2026-09-29
-사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 상자에 흩어져 있었다). 탭에는 비교
+**화면을 보는 조건(선행·실행·GAP·상세·EDP·Past Data·제품별 비중 단위)은 사이드바 조건
+카드**다(2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 상자에 흩어져
+있었다). 탭에는 비교
 시나리오·선행 투입 물량·`Summary 공지`·Top5 대역·주요공정·실행 Capa 편집기가 있고, 저장은 모두
 공용 프로필 교체다. 저장 버튼은 편집 칸 **위**다. 설명은 Guide(`guides/home.md`)다.
 
@@ -37,12 +38,16 @@ from capa_simulation.home_state import (
 )
 from capa_simulation.home_state import (
     HOME_TOGGLE_DEFAULTS,
+    PRODUCT_SHARE_BASIS_DEFAULT,
 )
 from capa_simulation.home_state import (
     PAST_DATA_TOGGLE_KEY as PAST_DATA_TOGGLE_KEY,
 )
 from capa_simulation.home_state import (
     PLAN_DETAIL_CUSTOMER_KEY as PLAN_DETAIL_CUSTOMER_KEY,
+)
+from capa_simulation.home_state import (
+    PRODUCT_SHARE_BASIS_KEY as PRODUCT_SHARE_BASIS_KEY,
 )
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
@@ -80,6 +85,7 @@ from capa_simulation.services.key_process import (
     normalize_preset_name,
 )
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.product_share import PRODUCT_SHARE_BASES
 from capa_simulation.sidebar_status import condition_card
 
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
@@ -238,6 +244,18 @@ def render_home_view_card(*, comparison_ready: bool) -> None:
             value=HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY],
             key=PAST_DATA_TOGGLE_KEY,
             persist_state="session",
+        )
+        # `Capa LOB 현황` 맨 아래 `제품별 비중` 행의 분모. Wafer 는 같은 표의 `Wafer 계획`,
+        # PKG 는 그 달 PKG 생산수량 전체다. 비워 둘 수 없는 선택이라 `required` 다 — 선택된
+        # 칸을 다시 눌러 비우면 한 회차 동안 값이 없어 행이 깜박인다.
+        st.segmented_control(
+            "제품별 비중 단위",
+            options=PRODUCT_SHARE_BASES,
+            default=PRODUCT_SHARE_BASIS_DEFAULT,
+            required=True,
+            key=PRODUCT_SHARE_BASIS_KEY,
+            persist_state="session",
+            width="stretch",
         )
 
 

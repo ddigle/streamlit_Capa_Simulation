@@ -65,6 +65,8 @@ from capa_simulation.home_state import (
     HOME_TOGGLE_DEFAULTS,
     PAST_DATA_TOGGLE_KEY,
     PLAN_DETAIL_CUSTOMER_KEY,
+    PRODUCT_SHARE_BASIS_DEFAULT,
+    PRODUCT_SHARE_BASIS_KEY,
 )
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
@@ -145,6 +147,13 @@ from capa_simulation.services.process_picker import (
     build_process_picker_summary,
 )
 from capa_simulation.services.process_selection import resolve_included_processes
+from capa_simulation.services.product_share import (
+    PRODUCT_SHARE_BASES,
+    assign_product_slots,
+    build_product_share_cells,
+    combine_product_volume,
+    past_product_volume,
+)
 from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
     get_home_comparison_plan,
@@ -194,6 +203,12 @@ home_trace = PerformanceTrace()
 # 먼저 필요하다. 위젯이 `key` 로 쓰는 자리를 그대로 읽는다 — 사용자가 토글을 누르면 다음 실행의
 # 이 줄에 새 값이 들어온다. 카드가 서지 않는 회차(다른 탭)에도 값은 `persist_state` 가 지킨다.
 include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[EDP_TOGGLE_KEY]))
+# `제품별 비중` 행의 단위. 모르는 값(예전 세션에 남은 값)은 기본 단위로 읽는다.
+product_share_basis = str(
+    st.session_state.get(PRODUCT_SHARE_BASIS_KEY, PRODUCT_SHARE_BASIS_DEFAULT)
+)
+if product_share_basis not in PRODUCT_SHARE_BASES:
+    product_share_basis = PRODUCT_SHARE_BASIS_DEFAULT
 # 기본은 **켬**이다. 끄면 과거 구간을 화면에서 빼고 활성 시나리오의 계산 결과만 남긴다.
 # 토글도 `home_state` 의 같은 기본값을 읽어 첫 계산과 첫 위젯 표시를 맞춘다.
 include_past = bool(
@@ -288,6 +303,7 @@ try:
             monthly_wafer,
             securement_rate,
             assumed_capacity_defaults,
+            product_volume_with_edp,
         ) = get_home_simulation(
             cache_key=home_simulation_cache_key,
             _tables=active_scenario["tables"],
@@ -300,10 +316,18 @@ try:
         # 「계산을 멈췄습니다」와 어긋나지 않는다. 본문 안내는 아래 `except` 가 그대로 한다.
         show_calculation_stopped()
         raise
+    # 제품별 비중이 그리는 수량. 색 칸은 EDP 를 **포함한** 쪽(`product_volume_with_edp`)에서
+    # 정한다 — EDP 를 꺼도 남은 제품의 색이 바뀌지 않는다.
+    product_volume = product_volume_with_edp
     if not include_edp:
         # LOB 로 표현되는 값만 EDP 를 뺀다. 확보율과 B/N 공정 순위는 설비가 받는 전체
         # 부하 기준이라 그대로 둔다.
-        monthly_density, production_detail, monthly_wafer = get_home_lob_without_edp(
+        (
+            monthly_density,
+            production_detail,
+            monthly_wafer,
+            product_volume,
+        ) = get_home_lob_without_edp(
             cache_key=home_simulation_cache_key,
             _tables=active_scenario["tables"],
             _display_order=reference_tables["RQ_DISPLAY_ORDER"],
@@ -389,6 +413,16 @@ try:
         plan_detail_dimensions,
         reference_tables["RQ_DISPLAY_ORDER"],
     )
+    # 과거 구간은 제품별 PKG 만 있다(Wafer 는 월 합계뿐). EDP 를 가릴 컬럼도 없어 두 쪽에
+    # 같은 행을 잇는다.
+    past_products = past_product_volume(
+        past_profile.plan_detail,
+        start_month=effective_start,
+        end_month=effective_end,
+        exclude_months=calculated_months,
+    )
+    product_volume = combine_product_volume(product_volume, past_products)
+    product_volume_with_edp = combine_product_volume(product_volume_with_edp, past_products)
     # 실행 Capa 반영은 **원데이터 기준**이다. 기준정보 밖에서 생긴 변수(비가동·UPEH·
     # 재공)를 원 확보율에 퍼센트포인트로 얹은 뒤, 선행은 그렇게 조정된 값 위에 변동률을
     # 곱한다. 조정이 없어도 부른다 — `기준 확보율`·`확보율 증감`·`실행 비고` 세 컬럼이
@@ -415,6 +449,9 @@ try:
         unapplied_advance_months = unapplicable_advance_months(advance_ratio)
         monthly_density = apply_advance_to_density(monthly_density, advance_ratio)
         monthly_wafer = apply_advance_to_wafer(monthly_wafer, advance_ratio)
+        # 제품별 Wafer 도 같은 변동률로 나눈다. 달 안의 비중은 그대로지만 조각 hover 의 수량과
+        # 분모가 `Wafer 계획` 행과 같아지고, 연간 Total 도넛은 선행이 반영된 달 무게로 선다.
+        product_volume = apply_advance_to_wafer(product_volume, advance_ratio)
         securement_rate = apply_advance_to_securement(securement_rate, advance_ratio)
     # 확보율 표와 같은 공용 순서를 먼저 정한 뒤, 선택 dialog가 부족 여부로만 구역을 나눈다.
     # 표시명은 정렬 키나 세션값으로 쓰지 않는다. 규칙 밖의 공정은 기존 이름순으로 남는다.
@@ -695,6 +732,7 @@ figure_cache_key = HomeFigureCacheKey(
     past_profile_version=past_profile.version,
     key_processes=tuple(applied_key_processes),
     key_process_profile_version=key_process_profile.version,
+    product_share_basis=product_share_basis,
 )
 # 결론 요약은 **캐시 밖**에서 낸다. 아래 순위 집계는 캐시가 맞으면 건너뛰지만 이 집계는
 # 같은 프레임 위의 마스크 한 번이라 건너뛸 값이 없다 — 대신 캐시 적중·미적중에서 늘 같은
@@ -737,6 +775,15 @@ if cached_figures is None:
             baseline_wafer,
             baseline_bottlenecks,
         )
+    # 색 칸은 화면에 보이는 기간(과거 포함)의 EDP 포함 제품 목록에서 한 번 정한다. 모든
+    # 도넛·단위·EDP 토글이 같은 배정을 쓴다 — 같은 제품은 어디서나 같은 색이다.
+    product_share_cells = build_product_share_cells(
+        product_volume,
+        product_share_basis,
+        assign_product_slots(product_volume_with_edp, reference_tables["RQ_DISPLAY_ORDER"]),
+        month_labels=month_labels,
+        year_total_labels=year_total_labels,
+    )
     home_trace.mark("B/N 단일 순위·파생")
     loading.advance()
     label_figure, month_figure = build_lob_summary_figures(
@@ -754,6 +801,8 @@ if cached_figures is None:
         year_totals=year_totals,
         top5_rate_band=top5_band_profile.band,
         past_month_labels=past_month_labels,
+        product_share_cells=product_share_cells,
+        product_share_basis=product_share_basis,
     )
     displayed_detail = production_detail
     aligned_comparison_detail: pd.DataFrame | None = None

@@ -18,7 +18,11 @@
 import math
 from itertools import combinations
 
+import pytest
+
 from capa_simulation.design import tokens
+from capa_simulation.design.tokens import palette_value
+from capa_simulation.services.product_share import PRODUCT_SHARE_SLOT_COUNT
 
 # Machado, Oliveira & Fernandes (2009), severity 1.0, 선형 RGB.
 MACHADO = {
@@ -126,3 +130,44 @@ def test_the_old_pastels_would_have_failed() -> None:
 
     assert _closest(old_equipment)[0] < 1.0
     assert _closest(old_grid)[0] < 1.0
+
+
+def _normal_distance(first: str, second: str) -> float:
+    """정상 시야 OKLab 거리(×100)."""
+    return 100 * math.dist(_oklab(_linear(first)), _oklab(_linear(second)))
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_product_share_colors_stay_apart_around_the_ring(mode: str) -> None:
+    """도넛은 조각이 원으로 이어진다 — 마지막 칸이 첫 칸과도 맞닿는다.
+
+    칸 차례가 곧 안전장치다(`tokens.PRODUCT_SHARE_COLORS` 주석). 원형 인접 쌍이 색각이상
+    ΔE 8·정상 시야 15 를 넘어야 한다. 제품이 여섯을 넘어 `기타` 로 접힐 때는 이름 있는 칸이
+    앞의 다섯뿐이고 `기타` 가 그 어느 것과도 맞닿을 수 있다.
+    """
+    colors = list(palette_value(mode, "PRODUCT_SHARE_COLORS"))
+    other = palette_value(mode, "PRODUCT_SHARE_OTHER")
+
+    assert len(colors) == PRODUCT_SHARE_SLOT_COUNT
+    for first, second in zip(colors, colors[1:] + colors[:1], strict=True):
+        assert cvd_distance(first, second) >= 8.0, (mode, first, second)
+        assert _normal_distance(first, second) >= 15.0, (mode, first, second)
+    for named in colors[: PRODUCT_SHARE_SLOT_COUNT - 1]:
+        assert cvd_distance(other, named) >= 8.0, (mode, other, named)
+        assert _normal_distance(other, named) >= 15.0, (mode, other, named)
+    # `기타` 회색이 판정의 `확보` 회색으로 읽히지 않는다.
+    assert _normal_distance(other, palette_value(mode, "STATUS_SECURE")) >= 15.0
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_product_share_colors_do_not_impersonate_the_status_bars(mode: str) -> None:
+    """제품색이 같은 Figure 의 `경고`·`부족` 막대색으로 읽히지 않는다.
+
+    예외는 여섯째 칸(노랑) 하나다 — 라이트에서 `경고` 와 가깝지만 제품이 정확히 여섯일 때만
+    쓰인다(일곱부터는 다섯 + `기타` 로 접는다). 그 자리를 앞으로 옮기면 이 검사가 막는다.
+    """
+    colors = list(palette_value(mode, "PRODUCT_SHARE_COLORS"))
+    for named in colors[: PRODUCT_SHARE_SLOT_COUNT - 1]:
+        for status in ("STATUS_WARNING", "STATUS_SHORTAGE"):
+            distance = _normal_distance(named, palette_value(mode, status))
+            assert distance >= 10.0, (mode, named, status, round(distance, 1))

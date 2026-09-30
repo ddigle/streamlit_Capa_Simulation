@@ -399,6 +399,10 @@ DuckDB는 `data/capa_simulation.duckdb`, 설비 운영 전용 DuckDB는
   모두 그리고, `Preference`가 공용 설정(비교 시나리오·선행·Summary·Top5·주요공정·실행 Capa)을
   받습니다. 보는 조건 토글(`선행 전망`·`실행 Loss`·`GAP`·`상세 계획`·`EDP 포함`·`Past Data 포함`)은 사이드바
   `LOB 표시 조건` 카드에 있습니다(Main 탭에서만). 설명은 헤더의 `Guide` 입니다.
+- `Capa LOB 현황` 맨 아래 `제품별 비중` 행은 월마다 도넛으로 제품 구성을 그립니다. 단위는
+  `LOB 표시 조건` 의 `제품별 비중 단위`(Wafer·PKG)로 고르고, Wafer 의 분모는 같은 표의 `Wafer 계획`,
+  PKG 의 분모는 그 달 PKG 생산수량 전체입니다. 같은 제품의 양산·ER 을 더해 비중을 내며, 같은 제품은
+  모든 도넛에서 같은 색입니다(제품이 여섯을 넘으면 작은 제품을 `기타` 로 모읍니다).
 - `EDP 포함`을 끄면 LOB로 표현되는 값(Density·Wafer 계획·Wafer Capa·B/N Capa
   막대·Top 5·상세 B/N의 Wafer Capa)과 계획 세부수량에서 EDP-TSV를 뺍니다. 설비가 받는 부하는
   전체 계획 그대로라 **확보율과 B/N 공정 순위는 바뀌지 않습니다.**

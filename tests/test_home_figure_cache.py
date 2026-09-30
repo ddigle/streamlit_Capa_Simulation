@@ -44,6 +44,7 @@ def cache_key(monkeypatch: pytest.MonkeyPatch) -> HomeFigureCacheKey:
         past_profile_version=7,
         key_processes=("DEMO_B", "DEMO_A"),
         key_process_profile_version=8,
+        product_share_basis="Wafer",
     )
 
 
@@ -88,6 +89,7 @@ def test_named_cache_key_preserves_the_existing_tuple_contract(
         7,
         ("DEMO_B", "DEMO_A"),
         8,
+        "Wafer",
     )
 
     assert cache_key == legacy_key

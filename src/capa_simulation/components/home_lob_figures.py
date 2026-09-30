@@ -1,13 +1,16 @@
-# Purpose: HOME 요약 구획의 생산계획 LOB·Wafer·B/N Top5 Figure 한 쌍을 만든다.
+# Purpose: HOME 요약 구획의 생산계획 LOB·Wafer·B/N Top5·제품별 비중 Figure 한 쌍을 만든다.
 
 """생산계획 LOB 요약 Figure.
 
 고정 분류 영역과 스크롤 월 영역 두 Figure 를 한 쌍으로 돌려준다. 표 세 줄(Density·Wafer
-계획·Wafer Capa)과 LOB 꺾은선·B/N 막대·Top5 밴드가 한 Figure 안에 세로로 선다.
+계획·Wafer Capa)과 LOB 꺾은선·B/N 막대·Top5 밴드, 맨 아래 `제품별 비중` 도넛 행이 한 Figure
+안에 세로로 선다.
 """
 
 from __future__ import annotations
 
+import math
+import unicodedata
 from collections.abc import Collection, Mapping, Sequence
 from typing import Any, NamedTuple, cast
 
@@ -23,16 +26,25 @@ from capa_simulation.components.home_dimensions import (
     LOB_CHART_HEIGHT_PX,
     LOB_FIGURE_HEIGHT_PX,
     LOB_PANEL_BOTTOM_Y,
+    LOB_PLOT_AREA_HEIGHT_PX,
+    LOB_PRODUCT_SHARE_GAP_PX,
+    LOB_PRODUCT_SHARE_HOLE,
+    LOB_PRODUCT_SHARE_INSET_PX,
+    LOB_PRODUCT_SHARE_ROW_HEIGHT_PX,
+    LOB_PRODUCT_SHARE_TOP_Y,
     LOB_TABLE_HEIGHT_PX,
     LOB_TABLE_ROW_HEIGHTS_PX,
     LOB_TOP5_HEIGHT_PX,
+    LOB_TOP5_LABEL_ZONE_PX,
     LOB_TOP_MARGIN_PX,
     LOB_VALUE_FONT_SIZE_PX,
     TOP5_BAR_OUTLINE_WIDTH_PX,
     TOP5_BAR_WIDTH,
+    TOP5_PROCESS_LABEL_YSHIFT_PX,
     TOP5_RATE_LABEL_GAP_PX,
     TOP5_WAFER_LABEL_XSHIFT_PX,
     top5_axis_headroom_px,
+    top5_process_label_budget,
 )
 from capa_simulation.components.home_figure_common import (
     _capacity_color,
@@ -53,6 +65,10 @@ from capa_simulation.components.plotly_layout import (
 )
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
+from capa_simulation.services.product_share import (
+    PRODUCT_SHARE_BASIS_WAFER,
+    ProductShareCell,
+)
 from capa_simulation.services.top5_band import (
     DEFAULT_TOP5_MAX_RATE,
     DEFAULT_TOP5_MIN_RATE,
@@ -61,6 +77,214 @@ from capa_simulation.services.top5_band import (
 
 # 생산계획 LOB 막대 안 확보율 글자.
 LOB_BAR_LABEL_FONT_SIZE_PX = 22
+
+
+# `제품별 비중` 구분 칸. 제목 한 줄 아래에 두 칸짜리 범례가 최대 세 줄 선다(조각 상한 6).
+PRODUCT_SHARE_TITLE_FONT_SIZE_PX = 20
+PRODUCT_SHARE_UNIT_FONT_SIZE_PX = 14
+PRODUCT_SHARE_LEGEND_FONT_SIZE_PX = 13
+_PRODUCT_SHARE_TITLE_LINE_PX = 24
+_PRODUCT_SHARE_LEGEND_GAP_PX = 6
+_PRODUCT_SHARE_LEGEND_ROW_PX = 18
+_PRODUCT_SHARE_LEGEND_COLUMNS = 2
+_PRODUCT_SHARE_LEGEND_MAX_ROWS = 3
+# 범례 두 칸의 왼쪽 끝(구분 칸 폭 비율). 260px 칸에서 16px·138px 다.
+_PRODUCT_SHARE_LEGEND_X = (0.06, 0.53)
+# 범례 이름의 폭 예산. 한글·전각은 2, 나머지는 1 로 센다 — 13px 에서 약 105px 로, 한 칸
+# (약 122px)에서 색 네모를 뺀 자리다. 넘으면 말줄임표를 달고 전체 이름은 hover 로 준다.
+_PRODUCT_SHARE_NAME_BUDGET = 15
+# 단위별 hover 수량 표기. Wafer 는 매 → K, PKG 생산수량은 이미 K(Kea) 단위다.
+_PRODUCT_SHARE_SCALE = {PRODUCT_SHARE_BASIS_WAFER: 1_000.0}
+
+
+def _product_color(slot: int | None) -> str:
+    """조각 색. 칸 번호가 없으면 `기타` 회색이다."""
+    if slot is None:
+        return tokens.PRODUCT_SHARE_OTHER
+    return str(tokens.PRODUCT_SHARE_COLORS[slot])
+
+
+def _display_width(text: str) -> int:
+    return sum(2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1 for char in text)
+
+
+def _fit_name(name: str, budget: int = _PRODUCT_SHARE_NAME_BUDGET) -> str:
+    """`budget`(좁은 글자 수, 한글·전각은 2)에 드는 이름. 잘랐으면 말줄임표를 단다."""
+    if _display_width(name) <= budget:
+        return name
+    kept: list[str] = []
+    width = 0
+    for char in name:
+        char_width = _display_width(char)
+        if width + char_width > budget - 1:
+            break
+        kept.append(char)
+        width += char_width
+    return "".join(kept).rstrip() + "…"
+
+
+def _share_amount(value: float, basis: str) -> str:
+    return f"{value / _PRODUCT_SHARE_SCALE.get(basis, 1.0):,.1f}K"
+
+
+def _product_share_hover(cell: ProductShareCell, basis: str) -> list[str]:
+    """조각마다 hover 글자. 분모(그 칸 합계)를 함께 적어 `Wafer 계획` 행과 맞대어 본다."""
+    texts: list[str] = []
+    for piece in cell.slices:
+        lines = [
+            f"{cell.label} · {piece.product}",
+            f"비중 {piece.share:.1%}",
+            f"{basis} {_share_amount(piece.value, basis)} / {_share_amount(cell.total, basis)}",
+        ]
+        # `기타` 는 무엇이 모였는지 적는다. 접었다고 정보를 지우지 않는다.
+        lines.extend(f"· {name} {value / cell.total:.1%}" for name, value in piece.members)
+        texts.append("<br>".join(lines))
+    return texts
+
+
+def product_share_traces(
+    cells: Mapping[str, ProductShareCell],
+    month_labels: Sequence[str],
+    *,
+    basis: str,
+    year_totals: Collection[str],
+    past_month_labels: Collection[str] | None,
+) -> list[go.Pie]:
+    """칸마다 도넛 하나. 모든 도넛이 **같은 크기의 정사각형 영역**을 받아 반지름이 같다.
+
+    조각 차례는 칸 배정 차례 그대로다(`sort=False`). Plotly 기본값은 값이 큰 순으로 다시
+    세워, 달마다 같은 제품이 다른 자리에 서고 색만 같은 도넛이 된다. 12시에서 시계 방향이다.
+    """
+    count = max(len(month_labels), 1)
+    inset_x = LOB_PRODUCT_SHARE_INSET_PX / (count * tokens.MONTH_COLUMN_WIDTH_PX)
+    inset_y = LOB_PRODUCT_SHARE_INSET_PX / LOB_PLOT_AREA_HEIGHT_PX
+    traces: list[go.Pie] = []
+    for index, label in enumerate(month_labels):
+        cell = cells.get(label)
+        if cell is None:
+            continue
+        surface = _month_surface(label, year_totals, past_month_labels)
+        # 조각 사이 틈은 그 칸의 **실제 바탕**으로 긋는다. 기본 월 칸은 면을 따로 깔지 않아
+        # 캔버스가 바탕이고, 연간 Total·과거 칸은 제 면색 띠가 깔려 있다.
+        gap_color = tokens.CHART_CANVAS if surface == tokens.SURFACE else surface
+        traces.append(
+            go.Pie(
+                name=label,
+                labels=[piece.product for piece in cell.slices],
+                values=[piece.value for piece in cell.slices],
+                sort=False,
+                direction="clockwise",
+                rotation=0,
+                hole=LOB_PRODUCT_SHARE_HOLE,
+                textinfo="none",
+                marker={
+                    "colors": [_product_color(piece.slot) for piece in cell.slices],
+                    "line": {"color": gap_color, "width": LOB_PRODUCT_SHARE_GAP_PX},
+                },
+                domain={
+                    "x": [index / count + inset_x, (index + 1) / count - inset_x],
+                    "y": [inset_y, LOB_PRODUCT_SHARE_TOP_Y - inset_y],
+                },
+                hovertext=_product_share_hover(cell, basis),
+                hovertemplate="%{hovertext}<extra></extra>",
+                showlegend=False,
+            )
+        )
+    return traces
+
+
+def product_share_legend(cells: Mapping[str, ProductShareCell]) -> list[tuple[str, int | None]]:
+    """범례 항목. **화면에 실제로 그려진 조각만** 칸 번호 차례로 모은다.
+
+    EDP 를 끈 화면에서는 EDP 제품이 칸을 가진 채 조각이 없다. 범례에 두면 그리지 않은
+    제품을 알리는 셈이라 뺀다(색 칸은 그대로 비워 둔다 — 남은 제품이 색을 바꾸지 않는다).
+    """
+    seen: dict[str, int | None] = {}
+    for cell in cells.values():
+        for piece in cell.slices:
+            seen.setdefault(piece.product, piece.slot)
+    named = sorted(
+        ((name, slot) for name, slot in seen.items() if slot is not None),
+        key=lambda item: item[1] if item[1] is not None else -1,
+    )
+    others = [(name, slot) for name, slot in seen.items() if slot is None]
+    return [*named, *others]
+
+
+def _product_share_label_annotations(
+    cells: Mapping[str, ProductShareCell],
+    basis: str,
+    *,
+    row_top: float,
+) -> list[dict[str, Any]]:
+    """구분 칸의 제목(`제품별 비중` + 단위)과 색 범례.
+
+    범례가 이 칸에 있는 이유: 월 칸은 가로로 흐르지만 구분 칸은 늘 보인다. 제품 이름을
+    도넛 안에 적을 자리가 없으므로(지름 80px) 색의 뜻은 여기서 읽는다.
+    """
+    entries = product_share_legend(cells)
+    limit = _PRODUCT_SHARE_LEGEND_COLUMNS * _PRODUCT_SHARE_LEGEND_MAX_ROWS
+    shown = entries[:limit]
+    rows = math.ceil(len(shown) / _PRODUCT_SHARE_LEGEND_COLUMNS)
+    block = _PRODUCT_SHARE_TITLE_LINE_PX + (
+        _PRODUCT_SHARE_LEGEND_GAP_PX + rows * _PRODUCT_SHARE_LEGEND_ROW_PX if rows else 0
+    )
+    top_px = (LOB_PRODUCT_SHARE_ROW_HEIGHT_PX - block) / 2
+
+    def paper_y(offset_px: float) -> float:
+        return row_top - offset_px / LOB_PLOT_AREA_HEIGHT_PX
+
+    annotations: list[dict[str, Any]] = [
+        {
+            "x": 0.5,
+            "y": paper_y(top_px + _PRODUCT_SHARE_TITLE_LINE_PX / 2),
+            "xref": "paper",
+            "yref": "paper",
+            "text": (
+                "<b>제품별 비중</b> "
+                f'<span style="font-size:{PRODUCT_SHARE_UNIT_FONT_SIZE_PX}px;'
+                f'color:{tokens.TEXT_MUTED}">{basis}</span>'
+            ),
+            "showarrow": False,
+            "xanchor": "center",
+            "yanchor": "middle",
+            "font": {
+                "size": PRODUCT_SHARE_TITLE_FONT_SIZE_PX,
+                "color": tokens.TEXT,
+                "family": tokens.FONT_FAMILY,
+            },
+        }
+    ]
+    for position, (name, slot) in enumerate(shown):
+        row, column = divmod(position, _PRODUCT_SHARE_LEGEND_COLUMNS)
+        fitted = _fit_name(name)
+        single = len(shown) == 1
+        annotations.append(
+            {
+                "x": 0.5 if single else _PRODUCT_SHARE_LEGEND_X[column],
+                "y": paper_y(
+                    top_px
+                    + _PRODUCT_SHARE_TITLE_LINE_PX
+                    + _PRODUCT_SHARE_LEGEND_GAP_PX
+                    + (row + 0.5) * _PRODUCT_SHARE_LEGEND_ROW_PX
+                ),
+                "xref": "paper",
+                "yref": "paper",
+                # 이름은 본문 글자색이고 색 네모만 제품색이다 — 글자에 계열색을 입히면 밝은
+                # 계열(노랑)에서 읽히지 않는다.
+                "text": f'<span style="color:{_product_color(slot)}">■</span> {fitted}',
+                "hovertext": name if fitted != name else None,
+                "showarrow": False,
+                "xanchor": "center" if single else "left",
+                "yanchor": "middle",
+                "font": {
+                    "size": PRODUCT_SHARE_LEGEND_FONT_SIZE_PX,
+                    "color": tokens.TEXT,
+                    "family": tokens.FONT_FAMILY,
+                },
+            }
+        )
+    return annotations
 
 
 class ExecutionDeltaBars(NamedTuple):
@@ -421,8 +645,10 @@ def build_lob_summary_figures(
     year_totals: Mapping[str, Mapping[str, float]] | None = None,
     top5_rate_band: tuple[float, float] = (DEFAULT_TOP5_MIN_RATE, DEFAULT_TOP5_MAX_RATE),
     past_month_labels: Collection[str] | None = None,
+    product_share_cells: Mapping[str, ProductShareCell] | None = None,
+    product_share_basis: str = PRODUCT_SHARE_BASIS_WAFER,
 ) -> tuple[go.Figure, go.Figure]:
-    """생산계획·Wafer Capa·Bottleneck 요약 Figure 한 쌍을 만든다.
+    """생산계획·Wafer Capa·Bottleneck·제품별 비중 요약 Figure 한 쌍을 만든다.
 
     `process_labels` 는 **화면 문자열에만** 쓴다. 프레임의 `공정` 값은 그대로 두므로
     월 위치 계산과 확보율 색 판정은 원본을 본다.
@@ -433,6 +659,9 @@ def build_lob_summary_figures(
 
     `comparison_density`·`comparison_wafer` 는 비교 시나리오의 같은 월별 표다. 주면 값
     **아래**에 증감을 적는다. 위아래를 나눠 둔 것은 한 칸에 둘이 함께 붙을 수 있어서다.
+
+    `product_share_cells` 는 월 축 라벨 → 도넛 칸이다(`services/product_share`). 행 자체는
+    늘 있고, 칸이 없는 라벨은 비워 둔다. `product_share_basis` 는 구분 칸에 적는 단위다.
     """
     labels = process_labels or ProcessLabels()
     totals = dict(year_totals or {})
@@ -468,16 +697,19 @@ def build_lob_summary_figures(
         if pd.notna(month)
     }
     value_fills = [_month_surface(label, totals, past_month_labels) for label in month_labels]
+    # 넷째 줄은 축이 없는 자리다. 위쪽은 B/N Top 5 공정명이 드리우는 띠, 아래쪽은 도넛
+    # 행이다. 도넛은 축이 아니라 paper 좌표의 `domain` 으로 놓으므로 이 줄은 자리만 잡는다.
     subplot_options = {
-        "rows": 3,
+        "rows": 4,
         "cols": 1,
-        "specs": [[{"type": "table"}], [{"type": "xy"}], [{"type": "xy"}]],
+        "specs": [[{"type": "table"}], [{"type": "xy"}], [{"type": "xy"}], [None]],
         "shared_xaxes": False,
         "vertical_spacing": 0,
         "row_heights": [
             LOB_TABLE_HEIGHT_PX,
             LOB_CHART_HEIGHT_PX,
             LOB_TOP5_HEIGHT_PX,
+            LOB_TOP5_LABEL_ZONE_PX + LOB_PRODUCT_SHARE_ROW_HEIGHT_PX,
         ],
     }
     label_figure = make_subplots(**subplot_options)
@@ -861,19 +1093,25 @@ def build_lob_summary_figures(
                     },
                 }
             )
+        # 공정명은 띠(`LOB_TOP5_LABEL_ZONE_PX`) 안에서 끝나야 한다 — 넘치면 아래 도넛 위에
+        # 얹힌다(`top5_process_label_budget` 설명). 줄인 이름은 hover 가 전체를 보여 준다.
+        process_budget = top5_process_label_budget()
         for x_position, process in zip(top5_positions, monthly_top5["공정"], strict=True):
+            process_label = labels.label(process)
+            fitted_label = _fit_name(process_label, process_budget)
             top5_annotations.append(
                 {
                     "x": x_position,
                     "y": 0,
                     "xref": "x2",
                     "yref": "y2",
-                    "text": labels.label(process),
+                    "text": fitted_label,
+                    "hovertext": process_label if fitted_label != process_label else None,
                     "textangle": 270,
                     "xanchor": "right",
                     "yanchor": "top",
                     "xshift": 11.0,
-                    "yshift": -8.0,
+                    "yshift": -TOP5_PROCESS_LABEL_YSHIFT_PX,
                     "showarrow": False,
                     "font": {
                         "size": 15,
@@ -919,6 +1157,15 @@ def build_lob_summary_figures(
         },
     )
     append_layout_items(month_figure, annotations=top5_annotations)
+    month_figure.add_traces(
+        product_share_traces(
+            product_share_cells or {},
+            month_labels,
+            basis=product_share_basis,
+            year_totals=totals,
+            past_month_labels=past_month_labels,
+        )
+    )
     # 조정 **전** Capa 도 함께 본다. 빼먹으면 한 달만 조정해도 전 달 막대 높이가 바뀌어
     # 「조정이 없는 달은 그대로」가 무너진다.
     axis_candidates = [
@@ -985,6 +1232,14 @@ def build_lob_summary_figures(
     lob_y_domain = month_figure.layout.yaxis.domain
     top5_y_domain = month_figure.layout.yaxis2.domain
     table_y_domain = (lob_table_domains[-1][0], lob_table_domains[0][1])
+    share_top = LOB_PRODUCT_SHARE_TOP_Y
+    horizontal_boundaries = [
+        panel_bottom,
+        share_top,
+        (top5_y_domain[1] + lob_y_domain[0]) / 2,
+        (lob_y_domain[1] + table_y_domain[0]) / 2,
+        1.0,
+    ]
     append_layout_items(
         label_figure,
         annotations=[
@@ -1009,9 +1264,12 @@ def build_lob_summary_figures(
                     "family": tokens.FONT_FAMILY,
                 },
             },
+            # `B/N Top 5` 는 **눈에 보이는 칸**의 한가운데다. 그 칸은 막대 밴드(`yaxis2`)에 공정명이
+            # 드리우는 띠까지 더한 면이라, 밴드 가운데에 두면 칸 위쪽으로 치우친다(띠 130px 의
+            # 절반만큼). 칸은 아래 분류 면(`horizontal_boundaries[1]`~`[2]`)과 같은 경계를 쓴다.
             {
                 "x": 0.5,
-                "y": (top5_y_domain[0] + top5_y_domain[1]) / 2,
+                "y": (horizontal_boundaries[1] + horizontal_boundaries[2]) / 2,
                 "xref": "paper",
                 "yref": "paper",
                 "text": "<b>B/N Top 5</b>",
@@ -1024,22 +1282,23 @@ def build_lob_summary_figures(
                     "family": tokens.FONT_FAMILY,
                 },
             },
+            *_product_share_label_annotations(
+                product_share_cells or {},
+                product_share_basis,
+                row_top=share_top,
+            ),
         ],
     )
-    horizontal_boundaries = [
-        panel_bottom,
-        (top5_y_domain[1] + lob_y_domain[0]) / 2,
-        (lob_y_domain[1] + table_y_domain[0]) / 2,
-        1.0,
-    ]
+    # 구획 경계(도넛 행 위·Top5 위·LOB 위)는 굵게, 맨 아래·맨 위는 바깥 테두리가 따로 긋는다.
+    section_boundaries = {1, 2, 3}
     horizontal_shapes = [
         _paper_hrule(
             y_boundary,
-            color=tokens.BORDER_STRONG if boundary_index in {1, 2} else tokens.BORDER,
+            color=tokens.BORDER_STRONG if boundary_index in section_boundaries else tokens.BORDER,
             width=tokens.OUTER_BORDER_WIDTH_PX
-            if boundary_index in {1, 2}
+            if boundary_index in section_boundaries
             else tokens.GRID_LINE_WIDTH_PX,
-            layer="above" if boundary_index in {1, 2} else "below",
+            layer="above" if boundary_index in section_boundaries else "below",
         )
         for boundary_index, y_boundary in enumerate(horizontal_boundaries)
     ]
@@ -1062,6 +1321,7 @@ def build_lob_summary_figures(
                 for y0, y1 in (
                     (horizontal_boundaries[0], horizontal_boundaries[1]),
                     (horizontal_boundaries[1], horizontal_boundaries[2]),
+                    (horizontal_boundaries[2], horizontal_boundaries[3]),
                 )
             ],
             *[
@@ -1109,9 +1369,9 @@ def build_lob_summary_figures(
         for boundary_y, boundary_width, boundary_color in lob_row_boundaries
     ]
     append_layout_items(label_figure, shapes=lob_row_shapes)
-    # 차트 두 칸(생산계획 LOB·B/N Top 5)의 연간 Total·과거 구간 열. 표 칸은 행마다
-    # 칠했지만 차트는 면이 하나라 여기서 세로 띠로 덮는다. 과거 구간에는 막대·꺾은선이
-    # 있으므로 `layer: below` 로 값 아래에 깐다.
+    # 차트 세 칸(생산계획 LOB·B/N Top 5·제품별 비중)의 연간 Total·과거 구간 열. 표 칸은
+    # 행마다 칠했지만 차트는 면이 하나라 여기서 세로 띠로 덮는다. 과거 구간에는 막대·
+    # 꺾은선이 있으므로 `layer: below` 로 값 아래에 깐다.
     column_surface_shapes = _column_surface_rects(
         month_labels,
         y0=panel_bottom,

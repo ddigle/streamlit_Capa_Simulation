@@ -166,6 +166,32 @@ _LIGHT: Final[dict[str, Any]] = {
         "이설 완료": "#717171",
     },
     "EQUIPMENT_STAGE_FALLBACK": "#E5E7EB",
+    # ---------------------------------------------------------- 제품별 비중 도넛
+    # HOME `제품별 비중` 행의 제품색. **색은 제품을 따라간다** — 칸 번호는 화면 전체에서 한 번
+    # 정하므로(`services/product_share.assign_product_slots`) 같은 제품은 모든 도넛에서 같은
+    # 색이다. dataviz 기준 팔레트의 여덟 계열 중 여섯이다. 주황·빨강은 뺐다 — 이 Figure 의
+    # `경고`·`부족` 막대색과 정상 시야 ΔE 가 10 아래라 제품 조각이 판정색으로 읽힌다.
+    #
+    # **차례가 곧 색각이상 안전장치다.** 도넛은 조각이 원으로 이어져 마지막 칸이 첫 칸과도
+    # 맞닿는다. 이 차례는 그 원형 인접까지 넣어 색각이상 ΔE ≥ 8.4·정상 시야 ≥ 19.8 을 넘는
+    # (라이트·다크 모두) 차례 중 하나다. 칸을 바꾸면 `tests/test_categorical_palettes.py` 가
+    # 다시 잰다. 한 달에 빠진 제품이 있으면 떨어져 있던 칸이 맞닿을 수 있어 조각 사이 2px
+    # 틈·범례·hover 가 함께 구분을 나른다.
+    #
+    # **노랑은 마지막 칸이다.** 라이트에서 `경고`(#FB923C)와 ΔE 5.4 로 가깝다. 제품이 여섯을
+    # 넘으면 다섯 + `기타` 로 접으므로, 여섯째 칸은 제품이 **정확히 여섯**일 때만 쓰인다.
+    "PRODUCT_SHARE_COLORS": (
+        "#2A78D6",
+        "#E87BA4",
+        "#008300",
+        "#4A3AA7",
+        "#1BAF7A",
+        "#EDA100",
+    ),
+    # 여섯을 넘어 접힌 제품의 `기타` 조각. 계열이 없는 회색이다. 접히면 이름 있는 칸은 앞의
+    # 다섯뿐이고 `기타` 가 그 다섯 어느 것과 맞닿아도 색각이상 ΔE ≥ 9·정상 ≥ 16 이다. 밝은
+    # `확보` 막대색(STATUS_SECURE)과는 ΔE 34 로 떨어져 판정색으로 읽히지 않는다.
+    "PRODUCT_SHARE_OTHER": "#686B71",
     # Qual 실행관리 상태. 계획 → 확정 → 완료로 갈수록 짙어지고 지연만 경고색이다.
     "QUAL_CONFIRMATION_COLORS": {
         "계획": "#CBD5E1",
@@ -275,6 +301,19 @@ _DARK: Final[dict[str, Any]] = {
         "이설 완료": "#959595",
     },
     "EQUIPMENT_STAGE_FALLBACK": "#3A3A42",
+    # 제품색. 라이트와 같은 여섯 계열을 어두운 바탕 쪽 단계로 옮긴 것이다(dataviz 기준
+    # 팔레트의 다크 열). 따로 고른 팔레트가 아니라 같은 제품이 같은 계열로 남는다.
+    "PRODUCT_SHARE_COLORS": (
+        "#3987E5",
+        "#D55181",
+        "#008300",
+        "#9085E9",
+        "#199E70",
+        "#C98500",
+    ),
+    # 다크의 `확보` 막대(STATUS_SECURE #69696B)도 회색이라 밝은 쪽으로 옮겨 둘 사이를 정상
+    # 시야 ΔE 24 로 벌린다. 앞의 다섯 칸과는 색각이상 ΔE ≥ 11·정상 ≥ 16 이다.
+    "PRODUCT_SHARE_OTHER": "#B0B3B9",
     "QUAL_CONFIRMATION_COLORS": {
         "계획": "#7C8899",
         "확정": "#5C9BE8",
@@ -386,6 +425,8 @@ if TYPE_CHECKING:
     NAV_HOME_TINT_STRONG: Final[str] = ""
     NAV_SHADOW: Final[str] = ""
     PENDING_MARK: Final[str] = ""
+    PRODUCT_SHARE_COLORS: Final[tuple[str, ...]] = ()
+    PRODUCT_SHARE_OTHER: Final[str] = ""
     QUAL_CONFIRMATION_COLORS: Final[dict[str, str]] = {}
     SCHEDULE_DONE: Final[str] = ""
     SCHEDULE_PLANNED: Final[str] = ""

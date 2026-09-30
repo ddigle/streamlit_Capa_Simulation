@@ -190,8 +190,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Figure 여덟 개를 그리고, `Preference`는 공용 프로필 편집기(비교 시나리오·선행·Summary·
     Top5·주요공정·실행 Capa)를 두며 `Past Data`는 과거 구간 세 표를 받는다
     (`components/past_data_management.py`). 요약만 그리는 경로는 없다.
-  - **보는 조건 토글 여섯(선행·실행·GAP·상세·EDP 포함·Past Data 포함)은 사이드바 조건 카드
-    `LOB 표시 조건`**(`home_preference.render_home_view_card`, Main 탭이 열렸을 때만)이다
+  - **보는 조건 토글 여섯(선행·실행·GAP·상세·EDP 포함·Past Data 포함)과 `제품별 비중 단위`
+    (Wafer·PKG 고르는 칸)는 사이드바 조건 카드 `LOB 표시 조건`**(`home_preference.render_home_view_card`,
+    Main 탭이 열렸을 때만)이다
     (2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 에 흩어져 있었다).
     설명(토글 툴팁·편집기 캡션·과거 구간 규칙)은 Guide(`guides/home.md`)다. B/N 공정 선택
     팝업의 `선택 공정 적용` 은 타일 목록 위 작업 줄이다.
@@ -202,6 +203,37 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세부수량 행이 대상이다. 소요대수·확보율·B/N 공정 순위는 **바뀌지 않는다** — 설비가 받는
     부하는 EDP 를 포함한 전체 계획이다. 그래서 설비 수요를 다시 돌리지 않고
     `get_home_lob_without_edp` 로 부하량 쪽만 다시 만든다.
+  - **`제품별 비중` 행(2026-10-01 사용자 요청)** — `Capa LOB 현황` 맨 아래, 칸마다 도넛 하나.
+    계산은 `services/product_share.py`, 그림은 `home_lob_figures.product_share_traces`.
+    - 단위는 사이드바 `LOB 표시 조건` 의 `제품별 비중 단위`(`home_state.PRODUCT_SHARE_BASIS_KEY`,
+      기본 Wafer)다. Wafer 의 분모는 **같은 표의 `Wafer 계획` 값**이다 — 둘 다 같은 상세 환산
+      (`calculate_chip_and_wafer_loads` 의 `물량`)을 묶으므로 제품별 합이 그 행과 한 치도 다르지
+      않다. EDP 제외·선행(`apply_advance_to_wafer`)·과거 구간도 그 행과 같은 것을 받는다. PKG 의
+      분모는 그 달 `생산수량` 전체다(EDP 토글을 따른다).
+    - **양산구분을 나누지 않는다.** 같은 제품의 양산·ER 을 더한 뒤 비중을 낸다(사용자 지정 —
+      사용자가 든 예시는 양산만이라 그보다 조금 높게 나온다).
+    - 제품×월 수량은 `get_home_simulation`(EDP 포함)·`get_home_lob_without_edp` 가 **이미 만든
+      Wafer 상세를 묶어** 마지막 원소로 돌려준다. 세 번째 환산을 돌리지 않는다.
+    - **색은 제품을 따라간다.** `assign_product_slots` 가 화면에 보이는 기간(과거 포함)의 **EDP 포함**
+      제품 목록에서 칸을 한 번 정한다 — 차례는 `계획 세부수량` 과 같은 표시순서(`PKG PLAN` 탭)이고,
+      EDP 를 꺼도 남은 제품이 앞 칸으로 당겨지지 않는다. 여섯을 넘으면 PKG 물량이 작은 제품부터
+      `기타` 로 접어 다섯 + 기타가 된다. 조각은 `sort=False`·12시 시계 방향(Plotly 기본값은 값
+      순으로 다시 세워 달마다 자리가 바뀐다).
+    - 팔레트는 `tokens.PRODUCT_SHARE_COLORS`(6)·`PRODUCT_SHARE_OTHER`. 도넛은 **마지막 칸이 첫
+      칸과도 맞닿으므로** 원형 인접까지 넣어 잰다(`tests/test_categorical_palettes.py`). 주황·빨강은
+      `경고`·`부족` 막대색과 겹쳐 뺐고, 라이트에서 `경고` 와 가까운 노랑은 **여섯째 칸**이라 제품이
+      정확히 여섯일 때만 쓰인다.
+    - 칸은 **정사각형**이다(행 높이 = `MONTH_COLUMN_WIDTH_PX`). 도넛마다 같은 크기의 `domain`
+      (네 변 `LOB_PRODUCT_SHARE_INSET_PX`)을 주므로 반지름이 모두 같다. 도넛은 paper 좌표 0~1
+      안에만 놓이므로, B/N Top 5 공정명이 드리우던 아래 여백(130px)이 그림 영역 안의 띠
+      (`LOB_TOP5_LABEL_ZONE_PX`)가 되었고 아래 여백은 0 이다.
+    - **Plotly 는 주석을 자르지 못한다.** 예전에는 그림 끝이 긴 공정명을 잘라 주었지만 지금은 그 아래에
+      도넛이 있어, 띠를 넘칠 공정명은 `top5_process_label_budget()` 으로 줄이고 전체 이름은 hover 로 준다.
+    - 과거 구간은 제품별 Wafer 가 없어 Wafer 칸을 비운다(0 으로 두면 「Wafer 가 없었다」가 된다). 연간
+      Total 칸은 그해 달 칸이 모두 그려질 때만 그해 합으로 그린다.
+    - 범례는 왼쪽 `제품별 비중` 칸(두 칸 × 세 줄)이다. 화면에 **그려진 조각만** 싣는다.
+  - `B/N Top 5` 구분 글자는 **눈에 보이는 칸**(막대 밴드 + 공정명 띠, 분류 면과 같은 경계)의 세로
+    가운데다. 밴드(`yaxis2`) 가운데에 두면 띠 높이의 절반만큼 위로 치우친다.
   - `계획 세부수량` 제목도 Plotly 주석이 아니라 Streamlit 이 그린다(`render_section_title_row`).
     그 줄은 두 칸이 나란한 캔버스 **안**이라 월 칸에도 같은 높이의 빈 줄을 끼워야 행이 맞는다
     (`plan_detail_title_row`·`plan_detail_title_spacer`, 둘 다 CSS 로 높이를 못박는다).

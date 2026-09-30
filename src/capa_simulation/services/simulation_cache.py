@@ -28,6 +28,7 @@ from capa_simulation.services.load_calculator import (
     filter_edp_plan,
 )
 from capa_simulation.services.month_filter import MONTH_COLUMN, filter_month_range
+from capa_simulation.services.product_share import build_product_volume
 from capa_simulation.services.required_equipment import (
     calculate_required_equipment,
 )
@@ -278,8 +279,13 @@ def get_home_simulation(
     _tables: Mapping[str, pd.DataFrame],
     _display_order: pd.DataFrame,
     _reference_tables: Mapping[str, pd.DataFrame],
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, CapacityAssumptions]:
+) -> tuple[
+    pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, CapacityAssumptions, pd.DataFrame
+]:
     """Reuse HOME results while hashing only ``cache_key`` on warm reruns.
+
+    마지막 원소는 제품×월 Wafer·PKG 수량(EDP 포함)이다. 제품별 비중 행이 쓰고, EDP 를 뺀
+    화면에서도 색 칸을 정하는 목록으로 쓴다 — 이미 만든 Wafer 상세 환산을 묶기만 한다.
 
     월 슬라이스는 이 안에서 한다. 호출자가 미리 잘라서 넘기면 캐시가 적중해도 표 열 개를
     자르고 복사한 뒤 버린다(warm rerun 27~36ms 중 93~98%). 키와 프레임을 한 객체에서
@@ -317,8 +323,16 @@ def get_home_simulation(
     assumed_defaults = capacity_assumptions(unit_capacity)
     _, wafer_load = calculate_chip_and_wafer_loads(_plan, _yield_data, _chip_qty)
     monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
+    product_volume = build_product_volume(_plan, wafer_load)
     securement_rate = get_securement_rate(scenario_key, _available_equipment, required_equipment)
-    return monthly_density, production_detail, monthly_wafer, securement_rate, assumed_defaults
+    return (
+        monthly_density,
+        production_detail,
+        monthly_wafer,
+        securement_rate,
+        assumed_defaults,
+        product_volume,
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
@@ -326,8 +340,8 @@ def get_home_lob_without_edp(
     cache_key: HomeSimulationCacheKey,
     _tables: Mapping[str, pd.DataFrame],
     _display_order: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """EDP 를 뺀 Density·계획 세부수량·Wafer 부하량. **소요대수는 여기서 만들지 않는다.**
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """EDP 를 뺀 Density·계획 세부수량·Wafer 부하량·제품별 수량. **소요대수는 만들지 않는다.**
 
     EDP 제외는 LOB 로 표현되는 값, 곧 `확보율 × 부하량` 꼴로 나오는 값에만 건다. 설비가
     받는 부하는 EDP 를 포함한 전체 계획이므로 확보율과 B/N 공정 순위는 바뀌면 안 된다.
@@ -348,7 +362,7 @@ def get_home_lob_without_edp(
     )
     _, wafer_load = calculate_chip_and_wafer_loads(plan, yield_data, _tables["RQ_CHIP_QTY"])
     monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
-    return monthly_density, production_detail, monthly_wafer
+    return monthly_density, production_detail, monthly_wafer, build_product_volume(plan, wafer_load)
 
 
 @st.cache_data(show_spinner=False, max_entries=8)

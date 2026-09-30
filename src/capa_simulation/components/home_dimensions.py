@@ -253,7 +253,48 @@ LOB_CHART_HEIGHT_PX = 150
 
 LOB_TOP5_HEIGHT_PX = 150
 
-LOB_BOTTOM_MARGIN_PX = 130
+# B/N Top 5 막대 밑으로 세운 공정명이 내려오는 띠. 공정명은 축 0 에 위 끝을 걸고 아래로
+# 드리우므로 막대 칸 **안**에 둘 수 없다. 이 띠까지가 눈에 보이는 `B/N Top 5` 칸이다.
+LOB_TOP5_LABEL_ZONE_PX = 130
+
+# 띠 안의 공정명. 축 0 에서 `YSHIFT` 만큼 내려 위 끝을 걸고, 띠 아래 끝에서 `BOTTOM_GAP` 을
+# 남긴다. **Plotly 는 주석을 자르지 못한다** — 예전에는 이 띠가 그림 아래 여백이라 그림 끝이
+# 긴 이름을 잘라 주었지만, 지금은 그 아래에 도넛 행이 있어 넘친 글자가 도넛 위에 얹힌다.
+# 그래서 넘칠 이름은 미리 줄이고 전체 이름은 hover 로 준다.
+#
+# `CHAR_PX` 는 좁은 글자(라틴·숫자) 한 자의 세로 길이다. 15px 에서 실측 6.2~7.2px 였다
+# (`Compression Mold` 16자 114.8px). 한글·전각은 두 자로 센다.
+TOP5_PROCESS_LABEL_YSHIFT_PX = 8.0
+TOP5_PROCESS_LABEL_BOTTOM_GAP_PX = 6.0
+TOP5_PROCESS_LABEL_CHAR_PX = 7.2
+
+
+def top5_process_label_budget() -> int:
+    """공정명 한 줄에 드는 좁은 글자 수. 한글·전각은 둘로 센다."""
+    room = LOB_TOP5_LABEL_ZONE_PX - TOP5_PROCESS_LABEL_YSHIFT_PX - TOP5_PROCESS_LABEL_BOTTOM_GAP_PX
+    return int(room // TOP5_PROCESS_LABEL_CHAR_PX)
+
+
+# `제품별 비중` 행. 칸이 **정사각형**이어야 도넛이 칸 가운데에 제 크기로 선다 — 그래서 행
+# 높이를 월 칸 폭과 같은 값으로 묶는다. 폭을 바꾸면 행이 같이 따라온다.
+LOB_PRODUCT_SHARE_ROW_HEIGHT_PX = tokens.MONTH_COLUMN_WIDTH_PX
+
+# 도넛 바깥 테두리와 칸 경계 사이. 네 변이 같아야 모든 칸의 도넛이 **같은 반지름**이다
+# (Plotly 는 조각 영역의 짧은 변을 지름으로 쓴다). 100px 칸이면 지름 80px 이다.
+LOB_PRODUCT_SHARE_INSET_PX = 10
+
+# 도넛 구멍의 지름 비율. 지름 80px 에서 고리 두께가 약 17px 다 — 더 얇으면 5% 안팎의 조각이
+# 조각 사이 2px 틈에 묻힌다.
+LOB_PRODUCT_SHARE_HOLE = 0.58
+
+# 조각 사이 틈. dataviz 규칙의 「채움 사이 2px 바탕 틈」이다. 선 색은 그 칸의 바탕이라 틈이
+# 오려 낸 자리로 보인다.
+LOB_PRODUCT_SHARE_GAP_PX = 2
+
+# 그림 아래 여백. 예전에는 B/N Top 5 공정명이 이 여백(130px)에 드리웠지만, 그 아래에 도넛
+# 행이 들어오면서 공정명 띠가 그림 영역 안으로 들어갔다. Plotly 의 도넛은 paper 좌표 0~1
+# 안에만 놓이므로(`domain`) 그림 영역 밖 여백에는 그릴 수 없다.
+LOB_BOTTOM_MARGIN_PX = 0
 
 # LOB 두 Figure 만 제목 자리를 쓰지 않는다. `Capa LOB 현황` 은 Plotly 주석이 아니라
 # Streamlit 이 그려서 그 옆에 「선행 전망」 토글을 둔다. 여백을 남겨 두면 표 위에 빈 띠가 생긴다.
@@ -264,6 +305,8 @@ LOB_FIGURE_HEIGHT_PX = (
     + LOB_TABLE_HEIGHT_PX
     + LOB_CHART_HEIGHT_PX
     + LOB_TOP5_HEIGHT_PX
+    + LOB_TOP5_LABEL_ZONE_PX
+    + LOB_PRODUCT_SHARE_ROW_HEIGHT_PX
     + LOB_BOTTOM_MARGIN_PX
 )
 
@@ -271,9 +314,12 @@ LOB_FIGURE_HEIGHT_PX = (
 # 그림 전체 높이로 나누면 어긋난다.
 LOB_PLOT_AREA_HEIGHT_PX = LOB_FIGURE_HEIGHT_PX - LOB_TOP_MARGIN_PX - LOB_BOTTOM_MARGIN_PX
 
-# 패널 아래 테두리·세로 격자가 내려오는 paper 좌표. 아래 여백까지 감싸야 B/N Top 5 의
-# 축 글자가 테두리 안에 들어오므로 0 이 아니라 그림의 맨 아랫줄이다.
+# 패널 아래 테두리·세로 격자가 내려오는 paper 좌표 — 그림의 맨 아랫줄이다. 지금은 아래
+# 여백이 0 이라 0 이지만, 여백을 다시 두면 테두리가 그 여백까지 감싸도록 식으로 둔다.
 #
 # **비율을 손으로 적지 않는다.** 행 높이를 한 번 올리면 그림 영역이 함께 커져서 같은
 # 비율이 캔버스 밖으로 밀려나고, 아래 테두리가 그려지기는 하되 잘려서 통째로 사라진다.
 LOB_PANEL_BOTTOM_Y = -LOB_BOTTOM_MARGIN_PX / LOB_PLOT_AREA_HEIGHT_PX
+
+# `제품별 비중` 행의 위 경계(paper). 행은 그림 영역 맨 아래에 붙는다.
+LOB_PRODUCT_SHARE_TOP_Y = LOB_PRODUCT_SHARE_ROW_HEIGHT_PX / LOB_PLOT_AREA_HEIGHT_PX
