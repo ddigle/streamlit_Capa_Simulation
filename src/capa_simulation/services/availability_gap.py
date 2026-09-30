@@ -17,6 +17,11 @@ Static 의 `공정` 은 원본 공정명이고 Dynamic 의 `공정소분류` 는
 (`GapComparison.dynamic_only`·`static_only`). 화면은 그 목록을 반드시 드러내야 한다 —
 조용히 떨어지면 GAP 이 이유 없이 커 보인다.
 
+**한쪽에만 있는 공정은 GAP 을 내지 않는다**(2026-10-01 사용자 결정). 없는 쪽을 0 으로 보면
+「기준정보에 이름이 없다」가 「Dynamic 만큼 모자라다(넘친다)」로 읽힌다 — 공정명이 어긋난
+것을 대수 차이로 보고하는 셈이다. 그 공정의 분류·소계(또는 Static) 행은 그대로 두고 GAP 행만
+뺀다. 전체 합계(화면이 한쪽짜리 공정을 뺀다)·호기 필터(Static·GAP 을 뺀다)와 같은 규칙이다.
+
 ## 행 구성
 
 한 `(월, 공정)` 마다 이렇게 쌓인다.
@@ -24,7 +29,7 @@ Static 의 `공정` 은 원본 공정명이고 Dynamic 의 `공정소분류` 는
     분류 행 열 개          기존보유 / 가용 / 운영 비가동 / ... (부호와 가용반영 플래그)
     Dynamic 가용 소계      `가용반영` 이 참인 분류만 더한 값
     Static 가용대수        기준정보에서 그대로
-    GAP                    Dynamic 소계 - Static
+    GAP                    Dynamic 소계 - Static (양쪽에 다 있는 공정만)
     Dynamic 가용 소계(환산) 같은 소계에 호기별 환산비를 곱한 값
 
 `GAP` 이 음수면 기준정보가 실제 확보보다 낙관적이라는 뜻이다.
@@ -156,7 +161,7 @@ def build_availability_gap(
     if static_frame is not None:
         pieces.append(static_frame)
 
-    gap = _gap_rows(subtotal, static, wanted)
+    gap = _gap_rows(subtotal, static, wanted, dynamic_processes & static_processes)
     if gap is not None:
         pieces.append(gap)
 
@@ -216,9 +221,17 @@ def _labelled(frame: pd.DataFrame | None, *, row: str, kind: str) -> pd.DataFram
 
 
 def _gap_rows(
-    subtotal: pd.DataFrame | None, static: pd.DataFrame, months: list[int]
+    subtotal: pd.DataFrame | None,
+    static: pd.DataFrame,
+    months: list[int],
+    matched: set[str],
 ) -> pd.DataFrame | None:
-    """한쪽에만 있는 월·공정도 GAP 을 낸다 — 없는 쪽을 0 으로 본다."""
+    """양쪽에 다 있는 공정(`matched`)만 GAP 을 낸다 — 한쪽에만 있는 공정은 GAP 이 없다.
+
+    한쪽짜리 공정의 없는 쪽을 0 으로 보면 공정명 불일치가 대수 차이로 읽힌다(모듈 docstring,
+    2026-10-01 결정). 양쪽에 다 있는 공정 안에서 어느 달 값이 한쪽에 없으면 그 달은 0 으로
+    본다 — 이름이 맞는 공정의 빈 달은 그 달 대수가 없다는 뜻이다.
+    """
     left = (
         subtotal.rename(columns={"Dynamic가용대수": "dynamic"})
         if subtotal is not None and not subtotal.empty
@@ -232,6 +245,7 @@ def _gap_rows(
     if left.empty and right.empty:
         return None
     merged = left.merge(right, on=["생산계획년월", "공정"], how="outer")
+    merged = merged.loc[merged["공정"].astype("string").str.strip().isin(matched)].copy()
     merged["dynamic"] = merged["dynamic"].fillna(0.0)
     merged["static"] = merged["static"].fillna(0.0)
     merged["대수"] = merged["dynamic"] - merged["static"]
