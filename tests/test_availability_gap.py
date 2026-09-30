@@ -73,14 +73,37 @@ def test_a_process_only_in_the_equipment_side_is_reported() -> None:
     assert comparison.static_only == ["다른_공정"]
 
 
-def test_a_process_missing_from_one_side_still_gets_a_gap_row() -> None:
-    """없는 쪽을 0 으로 본다 — 행이 통째로 사라지면 차이를 볼 수 없다."""
+def test_a_process_missing_from_one_side_gets_no_gap_row() -> None:
+    """한쪽에만 있는 공정은 GAP 을 내지 않는다(2026-10-01 사용자 결정).
+
+    없는 쪽을 0 으로 보면 공정명 불일치가 「Dynamic 만큼 모자라다(넘친다)」로 읽혔다. 그 공정의
+    분류·소계와 Static 행은 남아 따로 볼 수 있다.
+    """
     comparison = build_availability_gap(monthly_for(3), static_for(5.0, "다른_공정"), MONTHS)
 
+    rows = comparison.rows
+    assert rows.loc[rows["행"] == GAP_ROW].empty
+    subtotal = rows.loc[rows["행"] == DYNAMIC_SUBTOTAL_ROW]
+    assert dict(zip(subtotal["공정"], subtotal["대수"], strict=True)) == {PROCESS: 3.0}
+    static = rows.loc[rows["행"] == STATIC_ROW]
+    assert dict(zip(static["공정"], static["대수"], strict=True)) == {"다른_공정": 5.0}
+    assert GAP_ROW not in gap_matrix(rows, PROCESS).index
+
+
+def test_only_the_process_on_both_sides_gets_a_gap_row() -> None:
+    monthly = pd.concat(
+        [monthly_for(3), monthly_for(2).assign(공정="설비만_공정")], ignore_index=True
+    )
+    static = pd.DataFrame(
+        {"생산계획년월": MONTHS * 2, "공정": [PROCESS, "기준정보만_공정"], "가용대수": [4.0, 9.0]}
+    )
+
+    comparison = build_availability_gap(monthly, static, MONTHS)
+
     gaps = comparison.rows.loc[comparison.rows["행"] == GAP_ROW]
-    by_process = dict(zip(gaps["공정"], gaps["대수"], strict=True))
-    assert by_process[PROCESS] == 3.0
-    assert by_process["다른_공정"] == -5.0
+    assert dict(zip(gaps["공정"], gaps["대수"], strict=True)) == {PROCESS: -1.0}
+    assert comparison.dynamic_only == ["설비만_공정"]
+    assert comparison.static_only == ["기준정보만_공정"]
 
 
 def test_static_rows_for_the_same_month_are_added_up() -> None:
@@ -95,12 +118,24 @@ def test_static_rows_for_the_same_month_are_added_up() -> None:
 
 
 def test_months_outside_the_request_are_dropped() -> None:
-    other = pd.DataFrame({"생산계획년월": [202601], "공정": [PROCESS], "가용대수": [99.0]})
+    other = pd.DataFrame(
+        {"생산계획년월": [202601, *MONTHS], "공정": [PROCESS] * 2, "가용대수": [99.0, 1.0]}
+    )
 
     comparison = build_availability_gap(monthly_for(2), other, MONTHS)
 
     assert 202601 not in set(comparison.rows["생산계획년월"])
-    assert value_of(comparison.rows, GAP_ROW) == 2.0
+    assert value_of(comparison.rows, GAP_ROW) == 1.0
+
+
+def test_static_only_outside_the_request_leaves_the_process_one_sided() -> None:
+    """조회 달에 Static 이 없으면 그 공정은 Dynamic 에만 있는 공정이다 — GAP 을 내지 않는다."""
+    other = pd.DataFrame({"생산계획년월": [202601], "공정": [PROCESS], "가용대수": [99.0]})
+
+    comparison = build_availability_gap(monthly_for(2), other, MONTHS)
+
+    assert comparison.dynamic_only == [PROCESS]
+    assert comparison.rows.loc[comparison.rows["행"] == GAP_ROW].empty
 
 
 def test_the_matrix_puts_months_in_columns_and_orders_the_rows() -> None:

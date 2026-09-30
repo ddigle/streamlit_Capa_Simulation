@@ -7,12 +7,14 @@ import pandas as pd
 from streamlit.testing.v1 import AppTest
 from test_floor_layout_profile import _png
 
+from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_contract import (
     empty_downtime_schedule,
     empty_equipment_master,
 )
+from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -155,6 +157,30 @@ def test_space_page_opens_with_empty_database(tmp_path: Path) -> None:
     assert not app.exception
     assert app.title[0].value == "Space 현황"
     assert any("Data확보중" in element.value for element in app.markdown)
+
+
+def test_space_page_with_the_sample_switch_off_keeps_a_card_under_the_sidebar_title(
+    tmp_path: Path,
+) -> None:
+    """호기가 없고 샘플을 끄면 카드 안에 까닭 한 줄을 둔다.
+
+    카드 없이 멈추면 사이드바에 「조회 조건 · 이 화면에 적용」 제목만 덩그러니 남았다
+    (2026-10-01 브라우저 실측). 가용설비 현황의 같은 자리와 같은 모양이다.
+    """
+    page_path = PROJECT_ROOT / "app_pages" / "space_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "space_off.duckdb"), default_timeout=60
+    )
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
+    app.run()
+
+    assert not app.exception
+    card = app.sidebar.get_by_key(f"{CONDITION_CARD_PREFIX}space")
+    assert card.label.endswith("Space 조건")
+    assert any("조회할 호기가 없습니다" in item.value for item in app.sidebar.caption)
+    # 조건 위젯은 서지 않는다 — 고를 호기가 없다.
+    assert not app.sidebar.date_input
+    assert not app.sidebar.multiselect
 
 
 def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_canvas(

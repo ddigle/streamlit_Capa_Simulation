@@ -127,6 +127,9 @@ _UNIT_COUNT_COLUMNS = {
 }
 
 
+SPACE_CARD_LABEL = "Space 조건"
+SPACE_CARD_NAME = "space"
+
 today = date.today()
 try:
     equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
@@ -174,6 +177,11 @@ render_page_guide("space_status", title="Space 현황")
 if using_sample_equipment:
     # 스위치는 호기 마스터가 비었을 때만 뜻이 있다. 실데이터가 있으면 끌 것이 없다.
     if not render_sample_switch(key="space_sample_switch", source="설비 운영 DB"):
+        # 멈추기 **전에** 카드를 세우고 까닭을 적는다. 사이드바 「조회 조건」 제목은 페이지보다
+        # 먼저 선언으로 서므로, 카드 없이 멈추면 제목만 덩그러니 남았다(2026-10-01 브라우저
+        # 실측). 가용설비 현황의 같은 자리와 같은 모양이다.
+        with condition_card(SPACE_CARD_LABEL, name=SPACE_CARD_NAME):
+            st.caption("조회할 호기가 없습니다. 가용설비 현황에서 입력하거나 샘플 데이터를 켜세요.")
         render_pending_source(
             subject="Space 현황",
             source="설비 운영 DB",
@@ -195,7 +203,7 @@ elif latest_snapshot is not None:
 
 # 기준일·필터와 단계 전환 조회 조건은 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자
 # 결정). 기준일이 먼저다 — 공정·단계 선택지와 전환 조회기간의 기본값이 그 날에서 나온다.
-space_card = condition_card("Space 조건", name="space")
+space_card = condition_card(SPACE_CARD_LABEL, name=SPACE_CARD_NAME)
 with space_card:
     as_of = st.date_input(
         "기준일",

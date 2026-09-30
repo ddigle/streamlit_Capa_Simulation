@@ -44,6 +44,7 @@ from capa_simulation.services.availability_gap import (
     DYNAMIC_WEIGHTED_ROW,
     ROW_KIND_GAP,
     ROW_KIND_STATIC,
+    GapComparison,
     build_availability_gap,
     gap_matrix,
 )
@@ -216,7 +217,7 @@ def render_availability_gap_panel(
     if process is None:
         # **한쪽에만 있는 공정을 합계에서 뺀다.** 넣으면 「Cut-off 를 아직 안 적었다」가
         # 「수백 대 모자라다」로 읽힌다 — 경고 한 줄로는 그 인상을 못 지운다. 공정을
-        # 직접 고르면 한쪽짜리도 그대로 보이므로 감추는 것이 아니다.
+        # 직접 고르면 한쪽짜리도 있는 쪽 값은 보이므로 감추는 것이 아니다(GAP 만 없다).
         excluded = set(comparison.dynamic_only) | set(comparison.static_only)
         scoped = comparison.rows.loc[~comparison.rows["공정"].isin(excluded)]
         if excluded:
@@ -235,7 +236,13 @@ def render_availability_gap_panel(
     if not processes_in(spans, baseline):
         st.caption("호기 마스터와 기존보유대수가 모두 비어 있어 Dynamic 이 0 입니다.")
 
+    one_sided = _one_sided_reason(process, comparison)
     if result_view == "가용대수 비교":
+        if one_sided is not None:
+            # 그림은 Static 과 Dynamic 을 나란히 세우고 그 차이를 막대 위에 적는다. 한쪽이
+            # 없으면 맞댈 것이 없고, 비운 GAP 을 그림이 0 으로 채워 「+0.00」이 붙는다.
+            st.info(f"{one_sided} 있는 쪽 값은 `분류별 내역` 에서 봅니다.")
+            return
         st.plotly_chart(
             build_availability_gap_figure(matrix),
             width="stretch",
@@ -251,6 +258,8 @@ def render_availability_gap_panel(
         key=DETAIL_MODE_KEY,
         persist_state="session",
     )
+    if one_sided is not None:
+        st.caption(f":material/info: {one_sided} 있는 쪽 값만 보입니다.")
     # 전체 합계는 표와 같은 공정만 본다 — 한쪽에만 있는 공정을 뺀 범위다.
     scope = {process} if process is not None else set(scoped["공정"].dropna().astype(str))
     chosen_units: set[str] | None = None
@@ -434,7 +443,9 @@ def _render_unit_filters(units: pd.DataFrame, scope: set[str]) -> tuple[set[str]
     )
     if not applied:
         return None, []
-    unit_ids = _text_values(units["호기"]).loc[kept]
+    # 공정 범위 안의 호기만 돌려준다. 표는 어차피 범위로 다시 좁히지만, 본문 캡션이 이 수를
+    # 「호기 N개만 더합니다」로 적는다 — 범위 밖 호기까지 세면 그 수가 표와 어긋났다(2026-10-01).
+    unit_ids = _text_values(units["호기"]).loc[kept & in_scope]
     return set(unit_ids.dropna()), applied
 
 
@@ -450,8 +461,10 @@ def _unit_filtered_matrix(
     """호기 필터에 든 호기만 분류대로 다시 더한 행렬.
 
     대수 표와 같은 길(`build_monthly_equipment_availability` → `build_availability_gap` →
-    `gap_matrix`)을 걷되 구간을 그 호기로 좁히고 기존보유를 넣지 않는다. Static 을 주지 않으면
-    GAP 이 「Dynamic - 0」으로 나오므로 Static·GAP 행을 함께 뺀다.
+    `gap_matrix`)을 걷되 구간을 그 호기로 좁히고 기존보유를 넣지 않는다. Static 을 주지 않으므로
+    모든 공정이 Dynamic 에만 있는 공정이 되어 GAP 이 나오지 않는다(한쪽짜리 공정은 GAP 을 내지
+    않는다, 2026-10-01). 거르는 줄은 걸러진 Dynamic 을 거르지 않은 Static 과 맞대지 않는다는
+    이 경로의 약속을 서비스 규칙과 따로 지킨다.
     """
     unit_ids = _text_values(spans["호기"])
     chosen_spans = spans.loc[unit_ids.isin(chosen_units).fillna(False).astype(bool)]
@@ -463,6 +476,24 @@ def _unit_filtered_matrix(
         rows["공정"].astype(str).isin(scope) & ~rows["행종류"].isin((ROW_KIND_STATIC, ROW_KIND_GAP))
     ]
     return gap_matrix(rows, process)
+
+
+def _one_sided_reason(process: str | None, comparison: GapComparison) -> str | None:
+    """고른 공정이 한쪽에만 있으면 GAP 이 없는 까닭 한 문장. 양쪽에 다 있거나 전체 합계면 `None`.
+
+    서비스가 한쪽짜리 공정의 GAP 을 내지 않는다(`services/availability_gap`). 화면은 GAP 이
+    **왜** 없는지를 말한다 — 말하지 않으면 「차이 없음」이나 「계산 누락」으로 읽힌다.
+    """
+    if process is None:
+        return None
+    if process in comparison.dynamic_only:
+        return f"「{process}」는 기준정보(Static)에 없는 공정이라 GAP 을 내지 않습니다."
+    if process in comparison.static_only:
+        return (
+            f"「{process}」는 Dynamic 이 나오지 않은 공정(Cut-off·설비 없음)이라 GAP 을 내지 "
+            "않습니다."
+        )
+    return None
 
 
 def _unit_table(rows: pd.DataFrame, *, with_month: bool) -> pd.DataFrame:
@@ -587,6 +618,16 @@ def _render_securement_cross_check(
             "**차이가 늘 0** 입니다 — 맞대어 본 것이 아니라 같은 값을 두 번 본 자리입니다. "
             f"실제로 비교한 공정은 {len(check.compared_processes)}개입니다."
         )
+    # 기준정보에 없는 공정은 소요대수·Static 이 없어 행이 없다(서비스가 뺀다, 2026-10-01).
+    # 빈 행을 싣던 때는 그 공정이 「실제로 비교한 공정」으로 세어졌다.
+    if check.dynamic_only_processes:
+        st.caption(
+            f"기준정보(Static)에 없는 공정 {len(check.dynamic_only_processes)}개는 소요대수·"
+            "Static 가용대수가 없어 맞대지 않았습니다 — 공정명은 위 경고를 봅니다."
+        )
+    if process is not None and process in check.dynamic_only_processes:
+        st.info(f"「{process}」는 기준정보(Static)에 없는 공정이라 확보율을 맞대지 않습니다.")
+        return
 
     rows = check.rows
     if process is not None:
@@ -594,7 +635,13 @@ def _render_securement_cross_check(
     # 채운 자리는 비교가 아니므로 기본으로 감춘다. 위 캡션이 개수를 이미 알린다.
     compared = rows.loc[~rows["Static대체"]]
     if compared.empty:
-        st.info("아직 맞대어 볼 수 있는 공정이 없습니다. Cut-off 를 적으면 여기에 나타납니다.")
+        # Cut-off 를 다 적어도 공정명이 기준정보와 다르면 비어 있다 — 그때는 이름이 까닭이다.
+        remedy = (
+            "Cut-off 를 적고 공정명을 기준정보와 맞추면"
+            if check.dynamic_only_processes
+            else "Cut-off 를 적으면"
+        )
+        st.info(f"아직 맞대어 볼 수 있는 공정이 없습니다. {remedy} 여기에 나타납니다.")
         return
 
     # **확보율 두 값을 같이 보인다.** 차이만 보이면 「29.5 차이」가 무슨 뜻인지 알 수 없다 —

@@ -62,6 +62,32 @@ def _panel_app() -> None:
             "소요대수": [10.0, 20.0, 40.0],
         }
     )
+    if st.session_state.get("wire_bond_units", False):
+        # 설비에만 있는 공정 — 기준정보(Static)·소요대수에 `Wire Bond` 가 없다.
+        spans = pd.concat(
+            [
+                spans,
+                pd.DataFrame(
+                    {
+                        "호기": ["EQ-9"],
+                        "공정소분류": ["Wire Bond"],
+                        "상태": ["가용"],
+                        "시작일": [date(2020, 1, 1)],
+                        "종료일": [date(2030, 1, 1)],
+                    }
+                ),
+            ],
+            ignore_index=True,
+        )
+        cutoff = prepare_process_cutoff(
+            pd.DataFrame(
+                {
+                    "공정": ["Die Attach", "Etch", "Wire Bond"],
+                    "Cutoff일수": [15.0, 15.0, 15.0],
+                    "비고": [None, None, None],
+                }
+            )
+        )
     if st.session_state.get("omit_etch", False):
         spans = spans.loc[spans["공정소분류"] != "Etch"]
         baseline = baseline.loc[baseline["공정"] != "Etch"]
@@ -358,3 +384,62 @@ def test_the_unit_list_keeps_full_precision_so_thirds_add_up_to_one() -> None:
     exported = pd.read_csv(StringIO(table.to_csv(index=False)))
     assert exported["대수"].sum() == pytest.approx(1.0, abs=1e-12)
     assert "설비" in table.columns
+
+
+# ------------------------------------------------------------------ 한쪽에만 있는 공정
+
+
+def test_a_process_only_in_the_equipment_side_shows_no_gap_and_says_why() -> None:
+    """기준정보에 없는 공정을 골라도 GAP 을 「+Dynamic」으로 내지 않는다(2026-10-01 결정).
+
+    전체 합계·호기 필터가 이미 그렇게 한다. 없는 쪽을 0 으로 보면 공정명 불일치가 「그만큼
+    넘친다」로 읽혔다(브라우저 재현: Die Attach 의 GAP 이 Dynamic 소계와 같았다).
+    """
+    app = _run(wire_bond_units=True)
+    assert "Wire Bond" in " ".join(item.value for item in app.warning)
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Wire Bond").run()
+    assert not app.exception
+    # 그림은 Static 과 Dynamic 을 맞대는 자리라 그리지 않고 까닭을 말한다.
+    assert not app.get("plotly_chart")
+    infos = " ".join(item.value for item in app.info)
+    assert "「Wire Bond」는 기준정보(Static)에 없는 공정이라 GAP 을 내지 않습니다" in infos
+
+    _select_view(app, "분류별 내역")
+    matrix = app.dataframe[0].value
+    assert matrix.loc[DYNAMIC_SUBTOTAL_ROW, "26.10"] == 1.0
+    assert GAP_ROW not in matrix.index
+    assert STATIC_ROW not in matrix.index
+    assert "GAP 을 내지 않습니다" in " ".join(item.value for item in app.caption)
+
+
+def test_a_process_only_in_the_reference_side_shows_its_static_without_gap() -> None:
+    app = _run()
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
+    assert not app.get("plotly_chart")
+    assert "「Probe」는 Dynamic 이 나오지 않은 공정" in " ".join(item.value for item in app.info)
+
+    _select_view(app, "분류별 내역")
+    matrix = app.dataframe[0].value
+    assert matrix.loc[STATIC_ROW, "26.10"] == 20.0
+    assert GAP_ROW not in matrix.index
+
+
+def test_the_cross_check_leaves_out_a_process_missing_from_the_reference() -> None:
+    """기준정보에 없는 공정은 확보율 표에 빈 행으로 실리지 않고, 비교한 공정 수에도 없다."""
+    app = _run(wire_bond_units=True)
+    _select_view(app, "확보율 교차검증")
+    assert set(app.dataframe[0].value["공정"]) == {"Die Attach", "Etch"}
+    captions = " ".join(item.value for item in app.caption)
+    assert "실제로 비교한 공정은 2개입니다" in captions
+    assert "기준정보(Static)에 없는 공정 1개는" in captions
+
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Wire Bond").run()
+    assert not app.exception
+    assert not app.dataframe
+    infos = " ".join(item.value for item in app.info)
+    assert "「Wire Bond」는 기준정보(Static)에 없는 공정이라 확보율을 맞대지 않습니다" in infos
+
+    # 맞댈 공정이 없을 때 이름이 어긋난 공정이 있으면 이름도 까닭으로 든다.
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
+    infos = " ".join(item.value for item in app.info)
+    assert "공정명을 기준정보와 맞추면" in infos

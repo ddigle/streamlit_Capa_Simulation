@@ -27,6 +27,13 @@ Dynamic 은 Cut-off 원장에 적힌 공정만 덮는다. 나머지 공정은 `�
 채우는 이유는 예외로 멈추면 나머지 공정의 비교도 못 보기 때문이고, 목록을 돌려주는
 이유는 **채운 자리는 비교가 아니라 같은 값을 두 번 본 것**이기 때문이다. 화면이 그
 구분을 반드시 드러내야 한다 — 안 그러면 「차이 없음」으로 읽힌다.
+
+## 기준정보에 없는 공정
+
+거꾸로 Dynamic 에만 있는 공정(호기 마스터의 `공정소분류` 가 기준정보 `공정` 과 다른 이름)은
+소요대수도 Static 도 없어 확보율을 낼 수 없다. **행으로 싣지 않고 목록으로만 돌려준다**
+(`CrossCheck.dynamic_only_processes`, 2026-10-01). 실으면 Dynamic 가용대수 한 칸 말고는 모두
+빈 행이 「실제로 비교한 공정」으로 세어졌다 — 맞댄 공정이 0개인데 수십 개로 보고됐다.
 """
 
 from __future__ import annotations
@@ -68,6 +75,9 @@ class CrossCheck:
 
     months: list[int] = field(default_factory=list)
     """실제로 맞대어 본 달. Dynamic 이 덮는 달로 좁힌 결과다."""
+
+    dynamic_only_processes: list[str] = field(default_factory=list)
+    """Dynamic 에만 있고 기준정보(Static)에 없는 공정. 맞댈 수 없어 `rows` 에 없다."""
 
     @property
     def compared_processes(self) -> list[str]:
@@ -123,14 +133,24 @@ def build_securement_cross_check(
     dynamic_side = dynamic_rate.loc[:, ["생산계획년월", "공정", "가용대수", "확보율"]].rename(
         columns={"가용대수": "Dynamic가용대수", "확보율": "Dynamic확보율"}
     )
-    result = merged.merge(dynamic_side, on=["생산계획년월", "공정"], how="outer")
+    # Static 쪽 행만 싣는다. 채운 뒤라 Static 의 모든 월·공정은 Dynamic 쪽에도 있다 — 빠지는
+    # 것은 Dynamic 에만 있는 공정뿐이고, 그 공정은 목록으로 돌려준다(모듈 docstring).
+    result = merged.merge(dynamic_side, on=["생산계획년월", "공정"], how="left")
     result["확보율차이"] = result["Dynamic확보율"] - result["Static확보율"]
     result["Static대체"] = result["공정"].isin(fallback)
     result = result.sort_values(["생산계획년월", "공정"]).reset_index(drop=True)
+    static_processes = {str(value) for value in static_rate["공정"].dropna()}
+    # 확보율 계산이 공정명 앞뒤 공백을 떼므로(`calculate_securement_rate`) 여기서도 뗀다.
+    dynamic_processes = (
+        {str(value).strip() for value in dynamic_available["공정"].dropna()}
+        if not dynamic_available.empty
+        else set()
+    )
     return CrossCheck(
         rows=result.loc[:, list(CROSS_CHECK_COLUMNS)],
         fallback_processes=fallback,
         months=sorted(months),
+        dynamic_only_processes=sorted(dynamic_processes - static_processes),
     )
 
 
