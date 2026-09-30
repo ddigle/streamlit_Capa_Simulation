@@ -174,6 +174,10 @@ def render_month_editor(
             row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
             num_rows="fixed",
             disabled=dimensions,
+            # **빈칸은 빈칸으로 그린다**(2026-10-01 브라우저 점검). `placeholder` 를 주지 않으면
+            # Streamlit 이 결측 칸에 회색 `None` 글자를 쓴다 — 가이드·경고가 「빈칸」이라 부르는
+            # 칸(비운 붙여넣기, 값이 없는 달)이 `None` 으로 읽혔다. 편집표는 모두 이 값을 준다.
+            placeholder="",
             column_config={
                 **_dimension_column_config(default_table, dimensions, value_labels),
                 **{

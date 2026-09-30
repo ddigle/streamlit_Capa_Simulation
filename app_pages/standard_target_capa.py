@@ -100,6 +100,8 @@ PROCESS_FILTER_KEY = STANDARD_TARGET_PROCESS_SELECTION_KEY
 SHOW_DETAIL_KEY = STANDARD_TARGET_SHOW_DETAIL_KEY
 DETAIL_LEVEL_KEY = STANDARD_TARGET_DETAIL_LEVEL_KEY
 OUTPUT_METRIC_KEY = STANDARD_TARGET_OUTPUT_METRIC_KEY
+# 직전 회차에 그린 표시 항목. 위젯이 아닌 칸이라 선택을 비운 회차에도 남는다.
+OUTPUT_METRIC_SHOWN_KEY = f"{OUTPUT_METRIC_KEY}__shown"
 PKG_BASIS_KEY = "standard_target_pkg_basis"
 # 사이드바 조건 카드와 팝업. 팝업은 한 칸이라 한 회차에 하나다.
 CARD_NAME = "standard_target"
@@ -536,6 +538,14 @@ if st.session_state[START_DATE_KEY] > st.session_state[END_DATE_KEY]:
 
 # 저장된 선택지 문자열이 현재 옵션에 없으면 위젯 생성이 실패한다. 옵션은 화면이 소유하므로
 # 검증도 여기서 한다. 상세 토글이 꺼져 위젯이 없는 실행에서도 세션값을 정상으로 유지한다.
+if OUTPUT_METRIC_KEY in st.session_state and st.session_state[OUTPUT_METRIC_KEY] is None:
+    # 선택된 항목을 다시 누르면 `segmented_control` 이 선택을 비운다. 표시 항목은 늘 하나를
+    # 그리므로 직전에 보던 항목으로 되돌린다 — 위젯을 만들기 **전에** 써야 선택 표시도 따라온다
+    # (2026-10-01 브라우저 점검: 전에는 선택이 모두 꺼진 채 본문만 기본 표를 그렸다).
+    last_shown = st.session_state.get(OUTPUT_METRIC_SHOWN_KEY)
+    st.session_state[OUTPUT_METRIC_KEY] = (
+        last_shown if last_shown in OUTPUT_OPTIONS else DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
+    )
 if st.session_state.get(OUTPUT_METRIC_KEY) == "일 최대 투입 가능량":
     st.session_state[OUTPUT_METRIC_KEY] = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
 if st.session_state.get(OUTPUT_METRIC_KEY) not in (*OUTPUT_OPTIONS, None):
@@ -640,6 +650,7 @@ with weekly_output_container:
     )
     if output_metric is None:
         output_metric = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
+    st.session_state[OUTPUT_METRIC_SHOWN_KEY] = output_metric
 
 with card:
     selected_processes = st.multiselect(

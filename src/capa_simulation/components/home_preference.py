@@ -565,6 +565,8 @@ def _render_advance_editor(
                 hide_index=True,
                 num_rows="fixed",
                 width="stretch",
+                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+                placeholder="",
                 disabled=[DIMENSION_COLUMN],
                 column_config={
                     DIMENSION_COLUMN: st.column_config.TextColumn(DIMENSION_COLUMN, width="small"),
@@ -1057,6 +1059,8 @@ def _render_execution_editor(
                 hide_index=True,
                 num_rows="dynamic",
                 width="stretch",
+                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+                placeholder="",
                 column_config={
                     "생산계획년월": st.column_config.SelectboxColumn(
                         "년월",

@@ -123,3 +123,45 @@ def test_without_an_advance_baseline_the_gap_uses_the_shown_values() -> None:
     )
 
     assert "+2.00" in _gap_texts(month_figure)
+
+
+def _month_gap_texts(*, advanced_wafer: float, comparison_wafer: float | None = None) -> list[str]:
+    """Density 는 같고 Wafer 계획만 다른 한 쌍의 증감 문구. 기준(선행 전)은 1,000 매다."""
+    comparison = None if comparison_wafer is None else _wafer([comparison_wafer] * 2)
+    _, month_figure = build_lob_summary_figures(
+        monthly_density=_monthly([10.0, 10.0]),
+        monthly_top5=_top5(),
+        bottleneck_capacity=_capacity(),
+        lob_summary=_summary([10.0, 10.0], [advanced_wafer] * 2),
+        month_labels=MONTH_LABELS,
+        secure_threshold=1.095,
+        warning_threshold=0.995,
+        baseline_lob_summary=_summary([10.0, 10.0], [1000.0, 1000.0]),
+        comparison_density=None if comparison is None else _monthly([10.0, 10.0]),
+        comparison_wafer=comparison,
+    )
+    return _gap_texts(month_figure)
+
+
+def test_a_small_wafer_plan_gap_is_not_written_as_zero() -> None:
+    """천 매 단위 값 칸(`1K`)에 수백 매 증감을 `+0K` 로 적으면 0 이 아닌 증감이 0 으로 읽힌다.
+
+    2026-10-01 브라우저 점검: 선행 +0.05 에 Wafer 계획 증감이 `+0K`/`-0K` 로 찍혔다.
+    """
+    texts = _month_gap_texts(advanced_wafer=1480.0)
+    assert "+0.5K" in texts, texts
+    assert not [text for text in texts if text in {"+0K", "-0K"}], texts
+
+    assert "-0.5K" in _month_gap_texts(advanced_wafer=520.0)
+
+
+def test_a_wafer_plan_gap_that_rounds_to_zero_is_left_out() -> None:
+    """한 자리를 늘려도 0 으로 보이는 증감(50 매 미만)은 적지 않는다 — `+0.0K` 도 0 으로 읽힌다."""
+    texts = _month_gap_texts(advanced_wafer=1020.0)
+    assert not [text for text in texts if text.endswith("K")], texts
+
+
+def test_the_comparison_wafer_gap_keeps_the_same_precision() -> None:
+    """비교 GAP 도 같은 글자다. 원 데이터 1,000 매와 비교 800 매면 `+0.2K` 이다."""
+    texts = _month_gap_texts(advanced_wafer=1000.0, comparison_wafer=800.0)
+    assert "+0.2K" in texts, texts

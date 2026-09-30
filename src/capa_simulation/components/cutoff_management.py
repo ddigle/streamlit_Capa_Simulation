@@ -118,6 +118,8 @@ def render_cutoff_management(
             num_rows=view.row_mode,
             width="stretch",
             hide_index=True,
+            # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+            placeholder="",
             column_config={
                 **dict(view.column_config),
                 "Cutoff일수": st.column_config.NumberColumn(
