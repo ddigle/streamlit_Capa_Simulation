@@ -269,11 +269,29 @@ def test_a_save_pressed_as_unapplied_edits_resurface_is_refused_out_loud(
 
     assert not app.exception
     assert "test_saved_revision_name" not in app.session_state
-    refusals = [item.value for item in app.warning if "저장하지 않았습니다" in item.value]
-    # 팝업 안과 상자 본문에 한 번씩. 누른 회차에 상자의 줄이 바뀌면 팝업이 닫혀 안의 알림이
-    # 가려진다.
-    assert len(refusals) == 2
-    assert all("생산 계획 · 수율" in refusal for refusal in refusals)
+    # 누른 회차에 상자의 줄이 바뀌면(적용 전 편집 경고가 새로 서면) 팝업이 새 요소로 다시 서며
+    # 닫힌다. 그래서 막았다는 알림은 **팝업 밖에도** 있어야 보인다.
+    outside = _refusals_outside_popover(app.sidebar)
+    assert outside, "팝업 밖에 저장을 막았다는 알림이 없습니다"
+    assert all("생산 계획 · 수율" in refusal for refusal in outside)
+
+    # 막은 회차는 다시 돌리지 않았다 — 다음 조작에도 적용 전 편집 경고가 그대로 선다.
+    app = app.run()
+    assert "test_saved_revision_name" not in app.session_state
+    assert any("생산 계획 · 수율" in item.value for item in app.caption)
+
+
+def _refusals_outside_popover(node: object) -> list[str]:
+    """저장을 막았다는 알림 가운데 팝업 **밖**에 그려진 것의 글."""
+    found: list[str] = []
+    for child in getattr(node, "children", {}).values():
+        kind = getattr(child, "type", None)
+        if kind == "popover":
+            continue
+        if kind == "warning" and "저장하지 않았습니다" in str(getattr(child, "value", "")):
+            found.append(str(child.value))
+        found.extend(_refusals_outside_popover(child))
+    return found
 
 
 def test_without_unapplied_edits_nothing_extra_is_asked(sidebar_app: AppTest) -> None:
