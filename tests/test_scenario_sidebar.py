@@ -238,12 +238,42 @@ def test_unapplied_edits_gate_both_load_and_save(sidebar_app: AppTest) -> None:
     app = app.checkbox(key="sidebar_discard_unsaved_changes").check().run()
     assert not app.button(key="sidebar_load_revision").disabled
 
-    # 저장은 「적용하지 않은 편집을 버리고 저장」을 체크해야 열린다.
-    save_button = next(button for button in app.button if button.label == "신규 리비전 저장")
-    assert save_button.disabled
+    # 저장은 「적용하지 않은 편집을 버리고 저장」을 체크해야 된다. 버튼은 잠그지 않는다 — 체크하지
+    # 않고 누르면 저장하지 않고 그렇다고 알린다(아래 테스트가 잠그지 않는 까닭을 말한다).
+    app = _save(app, "체크 없이 누른 저장안")
+    assert "test_saved_revision_name" not in app.session_state
+    assert any("저장하지 않았습니다" in item.value for item in app.warning)
     app = app.checkbox(key="sidebar_save_discards_pending_edits").check().run()
+    app = _save(app, "편집을 버린 저장안")
+    assert app.session_state["test_saved_revision_name"] == "편집을 버린 저장안"
+
+
+def test_a_save_pressed_as_unapplied_edits_resurface_is_refused_out_loud(
+    sidebar_app: AppTest,
+) -> None:
+    """보여 준 회차에는 없던 적용 전 편집이 누른 회차에 생기면, 저장하지 않고 **그렇다고 알린다**.
+
+    2026-10-01 브라우저 E2E: 수율을 고친 채 PKG PLAN 을 적용하면 수율 편집이 서버에서 한 회차
+    사라져 저장 팝업이 경고 없이 켜진 버튼을 보였다. 누른 회차에는 브라우저가 그 편집을 되보내
+    버튼이 잠긴 채 다시 그려졌고, Streamlit 은 잠긴 버튼으로 온 제출을 서버에서 버린다 — 리비전도
+    알림도 없이 리비전명만 지워졌다. 그래서 버튼은 잠그지 않고 누른 회차의 목록으로 판정한다.
+    """
+    app = sidebar_app.run()
+    revision_name = next(widget for widget in app.text_input if widget.label == "새 리비전명")
+    app = revision_name.set_value("E2E-D1b-rev").run()
     save_button = next(button for button in app.button if button.label == "신규 리비전 저장")
     assert not save_button.disabled
+
+    app.session_state["test_pending_edits"] = ["생산 계획 · 수율"]
+    app = save_button.click().run()
+
+    assert not app.exception
+    assert "test_saved_revision_name" not in app.session_state
+    refusals = [item.value for item in app.warning if "저장하지 않았습니다" in item.value]
+    # 팝업 안과 상자 본문에 한 번씩. 누른 회차에 상자의 줄이 바뀌면 팝업이 닫혀 안의 알림이
+    # 가려진다.
+    assert len(refusals) == 2
+    assert all("생산 계획 · 수율" in refusal for refusal in refusals)
 
 
 def test_without_unapplied_edits_nothing_extra_is_asked(sidebar_app: AppTest) -> None:
