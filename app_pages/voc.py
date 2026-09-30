@@ -79,9 +79,12 @@ def _author_value() -> str:
 with st.container(border=True):
     st.markdown("#### :material/edit_note: 새 글 쓰기")
     # 이름은 폼 **밖**이다. 폼 안에 두면 글을 올릴 때마다 함께 지워져 매번 다시 적어야 한다.
+    # 다른 화면에 갔다 와도 남는다(`persist_state`) — 그리지 않은 회차에 Streamlit 이 값을 버려
+    # 돌아오면 빈 칸이었고, 글을 올리면 「작성자를 입력하세요.」로 막혔다(2026-10-01 브라우저 점검).
     st.text_input(
         "작성자",
         key=AUTHOR_KEY,
+        persist_state="session",
         placeholder="예: 홍길동 / 제조기술",
         max_chars=40,
         help="이 앱에는 로그인이 없습니다. 답을 돌려줄 수 있을 만큼만 적어 주세요.",
