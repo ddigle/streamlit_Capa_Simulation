@@ -75,9 +75,17 @@ _SCRIPT = """
       "border:1px solid " + (isDark ? "%(dark_border)s" : "%(light_border)s"),
       "color:" + (isDark ? "%(dark_ink)s" : "%(light_ink)s")
     ].join(";");
+    // 숨은 버튼을 `trigger.click()` 으로 누르지 않는다(2026-10-01, E2E G1-S4b·G2-D2). 그 click 은
+    // `detail=0` 이라 대화상자의 react-aria 가 입력을 화면 낭독기(`virtual`)로 보고 포커스를 미뤄
+    // 두었다가 놓쳤다 — 대화상자가 떠도 포커스가 BODY 에 남아 곧바로 누른 Esc 가 닿지 않았다.
+    // 사람이 누른 click 처럼 `detail=1` 로 보내면 본문 버튼으로 연 팝업과 같이 대화상자가 포커스를
+    // 받는다(브라우저 실측).
     button.onclick = function () {
       var trigger = doc.querySelector('%(trigger)s');
-      if (trigger) trigger.click();
+      if (!trigger) return;
+      trigger.dispatchEvent(new parentWindow.MouseEvent("click", {
+        bubbles: true, cancelable: true, view: parentWindow, detail: 1
+      }));
     };
     // 테마 버튼 **바로 왼쪽**에 선다. 테마 버튼이 아직 없으면 슬롯 맨 앞에 둔다.
     var theme = doc.getElementById("capa-theme-toggle");
