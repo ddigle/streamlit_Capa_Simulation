@@ -16,13 +16,11 @@
 을 따르므로, OS 를 어둡게 쓰는 사람에게는 이 앱이 어두운 화면으로 처음 열린다. 그래서 첫
 로드에 `"Light"` 를 적어 둔다 — 그 뒤로는 버튼으로 고른 값이 그대로 남는다.
 
-**OS 가 밝은 첫 방문은 새로고침하지 않는다(2026-10-01).** 전에는 주소에 `?theme=` 가 없으면
-늘 새로고침했다. 그러면 한 탭이 세션 둘을 만들어, 빈 DB 에 시드를 쓰던 첫 세션이 끝나는 순간
-두 번째 세션의 연결이 같은 파일을 두고 겹쳤다(E2E G1-D0, 겹침 자체는 `_sql_helpers.connect`
-가 기다려 푼다). 고르기 전이고 주소에 테마가 없고 OS 가 밝으면 크롬은 이미 밝게 그렸고,
-파이썬도 크롬이 보고한 밝은 쪽으로 그렸다(브라우저 실측: Plotly 배경까지 밝다). 그래서 주소에
-`?theme=light` 만 적고 넘어간다 — 다음 rerun 부터 파이썬이 그것을 읽는다. OS 가 어둡거나
-이미 고른 값이 있는데 주소가 다르면 예전처럼 새로고침해 둘을 맞춘다.
+주소에 `?theme=` 가 없는 첫 방문은 한 번 새로고침한다. 그러면 한 탭이 세션 둘을 만들어, 빈 DB
+에 시드를 쓰던 첫 세션이 끝나는 순간 두 번째 세션의 연결이 같은 파일을 두고 겹친다(E2E
+G1-D0). 그 겹침은 `_sql_helpers.connect` 가 기다려 푼다. OS 가 밝을 때 새로고침을 건너뛰는
+방법도 해 봤지만, 세션 도중 OS 테마가 바뀌면 크롬만 어두워지는 반쯤 어두운 화면이 다시
+생겨(검토 실측) 되돌렸다(2026-10-01).
 
 **이 iframe 의 내용은 회차마다 같아야 한다.** 내용이 바뀌면 Streamlit 이 iframe 을 새로
 만들고, 옛 iframe 이 만든 툴바 버튼의 `onclick` 은 떨어져 나간 문서의 함수라 브라우저가 더는
@@ -78,18 +76,6 @@ _SCRIPT = """
     return chosen() === "Dark";
   }
 
-  // 고르기 전(`"System"`)의 Streamlit 크롬이 따르는 OS 설정. 알 수 없으면 어둡다고 보아
-  // 새로고침 쪽으로 기운다 — 반쯤 어두운 화면보다 한 번 더 읽는 편이 낫다.
-  function prefersDark() {
-    try { return parentWindow.matchMedia("(prefers-color-scheme: dark)").matches; }
-    catch (error) { return true; }
-  }
-
-  function currentParam() {
-    try { return new parentWindow.URL(parentWindow.location.href).searchParams.get("%(param)s"); }
-    catch (error) { return null; }
-  }
-
   // 주소의 조회 인자를 고친다. **`location.replace` 를 쓰지 않는다** — 이 iframe 의
   // 샌드박스에 `allow-top-navigation` 이 없어서 다른 주소로 옮기는 것은 조용히 막힌다.
   // 버튼이 아무 반응도 없던 이유가 그것이다. `history.replaceState` 는 이동이 아니라
@@ -125,20 +111,17 @@ _SCRIPT = """
     if (doc.getElementById("%(id)s")) return true;
 
     var dark = isDark();
-    // 고르기 전이고 주소에 테마가 없고 OS 가 밝으면 크롬도 파이썬도 이 회차를 이미 밝게
-    // 그렸다. 그때는 주소만 고치고 새로고침하지 않는다(모듈 설명, E2E G1-D0).
-    var drawnLight = chosen() === null && currentParam() === null && !prefersDark();
     if (chosen() === null) {
       // 고른 적이 없으면 밝은 쪽을 **적어 둔다.** 적지 않으면 Streamlit 크롬만 OS 를 따라
-      // 어두워지고 우리 그림은 밝은 채로 남아 반쯤 어두운 화면이 된다. 크롬이 이미 어둡게
-      // 그렸으면 아래 `syncParam` 이 같은 첫 로드에서 새로고침하므로 왕복이 늘지 않는다.
+      // 어두워지고 우리 그림은 밝은 채로 남아 반쯤 어두운 화면이 된다. 아래 `syncParam` 이
+      // 같은 첫 로드에서 새로고침하므로 왕복이 늘지 않는다.
       try {
         parentWindow.localStorage.setItem(KEY, JSON.stringify("Light"));
       } catch (error) { /* 저장을 못 해도 아래 조회 인자가 밝은 쪽을 정한다 */ }
     }
     // 파이썬이 읽는 값과 화면이 쓰는 값을 처음부터 맞춘다. `st.context.theme.type` 은
     // 첫 로드에 틀릴 수 있어서, 여기서 한 번 맞춰 두면 그 뒤로는 어긋나지 않는다.
-    if (syncParam(dark ? "dark" : "light") && !drawnLight) {
+    if (syncParam(dark ? "dark" : "light")) {
       parentWindow.location.reload();
       return true;
     }

@@ -245,6 +245,7 @@ def _render_scenario_list_editor(
     edited = st.data_editor(
         table,
         key=editor_widget_key(LIST_EDITOR_KEY),
+        placeholder="",
         num_rows="fixed",
         hide_index=True,
         width="stretch",

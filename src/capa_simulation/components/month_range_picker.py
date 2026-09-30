@@ -85,7 +85,12 @@ _MONTH_RANGE_CSS = """
 # 덮어써** 연도를 타이핑할 수 없었다. 화살표를 빠르게 누르면 한 칸만 반영됐고, 중간 회차의
 # 기간이 다른 화면(표준 목표 시작일)을 잘라 두기도 했다. 그래서
 # - 범위 안의 온전한 `YYYY-MM` 만 보낸다.
-# - 키를 누른 직후의 변경은 잠깐(`SETTLE_MS`) 멈춘 뒤 한 번, Enter 나 칸을 떠날 때는 곧바로 보낸다.
+# - 키를 누른 직후의 변경은 잠깐(`SETTLE_MS`) 멈춘 뒤 한 번, Enter 나 다른 월 칸으로 옮길 때는
+#   곧바로 보낸다. **바깥(사이드바 링크 등)으로 떠날 때는 곧바로 보내지 않고 걸린 타이머에
+#   맡긴다** — 곧바로 보내면 그 값을 실은 요청이 링크의 페이지 이동을 덮어 화면이 제자리에
+#   남았다(검토 실측).
+# - `min`·`max` 는 값이 바뀔 때만 다시 넣는다. 같은 값이라도 다시 넣으면 Chrome 이 월 칸의
+#   두 자리 입력을 끊어 `1`·`1` 이 11월이 아니라 1월로 확정됐다(검토 실측).
 #   마우스로 달력에서 고른 것은 키 입력이 없으므로 예전처럼 곧바로 보낸다.
 # - 포커스 중인 칸은 다시 그릴 때 덮어쓰지 않는다. 칸을 떠날 때 값이 온전하지 않으면 적용된
 #   값으로 되돌린다.
@@ -116,8 +121,8 @@ export default function(component) {
   memo.sent = startValue + '|' + endValue
 
   for (const [input, committed] of [[startInput, startValue], [endInput, endValue]]) {
-    input.min = minMonth
-    input.max = maxMonth
+    if (input.min !== minMonth) input.min = minMonth
+    if (input.max !== maxMonth) input.max = maxMonth
     input.__capaCommitted = committed
     if (!isFocused(input) && input.value !== committed) input.value = committed
   }
@@ -162,8 +167,9 @@ export default function(component) {
         emitRange(field)
       }
     }
-    input.onblur = () => {
-      if (memo.timer) emitRange(field)
+    input.onblur = (event) => {
+      const next = event.relatedTarget
+      if (memo.timer && (next === startInput || next === endInput)) emitRange(field)
       if (!isMonth(input.value)) input.value = input.__capaCommitted
     }
   }

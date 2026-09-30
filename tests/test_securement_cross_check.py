@@ -196,3 +196,21 @@ def test_only_fallback_and_dynamic_only_processes_compare_nothing() -> None:
     assert check.dynamic_only_processes == ["AVI", "Die Attach"]
     assert set(check.rows["공정"]) == {"DEMO_A"}
     assert check.rows["소요대수"].notna().all()
+
+
+def test_months_static_does_not_cover_are_not_counted_as_compared() -> None:
+    """Dynamic 이 Static 보다 긴 달까지 덮으면 넘친 달은 행에서 빠진다 — 달 수도 그만 센다.
+
+    캡션 「맞대어 본 달 (N개월)」이 행에 없는 달까지 세어 결과와 어긋났다(2026-10-01 검토 실측).
+    """
+    static = two_month_frame({(202611, "A"): 10.0, (202612, "A"): 10.0}, "가용대수")
+    required = two_month_frame({(202611, "A"): 20.0, (202612, "A"): 20.0}, "소요대수")
+    dynamic = two_month_frame(
+        {(202611, "A"): 8.0, (202612, "A"): 8.0, (202701, "A"): 8.0, (202702, "A"): 8.0},
+        "가용대수",
+    )
+
+    check = build_securement_cross_check(static, dynamic, required)
+
+    assert set(check.rows["생산계획년월"]) == {202611, 202612}
+    assert check.months == [202611, 202612]

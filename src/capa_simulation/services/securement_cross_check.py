@@ -146,10 +146,16 @@ def build_securement_cross_check(
         if not dynamic_available.empty
         else set()
     )
+    # 맞대어 본 달은 **결과에 남은 달**이다. Static 쪽 행만 싣으므로(위 left merge) Dynamic 에만
+    # 있는 달은 빠진다 — 설비 조회기간으로 잡은 달을 그대로 세면 캡션이 빠진 달까지 셌다
+    # (2026-10-01 검토 실측).
+    compared_months = {
+        int(month) for month in pd.to_numeric(result["생산계획년월"], errors="coerce").dropna()
+    }
     return CrossCheck(
         rows=result.loc[:, list(CROSS_CHECK_COLUMNS)],
         fallback_processes=fallback,
-        months=sorted(months),
+        months=sorted(compared_months if months else months),
         dynamic_only_processes=sorted(dynamic_processes - static_processes),
     )
 

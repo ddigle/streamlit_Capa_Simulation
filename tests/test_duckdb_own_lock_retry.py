@@ -105,6 +105,44 @@ def test_connect_gives_up_after_the_wait_budget(
     assert len(attempts) >= 2
 
 
+def test_an_unnamed_sharing_violation_is_retried_briefly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 겹침이 가끔 쥔 프로세스를 적지 않은 공유 위반으로 온다(검토 실측) — 짧게 다시 연다."""
+    real_connect = duckdb.connect
+    attempts: list[int] = []
+
+    def unnamed_then_open(*args: object, **kwargs: object) -> duckdb.DuckDBPyConnection:
+        attempts.append(1)
+        if len(attempts) <= 2:
+            raise duckdb.IOException('IO Error: Cannot open file "C:/app/data/x.duckdb": ???')
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(_sql_helpers.duckdb, "connect", unnamed_then_open)
+    monkeypatch.setattr(_sql_helpers, "OWN_LOCK_POLL_SECONDS", 0.0)
+
+    with connect(tmp_path / "unnamed.duckdb") as connection:
+        assert connection.execute("SELECT 1").fetchone() == (1,)
+    assert len(attempts) == 3
+
+
+def test_an_unnamed_failure_in_a_missing_folder_is_raised_at_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """폴더가 없으면 기다려도 열리지 않는다 — 같은 「Cannot open file」 문장이어도 곧바로 올린다."""
+    attempts: list[int] = []
+
+    def missing(*_args: object, **_kwargs: object) -> None:
+        attempts.append(1)
+        raise duckdb.IOException('IO Error: Cannot open file "C:/nowhere/x.duckdb": ???')
+
+    monkeypatch.setattr(_sql_helpers.duckdb, "connect", missing)
+
+    with pytest.raises(duckdb.IOException):
+        connect(tmp_path / "no-such-folder" / "x.duckdb")
+    assert len(attempts) == 1
+
+
 def _open_repeatedly(
     database: Path,
     started: threading.Event,
@@ -124,8 +162,8 @@ def test_a_connect_racing_the_last_close_of_a_large_wal_succeeds(tmp_path: Path)
     """마지막 연결이 큰 WAL 을 체크포인트하며 닫히는 동안 다른 스레드가 연다(E2E G1-D0 의 자리).
 
     재시도를 끄면(고치기 전과 같다) Windows 에서 이 테스트가 3번 돌려 3번 「PID <자기 자신>」
-    잠금 오류로 실패했다(2026-10-01).
-    경합이 안 일어난 회차도 통과하므로 이 테스트가 흔들려 실패하지는 않는다.
+    잠금 오류로 실패했다(2026-10-01). 경합이 안 일어난 회차도 통과한다. PID 를 적지 않은 공유
+    위반을 곧바로 올리던 동안은 40번 중 4번 실패했다 — 그 경우도 짧게 기다려 연다.
     """
     database = tmp_path / "race.duckdb"
     wal = tmp_path / "race.duckdb.wal"

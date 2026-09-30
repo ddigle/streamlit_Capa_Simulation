@@ -16,15 +16,8 @@ from test_month_editor_filter import EDITOR_SCRIPT
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = (ROOT / "app.py", ROOT / "app_pages", ROOT / "src")
-# 이 파일들의 편집표는 같은 날 다른 작업 갈래가 같은 인자를 들인다. 모두 들어오면 이 목록은
-# 비어야 한다 — 아래 테스트가 낡은 항목을 알린다.
-FIXED_ELSEWHERE = frozenset(
-    {
-        "app_pages/load_conversion.py",
-        "src/capa_simulation/components/equipment_data_workspace.py",
-        "src/capa_simulation/components/scenario_management.py",
-    }
-)
+# 인자를 아직 들이지 않은 편집표 파일. 비어 있어야 한다 — 아래 테스트가 낡은 항목을 알린다.
+FIXED_ELSEWHERE: frozenset[str] = frozenset()
 
 
 def _source_files() -> list[Path]:

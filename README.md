@@ -342,6 +342,8 @@ STEP·MCP 키 도입 전에 첫 행 선택 방식으로 저장한 사내 검증 
 개발용 `Core Data 초기 시나리오`를 현재 변환 계약으로 교체할 때는 아래 명령을 사용합니다.
 새 시나리오를 공식 발행한 뒤 같은 원천 코드의 기존 시나리오는 스크립트가 건드리지 않고
 목록에 남깁니다. 필요 없으면 `시나리오 관리 → 시나리오 관리 탭 → 목록 관리`에서 지웁니다.
+시나리오명은 겹칠 수 없으므로(보관본 포함) 같은 이름이 있으면 스크립트가 이름 뒤에 만든
+시각을 붙입니다.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\bootstrap_initial_duckdb_scenario.py --replace-existing

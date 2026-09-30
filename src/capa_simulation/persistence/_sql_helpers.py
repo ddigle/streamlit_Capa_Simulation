@@ -57,21 +57,45 @@ def is_own_process_lock(exc: BaseException) -> bool:
     return lock_holder_pid(exc) == os.getpid()
 
 
+# PID 꼬리 **없이** 오는 Windows 공유 위반. 같은 겹침인데 가끔 「Cannot open file "…":
+# 다른 프로세스가 파일을 사용 중…」만 오고 쥔 프로세스를 적지 않는다(검토 실측 40회 중 1회 —
+# 이 경우를 곧바로 올려 경합 테스트가 10% 흔들렸다). 쥔 쪽을 모르므로 짧게만 기다린다.
+UNNAMED_LOCK_WAIT_SECONDS = 0.5
+_CANNOT_OPEN_FILE = "Cannot open file"
+
+
+def _may_be_unnamed_own_lock(exc: BaseException, database_path: Path) -> bool:
+    """PID 를 적지 않은 공유 위반일 수 있는가. 폴더가 없거나 다른 종류의 오류면 아니다."""
+    return (
+        isinstance(exc, duckdb.IOException)
+        and lock_holder_pid(exc) is None
+        and _CANNOT_OPEN_FILE in str(exc)
+        and database_path.parent.is_dir()
+    )
+
+
 def connect(database_path: Path) -> duckdb.DuckDBPyConnection:
     """같은 파일에 붙는 모든 연결이 동일한 configuration 을 쓰도록 한 곳에서 연다.
 
     이 프로세스 자신이 쥔 잠금으로 실패하면 `OWN_LOCK_WAIT_SECONDS` 까지 다시 연다(위 상수의
-    설명). 그 밖의 실패는 곧바로 올린다.
+    설명). 쥔 프로세스를 적지 않은 공유 위반은 `UNNAMED_LOCK_WAIT_SECONDS` 까지만 다시 연다.
+    **다른** 프로세스가 적힌 잠금과 그 밖의 실패(없는 폴더 등)는 곧바로 올린다.
     """
     # configuration 이 다른 연결이 하나라도 섞이면 DuckDB 가 "Can't open a connection to
     # same database file with a different configuration" 로 연결 자체를 거부한다.
     # 그래서 read_only 도 쓰지 않고, 설정도 여기서만 만든다.
-    deadline = time.monotonic() + OWN_LOCK_WAIT_SECONDS
+    started = time.monotonic()
     while True:
         try:
             return duckdb.connect(str(database_path), config=DUCKDB_CONNECT_CONFIG)
         except duckdb.IOException as exc:
-            if not is_own_process_lock(exc) or time.monotonic() >= deadline:
+            if is_own_process_lock(exc):
+                budget = OWN_LOCK_WAIT_SECONDS
+            elif _may_be_unnamed_own_lock(exc, database_path):
+                budget = UNNAMED_LOCK_WAIT_SECONDS
+            else:
+                raise
+            if time.monotonic() - started >= budget:
                 raise
             time.sleep(OWN_LOCK_POLL_SECONDS)
 

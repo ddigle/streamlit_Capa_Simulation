@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 from capa_simulation.io.core_data_source import read_core_data_csv
@@ -20,6 +21,20 @@ from capa_simulation.settings import CORE_DATA_CSV_PATH, DUCKDB_PATH, PROJECT_RO
 
 DEFAULT_SOURCE_CODE = "LOCAL-CORE-DATA-INITIAL"
 PIPELINE_VERSION = "core-data-pandas-v5"
+
+
+def _free_scenario_name(repository: DuckDBScenarioRepository, name: str) -> str:
+    """시나리오명이 이미 있으면(보관본 포함) 만든 시각을 붙인다.
+
+    저장소가 이름 중복을 막는다(2026-10-01). `--replace-existing` 의 기본 이름은 첫 실행이 만든
+    시나리오 이름과 같아, 그대로 두면 README 의 교체 명령이 늘 「같은 이름」으로 멈췄다.
+    """
+    taken = {
+        scenario.scenario_name for scenario in repository.list_scenarios(include_archived=True)
+    }
+    if name not in taken:
+        return name
+    return f"{name} ({datetime.now():%Y-%m-%d %H:%M})"
 
 
 def parse_args() -> argparse.Namespace:
@@ -106,7 +121,7 @@ def main() -> None:
     )
     snapshot = repository.create_scenario(
         ScenarioCreate(
-            scenario_name=args.scenario_name,
+            scenario_name=_free_scenario_name(repository, args.scenario_name),
             source_simulation_code=args.source_code,
             source_simulation_name=args.source_name,
             source_type=(

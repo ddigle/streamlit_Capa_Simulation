@@ -642,11 +642,14 @@ def _restore_public_process_default() -> None:
 weekly_output_container = st.container(border=True)
 with weekly_output_container:
     action_row = st.container()
+    # `required=True` — 고른 항목을 다시 눌러도 선택이 풀리지 않는다(Streamlit 1.63). 위의
+    # 되돌림만으로는 다시 누른 뒤 한 회차 동안 선택이 모두 꺼져 보이고 앱이 한 번 더 돌았다.
     output_metric = st.segmented_control(
         "표시 항목",
         options=OUTPUT_OPTIONS,
         key=OUTPUT_METRIC_KEY,
         persist_state="session",
+        required=True,
     )
     if output_metric is None:
         output_metric = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
