@@ -362,6 +362,28 @@ def test_fallback_constants_exist_in_the_page_option_lists() -> None:
     assert f'"{DEFAULT_STANDARD_TARGET_OUTPUT_METRIC}"' in page
 
 
+def test_clicking_the_selected_output_item_again_keeps_it_selected() -> None:
+    """선택된 표시 항목을 다시 눌러도 선택이 비지 않는다 — 선택 표시와 본문이 늘 같은 항목이다.
+
+    `segmented_control` 은 선택된 항목을 다시 누르면 `None` 을 돌려준다. 전에는 선택이 모두
+    꺼진 채 본문만 기본 표(`일 표준 가능량`)를 그렸다(2026-10-01 브라우저 점검).
+    """
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    app = app.segmented_control(key="standard_target_output_metric").set_value("가용대수").run()
+    assert not app.exception
+    assert "주차별 가용대수" in [element.value for element in app.subheader]
+
+    # AppTest 의 `set_value(None)` 은 「바꾸지 않음」으로 읽혀 무시된다. 브라우저가 보내는 빈 선택을
+    # 세션 값으로 넣는다.
+    app.session_state["standard_target_output_metric"] = None
+    app = app.run()
+
+    assert not app.exception
+    assert app.segmented_control(key="standard_target_output_metric").value == "가용대수"
+    assert app.session_state["standard_target_output_metric"] == "가용대수"
+    assert "주차별 가용대수" in [element.value for element in app.subheader]
+
+
 def test_saved_view_settings_outside_the_current_options_fall_back() -> None:
     """옵션 문자열이 바뀌어도 저장된 값 때문에 위젯 생성이 실패하지 않는다."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
