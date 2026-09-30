@@ -196,6 +196,8 @@ def _render_direct_editor(
             num_rows="dynamic",
             width="stretch",
             height=420,
+            # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+            placeholder="",
             column_config={
                 "공정": st.column_config.TextColumn("공정 (원본)"),
                 "표시명": st.column_config.TextColumn("표시명 (화면 표기)"),
