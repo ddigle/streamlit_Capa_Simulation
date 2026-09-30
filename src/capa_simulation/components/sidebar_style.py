@@ -41,6 +41,10 @@ _APPLIED_OVERLAY_RIGHT = (
     f"calc({_SUMMARY_PADDING_RIGHT} + {_SUMMARY_MARKER_SIZE} + {_SUMMARY_MARKER_GAP} + 2px)"
 )
 _APPLIED_OVERLAY_LEFT = "7.5rem"
+# 실행이 시작된 뒤 본문을 흐리기까지 기다리는 시간. 사이드바 상자 여닫기(빈 프래그먼트만 도는
+# 실행)의 흐림 구간이 클릭 뒤 60~290ms 였다(실측) — 그보다 길게, 계산이 걸리는 재실행의 로딩
+# 표시는 늦지 않게.
+STALE_DIM_DELAY = "0.3s"
 
 
 def build_sidebar_stylesheet(
@@ -534,6 +538,15 @@ def build_sidebar_stylesheet(
         [data-testid="stLayoutWrapper"]:has(> .st-key-{SIDEBAR_TOGGLE_SINK_KEY}),
         .st-key-{SIDEBAR_TOGGLE_SINK_KEY} {{
             display: none !important;
+        }}
+        /* **짧은 실행은 본문을 흐리지 않는다.** Streamlit 은 실행이 시작되면 본문 요소에
+           `data-stale` 를 달아 즉시 불투명도 0.33 으로 흐린다(전환 없음, 실측). 상자 여닫기는
+           본문을 다시 돌리지 않는데도, 콜백이 프래그먼트로 바꾸기 전에 앱 실행이 잠깐 시작돼
+           본문이 40~120ms 깜빡였다(실측). 흐림을 {STALE_DIM_DELAY} 늦춰 그 안에 끝나는 실행은
+           흐리지 않고, 정말 계산하는 재실행은 그 뒤부터 전처럼 흐린다. 흐림이 풀릴 때는 이
+           규칙이 떨어져 곧바로 돌아온다. */
+        [data-stale="true"] {{
+            transition: opacity 0s linear {STALE_DIM_DELAY} !important;
         }}
         </style>
         """

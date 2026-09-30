@@ -165,3 +165,23 @@ def test_the_support_box_sits_last_and_apart() -> None:
     ]
     # 간격은 **같은 규칙**에 있다 — 따로 두면 한쪽 선택자만 고치는 일이 생긴다.
     assert _rules_with(block, "margin-top: 0.9rem;") == [rule]
+
+
+def test_the_toggle_sink_is_hidden_and_short_runs_do_not_dim_the_body() -> None:
+    """사이드바 상자를 여닫을 때 도는 빈 프래그먼트의 칸은 숨기고, 짧은 실행은 본문을 흐리지 않는다.
+
+    여닫기는 본문을 다시 돌리지 않지만 콜백이 프래그먼트로 바꾸기 전에 앱 실행이 잠깐 시작돼,
+    Streamlit 이 본문을 40~120ms 즉시 흐렸다(2026-09-30 실측). 흐림에 지연을 둔다.
+    """
+    from capa_simulation.components.sidebar_style import STALE_DIM_DELAY
+    from capa_simulation.sidebar_status import SIDEBAR_TOGGLE_SINK_KEY
+
+    block = _style_block()
+    (sink_rule,) = _rules_with(block, "display: none !important;")
+    assert sink_rule == [
+        f'[data-testid="stLayoutWrapper"]:has(> .st-key-{SIDEBAR_TOGGLE_SINK_KEY})',
+        f".st-key-{SIDEBAR_TOGGLE_SINK_KEY}",
+    ]
+    assert _rules_with(block, f"transition: opacity 0s linear {STALE_DIM_DELAY} !important;") == [
+        ['[data-stale="true"]']
+    ]
