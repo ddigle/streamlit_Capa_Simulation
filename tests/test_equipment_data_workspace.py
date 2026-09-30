@@ -10,15 +10,20 @@ from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.equipment_data_workspace import (
+    _NOTICE_KEY,
     BUFFER_KEY,
     CLIPBOARD_KEY,
+    DOWNLOADS_EXPANDER_KEY,
     DROP_EXAMPLE_ROWS_KEY,
+    EDITOR_TABS_KEY,
     EQUIPMENT_EDITOR_KEY,
     EXAMPLE_DROP_BUTTON_KEY,
+    HISTORY_FILTER_EXPANDER_KEY,
     IMPORT_SAVE_BUTTON_KEY,
     PREVIEW_BUTTON_KEY,
     PREVIEW_KEY,
     TARGET_KEY,
+    WORKSPACE_TABS_KEY,
     build_import_review,
 )
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -420,3 +425,43 @@ def test_current_data_downloads_say_when_the_buffer_differs_from_the_saved_revis
     captions = " ".join(str(item.value) for item in app.caption)
     assert "저장하지 않은 변경 포함" in captions
     assert "호기 마스터 현재 데이터 · 2행" in [button.label for button in app.download_button]
+
+
+def _keyed_blocks(app: AppTest) -> dict[str | None, str]:
+    """이 회차의 탭 묶음·접힘 칸을 (key → 브라우저가 상태를 기억하는 블록 id)로."""
+    return {
+        node.key: node._block_id
+        for node in app.main
+        if getattr(node, "type", None) in {"tab_container", "expander"} and node.key
+    }
+
+
+def test_inner_tabs_keep_their_identity_when_a_notice_appears_above_the_form(
+    tmp_path: Path,
+) -> None:
+    """폼 위 알림이 생겨 자리가 밀려도 안쪽 탭·접힘 칸이 같은 블록 id 를 가진다.
+
+    key 없는 탭은 자리가 한 칸 밀리는 회차에 새로 마운트되어 「입력」·「호기 마스터」로
+    돌아갔다(삭제 확정·저장 직후 이력 조회, 2026-10-01 브라우저 실측). 브라우저는 고른 탭·
+    펼침을 **블록 id** 로 기억하므로, 알림이 있든 없든 id 가 같고 비어 있지 않아야 한다.
+    """
+    repository = _repository(tmp_path / "equipment.duckdb")
+    repository.save_snapshot(
+        empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
+    )
+    app = _app(tmp_path / "equipment.duckdb")
+    assert not app.exception
+    quiet = _keyed_blocks(app)
+    assert {
+        WORKSPACE_TABS_KEY,
+        EDITOR_TABS_KEY,
+        DOWNLOADS_EXPANDER_KEY,
+        HISTORY_FILTER_EXPANDER_KEY,
+    } <= set(quiet)
+    assert all(quiet.values())
+
+    app.session_state[_NOTICE_KEY] = "선택한 행이 없습니다."
+    app.run()
+    assert not app.exception
+    assert any("선택한 행이 없습니다" in item.value for item in app.info)
+    assert _keyed_blocks(app) == quiet

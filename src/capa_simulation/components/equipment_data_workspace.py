@@ -120,6 +120,12 @@ UNDO_DELETE_BUTTON_KEY = "equipment_delete_undo_v1"
 SELECT_MATCHING = "select_matching"
 SELECT_CLEAR = "select_clear"
 DELETE_SELECTED = "delete_selected"
+# 안쪽 탭·접힘 칸의 key. 위젯이 아니라 **브라우저가 고른 탭·펼침을 기억하는 이름**이다
+# (`render_equipment_data_workspace` 의 탭 주석).
+WORKSPACE_TABS_KEY = "equipment_workspace_tabs_v1"
+EDITOR_TABS_KEY = "equipment_workspace_editor_tabs_v1"
+DOWNLOADS_EXPANDER_KEY = "equipment_workspace_downloads_v1"
+HISTORY_FILTER_EXPANDER_KEY = "equipment_history_filters_v1"
 _EDITOR_KEYS = (BASELINE_EDITOR_KEY, EQUIPMENT_EDITOR_KEY, DOWNTIME_EDITOR_KEY)
 _TARGETS = ("호기 마스터", "기존 보유대수", "비가동 일정")
 Frames = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
@@ -624,7 +630,8 @@ def _render_editors(
     selection: Mapping[str, frozenset[RowKey]],
 ) -> EditorResult:
     baseline, equipment, downtime = frames
-    master_tab, baseline_tab, downtime_tab = st.tabs(list(_TARGETS))
+    # 위에 삭제 확인이 서거나 사라지면 이 탭의 자리가 밀린다 — key 가 고른 표를 지킨다.
+    master_tab, baseline_tab, downtime_tab = st.tabs(list(_TARGETS), key=EDITOR_TABS_KEY)
     with master_tab:
         equipment_view, equipment_requested = _editor_view(
             equipment,
@@ -807,7 +814,7 @@ def _render_history(repository: DuckDBEquipmentRepository) -> None:
     equipment = historical.equipment
     downtime = historical.downtime
     filters: dict[str, list[str]] = {}
-    with st.expander("조회 조건", expanded=False):
+    with st.expander("조회 조건", expanded=False, key=HISTORY_FILTER_EXPANDER_KEY):
         with st.container(horizontal=True, gap="small"):
             for column, suffix in (
                 ("공정소분류", "process"),
@@ -923,7 +930,9 @@ def render_equipment_data_workspace(
         st.warning(message, icon=":material/view_module:")
     # 표마다 무엇을 키로 대체하는지·모체호기·환산비 같은 작성 기준은 Guide 가 말한다. 여기는
     # 내려받기만 남긴다.
-    with st.expander("입력 양식 · 현재 데이터 내려받기", expanded=False):
+    with st.expander(
+        "입력 양식 · 현재 데이터 내려받기", expanded=False, key=DOWNLOADS_EXPANDER_KEY
+    ):
         for column, label, payload, filename, key in zip(
             st.columns(3),
             _TARGETS,
@@ -952,7 +961,14 @@ def render_equipment_data_workspace(
         # 올라가면서 메모만 폼 맨 아래에 남으면 적지 않고 저장하기 쉽다.
         note = st.text_input("변경 메모", key=_NOTE_KEY, placeholder="예: 10월 신규 호기 30대 등록")
         # 전환은 브라우저에서만 한다. 폼의 다른 탭도 계속 생성해 미제출 delta를 유지한다.
-        input_tab, edit_tab, history_tab = st.tabs(["입력", "직접 편집", "저장 이력"])
+        # **key 는 고른 탭을 지키려고 준다**(2026-10-01). 폼 위 알림(오류·안내·예시 행·저장
+        # 완료)이 생기거나 사라지는 제출마다 이 탭의 자리가 한 칸 밀려 새로 마운트되고,
+        # key 가 없으면 「입력」으로 돌아갔다(삭제 확정·저장 직후 이력 조회, 브라우저 실측).
+        # `on_change` 를 주지 않은 key 는 위젯이 아니다 — 브라우저가 고른 탭을 그 이름으로
+        # 기억했다 다시 세울 때 되돌릴 뿐이고, 탭을 눌러도 rerun 이 돌지 않는다.
+        input_tab, edit_tab, history_tab = st.tabs(
+            ["입력", "직접 편집", "저장 이력"], key=WORKSPACE_TABS_KEY
+        )
         with input_tab:
             target = st.selectbox("등록할 표", _TARGETS, key=TARGET_KEY)
             paste_column, upload_column = st.columns([3, 2])
