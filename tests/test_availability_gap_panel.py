@@ -422,3 +422,19 @@ def test_a_process_only_in_the_reference_side_shows_its_static_without_gap() -> 
     matrix = app.dataframe[0].value
     assert matrix.loc[STATIC_ROW, "26.10"] == 20.0
     assert GAP_ROW not in matrix.index
+
+
+def test_the_cross_check_leaves_out_a_process_missing_from_the_reference() -> None:
+    """기준정보에 없는 공정은 확보율 표에 빈 행으로 실리지 않고, 비교한 공정 수에도 없다."""
+    app = _run(wire_bond_units=True)
+    _select_view(app, "확보율 교차검증")
+    assert set(app.dataframe[0].value["공정"]) == {"Die Attach", "Etch"}
+    captions = " ".join(item.value for item in app.caption)
+    assert "실제로 비교한 공정은 2개입니다" in captions
+    assert "기준정보(Static)에 없는 공정 1개는" in captions
+
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Wire Bond").run()
+    assert not app.exception
+    assert not app.dataframe
+    infos = " ".join(item.value for item in app.info)
+    assert "「Wire Bond」는 기준정보(Static)에 없는 공정이라 확보율을 맞대지 않습니다" in infos

@@ -163,3 +163,36 @@ def test_a_genuinely_missing_process_is_still_reported() -> None:
 
     assert check.months == [MONTH]
     assert check.fallback_processes == ["B"]
+
+
+def test_a_process_only_on_the_dynamic_side_is_listed_not_compared() -> None:
+    """기준정보에 없는 공정은 소요대수·Static 이 없어 맞댈 수 없다(2026-10-01).
+
+    행으로 싣던 때는 Dynamic 가용대수 한 칸 말고 모두 빈 행이 「실제로 비교한 공정」으로
+    세어졌다 — 맞댄 공정이 0개인데 수십 개로 보고됐다(브라우저 재현).
+    """
+    check = build_securement_cross_check(
+        frame({"A": 10.0}, "가용대수"),
+        frame({"A": 8.0, " Die Attach ": 49.0}, "가용대수"),
+        frame({"A": 20.0}, "소요대수"),
+    )
+
+    assert set(check.rows["공정"]) == {"A"}
+    assert check.compared_processes == ["A"]
+    assert check.dynamic_only_processes == ["Die Attach"]
+    assert check.fallback_processes == []
+
+
+def test_only_fallback_and_dynamic_only_processes_compare_nothing() -> None:
+    """실측 모양 — Static 쪽 공정은 모두 채움이고 Dynamic 쪽 공정은 모두 기준정보에 없다."""
+    check = build_securement_cross_check(
+        frame({"DEMO_A": 10.0}, "가용대수"),
+        frame({"Die Attach": 49.0, "AVI": 21.0}, "가용대수"),
+        frame({"DEMO_A": 20.0}, "소요대수"),
+    )
+
+    assert check.fallback_processes == ["DEMO_A"]
+    assert check.compared_processes == []
+    assert check.dynamic_only_processes == ["AVI", "Die Attach"]
+    assert set(check.rows["공정"]) == {"DEMO_A"}
+    assert check.rows["소요대수"].notna().all()

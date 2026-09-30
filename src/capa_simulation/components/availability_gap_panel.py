@@ -616,6 +616,16 @@ def _render_securement_cross_check(
             "**차이가 늘 0** 입니다 — 맞대어 본 것이 아니라 같은 값을 두 번 본 자리입니다. "
             f"실제로 비교한 공정은 {len(check.compared_processes)}개입니다."
         )
+    # 기준정보에 없는 공정은 소요대수·Static 이 없어 행이 없다(서비스가 뺀다, 2026-10-01).
+    # 빈 행을 싣던 때는 그 공정이 「실제로 비교한 공정」으로 세어졌다.
+    if check.dynamic_only_processes:
+        st.caption(
+            f"기준정보(Static)에 없는 공정 {len(check.dynamic_only_processes)}개는 소요대수·"
+            "Static 가용대수가 없어 맞대지 않았습니다 — 공정명은 위 경고를 봅니다."
+        )
+    if process is not None and process in check.dynamic_only_processes:
+        st.info(f"「{process}」는 기준정보(Static)에 없는 공정이라 확보율을 맞대지 않습니다.")
+        return
 
     rows = check.rows
     if process is not None:
