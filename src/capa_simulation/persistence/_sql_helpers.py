@@ -5,6 +5,9 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import re
+import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import datetime
@@ -24,13 +27,53 @@ DUCKDB_CONNECT_CONFIG: dict[str, str | bool | int | float | list[str]] = {
     "default_block_size": DUCKDB_BLOCK_SIZE
 }
 
+# **같은 프로세스가 쥔 잠금**을 기다려 주는 한도와 간격(2026-10-01). 한 프로세스 안에서 마지막
+# 연결이 닫히면 DuckDB 인스턴스가 내려가며 WAL 을 체크포인트하는데, 그동안 파일 잠금은 아직
+# 내려가는 인스턴스가 쥐고 있다. 그 틈에 다른 세션 스레드가 `connect()` 하면 새 인스턴스를
+# 만들다 「다른 프로세스가 파일을 사용 중… (PID <자기 자신>)」으로 실패한다(Windows 실측,
+# 15 MB WAL 을 닫는 0.09초 동안 4/4). 빈 DB 첫 방문에서 시드를 쓴 세션이 끝나는 순간 테마
+# 새로고침이 만든 두 번째 세션이 이 틈에 걸려 첫 화면이 「데이터베이스를 열지 못했습니다」로
+# 멈췄다(E2E G1-D0). 체크포인트는 곧 끝나므로 잠깐 기다렸다 다시 열면 된다. 다른 프로세스가
+# 쥔 잠금은 기다려도 풀리지 않으므로 곧바로 올린다 — 동기화 스크립트와 안내가 그 빠른 실패에
+# 기댄다.
+OWN_LOCK_WAIT_SECONDS = 5.0
+OWN_LOCK_POLL_SECONDS = 0.025
+# DuckDB 잠금 오류의 꼬리. Windows 는 「File is already open in <exe> (PID n)」, Linux 는
+# 「Conflicting lock is held in <exe> (PID n) by user …」다. 앞부분은 로캘에 따라 깨지므로
+# ASCII 꼬리만 읽는다.
+_LOCK_HOLDER_PID = re.compile(r"\(PID (\d+)\)")
+
+
+def lock_holder_pid(exc: BaseException) -> int | None:
+    """DuckDB 잠금 오류가 알려 주는, 파일을 쥔 프로세스 번호. 잠금 오류가 아니면 None."""
+    if not isinstance(exc, duckdb.IOException):
+        return None
+    match = _LOCK_HOLDER_PID.search(str(exc))
+    return int(match.group(1)) if match else None
+
+
+def is_own_process_lock(exc: BaseException) -> bool:
+    """이 프로세스 자신이 쥔 잠금인가 — 내려가는 인스턴스와 새 연결이 겹친 경우다."""
+    return lock_holder_pid(exc) == os.getpid()
+
 
 def connect(database_path: Path) -> duckdb.DuckDBPyConnection:
-    """같은 파일에 붙는 모든 연결이 동일한 configuration 을 쓰도록 한 곳에서 연다."""
+    """같은 파일에 붙는 모든 연결이 동일한 configuration 을 쓰도록 한 곳에서 연다.
+
+    이 프로세스 자신이 쥔 잠금으로 실패하면 `OWN_LOCK_WAIT_SECONDS` 까지 다시 연다(위 상수의
+    설명). 그 밖의 실패는 곧바로 올린다.
+    """
     # configuration 이 다른 연결이 하나라도 섞이면 DuckDB 가 "Can't open a connection to
     # same database file with a different configuration" 로 연결 자체를 거부한다.
     # 그래서 read_only 도 쓰지 않고, 설정도 여기서만 만든다.
-    return duckdb.connect(str(database_path), config=DUCKDB_CONNECT_CONFIG)
+    deadline = time.monotonic() + OWN_LOCK_WAIT_SECONDS
+    while True:
+        try:
+            return duckdb.connect(str(database_path), config=DUCKDB_CONNECT_CONFIG)
+        except duckdb.IOException as exc:
+            if not is_own_process_lock(exc) or time.monotonic() >= deadline:
+                raise
+            time.sleep(OWN_LOCK_POLL_SECONDS)
 
 
 @contextmanager
@@ -47,7 +90,8 @@ def pinned_connections(*database_paths: Path) -> Iterator[None]:
     읽는다), 핀이 닫히며 인스턴스가 내려갈 때 WAL 체크포인트가 돈다.
 
     열지 못하는 파일(다른 프로세스의 잠금, 없는 폴더)은 건너뛴다. 뒤의 실제 연결이 같은
-    오류를 내고 그 자리의 안내가 처리하므로 여기서 판단하지 않는다.
+    오류를 내고 그 자리의 안내가 처리하므로 여기서 판단하지 않는다. 다른 세션의 핀이 닫히며
+    인스턴스가 내려가는 중이면 `connect()` 가 그 체크포인트를 기다렸다 연다.
     """
     pins: list[duckdb.DuckDBPyConnection] = []
     for database_path in database_paths:

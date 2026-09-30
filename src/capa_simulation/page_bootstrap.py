@@ -24,6 +24,7 @@ import streamlit as st
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.display_order import (
@@ -71,23 +72,47 @@ def bootstrap_error_message(
     """화면에 보여 줄 오류 문구.
 
     DuckDB 예외는 원문이 사용자에게 아무 도움이 안 된다(잠금 경로와 영어 문장, Windows
-    로캘에서는 한글이 깨진다). 원인이 거의 항상 "이미 다른 창에서 실행 중" 이므로 그 안내로
-    바꾼다. 나머지 예외는 서비스 계층이 이미 한국어로 만든 문장이라 그대로 쓴다.
+    로캘에서는 한글이 깨진다). 그래서 **잠금을 쥔 쪽**에 맞춘 조치로 바꾼다. 나머지 예외는
+    서비스 계층이 이미 한국어로 만든 문장이라 그대로 쓴다.
+
+    잠금을 쥔 것이 **이 앱 자신**이면 닫을 것이 없다(2026-10-01, E2E G1-D0). 한 서버가
+    모든 브라우저 창·탭을 받으므로 창을 닫는 것은 조치가 아니다 — 예전 문구가 「다른 창을
+    닫으라」고 해 빈 DB 첫 방문에서 틀린 조치를 권했다. 자기 잠금은 `connect()` 가 이미
+    기다렸다 다시 연 뒤에도 남은 경우라 새로고침을 권한다.
 
     **어느 파일이 잠겼는지는 부르는 쪽만 안다.** 이 앱은 DB 가 둘이고(시뮬레이션·설비) 한
     `try` 가 둘 다 받는 자리도 있다. 경로를 여기에 박아 두면 설비 DB 가 잠겼을 때 사용자가
     멀쩡한 시뮬레이션 파일을 들여다보게 된다.
     """
-    if isinstance(exc, duckdb.Error):
-        files = "\n".join(f"- 파일: `{path}`" for path in database_paths)
+    if not isinstance(exc, duckdb.Error):
+        return str(exc)
+    files = "\n".join(f"- 파일: `{path}`" for path in database_paths)
+    if is_own_process_lock(exc):
         return (
-            "데이터베이스를 열지 못했습니다.\n\n"
+            "데이터베이스를 열지 못했습니다 — 이 앱이 같은 파일을 정리하는 동안 연결이 "
+            "겹쳤습니다.\n\n"
             f"{files}\n"
-            "- 이 앱이 이미 다른 창에서 실행 중이면 그 창을 닫고 다시 시작하세요. "
-            "DuckDB 는 한 번에 한 프로세스만 파일을 엽니다.\n"
-            "- 그래도 같은 오류가 나면 파일 권한과 경로(네트워크 드라이브 여부)를 확인하세요."
+            "- 잠시 뒤 화면을 새로고침(F5)하면 이어집니다. 다른 창이나 프로그램을 닫을 필요는 "
+            "없습니다."
         )
-    return str(exc)
+    holder = lock_holder_pid(exc)
+    if holder is not None:
+        return (
+            "데이터베이스를 열지 못했습니다 — 다른 프로그램이 파일을 열어 두었습니다.\n\n"
+            f"{files}\n"
+            f"- 파일을 연 프로세스: PID {holder}. DuckDB 는 한 번에 한 프로세스만 파일을 "
+            "엽니다. 이 앱을 한 번 더 띄운 서버나 DB 도구·동기화 스크립트라면 그것을 닫고 "
+            "새로고침하세요.\n"
+            "- 같은 서버를 브라우저 창·탭 여러 개로 여는 것은 원인이 아닙니다."
+        )
+    return (
+        "데이터베이스를 열지 못했습니다.\n\n"
+        f"{files}\n"
+        "- 같은 파일을 연 다른 프로그램(이 앱을 한 번 더 띄운 서버, DB 도구, 동기화 "
+        "스크립트)이 있으면 닫고 새로고침하세요. DuckDB 는 한 번에 한 프로세스만 파일을 "
+        "엽니다.\n"
+        "- 그래도 같은 오류가 나면 파일 권한과 경로(네트워크 드라이브 여부)를 확인하세요."
+    )
 
 
 @dataclass(frozen=True)

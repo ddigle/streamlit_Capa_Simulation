@@ -79,6 +79,17 @@ _MONTH_RANGE_CSS = """
 }
 """
 
+# **키보드로 고치는 도중의 값은 보내지 않는다(2026-10-01, E2E G1-S2b).** 월 입력은 연도 칸에
+# 숫자를 칠 때마다 `0002-12`·`0020-12` 같은 중간값으로 change 를 낸다. 예전에는 그때마다
+# rerun 을 걸었고, 파이썬이 범위 밖 중간값을 버린 값으로 다시 그리며 **포커스 중인 칸까지
+# 덮어써** 연도를 타이핑할 수 없었다. 화살표를 빠르게 누르면 한 칸만 반영됐고, 중간 회차의
+# 기간이 다른 화면(표준 목표 시작일)을 잘라 두기도 했다. 그래서
+# - 범위 안의 온전한 `YYYY-MM` 만 보낸다.
+# - 키를 누른 직후의 변경은 잠깐(`SETTLE_MS`) 멈춘 뒤 한 번, Enter 나 칸을 떠날 때는 곧바로 보낸다.
+#   마우스로 달력에서 고른 것은 키 입력이 없으므로 예전처럼 곧바로 보낸다.
+# - 포커스 중인 칸은 다시 그릴 때 덮어쓰지 않는다. 칸을 떠날 때 값이 온전하지 않으면 적용된
+#   값으로 되돌린다.
+# 입력 요소는 rerun 에서 교체되지 않으므로(실측) 회차를 넘는 상태는 요소에 단다.
 _MONTH_RANGE_JS = """
 export default function(component) {
   const { data, parentElement, setStateValue } = component
@@ -91,18 +102,36 @@ export default function(component) {
   const endValue = String(value.end || data?.maxMonth || '')
   const minMonth = String(data?.minMonth || '')
   const maxMonth = String(data?.maxMonth || '')
+  const TYPING_WINDOW_MS = 1000
+  const SETTLE_MS = 600
 
-  startInput.min = minMonth
-  startInput.max = maxMonth
-  endInput.min = minMonth
-  endInput.max = maxMonth
-  if (startInput.value !== startValue) startInput.value = startValue
-  if (endInput.value !== endValue) endInput.value = endValue
+  const isMonth = (text) =>
+    /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(text) &&
+    (!minMonth || text >= minMonth) &&
+    (!maxMonth || text <= maxMonth)
+  const isFocused = (input) => input.getRootNode().activeElement === input
+
+  const memo = startInput.__capaRange || (startInput.__capaRange = { timer: 0, sent: '' })
+  // 파이썬이 지금 쥔 값. 같은 값을 다시 보내 헛 rerun 을 만들지 않는다.
+  memo.sent = startValue + '|' + endValue
+
+  for (const [input, committed] of [[startInput, startValue], [endInput, endValue]]) {
+    input.min = minMonth
+    input.max = maxMonth
+    input.__capaCommitted = committed
+    if (!isFocused(input) && input.value !== committed) input.value = committed
+  }
+
+  const cancelPending = () => {
+    clearTimeout(memo.timer)
+    memo.timer = 0
+  }
 
   const emitRange = (changedField) => {
+    cancelPending()
     let start = startInput.value
     let end = endInput.value
-    if (!start || !end) return
+    if (!isMonth(start) || !isMonth(end)) return
 
     if (start > end) {
       if (changedField === 'start') {
@@ -113,11 +142,33 @@ export default function(component) {
         startInput.value = start
       }
     }
+    const signature = start + '|' + end
+    if (signature === memo.sent) return
+    memo.sent = signature
     setStateValue('value', { start, end })
   }
 
-  startInput.onchange = () => emitRange('start')
-  endInput.onchange = () => emitRange('end')
+  const bind = (input, field) => {
+    input.onkeydown = (event) => {
+      input.__capaKeyAt = Date.now()
+      if (event.key === 'Enter') emitRange(field)
+    }
+    input.onchange = () => {
+      cancelPending()
+      if (!isMonth(input.value)) return
+      if (Date.now() - (input.__capaKeyAt || 0) < TYPING_WINDOW_MS) {
+        memo.timer = setTimeout(() => emitRange(field), SETTLE_MS)
+      } else {
+        emitRange(field)
+      }
+    }
+    input.onblur = () => {
+      if (memo.timer) emitRange(field)
+      if (!isMonth(input.value)) input.value = input.__capaCommitted
+    }
+  }
+  bind(startInput, 'start')
+  bind(endInput, 'end')
 }
 """
 
