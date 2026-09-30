@@ -24,7 +24,6 @@ from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.remembered_expander import remembered_expander
 from capa_simulation.components.securement_heatmap import (
     render_securement_heatmap,
     shortage_summary,
@@ -79,7 +78,7 @@ from capa_simulation.services.unit_capacity import (
     unit_capacity_to_month_table,
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
-from capa_simulation.sidebar_status import table_card
+from capa_simulation.sidebar_status import remembered_expander, table_card
 
 KEY_PROCESS_FILTER_KEY = "securement_heatmap_key_processes"
 HEATMAP_EXPANDER_KEY = "securement_heatmap_expander"

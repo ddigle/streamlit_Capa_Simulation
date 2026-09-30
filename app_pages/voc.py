@@ -22,12 +22,11 @@ import streamlit as st
 
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.remembered_expander import remembered_expander
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.services.voc_board import VOC_CATEGORIES
 from capa_simulation.settings import DUCKDB_PATH
-from capa_simulation.sidebar_status import condition_card
+from capa_simulation.sidebar_status import condition_card, remembered_expander
 
 AUTHOR_KEY = "voc_author"
 # 글마다 하나씩 생기는 위젯이라 키에 글 번호를 붙인다. 접두를 리터럴로 흩어 두면

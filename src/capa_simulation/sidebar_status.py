@@ -1,4 +1,6 @@
-# Purpose: 사이드바의 구역 제목·적용 월 범위 표시와, 접힘 상태를 기억하는 상자·조건 카드를 만든다.
+# Purpose: 사이드바 구역 제목·적용 월 범위 표시와, 펼침을 기억하는 상자(본문도)·조건 카드를 만든다.
+
+from collections.abc import Callable
 
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
@@ -131,6 +133,35 @@ def sidebar_expander(
     그래서 위젯이 아닌 칸에 `(펼침, 라벨)` 을 적어 두고 **값이 사라졌거나 라벨이 바뀐
     회차에만** 되돌려 놓는다. 매 회차 덮어쓰면 방금 누른 사용자의 클릭을 지운다.
     """
+    return _remembered_box(st.sidebar.expander, label, key=key, icon=icon, default=default)
+
+
+def remembered_expander(
+    label: str,
+    *,
+    key: str,
+    icon: str | None = None,
+    default: bool = False,
+) -> DeltaGenerator:
+    """본문(지금 컨테이너)에 여는 같은 기억 상자(2026-10-01 브라우저 점검).
+
+    `key` 없는 본문 `st.expander` 도 사이드바 상자와 같은 두 자리에서 편 상태를 잃었다. 닫힌 탭의
+    본문을 건너뛰는 화면(산출 결과 확보율 탭의 히트맵)은 다른 탭에 갔다 오면 상자가 새로 만들어져
+    접혔고, 라벨에 「답변 N」이 든 VOC 글은 답변을 남기면 접혔다. 규칙은 `sidebar_expander` 와
+    같다 — 여닫을 때 본문을 다시 돌리지 않는 것도 같다.
+    """
+    return _remembered_box(st.expander, label, key=key, icon=icon, default=default)
+
+
+def _remembered_box(
+    open_box: Callable[..., DeltaGenerator],
+    label: str,
+    *,
+    key: str,
+    icon: str | None,
+    default: bool,
+) -> DeltaGenerator:
+    """`(펼침, 라벨)` 기억 칸을 **값이 사라졌거나 라벨이 바뀐 회차에만** 되돌리고 상자를 연다."""
     memory = remembered_box_key(key)
     remembered = st.session_state.get(memory)
     expanded, remembered_label = (
@@ -140,7 +171,7 @@ def sidebar_expander(
     )
     if key not in st.session_state or remembered_label != label:
         st.session_state[key] = expanded
-    box = st.sidebar.expander(label, key=key, icon=icon, on_change=on_box_toggle, args=(key, label))
+    box = open_box(label, key=key, icon=icon, on_change=on_box_toggle, args=(key, label))
     st.session_state[memory] = (bool(st.session_state[key]), label)
     return box
 
