@@ -32,7 +32,7 @@ Dynamic 은 Cut-off 원장에 적힌 공정만 덮는다. 나머지 공정은 `�
 
 거꾸로 Dynamic 에만 있는 공정(호기 마스터의 `공정소분류` 가 기준정보 `공정` 과 다른 이름)은
 소요대수도 Static 도 없어 확보율을 낼 수 없다. **행으로 싣지 않고 목록으로만 돌려준다**
-(`CrossCheck.dynamic_only_processes`, 2026-10-01). 싣으면 Dynamic 가용대수 한 칸 말고는 모두
+(`CrossCheck.dynamic_only_processes`, 2026-10-01). 실으면 Dynamic 가용대수 한 칸 말고는 모두
 빈 행이 「실제로 비교한 공정」으로 세어졌다 — 맞댄 공정이 0개인데 수십 개로 보고됐다.
 """
 
