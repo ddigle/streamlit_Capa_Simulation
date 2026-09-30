@@ -262,6 +262,10 @@ def _banded_rate_heights(
 # 증감이 이 값보다 작으면 적지 않는다. 화면에 보이는 자릿수에서 달라지지 않은 칸까지
 # `+0.00` 을 달면 무엇이 움직였는지 오히려 안 읽힌다.
 _GAP_EPSILON = 5e-3
+# Wafer 계획 증감의 글자(천 매 단위). 값 칸(`2K`)과 같은 0 자리로 쓰면 5~499 매가 `+0K`·`-0K` 로
+# 찍혀 0 이 아닌 증감이 0 으로 읽혔다(2026-10-01 브라우저 점검). 한 자리를 더 쓰고, 그 자리에서도
+# 0 으로 보이는 증감(50 매 미만)은 `_visible_gap` 이 적지 않는다.
+_WAFER_GAP_FORMAT = "{:+,.1f}K"
 
 
 def _contiguous_segments(indices: Sequence[int]) -> list[tuple[int, int]]:
@@ -328,10 +332,21 @@ def _value_gaps(
         - pd.to_numeric(baseline[column], errors="coerce").to_numpy()
     ) / scale
     gaps = [
-        "" if pd.isna(value) or abs(value) < _GAP_EPSILON else number_format.format(value)
+        ""
+        if pd.isna(value) or abs(value) < _GAP_EPSILON
+        else _visible_gap(number_format.format(value))
         for value in differences
     ]
     return gaps if any(gaps) else None
+
+
+def _visible_gap(text: str) -> str:
+    """증감 글자 하나. 형식 자릿수에서 0 으로 보이면(`+0.0K`·`-0.00`) 적지 않는다.
+
+    `_GAP_EPSILON` 은 소수 둘째 자리 형식에 맞춘 값이라 자릿수가 다른 형식에는 맞지 않는다.
+    글자로 판정하면 형식이 무엇이든 「0 이 아닌 증감이 0 으로 찍히는」 칸이 생기지 않는다.
+    """
+    return text if any(character in "123456789" for character in text) else ""
 
 
 def _bottleneck_rate_labels(
@@ -433,7 +448,7 @@ def build_lob_summary_figures(
     assert aligned_summary is not None
     density_gaps = _value_gaps(aligned_summary, aligned_baseline, "부하량", "{:+,.2f}")
     wafer_plan_gaps = _value_gaps(
-        aligned_summary, aligned_baseline, "Wafer 부하량", "{:+,.0f}K", scale=1_000
+        aligned_summary, aligned_baseline, "Wafer 부하량", _WAFER_GAP_FORMAT, scale=1_000
     )
     # GAP 은 **원 데이터끼리의** 차이다. 선행을 켜면 `aligned_summary` 는 이미 선행이 반영된
     # 값이라 그대로 빼면 비교 시나리오와의 차이에 내가 넣은 선행 물량이 섞인다. 비교
@@ -444,7 +459,7 @@ def build_lob_summary_figures(
         raw_summary, aligned_comparison_density, "부하량", "{:+,.2f}"
     )
     wafer_plan_comparison_gaps = _value_gaps(
-        raw_summary, aligned_comparison_wafer, "Wafer 부하량", "{:+,.0f}K", scale=1_000
+        raw_summary, aligned_comparison_wafer, "Wafer 부하량", _WAFER_GAP_FORMAT, scale=1_000
     )
     month_positions = list(range(len(month_labels)))
     month_position_by_value = {
