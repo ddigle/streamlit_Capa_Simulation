@@ -1170,7 +1170,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 
 - `core_data_derivation.py`: 원천 78컬럼에서 RQ 파생에 쓰는 정규화된 작업 프레임을
   만든다. 제품정보 언더바 정규화와 Area·소요기준 별칭 정리가 이 경계에서 끝난다.
-  - **CS → 양산구분 규칙은 `CS_PRODUCTION_CLASSES` 한 곳이다**(MP·CS → 양산, ER → ER). CS 컬럼 값
+  - **CS → 양산구분 규칙은 `CS_PRODUCTION_CLASSES` 한 곳이다**(MP·CS·CB → 양산, ER → ER. CB 는
+    2026-09-30 사용자 결정으로 양산). CS 컬럼 값
     자체를 앞뒤 공백 제거·대문자로 맞춘 뒤 매핑한다(CS 는 RQ_PKG_PLAN·RQ_REQB 업무 키라, 비교만
     느슨하게 하면 표기별로 계획이 갈라져 부풀려진다). **규칙 밖 코드는 등록을 막는다**
     (`reject_unmapped_cs_codes`, 코드별 행 수·계획 행 수) — 새 코드를 어느 쪽으로 셀지는 업무

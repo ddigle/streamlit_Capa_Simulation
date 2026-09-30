@@ -175,22 +175,24 @@ def test_area_name_is_normalized_before_rq_derivation() -> None:
 
 def test_cs_codes_map_to_the_two_production_classes_after_trimming_and_casing() -> None:
     """MP·CS 는 양산, ER 은 ER — 앞뒤 공백·소문자는 맞춘 뒤 대조하고 CS 키도 그 값으로 남긴다."""
-    source = pd.concat([_core_data_row()] * 4, ignore_index=True)
-    source["생산계획년월"] = [202608, 202609, 202610, 202611]
-    source["CS"] = ["MP", " cs ", "er", "ER "]
+    source = pd.concat([_core_data_row()] * 6, ignore_index=True)
+    source["생산계획년월"] = [202608, 202609, 202610, 202611, 202612, 202701]
+    source["CS"] = ["MP", " cs ", "er", "ER ", "CB", " cb"]
 
     tables = build_reference_tables(source, _display_order())
 
     plan = tables["RQ_PKG_PLAN"].sort_values("생산계획년월")
-    assert plan["CS"].tolist() == ["MP", "CS", "ER", "ER"]
-    assert plan["양산구분"].tolist() == ["양산", "양산", "ER", "ER"]
+    assert plan["CS"].tolist() == ["MP", "CS", "ER", "ER", "CB", "CB"]
+    # `CB` 는 사내 1월 시나리오에 새로 온 코드로 양산이다(2026-09-30 사용자 결정).
+    assert plan["양산구분"].tolist() == ["양산", "양산", "ER", "ER", "양산", "양산"]
 
 
 @pytest.mark.parametrize(
     ("codes", "expected"),
     [
-        # 새 코드는 코드 이름과 행 수(계획 행 수)를 알린다 — 사내 1월 시나리오의 `CB`(2026-09-30).
-        (["MP", "CB", "CB"], "`CB` 2행(계획 2행)"),
+        # 규칙에 없는 새 코드는 코드 이름과 행 수(계획 행 수)를 알린다 — 사내 1월 시나리오의 `CB`
+        # 가 이 문구 없이 막혔다(2026-09-30). CB 자체는 이제 규칙에 있다(양산).
+        (["MP", "ZX", "ZX"], "`ZX` 2행(계획 2행)"),
         # 빈 CS 도 같은 문구로 알린다.
         (["MP", "", "ER"], "`(빈값)` 1행(계획 1행)"),
     ],
@@ -208,7 +210,7 @@ def test_an_unmapped_cs_code_is_named_before_any_table_is_built(
 
     message = str(caught.value)
     assert expected in message
-    assert "MP, CS, ER" in message
+    assert "MP, CS, CB, ER" in message
     assert "업무 키에 null" not in message
 
 

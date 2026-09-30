@@ -86,6 +86,9 @@ CS_PRODUCTION_CLASSES: Final[Mapping[str, str]] = MappingProxyType(
     {
         "MP": "양산",
         "CS": "양산",
+        # 사내 1월 시나리오에 새로 온 코드. 양산으로 센다(2026-09-30 사용자 결정) — HOME 생산계획·
+        # Density·표준 목표 Capa 에 들어가고, 효율·여유율은 같은 달·공정의 양산 값과 한 칸을 쓴다.
+        "CB": "양산",
         "ER": "ER",
     }
 )
