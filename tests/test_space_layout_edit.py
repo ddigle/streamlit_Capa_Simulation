@@ -22,6 +22,7 @@ from capa_simulation.services.space_layout_edit import (
     new_unit_options,
     other_change_count,
     parse_editor_apply,
+    viewer_items,
 )
 
 FLOOR = ("C1", "1F")
@@ -403,3 +404,17 @@ def test_a_new_unit_name_is_refused_with_its_real_reason(unit_id: str, message: 
             master,
         )
     assert "BIG" in new_unit_options(master)["existingIds"]
+
+
+def test_the_viewer_gets_saved_units_with_process_and_downtime_detail() -> None:
+    master = _master({"호기": "M-1", "모체호기": "BIG", "X좌표": 50.0, "Y좌표": 30.0})
+    status = _status(master)
+    located = status.loc[status["동"].eq("C1") & status["X좌표"].notna()]
+
+    items = {item["id"]: item for item in viewer_items(located)}
+
+    assert set(items) == {"EQ-01", "EQ-02", "M-1"}
+    assert items["M-1"]["group"] == "BIG" and items["EQ-01"]["group"] is None
+    assert items["EQ-01"]["detail"].startswith("Process-A")
+    assert (items["EQ-02"]["x"], items["EQ-02"]["w"]) == (30.0, 12.0)
+    assert all(item["placed"] for item in items.values())

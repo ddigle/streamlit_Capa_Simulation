@@ -1341,3 +1341,25 @@ def test_a_preset_absent_from_this_screen_says_so_instead_of_asking_to_choose(
     assert KEY_PROCESS_ABSENT_NOTICE in json.dumps(labels.to_plotly_json(), ensure_ascii=False)
     card = " ".join(item.value for item in app.sidebar.caption)
     assert "그릴 공정 없음" in card and "이 화면에 없음: ONLY_ELSEWHERE" in card
+
+
+def test_a_long_section_title_stays_on_one_line_and_is_escaped() -> None:
+    """구분 칸(260px) 제목 줄은 높이가 못박혀 있고 월 칸의 짝 빈 줄도 같은 높이다. 긴 프리셋
+    이름이 줄을 바꾸면 그 줄만 높아져 아래 표의 행이 어긋났다 — 넘치면 한 줄로 말줄임하고 전체는
+    풍선으로 보인다. 프리셋 이름은 사용자가 정한 글이라 이스케이프한다."""
+    from capa_simulation.components.home_preference import section_title_markup
+    from capa_simulation.components.home_rendering import dashboard_title_row_style
+
+    markup = section_title_markup("주요공정 확보율 · <b>후공정 핵심 병목 관리 그룹 A</b>")
+
+    assert "white-space:nowrap" in markup and "text-overflow:ellipsis" in markup
+    assert 'title="주요공정 확보율 · &lt;b&gt;후공정 핵심 병목 관리 그룹 A&lt;/b&gt;"' in markup
+    assert "<b>후공정" not in markup
+    # 보이는 글은 `st.markdown` 을 거치므로 마크다운·지시어 글자도 엔티티로 넣는다(`~` 취소선,
+    # `*` 기울임, `$` 수식, `:` 아이콘이 이름 글자를 먹지 않게).
+    marked = section_title_markup("1~2공정 *핵심* $1 :red[x]")
+    assert "1&#126;2공정 &#42;핵심&#42; &#36;1 &#58;red&#91;x&#93;" in marked
+    style = " ".join(dashboard_title_row_style().split())
+    # 줄부터 제목 글까지 모든 겹이 칸 폭 아래로 줄어들어야 말줄임이 칸 안에서 일어난다.
+    assert ".st-key-key_process_title_row *," in style
+    assert "_title_row * { min-width: 0; max-width: 100%; }" in style

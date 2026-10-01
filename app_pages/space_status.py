@@ -37,15 +37,18 @@ from capa_simulation.components.space_layout import (
     BUILDINGS,
     build_fab_figure,
     build_floor_figure,
-    build_floor_layout_figure,
     equipment_unit_total,
     first_selected_customdata,
     floors_for,
     invalid_equipment_rows,
     occupancy_ratio,
     stage_counts,
+    stage_legend_markup,
 )
-from capa_simulation.components.space_layout_editor import render_space_layout_editor
+from capa_simulation.components.space_layout_editor import (
+    render_space_layout_editor,
+    render_space_layout_viewer,
+)
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -80,6 +83,7 @@ from capa_simulation.services.space_layout_edit import (
     other_change_count,
     parse_editor_apply,
     unsaved_unit_ids,
+    viewer_items,
 )
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
@@ -198,7 +202,9 @@ if not isinstance(selected_floor, str) or selected_floor not in valid_floor_name
     selected_floor = None
     st.session_state.pop(SELECTED_FLOOR_KEY, None)
 
-render_page_header("Space 현황 (Data확보중)")
+# 본문 머리에는 상태 배지(「Data확보중」)도 적용 이력 줄도 두지 않는다 — 배치도가 쓸 자리다
+# (2026-10-01 사용자 결정). 사이드바 메뉴 이름은 그대로다.
+render_page_header("Space 현황 (Data확보중)", show_status=False)
 render_page_guide("space_status", title="Space 현황")
 render_flash(SPACE_FLASH_KEY)
 # 배치 편집은 실제 저장본이 있을 때만 — 합성 데모 fleet 을 편집본에 섞으면 첫 실제 저장이 막힌다.
@@ -233,11 +239,6 @@ if using_sample_equipment:
         )
         st.stop()
     st.caption("호기 마스터가 비어 있어 데모 fleet 을 표시합니다.")
-elif latest_snapshot is not None:
-    st.caption(
-        f"적용 이력 r{latest_snapshot.revision.revision_no} · "
-        f"{latest_snapshot.revision.created_at:%Y-%m-%d %H:%M}"
-    )
 
 # 기준일·필터는 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자 결정). 기준일이 먼저다 —
 # 공정·단계 선택지가 그 날의 상태에서 나온다. 이 화면은 배치·공간만 본다 — 기간별 단계 전환은
@@ -754,32 +755,34 @@ else:
         unplaced_equipment["동"].eq(selected_building) & unplaced_equipment["층"].eq(selected_floor)
     ]
     occupancy = occupancy_ratio(floor_equipment, canvas_width, canvas_height)
-    _render_placement_cards(
-        (
-            ("선택 Space", f"{selected_building} {selected_floor}", None),
-            ("배치 설비", _units(equipment_unit_total(floor_counted)), _PLACED_HELP),
-            ("미배치", _units(equipment_unit_total(floor_unplaced)), _UNPLACED_HELP),
-            ("점유율", f"{occupancy:.1%}", _OCCUPANCY_HELP),
-        ),
-        key="space_floor_counts",
-    )
-
     floor_unknown_here = unplaced_equipment["동"].isna() | (
         unplaced_equipment["동"].eq(selected_building).fillna(False)
         & unplaced_equipment["층"].isna()
     )
+    # 층 화면은 카드 없이 배치도가 화면을 쓴다(2026-10-01 사용자 결정). 배치·미배치·점유율은 뷰어
+    # 도구 줄 오른쪽 한 줄 요약이다. 층 미정 미배치는 이 층 미배치에 세지 않고 따로 말한다.
+    summary = (
+        f"배치 {_units(equipment_unit_total(floor_counted))} · "
+        f"미배치 {_units(equipment_unit_total(floor_unplaced))} · 점유율 {occupancy:.1%}"
+    )
     if floor_unknown_here.any():
-        st.caption(
-            f"층이 정해지지 않은 미배치 "
-            f"{_units(equipment_unit_total(unplaced_equipment.loc[floor_unknown_here]))}는 이 층 "
-            "미배치에 세지 않지만 배치 편집기 트레이에 함께 보입니다."
+        summary += (
+            f" · 층 미정 미배치 "
+            f"{_units(equipment_unit_total(unplaced_equipment.loc[floor_unknown_here]))}"
+            "는 배치 편집 트레이에"
         )
 
     with st.container(border=True):
-        st.markdown(f"#### :material/map: {selected_building} {selected_floor} 상세 레이아웃")
-        # 작업 줄은 레이아웃 **위**다. 도면·캔버스 편집은 가끔 하는 쓰기라 팝업이고, 배치 편집은
-        # 켜면 아래 도면이 편집기로 바뀐다(실제 저장본이 있을 때만).
-        with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+        # 머리 줄 하나에 제목·도면·캔버스 편집·배치 편집·상태 범례를 세운다. 배치도 Figure 의 제목과
+        # 범례가 도면 위 한 띠를 따로 먹던 것을 걷었다 — 도면이 테두리 안을 다 쓴다.
+        editing_requested = bool(st.session_state.get(EDIT_MODE_KEY, False))
+        with st.container(
+            horizontal=True, gap="small", vertical_alignment="center", key="space_floor_head"
+        ):
+            st.markdown(
+                f"#### :material/map: {selected_building} {selected_floor} 상세 레이아웃",
+                width="content",
+            )
             render_floor_layout_editor(
                 database_path=equipment_database_path,
                 building=selected_building,
@@ -794,29 +797,49 @@ else:
                     "저장하기 전까지 이 세션에만 있습니다."
                 ),
             )
+            st.space("stretch")
+            # 편집 중에는 편집본을 그리므로 저장본의 대수를 달지 않고 색 뜻만 보인다. 반출·이설을
+            # 마친 호기는 편집기에 나오지 않으니 그 색도 뺀다.
+            st.markdown(
+                stage_legend_markup(None, exclude=EXITED_STATUSES)
+                if editable and editing_requested
+                else stage_legend_markup(stage_counts(floor_counted)),
+                unsafe_allow_html=True,
+                width="content",
+            )
         if editing:
             _render_layout_editor(buffer_frames, selected_building, selected_floor, layout_profile)
         else:
-            st.plotly_chart(
-                build_floor_layout_figure(
-                    floor_equipment,
-                    selected_building,
-                    selected_floor,
-                    background_image=(
-                        layout_profile.image_data_uri if layout_profile is not None else None
-                    ),
-                    canvas_width=canvas_width,
-                    canvas_height=canvas_height,
-                    # 범례에 그 층의 상태별 대수를 붙인다 — 상태 대수는 카드가 아니라 색 옆에 둔다.
-                    stage_counts=stage_counts(floor_counted),
-                    # 저장된 도면 요소(반입구·문·영역 …). 위 카드·도면처럼 저장본이다.
-                    marks=load_floor_layout_marks(
-                        equipment_database_path, selected_building, selected_floor
-                    ),
+            marks = load_floor_layout_marks(
+                equipment_database_path, selected_building, selected_floor
+            )
+            items = viewer_items(floor_equipment)
+            roster = hashlib.sha256(
+                "|".join(str(item["id"]) for item in items).encode()
+            ).hexdigest()[:16]
+            render_space_layout_viewer(
+                key=f"space_layout_viewer_{selected_building}_{selected_floor}",
+                # 저장본·캔버스·요소·그리는 호기(조건 카드 필터)가 바뀌면 새로 선다. 기준일로 단계만
+                # 바뀌면 같은 epoch 로 색만 다시 칠하고 보던 배율을 지킨다.
+                epoch="|".join(
+                    (
+                        "view",
+                        selected_building,
+                        selected_floor,
+                        revision_token(latest_snapshot) if editable else "sample",
+                        f"{canvas_width:g}x{canvas_height:g}",
+                        marks_fingerprint(marks),
+                        roster,
+                    )
                 ),
-                key=f"space_status_layout_chart_{selected_building}_{selected_floor}",
-                width="stretch",
-                config={"displayModeBar": False, "scrollZoom": False},
+                items=items,
+                canvas=(canvas_width, canvas_height),
+                floor=(selected_building, selected_floor),
+                marks=marks,
+                summary=summary,
+                background_image=(
+                    layout_profile.image_data_uri if layout_profile is not None else None
+                ),
             )
     st.dataframe(
         floor_equipment,

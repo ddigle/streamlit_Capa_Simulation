@@ -60,15 +60,18 @@ def render_page_header(
     *,
     description: str | None = None,
     badges: str | None = None,
+    show_status: bool = True,
 ) -> None:
     """페이지 제목과 설명을 그린다.
 
     `title` 에 `(구현중)` 이 붙어 있으면 제목에서 떼어 배지로 보여준다. 제목 줄이
-    짧아지고 미구현 여부가 색으로 먼저 읽힌다.
+    짧아지고 미구현 여부가 색으로 먼저 읽힌다. `show_status=False` 면 배지를 그리지 않는다 —
+    `title` 은 그대로 사이드바 라벨과 같게 넘긴다(두 제목이 같다는 계약은 표기 유무와 무관하다).
+    Space 현황이 그렇다(2026-10-01 사용자 결정 — 본문은 배치도가 쓸 자리다).
     """
     heading, status_badge = _split_status_suffix(title)
     st.title(heading)
-    _render_marks(status_badge, badges, description)
+    _render_marks(status_badge if show_status else None, badges, description)
 
 
 def render_page_header_with_status(

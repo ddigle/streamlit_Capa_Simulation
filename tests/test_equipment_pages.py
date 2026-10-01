@@ -4,9 +4,11 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from streamlit.testing.v1 import AppTest
 from test_floor_layout_profile import _png
 
+from capa_simulation.components import space_layout_editor
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -156,7 +158,9 @@ def test_space_page_opens_with_empty_database(tmp_path: Path) -> None:
 
     assert not app.exception
     assert app.title[0].value == "Space 현황"
-    assert any("Data확보중" in element.value for element in app.markdown)
+    # 본문 머리에는 상태 배지도 적용 이력 줄도 없다 — 배치도가 쓸 자리다(2026-10-01 사용자 결정).
+    assert not any("Data확보중" in element.value for element in app.markdown)
+    assert not any("적용 이력" in element.value for element in app.caption)
 
 
 def test_space_page_with_the_sample_switch_off_keeps_a_card_under_the_sidebar_title(
@@ -184,7 +188,7 @@ def test_space_page_with_the_sample_switch_off_keeps_a_card_under_the_sidebar_ti
 
 
 def test_space_page_counts_placement_and_leaves_stage_transitions_to_availability(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Space 는 배치·공간만 본다. 기간별 단계 전환은 가용설비 현황 Main 의 「단계 전환」이다."""
     page_path = PROJECT_ROOT / "app_pages" / "space_status.py"
@@ -218,20 +222,23 @@ def test_space_page_counts_placement_and_leaves_stage_transitions_to_availabilit
         "캔버스",
     ]
 
+    viewer: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        space_layout_editor, "_EDITOR", lambda **kwargs: viewer.append(kwargs["data"])
+    )
     app.session_state["space_status_selected_floor"] = "1F"
     app.run()
     assert not app.exception
-    assert [metric.label for metric in app.metric] == [
-        "선택 Space",
-        "배치 설비",
-        "미배치",
-        "점유율",
-    ]
-    assert next(metric.value for metric in app.metric if metric.label == "점유율").endswith("%")
+    # 층 화면은 카드 없이 배치도가 화면을 쓴다. 배치·미배치·점유율은 뷰어 도구 줄의 한 줄 요약이다.
+    assert not app.metric
+    data = viewer[-1]
+    assert data["mode"] == "view"
+    assert "배치 " in str(data["summary"]) and str(data["summary"]).count("%") == 1
+    assert not any("Space 배치도" in element.value for element in app.markdown)
 
 
 def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_canvas(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     database_path = tmp_path / "space_layout.duckdb"
     repository = DuckDBEquipmentRepository(database_path)
@@ -239,6 +246,10 @@ def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_can
     repository.save_floor_layout_image("C1", "1F", "c1_1f.png", _png(4000, 1500))
     clear_equipment_repository()
 
+    viewer: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        space_layout_editor, "_EDITOR", lambda **kwargs: viewer.append(kwargs["data"])
+    )
     page_path = PROJECT_ROOT / "app_pages" / "space_status.py"
     app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60)
     app.session_state["space_status_selected_building"] = "C1"
@@ -246,6 +257,9 @@ def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_can
     app.run()
 
     assert not app.exception
+    # 뷰어는 도면의 캔버스와 배경 도면을 받는다.
+    assert viewer[-1]["canvas"] == {"width": 100.0, "height": 37.5}
+    assert str(viewer[-1]["backgroundImage"]).startswith("data:image/png")
     # 도면·캔버스 편집은 레이아웃 위 작업 줄의 팝업이다 — 닫혀 있는 동안 본문을 차지하지 않는다.
     assert len(app.get("file_uploader")) == 0
     app.button(key="space_floor_layout_open_C1_1F").click().run()

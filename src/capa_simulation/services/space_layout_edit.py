@@ -1,4 +1,4 @@
-# Purpose: Space 배치 편집기의 입력을 만들고 적용값을 검증해 설비 편집본에 얹는 순수 계산을 모은다.
+# Purpose: Space 배치 편집기·뷰어 입력을 만들고 적용값을 검증해 편집본에 얹는 순수 계산을 모은다.
 
 """Space 배치 편집기(드래그앤드롭)의 파이썬 쪽 계산.
 
@@ -752,3 +752,30 @@ def unsaved_unit_ids(
         if now == here and before != here and "" not in before:
             arrived.add(unit_id)
     return new_ids, arrived
+
+
+def viewer_items(located: pd.DataFrame) -> list[dict[str, Any]]:
+    """층 상세 뷰어(편집기와 같은 도면, 보기 전용)에 보낼 저장본 호기. 좌표·크기가 다 있는 행만
+    받는다. `detail` 은 풍선·선택 줄에 붙는 공정과 운영 비가동이다."""
+    items: list[dict[str, Any]] = []
+    parents = _parents(located)
+    for (_, row), parent in zip(located.iterrows(), parents, strict=True):
+        process = _text(row.get("공정소분류")).strip()
+        downtime = _text(row.get("비가동유형")).strip()
+        items.append(
+            {
+                "id": str(row["호기"]).strip(),
+                "label": str(row["호기"]).strip(),
+                "stage": _text(row.get("상태")),
+                "x": _finite(row["X좌표"]),
+                "y": _finite(row["Y좌표"]),
+                "w": _finite(row["Xsize"]),
+                "h": _finite(row["Ysize"]),
+                "placed": True,
+                "group": str(parent) if _present(parent) else None,
+                "detail": " · ".join(
+                    part for part in (process, f"비가동 {downtime}" if downtime else "") if part
+                ),
+            }
+        )
+    return items

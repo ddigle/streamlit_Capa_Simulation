@@ -179,3 +179,19 @@
 .sle-area-note:empty { display: none; }
 .sle-inspector.is-empty .sle-inspector-name { font-weight: 400; color: var(--sle-muted); }
 @media (max-width: 720px) { .sle-body { flex-direction: column; } .sle-tray { width: 100%; } }
+
+/* ---- 보기 전용(Space 층 상세 뷰어) — 편집 도구를 숨기고 같은 도면을 보인다 ---- */
+.sle:not(.is-view) .sle-view-only, .sle.is-view .sle-edit-only { display: none !important; }
+.sle.is-view .sle-handle { display: none; }
+.sle.is-view .sle-item { cursor: pointer; }
+.sle.is-view .sle-canvas.is-zoomed { cursor: grab; }
+.sle.is-view .sle-canvas.is-panning { cursor: grabbing; }
+/* 선택 줄은 남는 폭만 쓰는 한 줄 칸이다. 글자 폭으로 줄 접힘에 끼면 고를 때마다 도구 줄 높이가
+   바뀌어 도면이 위아래로 튀고, 더블클릭의 둘째 클릭이 다른 자리에 떨어진다. */
+.sle-pick {
+  flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 0.82rem; color: var(--sle-text); margin-left: 6px; font-variant-numeric: tabular-nums;
+}
+.sle.is-view .sle-spacer { display: none; }
+.sle-pick:empty::before { content: attr(data-hint); color: var(--sle-muted); }
+.sle-summary { font-size: 0.82rem; color: var(--sle-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }

@@ -66,10 +66,9 @@ def test_the_editor_receives_the_floor_from_the_shared_draft(
     ]
     assert data["floor"] == "C1 1F" and "C2 2F" in data["floors"]
     assert data["canvas"] == {"width": 100.0, "height": 60.0}
-    # 편집 중에는 Plotly 배치도 대신 편집기다.
-    assert not any(
-        "space_status_layout_chart" in str(chart.proto) for chart in app.get("plotly_chart")
-    )
+    # 편집을 켜기 전 회차는 보기 전용 뷰어였고, 켠 뒤에는 뷰어를 부르지 않는다(도면 자리에 편집기).
+    assert editor_calls[0]["mode"] == "view"
+    assert data.get("mode") != "view"
     clear_equipment_repository()
 
 

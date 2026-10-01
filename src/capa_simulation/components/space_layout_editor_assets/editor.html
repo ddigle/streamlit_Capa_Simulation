@@ -1,8 +1,9 @@
 <div class="sle" lang="ko">
   <div class="sle-toolbar">
-    <span class="sle-title"></span>
-    <div class="sle-steps" role="group" aria-label="격자 간격">
+    <span class="sle-title sle-edit-only"></span>
+    <div class="sle-steps sle-edit-only" role="group" aria-label="격자 간격">
       <span class="sle-label-text">격자</span>
+      <button type="button" data-step="0.1">0.1</button>
       <button type="button" data-step="0.5">0.5</button>
       <button type="button" data-step="1">1</button>
       <button type="button" data-step="2">2</button>
@@ -14,13 +15,15 @@
       <button type="button" class="sle-zoom-fit" title="전체 보기 (0)">전체 보기</button>
       <button type="button" class="sle-zoom-sel">고른 곳 보기</button>
     </div>
-    <button type="button" class="sle-undo" title="Ctrl+Z">실행 취소</button>
-    <button type="button" class="sle-reset">처음 상태로</button>
-    <button type="button" class="sle-unplace" title="Delete — 호기는 트레이로, 도면 요소는 지웁니다">빼기·지우기</button>
+    <button type="button" class="sle-undo sle-edit-only" title="Ctrl+Z">실행 취소</button>
+    <button type="button" class="sle-reset sle-edit-only">처음 상태로</button>
+    <button type="button" class="sle-unplace sle-edit-only" title="Delete — 호기는 트레이로, 도면 요소는 지웁니다">빼기·지우기</button>
+    <span class="sle-pick sle-view-only" aria-live="polite"></span>
     <span class="sle-spacer"></span>
-    <button type="button" class="sle-apply">적용</button>
+    <span class="sle-summary sle-view-only"></span>
+    <button type="button" class="sle-apply sle-edit-only">적용</button>
   </div>
-  <div class="sle-panels">
+  <div class="sle-panels sle-edit-only">
     <div class="sle-panel sle-palette" role="group" aria-label="도면 요소 넣기">
       <span class="sle-panel-title">도면 요소</span>
       <button type="button" data-kind="zone" title="눌러서 넣거나 도면으로 끌어 놓기">
@@ -91,7 +94,7 @@
         <g class="sle-overlay"></g>
       </svg>
     </div>
-    <aside class="sle-tray">
+    <aside class="sle-tray sle-edit-only">
       <div class="sle-tray-title">미배치 호기 <span class="sle-tray-count"></span></div>
       <div class="sle-addunit">
         <button type="button" class="sle-addunit-toggle" aria-expanded="false">+ 호기 추가</button>
@@ -122,5 +125,5 @@
       <p class="sle-tray-hint">끌어서 도면에 놓으면 그 자리에 배치됩니다. 누르기만 하면 골라져 다른 층으로 보낼 수 있습니다. <b>층 미정</b> 호기는 모든 층 트레이에 보입니다.</p>
     </aside>
   </div>
-  <div class="sle-status" aria-live="polite"></div>
+  <div class="sle-status sle-edit-only" aria-live="polite"></div>
 </div>

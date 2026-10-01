@@ -241,6 +241,15 @@ def dashboard_title_row_style() -> str:
     .st-key-plan_detail_title_row,
     .st-key-key_process_title_row,
     .st-key-bottleneck_title_row {{ align-items: center; }}
+    /* 구분 칸의 세 제목 줄은 **넘쳐도 한 줄**이다(`section_title_markup` 이 말줄임한다). 그러려면
+       줄부터 제목 글까지 모든 겹이 칸 폭 아래로 줄어들 수 있어야 한다 — flex 항목의 기본
+       `min-width:auto` 가 한 겹이라도 남으면 제목이 칸 밖(월 칸 위)으로 삐져나간다. */
+    .st-key-plan_detail_title_row,
+    .st-key-key_process_title_row,
+    .st-key-bottleneck_title_row {{ overflow: hidden; }}
+    .st-key-plan_detail_title_row *,
+    .st-key-key_process_title_row *,
+    .st-key-bottleneck_title_row * {{ min-width: 0; max-width: 100%; }}
     /* 범례는 제목과 같은 줄의 오른쪽 끝이다. 아래 월 영역 위에 얹힌 가로
        스크롤바와 겹치지 않게 별도 블록으로 두지 않는다. */
     /* 범례는 제목 줄의 오른쪽 끝이다. `margin-left:auto` 를 받아야 하는 것은 **flex

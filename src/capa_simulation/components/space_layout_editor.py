@@ -1,8 +1,8 @@
-# Purpose: Space 층 도면에서 호기·도면 요소를 끌어 놓아 배치를 고치는 Components v2 편집기를 그린다.
+# Purpose: Space 층 도면의 Components v2 편집기(끌어 놓아 배치 고치기)와 보기 전용 뷰어를 그린다.
 
-"""드래그앤드롭 배치 편집기.
+"""드래그앤드롭 배치 편집기. 같은 도면의 보기 전용 층 상세 뷰어(`mode="view"`)도 이것이다.
 
-좌표 계약은 `space_layout.build_floor_layout_figure` 와 같다: 원점은 **왼쪽 아래**, Y 는 위로 커지고
+좌표 계약은 호기 마스터와 같다: 원점은 **왼쪽 아래**, Y 는 위로 커지고
 호기 사각형은 (X좌표, Y좌표) → (X좌표+Xsize, Y좌표+Ysize) 다. SVG 는 위가 0 이라
 화면 y = 캔버스 높이 − (Y좌표 + Ysize) 로 바꿔 그린다.
 
@@ -92,6 +92,69 @@ def _palette() -> dict[str, str]:
     }
 
 
+def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """브라우저로 보낼 호기. 숫자 아님은 None 으로, 모체호기는 글자일 때만 묶음으로."""
+    return [
+        {
+            "id": str(item["id"]),
+            "label": str(item.get("label", item["id"])),
+            "stage": str(item.get("stage") or ""),
+            "detail": str(item.get("detail") or ""),
+            "x": _finite_or_none(item.get("x")),
+            "y": _finite_or_none(item.get("y")),
+            "w": _finite_or_none(item.get("w")),
+            "h": _finite_or_none(item.get("h")),
+            "placed": bool(item.get("placed")),
+            "isNew": bool(item.get("is_new")),
+            "arrived": bool(item.get("arrived")),
+            "floorless": bool(item.get("floorless")),
+            "group": item["group"]
+            if isinstance(item.get("group"), str) and item["group"]
+            else None,
+        }
+        for item in items
+    ]
+
+
+def render_space_layout_viewer(
+    *,
+    key: str,
+    epoch: str,
+    items: Sequence[Mapping[str, Any]],
+    canvas: CanvasSize,
+    floor: FloorKey,
+    marks: Sequence[FloorLayoutMark],
+    summary: str,
+    background_image: str | None = None,
+) -> None:
+    """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
+    화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
+    오른쪽의 한 줄 요약(배치·미배치·점유율)이다. 돌려받는 값이 없다."""
+    _EDITOR(
+        key=key,
+        data={
+            "mode": "view",
+            "epoch": epoch,
+            "title": floor_label(floor),
+            "summary": summary,
+            "items": _clean_items(items),
+            "marks": [mark.editor_payload() for mark in marks],
+            "canvas": {"width": canvas[0], "height": canvas[1]},
+            "canvasLimits": {"min": MIN_CANVAS_EXTENT, "max": MAX_CANVAS_EXTENT},
+            "decimals": CANVAS_DECIMALS,
+            "palette": _palette(),
+            "stageColors": dict(tokens.EQUIPMENT_STAGE_COLORS),
+            "markColors": mark_colors(),
+            "backgroundImage": background_image,
+            "floor": floor_label(floor),
+            "floors": [],
+            "newUnit": {},
+        },
+        on_apply_change=lambda: None,
+        width="stretch",
+    )
+
+
 def render_space_layout_editor(
     *,
     key: str,
@@ -116,25 +179,7 @@ def render_space_layout_editor(
     - ``canvas``: 편집 영역을 바꿨을 때만 ``{width, height}``.
     - ``marks``: 도면 요소를 바꿨을 때만 이 층 요소 전체 목록, 아니면 None.
     """
-    items = [
-        {
-            "id": str(item["id"]),
-            "label": str(item.get("label", item["id"])),
-            "stage": str(item.get("stage") or ""),
-            "x": _finite_or_none(item.get("x")),
-            "y": _finite_or_none(item.get("y")),
-            "w": _finite_or_none(item.get("w")),
-            "h": _finite_or_none(item.get("h")),
-            "placed": bool(item.get("placed")),
-            "isNew": bool(item.get("is_new")),
-            "arrived": bool(item.get("arrived")),
-            "floorless": bool(item.get("floorless")),
-            "group": item["group"]
-            if isinstance(item.get("group"), str) and item["group"]
-            else None,
-        }
-        for item in inputs.items
-    ]
+    items = _clean_items(inputs.items)
     result = _EDITOR(
         key=key,
         data={

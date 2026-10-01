@@ -9,16 +9,13 @@ from capa_simulation.components.space_layout import (
     BUILDINGS,
     build_fab_figure,
     build_floor_figure,
-    build_floor_layout_figure,
-    floor_layout_figure_height,
     floors_for,
     invalid_equipment_rows,
-    keep_out_color,
     occupancy_ratio,
     stage_counts,
+    stage_legend_markup,
 )
 from capa_simulation.design.tokens import EQUIPMENT_STAGE_COLORS
-from capa_simulation.services.floor_layout_mark import prepare_floor_layout_marks
 
 
 def _space_equipment() -> pd.DataFrame:
@@ -129,28 +126,6 @@ def test_occupancy_is_box_area_over_canvas_area() -> None:
     assert occupancy_ratio(placed, 0.0, 60.0) == 0.0
 
 
-def test_floor_layout_legend_carries_the_floor_counts() -> None:
-    equipment = _space_equipment().loc[lambda frame: frame["동"].eq("C1")]
-
-    counted = build_floor_layout_figure(equipment, "C1", "1F", stage_counts=stage_counts(equipment))
-    plain = build_floor_layout_figure(equipment, "C1", "1F")
-
-    assert [trace.name for trace in counted.data if trace.name] == ["셋업 진행중 1대", "가용 1대"]
-    # 대수를 주지 않으면 모든 상태의 색 범례만 둔다.
-    assert [trace.name for trace in plain.data if trace.name] == list(EQUIPMENT_STAGE_COLORS)
-
-
-def test_floor_layout_uses_status_colors_and_input_sizes() -> None:
-    equipment = _space_equipment().loc[lambda frame: frame["동"].eq("C1")]
-    figure = build_floor_layout_figure(equipment, "C1", "1F")
-
-    equipment_shapes = list(figure.layout.shapes)[1:]
-    assert equipment_shapes[0].fillcolor == EQUIPMENT_STAGE_COLORS["가용"]
-    assert equipment_shapes[1].fillcolor == EQUIPMENT_STAGE_COLORS["셋업 진행중"]
-    assert float(equipment_shapes[0].y1) - float(equipment_shapes[0].y0) == pytest.approx(8)
-    assert float(equipment_shapes[1].y1) - float(equipment_shapes[1].y0) == pytest.approx(6)
-
-
 def test_invalid_equipment_rows_detects_out_of_canvas_equipment() -> None:
     equipment = pd.DataFrame(
         [
@@ -178,86 +153,18 @@ def test_invalid_equipment_rows_follow_the_floor_canvas() -> None:
     assert invalid_equipment_rows(equipment) == [2]
 
 
-def test_floor_layout_without_a_drawing_keeps_the_previous_canvas() -> None:
-    equipment = _space_equipment().loc[lambda frame: frame["동"].eq("C1")]
+def test_the_floor_legend_names_only_the_states_on_the_floor_with_counts() -> None:
+    """층 상세 범례는 머리 줄 오른쪽의 HTML 칩이다. 그 층에 있는 상태만 대수와 함께, 편집 중
+    (`None`)에는 모든 상태의 색 뜻만 보인다."""
+    counted = stage_legend_markup({"가용": 5.0, "운영 비가동": 0.75})
+    plain = stage_legend_markup(None, exclude=("반출 완료", "이설 완료"))
 
-    figure = build_floor_layout_figure(equipment, "C1", "1F")
-
-    canvas = figure.layout.shapes[0]
-    assert (canvas.x0, canvas.x1, canvas.y0, canvas.y1) == (0, 100, 0, 60)
-    assert figure.layout.xaxis.range == (0.0, 100.0)
-    assert figure.layout.yaxis.range == (0.0, 60.0)
-    assert figure.layout.height == 600
-    assert figure.layout.xaxis.dtick == 10
-    assert figure.layout.yaxis.dtick == 10
-    assert figure.layout.images == ()
-
-
-def test_floor_layout_draws_the_uploaded_drawing_on_the_floor_canvas() -> None:
-    equipment = _space_equipment().loc[lambda frame: frame["동"].eq("C1")]
-
-    figure = build_floor_layout_figure(
-        equipment,
-        "C1",
-        "1F",
-        background_image="data:image/png;base64,AAAA",
-        canvas_width=100.0,
-        canvas_height=37.5,
+    assert "가용 5대" in counted and "운영 비가동 0.75대" in counted
+    assert "셋업 진행중" not in counted
+    assert EQUIPMENT_STAGE_COLORS["가용"] in counted
+    # 편집 중 범례는 편집기에 나오지 않는 퇴장 상태를 뺀다.
+    assert all(
+        (status in plain) != (status in ("반출 완료", "이설 완료"))
+        for status in EQUIPMENT_STAGE_COLORS
     )
-
-    image = figure.layout.images[0]
-    assert image.source == "data:image/png;base64,AAAA"
-    # xref·yref 가 없으면 plotly 가 paper 좌표로 읽어 도면이 화면 밖으로 나간다.
-    assert (image.xref, image.yref) == ("x", "y")
-    assert (image.x, image.y, image.sizex, image.sizey) == (0, 37.5, 100.0, 37.5)
-    canvas = figure.layout.shapes[0]
-    assert (canvas.x1, canvas.y1) == (100.0, 37.5)
-    assert figure.layout.yaxis.range == (0.0, 37.5)
-    assert figure.layout.height == floor_layout_figure_height(100.0, 37.5)
-    assert figure.layout.height == 375
-
-
-def test_the_floor_layout_draws_saved_marks_around_the_equipment() -> None:
-    """영역은 호기 아래, 반입구·문·기둥은 호기 위에 그린다. 이름표는 이스케이프한다."""
-    equipment = _space_equipment().loc[lambda frame: frame["동"].eq("C1")]
-    marks = prepare_floor_layout_marks(
-        [
-            {"id": "Z", "kind": "zone", "x": 0, "y": 0, "w": 20, "h": 10, "label": "<b>정비</b>"},
-            {"id": "K", "kind": "zone", "x": 30, "y": 0, "w": 10, "h": 10, "keepOut": True},
-            {"id": "S", "kind": "shutter", "x": 50, "y": 0, "w": 12, "h": 5, "label": "반입"},
-            {"id": "D", "kind": "door", "x": 70, "y": 0, "w": 4, "h": 4, "rot": 90},
-            {"id": "C", "kind": "column", "x": 80, "y": 20, "w": 1.5, "h": 1.5},
-            {"id": "T", "kind": "text", "x": 5, "y": 40, "w": 14, "h": 3, "label": "메모"},
-            {"id": "A", "kind": "arrow", "x": 30, "y": 40, "w": 16, "h": 3},
-        ],
-        (100.0, 60.0),
-    )
-
-    plain = build_floor_layout_figure(equipment, "C1", "1F")
-    figure = build_floor_layout_figure(equipment, "C1", "1F", marks=marks)
-
-    shapes = list(figure.layout.shapes)
-    equipment_count = len(plain.layout.shapes) - 1
-    # 캔버스 · 영역 둘(채움·테두리씩 4) · 호기 · 반입구 1 · 문 2 · 기둥 1
-    assert len(shapes) == 1 + 4 + equipment_count + 4
-    assert all(shape.layer == "below" for shape in shapes[1:5])
-    assert shapes[3].fillcolor == keep_out_color()
-    assert all(shape.layer == "above" for shape in shapes[5 + equipment_count :])
-    texts = [annotation.text for annotation in figure.layout.annotations]
-    assert "<b>&lt;b&gt;정비&lt;/b&gt;</b>" in texts
-    assert "<b>영역 · 설비 금지</b>" in texts and "<b>메모</b>" in texts and "반입" in texts
-    # 반입구·동선 화살표는 글자 없는 화살표 주석이다.
-    assert sum(1 for annotation in figure.layout.annotations if annotation.showarrow) == 2
-
-
-def test_a_rotated_door_keeps_its_hinge_on_the_wall() -> None:
-    """편집기와 같은 회전: 0° 는 아래 변이 벽, 90° 는 왼쪽 변이 벽이다(시계 방향)."""
-    (door,) = prepare_floor_layout_marks(
-        [{"id": "D", "kind": "door", "x": 10, "y": 10, "w": 4, "h": 4, "rot": 90}], (100.0, 60.0)
-    )
-    figure = build_floor_layout_figure(_space_equipment().iloc[0:0], "C1", "1F", marks=[door])
-
-    leaf = next(shape for shape in figure.layout.shapes if shape.type == "path")
-    start, end = (tuple(float(v) for v in point.split()) for point in leaf.path[2:].split(" L "))
-    # 경첩은 벽(왼쪽 변 x = 10)의 위 끝이고, 열린 문짝은 벽과 직각으로 윗변을 따라 놓인다.
-    assert start == pytest.approx((10, 14)) and end == pytest.approx((14, 14))
+    assert "대<" not in plain

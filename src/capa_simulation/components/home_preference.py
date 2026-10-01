@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import html
 from collections.abc import Collection, Sequence
 
 import pandas as pd
@@ -113,6 +114,12 @@ STATUS_LEGEND_ROW_KEY = "home_status_legend"
 STATUS_LEGEND_CLASS = "capa-status-legend"
 
 
+# 마크다운·Streamlit 지시어·HTML 로 읽히는 글자 → 숫자 엔티티. 구획 제목에 사용자 이름이 들어간다.
+_MARKDOWN_SAFE = str.maketrans(
+    {char: f"&#{ord(char)};" for char in r"\`*_{}[]()#+-.!|~$:<>&'" + '"'}
+)
+
+
 def render_section_title_row(text: str, *, key: str) -> None:
     """구획 제목 줄. `Capa LOB 현황` 줄과 같은 높이·같은 모양이다.
 
@@ -120,7 +127,8 @@ def render_section_title_row(text: str, *, key: str) -> None:
     하나만 Plotly 주석으로 남겨 두면 그 구획만 간격이 다르다.
     """
     with st.container(key=key, horizontal=True, vertical_alignment="center", gap="medium"):
-        st.markdown(section_title_markup(text), unsafe_allow_html=True)
+        # 줄 폭을 채워야 넘친 제목이 줄 안에서 말줄임된다(내용 폭이면 칸 밖으로 삐져나간다).
+        st.markdown(section_title_markup(text), unsafe_allow_html=True, width="stretch")
 
 
 def section_title_markup(text: str) -> str:
@@ -136,14 +144,24 @@ def section_title_markup(text: str) -> str:
     감싸개 `margin-bottom: -15px` 짝을 함께 끌고 와(`app.py` 의 제목 CSS) 이미 맞춰 둔 제목
     줄 높이가 다시 어긋난다. 레벨이 2 인 것은 페이지 제목이 h1 이고 상세 B/N 구획 안에 h4 가
     이미 있기 때문이다.
+
+    **한 줄을 넘지 않는다.** 제목 줄은 높이를 못박은 줄이고 월 칸의 짝 빈 줄도 같은 높이다.
+    프리셋 이름처럼 사용자가 정한 긴 글이 구분 칸(260px)에서 줄을 바꾸면 이 줄만 높아져 아래
+    표의 행이 월 칸과 어긋났다(2026-10-01 사용자 보고). 넘치면 말줄임하고 전체 글은 풍선
+    (`title`)으로 보인다. 글은 사용자가 정한 이름일 수 있어 이스케이프한다.
     """
+    safe = html.escape(text)
+    # 보이는 글은 `st.markdown` 을 거친다. HTML 이스케이프만 하면 `~`(취소선)·`*`(기울임)·`$`(수식)·
+    # `:`(아이콘 지시어) 같은 마크다운 글자가 해석돼 프리셋 이름 글자가 사라진다 — 숫자 엔티티로.
+    visible = text.translate(_MARKDOWN_SAFE)
     return (
-        f'<span role="heading" aria-level="2" '
-        f'style="display:inline-flex;align-items:center;'
+        f'<span role="heading" aria-level="2" title="{safe}" '
+        f'style="display:inline-flex;align-items:center;max-width:100%;min-width:0;'
         f"gap:{SECTION_BAR_GAP_PX}px;"
         f'font-size:{SECTION_TITLE_FONT_PX}px;font-weight:700;line-height:1.2">'
         f'<span aria-hidden="true" style="{section_accent_bar_css()}"></span>'
-        f"{text}</span>"
+        f'<span style="min-width:0;overflow:hidden;white-space:nowrap;'
+        f'text-overflow:ellipsis">{visible}</span></span>'
     )
 
 

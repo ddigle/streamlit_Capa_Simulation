@@ -1,34 +1,27 @@
-# Purpose: FAB 동·층·설비 좌표를 집계하고 3단계 Space Plotly Figure를 생성한다.
+# Purpose: FAB 동·층 정의와 배치 집계, FAB·동 Plotly Figure, 층 상세 범례·도면 요소 색을 만든다.
 
 from __future__ import annotations
 
 import html
-import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Final, cast
+from typing import Final
 
 import pandas as pd
 import plotly.graph_objects as go
 
-from capa_simulation.components.plotly_layout import append_layout_items, flush_layout_items
+from capa_simulation.components.plotly_layout import flush_layout_items
 from capa_simulation.design import theme, tokens
 from capa_simulation.services.equipment_units import (
     UNIT_SHARE_COLUMN,
     format_unit_count,
     unit_total,
 )
-from capa_simulation.services.floor_layout_mark import MARK_COLOR_KEYS, FloorLayoutMark
+from capa_simulation.services.floor_layout_mark import MARK_COLOR_KEYS
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
     DEFAULT_CANVAS_WIDTH,
 )
-
-# 기본 캔버스(100×60)에서의 층 상세 Figure 픽셀 높이와 격자 칸 수.
-LAYOUT_BASE_FIGURE_HEIGHT: Final = 600
-LAYOUT_MIN_FIGURE_HEIGHT: Final = 320
-LAYOUT_MAX_FIGURE_HEIGHT: Final = 900
-LAYOUT_GRID_DIVISIONS: Final = 10
 
 
 @dataclass(frozen=True)
@@ -258,312 +251,26 @@ def keep_out_color() -> str:
     return tokens.DELTA_AREA_DECREASE if theme.current_mode() == "dark" else tokens.STATUS_SHORTAGE
 
 
-def _local_to_data(mark: FloorLayoutMark, u: float, v: float) -> tuple[float, float]:
-    """요소의 제자리 좌표(돌리기 전 크기, 위가 0 인 화면식)를 데이터 좌표(왼쪽 아래 원점)로 바꾼다.
-    편집기 SVG 와 같은 변환이다 — 상자 가운데를 축으로 시계 방향 회전, 0° 일 때 아래 변이 벽."""
-    rotation = math.radians(mark.rotation)
-    width, height = (mark.h, mark.w) if mark.rotation % 180 else (mark.w, mark.h)
-    du, dv = u - width / 2, v - height / 2
-    x = du * math.cos(rotation) - dv * math.sin(rotation)
-    y = du * math.sin(rotation) + dv * math.cos(rotation)
-    return mark.x + mark.w / 2 + x, mark.y + mark.h / 2 - y
-
-
-def _mark_layout_items(
-    marks: Sequence[FloorLayoutMark],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    """(호기 아래 영역 도형, 호기 위 요소 도형, 글자). 이름표는 사용자 글자라 이스케이프한다."""
-    colors = mark_colors()
-    ink = tokens.SPACE_TEXT
-    zones: list[dict[str, Any]] = []
-    shapes: list[dict[str, Any]] = []
-    labels: list[dict[str, Any]] = []
-    for mark in marks:
-        x0, y0, x1, y1 = mark.x, mark.y, mark.x + mark.w, mark.y + mark.h
-        width, height = (mark.h, mark.w) if mark.rotation % 180 else (mark.w, mark.h)
-        label = html.escape(mark.label)
-
-        def path(points: Sequence[tuple[float, float]], *, item: FloorLayoutMark = mark) -> str:
-            data = [_local_to_data(item, u, v) for u, v in points]
-            return "M " + " L ".join(f"{px:.3f} {py:.3f}" for px, py in data)
-
-        if mark.kind == "zone":
-            color = keep_out_color() if mark.keep_out else colors.get(mark.color, colors["gray"])
-            box = {"type": "rect", "x0": x0, "y0": y0, "x1": x1, "y1": y1, "layer": "below"}
-            zones.append({**box, "fillcolor": color, "opacity": 0.16, "line": {"width": 0}})
-            zones.append({**box, "line": {"color": color, "width": 1.5, "dash": "dash"}})
-            caption = html.escape(mark.label or "영역") + (" · 설비 금지" if mark.keep_out else "")
-            labels.append(
-                {
-                    "x": x0,
-                    "y": y1,
-                    "text": f"<b>{caption}</b>",
-                    "showarrow": False,
-                    "xanchor": "left",
-                    "yanchor": "top",
-                    "font": {"size": 10, "color": ink},
-                }
-            )
-        elif mark.kind == "column":
-            shapes.append(
-                {
-                    "type": "rect",
-                    "x0": x0,
-                    "y0": y0,
-                    "x1": x1,
-                    "y1": y1,
-                    "fillcolor": tokens.SPACE_LABEL_TEXT,
-                    "line": {"color": ink, "width": 1},
-                    "layer": "above",
-                }
-            )
-        elif mark.kind == "shutter":
-            # 반입구: 벽(0° 일 때 아래 변)에 굵은 셔터, 안쪽으로 들어오는 화살표.
-            shapes.append(
-                {
-                    "type": "path",
-                    "path": path([(0, height), (width, height)]),
-                    "line": {"color": ink, "width": 5},
-                    "layer": "above",
-                }
-            )
-            tail = _local_to_data(mark, width / 2, height * 0.75)
-            head = _local_to_data(mark, width / 2, height * 0.15)
-            labels.append(_arrow(tail, head, color=ink, width=2))
-        elif mark.kind == "door":
-            # 여닫이문: 왼쪽 아래가 경첩, 문짝과 열리는 궤적(사분원).
-            arc = [
-                (
-                    width * math.sin(step * math.pi / 24),
-                    height - height * math.cos(step * math.pi / 24),
-                )
-                for step in range(13)
-            ]
-            shapes.append(
-                {
-                    "type": "path",
-                    "path": path([(0, height), (0, 0)]),
-                    "line": {"color": ink, "width": 3},
-                    "layer": "above",
-                }
-            )
-            shapes.append(
-                {
-                    "type": "path",
-                    "path": path(arc),
-                    "line": {"color": ink, "width": 1, "dash": "dot"},
-                    "layer": "above",
-                }
-            )
-        elif mark.kind == "text":
-            labels.append(
-                {
-                    "x": (x0 + x1) / 2,
-                    "y": (y0 + y1) / 2,
-                    "text": f"<b>{label or '글자'}</b>",
-                    "showarrow": False,
-                    "textangle": mark.rotation,
-                    "font": {"size": 12, "color": ink},
-                }
-            )
-            continue
-        elif mark.kind == "arrow":
-            tail = _local_to_data(mark, height * 0.3, height / 2)
-            head = _local_to_data(mark, width, height / 2)
-            labels.append(_arrow(tail, head, color=tokens.ACCENT, width=3))
-        if label and mark.kind in ("shutter", "door", "arrow"):
-            # 이름표는 돌리지 않고 상자 바깥 방 쪽(반입구·문)이나 옆(동선)에 가로로 쓴다 — 편집기와
-            # 같은 자리다. 0° 일 때 방은 위쪽이다(아래 변이 벽).
-            if mark.kind == "arrow":
-                side = "right" if mark.rotation % 180 else "up"
-            else:
-                side = {0: "up", 90: "right", 180: "down", 270: "left"}[mark.rotation]
-            middle_x, middle_y = (x0 + x1) / 2, (y0 + y1) / 2
-            anchor = {
-                "up": {"x": middle_x, "y": y1, "yanchor": "bottom"},
-                "down": {"x": middle_x, "y": y0, "yanchor": "top"},
-                "right": {"x": x1, "y": middle_y, "xanchor": "left"},
-                "left": {"x": x0, "y": middle_y, "xanchor": "right"},
-            }[side]
-            labels.append(
-                {**anchor, "text": label, "showarrow": False, "font": {"size": 10, "color": ink}}
-            )
-    return zones, shapes, labels
-
-
-def _arrow(
-    tail: tuple[float, float], head: tuple[float, float], *, color: str, width: float
-) -> dict[str, Any]:
-    return {
-        "x": head[0],
-        "y": head[1],
-        "ax": tail[0],
-        "ay": tail[1],
-        "axref": "x",
-        "ayref": "y",
-        "showarrow": True,
-        "arrowhead": 2,
-        "arrowwidth": width,
-        "arrowcolor": color,
-        "text": "",
-    }
-
-
-def build_floor_layout_figure(
-    equipment: pd.DataFrame,
-    building: str,
-    floor: str,
-    *,
-    background_image: str | None = None,
-    canvas_width: float = DEFAULT_CANVAS_WIDTH,
-    canvas_height: float = DEFAULT_CANVAS_HEIGHT,
-    stage_counts: Mapping[str, float] | None = None,
-    marks: Sequence[FloorLayoutMark] = (),
-) -> go.Figure:
-    """층 상세 배치도. `stage_counts` 를 주면 범례에 그 층의 상태별 대수를 붙이고 없는 상태는
-    뺀다(「가용 12대」). 주지 않으면 모든 상태의 색 범례만 둔다. `marks` 는 저장된 도면 요소로,
-    편집기와 같은 모양으로 그린다 — 영역은 호기 아래, 반입구·문·기둥·동선은 호기 위."""
-    figure = go.Figure()
-    if background_image:
-        # xref·yref 를 주지 않으면 plotly 가 paper 좌표로 읽어 도면이 화면 밖으로 나간다.
-        figure.add_layout_image(
-            source=background_image,
-            xref="x",
-            yref="y",
-            x=0,
-            y=canvas_height,
-            sizex=canvas_width,
-            sizey=canvas_height,
-            sizing="stretch",
-            opacity=0.65,
-            layer="below",
-        )
-    figure.add_shape(
-        type="rect",
-        x0=0,
-        x1=canvas_width,
-        y0=0,
-        y1=canvas_height,
-        fillcolor=tokens.SPACE_CANVAS_OVERLAY if background_image else tokens.SPACE_CANVAS,
-        line={"color": tokens.SPACE_BORDER, "width": 2.5},
-        layer="below",
-    )
-
-    hover_x: list[float] = []
-    hover_y: list[float] = []
-    hover_text: list[str] = []
-    # 호기마다 add_shape·add_annotation 을 부르면 호기 수 제곱으로 는다(200대 13~18초). 지금은
-    # 호기 마스터가 비어 잠복해 있지만 들어오는 순간 클릭마다 멈춘다. 모아서 한 번에 넣는다.
-    # 바깥 캔버스 rect 는 위에서 먼저 넣었으므로 layout.shapes[0] 자리가 유지된다.
-    equipment_shapes: list[dict[str, Any]] = []
-    equipment_labels: list[dict[str, Any]] = []
-    records = cast(list[dict[str, object]], equipment.to_dict(orient="records"))
-    for record in records:
-        equipment_id = str(record.get("호기", ""))
-        process = str(record.get("공정소분류", ""))
-        stage = str(record.get("단계", "입고 예정"))
-        status = str(record.get("상태", stage))
-        downtime_type = record.get("비가동유형")
-        x = _to_float(record.get("X좌표"))
-        y = _to_float(record.get("Y좌표"))
-        width = max(_to_float(record.get("Xsize")), 0.1)
-        height = max(_to_float(record.get("Ysize")), 0.1)
-        fill_color = tokens.EQUIPMENT_STAGE_COLORS.get(status, tokens.EQUIPMENT_STAGE_FALLBACK)
-        equipment_shapes.append(
-            {
-                "type": "rect",
-                "x0": x,
-                "x1": x + width,
-                "y0": y,
-                "y1": y + height,
-                "fillcolor": fill_color,
-                "line": {"color": tokens.SPACE_BORDER, "width": 1.2},
-                "layer": "above",
-            }
-        )
-        equipment_labels.append(
-            {
-                "x": x + width / 2,
-                "y": y + height / 2,
-                "text": f"<b>{equipment_id}</b><br>{stage}",
-                "showarrow": False,
-                "font": {"size": 9, "color": tokens.SPACE_TEXT},
-                "align": "center",
-            }
-        )
-        hover_x.append(x + width / 2)
-        hover_y.append(y + height / 2)
-        downtime_text = (
-            f"<br>비가동: {downtime_type}"
-            if isinstance(downtime_type, str) and downtime_type
-            else ""
-        )
-        hover_text.append(
-            f"{equipment_id}<br>{process}<br>단계: {stage}{downtime_text}<br>"
-            f"X {x:g} · Y {y:g} · 크기 {width:g}×{height:g}"
-        )
-
-    zone_shapes, mark_shapes, mark_labels = _mark_layout_items(marks)
-    append_layout_items(
-        figure,
-        shapes=[*zone_shapes, *equipment_shapes, *mark_shapes],
-        annotations=[*equipment_labels, *mark_labels],
-    )
-    figure.add_trace(
-        go.Scatter(
-            x=hover_x,
-            y=hover_y,
-            mode="markers",
-            marker={"size": 28, "color": tokens.HIT_TARGET},
-            text=hover_text,
-            hovertemplate="%{text}<extra></extra>",
-            showlegend=False,
-        )
-    )
+def stage_legend_markup(
+    counts: Mapping[str, float] | None, *, exclude: Collection[str] = ()
+) -> str:
+    """층 상세 머리 줄 오른쪽의 상태 범례. `counts` 가 있으면 그 층에 있는 상태만 대수와 함께
+    (「가용 5대」), 없으면 모든 상태의 색 뜻만 보인다(배치 편집 중 — 편집본은 저장본과 대수가
+    다르다). 도면 안이 아니라 머리 줄에 두어 도면이 테두리 안을 다 쓴다."""
+    chips = []
     for status, color in tokens.EQUIPMENT_STAGE_COLORS.items():
-        if stage_counts is not None and status not in stage_counts:
+        if status in exclude or (counts is not None and status not in counts):
             continue
-        name = (
-            status
-            if stage_counts is None
-            else f"{status} {format_unit_count(stage_counts[status])}대"
+        text = status if counts is None else f"{status} {format_unit_count(counts[status])}대"
+        chips.append(
+            '<span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap">'
+            f'<span aria-hidden="true" style="width:11px;height:11px;border-radius:2px;'
+            f'background:{color};flex:none"></span>{html.escape(text)}</span>'
         )
-        figure.add_trace(
-            go.Scatter(
-                x=[None],
-                y=[None],
-                mode="markers",
-                marker={"size": 12, "symbol": "square", "color": color},
-                name=name,
-                hoverinfo="skip",
-            )
-        )
-
-    figure.update_layout(
-        title={"text": f"{building} {floor} Space 배치도", "x": 0.01, "xanchor": "left"},
-        legend={"orientation": "h", "x": 1, "xanchor": "right", "y": 1.14},
+    return (
+        '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 14px;'
+        f'font-size:0.82rem;color:{tokens.TEXT_MUTED}">{"".join(chips)}</div>'
     )
-    _apply_layout(
-        figure,
-        x_range=(0.0, canvas_width),
-        y_range=(0.0, canvas_height),
-        height=floor_layout_figure_height(canvas_width, canvas_height),
-    )
-    # 격자 간격을 폭에서 뽑아 캔버스 비율이 바뀌어도 칸이 정사각으로 남는다.
-    grid_step = canvas_width / LAYOUT_GRID_DIVISIONS
-    figure.update_xaxes(showgrid=True, gridcolor=tokens.SPACE_GRID, dtick=grid_step)
-    figure.update_yaxes(showgrid=True, gridcolor=tokens.SPACE_GRID, dtick=grid_step)
-    flush_layout_items(figure)
-    return figure
-
-
-def floor_layout_figure_height(canvas_width: float, canvas_height: float) -> int:
-    """캔버스 종횡비에 맞춰 Figure 픽셀 높이를 정한다(기본 캔버스에서 기준값 그대로)."""
-    if canvas_width <= 0 or canvas_height <= 0:
-        return LAYOUT_BASE_FIGURE_HEIGHT
-    ratio = (canvas_height / canvas_width) / (DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH)
-    scaled = round(LAYOUT_BASE_FIGURE_HEIGHT * ratio)
-    return int(min(max(scaled, LAYOUT_MIN_FIGURE_HEIGHT), LAYOUT_MAX_FIGURE_HEIGHT))
 
 
 def first_selected_customdata(event: object) -> str | None:
@@ -608,13 +315,6 @@ def invalid_equipment_rows(
         | numeric["Y좌표"].add(numeric["Ysize"]).gt(canvas_height)
     )
     return [int(index) + 1 for index in numeric.index[invalid].tolist()]
-
-
-def _to_float(value: object) -> float:
-    try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _apply_layout(

@@ -9,6 +9,10 @@ export default function (component) {
     canvas: null, originalCanvas: null, note: '', view: { z: 1, x: 0, top: 0 }, spaceDown: false, seq: 0,
     passthrough: [], bgImage: null,
   })
+  // 보기 전용(Space 층 상세 뷰어). 같은 도면을 그리되 편집 도구를 숨기고, 끌기는 화면 이동,
+  // 누르기는 그 호기의 정보 한 줄이다.
+  const VIEW = data.mode === 'view'
+  host.classList.toggle('is-view', VIEW)
   const palette = data.palette || {}
   for (const [name, value] of Object.entries(palette)) host.style.setProperty('--sle-' + name, String(value))
   const DECIMALS = Number.isInteger(data.decimals) ? data.decimals : 1
@@ -96,6 +100,9 @@ export default function (component) {
   const newQual = q('.sle-new-qual')
   const newConfirm = q('.sle-new-confirm')
   q('.sle-title').textContent = data.title || ''
+  const pickBox = q('.sle-pick')
+  pickBox.dataset.hint = '호기를 누르면 정보가 여기 뜹니다 · Ctrl+휠 확대 · 끌어서 이동 · 더블클릭 확대/전체 보기'
+  q('.sle-summary').textContent = data.summary || ''
 
   const num = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v))
   const roundTo = (v) => Math.round(v * SCALE) / SCALE
@@ -143,7 +150,7 @@ export default function (component) {
     rot: item.rot, label: item.label, color: item.color, hatch: item.hatch, keepOut: item.keepOut,
   })
   const hasSize = (item) => Number.isFinite(item.w) && item.w > 0 && Number.isFinite(item.h) && item.h > 0
-  const unitTip = (item) => `${item.label} · ${item.stage || ''}${item.group ? ` · 모체 ${item.group}` : ''}${item.arrived ? ' · 다른 층에서 옴' : ''}`
+  const unitTip = (item) => `${item.label} · ${item.stage || ''}${item.detail ? ` · ${item.detail}` : ''}${item.group ? ` · 모체 ${item.group}` : ''}${item.arrived ? ' · 다른 층에서 옴' : ''}`
   const sameGeometry = (a, b) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
   const sameNumber = (p, q) => p === q || (Number.isNaN(p) && Number.isNaN(q))
   const sameSize = (a, b) => sameNumber(a.w, b.w) && sameNumber(a.h, b.h)
@@ -603,6 +610,21 @@ export default function (component) {
 
   // 겹침은 막지 않고 알린다(저장도 된다). 호기끼리, 그리고 호기와 반입구·문·기둥·설비 금지 영역.
   function markOverlaps() {
+    if (VIEW) {
+      // 보기 전용: 호기끼리 겹친 것만 점선으로 알린다 — 완전히 겹치면 아래 호기가 보이지도 눌리지도
+      // 않는데 범례·요약은 그것을 센다. 반입구·문 가림과 개수 문구는 편집 화면의 몫이다.
+      const shown = [...S.items.values()].filter((i) => isUnit(i) && onCanvas(i))
+      const hit = new Set()
+      for (let a = 0; a < shown.length; a += 1) {
+        for (let b = a + 1; b < shown.length; b += 1) {
+          if (overlaps(shown[a], shown[b])) { hit.add(shown[a].id); hit.add(shown[b].id) }
+        }
+      }
+      for (const [id, group] of S.groups) group.classList.toggle('is-overlap', hit.has(id))
+      S.overlapPairs = 0
+      S.blocked = 0
+      return
+    }
     const units = [...S.items.values()].filter((i) => isUnit(i) && onCanvas(i))
     const blockers = [...S.items.values()].filter((m) => isMark(m) && onCanvas(m) && blocks(m))
     const hit = new Set()
@@ -729,7 +751,21 @@ export default function (component) {
     }
   }
 
+  function pickText(item) {
+    if (isMark(item)) return `선택 ${MARK_KINDS[item.kind]?.name || item.kind}${item.label ? ` · ${item.label}` : ''}`
+    return `선택 ${item.label} · ${item.stage || '-'}${item.detail ? ` · ${item.detail}` : ''}`
+      + `${item.group ? ` · 모체 ${item.group}` : ''} · X ${item.x} · Y ${item.y} · ${item.w}×${item.h}`
+  }
+
   function updateStatus() {
+    if (VIEW) {
+      const chosen = selectedItems()
+      pickBox.textContent = chosen.length === 1 ? pickText(chosen[0]) : ''
+      // 한 줄에서 잘리면 전체 문구는 풍선으로.
+      pickBox.title = pickBox.textContent || pickBox.dataset.hint
+      zoomSel.disabled = !chosen.some(onCanvas)
+      return
+    }
     const chosen = selectedItems()
     const item = chosen.length === 1 ? chosen[0] : null
     const changed = changes().length + markChangeCount() + (canvasChanged() ? 1 : 0)
@@ -1107,7 +1143,7 @@ export default function (component) {
     id: String(raw.id), kind: 'unit', label: String(raw.label ?? raw.id), stage: String(raw.stage || ''),
     group: raw.group ? String(raw.group) : null, x: num(raw.x), y: num(raw.y), w: num(raw.w), h: num(raw.h),
     isNew: Boolean(raw.isNew), arrived: Boolean(raw.arrived), floorless: Boolean(raw.floorless), moveTo: null, created: null,
-    sizeGuessed: false,
+    sizeGuessed: false, detail: String(raw.detail || ''),
   })
   const readMark = (raw) => ({
     id: String(raw.id), kind: String(raw.kind), label: String(raw.label || ''), stage: '', group: null,
@@ -1164,6 +1200,7 @@ export default function (component) {
       if (!item) continue
       item.stage = String(raw.stage || '')
       item.label = String(raw.label ?? raw.id)
+      item.detail = String(raw.detail || '')
     }
     if ((data.backgroundImage || null) !== S.bgImage) {
       S.bgImage = data.backgroundImage || null
@@ -1180,6 +1217,16 @@ export default function (component) {
     if (!p) return
     event.preventDefault()
     svg.focus({ preventScroll: true })
+    if (VIEW) {
+      // 보기 전용: 끌면 화면 이동(확대했을 때), 끌지 않고 떼면 누른 호기를 고른다.
+      const target = event.target.closest ? event.target.closest('.sle-item') : null
+      S.drag = {
+        mode: 'view', pointerId: event.pointerId, startClientX: event.clientX, startClientY: event.clientY,
+        view: { ...S.view }, upp: unitsPerPx(), id: target ? target.dataset.id : null, moved: false,
+      }
+      svg.setPointerCapture(event.pointerId)
+      return
+    }
     const start = { pointerId: event.pointerId, startX: p.x, startTop: p.top, startClientX: event.clientX, startClientY: event.clientY, moved: false }
     if (event.button === 1 || S.spaceDown) {
       // 화면 옮기기: 가운데 버튼 끌기, 또는 Space 를 누른 채 끌기.
@@ -1232,7 +1279,11 @@ export default function (component) {
   svg.onpointermove = (event) => {
     const drag = S.drag
     if (!drag || event.pointerId !== drag.pointerId) return
-    if (drag.mode === 'pan') {
+    if (drag.mode === 'pan' || drag.mode === 'view') {
+      if (drag.mode === 'view' && S.view.z <= 1) return
+      if (drag.mode === 'view' && !drag.moved
+        && Math.hypot(event.clientX - drag.startClientX, event.clientY - drag.startClientY) < DRAG_THRESHOLD_PX) return
+      svg.classList.add('is-panning')
       S.view.x = drag.view.x - (event.clientX - drag.startClientX) * drag.upp
       S.view.top = drag.view.top - (event.clientY - drag.startClientY) * drag.upp
       applyView({ reposition: false })
@@ -1289,6 +1340,13 @@ export default function (component) {
     if (!drag || (event && event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return
     S.drag = null
     if (drag.mode === 'pan') { svg.classList.remove('is-panning'); return }
+    if (drag.mode === 'view') {
+      svg.classList.remove('is-panning')
+      // 끌어서 옮긴 직후의 더블클릭(누르고 곧바로 그 자리에서 끈 경우)은 확대·전체 보기가 아니다.
+      S.lastViewDragMoved = drag.moved
+      if (!drag.moved) select(drag.id)
+      return
+    }
     if (drag.mode === 'marquee') {
       // 끌지 않고 빈 곳을 누르기만 했으면 선택을 푼다(Shift/Ctrl 이면 그대로 둔다).
       if (!drag.moved && !drag.additive) clearSelection()
@@ -1326,11 +1384,33 @@ export default function (component) {
     if (panBy(dx, dTop)) event.preventDefault()
   }
   svg.onblur = () => { S.spaceDown = false; svg.classList.remove('is-pan-ready') }
+  // 보기 전용 더블클릭: 확대 중이면 전체 보기, 전체 보기면 그 자리를 2.5배로.
+  svg.ondblclick = (event) => {
+    if (!VIEW || S.lastViewDragMoved) return
+    event.preventDefault()
+    if (S.view.z > 1) zoomAt(1)
+    else zoomAt(2.5, toUser(event))
+  }
   // 단축키는 편집기 어디에 포커스가 있어도 듣는다(툴바 단추를 누른 뒤에도). 입력 칸에서는 비킨다.
   host.onkeyup = (event) => {
     if (event.key === ' ') { S.spaceDown = false; svg.classList.remove('is-pan-ready') }
   }
   host.onkeydown = (event) => {
+    if (VIEW) {
+      // 보기 전용 단축키: 확대·축소·전체 보기, 방향키 화면 이동, Esc 선택 풀기. 고치는 키는 없다.
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      const step = 0.1
+      const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }
+      if (event.key === '+' || event.key === '=') zoomAt(S.view.z * ZOOM_STEP)
+      else if (event.key === '-') zoomAt(S.view.z / ZOOM_STEP)
+      else if (event.key === '0') zoomAt(1)
+      else if (event.key === 'Escape') select(null)
+      else if (moves[event.key]) {
+        if (!panBy(moves[event.key][0] * viewW(), moves[event.key][1] * viewH())) return
+      } else return
+      event.preventDefault()
+      return
+    }
     if (event.key === 'Escape' && S.drag) { event.preventDefault(); cancelDrag(); return }
     const typing = event.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName)
     const ctrl = event.ctrlKey || event.metaKey
