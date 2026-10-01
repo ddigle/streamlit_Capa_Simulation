@@ -1423,13 +1423,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 그래서 **프론트엔드가 테마를 기억하는 자리**를 쓴다. `localStorage` 의
     `stActiveTheme-<경로>-v2` 에 `"System"`·`"Light"`·`"Dark"` 중 하나를 적고 새로고침하면
     Streamlit 크롬과 우리 토큰이 **함께** 바뀐다(`st.context.theme` 이 새 값을 보고한다).
-  - `st.html` 은 스크립트를 실행하지 않으므로 높이 0 의 `components.v1.html` iframe 에서
-    `window.parent` 에 닿는다. 슬롯을 못 찾으면 **조용히 물러난다** — 버튼이 안 생길 뿐
-    화면은 멀쩡하다.
+  - `st.html` 은 스크립트를 실행하지 않으므로 `st.iframe` 안에서 `window.parent` 에 닿는다.
+    슬롯을 못 찾으면 **조용히 물러난다** — 버튼이 안 생길 뿐 화면은 멀쩡하다. `st.iframe` 은
+    높이 0 을 막으므로(오류로 페이지가 선다) 1px 로 띄우고 그 iframe 과 감싼 요소 칸을 CSS 로
+    0 으로 접는다(칸은 `flex` 기본 크기까지 덮어야 한다). `components.v1.html` 은 회차마다 터미널에
+    폐기 예고를 찍어 2026-10-01 에 옮겼다.
   - **비공식 경로다.** `data-testid` 와 `localStorage` 키 모양은 판올림에서 바뀔 수 있다.
     Streamlit 을 올린 뒤에는 이 버튼이 보이는지 눈으로 확인한다.
   - `extra_scripts` 로 같은 툴바에 버튼을 얹는 다른 스크립트(Guide)를 함께 싣는다. iframe 을
-    따로 두지 않는다 — 높이 0 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다.
+    따로 두지 않는다 — 높이를 접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다.
 - `src/capa_simulation/components/page_guide.py`
   - 헤더 테마 버튼 **바로 왼쪽**의 `Guide` 버튼과 화면별 사용 안내 대화상자(2026-09-28 사용자
     결정 — 설명 문구를 본문에서 빼고 Guide 로). 원문은 `guides/<페이지 파일 이름>.md` 다.

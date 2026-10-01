@@ -39,7 +39,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import streamlit.components.v1 as components
+import streamlit as st
 
 from capa_simulation.design import tokens
 from capa_simulation.design.theme import THEME_QUERY_PARAM
@@ -50,6 +50,22 @@ _STORAGE_PREFIX = "stActiveTheme-"
 _STORAGE_SUFFIX = "-v2"
 _TOOLBAR_SLOT = '[data-testid="stToolbarActions"]'
 _BUTTON_ID = "capa-theme-toggle"
+
+# `st.iframe` 은 높이 0 을 받지 않는다(양수 px·`"stretch"`·`"content"` 만 — 0 이면
+# `StreamlitInvalidHeightError` 로 페이지가 선다). 1px 로 띄우고 아래 규칙으로 0 으로 접는다.
+# `"content"` 는 스크립트뿐인 문서라도 기본 150px 칸을 잡아 모든 화면을 그만큼 내린다.
+_FRAME_HEIGHT_PX = 1
+# 이 iframe 과 그것을 감싼 요소 칸을 높이 0 으로 접는다. 칸의 높이는 `height` 가 아니라
+# flex 기본 크기(`flex: 0 0 1px`)에서 나오므로 그것까지 덮어야 본문이 1px 내려가지 않는다
+# (브라우저 실측: 접기 전 본문 맨 위 113px, 접은 뒤 112px — `components.v1.html` 높이 0 과 같다).
+# iframe 은 `srcdoc` 에 든 버튼 id 로 고른다. 스타일만 든 `st.html` 은 본문 자리를 먹지 않는다.
+_COLLAPSE_STYLE = (
+    "<style>"
+    f'[data-testid="stElementContainer"]:has(> iframe[srcdoc*="{_BUTTON_ID}"]),'
+    f'iframe[data-testid="stIFrame"][srcdoc*="{_BUTTON_ID}"]'
+    "{flex:0 0 0 !important;height:0 !important;min-height:0 !important;}"
+    "</style>"
+)
 
 _SCRIPT = """
 <script>
@@ -169,15 +185,13 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
     iframe 을 따로 두지 않고 여기에 함께 싣는다 — 높이 0 iframe 도 본문 맨 위에 요소 간격 한
     칸을 먹어서, 하나 더 두면 모든 화면이 그만큼 내려간다.
 
-    높이 0 의 iframe 하나를 쓴다. `st.html` 은 스크립트를 실행하지 않으므로 이 경로가
-    아니면 부모 창에 닿을 수 없다.
-
-    **`st.iframe` 으로 옮기지 않는다.** 권고는 그쪽이지만(`components.v1.html` 은
-    2026-06-01 제거 예정) 실제로 바꿔 띄워 보니 **iframe 이 DOM 에 아예 생기지 않아**
-    버튼이 사라졌다. 브라우저에서 `document.querySelectorAll('iframe').length === 0` 으로
-    확인했다. 옮기려면 그때 다시 띄워 보고 버튼이 실제로 붙는지 눈으로 봐야 한다.
+    `st.iframe` 하나를 쓰고 높이를 0 으로 접는다(`_COLLAPSE_STYLE`). `st.html` 은 스크립트를
+    실행하지 않으므로 iframe 이 아니면 부모 창에 닿을 수 없다. 예전의 `components.v1.html` 은
+    회차마다 터미널에 폐기 예고를 찍어 `st.iframe` 으로 옮겼다(2026-10-01). 예전에 옮겼다가
+    iframe 이 안 생긴 것은 높이 0 이 오류로 막혔기 때문이다 — 1px 로 띄워 CSS 로 접는다.
     """
-    components.html(
+    st.html(_COLLAPSE_STYLE)
+    st.iframe(
         _SCRIPT
         % {
             "prefix": _STORAGE_PREFIX,
@@ -197,5 +211,5 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
             "light_ink": tokens.palette_value("dark", "TEXT"),
         }
         + "".join(f"<script>{script}</script>" for script in extra_scripts),
-        height=0,
+        height=_FRAME_HEIGHT_PX,
     )
