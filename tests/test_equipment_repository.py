@@ -30,7 +30,7 @@ from capa_simulation.services.weekly_availability_input import (
 
 def _repository(path: Path) -> DuckDBEquipmentRepository:
     repository = DuckDBEquipmentRepository(path)
-    assert repository.initialize() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+    assert repository.initialize() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
     assert repository.initialize() == ()
     return repository
 
@@ -237,7 +237,7 @@ def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (3, 4, 5, 6, 7, 8, 9, 10)
+    assert repository.initialize() == (3, 4, 5, 6, 7, 8, 9, 10, 11)
     snapshot = repository.load_snapshot("legacy-r1")
 
     assert snapshot.equipment.loc[0, "호기"] == "EQ-LEGACY"

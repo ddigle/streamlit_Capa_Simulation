@@ -74,3 +74,5 @@ ignore_missing_imports = true
 "capa_simulation" = ["py.typed"]
 "capa_simulation.persistence.migrations" = ["*.sql"]
 "capa_simulation.persistence.equipment_migrations" = ["*.sql"]
+# Space 배치 편집기의 HTML·CSS·JS. 모듈이 읽을 때 파일에서 읽어 컴포넌트로 등록한다.
+"capa_simulation.components" = ["space_layout_editor_assets/*"]

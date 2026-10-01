@@ -13,10 +13,12 @@ from capa_simulation.components.space_layout import (
     floor_layout_figure_height,
     floors_for,
     invalid_equipment_rows,
+    keep_out_color,
     occupancy_ratio,
     stage_counts,
 )
 from capa_simulation.design.tokens import EQUIPMENT_STAGE_COLORS
+from capa_simulation.services.floor_layout_mark import prepare_floor_layout_marks
 
 
 def _space_equipment() -> pd.DataFrame:
@@ -213,3 +215,49 @@ def test_floor_layout_draws_the_uploaded_drawing_on_the_floor_canvas() -> None:
     assert figure.layout.yaxis.range == (0.0, 37.5)
     assert figure.layout.height == floor_layout_figure_height(100.0, 37.5)
     assert figure.layout.height == 375
+
+
+def test_the_floor_layout_draws_saved_marks_around_the_equipment() -> None:
+    """영역은 호기 아래, 반입구·문·기둥은 호기 위에 그린다. 이름표는 이스케이프한다."""
+    equipment = _space_equipment().loc[lambda frame: frame["동"].eq("C1")]
+    marks = prepare_floor_layout_marks(
+        [
+            {"id": "Z", "kind": "zone", "x": 0, "y": 0, "w": 20, "h": 10, "label": "<b>정비</b>"},
+            {"id": "K", "kind": "zone", "x": 30, "y": 0, "w": 10, "h": 10, "keepOut": True},
+            {"id": "S", "kind": "shutter", "x": 50, "y": 0, "w": 12, "h": 5, "label": "반입"},
+            {"id": "D", "kind": "door", "x": 70, "y": 0, "w": 4, "h": 4, "rot": 90},
+            {"id": "C", "kind": "column", "x": 80, "y": 20, "w": 1.5, "h": 1.5},
+            {"id": "T", "kind": "text", "x": 5, "y": 40, "w": 14, "h": 3, "label": "메모"},
+            {"id": "A", "kind": "arrow", "x": 30, "y": 40, "w": 16, "h": 3},
+        ],
+        (100.0, 60.0),
+    )
+
+    plain = build_floor_layout_figure(equipment, "C1", "1F")
+    figure = build_floor_layout_figure(equipment, "C1", "1F", marks=marks)
+
+    shapes = list(figure.layout.shapes)
+    equipment_count = len(plain.layout.shapes) - 1
+    # 캔버스 · 영역 둘(채움·테두리씩 4) · 호기 · 반입구 1 · 문 2 · 기둥 1
+    assert len(shapes) == 1 + 4 + equipment_count + 4
+    assert all(shape.layer == "below" for shape in shapes[1:5])
+    assert shapes[3].fillcolor == keep_out_color()
+    assert all(shape.layer == "above" for shape in shapes[5 + equipment_count :])
+    texts = [annotation.text for annotation in figure.layout.annotations]
+    assert "<b>&lt;b&gt;정비&lt;/b&gt;</b>" in texts
+    assert "<b>영역 · 설비 금지</b>" in texts and "<b>메모</b>" in texts and "반입" in texts
+    # 반입구·동선 화살표는 글자 없는 화살표 주석이다.
+    assert sum(1 for annotation in figure.layout.annotations if annotation.showarrow) == 2
+
+
+def test_a_rotated_door_keeps_its_hinge_on_the_wall() -> None:
+    """편집기와 같은 회전: 0° 는 아래 변이 벽, 90° 는 왼쪽 변이 벽이다(시계 방향)."""
+    (door,) = prepare_floor_layout_marks(
+        [{"id": "D", "kind": "door", "x": 10, "y": 10, "w": 4, "h": 4, "rot": 90}], (100.0, 60.0)
+    )
+    figure = build_floor_layout_figure(_space_equipment().iloc[0:0], "C1", "1F", marks=[door])
+
+    leaf = next(shape for shape in figure.layout.shapes if shape.type == "path")
+    start, end = (tuple(float(v) for v in point.split()) for point in leaf.path[2:].split(" L "))
+    # 경첩은 벽(왼쪽 변 x = 10)의 위 끝이고, 열린 문짝은 벽과 직각으로 윗변을 따라 놓인다.
+    assert start == pytest.approx((10, 14)) and end == pytest.approx((14, 14))

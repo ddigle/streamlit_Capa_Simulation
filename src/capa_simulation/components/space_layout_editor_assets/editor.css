@@ -1,0 +1,181 @@
+:host { display: block; width: 100%; }
+.sle {
+  display: flex; flex-direction: column; gap: 8px;
+  font-family: var(--sle-font); color: var(--sle-text);
+}
+.sle-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sle-title { font-weight: 700; margin-right: 8px; }
+.sle-steps, .sle-zoom { display: inline-flex; align-items: center; gap: 2px; margin-right: 6px; }
+.sle-label-text { font-size: 0.8rem; color: var(--sle-muted); margin-right: 4px; }
+.sle-zoom-label { min-width: 3.4em; text-align: center; font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--sle-muted); }
+.sle button {
+  font: inherit; font-size: 0.82rem; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--sle-border); background: var(--sle-surface); color: var(--sle-text);
+}
+.sle button:hover { border-color: var(--sle-accent); }
+.sle button:focus-visible, .sle-canvas:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 2px; }
+.sle-steps button[aria-pressed="true"] { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
+.sle button:disabled { opacity: 0.45; cursor: default; }
+.sle button.sle-apply { font-weight: 700; }
+.sle button.sle-apply.is-pending { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
+.sle-spacer { flex: 1; }
+.sle-body { display: flex; gap: 10px; align-items: flex-start; }
+.sle-stage { flex: 1; min-width: 0; }
+/* 높이는 viewBox 비율로 정해진다. 세로로 긴 영역의 상한은 JS 가 max-width 로 건다. */
+.sle-canvas { display: block; width: 100%; height: auto; touch-action: none; user-select: none; }
+.sle-canvas.is-pan-ready, .sle-canvas.is-panning { cursor: grab; }
+.sle-canvas.is-panning { cursor: grabbing; }
+.sle-canvas-bg { fill: var(--sle-canvas); stroke: var(--sle-frame); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.sle-canvas-bg.has-image { fill: var(--sle-canvas-overlay); }
+.sle-bg-image { opacity: var(--sle-image-opacity); }
+.sle-grid-minor { stroke: var(--sle-grid); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
+.sle-grid-major { stroke: var(--sle-grid-major); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sle-item { cursor: grab; }
+.sle-item:active { cursor: grabbing; }
+
+/* ---- 호기 ---- */
+.sle-unit .sle-rect { stroke: var(--sle-frame); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sle-unit.is-selected .sle-rect { stroke: var(--sle-accent); stroke-width: 3; }
+.sle-unit.is-grouped .sle-rect { stroke: var(--sle-accent); stroke-width: 1.5; }
+/* 다른 층에서 옮겨 온 호기 — 같은 좌표로 와서 겹칠 수 있어 맨 위에 그리고 테를 두른다. */
+.sle-unit.is-arrived .sle-rect { stroke: var(--sle-accent); stroke-width: 2; stroke-dasharray: 2 2; }
+.sle-unit.is-overlap .sle-rect, .sle-unit.is-overlap-live .sle-rect, .sle-unit.is-blocked .sle-rect {
+  stroke: var(--sle-danger); stroke-width: 3; stroke-dasharray: 6 3;
+}
+.sle-label { fill: var(--sle-text); text-anchor: middle; dominant-baseline: central; pointer-events: none; font-weight: 600; }
+
+/* ---- 도면 요소 ---- */
+.sle-mark-shape { pointer-events: none; }
+.sle-mark-box { fill: transparent; stroke: none; }
+.sle-mark.is-selected:not(.mark-zone) .sle-mark-box {
+  stroke: var(--sle-accent); stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke;
+}
+.sle-mark.is-grouped:not(.mark-zone) .sle-mark-box { stroke: var(--sle-accent); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.sle-mark.is-violated:not(.mark-zone) .sle-mark-box, .sle-mark.is-overlap-live:not(.mark-zone) .sle-mark-box {
+  stroke: var(--sle-danger); stroke-width: 2; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke;
+}
+/* 영역은 안쪽을 눌러도 잡히지 않는다 — 안에서 시작한 끌기가 호기 고르기(사각형)가 되도록. 테두리와 이름표로 잡는다. */
+.mark-zone .sle-mark-box { fill: none; stroke: transparent; stroke-width: 12; vector-effect: non-scaling-stroke; pointer-events: stroke; }
+.mark-zone .sle-zone-tag { pointer-events: all; cursor: grab; }
+.sle-zone-fill { fill-opacity: 0.16; }
+.sle-zone-border { fill: none; stroke-width: 1.5; stroke-dasharray: 6 3; vector-effect: non-scaling-stroke; }
+.mark-zone.is-selected .sle-zone-border, .mark-zone.is-grouped .sle-zone-border { stroke-width: 3; stroke-dasharray: none; }
+.mark-zone.is-violated .sle-zone-border, .mark-zone.is-overlap-live .sle-zone-border { stroke: var(--sle-danger) !important; stroke-width: 3; }
+.sle-zone-tag { fill: var(--sle-surface); fill-opacity: 0.88; }
+.sle-mark-text { fill: var(--sle-mark-ink); font-weight: 700; paint-order: stroke; stroke: var(--sle-surface); stroke-width: 3; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.sle-hatch-line { stroke: var(--sle-mark-ink); stroke-opacity: 0.35; stroke-width: 0.12; }
+.sle-clear { fill: var(--sle-accent); fill-opacity: 0.07; stroke: var(--sle-mark-muted); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.sle-shutter-bar { stroke: var(--sle-mark-ink); stroke-width: 5; stroke-linecap: butt; vector-effect: non-scaling-stroke; }
+.sle-shutter-slat { stroke: var(--sle-surface); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sle-mark-line { fill: none; stroke: var(--sle-mark-ink); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.sle-mark-line.is-thick { stroke-width: 3; }
+.sle-mark-line.is-dashed { stroke-dasharray: 4 3; }
+.sle-mark-head { fill: var(--sle-mark-ink); }
+.sle-column { fill: var(--sle-mark-muted); stroke: var(--sle-mark-ink); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sle-column-cross { stroke: var(--sle-surface); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sle-flow { fill: none; stroke: var(--sle-accent); stroke-linecap: round; stroke-dasharray: 0.9 0.7; }
+.sle-flow-head { fill: var(--sle-accent); }
+
+/* ---- 손잡이·선택 ---- */
+.sle-handle {
+  fill: var(--sle-surface); stroke: var(--sle-accent); stroke-width: 1.5; vector-effect: non-scaling-stroke;
+  opacity: 0; pointer-events: none;
+}
+.sle-item.is-selected .sle-handle { opacity: 1; pointer-events: auto; }
+/* 여러 개를 고르면 크기 손잡이는 숨긴다 — 크기는 숫자 칸·Ctrl+방향키로 함께 바꾼다. */
+.sle-canvas.is-multi .sle-handle { opacity: 0 !important; pointer-events: none !important; }
+.sle-group-box { fill: none; stroke: var(--sle-accent); stroke-width: 1.5; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+.sle-marquee { fill: var(--sle-accent); fill-opacity: 0.08; stroke: var(--sle-accent); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+
+/* ---- 팔레트 ---- */
+.sle-palette button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; touch-action: none; }
+.sle-palette svg { width: 15px; height: 15px; flex: none; }
+.ico-dash { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-dasharray: 2.5 1.6; }
+.ico-line { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
+.ico-bold { stroke: currentColor; stroke-width: 2.6; }
+.ico-fill { fill: currentColor; opacity: 0.6; stroke: currentColor; }
+.ico-text { fill: currentColor; font-size: 12px; font-weight: 700; }
+
+/* ---- 트레이 ---- */
+.sle-tray {
+  width: 214px; flex: none; border: 1px solid var(--sle-border); border-radius: 8px;
+  padding: 8px; background: var(--sle-surface); max-height: 640px; overflow: auto;
+}
+.sle-tray-title { font-weight: 700; font-size: 0.85rem; margin-bottom: 6px; }
+.sle-tray-count { color: var(--sle-muted); font-weight: 400; }
+.sle-tray-list { display: flex; flex-direction: column; gap: 4px; }
+.sle-chip {
+  display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px;
+  border: 1px solid var(--sle-border); cursor: grab; font-size: 0.8rem; touch-action: none; user-select: none;
+}
+.sle-chip-swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.sle-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sle-chip-size { margin-left: auto; color: var(--sle-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; flex: none; }
+.sle-chip-tag { flex: none; font-size: 0.66rem; padding: 0 4px; border-radius: 4px; border: 1px solid var(--sle-border); color: var(--sle-muted); }
+.sle-chip.is-new { border-style: dashed; border-color: var(--sle-accent); }
+.sle-chip.is-group .sle-chip-name { font-weight: 700; }
+.sle-chip.is-selected { outline: 2px solid var(--sle-accent); outline-offset: 1px; }
+.sle-chip.is-leaving { cursor: default; opacity: 0.75; border-style: dotted; }
+.sle-chip.is-new .sle-chip-name::after { content: ' 신규'; color: var(--sle-accent); font-size: 0.7rem; font-weight: 700; }
+.sle button.sle-chip-remove { flex: none; padding: 0 6px; font-size: 0.8rem; line-height: 1.3; }
+.sle-leaving { margin-top: 10px; }
+.sle-leaving[hidden] { display: none; }
+.sle-leaving-list { display: flex; flex-direction: column; gap: 4px; }
+.sle-tray-hint { font-size: 0.75rem; color: var(--sle-muted); margin: 8px 0 0; }
+.sle-addunit { margin-bottom: 8px; }
+.sle button.sle-addunit-toggle { width: 100%; border-style: dashed; }
+.sle-addunit-form { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; padding: 6px; border: 1px solid var(--sle-border); border-radius: 6px; font-size: 0.78rem; }
+.sle-addunit-form[hidden] { display: none; }
+.sle-form-row { display: flex; align-items: center; gap: 5px; color: var(--sle-muted); }
+.sle-form-row > span:first-child { width: 2.4em; flex: none; }
+.sle-form-row input[type="text"], .sle-form-row input[type="date"], .sle-form-row select { flex: 1; min-width: 0; }
+.sle input[type="date"] {
+  font: inherit; font-size: 0.78rem; padding: 2px 4px; border-radius: 6px; color-scheme: light dark;
+  border: 1px solid var(--sle-border); background: var(--sle-surface); color: var(--sle-text);
+}
+.sle-new-dates { display: flex; flex-direction: column; gap: 5px; }
+.sle-new-dates[hidden] { display: none; }
+.sle-form-row input[type="number"] { width: 4.2em; }
+.sle-times { color: var(--sle-muted); }
+.sle-new-error { margin: 0; color: var(--sle-danger); font-size: 0.75rem; min-height: 0; }
+.sle-new-error:empty { display: none; }
+.sle-form-actions { display: flex; gap: 6px; }
+.sle-form-actions button { flex: 1; padding: 3px 6px; }
+.sle-ghost {
+  position: fixed; pointer-events: none; z-index: 9999; padding: 3px 8px; border-radius: 6px;
+  background: var(--sle-accent); color: var(--sle-on-accent); font-size: 0.8rem; font-family: var(--sle-font);
+}
+
+/* ---- 칸들 ---- */
+.sle-status { font-size: 0.82rem; color: var(--sle-muted); font-variant-numeric: tabular-nums; min-height: 1.2em; }
+.sle-status b { color: var(--sle-text); }
+.sle-panels { display: flex; flex-wrap: wrap; gap: 8px; }
+.sle-panel {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px;
+  border: 1px solid var(--sle-border); border-radius: 8px; background: var(--sle-surface); font-size: 0.82rem;
+}
+.sle-panel-title { font-weight: 700; }
+.sle-field { display: inline-flex; align-items: center; gap: 4px; color: var(--sle-muted); }
+.sle-fields { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.sle input[type="number"], .sle input[type="text"] {
+  font: inherit; font-size: 0.82rem; width: 4.6em; padding: 3px 5px; border-radius: 6px;
+  border: 1px solid var(--sle-border); background: var(--sle-surface); color: var(--sle-text);
+  font-variant-numeric: tabular-nums;
+}
+.sle input[type="text"] { width: 9em; }
+.sle input:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 1px; }
+.sle input:disabled { opacity: 0.45; }
+.sle input[type="checkbox"] { accent-color: var(--sle-accent); margin: 0; }
+.sle button.sle-nudge { padding: 2px 8px; min-width: 26px; }
+.sle select {
+  font: inherit; font-size: 0.82rem; padding: 3px 5px; border-radius: 6px;
+  border: 1px solid var(--sle-border); background: var(--sle-surface); color: var(--sle-text);
+}
+.sle select:disabled { opacity: 0.45; }
+.sle select:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 1px; }
+.sle-markprops { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.sle-markprops[hidden], .sle-sendto[hidden], .sle-zone-only[hidden] { display: none; }
+.sle-area-note { color: var(--sle-danger); font-size: 0.78rem; }
+.sle-area-note:empty { display: none; }
+.sle-inspector.is-empty .sle-inspector-name { font-weight: 400; color: var(--sle-muted); }
+@media (max-width: 720px) { .sle-body { flex-direction: column; } .sle-tray { width: 100%; } }

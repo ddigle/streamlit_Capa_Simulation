@@ -489,3 +489,46 @@ def test_blank_cells_in_the_direct_editors_render_empty_not_none(tmp_path: Path)
     for editor in editors:
         assert editor.proto.HasField("placeholder")
         assert editor.proto.placeholder == ""
+
+
+def test_a_rawdata_save_on_the_run_that_saw_someone_elses_save_is_not_applied(
+    tmp_path: Path,
+) -> None:
+    """다른 사람이 저장한 직후의 제출은 옛 편집본 위의 것이다. 새 저장본에 얹어 저장하면 남의
+    리비전과 같은 리비전이 「저장했습니다」로 생기고 버림 알림도 사라진다 — 반영하지 않는다."""
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    repository.save_snapshot(
+        empty_equipment_baseline(), _master(["OLD-001"]), empty_downtime_schedule()
+    )
+    app = AppTest.from_string(
+        f"""
+from pathlib import Path
+from capa_simulation.components.equipment_data_workspace import (
+    ensure_equipment_drafts, pop_drafts_replaced, render_equipment_data_workspace,
+)
+from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+repository = DuckDBEquipmentRepository(Path({str(path)!r}))
+snapshot = repository.load_snapshot(repository.latest_revision_id())
+ensure_equipment_drafts(snapshot)
+replaced = pop_drafts_replaced()
+render_equipment_data_workspace(
+    repository=repository, latest_snapshot=snapshot,
+    baseline=snapshot.baseline, equipment=snapshot.equipment, downtime=snapshot.downtime,
+    floor_canvases={{}}, max_extent=(100.0, 60.0), drafts_replaced=replaced,
+)
+""",
+        default_timeout=20,
+    ).run()
+    repository.save_snapshot(
+        empty_equipment_baseline(),
+        _master(["OLD-001", "NEW-002"]),
+        empty_downtime_schedule(),
+        note="남",
+    )
+
+    app.button("equipment_edit_save_v1").click().run()
+
+    assert not app.exception
+    assert any("반영하지 않았습니다" in item.value for item in app.warning)
+    assert len(repository.list_revisions()) == 2

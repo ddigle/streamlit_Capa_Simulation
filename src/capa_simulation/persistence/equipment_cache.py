@@ -14,6 +14,7 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentRevisionSummary,
     EquipmentSnapshot,
 )
+from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import (
     FloorLayoutCanvas,
     FloorLayoutProfile,
@@ -98,6 +99,30 @@ def _load_floor_layout_profile_payload(
     return _payload(profile, FloorLayoutProfile)
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
+def _load_floor_layout_marks_payload(
+    database_path: str,
+    building: str,
+    floor: str,
+) -> list[dict[str, Any]]:
+    return [
+        _payload(mark, FloorLayoutMark)
+        for mark in get_equipment_repository(database_path).load_floor_layout_marks(building, floor)
+    ]
+
+
+def load_floor_layout_marks(
+    database_path: str,
+    building: str,
+    floor: str,
+) -> tuple[FloorLayoutMark, ...]:
+    """Load one floor's non-equipment drawing marks in drawing order."""
+    return tuple(
+        FloorLayoutMark(**payload)
+        for payload in _load_floor_layout_marks_payload(database_path, building, floor)
+    )
+
+
 def load_floor_layout_summaries(database_path: str) -> tuple[FloorLayoutCanvas, ...]:
     """Load every stored floor canvas without the drawing bytes."""
     return tuple(
@@ -127,9 +152,11 @@ def load_floor_layout_profile(
 
 
 def clear_floor_layout_cache() -> None:
-    """도면은 설비 리비전과 무관하므로 스냅샷 캐시는 함께 비우지 않는다."""
+    """층 도면·캔버스·도면 요소 캐시를 비운다. 도면만 바꾼 저장(팝업)은 설비 리비전과 무관하므로
+    스냅샷 캐시는 비우지 않는다 — 리비전과 캔버스·요소를 함께 쓴 저장은 부른 쪽이 둘 다 비운다."""
     _load_floor_layout_summaries_payload.clear()
     _load_floor_layout_profile_payload.clear()
+    _load_floor_layout_marks_payload.clear()
 
 
 def clear_equipment_snapshot_cache() -> None:

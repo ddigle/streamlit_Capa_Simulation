@@ -31,6 +31,7 @@ from capa_simulation.services.equipment_contract import (
     with_optional_equipment_columns,
 )
 from capa_simulation.services.floor_layout_profile import (
+    CANVAS_DECIMALS,
     DEFAULT_CANVAS_HEIGHT,
     DEFAULT_CANVAS_WIDTH,
     FloorCanvasMap,
@@ -94,7 +95,7 @@ def prepare_equipment_master(
             raise ValueError(f"{column}는 Y 또는 N이어야 합니다: {examples}")
 
     for column in COORDINATE_COLUMNS:
-        result[column] = pd.to_numeric(result[column], errors="coerce")
+        result[column] = _readable_number(result, column)
     _validate_locations_and_coordinates(result, floor_canvases)
     result[CONVERSION_RATIO_COLUMN] = _normalize_conversion_ratio(result)
 
@@ -230,43 +231,60 @@ def _validate_locations_and_coordinates(
     result: pd.DataFrame,
     floor_canvases: FloorCanvasMap | None,
 ) -> None:
-    layout = result["레이아웃표시"].eq("Y")
-    missing_location = layout & (
-        result["동"].isna()
-        | result["층"].isna()
-        | result.loc[:, COORDINATE_COLUMNS].isna().any(axis=1)
-    )
-    if missing_location.any():
-        examples = result.loc[missing_location, "호기"].head(5).tolist()
-        raise ValueError(
-            f"레이아웃표시 Y 호기는 동·층·좌표·크기를 모두 입력해야 합니다: {examples}"
-        )
+    """Space 위치 계약.
+
+    레이아웃표시는 「도면 대상인가」만 가른다 — Y 인데 좌표가 없으면 Space 편집기의 미배치
+    트레이에 뜨고, 동·층까지 비면 모든 층 트레이에 뜬다. 크기만 있고 X·Y 가 없는 행도 받는다
+    (트레이로 빼도 실제 설비 치수를 지킨다, 2026-10-01 사용자 결정).
+
+    - X좌표·Y좌표는 함께, Xsize·Ysize 도 함께 넣거나 비운다.
+    - X·Y 가 있으면 크기도 있어야 한다. 레이아웃표시 Y 면 동·층도 있어야 한다. N 행은 예전처럼
+      동·층 없이 좌표만 있어도 받는다 — 그런 행이 든 리비전이 다시 읽힐 때 막히지 않게.
+    - 부호는 있는 값마다 본다(X·Y ≥ 0, 크기 > 0). 캔버스 상한은 X·Y 가 있는 행에만 건다.
+
+    과거 리비전을 다시 읽을 때도 이 검사를 탄다. 그래서 **풀기만 하고 다시 조이지 않는다** —
+    조이면 그 사이에 저장된 리비전이 열리지 않는다.
+    """
     invalid_building = result["동"].notna() & ~result["동"].isin(VALID_BUILDINGS)
     invalid_floor = result["층"].notna() & ~result["층"].isin(VALID_FLOORS)
     if (invalid_building | invalid_floor).any():
         examples = result.loc[invalid_building | invalid_floor, "호기"].head(5).tolist()
         raise ValueError(f"동은 C1~C5, 층은 1F~6F 범위여야 합니다: {examples}")
-    coordinate_present = result.loc[:, COORDINATE_COLUMNS].notna()
-    incomplete = coordinate_present.any(axis=1) & ~coordinate_present.all(axis=1)
-    if incomplete.any():
-        examples = result.loc[incomplete, "호기"].head(5).tolist()
-        raise ValueError(f"Space 좌표와 Xsize·Ysize는 함께 입력해야 합니다: {examples}")
-    complete = coordinate_present.all(axis=1)
-    invalid = complete & (
-        result["X좌표"].lt(0)
-        | result["Y좌표"].lt(0)
-        | result["Xsize"].le(0)
-        | result["Ysize"].le(0)
+    position = result.loc[:, ["X좌표", "Y좌표"]].notna()
+    size = result.loc[:, ["Xsize", "Ysize"]].notna()
+    has_position = position.all(axis=1)
+    has_size = size.all(axis=1)
+    missing_location = result["동"].isna() | result["층"].isna()
+    rules = (
+        (position.any(axis=1) & ~has_position, "X좌표·Y좌표는 함께 넣거나 함께 비워야 합니다"),
+        (size.any(axis=1) & ~has_size, "Xsize·Ysize는 함께 넣거나 함께 비워야 합니다"),
+        (has_position & ~has_size, "Space 좌표(X좌표·Y좌표)가 있으면 Xsize·Ysize 도 넣어야 합니다"),
+        (
+            has_position & result["레이아웃표시"].eq("Y") & missing_location,
+            "레이아웃표시 Y 호기에 좌표를 넣으면 동·층도 넣어야 합니다",
+        ),
+        (
+            has_position & (result["X좌표"].lt(0) | result["Y좌표"].lt(0)),
+            "Space 좌표(X좌표·Y좌표)는 0 이상이어야 합니다",
+        ),
+        (
+            has_size & (result["Xsize"].le(0) | result["Ysize"].le(0)),
+            "Xsize·Ysize는 0 보다 커야 합니다",
+        ),
     )
-    if invalid.any():
-        examples = result.loc[invalid, "호기"].head(5).tolist()
-        raise ValueError(f"Space 좌표는 0 이상, 크기는 0 초과여야 합니다: {examples}")
+    for broken, message in rules:
+        if broken.any():
+            examples = result.loc[broken, "호기"].head(5).tolist()
+            raise ValueError(f"{message}: {examples}")
+    complete = has_position & has_size
     if floor_canvases is None:
         return
     limit_width, limit_height = _canvas_limits(result, floor_canvases)
+    # 끝 좌표는 저장 정밀도로 반올림해 견준다. 편집기가 캔버스 끝에 붙여 놓은 호기(88.7 + 11.3)가
+    # 부동소수 합(100.00000000000001)으로 「밖」이 되지 않게 — 푸는 쪽이라 과거 리비전도 열린다.
     outside = complete & (
-        result["X좌표"].add(result["Xsize"]).gt(limit_width)
-        | result["Y좌표"].add(result["Ysize"]).gt(limit_height)
+        result["X좌표"].add(result["Xsize"]).round(CANVAS_DECIMALS).gt(limit_width)
+        | result["Y좌표"].add(result["Ysize"]).round(CANVAS_DECIMALS).gt(limit_height)
     )
     if outside.any():
         raise ValueError(_outside_canvas_message(result, outside, complete, floor_canvases))
@@ -298,12 +316,10 @@ def _outside_canvas_message(
             stored if stored is not None else (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
         )
         on_floor = complete & _same_value(result["동"], building) & _same_value(result["층"], floor)
-        need_width = max(
-            width, float(result.loc[on_floor, "X좌표"].add(result.loc[on_floor, "Xsize"]).max())
-        )
-        need_height = max(
-            height, float(result.loc[on_floor, "Y좌표"].add(result.loc[on_floor, "Ysize"]).max())
-        )
+        right = result.loc[on_floor, "X좌표"].add(result.loc[on_floor, "Xsize"]).max()
+        top = result.loc[on_floor, "Y좌표"].add(result.loc[on_floor, "Ysize"]).max()
+        need_width = max(width, round(float(right), CANVAS_DECIMALS))
+        need_height = max(height, round(float(top), CANVAS_DECIMALS))
         label = "동·층 미지정" if unplaced else f"{building} {floor}"
         source = "" if stored is not None else "(저장된 캔버스 없음 · 기본값)"
         examples = rows["호기"].head(5).tolist()
@@ -378,6 +394,22 @@ def _normalize_conversion_ratio(result: pd.DataFrame) -> pd.Series:
         examples = result.loc[not_positive, "호기"].head(5).tolist()
         raise ValueError(f"환산비는 0보다 큰 숫자여야 합니다: {examples}")
     return ratio.mask(blank, DEFAULT_CONVERSION_RATIO).astype("float64")
+
+
+def _readable_number(result: pd.DataFrame, column: str) -> pd.Series:
+    """좌표·크기 칸을 숫자로 읽는다. **빈 칸과 못 읽는 값을 가른다**(환산비와 같은 이유).
+
+    좌표는 비어도 되는 칸이라(레이아웃표시 Y 의 미배치·크기만 있는 행), 못 읽는 값을 NaN 으로
+    흘리면 붙여넣기의 `12,5`·`12m`·줄바꿈 없는 공백이 조용히 「미배치」로 저장된다.
+    """
+    raw = result[column]
+    blank = raw.isna() | raw.astype("string").str.strip().isin(["", "nan", "None", "<NA>"])
+    number = pd.to_numeric(raw, errors="coerce")
+    unreadable = ~blank & number.isna()
+    if unreadable.any():
+        examples = result.loc[unreadable, "호기"].head(5).tolist()
+        raise ValueError(f"{column}를 숫자로 읽을 수 없습니다: {examples}")
+    return number.mask(blank).astype("float64")
 
 
 def _drop_blank_rows(data: pd.DataFrame, columns: tuple[str, ...]) -> pd.DataFrame:

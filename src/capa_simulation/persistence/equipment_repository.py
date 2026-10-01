@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -40,7 +40,15 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_baseline,
     prepare_equipment_master,
 )
+from capa_simulation.services.floor_layout_mark import (
+    FloorLayoutMark,
+    marks_extent,
+    marks_fingerprint,
+    prepare_floor_layout_marks,
+)
 from capa_simulation.services.floor_layout_profile import (
+    DEFAULT_CANVAS_HEIGHT,
+    DEFAULT_CANVAS_WIDTH,
     CanvasSize,
     FloorKey,
     FloorLayoutCanvas,
@@ -59,6 +67,17 @@ from capa_simulation.services.process_cutoff import (
 from capa_simulation.services.weekly_availability_input import prepare_weekly_availability
 
 _WRITE_LOCK = threading.RLock()
+# 저장본이 하나도 없을 때의 출발 리비전 표시. 편집본이 「빈 저장소에서 나왔다」는 뜻이다.
+EMPTY_REVISION_TOKEN = "empty"
+# 한 층 편집을 시작할 때 본 저장값: (저장된 캔버스 — 없으면 None, 저장된 도면 요소의 지문).
+FloorLayoutBase = tuple[CanvasSize | None, str]
+
+
+@dataclass
+class _WriteOutcome:
+    """쓰기 트랜잭션이 실제로 무엇을 썼는가. 아무것도 안 썼으면 동기화 dirty 표시를 하지 않는다."""
+
+    wrote: bool = True
 
 
 @dataclass(frozen=True)
@@ -130,47 +149,163 @@ class DuckDBEquipmentRepository:
         downtime: pd.DataFrame,
         *,
         note: str | None = None,
+        floor_canvases: Mapping[FloorKey, CanvasSize] | None = None,
+        floor_marks: Mapping[FloorKey, Sequence[Mapping[str, object]]] | None = None,
+        base_revision_id: str | None = None,
+        floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None,
     ) -> EquipmentSnapshot:
-        prepared_baseline = prepare_equipment_baseline(baseline)
-        # 저장 시점에만 층 캔버스 상한을 강제한다. 과거 리비전을 다시 읽을 때는 캔버스를
-        # 넘기지 않아, 도면 비율을 줄여도 이미 저장된 리비전이 계속 열린다.
-        prepared_equipment = prepare_equipment_master(
-            equipment, floor_canvases=self.load_floor_layout_canvases()
+        """세 표를 새 리비전으로 저장한다.
+
+        미저장 층 캔버스·도면 요소가 있으면 **같은 트랜잭션**에 함께 쓴다(호기는 넓힌 캔버스
+        기준으로 검증된다). 캔버스·요소는 리비전이 아니라 층 현행값이다.
+
+        `base_revision_id` 는 편집본이 나온 리비전(저장본이 없었으면 `EMPTY_REVISION_TOKEN`)이다.
+        주면 쓰기 잠금 안에서 최신 리비전과 견줘, 그 사이 다른 사람이 저장했으면 거부한다 —
+        옛 편집본이 남의 리비전을 조용히 되돌리지 않게. `floor_layout_bases` 는 층마다 편집을
+        시작할 때 본 캔버스·요소 지문이고, 저장 직전 값과 다르면 같은 이유로 거부한다.
+        """
+        revision_id = self._save(
+            baseline,
+            equipment,
+            downtime,
+            note=note,
+            floor_canvases=floor_canvases,
+            floor_marks=floor_marks,
+            base_revision_id=base_revision_id,
+            floor_layout_bases=floor_layout_bases,
+            skip_unchanged=False,
         )
-        prepared_downtime = prepare_downtime_for_prepared_equipment(downtime, prepared_equipment)
-        normalized_note = note.strip() if note and note.strip() else None
-        baseline_hash = hash_frame(prepared_baseline)
-        equipment_hash = hash_frame(prepared_equipment)
-        downtime_hash = hash_frame(prepared_downtime)
-        revision_id = str(uuid4())
-        with self._write_transaction() as connection:
-            row = connection.execute(
-                "SELECT COALESCE(MAX(revision_no), 0) + 1 FROM equipment_ops.revision"
-            ).fetchone()
-            if row is None:
-                raise RuntimeError("설비 이력 번호를 생성하지 못했습니다.")
-            revision_no = int(row[0])
-            connection.execute(
-                """
-                INSERT INTO equipment_ops.revision (
-                    revision_id, revision_no, note, baseline_hash, schedule_hash,
-                    equipment_hash, downtime_hash, equipment_contract_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 3)
-                """,
-                [
-                    revision_id,
-                    revision_no,
-                    normalized_note,
-                    baseline_hash,
-                    equipment_hash,
-                    equipment_hash,
-                    downtime_hash,
-                ],
-            )
-            _insert_baseline(connection, revision_id, prepared_baseline)
-            _insert_equipment(connection, revision_id, prepared_equipment)
-            _insert_downtime(connection, revision_id, prepared_downtime)
+        assert revision_id is not None
         return self.load_snapshot(revision_id)
+
+    def save_space_layout(
+        self,
+        baseline: pd.DataFrame,
+        equipment: pd.DataFrame,
+        downtime: pd.DataFrame,
+        *,
+        note: str | None = None,
+        floor_canvases: Mapping[FloorKey, CanvasSize] | None = None,
+        floor_marks: Mapping[FloorKey, Sequence[Mapping[str, object]]] | None = None,
+        base_revision_id: str | None = None,
+        floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None,
+    ) -> EquipmentSnapshot | None:
+        """`save_snapshot` 과 같되, 세 표가 최신 리비전과 같으면 **리비전을 만들지 않고**
+        캔버스·도면 요소만 쓴다(Space 에서 요소만 고친 저장이 호기 마스터를 복제하지 않게).
+        새 리비전을 만들었으면 그 스냅샷, 아니면 None."""
+        revision_id = self._save(
+            baseline,
+            equipment,
+            downtime,
+            note=note,
+            floor_canvases=floor_canvases,
+            floor_marks=floor_marks,
+            base_revision_id=base_revision_id,
+            floor_layout_bases=floor_layout_bases,
+            skip_unchanged=True,
+        )
+        return self.load_snapshot(revision_id) if revision_id is not None else None
+
+    def _save(
+        self,
+        baseline: pd.DataFrame,
+        equipment: pd.DataFrame,
+        downtime: pd.DataFrame,
+        *,
+        note: str | None,
+        floor_canvases: Mapping[FloorKey, CanvasSize] | None,
+        floor_marks: Mapping[FloorKey, Sequence[Mapping[str, object]]] | None,
+        base_revision_id: str | None,
+        floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None,
+        skip_unchanged: bool,
+    ) -> str | None:
+        """검증·리비전·캔버스·요소를 **연결 하나, 트랜잭션 하나**에서 한다.
+
+        캔버스를 따로 저장(`save_floor_layout_canvas`)한 뒤 `save_snapshot` 을 부르면 트랜잭션이
+        둘로 갈려, 호기 검증이 실패해도 캔버스만 바뀐 채 남는다. 저장된 캔버스도 이 연결 안에서
+        읽는다 — 밖에서 읽으면 그 사이에 다른 사람이 줄인 캔버스를 놓친다.
+        """
+        canvases: dict[FloorKey, CanvasSize] = {}
+        for (building, floor), size in (floor_canvases or {}).items():
+            _require_floor_key(building, floor)
+            canvases[(building, floor)] = normalize_canvas_size(*size)
+        for building, floor in floor_marks or {}:
+            _require_floor_key(building, floor)
+        prepared_baseline = prepare_equipment_baseline(baseline)
+        normalized_note = note.strip() if note and note.strip() else None
+        outcome = _WriteOutcome()
+        with self._write_transaction(outcome) as connection:
+            # 최신 리비전·저장된 캔버스·요소는 모두 **쓰기 잠금 안에서** 읽는다. 밖에서 읽으면
+            # 그 사이 다른 세션의 저장을 놓쳐 옛 편집본이 그것을 되돌린다.
+            latest = _latest_revision(connection)
+            if base_revision_id is not None:
+                current = latest[0] if latest is not None else EMPTY_REVISION_TOKEN
+                if current != base_revision_id:
+                    newest = f"r{latest[1]}" if latest is not None else "다른 저장"
+                    raise ValueError(
+                        f"다른 사용자가 먼저 {newest}을 저장해 저장하지 않았습니다. 화면을 "
+                        "다시 불러와 최신 저장본 위에서 고친 뒤 저장하세요."
+                    )
+            stored_canvases = _stored_floor_canvases(connection)
+            _require_floor_layout_bases(
+                connection,
+                stored_canvases,
+                floor_layout_bases or {},
+                changed={*canvases, *(floor_marks or {})},
+            )
+            # 저장 시점에만 층 캔버스 상한을 강제한다. 과거 리비전을 다시 읽을 때는 캔버스를
+            # 넘기지 않아, 도면 비율을 줄여도 이미 저장된 리비전이 계속 열린다.
+            merged = {**stored_canvases, **canvases}
+            prepared_equipment = prepare_equipment_master(equipment, floor_canvases=merged)
+            prepared_downtime = prepare_downtime_for_prepared_equipment(
+                downtime, prepared_equipment
+            )
+            default_canvas = (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
+            prepared_marks = {
+                key: prepare_floor_layout_marks(marks, merged.get(key, default_canvas))
+                for key, marks in (floor_marks or {}).items()
+            }
+            # 캔버스만 바꾸는 층의 **저장된** 요소도 새 캔버스 안이어야 한다.
+            for key, size in canvases.items():
+                if key not in prepared_marks:
+                    _require_marks_fit(connection, key, size)
+            hashes = (
+                hash_frame(prepared_baseline),
+                hash_frame(prepared_equipment),
+                hash_frame(prepared_downtime),
+            )
+            content = (
+                _content_hash(prepared_baseline),
+                _content_hash(prepared_equipment),
+                _content_hash(prepared_downtime),
+            )
+            # 「세 표가 그대로인가」는 저장 당시 감사 해시가 아니라 **최신 리비전을 다시 정규화한
+            # 값**과 내용 해시(`_content_hash`)로 견준다. 감사 해시는 입력의 형(정수 좌표 …)까지
+            # 타서, 읽어 온 편집본을 다시 정규화한 값과 늘 달라 「바뀌었다」가 된다. 저장본이
+            # 없으면 빈 세 표가 「그대로」다(요소만 저장하면서 빈 r1 을 만들지 않게).
+            unchanged = False
+            if skip_unchanged:
+                if latest is None:
+                    unchanged = all(
+                        frame.empty
+                        for frame in (prepared_baseline, prepared_equipment, prepared_downtime)
+                    )
+                else:
+                    unchanged = _content_hashes(_read_snapshot(connection, latest[0])) == content
+            revision_id: str | None = None
+            if not unchanged:
+                revision_id = _insert_revision(
+                    connection,
+                    note=normalized_note,
+                    hashes=hashes,
+                    frames=(prepared_baseline, prepared_equipment, prepared_downtime),
+                )
+            for (building, floor), (width, height) in canvases.items():
+                _upsert_floor_canvas(connection, building, floor, width, height)
+            for (building, floor), marks in prepared_marks.items():
+                _replace_floor_marks(connection, building, floor, marks)
+            outcome.wrote = revision_id is not None or bool(canvases) or bool(prepared_marks)
+        return revision_id
 
     def latest_revision_id(self) -> str | None:
         """Return the newest immutable revision id without loading its frames."""
@@ -184,35 +319,7 @@ class DuckDBEquipmentRepository:
 
     def load_snapshot(self, revision_id: str) -> EquipmentSnapshot:
         with self._connect() as connection:
-            revision_row = connection.execute(
-                f"""
-                SELECT {_REVISION_SUMMARY_PROJECTION}, r.equipment_contract_version
-                FROM equipment_ops.revision r
-                WHERE r.revision_id = ?
-                """,
-                [revision_id],
-            ).fetchone()
-            if revision_row is None:
-                raise KeyError(f"설비 이력을 찾을 수 없습니다: {revision_id}")
-            baseline = _load_baseline(connection, revision_id)
-            contract_version = int(revision_row[7])
-            if contract_version == 3:
-                equipment = _load_equipment_master(connection, revision_id)
-                downtime = _load_downtime_schedule(connection, revision_id)
-            else:
-                equipment = _load_legacy_equipment(connection, revision_id)
-                if equipment.empty:
-                    equipment = _load_legacy_schedule(connection, revision_id)
-                downtime = _load_legacy_downtime(connection, revision_id)
-        prepared_equipment = prepare_equipment_master(equipment.reindex(columns=EQUIPMENT_COLUMNS))
-        return EquipmentSnapshot(
-            revision=_revision_summary(revision_row),
-            baseline=prepare_equipment_baseline(baseline.reindex(columns=BASELINE_COLUMNS)),
-            equipment=prepared_equipment,
-            downtime=prepare_downtime_for_prepared_equipment(
-                downtime.reindex(columns=DOWNTIME_COLUMNS), prepared_equipment
-            ),
-        )
+            return _read_snapshot(connection, revision_id)
 
     def list_revisions(self, *, limit: int = 50) -> list[EquipmentRevisionSummary]:
         if limit <= 0:
@@ -352,6 +459,7 @@ class DuckDBEquipmentRepository:
         else:
             width, height = normalize_canvas_size(canvas_width, canvas_height)
         with self._write_transaction() as connection:
+            _require_marks_fit(connection, (building, floor), (width, height))
             require_total_layout_budget(
                 _other_floors_layout_bytes(connection, building, floor), len(payload)
             )
@@ -395,24 +503,40 @@ class DuckDBEquipmentRepository:
         _require_floor_key(building, floor)
         width, height = normalize_canvas_size(canvas_width, canvas_height)
         with self._write_transaction() as connection:
-            # 행이 이미 있으면 숫자 두 개만 UPDATE 한다. DELETE+INSERT 로 행을 다시 쓰면
-            # 도면 BLOB 이 통째로 다시 기록되고 DuckDB 는 지운 페이지를 회수하지 않는다.
-            updated = connection.execute(
-                """
-                UPDATE equipment_ops.floor_layout_profile
-                SET canvas_width = ?, canvas_height = ?, updated_at = current_timestamp
-                WHERE building = ? AND floor_name = ?
-                """,
-                [width, height, building, floor],
-            ).fetchone()
-            if updated is None or int(updated[0]) == 0:
-                _insert_floor_layout(connection, building, floor, width, height, None)
+            _require_marks_fit(connection, (building, floor), (width, height))
+            _upsert_floor_canvas(connection, building, floor, width, height)
         return self._require_floor_layout_profile(building, floor)
 
-    def delete_floor_layout_profile(self, building: str, floor: str) -> None:
-        """Delete one floor's drawing and canvas without creating a revision."""
+    def load_floor_layout_marks(self, building: str, floor: str) -> tuple[FloorLayoutMark, ...]:
+        """한 층의 도면 요소를 그리는 순서(`source_row_no`)대로 읽는다."""
+        with self._connect() as connection:
+            return _stored_floor_marks(connection, building, floor)
+
+    def replace_floor_layout_marks(
+        self,
+        building: str,
+        floor: str,
+        marks: Sequence[Mapping[str, object]],
+    ) -> tuple[FloorLayoutMark, ...]:
+        """한 층의 도면 요소를 통째로 갈아 끼운다. 리비전을 만들지 않는다. 빈 목록은 모두 지운다."""
         _require_floor_key(building, floor)
         with self._write_transaction() as connection:
+            stored = _stored_floor_canvases(connection)
+            canvas = stored.get((building, floor), (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT))
+            _replace_floor_marks(
+                connection, building, floor, prepare_floor_layout_marks(marks, canvas)
+            )
+        return self.load_floor_layout_marks(building, floor)
+
+    def delete_floor_layout_profile(self, building: str, floor: str) -> None:
+        """층 배경 도면과 캔버스를 지운다(리비전 없음). 도면 요소는 남긴다 — 지우면 캔버스가 기본
+        크기로 돌아가므로, 그 밖에 요소가 있으면 거부한다(요소가 캔버스 밖에 남으면 그 층 요소를
+        다시 저장할 수 없다)."""
+        _require_floor_key(building, floor)
+        with self._write_transaction() as connection:
+            _require_marks_fit(
+                connection, (building, floor), (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
+            )
             connection.execute(
                 """
                 DELETE FROM equipment_ops.floor_layout_profile
@@ -488,12 +612,16 @@ class DuckDBEquipmentRepository:
         return profile
 
     @contextmanager
-    def _write_transaction(self) -> Iterator[duckdb.DuckDBPyConnection]:
+    def _write_transaction(
+        self, outcome: _WriteOutcome | None = None
+    ) -> Iterator[duckdb.DuckDBPyConnection]:
         with _WRITE_LOCK, self._connect() as connection, transaction(connection):
             yield connection
         # COMMIT 이 끝나고 연결이 닫힌 뒤에만 표시한다. `sync_state` 는 등록되지 않은
-        # 환경에서 아무 파일도 만들지 않으므로 개발 PC·CI 동작은 그대로다.
-        sync_state.mark_dirty(self._database_path)
+        # 환경에서 아무 파일도 만들지 않으므로 개발 PC·CI 동작은 그대로다. 아무것도 쓰지 않은
+        # 저장은 표시하지 않는다 — dirty 가 서면 다른 PC 의 새 세대를 받지 못한다.
+        if outcome is None or outcome.wrote:
+            sync_state.mark_dirty(self._database_path)
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
         return connect(self._database_path)
@@ -502,6 +630,255 @@ class DuckDBEquipmentRepository:
 def _require_floor_key(building: str, floor: str) -> None:
     if building not in VALID_BUILDINGS or floor not in VALID_FLOORS:
         raise ValueError(f"동은 C1~C5, 층은 1F~6F 범위여야 합니다: {building} {floor}")
+
+
+def _latest_revision(connection: duckdb.DuckDBPyConnection) -> tuple[str, int] | None:
+    """(최신 리비전 id, 번호). 리비전이 없으면 None."""
+    row = connection.execute(
+        """
+        SELECT revision_id, revision_no FROM equipment_ops.revision
+        ORDER BY revision_no DESC LIMIT 1
+        """
+    ).fetchone()
+    return (str(row[0]), int(row[1])) if row is not None else None
+
+
+def _read_snapshot(connection: duckdb.DuckDBPyConnection, revision_id: str) -> EquipmentSnapshot:
+    revision_row = connection.execute(
+        f"""
+        SELECT {_REVISION_SUMMARY_PROJECTION}, r.equipment_contract_version
+        FROM equipment_ops.revision r
+        WHERE r.revision_id = ?
+        """,
+        [revision_id],
+    ).fetchone()
+    if revision_row is None:
+        raise KeyError(f"설비 이력을 찾을 수 없습니다: {revision_id}")
+    baseline = _load_baseline(connection, revision_id)
+    contract_version = int(revision_row[7])
+    if contract_version == 3:
+        equipment = _load_equipment_master(connection, revision_id)
+        downtime = _load_downtime_schedule(connection, revision_id)
+    else:
+        equipment = _load_legacy_equipment(connection, revision_id)
+        if equipment.empty:
+            equipment = _load_legacy_schedule(connection, revision_id)
+        downtime = _load_legacy_downtime(connection, revision_id)
+    prepared_equipment = prepare_equipment_master(equipment.reindex(columns=EQUIPMENT_COLUMNS))
+    return EquipmentSnapshot(
+        revision=_revision_summary(revision_row),
+        baseline=prepare_equipment_baseline(baseline.reindex(columns=BASELINE_COLUMNS)),
+        equipment=prepared_equipment,
+        downtime=prepare_downtime_for_prepared_equipment(
+            downtime.reindex(columns=DOWNTIME_COLUMNS), prepared_equipment
+        ),
+    )
+
+
+def _content_hashes(snapshot: EquipmentSnapshot) -> tuple[str, str, str]:
+    """저장본을 다시 정규화한 세 표의 내용 해시. 저장 후보의 `_content_hash` 와 견준다."""
+    equipment = prepare_equipment_master(snapshot.equipment)
+    return (
+        _content_hash(prepare_equipment_baseline(snapshot.baseline)),
+        _content_hash(equipment),
+        _content_hash(prepare_downtime_for_prepared_equipment(snapshot.downtime, equipment)),
+    )
+
+
+def _require_floor_layout_bases(
+    connection: duckdb.DuckDBPyConnection,
+    stored_canvases: Mapping[FloorKey, CanvasSize],
+    bases: Mapping[FloorKey, FloorLayoutBase],
+    *,
+    changed: set[FloorKey],
+) -> None:
+    """바꾸려는 층의 캔버스·요소가 편집을 시작할 때 본 값 그대로인가. 아니면 다른 사람이 먼저
+    저장한 것이다 — 요소는 층 전체 교체라 옛 목록으로 덮으면 그 사람의 요소가 지워진다."""
+    for key in sorted(changed & set(bases)):
+        expected_canvas, expected_marks = bases[key]
+        stored_canvas = stored_canvases.get(key)
+        if stored_canvas is None or expected_canvas is None:
+            same_canvas = stored_canvas is None and expected_canvas is None
+        else:
+            same_canvas = all(
+                abs(a - b) < 1e-9 for a, b in zip(stored_canvas, expected_canvas, strict=True)
+            )
+        same_marks = marks_fingerprint(_stored_floor_marks(connection, *key)) == expected_marks
+        if not (same_canvas and same_marks):
+            raise ValueError(
+                f"{key[0]} {key[1]} 의 캔버스·도면 요소를 다른 사용자가 먼저 바꿔 저장하지 "
+                "않았습니다. 저장 안 한 배치를 버리고 다시 고치세요."
+            )
+
+
+def _require_marks_fit(
+    connection: duckdb.DuckDBPyConnection, key: FloorKey, canvas: CanvasSize
+) -> None:
+    """그 층의 **저장된** 도면 요소가 새 캔버스 안인가. 캔버스를 바꾸는 모든 길이 지킨다 —
+    요소가 캔버스 밖에 남으면 그 층 요소를 다시 저장할 때 손대지 않은 요소 때문에 막힌다."""
+    width, height = canvas
+    right, top = marks_extent(_stored_floor_marks(connection, *key))
+    if right > width + 1e-9 or top > height + 1e-9:
+        raise ValueError(
+            f"{key[0]} {key[1]} 캔버스 {width:g} × {height:g} 밖에 도면 요소가 있습니다(필요한 "
+            f"크기 {right:g} × {top:g}). Space 편집기에서 요소를 옮기거나 캔버스를 넓히세요."
+        )
+
+
+def _content_hash(frame: pd.DataFrame) -> str:
+    """값만 보는 해시. 모든 칸을 같은 글자 표기로 바꾼 뒤 잰다 — 같은 값이 정수로 들어왔는지
+    DB 에서 실수로 읽혔는지, 날짜 단위가 ns 인지 us 인지로 「바뀌었다」고 하지 않게."""
+    canonical = pd.DataFrame(index=range(len(frame)))
+    for column in frame.columns:
+        series = frame[column].reset_index(drop=True)
+        if pd.api.types.is_bool_dtype(series):
+            text = series.astype("string")
+        elif pd.api.types.is_numeric_dtype(series):
+            text = series.astype("float64").map(lambda value: "" if pd.isna(value) else repr(value))
+        elif pd.api.types.is_datetime64_any_dtype(series):
+            text = series.dt.strftime("%Y-%m-%dT%H:%M:%S")
+        else:
+            text = series.astype("string")
+        canonical[str(column)] = text.astype("string").fillna("")
+    return hash_frame(canonical)
+
+
+def _insert_revision(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    note: str | None,
+    hashes: tuple[str, str, str],
+    frames: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame],
+) -> str:
+    """검증을 마친 세 표를 새 리비전 하나로 넣고 그 id 를 돌려준다."""
+    baseline_hash, equipment_hash, downtime_hash = hashes
+    revision_id = str(uuid4())
+    row = connection.execute(
+        "SELECT COALESCE(MAX(revision_no), 0) + 1 FROM equipment_ops.revision"
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("설비 이력 번호를 생성하지 못했습니다.")
+    connection.execute(
+        """
+        INSERT INTO equipment_ops.revision (
+            revision_id, revision_no, note, baseline_hash, schedule_hash,
+            equipment_hash, downtime_hash, equipment_contract_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 3)
+        """,
+        [
+            revision_id,
+            int(row[0]),
+            note,
+            baseline_hash,
+            equipment_hash,
+            equipment_hash,
+            downtime_hash,
+        ],
+    )
+    _insert_baseline(connection, revision_id, frames[0])
+    _insert_equipment(connection, revision_id, frames[1])
+    _insert_downtime(connection, revision_id, frames[2])
+    return revision_id
+
+
+def _stored_floor_canvases(connection: duckdb.DuckDBPyConnection) -> dict[FloorKey, CanvasSize]:
+    """저장된 층 캔버스. 도면 바이트는 읽지 않는다."""
+    rows = connection.execute(
+        "SELECT building, floor_name, canvas_width, canvas_height "
+        "FROM equipment_ops.floor_layout_profile"
+    ).fetchall()
+    return {(str(row[0]), str(row[1])): (float(row[2]), float(row[3])) for row in rows}
+
+
+def _upsert_floor_canvas(
+    connection: duckdb.DuckDBPyConnection,
+    building: str,
+    floor: str,
+    width: float,
+    height: float,
+) -> None:
+    # 행이 이미 있으면 숫자 두 개만 UPDATE 한다. DELETE+INSERT 로 행을 다시 쓰면
+    # 도면 BLOB 이 통째로 다시 기록되고 DuckDB 는 지운 페이지를 회수하지 않는다.
+    updated = connection.execute(
+        """
+        UPDATE equipment_ops.floor_layout_profile
+        SET canvas_width = ?, canvas_height = ?, updated_at = current_timestamp
+        WHERE building = ? AND floor_name = ?
+        """,
+        [width, height, building, floor],
+    ).fetchone()
+    if updated is None or int(updated[0]) == 0:
+        _insert_floor_layout(connection, building, floor, width, height, None)
+
+
+def _stored_floor_marks(
+    connection: duckdb.DuckDBPyConnection,
+    building: str,
+    floor: str,
+) -> tuple[FloorLayoutMark, ...]:
+    rows = connection.execute(
+        """
+        SELECT mark_id, mark_kind, x_coordinate, y_coordinate, x_size, y_size, rotation_deg,
+               label, color_key, hatch, keep_out
+        FROM equipment_ops.floor_layout_mark
+        WHERE building = ? AND floor_name = ?
+        ORDER BY source_row_no
+        """,
+        [building, floor],
+    ).fetchall()
+    return tuple(
+        FloorLayoutMark(
+            mark_id=str(row[0]),
+            kind=str(row[1]),
+            x=float(row[2]),
+            y=float(row[3]),
+            w=float(row[4]),
+            h=float(row[5]),
+            rotation=int(row[6]),
+            label=str(row[7]) if row[7] is not None else "",
+            color=str(row[8]) if row[8] is not None else "",
+            hatch=bool(row[9]),
+            keep_out=bool(row[10]),
+        )
+        for row in rows
+    )
+
+
+def _replace_floor_marks(
+    connection: duckdb.DuckDBPyConnection,
+    building: str,
+    floor: str,
+    marks: Sequence[FloorLayoutMark],
+) -> None:
+    """그 층 요소를 지우고 받은 순서대로 다시 넣는다(`source_row_no` 가 그리는 순서)."""
+    connection.execute(
+        "DELETE FROM equipment_ops.floor_layout_mark WHERE building = ? AND floor_name = ?",
+        [building, floor],
+    )
+    if not marks:
+        return
+    frame = pd.DataFrame(
+        [
+            {
+                "building": building,
+                "floor_name": floor,
+                "mark_id": mark.mark_id,
+                "source_row_no": index,
+                "mark_kind": mark.kind,
+                "x_coordinate": mark.x,
+                "y_coordinate": mark.y,
+                "x_size": mark.w,
+                "y_size": mark.h,
+                "rotation_deg": mark.rotation,
+                "label": mark.label or None,
+                "color_key": mark.color or None,
+                "hatch": mark.hatch,
+                "keep_out": mark.keep_out,
+            }
+            for index, mark in enumerate(marks, start=1)
+        ]
+    )
+    insert_by_name(connection, schema="equipment_ops", table_name="floor_layout_mark", frame=frame)
 
 
 def _stored_image_digest(

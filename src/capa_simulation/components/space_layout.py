@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import html
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, cast
@@ -10,12 +12,13 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from capa_simulation.components.plotly_layout import append_layout_items, flush_layout_items
-from capa_simulation.design import tokens
+from capa_simulation.design import theme, tokens
 from capa_simulation.services.equipment_units import (
     UNIT_SHARE_COLUMN,
     format_unit_count,
     unit_total,
 )
+from capa_simulation.services.floor_layout_mark import MARK_COLOR_KEYS, FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
     DEFAULT_CANVAS_WIDTH,
@@ -243,6 +246,169 @@ def build_floor_figure(
     return figure
 
 
+def mark_colors() -> dict[str, str]:
+    """영역 색 키 → 지금 테마의 색. 검증된 범주 팔레트(제품별 비중과 같은 색)를 그대로 쓴다.
+    편집기와 Plotly 배치도가 같은 색을 쓴다."""
+    named = dict(zip(MARK_COLOR_KEYS[:-1], tokens.PRODUCT_SHARE_COLORS, strict=False))
+    return {**named, MARK_COLOR_KEYS[-1]: tokens.PRODUCT_SHARE_OTHER}
+
+
+def keep_out_color() -> str:
+    """겹침·설비 금지 표시색. 다크의 부족색은 어두운 캔버스에서 1.9:1 로 묻혀 밝은 감소색을 쓴다."""
+    return tokens.DELTA_AREA_DECREASE if theme.current_mode() == "dark" else tokens.STATUS_SHORTAGE
+
+
+def _local_to_data(mark: FloorLayoutMark, u: float, v: float) -> tuple[float, float]:
+    """요소의 제자리 좌표(돌리기 전 크기, 위가 0 인 화면식)를 데이터 좌표(왼쪽 아래 원점)로 바꾼다.
+    편집기 SVG 와 같은 변환이다 — 상자 가운데를 축으로 시계 방향 회전, 0° 일 때 아래 변이 벽."""
+    rotation = math.radians(mark.rotation)
+    width, height = (mark.h, mark.w) if mark.rotation % 180 else (mark.w, mark.h)
+    du, dv = u - width / 2, v - height / 2
+    x = du * math.cos(rotation) - dv * math.sin(rotation)
+    y = du * math.sin(rotation) + dv * math.cos(rotation)
+    return mark.x + mark.w / 2 + x, mark.y + mark.h / 2 - y
+
+
+def _mark_layout_items(
+    marks: Sequence[FloorLayoutMark],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """(호기 아래 영역 도형, 호기 위 요소 도형, 글자). 이름표는 사용자 글자라 이스케이프한다."""
+    colors = mark_colors()
+    ink = tokens.SPACE_TEXT
+    zones: list[dict[str, Any]] = []
+    shapes: list[dict[str, Any]] = []
+    labels: list[dict[str, Any]] = []
+    for mark in marks:
+        x0, y0, x1, y1 = mark.x, mark.y, mark.x + mark.w, mark.y + mark.h
+        width, height = (mark.h, mark.w) if mark.rotation % 180 else (mark.w, mark.h)
+        label = html.escape(mark.label)
+
+        def path(points: Sequence[tuple[float, float]], *, item: FloorLayoutMark = mark) -> str:
+            data = [_local_to_data(item, u, v) for u, v in points]
+            return "M " + " L ".join(f"{px:.3f} {py:.3f}" for px, py in data)
+
+        if mark.kind == "zone":
+            color = keep_out_color() if mark.keep_out else colors.get(mark.color, colors["gray"])
+            box = {"type": "rect", "x0": x0, "y0": y0, "x1": x1, "y1": y1, "layer": "below"}
+            zones.append({**box, "fillcolor": color, "opacity": 0.16, "line": {"width": 0}})
+            zones.append({**box, "line": {"color": color, "width": 1.5, "dash": "dash"}})
+            caption = html.escape(mark.label or "영역") + (" · 설비 금지" if mark.keep_out else "")
+            labels.append(
+                {
+                    "x": x0,
+                    "y": y1,
+                    "text": f"<b>{caption}</b>",
+                    "showarrow": False,
+                    "xanchor": "left",
+                    "yanchor": "top",
+                    "font": {"size": 10, "color": ink},
+                }
+            )
+        elif mark.kind == "column":
+            shapes.append(
+                {
+                    "type": "rect",
+                    "x0": x0,
+                    "y0": y0,
+                    "x1": x1,
+                    "y1": y1,
+                    "fillcolor": tokens.SPACE_LABEL_TEXT,
+                    "line": {"color": ink, "width": 1},
+                    "layer": "above",
+                }
+            )
+        elif mark.kind == "shutter":
+            # 반입구: 벽(0° 일 때 아래 변)에 굵은 셔터, 안쪽으로 들어오는 화살표.
+            shapes.append(
+                {
+                    "type": "path",
+                    "path": path([(0, height), (width, height)]),
+                    "line": {"color": ink, "width": 5},
+                    "layer": "above",
+                }
+            )
+            tail = _local_to_data(mark, width / 2, height * 0.75)
+            head = _local_to_data(mark, width / 2, height * 0.15)
+            labels.append(_arrow(tail, head, color=ink, width=2))
+        elif mark.kind == "door":
+            # 여닫이문: 왼쪽 아래가 경첩, 문짝과 열리는 궤적(사분원).
+            arc = [
+                (
+                    width * math.sin(step * math.pi / 24),
+                    height - height * math.cos(step * math.pi / 24),
+                )
+                for step in range(13)
+            ]
+            shapes.append(
+                {
+                    "type": "path",
+                    "path": path([(0, height), (0, 0)]),
+                    "line": {"color": ink, "width": 3},
+                    "layer": "above",
+                }
+            )
+            shapes.append(
+                {
+                    "type": "path",
+                    "path": path(arc),
+                    "line": {"color": ink, "width": 1, "dash": "dot"},
+                    "layer": "above",
+                }
+            )
+        elif mark.kind == "text":
+            labels.append(
+                {
+                    "x": (x0 + x1) / 2,
+                    "y": (y0 + y1) / 2,
+                    "text": f"<b>{label or '글자'}</b>",
+                    "showarrow": False,
+                    "textangle": mark.rotation,
+                    "font": {"size": 12, "color": ink},
+                }
+            )
+            continue
+        elif mark.kind == "arrow":
+            tail = _local_to_data(mark, height * 0.3, height / 2)
+            head = _local_to_data(mark, width, height / 2)
+            labels.append(_arrow(tail, head, color=tokens.ACCENT, width=3))
+        if label and mark.kind in ("shutter", "door", "arrow"):
+            # 이름표는 돌리지 않고 상자 바깥 방 쪽(반입구·문)이나 옆(동선)에 가로로 쓴다 — 편집기와
+            # 같은 자리다. 0° 일 때 방은 위쪽이다(아래 변이 벽).
+            if mark.kind == "arrow":
+                side = "right" if mark.rotation % 180 else "up"
+            else:
+                side = {0: "up", 90: "right", 180: "down", 270: "left"}[mark.rotation]
+            middle_x, middle_y = (x0 + x1) / 2, (y0 + y1) / 2
+            anchor = {
+                "up": {"x": middle_x, "y": y1, "yanchor": "bottom"},
+                "down": {"x": middle_x, "y": y0, "yanchor": "top"},
+                "right": {"x": x1, "y": middle_y, "xanchor": "left"},
+                "left": {"x": x0, "y": middle_y, "xanchor": "right"},
+            }[side]
+            labels.append(
+                {**anchor, "text": label, "showarrow": False, "font": {"size": 10, "color": ink}}
+            )
+    return zones, shapes, labels
+
+
+def _arrow(
+    tail: tuple[float, float], head: tuple[float, float], *, color: str, width: float
+) -> dict[str, Any]:
+    return {
+        "x": head[0],
+        "y": head[1],
+        "ax": tail[0],
+        "ay": tail[1],
+        "axref": "x",
+        "ayref": "y",
+        "showarrow": True,
+        "arrowhead": 2,
+        "arrowwidth": width,
+        "arrowcolor": color,
+        "text": "",
+    }
+
+
 def build_floor_layout_figure(
     equipment: pd.DataFrame,
     building: str,
@@ -252,9 +418,11 @@ def build_floor_layout_figure(
     canvas_width: float = DEFAULT_CANVAS_WIDTH,
     canvas_height: float = DEFAULT_CANVAS_HEIGHT,
     stage_counts: Mapping[str, float] | None = None,
+    marks: Sequence[FloorLayoutMark] = (),
 ) -> go.Figure:
     """층 상세 배치도. `stage_counts` 를 주면 범례에 그 층의 상태별 대수를 붙이고 없는 상태는
-    뺀다(「가용 12대」). 주지 않으면 모든 상태의 색 범례만 둔다."""
+    뺀다(「가용 12대」). 주지 않으면 모든 상태의 색 범례만 둔다. `marks` 는 저장된 도면 요소로,
+    편집기와 같은 모양으로 그린다 — 영역은 호기 아래, 반입구·문·기둥·동선은 호기 위."""
     figure = go.Figure()
     if background_image:
         # xref·yref 를 주지 않으면 plotly 가 paper 좌표로 읽어 도면이 화면 밖으로 나간다.
@@ -335,7 +503,12 @@ def build_floor_layout_figure(
             f"X {x:g} · Y {y:g} · 크기 {width:g}×{height:g}"
         )
 
-    append_layout_items(figure, shapes=equipment_shapes, annotations=equipment_labels)
+    zone_shapes, mark_shapes, mark_labels = _mark_layout_items(marks)
+    append_layout_items(
+        figure,
+        shapes=[*zone_shapes, *equipment_shapes, *mark_shapes],
+        annotations=[*equipment_labels, *mark_labels],
+    )
     figure.add_trace(
         go.Scatter(
             x=hover_x,

@@ -1,0 +1,126 @@
+<div class="sle" lang="ko">
+  <div class="sle-toolbar">
+    <span class="sle-title"></span>
+    <div class="sle-steps" role="group" aria-label="격자 간격">
+      <span class="sle-label-text">격자</span>
+      <button type="button" data-step="0.5">0.5</button>
+      <button type="button" data-step="1">1</button>
+      <button type="button" data-step="2">2</button>
+    </div>
+    <div class="sle-zoom" role="group" aria-label="확대·축소">
+      <button type="button" class="sle-zoom-out" aria-label="축소" title="축소 (−, Ctrl+휠)">−</button>
+      <span class="sle-zoom-label" aria-live="polite">100%</span>
+      <button type="button" class="sle-zoom-in" aria-label="확대" title="확대 (+, Ctrl+휠)">+</button>
+      <button type="button" class="sle-zoom-fit" title="전체 보기 (0)">전체 보기</button>
+      <button type="button" class="sle-zoom-sel">고른 곳 보기</button>
+    </div>
+    <button type="button" class="sle-undo" title="Ctrl+Z">실행 취소</button>
+    <button type="button" class="sle-reset">처음 상태로</button>
+    <button type="button" class="sle-unplace" title="Delete — 호기는 트레이로, 도면 요소는 지웁니다">빼기·지우기</button>
+    <span class="sle-spacer"></span>
+    <button type="button" class="sle-apply">적용</button>
+  </div>
+  <div class="sle-panels">
+    <div class="sle-panel sle-palette" role="group" aria-label="도면 요소 넣기">
+      <span class="sle-panel-title">도면 요소</span>
+      <button type="button" data-kind="zone" title="눌러서 넣거나 도면으로 끌어 놓기">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1" class="ico-dash"/></svg>영역</button>
+      <button type="button" data-kind="shutter" title="반입구(셔터) — 앞 공간에 호기가 서면 경고">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><line x1="1" y1="14" x2="15" y2="14" class="ico-bold"/><line x1="8" y1="12" x2="8" y2="4" class="ico-line"/><polyline points="5,7 8,3 11,7" class="ico-line"/></svg>반입구</button>
+      <button type="button" data-kind="door" title="여닫이문 — 열리는 자리에 호기가 서면 경고">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><line x1="3" y1="14" x2="3" y2="3" class="ico-bold"/><path d="M3 3 A11 11 0 0 1 14 14" class="ico-dash"/></svg>문</button>
+      <button type="button" data-kind="column" title="기둥 — 호기가 겹치면 경고">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" class="ico-fill"/></svg>기둥</button>
+      <button type="button" data-kind="text">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><text x="8" y="12.5" text-anchor="middle" class="ico-text">T</text></svg>글자</button>
+      <button type="button" data-kind="arrow" title="동선 화살표">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><line x1="2" y1="8" x2="12" y2="8" class="ico-dash"/><polyline points="10,5 14,8 10,11" class="ico-line"/></svg>동선</button>
+    </div>
+    <div class="sle-panel sle-area" role="group" aria-label="편집 영역 크기">
+      <span class="sle-panel-title">편집 영역</span>
+      <span class="sle-field">
+        <span aria-hidden="true">폭</span>
+        <button type="button" class="sle-nudge" data-area="w-10" aria-label="폭 10 줄이기">−</button>
+        <input class="sle-area-w" type="number" step="1" inputmode="decimal" aria-label="편집 영역 폭">
+        <button type="button" class="sle-nudge" data-area="w+10" aria-label="폭 10 늘리기">+</button>
+      </span>
+      <span class="sle-field">
+        <span aria-hidden="true">높이</span>
+        <button type="button" class="sle-nudge" data-area="h-10" aria-label="높이 10 줄이기">−</button>
+        <input class="sle-area-h" type="number" step="1" inputmode="decimal" aria-label="편집 영역 높이">
+        <button type="button" class="sle-nudge" data-area="h+10" aria-label="높이 10 늘리기">+</button>
+      </span>
+      <button type="button" class="sle-area-fit" title="놓인 호기·요소가 다 들어가는 가장 작은 크기">맞춤</button>
+      <span class="sle-area-note" aria-live="polite"></span>
+    </div>
+    <div class="sle-panel sle-inspector is-empty" role="group" aria-label="고른 것의 위치와 크기">
+      <span class="sle-panel-title">선택 <b class="sle-inspector-name"></b></span>
+      <div class="sle-fields">
+        <label class="sle-field"><span>X</span><input type="number" data-field="x" inputmode="decimal"></label>
+        <label class="sle-field"><span>Y</span><input type="number" data-field="y" inputmode="decimal"></label>
+        <label class="sle-field"><span>폭</span><input type="number" data-field="w" inputmode="decimal"></label>
+        <label class="sle-field"><span>높이</span><input type="number" data-field="h" inputmode="decimal"></label>
+      </div>
+      <span class="sle-field sle-sendto">
+        <select class="sle-move-floor" aria-label="보낼 층"></select>
+        <button type="button" class="sle-move" title="모듈 묶음은 함께 갑니다. 놓여 있던 호기는 같은 좌표·크기로 그 층에 섭니다.">다른 층으로 보내기</button>
+      </span>
+      <span class="sle-markprops" hidden>
+        <label class="sle-field"><span>이름</span><input class="sle-mark-label" type="text" maxlength="40" autocomplete="off"></label>
+        <label class="sle-field sle-zone-only"><span>색</span><select class="sle-mark-color"></select></label>
+        <label class="sle-field sle-zone-only"><input class="sle-mark-hatch" type="checkbox"><span>빗금</span></label>
+        <label class="sle-field sle-zone-only" title="이 영역에 호기가 서면 경고합니다"><input class="sle-mark-keepout" type="checkbox"><span>설비 금지</span></label>
+        <button type="button" class="sle-mark-rotate">90° 돌리기</button>
+      </span>
+    </div>
+  </div>
+  <div class="sle-body">
+    <div class="sle-stage">
+      <svg class="sle-canvas" xmlns="http://www.w3.org/2000/svg" tabindex="0"
+           role="application" aria-label="층 배치 도면 편집기">
+        <defs>
+          <pattern id="sle-hatch" patternUnits="userSpaceOnUse" width="1.2" height="1.2" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="1.2" class="sle-hatch-line"/>
+          </pattern>
+        </defs>
+        <g class="sle-bg"></g>
+        <g class="sle-grid"></g>
+        <g class="sle-zones"></g>
+        <g class="sle-items"></g>
+        <g class="sle-marks"></g>
+        <g class="sle-overlay"></g>
+      </svg>
+    </div>
+    <aside class="sle-tray">
+      <div class="sle-tray-title">미배치 호기 <span class="sle-tray-count"></span></div>
+      <div class="sle-addunit">
+        <button type="button" class="sle-addunit-toggle" aria-expanded="false">+ 호기 추가</button>
+        <form class="sle-addunit-form" hidden>
+          <label class="sle-form-row"><span>호기</span><input class="sle-new-id" type="text" maxlength="40" autocomplete="off" placeholder="예: APW-101"></label>
+          <label class="sle-form-row"><span>공정</span><select class="sle-new-process"></select></label>
+          <label class="sle-form-row"><span>라인</span><select class="sle-new-line"></select></label>
+          <label class="sle-form-row"><span>활용</span><select class="sle-new-use"></select></label>
+          <label class="sle-form-row"><span>구분</span><select class="sle-new-kind"><option value="new">신규 설비</option><option value="existing">기존 설비</option></select></label>
+          <div class="sle-new-dates">
+            <label class="sle-form-row"><span>입고</span><input class="sle-new-arrival" type="date"></label>
+            <label class="sle-form-row"><span>Qual</span><input class="sle-new-qual" type="date"></label>
+            <label class="sle-form-row"><span>확정</span><select class="sle-new-confirm"></select></label>
+          </div>
+          <div class="sle-form-row"><span>크기</span><input class="sle-new-w" type="number" min="0.1" step="0.1" aria-label="폭"><span class="sle-times">×</span><input class="sle-new-h" type="number" min="0.1" step="0.1" aria-label="높이"></div>
+          <p class="sle-new-error" aria-live="polite"></p>
+          <div class="sle-form-actions">
+            <button type="submit" class="sle-new-submit">추가</button>
+            <button type="button" class="sle-addunit-close">닫기</button>
+          </div>
+        </form>
+      </div>
+      <div class="sle-tray-list"></div>
+      <div class="sle-leaving" hidden>
+        <div class="sle-tray-title">다른 층으로 보냄</div>
+        <div class="sle-leaving-list"></div>
+      </div>
+      <p class="sle-tray-hint">끌어서 도면에 놓으면 그 자리에 배치됩니다. 누르기만 하면 골라져 다른 층으로 보낼 수 있습니다. <b>층 미정</b> 호기는 모든 층 트레이에 보입니다.</p>
+    </aside>
+  </div>
+  <div class="sle-status" aria-live="polite"></div>
+</div>

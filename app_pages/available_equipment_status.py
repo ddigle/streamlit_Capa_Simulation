@@ -11,13 +11,13 @@ from capa_simulation.components.availability_gap_panel import render_availabilit
 from capa_simulation.components.cutoff_management import render_cutoff_management
 from capa_simulation.components.equipment_data_workspace import (
     BASELINE_DRAFT_KEY,
-    BASELINE_IMPORT_KEY,
     DOWNTIME_DRAFT_KEY,
-    DOWNTIME_IMPORT_KEY,
-    DRAFT_REVISION_KEY,
     EQUIPMENT_DRAFT_KEY,
-    EQUIPMENT_IMPORT_KEY,
     FLASH_KEY,
+    effective_floor_canvases,
+    ensure_equipment_drafts,
+    pop_discarded_notice,
+    pop_drafts_replaced,
     render_equipment_data_workspace,
 )
 from capa_simulation.components.equipment_explorer import (
@@ -40,11 +40,6 @@ from capa_simulation.persistence.equipment_cache import (
     load_latest_equipment_snapshot,
 )
 from capa_simulation.services.equipment_availability import build_equipment_lifecycle_spans
-from capa_simulation.services.equipment_contract import (
-    empty_downtime_schedule,
-    empty_equipment_baseline,
-    empty_equipment_master,
-)
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_baseline,
@@ -110,19 +105,8 @@ today = date.today()
 try:
     equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
     repository = get_equipment_repository(equipment_database_path)
-    floor_canvases = load_floor_layout_canvases(equipment_database_path)
-    max_extent = max_canvas_extent(floor_canvases)
     latest_snapshot = load_latest_equipment_snapshot(equipment_database_path)
-    if latest_snapshot is None:
-        saved_baseline = empty_equipment_baseline()
-        saved_equipment = empty_equipment_master()
-        saved_downtime = empty_downtime_schedule()
-        revision_token = "empty"
-    else:
-        saved_baseline = latest_snapshot.baseline
-        saved_equipment = latest_snapshot.equipment
-        saved_downtime = latest_snapshot.downtime
-        revision_token = latest_snapshot.revision.revision_id
+    stored_floor_canvases = load_floor_layout_canvases(equipment_database_path)
 except BOOTSTRAP_ERRORS as exc:
     st.error(
         "설비 현황을 준비하지 못했습니다. "
@@ -130,13 +114,16 @@ except BOOTSTRAP_ERRORS as exc:
     )
     st.stop()
 
-if st.session_state.get(DRAFT_REVISION_KEY) != revision_token:
-    st.session_state[BASELINE_DRAFT_KEY] = saved_baseline.copy()
-    st.session_state[EQUIPMENT_DRAFT_KEY] = saved_equipment.copy()
-    st.session_state[DOWNTIME_DRAFT_KEY] = saved_downtime.copy()
-    st.session_state[DRAFT_REVISION_KEY] = revision_token
-    for preview_key in (BASELINE_IMPORT_KEY, EQUIPMENT_IMPORT_KEY, DOWNTIME_IMPORT_KEY):
-        st.session_state.pop(preview_key, None)
+# 저장본 사본과 미저장 편집본을 한 곳에서 세운다 — Space 현황이 먼저 세웠어도 같은 토큰이다.
+ensure_equipment_drafts(latest_snapshot)
+drafts_replaced = pop_drafts_replaced()
+discarded_notice = pop_discarded_notice()
+if discarded_notice:
+    st.warning(discarded_notice, icon=":material/sync_problem:")
+# Space 에서 넓혀 두고 아직 저장하지 않은 캔버스도 본다 — 편집표 상한·미리보기 검증이 그
+# 캔버스에 놓은 호기를 「밖」으로 막지 않게. 새 리비전이 생겨 대기분이 버려진 뒤에 읽는다.
+floor_canvases = effective_floor_canvases(stored_floor_canvases)
+max_extent = max_canvas_extent(floor_canvases)
 baseline = st.session_state[BASELINE_DRAFT_KEY].copy()
 equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
 downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
@@ -161,7 +148,8 @@ if latest_snapshot is None and not tab_is_hidden(main_tab):
                 "설비 데이터 입력", icon=":material/add:", type="primary", on_click=_open_input
             )
         cutoff = repository.load_process_cutoff()
-        _render_first_data_checklist((len(saved_equipment), len(saved_downtime), len(cutoff)))
+        # 이 안내는 저장본이 없을 때만 선다 — 저장된 호기·비가동은 0건이다.
+        _render_first_data_checklist((0, 0, len(cutoff)))
 show_sample_fleet = bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
 if using_dashboard_sample and (not tab_is_hidden(main_tab) or not tab_is_hidden(gap_tab)):
     with sample_notice.container():
@@ -316,4 +304,5 @@ with rawdata_tab:
         downtime=downtime,
         floor_canvases=floor_canvases,
         max_extent=max_extent,
+        drafts_replaced=drafts_replaced,
     )

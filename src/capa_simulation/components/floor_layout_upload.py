@@ -9,16 +9,28 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.equipment_data_workspace import (
+    rebase_floor_canvas,
+    stage_floor_canvas,
+)
 from capa_simulation.components.space_layout import invalid_equipment_rows
-from capa_simulation.page_bootstrap import PAGE_DIALOG_SUFFIX
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    PAGE_DIALOG_SUFFIX,
+    bootstrap_error_message,
+)
 from capa_simulation.persistence.equipment_cache import (
     clear_floor_layout_cache,
     get_equipment_repository,
+    load_floor_layout_marks,
     load_floor_layout_profile,
 )
+from capa_simulation.services.floor_layout_mark import marks_extent
 from capa_simulation.services.floor_layout_profile import (
     ALLOWED_IMAGE_EXTENSIONS,
     DEFAULT_CANVAS_HEIGHT,
@@ -32,6 +44,7 @@ from capa_simulation.services.floor_layout_profile import (
     canvas_from_pixel_size,
     format_bytes,
     image_pixel_size,
+    normalize_canvas_size,
 )
 
 # 이 화면의 위젯 키는 모두 이 접두에서 파생한다. 리터럴 접두를 자리마다 다시
@@ -166,21 +179,42 @@ def _floor_layout_dialog(
             key=f"{FLOOR_LAYOUT_WIDGET_KEY}_shrink_{building}_{floor}",
         )
 
+    # 도면 요소(반입구·문·영역 …)는 호기와 달리 캔버스 밖에 둘 수 없다 — 저장소가 거부한다. 누르기
+    # 전에 말하고 단추를 막는다. 지우기는 캔버스가 기본 크기로 돌아가므로 그 크기로 본다.
+    mark_right, mark_top = marks_extent(load_floor_layout_marks(database_path, building, floor))
+    marks_outside = mark_right > target_width + 1e-9 or mark_top > target_height + 1e-9
+    if marks_outside:
+        st.warning(
+            f"이 캔버스에서는 {building} {floor} 도면 요소가 범위를 벗어나 저장할 수 없습니다"
+            f"(필요한 크기 {mark_right:g} × {mark_top:g}). Space 배치 편집에서 요소를 옮기세요.",
+            icon=":material/warning:",
+        )
+    delete_blocked = (
+        mark_right > DEFAULT_CANVAS_WIDTH + 1e-9 or mark_top > DEFAULT_CANVAS_HEIGHT + 1e-9
+    )
     with st.container(horizontal=True, gap="small"):
         save_clicked = st.button(
             "도면·캔버스 저장",
             icon=":material/save:",
             type="primary",
-            disabled=not shrink_confirmed,
+            disabled=not shrink_confirmed or marks_outside,
             key=f"{FLOOR_LAYOUT_WIDGET_KEY}_save_{building}_{floor}",
         )
         delete_clicked = st.button(
             "도면·캔버스 삭제",
             icon=":material/delete:",
-            disabled=profile is None,
+            disabled=profile is None or delete_blocked,
+            help=(
+                "지우면 캔버스가 기본 "
+                f"{DEFAULT_CANVAS_WIDTH:g} × {DEFAULT_CANVAS_HEIGHT:g} 로 돌아가는데 그 밖에 도면 "
+                "요소가 있어 지울 수 없습니다. 도면 요소는 지워도 남습니다."
+                if delete_blocked
+                else "배경 도면과 캔버스 치수를 지웁니다. 도면 요소는 남습니다."
+            ),
             key=f"{FLOOR_LAYOUT_WIDGET_KEY}_delete_{building}_{floor}",
         )
 
+    written: tuple[float, float] | None = None
     if save_clicked:
         if not _save(
             database_path=database_path,
@@ -192,11 +226,23 @@ def _floor_layout_dialog(
             canvas_height=target_height,
         ):
             return
+        # 저장소가 맞춘 값과 같은 정밀도로(대기분 기준값과 견줄 때 어긋나지 않게).
+        written = normalize_canvas_size(target_width, target_height)
     elif delete_clicked and profile is not None:
-        get_equipment_repository(database_path).delete_floor_layout_profile(building, floor)
+        try:
+            get_equipment_repository(database_path).delete_floor_layout_profile(building, floor)
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(bootstrap_error_message(exc, database_paths=(Path(database_path),)))
+            return
         clear_floor_layout_cache()
     else:
         return
+    # 이 층의 Space 미저장 캔버스는 버린다. 남겨 두면 팝업이 저장한 값을 가리고, 다음 설비 저장이
+    # 옛 대기값으로 되돌린다. 미저장 호기 좌표·도면 요소는 그대로 둔다 — 다음 저장이 새 캔버스로
+    # 다시 검증해 밖이면 막는다.
+    # 이 세션의 그 층 대기분이 본 캔버스도 방금 쓴 값으로 바꾼다(남의 변경으로 오인하지 않게).
+    rebase_floor_canvas((building, floor), written)
+    stage_floor_canvas((building, floor), None)
     st.session_state[UPLOAD_NONCE_KEY] = int(st.session_state.get(UPLOAD_NONCE_KEY, 0)) + 1
     _close_dialog()
     st.rerun()
@@ -227,8 +273,8 @@ def _save(
         else:
             # 도면 없이 캔버스 치수만 저장한다. 화면에서 확답한 값이 조용히 버려지지 않는다.
             repository.save_floor_layout_canvas(building, floor, canvas_width, canvas_height)
-    except ValueError as exc:
-        st.error(str(exc))
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc, database_paths=(Path(database_path),)))
         return False
     clear_floor_layout_cache()
     return True

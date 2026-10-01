@@ -209,6 +209,12 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   행을 DELETE+INSERT 로 다시 쓰면 수정마다 BLOB 한 벌씩 파일이 커진다(실측: 3.8MB 한 장을
   6회 수정하면 51.7MB). 캔버스만 바꿀 때는 치수 두 컬럼만 UPDATE 하고, 같은 도면
   재업로드는 저장된 `sha256(image_payload)` 와 비교해 BLOB 쓰기를 건너뛴다.
+- `floor_layout_mark`(마이그레이션 11): 동·층별 비설비 도면 요소(반입구·문·영역·기둥·글자·
+  동선). `floor_layout_profile` 처럼 `revision_id` 가 없는 층 현행값이라 설비 리비전을 저장해도
+  복제되지 않는다. 저장은 그 층 요소 전체를 DELETE+INSERT 로 갈아 끼우고(BLOB 이 없어 파일
+  증가는 미미하다) `source_row_no` 가 그리는 순서다. PK 는 두지 않는다 — 같은 트랜잭션에서
+  같은 id 를 지웠다 다시 넣는다. 종류(`mark_kind`)·회전·영역 색 키·캔버스 범위·층 안 id
+  유일성은 `services/floor_layout_mark.py` 가 맡는다. 리비전 저장과 같은 트랜잭션에 쓸 수 있다.
 - `schedule_snapshot`: 마이그레이션 1에서 생성한 기존 입고·셋업 일정 보존용 레거시 테이블.
 - `equipment_snapshot`, `downtime_snapshot`: 마이그레이션 2 계약의 과거 리비전
   보존용 레거시 테이블. 신규 저장은 마이그레이션 3의 두 스냅샷 테이블을 사용한다.

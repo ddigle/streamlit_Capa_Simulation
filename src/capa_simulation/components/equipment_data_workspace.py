@@ -24,11 +24,14 @@ from capa_simulation.page_bootstrap import (
 )
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_snapshot_cache,
+    clear_floor_layout_cache,
     load_equipment_snapshot,
 )
 from capa_simulation.persistence.equipment_repository import (
+    EMPTY_REVISION_TOKEN,
     DuckDBEquipmentRepository,
     EquipmentSnapshot,
+    FloorLayoutBase,
 )
 from capa_simulation.services.equipment_bulk_delete import (
     BASELINE_TARGET,
@@ -51,6 +54,8 @@ from capa_simulation.services.equipment_contract import (
     VALID_BUILDINGS,
     VALID_FLOORS,
     empty_downtime_schedule,
+    empty_equipment_baseline,
+    empty_equipment_master,
 )
 from capa_simulation.services.equipment_csv import (
     baseline_csv_bytes,
@@ -80,7 +85,8 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_baseline,
     prepare_equipment_master,
 )
-from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap
+from capa_simulation.services.floor_layout_mark import FloorLayoutMark
+from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
 
 FLASH_KEY = "equipment_status_flash"
 BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
@@ -115,6 +121,22 @@ SELECTION_KEY = "equipment_workspace_selection_v1"
 PENDING_DELETE_KEY = "equipment_workspace_pending_delete_v1"
 LAST_REMOVED_KEY = "equipment_workspace_last_removed_v1"
 CONFIRM_DELETE_BUTTON_KEY = "equipment_delete_confirm_v1"
+# Space 편집기가 쌓는 미저장 층 캔버스·도면 요소((동, 층) → 값). 호기 편집본(BUFFER_KEY)과
+# **함께 저장되고 함께 버려진다** — 어느 저장 단추를 눌러도 같은 저장 helper 를 탄다.
+PENDING_CANVASES_KEY = "equipment_pending_floor_canvases_v1"
+PENDING_MARKS_KEY = "equipment_pending_floor_marks_v1"
+# 층마다 편집을 시작할 때 본 저장값(캔버스·요소 지문). 저장이 이것과 지금 저장값을 견줘, 그 사이
+# 다른 사람이 바꾼 층을 옛 목록으로 덮지 않는다(요소는 층 전체 교체다).
+PENDING_BASES_KEY = "equipment_pending_floor_bases_v1"
+# 다른 사람이 새 리비전을 저장해 이 세션의 저장 안 한 편집을 버렸을 때 한 번 띄우는 알림.
+DISCARDED_NOTICE_KEY = "equipment_workspace_discarded_v1"
+# 이번 회차 맨 위에서 편집본을 새 저장본으로 갈아 끼웠다는 표시. 그 회차의 RawData 제출은 옛
+# 편집본 위의 것이라 반영하지 않는다 — 페이지가 `pop_drafts_replaced` 로 한 번 읽는다.
+DRAFTS_REPLACED_KEY = "equipment_workspace_drafts_replaced_v1"
+# 편집본을 저장본에서 새로 세운 직후의 세대. 지금 세대가 이보다 크면 저장 안 한 편집이 있다.
+_SEEDED_GENERATION_KEY = "equipment_workspace_seeded_generation_v1"
+# 편집본을 바꿀 때마다 오르는 세대. Space 편집기 epoch 에 넣어 RawData 편집을 놓치지 않게 한다.
+BUFFER_GENERATION_KEY = "equipment_workspace_buffer_generation_v1"
 CANCEL_DELETE_BUTTON_KEY = "equipment_delete_cancel_v1"
 UNDO_DELETE_BUTTON_KEY = "equipment_delete_undo_v1"
 SELECT_MATCHING = "select_matching"
@@ -180,6 +202,10 @@ def reset_equipment_drafts() -> None:
         SELECTION_KEY,
         PENDING_DELETE_KEY,
         LAST_REMOVED_KEY,
+        PENDING_CANVASES_KEY,
+        PENDING_MARKS_KEY,
+        PENDING_BASES_KEY,
+        _SEEDED_GENERATION_KEY,
     ):
         st.session_state.pop(key, None)
 
@@ -188,10 +214,257 @@ def _copy_frames(frames: Frames) -> Frames:
     return frames[0].copy(), frames[1].copy(), frames[2].copy()
 
 
+def _bump_buffer_generation() -> None:
+    st.session_state[BUFFER_GENERATION_KEY] = equipment_buffer_generation() + 1
+
+
+def equipment_buffer_generation() -> int:
+    """편집본 세대. 편집본이 바뀔 때마다(RawData 제출·Space 적용·새 리비전) 오른다."""
+    value = st.session_state.get(BUFFER_GENERATION_KEY, 0)
+    return int(value) if isinstance(value, int) else 0
+
+
+def revision_token(latest_snapshot: EquipmentSnapshot | None) -> str:
+    """편집본이 어느 저장본에서 나왔는지 가르는 값. 저장본이 없으면 `EMPTY_REVISION_TOKEN`."""
+    if latest_snapshot is None:
+        return EMPTY_REVISION_TOKEN
+    return latest_snapshot.revision.revision_id
+
+
+def has_unsaved_equipment_edits() -> bool:
+    """편집본을 저장본에서 세운 뒤 바뀐 것이 있는가(RawData 제출·Space 적용·미저장 층 배치)."""
+    seeded = st.session_state.get(_SEEDED_GENERATION_KEY)
+    return isinstance(seeded, int) and equipment_buffer_generation() > seeded
+
+
+def pop_drafts_replaced() -> bool:
+    """이번 회차에 다른 사람의 저장으로 편집본을 새로 세웠는가. 페이지가 `ensure_equipment_drafts`
+    바로 뒤에 한 번 읽는다(안 읽으면 다음 회차의 정상 제출까지 막는다)."""
+    return st.session_state.pop(DRAFTS_REPLACED_KEY, False) is True
+
+
+def pop_discarded_notice() -> str | None:
+    """다른 사람의 저장으로 이 세션의 편집이 버려졌다는 알림. 한 번 읽으면 지운다."""
+    value = st.session_state.pop(DISCARDED_NOTICE_KEY, None)
+    return value if isinstance(value, str) else None
+
+
+def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames:
+    """저장본 사본(draft)과 미저장 편집본(buffer)을 **한 곳에서** 세우고 편집본을 돌려준다.
+
+    가용설비 현황과 Space 현황이 같은 편집본을 쓴다. 어느 쪽을 먼저 열어도 같은 저장본
+    토큰으로 세워야, 나중에 연 쪽이 「토큰이 다르다」며 편집본을 저장본으로 덮어쓰지 않는다.
+    새 리비전이 생기면(누가 저장하면) 미저장 편집·캔버스·도면 요소는 버리고 다시 세운다.
+    샘플 fleet 은 넣지 않는다 — 합성값이 섞이면 첫 실제 저장이 막힌다.
+    """
+    token = revision_token(latest_snapshot)
+    previous = st.session_state.get(_REVISION_KEY)
+    if st.session_state.get(DRAFT_REVISION_KEY) != token:
+        saved: Frames = (
+            (latest_snapshot.baseline, latest_snapshot.equipment, latest_snapshot.downtime)
+            if latest_snapshot is not None
+            else (empty_equipment_baseline(), empty_equipment_master(), empty_downtime_schedule())
+        )
+        st.session_state[BASELINE_DRAFT_KEY] = saved[0].copy()
+        st.session_state[EQUIPMENT_DRAFT_KEY] = saved[1].copy()
+        st.session_state[DOWNTIME_DRAFT_KEY] = saved[2].copy()
+        st.session_state[DRAFT_REVISION_KEY] = token
+        for preview_key in (BASELINE_IMPORT_KEY, EQUIPMENT_IMPORT_KEY, DOWNTIME_IMPORT_KEY):
+            st.session_state.pop(preview_key, None)
+    if previous != token or BUFFER_KEY not in st.session_state:
+        # 토큰이 **실제로 바뀐** 경우(다른 사람이 새 리비전을 저장)에만 옛 편집을 버리고 알린다.
+        # 처음 세우는 회차(앞 토큰 없음)에 미리 쌓인 층 배치까지 지우면 그 편집이 사라진다.
+        replaced = previous is not None and previous != token
+        if replaced:
+            st.session_state[DRAFTS_REPLACED_KEY] = True
+        if replaced and has_unsaved_equipment_edits():
+            number = f"r{latest_snapshot.revision.revision_no}" if latest_snapshot else "새 저장"
+            st.session_state[DISCARDED_NOTICE_KEY] = (
+                f"다른 사용자가 {number}을 저장해, 이 화면에서 저장하지 않은 설비 편집"
+                "(RawData·Space 배치)을 버리고 최신 저장본으로 다시 열었습니다."
+            )
+        _clear_editors()
+        st.session_state[BUFFER_KEY] = _copy_frames(
+            (
+                st.session_state[BASELINE_DRAFT_KEY],
+                st.session_state[EQUIPMENT_DRAFT_KEY],
+                st.session_state[DOWNTIME_DRAFT_KEY],
+            )
+        )
+        st.session_state[_REVISION_KEY] = token
+        # 선택·삭제 대기·되돌리기·미저장 층 배치는 옛 편집본의 것이다. 새 저장본 위에서
+        # 쓰이면 안 된다.
+        stale = [PREVIEW_KEY, SELECTION_KEY, PENDING_DELETE_KEY, LAST_REMOVED_KEY]
+        if replaced:
+            stale += [PENDING_CANVASES_KEY, PENDING_MARKS_KEY, PENDING_BASES_KEY]
+        for key in stale:
+            st.session_state.pop(key, None)
+        _bump_buffer_generation()
+        st.session_state[_SEEDED_GENERATION_KEY] = equipment_buffer_generation()
+    frames: Frames = st.session_state[BUFFER_KEY]
+    return frames
+
+
 def _remember_edits(frames: Frames) -> None:
     # 검증 실패한 값도 수정할 수 있어야 한다. 화면 계산이 읽는 draft에는 올리지 않는다.
+    current = st.session_state.get(BUFFER_KEY)
+    unchanged = isinstance(current, tuple) and all(
+        left.equals(right) for left, right in zip(current, frames, strict=True)
+    )
     st.session_state[BUFFER_KEY] = _copy_frames(frames)
     _clear_editors()
+    # 내용이 그대로인 제출(보기 적용·이력 조회)은 세대를 올리지 않는다 — 올리면 「저장 안 한 편집이
+    # 있다」로 보여, 남의 저장 때 버린 것도 없는데 버렸다고 알린다.
+    if not unchanged:
+        _bump_buffer_generation()
+
+
+def replace_equipment_buffer(frames: Frames) -> None:
+    """RawData 밖(Space 편집기)에서 편집본을 바꾼다. **편집본은 이 함수로만 바꾼다.**
+
+    BUFFER_KEY 만 바꾸면 RawData 편집표가 옛 `{key}_applied_view` 프레임을 그대로 그리다
+    다음 제출 때 이 편집을 되돌린다. 편집표 세대를 올리고 보기·미리보기·삭제 대기를 버린다.
+    """
+    _remember_edits(frames)
+    st.session_state.pop(PREVIEW_KEY, None)
+    st.session_state.pop(PENDING_DELETE_KEY, None)
+
+
+def pending_floor_canvases() -> dict[FloorKey, CanvasSize]:
+    """Space 에서 바꿨지만 아직 저장하지 않은 층 캔버스."""
+    value = st.session_state.get(PENDING_CANVASES_KEY)
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def pending_floor_marks() -> dict[FloorKey, tuple[FloorLayoutMark, ...]]:
+    """Space 에서 바꿨지만 아직 저장하지 않은 층 도면 요소(층 전체 목록)."""
+    value = st.session_state.get(PENDING_MARKS_KEY)
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def pending_floor_bases() -> dict[FloorKey, FloorLayoutBase]:
+    """층마다 편집을 시작할 때 본 저장값(캔버스, 요소 지문)."""
+    value = st.session_state.get(PENDING_BASES_KEY)
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _remember_base(key: FloorKey, base: FloorLayoutBase | None) -> None:
+    """그 층의 **첫** 대기분이 본 저장값만 남긴다. 대기분이 다 빠지면 함께 버린다."""
+    bases = pending_floor_bases()
+    if key not in pending_floor_canvases() and key not in pending_floor_marks():
+        bases.pop(key, None)
+    elif key not in bases and base is not None:
+        bases[key] = base
+    st.session_state[PENDING_BASES_KEY] = bases
+
+
+def stage_floor_canvas(
+    key: FloorKey, canvas: CanvasSize | None, *, base: FloorLayoutBase | None = None
+) -> None:
+    """미저장 캔버스를 둔다. None 이면 그 층 대기분을 지운다(저장값과 같아졌을 때·팝업이 그 층
+    캔버스를 저장했을 때). `base` 는 편집을 시작할 때 본 저장값이다."""
+    staged = pending_floor_canvases()
+    if canvas is None and key not in staged:
+        return
+    if canvas is None:
+        staged.pop(key, None)
+    else:
+        staged[key] = canvas
+    st.session_state[PENDING_CANVASES_KEY] = staged
+    _remember_base(key, base)
+    _bump_buffer_generation()
+
+
+def stage_floor_marks(
+    key: FloorKey,
+    marks: tuple[FloorLayoutMark, ...] | None,
+    *,
+    base: FloorLayoutBase | None = None,
+) -> None:
+    """미저장 도면 요소(층 전체)를 둔다. None 이면 그 층 대기분을 지운다."""
+    staged = pending_floor_marks()
+    if marks is None and key not in staged:
+        return
+    if marks is None:
+        staged.pop(key, None)
+    else:
+        staged[key] = marks
+    st.session_state[PENDING_MARKS_KEY] = staged
+    _remember_base(key, base)
+    _bump_buffer_generation()
+
+
+def rebase_floor_canvas(key: FloorKey, canvas: CanvasSize | None) -> None:
+    """이 세션이 팝업으로 그 층 캔버스를 방금 저장·삭제했다. 그 층 대기분이 본 저장값의 **캔버스
+    부분만** 새 값으로 바꾼다 — 그대로 두면 다음 저장이 「다른 사용자가 먼저 바꿨다」로 영영 막힌다.
+    요소 지문은 처음 본 값 그대로 둔다(그 사이 남이 바꾼 요소는 여전히 저장 때 걸린다)."""
+    bases = pending_floor_bases()
+    if key in bases:
+        bases[key] = (canvas, bases[key][1])
+        st.session_state[PENDING_BASES_KEY] = bases
+
+
+def effective_floor_canvases(stored: FloorCanvasMap) -> dict[FloorKey, CanvasSize]:
+    """저장된 캔버스에 미저장 캔버스를 덮은 값. 저장·미리보기 검증과 편집표 상한이 이것을 본다 —
+    Space 에서 넓힌 캔버스에 놓은 호기가 RawData 저장에서 「캔버스 밖」으로 막히지 않게."""
+    return {**stored, **pending_floor_canvases()}
+
+
+def has_pending_floor_layouts() -> bool:
+    return bool(pending_floor_canvases() or pending_floor_marks())
+
+
+def save_equipment_buffer(
+    repository: DuckDBEquipmentRepository,
+    frames: Frames,
+    note: str,
+    *,
+    revision_optional: bool = False,
+) -> str:
+    """편집본(세 표)과 미저장 층 캔버스·도면 요소를 **한 트랜잭션**에 저장하고 알림 문구를 돌려준다.
+
+    RawData 저장과 Space 저장이 이 한 곳을 탄다. `revision_optional` 이면 세 표가 최신
+    리비전과 같을 때 리비전 없이 캔버스·요소만 쓴다(Space 에서 요소만 고친 저장). 예시 행 가드는
+    repository 에 없으므로 여기서 건다. 성공하면 두 캐시와 편집본을 모두 비운다.
+    """
+    leftovers = _example_baseline_rows(frames[0])
+    if not leftovers.empty:
+        raise ValueError(
+            f"기존 보유대수에 지우지 않은 예시 행이 {len(leftovers)}건 남아 있습니다. "
+            "실제 값으로 고치거나 지운 뒤 저장하세요."
+        )
+    canvases = pending_floor_canvases()
+    marks = {
+        key: [mark.editor_payload() for mark in staged]
+        for key, staged in pending_floor_marks().items()
+    }
+    # 편집본이 나온 리비전과 층마다 본 저장값을 함께 넘긴다. 그 사이 다른 사람이 저장했으면
+    # 저장소가 쓰기 잠금 안에서 거부한다 — 옛 편집이 남의 저장을 조용히 되돌리지 않게.
+    options: dict[str, Any] = {
+        "note": note,
+        "floor_canvases": canvases,
+        "floor_marks": marks,
+        "base_revision_id": st.session_state.get(_REVISION_KEY),
+        "floor_layout_bases": pending_floor_bases(),
+    }
+    if revision_optional:
+        saved = repository.save_space_layout(*frames, **options)
+    else:
+        saved = repository.save_snapshot(*frames, **options)
+    if saved is None and not (canvases or marks):
+        # 아무것도 쓰지 않았다. 편집본·변경 메모·선택을 그대로 둔다.
+        return "바뀐 내용이 없어 저장하지 않았습니다."
+    clear_equipment_snapshot_cache()
+    if canvases or marks:
+        clear_floor_layout_cache()
+    reset_equipment_drafts()
+    layouts = " 층 캔버스·도면 요소도 함께 저장했습니다." if canvases or marks else ""
+    if saved is None:
+        return "호기 마스터가 바뀌지 않아 새 리비전 없이 층 캔버스·도면 요소만 저장했습니다."
+    return (
+        f"설비 운영 데이터 r{saved.revision.revision_no}을 저장했습니다. "
+        f"가용설비와 Space 현황에 반영됩니다.{layouts}"
+    )
 
 
 def current_data_file_name(
@@ -395,19 +668,7 @@ def build_import_review(
 
 
 def _save_snapshot(repository: DuckDBEquipmentRepository, frames: Frames, note: str) -> None:
-    leftovers = _example_baseline_rows(frames[0])
-    if not leftovers.empty:
-        raise ValueError(
-            f"기존 보유대수에 지우지 않은 예시 행이 {len(leftovers)}건 남아 있습니다. "
-            "실제 값으로 고치거나 지운 뒤 저장하세요."
-        )
-    saved = repository.save_snapshot(*frames, note=note)
-    clear_equipment_snapshot_cache()
-    reset_equipment_drafts()
-    st.session_state[FLASH_KEY] = (
-        f"설비 운영 데이터 r{saved.revision.revision_no}을 저장했습니다. "
-        "가용설비와 Space 현황에 반영됩니다."
-    )
+    st.session_state[FLASH_KEY] = save_equipment_buffer(repository, frames, note)
 
 
 def _editor_view(
@@ -882,18 +1143,15 @@ def render_equipment_data_workspace(
     downtime: pd.DataFrame,
     floor_canvases: FloorCanvasMap,
     max_extent: CanvasSize,
+    drafts_replaced: bool = False,
 ) -> None:
-    """입력·직접 편집·조회 중 한 작업을 표시하고 세 표를 한 리비전으로 저장한다."""
-    revision_token = latest_snapshot.revision.revision_id if latest_snapshot else "empty"
-    if st.session_state.get(_REVISION_KEY) != revision_token:
-        _clear_editors()
-        st.session_state[BUFFER_KEY] = _copy_frames((baseline, equipment, downtime))
-        st.session_state[_REVISION_KEY] = revision_token
-        st.session_state.pop(PREVIEW_KEY, None)
-        # 선택·삭제 대기·되돌리기는 옛 편집본의 것이다. 새 저장본 위에서 쓰이면 안 된다.
-        for key in (SELECTION_KEY, PENDING_DELETE_KEY, LAST_REMOVED_KEY):
-            st.session_state.pop(key, None)
-    frames: Frames = st.session_state[BUFFER_KEY]
+    """입력·직접 편집·조회 중 한 작업을 표시하고 세 표를 한 리비전으로 저장한다.
+
+    `drafts_replaced` 는 이번 회차 맨 위에서 다른 사람의 저장으로 편집본을 새로 세웠다는 뜻이다
+    (`pop_drafts_replaced`). 그 회차의 제출은 반영하지 않는다 — 옛 편집본 위의 제출을 새 저장본에
+    얹어 저장하면 남의 리비전과 같은 리비전이 「저장했습니다」로 생기고, 다시 그리면서 버림 알림도
+    사라진다."""
+    frames = ensure_equipment_drafts(latest_snapshot)
     if latest_snapshot is None:
         st.info(
             "아직 저장된 설비 데이터가 없습니다. 호기 마스터를 붙여넣고 "
@@ -1047,6 +1305,13 @@ def render_equipment_data_workspace(
             undo_delete,
         )
     ):
+        return
+    if drafts_replaced:
+        st.warning(
+            "다른 사용자가 먼저 저장해 이번 제출은 반영하지 않았습니다. 최신 저장본으로 다시 "
+            "열었으니 확인한 뒤 다시 고치세요.",
+            icon=":material/sync_problem:",
+        )
         return
     _remember_edits(edited)
     _apply_bulk_actions(
