@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date, timedelta
+from datetime import date
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -21,47 +20,28 @@ from capa_simulation.components.space_layout import (
     build_fab_figure,
     build_floor_figure,
     build_floor_layout_figure,
-    building_counts,
-    equipment_counts,
     equipment_unit_total,
-    fab_counts,
     first_selected_customdata,
     floors_for,
     invalid_equipment_rows,
+    occupancy_ratio,
+    stage_counts,
 )
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.table_toolbar import render_csv_download
-from capa_simulation.design import tokens
-from capa_simulation.page_bootstrap import (
-    BOOTSTRAP_ERRORS,
-    bootstrap_error_message,
-    date_range_value,
-)
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.equipment_cache import (
     load_floor_layout_canvases,
     load_floor_layout_profile,
     load_floor_layout_summaries,
     load_latest_equipment_snapshot,
 )
-from capa_simulation.services.equipment_availability import (
-    build_milestone_transition_events,
-    build_space_equipment_status,
-)
-from capa_simulation.services.equipment_contract import (
-    MILESTONES,
-    QUAL_CONFIRMATION_STATUSES,
-)
+from capa_simulation.services.equipment_availability import build_space_equipment_status
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_master,
 )
-from capa_simulation.services.equipment_units import (
-    UNIT_COUNT_DECIMALS,
-    UNIT_KEY_COLUMN,
-    format_unit_count,
-    placed_unit_rows,
-    unit_transitions,
-)
+from capa_simulation.services.equipment_units import format_unit_count, placed_unit_rows
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
     DEFAULT_CANVAS_WIDTH,
@@ -75,10 +55,10 @@ SELECTED_FLOOR_KEY = "space_status_selected_floor"
 # 덫은 이 버전에 없다 — Streamlit 은 그 회차에 그려지지 않은 위젯의 상태를 버리고(이
 # 저장소의 탭·필터 초기화 문제가 바로 그 동작이다), 위 단계로 올라가면 아래 표는 그려지지
 # 않는다. 예외는 **같은 분기 안에서 대상만 바뀌는** 층 표 하나라, 그것만 동 이름으로 키를
-# 가른다(:439 의 층 도면과 같은 이유다).
+# 가른다(층 도면과 같은 이유다).
 BUILDING_TABLE_KEY = "space_status_building_table"
-# 전환 단계 차트의 막대 폭(px). 단계는 여섯이 전부라 좁은 창에서도 칸이 이보다 넓다.
-_TRANSITION_BAR_SIZE_PX = 70
+# 반출·이설을 마친 호기는 더 이상 공간에 없다. 배치·미배치·제외 어디에도 세지 않는다.
+EXITED_STATUSES = ("반출 완료", "이설 완료")
 
 
 def _show_fab_overview() -> None:
@@ -99,31 +79,33 @@ def _units(value: float) -> str:
     return f"{format_unit_count(value)}대"
 
 
-def _render_space_counts(
-    counts: tuple[float, float, float],
-    *,
-    key: str,
-    leading: Sequence[tuple[str, str]] = (),
-) -> None:
-    """세 단계 화면이 공통으로 쓰는 `가용 / 설치·전환 진행 / 비가동` 카드 줄.
+def _units_by(frame: pd.DataFrame, column: str) -> dict[str, float]:
+    """`column` 값마다 설비 대수(설비지분 합). 값이 빈 행은 세지 않는다."""
+    rows = frame.dropna(subset=[column])
+    return {str(name): equipment_unit_total(group) for name, group in rows.groupby(column)}
 
-    앞에 화면별 카드를 끼울 수 있다. 대수는 설비지분 합이라 모듈 설비가 있으면 소수가
-    나온다(`%,d` 서식은 0.75 를 0 으로 자른다). 그래서 카드 값은 모두 `format_unit_count`
-    한 곳에서 만든 문자열이다 — 천단위 구분도 그 함수가 똑같이 붙인다.
-    """
-    production, progress, inactive = counts
+
+def _render_placement_cards(cards: Sequence[tuple[str, str, str | None]], *, key: str) -> None:
+    """세 단계 화면이 공통으로 쓰는 배치 카드 줄. 대수는 설비지분 합이라 모듈 설비가 있으면
+    소수가 나온다(`%,d` 서식은 0.75 를 0 으로 자른다) — 값은 모두 `format_unit_count` 로 만든다."""
     with metric_row(key=key):
-        for label, value in leading:
-            st.metric(label, value, border=True)
-        st.metric("가용", _units(production), border=True)
-        st.metric("설치·전환 진행", _units(progress), border=True)
-        st.metric("비가동", _units(inactive), border=True)
+        for label, value, help_text in cards:
+            st.metric(label, value, border=True, help=help_text)
 
 
-# 동·층 표의 대수 칸. 설비지분 합이라 모듈 설비가 있으면 소수가 나온다.
-_UNIT_COUNT_COLUMNS = {
-    column: st.column_config.NumberColumn(format="localized")
-    for column in ("가용대수", "진행대수", "비가동대수")
+_PLACED_HELP = "도면에 그린 설비입니다. 모체호기로 묶은 모듈 행은 합쳐 1대입니다."
+_UNPLACED_HELP = "레이아웃표시 Y 인데 좌표가 없어 도면에 그리지 못한 설비입니다."
+_EXCLUDED_HELP = "레이아웃표시 N — 도면 대상이 아닌 설비입니다."
+_OCCUPANCY_HELP = (
+    "도면에 그린 호기 사각형 면적 합 ÷ 캔버스 면적. 캔버스 단위의 상대값이며 "
+    "겹친 자리는 두 번 셉니다."
+)
+_DRAWINGS_HELP = "배경 도면 이미지를 올린 층 수입니다."
+# 동·층 표의 대수·비율 칸. 대수는 설비지분 합이라 모듈 설비가 있으면 소수가 나온다.
+_TABLE_COLUMNS = {
+    "배치대수": st.column_config.NumberColumn(format="localized", help=_PLACED_HELP),
+    "미배치대수": st.column_config.NumberColumn(format="localized", help=_UNPLACED_HELP),
+    "점유율": st.column_config.NumberColumn(format="percent", help=_OCCUPANCY_HELP),
 }
 
 
@@ -201,10 +183,10 @@ elif latest_snapshot is not None:
         f"{latest_snapshot.revision.created_at:%Y-%m-%d %H:%M}"
     )
 
-# 기준일·필터와 단계 전환 조회 조건은 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자
-# 결정). 기준일이 먼저다 — 공정·단계 선택지와 전환 조회기간의 기본값이 그 날에서 나온다.
-space_card = condition_card(SPACE_CARD_LABEL, name=SPACE_CARD_NAME)
-with space_card:
+# 기준일·필터는 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자 결정). 기준일이 먼저다 —
+# 공정·단계 선택지가 그 날의 상태에서 나온다. 이 화면은 배치·공간만 본다 — 기간별 단계 전환은
+# 가용설비 현황 Main 의 「단계 전환」이다(2026-10-01 사용자 결정).
+with condition_card(SPACE_CARD_LABEL, name=SPACE_CARD_NAME):
     as_of = st.date_input(
         "기준일",
         value=today,
@@ -249,155 +231,26 @@ located_equipment = space_equipment.loc[
 # 그리는 행(located)과 세는 행(counted)을 가른다 — 배치는 설비 단위다. 상태·단계 필터는
 # 일부러 설비를 쪼갠다(모듈 하나가 PM 이면 0.75). 여기서 되돌리지 않는다.
 counted_equipment = placed_unit_rows(space_equipment, located_equipment)
-unlocated_count = (
-    round(
-        equipment_unit_total(space_equipment) - equipment_unit_total(counted_equipment),
-        UNIT_COUNT_DECIMALS,
-    )
-    + 0.0
-)
+# 도면에 서지 않은 설비는 둘로 가른다. 레이아웃표시 Y 면 「미배치」(좌표를 넣으면 설 자리가 있다),
+# N 이면 「레이아웃 제외」. 반출·이설을 마친 호기는 공간에 없으니 어디에도 세지 않는다.
+exited = space_equipment["상태"].isin(EXITED_STATUSES)
+not_placed = space_equipment.loc[~space_equipment.index.isin(counted_equipment.index) & ~exited]
+wants_layout = not_placed["레이아웃표시"].eq("Y").fillna(False)
+unplaced_equipment = not_placed.loc[wants_layout]
+excluded_equipment = not_placed.loc[~wants_layout]
+exited_count = equipment_unit_total(space_equipment.loc[exited])
 
-transition_process_options = equipment["공정소분류"].dropna().drop_duplicates().tolist()
-transition_stage_options = [label for _, label in MILESTONES]
-with space_card:
-    st.caption("단계 전환 현황")
-    # 다섯 조건을 한 번에 바꿔 보는 조회라 폼으로 묶는다 — 칸마다 다시 그리지 않는다.
-    with st.form("space_transition_event_filter_form", border=False):
-        transition_range = st.date_input(
-            "전환 조회기간",
-            value=(as_of - timedelta(days=14), as_of + timedelta(days=14)),
-            key="space_transition_event_range",
-            persist_state="session",
-        )
-        transition_processes = st.multiselect(
-            "공정소분류",
-            options=transition_process_options,
-            placeholder="전체",
-            key="space_transition_process_filter",
-            persist_state="session",
-        )
-        transition_stages = st.multiselect(
-            "전환단계",
-            options=transition_stage_options,
-            placeholder="전체",
-            key="space_transition_stage_filter",
-            persist_state="session",
-        )
-        transition_schedule_status = st.selectbox(
-            "일정상태",
-            options=("전체", "완료", "예정"),
-            key="space_transition_status_filter",
-            persist_state="session",
-        )
-        transition_confirmation_statuses = st.multiselect(
-            "Qual 확정상태",
-            options=list(QUAL_CONFIRMATION_STATUSES),
-            placeholder="전체",
-            key="space_transition_confirmation_filter",
-            persist_state="session",
-        )
-        st.form_submit_button("조회", icon=":material/search:", type="primary", width="stretch")
 
-with st.container(border=True):
-    st.markdown("#### :material/event_available: 기간 내 설비 단계 전환 현황")
+def _canvas_of(building: str, floor: str) -> tuple[float, float]:
+    return floor_canvases.get((building, floor), (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT))
 
-    transition_start, transition_end = date_range_value(
-        transition_range, (as_of - timedelta(days=14), as_of + timedelta(days=14))
-    )
 
-    try:
-        transition_events = build_milestone_transition_events(
-            equipment,
-            start_date=transition_start,
-            end_date=transition_end,
-            as_of=as_of,
-        )
-    except ValueError as exc:
-        st.error(str(exc))
-        transition_events = pd.DataFrame()
+def _floor_occupancy(building: str, floor: str) -> float:
+    rows = located_equipment.loc[
+        located_equipment["동"].eq(building) & located_equipment["층"].eq(floor)
+    ]
+    return occupancy_ratio(rows, *_canvas_of(building, floor))
 
-    if transition_processes and not transition_events.empty:
-        transition_events = transition_events.loc[
-            transition_events["공정소분류"].isin(transition_processes)
-        ]
-    if transition_stages and not transition_events.empty:
-        transition_events = transition_events.loc[
-            transition_events["전환단계"].isin(transition_stages)
-        ]
-    if transition_schedule_status != "전체" and not transition_events.empty:
-        transition_events = transition_events.loc[
-            transition_events["일정상태"].eq(transition_schedule_status)
-        ]
-    if transition_confirmation_statuses and not transition_events.empty:
-        transition_events = transition_events.loc[
-            transition_events["전환단계"].eq("Qual")
-            & transition_events["확정상태"].isin(transition_confirmation_statuses)
-        ]
-
-    if transition_events.empty:
-        st.info("선택한 조건에 해당하는 설비 단계 전환 일정이 없습니다.")
-    else:
-        # 건수는 **설비 단위**로 센다(`unit_transitions`). 아래 목록은 행 그대로 둔다.
-        unit_events = unit_transitions(transition_events)
-        completed_count = int(unit_events["일정상태"].eq("완료").sum())
-        planned_count = int(unit_events["일정상태"].eq("예정").sum())
-        confirmed_count = int(unit_events["Qual확정"].sum())
-        with metric_row(key="space_transition_metrics"):
-            st.metric("전환 일정", f"{len(unit_events):,}건", border=True)
-            st.metric("대상 설비", f"{unit_events[UNIT_KEY_COLUMN].nunique():,}대", border=True)
-            st.metric("완료", f"{completed_count:,}건", border=True)
-            st.metric("예정", f"{planned_count:,}건", border=True)
-            st.metric("Qual 확정·완료", f"{confirmed_count:,}건", border=True)
-
-        transition_summary = (
-            unit_events.groupby(["전환단계", "일정상태"], observed=True)
-            .size()
-            .rename("전환건수")
-            .reset_index()
-        )
-        transition_chart = (
-            alt.Chart(transition_summary)
-            # 단계가 여섯뿐이라 폭을 두지 않으면 막대 하나가 400px 이 넘게 퍼져 둥근 머리가
-            # 보이지 않는다. HOME 생산계획 LOB 막대와 같은 70px 로 세운다(단계 여섯이면 좁은
-            # 창에서도 칸이 그보다 넓다). 굵기가 넓음 등급이라 반경 8px. 쌓인 막대는 Vega-Lite 가
-            # 막대 전체를 잘라 둥글리므로 이음매는 네모로 남는다(브라우저 실측).
-            .mark_bar(
-                size=_TRANSITION_BAR_SIZE_PX,
-                cornerRadiusTopLeft=tokens.BAR_CORNER_RADIUS_WIDE_PX,
-                cornerRadiusTopRight=tokens.BAR_CORNER_RADIUS_WIDE_PX,
-            )
-            .encode(
-                x=alt.X(
-                    "전환단계:N",
-                    sort=transition_stage_options,
-                    axis=alt.Axis(title=None, labelAngle=0, labelFontSize=12),
-                ),
-                y=alt.Y("전환건수:Q", axis=alt.Axis(title=None, tickMinStep=1)),
-                color=alt.Color(
-                    "일정상태:N",
-                    scale=alt.Scale(
-                        domain=["완료", "예정"],
-                        range=[tokens.SCHEDULE_DONE, tokens.SCHEDULE_PLANNED],
-                    ),
-                    legend=alt.Legend(title=None, orient="top"),
-                ),
-                tooltip=["전환단계:N", "일정상태:N", "전환건수:Q"],
-            )
-            .properties(height=210)
-        )
-        st.altair_chart(transition_chart, width="stretch")
-        # 설비키는 모듈 행이 있을 때만 보인다. 비모듈 행은 호기와 같은 값이라 칸만 는다.
-        has_modules = bool(transition_events[UNIT_KEY_COLUMN].ne(transition_events["호기"]).any())
-        st.dataframe(
-            transition_events,
-            hide_index=True,
-            width="stretch",
-            column_config={
-                "호기": st.column_config.TextColumn(pinned=True),
-                "전환일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                UNIT_KEY_COLUMN: st.column_config.TextColumn("설비") if has_modules else None,
-            },
-        )
 
 with st.container(horizontal=True, gap="small", vertical_alignment="center"):
     if st.button(
@@ -427,18 +280,22 @@ with st.container(horizontal=True, gap="small", vertical_alignment="center"):
         )
 
 if selected_building is None:
-    production_count, progress_count, inactive_count = fab_counts(counted_equipment)
-    _render_space_counts(
-        (production_count, progress_count, inactive_count),
+    _render_placement_cards(
+        (
+            ("배치 설비", _units(equipment_unit_total(counted_equipment)), _PLACED_HELP),
+            ("미배치", _units(equipment_unit_total(unplaced_equipment)), _UNPLACED_HELP),
+            ("레이아웃 제외", _units(equipment_unit_total(excluded_equipment)), _EXCLUDED_HELP),
+        ),
         key="space_fab_counts",
-        leading=(("배치 설비", _units(equipment_unit_total(counted_equipment))),),
     )
-    st.metric("레이아웃 제외·미지정", _units(unlocated_count), border=True)
+    if exited_count > 0:
+        st.caption(f"반출·이설을 마친 {_units(exited_count)}는 공간에 없어 세지 않습니다.")
 
+    unplaced_by_building = _units_by(unplaced_equipment, "동")
     with st.container(border=True):
         st.markdown("#### :material/domain: S.PKG FAB 전체 배치")
         building_event = st.plotly_chart(
-            build_fab_figure(counted_equipment),
+            build_fab_figure(counted_equipment, unplaced=unplaced_by_building),
             key="space_status_fab_chart",
             on_select="rerun",
             selection_mode="points",
@@ -452,14 +309,19 @@ if selected_building is None:
 
     overview_rows = []
     for building in BUILDINGS:
-        production, progress, inactive = building_counts(counted_equipment, building.name)
+        building_floors = floors_for(building.name)
+        drawings = sum(
+            (building.name, floor.floor) in floors_with_layout_image for floor in building_floors
+        )
         overview_rows.append(
             {
                 "동": building.name,
-                "층수": len(floors_for(building.name)),
-                "가용대수": production,
-                "진행대수": progress,
-                "비가동대수": inactive,
+                "층수": len(building_floors),
+                "배치대수": equipment_unit_total(
+                    counted_equipment.loc[counted_equipment["동"].eq(building.name)]
+                ),
+                "미배치대수": unplaced_by_building.get(building.name, 0.0),
+                "배치 도면": f"{drawings} / {len(building_floors)}층",
             }
         )
     # 도면의 표적은 Plotly SVG 마커라 포커스를 받지 못한다. 아래 동으로 내려가는 키보드
@@ -468,7 +330,7 @@ if selected_building is None:
         pd.DataFrame(overview_rows),
         hide_index=True,
         width="stretch",
-        column_config=_UNIT_COUNT_COLUMNS,
+        column_config=_TABLE_COLUMNS,
         key=BUILDING_TABLE_KEY,
         on_select="rerun",
         selection_mode="single-row",
@@ -480,18 +342,34 @@ if selected_building is None:
 
 elif selected_floor is None:
     building_equipment = counted_equipment.loc[counted_equipment["동"].eq(selected_building)]
-    production_count, progress_count, inactive_count = equipment_counts(building_equipment)
+    building_unplaced = unplaced_equipment.loc[unplaced_equipment["동"].eq(selected_building)]
     building_floors = floors_for(selected_building)
-    _render_space_counts(
-        (production_count, progress_count, inactive_count),
+    drawings = sum(
+        (selected_building, floor.floor) in floors_with_layout_image for floor in building_floors
+    )
+    _render_placement_cards(
+        (
+            ("선택 동", selected_building, None),
+            ("배치 설비", _units(equipment_unit_total(building_equipment)), _PLACED_HELP),
+            ("미배치", _units(equipment_unit_total(building_unplaced)), _UNPLACED_HELP),
+            ("배치 도면", f"{drawings} / {len(building_floors)}층", _DRAWINGS_HELP),
+        ),
         key="space_building_counts",
-        leading=(("선택 동", selected_building),),
     )
 
+    unplaced_by_floor = _units_by(building_unplaced, "층")
+    occupancy_by_floor = {
+        floor.floor: _floor_occupancy(selected_building, floor.floor) for floor in building_floors
+    }
     with st.container(border=True):
-        st.markdown(f"#### :material/apartment: {selected_building}동 층별 현황")
+        st.markdown(f"#### :material/apartment: {selected_building}동 층별 배치")
         floor_event = st.plotly_chart(
-            build_floor_figure(counted_equipment, selected_building),
+            build_floor_figure(
+                counted_equipment,
+                selected_building,
+                unplaced=unplaced_by_floor,
+                occupancy=occupancy_by_floor,
+            ),
             key=f"space_status_floor_chart_{selected_building}",
             on_select="rerun",
             selection_mode="points",
@@ -505,22 +383,21 @@ elif selected_floor is None:
 
     floor_rows = []
     for floor in building_floors:
-        floor_equipment = building_equipment.loc[building_equipment["층"].eq(floor.floor)]
-        production, progress, inactive = equipment_counts(floor_equipment)
-        canvas = floor_canvases.get((selected_building, floor.floor))
-        has_layout_image = (selected_building, floor.floor) in floors_with_layout_image
+        canvas = _canvas_of(selected_building, floor.floor)
         floor_rows.append(
             {
                 "층": floor.floor,
-                "가용대수": production,
-                "진행대수": progress,
-                "비가동대수": inactive,
-                "배치 도면": "등록" if has_layout_image else "미등록",
-                "캔버스": (
-                    f"{canvas[0]:g} × {canvas[1]:g}"
-                    if canvas
-                    else f"{DEFAULT_CANVAS_WIDTH:g} × {DEFAULT_CANVAS_HEIGHT:g}"
+                "배치대수": equipment_unit_total(
+                    building_equipment.loc[building_equipment["층"].eq(floor.floor)]
                 ),
+                "미배치대수": unplaced_by_floor.get(floor.floor, 0.0),
+                "점유율": occupancy_by_floor[floor.floor],
+                "배치 도면": (
+                    "등록"
+                    if (selected_building, floor.floor) in floors_with_layout_image
+                    else "미등록"
+                ),
+                "캔버스": f"{canvas[0]:g} × {canvas[1]:g}",
             }
         )
     # 층 도면도 같은 이유로 키보드 길이 없다. 위와 같은 표로 잇는다.
@@ -528,7 +405,7 @@ elif selected_floor is None:
         pd.DataFrame(floor_rows),
         hide_index=True,
         width="stretch",
-        column_config=_UNIT_COUNT_COLUMNS,
+        column_config=_TABLE_COLUMNS,
         key=f"space_status_floor_table_{selected_building}",
         on_select="rerun",
         selection_mode="single-row",
@@ -564,16 +441,21 @@ else:
             + ", ".join(map(str, invalid_rows))
         )
 
-    production_count, progress_count, inactive_count = equipment_counts(
-        counted_equipment.loc[
-            counted_equipment["동"].eq(selected_building)
-            & counted_equipment["층"].eq(selected_floor)
-        ]
-    )
-    _render_space_counts(
-        (production_count, progress_count, inactive_count),
+    floor_counted = counted_equipment.loc[
+        counted_equipment["동"].eq(selected_building) & counted_equipment["층"].eq(selected_floor)
+    ]
+    floor_unplaced = unplaced_equipment.loc[
+        unplaced_equipment["동"].eq(selected_building) & unplaced_equipment["층"].eq(selected_floor)
+    ]
+    occupancy = occupancy_ratio(floor_equipment, canvas_width, canvas_height)
+    _render_placement_cards(
+        (
+            ("선택 Space", f"{selected_building} {selected_floor}", None),
+            ("배치 설비", _units(equipment_unit_total(floor_counted)), _PLACED_HELP),
+            ("미배치", _units(equipment_unit_total(floor_unplaced)), _UNPLACED_HELP),
+            ("점유율", f"{occupancy:.1%}", _OCCUPANCY_HELP),
+        ),
         key="space_floor_counts",
-        leading=(("선택 Space", f"{selected_building} {selected_floor}"),),
     )
 
     with st.container(border=True):
@@ -595,6 +477,8 @@ else:
                 ),
                 canvas_width=canvas_width,
                 canvas_height=canvas_height,
+                # 범례에 그 층의 상태별 대수를 붙인다 — 상태 대수는 카드가 아니라 색 옆에 둔다.
+                stage_counts=stage_counts(floor_counted),
             ),
             key=f"space_status_layout_chart_{selected_building}_{selected_floor}",
             width="stretch",

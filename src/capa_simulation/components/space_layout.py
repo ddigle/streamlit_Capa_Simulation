@@ -72,40 +72,52 @@ def equipment_unit_total(equipment: pd.DataFrame) -> float:
     return unit_total(_unit_shares(equipment))
 
 
-def equipment_counts(equipment: pd.DataFrame) -> tuple[float, float, float]:
-    """가용·설치·전환 진행·비가동 대수. 행을 세지 않고 설비지분을 더한다.
+def stage_counts(equipment: pd.DataFrame) -> dict[str, float]:
+    """상태별 설비 대수(층 배치도 범례). 행을 세지 않고 설비지분을 더하고, 0 대인 상태는 뺀다.
 
-    모듈 하나가 비가동이면 그 설비는 가용 0.75 · 비가동 0.25 로 갈린다.
+    모듈 하나가 비가동이면 그 설비는 가용 0.75 · 운영 비가동 0.25 로 갈린다. 상태마다
+    **직접 더한다** — 합계에서 빼면 반올림 끝자리가 -0.0 으로 남아 「-0대」가 찍힌다.
     """
     if equipment.empty or "상태" not in equipment.columns:
-        return 0.0, 0.0, 0.0
+        return {}
     shares = _unit_shares(equipment)
-    available = equipment["가용여부"].fillna(False).astype(bool)
-    inactive_rows = equipment["상태"].isin(["보관 설비", "운영 비가동"])
-    # 셋 다 **직접 더한다.** 합계에서 둘을 빼면 반올림 끝자리가 -0.0 으로 남아 표에
-    # 「-0」이 찍힌다(3모듈 설비의 1/3 지분).
-    production = unit_total(shares.where(available, 0.0))
-    inactive = unit_total(shares.where(inactive_rows, 0.0))
-    progress = unit_total(shares.where(~available & ~inactive_rows, 0.0))
-    return production, progress, inactive
+    counts = {
+        status: unit_total(shares.where(equipment["상태"].eq(status), 0.0))
+        for status in tokens.EQUIPMENT_STAGE_COLORS
+    }
+    return {status: count for status, count in counts.items() if count > 0}
 
 
-def building_counts(equipment: pd.DataFrame, building: str) -> tuple[float, float, float]:
-    return equipment_counts(equipment.loc[equipment["동"].eq(building)])
+def occupancy_ratio(placed: pd.DataFrame, canvas_width: float, canvas_height: float) -> float:
+    """도면에 그린 호기 사각형 면적 합 ÷ 캔버스 면적. 캔버스 단위의 상대값이고(실제 m² 아님)
+    겹친 자리는 두 번 센다. 캔버스가 없으면 0."""
+    area = canvas_width * canvas_height
+    if placed.empty or area <= 0:
+        return 0.0
+    sizes = placed.loc[:, ["Xsize", "Ysize"]].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    return float((sizes["Xsize"] * sizes["Ysize"]).sum()) / area
 
 
-def fab_counts(equipment: pd.DataFrame) -> tuple[float, float, float]:
-    return equipment_counts(equipment)
+def _placement_text(placed: float, unplaced: float) -> str:
+    """동·층 칸의 글자: 「배치 12대」, 좌표가 아직 없는 호기가 있으면 「· 미배치 3대」를 붙인다."""
+    text = f"배치 {format_unit_count(placed)}대"
+    if unplaced > 0:
+        text += f" · 미배치 {format_unit_count(unplaced)}대"
+    return text
 
 
-def build_fab_figure(equipment: pd.DataFrame) -> go.Figure:
+def build_fab_figure(
+    equipment: pd.DataFrame, *, unplaced: Mapping[str, float] | None = None
+) -> go.Figure:
+    """FAB 전체. 동마다 도면에 배치된 설비 대수와(있으면) 동은 정했지만 좌표가 없는 미배치 대수."""
     figure = go.Figure()
     clickable_x: list[float] = []
     clickable_y: list[float] = []
     clickable_buildings: list[str] = []
 
     for index, building in enumerate(BUILDINGS):
-        production, progress, inactive = building_counts(equipment, building.name)
+        placed = equipment_unit_total(equipment.loc[equipment["동"].eq(building.name)])
+        waiting = (unplaced or {}).get(building.name, 0.0)
         figure.add_shape(
             type="rect",
             x0=building.x,
@@ -120,10 +132,9 @@ def build_fab_figure(equipment: pd.DataFrame) -> go.Figure:
             x=building.x + building.width / 2,
             y=0.5 + building.height / 2,
             text=(
-                f"<b>{building.name}</b><br>가용 {format_unit_count(production)}대<br>"
-                f"진행 {format_unit_count(progress)}대<br>"
-                f"비가동 {format_unit_count(inactive)}대<br>"
-                "<span style='font-size:10px'>클릭하여 상세 보기</span>"
+                f"<b>{building.name}</b><br>배치 {format_unit_count(placed)}대<br>"
+                + (f"미배치 {format_unit_count(waiting)}대<br>" if waiting > 0 else "")
+                + "<span style='font-size:10px'>클릭하여 상세 보기</span>"
             ),
             showarrow=False,
             font={"size": 14, "color": tokens.SPACE_TEXT},
@@ -164,7 +175,14 @@ def build_fab_figure(equipment: pd.DataFrame) -> go.Figure:
     return figure
 
 
-def build_floor_figure(equipment: pd.DataFrame, building: str) -> go.Figure:
+def build_floor_figure(
+    equipment: pd.DataFrame,
+    building: str,
+    *,
+    unplaced: Mapping[str, float] | None = None,
+    occupancy: Mapping[str, float] | None = None,
+) -> go.Figure:
+    """한 동의 층들. 층마다 배치 대수·점유율(캔버스 대비 호기 면적)과 미배치 대수."""
     floors = floors_for(building)
     figure = go.Figure()
     clickable_x: list[float] = []
@@ -177,7 +195,9 @@ def build_floor_figure(equipment: pd.DataFrame, building: str) -> go.Figure:
         floor_equipment = equipment.loc[
             equipment["동"].eq(building) & equipment["층"].eq(floor.floor)
         ]
-        production, progress, inactive = equipment_counts(floor_equipment)
+        placed = equipment_unit_total(floor_equipment)
+        waiting = (unplaced or {}).get(floor.floor, 0.0)
+        ratio = (occupancy or {}).get(floor.floor)
         y0 = (len(floors) - index - 1) * (band_height + gap) + 0.5
         y1 = y0 + band_height
         figure.add_shape(
@@ -194,8 +214,8 @@ def build_floor_figure(equipment: pd.DataFrame, building: str) -> go.Figure:
             x=5.0,
             y=(y0 + y1) / 2,
             text=(
-                f"<b>{building} {floor.floor}</b>　가용 {format_unit_count(production)}대　"
-                f"진행 {format_unit_count(progress)}대　비가동 {format_unit_count(inactive)}대"
+                f"<b>{building} {floor.floor}</b>　{_placement_text(placed, waiting)}"
+                + (f"　점유율 {ratio:.1%}" if ratio is not None and placed > 0 else "")
             ),
             showarrow=False,
             font={"size": 15, "color": tokens.SPACE_TEXT},
@@ -231,7 +251,10 @@ def build_floor_layout_figure(
     background_image: str | None = None,
     canvas_width: float = DEFAULT_CANVAS_WIDTH,
     canvas_height: float = DEFAULT_CANVAS_HEIGHT,
+    stage_counts: Mapping[str, float] | None = None,
 ) -> go.Figure:
+    """층 상세 배치도. `stage_counts` 를 주면 범례에 그 층의 상태별 대수를 붙이고 없는 상태는
+    뺀다(「가용 12대」). 주지 않으면 모든 상태의 색 범례만 둔다."""
     figure = go.Figure()
     if background_image:
         # xref·yref 를 주지 않으면 plotly 가 paper 좌표로 읽어 도면이 화면 밖으로 나간다.
@@ -325,13 +348,20 @@ def build_floor_layout_figure(
         )
     )
     for status, color in tokens.EQUIPMENT_STAGE_COLORS.items():
+        if stage_counts is not None and status not in stage_counts:
+            continue
+        name = (
+            status
+            if stage_counts is None
+            else f"{status} {format_unit_count(stage_counts[status])}대"
+        )
         figure.add_trace(
             go.Scatter(
                 x=[None],
                 y=[None],
                 mode="markers",
                 marker={"size": 12, "symbol": "square", "color": color},
-                name=status,
+                name=name,
                 hoverinfo="skip",
             )
         )

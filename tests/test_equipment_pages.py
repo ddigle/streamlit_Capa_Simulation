@@ -183,6 +183,53 @@ def test_space_page_with_the_sample_switch_off_keeps_a_card_under_the_sidebar_ti
     assert not app.sidebar.multiselect
 
 
+def test_space_page_counts_placement_and_leaves_stage_transitions_to_availability(
+    tmp_path: Path,
+) -> None:
+    """Space 는 배치·공간만 본다. 기간별 단계 전환은 가용설비 현황 Main 의 「단계 전환」이다."""
+    page_path = PROJECT_ROOT / "app_pages" / "space_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "space_place.duckdb"), default_timeout=60
+    ).run()
+
+    assert not app.exception
+    assert [metric.label for metric in app.metric] == ["배치 설비", "미배치", "레이아웃 제외"]
+    # 사이드바 카드는 기준일·공정소분류·단계뿐이다 — 전환 조회기간·전환단계 폼이 없다.
+    assert len(app.sidebar.date_input) == 1
+    assert [widget.label for widget in app.sidebar.multiselect] == ["공정소분류", "단계"]
+    assert not any("단계 전환" in element.value for element in app.markdown)
+
+    app.session_state["space_status_selected_building"] = "C1"
+    app.run()
+    assert not app.exception
+    assert [metric.label for metric in app.metric] == [
+        "선택 동",
+        "배치 설비",
+        "미배치",
+        "배치 도면",
+    ]
+    floor_table = app.dataframe[0].value
+    assert list(floor_table.columns) == [
+        "층",
+        "배치대수",
+        "미배치대수",
+        "점유율",
+        "배치 도면",
+        "캔버스",
+    ]
+
+    app.session_state["space_status_selected_floor"] = "1F"
+    app.run()
+    assert not app.exception
+    assert [metric.label for metric in app.metric] == [
+        "선택 Space",
+        "배치 설비",
+        "미배치",
+        "점유율",
+    ]
+    assert next(metric.value for metric in app.metric if metric.label == "점유율").endswith("%")
+
+
 def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_canvas(
     tmp_path: Path,
 ) -> None:

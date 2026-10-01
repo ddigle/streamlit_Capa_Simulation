@@ -14,6 +14,7 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation.components.equipment_lifecycle_gantt import (
     render_equipment_lifecycle_gantt,
 )
+from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.services.equipment_availability import (
@@ -21,11 +22,13 @@ from capa_simulation.services.equipment_availability import (
     build_equipment_status_as_of,
     build_inactive_equipment,
     build_inactive_equipment_in_month,
+    build_milestone_transition_events,
     inactive_equipment_moments,
 )
 from capa_simulation.services.equipment_contract import (
     DATE_COLUMNS,
     EQUIPMENT_STATUSES,
+    MILESTONES,
     PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
     STATUS_COUNT_COLUMNS,
@@ -36,6 +39,7 @@ from capa_simulation.services.equipment_units import (
     UNIT_SHARE_COLUMN,
     format_unit_count,
     static_unit_shares,
+    unit_transitions,
 )
 from capa_simulation.services.simulation_cache import get_weekly_equipment_availability
 
@@ -48,13 +52,22 @@ SMALL_PROCESS_KEY = "equipment_dashboard_small_processes"
 LINE_TYPE_KEY = "equipment_dashboard_line_types"
 UTILIZATION_TYPE_KEY = "equipment_dashboard_utilization_types"
 LARGE_PROCESS_KEY = "equipment_dashboard_large_processes"
-QUESTIONS = ("가용대수", "호기 현황", "비가동 호기", "Qual 일정")
+TRANSITION_VIEW_KEY = "equipment_explorer_transition_view"
+TRANSITION_STAGE_KEY = "equipment_transition_stage_filter"
+TRANSITION_SCHEDULE_KEY = "equipment_transition_schedule_filter"
+TRANSITION_CONFIRMATION_KEY = "equipment_transition_confirmation_filter"
+QUESTIONS = ("가용대수", "호기 현황", "비가동 호기", "Qual 일정", "단계 전환")
+TRANSITION_STAGES = tuple(label for _, label in MILESTONES)
 _INACTIVE_COLUMNS = ("호기", "공정소분류", "상태", "입고일정", "Qual일정", "반출일정", "이설일")
 _INACTIVE_MONTH_COLUMNS = ("호기", "비가동 시작", "비가동 종료", *_INACTIVE_COLUMNS[1:])
 
 
 # 주차별 설비 현황의 막대 폭을 주 수와 잇는 실측값(1600px 창에서 17주일 때 막대 53px).
 _WEEKLY_BAR_SPAN_PX = 903.0
+# 단계 전환 차트의 막대 폭(px). 단계는 여섯이 전부라 폭을 두지 않으면 막대 하나가 400px 이
+# 넘게 퍼져 둥근 머리가 보이지 않는다. HOME 생산계획 LOB 막대와 같은 70px 이다(좁은 창에서도
+# 칸이 그보다 넓다).
+_TRANSITION_BAR_SIZE_PX = 70
 
 
 def render_equipment_period(
@@ -234,6 +247,98 @@ def _availability(
     st.altair_chart(chart, width="stretch")
 
 
+def _transitions(
+    equipment: pd.DataFrame,
+    *,
+    start: date,
+    end: date,
+    as_of: date,
+    view: str,
+    expression: str,
+    stages: Sequence[str],
+    schedule: str,
+    confirmations: Sequence[str],
+) -> None:
+    """조회기간에 제진대·물류·입고·Qual·반출·이설 일정이 든 호기를 전환 한 건씩 편다.
+
+    기준일 이전 일정은 **완료**, 이후는 **예정**이다(호기 마스터에 적힌 날과 기준일을 견준 결과).
+    건수는 설비 단위다 — 모듈 행이 같은 날 같은 단계로 넘어가면 1건(`unit_transitions`).
+    동·층·좌표를 보지 않고 걸러진 호기 마스터 전체를 본다.
+    """
+    events = build_milestone_transition_events(
+        equipment, start_date=start, end_date=end, as_of=as_of
+    )
+    if stages and not events.empty:
+        events = events.loc[events["전환단계"].isin(stages)]
+    if schedule != "전체" and not events.empty:
+        events = events.loc[events["일정상태"].eq(schedule)]
+    if confirmations and not events.empty:
+        events = events.loc[events["전환단계"].eq("Qual") & events["확정상태"].isin(confirmations)]
+    st.markdown(f"#### 단계 전환 · {start:%Y-%m-%d} ~ {end:%Y-%m-%d} · 기준일 {as_of:%Y-%m-%d}")
+    if events.empty:
+        st.info("조건에 맞는 설비 단계 전환 일정이 없습니다. 기간이나 조건을 바꿔 보세요.")
+        return
+    if view == "전환 일정 목록":
+        # 설비키는 모듈 행이 있을 때만 보인다. 비모듈 행은 호기와 같은 값이라 칸만 는다.
+        has_modules = bool(events[UNIT_KEY_COLUMN].ne(events["호기"]).any())
+        st.dataframe(
+            events,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "호기": st.column_config.TextColumn(pinned=True),
+                "전환일": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                UNIT_KEY_COLUMN: st.column_config.TextColumn("설비") if has_modules else None,
+            },
+        )
+        return
+    unit_events = unit_transitions(events)
+    with metric_row(key="equipment_transition_metrics"):
+        st.metric("전환 일정", f"{len(unit_events):,}건", border=True)
+        st.metric("대상 설비", f"{unit_events[UNIT_KEY_COLUMN].nunique():,}대", border=True)
+        st.metric("완료", f"{int(unit_events['일정상태'].eq('완료').sum()):,}건", border=True)
+        st.metric("예정", f"{int(unit_events['일정상태'].eq('예정').sum()):,}건", border=True)
+        st.metric("Qual 확정·완료", f"{int(unit_events['Qual확정'].sum()):,}건", border=True)
+    summary = (
+        unit_events.groupby(["전환단계", "일정상태"], observed=True)
+        .size()
+        .rename("전환건수")
+        .reset_index()
+    )
+    if expression == "표":
+        _table(summary)
+        return
+    chart = (
+        alt.Chart(summary)
+        # 굵기가 넓음 등급이라 반경 8px. 쌓인 막대는 Vega-Lite 가 막대 전체를 잘라 둥글리므로
+        # 이음매는 네모로 남는다(브라우저 실측).
+        .mark_bar(
+            size=_TRANSITION_BAR_SIZE_PX,
+            cornerRadiusTopLeft=tokens.BAR_CORNER_RADIUS_WIDE_PX,
+            cornerRadiusTopRight=tokens.BAR_CORNER_RADIUS_WIDE_PX,
+        )
+        .encode(
+            x=alt.X(
+                "전환단계:N",
+                sort=list(TRANSITION_STAGES),
+                axis=alt.Axis(title=None, labelAngle=0, labelFontSize=12),
+            ),
+            y=alt.Y("전환건수:Q", axis=alt.Axis(title=None, tickMinStep=1)),
+            color=alt.Color(
+                "일정상태:N",
+                scale=alt.Scale(
+                    domain=["완료", "예정"],
+                    range=[tokens.SCHEDULE_DONE, tokens.SCHEDULE_PLANNED],
+                ),
+                legend=alt.Legend(title=None, orient="top"),
+            ),
+            tooltip=["전환단계:N", "일정상태:N", "전환건수:Q"],
+        )
+        .properties(height=240)
+    )
+    st.altair_chart(chart, width="stretch")
+
+
 def render_equipment_explorer(
     *,
     baseline: pd.DataFrame,
@@ -295,8 +400,16 @@ def render_equipment_explorer(
                 persist_state="session",
                 width=200,
             )
+        elif question == "단계 전환":
+            view = st.selectbox(
+                "보기",
+                ["단계별 건수", "전환 일정 목록"],
+                key=TRANSITION_VIEW_KEY,
+                persist_state="session",
+                width=200,
+            )
         expression = "표"
-        if view in ("주차별 추이", "상태 분포", "확정상태 분포"):
+        if view in ("주차별 추이", "상태 분포", "확정상태 분포", "단계별 건수"):
             expression = (
                 st.segmented_control(
                     "표현",
@@ -322,14 +435,17 @@ def render_equipment_explorer(
                 persist_state="session",
                 width="stretch" if in_card else 300,
             )
-            uses_period = question == "가용대수" or view == "생애주기 일정"
+            uses_period = question in ("가용대수", "단계 전환") or view == "생애주기 일정"
+            # 단계 전환은 기간과 기준일이 둘 다 든다 — 기간은 어느 일정을 모을지, 기준일은
+            # 완료·예정을 가른다. 기준일 위젯은 다른 질문과 같은 것이다(질문을 옮겨도 그대로).
+            uses_as_of = not uses_period or question == "단계 전환"
             start = end = today
             as_of = today
             if uses_period:
                 start, end = render_equipment_period(
                     today=today, width="stretch" if in_card else 180
                 )
-            else:
+            if uses_as_of:
                 chosen = st.date_input(
                     "기준일",
                     value=today,
@@ -339,6 +455,36 @@ def render_equipment_explorer(
                 )
                 assert isinstance(chosen, date)
                 as_of = chosen
+        transition_stages: list[str] = []
+        transition_schedule = "전체"
+        transition_confirmations: list[str] = []
+        if question == "단계 전환":
+            with st.container(horizontal=not in_card, gap="small"):
+                transition_stages = st.multiselect(
+                    "전환단계",
+                    list(TRANSITION_STAGES),
+                    placeholder="전체",
+                    key=TRANSITION_STAGE_KEY,
+                    persist_state="session",
+                    width="stretch" if in_card else 240,
+                )
+                transition_schedule = str(
+                    st.selectbox(
+                        "일정상태",
+                        ("전체", "완료", "예정"),
+                        key=TRANSITION_SCHEDULE_KEY,
+                        persist_state="session",
+                        width="stretch" if in_card else 140,
+                    )
+                )
+                transition_confirmations = st.multiselect(
+                    "Qual 확정상태",
+                    list(QUAL_CONFIRMATION_STATUSES),
+                    placeholder="전체",
+                    key=TRANSITION_CONFIRMATION_KEY,
+                    persist_state="session",
+                    width="stretch" if in_card else 240,
+                )
         # 카드 안에는 접는 틀을 한 겹 더 두지 않는다 — 카드가 이미 접힌다.
         extra = st.container() if in_card else st.expander("추가 조건 · 라인 / 활용 / 공정대분류")
         with extra:
@@ -360,6 +506,17 @@ def render_equipment_explorer(
                     filters.append((column, values))
     # 무엇으로 걸렀는지는 본문에도 한 줄 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
     active_filters = [f"{name}: {', '.join(values)}" for name, values in filters if values]
+    if question == "단계 전환":
+        active_filters += [
+            f"{name}: {', '.join(values)}"
+            for name, values in (
+                ("전환단계", transition_stages),
+                ("Qual 확정상태", transition_confirmations),
+            )
+            if values
+        ]
+        if transition_schedule != "전체":
+            active_filters.append(f"일정상태: {transition_schedule}")
     if active_filters:
         st.caption(":material/filter_alt: " + " · ".join(active_filters))
     filtered = equipment
@@ -376,7 +533,19 @@ def render_equipment_explorer(
             st.error("시작일은 종료일보다 늦을 수 없습니다.")
             return
         try:
-            if question == "가용대수":
+            if question == "단계 전환":
+                _transitions(
+                    filtered,
+                    start=start,
+                    end=end,
+                    as_of=as_of,
+                    view=view,
+                    expression=expression,
+                    stages=transition_stages,
+                    schedule=transition_schedule,
+                    confirmations=transition_confirmations,
+                )
+            elif question == "가용대수":
                 _availability(
                     filtered_baseline,
                     filtered,

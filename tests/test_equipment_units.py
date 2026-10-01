@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.components.equipment_explorer import _rows_label
-from capa_simulation.components.space_layout import equipment_counts
+from capa_simulation.components.space_layout import equipment_unit_total, stage_counts
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_availability import (
     build_equipment_lifecycle_spans,
@@ -360,11 +360,12 @@ def _one_removed_one_down() -> pd.DataFrame:
 
 
 def test_space_counts_add_up_without_a_negative_zero() -> None:
-    production, progress, inactive = equipment_counts(_one_removed_one_down())
+    counts = stage_counts(_one_removed_one_down())
 
-    assert (production, inactive) == pytest.approx((1 + 2 / 3, 1 / 3), abs=1e-6)
-    assert progress == 0.0
-    assert math.copysign(1.0, progress) == 1.0
+    assert counts == pytest.approx({"가용": 1 + 2 / 3, "운영 비가동": 1 / 3}, abs=1e-6)
+    # 반출해 지분이 0 인 모듈은 범례에 「반출 완료 0대」로 서지 않는다. 음수 0 도 남지 않는다.
+    assert "반출 완료" not in counts
+    assert all(math.copysign(1.0, value) == 1.0 for value in counts.values())
 
 
 def test_one_placed_module_places_the_whole_unit() -> None:
@@ -374,7 +375,8 @@ def test_one_placed_module_places_the_whole_unit() -> None:
 
     counted = placed_unit_rows(status, placed)
 
-    assert equipment_counts(counted) == (2.0, 0.0, 0.0)
+    assert stage_counts(counted) == {"가용": 2.0}
+    assert equipment_unit_total(counted) == 2.0
     assert len(counted) == 5
 
 

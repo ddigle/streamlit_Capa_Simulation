@@ -8,11 +8,13 @@ import pytest
 from capa_simulation.components.space_layout import (
     BUILDINGS,
     build_fab_figure,
+    build_floor_figure,
     build_floor_layout_figure,
-    equipment_counts,
     floor_layout_figure_height,
     floors_for,
     invalid_equipment_rows,
+    occupancy_ratio,
+    stage_counts,
 )
 from capa_simulation.design.tokens import EQUIPMENT_STAGE_COLORS
 
@@ -86,14 +88,54 @@ def test_fab_buildings_keep_c5_separate_and_c1_to_c4_connected() -> None:
         assert left.x + left.width == pytest.approx(right.x)
 
 
-def test_space_counts_use_available_progress_and_inactive() -> None:
-    assert equipment_counts(_space_equipment()) == (1, 1, 1)
+def test_stage_counts_name_only_the_states_that_are_on_the_floor() -> None:
+    assert stage_counts(_space_equipment()) == {"셋업 진행중": 1, "가용": 1, "운영 비가동": 1}
+    assert stage_counts(_space_equipment().iloc[0:0]) == {}
 
 
 def test_fab_figure_has_one_building_shape_per_building() -> None:
     figure = build_fab_figure(_space_equipment())
 
     assert len(figure.layout.shapes) == len(BUILDINGS)
+
+
+def test_fab_and_floor_figures_count_placement_not_state() -> None:
+    """동·층 칸은 상태가 아니라 배치를 센다 — 상태는 층 배치도의 색과 범례가 말한다."""
+    fab = build_fab_figure(_space_equipment(), unplaced={"C1": 2.0})
+    texts = {
+        annotation.text.split("<br>")[0]: annotation.text for annotation in fab.layout.annotations
+    }
+    assert "배치 2대" in texts["<b>C1</b>"] and "미배치 2대" in texts["<b>C1</b>"]
+    assert "배치 1대" in texts["<b>C2</b>"] and "미배치" not in texts["<b>C2</b>"]
+    assert not any("가용" in annotation.text for annotation in fab.layout.annotations)
+
+    floors = build_floor_figure(
+        _space_equipment(), "C1", unplaced={"2F": 0.5}, occupancy={"1F": 0.0425, "2F": 0.0}
+    )
+    lines = [annotation.text for annotation in floors.layout.annotations]
+    assert "<b>C1 1F</b>　배치 2대　점유율 4.2%" in lines
+    # 배치가 없는 층은 점유율을 적지 않는다.
+    assert "<b>C1 2F</b>　배치 0대 · 미배치 0.5대" in lines
+
+
+def test_occupancy_is_box_area_over_canvas_area() -> None:
+    placed = _space_equipment().loc[lambda frame: frame["동"].eq("C1")]
+
+    # 15×8 + 15×6 = 210 → 100×60 캔버스의 3.5%.
+    assert occupancy_ratio(placed, 100.0, 60.0) == pytest.approx(0.035)
+    assert occupancy_ratio(placed.iloc[0:0], 100.0, 60.0) == 0.0
+    assert occupancy_ratio(placed, 0.0, 60.0) == 0.0
+
+
+def test_floor_layout_legend_carries_the_floor_counts() -> None:
+    equipment = _space_equipment().loc[lambda frame: frame["동"].eq("C1")]
+
+    counted = build_floor_layout_figure(equipment, "C1", "1F", stage_counts=stage_counts(equipment))
+    plain = build_floor_layout_figure(equipment, "C1", "1F")
+
+    assert [trace.name for trace in counted.data if trace.name] == ["셋업 진행중 1대", "가용 1대"]
+    # 대수를 주지 않으면 모든 상태의 색 범례만 둔다.
+    assert [trace.name for trace in plain.data if trace.name] == list(EQUIPMENT_STAGE_COLORS)
 
 
 def test_floor_layout_uses_status_colors_and_input_sizes() -> None:

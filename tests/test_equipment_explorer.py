@@ -9,6 +9,10 @@ from capa_simulation.components.equipment_explorer import (
     INACTIVE_VIEW_KEY,
     QUESTION_KEY,
     SMALL_PROCESS_KEY,
+    START_DATE_KEY,
+    TRANSITION_CONFIRMATION_KEY,
+    TRANSITION_SCHEDULE_KEY,
+    TRANSITION_VIEW_KEY,
 )
 
 
@@ -202,3 +206,45 @@ def test_hidden_main_preserves_the_inactive_view_selection() -> None:
     _assert_one_result(app)
     assert app.selectbox(INACTIVE_VIEW_KEY).value == "그 달 전체"
     assert "비가동 시작" in app.dataframe[0].value.columns
+
+
+def test_stage_transitions_read_the_period_and_split_done_from_planned_by_the_day() -> None:
+    """EQ-QUAL 은 10월 1일 입고, 10일 Qual. 기간은 일정을 모으고 기준일은 완료·예정을 가른다."""
+    app = _app()
+    app.segmented_control(QUESTION_KEY).set_value("단계 전환").run()
+
+    _assert_one_result(app)
+    # 기간과 기준일이 둘 다 선다 — 기준일은 다른 질문과 같은 위젯이다.
+    assert app.date_input(START_DATE_KEY).value == date(2026, 10, 1)
+    assert app.date_input(AS_OF_KEY).value == date(2026, 10, 6)
+    metrics = {metric.label: metric.value for metric in app.metric}
+    assert metrics["전환 일정"] == "2건"
+    assert metrics["완료"] == "1건"
+    assert metrics["예정"] == "1건"
+    assert metrics["대상 설비"] == "1대"
+
+    app.segmented_control("equipment_explorer_expression_단계별 건수").set_value("표").run()
+    _assert_one_result(app)
+    summary = app.dataframe[0].value.set_index("전환단계")
+    assert summary.loc["입고", "일정상태"] == "완료"
+    assert summary.loc["Qual", "일정상태"] == "예정"
+
+    app.selectbox(TRANSITION_VIEW_KEY).set_value("전환 일정 목록").run()
+    _assert_one_result(app)
+    assert app.dataframe[0].value["호기"].tolist() == ["EQ-QUAL", "EQ-QUAL"]
+
+    app.selectbox(TRANSITION_SCHEDULE_KEY).set_value("예정").run()
+    _assert_one_result(app)
+    assert app.dataframe[0].value["전환단계"].tolist() == ["Qual"]
+    assert any("일정상태: 예정" in item.value for item in app.caption)
+
+    # 기준일을 Qual 뒤로 옮기면 Qual 도 완료다 — 예정만 고른 표가 빈다.
+    app.date_input(AS_OF_KEY).set_value(date(2026, 10, 11)).run()
+    assert not app.exception
+    assert not app.dataframe
+    assert any("단계 전환 일정이 없습니다" in item.value for item in app.info)
+
+    app.selectbox(TRANSITION_SCHEDULE_KEY).set_value("전체").run()
+    app.multiselect(TRANSITION_CONFIRMATION_KEY).set_value(["계획"]).run()
+    _assert_one_result(app)
+    assert app.dataframe[0].value["전환단계"].tolist() == ["Qual"]
