@@ -1185,13 +1185,13 @@ def test_the_sidebar_picks_a_key_process_preset_and_the_heatmap_follows(tmp_path
     preset = app.selectbox(key="home_key_process_preset")
     assert preset.options == ["A 그룹", "B 그룹"]
     assert preset.value == "A 그룹"
-    assert any("주요공정 확보율 · A 그룹" in item.value for item in app.markdown)
+    assert any('title="주요공정 - A 그룹"' in item.value for item in app.markdown)
     labels = app.session_state["spy_figures"]["key_process_heatmap_labels"]
     assert "DEMO_Chip_Attach" in json.dumps(labels.to_plotly_json(), ensure_ascii=False)
 
     preset.set_value("B 그룹").run()
     assert not list(app.exception), [element.message for element in app.exception]
-    assert any("주요공정 확보율 · B 그룹" in item.value for item in app.markdown)
+    assert any('title="주요공정 - B 그룹"' in item.value for item in app.markdown)
     labels = app.session_state["spy_figures"]["key_process_heatmap_labels"]
     text = json.dumps(labels.to_plotly_json(), ensure_ascii=False)
     assert "DEMO_Final_Test" in text and "DEMO_Wafer_Inspect" in text
@@ -1326,7 +1326,7 @@ def test_renaming_the_viewed_preset_from_preference_carries_the_view_on_return(
     app.run()
     assert not list(app.exception)
     assert app.selectbox(key="home_key_process_preset").value == "B3"
-    assert any("주요공정 확보율 · B3" in item.value for item in app.markdown)
+    assert any('title="주요공정 - B3"' in item.value for item in app.markdown)
 
 
 def test_a_preset_absent_from_this_screen_says_so_instead_of_asking_to_choose(

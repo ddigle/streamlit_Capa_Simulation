@@ -932,10 +932,10 @@ with main_tab:
             month_labels,
             leading_past_month_count=leading_past_months,
             owner_tab=main_tab,
+            # 프리셋이 있으면 접두를 「주요공정」으로 줄인다 — 구분 칸(260px)은 한 줄 말줄임이라 긴
+            # 접두가 프리셋 이름 자리를 먹었다(2026-10-02 사용자 결정).
             key_process_title=(
-                f"주요공정 확보율 · {key_process_preset}"
-                if key_process_preset
-                else "주요공정 확보율"
+                f"주요공정 - {key_process_preset}" if key_process_preset else "주요공정 확보율"
             ),
         )
     if comparison_detail is not None:
