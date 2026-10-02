@@ -1588,6 +1588,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Streamlit 머리말·사이드바의 쌓임 맥락 아래에 깔린다. 칸은 스타일만 든 `st.html` 로 접어
     본문에 틈을 남기지 않는다. 컴포넌트의 `css=` 는 칸의 shadow root 에만 들어가 body 호스트에
     닿지 않으므로, 등록 때 intro.html·intro.css·글꼴을 JS 앞에 상수로 붙여 싣는다.
+  - **움직임은 메인 스레드 밖에서 돈다.** 첫 로딩 동안 메인 스레드는 Streamlit 이 HOME 의 표·그림을
+    그리느라 수백 ms 씩 막힌다(8514 실측 최대 0.5초). 심볼·워드마크·원형 펼침·웨이퍼 맵은 `intro.js` 의
+    `scene()` 이 **워커의 OffscreenCanvas** 에 그리고, 입장 화면 HTML(글자·단추)은 합성기가 돌리는
+    투명도·이동만 쓰며 시작 시각을 미리 예약한다(같은 부하에서 장면 프레임 최대 간격 0.48초 → 66ms).
+    `scene()` 은 문자열로 바뀌어 워커에서 돌므로 **이 파일의 다른 이름을 쓰지 않는다**(시간표 상수도 안에
+    따로 둔다 — `test_intro_overlay` 가 둘 다 지킨다). 워커·OffscreenCanvas 가 없거나 워커가 죽으면 같은
+    장면을 메인 스레드에서 돌린다. 원형으로 접히는 퇴장만 clip-path 다(그때는 앱이 다 그려져 한가하다).
   - **「다 그렸다」는 파이썬이 알릴 수 없다.** `st.stop()` 뒤로는 어떤 요소도 브라우저에 닿지
     않는다(13개 화면이 멈춘다). JS 가 `[data-testid="stApp"]` 의 `data-test-script-state` 가
     `notRunning` 이 되는 것을 본다. 단계 막대는 HOME 본문 `LoadingProgress` 막대의 퍼센트를

@@ -120,15 +120,61 @@ def test_theme_reload_is_predicted_with_the_toggle_scripts_own_keys() -> None:
         assert name in js
 
 
-def test_the_intro_artwork_stays_hidden_until_the_intro_begins() -> None:
-    """기다리는 동안에는 바탕 한 장만 — 심볼·워드마크는 인트로가 시작해야 보인다."""
-    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+def _scene_source(js: str) -> str:
+    start = js.index("function scene(port) {")
+    end = js.index("\n}\n", start)
+    return js[start : end + 2]
+
+
+def test_the_scene_runs_in_a_worker_with_a_main_thread_fallback() -> None:
+    """움직임은 워커의 OffscreenCanvas 에서 돈다 — 첫 로딩 동안 메인 스레드가 막혀도 끊기지 않는다.
+
+    워커·OffscreenCanvas 를 못 쓰거나 워커가 죽으면 같은 장면을 메인 스레드에서 돌린다.
+    """
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
 
-    intro_rule = re.search(r"^\.intro \{(.*?)\}", css, flags=re.MULTILINE | re.DOTALL)
-    assert intro_rule and "visibility: hidden" in intro_rule.group(1)
-    assert ".stage.begun .intro" in css
-    assert 'stage.classList.add("begun")' in js
+    assert "transferControlToOffscreen" in js
+    assert "new Worker(" in js
+    assert "scene.toString()" in js
+    assert "runOnMain(" in js and "worker.onerror" in js
+    # 덮개를 걷을 때 장면을 멈추고 워커를 닫는다.
+    assert "sceneHandle.stop()" in js and "worker.terminate()" in js
+
+
+def test_the_scene_uses_no_name_from_outside_itself() -> None:
+    """`scene()` 은 문자열로 바뀌어 워커에서 돈다 — 이 파일의 다른 이름을 쓰면 워커에서 죽는다."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    body = _scene_source(js)
+    top_level = set(re.findall(r"^(?:const|let|function|async function) (\w+)", js, re.MULTILINE))
+    own = set(re.findall(r"\b(?:const|let|function) (\w+)", body))
+    outside = {name for name in top_level - own - {"scene"} if re.search(rf"\b{name}\b", body)}
+
+    assert not outside, sorted(outside)
+
+
+def test_the_scene_and_the_page_share_one_timeline() -> None:
+    """원형 펼침 시각은 장면(워커)과 입장 화면 글자(메인)가 따로 들고 있다 — 같아야 맞물린다."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    body = _scene_source(js)
+
+    def value(pattern: str, text: str) -> int:
+        found = re.search(pattern, text)
+        assert found, pattern
+        return int(found.group(1))
+
+    assert value(r"const REVEAL_AT_MS = (\d+);", js) == value(r"const REVEAL_AT = (\d+);", body)
+    assert value(r"const REVEAL_MS = (\d+);", js) == value(r"const REVEAL_MS = (\d+);", body)
+
+
+def test_nothing_is_drawn_until_the_intro_begins() -> None:
+    """테마 새로고침을 기다리는 동안 장면은 비워 두고 HTML 바탕(앱 바탕색) 한 장만 보인다."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    html = (ASSETS / "intro.html").read_text(encoding="utf-8")
+
+    assert "if (!beginAt) return;" in _scene_source(js)
+    assert (
+        html.index('class="intro-bg"') < html.index('class="scene"') < html.index('class="entry"')
+    )
 
 
 def test_intro_never_talks_back_to_python() -> None:

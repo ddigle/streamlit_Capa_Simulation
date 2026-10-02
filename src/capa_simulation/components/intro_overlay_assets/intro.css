@@ -1,5 +1,7 @@
 /* 입장 화면. 이 규칙은 컴포넌트 칸이 아니라 intro.js 가 document.body 에 붙인 호스트의
-   shadow root 안에 들어간다. 색은 모두 변수다 — 값은 data.palette(tokens.INTRO_PALETTE)에서 온다. */
+   shadow root 안에 들어간다. 색은 모두 변수다 — 값은 data.palette(tokens.INTRO_PALETTE)에서 온다.
+   심볼·워드마크·원형 펼침·웨이퍼 맵·글자 쪽 그늘은 .scene 캔버스 하나에 워커가 그린다(intro.js).
+   여기 HTML 글자·단추는 투명도·이동만 움직인다 — 합성기가 돌려 로딩 중에도 끊기지 않는다. */
 :host {
   all: initial;
   position: fixed;
@@ -26,46 +28,26 @@
   background: var(--frame0);
 }
 
-/* 테마 새로고침을 기다리는 동안에는 바탕 한 장만 보인다. 인트로가 시작할 때 .begun 이 붙는다. */
-.intro {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  pointer-events: none;
-  visibility: hidden;
-}
-
-.stage.begun .intro {
-  visibility: visible;
-}
-
-.entry {
+/* 테마 새로고침을 기다리는 동안에는 장면이 아무것도 그리지 않아 이 바탕 한 장만 보인다. */
+.scene {
   position: absolute;
   inset: 0;
   z-index: 2;
-  visibility: hidden;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 20px;
-  padding: clamp(18px, 3vw, 36px) clamp(16px, 4.5vw, 64px) clamp(28px, 6vh, 72px);
-  background: var(--surface);
-  color: var(--text);
-}
-
-.entry .map,
-.entry .veil {
-  position: absolute;
-  inset: 0;
+  display: block;
   width: 100%;
   height: 100%;
   pointer-events: none;
 }
 
-.veil {
-  background: linear-gradient(90deg, var(--surface) 0%, var(--veil-mid) 36%, transparent 68%);
+.entry {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 20px;
+  padding: clamp(18px, 3vw, 36px) clamp(16px, 4.5vw, 64px) clamp(28px, 6vh, 72px);
+  color: var(--text);
 }
 
 .head,
@@ -254,56 +236,7 @@
   color: var(--muted);
 }
 
-/* 인트로: 웨이퍼 심볼 + 워드마크 */
-.mark {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: clamp(18px, 2.4vw, 28px);
-}
-
-.symbol svg {
-  display: block;
-  width: clamp(88px, 10vw, 124px);
-  height: auto;
-  overflow: visible;
-}
-
-/* 테두리는 한 줄짜리 대시로 그린다. 대시 양끝은 이음 없이 끊기므로 둥근 끝으로 맞물리게 하고,
-   다 그린 뒤에는 대시를 걷어 닫힌 경로의 모서리 이음으로 마감한다(intro.js). */
-.rim {
-  fill: none;
-  stroke: var(--text);
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-}
-
-.die {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.word {
-  display: flex;
-  font: 800 clamp(24px, 3vw, 36px)/1 var(--display);
-  font-stretch: 75%;
-  letter-spacing: 0;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.word span {
-  display: inline-block;
-}
-
 @media (max-width: 760px) {
-  .veil {
-    background: linear-gradient(0deg, var(--surface) 0%, var(--surface) 38%, transparent 82%);
-  }
-
   .main {
     align-self: end;
   }
