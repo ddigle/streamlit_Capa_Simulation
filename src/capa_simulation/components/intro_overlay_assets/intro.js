@@ -1434,7 +1434,15 @@ function createOverlay(api, data, initial, syncToolbar) {
     detail.disabled = !can;
     detailText.textContent = can ? text.detail || "Detail" : text.waiting || "";
     // Summary 는 들어갈 수 있을 때 함께 선다. 요약을 만들지 못했으면 까닭을 달고 꺼 둔다.
+    const appearing = can && summaryButton.hidden;
     summaryButton.hidden = !can;
+    // 준비되는 순간 Detail 옆에 살짝 떠오른다(갑자기 튀어나오지 않게). 입장 화면에서만.
+    if (appearing && mode === "intro" && !reduce) {
+      summaryButton.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], {
+        duration: 420,
+        easing: OUT,
+      });
+    }
     summaryButton.disabled = !canSummary();
     summaryButton.title = summaryArrived && !summary ? reasonText : text.summary_title || "";
   }
