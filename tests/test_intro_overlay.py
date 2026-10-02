@@ -1,4 +1,4 @@
-# Purpose: 첫 접속 입장 화면의 등록 내용(틀·스타일·부분 글꼴)과 회차마다 같은 페이로드를 검증한다.
+# Purpose: 입장 화면의 등록 내용(틀·스타일·부분 글꼴)·같은 페이로드·Summary 연결을 검증한다.
 
 from __future__ import annotations
 
@@ -22,12 +22,12 @@ def _prelude_constant(js: str, name: str) -> str:
     return str(json.loads(match.group(1)))
 
 
-def test_bundled_font_is_a_woff2_shipped_with_its_license() -> None:
-    """사내망에는 외부 글꼴이 없다. 부분 글꼴이 저장소에 있고 OFL 라이선스가 곁에 있어야 한다."""
-    font = (ASSETS / "archivo-capa.woff2").read_bytes()
+def test_bundled_fonts_are_woff2_shipped_with_their_license() -> None:
+    """사내망에는 외부 글꼴이 없다. 부분 글꼴 둘이 저장소에 있고 OFL 라이선스가 곁에 있어야 한다."""
     license_text = (ASSETS / "OFL.txt").read_text(encoding="utf-8")
 
-    assert font[:4] == b"wOF2"
+    for name in ("archivo-capa.woff2", "archivo-capa-number.woff2"):
+        assert (ASSETS / name).read_bytes()[:4] == b"wOF2", name
     assert "SIL Open Font License, Version 1.1" in license_text
     # 예약 글꼴 이름(Reserved Font Name)이 있으면 부분 글꼴에 원래 이름을 쓸 수 없다.
     copyright_line = license_text.splitlines()[0]
@@ -48,30 +48,45 @@ def test_registered_js_carries_the_assets_verbatim() -> None:
         base64.b64decode(_prelude_constant(js, "FONT_DATA"))
         == (ASSETS / "archivo-capa.woff2").read_bytes()
     )
+    assert (
+        base64.b64decode(_prelude_constant(js, "NUMBER_FONT_DATA"))
+        == (ASSETS / "archivo-capa-number.woff2").read_bytes()
+    )
     assert js.endswith((ASSETS / "intro.js").read_text(encoding="utf-8"))
     # 한 줄짜리 문자열은 Components v2 가 파일 경로로 읽는다.
     assert "\n" in js
 
 
 def test_every_display_string_is_covered_by_the_font_subset() -> None:
-    """부분 글꼴에 없는 글자는 조용히 본문 글꼴로 떨어진다. 타이틀은 CSS 가 대문자로 바꾼다."""
+    """부분 글꼴에 없는 글자는 조용히 본문 글꼴로 떨어진다. 타이틀은 CSS 가 대문자로 바꾼다.
+
+    시트의 달(`26.10`)은 표시 글꼴, 차트 숫자·단위는 숫자 글꼴이다.
+    """
     covered = set(intro_overlay.FONT_SUBSET_TEXT)
-    shown = intro_overlay.BRAND + intro_overlay.ENTER_LABEL
+    shown = intro_overlay.BRAND + intro_overlay.DETAIL_LABEL + intro_overlay.SUMMARY_LABEL
     shown += "".join(line + line.upper() for line in intro_overlay.TITLE_LINES)
+    shown += "0123456789."
 
     assert set(shown) <= covered, sorted(set(shown) - covered)
+    assert set("0123456789.%K") <= set(intro_overlay.NUMBER_FONT_SUBSET_TEXT)
 
 
-def test_steps_follow_the_home_loading_stages() -> None:
-    """가운데 세 단계는 HOME 진행 막대의 누적 퍼센트를 문턱으로 쓴다. 다섯 칸은 CSS 격자와 같다."""
+def test_steps_follow_the_order_they_actually_finish() -> None:
+    """요약은 부트스트랩 뒤·페이지 앞에서 보내 HOME 막대보다 먼저 찬다. 여섯 칸은 CSS 격자와 같다.
+
+    `reach` 는 앞에서부터 끝난 만큼 채운다 — 늦게 끝나는 단계가 앞에 서면 그 뒤가 한꺼번에 찬다.
+    """
     steps = intro_overlay._steps()
-    thresholds = [step["until"] for step in steps if step["until"] is not None]
+    thresholds = [step["until"] for step in steps if "until" in step]
 
-    assert len(steps) == 5
-    assert "repeat(5," in (ASSETS / "intro.css").read_text(encoding="utf-8")
-    assert steps[0]["until"] is None and steps[-1]["until"] is None
+    assert len(steps) == 6
+    assert "repeat(6," in (ASSETS / "intro.css").read_text(encoding="utf-8")
+    assert [step.get("signal") for step in steps] == ["boot", "summary", None, None, None, "end"]
     assert thresholds == sorted(thresholds)
     assert set(thresholds) <= {stage.percent for stage in HOME_LOADING_STAGES}
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    for signal in ("boot", "summary"):
+        assert f'step.signal === "{signal}"' in js
 
 
 def test_render_sends_the_hide_rule_first_and_an_unchanging_payload(
@@ -121,7 +136,7 @@ def test_theme_reload_is_predicted_with_the_toggle_scripts_own_keys() -> None:
 
 
 def _scene_source(js: str) -> str:
-    start = js.index("function scene(port) {")
+    start = js.index("function scene(port, gridOf) {")
     end = js.index("\n}\n", start)
     return js[start : end + 2]
 
@@ -141,15 +156,23 @@ def test_the_scene_runs_in_a_worker_with_a_main_thread_fallback() -> None:
     assert "sceneHandle.stop()" in js and "worker.terminate()" in js
 
 
-def test_the_scene_uses_no_name_from_outside_itself() -> None:
-    """`scene()` 은 문자열로 바뀌어 워커에서 돈다 — 이 파일의 다른 이름을 쓰면 워커에서 죽는다."""
-    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
-    body = _scene_source(js)
-    top_level = set(re.findall(r"^(?:const|let|function|async function) (\w+)", js, re.MULTILINE))
-    own = set(re.findall(r"\b(?:const|let|function) (\w+)", body))
-    outside = {name for name in top_level - own - {"scene"} if re.search(rf"\b{name}\b", body)}
+def _function_source(js: str, name: str) -> str:
+    start = js.index(f"function {name}(")
+    end = js.index("\n}\n", start)
+    return js[start : end + 2]
 
-    assert not outside, sorted(outside)
+
+def test_the_scene_uses_no_name_from_outside_itself() -> None:
+    """`scene()` 과 그와 함께 실어 보내는 `summaryGrid()` 는 문자열로 바뀌어 워커에서 돈다 —
+    이 파일의 다른 이름을 쓰면 워커에서 죽는다."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    top_level = set(re.findall(r"^(?:const|let|function|async function) (\w+)", js, re.MULTILINE))
+    for name in ("scene", "summaryGrid"):
+        body = _function_source(js, name)
+        own = set(re.findall(r"\b(?:const|let|function) (\w+)", body))
+        outside = {item for item in top_level - own - {name} if re.search(rf"\b{item}\b", body)}
+        assert not outside, (name, sorted(outside))
+    assert "(${scene.toString()})(self, ${summaryGrid.toString()})" in js
 
 
 def test_the_scene_and_the_page_share_one_timeline() -> None:
@@ -182,3 +205,47 @@ def test_intro_never_talks_back_to_python() -> None:
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
 
     assert not re.search(r"set(State|Trigger)Value\s*\(", js)
+
+
+def test_the_toolbar_button_and_the_overlay_agree_on_one_id() -> None:
+    """툴바 단추는 테마 iframe 스크립트가 세우고 입장 화면 JS 가 꾸민다 — 같은 id 를 봐야 한다."""
+    from capa_simulation.components import intro_summary
+
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    script = intro_summary.summary_toolbar_script()
+
+    assert f'const SUMMARY_BUTTON_ID = "{intro_summary.SUMMARY_BUTTON_ID}";' in js
+    assert f'"{intro_summary.SUMMARY_BUTTON_ID}"' in script
+    # 누르면 입장 화면 JS 가 연다. 스크립트 자체는 상태가 없어 회차마다 같은 문자열이다.
+    assert "api.openSummary(button)" in script
+    assert script == intro_summary.summary_toolbar_script()
+
+
+def test_the_summary_payload_reaches_the_overlay_without_talking_back() -> None:
+    """요약 값은 따로 오는 컴포넌트가 창에 두고 오버레이에 넘긴다 — 파이썬으로는 되보내지 않는다."""
+    from capa_simulation.components import intro_summary
+
+    assert "window.__capaSummary = data;" in intro_summary._JS
+    assert "api.setSummary(data)" in intro_summary._JS
+    assert not re.search(r"set(State|Trigger)Value\s*\(", intro_summary._JS)
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    assert "window.__capaSummary !== undefined" in js
+
+
+def test_the_summary_hides_its_slot_before_it_is_drawn(monkeypatch: pytest.MonkeyPatch) -> None:
+    from capa_simulation.components import intro_summary
+
+    calls: list[tuple[str, Any]] = []
+    monkeypatch.setattr(intro_summary.st, "html", lambda body: calls.append(("html", body)))
+    monkeypatch.setattr(
+        intro_summary, "_SUMMARY", lambda **kwargs: calls.append(("summary", kwargs))
+    )
+    monkeypatch.setattr(
+        intro_summary, "official_summary_data", lambda path: {"available": False, "reason": "x"}
+    )
+
+    intro_summary.render_intro_summary("db")
+
+    assert [kind for kind, _ in calls] == ["html", "summary"]
+    assert f".st-key-{intro_summary.INTRO_SUMMARY_KEY}" in calls[0][1]
+    assert calls[1][1]["key"] == intro_summary.INTRO_SUMMARY_KEY

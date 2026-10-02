@@ -257,10 +257,13 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
 
 - **Space 배치도 팔레트**(`SPACE_*`)는 zinc가 아니라 blue-grey다. FAB 도면 관례에 맞춘
   하위 팔레트이며 표·차트와 섞어 쓰지 않는다.
-- **첫 접속 입장 화면**(`components/intro_overlay.py`)은 앱 테마와 무관한 어두운 한 벌
-  (`tokens.INTRO_PALETTE`)이고, 워드마크·타이틀·`Enter` 만 Archivo 800·폭 75% 를 쓴다. 사내망에
-  외부 글꼴이 없어 이 화면이 쓰는 글자만 담은 부분 글꼴(SIL OFL 1.1)을 저장소에 두었다. 한글은
-  `FONT_FAMILY` 그대로다. 본문 화면에는 쓰지 않는다.
+- **첫 접속 입장 화면과 Summary 요약 화면**(`components/intro_overlay.py`)은 앱 테마와 무관한
+  어두운 한 벌(`tokens.INTRO_PALETTE`)이고, 워드마크·타이틀·`Detail`·`Summary`·시트의 달만 Archivo
+  800·폭 75%, 요약 차트의 숫자만 Archivo 700 을 쓴다. 사내망에 외부 글꼴이 없어 이 화면이 쓰는 글자만
+  담은 부분 글꼴 둘(SIL OFL 1.1)을 저장소에 두었다. 한글은 `FONT_FAMILY` 그대로다. 제품 비중 도넛은
+  다크 테마의 `PRODUCT_SHARE_COLORS` 를 테마와 무관하게 쓰고, 막대 상태색은 웨이퍼 다이 셋(확보·경고·
+  부족)이다. 본문 화면에는 쓰지 않는다. 헤더의 툴바 `Summary` 단추도 이 한 벌로 칠한다(입장 화면으로
+  돌아가는 문이라는 표시).
 - **월 스크롤 임계**가 상세표 8, HOME 대시보드 10으로 다르다. 두 화면의 밀도가 달라
   유지하되 같은 개념이므로 `tokens.py`에 나란히 두어 차이가 보이게 했다.
 - **`[theme]` ↔ 토큰 1:1 대조에서 빠지는 것**이 둘 있다. `[theme.sidebar]` 하위 블록은

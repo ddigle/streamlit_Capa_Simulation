@@ -7,6 +7,7 @@ from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
 from capa_simulation.components.app_header import render_app_header
 from capa_simulation.components.intro_overlay import render_intro_overlay
+from capa_simulation.components.intro_summary import render_intro_summary, summary_toolbar_script
 from capa_simulation.components.month_range_picker import render_month_range_picker
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
 from capa_simulation.components.scenario_edit_bar import pending_edit_labels
@@ -133,6 +134,10 @@ with pinned_connections(DUCKDB_PATH):
             st.code(f"{type(exc).__name__}: {exc}")
         st.stop()
     apply_pending_scenario_preset()
+    # 입장 화면 Summary 가 그릴 최신 공식버전 요약. 로딩에 포함되도록 페이지보다 **먼저**
+    # 보낸다 — 페이지가 `st.stop()` 하면 그 뒤로는 아무것도 브라우저에 닿지 않는다. 회차마다
+    # 같은 값이라 한 번만 실제로 오가고, 시나리오 전체 Capa 계산은 HOME 과 한 칸을 나눠 쓴다.
+    render_intro_summary(str(DUCKDB_PATH.resolve()))
 
     pages = build_navigation_pages()
     navigation = st.navigation(pages.ordered, position="hidden")
@@ -159,8 +164,10 @@ with pinned_connections(DUCKDB_PATH):
     # 헤더 오른쪽 Deploy 왼쪽 자리에 밝게/어둡게 버튼을 얹는다. Streamlit 이 테마를
     # 기억하는 자리를 그대로 쓰므로 위젯과 우리 Figure 가 함께 바뀐다. 그 왼쪽의 `Guide`
     # 버튼도 같은 iframe 에 싣는다. 기본은 감춰 두고 가이드를 단 페이지만 보이게 한다.
+    # 맨 왼쪽의 `Summary` 는 원래 화면에서 공식버전 요약으로 돌아오는 단추다 — 요약이 준비된
+    # 뒤에만 입장 화면 JS 가 보이게 한다.
     render_guide_base_style()
-    render_theme_toggle(extra_scripts=(guide_toolbar_script(),))
+    render_theme_toggle(extra_scripts=(guide_toolbar_script(), summary_toolbar_script()))
     with st.sidebar.container(key="home_navigation"):
         st.page_link(pages.home, width="stretch")
 

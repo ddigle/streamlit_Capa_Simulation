@@ -1,7 +1,7 @@
-/* 입장 화면. 이 규칙은 컴포넌트 칸이 아니라 intro.js 가 document.body 에 붙인 호스트의
-   shadow root 안에 들어간다. 색은 모두 변수다 — 값은 data.palette(tokens.INTRO_PALETTE)에서 온다.
-   심볼·워드마크·원형 펼침·웨이퍼 맵·글자 쪽 그늘은 .scene 캔버스 하나에 워커가 그린다(intro.js).
-   여기 HTML 글자·단추는 투명도·이동만 움직인다 — 합성기가 돌려 로딩 중에도 끊기지 않는다. */
+/* 입장 화면과 Summary 요약 화면. 이 규칙은 컴포넌트 칸이 아니라 intro.js 가 document.body 에 붙인
+   호스트의 shadow root 안에 들어간다. 색은 모두 변수다 — 값은 data.palette(tokens.INTRO_PALETTE)에서 온다.
+   심볼·워드마크·원형 펼침·웨이퍼 맵·글자 쪽 그늘과 Summary 의 차트는 .scene 캔버스 하나에 워커가
+   그린다(intro.js). 여기 HTML 글자·단추·행 이름은 투명도·이동만 움직인다 — 합성기가 돌려 끊기지 않는다. */
 :host {
   all: initial;
   position: fixed;
@@ -19,6 +19,21 @@
   font-family: var(--body);
   word-break: keep-all;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Detail 로 들어갈 때는 누른 단추에서 구멍이 퍼지고, 툴바 Summary 로 돌아올 때는 그 단추로 구멍이
+   좁혀진다. 구멍 반지름은 intro.js 가 등록한 `--capa-hole` 이다. */
+.stage.masked {
+  -webkit-mask-image: radial-gradient(
+    circle at var(--hx) var(--hy),
+    transparent var(--capa-hole),
+    #000 calc(var(--capa-hole) + 1px)
+  );
+  mask-image: radial-gradient(
+    circle at var(--hx) var(--hy),
+    transparent var(--capa-hole),
+    #000 calc(var(--capa-hole) + 1px)
+  );
 }
 
 .intro-bg {
@@ -39,10 +54,70 @@
   pointer-events: none;
 }
 
-.entry {
+/* ---------------------------------------------------------------- Summary 행 이름(차트는 캔버스) */
+.sum-labels {
   position: absolute;
   inset: 0;
   z-index: 3;
+  pointer-events: none;
+  visibility: hidden;
+  color: var(--text);
+}
+
+.stage.summary .sum-labels {
+  visibility: visible;
+}
+
+.sum-label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.sum-label .t {
+  font: 800 17px/1.15 var(--display);
+  font-stretch: 75%;
+  letter-spacing: 0.02em;
+}
+
+.sum-label .s {
+  margin-top: -6px;
+  font: 500 12px/1.45 var(--body);
+  color: var(--muted);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font: 500 12px/1.2 var(--body);
+  color: var(--muted);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.legend i {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+/* ---------------------------------------------------------------- 머리 줄·입장 화면 */
+.entry {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 20px;
@@ -56,7 +131,8 @@
   min-width: 0;
 }
 
-.head > *,
+.head > .logo,
+.head > .brand,
 .main > * {
   opacity: 0;
 }
@@ -65,6 +141,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  height: 34px;
 }
 
 .logo {
@@ -81,11 +158,46 @@
   height: 100%;
 }
 
-/* 심볼 옆 라벨·메인 타이틀·Enter·인트로 워드마크는 한 서체(Archivo 800 · 폭 75%)다. */
-.brand {
+/* 심볼 옆 라벨·메인 타이틀·단추·인트로 워드마크는 한 서체(Archivo 800 · 폭 75%)다.
+   머리 줄로 옮겨 온 Detail 은 이 라벨과 크기·자간까지 같다(.btn.docked). */
+.brand,
+.btn.docked {
   font: 800 18px/1 var(--display);
   font-stretch: 75%;
   letter-spacing: 0.03em;
+}
+
+.dock {
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.asof {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: auto;
+  font: 500 12px/1 var(--body);
+  color: var(--muted);
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.asof .period {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.asof .chip {
+  flex: none;
+  padding: 4px 7px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--button-text);
+  font: 700 11px/1 var(--body);
+  letter-spacing: 0.02em;
 }
 
 .main {
@@ -117,12 +229,12 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-width: 540px;
+  max-width: 560px;
 }
 
 .steps {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
   margin: 0;
   padding: 0;
@@ -177,46 +289,130 @@
   color: var(--text);
 }
 
-.enter {
+/* ---------------------------------------------------------------- 단추 */
+.actions {
+  display: flex;
+  align-items: center;
   align-self: flex-start;
+  gap: 12px;
+}
+
+/* 단추 = 바탕(.bg)과 글자(.tx) 두 겹. 머리 줄로 옮길 때 바탕은 상자 크기로, 글자는 한 비율로만
+   줄어 글자가 찌그러지지 않는다. 머리 줄 크기(86×30)는 입장 크기(148×52)와 같은 비율이다. */
+.btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
   min-width: 148px;
-  min-height: 52px;
+  height: 52px;
   padding: 0 30px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 999px;
-  background: var(--button);
-  color: var(--button-text);
+  background: none;
+  color: inherit;
   font: 800 20px/1 var(--display);
   font-stretch: 75%;
   letter-spacing: 0.03em;
   cursor: pointer;
-  transition: background-color 0.35s, color 0.35s, border-color 0.35s, transform 0.2s;
 }
 
-.enter:disabled {
-  background: transparent;
-  color: var(--muted);
-  border-color: var(--button-off-line);
-  font: 600 15px/1 var(--body);
-  font-stretch: 100%;
-  letter-spacing: 0;
-  cursor: progress;
+/* 위 `display` 가 브라우저의 `[hidden]` 규칙을 이기므로 다시 적는다 — Summary 는 들어갈 수 있을 때 선다. */
+.btn[hidden] {
+  display: none;
 }
 
-.enter:not(:disabled):hover {
-  transform: translateY(-1px);
+.btn .bg {
+  position: absolute;
+  inset: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  transform-origin: 0 0;
+  transition: background-color 0.35s, border-color 0.35s;
 }
 
-.enter:focus-visible {
+.btn .tx {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+  transform-origin: 0 0;
+}
+
+.btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
 
-.enter .spin {
+.btn.detail {
+  z-index: 2;
+}
+
+.btn.detail .bg {
+  background: var(--button);
+}
+
+.btn.detail .tx {
+  color: var(--button-text);
+}
+
+.btn:not(:disabled) {
+  transition: translate 0.2s;
+}
+
+.btn:not(:disabled):hover {
+  translate: 0 -1px;
+}
+
+.btn.detail:disabled {
+  cursor: progress;
+}
+
+.btn.detail:disabled .bg {
+  background: transparent;
+  border-color: var(--button-off-line);
+}
+
+.btn.detail:disabled .tx {
+  color: var(--muted);
+  font: 600 15px/1 var(--body);
+  font-stretch: 100%;
+  letter-spacing: 0;
+}
+
+.btn.summary {
+  z-index: 1;
+}
+
+.btn.summary .bg {
+  border-color: var(--ghost-line);
+}
+
+.btn.summary .tx {
+  color: var(--text);
+}
+
+.btn.summary:not(:disabled):hover .bg {
+  background: var(--ghost-hover);
+}
+
+.btn.summary:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.btn.docked {
+  min-width: 86px;
+  height: 30px;
+  padding: 0 14px;
+}
+
+.btn.docked:focus-visible {
+  outline-offset: 3px;
+}
+
+.btn .spin {
   width: 14px;
   height: 14px;
   border: 2px solid currentColor;
@@ -225,7 +421,7 @@
   animation: spin 0.8s linear infinite;
 }
 
-.enter:not(:disabled) .spin {
+.btn:not(:disabled) .spin {
   display: none;
 }
 
@@ -234,6 +430,40 @@
   font-size: 12px;
   line-height: 1.5;
   color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- 말풍선·낭독용 표 */
+.tip {
+  position: fixed;
+  z-index: 10;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-line);
+  border-radius: 6px;
+  background: var(--tip);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
+  color: var(--text);
+  font: 500 12px/1.55 var(--body);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.tip b {
+  font-weight: 700;
+}
+
+.tip .dim {
+  color: var(--muted);
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 @media (max-width: 760px) {
@@ -245,8 +475,17 @@
     visibility: hidden;
   }
 
-  .enter {
+  .actions {
     align-self: stretch;
+  }
+
+  .actions .btn:not(.docked) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .asof .period {
+    display: none;
   }
 }
 
@@ -268,7 +507,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .steps li.active .track::after,
-  .enter .spin {
+  .btn .spin {
     animation: none;
   }
 }

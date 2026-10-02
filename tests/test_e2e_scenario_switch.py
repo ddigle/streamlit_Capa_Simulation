@@ -39,6 +39,7 @@ from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.intro_overlay as intro_overlay
+import capa_simulation.components.intro_summary as intro_summary
 import capa_simulation.components.month_range_picker as month_range_picker
 import capa_simulation.components.scenario_status as scenario_status
 import capa_simulation.settings as settings
@@ -239,6 +240,7 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
         patch.setattr(month_range_picker, "render_month_range_picker", _month_range_stub)
         patch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
         patch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
+        patch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
         patch.setattr(
             scenario_status,
             "render_scenario_controls",
@@ -493,6 +495,7 @@ def test_toggles_flipped_in_the_card_on_main_are_released_by_a_load(
     monkeypatch.setattr(month_range_picker, "render_month_range_picker", _month_range_stub)
     monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
     monkeypatch.setattr(
         scenario_status,
         "render_scenario_controls",

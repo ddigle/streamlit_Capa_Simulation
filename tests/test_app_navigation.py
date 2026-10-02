@@ -1,8 +1,10 @@
 # Purpose: 사이드바 페이지 인벤토리와 네비게이션 설정을 고정한다.
 
 import ast
+import json
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -33,6 +35,8 @@ from capa_simulation.sidebar_status import BOTTLENECK_BOX_KEY, remembered_box_ke
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
+# `_app` 이 바꿔 끼운 요약 컴포넌트가 받은 값. 회차마다 하나씩 쌓인다.
+SENT_SUMMARIES: list[dict[str, Any]] = []
 
 # 특성화 테스트다. 페이지가 빠지거나 제목·아이콘이 바뀌는 것을 잡기 위한 기준값이며,
 # 의도적으로 바꿀 때는 함께 갱신한다.
@@ -164,7 +168,10 @@ def test_navigation_hides_the_builtin_sidebar_widget() -> None:
 def _app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     """빈 DuckDB 를 보는 `app.py`. 내장 시드가 부트스트랩을 채운다."""
     import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+
+    SENT_SUMMARIES.clear()
     import capa_simulation.components.intro_overlay as intro_overlay
+    import capa_simulation.components.intro_summary as intro_summary
     import capa_simulation.components.month_range_picker as month_range_picker
     import capa_simulation.settings as settings
 
@@ -173,6 +180,8 @@ def _app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     # Components v2 위젯은 모듈 로드 때 등록되어 AppTest 인스턴스마다 살아 있지 않다.
     monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
+    # 요약 계산은 그대로 돌리고 브라우저로 보내는 컴포넌트만 바꿔 끼운다.
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: SENT_SUMMARIES.append(kwargs))
     monkeypatch.setattr(
         month_range_picker,
         "render_month_range_picker",
@@ -296,6 +305,7 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     먼저여야 그동안을 덮고, 매 회차여야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다.
     """
     import capa_simulation.components.intro_overlay as intro_overlay
+    import capa_simulation.components.intro_summary as intro_summary
     import capa_simulation.scenario_activation as scenario_activation
 
     order: list[str] = []
@@ -306,6 +316,7 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
         return original_bootstrap(*args, **kwargs)
 
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: order.append("intro"))
+    monkeypatch.setattr(intro_summary, "render_intro_summary", lambda path: order.append("summary"))
     monkeypatch.setattr(
         scenario_activation, "bootstrap_latest_official_scenario", _recording_bootstrap
     )
@@ -314,7 +325,28 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     assert not list(app.exception), [element.message for element in app.exception]
     app.run()
 
-    assert order == ["intro", "bootstrap", "intro", "bootstrap"]
+    # 요약은 부트스트랩 뒤·페이지 앞이다 — 로딩에 들어가고, 페이지가 멈춰도 이미 보냈다.
+    assert order == ["intro", "bootstrap", "summary", "intro", "bootstrap", "summary"]
+
+
+def test_the_intro_summary_sends_the_official_six_months_once_per_value(_app: AppTest) -> None:
+    """내장 시드(공식버전 하나)에서 요약이 실제로 계산되어 나간다. 값은 회차마다 같다.
+
+    같아야 Streamlit 이 다시 보내지 않고 브라우저 JS 도 다시 불리지 않는다.
+    """
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    app.run()
+
+    assert len(SENT_SUMMARIES) == 2
+    first, second = (sent["data"] for sent in SENT_SUMMARIES)
+    assert first["available"] is True, first
+    assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
+    count = first["count"]
+    assert 1 <= count <= 6
+    for key in ("months", "density", "wafer", "bn", "mix"):
+        assert len(first[key]) == count, key
+    assert first["products"] and all(item["color"].startswith("#") for item in first["products"])
 
 
 def test_the_control_boxes_open_collapsed_on_the_first_run(_app: AppTest) -> None:

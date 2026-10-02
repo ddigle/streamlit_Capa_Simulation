@@ -488,7 +488,8 @@ HIT_TARGET: Final = "rgba(255,255,255,0.01)"
 # --------------------------------------------------------------- 첫 접속 입장 화면
 # `components/intro_overlay` 의 색. **앱 테마와 상관없이 한 벌이다** — 웨이퍼 맵 위에 밝은 글자가
 # 얹히는 어두운 장면이라 밝은 짝을 두지 않는다. 첫 프레임만 앱 바탕색(브라우저가 칠한 `stApp`
-# 배경)에서 출발해 이 `surface` 로 어두워진다. 웨이퍼 다이 셋은 확보·경고·부족 순이다.
+# 배경)에서 출발해 이 `surface` 로 어두워진다. 웨이퍼 다이 셋은 확보·경고·부족 순이고,
+# Summary 막대의 상태색도 이 셋이다.
 INTRO_PALETTE: Final[Mapping[str, str]] = MappingProxyType(
     {
         "surface": "#0F1013",
@@ -505,6 +506,14 @@ INTRO_PALETTE: Final[Mapping[str, str]] = MappingProxyType(
         "die-ok": "#4FA79C",
         "die-warn": "#D29A3A",
         "die-short": "#D0644F",
+        # Summary 요약 화면. 축 눈금 글자·차트 판의 면과 테두리·말풍선 바탕.
+        "faint": "#5E616B",
+        "panel": "rgba(236, 236, 239, 0.035)",
+        "panel-line": "rgba(236, 236, 239, 0.16)",
+        "tip": "#1C1D22",
+        # 입장 화면 `Summary`(테두리만 있는 단추)의 테두리와 눌러 볼 때의 면.
+        "ghost-line": "rgba(236, 236, 239, 0.45)",
+        "ghost-hover": "rgba(236, 236, 239, 0.08)",
     }
 )
 # ----------------------------------------------------------------------- 서체

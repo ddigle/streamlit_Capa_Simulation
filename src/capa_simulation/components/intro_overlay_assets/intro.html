@@ -1,8 +1,13 @@
 <div class="stage" role="dialog" aria-modal="true" aria-labelledby="capa-intro-title">
   <div class="intro-bg"></div>
   <canvas class="scene" aria-hidden="true"></canvas>
+  <div class="sum-labels" data-slot="labels" aria-hidden="true"></div>
   <div class="entry">
-    <header class="head"><span class="logo" data-slot="logo"></span><span class="brand" data-slot="brand"></span></header>
+    <header class="head">
+      <span class="logo" data-slot="logo"></span><span class="brand" data-slot="brand"></span>
+      <span class="dock" data-slot="dock"></span>
+      <span class="asof" data-slot="asof"><b class="chip"></b><span class="period"></span></span>
+    </header>
     <section class="main">
       <h1 class="title" id="capa-intro-title" data-slot="title"></h1>
       <div class="gap" aria-hidden="true"></div>
@@ -10,8 +15,13 @@
         <ol class="steps" data-slot="steps"></ol>
         <p class="status" role="status" aria-live="polite"></p>
       </div>
-      <button type="button" class="enter" disabled><span class="spin" aria-hidden="true"></span><span class="txt"></span></button>
+      <div class="actions">
+        <button type="button" class="btn detail" disabled><span class="bg"></span><span class="tx"><span class="spin" aria-hidden="true"></span><span class="txt"></span></span></button>
+        <button type="button" class="btn summary" hidden><span class="bg"></span><span class="tx"><span class="txt"></span></span></button>
+      </div>
       <p class="hint" hidden></p>
     </section>
   </div>
+  <table class="sr" data-slot="table"></table>
+  <div class="tip" role="tooltip"></div>
 </div>

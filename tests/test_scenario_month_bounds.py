@@ -62,6 +62,7 @@ def test_shifted_months_remain_selectable_after_narrowing_and_page_roundtrip(
 ) -> None:
     import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
     import capa_simulation.components.intro_overlay as intro_overlay
+    import capa_simulation.components.intro_summary as intro_summary
     import capa_simulation.components.month_range_picker as month_range_picker
     import capa_simulation.components.scenario_status as scenario_status
     import capa_simulation.settings as settings
@@ -93,6 +94,7 @@ def test_shifted_months_remain_selectable_after_narrowing_and_page_roundtrip(
     )
     monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
     # JS 전송만 대신하고 범위 밖 값을 버리는 실제 Python 선택기 검증은 그대로 실행한다.
     monkeypatch.setattr(
         month_range_picker,

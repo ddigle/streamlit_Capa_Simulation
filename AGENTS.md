@@ -179,6 +179,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오 부트스트랩보다 앞에서 매 회차 부른다.** 앞이어야 첫 로딩을 덮고, 매 회차 같은
     내용이어야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다(이미 들어간 탭이면 브라우저가
     아무것도 하지 않는다). `app.py` 를 여는 AppTest 는 `render_intro_overlay` 를 바꿔 끼운다.
+  - **입장 화면 Summary 의 요약 값(`components/intro_summary.py`)은 공식 시나리오 부트스트랩
+    바로 뒤, 페이지보다 앞에서 매 회차 보낸다.** 페이지가 `st.stop()` 하면 그 뒤로는 아무것도
+    브라우저에 닿지 않고, 앞이어야 입장 화면 로딩에 포함된다. 값은 세션에 한 번 만들어 공식버전·
+    표시순서·공정 표시명이 그대로인 동안 다시 쓴다(회차마다 같은 값이라 한 번만 오간다). AppTest 는
+    `intro_summary._SUMMARY`(브라우저로 보내는 컴포넌트)만 바꿔 끼우고 계산은 그대로 돌린다.
   - 공통 월 선택기는 기본 조회기간과 활성 기준정보의 실제 월 범위의 합집합을 허용한다
     (`services/scenario_month_bounds.py`). 기간을 좁히거나 페이지를 왕복해도 기본 범위
     밖의 저장된 월을 다시 고를 수 있어야 한다. 연도 오류를 판정하는 기능은 아니다.
@@ -1580,27 +1585,44 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/intro_overlay.py`
   - **탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면**(2026-10-02 사용자 결정 — 4시안 중 B안
     수정본). 웨이퍼 심볼과 `S.PKG CAPA` 워드마크가 원형으로 화면 전체로 펼쳐지고, 입장 화면의
-    단계 막대 다섯이 진행을 보여 준다. 다 그려지면 `Enter` 가 켜지고 누르면 버튼 쪽으로 접히며
-    원래 화면이 드러난다. 들어가면 `sessionStorage` 에 적어 **같은 탭에서는 다시 띄우지 않는다**
-    (테마 버튼·새로고침은 새 세션이지만 같은 탭이다).
+    단계 막대 여섯이 진행을 보여 준다(시나리오 → 요약 → 기준정보 → 부하량·Capa → 확보율 → HOME, 실제로
+    끝나는 차례). 다 그려지면 단추 둘이 켜진다. **`Detail`** 은 누른 단추에서 구멍이 퍼지며 원래 화면이
+    드러나고, 들어가면 `sessionStorage` 에 적어 **같은 탭에서는 다시 띄우지 않는다**(테마 버튼·
+    새로고침은 새 세션이지만 같은 탭이다).
+  - **`Summary`** 는 같은 오버레이 안에서 **최신 공식버전의 여섯 달 요약**을 모션으로 그린다(역할
+    분리: 앱 안은 상세, 입장 화면은 요약 — 2026-10-02 사용자 결정, 최종 시안 아티팩트
+    `RjdbkmrAgBp2TnQbyRZy9D`). 타이틀·로딩 막대가 위로 빠지고, Summary 는 Detail 밑으로 접히고, Detail 은
+    심볼·라벨 옆으로 옮겨 **라벨과 같은 글자**(Archivo 800·폭 75%·18px·자간 .03em)가 된다 — 바탕(.bg)과
+    글자(.tx) 두 겹 FLIP 이라 바탕은 148×52 → 86×30(같은 비율), 글자는 한 비율로만 줄어 찌그러지지 않는다.
+    웨이퍼는 **제자리·같은 크기·같은 속도로 돌며 20% 무채색**이 된다(축소는 넷다이가 작아 불채택). 그 위에
+    생산계획 선·B/N 확보율 막대(부족 대수)·월별 시트(Density·Wafer 계획·제품 비중 도넛)가 6개월 한 축에
+    맞춰 조립된다. 원래 화면에서는 툴바 `Summary` 단추(`intro_summary.summary_toolbar_script`, Guide 왼쪽)가
+    같은 요약을 다시 연다 — 화면이 그 단추 속으로 접힌다. 그래서 오버레이는 걷지 않고 **감춰 둔다**
+    (워커 멈춤·캔버스 1px). 이미 들어간 탭은 요약 값이 닿을 때 감춘 오버레이를 미리 만들어 둔다. 요약에서
+    Esc 는 Detail 과 같다. 요약을 만들지 못했으면(공식버전 없음·계산 오류) Summary 를 끄고 까닭을 단다.
   - Components v2 하나이고, HTML·CSS·JS 는 `intro_overlay_assets/` 의 파일이다. JS 가 화면을
     **`document.body` 에 붙인 자기 호스트**(shadow root)에 그린다 — 컴포넌트 칸 안에서는
     Streamlit 머리말·사이드바의 쌓임 맥락 아래에 깔린다. 칸은 스타일만 든 `st.html` 로 접어
     본문에 틈을 남기지 않는다. 컴포넌트의 `css=` 는 칸의 shadow root 에만 들어가 body 호스트에
     닿지 않으므로, 등록 때 intro.html·intro.css·글꼴을 JS 앞에 상수로 붙여 싣는다.
   - **움직임은 메인 스레드 밖에서 돈다.** 첫 로딩 동안 메인 스레드는 Streamlit 이 HOME 의 표·그림을
-    그리느라 수백 ms 씩 막힌다(8514 실측 최대 0.5초). 심볼·워드마크·원형 펼침·웨이퍼 맵은 `intro.js` 의
-    `scene()` 이 **워커의 OffscreenCanvas** 에 그리고, 입장 화면 HTML(글자·단추)은 합성기가 돌리는
-    투명도·이동만 쓰며 시작 시각을 미리 예약한다(같은 부하에서 장면 프레임 최대 간격 0.48초 → 66ms).
-    `scene()` 은 문자열로 바뀌어 워커에서 돌므로 **이 파일의 다른 이름을 쓰지 않는다**(시간표 상수도 안에
-    따로 둔다 — `test_intro_overlay` 가 둘 다 지킨다). 워커·OffscreenCanvas 가 없거나 워커가 죽으면 같은
-    장면을 메인 스레드에서 돌린다. 원형으로 접히는 퇴장만 clip-path 다(그때는 앱이 다 그려져 한가하다).
+    그리느라 수백 ms 씩 막힌다(8514 실측 최대 0.5초). 심볼·워드마크·원형 펼침·웨이퍼 맵과 **Summary 의
+    차트(선 긋기·막대·시트·도넛·숫자 세기)** 는 `intro.js` 의 `scene()` 이 **워커의 OffscreenCanvas** 에
+    그리고, HTML(글자·단추·행 이름)은 합성기가 돌리는 투명도·이동만 쓰며 시작 시각을 미리 예약한다(같은
+    부하에서 장면 프레임 최대 간격 0.48초 → 66ms, 요약을 더한 뒤 따뜻한 캐시 63ms). 요약 값은 로딩 중에
+    받아 워커가 글꼴(`self.fonts`)·배치를 끝내 두고 `summary-ready` 로 알린다 — 누른 뒤에는 그리기만
+    한다. 말풍선은 워커가 돌려준 자리(`hits`)로 메인 스레드가 맞춘다. 차트는 캔버스라 같은 값을 숨은
+    표(`.sr`)로도 둔다. `scene()` 과 함께 실어 보내는 `summaryGrid()`(격자 — 행 이름 위치와 차트가 같이
+    쓴다)는 문자열로 바뀌어 워커에서 돌므로 **이 파일의 다른 이름을 쓰지 않는다**(인트로 시간표 상수도
+    안에 따로 둔다. Summary 시간표는 절대 시각으로 메시지에 싣는다 — `test_intro_overlay` 가 지킨다).
+    워커·OffscreenCanvas 가 없거나 워커가 죽으면 같은 장면을 메인 스레드에서 돌린다. Detail 퇴장과 툴바
+    Summary 복귀만 메인 스레드의 마스크(`--capa-hole`, `CSS.registerProperty`)다 — 그때는 앱이 한가하다.
   - **「다 그렸다」는 파이썬이 알릴 수 없다.** `st.stop()` 뒤로는 어떤 요소도 브라우저에 닿지
     않는다(13개 화면이 멈춘다). JS 가 `[data-testid="stApp"]` 의 `data-test-script-state` 가
-    `notRunning` 이 되는 것을 본다. 단계 막대는 HOME 본문 `LoadingProgress` 막대의 퍼센트를
-    읽어 `HOME_LOADING_STAGES` 의 누적값을 문턱으로 채운다. 둘 다 **비공식 화면 속성**이라
-    Streamlit 을 올리면 브라우저로 확인한다 — 속성이 없으면 인트로 뒤 바로 Enter 가 켜지고,
-    60초가 넘게 안 끝나도 켜져 앱을 가두지 않는다.
+    `notRunning` 이 되는 것을 본다. 단계 막대는 요약 값이 닿은 것(`summary`)과 HOME 본문
+    `LoadingProgress` 막대의 퍼센트(`HOME_LOADING_STAGES` 의 누적값 문턱)로 채운다. 둘 다 **비공식
+    화면 속성**이라 Streamlit 을 올리면 브라우저로 확인한다 — 속성이 없으면 인트로 뒤 바로 Detail 이
+    켜지고, 60초가 넘게 안 끝나도 켜져 앱을 가두지 않는다.
   - 주소의 테마 인자가 저장된 테마와 다르거나 없으면(첫 방문·옛 북마크·남이 보낸 링크)
     `theme_toggle` 이 한 번 새로고침한다. JS 가 **그 스크립트와 같은 규칙**(그 모듈의
     `THEME_STORAGE_PREFIX`·`THEME_STORAGE_SUFFIX`·`THEME_BUTTON_ID` 를 `data` 로 받는다)으로 미리
@@ -1609,12 +1631,36 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     조건을 바꾸면 `intro.js` 의 `themeReloadPending` 도 같이 고친다.
   - **회차마다 같은 것을 보낸다.** 등록 JS(글꼴 base64 포함)와 `data` 가 같아야 Streamlit 이
     큰 메시지를 다시 보내지 않고 JS 도 다시 불리지 않는다. 색은 테마와 무관한
-    `tokens.INTRO_PALETTE` 한 벌이고, 첫 프레임만 브라우저가 칠한 앱 바탕색을 쓴다. Enter 는
-    파이썬으로 아무것도 보내지 않는다 — `setStateValue`·`setTriggerValue` 는 rerun 을 부른다.
-  - **글꼴은 저장소에 든 부분 글꼴이다**(`archivo-capa.woff2`, Archivo 800·폭 75%, SIL OFL 1.1 —
-    같은 폴더 `OFL.txt`). 사내망에는 외부 글꼴이 없다. `BRAND`·`TITLE_LINES`·`ENTER_LABEL` 에
-    새 글자를 쓰면 `FONT_SUBSET_TEXT` 로 다시 받는다(`test_intro_overlay` 가 빠진 글자를 잡는다).
+    `tokens.INTRO_PALETTE` 한 벌이고(요약 화면의 판·눈금·말풍선 색 포함), 첫 프레임만 브라우저가 칠한
+    앱 바탕색을 쓴다. 요약 값은 이 `data` 가 아니라 따로 오는 컴포넌트(`intro_summary`)가 보낸다.
+    Detail·Summary 는 파이썬으로 아무것도 보내지 않는다 — `setStateValue`·`setTriggerValue` 는 rerun 을
+    부른다.
+  - **글꼴은 저장소에 든 부분 글꼴 둘이다**(`archivo-capa.woff2` Archivo 800·폭 75% — 워드마크·타이틀·
+    단추·시트의 달, `archivo-capa-number.woff2` Archivo 700·폭 100% — 차트 숫자·단위, SIL OFL 1.1 —
+    같은 폴더 `OFL.txt`). 사내망에는 외부 글꼴이 없다. Google Fonts `css2?family=Archivo:wdth,wght@…` 에
+    `text=` 로 글자 목록을 넘겨 받은 것이다. `BRAND`·`TITLE_LINES`·`DETAIL_LABEL`·`SUMMARY_LABEL` 에
+    새 글자를 쓰면 `FONT_SUBSET_TEXT`(숫자는 `NUMBER_FONT_SUBSET_TEXT`)로 다시 받는다(`test_intro_overlay`
+    가 빠진 글자를 잡는다). 한글은 시스템 본문 글꼴이고 워커 캔버스도 같은 글꼴 이름으로 그린다.
     `.gitattributes` 가 `*.woff2` 를 binary 로 둔다 — 줄바꿈 정규화가 닿으면 글꼴이 깨진다.
+- `src/capa_simulation/components/intro_summary.py`
+  - 입장 화면 Summary 의 **값**과 툴바 `Summary` 단추. 최신 공식버전(`latest_official_release`)
+    하나를 `services/official_summary.py` 로 요약해 Components v2 `capa_intro_summary` 의 `data` 로
+    보낸다. 계산은 공식 리비전의 결정적 키(`reference_version_for_revision`·`pristine_content_token`)로
+    `get_home_simulation`·`get_home_lob_without_edp` 를 부른다 — **무거운 시나리오 전체 Capa 계산
+    (`get_full_capacity_outcome`)은 HOME·공식 발행 검사와 한 칸을 나눠 쓰고**, 여섯 달로 자른 결과는
+    HOME 조회기간과 대개 달라 따로 캐시된다. 색은 테마와 무관한 다크 팔레트(`palette_value("dark", …)`),
+    값은 반올림·차례를 고정해 같은 요약이면 늘 같다. 상태(확보·경고·부족)는 `capacity_status` 한 곳이
+    가른다. 모든 페이지 앞이라 **어떤 예외도 밖으로 내보내지 않고**(`available: false` 와 까닭),
+    예외로 끝난 결과는 세션에 기억하지 않는다(일시적 실패는 다음 회차에 다시 해 본다).
+  - 툴바 단추는 Guide 처럼 테마 버튼 iframe 의 스크립트가 세우고(`summary_toolbar_script` — 상태 없는
+    고정 문자열), 꾸밈·보임·눌렀을 때의 동작은 입장 화면 JS(`window.__capaIntro`)가 맡는다. 단추 id 는
+    `SUMMARY_BUTTON_ID` 하나를 두 쪽이 본다(`test_intro_overlay`).
+- `src/capa_simulation/services/official_summary.py`
+  - 공식버전 6개월 요약의 순수 계산. 기간은 리비전 프리셋의 조회 시작월과 생산계획 첫 달 중 **늦은
+    쪽**부터 여섯 달(계획 끝을 넘지 않음, 연간 Total 없음). 생산계획 = HOME `Density (억Gb)`(`부하량`),
+    B/N = 프리셋 `B/N 집계 공정` 안에서 달마다 확보율이 가장 낮은 공정(HOME 과 같은 순위 함수), 부족
+    대수 = `소요대수 − 가용대수` 올림, 제품 비중 = Wafer 기준(색 칸은 EDP 포함 수량으로). HOME 토글
+    기본값(EDP 제외·선행·실행 반영 없음)과 같은 화면이다(2026-10-02 사용자 결정).
 - `src/capa_simulation/components/admin_dialog.py`
   - Admin Area 편집 탭들이 함께 쓰는 팝업 칸(`admin_area_open_dialog`) 하나를 여닫는 콜백.
     탭이 닫혀도 매 회차 그리므로 칸이 탭마다 있으면 한 회차에 팝업이 둘 뜰 수 있다.
@@ -2762,7 +2808,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   스크립트는 저장소에 두고 등록 때 싣는다(`components/intro_overlay.py` 의 부분 글꼴).
 - **「실행이 끝났다」를 `navigation.run()` 뒤의 요소로 알리지 않는다.** 페이지가 `st.stop()`
   하면 그 뒤로는 `finally` 에서 그린 요소도 브라우저에 닿지 않는다. 브라우저 쪽에서 실행 상태를
-  본다(`components/intro_overlay.py`).
+  본다(`components/intro_overlay.py`). 모든 화면이 브라우저로 꼭 보내야 하는 값(입장 화면 요약)도
+  같은 까닭으로 `navigation.run()` **앞**에서 보낸다(`components/intro_summary.py`).
 - 페이지 전용 위젯에는 고유 `key`를 부여한다.
 - 페이지 이동 후에도 유지해야 하는 위젯은 현재 Streamlit 버전의
   `persist_state="session"` 패턴을 따른다.
