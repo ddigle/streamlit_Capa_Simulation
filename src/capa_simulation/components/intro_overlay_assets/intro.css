@@ -1,0 +1,341 @@
+/* 입장 화면. 이 규칙은 컴포넌트 칸이 아니라 intro.js 가 document.body 에 붙인 호스트의
+   shadow root 안에 들어간다. 색은 모두 변수다 — 값은 data.palette(tokens.INTRO_PALETTE)에서 온다. */
+:host {
+  all: initial;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: block;
+  color-scheme: dark;
+}
+
+.stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  font-family: var(--body);
+  word-break: keep-all;
+  -webkit-font-smoothing: antialiased;
+}
+
+.intro-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--frame0);
+}
+
+/* 테마 새로고침을 기다리는 동안에는 바탕 한 장만 보인다. 인트로가 시작할 때 .begun 이 붙는다. */
+.intro {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.stage.begun .intro {
+  visibility: visible;
+}
+
+.entry {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  visibility: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 20px;
+  padding: clamp(18px, 3vw, 36px) clamp(16px, 4.5vw, 64px) clamp(28px, 6vh, 72px);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.entry .map,
+.entry .veil {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.veil {
+  background: linear-gradient(90deg, var(--surface) 0%, var(--veil-mid) 36%, transparent 68%);
+}
+
+.head,
+.main {
+  position: relative;
+  min-width: 0;
+}
+
+.head > *,
+.main > * {
+  opacity: 0;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+}
+
+.logo svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 심볼 옆 라벨·메인 타이틀·Enter·인트로 워드마크는 한 서체(Archivo 800 · 폭 75%)다. */
+.brand {
+  font: 800 18px/1 var(--display);
+  font-stretch: 75%;
+  letter-spacing: 0.03em;
+}
+
+.main {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: min(700px, 100%);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-stretch: 75%;
+  font-size: clamp(44px, 6.6vw, 100px);
+  line-height: 0.86;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+/* 소개 문구를 뺀 자리. 그 한 줄 높이를 남겨 아래 단계·버튼 위치를 유지한다. */
+.gap {
+  height: calc(clamp(14px, 1.25vw, 17px) * 1.7);
+}
+
+.load {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 540px;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.steps li {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.steps .lbl {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.steps .track {
+  position: relative;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.steps li.done .track {
+  background: var(--accent);
+}
+
+.steps li.active .track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: var(--accent);
+  animation: slide 1.15s ease-in-out infinite;
+}
+
+.steps li.done,
+.steps li.active {
+  color: var(--text);
+}
+
+.status {
+  margin: 0;
+  font: 500 13px/1.45 var(--body);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.enter {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: 148px;
+  min-height: 52px;
+  padding: 0 30px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--button);
+  color: var(--button-text);
+  font: 800 20px/1 var(--display);
+  font-stretch: 75%;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background-color 0.35s, color 0.35s, border-color 0.35s, transform 0.2s;
+}
+
+.enter:disabled {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--button-off-line);
+  font: 600 15px/1 var(--body);
+  font-stretch: 100%;
+  letter-spacing: 0;
+  cursor: progress;
+}
+
+.enter:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.enter:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.enter .spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.enter:not(:disabled) .spin {
+  display: none;
+}
+
+.hint {
+  margin: -8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* 인트로: 웨이퍼 심볼 + 워드마크 */
+.mark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(18px, 2.4vw, 28px);
+}
+
+.symbol svg {
+  display: block;
+  width: clamp(88px, 10vw, 124px);
+  height: auto;
+  overflow: visible;
+}
+
+/* 테두리는 한 줄짜리 대시로 그린다. 대시 양끝은 이음 없이 끊기므로 둥근 끝으로 맞물리게 하고,
+   다 그린 뒤에는 대시를 걷어 닫힌 경로의 모서리 이음으로 마감한다(intro.js). */
+.rim {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.die {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.word {
+  display: flex;
+  font: 800 clamp(24px, 3vw, 36px)/1 var(--display);
+  font-stretch: 75%;
+  letter-spacing: 0;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.word span {
+  display: inline-block;
+}
+
+@media (max-width: 760px) {
+  .veil {
+    background: linear-gradient(0deg, var(--surface) 0%, var(--surface) 38%, transparent 82%);
+  }
+
+  .main {
+    align-self: end;
+  }
+
+  .steps li:not(.active) .lbl {
+    visibility: hidden;
+  }
+
+  .enter {
+    align-self: stretch;
+  }
+}
+
+@keyframes slide {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(240%);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .steps li.active .track::after,
+  .enter .spin {
+    animation: none;
+  }
+}

@@ -54,7 +54,7 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
   으로 참조한다.
 - **서체는 `tokens.FONT_FAMILY`를 쓴다.** `"Malgun Gothic"` 단독 지정은 금지다. Windows
   전용 서체라 다른 OS에서 서체와 함께 **컬럼 폭 계산까지** 어긋난다. 숫자를 정렬해 보여야
-  하는 자리는 `FONT_FAMILY_NUMERIC`을 쓴다.
+  하는 자리는 `FONT_FAMILY_NUMERIC`을 쓴다. 예외는 첫 접속 입장 화면의 워드마크 서체 하나다(4장).
 - **토큰 이름은 값이 아니라 역할이다.** `BORDER`와 `STATUS_SECURE`는 현재 둘 다 zinc-300
   이지만 확보 상태색을 조정할 때 표 테두리가 함께 바뀌면 안 되므로 따로 둔다. 값이 같다고
   합치지 않는다.
@@ -257,6 +257,10 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
 
 - **Space 배치도 팔레트**(`SPACE_*`)는 zinc가 아니라 blue-grey다. FAB 도면 관례에 맞춘
   하위 팔레트이며 표·차트와 섞어 쓰지 않는다.
+- **첫 접속 입장 화면**(`components/intro_overlay.py`)은 앱 테마와 무관한 어두운 한 벌
+  (`tokens.INTRO_PALETTE`)이고, 워드마크·타이틀·`Enter` 만 Archivo 800·폭 75% 를 쓴다. 사내망에
+  외부 글꼴이 없어 이 화면이 쓰는 글자만 담은 부분 글꼴(SIL OFL 1.1)을 저장소에 두었다. 한글은
+  `FONT_FAMILY` 그대로다. 본문 화면에는 쓰지 않는다.
 - **월 스크롤 임계**가 상세표 8, HOME 대시보드 10으로 다르다. 두 화면의 밀도가 달라
   유지하되 같은 개념이므로 `tokens.py`에 나란히 두어 차이가 보이게 했다.
 - **`[theme]` ↔ 토큰 1:1 대조에서 빠지는 것**이 둘 있다. `[theme.sidebar]` 하위 블록은

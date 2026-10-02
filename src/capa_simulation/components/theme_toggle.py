@@ -46,10 +46,12 @@ from capa_simulation.design.theme import THEME_QUERY_PARAM
 
 # 이 셋이 Streamlit 과 맞춰야 하는 계약 전부다. 한 곳에 모아 두어야 판올림에서 무엇을
 # 확인해야 하는지가 분명하다.
-_STORAGE_PREFIX = "stActiveTheme-"
-_STORAGE_SUFFIX = "-v2"
+# 저장 키 모양과 버튼 id 는 입장 화면(`intro_overlay`)도 읽는다 — 이 스크립트가 새로고침할지를
+# 같은 규칙으로 미리 알아야 인트로가 새로고침에 끊기지 않는다.
+THEME_STORAGE_PREFIX = "stActiveTheme-"
+THEME_STORAGE_SUFFIX = "-v2"
 _TOOLBAR_SLOT = '[data-testid="stToolbarActions"]'
-_BUTTON_ID = "capa-theme-toggle"
+THEME_BUTTON_ID = "capa-theme-toggle"
 
 # `st.iframe` 은 높이 0 을 받지 않는다(양수 px·`"stretch"`·`"content"` 만 — 0 이면
 # `StreamlitInvalidHeightError` 로 페이지가 선다). 1px 로 띄우고 아래 규칙으로 0 으로 접는다.
@@ -61,8 +63,8 @@ _FRAME_HEIGHT_PX = 1
 # iframe 은 `srcdoc` 에 든 버튼 id 로 고른다. 스타일만 든 `st.html` 은 본문 자리를 먹지 않는다.
 _COLLAPSE_STYLE = (
     "<style>"
-    f'[data-testid="stElementContainer"]:has(> iframe[srcdoc*="{_BUTTON_ID}"]),'
-    f'iframe[data-testid="stIFrame"][srcdoc*="{_BUTTON_ID}"]'
+    f'[data-testid="stElementContainer"]:has(> iframe[srcdoc*="{THEME_BUTTON_ID}"]),'
+    f'iframe[data-testid="stIFrame"][srcdoc*="{THEME_BUTTON_ID}"]'
     "{flex:0 0 0 !important;height:0 !important;min-height:0 !important;}"
     "</style>"
 )
@@ -194,10 +196,10 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
     st.iframe(
         _SCRIPT
         % {
-            "prefix": _STORAGE_PREFIX,
-            "suffix": _STORAGE_SUFFIX,
+            "prefix": THEME_STORAGE_PREFIX,
+            "suffix": THEME_STORAGE_SUFFIX,
             "slot": _TOOLBAR_SLOT,
-            "id": _BUTTON_ID,
+            "id": THEME_BUTTON_ID,
             "to_light": "Light",
             "to_dark": "Dark",
             "tip_light": "밝은 테마로 바꿉니다",

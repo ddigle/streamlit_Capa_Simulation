@@ -30,6 +30,8 @@ rerun 당 3.83ms 이고 한 번만 읽으면 0.05ms 다.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
 from capa_simulation.design import theme
@@ -483,6 +485,28 @@ TRANSPARENT: Final = "rgba(0, 0, 0, 0)"  # 격자·테두리 선을 지울 때
 # Space 도면 위에 깔아 클릭·호버 표적으로 쓰는 마커. 눈에 띄지 않을 만큼만 칠한다.
 # 알파를 바꾸면 Space 화면에서 동·층 클릭과 설비 호버가 살아 있는지 확인한다.
 HIT_TARGET: Final = "rgba(255,255,255,0.01)"
+# --------------------------------------------------------------- 첫 접속 입장 화면
+# `components/intro_overlay` 의 색. **앱 테마와 상관없이 한 벌이다** — 웨이퍼 맵 위에 밝은 글자가
+# 얹히는 어두운 장면이라 밝은 짝을 두지 않는다. 첫 프레임만 앱 바탕색(브라우저가 칠한 `stApp`
+# 배경)에서 출발해 이 `surface` 로 어두워진다. 웨이퍼 다이 셋은 확보·경고·부족 순이다.
+INTRO_PALETTE: Final[Mapping[str, str]] = MappingProxyType(
+    {
+        "surface": "#0F1013",
+        "text": "#ECECEF",
+        "muted": "#9A9CA6",
+        "accent": "#5FB8AC",
+        "line": "rgba(236, 236, 239, 0.2)",
+        "track": "rgba(236, 236, 239, 0.12)",
+        "button": "#ECECEF",
+        "button-text": "#0F1013",
+        "button-off-line": "rgba(236, 236, 239, 0.28)",
+        "wafer": "#17191E",
+        "die-idle": "#24272E",
+        "die-ok": "#4FA79C",
+        "die-warn": "#D29A3A",
+        "die-short": "#D0644F",
+    }
+)
 # ----------------------------------------------------------------------- 서체
 # Windows 전용 서체 하나만 지정하면 비Windows 클라이언트에서 서체와 컬럼 폭이 함께
 # 깨진다. 폴백 스택을 반드시 함께 넘긴다.

@@ -175,6 +175,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 사이드바 CSS 문자열은 `components/sidebar_style.py`가 탐색 그룹·활성 경로·컨테이너
     키를 받아 만든다. 테마 초기화와 `st.html` 주입 순서는 진입점이 소유한다.
   - 모든 페이지에 필요한 전역 위젯은 `navigation.run()`보다 앞에 둔다.
+  - **첫 접속 입장 화면(`components/intro_overlay.py`)은 `theme.begin_run()` 바로 뒤, 공식
+    시나리오 부트스트랩보다 앞에서 매 회차 부른다.** 앞이어야 첫 로딩을 덮고, 매 회차 같은
+    내용이어야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다(이미 들어간 탭이면 브라우저가
+    아무것도 하지 않는다). `app.py` 를 여는 AppTest 는 `render_intro_overlay` 를 바꿔 끼운다.
   - 공통 월 선택기는 기본 조회기간과 활성 기준정보의 실제 월 범위의 합집합을 허용한다
     (`services/scenario_month_bounds.py`). 기간을 좁히거나 페이지를 왕복해도 기본 범위
     밖의 저장된 월을 다시 고를 수 있어야 한다. 연도 오류를 판정하는 기능은 아니다.
@@ -1573,6 +1577,37 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 가이드가 있는 화면(2026-09-29): HOME·Static Capa·생산 계획·기준 정보·산출 결과·표준 목표·
     시나리오 관리·가용설비 현황·Space 현황·Admin Area·VOC. 본문에서 뺀 설명을 옮긴 것이라 각
     화면 테스트가 옮긴 핵심 문구가 Guide 에 있는지 대조한다(`test_*_guide_carries_*`).
+- `src/capa_simulation/components/intro_overlay.py`
+  - **탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면**(2026-10-02 사용자 결정 — 4시안 중 B안
+    수정본). 웨이퍼 심볼과 `S.PKG CAPA` 워드마크가 원형으로 화면 전체로 펼쳐지고, 입장 화면의
+    단계 막대 다섯이 진행을 보여 준다. 다 그려지면 `Enter` 가 켜지고 누르면 버튼 쪽으로 접히며
+    원래 화면이 드러난다. 들어가면 `sessionStorage` 에 적어 **같은 탭에서는 다시 띄우지 않는다**
+    (테마 버튼·새로고침은 새 세션이지만 같은 탭이다).
+  - Components v2 하나이고, HTML·CSS·JS 는 `intro_overlay_assets/` 의 파일이다. JS 가 화면을
+    **`document.body` 에 붙인 자기 호스트**(shadow root)에 그린다 — 컴포넌트 칸 안에서는
+    Streamlit 머리말·사이드바의 쌓임 맥락 아래에 깔린다. 칸은 스타일만 든 `st.html` 로 접어
+    본문에 틈을 남기지 않는다. 컴포넌트의 `css=` 는 칸의 shadow root 에만 들어가 body 호스트에
+    닿지 않으므로, 등록 때 intro.html·intro.css·글꼴을 JS 앞에 상수로 붙여 싣는다.
+  - **「다 그렸다」는 파이썬이 알릴 수 없다.** `st.stop()` 뒤로는 어떤 요소도 브라우저에 닿지
+    않는다(13개 화면이 멈춘다). JS 가 `[data-testid="stApp"]` 의 `data-test-script-state` 가
+    `notRunning` 이 되는 것을 본다. 단계 막대는 HOME 본문 `LoadingProgress` 막대의 퍼센트를
+    읽어 `HOME_LOADING_STAGES` 의 누적값을 문턱으로 채운다. 둘 다 **비공식 화면 속성**이라
+    Streamlit 을 올리면 브라우저로 확인한다 — 속성이 없으면 인트로 뒤 바로 Enter 가 켜지고,
+    60초가 넘게 안 끝나도 켜져 앱을 가두지 않는다.
+  - 주소의 테마 인자가 저장된 테마와 다르거나 없으면(첫 방문·옛 북마크·남이 보낸 링크)
+    `theme_toggle` 이 한 번 새로고침한다. JS 가 **그 스크립트와 같은 규칙**(그 모듈의
+    `THEME_STORAGE_PREFIX`·`THEME_STORAGE_SUFFIX`·`THEME_BUTTON_ID` 를 `data` 로 받는다)으로 미리
+    알아채고, 그 사이에는 앱 바탕색 한 장만 보여 주며 인트로를 아낀다. 헤더 테마 버튼이 서면(새로고침
+    없음) 바로, 실행이 끝나고 2초가 조용하거나 10초가 지나도 시작한다. theme_toggle 의 새로고침
+    조건을 바꾸면 `intro.js` 의 `themeReloadPending` 도 같이 고친다.
+  - **회차마다 같은 것을 보낸다.** 등록 JS(글꼴 base64 포함)와 `data` 가 같아야 Streamlit 이
+    큰 메시지를 다시 보내지 않고 JS 도 다시 불리지 않는다. 색은 테마와 무관한
+    `tokens.INTRO_PALETTE` 한 벌이고, 첫 프레임만 브라우저가 칠한 앱 바탕색을 쓴다. Enter 는
+    파이썬으로 아무것도 보내지 않는다 — `setStateValue`·`setTriggerValue` 는 rerun 을 부른다.
+  - **글꼴은 저장소에 든 부분 글꼴이다**(`archivo-capa.woff2`, Archivo 800·폭 75%, SIL OFL 1.1 —
+    같은 폴더 `OFL.txt`). 사내망에는 외부 글꼴이 없다. `BRAND`·`TITLE_LINES`·`ENTER_LABEL` 에
+    새 글자를 쓰면 `FONT_SUBSET_TEXT` 로 다시 받는다(`test_intro_overlay` 가 빠진 글자를 잡는다).
+    `.gitattributes` 가 `*.woff2` 를 binary 로 둔다 — 줄바꿈 정규화가 닿으면 글꼴이 깨진다.
 - `src/capa_simulation/components/admin_dialog.py`
   - Admin Area 편집 탭들이 함께 쓰는 팝업 칸(`admin_area_open_dialog`) 하나를 여닫는 콜백.
     탭이 닫혀도 매 회차 그리므로 칸이 탭마다 있으면 한 회차에 팝업이 둘 뜰 수 있다.
@@ -2716,6 +2751,11 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 ## 9. Streamlit 구현 규칙
 
 - 페이지 간 공유 위젯은 `app.py`에서 `navigation.run()` 전에 만든다.
+- **외부 네트워크 자원을 쓰지 않는다.** 사내망에서는 CDN·Google Fonts 가 닿지 않는다. 글꼴·
+  스크립트는 저장소에 두고 등록 때 싣는다(`components/intro_overlay.py` 의 부분 글꼴).
+- **「실행이 끝났다」를 `navigation.run()` 뒤의 요소로 알리지 않는다.** 페이지가 `st.stop()`
+  하면 그 뒤로는 `finally` 에서 그린 요소도 브라우저에 닿지 않는다. 브라우저 쪽에서 실행 상태를
+  본다(`components/intro_overlay.py`).
 - 페이지 전용 위젯에는 고유 `key`를 부여한다.
 - 페이지 이동 후에도 유지해야 하는 위젯은 현재 Streamlit 버전의
   `persist_state="session"` 패턴을 따른다.

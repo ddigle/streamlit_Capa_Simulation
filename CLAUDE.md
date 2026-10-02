@@ -69,7 +69,8 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
 계층과 경계:
 
 - `app.py` — 진입점. `navigation.run()` 전에 공식 시나리오 부트스트랩, 공통 사이드바
-  (시나리오 컨트롤·조회기간)를 만든다. 페이지 간 공유 위젯은 여기서만 만든다.
+  (시나리오 컨트롤·조회기간)를 만든다. 페이지 간 공유 위젯은 여기서만 만든다. 부트스트랩보다
+  먼저 첫 접속 입장 화면(`components/intro_overlay.py`)을 매 회차 건다.
 - `src/capa_simulation/navigation.py` — 사이드바 페이지 목록의 **선언 한 곳**. 하위 페이지
   추가·제목 변경뿐 아니라 **새 최상위 그룹**도 여기서 끝난다 — `SIDEBAR_GROUPS`에 한 줄을
   더하면 `app.py`의 박스·CSS 선택자·페이지 순서가 모두 그 선언에서 나온다. HOME과 Admin

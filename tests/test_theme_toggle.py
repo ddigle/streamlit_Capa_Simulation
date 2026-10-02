@@ -60,6 +60,6 @@ def test_toolbar_iframe_is_collapsed_to_zero_without_the_deprecated_api(
     assert isinstance(heights[0], int) and heights[0] > 0
     assert styles == [theme_toggle._COLLAPSE_STYLE]
     assert _html_only_style_tags(styles[0])
-    assert f'srcdoc*="{theme_toggle._BUTTON_ID}"' in styles[0]
-    assert theme_toggle._BUTTON_ID in frames[0]
+    assert f'srcdoc*="{theme_toggle.THEME_BUTTON_ID}"' in styles[0]
+    assert theme_toggle.THEME_BUTTON_ID in frames[0]
     assert "components" not in vars(theme_toggle)

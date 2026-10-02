@@ -6,6 +6,7 @@ import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
 from capa_simulation.components.app_header import render_app_header
+from capa_simulation.components.intro_overlay import render_intro_overlay
 from capa_simulation.components.month_range_picker import render_month_range_picker
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
 from capa_simulation.components.scenario_edit_bar import pending_edit_labels
@@ -104,6 +105,11 @@ with st.container(key=SIDEBAR_TOGGLE_SINK_KEY):
 # 이 실행이 쓸 테마를 먼저 정한다. **토큰을 하나라도 읽기 전**이어야 한다 — 색을 읽는
 # 쪽은 여기서 담아 둔 값을 본다. 바뀌었으면 그 세션의 Figure 캐시도 여기서 비운다.
 theme.begin_run()
+# 탭을 처음 연 사용자에게 첫 로딩을 덮는 입장 화면. 무거운 부트스트랩보다 **먼저** 보내야
+# 그동안을 덮는다. 토큰을 읽으므로 `theme.begin_run()` 뒤다. 매 회차 같은 자리에 같은 내용으로
+# 그려야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다 — 이미 들어간 탭이면 브라우저 쪽에서
+# 아무것도 하지 않는다.
+render_intro_overlay()
 
 # managed 모드에서만 동기화 표시를 켠다. local 모드(개발 PC·기본값)에서는 아무 일도 하지
 # 않으므로 이 호출이 있어도 동작이 바뀌지 않는다.

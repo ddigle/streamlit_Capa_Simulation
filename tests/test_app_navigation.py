@@ -164,6 +164,7 @@ def test_navigation_hides_the_builtin_sidebar_widget() -> None:
 def _app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     """빈 DuckDB 를 보는 `app.py`. 내장 시드가 부트스트랩을 채운다."""
     import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+    import capa_simulation.components.intro_overlay as intro_overlay
     import capa_simulation.components.month_range_picker as month_range_picker
     import capa_simulation.settings as settings
 
@@ -171,6 +172,7 @@ def _app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", tmp_path / "equipment.duckdb")
     # Components v2 위젯은 모듈 로드 때 등록되어 AppTest 인스턴스마다 살아 있지 않다.
     monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
+    monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
     monkeypatch.setattr(
         month_range_picker,
         "render_month_range_picker",
@@ -284,6 +286,35 @@ def test_groups_without_subpages_are_boxed_but_not_expandable(_app: AppTest) -> 
 # 페이지 그룹과 **같은 양식**으로 접는다. 넷 다 `st.expander` 이고 `key` 로 펼침 상태가
 # 세션에 남는다. 확인할 것은 셋이다 — 첫 화면에서 접혀 있는가, 세션 값으로 펼 수 있는가,
 # HOME 에만 있는 B/N 상자가 페이지를 왕복해도 제 상태를 기억하는가.
+
+
+def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """입장 화면은 무거운 부트스트랩보다 **먼저**, 그리고 **매 회차** 그려진다.
+
+    먼저여야 그동안을 덮고, 매 회차여야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다.
+    """
+    import capa_simulation.components.intro_overlay as intro_overlay
+    import capa_simulation.scenario_activation as scenario_activation
+
+    order: list[str] = []
+    original_bootstrap = scenario_activation.bootstrap_latest_official_scenario
+
+    def _recording_bootstrap(*args: object, **kwargs: object) -> object:
+        order.append("bootstrap")
+        return original_bootstrap(*args, **kwargs)
+
+    monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: order.append("intro"))
+    monkeypatch.setattr(
+        scenario_activation, "bootstrap_latest_official_scenario", _recording_bootstrap
+    )
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    app.run()
+
+    assert order == ["intro", "bootstrap", "intro", "bootstrap"]
 
 
 def test_the_control_boxes_open_collapsed_on_the_first_run(_app: AppTest) -> None:
