@@ -695,7 +695,8 @@ function scene(port, gridOf) {
     g.font = `500 10px ${bodyStack}`;
     g.textAlign = "left";
     g.textBaseline = "alphabetic";
-    const digits = L.step < 1 ? 1 : 0;
+    // 눈금 글자는 간격의 자릿수만큼 찍는다(0.05 간격이면 둘째 자리).
+    const digits = Math.max(0, -Math.floor(Math.log10(L.step) + 1e-9));
     for (const v of L.ticks) {
       const y = L.yLine(v);
       g.strokeStyle = rgba(textColor, 0.08);
