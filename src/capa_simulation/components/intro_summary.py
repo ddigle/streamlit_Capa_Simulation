@@ -22,21 +22,28 @@ Detail 만 남긴다. 예외로 끝난 결과는 세션에 기억하지 않는�
 내내 남지 않게 다음 회차에 다시 해 본다).
 
 **툴바 단추.** 원래 화면에서 요약으로 돌아오는 `Summary` 는 Guide 처럼 테마 버튼 iframe 의
-스크립트(`summary_toolbar_script`)가 툴바에 끼워 넣는다. 그 스크립트는 단추만 세우고, 꾸밈·보임·
-눌렀을 때의 동작은 입장 화면 JS(`window.__capaIntro`)가 맡는다 — 요약 데이터와 장면을 가진 쪽이다.
+스크립트(`summary_toolbar_script`)가 툴바에 끼워 넣고 칠한다 — Guide 와 같은 윤곽 단추에 앱 색 16px
+웨이퍼. 보임과 눌렀을 때의 동작은 입장 화면 JS(`window.__capaIntro`)가 맡는다 — 요약 데이터와 장면을
+가진 쪽이다.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any
 
 import streamlit as st
 
 from capa_simulation.components.home_figure_common import capacity_status
+from capa_simulation.components.intro_overlay import SUMMARY_LABEL
 from capa_simulation.components.page_guide import BUTTON_ID as GUIDE_BUTTON_ID
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.theme_toggle import THEME_BUTTON_ID
+from capa_simulation.components.theme_toggle import (
+    THEME_BUTTON_ID,
+    THEME_STORAGE_PREFIX,
+    THEME_STORAGE_SUFFIX,
+)
 from capa_simulation.design import tokens
 from capa_simulation.io.reference_cache import reference_version_for_revision
 from capa_simulation.persistence.cache import (
@@ -240,19 +247,35 @@ _TOOLBAR_SCRIPT = """
   if (!parentWindow || parentWindow === window) return;
   var doc = parentWindow.document;
 
+  // 테마는 테마 버튼과 같은 저장 키로 읽는다. 바꾸면 그 버튼이 새로고침하므로 한 번 읽으면 된다.
+  function dark() {
+    try {
+      var key = "%(prefix)s" + parentWindow.location.pathname + "%(suffix)s";
+      return JSON.parse(parentWindow.localStorage.getItem(key) || '"Light"') === "Dark";
+    } catch (error) { return false; }
+  }
+
   function place() {
     var slot = doc.querySelector('[data-testid="stToolbarActions"]');
     if (!slot) return false;
     var button = doc.getElementById("%(id)s");
     if (!button) {
+      var colors = dark() ? %(dark)s : %(light)s;
       button = doc.createElement("button");
       button.id = "%(id)s";
       button.type = "button";
-      button.textContent = "Summary";
+      button.innerHTML = colors.icon + "<span>%(label)s</span>";
       button.title = "공식버전 요약 보기";
       button.setAttribute("aria-label", button.title);
-      // 요약이 준비되기 전에는 감춘다. 보임·꾸밈은 입장 화면 JS 가 정한다.
-      button.style.display = "none";
+      // Guide 와 같은 윤곽 단추(본문 글꼴 13px/600 · 모서리 8px · 높이 27px)에 16px 웨이퍼 하나.
+      // `display:none` 은 **맨 끝**이다 — 요약이 준비되면 입장 화면 JS 가 보이게 한다.
+      button.style.cssText = [
+        "font:inherit", "font-size:13px", "font-weight:600", "line-height:1",
+        "align-items:center", "gap:6px", "box-sizing:border-box", "height:27px",
+        "padding:0 12px 0 8px", "margin-right:6px", "border-radius:8px", "cursor:pointer",
+        "white-space:nowrap", "background:transparent",
+        "border:1px solid " + colors.border, "color:" + colors.text, "display:none"
+      ].join(";");
       button.onclick = function () {
         var api = parentWindow.__capaIntro;
         if (api && typeof api.openSummary === "function") api.openSummary(button);
@@ -276,13 +299,51 @@ _TOOLBAR_SCRIPT = """
 """
 
 
-def summary_toolbar_script() -> str:
-    """툴바에 `Summary` 단추를 세우는 스크립트. 테마 버튼 iframe 에 Guide 와 함께 싣는다.
+def _toolbar_icon(ring: str, die: str) -> str:
+    """툴바용 16px 웨이퍼. 입장 화면 심볼(9칸)은 16px 에서 뭉개지고 가운데 주황은 앱에서 「경고」라,
+    노치 있는 링과 2×2 다이로 다시 그려 앱 색으로 칠한다."""
+    dies = "".join(
+        f'<rect x="{x}" y="{y}" width="2.7" height="2.7" rx="0.5" fill="{die}"/>'
+        for y in (4.9, 8.4)
+        for x in (4.9, 8.4)
+    )
+    return (
+        '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" '
+        'style="display:block;flex:none">'
+        f'<path d="M9 14.3 A6.4 6.4 0 1 0 7 14.3" fill="none" stroke="{ring}" '
+        'stroke-width="1.5" stroke-linecap="round"/>'
+        f"{dies}</svg>"
+    )
 
-    iframe 내용은 회차마다 같아야 한다(`theme_toggle`) — 그래서 상태가 없는 고정 문자열이다.
+
+def _toolbar_colors(mode: str) -> str:
+    def value(name: str) -> str:
+        return str(tokens.palette_value(mode, name))
+
+    return json.dumps(
+        {
+            "border": value("BORDER"),
+            "text": value("TEXT"),
+            "icon": _toolbar_icon(value("TEXT_MUTED"), value("ACCENT")),
+        }
+    )
+
+
+def summary_toolbar_script() -> str:
+    """툴바에 `Summary` 단추를 세우고 칠하는 스크립트. 테마 버튼 iframe 에 Guide 와 함께 싣는다.
+
+    **Guide 와 같은 윤곽 단추**에 앱 색으로 다시 그린 16px 웨이퍼 하나를 더한 모양이다(2026-10-03
+    사용자 결정 — 입장 화면 옷을 입은 검은 알약이 툴바와 결이 맞지 않았다). 두 테마 값을 모두 싣고
+    테마 버튼과 같은 저장 키로 고른다 — iframe 내용은 회차마다 같아야 하므로(`theme_toggle`) 지금
+    테마를 따라 바뀌는 토큰을 넣지 않는다. 보임과 눌렀을 때의 동작은 입장 화면 JS 가 맡는다.
     """
     return _TOOLBAR_SCRIPT % {
         "id": SUMMARY_BUTTON_ID,
         "guide": GUIDE_BUTTON_ID,
         "theme": THEME_BUTTON_ID,
+        "prefix": THEME_STORAGE_PREFIX,
+        "suffix": THEME_STORAGE_SUFFIX,
+        "label": SUMMARY_LABEL,
+        "light": _toolbar_colors("light"),
+        "dark": _toolbar_colors("dark"),
     }

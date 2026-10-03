@@ -1652,9 +1652,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     값은 반올림·차례를 고정해 같은 요약이면 늘 같다. 상태(확보·경고·부족)는 `capacity_status` 한 곳이
     가른다. 모든 페이지 앞이라 **어떤 예외도 밖으로 내보내지 않고**(`available: false` 와 까닭),
     예외로 끝난 결과는 세션에 기억하지 않는다(일시적 실패는 다음 회차에 다시 해 본다).
-  - 툴바 단추는 Guide 처럼 테마 버튼 iframe 의 스크립트가 세우고(`summary_toolbar_script` — 상태 없는
-    고정 문자열), 꾸밈·보임·눌렀을 때의 동작은 입장 화면 JS(`window.__capaIntro`)가 맡는다. 단추 id 는
-    `SUMMARY_BUTTON_ID` 하나를 두 쪽이 본다(`test_intro_overlay`).
+  - 툴바 단추는 Guide 처럼 테마 버튼 iframe 의 스크립트가 세우고 칠한다(`summary_toolbar_script` — 상태
+    없는 고정 문자열). 모양은 **Guide 와 같은 윤곽 단추에 앱 색 16px 웨이퍼**(링 `TEXT_MUTED`·다이
+    `ACCENT`)이고 두 테마 값을 다 실어 테마 버튼과 같은 저장 키로 고른다(2026-10-03 사용자 결정, 입장 화면
+    색·압축 글꼴·떠오르는 움직임은 쓰지 않는다). 보임과 눌렀을 때의 동작만 입장 화면 JS(`window.__capaIntro`)가
+    맡는다. 단추 id 는 `SUMMARY_BUTTON_ID` 하나를 두 쪽이 본다(`test_intro_overlay`).
 - `src/capa_simulation/services/official_summary.py`
   - 공식버전 6개월 요약의 순수 계산. 기간은 리비전 프리셋의 조회 시작월과 생산계획 첫 달 중 **늦은
     쪽**부터 여섯 달(계획 끝을 넘지 않음, 연간 Total 없음). 생산계획 = HOME `Density (억Gb)`(`부하량`),

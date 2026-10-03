@@ -26,7 +26,6 @@ const FONT_FAMILY = "CapaIntroDisplay";
 const NUMBER_FAMILY = "CapaIntroNumber";
 // 툴바 Summary 단추 id. `intro_summary.SUMMARY_BUTTON_ID` 와 같아야 한다.
 const SUMMARY_BUTTON_ID = "capa-summary-button";
-const TOOLBAR_STYLE_ID = "capa-summary-button-style";
 // 이 탭에서 이미 들어갔다는 표시. 테마 버튼·새로고침은 새 세션을 만들지만 같은 탭이라 다시 띄우지 않는다.
 const ENTERED_KEY = "capa-intro-entered";
 const EASE = "cubic-bezier(.6,0,0,1)";
@@ -1210,8 +1209,6 @@ function startScene(canvas, init, onReply) {
 function boot(api, data) {
   registerFont();
   registerHole();
-  const palette = data.palette || {};
-  const theme = data.theme || {};
   let overlay = null;
   let summary = null;
   const ensure = (initial) => {
@@ -1219,44 +1216,12 @@ function boot(api, data) {
     return overlay;
   };
 
-  // 툴바 Summary 단추. 단추는 테마 버튼 iframe 의 스크립트가 세우고, 꾸밈·보임은 여기서 정한다.
+  // 툴바 Summary 단추. 테마 버튼 iframe 의 스크립트가 세우고 칠한다(intro_summary.summary_toolbar_script).
+  // 여기서는 보임만 정한다 — 요약이 있고 오버레이가 감춰져 있을 때만 선다.
   function syncToolbar() {
     const button = document.getElementById(SUMMARY_BUTTON_ID);
-    if (!button || api.done) return;
-    if (button.dataset.capa !== "1") {
-      button.dataset.capa = "1";
-      button.innerHTML = `<span class="capa-mini">${waferLogo(palette)}</span><span>${escapeHtml((data.text || {}).summary || "Summary")}</span>`;
-      const dark = storedTheme(theme) === "Dark";
-      button.style.cssText = [
-        "display:none",
-        "align-items:center",
-        "gap:6px",
-        "height:28px",
-        "padding:0 12px 0 5px",
-        "margin-right:6px",
-        "border-radius:999px",
-        "cursor:pointer",
-        "white-space:nowrap",
-        `background:${palette.surface}`,
-        `color:${palette.text}`,
-        `border:1px solid ${dark ? palette["button-off-line"] : "transparent"}`,
-        `font:800 14px/1 "${FONT_FAMILY}", ${data.font_body || "sans-serif"}`,
-        "font-stretch:75%",
-        "letter-spacing:0.03em",
-      ].join(";");
-      if (!document.getElementById(TOOLBAR_STYLE_ID)) {
-        const style = document.createElement("style");
-        style.id = TOOLBAR_STYLE_ID;
-        style.textContent =
-          `#${SUMMARY_BUTTON_ID}{transition:translate .18s}` +
-          `#${SUMMARY_BUTTON_ID}:hover{translate:0 -1px}` +
-          `#${SUMMARY_BUTTON_ID}:focus-visible{outline:2px solid ${palette.accent};outline-offset:2px}` +
-          `#${SUMMARY_BUTTON_ID} .capa-mini{display:block;width:20px;height:20px}` +
-          `#${SUMMARY_BUTTON_ID} .capa-mini svg{display:block;width:100%;height:100%}`;
-        document.head.appendChild(style);
-      }
-    }
-    const show = !!summary && (!overlay || !overlay.visible);
+    if (!button) return;
+    const show = !api.done && !!summary && (!overlay || !overlay.visible);
     button.style.display = show ? "inline-flex" : "none";
   }
 

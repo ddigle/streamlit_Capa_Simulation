@@ -249,3 +249,23 @@ def test_the_summary_hides_its_slot_before_it_is_drawn(monkeypatch: pytest.Monke
     assert [kind for kind, _ in calls] == ["html", "summary"]
     assert f".st-key-{intro_summary.INTRO_SUMMARY_KEY}" in calls[0][1]
     assert calls[1][1]["key"] == intro_summary.INTRO_SUMMARY_KEY
+
+
+def test_the_toolbar_summary_button_is_a_sibling_of_guide() -> None:
+    """툴바 Summary 는 Guide 와 같은 윤곽 단추에 앱 색 16px 웨이퍼다(2026-10-03 사용자 결정).
+
+    입장 화면 옷(검은 알약·압축 글꼴·떠오르는 움직임)을 입으면 툴바와 결이 어긋난다. 두 테마 값을 다
+    싣고 고르므로 iframe 내용은 테마와 상관없이 같은 문자열이다.
+    """
+    from capa_simulation.components import intro_summary, page_guide
+
+    script = intro_summary.summary_toolbar_script()
+    for mode in ("light", "dark"):
+        for name in ("BORDER", "TEXT", "TEXT_MUTED", "ACCENT"):
+            assert str(tokens.palette_value(mode, name)) in script, (mode, name)
+    for rule in ('"border-radius:8px"', '"font-size:13px"', '"font-weight:600"', '"line-height:1"'):
+        assert rule in script and rule in page_guide._SCRIPT, rule
+    assert "999px" not in script and "CapaIntroDisplay" not in script and "translate" not in script
+    # 꾸밈은 툴바 스크립트 한 곳이다. 입장 화면 JS 는 보임만 정한다.
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    assert "TOOLBAR_STYLE_ID" not in js and "capa-mini" not in js
