@@ -674,6 +674,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     처음 대기시킬 때 본 저장값(`PENDING_BASES_KEY`)을 저장 때 함께 넘긴다. 이 세션이 팝업으로 그 층
     캔버스를 저장·삭제하면 기준값의 캔버스 절반만 새 값으로 바꾼다(`rebase_floor_canvas` — 안 하면 자기
     변경을 남의 변경으로 보아 그 층 저장이 영영 막힌다).
+    미저장 **FAB 전체 배치**(`PENDING_FAB_KEY`, `stage_fab_layout`·`pending_fab_layout`)는 설비 리비전과
+    무관하다 — 남이 새 리비전을 저장해도 버리지 않고(리비전 토큰과 상관없다), 처음 대기시킬 때 본 FAB
+    저장값(캔버스 행|None, 요소 지문)을 저장 때 따로 견준다. `save_equipment_buffer` 는 FAB 대기분을 설비
+    편집보다 **먼저** 별도 쓰기(`save_pending_fab_layout` → `save_fab_layout`, 리비전 없음)로 쓴다 — 설비
+    쪽이 막혀도 FAB 는 저장된 채 남고 그 사실을 오류 문구에 적는다(반대 순서면 설비 저장 뒤 편집본을
+    비우면서 FAB 대기분까지 잃는다). 반대로 **FAB 가 거부돼도**(남이 먼저 저장·검증 실패, `ValueError`)
+    설비 저장은 그대로 하고, 거부된 FAB 대기분은 설비 저장이 편집본을 비운 뒤 다시 얹어 남긴 채 두 결과를
+    함께 적은 `ValueError` 를 낸다(FAB 거부가 설비 저장을 볼모로 잡지 않게 — 가용설비 RawData 저장도 이
+    함수를 탄다). 빠져나갈 곳은 Space 상자의 `버리기` › `FAB 배치만 버리기`(FAB 대기분만 지운다)이고
+    문구가 그 자리를 말한다. `frames` 가 None 이면(설비 저장본이 없어 대조할 출발 리비전이 없는
+    화면) FAB 만 쓴다. `reset_equipment_drafts`(모두 버리기·저장 성공)는 FAB 대기분도 비운다.
     토큰이 바뀐 회차는 `DRAFTS_REPLACED_KEY` 로 표시되고 페이지가 `pop_drafts_replaced` 로 한 번 읽어
     `render_equipment_data_workspace(drafts_replaced=)` 에 넘긴다. **그 회차의 RawData 제출은 반영하지
     않는다** — 옛 편집본 위의 제출을 새 저장본에 얹어 저장하면 남의 리비전과 같은 리비전이 「저장했습니다」
@@ -757,15 +768,30 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `getQueryString`). 그래서 뒤로를 누르면 화면은 그대로이고 주소 표시줄만 옛 값이 되며, 그 상태에서
     새로고침하면 주소 표시줄의 층(또는 FAB)이 열린다. 파이썬에서 주소를 원천으로 삼아도 그 값이 오지 않아
     고칠 수 없다 — 층 이동은 경로 줄·블록·층 목록 표로 하고 가이드에 그렇게 적는다.
-  - **FAB 전체**는 테두리 상자 하나다. 머리 줄(`space_fab_head`)은 층 상세와 같은 구조(제목 · 오른쪽
-    범례 자리 — FAB 는 비워 둔다. 블록 색의 뜻은 사용자가 도면 글자로 적는다)이고, 아래를 도면이 채운다.
-    도면은 `services/fab_layout.default_fab_layout()`(저장본이 없을 때의 기본 배치 — 그리기만 하고 DB 에
-    쓰지 않는다)이다. **층 블록**(`kind="block"`)만 누르면 열린다 — 영역·글자·동 이름은 꾸밈이다(2026-10-03
-    사용자 결정). 블록은 연결 필수이고 색은 사용자가 고르는 자리 구분 색(`MARK_COLOR_KEYS` + 기본 = Space
+  - **FAB 전체**는 테두리 상자 하나다. 머리 줄(`space_fab_head`)은 층 상세와 같은 구조(제목 ·
+    `도면·캔버스 편집` · `배치 편집` 토글 · 오른쪽 범례 자리 — FAB 는 비워 둔다. 블록 색의 뜻은 사용자가 도면
+    글자로 적는다)이고, 아래를 도면이 채운다. 도면은 **저장된 FAB**(설비 DB `fab_layout_profile`·
+    `fab_layout_mark`, 마이그레이션 `0013`)이고 요소 행이 없으면 `services/fab_layout.default_fab_layout()`
+    의 기본 배치(그리기만 하고 DB 에 쓰지 않는다 — `effective_fab_layout`)다. **층 블록**(`kind="block"`)만
+    누르면 열린다 — 영역·글자·동 이름은 꾸밈이다(2026-10-03 사용자 결정). 블록은 연결 필수이고 색은 사용자가 고르는 자리 구분 색(`MARK_COLOR_KEYS` + 기본 = Space
     기본 면 `SPACE_BLOCK_FILL`)이지 **상태 색이 아니다** — 블록 안 숫자는 배치·미배치 대수뿐이다(점유율은
     풍선). 블록 대수(`data.linkStats`)는 **epoch 밖**이다 — 넣으면 기준일만 바꿔도 편집 중 내용·실행 취소가
     지워진다. 같은 epoch 회차에는 블록 글자만 다시 쓴다. 상자 아래는 **층 목록 표**(30개 층, 이름 순)이고
     한 행을 고르면 그 층이 열린다(키보드 길).
+  - **FAB 배치 편집**(2026-10-03 사용자 결정 2). 머리 줄의 `배치 편집`(`space_fab_edit_mode` — 층의
+    `space_layout_edit_mode` 와 따로다. 같으면 FAB 편집에서 [열기] 로 연 층이 곧장 편집 모드로 선다)을 켜면
+    뷰어 자리에 `render_fab_layout_editor`(`scope="fab"`) 가 선다. **설비 저장본이 없어도 켠다**(FAB 는
+    설비 리비전과 무관한 현행값) — 단 설비 샘플 화면(호기 마스터가 비어 샘플 스위치를 켠 상태)에서는 토글과
+    `도면·캔버스 편집` 을 끈다(합성 fleet 위에서 고친 FAB 가 실제 저장소에 들어간다). 샘플을 끈 빈 화면은
+    조건 카드에 까닭 한 줄·연결 대기 안내를 두고 **멈추지 않고** 빈 fleet 으로 FAB·층 목록을 그린다(조건
+    위젯은 세우지 않는다). 편집기는 대기분(없으면 저장본, 그것도 없으면 기본 배치)을 그리고 `적용` 은
+    `parse_fab_editor_apply`(호기 변경은 거부, 요소는 `prepare_fab_layout_marks`) → `stage_fab_layout` 이다.
+    저장값(그리는 저장값 — 요소가 없으면 기본 배치)과 같아진 쪽은 대기분에서 빼고, 저장 때 견줄 본 값은 실제
+    저장 행(캔버스 행|None, 저장된 요소 지문)이다. 저장 안 한 배치 상자는 `editable or FAB 대기분` 일 때 서고
+    FAB 를 한 줄(「S.PKG FAB 전체 배치」)로 말한다. 같은 `배치 저장`·`모두 버리기`(콜백)가 FAB 도 저장·버린다
+    — 설비 저장본이 없는 화면에서는 FAB 만 저장·버린다. 설비 편집본이 있는 화면에 FAB 대기분이 있으면
+    `버리기` 안에 `FAB 배치만 버리기`(설비·층 편집은 둔다)가 더 선다. 편집기 epoch 는 그리는 도면 지문 + 저장본 지문이다.
+    두 블록이 같은 층을 가리키면 막지 않고 알린다(편집기 상태 줄·적용 알림·상자).
   - **층 상세**는 테두리 상자 하나다. 머리 줄(`space_floor_head`)에 제목 · `도면·캔버스 편집` ·
     `배치 편집` 토글 · 상태 범례(오른쪽 끝, `st.space("stretch")` 뒤)가 서고, 그 아래를 도면이 채운다.
     편집을 끄면 `render_space_layout_viewer`(저장본, 조건 카드 필터 적용), 켜면 편집기(편집본)다.
@@ -970,8 +996,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     두고 편집기가 가져다 쓴다(편집기 모듈은 읽을 때 컴포넌트를 등록하므로 여기서 그것을 import
     하지 않는다).
 - `src/capa_simulation/components/floor_layout_upload.py`
-  - Space 현황의 동·층별 배경 도면 업로드·삭제와 캔버스 치수 조정 UI. 레이아웃 위 작업 줄의
-    `도면·캔버스 편집` 버튼이 **팝업**(`FLOOR_LAYOUT_DIALOG_KEY`, 값은 `동|층`)을 연다. 팝업은
+  - Space 현황의 동·층별·**FAB 전체** 배경 도면 업로드·삭제와 캔버스 치수 조정 UI. 레이아웃 위 작업 줄의
+    `도면·캔버스 편집` 버튼이 **팝업**(`FLOOR_LAYOUT_DIALOG_KEY`, 값은 `동|층` 또는 `FAB`)을 연다. 층과
+    FAB 가 같은 팝업을 범위(`_DrawingTarget`)만 바꿔 쓴다(`render_floor_layout_editor`·
+    `render_fab_layout_drawing_editor`, 위젯 키 꼬리 `C1_1F`·`FAB`). FAB 는 기본 캔버스가 `FAB_CANVAS`,
+    캔버스 밖 검사 대상이 지금 그리는 요소(저장된 것이 없으면 기본 배치)이고, 저장·삭제 뒤
+    `rebase_fab_canvas` 로 FAB 대기분의 캔버스를 버리고 본 값의 캔버스만 새 값으로 바꾼다. 팝업은
     fragment 라 저장·삭제가 성공하면 팝업 칸을 비우고 앱 전체를 다시 돌린다.
     도면 없이 캔버스만 저장할 수도 있다. 캔버스를 줄여 이탈 호기가 생기면 확인
     체크박스를 통과해야 저장한다 — 이탈이 있으면 `save_snapshot` 이 마스터 프레임
@@ -1001,6 +1031,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     FAB 만). 영역·글자는 FAB 보기에서 눌림을 받지 않는다(꾸밈). 블록 면은 색 키가 있으면 그 색을 옅게,
     없으면 `--sle-block`(`SPACE_BLOCK_FILL`)이다. 높이 기억 키는 `capa.space.viewerHeight.fab` 로 층과
     따로다.
+  - **FAB 전체 편집기**(`render_fab_layout_editor`, `scope="fab"`, 보기 전용 아님)도 같은 컴포넌트다. 범위
+    표시(`.sle.is-fab`)가 `.sle-floor-only`(트레이 서랍·반입구·문·기둥·설비 금지)를 숨기고 `.sle-fab-only`
+    (팔레트의 `층 블록`, 선택 칸의 블록 속성)를 보인다. 다른 층 보내기 칸도 숨긴다. 블록을 누르면 고르기이고
+    (열지 않는다), 선택 칸에서 연결 층(`data.linkTargets`, 30개 층)·색(기본 + 영역 여섯 색)을 고르며 `[열기]`
+    로 그 층을 연다 — 적용하지 않은 FAB 편집(`hasPendingEdits`)이 있으면 잠기고 「먼저 적용」 풍선이다.
+    `[열기]` 도 보기 전용 블록과 같은 `openFloor` → `setTriggerValue('navigate')` 한 자리를 탄다(파이썬은
+    같은 `on_navigate_change` 콜백). 새 층 블록은 아직 블록이 없는 첫 층을 가리킨다(연결 필수).
   - **보기 전용 뷰어**(`render_space_layout_viewer`, `data.mode="view"`)도 같은 컴포넌트다. 편집
     도구(`.sle-edit-only`)를 숨기고, 끌기는 화면 이동, 누르기는 그 호기 정보 한 줄(공정·운영 비가동은
     `viewer_items` 의 `detail`), 더블클릭은 확대/전체 보기, Ctrl+휠·+/−·0 은 확대, 방향키는 화면
@@ -1573,7 +1610,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   만드는 자리만 바꾸고 화면은 그대로 둔다. 숫자는 `performance_actuals` 데모에서 나와 옆
   화면과 대조해도 어긋나지 않는다.
 - `floor_layout_mark.py`: 층 도면의 비설비 요소(반입구·문·영역·기둥·글자·동선) 계약.
-  `FloorLayoutMark`·종류·회전·영역 색 키·한 층 500개 상한과 `prepare_floor_layout_marks`.
+  `FloorLayoutMark`·종류·회전·영역 색 키·한 층 500개 상한과 `prepare_floor_layout_marks`. 요소 하나의
+  공용 검사(`mark_id_of`·`mark_box`·`mark_rotation`·`mark_label`·`zone_color`·`mark_flag`)는 FAB 요소
+  검증(`fab_layout.prepare_fab_layout_marks`)이 같이 쓴다. `marks_extent` 는 좌표·크기만 보는
+  `MarkBox` 를 받아 층·FAB 요소 모두에 쓴다.
   층 단위 전체 교체로 저장되므로 **어긋난 항목을 조용히 버리지 않고** 통째로 `ValueError` 를
   낸다(하나를 버리면 그 요소가 지워진다). 반입구·문·기둥·「설비 금지」 영역은 호기가 덮으면
   경고하는 요소다(`blocks`, 저장은 막지 않는다). `marks_fingerprint` 는 층 요소 목록의 지문으로,
@@ -1586,6 +1626,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   인자 `floor_param` 「C1-1F」 ↔ `floor_from_param`, FAB 의 층이 아니면 None)과 뷰어 epoch 용
   `fab_layout_fingerprint` 도 여기 있다. 층 블록 종류는 층 도면 요소 검증(`prepare_floor_layout_marks`)에
   넣지 않는다.
+  FAB 저장 계약도 여기다: `FabLayoutMark`(층 요소와 같은 키 + `link`, 회전·빗금 포함)·`FabLayoutProfile`
+  (캔버스·배경 도면)·`FabLayoutBase`(편집을 시작할 때 본 캔버스 행|None·요소 지문)와
+  `prepare_fab_layout_marks`(종류 `FAB_MARK_KINDS` = 영역·글자·동선·층 블록, 층과 같은 500개 상한·캔버스
+  안 검사, **층 블록은 30개 층 중 하나로 연결 필수**, 블록 색은 기본(빈 값) 또는 `MARK_COLOR_KEYS`, 블록이
+  아닌 요소의 연결은 버린다), `duplicate_block_links`(두 블록이 같은 층 — 경고만), `parse_fab_editor_apply`
+  (호기 변경 거부), `fab_marks_fingerprint`. **요소 행이 하나도 없으면 기본 배치를 그린다**
+  (`effective_fab_layout` — 캔버스는 저장된 행, 없으면 `FAB_CANVAS`). 배경 도면만 먼저 올려도 블록이
+  사라지지 않게 하는 규칙이라, 요소를 모두 지워 저장하면 기본 배치로 돌아간다.
 - `space_layout_edit.py`: Space 배치 편집기의 순수 계산. `editor_inputs`(도면·트레이·영역 하한·
   기본 크기), `parse_editor_apply`(적용값 검증 — **하나라도 어긋나면 전체 거부**),
   `apply_layout_edits`(편집본 반영), `layout_warnings`·`layout_changes`·`other_change_count`·
@@ -1608,8 +1656,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     남긴다). 새 호기 이름은 모체호기 이름과도 겹칠 수 없다(`parentIds`).
 - `floor_layout_profile.py`: 층 배경 도면의 순수 계층. PNG·JPEG 헤더를 직접 읽어 픽셀
   치수를 얻고(새 의존성 없이), 캔버스 기본값을 폭 100 고정·높이 100×h/w 로 만든다.
-  상한은 층당 2MB(`MAX_FLOOR_LAYOUT_BYTES`)와 전 층 합계 30MB(`MAX_TOTAL_LAYOUT_BYTES`)
-  이고 둘 다 이 파일에만 둔다. 파일 시그니처와 확장자가 다르면 거부한다 — data URI 의
+  상한은 도면당 2MB(`MAX_FLOOR_LAYOUT_BYTES`)와 전 층·FAB 전체 도면 합계 30MB
+  (`MAX_TOTAL_LAYOUT_BYTES`)이고 둘 다 이 파일에만 둔다. 파일 시그니처와 확장자가 다르면 거부한다 — data URI 의
   MIME 이 내용과 어긋나면 배경이 조용히 안 그려진다.
 - `display_order_editor.py`, `display_order_csv.py`: 웹 편집 표시순서 규칙의 검증·범위
   교체·CSV 직렬화와 수동 입력 `RQ_DISPLAY_ORDER` 변환
@@ -2308,6 +2356,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     **저장은 `save_equipment_buffer` 한 곳**이다(RawData 의 두 저장 단추도 이것을 탄다). 세 표와
     대기 중인 캔버스·요소를 한 트랜잭션에 쓰고 두 캐시·편집본을 비운 뒤 알림 문구를 돌려준다.
     `revision_optional` 이면 세 표가 최신 리비전과 같을 때 리비전 없이 캔버스·요소만 쓴다.
+    미저장 FAB 전체 배치(`stage_fab_layout`·`pending_fab_layout`·`rebase_fab_canvas`)도 같은 helper 가
+    설비 편집보다 먼저 별도 쓰기로 저장한다(`save_pending_fab_layout`, 리비전 없음). `frames` 가 None 이면
+    FAB 만 쓴다(Space 의 설비 저장본 없는 화면).
   - `ImportReview`는 대상 표·원문·원본 세 표·저장 후보를 함께 보관한다. 최종 저장 시
     대상·원문·원본이 달라졌으면 미리보기만 갱신하고 다시 확인받는다. 보지 않은 변경을
     이전 확인으로 저장하지 않는다. 붙여넣기와 CSV 업로드를 동시에 받으면 하나를 고르게 한다.
@@ -2542,8 +2593,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그 엔진에 묶는 진입점
 - `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷과 공용 프로필 아홉 종
   (표시순서·공정 표시명·비교 시나리오·선행·Summary 공지·Top5 대역·주요공정·실행 Capa·과거
-  구간)의 Streamlit 캐시 경계. 설비 쪽은 설비 스냅샷과 층 도면 프로필·도면 요소다
-  (`clear_floor_layout_cache` 가 셋을 함께 비운다)
+  구간)의 Streamlit 캐시 경계. 설비 쪽은 설비 스냅샷과 층 도면 프로필·도면 요소, FAB 전체 도면
+  (`load_fab_layout` — 캔버스·배경 도면 행과 요소를 한 항목에)이다(`clear_floor_layout_cache` 가 층 셋과
+  FAB 를 함께 비운다 — 팝업·저장의 기존 호출처가 그대로 FAB 까지 덮는다)
 - `persistence/equipment_repository.py`: 설비 운영 입력의 불변 전체 스냅샷 저장소
   - `save_snapshot`·`save_space_layout` 은 **연결 하나·트랜잭션 하나**에서 저장된 캔버스 읽기
     → 미저장 캔버스 덮기 → 호기·요소 검증 → 리비전 → 캔버스 UPDATE → 층 요소 교체를 한다.
@@ -2561,6 +2613,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 캔버스를 바꾸는 모든 길(`save_floor_layout_canvas`·`save_floor_layout_image`·
     `delete_floor_layout_profile`)이 저장된 요소가 새 캔버스(삭제는 기본 100×60) 안인지 본다
     (`_require_marks_fit`). 도면을 지워도 요소는 남긴다(2026-10-01 결정).
+  - **FAB 전체 도면**은 층 표가 아니라 `fab_layout_profile`(한 행, `layout_key = 'FAB'`)·`fab_layout_mark`
+    (마이그레이션 `0013`)다 — 층 표에 「FAB」 가짜 키를 넣으면 `_require_floor_key`·RawData 좌표 상한
+    (`max_canvas_extent`)·층 열거가 모두 그것을 걸러야 한다. `save_fab_layout(canvas, marks, base)` 는 설비
+    리비전을 만들지 않는 별도 쓰기이고, `_write_transaction`(쓰기 잠금 + dirty) 안에서 `base`(캔버스
+    행|None, 요소 지문)를 지금 저장값과 견준 뒤 쓴다(`_require_fab_layout_base` — 층의
+    `_require_floor_layout_bases` 와 같다). 캔버스 행이 없으면(처음 저장) 그 행도 쓴다. 캔버스만 바꾸는 길
+    (`save_fab_layout`·`save_fab_layout_canvas`·`save_fab_layout_image`·`delete_fab_layout_profile`, 삭제는
+    `FAB_CANVAS`)은 **지금 그리는 요소**(저장된 것, 없으면 기본 배치) 안인지 본다. 요소를 **빈 목록**으로
+    쓰는 길도 같다 — 빈 목록이면 기본 배치를 그리므로 그 기본 배치가 캔버스 안이어야 한다(서비스
+    `require_fab_layout_fits` 한 곳, 편집기 `적용` 도 같은 검사로 미리 거부한다). 도면 용량 30MB 합계는 층과
+    FAB 를 함께 센다(층 도면을 올릴 때 FAB 바이트를, FAB 를 올릴 때 층 합계를 더한다).
 
 ## 4. 기준정보 테이블 계약
 

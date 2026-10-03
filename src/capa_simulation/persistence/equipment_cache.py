@@ -14,6 +14,7 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentRevisionSummary,
     EquipmentSnapshot,
 )
+from capa_simulation.services.fab_layout import FabLayoutMark, FabLayoutProfile
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import (
     FloorLayoutCanvas,
@@ -151,12 +152,41 @@ def load_floor_layout_profile(
     return FloorLayoutProfile(**payload)
 
 
+class _FabLayoutPayload(TypedDict):
+    profile: dict[str, Any] | None
+    marks: list[dict[str, Any]]
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
+def _load_fab_layout_payload(database_path: str) -> _FabLayoutPayload:
+    repository = get_equipment_repository(database_path)
+    profile = repository.load_fab_layout_profile()
+    return {
+        "profile": _payload(profile, FabLayoutProfile) if profile is not None else None,
+        "marks": [_payload(mark, FabLayoutMark) for mark in repository.load_fab_layout_marks()],
+    }
+
+
+def load_fab_layout(
+    database_path: str,
+) -> tuple[FabLayoutProfile | None, tuple[FabLayoutMark, ...]]:
+    """저장된 FAB 전체 도면 — (캔버스·배경 도면 행 | None, 요소). 요소가 없으면 빈 튜플이고 화면이
+    기본 배치를 그린다(`services/fab_layout.effective_fab_layout`). 층 도면 캐시와 함께 비운다."""
+    payload = _load_fab_layout_payload(database_path)
+    profile = payload["profile"]
+    return (
+        FabLayoutProfile(**profile) if profile is not None else None,
+        tuple(FabLayoutMark(**mark) for mark in payload["marks"]),
+    )
+
+
 def clear_floor_layout_cache() -> None:
-    """층 도면·캔버스·도면 요소 캐시를 비운다. 도면만 바꾼 저장(팝업)은 설비 리비전과 무관하므로
+    """층·FAB 도면·캔버스·도면 요소 캐시를 비운다. 도면만 바꾼 저장(팝업)은 설비 리비전과 무관하므로
     스냅샷 캐시는 비우지 않는다 — 리비전과 캔버스·요소를 함께 쓴 저장은 부른 쪽이 둘 다 비운다."""
     _load_floor_layout_summaries_payload.clear()
     _load_floor_layout_profile_payload.clear()
     _load_floor_layout_marks_payload.clear()
+    _load_fab_layout_payload.clear()
 
 
 def clear_equipment_snapshot_cache() -> None:

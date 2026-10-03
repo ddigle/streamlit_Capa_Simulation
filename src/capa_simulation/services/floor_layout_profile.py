@@ -22,7 +22,7 @@ MAX_CANVAS_EXTENT: Final = 400.0
 CANVAS_DECIMALS: Final = 1
 
 # 설비 DuckDB 는 통째로 S3 스냅샷에 실린다. 도면 한 장이 곧 매 전송의 고정 비용이라
-# 층당 상한과 전 층 합계 상한을 코드에서 건다. 브라우저는 파일을 다 올린 뒤에야 이 검사가
+# 도면당 상한과 전 층·FAB 합계 상한을 코드에서 건다. 브라우저는 파일을 다 올린 뒤에야 이 검사가
 # 도므로 전송 차단이 아니라 저장 거부다. 도면은 이미 압축된 PNG·JPEG 라 DuckDB 가 더
 # 줄이지 못하고, 합계가 곧 스냅샷 증가분이다.
 MAX_FLOOR_LAYOUT_BYTES: Final = 2 * 1024 * 1024
@@ -154,13 +154,16 @@ def normalize_image_upload(file_name: str, payload: bytes) -> tuple[str, str]:
     return normalized_name, mime
 
 
-def require_total_layout_budget(other_floors_bytes: int, payload_bytes: int) -> None:
-    """이 층을 뺀 나머지 층 합계에 새 도면을 더해 전체 상한을 넘는지 본다."""
+def require_total_layout_budget(
+    other_floors_bytes: int, payload_bytes: int, *, subject: str = "이 층"
+) -> None:
+    """올리는 도면을 뺀 나머지 도면 합계(다른 층 + FAB 전체 도면)에 새 도면을 더해 전체 상한을
+    넘는지 본다. `subject` 는 올리는 도면의 이름이다(문구에만 쓴다)."""
     total = other_floors_bytes + payload_bytes
     if total > MAX_TOTAL_LAYOUT_BYTES:
         raise ValueError(
             f"도면 전체 합계는 {format_bytes(MAX_TOTAL_LAYOUT_BYTES)} 이하만 저장합니다: "
-            f"{total:,}B (이 층 {payload_bytes:,}B 포함). 다른 층 도면을 지우거나 줄이세요."
+            f"{total:,}B ({subject} {payload_bytes:,}B 포함). 다른 도면을 지우거나 줄이세요."
         )
 
 

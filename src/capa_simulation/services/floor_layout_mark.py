@@ -19,7 +19,7 @@ import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, Protocol
 
 from capa_simulation.services.floor_layout_profile import CANVAS_DECIMALS, CanvasSize
 
@@ -85,6 +85,22 @@ class FloorLayoutMark:
         }
 
 
+class MarkBox(Protocol):
+    """좌표·크기만 보는 쪽(`marks_extent`)이 받는 모양. 층 요소와 FAB 요소가 함께 맞는다."""
+
+    @property
+    def x(self) -> float: ...
+
+    @property
+    def y(self) -> float: ...
+
+    @property
+    def w(self) -> float: ...
+
+    @property
+    def h(self) -> float: ...
+
+
 def _number(value: object, field: str, mark_id: str) -> float:
     if value is None or isinstance(value, bool):
         raise ValueError(f"도면 요소 {mark_id} 의 {field} 가 비었습니다.")
@@ -97,8 +113,61 @@ def _number(value: object, field: str, mark_id: str) -> float:
     return round(number, CANVAS_DECIMALS)
 
 
-def _flag(value: object) -> bool:
+def mark_flag(value: object) -> bool:
+    """`True`·「Y」·「TRUE」 만 참이다(브라우저·CSV 어느 쪽에서 와도)."""
     return value is True or (isinstance(value, str) and value.strip().upper() in ("Y", "TRUE"))
+
+
+def mark_id_of(raw: Mapping[str, Any], seen: set[str]) -> str:
+    """요소 id 를 검사하고 `seen` 에 더한다. 형식이 틀리거나 겹치면 `ValueError`."""
+    mark_id = str(raw.get("id", "")).strip()
+    if not _MARK_ID.fullmatch(mark_id):
+        raise ValueError(f"도면 요소 id 는 영문·숫자·_·- 1~40자여야 합니다: {mark_id!r}")
+    if mark_id in seen:
+        raise ValueError(f"도면 요소 id 가 겹칩니다: {mark_id}")
+    seen.add(mark_id)
+    return mark_id
+
+
+def mark_box(
+    raw: Mapping[str, Any], mark_id: str, name: str, canvas: CanvasSize
+) -> tuple[float, float, float, float]:
+    """(x, y, w, h) 를 소수 첫째 자리로 맞추고 캔버스 안인지 본다. 어긋나면 `ValueError`."""
+    x, y = _number(raw.get("x"), "X", mark_id), _number(raw.get("y"), "Y", mark_id)
+    w, h = _number(raw.get("w"), "폭", mark_id), _number(raw.get("h"), "높이", mark_id)
+    if x < 0 or y < 0 or w <= 0 or h <= 0:
+        raise ValueError(f"도면 요소 {mark_id} 의 좌표는 0 이상, 크기는 0 보다 커야 합니다.")
+    width, height = canvas
+    if x + w > width + 1e-9 or y + h > height + 1e-9:
+        raise ValueError(
+            f"도면 요소 {mark_id}({name}) 가 캔버스 {width:g} × {height:g} 를 벗어났습니다."
+        )
+    return x, y, w, h
+
+
+def mark_rotation(raw: Mapping[str, Any], mark_id: str) -> int:
+    """회전(0·90·180·270). 아니면 `ValueError`."""
+    rotation_value = raw.get("rot", 0)
+    rotation = int(rotation_value) if isinstance(rotation_value, (int, float)) else -1
+    if rotation not in MARK_ROTATIONS:
+        raise ValueError(f"도면 요소 {mark_id} 의 회전은 0·90·180·270 중 하나여야 합니다.")
+    return rotation
+
+
+def mark_label(raw: Mapping[str, Any], mark_id: str) -> str:
+    """이름표(앞뒤 공백을 떼고 `MARK_LABEL_MAX` 자까지)."""
+    label = str(raw.get("label") or "").strip()
+    if len(label) > MARK_LABEL_MAX:
+        raise ValueError(f"도면 요소 {mark_id} 의 이름은 {MARK_LABEL_MAX}자까지입니다.")
+    return label
+
+
+def zone_color(raw: Mapping[str, Any], mark_id: str) -> str:
+    """영역 색 키. 비면 회색이고 `MARK_COLOR_KEYS` 밖이면 `ValueError`."""
+    color = str(raw.get("color") or "") or "gray"
+    if color not in MARK_COLOR_KEYS:
+        raise ValueError(f"영역 {mark_id} 의 색을 알 수 없습니다: {color!r}")
+    return color
 
 
 def prepare_floor_layout_marks(
@@ -112,42 +181,14 @@ def prepare_floor_layout_marks(
     """
     if len(marks) > MARKS_PER_FLOOR_MAX:
         raise ValueError(f"한 층의 도면 요소는 {MARKS_PER_FLOOR_MAX}개까지입니다: {len(marks)}개")
-    width, height = canvas
     prepared: list[FloorLayoutMark] = []
     seen: set[str] = set()
     for raw in marks:
-        mark_id = str(raw.get("id", "")).strip()
-        if not _MARK_ID.fullmatch(mark_id):
-            raise ValueError(f"도면 요소 id 는 영문·숫자·_·- 1~40자여야 합니다: {mark_id!r}")
-        if mark_id in seen:
-            raise ValueError(f"도면 요소 id 가 겹칩니다: {mark_id}")
-        seen.add(mark_id)
+        mark_id = mark_id_of(raw, seen)
         kind = str(raw.get("kind", ""))
         if kind not in MARK_KINDS:
             raise ValueError(f"도면 요소 {mark_id} 의 종류를 알 수 없습니다: {kind!r}")
-        x, y = _number(raw.get("x"), "X", mark_id), _number(raw.get("y"), "Y", mark_id)
-        w, h = _number(raw.get("w"), "폭", mark_id), _number(raw.get("h"), "높이", mark_id)
-        if x < 0 or y < 0 or w <= 0 or h <= 0:
-            raise ValueError(f"도면 요소 {mark_id} 의 좌표는 0 이상, 크기는 0 보다 커야 합니다.")
-        if x + w > width + 1e-9 or y + h > height + 1e-9:
-            raise ValueError(
-                f"도면 요소 {mark_id}({MARK_NAMES[kind]}) 가 캔버스 {width:g} × {height:g} 를 "
-                "벗어났습니다."
-            )
-        rotation_value = raw.get("rot", 0)
-        rotation = int(rotation_value) if isinstance(rotation_value, (int, float)) else -1
-        if rotation not in MARK_ROTATIONS:
-            raise ValueError(f"도면 요소 {mark_id} 의 회전은 0·90·180·270 중 하나여야 합니다.")
-        label = str(raw.get("label") or "").strip()
-        if len(label) > MARK_LABEL_MAX:
-            raise ValueError(f"도면 요소 {mark_id} 의 이름은 {MARK_LABEL_MAX}자까지입니다.")
-        color = str(raw.get("color") or "")
-        if kind == "zone":
-            color = color or "gray"
-            if color not in MARK_COLOR_KEYS:
-                raise ValueError(f"영역 {mark_id} 의 색을 알 수 없습니다: {color!r}")
-        else:
-            color = ""
+        x, y, w, h = mark_box(raw, mark_id, MARK_NAMES[kind], canvas)
         prepared.append(
             FloorLayoutMark(
                 mark_id=mark_id,
@@ -156,17 +197,17 @@ def prepare_floor_layout_marks(
                 y=y,
                 w=w,
                 h=h,
-                rotation=rotation,
-                label=label,
-                color=color,
-                hatch=kind == "zone" and _flag(raw.get("hatch")),
-                keep_out=kind == "zone" and _flag(raw.get("keepOut")),
+                rotation=mark_rotation(raw, mark_id),
+                label=mark_label(raw, mark_id),
+                color=zone_color(raw, mark_id) if kind == "zone" else "",
+                hatch=kind == "zone" and mark_flag(raw.get("hatch")),
+                keep_out=kind == "zone" and mark_flag(raw.get("keepOut")),
             )
         )
     return tuple(prepared)
 
 
-def marks_extent(marks: Sequence[FloorLayoutMark]) -> CanvasSize:
+def marks_extent(marks: Sequence[MarkBox]) -> CanvasSize:
     """요소가 차지한 가장 먼 오른쪽·위. 캔버스를 이보다 줄이면 요소가 밖으로 나간다."""
     right = max((mark.x + mark.w for mark in marks), default=0.0)
     top = max((mark.y + mark.h for mark in marks), default=0.0)

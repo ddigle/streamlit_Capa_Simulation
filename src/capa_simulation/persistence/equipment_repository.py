@@ -40,6 +40,16 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_baseline,
     prepare_equipment_master,
 )
+from capa_simulation.services.fab_layout import (
+    FAB_CANVAS,
+    FAB_LAYOUT_KEY,
+    FabLayoutBase,
+    FabLayoutMark,
+    FabLayoutProfile,
+    fab_marks_fingerprint,
+    prepare_fab_layout_marks,
+    require_fab_layout_fits,
+)
 from capa_simulation.services.floor_layout_mark import (
     FloorLayoutMark,
     marks_extent,
@@ -461,7 +471,9 @@ class DuckDBEquipmentRepository:
         with self._write_transaction() as connection:
             _require_marks_fit(connection, (building, floor), (width, height))
             require_total_layout_budget(
-                _other_floors_layout_bytes(connection, building, floor), len(payload)
+                _floor_layout_bytes(connection, excluding=(building, floor))
+                + _fab_layout_bytes(connection),
+                len(payload),
             )
             row_exists, stored_digest = _stored_image_digest(connection, building, floor)
             if not row_exists:
@@ -604,6 +616,159 @@ class DuckDBEquipmentRepository:
             image_byte_count=len(image_bytes),
             updated_at=as_datetime(row[5]),
         )
+
+    def load_fab_layout_profile(self) -> FabLayoutProfile | None:
+        """FAB 전체 도면의 캔버스와 배경 도면(data URI). 저장한 적이 없으면 None."""
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT canvas_width, canvas_height, image_mime, image_name, image_payload,
+                       updated_at
+                FROM equipment_ops.fab_layout_profile
+                WHERE layout_key = ?
+                """,
+                [FAB_LAYOUT_KEY],
+            ).fetchone()
+        if row is None:
+            return None
+        payload = row[4]
+        mime = str(row[2]) if row[2] is not None else None
+        has_image = isinstance(payload, (bytes, bytearray)) and bool(payload) and mime is not None
+        image_bytes = bytes(payload) if has_image else b""
+        return FabLayoutProfile(
+            canvas_width=float(row[0]),
+            canvas_height=float(row[1]),
+            image_data_uri=to_data_uri(str(mime), image_bytes) if has_image else None,
+            image_name=str(row[3]) if row[3] is not None else None,
+            image_byte_count=len(image_bytes),
+            updated_at=as_datetime(row[5]),
+        )
+
+    def load_fab_layout_marks(self) -> tuple[FabLayoutMark, ...]:
+        """저장된 FAB 요소(그리는 순서대로). 하나도 없으면 빈 튜플 — 화면은 기본 배치를 그린다."""
+        with self._connect() as connection:
+            return _stored_fab_marks(connection)
+
+    def save_fab_layout(
+        self,
+        *,
+        canvas: CanvasSize | None,
+        marks: Sequence[Mapping[str, object]] | None,
+        base: FabLayoutBase | None,
+    ) -> bool:
+        """FAB 캔버스·요소를 쓴다. **설비 리비전을 만들지 않는다**(층 도면 요소처럼 현행값이다).
+
+        `base` 는 편집을 시작할 때 본 저장값(캔버스|None, 요소 지문)이다. 쓰기 잠금 안에서 지금
+        저장값과 견줘 다르면 거부한다 — 요소는 전체 교체라 옛 목록으로 덮으면 남이 먼저 저장한 FAB
+        가 지워진다. 캔버스 행이 없으면(처음 저장) 그 행도 함께 쓴다. 쓴 것이 있으면 True."""
+        size = normalize_canvas_size(*canvas) if canvas is not None else None
+        if size is None and marks is None:
+            return False
+        with self._write_transaction() as connection:
+            stored_canvas = _stored_fab_canvas(connection)
+            if base is not None:
+                _require_fab_layout_base(connection, stored_canvas, base)
+            target = size or stored_canvas or FAB_CANVAS
+            prepared: tuple[FabLayoutMark, ...] | None = None
+            if marks is not None:
+                prepared = prepare_fab_layout_marks(marks, target)
+                # 빈 목록이면 기본 배치를 그린다 — 그 기본 배치도 캔버스 안이어야 한다.
+                require_fab_layout_fits(target, prepared)
+            else:
+                # 캔버스만 바꾼다 — 지금 그리는 요소(저장된 것, 없으면 기본 배치)가 새 캔버스
+                # 안이어야 한다.
+                _require_fab_marks_fit(connection, target)
+            if size is not None or stored_canvas is None:
+                _upsert_fab_canvas(connection, *target)
+            if prepared is not None:
+                _replace_fab_marks(connection, prepared)
+        return True
+
+    def save_fab_layout_image(
+        self,
+        file_name: str,
+        payload: bytes,
+        *,
+        canvas_width: float | None = None,
+        canvas_height: float | None = None,
+    ) -> FabLayoutProfile:
+        """FAB 배경 도면을 올린다(리비전 없음). 층 도면과 같은 용량 규칙이고 합계는 전 층과 함께
+        센다."""
+        normalized_name, mime = normalize_image_upload(file_name, payload)
+        if canvas_width is None or canvas_height is None:
+            pixel_size = image_pixel_size(payload)
+            if pixel_size is None:
+                raise ValueError(f"도면 파일 형식을 읽지 못했습니다: {normalized_name}")
+            width, height = canvas_from_pixel_size(*pixel_size)
+        else:
+            width, height = normalize_canvas_size(canvas_width, canvas_height)
+        with self._write_transaction() as connection:
+            _require_fab_marks_fit(connection, (width, height))
+            require_total_layout_budget(
+                _floor_layout_bytes(connection), len(payload), subject="FAB 도면"
+            )
+            row = connection.execute(
+                "SELECT sha256(image_payload) FROM equipment_ops.fab_layout_profile "
+                "WHERE layout_key = ?",
+                [FAB_LAYOUT_KEY],
+            ).fetchone()
+            if row is None:
+                connection.execute(
+                    """
+                    INSERT INTO equipment_ops.fab_layout_profile (
+                        layout_key, canvas_width, canvas_height, image_mime, image_name,
+                        image_payload
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    [FAB_LAYOUT_KEY, width, height, mime, normalized_name, payload],
+                )
+            elif row[0] is not None and str(row[0]) == hashlib.sha256(payload).hexdigest():
+                # 같은 도면을 다시 올렸다. BLOB 을 다시 쓰지 않는다(DuckDB 가 옛 페이지를 회수하지
+                # 않는다).
+                connection.execute(
+                    """
+                    UPDATE equipment_ops.fab_layout_profile
+                    SET canvas_width = ?, canvas_height = ?, image_mime = ?, image_name = ?,
+                        updated_at = current_timestamp
+                    WHERE layout_key = ?
+                    """,
+                    [width, height, mime, normalized_name, FAB_LAYOUT_KEY],
+                )
+            else:
+                connection.execute(
+                    """
+                    UPDATE equipment_ops.fab_layout_profile
+                    SET canvas_width = ?, canvas_height = ?, image_mime = ?, image_name = ?,
+                        image_payload = ?, updated_at = current_timestamp
+                    WHERE layout_key = ?
+                    """,
+                    [width, height, mime, normalized_name, payload, FAB_LAYOUT_KEY],
+                )
+        return self._require_fab_layout_profile()
+
+    def save_fab_layout_canvas(self, canvas_width: float, canvas_height: float) -> FabLayoutProfile:
+        """FAB 캔버스 치수만 저장한다(도면은 그대로). 지금 그리는 요소가 새 캔버스 안이어야 한다."""
+        width, height = normalize_canvas_size(canvas_width, canvas_height)
+        with self._write_transaction() as connection:
+            _require_fab_marks_fit(connection, (width, height))
+            _upsert_fab_canvas(connection, width, height)
+        return self._require_fab_layout_profile()
+
+    def delete_fab_layout_profile(self) -> None:
+        """FAB 배경 도면과 캔버스를 지운다(리비전 없음). 캔버스는 기본 `FAB_CANVAS` 로 돌아가고
+        요소는 남는다 — 그 밖에 요소가 있으면 거부한다."""
+        with self._write_transaction() as connection:
+            _require_fab_marks_fit(connection, FAB_CANVAS)
+            connection.execute(
+                "DELETE FROM equipment_ops.fab_layout_profile WHERE layout_key = ?",
+                [FAB_LAYOUT_KEY],
+            )
+
+    def _require_fab_layout_profile(self) -> FabLayoutProfile:
+        profile = self.load_fab_layout_profile()
+        if profile is None:
+            raise RuntimeError("FAB 도면 프로필을 저장하지 못했습니다.")
+        return profile
 
     def _require_floor_layout_profile(self, building: str, floor: str) -> FloorLayoutProfile:
         profile = self.load_floor_layout_profile(building, floor)
@@ -900,12 +1065,11 @@ def _stored_image_digest(
     return True, str(row[0]) if row[0] is not None else None
 
 
-def _other_floors_layout_bytes(
-    connection: duckdb.DuckDBPyConnection,
-    building: str,
-    floor: str,
+def _floor_layout_bytes(
+    connection: duckdb.DuckDBPyConnection, *, excluding: FloorKey | None = None
 ) -> int:
-    """이 층을 뺀 나머지 층 도면의 바이트 합계."""
+    """층 도면의 바이트 합계(`excluding` 층은 뺀다 — 그 층 도면을 갈아 끼우는 중이다)."""
+    building, floor = excluding if excluding is not None else ("", "")
     row = connection.execute(
         """
         SELECT COALESCE(SUM(octet_length(image_payload)), 0)
@@ -915,6 +1079,128 @@ def _other_floors_layout_bytes(
         [building, floor],
     ).fetchone()
     return int(row[0]) if row is not None else 0
+
+
+def _fab_layout_bytes(connection: duckdb.DuckDBPyConnection) -> int:
+    """FAB 도면의 바이트. 층 도면을 올릴 때 30MB 합계에 함께 센다(FAB 를 올릴 때는 층 합계를
+    센다)."""
+    row = connection.execute(
+        "SELECT COALESCE(SUM(octet_length(image_payload)), 0) FROM equipment_ops.fab_layout_profile"
+    ).fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def _stored_fab_canvas(connection: duckdb.DuckDBPyConnection) -> CanvasSize | None:
+    row = connection.execute(
+        "SELECT canvas_width, canvas_height FROM equipment_ops.fab_layout_profile "
+        "WHERE layout_key = ?",
+        [FAB_LAYOUT_KEY],
+    ).fetchone()
+    return (float(row[0]), float(row[1])) if row is not None else None
+
+
+def _stored_fab_marks(connection: duckdb.DuckDBPyConnection) -> tuple[FabLayoutMark, ...]:
+    rows = connection.execute(
+        """
+        SELECT mark_id, mark_kind, x_coordinate, y_coordinate, x_size, y_size, rotation_deg,
+               label, color_key, hatch, link_building, link_floor
+        FROM equipment_ops.fab_layout_mark
+        ORDER BY source_row_no
+        """
+    ).fetchall()
+    return tuple(
+        FabLayoutMark(
+            mark_id=str(row[0]),
+            kind=str(row[1]),
+            x=float(row[2]),
+            y=float(row[3]),
+            w=float(row[4]),
+            h=float(row[5]),
+            rotation=int(row[6]),
+            label=str(row[7]) if row[7] is not None else "",
+            color=str(row[8]) if row[8] is not None else "",
+            hatch=bool(row[9]),
+            link=(str(row[10]), str(row[11]))
+            if row[10] is not None and row[11] is not None
+            else None,
+        )
+        for row in rows
+    )
+
+
+def _require_fab_layout_base(
+    connection: duckdb.DuckDBPyConnection,
+    stored_canvas: CanvasSize | None,
+    base: FabLayoutBase,
+) -> None:
+    """FAB 캔버스·요소가 편집을 시작할 때 본 값 그대로인가. 아니면 다른 사람이 먼저 저장했다."""
+    expected_canvas, expected_marks = base
+    if stored_canvas is None or expected_canvas is None:
+        same_canvas = stored_canvas is None and expected_canvas is None
+    else:
+        same_canvas = all(
+            abs(a - b) < 1e-9 for a, b in zip(stored_canvas, expected_canvas, strict=True)
+        )
+    same_marks = fab_marks_fingerprint(_stored_fab_marks(connection)) == expected_marks
+    if not (same_canvas and same_marks):
+        raise ValueError(
+            "S.PKG FAB 전체 배치를 다른 사용자가 먼저 바꿔 저장하지 않았습니다. 저장 안 한 FAB "
+            "배치를 버리고 다시 고치세요."
+        )
+
+
+def _require_fab_marks_fit(connection: duckdb.DuckDBPyConnection, canvas: CanvasSize) -> None:
+    """지금 그리는 FAB 요소(저장된 것, 하나도 없으면 기본 배치)가 새 캔버스 안인가."""
+    require_fab_layout_fits(canvas, _stored_fab_marks(connection))
+
+
+def _upsert_fab_canvas(connection: duckdb.DuckDBPyConnection, width: float, height: float) -> None:
+    # 행이 있으면 숫자 두 개만 UPDATE 한다(도면 BLOB 을 다시 쓰지 않는다).
+    updated = connection.execute(
+        """
+        UPDATE equipment_ops.fab_layout_profile
+        SET canvas_width = ?, canvas_height = ?, updated_at = current_timestamp
+        WHERE layout_key = ?
+        """,
+        [width, height, FAB_LAYOUT_KEY],
+    ).fetchone()
+    if updated is None or int(updated[0]) == 0:
+        connection.execute(
+            "INSERT INTO equipment_ops.fab_layout_profile (layout_key, canvas_width, "
+            "canvas_height) VALUES (?, ?, ?)",
+            [FAB_LAYOUT_KEY, width, height],
+        )
+
+
+def _replace_fab_marks(
+    connection: duckdb.DuckDBPyConnection, marks: Sequence[FabLayoutMark]
+) -> None:
+    """FAB 요소를 모두 지우고 받은 순서대로 다시 넣는다(`source_row_no` 가 그리는 순서)."""
+    connection.execute("DELETE FROM equipment_ops.fab_layout_mark")
+    if not marks:
+        return
+    frame = pd.DataFrame(
+        [
+            {
+                "mark_id": mark.mark_id,
+                "source_row_no": index,
+                "mark_kind": mark.kind,
+                "x_coordinate": mark.x,
+                "y_coordinate": mark.y,
+                "x_size": mark.w,
+                "y_size": mark.h,
+                "rotation_deg": mark.rotation,
+                "label": mark.label or None,
+                "color_key": mark.color or None,
+                "hatch": mark.hatch,
+                "keep_out": False,
+                "link_building": mark.link[0] if mark.link is not None else None,
+                "link_floor": mark.link[1] if mark.link is not None else None,
+            }
+            for index, mark in enumerate(marks, start=1)
+        ]
+    )
+    insert_by_name(connection, schema="equipment_ops", table_name="fab_layout_mark", frame=frame)
 
 
 def _insert_floor_layout(

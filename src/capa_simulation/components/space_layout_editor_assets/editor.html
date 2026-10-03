@@ -28,16 +28,18 @@
       <span class="sle-panel-title">도면 요소</span>
       <button type="button" data-kind="zone" title="눌러서 넣거나 도면으로 끌어 놓기">
         <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1" class="ico-dash"/></svg>영역</button>
-      <button type="button" data-kind="shutter" title="반입구(셔터) — 앞 공간에 호기가 서면 경고">
+      <button type="button" class="sle-floor-only" data-kind="shutter" title="반입구(셔터) — 앞 공간에 호기가 서면 경고">
         <svg viewBox="0 0 16 16" aria-hidden="true"><line x1="1" y1="14" x2="15" y2="14" class="ico-bold"/><line x1="8" y1="12" x2="8" y2="4" class="ico-line"/><polyline points="5,7 8,3 11,7" class="ico-line"/></svg>반입구</button>
-      <button type="button" data-kind="door" title="여닫이문 — 열리는 자리에 호기가 서면 경고">
+      <button type="button" class="sle-floor-only" data-kind="door" title="여닫이문 — 열리는 자리에 호기가 서면 경고">
         <svg viewBox="0 0 16 16" aria-hidden="true"><line x1="3" y1="14" x2="3" y2="3" class="ico-bold"/><path d="M3 3 A11 11 0 0 1 14 14" class="ico-dash"/></svg>문</button>
-      <button type="button" data-kind="column" title="기둥 — 호기가 겹치면 경고">
+      <button type="button" class="sle-floor-only" data-kind="column" title="기둥 — 호기가 겹치면 경고">
         <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" class="ico-fill"/></svg>기둥</button>
       <button type="button" data-kind="text">
         <svg viewBox="0 0 16 16" aria-hidden="true"><text x="8" y="12.5" text-anchor="middle" class="ico-text">T</text></svg>글자</button>
       <button type="button" data-kind="arrow" title="동선 화살표">
         <svg viewBox="0 0 16 16" aria-hidden="true"><line x1="2" y1="8" x2="12" y2="8" class="ico-dash"/><polyline points="10,5 14,8 10,11" class="ico-line"/></svg>동선</button>
+      <button type="button" class="sle-fab-only" data-kind="block" title="층 블록 — 연결 층(필수)을 가리키고, 보기 화면에서 누르면 그 층이 열립니다">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="2" width="10" height="5" rx="1" class="ico-line"/><rect x="3" y="9" width="10" height="5" rx="1" class="ico-fill"/></svg>층 블록</button>
     </div>
     <div class="sle-panel sle-area" role="group" aria-label="편집 영역 크기">
       <span class="sle-panel-title">편집 영역</span>
@@ -75,9 +77,14 @@
             <span class="sle-zone-props">
               <label class="sle-field sle-zone-only"><span>색</span><select class="sle-mark-color"></select></label>
               <label class="sle-field sle-zone-only"><input class="sle-mark-hatch" type="checkbox"><span>빗금</span></label>
-              <label class="sle-field sle-zone-only" title="이 영역에 호기가 서면 경고합니다"><input class="sle-mark-keepout" type="checkbox"><span>설비 금지</span></label>
+              <label class="sle-field sle-zone-only sle-floor-only" title="이 영역에 호기가 서면 경고합니다"><input class="sle-mark-keepout" type="checkbox"><span>설비 금지</span></label>
             </span>
             <button type="button" class="sle-mark-rotate">90° 돌리기</button>
+            <span class="sle-block-props sle-fab-only" hidden>
+              <label class="sle-field"><span>연결</span><select class="sle-block-link" aria-label="연결 층"></select></label>
+              <label class="sle-field"><span>색</span><select class="sle-block-color" aria-label="블록 색"></select></label>
+              <button type="button" class="sle-block-open">열기</button>
+            </span>
           </span>
         </span>
       </span>
@@ -99,7 +106,7 @@
         <g class="sle-marks"></g>
         <g class="sle-overlay"></g>
       </svg>
-      <div class="sle-drawer sle-edit-only">
+      <div class="sle-drawer sle-edit-only sle-floor-only">
         <button type="button" class="sle-drawer-tab" aria-expanded="false" aria-controls="sle-tray"
                 title="미배치 호기 서랍 열기 — 끌어서 도면에 놓습니다">미배치 <b class="sle-drawer-count">0</b></button>
         <aside class="sle-tray" id="sle-tray" aria-label="미배치 호기" hidden>

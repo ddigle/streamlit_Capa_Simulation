@@ -14,6 +14,7 @@ from capa_simulation.components.equipment_data_workspace import (
     effective_floor_canvases,
     ensure_equipment_drafts,
     equipment_buffer_generation,
+    pending_fab_layout,
     pending_floor_canvases,
     pending_floor_marks,
     pop_discarded_notice,
@@ -22,11 +23,15 @@ from capa_simulation.components.equipment_data_workspace import (
     reset_equipment_drafts,
     revision_token,
     save_equipment_buffer,
+    stage_fab_layout,
     stage_floor_canvas,
     stage_floor_marks,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
-from capa_simulation.components.floor_layout_upload import render_floor_layout_editor
+from capa_simulation.components.floor_layout_upload import (
+    render_fab_layout_drawing_editor,
+    render_floor_layout_editor,
+)
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import (
@@ -43,6 +48,7 @@ from capa_simulation.components.space_layout import (
     stage_legend_markup,
 )
 from capa_simulation.components.space_layout_editor import (
+    render_fab_layout_editor,
     render_fab_layout_viewer,
     render_space_layout_editor,
     render_space_layout_viewer,
@@ -51,6 +57,7 @@ from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
+    load_fab_layout,
     load_floor_layout_canvases,
     load_floor_layout_marks,
     load_floor_layout_profile,
@@ -58,6 +65,10 @@ from capa_simulation.persistence.equipment_cache import (
     load_latest_equipment_snapshot,
 )
 from capa_simulation.services.equipment_availability import build_space_equipment_status
+from capa_simulation.services.equipment_contract import (
+    empty_downtime_schedule,
+    empty_equipment_master,
+)
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_master,
@@ -66,12 +77,18 @@ from capa_simulation.services.equipment_units import format_unit_count, placed_u
 from capa_simulation.services.equipment_validation import prepare_equipment_master
 from capa_simulation.services.fab_layout import (
     FLOOR_KEYS,
-    default_fab_layout,
+    FabLayoutMark,
+    duplicate_block_links,
+    effective_fab_layout,
     fab_layout_fingerprint,
+    fab_marks_fingerprint,
     floor_from_label,
     floor_from_param,
     floor_label,
     floor_param,
+    parse_fab_editor_apply,
+    prepare_fab_layout_marks,
+    require_fab_layout_fits,
 )
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark, marks_fingerprint
 from capa_simulation.services.floor_layout_profile import (
@@ -107,15 +124,20 @@ FLOOR_PARAM = "floor"
 FLOOR_TABLE_KEY = "space_status_floor_table"
 FLOOR_JUMP_KEY = "space_status_floor_jump"
 FAB_VIEWER_KEY = "space_fab_viewer"
+FAB_EDITOR_KEY = "space_fab_editor"
 # 배치 편집. 저장 알림·메모는 가용설비 현황의 키(`FLASH_KEY`·`_NOTE_KEY`)를 쓰지 않는다 — 그쪽
 # 페이지가 소비해 엉뚱한 화면에 뜬다. 메모 칸은 저장할 때마다 키를 바꿔 비운다.
 SPACE_FLASH_KEY = "space_status_flash"
 EDIT_MODE_KEY = "space_layout_edit_mode"
+# FAB 배치 편집 토글은 층의 것과 따로다 — 같은 키면 FAB 편집에서 [열기] 로 연 층이 곧장 편집 모드로
+# 선다.
+FAB_EDIT_MODE_KEY = "space_fab_edit_mode"
 SAVE_NOTE_KEY = "space_layout_save_note"
 SAVE_NOTE_NONCE_KEY = "space_layout_save_note_nonce"
 SAVE_ERROR_KEY = "space_layout_save_error"
 SAVE_BUTTON_KEY = "space_layout_save"
 DISCARD_BUTTON_KEY = "space_layout_discard"
+DISCARD_FAB_BUTTON_KEY = "space_layout_discard_fab"
 # 반출·이설을 마친 호기는 더 이상 공간에 없다. 배치·미배치·제외 어디에도 세지 않는다.
 EXITED_STATUSES = ("반출 완료", "이설 완료")
 
@@ -190,6 +212,8 @@ try:
         for summary in load_floor_layout_summaries(equipment_database_path)
         if summary.has_image
     }
+    # 저장된 FAB 전체 도면(캔버스·배경 도면 행, 요소). 요소가 없으면 기본 배치를 그린다.
+    fab_profile, fab_stored_marks = load_fab_layout(equipment_database_path)
     if latest_snapshot is None or latest_snapshot.equipment.empty:
         equipment = sample_equipment_master(anchor_date=today)
         downtime = sample_downtime_schedule(anchor_date=today)
@@ -246,12 +270,22 @@ if editable:
     discarded_notice = pop_discarded_notice()
     if discarded_notice:
         st.warning(discarded_notice, icon=":material/sync_problem:")
+# 설비 샘플 화면(호기 마스터가 비어 샘플 스위치를 켠 상태)인가. 이때는 FAB 편집도 끈다 — 합성 fleet
+# 위에서 고친 FAB 가 실제 저장소에 들어간다(2026-10-03 사용자 결정 2).
+showing_sample = False
+# 호기가 없고 샘플을 끈 상태. 조건 카드에 까닭 한 줄만 두고, 빈 fleet 으로 FAB·층 목록을 그린다 —
+# FAB 배치는 설비 리비전과 무관한 현행값이라 설비 저장본이 없어도 고치고 저장한다(결정 2).
+no_fleet = False
 if using_sample_equipment:
     # 스위치는 호기 마스터가 비었을 때만 뜻이 있다. 실데이터가 있으면 끌 것이 없다.
-    if not render_sample_switch(key="space_sample_switch", source="설비 운영 DB"):
-        # 멈추기 **전에** 카드를 세우고 까닭을 적는다. 사이드바 「조회 조건」 제목은 페이지보다
-        # 먼저 선언으로 서므로, 카드 없이 멈추면 제목만 덩그러니 남았다(2026-10-01 브라우저
-        # 실측). 가용설비 현황의 같은 자리와 같은 모양이다.
+    if render_sample_switch(key="space_sample_switch", source="설비 운영 DB"):
+        showing_sample = True
+        st.caption("호기 마스터가 비어 있어 데모 fleet 을 표시합니다.")
+    else:
+        no_fleet = True
+        # 카드를 세우고 까닭을 적는다. 사이드바 「조회 조건」 제목은 페이지보다 먼저 선언으로
+        # 서므로, 카드가 없으면 제목만 덩그러니 남았다(2026-10-01 브라우저 실측). 가용설비 현황의
+        # 같은 자리와 같은 모양이다.
         with condition_card(SPACE_CARD_LABEL, name=SPACE_CARD_NAME):
             st.caption("조회할 호기가 없습니다. 가용설비 현황에서 입력하거나 샘플 데이터를 켜세요.")
         render_pending_source(
@@ -265,34 +299,45 @@ if using_sample_equipment:
                 "생애주기 상태를 만드는 일정 여섯 개와 운영 비가동 일정",
             ),
         )
-        st.stop()
-    st.caption("호기 마스터가 비어 있어 데모 fleet 을 표시합니다.")
+        st.caption(
+            "호기가 없어도 아래 S.PKG FAB 전체 배치(층 블록·영역·글자)는 고치고 저장할 수 있습니다."
+        )
+        equipment = empty_equipment_master()
+        downtime = empty_downtime_schedule()
+fab_editable = not showing_sample
 
-# 기준일·필터는 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자 결정). 기준일이 먼저다 —
-# 공정·단계 선택지가 그 날의 상태에서 나온다. 이 화면은 배치·공간만 본다 — 기간별 단계 전환은
-# 가용설비 현황 Main 의 「단계 전환」이다(2026-10-01 사용자 결정).
-with condition_card(SPACE_CARD_LABEL, name=SPACE_CARD_NAME):
-    as_of = st.date_input(
-        "기준일",
-        value=today,
-        key="space_status_as_of",
-        persist_state="session",
-    )
+if no_fleet:
+    # 고를 호기가 없어 조건 위젯을 세우지 않는다(카드에는 위의 까닭 한 줄).
+    as_of = today
     all_status = build_space_equipment_status(equipment, downtime, as_of=as_of)
-    selected_processes = st.multiselect(
-        "공정소분류",
-        options=all_status["공정소분류"].dropna().drop_duplicates().tolist(),
-        placeholder="전체",
-        key="space_status_process_filter",
-        persist_state="session",
-    )
-    selected_stages = st.multiselect(
-        "단계",
-        options=all_status["상태"].dropna().drop_duplicates().tolist(),
-        placeholder="전체",
-        key="space_status_stage_filter",
-        persist_state="session",
-    )
+    selected_processes: list[str] = []
+    selected_stages: list[str] = []
+else:
+    # 기준일·필터는 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자 결정). 기준일이 먼저다 —
+    # 공정·단계 선택지가 그 날의 상태에서 나온다. 이 화면은 배치·공간만 본다 — 기간별 단계 전환은
+    # 가용설비 현황 Main 의 「단계 전환」이다(2026-10-01 사용자 결정).
+    with condition_card(SPACE_CARD_LABEL, name=SPACE_CARD_NAME):
+        as_of = st.date_input(
+            "기준일",
+            value=today,
+            key="space_status_as_of",
+            persist_state="session",
+        )
+        all_status = build_space_equipment_status(equipment, downtime, as_of=as_of)
+        selected_processes = st.multiselect(
+            "공정소분류",
+            options=all_status["공정소분류"].dropna().drop_duplicates().tolist(),
+            placeholder="전체",
+            key="space_status_process_filter",
+            persist_state="session",
+        )
+        selected_stages = st.multiselect(
+            "단계",
+            options=all_status["상태"].dropna().drop_duplicates().tolist(),
+            placeholder="전체",
+            key="space_status_stage_filter",
+            persist_state="session",
+        )
 
 space_equipment = all_status.copy()
 if selected_processes:
@@ -350,20 +395,27 @@ def _canvas_text(key: FloorKey) -> str:
 ALL_FLOORS: tuple[FloorKey, ...] = FLOOR_KEYS
 
 
-def _render_unsaved_layout_panel(frames: Frames) -> None:
-    """저장 안 한 배치 변경(호기 배치·편집 영역·도면 요소)과 저장·버리기. 어느 단계 화면에서나 뜬다.
+def _render_unsaved_layout_panel(frames: Frames | None) -> None:
+    """저장 안 한 배치 변경(호기 배치·편집 영역·도면 요소·FAB 전체 배치)과 저장·버리기. 어느 단계
+    화면에서나 뜬다.
 
     저장은 가용설비 RawData 와 같은 `save_equipment_buffer` 다 — 편집본 전체를 저장하므로 RawData
-    의 저장 안 한 다른 편집도 함께 들어간다. 그 사실을 건수로 말한다.
+    의 저장 안 한 다른 편집도 함께 들어간다. 그 사실을 건수로 말한다. FAB 전체 배치는 설비 리비전과
+    무관한 별도 쓰기라 `frames` 가 None(설비 저장본이 없는 화면)이어도 상자가 서고 FAB 만 저장한다.
     """
-    assert latest_snapshot is not None
     # 저장 오류는 상자를 그리지 않는 회차에도 한 번만 보이고 버린다(남의 저장으로 편집이 버려진
     # 회차에는 상자가 없다). 남겨 두면 나중의 상관없는 적용 옆에 다시 뜬다.
     error = st.session_state.pop(SAVE_ERROR_KEY, None)
-    changes = layout_changes(latest_snapshot.equipment, frames[1])
-    canvases = pending_floor_canvases()
-    marks = pending_floor_marks()
-    if changes.empty and not canvases and not marks:
+    fab_pending = pending_fab_layout()
+    if frames is not None:
+        assert latest_snapshot is not None
+        changes = layout_changes(latest_snapshot.equipment, frames[1])
+        canvases = pending_floor_canvases()
+        marks = pending_floor_marks()
+        others = other_change_count(latest_snapshot.equipment, frames[1])
+    else:
+        changes, canvases, marks, others = pd.DataFrame(), {}, {}, 0
+    if changes.empty and not canvases and not marks and fab_pending is None:
         if isinstance(error, str):
             st.error(f"배치를 저장하지 못했습니다: {error}")
         return
@@ -372,7 +424,8 @@ def _render_unsaved_layout_panel(frames: Frames) -> None:
         parts.append(f"편집 영역 {len(canvases)}개 층")
     if marks:
         parts.append(f"도면 요소 {len(marks)}개 층")
-    others = other_change_count(latest_snapshot.equipment, frames[1])
+    if fab_pending is not None:
+        parts.append("S.PKG FAB 전체 배치")
     with st.container(border=True, key="space_unsaved_layout_panel"):
         st.markdown(f"**:material/edit_note: 저장 안 한 배치 변경** — {' · '.join(parts)}")
         st.caption(
@@ -383,23 +436,22 @@ def _render_unsaved_layout_panel(frames: Frames) -> None:
                 if others
                 else ""
             )
+            + (
+                " FAB 전체 배치는 설비 리비전을 만들지 않고 따로 저장합니다."
+                if fab_pending is not None
+                else ""
+            )
         )
         if not changes.empty:
             with st.expander(f"바뀐 호기 {len(changes)}건"):
                 st.dataframe(changes, hide_index=True, width="stretch")
-        try:
-            status = build_space_equipment_status(frames[1], frames[2], as_of=as_of)
-        except ValueError as exc:
-            # RawData 의 검증 실패 편집이 편집본에 남아 있다. 경고만 건너뛰고 저장·버리기는 둔다
-            # (저장하면 같은 까닭으로 막히고, 버리면 풀린다).
-            st.caption(
-                ":material/error: 가용설비 현황 RawData 에 검증을 통과하지 못한 저장 안 한 편집이 "
-                f"있어 겹침 경고를 계산하지 못했습니다: {exc}"
-            )
-        else:
-            warnings = layout_warnings(status, {**_stored_marks_for(status, set(marks)), **marks})
-            for warning in warnings:
-                st.caption(f":material/warning: {warning}")
+        if fab_pending is not None and fab_pending.marks is not None:
+            for label in duplicate_block_links(fab_pending.marks):
+                st.caption(
+                    f":material/warning: FAB 의 층 블록 둘 이상이 {label} 을 가리킵니다(저장은 됨)."
+                )
+        if frames is not None:
+            _render_layout_warnings(frames, marks)
         if isinstance(error, str):
             st.error(f"저장하지 못했습니다: {error}")
         note_key = f"{SAVE_NOTE_KEY}_{int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0))}"
@@ -421,19 +473,60 @@ def _render_unsaved_layout_panel(frames: Frames) -> None:
             with st.popover("버리기", icon=":material/undo:"):
                 st.caption(
                     "저장 안 한 설비 편집을 모두 버리고 최신 저장본으로 돌아갑니다. 가용설비 "
-                    "RawData 의 저장 안 한 편집도 함께 버려집니다."
+                    "RawData 의 저장 안 한 편집과 FAB 전체 배치도 함께 버려집니다."
+                    if frames is not None
+                    else "저장 안 한 S.PKG FAB 전체 배치를 버리고 저장본(없으면 기본 배치)으로 "
+                    "돌아갑니다."
                 )
-                st.button("모두 버리기", key=DISCARD_BUTTON_KEY, on_click=_discard_space_layout)
+                st.button(
+                    "모두 버리기",
+                    key=DISCARD_BUTTON_KEY,
+                    on_click=_discard_space_layout,
+                    args=(frames is not None,),
+                )
+                if frames is not None and fab_pending is not None:
+                    # FAB 는 별도 쓰기라 따로 버릴 수 있어야 한다 — 남이 먼저 FAB 를 저장해 거부된
+                    # 대기분을 설비·층 편집까지 버리지 않고 치운다.
+                    st.button(
+                        "FAB 배치만 버리기",
+                        key=DISCARD_FAB_BUTTON_KEY,
+                        on_click=_discard_space_layout,
+                        args=(False,),
+                        help="설비·층 배치 편집은 두고 S.PKG FAB 전체 배치 대기분만 버립니다.",
+                    )
 
 
-def _discard_space_layout() -> None:
-    """`모두 버리기` 콜백. 편집본·대기분과 함께 남은 저장 오류도 버린다."""
+def _render_layout_warnings(
+    frames: Frames, marks: dict[FloorKey, tuple[FloorLayoutMark, ...]]
+) -> None:
+    """편집본의 겹침·가림 경고. RawData 의 검증 실패 편집이 남아 있으면 경고만 건너뛴다."""
+    try:
+        status = build_space_equipment_status(frames[1], frames[2], as_of=as_of)
+    except ValueError as exc:
+        # 저장·버리기는 둔다(저장하면 같은 까닭으로 막히고, 버리면 풀린다).
+        st.caption(
+            ":material/error: 가용설비 현황 RawData 에 검증을 통과하지 못한 저장 안 한 편집이 "
+            f"있어 겹침 경고를 계산하지 못했습니다: {exc}"
+        )
+        return
+    for warning in layout_warnings(status, {**_stored_marks_for(status, set(marks)), **marks}):
+        st.caption(f":material/warning: {warning}")
+
+
+def _discard_space_layout(with_equipment: bool) -> None:
+    """`모두 버리기`·`FAB 배치만 버리기` 콜백. 편집본·대기분(FAB 포함)과 남은 저장 오류를 버린다.
+    `with_equipment` 가 거짓이면(설비 저장본이 없는 화면, 또는 `FAB 배치만 버리기`) FAB 대기분만
+    버린다."""
     st.session_state.pop(SAVE_ERROR_KEY, None)
-    reset_equipment_drafts()
+    if with_equipment:
+        reset_equipment_drafts()
+    else:
+        stage_fab_layout(None, None, base=(None, ""))
 
 
-def _save_space_layout(frames: Frames, note_key: str, database_path: str) -> None:
-    """`배치 저장` 콜백. 편집본(세 표)과 미저장 층 배치를 한 번에 쓰고 알림을 남긴다."""
+def _save_space_layout(frames: Frames | None, note_key: str, database_path: str) -> None:
+    """`배치 저장` 콜백. 편집본(세 표)과 미저장 층 배치를 한 번에 쓰고 알림을 남긴다. FAB 전체
+    배치는 그 앞에 따로 쓴다(설비 리비전 없음). `frames` 가 None 이면 FAB 만 쓴다."""
     note = st.session_state.get(note_key)
     try:
         message = save_equipment_buffer(
@@ -570,6 +663,80 @@ def _render_layout_editor(
     st.rerun()
 
 
+def _render_fab_editor(
+    link_stats: dict[str, dict[str, str | None]], background_image: str | None
+) -> None:
+    """FAB 전체 배치 편집기. 대기분(없으면 저장본, 그것도 없으면 기본 배치)을 그리고, `적용` 이
+    오면 검증해 세션 대기분에 얹는다(저장 전). 설비 편집본과 무관하다."""
+    pending = pending_fab_layout()
+    stored_canvas, stored_marks = effective_fab_layout(fab_profile, fab_stored_marks)
+    canvas = pending.canvas if pending is not None and pending.canvas else stored_canvas
+    marks: tuple[FabLayoutMark, ...] = (
+        pending.marks if pending is not None and pending.marks is not None else stored_marks
+    )
+    st.caption(
+        "층 블록·영역·글자를 끌어 놓아 고치고 **적용**을 누르면 이 세션에 들어갑니다(저장 전). "
+        "층 블록을 고르면 선택 칸에서 연결 층·색을 바꾸고 [열기] 로 그 층을 엽니다. S.PKG 가 "
+        "아닌 자리는 블록 대신 색을 고른 영역과 글자로 그립니다."
+    )
+    # epoch: 그리는 도면(대기분 또는 저장본)과 저장본. 적용하면 대기분이, 남이 저장하면 저장본이
+    # 바뀌어 브라우저가 새 값으로 다시 선다. 블록 대수는 epoch 밖이다.
+    epoch = "|".join(
+        (
+            "fab-edit",
+            fab_layout_fingerprint(canvas, marks),
+            fab_layout_fingerprint(stored_canvas, stored_marks),
+        )
+    )
+    submission = render_fab_layout_editor(
+        key=FAB_EDITOR_KEY,
+        epoch=epoch,
+        canvas=canvas,
+        marks=marks,
+        link_stats=link_stats,
+        on_open=_open_floor,
+        background_image=background_image,
+    )
+    if submission is None:
+        return
+    if submission.stale:
+        st.warning("편집기가 새 값으로 다시 서는 사이에 누른 적용이라 반영하지 않았습니다.")
+        return
+    try:
+        applied = parse_fab_editor_apply(submission.payload, canvas)
+        next_canvas = applied.canvas or canvas
+        next_marks = applied.marks if applied.marks is not None else marks
+        if applied.marks is None:
+            # 영역만 바꿨다 — 지금 요소가 새 영역 안인지 저장 때와 같은 검사를 지금 한다.
+            prepare_fab_layout_marks([mark.editor_payload() for mark in next_marks], next_canvas)
+        # 요소를 모두 지웠으면 기본 배치를 그린다 — 그것도 영역 안이어야 한다(저장 때와 같은 검사).
+        require_fab_layout_fits(next_canvas, next_marks)
+    except ValueError as exc:
+        st.error(f"적용하지 못했습니다: {exc}")
+        return
+    # 저장값과 같아진 쪽은 대기분에서 뺀다. 견주는 기준은 그리는 저장값(요소가 없으면 기본
+    # 배치)이고, 저장 때 대조할 본 값은 실제 저장 행이다(캔버스 행이 없으면 None, 요소가 없으면 빈
+    # 목록의 지문).
+    base = (
+        fab_profile.canvas_size if fab_profile is not None else None,
+        fab_marks_fingerprint(fab_stored_marks),
+    )
+    stage_fab_layout(
+        None if next_canvas == stored_canvas else next_canvas,
+        None
+        if fab_marks_fingerprint(next_marks) == fab_marks_fingerprint(stored_marks)
+        else next_marks,
+        base=base,
+    )
+    doubled = duplicate_block_links(next_marks)
+    queue_flash(
+        SPACE_FLASH_KEY,
+        "S.PKG FAB 전체 배치를 이 세션에 적용했습니다. 저장해야 다른 사람 화면에 반영됩니다."
+        + (f" 같은 층을 가리키는 블록이 있습니다: {', '.join(doubled)}." if doubled else ""),
+    )
+    st.rerun()
+
+
 # 경로 줄은 두 칸이다: `S.PKG FAB 전체` › `층 바로 가기`(30개 층). FAB 에서는 둘째 칸이 비어 있고,
 # 층을 고르면 그 층이 열린다. 자리를 옮기는 것은 모두 콜백이다(재실행 한 번).
 with st.container(horizontal=True, gap="small", vertical_alignment="center", key="space_path"):
@@ -595,8 +762,8 @@ with st.container(horizontal=True, gap="small", vertical_alignment="center", key
         width=170,
     )
 
-if editable:
-    _render_unsaved_layout_panel(buffer_frames)
+if editable or pending_fab_layout() is not None:
+    _render_unsaved_layout_panel(buffer_frames if editable else None)
 
 if selected is None:
     placements = floor_placements(
@@ -615,26 +782,54 @@ if selected is None:
             " · 미배치 중 동·층 미정 "
             f"{_units(equipment_unit_total(unplaced_equipment.loc[location_unknown]))}"
         )
-    fab_canvas, fab_marks = default_fab_layout()
+    # 보기는 저장본이다(저장된 요소가 없으면 기본 배치). 저장 안 한 FAB 편집은 편집기와 상자가
+    # 말한다.
+    fab_canvas, fab_marks = effective_fab_layout(fab_profile, fab_stored_marks)
+    fab_background = fab_profile.image_data_uri if fab_profile is not None else None
+    block_stats = floor_block_stats(placements)
     with st.container(border=True):
-        # 머리 줄은 층 상세와 같은 구조다(제목 · 오른쪽 범례 자리). FAB 범례 자리는 비워 둔다 —
-        # 블록 색의 뜻은 사용자가 도면 글자로 적는다.
+        # 머리 줄은 층 상세와 같은 구조다(제목 · 도면·캔버스 편집 · 배치 편집 · 오른쪽 범례 자리).
+        # FAB 범례 자리는 비워 둔다 — 블록 색의 뜻은 사용자가 도면 글자로 적는다.
         with st.container(
             horizontal=True, gap="small", vertical_alignment="center", key="space_fab_head"
         ):
             st.markdown("#### :material/domain: S.PKG FAB 전체 배치", width="content")
+            render_fab_layout_drawing_editor(
+                database_path=equipment_database_path, disabled=not fab_editable
+            )
+            # 설비 저장본이 없어도 켠다(FAB 는 설비 리비전과 무관한 현행값, 결정 2). 샘플 화면에서는
+            # 끈다.
+            fab_editing = (
+                st.toggle(
+                    "배치 편집",
+                    key=FAB_EDIT_MODE_KEY,
+                    disabled=not fab_editable,
+                    help=(
+                        "샘플 데이터를 보는 중에는 FAB 배치를 고치지 않습니다."
+                        if not fab_editable
+                        else "층 블록·영역·글자를 끌어 놓아 자리·크기를 고치고, 층 블록의 "
+                        "연결 층과 색을 고릅니다. 적용한 변경은 저장하기 전까지 이 세션에만 "
+                        "있습니다."
+                    ),
+                )
+                and fab_editable
+            )
             st.space("stretch")
-        render_fab_layout_viewer(
-            key=FAB_VIEWER_KEY,
-            # 도면(캔버스·요소)이 바뀔 때만 새로 선다. 블록 대수는 epoch 밖이라 기준일·필터가 바뀌면
-            # 블록 글자만 다시 쓰고 보던 배율을 지킨다.
-            epoch="|".join(("fab", fab_layout_fingerprint(fab_canvas, fab_marks))),
-            canvas=fab_canvas,
-            marks=fab_marks,
-            link_stats=floor_block_stats(placements),
-            summary=fab_summary,
-            on_open=_open_floor,
-        )
+        if fab_editing:
+            _render_fab_editor(block_stats, fab_background)
+        else:
+            render_fab_layout_viewer(
+                key=FAB_VIEWER_KEY,
+                # 도면(캔버스·요소)이 바뀔 때만 새로 선다. 블록 대수는 epoch 밖이라 기준일·필터가
+                # 바뀌면 블록 글자만 다시 쓰고 보던 배율을 지킨다.
+                epoch="|".join(("fab", fab_layout_fingerprint(fab_canvas, fab_marks))),
+                canvas=fab_canvas,
+                marks=fab_marks,
+                link_stats=block_stats,
+                summary=fab_summary,
+                on_open=_open_floor,
+                background_image=fab_background,
+            )
     if exited_count > 0:
         st.caption(f"반출·이설을 마친 {_units(exited_count)}는 공간에 없어 세지 않습니다.")
 

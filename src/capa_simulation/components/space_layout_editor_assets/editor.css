@@ -240,6 +240,12 @@
 .sle-markprops[hidden], .sle-sendto[hidden], .sle-zone-only[hidden], .sle-mark-rotate[hidden] {
   display: inline-flex; visibility: hidden; pointer-events: none;
 }
+/* 층 블록(FAB 편집) 속성 — 연결 층·색·[열기]. 영역 속성·돌리기와 한 칸에 겹친다. */
+.sle-block-props { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.sle-block-props[hidden] { display: inline-flex; visibility: hidden; pointer-events: none; }
+/* 범위(층·FAB)마다 쓰는 도구만 보인다. FAB 에는 호기가 없어 트레이 서랍·반입구·문·기둥·설비 금지가 없고, 층
+   블록은 FAB 에만 있다. */
+.sle.is-fab .sle-floor-only, .sle:not(.is-fab) .sle-fab-only { display: none !important; }
 .sle-area-note { color: var(--sle-danger); font-size: 0.78rem; }
 .sle-area-note:empty { display: none; }
 .sle-inspector-name { display: inline; }

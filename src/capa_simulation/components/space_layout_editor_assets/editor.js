@@ -30,6 +30,8 @@ export default function (component) {
   const RESERVED = { right: Number(data.canvasLimits?.reservedW) || 0, top: Number(data.canvasLimits?.reservedH) || 0 }
   const FLOOR = String(data.floor || '')
   const OTHER_FLOORS = (Array.isArray(data.floors) ? data.floors : []).map(String).filter((f) => f !== FLOOR)
+  // FAB 편집에서 층 블록이 가리킬 수 있는 층(「C1 1F」, 30개). 층 범위에는 없다.
+  const LINK_TARGETS = (Array.isArray(data.linkTargets) ? data.linkTargets : []).map(String)
   const stageColors = data.stageColors || {}
   const markColors = data.markColors || {}
   const defaultSize = data.defaultSize || { w: 12, h: 7 }
@@ -69,7 +71,9 @@ export default function (component) {
   // 이 범위에서 그리는 종류. 층 블록은 FAB 에만 있다 — 층 도면에 오면 그리지 않고 그대로 돌려보낸다.
   const drawable = (kind) => Boolean(MARK_KINDS[kind]) && (kind !== 'block' || FAB)
   const ZONE_COLOR_NAMES = { blue: '파랑', green: '초록', violet: '보라', sky: '하늘', rose: '분홍', gray: '회색' }
-  const HINT = '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+A 전체 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
+  const HINT = FAB
+    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
+    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+A 전체 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
   const q = (selector) => host.querySelector(selector)
   const svg = q('.sle-canvas')
@@ -109,6 +113,10 @@ export default function (component) {
   const markKeepOut = q('.sle-mark-keepout')
   const markRotate = q('.sle-mark-rotate')
   const zoneOnly = [...host.querySelectorAll('.sle-zone-only')]
+  const blockProps = q('.sle-block-props')
+  const blockLink = q('.sle-block-link')
+  const blockColor = q('.sle-block-color')
+  const blockOpen = q('.sle-block-open')
   const zoomOut = q('.sle-zoom-out')
   const zoomIn = q('.sle-zoom-in')
   const zoomLabel = q('.sle-zoom-label')
@@ -876,7 +884,7 @@ export default function (component) {
     const single = chosen.length === 1 ? chosen[0] : null
     inspector.classList.toggle('is-empty', chosen.length === 0)
     if (!chosen.length) {
-      inspectorName.textContent = '— 도면이나 트레이에서 고르세요(빈 곳을 끌면 여러 개)'
+      inspectorName.textContent = FAB ? '— 도면에서 고르세요(빈 곳을 끌면 여러 개)' : '— 도면이나 트레이에서 고르세요(빈 곳을 끌면 여러 개)'
     } else if (multi) {
       const together = expanded(chosen).length
       inspectorName.textContent = `${chosen.length}개${together > chosen.length ? ` (모듈 묶음까지 ${together}개)` : ''}`
@@ -908,7 +916,7 @@ export default function (component) {
       moveSelect.replaceChildren(...OTHER_FLOORS.map((floor) => new Option(floor, floor)))
     }
     const units = chosen.filter(isUnit)
-    sendBox.hidden = chosen.length > 0 && units.length === 0
+    sendBox.hidden = FAB || (chosen.length > 0 && units.length === 0)
     const canSend = units.length > 0 && units.every((m) => !m.moveTo) && OTHER_FLOORS.length > 0
     moveSelect.disabled = !canSend
     moveButton.disabled = !canSend
@@ -918,6 +926,15 @@ export default function (component) {
     if (!markColor.options.length) {
       markColor.replaceChildren(...Object.keys(markColors).map((key) => new Option(ZONE_COLOR_NAMES[key] || key, key)))
     }
+    // 층 블록(FAB): 연결 층·색(기본 + 영역과 같은 여섯 색)·[열기]. 목록은 처음부터 채운다(칸 폭이 튀지 않게).
+    if (FAB && !blockLink.options.length) {
+      blockLink.replaceChildren(...LINK_TARGETS.map((target) => new Option(target, target)))
+      blockColor.replaceChildren(
+        new Option('기본', ''),
+        ...Object.keys(markColors).map((key) => new Option(ZONE_COLOR_NAMES[key] || key, key)),
+      )
+    }
+    blockProps.hidden = !mark || mark.kind !== 'block'
     if (mark) {
       if (!isFocused(markLabel)) markLabel.value = mark.label || ''
       for (const node of zoneOnly) node.hidden = mark.kind !== 'zone'
@@ -925,7 +942,19 @@ export default function (component) {
       markHatch.checked = Boolean(mark.hatch)
       markKeepOut.checked = Boolean(mark.keepOut)
       markRotate.hidden = !MARK_KINDS[mark.kind].rotatable
+      if (mark.kind === 'block') {
+        blockLink.value = mark.link || ''
+        blockColor.value = mark.color || ''
+        // 적용하지 않은 FAB 편집이 있으면 열지 않는다 — 열면 이 편집기가 내려가 그 편집이 사라진다.
+        const pending = hasPendingEdits()
+        blockOpen.disabled = pending || !mark.link
+        blockOpen.title = pending ? '먼저 적용하세요 — 적용하지 않은 FAB 편집이 있습니다' : `${mark.link || '연결 층'} 을 엽니다`
+      }
     }
+  }
+  // 브라우저가 쥔 적용 전 편집(요소·편집 영역)이 있는가.
+  function hasPendingEdits() {
+    return markChangeCount() > 0 || canvasChanged()
   }
 
   // 층 블록 위에 올려 두거나 초점을 두면 선택 줄에 「C1 1F · 누르면 열기」. 떠나면 원래 줄로 돌린다.
@@ -935,10 +964,14 @@ export default function (component) {
     pickBox.textContent = `${item.link} · 누르면 열기`
     pickBox.title = pickBox.textContent
   }
+  // FAB 편집의 선택 칸 [열기]: 고른 층 블록이고 적용하지 않은 편집이 없을 때만.
+  const opensFromInspector = (item) => Boolean(!VIEW && FAB && item && item.kind === 'block' && item.link && !hasPendingEdits())
   // 블록이 가리키는 층을 연다. 파이썬 `on_navigate_change` 콜백이 층을 바꿔 재실행 한 번으로 층 상세가 선다.
-  function openFloor(item) {
-    if (!opensFloor(item)) return
+  // 보기 전용 FAB 의 블록 누르기·Enter, 그리고 FAB 편집 선택 칸의 [열기] 가 모두 여기로 온다.
+  function openFloor(item, fromInspector = false) {
+    if (!(opensFloor(item) || (fromInspector && opensFromInspector(item)))) return
     pickBox.textContent = `${item.link} 여는 중…`
+    if (fromInspector) { S.note = `${item.link} 여는 중…`; updateStatus() }
     setTriggerValue('navigate', { epoch: S.epoch, target: item.link })
   }
 
@@ -984,6 +1017,13 @@ export default function (component) {
       add(HINT)
     }
     add('적용 안 한 변경 ', `${changed}건`)
+    if (FAB) {
+      // 두 블록이 같은 층을 가리키면 알린다(막지 않는다 — 누르면 둘 다 그 층을 연다).
+      const seen = new Map()
+      for (const m of S.items.values()) if (m.kind === 'block' && m.link) seen.set(m.link, (seen.get(m.link) || 0) + 1)
+      const doubled = [...seen.values()].filter((n) => n > 1).length
+      if (doubled) add('같은 층을 가리키는 블록(저장은 됨) ', `${doubled}개 층`)
+    }
     if (canvasChanged()) add('편집 영역 ', `${S.originalCanvas.w}×${S.originalCanvas.h} → ${W()}×${H()}`)
     if (S.passthrough.length) add('그리지 못한 도면 요소(그대로 둡니다) ', `${S.passthrough.length}개`)
     if (S.overlapPairs) add('겹침(저장은 됨) ', `${S.overlapPairs}쌍`)
@@ -1167,10 +1207,13 @@ export default function (component) {
     S.seq += 1
     const id = `MK-${Date.now().toString(36)}-${S.seq}`
     const center = at || { x: S.view.x + viewW() / 2, top: S.view.top + viewH() / 2 }
+    // 새 층 블록은 아직 블록이 없는 첫 층을 가리킨다(모두 있으면 첫 층). 선택 칸에서 바꾼다 — 블록은 연결이 필수다.
+    const linked = new Set([...S.items.values()].filter((m) => m.kind === 'block').map((m) => m.link))
+    const link = kind === 'block' ? (LINK_TARGETS.find((target) => !linked.has(target)) || LINK_TARGETS[0] || '') : ''
     const item = {
       id, kind, label: spec.label, stage: '', group: null, placed: true, moveTo: null, isNew: false, arrived: false,
       x: snapDelta(center.x - w / 2), y: snapDelta(H() - center.top - h / 2), w, h, rot: 0,
-      color: kind === 'zone' ? 'blue' : '', hatch: false, keepOut: false, link: '',
+      color: kind === 'zone' ? 'blue' : '', hatch: false, keepOut: false, link,
     }
     fit(item)
     S.items.set(id, item)
@@ -1732,6 +1775,9 @@ export default function (component) {
   markHatch.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { hatch: markHatch.checked }) }
   markKeepOut.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { keepOut: markKeepOut.checked }) }
   markRotate.onclick = () => { const mark = selectedMark(); if (mark) rotateMark(mark) }
+  blockLink.onchange = () => { const mark = selectedMark(); if (mark && mark.kind === 'block' && blockLink.value) setMarkProps(mark, { link: blockLink.value }) }
+  blockColor.onchange = () => { const mark = selectedMark(); if (mark && mark.kind === 'block') setMarkProps(mark, { color: blockColor.value }) }
+  blockOpen.onclick = () => openFloor(selectedMark(), true)
   for (const button of host.querySelectorAll('.sle-palette [data-kind]')) {
     const kind = button.dataset.kind
     button.onpointerdown = (event) => ghostDrag(event, MARK_KINDS[kind].name, (p) => addMark(kind, p), () => addMark(kind))

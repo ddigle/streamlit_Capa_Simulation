@@ -1,7 +1,7 @@
 # Purpose: Space 층·FAB 도면의 Components v2 편집기(끌어 놓아 배치 고치기)와 보기 전용 뷰어.
 
 """드래그앤드롭 배치 편집기. 같은 도면의 보기 전용 층 상세 뷰어(`mode="view"`)와 FAB 전체 도면
-(`scope="fab"`, 보기 전용)도 이것이다 — 컴포넌트는 하나만 등록하고 범위 표시로 나눈다.
+(`scope="fab"`, 보기 전용 뷰어와 편집기)도 이것이다 — 컴포넌트는 하나만 등록하고 범위 표시로 나눈다.
 
 좌표 계약은 호기 마스터와 같다: 원점은 **왼쪽 아래**, Y 는 위로 커지고
 호기 사각형은 (X좌표, Y좌표) → (X좌표+Xsize, Y좌표+Ysize) 다. SVG 는 위가 0 이라
@@ -41,6 +41,7 @@ import streamlit as st
 from capa_simulation.components.space_layout import keep_out_color, mark_colors
 from capa_simulation.design import tokens
 from capa_simulation.services.fab_layout import (
+    FLOOR_KEYS,
     FabLayoutMark,
     floor_from_label,
     floor_label,
@@ -207,6 +208,7 @@ def render_fab_layout_viewer(
     link_stats: Mapping[str, Mapping[str, str | None]],
     summary: str,
     on_open: Callable[[FloorKey], None],
+    background_image: str | None = None,
 ) -> None:
     """FAB 전체 **뷰어**. 층 도면과 같은 편집기의 보기 전용(`scope="fab"`)이다.
 
@@ -230,7 +232,7 @@ def render_fab_layout_viewer(
             "palette": _palette(),
             "stageColors": dict(tokens.EQUIPMENT_STAGE_COLORS),
             "markColors": mark_colors(),
-            "backgroundImage": None,
+            "backgroundImage": background_image,
             "floor": FAB_VIEW_LABEL,
             "floors": [],
             "newUnit": {},
@@ -239,6 +241,55 @@ def render_fab_layout_viewer(
         on_navigate_change=partial(_dispatch_navigate, key, epoch, on_open),
         width="stretch",
     )
+
+
+def render_fab_layout_editor(
+    *,
+    key: str,
+    epoch: str,
+    canvas: CanvasSize,
+    marks: Sequence[FabLayoutMark],
+    link_stats: Mapping[str, Mapping[str, str | None]],
+    on_open: Callable[[FloorKey], None],
+    background_image: str | None = None,
+) -> EditorSubmission | None:
+    """FAB 전체 **편집기**(`scope="fab"`). 층 편집기와 같은 컴포넌트이고 범위 표시로 나눈다.
+
+    호기가 없어 트레이·호기 추가·다른 층 보내기·겹침 상태 줄이 없고, 팔레트는 영역·글자·동선·층
+    블록이다(반입구·문·기둥은 층 도면 요소). 블록을 누르면 고르기이고(열지 않는다), 선택 칸에서 연결
+    층(`linkTargets`, 30개 층)·색(기본 + 영역 색)을 고르며 [열기] 로 그 층을 연다 — 적용하지 않은
+    편집이 있으면 잠긴다. 블록 대수(`link_stats`)는 보기와 같이 epoch 밖이다.
+
+    `적용` 이 눌린 회차에만 받은 값(``{"epoch", "changes": [], "canvas", "marks"}``)을 돌려준다."""
+    result = _EDITOR(
+        key=key,
+        data={
+            "scope": "fab",
+            "epoch": epoch,
+            "title": FAB_VIEW_LABEL,
+            "items": [],
+            "marks": [mark.editor_payload() for mark in marks],
+            "linkStats": {label: dict(stats) for label, stats in link_stats.items()},
+            "linkTargets": [floor_label(target) for target in FLOOR_KEYS],
+            "canvas": {"width": canvas[0], "height": canvas[1]},
+            "canvasLimits": {"min": MIN_CANVAS_EXTENT, "max": MAX_CANVAS_EXTENT},
+            "decimals": CANVAS_DECIMALS,
+            "palette": _palette(),
+            "stageColors": dict(tokens.EQUIPMENT_STAGE_COLORS),
+            "markColors": mark_colors(),
+            "backgroundImage": background_image,
+            "floor": FAB_VIEW_LABEL,
+            "floors": [],
+            "newUnit": {},
+        },
+        on_apply_change=lambda: None,
+        on_navigate_change=partial(_dispatch_navigate, key, epoch, on_open),
+        width="stretch",
+    )
+    payload = getattr(result, "apply", None)
+    if not isinstance(payload, Mapping):
+        return None
+    return EditorSubmission(payload=payload, stale=payload.get("epoch") != epoch)
 
 
 def render_space_layout_editor(

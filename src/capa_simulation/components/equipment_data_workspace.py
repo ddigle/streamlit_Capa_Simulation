@@ -85,6 +85,7 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_baseline,
     prepare_equipment_master,
 )
+from capa_simulation.services.fab_layout import FabLayoutBase, FabLayoutMark
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
 
@@ -128,6 +129,11 @@ PENDING_MARKS_KEY = "equipment_pending_floor_marks_v1"
 # 층마다 편집을 시작할 때 본 저장값(캔버스·요소 지문). 저장이 이것과 지금 저장값을 견줘, 그 사이
 # 다른 사람이 바꾼 층을 옛 목록으로 덮지 않는다(요소는 층 전체 교체다).
 PENDING_BASES_KEY = "equipment_pending_floor_bases_v1"
+# Space FAB 편집기가 쌓는 미저장 FAB 전체 배치(캔버스·요소와 편집을 시작할 때 본 저장값). FAB 는
+# 설비 리비전과 무관한 현행값이라 **설비 저장본이 없어도** 쌓고 저장한다. 같은 저장 단추가 쓰고
+# 같은 `모두 버리기` 가 버린다. 남이 새 리비전을 저장해도 버리지 않는다 — 리비전과 상관없고, 남이
+# FAB 를 먼저 바꿨는지는 저장 때 본 저장값으로 따로 견준다.
+PENDING_FAB_KEY = "equipment_pending_fab_layout_v1"
 # 다른 사람이 새 리비전을 저장해 이 세션의 저장 안 한 편집을 버렸을 때 한 번 띄우는 알림.
 DISCARDED_NOTICE_KEY = "equipment_workspace_discarded_v1"
 # 이번 회차 맨 위에서 편집본을 새 저장본으로 갈아 끼웠다는 표시. 그 회차의 RawData 제출은 옛
@@ -205,6 +211,7 @@ def reset_equipment_drafts() -> None:
         PENDING_CANVASES_KEY,
         PENDING_MARKS_KEY,
         PENDING_BASES_KEY,
+        PENDING_FAB_KEY,
         _SEEDED_GENERATION_KEY,
     ):
         st.session_state.pop(key, None)
@@ -414,9 +421,91 @@ def has_pending_floor_layouts() -> bool:
     return bool(pending_floor_canvases() or pending_floor_marks())
 
 
+@dataclass(frozen=True)
+class PendingFabLayout:
+    """저장 안 한 FAB 전체 배치. 바꾼 쪽만 든다(None 은 저장값 그대로). `base` 는 첫 대기분이 본
+    저장값(캔버스|None, 요소 지문)이다."""
+
+    canvas: CanvasSize | None
+    marks: tuple[FabLayoutMark, ...] | None
+    base: FabLayoutBase
+
+
+def pending_fab_layout() -> PendingFabLayout | None:
+    """Space FAB 편집기에서 적용했지만 아직 저장하지 않은 FAB 전체 배치."""
+    value = st.session_state.get(PENDING_FAB_KEY)
+    if not isinstance(value, dict):
+        return None
+    return PendingFabLayout(canvas=value["canvas"], marks=value["marks"], base=value["base"])
+
+
+def stage_fab_layout(
+    canvas: CanvasSize | None,
+    marks: tuple[FabLayoutMark, ...] | None,
+    *,
+    base: FabLayoutBase,
+) -> None:
+    """미저장 FAB 배치를 둔다. 둘 다 None 이면 대기분을 지운다(저장값과 같아졌을 때). `base` 는
+    첫 대기분의 것만 남긴다 — 그 뒤의 적용은 이 세션이 쌓은 것이라 남의 변경이 아니다."""
+    current = pending_fab_layout()
+    if canvas is None and marks is None:
+        st.session_state.pop(PENDING_FAB_KEY, None)
+        return
+    st.session_state[PENDING_FAB_KEY] = {
+        "canvas": canvas,
+        "marks": marks,
+        "base": current.base if current is not None else base,
+    }
+
+
+def rebase_fab_canvas(canvas: CanvasSize | None) -> None:
+    """이 세션이 팝업으로 FAB 캔버스를 방금 저장·삭제했다. 대기분의 캔버스는 버리고(팝업 값이
+    정본이다), 본 저장값의 **캔버스 부분만** 새 값으로 바꾼다 — 요소 지문은 처음 본 값 그대로라
+    그 사이 남이 바꾼 요소는 여전히 저장 때 걸린다."""
+    current = pending_fab_layout()
+    if current is None:
+        return
+    if current.marks is None:
+        st.session_state.pop(PENDING_FAB_KEY, None)
+        return
+    st.session_state[PENDING_FAB_KEY] = {
+        "canvas": None,
+        "marks": current.marks,
+        "base": (canvas, current.base[1]),
+    }
+
+
+def save_pending_fab_layout(repository: DuckDBEquipmentRepository) -> bool:
+    """미저장 FAB 배치를 쓴다(설비 리비전 없음). 썼으면 대기분·도면 캐시를 비우고 True."""
+    pending = pending_fab_layout()
+    if pending is None:
+        return False
+    wrote = repository.save_fab_layout(
+        canvas=pending.canvas,
+        marks=(
+            [mark.editor_payload() for mark in pending.marks] if pending.marks is not None else None
+        ),
+        base=pending.base,
+    )
+    st.session_state.pop(PENDING_FAB_KEY, None)
+    if wrote:
+        clear_floor_layout_cache()
+    return wrote
+
+
+FAB_SAVED_MESSAGE = "S.PKG FAB 전체 배치를 저장했습니다. 설비 리비전과 무관한 현행값입니다."
+NOTHING_SAVED_MESSAGE = "바뀐 내용이 없어 저장하지 않았습니다."
+# FAB 저장이 거부됐을 때 빠져나갈 곳. 가용설비 RawData 저장도 FAB 대기분을 쓰므로 그 화면에서도
+# 이 문구가 뜬다 — FAB 대기분만 버리는 단추는 Space 현황에 있다.
+FAB_DISCARD_HINT = (
+    " FAB 대기분만 버리려면 Space 현황의 `저장 안 한 배치 변경` › `버리기` › "
+    "`FAB 배치만 버리기` 를 누르세요."
+)
+
+
 def save_equipment_buffer(
     repository: DuckDBEquipmentRepository,
-    frames: Frames,
+    frames: Frames | None,
     note: str,
     *,
     revision_optional: bool = False,
@@ -426,13 +515,67 @@ def save_equipment_buffer(
     RawData 저장과 Space 저장이 이 한 곳을 탄다. `revision_optional` 이면 세 표가 최신
     리비전과 같을 때 리비전 없이 캔버스·요소만 쓴다(Space 에서 요소만 고친 저장). 예시 행 가드는
     repository 에 없으므로 여기서 건다. 성공하면 두 캐시와 편집본을 모두 비운다.
+
+    미저장 **FAB 전체 배치**는 설비 리비전과 무관한 별도 쓰기다(`save_pending_fab_layout`). 설비
+    편집보다 **먼저** 쓴다 — 설비 저장이 막혀도 FAB 는 저장된 채 남고(그 사실을 오류 문구에 적는다),
+    반대 순서면 설비 저장 뒤 편집본을 비우면서 FAB 대기분까지 잃는다. FAB 가 거부돼도(남이 먼저
+    저장) 설비 저장은 그대로 하고, FAB 대기분은 남긴 채 두 결과를 함께 적은 `ValueError` 를 낸다.
+    `frames` 가 None 이면(설비 저장본이 없어 대조할 출발 리비전이 없는 화면) FAB 대기분만 쓴다.
     """
+    if frames is None:
+        return FAB_SAVED_MESSAGE if save_pending_fab_layout(repository) else NOTHING_SAVED_MESSAGE
     leftovers = _example_baseline_rows(frames[0])
     if not leftovers.empty:
         raise ValueError(
             f"기존 보유대수에 지우지 않은 예시 행이 {len(leftovers)}건 남아 있습니다. "
             "실제 값으로 고치거나 지운 뒤 저장하세요."
         )
+    # FAB 는 별도 쓰기라 그 거부(남이 먼저 저장·검증 실패)가 설비 저장을 막지 않는다. 거부된 FAB
+    # 대기분은 남긴다 — 설비 저장이 편집본을 비우면서 대기분도 지우므로 끝나고 다시 얹는다.
+    fab_pending = pending_fab_layout()
+    fab_error: str | None = None
+    try:
+        fab_saved = save_pending_fab_layout(repository)
+    except ValueError as exc:
+        fab_saved, fab_error = False, str(exc)
+    try:
+        message = _save_equipment_frames(
+            repository, frames, note, revision_optional=revision_optional, fab_saved=fab_saved
+        )
+    except BOOTSTRAP_ERRORS as exc:
+        if not (fab_saved or fab_error):
+            raise
+        reason = bootstrap_error_message(exc, database_paths=(repository.database_path,))
+        if fab_saved:
+            raise ValueError(
+                f"S.PKG FAB 전체 배치는 저장했지만 설비·층 배치는 저장하지 못했습니다: {reason}"
+            ) from exc
+        raise ValueError(
+            f"설비·층 배치를 저장하지 못했습니다: {reason} S.PKG FAB 전체 배치도 저장하지 "
+            f"못했습니다: {fab_error}{FAB_DISCARD_HINT}"
+        ) from exc
+    finally:
+        if fab_error is not None and fab_pending is not None:
+            stage_fab_layout(fab_pending.canvas, fab_pending.marks, base=fab_pending.base)
+    if fab_error is None:
+        return message
+    if message == NOTHING_SAVED_MESSAGE:
+        raise ValueError(f"{fab_error}{FAB_DISCARD_HINT}")
+    raise ValueError(
+        f"S.PKG FAB 전체 배치만 저장하지 못했습니다(이 화면의 FAB 대기분은 남겼습니다): "
+        f"{fab_error}{FAB_DISCARD_HINT} 설비 쪽은 저장했습니다 — {message}"
+    )
+
+
+def _save_equipment_frames(
+    repository: DuckDBEquipmentRepository,
+    frames: Frames,
+    note: str,
+    *,
+    revision_optional: bool,
+    fab_saved: bool,
+) -> str:
+    """`save_equipment_buffer` 의 설비 쪽(세 표 + 층 캔버스·요소 한 트랜잭션)."""
     canvases = pending_floor_canvases()
     marks = {
         key: [mark.editor_payload() for mark in staged]
@@ -451,19 +594,20 @@ def save_equipment_buffer(
         saved = repository.save_space_layout(*frames, **options)
     else:
         saved = repository.save_snapshot(*frames, **options)
+    fab = " S.PKG FAB 전체 배치도 저장했습니다." if fab_saved else ""
     if saved is None and not (canvases or marks):
-        # 아무것도 쓰지 않았다. 편집본·변경 메모·선택을 그대로 둔다.
-        return "바뀐 내용이 없어 저장하지 않았습니다."
+        # 설비 쪽은 아무것도 쓰지 않았다. 편집본·변경 메모·선택을 그대로 둔다.
+        return FAB_SAVED_MESSAGE if fab_saved else NOTHING_SAVED_MESSAGE
     clear_equipment_snapshot_cache()
     if canvases or marks:
         clear_floor_layout_cache()
     reset_equipment_drafts()
     layouts = " 층 캔버스·도면 요소도 함께 저장했습니다." if canvases or marks else ""
     if saved is None:
-        return "호기 마스터가 바뀌지 않아 새 리비전 없이 층 캔버스·도면 요소만 저장했습니다."
+        return f"호기 마스터가 바뀌지 않아 새 리비전 없이 층 캔버스·도면 요소만 저장했습니다.{fab}"
     return (
         f"설비 운영 데이터 r{saved.revision.revision_no}을 저장했습니다. "
-        f"가용설비와 Space 현황에 반영됩니다.{layouts}"
+        f"가용설비와 Space 현황에 반영됩니다.{layouts}{fab}"
     )
 
 

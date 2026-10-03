@@ -132,3 +132,29 @@ def test_only_a_floor_block_in_the_fab_viewer_opens_a_floor() -> None:
     )
     # 블록 대수는 epoch 밖의 `data.linkStats` 로 온다(같은 epoch 회차에도 글자를 다시 쓴다).
     assert "const LINK_STATS = data.linkStats || {}" in JS
+
+
+def test_the_fab_editor_shows_only_fab_tools() -> None:
+    """FAB 편집(`scope="fab"`)에는 호기가 없다 — 트레이 서랍·반입구·문·기둥·설비 금지가 숨고,
+    층 블록 넣기와 블록 속성(연결 층·색·[열기])은 FAB 에만 선다."""
+    rule = _rule(".sle.is-fab .sle-floor-only, .sle:not(.is-fab) .sle-fab-only")
+    assert "display: none !important" in rule
+    for kind in ("shutter", "door", "column"):
+        assert f'class="sle-floor-only" data-kind="{kind}"' in HTML
+    assert 'class="sle-fab-only" data-kind="block"' in HTML
+    assert 'class="sle-drawer sle-edit-only sle-floor-only"' in HTML
+    props = HTML[HTML.index('class="sle-block-props') :]
+    assert props.index('class="sle-block-link"') < props.index('class="sle-block-open"')
+    # 블록 속성은 영역 속성·돌리기와 한 칸에 겹쳐 숨을 때도 자리를 남긴다(고를 때 도면이 튀지 않게).
+    assert "visibility: hidden" in _rule(".sle-block-props[hidden]")
+    assert HTML.index('class="sle-markprops-kind"') < HTML.index('class="sle-block-props')
+
+
+def test_the_inspector_open_is_locked_while_fab_edits_are_unapplied() -> None:
+    """[열기] 는 적용하지 않은 FAB 편집이 있으면 잠긴다(열면 편집기가 내려가 그 편집이 사라진다).
+    여는 길은 보기 전용 블록과 같은 `openFloor` 하나다 — `navigate` 를 보내는 자리는 하나뿐이다."""
+    assert "blockOpen.disabled = pending || !mark.link" in JS
+    assert "function hasPendingEdits()" in JS and "markChangeCount() > 0 || canvasChanged()" in JS
+    assert "blockOpen.onclick = () => openFloor(selectedMark(), true)" in JS
+    assert "(fromInspector && opensFromInspector(item))" in JS
+    assert "!VIEW && FAB && item && item.kind === 'block' && item.link && !hasPendingEdits()" in JS
