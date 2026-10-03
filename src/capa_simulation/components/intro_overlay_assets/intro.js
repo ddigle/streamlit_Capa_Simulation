@@ -346,7 +346,7 @@ function scene(port, gridOf) {
   let sum = null;
   let sumL = null;
   let sumAt = 0;
-  let rowsAt = [0, 380, 800];
+  let rowsAt = null;
   const look = { fade: 1, mono: 0 };
   let lookTween = null;
   let veil = 1;
@@ -1095,9 +1095,9 @@ function scene(port, gridOf) {
         settle = 1;
         ready = true;
       }
-      rowsAt = m.rows || rowsAt;
+      rowsAt = m.rows;
       sumAt = m.charts;
-      const to = m.look || { fade: 0.2, mono: 1 };
+      const to = m.look;
       if (m.instant) {
         lookTween = null;
         veilTween = null;
@@ -1273,7 +1273,6 @@ function createOverlay(api, data, initial, syncToolbar) {
     "--text": palette.text,
     "--muted": palette.muted,
     "--accent": palette.accent,
-    "--line": palette.line,
     "--track": palette.track,
     "--button": palette.button,
     "--button-text": palette["button-text"],
@@ -1282,6 +1281,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     "--ghost-hover": palette["ghost-hover"],
     "--panel-line": palette["panel-line"],
     "--tip": palette.tip,
+    "--tip-shadow": palette["tip-shadow"],
     "--body": data.font_body || "sans-serif",
     "--display": `"${FONT_FAMILY}", ${data.font_body || "sans-serif"}`,
   };
@@ -1630,6 +1630,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     if (busy || mode !== "intro" || !canSummary()) return;
     busy = true;
     mode = "summary";
+    window.clearInterval(poller);
     stage.classList.add("summary");
     hint.hidden = true;
     timers.forEach((id) => window.clearTimeout(id));

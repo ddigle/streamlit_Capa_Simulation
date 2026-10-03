@@ -81,10 +81,11 @@ from capa_simulation.design import tokens
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 
 # Streamlit 과 맞춰야 하는 계약은 저장 키 모양(접두·접미)과 툴바 슬롯이다. 한 곳에 모아 두어야
-# 판올림에서 무엇을 확인해야 하는지가 분명하다.
+# 판올림에서 무엇을 확인해야 하는지가 분명하다. 툴바 슬롯과 테마 버튼 id 는 같은 툴바에 단추를
+# 얹는 Guide·Summary 스크립트(`page_guide`·`intro_summary`)도 여기서 받아 쓴다.
 THEME_STORAGE_PREFIX = "stActiveTheme-"
 THEME_STORAGE_SUFFIX = "-v2"
-_TOOLBAR_SLOT = '[data-testid="stToolbarActions"]'
+TOOLBAR_SLOT = '[data-testid="stToolbarActions"]'
 THEME_BUTTON_ID = "capa-theme-toggle"
 # 앱이 고른 테마의 정본(`"Light"`·`"Dark"` 글자 그대로). 경로별 Streamlit 키는 이것의 사본이다.
 THEME_APP_KEY = "capa-theme"
@@ -342,7 +343,7 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
         f"<script>{THEME_RULE_SCRIPT}</script>"
         + _SCRIPT
         % {
-            "slot": _TOOLBAR_SLOT,
+            "slot": TOOLBAR_SLOT,
             "id": THEME_BUTTON_ID,
             "to_light": "Light",
             "to_dark": "Dark",

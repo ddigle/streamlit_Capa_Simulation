@@ -194,3 +194,17 @@ def test_toolbar_readers_use_the_shared_rule_instead_of_their_own_key() -> None:
         assert "localStorage" not in script
         assert "capaTheme.resolve(parentWindow)" in script
     assert "THEME_STORAGE_PREFIX" not in vars(intro_summary)
+
+
+def test_toolbar_scripts_take_the_slot_and_button_id_from_one_place() -> None:
+    """툴바 슬롯·테마 버튼 id 는 `theme_toggle` 한 곳에 있다. Guide·Summary 원문이 값을 직접 적으면
+    판올림에서 한 곳만 고쳐 다른 단추가 조용히 사라진다."""
+    templates = (page_guide._SCRIPT, intro_summary._TOOLBAR_SCRIPT)
+    for template in templates:
+        assert theme_toggle.TOOLBAR_SLOT not in template
+        assert theme_toggle.THEME_BUTTON_ID not in template
+        assert "querySelector('%(slot)s')" in template
+    assert 'getElementById("%(theme)s")' in page_guide._SCRIPT
+    for script in (guide_toolbar_script(), summary_toolbar_script()):
+        assert f"querySelector('{theme_toggle.TOOLBAR_SLOT}')" in script
+        assert f'getElementById("{theme_toggle.THEME_BUTTON_ID}")' in script

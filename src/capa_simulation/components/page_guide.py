@@ -32,6 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from capa_simulation.components.theme_toggle import THEME_BUTTON_ID, TOOLBAR_SLOT
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import forget_page_dialogs
 
@@ -54,7 +55,7 @@ _SCRIPT = """
   }
 
   function place() {
-    var slot = doc.querySelector('[data-testid="stToolbarActions"]');
+    var slot = doc.querySelector('%(slot)s');
     if (!slot) return false;
     if (doc.getElementById("%(id)s")) return true;
     var isDark = dark();
@@ -87,7 +88,7 @@ _SCRIPT = """
       }));
     };
     // 테마 버튼 **바로 왼쪽**에 선다. 테마 버튼이 아직 없으면 슬롯 맨 앞에 둔다.
-    var theme = doc.getElementById("capa-theme-toggle");
+    var theme = doc.getElementById("%(theme)s");
     slot.insertBefore(button, theme || slot.firstChild);
     return true;
   }
@@ -125,6 +126,8 @@ def guide_toolbar_script() -> str:
         "dark_border": tokens.palette_value("dark", "BORDER"),
         "light_ink": tokens.palette_value("light", "TEXT"),
         "dark_ink": tokens.palette_value("dark", "TEXT"),
+        "slot": TOOLBAR_SLOT,
+        "theme": THEME_BUTTON_ID,
     }
 
 

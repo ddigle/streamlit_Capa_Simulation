@@ -485,7 +485,6 @@ INTRO_PALETTE: Final[Mapping[str, str]] = MappingProxyType(
         "text": "#ECECEF",
         "muted": "#9A9CA6",
         "accent": "#5FB8AC",
-        "line": "rgba(236, 236, 239, 0.2)",
         "track": "rgba(236, 236, 239, 0.12)",
         "button": "#ECECEF",
         "button-text": "#0F1013",
@@ -495,11 +494,12 @@ INTRO_PALETTE: Final[Mapping[str, str]] = MappingProxyType(
         "die-ok": "#4FA79C",
         "die-warn": "#D29A3A",
         "die-short": "#D0644F",
-        # Summary 요약 화면. 축 눈금 글자·차트 판의 면과 테두리·말풍선 바탕.
+        # Summary 요약 화면. 축 눈금 글자·차트 판의 면과 테두리·말풍선 바탕과 그림자.
         "faint": "#5E616B",
         "panel": "rgba(236, 236, 239, 0.035)",
         "panel-line": "rgba(236, 236, 239, 0.16)",
         "tip": "#1C1D22",
+        "tip-shadow": "rgb(0 0 0 / 45%)",
         # 입장 화면 `Summary`(테두리만 있는 단추)의 테두리와 눌러 볼 때의 면.
         "ghost-line": "rgba(236, 236, 239, 0.45)",
         "ghost-hover": "rgba(236, 236, 239, 0.08)",

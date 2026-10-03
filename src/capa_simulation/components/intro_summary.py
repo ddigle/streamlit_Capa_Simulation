@@ -49,7 +49,7 @@ from capa_simulation.components.home_figure_common import capacity_status
 from capa_simulation.components.intro_overlay import SUMMARY_LABEL
 from capa_simulation.components.page_guide import BUTTON_ID as GUIDE_BUTTON_ID
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.theme_toggle import THEME_BUTTON_ID
+from capa_simulation.components.theme_toggle import THEME_BUTTON_ID, TOOLBAR_SLOT
 from capa_simulation.design import tokens
 from capa_simulation.io.reference_cache import reference_version_for_revision
 from capa_simulation.persistence.cache import (
@@ -318,7 +318,7 @@ _TOOLBAR_SCRIPT = """
   }
 
   function place() {
-    var slot = doc.querySelector('[data-testid="stToolbarActions"]');
+    var slot = doc.querySelector('%(slot)s');
     if (!slot) return false;
     var button = doc.getElementById("%(id)s");
     if (!button) {
@@ -407,4 +407,5 @@ def summary_toolbar_script() -> str:
         "label": SUMMARY_LABEL,
         "light": _toolbar_colors("light"),
         "dark": _toolbar_colors("dark"),
+        "slot": TOOLBAR_SLOT,
     }

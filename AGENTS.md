@@ -1700,7 +1700,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     0 으로 접는다(칸은 `flex` 기본 크기까지 덮어야 한다). `components.v1.html` 은 회차마다 터미널에
     폐기 예고를 찍어 2026-10-01 에 옮겼다.
   - **비공식 경로다.** `data-testid` 와 `localStorage` 키 모양은 판올림에서 바뀔 수 있다.
-    Streamlit 을 올린 뒤에는 이 버튼이 보이는지 눈으로 확인한다.
+    Streamlit 을 올린 뒤에는 이 버튼이 보이는지 눈으로 확인한다. 툴바 슬롯 선택자(`TOOLBAR_SLOT`)와
+    테마 버튼 id(`THEME_BUTTON_ID`)는 이 모듈 한 곳에 두고, Guide·툴바 Summary 스크립트도 문자열을
+    적지 않고 `%(slot)s`·`%(theme)s` 자리로 받는다 — 판올림에서 고칠 곳이 하나다.
   - `extra_scripts` 로 같은 툴바에 버튼을 얹는 다른 스크립트(Guide)를 함께 싣는다. iframe 을
     따로 두지 않는다 — 높이를 접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다.
   - **iframe 내용은 회차마다 같아야 한다**(`tests/test_theme_toggle.py`). 바뀌면 Streamlit 이 iframe 을
