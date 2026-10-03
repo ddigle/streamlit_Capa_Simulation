@@ -1678,6 +1678,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Streamlit 이 헤더에 위젯을 넣는 API 를 주지 않아 `stHeader`·`stSidebarHeader` 의
     가상요소에 글을 얹는다(글자만 가능, 링크·버튼 불가). 값은 `settings.py` 가 단일 근거이고
     ⋮ 메뉴의 About 과 같은 상수를 본다. `app.py` 에서 한 번만 부른다.
+  - 사이드바 접기 버튼(`stSidebarCollapseButton`)을 늘 보이게 한다(2026-10-03 사용자 요청).
+    Streamlit 은 사이드바에 마우스를 올렸을 때만 `visibility: visible` 로 띄운다. 인쇄 숨김은
+    남기려고 `@media screen` 안에서만 덮는다. 판올림 뒤 버튼이 늘 보이는지 눈으로 확인한다.
 - `src/capa_simulation/components/sidebar_style.py`
   - 탐색 그룹·활성 경로·기존 컨테이너 키와 현재 테마로 사이드바 스타일 문자열을 만든다.
     위젯 생성이나 HTML 주입은 하지 않는다. 생성된 HTML의 태그 안전성과 테마·활성 선택자를

@@ -159,6 +159,15 @@ _HEADER_TEMPLATE = """
   color: __TEXT_MUTED__;
 }
 
+/* 접기 버튼(<<)은 Streamlit 이 사이드바에 마우스를 올렸을 때만 `visibility: visible` 로 띄운다.
+   있는 줄 모르고 지나치지 않게 늘 보이게 둔다. 인쇄에서 숨기는 Streamlit 규칙은 남기려고
+   화면 매체에만 건다. */
+@media screen {
+  [data-testid="stSidebarCollapseButton"] {
+    visibility: visible !important;
+  }
+}
+
 /* 사이드바를 접으면 헤더 왼쪽 끝에 펼침 버튼이 나타나 첫 글자와 겹친다. 그 자리만큼 민다.
    사이드바와 헤더는 부모가 달라 형제 선택자가 닿지 않으므로 접힘 상태를 `:has()` 로 본다.
    `:has()` 를 모르는 브라우저는 이 규칙만 버리고 접었을 때만 겹친다. */
