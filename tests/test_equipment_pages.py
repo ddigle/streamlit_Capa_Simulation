@@ -16,6 +16,7 @@ from capa_simulation.services.equipment_contract import (
     empty_downtime_schedule,
     empty_equipment_master,
 )
+from capa_simulation.services.fab_layout import FLOOR_KEYS, floor_label
 from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -190,30 +191,41 @@ def test_space_page_with_the_sample_switch_off_keeps_a_card_under_the_sidebar_ti
 def test_space_page_counts_placement_and_leaves_stage_transitions_to_availability(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Space 는 배치·공간만 본다. 기간별 단계 전환은 가용설비 현황 Main 의 「단계 전환」이다."""
+    """Space 는 배치·공간만 본다. 기간별 단계 전환은 가용설비 현황 Main 의 「단계 전환」이다.
+
+    2단이다: FAB 전체(층 도면과 같은 편집기의 보기 전용, `scope="fab"`) → 층 상세. 동 단계는 없다.
+    """
+    viewer: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        space_layout_editor, "_EDITOR", lambda **kwargs: viewer.append(kwargs["data"])
+    )
     page_path = PROJECT_ROOT / "app_pages" / "space_status.py"
     app = AppTest.from_string(
         _page_script(page_path, tmp_path / "space_place.duckdb"), default_timeout=60
     ).run()
 
     assert not app.exception
-    assert [metric.label for metric in app.metric] == ["배치 설비", "미배치", "레이아웃 제외"]
+    # FAB 에는 카드가 없다. 배치·미배치·레이아웃 제외는 뷰어 도구 줄 오른쪽 한 줄 요약이다.
+    assert not app.metric
+    fab = viewer[-1]
+    assert fab["mode"] == "view" and fab["scope"] == "fab"
+    assert str(fab["summary"]).startswith("배치 ") and "레이아웃 제외" in str(fab["summary"])
+    labels = {floor_label(key) for key in FLOOR_KEYS}
+    marks = fab["marks"]
+    assert isinstance(marks, list)
+    assert {mark["link"] for mark in marks if mark["kind"] == "block"} == labels
+    # 블록 대수는 배치·미배치만 센다(상태 대수가 아니다).
+    stats = fab["linkStats"]
+    assert isinstance(stats, dict) and set(stats) == labels
+    assert not any("가용" in str(value) for floor in stats.values() for value in floor.values())
     # 사이드바 카드는 기준일·공정소분류·단계뿐이다 — 전환 조회기간·전환단계 폼이 없다.
     assert len(app.sidebar.date_input) == 1
     assert [widget.label for widget in app.sidebar.multiselect] == ["공정소분류", "단계"]
     assert not any("단계 전환" in element.value for element in app.markdown)
-
-    app.session_state["space_status_selected_building"] = "C1"
-    app.run()
-    assert not app.exception
-    assert [metric.label for metric in app.metric] == [
-        "선택 동",
-        "배치 설비",
-        "미배치",
-        "배치 도면",
-    ]
+    # FAB 아래는 30개 층 목록 표다(행을 고르면 그 층이 열린다).
     floor_table = app.dataframe[0].value
     assert list(floor_table.columns) == [
+        "동",
         "층",
         "배치대수",
         "미배치대수",
@@ -221,18 +233,22 @@ def test_space_page_counts_placement_and_leaves_stage_transitions_to_availabilit
         "배치 도면",
         "캔버스",
     ]
+    assert len(floor_table) == len(FLOOR_KEYS)
 
-    viewer: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        space_layout_editor, "_EDITOR", lambda **kwargs: viewer.append(kwargs["data"])
-    )
+    # 동만 고른 세션은 FAB 그대로다(동 단계는 없다).
+    app.session_state["space_status_selected_building"] = "C1"
+    app.run()
+    assert not app.exception
+    assert viewer[-1]["scope"] == "fab"
+
+    app.session_state["space_status_selected_building"] = "C1"
     app.session_state["space_status_selected_floor"] = "1F"
     app.run()
     assert not app.exception
     # 층 화면은 카드 없이 배치도가 화면을 쓴다. 배치·미배치·점유율은 뷰어 도구 줄의 한 줄 요약이다.
     assert not app.metric
     data = viewer[-1]
-    assert data["mode"] == "view"
+    assert data["mode"] == "view" and data["scope"] == "floor" and data["floor"] == "C1 1F"
     assert "배치 " in str(data["summary"]) and str(data["summary"]).count("%") == 1
     assert not any("Space 배치도" in element.value for element in app.markdown)
 

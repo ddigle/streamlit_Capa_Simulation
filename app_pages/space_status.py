@@ -1,10 +1,10 @@
-# Purpose: FAB 전체에서 동·층·설비 배치로 이어지는 Space 현황 탐색 화면을 렌더링한다.
+# Purpose: S.PKG FAB 전체 도면에서 층 상세 배치로 이어지는 Space 현황 2단 탐색 화면을 렌더링한다.
 
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
 from datetime import date
+from functools import partial
 
 import pandas as pd
 import streamlit as st
@@ -34,22 +34,19 @@ from capa_simulation.components.sample_data import (
     render_sample_switch,
 )
 from capa_simulation.components.space_layout import (
-    BUILDINGS,
-    build_fab_figure,
-    build_floor_figure,
     equipment_unit_total,
-    first_selected_customdata,
-    floors_for,
+    floor_block_stats,
+    floor_placements,
     invalid_equipment_rows,
     occupancy_ratio,
     stage_counts,
     stage_legend_markup,
 )
 from capa_simulation.components.space_layout_editor import (
+    render_fab_layout_viewer,
     render_space_layout_editor,
     render_space_layout_viewer,
 )
-from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.equipment_cache import (
@@ -67,6 +64,15 @@ from capa_simulation.services.equipment_samples import (
 )
 from capa_simulation.services.equipment_units import format_unit_count, placed_unit_rows
 from capa_simulation.services.equipment_validation import prepare_equipment_master
+from capa_simulation.services.fab_layout import (
+    FLOOR_KEYS,
+    default_fab_layout,
+    fab_layout_fingerprint,
+    floor_from_label,
+    floor_from_param,
+    floor_label,
+    floor_param,
+)
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark, marks_fingerprint
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
@@ -88,14 +94,19 @@ from capa_simulation.services.space_layout_edit import (
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 
+# 연 층. 두 키는 한 묶음이다 — 둘 다 있고 FAB 의 층이면 층 상세, 아니면 FAB 전체.
 SELECTED_BUILDING_KEY = "space_status_selected_building"
 SELECTED_FLOOR_KEY = "space_status_selected_floor"
-# 아래 두 표의 위젯 키는 **고정이다.** 화면을 되돌렸을 때 옛 선택이 다시 읽혀 도로 끌려가는
-# 덫은 이 버전에 없다 — Streamlit 은 그 회차에 그려지지 않은 위젯의 상태를 버리고(이
-# 저장소의 탭·필터 초기화 문제가 바로 그 동작이다), 위 단계로 올라가면 아래 표는 그려지지
-# 않는다. 예외는 **같은 분기 안에서 대상만 바뀌는** 층 표 하나라, 그것만 동 이름으로 키를
-# 가른다(층 도면과 같은 이유다).
-BUILDING_TABLE_KEY = "space_status_building_table"
+# 주소의 조회 인자(`?floor=C1-1F`). 새로고침해도 보던 층에 머문다. 이 키만 넣고 지운다 —
+# `st.query_params.clear()` 는 테마 인자(`theme`)까지 지워 테마 스크립트가 첫 방문으로 보고 다시
+# 새로고침한다.
+FLOOR_PARAM = "floor"
+# 층 목록 표·층 바로 가기의 위젯 키. 층을 열면 FAB 화면은 그려지지 않아 표 선택은 그 회차에
+# 버려진다(그리지 않은 위젯 상태는 버려진다). 바로 가기는 지금 자리(FAB·층)마다 키를 갈라 그
+# 자리의 값으로 선다.
+FLOOR_TABLE_KEY = "space_status_floor_table"
+FLOOR_JUMP_KEY = "space_status_floor_jump"
+FAB_VIEWER_KEY = "space_fab_viewer"
 # 배치 편집. 저장 알림·메모는 가용설비 현황의 키(`FLASH_KEY`·`_NOTE_KEY`)를 쓰지 않는다 — 그쪽
 # 페이지가 소비해 엉뚱한 화면에 뜬다. 메모 칸은 저장할 때마다 키를 바꿔 비운다.
 SPACE_FLASH_KEY = "space_status_flash"
@@ -110,50 +121,59 @@ EXITED_STATUSES = ("반출 완료", "이설 완료")
 
 
 def _show_fab_overview() -> None:
+    """FAB 전체로 돌아간다(콜백). 주소의 `floor` 인자만 지운다."""
     st.session_state.pop(SELECTED_BUILDING_KEY, None)
     st.session_state.pop(SELECTED_FLOOR_KEY, None)
+    if FLOOR_PARAM in st.query_params:
+        del st.query_params[FLOOR_PARAM]
 
 
-def _show_building(building: str) -> None:
-    st.session_state[SELECTED_BUILDING_KEY] = building
-    st.session_state.pop(SELECTED_FLOOR_KEY, None)
+def _open_floor(key: FloorKey) -> None:
+    """그 층을 연다. 블록 누르기·층 바로 가기·층 목록 표가 모두 이것을 **콜백**에서 부른다 — 콜백은
+    본문보다 먼저 돌아 재실행 한 번으로 층 상세가 서고, 본문에서 `st.rerun()` 할 때처럼 아직 안 그린
+    위젯 상태가 버려지지 않는다. 주소에는 `floor` 인자만 적는다(다른 인자는 그대로)."""
+    st.session_state[SELECTED_BUILDING_KEY], st.session_state[SELECTED_FLOOR_KEY] = key
+    if st.query_params.get(FLOOR_PARAM) != floor_param(key):
+        st.query_params[FLOOR_PARAM] = floor_param(key)
 
 
-def _show_floor(floor: str) -> None:
-    st.session_state[SELECTED_FLOOR_KEY] = floor
+def _jump_to_floor(widget_key: str) -> None:
+    """`층 바로 가기` 콜백."""
+    key = floor_from_label(st.session_state.get(widget_key))
+    if key is not None:
+        _open_floor(key)
+
+
+def _open_from_table(keys: tuple[FloorKey, ...]) -> None:
+    """층 목록 표의 행 고르기 콜백. 키보드로 층을 여는 길이기도 하다."""
+    state = st.session_state.get(FLOOR_TABLE_KEY)
+    if state is None:
+        return
+    try:
+        rows = list(state["selection"]["rows"])
+    except (KeyError, TypeError):
+        return
+    if rows and 0 <= int(rows[0]) < len(keys):
+        _open_floor(keys[int(rows[0])])
 
 
 def _units(value: float) -> str:
     return f"{format_unit_count(value)}대"
 
 
-def _units_by(frame: pd.DataFrame, column: str) -> dict[str, float]:
-    """`column` 값마다 설비 대수(설비지분 합). 값이 빈 행은 세지 않는다."""
-    rows = frame.dropna(subset=[column])
-    return {str(name): equipment_unit_total(group) for name, group in rows.groupby(column)}
-
-
-def _render_placement_cards(cards: Sequence[tuple[str, str, str | None]], *, key: str) -> None:
-    """세 단계 화면이 공통으로 쓰는 배치 카드 줄. 대수는 설비지분 합이라 모듈 설비가 있으면
-    소수가 나온다(`%,d` 서식은 0.75 를 0 으로 자른다) — 값은 모두 `format_unit_count` 로 만든다."""
-    with metric_row(key=key):
-        for label, value, help_text in cards:
-            st.metric(label, value, border=True, help=help_text)
-
-
 _PLACED_HELP = "도면에 그린 설비입니다. 모체호기로 묶은 모듈 행은 합쳐 1대입니다."
 _UNPLACED_HELP = "레이아웃표시 Y 인데 좌표가 없어 도면에 그리지 못한 설비입니다."
-_EXCLUDED_HELP = "레이아웃표시 N — 도면 대상이 아닌 설비입니다."
 _OCCUPANCY_HELP = (
     "도면에 그린 호기 사각형 면적 합 ÷ 캔버스 면적. 캔버스 단위의 상대값이며 "
     "겹친 자리는 두 번 셉니다."
 )
-_DRAWINGS_HELP = "배경 도면 이미지를 올린 층 수입니다."
-# 동·층 표의 대수·비율 칸. 대수는 설비지분 합이라 모듈 설비가 있으면 소수가 나온다.
+_DRAWING_HELP = "그 층에 배경 도면 이미지를 올렸는지입니다."
+# 층 목록 표의 대수·비율 칸. 대수는 설비지분 합이라 모듈 설비가 있으면 소수가 나온다.
 _TABLE_COLUMNS = {
     "배치대수": st.column_config.NumberColumn(format="localized", help=_PLACED_HELP),
     "미배치대수": st.column_config.NumberColumn(format="localized", help=_UNPLACED_HELP),
     "점유율": st.column_config.NumberColumn(format="percent", help=_OCCUPANCY_HELP),
+    "배치 도면": st.column_config.TextColumn(help=_DRAWING_HELP),
 }
 
 
@@ -185,22 +205,30 @@ except BOOTSTRAP_ERRORS as exc:
     )
     st.stop()
 
-building_names = {building.name for building in BUILDINGS}
-valid_location_pairs = {
-    (building.name, floor.floor) for building in BUILDINGS for floor in floors_for(building.name)
-}
-selected_building = st.session_state.get(SELECTED_BUILDING_KEY)
-if not isinstance(selected_building, str) or selected_building not in building_names:
-    selected_building = None
-    _show_fab_overview()
-
-selected_floor = st.session_state.get(SELECTED_FLOOR_KEY)
-valid_floor_names = (
-    {floor.floor for floor in floors_for(selected_building)} if selected_building else set()
-)
-if not isinstance(selected_floor, str) or selected_floor not in valid_floor_names:
-    selected_floor = None
+valid_location_pairs = set(FLOOR_KEYS)
+# 연 층: 세션이 먼저다. 세션에 층이 없을 때만 주소(`?floor=`)를 읽는다 — 새로고침·주소로 들어온 첫
+# 회차가 그 층을 연다. 잘못된 값은 조용히 FAB 이고 그 인자만 지운다. 세션에 층이 있는데 주소가
+# 다르면 주소를 세션에 맞춘다.
+selected: FloorKey | None = None
+session_building = st.session_state.get(SELECTED_BUILDING_KEY)
+session_floor = st.session_state.get(SELECTED_FLOOR_KEY)
+if (
+    isinstance(session_building, str)
+    and isinstance(session_floor, str)
+    and (session_building, session_floor) in valid_location_pairs
+):
+    selected = (session_building, session_floor)
+    if st.query_params.get(FLOOR_PARAM) != floor_param(selected):
+        st.query_params[FLOOR_PARAM] = floor_param(selected)
+else:
+    st.session_state.pop(SELECTED_BUILDING_KEY, None)
     st.session_state.pop(SELECTED_FLOOR_KEY, None)
+    if FLOOR_PARAM in st.query_params:
+        selected = floor_from_param(st.query_params.get(FLOOR_PARAM))
+        if selected is None:
+            del st.query_params[FLOOR_PARAM]
+        else:
+            st.session_state[SELECTED_BUILDING_KEY], st.session_state[SELECTED_FLOOR_KEY] = selected
 
 # 본문 머리에는 상태 배지(「Data확보중」)도 적용 이력 줄도 두지 않는다 — 배치도가 쓸 자리다
 # (2026-10-01 사용자 결정). 사이드바 메뉴 이름은 그대로다.
@@ -296,23 +324,30 @@ wants_layout = not_placed["레이아웃표시"].eq("Y").fillna(False)
 unplaced_equipment = not_placed.loc[wants_layout]
 excluded_equipment = not_placed.loc[~wants_layout]
 exited_count = equipment_unit_total(space_equipment.loc[exited])
-# 동·층이 정해지지 않은 미배치는 동·층 집계에 들어갈 자리가 없다. 위 단계 카드 = 아래 단계 합 +
-# 미정이 되도록 단계마다 따로 말한다(층 화면 카드에 더하면 여러 층에서 거듭 세어진다).
-building_unknown = unplaced_equipment["동"].isna()
-
-
-def _canvas_of(building: str, floor: str) -> tuple[float, float]:
-    return floor_canvases.get((building, floor), (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT))
-
-
-# 「다른 층으로 보내기」 목록 순서 — C1 1F, C1 2F, … (그림의 동·층 배치 순서가 아니라 이름 순).
-ALL_FLOORS: tuple[FloorKey, ...] = tuple(
-    sorted(
-        (building.name, floor.floor)
-        for building in BUILDINGS
-        for floor in floors_for(building.name)
-    )
+# 동·층이 정해지지 않은(또는 FAB 의 층이 아닌) 미배치는 층 집계에 들어갈 자리가 없다. FAB
+# 요약의 미배치 = 층 목록 표 미배치 합 + 미정이 되도록 FAB 요약에서 따로 말한다(층 요약에 더하면
+# 여러 층에서 거듭 세어진다).
+location_unknown = pd.Series(
+    [
+        (building, floor) not in valid_location_pairs
+        for building, floor in zip(unplaced_equipment["동"], unplaced_equipment["층"], strict=False)
+    ],
+    index=unplaced_equipment.index,
+    dtype=bool,
 )
+
+
+def _canvas_of(key: FloorKey) -> tuple[float, float]:
+    return floor_canvases.get(key, (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT))
+
+
+def _canvas_text(key: FloorKey) -> str:
+    width, height = _canvas_of(key)
+    return f"{width:g} × {height:g}"
+
+
+# 「다른 층으로 보내기」 목록 순서 — C1 1F, C1 2F, … (도면의 동·층 배치 순서가 아니라 이름 순).
+ALL_FLOORS: tuple[FloorKey, ...] = FLOOR_KEYS
 
 
 def _render_unsaved_layout_panel(frames: Frames) -> None:
@@ -341,7 +376,7 @@ def _render_unsaved_layout_panel(frames: Frames) -> None:
     with st.container(border=True, key="space_unsaved_layout_panel"):
         st.markdown(f"**:material/edit_note: 저장 안 한 배치 변경** — {' · '.join(parts)}")
         st.caption(
-            "적용한 변경은 이 화면(세션)에만 있습니다. 저장해야 위 카드·도면과 다른 사람 화면에 "
+            "적용한 변경은 이 화면(세션)에만 있습니다. 저장해야 도면·요약과 다른 사람 화면에 "
             "반영됩니다."
             + (
                 f" 가용설비 현황 RawData 의 저장 안 한 다른 편집 {others}건도 함께 저장됩니다."
@@ -535,194 +570,100 @@ def _render_layout_editor(
     st.rerun()
 
 
-def _floor_occupancy(building: str, floor: str) -> float:
-    rows = located_equipment.loc[
-        located_equipment["동"].eq(building) & located_equipment["층"].eq(floor)
-    ]
-    return occupancy_ratio(rows, *_canvas_of(building, floor))
-
-
-with st.container(horizontal=True, gap="small", vertical_alignment="center"):
-    if st.button(
+# 경로 줄은 두 칸이다: `S.PKG FAB 전체` › `층 바로 가기`(30개 층). FAB 에서는 둘째 칸이 비어 있고,
+# 층을 고르면 그 층이 열린다. 자리를 옮기는 것은 모두 콜백이다(재실행 한 번).
+with st.container(horizontal=True, gap="small", vertical_alignment="center", key="space_path"):
+    st.button(
         "S.PKG FAB 전체",
         icon=":material/domain:",
-        type="primary" if selected_building is None else "secondary",
+        type="primary" if selected is None else "secondary",
         key="space_status_fab_breadcrumb",
-    ):
-        _show_fab_overview()
-        st.rerun()
-    if selected_building:
-        st.markdown(":material/chevron_right:")
-        if st.button(
-            f"{selected_building}동",
-            type="primary" if selected_floor is None else "secondary",
-            key="space_status_building_breadcrumb",
-        ):
-            _show_building(selected_building)
-            st.rerun()
-    if selected_building and selected_floor:
-        st.markdown(":material/chevron_right:")
-        st.button(
-            selected_floor,
-            type="primary",
-            disabled=True,
-            key="space_status_floor_breadcrumb",
-        )
+        on_click=_show_fab_overview,
+    )
+    st.markdown(":material/chevron_right:", width="content")
+    floor_labels = [floor_label(key) for key in FLOOR_KEYS]
+    jump_key = f"{FLOOR_JUMP_KEY}_{floor_param(selected) if selected is not None else 'fab'}"
+    st.selectbox(
+        "층 바로 가기",
+        options=floor_labels,
+        index=floor_labels.index(floor_label(selected)) if selected is not None else None,
+        placeholder="층 바로 가기",
+        key=jump_key,
+        on_change=_jump_to_floor,
+        args=(jump_key,),
+        label_visibility="collapsed",
+        width=170,
+    )
 
 if editable:
     _render_unsaved_layout_panel(buffer_frames)
 
-if selected_building is None:
-    _render_placement_cards(
-        (
-            ("배치 설비", _units(equipment_unit_total(counted_equipment)), _PLACED_HELP),
-            ("미배치", _units(equipment_unit_total(unplaced_equipment)), _UNPLACED_HELP),
-            ("레이아웃 제외", _units(equipment_unit_total(excluded_equipment)), _EXCLUDED_HELP),
-        ),
-        key="space_fab_counts",
+if selected is None:
+    placements = floor_placements(
+        counted_equipment, unplaced_equipment, located_equipment, _canvas_of
     )
+    # FAB 전체는 층 도면과 같은 편집기의 보기 전용이다(scope="fab"). 카드 없이 배치·미배치·
+    # 레이아웃 제외가 뷰어 도구 줄 오른쪽 한 줄 요약이다. 층 미정 미배치는 층 목록 표 어디에도
+    # 들지 않아 따로 단다.
+    fab_summary = (
+        f"배치 {_units(equipment_unit_total(counted_equipment))} · "
+        f"미배치 {_units(equipment_unit_total(unplaced_equipment))} · "
+        f"레이아웃 제외 {_units(equipment_unit_total(excluded_equipment))}"
+    )
+    if location_unknown.any():
+        fab_summary += (
+            " · 미배치 중 동·층 미정 "
+            f"{_units(equipment_unit_total(unplaced_equipment.loc[location_unknown]))}"
+        )
+    fab_canvas, fab_marks = default_fab_layout()
+    with st.container(border=True):
+        # 머리 줄은 층 상세와 같은 구조다(제목 · 오른쪽 범례 자리). FAB 범례 자리는 비워 둔다 —
+        # 블록 색의 뜻은 사용자가 도면 글자로 적는다.
+        with st.container(
+            horizontal=True, gap="small", vertical_alignment="center", key="space_fab_head"
+        ):
+            st.markdown("#### :material/domain: S.PKG FAB 전체 배치", width="content")
+            st.space("stretch")
+        render_fab_layout_viewer(
+            key=FAB_VIEWER_KEY,
+            # 도면(캔버스·요소)이 바뀔 때만 새로 선다. 블록 대수는 epoch 밖이라 기준일·필터가 바뀌면
+            # 블록 글자만 다시 쓰고 보던 배율을 지킨다.
+            epoch="|".join(("fab", fab_layout_fingerprint(fab_canvas, fab_marks))),
+            canvas=fab_canvas,
+            marks=fab_marks,
+            link_stats=floor_block_stats(placements),
+            summary=fab_summary,
+            on_open=_open_floor,
+        )
     if exited_count > 0:
         st.caption(f"반출·이설을 마친 {_units(exited_count)}는 공간에 없어 세지 않습니다.")
-    if building_unknown.any():
-        st.caption(
-            f"동이 정해지지 않은 미배치 "
-            f"{_units(equipment_unit_total(unplaced_equipment.loc[building_unknown]))}는 "
-            "동별 집계에 들어가지 않습니다 — 어느 층 배치 편집기에서나 트레이에 보입니다."
-        )
 
-    unplaced_by_building = _units_by(unplaced_equipment, "동")
-    with st.container(border=True):
-        st.markdown("#### :material/domain: S.PKG FAB 전체 배치")
-        building_event = st.plotly_chart(
-            build_fab_figure(counted_equipment, unplaced=unplaced_by_building),
-            key="space_status_fab_chart",
-            on_select="rerun",
-            selection_mode="points",
-            width="stretch",
-            config={"displayModeBar": False, "scrollZoom": False},
-        )
-        clicked_building = first_selected_customdata(building_event)
-        if clicked_building in building_names and clicked_building != selected_building:
-            _show_building(clicked_building)
-            st.rerun()
-
-    overview_rows = []
-    for building in BUILDINGS:
-        building_floors = floors_for(building.name)
-        drawings = sum(
-            (building.name, floor.floor) in floors_with_layout_image for floor in building_floors
-        )
-        overview_rows.append(
-            {
-                "동": building.name,
-                "층수": len(building_floors),
-                "배치대수": equipment_unit_total(
-                    counted_equipment.loc[counted_equipment["동"].eq(building.name)]
-                ),
-                "미배치대수": unplaced_by_building.get(building.name, 0.0),
-                "배치 도면": f"{drawings} / {len(building_floors)}층",
-            }
-        )
-    # 도면의 표적은 Plotly SVG 마커라 포커스를 받지 못한다. 아래 동으로 내려가는 키보드
-    # 길은 이 표다(행에 포커스를 두고 Shift+Space). 도면 클릭과 같은 자리로 이어진다.
-    building_table = st.dataframe(
-        pd.DataFrame(overview_rows),
-        hide_index=True,
-        width="stretch",
-        column_config=_TABLE_COLUMNS,
-        key=BUILDING_TABLE_KEY,
-        on_select="rerun",
-        selection_mode="single-row",
-    )
-    picked_building_rows = building_table.selection.rows
-    if picked_building_rows:
-        _show_building(str(overview_rows[picked_building_rows[0]]["동"]))
-        st.rerun()
-
-elif selected_floor is None:
-    building_equipment = counted_equipment.loc[counted_equipment["동"].eq(selected_building)]
-    building_unplaced = unplaced_equipment.loc[unplaced_equipment["동"].eq(selected_building)]
-    building_floors = floors_for(selected_building)
-    drawings = sum(
-        (selected_building, floor.floor) in floors_with_layout_image for floor in building_floors
-    )
-    _render_placement_cards(
-        (
-            ("선택 동", selected_building, None),
-            ("배치 설비", _units(equipment_unit_total(building_equipment)), _PLACED_HELP),
-            ("미배치", _units(equipment_unit_total(building_unplaced)), _UNPLACED_HELP),
-            ("배치 도면", f"{drawings} / {len(building_floors)}층", _DRAWINGS_HELP),
-        ),
-        key="space_building_counts",
-    )
-    floor_unknown = building_unplaced["층"].isna()
-    if floor_unknown.any():
-        st.caption(
-            f"층이 정해지지 않은 미배치 "
-            f"{_units(equipment_unit_total(building_unplaced.loc[floor_unknown]))}는 층별 "
-            f"집계에 들어가지 않습니다 — {selected_building}동 어느 층 배치 편집기에서나 "
-            "트레이에 보입니다."
-        )
-
-    unplaced_by_floor = _units_by(building_unplaced, "층")
-    occupancy_by_floor = {
-        floor.floor: _floor_occupancy(selected_building, floor.floor) for floor in building_floors
-    }
-    with st.container(border=True):
-        st.markdown(f"#### :material/apartment: {selected_building}동 층별 배치")
-        floor_event = st.plotly_chart(
-            build_floor_figure(
-                counted_equipment,
-                selected_building,
-                unplaced=unplaced_by_floor,
-                occupancy=occupancy_by_floor,
-            ),
-            key=f"space_status_floor_chart_{selected_building}",
-            on_select="rerun",
-            selection_mode="points",
-            width="stretch",
-            config={"displayModeBar": False, "scrollZoom": False},
-        )
-        clicked_floor = first_selected_customdata(floor_event)
-        if clicked_floor in valid_floor_names and clicked_floor != selected_floor:
-            _show_floor(clicked_floor)
-            st.rerun()
-
-    floor_rows = []
-    for floor in building_floors:
-        canvas = _canvas_of(selected_building, floor.floor)
-        floor_rows.append(
-            {
-                "층": floor.floor,
-                "배치대수": equipment_unit_total(
-                    building_equipment.loc[building_equipment["층"].eq(floor.floor)]
-                ),
-                "미배치대수": unplaced_by_floor.get(floor.floor, 0.0),
-                "점유율": occupancy_by_floor[floor.floor],
-                "배치 도면": (
-                    "등록"
-                    if (selected_building, floor.floor) in floors_with_layout_image
-                    else "미등록"
-                ),
-                "캔버스": f"{canvas[0]:g} × {canvas[1]:g}",
-            }
-        )
-    # 층 도면도 같은 이유로 키보드 길이 없다. 위와 같은 표로 잇는다.
-    floor_table = st.dataframe(
+    # 층 목록 표. 층마다 배치·미배치·점유율을 견주는 자리이고, 층 바로 가기와 함께 키보드로 층을
+    # 여는 길이다(행에 초점을 두고 Shift+Space). 행을 고르면 그 층이 열린다.
+    floor_rows = [
+        {
+            "동": placement.key[0],
+            "층": placement.key[1],
+            "배치대수": placement.placed,
+            "미배치대수": placement.unplaced,
+            "점유율": placement.occupancy,
+            "배치 도면": "등록" if placement.key in floors_with_layout_image else "미등록",
+            "캔버스": _canvas_text(placement.key),
+        }
+        for placement in placements
+    ]
+    st.dataframe(
         pd.DataFrame(floor_rows),
         hide_index=True,
         width="stretch",
         column_config=_TABLE_COLUMNS,
-        key=f"space_status_floor_table_{selected_building}",
-        on_select="rerun",
+        key=FLOOR_TABLE_KEY,
+        on_select=partial(_open_from_table, tuple(placement.key for placement in placements)),
         selection_mode="single-row",
     )
-    picked_floor_rows = floor_table.selection.rows
-    if picked_floor_rows:
-        _show_floor(str(floor_rows[picked_floor_rows[0]]["층"]))
-        st.rerun()
 
 else:
+    selected_building, selected_floor = selected
     floor_equipment = (
         located_equipment.loc[
             located_equipment["동"].eq(selected_building)

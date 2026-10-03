@@ -714,8 +714,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     샘플 스위치를 끄면 무엇이 붙어야 하는지만 남는다.
 - `app_pages/space_status.py`
   - Dynamic Capa의 Space 현황 페이지다.
-  - `FAB 전체(C5 독립, C1~C4 연결) → 동별 층 → 층 상세 배치`의 3단계 클릭 탐색을 제공한다. FAB·동은
-    Plotly, 층 상세는 배치 편집기와 **같은 도면**(Components v2, 보기 전용)이다.
+  - `S.PKG FAB 전체(C5 독립, C1~C4 연결) → 층 상세 배치`의 **2단** 탐색이다(2026-10-03 사용자 결정 — 동
+    단계는 없다). 두 단계 모두 배치 편집기와 **같은 도면**(Components v2, 보기 전용)이고 Space 페이지에는
+    Plotly 가 없다. FAB 는 `scope="fab"`(`render_fab_layout_viewer`), 층은 `scope="floor"` 다.
   - 가용설비 현황의 최신 호기 리비전을 사용하고 설비별 X/Y 좌표와 X/Y 크기로 배치한다.
   - 기준일의 생애주기 상태와 운영 비가동을 색으로 구분한다. 층 배경 도면은
     `components/floor_layout_upload.py` 로 올려 `background_image` 로 깐다. Space Capa
@@ -731,11 +732,36 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 본문 머리에는 상태 배지(「Data확보중」)도 적용 이력 줄도 두지 않는다(2026-10-01 사용자 결정 — 배치도가
     쓸 자리다). 사이드바 메뉴 이름의 「(Data확보중)」은 남긴다 — `render_page_header(..., show_status=False)`
     로 배지만 끄고 제목 인자는 사이드바 라벨과 같게 둔다(`test_app_navigation` 의 두 제목 계약).
-  - 단계마다 카드는 배치 중심이다. FAB: 배치 설비 · 미배치(레이아웃표시 Y 인데 좌표 없음) ·
-    레이아웃 제외(N). 동: 선택 동 · 배치 · 미배치 · 배치 도면(층 수). **층에는 카드가 없다**
-    (2026-10-01 사용자 결정) — 배치·미배치·점유율은 뷰어 도구 줄 오른쪽의 한 줄 요약이다. 반출·이설을
-    마친 호기는 공간에 없으니 어디에도 세지 않는다(FAB 캡션에 대수만). 동·층 그림과 표도 같은 축
-    (배치대수·미배치대수·점유율·배치 도면·캔버스)이다.
+  - **카드가 없다**(층 2026-10-01, FAB 2026-10-03 사용자 결정). 두 단계 모두 뷰어 도구 줄 오른쪽의 한 줄
+    요약이다 — FAB: 「배치 N대 · 미배치 M대 · 레이아웃 제외 K대」(미배치 = 레이아웃표시 Y 인데 좌표 없음,
+    제외 = N, 동·층 미정 미배치가 있으면 「미배치 중 동·층 미정 L대」를 단다), 층: 배치·미배치·점유율.
+    반출·이설을 마친 호기는 공간에 없으니 어디에도 세지 않는다(FAB 상자 아래 캡션에 대수만). FAB 블록과
+    층 목록 표는 같은 축(배치대수·미배치대수·점유율·배치 도면·캔버스, `floor_placements`)이다.
+  - **경로 줄**은 두 칸이다: `S.PKG FAB 전체` 단추 › `층 바로 가기`(30개 층 고르기, FAB 에서는 비어
+    있음). 자리를 옮기는 것은 모두 **콜백**(`on_click`·`on_change`·`on_select`·`on_navigate_change`)이라
+    재실행 한 번이고, 본문 `st.rerun()` 처럼 아직 안 그린 위젯 상태를 버리지 않는다. 바로 가기의 위젯
+    키는 자리(FAB·층)마다 갈라 그 자리의 값으로 선다.
+  - **연 층**은 세션 키 두 개(`space_status_selected_building`·`_floor`)가 한 묶음이다 — 둘 다 있고 FAB
+    의 층이면 층 상세, 아니면 FAB. **주소에 층을 둔다**(`?floor=C1-1F`, 2026-10-03 사용자 결정 — 새로고침해도
+    보던 층에 머문다). 세션이 먼저고, 세션에 층이 없을 때만 주소를 읽는다(잘못된 값은 조용히 FAB 이고 그
+    인자만 지운다). 층을 열면 `st.query_params["floor"]` 를 쓰고 FAB 로 가면 `del` 한다. **`floor` 키만
+    넣고 지운다 — `st.query_params.clear()` 금지**: 테마 토글은 `?theme=` 를 보존하는 `syncParam` 으로
+    다른 인자를 두는데, `theme` 가 지워지면 첫 방문으로 보고 다시 새로고침한다
+    (`test_space_fab_navigation`). **알려진 한계 — 브라우저 뒤로/앞으로는 층 이동이 아니다**: Streamlit 은
+    파이썬이 `st.query_params` 를 쓸 때마다 `history.pushState` 로 기록을 하나 쌓지만, 뒤로/앞으로가 일으킨
+    재실행에는 브라우저 주소가 아니라 **파이썬이 마지막으로 쓴 조회 문자열**을 보낸다(1.63 프런트엔드
+    `getQueryString`). 그래서 뒤로를 누르면 화면은 그대로이고 주소 표시줄만 옛 값이 되며, 그 상태에서
+    새로고침하면 주소 표시줄의 층(또는 FAB)이 열린다. 파이썬에서 주소를 원천으로 삼아도 그 값이 오지 않아
+    고칠 수 없다 — 층 이동은 경로 줄·블록·층 목록 표로 하고 가이드에 그렇게 적는다.
+  - **FAB 전체**는 테두리 상자 하나다. 머리 줄(`space_fab_head`)은 층 상세와 같은 구조(제목 · 오른쪽
+    범례 자리 — FAB 는 비워 둔다. 블록 색의 뜻은 사용자가 도면 글자로 적는다)이고, 아래를 도면이 채운다.
+    도면은 `services/fab_layout.default_fab_layout()`(저장본이 없을 때의 기본 배치 — 그리기만 하고 DB 에
+    쓰지 않는다)이다. **층 블록**(`kind="block"`)만 누르면 열린다 — 영역·글자·동 이름은 꾸밈이다(2026-10-03
+    사용자 결정). 블록은 연결 필수이고 색은 사용자가 고르는 자리 구분 색(`MARK_COLOR_KEYS` + 기본 = Space
+    기본 면 `SPACE_BLOCK_FILL`)이지 **상태 색이 아니다** — 블록 안 숫자는 배치·미배치 대수뿐이다(점유율은
+    풍선). 블록 대수(`data.linkStats`)는 **epoch 밖**이다 — 넣으면 기준일만 바꿔도 편집 중 내용·실행 취소가
+    지워진다. 같은 epoch 회차에는 블록 글자만 다시 쓴다. 상자 아래는 **층 목록 표**(30개 층, 이름 순)이고
+    한 행을 고르면 그 층이 열린다(키보드 길).
   - **층 상세**는 테두리 상자 하나다. 머리 줄(`space_floor_head`)에 제목 · `도면·캔버스 편집` ·
     `배치 편집` 토글 · 상태 범례(오른쪽 끝, `st.space("stretch")` 뒤)가 서고, 그 아래를 도면이 채운다.
     편집을 끄면 `render_space_layout_viewer`(저장본, 조건 카드 필터 적용), 켜면 편집기(편집본)다.
@@ -745,9 +771,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     보던 배율을 지킨다.
   - **점유율** = 도면에 그린 호기 사각형 면적 합 ÷ 캔버스 면적(`occupancy_ratio`). 캔버스 단위의
     상대값(실제 m² 아님)이고 겹친 자리는 두 번 센다.
-  - 동·층이 빈 미배치(레이아웃표시 Y)는 아래 단계 집계에 들어갈 자리가 없다. 단계마다 캡션으로
-    따로 말해 「위 카드 = 아래 합 + 미정」이 화면에서 맞게 한다. 층 요약에 더하지 않는다 — 여러
-    층에서 거듭 세어진다(층에서는 요약 끝에 「층 미정 미배치 N대는 배치 편집 트레이에」로 따로 단다).
+  - 동·층이 빈(또는 FAB 의 층이 아닌) 미배치(레이아웃표시 Y)는 층 집계에 들어갈 자리가 없다. FAB 요약에
+    따로 달아 「FAB 미배치 = 층 목록 표 미배치 합 + 미정」이 화면에서 맞게 한다. 층 요약에 더하지 않는다 —
+    여러 층에서 거듭 세어진다(층에서는 요약 끝에 「층 미정 미배치 N대는 배치 편집 트레이에」로 따로 단다).
   - **배치 편집**(2026-10-01). 층 상세 머리 줄의 `배치 편집` 토글을 켜면 뷰어 자리에
     드래그앤드롭 편집기(`components/space_layout_editor.py`)가 선다. 실제 저장본이 있을 때만이다
     (합성 데모 fleet 은 편집본에 넣지 않는다). 편집기는 **가용설비 RawData 와 같은 편집본**
@@ -755,7 +781,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     모두 보인다. `적용` 은 `parse_editor_apply` → `apply_layout_edits` → 저장 때와 같은
     `prepare_equipment_master` 검사를 거쳐 `replace_equipment_buffer`·`stage_floor_canvas`·
     `stage_floor_marks` 로 들어간다(저장 전). 하나라도 어긋나면 적용 전체를 거부하고 까닭을 쓴다.
-    위·카드·Plotly 는 여전히 **저장본**이다. 저장 안 한 배치가 있으면 어느 단계 화면에서나
+    FAB 도면·요약·층 목록 표는 여전히 **저장본**이다. 저장 안 한 배치가 있으면 어느 단계 화면에서나
     `저장 안 한 배치 변경` 상자가 뜨고, 저장은 `save_equipment_buffer(revision_optional=True)` —
     호기 마스터가 그대로면 리비전 없이 캔버스·요소만 쓴다. 편집본 전체를 저장하므로 RawData 의
     저장 안 한 다른 편집도 함께 들어가며 그 건수를 말한다. 알림 키는 `SPACE_FLASH_KEY` 다 —
@@ -924,9 +950,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     원인은 상자 안에서 말한다. 아이콘은 `:material/layers:` 다 — `시나리오 관리` 페이지가
     쓰는 `:material/database:` 와 겹치면 페이지와 컨트롤이 갈리지 않는다.
 - `src/capa_simulation/components/space_layout.py`
-  - FAB 동·층 정의, 설치 단계·양산·운영 비가동 집계, FAB·동 Plotly Figure, 층 상세 머리 줄의
-    상태 범례(`stage_legend_markup`, HTML 칩)를 만든다. 층 상세 도면은 Plotly 가 아니라 편집기와
-    같은 Components v2 뷰어다(`space_layout_editor.render_space_layout_viewer`).
+  - Space 배치 집계(설비 대수·상태별 대수·점유율), 층별 배치(`floor_placements` → FAB 층 블록 글자
+    `floor_block_stats`·층 목록 표), 층 상세 머리 줄의 상태 범례(`stage_legend_markup`, HTML 칩)를
+    만든다. Plotly 는 쓰지 않는다 — FAB·층 도면 모두 편집기와 같은 Components v2 뷰어다. 동·층 정의는
+    `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이다(상태 대수를 넣지 않는다 —
+    `test_floor_blocks_count_placement_not_state`).
   - 층 캔버스는 층마다 다르다. `equipment_ops.floor_layout_profile` 에 저장된 폭·높이를 쓰고,
     프로필이 없는 층만 기본값 100×60 이다. `invalid_equipment_rows` 도 같은 층 캔버스를 기준으로
     이탈을 판정한다. 상수를 다시 박으면 도면 비율을 바꾼 순간 멀쩡한 호기가 오류로 찍힌다.
@@ -948,9 +976,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - Space 층 배치 편집기(Components v2). HTML·CSS·JS 는 `space_layout_editor_assets/` 파일이다 —
     파이썬 문자열에 넣으면 줄 길이 검사·이스케이프가 JS 를 망가뜨린다. 모듈을 읽을 때 한 번
     등록한다(`_EDITOR`). AppTest 는 JS 를 돌리지 못하고, 한 프로세스의 두 번째 AppTest 에서 진짜
-    컴포넌트를 부르면 「not registered」로 죽으므로 테스트는 `_EDITOR` 를 대역으로 바꾼다.
+    컴포넌트를 부르면 「not registered」로 죽으므로 테스트는 `_EDITOR` 를 대역으로 바꾼다 — Space 첫 화면(FAB)부터
+    이 컴포넌트라 `tests/conftest.py` 가 모든 테스트에 말 없는 대역을 깔고, 받은 값을 보는 테스트는 제 대역으로 덮는다.
   - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보낸다(`changes`·`canvas`·`marks`). 색은 등록 CSS
     가 아니라 회차마다 `data.palette` 로 넘긴다. 받은 값의 검증은 서비스(`parse_editor_apply`)다.
+  - **FAB 전체 뷰어**(`render_fab_layout_viewer`, `data.scope="fab"`, 보기 전용)도 같은 컴포넌트다(한 번
+    등록, 범위 표시로 나눈다). 층 블록(`kind="block"`, `link`=「C1 1F」)은 FAB 범위에서만 그리고(층 도면에 오면
+    그리지 않고 그대로 돌려보낸다), 누르면 `setTriggerValue('navigate', {epoch, target})` → 파이썬
+    `on_navigate_change` 콜백(`_dispatch_navigate`)이 `st.session_state[key].navigate` 를 읽어 층을 연다.
+    값의 epoch 가 뷰어를 그린 epoch(콜백에 묶어 넘긴다)와 다르면 버린다 — 적용의 옛 epoch 거절과 같은
+    규칙이라, FAB 도면이 저장으로 다시 서도 그 전에 누른 옛 블록은 열리지 않는다. 콜백은 본문보다 먼저 돌아
+    **재실행 한 번**이다(2026-10-03 시험 앱으로 콜백 안에서 값이 읽히는 것을
+    확인). 끌기(3px 문턱)는 화면 옮기기일 뿐 열지 않고(전체 보기에서 화면이 안 움직여도), 블록 위에서는
+    더블클릭 확대가 없다. 올려 두거나 초점이 오면 테두리가 강조색이고 선택 줄에 「C1 1F · 누르면 열기」, 떠나면
+    되돌린다. 블록마다 Tab 초점(`role="button"`, 이름은 풍선 글)을 주고 Enter·Space 로 연다(보기 전용
+    FAB 만). 영역·글자는 FAB 보기에서 눌림을 받지 않는다(꾸밈). 블록 면은 색 키가 있으면 그 색을 옅게,
+    없으면 `--sle-block`(`SPACE_BLOCK_FILL`)이다. 높이 기억 키는 `capa.space.viewerHeight.fab` 로 층과
+    따로다.
   - **보기 전용 뷰어**(`render_space_layout_viewer`, `data.mode="view"`)도 같은 컴포넌트다. 편집
     도구(`.sle-edit-only`)를 숨기고, 끌기는 화면 이동, 누르기는 그 호기 정보 한 줄(공정·운영 비가동은
     `viewer_items` 의 `detail`), 더블클릭은 확대/전체 보기, Ctrl+휠·+/−·0 은 확대, 방향키는 화면
@@ -968,7 +1010,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     무대 아래 가로 손잡이(`role="separator"`, `aria-orientation="horizontal"`)를 끌면 높이가 바뀌고(280px ~
     화면 높이 1.5배), 두 번 누르거나 Home/Enter 면 기본, ↑/↓ 는 20px(Shift 80px)다. 손잡이의 키는 편집기
     단축키(화면 옮기기·호기 이동)로 새지 않는다. 고른 높이는 localStorage(`capa.space.viewerHeight.<scope>`,
-    읽기·쓰기 모두 try/catch — 막히면 그 편집기 안에서만 기억)에 범위(`data.scope`, 지금은 `floor`)별로 두고
+    읽기·쓰기 모두 try/catch — 막히면 그 편집기 안에서만 기억)에 범위(`data.scope` — `floor`·`fab`)별로 두고
     **파이썬으로 보내지 않는다**(`setStateValue`·Streamlit 위젯 금지 — 보내면 페이지 전체가 다시 돈다). epoch 에도
     넣지 않는다.
   - `ResizeObserver` 는 **한 번만** 만들어 `S.ro` 에 두고, 실행마다 다시 정의되는 `S.onResize` 를 부른다 — 첫
@@ -1487,6 +1529,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   낸다(하나를 버리면 그 요소가 지워진다). 반입구·문·기둥·「설비 금지」 영역은 호기가 덮으면
   경고하는 요소다(`blocks`, 저장은 막지 않는다). `marks_fingerprint` 는 층 요소 목록의 지문으로,
   편집을 시작할 때 본 저장값과 저장 직전 값을 견주는 데 쓴다.
+- `fab_layout.py`: S.PKG FAB 의 동·층 정의(`BUILDINGS`·`FLOORS`·`floors_for`·이름 순 `FLOOR_KEYS`)와 FAB
+  전체 도면의 계약. `default_fab_layout()` 이 저장본이 없을 때의 기본 배치(캔버스 + 요소)를 만드는 **순수
+  함수 하나**다 — 동 사각형을 동마다 6F(위)→1F(아래) 층 블록 여섯으로 나누고, C5 「독립동」·C1~C4 「연결
+  구간」 영역과 동 이름 글자를 꾸밈으로 둔다. 층 블록(`FAB_BLOCK_KIND`)은 연결(`link`) 필수이고 연결 없는
+  자리는 블록이 아니라 영역·글자로 그린다. 층 이름 변환(`floor_label` 「C1 1F」 ↔ `floor_from_label`, 주소
+  인자 `floor_param` 「C1-1F」 ↔ `floor_from_param`, FAB 의 층이 아니면 None)과 뷰어 epoch 용
+  `fab_layout_fingerprint` 도 여기 있다. 층 블록 종류는 층 도면 요소 검증(`prepare_floor_layout_marks`)에
+  넣지 않는다.
 - `space_layout_edit.py`: Space 배치 편집기의 순수 계산. `editor_inputs`(도면·트레이·영역 하한·
   기본 크기), `parse_editor_apply`(적용값 검증 — **하나라도 어긋나면 전체 거부**),
   `apply_layout_edits`(편집본 반영), `layout_warnings`·`layout_changes`·`other_change_count`·

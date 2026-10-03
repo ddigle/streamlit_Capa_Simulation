@@ -1,59 +1,27 @@
-# Purpose: FAB 동·층 정의와 배치 집계, FAB·동 Plotly Figure, 층 상세 범례·도면 요소 색을 만든다.
+# Purpose: Space 배치 집계(설비·상태별 대수·점유율·층별 배치)와 층 상세 범례·도면 요소 색을 만든다.
 
 from __future__ import annotations
 
 import html
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
-from typing import Final
 
 import pandas as pd
-import plotly.graph_objects as go
 
-from capa_simulation.components.plotly_layout import flush_layout_items
 from capa_simulation.design import theme, tokens
 from capa_simulation.services.equipment_units import (
     UNIT_SHARE_COLUMN,
     format_unit_count,
     unit_total,
 )
+from capa_simulation.services.fab_layout import FLOOR_KEYS, floor_label
 from capa_simulation.services.floor_layout_mark import MARK_COLOR_KEYS
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
     DEFAULT_CANVAS_WIDTH,
+    CanvasSize,
+    FloorKey,
 )
-
-
-@dataclass(frozen=True)
-class BuildingSpec:
-    name: str
-    x: float
-    width: float
-    height: float
-
-
-@dataclass(frozen=True)
-class FloorSpec:
-    building: str
-    floor: str
-
-
-BUILDINGS: Final[tuple[BuildingSpec, ...]] = (
-    BuildingSpec("C5", x=0.5, width=1.45, height=3.3),
-    BuildingSpec("C1", x=3.1, width=1.55, height=4.0),
-    BuildingSpec("C2", x=4.65, width=1.75, height=4.7),
-    BuildingSpec("C3", x=6.40, width=1.50, height=4.1),
-    BuildingSpec("C4", x=7.90, width=1.70, height=3.5),
-)
-FLOORS: Final[tuple[FloorSpec, ...]] = tuple(
-    FloorSpec(building, floor)
-    for building in ("C5", "C1", "C2", "C3", "C4")
-    for floor in ("6F", "5F", "4F", "3F", "2F", "1F")
-)
-
-
-def floors_for(building: str) -> list[FloorSpec]:
-    return [floor for floor in FLOORS if floor.building == building]
 
 
 def _unit_shares(equipment: pd.DataFrame) -> pd.Series:
@@ -94,154 +62,75 @@ def occupancy_ratio(placed: pd.DataFrame, canvas_width: float, canvas_height: fl
     return float((sizes["Xsize"] * sizes["Ysize"]).sum()) / area
 
 
-def _placement_text(placed: float, unplaced: float) -> str:
-    """동·층 칸의 글자: 「배치 12대」, 좌표가 아직 없는 호기가 있으면 「· 미배치 3대」를 붙인다."""
-    text = f"배치 {format_unit_count(placed)}대"
-    if unplaced > 0:
-        text += f" · 미배치 {format_unit_count(unplaced)}대"
-    return text
+@dataclass(frozen=True)
+class FloorPlacement:
+    """한 층의 배치 집계. FAB 도면의 층 블록과 층 목록 표가 같은 값을 쓴다 — 상태가 아니라 배치를
+    센다(상태는 층 상세의 색과 범례가 말한다)."""
+
+    key: FloorKey
+    placed: float
+    unplaced: float
+    occupancy: float
 
 
-def build_fab_figure(
-    equipment: pd.DataFrame, *, unplaced: Mapping[str, float] | None = None
-) -> go.Figure:
-    """FAB 전체. 동마다 도면에 배치된 설비 대수와(있으면) 동은 정했지만 좌표가 없는 미배치 대수."""
-    figure = go.Figure()
-    clickable_x: list[float] = []
-    clickable_y: list[float] = []
-    clickable_buildings: list[str] = []
+def _by_floor(frame: pd.DataFrame) -> dict[FloorKey, pd.DataFrame]:
+    rows = frame.dropna(subset=["동", "층"])
+    return {
+        (str(building), str(floor)): group
+        for (building, floor), group in rows.groupby(["동", "층"], sort=False)
+    }
 
-    for index, building in enumerate(BUILDINGS):
-        placed = equipment_unit_total(equipment.loc[equipment["동"].eq(building.name)])
-        waiting = (unplaced or {}).get(building.name, 0.0)
-        figure.add_shape(
-            type="rect",
-            x0=building.x,
-            x1=building.x + building.width,
-            y0=0.5,
-            y1=0.5 + building.height,
-            fillcolor=tokens.SPACE_BUILDING_FILLS[index],
-            line={"color": tokens.SPACE_BORDER, "width": 2.5},
-            layer="below",
+
+def floor_placements(
+    counted: pd.DataFrame,
+    unplaced: pd.DataFrame,
+    located: pd.DataFrame,
+    canvas_of: Callable[[FloorKey], CanvasSize],
+) -> tuple[FloorPlacement, ...]:
+    """FAB 의 30개 층(이름 순)마다 배치·미배치 대수와 점유율. 대수는 설비지분 합이다.
+
+    `counted` 는 세는 배치 행, `unplaced` 는 레이아웃표시 Y 인데 좌표가 없는 행, `located` 는
+    도면에 그리는 행(점유율의 면적)이다. 동·층이 정해지지 않은 미배치는 어느 층에도 들지 않는다 —
+    호출하는 쪽이 따로 말한다."""
+    counted_by = _by_floor(counted)
+    unplaced_by = _by_floor(unplaced)
+    located_by = _by_floor(located)
+    return tuple(
+        FloorPlacement(
+            key=key,
+            placed=equipment_unit_total(counted_by.get(key, counted.iloc[0:0])),
+            unplaced=equipment_unit_total(unplaced_by.get(key, unplaced.iloc[0:0])),
+            occupancy=occupancy_ratio(located_by.get(key, located.iloc[0:0]), *canvas_of(key)),
         )
-        figure.add_annotation(
-            x=building.x + building.width / 2,
-            y=0.5 + building.height / 2,
-            text=(
-                f"<b>{building.name}</b><br>배치 {format_unit_count(placed)}대<br>"
-                + (f"미배치 {format_unit_count(waiting)}대<br>" if waiting > 0 else "")
-                + "<span style='font-size:10px'>클릭하여 상세 보기</span>"
+        for key in FLOOR_KEYS
+    )
+
+
+def floor_block_stats(
+    placements: Collection[FloorPlacement],
+) -> dict[str, dict[str, str | None]]:
+    """층 블록 글자(편집기 `data.linkStats`). 키는 블록의 연결(「C1 1F」)이다.
+
+    블록 안에는 배치 대수와, 있으면 미배치 대수만 적는다(점유율은 풍선). 상태별 대수는 넣지
+    않는다 — FAB·층 칸은 배치를 센다(2026-10-01 결정). 이 값은 epoch 에 넣지 않는다: 넣으면 기준일만
+    바꿔도 편집 중 내용과 실행 취소가 지워진다."""
+    return {
+        floor_label(placement.key): {
+            "placed": f"배치 {format_unit_count(placement.placed)}대",
+            "unplaced": (
+                f"미배치 {format_unit_count(placement.unplaced)}대"
+                if placement.unplaced > 0
+                else None
             ),
-            showarrow=False,
-            font={"size": 14, "color": tokens.SPACE_TEXT},
-            align="center",
-        )
-        for y_ratio in (0.25, 0.50, 0.75):
-            clickable_x.append(building.x + building.width / 2)
-            clickable_y.append(0.5 + building.height * y_ratio)
-            clickable_buildings.append(building.name)
-
-    figure.add_trace(
-        go.Scatter(
-            x=clickable_x,
-            y=clickable_y,
-            mode="markers",
-            customdata=clickable_buildings,
-            marker={"size": 64, "color": tokens.HIT_TARGET},
-            hovertemplate="%{customdata}동 상세 보기<extra></extra>",
-            showlegend=False,
-        )
-    )
-    figure.add_annotation(
-        x=1.225,
-        y=4.25,
-        text="독립동",
-        showarrow=False,
-        font={"size": 12, "color": tokens.SPACE_LABEL_TEXT},
-    )
-    figure.add_annotation(
-        x=6.35,
-        y=5.25,
-        text="C1 · C2 · C3 · C4 연결 구간",
-        showarrow=False,
-        font={"size": 12, "color": tokens.SPACE_LABEL_TEXT},
-    )
-    _apply_layout(figure, x_range=(0.0, 10.2), y_range=(0.0, 5.6), height=470)
-    flush_layout_items(figure)
-    return figure
-
-
-def build_floor_figure(
-    equipment: pd.DataFrame,
-    building: str,
-    *,
-    unplaced: Mapping[str, float] | None = None,
-    occupancy: Mapping[str, float] | None = None,
-) -> go.Figure:
-    """한 동의 층들. 층마다 배치 대수·점유율(캔버스 대비 호기 면적)과 미배치 대수."""
-    floors = floors_for(building)
-    figure = go.Figure()
-    clickable_x: list[float] = []
-    clickable_y: list[float] = []
-    clickable_floors: list[str] = []
-    band_height = 1.05
-    gap = 0.15
-
-    for index, floor in enumerate(floors):
-        floor_equipment = equipment.loc[
-            equipment["동"].eq(building) & equipment["층"].eq(floor.floor)
-        ]
-        placed = equipment_unit_total(floor_equipment)
-        waiting = (unplaced or {}).get(floor.floor, 0.0)
-        ratio = (occupancy or {}).get(floor.floor)
-        y0 = (len(floors) - index - 1) * (band_height + gap) + 0.5
-        y1 = y0 + band_height
-        figure.add_shape(
-            type="rect",
-            x0=0.8,
-            x1=9.2,
-            y0=y0,
-            y1=y1,
-            fillcolor=tokens.SPACE_BUILDING_FILLS[index % len(tokens.SPACE_BUILDING_FILLS)],
-            line={"color": tokens.SPACE_BORDER, "width": 2},
-            layer="below",
-        )
-        figure.add_annotation(
-            x=5.0,
-            y=(y0 + y1) / 2,
-            text=(
-                f"<b>{building} {floor.floor}</b>　{_placement_text(placed, waiting)}"
-                + (f"　점유율 {ratio:.1%}" if ratio is not None and placed > 0 else "")
-            ),
-            showarrow=False,
-            font={"size": 15, "color": tokens.SPACE_TEXT},
-        )
-        for x in (2.0, 4.0, 6.0, 8.0):
-            clickable_x.append(x)
-            clickable_y.append((y0 + y1) / 2)
-            clickable_floors.append(floor.floor)
-
-    figure.add_trace(
-        go.Scatter(
-            x=clickable_x,
-            y=clickable_y,
-            mode="markers",
-            customdata=clickable_floors,
-            marker={"size": 62, "color": tokens.HIT_TARGET},
-            hovertemplate=f"{building} %{{customdata}} 상세 보기<extra></extra>",
-            showlegend=False,
-        )
-    )
-    figure_height = max(340, 105 * len(floors) + 80)
-    y_max = len(floors) * (band_height + gap) + 0.65
-    _apply_layout(figure, x_range=(0.0, 10.0), y_range=(0.0, y_max), height=figure_height)
-    flush_layout_items(figure)
-    return figure
+            "occupancy": (f"점유율 {placement.occupancy:.1%}" if placement.placed > 0 else None),
+        }
+        for placement in placements
+    }
 
 
 def mark_colors() -> dict[str, str]:
     """영역 색 키 → 지금 테마의 색. 검증된 범주 팔레트(제품별 비중과 같은 색)를 그대로 쓴다.
-    편집기와 Plotly 배치도가 같은 색을 쓴다."""
+    층·FAB 도면(편집기)이 같은 색을 쓴다."""
     named = dict(zip(MARK_COLOR_KEYS[:-1], tokens.PRODUCT_SHARE_COLORS, strict=False))
     return {**named, MARK_COLOR_KEYS[-1]: tokens.PRODUCT_SHARE_OTHER}
 
@@ -273,26 +162,6 @@ def stage_legend_markup(
     )
 
 
-def first_selected_customdata(event: object) -> str | None:
-    if not isinstance(event, Mapping):
-        return None
-    selection = event.get("selection")
-    if not isinstance(selection, Mapping):
-        return None
-    points = selection.get("points")
-    if not isinstance(points, Sequence) or isinstance(points, (str, bytes)) or not points:
-        return None
-    point = points[0]
-    if not isinstance(point, Mapping):
-        return None
-    customdata = point.get("customdata")
-    if isinstance(customdata, str):
-        return customdata
-    if isinstance(customdata, Sequence) and customdata and isinstance(customdata[0], str):
-        return customdata[0]
-    return None
-
-
 def invalid_equipment_rows(
     equipment: pd.DataFrame,
     *,
@@ -315,35 +184,3 @@ def invalid_equipment_rows(
         | numeric["Y좌표"].add(numeric["Ysize"]).gt(canvas_height)
     )
     return [int(index) + 1 for index in numeric.index[invalid].tolist()]
-
-
-def _apply_layout(
-    figure: go.Figure,
-    *,
-    x_range: tuple[float, float],
-    y_range: tuple[float, float],
-    height: int,
-) -> None:
-    figure.update_layout(
-        height=height,
-        margin={"l": 16, "r": 16, "t": 42, "b": 16},
-        paper_bgcolor=tokens.CHART_CANVAS,
-        plot_bgcolor=tokens.CHART_CANVAS,
-        hoverlabel={"bgcolor": tokens.SURFACE, "font": {"color": tokens.SPACE_TEXT}},
-        clickmode="event+select",
-        dragmode=False,
-    )
-    figure.update_xaxes(
-        range=list(x_range),
-        visible=False,
-        fixedrange=True,
-        zeroline=False,
-    )
-    figure.update_yaxes(
-        range=list(y_range),
-        visible=False,
-        fixedrange=True,
-        zeroline=False,
-        scaleanchor="x",
-        scaleratio=1,
-    )

@@ -1,4 +1,4 @@
-# Purpose: Space 배치 편집기 자산(HTML·CSS·JS)의 뷰어 크기·트레이 서랍·단추 계약을 글자로 검사한다.
+# Purpose: Space 배치 편집기 자산(HTML·CSS·JS)의 뷰어 크기·서랍·단추·층 블록 계약을 글자로 검사한다.
 
 """AppTest 는 편집기 JS 를 돌리지 못한다. 그래서 크기 바꾸기가 재실행을 일으키지 않는다는
 것, 높이 손잡이·서랍 자리, 단추 결처럼 자산 글자로 드러나는 약속을 여기서 붙잡는다. 실제 동작은
@@ -52,9 +52,10 @@ def test_the_height_handle_is_a_horizontal_separator_under_the_stage() -> None:
 
 
 def test_resizing_stays_in_the_browser() -> None:
-    """크기는 파이썬으로 보내지 않는다(보내면 페이지 전체가 다시 돈다). 보내는 것은 `적용` 하나."""
+    """크기는 파이썬으로 보내지 않는다(보내면 페이지 전체가 다시 돈다). 보내는 것은 `적용` 과
+    FAB 층 블록의 `열기` 둘뿐이다."""
     assert "setStateValue" not in JS
-    assert re.findall(r"setTriggerValue\('([a-z]+)'", JS) == ["apply"]
+    assert sorted(re.findall(r"setTriggerValue\('([a-z]+)'", JS)) == ["apply", "navigate"]
     # 관찰자는 한 번만 만들고, 실행마다 새로 정의되는 S.onResize 를 부른다. 내릴 때 끊는다.
     assert JS.count("new ResizeObserver(") == 1
     assert "if (!S.ro &&" in JS and "S.onResize = " in JS
@@ -114,3 +115,20 @@ def test_the_inspector_keeps_its_size_whatever_is_selected() -> None:
     # 이름 칸은 글자 길이와 무관한 정한 폭으로 줄을 나눈다.
     title = _rule(".sle-inspector > .sle-panel-title")
     assert re.search(r"flex: 1 1 \d+em", title) and "text-overflow: ellipsis" in title
+
+
+def test_only_a_floor_block_in_the_fab_viewer_opens_a_floor() -> None:
+    """누르면 열리는 것은 보기 전용 FAB 의 층 블록뿐이다. 끌었으면 열지 않고, 키보드(Enter·
+    Space)로도 연다. 영역·글자는 꾸밈이라 눌림을 받지 않는다. 층 블록은 FAB 범위에서만 그린다."""
+    assert JS.count("setTriggerValue('navigate'") == 1
+    assert "Boolean(VIEW && FAB && item && item.kind === 'block' && item.link)" in JS
+    assert "if (!drag.travelled) openFloor(item)" in JS
+    assert "(event.key === 'Enter' || event.key === ' ')" in JS
+    assert "group.setAttribute('tabindex', '0')" in JS
+    assert "const drawable = (kind) => Boolean(MARK_KINDS[kind]) && (kind !== 'block' || FAB)" in JS
+    assert "pointer-events: none !important" in _rule(
+        ".sle.is-view.is-fab .sle-mark:not(.mark-block), "
+        ".sle.is-view.is-fab .sle-mark:not(.mark-block) *"
+    )
+    # 블록 대수는 epoch 밖의 `data.linkStats` 로 온다(같은 epoch 회차에도 글자를 다시 쓴다).
+    assert "const LINK_STATS = data.linkStats || {}" in JS

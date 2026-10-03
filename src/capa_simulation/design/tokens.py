@@ -205,13 +205,8 @@ _LIGHT: Final[dict[str, Any]] = {
     "SPACE_TEXT": "#20262E",
     "SPACE_LABEL_TEXT": "#69727C",
     "SPACE_GRID": "#E5E8EB",
-    "SPACE_BUILDING_FILLS": (
-        "#E7EDF2",
-        "#F3F5F7",
-        "#E9EDF1",
-        "#F3F5F7",
-        "#E9EDF1",
-    ),
+    # FAB 도면 층 블록의 기본 면(색 키를 고르지 않은 블록). 캔버스보다 한 단 짙다.
+    "SPACE_BLOCK_FILL": "#E7EDF2",
     # ------------------------------------------------------------------ 스크롤바 색
     "SCROLLBAR_TRACK": "#ECEEF1",
     "SCROLLBAR_THUMB": "#8F9399",
@@ -323,13 +318,7 @@ _DARK: Final[dict[str, Any]] = {
     "SPACE_TEXT": "#DCE3EB",
     "SPACE_LABEL_TEXT": "#98A3B0",
     "SPACE_GRID": "#2A323C",
-    "SPACE_BUILDING_FILLS": (
-        "#1E2630",
-        "#182028",
-        "#1B232C",
-        "#182028",
-        "#1B232C",
-    ),
+    "SPACE_BLOCK_FILL": "#1E2630",
     # 손잡이는 누를수록 또렷해진다 — 다크에서는 밝아지는 쪽이다.
     "SCROLLBAR_TRACK": "#22222A",
     "SCROLLBAR_THUMB": "#55555F",
@@ -435,8 +424,8 @@ if TYPE_CHECKING:
     SERIES_ACTUAL: Final[str] = ""
     SERIES_EFFECTIVE: Final[str] = ""
     SERIES_STANDARD: Final[str] = ""
+    SPACE_BLOCK_FILL: Final[str] = ""
     SPACE_BORDER: Final[str] = ""
-    SPACE_BUILDING_FILLS: Final[tuple[str, ...]] = ()
     SPACE_CANVAS: Final[str] = ""
     SPACE_CANVAS_OVERLAY: Final[str] = ""
     SPACE_GRID: Final[str] = ""

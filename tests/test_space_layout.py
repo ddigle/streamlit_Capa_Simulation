@@ -6,16 +6,26 @@ import pandas as pd
 import pytest
 
 from capa_simulation.components.space_layout import (
-    BUILDINGS,
-    build_fab_figure,
-    build_floor_figure,
-    floors_for,
+    floor_block_stats,
+    floor_placements,
     invalid_equipment_rows,
     occupancy_ratio,
     stage_counts,
     stage_legend_markup,
 )
 from capa_simulation.design.tokens import EQUIPMENT_STAGE_COLORS
+from capa_simulation.services.fab_layout import (
+    BUILDINGS,
+    FAB_BLOCK_KIND,
+    FLOOR_KEYS,
+    default_fab_layout,
+    fab_layout_fingerprint,
+    floor_from_label,
+    floor_from_param,
+    floor_param,
+    floors_for,
+)
+from capa_simulation.services.floor_layout_profile import MAX_CANVAS_EXTENT, MIN_CANVAS_EXTENT
 
 
 def _space_equipment() -> pd.DataFrame:
@@ -92,29 +102,73 @@ def test_stage_counts_name_only_the_states_that_are_on_the_floor() -> None:
     assert stage_counts(_space_equipment().iloc[0:0]) == {}
 
 
-def test_fab_figure_has_one_building_shape_per_building() -> None:
-    figure = build_fab_figure(_space_equipment())
+def test_the_default_fab_layout_has_one_linked_block_per_floor() -> None:
+    """기본 FAB 도면: 30개 층마다 층 블록 하나(연결 필수), 동마다 6F 가 위·1F 가 아래, C5 는 떨어져
+    있고 C1~C4 는 맞붙는다. 동 이름·「독립동」·「연결 구간」은 연결 없는 꾸밈(영역·글자)이다."""
+    canvas, marks = default_fab_layout()
+    blocks = [mark for mark in marks if mark.kind == FAB_BLOCK_KIND]
 
-    assert len(figure.layout.shapes) == len(BUILDINGS)
-
-
-def test_fab_and_floor_figures_count_placement_not_state() -> None:
-    """동·층 칸은 상태가 아니라 배치를 센다 — 상태는 층 배치도의 색과 범례가 말한다."""
-    fab = build_fab_figure(_space_equipment(), unplaced={"C1": 2.0})
-    texts = {
-        annotation.text.split("<br>")[0]: annotation.text for annotation in fab.layout.annotations
+    assert sorted(block.link for block in blocks if block.link) == sorted(FLOOR_KEYS)
+    assert len(blocks) == len(FLOOR_KEYS) == 30
+    assert all(mark.link is None for mark in marks if mark.kind != FAB_BLOCK_KIND)
+    assert {"독립동", "C1 · C2 · C3 · C4 연결 구간", "C1", "C5"} <= {
+        mark.label for mark in marks if mark.kind != FAB_BLOCK_KIND
     }
-    assert "배치 2대" in texts["<b>C1</b>"] and "미배치 2대" in texts["<b>C1</b>"]
-    assert "배치 1대" in texts["<b>C2</b>"] and "미배치" not in texts["<b>C2</b>"]
-    assert not any("가용" in annotation.text for annotation in fab.layout.annotations)
+    assert MIN_CANVAS_EXTENT <= min(canvas) and max(canvas) <= MAX_CANVAS_EXTENT
+    for mark in marks:
+        assert mark.x >= 0 and mark.y >= 0
+        assert mark.x + mark.w <= canvas[0] + 1e-9 and mark.y + mark.h <= canvas[1] + 1e-9
 
-    floors = build_floor_figure(
-        _space_equipment(), "C1", unplaced={"2F": 0.5}, occupancy={"1F": 0.0425, "2F": 0.0}
+    by_floor = {block.link: block for block in blocks}
+    for building in BUILDINGS:
+        bottoms = [by_floor[(building.name, spec.floor)].y for spec in floors_for(building.name)]
+        assert bottoms == sorted(bottoms, reverse=True), building.name
+
+    def edges(name: str) -> tuple[float, float]:
+        column = [block for block in blocks if block.link and block.link[0] == name]
+        return min(block.x for block in column), max(block.x + block.w for block in column)
+
+    assert edges("C5")[1] < edges("C1")[0] - 5
+    for left, right in (("C1", "C2"), ("C2", "C3"), ("C3", "C4")):
+        assert edges(right)[0] - edges(left)[1] < 1
+
+    payload = by_floor[("C1", "1F")].editor_payload()
+    assert payload["kind"] == "block" and payload["link"] == "C1 1F" and payload["color"] == ""
+    # 지문은 같은 도면이면 같다(뷰어 epoch).
+    assert fab_layout_fingerprint(*default_fab_layout()) == fab_layout_fingerprint(canvas, marks)
+
+
+def test_floor_blocks_count_placement_not_state() -> None:
+    """층 블록 글자는 상태가 아니라 배치를 센다 — 상태는 층 상세의 색과 범례가 말한다
+    (2026-10-01 결정). 동·층이 빈 미배치는 어느 층에도 들지 않는다."""
+    equipment = _space_equipment()
+    unplaced = pd.DataFrame({"동": ["C1", "C1", None], "층": ["2F", "2F", None]})
+
+    placements = floor_placements(equipment, unplaced, equipment, lambda key: (100.0, 60.0))
+    stats = floor_block_stats(placements)
+
+    assert [placement.key for placement in placements] == list(FLOOR_KEYS)
+    # 15×8 + 15×6 = 210 → 100×60 캔버스의 3.5%. 점유율은 블록이 아니라 풍선에 들어간다.
+    assert stats["C1 1F"] == {"placed": "배치 2대", "unplaced": None, "occupancy": "점유율 3.5%"}
+    assert stats["C1 2F"] == {"placed": "배치 0대", "unplaced": "미배치 2대", "occupancy": None}
+    assert stats["C2 2F"]["placed"] == "배치 1대"
+    assert sum(placement.unplaced for placement in placements) == 2
+    assert not any(
+        "가용" in str(value) or "비가동" in str(value)
+        for floor in stats.values()
+        for value in floor.values()
     )
-    lines = [annotation.text for annotation in floors.layout.annotations]
-    assert "<b>C1 1F</b>　배치 2대　점유율 4.2%" in lines
-    # 배치가 없는 층은 점유율을 적지 않는다.
-    assert "<b>C1 2F</b>　배치 0대 · 미배치 0.5대" in lines
+
+
+def test_floor_names_round_trip_through_the_address_and_the_block_link() -> None:
+    """주소 인자는 「C1-1F」, 블록 연결은 「C1 1F」. FAB 의 층이 아니면 None(조용히 FAB)."""
+    assert floor_param(("C2", "3F")) == "C2-3F"
+    assert floor_from_param("C2-3F") == ("C2", "3F")
+    assert floor_from_label("C2 3F") == ("C2", "3F")
+    for bad in ("C9-1F", "C1-7F", "C1 1F", "", "C1-", None, ["C1", "1F"]):
+        assert floor_from_param(bad) is None, bad
+    for bad in ("C2-3F", "C2  3F", "C6 1F", None):
+        assert floor_from_label(bad) is None, bad
 
 
 def test_occupancy_is_box_area_over_canvas_area() -> None:

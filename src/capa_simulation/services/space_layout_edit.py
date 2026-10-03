@@ -31,6 +31,7 @@ from capa_simulation.services.equipment_contract import (
     QUAL_CONFIRMATION_STATUSES,
 )
 from capa_simulation.services.equipment_units import unit_keys
+from capa_simulation.services.fab_layout import floor_label
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark, prepare_floor_layout_marks
 from capa_simulation.services.floor_layout_profile import (
     CANVAS_DECIMALS,
@@ -47,11 +48,6 @@ PLACE_COLUMNS: Final = ("동", "층", "X좌표", "Y좌표", "Xsize", "Ysize", "�
 UNIT_ID_MAX: Final = 40
 NEW_UNIT_HISTORY: Final = "Space 편집기에서 추가"
 _DEFAULT_SIZE: Final = (12.0, 7.0)
-
-
-def floor_label(key: FloorKey) -> str:
-    """편집기 화면·적용값에 쓰는 층 이름(「C1 1F」)."""
-    return f"{key[0]} {key[1]}"
 
 
 @dataclass(frozen=True)

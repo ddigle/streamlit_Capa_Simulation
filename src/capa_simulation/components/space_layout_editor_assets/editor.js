@@ -15,6 +15,11 @@ export default function (component) {
   host.classList.toggle('is-view', VIEW)
   // 범위(층·FAB). 브라우저가 기억하는 뷰어 높이를 범위마다 따로 둔다.
   const SCOPE = data.scope === 'fab' ? 'fab' : 'floor'
+  // FAB 전체 도면. 층 블록(kind 'block')은 이 범위에만 있고, 보기 전용에서 누르면 연결된 층이 열린다.
+  const FAB = SCOPE === 'fab'
+  host.classList.toggle('is-fab', FAB)
+  // 블록 글자(배치·미배치 대수, 점유율). epoch 밖이라 같은 epoch 회차에도 새 값으로 다시 쓴다.
+  const LINK_STATS = data.linkStats || {}
   const palette = data.palette || {}
   for (const [name, value] of Object.entries(palette)) host.style.setProperty('--sle-' + name, String(value))
   const DECIMALS = Number.isInteger(data.decimals) ? data.decimals : 1
@@ -58,7 +63,11 @@ export default function (component) {
     column: { name: '기둥', size: [1.5, 1.5], label: '', rotatable: false },
     text: { name: '글자', size: [14, 3], label: '메모', rotatable: true },
     arrow: { name: '동선', size: [16, 3], label: '', rotatable: true },
+    // FAB 층 블록. 연결(link, 「C1 1F」)이 필수다. 색은 사용자가 고르는 자리 구분 색이고 빈 값은 Space 기본 면이다.
+    block: { name: '층 블록', size: [16, 6], label: '', rotatable: false },
   }
+  // 이 범위에서 그리는 종류. 층 블록은 FAB 에만 있다 — 층 도면에 오면 그리지 않고 그대로 돌려보낸다.
+  const drawable = (kind) => Boolean(MARK_KINDS[kind]) && (kind !== 'block' || FAB)
   const ZONE_COLOR_NAMES = { blue: '파랑', green: '초록', violet: '보라', sky: '하늘', rose: '분홍', gray: '회색' }
   const HINT = '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+A 전체 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
@@ -121,8 +130,11 @@ export default function (component) {
   const newConfirm = q('.sle-new-confirm')
   q('.sle-title').textContent = data.title || ''
   const pickBox = q('.sle-pick')
-  pickBox.dataset.hint = '호기를 누르면 정보가 여기 뜹니다 · Ctrl+휠 확대 · 끌어서 이동 · 더블클릭 확대/전체 보기'
+  pickBox.dataset.hint = FAB
+    ? '층 블록을 누르면 그 층이 열립니다 · Tab 으로 블록을 고르고 Enter · Ctrl+휠 확대 · 확대 뒤 끌어서 화면 옮기기'
+    : '호기를 누르면 정보가 여기 뜹니다 · Ctrl+휠 확대 · 끌어서 이동 · 더블클릭 확대/전체 보기'
   q('.sle-summary').textContent = data.summary || ''
+  svg.setAttribute('aria-label', !VIEW ? '층 배치 도면 편집기' : FAB ? 'S.PKG FAB 전체 배치도' : '층 배치 도면')
 
   const num = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v))
   const roundTo = (v) => Math.round(v * SCALE) / SCALE
@@ -182,8 +194,20 @@ export default function (component) {
   const emWidth = (text) => [...text].reduce((sum, ch) => sum + (ch.charCodeAt(0) >= 0x1100 ? 1 : 0.6), 0)
   const snapshot = (item) => ({
     x: item.x, y: item.y, w: item.w, h: item.h, placed: item.placed, moveTo: item.moveTo, sizeGuessed: item.sizeGuessed,
-    rot: item.rot, label: item.label, color: item.color, hatch: item.hatch, keepOut: item.keepOut,
+    rot: item.rot, label: item.label, color: item.color, hatch: item.hatch, keepOut: item.keepOut, link: item.link,
   })
+  // 층 블록 글자: 첫 줄은 이름(없으면 연결 층), 다음 줄은 배치·미배치 대수. 풍선에는 점유율까지.
+  const blockHead = (item) => item.label || item.link || '연결 없음'
+  const blockLines = (item) => {
+    const stats = LINK_STATS[item.link] || {}
+    return [blockHead(item), stats.placed, stats.unplaced].filter(Boolean).map(String)
+  }
+  const opensFloor = (item) => Boolean(VIEW && FAB && item && item.kind === 'block' && item.link)
+  const blockTip = (item) => {
+    const stats = LINK_STATS[item.link] || {}
+    const parts = [blockHead(item), stats.placed, stats.unplaced, stats.occupancy].filter(Boolean)
+    return parts.join(' · ') + (opensFloor(item) ? ' · 누르면 열기' : '')
+  }
   const hasSize = (item) => Number.isFinite(item.w) && item.w > 0 && Number.isFinite(item.h) && item.h > 0
   const unitTip = (item) => `${item.label} · ${item.stage || ''}${item.detail ? ` · ${item.detail}` : ''}${item.group ? ` · 모체 ${item.group}` : ''}${item.arrived ? ' · 다른 층에서 옴' : ''}`
   const sameGeometry = (a, b) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
@@ -485,6 +509,33 @@ export default function (component) {
       const shaft = el('line', { class: 'sle-flow', x1: lh * 0.3, y1: lh / 2, x2: lw - head * 0.9, y2: lh / 2 })
       shaft.style.strokeWidth = String(Math.min(lh * 0.2, 5 * upp))
       inner.append(shaft, el('polygon', { class: 'sle-flow-head', points: `${lw - head},${lh * 0.15} ${lw},${lh / 2} ${lw - head},${lh * 0.85}` }))
+    } else if (item.kind === 'block') {
+      // 층 블록: 면(고른 색 또는 Space 기본 면)·테두리·가운데 글자 줄. 글자는 블록에 맞춰 줄이고 화면에서 13px 를
+      // 넘지 않는다. 줄이 다 안 들어가면 이름 줄만, 그것도 6px 아래면 숨긴다(풍선·초점 이름에는 남는다).
+      const fill = el('rect', { class: 'sle-block-fill', x: 0, y: 0, width: lw, height: lh, rx: 0.4 })
+      const tint = item.color ? markColors[item.color] : null
+      if (tint) {
+        fill.style.fill = tint
+        fill.classList.add('is-tinted')
+      }
+      inner.append(fill, el('rect', { class: 'sle-block-border', x: 0, y: 0, width: lw, height: lh, rx: 0.4 }))
+      const fitLines = (lines) => {
+        const longest = Math.max(...lines.map(emWidth), 1)
+        return Math.min((lh * 0.8) / (lines.length * 1.3), (lw * 0.9) / longest, 13 * upp)
+      }
+      let lines = blockLines(item)
+      let size = fitLines(lines)
+      if (lines.length > 1 && size / upp < 7) {
+        lines = lines.slice(0, 1)
+        size = fitLines(lines)
+      }
+      const step = size * 1.3
+      lines.forEach((value, k) => {
+        const node = text(value, lw / 2, lh / 2 + (k - (lines.length - 1) / 2) * step, size)
+        node.classList.add(k === 0 ? 'is-head' : 'is-sub')
+        node.style.display = size / upp < 6 ? 'none' : ''
+        inner.append(node)
+      })
     }
     shape.append(inner)
     // 반입구·문·동선의 이름표는 돌리지 않는다(세로 글자가 되지 않게). 상자 바깥, 방 쪽(반입구·문)이나
@@ -505,6 +556,12 @@ export default function (component) {
       shape.append(text(item.label, placement[0], placement[1], fs, placement[2]))
     }
     const tip = group.querySelector('title')
+    if (item.kind === 'block') {
+      const words = blockTip(item)
+      if (tip) tip.textContent = words
+      if (group.hasAttribute('tabindex')) group.setAttribute('aria-label', words)
+      return
+    }
     if (tip) tip.textContent = `${MARK_KINDS[item.kind].name}${item.label ? ` · ${item.label}` : ''}`
   }
 
@@ -537,6 +594,13 @@ export default function (component) {
     const group = el('g', { class: `sle-item sle-mark mark-${item.kind}` })
     group.dataset.id = item.id
     group.append(el('g', { class: 'sle-mark-shape' }), el('rect', { class: 'sle-rect sle-mark-box' }), el('title'))
+    if (opensFloor(item)) {
+      // 보기 전용 FAB 의 층 블록은 키보드로도 연다 — Tab 초점, Enter/Space 로 열기. 초점이 오면 선택 줄에 알린다.
+      group.setAttribute('tabindex', '0')
+      group.setAttribute('role', 'button')
+      group.onfocus = () => { if (S.showBlockHint) S.showBlockHint(group) }
+      group.onblur = () => { if (S.showBlockHint) S.showBlockHint(null) }
+    }
     appendHandles(group)
     position(group, item)
     // 영역은 이름표로도 잡는다(안쪽은 비워 둔다) — 이름표만 눌림을 받게 한다.
@@ -665,6 +729,7 @@ export default function (component) {
     if (isMark(item)) {
       return !sameGeometry(o, item) || o.rot !== item.rot || o.label !== item.label
         || o.color !== item.color || o.hatch !== item.hatch || o.keepOut !== item.keepOut
+        || (o.link || '') !== (item.link || '')
     }
     if ((o.moveTo || null) !== (item.moveTo || null)) return true
     if (o.placed !== item.placed) return true
@@ -798,6 +863,7 @@ export default function (component) {
     ...[...S.items.values()].filter(isMark).map((m) => ({
       id: m.id, kind: m.kind, x: m.x, y: m.y, w: m.w, h: m.h, rot: m.rot || 0,
       label: m.label || '', color: m.color || '', hatch: Boolean(m.hatch), keepOut: Boolean(m.keepOut),
+      ...(m.kind === 'block' ? { link: m.link || '' } : {}),
     })),
     ...S.passthrough,
   ]
@@ -860,6 +926,20 @@ export default function (component) {
       markKeepOut.checked = Boolean(mark.keepOut)
       markRotate.hidden = !MARK_KINDS[mark.kind].rotatable
     }
+  }
+
+  // 층 블록 위에 올려 두거나 초점을 두면 선택 줄에 「C1 1F · 누르면 열기」. 떠나면 원래 줄로 돌린다.
+  S.showBlockHint = (group) => {
+    const item = group ? S.items.get(group.dataset.id) : null
+    if (!opensFloor(item)) { updateStatus(); return }
+    pickBox.textContent = `${item.link} · 누르면 열기`
+    pickBox.title = pickBox.textContent
+  }
+  // 블록이 가리키는 층을 연다. 파이썬 `on_navigate_change` 콜백이 층을 바꿔 재실행 한 번으로 층 상세가 선다.
+  function openFloor(item) {
+    if (!opensFloor(item)) return
+    pickBox.textContent = `${item.link} 여는 중…`
+    setTriggerValue('navigate', { epoch: S.epoch, target: item.link })
   }
 
   function pickText(item) {
@@ -1090,7 +1170,7 @@ export default function (component) {
     const item = {
       id, kind, label: spec.label, stage: '', group: null, placed: true, moveTo: null, isNew: false, arrived: false,
       x: snapDelta(center.x - w / 2), y: snapDelta(H() - center.top - h / 2), w, h, rot: 0,
-      color: kind === 'zone' ? 'blue' : '', hatch: false, keepOut: false,
+      color: kind === 'zone' ? 'blue' : '', hatch: false, keepOut: false, link: '',
     }
     fit(item)
     S.items.set(id, item)
@@ -1282,7 +1362,7 @@ export default function (component) {
     id: String(raw.id), kind: String(raw.kind), label: String(raw.label || ''), stage: '', group: null,
     x: num(raw.x), y: num(raw.y), w: num(raw.w), h: num(raw.h), rot: Number(raw.rot) || 0,
     color: String(raw.color || ''), hatch: Boolean(raw.hatch), keepOut: Boolean(raw.keepOut),
-    placed: true, moveTo: null, isNew: false, arrived: false,
+    link: String(raw.link || ''), placed: true, moveTo: null, isNew: false, arrived: false,
   })
 
   function initFromData() {
@@ -1298,7 +1378,7 @@ export default function (component) {
     }
     for (const raw of data.marks || []) {
       const mark = readMark(raw)
-      if (!MARK_KINDS[mark.kind] || ![mark.x, mark.y, mark.w, mark.h].every(Number.isFinite)) {
+      if (!drawable(mark.kind) || ![mark.x, mark.y, mark.w, mark.h].every(Number.isFinite)) {
         S.passthrough.push(raw)
         continue
       }
@@ -1413,9 +1493,11 @@ export default function (component) {
     const drag = S.drag
     if (!drag || event.pointerId !== drag.pointerId) return
     if (drag.mode === 'pan' || drag.mode === 'view') {
+      const far = Math.hypot(event.clientX - drag.startClientX, event.clientY - drag.startClientY) >= DRAG_THRESHOLD_PX
+      // 문턱을 넘은 끌기는 블록을 열지 않는다(전체 보기에서 화면이 움직이지 않아도).
+      if (far) drag.travelled = true
       if (drag.mode === 'view' && S.view.z <= 1) return
-      if (drag.mode === 'view' && !drag.moved
-        && Math.hypot(event.clientX - drag.startClientX, event.clientY - drag.startClientY) < DRAG_THRESHOLD_PX) return
+      if (drag.mode === 'view' && !drag.moved && !far) return
       svg.classList.add('is-panning')
       S.view.x = drag.view.x - (event.clientX - drag.startClientX) * drag.upp
       S.view.top = drag.view.top - (event.clientY - drag.startClientY) * drag.upp
@@ -1477,7 +1559,16 @@ export default function (component) {
       svg.classList.remove('is-panning')
       // 끌어서 옮긴 직후의 더블클릭(누르고 곧바로 그 자리에서 끈 경우)은 확대·전체 보기가 아니다.
       S.lastViewDragMoved = drag.moved
-      if (!drag.moved) select(drag.id)
+      // 포인터 캡처 때문에 뒤따르는 click·dblclick 의 target 은 캔버스로 바뀐다. 블록 위를 눌렀는지는 여기서 기억한다.
+      const item = drag.id ? S.items.get(drag.id) : null
+      S.lastViewOnBlock = opensFloor(item)
+      if (drag.moved) return
+      // FAB 의 층 블록은 누르면 그 층을 연다(끌었으면 열지 않는다). 나머지는 고르기다.
+      if (S.lastViewOnBlock) {
+        if (!drag.travelled) openFloor(item)
+        return
+      }
+      select(drag.id)
       return
     }
     if (drag.mode === 'marquee') {
@@ -1517,9 +1608,22 @@ export default function (component) {
     if (panBy(dx, dTop)) event.preventDefault()
   }
   svg.onblur = () => { S.spaceDown = false; svg.classList.remove('is-pan-ready') }
+  // 층 블록에 올려 두면 선택 줄에 열 층을 알리고, 블록을 떠나면 되돌린다(보기 전용 FAB 만).
+  svg.onpointerover = (event) => {
+    if (!(VIEW && FAB) || S.drag) return
+    const group = event.target.closest ? event.target.closest('.mark-block') : null
+    if (group) S.showBlockHint(group)
+  }
+  svg.onpointerout = (event) => {
+    if (!(VIEW && FAB)) return
+    const from = event.target.closest ? event.target.closest('.mark-block') : null
+    const into = event.relatedTarget && event.relatedTarget.closest ? event.relatedTarget.closest('.mark-block') : null
+    if (from && from !== into) S.showBlockHint(into)
+  }
   // 보기 전용 더블클릭: 확대 중이면 전체 보기, 전체 보기면 그 자리를 2.5배로.
   svg.ondblclick = (event) => {
-    if (!VIEW || S.lastViewDragMoved) return
+    // 블록 위에서는 확대하지 않는다 — 첫 누름이 이미 그 층을 열었다.
+    if (!VIEW || S.lastViewDragMoved || S.lastViewOnBlock) return
     event.preventDefault()
     if (S.view.z > 1) zoomAt(1)
     else zoomAt(2.5, toUser(event))
@@ -1532,6 +1636,13 @@ export default function (component) {
     if (VIEW) {
       // 보기 전용 단축키: 확대·축소·전체 보기, 방향키 화면 이동, Esc 선택 풀기. 고치는 키는 없다.
       if (event.ctrlKey || event.metaKey || event.altKey) return
+      // FAB 의 층 블록에 초점이 있으면 Enter·Space 로 그 층을 연다(Space 가 페이지를 굴리지 않게 막는다).
+      const block = FAB && event.target && event.target.closest ? event.target.closest('.mark-block') : null
+      if (block && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault()
+        openFloor(S.items.get(block.dataset.id))
+        return
+      }
       const step = 0.1
       const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }
       if (event.key === '+' || event.key === '=') zoomAt(S.view.z * ZOOM_STEP)
