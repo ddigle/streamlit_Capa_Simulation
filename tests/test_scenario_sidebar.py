@@ -15,6 +15,8 @@ from capa_simulation.components.scenario_status import (
     SIDEBAR_REVISION_KEY,
     SIDEBAR_SCENARIO_KEY,
 )
+from capa_simulation.scenario_state import VIRTUAL_PRODUCTS_KEY
+from capa_simulation.services.virtual_product import VirtualProductRecord
 
 
 def scenario(scenario_id, name, code, revision_id, revision_no):
@@ -59,6 +61,7 @@ class FakeRepository:
 
     def save_revision(self, scenario_id, tables, preset, **kwargs):
         st.session_state["test_saved_revision_name"] = kwargs["revision_name"]
+        st.session_state["test_saved_virtual_products"] = list(kwargs.get("virtual_products", ()))
         return SimpleNamespace(
             scenario=SCENARIOS[0],
             revision=revision("revision-3", scenario_id, 2, kwargs["revision_name"]),
@@ -81,6 +84,15 @@ def load_snapshot(_database_path, revision_id):
         preset=SimpleNamespace(),
         tables={},
     )
+
+
+def _activate(snapshot: SimpleNamespace) -> None:
+    """실제 활성화처럼 세션의 가상 제품 목록도 비운다(`clear_virtual_products`).
+
+    비우지 않는 가짜로는 활성화 **뒤에** 목록을 읽는 저장도 통과해 버린다.
+    """
+    st.session_state["test_activated_revision"] = snapshot.revision.revision_id
+    st.session_state.pop(VIRTUAL_PRODUCTS_KEY, None)
 
 
 TEST_SCRIPT = """
@@ -107,9 +119,7 @@ def sidebar_app() -> Iterator[AppTest]:
         "discard_unsaved_scenario_changes": lambda _tables, version: st.session_state.__setitem__(
             "test_reset_to_version", version
         ),
-        "activate_persisted_snapshot": lambda snapshot: st.session_state.__setitem__(
-            "test_activated_revision", snapshot.revision.revision_id
-        ),
+        "activate_persisted_snapshot": _activate,
         "get_effective_reference_version": lambda: 1,
         "get_effective_reference_tables": lambda: {
             "RQ_REQB": pd.DataFrame({"공정": ["공정 A"]}),
@@ -167,6 +177,45 @@ def test_sidebar_saves_current_state_as_a_new_revision(sidebar_app: AppTest) -> 
     assert not app.exception
     assert app.session_state["test_saved_revision_name"] == "사이드바 저장안"
     assert app.session_state["test_activated_revision"] == "revision-3"
+
+
+def test_sidebar_save_keeps_the_session_virtual_products(sidebar_app: AppTest) -> None:
+    """사이드바 저장도 가상 제품 이력을 리비전에 남기고 관리 페이지와 같은 문장으로 알린다.
+
+    이 경로만 `virtual_products` 를 넘기지 않아 가상 제품을 등록한 편집본을 사이드바로 저장하면
+    `app_meta.revision_virtual_product` 가 비었다. 활성화가 세션 목록을 비우므로 그 전에 읽는다.
+    """
+    record = VirtualProductRecord(
+        product="DEMO_VIRTUAL", stack="8H", source_product="DEMO_SOURCE", source_stack="8H"
+    )
+    app = sidebar_app
+    app.session_state[VIRTUAL_PRODUCTS_KEY] = (record,)
+    app = _save(app.run(), "가상 제품 포함 저장")
+
+    assert not app.exception
+    assert app.session_state["test_saved_virtual_products"] == [
+        {
+            "product": "DEMO_VIRTUAL",
+            "stack": "8H",
+            "source_product": "DEMO_SOURCE",
+            "source_stack": "8H",
+        }
+    ]
+    assert [item.value for item in app.success] == [
+        "신규 리비전 r2을 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
+        "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
+    ]
+
+
+def test_sidebar_save_without_virtual_products_says_only_what_it_saved(
+    sidebar_app: AppTest,
+) -> None:
+    """가상 제품이 없으면 이력도 넘기지 않고 알림은 저장한 리비전 한 문장 그대로다."""
+    app = _save(sidebar_app.run(), "가상 제품 없는 저장")
+
+    assert not app.exception
+    assert app.session_state["test_saved_virtual_products"] == []
+    assert [item.value for item in app.success] == ["신규 리비전 r2을 저장했습니다."]
 
 
 def test_discarding_edits_lives_in_the_scenario_box_only_when_there_are_edits(

@@ -940,6 +940,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     말없이 버려 저장이 아무 일도 없이 사라졌다). 거절 알림은 `st.rerun()` 없이 같은 회차에 그린다
     — 사이드바에서 rerun 하면 페이지 편집표를 그리기 전에 회차가 끝나 그 편집 상태가 지워진다.
     조회기간 상자도 같은 목록으로 「기간을 바꾸면 사라진다」를 적는다.
+  - 저장은 세션의 가상 제품 이력(`scenario_management.session_virtual_product_rows`)을
+    `save_revision(virtual_products=...)` 로 넘긴다. 저장한 스냅샷을 활성화하면 세션 목록이 비므로
+    **활성화 전에** 읽는다. 시나리오 관리 페이지의 `새 리비전 저장`·`현재 활성 RQ 복제` 도 같은
+    도우미를 쓰고, 세 경로의 알림이 같은 확인 문장(`virtual_product_save_notice`)을 붙인다.
   - `편집 되돌리기`는 `scenario_activation.discard_unsaved_scenario_changes` 다 — 표를 올라와
     있는 리비전의 표로 갈아 끼우고(리비전 번호는 올린다) **그 번호를 저장 표시에도 적는다.**
     적지 않으면 내용이 저장본과 같은데도 번호가 달라 `미저장 변경`·버튼·불러오기 잠금이 남았다.

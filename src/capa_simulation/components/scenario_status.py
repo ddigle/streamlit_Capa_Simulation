@@ -14,7 +14,11 @@ from streamlit.delta_generator import DeltaGenerator
 # 바인딩이 교체를 무시하므로 호출 시점에 모듈에서 찾는다.
 import capa_simulation.settings as settings
 from capa_simulation.components.capacity_gate import revision_save_verdict
-from capa_simulation.components.scenario_management import revision_tables_for_save
+from capa_simulation.components.scenario_management import (
+    revision_tables_for_save,
+    session_virtual_product_rows,
+    virtual_product_save_notice,
+)
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -394,6 +398,8 @@ def _render_revision_save(
                     st.error(verdict.message)
                     return None
                 revision_tables = revision_tables_for_save(active_scenario, reference_tables)
+                # 활성화가 세션의 가상 제품 목록을 비우므로 그 전에 읽는다.
+                virtual_products = session_virtual_product_rows()
                 snapshot = repository.save_revision(
                     active_scenario_id,
                     revision_tables,
@@ -403,6 +409,7 @@ def _render_revision_save(
                     revision_name=revision_name,
                     parent_revision_id=active_revision_id,
                     note=note.strip() or None,
+                    virtual_products=virtual_products,
                 )
                 activate_persisted_snapshot(snapshot)
         except BOOTSTRAP_ERRORS as exc:
@@ -411,6 +418,7 @@ def _render_revision_save(
         else:
             st.session_state[SIDEBAR_FLASH_KEY] = (
                 f"신규 리비전 r{snapshot.revision.revision_no}을 저장했습니다."
+                + virtual_product_save_notice(len(virtual_products))
             )
             if verdict.message:
                 st.session_state[SIDEBAR_FLASH_WARNING_KEY] = verdict.message

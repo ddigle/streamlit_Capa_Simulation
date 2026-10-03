@@ -13,6 +13,8 @@ from capa_simulation.components.scenario_management import (
 )
 from capa_simulation.persistence.models import ScenarioCreate, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.scenario_state import VIRTUAL_PRODUCTS_KEY
+from capa_simulation.services.virtual_product import VirtualProductRecord
 
 PAGE_PATH = "app_pages/scenario_management.py"
 
@@ -189,3 +191,98 @@ def test_clone_form_clears_after_saving_and_refuses_a_taken_name(tmp_path: Path)
         )
     ]
     assert names.count("복제 A") == 1
+
+
+def test_clone_keeps_the_session_virtual_products(tmp_path: Path) -> None:
+    """「신규 시나리오 저장」(현재 활성 RQ 복제)도 가상 제품 이력을 초기 리비전에 남긴다.
+
+    복제는 가상 제품의 복제 행이 든 활성 RQ 를 그대로 옮기면서 그 출처만 버렸다. 리비전 저장과
+    같은 확인 문장을 저장 알림에 붙인다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    app.segmented_control(key=MODE_KEY).set_value("현재 활성 RQ 복제").run()
+    assert not app.exception
+    # 첫 회차의 공식버전 활성화가 목록을 비우므로 그 뒤에 넣는다.
+    app.session_state[VIRTUAL_PRODUCTS_KEY] = (
+        VirtualProductRecord(
+            product="DEMO_VIRTUAL",
+            stack="8H",
+            source_product="DEMO_SOURCE",
+            source_stack="8H",
+        ),
+    )
+
+    _fill_clone(app, "가상 제품 복제", "CLONE-VIRTUAL")
+
+    assert any(
+        item.value
+        == (
+            "가상 제품 복제을 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
+            "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
+        )
+        for item in app.success
+    )
+    repository = DuckDBScenarioRepository(database_path)
+    clone = next(
+        scenario
+        for scenario in repository.list_scenarios()
+        if scenario.scenario_name == "가상 제품 복제"
+    )
+    history = repository.list_virtual_products(clone.active_revision_id)
+    assert history.to_dict("records") == [
+        {
+            "제품정보": "DEMO_VIRTUAL",
+            "Stack": "8H",
+            "원본 제품정보": "DEMO_SOURCE",
+            "원본 Stack": "8H",
+        }
+    ]
+
+
+def test_revision_save_keeps_the_session_virtual_products(tmp_path: Path) -> None:
+    """이 페이지의 「새 리비전 저장」은 처음부터 이력을 넘겼다. 공용 도우미로 옮긴 뒤에도 같다."""
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    app.segmented_control(key=MODE_KEY).set_value("리비전 저장").run()
+    assert not app.exception
+    app.session_state[VIRTUAL_PRODUCTS_KEY] = (
+        VirtualProductRecord(
+            product="DEMO_VIRTUAL",
+            stack="8H",
+            source_product="DEMO_SOURCE",
+            source_stack="8H",
+        ),
+    )
+
+    next(widget for widget in app.text_input if widget.label == "새 리비전명").set_value(
+        "가상 제품 포함"
+    )
+    next(button for button in app.button if button.label == "새 리비전 저장").click()
+    app.run()
+    assert not app.exception
+
+    repository = DuckDBScenarioRepository(database_path)
+    (saved,) = [
+        scenario for scenario in repository.list_scenarios() if scenario.active_revision_no == 2
+    ]
+    assert any(
+        item.value
+        == (
+            "새 리비전 r2을 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
+            "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
+        )
+        for item in app.success
+    )
+    assert repository.list_virtual_products(saved.active_revision_id).to_dict("records") == [
+        {
+            "제품정보": "DEMO_VIRTUAL",
+            "Stack": "8H",
+            "원본 제품정보": "DEMO_SOURCE",
+            "원본 Stack": "8H",
+        }
+    ]

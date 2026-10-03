@@ -651,6 +651,7 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
         with st.spinner("현재 활성 RQ 16개를 새 시나리오로 복제하는 중입니다..."):
             revision_source = revision_tables_for_save(active_scenario, reference_tables)
             preset = _compatible_preset(capture_scenario_preset(revision_source), revision_source)
+            virtual_products = session_virtual_product_rows()
             snapshot = repository.create_scenario(
                 ScenarioCreate(
                     scenario_name=scenario_name,
@@ -666,12 +667,16 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
                 revision_tables=revision_source,
                 revision_name=revision_name,
                 note=note.strip() or None,
+                virtual_products=virtual_products,
             )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:
         activate_persisted_snapshot(snapshot)
-        st.session_state[FLASH_KEY] = f"{snapshot.scenario.scenario_name}을 저장했습니다."
+        st.session_state[FLASH_KEY] = (
+            f"{snapshot.scenario.scenario_name}을 저장했습니다."
+            + virtual_product_save_notice(len(virtual_products))
+        )
         st.session_state[CLONE_FORM_GENERATION_KEY] = (
             int(st.session_state.get(CLONE_FORM_GENERATION_KEY, 0)) + 1
         )
@@ -712,6 +717,7 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
             preset = capture_scenario_preset(
                 {**reference_tables, "RQ_REQB": revision_tables["RQ_REQB"]}
             )
+            virtual_products = session_virtual_product_rows()
             snapshot = repository.save_revision(
                 scenario_id,
                 revision_tables,
@@ -719,31 +725,47 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
                 revision_name=revision_name,
                 parent_revision_id=active_persisted_revision_id(),
                 note=note.strip() or None,
-                virtual_products=[
-                    {
-                        "product": record.product,
-                        "stack": record.stack,
-                        "source_product": record.source_product,
-                        "source_stack": record.source_stack,
-                    }
-                    for record in cast(tuple[VirtualProductRecord, ...], session_virtual_products())
-                ],
+                virtual_products=virtual_products,
             )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:
-        virtual_count = len(session_virtual_products())
         activate_persisted_snapshot(snapshot)
-        message = f"새 리비전 r{snapshot.revision.revision_no}을 저장했습니다."
-        if virtual_count:
-            message += (
-                f" 가상 제품 {virtual_count}건이 포함되어 있습니다. "
-                "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
-            )
-        st.session_state[FLASH_KEY] = message
+        st.session_state[FLASH_KEY] = (
+            f"새 리비전 r{snapshot.revision.revision_no}을 저장했습니다."
+            + virtual_product_save_notice(len(virtual_products))
+        )
         if verdict.message:
             st.session_state[FLASH_WARNING_KEY] = verdict.message
         st.rerun()
+
+
+def session_virtual_product_rows() -> list[dict[str, str]]:
+    """이 세션이 복제 등록한 가상 제품을 저장소가 받는 이력 행으로 옮긴다.
+
+    저장한 스냅샷을 활성화하면 세션 목록이 비므로(`clear_virtual_products`) 저장 **전에**
+    읽고, 알림의 건수도 이 결과에서 센다. 새 리비전을 남기는 저장 단추(사이드바와 이 페이지의
+    리비전 저장, 현재 활성 RQ 복제)가 모두 이것을 넘겨야 가상 제품 출처가 DB 에 남는다.
+    """
+    return [
+        {
+            "product": record.product,
+            "stack": record.stack,
+            "source_product": record.source_product,
+            "source_stack": record.source_stack,
+        }
+        for record in cast(tuple[VirtualProductRecord, ...], session_virtual_products())
+    ]
+
+
+def virtual_product_save_notice(count: int) -> str:
+    """저장 알림 뒤에 붙일 가상 제품 확인 문장. 없으면 빈 문자열이라 알림이 그대로다."""
+    if not count:
+        return ""
+    return (
+        f" 가상 제품 {count}건이 포함되어 있습니다. "
+        "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
+    )
 
 
 def revision_tables_for_save(
