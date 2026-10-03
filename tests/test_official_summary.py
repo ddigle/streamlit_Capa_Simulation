@@ -157,7 +157,9 @@ def test_the_payload_is_rounded_theme_independent_and_serializable() -> None:
     assert payload["available"] is True
     assert payload["period"] == "26.10–27.03" and payload["count"] == 6
     assert payload["wafer"][0] == pytest.approx(211.0)
+    # 숫자는 기준선 자리라 정확하고, 범례·이름표 글자는 사사오입한 정수 퍼센트다.
     assert (payload["secure"], payload["warning"]) == (109.5, 99.5)
+    assert (payload["secure_label"], payload["warning_label"]) == ("110%", "100%")
     first = payload["bn"][0]
     assert first == {
         "process": "<P-A>",

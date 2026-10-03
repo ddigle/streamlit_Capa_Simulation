@@ -87,6 +87,7 @@ from capa_simulation.services.key_process import (
 )
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.product_share import PRODUCT_SHARE_BASES
+from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.sidebar_status import condition_card
 
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
@@ -187,10 +188,14 @@ def status_legend_markup(
     나르는데, 판정 세 색과 달리 이름이 어디에도 없었다. 과거 열이 없는 실행에서까지 칩을
     달면 화면에 없는 것을 설명하게 된다.
     """
+    # 경계 숫자는 사사오입한 정수 퍼센트다(`threshold_percent_label`) — 109.5% 는 110% 로
+    # 적는다. 칩 색을 가르는 판정은 정확한 기준을 그대로 쓴다.
+    secure = threshold_percent_label(secure_threshold)
+    warning = threshold_percent_label(warning_threshold)
     chips: tuple[tuple[str, str], ...] = (
-        (tokens.STATUS_SECURE, f"확보 {secure_threshold:.0%} 초과"),
-        (tokens.STATUS_WARNING, f"경고 {warning_threshold:.0%}~{secure_threshold:.0%}"),
-        (tokens.STATUS_SHORTAGE, f"부족 {warning_threshold:.0%} 미만"),
+        (tokens.STATUS_SECURE, f"확보 {secure} 초과"),
+        (tokens.STATUS_WARNING, f"경고 {warning}~{secure}"),
+        (tokens.STATUS_SHORTAGE, f"부족 {warning} 미만"),
     )
     if has_past:
         chips += ((tokens.SURFACE_PAST, "과거 구간"),)

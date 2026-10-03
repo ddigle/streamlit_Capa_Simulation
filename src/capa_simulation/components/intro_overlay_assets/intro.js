@@ -637,15 +637,17 @@ function scene(port, gridOf) {
     const step = niceStep((hi - lo) / 3);
     const ticks = [];
     for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) ticks.push(v);
+    // 아래 30px 는 달 이름(14px — 점 위 값 글자와 같은 크기) 자리다.
     const lineTop = line.y + 30;
-    const lineBot = line.y + line.h - 26;
+    const lineBot = line.y + line.h - 30;
     const yLine = (v) => lineBot - ((v - lo) / (hi - lo)) * Math.max(1, lineBot - lineTop);
     const points = sum.density.map((v, i) => (v == null ? null : { x: colX(i), y: yLine(v), v }));
     // 막대: 0 에서 시작한다. 기준선과 가장 큰 값이 다 들어오도록 위를 잡는다.
     const rates = sum.bn.filter(Boolean).map((b) => b.rate);
     const max = Math.max(130, ...rates.map((r) => r * 1.12), (sum.secure || 110) * 1.15);
+    // 아래 50px 는 막대 밑 두 줄(공정 이름·상태 — 둘 다 14px) 자리다. 기준선 자리는 정확한 기준이다.
     const barTop = bars.y + 24;
-    const barBot = bars.y + bars.h - 40;
+    const barBot = bars.y + bars.h - 50;
     const yBar = (v) => barBot - (v / max) * Math.max(1, barBot - barTop);
     const bw = Math.min(54, G.colW * 0.42);
     let lowest = -1;
@@ -708,10 +710,11 @@ function scene(port, gridOf) {
       g.fillStyle = pal.faint;
       g.fillText(`${v.toFixed(digits)}억Gb`, line.x + 6, y - 4);
     }
-    g.font = `500 11px ${bodyStack}`;
+    // 달 이름은 점 위 값 글자(14px)와 같은 크기다(2026-10-03 사용자 결정).
+    g.font = `500 14px ${bodyStack}`;
     g.textAlign = "center";
     g.fillStyle = pal.muted;
-    sum.months.forEach((m, i) => g.fillText(m, L.colX(i), line.y + line.h - 8));
+    sum.months.forEach((m, i) => g.fillText(m, L.colX(i), line.y + line.h - 9));
     const pts = L.points.filter(Boolean);
     if (pts.length) {
       // 영역은 선이 다 그어질 즈음 번진다.
@@ -788,11 +791,12 @@ function scene(port, gridOf) {
     g.translate(0, 18 * (1 - k));
     panel(bars.x, bars.y, bars.w, bars.h);
     // 기준선 둘은 몇 px 떨어져 있어 이름표를 양 끝에 나눠 단다(경고 기준은 왼쪽 선 아래, 확보 기준은 오른쪽 선 위).
+    // 선은 정확한 기준(109.5) 자리에 긋고, 이름표는 사사오입한 글자(`*_label`, 110%)를 단다.
     g.font = `500 10px ${bodyStack}`;
     g.textBaseline = "alphabetic";
-    for (const [v, dash, alignLeft] of [
-      [sum.warning, [4, 4], true],
-      [sum.secure, [1, 4], false],
+    for (const [v, label, dash, alignLeft] of [
+      [sum.warning, sum.warning_label, [4, 4], true],
+      [sum.secure, sum.secure_label, [1, 4], false],
     ]) {
       if (v == null) continue;
       const y = Math.round(L.yBar(v)) + 0.5;
@@ -806,15 +810,15 @@ function scene(port, gridOf) {
       g.setLineDash([]);
       g.fillStyle = pal.muted;
       g.textAlign = alignLeft ? "left" : "right";
-      g.fillText(`${v}%`, alignLeft ? bars.x + 6 : bars.x + bars.w - 6, alignLeft ? y + 12 : y - 4);
+      g.fillText(label || `${v}%`, alignLeft ? bars.x + 6 : bars.x + bars.w - 6, alignLeft ? y + 12 : y - 4);
     }
     sum.bn.forEach((b, i) => {
       const cx = L.colX(i);
       g.textAlign = "center";
       if (!b) {
-        g.font = `500 10.5px ${bodyStack}`;
+        g.font = `500 14px ${bodyStack}`;
         g.fillStyle = pal.faint;
-        g.fillText("—", cx, L.barBot + 15);
+        g.fillText("—", cx, L.barBot + 19);
         return;
       }
       const color = statusColor(b.status);
@@ -835,17 +839,18 @@ function scene(port, gridOf) {
         g.fillText(`${round(b.rate, 1)}%`, cx, top - 7);
         g.globalAlpha = k;
       }
-      g.font = `500 10.5px ${bodyStack}`;
+      // 막대 밑 두 줄(공정 이름·상태)은 생산계획 값 글자와 같은 14px 다(2026-10-03 사용자 결정).
+      g.font = `500 14px ${bodyStack}`;
       g.fillStyle = pal.muted;
-      g.fillText(fit(b.process, L.G.colW - 8), cx, L.barBot + 15);
+      g.fillText(fit(b.process, L.G.colW - 8), cx, L.barBot + 19);
       // 부족 대수 — 부족한 달만 숫자로 세우고(상태색), 나머지는 상태 이름만 단다.
       const a2 = clamp01((c - 900 - i * 90) / 400);
       if (a2 > 0) {
         g.globalAlpha = k * a2;
         const short = b.status === "shortage" && b.short != null && b.short > 0;
-        g.font = short ? `700 13px ${bodyStack}` : `700 10.5px ${bodyStack}`;
+        g.font = `700 14px ${bodyStack}`;
         g.fillStyle = short ? color : pal.muted;
-        g.fillText(short ? `${sum.text.shortage} ${b.short}대` : sum.text[b.status] || "", cx, L.barBot + 31);
+        g.fillText(short ? `${sum.text.shortage} ${b.short}대` : sum.text[b.status] || "", cx, L.barBot + 38);
         g.globalAlpha = k;
       }
     });
@@ -1498,15 +1503,17 @@ function createOverlay(api, data, initial, syncToolbar) {
 
   function buildLabels() {
     const rows = text.rows || [];
+    // 범례의 기준 숫자는 파이썬이 사사오입해 보낸 글자다(`secure_label` — 109.5 → 110%).
     const legendStatus = [
-      [palette["die-ok"], `${(text.status || {}).secure || ""} >${summary.secure}%`],
+      [palette["die-ok"], `${(text.status || {}).secure || ""} >${summary.secure_label || `${summary.secure}%`}`],
       [palette["die-warn"], (text.status || {}).warning || ""],
-      [palette["die-short"], `${(text.status || {}).shortage || ""} <${summary.warning}%`],
+      [palette["die-short"], `${(text.status || {}).shortage || ""} <${summary.warning_label || `${summary.warning}%`}`],
     ];
     const legend = (pairs) =>
       `<div class="legend">${pairs.map(([color, name]) => `<span><i style="background:${escapeHtml(color)}"></i>${escapeHtml(name)}</span>`).join("")}</div>`;
+    // 설명(`sub`)이 없는 행은 그 줄을 아예 만들지 않는다 — 빈 줄이 남으면 범례가 위로 끌려 붙는다.
     const cell = (row, extra) =>
-      `<div class="sum-label"><div class="t">${escapeHtml(row.title || "")}</div><div class="s">${escapeHtml(row.sub || "")}</div>${extra}</div>`;
+      `<div class="sum-label"><div class="t">${escapeHtml(row.title || "")}</div>${row.sub ? `<div class="s">${escapeHtml(row.sub)}</div>` : ""}${extra}</div>`;
     labels.innerHTML =
       cell(rows[0] || {}, "") +
       cell(rows[1] || {}, legend(legendStatus)) +

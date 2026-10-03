@@ -269,3 +269,45 @@ def test_the_toolbar_summary_button_is_a_sibling_of_guide() -> None:
     # 꾸밈은 툴바 스크립트 한 곳이다. 입장 화면 JS 는 보임만 정한다.
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
     assert "TOOLBAR_STYLE_ID" not in js and "capa-mini" not in js
+
+
+def test_summary_rows_keep_only_the_production_caption() -> None:
+    """행 이름 아래 설명은 단위가 필요한 생산계획만 남긴다(2026-10-03 사용자 결정).
+
+    B/N 확보율·월별 시트는 범례가 뜻을 나른다. 설명이 없는 행은 빈 줄도 만들지 않는다 — 빈 줄의
+    음수 여백이 범례를 행 이름 쪽으로 끌어올린다.
+    """
+    rows = intro_overlay._data()["text"]["rows"]
+
+    assert [row["title"] for row in rows] == ["생산계획", "B/N 확보율", "월별 시트"]
+    assert [row.get("sub") for row in rows] == ["Density · 억Gb", None, None]
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    assert '${row.sub ? `<div class="s">' in js
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+    assert re.search(r"\.sum-label \.t \{\s*font: 800 20px/", css)
+
+
+def test_summary_threshold_text_is_the_rounded_label_and_the_line_stays_exact() -> None:
+    """범례·기준선 이름표는 파이썬이 사사오입한 글자(`*_label`)를 쓰고, 선 자리는 정확한 숫자다."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+
+    assert "summary.secure_label" in js and "summary.warning_label" in js
+    assert "[sum.warning, sum.warning_label," in js and "[sum.secure, sum.secure_label," in js
+    assert "L.yBar(v)" in js
+    assert not re.search(r">\$\{summary\.secure\}%`\]", js)
+
+
+def test_summary_axis_and_bar_labels_match_the_point_value_size() -> None:
+    """생산계획 달 이름, 막대 밑 공정 이름·상태(부족 대수)는 점 위 값 글자와 같은 14px 다."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    scene = js[js.index("function drawLine(") : js.index("function drawSheets(")]
+
+    assert "g.font = `700 14px ${numStack}`;" in scene
+    assert "sum.months.forEach" in scene
+    month_font = scene[: scene.index("sum.months.forEach")].rsplit("g.font = ", 1)[1]
+    assert month_font.startswith("`500 14px ")
+    assert "fit(b.process" in scene
+    process_font = scene[: scene.index("fit(b.process")].rsplit("g.font = ", 1)[1]
+    assert process_font.startswith("`500 14px ")
+    assert "g.font = `700 14px ${bodyStack}`;" in scene
+    assert "10.5px" not in scene and "700 13px" not in scene

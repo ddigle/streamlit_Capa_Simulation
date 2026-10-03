@@ -161,6 +161,7 @@ from capa_simulation.services.simulation_cache import (
     get_home_plan_detail,
     get_home_simulation,
 )
+from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import (
     BOTTLENECK_BOX_KEY,
@@ -557,8 +558,11 @@ def show_process_filter_dialog(
 
     st.markdown(f"**선택 {len(selected_set)} / {len(options)}** · 체크된 버튼이 ON입니다.")
     # 기간·기준은 상태다. 판정 규칙(유효한 월 중 최저 확보율)과 hover 는 Guide 가 말한다.
+    # 기준은 사사오입한 정수 퍼센트로 적는다(`threshold_percent_label`). 공정을 가르는 판정은
+    # 정확한 값이다.
     st.caption(
-        f"{month_label(start_month)}–{month_label(end_month)} · 확보 기준 {threshold_percent:g}%"
+        f"{month_label(start_month)}–{month_label(end_month)} · "
+        f"확보 기준 {threshold_percent_label(threshold_percent / 100.0)}"
     )
     # 적용은 타일 목록 **위** 작업 줄이다 — 공정이 많으면 목록 아래 버튼이 팝업 밖으로 밀린다.
     with st.container(horizontal=True, gap="small"):

@@ -80,7 +80,7 @@
 }
 
 .sum-label .t {
-  font: 800 17px/1.15 var(--display);
+  font: 800 20px/1.15 var(--display);
   font-stretch: 75%;
   letter-spacing: 0.02em;
 }

@@ -75,6 +75,7 @@ from capa_simulation.services.simulation_cache import (
     get_home_simulation,
     get_intro_summary_payload,
 )
+from capa_simulation.services.threshold_label import threshold_percent_label
 
 # 컴포넌트 칸의 key 이자 숨김 규칙의 훅.
 INTRO_SUMMARY_KEY = "capa_intro_summary"
@@ -167,8 +168,12 @@ def summary_payload(
         "density": [_round(value, 2) for value in summary.density],
         "wafer": [_round(None if value is None else value / 1_000, 1) for value in summary.wafer],
         "bn": bottlenecks,
+        # 숫자는 기준선의 **자리**(정확한 값), `*_label` 은 범례·기준선 이름표에 적는 **글자**다 —
+        # 사사오입한 정수 퍼센트(109.5 → 110%). 109.7% 확보 막대가 선 위에 서야 하므로 둘을 나눈다.
         "secure": round(secure_threshold * 100.0, 1),
         "warning": round(warning_threshold * 100.0, 1),
+        "secure_label": threshold_percent_label(secure_threshold),
+        "warning_label": threshold_percent_label(warning_threshold),
         "products": [
             {"name": name, "color": other if slot is None else colors[slot % len(colors)]}
             for name, slot in zip(summary.products, summary.product_slots, strict=True)
