@@ -290,6 +290,33 @@ def test_groups_without_subpages_are_boxed_but_not_expandable(_app: AppTest) -> 
     assert SCENARIO_MANAGEMENT.title not in expandable
 
 
+def test_the_scenario_box_opens_the_database_that_settings_points_to_at_run_time(
+    _app: AppTest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사이드바 시나리오 상자는 **부르는 순간의** `settings.DUCKDB_PATH` 를 연다.
+
+    기본 경로를 import 때 잡으면 픽스처가 `settings` 를 갈아끼워도 상자만 저장소의
+    `data/capa_simulation.duckdb` 를 만들고 마이그레이션하며 잠근다 — 앱 서버가 떠 있는
+    개발 PC 에서 잠금 충돌이 난다. 파일이 없는지로 보지 않는다: 작업 사본에는 그 파일이
+    정상적으로 있을 수 있어서다. 상자가 연 경로를 그대로 적어 둔다.
+    """
+    import capa_simulation.components.scenario_status as scenario_status
+
+    opened: list[str] = []
+    original = scenario_status.get_scenario_repository
+
+    def _recording(database_path: str) -> Any:
+        opened.append(database_path)
+        return original(database_path)
+
+    monkeypatch.setattr(scenario_status, "get_scenario_repository", _recording)
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert opened
+    assert set(opened) == {str((tmp_path / "scenario.duckdb").resolve())}
+
+
 # ------------------------------------------------------- 조회 컨트롤 상자 접기
 #
 # 페이지 그룹과 **같은 양식**으로 접는다. 넷 다 `st.expander` 이고 `key` 로 펼침 상태가

@@ -1,7 +1,6 @@
 # Purpose: 저장된 월이 기본 조회기간 밖에 있어도 선택·재선택과 페이지 왕복이 가능한지 검증한다.
 
 from dataclasses import replace
-from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -64,7 +63,6 @@ def test_shifted_months_remain_selectable_after_narrowing_and_page_roundtrip(
     import capa_simulation.components.intro_overlay as intro_overlay
     import capa_simulation.components.intro_summary as intro_summary
     import capa_simulation.components.month_range_picker as month_range_picker
-    import capa_simulation.components.scenario_status as scenario_status
     import capa_simulation.settings as settings
 
     database = tmp_path / "scenario.duckdb"
@@ -87,11 +85,6 @@ def test_shifted_months_remain_selectable_after_narrowing_and_page_roundtrip(
     )
     monkeypatch.setattr(settings, "DUCKDB_PATH", database)
     monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", tmp_path / "equipment.duckdb")
-    monkeypatch.setattr(
-        scenario_status,
-        "render_scenario_controls",
-        partial(scenario_status.render_scenario_controls, database_path=database),
-    )
     monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
     monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)

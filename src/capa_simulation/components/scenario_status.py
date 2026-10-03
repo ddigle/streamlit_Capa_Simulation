@@ -10,6 +10,9 @@ from pathlib import Path
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+# 테스트가 `settings.DUCKDB_PATH` 를 갈아끼운다. 이름을 직접 import 하면 여기서 잡은
+# 바인딩이 교체를 무시하므로 호출 시점에 모듈에서 찾는다.
+import capa_simulation.settings as settings
 from capa_simulation.components.capacity_gate import revision_save_verdict
 from capa_simulation.components.scenario_management import revision_tables_for_save
 from capa_simulation.io.reference_cache import (
@@ -32,7 +35,6 @@ from capa_simulation.scenario_activation import (
 )
 from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.scenario_state import ensure_active_scenario
-from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import sidebar_expander
 
 SIDEBAR_SCENARIO_KEY = "sidebar_scenario_id"
@@ -51,15 +53,19 @@ SCENARIO_BOX_ICON = ":material/layers:"
 
 
 def render_scenario_controls(
-    database_path: Path = DUCKDB_PATH, *, pending_edits: Sequence[str] = ()
+    database_path: Path | None = None, *, pending_edits: Sequence[str] = ()
 ) -> None:
     """Load a saved revision or persist the current edits from every page.
+
+    `database_path` 를 주지 않으면 **부를 때의** `settings.DUCKDB_PATH` 를 쓴다.
 
     `pending_edits` 는 이 화면에 **적용하지 않은** 편집이 남은 곳이다(`「기준 정보 · UPEH」`).
     그 편집은 시나리오에 들어 있지 않아 저장에 실리지 않고, 저장·불러오기가 원본을 바꾸는 순간
     사라진다. 그래서 둘 다 한 번 더 묻는다(2026-09-29 2차 리뷰).
     """
-    resolved_path = str(database_path.resolve())
+    resolved_path = str(
+        (settings.DUCKDB_PATH if database_path is None else database_path).resolve()
+    )
     # 플래시는 상자를 세우기 **전에** 꺼낸다. 저장소를 못 읽는 회차에도 한 번 보여 주고
     # 지워야 다음 rerun 까지 남지 않는다.
     flash = st.session_state.pop(SIDEBAR_FLASH_KEY, None)

@@ -27,7 +27,6 @@
 
 from __future__ import annotations
 
-import functools
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,7 +40,6 @@ import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.intro_overlay as intro_overlay
 import capa_simulation.components.intro_summary as intro_summary
 import capa_simulation.components.month_range_picker as month_range_picker
-import capa_simulation.components.scenario_status as scenario_status
 import capa_simulation.settings as settings
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.components.home_preference import (
@@ -221,8 +219,8 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
 
     DuckDB 는 프로세스 배타 잠금이라 반드시 `tmp_path` 에 만든 DB 를 쓴다. 운영 DB 를
     가리키는 기본값이 한 군데라도 남아 있으면 앱 서버가 떠 있는 개발 PC 에서 이 검사가
-    `duckdb.IOException` 으로 죽는다 — `render_scenario_controls` 의 기본 인자가 그 자리라
-    함께 갈아끼운다(기본값은 import 시점에 박히므로 `settings` 만 바꿔서는 늦다).
+    `duckdb.IOException` 으로 죽는다. 사이드바 시나리오 상자도 기본 경로를 부를 때
+    `settings` 에서 찾으므로 `settings.DUCKDB_PATH` 하나만 바꾸면 된다.
     """
     database = tmp_path_factory.mktemp("e2e_scenario_switch") / "scenario.duckdb"
     baseline_revision_id, other_revision_id = _seed_two_revisions(database)
@@ -241,11 +239,6 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
         patch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
         patch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
         patch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
-        patch.setattr(
-            scenario_status,
-            "render_scenario_controls",
-            functools.partial(scenario_status.render_scenario_controls, database_path=database),
-        )
         patch.setattr(st, "plotly_chart", _spy_plotly_chart)
 
         app = AppTest.from_file(str(APP_PATH), default_timeout=600)
@@ -496,11 +489,6 @@ def test_toggles_flipped_in_the_card_on_main_are_released_by_a_load(
     monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
     monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
-    monkeypatch.setattr(
-        scenario_status,
-        "render_scenario_controls",
-        functools.partial(scenario_status.render_scenario_controls, database_path=database),
-    )
     app = AppTest.from_file(str(APP_PATH), default_timeout=600)
     app.run()
     assert not app.exception, [element.message for element in app.exception]
