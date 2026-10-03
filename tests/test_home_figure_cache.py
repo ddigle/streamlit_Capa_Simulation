@@ -1,5 +1,7 @@
 # Purpose: HOME Figure 캐시의 내용·테마·스키마 분리, 최근 사용 순서와 세션 공유를 검증한다.
 
+import pickle
+
 import plotly.graph_objects as go
 import pytest
 
@@ -220,3 +222,39 @@ def test_a_shared_recall_is_a_copy_that_cannot_repaint_another_session(
 
     assert second is not None
     assert second.lob_labels.layout.title.text is None
+
+
+def test_a_shared_recall_rebuilds_the_same_figure_from_plain_specs(
+    cache_key: HomeFigureCacheKey,
+    figures: HomeFigureSet,
+    shared_store: SharedBlobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """공용 칸은 Figure 가 아니라 `to_dict()` 목록을 담고, 꺼낼 때 같은 그림을 다시 세운다.
+
+    빈 Figure 만으로는 저장 형식이 Figure 통째 pickle 로 돌아가도 드러나지 않는다. 막대와
+    축 제목이 있는 그림으로 왕복하고, Plotly 비공개 인자 `_validate` 가 사라지면 복원이
+    `TypeError` 로 깨져 여기서 먼저 드러난다.
+    """
+    drawn = go.Figure(
+        go.Bar(x=["DEMO_A", "DEMO_B"], y=[1.5, 2.0], marker={"color": "#336699"}),
+        layout={"xaxis": {"title": {"text": "공정"}}, "height": 120},
+    )
+    pristine = cache_key._replace(content_token="pristine-3")
+    store_home_figures(pristine, figures._replace(bottleneck_months=drawn))
+
+    blob = shared_store.get(("light", pristine))
+    assert blob is not None
+    specs = pickle.loads(blob)
+    assert isinstance(specs, list)
+    assert len(specs) == len(HomeFigureSet._fields)
+    assert all(type(spec) is dict for spec in specs)
+
+    _new_session(monkeypatch)
+    recalled = take_home_figures(pristine)
+
+    assert recalled is not None
+    assert all(isinstance(figure, go.Figure) for figure in recalled)
+    assert recalled.bottleneck_months is not drawn
+    assert recalled.bottleneck_months.to_dict() == drawn.to_dict()
+    assert recalled.lob_labels.to_dict() == figures.lob_labels.to_dict()

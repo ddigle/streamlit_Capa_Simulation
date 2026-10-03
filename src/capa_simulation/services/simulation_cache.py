@@ -90,7 +90,9 @@ def shared_home_figure_store() -> SharedBlobStore:
     """HOME Figure 묶음을 세션끼리 나누는 저장소. 키가 내용 전체를 말하므로 비울 일이 없다.
 
     키는 (테마, `HomeFigureCacheKey`) 다. 편집 없는 리비전(`pristine-` 토큰)의 그림만
-    들어온다 — 새로고침한 세션이 Figure 생성(0.74초)을 건너뛰고 복원(0.28초)만 치른다.
+    들어온다 — 새로고침한 세션이 Figure 생성을 건너뛰고 복원만 치른다. 값의 형식과 복원은
+    `components/home_rendering.py` 가 정한다(`to_dict()` 목록, 검증 없이 다시 세워 여덟 개에
+    약 0.05초 — 합성 표본의 샘플 관측).
     """
     return SharedBlobStore(SHARED_HOME_FIGURE_MAX_ENTRIES)
 

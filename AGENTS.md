@@ -1286,7 +1286,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `shared_home_figure_store()`(`st.cache_resource`)는 HOME Figure 묶음을 세션끼리 나누는
     프로세스 공용 LRU 다. **값은 pickle 바이트**로 둔다 — 객체를 그대로 나누면 한 세션이
     꺼낸 Figure 를 고칠 때 남의 화면이 바뀐다. 편집 없는 리비전(`pristine-` 토큰)의 그림만
-    들어오고, 키가 내용 전체를 말하므로 비우지 않는다.
+    들어오고, 키가 내용 전체를 말하므로 비우지 않는다. 바이트의 내용은 Figure 가 아니라
+    `HomeFigureSet` 필드 차례의 `to_dict()` 목록이고, 꺼낼 때 `go.Figure(d, _validate=False)`
+    로 검증 생성자를 건너뛴다(`components/home_rendering.py`). `_validate` 는 Plotly 비공개
+    인자라 `plotly>=5.24,<7` 고정과 `tests/test_home_figure_cache.py` 의 공용 칸 왕복 테스트가
+    지킨다. 저장 형식을 바꾸면 `HOME_FIGURE_SCHEMA_VERSION` 을 올린다 — 오래 떠 있는
+    프로세스의 공용 칸에 옛 형식이 남아 있다.
   - **대당 Capa·소요대수는 시나리오 전체 기간으로 한 번 계산하고 조회기간은 잘라 쓴다**
     (`get_full_capacity_outcome` → `slice_capacity_months`). 월끼리 섞이는 계산(누적·이월·
     보간)이 없어 자른 결과가 그 기간만 계산한 결과와 행 차례까지 같다
@@ -2398,7 +2403,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `HOME_FIGURE_SCHEMA_VERSION`도 올려 기존 세션의 옛 값을 다시 만들게 한다. 편집 없는
     리비전의 그림은 세션 공용 저장소에도 들어가고 그 토큰이 리비전에서 나온 고정값이라,
     올리지 않으면 새 세션·다른 사용자까지 옛 그림을 받는다(이름 있는 묶음 42, 막대 둥근
-    머리·LOB 폭 43). 테마 분리와 LRU 최대 8개 정책은 같다.
+    머리·LOB 폭 43, 제품별 비중 도넛 44, 공용 칸 `to_dict()` 저장 형식 45). 테마 분리와 LRU
+    최대 8개 정책은 같다.
   - **값 막대만 머리가 둥글다.** 생산계획 LOB 의 B/N 막대는 `tokens.BAR_CORNER_RADIUS_WIDE_PX`
     (8px), B/N Top 5 는 `BAR_CORNER_RADIUS_NARROW_PX`(3px)를 trace 의 `marker.cornerradius`
     스칼라로 준다. `layout.barcornerradius` 는 쓰지 않는다 — 그림 전체 기본값이 되어 증감

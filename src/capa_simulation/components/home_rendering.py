@@ -8,7 +8,7 @@ import html
 import pickle
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import NamedTuple, cast
+from typing import Any, NamedTuple, cast
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -106,8 +106,9 @@ HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 # 처럼 Figure 에 구워지는 것)을 바꿀 때도 올린다. 편집 없는 리비전의 그림은 세션 공용
 # 저장소에도 들어가고 그 토큰은 리비전에서 나온 고정값이라, 올리지 않으면 새 세션과 다른
 # 사용자까지 옛 그림을 받는다. 42 는 이름 있는 묶음, 43 은 막대 둥근 머리·LOB 폭 70px,
-# 44 는 `제품별 비중` 도넛 행과 `B/N Top 5` 구분 글자의 세로 가운데.
-HOME_FIGURE_SCHEMA_VERSION = 44
+# 44 는 `제품별 비중` 도넛 행과 `B/N Top 5` 구분 글자의 세로 가운데, 45 는 공용 칸에 Figure
+# 대신 `to_dict()` 목록을 넣는 저장 형식.
+HOME_FIGURE_SCHEMA_VERSION = 45
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지
@@ -159,7 +160,7 @@ def take_home_figures(cache_key: HomeFigureCacheKey) -> HomeFigureSet | None:
         # 건너뛴다.
         blob = shared_home_figure_store().get(themed)
         if blob is not None:
-            figures = cast(HomeFigureSet, pickle.loads(blob))
+            figures = _figures_from_blob(blob)
     if figures is not None:
         _remember(cache, themed, figures)
     return figures
@@ -174,9 +175,28 @@ def store_home_figures(
     _remember(cache, themed, figures)
     # 편집 중인 세션의 그림은 남이 쓸 일이 없다. 공용 칸에 넣으면 남의 칸만 밀어낸다.
     if is_pristine_content_token(cache_key.content_token):
-        shared_home_figure_store().put(
-            themed, pickle.dumps(figures, protocol=pickle.HIGHEST_PROTOCOL)
-        )
+        shared_home_figure_store().put(themed, _figures_to_blob(figures))
+
+
+# 공용 칸의 값은 **바이트**다 — 객체를 그대로 나누면 한 세션이 꺼낸 Figure 를 고칠 때 남의
+# 화면이 바뀐다. Figure 를 통째로 pickle 하면 꺼낼 때 `Figure(...)` 검증 생성자가 모든 속성을
+# 다시 검사해 새 세션마다 그 비용을 치른다. 그래서 필드 차례대로 `to_dict()` 목록을 넣고,
+# 꺼낼 때는 검증 없이 다시 세운다 — 넣은 dict 는 이미 검증을 마친 Figure 에서 나왔다.
+# `_validate` 는 Plotly 의 **비공개** 인자다(`plotly>=5.24,<7` 고정). 인자가 사라지면
+# `go.Figure` 가 모르는 속성으로 거절하므로 `tests/test_home_figure_cache.py` 의 공용 칸
+# 왕복 테스트가 먼저 깨진다.
+def _figures_to_blob(figures: HomeFigureSet) -> bytes:
+    return pickle.dumps([figure.to_dict() for figure in figures], protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def _figures_from_blob(blob: bytes) -> HomeFigureSet:
+    specs: list[dict[str, Any]] = pickle.loads(blob)
+    return HomeFigureSet(
+        **{
+            name: go.Figure(spec, _validate=False)
+            for name, spec in zip(HomeFigureSet._fields, specs, strict=True)
+        }
+    )
 
 
 def _remember(
