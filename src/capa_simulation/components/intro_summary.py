@@ -12,14 +12,22 @@
 시나리오 시작월부터 여섯 달, HOME 토글 기본값. `get_home_simulation` 에 공식 리비전의 결정적
 키(`reference_version_for_revision`·`pristine_content_token`)를 넘기므로 **무거운 시나리오 전체 Capa
 계산(`get_full_capacity_outcome`)은 HOME·공식 발행 검사와 한 칸을 나눠 쓴다.** 여섯 달로 자른
-결과는 HOME 의 조회기간과 대개 달라 따로 캐시된다(가벼운 부분이다). 값이 회차마다 같아야
-Streamlit 이 다시 보내지 않으므로 세션에 한 번 만든 값을 공식버전(과 그 시나리오 이름)·표시순서·
-공정 표시명이 그대로인 동안 다시 쓴다.
+결과는 HOME 의 조회기간과 대개 달라 따로 캐시된다(가벼운 부분이다).
+
+**HOME 을 무겁게 하지 않는다**(2026-10-03 사용자 결정 — 주 업무가 HOME 이다).
+완성된 요약은 서버에 한 벌만 둔다(`simulation_cache.get_intro_summary_payload` —
+모든 사용자가 같은 공식버전을 본다). 같은 세션의 회차는 지난번 값을 그대로 보내고,
+공식버전이 바뀌었는지는 `RECHECK_SECONDS` 에 한 번만 확인한다. 그래서 HOME 의 회차
+(다시 실행·시나리오 전환)가 치르는 값은 세션에서 한 번 읽는 것뿐이고, 새 탭·F5·테마
+전환도 서버에 이미 있는 값을 꺼낸다. 회차마다 같은 값이라 Streamlit 은 다시 그리지
+않고 브라우저 JS 도 다시 돌지 않는다. 컴포넌트 칸은 회차마다 같은 자리에 둔다 —
+빼면 그 뒤 본문 요소의 자리가 밀려 HOME 이 다시 그려진다.
 
 **실패해도 앱은 선다.** 이 값은 모든 페이지 앞에서 보내므로 어떤 예외도 밖으로 내보내지 않는다 —
 공식버전이 없거나 계산이 멈추면 `available: false` 와 까닭을 보낸다. 입장 화면은 Summary 를 끄고
-Detail 만 남긴다. 예외로 끝난 결과는 세션에 기억하지 않는다(DB 잠금 같은 일시적 실패가 그 세션
-내내 남지 않게 다음 회차에 다시 해 본다).
+Detail 만 남긴다. 데이터 오류로 만들지 못한 결과는 서버 캐시에 남겨 회차마다 다시 계산하지 않는다
+(고치려면 새 공식버전을 지정해야 하고 그때 키가 바뀐다). DB 잠금 같은 일시적 실패는 남기지 않고
+다음 확인 때(`RECHECK_SECONDS` 뒤) 다시 해 본다.
 
 **툴바 단추.** 원래 화면에서 요약으로 돌아오는 `Summary` 는 Guide 처럼 테마 버튼 iframe 의
 스크립트(`summary_toolbar_script`)가 툴바에 끼워 넣고 칠한다 — Guide 와 같은 윤곽 단추에 앱 색 16px
@@ -30,9 +38,11 @@ Detail 만 남긴다. 예외로 끝난 결과는 세션에 기억하지 않는�
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from typing import Any
 
+import duckdb
 import streamlit as st
 
 from capa_simulation.components.home_figure_common import capacity_status
@@ -63,14 +73,24 @@ from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
     get_home_lob_without_edp,
     get_home_simulation,
+    get_intro_summary_payload,
 )
 
 # 컴포넌트 칸의 key 이자 숨김 규칙의 훅.
 INTRO_SUMMARY_KEY = "capa_intro_summary"
 # 툴바 단추 id. 입장 화면 JS 의 `SUMMARY_BUTTON_ID` 와 같아야 한다(테스트가 잡는다).
 SUMMARY_BUTTON_ID = "capa-summary-button"
-# 세션에 한 번 만든 요약. (공식버전, 표시순서 판, 공정 표시명 판) 이 같은 동안 다시 쓴다.
-_MEMO_KEY = "intro_official_summary_memo"
+# 이 세션이 마지막으로 보낸 요약과 그때 확인한 시각. HOME 이 주 업무 화면이라 이 부가
+# 기능이 HOME 의 회차를 무겁게 하면 안 된다(2026-10-03 사용자 결정). 그래서 같은 세션의
+# 회차는 이 값을 그대로 보내고, 공식버전이 바뀌었는지는 `RECHECK_SECONDS` 에 한 번만
+# 본다(그 조회가 회차마다 7~9ms 였다). 이 세션에서 공식버전을 지정하면
+# `forget_intro_summary_check` 가 곧바로 다시 보게 한다.
+_SESSION_KEY = "intro_official_summary"
+RECHECK_SECONDS = 30.0
+# 일시적일 수 있는 실패. 이것만 서버 캐시에 남기지 않고 다음 확인 때(`RECHECK_SECONDS` 뒤)
+# 다시 해 본다. 그 밖의 실패는 다시 해도 같은 결과(데이터 오류)라 「만들지 못함」을 서버
+# 캐시에 남긴다 — 고치려면 새 공식버전을 지정해야 하고 그때 키가 바뀐다.
+_TRANSIENT_ERRORS = (duckdb.Error, OSError, MemoryError)
 
 # 받은 값을 입장 화면 JS 에 넘기기만 한다. 오버레이가 아직 없으면 창에 두고 뜰 때 읽는다.
 _JS = """
@@ -206,30 +226,73 @@ def _build(database_path: str, release: OfficialReleaseSummary) -> dict[str, Any
     )
 
 
-def official_summary_data(database_path: str) -> dict[str, Any]:
-    """이 세션이 보낼 요약. 공식버전·표시순서·공정 표시명이 그대로면 세션에 둔 값을 그대로 쓴다."""
+def _build_or_unavailable(database_path: str, release: OfficialReleaseSummary) -> dict[str, Any]:
+    """서버 캐시가 부르는 계산. 일시적일 수 있는 실패는 그대로 올려 캐시에 남기지 않고,
+    그 밖의 실패(데이터 오류)는 「만들지 못함」으로 돌려 캐시에 남긴다."""
+    try:
+        return _build(database_path, release)
+    except _TRANSIENT_ERRORS:
+        raise
+    except Exception as exc:  # 다시 해도 같은 결과다 — 회차마다 다시 계산하지 않게 남긴다
+        return _unavailable(f"공식버전 요약을 만들지 못했습니다: {type(exc).__name__}: {exc}")
+
+
+class _Transient(Exception):
+    """이번 확인이 일시적 실패로 끝났다. 세션이 들고 있던 값을 지우지 않는다."""
+
+
+def _look_up(database_path: str) -> dict[str, Any]:
     try:
         release = get_scenario_repository(database_path).latest_official_release()
         if release is None:
             return _unavailable("공식버전이 아직 없습니다.")
-        memo_key = (
+        cache_key = (
             release.official_release_id,
             # 시나리오 이름은 바꿔도 공식버전 id 가 그대로라 따로 넣는다(머리 줄 풍선이 쓴다).
             release.scenario_name,
             load_global_display_order(database_path).version,
             get_process_labels().version,
         )
-    except Exception as exc:  # 모든 페이지 앞이다 — 어떤 실패든 이 화면 하나로 끝내야 한다
-        return _unavailable(f"공식버전을 읽지 못했습니다: {type(exc).__name__}: {exc}")
-    memo = st.session_state.get(_MEMO_KEY)
-    if isinstance(memo, tuple) and len(memo) == 2 and memo[0] == memo_key:
-        return dict(memo[1])
-    try:
-        data = _build(database_path, release)
+        return get_intro_summary_payload(
+            cache_key, _build=lambda: _build_or_unavailable(database_path, release)
+        )
+    except _TRANSIENT_ERRORS as exc:
+        raise _Transient(f"{type(exc).__name__}: {exc}") from exc
     except Exception as exc:  # 모든 페이지 앞이다 — 어떤 실패든 이 화면 하나로 끝내야 한다
         return _unavailable(f"공식버전 요약을 만들지 못했습니다: {type(exc).__name__}: {exc}")
-    st.session_state[_MEMO_KEY] = (memo_key, data)
+
+
+def official_summary_data(database_path: str) -> dict[str, Any]:
+    """이 회차에 보낼 요약.
+
+    같은 세션에서 `RECHECK_SECONDS` 안이면 지난번 값을 그대로 쓴다(DB·캐시를 보지 않는다). 그 밖이면
+    공식버전을 확인해 서버 캐시에서 꺼낸다 — 처음 만드는 것은 서버 전체에서 그 키로 한 번뿐이다.
+    """
+    now = time.monotonic()
+    held = st.session_state.get(_SESSION_KEY)
+    if (
+        isinstance(held, dict)
+        and isinstance(held.get("data"), dict)
+        and now - float(held.get("checked_at", -RECHECK_SECONDS)) < RECHECK_SECONDS
+    ):
+        return dict(held["data"])
+    try:
+        data = _look_up(database_path)
+    except _Transient as exc:
+        # DB 잠금 같은 일시적 실패로 멀쩡한 요약을 지우지 않는다(지우면 툴바 Summary 가
+        # 사라진다). 들고 있던 값을 그대로 두고, 다음 확인도 `RECHECK_SECONDS` 뒤에 한다 —
+        # HOME 회차는 그대로 가볍다.
+        kept = held.get("data") if isinstance(held, dict) else None
+        data = (
+            kept if isinstance(kept, dict) else _unavailable(f"공식버전을 읽지 못했습니다: {exc}")
+        )
+    st.session_state[_SESSION_KEY] = {"checked_at": now, "data": data}
     return dict(data)
+
+
+def forget_intro_summary_check() -> None:
+    """이 세션의 다음 회차가 공식버전을 곧바로 다시 확인하게 한다(공식버전을 지정한 뒤)."""
+    st.session_state.pop(_SESSION_KEY, None)
 
 
 def render_intro_summary(database_path: str) -> None:

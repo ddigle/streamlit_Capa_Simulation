@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -176,3 +177,137 @@ def test_the_payload_is_rounded_theme_independent_and_serializable() -> None:
         warning_threshold=0.995,
         process_label=lambda process: f"<{process}>",
     )
+
+
+# --------------------------------------------------------------- HOME 을 무겁게 하지 않는다
+# 주 업무 화면은 HOME 이다(2026-10-03 사용자 결정). 요약은 회차마다 DB 를 보지 않고, 세션이
+# 바뀌어도 다시 만들지 않으며, 데이터 오류로 실패했으면 회차마다 다시 계산하지 않는다.
+
+
+class _Repo:
+    def __init__(self, release_id: str) -> None:
+        self.calls = 0
+        self.release = SimpleNamespace(
+            official_release_id=release_id, scenario_name="DEMO", revision_id="rev"
+        )
+
+    def latest_official_release(self) -> SimpleNamespace:
+        self.calls += 1
+        return self.release
+
+
+@pytest.fixture
+def summary_env(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    from capa_simulation.components import intro_summary
+    from capa_simulation.services import simulation_cache
+
+    simulation_cache.get_intro_summary_payload.clear()
+    env = SimpleNamespace(
+        session={}, now=1000.0, repo=_Repo("rel-1"), builds=[], fail=None, module=intro_summary
+    )
+
+    def fake_build(path: str, release: SimpleNamespace) -> dict[str, object]:
+        env.builds.append(release.official_release_id)
+        if env.fail is not None:
+            raise env.fail
+        return {"available": True, "release": release.official_release_id}
+
+    monkeypatch.setattr(intro_summary.st, "session_state", env.session)
+    monkeypatch.setattr(intro_summary, "time", SimpleNamespace(monotonic=lambda: env.now))
+    monkeypatch.setattr(intro_summary, "get_scenario_repository", lambda path: env.repo)
+    monkeypatch.setattr(
+        intro_summary, "load_global_display_order", lambda path: SimpleNamespace(version=1)
+    )
+    monkeypatch.setattr(intro_summary, "get_process_labels", lambda: SimpleNamespace(version=0))
+    monkeypatch.setattr(intro_summary, "_build", fake_build)
+    yield env
+    simulation_cache.get_intro_summary_payload.clear()
+
+
+def test_home_reruns_reuse_the_session_value_without_touching_the_db(
+    summary_env: SimpleNamespace,
+) -> None:
+    data = summary_env.module.official_summary_data
+    first = data("db")
+    summary_env.now += 10
+    assert data("db") == first
+    # 30초 안의 회차는 DB(공식버전 조회)도 서버 캐시도 보지 않는다.
+    assert summary_env.repo.calls == 1 and summary_env.builds == ["rel-1"]
+    summary_env.now += summary_env.module.RECHECK_SECONDS
+    assert data("db") == first
+    # 다시 확인해도 같은 공식버전이면 서버 캐시에서 꺼낸다 — 다시 만들지 않는다.
+    assert summary_env.repo.calls == 2 and summary_env.builds == ["rel-1"]
+
+
+def test_a_new_session_takes_the_summary_from_the_server_cache(
+    summary_env: SimpleNamespace,
+) -> None:
+    data = summary_env.module.official_summary_data
+    first = data("db")
+    summary_env.session.clear()  # 새 탭·F5·테마 전환
+    assert data("db") == first
+    assert summary_env.builds == ["rel-1"]
+
+
+def test_publishing_an_official_version_rechecks_at_once(summary_env: SimpleNamespace) -> None:
+    data = summary_env.module.official_summary_data
+    data("db")
+    summary_env.repo = _Repo("rel-2")
+    assert data("db")["release"] == "rel-1"  # 평소에는 30초에 한 번 본다
+    summary_env.module.forget_intro_summary_check()
+    assert data("db")["release"] == "rel-2"
+
+
+def test_data_errors_are_kept_but_transient_errors_are_retried(
+    summary_env: SimpleNamespace,
+) -> None:
+    import duckdb
+
+    data = summary_env.module.official_summary_data
+    summary_env.fail = ValueError("기준정보 오류")
+    assert data("db")["available"] is False
+    summary_env.session.clear()
+    assert data("db")["available"] is False
+    # 데이터 오류는 서버 캐시에 남아 다른 세션도 다시 계산하지 않는다.
+    assert summary_env.builds == ["rel-1"]
+
+    summary_env.repo = _Repo("rel-3")
+    summary_env.fail = duckdb.IOException("잠김")
+    summary_env.session.clear()
+    assert data("db")["available"] is False
+    summary_env.now += summary_env.module.RECHECK_SECONDS
+    summary_env.fail = None
+    # DB 잠금은 남기지 않는다 — 다음 확인 때 다시 만들어 성공한다.
+    assert data("db")["release"] == "rel-3"
+    assert summary_env.builds == ["rel-1", "rel-3", "rel-3"]
+
+
+def test_a_transient_failure_keeps_the_summary_already_held(summary_env: SimpleNamespace) -> None:
+    """30초마다 하는 확인이 DB 잠금으로 실패해도 멀쩡한 요약을 지우지 않는다.
+
+    지우면 툴바 Summary 가 사라진다.
+    """
+    import duckdb
+
+    data = summary_env.module.official_summary_data
+    good = data("db")
+    summary_env.now += summary_env.module.RECHECK_SECONDS
+
+    def locked() -> None:
+        raise duckdb.IOException("잠김")
+
+    summary_env.repo.latest_official_release = locked
+    assert data("db") == good
+    # 다음 확인도 30초 뒤다 — 잠긴 동안 HOME 회차가 DB 를 붙잡지 않는다.
+    summary_env.now += 1
+    assert data("db") == good
+
+
+def test_other_always_failing_errors_are_kept_too(summary_env: SimpleNamespace) -> None:
+    """DB·파일·메모리가 아닌 실패는 다시 해도 같은 결과라 서버 캐시에 남긴다."""
+    data = summary_env.module.official_summary_data
+    summary_env.fail = AttributeError("데이터 모양")
+    assert data("db")["available"] is False
+    summary_env.session.clear()
+    assert data("db")["available"] is False
+    assert summary_env.builds == ["rel-1"]

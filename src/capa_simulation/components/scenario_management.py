@@ -18,6 +18,7 @@ from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
+from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.scenario_month_merge import render_scenario_month_merge
 from capa_simulation.components.scenario_year_shift import render_scenario_year_shift
 from capa_simulation.io.reference_cache import (
@@ -458,6 +459,9 @@ def _render_official(
                 f"공식 v{release.release_no} · {release.release_name}을 지정했습니다."
             )
             st.session_state.pop(ACTION_KEY, None)
+            # 입장 화면 Summary 가 새 공식버전을 다음 회차에 곧바로 싣게 한다
+            # (평소에는 30초에 한 번 본다).
+            forget_intro_summary_check()
             st.rerun()
     releases = repository.list_official_releases(limit=10)
     if releases:

@@ -5,9 +5,9 @@
 import hashlib
 import threading
 from collections import OrderedDict
-from collections.abc import Hashable, Mapping
+from collections.abc import Callable, Hashable, Mapping
 from datetime import date
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import pandas as pd
 import streamlit as st
@@ -435,6 +435,20 @@ def get_home_comparison_plan(
     )
     monthly_wafer = build_monthly_wafer_load_from_load(wafer_load)
     return monthly_density, monthly_wafer, production_detail
+
+
+# 입장 화면 Summary 의 완성된 요약 값(`components/intro_summary`). 모든 사용자가
+# 같은 값(최신 공식버전)을 보므로 서버에 한 벌만 둔다 — 세션마다 다시 만들면
+# 새 탭·F5·테마 전환마다 HOME 보다 먼저 0.5초를 썼다(실DB 사본 실측).
+# 키는 (공식버전 id, 그 시나리오 이름, 공용 표시순서 판, 공정 표시명 판)이고 요약에
+# 들어가는 것을 모두 덮는다(공식 리비전은 고칠 수 없다). `_build` 는 키에 넣지 않는다.
+# 일시적일 수 있는 실패(DB 잠금 등)는 `_build` 가 예외로 올리므로 여기 남지 않는다.
+@st.cache_data(show_spinner=False, max_entries=4)
+def get_intro_summary_payload(
+    cache_key: tuple[str, str, int, int],
+    _build: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    return _build()
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
