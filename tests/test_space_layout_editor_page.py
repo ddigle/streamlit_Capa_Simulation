@@ -69,6 +69,10 @@ def test_the_editor_receives_the_floor_from_the_shared_draft(
     # 편집을 켜기 전 회차는 보기 전용 뷰어였고, 켠 뒤에는 뷰어를 부르지 않는다(도면 자리에 편집기).
     assert editor_calls[0]["mode"] == "view"
     assert data.get("mode") != "view"
+    # 뷰어와 편집기는 같은 범위라 브라우저가 기억하는 도면 높이를 함께 쓴다(보기·편집에서 상자
+    # 크기가 같다). 높이는 브라우저 몫이라 data 에 실리지 않는다.
+    assert editor_calls[0]["scope"] == data["scope"] == "floor"
+    assert not {key for key in data if "height" in key.lower()}
     clear_equipment_repository()
 
 

@@ -12,6 +12,10 @@
 진행 중인 편집과 확대 배율을 그대로 두고 단계 색·라벨만 다시 칠한다. epoch 는 층·저장본·편집본
 세대로 만들어, 편집본이 바뀌면(적용·RawData 제출·저장) 브라우저가 새 값으로 다시 선다.
 
+뷰어 크기도 브라우저 몫이다. 무대 폭은 열을 채우고, 높이는 화면에 맞춘 기본값이거나 무대 아래
+손잡이로 고른 값이다. 고른 높이는 브라우저(localStorage)에 범위(`scope`)별로 기억하고 파이썬으로
+보내지 않는다 — 보내면 페이지가 다시 돈다. 같은 까닭으로 epoch 에도 넣지 않는다.
+
 HTML·CSS·JS 는 `space_layout_editor_assets/` 의 파일이다(파이썬 문자열에 넣으면 줄 길이 검사와
 이스케이프가 JS 를 망가뜨린다). 색은 등록 시점 CSS 에 적지 않고 회차마다 `data.palette` 로 넘긴다 —
 `st.components.v2.component` 는 등록 때의 CSS 를 그대로 쓰므로 테마를 바꿔도 따라오지 않는다.
@@ -82,7 +86,12 @@ def _palette() -> dict[str, str]:
         "grid": tokens.SPACE_GRID,
         "grid-major": tokens.BORDER_STRONG,
         "border": tokens.BORDER,
+        "border-strong": tokens.BORDER_STRONG,
         "surface": tokens.SURFACE,
+        # 무대 바탕 — 편집 영역 둘레의 여백이 이 색이다.
+        "stage": tokens.SURFACE_PAGE,
+        # 단추 글자는 앱 단추와 같은 TEXT(도면 글자 SPACE_TEXT 와 따로).
+        "ui-text": tokens.TEXT,
         "accent": tokens.ACCENT,
         "on-accent": tokens.SURFACE,
         "danger": keep_out_color(),
@@ -134,6 +143,7 @@ def render_space_layout_viewer(
         key=key,
         data={
             "mode": "view",
+            "scope": "floor",
             "epoch": epoch,
             "title": floor_label(floor),
             "summary": summary,
@@ -183,6 +193,7 @@ def render_space_layout_editor(
     result = _EDITOR(
         key=key,
         data={
+            "scope": "floor",
             "epoch": epoch,
             "title": title,
             "items": items,

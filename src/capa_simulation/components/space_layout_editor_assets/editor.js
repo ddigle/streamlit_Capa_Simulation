@@ -13,6 +13,8 @@ export default function (component) {
   // 누르기는 그 호기의 정보 한 줄이다.
   const VIEW = data.mode === 'view'
   host.classList.toggle('is-view', VIEW)
+  // 범위(층·FAB). 브라우저가 기억하는 뷰어 높이를 범위마다 따로 둔다.
+  const SCOPE = data.scope === 'fab' ? 'fab' : 'floor'
   const palette = data.palette || {}
   for (const [name, value] of Object.entries(palette)) host.style.setProperty('--sle-' + name, String(value))
   const DECIMALS = Number.isInteger(data.decimals) ? data.decimals : 1
@@ -33,6 +35,18 @@ export default function (component) {
   const DRAG_THRESHOLD_PX = 3
   const HANDLE_PX = 9
   const GROUP_PAD = 0.6
+  // 편집 영역 둘레의 여백(영역 긴 변의 비율). 전체 보기는 영역+여백이 다 보이는 크기다.
+  const VIEW_MARGIN = 0.03
+  // 무대 높이(px). 기본은 화면에 맞추고(MIN_DEFAULT_H 이상), 손잡이로는 MIN_DRAG_H ~ 화면 높이의 MAX_H_RATIO 배.
+  const MIN_DEFAULT_H = 320
+  const MIN_DRAG_H = 280
+  const MAX_H_RATIO = 1.5
+  // 보기 화면에서 무대 위·아래에 서는 것(앱 머리·제목·경로·머리 줄·도구 줄, 아래 손잡이·여유)의 몫. 무대의 실제
+  // 위치로 재지 않는다 — 편집 화면은 위에 도구가 더 서서 같은 식이면 보기보다 낮아지는데, 보기·편집의 도면
+  // 상자 크기는 같아야 한다.
+  const VIEW_CHROME_PX = 320
+  const HEIGHT_KEY_STEP = 20
+  const HEIGHT_STORE_KEY = `capa.space.viewerHeight.${SCOPE}`
   // 크기 손잡이 여덟 개. 글자는 움직이는 변 — e 오른쪽, w 왼쪽, n 위(데이터의 Y+Ysize), s 아래(데이터의 Y).
   const HANDLE_DIRS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
   const HANDLE_CURSORS = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' }
@@ -56,6 +70,12 @@ export default function (component) {
   const layer = svg.querySelector('.sle-items')
   const marksLayer = svg.querySelector('.sle-marks')
   const overlay = svg.querySelector('.sle-overlay')
+  const stage = q('.sle-stage')
+  const resizeHandle = q('.sle-resize')
+  const drawer = q('.sle-drawer')
+  const drawerTab = q('.sle-drawer-tab')
+  const drawerCount = q('.sle-drawer-count')
+  const trayBox = q('.sle-tray')
   const trayList = q('.sle-tray-list')
   const trayCount = q('.sle-tray-count')
   const leavingBox = q('.sle-leaving')
@@ -120,8 +140,23 @@ export default function (component) {
   const zoneColor = (m) => (m.keepOut ? 'var(--sle-danger)' : markColors[m.color] || markColors.gray || 'gray')
   const W = () => S.canvas.w
   const H = () => S.canvas.h
-  const viewW = () => W() / S.view.z
-  const viewH = () => H() / S.view.z
+  const margin = () => Math.max(W(), H()) * VIEW_MARGIN
+  // 전체 보기(z=1)의 viewBox: 영역+여백을 무대 px 비율로 넓힌 상자. 비율이 무대와 같아 SVG 안에 빈 띠가 없고,
+  // getScreenCTM 의 배율이 가로·세로 같아 끌기·손잡이 좌표가 그대로 맞는다.
+  const baseBox = () => {
+    const pad = margin()
+    let bw = W() + pad * 2
+    let bh = H() + pad * 2
+    const port = S.port
+    if (port && port.w >= 1 && port.h >= 1) {
+      const aspect = port.w / port.h
+      if (bw / bh < aspect) bw = bh * aspect
+      else bh = bw / aspect
+    }
+    return { w: bw, h: bh }
+  }
+  const viewW = () => baseBox().w / S.view.z
+  const viewH = () => baseBox().h / S.view.z
   // 데이터는 왼쪽 아래가 원점(Y 위로), SVG 는 왼쪽 위가 원점이다.
   const svgTop = (item) => H() - (item.y + item.h)
   const el = (tag, attrs) => {
@@ -203,10 +238,14 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 확대·축소
   // viewBox 를 캔버스의 일부로 좁혀 확대한다. 좌표 변환은 getScreenCTM 이 viewBox 를 품어 끌기·손잡이가 그대로 맞는다.
+  // 화면 옮기기는 영역+여백 안에서만. 보이는 폭이 그보다 넓은 축은 영역 가운데에 둔다.
   function clampView() {
     S.view.z = clamp(S.view.z, 1, MAX_ZOOM)
-    S.view.x = clamp(S.view.x, 0, W() - viewW())
-    S.view.top = clamp(S.view.top, 0, H() - viewH())
+    const pad = margin()
+    const vw = viewW()
+    const vh = viewH()
+    S.view.x = vw >= W() + pad * 2 ? (W() - vw) / 2 : clamp(S.view.x, -pad, W() + pad - vw)
+    S.view.top = vh >= H() + pad * 2 ? (H() - vh) / 2 : clamp(S.view.top, -pad, H() + pad - vh)
   }
   function applyView({ reposition = true } = {}) {
     clampView()
@@ -231,7 +270,8 @@ export default function (component) {
   }
   function zoomToBox(box) {
     const pad = 3
-    const z = clamp(Math.min(W() / (box.maxR - box.minX + pad * 2), H() / (box.maxT - box.minY + pad * 2)), 1, MAX_ZOOM)
+    const base = baseBox()
+    const z = clamp(Math.min(base.w / (box.maxR - box.minX + pad * 2), base.h / (box.maxT - box.minY + pad * 2)), 1, MAX_ZOOM)
     S.view.z = z
     S.view.x = (box.minX + box.maxR) / 2 - viewW() / 2
     S.view.top = H() - (box.minY + box.maxT) / 2 - viewH() / 2
@@ -247,9 +287,74 @@ export default function (component) {
     return moved
   }
 
+  // ---------------------------------------------------------------- 무대 높이(브라우저 안에서만)
+  // 고른 높이는 브라우저(localStorage)에 범위별로 기억한다. 파이썬으로 보내지 않는다 — 보내면 페이지가 다시
+  // 돈다. 사생활 창·막힌 저장소에서는 읽기·쓰기가 던지므로 이 편집기 안에서만 기억하고 기본 높이로 산다.
+  function savedHeight() {
+    try {
+      const value = Number(window.localStorage.getItem(HEIGHT_STORE_KEY))
+      return Number.isFinite(value) && value > 0 ? value : null
+    } catch {
+      return null
+    }
+  }
+  function storeHeight(value) {
+    try {
+      if (value === null) window.localStorage.removeItem(HEIGHT_STORE_KEY)
+      else window.localStorage.setItem(HEIGHT_STORE_KEY, String(Math.round(value)))
+    } catch {
+      // 기억하지 못해도 지금 화면은 S.chosenH 로 그대로 쓴다.
+    }
+  }
+  const maxHeight = () => Math.max(MIN_DEFAULT_H, Math.round(window.innerHeight * MAX_H_RATIO))
+  // 기본 높이 = 화면 높이에서 보기 화면의 머리·도구 몫을 뺀 만큼(스크롤·무대 위치와 무관). 단 영역+여백이 열
+  // 폭을 꽉 채우는 높이를 넘지 않는다 — 넓적한 영역 위아래에 빈 띠를 만들지 않게.
+  function defaultHeight() {
+    const width = stage.clientWidth || host.clientWidth || 0
+    const pad = margin()
+    const fitted = width > 0 ? (width * (H() + pad * 2)) / (W() + pad * 2) : Infinity
+    const room = window.innerHeight - VIEW_CHROME_PX
+    return Math.round(clamp(Math.min(room, fitted), MIN_DEFAULT_H, maxHeight()))
+  }
+  function setStageHeight(value) {
+    const h = Math.round(value)
+    if (stage.style.height !== `${h}px`) stage.style.height = `${h}px`
+    S.stageH = h
+    resizeHandle.setAttribute('aria-valuenow', String(h))
+    resizeHandle.setAttribute('aria-valuemin', String(MIN_DRAG_H))
+    resizeHandle.setAttribute('aria-valuemax', String(maxHeight()))
+    resizeHandle.setAttribute('aria-valuetext', `높이 ${h}px`)
+  }
+  // 무대 px 크기를 S.port 에 적는다. 1px 미만 변화는 무시한다(스크롤 막대 들락날락에 흔들리지 않게). 바뀌었으면 true.
+  function measurePort() {
+    const w = stage.clientWidth
+    const h = stage.clientHeight
+    if (S.port && Math.abs(S.port.w - w) < 1 && Math.abs(S.port.h - h) < 1) return false
+    S.port = { w, h }
+    return true
+  }
+  // 무대 높이를 정한다 — 고른 값(이 편집기 → 브라우저 기억 순), 없으면 기본값.
+  function fitStage() {
+    const chosen = S.chosenH ?? savedHeight()
+    setStageHeight(chosen === null ? defaultHeight() : clamp(chosen, MIN_DRAG_H, maxHeight()))
+    return measurePort()
+  }
+  function chooseHeight(value) {
+    const h = Math.round(clamp(value, MIN_DRAG_H, maxHeight()))
+    S.chosenH = h
+    setStageHeight(h)
+    storeHeight(h)
+    if (measurePort()) applyView()
+  }
+  function resetHeight() {
+    S.chosenH = null
+    storeHeight(null)
+    if (fitStage()) applyView()
+  }
+
   function drawStatic() {
-    // 세로로 긴 영역은 화면 높이(78vh)에서 멈춘다. 폭도 같은 비율로 줄여 SVG 상자가 도면과 꼭 맞게 한다.
-    svg.style.maxWidth = `calc(78vh * ${W() / H()})`
+    // 영역 비율이 바뀌면 기본 높이도 바뀐다(고른 높이가 없을 때만).
+    fitStage()
     bg.replaceChildren()
     if (data.backgroundImage) {
       bg.append(el('image', { href: data.backgroundImage, x: 0, y: 0, width: W(), height: H(), preserveAspectRatio: 'none', class: 'sle-bg-image' }))
@@ -522,9 +627,14 @@ export default function (component) {
       trayList.append(buildChip(entry, false))
     }
     const leaving = trayEntries((m) => Boolean(m.moveTo))
-    for (const entry of leaving) leavingList.append(buildChip(entry, true))
+    let leavingN = 0
+    for (const entry of leaving) {
+      leavingN += entry.list.length
+      leavingList.append(buildChip(entry, true))
+    }
     leavingBox.hidden = leaving.length === 0
     trayCount.textContent = `${trayN}대`
+    drawerCount.textContent = leavingN ? `${trayN} · 보냄 ${leavingN}` : String(trayN)
     markSelection()
     markOverlaps()
   }
@@ -738,12 +848,13 @@ export default function (component) {
     moveButton.disabled = !canSend
     const mark = single && isMark(single) ? single : null
     markProps.hidden = !mark
+    // 색 목록은 처음부터 채운다 — 숨긴 칸도 자리를 차지하니 처음 고를 때 넓어지면 칸 줄이 한 번 튄다.
+    if (!markColor.options.length) {
+      markColor.replaceChildren(...Object.keys(markColors).map((key) => new Option(ZONE_COLOR_NAMES[key] || key, key)))
+    }
     if (mark) {
       if (!isFocused(markLabel)) markLabel.value = mark.label || ''
       for (const node of zoneOnly) node.hidden = mark.kind !== 'zone'
-      if (!markColor.options.length) {
-        markColor.replaceChildren(...Object.keys(markColors).map((key) => new Option(ZONE_COLOR_NAMES[key] || key, key)))
-      }
       markColor.value = mark.color || 'gray'
       markHatch.checked = Boolean(mark.hatch)
       markKeepOut.checked = Boolean(mark.keepOut)
@@ -818,6 +929,14 @@ export default function (component) {
     setSelection(id ? [id] : [], id)
   }
 
+  // 서랍 열림은 같은 편집기의 다음 실행에도 이어진다(S 에 둔다).
+  function setDrawer(open) {
+    S.drawerOpen = Boolean(open)
+    drawer.classList.toggle('is-open', S.drawerOpen)
+    trayBox.hidden = !S.drawerOpen
+    drawerTab.setAttribute('aria-expanded', String(S.drawerOpen))
+  }
+
   function clearSelection() {
     S.selection = new Set()
     S.selected = null
@@ -879,20 +998,32 @@ export default function (component) {
     ghost.textContent = label
     const move = (e) => { ghost.style.left = `${e.clientX + 8}px`; ghost.style.top = `${e.clientY + 8}px` }
     let shown = false
+    // 서랍에서 끈 칩이 서랍 밖으로 나가면 서랍을 비치게 해 그 아래 도면에도 놓게 한다. 비치기 전의 서랍 위는
+    // 도면이 아니다 — 거기 놓으면 서랍 아래에 숨은 채 배치된다.
+    const fromTray = Boolean(source.closest && source.closest('.sle-tray'))
+    let peek = false
+    const overTray = (e) => {
+      if (trayBox.hidden) return false
+      const r = trayBox.getBoundingClientRect()
+      return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+    }
     const finish = (e, dropped) => {
       source.onpointermove = null
       source.onpointerup = source.onpointercancel = source.onlostpointercapture = null
       ghost.remove()
+      drawer.classList.remove('is-peek')
       if (!dropped) return
       const still = Math.hypot(e.clientX - startX, e.clientY - startY) < DRAG_THRESHOLD_PX
       if (still) { onClick(); return }
       const box = svg.getBoundingClientRect()
       const inside = e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom
+        && !(overTray(e) && !peek)
       const p = inside ? toUser(e) : null
       if (p) onDrop(p)
     }
     source.onpointermove = (e) => {
       if (!shown && Math.hypot(e.clientX - startX, e.clientY - startY) >= DRAG_THRESHOLD_PX) { host.append(ghost); shown = true }
+      if (shown && fromTray && !peek && !overTray(e)) { peek = true; drawer.classList.add('is-peek') }
       move(e)
     }
     source.onpointerup = (e) => finish(e, true)
@@ -943,6 +1074,8 @@ export default function (component) {
     S.selected = lead.id
     renderItems()
     updateStatus()
+    // 놓았으면 서랍을 접어 도면을 다 보인다.
+    setDrawer(false)
     svg.focus({ preventScroll: true })
   }
 
@@ -1609,5 +1742,97 @@ export default function (component) {
       marks: marksChanged ? marksPayload() : null,
     })
   }
+
+  // ---------------------------------------------------------------- 트레이 서랍(편집)
+  const drawerClose = q('.sle-drawer-close')
+  drawerTab.onclick = () => {
+    setDrawer(true)
+    drawerClose.focus({ preventScroll: true })
+  }
+  drawerClose.onclick = () => {
+    setDrawer(false)
+    drawerTab.focus({ preventScroll: true })
+  }
+  drawer.onkeydown = (event) => {
+    if (event.key !== 'Escape' || !S.drawerOpen || S.drag) return
+    event.preventDefault()
+    event.stopPropagation()
+    setDrawer(false)
+    drawerTab.focus({ preventScroll: true })
+  }
+  setDrawer(S.drawerOpen)
+
+  // ---------------------------------------------------------------- 높이 손잡이
+  // 끌기·키는 브라우저 안에서만 무대 높이를 바꾼다(재실행 없음). 방향키는 편집기 단축키(화면 옮기기·호기 이동)로
+  // 새지 않게 여기서 멈춘다.
+  resizeHandle.onpointerdown = (event) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    resizeHandle.setPointerCapture(event.pointerId)
+    S.heightDrag = { pointerId: event.pointerId, startY: event.clientY, startH: S.stageH || stage.clientHeight, moved: false }
+  }
+  resizeHandle.onpointermove = (event) => {
+    const drag = S.heightDrag
+    if (!drag || event.pointerId !== drag.pointerId) return
+    const dy = event.clientY - drag.startY
+    if (!drag.moved && Math.abs(dy) < DRAG_THRESHOLD_PX) return
+    drag.moved = true
+    resizeHandle.classList.add('is-dragging')
+    setStageHeight(clamp(drag.startH + dy, MIN_DRAG_H, maxHeight()))
+  }
+  resizeHandle.onpointerup = resizeHandle.onpointercancel = (event) => {
+    const drag = S.heightDrag
+    if (!drag || (event && event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return
+    S.heightDrag = null
+    resizeHandle.classList.remove('is-dragging')
+    if (drag.moved) chooseHeight(S.stageH)
+  }
+  resizeHandle.onlostpointercapture = (event) => { if (S.heightDrag) resizeHandle.onpointerup(event) }
+  resizeHandle.ondblclick = (event) => {
+    event.preventDefault()
+    resetHeight()
+  }
+  resizeHandle.onkeydown = (event) => {
+    const step = HEIGHT_KEY_STEP * (event.shiftKey ? 4 : 1)
+    if (event.key === 'ArrowUp') chooseHeight((S.stageH || stage.clientHeight) - step)
+    else if (event.key === 'ArrowDown') chooseHeight((S.stageH || stage.clientHeight) + step)
+    else if (event.key === 'Home' || event.key === 'Enter') resetHeight()
+    else return
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  // ---------------------------------------------------------------- 크기 바뀜
+  // 관찰자는 한 번만 만든다(S.ro). 실행마다 새로 정의되는 S.onResize 를 부르므로 첫 실행의 낡은 값(데이터·
+  // 팔레트·VIEW)을 쥐지 않는다. rAF 로 묶고, 바뀐 px 크기로 viewBox 비율과 화면 px 에 기대는 값(손잡이·글자
+  // 크기)을 다시 맞춘다. 창 높이만 바뀌어도 기본 높이·상한이 바뀌므로 창 크기도 듣는다.
+  S.onResize = () => {
+    const changed = S.heightDrag ? measurePort() : fitStage()
+    if (changed) applyView()
+  }
+  if (!S.ro && typeof ResizeObserver === 'function') {
+    const schedule = () => {
+      if (S.resizeFrame) return
+      S.resizeFrame = requestAnimationFrame(() => {
+        S.resizeFrame = 0
+        if (S.onResize) S.onResize()
+      })
+    }
+    S.ro = new ResizeObserver(schedule)
+    S.ro.observe(stage)
+    S.onWindowResize = schedule
+    window.addEventListener('resize', schedule)
+  }
+  // 이번 실행에서 무대 크기가 달라졌으면(첫 실행·열 폭 변화) 바로 맞춘다.
+  S.onResize()
   updateStatus()
+  // Streamlit 은 마지막 실행이 돌려준 정리 함수를 컴포넌트를 내릴 때 부른다.
+  return () => {
+    if (S.ro) S.ro.disconnect()
+    if (S.onWindowResize) window.removeEventListener('resize', S.onWindowResize)
+    if (S.resizeFrame) cancelAnimationFrame(S.resizeFrame)
+    S.ro = null
+    S.onWindowResize = null
+    S.resizeFrame = 0
+  }
 }
