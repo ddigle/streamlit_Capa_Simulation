@@ -302,10 +302,14 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
 ) -> None:
     """입장 화면은 무거운 부트스트랩보다 **먼저**, 그리고 **매 회차** 그려진다.
 
-    먼저여야 그동안을 덮고, 매 회차여야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다.
+    먼저여야 그동안을 덮고, 매 회차여야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다. 툴바
+    iframe(테마·Guide·Summary 단추)은 입장 화면 바로 뒤·부트스트랩 앞이다 — 첫 방문처럼 테마
+    스크립트가 새로고침할 로드는 그 세션이 버려지므로, 부트스트랩·요약을 돌기 전에 새로고침이
+    걸려야 한다.
     """
     import capa_simulation.components.intro_overlay as intro_overlay
     import capa_simulation.components.intro_summary as intro_summary
+    import capa_simulation.components.theme_toggle as theme_toggle
     import capa_simulation.scenario_activation as scenario_activation
 
     order: list[str] = []
@@ -316,6 +320,11 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
         return original_bootstrap(*args, **kwargs)
 
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: order.append("intro"))
+    monkeypatch.setattr(
+        theme_toggle,
+        "render_theme_toggle",
+        lambda extra_scripts=(): order.append(f"toolbar:{len(extra_scripts)}"),
+    )
     monkeypatch.setattr(intro_summary, "render_intro_summary", lambda path: order.append("summary"))
     monkeypatch.setattr(
         scenario_activation, "bootstrap_latest_official_scenario", _recording_bootstrap
@@ -325,8 +334,10 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     assert not list(app.exception), [element.message for element in app.exception]
     app.run()
 
-    # 요약은 부트스트랩 뒤·페이지 앞이다 — 로딩에 들어가고, 페이지가 멈춰도 이미 보냈다.
-    assert order == ["intro", "bootstrap", "summary", "intro", "bootstrap", "summary"]
+    # 요약은 부트스트랩 뒤·페이지 앞이다 — 로딩에 들어가고, 페이지가 멈춰도 이미 보냈다. 툴바는
+    # Guide·Summary 스크립트 둘을 함께 싣는다.
+    one_run = ["intro", "toolbar:2", "bootstrap", "summary"]
+    assert order == one_run * 2
 
 
 def test_the_intro_summary_sends_the_official_six_months_once_per_value(_app: AppTest) -> None:

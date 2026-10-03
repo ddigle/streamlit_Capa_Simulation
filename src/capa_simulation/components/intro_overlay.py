@@ -37,11 +37,12 @@ Streamlit 을 올릴 때 브라우저로 확인한다 — 속성이 사라져도
 가두지 않는다.
 
 **한 탭에 한 번.** Detail 로 들어가면 `sessionStorage` 에 적는다. 테마 버튼·새로고침은 새 세션을
-만들지만 같은 탭이라 다시 띄우지 않는다. 주소의 테마 인자가 저장된 테마와 다르거나 없으면(첫 방문·옛
-북마크·남이 보낸 링크) `theme_toggle` 이 한 번 새로고침한다. JS 가 그 스크립트와 **같은 규칙**
-(같은 저장 키)으로 미리 알아채고, 그 사이에는 앱 바탕색 한 장만 보여 주며 인트로를 아낀다 — 끊겨
-보이지 않게. 헤더에 테마 버튼이 서면(새로고침이 없다는 뜻) 바로, 실행이 끝나고 2초가 조용하거나
-10초가 지나도 시작한다.
+만들지만 같은 탭이라 다시 띄우지 않는다. 주소의 테마 인자가 고른 테마와 다르거나 없을 때(첫 방문·옛
+북마크·남이 보낸 링크)와 지금 경로의 Streamlit 테마 키가 앱 키와 다를 때 `theme_toggle` 이 한 번
+새로고침한다. JS 가 그 스크립트와 **같은 규칙**(등록 JS 앞에 붙인 `THEME_RULE_SCRIPT`)으로 미리
+알아채고 — 그 스크립트가 먼저 돌아 이미 새로고침을 걸었으면 창에 남긴 표지(`__capaThemeReloading`)로
+알아챈다 — 그 사이에는 앱 바탕색 한 장만 보여 주며 인트로를 아낀다. 끊겨 보이지 않게. 헤더에 테마
+버튼이 서면(새로고침이 없다는 뜻) 바로, 실행이 끝나고 2초가 조용하거나 10초가 지나도 시작한다.
 
 **회차마다 같은 것을 보낸다.** 등록한 HTML·CSS·JS(글꼴 포함)와 `data` 가 매 회차 같아야 Streamlit
 이 같은 메시지를 다시 보내지 않고, JS 도 다시 불리지 않는다. 색은 테마와 무관한
@@ -70,11 +71,7 @@ from typing import Any
 import streamlit as st
 
 from capa_simulation.components.home_rendering import HOME_LOADING_STAGES
-from capa_simulation.components.theme_toggle import (
-    THEME_BUTTON_ID,
-    THEME_STORAGE_PREFIX,
-    THEME_STORAGE_SUFFIX,
-)
+from capa_simulation.components.theme_toggle import THEME_BUTTON_ID, THEME_RULE_SCRIPT
 from capa_simulation.design import tokens
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 
@@ -102,7 +99,11 @@ def _asset_text(name: str) -> str:
 
 
 def _registered_js() -> str:
-    """intro.js 앞에 화면 틀·스타일·글꼴을 상수로 붙인다. 등록 때 한 번만 만든다."""
+    """intro.js 앞에 화면 틀·스타일·글꼴과 테마 키 규칙을 붙인다. 등록 때 한 번만 만든다.
+
+    테마 키 규칙(`theme_toggle.THEME_RULE_SCRIPT`)은 테마 버튼이 쓰는 것과 **같은 문자열**이다 —
+    새로고침할지를 같은 규칙으로 미리 보려는 것이고, 입장 화면의 색과는 상관이 없다.
+    """
     font = base64.b64encode((_ASSETS / "archivo-capa.woff2").read_bytes()).decode("ascii")
     number = base64.b64encode((_ASSETS / "archivo-capa-number.woff2").read_bytes()).decode("ascii")
     prelude = (
@@ -110,6 +111,7 @@ def _registered_js() -> str:
         f"const OVERLAY_CSS = {json.dumps(_asset_text('intro.css'))};",
         f'const FONT_DATA = "{font}";',
         f'const NUMBER_FONT_DATA = "{number}";',
+        THEME_RULE_SCRIPT,
     )
     return "\n".join((*prelude, _asset_text("intro.js")))
 
@@ -156,10 +158,9 @@ def _data() -> dict[str, Any]:
         "brand": BRAND,
         "title": list(TITLE_LINES),
         # theme_toggle 이 새로고침할지를 같은 규칙으로 미리 보려고 넘긴다(그 모듈의 상수 그대로).
+        # 저장 키는 등록 JS 앞에 붙인 `capaTheme` 규칙이 안다.
         "theme": {
             "param": THEME_QUERY_PARAM,
-            "storage_prefix": THEME_STORAGE_PREFIX,
-            "storage_suffix": THEME_STORAGE_SUFFIX,
             "button_id": THEME_BUTTON_ID,
         },
         "steps": _steps(),

@@ -179,6 +179,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오 부트스트랩보다 앞에서 매 회차 부른다.** 앞이어야 첫 로딩을 덮고, 매 회차 같은
     내용이어야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다(이미 들어간 탭이면 브라우저가
     아무것도 하지 않는다). `app.py` 를 여는 AppTest 는 `render_intro_overlay` 를 바꿔 끼운다.
+  - **툴바 iframe(`render_guide_base_style` + `theme_toggle.render_theme_toggle` — 테마·Guide·Summary
+    단추)은 입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
+    스크립트가 새로고침해 그 세션을 버리므로, 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기 전에
+    새로고침이 걸린다. 차례 `입장 화면 → 툴바 → 부트스트랩 → 요약` 은 `tests/test_app_navigation.py` 가
+    지킨다.
   - **입장 화면 Summary 의 요약 값(`components/intro_summary.py`)은 공식 시나리오 부트스트랩
     바로 뒤, 페이지보다 앞에서 매 회차 보낸다.** 페이지가 `st.stop()` 하면 그 뒤로는 아무것도
     브라우저에 닿지 않고, 앞이어야 입장 화면 로딩에 포함된다. **이 부가 기능이 주 업무 화면(HOME)의
@@ -1599,6 +1604,32 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 그래서 **프론트엔드가 테마를 기억하는 자리**를 쓴다. `localStorage` 의
     `stActiveTheme-<경로>-v2` 에 `"System"`·`"Light"`·`"Dark"` 중 하나를 적고 새로고침하면
     Streamlit 크롬과 우리 토큰이 **함께** 바뀐다(`st.context.theme` 이 새 값을 보고한다).
+  - **테마는 앱 전체에 하나다 — 키 규칙.** Streamlit 1.63 은 그 키를 번들을 읽는 순간의 경로로 한 번만
+    정하고 읽어서 키가 **페이지 경로마다 따로**다. 그래서 고른 값의 정본은 앱 키 `capa-theme`
+    (`THEME_APP_KEY`)이고 경로별 Streamlit 키는 그 사본이다. 규칙은 `THEME_RULE_SCRIPT`(`capaTheme`)
+    한 벌이고 툴바 iframe 맨 앞 스크립트와 입장 화면 등록 JS 앞에 같은 문자열로 실린다. 테마 버튼·
+    Guide·툴바 Summary·입장 화면의 새로고침 예측이 모두 이것만 부른다 — 저장 키를 따로 만들지 않는다.
+    - 경로는 **쓰는 순간** `location.pathname` 으로 읽는다. 이 iframe 은 앱 안에서 페이지를 옮겨도
+      남으므로 처음 실행 때 만든 키는 다른 페이지에서 틀린 키다.
+    - 열릴 때(`sync`): 고른 값 = ⋮ 메뉴로 바꾼 값 → 앱 키 → 지금 경로의 Streamlit 키(예전 판 값을
+      한 번 이어받음) → `"Light"` 순. 그 값을 앱 키·지금 경로와 우리 표지가 있는 경로의 Streamlit
+      키·표지에 적고, 지금 경로의 Streamlit 키를 고쳐 적었거나 `?theme` 이 다르면 **한 번** 새로고침한다.
+    - 다른 경로는 **우리 표지가 있는 경로만** 만진다(Streamlit 테마 키 전부를 훑지 않는다). 한 출처에
+      다른 Streamlit 앱이 같이 있을 때(`/proxy/<포트>/`) 그 앱의 키를 덮어쓰거나 그 앱의 메뉴 선택을 앱
+      키로 받아들이지 않기 위해서다.
+    - 키 때문에는 **탭마다 한 번만** 새로고침한다. Streamlit 은 문서가 열릴 때마다 지금 경로의 키를 제
+      값으로 다시 적으므로, 그 값이 우리가 적은 것과 어긋나면(판올림·`[theme.dark]` 없는 설정) 새로고침이
+      끝없이 돈다. 새로고침 전에 `sessionStorage` 표지(`THEME_RELOAD_GUARD_PREFIX` + 경로)를 남기고, 다음
+      로드에도 어긋나 있으면 `?theme` 만 맞춘 채 멈춘다. 키가 맞는 로드에서 지운다. `resolve` 도 이
+      표지를 보므로 입장 화면의 예측이 같다.
+    - ⋮ 메뉴는 지금 경로의 Streamlit 키만 고친다. 경로마다 「우리가 마지막으로 적은 값」 표지
+      (`THEME_SYNC_PREFIX` + 경로)를 두고, 어느 경로의 Streamlit 키가 표지와 다르면 메뉴로 바꾼 것으로
+      보고 앱 키로 받아들인다. 표지가 없는 값(예전 판)은 받아들이지 않는다. 메뉴의 `"System"` 은 고른
+      값이 아니다(처음 여는 화면은 밝게).
+    - 버튼(`choose`): 누르는 순간의 경로로 앱 키·Streamlit 키·표지를 적고 `?theme` 을 맞춰 한 번
+      새로고침한다. 저장소에 못 쓰면 Streamlit 키 때문에는 새로고침하지 않는다(반복 방지).
+    - `?theme` 인자 규칙은 그대로다(`design/theme.py` — `st.context.theme` 이 첫 로드에 틀릴 수 있다).
+      인자는 저장된 앱 테마를 따라 적는 사본이라 즐겨찾기로 테마를 고정하지는 못한다.
   - `st.html` 은 스크립트를 실행하지 않으므로 `st.iframe` 안에서 `window.parent` 에 닿는다.
     슬롯을 못 찾으면 **조용히 물러난다** — 버튼이 안 생길 뿐 화면은 멀쩡하다. `st.iframe` 은
     높이 0 을 막으므로(오류로 페이지가 선다) 1px 로 띄우고 그 iframe 과 감싼 요소 칸을 CSS 로
@@ -1608,6 +1639,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Streamlit 을 올린 뒤에는 이 버튼이 보이는지 눈으로 확인한다.
   - `extra_scripts` 로 같은 툴바에 버튼을 얹는 다른 스크립트(Guide)를 함께 싣는다. iframe 을
     따로 두지 않는다 — 높이를 접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다.
+  - **iframe 내용은 회차마다 같아야 한다**(`tests/test_theme_toggle.py`). 바뀌면 Streamlit 이 iframe 을
+    새로 만들고 옛 버튼의 `onclick` 이 죽는다. 키 규칙도 상수만 실린 고정 문자열이다.
 - `src/capa_simulation/components/page_guide.py`
   - 헤더 테마 버튼 **바로 왼쪽**의 `Guide` 버튼과 화면별 사용 안내 대화상자(2026-09-28 사용자
     결정 — 설명 문구를 본문에서 빼고 Guide 로). 원문은 `guides/<페이지 파일 이름>.md` 다.
@@ -1666,12 +1699,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `LoadingProgress` 막대의 퍼센트(`HOME_LOADING_STAGES` 의 누적값 문턱)로 채운다. 둘 다 **비공식
     화면 속성**이라 Streamlit 을 올리면 브라우저로 확인한다 — 속성이 없으면 인트로 뒤 바로 Detail 이
     켜지고, 60초가 넘게 안 끝나도 켜져 앱을 가두지 않는다.
-  - 주소의 테마 인자가 저장된 테마와 다르거나 없으면(첫 방문·옛 북마크·남이 보낸 링크)
-    `theme_toggle` 이 한 번 새로고침한다. JS 가 **그 스크립트와 같은 규칙**(그 모듈의
-    `THEME_STORAGE_PREFIX`·`THEME_STORAGE_SUFFIX`·`THEME_BUTTON_ID` 를 `data` 로 받는다)으로 미리
-    알아채고, 그 사이에는 앱 바탕색 한 장만 보여 주며 인트로를 아낀다. 헤더 테마 버튼이 서면(새로고침
-    없음) 바로, 실행이 끝나고 2초가 조용하거나 10초가 지나도 시작한다. theme_toggle 의 새로고침
-    조건을 바꾸면 `intro.js` 의 `themeReloadPending` 도 같이 고친다.
+  - 주소의 테마 인자가 고른 테마와 다르거나 없을 때(첫 방문·옛 북마크·남이 보낸 링크)와 지금 경로의
+    Streamlit 테마 키가 앱 키와 다를 때 `theme_toggle` 이 한 번 새로고침한다. JS 가 **그 스크립트와 같은
+    규칙**(등록 JS 앞에 붙인 `theme_toggle.THEME_RULE_SCRIPT` 의 `capaTheme.resolve` — 예측만 하고
+    적지 않는다. `data` 로는 `THEME_QUERY_PARAM`·`THEME_BUTTON_ID` 만 받는다)으로 미리 알아채고, 테마
+    스크립트가 먼저 돌아 이미 새로고침을 걸었으면 그 스크립트가 창에 남긴 `__capaThemeReloading` 으로
+    안다. 그 사이에는 앱 바탕색 한 장만 보여 주며 인트로를 아낀다. 헤더 테마 버튼이 서면(새로고침
+    없음) 바로, 실행이 끝나고 2초가 조용하거나 10초가 지나도 시작한다. 새로고침 조건은 키 규칙
+    한 곳에서 바꾸고, `place()` 의 새로고침 조건(`state.stale`·인자)을 바꾸면 `intro.js` 의
+    `themeReloadPending` 도 같이 고친다. 입장 화면의 **색은 테마와 상관없다**(사용자 규칙) — 키 규칙은
+    새로고침 예측에만 쓴다.
   - **회차마다 같은 것을 보낸다.** 등록 JS(글꼴 base64 포함)와 `data` 가 같아야 Streamlit 이
     큰 메시지를 다시 보내지 않고 JS 도 다시 불리지 않는다. 색은 테마와 무관한
     `tokens.INTRO_PALETTE` 한 벌이고(요약 화면의 판·눈금·말풍선 색 포함), 첫 프레임만 브라우저가 칠한

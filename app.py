@@ -111,6 +111,16 @@ theme.begin_run()
 # 그려야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다 — 이미 들어간 탭이면 브라우저 쪽에서
 # 아무것도 하지 않는다.
 render_intro_overlay()
+# 헤더 오른쪽 Deploy 왼쪽 자리에 밝게/어둡게 버튼을 얹는다. Streamlit 이 테마를 기억하는 자리를
+# 그대로 쓰므로 위젯과 우리 Figure 가 함께 바뀐다. 그 왼쪽의 `Guide` 버튼도 같은 iframe 에 싣는다.
+# 기본은 감춰 두고 가이드를 단 페이지만 보이게 한다. 맨 왼쪽의 `Summary` 는 원래 화면에서 공식버전
+# 요약으로 돌아오는 단추다 — 요약이 준비된 뒤에만 입장 화면 JS 가 보이게 한다.
+#
+# **입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
+# 스크립트가 새로고침하고 그 세션은 버려진다. 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기
+# 전에 새로고침이 걸린다. 입장 화면이 먼저인 것은 그것이 무엇보다 먼저 화면을 덮어야 해서다.
+render_guide_base_style()
+render_theme_toggle(extra_scripts=(guide_toolbar_script(), summary_toolbar_script()))
 
 # managed 모드에서만 동기화 표시를 켠다. local 모드(개발 PC·기본값)에서는 아무 일도 하지
 # 않으므로 이 호출이 있어도 동작이 바뀌지 않는다.
@@ -161,13 +171,6 @@ with pinned_connections(DUCKDB_PATH):
         )
     )
     render_app_header()
-    # 헤더 오른쪽 Deploy 왼쪽 자리에 밝게/어둡게 버튼을 얹는다. Streamlit 이 테마를
-    # 기억하는 자리를 그대로 쓰므로 위젯과 우리 Figure 가 함께 바뀐다. 그 왼쪽의 `Guide`
-    # 버튼도 같은 iframe 에 싣는다. 기본은 감춰 두고 가이드를 단 페이지만 보이게 한다.
-    # 맨 왼쪽의 `Summary` 는 원래 화면에서 공식버전 요약으로 돌아오는 단추다 — 요약이 준비된
-    # 뒤에만 입장 화면 JS 가 보이게 한다.
-    render_guide_base_style()
-    render_theme_toggle(extra_scripts=(guide_toolbar_script(), summary_toolbar_script()))
     with st.sidebar.container(key="home_navigation"):
         st.page_link(pages.home, width="stretch")
 

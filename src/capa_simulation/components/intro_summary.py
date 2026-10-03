@@ -49,11 +49,7 @@ from capa_simulation.components.home_figure_common import capacity_status
 from capa_simulation.components.intro_overlay import SUMMARY_LABEL
 from capa_simulation.components.page_guide import BUTTON_ID as GUIDE_BUTTON_ID
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.theme_toggle import (
-    THEME_BUTTON_ID,
-    THEME_STORAGE_PREFIX,
-    THEME_STORAGE_SUFFIX,
-)
+from capa_simulation.components.theme_toggle import THEME_BUTTON_ID
 from capa_simulation.design import tokens
 from capa_simulation.io.reference_cache import reference_version_for_revision
 from capa_simulation.persistence.cache import (
@@ -315,12 +311,10 @@ _TOOLBAR_SCRIPT = """
   if (!parentWindow || parentWindow === window) return;
   var doc = parentWindow.document;
 
-  // 테마는 테마 버튼과 같은 저장 키로 읽는다. 바꾸면 그 버튼이 새로고침하므로 한 번 읽으면 된다.
+  // 테마는 테마 버튼과 같은 키 규칙(같은 iframe 맨 앞의 `capaTheme`)으로 읽는다. 바꾸면 그 버튼이
+  // 새로고침하므로 한 번 읽으면 된다.
   function dark() {
-    try {
-      var key = "%(prefix)s" + parentWindow.location.pathname + "%(suffix)s";
-      return JSON.parse(parentWindow.localStorage.getItem(key) || '"Light"') === "Dark";
-    } catch (error) { return false; }
+    return typeof capaTheme !== "undefined" && capaTheme.resolve(parentWindow).choice === "Dark";
   }
 
   function place() {
@@ -402,15 +396,14 @@ def summary_toolbar_script() -> str:
 
     **Guide 와 같은 윤곽 단추**에 앱 색으로 다시 그린 16px 웨이퍼 하나를 더한 모양이다(2026-10-03
     사용자 결정 — 입장 화면 옷을 입은 검은 알약이 툴바와 결이 맞지 않았다). 두 테마 값을 모두 싣고
-    테마 버튼과 같은 저장 키로 고른다 — iframe 내용은 회차마다 같아야 하므로(`theme_toggle`) 지금
-    테마를 따라 바뀌는 토큰을 넣지 않는다. 보임과 눌렀을 때의 동작은 입장 화면 JS 가 맡는다.
+    테마 버튼과 같은 키 규칙(`theme_toggle.THEME_RULE_SCRIPT`)으로 고른다 — iframe 내용은 회차마다
+    같아야 하므로(`theme_toggle`) 지금 테마를 따라 바뀌는 토큰을 넣지 않는다. 보임과 눌렀을 때의
+    동작은 입장 화면 JS 가 맡는다.
     """
     return _TOOLBAR_SCRIPT % {
         "id": SUMMARY_BUTTON_ID,
         "guide": GUIDE_BUTTON_ID,
         "theme": THEME_BUTTON_ID,
-        "prefix": THEME_STORAGE_PREFIX,
-        "suffix": THEME_STORAGE_SUFFIX,
         "label": SUMMARY_LABEL,
         "light": _toolbar_colors("light"),
         "dark": _toolbar_colors("dark"),

@@ -164,20 +164,17 @@ function registerHole() {
   }
 }
 
-function storedTheme(theme) {
-  try {
-    const key = theme.storage_prefix + window.location.pathname + theme.storage_suffix;
-    return JSON.parse(window.localStorage.getItem(key) || '"System"');
-  } catch (error) {
-    return "System";
-  }
-}
-
-// theme_toggle.py 의 place() 와 같은 규칙이다 — 저장된 값이 "Dark" 면 dark, 그 밖(고른 적 없음 포함)은
-// light 이고, 주소의 테마 인자가 그와 다르면 그 스크립트가 고쳐 쓰고 새로고침한다.
+// theme_toggle.py 의 place() 와 같은 규칙이다 — 등록 JS 앞에 붙은 `capaTheme`(THEME_RULE_SCRIPT)가 앱 키·
+// 지금 경로의 Streamlit 키·⋮ 메뉴 표지로 테마를 정한다. 지금 경로의 Streamlit 키가 그와 다르거나(`stale`)
+// 주소의 테마 인자가 다르면 그 스크립트가 고쳐 쓰고 새로고침한다. 여기서는 아무것도 적지 않고 예측만 한다.
+// 그 스크립트가 이 파일보다 먼저 돌아 이미 키를 맞추고 새로고침을 걸었으면 예측으로는 알 수 없으므로,
+// 그 스크립트가 창에 남긴 표지를 함께 본다.
 function themeReloadPending(theme) {
-  if (!theme || !theme.param) return false;
-  const mode = storedTheme(theme) === "Dark" ? "dark" : "light";
+  if (window.__capaThemeReloading === true) return true;
+  if (!theme || !theme.param || typeof capaTheme === "undefined") return false;
+  const state = capaTheme.resolve(window);
+  if (state.stale) return true;
+  const mode = state.choice === "Dark" ? "dark" : "light";
   try {
     return new URL(window.location.href).searchParams.get(theme.param) !== mode;
   } catch (error) {

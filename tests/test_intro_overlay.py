@@ -114,25 +114,32 @@ def test_render_sends_the_hide_rule_first_and_an_unchanging_payload(
     assert first["data"]["brand"] == intro_overlay.BRAND
 
 
-def test_theme_reload_is_predicted_with_the_toggle_scripts_own_keys() -> None:
-    """테마 새로고침을 미리 알아채는 규칙은 theme_toggle 과 같은 저장 키·버튼 id 를 쓴다.
+def test_theme_reload_is_predicted_with_the_toggle_scripts_own_rule() -> None:
+    """테마 새로고침을 미리 알아채는 규칙은 theme_toggle 과 **같은 규칙 문자열**이다.
 
-    다르면 새로고침이 올 때 인트로가 이미 돌고 있어 끊겼다가 처음부터 다시 돈다.
+    다르면 새로고침이 올 때 인트로가 이미 돌고 있어 끊겼다가 처음부터 다시 돌거나, 오지 않을
+    새로고침을 10초 기다린다. 입장 화면은 예측만 하고 아무것도 적지 않는다.
     """
     from capa_simulation.components import theme_toggle
     from capa_simulation.design.theme import THEME_QUERY_PARAM
 
     theme = intro_overlay._data()["theme"]
+    registered = intro_overlay._registered_js()
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
 
-    assert theme == {
-        "param": THEME_QUERY_PARAM,
-        "storage_prefix": theme_toggle.THEME_STORAGE_PREFIX,
-        "storage_suffix": theme_toggle.THEME_STORAGE_SUFFIX,
-        "button_id": theme_toggle.THEME_BUTTON_ID,
-    }
-    for name in ("theme.storage_prefix", "theme.storage_suffix", "theme.button_id"):
-        assert name in js
+    assert theme == {"param": THEME_QUERY_PARAM, "button_id": theme_toggle.THEME_BUTTON_ID}
+    assert theme_toggle.THEME_RULE_SCRIPT in registered
+    assert registered.index(theme_toggle.THEME_RULE_SCRIPT) < registered.index(js)
+    pending = _function_source(js, "themeReloadPending")
+    assert "capaTheme.resolve(window)" in pending
+    assert "state.stale" in pending and "theme.param" in pending
+    # 테마 스크립트가 먼저 돌아 이미 새로고침을 걸었으면 그 표지로 안다.
+    assert "window.__capaThemeReloading === true" in pending
+    assert "parentWindow.__capaThemeReloading = true;" in theme_toggle._SCRIPT
+    # 저장 키를 따로 만들지 않고, 저장소에 쓰지 않는다.
+    assert "stActiveTheme" not in js and "storage_prefix" not in js
+    assert not re.search(r"(capaTheme\.(sync|choose)|localStorage\.setItem)", js)
+    assert "theme.button_id" in js
 
 
 def _scene_source(js: str) -> str:

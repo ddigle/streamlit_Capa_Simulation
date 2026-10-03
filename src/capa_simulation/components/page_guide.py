@@ -47,11 +47,10 @@ _SCRIPT = """
   if (!parentWindow || parentWindow === window) return;
   var doc = parentWindow.document;
 
+  // 테마는 테마 버튼과 같은 키 규칙(`theme_toggle.THEME_RULE_SCRIPT` 의 `capaTheme`)으로 읽는다.
+  // 그 규칙은 같은 iframe 의 맨 앞 스크립트가 정의한다.
   function dark() {
-    try {
-      var key = "stActiveTheme-" + parentWindow.location.pathname + "-v2";
-      return JSON.parse(parentWindow.localStorage.getItem(key) || '"Light"') === "Dark";
-    } catch (error) { return false; }
+    return typeof capaTheme !== "undefined" && capaTheme.resolve(parentWindow).choice === "Dark";
   }
 
   function place() {
