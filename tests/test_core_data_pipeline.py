@@ -1,6 +1,7 @@
 # Purpose: core data pipeline 관련 정상·예외·회귀 동작을 검증한다.
 
 import csv
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -8,13 +9,14 @@ import pytest
 
 from capa_simulation.io.core_data_source import (
     CoreDataBatch,
-    CsvCoreDataProvider,
     build_source_column_profile,
     core_data_hash,
     load_core_data_contract,
     normalize_core_data,
+    read_core_data_csv,
 )
 from capa_simulation.services.core_data_pipeline import (
+    fetch_core_data_dataset,
     prepare_core_data_dataset,
     reference_conflicts_to_csv,
     summarize_reference_conflicts,
@@ -83,6 +85,21 @@ def test_normalize_core_data_applies_exact_nullable_contract() -> None:
     assert profile["null_count"].sum() == 0
 
 
+@dataclass(frozen=True)
+class _CsvProvider:
+    """`CoreDataProvider` 규약을 채우는 최소 CSV 공급자. 운영에는 CSV 공급자가 없다."""
+
+    path: Path
+
+    def fetch(self, simulation_code: str) -> CoreDataBatch:
+        return CoreDataBatch(
+            simulation_code=simulation_code,
+            simulation_name="테스트 시뮬레이션",
+            source_type="CSV_CORE_DATA",
+            frame=read_core_data_csv(self.path),
+        )
+
+
 def test_csv_adapter_and_dataframe_adapter_share_the_same_pipeline(tmp_path: Path) -> None:
     csv_path = tmp_path / "Core_Data.csv"
     _core_data_row().to_csv(
@@ -92,9 +109,9 @@ def test_csv_adapter_and_dataframe_adapter_share_the_same_pipeline(tmp_path: Pat
         quoting=csv.QUOTE_NONE,
         escapechar="\\",
     )
-    provider = CsvCoreDataProvider(csv_path, "테스트 시뮬레이션")
+    provider = _CsvProvider(csv_path)
 
-    prepared = prepare_core_data_dataset(provider.fetch("SIM-001"), _display_order())
+    prepared = fetch_core_data_dataset(provider, "SIM-001", _display_order())
 
     assert prepared.batch.source_type == "CSV_CORE_DATA"
     assert len(prepared.source_data) == 1

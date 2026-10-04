@@ -1,6 +1,6 @@
-# Purpose: Core Data source adapters and the shared 78-column normalization boundary.
+# Purpose: Core Data 원천 계약(78컬럼 정규화·CSV 읽기·해시·컬럼 프로파일)과 공급자 규약을 둔다.
 
-"""Core Data source adapters and the shared 78-column normalization boundary."""
+"""Core Data source contract, CSV reader, and the shared 78-column normalization boundary."""
 
 from __future__ import annotations
 
@@ -73,25 +73,6 @@ class CoreDataBatch:
 
 class CoreDataProvider(Protocol):
     def fetch(self, simulation_code: str) -> CoreDataBatch: ...
-
-
-@dataclass(frozen=True)
-class CsvCoreDataProvider:
-    """Development adapter that has the same output contract as BigDataQuery."""
-
-    path: Path
-    simulation_name: str
-
-    def fetch(self, simulation_code: str) -> CoreDataBatch:
-        code = simulation_code.strip()
-        if not code:
-            raise ValueError("시뮬레이션 코드는 비어 있을 수 없습니다.")
-        return CoreDataBatch(
-            simulation_code=code,
-            simulation_name=self.simulation_name,
-            source_type="CSV_CORE_DATA",
-            frame=read_core_data_csv(self.path),
-        )
 
 
 def load_core_data_contract(path: Path | None = None) -> CoreDataContract:

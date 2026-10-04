@@ -1,6 +1,6 @@
-# Purpose: Display-only load-weighted summaries of detailed unit capacity.
+# Purpose: 원수요 부하량을 STEP별 소요대수 합으로 나눈 공정 유효 Capa 를 집계한다.
 
-"""Display-only load-weighted summaries of detailed unit capacity."""
+"""Effective process capacity: unique demand load divided by summed STEP needs."""
 
 import pandas as pd
 
@@ -121,69 +121,6 @@ def effective_process_capacity_long(
             "공정 유효 Capa",
         ]
     ].sort_values(["생산계획년월", *display_dimensions], ignore_index=True)
-
-
-def weighted_unit_capacity_to_month_table(
-    required_equipment: pd.DataFrame,
-    detail_level: str,
-) -> pd.DataFrame:
-    """Build a process-route load-weighted unit capacity table for display only."""
-    if detail_level not in WEIGHTED_CAPACITY_HIERARCHY:
-        raise ValueError(f"지원하지 않는 대당 Capa 집계 수준입니다: {detail_level}")
-
-    level_index = WEIGHTED_CAPACITY_HIERARCHY.index(detail_level)
-    hierarchy_dimensions = WEIGHTED_CAPACITY_HIERARCHY[: level_index + 1]
-    display_dimensions = ["공정", "소요기준", *hierarchy_dimensions[1:]]
-    required = [
-        "생산계획년월",
-        *WEIGHTED_CAPACITY_HIERARCHY,
-        "소요기준",
-        "부하량",
-        "대당 Capa",
-    ]
-    require_columns(required_equipment, required, "소요대수 상세")
-    if required_equipment.empty:
-        return pd.DataFrame(columns=display_dimensions)
-
-    result = required_equipment[required].copy()
-    normalize_month_column(result, "소요대수 상세")
-    strip_text_columns(result, WEIGHTED_CAPACITY_HIERARCHY)
-    result["소요기준"] = normalize_demand_basis(result["소요기준"])
-    assert_complete(
-        result,
-        ["생산계획년월", *WEIGHTED_CAPACITY_HIERARCHY, "소요기준"],
-        "소요대수 상세",
-    )
-
-    _assert_one_basis_per_process(result)
-
-    result["부하량"] = _numeric(result["부하량"], "부하량")
-    result["대당 Capa"] = _numeric(result["대당 Capa"], "대당 Capa")
-    if result["부하량"].lt(0).any():
-        raise ValueError("소요대수 상세의 부하량 값은 0 이상이어야 합니다.")
-    if result["대당 Capa"].le(0).any():
-        raise ValueError("소요대수 상세의 대당 Capa 값은 0보다 커야 합니다.")
-
-    result["__weighted_capacity"] = result["부하량"] * result["대당 Capa"]
-    group_keys = ["생산계획년월", *display_dimensions]
-    grouped = result.groupby(group_keys, as_index=False, dropna=False).agg(
-        부하량=("부하량", "sum"),
-        가중_Capa=("__weighted_capacity", "sum"),
-    )
-    grouped["대당 Capa"] = grouped["가중_Capa"].div(
-        grouped["부하량"].where(grouped["부하량"].gt(0))
-    )
-
-    table = grouped.pivot(
-        index=display_dimensions,
-        columns="생산계획년월",
-        values="대당 Capa",
-    ).reset_index()
-    table.columns.name = None
-    raw_month_columns = [column for column in table.columns if column not in display_dimensions]
-    table = table.rename(columns={column: str(int(column)) for column in raw_month_columns})
-    month_columns = sorted(column for column in table.columns if column not in display_dimensions)
-    return table[[*display_dimensions, *month_columns]]
 
 
 def _numeric(series: pd.Series, label: str) -> pd.Series:

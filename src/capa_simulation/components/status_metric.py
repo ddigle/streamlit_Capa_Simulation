@@ -15,11 +15,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Literal
 
-import pandas as pd
 import streamlit as st
 
 from capa_simulation.design import tokens
@@ -85,18 +84,14 @@ def render_status_metric(
     key: str,
     tone: MetricTone = "neutral",
     help: str | None = None,
-    chart_data: Sequence[float] | pd.Series | None = None,
 ) -> None:
     """상태색 띠가 붙은 metric 카드 하나를 그린다.
 
     `tone="neutral"` 은 기존 카드와 완전히 같은 모양이다. 색을 붙일 이유가 없는 지표에
     굳이 색을 붙이지 않기 위해 기본값으로 둔다.
-
-    `chart_data` 를 넘기면 값 아래에 추이 스파크라인이 붙는다. 한 줄에 놓인 카드 중
-    일부에만 넣으면 높이가 어긋나므로 그 줄 전체에 넣거나 전부 빼야 한다.
     """
     if tone not in _TONE_TOKENS:
-        _draw(label, value, help, chart_data)
+        st.metric(label, value, border=True, help=help)
         return
     color = tone_color(tone)
     st.html(
@@ -111,21 +106,4 @@ def render_status_metric(
         )
     )
     with st.container(key=key):
-        _draw(label, value, help, chart_data)
-
-
-def _draw(
-    label: str,
-    value: str,
-    help: str | None,
-    chart_data: Sequence[float] | pd.Series | None,
-) -> None:
-    """카드 한 장. 스파크라인은 정식 파라미터라 `**kwargs` 로 풀 이유가 없다.
-
-    `dict[str, object]` 를 풀어 넘기면 타입이 흐려져 `type: ignore` 가 필요했고, 그 ignore
-    가 label·value 의 타입 오류까지 함께 가렸다.
-    """
-    if chart_data is None:
         st.metric(label, value, border=True, help=help)
-        return
-    st.metric(label, value, border=True, help=help, chart_data=chart_data, chart_type="area")

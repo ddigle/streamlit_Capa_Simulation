@@ -7,17 +7,15 @@ from capa_simulation.services.dashboard import (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
     align_detail_with_comparison,
     build_bottleneck_capacity,
-    build_monthly_bottleneck_details,
     build_monthly_bottleneck_details_from_ranking,
     build_monthly_bottleneck_ranking,
-    build_monthly_bottleneck_top5,
     build_monthly_bottleneck_top5_from_ranking,
-    build_monthly_bottlenecks,
     build_monthly_bottlenecks_from_ranking,
-    build_monthly_wafer_load,
+    build_monthly_wafer_load_from_load,
     build_production_dashboard,
     build_production_lob_summary,
 )
+from capa_simulation.services.load_calculator import calculate_wafer_load
 
 
 def test_production_dashboard_groups_pkg_plan_by_product_and_stack() -> None:
@@ -194,7 +192,7 @@ def test_dashboard_selects_lowest_monthly_securement_process() -> None:
         }
     )
 
-    result = build_monthly_bottlenecks(securement)
+    result = build_monthly_bottlenecks_from_ranking(build_monthly_bottleneck_ranking(securement))
 
     assert result["년월"].tolist() == ["26.08", "26.09"]
     assert result["공정"].tolist() == ["Process-A", "Process-D"]
@@ -204,10 +202,14 @@ def test_dashboard_selects_lowest_monthly_securement_process() -> None:
         "26.09<br>Process-D",
     ]
 
-    filtered = build_monthly_bottlenecks(securement, included_processes=["Process-B", "Process-C"])
+    filtered = build_monthly_bottlenecks_from_ranking(
+        build_monthly_bottleneck_ranking(securement, included_processes=["Process-B", "Process-C"])
+    )
     assert filtered["공정"].tolist() == ["Process-B", "Process-C"]
 
-    excluded = build_monthly_bottlenecks(securement, included_processes=[])
+    excluded = build_monthly_bottlenecks_from_ranking(
+        build_monthly_bottleneck_ranking(securement, included_processes=[])
+    )
     assert excluded.empty
     assert excluded.columns.tolist() == ["생산계획년월", "공정", "확보율", "년월", "축레이블"]
 
@@ -307,10 +309,13 @@ def test_dashboard_builds_monthly_bottleneck_top5_capacity() -> None:
         {"생산계획년월": [202608], "Wafer 부하량": [1_000.0], "년월": ["26.08"]}
     )
 
-    result = build_monthly_bottleneck_top5(
+    ranking = build_monthly_bottleneck_ranking(
         securement,
-        monthly_density,
         included_processes=[f"Process-{index}" for index in range(6)],
+    )
+    result = build_monthly_bottleneck_top5_from_ranking(
+        ranking,
+        monthly_density,
         monthly_wafer=monthly_wafer,
     )
 
@@ -355,11 +360,12 @@ def test_dashboard_builds_monthly_bottleneck_details() -> None:
         "Process-10",
     ]
 
+    ranking = build_monthly_bottleneck_ranking(securement, included_processes=included)
+
     # 상한이 유효 공정 수보다 크면 있는 만큼만 나온다.
-    result = build_monthly_bottleneck_details(
-        securement,
+    result = build_monthly_bottleneck_details_from_ranking(
+        ranking,
         monthly_wafer,
-        included_processes=included,
         rank_limit=20,
     )
 
@@ -383,10 +389,9 @@ def test_dashboard_builds_monthly_bottleneck_details() -> None:
     )
 
     # 상한이 실제로 자른다.
-    limited = build_monthly_bottleneck_details(
-        securement,
+    limited = build_monthly_bottleneck_details_from_ranking(
+        ranking,
         monthly_wafer,
-        included_processes=included,
         rank_limit=4,
     )
 
@@ -446,7 +451,7 @@ def test_dashboard_builds_wafer_lob_summary() -> None:
     density = pd.DataFrame({"생산계획년월": [202608], "년월": ["26.08"], "부하량": [10.0]})
     bottleneck = pd.DataFrame({"생산계획년월": [202608], "공정": ["Process-A"], "확보율": [1.1]})
 
-    wafer = build_monthly_wafer_load(plan, yield_data, chip_qty)
+    wafer = build_monthly_wafer_load_from_load(calculate_wafer_load(plan, yield_data, chip_qty))
     summary = build_production_lob_summary(density, wafer, bottleneck)
 
     assert wafer.loc[0, "Wafer 부하량"] == pytest.approx(150 * 1_000 * 2 / 0.8 / 0.5 / 500)

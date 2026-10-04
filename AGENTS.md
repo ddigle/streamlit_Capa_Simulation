@@ -1220,8 +1220,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/io/core_data_source.py`
   - CSV와 사내 DB 조회 결과가 공유하는 78컬럼 DataFrame 계약, nullable 타입 정규화,
     원천·행·스키마 해시와 컬럼 프로파일을 제공한다.
-  - CSV 어댑터는 외부 개발 전용이며 사내 조회 구현은 `CoreDataProvider` 계약을 따른다.
-    웹 화면에는 CSV 원천 저장 입구가 없다. 쓰는 곳은 부트스트랩·검증 스크립트뿐이다.
+  - CSV 공급자 클래스는 없다. CSV 원천은 부트스트랩·검증 스크립트가 `read_core_data_csv` 로
+    직접 읽고, 웹 화면에는 CSV 원천 저장 입구가 없다. 사내 조회 구현은 `CoreDataProvider`
+    계약을 따른다.
 - `src/capa_simulation/io/company_bigdataquery_adapter.py`
   - 사내 SQL과 DB 컬럼 매핑을 넣는 전용 접속부다. `bigdataquery`를 지연 import하고 반환
     DataFrame을 CSV로 저장하지 않고 공통 78컬럼 파이프라인에 전달한다.
@@ -1374,7 +1375,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   Chip·Wafer 부하량은 공통 전처리를 한 번만 수행한다.
 - `unit_capacity.py`: Main/MI 환산 UPEH와 대당 Capa
 - `weighted_unit_capacity.py`: 중복되지 않은 원수요 부하량과 STEP별 소요대수 합으로
-  공정별 대당 Capa를 만들며 기존 부하량 가중평균 조회 함수도 호환용으로 유지
+  공정별 대당 Capa를 만든다. 한 공정에 소요기준이 둘 이상이면 멈춘다(업무 규칙)
 - `standard_target_capacity.py`: ER 제외 월간 공정별 대당 Capa의 일 환산, 주차별 일 표준
   가능량과 PKG 기준 역산(`add_pkg_equivalent_standard_target`). 주차 캘린더는
   `iso_week_calendar.py`, 수동 가용대수 표 계약은 `weekly_availability_input.py` 를 쓴다.
@@ -1940,9 +1941,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/column_filter.py`
   - 분류 컬럼별 다중선택 필터와 초기화 버튼. 선택값으로 거른 프레임을 돌려준다.
     `value_labels` 는 `format_func` 로 표시만 바꾼다. 옵션 값과 세션 저장값은 원본이다.
-  - 모양이 둘이다 — 본문 접는 틀(`render_column_filters`)과 사이드바 조건 카드 안에 세로로
-    쌓는 `render_column_filter_controls`(`disabled` 로 잠글 수 있다). 카드가 없는 회차(닫힌
-    탭)에는 `apply_column_filters` 가 세션에 남은 선택만 읽어 거른다.
+  - 사이드바 조건 카드 안에 세로로 쌓는 `render_column_filter_controls` 한 모양이다(`disabled`
+    로 잠글 수 있다). 카드가 없는 회차(닫힌 탭)에는 `apply_column_filters` 가 세션에 남은
+    선택만 읽어 거른다.
 - `src/capa_simulation/components/process_labels.py`
   - 원본 공정명을 화면 표시명으로 바꾸는 **유일한 지점**이다. `공정` 은 1급 조인 키라
     데이터에서 바꾸지 않고 표시 직전에만 라벨을 갈아 끼운다. `services/` 는 이 모듈을
@@ -2090,8 +2091,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     탭만 카드를 세우고, 닫힌 탭의 표는 세션 선택으로 거른다. **적용하지 않은 편집이 있으면
     필터를 잠근다**(`FILTER_LOCKED_NOTICE`) — 보이는 행이 바뀌면 편집이 다른 행에 붙기 때문이다.
     필터로 행이 줄면 `편집 범위` 줄이 `필터로 N개 행 표시` 를 덧붙인다.
-  - **필터는 보기만 좁히고 저장은 전체다.** 분류 컬럼 필터(`render_column_filters`)는 화면에
-    그릴 행만 줄이고, 돌려주는 표는 언제나 원본과 행 수·행 순서가 같은 전체 표다. 편집값은
+  - **필터는 보기만 좁히고 저장은 전체다.** 분류 컬럼 필터(`render_column_filter_controls`)는
+    화면에 그릴 행만 줄이고, 돌려주는 표는 언제나 원본과 행 수·행 순서가 같은 전체 표다. 편집값은
     `merge_edited_months` 가 그 탭의 `dimensions` 를 키로 원본에 되머지한다. 되머지를 지우고
     걸러진 표를 그대로 돌려주면 `replace_month_range` 가 조회기간의 행을 편집값으로 통째로
     갈아끼우므로 **화면에서 걸러진 공정이 그 기간에서 조용히 삭제된다.** 되머지가 정확한

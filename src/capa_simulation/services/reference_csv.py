@@ -1,18 +1,14 @@
-# Purpose: CSV round-trip contract for wide editable RQ tables.
+# Purpose: 편집 RQ Wide 표의 Excel 안전 CSV 양식 내려받기와 붙여넣은 표 검증을 맡는다.
 
-"""CSV round-trip contract for wide editable RQ tables."""
+"""Excel-safe CSV template download and pasted-table validation for wide RQ tables."""
 
 from __future__ import annotations
 
 import re
-from io import BytesIO
 
 import pandas as pd
 
-from capa_simulation.services.clipboard_table import (
-    TEXT_TABLE_READ_OPTIONS,
-    parse_clipboard_table,
-)
+from capa_simulation.services.clipboard_table import parse_clipboard_table
 
 # Excel 은 CSV 를 열 때 셀 내용을 **글자로 읽지 않고 해석한다.** 그래서 내려받은 양식을
 # Excel 에서 열었다 그대로 복사해 붙여넣는 것만으로 분류 행이 달라진다 — 예를 들어
@@ -82,32 +78,6 @@ def reference_edit_csv_bytes(
             if column in prepared.columns:
                 prepared[column] = prepared[column].map(_guard_excel_text)
     return prepared.to_csv(index=False).encode("utf-8-sig")
-
-
-def parse_reference_edit_csv(
-    content: bytes,
-    template: pd.DataFrame,
-    key_columns: list[str],
-    table_name: str,
-) -> pd.DataFrame:
-    """Read a wide RQ CSV and require the same columns and classification rows."""
-    if not content:
-        raise ValueError(f"{table_name} CSV 파일이 비어 있습니다.")
-
-    source: pd.DataFrame | None = None
-    for encoding in ("utf-8-sig", "cp949"):
-        try:
-            # 붙여넣기와 **같은 옵션**으로 읽는다. 예전에는 여기만 pandas 기본값이라
-            # `NA`·`NULL` 같은 분류 값이 결측이 되어, 같은 파일이 붙여넣기로는 통과하고
-            # 업로드로는 「식별 컬럼에 누락값이 있습니다」로 막혔다.
-            source = pd.read_csv(BytesIO(content), encoding=encoding, **TEXT_TABLE_READ_OPTIONS)
-            break
-        except UnicodeDecodeError:
-            continue
-    if source is None:
-        raise ValueError(f"{table_name} CSV는 UTF-8 또는 CP949 인코딩이어야 합니다.")
-
-    return validate_reference_edit_table(source, template, key_columns, table_name)
 
 
 def parse_reference_edit_clipboard(

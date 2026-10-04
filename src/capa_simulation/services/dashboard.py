@@ -10,10 +10,7 @@ from capa_simulation.services.display_order_scopes import (
     TAB_PKG_PLAN,
 )
 from capa_simulation.services.frame_contracts import require_columns
-from capa_simulation.services.load_calculator import (
-    calculate_density_load,
-    calculate_wafer_load,
-)
+from capa_simulation.services.load_calculator import calculate_density_load
 from capa_simulation.services.month_columns import month_label, year_total_label
 
 PRODUCTION_DETAIL_DIMENSIONS = ["제품정보", "Stack"]
@@ -168,17 +165,6 @@ def align_detail_with_comparison(
     return aligned_current, aligned_comparison
 
 
-def build_monthly_wafer_load(
-    plan: pd.DataFrame,
-    yield_data: pd.DataFrame,
-    chip_qty: pd.DataFrame,
-) -> pd.DataFrame:
-    """Build monthly Wafer load in sheets for the complete production plan."""
-    if plan.empty:
-        return pd.DataFrame(columns=["생산계획년월", "Wafer 부하량", "년월"])
-    return build_monthly_wafer_load_from_load(calculate_wafer_load(plan, yield_data, chip_qty))
-
-
 def build_monthly_wafer_load_from_load(wafer: pd.DataFrame) -> pd.DataFrame:
     """Aggregate a precomputed detailed Wafer load by month."""
     required = ["생산계획년월", "물량"]
@@ -216,15 +202,6 @@ def build_production_lob_summary(
     )
     result["Wafer Capa"] = result["Wafer 부하량"] * result["확보율"]
     return result
-
-
-def build_monthly_bottlenecks(
-    securement_rate: pd.DataFrame,
-    included_processes: list[str] | None = None,
-) -> pd.DataFrame:
-    """Select the lowest valid securement-rate process for every month."""
-    ranking = build_monthly_bottleneck_ranking(securement_rate, included_processes)
-    return build_monthly_bottlenecks_from_ranking(ranking)
 
 
 # 순위 파생이 **있을 때만** 함께 나르는 컬럼. 앞의 둘은 원래부터 상세 화면이 쓰던 것이고,
@@ -312,21 +289,6 @@ def build_bottleneck_capacity(
     return result
 
 
-def build_monthly_bottleneck_top5(
-    securement_rate: pd.DataFrame,
-    monthly_density: pd.DataFrame,
-    included_processes: list[str] | None = None,
-    monthly_wafer: pd.DataFrame | None = None,
-) -> pd.DataFrame:
-    """Return each month's five lowest-rate processes and converted capacity."""
-    ranking = build_monthly_bottleneck_ranking(securement_rate, included_processes)
-    return build_monthly_bottleneck_top5_from_ranking(
-        ranking,
-        monthly_density,
-        monthly_wafer=monthly_wafer,
-    )
-
-
 def build_monthly_bottleneck_top5_from_ranking(
     ranking: pd.DataFrame,
     monthly_density: pd.DataFrame,
@@ -360,24 +322,6 @@ def build_monthly_bottleneck_top5_from_ranking(
             result["기준 Wafer Capa"] = result["Wafer 부하량"] * result["기준 확보율"]
     result["년월"] = result["생산계획년월"].map(_month_label)
     return result.reset_index(drop=True)
-
-
-def build_monthly_bottleneck_details(
-    securement_rate: pd.DataFrame,
-    monthly_wafer: pd.DataFrame,
-    included_processes: list[str] | None = None,
-    *,
-    rank_limit: int,
-) -> pd.DataFrame:
-    """Return each month's lowest-rate processes with equipment and Wafer Capa."""
-    required = ["생산계획년월", "공정", "가용대수", "소요대수", "확보율"]
-    require_columns(securement_rate, required, "확보율")
-    ranking = build_monthly_bottleneck_ranking(securement_rate, included_processes)
-    return build_monthly_bottleneck_details_from_ranking(
-        ranking,
-        monthly_wafer,
-        rank_limit=rank_limit,
-    )
 
 
 def build_monthly_bottleneck_details_from_ranking(

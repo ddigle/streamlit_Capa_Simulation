@@ -332,12 +332,12 @@ def test_column_filter_shows_labels_but_keeps_original_selection_values() -> Non
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.components.column_filter import render_column_filters
+from capa_simulation.components.column_filter import render_column_filter_controls
 from capa_simulation.components.process_labels import process_labels_from_rules
 
 labels = process_labels_from_rules(pd.DataFrame([("SAW", "절단")], columns=["공정", "표시명"]), 1)
 data = pd.DataFrame({"공정": ["SAW", "MOLD"], "값": [1, 2]})
-filtered = render_column_filters(
+filtered = render_column_filter_controls(
     data,
     ["공정"],
     key_prefix="probe",

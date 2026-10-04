@@ -12,7 +12,6 @@ from capa_simulation.services.equipment_count import (
 from capa_simulation.services.reference_csv import (
     count_removed_values,
     parse_reference_edit_clipboard,
-    parse_reference_edit_csv,
     reference_edit_csv_bytes,
 )
 
@@ -26,22 +25,6 @@ def _template() -> pd.DataFrame:
             "202609": [0.91, 0.81],
         }
     )
-
-
-def test_reference_csv_round_trip_preserves_template_row_order() -> None:
-    template = _template()
-    modified = template.iloc[::-1].reset_index(drop=True)
-    modified.loc[modified["공정"].eq("Process-A"), "202608"] = 0.75
-
-    result = parse_reference_edit_csv(
-        reference_edit_csv_bytes(modified),
-        template,
-        ["공정", "양산구분"],
-        "RQ_RUN_RATE",
-    )
-
-    assert result["공정"].tolist() == ["Process-B", "Process-A"]
-    assert float(result.loc[1, "202608"]) == pytest.approx(0.75)
 
 
 def test_reference_clipboard_round_trip_preserves_template_row_order() -> None:
@@ -60,14 +43,14 @@ def test_reference_clipboard_round_trip_preserves_template_row_order() -> None:
     assert float(result.loc[1, "202608"]) == pytest.approx(0.75)
 
 
-def test_reference_csv_rejects_changed_classification_rows() -> None:
+def test_reference_paste_rejects_changed_classification_rows() -> None:
     template = _template()
     changed = template.copy()
     changed.loc[0, "공정"] = "Unknown"
 
     with pytest.raises(ValueError, match="분류 행"):
-        parse_reference_edit_csv(
-            reference_edit_csv_bytes(changed),
+        parse_reference_edit_clipboard(
+            changed.to_csv(index=False, sep="\t"),
             template,
             ["공정", "양산구분"],
             "RQ_RUN_RATE",
@@ -201,17 +184,6 @@ def test_paste_survives_excel_opening_the_downloaded_template() -> None:
     assert result["Pack Code"].tolist() == ["4.00E+02", "007", "3FA"]
 
 
-def test_downloaded_template_uploads_without_opening_excel() -> None:
-    template = _plan_template()
-    key_columns = ["Capa Code", "Pack Code"]
-
-    result = parse_reference_edit_csv(
-        reference_edit_csv_bytes(template, key_columns), template, key_columns, "RQ_PKG_PLAN"
-    )
-
-    assert result["Pack Code"].tolist() == ["4.00E+02", "007", "3FA"]
-
-
 def test_row_mismatch_names_the_value_excel_changed() -> None:
     template = _plan_template()
     key_columns = ["Capa Code", "Pack Code"]
@@ -258,26 +230,23 @@ def _na_template() -> pd.DataFrame:
     )
 
 
-def test_upload_reads_na_shaped_keys_as_text_like_paste_does() -> None:
+def test_paste_reads_na_shaped_keys_as_text() -> None:
     template = _na_template()
     key_columns = ["Customer", "Capa Code"]
-    payload = reference_edit_csv_bytes(template, key_columns)
 
-    uploaded = parse_reference_edit_csv(payload, template, key_columns, "RQ_PKG_PLAN")
     pasted = parse_reference_edit_clipboard(
         template.to_csv(index=False, sep="\t"), template, key_columns, "RQ_PKG_PLAN"
     )
 
-    assert uploaded["Customer"].tolist() == ["NA", "NULL", "BBS"]
-    assert pasted["Customer"].tolist() == uploaded["Customer"].tolist()
+    assert pasted["Customer"].tolist() == ["NA", "NULL", "BBS"]
 
 
 # --------------------------------------------------- 값 칸 검증 (숫자 아니면 행이 사라진다)
 
 
 def _paste(template: pd.DataFrame, modified: pd.DataFrame) -> pd.DataFrame:
-    return parse_reference_edit_csv(
-        reference_edit_csv_bytes(modified),
+    return parse_reference_edit_clipboard(
+        modified.to_csv(index=False, sep="\t"),
         template,
         ["공정", "양산구분"],
         "RQ_RUN_RATE",

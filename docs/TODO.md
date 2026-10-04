@@ -772,6 +772,16 @@ Codex 구축분에 대한 구조 리팩토링을 진행했다. 계산 결과와 
     `strip`, Core Data 의 10개 상한은 `limit` 로 남겼다. 문구는 먼저 스냅샷 테스트를 옛 코드에서
     통과시킨 뒤 바꿨고, 무작위 머리글 3,300건(계약 오류 2,567건)의 결과가 전후 바이트 단위로
     같다. `replace_global_past_data` 의 이중 정규화는 측정하지 않아 손대지 않았다.
+- [x] 2026-10-04: 운영 호출이 0 이고 테스트만 부르던 공개 API 를 걷어 냈다(코드 6파일 261줄
+  삭제·23줄 추가). 본문 접는 틀 필터 `render_column_filters`, HOME 래퍼 4개
+  (`build_monthly_wafer_load`·`build_monthly_bottlenecks`·`build_monthly_bottleneck_top5`·
+  `build_monthly_bottleneck_details` — 랭킹을 매번 다시 계산하던 진입점), 부하량 가중
+  `weighted_unit_capacity_to_month_table`, 기준 정보 CSV 업로드 `parse_reference_edit_csv`,
+  `CsvCoreDataProvider`, `render_status_metric` 의 `chart_data`. 테스트는 운영 조합(B/N 순위
+  한 번 → `*_from_ranking`, `calculate_wafer_load` → `build_monthly_wafer_load_from_load`,
+  붙여넣기 `parse_reference_edit_clipboard`, `fetch_core_data_dataset` + 최소 CSV 공급자)으로
+  옮겼고, 한 공정 한 소요기준 업무 규칙 테스트 두 개는 `effective_process_capacity_long`
+  대상으로 옮겨 그대로 남겼다.
 - [x] Static Capa 5개 페이지의 부트스트랩을 `page_bootstrap.py` 로 통합했다. 페이지마다
   다르던 예외 조합 탓에 `capacity_standards` 는 실제 발생하는 RuntimeError 를 놓치고 있었다.
 - [x] 색 리터럴 89개를 `design/tokens.py` 로 모으고 서체 폴백 스택을 적용했다.
