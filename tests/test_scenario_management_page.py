@@ -1,4 +1,4 @@
-# Purpose: 시나리오 관리 페이지의 폼 구성·목록 작업·보관함 펼침·복제 저장을 AppTest 로 고정한다.
+# Purpose: 시나리오 관리 페이지의 폼·목록 작업·보관함·복제 저장·캐시 무효화를 AppTest 로 고정한다.
 
 from pathlib import Path
 
@@ -7,9 +7,19 @@ from streamlit.testing.v1 import AppTest
 from test_all_pages_render import _page_script
 
 from capa_simulation.components.scenario_management import (
+    ACTION_KEY,
+    ARCHIVE_CONFIRM_KEY,
     ARCHIVED_EXPANDER_KEY,
+    ARCHIVED_SELECT_KEY,
+    DELETE_CONFIRM_KEY,
     FLASH_KEY,
+    LIST_EDITOR_KEY,
     MODE_KEY,
+)
+from capa_simulation.persistence.cache import (
+    clear_global_comparison_scenario_cache,
+    load_global_comparison_scenario,
+    load_scenario_snapshot,
 )
 from capa_simulation.persistence.models import ScenarioCreate, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -65,7 +75,7 @@ def test_list_management_acts_on_the_checked_scenario(
 
     # data_editor 위젯 상태는 편집한 셀만 담는다. 체크 한 번을 그 모양 그대로 넣는다.
     app = AppTest.from_string(script, default_timeout=120)
-    app.session_state["scenario_list_editor"] = {
+    app.session_state[LIST_EDITOR_KEY] = {
         "edited_rows": {0: {"선택": True}},
         "added_rows": [],
         "deleted_rows": [],
@@ -286,3 +296,105 @@ def test_revision_save_keeps_the_session_virtual_products(tmp_path: Path) -> Non
             "원본 Stack": "8H",
         }
     ]
+
+
+def _check_row(app: AppTest, database_path: Path, scenario_id: str) -> None:
+    """목록 표에서 그 시나리오 한 건만 체크한다. 표의 행 차례는 `list_scenarios()` 차례다."""
+    order = [
+        scenario.scenario_id
+        for scenario in DuckDBScenarioRepository(database_path).list_scenarios()
+    ]
+    app.session_state[LIST_EDITOR_KEY] = {
+        "edited_rows": {order.index(scenario_id): {"선택": True}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+
+
+def test_rename_refreshes_the_cached_snapshot_name(tmp_path: Path) -> None:
+    """이름을 바꾸면 캐시된 리비전 스냅샷도 새 이름을 돌려준다.
+
+    스냅샷 payload 는 시나리오 메타데이터를 함께 담는다. 비우지 않으면 그 리비전에서 파생한
+    시나리오의 `source_simulation_name` 과 출처 메모에 옛 이름이 남는다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    (summary,) = DuckDBScenarioRepository(database_path).list_scenarios()
+    revision_id = summary.active_revision_id
+    cached = load_scenario_snapshot(str(database_path), revision_id)
+    assert cached.scenario.scenario_name == summary.scenario_name
+
+    app = AppTest.from_string(script, default_timeout=120)
+    _check_row(app, database_path, summary.scenario_id)
+    app.run()
+    app.session_state[ACTION_KEY] = "rename"
+    app.run()
+    assert not app.exception
+    next(widget for widget in app.text_input if widget.label == "새 시나리오명").set_value(
+        "이름 바꾼 시나리오"
+    )
+    next(button for button in app.button if button.label == "이름 저장").click()
+    app.run()
+    assert not app.exception
+
+    assert any("이름 바꾼 시나리오 으로 변경했습니다" in item.value for item in app.success)
+    refreshed = load_scenario_snapshot(str(database_path), revision_id)
+    assert refreshed.scenario.scenario_name == "이름 바꾼 시나리오"
+
+
+def test_archive_and_delete_drop_the_cached_comparison_target(tmp_path: Path) -> None:
+    """보관·영구 삭제는 DB 의 공용 비교 대상을 비운다. 캐시된 비교 대상도 함께 비어야 한다.
+
+    캐시는 DB 경로 키라 저장소가 `version` 을 올려도 무효화되지 않는다. 남아 있으면 새 세션의
+    HOME 이 보관·삭제된 시나리오를 비교 대상으로 다시 심는다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    database = str(database_path)
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    target = _clone_official(database_path, "비교 대상", "COMPARE-1")
+    target_id = target.scenario.scenario_id
+    repository.replace_global_comparison_scenario(
+        target_id, target.revision.revision_id, source="테스트"
+    )
+    clear_global_comparison_scenario_cache()
+    assert load_global_comparison_scenario(database).scenario_id == target_id
+
+    app = AppTest.from_string(script, default_timeout=120)
+    _check_row(app, database_path, target_id)
+    app.run()
+    app.session_state[ACTION_KEY] = "archive"
+    app.run()
+    assert not app.exception
+    next(widget for widget in app.checkbox if widget.key == ARCHIVE_CONFIRM_KEY).check()
+    app.run()
+    next(button for button in app.button if button.label == "보관 실행").click()
+    app.run()
+    assert not app.exception
+
+    assert repository.load_global_comparison_scenario().scenario_id is None
+    assert load_global_comparison_scenario(database).scenario_id is None
+
+    # 영구 삭제 칸만 따로 본다. 보관이 DB 를 이미 비웠으므로 보관본을 다시 가리키게 한다.
+    repository.replace_global_comparison_scenario(
+        target_id, target.revision.revision_id, source="테스트"
+    )
+    clear_global_comparison_scenario_cache()
+    assert load_global_comparison_scenario(database).scenario_id == target_id
+
+    app = AppTest.from_string(script, default_timeout=120)
+    app.session_state[ARCHIVED_SELECT_KEY] = target_id
+    app.run()
+    assert not app.exception
+    app.text_input(key=DELETE_CONFIRM_KEY).set_value("비교 대상")
+    app.run()
+    next(button for button in app.button if button.label == "영구 삭제 실행").click()
+    app.run()
+    assert not app.exception
+
+    assert target_id not in {
+        scenario.scenario_id for scenario in repository.list_scenarios(include_archived=True)
+    }
+    assert load_global_comparison_scenario(database).scenario_id is None

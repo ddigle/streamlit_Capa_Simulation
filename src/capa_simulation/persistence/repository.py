@@ -474,8 +474,8 @@ class DuckDBScenarioRepository:
         """Atomically replace the shared comparison target.
 
         다른 공용 프로필과 같은 결로 현재본만 남기고 version 을 올린다. **고르지 않음(둘 다
-        `None`)도 정상 저장이며 version 은 올라간다** — 캐시 키가 version 을 보므로 해제도
-        올라가야 무효화된다.
+        `None`)도 정상 저장이며 version 은 올라간다.** 캐시는 경로 키이므로 version 으로
+        무효화되지 않는다 — 저장한 호출부가 `clear_global_comparison_scenario_cache()` 로 비운다.
 
         리비전만 있고 시나리오가 없는 짝은 저장하지 않는다. 그 상태로는 어느 시나리오의
         리비전인지 알 수 없어 화면이 복원할 수 없다.

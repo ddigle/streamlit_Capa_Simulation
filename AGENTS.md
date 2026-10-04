@@ -1229,6 +1229,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 불변 `revision_id`의 전체 스냅샷과 공용 표시순서 프로필을 `st.cache_data`로 여러 세션에
     공유한다. 표시순서는 교체 시 `clear_global_display_order_cache()`로 명시 무효화한다
     (스냅샷 payload 에 현재 표시순서가 `RQ_DISPLAY_ORDER`로 들어가므로 두 캐시를 함께 비운다).
+    공용 프로필 캐시는 DB 경로 키라 `version` 이 올라도 무효화되지 않는다 — DB 를 바꾼
+    호출부가 해당 `clear_*_cache()` 를 부른다. 스냅샷 payload 에는 시나리오명도 들어가므로
+    이름 변경·보관·복원·삭제 뒤에는 `clear_scenario_snapshot_cache()` 를, 공용 비교 대상을
+    함께 비우는 보관·삭제 뒤에는 `clear_global_comparison_scenario_cache()` 도 부른다.
     시나리오·리비전 **목록**은 캐시하지 않는다. 사용자 정의 `ScenarioSnapshot`·
     `GlobalDisplayOrder` 인스턴스는 코드 핫리로드 후 pickle 클래스 식별자가 달라질 수
     있으므로 캐시에 직접 넣지 않고 기본형 메타데이터와 DataFrame payload를 캐시한 뒤

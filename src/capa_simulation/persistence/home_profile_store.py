@@ -142,8 +142,8 @@ def clear_global_comparison_scenario(
 ) -> None:
     """공용 GAP 비교 대상이 이 시나리오를 가리키고 있으면 비운다.
 
-    `version` 을 함께 올려야 한다. 이 프로필의 캐시 키가 `version` 이므로, 올리지 않으면
-    다른 세션이 사라진 시나리오를 비교 대상으로 계속 쥐고 있는다. `revision_id` 도 같이
+    다른 교체와 같은 결로 `version` 을 올린다. 캐시는 경로 키이므로 다른 세션의 캐시는
+    호출부가 명시적으로 비운다(`clear_global_comparison_scenario_cache`). `revision_id` 도 같이
     비운다 — 표의 `CHECK (revision_id IS NULL OR scenario_id IS NOT NULL)` 때문에 한쪽만
     비우면 제약에 걸린다.
     """

@@ -27,6 +27,7 @@ from capa_simulation.io.reference_cache import (
 )
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
+    clear_global_comparison_scenario_cache,
     clear_scenario_snapshot_cache,
     load_scenario_snapshot,
 )
@@ -417,6 +418,9 @@ def _render_rename(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         return
+    # 스냅샷 payload 는 시나리오명을 함께 담는다. 비우지 않으면 그 리비전에서 파생한 시나리오의
+    # 원천명·출처 메모에 옛 이름이 남는다.
+    clear_scenario_snapshot_cache()
     st.session_state[FLASH_KEY] = f"시나리오명을 {renamed_summary.scenario_name} 으로 변경했습니다."
     st.session_state.pop(ACTION_KEY, None)
     st.rerun()
@@ -507,6 +511,8 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
         st.error(bootstrap_error_message(exc))
         return
     clear_scenario_snapshot_cache()
+    # 저장소가 이 시나리오를 가리키던 공용 비교 대상을 비웠다. 캐시는 경로 키라 따로 비운다.
+    clear_global_comparison_scenario_cache()
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
     st.session_state[FLASH_KEY] = f"{summary.scenario_name} 을 보관했습니다."
@@ -595,6 +601,7 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
         st.error(bootstrap_error_message(exc))
         return
     clear_scenario_snapshot_cache()
+    clear_global_comparison_scenario_cache()
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
     st.session_state[FLASH_KEY] = f"{summary.scenario_name} 을 영구 삭제했습니다."
