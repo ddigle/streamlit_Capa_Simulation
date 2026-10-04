@@ -32,10 +32,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
-from capa_simulation.components.availability_gap_figure import (
-    build_availability_gap_figure,
-    month_label,
-)
+from capa_simulation.components.availability_gap_figure import build_availability_gap_figure
 from capa_simulation.components.plotly_layout import hover_chart_config
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -49,6 +46,7 @@ from capa_simulation.services.availability_gap import (
     gap_matrix,
 )
 from capa_simulation.services.equipment_units import format_unit_count
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.monthly_equipment_availability import (
     CATEGORIES,
     build_monthly_equipment_availability,
@@ -659,7 +657,7 @@ def _render_securement_cross_check(
             "확보율차이",
         ],
     ].copy()
-    display["생산계획년월"] = display["생산계획년월"].map(month_label)
+    display["생산계획년월"] = display["생산계획년월"].map(lambda month: month_label(int(month)))
     st.dataframe(display.round(3), hide_index=True, width="stretch")
 
 

@@ -41,12 +41,15 @@ from collections.abc import Mapping
 import pandas as pd
 
 from capa_simulation.services.frame_checks import strip_text_columns
-from capa_simulation.services.frame_contracts import normalize_area_name, normalize_month_column
+from capa_simulation.services.frame_contracts import (
+    UNIMPLEMENTED_BASES,
+    normalize_area_name,
+    normalize_month_column,
+)
 from capa_simulation.services.unit_capacity import (
     PERFORMANCE_KEYS,
     RUN_DAY_KEYS,
     RUN_RATE_KEYS,
-    UNIMPLEMENTED_BASES,
     VITAL_KEYS,
 )
 

@@ -47,7 +47,12 @@ def excel_text_guard_needed(value: str) -> bool:
     return any(pattern.search(value) for pattern in _EXCEL_GUARDS)
 
 
-def _guard_excel_text(value: object) -> object:
+def guard_excel_text(value: object) -> object:
+    """Excel 이 바꿔 놓을 문자열만 `="..."` 로 감싼다.
+
+    기준정보 편집 CSV(`reference_edit_csv_bytes`)와 설비 현재 데이터 내보내기
+    (`equipment_csv._export_csv_bytes`)가 함께 쓰는 한 벌이다.
+    """
     if not isinstance(value, str) or not excel_text_guard_needed(value):
         return value
     return f'="{value}"'
@@ -76,7 +81,7 @@ def reference_edit_csv_bytes(
         prepared = data.copy()
         for column in key_columns:
             if column in prepared.columns:
-                prepared[column] = prepared[column].map(_guard_excel_text)
+                prepared[column] = prepared[column].map(guard_excel_text)
     return prepared.to_csv(index=False).encode("utf-8-sig")
 
 

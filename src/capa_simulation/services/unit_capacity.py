@@ -6,6 +6,7 @@ import pandas as pd
 
 from capa_simulation.services.frame_checks import assert_unique_keys, strip_text_columns
 from capa_simulation.services.frame_contracts import (
+    UNIMPLEMENTED_BASES,
     assert_complete,
     normalize_area_name,
     normalize_month_column,
@@ -34,7 +35,6 @@ UNIT_CAPACITY_DIMENSIONS = [
     "STEP_SEQ",
     "MCP_SEQ",
 ]
-UNIMPLEMENTED_BASES = {"BOX", "PCB"}
 CAPACITY_EXCLUSIONS_ATTR = "excluded_capacity_rows"
 # 측정률 행이 없어 중립값 1.0 으로 이어 간 건수. **세지 않고 메우면 조용히 틀린다.**
 # 측정률은 분모라 실제가 1 보다 작으면 대당 Capa 과소 → 소요대수 과대 → 확보율 과소(보수 쪽),

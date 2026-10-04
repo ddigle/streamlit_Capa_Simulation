@@ -11,10 +11,10 @@ from capa_simulation.services.scenario_transform import (
     MONTHLY_TABLES,
     NON_MONTHLY_TABLES,
     copy_scenario_tables,
-    format_month,
     scenario_months,
     validate_month_axes,
 )
+from capa_simulation.settings import format_month
 
 OverlapPolicy = Literal["reject", "base", "donor"]
 

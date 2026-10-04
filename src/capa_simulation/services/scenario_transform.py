@@ -6,6 +6,7 @@ import pandas as pd
 
 from capa_simulation.services.frame_contracts import normalize_month_column, require_columns
 from capa_simulation.services.month_filter import MONTH_COLUMN
+from capa_simulation.settings import format_month
 
 MONTHLY_TABLES = (
     "RQ_EQP_AVBL",
@@ -43,10 +44,6 @@ def month_axis(frame: pd.DataFrame) -> tuple[int, ...]:
 
 def scenario_months(tables: Mapping[str, pd.DataFrame]) -> tuple[int, ...]:
     return tuple(sorted({month for name in MONTHLY_TABLES for month in month_axis(tables[name])}))
-
-
-def format_month(month: int) -> str:
-    return f"{month // 100:04d}-{month % 100:02d}"
 
 
 def format_month_range(months: tuple[int, ...]) -> str:

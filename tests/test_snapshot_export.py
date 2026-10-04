@@ -132,6 +132,26 @@ def test_verify_rejects_a_snapshot_from_a_newer_deployment(workspace: Path) -> N
         )
 
 
+def test_verify_passes_when_the_snapshot_version_equals_the_deployment(workspace: Path) -> None:
+    """같은 버전은 「최신」이 아니다. 경계에서 막으면 같은 배포본끼리도 주고받지 못한다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database)
+    destination = workspace / "snapshot.duckdb"
+    result = snapshot_export.export_snapshot(database, destination)
+    file_version = snapshot_export.read_migration_version(result.path, "simulation")
+
+    version = snapshot_export.verify_snapshot(
+        result.path,
+        dataset="simulation",
+        expected_sha256=result.sha256_hex,
+        expected_size=result.size_bytes,
+        code_version=file_version,
+    )
+
+    assert version == file_version
+    assert result.path.exists()
+
+
 def test_verify_passes_for_a_healthy_snapshot(workspace: Path) -> None:
     database = workspace / "capa_simulation.duckdb"
     _seed_database(database)

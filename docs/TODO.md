@@ -74,7 +74,7 @@
 - [x] Net Die는 현재 `제품정보 + WF 구분`으로 구분되고 PKG Part No별 차이는 없다고 확인했다.
 - [x] 수율의 고유 키를 `생산계획년월 + 제품정보 + Stack + WF 구분`으로 확정했다.
 - [x] Chip 구성 수 컬럼명은 `구분_Chip`으로 확정하고 `WF 구분`별 Chip·Wafer 부하량 산출에 반영했다. `CHIP`와 `Chip수`는 동일한 원천 값이며 `Chip수`는 쿼리에서 비활성화했다. `구분EQ`는 Core·Top·Master·Slave 등 용량이 발생하는 `WF 구분`에 대한 Chip당 용량으로 사용한다.
-- [x] 공정별 사용 부하 Unit은 `RQ_REQB.소요기준`으로 제공한다. `PKG`·`CHIP`·`WF` 를 구현했고 `BOX`·`PCB` 는 산식 확정 전까지 대당 Capa·소요대수 계산에서 제외한다 (`frame_contracts.DEMAND_BASES`, `unit_capacity.UNIMPLEMENTED_BASES`).
+- [x] 공정별 사용 부하 Unit은 `RQ_REQB.소요기준`으로 제공한다. `PKG`·`CHIP`·`WF` 를 구현했고 `BOX`·`PCB` 는 산식 확정 전까지 대당 Capa·소요대수 계산에서 제외한다 (`frame_contracts.DEMAND_BASES`, `frame_contracts.UNIMPLEMENTED_BASES`).
 - [x] **소요기준 PKG 는 Buffer 로만 센다**(2026-09-28 사용자 설명·사내 버그 보고). 스택·Mold·
   MPGA Saw 이후 PKG Chip 단위로 투입하는 공정이라 부하량은 생산수량 그대로(수율 미적용)이고,
   스택된 Chip 은 Buffer 에 쌓여 있어 `RQ_REQB` 의 Buffer 행에만 부하량을 붙인다. 부하량에

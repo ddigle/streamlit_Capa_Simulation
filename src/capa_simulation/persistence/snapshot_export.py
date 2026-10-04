@@ -34,7 +34,11 @@ from capa_simulation import settings
 from capa_simulation.persistence._sql_helpers import DUCKDB_BLOCK_SIZE, connect
 from capa_simulation.persistence.equipment_migration_runner import load_equipment_migrations
 from capa_simulation.persistence.migration_runner import load_migrations
-from capa_simulation.services.object_storage_manifest import MIGRATION_SCHEMA, DatasetName
+from capa_simulation.services.object_storage_manifest import (
+    MIGRATION_SCHEMA,
+    DatasetName,
+    compare_migration_version,
+)
 
 SCRATCH_DIRNAME: Final = "objectstore"
 BACKUP_DIRNAME: Final = "superseded"
@@ -176,7 +180,8 @@ def verify_snapshot(
             if tables is None or int(tables[0]) == 0:
                 raise RuntimeError("스냅샷에 표가 하나도 없습니다.")
         file_version = read_migration_version(path, dataset)
-        if file_version > code_version:
+        comparison = compare_migration_version(file_version=file_version, code_version=code_version)
+        if comparison == "newer":
             raise RuntimeError(
                 f"스냅샷의 마이그레이션 버전 {file_version} 이 이 배포본({code_version})보다 "
                 "최신입니다. 앱을 최신 배포본으로 올린 뒤 다시 받으세요."

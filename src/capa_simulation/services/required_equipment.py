@@ -4,6 +4,7 @@ import pandas as pd
 
 from capa_simulation.services.frame_checks import assert_unique_keys, strip_text_columns
 from capa_simulation.services.frame_contracts import (
+    UNIMPLEMENTED_BASES,
     assert_complete,
     match_key,
     normalize_area_name,
@@ -93,7 +94,6 @@ PKG_UNCOUNTED_REASON = "PKG 기준은 Buffer 로만 계수"
 
 REQB_TEXT_COLUMNS = [column for column in REQB_COLUMNS if column != "생산계획년월"]
 REQB_REQUIRED_KEYS = list(dict.fromkeys([*LOAD_KEYS, *CAPACITY_KEYS]))
-UNIMPLEMENTED_BASES = {"BOX", "PCB"}
 REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR = "excluded_required_equipment_rows"
 
 

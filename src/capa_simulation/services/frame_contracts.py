@@ -17,6 +17,9 @@ from capa_simulation.services.month_filter import valid_month_mask
 
 # 소요기준은 공정이 어떤 부하 Unit을 쓰는지 정하며 BOX·PCB는 산식 구현 전까지 제외한다.
 DEMAND_BASES = ("PKG", "CHIP", "WF")
+# 산식이 확정되지 않아 대당 Capa·소요대수가 함께 빼는 소요기준. 두 계산이 같은 집합을 봐야
+# 한쪽만 고쳐 서로 다른 행을 조용히 빼는 일이 없다 — 여기 한 곳에서만 정의한다.
+UNIMPLEMENTED_BASES = {"BOX", "PCB"}
 # Area_Name은 대당 Capa의 UPEH/ST 분기를 결정한다.
 AREA_NAMES = ("Main", "MI")
 _AREA_BY_CASEFOLD = {name.casefold(): name for name in AREA_NAMES}

@@ -32,7 +32,7 @@ from capa_simulation.services.equipment_validation import (
 from capa_simulation.services.floor_layout_profile import FloorCanvasMap
 from capa_simulation.services.frame_contracts import require_columns
 from capa_simulation.services.reference_csv import (
-    excel_text_guard_needed,
+    guard_excel_text,
     strip_excel_text_guard,
 )
 
@@ -183,14 +183,8 @@ def _export_csv_bytes(
     """
     exported = frame.reindex(columns=list(columns)).copy()
     for column in guarded_columns:
-        exported[column] = exported[column].map(_guard_excel_text)
+        exported[column] = exported[column].map(guard_excel_text)
     return exported.to_csv(index=False, date_format="%Y-%m-%d").encode("utf-8-sig")
-
-
-def _guard_excel_text(value: object) -> object:
-    if not isinstance(value, str) or not excel_text_guard_needed(value):
-        return value
-    return f'="{value}"'
 
 
 def read_baseline_csv(payload: bytes) -> pd.DataFrame:

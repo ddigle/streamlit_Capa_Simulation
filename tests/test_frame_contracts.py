@@ -6,6 +6,7 @@ import pytest
 from capa_simulation.services.frame_contracts import (
     AREA_NAMES,
     DEMAND_BASES,
+    UNIMPLEMENTED_BASES,
     assert_complete,
     normalize_area_name,
     normalize_demand_basis,
@@ -31,6 +32,16 @@ def test_demand_basis_normalization_absorbs_case_whitespace_and_wafer_alias() ->
 
     assert normalize_demand_basis(values).tolist() == ["WF", "WF", "WF", "CHIP", "PKG"]
     assert set(DEMAND_BASES) == {"PKG", "CHIP", "WF"}
+
+
+def test_unimplemented_bases_have_one_owner_shared_by_both_calculations() -> None:
+    """대당 Capa 와 소요대수가 같은 소요기준을 빼야 한다. 사본이 생기면 한쪽만 고쳐 갈라진다."""
+    from capa_simulation.services import reference_consistency, required_equipment, unit_capacity
+
+    assert set(UNIMPLEMENTED_BASES) == {"BOX", "PCB"}
+    assert not set(UNIMPLEMENTED_BASES) & set(DEMAND_BASES)
+    for module in (unit_capacity, required_equipment, reference_consistency):
+        assert module.UNIMPLEMENTED_BASES is UNIMPLEMENTED_BASES
 
 
 def test_demand_basis_normalization_passes_unsupported_values_through() -> None:

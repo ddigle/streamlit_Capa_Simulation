@@ -1424,9 +1424,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   **현재 데이터 내보내기**(`equipment_csv_bytes`·`baseline_csv_bytes`·`downtime_csv_bytes`)는
   읽는 쪽 계약(`*_COLUMNS`)과 같은 이름·차례로 적고 날짜를 `YYYY-MM-DD` 로 낸다 — 내보낸
   파일을 고치지 않고 그대로 붙여넣어도 통과하는 것이 계약이다. 식별 컬럼(호기·공정·분류·
-  비가동유형)의 값 중 Excel 이 바꿔 놓을 것만 `="…"` 로 묶고(`reference_csv.py` 와 같은
-  판정), 읽는 쪽 `_select_columns` 가 그 껍데기를 벗긴다. 좌표·대수·환산비·날짜는 묶지
-  않는다 — 숫자로 읽히는 것이 맞고 한국어 Excel 은 날짜를 그대로 돌려준다(실측). 빈 표는
+  비가동유형)의 값 중 Excel 이 바꿔 놓을 것만 `="…"` 로 묶고(`reference_csv.guard_excel_text`
+  하나를 함께 쓴다), 읽는 쪽 `_select_columns` 가 그 껍데기를 벗긴다. 좌표·대수·환산비·
+  날짜는 묶지 않는다 — 숫자로 읽히는 것이 맞고 한국어 Excel 은 날짜를 그대로 돌려준다(실측). 빈 표는
   헤더 한 줄만 나간다.
 - `dashboard.py`: HOME 월별 집계, B/N 단일 월별 순위에서 파생하는 Top 1·Top 5·순위 상한을
   인자로 받는 상세, Wafer Capa
@@ -1530,7 +1530,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   치환을 택했다.
 - `frame_contracts.py`: 여러 서비스가 공유하는 필수 컬럼 검증과 업무 키 정규화를 단일
   정의한다. 소요기준(`WAFER`→`WF`)·Area_Name(`Main`·`MI`)·월(`YYYYMM`) 규칙이 여기 있다.
-  계약이 서로 다른 것은 합치지 않는다.
+  구현한 소요기준(`DEMAND_BASES`)과 아직 계산에서 빼는 소요기준(`UNIMPLEMENTED_BASES`)도
+  여기 한 벌뿐이다. 계약이 서로 다른 것은 합치지 않는다.
   컬럼 계약 **정확 일치** 검사(`"{주어} 계약이 일치하지 않습니다 (누락: …; 추가: …)."`)도
   `require_exact_columns` 하나가 갖는다. 저장 경계(`_sql_helpers.insert_frame`·공용 표시순서),
   Core Data 78컬럼(`limit=10`), 선행·실행 Capa·과거 세 표·공정 표시명 정규화는 이름 집합만
@@ -1698,6 +1699,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/settings.py`, `sidebar_status.py`
   - 앱 이름·경로·조회기간 상수와 사이드바의 조회기간 표시(선택·적용·계산 멈춤·데이터 없음·
     과거 밖).
+  - 조회기간·시나리오 월 표기 `YYYY-MM` 은 `settings.format_month` 한 벌이다. 파생 시나리오의
+    월 표기(`scenario_transform.format_month_range`·월 머지 검증 문구)도 이것을 쓴다.
   - `sidebar_status.render_sidebar_section` 이 구역 제목 한 줄을 그린다. 가로 컨테이너가
     돌려준 부모에 직접 쓴다 — `st.sidebar.*` 는 `with` 문맥을 따르지 않는다.
   - `sidebar_status.sidebar_expander` 가 **접힘 상태를 기억하는 사이드바 상자**를 만든다.
@@ -2173,6 +2176,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     합" 이라 같은 이름으로 두면 읽는 사람이 속는다.
   - 축은 **하나**다. 표·차트·가로 스크롤 폭이 모두 같은 칸 수를 보아야 하므로 Total 을
     끼운 라벨 목록 하나만 만들어 돌려준다.
+  - 월 칸 표기 `YY.MM` 은 `month_label` 한 벌이다. 화면 모듈이 사본을 두지 않는다. 정수만
+    받으므로 DataFrame 열을 바꿀 때는 `int()` 로 감싸 넘긴다.
   - `build_past_month_labels`·`leading_past_column_count` 는 과거 구간의 **면색과 스크롤
     시작 위치**가 함께 보는 근거다. 뒤의 것은 **연속된 앞머리만** 센다 — 중간에 낀 과거
     칸까지 세면 건너뛴 뒤의 열 순서가 어긋난다.
@@ -3247,7 +3252,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - BOX·PCB 는 산식 확정 전까지 대당 Capa·소요대수 계산에서 빼 두었다. **제외가 아니라
   `추가 예정` 이다**(2026-09-05 확정). `PCB수(K매)` 의 원천 공식 또는 PCB당 Unit·수율·보정
   기준이 확정되면 넣는다. 경계는 `frame_contracts.DEMAND_BASES` 와
-  `unit_capacity.UNIMPLEMENTED_BASES`·`required_equipment.UNIMPLEMENTED_BASES` 다.
+  `frame_contracts.UNIMPLEMENTED_BASES` 다. 뒤의 것은 대당 Capa·소요대수·기준정보 적용 검사가
+  모두 import 하는 한 벌이다 — 넣을 때 한 곳만 고치면 세 경로가 같은 행을 본다.
 - `MCP_Chip_Ratio` 보정식은 미확정이다.
 - BigDataQuery 실제 SQL과 컬럼 매핑은 `company_bigdataquery_adapter.py`에 커밋을 마쳤고
   `is_bigdataquery_adapter_configured()`도 참이다. 남은 것은 사내 환경에서의 접속·조회

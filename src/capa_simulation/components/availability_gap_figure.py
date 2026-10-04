@@ -42,19 +42,14 @@ from capa_simulation.services.availability_gap import (
     GAP_ROW,
     STATIC_ROW,
 )
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.monthly_equipment_availability import BASELINE_CATEGORY
 
-__all__ = ["build_availability_gap_figure", "month_label"]
+__all__ = ["build_availability_gap_figure"]
 
 _AVAILABLE_CATEGORY = "가용"
 _BAR_FONT_SIZE = 12
 _CHART_HEIGHT_PX = 360
-
-
-def month_label(year_month: int) -> str:
-    """`202610` → `26.10`. 다른 화면의 월 라벨과 같은 표기다."""
-    text = str(int(year_month))
-    return f"{text[2:4]}.{text[4:6]}"
 
 
 # 쌓인 두 조각 사이를 가르는 흰 테두리 굵기.

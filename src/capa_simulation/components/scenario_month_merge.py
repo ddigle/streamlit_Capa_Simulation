@@ -22,7 +22,6 @@ from capa_simulation.services.scenario_month_merge import (
 )
 from capa_simulation.services.scenario_transform import (
     copy_scenario_tables,
-    format_month,
     format_month_range,
     scenario_months,
 )
@@ -30,6 +29,7 @@ from capa_simulation.services.scenario_virtual_products import (
     merge_virtual_product_records,
     virtual_product_records,
 )
+from capa_simulation.settings import format_month
 
 OVERLAP_LABELS: dict[OverlapPolicy, str] = {
     "reject": "겹치면 저장 차단",
