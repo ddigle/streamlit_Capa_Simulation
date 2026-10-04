@@ -16,10 +16,12 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
 
+from capa_simulation import navigation
 from capa_simulation.services.display_order_scopes import (
     DISPLAY_ORDER_SCOPES,
     LEGACY_SCOPE_RENAMES,
@@ -30,7 +32,6 @@ from capa_simulation.services.display_order_scopes import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-NAVIGATION = PROJECT_ROOT / "src" / "capa_simulation" / "navigation.py"
 BOOTSTRAP = PROJECT_ROOT / "config" / "bootstrap_display_order.json"
 MIGRATION = (
     PROJECT_ROOT
@@ -41,7 +42,8 @@ MIGRATION = (
     / "0027_display_order_scope_rename.sql"
 )
 
-# 구분자를 쓰는 페이지와 그 파일. 탭 이름은 각 페이지의 `TAB_NAMES` 에서 읽는다.
+# 구분자를 쓰는 페이지와 그 파일. 탭 이름은 각 페이지의 `TAB_NAMES`(또는 `TAB_LABELS`)에서
+# 읽는다.
 SCOPE_PAGES = {
     PAGE_PLAN: "app_pages/load_conversion.py",
     PAGE_REFERENCE: "app_pages/reference_data.py",
@@ -50,21 +52,43 @@ SCOPE_PAGES = {
 }
 
 
+# 탭 목록을 담는 모듈 상수 이름. 페이지마다 둘 중 하나를 쓴다.
+TAB_CONSTANTS = ("TAB_NAMES", "TAB_LABELS")
+# 탭 라벨 앞의 아이콘 접두어. 이름이 아니라 서식이다.
+ICON_PREFIX = re.compile(r"^:material/[a-z_0-9]+:\s*")
+
+
 def _navigation_titles() -> dict[str, str]:
-    """`PageSpec("app_pages/x.py", "제목"` 에서 모듈 경로 → 제목."""
-    text = NAVIGATION.read_text(encoding="utf-8")
-    found = re.findall(r'PageSpec\(\s*"(app_pages/[a-z_]+\.py)",\s*(?:_\w+\()?"([^"]+)"', text)
-    return {module: title for module, title in found}
+    """사이드바 선언(`navigation.ALL_SPECS`)의 모듈 경로 → 제목."""
+    return {spec.path: spec.title for spec in navigation.ALL_SPECS}
 
 
 def _tab_names(module: str) -> set[str]:
-    """그 페이지의 `TAB_NAMES`. 아이콘 접두어(`:material/x:`)는 이름이 아니라 서식이다."""
-    text = (PROJECT_ROOT / module).read_text(encoding="utf-8")
-    block = re.search(r"^TAB_NAMES\s*=\s*\((.*?)\)", text, re.S | re.M)
-    if block is None:
-        return set()
-    names = re.findall(r'"([^"]+)"', block.group(1))
-    return {re.sub(r"^:material/[a-z_0-9]+:\s*", "", name) for name in names}
+    """그 페이지의 `TAB_NAMES`/`TAB_LABELS` 가 담은 탭 이름. 찾지 못하면 빈 집합이다.
+
+    원소가 `TAB_CONVERSION` 처럼 모듈 상수를 가리키면 그 상수의 문자열로 푼다. 아이콘
+    접두어(`:material/x:`)는 뗀다.
+    """
+    tree = ast.parse((PROJECT_ROOT / module).read_text(encoding="utf-8"))
+    constants: dict[str, ast.expr] = {
+        node.targets[0].id: node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+    }
+    for constant in TAB_CONSTANTS:
+        node = constants.get(constant)
+        if not isinstance(node, ast.Tuple):
+            continue
+        names: set[str] = set()
+        for element in node.elts:
+            if isinstance(element, ast.Name):
+                element = constants.get(element.id, element)
+            if isinstance(element, ast.Constant) and isinstance(element.value, str):
+                names.add(ICON_PREFIX.sub("", element.value))
+        return names
+    return set()
 
 
 def test_every_page_scope_is_a_real_page_title() -> None:
@@ -84,7 +108,9 @@ def test_every_tab_scope_is_a_real_tab_on_that_page() -> None:
     """탭 구분은 그 페이지에 실제로 있는 탭이어야 한다.
 
     **표준 목표만 예외다** — `표준 대비 재공 현황` 과 규칙 한 벌을 함께 쓰기로 했고
-    (2026-09-24 사용자 결정), 그 탭 이름은 `표준 목표` 페이지가 갖는다.
+    (2026-09-24 사용자 결정), 그 탭 이름은 `표준 목표` 페이지가 갖는다. 그 페이지에는 탭
+    목록이 없다. 다른 페이지에서 탭 목록을 찾지 못하면 검사가 답하지 못한 것이므로 실패한다 —
+    상수 이름을 바꿨는데 검사가 조용히 넘어가면 이 검사가 막으려는 갈라짐이 그대로 지나간다.
     """
     missing: list[str] = []
     for page, module in SCOPE_PAGES.items():
@@ -93,11 +119,13 @@ def test_every_tab_scope_is_a_real_tab_on_that_page() -> None:
             continue
         actual = _tab_names(module)
         if not actual:
-            continue  # `TAB_NAMES` 가 없는 페이지는 이 검사가 답할 것이 없다
+            if page != PAGE_STANDARD_TARGET:
+                missing.append(f"{page}: {module} 에서 {' / '.join(TAB_CONSTANTS)} 를 찾지 못함")
+            continue
         missing += [f"{page} / {tab}" for tab in sorted(declared - actual)]
 
     assert not missing, (
-        "표시순서의 `탭 구분` 이 그 페이지의 `TAB_NAMES` 에 없습니다. "
+        "표시순서의 `탭 구분` 이 그 페이지의 `TAB_NAMES`/`TAB_LABELS` 에 없습니다. "
         f"탭 이름을 바꿨다면 `display_order_scopes.py` 도 함께 고칩니다:\n{missing}"
     )
 

@@ -9,6 +9,7 @@ AppTest 는 편집표의 칸을 누를 수 없다. 그래서 칸을 누르지 �
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -52,19 +53,55 @@ exec(compile(page_source, {str(EQUIPMENT_PAGE)!r}, "exec"), {{"__name__": "__mai
 """
 
 
-def _seeded(tmp_path: Path) -> Path:
-    """호기 54대·비가동 14건이 저장된 설비 DB. C4 동에는 호기 9대와 비가동 4건이 있다."""
+@dataclass(frozen=True)
+class _Seed:
+    """저장한 샘플에서 계산한 기대값. 표본의 대수·건수를 테스트에 적지 않으려고 둔다."""
+
+    database: Path
+    machines: frozenset[str]
+    downtime_count: int
+    building: str
+    building_machines: frozenset[str]
+    building_downtime_count: int
+
+
+def _seeded(tmp_path: Path) -> _Seed:
+    """샘플 호기·비가동 일정을 저장한 설비 DB 와, 그 프레임에서 계산한 기대값.
+
+    지울 동은 비가동 일정이 딸린 첫 동이다 — 일정이 없는 동을 고르면 「함께 지운다」 경로를
+    밟지 않는다.
+    """
     database = tmp_path / "bulk_delete.duckdb"
     repository = DuckDBEquipmentRepository(database)
     repository.initialize()
     today = date.today()
+    equipment = sample_equipment_master(anchor_date=today)
+    downtime = sample_downtime_schedule(anchor_date=today)
     repository.save_snapshot(
         pd.DataFrame(columns=list(BASELINE_COLUMNS)),
-        sample_equipment_master(anchor_date=today),
-        sample_downtime_schedule(anchor_date=today),
+        equipment,
+        downtime,
         note="일괄 삭제 화면 검증",
     )
-    return database
+
+    building_of = dict(zip(equipment["호기"].astype(str), equipment["동"].astype(str), strict=True))
+    downtime_buildings = downtime["호기"].astype(str).map(building_of)
+    building = sorted(set(downtime_buildings.dropna()))[0]
+    building_machines = frozenset(
+        machine for machine, owner in building_of.items() if owner == building
+    )
+    seed = _Seed(
+        database=database,
+        machines=frozenset(building_of),
+        downtime_count=len(downtime),
+        building=building,
+        building_machines=building_machines,
+        building_downtime_count=int((downtime_buildings == building).sum()),
+    )
+    # 전제: 고른 동은 일부만 차지하고, 딸린 일정이 있다. 깨지면 아래 검사가 아무것도 말하지 않는다.
+    assert 0 < len(seed.building_machines) < len(seed.machines)
+    assert 0 < seed.building_downtime_count < seed.downtime_count
+    return seed
 
 
 def _machines(app: AppTest) -> list[str]:
@@ -75,44 +112,49 @@ def _downtime_machines(app: AppTest) -> list[str]:
     return sorted(app.session_state[BUFFER_KEY][2]["호기"].astype(str))
 
 
-def _in_c4(values: list[str]) -> list[str]:
-    return [value for value in values if value.startswith("SAMPLE-C4")]
-
-
 def test_select_by_an_unapplied_filter_then_delete_confirm_and_undo(tmp_path: Path) -> None:
-    app = AppTest.from_string(_page_script(_seeded(tmp_path)), default_timeout=120).run()
+    seed = _seeded(tmp_path)
+    total = len(seed.machines)
+    kept = total - len(seed.building_machines)
+    kept_downtime = seed.downtime_count - seed.building_downtime_count
+    app = AppTest.from_string(_page_script(seed.database), default_timeout=120).run()
     assert not app.exception, [item.message for item in app.exception]
-    assert len(_machines(app)) == 54 and len(_downtime_machines(app)) == 14
+    assert _machines(app) == sorted(seed.machines)
+    assert len(_downtime_machines(app)) == seed.downtime_count
 
     # 필터만 고르고 「보기 적용」은 누르지 않는다.
-    app.multiselect(key=BUILDING_FILTER_KEY).set_value(["C4"])
+    app.multiselect(key=BUILDING_FILTER_KEY).set_value([seed.building])
     app.button(key=SELECT_MATCHING_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
-    assert {key[0] for key in app.session_state[SELECTION_KEY][EQUIPMENT_TARGET]} == {
-        f"SAMPLE-C42F-{number:02d}" for number in range(1, 10)
-    }
+    assert {key[0] for key in app.session_state[SELECTION_KEY][EQUIPMENT_TARGET]} == (
+        seed.building_machines
+    )
 
     app.button(key=DELETE_SELECTED_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
     warning = " ".join(item.value for item in app.warning)
-    assert "호기 9행" in warning and "비가동 일정 4건도 함께" in warning
-    assert len(_machines(app)) == 54  # 확정 전에는 아무것도 빠지지 않는다
+    assert f"호기 {len(seed.building_machines):,}행" in warning
+    assert f"비가동 일정 {seed.building_downtime_count:,}건도 함께" in warning
+    assert len(_machines(app)) == total  # 확정 전에는 아무것도 빠지지 않는다
 
     app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
-    assert len(_machines(app)) == 45 and not _in_c4(_machines(app))
-    assert len(_downtime_machines(app)) == 10 and not _in_c4(_downtime_machines(app))
+    assert len(_machines(app)) == kept
+    assert not seed.building_machines & set(_machines(app))
+    assert len(_downtime_machines(app)) == kept_downtime
+    assert not seed.building_machines & set(_downtime_machines(app))
 
     app.button(key=UNDO_DELETE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
-    assert len(_machines(app)) == 54 and len(_downtime_machines(app)) == 14
+    assert _machines(app) == sorted(seed.machines)
+    assert len(_downtime_machines(app)) == seed.downtime_count
 
 
 def test_a_confirmed_deletion_saves_without_orphaned_downtime(tmp_path: Path) -> None:
     """호기만 지우고 일정을 남기면 저장이 「호기 마스터에 없는 설비의 비가동 일정」으로 막힌다."""
-    database = _seeded(tmp_path)
-    app = AppTest.from_string(_page_script(database), default_timeout=120).run()
-    app.multiselect(key=BUILDING_FILTER_KEY).set_value(["C4"])
+    seed = _seeded(tmp_path)
+    app = AppTest.from_string(_page_script(seed.database), default_timeout=120).run()
+    app.multiselect(key=BUILDING_FILTER_KEY).set_value([seed.building])
     app.button(key=SELECT_MATCHING_KEY).click().run()
     app.button(key=DELETE_SELECTED_KEY).click().run()
     app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()
@@ -121,16 +163,18 @@ def test_a_confirmed_deletion_saves_without_orphaned_downtime(tmp_path: Path) ->
 
     assert not app.exception, [item.message for item in app.exception]
     assert not app.error, [item.value for item in app.error]
-    repository = DuckDBEquipmentRepository(database)
+    repository = DuckDBEquipmentRepository(seed.database)
     latest = repository.load_snapshot(repository.list_revisions()[0].revision_id)
-    assert len(latest.equipment) == 45 and len(latest.downtime) == 10
+    assert len(latest.equipment) == len(seed.machines) - len(seed.building_machines)
+    assert len(latest.downtime) == seed.downtime_count - seed.building_downtime_count
 
 
 def test_deleting_with_nothing_selected_says_so_and_changes_nothing(tmp_path: Path) -> None:
-    app = AppTest.from_string(_page_script(_seeded(tmp_path)), default_timeout=120).run()
+    seed = _seeded(tmp_path)
+    app = AppTest.from_string(_page_script(seed.database), default_timeout=120).run()
 
     app.button(key=DELETE_SELECTED_KEY).click().run()
 
     assert not app.exception, [item.message for item in app.exception]
     assert any("선택한 행이 없습니다" in item.value for item in app.info)
-    assert len(_machines(app)) == 54
+    assert _machines(app) == sorted(seed.machines)
