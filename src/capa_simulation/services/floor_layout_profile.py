@@ -99,6 +99,11 @@ def max_canvas_extent(canvases: FloorCanvasMap | None) -> CanvasSize:
     return width, height
 
 
+def rounded_to_canvas(value: float) -> float:
+    """캔버스 좌표·치수를 저장 정밀도(소수 `CANVAS_DECIMALS` 자리)로 맞춘다."""
+    return round(value, CANVAS_DECIMALS)
+
+
 def normalize_canvas_size(width: float, height: float) -> CanvasSize:
     """사용자가 직접 넣은 캔버스 폭·높이를 검증하고 소수 첫째 자리로 맞춘다."""
     values: list[float] = []
@@ -113,7 +118,7 @@ def normalize_canvas_size(width: float, height: float) -> CanvasSize:
             raise ValueError(
                 f"{label}은(는) {MIN_CANVAS_EXTENT:g}~{MAX_CANVAS_EXTENT:g} 범위여야 합니다."
             )
-        values.append(round(number, CANVAS_DECIMALS))
+        values.append(rounded_to_canvas(number))
     return values[0], values[1]
 
 

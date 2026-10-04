@@ -94,6 +94,8 @@ def test_an_apply_lands_in_the_draft_and_one_save_writes_master_and_marks(
     assert any("편집본에 적용했습니다" in item.value for item in app.success)
     panel = app.get("markdown")
     assert any("호기 배치 1건 · 도면 요소 1개 층" in item.value for item in panel)
+    # 설비 리비전이 생기는 저장이라 메모 칸이 선다(FAB 만 바뀐 저장에서만 숨긴다).
+    assert [item for item in app.text_input if item.label == "변경 메모"]
     # 적용 뒤 epoch 가 바뀌어 브라우저가 새 값으로 다시 선다.
     assert editor_calls[-1]["epoch"] != epoch
     moved = next(item for item in editor_calls[-1]["items"] if item["id"] == "EQ-01")

@@ -29,7 +29,6 @@ FAB 도면의 층 블록을 누르면(또는 초점을 두고 Enter) 브라우�
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
@@ -54,7 +53,7 @@ from capa_simulation.services.floor_layout_profile import (
     CanvasSize,
     FloorKey,
 )
-from capa_simulation.services.space_layout_edit import EditorInputs
+from capa_simulation.services.space_layout_edit import EditorInputs, finite_or_none
 
 _ASSETS = Path(__file__).with_name("space_layout_editor_assets")
 # FAB 도면의 범위 이름(편집기 `data.floor`). 층 이름과 겹치지 않으면 된다 — 뷰를 처음 크기로 돌릴지
@@ -75,17 +74,6 @@ class EditorSubmission:
 
     payload: Mapping[str, Any]
     stale: bool
-
-
-def _finite_or_none(value: object) -> float | None:
-    """NaN·NA·무한대는 None — Components v2 가 NaN 을 JSON 에 실으면 브라우저가 거부한다."""
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        number = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
-    return number if math.isfinite(number) else None
 
 
 def _palette() -> dict[str, str]:
@@ -126,10 +114,10 @@ def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             "label": str(item.get("label", item["id"])),
             "stage": str(item.get("stage") or ""),
             "detail": str(item.get("detail") or ""),
-            "x": _finite_or_none(item.get("x")),
-            "y": _finite_or_none(item.get("y")),
-            "w": _finite_or_none(item.get("w")),
-            "h": _finite_or_none(item.get("h")),
+            "x": finite_or_none(item.get("x")),
+            "y": finite_or_none(item.get("y")),
+            "w": finite_or_none(item.get("w")),
+            "h": finite_or_none(item.get("h")),
             "placed": bool(item.get("placed")),
             "isNew": bool(item.get("is_new")),
             "arrived": bool(item.get("arrived")),
@@ -329,8 +317,8 @@ def render_space_layout_editor(
             "canvasLimits": {
                 "min": MIN_CANVAS_EXTENT,
                 "max": MAX_CANVAS_EXTENT,
-                "reservedW": _finite_or_none(inputs.reserved_extent[0]) or 0.0,
-                "reservedH": _finite_or_none(inputs.reserved_extent[1]) or 0.0,
+                "reservedW": finite_or_none(inputs.reserved_extent[0]) or 0.0,
+                "reservedH": finite_or_none(inputs.reserved_extent[1]) or 0.0,
             },
             "decimals": CANVAS_DECIMALS,
             "palette": _palette(),

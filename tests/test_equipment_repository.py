@@ -22,6 +22,7 @@ from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
     EquipmentSnapshot,
 )
+from capa_simulation.services.process_cutoff import empty_process_cutoff
 from capa_simulation.services.weekly_availability_input import (
     build_weekly_availability_template,
     parse_weekly_availability_clipboard,
@@ -281,7 +282,7 @@ def test_process_cutoff_round_trips_and_replaces_the_whole_table(tmp_path: Path)
     assert list(replaced["공정"]) == ["DEMO_MOLD"]
     assert list(replaced["Cutoff일수"]) == [9.0]
 
-    repository.clear_process_cutoff()
+    repository.save_process_cutoff(empty_process_cutoff())
     assert repository.load_process_cutoff().empty
 
 

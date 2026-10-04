@@ -16,6 +16,7 @@ from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
 
 from capa_simulation.components import space_layout_editor
+from capa_simulation.components.equipment_data_workspace import BUFFER_KEY
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -117,6 +118,8 @@ def test_fab_edit_applies_to_the_session_and_the_same_save_button_writes_it(
     assert not app.exception, [item.message for item in app.exception]
     assert any("이 세션에 적용했습니다" in item.value for item in app.success)
     assert any("S.PKG FAB 전체 배치" in item.value for item in app.get("markdown"))
+    # FAB 만 바뀐 저장은 리비전을 만들지 않아 메모가 남을 곳이 없다 — 칸을 세우지 않는다.
+    assert not [item for item in app.text_input if item.label == "변경 메모"]
     after = _fab_calls(editor_calls, editing=True)[-1]
     assert after["epoch"] != data["epoch"] and len(after["marks"]) == len(edited)
     repository = DuckDBEquipmentRepository(database)
@@ -165,6 +168,7 @@ def test_fab_edit_and_save_work_without_any_saved_equipment(
 
     assert not app.exception, [item.message for item in app.exception]
     assert any("S.PKG FAB 전체 배치" in item.value for item in app.get("markdown"))
+    assert not [item for item in app.text_input if item.label == "변경 메모"]
     app.button(key="space_layout_save").click().run()
 
     assert not app.exception, [item.message for item in app.exception]
@@ -189,6 +193,109 @@ def test_fab_edit_is_off_while_viewing_the_sample_fleet(
     assert app.button(key="space_floor_layout_open_FAB").disabled
     assert not _fab_calls(editor_calls, editing=True)
     assert _fab_calls(editor_calls, editing=False)
+    clear_equipment_repository()
+
+
+def test_a_fab_edit_applied_before_the_sample_is_turned_on_cannot_be_saved_but_can_be_discarded(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """결정 2: 샘플 화면에서는 FAB 편집이 꺼진다. 샘플을 끈 채 적용한 대기분은 남기되 저장은 막고
+    (까닭을 말한다), 버리기는 된다."""
+    database = tmp_path / "fab_sample_after_apply.duckdb"
+    app = _app(database, saved_fleet=False, sample=False).run()
+    app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
+    data = _fab_calls(editor_calls, editing=True)[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": {"width": 120, "height": 70},
+        "marks": None,
+    }
+    app.run()
+    assert not app.button(key="space_layout_save").disabled
+
+    app.session_state[SAMPLE_TOGGLE_KEY] = True
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.toggle(key=FAB_EDIT_KEY).disabled
+    # 대기분은 남고 저장만 꺼진다. 까닭은 상자 안내와 단추 풍선에 있다.
+    assert any("S.PKG FAB 전체 배치" in item.value for item in app.get("markdown"))
+    save = app.button(key="space_layout_save")
+    assert save.disabled and "샘플 스위치를 끄면" in save.help
+    assert any("샘플 스위치를 끄면 저장할 수 있습니다" in item.value for item in app.caption)
+    repository = DuckDBEquipmentRepository(database)
+    assert repository.load_fab_layout_profile() is None
+
+    app.button(key="space_layout_discard").click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.get("markdown"))
+    assert repository.load_fab_layout_profile() is None
+    clear_equipment_repository()
+
+
+@pytest.mark.parametrize(
+    ("table", "column", "value", "label"),
+    [(0, "기존보유대수", 5, "기존 보유대수"), (2, "상세사유", "다른 사유", "비가동 일정")],
+)
+def test_a_fab_save_with_an_unsaved_baseline_or_downtime_edit_keeps_the_memo(
+    tmp_path: Path,
+    editor_calls: list[dict[str, Any]],
+    table: int,
+    column: str,
+    value: object,
+    label: str,
+) -> None:
+    """저장은 세 표를 다 견준다. 호기 마스터 밖 RawData 편집이 남아 있으면 FAB 와 함께 저장해도 새
+    리비전이 생기니, 메모 칸을 두고 그 편집을 상자 안내에 말하며 적은 메모가 리비전에 남는다."""
+    database = tmp_path / f"fab_memo_{table}.duckdb"
+    app = _app(database, saved_fleet=True).run()
+    frames = [frame.copy() for frame in app.session_state[BUFFER_KEY]]
+    frames[table].loc[frames[table].index[0], column] = value
+    app.session_state[BUFFER_KEY] = tuple(frames)
+    app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
+    data = _fab_calls(editor_calls, editing=True)[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": _edited_marks(data),
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert any(f"{label} 표 편집도 함께 저장됩니다" in item.value for item in app.caption)
+    memo = [item for item in app.text_input if item.label == "변경 메모"]
+    assert len(memo) == 1
+    memo[0].set_value("FAB 와 함께")
+    app.button(key="space_layout_save").click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    revisions = DuckDBEquipmentRepository(database).list_revisions()
+    assert [(item.revision_no, item.note) for item in revisions] == [(2, "FAB 와 함께"), (1, "r1")]
+    clear_equipment_repository()
+
+
+def test_a_stale_fab_apply_says_the_drawing_was_reloaded(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    app = _app(tmp_path / "fab_stale.duckdb", saved_fleet=True).run()
+    app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
+    data = _fab_calls(editor_calls, editing=True)[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": "old",
+        "changes": [],
+        "marks": _edited_marks(data),
+    }
+    app.run()
+
+    assert not app.exception
+    assert any(
+        "FAB 도면이 바뀌어" in item.value and "다시 고친 뒤 적용" in item.value
+        for item in app.warning
+    )
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.get("markdown"))
     clear_equipment_repository()
 
 

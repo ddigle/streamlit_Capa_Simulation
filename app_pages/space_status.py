@@ -65,6 +65,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_latest_equipment_snapshot,
 )
 from capa_simulation.services.equipment_availability import build_space_equipment_status
+from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWNTIME_TARGET
 from capa_simulation.services.equipment_contract import (
     empty_downtime_schedule,
     empty_equipment_master,
@@ -105,6 +106,7 @@ from capa_simulation.services.space_layout_edit import (
     new_unit_options,
     other_change_count,
     parse_editor_apply,
+    table_changed,
     unsaved_unit_ids,
     viewer_items,
 )
@@ -138,6 +140,11 @@ SAVE_ERROR_KEY = "space_layout_save_error"
 SAVE_BUTTON_KEY = "space_layout_save"
 DISCARD_BUTTON_KEY = "space_layout_discard"
 DISCARD_FAB_BUTTON_KEY = "space_layout_discard_fab"
+# 설비 샘플 화면에서 FAB 대기분 저장을 막은 까닭(상자 안내와 단추 풍선).
+SAMPLE_SAVE_BLOCKED = (
+    "설비 샘플을 보는 동안에는 FAB 전체 배치를 저장할 수 없습니다 — 샘플 스위치를 끄면 "
+    "저장할 수 있습니다."
+)
 # 반출·이설을 마친 호기는 더 이상 공간에 없다. 배치·미배치·제외 어디에도 세지 않는다.
 EXITED_STATUSES = ("반출 완료", "이설 완료")
 
@@ -413,8 +420,17 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         canvases = pending_floor_canvases()
         marks = pending_floor_marks()
         others = other_change_count(latest_snapshot.equipment, frames[1])
+        # 저장은 세 표를 다 견준다. 호기 마스터 밖의 편집도 리비전을 만드니 따로 말한다.
+        side_tables = [
+            label
+            for label, saved, buffer in (
+                (BASELINE_TARGET, latest_snapshot.baseline, frames[0]),
+                (DOWNTIME_TARGET, latest_snapshot.downtime, frames[2]),
+            )
+            if table_changed(saved, buffer)
+        ]
     else:
-        changes, canvases, marks, others = pd.DataFrame(), {}, {}, 0
+        changes, canvases, marks, others, side_tables = pd.DataFrame(), {}, {}, 0, []
     if changes.empty and not canvases and not marks and fab_pending is None:
         if isinstance(error, str):
             st.error(f"배치를 저장하지 못했습니다: {error}")
@@ -437,10 +453,16 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 else ""
             )
             + (
+                f" 가용설비 현황 RawData 의 {'·'.join(side_tables)} 표 편집도 함께 저장됩니다."
+                if side_tables
+                else ""
+            )
+            + (
                 " FAB 전체 배치는 설비 리비전을 만들지 않고 따로 저장합니다."
                 if fab_pending is not None
                 else ""
             )
+            + (f" {SAMPLE_SAVE_BLOCKED}" if not fab_editable else "")
         )
         if not changes.empty:
             with st.expander(f"바뀐 호기 {len(changes)}건"):
@@ -455,13 +477,19 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         if isinstance(error, str):
             st.error(f"저장하지 못했습니다: {error}")
         note_key = f"{SAVE_NOTE_KEY}_{int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0))}"
+        # 메모는 설비 리비전에만 남는다. 설비 쪽 차이가 하나도 없는(FAB 만 바뀐) 저장은 리비전을
+        # 만들지 않으니 칸을 두지 않는다.
+        fab_only = changes.empty and not canvases and not marks and not others and not side_tables
         # 저장·버리기는 **콜백**이다. 본문에서 저장하고 `st.rerun()` 하면 이 상자 아래 위젯
         # (층 상세의 `배치 편집` 토글 등)이 그 회차에 그려지지 않은 것으로 끝나 상태가 버려진다 —
         # 저장하자마자 편집기가 꺼졌다(2026-10-01 브라우저 확인). 콜백은 다음 회차 전에 돈다.
         with st.container(horizontal=True, gap="small", vertical_alignment="bottom"):
-            st.text_input(
-                "변경 메모", key=note_key, placeholder="예: C1 1F 반입구 앞 정리", width=360
-            )
+            if not fab_only:
+                st.text_input(
+                    "변경 메모", key=note_key, placeholder="예: C1 1F 반입구 앞 정리", width=360
+                )
+            # 설비 샘플 화면에서는 FAB 편집이 꺼진다(결정 2). 그 전에 적용한 FAB 대기분도 저장하지
+            # 않는다 — 대기분은 두고, 스위치를 끄면 저장할 수 있다. 버리기는 그대로 된다.
             st.button(
                 "배치 저장",
                 type="primary",
@@ -469,6 +497,8 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 key=SAVE_BUTTON_KEY,
                 on_click=_save_space_layout,
                 args=(frames, note_key, equipment_database_path),
+                disabled=not fab_editable,
+                help=None if fab_editable else SAMPLE_SAVE_BLOCKED,
             )
             with st.popover("버리기", icon=":material/undo:"):
                 st.caption(
@@ -700,7 +730,10 @@ def _render_fab_editor(
     if submission is None:
         return
     if submission.stale:
-        st.warning("편집기가 새 값으로 다시 서는 사이에 누른 적용이라 반영하지 않았습니다.")
+        st.warning(
+            "그 사이 FAB 도면이 바뀌어(예: 다른 화면에서 저장) 편집기를 새 값으로 다시 "
+            "불러왔습니다. 방금 누른 적용은 반영하지 않았으니 다시 고친 뒤 적용하세요."
+        )
         return
     try:
         applied = parse_fab_editor_apply(submission.payload, canvas)

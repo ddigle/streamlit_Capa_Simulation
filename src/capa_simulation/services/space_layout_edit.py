@@ -39,6 +39,7 @@ from capa_simulation.services.floor_layout_profile import (
     CanvasSize,
     FloorKey,
     normalize_canvas_size,
+    rounded_to_canvas,
 )
 
 POSITION_COLUMNS: Final = ("X좌표", "Y좌표")
@@ -97,7 +98,9 @@ class EditorInputs:
     unplaced_floorless: int
 
 
-def _finite(value: object) -> float | None:
+def finite_or_none(value: object) -> float | None:
+    """숫자로 읽히는 유한한 값만 float 로, 그 밖(None·bool·NA·NaN·무한대·글자)은 None 으로 돌려준다.
+    편집기로 보내는 값에도 쓴다 — Components v2 가 NaN 을 JSON 에 실으면 브라우저가 거부한다."""
     if value is None or isinstance(value, bool):
         return None
     try:
@@ -105,10 +108,6 @@ def _finite(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
-
-
-def _rounded(value: float) -> float:
-    return round(value, CANVAS_DECIMALS)
 
 
 def _present(value: object) -> bool:
@@ -215,10 +214,10 @@ def editor_inputs(
                 "id": unit_id,
                 "label": unit_id,
                 "stage": stages.get(unit_id, str(row.get("상태", "") or "")),
-                "x": _finite(row["X좌표"]),
-                "y": _finite(row["Y좌표"]),
-                "w": _finite(row["Xsize"]),
-                "h": _finite(row["Ysize"]),
+                "x": finite_or_none(row["X좌표"]),
+                "y": finite_or_none(row["Y좌표"]),
+                "w": finite_or_none(row["Xsize"]),
+                "h": finite_or_none(row["Ysize"]),
                 "placed": bool(row["_placed"]),
                 "is_new": unit_id in news,
                 "arrived": unit_id in arrivals,
@@ -247,8 +246,8 @@ def new_unit_options(master: pd.DataFrame) -> dict[str, Any]:
     ]
     hints = {
         str(name): [
-            _rounded(float(group["Xsize"].median())),
-            _rounded(float(group["Ysize"].median())),
+            rounded_to_canvas(float(group["Xsize"].median())),
+            rounded_to_canvas(float(group["Ysize"].median())),
         ]
         for name, group in sized.groupby("공정소분류")
     }
@@ -336,7 +335,10 @@ def parse_editor_apply(
     new_canvas: CanvasSize | None = None
     raw_canvas = payload.get("canvas")
     if isinstance(raw_canvas, Mapping):
-        width, height = _finite(raw_canvas.get("width")), _finite(raw_canvas.get("height"))
+        width, height = (
+            finite_or_none(raw_canvas.get("width")),
+            finite_or_none(raw_canvas.get("height")),
+        )
         if width is None or height is None:
             raise ValueError("편집 영역 크기를 읽지 못했습니다.")
         new_canvas = normalize_canvas_size(width, height)
@@ -366,7 +368,7 @@ def parse_editor_apply(
             move_to = targets.get(_text(raw.get("moveTo")))
             if move_to is None:
                 raise ValueError(f"{unit_id} 를 보낼 층을 알 수 없습니다: {raw.get('moveTo')!r}")
-        w, h = _finite(raw.get("w")), _finite(raw.get("h"))
+        w, h = finite_or_none(raw.get("w")), finite_or_none(raw.get("h"))
         if (w is None) != (h is None) or (w is not None and h is not None and (w <= 0 or h <= 0)):
             raise ValueError(f"{unit_id} 의 크기는 0 보다 큰 폭·높이 둘 다여야 합니다.")
         if w is not None and h is not None and (w > MAX_CANVAS_EXTENT or h > MAX_CANVAS_EXTENT):
@@ -374,10 +376,15 @@ def parse_editor_apply(
         placed = raw.get("placed") is True
         x = y = None
         if placed:
-            x, y = _finite(raw.get("x")), _finite(raw.get("y"))
+            x, y = finite_or_none(raw.get("x")), finite_or_none(raw.get("y"))
             if x is None or y is None or w is None or h is None:
                 raise ValueError(f"{unit_id} 를 놓은 좌표·크기를 읽지 못했습니다.")
-            x, y, w, h = _rounded(x), _rounded(y), _rounded(w), _rounded(h)
+            x, y, w, h = (
+                rounded_to_canvas(x),
+                rounded_to_canvas(y),
+                rounded_to_canvas(w),
+                rounded_to_canvas(h),
+            )
             if x < 0 or y < 0:
                 raise ValueError(f"{unit_id} 의 좌표는 0 이상이어야 합니다.")
             if move_to is None and (x + w > bounds[0] + 1e-9 or y + h > bounds[1] + 1e-9):
@@ -385,7 +392,7 @@ def parse_editor_apply(
                     f"{unit_id} 가 편집 영역 {bounds[0]:g} × {bounds[1]:g} 를 벗어났습니다."
                 )
         elif w is not None and h is not None:
-            w, h = _rounded(w), _rounded(h)
+            w, h = rounded_to_canvas(w), rounded_to_canvas(h)
         if raw.get("created") is not None and (w is None or h is None):
             raise ValueError(f"새 호기 {unit_id} 의 크기가 없습니다.")
         changes.append(UnitChange(unit_id, placed, x, y, w, h, move_to))
@@ -611,7 +618,10 @@ def layout_warnings(
         for mark in marks_by_floor.get((str(building), str(floor)), ()):
             if not mark.blocks:
                 continue
-            mark_right, mark_top = _rounded(mark.x + mark.w), _rounded(mark.y + mark.h)
+            mark_right, mark_top = (
+                rounded_to_canvas(mark.x + mark.w),
+                rounded_to_canvas(mark.y + mark.h),
+            )
             for record in records:
                 if (
                     record["X좌표"] < mark_right
@@ -640,9 +650,9 @@ def _where(row: Mapping[Any, Any]) -> str:
         if not (_present(row.get("동")) and _present(row.get("층")))
         else f"{row['동']} {row['층']}"
     )
-    width, height = _finite(row.get("Xsize")), _finite(row.get("Ysize"))
+    width, height = finite_or_none(row.get("Xsize")), finite_or_none(row.get("Ysize"))
     size = f"{width:g}×{height:g}" if width is not None and height is not None else "크기 없음"
-    x, y = _finite(row.get("X좌표")), _finite(row.get("Y좌표"))
+    x, y = finite_or_none(row.get("X좌표")), finite_or_none(row.get("Y좌표"))
     if x is None or y is None:
         return f"{floor} · 미배치 {size}"
     return f"{floor} · {x:g}, {y:g} · {size}"
@@ -651,7 +661,7 @@ def _where(row: Mapping[Any, Any]) -> str:
 def _comparable(value: object) -> str:
     if not _present(value):
         return ""
-    number = _finite(value)
+    number = finite_or_none(value)
     if number is not None and not isinstance(value, str):
         return repr(round(number, 6))
     if isinstance(value, pd.Timestamp):
@@ -727,6 +737,18 @@ def other_change_count(saved: pd.DataFrame, buffer: pd.DataFrame) -> int:
     return count
 
 
+def table_changed(saved: pd.DataFrame, buffer: pd.DataFrame) -> bool:
+    """두 표의 내용이 다른가(값의 형 차이는 무시). 호기 마스터 밖의 RawData 편집(기존 보유대수·
+    비가동 일정)을 알린다. 「다르다」로 잘못 보면 메모 칸이 더 뜰 뿐이라 행 순서도 견준다."""
+    if list(saved.columns) != list(buffer.columns) or len(saved) != len(buffer):
+        return True
+    rows = [
+        [tuple(_comparable(value) for value in row) for row in frame.itertuples(index=False)]
+        for frame in (saved, buffer)
+    ]
+    return rows[0] != rows[1]
+
+
 def unsaved_unit_ids(
     saved: pd.DataFrame, buffer: pd.DataFrame, floor: FloorKey
 ) -> tuple[set[str], set[str]]:
@@ -763,10 +785,10 @@ def viewer_items(located: pd.DataFrame) -> list[dict[str, Any]]:
                 "id": str(row["호기"]).strip(),
                 "label": str(row["호기"]).strip(),
                 "stage": _text(row.get("상태")),
-                "x": _finite(row["X좌표"]),
-                "y": _finite(row["Y좌표"]),
-                "w": _finite(row["Xsize"]),
-                "h": _finite(row["Ysize"]),
+                "x": finite_or_none(row["X좌표"]),
+                "y": finite_or_none(row["Y좌표"]),
+                "w": finite_or_none(row["Xsize"]),
+                "h": finite_or_none(row["Ysize"]),
                 "placed": True,
                 "group": str(parent) if _present(parent) else None,
                 "detail": " · ".join(

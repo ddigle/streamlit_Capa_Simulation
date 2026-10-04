@@ -443,11 +443,6 @@ class DuckDBEquipmentRepository:
             return empty_process_cutoff()
         return prepare_process_cutoff(result)
 
-    def clear_process_cutoff(self) -> None:
-        """공정별 Cut-off 를 모두 지운다. 리비전을 만들지 않는다."""
-        with self._write_transaction() as connection:
-            connection.execute("DELETE FROM equipment_ops.process_cutoff")
-
     def save_floor_layout_image(
         self,
         building: str,

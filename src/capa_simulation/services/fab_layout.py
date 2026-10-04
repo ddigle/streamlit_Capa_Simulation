@@ -44,6 +44,7 @@ from capa_simulation.services.floor_layout_profile import (
     CanvasSize,
     FloorKey,
     normalize_canvas_size,
+    rounded_to_canvas,
 )
 
 
@@ -212,10 +213,6 @@ def _scaled(value: float) -> float:
     return round(value * FAB_SCALE, CANVAS_DECIMALS)
 
 
-def _rounded(value: float) -> float:
-    return round(value, CANVAS_DECIMALS)
-
-
 def _zone_around(mark_id: str, label: str, buildings: Sequence[BuildingSpec]) -> FabLayoutMark:
     left = min(_scaled(building.x) for building in buildings) - _ZONE_PAD
     right = max(_scaled(building.x + building.width) for building in buildings) + _ZONE_PAD
@@ -229,10 +226,10 @@ def _zone_around(mark_id: str, label: str, buildings: Sequence[BuildingSpec]) ->
     return FabLayoutMark(
         mark_id=mark_id,
         kind="zone",
-        x=_rounded(left),
+        x=rounded_to_canvas(left),
         y=_ZONE_BOTTOM,
-        w=_rounded(right - left),
-        h=_rounded(top - _ZONE_BOTTOM),
+        w=rounded_to_canvas(right - left),
+        h=rounded_to_canvas(top - _ZONE_BOTTOM),
         label=label,
         color=MARK_COLOR_KEYS[-1],
     )
@@ -261,7 +258,7 @@ def default_fab_layout() -> tuple[CanvasSize, tuple[FabLayoutMark, ...]]:
                 mark_id=f"T-{building.name}",
                 kind="text",
                 x=left,
-                y=_rounded(_BASE_Y + height + _NAME_GAP),
+                y=rounded_to_canvas(_BASE_Y + height + _NAME_GAP),
                 w=width,
                 h=_NAME_HEIGHT,
                 label=building.name,
@@ -271,16 +268,16 @@ def default_fab_layout() -> tuple[CanvasSize, tuple[FabLayoutMark, ...]]:
         count = len(floors)
         for index, spec in enumerate(floors):
             level = count - 1 - index
-            bottom = _rounded(_BASE_Y + height * level / count)
-            top = _rounded(_BASE_Y + height * (level + 1) / count)
+            bottom = rounded_to_canvas(_BASE_Y + height * level / count)
+            top = rounded_to_canvas(_BASE_Y + height * (level + 1) / count)
             blocks.append(
                 FabLayoutMark(
                     mark_id=f"B-{building.name}-{spec.floor}",
                     kind=FAB_BLOCK_KIND,
-                    x=_rounded(left + _BLOCK_INSET),
-                    y=_rounded(bottom + _BLOCK_INSET),
-                    w=_rounded(width - _BLOCK_INSET * 2),
-                    h=_rounded(top - bottom - _BLOCK_INSET * 2),
+                    x=rounded_to_canvas(left + _BLOCK_INSET),
+                    y=rounded_to_canvas(bottom + _BLOCK_INSET),
+                    w=rounded_to_canvas(width - _BLOCK_INSET * 2),
+                    h=rounded_to_canvas(top - bottom - _BLOCK_INSET * 2),
                     link=(building.name, spec.floor),
                 )
             )

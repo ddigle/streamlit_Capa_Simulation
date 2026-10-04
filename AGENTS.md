@@ -791,6 +791,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     FAB 를 한 줄(「S.PKG FAB 전체 배치」)로 말한다. 같은 `배치 저장`·`모두 버리기`(콜백)가 FAB 도 저장·버린다
     — 설비 저장본이 없는 화면에서는 FAB 만 저장·버린다. 설비 편집본이 있는 화면에 FAB 대기분이 있으면
     `버리기` 안에 `FAB 배치만 버리기`(설비·층 편집은 둔다)가 더 선다. 편집기 epoch 는 그리는 도면 지문 + 저장본 지문이다.
+    그래서 남이 FAB 를 저장하면 편집기가 새 값으로 다시 서고, 그 사이 누른 적용은 「도면이 바뀌어 다시
+    불러왔다 — 다시 적용하라」로 거부한다(층의 같은 거부 문구는 따로다). 샘플을 끈 화면에서 적용한 FAB 대기분이
+    있는데 샘플을 다시 켜면 대기분은 두고 `배치 저장` 만 끈다(까닭을 상자 안내·단추 풍선에 적는다 — 결정 2,
+    `버리기` 는 된다). FAB 만 바뀐 저장(호기 배치·층 캔버스·층 요소·RawData 다른 편집이 없음)은 리비전을
+    만들지 않아 메모가 어디에도 남지 않으므로 `변경 메모` 칸을 세우지 않는다. 저장은 세 표를 다 견주므로
+    「RawData 다른 편집」은 호기 마스터(`other_change_count`)만이 아니라 기존 보유대수·비가동 일정의 차이
+    (`table_changed`)도 센다 — 그 편집이 남아 있으면 메모 칸을 두고 상자 안내에 그 표를 적는다.
     두 블록이 같은 층을 가리키면 막지 않고 알린다(편집기 상태 줄·적용 알림·상자).
   - **층 상세**는 테두리 상자 하나다. 머리 줄(`space_floor_head`)에 제목 · `도면·캔버스 편집` ·
     `배치 편집` 토글 · 상태 범례(오른쪽 끝, `st.space("stretch")` 뒤)가 서고, 그 아래를 도면이 채운다.
@@ -1637,7 +1644,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `space_layout_edit.py`: Space 배치 편집기의 순수 계산. `editor_inputs`(도면·트레이·영역 하한·
   기본 크기), `parse_editor_apply`(적용값 검증 — **하나라도 어긋나면 전체 거부**),
   `apply_layout_edits`(편집본 반영), `layout_warnings`·`layout_changes`·`other_change_count`·
-  `unsaved_unit_ids`.
+  `table_changed`(호기 마스터 밖 표의 미저장 차이)·`unsaved_unit_ids`. 숫자 읽기 `finite_or_none`(None·bool·NA·NaN·무한대 → None)은 편집기 컴포넌트도
+  이것을 쓴다(`official_summary` 의 같은 이름 도우미는 None·bool 처리가 달라 따로 둔다).
   - 대상은 Space 가 그리는 호기와 같다(`레이아웃반영여부` — Y 이고 반출·이설 실행 전). 도면은 이
     층에 X·Y·크기가 다 있는 호기, 트레이는 X·Y 가 없고 이 층이거나 층 미정인 호기다(동까지 비면
     모든 층, 동만 있으면 그 동의 층마다). 모체호기 묶음의 한 모듈이 이 층에 서 있으면 좌표 없는
@@ -1658,7 +1666,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   치수를 얻고(새 의존성 없이), 캔버스 기본값을 폭 100 고정·높이 100×h/w 로 만든다.
   상한은 도면당 2MB(`MAX_FLOOR_LAYOUT_BYTES`)와 전 층·FAB 전체 도면 합계 30MB
   (`MAX_TOTAL_LAYOUT_BYTES`)이고 둘 다 이 파일에만 둔다. 파일 시그니처와 확장자가 다르면 거부한다 — data URI 의
-  MIME 이 내용과 어긋나면 배경이 조용히 안 그려진다.
+  MIME 이 내용과 어긋나면 배경이 조용히 안 그려진다. 캔버스 좌표 반올림(`rounded_to_canvas`, 소수
+  `CANVAS_DECIMALS` 자리)도 여기 하나다 — `space_layout_edit`·`fab_layout` 이 import 한다(`space_layout_edit`
+  가 `fab_layout` 을 import 하므로 거꾸로 두면 순환이다).
 - `display_order_editor.py`, `display_order_csv.py`: 웹 편집 표시순서 규칙의 검증·범위
   교체·CSV 직렬화와 수동 입력 `RQ_DISPLAY_ORDER` 변환
 

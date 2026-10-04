@@ -417,10 +417,6 @@ def effective_floor_canvases(stored: FloorCanvasMap) -> dict[FloorKey, CanvasSiz
     return {**stored, **pending_floor_canvases()}
 
 
-def has_pending_floor_layouts() -> bool:
-    return bool(pending_floor_canvases() or pending_floor_marks())
-
-
 @dataclass(frozen=True)
 class PendingFabLayout:
     """저장 안 한 FAB 전체 배치. 바꾼 쪽만 든다(None 은 저장값 그대로). `base` 는 첫 대기분이 본

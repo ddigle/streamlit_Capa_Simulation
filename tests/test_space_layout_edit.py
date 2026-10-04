@@ -22,6 +22,7 @@ from capa_simulation.services.space_layout_edit import (
     new_unit_options,
     other_change_count,
     parse_editor_apply,
+    table_changed,
     viewer_items,
 )
 
@@ -314,6 +315,17 @@ def test_changes_list_layout_edits_and_count_the_rest_apart() -> None:
     assert changes.loc[0, "새"] == "C1 1F · 미배치 12×7"
     assert other_change_count(saved, buffer) == 1
     assert other_change_count(saved, saved.iloc[[0]]) == 1
+
+
+def test_table_changed_ignores_value_types_but_sees_edits_and_row_counts() -> None:
+    saved = pd.DataFrame({"공정": ["DA", "WB"], "기존보유대수": [3, 4]})
+
+    assert not table_changed(saved, saved.astype({"기존보유대수": "float64"}))
+    edited = saved.copy()
+    edited.loc[1, "기존보유대수"] = 5
+    assert table_changed(saved, edited)
+    assert table_changed(saved, saved.iloc[[0]])
+    assert table_changed(saved, saved.rename(columns={"공정": "공정명"}))
 
 
 def test_a_created_unit_does_not_make_every_other_row_look_edited() -> None:
