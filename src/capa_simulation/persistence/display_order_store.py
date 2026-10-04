@@ -17,6 +17,7 @@ from capa_simulation.persistence._sql_helpers import (
 )
 from capa_simulation.persistence.models import GlobalDisplayOrder
 from capa_simulation.services.display_order_editor import ensure_route_sequence_rules
+from capa_simulation.services.frame_contracts import require_exact_columns
 
 GLOBAL_DISPLAY_ORDER_COLUMNS = (
     "페이지 구분",
@@ -33,15 +34,7 @@ GLOBAL_DISPLAY_ORDER_COLUMNS = (
 def validate_global_display_order_frame(frame: pd.DataFrame) -> None:
     if not isinstance(frame, pd.DataFrame):
         raise TypeError("공용 표시순서는 pandas DataFrame이어야 합니다.")
-    missing = [column for column in GLOBAL_DISPLAY_ORDER_COLUMNS if column not in frame.columns]
-    extra = [column for column in frame.columns if column not in GLOBAL_DISPLAY_ORDER_COLUMNS]
-    if missing or extra:
-        details: list[str] = []
-        if missing:
-            details.append(f"누락: {', '.join(missing)}")
-        if extra:
-            details.append(f"추가: {', '.join(str(column) for column in extra)}")
-        raise ValueError(f"공용 표시순서 컬럼 계약이 일치하지 않습니다 ({'; '.join(details)}).")
+    require_exact_columns(frame.columns, GLOBAL_DISPLAY_ORDER_COLUMNS, "공용 표시순서 컬럼")
     if frame.empty:
         raise ValueError("공용 표시순서에는 한 개 이상의 규칙이 필요합니다.")
 

@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 import pandas as pd
 
@@ -71,6 +71,49 @@ def require_columns(data: pd.DataFrame, columns: Sequence[str], label: str) -> N
     missing = [column for column in columns if column not in data.columns]
     if missing:
         raise ValueError(f"{label} 필수 컬럼이 없습니다: {', '.join(missing)}")
+
+
+def require_exact_columns(
+    columns: Iterable[object],
+    expected: Sequence[str],
+    label: str,
+    *,
+    limit: int | None = None,
+    check_order: bool = False,
+    strip: bool = False,
+) -> None:
+    """컬럼이 계약과 정확히 같은지 확인하고, 다르면 누락·추가를 적은 한국어 오류를 낸다.
+
+    문구는 `"{label} 계약이 일치하지 않습니다 (누락: …; 추가: …)."` 하나다. `label` 은
+    `계약이` 앞의 주어 전체다 — `선행 물량 컬럼`, `Core Data 78컬럼` 처럼 넘긴다. 누락은
+    계약 차례로, 추가는 입력 차례로 싣는다. 이름은 모두 `str()` 로 바꿔 비교한다.
+
+    - `check_order=False`(저장·계산 경계): 이름 집합만 본다. 차례가 달라도, 계약 컬럼이
+      겹쳐 들어와도 여기서는 통과한다 — 뒤 단계가 계약 차례로 다시 고른다.
+    - `check_order=True`(붙여넣기·CSV 입력): 목록이 양식과 한 칸이라도 다르면 막는다.
+      누락·추가가 모두 비면(차례만 다르거나 머리글이 겹치면) `컬럼 순서가 양식과 다름` 을
+      싣는다.
+    - `strip=True`: 입력 머리글의 앞뒤 공백을 떼고 비교한다(복사한 머리글에 공백이 붙는다).
+    - `limit`: 누락·추가를 각각 앞에서 이만큼만 싣는다. 78컬럼처럼 긴 계약의 오류가
+      화면을 덮지 않게 한다.
+    """
+    actual = [str(column).strip() if strip else str(column) for column in columns]
+    contract = [str(column) for column in expected]
+    actual_names = set(actual)
+    contract_names = set(contract)
+    missing = [column for column in contract if column not in actual_names]
+    extra = [column for column in actual if column not in contract_names]
+    mismatched = actual != contract if check_order else bool(missing or extra)
+    if not mismatched:
+        return
+    details: list[str] = []
+    if missing:
+        details.append(f"누락: {', '.join(missing[:limit])}")
+    if extra:
+        details.append(f"추가: {', '.join(extra[:limit])}")
+    if not details:
+        details.append("컬럼 순서가 양식과 다름")
+    raise ValueError(f"{label} 계약이 일치하지 않습니다 ({'; '.join(details)}).")
 
 
 def match_key(values: pd.Series) -> pd.Series:

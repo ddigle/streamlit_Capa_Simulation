@@ -28,7 +28,7 @@ from collections.abc import Sequence
 
 import pandas as pd
 
-from capa_simulation.services.frame_contracts import require_columns
+from capa_simulation.services.frame_contracts import require_columns, require_exact_columns
 
 ADVANCE_LOAD_COLUMNS = ("생산계획년월", "선행 물량")
 
@@ -55,15 +55,7 @@ def prepare_advance_load(frame: pd.DataFrame) -> pd.DataFrame:
     """
     if not isinstance(frame, pd.DataFrame):
         raise TypeError("선행 물량은 pandas DataFrame이어야 합니다.")
-    missing = [column for column in ADVANCE_LOAD_COLUMNS if column not in frame.columns]
-    extra = [column for column in frame.columns if column not in ADVANCE_LOAD_COLUMNS]
-    if missing or extra:
-        details: list[str] = []
-        if missing:
-            details.append(f"누락: {', '.join(missing)}")
-        if extra:
-            details.append(f"추가: {', '.join(str(column) for column in extra)}")
-        raise ValueError(f"선행 물량 컬럼 계약이 일치하지 않습니다 ({'; '.join(details)}).")
+    require_exact_columns(frame.columns, ADVANCE_LOAD_COLUMNS, "선행 물량 컬럼")
     if frame.empty:
         return empty_advance_load()
     prepared = frame.loc[:, list(ADVANCE_LOAD_COLUMNS)].copy()

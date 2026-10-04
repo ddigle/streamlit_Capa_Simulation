@@ -13,6 +13,7 @@ from __future__ import annotations
 import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
+from capa_simulation.services.frame_contracts import require_exact_columns
 
 PROCESS_RENAME_COLUMNS = ("공정", "표시명")
 
@@ -46,15 +47,7 @@ def validate_process_rename_frame(frame: pd.DataFrame) -> None:
     """컬럼 계약과 1:1 규칙을 검사한다. 빈 프레임은 '지정 없음' 이라 허용한다."""
     if not isinstance(frame, pd.DataFrame):
         raise TypeError("공정 표시명은 pandas DataFrame이어야 합니다.")
-    missing = [column for column in PROCESS_RENAME_COLUMNS if column not in frame.columns]
-    extra = [column for column in frame.columns if column not in PROCESS_RENAME_COLUMNS]
-    if missing or extra:
-        details: list[str] = []
-        if missing:
-            details.append(f"누락: {', '.join(missing)}")
-        if extra:
-            details.append(f"추가: {', '.join(str(column) for column in extra)}")
-        raise ValueError(f"공정 표시명 컬럼 계약이 일치하지 않습니다 ({'; '.join(details)}).")
+    require_exact_columns(frame.columns, PROCESS_RENAME_COLUMNS, "공정 표시명 컬럼")
 
     normalized = {
         column: [normalize_process_text(value) for value in frame[column]]
@@ -116,20 +109,12 @@ def process_rename_from_clipboard(content: str) -> pd.DataFrame:
 
 def validate_process_rename_import(parsed: pd.DataFrame) -> pd.DataFrame:
     """전송수단(CSV·클립보드)과 무관한 입력 계약 검증 한 곳."""
-    actual_columns = [str(column).strip() for column in parsed.columns]
-    expected_columns = list(PROCESS_RENAME_COLUMNS)
-    if actual_columns != expected_columns:
-        missing = [column for column in expected_columns if column not in actual_columns]
-        extra = [column for column in actual_columns if column not in expected_columns]
-        details: list[str] = []
-        if missing:
-            details.append(f"누락: {', '.join(missing)}")
-        if extra:
-            details.append(f"추가: {', '.join(extra)}")
-        if not details:
-            details.append("컬럼 순서가 양식과 다름")
-        raise ValueError(
-            f"공정 표시명 입력 표 컬럼 계약이 일치하지 않습니다 ({'; '.join(details)})."
-        )
-    parsed.columns = expected_columns
+    require_exact_columns(
+        parsed.columns,
+        PROCESS_RENAME_COLUMNS,
+        "공정 표시명 입력 표 컬럼",
+        check_order=True,
+        strip=True,
+    )
+    parsed.columns = list(PROCESS_RENAME_COLUMNS)
     return prepare_process_rename_rules(drop_blank_process_rename_rows(parsed))

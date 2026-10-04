@@ -764,6 +764,12 @@ Codex 구축분에 대한 구조 리팩토링을 진행했다. 계산 결과와 
   분할했다. 800줄 이상 서비스 파일이 사라졌다.
 - [x] 중복 검증·정규화 헬퍼를 `services/frame_contracts.py` 로 통합했다(지역 정의 9벌 → 0,
   소요기준 인라인 11곳 → 0, Area 검증 3곳 → 0).
+  - [x] 2026-10-04: 남아 있던 컬럼 계약 **정확 일치** 검사 9벌(저장 경계 2·Core Data 1·서비스
+    정규화 4·붙여넣기 입력 2)을 `frame_contracts.require_exact_columns` 한 곳으로 모았다(9파일
+    97줄 삭제·75줄 추가, 공용 함수 포함). 순서·머리글 공백을 보는 입력 두 곳은 `check_order`·
+    `strip`, Core Data 의 10개 상한은 `limit` 로 남겼다. 문구는 먼저 스냅샷 테스트를 옛 코드에서
+    통과시킨 뒤 바꿨고, 무작위 머리글 3,300건(계약 오류 2,567건)의 결과가 전후 바이트 단위로
+    같다. `replace_global_past_data` 의 이중 정규화는 측정하지 않아 손대지 않았다.
 - [x] Static Capa 5개 페이지의 부트스트랩을 `page_bootstrap.py` 로 통합했다. 페이지마다
   다르던 예외 조합 탓에 `capacity_standards` 는 실제 발생하는 RuntimeError 를 놓치고 있었다.
 - [x] 색 리터럴 89개를 `design/tokens.py` 로 모으고 서체 폴백 스택을 적용했다.

@@ -24,6 +24,7 @@ from capa_simulation.services.display_order_scopes import (
     PAGE_PLAN,
     TAB_PKG_PLAN,
 )
+from capa_simulation.services.frame_contracts import require_exact_columns
 from capa_simulation.services.month_columns import month_label
 
 PAST_MONTH_COLUMNS = ("생산계획년월", "Density", "Wafer Total")
@@ -223,15 +224,7 @@ def prepare_past_table(frame: pd.DataFrame, columns: tuple[str, ...]) -> pd.Data
     table_name = _TABLE_NAMES[columns]
     if not isinstance(frame, pd.DataFrame):
         raise TypeError(f"{table_name}은(는) pandas DataFrame이어야 합니다.")
-    missing = [column for column in columns if column not in frame.columns]
-    extra = [column for column in frame.columns if column not in columns]
-    if missing or extra:
-        details: list[str] = []
-        if missing:
-            details.append(f"누락: {', '.join(missing)}")
-        if extra:
-            details.append(f"추가: {', '.join(str(column) for column in extra)}")
-        raise ValueError(f"{table_name} 컬럼 계약이 일치하지 않습니다 ({'; '.join(details)}).")
+    require_exact_columns(frame.columns, columns, f"{table_name} 컬럼")
     if frame.empty:
         return empty_past_table(columns)
     prepared = frame.loc[:, list(columns)].copy()

@@ -16,6 +16,7 @@ from capa_simulation.services.display_order_editor import (
     DISPLAY_ORDER_COLUMNS,
     validate_display_order,
 )
+from capa_simulation.services.frame_contracts import require_exact_columns
 
 
 def display_order_to_csv(display_order: pd.DataFrame) -> bytes:
@@ -50,18 +51,12 @@ def display_order_from_clipboard(content: str) -> pd.DataFrame:
 
 def validate_display_order_import(parsed: pd.DataFrame) -> pd.DataFrame:
     """Validate the full display-order import contract independently of its transport."""
-    actual_columns = [str(column).strip() for column in parsed.columns]
-    expected_columns = list(DISPLAY_ORDER_COLUMNS)
-    if actual_columns != expected_columns:
-        missing = [column for column in expected_columns if column not in actual_columns]
-        extra = [column for column in actual_columns if column not in expected_columns]
-        details: list[str] = []
-        if missing:
-            details.append(f"누락: {', '.join(missing)}")
-        if extra:
-            details.append(f"추가: {', '.join(extra)}")
-        if not details:
-            details.append("컬럼 순서가 양식과 다름")
-        raise ValueError(f"표시순서 입력 표 컬럼 계약이 일치하지 않습니다 ({'; '.join(details)}).")
-    parsed.columns = expected_columns
+    require_exact_columns(
+        parsed.columns,
+        DISPLAY_ORDER_COLUMNS,
+        "표시순서 입력 표 컬럼",
+        check_order=True,
+        strip=True,
+    )
+    parsed.columns = list(DISPLAY_ORDER_COLUMNS)
     return validate_display_order(parsed)

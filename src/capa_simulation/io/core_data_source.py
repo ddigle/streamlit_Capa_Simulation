@@ -15,6 +15,7 @@ from typing import Literal, Protocol, cast
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import require_exact_columns
 from capa_simulation.services.month_filter import valid_month_mask
 from capa_simulation.settings import PROJECT_ROOT
 
@@ -174,16 +175,7 @@ def normalize_core_data(
         duplicates = frame.columns[frame.columns.duplicated()].astype(str).tolist()
         raise ValueError(f"Core Data 컬럼명이 중복되었습니다: {', '.join(duplicates[:5])}")
     expected = [column.name for column in selected.columns]
-    actual = [str(column) for column in frame.columns]
-    missing = [column for column in expected if column not in actual]
-    extra = [column for column in actual if column not in expected]
-    if missing or extra:
-        details: list[str] = []
-        if missing:
-            details.append(f"누락: {', '.join(missing[:10])}")
-        if extra:
-            details.append(f"추가: {', '.join(extra[:10])}")
-        raise ValueError(f"Core Data 78컬럼 계약이 일치하지 않습니다 ({'; '.join(details)}).")
+    require_exact_columns(frame.columns, expected, "Core Data 78컬럼", limit=10)
 
     saved_source_dtypes = frame.attrs.get("source_dtypes")
     source_dtypes = (

@@ -17,6 +17,7 @@ from uuid import uuid4
 import duckdb
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import require_exact_columns
 from capa_simulation.services.month_filter import valid_month_mask
 
 # DuckDB 기본 블록은 256 KiB 라서 행이 2,767개뿐인 첫 부팅 DB 도 24.5 MiB 를 차지한다.
@@ -234,16 +235,7 @@ def insert_frame(
     logical_name: str,
 ) -> None:
     target_columns = business_columns(connection, schema, table_name, owner_column)
-    actual_columns = [str(column) for column in frame.columns]
-    missing = [column for column in target_columns if column not in actual_columns]
-    extra = [column for column in actual_columns if column not in target_columns]
-    if missing or extra:
-        details: list[str] = []
-        if missing:
-            details.append(f"누락: {', '.join(missing)}")
-        if extra:
-            details.append(f"추가: {', '.join(extra)}")
-        raise ValueError(f"{logical_name} 컬럼 계약이 일치하지 않습니다 ({'; '.join(details)}).")
+    require_exact_columns(frame.columns, target_columns, f"{logical_name} 컬럼")
 
     prepared = frame.reindex(columns=target_columns).copy()
     if "생산계획년월" in prepared.columns:

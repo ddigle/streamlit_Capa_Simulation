@@ -1486,6 +1486,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `frame_contracts.py`: 여러 서비스가 공유하는 필수 컬럼 검증과 업무 키 정규화를 단일
   정의한다. 소요기준(`WAFER`→`WF`)·Area_Name(`Main`·`MI`)·월(`YYYYMM`) 규칙이 여기 있다.
   계약이 서로 다른 것은 합치지 않는다.
+  컬럼 계약 **정확 일치** 검사(`"{주어} 계약이 일치하지 않습니다 (누락: …; 추가: …)."`)도
+  `require_exact_columns` 하나가 갖는다. 저장 경계(`_sql_helpers.insert_frame`·공용 표시순서),
+  Core Data 78컬럼(`limit=10`), 선행·실행 Capa·과거 세 표·공정 표시명 정규화는 이름 집합만
+  보고, 붙여넣기·CSV 입력(표시순서·공정 표시명)은 `check_order=True, strip=True` 로 차례와
+  머리글 공백까지 본다(누락·추가가 없으면 `컬럼 순서가 양식과 다름`). 문구는
+  `tests/test_exact_column_contracts.py` 가 바이트 단위로 고정한다. 새 정확 일치 검사를 손으로
+  다시 쓰지 않는다.
 - `frame_checks.py`: 중복 연결 키 검사(`assert_unique_keys` — 겹친 키 조합을 최대 5건 함께
   싣고, 주어와 조사는 호출부가 넘긴다)와 텍스트 키 strip(`strip_text_columns` — 제자리 변경)의
   단일 정의. 본래 `frame_contracts.py` 에 있어야 할 같은 종류의 규칙이지만 그 파일이 병행

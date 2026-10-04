@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import require_exact_columns
 from capa_simulation.services.process_rename import normalize_process_text
 
 EXECUTION_CAPACITY_COLUMNS = ("생산계획년월", "공정", "증감 확보율", "비고")
@@ -59,15 +60,7 @@ def prepare_execution_capacity(frame: pd.DataFrame) -> pd.DataFrame:
     """
     if not isinstance(frame, pd.DataFrame):
         raise TypeError("실행 Capa 반영은 pandas DataFrame이어야 합니다.")
-    missing = [column for column in EXECUTION_CAPACITY_COLUMNS if column not in frame.columns]
-    extra = [column for column in frame.columns if column not in EXECUTION_CAPACITY_COLUMNS]
-    if missing or extra:
-        details: list[str] = []
-        if missing:
-            details.append(f"누락: {', '.join(missing)}")
-        if extra:
-            details.append(f"추가: {', '.join(str(column) for column in extra)}")
-        raise ValueError(f"실행 Capa 반영 컬럼 계약이 일치하지 않습니다 ({'; '.join(details)}).")
+    require_exact_columns(frame.columns, EXECUTION_CAPACITY_COLUMNS, "실행 Capa 반영 컬럼")
     if frame.empty:
         return empty_execution_capacity()
     prepared = frame.loc[:, list(EXECUTION_CAPACITY_COLUMNS)].copy()
