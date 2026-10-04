@@ -1354,6 +1354,11 @@ pytest **1,256 통과·예상 실패 2개**(493.90초), worktree 격리 검사 �
   잠금 성질은 그대로. 앵커 재검토 조건: 배치가 같은 파일을 쓰는지 · 교체 방식(덮어쓰기/
   rename) · 같은 머신인지. 파생 항목(가용설비 `list_revisions` 토큰 캐시)은 핀으로 연결
   비용이 사라져 무의미. `299483c`
+  - [x] 2026-10-04: 같은 rerun 한정 핀을 설비 DB 에도 — 단 **설비 DB 를 여러 번 여는 화면에서만**
+    (`PageSpec.uses_equipment_db`, 지금은 가용설비 현황). 전역 핀은 다른 화면마다 핀 비용이
+    붙어 쓰지 않는다. 샘플 관측(AppTest rerun 중앙값 8회 × A/B 2쌍, 합성 데모 DB): 빈 설비 DB
+    971/998 → 798/816ms(설비 DB connect 합 229/234 → 66/66ms), 저장본 1개 916/927 →
+    812/838ms(176/176 → 58/58ms). HOME·VOC 는 설비 DB 를 열지 않아 그대로.
 - [x] **B2 E11 Static Capa 5페이지 계산 캐시 키** — `get_scenario_capacity_and_demand` 가
   (reference_version, content_token, start, end) 키만 해시하고 안에서 슬라이스한다. 내용 해시
   캐시 `get_unit_capacity`·`get_required_equipment` 는 제거, `get_securement_rate` 도 키 방식.

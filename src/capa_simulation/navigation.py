@@ -68,6 +68,11 @@ class PageSpec:
     has_condition_cards: bool = False
     # 공통 조건을 일부 탭에서만 읽으면 그 탭들. 비워 두면 `reads_*` 가 화면 전체에 걸린다.
     condition_tabs: ConditionTabs | None = None
+    # 이 화면이 rerun 한 번에 설비 DB 를 **여러 번** 연다. 참이면 `app.py` 가 그 회차 동안
+    # 설비 DB 에도 핀(`pinned_connections`)을 건다 — 연결마다 인스턴스를 다시 만들지 않게.
+    # 설비 DB 를 한 번만 여는 화면은 핀 비용이 이득과 같아 두지 않고, 앱 전역으로 걸면 설비
+    # DB 를 안 보는 화면마다 rerun 이 그 비용만큼 늘어나 화면 단위로 선언한다.
+    uses_equipment_db: bool = False
 
     def reads_common_conditions_on(self, active_tab: str | None) -> bool:
         """지금 열린 탭(`None` 은 탭을 가르지 않는 화면)에서 이 화면이 공통 조건을 읽는가."""
@@ -176,6 +181,8 @@ DYNAMIC_CAPA_SUBPAGES = (
             card_labels=frozenset({EQUIPMENT_MAIN_TAB, EQUIPMENT_GAP_TAB}),
         ),
         has_condition_cards=True,
+        # 스냅샷·도면·컷오프를 따로 읽어 rerun 마다 설비 DB 를 서너 번 연다.
+        uses_equipment_db=True,
     ),
     # 설비 DB 와 자기 기준일만 본다. 기준일·필터는 자기 조건 카드(`Space 조건`)다.
     PageSpec(

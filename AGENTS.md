@@ -1226,6 +1226,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `app.py` 는 rerun 한 번을 `pinned_connections(DUCKDB_PATH)` 로 감싸 작업별 연결이
     인스턴스를 다시 만들지 않게 한다(연결당 48ms → 0.2ms). rerun 이 끝나면 풀리는 핀이지
     상시 앵커가 아니다 — 배치가 DB 파일을 갱신하는 환경을 위해 일부러 그렇게 둔다.
+    설비 DB 는 **rerun 한 번에 여러 번 여는 화면에서만** 같은 수명의 핀을 더한다.
+    `navigation.PageSpec.uses_equipment_db` 가 그 화면을 선언하고(지금은 가용설비 현황
+    하나) `app.py` 가 그 회차의 `navigation.run()` 을 `pinned_connections(EQUIPMENT_DUCKDB_PATH)`
+    로 감싼다. 전역으로 걸지 않는다 — 설비 DB 를 안 보는 화면마다 핀을 여는 비용이 붙는다.
+    설비 DB 를 한 번만 여는 화면(Space 현황·표준 목표·재공)은 이득이 없어 선언하지 않는다.
   - 불변 `revision_id`의 전체 스냅샷과 공용 표시순서 프로필을 `st.cache_data`로 여러 세션에
     공유한다. 표시순서는 교체 시 `clear_global_display_order_cache()`로 명시 무효화한다
     (스냅샷 payload 에 현재 표시순서가 `RQ_DISPLAY_ORDER`로 들어가므로 두 캐시를 함께 비운다).
@@ -1594,6 +1599,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `section.key` 가 컨테이너 key 와 CSS 선택자의 단일 근거다.
   - 페이지 추가·제목 변경은 여기서만 한다. 상태 접미는 `IMPLEMENTING_SUFFIX`(구현중)·
     `DATA_PENDING_SUFFIX`(Data확보중) 둘이고, `page_header.py` 가 같은 상수로 배지를 만든다.
+  - `PageSpec` 은 화면이 `app.py` 에 바라는 것도 선언한다. 공통 조건(`reads_*`·
+    `condition_tabs`·`has_condition_cards`)과 설비 DB rerun 핀(`uses_equipment_db`)이다.
+    `app.py` 는 이 선언을 그대로 따르고 화면 이름으로 가르지 않는다.
 - `src/capa_simulation/page_bootstrap.py`
   - 계산 페이지 공통 진입 절차다. 활성 리비전·표시순서·활성 시나리오·조회기간을 준비하고
     원천과 겹치는 유효 구간을 확정한다. 페이지는 `BOOTSTRAP_ERRORS` 를 잡는다.

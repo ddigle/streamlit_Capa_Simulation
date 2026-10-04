@@ -721,3 +721,48 @@ def test_every_declared_condition_tab_is_a_real_label() -> None:
     """선언한 탭 라벨이 페이지의 실제 탭과 어긋나면 그 탭에서도 상자가 영영 서지 않는다."""
     source = (PROJECT_ROOT / DYNAMIC_CAPA_SUBPAGES[0].path).read_text(encoding="utf-8")
     assert "EQUIPMENT_GAP_TAB," in source and "key=EQUIPMENT_TAB_KEY" in source
+
+
+# ----------------------------------------------------------------- 설비 DB 핀
+#
+# 설비 DB 핀은 rerun 한 번만 사는 **화면 한정** 핀이다. 전역으로 걸면 설비 DB 를 안 보는
+# 화면마다 인스턴스 생성 비용이 붙고, 선언과 어긋나면 이득이 조용히 사라진다.
+
+
+def test_only_the_equipment_status_screen_declares_the_equipment_db_pin() -> None:
+    declared = {spec.path for spec in ALL_SPECS if spec.uses_equipment_db}
+    assert declared == {DYNAMIC_CAPA_SUBPAGES[0].path}
+
+
+def test_the_equipment_db_is_pinned_only_on_the_screen_that_declares_it(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`app.py` 는 실행마다 핀 함수를 새로 import 하므로 기록용 대역이 그대로 불린다."""
+    import capa_simulation.persistence._sql_helpers as sql_helpers
+    import capa_simulation.settings as settings
+
+    pinned: list[tuple[Path, ...]] = []
+    original = sql_helpers.pinned_connections
+
+    def recording(*database_paths: Path) -> Any:
+        pinned.append(database_paths)
+        return original(*database_paths)
+
+    monkeypatch.setattr(sql_helpers, "pinned_connections", recording)
+    equipment_db = settings.EQUIPMENT_DUCKDB_PATH
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert pinned == [(settings.DUCKDB_PATH,)]
+
+    pinned.clear()
+    app.switch_page(DYNAMIC_CAPA_SUBPAGES[0].path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert pinned == [(settings.DUCKDB_PATH,), (equipment_db,)]
+
+    # 설비 DB 를 한 번만 여는 화면(Space 현황)과 HOME 으로 가면 다시 걸지 않는다.
+    for path in (DYNAMIC_CAPA_SUBPAGES[1].path, HOME.path):
+        pinned.clear()
+        app.switch_page(path).run()
+        assert not list(app.exception), [element.message for element in app.exception]
+        assert pinned == [(settings.DUCKDB_PATH,)], path

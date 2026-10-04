@@ -1,5 +1,6 @@
 # Purpose: Streamlit 앱의 공식 시나리오 활성화, 공통 사이드바·조회기간과 페이지 탐색을 구성한다.
 
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
 import streamlit as st
@@ -36,6 +37,7 @@ from capa_simulation.settings import (
     APP_HELP_URL,
     APP_NAME,
     DUCKDB_PATH,
+    EQUIPMENT_DUCKDB_PATH,
     MONTH_SELECTION_END,
     MONTH_SELECTION_START,
     format_month,
@@ -327,10 +329,19 @@ with pinned_connections(DUCKDB_PATH):
             for page in pages.admin_box_pages:
                 st.page_link(page, width="stretch")
 
+    # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
+    # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명이 같다 — 페이지가 끝나거나
+    # `st.stop()`·`st.rerun()` 으로 빠져나가면 풀린다. 다른 화면에는 걸지 않는다.
+    equipment_pin: AbstractContextManager[None] = (
+        pinned_connections(EQUIPMENT_DUCKDB_PATH)
+        if current_spec is not None and current_spec.uses_equipment_db
+        else nullcontext()
+    )
     # 끝까지 돈 실행 뒤에만 상자 여닫기가 본문을 건너뛴다. 페이지가 `st.stop()` 으로 멈춘 것도
     # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다.
     try:
-        navigation.run()
+        with equipment_pin:
+            navigation.run()
     except StopException:
         app_run["complete"] = True
         raise
