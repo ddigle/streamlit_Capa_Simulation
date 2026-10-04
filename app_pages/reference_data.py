@@ -48,14 +48,9 @@ from capa_simulation.scenario_state import (
 from capa_simulation.services.capacity_reference_editor import (
     PERFORMANCE_EDITOR_DIMENSIONS,
     performance_from_edit_table,
-    performance_to_edit_table,
     reference_from_edit_table,
-    reference_to_edit_table,
 )
-from capa_simulation.services.display_order import (
-    apply_display_order,
-    reorder_display_columns,
-)
+from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import (
     PAGE_REFERENCE,
     TAB_EQUIPMENT_COUNT,
@@ -93,6 +88,8 @@ from capa_simulation.services.route_step_editor import (
     delete_route_step,
 )
 from capa_simulation.services.simulation_cache import (
+    display_order_digest,
+    get_reference_edit_table,
     get_route_step_tables,
     scenario_cache_key,
 )
@@ -238,107 +235,95 @@ try:
 
     # 편집표 여섯 개는 자기 탭이 열려 있거나 **적용하지 않은 편집이 남았을 때만** 만든다.
     # 그 밖의 닫힌 탭에서는 month_editor 가 default_table 을 읽기 전에 돌아가므로 만들어 봐야
-    # 버려진다 — 기본 탭에서 rerun 마다 519~793ms 를 피벗·정렬에 쓰고 있었다.
-    default_upeh_table = pd.DataFrame()
-    if _editor_needed(upeh_tab, EDITOR_UPEH):
-        default_upeh_table = performance_to_edit_table(filtered_upeh)
-        default_upeh_table = apply_display_order(
-            default_upeh_table, display_order, PAGE_REFERENCE, TAB_UPEH
+    # 버려진다 — 기본 탭에서 rerun 마다 519~793ms 를 피벗·정렬에 쓰고 있었다. 만드는 표는
+    # 편집 기간·표시순서 내용으로 캐시한다(`get_reference_edit_table`).
+    edit_cache_key = scenario_cache_key(
+        reference_version, active_scenario, effective_start_month, effective_end_month
+    )
+    edit_display_order_key = display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])
+
+    def _edit_table(
+        tab: OpenTab,
+        editor_key: str,
+        data: pd.DataFrame,
+        *,
+        table_name: str,
+        dimensions: list[str],
+        value_column: str | None,
+        scope_tab: str,
+    ) -> pd.DataFrame:
+        if not _editor_needed(tab, editor_key):
+            return pd.DataFrame()
+        return get_reference_edit_table(
+            edit_cache_key,
+            edit_display_order_key,
+            table_name=table_name,
+            dimensions=tuple(dimensions),
+            value_column=value_column,
+            page=PAGE_REFERENCE,
+            tab=scope_tab,
+            _data=data,
+            _display_order=display_order,
         )
-        default_upeh_table, _ = reorder_display_columns(
-            default_upeh_table,
-            PERFORMANCE_EDITOR_DIMENSIONS,
-            display_order,
-            PAGE_REFERENCE,
-            TAB_UPEH,
-        )
-    default_run_rate_table = pd.DataFrame()
-    if _editor_needed(run_rate_tab, EDITOR_RUN_RATE):
-        default_run_rate_table = reference_to_edit_table(
-            filtered_run_rate, RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", "RQ_RUN_RATE"
-        )
-        default_run_rate_table = apply_display_order(
-            default_run_rate_table, display_order, PAGE_REFERENCE, TAB_RUN_RATE
-        )
-        default_run_rate_table, _ = reorder_display_columns(
-            default_run_rate_table,
-            RUN_RATE_DIMENSIONS,
-            display_order,
-            PAGE_REFERENCE,
-            TAB_RUN_RATE,
-        )
-    default_vital_table = pd.DataFrame()
-    if _editor_needed(vital_tab, EDITOR_VITAL):
-        default_vital_table = reference_to_edit_table(
-            filtered_vital, VITAL_DIMENSIONS, "편중률", "RQ_VITAL"
-        )
-        default_vital_table = apply_display_order(
-            default_vital_table, display_order, PAGE_REFERENCE, TAB_VITAL
-        )
-        default_vital_table, _ = reorder_display_columns(
-            default_vital_table,
-            VITAL_DIMENSIONS,
-            display_order,
-            PAGE_REFERENCE,
-            TAB_VITAL,
-        )
-    default_run_day_table = pd.DataFrame()
-    if _editor_needed(run_day_tab, EDITOR_RUN_DAY):
-        default_run_day_table = reference_to_edit_table(
-            filtered_run_day, RUN_DAY_DIMENSIONS, "RUN_DAY", "RQ_RUN_DAY"
-        )
-        default_run_day_table = apply_display_order(
-            default_run_day_table, display_order, PAGE_REFERENCE, TAB_RUN_DAY
-        )
-        default_run_day_table, _ = reorder_display_columns(
-            default_run_day_table,
-            RUN_DAY_DIMENSIONS,
-            display_order,
-            PAGE_REFERENCE,
-            TAB_RUN_DAY,
-        )
-    default_lot_ratio_table = pd.DataFrame()
-    if _editor_needed(lot_ratio_tab, EDITOR_LOT_RATIO):
-        default_lot_ratio_table = reference_to_edit_table(
-            filtered_lot_ratio, RATIO_DIMENSIONS, "Lot 측정률", "RQ_LOT_RATIO"
-        )
-        default_lot_ratio_table = apply_display_order(
-            default_lot_ratio_table,
-            display_order,
-            PAGE_REFERENCE,
-            TAB_LOT_RATIO,
-        )
-        default_lot_ratio_table, _ = reorder_display_columns(
-            default_lot_ratio_table,
-            RATIO_DIMENSIONS,
-            display_order,
-            PAGE_REFERENCE,
-            TAB_LOT_RATIO,
-        )
-    default_wf_ratio_table = pd.DataFrame()
-    if _editor_needed(wf_ratio_tab, EDITOR_WF_RATIO):
-        default_wf_ratio_table = reference_to_edit_table(
-            filtered_wf_ratio, RATIO_DIMENSIONS, "WF측정률", "RQ_WF_RATIO"
-        )
-        default_wf_ratio_table = apply_display_order(
-            default_wf_ratio_table,
-            display_order,
-            PAGE_REFERENCE,
-            TAB_WF_RATIO,
-        )
-        default_wf_ratio_table, _ = reorder_display_columns(
-            default_wf_ratio_table,
-            RATIO_DIMENSIONS,
-            display_order,
-            PAGE_REFERENCE,
-            TAB_WF_RATIO,
-        )
+
+    default_upeh_table = _edit_table(
+        upeh_tab,
+        EDITOR_UPEH,
+        filtered_upeh,
+        table_name="RQ_UPEH",
+        dimensions=PERFORMANCE_EDITOR_DIMENSIONS,
+        value_column=None,
+        scope_tab=TAB_UPEH,
+    )
+    default_run_rate_table = _edit_table(
+        run_rate_tab,
+        EDITOR_RUN_RATE,
+        filtered_run_rate,
+        table_name="RQ_RUN_RATE",
+        dimensions=RUN_RATE_DIMENSIONS,
+        value_column="CAPA_RUN_RATE",
+        scope_tab=TAB_RUN_RATE,
+    )
+    default_vital_table = _edit_table(
+        vital_tab,
+        EDITOR_VITAL,
+        filtered_vital,
+        table_name="RQ_VITAL",
+        dimensions=VITAL_DIMENSIONS,
+        value_column="편중률",
+        scope_tab=TAB_VITAL,
+    )
+    default_run_day_table = _edit_table(
+        run_day_tab,
+        EDITOR_RUN_DAY,
+        filtered_run_day,
+        table_name="RQ_RUN_DAY",
+        dimensions=RUN_DAY_DIMENSIONS,
+        value_column="RUN_DAY",
+        scope_tab=TAB_RUN_DAY,
+    )
+    default_lot_ratio_table = _edit_table(
+        lot_ratio_tab,
+        EDITOR_LOT_RATIO,
+        filtered_lot_ratio,
+        table_name="RQ_LOT_RATIO",
+        dimensions=RATIO_DIMENSIONS,
+        value_column="Lot 측정률",
+        scope_tab=TAB_LOT_RATIO,
+    )
+    default_wf_ratio_table = _edit_table(
+        wf_ratio_tab,
+        EDITOR_WF_RATIO,
+        filtered_wf_ratio,
+        table_name="RQ_WF_RATIO",
+        dimensions=RATIO_DIMENSIONS,
+        value_column="WF측정률",
+        scope_tab=TAB_WF_RATIO,
+    )
     # STEP 구성 탭의 요약·목록. 목록은 작업·경로 선택 위젯의 options 라 탭이 닫혀 있어도
     # 있어야 한다(숨은 탭에서는 그림만 건너뛴다). 그래서 건너뛰는 대신 내용 토큰으로 캐시한다.
     step_summary, step_catalog = get_route_step_tables(
-        scenario_cache_key(
-            reference_version, active_scenario, effective_start_month, effective_end_month
-        ),
+        edit_cache_key,
         _upeh=filtered_upeh,
         _reqb=filtered_reqb,
     )

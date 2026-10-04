@@ -12,12 +12,14 @@ from typing import Any, NamedTuple
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.services.capacity_reference_editor import build_reference_edit_table
 from capa_simulation.services.dashboard import (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
     PRODUCTION_DETAIL_DIMENSIONS,
     build_monthly_wafer_load_from_load,
     build_production_dashboard,
 )
+from capa_simulation.services.display_order import PreparedDisplayOrder
 from capa_simulation.services.equipment_availability import (
     build_weekly_equipment_availability,
 )
@@ -132,6 +134,23 @@ def build_home_simulation_cache_key(
     `st.cache_data` 는 프로세스 전역이라 다른 브라우저 세션과도 겹쳤다.
     시나리오 내용이 바뀔 때마다 새로 발급되는 `content_token` 을 쓴다.
     """
+    return (
+        reference_version,
+        scenario_token,
+        start_month,
+        end_month,
+        display_order_digest(display_order),
+    )
+
+
+def display_order_digest(display_order: pd.DataFrame) -> str:
+    """공용 표시순서 표(`RQ_DISPLAY_ORDER`) 내용의 SHA-256. 컬럼·dtype·행 값을 모두 덮는다.
+
+    **표시순서는 `reference_version` 을 바꾸지 않고 바뀐다**(`reference_cache.
+    apply_global_display_order`). 그래서 `reference_version` 을 키로 쓰면서 표시순서로 정렬한
+    결과를 캐시하는 래퍼는 이 값도 키에 넣어야 한다 — 빠뜨리면 Admin 에서 순서를 바꾼 뒤에도
+    옛 순서가 남는다.
+    """
     digest = hashlib.sha256()
     digest.update("\x1f".join(map(str, display_order.columns)).encode("utf-8"))
     digest.update("\x1f".join(map(str, display_order.dtypes)).encode("utf-8"))
@@ -140,13 +159,7 @@ def build_home_simulation_cache_key(
         .to_numpy(dtype="uint64")
         .tobytes()
     )
-    return (
-        reference_version,
-        scenario_token,
-        start_month,
-        end_month,
-        digest.hexdigest(),
-    )
+    return digest.hexdigest()
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -193,6 +206,48 @@ def get_route_step_tables(
     """
     del cache_key
     return route_step_summary(_reqb), route_step_catalog(_upeh, _reqb)
+
+
+# 기준 정보 편집표 칸 수. 편집표 여섯 개가 나눠 쓴다 — 한 시나리오·기간에 열린 탭 몇 개면
+# 차므로 여러 세션·시나리오를 오가도 넉넉하다.
+REFERENCE_EDIT_TABLE_MAX_ENTRIES = 24
+
+
+@st.cache_data(show_spinner=False, max_entries=REFERENCE_EDIT_TABLE_MAX_ENTRIES)
+def get_reference_edit_table(
+    cache_key: ScenarioCacheKey,
+    display_order_key: str,
+    *,
+    table_name: str,
+    dimensions: tuple[str, ...],
+    value_column: str | None,
+    page: str,
+    tab: str,
+    _data: pd.DataFrame,
+    _display_order: PreparedDisplayOrder | None,
+) -> pd.DataFrame:
+    """기준 정보의 열린 편집표(Wide 변환 → 표시순서 정렬 → 분류 컬럼 재배치).
+
+    rerun 마다 다시 만들고 있었다(UPEH 2,660×39 표에서 약 320ms, 합성 표본의 샘플 관측).
+    키는 `scenario_cache_key`(편집 기간) + 표시순서 내용(`display_order_digest`) + 표 이름·
+    분류 컬럼·값 컬럼·화면 범위다. **표시순서 다이제스트를 빼면 안 된다** — 표시순서는
+    `reference_version` 을 바꾸지 않고 바뀐다.
+
+    `_data` 는 키의 `content_token` 을 발급한 바로 그 활성 시나리오에서 키와 같은 기간으로
+    자른 표, `_display_order` 는 `display_order_key` 를 만든 `RQ_DISPLAY_ORDER` 를 준비한
+    것이어야 한다. 다른 것을 넘기면 키와 내용이 어긋난다. 검증 예외는 캐시되지 않고,
+    `st.cache_data` 는 꺼낼 때마다 사본을 준다.
+    """
+    del cache_key, display_order_key
+    return build_reference_edit_table(
+        _data,
+        table_name=table_name,
+        dimensions=dimensions,
+        value_column=value_column,
+        display_order=_display_order,
+        page=page,
+        tab=tab,
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=16)

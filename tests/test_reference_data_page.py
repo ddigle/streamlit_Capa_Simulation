@@ -1695,3 +1695,89 @@ def test_a_scenario_without_ratio_rows_opens_every_tab() -> None:
     assert [error.value for error in app.error] == []
     assert sorted(_scenario_table(app, "RQ_UPEH")["STEP_SEQ"]) == ["P100", "P200"]
     assert _scenario_table(app, "RQ_LOT_RATIO").empty
+
+
+# 공용 표시순서만 바꾼다 — 활성 리비전 번호·시나리오 토큰·기간은 그대로다. Admin 의 표시순서
+# 교체(`reference_cache.apply_global_display_order`)가 바로 이 모양이다. 편집표 여섯 개의 화면
+# 범위마다 `공정` 규칙을 하나씩 두고, 세션 상태 하나로 오름차순·내림차순을 고른다. 편집표에
+# 넘어간 기본 표의 공정 차례는 `render_month_editor` 를 감싸 그대로 적어 둔다.
+_DISPLAY_ORDER_SWAP = """
+from capa_simulation.services import display_order_scopes as _scopes
+
+_order_mode = "내림차순" if st.session_state.get("test_display_order_descending") else "오름차순"
+tables["RQ_DISPLAY_ORDER"] = pd.DataFrame(
+    [
+        {
+            "페이지 구분": _scopes.PAGE_REFERENCE,
+            "탭 구분": _scope_tab,
+            "정렬우선순위": 1,
+            "분류컬럼": "공정",
+            "정렬방식": _order_mode,
+            "분류값": "",
+            "값표시순서": None,
+            "활성여부": "Y",
+        }
+        for _scope_tab in (
+            _scopes.TAB_UPEH,
+            _scopes.TAB_RUN_RATE,
+            _scopes.TAB_VITAL,
+            _scopes.TAB_RUN_DAY,
+            _scopes.TAB_LOT_RATIO,
+            _scopes.TAB_WF_RATIO,
+        )
+    ]
+)
+
+import capa_simulation.components.month_editor as _month_editor_module
+
+_original_render_month_editor = _month_editor_module.render_month_editor
+
+
+def _record_month_editor(tab, default_table, dimensions, editor_key, *args, **kwargs):
+    if "공정" in default_table.columns:
+        st.session_state[f"captured_order::{editor_key}"] = default_table["공정"].tolist()
+    return _original_render_month_editor(
+        tab, default_table, dimensions, editor_key, *args, **kwargs
+    )
+
+
+_month_editor_module.render_month_editor = _record_month_editor
+"""
+DISPLAY_ORDER_SWAP_TEST_SCRIPT = (
+    TEST_SCRIPT.replace("ADD_SECOND_PROCESS = False", "ADD_SECOND_PROCESS = True")
+    .replace("\nactive = {", _DISPLAY_ORDER_SWAP + "\nactive = {", 1)
+    .replace('"test-capacity-standards-page"', '"test-reference-display-order-swap"')
+    .replace(
+        "    st.download_button = original_download_button\n",
+        "    st.download_button = original_download_button\n"
+        "    _month_editor_module.render_month_editor = _original_render_month_editor\n",
+        1,
+    )
+)
+
+
+@pytest.mark.parametrize("tab_name", list(TAB_EDITORS))
+def test_a_display_order_swap_reorders_the_cached_edit_table(tab_name: str) -> None:
+    """표시순서만 바뀌어도 편집표 행 차례가 바로 따라 바뀐다(캐시 키의 표시순서 다이제스트).
+
+    편집표는 `scenario_cache_key`(리비전 번호·시나리오 토큰·기간)로 캐시한다. 공용 표시순서
+    교체는 그 셋 어느 것도 바꾸지 않으므로, 키에 표시순서 내용이 빠지면 옛 순서가 남는다.
+    """
+    editor_key = TAB_EDITORS[tab_name]
+    captured = f"captured_order::{editor_key}"
+    app = AppTest.from_string(DISPLAY_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB[tab_name]
+    app.run()
+    assert not app.exception
+    assert app.session_state[captured] == ["Process-A", "Process-B"]
+
+    app.session_state["test_display_order_descending"] = True
+    app.run()
+    assert not app.exception
+    assert app.session_state[captured] == ["Process-B", "Process-A"]
+
+    # 되돌리면 처음 차례다 — 처음 만든 표가 캐시에서 그대로 나온다.
+    app.session_state["test_display_order_descending"] = False
+    app.run()
+    assert not app.exception
+    assert app.session_state[captured] == ["Process-A", "Process-B"]

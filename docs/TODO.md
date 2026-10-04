@@ -1377,6 +1377,13 @@ pytest **1,256 통과·예상 실패 2개**(493.90초), worktree 격리 검사 �
   위젯은 항상 그리고, 계산·표·차트만 건너뛴다". 목록은 위젯 options 라 건너뛸 수 없어
   `get_route_step_tables` 내용 토큰 캐시로 바꾸고 요약 표만 접었다. 기본 탭 warm rerun
   **2,226 → 1,147ms**. persist_state 변경 없음(위젯이 계속 그려지므로). `efb98e1`
+  - [x] 2026-10-04: 열린 탭의 편집표(피벗 → 표시순서 → 열 재배치)도 rerun 마다 다시 만들고
+    있었다(UPEH 2,660×39 표 약 320ms). `simulation_cache.get_reference_edit_table` 이 편집 기간의
+    `scenario_cache_key` + **표시순서 내용 다이제스트**(표시순서 교체는 `reference_version` 을
+    바꾸지 않는다) + 표 이름·화면 범위로 캐시한다. 편집표 여섯 개 공통, `_editor_needed` 게이트는
+    그대로. 표 내용(컬럼·dtype·인덱스·값 해시)은 여섯 개 모두 전후 같다. 샘플 관측(AppTest
+    UPEH 탭 rerun 중앙값 5회 × A/B 2쌍, 합성 데모 DB): 1,449/1,611 → 1,250/1,283ms, script CPU
+    1,406/1,516 → 1,188/1,219ms.
 - [x] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없음, 순수 유지보수
   비용. 권장: E 시리즈 뒤로. → 2026-09-21 부분 이행: 분류 컬럼 폭 계산과 `go.Table` 두 벌
   조립을 `monthly_table_base` 로 올렸다(Figure JSON 전후 동일). 격자 머리 여섯 호출과 반복

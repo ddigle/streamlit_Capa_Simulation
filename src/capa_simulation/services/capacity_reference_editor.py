@@ -1,7 +1,14 @@
 # Purpose: Capa 기준정보를 월별 Wide 편집 표와 Long 계산 테이블 사이에서 변환한다.
 
+from collections.abc import Sequence
+
 import pandas as pd
 
+from capa_simulation.services.display_order import (
+    DisplayOrderInput,
+    apply_display_order,
+    reorder_display_columns,
+)
 from capa_simulation.services.frame_checks import assert_unique_keys, strip_text_columns
 from capa_simulation.services.frame_contracts import (
     assert_complete,
@@ -101,6 +108,30 @@ def performance_to_edit_table(data: pd.DataFrame) -> pd.DataFrame:
         "기준값",
         "RQ_UPEH",
     )
+
+
+def build_reference_edit_table(
+    data: pd.DataFrame,
+    *,
+    table_name: str,
+    dimensions: Sequence[str],
+    value_column: str | None,
+    display_order: DisplayOrderInput,
+    page: str,
+    tab: str,
+) -> pd.DataFrame:
+    """기준 정보 편집표 하나 — 월별 Wide 변환 → 표시순서 행 정렬 → 분류 컬럼 재배치.
+
+    `value_column` 이 None 이면 UPEH 편집표다(`performance_to_edit_table` — Main 은 UPEH,
+    MI 는 ST 를 한 칸에 보인다). 그 밖에는 `value_column` 한 컬럼을 월 컬럼으로 편다.
+    """
+    if value_column is None:
+        table = performance_to_edit_table(data)
+    else:
+        table = reference_to_edit_table(data, list(dimensions), value_column, table_name)
+    table = apply_display_order(table, display_order, page, tab)
+    table, _ = reorder_display_columns(table, list(dimensions), display_order, page, tab)
+    return table
 
 
 def performance_from_edit_table(

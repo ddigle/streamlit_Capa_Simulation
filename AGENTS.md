@@ -1288,6 +1288,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 주요 계산 함수의 content-addressed `st.cache_data` 래퍼다.
   - HOME 전체 계산 그래프는 reference version·`content_token`·조회기간·표시순서 해시의 명시적 경량 키로 조회해 warm
     rerun의 대형 DataFrame 해싱을 피하고, 하위 계산 캐시는 다른 페이지와 계속 공유한다.
+  - **표시순서는 `reference_version` 을 바꾸지 않고 바뀐다**(`reference_cache.
+    apply_global_display_order`). `reference_version`·`content_token` 을 키로 쓰면서 표시순서로
+    정렬한 결과를 캐시하는 래퍼는 `display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])`
+    를 키에 같이 넣는다 — HOME 키(`build_home_simulation_cache_key`)와 기준 정보 편집표가
+    이 한 함수를 쓴다.
+  - `get_reference_edit_table` 은 기준 정보의 열린 편집표(Wide 변환 → 표시순서 정렬 → 분류
+    컬럼 재배치, `capacity_reference_editor.build_reference_edit_table`)를 편집 기간의
+    `scenario_cache_key` + 표시순서 다이제스트 + 표 이름·분류 컬럼·값 컬럼·화면 범위로 캐시한다.
+    프레임과 `PreparedDisplayOrder` 는 `_` 인자라 해시하지 않는다. 표시순서만 바꿔도 행 차례가
+    바뀌는지는 `tests/test_reference_data_page.py` 의 표시순서 교체 테스트가 여섯 표 모두 지킨다.
   - `shared_home_figure_store()`(`st.cache_resource`)는 HOME Figure 묶음을 세션끼리 나누는
     프로세스 공용 LRU 다. **값은 pickle 바이트**로 둔다 — 객체를 그대로 나누면 한 세션이
     꺼낸 Figure 를 고칠 때 남의 화면이 바뀐다. 편집 없는 리비전(`pristine-` 토큰)의 그림만
@@ -1395,6 +1405,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `capacity_reference_editor.py`: Capa 기준정보 Long/Wide 편집 변환. **빈 칸은 「값이 빈
   행」이 아니라 「행 없음」이다** — Wide→Long 복원이 `to_numeric(coerce)` → `dropna` 로
   끝나므로, 빈 칸을 채우면 행이 하나 생기고 값을 지우면 행이 하나 사라진다.
+  `build_reference_edit_table` 은 기준 정보 편집표 한 장(Wide 변환 → 표시순서 정렬 → 분류
+  컬럼 재배치)의 순수 조합이고, 캐시는 `simulation_cache.get_reference_edit_table` 이 건다.
 - `clipboard_table.py`, `reference_csv.py`: Excel에서 복사한 헤더 포함 TSV 표 파싱과
   입력 RQ Wide 표의 컬럼·분류행 동일성 검증. 다운로드 양식은 UTF-8 CSV로 유지한다.
   **값 칸도 본다** — 숫자로 못 읽는 값은 위 `dropna` 가 행을 지우므로 막고(천 단위 쉼표도
