@@ -184,6 +184,8 @@ def _required_selectbox(
         disabled=disabled,
         # 표시만 바꾼다. 아래 필터가 원본 컬럼과 문자열로 대조하므로 값은 원본이어야 한다.
         format_func=format_func,
+        # 로직 분석은 표시 항목을 바꾸면 그려지지 않는다. 그 회차를 건너 7단계 선택이 남게 한다.
+        persist_state="session",
     )
     return selected
 
@@ -616,8 +618,8 @@ try:
     standard_target_exception_rows = standard_target_exception_row_count(required_equipment)
     required_equipment = prepare_standard_target_required_equipment(required_equipment)
     production_reqb = exclude_er_required_equipment(active_scenario["tables"]["RQ_REQB"])
-except (KeyError, ValueError) as exc:
-    st.error(str(exc))
+except BOOTSTRAP_ERRORS as exc:
+    st.error(bootstrap_error_message(exc))
     st.stop()
 
 process_order = production_reqb[["공정"]].drop_duplicates()

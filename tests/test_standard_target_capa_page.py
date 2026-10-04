@@ -154,6 +154,14 @@ simulation_cache.get_scenario_capacity_and_demand = lambda cache_key, **_kwargs:
     pd.DataFrame(),
     filter_month_range(required_equipment, cache_key[2], cache_key[3], "소요대수 상세"),
 )
+# 계산 블록이 던지는 예외를 화면이 어떻게 받는지 보려고 갈아끼운다. 기본은 끈다.
+RAISE_IN_CALCULATION = None
+if RAISE_IN_CALCULATION is not None:
+
+    def raise_in_calculation(*_args, **_kwargs):
+        raise RAISE_IN_CALCULATION
+
+    simulation_cache.get_scenario_capacity_and_demand = raise_in_calculation
 
 
 def capture_table(data, **kwargs):
@@ -318,6 +326,56 @@ def test_standard_target_page_analyzes_one_selected_process_week() -> None:
     assert "일 표준 가능량 로직 분석" in [element.value for element in app.subheader]
     assert "일 표준 가능량 (매)" in [element.label for element in app.metric]
     assert len(app.dataframe) == 2
+
+
+LOGIC_SELECTIONS = {
+    "standard_target_logic_weeknum": "26-W32",
+    "standard_target_logic_process": "Process-A",
+    "standard_target_logic_basis": "WF",
+    "standard_target_logic_production_type": "양산",
+    "standard_target_logic_product": "Product-A",
+    "standard_target_logic_stack": "8H",
+    "standard_target_logic_wf_type": "Core",
+}
+
+
+def test_logic_analysis_selections_survive_switching_the_output_item() -> None:
+    """로직 분석은 다른 표시 항목을 보는 동안 그려지지 않는다. 돌아왔을 때 7단계 선택을
+    처음부터 다시 고르지 않게 선택이 남아야 한다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    output_selector = app.segmented_control(key="standard_target_output_metric")
+    app = output_selector.set_value("로직 분석").run()
+    for key, value in LOGIC_SELECTIONS.items():
+        app = app.selectbox(key=key).set_value(value).run()
+    metric_labels = [element.label for element in app.metric]
+    assert "일 표준 가능량 (매)" in metric_labels
+
+    output_selector = app.segmented_control(key="standard_target_output_metric")
+    app = output_selector.set_value("일 표준 가능량").run()
+    assert not app.metric
+    output_selector = app.segmented_control(key="standard_target_output_metric")
+    app = output_selector.set_value("로직 분석").run()
+
+    assert not app.exception
+    assert {key: app.selectbox(key=key).value for key in LOGIC_SELECTIONS} == LOGIC_SELECTIONS
+    assert [element.label for element in app.metric] == metric_labels
+
+
+@pytest.mark.parametrize(
+    ("error", "message"),
+    [
+        ("KeyError('RQ_REQB')", "'RQ_REQB'"),
+        ("RuntimeError('계산 입력을 만들지 못했습니다.')", "계산 입력을 만들지 못했습니다."),
+    ],
+)
+def test_calculation_block_failure_is_reported_on_the_page(error: str, message: str) -> None:
+    """계산 블록은 다른 페이지와 같은 예외 튜플로 받는다. 서비스 예외 문구는 그대로 보인다."""
+    script = TEST_SCRIPT.replace("RAISE_IN_CALCULATION = None", f"RAISE_IN_CALCULATION = {error}")
+    assert script != TEST_SCRIPT
+    app = AppTest.from_string(script, default_timeout=60).run()
+
+    assert not app.exception
+    assert message in [element.value for element in app.error]
 
 
 def test_saved_view_date_outside_the_current_period_is_clamped_with_a_notice() -> None:

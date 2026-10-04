@@ -39,6 +39,9 @@ PASTE_DIALOG = "display_order_paste"
 # 전체 교체 확인 체크박스의 자리. 적용에 성공하면 비워 다음 붙여넣기가 다시 확인을 거친다.
 CLIPBOARD_CONFIRM_KEY = "global_display_order_clipboard_confirm"
 DISPLAY_ORDER_EDITOR_KEY = "display_order_editor"
+# 저장 뒤 「화면 표시명」 경고의 자리. 저장 성공은 곧바로 `st.rerun()` 하므로 그 회차에
+# 그린 경고는 화면에 닿지 않는다. 성공 문구처럼 세션에 담았다가 다음 회차에 한 번 그린다.
+LABEL_WARNINGS_KEY = "display_order_label_warnings"
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -87,6 +90,7 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
             args=(PASTE_DIALOG,),
         )
     render_flash("display_order_flash")
+    _render_label_warnings()
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, display_order)
@@ -223,12 +227,8 @@ def _render_direct_editor(
         _save_global_display_order(repository, revised, source=source)
         # 표시명을 적으면 저장은 통과하고 정렬만 조용히 걸리지 않는다. 막지 않고 알린다.
         mistakes = display_label_mistakes(pd.DataFrame(edited), COLUMN_LABELS)
-        for typed, column in mistakes.items():
-            st.warning(
-                f"`{typed}` 은 화면 표시명입니다. 정렬은 원본 컬럼명을 봅니다 — "
-                f"`{column}` 을 뜻하신 것이라면 그렇게 적어야 걸립니다.",
-                icon=":material/help:",
-            )
+        if mistakes:
+            st.session_state[LABEL_WARNINGS_KEY] = mistakes
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:
@@ -237,6 +237,19 @@ def _render_direct_editor(
             "표시순서를 모든 시나리오의 공용 설정으로 저장했습니다.",
         )
         st.rerun()
+
+
+def _render_label_warnings() -> None:
+    """저장한 회차에 담아 둔 표시명 경고를 성공 문구 바로 아래에 한 번 그리고 비운다."""
+    mistakes = st.session_state.pop(LABEL_WARNINGS_KEY, None)
+    if not isinstance(mistakes, dict):
+        return
+    for typed, column in mistakes.items():
+        st.warning(
+            f"`{typed}` 은 화면 표시명입니다. 정렬은 원본 컬럼명을 봅니다 — "
+            f"`{column}` 을 뜻하신 것이라면 그렇게 적어야 걸립니다.",
+            icon=":material/help:",
+        )
 
 
 def _save_global_display_order(
