@@ -9,11 +9,15 @@
 
 여기서 고정하는 것은 셋이다 — 새 조합을 찾는가, 측정률 두 표를 **함께** 보는가,
 **이미 어긋나 있던 것은 건드리지 않는가.**
+
+끝의 묶음은 적용 경계의 검증 조합(`validate_upeh_edit`·`validate_required_edit`)이 위 판정을
+정해진 순서로 묶어 문구 그대로 하나의 오류로 내는지 본다.
 """
 
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from capa_simulation.services.reference_consistency import (
     added_performance_keys,
@@ -25,6 +29,8 @@ from capa_simulation.services.reference_consistency import (
     missing_ratio_rows,
     missing_required_rows,
     nonpositive_keys_in_use,
+    validate_required_edit,
+    validate_upeh_edit,
 )
 from capa_simulation.services.unit_capacity import PERFORMANCE_KEYS
 
@@ -403,3 +409,100 @@ def test_a_zero_in_a_cell_an_upeh_path_uses_is_reported() -> None:
     # 음수도 같다(붙여넣기는 편집기의 하한을 지나지 않는다).
     negative = _vital({(202608, "Process-A"): -1.0})
     assert not nonpositive_keys_in_use("RQ_VITAL", before, negative, "편중률", upeh).empty
+
+
+# ---------------------------- 적용 경계의 검증 조합(기준 정보 화면의 격자 적용·붙여넣기가 부른다)
+
+
+def test_upeh_edit_validation_raises_the_one_combined_message() -> None:
+    """측정률과 효율·여유율·일수 결손을 **한 오류문**으로 낸다 — 두 판정을 합친 문구 그대로다."""
+    before = _upeh([_row(202608)])
+    after = _upeh([_row(202608), _row(202609)])
+    scenario_tables = {
+        **_tables([_row(202608)], [_row(202608)]),
+        **_required_tables(
+            run_rate={202608: 0.9}, vital={202608: 1.0}, run_day={202608: 30.0, 202609: 30.0}
+        ),
+        "RQ_UPEH": before,
+    }
+    expected = describe_missing_path_rows(
+        missing_ratio_rows(
+            added_performance_keys(before, after),
+            {name: scenario_tables[name] for name in ("RQ_LOT_RATIO", "RQ_WF_RATIO")},
+        ),
+        missing_required_rows(before, after, scenario_tables),
+    )
+    assert "「효율」" in expected and "「Lot측정률」" in expected
+
+    with pytest.raises(ValueError) as raised:
+        validate_upeh_edit(before, after, scenario_tables)
+
+    assert str(raised.value) == expected
+
+
+def test_upeh_edit_validation_passes_a_path_whose_rows_are_all_present() -> None:
+    """측정률·효율·여유율·일수가 모두 있는 달을 채우는 것은 막지 않는다."""
+    before = _upeh([_row(202608)])
+    after = _upeh([_row(202608), _row(202609)])
+    both = [_row(202608), _row(202609)]
+    scenario_tables = {
+        **_tables(both, both),
+        **_required_tables(
+            run_rate={202608: 0.9, 202609: 0.9},
+            vital={202608: 1.0, 202609: 1.0},
+            run_day={202608: 30.0, 202609: 30.0},
+        ),
+    }
+
+    validate_upeh_edit(before, after, scenario_tables)
+
+
+def test_upeh_edit_validation_needs_every_table_it_checks() -> None:
+    """활성 시나리오에 검사할 표가 없으면 조용히 통과하지 않고 `KeyError` 로 멈춘다."""
+    before = _upeh([_row(202608)])
+
+    with pytest.raises(KeyError):
+        validate_upeh_edit(before, before.copy(), _tables([_row(202608)], [_row(202608)]))
+
+
+def test_required_edit_validation_joins_cleared_then_nonpositive() -> None:
+    """여유율의 쓰는 칸 하나를 비우고 하나를 0 으로 하면 두 문구를 그 순서로 한 오류문에 잇는다."""
+    before = _vital({(202608, "Process-A"): 1.0, (202609, "Process-A"): 1.0})
+    after = _vital({(202608, "Process-A"): 0.0})
+    upeh = _upeh([_row(202608), _row(202609)])
+    cleared = cleared_keys_in_use("RQ_VITAL", before, after, "편중률", upeh)
+    nonpositive = nonpositive_keys_in_use("RQ_VITAL", before, after, "편중률", upeh)
+    assert not cleared.empty and not nonpositive.empty
+    expected = " ".join(
+        [
+            describe_cleared_keys_in_use("여유율", "RQ_VITAL", cleared),
+            describe_nonpositive_keys_in_use("여유율", "RQ_VITAL", "편중률", nonpositive),
+        ]
+    )
+
+    with pytest.raises(ValueError) as raised:
+        validate_required_edit("RQ_VITAL", "여유율", before, after, "편중률", upeh)
+
+    assert str(raised.value) == expected
+
+
+def test_required_edit_validation_lets_a_zero_run_rate_through() -> None:
+    """효율 0 은 그 경로만 제외라 계산이 멈추지 않는다. 비우지 않았으면 막지 않는다."""
+    before = _run_rate({(202608, "Process-A"): 0.9})
+    after = _run_rate({(202608, "Process-A"): 0.0})
+    upeh = _upeh([_row(202608)])
+
+    validate_required_edit("RQ_RUN_RATE", "효율", before, after, "CAPA_RUN_RATE", upeh)
+
+
+def test_required_edit_validation_reports_only_the_cleared_cell_for_run_rate() -> None:
+    """효율에서 쓰는 칸을 비우면 비운 칸 문구 하나만 낸다(0 이하 검사는 여유율·일수뿐)."""
+    before = _run_rate({(202608, "Process-A"): 0.9})
+    after = before.head(0)
+    upeh = _upeh([_row(202608)])
+    cleared = cleared_keys_in_use("RQ_RUN_RATE", before, after, "CAPA_RUN_RATE", upeh)
+
+    with pytest.raises(ValueError) as raised:
+        validate_required_edit("RQ_RUN_RATE", "효율", before, after, "CAPA_RUN_RATE", upeh)
+
+    assert str(raised.value) == describe_cleared_keys_in_use("효율", "RQ_RUN_RATE", cleared)

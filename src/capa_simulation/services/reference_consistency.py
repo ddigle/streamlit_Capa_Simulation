@@ -29,6 +29,9 @@ reference_from_edit_table` 가 빈 칸을 `dropna` 로 버린다). 그래서 칸
 
 **측정률 두 표를 함께 본다.** Lot 만 채우면 바로 다음 적용에서 `RQ_WF_RATIO` 로 같은
 문구가 이어진다 — 한 번에 알려 주지 않으면 사용자가 같은 일을 두 번 겪는다.
+
+적용 경계가 부르는 것은 판정과 문구를 묶은 `validate_upeh_edit`·`validate_required_edit` 다.
+행 생성(`capacity_reference_editor`)은 부르는 쪽이 하고 결과 행만 넘긴다.
 """
 
 from __future__ import annotations
@@ -425,3 +428,74 @@ def describe_missing_path_rows(
         + " 그 탭에서 같은 행의 같은 달 칸에 먼저 0보다 큰 값을 넣고 「변경사항 적용」을 누른 뒤 "
         "UPEH 를 다시 적용하세요" + neutral_note
     )
+
+
+def validate_upeh_edit(
+    before_upeh: pd.DataFrame,
+    rows: pd.DataFrame,
+    scenario_tables: Mapping[str, pd.DataFrame],
+) -> None:
+    """UPEH 편집의 적용 행 `rows` 가 새로 만든 경로에 기다리는 행이 없으면 `ValueError` 를 낸다.
+
+    `before_upeh` 는 편집표를 만든 같은 기간의 시나리오 `RQ_UPEH`, `scenario_tables` 는
+    **적용 전 활성 시나리오**의 표들이다(측정률 두 표와 효율·여유율·일수를 꺼내 쓴다).
+
+    빈 월 칸을 채우는 것은 값 수정이 아니라 **경로를 하나 더 만드는 일**이다. 측정률 행이
+    없으면 계산은 1.0 으로 가정해 이어 가지만(40a09b8), 새 경로는 측정률을 먼저 갖추게 한다
+    (정책 — 2026-09-23 사내에서 겪은 일로 들어온 검사). **이번 편집이 새로 만든 조합만** 본다
+    — 이미 어긋나 있던 것까지 막으면 상관없는 칸을 고치려던 사람이 자기가 만들지 않은 문제에
+    걸린다. 비교 기준은 **적용 전 활성 시나리오**다. 저장 리비전과 맞대면 이 세션에서 먼저
+    적용한 STEP 추가·측정률 입력이 안 보여, STEP 을 더한 뒤에는 UPEH 어느 칸을 고쳐도
+    막혔고 안내대로 측정률을 채워도 저장 전에는 풀리지 않았다(2026-09-29).
+
+    효율·여유율·일수도 본다. 측정률(없으면 1.0 가정)만 보고 이 셋을 보지 않아, 효율 행이 없는
+    달을 채우면 적용은 성공하고 계산 전체가 「RQ_RUN_RATE 연결값이 없는 …」로 멈췄다
+    (2026-09-29 2차 리뷰). 측정률 결손과 **한 오류문**으로 알린다 — 따로 알리면 하나를 채운 뒤
+    다음 적용에서 다른 표로 같은 일을 또 겪는다.
+    """
+    missing_ratio = missing_ratio_rows(
+        added_performance_keys(before_upeh, rows),
+        {name: scenario_tables[name] for name in RATIO_TABLES},
+    )
+    missing_required = missing_required_rows(
+        before_upeh,
+        rows,
+        {name: scenario_tables[name] for name in REQUIRED_TABLE_KEYS},
+    )
+    if missing_ratio or missing_required:
+        raise ValueError(describe_missing_path_rows(missing_ratio, missing_required))
+
+
+def validate_required_edit(
+    table_name: str,
+    label: str,
+    source: pd.DataFrame,
+    rows: pd.DataFrame,
+    value_column: str,
+    upeh: pd.DataFrame,
+) -> None:
+    """효율·여유율·일수의 적용 행 `rows` 가 **UPEH 경로가 쓰는 칸**을 깨면 `ValueError` 를 낸다.
+
+    세 표에는 측정률의 1.0 같은 중립값이 없다. 경로가 쓰는 (키, 월) 칸을 비우면 적용은 성공으로
+    알리고 행이 지워지는데, 그 뒤 계산 전체가 「… 연결값이 없는 대당 Capa 기준이 있습니다」로
+    멈췄다(2026-09-29 버그 보고 횡전개). 쓰는 경로가 없는 칸을 지우는 것은 그대로 둔다.
+    `source` 는 편집표를 만든 같은 기간의 원본, `upeh` 는 적용 전 활성 시나리오의 `RQ_UPEH` 다.
+
+    여유율·일수(`POSITIVE_REQUIRED_COLUMNS`)는 0 이하도 계산 전체를 「… 0보다 커야 합니다」로
+    멈춘다. 편집기는 0 을 받아(`min_value` 0) 비우기만 막던 동안 쓰는 칸의 0 이 적용·저장됐다
+    (2026-09-29 2차 리뷰). 쓰는 경로가 없는 칸의 0 은 계산이 멈추지 않으므로 둔다 — 막는 범위를
+    계산과 같게 하려고 편집기의 하한은 올리지 않는다. 효율 0 은 그 경로만 제외라 여기 없다.
+    두 문제가 함께 있으면 비운 칸 → 0 이하 칸 순서로 한 오류문에 잇는다.
+    """
+    problems: list[str] = []
+    cleared = cleared_keys_in_use(table_name, source, rows, value_column, upeh)
+    if not cleared.empty:
+        problems.append(describe_cleared_keys_in_use(label, table_name, cleared))
+    if table_name in POSITIVE_REQUIRED_COLUMNS:
+        nonpositive = nonpositive_keys_in_use(table_name, source, rows, value_column, upeh)
+        if not nonpositive.empty:
+            problems.append(
+                describe_nonpositive_keys_in_use(label, table_name, value_column, nonpositive)
+            )
+    if problems:
+        raise ValueError(" ".join(problems))

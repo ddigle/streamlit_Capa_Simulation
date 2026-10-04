@@ -476,7 +476,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`reference_consistency.cleared_keys_in_use`) — 막지 않으면 적용은 성공으로 알리고 계산 전체가
     「연결값이 없는 대당 Capa 기준」으로 멈췄다. 붙여넣기 완료 문구도 표마다 그 뜻대로 말한다
     (`_Editor.removed_notice`·`blank_is_zero`).
-  - UPEH 적용 검사(`_upeh_rows`)는 **적용 전 활성 시나리오**와 비교한다. 저장 리비전과 비교하면 이
+  - UPEH 적용 검사(`validate_upeh_edit`)는 **적용 전 활성 시나리오**와 비교한다. 저장 리비전과 비교하면 이
     세션의 STEP 추가·측정률 입력을 못 봐 저장 전까지 UPEH 적용이 모두 막혔다. UPEH 왕복
     (`performance_from_edit_table(..., source=)`)은 고친 칸만 원본 위에 덮는다 — 안 고친 쪽 컬럼
     (Main 의 ST·MI 의 UPEH), 값이 빈 실재 행(BOX 등), `Area_Name` 원본 표기(`MAIN`)를 지킨다.
@@ -514,7 +514,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `components/month_editor.py` 항목에 있다. 설명(UPEH 의 MI=ST 규칙, STEP 수 정의, 필터·
     붙여넣기 규칙)은 Guide(`guides/reference_data.md`)다(2026-09-29 사용자 결정).
   - 격자 적용과 팝업 붙여넣기는 **같은 적용 규칙**(`_Editor.to_rows` → `_apply_edit`)을 탄다.
-    UPEH 는 이번 편집이 새로 만든 경로에 측정률 행이 없으면 막는다(`_upeh_rows`).
+    UPEH 는 이번 편집이 새로 만든 경로에 측정률 행이 없으면 막는다(`validate_upeh_edit`).
+    효율·여유율·일수의 쓰는 칸 비움·0 이하 검사는 `validate_required_edit` 다. 두 검증 조합은
+    `services/reference_consistency.py` 에 두고, 페이지(`_upeh_rows`·`_required_rows`)는 편집표를
+    행으로 바꾼 뒤 그 함수를 부르기만 한다 — 행 생성(`capacity_reference_editor`)은 페이지에 남겨
+    `reference_consistency` 가 편집기 모듈을 import 하지 않게 한다.
   - 탭 라벨은 아이콘을 단 `TAB_NAMES`·`EQUIPMENT_TAB_NAMES` 이고, 적용하지 않은 편집이 남은
     탭(설비대수는 안쪽 탭도)에 주황 점을 찍는다 — 원본 토큰으로 편집표를 비운 **뒤**에 정한다.
   - 대형 월별 편집기는 상태 추적 탭으로 구성해 선택된 탭만 렌더링하며, 탭 전환 시 rerun한다.
@@ -1418,6 +1422,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   오류가 이어진다. **이번 편집이 새로 만든 조합만 본다**(이미 어긋나 있던 것까지 막으면
   상관없는 칸을 고치려던 사람이 되돌릴 길까지 잃는다). 줄이는 규칙은
   `unit_capacity._join_reference` 와 같아야 한다 — 다르면 없는 결손을 만든다.
+  적용 경계의 검증 조합 `validate_upeh_edit`·`validate_required_edit` 도 여기 있다 — 판정과
+  문구를 정해진 순서로 묶어 `ValueError` 하나로 낸다(기준 정보 화면의 격자 적용·붙여넣기가 부른다).
 - `reference_transformer.py`: XLSB의 `Q_Core_Data`와 15개 Core 파생 Power Query를
   pandas로 대체한다. 수동 입력 `RQ_DISPLAY_ORDER` 는 `display_order_editor` 의
   `transform_display_order` 로 넘긴다. Core 파생 RQ의 동일 업무 키 값 충돌은 **값이 있는

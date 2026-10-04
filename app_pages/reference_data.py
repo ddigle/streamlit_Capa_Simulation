@@ -69,17 +69,8 @@ from capa_simulation.services.equipment_count import (
     equipment_count_to_edit_table,
 )
 from capa_simulation.services.reference_consistency import (
-    POSITIVE_REQUIRED_COLUMNS,
-    RATIO_TABLES,
-    REQUIRED_TABLE_KEYS,
-    added_performance_keys,
-    cleared_keys_in_use,
-    describe_cleared_keys_in_use,
-    describe_missing_path_rows,
-    describe_nonpositive_keys_in_use,
-    missing_ratio_rows,
-    missing_required_rows,
-    nonpositive_keys_in_use,
+    validate_required_edit,
+    validate_upeh_edit,
 )
 from capa_simulation.services.reference_csv import count_removed_values
 from capa_simulation.services.route_step_editor import (
@@ -812,32 +803,11 @@ def _removed_values(editor: _Editor, imported_table: pd.DataFrame | None) -> int
 
 
 def _upeh_rows(table: pd.DataFrame) -> pd.DataFrame:
+    """UPEH 의 적용 행. 새로 만든 경로의 결손 검사는 `validate_upeh_edit` 가 한다."""
     # 원본(편집표를 만든 같은 기간의 시나리오 `RQ_UPEH`)을 넘겨 **고치지 않은 것은 원본 그대로**
     # 돌려받는다 — Main 행의 ST·MI 행의 UPEH, 값이 빈 실재 행, `Area_Name` 표기(2026-09-29).
     rows = performance_from_edit_table(table, filtered_upeh)
-    # 빈 월 칸을 채우는 것은 값 수정이 아니라 **경로를 하나 더 만드는 일**이다. 측정률 행이
-    # 없으면 계산은 1.0 으로 가정해 이어 가지만(40a09b8), 새 경로는 측정률을 먼저 갖추게 한다
-    # (정책 — 2026-09-23 사내에서 겪은 일로 들어온 검사). **이번 편집이 새로 만든 조합만** 본다
-    # — 이미 어긋나 있던 것까지 막으면 상관없는 칸을 고치려던 사람이 자기가 만들지 않은 문제에
-    # 걸린다. 비교 기준은 **적용 전 활성 시나리오**다. 저장 리비전과 맞대면 이 세션에서 먼저
-    # 적용한 STEP 추가·측정률 입력이 안 보여, STEP 을 더한 뒤에는 UPEH 어느 칸을 고쳐도
-    # 막혔고 안내대로 측정률을 채워도 저장 전에는 풀리지 않았다(2026-09-29).
-    scenario_tables = active_scenario["tables"]
-    missing_ratio = missing_ratio_rows(
-        added_performance_keys(filtered_upeh, rows),
-        {name: scenario_tables[name] for name in RATIO_TABLES},
-    )
-    # 효율·여유율·일수도 본다. 측정률(없으면 1.0 가정)만 보고 이 셋을 보지 않아, 효율 행이 없는
-    # 달을 채우면 적용은 성공하고 계산 전체가 「RQ_RUN_RATE 연결값이 없는 …」로 멈췄다
-    # (2026-09-29 2차 리뷰). 측정률 결손과 **한 오류문**으로 알린다 — 따로 알리면 하나를 채운 뒤
-    # 다음 적용에서 다른 표로 같은 일을 또 겪는다.
-    missing_required = missing_required_rows(
-        filtered_upeh,
-        rows,
-        {name: scenario_tables[name] for name in REQUIRED_TABLE_KEYS},
-    )
-    if missing_ratio or missing_required:
-        raise ValueError(describe_missing_path_rows(missing_ratio, missing_required))
+    validate_upeh_edit(filtered_upeh, rows, active_scenario["tables"])
     return rows
 
 
@@ -848,34 +818,16 @@ def _required_rows(
     value_column: str,
     source: pd.DataFrame,
 ) -> Callable[[pd.DataFrame], pd.DataFrame]:
-    """효율·여유율·일수의 적용 행. **UPEH 경로가 쓰는 칸을 비우면 막는다.**
+    """효율·여유율·일수의 적용 행. **UPEH 경로가 쓰는 칸을 비우거나 0 이하로 하면 막는다.**
 
-    세 표에는 측정률의 1.0 같은 중립값이 없다. 경로가 쓰는 (키, 월) 칸을 비우면 적용은 성공으로
-    알리고 행이 지워지는데, 그 뒤 계산 전체가 「… 연결값이 없는 대당 Capa 기준이 있습니다」로
-    멈췄다(2026-09-29 버그 보고 횡전개). 쓰는 경로가 없는 칸을 지우는 것은 그대로 둔다.
-    여유율·일수는 쓰는 칸의 **0 이하 값**도 같은 식으로 막는다(아래). `source` 는 편집표를 만든
-    같은 기간의 원본이다. 격자 적용과 붙여넣기가 모두 이 함수를 지난다.
+    막는 규칙은 `validate_required_edit` 에 있다. `source` 는 편집표를 만든 같은 기간의 원본이다.
+    격자 적용과 붙여넣기가 모두 이 함수를 지난다.
     """
 
     def to_rows(table: pd.DataFrame) -> pd.DataFrame:
         rows = reference_from_edit_table(table, dimensions, value_column, f"{label} 편집값")
         upeh = active_scenario["tables"]["RQ_UPEH"]
-        problems: list[str] = []
-        cleared = cleared_keys_in_use(table_name, source, rows, value_column, upeh)
-        if not cleared.empty:
-            problems.append(describe_cleared_keys_in_use(label, table_name, cleared))
-        # 여유율·일수는 0 이하도 계산 전체를 「… 0보다 커야 합니다」로 멈춘다. 편집기는 0 을
-        # 받아(`min_value` 0) 비우기만 막던 동안 쓰는 칸의 0 이 적용·저장됐다(2026-09-29 2차
-        # 리뷰). 쓰는 경로가 없는 칸의 0 은 계산이 멈추지 않으므로 둔다 — 막는 범위를 계산과
-        # 같게 하려고 편집기의 하한은 올리지 않는다. 효율 0 은 그 경로만 제외라 여기 없다.
-        if table_name in POSITIVE_REQUIRED_COLUMNS:
-            nonpositive = nonpositive_keys_in_use(table_name, source, rows, value_column, upeh)
-            if not nonpositive.empty:
-                problems.append(
-                    describe_nonpositive_keys_in_use(label, table_name, value_column, nonpositive)
-                )
-        if problems:
-            raise ValueError(" ".join(problems))
+        validate_required_edit(table_name, label, source, rows, value_column, upeh)
         return rows
 
     return to_rows
