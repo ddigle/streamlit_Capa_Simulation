@@ -166,6 +166,52 @@ def test_prepared_display_order_is_reused_across_helpers(
     assert columns == ["제품정보", "값"]
 
 
+def test_derived_rules_are_built_once_per_prepared_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`Top_e` 파생은 준비할 때 한 번이다. 도우미를 여러 번 불러도 다시 파생하지 않는다.
+
+    `rules` 는 검증한 입력 그대로 두고, 정렬 도우미는 파생이 더해진 `derived_rules` 를 읽는다.
+    """
+    from capa_simulation.services import display_order
+
+    derive_calls = 0
+    original_derive = display_order._with_edp_top_rule
+
+    def counted_derive(rules: pd.DataFrame) -> pd.DataFrame:
+        nonlocal derive_calls
+        derive_calls += 1
+        return original_derive(rules)
+
+    monkeypatch.setattr(display_order, "_with_edp_top_rule", counted_derive)
+    rules = pd.DataFrame(
+        {
+            "페이지 구분": ["부하량"] * 2,
+            "탭 구분": ["환산"] * 2,
+            "정렬우선순위": [1] * 2,
+            "분류컬럼": ["WF 구분"] * 2,
+            "정렬방식": ["사용자지정"] * 2,
+            "분류값": ["Top", "Core"],
+            "값표시순서": [1, 2],
+            "활성여부": ["Y"] * 2,
+        }
+    )
+    prepared = prepare_display_order(rules)
+    assert prepared is not None
+    data = pd.DataFrame({"WF 구분": ["Core", "Top_e", "Top"], "값": [1, 2, 3]})
+
+    first = apply_display_order(data, prepared, "부하량", "환산")
+    second = apply_display_order(data, prepared, "부하량", "환산")
+    columns = classification_columns_in_display_order(["값", "WF 구분"], prepared, "부하량", "환산")
+
+    assert derive_calls == 1
+    assert first["WF 구분"].tolist() == ["Top", "Top_e", "Core"]
+    assert second["WF 구분"].tolist() == ["Top", "Top_e", "Core"]
+    assert columns == ["WF 구분", "값"]
+    assert "Top_e" not in prepared.rules["분류값"].tolist()
+    assert "Top_e" in prepared.derived_rules["분류값"].tolist()
+
+
 def test_a_display_label_in_the_column_field_is_flagged() -> None:
     """`거래선` 은 화면 표시명이다. 그대로 적으면 저장은 통과하고 정렬만 조용히 안 걸린다.
 

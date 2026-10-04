@@ -220,17 +220,26 @@ def exclude_er_required_equipment(data: pd.DataFrame) -> pd.DataFrame:
     return data.loc[production_mask].reset_index(drop=True)
 
 
-def prepare_standard_target_required_equipment(data: pd.DataFrame) -> pd.DataFrame:
-    """Apply every demand exclusion used only by standard target Capa."""
+def split_standard_target_required_equipment(data: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """표준 목표 전용 제외를 적용한 소요대수 상세와 공정 예외로 뺀 행 수를 함께 돌려준다.
+
+    ER 제외와 예외 마스크는 소요대수 상세 전체를 훑는다. 화면이 남는 표와 제외 건수를 둘 다
+    쓰므로 한 번 만든 마스크로 둘을 낸다. 아래 두 함수는 한쪽만 필요한 호출부용 래퍼다.
+    """
     production = exclude_er_required_equipment(data)
     exception_mask = _standard_target_exception_mask(production)
-    return production.loc[~exception_mask].reset_index(drop=True)
+    prepared = production.loc[~exception_mask].reset_index(drop=True)
+    return prepared, int(exception_mask.sum())
+
+
+def prepare_standard_target_required_equipment(data: pd.DataFrame) -> pd.DataFrame:
+    """Apply every demand exclusion used only by standard target Capa."""
+    return split_standard_target_required_equipment(data)[0]
 
 
 def standard_target_exception_row_count(data: pd.DataFrame) -> int:
     """Count detailed rows omitted by process-specific standard target rules."""
-    production = exclude_er_required_equipment(data)
-    return int(_standard_target_exception_mask(production).sum())
+    return split_standard_target_required_equipment(data)[1]
 
 
 def _standard_target_exception_mask(data: pd.DataFrame) -> pd.Series:

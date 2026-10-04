@@ -29,7 +29,7 @@ import streamlit as st
 # 테스트가 스크롤바를 갈아끼울 수 있도록 이름이 아니라 모듈을 잡는다. 이름을 직접
 # import 하면 여기서 잡은 바인딩이 교체를 무시한다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
-from capa_simulation.components.plotly_layout import static_chart_config
+from capa_simulation.components.plotly_layout import append_layout_items, static_chart_config
 from capa_simulation.components.process_labels import apply_process_label
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
@@ -213,6 +213,34 @@ def header_boundary_ratio(row_count: int) -> float:
     return 1 - HEADER_HEIGHT_PX / table_height_px(row_count)
 
 
+def _grid_line(
+    x0: float,
+    x1: float,
+    y0: float,
+    y1: float,
+    *,
+    color: str,
+    width: float,
+) -> dict[str, Any]:
+    """격자선 하나의 shape dict. 아래 네 도우미가 같은 모양을 쓴다."""
+    return {
+        "type": "line",
+        "x0": x0,
+        "x1": x1,
+        "y0": y0,
+        "y1": y1,
+        "xref": "paper",
+        "yref": "paper",
+        "line": {"color": color, "width": width},
+        "layer": "above",
+    }
+
+
+# 아래 네 도우미는 선을 Figure 에 바로 넣지 않고 `append_layout_items` 누적함에 모으기만
+# 한다. `add_shape` 는 부를 때마다 지금까지 쌓인 shape 전부를 다시 검증하므로, 열이 많은
+# 월 영역(표준 목표의 Weeknum 축)에서는 선 수의 제곱으로 불어난다. 반영은 표 모듈의
+# `_add_table_grid` 끝에서 부르는 `flush_layout_items` 가 한 번에 한다 — 이 도우미를 새로
+# 부르는 곳도 반드시 flush 해야 한다. 잊으면 격자선이 통째로 빠진다.
 def add_outer_border(figure: go.Figure, *, include_left: bool) -> None:
     """표 바깥 테두리를 그린다. 좌변은 분류 영역 Figure 에만 넣는다.
 
@@ -222,32 +250,36 @@ def add_outer_border(figure: go.Figure, *, include_left: bool) -> None:
     edges = [(0, 1, 1, 1), (1, 1, 0, 1), (0, 1, 0, 0)]
     if include_left:
         edges.append((0, 0, 0, 1))
-    for x0, x1, y0, y1 in edges:
-        figure.add_shape(
-            type="line",
-            x0=x0,
-            x1=x1,
-            y0=y0,
-            y1=y1,
-            xref="paper",
-            yref="paper",
-            line={"color": tokens.BORDER_STRONG, "width": OUTER_BORDER_WIDTH_PX * 2},
-            layer="above",
-        )
+    append_layout_items(
+        figure,
+        shapes=[
+            _grid_line(
+                x0,
+                x1,
+                y0,
+                y1,
+                color=tokens.BORDER_STRONG,
+                width=OUTER_BORDER_WIDTH_PX * 2,
+            )
+            for x0, x1, y0, y1 in edges
+        ],
+    )
 
 
 def add_header_rule(figure: go.Figure, *, boundary_y: float) -> None:
     """헤더와 본문을 가르는 가로선을 긋는다."""
-    figure.add_shape(
-        type="line",
-        x0=0,
-        x1=1,
-        y0=boundary_y,
-        y1=boundary_y,
-        xref="paper",
-        yref="paper",
-        line={"color": tokens.BORDER_STRONG, "width": OUTER_BORDER_WIDTH_PX},
-        layer="above",
+    append_layout_items(
+        figure,
+        shapes=[
+            _grid_line(
+                0,
+                1,
+                boundary_y,
+                boundary_y,
+                color=tokens.BORDER_STRONG,
+                width=OUTER_BORDER_WIDTH_PX,
+            )
+        ],
     )
 
 
@@ -257,44 +289,44 @@ def add_classification_boundaries(
 ) -> None:
     """분류 컬럼 사이마다 세로 격자선을 긋는다."""
     total_width = sum(classification_widths)
+    shapes: list[dict[str, Any]] = []
     for column_index in range(1, len(classification_widths)):
         boundary_x = sum(classification_widths[:column_index]) / total_width
-        figure.add_shape(
-            type="line",
-            x0=boundary_x,
-            x1=boundary_x,
-            y0=0,
-            y1=1,
-            xref="paper",
-            yref="paper",
-            line={"color": tokens.BORDER, "width": GRID_LINE_WIDTH_PX},
-            layer="above",
+        shapes.append(
+            _grid_line(
+                boundary_x,
+                boundary_x,
+                0,
+                1,
+                color=tokens.BORDER,
+                width=GRID_LINE_WIDTH_PX,
+            )
         )
+    append_layout_items(figure, shapes=shapes)
 
 
 def add_month_boundaries(figure: go.Figure, month_columns: Sequence[str]) -> None:
     """월 컬럼 사이에 세로 격자선을 긋고 분기가 바뀌는 자리는 굵게 강조한다."""
     quarter_keys = [quarter_key(month) for month in month_columns]
+    shapes: list[dict[str, Any]] = []
     for month_index in range(1, len(month_columns)):
         is_quarter_boundary = (
             quarter_keys[month_index] is not None
             and quarter_keys[month_index - 1] is not None
             and quarter_keys[month_index] != quarter_keys[month_index - 1]
         )
-        figure.add_shape(
-            type="line",
-            x0=month_index / len(month_columns),
-            x1=month_index / len(month_columns),
-            y0=0,
-            y1=1,
-            xref="paper",
-            yref="paper",
-            line={
-                "color": tokens.BORDER_STRONG if is_quarter_boundary else tokens.BORDER,
-                "width": OUTER_BORDER_WIDTH_PX if is_quarter_boundary else GRID_LINE_WIDTH_PX,
-            },
-            layer="above",
+        boundary_x = month_index / len(month_columns)
+        shapes.append(
+            _grid_line(
+                boundary_x,
+                boundary_x,
+                0,
+                1,
+                color=tokens.BORDER_STRONG if is_quarter_boundary else tokens.BORDER,
+                width=OUTER_BORDER_WIDTH_PX if is_quarter_boundary else GRID_LINE_WIDTH_PX,
+            )
         )
+    append_layout_items(figure, shapes=shapes)
 
 
 def build_split_table_figures(

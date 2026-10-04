@@ -29,9 +29,15 @@ ROUTE_SEQUENCE_COLUMNS = ("STEP_SEQ", "MCP_SEQ")
 
 @dataclass(frozen=True)
 class PreparedDisplayOrder:
-    """Validated display-order rules that can be reused within one rerun."""
+    """Validated display-order rules that can be reused within one rerun.
+
+    `rules` 는 검증한 입력 그대로다. `derived_rules` 는 거기에 앱이 파생하는 규칙
+    (`_with_edp_top_rule` 의 `Top_e`)을 더한 것으로, 정렬 도우미가 실제로 읽는 쪽이다.
+    한 회차에 표마다 도우미를 여러 번 부르므로 파생도 준비할 때 한 번만 한다.
+    """
 
     rules: pd.DataFrame
+    derived_rules: pd.DataFrame
 
 
 DisplayOrderInput = pd.DataFrame | PreparedDisplayOrder | None
@@ -89,7 +95,8 @@ def prepare_display_order(display_order: DisplayOrderInput) -> PreparedDisplayOr
         return None
     if isinstance(display_order, PreparedDisplayOrder):
         return display_order
-    return PreparedDisplayOrder(_prepare_display_order(display_order))
+    rules = _prepare_display_order(display_order)
+    return PreparedDisplayOrder(rules=rules, derived_rules=_with_edp_top_rule(rules))
 
 
 def _with_edp_top_rule(rules: pd.DataFrame) -> pd.DataFrame:
@@ -151,7 +158,7 @@ def _with_edp_top_rule(rules: pd.DataFrame) -> pd.DataFrame:
 
 def _prepared_rules(display_order: DisplayOrderInput) -> pd.DataFrame | None:
     prepared = prepare_display_order(display_order)
-    return None if prepared is None else _with_edp_top_rule(prepared.rules)
+    return None if prepared is None else prepared.derived_rules
 
 
 def apply_display_order(

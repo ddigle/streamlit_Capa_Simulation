@@ -79,8 +79,7 @@ from capa_simulation.services.standard_target_capacity import (
     PKG_EQUIVALENT_COLUMN,
     STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES,
     exclude_er_required_equipment,
-    prepare_standard_target_required_equipment,
-    standard_target_exception_row_count,
+    split_standard_target_required_equipment,
     weekly_standard_target_to_wide,
 )
 from capa_simulation.services.standard_target_logic import (
@@ -615,8 +614,9 @@ try:
         scenario_tables=active_scenario["tables"],
         reference_tables=reference_tables,
     )
-    standard_target_exception_rows = standard_target_exception_row_count(required_equipment)
-    required_equipment = prepare_standard_target_required_equipment(required_equipment)
+    required_equipment, standard_target_exception_rows = split_standard_target_required_equipment(
+        required_equipment
+    )
     production_reqb = exclude_er_required_equipment(active_scenario["tables"]["RQ_REQB"])
 except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))

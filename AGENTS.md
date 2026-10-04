@@ -1309,7 +1309,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   공정별 대당 Capa를 만들며 기존 부하량 가중평균 조회 함수도 호환용으로 유지
 - `standard_target_capacity.py`: ER 제외 월간 공정별 대당 Capa의 일 환산, 주차별 일 표준
   가능량과 PKG 기준 역산(`add_pkg_equivalent_standard_target`). 주차 캘린더는
-  `iso_week_calendar.py`, 수동 가용대수 표 계약은 `weekly_availability_input.py` 를 쓴다
+  `iso_week_calendar.py`, 수동 가용대수 표 계약은 `weekly_availability_input.py` 를 쓴다.
+  표준 목표 전용 제외(ER·`Pre B/D` DUMMY)는 `split_standard_target_required_equipment` 가
+  남는 표와 제외 건수를 한 번에 낸다. 둘 다 쓰는 화면은 이것을 부르고,
+  `prepare_standard_target_required_equipment`·`standard_target_exception_row_count` 는 한쪽만
+  필요한 호출부용 래퍼다
 - `route_step_editor.py`: MCP·STEP 고유 조합 수와 네 경로 테이블의 일괄 복제·삭제
 - `process_rename.py`: 공용 공정 표시명의 값 정규화(앞뒤 공백·U+00A0), 1:1 검증과
   CSV·붙여넣기 직렬화. **치환은 여기 없다** — 표시명을 실제로 갈아 끼우는 헬퍼는
@@ -1372,7 +1376,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `LEGACY_SCOPE_RENAMES` 는 `0027_display_order_scope_rename.sql`·
     `config/bootstrap_display_order.json` 과 **같은 대응**이어야 한다. 셋이 갈라지면 저장된
     규칙이 갈 곳을 잃는다. `tests/test_display_order_scopes.py` 가 셋을 함께 본다.
-- `display_order.py`: `RQ_DISPLAY_ORDER` 기반 동적 행 정렬
+- `display_order.py`: `RQ_DISPLAY_ORDER` 기반 동적 행 정렬. `prepare_display_order` 가 한
+  회차에 한 번 검증해 `PreparedDisplayOrder` 를 만든다 — `rules` 는 검증한 입력 그대로,
+  `derived_rules` 는 앱 파생 규칙(`Top_e`)을 더한 것이고 정렬 도우미는 `derived_rules` 를 읽는다
 - `month_filter.py`: YYYYMM 검증과 조회기간 필터. 원천·SQL 적재·계산 계층의 월 정규화가
   같은 달력 검증을 공유한다(정수, 연도 1~9999, 월 1~12). 조회 UI의 2025~2030 범위와는
   별개이며, 정수 변환 전에 검사해 잘못된 값이나 넘치는 수가 저장되지 않게 한다.
@@ -1897,8 +1903,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     값을 본다. 두 층에서 따로 바꾸면 조인 한쪽만 바뀌어 수율·Chip 이 조용히 안 붙는다.
   - 입력은 그대로 받는다. Capa 기준정보 DB·실적 DB 어디에도 `Top_e` 는 없고
     `raw_data.core_data` 도 원천 표기 그대로다. 표시순서 규칙도 입력에는 Top 뿐이라
-    `display_order._with_edp_top_rule` 이 적용 시점에 `Top_e` 규칙을 파생한다 — 없으면
-    화면 맨 뒤로 조용히 밀린다.
+    `display_order._with_edp_top_rule` 이 `Top_e` 규칙을 파생한다 — 없으면 화면 맨 뒤로
+    조용히 밀린다. 파생은 `prepare_display_order` 가 규칙을 준비할 때 한 번 해
+    `PreparedDisplayOrder.derived_rules` 에 두고, 정렬 도우미는 그것을 읽는다.
   - **원천 `WF 구분` 표기는 대문자 `TOP` 이다**(2026-09-18 사용자 확인). 이 파일과 문서의
     상수는 읽기 좋은 `Top` 으로 적혀 있고, 둘을 글자 그대로 맞추던 동안 `apply_edp_wf_division`
     은 **운영 데이터에서 한 번도 동작하지 않았다.** 로컬 합성 표본만 `Top` 이라 검사도
@@ -1950,6 +1957,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 두 월별 표가 공유하는 상수·텍스트 폭 계산과 고정 분류 + 스크롤 월 껍데기. 분류 컬럼
     폭(`classification_widths`)과 `go.Table` 두 벌 + 공통 layout 조립
     (`build_split_table_figures`)도 여기 있다. 행 모델과 면색 규칙만 표마다 다르다.
+  - 격자 도우미 넷(`add_outer_border`·`add_header_rule`·`add_classification_boundaries`·
+    `add_month_boundaries`)은 `append_layout_items` 에 **모으기만** 한다. 반영은 표 모듈의
+    `_add_table_grid` 끝 `flush_layout_items` 한 번이다. 도우미가 `add_shape` 로 바로 넣으면
+    열이 많은 표준 목표 월 영역에서 재검증이 선 수의 제곱으로 불어난다. 도우미를 새로 부르는
+    곳도 flush 해야 한다 — `tests/test_monthly_table_grid.py` 가 이 계약을 본다.
 - `src/capa_simulation/components/scroll_shell.py`
   - 가로 스크롤 상자와 그 안의 고정 폭 캔버스. 월별 표·HOME·재공 현황이 함께 쓴다.
     컨테이너 key 가 `.st-key-<key>` 클래스가 되므로 이름을 바꾸면 CSS 가 끊어진다.

@@ -226,8 +226,9 @@ def _add_table_grid(
     add_month_boundaries(month_figure, month_columns)
 
     # `add_shape` 는 부를 때마다 지금까지 쌓인 shape 전부를 다시 검증한다. 행마다 부르면
-    # 행 수 제곱으로 늘어 STEP 별 대당 Capa(1,140행)는 300초 안에 끝나지 않았다. 행 루프는
-    # dict 를 모아 두었다가 한 번에 주입한다. 순서는 그대로다(테두리·머리선·경계 → 행 경계).
+    # 행 수 제곱으로 늘어 STEP 별 대당 Capa(1,140행)는 300초 안에 끝나지 않는다. 그래서 위의
+    # 격자 도우미와 아래 행 루프가 모두 dict 를 누적함에 모으고 끝에서 한 번에 주입한다.
+    # 순서는 그대로다(테두리·머리선·분류·월 경계 → 행 경계).
     def _rule(x0: float, y: float, width: float) -> dict[str, Any]:
         return {
             "type": "line",

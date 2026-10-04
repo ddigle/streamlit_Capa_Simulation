@@ -10,6 +10,9 @@ from capa_simulation.services.standard_target_capacity import (
     PKG_EQUIVALENT_COLUMN,
     add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
+    prepare_standard_target_required_equipment,
+    split_standard_target_required_equipment,
+    standard_target_exception_row_count,
     weekly_standard_target_to_wide,
 )
 from capa_simulation.services.standard_target_logic import (
@@ -454,6 +457,46 @@ def test_pre_bd_standard_target_excludes_dummy_from_product_mix() -> None:
     assert result.loc[0, "일 표준 가능량"] == pytest.approx(20.0)
     assert target.loc[0, "일 표준 가능량"] == pytest.approx(20.0)
     assert contributions["WF 구분"].tolist() == ["Core"]
+
+
+def test_split_standard_target_demand_matches_the_two_single_purpose_helpers() -> None:
+    """남는 표와 제외 건수를 한 번에 내는 함수가 두 래퍼와 같은 값을 낸다.
+
+    ER 행은 제외 건수에 세지 않고(공정 예외가 아니다), `Pre B/D` 의 DUMMY 만 센다.
+    """
+    base = {
+        "생산계획년월": 202608,
+        "소요기준": "CHIP",
+        "제품정보": "Product-A",
+        "Stack": "12H",
+        "Capa Code": "C1",
+        "Customer": "Customer-A",
+        "CS": "MP",
+        "부하량": 100.0,
+        "소요대수": 1.0,
+    }
+    required_equipment = pd.DataFrame(
+        [
+            {**base, "공정": "Pre B/D", "양산구분": "양산", "WF 구분": "Core"},
+            {**base, "공정": "Pre B/D", "양산구분": "양산", "WF 구분": " dummy "},
+            {**base, "공정": "Pre B/D", "양산구분": " er ", "WF 구분": "DUMMY"},
+            {**base, "공정": "Process-A", "양산구분": "양산", "WF 구분": "DUMMY"},
+            {**base, "공정": "Process-A", "양산구분": "ER", "WF 구분": "Core"},
+        ]
+    )
+
+    prepared, exception_rows = split_standard_target_required_equipment(required_equipment)
+
+    assert exception_rows == 1
+    assert exception_rows == standard_target_exception_row_count(required_equipment)
+    pd.testing.assert_frame_equal(
+        prepared, prepare_standard_target_required_equipment(required_equipment)
+    )
+    assert list(zip(prepared["공정"], prepared["WF 구분"], strict=True)) == [
+        ("Pre B/D", "Core"),
+        ("Process-A", "DUMMY"),
+    ]
+    assert prepared.index.tolist() == [0, 1]
 
 
 def test_availability_rejects_duplicate_process_week() -> None:

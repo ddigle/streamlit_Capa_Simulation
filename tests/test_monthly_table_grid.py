@@ -11,6 +11,7 @@ from capa_simulation.components.monthly_table_base import (
     add_month_boundaries,
     add_outer_border,
 )
+from capa_simulation.components.plotly_layout import flush_layout_items
 from capa_simulation.design import tokens
 
 MONTHS = ["202601", "202602", "202603", "202604", "202605", "202606", "202607"]
@@ -18,6 +19,9 @@ WIDTHS = [120, 160, 90, 110]
 
 
 def _shapes(figure: go.Figure) -> list[dict[str, object]]:
+    # 격자 도우미는 누적함에 모으기만 한다. 반영은 표 모듈이 하므로 여기서 대신 부른다.
+    # 여러 번 불러도 결과가 같아 이미 반영된 Figure 에도 그대로 쓸 수 있다.
+    flush_layout_items(figure)
     return [shape.to_plotly_json() for shape in figure.layout.shapes]
 
 
@@ -71,6 +75,22 @@ def test_outer_border_draws_only_lines() -> None:
             "color": tokens.BORDER_STRONG,
             "width": OUTER_BORDER_WIDTH_PX * 2,
         }
+
+
+def test_grid_helpers_only_accumulate_and_tables_flush() -> None:
+    """격자 도우미는 누적함에 모으기만 하고 반영은 표 모듈의 `_add_table_grid` 가 한다.
+
+    도우미가 `add_shape` 로 바로 넣으면 열이 많은 월 영역에서 재검증이 선 수의 제곱으로
+    불어난다. 반대로 표 모듈이 flush 를 빠뜨리면 격자선이 통째로 사라진다. 둘 다 여기서 걸린다.
+    """
+    figure = go.Figure()
+    add_outer_border(figure, include_left=True)
+    add_month_boundaries(figure, MONTHS)
+    assert not figure.layout.shapes
+
+    (grouped_label, grouped_month), (hier_label, hier_month) = _grid_pair()
+    for table_figure in (grouped_label, grouped_month, hier_label, hier_month):
+        assert table_figure.layout.shapes
 
 
 def test_month_boundaries_emphasize_quarter_change() -> None:
