@@ -9,7 +9,7 @@ import os
 import re
 import time
 from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -136,13 +136,18 @@ def transaction(connection: duckdb.DuckDBPyConnection) -> Iterator[None]:
 
     두 Repository 의 쓰기 경계와 마이그레이션 적용이 같은 한 벌을 쓴다 — 경계가 여러 벌로
     갈려 있으면 한쪽만 고쳐져도 아무 데서도 드러나지 않는다.
+
+    COMMIT 이 실패하면 DuckDB 는 트랜잭션을 이미 닫아 두므로 뒤의 ROLLBACK 이
+    "no transaction is active" 로 다시 실패한다. 그 오류가 원래 원인(제약 위반·I/O 등)을
+    덮지 않도록 ROLLBACK 의 트랜잭션 오류는 삼키고 원래 예외를 올린다.
     """
     connection.execute("BEGIN TRANSACTION")
     try:
         yield
         connection.execute("COMMIT")
     except Exception:
-        connection.execute("ROLLBACK")
+        with suppress(duckdb.TransactionException):
+            connection.execute("ROLLBACK")
         raise
 
 

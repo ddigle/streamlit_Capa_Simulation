@@ -2455,6 +2455,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/repository.py`: `DuckDBScenarioRepository`의 입력 검증·연결·쓰기 잠금·트랜잭션 경계.
   공용 프로필 SQL과 모델 조립은 아래 store가 열린 연결을 받아 수행하며, 커밋과 변경 신호는
   Repository만 소유한다. 교체 실패 시 기존 행·버전이 복구되고 변경 신호를 발행하지 않는다.
+  기동마다 도는 `initialize_global_display_order` 는 프로필이 이미 있으면 쓰기 트랜잭션을
+  열지 않아 변경 신호를 내지 않는다(보기만 한 managed 사본이 다음 pull 에서 막히지 않게).
+  경로 식별 컬럼 보강은 매번 확인하고 실제로 바뀔 때만 교체한다.
   `load_revision(..., apply_global_display_order=False)`는 파생 입력용 저장 원본을 읽는다.
   기본 조회는 계속 공용 표시순서를 적용하며, 캐시도 이 플래그로 두 결과를 구분한다.
 - `persistence/models.py`: Repository 가 주고받는 타입
@@ -2473,7 +2476,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`SCENARIO_SUMMARY_SELECT`·`REVISION_SUMMARY_SELECT`·`OFFICIAL_RELEASE_SELECT`)을 매퍼
   옆에 둔다 — 투영 열 순서와 row 인덱스가 한 파일 안에서 짝을 이룬다
 - `persistence/_sql_helpers.py`: 프레임 저장·조회·값 변환과 트랜잭션 경계 공용 헬퍼. 두
-  Repository 의 `_write_transaction` 과 `_migration_core` 가 `transaction()` 한 벌을 쓰고,
+  Repository 의 `_write_transaction` 과 `_migration_core` 가 `transaction()` 한 벌을 쓰고
+  (COMMIT 이 실패하면 뒤따르는 ROLLBACK 의 트랜잭션 오류가 원인을 덮지 않고 COMMIT 오류가
+  그대로 올라온다),
   register → INSERT BY NAME → unregister 는 `insert_by_name()`, 공용 프로필 헤더 조회·삽입은
   `load_profile_header()`·`insert_profile_header()`, 상세→헤더 삭제와 다음 버전 계산은
   `reset_profile()`, 표 하나의 감사 해시는 `hash_frame()`(`hash_tables` 와 같은

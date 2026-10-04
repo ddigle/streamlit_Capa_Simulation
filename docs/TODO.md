@@ -1533,6 +1533,11 @@ WebIDE 로 이관하면서 DuckDB 파일을 WebIDE 밖에 두기로 했다. 저�
   부르고, `sync_boot.py` 가 `managed` 일 때만 두 DB 를 등록한다. 이게 없어서 앱에서 몇 번을
   저장해도 사이드카가 `dirty: false` 라 `push` 가 영원히 "올릴 것 없음" 이었다.
   사내에서 켜려면 `setx CAPA_S3_SYNC_MODE managed` 가 필요하다.
+- [x] **쓰지 않는 기동의 변경 표시 제거.** 기동마다 도는 공용 표시순서 초기화가 프로필이
+  이미 있어도 쓰기 트랜잭션을 열어 COMMIT 뒤 dirty 를 세웠다 — HOME 만 본 managed 사본이
+  다음 pull 에서 `BLOCKED_DIRTY` 로 막히고 같은 세대를 다시 올렸다. 이제 헤더를 먼저 읽어
+  없을 때만 쓴다. 같은 변경에서 `transaction()` 이 COMMIT 실패 원인(제약 위반·I/O)을
+  ROLLBACK 오류로 가리던 것도 고쳤다(`tests/test_duckdb_repository.py`).
 - [ ] **push 시점 결정 (사용자 판단 대기).** ⓐ 저장마다 자동 — 유실 없음, 저장마다 66초.
   ⓑ 공식버전 발행 때만(권장) — 저장은 즉시, 미발행 리비전이 로컬에만 존재.
   ⓒ 수동(현재). **ⓑ 는 WebIDE 디스크가 재시작에도 유지될 때만 안전하다.**

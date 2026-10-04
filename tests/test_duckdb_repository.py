@@ -15,13 +15,19 @@ from capa_simulation.persistence import (
     DuckDBScenarioRepository,
     ScenarioCreate,
     ScenarioPreset,
+    display_order_store,
+    sync_state,
 )
-from capa_simulation.persistence._sql_helpers import connect
+from capa_simulation.persistence._sql_helpers import connect, transaction
 from capa_simulation.persistence.cache import (
     clear_scenario_repository,
     load_scenario_snapshot,
 )
 from capa_simulation.persistence.repository import REFERENCE_TABLES, REVISION_TABLES
+from capa_simulation.services.display_order_editor import (
+    ROUTE_SEQUENCE_COLUMNS,
+    ROUTE_SEQUENCE_SCOPES,
+)
 from capa_simulation.services.reference_transformer import build_reference_tables
 
 
@@ -303,6 +309,91 @@ def test_global_display_order_migrates_and_replaces_independently(tmp_path: Path
     assert repository.load_revision(snapshot.revision.revision_id).tables["RQ_DISPLAY_ORDER"][
         "분류값"
     ].tolist() == ["Product-B"]
+
+
+def test_global_display_order_init_marks_sync_dirty_only_when_it_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """프로필이 이미 있으면 기동마다 도는 초기화가 동기화 dirty 를 세우지 않는다."""
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    marked: list[Path] = []
+    monkeypatch.setattr(sync_state, "mark_dirty", marked.append)
+    fallback = _reference_tables()["RQ_DISPLAY_ORDER"]
+
+    created = repository.initialize_global_display_order(fallback)
+
+    assert created.version == 1
+    assert created.source == "초기 표시순서 시드"
+    assert marked == [database_path.resolve()]
+
+    marked.clear()
+    reopened = DuckDBScenarioRepository(database_path)
+    again = reopened.initialize_global_display_order(fallback.assign(분류값="Ignored"))
+
+    assert marked == []
+    assert again.version == 1
+    assert again.rules["분류값"].tolist() == ["Product-A"]
+
+
+def test_global_display_order_init_still_augments_an_existing_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """프로필이 있어도 경로 식별 컬럼 보강은 매번 확인하고 필요할 때만 쓴다."""
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    page, tab = ROUTE_SEQUENCE_SCOPES[0]
+    raw = _reference_tables()["RQ_DISPLAY_ORDER"].assign(**{"페이지 구분": page, "탭 구분": tab})
+    with connect(database_path) as connection:
+        display_order_store.insert_global_display_order(
+            connection, raw, version=1, source="보강 전 저장본"
+        )
+    marked: list[Path] = []
+    monkeypatch.setattr(sync_state, "mark_dirty", marked.append)
+
+    augmented = repository.initialize_global_display_order(raw)
+
+    assert augmented.version == 2
+    assert augmented.source == "경로 식별 컬럼 하위 배치 자동 보강"
+    assert set(ROUTE_SEQUENCE_COLUMNS) <= set(augmented.rules["분류컬럼"])
+    assert marked == [database_path.resolve()]
+
+    marked.clear()
+    assert repository.initialize_global_display_order(raw).version == 2
+    assert marked == []
+
+
+def test_transaction_surfaces_the_commit_failure_cause(tmp_path: Path) -> None:
+    """COMMIT 이 실패하면 뒤따르는 ROLLBACK 오류가 아니라 실패 원인이 올라온다."""
+    database_path = tmp_path / "commit.duckdb"
+    with connect(database_path) as connection:
+        connection.execute("CREATE TABLE t (k INTEGER PRIMARY KEY, v INTEGER)")
+    other = connect(database_path)
+    writer = connect(database_path)
+    try:
+        with pytest.raises(duckdb.TransactionException, match="Failed to commit"):
+            with transaction(writer):
+                writer.execute("INSERT INTO t VALUES (1, 2)")
+                other.execute("INSERT INTO t VALUES (1, 1)")
+
+        assert other.execute("SELECT k, v FROM t").fetchall() == [(1, 1)]
+        with transaction(writer):
+            writer.execute("INSERT INTO t VALUES (2, 2)")
+        assert other.execute("SELECT k, v FROM t ORDER BY k").fetchall() == [(1, 1), (2, 2)]
+    finally:
+        writer.close()
+        other.close()
+
+
+def test_transaction_body_failure_still_rolls_back_and_reraises(tmp_path: Path) -> None:
+    database_path = tmp_path / "body.duckdb"
+    with connect(database_path) as connection:
+        connection.execute("CREATE TABLE t (k INTEGER PRIMARY KEY)")
+        with pytest.raises(ValueError, match="본문 실패"):
+            with transaction(connection):
+                connection.execute("INSERT INTO t VALUES (1)")
+                raise ValueError("본문 실패")
+        assert connection.execute("SELECT count(*) FROM t").fetchone() == (0,)
 
 
 def test_cached_scenario_load_always_overlays_global_display_order(tmp_path: Path) -> None:
