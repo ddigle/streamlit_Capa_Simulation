@@ -59,6 +59,14 @@ class FakeRepository:
     def latest_official_release(self):
         return None
 
+    def list_virtual_products(self, revision_id):
+        # 불러온 리비전(`revision-1`)의 가상 제품 이력. 테스트가 세션에 넣어 둔다.
+        st.session_state["test_history_revision"] = revision_id
+        return pd.DataFrame(
+            st.session_state.get("test_parent_history", []),
+            columns=["제품정보", "Stack", "원본 제품정보", "원본 Stack"],
+        )
+
     def save_revision(self, scenario_id, tables, preset, **kwargs):
         st.session_state["test_saved_revision_name"] = kwargs["revision_name"]
         st.session_state["test_saved_virtual_products"] = list(kwargs.get("virtual_products", ()))
@@ -203,6 +211,41 @@ def test_sidebar_save_keeps_the_session_virtual_products(sidebar_app: AppTest) -
     ]
     assert [item.value for item in app.success] == [
         "신규 리비전 r2를 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
+        "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
+    ]
+
+
+def test_sidebar_save_carries_over_the_loaded_revisions_virtual_products(
+    sidebar_app: AppTest,
+) -> None:
+    """새 리비전은 불러온 리비전의 가상 제품 이력을 물려받고 이 세션의 등록을 더한다.
+
+    세션 목록은 리비전을 불러올 때 비므로, 물려받지 않으면 가상 제품을 등록한 리비전에서 이어
+    저장한 리비전부터 출처가 사라졌다. 같은 제품은 한 건이고, 알림은 합친 건수를 센다. 이 가짜
+    저장 표에는 제품 키를 가진 표가 없어 물려받은 이력을 거를 근거가 없으므로 모두 남는다.
+    """
+    app = sidebar_app
+    app.session_state["test_parent_history"] = [
+        ("DEMO_PARENT", "8H", "DEMO_SOURCE", "8H"),
+        ("DEMO_VIRTUAL", "8H", "DEMO_SOURCE", "8H"),
+    ]
+    app.session_state[VIRTUAL_PRODUCTS_KEY] = (
+        VirtualProductRecord(
+            product="DEMO_VIRTUAL", stack="8H", source_product="DEMO_SOURCE", source_stack="8H"
+        ),
+        VirtualProductRecord(
+            product="DEMO_SESSION", stack="4H", source_product="DEMO_SOURCE", source_stack="8H"
+        ),
+    )
+    app = _save(app.run(), "이어 저장")
+
+    assert not app.exception
+    assert app.session_state["test_history_revision"] == "revision-1"
+    assert [
+        (row["product"], row["stack"]) for row in app.session_state["test_saved_virtual_products"]
+    ] == [("DEMO_PARENT", "8H"), ("DEMO_VIRTUAL", "8H"), ("DEMO_SESSION", "4H")]
+    assert [item.value for item in app.success] == [
+        "신규 리비전 r2를 저장했습니다. 가상 제품 3건이 포함되어 있습니다. "
         "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
     ]
 

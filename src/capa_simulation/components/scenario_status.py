@@ -16,7 +16,7 @@ import capa_simulation.settings as settings
 from capa_simulation.components.capacity_gate import revision_save_verdict
 from capa_simulation.components.scenario_management import (
     revision_tables_for_save,
-    session_virtual_product_rows,
+    revision_virtual_product_rows,
     virtual_product_save_notice,
 )
 from capa_simulation.io.reference_cache import (
@@ -400,8 +400,11 @@ def _render_revision_save(
                     st.error(verdict.message)
                     return None
                 revision_tables = revision_tables_for_save(active_scenario, reference_tables)
-                # 활성화가 세션의 가상 제품 목록을 비우므로 그 전에 읽는다.
-                virtual_products = session_virtual_product_rows()
+                # 활성화가 세션의 가상 제품 목록을 비우므로 그 전에 읽는다. 불러온 리비전의
+                # 이력도 함께 물려준다.
+                virtual_products = revision_virtual_product_rows(
+                    repository, active_revision_id, revision_tables
+                )
                 snapshot = repository.save_revision(
                     active_scenario_id,
                     revision_tables,

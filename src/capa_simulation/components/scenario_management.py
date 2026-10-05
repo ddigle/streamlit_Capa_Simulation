@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import cast
 
@@ -52,6 +53,10 @@ from capa_simulation.scenario_state import (
 from capa_simulation.services.builtin_seed import BUILTIN_SEED_SOURCE_CODE
 from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
+from capa_simulation.services.scenario_virtual_products import (
+    inherit_virtual_product_records,
+    virtual_product_records,
+)
 from capa_simulation.services.virtual_product import VirtualProductRecord
 
 CLONE_PIPELINE_VERSION = "duckdb-rq-snapshot-v3"
@@ -682,7 +687,9 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
         with st.spinner("현재 활성 RQ 16개를 새 시나리오로 복제하는 중입니다..."):
             revision_source = revision_tables_for_save(active_scenario, reference_tables)
             preset = _compatible_preset(capture_scenario_preset(revision_source), revision_source)
-            virtual_products = session_virtual_product_rows()
+            virtual_products = revision_virtual_product_rows(
+                repository, active_persisted_revision_id(), revision_source
+            )
             snapshot = repository.create_scenario(
                 ScenarioCreate(
                     scenario_name=scenario_name,
@@ -749,13 +756,16 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
             preset = capture_scenario_preset(
                 {**reference_tables, "RQ_REQB": revision_tables["RQ_REQB"]}
             )
-            virtual_products = session_virtual_product_rows()
+            parent_revision_id = active_persisted_revision_id()
+            virtual_products = revision_virtual_product_rows(
+                repository, parent_revision_id, revision_tables
+            )
             snapshot = repository.save_revision(
                 scenario_id,
                 revision_tables,
                 preset,
                 revision_name=revision_name,
-                parent_revision_id=active_persisted_revision_id(),
+                parent_revision_id=parent_revision_id,
                 note=note.strip() or None,
                 virtual_products=virtual_products,
             )
@@ -773,13 +783,31 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
         st.rerun()
 
 
-def session_virtual_product_rows() -> list[dict[str, str]]:
-    """이 세션이 복제 등록한 가상 제품을 저장소가 받는 이력 행으로 옮긴다.
+def revision_virtual_product_rows(
+    repository: DuckDBScenarioRepository,
+    parent_revision_id: str | None,
+    revision_tables: Mapping[str, pd.DataFrame],
+) -> list[dict[str, str]]:
+    """새 리비전에 남길 가상 제품 이력을 저장소가 받는 행으로 만든다.
+
+    부모 리비전(세션이 불러온 리비전, 복제라면 복제하는 활성 리비전)의 이력에 이 세션이 복제
+    등록한 가상 제품을 더한다(`inherit_virtual_product_records` — 같은 키는 한 건, 저장할 표에서
+    사라진 부모 제품은 뺀다). 부모가 없는 세션(내장 시드)은 세션 등록만 남는다.
 
     저장한 스냅샷을 활성화하면 세션 목록이 비므로(`clear_virtual_products`) 저장 **전에**
     읽고, 알림의 건수도 이 결과에서 센다. 새 리비전을 남기는 저장 단추(사이드바와 이 페이지의
-    리비전 저장, 현재 활성 RQ 복제)가 모두 이것을 넘겨야 가상 제품 출처가 DB 에 남는다.
+    리비전 저장, 현재 활성 RQ 복제)가 모두 이것을 넘겨야 가상 제품 출처가 DB 에 이어진다.
     """
+    parent = (
+        virtual_product_records(repository.list_virtual_products(parent_revision_id))
+        if parent_revision_id is not None
+        else ()
+    )
+    records = inherit_virtual_product_records(
+        parent,
+        cast(tuple[VirtualProductRecord, ...], session_virtual_products()),
+        revision_tables,
+    )
     return [
         {
             "product": record.product,
@@ -787,7 +815,7 @@ def session_virtual_product_rows() -> list[dict[str, str]]:
             "source_product": record.source_product,
             "source_stack": record.source_stack,
         }
-        for record in cast(tuple[VirtualProductRecord, ...], session_virtual_products())
+        for record in records
     ]
 
 

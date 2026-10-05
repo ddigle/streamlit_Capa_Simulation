@@ -23,8 +23,14 @@ from capa_simulation.persistence.cache import (
 )
 from capa_simulation.persistence.models import ScenarioCreate, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
-from capa_simulation.scenario_state import VIRTUAL_PRODUCTS_KEY
-from capa_simulation.services.virtual_product import VirtualProductRecord
+from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY, VIRTUAL_PRODUCTS_KEY
+from capa_simulation.services.virtual_product import (
+    VirtualProductRecord,
+    VirtualProductRequest,
+    available_source_products,
+    clone_product,
+    clone_table_names,
+)
 
 PAGE_PATH = "app_pages/scenario_management.py"
 
@@ -314,6 +320,122 @@ def test_revision_save_keeps_the_session_virtual_products(tmp_path: Path) -> Non
             "원본 Stack": "8H",
         }
     ]
+
+
+def _register_virtual(app: AppTest, product: str) -> VirtualProductRecord:
+    """등록 팝업이 하는 일을 세션에 그대로 한다 — 복제 행을 활성 표에 넣고 세션 목록에 더한다."""
+    active = dict(app.session_state[ACTIVE_SCENARIO_KEY])
+    tables = active["tables"]
+    source = available_source_products(tables).iloc[0]
+    request = VirtualProductRequest(
+        source_product=str(source["제품정보"]),
+        source_stack=str(source["Stack"]),
+        product=product,
+        stack=str(source["Stack"]),
+    )
+    active["tables"] = {**tables, **clone_product(tables, request)}
+    app.session_state[ACTIVE_SCENARIO_KEY] = active
+    record = VirtualProductRecord.from_request(request)
+    registered = (
+        app.session_state[VIRTUAL_PRODUCTS_KEY] if VIRTUAL_PRODUCTS_KEY in app.session_state else ()
+    )
+    app.session_state[VIRTUAL_PRODUCTS_KEY] = (*registered, record)
+    return record
+
+
+def _drop_from_active_tables(app: AppTest, product: str) -> None:
+    """그 제품의 행을 제품 키를 가진 모든 표에서 지운다."""
+    active = dict(app.session_state[ACTIVE_SCENARIO_KEY])
+    tables = dict(active["tables"])
+    for name in clone_table_names(tables):
+        tables[name] = tables[name].loc[~tables[name]["제품정보"].eq(product)]
+    active["tables"] = tables
+    app.session_state[ACTIVE_SCENARIO_KEY] = active
+
+
+def _save_revision(app: AppTest, name: str) -> None:
+    next(widget for widget in app.text_input if widget.label == "새 리비전명").set_value(name)
+    next(button for button in app.button if button.label == "새 리비전 저장").click()
+    app.run()
+    assert not app.exception
+
+
+def _history_products(repository: DuckDBScenarioRepository, revision_id: str) -> list[str]:
+    return repository.list_virtual_products(revision_id)["제품정보"].tolist()
+
+
+def _notice(count: int) -> str:
+    return (
+        f"가상 제품 {count}건이 포함되어 있습니다. "
+        "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
+    )
+
+
+def test_new_revision_inherits_the_loaded_revisions_virtual_products(tmp_path: Path) -> None:
+    """r2 에 등록한 가상 제품이 r2 를 이어 저장한 r3 에도 남는다(2026-10-05 사용자 결정 N6 = A).
+
+    리비전을 불러오면 세션 목록이 비어서, 물려받지 않으면 r3 부터 출처가 사라졌다. r3 의 세션
+    목록에는 B 만 있으므로 A 는 부모 이력에서만 올 수 있고, 알림은 합친 건수를 센다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    app.segmented_control(key=MODE_KEY).set_value("리비전 저장").run()
+    _register_virtual(app, "DEMO_VIRTUAL_A")
+    _save_revision(app, "가상 제품 A")
+    repository = DuckDBScenarioRepository(database_path)
+    (scenario,) = [item for item in repository.list_scenarios() if item.active_revision_no == 2]
+    assert _history_products(repository, scenario.active_revision_id) == ["DEMO_VIRTUAL_A"]
+    # 활성화가 세션 목록을 비웠다 — r2 의 이력은 이제 DB 에만 있다.
+    assert VIRTUAL_PRODUCTS_KEY not in app.session_state
+
+    _register_virtual(app, "DEMO_VIRTUAL_B")
+    assert [record.product for record in app.session_state[VIRTUAL_PRODUCTS_KEY]] == [
+        "DEMO_VIRTUAL_B"
+    ]
+    _save_revision(app, "가상 제품 B")
+
+    summary = next(
+        item for item in repository.list_scenarios() if item.scenario_id == scenario.scenario_id
+    )
+    assert summary.active_revision_no == 3
+    assert _history_products(repository, summary.active_revision_id) == [
+        "DEMO_VIRTUAL_A",
+        "DEMO_VIRTUAL_B",
+    ]
+    assert f"새 리비전 r3을 저장했습니다. {_notice(2)}" in [item.value for item in app.success]
+
+
+def test_clone_inherits_the_active_revisions_virtual_products_still_in_the_tables(
+    tmp_path: Path,
+) -> None:
+    """「현재 활성 RQ 복제」의 초기 리비전도 활성 리비전의 이력을 물려받는다.
+
+    물려받은 제품이 복제하는 표 어디에도 남아 있지 않으면 그 이력은 따라가지 않는다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    app.segmented_control(key=MODE_KEY).set_value("리비전 저장").run()
+    _register_virtual(app, "DEMO_VIRTUAL_A")
+    _register_virtual(app, "DEMO_VIRTUAL_B")
+    _save_revision(app, "가상 제품 둘")
+
+    _drop_from_active_tables(app, "DEMO_VIRTUAL_A")
+    app.segmented_control(key=MODE_KEY).set_value("현재 활성 RQ 복제").run()
+    assert not app.exception
+    _fill_clone(app, "가상 제품 상속 복제", "CLONE-INHERIT")
+
+    assert f"가상 제품 상속 복제를 저장했습니다. {_notice(1)}" in [
+        item.value for item in app.success
+    ]
+    repository = DuckDBScenarioRepository(database_path)
+    clone = next(
+        item for item in repository.list_scenarios() if item.scenario_name == "가상 제품 상속 복제"
+    )
+    assert _history_products(repository, clone.active_revision_id) == ["DEMO_VIRTUAL_B"]
 
 
 def _check_row(app: AppTest, database_path: Path, scenario_id: str) -> None:

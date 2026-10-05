@@ -979,10 +979,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     말없이 버려 저장이 아무 일도 없이 사라졌다). 거절 알림은 `st.rerun()` 없이 같은 회차에 그린다
     — 사이드바에서 rerun 하면 페이지 편집표를 그리기 전에 회차가 끝나 그 편집 상태가 지워진다.
     조회기간 상자도 같은 목록으로 「기간을 바꾸면 사라진다」를 적는다.
-  - 저장은 세션의 가상 제품 이력(`scenario_management.session_virtual_product_rows`)을
-    `save_revision(virtual_products=...)` 로 넘긴다. 저장한 스냅샷을 활성화하면 세션 목록이 비므로
-    **활성화 전에** 읽는다. 시나리오 관리 페이지의 `새 리비전 저장`·`현재 활성 RQ 복제` 도 같은
-    도우미를 쓰고, 세 경로의 알림이 같은 확인 문장(`virtual_product_save_notice`)을 붙인다.
+  - 저장은 가상 제품 이력(`scenario_management.revision_virtual_product_rows`)을
+    `save_revision(virtual_products=...)` 로 넘긴다. 이력은 **부모 리비전**(불러온 리비전, 복제라면
+    복제하는 활성 리비전)의 `app_meta.revision_virtual_product` 에 이 세션의 등록을 더한 것이다
+    (`services/scenario_virtual_products.inherit_virtual_product_records`). 같은 `제품정보 + Stack` 은
+    한 건이고 세션 쪽이 이긴다. 물려받는 행은 저장할 표의 제품 키 표(`clone_table_names`) 어디에도
+    그 키가 없을 때만 빠지고, 제품 키 표가 하나도 없으면 모두 물려받는다. 세션 등록은 거르지 않는다.
+    저장한 스냅샷을 활성화하면 세션 목록이 비므로 **활성화 전에** 읽는다. 시나리오 관리 페이지의
+    `새 리비전 저장`·`현재 활성 RQ 복제` 도 같은 도우미를 쓰고, 세 경로의 알림이 같은 확인
+    문장(`virtual_product_save_notice`)을 붙이며 건수는 합친 이력의 건수다.
   - `편집 되돌리기`는 `scenario_activation.discard_unsaved_scenario_changes` 다 — 표를 올라와
     있는 리비전의 표로 갈아 끼우고(리비전 번호는 올린다) **그 번호를 저장 표시에도 적는다.**
     적지 않으면 내용이 저장본과 같은데도 번호가 달라 `미저장 변경`·버튼·불러오기 잠금이 남았다.
@@ -2578,7 +2583,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     월 축이 있는 12표·없는 4표의 복사와 검증은 `services/scenario_transform.py`가 맡는다.
     저장은 새 데이터셋과 초기 리비전을 만들며 현재 활성 편집본을 바꾸지 않는다.
     `services/scenario_virtual_products.py`는 가상제품 복제 이력을 변환하고 같은 제품·Stack의
-    복제 원본 충돌을 검사한다. `create_scenario(virtual_products=...)`가 기존 이력 표에
+    복제 원본 충돌을 검사한다(새 리비전·복제가 부모 이력을 물려받는 규칙도 여기 있다). `create_scenario(virtual_products=...)`가 기존 이력 표에
     초기 리비전·16표와 같은 트랜잭션으로 기록하고 저장 폼은 보존할 이력을 미리 보여 준다.
   - `components/scenario_month_merge.py`는 무월 표 비교와 머지 미리보기·저장을,
     `services/scenario_month_merge.py`는 월별 출처 계획·겹침 정책·결과 축 검증과 표 병합을 맡는다.
