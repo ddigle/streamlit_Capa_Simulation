@@ -1104,6 +1104,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가 낸 값으로만 만들고 **여기서 다시 집계하지 않는다.**
   - 구간 색은 `securement_heatmap._tier` 와 **같은 부등호**를 쓴다. 경계가 갈리면 히트맵이
     「경고」로 칠한 칸을 요약이 「부족」이라 부른다.
+  - 구간 색은 **강조 칸의 바탕**에 깔고 글자는 `TEXT` 다. `STATUS_*` 는 면색이라 글자색으로
+    쓰면 어두운 테마의 부족이 2.0:1 로 읽히지 않았다(2026-10-05 E2E).
   - 표시명(`ProcessLabels.label`)은 화면 이름일 뿐이고 저장 키는 원본 공정명이다.
 - `src/capa_simulation/components/table_view_controls.py`
   - 편집표의 **볼 컬럼**과 **행 필터**를 고르게 하고, 거른 편집분을 원본 전체에 되머지한다.
@@ -1323,7 +1325,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「조회·집계 설정」은 공통 위젯 생성 전에 대기 프리셋으로 복원한다. 세션 키 문자열과
     조회·집계 설정 기본값의 선언 자리는 `scenario_preset_state.py`·
     `persistence/models.py` 이며 페이지는 import 해서 쓴다.
-  - 판정 기준 기본값 심기(`seed_threshold_defaults`)와 %→비율 읽기(`session_threshold`)도
+  - 판정 기준 기본값 심기(`seed_threshold_defaults`)와 %→비율 읽기(`session_threshold`),
+    HOME 이 경고 > 확보 짝 대신 직전의 바른 짝을 쓰는 `applied_threshold_pair` 도
     `scenario_preset_state.py` 가 소유한다. `session_threshold` 는 `_session_number` 와 달리
     값이 이상해도 예외 없이 기본값으로 떨어진다 — 읽어서 그리기만 하는 화면이 기준 한 칸
     때문에 멈추면 안 된다.

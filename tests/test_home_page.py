@@ -502,6 +502,27 @@ def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -
     assert _cache_state(app) == "적중"
 
 
+def _decision_caption(app: AppTest) -> str:
+    return next(element.value for element in app.caption if "기준 미달" in element.value)
+
+
+def test_a_reversed_threshold_pair_is_not_applied(seeded_database: Path) -> None:
+    """경고가 확보보다 큰 짝은 알리기만 하고 **직전의 바른 짝으로** 계속 판정한다.
+
+    그대로 쓰면 경고 구간이 사라져 대시보드 전체가 「경고 0 · 부족 N」이 되었다 — 화면은
+    「다시 누르세요」라고 말하면서 이미 그 값으로 그리고 있었다(2026-10-05 E2E).
+    """
+    app = _run(seeded_database)
+    before = _decision_caption(app)
+
+    app.sidebar.number_input(key=WARNING_THRESHOLD_KEY).set_value(109.6)
+    app.get_by_key("dashboard_threshold_apply").click().run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _decision_caption(app) == before
+    assert any("직전 기준(확보 109.5% · 경고 99.5%)" in element.value for element in app.warning)
+
+
 def test_home_reports_a_missing_active_revision_instead_of_a_traceback(tmp_path: Path) -> None:
     """공식버전이 없는 저장소로 열면 활성 리비전이 없어 RuntimeError 가 난다.
 

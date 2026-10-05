@@ -30,6 +30,8 @@ WARNING_THRESHOLD_KEY = "dashboard_warning_threshold_percent"
 # 같은 세션 키를 쓰는데 기본값을 따로 적어 두면 한쪽만 바뀌어도 드러나지 않는다.
 DEFAULT_SECURE_THRESHOLD_PERCENT = 109.5
 DEFAULT_WARNING_THRESHOLD_PERCENT = 99.5
+# 마지막으로 판정에 쓴 바른 (확보, 경고) 짝. 경고가 확보보다 큰 짝을 적용했을 때 대신 쓴다.
+LAST_VALID_THRESHOLDS_KEY = "dashboard_threshold_last_valid"
 STANDARD_TARGET_PROCESS_SELECTION_KEY = "standard_target_process_filter"
 STANDARD_TARGET_PROCESS_DEFAULT_KEY = "standard_target_process_default"
 # 표준 목표 Capa 「조회·집계 설정」도 리비전 프리셋이 소유하므로 세션 키를 여기서 선언한다.
@@ -55,6 +57,26 @@ def seed_threshold_defaults(*, owner: str) -> None:
     carry_shared_widget_value(
         WARNING_THRESHOLD_KEY, default=DEFAULT_WARNING_THRESHOLD_PERCENT, owner=owner
     )
+
+
+def applied_threshold_pair(secure_percent: float, warning_percent: float) -> tuple[float, float]:
+    """판정에 쓸 (확보, 경고) 짝(%). 경고가 확보보다 크면 **직전에 쓴 바른 짝**을 돌려준다.
+
+    바른 짝이면 그것을 기억해 두고 그대로 돌려준다. 기억이 없으면 기본값이다. 기억 칸은
+    위젯이 아니라 세션 칸이라 페이지를 옮겨도 남는다.
+    """
+    if warning_percent <= secure_percent:
+        st.session_state[LAST_VALID_THRESHOLDS_KEY] = (secure_percent, warning_percent)
+        return secure_percent, warning_percent
+    remembered = st.session_state.get(LAST_VALID_THRESHOLDS_KEY)
+    if (
+        isinstance(remembered, tuple)
+        and len(remembered) == 2
+        and all(isinstance(value, int | float) for value in remembered)
+        and remembered[1] <= remembered[0]
+    ):
+        return float(remembered[0]), float(remembered[1])
+    return DEFAULT_SECURE_THRESHOLD_PERCENT, DEFAULT_WARNING_THRESHOLD_PERCENT
 
 
 def session_threshold(key: str, default_percent: float) -> float:

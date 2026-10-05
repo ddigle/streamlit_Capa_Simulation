@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import html
+
 import streamlit as st
 
 from capa_simulation.components.home_figures import capacity_status
@@ -22,10 +24,16 @@ NO_DATA_NOTICE = "조회기간에 판정할 확보율 데이터가 없습니다.
 
 
 def _tone(decision: CapacityDecision, *, secure_threshold: float, warning_threshold: float) -> str:
-    """최저 구간의 색. `home_figures.capacity_status` 와 같은 부등호를 쓴다."""
+    """최저 구간의 **면**색. `home_figures.capacity_status` 와 같은 부등호를 쓴다.
+
+    `STATUS_*` 는 칸을 칠하고 그 위에 `TEXT` 를 얹는 색이다(토큰 설명). 글자색으로 쓰면 어두운
+    테마에서 부족 2.0:1·경고 3.3:1 로 결론 문장이 읽히지 않았고, 밝은 테마의 확보 회색도 흰
+    면에서 1.5:1 이었다(2026-10-05 E2E). 그래서 이 색은 강조 칸의 바탕에 깔고 글자는 `TEXT` 로
+    쓴다 — 두 테마 모두 토큰이 보증하는 짝(밝게 4.8:1·어둡게 4.5:1 이상)이다.
+    """
     rate = decision.rate
     if rate is None:
-        return tokens.TEXT_MUTED
+        return tokens.SURFACE_SUBTLE
     # 상태 → 색 짝은 함수 안에서 만든다. 모듈 상수로 올리면 처음 임포트한 순간의 팔레트가
     # 굳어 테마를 바꿔도 이 색만 따라오지 않는다.
     return {
@@ -58,11 +66,15 @@ def render_home_capacity_decision(
     tone = _tone(decision, secure_threshold=secure_threshold, warning_threshold=warning_threshold)
     scope = "선택한 공정 기준" if filtered else "전체 공정 기준"
 
+    chip = (
+        f"background:{tone};color:{tokens.TEXT};padding:0 0.3em;border-radius:4px;"
+        "box-decoration-break:clone;-webkit-box-decoration-break:clone"
+    )
     with st.container(border=True, key="home_capacity_decision"):
         st.markdown(
             f"가장 낮은 확보율은 "
-            f'<b style="color:{tone}">{name} · {month}</b> 입니다 — '
-            f'<b style="color:{tone}">{rate:.1%}</b>',
+            f'<b style="{chip}">{html.escape(name)} · {month}</b> 입니다 — '
+            f'<b style="{chip}">{rate:.1%}</b>',
             unsafe_allow_html=True,
         )
         # 「몇 건이 미달인가」는 「몇 건을 봤는가」 없이는 뜻이 없다. 분모를 함께 적는다.

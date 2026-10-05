@@ -93,6 +93,7 @@ from capa_simulation.scenario_preset_state import (
     PROCESS_SELECTION_KEY,
     SECURE_THRESHOLD_KEY,
     WARNING_THRESHOLD_KEY,
+    applied_threshold_pair,
     seed_threshold_defaults,
 )
 from capa_simulation.scenario_state import (
@@ -681,12 +682,20 @@ with sidebar_expander(
             effective_start,
             effective_end,
         )
-    if warning_threshold_percent > secure_threshold_percent:
+    # 거꾸로 된 짝은 **적용하지 않는다.** 그대로 쓰면 경고 구간이 사라져 대시보드 전체가
+    # 「경고 0 · 부족 N」으로 판정된다(2026-10-05 E2E). 직전에 쓴 바른 짝으로 계속 그린다 —
+    # Static Capa 처럼 화면을 멈추면 고칠 값을 보며 고를 수 없다.
+    applied_secure, applied_warning = applied_threshold_pair(
+        secure_threshold_percent, warning_threshold_percent
+    )
+    if (applied_secure, applied_warning) != (secure_threshold_percent, warning_threshold_percent):
         st.warning(
             f"경고 기준({warning_threshold_percent:g}%)이 확보 기준"
             f"({secure_threshold_percent:g}%)보다 큽니다. 경고 기준을 확보 기준 이하로 "
-            "낮추고 「기준 적용」을 다시 누르세요."
+            "낮추고 「기준 적용」을 다시 누르세요. 그때까지 직전 기준(확보 "
+            f"{applied_secure:g}% · 경고 {applied_warning:g}%)으로 판정합니다."
         )
+    secure_threshold_percent, warning_threshold_percent = applied_secure, applied_warning
     if not process_options:
         st.caption("집계 가능한 공정이 없습니다.")
 
