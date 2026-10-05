@@ -149,6 +149,21 @@ def test_condition_cards_wear_the_condition_box_face() -> None:
     assert f'{card} summary [data-testid="stExpanderIcon"]' in icon_rule
 
 
+def test_off_switches_on_the_condition_face_keep_a_visible_track() -> None:
+    """꺼진 스위치 트랙(밝게 #E6E9ED)이 청록 면 위에서 1.03:1 로 사라졌다(2026-10-05 E2E).
+
+    조건 상자·카드 안의 꺼진 스위치만 `TEXT_MUTED` 1px 윤곽을 두른다.
+    """
+    block = _style_block()
+    card = f'[class*="st-key-{CONDITION_CARD_PREFIX}"]'
+
+    (rule,) = _rules_with(block, f"box-shadow: inset 0 0 0 1px {tokens.TEXT_MUTED};")
+    assert (
+        f'{card} details label:has(> span > input[role="switch"]:not(:checked)) > span + div'
+        in rule
+    )
+
+
 def test_the_support_box_sits_last_and_apart() -> None:
     """`Support` 상자는 **맨 아래**이고 **앞에 간격**을 둔다. 두 선언이 한 규칙에 있다.
 

@@ -13,3 +13,19 @@ def test_sidebar_collapse_button_is_always_visible_on_screen() -> None:
     block = screen.group(1)
     assert '[data-testid="stSidebarCollapseButton"]' in block
     assert "visibility: visible !important;" in block
+
+
+def test_the_header_text_leaves_room_for_the_whole_toolbar() -> None:
+    """툴바(Summary·Guide·테마·Deploy·⋮)가 1100px 창에서 323px 를 쓴다. 16rem(224px)만 비우면
+    머리 글자가 Summary 밑으로 들어갔다(2026-10-05 E2E)."""
+    widths = re.findall(r"max-width: calc\(100% - (\d+)rem\)", _header_css())
+    root_px = 14
+    assert widths and int(widths[0]) * root_px >= 323 + 21 + 12
+
+
+def test_inline_code_in_body_text_is_close_to_the_body_size() -> None:
+    """인라인 코드의 한글이 0.75em 대체 글꼴로 9~10px 까지 작아졌다(2026-10-05 E2E)."""
+    css = _header_css()
+    block = css[css.index('[data-testid="stMarkdownContainer"] :not(pre) > code') :]
+    block = block[: block.index("}")]
+    assert "font-size: 0.9em;" in block

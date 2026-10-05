@@ -384,7 +384,7 @@ def _trend_figure(trend: pd.DataFrame, metric: MetricSpec) -> go.Figure:
             name=f"기준 {metric.name}",
             mode="lines",
             line={"color": tokens.SERIES_STANDARD, "width": 2, "dash": "dash"},
-            hovertemplate="%{x} 기준 %{y:,.3f}<extra></extra>",
+            hovertemplate=f"%{{x}} 기준 %{{y:{_value_tick_format(metric)}}}<extra></extra>",
         )
     )
     figure.add_trace(
@@ -397,7 +397,7 @@ def _trend_figure(trend: pd.DataFrame, metric: MetricSpec) -> go.Figure:
             # 위치 전용이고, 같은 개념을 그리는 `dynamic_capacity_dashboard` 도 이 색이다.
             line={"color": tokens.SERIES_ACTUAL, "width": 2},
             marker={"size": 6},
-            hovertemplate="%{x} 실적 %{y:,.3f}<extra></extra>",
+            hovertemplate=f"%{{x}} 실적 %{{y:{_value_tick_format(metric)}}}<extra></extra>",
         )
     )
     figure.update_layout(
@@ -408,8 +408,19 @@ def _trend_figure(trend: pd.DataFrame, metric: MetricSpec) -> go.Figure:
         hovermode="x unified",
     )
     figure.update_xaxes(type="category", title=None, showgrid=False)
-    figure.update_yaxes(title=None, gridcolor=tokens.BORDER, zeroline=False)
+    # 눈금은 KPI 와 같은 형식이다. 자동 눈금은 비율을 `0.9924·0.992` 처럼 자릿수를 섞어 적어
+    # 99.21% 로 적은 KPI 와 맞춰 읽을 수 없었다(2026-10-05 E2E).
+    figure.update_yaxes(
+        title=None, gridcolor=tokens.BORDER, zeroline=False, tickformat=_value_tick_format(metric)
+    )
     return figure
+
+
+def _value_tick_format(metric: MetricSpec) -> str:
+    """지표 값의 d3 형식. `_format_value` 와 같은 자릿수를 쓴다."""
+    if metric.value_format == "percent":
+        return f".{metric.value_decimals}%"
+    return f",.{metric.value_decimals}f"
 
 
 def _priority_figure(
@@ -454,14 +465,26 @@ def _priority_figure(
         showlegend=False,
     )
     # 눈금도 지표를 따른다. `.0%` 로 굳히면 수율 축이 전부 `0%` 로 찍힌다.
+    # 바깥 라벨이 나갈 자리를 축 **안**에 남긴다. 축 밖으로 내보내면 가장 긴 막대의 라벨이
+    # 왼쪽 공정 이름 위에 겹쳐 「TC Bonding.4%」처럼 읽혔다(2026-10-05 E2E).
     figure.update_xaxes(
         title=None,
         gridcolor=tokens.BORDER,
         zeroline=True,
         tickformat=f".{metric.gap_decimals}%",
+        range=_priority_range(ordered["Gap"]),
     )
     figure.update_yaxes(type="category", title=None, showgrid=False)
     return figure
+
+
+def _priority_range(gaps: pd.Series) -> list[float]:
+    """막대와 그 바깥 라벨이 함께 들어가는 x 범위. 라벨이 나가는 쪽마다 폭의 35% 를 더 둔다."""
+    values = pd.to_numeric(gaps, errors="coerce").dropna()
+    low = min(0.0, float(values.min())) if not values.empty else 0.0
+    high = max(0.0, float(values.max())) if not values.empty else 0.0
+    span = (high - low) or 0.01
+    return [low - span * 0.35 if low < 0 else low, high + span * 0.35 if high > 0 else high]
 
 
 def _gap_matrix_figure(

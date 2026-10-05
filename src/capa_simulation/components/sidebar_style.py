@@ -146,6 +146,11 @@ def build_sidebar_stylesheet(
     condition_alert_selectors = _SELECTOR_JOINER.join(
         f'{root} details [data-testid="stAlert"]' for root in condition_roots
     )
+    # 꺼진 스위치의 트랙. 숨긴 `input` 을 품은 `span` 바로 뒤의 `div` 다(1.63 DOM 실측).
+    condition_switch_off_selectors = _SELECTOR_JOINER.join(
+        f'{root} details label:has(> span > input[role="switch"]:not(:checked)) > span + div'
+        for root in condition_roots
+    )
     # 사이드바 안의 페이지 링크 전부. 본문에도 `stPageLink` 가 있을 수 있어 사이드바로 좁힌다.
     NAV_LINK = '[data-testid="stSidebarContent"] [data-testid="stPageLink-NavLink"]'
     # HOME 링크 하나. **활성 규칙보다 특정도가 높아야** 한다 — HOME 에 있을 때 활성 규칙의
@@ -431,6 +436,12 @@ def build_sidebar_stylesheet(
         {condition_alert_selectors} {{
             background-color: {tokens.SURFACE};
             border-radius: 10px;
+        }}
+        /* 꺼진 스위치의 트랙은 Streamlit 기본 면(밝게 #E6E9ED)이라 청록 면 위에서 1.03:1 로
+           사라지고 흰 손잡이만 남았다(2026-10-05 E2E). 1px 윤곽을 `TEXT_MUTED` 로 둘러 면에서
+           떼어 낸다(밝게 4.6:1). 켜진 스위치는 강조색이라 건드리지 않는다. */
+        {condition_switch_off_selectors} {{
+            box-shadow: inset 0 0 0 1px {tokens.TEXT_MUTED};
         }}
         /* 면 위에서는 공식버전 배지의 경계가 흐려진다. 1px 윤곽으로 배지를 세운다. */
         .st-key-{scenario_box_key} summary .stMarkdownBadge {{

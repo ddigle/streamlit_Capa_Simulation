@@ -14,6 +14,7 @@ FAB 는
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -116,6 +117,11 @@ class _DrawingTarget:
         return FAB_CANVAS if self.floor is None else (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
 
 
+# `st.file_uploader` 의 상한은 MB 정수다. 도면당 상한(바이트)을 올림해 넣는다 — 서버 쪽 검사는
+# 그대로 바이트로 한다.
+UPLOAD_LIMIT_MB = math.ceil(MAX_FLOOR_LAYOUT_BYTES / (1024 * 1024))
+
+
 def render_floor_layout_editor(
     *,
     database_path: str,
@@ -206,6 +212,9 @@ def _floor_layout_dialog(
         "배치 도면 이미지",
         type=sorted(ALLOWED_IMAGE_EXTENSIONS),
         key=f"{FLOOR_LAYOUT_WIDGET_KEY}_uploader_{key}_{nonce}",
+        # 올리기 칸의 안내(「…MB per file」)와 막는 크기를 도면당 상한에 맞춘다. 빼면 서버 전체
+        # 상한(1GB)이 적혀 바로 위 「도면당 2.0MB」 문장과 어긋났다(2026-10-05 E2E).
+        max_upload_size=UPLOAD_LIMIT_MB,
     )
     payload = uploaded.getvalue() if uploaded is not None else None
     pixel_size = image_pixel_size(payload) if payload else None

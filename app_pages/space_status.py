@@ -835,7 +835,10 @@ if selected is None:
                 database_path=equipment_database_path, disabled=not fab_editable
             )
             # 설비 저장본이 없어도 켠다(FAB 는 설비 리비전과 무관한 현행값, 결정 2). 샘플 화면에서는
-            # 끈다.
+            # 끈다. 잠글 때는 **값도 끈다** — 켜 둔 채 잠그면 스위치는 켜짐인데 보기 전용 도면이
+            # 그려져 화면이 서로 다른 말을 했다(2026-10-05 E2E). 적용해 둔 대기분은 그대로다.
+            if not fab_editable:
+                st.session_state[FAB_EDIT_MODE_KEY] = False
             fab_editing = (
                 st.toggle(
                     "배치 편집",

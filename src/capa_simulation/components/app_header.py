@@ -86,9 +86,11 @@ _HEADER_TEMPLATE = """
   position: absolute;
   line-height: 1.1rem;
   left: 1.5rem;
-  /* 오른쪽 툴바(실행 표시·Stop·Deploy·⋮)가 쓰는 폭은 비워 둔다. 창이 좁아지면
-     글자를 밀어내지 않고 말줄임으로 끊는다. */
-  max-width: calc(100% - 16rem);
+  /* 오른쪽 툴바(Summary·Guide·테마·Deploy·⋮)가 쓰는 폭은 비워 둔다. 창이 좁아지면
+     글자를 밀어내지 않고 말줄임으로 끊는다. 툴바에 Summary·Guide·테마 단추가 붙으며 그 폭이
+     약 23rem(1100px 창 실측 323px)이 되어, 예전 16rem 으로는 글자가 Summary 밑으로 들어갔다
+     (2026-10-05 E2E). */
+  max-width: calc(100% - 27rem);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -115,6 +117,13 @@ _HEADER_TEMPLATE = """
   top: 50%;
   font-size: 0.72rem;
   color: __TEXT_MUTED__;
+}
+
+/* 본문 글 속 인라인 코드. Streamlit 기본(0.75em)은 고정폭 글꼴에 없는 한글이 대체 글꼴로 그려져
+   알림 안에서 10.5px·캡션 안에서 9.2px 로 작아 읽히지 않았다(2026-10-05 E2E). 본문 크기에
+   가깝게 올린다. 코드 블록(`pre`)은 건드리지 않는다. */
+[data-testid="stMarkdownContainer"] :not(pre) > code {
+  font-size: 0.9em;
 }
 
 /* 사이드바 머리칸. `relative` 로 두면 기준 상자는 되지만 사이드바 내용과 함께 스크롤돼

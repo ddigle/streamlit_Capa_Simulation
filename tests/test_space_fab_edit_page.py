@@ -190,6 +190,8 @@ def test_fab_edit_is_off_while_viewing_the_sample_fleet(
 
     assert not app.exception
     assert app.toggle(key=FAB_EDIT_KEY).disabled
+    # 잠근 스위치는 꺼짐으로 보인다. 켜짐인데 보기 전용 도면이 그려지면 화면이 서로 다른 말을 한다.
+    assert app.toggle(key=FAB_EDIT_KEY).value is False
     assert app.button(key="space_floor_layout_open_FAB").disabled
     assert not _fab_calls(editor_calls, editing=True)
     assert _fab_calls(editor_calls, editing=False)
@@ -401,6 +403,8 @@ def test_the_fab_drawing_popup_reuses_the_floor_popup_and_guards_the_blocks(
 
     assert not app.exception
     assert len(app.get("file_uploader")) == 1
+    # 올리기 칸의 상한 안내가 도면당 상한(2.0MB)과 같다. 서버 전체 상한(1GB)이 적혔었다.
+    assert app.get("file_uploader")[0].proto.max_upload_size_mb == 2
     assert app.button(key="space_floor_layout_delete_FAB").disabled
     right, top = marks_extent(default_fab_layout()[1])
     app.checkbox(key="space_floor_layout_auto_FAB").uncheck().run()

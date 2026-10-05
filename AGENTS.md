@@ -1100,6 +1100,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 효율·UPEH·수율 실적 화면 **한 벌**. 세 화면이 같은 질문을 지표만 바꿔 묻기 때문에
     `MetricSpec` 만 갈아 끼운다. 요약(보고용)·상세 분석·개선과제 세 탭이고 탭은
     `stateful_tabs` 로 만든다. 조회 조건 위젯은 숨은 탭에서도 그리고 Plotly 만 건너뛴다.
+  - 추이 축 눈금·풍선은 KPI 와 같은 형식(`_value_tick_format`)이고, 우선순위 막대는 바깥 라벨이 나갈
+    자리를 x 범위 안에 남긴다(`_priority_range`) — 축 밖으로 내보내면 공정 이름 위에 겹쳤다.
 - `src/capa_simulation/components/decision_summary.py`
   - HOME 맨 위의 **결론 → 근거 → 다음 확인** 한 묶음. 가장 낮은 확보율 공정·월을 한 줄로
     말하고 판정 가능한 수와 구간별 미달 수를 근거로 단다. 문장은 `services/home_decision.py`
@@ -1944,10 +1946,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 사이드바 접기 버튼(`stSidebarCollapseButton`)을 늘 보이게 한다(2026-10-03 사용자 요청).
     Streamlit 은 사이드바에 마우스를 올렸을 때만 `visibility: visible` 로 띄운다. 인쇄 숨김은
     남기려고 `@media screen` 안에서만 덮는다. 판올림 뒤 버튼이 늘 보이는지 눈으로 확인한다.
+  - 머리 글자는 오른쪽 툴바 폭(`27rem`, Summary·Guide·테마·Deploy·⋮ 실측 323px)을 비우고 말줄임으로
+    끊는다. 툴바에 단추를 더하면 이 폭도 다시 잰다(2026-10-05 E2E — 16rem 이라 글자가 단추 밑으로).
+  - 본문 인라인 코드는 `0.9em` 이다. Streamlit 기본 0.75em 은 대체 글꼴로 그려지는 한글을 9~10px 로
+    줄였다(2026-10-05 E2E). 같은 전역 스타일이라 이 파일에 둔다.
 - `src/capa_simulation/components/sidebar_style.py`
   - 탐색 그룹·활성 경로·기존 컨테이너 키와 현재 테마로 사이드바 스타일 문자열을 만든다.
     위젯 생성이나 HTML 주입은 하지 않는다. 생성된 HTML의 태그 안전성과 테마·활성 선택자를
     `tests/test_sidebar_stylesheet.py`가 검사한다.
+  - 조건 상자·카드 안의 **꺼진 스위치** 트랙에 `TEXT_MUTED` 1px 윤곽을 두른다. 기본 트랙 면이 청록
+    면 위에서 1.03:1 로 사라졌다(2026-10-05 E2E). 선택자는 1.63 DOM(숨긴 input 의 `span` 뒤 `div`)에
+    기대므로 판올림 때 확인한다.
   - 상자 제목은 모두 확장 패널의 요약 줄이라 **한 규칙**(1rem·700)이 그룹과 컨트롤 넷을
     함께 건다. 여기서만 하는 두 가지가 더 있다 — 시나리오 배지를 요약 줄 오른쪽 끝으로
     미는 것과, 적용 기간 자리표시자를 높이 0 으로 눌러 요약 줄 위에 얹는 것(좌표는 모듈

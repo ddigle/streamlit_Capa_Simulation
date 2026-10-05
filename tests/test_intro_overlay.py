@@ -318,3 +318,17 @@ def test_summary_axis_and_bar_labels_match_the_point_value_size() -> None:
     assert process_font.startswith("`500 14px ")
     assert "g.font = `700 14px ${bodyStack}`;" in scene
     assert "10.5px" not in scene and "700 13px" not in scene
+
+
+def test_closing_the_toolbar_summary_returns_focus_to_its_button() -> None:
+    """툴바 Summary 로 연 요약을 Esc·Detail 로 닫으면 포커스가 그 단추로 돌아간다.
+
+    돌려주지 않으면 body 에 남아 키보드 사용자가 제자리를 잃었다(2026-10-05 E2E — Guide 는
+    `#capa-guide-button` 으로 돌려준다). 처음 입장 화면은 연 단추가 없으니 돌려줄 곳도 없다.
+    """
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    opening = js[js.index("async function openFromApp(button)") :]
+    assert "opener = button || null;" in opening[: opening.index("snapToSummary()")]
+    closing = js[js.index("async function toDetail()") : js.index("function hide()")]
+    assert closing.index("hide();") < closing.index("opener.focus(")
+    assert "opener = null;" in closing

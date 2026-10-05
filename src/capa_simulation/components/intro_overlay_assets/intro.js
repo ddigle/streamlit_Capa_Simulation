@@ -1378,6 +1378,9 @@ function createOverlay(api, data, initial, syncToolbar) {
   /* ------------------------------------------------ 상태: intro(입장) · summary(요약) · hidden(감춤) */
   let mode = intro ? "intro" : "hidden";
   let busy = false;
+  // 툴바 Summary 로 연 요약을 닫으면 포커스를 그 단추로 돌려준다. 돌려주지 않으면 body 에 남아
+  // 키보드 사용자가 제자리를 잃었다(Guide 는 돌려준다, 2026-10-05 E2E).
+  let opener = null;
   const t0 = performance.now();
   let reached = 0; // 끝낸 단계 수
   let ready = !intro;
@@ -1696,6 +1699,7 @@ function createOverlay(api, data, initial, syncToolbar) {
   async function openFromApp(button) {
     if (busy || mode !== "hidden" || !summary) return;
     busy = true;
+    opener = button || null;
     if (!prepared) {
       await Promise.race([
         new Promise((resolve) => preparedWaiters.push(resolve)),
@@ -1747,6 +1751,8 @@ function createOverlay(api, data, initial, syncToolbar) {
     }
     hide();
     busy = false;
+    if (opener && opener.isConnected) opener.focus({ preventScroll: true });
+    opener = null;
   }
 
   function hide() {
