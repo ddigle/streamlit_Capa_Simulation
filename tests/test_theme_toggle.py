@@ -5,9 +5,10 @@ import re
 import pytest
 from streamlit.elements.html import _html_only_style_tags
 
-from capa_simulation.components import intro_summary, page_guide, theme_toggle
+from capa_simulation.components import intro_summary, page_guide, print_button, theme_toggle
 from capa_simulation.components.intro_summary import summary_toolbar_script
 from capa_simulation.components.page_guide import guide_toolbar_script
+from capa_simulation.components.print_button import print_toolbar_script
 from capa_simulation.design import theme
 
 
@@ -41,7 +42,7 @@ def test_toolbar_iframe_is_identical_whatever_theme_python_resolved(
         monkeypatch.setattr(theme, "_read_client_mode", lambda mode=mode: mode)
         theme.begin_run()
         theme_toggle.render_theme_toggle(
-            extra_scripts=(guide_toolbar_script(), summary_toolbar_script())
+            extra_scripts=(guide_toolbar_script(), summary_toolbar_script(), print_toolbar_script())
         )
 
     assert len(frames) == 2
@@ -82,11 +83,11 @@ def test_the_key_rule_is_the_first_script_and_keeps_one_app_wide_choice(
     """고른 테마의 정본은 앱 키 하나다. Streamlit 키는 경로마다 따로라 그것만 보면 한 페이지에서
     고른 테마가 다른 페이지에 닿지 않는다(하위 페이지 Dark 가 두 번 새로고침하고 밝게 끝났다).
 
-    규칙은 iframe 맨 앞 스크립트 한 벌이고, 버튼·Guide·Summary 스크립트가 모두 그것을 부른다.
+    규칙은 iframe 맨 앞 스크립트 한 벌이고, 버튼·Guide·Summary·Print 스크립트가 모두 그것을 부른다.
     """
     frames, _, _ = _render(monkeypatch)
     theme_toggle.render_theme_toggle(
-        extra_scripts=(guide_toolbar_script(), summary_toolbar_script())
+        extra_scripts=(guide_toolbar_script(), summary_toolbar_script(), print_toolbar_script())
     )
     frame = frames[0]
     rule = theme_toggle.THEME_RULE_SCRIPT
@@ -106,7 +107,7 @@ def test_the_key_rule_is_the_first_script_and_keeps_one_app_wide_choice(
     assert not theme_toggle.THEME_APP_KEY.startswith(theme_toggle.THEME_STORAGE_PREFIX)
     # 처음이면 밝게(2026-10-01 결정) — 앱 키도 경로 키도 없을 때의 마지막 값이다.
     assert '|| here || "Light";' in rule
-    # 고른 값은 Light·Dark 뿐이다. ⋮ 메뉴의 "System" 은 고른 값으로 치지 않는다.
+    # 고른 값은 Light·Dark 뿐이다. ⋮ 메뉴(감췄지만 남긴 안전망)의 "System" 은 고른 값이 아니다.
     assert 'value === "Dark" || value === "Light"' in rule
 
 
@@ -136,6 +137,9 @@ def test_the_storage_key_is_computed_from_the_path_at_the_moment_of_use() -> Non
 def test_menu_choices_are_adopted_only_against_our_own_sync_mark() -> None:
     """⋮ 메뉴는 지금 경로의 Streamlit 키만 고친다. 그 키가 우리가 마지막으로 적은 표지와 다를 때만
     사람이 바꾼 것으로 보고 앱 키로 받아들인다 — 표지가 없는 옛 경로 값은 받아들이지 않는다.
+
+    메뉴는 CSS 로 감춘다(`app_header.py`). 이 규칙은 판올림으로 그 감춤이 풀려 메뉴가 다시 보일 때를
+    위한 안전망으로 남긴다.
     """
     rule = theme_toggle.THEME_RULE_SCRIPT
     menu = _function_body(rule, "menuChoice")
@@ -188,24 +192,31 @@ def test_a_key_driven_reload_happens_at_most_once_per_tab() -> None:
 
 
 def test_toolbar_readers_use_the_shared_rule_instead_of_their_own_key() -> None:
-    """Guide·Summary 단추의 색도 같은 규칙으로 고른다. 저장 키를 따로 만들면 규칙이 갈라진다."""
-    for script in (guide_toolbar_script(), summary_toolbar_script(), page_guide._SCRIPT):
+    """Guide·Summary·Print 단추의 색도 같은 규칙으로 고른다. 저장 키를 따로 두면 규칙이 갈라진다."""
+    for script in (
+        guide_toolbar_script(),
+        summary_toolbar_script(),
+        print_toolbar_script(),
+        page_guide._SCRIPT,
+    ):
         assert theme_toggle.THEME_STORAGE_PREFIX not in script
         assert "localStorage" not in script
         assert "capaTheme.resolve(parentWindow)" in script
     assert "THEME_STORAGE_PREFIX" not in vars(intro_summary)
+    assert "THEME_STORAGE_PREFIX" not in vars(print_button)
 
 
 def test_toolbar_scripts_take_the_slot_and_button_id_from_one_place() -> None:
-    """툴바 슬롯·테마 버튼 id 는 `theme_toggle` 한 곳에 있다. Guide·Summary 원문이 값을 직접 적으면
-    판올림에서 한 곳만 고쳐 다른 단추가 조용히 사라진다."""
-    templates = (page_guide._SCRIPT, intro_summary._TOOLBAR_SCRIPT)
+    """툴바 슬롯·테마 버튼 id 는 `theme_toggle` 한 곳에 있다. Guide·Summary·Print 원문이 값을 직접
+    적으면 판올림에서 한 곳만 고쳐 다른 단추가 조용히 사라진다."""
+    templates = (page_guide._SCRIPT, intro_summary._TOOLBAR_SCRIPT, print_button._SCRIPT)
     for template in templates:
         assert theme_toggle.TOOLBAR_SLOT not in template
         assert theme_toggle.THEME_BUTTON_ID not in template
         assert "querySelector('%(slot)s')" in template
     assert 'getElementById("%(theme)s")' in page_guide._SCRIPT
-    for script in (guide_toolbar_script(), summary_toolbar_script()):
+    assert 'getElementById("%(theme)s")' in print_button._SCRIPT
+    for script in (guide_toolbar_script(), summary_toolbar_script(), print_toolbar_script()):
         assert f"querySelector('{theme_toggle.TOOLBAR_SLOT}')" in script
         assert f'getElementById("{theme_toggle.THEME_BUTTON_ID}")' in script
 
@@ -233,3 +244,38 @@ def test_the_theme_button_asks_before_a_reload_drops_unsaved_edits(
     assert f"{variable}:1" in marker
     assert _html_only_style_tags(marker)
     assert theme_toggle.unsaved_edits_marker(False) == ""
+
+
+def test_the_print_button_sits_right_of_the_theme_button_and_waits_for_an_idle_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """⋮ 메뉴를 감추며 그 안의 Print 를 툴바 단추로 옮겼다(2026-10-05 사용자 결정). Streamlit 메뉴의
+    Print 처럼 스크립트가 도는 동안은 500ms 마다 다시 보고, 멈췄을 때 앱 창의 `print()` 를 부른다 —
+    반쯤 그려진 화면을 찍지 않는다. 같은 iframe 에 실려도 내용은 회차마다 같아야 한다.
+    """
+    script = print_toolbar_script()
+    assert "%(" not in script
+    assert f'button.id = "{print_button.BUTTON_ID}";' in script
+    assert 'button.setAttribute("aria-label", "인쇄");' in script
+    assert 'button.textContent = "Print";' in script
+    # 실행 상태를 읽어 도는 중이면 500ms 뒤에 다시 본다. 다 돌았을 때만 인쇄한다.
+    wait = _function_body(script, "printWhenIdle")
+    assert ".stApp[data-test-script-state]" in wait
+    assert 'getAttribute("data-test-script-state")' in wait
+    assert 'state === "running"' in wait
+    assert "parentWindow.setTimeout(printWhenIdle, 500);" in wait
+    assert wait.index("setTimeout(printWhenIdle") < wait.index("parentWindow.print()")
+    # 테마 버튼 바로 오른쪽에 선다. 테마 버튼이 서기 전이면 기다려 차례가 뒤집히지 않게 한다.
+    place = _function_body(script, "place")
+    assert "if (!theme) return false;" in place
+    assert "slot.insertBefore(button, theme.nextSibling);" in place
+    # Guide 와 같은 윤곽 단추다.
+    assert '"font-size:13px", "font-weight:600"' in place
+    assert '"border-radius:8px"' in place
+    assert '"background:transparent"' in place
+
+    frames, _, _ = _render(monkeypatch)
+    for _ in range(2):
+        theme_toggle.render_theme_toggle(extra_scripts=(print_toolbar_script(),))
+    assert frames[0] == frames[1]
+    assert f"<script>{script}</script>" in frames[0]

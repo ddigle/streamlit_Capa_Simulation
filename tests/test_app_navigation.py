@@ -337,10 +337,11 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     """입장 화면은 무거운 부트스트랩보다 **먼저**, 그리고 **매 회차** 그려진다.
 
     먼저여야 그동안을 덮고, 매 회차여야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다. 툴바
-    iframe(테마·Guide·Summary 단추)은 입장 화면 바로 뒤·부트스트랩 앞이다 — 첫 방문처럼 테마
+    iframe(테마·Guide·Summary·Print 단추)은 입장 화면 바로 뒤·부트스트랩 앞이다 — 첫 방문처럼 테마
     스크립트가 새로고침할 로드는 그 세션이 버려지므로, 부트스트랩·요약을 돌기 전에 새로고침이
     걸려야 한다.
     """
+    import capa_simulation.components.app_header as app_header
     import capa_simulation.components.intro_overlay as intro_overlay
     import capa_simulation.components.intro_summary as intro_summary
     import capa_simulation.components.theme_toggle as theme_toggle
@@ -354,6 +355,7 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
         return original_bootstrap(*args, **kwargs)
 
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: order.append("intro"))
+    monkeypatch.setattr(app_header, "hide_main_menu", lambda: order.append("menu"))
     monkeypatch.setattr(
         theme_toggle,
         "render_theme_toggle",
@@ -369,8 +371,9 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     app.run()
 
     # 요약은 부트스트랩 뒤·페이지 앞이다 — 로딩에 들어가고, 페이지가 멈춰도 이미 보냈다. 툴바는
-    # Guide·Summary 스크립트 둘을 함께 싣는다.
-    one_run = ["intro", "toolbar:2", "bootstrap", "summary"]
+    # Guide·Summary·Print 스크립트 셋을 함께 싣는다. ⋮ 메뉴를 감추는 규칙도 부트스트랩 앞이다 —
+    # 부트스트랩 오류 화면(`st.stop()`)에서도 메뉴가 보이지 않아야 한다.
+    one_run = ["intro", "menu", "toolbar:3", "bootstrap", "summary"]
     assert order == one_run * 2
 
 

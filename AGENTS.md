@@ -179,11 +179,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오 부트스트랩보다 앞에서 매 회차 부른다.** 앞이어야 첫 로딩을 덮고, 매 회차 같은
     내용이어야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다(이미 들어간 탭이면 브라우저가
     아무것도 하지 않는다). `app.py` 를 여는 AppTest 는 `render_intro_overlay` 를 바꿔 끼운다.
-  - **툴바 iframe(`render_guide_base_style` + `theme_toggle.render_theme_toggle` — 테마·Guide·Summary
-    단추)은 입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
+  - **툴바 iframe(`render_guide_base_style` + `theme_toggle.render_theme_toggle` — 테마·Guide·Summary·
+    Print 단추)은 입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
     스크립트가 새로고침해 그 세션을 버리므로, 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기 전에
-    새로고침이 걸린다. 차례 `입장 화면 → 툴바 → 부트스트랩 → 요약` 은 `tests/test_app_navigation.py` 가
-    지킨다.
+    새로고침이 걸린다. ⋮ 메뉴를 감추는 스타일(`app_header.hide_main_menu`)도 툴바 바로 앞, 부트스트랩
+    앞이다 — 머리 띠(`render_app_header`)는 부트스트랩 뒤라 거기에 두면 부트스트랩 오류 화면에 메뉴가
+    남고, 새로 읽을 때마다 메뉴가 보였다 사라지며 툴바 단추가 밀린다. 차례
+    `입장 화면 → 메뉴 감춤 → 툴바 → 부트스트랩 → 요약` 은 `tests/test_app_navigation.py` 가 지킨다.
   - **입장 화면 Summary 의 요약 값(`components/intro_summary.py`)은 공식 시나리오 부트스트랩
     바로 뒤, 페이지보다 앞에서 매 회차 보낸다.** 페이지가 `st.stop()` 하면 그 뒤로는 아무것도
     브라우저에 닿지 않고, 앞이어야 입장 화면 로딩에 포함된다. **이 부가 기능이 주 업무 화면(HOME)의
@@ -1807,7 +1809,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Guide·툴바 Summary·입장 화면의 새로고침 예측이 모두 이것만 부른다 — 저장 키를 따로 만들지 않는다.
     - 경로는 **쓰는 순간** `location.pathname` 으로 읽는다. 이 iframe 은 앱 안에서 페이지를 옮겨도
       남으므로 처음 실행 때 만든 키는 다른 페이지에서 틀린 키다.
-    - 열릴 때(`sync`): 고른 값 = ⋮ 메뉴로 바꾼 값 → 앱 키 → 지금 경로의 Streamlit 키(예전 판 값을
+    - 열릴 때(`sync`): 고른 값 = ⋮ 메뉴로 바꾼 값(안전망 — 아래) → 앱 키 → 지금 경로의 Streamlit 키(예전 판 값을
       한 번 이어받음) → `"Light"` 순. 그 값을 앱 키·지금 경로와 우리 표지가 있는 경로의 Streamlit
       키·표지에 적고, 지금 경로의 Streamlit 키를 고쳐 적었거나 `?theme` 이 다르면 **한 번** 새로고침한다.
     - 다른 경로는 **우리 표지가 있는 경로만** 만진다(Streamlit 테마 키 전부를 훑지 않는다). 한 출처에
@@ -1818,6 +1820,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       끝없이 돈다. 새로고침 전에 `sessionStorage` 표지(`THEME_RELOAD_GUARD_PREFIX` + 경로)를 남기고, 다음
       로드에도 어긋나 있으면 `?theme` 만 맞춘 채 멈춘다. 키가 맞는 로드에서 지운다. `resolve` 도 이
       표지를 보므로 입장 화면의 예측이 같다.
+    - **테마를 바꾸는 길은 이 버튼 하나다.** Streamlit 의 ⋮ 메뉴는 `app_header.py` 가 통째로 감춘다
+      (2026-10-05 사용자 결정). 아래 메뉴 채택 규칙은 판올림으로 감춤이 빗나가 메뉴가 다시 보일 때를
+      위한 **안전망**으로 남긴다 — 메뉴가 감춰져 있는 동안은 사람이 메뉴로 키를 바꿀 길이 없어 할 일이
+      없다(첫 delta 전 아주 잠깐 보이는 메뉴를 누른 경우라도 규칙대로 받아들일 뿐이다).
     - ⋮ 메뉴는 지금 경로의 Streamlit 키만 고친다. 경로마다 「우리가 마지막으로 적은 값」 표지
       (`THEME_SYNC_PREFIX` + 경로)를 두고, 어느 경로의 Streamlit 키가 표지와 다르면 메뉴로 바꾼 것으로
       보고 앱 키로 받아들인다. 표지가 없는 값(예전 판)은 받아들이지 않는다. 메뉴의 `"System"` 은 고른
@@ -1833,9 +1839,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     폐기 예고를 찍어 2026-10-01 에 옮겼다.
   - **비공식 경로다.** `data-testid` 와 `localStorage` 키 모양은 판올림에서 바뀔 수 있다.
     Streamlit 을 올린 뒤에는 이 버튼이 보이는지 눈으로 확인한다. 툴바 슬롯 선택자(`TOOLBAR_SLOT`)와
-    테마 버튼 id(`THEME_BUTTON_ID`)는 이 모듈 한 곳에 두고, Guide·툴바 Summary 스크립트도 문자열을
+    테마 버튼 id(`THEME_BUTTON_ID`)는 이 모듈 한 곳에 두고, Guide·툴바 Summary·Print 스크립트도 문자열을
     적지 않고 `%(slot)s`·`%(theme)s` 자리로 받는다 — 판올림에서 고칠 곳이 하나다.
-  - `extra_scripts` 로 같은 툴바에 버튼을 얹는 다른 스크립트(Guide)를 함께 싣는다. iframe 을
+  - `extra_scripts` 로 같은 툴바에 버튼을 얹는 다른 스크립트(Guide·Summary·Print)를 함께 싣는다. iframe 을
     따로 두지 않는다 — 높이를 접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다.
   - **iframe 내용은 회차마다 같아야 한다**(`tests/test_theme_toggle.py`). 바뀌면 Streamlit 이 iframe 을
     새로 만들고 옛 버튼의 `onclick` 이 죽는다. 키 규칙도 상수만 실린 고정 문자열이다.
@@ -1856,6 +1862,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 가이드가 있는 화면(2026-09-29): HOME·Static Capa·생산 계획·기준 정보·산출 결과·표준 목표·
     시나리오 관리·가용설비 현황·Space 현황·Admin Area·VOC. 본문에서 뺀 설명을 옮긴 것이라 각
     화면 테스트가 옮긴 핵심 문구가 Guide 에 있는지 대조한다(`test_*_guide_carries_*`).
+- `src/capa_simulation/components/print_button.py`
+  - 헤더 테마 버튼 **바로 오른쪽**의 `Print` 버튼(2026-10-05 사용자 결정 — ⋮ 메뉴를 통째로 감추며
+    그 안의 인쇄를 툴바로 옮겼다). 최소 모드(`client.toolbarMode = "minimal"`)는 테마 항목을 남겨
+    메뉴가 사라지지 않으므로 쓰지 않는다.
+  - 동작은 Streamlit 메뉴의 Print 와 같다. `.stApp` 의 `data-test-script-state` 가 `running`·
+    `rerunRequested`·`stopRequested` 이면 500ms 뒤에 다시 보고, 멈췄을 때 앱 창의 `print()` 를 부른다
+    (반쯤 그려진 화면을 찍지 않는다). 기다리는 중에 다시 눌러도 기다림을 하나 더 걸지 않는다.
+  - Guide 와 같은 윤곽 단추(13px/600 · 모서리 8px · 높이 27px · `BORDER`/`TEXT`)이고 `aria-label` 은
+    「인쇄」다. 테마 버튼 iframe 에 함께 싣고(`extra_scripts`), 색은 같은 키 규칙(`capaTheme`)으로
+    두 테마 값 중에서 고른다 — iframe 내용은 회차마다 같아야 한다. 테마 버튼이 서기 전에는 서지
+    않는다(먼저 서면 뒤에 오는 테마 버튼이 슬롯 끝에 붙어 차례가 뒤집힌다).
 - `src/capa_simulation/components/intro_overlay.py`
   - **탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면**(2026-10-02 사용자 결정 — 4시안 중 B안
     수정본). 웨이퍼 심볼과 `S.PKG CAPA` 워드마크가 원형으로 화면 전체로 펼쳐지고, 입장 화면의
@@ -1954,11 +1971,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 화면 맨 위 띠의 면을 칠하고 앱 이름·버전·개발자·인증 정보를 모든 페이지에 표시한다.
     Streamlit 이 헤더에 위젯을 넣는 API 를 주지 않아 `stHeader`·`stSidebarHeader` 의
     가상요소에 글을 얹는다(글자만 가능, 링크·버튼 불가). 값은 `settings.py` 가 단일 근거이고
-    ⋮ 메뉴의 About 과 같은 상수를 본다. `app.py` 에서 한 번만 부른다.
+    이 띠가 그 값을 보여 주는 유일한 자리다(⋮ 메뉴의 About 은 없다 — 인증 유효기간도 둘째 줄의
+    인증번호 뒤에 싣는다). `app.py` 에서 한 번만 부른다.
+  - **Streamlit 의 ⋮ 메뉴(`stMainMenu`)를 통째로 감춘다**(2026-10-05 사용자 결정). 사용자에게 남길
+    항목은 인쇄·테마뿐이고 둘 다 툴바 단추(`print_button`·`theme_toggle`)가 맡는다. 감추는 규칙은 그
+    요소 하나만 고른다 — Deploy 와 툴바 슬롯(`stToolbarActions`)은 그대로다. 그래서
+    `set_page_config` 에 `menu_items` 를 적지 않는다. 이 규칙(`MAIN_MENU_HIDE_STYLE`)은 머리 띠 CSS 와
+    따로 `hide_main_menu()` 로 **부트스트랩 앞에서** 보낸다(위 진입점 차례). 메뉴는 Streamlit 의 정적
+    껍데기라 첫 delta 가 닿기 전 아주 잠깐은 보일 수 있다. 판올림 뒤 메뉴가 다시 보이지 않는지 확인한다.
   - 사이드바 접기 버튼(`stSidebarCollapseButton`)을 늘 보이게 한다(2026-10-03 사용자 요청).
     Streamlit 은 사이드바에 마우스를 올렸을 때만 `visibility: visible` 로 띄운다. 인쇄 숨김은
     남기려고 `@media screen` 안에서만 덮는다. 판올림 뒤 버튼이 늘 보이는지 눈으로 확인한다.
-  - 머리 글자는 오른쪽 툴바 폭(`27rem`, Summary·Guide·테마·Deploy·⋮ 실측 323px)을 비우고 말줄임으로
+  - 머리 글자는 오른쪽 툴바 폭(`28rem`, Summary·Guide·테마·Print·Deploy 1100px 창 실측 355px)을 비우고 말줄임으로
     끊는다. 툴바에 단추를 더하면 이 폭도 다시 잰다(2026-10-05 E2E — 16rem 이라 글자가 단추 밑으로).
   - 본문 인라인 코드는 `0.9em` 이다. Streamlit 기본 0.75em 은 대체 글꼴로 그려지는 한글을 9~10px 로
     줄였다(2026-10-05 E2E). 같은 전역 스타일이라 이 파일에 둔다.

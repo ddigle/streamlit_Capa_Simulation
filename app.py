@@ -6,12 +6,13 @@ from pathlib import Path
 import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
-from capa_simulation.components.app_header import render_app_header
+from capa_simulation.components.app_header import hide_main_menu, render_app_header
 from capa_simulation.components.equipment_data_workspace import has_unsaved_equipment_edits
 from capa_simulation.components.intro_overlay import render_intro_overlay
 from capa_simulation.components.intro_summary import render_intro_summary, summary_toolbar_script
 from capa_simulation.components.month_range_picker import render_month_range_picker
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
+from capa_simulation.components.print_button import print_toolbar_script
 from capa_simulation.components.scenario_edit_bar import pending_edit_labels
 from capa_simulation.components.scenario_status import (
     SCENARIO_BOX_KEY,
@@ -41,9 +42,6 @@ from capa_simulation.scenario_preset_state import (
 )
 from capa_simulation.services.scenario_month_bounds import scenario_month_bounds
 from capa_simulation.settings import (
-    APP_ABOUT,
-    APP_BUG_REPORT_URL,
-    APP_HELP_URL,
     APP_NAME,
     DUCKDB_PATH,
     EQUIPMENT_DUCKDB_PATH,
@@ -101,12 +99,8 @@ st.set_page_config(
     page_title=APP_NAME,
     page_icon=":material/factory:",
     layout="wide",
-    # 헤더에 직접 글을 넣는 공식 API 는 없다. 개발자·인증 정보는 ⋮ 메뉴의 About 에 싣는다.
-    menu_items={
-        "Get help": APP_HELP_URL,
-        "Report a bug": APP_BUG_REPORT_URL,
-        "About": APP_ABOUT,
-    },
+    # `menu_items` 는 적지 않는다. ⋮ 메뉴는 통째로 감추고(`hide_main_menu`), 개발자·인증 정보는
+    # 머리 띠(`render_app_header`)가 보여 준다.
 )
 # 사이드바 상자를 여닫을 때 앱 전체 대신 다시 도는 빈 프래그먼트와, 이번 실행이 끝까지
 # 돌았는지의 표지(`sidebar_status.on_box_toggle`). 프래그먼트는 `st.stop()` 이 걸릴 수 있는
@@ -123,15 +117,22 @@ theme.begin_run()
 # 아무것도 하지 않는다.
 render_intro_overlay()
 # 헤더 오른쪽 Deploy 왼쪽 자리에 밝게/어둡게 버튼을 얹는다. Streamlit 이 테마를 기억하는 자리를
-# 그대로 쓰므로 위젯과 우리 Figure 가 함께 바뀐다. 그 왼쪽의 `Guide` 버튼도 같은 iframe 에 싣는다.
-# 기본은 감춰 두고 가이드를 단 페이지만 보이게 한다. 맨 왼쪽의 `Summary` 는 원래 화면에서 공식버전
-# 요약으로 돌아오는 단추다 — 요약이 준비된 뒤에만 입장 화면 JS 가 보이게 한다.
+# 그대로 쓰므로 위젯과 우리 Figure 가 함께 바뀐다. 테마를 바꾸는 길은 이 버튼 하나다(⋮ 메뉴는
+# 감춘다). 그 왼쪽의 `Guide` 버튼도 같은 iframe 에 싣는다. 기본은 감춰 두고 가이드를 단 페이지만
+# 보이게 한다. 맨 왼쪽의 `Summary` 는 원래 화면에서 공식버전 요약으로 돌아오는 단추다 — 요약이
+# 준비된 뒤에만 입장 화면 JS 가 보이게 한다. 테마 버튼 바로 오른쪽의 `Print` 는 감춘 메뉴의
+# 인쇄를 대신한다.
 #
 # **입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
 # 스크립트가 새로고침하고 그 세션은 버려진다. 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기
 # 전에 새로고침이 걸린다. 입장 화면이 먼저인 것은 그것이 무엇보다 먼저 화면을 덮어야 해서다.
+# ⋮ 메뉴를 감추는 규칙도 여기서 보낸다 — 머리 띠(`render_app_header`)는 부트스트랩 뒤라, 거기에
+# 두면 부트스트랩 오류 화면에 메뉴가 남고 새로 읽을 때마다 메뉴가 잠깐 보였다 사라진다.
+hide_main_menu()
 render_guide_base_style()
-render_theme_toggle(extra_scripts=(guide_toolbar_script(), summary_toolbar_script()))
+render_theme_toggle(
+    extra_scripts=(guide_toolbar_script(), summary_toolbar_script(), print_toolbar_script())
+)
 
 # managed 모드에서만 동기화 표시를 켠다. local 모드(개발 PC·기본값)에서는 아무 일도 하지
 # 않으므로 이 호출이 있어도 동작이 바뀌지 않는다.

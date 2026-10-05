@@ -35,11 +35,16 @@ Streamlit 1.63 은 그 키를 **번들을 읽는 순간의 경로**로 한 번�
   맞는 로드에서 표지를 지운다. 표지를 못 남기면 키 때문에는 새로고침하지 않는다.
 - **처음이면 밝게**: 앱 키가 비었으면 지금 경로의 Streamlit 키에 고른 값이 있으면 그것을(예전 판의
   경로별 선택을 한 번 이어받는다), 없으면 `"Light"` 다.
-- **⋮ 메뉴로 고른 것도 존중한다.** 그 메뉴는 지금 경로의 Streamlit 키만 고친다. 그래서 경로마다
-  「우리가 마지막으로 적은 값」(`THEME_SYNC_PREFIX` + 경로)을 남겨 두고, 열릴 때 어느 경로의
-  Streamlit 키가 그 표지와 다르면 **사람이 메뉴로 바꾼 것**으로 보고 앱 키로 받아들인다. 표지가
-  없으면(예전 판이 남긴 값) 받아들이지 않고 앱 키가 이긴다. 메뉴의 `"System"` 은 고른 값으로
-  치지 않는다(처음 여는 화면은 밝게라는 결정과 같다).
+- **테마를 바꾸는 길은 이 버튼 하나다.** Streamlit 의 ⋮ 메뉴는 통째로 감춘다(2026-10-05 사용자
+  결정 — `app_header.py` 의 전역 규칙, 메뉴의 인쇄는 툴바 `Print` 단추가 맡는다).
+- **⋮ 메뉴로 고른 것을 받아들이는 규칙은 안전망으로 남긴다.** 판올림으로 감추는 선택자가 빗나가
+  메뉴가 다시 보이면 사람이 그 메뉴로 테마를 고를 수 있다. 그 메뉴는 지금 경로의 Streamlit 키만
+  고친다. 그래서 경로마다 「우리가 마지막으로 적은 값」(`THEME_SYNC_PREFIX` + 경로)을 남겨 두고,
+  열릴 때 어느 경로의 Streamlit 키가 그 표지와 다르면 **사람이 메뉴로 바꾼 것**으로 보고 앱 키로
+  받아들인다. 표지가 없으면(예전 판이 남긴 값) 받아들이지 않고 앱 키가 이긴다. 메뉴의 `"System"` 은
+  고른 값으로 치지 않는다(처음 여는 화면은 밝게라는 결정과 같다). 메뉴가 감춰져 있는 동안은 사람이
+  메뉴로 키를 바꿀 길이 없어 이 규칙이 할 일이 없다. 메뉴는 Streamlit 의 정적 껍데기라 첫 delta 전
+  아주 잠깐 보일 수 있는데, 그때 누른 것도 이 규칙대로 받아들일 뿐이다.
 - **버튼을 누르면(`choose`)**: 앱 키·지금 경로와 표지가 있는 경로의 Streamlit 키·표지를 모두 새
   값으로 적고 `?theme` 을 맞춰 한 번 새로고침한다.
 - 저장소에 쓰지 못하면 Streamlit 키 때문에는 새로고침하지 않는다(쓰기 실패가 새로고침 반복이 되지
@@ -82,7 +87,7 @@ from capa_simulation.design.theme import THEME_QUERY_PARAM
 
 # Streamlit 과 맞춰야 하는 계약은 저장 키 모양(접두·접미)과 툴바 슬롯이다. 한 곳에 모아 두어야
 # 판올림에서 무엇을 확인해야 하는지가 분명하다. 툴바 슬롯과 테마 버튼 id 는 같은 툴바에 단추를
-# 얹는 Guide·Summary 스크립트(`page_guide`·`intro_summary`)도 여기서 받아 쓴다.
+# 얹는 Guide·Summary·Print 스크립트(`page_guide`·`intro_summary`·`print_button`)도 여기서 받아 쓴다.
 THEME_STORAGE_PREFIX = "stActiveTheme-"
 THEME_STORAGE_SUFFIX = "-v2"
 TOOLBAR_SLOT = '[data-testid="stToolbarActions"]'
@@ -142,7 +147,8 @@ var capaTheme = (function () {
     return paths;
   }
 
-  // ⋮ 메뉴로 바꾼 값: 우리가 적은 표지가 있고 Streamlit 키가 그와 다른 경로의 값.
+  // ⋮ 메뉴로 바꾼 값: 우리가 적은 표지가 있고 Streamlit 키가 그와 다른 경로의 값. 메뉴는 CSS 로
+  // 감추므로(`app_header.py`) 평소에는 없고, 판올림으로 메뉴가 다시 보일 때를 위한 안전망이다.
   function menuChoice(storage, paths) {
     for (var index = 0; index < paths.length; index += 1) {
       var mark = pick(storage.getItem(SYNC_PREFIX + paths[index]));
@@ -342,7 +348,7 @@ _SCRIPT = """
 def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
     """헤더에 전환 버튼을 얹는다. `app.py` 가 한 번만 부른다.
 
-    `extra_scripts` 는 같은 툴바에 버튼을 얹는 **다른 스크립트**다(`page_guide` 의 Guide 버튼).
+    `extra_scripts` 는 같은 툴바에 버튼을 얹는 **다른 스크립트**다(Guide·Summary·Print 버튼).
     iframe 을 따로 두지 않고 여기에 함께 싣는다 — 높이 0 iframe 도 본문 맨 위에 요소 간격 한
     칸을 먹어서, 하나 더 두면 모든 화면이 그만큼 내려간다.
 

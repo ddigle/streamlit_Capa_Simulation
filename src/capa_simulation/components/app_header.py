@@ -1,4 +1,4 @@
-# Purpose: 상단 띠의 면을 칠하고 앱 이름·개발자·인증 정보를 모든 페이지에 표시한다.
+# Purpose: 상단 띠에 앱·개발자·인증 정보를 표시하고 Streamlit ⋮ 메뉴를 감춘다.
 
 """App name, developer, and clearance info pinned to the top bars.
 
@@ -12,8 +12,17 @@ Streamlit 은 헤더(`stHeader`)에 위젯을 넣는 공식 API 를 주지 않�
 
 대가는 가상요소의 한계다. 줄마다 글 한 덩어리와 스타일 하나뿐이라 한 줄 안에서 굵기나
 색을 섞지 못하고, 링크·버튼처럼 누를 수 있는 것도 못 넣는다. 그래서 두 줄로 나눠 위는
-개발 정보, 아래는 인증 정보를 싣는다. 값은 `settings.py` 가 단일 근거이고 ⋮ 메뉴의
-About 과 같은 상수를 본다.
+개발 정보, 아래는 인증 정보를 싣는다. 값은 `settings.py` 가 단일 근거이고, 이 띠가 그 값을
+보여 주는 유일한 자리다.
+
+Streamlit 의 ⋮ 메뉴(`stMainMenu`)도 여기서 통째로 감춘다(2026-10-05 사용자 결정,
+`hide_main_menu`). 사용자에게 남길 메뉴 항목은 인쇄와 테마뿐이고, 둘 다 툴바 단추(`print_button`·
+`theme_toggle`)가 맡는다. 최소 모드(`client.toolbarMode = "minimal"`)는 테마 항목을 남겨 메뉴가
+사라지지 않으므로 쓰지 않는다 — Deploy 단추와 우리 단추가 앉는 툴바 슬롯은 그대로다. 이 규칙만은
+머리 띠 CSS 와 따로 **부트스트랩보다 앞에서** 보낸다. 머리 띠는 부트스트랩·요약 뒤에야 나가서,
+거기에 두면 부트스트랩 오류 화면(`st.stop()`)에는 메뉴가 그대로 남고, 새로 읽을 때마다 부트스트랩이
+끝날 때까지 메뉴가 보였다 사라지며 툴바 단추가 옆으로 밀린다. 메뉴는 Streamlit 의 정적 껍데기라
+첫 delta 가 닿기 전 아주 잠깐은 보일 수 있다 — 파이썬이 그보다 앞설 길은 없다.
 
 띠의 면은 페이지 바탕보다 한 단계만 눌러(`tokens.HEADER_BAR`) 앱 머리와 본문을 나눈다.
 글자색은 본문과 같다 — 면이 밝아 뒤집을 이유가 없다.
@@ -27,6 +36,7 @@ import streamlit as st
 from capa_simulation.design import tokens
 from capa_simulation.settings import (
     APP_AUTH_CODE,
+    APP_AUTH_EXPIRY,
     APP_BUILD_DATE,
     APP_CONTACT_EMAIL,
     APP_HANDLING_NOTE,
@@ -39,8 +49,13 @@ from capa_simulation.settings import (
 _TOP_LINE = f"{APP_OWNER_TEAM} · {APP_CONTACT_EMAIL}"
 _BOTTOM_LINE = (
     f"v{APP_VERSION} ({APP_BUILD_DATE}) · {APP_SECURITY_LEVEL}"
-    f" · 인증번호 {APP_AUTH_CODE} · {APP_HANDLING_NOTE}"
+    f" · 인증번호 {APP_AUTH_CODE}(유효기간 {APP_AUTH_EXPIRY}) · {APP_HANDLING_NOTE}"
 )
+
+# Streamlit 의 ⋮ 메뉴. 인쇄·테마는 툴바 단추가 맡으므로 단추째 감춘다. 감추는 것은 이 요소
+# 하나다 — Deploy 와 툴바 슬롯(`stToolbarActions`)은 형제라 영향이 없다. 색을 쓰지 않아 테마와
+# 무관한 고정 문자열이다.
+MAIN_MENU_HIDE_STYLE = '<style>[data-testid="stMainMenu"] { display: none !important; }</style>'
 
 # CSS 는 중괄호가 많아 f-string 으로 두면 전부 이스케이프해야 한다. 색·글자 자리에
 # 센티넬을 두고 **그릴 때마다** 치환한다.
@@ -86,11 +101,11 @@ _HEADER_TEMPLATE = """
   position: absolute;
   line-height: 1.1rem;
   left: 1.5rem;
-  /* 오른쪽 툴바(Summary·Guide·테마·Deploy·⋮)가 쓰는 폭은 비워 둔다. 창이 좁아지면
-     글자를 밀어내지 않고 말줄임으로 끊는다. 툴바에 Summary·Guide·테마 단추가 붙으며 그 폭이
-     약 23rem(1100px 창 실측 323px)이 되어, 예전 16rem 으로는 글자가 Summary 밑으로 들어갔다
-     (2026-10-05 E2E). */
-  max-width: calc(100% - 27rem);
+  /* 오른쪽 툴바(Summary·Guide·테마·Print·Deploy)가 쓰는 폭은 비워 둔다. 창이 좁아지면
+     글자를 밀어내지 않고 말줄임으로 끊는다. 1100px 창 실측 355px(⋮ 를 감추고 Print 를 더한 뒤)에
+     글자 시작 21px 과 틈 12px 를 더해 28rem 이다. 16rem 일 때는 글자가 Summary 밑으로
+     들어갔다(2026-10-05 E2E). */
+  max-width: calc(100% - 28rem);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -179,6 +194,7 @@ _HEADER_TEMPLATE = """
 }
 
 /* 사이드바를 접으면 헤더 왼쪽 끝에 펼침 버튼이 나타나 첫 글자와 겹친다. 그 자리만큼 민다.
+   민 만큼(2.5rem) 최대 폭도 줄여야 오른쪽 끝이 툴바 쪽으로 밀려 들어가지 않는다.
    사이드바와 헤더는 부모가 달라 형제 선택자가 닿지 않으므로 접힘 상태를 `:has()` 로 본다.
    `:has()` 를 모르는 브라우저는 이 규칙만 버리고 접었을 때만 겹친다. */
 [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
@@ -186,6 +202,7 @@ _HEADER_TEMPLATE = """
 [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
   [data-testid="stHeader"]::after {
   left: 4rem;
+  max-width: calc(100% - 30.5rem);
 }
 """
 
@@ -210,3 +227,11 @@ def _header_css() -> str:
 def render_app_header() -> None:
     """헤더 글을 그린다. 페이지마다 부르지 말고 `app.py` 에서 한 번만 부른다."""
     st.html(f"<style>{_header_css()}</style>")
+
+
+def hide_main_menu() -> None:
+    """⋮ 메뉴를 감춘다. `app.py` 가 부트스트랩보다 앞에서 매 회차 한 번 부른다.
+
+    스타일만 든 `st.html` 이라 본문 자리를 먹지 않는다.
+    """
+    st.html(MAIN_MENU_HIDE_STYLE)
