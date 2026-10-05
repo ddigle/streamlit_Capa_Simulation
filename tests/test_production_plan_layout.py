@@ -79,12 +79,20 @@ def test_the_card_shows_only_on_the_conversion_tab_and_remembers_it_was_opened(
 @pytest.mark.parametrize(
     ("path", "label", "sheet"),
     [
-        (PAGE, "PKG PLAN 변경사항 적용", "styled_plan_table"),
-        (PAGE, "수율 변경사항 적용", "styled_yield_table"),
+        (
+            PAGE,
+            "PKG PLAN 변경사항 적용",
+            "classification_styled(displayed_plan_table, PLAN_EDITOR_DIMENSIONS)",
+        ),
+        (
+            PAGE,
+            "수율 변경사항 적용",
+            "classification_styled(default_yield_table, YIELD_EDITOR_DIMENSIONS)",
+        ),
         (
             ROOT / "src" / "capa_simulation" / "components" / "month_editor.py",
             "변경사항 적용",
-            "styled_table",
+            "classification_styled(visible_table, dimensions)",
         ),
     ],
 )

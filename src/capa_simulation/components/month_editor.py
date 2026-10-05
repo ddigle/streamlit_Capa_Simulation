@@ -22,10 +22,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
+from typing import Final
 
 import pandas as pd
 import streamlit as st
+from pandas.io.formats.style import Styler
 from streamlit.delta_generator import DeltaGenerator
 from streamlit.elements.lib.column_types import ColumnConfig
 
@@ -64,6 +66,14 @@ PASTE_DROPS_EDITS_NOTICE = (
 # 적용을 누르면 어디까지 반영되는지. 동작을 좌우하는 안내라 Guide 로만 보내지 않고 버튼
 # 툴팁에 남긴다(생산 계획과 같다).
 APPLY_NOTICE = "적용 후 계산에 반영됩니다. 보관하려면 새 리비전을 저장하세요."
+# **큰 표는 분류 컬럼 배경색을 입히지 않는다**(2026-10-05 사용자 결정 N1 = B). 배경색은 pandas
+# Styler 로만 줄 수 있는데(`column_config` 에 배경색이 없다), Streamlit 은 그 Styler 를 그릴
+# 때마다(rerun 마다) 분류 컬럼만이 아니라 **표의 모든 칸**을 번역한다. 비용은 셀 수에
+# 비례해 칸당 약 15 µs 다(샘플 관측 — `scripts/generate_sample_core_data.py` 합성 DB 의
+# UPEH 편집표를 행 수별로 잘라 `marshall_styler` 를 잰 값: 9,750칸 143 ms, 11,700칸 187 ms,
+# 2,660×39 = 103,740칸 약 1.5 s). 그래서 약 150 ms 를 넘는 표, 곧 이 칸 수를 넘는 표는
+# 배경색 없이 그린다. 그보다 작은 표는 전과 똑같이 그린다.
+CLASSIFICATION_STYLE_MAX_CELLS: Final = 10_000
 # 표시명을 그리는 분류 컬럼의 폭 한계. `SelectboxColumn` 은 원본 값으로 폭을 재므로
 # 표시명이 더 길면 잘린다.
 DIMENSION_MIN_WIDTH_PX = 110
@@ -160,12 +170,8 @@ def render_month_editor(
         applied_flash = st.session_state.pop(f"{editor_key}_apply_flash", None)
         if isinstance(applied_flash, str):
             notice.success(applied_flash)
-        styled_table = visible_table.style.set_properties(
-            subset=pd.Index(dimensions),
-            **{"background-color": tokens.SURFACE_CLASSIFICATION},
-        )
         edited = st.data_editor(
-            styled_table,
+            classification_styled(visible_table, dimensions),
             # 편집을 버릴 때마다 바뀌는 위젯 키다 — 세션만 지우면 브라우저가 옛 편집을 다시 보낸다.
             key=editor_widget_key(editor_key),
             hide_index=True,
@@ -214,6 +220,20 @@ def render_month_editor(
             rename_notice=_has_display_labels(dimensions, value_labels),
         )
     return merged, submitted
+
+
+def classification_styled(table: pd.DataFrame, dimensions: Sequence[str]) -> pd.DataFrame | Styler:
+    """분류 컬럼에 배경색을 입힌 Styler 다. 칸 수가 상한을 넘으면 표를 그대로 돌려준다.
+
+    판정은 **실제로 그리는 표**(필터를 건 뒤의 표)의 칸 수로 한다 — 비용이 그 표를 번역하는
+    데서 나오기 때문이다. 그래서 큰 표도 필터로 상한 아래까지 좁히면 배경색이 돌아온다.
+    """
+    if table.size > CLASSIFICATION_STYLE_MAX_CELLS:
+        return table
+    return table.style.set_properties(
+        subset=pd.Index(dimensions),
+        **{"background-color": tokens.SURFACE_CLASSIFICATION},
+    )
 
 
 def _open_paste(dialog_key: str, editor_key: str) -> None:

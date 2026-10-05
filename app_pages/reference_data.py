@@ -19,7 +19,11 @@ import streamlit as st
 
 from capa_simulation.components.column_filter import render_column_filter_controls
 from capa_simulation.components.editor_state import editor_has_edits
-from capa_simulation.components.month_editor import editor_notice, render_month_editor
+from capa_simulation.components.month_editor import (
+    classification_styled,
+    editor_notice,
+    render_month_editor,
+)
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
@@ -685,12 +689,8 @@ if not (tab_is_hidden(equipment_tab) or tab_is_hidden(equipment_overview_tab)):
         # 맞지 않는다. 같은 탭의 왕복 양식은 `equipment_edit_tables` 라는 별도 프레임이라
         # 이 복사본이 붙여넣기 경로에 닿지 않는다.
         displayed_equipment_table["공정"] = process_labels.series(displayed_equipment_table["공정"])
-        styled_equipment_table = displayed_equipment_table.style.set_properties(
-            subset=pd.Index(equipment_dimensions),
-            **{"background-color": tokens.SURFACE_CLASSIFICATION},
-        )
         st.dataframe(
-            styled_equipment_table,
+            classification_styled(displayed_equipment_table, equipment_dimensions),
             hide_index=True,
             width="content",
             height=500,

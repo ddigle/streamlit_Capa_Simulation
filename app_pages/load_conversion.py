@@ -27,7 +27,10 @@ from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
     render_grouped_monthly_table,
 )
-from capa_simulation.components.month_editor import PASTE_DROPS_EDITS_NOTICE
+from capa_simulation.components.month_editor import (
+    PASTE_DROPS_EDITS_NOTICE,
+    classification_styled,
+)
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
@@ -529,12 +532,8 @@ with pkg_plan_tab:
     displayed_plan_table[plan_month_columns] = displayed_plan_table[plan_month_columns].mask(
         displayed_plan_table[plan_month_columns].eq(0)
     )
-    styled_plan_table = displayed_plan_table.style.set_properties(
-        subset=pd.Index(PLAN_EDITOR_DIMENSIONS),
-        **{"background-color": tokens.SURFACE_CLASSIFICATION},
-    )
     edited_plan_table = st.data_editor(
-        styled_plan_table,
+        classification_styled(displayed_plan_table, PLAN_EDITOR_DIMENSIONS),
         key=editor_widget_key(PLAN_EDITOR_KEY),
         hide_index=True,
         width="content",
@@ -622,12 +621,8 @@ with yield_tab:
             for column in default_yield_table.columns
             if column not in YIELD_EDITOR_DIMENSIONS
         ]
-        styled_yield_table = default_yield_table.style.set_properties(
-            subset=pd.Index(YIELD_EDITOR_DIMENSIONS),
-            **{"background-color": tokens.SURFACE_CLASSIFICATION},
-        )
         edited_yield_table = st.data_editor(
-            styled_yield_table,
+            classification_styled(default_yield_table, YIELD_EDITOR_DIMENSIONS),
             key=editor_widget_key(YIELD_EDITOR_KEY),
             hide_index=True,
             width="content",

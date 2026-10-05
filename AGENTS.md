@@ -2147,6 +2147,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     넘긴다. 양식이 부분 표가 되면 그 부분 표가 행 집합 검증을 통과해 나머지 공정을 지운다.
   - 공정 표시명은 페이지가 조회해 `value_labels=` 로 넘기고 필터 옵션 표기에만 쓴다. 이
     모듈은 `process_labels` 를 import 하지 않는다.
+  - **분류 컬럼 회색 배경은 작은 표에만 입힌다**(2026-10-05 사용자 결정 N1 = B). 배경색은
+    pandas Styler 로만 줄 수 있고(`column_config` 에 배경색이 없다) Streamlit 은 그 Styler 를
+    rerun 마다 **표의 모든 칸**에 대해 번역한다 — 칸당 약 15 µs(샘플 관측). 그래서
+    `classification_styled(table, dimensions)` 가 칸 수(`table.size`)가
+    `CLASSIFICATION_STYLE_MAX_CELLS`(10,000, 약 150 ms 선)를 넘으면 Styler 없이 표를 그대로
+    돌려준다. 이하의 표는 예전 식과 proto 바이트까지 같다. 판정은 **실제로 그리는 표**(필터를 건
+    뒤의 표)로 한다 — 비용이 그 표를 번역하는 데서 나오므로, 큰 표를 필터로 상한 아래까지
+    좁히면 회색이 돌아오는 것은 의도다. 이 편집기와 생산 계획 PKG PLAN·수율 편집표
+    (`load_conversion.py`), 기준 정보 설비대수 `현황` 조회표(`reference_data.py`, `st.dataframe`)가
+    모두 이 도우미를 거친다 — 새 월별 표도 Styler 를 직접 만들지 말고 이것을 쓴다.
+    `tests/test_classification_style.py` 가 경계(상한 = 칠함, 상한 + 1 = 안 칠함)와 바이트 동일을 본다.
 - `src/capa_simulation/services/revision_compatibility.py`
   - 저장된 리비전이 현재 계산 계약으로 쓸 수 있는지 **불러오기 전에** 판정한다. 리비전은
     append-only 라 계약이 바뀌어도 옛 저장분이 그대로 남는다. 활성화한 뒤에 계산이 죽으면
