@@ -279,3 +279,34 @@ def test_the_print_button_sits_right_of_the_theme_button_and_waits_for_an_idle_r
         theme_toggle.render_theme_toggle(extra_scripts=(print_toolbar_script(),))
     assert frames[0] == frames[1]
     assert f"<script>{script}</script>" in frames[0]
+
+
+def test_the_print_button_asks_first_in_the_dark_theme_and_prints_at_once_in_light() -> None:
+    """인쇄는 화면 색 그대로라 어두운 테마는 검은 바탕까지 찍힌다. 어두운 테마에서 Print 를 누르면
+    테마 버튼의 미저장 확인과 같은 네이티브 `confirm` 으로 먼저 묻고, 취소면 아무것도 하지 않는다
+    (2026-10-06 사용자 결정). 테마는 툴바 단추들과 같은 키 규칙(`capaTheme.resolve`)으로 단추를
+    세울 때 읽은 값이다 — 누르는 순간 저장소를 다시 읽으면 다른 탭에서 바꾼 테마를 이 탭 화면의
+    테마로 착각한다. 밝은 테마는 묻지 않고 곧바로 기다림-인쇄로 간다.
+    """
+    script = print_toolbar_script()
+    click = script[script.index("button.onclick") :]
+    click = click[: click.index("\n    };")]
+
+    # 어두운 테마인지는 색이 아니라 같은 키 규칙으로, 단추를 세울 때(단추 색과 같은 값) 판단한다.
+    assert 'capaTheme.resolve(parentWindow).choice === "Dark"' in _function_body(script, "dark")
+    assert "var isDark = dark();" in script[: script.index("button.onclick")]
+    assert "dark()" not in click
+    # 기다리는 중이면 다시 묻지도 않는다. 묻는 것은 어두운 테마일 때뿐이고, 취소면 그대로 끝난다.
+    assert "if (waiting) return;" in click
+    guard = f'if (isDark && !parentWindow.confirm("{print_button.DARK_PRINT_CONFIRM}")) return;'
+    assert guard in click
+    assert (
+        click.index("if (waiting) return;") < click.index(guard) < click.index("printWhenIdle();")
+    )
+    # 확인을 거친 뒤에야 기다림 → print() 경로로 들어간다. 클릭이 print() 를 바로 부르지 않는다.
+    assert "parentWindow.print()" not in click
+    assert click.count("confirm(") == 1
+    # 문구는 JS 문자열 안에 그대로 들어간다 — 따옴표·역슬래시·줄바꿈이 없어야 한다.
+    for unsafe in ('"', "\\", "\n", "\r"):
+        assert unsafe not in print_button.DARK_PRINT_CONFIRM
+    assert "Light" in print_button.DARK_PRINT_CONFIRM

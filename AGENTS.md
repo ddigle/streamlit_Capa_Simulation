@@ -1870,6 +1870,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 동작은 Streamlit 메뉴의 Print 와 같다. `.stApp` 의 `data-test-script-state` 가 `running`·
     `rerunRequested`·`stopRequested` 이면 500ms 뒤에 다시 보고, 멈췄을 때 앱 창의 `print()` 를 부른다
     (반쯤 그려진 화면을 찍지 않는다). 기다리는 중에 다시 눌러도 기다림을 하나 더 걸지 않는다.
+  - **어두운 테마에서는 먼저 묻는다**(2026-10-06 사용자 결정). 인쇄는 화면 색 그대로라 검은 바탕까지
+    찍힌다. 단추를 세울 때 같은 키 규칙(`capaTheme.resolve`)으로 읽은 테마(단추 색·테마 버튼 글자와
+    같은 값)가 `Dark` 이면 테마 버튼의 미저장 확인과 같은 네이티브 `confirm`(`DARK_PRINT_CONFIRM`)으로
+    묻고, 확인이면 위 기다림을 거쳐 인쇄하고 취소면 아무것도 하지 않는다. 누르는 순간 저장소를 다시
+    읽지 않는다 — 다른 탭에서 테마를 바꾸면 저장소만 바뀌고 이 탭 화면은 새로 읽기 전까지 옛 테마다.
+    밝은 테마는 묻지 않는다. 브라우저 인쇄(Ctrl+P)는 가로채지 않는다. 문구가 iframe 에 실리므로
+    회차마다 같은 상수 하나다.
   - Guide 와 같은 윤곽 단추(13px/600 · 모서리 8px · 높이 27px · `BORDER`/`TEXT`)이고 `aria-label` 은
     「인쇄」다. 테마 버튼 iframe 에 함께 싣고(`extra_scripts`), 색은 같은 키 규칙(`capaTheme`)으로
     두 테마 값 중에서 고른다 — iframe 내용은 회차마다 같아야 한다. 테마 버튼이 서기 전에는 서지
@@ -1998,7 +2005,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `data-testid` 다 — 판올림 뒤 인쇄 미리보기로 다시 본다. **알려진 한계**: `st.dataframe`(Glide 격자,
     canvas)은 지금 그려진 행만 찍힌다(Streamlit 한계, 여기서 고치지 않는다). 월별 표의 가로 스크롤 칸은
     스크롤 자리에서 종이 폭에 드는 달만 찍히고(Letter 세로에서 넉 달 남짓), 맞춤 가로 스크롤 막대는 회색 띠로 찍힌다. 규칙은
-    `tests/test_app_header.py` 가 고정한다.
+    `tests/test_app_header.py` 가 고정한다. 가로로 넓은 표(HOME `Capa LOB 현황` 등)가 화면에 보이는
+    부분만 찍히는 것은 **그대로 둔다**(2026-10-06 사용자 결정 A — 코드로 풀지 않는다). 대신 사용자에게
+    인쇄 창에서 가로 방향을 고르거나 인쇄 전에 사이드바 조회기간을 좁히라고 안내한다(README·HOME
+    Guide).
   - 사이드바 접기 버튼(`stSidebarCollapseButton`)을 늘 보이게 한다(2026-10-03 사용자 요청).
     Streamlit 은 사이드바에 마우스를 올렸을 때만 `visibility: visible` 로 띄운다. 인쇄 숨김은
     남기려고 `@media screen` 안에서만 덮는다. 판올림 뒤 버튼이 늘 보이는지 눈으로 확인한다.
