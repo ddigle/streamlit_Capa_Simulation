@@ -50,6 +50,7 @@ from capa_simulation.scenario_state import (
     session_virtual_products,
 )
 from capa_simulation.services.builtin_seed import BUILTIN_SEED_SOURCE_CODE
+from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.virtual_product import VirtualProductRecord
 
@@ -653,6 +654,21 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
         )
     if not create_submitted:
         return
+    # 빈 필수 칸을 **한 번에** 모두 알린다. 저장소 검사에 맡기면 한 번에 한 칸씩만 말해 세 번
+    # 눌러야 했다(2026-10-05 E2E). 저장소 검사는 그대로 마지막 방어선이다.
+    missing = [
+        label
+        for label, value in (
+            ("시나리오명", scenario_name),
+            ("원천 시뮬레이션 코드", source_code),
+            ("원천 시뮬레이션명", source_name),
+            ("초기 리비전명", revision_name),
+        )
+        if not value.strip()
+    ]
+    if missing:
+        st.error(f"필수 칸이 비어 있습니다: {', '.join(missing)}")
+        return
     try:
         # 활성 RQ 16개를 새 데이터셋으로 통째로 복제한다. 표가 크면 몇 초가 걸린다.
         with st.spinner("현재 활성 RQ 16개를 새 시나리오로 복제하는 중입니다..."):
@@ -681,7 +697,8 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
     else:
         activate_persisted_snapshot(snapshot)
         st.session_state[FLASH_KEY] = (
-            f"{snapshot.scenario.scenario_name}을 저장했습니다."
+            f"{snapshot.scenario.scenario_name}"
+            f"{object_particle(snapshot.scenario.scenario_name)} 저장했습니다."
             + virtual_product_save_notice(len(virtual_products))
         )
         st.session_state[CLONE_FORM_GENERATION_KEY] = (
@@ -739,7 +756,8 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
     else:
         activate_persisted_snapshot(snapshot)
         st.session_state[FLASH_KEY] = (
-            f"새 리비전 r{snapshot.revision.revision_no}을 저장했습니다."
+            f"새 리비전 r{snapshot.revision.revision_no}"
+            f"{object_particle(str(snapshot.revision.revision_no))} 저장했습니다."
             + virtual_product_save_notice(len(virtual_products))
         )
         if verdict.message:

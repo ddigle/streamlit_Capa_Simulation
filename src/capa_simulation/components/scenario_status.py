@@ -39,6 +39,7 @@ from capa_simulation.scenario_activation import (
 )
 from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.scenario_state import ensure_active_scenario
+from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.sidebar_status import sidebar_expander
 
 SIDEBAR_SCENARIO_KEY = "sidebar_scenario_id"
@@ -417,7 +418,8 @@ def _render_revision_save(
             return None
         else:
             st.session_state[SIDEBAR_FLASH_KEY] = (
-                f"신규 리비전 r{snapshot.revision.revision_no}을 저장했습니다."
+                f"신규 리비전 r{snapshot.revision.revision_no}"
+                f"{object_particle(str(snapshot.revision.revision_no))} 저장했습니다."
                 + virtual_product_save_notice(len(virtual_products))
             )
             if verdict.message:

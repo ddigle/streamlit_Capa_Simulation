@@ -91,13 +91,71 @@ render_display_order_management(repository)
     assert [element.value for element in app.success] == [
         "표시순서를 모든 시나리오의 공용 설정으로 저장했습니다."
     ]
-    warnings = [element for element in app.warning if "화면 표시명입니다" in element.value]
+    warnings = [element for element in app.warning if "화면 표시명을 적었습니다" in element.value]
     assert len(warnings) == 1
     assert "`거래선`" in warnings[0].value
-    assert "`Customer`" in warnings[0].value
+    assert "`거래선` → `Customer`" in warnings[0].value
     assert warnings[0].icon == ":material/help:"
 
     app.run(timeout=30)
     assert not app.exception
     assert not app.success
-    assert not any("화면 표시명입니다" in element.value for element in app.warning)
+    assert not any("화면 표시명을 적었습니다" in element.value for element in app.warning)
+
+
+def test_a_rejected_save_is_reported_above_the_editor(tmp_path: Path) -> None:
+    """거절된 저장의 오류는 표 **위**, 저장 버튼 바로 위에 선다.
+
+    460px 표 아래에 그리면 화면 밖이라 저장을 눌러도 아무 일이 없는 것처럼 보였다(2026-10-05 E2E).
+    """
+    from capa_simulation.components import display_order_management
+
+    database_path = tmp_path / "display-order-error.duckdb"
+    script = f'''
+from pathlib import Path
+
+import pandas as pd
+
+from capa_simulation.components import display_order_management
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+repository = DuckDBScenarioRepository(Path(r"{database_path}"))
+repository.initialize()
+repository.initialize_global_display_order(
+    pd.DataFrame(
+        {{
+            "페이지 구분": ["생산 계획"],
+            "탭 구분": ["환산"],
+            "정렬우선순위": [1],
+            "분류컬럼": ["제품정보"],
+            "정렬방식": ["사용자지정"],
+            "분류값": ["X"],
+            "값표시순서": [1],
+            "활성여부": ["Y"],
+        }}
+    )
+)
+
+def _reject(*_args, **_kwargs):
+    raise ValueError("거절된 저장")
+
+display_order_management._save_global_display_order = _reject
+display_order_management.render_display_order_management(repository)
+'''
+    app = AppTest.from_string(script).run(timeout=30)
+    assert not app.exception
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click().run(
+        timeout=30
+    )
+
+    assert not app.exception
+    assert [element.value for element in app.error] == ["거절된 저장"]
+    order = [
+        "error" if type(node).__name__ == "Error" else "editor"
+        for node in app.main
+        if type(node).__name__ == "Error"
+        or str(getattr(node, "key", None) or "").startswith(
+            display_order_management.DISPLAY_ORDER_EDITOR_KEY
+        )
+    ]
+    assert order.index("error") < order.index("editor"), order

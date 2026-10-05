@@ -178,6 +178,9 @@ def _render_direct_editor(
     scope_rules = display_order.loc[scope_mask, list(DISPLAY_ORDER_RULE_COLUMNS)].reset_index(
         drop=True
     )
+    # 저장 오류는 저장 버튼 **바로 위**에 띄운다. 460px 표 아래에 두면 화면 밖이라 저장을 눌러도
+    # 아무 일이 없는 것처럼 보였다(2026-10-05 E2E). 칸은 늘 세워 둬 아래 폼의 자리를 고정한다.
+    save_status = st.container()
     with st.form("display_order_edit_form"):
         # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다(오른쪽 끝은 표 도구 막대에 가린다).
         # 정렬 규칙을 쓰는 법은 Admin Area Guide 가 말한다.
@@ -230,7 +233,7 @@ def _render_direct_editor(
         if mistakes:
             st.session_state[LABEL_WARNINGS_KEY] = mistakes
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        save_status.error(bootstrap_error_message(exc))
     else:
         queue_flash(
             "display_order_flash",
@@ -245,9 +248,11 @@ def _render_label_warnings() -> None:
     if not isinstance(mistakes, dict):
         return
     for typed, column in mistakes.items():
+        # 이름 뒤에 조사를 붙이지 않는다. `Customer` 같은 영문 이름은 받침을 가릴 수 없어
+        # 「`Customer` 을」로 틀렸다(2026-10-05 E2E).
         st.warning(
-            f"`{typed}` 은 화면 표시명입니다. 정렬은 원본 컬럼명을 봅니다 — "
-            f"`{column}` 을 뜻하신 것이라면 그렇게 적어야 걸립니다.",
+            "화면 표시명을 적었습니다. 정렬은 원본 컬럼명을 보므로 원본 컬럼명으로 바꿔 적어야 "
+            f"걸립니다: `{typed}` → `{column}`",
             icon=":material/help:",
         )
 

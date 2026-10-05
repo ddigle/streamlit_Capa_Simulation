@@ -88,6 +88,7 @@ from capa_simulation.services.equipment_validation import (
 from capa_simulation.services.fab_layout import FabLayoutBase, FabLayoutMark
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
+from capa_simulation.services.korean_particle import object_particle
 
 FLASH_KEY = "equipment_status_flash"
 BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
@@ -607,7 +608,8 @@ def _save_equipment_frames(
     if saved is None:
         return f"호기 마스터가 바뀌지 않아 새 리비전 없이 층 캔버스·도면 요소만 저장했습니다.{fab}"
     return (
-        f"설비 운영 데이터 r{saved.revision.revision_no}을 저장했습니다. "
+        f"설비 운영 데이터 r{saved.revision.revision_no}"
+        f"{object_particle(str(saved.revision.revision_no))} 저장했습니다. "
         f"가용설비와 Space 현황에 반영됩니다.{layouts}{fab}"
     )
 

@@ -202,7 +202,7 @@ def test_sidebar_save_keeps_the_session_virtual_products(sidebar_app: AppTest) -
         }
     ]
     assert [item.value for item in app.success] == [
-        "신규 리비전 r2을 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
+        "신규 리비전 r2를 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
         "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
     ]
 
@@ -215,7 +215,7 @@ def test_sidebar_save_without_virtual_products_says_only_what_it_saved(
 
     assert not app.exception
     assert app.session_state["test_saved_virtual_products"] == []
-    assert [item.value for item in app.success] == ["신규 리비전 r2을 저장했습니다."]
+    assert [item.value for item in app.success] == ["신규 리비전 r2를 저장했습니다."]
 
 
 def test_discarding_edits_lives_in_the_scenario_box_only_when_there_are_edits(

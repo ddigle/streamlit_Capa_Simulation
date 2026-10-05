@@ -182,7 +182,7 @@ def test_clone_form_clears_after_saving_and_refuses_a_taken_name(tmp_path: Path)
     assert not app.exception
 
     _fill_clone(app, "복제 A", "CLONE-A")
-    assert any("복제 A을 저장했습니다" in item.value for item in app.success)
+    assert any("복제 A을(를) 저장했습니다" in item.value for item in app.success)
     assert _clone_inputs(app) == {
         "시나리오명": "",
         "원천 시뮬레이션 코드": "",
@@ -201,6 +201,24 @@ def test_clone_form_clears_after_saving_and_refuses_a_taken_name(tmp_path: Path)
         )
     ]
     assert names.count("복제 A") == 1
+
+
+def test_clone_names_every_missing_required_field_at_once(tmp_path: Path) -> None:
+    """빈 필수 칸은 **한 번에** 모두 알린다. 한 칸씩 알리면 세 번 눌러야 했다(2026-10-05 E2E)."""
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+    app.segmented_control(key=MODE_KEY).set_value("현재 활성 RQ 복제").run()
+    for widget in app.text_input:
+        if str(widget.key or "").startswith("scenario_create_") and widget.label == "시나리오명":
+            widget.set_value("이름만 적은 복제")
+    next(button for button in app.button if button.label == "신규 시나리오 저장").click().run()
+
+    assert not app.exception
+    assert [item.value for item in app.error] == [
+        "필수 칸이 비어 있습니다: 원천 시뮬레이션 코드, 원천 시뮬레이션명"
+    ]
+    assert _clone_inputs(app)["시나리오명"] == "이름만 적은 복제"
 
 
 def test_clone_keeps_the_session_virtual_products(tmp_path: Path) -> None:
@@ -230,7 +248,7 @@ def test_clone_keeps_the_session_virtual_products(tmp_path: Path) -> None:
     assert any(
         item.value
         == (
-            "가상 제품 복제을 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
+            "가상 제품 복제를 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
             "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
         )
         for item in app.success
@@ -283,7 +301,7 @@ def test_revision_save_keeps_the_session_virtual_products(tmp_path: Path) -> Non
     assert any(
         item.value
         == (
-            "새 리비전 r2을 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
+            "새 리비전 r2를 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
             "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
         )
         for item in app.success

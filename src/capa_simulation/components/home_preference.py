@@ -85,6 +85,7 @@ from capa_simulation.services.key_process import (
     PRESET_NAME_LIMIT,
     normalize_preset_name,
 )
+from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.product_share import PRODUCT_SHARE_BASES
 from capa_simulation.services.threshold_label import threshold_percent_label
@@ -992,7 +993,10 @@ def _render_key_process_editor(
         _queue_selection(KEY_PROCESS_EDIT_TARGET_KEY, new_name)
         if not is_new and st.session_state.get(KEY_PROCESS_PRESET_KEY) == target:
             _queue_selection(KEY_PROCESS_PRESET_KEY, new_name)
-        queue_flash("home_key_process_flash", f"프리셋 「{new_name}」을 저장했습니다.")
+        queue_flash(
+            "home_key_process_flash",
+            f"프리셋 「{new_name}」{object_particle(new_name)} 저장했습니다.",
+        )
         st.rerun(scope="app")
 
 

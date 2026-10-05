@@ -98,3 +98,27 @@ def test_shortage_summary_skips_processes_that_never_break() -> None:
     table = pd.DataFrame({"공정": ["SAW"], "202601": [1.5]})
 
     assert shortage_summary(table, dimension_columns=["공정"], warning_threshold=0.995).empty
+
+
+def test_every_process_row_keeps_its_name_when_many_are_shown() -> None:
+    """공정을 다 깔아도 **모든 행에 이름**이 붙는다.
+
+    70공정을 900px 에 눌러 담으니 칸이 12.9px 이 되고 Plotly 자동 눈금이 이름을 하나 건너
+    하나만 그려 35개 행이 이름 없이 남았다(2026-10-05 E2E). 행마다 눈금을 두고 칸이 너무
+    낮아지지 않게 그래프를 늘인다.
+    """
+    from capa_simulation.components.securement_heatmap import (
+        CHART_CHROME_PX,
+        MIN_LABELLED_ROW_PX,
+    )
+
+    names = [f"P{index:02d}" for index in range(70)]
+    table = pd.DataFrame({"공정": names, "202601": [1.0] * 70})
+
+    figure = build_securement_heatmap(table, dimension_columns=["공정"], **THRESHOLDS)
+
+    assert figure is not None
+    yaxis = figure.layout.yaxis
+    assert (yaxis.tickmode, yaxis.dtick) == ("linear", 1)
+    assert (figure.layout.height - CHART_CHROME_PX) / len(names) >= MIN_LABELLED_ROW_PX
+    assert yaxis.tickfont.size < MIN_LABELLED_ROW_PX

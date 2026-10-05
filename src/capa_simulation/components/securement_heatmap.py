@@ -40,6 +40,12 @@ from capa_simulation.services.month_columns import month_label
 CELL_HEIGHT_PX = 20
 CHART_CHROME_PX = 70
 MAX_CHART_HEIGHT_PX = 900
+# 공정이 많아 칸이 낮아져도 이보다는 낮추지 않는다. **모든 행에 이름을 단다** — Plotly 자동 눈금은
+# 칸이 낮으면 이름을 하나 건너 하나만 그려, 70공정에서 35개 행(부족 행 포함)이 이름 없이 남고
+# 이름이 두 행 사이에 걸려 다른 공정으로 읽혔다(2026-10-05 E2E). 이 높이에서는 상한을 넘어 길어진다.
+MIN_LABELLED_ROW_PX = 13
+# 칸이 낮을 때의 공정 이름 글자 크기. 칸 높이보다 3px 작아야 위아래 이름이 붙지 않는다.
+DENSE_TICK_FONT_PX = 10
 # 이보다 칸이 많으면 숫자를 적지 않는다. 6pt 글씨로 가득 찬 격자는 모양도 숫자도 못 읽는다.
 MAX_LABELLED_CELLS = 180
 
@@ -134,7 +140,12 @@ def build_securement_heatmap(
             hovertemplate="%{y} · %{x}<br>확보율 %{customdata:,.1f}%<extra></extra>",
         )
     )
-    height = min(MAX_CHART_HEIGHT_PX, max(180, len(row_names) * CELL_HEIGHT_PX + CHART_CHROME_PX))
+    rows = len(row_names)
+    row_px = max(
+        MIN_LABELLED_ROW_PX,
+        min(CELL_HEIGHT_PX, (MAX_CHART_HEIGHT_PX - CHART_CHROME_PX) / max(rows, 1)),
+    )
+    height = max(180, round(rows * row_px + CHART_CHROME_PX))
     figure.update_layout(
         height=height,
         margin={"l": 8, "r": 8, "t": 28, "b": 8},
@@ -143,8 +154,15 @@ def build_securement_heatmap(
     # 표와 같은 순서로 위에서 아래로 읽힌다. Plotly 의 y 축은 기본이 아래에서 위다.
     # 두 축 모두 **범주**다. `"26.07"` 은 숫자로 읽히면 26.07 이 되어 월 칸이 실수 축에
     # 눌려 붙고 눈금이 `26.2·26.4` 로 나온다. 공정명도 마찬가지로 범주여야 한다.
+    # 눈금은 행마다 하나(`dtick=1`)다 — 자동 눈금은 낮은 칸에서 이름을 건너뛴다.
     figure.update_yaxes(
-        type="category", autorange="reversed", title=None, ticklabelposition="outside"
+        type="category",
+        autorange="reversed",
+        title=None,
+        ticklabelposition="outside",
+        tickmode="linear",
+        dtick=1,
+        tickfont={"size": 11 if row_px >= 14 else DENSE_TICK_FONT_PX},
     )
     figure.update_xaxes(type="category", title=None, side="top", tickangle=0)
     return figure
