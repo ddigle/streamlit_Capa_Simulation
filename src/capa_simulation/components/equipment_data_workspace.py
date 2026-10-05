@@ -116,6 +116,10 @@ _REVISION_KEY = "equipment_workspace_revision_v1"
 _ERROR_KEY = "equipment_workspace_error_v1"
 _NOTICE_KEY = "equipment_workspace_notice_v1"
 _NOTE_KEY = "equipment_workspace_note_v1"
+# 변경 메모를 다음 회차에 비우라는 표지. 저장은 메모 칸을 그린 **뒤**에 일어나 그 회차에는 칸을
+# 바꿀 수 없고, 칸을 지우기만 하면 브라우저가 옛 메모를 다음 저장에 다시 보낸다(2026-10-05 E2E —
+# r4 의 메모가 r5 에 그대로 실렸다). 다음 회차 메모 칸 앞에서 빈 값을 적는다.
+_NOTE_CLEAR_KEY = "equipment_workspace_note_clear_v1"
 # 일괄 삭제. 선택은 행 번호가 아니라 업무 키로 기억한다(`services/equipment_bulk_delete`).
 SELECT_COLUMN = "선택"
 SELECTION_KEY = "equipment_workspace_selection_v1"
@@ -215,6 +219,7 @@ def reset_equipment_drafts() -> None:
         _SEEDED_GENERATION_KEY,
     ):
         st.session_state.pop(key, None)
+    st.session_state[_NOTE_CLEAR_KEY] = True
 
 
 def _copy_frames(frames: Frames) -> Frames:
@@ -1302,33 +1307,37 @@ def render_equipment_data_workspace(
             f"최근 저장본 r{latest_snapshot.revision.revision_no} · "
             "저장할 때 세 표 전체가 새 리비전으로 보관됩니다."
         )
-    error = st.session_state.pop(_ERROR_KEY, None)
-    if isinstance(error, str):
-        st.error(error)
-    notice = st.session_state.pop(_NOTICE_KEY, None)
-    if isinstance(notice, str):
-        st.info(notice)
     pending = st.session_state.get(PREVIEW_KEY)
-    # **저장을 누르기 전에 말한다.** 30행을 다 붙여넣고 저장에서 막히는 것과, 들어오자마자
-    # 아는 것은 다르다. 폼 밖이라 일반 버튼이 되고 콜백이 그 자리에서 지운다.
-    example_rows = _example_row_count(frames, pending)
-    if example_rows:
-        st.warning(
-            f"기존 보유대수에 손대지 않은 예시 행 {example_rows:,}건 — 저장이 막힙니다"
-            "(양식의 예시 줄이거나 개발용 샘플입니다)."
-        )
-        st.button(
-            f"예시 행 {example_rows:,}건 지우기",
-            icon=":material/delete_sweep:",
-            key=EXAMPLE_DROP_BUTTON_KEY,
-            on_click=_drop_example_rows,
-            kwargs={"floor_canvases": floor_canvases},
-        )
-    # 저장은 막지 않는다. 묶음의 환산비가 모두 1 이면 능력이 모듈 수만큼 부풀려진다.
-    # 미리보기 중이면 **저장될 후보**를 본다 — 편집본만 보면 저장한 뒤에야 경고가 뜬다.
-    master = pending.candidate[1] if isinstance(pending, ImportReview) else frames[1]
-    for message in module_group_warnings(master):
-        st.warning(message, icon=":material/view_module:")
+    # 알림(오류·안내·예시 행·모체호기 묶음)은 수가 회차마다 다르다. **늘 서 있는 한 칸** 안에
+    # 그려 아래 key 있는 펼침·탭의 자리를 고정한다 — 자리가 밀리면 `st.rerun()` 으로 끊긴
+    # 저장 회차의 사본이 화면에 남는다(2026-10-05 E2E).
+    with st.container():
+        error = st.session_state.pop(_ERROR_KEY, None)
+        if isinstance(error, str):
+            st.error(error)
+        notice = st.session_state.pop(_NOTICE_KEY, None)
+        if isinstance(notice, str):
+            st.info(notice)
+        # **저장을 누르기 전에 말한다.** 30행을 다 붙여넣고 저장에서 막히는 것과, 들어오자마자
+        # 아는 것은 다르다. 폼 밖이라 일반 버튼이 되고 콜백이 그 자리에서 지운다.
+        example_rows = _example_row_count(frames, pending)
+        if example_rows:
+            st.warning(
+                f"기존 보유대수에 손대지 않은 예시 행 {example_rows:,}건 — 저장이 막힙니다"
+                "(양식의 예시 줄이거나 개발용 샘플입니다)."
+            )
+            st.button(
+                f"예시 행 {example_rows:,}건 지우기",
+                icon=":material/delete_sweep:",
+                key=EXAMPLE_DROP_BUTTON_KEY,
+                on_click=_drop_example_rows,
+                kwargs={"floor_canvases": floor_canvases},
+            )
+        # 저장은 막지 않는다. 묶음의 환산비가 모두 1 이면 능력이 모듈 수만큼 부풀려진다.
+        # 미리보기 중이면 **저장될 후보**를 본다 — 편집본만 보면 저장한 뒤에야 경고가 뜬다.
+        master = pending.candidate[1] if isinstance(pending, ImportReview) else frames[1]
+        for message in module_group_warnings(master):
+            st.warning(message, icon=":material/view_module:")
     # 표마다 무엇을 키로 대체하는지·모체호기·환산비 같은 작성 기준은 Guide 가 말한다. 여기는
     # 내려받기만 남긴다.
     with st.expander(
@@ -1360,6 +1369,8 @@ def render_equipment_data_workspace(
     with st.form(WORKSPACE_FORM_KEY, border=False, enter_to_submit=False):
         # 두 저장(입력·직접 편집)이 같이 쓰는 메모라 탭 **위**에 둔다 — 저장 버튼이 표 위로
         # 올라가면서 메모만 폼 맨 아래에 남으면 적지 않고 저장하기 쉽다.
+        if st.session_state.pop(_NOTE_CLEAR_KEY, False):
+            st.session_state[_NOTE_KEY] = ""
         note = st.text_input("변경 메모", key=_NOTE_KEY, placeholder="예: 10월 신규 호기 30대 등록")
         # 전환은 브라우저에서만 한다. 폼의 다른 탭도 계속 생성해 미제출 delta를 유지한다.
         # **key 는 고른 탭을 지키려고 준다**(2026-10-01). 폼 위 알림(오류·안내·예시 행·저장

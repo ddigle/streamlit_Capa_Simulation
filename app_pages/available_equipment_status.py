@@ -97,9 +97,14 @@ def _render_first_data_checklist(counts: tuple[int, int, int]) -> None:
 
 render_page_header("가용설비 현황 (Data확보중)")
 render_page_guide("available_equipment_status", title="가용설비 현황")
+# 저장 알림·버림 알림은 **늘 서 있는 한 칸** 안에 그린다. 알림이 생기거나 사라질 때 아래 탭
+# 묶음의 자리가 한 칸 밀리면, `st.rerun()` 으로 끊긴 저장 회차와 그다음 회차 사이에서 key 가
+# 있는 탭 묶음이 옛 자리에 회색 사본으로 남아 다른 페이지까지 따라왔다(2026-10-05 E2E — 두
+# 번째 RawData 저장마다). 자리를 고정하면 탭 묶음은 늘 같은 자리다.
+notices = st.container()
 flash = st.session_state.pop(FLASH_KEY, None)
 if isinstance(flash, str):
-    st.success(flash)
+    notices.success(flash)
 
 today = date.today()
 try:
@@ -119,7 +124,7 @@ ensure_equipment_drafts(latest_snapshot)
 drafts_replaced = pop_drafts_replaced()
 discarded_notice = pop_discarded_notice()
 if discarded_notice:
-    st.warning(discarded_notice, icon=":material/sync_problem:")
+    notices.warning(discarded_notice, icon=":material/sync_problem:")
 # Space 에서 넓혀 두고 아직 저장하지 않은 캔버스도 본다 — 편집표 상한·미리보기 검증이 그
 # 캔버스에 놓은 호기를 「밖」으로 막지 않게. 새 리비전이 생겨 대기분이 버려진 뒤에 읽는다.
 floor_canvases = effective_floor_canvases(stored_floor_canvases)

@@ -136,3 +136,30 @@ def test_the_panel_accepts_a_real_static_frame(tmp_path: Path) -> None:
     # Figure 가 실제로 만들어지는지도 본다 — 빈 행이 섞여도 죽지 않아야 한다.
     figure = availability_gap_panel.build_availability_gap_figure(matrix)
     assert len(figure.data) == 3
+
+
+def test_filling_from_equipment_processes_keeps_the_values_already_written() -> None:
+    """「설비 공정으로 채우기」는 표에 없는 공정만 빈 행으로 덧붙인다.
+
+    몇 공정만 적어 저장하면 저장은 적은 행만 남긴다. 그때 채우기가 표 전체를 새로 깔아
+    저장한 값까지 지웠다(2026-10-05 E2E).
+    """
+    from capa_simulation.services.process_cutoff import (
+        PROCESS_CUTOFF_EDIT_COLUMNS,
+        add_missing_cutoff_rows,
+        build_process_cutoff_template,
+    )
+
+    draft = build_process_cutoff_template(["AVI-CoW", "Die Attach"]).loc[
+        :, PROCESS_CUTOFF_EDIT_COLUMNS
+    ]
+    draft["Cutoff일수"] = [7.0, 14.0]
+
+    filled = add_missing_cutoff_rows(draft, ["Die Attach", "Wire Bond", " AVI-CoW ", "Mold"])
+
+    assert filled["공정"].tolist() == ["AVI-CoW", "Die Attach", "Wire Bond", "Mold"]
+    assert filled["Cutoff일수"].iloc[:2].tolist() == [7.0, 14.0]
+    assert filled["Cutoff일수"].iloc[2:].isna().all()
+    assert list(filled.columns) == PROCESS_CUTOFF_EDIT_COLUMNS
+    # 빠진 공정이 없으면 표를 그대로 돌려준다.
+    assert add_missing_cutoff_rows(draft, ["Die Attach"]) is draft

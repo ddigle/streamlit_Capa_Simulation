@@ -29,6 +29,7 @@ from capa_simulation.components.table_view_controls import (
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.process_cutoff import (
     PROCESS_CUTOFF_EDIT_COLUMNS,
+    add_missing_cutoff_rows,
     build_process_cutoff_template,
     missing_cutoff_processes,
 )
@@ -80,13 +81,14 @@ def render_cutoff_management(
         if st.button(
             "설비 공정으로 채우기",
             icon=":material/playlist_add:",
-            help="호기 마스터와 기존보유대수에 있는 공정으로 빈 행을 만듭니다. 적은 값은 지웁니다.",
+            help=(
+                "호기 마스터와 기존보유대수에 있는데 표에 없는 공정을 빈 행으로 덧붙입니다. "
+                "적어 둔 값은 그대로 둡니다."
+            ),
             width="content",
         ):
-            st.session_state[CUTOFF_DRAFT_KEY] = build_process_cutoff_template(
-                equipment_processes
-            ).loc[:, PROCESS_CUTOFF_EDIT_COLUMNS]
-            # 편집 델타는 행 위치다. 표를 새로 깔면서 옛 델타를 남기면 다른 공정에 붙는다.
+            st.session_state[CUTOFF_DRAFT_KEY] = add_missing_cutoff_rows(draft, equipment_processes)
+            # 편집 델타는 행 위치다. 표가 바뀌는데 옛 델타를 남기면 다른 공정에 붙는다.
             # 세션 칸만 지우면 브라우저가 옛 편집을 다시 보내므로 위젯 키를 바꾼다.
             discard_editor(_EDITOR_KEY)
             st.rerun()

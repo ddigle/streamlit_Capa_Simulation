@@ -10,6 +10,9 @@ from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.equipment_data_workspace import (
+    _NOTE_KEY as NOTE_KEY,
+)
+from capa_simulation.components.equipment_data_workspace import (
     _NOTICE_KEY,
     BASELINE_EDITOR_KEY,
     BUFFER_KEY,
@@ -17,6 +20,7 @@ from capa_simulation.components.equipment_data_workspace import (
     DOWNLOADS_EXPANDER_KEY,
     DOWNTIME_EDITOR_KEY,
     DROP_EXAMPLE_ROWS_KEY,
+    EDIT_SAVE_BUTTON_KEY,
     EDITOR_TABS_KEY,
     EQUIPMENT_EDITOR_KEY,
     EXAMPLE_DROP_BUTTON_KEY,
@@ -467,6 +471,60 @@ def test_inner_tabs_keep_their_identity_when_a_notice_appears_above_the_form(
     assert not app.exception
     assert any("선택한 행이 없습니다" in item.value for item in app.info)
     assert _keyed_blocks(app) == quiet
+
+
+def _top_level_slot(app: AppTest, key: str) -> int:
+    """`key` 블록을 품은 최상위 칸의 자리(델타 경로의 첫 번호)."""
+    for index, node in app.main.children.items():
+        if any(getattr(inner, "key", None) == key for inner in node):
+            return int(index)
+    raise AssertionError(f"{key} 블록이 없다")
+
+
+def test_notices_above_the_form_do_not_shift_the_keyed_blocks_below(tmp_path: Path) -> None:
+    """알림 수가 달라도 아래 key 있는 펼침·탭 묶음의 **자리**가 그대로다.
+
+    자리가 한 칸 밀리면 `st.rerun()` 으로 끊긴 저장 회차와 그다음 회차 사이에서 key 있는 탭
+    묶음이 옛 자리에 회색 사본으로 남아 다른 페이지까지 따라왔다(2026-10-05 E2E — 두 번째
+    RawData 저장마다). 알림은 늘 서 있는 한 칸 안에 그린다.
+    """
+    repository = _repository(tmp_path / "equipment.duckdb")
+    repository.save_snapshot(
+        empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
+    )
+    app = _app(tmp_path / "equipment.duckdb")
+    quiet = {key: _top_level_slot(app, key) for key in (DOWNLOADS_EXPANDER_KEY, WORKSPACE_TABS_KEY)}
+
+    app.session_state[_NOTICE_KEY] = "선택한 행이 없습니다."
+    app.session_state["equipment_workspace_error_v1"] = "오류 한 줄"
+    app.run()
+    assert not app.exception
+    assert any("선택한 행이 없습니다" in item.value for item in app.info)
+    noisy = {key: _top_level_slot(app, key) for key in quiet}
+    assert noisy == quiet
+
+
+def test_the_change_memo_is_cleared_after_a_save_and_not_reused(tmp_path: Path) -> None:
+    """저장한 메모는 칸에서 비워진다. 그대로 남으면 다음 리비전에 말없이 다시 실렸다
+    (2026-10-05 E2E — r4 와 r5 가 같은 메모). 칸을 지우기만 하면 브라우저가 옛 값을 다시
+    보내므로 다음 회차 칸 앞에서 빈 값을 적어 브라우저에도 알린다.
+    """
+    repository = _repository(tmp_path / "equipment.duckdb")
+    repository.save_snapshot(
+        empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
+    )
+    app = _app(tmp_path / "equipment.duckdb")
+    app.text_input(key=NOTE_KEY).input("M1 메모")
+    app.button(EDIT_SAVE_BUTTON_KEY).click().run()
+    assert not app.exception
+
+    memo = app.text_input(key=NOTE_KEY)
+    assert (memo.value, memo.proto.set_value) == ("", True)
+    assert repository.list_revisions()[0].note == "M1 메모"
+
+    app.button(EDIT_SAVE_BUTTON_KEY).click().run()
+    assert not app.exception
+    assert repository.list_revisions()[0].note is None
 
 
 def test_blank_cells_in_the_direct_editors_render_empty_not_none(tmp_path: Path) -> None:

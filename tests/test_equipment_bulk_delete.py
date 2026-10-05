@@ -128,3 +128,18 @@ def test_undo_puts_rows_back_but_never_duplicates_a_key() -> None:
     assert sorted(equipment["호기"].str.strip()) == ["E1", "E2", "E3", "E4"]
     assert len(downtime) == 4
     assert baseline.equals(frames[0])
+
+
+def test_undo_puts_rows_back_where_they_were() -> None:
+    """되돌린 행은 지우기 전 자리로 돌아온다. 맨 뒤에 붙으면 저장할 때 순서만 다른 리비전이
+    생겼다(2026-10-05 E2E)."""
+    frames = _frames()
+    plan = plan_deletion(frames, EQUIPMENT_TARGET, {("E1",), ("E3",)})
+
+    (baseline, equipment, downtime), skipped = restore_rows(
+        apply_deletion(frames, plan), plan.removed
+    )
+
+    assert skipped == 0
+    assert equipment.equals(frames[1].reset_index(drop=True))
+    assert downtime.equals(frames[2].reset_index(drop=True))

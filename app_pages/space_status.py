@@ -265,7 +265,11 @@ else:
 # (2026-10-01 사용자 결정). 사이드바 메뉴 이름은 그대로다.
 render_page_header("Space 현황 (Data확보중)", show_status=False)
 render_page_guide("space_status", title="Space 현황")
-render_flash(SPACE_FLASH_KEY)
+# 저장 알림·버림 알림은 늘 서 있는 한 칸 안에 그린다 — 알림이 생기고 사라질 때 아래 key 있는
+# 묶음의 자리가 밀리면 `st.rerun()` 으로 끊긴 회차의 사본이 남는다(가용설비 현황과 같은 까닭).
+notices = st.container()
+with notices:
+    render_flash(SPACE_FLASH_KEY)
 # 배치 편집은 실제 저장본이 있을 때만 — 합성 데모 fleet 을 편집본에 섞으면 첫 실제 저장이 막힌다.
 editable = not using_sample_equipment and latest_snapshot is not None
 if editable:
@@ -276,7 +280,7 @@ if editable:
     pop_drafts_replaced()
     discarded_notice = pop_discarded_notice()
     if discarded_notice:
-        st.warning(discarded_notice, icon=":material/sync_problem:")
+        notices.warning(discarded_notice, icon=":material/sync_problem:")
 # 설비 샘플 화면(호기 마스터가 비어 샘플 스위치를 켠 상태)인가. 이때는 FAB 편집도 끈다 — 합성 fleet
 # 위에서 고친 FAB 가 실제 저장소에 들어간다(2026-10-03 사용자 결정 2).
 showing_sample = False

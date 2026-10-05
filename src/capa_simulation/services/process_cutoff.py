@@ -95,6 +95,21 @@ def build_process_cutoff_template(processes: Iterable[str]) -> pd.DataFrame:
     )
 
 
+def add_missing_cutoff_rows(draft: pd.DataFrame, processes: Iterable[str]) -> pd.DataFrame:
+    """편집 중인 표에 **없는** 공정만 빈 행으로 덧붙인다. 이미 적은 값은 그대로 둔다.
+
+    저장은 Cut-off 를 적은 행만 남기므로, 몇 공정만 적어 저장하면 나머지가 표에서 사라진다.
+    표 전체를 새로 깔면 적어 둔 값까지 지워졌다(2026-10-05 E2E). 빠진 공정만 채운다.
+    """
+    present = {str(name).strip() for name in draft["공정"].dropna()} if "공정" in draft else set()
+    missing = [name for name in dict.fromkeys(str(p).strip() for p in processes) if name]
+    template = build_process_cutoff_template(name for name in missing if name not in present)
+    if template.empty:
+        return draft
+    added = template.loc[:, [column for column in draft.columns if column in template.columns]]
+    return pd.concat([draft, added], ignore_index=True)
+
+
 def parse_process_cutoff_clipboard(
     content: str,
     *,

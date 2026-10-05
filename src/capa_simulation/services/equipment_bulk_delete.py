@@ -154,8 +154,30 @@ def apply_deletion(frames: Frames, plan: DeletionPlan) -> Frames:
     return result[0], result[1], result[2]
 
 
+def _reinsert(current: pd.DataFrame, rows: pd.DataFrame) -> pd.DataFrame:
+    """`rows` 를 지우기 전 자리로 끼워 넣는다. 자리를 모르면 뒤에 붙인다.
+
+    `plan_deletion` 이 남긴 행 이름은 지우기 직전 편집본의 행 번호다(편집본은 늘 0 부터 매긴
+    번호다 — `apply_deletion` 이 다시 매긴다). 작은 번호부터 그 자리에 넣으면 그 사이 편집이
+    없을 때 지우기 전 순서가 그대로 돌아온다. 되돌린 행이 맨 뒤로 가면 저장할 때 순서만 다른
+    리비전이 생겼다(2026-10-05 E2E).
+    """
+    if rows.empty:
+        return current
+    if not all(isinstance(label, int) for label in rows.index.tolist()):
+        return pd.concat([current, rows], ignore_index=True)
+    result = current.reset_index(drop=True)
+    for label in sorted(rows.index.tolist()):
+        position = min(int(label), len(result))
+        result = pd.concat(
+            [result.iloc[:position], rows.loc[[label]], result.iloc[position:]],
+            ignore_index=True,
+        )
+    return result
+
+
 def restore_rows(frames: Frames, removed: Frames) -> tuple[Frames, int]:
-    """방금 뺀 행을 뒤에 되붙인다. 그 사이에 같은 키가 다시 생겼으면 그 행은 건너뛴다.
+    """방금 뺀 행을 지우기 전 자리로 되돌린다. 그 사이에 같은 키가 다시 생겼으면 건너뛴다.
 
     건너뛴 행 수를 함께 돌려준다 — 몰래 빠뜨리지 않고 화면이 말하게 한다.
     """
@@ -169,5 +191,5 @@ def restore_rows(frames: Frames, removed: Frames) -> tuple[Frames, int]:
         present = set(row_keys(current, target))
         back = [key not in present for key in row_keys(gone, target)]
         skipped += back.count(False)
-        restored.append(pd.concat([current, gone.loc[back]], ignore_index=True))
+        restored.append(_reinsert(current, gone.loc[back]))
     return (restored[0], restored[1], restored[2]), skipped
