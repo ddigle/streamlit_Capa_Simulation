@@ -718,8 +718,10 @@
 
 - [x] `C:\Dev\Streamlit_Project` 프로젝트 기본 폴더 구조를 구성했다.
 - [x] `.gitignore`, `pyproject.toml`, requirements 파일, Streamlit 설정을 구성했다.
-  `requirements.txt`·`requirements-dev.txt` 는 이후 `e873cf5` 가 지웠다. 지금 저장소에
-  그 파일은 없고 의존성 선언과 설치 경로는 `pyproject.toml` 하나다.
+  `requirements.txt`·`requirements-dev.txt` 는 이후 `e873cf5` 가 지웠고, 의존성 선언과
+  설치 경로는 `pyproject.toml` 하나다. `requirements.txt` 는 `078ac18` 이 사내 WebIDE
+  CI/CD 의 `docker/Dockerfile-prod` 가 읽는 컨테이너용 고정 목록으로 되살렸다 — `uv.lock` 에서
+  자동 생성하는 파일이라 손으로 고치지 않고, 의존성 선언의 정본은 여전히 `pyproject.toml` 이다.
 - [x] 초기 개발 환경으로 Python 3.13 기반 `.venv`를 생성하고 활성화했다.
 - [x] 사내 실행환경에 맞춰 Python 3.10.11 기반 `.venv`로 전환하고 프로젝트 Python/Ruff/mypy 대상 버전을 3.10으로 조정했다.
 - [x] Python 3.10.11 환경에서 mypy, Ruff, pytest 3개 및 실제 XLSB Streamlit 실행 검증을 완료했다.
@@ -1276,14 +1278,16 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
 
 - [ ] 제품·단수별 Process 흐름 순서와 TAT 를 DB 에서 조회해 기준 흐름에 따라 재공을
   분류한다. 사용자가 곧 지시 예정. 현재 재공 현황은 결정론적 데모 데이터다.
-- [ ] 대당 Capa 제외 건수를 나머지 계산 화면에도 보인다. `CAPACITY_EXCLUSIONS_ATTR` 를 읽는
-  화면은 `app_pages/capacity_standards.py`·`app_pages/process_securement.py` 둘뿐이고
-  (`REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR` 는 `process_securement.py` 하나뿐이다), 같은
-  대당 Capa 결과를 쓰면서 제외를 전혀 읽지 않는 화면이 넷이다.
+- [ ] 대당 Capa 제외 건수를 나머지 계산 화면에도 보인다. `CAPACITY_EXCLUSIONS_ATTR` 와
+  `REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR` 를 읽는 화면은 `app_pages/calculation_result.py`
+  하나뿐이고, 같은 대당 Capa 결과를 쓰면서 제외를 전혀 읽지 않는 화면이 다섯이다.
   - `app_pages/home.py` — `get_home_simulation`
   - `app_pages/static_capa.py`·`app_pages/wip_status.py`·`app_pages/standard_target_capa.py`
-    — `get_scenario_capacity_and_demand`
-  네 화면 모두 제외 경고도 건수도 띄우지 않아, 측정률 0 인 경로가 아무 표시 없이 사라진다.
+    — `get_scenario_capacity_and_demand`(`static_capa`·`standard_target_capa` 는
+    `page_bootstrap.scenario_capacity_and_demand` 를 거친다)
+  - `app_pages/available_equipment_status.py` — `get_scenario_capacity_and_demand`
+    (Static/Dynamic GAP 탭, 소요대수만 받는다)
+  다섯 화면 모두 제외 경고도 건수도 띄우지 않아, 측정률 0 인 경로가 아무 표시 없이 사라진다.
 
 ## 3-6. 2026-09-06 전역 리팩토링 검토
 

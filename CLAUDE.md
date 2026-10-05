@@ -44,7 +44,8 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다(PowerShell
 
 보조 스크립트: `scripts\inspect_wf_division.py`·`scripts\inspect_top_remigration.py`
 (사내 실데이터의 `WF 구분`·재이관 전제를 **읽기 전용**으로 재는 것. 값은 찍지 않고
-개수만 보고한다), `scripts\benchmark_home.py`(HOME 단계별 성능), `scripts\validate_duckdb_persistence.py`
+개수만 보고한다), `scripts\audit_top_remigration.py`(`0026` 적용 뒤 이관 결과의 오염·누락을
+**읽기 전용**으로 점검), `scripts\benchmark_home.py`(HOME 단계별 성능), `scripts\validate_duckdb_persistence.py`
 (영속성 통합 검증), `scripts\generate_sample_core_data.py`(합성 Core Data 생성).
 `scripts\build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖는다).
 

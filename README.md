@@ -149,6 +149,7 @@ src/capa_simulation/page_bootstrap.py
 src/capa_simulation/home_state.py
                                HOME 토글의 세션 키·기본값 계약(UI 의존성 없음)
 src/capa_simulation/design/    색·서체·표 치수 토큰
+src/capa_simulation/guides/    화면별 Guide 원문(Markdown, `page_guide` 가 읽음)
 src/capa_simulation/components/ Streamlit 커스텀 UI 컴포넌트와 Figure 생성기
 src/capa_simulation/io/        Core Data 어댑터와 DuckDB 활성 기준정보 경계
 src/capa_simulation/io/object_storage.py
@@ -190,6 +191,13 @@ docs/data_model.md             DuckDB 데이터 모델
 docs/design_system.md          색·서체·표 밀도 규칙
 docs/migration_catalog.md      SQL 마이그레이션 목적·출처 카탈로그
 docs/objectstore_setup.md      사내 오브젝트 스토리지 연동 절차
+docs/dual_env_workflow.md      사외·사내 두 환경의 작업 절차와 리뷰 문서 양식
+docs/internal_update_runbook.md
+                               사내에서 배포 ZIP 을 받아 적용하는 한 번의 작업 런북
+docs/bigdataquery_webide_setup.md
+                               사내 WebIDE 에서 BigDataQuery 조회를 여는 설치·로그인·계정 설정
+docs/parallel_agent_briefing.md
+                               병행 개발 후보 에이전트의 시작 절차와 하루 흐름
 AGENTS.md                      개발 에이전트용 구조·규칙 문서
 ```
 
