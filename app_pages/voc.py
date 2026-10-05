@@ -41,6 +41,12 @@ CATEGORY_FILTER_KEY = "voc_category_filter"
 OPEN_ONLY_KEY = "voc_open_only"
 SEARCH_KEY = "voc_search"
 FLASH_KEY = "voc_flash"
+POST_TITLE_KEY = "voc_post_title"
+POST_BODY_KEY = "voc_post_body"
+# 올리기에 **성공한 뒤에만** 폼을 비운다는 표지. 위젯을 그린 회차에는 그 값을 바꿀 수 없으므로
+# 다음 회차 위젯 앞에서 빈 값을 적는다. 답변 폼은 글 번호를 붙인 칸이다.
+POST_CLEAR_KEY = "voc_post_clear"
+REPLY_CLEAR_KEY = "voc_reply_clear"
 
 render_page_header("VOC")
 render_page_guide("voc", title="VOC")
@@ -90,17 +96,25 @@ with st.container(border=True):
         max_chars=40,
         help="이 앱에는 로그인이 없습니다. 답을 돌려줄 수 있을 만큼만 적어 주세요.",
     )
-    with st.form("voc_post_form", clear_on_submit=True):
+    # `clear_on_submit` 을 쓰지 않는다. 그것은 **거절된 제출**(작성자 빈칸 등)에도 제목·내용을
+    # 지워, 4000자까지 적은 글이 되돌릴 길 없이 사라졌다(2026-10-05 E2E). 성공한 뒤에만 비운다.
+    if st.session_state.pop(POST_CLEAR_KEY, False):
+        st.session_state[POST_TITLE_KEY] = ""
+        st.session_state[POST_BODY_KEY] = ""
+    with st.form("voc_post_form"):
         category_column, title_column = st.columns([1, 3])
         with category_column:
             category = st.selectbox("분류", options=VOC_CATEGORIES)
         with title_column:
-            title = st.text_input("제목", placeholder="한 줄로 요약해 주세요", max_chars=120)
+            title = st.text_input(
+                "제목", placeholder="한 줄로 요약해 주세요", max_chars=120, key=POST_TITLE_KEY
+            )
         body = st.text_area(
             "내용",
             height=140,
             placeholder="어떤 화면에서 무엇을 하려다 무엇이 막혔는지 적어 주시면 답이 빨라집니다.",
             max_chars=4000,
+            key=POST_BODY_KEY,
         )
         submitted = st.form_submit_button(
             "글 올리기", icon=":material/send:", type="primary", width="stretch"
@@ -119,6 +133,7 @@ with st.container(border=True):
             st.error(str(exc))
         else:
             st.session_state[FLASH_KEY] = "글을 올렸습니다."
+            st.session_state[POST_CLEAR_KEY] = True
             st.rerun()
 
 st.divider()
@@ -190,13 +205,17 @@ def _render_post(row: Any) -> None:
                 with st.chat_message("assistant", avatar=":material/reply:"):
                     st.caption(f"{reply['author']} · {_timestamp(reply['created_at'])}")
                     st.text(str(reply["body"]))
-        with st.form(f"{REPLY_FORM_KEY}_{post_id}", clear_on_submit=True):
+        # 새 글 폼과 같이 성공한 뒤에만 비운다 — 거절된 답변이 지워지면 다시 적어야 한다.
+        reply_key = f"{REPLY_BODY_KEY}_{post_id}"
+        if st.session_state.pop(f"{REPLY_CLEAR_KEY}_{post_id}", False):
+            st.session_state[reply_key] = ""
+        with st.form(f"{REPLY_FORM_KEY}_{post_id}"):
             reply_body = st.text_area(
                 "답변",
                 height=100,
                 placeholder="답변을 적어 주세요.",
                 max_chars=4000,
-                key=f"{REPLY_BODY_KEY}_{post_id}",
+                key=reply_key,
             )
             reply_submitted = st.form_submit_button(
                 "답변 남기기", icon=":material/reply:", type="primary"
@@ -214,6 +233,7 @@ def _render_post(row: Any) -> None:
                 st.error(str(exc))
             else:
                 st.session_state[FLASH_KEY] = "답변을 남겼습니다."
+                st.session_state[f"{REPLY_CLEAR_KEY}_{post_id}"] = True
                 st.rerun()
         with st.container(horizontal=True, gap="small", vertical_alignment="center"):
             if st.button(

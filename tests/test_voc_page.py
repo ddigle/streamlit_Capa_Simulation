@@ -118,3 +118,49 @@ def test_an_opened_post_stays_open_after_a_trip_to_another_screen(tmp_path: Path
     app.run()
 
     assert _post_box(app, box_key)[1] is True
+
+
+def _click(app: AppTest, label: str) -> AppTest:
+    return next(button for button in app.button if button.label == label).click().run()
+
+
+def test_a_rejected_post_keeps_what_was_typed_and_a_saved_one_clears(tmp_path: Path) -> None:
+    """작성자를 빠뜨려 거절된 글은 제목·내용을 **지우지 않는다**(2026-10-05 E2E).
+
+    `clear_on_submit` 은 거절된 제출에도 폼을 비워 4000자까지 적은 글이 사라졌다. 올리기에
+    성공한 뒤에만 비운다 — 그대로 두면 한 번 더 눌러 같은 글이 또 올라간다.
+    """
+    app = _app(tmp_path / "scenario.duckdb")
+    app.text_input(key="voc_post_title").input("제목 A")
+    app.text_area(key="voc_post_body").input("길게 적은 내용")
+    _click(app, "글 올리기")
+
+    assert "작성자를 입력하세요." in [message.value for message in app.error]
+    assert app.text_input(key="voc_post_title").value == "제목 A"
+    assert app.text_area(key="voc_post_body").value == "길게 적은 내용"
+
+    app.text_input(key=AUTHOR_KEY).input("검증자A")
+    _click(app, "글 올리기")
+
+    assert not app.exception
+    assert "글을 올렸습니다." in [message.value for message in app.success]
+    assert app.text_input(key="voc_post_title").value == ""
+    assert app.text_area(key="voc_post_body").value == ""
+
+
+def test_a_rejected_reply_keeps_its_text_and_a_saved_one_clears(tmp_path: Path) -> None:
+    database_path = tmp_path / "scenario.duckdb"
+    post_id = _post(database_path)
+    reply_key = f"voc_reply_body_{post_id}"
+    app = _app(database_path)
+    app.text_area(key=reply_key).input("확인했습니다.")
+    _click(app, "답변 남기기")
+
+    assert "작성자를 입력하세요." in [message.value for message in app.error]
+    assert app.text_area(key=reply_key).value == "확인했습니다."
+
+    app.text_input(key=AUTHOR_KEY).input("담당자")
+    _click(app, "답변 남기기")
+
+    assert "답변을 남겼습니다." in [message.value for message in app.success]
+    assert app.text_area(key=reply_key).value == ""
