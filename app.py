@@ -6,7 +6,7 @@ from pathlib import Path
 import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
-from capa_simulation.components.app_header import hide_main_menu, render_app_header
+from capa_simulation.components.app_header import render_app_header, render_shell_style
 from capa_simulation.components.equipment_data_workspace import has_unsaved_equipment_edits
 from capa_simulation.components.intro_overlay import render_intro_overlay
 from capa_simulation.components.intro_summary import render_intro_summary, summary_toolbar_script
@@ -99,7 +99,7 @@ st.set_page_config(
     page_title=APP_NAME,
     page_icon=":material/factory:",
     layout="wide",
-    # `menu_items` 는 적지 않는다. ⋮ 메뉴는 통째로 감추고(`hide_main_menu`), 개발자·인증 정보는
+    # `menu_items` 는 적지 않는다. ⋮ 메뉴는 통째로 감추고(`render_shell_style`), 개발자·인증 정보는
     # 머리 띠(`render_app_header`)가 보여 준다.
 )
 # 사이드바 상자를 여닫을 때 앱 전체 대신 다시 도는 빈 프래그먼트와, 이번 실행이 끝까지
@@ -126,9 +126,10 @@ render_intro_overlay()
 # **입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
 # 스크립트가 새로고침하고 그 세션은 버려진다. 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기
 # 전에 새로고침이 걸린다. 입장 화면이 먼저인 것은 그것이 무엇보다 먼저 화면을 덮어야 해서다.
-# ⋮ 메뉴를 감추는 규칙도 여기서 보낸다 — 머리 띠(`render_app_header`)는 부트스트랩 뒤라, 거기에
-# 두면 부트스트랩 오류 화면에 메뉴가 남고 새로 읽을 때마다 메뉴가 잠깐 보였다 사라진다.
-hide_main_menu()
+# ⋮ 메뉴 감춤과 인쇄 규칙(사이드바·머리 띠·덮개 빼기)을 담은 껍데기 스타일도 여기서 보낸다 —
+# 머리 띠(`render_app_header`)는 부트스트랩 뒤라, 거기에 두면 부트스트랩 오류 화면에 메뉴가
+# 남고 그 화면을 인쇄하면 사이드바가 찍히며, 새로 읽을 때마다 메뉴가 잠깐 보였다 사라진다.
+render_shell_style()
 render_guide_base_style()
 render_theme_toggle(
     extra_scripts=(guide_toolbar_script(), summary_toolbar_script(), print_toolbar_script())

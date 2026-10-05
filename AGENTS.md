@@ -182,10 +182,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **툴바 iframe(`render_guide_base_style` + `theme_toggle.render_theme_toggle` — 테마·Guide·Summary·
     Print 단추)은 입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
     스크립트가 새로고침해 그 세션을 버리므로, 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기 전에
-    새로고침이 걸린다. ⋮ 메뉴를 감추는 스타일(`app_header.hide_main_menu`)도 툴바 바로 앞, 부트스트랩
-    앞이다 — 머리 띠(`render_app_header`)는 부트스트랩 뒤라 거기에 두면 부트스트랩 오류 화면에 메뉴가
-    남고, 새로 읽을 때마다 메뉴가 보였다 사라지며 툴바 단추가 밀린다. 차례
-    `입장 화면 → 메뉴 감춤 → 툴바 → 부트스트랩 → 요약` 은 `tests/test_app_navigation.py` 가 지킨다.
+    새로고침이 걸린다. ⋮ 메뉴 감춤과 인쇄 규칙을 담은 껍데기 스타일(`app_header.render_shell_style`)도
+    툴바 바로 앞, 부트스트랩 앞이다 — 머리 띠(`render_app_header`)는 부트스트랩 뒤라 거기에 두면
+    부트스트랩 오류 화면에 메뉴가 남고 그 화면을 인쇄하면 사이드바가 찍히며, 새로 읽을 때마다 메뉴가
+    보였다 사라지며 툴바 단추가 밀린다. 차례 `입장 화면 → 껍데기 스타일 → 툴바 → 부트스트랩 → 요약` 은
+    `tests/test_app_navigation.py` 가 지킨다.
   - **입장 화면 Summary 의 요약 값(`components/intro_summary.py`)은 공식 시나리오 부트스트랩
     바로 뒤, 페이지보다 앞에서 매 회차 보낸다.** 페이지가 `st.stop()` 하면 그 뒤로는 아무것도
     브라우저에 닿지 않고, 앞이어야 입장 화면 로딩에 포함된다. **이 부가 기능이 주 업무 화면(HOME)의
@@ -1976,9 +1977,28 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **Streamlit 의 ⋮ 메뉴(`stMainMenu`)를 통째로 감춘다**(2026-10-05 사용자 결정). 사용자에게 남길
     항목은 인쇄·테마뿐이고 둘 다 툴바 단추(`print_button`·`theme_toggle`)가 맡는다. 감추는 규칙은 그
     요소 하나만 고른다 — Deploy 와 툴바 슬롯(`stToolbarActions`)은 그대로다. 그래서
-    `set_page_config` 에 `menu_items` 를 적지 않는다. 이 규칙(`MAIN_MENU_HIDE_STYLE`)은 머리 띠 CSS 와
-    따로 `hide_main_menu()` 로 **부트스트랩 앞에서** 보낸다(위 진입점 차례). 메뉴는 Streamlit 의 정적
+    `set_page_config` 에 `menu_items` 를 적지 않는다. 이 규칙은 머리 띠 CSS 와 따로 껍데기 스타일
+    (`SHELL_STYLE`)에 담아 `render_shell_style()` 로 **부트스트랩 앞에서** 보낸다(위 진입점 차례). 메뉴는 Streamlit 의 정적
     껍데기라 첫 delta 가 닿기 전 아주 잠깐은 보일 수 있다. 판올림 뒤 메뉴가 다시 보이지 않는지 확인한다.
+  - **인쇄에서는 사이드바를 늘 뺀다**(2026-10-05 사용자 요청 — 화면에 펼쳐 둔 사이드바도). 같은 껍데기
+    스타일의 `@media print` 덩어리 **하나**에 인쇄 규칙을 모두 둔다 — 부트스트랩 앞에서 나가므로 오류
+    화면 인쇄에도 걸리고, 화면 렌더링은 바뀌지 않는다. 빼는 것은 사이드바(`stSidebar`, Streamlit 은 펼친
+    사이드바를 `display: initial` 로 찍으므로 `!important`)·머리 띠(`stHeader` 요소째 — 툴바 단추·Deploy
+    포함)·입장 화면/Summary 덮개(`#capa-intro-host`)다. 본문은 폭 상한을 풀어 종이 폭을 다 쓴다. 색은
+    `print-color-adjust: exact` 로 화면 그대로 찍는다. 쪽 사이에서 자르지 않는 것(`break-inside: avoid`)은
+    Vega 차트(`stVegaLiteChart`)·CCv2 칸(`stBidiComponentIsolated`·`stBidiComponentRegular`, Space 배치
+    보기 등)·지표 카드(`stMetric`)뿐이다. 긴 표(`stDataFrame`·`stTable`)에는 걸지 않는다 — 한 쪽보다
+    길면 통째로 밀려 빈 쪽이 생긴다. **Plotly(`stPlotlyChart`)에도 걸지 않는다**(합의한 기본값 「차트는
+    자르지 않는다」에서 벗어난 것): 월별 표(`monthly_table_base`·HOME 대시보드)가 Plotly 라 긴 표와 같은
+    꼴이고, 걸면 산출 결과 첫 쪽이 제목만 남고 비며, HOME 상세 B/N 은 행 이름 열만 다음 쪽으로 밀려
+    인쇄에서 쪼개지지 않는 월 스크롤 칸(`overflow-x: auto`)과 어긋나 값이 잘려 나갔다(PDF 실측). Plotly
+    표와 차트를 가를 `data-testid` 는 없다. 테두리 상자(`st.container(border=True)`)는 테두리가
+    emotion 스타일에만 있고 DOM 표지가 없어 `data-testid` 로 고를 수 없으므로 걸지 않는다. 용지 방향은
+    인쇄 창에 맡긴다(`@page` 에 `size` 를 두지 않고 여백만 둔다). 선택자는 모두 1.63 번들에서 확인한
+    `data-testid` 다 — 판올림 뒤 인쇄 미리보기로 다시 본다. **알려진 한계**: `st.dataframe`(Glide 격자,
+    canvas)은 지금 그려진 행만 찍힌다(Streamlit 한계, 여기서 고치지 않는다). 월별 표의 가로 스크롤 칸은
+    스크롤 자리에서 종이 폭에 드는 달만 찍히고(Letter 세로에서 넉 달 남짓), 맞춤 가로 스크롤 막대는 회색 띠로 찍힌다. 규칙은
+    `tests/test_app_header.py` 가 고정한다.
   - 사이드바 접기 버튼(`stSidebarCollapseButton`)을 늘 보이게 한다(2026-10-03 사용자 요청).
     Streamlit 은 사이드바에 마우스를 올렸을 때만 `visibility: visible` 로 띄운다. 인쇄 숨김은
     남기려고 `@media screen` 안에서만 덮는다. 판올림 뒤 버튼이 늘 보이는지 눈으로 확인한다.

@@ -1,4 +1,4 @@
-# Purpose: 상단 띠에 앱·개발자·인증 정보를 표시하고 Streamlit ⋮ 메뉴를 감춘다.
+# Purpose: 상단 띠에 앱·개발자·인증 정보를 싣고, ⋮ 메뉴 감춤·인쇄 규칙을 껍데기 스타일로 보낸다.
 
 """App name, developer, and clearance info pinned to the top bars.
 
@@ -15,14 +15,17 @@ Streamlit 은 헤더(`stHeader`)에 위젯을 넣는 공식 API 를 주지 않�
 개발 정보, 아래는 인증 정보를 싣는다. 값은 `settings.py` 가 단일 근거이고, 이 띠가 그 값을
 보여 주는 유일한 자리다.
 
-Streamlit 의 ⋮ 메뉴(`stMainMenu`)도 여기서 통째로 감춘다(2026-10-05 사용자 결정,
-`hide_main_menu`). 사용자에게 남길 메뉴 항목은 인쇄와 테마뿐이고, 둘 다 툴바 단추(`print_button`·
-`theme_toggle`)가 맡는다. 최소 모드(`client.toolbarMode = "minimal"`)는 테마 항목을 남겨 메뉴가
-사라지지 않으므로 쓰지 않는다 — Deploy 단추와 우리 단추가 앉는 툴바 슬롯은 그대로다. 이 규칙만은
-머리 띠 CSS 와 따로 **부트스트랩보다 앞에서** 보낸다. 머리 띠는 부트스트랩·요약 뒤에야 나가서,
+Streamlit 의 ⋮ 메뉴(`stMainMenu`)도 여기서 통째로 감춘다(2026-10-05 사용자 결정). 사용자에게
+남길 메뉴 항목은 인쇄와 테마뿐이고, 둘 다 툴바 단추(`print_button`·`theme_toggle`)가 맡는다. 최소
+모드(`client.toolbarMode = "minimal"`)는 테마 항목을 남겨 메뉴가 사라지지 않으므로 쓰지 않는다 —
+Deploy 단추와 우리 단추가 앉는 툴바 슬롯은 그대로다. 인쇄 규칙(`@media print`)도 같은 스타일에
+싣는다(2026-10-05 사용자 요청 — 화면에 펼쳐 둔 사이드바도 인쇄에서는 늘 뺀다). 이 둘을 담은 앞선
+껍데기 스타일(`SHELL_STYLE`, `render_shell_style`)만은 머리 띠 CSS 와 따로 **부트스트랩보다 앞에서**
+보낸다. 머리 띠는 부트스트랩·요약 뒤에야 나가서,
 거기에 두면 부트스트랩 오류 화면(`st.stop()`)에는 메뉴가 그대로 남고, 새로 읽을 때마다 부트스트랩이
-끝날 때까지 메뉴가 보였다 사라지며 툴바 단추가 옆으로 밀린다. 메뉴는 Streamlit 의 정적 껍데기라
-첫 delta 가 닿기 전 아주 잠깐은 보일 수 있다 — 파이썬이 그보다 앞설 길은 없다.
+끝날 때까지 메뉴가 보였다 사라지며 툴바 단추가 옆으로 밀린다. 인쇄 규칙도 앞에 있어야 오류 화면을
+인쇄할 때 사이드바가 빠진다. 메뉴는 Streamlit 의 정적 껍데기라 첫 delta 가 닿기 전 아주 잠깐은 보일
+수 있다 — 파이썬이 그보다 앞설 길은 없다.
 
 띠의 면은 페이지 바탕보다 한 단계만 눌러(`tokens.HEADER_BAR`) 앱 머리와 본문을 나눈다.
 글자색은 본문과 같다 — 면이 밝아 뒤집을 이유가 없다.
@@ -52,10 +55,55 @@ _BOTTOM_LINE = (
     f" · 인증번호 {APP_AUTH_CODE}(유효기간 {APP_AUTH_EXPIRY}) · {APP_HANDLING_NOTE}"
 )
 
-# Streamlit 의 ⋮ 메뉴. 인쇄·테마는 툴바 단추가 맡으므로 단추째 감춘다. 감추는 것은 이 요소
-# 하나다 — Deploy 와 툴바 슬롯(`stToolbarActions`)은 형제라 영향이 없다. 색을 쓰지 않아 테마와
-# 무관한 고정 문자열이다.
-MAIN_MENU_HIDE_STYLE = '<style>[data-testid="stMainMenu"] { display: none !important; }</style>'
+# 부트스트랩 앞에서 보내는 껍데기 스타일. 색을 쓰지 않아 테마와 무관한 고정 문자열이다.
+#
+# 첫 규칙은 Streamlit 의 ⋮ 메뉴다. 인쇄·테마는 툴바 단추가 맡으므로 단추째 감춘다. 감추는 것은 이
+# 요소 하나다 — Deploy 와 툴바 슬롯(`stToolbarActions`)은 형제라 영향이 없다.
+#
+# 나머지는 인쇄 규칙 한 덩어리다. 화면에는 아무것도 바꾸지 않는다. 선택자는 모두 1.63 번들에서
+# `data-testid` 로 확인한 것이다 — 판올림 뒤 인쇄 미리보기로 다시 본다.
+# - 사이드바는 펼쳐 있어도 뺀다. Streamlit 은 인쇄에서 `display: 접힘 ? none : initial` 로 펼친
+#   사이드바를 그대로 찍으므로 `!important` 로 덮는다. 사이드바와 본문(`stMain`)은 가로 flex 의
+#   형제라, 사이드바가 빠지면 본문이 왼쪽 끝부터 종이 폭을 다 쓴다. 사이드바 머리 띠(`::before`)와
+#   접기 버튼도 함께 빠진다.
+# - 머리 띠는 요소째 뺀다. Streamlit 은 헤더의 자식만 감춰 우리 면·`::before`/`::after` 글이 남는다.
+#   툴바 단추(Summary·Guide·테마·Print)와 Deploy 도 이 안에 있다.
+# - 입장 화면·Summary 덮개(`#capa-intro-host`, `document.body` 에 붙은 호스트)는 열려 있어도 뺀다.
+# - 본문 폭 상한은 풀어 둔다(`layout="wide"` 가 이미 풀지만 못박는다).
+# - 색은 화면 그대로 찍는다. Streamlit 이 `html` 에 걸어 둔 것을 앱 뿌리에도 건다(물려받는 속성이라
+#   상태색·차트색·표 바탕이 함께 남는다).
+# - Vega 차트·CCv2 칸(Space 배치 보기 등)·지표 카드는 쪽 사이에서 자르지 않는다. 긴 표
+#   (`stDataFrame`·`stTable`)에는 걸지 않는다 — 한 쪽보다 길면 통째로 다음 쪽으로 밀려 빈 쪽이
+#   생긴다. **Plotly(`stPlotlyChart`)에도 걸지 않는다.** 이 앱의 월별 표(`monthly_table_base`·HOME
+#   대시보드)가 Plotly 라 긴 표와 같은 꼴이 되고, 행 이름 열만 다음 쪽으로 밀리면 옆의 월 열(가로
+#   스크롤 칸 — 인쇄에서 쪼개지지 않는다)과 어긋나 값이 잘려 나간다. Plotly 표와 차트를 가를
+#   `data-testid` 는 없다. 테두리 상자(`st.container(border=True)`)는 테두리가 emotion 스타일에만
+#   있고 DOM 에 표지가 없어 `data-testid` 로 고를 수 없으므로 걸지 않는다.
+# - 용지 방향은 브라우저 인쇄 창에 맡긴다(`@page` 에 `size` 를 두지 않는다). 여백만 정한다.
+SHELL_STYLE = """<style>
+[data-testid="stMainMenu"] { display: none !important; }
+@media print {
+  @page { margin: 10mm; }
+  [data-testid="stSidebar"],
+  [data-testid="stHeader"],
+  #capa-intro-host {
+    display: none !important;
+  }
+  [data-testid="stMainBlockContainer"] {
+    max-width: none !important;
+  }
+  [data-testid="stApp"] {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  [data-testid="stVegaLiteChart"],
+  [data-testid="stBidiComponentIsolated"],
+  [data-testid="stBidiComponentRegular"],
+  [data-testid="stMetric"] {
+    break-inside: avoid;
+  }
+}
+</style>"""
 
 # CSS 는 중괄호가 많아 f-string 으로 두면 전부 이스케이프해야 한다. 색·글자 자리에
 # 센티넬을 두고 **그릴 때마다** 치환한다.
@@ -229,9 +277,9 @@ def render_app_header() -> None:
     st.html(f"<style>{_header_css()}</style>")
 
 
-def hide_main_menu() -> None:
-    """⋮ 메뉴를 감춘다. `app.py` 가 부트스트랩보다 앞에서 매 회차 한 번 부른다.
+def render_shell_style() -> None:
+    """⋮ 메뉴 감춤과 인쇄 규칙을 보낸다. `app.py` 가 부트스트랩보다 앞에서 매 회차 한 번 부른다.
 
     스타일만 든 `st.html` 이라 본문 자리를 먹지 않는다.
     """
-    st.html(MAIN_MENU_HIDE_STYLE)
+    st.html(SHELL_STYLE)

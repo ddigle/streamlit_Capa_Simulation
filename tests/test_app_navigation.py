@@ -355,7 +355,15 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
         return original_bootstrap(*args, **kwargs)
 
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: order.append("intro"))
-    monkeypatch.setattr(app_header, "hide_main_menu", lambda: order.append("menu"))
+    original_shell_style = app_header.render_shell_style
+
+    def _recording_shell_style() -> None:
+        # 진짜 스타일도 보낸다 — 인쇄 규칙이 든 그 스타일이 부트스트랩 앞에 나가는지가 요점이다.
+        assert "@media print" in app_header.SHELL_STYLE
+        order.append("shell")
+        original_shell_style()
+
+    monkeypatch.setattr(app_header, "render_shell_style", _recording_shell_style)
     monkeypatch.setattr(
         theme_toggle,
         "render_theme_toggle",
@@ -371,9 +379,10 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     app.run()
 
     # 요약은 부트스트랩 뒤·페이지 앞이다 — 로딩에 들어가고, 페이지가 멈춰도 이미 보냈다. 툴바는
-    # Guide·Summary·Print 스크립트 셋을 함께 싣는다. ⋮ 메뉴를 감추는 규칙도 부트스트랩 앞이다 —
-    # 부트스트랩 오류 화면(`st.stop()`)에서도 메뉴가 보이지 않아야 한다.
-    one_run = ["intro", "menu", "toolbar:3", "bootstrap", "summary"]
+    # Guide·Summary·Print 스크립트 셋을 함께 싣는다. ⋮ 메뉴 감춤과 인쇄 규칙을 담은 껍데기 스타일도
+    # 부트스트랩 앞이다 — 부트스트랩 오류 화면(`st.stop()`)에서도 메뉴가 보이지 않고, 그 화면을
+    # 인쇄해도 사이드바가 빠져야 한다.
+    one_run = ["intro", "shell", "toolbar:3", "bootstrap", "summary"]
     assert order == one_run * 2
 
 
