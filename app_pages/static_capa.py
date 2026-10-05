@@ -143,7 +143,7 @@ process_labels = get_process_labels()
 render_page_header("Static Capa")
 render_page_guide("static_capa", title="Static Capa")
 
-seed_threshold_defaults()
+seed_threshold_defaults(owner="static_capa")
 
 # 판정 기준은 이 화면이 읽는 조건이라 사이드바 조건 카드다. HOME 의 B/N 집계 공정 상자와 **같은
 # 세션 키**를 쓴다 — 한쪽에서 바꾸면 다른 쪽도 같은 기준으로 판정한다. 두 칸을 한 줄에 반씩

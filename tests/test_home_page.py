@@ -748,6 +748,38 @@ def test_comparison_can_target_another_revision_of_the_same_scenario(tmp_path: P
     assert all(text.startswith("+") for text in gaps), gaps
 
 
+def test_switching_the_comparison_scenario_shows_its_own_revision(tmp_path: Path) -> None:
+    """비교 시나리오를 바꾸면 리비전 상자도 **그 시나리오의 리비전**을 보여 준다.
+
+    앞 시나리오의 리비전을 세션에서 지우기만 하면 서버는 새 시나리오의 첫 리비전을 쓰지만
+    브라우저는 그것을 듣지 못해 앞 시나리오의 리비전 이름(`r5 · 임시 적용`)을 그대로
+    보여 줬다 — GAP 이 어느 리비전과 견주는지 화면이 거짓말한다(2026-10-05 E2E).
+    """
+    from capa_simulation.components.home_preference import (
+        COMPARISON_REVISION_KEY,
+        COMPARISON_SCENARIO_KEY,
+    )
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+    official = DuckDBScenarioRepository(database_path).latest_official_release()
+    assert official is not None
+    comparison_id, comparison_revision_id = _create_comparison_scenario(database_path, 0.5)
+    _pick_comparison(app, str(official.scenario_id), str(official.revision_id))
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    app.selectbox(key=COMPARISON_SCENARIO_KEY).set_value(comparison_id).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    revision = app.selectbox(key=COMPARISON_REVISION_KEY)
+    assert revision.value == comparison_revision_id
+    # 브라우저에 「이 값으로 그려라」를 함께 보낸다. 없으면 앞 시나리오의 리비전이 남는다.
+    assert revision.proto.set_value is True
+
+
 def _value_slots(app: AppTest) -> list[tuple[float, float, float]]:
     """LOB 표 세 행의 값 글자가 놓인 자리. 값 자체가 아니라 **자리**만 본다.
 

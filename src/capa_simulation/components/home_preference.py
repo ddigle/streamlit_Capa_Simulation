@@ -446,12 +446,15 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
             st.error(bootstrap_error_message(exc))
             return
         revision_by_id = {revision.revision_id: revision for revision in revisions}
-        # 시나리오를 바꾸면 앞서 고른 리비전은 남의 것이 된다. 위젯을 만들기 전에 버린다.
-        if st.session_state.get(COMPARISON_REVISION_KEY) not in revision_by_id:
-            st.session_state.pop(COMPARISON_REVISION_KEY, None)
         if not revision_by_id:
+            st.session_state.pop(COMPARISON_REVISION_KEY, None)
             st.info("선택한 시나리오에 저장된 리비전이 없습니다.")
             return
+        # 시나리오를 바꾸면 앞서 고른 리비전은 남의 것이 된다. 위젯을 만들기 전에 그 시나리오의
+        # 첫 리비전(선택 상자의 기본값)으로 **적는다.** 칸을 지우기만 하면 서버는 기본값을 쓰지만
+        # 브라우저는 그 사실을 듣지 못해 앞 시나리오의 리비전 이름을 계속 보여 준다(2026-10-05 E2E).
+        if st.session_state.get(COMPARISON_REVISION_KEY) not in revision_by_id:
+            st.session_state[COMPARISON_REVISION_KEY] = next(iter(revision_by_id))
         active_revision_id = active_persisted_revision_id()
         st.selectbox(
             "비교 리비전",

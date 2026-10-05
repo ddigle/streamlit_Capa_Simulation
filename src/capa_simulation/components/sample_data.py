@@ -17,7 +17,8 @@
 **세션 키 하나를 그룹 전체가 공유한다.** 페이지를 옮길 때마다 다시 켜야 한다면 스위치가
 아니라 방해물이다. Streamlit 은 한 번에 한 페이지만 돌리므로 같은 키의 위젯이 여러
 페이지에 있어도 충돌하지 않는다. 다만 `persist_state="session"` 이 없으면 위젯이 화면에서
-사라지는 순간 값이 버려진다.
+사라지는 순간 값이 버려지고, 있어도 다른 페이지로 넘어온 첫 회차에는 위젯이 기본값으로
+선다 — 그 회차에는 `carry_shared_widget_value` 가 값을 다시 적는다.
 """
 
 from __future__ import annotations
@@ -26,14 +27,19 @@ from collections.abc import Sequence
 
 import streamlit as st
 
+from capa_simulation.shared_widget_state import carry_shared_widget_value
+
 SAMPLE_TOGGLE_KEY = "dynamic_capa_sample_data"
 SAMPLE_TOGGLE_LABEL = "샘플 데이터"
 
 
 def render_sample_switch(*, key: str, source: str) -> bool:
-    """스위치 한 줄. `source` 는 연결되면 이 자리를 채울 원천의 이름이다."""
-    if SAMPLE_TOGGLE_KEY not in st.session_state:
-        st.session_state[SAMPLE_TOGGLE_KEY] = True
+    """스위치 한 줄. `source` 는 연결되면 이 자리를 채울 원천의 이름이다.
+
+    `key` 는 화면마다 다르므로 그리는 자리의 이름으로도 쓴다. 다른 화면에서 넘어온 회차에
+    값을 다시 적지 않으면 그 회차의 스위치가 기본값(꺼짐)으로 선다(`shared_widget_state`).
+    """
+    carry_shared_widget_value(SAMPLE_TOGGLE_KEY, default=True, owner=key)
     with st.container(border=True, key=key):
         with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
             enabled = st.toggle(

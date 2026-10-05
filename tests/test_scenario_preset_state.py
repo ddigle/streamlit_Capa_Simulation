@@ -373,14 +373,20 @@ def test_threshold_defaults_are_seeded_only_when_the_session_is_empty(monkeypatc
         def __init__(self, state: dict[str, object]) -> None:
             self.session_state = state
 
+    from capa_simulation import shared_widget_state
+
     state: dict[str, object] = {}
     monkeypatch.setattr(scenario_preset_state, "st", _FakeStreamlit(state))
-    scenario_preset_state.seed_threshold_defaults()
+    monkeypatch.setattr(shared_widget_state, "st", _FakeStreamlit(state))
+    scenario_preset_state.seed_threshold_defaults(owner="home")
     assert state[SECURE_THRESHOLD_KEY] == scenario_preset_state.DEFAULT_SECURE_THRESHOLD_PERCENT
     assert state[WARNING_THRESHOLD_KEY] == scenario_preset_state.DEFAULT_WARNING_THRESHOLD_PERCENT
 
     state[SECURE_THRESHOLD_KEY] = 101.0
-    scenario_preset_state.seed_threshold_defaults()
+    scenario_preset_state.seed_threshold_defaults(owner="home")
+    assert state[SECURE_THRESHOLD_KEY] == 101.0
+    # 다른 페이지가 그려도 값은 그대로 이어진다(다시 적을 뿐 기본값으로 덮지 않는다).
+    scenario_preset_state.seed_threshold_defaults(owner="static_capa")
     assert state[SECURE_THRESHOLD_KEY] == 101.0
 
 

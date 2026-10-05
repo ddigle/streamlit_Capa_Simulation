@@ -18,6 +18,7 @@ from capa_simulation.persistence.models import (
 )
 from capa_simulation.services.month_filter import MONTH_COLUMN, available_month_range
 from capa_simulation.settings import MONTH_SELECTION_END, MONTH_SELECTION_START, format_month
+from capa_simulation.shared_widget_state import carry_shared_widget_value
 
 PENDING_PRESET_KEY = "pending_scenario_preset"
 MONTH_RANGE_KEY = "production_month_range_v2"
@@ -39,16 +40,21 @@ STANDARD_TARGET_DETAIL_LEVEL_KEY = "standard_target_detail_level"
 STANDARD_TARGET_OUTPUT_METRIC_KEY = "standard_target_output_metric"
 
 
-def seed_threshold_defaults() -> None:
-    """판정 기준 두 칸의 기본값을 아직 비어 있을 때만 세션에 심는다.
+def seed_threshold_defaults(*, owner: str) -> None:
+    """판정 기준 두 칸을 위젯보다 먼저 세션에 세운다. `owner` 는 그리는 페이지의 이름이다.
 
     HOME 과 Static Capa 가 같은 세션 키를 공유한다. 어느 쪽을 먼저 열든 같은 값에서
-    출발해야 하므로 심는 절차도 키·기본값 옆인 여기 한 곳에 둔다.
+    출발해야 하므로 심는 절차도 키·기본값 옆인 여기 한 곳에 둔다. 비어 있으면 기본값을
+    심고, **다른 페이지에서 넘어온 회차에는 지금 값을 다시 적는다** — 그러지 않으면 넘어온
+    첫 회차의 위젯이 `min_value`(0)로 서서 세션 내내 0% 로 판정한다
+    (`shared_widget_state` 모듈 설명).
     """
-    if SECURE_THRESHOLD_KEY not in st.session_state:
-        st.session_state[SECURE_THRESHOLD_KEY] = DEFAULT_SECURE_THRESHOLD_PERCENT
-    if WARNING_THRESHOLD_KEY not in st.session_state:
-        st.session_state[WARNING_THRESHOLD_KEY] = DEFAULT_WARNING_THRESHOLD_PERCENT
+    carry_shared_widget_value(
+        SECURE_THRESHOLD_KEY, default=DEFAULT_SECURE_THRESHOLD_PERCENT, owner=owner
+    )
+    carry_shared_widget_value(
+        WARNING_THRESHOLD_KEY, default=DEFAULT_WARNING_THRESHOLD_PERCENT, owner=owner
+    )
 
 
 def session_threshold(key: str, default_percent: float) -> float:
