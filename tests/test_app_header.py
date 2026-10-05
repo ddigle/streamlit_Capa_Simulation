@@ -29,3 +29,5 @@ def test_inline_code_in_body_text_is_close_to_the_body_size() -> None:
     block = css[css.index('[data-testid="stMarkdownContainer"] :not(pre) > code') :]
     block = block[: block.index("}")]
     assert "font-size: 0.9em;" in block
+    # 캡션(`st.caption`)은 마크다운 칸이 아니라 따로 된 칸이다 — 둘 다 걸어야 한다.
+    assert '[data-testid="stCaptionContainer"] :not(pre) > code' in block

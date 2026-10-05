@@ -122,7 +122,8 @@ _HEADER_TEMPLATE = """
 /* 본문 글 속 인라인 코드. Streamlit 기본(0.75em)은 고정폭 글꼴에 없는 한글이 대체 글꼴로 그려져
    알림 안에서 10.5px·캡션 안에서 9.2px 로 작아 읽히지 않았다(2026-10-05 E2E). 본문 크기에
    가깝게 올린다. 코드 블록(`pre`)은 건드리지 않는다. */
-[data-testid="stMarkdownContainer"] :not(pre) > code {
+[data-testid="stMarkdownContainer"] :not(pre) > code,
+[data-testid="stCaptionContainer"] :not(pre) > code {
   font-size: 0.9em;
 }
 

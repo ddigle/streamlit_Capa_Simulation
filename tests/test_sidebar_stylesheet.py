@@ -150,7 +150,7 @@ def test_condition_cards_wear_the_condition_box_face() -> None:
 
 
 def test_off_switches_on_the_condition_face_keep_a_visible_track() -> None:
-    """꺼진 스위치 트랙(밝게 #E6E9ED)이 청록 면 위에서 1.03:1 로 사라졌다(2026-10-05 E2E).
+    """꺼진 스위치 트랙(밝은 회색)이 청록 면 위에서 1.03:1 로 사라졌다(2026-10-05 E2E).
 
     조건 상자·카드 안의 꺼진 스위치만 `TEXT_MUTED` 1px 윤곽을 두른다.
     """

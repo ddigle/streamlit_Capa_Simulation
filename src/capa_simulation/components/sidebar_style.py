@@ -437,7 +437,7 @@ def build_sidebar_stylesheet(
             background-color: {tokens.SURFACE};
             border-radius: 10px;
         }}
-        /* 꺼진 스위치의 트랙은 Streamlit 기본 면(밝게 #E6E9ED)이라 청록 면 위에서 1.03:1 로
+        /* 꺼진 스위치의 트랙은 Streamlit 기본 면(밝은 회색)이라 청록 면 위에서 1.03:1 로
            사라지고 흰 손잡이만 남았다(2026-10-05 E2E). 1px 윤곽을 `TEXT_MUTED` 로 둘러 면에서
            떼어 낸다(밝게 4.6:1). 켜진 스위치는 강조색이라 건드리지 않는다. */
         {condition_switch_off_selectors} {{
