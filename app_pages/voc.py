@@ -51,9 +51,14 @@ REPLY_CLEAR_KEY = "voc_reply_clear"
 render_page_header("VOC")
 render_page_guide("voc", title="VOC")
 
+# 알림은 **늘 서 있는 한 칸** 안에 그린다. 알림이 생기거나 사라질 때 아래 형제가 한 칸 밀리면,
+# `st.rerun()` 으로 끊긴 답변 회차(알림 없음)와 그다음 회차(알림 있음) 사이에서 key 있는 글 상자가
+# 옛 자리에 회색 사본으로 남아 — 적은 답변까지 든 채로 — 새로고침 전까지 Admin·HOME 에도
+# 따라왔다(2026-10-05 E2E, 답변 0 인 글에 첫 답변을 남길 때). 가용설비 현황과 같은 까닭이다.
+notices = st.container()
 flash = st.session_state.pop(FLASH_KEY, None)
 if isinstance(flash, str):
-    st.success(flash)
+    notices.success(flash)
 
 database_path = str(DUCKDB_PATH.resolve())
 try:
@@ -199,12 +204,15 @@ def _render_post(row: Any) -> None:
         # `st.markdown` 이 아니라 `st.text` 다. 사용자가 적는 자유 글이라 `#`·`-`·`*` 가
         # 제목과 목록으로 바뀌면 쓴 사람이 의도하지 않은 모양이 된다.
         st.text(str(row["body"]))
-        if not post_replies.empty:
-            st.divider()
-            for _, reply in post_replies.iterrows():
-                with st.chat_message("assistant", avatar=":material/reply:"):
-                    st.caption(f"{reply['author']} · {_timestamp(reply['created_at'])}")
-                    st.text(str(reply["body"]))
+        # 답글 목록도 늘 서 있는 한 칸이다 — 첫 답변이 달릴 때 아래 답변 폼(key 있는 칸)의 자리가
+        # 밀리지 않게 한다(위 알림 칸과 같은 까닭).
+        with st.container():
+            if not post_replies.empty:
+                st.divider()
+                for _, reply in post_replies.iterrows():
+                    with st.chat_message("assistant", avatar=":material/reply:"):
+                        st.caption(f"{reply['author']} · {_timestamp(reply['created_at'])}")
+                        st.text(str(reply["body"]))
         # 새 글 폼과 같이 성공한 뒤에만 비운다 — 거절된 답변이 지워지면 다시 적어야 한다.
         reply_key = f"{REPLY_BODY_KEY}_{post_id}"
         if st.session_state.pop(f"{REPLY_CLEAR_KEY}_{post_id}", False):
