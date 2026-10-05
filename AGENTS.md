@@ -1819,6 +1819,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     따로 두지 않는다 — 높이를 접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다.
   - **iframe 내용은 회차마다 같아야 한다**(`tests/test_theme_toggle.py`). 바뀌면 Streamlit 이 iframe 을
     새로 만들고 옛 버튼의 `onclick` 이 죽는다. 키 규칙도 상수만 실린 고정 문자열이다.
+  - 테마 전환은 새로고침이라 **새 세션**이다. 저장하지 않은 시나리오·설비 편집이 있으면 누른 순간
+    `confirm` 으로 묻는다(2026-10-05 E2E — 적용한 편집이 말없이 사라졌다). 표지는 iframe 이 아니라
+    `app.py` 가 늘 그리는 사이드바 스타일 끝의 CSS 변수(`unsaved_edits_marker`)다. 묻는 것은 그 두
+    편집뿐이고, 탭·필터·VOC 작성자 같은 화면 상태는 여전히 처음으로 돌아간다.
 - `src/capa_simulation/components/page_guide.py`
   - 헤더 테마 버튼 **바로 왼쪽**의 `Guide` 버튼과 화면별 사용 안내 대화상자(2026-09-28 사용자
     결정 — 설명 문구를 본문에서 빼고 Guide 로). 원문은 `guides/<페이지 파일 이름>.md` 다.

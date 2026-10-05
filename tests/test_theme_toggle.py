@@ -208,3 +208,28 @@ def test_toolbar_scripts_take_the_slot_and_button_id_from_one_place() -> None:
     for script in (guide_toolbar_script(), summary_toolbar_script()):
         assert f"querySelector('{theme_toggle.TOOLBAR_SLOT}')" in script
         assert f'getElementById("{theme_toggle.THEME_BUTTON_ID}")' in script
+
+
+def test_the_theme_button_asks_before_a_reload_drops_unsaved_edits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """테마 전환은 새로고침(새 세션)이라 적용만 하고 저장하지 않은 편집이 말없이 사라졌다
+    (2026-10-05 E2E). 표지가 있으면 누른 순간 먼저 묻는다.
+
+    표지는 iframe 이 아니라 늘 그리는 스타일 끝의 CSS 변수다 — iframe 내용은 회차마다 같아야
+    한다(위 검사). 표지만 든 스타일은 본문 자리를 먹지 않는다.
+    """
+    frames, _, _ = _render(monkeypatch)
+    theme_toggle.render_theme_toggle()
+
+    script = frames[0]
+    variable = theme_toggle.UNSAVED_EDITS_CSS_VARIABLE
+    click = script[script.index("button.onclick") :]
+    assert click.index("confirm(") < click.index("capaTheme.choose(")
+    assert variable in click
+    assert theme_toggle.UNSAVED_EDITS_CONFIRM in click
+
+    marker = theme_toggle.unsaved_edits_marker(True)
+    assert f"{variable}:1" in marker
+    assert _html_only_style_tags(marker)
+    assert theme_toggle.unsaved_edits_marker(False) == ""

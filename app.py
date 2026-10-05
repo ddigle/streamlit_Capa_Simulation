@@ -7,6 +7,7 @@ import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
 from capa_simulation.components.app_header import render_app_header
+from capa_simulation.components.equipment_data_workspace import has_unsaved_equipment_edits
 from capa_simulation.components.intro_overlay import render_intro_overlay
 from capa_simulation.components.intro_summary import render_intro_summary, summary_toolbar_script
 from capa_simulation.components.month_range_picker import render_month_range_picker
@@ -18,13 +19,16 @@ from capa_simulation.components.scenario_status import (
 )
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
 from capa_simulation.components.tab_state import remembered_tab_key
-from capa_simulation.components.theme_toggle import render_theme_toggle
+from capa_simulation.components.theme_toggle import render_theme_toggle, unsaved_edits_marker
 from capa_simulation.design import theme
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.navigation import CONDITIONS_SECTION, PageSpec, build_navigation_pages
 from capa_simulation.page_bootstrap import bootstrap_error_message, forget_page_dialogs
 from capa_simulation.persistence._sql_helpers import pinned_connections
-from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
+from capa_simulation.scenario_activation import (
+    bootstrap_latest_official_scenario,
+    has_unsaved_scenario_changes,
+)
 from capa_simulation.scenario_preset_state import (
     MONTH_PICKER_KEY,
     MONTH_RANGE_KEY,
@@ -171,6 +175,9 @@ with pinned_connections(DUCKDB_PATH):
             bottleneck_box_key=BOTTLENECK_BOX_KEY,
             admin_box_key=ADMIN_BOX_KEY,
         )
+        # 테마 버튼은 새로고침으로 테마를 바꾼다(새 세션). 저장하지 않은 시나리오·설비 편집이
+        # 있으면 묻게 표지를 단다 — 어느 페이지에서 눌러도 같은 표지를 본다.
+        + unsaved_edits_marker(has_unsaved_scenario_changes() or has_unsaved_equipment_edits())
     )
     render_app_header()
     with st.sidebar.container(key="home_navigation"):

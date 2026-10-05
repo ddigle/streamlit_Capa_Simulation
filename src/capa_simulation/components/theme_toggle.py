@@ -93,6 +93,14 @@ THEME_APP_KEY = "capa-theme"
 THEME_SYNC_PREFIX = "capa-theme-synced-"
 # 탭마다(`sessionStorage`) 「이 경로를 키 때문에 한 번 새로고침했다」는 표지. 뒤에 경로를 붙인다.
 THEME_RELOAD_GUARD_PREFIX = "capa-theme-reloaded-"
+# 이 세션에 저장하지 않은 편집이 있다는 표지. 버튼의 iframe 내용은 회차마다 같아야 하므로(모듈
+# 설명) 값을 iframe 에 싣지 않고, 매 회차 그리는 사이드바 스타일 끝에 CSS 변수로 단다
+# (`unsaved_edits_marker`). 버튼은 누르는 순간 그 변수를 읽는다.
+UNSAVED_EDITS_CSS_VARIABLE = "--capa-unsaved-edits"
+UNSAVED_EDITS_CONFIRM = (
+    "저장하지 않은 변경이 있습니다. 테마를 바꾸면 화면을 새로 읽어 이 변경이 사라집니다. "
+    "계속할까요?"
+)
 
 # 테마 키 규칙 한 벌(모듈 설명의 「키 규칙」). 툴바 iframe 맨 앞 `<script>` 와 입장 화면 등록 JS
 # 앞에 그대로 실린다. 모든 함수가 창(`win`)을 받아 **부르는 순간의** `win.location.pathname` 으로
@@ -301,6 +309,11 @@ _SCRIPT = """
     button.onmouseenter = function () { button.style.opacity = "1"; };
     button.onmouseleave = function () { button.style.opacity = ".92"; };
     button.onclick = function () {
+      // 새로고침은 새 Streamlit 세션이라 적용만 하고 저장하지 않은 편집이 말없이 사라졌다
+      // (2026-10-05 E2E). 그런 편집이 있으면 먼저 묻는다.
+      var unsaved = parentWindow.getComputedStyle(doc.documentElement)
+        .getPropertyValue("%(unsaved_var)s").trim() === "1";
+      if (unsaved && !parentWindow.confirm("%(unsaved_confirm)s")) return;
       var next = dark ? "Light" : "Dark";
       // 경로는 **누르는 순간** 읽는다(`capaTheme` 안) — 이 iframe 은 페이지를 옮겨도 남는다.
       try { capaTheme.choose(parentWindow, next); } catch (error) { return; }
@@ -350,6 +363,8 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
             "tip_light": "밝은 테마로 바꿉니다",
             "tip_dark": "어두운 테마로 바꿉니다",
             "param": THEME_QUERY_PARAM,
+            "unsaved_var": UNSAVED_EDITS_CSS_VARIABLE,
+            "unsaved_confirm": UNSAVED_EDITS_CONFIRM,
             # 버튼은 **반대 테마의 옷**을 입는다. 어두운 화면에서는 밝은 팔레트의 면과
             # 글자색을, 밝은 화면에서는 어두운 팔레트의 것을 쓴다.
             "dark_fill": tokens.palette_value("light", "SURFACE"),
@@ -360,3 +375,12 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
         + "".join(f"<script>{script}</script>" for script in extra_scripts),
         height=_FRAME_HEIGHT_PX,
     )
+
+
+def unsaved_edits_marker(dirty: bool) -> str:
+    """저장하지 않은 편집이 있으면 테마 버튼이 읽는 CSS 변수를 다는 스타일. 없으면 빈 문자열.
+
+    새 요소로 그리지 않고 **늘 그리는 스타일 끝에** 붙인다. 조건부 요소는 아래 형제의 자리를
+    밀어 `st.rerun()` 으로 끊긴 회차의 사본을 남길 수 있다(AGENTS.md 9장).
+    """
+    return f"<style>:root{{{UNSAVED_EDITS_CSS_VARIABLE}:1}}</style>" if dirty else ""
