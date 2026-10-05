@@ -829,3 +829,66 @@ def test_the_equipment_db_is_pinned_only_on_the_screen_that_declares_it(
         app.switch_page(path).run()
         assert not list(app.exception), [element.message for element in app.exception]
         assert pinned == [(settings.DUCKDB_PATH,)], path
+
+
+def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
+    _app: AppTest,
+) -> None:
+    """예전 배포로 되돌린 DB 도 화면은 그대로 열리고, 그 DB 를 여는 화면마다 경고 한 줄이 선다.
+
+    시뮬레이션 DB 경고는 `app.py` 가 모든 화면에, 설비 DB 경고는 설비 DB 를 여는 화면만 세운다.
+    HOME 은 설비 DB 를 열지 않으므로 그 경고가 없다.
+    """
+    import duckdb
+
+    import capa_simulation.settings as settings
+    from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    newer = 9999
+    for repository, schema in (
+        (DuckDBScenarioRepository(settings.DUCKDB_PATH), "app_meta"),
+        (DuckDBEquipmentRepository(settings.EQUIPMENT_DUCKDB_PATH), "equipment_meta"),
+    ):
+        repository.initialize()
+        with duckdb.connect(str(repository.database_path)) as connection:
+            connection.execute(
+                f"INSERT INTO {schema}.schema_migration (version, name, checksum) "
+                "VALUES (?, 'newer.sql', 'newer')",
+                [newer],
+            )
+
+    def ahead_warnings(app: AppTest) -> list[str]:
+        return [
+            str(element.value)
+            for element in app.warning
+            if "이 코드보다 새 버전입니다" in str(element.value)
+        ]
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    home_warnings = ahead_warnings(app)
+    assert len(home_warnings) == 1
+    assert home_warnings[0].startswith(
+        f"시뮬레이션 DB 가 이 코드보다 새 버전입니다(DB {newer} · 코드"
+    )
+
+    # 설비 DB 를 여는 네 화면 모두를 돈다. 페이지 소스에서 경고 호출을 찾아 대조해 두어,
+    # 호출을 지우거나 새 화면에 더하면 이 목록도 같이 고치게 한다.
+    equipment_pages = (
+        DYNAMIC_CAPA_SUBPAGES[0].path,
+        DYNAMIC_CAPA_SUBPAGES[1].path,
+        STATIC_CAPA_SUBPAGES[3].path,
+        DYNAMIC_CAPA_SUBPAGES[-1].path,
+    )
+    callers = {
+        spec.path
+        for spec in ALL_SPECS
+        if "render_schema_ahead_warning(" in (PROJECT_ROOT / spec.path).read_text(encoding="utf-8")
+    }
+    assert callers == set(equipment_pages)
+    for path in equipment_pages:
+        app.switch_page(path).run()
+        assert not list(app.exception), [element.message for element in app.exception]
+        names = sorted(warning.split(" 가 ", 1)[0] for warning in ahead_warnings(app))
+        assert names == ["설비 DB", "시뮬레이션 DB"], path

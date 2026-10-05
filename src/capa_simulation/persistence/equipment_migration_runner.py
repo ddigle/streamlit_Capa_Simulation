@@ -14,6 +14,8 @@ from capa_simulation.persistence._migration_core import (
     Migration as EquipmentMigration,
 )
 from capa_simulation.persistence._migration_core import (
+    MigrationOutcome,
+    SchemaAheadOfCode,
     apply_migrations_to,
     load_migrations_from,
 )
@@ -25,6 +27,8 @@ _LABEL = "설비 DB"
 __all__ = [
     "EQUIPMENT_MIGRATION_PACKAGE",
     "EquipmentMigration",
+    "MigrationOutcome",
+    "SchemaAheadOfCode",
     "apply_equipment_migrations",
     "load_equipment_migrations",
 ]
@@ -34,11 +38,15 @@ def load_equipment_migrations() -> tuple[EquipmentMigration, ...]:
     return load_migrations_from(EQUIPMENT_MIGRATION_PACKAGE, label=_LABEL)
 
 
-def apply_equipment_migrations(connection: duckdb.DuckDBPyConnection) -> tuple[int, ...]:
-    """Apply every pending equipment migration and reject edited applied files."""
+def apply_equipment_migrations(connection: duckdb.DuckDBPyConnection) -> MigrationOutcome:
+    """대기 중인 설비 마이그레이션을 적용하고, 적용된 파일의 변경을 거부한다.
+
+    DB 가 이 코드보다 새 것이면 막지 않고 결과의 `schema_ahead` 에 싣는다.
+    """
     return apply_migrations_to(
         connection,
         package=EQUIPMENT_MIGRATION_PACKAGE,
         schema=_SCHEMA,
         label=_LABEL,
+        database_name=_LABEL,
     )

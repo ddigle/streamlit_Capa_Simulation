@@ -131,6 +131,8 @@ availability = pd.DataFrame(
 
 
 class FakeEquipmentRepository:
+    schema_ahead = None
+
     def load_standard_target_availability(self):
         return availability.copy()
 

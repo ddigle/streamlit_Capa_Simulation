@@ -25,6 +25,7 @@ import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
+from capa_simulation.persistence.migration_runner import SchemaAheadOfCode
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.display_order import (
@@ -113,6 +114,27 @@ def bootstrap_error_message(
         "엽니다.\n"
         "- 그래도 같은 오류가 나면 파일 권한과 경로(네트워크 드라이브 여부)를 확인하세요."
     )
+
+
+def schema_ahead_message(notice: SchemaAheadOfCode) -> str:
+    """DB 가 이 코드보다 새 버전일 때 화면에 띄울 문구. 어느 DB 인지와 두 버전을 적는다."""
+    return (
+        f"{notice.database_name} 가 이 코드보다 새 버전입니다"
+        f"(DB {notice.database_version} · 코드 {notice.code_version}). "
+        "예전 배포로 되돌린 상태일 수 있습니다. 화면은 그대로 쓸 수 있지만, 새 버전이 더한 "
+        "표·열은 이 코드가 읽지도 쓰지도 않습니다. 되돌린 것이 아니라면 최신 배포를 다시 "
+        "적용하세요."
+    )
+
+
+def render_schema_ahead_warning(notice: SchemaAheadOfCode | None) -> None:
+    """DB 가 코드보다 새 것이면 경고 한 줄을 그린다. 아니면 아무것도 그리지 않는다.
+
+    막지 않는다(2026-10-05 사용자 결정) — 막으면 예전 배포로 되돌릴 때 DB 를 먼저 복원해야
+    한다. `notice` 는 캐시된 저장소의 `schema_ahead` 속성이라 rerun 마다 DB 를 열지 않는다.
+    """
+    if notice is not None:
+        st.warning(schema_ahead_message(notice), icon=":material/history:")
 
 
 @dataclass(frozen=True)

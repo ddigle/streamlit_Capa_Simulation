@@ -257,6 +257,8 @@ original_get_process_labels = process_labels_module.get_process_labels
 
 
 class FakeEquipmentRepository:
+    schema_ahead = None
+
     def load_standard_target_availability(self):
         return availability.copy()
 

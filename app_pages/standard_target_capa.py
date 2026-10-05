@@ -43,6 +43,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     load_page_context,
     prune_list_selection,
+    render_schema_ahead_warning,
     resolve_effective_months,
     scenario_capacity_and_demand,
 )
@@ -523,6 +524,8 @@ except BOOTSTRAP_ERRORS as exc:
     # 없으므로 두 경로를 다 적는다.
     st.error(bootstrap_error_message(exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)))
     st.stop()
+# 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
+render_schema_ahead_warning(equipment_repository.schema_ahead)
 
 minimum_date = _first_day(effective_start_month)
 maximum_date = _last_day(effective_end_month)

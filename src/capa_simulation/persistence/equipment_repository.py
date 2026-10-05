@@ -25,7 +25,10 @@ from capa_simulation.persistence._sql_helpers import (
     insert_by_name,
     transaction,
 )
-from capa_simulation.persistence.equipment_migration_runner import apply_equipment_migrations
+from capa_simulation.persistence.equipment_migration_runner import (
+    SchemaAheadOfCode,
+    apply_equipment_migrations,
+)
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
     DEFAULT_CONVERSION_RATIO,
@@ -143,15 +146,27 @@ class DuckDBEquipmentRepository:
 
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path.resolve()
+        self._schema_ahead: SchemaAheadOfCode | None = None
 
     @property
     def database_path(self) -> Path:
         return self._database_path
 
+    @property
+    def schema_ahead(self) -> SchemaAheadOfCode | None:
+        """마지막 `initialize()` 가 본 「설비 DB 가 이 코드보다 새 것」. 아니면 None.
+
+        저장소는 프로세스마다 한 번 만들어 캐시하므로(`equipment_cache`) 화면은 rerun 마다
+        이 속성만 읽는다 — DB 를 다시 열지 않는다.
+        """
+        return self._schema_ahead
+
     def initialize(self) -> tuple[int, ...]:
         self._database_path.parent.mkdir(parents=True, exist_ok=True)
         with _WRITE_LOCK, self._connect() as connection:
-            return apply_equipment_migrations(connection)
+            outcome = apply_equipment_migrations(connection)
+        self._schema_ahead = outcome.schema_ahead
+        return outcome.applied
 
     def save_snapshot(
         self,

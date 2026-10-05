@@ -54,7 +54,11 @@ from capa_simulation.components.space_layout_editor import (
     render_space_layout_viewer,
 )
 from capa_simulation.components.table_toolbar import render_csv_download
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
+    render_schema_ahead_warning,
+)
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
     load_fab_layout,
@@ -270,6 +274,8 @@ render_page_guide("space_status", title="Space 현황")
 notices = st.container()
 with notices:
     render_flash(SPACE_FLASH_KEY)
+    # 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
+    render_schema_ahead_warning(get_equipment_repository(equipment_database_path).schema_ahead)
 # 배치 편집은 실제 저장본이 있을 때만 — 합성 데모 fleet 을 편집본에 섞으면 첫 실제 저장이 막힌다.
 editable = not using_sample_equipment and latest_snapshot is not None
 if editable:

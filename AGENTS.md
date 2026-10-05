@@ -1723,6 +1723,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `date_range_value` 로 범위 날짜 입력의 세 반환 형태(두 날짜·한 날짜·`date` 하나)를,
     `prune_list_selection` 으로 계산 결과가 옵션인 다중 선택의 옛 값을 페이지 공통으로
     정리한다. 키 리터럴은 페이지가 소유하고 헬퍼는 변수로 받는다.
+  - `render_schema_ahead_warning` 은 저장소의 `schema_ahead`(DB 가 이 코드보다 새 버전)를 받아
+    경고 한 줄을 그린다. 없으면 아무것도 그리지 않는다(`_migration_core` 항목 참고).
 - `src/capa_simulation/settings.py`, `sidebar_status.py`
   - 앱 이름·경로·조회기간 상수와 사이드바의 조회기간 표시(선택·적용·계산 멈춤·데이터 없음·
     과거 밖).
@@ -2654,6 +2656,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   바이트 열, `tests/test_sql_helpers.py` 가 값을 핀한다)이 맡는다
 - `persistence/_migration_core.py`: 두 DuckDB가 공유하는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션)
+  - **DB 가 코드보다 새 것이면 막지 않고 알린다**(2026-10-05 사용자 결정). 적용 기록의 최고
+    번호가 코드가 아는 최고 번호보다 높으면(예전 배포 ZIP 으로 되돌린 상태) 그대로 진행하고
+    경고 로그를 남기며 그 사실(`SchemaAheadOfCode` — DB 이름·두 버전)을 적용 결과
+    `MigrationOutcome.schema_ahead` 에 싣는다. 막으면 DB 를 복원하기 전에는 되돌릴 수 없다.
+    최고 번호끼리만 견주므로 결번 2·3 처럼 코드 최고 번호 아래의 모르는 번호는 알리지 않는다.
+  - 두 Repository 의 `initialize()` 는 여전히 새로 적용한 번호 튜플을 돌려주고, 그 사실은
+    `schema_ahead` 속성으로 둔다. 저장소가 프로세스마다 한 번 만들어 캐시되므로 화면은 rerun
+    마다 그 속성만 읽는다(샘플 관측 약 40µs, DB 를 다시 열지 않는다). 화면 경고
+    (`page_bootstrap.render_schema_ahead_warning`)는 시뮬레이션 DB 는 `app.py` 가 모든 화면
+    본문 맨 위에, 설비 DB 는 그 DB 를 여는 화면(가용설비·Space 현황·표준 목표·재공 현황)이 각자
+    세운다 — `app.py` 가 설비 DB 를 열면 HOME 까지 그 DB 의 마이그레이션·잠금에 묶인다.
+    `persistence` 는 Streamlit 을 부르지 않는다.
 - `persistence/migration_runner.py`, `equipment_migration_runner.py`: 각 DB의 패키지·스키마를
   그 엔진에 묶는 진입점
 - `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷과 공용 프로필 아홉 종

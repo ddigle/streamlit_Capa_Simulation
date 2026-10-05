@@ -127,6 +127,8 @@ original_hierarchical_render = hierarchical_table.render_hierarchical_monthly_ta
 
 
 class FakeEquipmentRepository:
+    schema_ahead = None
+
     def load_standard_target_availability(self):
         return availability.copy()
 

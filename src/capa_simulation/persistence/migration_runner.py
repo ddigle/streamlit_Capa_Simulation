@@ -12,6 +12,8 @@ import duckdb
 
 from capa_simulation.persistence._migration_core import (
     Migration,
+    MigrationOutcome,
+    SchemaAheadOfCode,
     apply_migrations_to,
     load_migrations_from,
 )
@@ -19,19 +21,31 @@ from capa_simulation.persistence._migration_core import (
 MIGRATION_PACKAGE = "capa_simulation.persistence.migrations"
 _SCHEMA = "app_meta"
 _LABEL = "DuckDB"
+_DATABASE_NAME = "시뮬레이션 DB"
 
-__all__ = ["MIGRATION_PACKAGE", "Migration", "apply_migrations", "load_migrations"]
+__all__ = [
+    "MIGRATION_PACKAGE",
+    "Migration",
+    "MigrationOutcome",
+    "SchemaAheadOfCode",
+    "apply_migrations",
+    "load_migrations",
+]
 
 
 def load_migrations() -> tuple[Migration, ...]:
     return load_migrations_from(MIGRATION_PACKAGE, label=_LABEL)
 
 
-def apply_migrations(connection: duckdb.DuckDBPyConnection) -> tuple[int, ...]:
-    """Apply every pending migration and reject edited applied migrations."""
+def apply_migrations(connection: duckdb.DuckDBPyConnection) -> MigrationOutcome:
+    """대기 중인 마이그레이션을 적용하고, 적용된 파일의 변경을 거부한다.
+
+    DB 가 이 코드보다 새 것이면 막지 않고 결과의 `schema_ahead` 에 싣는다.
+    """
     return apply_migrations_to(
         connection,
         package=MIGRATION_PACKAGE,
         schema=_SCHEMA,
         label=_LABEL,
+        database_name=_DATABASE_NAME,
     )

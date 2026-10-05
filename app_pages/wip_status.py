@@ -37,6 +37,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     prune_list_selection,
+    render_schema_ahead_warning,
 )
 from capa_simulation.persistence.equipment_cache import get_equipment_repository
 from capa_simulation.scenario_state import (
@@ -133,12 +134,13 @@ try:
     )
     required_equipment = prepare_standard_target_required_equipment(required_equipment)
     route_scope = build_wip_route_scope(required_equipment)
-    availability = get_equipment_repository(
-        str(EQUIPMENT_DUCKDB_PATH.resolve())
-    ).load_standard_target_availability()
+    equipment_repository = get_equipment_repository(str(EQUIPMENT_DUCKDB_PATH.resolve()))
+    availability = equipment_repository.load_standard_target_availability()
 except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
     st.stop()
+# 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
+render_schema_ahead_warning(equipment_repository.schema_ahead)
 
 if route_scope.empty:
     st.warning("오늘 기준 조회 구간에 재공 현황을 구성할 공정·제품 경로가 없습니다.")

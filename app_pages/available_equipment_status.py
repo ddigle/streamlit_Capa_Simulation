@@ -33,6 +33,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     load_page_context,
+    render_schema_ahead_warning,
 )
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
@@ -118,6 +119,9 @@ except BOOTSTRAP_ERRORS as exc:
         + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
     )
     st.stop()
+# 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
+with notices:
+    render_schema_ahead_warning(repository.schema_ahead)
 
 # 저장본 사본과 미저장 편집본을 한 곳에서 세운다 — Space 현황이 먼저 세웠어도 같은 토큰이다.
 ensure_equipment_drafts(latest_snapshot)

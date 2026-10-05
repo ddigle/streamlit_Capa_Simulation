@@ -39,7 +39,7 @@ def connection(tmp_path: Path) -> duckdb.DuckDBPyConnection:
 def _rewind_and_apply(con: duckdb.DuckDBPyConnection) -> None:
     """`0026` 만 되감아 다시 적용한다. 픽스처를 넣은 뒤 그 파일만 돌리는 방법이다."""
     con.execute("DELETE FROM app_meta.schema_migration WHERE version = ?", [RETRY_VERSION])
-    applied = apply_migrations(con)
+    applied = apply_migrations(con).applied
     assert RETRY_VERSION in applied
 
 
