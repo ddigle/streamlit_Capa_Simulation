@@ -1640,7 +1640,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `equipment_samples.py`: 설비 DB 가 비어 있을 때만 쓰는 비영속 화면 샘플. 실제 DB 연결이
   끝나면 이 파일만 삭제한다. **상태마다 한 대씩이 아니라 여러 층에 걸친 fleet 이다** —
   Space 배치도·주차별 추이·생애주기 Gantt 는 일곱 대로는 「이 화면이 무엇을 보여 주는가」를
-  말하지 못한다. 난수를 쓰지 않으므로 다시 열어도 같은 배치다.
+  말하지 못한다. 난수를 쓰지 않으므로 다시 열어도 같은 배치다. 기존 보유대수 샘플
+  `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 의 공정·`owned` 를 옮겨 적은 것이고,
+  `tests/test_equipment_availability.py` 가 기대값을 생성기에서 읽어 대조하므로 생성기를
+  고치면 이 리터럴도 같이 고친다.
 - `chatbot_samples.py`: Capa Chatbot 답변 대본. LLM 을 붙이기 전에 정할 것은 모델이 아니라
   **답변의 모양**이다 — 결론 · 근거 표 · 사용한 조건과 산식 · 한계 네 칸. 연결할 때는 대본을
   만드는 자리만 바꾸고 화면은 그대로 둔다. 숫자는 `performance_actuals` 데모에서 나와 옆

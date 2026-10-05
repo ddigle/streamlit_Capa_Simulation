@@ -22,44 +22,85 @@ from capa_simulation.services.equipment_validation import (
 # 샘플 행임을 표시하는 비고. 저장 직전에 이 표식으로 손대지 않은 행을 가려낸다.
 SAMPLE_BASELINE_NOTE = "Core Data 개발 샘플"
 
-# 예전 생성기 `PROCESS_SPECS.owned` 를 옮겨 적은 고정값이다. 지금 생성기와는 맞춰지지
-# 않는다 — 맞출지 끊을지는 docs/TODO.md 에 남겼다.
+# 합성 Core Data 생성기 `scripts/generate_sample_core_data.py` 의 `PROCESS_SPECS` 와 같은
+# 공정·`owned`(설비보유) 값이다. `src` 는 `scripts/` 를 읽지 않으므로 옮겨 적고,
+# `tests/test_equipment_availability.py` 가 생성기와 한 줄씩 대조한다.
 SAMPLE_BASELINE_COUNTS = (
-    ("Pre B/D", 46.0),
+    ("Pre B/D", 5.0),
     ("Wafer_Sorter", 18.0),
-    ("AVI-CoW", 21.0),
+    ("AVI-CoW", 1.0),
     ("Laser Grooving", 16.0),
     ("Wafer Grinding", 14.0),
     ("Wafer Mount", 12.0),
-    ("Wafer Saw", 19.0),
-    ("Plasma Clean", 25.0),
-    ("DAF Attach", 35.0),
-    ("Die Attach", 42.0),
-    ("TC Bonding", 51.0),
-    ("Mass Reflow", 18.0),
-    ("Underfill", 38.0),
-    ("Mold", 27.0),
-    ("Cure", 13.0),
-    ("Laser Marking", 15.0),
-    ("Ball Attach", 32.0),
-    ("Flux Clean", 17.0),
-    ("Singulation", 29.0),
-    ("Package Sorter", 20.0),
-    ("Burn-In", 48.0),
-    ("Final Test", 44.0),
-    ("AVI-PKG", 23.0),
-    ("O/S Test", 18.0),
-    ("Taping", 16.0),
-    ("Packing", 12.0),
-    ("X-Ray", 26.0),
+    ("Wafer Saw", 1.0),
+    ("Plasma Clean", 3.0),
+    ("DAF Attach", 4.0),
+    ("Die Attach", 4.0),
+    ("TC Bonding", 5.0),
+    ("Mass Reflow", 3.0),
+    ("Underfill", 4.0),
+    ("Mold", 3.0),
+    ("Cure", 2.0),
+    ("Laser Marking", 2.0),
+    ("Ball Attach", 4.0),
+    ("Flux Clean", 2.0),
+    ("Singulation", 3.0),
+    ("Package Sorter", 3.0),
+    ("Burn-In", 5.0),
+    ("Final Test", 5.0),
+    ("AVI-PKG", 3.0),
+    ("O/S Test", 2.0),
+    ("Taping", 2.0),
+    ("Packing", 2.0),
+    ("X-Ray", 4.0),
     ("SAM", 22.0),
-    ("Warpage", 19.0),
-    ("Shipping Inspection", 10.0),
+    ("Warpage", 3.0),
+    ("Shipping Inspection", 2.0),
+    ("Wafer Incoming Inspection", 18.0),
+    ("Back Grinding Tape Lamination", 12.0),
+    ("Wafer Thinning", 14.0),
+    ("Stress Relief Polish", 14.0),
+    ("Wafer Debond", 12.0),
+    ("UV Release", 12.0),
+    ("Die Expansion", 12.0),
+    ("Wafer Surface Treatment", 16.0),
+    ("Protective Film Lamination", 12.0),
+    ("Wafer Edge Inspection", 1.0),
+    ("Backside Surface Inspection", 1.0),
+    ("Wafer Thickness Measurement", 1.0),
+    ("Die Crack Inspection", 1.0),
+    ("Wafer Map Verification", 1.0),
+    ("Die Cleaning", 3.0),
+    ("Adhesive Dispense", 3.0),
+    ("Epoxy Dispense", 3.0),
+    ("Flip Chip Placement", 5.0),
+    ("Thermal Compression Prebond", 5.0),
+    ("Copper Pillar Reflow", 3.0),
+    ("Compression Mold", 3.0),
+    ("Transfer Mold", 3.0),
+    ("Post Mold Cure", 2.0),
+    ("Solder Ball Inspection", 3.0),
+    ("Package Cleaning", 2.0),
+    ("Lid Attach", 4.0),
+    ("Heat Spreader Attach", 4.0),
+    ("Substrate Bake", 2.0),
+    ("Bump Co-Planarity Check", 3.0),
+    ("Reel Sealing", 2.0),
+    ("Tray Loading", 3.0),
+    ("Wire Bond", 4.0),
+    ("Electrical Continuity Inspection", 5.0),
+    ("Fine Pitch Interconnect Inspection", 5.0),
+    ("Micro Bump Alignment Verification", 4.0),
+    ("Acoustic Delamination Inspection", 22.0),
+    ("Laser Package Trimming", 3.0),
+    ("Post Singulation Edge Inspection", 2.0),
+    ("Mark Readback", 2.0),
+    ("Tape Pocket Inspection", 2.0),
 )
 
 
 def sample_equipment_baseline() -> pd.DataFrame:
-    """Return a detached baseline frozen from an earlier development Core Data sample."""
+    """설비 DB 가 비었을 때 조회에만 보충하는 기존 보유대수 샘플을 새 표로 만든다."""
     return pd.DataFrame(
         {
             "공정": pd.Series([process for process, _ in SAMPLE_BASELINE_COUNTS], dtype="string"),
@@ -307,9 +348,9 @@ def untouched_sample_baseline_rows(baseline: pd.DataFrame) -> pd.DataFrame:
     """편집기에 채워 준 샘플 그대로인 행만 골라낸다.
 
     `sample_equipment_baseline()` 은 설비 DB 가 비었을 때 **화면 표시용**으로만 채워 넣는
-    값인데, 그대로 저장하면 불변 리비전에 영구 기록된다. 그 숫자는 예전
+    값인데, 그대로 저장하면 불변 리비전에 영구 기록된다. 그 숫자는 합성 생성기
     `scripts/generate_sample_core_data.py` 의 `PROCESS_SPECS.owned` 를 옮겨 적은 고정
-    리터럴이고 공정명도 그 리터럴이 정한 것이다. 실제 공정명이 다르면 호기 마스터와 절대
+    리터럴이고 공정명도 그 생성기가 정한 합성 이름이다. 실제 공정명이 다르면 호기 마스터와 절대
     붙지 않는 유령 공정이 총대수·가용대수·가용률에 영원히 섞인다.
 
     값을 하나라도 고쳤으면 그 행은 사용자의 것이므로 걸러 내지 않는다. **네 컬럼이 모두

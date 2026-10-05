@@ -3,7 +3,7 @@
 """개발용 샘플 보유대수가 영구 기록으로 새어 나가는 것을 막는다.
 
 설비 DB 가 비어 있으면 편집기에 `sample_equipment_baseline()` 이 채워진다. 그 행의
-숫자는 예전 `scripts/generate_sample_core_data.py` 의 `PROCESS_SPECS.owned` 를 옮겨 적은
+숫자는 합성 생성기 `scripts/generate_sample_core_data.py` 의 `PROCESS_SPECS.owned` 를 옮겨 적은
 고정 리터럴이고 공정명도 그 리터럴이 정한 것이다. 실제 공정명이 다르면 호기 마스터의
 `공정소분류` 와 절대 붙지 않는 **유령 공정**이 총대수·가용대수·가용률에 섞인다.
 

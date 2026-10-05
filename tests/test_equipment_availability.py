@@ -1,6 +1,9 @@
 # Purpose: equipment availability 관련 정상·예외·회귀 동작을 검증한다.
 
+import importlib.util
+import sys
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -28,6 +31,8 @@ from capa_simulation.services.equipment_validation import (
     prepare_downtime_schedule,
     prepare_equipment_master,
 )
+
+GENERATOR_PATH = Path(__file__).resolve().parents[1] / "scripts" / "generate_sample_core_data.py"
 
 
 def _baseline() -> pd.DataFrame:
@@ -106,12 +111,28 @@ def _downtime() -> pd.DataFrame:
     )
 
 
-def test_sample_baseline_matches_development_process_sample() -> None:
-    result = sample_equipment_baseline()
+def _generator_owned_counts() -> dict[str, float]:
+    """합성 Core Data 생성기가 공정마다 적는 `설비보유`(`ProcessSpec.owned`)."""
+    name = "generate_sample_core_data_for_equipment_sample"
+    spec = importlib.util.spec_from_file_location(name, GENERATOR_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return {process.name: float(process.owned) for process in module.PROCESS_SPECS}
 
-    assert len(result) == 30
+
+def test_sample_baseline_matches_development_process_sample() -> None:
+    """설비 샘플 보유대수는 생성기 값과 같아야 한다 — 갈라지면 빈 설비 DB 의 GAP 이 부푼다.
+
+    기대값은 생성기에서 읽는다. 행 수나 특정 공정의 대수를 숫자로 못박지 않는다.
+    """
+    result = sample_equipment_baseline()
+    expected = _generator_owned_counts()
+
     assert result["분류"].unique().tolist() == ["전체"]
-    assert result.loc[result["공정"].eq("TC Bonding"), "기존보유대수"].item() == 51.0
+    assert result["공정"].tolist() == list(expected)
+    assert dict(zip(result["공정"], result["기존보유대수"], strict=True)) == expected
 
 
 def test_sample_units_cover_every_active_status() -> None:
