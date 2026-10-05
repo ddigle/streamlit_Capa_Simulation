@@ -70,6 +70,7 @@ from capa_simulation.services.floor_layout_profile import (
     require_total_layout_budget,
     to_data_uri,
 )
+from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.process_cutoff import (
     empty_process_cutoff,
     prepare_process_cutoff,
@@ -253,8 +254,8 @@ class DuckDBEquipmentRepository:
                 if current != base_revision_id:
                     newest = f"r{latest[1]}" if latest is not None else "다른 저장"
                     raise ValueError(
-                        f"다른 사용자가 먼저 {newest}을 저장해 저장하지 않았습니다. 화면을 "
-                        "다시 불러와 최신 저장본 위에서 고친 뒤 저장하세요."
+                        f"다른 사용자가 먼저 {with_object_particle(newest)} 저장해 저장하지 "
+                        "않았습니다. 화면을 다시 불러와 최신 저장본 위에서 고친 뒤 저장하세요."
                     )
             stored_canvases = _stored_floor_canvases(connection)
             _require_floor_layout_bases(

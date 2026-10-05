@@ -403,7 +403,8 @@ def _load_revision(database_path: str, revision_id: str) -> None:
         return
     activate_persisted_snapshot(snapshot)
     st.session_state[FLASH_KEY] = (
-        f"{snapshot.scenario.scenario_name} r{snapshot.revision.revision_no}을 불러왔습니다."
+        f"{snapshot.scenario.scenario_name} r{snapshot.revision.revision_no}"
+        f"{object_particle(str(snapshot.revision.revision_no))} 불러왔습니다."
     )
     st.rerun()
 
@@ -461,7 +462,8 @@ def _render_official(
             st.error(bootstrap_error_message(exc))
         else:
             st.session_state[FLASH_KEY] = (
-                f"공식 v{release.release_no} · {release.release_name}을 지정했습니다."
+                f"공식 v{release.release_no} · {release.release_name}"
+                f"{object_particle(release.release_name)} 지정했습니다."
             )
             st.session_state.pop(ACTION_KEY, None)
             # 입장 화면 Summary 가 새 공식버전을 다음 회차에 곧바로 싣게 한다
@@ -495,7 +497,7 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
     )
     # 보관이 파일 크기를 줄이지 않는다는 것(용량 목적이면 영구 삭제 + compact)은 Guide 가 말한다.
     confirmed = st.checkbox(
-        f"{summary.scenario_name} 을 보관합니다",
+        f"{summary.scenario_name}{object_particle(summary.scenario_name)} 보관합니다",
         key=ARCHIVE_CONFIRM_KEY,
     )
     if not st.button(
@@ -516,7 +518,9 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
     clear_global_comparison_scenario_cache()
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
-    st.session_state[FLASH_KEY] = f"{summary.scenario_name} 을 보관했습니다."
+    st.session_state[FLASH_KEY] = (
+        f"{summary.scenario_name}{object_particle(summary.scenario_name)} 보관했습니다."
+    )
     discard_editor(LIST_EDITOR_KEY)
     for key in (ACTION_KEY, ACTION_OWNER_KEY, ARCHIVE_CONFIRM_KEY):
         st.session_state.pop(key, None)
@@ -573,7 +577,9 @@ def _restore_scenario(
         st.error(bootstrap_error_message(exc))
         return
     clear_scenario_snapshot_cache()
-    st.session_state[FLASH_KEY] = f"{summary.scenario_name} 을 목록으로 되돌렸습니다."
+    st.session_state[FLASH_KEY] = (
+        f"{summary.scenario_name}{object_particle(summary.scenario_name)} 목록으로 되돌렸습니다."
+    )
     discard_editor(LIST_EDITOR_KEY)
     st.session_state.pop(ARCHIVED_SELECT_KEY, None)
     st.rerun()
@@ -605,7 +611,9 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     clear_global_comparison_scenario_cache()
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
-    st.session_state[FLASH_KEY] = f"{summary.scenario_name} 을 영구 삭제했습니다."
+    st.session_state[FLASH_KEY] = (
+        f"{summary.scenario_name}{object_particle(summary.scenario_name)} 영구 삭제했습니다."
+    )
     discard_editor(LIST_EDITOR_KEY)
     for key in (
         ACTION_KEY,

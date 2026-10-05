@@ -236,7 +236,7 @@ def test_a_save_from_a_stale_revision_is_refused(tmp_path: Path) -> None:
     repository.save_snapshot(_baseline(), other, _downtime(), note="다른 사람")
 
     for save in (repository.save_snapshot, repository.save_space_layout):
-        with pytest.raises(ValueError, match="먼저 r2을 저장"):
+        with pytest.raises(ValueError, match="먼저 r2를 저장"):
             save(
                 _baseline(),
                 _equipment(),

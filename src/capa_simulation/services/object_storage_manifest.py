@@ -29,6 +29,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Final, Literal
 
+from capa_simulation.services.korean_particle import with_object_particle
+
 POINTER_SCHEMA_VERSION: Final = 1
 # 내림차순 키를 만들 때 쓰는 시퀀스 공간. 12자리 고정폭이라 seq 는 0 이상 이 값 이하만 쓴다.
 SEQUENCE_SPACE: Final = 10**12 - 1
@@ -433,7 +435,9 @@ def decision_message(
     # 두 열거형은 `str` 을 섞은 Enum 이고 `up_to_date`·`remote_empty` 값이 겹친다. 한 사전에
     # 담으면 같은 값끼리 키가 충돌해 뒤에 적은 pull 문구가 push 문구를 덮어쓴다.
     pull_messages: Mapping[PullDecision, str] = {
-        PullDecision.DOWNLOAD: f"{label} 을 원격 {generation} 으로 내려받습니다.",
+        PullDecision.DOWNLOAD: (
+            f"{with_object_particle(label)} 원격 {generation} 으로 내려받습니다."
+        ),
         PullDecision.UP_TO_DATE: f"{label} 은 이미 원격 {generation} 입니다.",
         PullDecision.AMBIGUOUS: (
             f"{label} 로컬 DB 가 어느 세대에서 왔는지 알 수 없습니다. 자동으로 덮지 않습니다 — "
@@ -448,7 +452,9 @@ def decision_message(
         PullDecision.REMOTE_EMPTY: (
             f"{label} 원격이 비어 있습니다. 최초 이관은 sync 스크립트의 init 이 합니다."
         ),
-        PullDecision.LOCAL_MISSING: f"{label} 로컬 DB 가 없어 원격 {generation} 을 받습니다.",
+        PullDecision.LOCAL_MISSING: (
+            f"{label} 로컬 DB 가 없어 원격 {with_object_particle(generation)} 받습니다."
+        ),
     }
     message = (
         push_messages[decision] if isinstance(decision, PushDecision) else pull_messages[decision]

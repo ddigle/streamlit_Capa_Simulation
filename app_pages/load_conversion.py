@@ -61,6 +61,7 @@ from capa_simulation.scenario_state import (
     scenario_table,
     session_virtual_products,
 )
+from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
     YIELD_EDITOR_DIMENSIONS,
@@ -442,7 +443,8 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
         )
     )
     st.session_state[PRODUCT_REGISTERED_FLASH_KEY] = (
-        f"가상 제품 {request.normalized().product} · {request.normalized().stack} 을 "
+        f"가상 제품 {request.normalized().product} · "
+        f"{with_object_particle(request.normalized().stack)} "
         f"등록했습니다. 기준정보 {len(updates)}종을 복제했습니다."
         + plan_row_hint
         + (" 적용하지 않았던 붙여넣기 표는 버렸습니다 — 다시 붙여넣으세요." if staged_paste else "")

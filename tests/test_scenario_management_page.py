@@ -129,7 +129,7 @@ def test_archived_box_keeps_its_identity_when_the_flash_disappears(tmp_path: Pat
     DuckDBScenarioRepository(database_path).archive_scenario(archived.scenario.scenario_id)
 
     app = AppTest.from_string(script, default_timeout=120)
-    app.session_state[FLASH_KEY] = "보관 대상 을 보관했습니다."
+    app.session_state[FLASH_KEY] = "보관 대상을 보관했습니다."
     app.run()
     assert not app.exception
     assert any("보관했습니다" in item.value for item in app.success)

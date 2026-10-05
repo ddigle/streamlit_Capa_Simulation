@@ -293,7 +293,8 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
         if replaced and has_unsaved_equipment_edits():
             number = f"r{latest_snapshot.revision.revision_no}" if latest_snapshot else "새 저장"
             st.session_state[DISCARDED_NOTICE_KEY] = (
-                f"다른 사용자가 {number}을 저장해, 이 화면에서 저장하지 않은 설비 편집"
+                f"다른 사용자가 {number}{object_particle(number)} 저장해, 이 화면에서 저장하지 "
+                "않은 설비 편집"
                 "(RawData·Space 배치)을 버리고 최신 저장본으로 다시 열었습니다."
             )
         _clear_editors()

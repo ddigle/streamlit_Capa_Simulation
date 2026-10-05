@@ -221,7 +221,8 @@ def render_scenario_controls(
             else:
                 st.session_state[SIDEBAR_FLASH_KEY] = (
                     f"{snapshot.scenario.scenario_name} "
-                    f"r{snapshot.revision.revision_no}을 불러왔습니다."
+                    f"r{snapshot.revision.revision_no}"
+                    f"{object_particle(str(snapshot.revision.revision_no))} 불러왔습니다."
                 )
                 st.rerun()
         if not selection_is_active:

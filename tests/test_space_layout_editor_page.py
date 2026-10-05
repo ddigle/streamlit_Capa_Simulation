@@ -274,7 +274,7 @@ def test_a_save_error_is_shown_once_even_without_pending_changes(
 ) -> None:
     app, _ = _open_editor(tmp_path)
     app.session_state["space_layout_save_error"] = (
-        "다른 사용자가 먼저 r2을 저장해 저장하지 않았습니다."
+        "다른 사용자가 먼저 r2를 저장해 저장하지 않았습니다."
     )
     app.run()
     assert any("배치를 저장하지 못했습니다" in item.value for item in app.error)

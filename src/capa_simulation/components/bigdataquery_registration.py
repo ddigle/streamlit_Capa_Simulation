@@ -64,6 +64,7 @@ from capa_simulation.services.core_data_pipeline import (
     reference_conflicts_to_csv,
     summarize_reference_conflicts,
 )
+from capa_simulation.services.korean_particle import with_object_particle
 
 PIPELINE_VERSION = "bigdataquery-core-data-v5"
 CONFLICT_REPORT_STATE_KEY = "bigdataquery_reference_conflict_report"
@@ -618,7 +619,8 @@ def _save_scenario(
     # 목록은 남긴다. 선택과 폼만 비워 다음 코드를 이어서 등록할 수 있게 한다.
     _request_reset()
     st.session_state[REGISTRATION_FLASH_KEY] = (
-        f"{snapshot.scenario.scenario_name}을 저장하고 r{snapshot.revision.revision_no}을 "
+        f"{with_object_particle(snapshot.scenario.scenario_name)} 저장하고 "
+        f"{with_object_particle(f'r{snapshot.revision.revision_no}')} "
         "활성화했습니다."
     )
     st.rerun()

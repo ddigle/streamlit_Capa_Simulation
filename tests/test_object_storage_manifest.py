@@ -341,6 +341,21 @@ def test_decision_messages_are_korean_and_name_the_dataset() -> None:
     assert "로컬 저장은 그대로" in message
 
 
+def test_pull_messages_pick_the_object_particle_by_the_last_sound() -> None:
+    """이름 뒤 목적격 조사는 끝소리로 고른다 — 「가용설비 을」·「seq 2 을」이 아니다."""
+    head = _pointer(2)
+
+    assert manifest.decision_message(PullDecision.DOWNLOAD, "equipment", head=head).startswith(
+        "가용설비를 원격 seq 2 으로"
+    )
+    assert manifest.decision_message(PullDecision.DOWNLOAD, "simulation", head=head).startswith(
+        "시뮬레이션을 원격"
+    )
+    assert "원격 seq 2를 받습니다" in manifest.decision_message(
+        PullDecision.LOCAL_MISSING, "simulation", head=head
+    )
+
+
 def test_push_and_pull_messages_do_not_collide_on_shared_enum_values() -> None:
     """두 열거형은 `str` 을 섞은 Enum 이라 값이 같으면 사전 키가 충돌한다.
 
