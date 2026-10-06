@@ -194,10 +194,12 @@ MONTH_CELL_SURFACES = ("SURFACE", "SURFACE_SUBTLE", "SURFACE_PAST", "SURFACE_PAS
 SMALL_TEXT_MINIMUM = 4.5  # 12px 글자
 
 
-def test_the_advance_shipment_note_reads_on_every_month_cell_and_apart_from_deltas() -> None:
-    """Density 칸 오른쪽 위 선행 입고 실적 글자는 같은 띠의 선행 B/O 증감(`DELTA_*`)과 갈려야 한다.
+def test_the_advance_shipment_note_reads_on_every_month_cell() -> None:
+    """Density 칸 오른쪽 끝(값과 같은 높이) 선행 입고 실적 글자는 모든 월 칸 면에서 읽혀야 한다.
 
-    바탕은 흰 면·줄무늬·과거 구간 둘 — 그 모두에서 12px 글자 기준 4.5:1 을 넘어야 한다.
+    바탕은 흰 면·줄무늬·과거 구간 둘 — 그 모두에서 12px 글자 기준 4.5:1 을 넘어야 한다. 값 위
+    선행 B/O 증감과 같은 띠에 서지 않으므로 증감색과의 색 거리는 보지 않는다(2026-10-07 사용자
+    결정 — 밝게는 검정, 어둡게는 본문 글자색. 값과는 크기·자리로만 갈린다).
     """
     failures: list[str] = []
     for mode, palette in tokens._PALETTES.items():
@@ -206,14 +208,9 @@ def test_the_advance_shipment_note_reads_on_every_month_cell_and_apart_from_delt
             ratio = contrast_ratio(color, palette[surface])
             if ratio < SMALL_TEXT_MINIMUM:
                 failures.append(f"{mode} {surface} 위 {ratio:.2f}:1")
-        for delta in ("DELTA_INCREASE", "DELTA_DECREASE"):
-            normal = _delta_e(color, palette[delta])
-            if normal < NORMAL_FLOOR:
-                failures.append(f"{mode} {delta} 와 정상시야 ΔE {normal:.1f}")
-            worst = min(_delta_e(color, palette[delta], vision) for vision in CVD_MATRICES)
-            if worst < CVD_TARGET:
-                failures.append(f"{mode} {delta} 와 색각이상 ΔE {worst:.1f}")
-    assert not failures, "선행 입고 실적 글자색이 맞지 않습니다:" + _bullets(failures)
+    assert not failures, "선행 입고 실적 글자가 월 칸 면에서 읽히지 않습니다:" + _bullets(failures)
+    assert tokens._PALETTES["light"]["ADVANCE_SHIPMENT_TEXT"] == "#000000"
+    assert tokens._PALETTES["dark"]["ADVANCE_SHIPMENT_TEXT"] == tokens._PALETTES["dark"]["TEXT"]
 
 
 def test_every_equipment_status_has_its_own_color() -> None:

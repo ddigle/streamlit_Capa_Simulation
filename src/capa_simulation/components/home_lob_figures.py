@@ -45,7 +45,6 @@ from capa_simulation.components.home_dimensions import (
     TOP5_PROCESS_LABEL_YSHIFT_PX,
     TOP5_RATE_LABEL_GAP_PX,
     TOP5_WAFER_LABEL_XSHIFT_PX,
-    corner_note_font_size_px,
     top5_axis_headroom_px,
     top5_process_label_room_px,
 )
@@ -720,8 +719,9 @@ def build_lob_summary_figures(
     Wafer Capa 는 `계획 × 확보율` 이라 선행 전후가 정확히 같으므로 증감을 적지 않는다.
 
     `advance_shipment_notes` 는 월 축 칸마다 `(글자, hover)` 인 선행 입고 실적이다
-    (`services/advance_shipment.advance_shipment_notes`). 주면 Density 칸 **오른쪽 위**에 적는다 —
-    값·증감 자리는 그대로다. 계산에는 들어가지 않는 표시값이다.
+    (`services/advance_shipment.advance_shipment_notes`). 주면 Density 칸 **오른쪽 끝, 값과 같은
+    높이**에 적는다(값이 길면 겹칠 수 있음 — 2026-10-07 사용자 결정). 값·증감 자리는 그대로다.
+    계산에는 들어가지 않는 표시값이다.
 
     `comparison_density`·`comparison_wafer` 는 비교 시나리오의 같은 월별 표다. 주면 값
     **아래**에 증감을 적는다. 위아래를 나눠 둔 것은 한 칸에 둘이 함께 붙을 수 있어서다.
@@ -755,17 +755,6 @@ def build_lob_summary_figures(
     )
     wafer_plan_comparison_gaps = _value_gaps(
         raw_summary, aligned_comparison_wafer, "Wafer 부하량", _WAFER_GAP_FORMAT, scale=1_000
-    )
-    # 선행 입고 실적 글자 크기 — 같은 띠 가운데의 선행 B/O 증감과 칸 경계 사이에 다 들어가는 가장
-    # 큰 크기(12px 부터). 행 전체가 한 크기다.
-    advance_shipment_font_size = (
-        corner_note_font_size_px(
-            [note for note, _ in advance_shipment_notes],
-            density_gaps,
-            cell_width_px=tokens.MONTH_COLUMN_WIDTH_PX,
-        )
-        if advance_shipment_notes is not None
-        else None
     )
     month_positions = list(range(len(month_labels)))
     month_position_by_value = {
@@ -880,7 +869,6 @@ def build_lob_summary_figures(
             gaps=gaps,
             lower_gaps=lower_gaps,
             corner_notes=corner_notes,
-            corner_note_font_size=advance_shipment_font_size,
         )
     if bottleneck_capacity["B/N Capa"].notna().any():
         bottleneck_positions = [

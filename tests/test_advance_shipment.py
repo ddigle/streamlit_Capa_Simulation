@@ -5,12 +5,15 @@ from pathlib import Path
 
 import duckdb
 import pandas as pd
+import plotly.graph_objects as go
 import pytest
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.home_preference as home_preference
 from capa_simulation.components.home_preference import ADVANCE_SHIPMENT_EDITOR_KEY
 from capa_simulation.components.monthly_table_base import text_width_units
+from capa_simulation.components.plotly_layout import add_fixed_table_row, flush_layout_items
+from capa_simulation.design import tokens
 from capa_simulation.persistence.migration_runner import load_migrations
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.advance_load import ADVANCE_LOAD_ROW_LABEL
@@ -125,6 +128,58 @@ def test_notes_follow_the_month_axis_and_skip_totals_and_invisible_zeros() -> No
     ]
 
 
+def test_the_note_stands_at_the_value_height_on_the_right_edge() -> None:
+    """선행 입고 실적은 칸 **오른쪽 끝, 값과 같은 높이**에 12px 로 선다(2026-10-07 사용자 결정).
+
+    「같은 높이」는 줄 상자가 아니라 **글리프 가운데**다. 값과 이 글자는 서체·크기가 달라 줄 상자
+    가운데에서 글리프 가운데가 내려앉는 거리가 다르다 — 값의 `yshift` 를 그대로 쓰면 이 글자가
+    모형상 2.2px 위로 뜬다. 그래서 각자 제 보정을 빼서 맞춘다. 크기는 줄이지 않는다(값이 길면
+    겹친다).
+    """
+    from capa_simulation.components.home_dimensions import (
+        CORNER_NOTE_RIGHT_PADDING_PX,
+        NUMERIC_INK_OFFSET_RATIO,
+        TEXT_INK_OFFSET_RATIO,
+    )
+
+    value_size = 20
+    figure = go.Figure()
+    add_fixed_table_row(
+        figure,
+        domain=(0.2, 0.6),
+        values=["1,233.46", "12,345.67"],
+        fill_color="#FFFFFF",
+        font_size=value_size,
+        bold=False,
+        gaps=["+12.34", ""],
+        corner_notes=[("+12.3", "선행 입고 실적 +12.3억Gb"), ("+1234.5", "h")],
+    )
+    flush_layout_items(figure)
+    annotations = list(figure.layout.annotations)
+    values = [a for a in annotations if a.font.size == value_size]
+    notes = [a for a in annotations if a.xanchor == "right"]
+    assert [str(a.text) for a in notes] == ["+12.3", "+1234.5"]
+
+    for index, (value, note) in enumerate(zip(values, notes, strict=True)):
+        # 오른쪽 끝 — 칸 오른쪽 경계에서 `CORNER_NOTE_RIGHT_PADDING_PX` 안쪽.
+        assert note.x == pytest.approx((index + 1) / 2)
+        assert note.xshift == -CORNER_NOTE_RIGHT_PADDING_PX
+        # 같은 높이 — 두 글리프 가운데가 같은 y 다(같은 기준 y·같은 세로 기준점).
+        assert note.y == value.y
+        assert note.yanchor == value.yanchor == "middle"
+        value_ink_centre = value.yshift - value_size * TEXT_INK_OFFSET_RATIO
+        note_ink_centre = note.yshift - tokens.DELTA_FONT_SIZE_PX * NUMERIC_INK_OFFSET_RATIO
+        assert note_ink_centre == pytest.approx(value_ink_centre)
+        # 크기는 고정이다 — 값이 길어도 줄이지 않는다.
+        assert note.font.size == tokens.DELTA_FONT_SIZE_PX
+        assert note.font.color == tokens.ADVANCE_SHIPMENT_TEXT
+        # 겹치면 위에 서도록 값보다 뒤에 그린다.
+        assert annotations.index(note) > annotations.index(value)
+    # 같은 칸 값 위 증감(선행 B/O)과는 다른 높이다.
+    (delta,) = [a for a in annotations if str(a.text) == "+12.34"]
+    assert delta.yshift > notes[0].yshift
+
+
 def _editor_script(database: Path, months: tuple[int, ...] = MONTHS) -> str:
     return f"""
 from capa_simulation.components.home_preference import render_advance_shipment_editor
@@ -211,35 +266,3 @@ def test_the_row_name_column_fits_the_longest_name_of_both_editors(database: Pat
     for label in (ADVANCE_LOAD_ROW_LABEL, ADVANCE_SHIPMENT_ROW_LABEL):
         assert width >= text_width_units(label) * 14 + 16, label
     assert all("width" not in columns[month] for month in ("26.01", "26.02", "26.03"))
-
-
-def test_the_note_keeps_the_delta_size_until_it_would_touch_the_centred_delta() -> None:
-    """칸 오른쪽 위 글자는 12px 에서 시작해 들어가지 않을 때만 줄인다(행 전체가 한 크기).
-
-    칸은 100px, 가운데에 선행 B/O 증감이 선다. 숫자 폭은 Calibri 실측(12px `+12.34` 33.3px)과 같다.
-    """
-    from capa_simulation.components.home_dimensions import (
-        CORNER_NOTE_MIN_FONT_SIZE_PX,
-        corner_note_font_size_px,
-        numeric_text_width_px,
-    )
-
-    assert numeric_text_width_px("+12.34", 12) == pytest.approx(33.3, abs=0.2)
-    # 흔한 크기(B/O +12.34 · 입고 +12.3)는 그대로 12px 이다.
-    assert (
-        corner_note_font_size_px(
-            ["+12.3", "", "-12.3"], ["+12.34", "", "-12.34"], cell_width_px=100
-        )
-        == 12
-    )
-    # 증감이 없으면 칸 왼쪽까지 쓸 수 있다.
-    assert corner_note_font_size_px(["+1,234.5"], None, cell_width_px=100) == 12
-    # 한 칸이라도 들어가지 않으면 행 전체를 줄인다.
-    assert (
-        corner_note_font_size_px(["+12.3", "+123.4"], ["+12.34", "+12.34"], cell_width_px=100) == 9
-    )
-    # 하한 아래로는 줄이지 않는다.
-    assert (
-        corner_note_font_size_px(["+12,345.6"], ["+12,345.67"], cell_width_px=100)
-        == CORNER_NOTE_MIN_FONT_SIZE_PX
-    )

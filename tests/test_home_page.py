@@ -13,6 +13,7 @@ from capa_simulation.components.home_dimensions import (
     LOB_BOTTOM_MARGIN_PX,
     LOB_TOP_MARGIN_PX,
     LOB_VALUE_FONT_SIZE_PX,
+    delta_ink_yshift_px,
 )
 from capa_simulation.components.home_preference import THRESHOLD_POINTER
 from capa_simulation.design import tokens
@@ -674,13 +675,23 @@ def test_advance_scales_the_plan_and_rate_but_leaves_capacity_alone(
 
 
 def _corner_notes(app: AppTest) -> dict[str, tuple[str, str, float]]:
-    """LOB 월 Figure 의 Density 칸 오른쪽 위 글자(선행 입고 실적) — 월 라벨 → (글자, hover, x)."""
+    """LOB 월 Figure 의 Density 칸 오른쪽 끝 글자(선행 입고 실적) — 월 라벨 → (글자, hover, x).
+
+    색으로 고르지 않는다 — 어두운 테마에서는 값과 같은 본문 글자색이다. hover 글자로 고른다.
+    """
     figure = app.session_state["spy_figures"]["production_lob_months"]
     labels = _lob_month_labels(app)
     notes: dict[str, tuple[str, str, float]] = {}
     for annotation in figure.layout.annotations:
-        if annotation.xanchor != "right" or annotation.font.color != tokens.ADVANCE_SHIPMENT_TEXT:
+        if annotation.xanchor != "right" or not str(annotation.hovertext or "").startswith(
+            "선행 입고 실적"
+        ):
             continue
+        # 값과 같은 높이·증감과 같은 고정 크기다(2026-10-07 사용자 결정).
+        assert annotation.yanchor == "middle"
+        assert annotation.yshift == pytest.approx(delta_ink_yshift_px())
+        assert annotation.font.size == tokens.DELTA_FONT_SIZE_PX
+        assert annotation.font.color == tokens.ADVANCE_SHIPMENT_TEXT
         index = round(float(annotation.x) * len(labels)) - 1
         notes[labels[index]] = (
             str(annotation.text),
@@ -691,7 +702,9 @@ def _corner_notes(app: AppTest) -> dict[str, tuple[str, str, float]]:
 
 
 def test_the_advance_shipment_toggle_writes_notes_in_the_density_cells(tmp_path: Path) -> None:
-    """「선행 입고」 를 켜면 선행 입고 실적이 Density 칸 오른쪽 위에 적힌다(과거 달 포함).
+    """「선행 입고」 를 켜면 선행 입고 실적이 Density 칸 오른쪽 끝, 값과 같은 높이에 적힌다.
+
+    과거 달도 적는다.
 
     계산은 바꾸지 않는다 — 값·선 모두 그대로이고 글자만 더해진다. 토글과 프로필 version 은
     Figure 캐시 키에 든다.

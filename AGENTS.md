@@ -453,21 +453,26 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     분류가 아직 없어 모든 공정에 건다(`services/advance_load.py` 모듈 설명).
   - **`선행 입고`(2026-10-06 사용자 결정)는 계산을 바꾸지 않는다.** 선행 입고(라인 기준 입고가
     계획보다 앞선 것)는 이미 생산계획에 든 물량이라, 켜면 공용 선행 입고 실적 프로필
-    (`app_meta.global_advance_shipment*`, 0031)의 값을 `Capa LOB 현황` Density 칸 **오른쪽 위**에
-    `{:+.1f}` 로 적기만 한다(`services/advance_shipment.advance_shipment_notes` → `plotly_layout.
-    add_fixed_table_row(corner_notes=...)`). 자리는 값 위 선행 B/O 증감과 **같은 높이**(같은
-    `yshift`)이고 칸 오른쪽 경계에서 `CORNER_NOTE_RIGHT_PADDING_PX` 안쪽이다 — 그 띠는 값 글리프와
-    `DELTA_GUTTER_PX`, 행 위 경계와 `ROW_EDGE_PADDING_PX` 만큼 떨어져 있어 기존 글자를 움직이거나
-    줄이지 않는다. 가운데 선 증감과는 가로로만 떨어진다. 글자 크기는 증감과 같은
-    `DELTA_FONT_SIZE_PX`(12px)에서 시작해 **들어가지 않을 때만** 행 전체를 한 단계씩 줄인다(하한
-    `CORNER_NOTE_MIN_FONT_SIZE_PX` 9px, `home_dimensions.corner_note_font_size_px`) — 가운데 증감과
-    `DELTA_GUTTER_PX`, 칸 경계와 `CORNER_NOTE_RIGHT_PADDING_PX` 에 Plotly 의 정수 px 자리 반올림 1px
-    (`TEXT_PLACEMENT_SLACK_PX`)을 더해 잰다. 폭은 Calibri 숫자 모형(`numeric_text_width_px`, 숫자 0.507em)
-    이다 — `_calibri_width_units` 의 숫자 0.58 은 영문 공정명용이라 16% 넓다. 2026-10-07 Chrome 실측(칸
-    100×42px, 값 `1,233.46`): 선행 B/O `+12.34` 옆 `+12.3` 은 12px 로 서고 증감과 2.7px·칸 오른쪽
-    경계와 2.7px·행 위 경계와 3px·값 글리프와 1px(선행 B/O 증감과 같은 간격) 떨어진다. `+12.34` 옆
-    `+123.4` 가 한 칸이라도 있으면 행 전체가 9px 로 서고 그 칸의 틈은 4.7px 이다. 색은 증감색과 갈리는
-    `tokens.ADVANCE_SHIPMENT_TEXT`(두 테마 모두 월 칸 면 4.5:1 이상)다. hover 는
+    (`app_meta.global_advance_shipment*`, 0031)의 값을 `Capa LOB 현황` Density 칸 **오른쪽 끝, 값과 같은
+    높이**(값이 길면 겹칠 수 있음 — 2026-10-07 사용자 결정)에 `{:+.1f}` 로 적기만 한다
+    (`services/advance_shipment.advance_shipment_notes` → `plotly_layout.add_fixed_table_row(corner_notes=...)`).
+    가로는 칸 오른쪽 경계에서 `CORNER_NOTE_RIGHT_PADDING_PX` 안쪽(`xanchor="right"`)이고, 세로는 값과
+    **글리프 가운데**가 같다 — 값의 `yshift` 를 그대로 쓰지 않는다. 값(본문 서체 20px)과 이 글자(숫자
+    서체 12px)는 줄 상자 가운데에서 글리프 가운데가 내려앉는 거리가 달라(`TEXT_INK_OFFSET_RATIO`·
+    `NUMERIC_INK_OFFSET_RATIO`) 같은 `yshift` 면 이 글자가 모형상 2.2px 위로 뜬다. 그래서 값은
+    `value_ink_yshift_px`, 이 글자는 증감과 같은 `delta_ink_yshift_px` 로 둘 다 칸 한가운데에 세운다.
+    크기는 증감과 같은 `DELTA_FONT_SIZE_PX`(12px) 고정이다 — 넘치면 행 전체를 줄이던 규칙(하한 9px)은
+    걷었다. 값이 네 자리(`1,233.46`)면 남는 자리가 없어 값 오른쪽 끝과 겹치고, 사용자가 그것을 알고
+    「모두 가운데, 겹침 허용」을 골랐다. 값보다 뒤에 그려 겹치면 이 글자가 위에 선다. 색
+    `tokens.ADVANCE_SHIPMENT_TEXT` 는 밝게 검정(#000000)·어둡게 본문 글자색(#E9E9EC — 검정은 어두운 면에서
+    사라진다)이고 두 테마 모두 월 칸 면에서 12px 기준 4.5:1 을 넘는다. 값과는 **크기·자리로만** 갈린다
+    (값 위 선행 B/O 증감과 같은 띠에 서지 않으므로 증감색과 갈릴 까닭도 없다).
+    2026-10-07 Chrome 실측(1440px 창, 밝게·어둡게, 값 `17.97`·`9.24` 옆 `+1.2`·`+12.3`): 이 글자의 글리프
+    가운데가 값보다 **1px 아래**다 — 값 쪽 보정 `TEXT_INK_OFFSET_RATIO`(0.125)가 숫자만 든 값에는 과보정이라
+    (Noto Sans KR 숫자의 실제 내림은 0.07em 남짓) 값 글리프가 칸 가운데보다 1px 위에 선다. 증감 간격도 같은
+    비율을 쓰므로 여기서 고치지 않았다(`docs/TODO.md` 후속). 칸 오른쪽 경계와 글자 끝 사이는 2.8~2.9px, 값
+    `17.97`·`9.24` 와는 가로로 1.1px·0.2px 떨어지고(값이 더 길면 겹친다), 값 뒤에 그려진다. 글자색은 밝게 `rgb(0,0,0)`·
+    어둡게 `rgb(233,233,236)` 로 그려졌다. hover 는
     주석의 `hovertext`(「선행 입고 실적 +1.2억Gb」)라 trace 수가 늘지 않는다. 연간 Total 칸에는 적지
     않고, 과거 구간 달은 축에 있으면 적는다. 자릿수에서 0 으로 보이는 값(`+0.0`)은 적지 않는다.
     토글과 프로필 version(꺼져 있으면 0)은 `HomeFigureCacheKey` 의 마지막 두 칸
@@ -3760,8 +3765,9 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   확장할 때는 별도 쓰기 서비스 또는 서버형 DB로 전환한다.
 - 증감 표기색은 **글자색**(`DELTA_INCREASE`·`DELTA_DECREASE`)과 **면색**
   (`DELTA_AREA_INCREASE`·`DELTA_AREA_DECREASE`)이 다르다. 앞은 값 위에 작게 적는 선행 B/O
-  증감이고 뒤는 실행 Capa 증감 **구간 자체**를 칠한다. 같은 띠 오른쪽 끝의 선행 입고 실적 글자는
-  세 번째 글자색(`ADVANCE_SHIPMENT_TEXT`, 청록)이다 — 증감의 갈색·파랑과 갈린다. 면색으로 글자색을 쓰면 막대 안에서
+  증감이고 뒤는 실행 Capa 증감 **구간 자체**를 칠한다. Density 칸 오른쪽 끝, 값과 같은 높이(값이 길면
+  겹칠 수 있음 — 2026-10-07 사용자 결정)의 선행 입고 실적 글자는 따로 `ADVANCE_SHIPMENT_TEXT`(밝게 검정·
+  어둡게 본문 글자색)이다 — 값과는 크기·자리로만 갈리고 증감 띠에 서지 않는다. 면색으로 글자색을 쓰면 막대 안에서
   글자보다 무거워진다. 휘도 단조 검사는 `STATUS_*` 셋만 보므로 이 둘은 그 검사 대상이
   아니지만, 막대 트랙·확보 막대에서 떨어지는지는 토큰 주석의 대비값으로 확인한다.
 - BOX·PCB 는 산식 확정 전까지 대당 Capa·소요대수 계산에서 빼 두었다. **제외가 아니라

@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
 
 from capa_simulation.design import tokens
 
@@ -42,25 +41,11 @@ DELTA_GUTTER_PX = 2
 # 행 경계선과 글자 사이의 틈. 0 이면 글자가 경계선에 붙어 읽힌다.
 ROW_EDGE_PADDING_PX = 3
 
-# 칸 오른쪽 위 글자(선행 입고 실적)와 칸 오른쪽 경계 사이의 틈. 그 글자는 선행 B/O 증감과 같은
-# 띠(값 위)에 서되 오른쪽 끝에 붙으므로, 가운데에 선 증감과는 가로로만 떨어진다. Plotly 주석
-# 상자의 안쪽 여백(`borderpad` 1px)과 글자 자리 반올림이 더해져 보이는 틈은 행 위 경계의 틈
-# (`ROW_EDGE_PADDING_PX`)과 같은 3px 남짓이다(Chrome 실측).
+# 칸 오른쪽 끝 글자(선행 입고 실적)와 칸 오른쪽 경계 사이의 틈. 그 글자는 값과 **같은 높이**
+# (글리프 가운데)에 서되 오른쪽 끝에 붙는다. 값이 길면 값 글리프와 겹칠 수 있다(2026-10-07 사용자
+# 결정 — 「모두 가운데, 겹침 허용」). Plotly 주석 상자의 안쪽 여백(`borderpad` 1px)과 글자 자리
+# 반올림이 더해져 보이는 틈은 3px 남짓이다(Chrome 실측).
 CORNER_NOTE_RIGHT_PADDING_PX = 1
-# Plotly 주석 상자의 기본 안쪽 여백. 글자는 상자 경계에서 이만큼 안쪽에 선다.
-ANNOTATION_BORDER_PAD_PX = 1
-# Plotly 는 주석 글자의 시작 x 를 정수 px 로 놓는다. 폭 모형이 맞아도 글자가 최대 1px 밀리므로
-# 들어가는지 잴 때 양쪽에 그만큼 둔다(실측: 10px `+123.4` 가 모형보다 0.9px 넓게 섰다).
-TEXT_PLACEMENT_SLACK_PX = 1
-# 칸 오른쪽 위 글자를 줄일 수 있는 하한. 이보다 작으면 숫자가 읽히지 않는다.
-CORNER_NOTE_MIN_FONT_SIZE_PX = 9
-
-# `FONT_FAMILY_NUMERIC`(Calibri) 숫자 글자의 전진 폭(글자 크기 1px 기준). Calibri 의 숫자는 모두
-# 같은 폭(1038/2048)이다. 2026-10-06 Chrome 실측 — 12px `+12.34` 33.3px, `-12.34` 31.0px 와 맞는다.
-# `home_figure_common._calibri_width_units` 의 숫자 0.58 은 영문 공정명에 맞춘 값이라 숫자만 든
-# 증감 글자에는 16% 넓게 잡힌다.
-_CALIBRI_NUMERIC_UNITS = {".": 0.252, ",": 0.250, "+": 0.498, "-": 0.306}
-_CALIBRI_DIGIT_UNITS = 0.507
 
 
 def delta_line_shift_px(value_font_size: int) -> float:
@@ -78,60 +63,11 @@ def value_ink_yshift_px(value_font_size: int) -> float:
 
 
 def delta_ink_yshift_px() -> float:
-    """증감 글리프 가운데를 목표 자리에 맞추는 `yshift` 보정."""
-    return tokens.DELTA_FONT_SIZE_PX * NUMERIC_INK_OFFSET_RATIO
+    """증감 크기(`DELTA_FONT_SIZE_PX`) 숫자 글리프 가운데를 목표 자리에 맞추는 `yshift` 보정.
 
-
-def numeric_text_width_px(text: str, font_size: float) -> float:
-    """증감·선행 입고처럼 숫자·부호만 든 글자의 그려지는 폭(Calibri)."""
-    return font_size * sum(
-        _CALIBRI_DIGIT_UNITS if character.isdigit() else _CALIBRI_NUMERIC_UNITS.get(character, 0.55)
-        for character in text
-    )
-
-
-def corner_note_font_size_px(
-    notes: Sequence[str],
-    centered: Sequence[str] | None,
-    *,
-    cell_width_px: float,
-) -> int:
-    """칸 오른쪽 위 글자의 크기. 증감 크기(12px)에서 시작해 **들어가지 않을 때만** 줄인다.
-
-    글자는 같은 높이 띠의 가운데에 선 증감(`centered`, 선행 B/O)과 `DELTA_GUTTER_PX` 이상, 칸
-    오른쪽 경계와 `CORNER_NOTE_RIGHT_PADDING_PX` + 주석 여백만큼 떨어져야 한다. 증감이 없는 칸은
-    칸 왼쪽 경계까지 쓸 수 있다. 한 행의 모든 칸이 들어가는 가장 큰 크기를 **행 전체**에 쓴다 —
-    칸마다 크기가 다르면 같은 뜻의 글자가 크기로 위계처럼 읽힌다. 하한
-    (`CORNER_NOTE_MIN_FONT_SIZE_PX`)에서도 들어가지 않는 칸이 있으면 하한을 쓴다.
+    증감과 칸 오른쪽 끝의 선행 입고 실적이 쓴다 — 둘 다 그 크기의 숫자 서체다.
     """
-    right_edge = (
-        cell_width_px
-        - CORNER_NOTE_RIGHT_PADDING_PX
-        - ANNOTATION_BORDER_PAD_PX
-        - TEXT_PLACEMENT_SLACK_PX
-    )
-    middle_texts = list(centered) if centered is not None else [""] * len(notes)
-    if len(middle_texts) != len(notes):
-        raise ValueError("가운데 증감 개수가 칸 오른쪽 위 글자 개수와 다릅니다.")
-    for size in range(tokens.DELTA_FONT_SIZE_PX, CORNER_NOTE_MIN_FONT_SIZE_PX - 1, -1):
-        fits = True
-        for note, middle in zip(notes, middle_texts, strict=True):
-            if not note:
-                continue
-            left_edge = (
-                cell_width_px / 2
-                + numeric_text_width_px(middle, tokens.DELTA_FONT_SIZE_PX) / 2
-                + DELTA_GUTTER_PX
-                + TEXT_PLACEMENT_SLACK_PX
-                if middle
-                else ANNOTATION_BORDER_PAD_PX
-            )
-            if numeric_text_width_px(note, size) > right_edge - left_edge:
-                fits = False
-                break
-        if fits:
-            return size
-    return CORNER_NOTE_MIN_FONT_SIZE_PX
+    return tokens.DELTA_FONT_SIZE_PX * NUMERIC_INK_OFFSET_RATIO
 
 
 def row_height_with_deltas(value_font_size: int) -> int:
