@@ -207,27 +207,36 @@ function waferLogo(palette) {
 // Summary 의 격자(CSS px). 왼쪽 행 이름 칸 + 여섯 달 칸, 세 줄(선 · 막대 · 시트). 메인 스레드(행 이름
 // 위치)와 장면(차트)이 같이 쓴다 — 장면에는 이 함수의 원문을 함께 실어 보낸다. 그래서 **이 함수도
 // 바깥 이름을 쓰지 않는다.** 화면이 낮으면 위 두 줄이 줄고 시트 줄만 200px 를 지킨다(스크롤 없음).
+// 좁은 화면(760px 이하 — intro.css 의 @media 와 같은 경계)은 행 이름 칸을 없애고 이름을 각 줄 **위**
+// 띠(`rows[i].head`)에 올린다 — 칸을 남기면 390px 에서 여섯 달 칸이 30px 로 줄어 글자가 서로 겹친다.
 function summaryGrid(W, H) {
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  const side = clamp(W * 0.045, 16, 64);
+  const narrow = W <= 760;
+  const side = narrow ? 16 : clamp(W * 0.045, 16, 64);
   const bottom = clamp(W * 0.03, 16, 36);
   const top = 96;
-  const gap = 12;
-  const labelW = W <= 900 ? 104 : 156;
+  const rowGap = 12;
+  const gap = narrow ? 6 : 12;
+  const labelW = narrow ? 0 : W <= 900 ? 104 : 156;
+  const heads = narrow ? [24, 24, 44] : [0, 0, 0];
   const left = side;
-  const colW = Math.max(0, (W - side * 2 - labelW - gap * 6) / 6);
-  const cols = [0, 1, 2, 3, 4, 5].map((i) => left + labelW + gap + i * (colW + gap));
-  const avail = Math.max(0, H - top - bottom - gap * 2);
+  const lead = labelW ? labelW + gap : 0;
+  const colW = Math.max(0, (W - side * 2 - lead - gap * 5) / 6);
+  const cols = [0, 1, 2, 3, 4, 5].map((i) => left + lead + i * (colW + gap));
+  const avail = Math.max(0, H - top - bottom - rowGap * 2 - heads[0] - heads[1] - heads[2]);
   const third = Math.max(200, (avail * 1.45) / 3.53);
   const rest = Math.max(0, avail - third);
   const h0 = rest / 2.08;
   const h1 = (rest * 1.08) / 2.08;
+  const y0 = top + heads[0];
+  const y1 = y0 + h0 + rowGap + heads[1];
+  const y2 = y1 + h1 + rowGap + heads[2];
   const rows = [
-    { y: top, h: h0 },
-    { y: top + h0 + gap, h: h1 },
-    { y: top + h0 + h1 + gap * 2, h: third },
+    { y: y0, h: h0, head: heads[0] },
+    { y: y1, h: h1, head: heads[1] },
+    { y: y2, h: third, head: heads[2] },
   ];
-  return { left, labelW, colW, gap, cols, rows, spanX: cols[0], spanW: colW * 6 + gap * 5 };
+  return { left, labelW, colW, gap, cols, rows, narrow, spanX: cols[0], spanW: colW * 6 + gap * 5 };
 }
 
 /* ============================================================================================
@@ -616,6 +625,49 @@ function scene(port, gridOf) {
   function statusColor(key) {
     return key === "secure" ? pal["die-ok"] : key === "warning" ? pal["die-warn"] : pal["die-short"];
   }
+  // 막대 밑 둘째 줄 — 부족한 달만 부족 대수를 세우고, 나머지는 상태 이름만 단다.
+  const isShort = (b) => b.status === "shortage" && b.short != null && b.short > 0;
+  const statusText = (b) => (isShort(b) ? `${sum.text.shortage} ${b.short}대` : sum.text[b.status] || "");
+  const valueText = (v, d) => (v == null ? "—" : Number(v).toFixed(d));
+
+  // ---- 글자 자리 맞추기. 배치(`layoutSummary`)에서 한 번만 잰다 — 프레임마다는 그리기만 한다.
+  // 사각형은 {x, y, w, h}(CSS px)다.
+  const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  // 지금 글꼴(g.font)로 쓴 글자의 상자. y 는 글자 바탕선, px 는 글자 크기다.
+  function textBox(text, x, y, align, px) {
+    const w = g.measureText(String(text)).width;
+    const x0 = align === "left" ? x : align === "right" ? x - w : x - w / 2;
+    return { x: x0 - 2, y: y - px * 0.85 - 1, w: w + 4, h: px + 2 };
+  }
+  // 후보 자리를 차례로 보며 판(frame) 안에 들고 장애물과 겹치지 않는 첫 자리를 고른다. 없으면 null.
+  function freeSpot(text, px, spots, obstacles, frame) {
+    for (const spot of spots) {
+      const box = textBox(text, spot.x, spot.y, spot.align, px);
+      const inside =
+        box.x >= frame.x && box.y >= frame.y && box.x + box.w <= frame.x + frame.w && box.y + box.h <= frame.y + frame.h;
+      if (inside && !obstacles.some((o) => overlaps(box, o))) return { ...spot, box };
+    }
+    return null;
+  }
+  // 선분을 3px 마다 작은 상자로 바꾼다 — 글자가 선 위에 얹히는지 볼 때 쓴다.
+  function segmentBoxes(x1, y1, x2, y2) {
+    const steps = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / 3));
+    const boxes = [];
+    for (let k = 0; k <= steps; k++) {
+      boxes.push({ x: x1 + ((x2 - x1) * k) / steps - 1, y: y1 + ((y2 - y1) * k) / steps - 1, w: 2, h: 2 });
+    }
+    return boxes;
+  }
+  function widest(font, texts) {
+    g.font = font;
+    return Math.max(0, ...texts.map((t) => g.measureText(String(t)).width));
+  }
+  // 여러 글자를 한 크기로 폭(max)에 맞춘다. 기본 크기에서 넘치면 비례해 줄이고(0.5px 단위) 바닥(floor)
+  // 아래로는 내리지 않는다. 캔버스 글자 폭은 크기에 비례하므로 기본 크기에서 한 번 재면 된다.
+  function fitPx(texts, weight, base, floor, family, max) {
+    const w = widest(`${weight} ${base}px ${family}`, texts);
+    return w <= max ? base : Math.max(floor, Math.floor(((base * max) / w) * 2) / 2);
+  }
 
   // 배치는 값이 닿을 때와 창 크기가 바뀔 때 한 번 정한다. 프레임마다는 그리기만 한다.
   function layoutSummary() {
@@ -643,6 +695,42 @@ function scene(port, gridOf) {
     const lineBot = line.y + line.h - 30;
     const yLine = (v) => lineBot - ((v - lo) / (hi - lo)) * Math.max(1, lineBot - lineTop);
     const points = sum.density.map((v, i) => (v == null ? null : { x: colX(i), y: yLine(v), v }));
+    // 눈금 글자는 왼쪽 끝(기본) → 오른쪽 끝 → 눈금선 아래 왼쪽·오른쪽 차례로, 점·점 위 값·선·달 이름과
+    // 겹치지 않는 첫 자리에 단다. 칸이 좁으면 첫 점이 왼쪽 끝 눈금 글자 자리에 온다. 어디에도 자리가
+    // 없으면 그 눈금 글자는 쓰지 않는다 — 값은 점 위에 있다.
+    const lineObstacles = [];
+    const drawn = points.filter(Boolean);
+    g.font = `700 14px ${numStack}`;
+    for (const pt of drawn) {
+      lineObstacles.push({ x: pt.x - 7, y: pt.y - 7, w: 14, h: 14 }, textBox(round(pt.v, 2), pt.x, pt.y - 12, "center", 14));
+    }
+    for (let k = 1; k < drawn.length; k++) {
+      lineObstacles.push(...segmentBoxes(drawn[k - 1].x, drawn[k - 1].y, drawn[k].x, drawn[k].y));
+    }
+    g.font = `500 14px ${bodyStack}`;
+    sum.months.forEach((m, i) => lineObstacles.push(textBox(m, colX(i), line.y + line.h - 9, "center", 14)));
+    const digits = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+    g.font = `500 10px ${bodyStack}`;
+    const tickLabels = ticks.map((v) => {
+      const y = yLine(v);
+      const text = `${v.toFixed(digits)}억Gb`;
+      const left = line.x + 6;
+      const right = line.x + line.w - 6;
+      const spot = freeSpot(
+        text,
+        10,
+        [
+          { x: left, y: y - 4, align: "left" },
+          { x: right, y: y - 4, align: "right" },
+          { x: left, y: y + 12, align: "left" },
+          { x: right, y: y + 12, align: "right" },
+        ],
+        lineObstacles,
+        line,
+      );
+      if (spot) lineObstacles.push(spot.box);
+      return spot && { text, x: spot.x, y: spot.y, align: spot.align };
+    });
     // 막대: 0 에서 시작한다. 기준선과 가장 큰 값이 다 들어오도록 위를 잡는다.
     const rates = sum.bn.filter(Boolean).map((b) => b.rate);
     // 기준은 달마다 하나다(`sum.secure[i]`). 가장 높은 기준선까지 들어오게 잡는다.
@@ -657,21 +745,104 @@ function scene(port, gridOf) {
     sum.bn.forEach((b, i) => {
       if (b && (lowest < 0 || b.rate < sum.bn[lowest].rate)) lowest = i;
     });
-    // 시트: 달 · Density · Wafer 계획 · 도넛. 도넛은 남은 칸의 짧은 쪽에 맞춘다.
-    const sheets = G.cols.slice(0, n).map((x, i) => {
-      const s = { x, y: G.rows[2].y, w: G.colW, h: G.rows[2].h, i };
-      const top = s.y + 10;
-      const kv1 = top + 20 + 6;
-      const kv2 = kv1 + 22 + 6;
-      const donutTop = kv2 + 22 + 6;
-      const donutH = Math.max(0, s.y + s.h - 10 - donutTop);
-      const box = Math.max(0, Math.min(s.w - 24, donutH));
-      return { ...s, top, kv1, kv2, box, cx: s.x + s.w / 2, cy: donutTop + donutH / 2 };
+    // 막대 위 확보율(15px)과 막대 밑 상태(14px)는 제 칸 폭 안에만 쓴다 — 칸 사이 간격이 옆 칸 글자와의
+    // 틈으로 남는다. 넘치면 여섯 칸을 같은 크기로 함께 줄인다(넓은 화면에서는 그대로다).
+    const room = Math.max(1, G.colW - 2);
+    const shown = sum.bn.filter(Boolean);
+    const ratePx = fitPx(shown.map((b) => `${round(b.rate, 1)}%`), 700, 15, 10, numStack, room);
+    const statusPx = fitPx(shown.map(statusText), 700, 14, 10, bodyStack, room);
+    // 기준선. 기준은 **달마다** 온다(월별 기준). 같은 값이 이어지는 달끼리 한 구간으로 묶어 그 칸 폭만큼
+    // 긋고, 값이 바뀌는 자리는 세로로 이어 계단으로 만든다. 모든 달이 같으면 판 전체를 가로지르는 선 한 줄이다.
+    const edgeLeft = (i) => (i === 0 ? bars.x : G.cols[i] - G.gap / 2);
+    const edgeRight = (i) => (i === n - 1 ? bars.x + bars.w : G.cols[i] + G.colW + G.gap / 2);
+    const thresholds = [
+      [sum.warning || [], sum.warning_label || [], [4, 4], true],
+      [sum.secure || [], sum.secure_label || [], [1, 4], false],
+    ].map(([values, labels, dash, alignLeft]) => {
+      const runs = [];
+      for (let i = 0; i < n; i += 1) {
+        const v = values[i];
+        if (v == null) continue;
+        const last = runs[runs.length - 1];
+        if (last && last.end === i - 1 && last.v === v) last.end = i;
+        else runs.push({ start: i, end: i, v, label: labels[i] || `${v}%` });
+      }
+      return { dash, alignLeft, runs };
     });
-    sumL = { G, line, bars, colX, ticks, step, lineBot, points, yLine, max, barTop, barBot, yBar, bw, lowest, sheets };
-    // 말풍선 자리. 그리는 자리와 같은 값으로 메인 스레드에 돌려준다.
+    // 기준선 이름표 자리. 기본은 경고 기준이 구간 왼쪽 선 아래, 확보 기준이 구간 오른쪽 선 위다(선 둘이 몇 px
+    // 떨어져 있어 양 끝에 나눠 단다). 칸이 좁아 막대·확보율 글자·「최저」·기준선·다른 이름표에 닿으면 같은 쪽의
+    // 구간 다른 끝 → 막대 사이 → 선의 다른 쪽 차례로 옮긴다. 어디에도 자리가 없으면 기본 자리에 바탕을 깔아 단다.
+    const barObstacles = [];
+    g.font = `700 ${ratePx}px ${numStack}`;
+    sum.bn.forEach((b, i) => {
+      if (!b) return;
+      const top = yBar(b.rate);
+      barObstacles.push({ x: colX(i) - bw / 2, y: top, w: bw, h: barBot - top });
+      barObstacles.push(textBox(`${round(b.rate, 1)}%`, colX(i), top - 7, "center", ratePx));
+    });
+    if (lowest >= 0) {
+      g.font = `600 11px ${bodyStack}`;
+      barObstacles.push(textBox(sum.text.lowest, colX(lowest), yBar(sum.bn[lowest].rate) - 30, "center", 11));
+    }
+    for (const t of thresholds) {
+      t.runs.forEach((run, r) => {
+        const y = Math.round(yBar(run.v)) + 0.5;
+        const x0 = edgeLeft(run.start);
+        barObstacles.push({ x: x0, y: y - 1, w: edgeRight(run.end) - x0, h: 2 });
+        const prev = t.runs[r - 1];
+        if (prev && prev.end === run.start - 1) {
+          const py = Math.round(yBar(prev.v)) + 0.5;
+          barObstacles.push({ x: x0 - 1, y: Math.min(py, y), w: 2, h: Math.abs(py - y) });
+        }
+      });
+    }
+    g.font = `500 10px ${bodyStack}`;
+    for (const t of thresholds) {
+      for (const run of t.runs) {
+        const y = Math.round(yBar(run.v)) + 0.5;
+        const start = { x: edgeLeft(run.start) + 6, align: "left" };
+        const end = { x: edgeRight(run.end) - 6, align: "right" };
+        const across = t.alignLeft ? [start, end] : [end, start];
+        for (let i = run.start; i < run.end; i++) across.push({ x: (colX(i) + colX(i + 1)) / 2, align: "center" });
+        const sides = t.alignLeft ? [y + 12, y - 4] : [y - 4, y + 12];
+        const spots = sides.flatMap((sy) => across.map((p) => ({ ...p, y: sy })));
+        const spot = freeSpot(run.label, 10, spots, barObstacles, bars);
+        const fallback = { ...spots[0], box: textBox(run.label, spots[0].x, spots[0].y, spots[0].align, 10), backed: true };
+        run.spot = spot || fallback;
+        barObstacles.push(run.spot.box);
+      }
+    }
+    const sheet = layoutSheets(G, n);
+    const sheets = sheet.cards;
+    sumL = {
+      G,
+      line,
+      bars,
+      colX,
+      ticks,
+      tickLabels,
+      step,
+      lineBot,
+      points,
+      yLine,
+      max,
+      barTop,
+      barBot,
+      yBar,
+      bw,
+      lowest,
+      ratePx,
+      statusPx,
+      thresholds,
+      edgeLeft,
+      edgeRight,
+      sheet,
+      sheets,
+    };
+    // 말풍선 자리. 그리는 자리와 같은 값으로 메인 스레드에 돌려준다. 그리지 않는 도넛(`box` 0)은 자리도 없다.
     const hits = [];
     sheets.forEach((s) => {
+      if (!s.box) return;
       const r = s.box * 0.36;
       const half = s.box * 0.065;
       let acc = 0;
@@ -689,6 +860,85 @@ function scene(port, gridOf) {
     port.postMessage({ type: "hits", hits });
   }
 
+  // 월별 시트 — 달 · Density · Wafer 계획 · 도넛. 이름은 왼쪽, 값(18px)과 단위는 오른쪽이다. 칸이 좁으면
+  // 값이 이름을 덮는다(1100px 창이면 「Density」의 y). 그래서 가장 긴 글자를 재어 여섯 칸을 한 모양으로 정한다:
+  //   ① 이름 · 값 · 단위가 한 줄에 들어가면 그대로(넓은 화면의 기본 모양).
+  //   ② 값을 바닥(SHEET_VALUE_FLOOR — 요약의 다른 숫자 글자와 같은 14px)까지 줄여 한 줄에 넣는다.
+  //   ③ 그래도 안 되면 이름을 값 위 한 줄로 내리고 값은 다시 18px 부터 맞춘다(`stacked`).
+  //   ④ 그마저 안 되는 칸(휴대폰)은 시트를 세 칸씩 두 줄로 접는다(`wrap`).
+  // 값은 세기가 끝난 마지막 글자로 잰다 — 셀 때는 자릿수가 같거나 적고, 움직임을 줄여도 같은 배치다.
+  // 도넛은 남은 자리의 짧은 쪽에 맞추고 40px 이 안 되면 그리지 않는다(말풍선 자리도 함께 없다). 가운데
+  // 글자는 8px 이상일 때만 쓴다.
+  const SHEET_PAD = 12;
+  const SHEET_VALUE_PX = 18;
+  const SHEET_VALUE_FLOOR = 14;
+  const SHEET_LABEL_LINE = 13;
+  function layoutSheets(G, n) {
+    const rows = [
+      { label: "Density", values: sum.density, digits: 2, unit: "억Gb" },
+      { label: sum.text.wafer, values: sum.wafer, digits: 0, unit: "K" },
+    ].map((row) => ({
+      ...row,
+      labelW: widest(`500 11px ${bodyStack}`, [row.label]),
+      unitW: widest(`500 10px ${bodyStack}`, [row.unit]),
+      valueW: widest(`700 ${SHEET_VALUE_PX}px ${numStack}`, row.values.slice(0, n).map((v) => valueText(v, row.digits))),
+    }));
+    // 값 글자 크기. 한 줄이면 이름 뒤 8px 를 띄우고 남는 폭, 두 줄이면 단위만 뺀 폭에 맞춘다.
+    const valuePx = (inner, stacked) =>
+      Math.min(
+        SHEET_VALUE_PX,
+        ...rows.map((r) => {
+          const room = inner - r.unitW - 2 - (stacked ? 0 : r.labelW + 8);
+          return r.valueW > 0 ? Math.floor(((SHEET_VALUE_PX * room) / r.valueW) * 2) / 2 : SHEET_VALUE_PX;
+        }),
+      );
+    // 칸 안쪽 여백은 12px, 100px 가 안 되는 칸은 8px 이다(760px 바로 위 창에서 값이 바닥 아래로 내려가
+    // 시트가 접히지 않게).
+    const choose = (w) => {
+      const pad = w >= 100 ? SHEET_PAD : 8;
+      const inner = w - pad * 2;
+      const inline = valuePx(inner, false);
+      if (inline >= SHEET_VALUE_FLOOR) return { stacked: false, px: inline, inner, pad };
+      const stacked = valuePx(inner, true);
+      if (stacked >= SHEET_VALUE_FLOOR && rows.every((r) => r.labelW <= inner)) return { stacked: true, px: stacked, inner, pad };
+      return null;
+    };
+    let wrap = false;
+    let cellW = G.colW;
+    let fitted = choose(cellW);
+    if (!fitted && n > 3) {
+      wrap = true;
+      cellW = (G.spanW - G.gap * 2) / 3;
+      fitted = choose(cellW);
+    }
+    if (!fitted) {
+      // 이보다 좁은 화면은 없다고 보지만, 그래도 겹치지는 않게 바닥 아래로 줄이고 이름은 줄임표로 자른다.
+      const inner = Math.max(1, cellW - 16);
+      fitted = { stacked: true, px: Math.max(8, valuePx(inner, true)), inner, pad: 8 };
+    }
+    g.font = `500 11px ${bodyStack}`;
+    for (const r of rows) r.text = fitted.stacked ? fit(r.label, fitted.inner) : r.label;
+    // 달 글자는 자간(.4px)만큼 덜어 잰다.
+    const monthPx = fitPx(sum.months, 800, 20, 12, fontStack, fitted.inner - 0.4 * 6);
+    const rowH = fitted.stacked ? SHEET_LABEL_LINE + Math.ceil(fitted.px) + 3 : 22;
+    const lines = wrap ? Math.ceil(n / 3) : 1;
+    const cardH = (G.rows[2].h - G.gap * (lines - 1)) / lines;
+    const cards = [];
+    for (let i = 0; i < n; i++) {
+      const x = wrap ? G.spanX + (i % 3) * (cellW + G.gap) : G.cols[i];
+      const y = G.rows[2].y + (wrap ? Math.floor(i / 3) * (cardH + G.gap) : 0);
+      const top = y + 10;
+      const kv1 = top + 20 + 6;
+      const kv2 = kv1 + rowH + 6;
+      const donutTop = kv2 + rowH + 6;
+      const donutH = Math.max(0, y + cardH - 10 - donutTop);
+      const fits = Math.max(0, Math.min(cellW - 24, donutH));
+      const box = fits >= 40 ? fits : 0;
+      cards.push({ x, y, w: cellW, h: cardH, i, top, kv: [kv1, kv2], box, cx: x + cellW / 2, cy: donutTop + donutH / 2 });
+    }
+    return { ...fitted, wrap, rows, monthPx, cards };
+  }
+
   function drawLine(c) {
     const L = sumL;
     const k = OUT(clamp01((c - 60) / 700));
@@ -699,10 +949,8 @@ function scene(port, gridOf) {
     g.translate(0, 18 * (1 - k));
     panel(line.x, line.y, line.w, line.h);
     g.font = `500 10px ${bodyStack}`;
-    g.textAlign = "left";
     g.textBaseline = "alphabetic";
-    // 눈금 글자는 간격의 자릿수만큼 찍는다(0.05 간격이면 둘째 자리).
-    const digits = Math.max(0, -Math.floor(Math.log10(L.step) + 1e-9));
+    // 눈금 글자는 간격의 자릿수만큼 찍고(0.05 간격이면 둘째 자리), 자리는 배치가 골라 둔 곳이다.
     for (const v of L.ticks) {
       const y = L.yLine(v);
       g.strokeStyle = rgba(textColor, 0.08);
@@ -711,8 +959,12 @@ function scene(port, gridOf) {
       g.moveTo(line.x, Math.round(y) + 0.5);
       g.lineTo(line.x + line.w, Math.round(y) + 0.5);
       g.stroke();
-      g.fillStyle = pal.faint;
-      g.fillText(`${v.toFixed(digits)}억Gb`, line.x + 6, y - 4);
+    }
+    g.fillStyle = pal.faint;
+    for (const t of L.tickLabels) {
+      if (!t) continue;
+      g.textAlign = t.align;
+      g.fillText(t.text, t.x, t.y);
     }
     // 달 이름은 점 위 값 글자(14px)와 같은 크기다(2026-10-03 사용자 결정).
     g.font = `500 14px ${bodyStack}`;
@@ -794,54 +1046,29 @@ function scene(port, gridOf) {
     g.globalAlpha = k;
     g.translate(0, 18 * (1 - k));
     panel(bars.x, bars.y, bars.w, bars.h);
-    // 기준선 둘은 몇 px 떨어져 있어 이름표를 양 끝에 나눠 단다(경고 기준은 왼쪽 선 아래, 확보 기준은 오른쪽 선 위).
-    // 선은 정확한 기준(109.5) 자리에 긋고, 이름표는 사사오입한 글자(`*_label`, 110%)를 단다.
-    // 기준은 **달마다** 온다(월별 기준). 같은 값이 이어지는 달끼리 한 구간으로 묶어 그 칸 폭만큼 긋고,
-    // 값이 바뀌는 자리는 세로로 이어 계단으로 만든다. 이름표는 구간마다 단다. 모든 달이 같으면 구간이
-    // 하나라 판 전체를 가로지르는 선 한 줄이다.
-    g.font = `500 10px ${bodyStack}`;
+    // 기준선(구간·계단)과 이름표 자리는 배치(`layoutSummary`)가 정한다. 선은 정확한 기준(109.5) 자리에 긋고,
+    // 이름표는 사사오입한 글자(`*_label`, 110%)를 단다. 선은 막대 밑에, 이름표는 막대 위에 그린다 — 자리가
+    // 없어 바탕을 깐 이름표가 막대에 가리지 않게.
     g.textBaseline = "alphabetic";
-    const G = L.G;
-    const n = sum.months.length;
-    const edgeLeft = (i) => (i === 0 ? bars.x : G.cols[i] - G.gap / 2);
-    const edgeRight = (i) => (i === n - 1 ? bars.x + bars.w : G.cols[i] + G.colW + G.gap / 2);
-    for (const [values, labels, dash, alignLeft] of [
-      [sum.warning || [], sum.warning_label || [], [4, 4], true],
-      [sum.secure || [], sum.secure_label || [], [1, 4], false],
-    ]) {
-      const runs = [];
-      for (let i = 0; i < n; i += 1) {
-        const v = values[i];
-        if (v == null) continue;
-        const last = runs[runs.length - 1];
-        if (last && last.end === i - 1 && last.v === v) last.end = i;
-        else runs.push({ start: i, end: i, v, label: labels[i] });
-      }
+    for (const t of L.thresholds) {
       g.strokeStyle = rgba(textColor, 0.28);
       g.lineWidth = 1;
-      g.setLineDash(dash);
+      g.setLineDash(t.dash);
       g.beginPath();
-      runs.forEach((run, r) => {
+      t.runs.forEach((run, r) => {
         const y = Math.round(L.yBar(run.v)) + 0.5;
-        const x0 = edgeLeft(run.start);
-        const prev = runs[r - 1];
+        const x0 = L.edgeLeft(run.start);
+        const prev = t.runs[r - 1];
         if (prev && prev.end === run.start - 1) {
           g.moveTo(x0, Math.round(L.yBar(prev.v)) + 0.5);
           g.lineTo(x0, y);
         } else {
           g.moveTo(x0, y);
         }
-        g.lineTo(edgeRight(run.end), y);
+        g.lineTo(L.edgeRight(run.end), y);
       });
       g.stroke();
       g.setLineDash([]);
-      g.fillStyle = pal.muted;
-      g.textAlign = alignLeft ? "left" : "right";
-      runs.forEach((run) => {
-        const y = Math.round(L.yBar(run.v)) + 0.5;
-        const x = alignLeft ? edgeLeft(run.start) + 6 : edgeRight(run.end) - 6;
-        g.fillText(run.label || `${run.v}%`, x, alignLeft ? y + 12 : y - 4);
-      });
     }
     sum.bn.forEach((b, i) => {
       const cx = L.colX(i);
@@ -865,12 +1092,13 @@ function scene(port, gridOf) {
       const a = clamp01((c - 800 - i * 90) / 400);
       if (a > 0) {
         g.globalAlpha = k * a;
-        g.font = `700 15px ${numStack}`;
+        g.font = `700 ${L.ratePx}px ${numStack}`;
         g.fillStyle = pal.text;
         g.fillText(`${round(b.rate, 1)}%`, cx, top - 7);
         g.globalAlpha = k;
       }
-      // 막대 밑 두 줄(공정 이름·상태)은 생산계획 값 글자와 같은 14px 다(2026-10-03 사용자 결정).
+      // 막대 밑 두 줄(공정 이름·상태)은 생산계획 값 글자와 같은 14px 다(2026-10-03 사용자 결정). 상태 글자는
+      // 칸 간격을 넘을 때만 여섯 칸을 함께 줄인다(`statusPx` — 휴대폰 폭).
       g.font = `500 14px ${bodyStack}`;
       g.fillStyle = pal.muted;
       g.fillText(fit(b.process, L.G.colW - 8), cx, L.barBot + 19);
@@ -878,13 +1106,26 @@ function scene(port, gridOf) {
       const a2 = clamp01((c - 900 - i * 90) / 400);
       if (a2 > 0) {
         g.globalAlpha = k * a2;
-        const short = b.status === "shortage" && b.short != null && b.short > 0;
-        g.font = `700 14px ${bodyStack}`;
-        g.fillStyle = short ? color : pal.muted;
-        g.fillText(short ? `${sum.text.shortage} ${b.short}대` : sum.text[b.status] || "", cx, L.barBot + 38);
+        g.font = `700 ${L.statusPx}px ${bodyStack}`;
+        g.fillStyle = isShort(b) ? color : pal.muted;
+        g.fillText(statusText(b), cx, L.barBot + 38);
         g.globalAlpha = k;
       }
     });
+    g.font = `500 10px ${bodyStack}`;
+    for (const t of L.thresholds) {
+      for (const run of t.runs) {
+        const spot = run.spot;
+        if (spot.backed) {
+          rr(spot.box.x, spot.box.y, spot.box.w, spot.box.h, 3);
+          g.fillStyle = rgba(surface, 0.86);
+          g.fill();
+        }
+        g.fillStyle = pal.muted;
+        g.textAlign = spot.align;
+        g.fillText(run.label, spot.x, spot.y);
+      }
+    }
     if (L.lowest >= 0) {
       const e = OUT(clamp01((c - 1500) / 500));
       if (e > 0) {
@@ -901,6 +1142,7 @@ function scene(port, gridOf) {
 
   function drawSheets(c) {
     const L = sumL;
+    const K = L.sheet;
     for (const s of L.sheets) {
       const i = s.i;
       const e = OUT(clamp01((c - 120 - i * 110) / 760));
@@ -916,11 +1158,11 @@ function scene(port, gridOf) {
       g.scale(sc, sc);
       g.translate(-mx, -my);
       panel(s.x, s.y, s.w, s.h);
-      const padX = 12;
+      const padX = K.pad;
       g.textBaseline = "alphabetic";
       g.textAlign = "left";
       g.fillStyle = pal.text;
-      g.font = `800 20px ${fontStack}`;
+      g.font = `800 ${K.monthPx}px ${fontStack}`;
       try {
         g.letterSpacing = "0.4px";
       } catch (error) {
@@ -933,27 +1175,27 @@ function scene(port, gridOf) {
         /* 자간을 모르는 캔버스 */
       }
       const cnt = COUNT(clamp01((c - 260 - i * 110) / 900));
-      const rows = [
-        ["Density", sum.density[i], 2, "억Gb", s.kv1],
-        [sum.text.wafer, sum.wafer[i], 0, "K", s.kv2],
-      ];
-      for (const [label, value, digits, unit, top] of rows) {
-        const base = top + 17;
+      // 이름은 왼쪽, 값과 단위는 오른쪽. 한 줄(`stacked` 아님)이면 셋이 같은 바탕선이고, 두 줄이면 이름이
+      // 값 위 줄로 올라간다. 글자 크기·모양은 배치(`layoutSheets`)가 여섯 칸에 한 번 정해 둔 것이다.
+      K.rows.forEach((row, r) => {
+        const top = s.kv[r];
+        const base = K.stacked ? top + SHEET_LABEL_LINE + Math.round(K.px * 0.85) + 1 : top + 17;
+        const right = s.x + s.w - padX;
+        const value = row.values[i];
         g.font = `500 11px ${bodyStack}`;
         g.textAlign = "left";
         g.fillStyle = pal.muted;
-        g.fillText(label, s.x + padX, base);
+        g.fillText(row.text, s.x + padX, K.stacked ? top + 10 : base);
         g.textAlign = "right";
         g.font = `500 10px ${bodyStack}`;
-        const unitW = g.measureText(unit).width;
-        g.fillText(unit, s.x + s.w - padX, base);
-        g.font = `700 18px ${numStack}`;
+        g.fillText(row.unit, right, base);
+        g.font = `700 ${K.px}px ${numStack}`;
         g.fillStyle = pal.text;
-        g.fillText(value == null ? "—" : (value * cnt).toFixed(digits), s.x + s.w - padX - unitW - 2, base);
-      }
+        g.fillText(value == null ? "—" : (value * cnt).toFixed(row.digits), right - row.unitW - 2, base);
+      });
       // 도넛: 조각마다 50ms 씩 늦게 자란다. 조각 사이는 둘레의 0.9% 를 비운다.
       const slices = sum.mix[i] || [];
-      if (s.box > 8 && slices.length) {
+      if (s.box > 0 && slices.length) {
         const r = s.box * 0.36;
         g.lineWidth = s.box * 0.13;
         g.lineCap = "butt";
@@ -969,14 +1211,18 @@ function scene(port, gridOf) {
           }
           acc += share;
         });
-        const [topP, topShare] = slices.reduce((a, b) => (b[1] > a[1] ? b : a), slices[0]);
-        g.textAlign = "center";
-        g.fillStyle = pal.text;
-        g.font = `700 ${Math.round(s.box * 0.15)}px ${numStack}`;
-        g.fillText(`${Math.round(topShare * 100)}%`, s.cx, s.cy - s.box * 0.02);
-        g.font = `500 ${Math.max(8, Math.round(s.box * 0.08))}px ${bodyStack}`;
-        g.fillStyle = pal.muted;
-        g.fillText(fit(sum.products[topP] ? sum.products[topP].name : "", s.box * 0.62), s.cx, s.cy + s.box * 0.12);
+        // 가운데 글자(가장 큰 조각의 비중·제품)는 8px 이상으로 쓸 수 있을 때만 단다.
+        const sharePx = Math.round(s.box * 0.15);
+        if (sharePx >= 8) {
+          const [topP, topShare] = slices.reduce((a, b) => (b[1] > a[1] ? b : a), slices[0]);
+          g.textAlign = "center";
+          g.fillStyle = pal.text;
+          g.font = `700 ${sharePx}px ${numStack}`;
+          g.fillText(`${Math.round(topShare * 100)}%`, s.cx, s.cy - s.box * 0.02);
+          g.font = `500 ${Math.max(8, Math.round(s.box * 0.08))}px ${bodyStack}`;
+          g.fillStyle = pal.muted;
+          g.fillText(fit(sum.products[topP] ? sum.products[topP].name : "", s.box * 0.62), s.cx, s.cy + s.box * 0.12);
+        }
       }
       g.restore();
     }
@@ -1386,8 +1632,12 @@ function createOverlay(api, data, initial, syncToolbar) {
       frame0,
     },
     (m) => {
-      if (m.type === "hits") hits = m.hits || [];
-      else if (m.type === "summary-ready") {
+      if (m.type === "hits") {
+        hits = m.hits || [];
+        // 도넛을 그릴 자리가 없는 화면(휴대폰 — 시트를 접는다)에서는 제품 범례도 걷는다. 장면이 도넛 자리를
+        // 말풍선 자리(`seg`)로 돌려주므로 그것으로 안다 — 두 곳에서 따로 셈하지 않는다.
+        labels.classList.toggle("no-mix", !hits.some((h) => h.k === "seg"));
+      } else if (m.type === "summary-ready") {
         prepared = !!m.ok;
         preparedWaiters.splice(0).forEach((resolve) => resolve());
         render();
@@ -1581,15 +1831,17 @@ function createOverlay(api, data, initial, syncToolbar) {
     placeLabels();
   }
 
+  // 행 이름 자리. 넓은 화면은 왼쪽 칸에 줄 높이만큼, 좁은 화면은 줄 위 띠(`head`)에 차트 폭만큼 둔다 —
+  // 띠 안에서는 intro.css 의 @media (max-width: 760px) 가 이름과 범례를 한 줄로 잇는다.
   function placeLabels() {
     if (!summary) return;
     const G = summaryGrid(window.innerWidth, window.innerHeight);
     $$(".sum-label").forEach((el, i) => {
       const row = G.rows[i];
-      el.style.left = `${G.left}px`;
-      el.style.width = `${Math.max(0, G.labelW - 6)}px`;
-      el.style.top = `${row.y}px`;
-      el.style.height = `${row.h}px`;
+      el.style.left = `${G.narrow ? G.spanX : G.left}px`;
+      el.style.width = `${Math.max(0, G.narrow ? G.spanW : G.labelW - 6)}px`;
+      el.style.top = `${G.narrow ? row.y - row.head : row.y}px`;
+      el.style.height = `${G.narrow ? Math.max(0, row.head - 6) : row.h}px`;
     });
   }
 

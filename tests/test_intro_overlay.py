@@ -334,10 +334,11 @@ def test_summary_threshold_text_is_the_rounded_label_and_the_line_stays_exact() 
     """기준선 이름표는 파이썬이 사사오입한 글자(`*_label`)를 쓰고, 선 자리는 정확한 숫자다.
 
     기준은 달마다 온다 — 같은 값이 이어지는 달끼리 한 구간으로 묶어 계단으로 긋고, 이름표는
-    구간마다 단다(2026-10-06 사용자 결정).
+    구간마다 단다(2026-10-06 사용자 결정). 구간과 이름표 자리는 배치(`layoutSummary`)가 한 번 정하고
+    `drawBars` 는 그리기만 한다.
     """
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
-    scene = js[js.index("function drawBars(") : js.index("function drawSheets(")]
+    scene = js[js.index("function layoutSummary(") : js.index("function drawSheets(")]
 
     assert "[sum.warning || [], sum.warning_label || []," in scene
     assert "[sum.secure || [], sum.secure_label || []," in scene
@@ -361,9 +362,13 @@ def test_summary_legend_names_three_states_without_numbers() -> None:
 
 
 def test_summary_axis_and_bar_labels_match_the_point_value_size() -> None:
-    """생산계획 달 이름, 막대 밑 공정 이름·상태(부족 대수)는 점 위 값 글자와 같은 14px 다."""
+    """생산계획 달 이름, 막대 밑 공정 이름·상태(부족 대수)는 점 위 값 글자와 같은 14px 다.
+
+    상태 글자는 칸 폭을 넘을 때만(휴대폰 폭) 여섯 칸을 함께 줄인다 — 기본 크기는 14px 그대로다.
+    """
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
     scene = js[js.index("function drawLine(") : js.index("function drawSheets(")]
+    layout = js[js.index("function layoutSummary(") : js.index("function layoutSheets(")]
 
     assert "g.font = `700 14px ${numStack}`;" in scene
     assert "sum.months.forEach" in scene
@@ -372,8 +377,75 @@ def test_summary_axis_and_bar_labels_match_the_point_value_size() -> None:
     assert "fit(b.process" in scene
     process_font = scene[: scene.index("fit(b.process")].rsplit("g.font = ", 1)[1]
     assert process_font.startswith("`500 14px ")
-    assert "g.font = `700 14px ${bodyStack}`;" in scene
+    assert "g.font = `700 ${L.statusPx}px ${bodyStack}`;" in scene
+    assert "fitPx(shown.map(statusText), 700, 14, " in layout
     assert "10.5px" not in scene and "700 13px" not in scene
+
+
+def _between(js: str, start: str, end: str) -> str:
+    return js[js.index(start) : js.index(end, js.index(start))]
+
+
+def test_summary_sheet_text_is_fitted_once_in_the_layout() -> None:
+    """월별 시트의 이름·값·단위는 칸 폭을 재어 겹치지 않게 놓는다.
+
+    재지 않으면 1100px 창에서 값이 「Density」를 덮는다. 배치(`layoutSheets`)가 가장 긴 글자를
+    한 번 재어 여섯 칸의 모양을 정하고 `drawSheets` 는 그 값으로 그리기만 한다 — 한 줄(18px) →
+    값 줄이기(바닥 14px) → 이름을 값 위 줄로 → 시트 접기 차례다. 재는 글자는 세기가 끝난 마지막
+    값이라 움직임을 줄여도(`reduce`) 같은 배치다.
+    """
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    layout = _between(js, "function layoutSheets(", "function drawLine(")
+    draw = _between(js, "function drawSheets(", "function drawSummary(")
+
+    assert "const SHEET_VALUE_PX = 18;" in js and "const SHEET_VALUE_FLOOR = 14;" in js
+    assert "widest(" in layout and "valueText(v, row.digits)" in layout
+    assert "stacked" in layout and "wrap = true" in layout
+    assert "cnt" not in layout and "reduce" not in layout
+    assert "const sheet = layoutSheets(G, n);" in js
+    # 그리기는 배치가 정한 크기·모양만 쓴다 — 고정 18px 값 글자나 프레임마다 재는 일이 없다.
+    assert "measureText" not in draw and "700 18px" not in draw
+    assert "g.font = `700 ${K.px}px ${numStack}`;" in draw
+    assert "K.stacked" in draw and "s.kv[r]" in draw
+    # 너무 작은 도넛은 그리지 않고, 말풍선 자리도 함께 없앤다.
+    assert "fits >= 40 ? fits : 0" in layout
+    assert "if (!s.box) return;" in js
+
+
+def test_summary_labels_pick_a_free_spot_once_in_the_layout() -> None:
+    """눈금 글자·기준선 이름표는 점·값·막대·확보율 글자와 겹치지 않는 자리를 배치에서 한 번 고른다.
+
+    자리가 없으면 눈금 글자는 쓰지 않고(값은 점 위에 있다), 기준선 이름표는 바탕을 깔아 기본
+    자리에 단다.
+    """
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    layout = _between(js, "function layoutSummary(", "function layoutSheets(")
+    draw_line = _between(js, "function drawLine(", "function drawBars(")
+    draw_bars = _between(js, "function drawBars(", "function drawSheets(")
+
+    assert layout.count("freeSpot(") == 2
+    assert "lineObstacles" in layout and "barObstacles" in layout and "backed: true" in layout
+    assert "L.tickLabels" in draw_line and "fillText(`${v.toFixed(" not in draw_line
+    assert "spot.backed" in draw_bars and "measureText" not in draw_bars
+
+
+def test_summary_rows_stand_above_the_charts_on_narrow_screens() -> None:
+    """760px 이하에서는 행 이름 칸을 없애고 이름을 각 줄 위 띠에 올린다 — 칸을 남기면 여섯 달 칸이
+    30px 로 줄어 달·값·막대 글자가 서로 겹친다(390px). 경계는 intro.css 의 @media 와 같다.
+    """
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    grid = _function_source(js, "summaryGrid")
+    place = _between(js, "function placeLabels(", "function scheduleLabels(")
+
+    assert "const narrow = W <= 760;" in grid
+    assert "const labelW = narrow ? 0 :" in grid and "head: heads[2]" in grid
+    assert "row.y - row.head" in place
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+    narrow_block = css[css.index("@media (max-width: 760px) {") : css.index("@keyframes slide")]
+    assert re.search(r"\.sum-label \{\s*flex-direction: row;", narrow_block)
+    # 도넛을 그리지 않는 화면은 제품 범례도 걷는다 — 장면이 돌려준 도넛 말풍선 자리로 안다.
+    assert 'labels.classList.toggle("no-mix", !hits.some((h) => h.k === "seg"));' in js
+    assert ".sum-labels.no-mix .sum-label:nth-child(3) .legend" in css
 
 
 def test_closing_the_summary_returns_focus_to_the_sidebar_label() -> None:
