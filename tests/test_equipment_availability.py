@@ -284,20 +284,45 @@ def test_inactive_equipment_includes_setup_and_operational_downtime() -> None:
     assert result["상태"].tolist() == ["운영 비가동", "셋업 진행중"]
 
 
-def test_equipment_rejects_missing_required_dates() -> None:
+def test_new_equipment_may_leave_arrival_and_qual_blank() -> None:
+    """반입·Qual 일정은 비워도 저장된다(2026-10-06 사용자 결정). 상태 뜻은 그대로다 — 반입이 비면
+    입고 예정, 반입만 있고 Qual 이 비면 셋업 진행중에 머물러 가용대수에 들지 않는다."""
     equipment = _equipment()
-    equipment.loc[0, "Qual일정"] = None
+    equipment.loc[0, ["반입일정", "Qual일정", "확정상태"]] = None
+    equipment.loc[0, ["제진대일정", "물류일정"]] = None
+    equipment.loc[1, ["Qual일정", "확정상태"]] = None
 
-    with pytest.raises(ValueError, match="필수"):
-        prepare_equipment_master(equipment)
+    prepared = prepare_equipment_master(equipment)
+    status = build_equipment_status_as_of(prepared, _downtime().iloc[0:0], as_of=date(2030, 1, 1))
+
+    assert status["상태"].tolist() == ["입고 예정", "셋업 진행중"]
+    assert status["가용여부"].tolist() == [False, False]
+    assert status["보유여부"].tolist() == [False, True]
 
 
-def test_equipment_rejects_missing_qual_confirmation_status() -> None:
+def test_confirmation_is_required_only_when_a_qual_date_is_present() -> None:
     equipment = _equipment()
     equipment.loc[0, "확정상태"] = None
 
-    with pytest.raises(ValueError, match="확정상태"):
+    with pytest.raises(ValueError, match="Qual일정이 있는 호기.*확정상태가 필수.*EQ-01"):
         prepare_equipment_master(equipment)
+
+    equipment.loc[0, "Qual일정"] = None
+    assert pd.isna(prepare_equipment_master(equipment).loc[0, "확정상태"])
+    # Qual 없이 고른 확정상태도 받는다.
+    equipment.loc[1, "Qual일정"] = None
+    assert prepare_equipment_master(equipment).loc[1, "확정상태"] == "확정"
+
+
+def test_order_checks_still_apply_when_both_dates_exist() -> None:
+    equipment = _equipment()
+    equipment.loc[0, "Qual일정"] = "2026-08-01"
+
+    with pytest.raises(ValueError, match="일정 순서"):
+        prepare_equipment_master(equipment)
+
+    equipment.loc[0, "반입일정"] = None
+    assert prepare_equipment_master(equipment).loc[0, "Qual일정"] == pd.Timestamp("2026-08-01")
 
 
 def test_qual_confirmation_status_does_not_change_availability() -> None:

@@ -52,8 +52,10 @@ def prepare_equipment_baseline(data: pd.DataFrame) -> pd.DataFrame:
         return empty_equipment_baseline()
     _normalize_required_text(result, BASELINE_KEY_COLUMNS, "기존 보유대수")
     counts = pd.to_numeric(result["기존보유대수"], errors="coerce")
-    if not (counts.notna() & counts.ge(0)).all():
-        raise ValueError("기존보유대수는 0 이상의 숫자여야 합니다.")
+    invalid_counts = ~(counts.notna() & counts.ge(0))
+    if invalid_counts.any():
+        examples = _key_examples(result.loc[invalid_counts], BASELINE_KEY_COLUMNS)
+        raise ValueError(f"기존보유대수는 0 이상의 숫자여야 합니다: {examples}")
     result["기존보유대수"] = counts.astype("float64")
     result["비고"] = _optional_text(result["비고"])
     duplicated = result.duplicated(list(BASELINE_KEY_COLUMNS), keep=False)
@@ -106,19 +108,16 @@ def prepare_equipment_master(
 
     for column in DATE_COLUMNS:
         result[column] = _normalize_date(result[column], column)
+    # 반입·Qual 일정은 비워도 된다(2026-10-06 사용자 결정) — 반입이 비면 「입고 예정」, 반입만 있고
+    # Qual 이 비면 「셋업 진행중」에 머물러 날짜가 들어올 때까지 가용대수에 들지 않는다. 확정상태는
+    # Qual 일정의 실행관리 값이라 Qual일정이 있는 신규 호기에만 필수다.
     ordinary = result[STORAGE_FLAG_COLUMN].eq("N") & result["기존설비여부"].eq("N")
-    missing_required_dates = ordinary & (
-        result[ARRIVAL_DATE_COLUMN].isna() | result["Qual일정"].isna()
-    )
-    if missing_required_dates.any():
-        examples = result.loc[missing_required_dates, EQUIPMENT_ID_COLUMN].head(5).tolist()
-        raise ValueError(
-            f"보관·기존설비가 아닌 호기는 반입일정과 Qual일정이 필수입니다: {examples}"
-        )
-    missing_confirmation = ordinary & result["확정상태"].isna()
+    missing_confirmation = ordinary & result["Qual일정"].notna() & result["확정상태"].isna()
     if missing_confirmation.any():
         examples = result.loc[missing_confirmation, EQUIPMENT_ID_COLUMN].head(5).tolist()
-        raise ValueError(f"보관·기존설비가 아닌 호기는 Qual 확정상태가 필수입니다: {examples}")
+        raise ValueError(
+            f"Qual일정이 있는 호기(보관·기존설비 제외)는 Qual 확정상태가 필수입니다: {examples}"
+        )
     invalid_confirmation = result["확정상태"].notna() & ~result["확정상태"].isin(
         QUAL_CONFIRMATION_STATUSES
     )

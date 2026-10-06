@@ -1430,14 +1430,14 @@ def _convert_legacy_equipment(legacy: pd.DataFrame) -> pd.DataFrame:
         result[ARRIVAL_DATE_COLUMN] = legacy_arrival.fillna(legacy_qual)
     else:
         result[ARRIVAL_DATE_COLUMN] = legacy_arrival
-    if isinstance(legacy_qual, pd.Series):
-        result["Qual일정"] = legacy_qual.fillna(pd.Timestamp("2262-04-11"))
-    else:
-        result["Qual일정"] = pd.Timestamp("2262-04-11")
+    # 옛 양산전환일이 없으면 Qual일정도 비운다 — 신규 호기의 빈 Qual 은 「셋업 진행중」에 머문다.
+    result["Qual일정"] = legacy_qual if isinstance(legacy_qual, pd.Series) else None
     result[STORAGE_FLAG_COLUMN] = "N"
     has_legacy_schedule = result[ARRIVAL_DATE_COLUMN].notna()
     result["기존설비여부"] = has_legacy_schedule.map({True: "N", False: "Y"})
-    result["확정상태"] = has_legacy_schedule.map({True: "계획", False: None})
+    # 확정상태는 Qual 일정의 값이라 Qual일정이 있는 신규 호기에만 「계획」을 둔다.
+    has_legacy_qual = has_legacy_schedule & result["Qual일정"].notna()
+    result["확정상태"] = has_legacy_qual.map({True: "계획", False: None})
     result["설비이력"] = legacy.get("비고")
     result["레이아웃표시"] = has_coordinates.map({True: "Y", False: "N"})
     # 옛 리비전에는 모델별 생산성 구분이 없었다. 전부 기준 모델로 본다.

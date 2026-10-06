@@ -45,6 +45,10 @@ from capa_simulation.services.equipment_units import (
     unit_transitions,
 )
 from capa_simulation.services.simulation_cache import get_weekly_equipment_availability
+from capa_simulation.services.undated_equipment import (
+    undated_equipment,
+    undated_equipment_notice,
+)
 
 QUESTION_KEY = "equipment_explorer_question"
 AS_OF_KEY = "equipment_explorer_as_of"
@@ -179,6 +183,17 @@ def _count_chart(frame: pd.DataFrame, column: str, colors: dict[str, str]) -> No
     st.altair_chart(chart, width="stretch")
 
 
+def _undated_caption(equipment: pd.DataFrame) -> None:
+    """일정(반입·Qual)이 비어 가용대수에 들지 못하는 신규 설비 한 줄. 0대면 그리지 않는다.
+
+    `equipment` 는 이 화면의 조건으로 거른 표다. 조건 컬럼(공정·공정구분·투자구분·공정대분류)은
+    모듈 행끼리 같아야 해서 거른 표도 모듈 묶음을 쪼개지 않는다 — 지분이 그대로다.
+    """
+    notice = undated_equipment_notice(undated_equipment(equipment))
+    if notice is not None:
+        st.caption(f":material/event_busy: {notice}")
+
+
 def _availability(
     baseline: pd.DataFrame,
     equipment: pd.DataFrame,
@@ -208,6 +223,7 @@ def _availability(
         f"　총 {_count(total)}대 · 가용 {_count(available)}대 · 비가동 {_count(inactive)}대"
         f" · 가용률 {available / total if total else 0:.1%}"
     )
+    _undated_caption(equipment)
     if view == "공정별 내역":
         st.markdown("#### 공정소분류별 현황")
         _table(
@@ -645,6 +661,7 @@ def render_equipment_explorer(
                     st.caption(
                         f"호기 마스터 {_rows_label(status)} · 집계형 기존 보유대수는 제외됩니다."
                     )
+                    _undated_caption(filtered)
                     column, states, colors = (
                         "상태",
                         EQUIPMENT_STATUSES,

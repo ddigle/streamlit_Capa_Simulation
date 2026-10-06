@@ -136,6 +136,7 @@ export default function (component) {
   const newArrival = q('.sle-new-arrival')
   const newQual = q('.sle-new-qual')
   const newConfirm = q('.sle-new-confirm')
+  const newConfirmRow = newConfirm.closest('.sle-form-row')
   q('.sle-title').textContent = data.title || ''
   const pickBox = q('.sle-pick')
   pickBox.dataset.hint = FAB
@@ -1785,8 +1786,9 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 편집기에서 호기 추가
   // 적용 전까지는 이 편집기 안에만 있다(층 미정·미배치). 호기 마스터가 꼭 요구하는 값만 받는다 — 공정·공정구분·
-  // 투자구분·크기, 그리고 신규 설비면 반입·Qual 일정과 확정상태(기존 설비는 일정이 없어도 된다). 다른 호기의
-  // 일정·확정상태를 베끼지 않는다. 마스터의 나머지 칸은 가용설비에서 채운다.
+  // 투자구분·크기. 신규 설비의 반입·Qual 일정은 비워도 되고(반입이 비면 입고 예정, Qual 이 비면 셋업 진행중으로
+  // 남는다), 확정상태는 Qual 일정을 넣었을 때만 필요하다. 다른 호기의 일정·확정상태를 베끼지 않는다. 마스터의
+  // 나머지 칸은 가용설비에서 채운다.
   const fillSelect = (node, values, blank) => {
     const wanted = [blank === undefined ? null : blank, ...values].filter((v) => v !== null)
     if ([...node.options].map((o) => o.value).join('|') === wanted.join('|')) return
@@ -1795,9 +1797,17 @@ export default function (component) {
   fillSelect(newProcess, (NEW_UNIT.processes || []).map(String))
   fillSelect(newLine, (NEW_UNIT.lines || []).map(String), '')
   fillSelect(newUse, (NEW_UNIT.uses || []).map(String), '')
-  fillSelect(newConfirm, (NEW_UNIT.confirmations || ['계획']).map(String))
+  fillSelect(newConfirm, (NEW_UNIT.confirmations || ['계획']).map(String), '')
   newKind.onchange = () => { newDates.hidden = newKind.value === 'existing' }
   newDates.hidden = newKind.value === 'existing'
+  // 확정상태는 Qual 일정을 넣었을 때만 필요하다 — 그때만 필수로 표시한다(검사는 추가 단추에서).
+  const markConfirmRequired = () => {
+    const needed = Boolean(newQual.value)
+    newConfirm.setAttribute('aria-required', String(needed))
+    newConfirmRow.classList.toggle('is-required', needed)
+  }
+  newQual.oninput = newQual.onchange = markConfirmRequired
+  markConfirmRequired()
   const sizeHint = () => {
     const hint = (NEW_UNIT.sizeHints || {})[newProcess.value]
     return Array.isArray(hint) && hint.length === 2 ? hint : [defaultSize.w, defaultSize.h]
@@ -1823,8 +1833,8 @@ export default function (component) {
     else if (!newProcess.value) error = '공정을 골라 주세요.'
     else if (!(w > 0 && h > 0 && w <= MAX_EXTENT && h <= MAX_EXTENT)) error = `크기는 0 보다 크고 ${MAX_EXTENT} 이하여야 합니다.`
     const existing = newKind.value === 'existing'
-    if (!error && !existing && (!newArrival.value || !newQual.value)) error = '신규 설비는 반입일정과 Qual일정이 필요합니다(기존 설비는 없어도 됩니다).'
-    else if (!error && !existing && newQual.value < newArrival.value) error = 'Qual일정은 반입일정보다 빠를 수 없습니다.'
+    if (!error && !existing && newArrival.value && newQual.value && newQual.value < newArrival.value) error = 'Qual일정은 반입일정보다 빠를 수 없습니다.'
+    else if (!error && !existing && newQual.value && !newConfirm.value) error = 'Qual일정을 넣으면 확정상태를 골라 주세요.'
     newError.textContent = error
     if (error) return
     const item = {

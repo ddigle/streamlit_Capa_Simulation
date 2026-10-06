@@ -95,6 +95,34 @@ def _panel_app() -> None:
         static = static.loc[static["공정"] != "Etch"]
         required = required.loc[required["공정"] != "Etch"]
 
+    units = None
+    if st.session_state.get("undated_units", False):
+        from capa_simulation.services.equipment_contract import EQUIPMENT_COLUMNS
+
+        # 날짜가 빈 신규 호기 둘(Die Attach 반입 미정, Etch Qual 미정)과 일정이 다 있는 EQ-1.
+        rows = [
+            ("EQ-1", "Die Attach", date(2020, 1, 1), date(2020, 1, 5), "완료"),
+            ("EQ-NEW", "Die Attach", None, None, None),
+            ("EQ-ETCH", "Etch", date(2026, 9, 1), None, None),
+        ]
+        units = pd.DataFrame(
+            [
+                {
+                    **{column: None for column in EQUIPMENT_COLUMNS},
+                    "설비명": unit,
+                    "공정소분류": process,
+                    "반입일정": arrival,
+                    "Qual일정": qual,
+                    "확정상태": confirm,
+                    "보관유무": "N",
+                    "기존설비여부": "N",
+                    "레이아웃표시": "N",
+                }
+                for unit, process, arrival, qual, confirm in rows
+            ],
+            columns=EQUIPMENT_COLUMNS,
+        )
+
     is_open = st.toggle("비교 탭 열기", value=True, key="test_gap_panel_open")
     render_availability_gap_panel(
         spans=spans,
@@ -109,6 +137,7 @@ def _panel_app() -> None:
         conversion_ratios={"EQ-1": 1.5},
         required_equipment=None if st.session_state.get("missing_required", False) else required,
         owner_tab=SimpleNamespace(open=is_open),
+        units=units,
     )
 
 
@@ -443,3 +472,30 @@ def test_the_cross_check_leaves_out_a_process_missing_from_the_reference() -> No
     app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
     infos = " ".join(item.value for item in app.info)
     assert "공정명을 기준정보와 맞추면" in infos
+
+
+def _undated_captions(app: AppTest) -> list[str]:
+    return [caption.value for caption in app.caption if "일정 미정" in caption.value]
+
+
+def test_undated_units_are_named_in_the_scope_the_counts_use() -> None:
+    """날짜가 빈 신규 호기는 Dynamic 에 들지 않는다 — 둘러싼 대수와 같은 범위로 한 줄 알린다."""
+    app = _run(undated_units=True)
+
+    assert _undated_captions(app) == [
+        ":material/event_busy: 일정 미정 2대 (반입 미정 1 · Qual 미정 1) — 날짜가 들어올 때까지 "
+        "가용대수에 세지 않습니다."
+    ]
+
+    app.selectbox(key=PROCESS_FILTER_KEY).set_value("Die Attach").run()
+    assert [text.split(" — ")[0] for text in _undated_captions(app)] == [
+        ":material/event_busy: 일정 미정 1대 (반입 미정 1)"
+    ]
+
+    for view in ("분류별 내역", "확보율 교차검증"):
+        _select_view(app, view)
+        assert len(_undated_captions(app)) == 1, view
+
+
+def test_no_undated_line_without_undated_units() -> None:
+    assert _undated_captions(_run()) == []

@@ -238,6 +238,41 @@ def test_a_created_unit_fills_only_what_the_form_asked() -> None:
 
 
 @pytest.mark.parametrize(
+    ("created", "status"),
+    [
+        ({}, "입고 예정"),
+        ({"arrival": "2026-08-01"}, "셋업 진행중"),
+        ({"arrival": "2026-08-01", "confirm": "계획"}, "셋업 진행중"),
+    ],
+)
+def test_a_new_unit_may_come_without_dates(created: dict[str, Any], status: str) -> None:
+    """신규 설비의 반입·Qual 일정은 비워도 된다. 확정상태는 Qual일정이 있을 때만 필요하다."""
+    master = _master()
+    apply = _parse(
+        {
+            "changes": [
+                {
+                    "id": "NEW-1",
+                    "placed": False,
+                    "w": 8,
+                    "h": 5,
+                    "created": {"process": "Process-A", **created},
+                }
+            ]
+        },
+        master,
+    )
+
+    result = apply_layout_edits(master, apply, floor=FLOOR, canvases={}, default_canvas=CANVAS)
+    row = result.set_index("설비명").loc["NEW-1"]
+
+    assert pd.isna(row["Qual일정"]) and row["기존설비여부"] == "N"
+    prepared = prepare_equipment_master(result, floor_canvases={FLOOR: CANVAS})
+    states = _status(prepared).set_index("설비명")["상태"]
+    assert states["NEW-1"] == status
+
+
+@pytest.mark.parametrize(
     ("change", "message"),
     [
         ({"id": "NOPE", "placed": True, "x": 0, "y": 0, "w": 1, "h": 1}, "없는 호기"),
@@ -255,8 +290,39 @@ def test_a_created_unit_fills_only_what_the_form_asked() -> None:
             "이미 있는 호기",
         ),
         (
-            {"id": "NEW", "placed": False, "w": 1, "h": 1, "created": {"process": "Process-A"}},
-            "반입일정과 Qual일정",
+            {
+                "id": "NEW",
+                "placed": False,
+                "w": 1,
+                "h": 1,
+                "created": {"process": "Process-A", "qual": "2026-10-10"},
+            },
+            "Qual일정이 있어 확정상태가 필요합니다",
+        ),
+        (
+            {
+                "id": "NEW",
+                "placed": False,
+                "w": 1,
+                "h": 1,
+                "created": {"process": "Process-A", "confirm": "검토중"},
+            },
+            "확정상태를 고를 수 없는 값",
+        ),
+        (
+            {
+                "id": "NEW",
+                "placed": False,
+                "w": 1,
+                "h": 1,
+                "created": {
+                    "process": "Process-A",
+                    "arrival": "2026-10-10",
+                    "qual": "2026-10-01",
+                    "confirm": "계획",
+                },
+            },
+            "Qual일정이 반입일정보다 빠릅니다",
         ),
         (
             {"id": "NEW", "placed": False, "w": 1, "h": 1, "created": {"process": "X"}},

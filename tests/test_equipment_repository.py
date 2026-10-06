@@ -255,6 +255,54 @@ def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
     ]
 
 
+def test_legacy_revision_without_production_date_keeps_qual_blank(tmp_path: Path) -> None:
+    """옛 양산전환일이 없으면 Qual일정도 비운다(먼 미래 날짜로 채우지 않는다). 확정상태는 Qual 이
+    있는 행에만 「계획」이다."""
+    database_path = tmp_path / "legacy-no-qual.duckdb"
+    migrations = load_equipment_migrations()
+    with duckdb.connect(str(database_path)) as connection:
+        for migration in migrations[:2]:
+            connection.execute(migration.sql)
+            connection.execute(
+                """
+                INSERT INTO equipment_meta.schema_migration (version, name, checksum)
+                VALUES (?, ?, ?)
+                """,
+                [migration.version, migration.name, migration.checksum],
+            )
+        connection.execute(
+            """
+            INSERT INTO equipment_ops.revision (
+                revision_id, revision_no, note, baseline_hash, schedule_hash,
+                equipment_hash, downtime_hash
+            ) VALUES ('legacy-r1', 1, 'legacy', 'b', 's', 'e', 'd')
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO equipment_ops.equipment_snapshot (
+                revision_id, source_row_no, equipment_id, process_name,
+                classification, arrival_date, production_transition_date
+            ) VALUES
+                ('legacy-r1', 1, 'EQ-NOQUAL', 'Process-A', '전체', DATE '2026-08-01', NULL),
+                ('legacy-r1', 2, 'EQ-QUAL', 'Process-A', '전체', DATE '2026-08-01',
+                 DATE '2026-08-10'),
+                ('legacy-r1', 3, 'EQ-OLD', 'Process-A', '전체', NULL, NULL)
+            """
+        )
+
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.initialize()
+    equipment = repository.load_snapshot("legacy-r1").equipment.set_index("설비명")
+
+    assert pd.isna(equipment.loc["EQ-NOQUAL", "Qual일정"])
+    assert pd.isna(equipment.loc["EQ-NOQUAL", "확정상태"])
+    assert equipment.loc["EQ-NOQUAL", "기존설비여부"] == "N"
+    assert equipment.loc["EQ-QUAL", "확정상태"] == "계획"
+    assert pd.isna(equipment.loc["EQ-OLD", "Qual일정"])
+    assert equipment.loc["EQ-OLD", "기존설비여부"] == "Y"
+
+
 def test_process_cutoff_round_trips_and_replaces_the_whole_table(tmp_path: Path) -> None:
     """Cut-off 는 통째로 갈아 끼운다 — 행을 지우는 것이 「산출에서 빼라」는 뜻이다."""
     repository = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")

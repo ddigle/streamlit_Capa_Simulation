@@ -292,8 +292,9 @@ def _fleet_slots() -> list[tuple[str, str, str, float, float]]:
 def _fleet_schedule(kind: str, index: int) -> _FleetSchedule:
     """상태 하나를 일정 여섯 개로 푼다. 검증 규칙이 요구하는 순서를 여기서 지킨다.
 
-    제진대 ≤ 물류 ≤ 입고 ≤ Qual 이어야 하고, 보관·기존설비가 아닌 호기는 입고·Qual·
-    확정상태가 모두 있어야 한다. 반출일정과 이설일정은 함께 둘 수 없다.
+    제진대 ≤ 물류 ≤ 입고 ≤ Qual 이어야 하고, Qual 이 있는 신규 호기는 확정상태가 있어야 한다.
+    반출일정과 이설일정은 함께 둘 수 없다. 샘플은 상태를 보이려고 신규 호기마다 입고·Qual 을 둔다
+    (일정은 비워도 저장되지만 그러면 입고 예정·셋업 진행중에 머문다).
     """
     if kind == "보관":
         return _FleetSchedule(storage="Y")
