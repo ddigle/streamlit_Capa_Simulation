@@ -1073,7 +1073,7 @@ def _stored_floor_marks(
     rows = connection.execute(
         """
         SELECT mark_id, mark_kind, x_coordinate, y_coordinate, x_size, y_size, rotation_deg,
-               label, color_key, hatch, keep_out
+               label, color_key, hatch, keep_out, font_size, font_color
         FROM equipment_ops.floor_layout_mark
         WHERE building = ? AND floor_name = ?
         ORDER BY source_row_no
@@ -1093,6 +1093,8 @@ def _stored_floor_marks(
             color=str(row[8]) if row[8] is not None else "",
             hatch=bool(row[9]),
             keep_out=bool(row[10]),
+            font_size=int(row[11]) if row[11] is not None else None,
+            font_color=str(row[12]) if row[12] is not None else "",
         )
         for row in rows
     )
@@ -1128,11 +1130,18 @@ def _replace_floor_marks(
                 "color_key": mark.color or None,
                 "hatch": mark.hatch,
                 "keep_out": mark.keep_out,
+                "font_size": mark.font_size,
+                "font_color": mark.font_color or None,
             }
             for index, mark in enumerate(marks, start=1)
         ]
     )
-    insert_by_name(connection, schema="equipment_ops", table_name="floor_layout_mark", frame=frame)
+    insert_by_name(
+        connection,
+        schema="equipment_ops",
+        table_name="floor_layout_mark",
+        frame=_with_font_size_type(frame),
+    )
 
 
 def _stored_image_digest(
@@ -1192,7 +1201,7 @@ def _stored_fab_marks(connection: duckdb.DuckDBPyConnection) -> tuple[FabLayoutM
     rows = connection.execute(
         """
         SELECT mark_id, mark_kind, x_coordinate, y_coordinate, x_size, y_size, rotation_deg,
-               label, color_key, hatch, link_building, link_floor
+               label, color_key, hatch, link_building, link_floor, font_size, font_color
         FROM equipment_ops.fab_layout_mark
         ORDER BY source_row_no
         """
@@ -1212,6 +1221,8 @@ def _stored_fab_marks(connection: duckdb.DuckDBPyConnection) -> tuple[FabLayoutM
             link=(str(row[10]), str(row[11]))
             if row[10] is not None and row[11] is not None
             else None,
+            font_size=int(row[12]) if row[12] is not None else None,
+            font_color=str(row[13]) if row[13] is not None else "",
         )
         for row in rows
     )
@@ -1285,11 +1296,24 @@ def _replace_fab_marks(
                 "keep_out": False,
                 "link_building": mark.link[0] if mark.link is not None else None,
                 "link_floor": mark.link[1] if mark.link is not None else None,
+                "font_size": mark.font_size,
+                "font_color": mark.font_color or None,
             }
             for index, mark in enumerate(marks, start=1)
         ]
     )
-    insert_by_name(connection, schema="equipment_ops", table_name="fab_layout_mark", frame=frame)
+    insert_by_name(
+        connection,
+        schema="equipment_ops",
+        table_name="fab_layout_mark",
+        frame=_with_font_size_type(frame),
+    )
+
+
+def _with_font_size_type(frame: pd.DataFrame) -> pd.DataFrame:
+    """글자 크기 칸을 정수(빈 값 허용)로 맞춘다. 정수와 None 이 섞이면 pandas 가 실수(NaN)로,
+    모두 None 이면 객체로 만든다 — 어느 쪽이든 INTEGER 칸에 넣기 전에 형을 고정한다."""
+    return frame.assign(font_size=frame["font_size"].astype("Int64"))
 
 
 def _insert_floor_layout(

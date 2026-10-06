@@ -218,6 +218,9 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   증가는 미미하다) `source_row_no` 가 그리는 순서다. PK 는 두지 않는다 — 같은 트랜잭션에서
   같은 id 를 지웠다 다시 넣는다. 종류(`mark_kind`)·회전·영역 색 키·캔버스 범위·층 안 id
   유일성은 `services/floor_layout_mark.py` 가 맡는다. 리비전 저장과 같은 트랜잭션에 쓸 수 있다.
+  이름표 글자 크기 `font_size`(INTEGER, 9·11·13·16·20·24 화면 px)와 글자 색 `font_color`(영역 색 키)는
+  마이그레이션 17 의 NULL 허용 컬럼이다 — NULL 은 자동 크기·기본 글자색이다. `fab_layout_mark`
+  (마이그레이션 13)도 같은 두 컬럼을 갖는다.
 - `schedule_snapshot`: 마이그레이션 1에서 생성한 기존 입고·셋업 일정 보존용 레거시 테이블.
 - `equipment_snapshot`, `downtime_snapshot`: 마이그레이션 2 계약의 과거 리비전
   보존용 레거시 테이블. 신규 저장은 마이그레이션 3의 두 스냅샷 테이블을 사용한다.

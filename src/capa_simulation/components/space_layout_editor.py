@@ -45,7 +45,11 @@ from capa_simulation.services.fab_layout import (
     floor_from_label,
     floor_label,
 )
-from capa_simulation.services.floor_layout_mark import FloorLayoutMark
+from capa_simulation.services.floor_layout_mark import (
+    MARK_COLOR_KEYS,
+    MARK_FONT_SIZES,
+    FloorLayoutMark,
+)
 from capa_simulation.services.floor_layout_profile import (
     CANVAS_DECIMALS,
     MAX_CANVAS_EXTENT,
@@ -103,6 +107,8 @@ def _palette() -> dict[str, str]:
         "fallback": tokens.EQUIPMENT_STAGE_FALLBACK,
         "mark-ink": tokens.SPACE_TEXT,
         "mark-muted": tokens.SPACE_LABEL_TEXT,
+        # 도면 요소 이름표의 「글자 색」(`fontColor`). 편집기가 `var(--sle-mark-text-<키>)` 로 쓴다.
+        **{f"mark-text-{key}": tokens.SPACE_MARK_TEXT_COLORS[key] for key in MARK_COLOR_KEYS},
     }
 
 
@@ -160,6 +166,7 @@ def render_space_layout_viewer(
             "palette": _palette(),
             "stageColors": dict(tokens.EQUIPMENT_STAGE_COLORS),
             "markColors": mark_colors(),
+            "fontSizes": list(MARK_FONT_SIZES),
             "backgroundImage": background_image,
             "floor": floor_label(floor),
             "floors": [],
@@ -220,6 +227,7 @@ def render_fab_layout_viewer(
             "palette": _palette(),
             "stageColors": dict(tokens.EQUIPMENT_STAGE_COLORS),
             "markColors": mark_colors(),
+            "fontSizes": list(MARK_FONT_SIZES),
             "backgroundImage": background_image,
             "floor": FAB_VIEW_LABEL,
             "floors": [],
@@ -265,6 +273,7 @@ def render_fab_layout_editor(
             "palette": _palette(),
             "stageColors": dict(tokens.EQUIPMENT_STAGE_COLORS),
             "markColors": mark_colors(),
+            "fontSizes": list(MARK_FONT_SIZES),
             "backgroundImage": background_image,
             "floor": FAB_VIEW_LABEL,
             "floors": [],
@@ -324,6 +333,7 @@ def render_space_layout_editor(
             "palette": _palette(),
             "stageColors": dict(tokens.EQUIPMENT_STAGE_COLORS),
             "markColors": mark_colors(),
+            "fontSizes": list(MARK_FONT_SIZES),
             "defaultSize": {"w": inputs.default_size[0], "h": inputs.default_size[1]},
             "backgroundImage": background_image,
             "floor": floor_label(floor),

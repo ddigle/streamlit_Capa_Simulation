@@ -207,6 +207,18 @@ _LIGHT: Final[dict[str, Any]] = {
     "SPACE_GRID": "#E5E8EB",
     # FAB 도면 층 블록의 기본 면(색 키를 고르지 않은 블록). 캔버스보다 한 단 짙다.
     "SPACE_BLOCK_FILL": "#E7EDF2",
+    # Space 도면 요소 이름표의 「글자 색」. 키는 영역 색 키(`floor_layout_mark.MARK_COLOR_KEYS`)와
+    # 같고 계열도 같다 — 영역 면색(제품별 비중 색)은 하늘·장미·보라가 흰 면 대비 2.2~3.6:1 이라
+    # 글자로는 흐려 계열은 두고 명도만 내렸다. 이름표 글자에는 SURFACE 테두리가 둘러지므로 그 면이
+    # 기준이고, 캔버스·층 블록 면 위에서도 모두 4.5:1 이상이다(`tests/test_design_tokens.py`).
+    "SPACE_MARK_TEXT_COLORS": {
+        "blue": "#0154C6",
+        "rose": "#A8385F",
+        "green": "#46681E",
+        "violet": "#6544D6",
+        "sky": "#0A6C93",
+        "gray": "#5C5C5C",
+    },
     # ------------------------------------------------------------------ 스크롤바 색
     "SCROLLBAR_TRACK": "#ECEEF1",
     "SCROLLBAR_THUMB": "#8F9399",
@@ -319,6 +331,15 @@ _DARK: Final[dict[str, Any]] = {
     "SPACE_LABEL_TEXT": "#98A3B0",
     "SPACE_GRID": "#2A323C",
     "SPACE_BLOCK_FILL": "#1E2630",
+    # 이름표 글자 색. 같은 계열을 어두운 면 위의 밝은 띠로 옮겼다(모든 면 위 6.3:1 이상).
+    "SPACE_MARK_TEXT_COLORS": {
+        "blue": "#79A7F7",
+        "rose": "#EC8DB2",
+        "green": "#94C46A",
+        "violet": "#B5A0FF",
+        "sky": "#58C4EC",
+        "gray": "#B0B0B0",
+    },
     # 손잡이는 누를수록 또렷해진다 — 다크에서는 밝아지는 쪽이다.
     "SCROLLBAR_TRACK": "#22222A",
     "SCROLLBAR_THUMB": "#55555F",
@@ -430,6 +451,7 @@ if TYPE_CHECKING:
     SPACE_CANVAS_OVERLAY: Final[str] = ""
     SPACE_GRID: Final[str] = ""
     SPACE_LABEL_TEXT: Final[str] = ""
+    SPACE_MARK_TEXT_COLORS: Final[dict[str, str]] = {}
     SPACE_TEXT: Final[str] = ""
     STATUS_SECURE: Final[str] = ""
     STATUS_SHORTAGE: Final[str] = ""

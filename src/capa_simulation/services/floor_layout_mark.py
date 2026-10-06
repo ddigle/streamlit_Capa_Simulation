@@ -38,6 +38,9 @@ MARK_ROTATIONS: Final = (0, 90, 180, 270)
 # 영역 색 이름. 실제 색은 그리는 쪽이 테마 토큰(제품별 비중과 같은 검증된 범주 팔레트)에서 고른다.
 MARK_COLOR_KEYS: Final = ("blue", "rose", "green", "violet", "sky", "gray")
 MARK_LABEL_MAX: Final = 40
+# 이름표 글자 크기(화면 px). 빈 값(None)은 「자동」 — 글자 요소는 상자에 맞추고 나머지는 11px 다.
+# 화면 px 라 확대해도 글자 크기는 그대로다(이름표가 도면을 덮지 않게). 층·FAB 요소가 함께 쓴다.
+MARK_FONT_SIZES: Final = (9, 11, 13, 16, 20, 24)
 MARKS_PER_FLOOR_MAX: Final = 500
 _MARK_ID: Final = re.compile(r"[A-Za-z0-9_-]{1,40}")
 
@@ -57,6 +60,10 @@ class FloorLayoutMark:
     color: str
     hatch: bool
     keep_out: bool
+    # 이름표 글자 크기(`MARK_FONT_SIZES`, None 은 자동)와 색 키(`MARK_COLOR_KEYS`, 빈 값은 기본
+    # 글자색). 기본값이 있어야 캐시에 실린 옛 모양(`**payload`)도 다시 만들어진다.
+    font_size: int | None = None
+    font_color: str = ""
 
     @property
     def blocks(self) -> bool:
@@ -82,6 +89,8 @@ class FloorLayoutMark:
             "color": self.color,
             "hatch": self.hatch,
             "keepOut": self.keep_out,
+            "fontSize": self.font_size,
+            "fontColor": self.font_color,
         }
 
 
@@ -162,6 +171,33 @@ def mark_label(raw: Mapping[str, Any], mark_id: str) -> str:
     return label
 
 
+def mark_font_size(raw: Mapping[str, Any], mark_id: str) -> int | None:
+    """이름표 글자 크기. 비었거나 「자동」이면 None, `MARK_FONT_SIZES` 밖이면 `ValueError`."""
+    value = raw.get("fontSize")
+    if value is None or (isinstance(value, str) and value.strip() in ("", "자동", "auto")):
+        return None
+    size: float | None = None
+    if not isinstance(value, bool):
+        try:
+            size = float(value)
+        except (TypeError, ValueError):
+            size = None
+    if size is None or not size.is_integer() or int(size) not in MARK_FONT_SIZES:
+        allowed = "·".join(str(size) for size in MARK_FONT_SIZES)
+        raise ValueError(
+            f"도면 요소 {mark_id} 의 글자 크기는 자동 또는 {allowed} 중 하나여야 합니다: {value!r}"
+        )
+    return int(size)
+
+
+def mark_font_color(raw: Mapping[str, Any], mark_id: str) -> str:
+    """이름표 글자 색 키. 비면 기본 글자색(빈 값)이고 `MARK_COLOR_KEYS` 밖이면 `ValueError`."""
+    color = str(raw.get("fontColor") or "").strip()
+    if color and color not in MARK_COLOR_KEYS:
+        raise ValueError(f"도면 요소 {mark_id} 의 글자 색을 알 수 없습니다: {color!r}")
+    return color
+
+
 def zone_color(raw: Mapping[str, Any], mark_id: str) -> str:
     """영역 색 키. 비면 회색이고 `MARK_COLOR_KEYS` 밖이면 `ValueError`."""
     color = str(raw.get("color") or "") or "gray"
@@ -177,7 +213,8 @@ def prepare_floor_layout_marks(
     """한 층의 요소 목록을 검증·정규화한다. 하나라도 어긋나면 `ValueError`.
 
     받는 키는 편집기 계약(`id`·`kind`·`x`·`y`·`w`·`h`·`rot`·`label`·`color`·`hatch`·
-    `keepOut`)이다. 좌표는 소수 첫째 자리로 맞추고 상자가 캔버스 안이어야 한다.
+    `keepOut`·`fontSize`·`fontColor`)이다. 좌표는 소수 첫째 자리로 맞추고 상자가 캔버스 안이어야
+    한다. 글자 크기·색은 모든 종류가 갖는다(없으면 자동·기본).
     """
     if len(marks) > MARKS_PER_FLOOR_MAX:
         raise ValueError(f"한 층의 도면 요소는 {MARKS_PER_FLOOR_MAX}개까지입니다: {len(marks)}개")
@@ -202,6 +239,8 @@ def prepare_floor_layout_marks(
                 color=zone_color(raw, mark_id) if kind == "zone" else "",
                 hatch=kind == "zone" and mark_flag(raw.get("hatch")),
                 keep_out=kind == "zone" and mark_flag(raw.get("keepOut")),
+                font_size=mark_font_size(raw, mark_id),
+                font_color=mark_font_color(raw, mark_id),
             )
         )
     return tuple(prepared)

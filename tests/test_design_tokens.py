@@ -374,3 +374,21 @@ def test_the_surface_stack_flips_direction_in_the_dark_theme() -> None:
     finally:
         theme_module._LOCAL.mode = "light"
     assert dark[0] < dark[1] < dark[2], f"어두운 테마에서 밝아지지 않습니다: {dark}"
+
+
+def test_space_mark_text_colours_read_on_every_space_surface() -> None:
+    """도면 요소 이름표의 「글자 색」은 SURFACE 테두리를 두르고 캔버스·층 블록 면 위에 선다. 두 테마
+    모두 그 면 위에서 4.5:1 이상이어야 읽힌다(영역 면색을 그대로 쓰면 하늘이 2.2:1 이다)."""
+    from capa_simulation.services.floor_layout_mark import MARK_COLOR_KEYS
+
+    weak: list[str] = []
+    for mode, palette in tokens._PALETTES.items():
+        inks = palette["SPACE_MARK_TEXT_COLORS"]
+        assert set(inks) == set(MARK_COLOR_KEYS), mode
+        for key, ink in inks.items():
+            for surface in ("SURFACE", "SPACE_CANVAS", "SPACE_BLOCK_FILL"):
+                ratio = contrast_ratio(ink, palette[surface])
+                if ratio < 4.5:
+                    weak.append(f"{mode}.{key} {ink} on {surface}: {ratio:.2f}")
+
+    assert not weak, "\n".join(weak)

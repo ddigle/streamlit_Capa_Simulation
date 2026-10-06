@@ -1057,6 +1057,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이 컴포넌트라 `tests/conftest.py` 가 모든 테스트에 말 없는 대역을 깔고, 받은 값을 보는 테스트는 제 대역으로 덮는다.
   - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보낸다(`changes`·`canvas`·`marks`). 색은 등록 CSS
     가 아니라 회차마다 `data.palette` 로 넘긴다. 받은 값의 검증은 서비스(`parse_editor_apply`)다.
+  - **요소 이름표 글자 크기·색**(2026-10-06 사용자 결정). 모든 도면 요소(영역·반입구·문·기둥·글자·동선·
+    FAB 층 블록 — 호기 상자는 아니다)가 `fontSize`(null = 자동, 또는 `data.fontSizes` = `MARK_FONT_SIZES`
+    9·11·13·16·20·24 화면 px)와 `fontColor`('' = 기본 `--sle-mark-ink`, 또는 영역 색 키)를 갖는다. 선택 칸의
+    `글자 크기`·`글자 색` 두 선택 상자로 바꾸고(`.sle-markprops` 안이라 숨을 때도 자리를 지킨다), 각 종류가
+    그리는 글자 — 영역 꼬리표, 글자 요소, 층 블록 줄, 바깥 이름표 — 에 그대로 쓴다. 자동은 예전과 같다(글자
+    요소는 상자에 맞추고 작으면 숨김, 블록은 맞추고 줄이기, 나머지는 11px). 크기를 고르면 맞추거나 숨기지
+    않는다. 색은 팔레트의 `mark-text-<키>`(`tokens.SPACE_MARK_TEXT_COLORS`, 영역 면색은 글자로 흐려 계열만
+    같고 명도를 내린 값)를 `var(--sle-mark-text-<키>)` 로 칠해 테마를 따라간다. **기둥 이름표는 기둥 위
+    가운데**에 가로로 선다(반입구·문·동선의 바깥 이름표와 같은 규칙, 돌리지 않는다). 보기 화면도 같은
+    컴포넌트라 같은 크기·색이다. 손대지 않은 요소의 적용·저장이 변경이 되지 않도록 원본 비교(`isChanged`)와
+    파이썬 지문(`editor_payload`)이 둘을 함께 본다.
   - **FAB 전체 뷰어**(`render_fab_layout_viewer`, `data.scope="fab"`, 보기 전용)도 같은 컴포넌트다(한 번
     등록, 범위 표시로 나눈다). 층 블록(`kind="block"`, `link`=「C1 1F」)은 FAB 범위에서만 그리고(층 도면에 오면
     그리지 않고 그대로 돌려보낸다), 누르면 `setTriggerValue('navigate', {epoch, target})` → 파이썬
@@ -1108,8 +1119,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `space_layout_edit._parse_created` 다.
   - **트레이 서랍**(편집). 미배치 트레이·호기 추가 폼·「다른 층으로 보냄」은 무대 오른쪽 가장자리에 겹쳐 열리는
     서랍이다. 닫힌 상태는 「미배치 N」 탭이고 열림은 같은 편집기의 다음 실행에도 이어진다. 서랍에서 끈 칩이 서랍
-    밖으로 나가면 서랍이 비쳐 그 아래 도면에도 놓을 수 있고, 놓으면 서랍이 접힌다. 비치기 전의 서랍 위에
-    놓으면 놓지 않는다(서랍 아래에 숨은 배치가 되지 않게). Esc 로 접는다. 그래서 보기·편집에서 도면 폭이 같다.
+    밖으로 나가면 서랍이 비쳐 그 아래 도면에도 놓을 수 있다. **놓아도 서랍은 열어 둔다**(2026-10-06 사용자
+    결정 — 이어서 놓는다). 놓은 호기가 서랍 아래에 들면 `revealFromTray` 가 화면을 옮겨 꺼내 보인다 — 서랍이
+    열려 있는 동안 `clampView` 가 서랍 폭(데이터 단위, `trayReserve`)만큼 오른쪽으로 더 옮기게 허락하고(전체
+    보기에서도), 접으면 그 허락이 사라져 화면이 제자리로 돌아온다. 비치기 전의 서랍 위에 놓으면 놓지 않는다
+    (서랍 아래에 숨은 배치가 되지 않게). Esc 로 접는다. 그래서 보기·편집에서 도면 폭이 같다.
   - **단추 결**. 편집기 단추는 앱 단추와 같은 결이다 — 13px·600·모서리 8px·높이 27px·테두리 `BORDER`·글자
     `TEXT`(팔레트의 `border`·`ui-text`. 도면 글자 `SPACE_TEXT` 와 따로). 도구 줄은 한 줄·고정 높이이고 좁으면
     접지 않고 옆으로 민다 — 편집을 보내는 `적용` 은 sticky 로 오른쪽 끝에 붙어 늘 보인다. 편집 모드의 선택 칸은
@@ -1741,8 +1755,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   화면과 대조해도 어긋나지 않는다.
 - `floor_layout_mark.py`: 층 도면의 비설비 요소(반입구·문·영역·기둥·글자·동선) 계약.
   `FloorLayoutMark`·종류·회전·영역 색 키·한 층 500개 상한과 `prepare_floor_layout_marks`. 요소 하나의
-  공용 검사(`mark_id_of`·`mark_box`·`mark_rotation`·`mark_label`·`zone_color`·`mark_flag`)는 FAB 요소
-  검증(`fab_layout.prepare_fab_layout_marks`)이 같이 쓴다. `marks_extent` 는 좌표·크기만 보는
+  공용 검사(`mark_id_of`·`mark_box`·`mark_rotation`·`mark_label`·`zone_color`·`mark_flag`·
+  `mark_font_size`·`mark_font_color`)는 FAB 요소 검증(`fab_layout.prepare_fab_layout_marks`)이 같이 쓴다.
+  이름표 글자 크기(`font_size`, None 또는 `MARK_FONT_SIZES`)·색(`font_color`, 빈 값 또는 `MARK_COLOR_KEYS`)은
+  모든 종류가 갖고 밖의 값은 거부한다. 두 필드는 기본값이 있어 캐시가 `**payload` 로 옛 모양을 다시 만들
+  수 있고, 저장 칸은 설비 DB `0017` 의 nullable `font_size`·`font_color` 다(옛 요소는 NULL → 자동·기본). `marks_extent` 는 좌표·크기만 보는
   `MarkBox` 를 받아 층·FAB 요소 모두에 쓴다.
   층 단위 전체 교체로 저장되므로 **어긋난 항목을 조용히 버리지 않고** 통째로 `ValueError` 를
   낸다(하나를 버리면 그 요소가 지워진다). 반입구·문·기둥·「설비 금지」 영역은 호기가 덮으면

@@ -470,7 +470,7 @@ def test_migration_0015_adds_nullable_columns_and_keeps_investment_basis(tmp_pat
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (15,)
+    assert repository.initialize() == (15, 17)
     old = repository.load_snapshot("r-old").equipment
 
     assert old.loc[0, "설비명"] == "EQ-OLD"

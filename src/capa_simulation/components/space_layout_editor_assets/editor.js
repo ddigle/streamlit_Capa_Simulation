@@ -42,6 +42,8 @@ export default function (component) {
   const DRAG_THRESHOLD_PX = 3
   const HANDLE_PX = 9
   const GROUP_PAD = 0.6
+  // 서랍이 무대 가장자리에서 들어앉은 거리(CSS `.sle-drawer` 의 8px). 놓은 호기를 서랍 왼쪽으로 이만큼 더 꺼낸다.
+  const DRAWER_INSET_PX = 8
   // 편집 영역 둘레의 여백(영역 긴 변의 비율). 전체 보기는 영역+여백이 다 보이는 크기다.
   const VIEW_MARGIN = 0.03
   // 무대 높이(px). 기본은 화면에 맞추고(MIN_DEFAULT_H 이상), 손잡이로는 MIN_DRAG_H ~ 화면 높이의 MAX_H_RATIO 배.
@@ -71,6 +73,12 @@ export default function (component) {
   // 이 범위에서 그리는 종류. 층 블록은 FAB 에만 있다 — 층 도면에 오면 그리지 않고 그대로 돌려보낸다.
   const drawable = (kind) => Boolean(MARK_KINDS[kind]) && (kind !== 'block' || FAB)
   const ZONE_COLOR_NAMES = { blue: '파랑', green: '초록', violet: '보라', sky: '하늘', rose: '분홍', gray: '회색' }
+  // 요소 이름표의 글자 크기(화면 px)·색. 크기 null 은 「자동」(글자 요소는 상자에 맞추고 나머지는 LABEL_PX),
+  // 색 '' 은 기본 글자색(--sle-mark-ink)이다. 색 키는 영역 색과 같고 실제 색은 팔레트의 mark-text-<키> 다.
+  const FONT_SIZES = (Array.isArray(data.fontSizes) ? data.fontSizes : [9, 11, 13, 16, 20, 24]).map(Number)
+  const LABEL_PX = 11
+  const fontSizeOf = (raw) => (raw === null || raw === undefined || raw === '' || !FONT_SIZES.includes(Number(raw)) ? null : Number(raw))
+  const fontInk = (item) => (item.fontColor && markColors[item.fontColor] ? `var(--sle-mark-text-${item.fontColor})` : '')
   const HINT = FAB
     ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
     : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+A 전체 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
@@ -108,6 +116,8 @@ export default function (component) {
   const moveButton = q('.sle-move')
   const markProps = q('.sle-markprops')
   const markLabel = q('.sle-mark-label')
+  const markFontSize = q('.sle-mark-font-size')
+  const markFontColor = q('.sle-mark-font-color')
   const markColor = q('.sle-mark-color')
   const markHatch = q('.sle-mark-hatch')
   const markKeepOut = q('.sle-mark-keepout')
@@ -204,6 +214,7 @@ export default function (component) {
   const snapshot = (item) => ({
     x: item.x, y: item.y, w: item.w, h: item.h, placed: item.placed, moveTo: item.moveTo, sizeGuessed: item.sizeGuessed,
     rot: item.rot, label: item.label, color: item.color, hatch: item.hatch, keepOut: item.keepOut, link: item.link,
+    fontSize: item.fontSize, fontColor: item.fontColor,
   })
   // 층 블록 글자: 첫 줄은 이름(없으면 연결 층), 다음 줄은 배치·미배치 대수. 풍선에는 점유율까지.
   const blockHead = (item) => item.label || item.link || '연결 없음'
@@ -271,13 +282,23 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 확대·축소
   // viewBox 를 캔버스의 일부로 좁혀 확대한다. 좌표 변환은 getScreenCTM 이 viewBox 를 품어 끌기·손잡이가 그대로 맞는다.
-  // 화면 옮기기는 영역+여백 안에서만. 보이는 폭이 그보다 넓은 축은 영역 가운데에 둔다.
+  // 화면 옮기기는 영역+여백 안에서만. 보이는 폭이 그보다 넓은 축은 영역 가운데에 둔다. 단 편집의 트레이 서랍이 열려
+  // 있으면 그 폭(데이터 단위)만큼 오른쪽으로 더 옮길 수 있다 — 서랍 아래에 놓인 것을 꺼내 보이는 자리다. 서랍을
+  // 접으면 0 이 되어 화면이 제자리로 돌아온다.
+  function trayReserve() {
+    if (VIEW || FAB || !S.drawerOpen || trayBox.hidden || !S.port || S.port.w < 1) return 0
+    return (trayBox.getBoundingClientRect().width + DRAWER_INSET_PX * 2) * (viewW() / S.port.w)
+  }
   function clampView() {
     S.view.z = clamp(S.view.z, 1, MAX_ZOOM)
     const pad = margin()
     const vw = viewW()
     const vh = viewH()
-    S.view.x = vw >= W() + pad * 2 ? (W() - vw) / 2 : clamp(S.view.x, -pad, W() + pad - vw)
+    const reserve = trayReserve()
+    const center = (W() - vw) / 2
+    S.view.x = vw >= W() + pad * 2
+      ? clamp(S.view.x, center, center + reserve)
+      : clamp(S.view.x, -pad, W() + pad + reserve - vw)
     S.view.top = vh >= H() + pad * 2 ? (H() - vh) / 2 : clamp(S.view.top, -pad, H() + pad - vh)
   }
   function applyView({ reposition = true } = {}) {
@@ -468,10 +489,13 @@ export default function (component) {
     const cy = top + item.h / 2
     const inner = el('g', { transform: `translate(${cx} ${cy}) rotate(${rot}) translate(${-lw / 2} ${-lh / 2})` })
     const upp = unitsPerPx()
-    const fs = 11 * upp
+    // 이름표 글자는 화면 px 로 정한다(확대해도 같은 크기). 고른 크기가 없으면 LABEL_PX.
+    const fs = (item.fontSize || LABEL_PX) * upp
+    const ink = fontInk(item)
     const text = (value, x, y, size, anchor) => {
       const node = el('text', { class: 'sle-mark-text', x, y, 'font-size': size, 'text-anchor': anchor || 'middle', 'dominant-baseline': 'central' })
       node.textContent = value
+      if (ink) node.style.fill = ink
       return node
     }
     if (item.kind === 'zone') {
@@ -507,10 +531,11 @@ export default function (component) {
       inner.append(el('line', { class: 'sle-column-cross', x1: 0, y1: 0, x2: lw, y2: lh }))
       inner.append(el('line', { class: 'sle-column-cross', x1: lw, y1: 0, x2: 0, y2: lh }))
     } else if (item.kind === 'text') {
+      // 자동이면 상자에 맞추고(작아지면 숨김), 크기를 골랐으면 그 화면 px 로 쓴다(상자를 넘어도 그린다).
       const value = item.label || '글자'
-      const size = Math.min(lh * 0.7, (lw * 0.95) / Math.max(emWidth(value), 1))
+      const size = item.fontSize ? fs : Math.min(lh * 0.7, (lw * 0.95) / Math.max(emWidth(value), 1))
       const node = text(value, lw / 2, lh / 2, size)
-      node.style.display = size / upp < 6 ? 'none' : ''
+      node.style.display = !item.fontSize && size / upp < 6 ? 'none' : ''
       inner.append(node)
     } else if (item.kind === 'arrow') {
       // 동선: 왼쪽에서 오른쪽으로(0°). 굵기는 상자 높이를 따른다.
@@ -532,9 +557,10 @@ export default function (component) {
         const longest = Math.max(...lines.map(emWidth), 1)
         return Math.min((lh * 0.8) / (lines.length * 1.3), (lw * 0.9) / longest, 13 * upp)
       }
+      // 글자 크기를 골랐으면 모든 줄을 그 크기로 쓴다(맞추거나 숨기지 않는다).
       let lines = blockLines(item)
-      let size = fitLines(lines)
-      if (lines.length > 1 && size / upp < 7) {
+      let size = item.fontSize ? fs : fitLines(lines)
+      if (!item.fontSize && lines.length > 1 && size / upp < 7) {
         lines = lines.slice(0, 1)
         size = fitLines(lines)
       }
@@ -542,18 +568,20 @@ export default function (component) {
       lines.forEach((value, k) => {
         const node = text(value, lw / 2, lh / 2 + (k - (lines.length - 1) / 2) * step, size)
         node.classList.add(k === 0 ? 'is-head' : 'is-sub')
-        node.style.display = size / upp < 6 ? 'none' : ''
+        node.style.display = !item.fontSize && size / upp < 6 ? 'none' : ''
         inner.append(node)
       })
     }
     shape.append(inner)
-    // 반입구·문·동선의 이름표는 돌리지 않는다(세로 글자가 되지 않게). 상자 바깥, 방 쪽(반입구·문)이나
-    // 옆(동선)에 가로로 쓴다. 0° 일 때 방은 위쪽이다(아래 변이 벽).
-    if (item.label && (item.kind === 'shutter' || item.kind === 'door' || item.kind === 'arrow')) {
+    // 반입구·문·동선·기둥의 이름표는 돌리지 않는다(세로 글자가 되지 않게). 상자 바깥, 방 쪽(반입구·문)이나
+    // 옆(동선)에 가로로 쓴다. 0° 일 때 방은 위쪽이다(아래 변이 벽). 기둥은 돌리지 않으니 늘 위 가운데다.
+    if (item.label && (item.kind === 'shutter' || item.kind === 'door' || item.kind === 'arrow' || item.kind === 'column')) {
       const gap = fs * 0.4
-      const sides = item.kind === 'arrow'
-        ? (rot % 180 ? 'right' : 'up')
-        : ({ 0: 'up', 90: 'right', 180: 'down', 270: 'left' })[rot] || 'up'
+      const sides = item.kind === 'column'
+        ? 'up'
+        : item.kind === 'arrow'
+          ? (rot % 180 ? 'right' : 'up')
+          : ({ 0: 'up', 90: 'right', 180: 'down', 270: 'left' })[rot] || 'up'
       const left = item.x
       const right = item.x + item.w
       const placement = {
@@ -739,6 +767,7 @@ export default function (component) {
       return !sameGeometry(o, item) || o.rot !== item.rot || o.label !== item.label
         || o.color !== item.color || o.hatch !== item.hatch || o.keepOut !== item.keepOut
         || (o.link || '') !== (item.link || '')
+        || (o.fontSize ?? null) !== (item.fontSize ?? null) || (o.fontColor || '') !== (item.fontColor || '')
     }
     if ((o.moveTo || null) !== (item.moveTo || null)) return true
     if (o.placed !== item.placed) return true
@@ -872,6 +901,7 @@ export default function (component) {
     ...[...S.items.values()].filter(isMark).map((m) => ({
       id: m.id, kind: m.kind, x: m.x, y: m.y, w: m.w, h: m.h, rot: m.rot || 0,
       label: m.label || '', color: m.color || '', hatch: Boolean(m.hatch), keepOut: Boolean(m.keepOut),
+      fontSize: m.fontSize ?? null, fontColor: m.fontColor || '',
       ...(m.kind === 'block' ? { link: m.link || '' } : {}),
     })),
     ...S.passthrough,
@@ -927,6 +957,14 @@ export default function (component) {
     if (!markColor.options.length) {
       markColor.replaceChildren(...Object.keys(markColors).map((key) => new Option(ZONE_COLOR_NAMES[key] || key, key)))
     }
+    // 글자 크기·색(모든 도면 요소). 같은 까닭으로 처음부터 채운다.
+    if (!markFontSize.options.length) {
+      markFontSize.replaceChildren(new Option('자동', ''), ...FONT_SIZES.map((size) => new Option(`${size}px`, String(size))))
+      markFontColor.replaceChildren(
+        new Option('기본', ''),
+        ...Object.keys(markColors).map((key) => new Option(ZONE_COLOR_NAMES[key] || key, key)),
+      )
+    }
     // 층 블록(FAB): 연결 층·색(기본 + 영역과 같은 여섯 색)·[열기]. 목록은 처음부터 채운다(칸 폭이 튀지 않게).
     if (FAB && !blockLink.options.length) {
       blockLink.replaceChildren(...LINK_TARGETS.map((target) => new Option(target, target)))
@@ -938,6 +976,8 @@ export default function (component) {
     blockProps.hidden = !mark || mark.kind !== 'block'
     if (mark) {
       if (!isFocused(markLabel)) markLabel.value = mark.label || ''
+      markFontSize.value = mark.fontSize ? String(mark.fontSize) : ''
+      markFontColor.value = mark.fontColor || ''
       for (const node of zoneOnly) node.hidden = mark.kind !== 'zone'
       markColor.value = mark.color || 'gray'
       markHatch.checked = Boolean(mark.hatch)
@@ -1050,12 +1090,33 @@ export default function (component) {
     setSelection(id ? [id] : [], id)
   }
 
-  // 서랍 열림은 같은 편집기의 다음 실행에도 이어진다(S 에 둔다).
+  // 서랍 열림은 같은 편집기의 다음 실행에도 이어진다(S 에 둔다). 접으면 서랍 몫으로 옮긴 화면을 제자리로 돌린다.
   function setDrawer(open) {
+    const was = Boolean(S.drawerOpen)
     S.drawerOpen = Boolean(open)
     drawer.classList.toggle('is-open', S.drawerOpen)
     trayBox.hidden = !S.drawerOpen
     drawerTab.setAttribute('aria-expanded', String(S.drawerOpen))
+    if (was && !S.drawerOpen) applyView({ reposition: false })
+  }
+
+  // 서랍에서 놓은 호기가 서랍 아래에 들었으면 화면을 옮겨 꺼내 보인다(서랍은 열어 둔다 — 이어서 놓을 수 있게).
+  // 옮길 수 있는 만큼만 옮긴다(trayReserve). 위아래로 서랍과 겹치지 않으면 그대로 둔다.
+  function revealFromTray(list) {
+    if (!S.drawerOpen || trayBox.hidden) return
+    const tray = trayBox.getBoundingClientRect()
+    let right = -Infinity
+    let top = Infinity
+    let bottom = -Infinity
+    for (const m of list) {
+      const rect = S.groups.get(m.id)?.querySelector('.sle-rect')?.getBoundingClientRect()
+      if (!rect) continue
+      right = Math.max(right, rect.right)
+      top = Math.min(top, rect.top)
+      bottom = Math.max(bottom, rect.bottom)
+    }
+    const covered = right > tray.left && bottom > tray.top && top < tray.bottom
+    if (covered) panBy((right - tray.left + DRAWER_INSET_PX * 2) * unitsPerPx(), 0)
   }
 
   function clearSelection() {
@@ -1195,8 +1256,8 @@ export default function (component) {
     S.selected = lead.id
     renderItems()
     updateStatus()
-    // 놓았으면 서랍을 접어 도면을 다 보인다.
-    setDrawer(false)
+    // 서랍은 열어 둔다(이어서 놓는다). 놓은 호기가 서랍 아래면 화면을 옮겨 보인다.
+    revealFromTray(list)
     svg.focus({ preventScroll: true })
   }
 
@@ -1214,7 +1275,7 @@ export default function (component) {
     const item = {
       id, kind, label: spec.label, stage: '', group: null, placed: true, moveTo: null, isNew: false, arrived: false,
       x: snapDelta(center.x - w / 2), y: snapDelta(H() - center.top - h / 2), w, h, rot: 0,
-      color: kind === 'zone' ? 'blue' : '', hatch: false, keepOut: false, link,
+      color: kind === 'zone' ? 'blue' : '', hatch: false, keepOut: false, link, fontSize: null, fontColor: '',
     }
     fit(item)
     S.items.set(id, item)
@@ -1407,6 +1468,7 @@ export default function (component) {
     x: num(raw.x), y: num(raw.y), w: num(raw.w), h: num(raw.h), rot: Number(raw.rot) || 0,
     color: String(raw.color || ''), hatch: Boolean(raw.hatch), keepOut: Boolean(raw.keepOut),
     link: String(raw.link || ''), placed: true, moveTo: null, isNew: false, arrived: false,
+    fontSize: fontSizeOf(raw.fontSize), fontColor: String(raw.fontColor || ''),
   })
 
   function initFromData() {
@@ -1773,6 +1835,8 @@ export default function (component) {
   }
   markLabel.onkeydown = (event) => { if (event.key === 'Enter') markLabel.blur() }
   markColor.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { color: markColor.value }) }
+  markFontSize.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { fontSize: fontSizeOf(markFontSize.value) }) }
+  markFontColor.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { fontColor: markFontColor.value }) }
   markHatch.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { hatch: markHatch.checked }) }
   markKeepOut.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { keepOut: markKeepOut.checked }) }
   markRotate.onclick = () => { const mark = selectedMark(); if (mark) rotateMark(mark) }

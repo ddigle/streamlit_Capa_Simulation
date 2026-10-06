@@ -158,3 +158,43 @@ def test_the_inspector_open_is_locked_while_fab_edits_are_unapplied() -> None:
     assert "blockOpen.onclick = () => openFloor(selectedMark(), true)" in JS
     assert "(fromInspector && opensFromInspector(item))" in JS
     assert "!VIEW && FAB && item && item.kind === 'block' && item.link && !hasPendingEdits()" in JS
+
+
+def test_a_dropped_unit_keeps_the_drawer_open_and_is_revealed() -> None:
+    """놓아도 서랍은 열어 둔다(이어서 놓는다). 놓은 호기가 서랍 아래면 화면을 옮겨 보이고, 서랍이
+    열려 있는 동안만 서랍 폭만큼 더 옮길 수 있다 — 접으면 제자리로 돌아온다."""
+    place = JS[JS.index("function placeFromTray(") : JS.index("function addMark(")]
+    assert "setDrawer(false)" not in place
+    assert "revealFromTray(list)" in place
+    assert "function trayReserve()" in JS
+    clamp = JS[JS.index("function clampView(") : JS.index("function applyView(")]
+    assert "trayReserve()" in clamp and "center + reserve" in clamp
+    set_drawer = JS[JS.index("function setDrawer(") : JS.index("function revealFromTray(")]
+    assert "applyView(" in set_drawer
+    assert "서랍이 접힙니다" not in HTML
+
+
+def test_every_mark_takes_a_font_size_and_colour_from_the_inspector() -> None:
+    """글자 크기·색 두 칸은 도면 요소 속성(`.sle-markprops`) 안이다 — 숨을 때도 자리를 지켜 선택 칸
+    크기가 그대로다. 색은 팔레트의 `mark-text-<키>` 로 와 테마를 따라간다."""
+    from capa_simulation.services.floor_layout_mark import MARK_COLOR_KEYS, MARK_FONT_SIZES
+
+    props = HTML[HTML.index('class="sle-markprops"') : HTML.index('class="sle-markprops-kind"')]
+    assert 'class="sle-mark-font-size"' in props and 'class="sle-mark-font-color"' in props
+    palette = space_layout_editor._palette()
+    assert {f"mark-text-{key}" for key in MARK_COLOR_KEYS} <= set(palette)
+    assert "`var(--sle-mark-text-${item.fontColor})`" in JS
+    assert list(MARK_FONT_SIZES) == [9, 11, 13, 16, 20, 24]
+    # 손대지 않은 요소가 바뀐 것으로 보이지 않게 원본 비교와 보내는 값이 두 칸을 함께 본다.
+    assert "(o.fontSize ?? null) !== (item.fontSize ?? null)" in JS
+    assert "fontSize: m.fontSize ?? null, fontColor: m.fontColor || ''" in JS
+    assert "fontSize: fontSizeOf(raw.fontSize), fontColor: String(raw.fontColor || '')" in JS
+
+
+def test_a_column_draws_its_name_above_it() -> None:
+    """기둥 이름표는 기둥 위 가운데에 가로로 선다(돌리지 않는다)."""
+    outside = JS[
+        JS.index("// 반입구·문·동선·기둥의 이름표는") : JS.index("const tip = group.querySelector")
+    ]
+    assert "item.kind === 'column'" in outside
+    assert "item.kind === 'column'\n        ? 'up'" in outside
