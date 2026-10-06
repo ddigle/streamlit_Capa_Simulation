@@ -55,6 +55,8 @@ from capa_simulation.sidebar_status import (
     BOTTLENECK_BOX_KEY,
     SIDEBAR_TOGGLE_SINK_KEY,
     begin_app_run,
+    defer_sidebar_section,
+    forget_deferred_sidebar_section,
     forget_month_range_placeholder,
     on_box_toggle,
     register_month_range_placeholder,
@@ -260,8 +262,16 @@ with pinned_connections(DUCKDB_PATH):
     pending_edits = pending_edit_labels(
         None if current_spec is None else Path(current_spec.path).name
     )
-    if shows_scenario or shows_period or has_cards:
+    # 공통 조건 상자가 서면 제목은 그 상자 몫이라 곧바로 세운다. 자기 조건 카드만 있는 화면은
+    # 제목 자리만 비워 두고 카드가 실제로 설 때 채운다 — 페이지가 카드를 그리기 전에 멈추는 드문
+    # 오류 경로(VOC·설비 DB 를 못 읽음)에서 제목만 남지 않게. 세 갈래 중 하나가 **매 회차** 돈다.
+    if shows_scenario or shows_period:
+        forget_deferred_sidebar_section()
         render_sidebar_section(CONDITIONS_SECTION)
+    elif has_cards:
+        defer_sidebar_section(CONDITIONS_SECTION)
+    else:
+        forget_deferred_sidebar_section()
     if shows_scenario:
         render_scenario_controls(pending_edits=pending_edits)
 

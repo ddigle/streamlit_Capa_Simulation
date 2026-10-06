@@ -841,6 +841,36 @@ def test_a_screen_with_only_its_own_card_keeps_the_heading(_app: AppTest) -> Non
     }
 
 
+def test_a_card_only_screen_that_stops_before_its_card_shows_no_heading(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """카드를 그리기 전에 멈춘 회차에는 「조회 조건」 제목만 덩그러니 남지 않는다.
+
+    공통 조건이 없는 화면의 제목은 미뤄 두었다가 첫 카드가 설 때 채운다. VOC 게시판을 읽지
+    못하면 페이지는 오류만 적고 멈추는데, 전에는 제목이 페이지보다 먼저 서 혼자 남았다.
+    """
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    app = _app.run()
+    readable = DuckDBScenarioRepository.list_voc_posts
+
+    def _unreadable(_self: object) -> pd.DataFrame:
+        raise RuntimeError("VOC 게시판을 읽지 못함")
+
+    monkeypatch.setattr(DuckDBScenarioRepository, "list_voc_posts", _unreadable)
+    app.switch_page(ADMIN_BOX_PAGES[0].path).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert any("VOC 게시판을 읽지 못함" in element.value for element in app.error)
+    assert _common_boxes(app) == set()
+
+    # 다시 읽히면 같은 세션의 다음 회차에 제목과 카드가 함께 선다.
+    monkeypatch.setattr(DuckDBScenarioRepository, "list_voc_posts", readable)
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == {"heading"}
+
+
 def test_a_screen_that_reads_only_the_scenario_shows_only_its_box(_app: AppTest) -> None:
     app = _app.run()
     app.switch_page(ADMIN_AREA.path).run()
