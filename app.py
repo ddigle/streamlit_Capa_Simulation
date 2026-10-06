@@ -46,6 +46,7 @@ from capa_simulation.settings import (
     APP_NAME,
     DUCKDB_PATH,
     EQUIPMENT_DUCKDB_PATH,
+    FAVICON_PATH,
     MONTH_SELECTION_END,
     MONTH_SELECTION_START,
     format_month,
@@ -98,7 +99,8 @@ def active_condition_tab(spec: PageSpec) -> str | None:
 
 st.set_page_config(
     page_title=APP_NAME,
-    page_icon=":material/factory:",
+    # 문자열 경로여야 한다 — Streamlit 은 `.svg` 로 끝나는 **파일**만 읽어 data URI 로 싣는다.
+    page_icon=str(FAVICON_PATH),
     layout="wide",
     # `menu_items` 는 적지 않는다. ⋮ 메뉴는 통째로 감추고(`render_shell_style`), 개발자·인증 정보는
     # Admin Area 맨 아래(`components/app_credits.py`)가 보여 준다.

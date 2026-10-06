@@ -105,6 +105,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 
 - `app.py`
   - 유일한 실행 진입점이다.
+  - 브라우저 탭 아이콘은 `settings.FAVICON_PATH`(`static/icons/factory.svg` — Material Symbols Rounded
+    `factory`, Apache-2.0, 같은 폴더 `LICENSE-Apache-2.0.txt`)의 **문자열 경로**다. Streamlit 1.63 은
+    `.svg` 로 끝나는 파일을 읽어 `data:image/svg+xml;base64,…` 로 싣는다 — `:material/…:` 이름은
+    프런트엔드가 fonts.gstatic.com 에서 받아 사내망에서 끊기고, data URI 는 URL 경로 접두
+    (`server.baseUrlPath`)와도 무관하다. 파일은 `<svg` 로 시작해야 한다(앞에 주석·BOM 을 두면 경로
+    문자열이 그대로 나간다, `tests/test_settings.py`).
   - 페이지 목록과 사이드바 박스는 `navigation.py` 의 `SIDEBAR_GROUPS` 선언에서 받아
     그리기만 한다. 박스 컨테이너 key 와 CSS 선택자도 같은 선언에서 나온다. 공통 사이드바와
     조회기간은 여기서 관리한다.

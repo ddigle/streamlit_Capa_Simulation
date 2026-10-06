@@ -22,6 +22,11 @@ APP_AUTH_CODE = "DEMO-AUTH-0000"
 APP_AUTH_EXPIRY = "2026-12-31"
 APP_HANDLING_NOTE = "반출·사외 공유 금지"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# 브라우저 탭 아이콘. `:material/…:` 이름을 주면 프런트엔드가 fonts.gstatic.com 에서 받아 오는데
+# 사내 WebIDE 는 그 주소에 못 나갈 수 있다. 저장소의 SVG 파일 경로를 주면 Streamlit 이 파일을 읽어
+# `data:image/svg+xml;base64,…` 로 실어 보내므로 외부 주소도, 사내의 URL 경로 접두도 타지 않는다.
+# 글리프는 Material Symbols Rounded `factory`(Apache-2.0 — 같은 폴더 `LICENSE-Apache-2.0.txt`)다.
+FAVICON_PATH = PROJECT_ROOT / "static" / "icons" / "factory.svg"
 DATA_DIR = PROJECT_ROOT / "data"
 INPUT_DIR = DATA_DIR / "input"
 DUCKDB_PATH = DATA_DIR / "capa_simulation.duckdb"

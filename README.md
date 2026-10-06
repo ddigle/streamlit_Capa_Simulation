@@ -149,6 +149,8 @@ app.py                         Streamlit 실행 진입점과 공통 사이드바
 app_pages/                     페이지별 UI
 static/fonts/                  페이지 제목·상자 제목·큰 숫자의 Archivo 부분 글꼴(정적 서빙
                                `app/static/…`, 사내망에 외부 글꼴이 없어 저장소에 둔다)
+static/icons/                  브라우저 탭 아이콘 `factory.svg`(Material Symbols Rounded,
+                               Apache-2.0 — 같은 폴더 `LICENSE-Apache-2.0.txt`)
 src/capa_simulation/navigation.py
                                사이드바 페이지 목록 선언
 src/capa_simulation/page_bootstrap.py
@@ -235,6 +237,9 @@ AGENTS.md                      개발 에이전트용 구조·규칙 문서
 (`공식 vN`·`저장된 리비전`·`미저장 변경`), 아래 줄은 시뮬레이션 코드·시나리오 기간(생산계획의 첫
 달–끝 달)·원천과 등록일(공식버전이 아니면 리비전 저장일)입니다. 앱 버전·개발자·인증 정보는
 `Admin Area` 맨 아래에 있습니다.
+브라우저 탭 아이콘은 앱에 든 SVG 파일(`static/icons/factory.svg`, Google Material Symbols Rounded
+`factory`, Apache License 2.0)을 Streamlit 이 data URI 로 실어 보내므로, 외부 아이콘 서버
+(fonts.gstatic.com)에 나가지 않고 사내의 URL 경로 접두에도 영향을 받지 않습니다.
 페이지 제목·상자 제목·수치 카드의 큰 숫자는 영문·숫자를 Archivo, 한글을 Noto Sans KR(없으면 맑은
 고딕)로 그립니다. Archivo 는 앱에 든 작은 글꼴 파일(`static/fonts/`, 영문·숫자만)을 Streamlit 정적
 서빙(`.streamlit/config.toml` 의 `enableStaticServing = true`)으로 받으므로 외부 글꼴 서버에 나가지
