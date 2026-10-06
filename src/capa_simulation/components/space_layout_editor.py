@@ -37,7 +37,7 @@ from typing import Any
 
 import streamlit as st
 
-from capa_simulation.components.space_layout import keep_out_color, mark_colors
+from capa_simulation.components.space_layout import block_tints, keep_out_color, mark_colors
 from capa_simulation.design import tokens
 from capa_simulation.services.fab_layout import (
     FLOOR_KEYS,
@@ -109,6 +109,8 @@ def _palette() -> dict[str, str]:
         "mark-muted": tokens.SPACE_LABEL_TEXT,
         # 도면 요소 이름표의 「글자 색」(`fontColor`). 편집기가 `var(--sle-mark-text-<키>)` 로 쓴다.
         **{f"mark-text-{key}": tokens.SPACE_MARK_TEXT_COLORS[key] for key in MARK_COLOR_KEYS},
+        # 색을 고른 FAB 층 블록의 불투명 면. 편집기가 `var(--sle-block-tint-<키>)` 로 쓴다.
+        **{f"block-tint-{key}": tint for key, tint in block_tints().items()},
     }
 
 

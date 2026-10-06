@@ -547,11 +547,8 @@ export default function (component) {
       // 층 블록: 면(고른 색 또는 Space 기본 면)·테두리·가운데 글자 줄. 글자는 블록에 맞춰 줄이고 화면에서 13px 를
       // 넘지 않는다. 줄이 다 안 들어가면 이름 줄만, 그것도 6px 아래면 숨긴다(풍선·초점 이름에는 남는다).
       const fill = el('rect', { class: 'sle-block-fill', x: 0, y: 0, width: lw, height: lh, rx: 0.4 })
-      const tint = item.color ? markColors[item.color] : null
-      if (tint) {
-        fill.style.fill = tint
-        fill.classList.add('is-tinted')
-      }
+      // 고른 색은 팔레트가 캔버스 위에 미리 섞어 둔 불투명 면이다(반투명이면 뒤의 도면·격자가 비친다).
+      if (item.color && markColors[item.color]) fill.style.fill = `var(--sle-block-tint-${item.color})`
       inner.append(fill, el('rect', { class: 'sle-block-border', x: 0, y: 0, width: lw, height: lh, rx: 0.4 }))
       const fitLines = (lines) => {
         const longest = Math.max(...lines.map(emWidth), 1)

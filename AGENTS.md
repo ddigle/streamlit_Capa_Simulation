@@ -1145,7 +1145,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     더블클릭 확대가 없다. 올려 두거나 초점이 오면 테두리가 강조색이고 선택 줄에 「C1 1F · 누르면 열기」, 떠나면
     되돌린다. 블록마다 Tab 초점(`role="button"`, 이름은 풍선 글)을 주고 Enter·Space 로 연다(보기 전용
     FAB 만). 영역·글자는 FAB 보기에서 눌림을 받지 않는다(꾸밈). 블록 면은 색 키가 있으면 그 색을 옅게,
-    없으면 `--sle-block`(`SPACE_BLOCK_FILL`)이다. 높이 기억 키는 `capa.space.viewerHeight.fab` 로 층과
+    없으면 `--sle-block`(`SPACE_BLOCK_FILL`)이다. **옅은 색도 불투명이다**(2026-10-07 사용자 결정 — 뒤의
+    도면·격자가 비치지 않는다). 영역 색(`space_layout.mark_colors`)을 `tokens.SPACE_BLOCK_TINT_ALPHA`(0.38,
+    반투명이던 때의 옅기)만큼 캔버스(`SPACE_CANVAS`) 위에 파이썬이 미리 섞어(`tokens.opaque_mix`,
+    `space_layout.block_tints`) 팔레트의 `block-tint-<키>` 로 보내고, JS 는 `var(--sle-block-tint-<키>)` 로
+    칠한다 — `fill-opacity` 도 CSS `color-mix()` 도 쓰지 않는다(사내 Chrome 판을 모른다). 바탕을 블록 기본
+    면이 아니라 캔버스로 둔 것은 반투명이던 때 그 색이 캔버스 위에 얹혀 보였기 때문이라, 빈 캔버스 위에서는
+    색이 전과 같다. 블록 글자의 기본 색(`SPACE_TEXT`)은 두 테마의 모든 색 블록 위에서 6.1:1 이상이다.
+    이름표 「글자 색」(`SPACE_MARK_TEXT_COLORS`)을 색 블록 위에 그대로 대면 36 쌍 가운데 밝게 33·어둡게 17 이
+    4.5:1 에 못 미친다(가장 낮은 것 밝게 하늘 글자 × 파랑 블록 2.94:1) — 반투명이던 때도 같았고, 글자가
+    `SURFACE` 테두리(3px)를 둘러 바로 맞닿는 면은 `SURFACE` 다. 사용자가 고른 팔레트라 바꾸지 않고 보고했다
+    (`tests/test_design_tokens.py` 가 짝 수를 고정한다). 높이 기억 키는 `capa.space.viewerHeight.fab` 로 층과
     따로다.
   - **FAB 전체 편집기**(`render_fab_layout_editor`, `scope="fab"`, 보기 전용 아님)도 같은 컴포넌트다. 범위
     표시(`.sle.is-fab`)가 `.sle-floor-only`(트레이 서랍·반입구·문·기둥·설비 금지)를 숨기고 `.sle-fab-only`

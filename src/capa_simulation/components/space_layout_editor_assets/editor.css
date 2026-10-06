@@ -102,8 +102,9 @@
 .sle-flow-head { fill: var(--sle-accent); }
 
 /* ---- 층 블록(FAB) — 면은 고른 색 또는 Space 기본 면, 글자는 가운데 줄. 상태 색이 아니다. ---- */
+/* 면은 늘 불투명이다. 고른 색은 팔레트의 `block-tint-<키>`(캔버스 위에 미리 섞은 옅은 색)라 뒤의 도면·
+   격자가 비치지 않는다. */
 .sle-block-fill { fill: var(--sle-block); }
-.sle-block-fill.is-tinted { fill-opacity: 0.38; }
 .sle-block-border { fill: none; stroke: var(--sle-frame); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .sle-mark-text.is-sub { font-weight: 600; }
 .mark-block .sle-mark-box { pointer-events: all; }

@@ -43,6 +43,20 @@ def _with_alpha(hex_color: str, alpha: float) -> str:
     return f"rgba({red},{green},{blue},{alpha})"
 
 
+def opaque_mix(color: str, base: str, alpha: float) -> str:
+    """`color` 를 `alpha` 만큼 `base` 위에 얹은 색을 **불투명** `#RRGGBB` 로 낸다.
+
+    반투명 면은 뒤에 있는 도면·격자가 비친다. 같은 옅기를 불투명하게 칠하려면 바탕을 미리 섞어
+    둔다. CSS `color-mix()` 로 브라우저에 맡기지 않는다 — 사내 Chrome 판을 모른다.
+    """
+    top = [int(color[i : i + 2], 16) for i in (1, 3, 5)]
+    bottom = [int(base[i : i + 2], 16) for i in (1, 3, 5)]
+    mixed = [
+        round(alpha * one + (1 - alpha) * other) for one, other in zip(top, bottom, strict=True)
+    ]
+    return "#" + "".join(f"{channel:02X}" for channel in mixed)
+
+
 # 라이트 팔레트. 아래 주석이 값마다의 근거다.
 _LIGHT: Final[dict[str, Any]] = {
     # ---------------------------------------------------------------- 면과 텍스트
@@ -577,6 +591,10 @@ BAR_OUTLINE_WIDTH_PX: Final = 1.0
 BAR_CORNER_RADIUS_WIDE_PX: Final = 8
 BAR_CORNER_RADIUS_MEDIUM_PX: Final = 5
 BAR_CORNER_RADIUS_NARROW_PX: Final = 3
+# Space FAB 층 블록에 고른 색(영역 색)의 옅기. 블록 면은 이 옅기로 캔버스(`SPACE_CANVAS`) 위에 미리
+# 섞은 **불투명** 색이다(`opaque_mix`, 2026-10-07 사용자 결정 — 뒤의 도면·격자가 비치지 않는다).
+# 0.38 은 반투명으로 칠하던 때의 옅기 그대로라 빈 캔버스 위에서는 색이 전과 같다.
+SPACE_BLOCK_TINT_ALPHA: Final = 0.38
 
 
 def bar_corner_radius(bar_width_px: float) -> int:

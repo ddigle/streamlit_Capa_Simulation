@@ -135,6 +135,21 @@ def mark_colors() -> dict[str, str]:
     return {**named, MARK_COLOR_KEYS[-1]: tokens.PRODUCT_SHARE_OTHER}
 
 
+def block_tints() -> dict[str, str]:
+    """FAB 층 블록 면색 — 영역 색 키 → 지금 테마의 **불투명** 면.
+
+    영역 색을 `SPACE_BLOCK_TINT_ALPHA` 만큼 캔버스(`SPACE_CANVAS`) 위에 미리 섞는다. 반투명으로
+    칠하면 블록 뒤의 도면·격자가 비친다(2026-10-07 사용자 결정 — 색을 고른 블록은 불투명). 바탕을
+    블록 기본 면(`SPACE_BLOCK_FILL`)이 아니라 캔버스로 두는 것은, 반투명이던 때 그 색이 캔버스
+    위에 얹혀 보였기 때문이다 — 빈 캔버스 위에서는 색이 전과 같다. 편집기가
+    `var(--sle-block-tint-<키>)` 로 쓴다(`space_layout_editor._palette`).
+    """
+    return {
+        key: tokens.opaque_mix(color, tokens.SPACE_CANVAS, tokens.SPACE_BLOCK_TINT_ALPHA)
+        for key, color in mark_colors().items()
+    }
+
+
 def keep_out_color() -> str:
     """겹침·설비 금지 표시색. 다크의 부족색은 어두운 캔버스에서 1.9:1 로 묻혀 밝은 감소색을 쓴다."""
     return tokens.DELTA_AREA_DECREASE if theme.current_mode() == "dark" else tokens.STATUS_SHORTAGE

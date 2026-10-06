@@ -191,6 +191,24 @@ def test_every_mark_takes_a_font_size_and_colour_from_the_inspector() -> None:
     assert "fontSize: fontSizeOf(raw.fontSize), fontColor: String(raw.fontColor || '')" in JS
 
 
+def test_a_tinted_floor_block_is_painted_opaque_from_the_palette() -> None:
+    """색을 고른 FAB 층 블록 면은 불투명이다(2026-10-07 사용자 결정 — 뒤가 비치지 않는다).
+
+    색은 파이썬이 캔버스 위에 미리 섞어 팔레트의 `block-tint-<키>` 로 보낸다 — JS 에 색을 적지 않고,
+    CSS `color-mix()` 나 `fill-opacity` 로 브라우저에 맡기지 않는다. 블록 글자는 `SURFACE` 테두리를
+    두른다(글자 색이 색 블록과 바로 맞닿지 않게)."""
+    from capa_simulation.services.floor_layout_mark import MARK_COLOR_KEYS
+
+    palette = space_layout_editor._palette()
+    assert {f"block-tint-{key}" for key in MARK_COLOR_KEYS} <= set(palette)
+    assert "`var(--sle-block-tint-${item.color})`" in JS
+    assert "is-tinted" not in JS and "is-tinted" not in CSS
+    assert "fill-opacity" not in _rule(".sle-block-fill")
+    assert "color-mix" not in CSS and "color-mix" not in JS
+    label = _rule(".sle-mark-text")
+    assert "paint-order: stroke" in label and "stroke: var(--sle-surface)" in label
+
+
 def test_a_column_draws_its_name_above_it() -> None:
     """기둥 이름표는 기둥 위 가운데에 가로로 선다(돌리지 않는다)."""
     outside = JS[

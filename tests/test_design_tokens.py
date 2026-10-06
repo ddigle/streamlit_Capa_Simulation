@@ -420,3 +420,54 @@ def test_space_mark_text_colours_read_on_every_space_surface() -> None:
                     weak.append(f"{mode}.{key} {ink} on {surface}: {ratio:.2f}")
 
     assert not weak, "\n".join(weak)
+
+
+def test_opaque_mix_lays_a_colour_over_its_base_without_alpha() -> None:
+    """`opaque_mix` 는 반투명 칠을 바탕 위에 미리 섞은 불투명 `#RRGGBB` 다."""
+    assert tokens.opaque_mix("#000000", "#FFFFFF", 0.5) == "#808080"
+    assert tokens.opaque_mix("#0154C6", "#F7F8FA", 0.0) == "#F7F8FA"
+    assert tokens.opaque_mix("#0154C6", "#F7F8FA", 1.0) == "#0154C6"
+    assert re.fullmatch(r"#[0-9A-F]{6}", tokens.opaque_mix("#D17698", "#141A21", 0.38))
+
+
+def test_space_block_tints_are_opaque_and_carry_the_default_ink() -> None:
+    """색을 고른 FAB 층 블록 면은 불투명이다(2026-10-07 사용자 결정 — 뒤가 비치지 않는다).
+
+    면은 영역 색을 `SPACE_BLOCK_TINT_ALPHA` 만큼 캔버스 위에 섞은 색이라 빈 캔버스 위에서는
+    반투명이던 때와 같다. 블록 글자의 기본 색(`SPACE_TEXT`)은 두 테마의 모든 면 위에서 4.5:1
+    이상이어야 한다.
+
+    이름표 「글자 색」(`SPACE_MARK_TEXT_COLORS`)을 색 블록 위에 그대로 대면 4.5:1 에 못 미치는
+    짝이 많다(36 쌍 가운데 밝게 33 · 어둡게 17, 가장 낮은 것은 밝게 하늘 글자 × 파랑 블록
+    2.94:1). 반투명이던 때도 빈 캔버스 위에서는 같은 색이었으므로 새로 생긴 것이 아니다. 글자는
+    `SURFACE` 테두리(3px)를 두르고 서서 바로 맞닿는 면은 `SURFACE` 다 — 그 대비는 위 시험이
+    지킨다. 팔레트는 사용자가 고른 것이라 여기서 바꾸지 않는다.
+    """
+    from capa_simulation.components.space_layout import block_tints
+    from capa_simulation.design import theme as theme_module
+    from capa_simulation.services.floor_layout_mark import MARK_COLOR_KEYS
+
+    weak: list[str] = []
+    shortfalls: dict[str, int] = {}
+    previous = theme_module.current_mode()
+    try:
+        for mode in ("light", "dark"):
+            theme_module._LOCAL.mode = mode
+            tints = block_tints()
+            assert set(tints) == set(MARK_COLOR_KEYS), mode
+            palette = tokens._PALETTES[mode]
+            for key, tint in tints.items():
+                assert re.fullmatch(r"#[0-9A-F]{6}", tint), (mode, key, tint)
+                ratio = contrast_ratio(palette["SPACE_TEXT"], tint)
+                if ratio < 4.5:
+                    weak.append(f"{mode}.{key} SPACE_TEXT on {tint}: {ratio:.2f}")
+                shortfalls[mode] = shortfalls.get(mode, 0) + sum(
+                    contrast_ratio(ink, tint) < 4.5
+                    for ink in palette["SPACE_MARK_TEXT_COLORS"].values()
+                )
+    finally:
+        theme_module._LOCAL.mode = previous
+
+    assert not weak, "\n".join(weak)
+    # 글자 색 × 색 블록의 모자란 짝 수. 바뀌면 팔레트가 바뀐 것이다 — 위 설명과 함께 고친다.
+    assert shortfalls == {"light": 33, "dark": 17}
