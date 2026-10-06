@@ -248,11 +248,11 @@ def test_process_picker_bulk_actions_restore_applied_values_and_apply_empty_or_a
 
 
 @pytest.mark.parametrize(
-    "group_rate,other_rate,group_title,group_first",
+    "group_rate,other_rate,rest_rate,group_title,group_first",
     [
-        (0.8, 1.3, "확보 기준 미달", True),
-        (1.3, 0.8, "확보 기준 충족", False),
-        (float("nan"), 0.8, "확보율 없음", False),
+        (0.8, 1.3, float("nan"), "확보 기준 미달", True),
+        (1.3, 0.8, float("nan"), "확보 기준 충족", False),
+        (float("nan"), 0.8, 1.3, "확보율 없음", False),
     ],
 )
 def test_process_picker_preserves_shared_order_within_each_securement_group(
@@ -260,9 +260,16 @@ def test_process_picker_preserves_shared_order_within_each_securement_group(
     monkeypatch: pytest.MonkeyPatch,
     group_rate: float,
     other_rate: float,
+    rest_rate: float,
     group_title: str,
     group_first: bool,
 ) -> None:
+    """공용 표시순서는 확보율 구역 **안에서** 지켜진다.
+
+    내장 시드의 공정 수에 묶이지 않게, 정렬 규칙과 구역은 앞 세 공정으로만 만들고 나머지
+    공정에는 두 구역 어디에도 들지 않는 셋째 구역의 확보율(`rest_rate`)을 준다. 단언도 그 세
+    공정의 타일·선택만 본다 — 시드가 공정을 늘려도 계약은 그대로다.
+    """
     from capa_simulation.persistence.cache import (
         clear_global_display_order_cache,
         clear_global_process_rename_cache,
@@ -273,8 +280,9 @@ def test_process_picker_preserves_shared_order_within_each_securement_group(
 
     database = tmp_path / "ordered_picker.duckdb"
     app = _run_process_dialog_app(database)
-    originals = sorted(app.session_state[PROCESS_SELECTION_KEY])
-    assert len(originals) == 3
+    initial_selection = list(app.session_state[PROCESS_SELECTION_KEY])
+    assert len(initial_selection) >= 3
+    originals = sorted(initial_selection)[:3]
     configured_order = list(reversed(originals))
     group_members = [configured_order[0], configured_order[2]]
     other = configured_order[1]
@@ -306,10 +314,11 @@ def test_process_picker_preserves_shared_order_within_each_securement_group(
     def simulation_with_group_rates(*args, **kwargs):
         result = list(original_simulation(*args, **kwargs))
         securement = result[3].copy()
-        # 계산식은 실제 경로를 쓰고, 선택 UI의 세 구역을 만들 최종 확보율만 고정한다.
+        # 계산식은 실제 경로를 쓰고, 선택 UI의 세 구역을 만들 최종 확보율만 고정한다. 고른
+        # 세 공정 밖의 공정은 모두 셋째 구역이다 — 두 구역의 개수와 차례에 끼지 않는다.
         rates = {process: group_rate for process in group_members}
         rates[other] = other_rate
-        securement["확보율"] = securement["공정"].map(rates)
+        securement["확보율"] = securement["공정"].map(lambda process: rates.get(process, rest_rate))
         result[3] = securement
         return tuple(result)
 
@@ -319,17 +328,25 @@ def test_process_picker_preserves_shared_order_within_each_securement_group(
     app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
     assert not app.exception, [item.message for item in app.exception]
     expected_order = [*group_members, other] if group_first else [other, *group_members]
-    tiles = [button for button in app.button if str(button.key).startswith("home_bn_process_tile_")]
+    tile_prefix = "home_bn_process_tile_"
+    tiles = [
+        button
+        for button in app.button
+        if str(button.key).startswith(tile_prefix)
+        and str(button.key).removeprefix(tile_prefix) in originals
+    ]
     assert [button.key for button in tiles] == [
-        f"home_bn_process_tile_{process}" for process in expected_order
+        f"{tile_prefix}{process}" for process in expected_order
     ]
     assert [button.label for button in tiles] == [aliases[process] for process in expected_order]
     assert f"**{group_title} · 2**" in [item.value for item in app.markdown]
 
     app.button(key="dashboard_bottleneck_process_apply").click().run()
     assert not app.exception, [item.message for item in app.exception]
-    assert app.session_state[PROCESS_SELECTION_KEY] == configured_order
-    assert not set(aliases.values()).intersection(app.session_state[PROCESS_SELECTION_KEY])
+    applied = app.session_state[PROCESS_SELECTION_KEY]
+    assert [process for process in applied if process in originals] == configured_order
+    assert sorted(applied) == sorted(initial_selection)
+    assert not set(aliases.values()).intersection(applied)
 
 
 def test_a_broken_securement_display_order_shows_an_error_instead_of_a_traceback(

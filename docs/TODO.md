@@ -377,9 +377,12 @@
   (`home_decision`)과 B/N 공정 선택(`process_picker`)은 `SecurementThresholds.status` 를 지나게 했다
   (Static Capa 부족 현황은 이미 그 쪽이었다). 범례 이름 「초과 확보」는 「확보」로, 공정 선택의 구역
   이름 「기준 초과」는 「확보 기준 충족」으로 바꿨다.
-- [ ] `test_process_picker_preserves_shared_order_within_each_securement_group` 이
+- [x] `test_process_picker_preserves_shared_order_within_each_securement_group` 이
   `len(originals) == 3` 으로 내장 시드의 공정 수에 묶여 있다. 시드 공정이 늘면 계약과
   무관하게 깨진다 — 앞 셋만 골라 쓰고 나머지 확보율도 정해 주는 모양으로 푼다.
+  **2026-10-07**: 선택의 앞 세 공정으로 규칙·구역을 만들고 나머지 공정에는 두 구역 어디에도
+  들지 않는 셋째 구역 확보율(`rest_rate`)을 준다. 타일·적용 뒤 선택의 단언도 그 세 공정만
+  본다(적용 뒤 선택 전체는 처음 선택과 같은 집합).
 - [x] 사이드바의 기준정보 파일 경로 입력을 제거하고 프로젝트의 `templates/structure_template.xlsb`를 고정 기본 파일로 사용한다.
 - [x] 공통 사이드바 조회기간을 시작·종료 월을 각각 선택하는 월 캘린더로 구성하고 기존 전역 조회기간 상태와 연결했다.
 - [x] 2026-09-23: 사이드바 양식을 하나로 통일했다. 늘 펼쳐져 있던 시나리오·리비전, 조회기간, B/N 집계 공정, 관리 넷을 페이지 그룹과 같은 `st.expander` 로 바꿨다. 기본은 접힘(B/N 만 펼침)이고 편 상태는 세션 동안 기억한다. 접힌 줄에는 **두 조각만** 남긴다 — 시나리오의 상태 배지(요약 줄 우측정렬)와 조회기간의 적용 기간(자리표시자를 CSS 로 요약 줄에 얹는다). 시나리오 상자 아이콘은 `시나리오 관리` 페이지와 겹치던 `:material/database:` 에서 `:material/layers:` 로 바꿨고, 관리 상자는 계산 흐름 밖이라는 표시를 테두리 없음과 캡션 색 글자로 살렸다.
