@@ -47,16 +47,42 @@ def test_sidebar_collapse_button_is_always_visible_on_screen() -> None:
     assert "visibility: visible !important;" in block
 
 
+NARROW_MEDIA = "@media (max-width: 1399.98px)"
+
+
 def test_the_header_text_leaves_room_for_the_whole_toolbar() -> None:
     """툴바가 Summary 를 품고 있던 때 1100px 창에서 355px 를 썼다(⋮ 를 감추고 Print 를 더한
     뒤 실측). 16rem(224px)만 비우면 머리 글자가 툴바 밑으로 들어갔다(2026-10-05 E2E). Summary 를
     사이드바 라벨로 옮겨 툴바가 좁아졌어도 그 폭은 지킨다."""
-    widths = re.findall(r"max-width: calc\(100% - (\d+)rem\)", _header_css())
+    wide = _header_css().split(NARROW_MEDIA)[0]
+    widths = re.findall(r"max-width: calc\(100% - ([\d.]+)rem\)", wide)
     root_px = 14
-    assert widths and int(widths[0]) * root_px >= 355 + 21 + 12
+    assert widths and float(widths[0]) * root_px >= 355 + 21 + 12
     # 사이드바를 접으면 글자가 4rem 에서 시작한다. 민 만큼(2.5rem) 최대 폭도 줄어야 한다.
-    collapsed = re.findall(r"max-width: calc\(100% - ([\d.]+)rem\)", _header_css())[-1]
-    assert float(collapsed) * root_px >= 355 + 4 * root_px + 12
+    assert float(widths[-1]) * root_px >= 355 + 4 * root_px + 12
+
+
+def test_narrow_windows_reserve_only_what_todays_toolbar_uses() -> None:
+    """1400px 보다 좁은 창은 지금 툴바 실측으로 비움 폭을 잡는다(2026-10-07).
+
+    28rem 그대로면 1100px 창(사이드바 300px)에서 글자 폭이 408px 뿐이라 긴 이름이 잘렸다. 그 창의
+    실측: 툴바 단추 묶음이 Deploy 까지 250px, Deploy 없이 197px(테마 글자가 `Light` 면 2px 더).
+    여기에 글자 시작(펼침 21px · 접힘 4rem), 띠 안쪽 여백·선 11px(최대 폭은 글자 칸에만 걸린다)과
+    틈 12px 가 들어가야 글자가 툴바 밑으로 가지 않는다.
+    """
+    css = _header_css()
+    assert NARROW_MEDIA in css
+    narrow = css.split(NARROW_MEDIA)[1]
+    deploy, no_deploy, collapsed_deploy, collapsed_no_deploy = (
+        float(value) * 14 for value in re.findall(r"max-width: calc\(100% - ([\d.]+)rem\)", narrow)
+    )
+    light, frame, gap = 2, 11, 12
+    assert 250 + light + 21 + frame + gap <= deploy < 28 * 14
+    assert 197 + light + 21 + frame + gap <= no_deploy < deploy
+    assert 250 + light + 4 * 14 + frame + gap <= collapsed_deploy
+    assert 197 + light + 4 * 14 + frame + gap <= collapsed_no_deploy < collapsed_deploy
+    # Deploy 가 없는 툴바(사내)를 가르는 것은 `:has()` 다.
+    assert ':not(:has([data-testid="stAppDeployButton"]))' in narrow
 
 
 def test_inline_code_in_body_text_is_close_to_the_body_size() -> None:
@@ -85,7 +111,9 @@ def test_the_streamlit_main_menu_is_hidden_and_nothing_else() -> None:
     테마 항목을 남겨 메뉴가 사라지지 않는다. 화면에 걸리는 규칙은 메뉴 하나만 고른다 — Deploy 와
     우리 단추가 앉는 툴바 슬롯은 그대로여야 한다. 규칙은 머리 띠 CSS 가 아니라 부트스트랩 앞에서
     따로 나가는 껍데기 스타일에 있다(차례는 `test_app_navigation` 이 지킨다)."""
-    for css in (SHELL_STYLE, _header_css()):
+    # 좁은 창 규칙은 Deploy 가 **있는지**를 `:has()` 로 볼 뿐 그것에 서식을 걸지 않는다.
+    deploy_probe = ':has([data-testid="stAppDeployButton"])'
+    for css in (SHELL_STYLE, _header_css().replace(deploy_probe, "")):
         assert "stToolbarActions" not in css
         assert "stAppDeployButton" not in css
     screen, _ = _split_shell_style()

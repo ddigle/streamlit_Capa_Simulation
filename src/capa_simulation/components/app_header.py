@@ -175,9 +175,9 @@ _HEADER_TEMPLATE = """
   left: 1.5rem;
   /* 오른쪽 툴바(Guide·테마·Print·Deploy)가 쓰는 폭은 비워 둔다. 창이 좁아지면 글자를 밀어내지
      않고 말줄임으로 끊는다 — 두 줄이 따로 줄어 짧은 위 줄이 먼저 다 보인다. 28rem 은 툴바에
-     Summary 가 있던 때 1100px 창 실측 355px 에 글자 시작 21px 과 틈 12px 를 더한 값이다. Summary 를
-     사이드바 라벨로 옮겨 툴바가 좁아졌으니 넉넉하다. 16rem 일 때는 글자가 툴바 밑으로
-     들어갔다(2026-10-05 E2E). */
+     Summary 가 있던 때 1100px 창 실측 355px 에 글자 시작 21px 과 틈 12px 를 더한 값이다. 1400px
+     보다 좁은 창은 지금 툴바 실측으로 다시 잡는다(`_NARROW_HEADER_RULES`). 16rem 일 때는 글자가
+     툴바 밑으로 들어갔다(2026-10-05 E2E). */
   max-width: calc(100% - 28rem);
   overflow: hidden;
   white-space: nowrap;
@@ -246,6 +246,44 @@ _HEADER_TEMPLATE = """
   [data-testid="stHeader"]::after {
   left: 4rem;
   max-width: calc(100% - 30.5rem);
+}
+"""
+
+# 1400px 보다 좁은 창에서만 오른쪽 비움 폭을 지금 툴바의 실측에 맞춘다(2026-10-07). 위의 28rem 은
+# 툴바에 Summary 가 있던 때 값이라, 1100px 창(사이드바 300px)에서 글자 폭이 408px 뿐이어서 긴
+# 시나리오명·코드가 말줄임으로 잘렸다. 그 창의 실측(1rem = 14px): 툴바 단추 묶음은 Guide·테마·Print
+# 와 개발 모드의 Deploy 까지 850px 부터(머리 띠 오른쪽 끝까지 250px), Deploy 가 없으면 903px 부터
+# (197px)다. 여기에 글자 시작 21px, 왼쪽 띠 안쪽 여백·선 11px(최대 폭은 글자 칸에만 걸린다),
+# 틈 12px, 테마 단추 글자가 `Light` 일 때 넓어지는 2px 를 더하면 296px·243px 라 21.5rem·17.5rem
+# 으로 둔다(글자 칸 499px·555px — 위 28rem 일 때는 408px). Deploy 는 Streamlit 이 localhost
+# 접속에서만 세우므로 사내 WebIDE 에서는 보통 없는 쪽이다 — 그 여부를 `:has()` 로 가른다.
+# 사이드바를 접은 경우는 위 규칙과 같이 2.5rem 을 더 뺀다. 1400px 이상은 그대로 둔다.
+#
+# 말줄임이 끝내 남는 아주 긴 이름에 전체 글을 띄우는 풍선은 두지 않는다. 글은 가상요소라 `title`
+# 을 달 자리가 없고(`pointer-events: none`), 풍선을 달려면 스크립트로 실제 요소를 넣어야 한다 —
+# 이 모듈이 HOME 을 무겁게 하지 않으려고 피한 길이다. 전체 이름은 사이드바 시나리오 상자에 있다.
+_NARROW_HEADER_RULES = """
+@media (max-width: 1399.98px) {
+  [data-testid="stHeader"]::before,
+  [data-testid="stHeader"]::after {
+    max-width: calc(100% - 21.5rem);
+  }
+  [data-testid="stHeader"]:not(:has([data-testid="stAppDeployButton"]))::before,
+  [data-testid="stHeader"]:not(:has([data-testid="stAppDeployButton"]))::after {
+    max-width: calc(100% - 17.5rem);
+  }
+  [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
+    [data-testid="stHeader"]::before,
+  [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
+    [data-testid="stHeader"]::after {
+    max-width: calc(100% - 24rem);
+  }
+  [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
+    [data-testid="stHeader"]:not(:has([data-testid="stAppDeployButton"]))::before,
+  [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
+    [data-testid="stHeader"]:not(:has([data-testid="stAppDeployButton"]))::after {
+    max-width: calc(100% - 20rem);
+  }
 }
 """
 
@@ -329,7 +367,7 @@ def _header_css(top: str = APP_NAME, bottom: str = "") -> str:
         .replace("__TOP_OFFSET__", "calc(50% - 1.1rem)" if bottom else "calc(50% - 0.55rem)")
         .replace("__BOTTOM_LINE__", css_string(bottom))
         .replace("__TOP_LINE__", css_string(top))
-    )
+    ) + _NARROW_HEADER_RULES
 
 
 def render_app_header() -> None:
