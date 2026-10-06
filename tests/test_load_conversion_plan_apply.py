@@ -484,7 +484,7 @@ def test_a_product_locked_in_every_month_can_be_fixed_from_the_yield_grid(
     edit = {
         "edited_rows": {
             int(index): {month: (0.9 if kind == "EDS" else 0.95) for month in months}
-            for index, kind in b_rows["수율 구분"].items()
+            for index, kind in zip(b_rows.index, b_rows["수율 구분"], strict=True)
         },
         "added_rows": [],
         "deleted_rows": [],

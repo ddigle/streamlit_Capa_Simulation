@@ -40,7 +40,7 @@ def test_reference_clipboard_round_trip_preserves_template_row_order() -> None:
     )
 
     assert result["공정"].tolist() == ["Process-B", "Process-A"]
-    assert float(result.loc[1, "202608"]) == pytest.approx(0.75)
+    assert float(result["202608"].loc[1]) == pytest.approx(0.75)
 
 
 def test_reference_paste_rejects_changed_classification_rows() -> None:

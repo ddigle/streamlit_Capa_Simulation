@@ -13,7 +13,9 @@ def _frame(rows: list[tuple[int, str, float | None]]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["생산계획년월", "공정", "확보율"])
 
 
-def _summary(frame: pd.DataFrame, options: list[str], threshold: float = 1.0):
+def _summary(
+    frame: pd.DataFrame, options: list[str], threshold: float = 1.0
+) -> tuple[ProcessPickerItem, ...]:
     return build_process_picker_summary(
         frame,
         options,
@@ -51,7 +53,7 @@ def test_summary_preserves_input_original_keys_and_requested_order() -> None:
     pd.testing.assert_frame_equal(frame, before)
     assert options == ["A 원본", "데이터 없는 원본", "Z 원본"]
     with pytest.raises(FrozenInstanceError):
-        items[0].minimum_rate = 0.0
+        items[0].minimum_rate = 0.0  # type: ignore[misc]
 
 
 def test_nan_infinite_and_absent_months_do_not_become_zero_or_shortfall() -> None:
@@ -83,7 +85,7 @@ def test_nan_infinite_and_absent_months_do_not_become_zero_or_shortfall() -> Non
 
 @pytest.mark.parametrize("threshold", [0.0, 1.0, 1.095])
 def test_equal_threshold_is_sufficient_like_home_and_only_lower_is_shortfall(
-    threshold,
+    threshold: float,
 ) -> None:
     """HOME 은 기준과 같은 확보율을 확보로 센다(2026-10-06 사용자 결정). 선택 화면도 같아야 한다."""
     frame = _frame(
@@ -102,7 +104,7 @@ def test_equal_threshold_is_sufficient_like_home_and_only_lower_is_shortfall(
 
 
 @pytest.mark.parametrize("rate,expected", [(0.9, "shortfall"), (1.1, "sufficient")])
-def test_all_or_none_are_shortfall_without_reordering_options(rate, expected) -> None:
+def test_all_or_none_are_shortfall_without_reordering_options(rate: float, expected: str) -> None:
     frame = _frame([(202601, "B", rate), (202601, "A", rate)])
 
     items = _summary(frame, ["A", "B"])
@@ -139,13 +141,13 @@ def test_required_columns_are_validated() -> None:
 
 
 @pytest.mark.parametrize("threshold", [float("nan"), float("inf"), -0.1])
-def test_invalid_threshold_is_rejected(threshold) -> None:
+def test_invalid_threshold_is_rejected(threshold: float) -> None:
     with pytest.raises(ValueError, match="확보 기준"):
         _summary(_frame([]), [], threshold)
 
 
 @pytest.mark.parametrize("start,end", [(202600, 202603), (202603, 202601)])
-def test_invalid_query_bounds_are_rejected(start, end) -> None:
+def test_invalid_query_bounds_are_rejected(start: int, end: int) -> None:
     with pytest.raises(ValueError):
         build_process_picker_summary(
             _frame([]),

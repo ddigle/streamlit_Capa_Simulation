@@ -171,7 +171,7 @@ def test_preview_reads_blank_cells_the_same_after_the_scalar_fast_path() -> None
     assert "설비이력" in preview.loc[0, "변경컬럼"]
     assert "(빈 값)" in preview.loc[0, "변경내용"]
     # 원래도 비어 있던 칸은 변경이 아니다 — 양쪽 결측은 같은 값으로 본다.
-    assert "구분" not in preview.loc[0, "변경컬럼"].split(", ")
+    assert "구분" not in str(preview.loc[0, "변경컬럼"]).split(", ")
 
 
 def test_preview_does_not_depend_on_the_incoming_index() -> None:

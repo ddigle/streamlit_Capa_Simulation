@@ -2,8 +2,10 @@
 
 import ast
 from pathlib import Path
+from typing import TypedDict
 
 import pandas as pd
+import plotly.graph_objects as go
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.grouped_monthly_table import build_grouped_monthly_export
@@ -11,7 +13,10 @@ from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
 )
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
-from capa_simulation.components.process_labels import process_labels_from_rules
+from capa_simulation.components.process_labels import (
+    ProcessLabels,
+    process_labels_from_rules,
+)
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import build_home_simulation_cache_key
@@ -185,7 +190,16 @@ def test_display_order_and_equipment_paths_never_see_display_names() -> None:
 # ------------------------------------------------------- Figure 는 표시명을 쓴다
 
 
-def _lob_frames() -> dict[str, pd.DataFrame]:
+class _LobFrames(TypedDict):
+    """`build_lob_summary_figures(**frames)` 로 펼치는 네 프레임."""
+
+    monthly_density: pd.DataFrame
+    lob_summary: pd.DataFrame
+    bottleneck_capacity: pd.DataFrame
+    monthly_top5: pd.DataFrame
+
+
+def _lob_frames() -> _LobFrames:
     """LOB 요약 Figure 한 달치 최소 입력. 월 위치는 `monthly_density` 행 수를 따른다."""
     return {
         "monthly_density": pd.DataFrame(
@@ -223,7 +237,7 @@ def _lob_frames() -> dict[str, pd.DataFrame]:
     }
 
 
-def _lob_month_figure(labels: object | None) -> object:
+def _lob_month_figure(labels: ProcessLabels | None) -> go.Figure:
     from capa_simulation.components.home_figures import build_lob_summary_figures
 
     _, month_figure = build_lob_summary_figures(
@@ -235,7 +249,7 @@ def _lob_month_figure(labels: object | None) -> object:
     return month_figure
 
 
-def _rotated_annotation_texts(figure: object) -> list[str]:
+def _rotated_annotation_texts(figure: go.Figure) -> list[str]:
     """세로로 세운 주석의 문자열. 공정명 주석이 확보율·Wafer Capa 와 함께 여기 섞여 있다.
 
     Figure 는 `textangle=270` 으로 넣지만 Plotly 가 -90 으로 정규화해 보관한다.
@@ -262,7 +276,7 @@ def _bottleneck_detail_frame() -> pd.DataFrame:
     )
 
 
-def _bottleneck_detail_month_figure(labels: object | None) -> object:
+def _bottleneck_detail_month_figure(labels: ProcessLabels | None) -> go.Figure:
     from capa_simulation.components.home_figures import build_bottleneck_detail_figures
 
     _, month_figure = build_bottleneck_detail_figures(
@@ -463,7 +477,7 @@ def test_month_editor_dimension_uses_a_selectbox_that_splits_value_and_label() -
     config = _dimension_column_config(_monthly_frame(), ["공정"], LABELS.value_labels())
     type_config = config["공정"]["type_config"]
 
-    assert type_config["type"] == "selectbox"
+    assert type_config is not None and type_config["type"] == "selectbox"
     assert type_config["options"] == [
         {"value": "SAW", "label": "절단"},
         {"value": "MOLD", "label": "MOLD"},
@@ -476,7 +490,8 @@ def test_month_editor_dimension_stays_a_text_column_without_a_mapping() -> None:
 
     config = _dimension_column_config(_monthly_frame(), ["공정"], None)
 
-    assert config["공정"]["type_config"]["type"] == "text"
+    type_config = config["공정"]["type_config"]
+    assert type_config is not None and type_config["type"] == "text"
     assert config["공정"]["alignment"] == "center"
 
 
@@ -486,7 +501,12 @@ def test_month_editor_selectbox_options_cover_every_value_in_the_table() -> None
 
     frame = _monthly_frame()
     config = _dimension_column_config(frame, ["공정"], LABELS.value_labels())
-    values = {option["value"] for option in config["공정"]["type_config"]["options"]}
+    type_config = config["공정"]["type_config"]
+    assert type_config is not None and type_config["type"] == "selectbox"
+    options = type_config["options"] or []
+    # 옵션은 값·표시명을 나눠 가진 dict 여야 한다. 문자열 옵션은 표시명을 따로 줄 수 없다.
+    assert all(isinstance(option, dict) for option in options)
+    values = {option["value"] for option in options if isinstance(option, dict)}
 
     assert values == set(frame["공정"])
 

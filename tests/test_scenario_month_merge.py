@@ -1,10 +1,13 @@
 # Purpose: 월 머지의 겹침 정책과 미리보기 일치 및 원본·무월 표 보존과 월 축 검증을 확인한다.
 
+from collections.abc import Callable
+
 import pandas as pd
 import pytest
 from test_duckdb_repository import _reference_tables
 
 from capa_simulation.services.scenario_month_merge import (
+    OverlapPolicy,
     compare_non_monthly_tables,
     merge_scenario_months,
     preview_month_sources,
@@ -12,7 +15,9 @@ from capa_simulation.services.scenario_month_merge import (
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
 
 
-def _month_tables(months: list[int], source: str, rows_per_month: int = 1):
+def _month_tables(
+    months: list[int], source: str, rows_per_month: int = 1
+) -> dict[str, pd.DataFrame]:
     tables = _reference_tables()
     for name in MONTHLY_TABLES:
         template = tables[name]
@@ -81,13 +86,15 @@ def test_merge_rejects_result_axis_gaps() -> None:
         (202701, 202712, "월 데이터가 없습니다"),
     ],
 )
-def test_invalid_or_empty_range_is_rejected(operation, start: int, end: int, message: str) -> None:
+def test_invalid_or_empty_range_is_rejected(
+    operation: Callable[..., object], start: int, end: int, message: str
+) -> None:
     with pytest.raises(ValueError, match=message):
         operation(_reference_tables(), _reference_tables(), start, end)
 
 
 @pytest.mark.parametrize("policy", ["base", "donor"])
-def test_overlap_policy_selects_whole_months_and_matches_preview(policy) -> None:
+def test_overlap_policy_selects_whole_months_and_matches_preview(policy: OverlapPolicy) -> None:
     base = _month_tables([202608, 202609], "base")
     donor = _month_tables([202607, 202609, 202701, 202702], "donor", rows_per_month=2)
     for name in NON_MONTHLY_TABLES:
@@ -127,7 +134,7 @@ def test_overlap_policy_selects_whole_months_and_matches_preview(policy) -> None
 
 
 @pytest.mark.parametrize("policy", ["base", "donor"])
-def test_fully_overlapping_months_keep_only_the_chosen_source(policy) -> None:
+def test_fully_overlapping_months_keep_only_the_chosen_source(policy: OverlapPolicy) -> None:
     base = _month_tables([202608, 202609], "base")
     donor = _month_tables([202608, 202609], "donor", rows_per_month=2)
 
@@ -141,7 +148,9 @@ def test_fully_overlapping_months_keep_only_the_chosen_source(policy) -> None:
 
 
 @pytest.mark.parametrize("policy", ["base", "donor"])
-def test_missing_winner_month_is_rejected_instead_of_using_loser_rows(policy) -> None:
+def test_missing_winner_month_is_rejected_instead_of_using_loser_rows(
+    policy: OverlapPolicy,
+) -> None:
     base = _month_tables([202608, 202609], "base")
     donor = _month_tables([202609, 202701], "donor")
     winner = base if policy == "base" else donor
@@ -171,7 +180,7 @@ def test_default_preview_lists_overlaps_as_blocked_and_range_excludes_other_dono
 
 
 @pytest.mark.parametrize("operation", [merge_scenario_months, preview_month_sources])
-def test_invalid_overlap_policy_is_rejected(operation) -> None:
+def test_invalid_overlap_policy_is_rejected(operation: Callable[..., object]) -> None:
     with pytest.raises(ValueError, match="지원하지 않는 월 겹침 정책"):
         operation(_reference_tables(), _reference_tables(), 202608, 202608, overlap_policy="other")
 

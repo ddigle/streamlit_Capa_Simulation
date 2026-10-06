@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import plotly.graph_objects as go
 import pytest
 
 from capa_simulation.components.home_dimensions import (
@@ -42,7 +43,7 @@ def _securement_frame() -> pd.DataFrame:
     )
 
 
-def _figures(processes: list[str]) -> tuple[object, object]:
+def _figures(processes: list[str]) -> tuple[go.Figure, go.Figure]:
     return build_key_process_heatmap_figures(
         securement_rate=_securement_frame(),
         key_processes=processes,

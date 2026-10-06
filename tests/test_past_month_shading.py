@@ -10,7 +10,8 @@ Past Data 로 채운 달의 값은 DB 계산 결과가 아니라 입력해 둔 �
 (차트 열). 세 Figure 가 같은 월 축을 세로로 공유하므로 한 곳만 빠져도 띠가 중간에 끊긴다.
 """
 
-from typing import Any
+from collections.abc import Collection
+from typing import Any, TypedDict
 
 import pandas as pd
 
@@ -66,7 +67,16 @@ def test_a_year_total_without_any_month_column_is_not_past() -> None:
 # ------------------------------------------------------- Capa LOB 요약 (표·차트)
 
 
-def _lob_frames() -> dict[str, pd.DataFrame]:
+class _LobFrames(TypedDict):
+    """`build_lob_summary_figures(**frames)` 로 펼치는 네 프레임."""
+
+    monthly_density: pd.DataFrame
+    lob_summary: pd.DataFrame
+    bottleneck_capacity: pd.DataFrame
+    monthly_top5: pd.DataFrame
+
+
+def _lob_frames() -> _LobFrames:
     months = [202601, 202607, 202608]
     labels = ["26.01", "26.07", "26.08"]
     return {
@@ -105,7 +115,7 @@ def _lob_frames() -> dict[str, pd.DataFrame]:
     }
 
 
-def _lob_month_figure(past: object | None) -> Any:
+def _lob_month_figure(past: Collection[str] | None) -> Any:
     _, month_figure = build_lob_summary_figures(
         **_lob_frames(),
         month_labels=MONTH_LABELS,
@@ -157,7 +167,7 @@ def _detail() -> pd.DataFrame:
     )
 
 
-def _detail_column_fills(past: object | None) -> list[list[str]]:
+def _detail_column_fills(past: Collection[str] | None) -> list[list[str]]:
     _, month_figure = build_plan_detail_figures(
         production_detail=_detail(),
         month_labels=MONTH_LABELS,
@@ -183,7 +193,7 @@ def test_the_detail_table_without_past_labels_keeps_the_old_surfaces() -> None:
 # ----------------------------------------------------------------- 상세 B/N (차트)
 
 
-def _bottleneck_month_figure(past: object | None) -> Any:
+def _bottleneck_month_figure(past: Collection[str] | None) -> Any:
     details = pd.DataFrame(
         {
             "생산계획년월": [202601, 202607, 202608],

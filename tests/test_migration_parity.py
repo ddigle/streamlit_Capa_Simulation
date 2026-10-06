@@ -100,7 +100,7 @@ def test_the_agent_config_assigns_distinct_parities() -> None:
     agents = _agents()
     assert agents, "에이전트 선언이 비어 있습니다."
 
-    parities = {}
+    parities: dict[object, list[str]] = {}
     for name, spec in agents.items():
         parity = spec.get("migration_parity")
         assert parity in PARITY_REMAINDER, f"{name}: 홀짝이 odd/even 이 아닙니다 — {parity!r}"

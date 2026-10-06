@@ -1,6 +1,7 @@
 # Purpose: 호기 생애주기 구간 조립과 Gantt 조립 규칙을 검증한다.
 
 from datetime import date
+from typing import TypedDict
 
 import pandas as pd
 
@@ -16,7 +17,13 @@ from capa_simulation.services.equipment_contract import (
     EQUIPMENT_COLUMNS,
 )
 
-WINDOW = {"start_date": date(2026, 1, 1), "end_date": date(2026, 6, 30)}
+
+class _Window(TypedDict):
+    start_date: date
+    end_date: date
+
+
+WINDOW: _Window = {"start_date": date(2026, 1, 1), "end_date": date(2026, 6, 30)}
 
 
 def _equipment(**overrides: object) -> pd.DataFrame:
@@ -57,8 +64,8 @@ def test_spans_never_overlap_on_the_switching_day() -> None:
     """앞 구간은 전환일 **전날**까지다. 같은 날 두 상태가 겹치면 그림이 거짓말한다."""
     spans = build_equipment_lifecycle_spans(_equipment(), _no_downtime(), **WINDOW)
 
-    for earlier, later in zip(spans.itertuples(), spans.iloc[1:].itertuples(), strict=False):
-        assert earlier.종료일 < later.시작일
+    for end, next_start in zip(spans["종료일"].iloc[:-1], spans["시작일"].iloc[1:], strict=True):
+        assert end < next_start
 
 
 def test_downtime_turns_off_the_day_after_it_ends() -> None:

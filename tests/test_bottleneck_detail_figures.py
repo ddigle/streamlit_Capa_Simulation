@@ -4,6 +4,7 @@ import unicodedata
 from typing import Any, cast
 
 import pandas as pd
+import plotly.graph_objects as go
 import pytest
 
 from capa_simulation.components.home_dimensions import (
@@ -64,7 +65,7 @@ def _details(rows: list[tuple[str, int, str, float]]) -> pd.DataFrame:
     )
 
 
-def _build(details: pd.DataFrame) -> tuple[object, object]:
+def _build(details: pd.DataFrame) -> tuple[go.Figure, go.Figure]:
     return build_bottleneck_detail_figures(
         monthly_bottleneck_details=details,
         month_labels=MONTH_LABELS,

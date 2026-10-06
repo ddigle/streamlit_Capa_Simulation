@@ -180,9 +180,7 @@ def test_the_chip_load_keeps_the_two_product_families_apart() -> None:
 
     load = calculate_chip_load(tables["RQ_PKG_PLAN"], tables["RQ_YLD"], tables["RQ_CHIP_QTY"])
 
-    families = load.groupby(WF_DIVISION_COLUMN, dropna=False)["제품정보"].agg(
-        lambda names: frozenset(names)
-    )
+    families = load.groupby(WF_DIVISION_COLUMN, dropna=False)["제품정보"].agg(frozenset)
     assert families[EDP_TOP_DIVISION] == frozenset({EDP_PRODUCT})
     assert families[SOURCE_TOP] == frozenset({HBM_PRODUCT})
 

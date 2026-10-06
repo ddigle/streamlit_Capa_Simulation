@@ -466,7 +466,7 @@ def test_saved_view_settings_outside_the_current_options_fall_back() -> None:
 # ------------------------------------------- 화면은 표시명, 파일은 원본
 
 
-def _frame_with_value(app: AppTest, column: str, value: str):
+def _frame_with_value(app: AppTest, column: str, value: str) -> pd.DataFrame:
     for frame in app.dataframe:
         data = frame.value
         if column in getattr(data, "columns", []) and value in set(data[column]):

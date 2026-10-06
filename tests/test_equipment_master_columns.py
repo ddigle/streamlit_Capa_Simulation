@@ -412,7 +412,8 @@ def test_new_columns_round_trip_through_a_revision(tmp_path: Path) -> None:
     assert loaded.equipment.columns.tolist() == list(EQUIPMENT_COLUMNS)
     assert loaded.equipment.loc[0, "투자Capa"] == "322K"
     assert loaded.equipment.loc[0, "반입/Qual 이력"] == "반입 지연 1회"
-    assert loaded.equipment.loc[1, ["메모1", "메모2", "메모3"]].tolist() == ["하나", "둘", "셋"]
+    memos = [loaded.equipment.at[1, column] for column in ("메모1", "메모2", "메모3")]
+    assert memos == ["하나", "둘", "셋"]
     assert loaded.equipment.loc[1, "설비이력"] == "셋업 중"
     assert loaded.downtime.loc[0, "설비명"] == "EQ-01"
     pd.testing.assert_frame_equal(loaded.equipment, saved.equipment)
@@ -480,7 +481,7 @@ def test_migration_0015_adds_nullable_columns_and_keeps_investment_basis(tmp_pat
     assert old.loc[0, "구분"] == "임시"
     assert old.loc[0, "설비이력"] == "옛 비고"
     assert old.loc[0, "반입일정"] == pd.Timestamp("2026-08-01")
-    assert old.loc[0, list(NEW_COLUMNS)].isna().all()
+    assert old[list(NEW_COLUMNS)].loc[0].isna().all()
 
     repository.save_snapshot(_baseline(), _equipment(), _downtime(), note="0015 뒤")
     with duckdb.connect(str(database_path)) as connection:

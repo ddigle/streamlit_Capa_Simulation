@@ -10,6 +10,7 @@ from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.services.performance_actuals import (
     UPEH_METRIC,
     YIELD_METRIC,
+    MetricSpec,
     build_monthly_actual_demo,
     build_monthly_trend,
     build_priority_table,
@@ -17,7 +18,7 @@ from capa_simulation.services.performance_actuals import (
 
 
 @pytest.mark.parametrize("metric", [UPEH_METRIC, YIELD_METRIC], ids=["upeh", "yield"])
-def test_the_longest_bar_label_stays_inside_the_axis(metric) -> None:
+def test_the_longest_bar_label_stays_inside_the_axis(metric: MetricSpec) -> None:
     """가장 긴 음수 막대의 바깥 라벨이 왼쪽 공정 이름 위에 겹쳤다(`TC Bonding.4%`, 2026-10-05
     E2E). 라벨이 나가는 쪽에 자리를 남긴 범위를 준다."""
     priority = build_priority_table(build_monthly_actual_demo(), metric, ["공정"])
@@ -33,7 +34,7 @@ def test_the_longest_bar_label_stays_inside_the_axis(metric) -> None:
 @pytest.mark.parametrize(
     ("metric", "tick"), [(UPEH_METRIC, ",.0f"), (YIELD_METRIC, ".2%")], ids=["upeh", "yield"]
 )
-def test_trend_ticks_use_the_kpi_format(metric, tick: str) -> None:
+def test_trend_ticks_use_the_kpi_format(metric: MetricSpec, tick: str) -> None:
     """수율 축이 `0.9924·0.992` 처럼 자릿수를 섞은 비율로 적혀 99.21% 인 KPI 와 맞지 않았다."""
     trend = build_monthly_trend(build_monthly_actual_demo(), metric)
 

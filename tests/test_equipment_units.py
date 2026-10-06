@@ -10,6 +10,7 @@ CoW Bonder 처럼 모듈로 관리하는 공정은 설비 한 대(APW01)를 모�
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
 
@@ -91,7 +92,7 @@ def _row(
     return row
 
 
-def _modules(**overrides: dict[str, object]) -> pd.DataFrame:
+def _modules(**overrides: Mapping[str, object]) -> pd.DataFrame:
     """APW01 의 모듈 넷(환산비 0.25) + 비모듈 설비 DA01(환산비 1.2)."""
     rows = [_row(f"APW01{suffix}", "APW01", 0.25) for suffix in "ABCD"]
     rows.append(_row("DA01", None, 1.2))
@@ -255,10 +256,12 @@ def test_a_unit_not_yet_arrived_is_one_planned_unit() -> None:
 
 def test_spans_split_where_a_sibling_changes_the_share_only_when_asked() -> None:
     frame = _modules(APW01D={"반출일정": "2026-05-10"})
-    kwargs = {"start_date": date(2026, 4, 1), "end_date": date(2026, 6, 30)}
+    start, end = date(2026, 4, 1), date(2026, 6, 30)
 
-    plain = build_equipment_lifecycle_spans(frame, _no_downtime(), **kwargs)
-    shared = build_equipment_lifecycle_spans(frame, _no_downtime(), with_unit_share=True, **kwargs)
+    plain = build_equipment_lifecycle_spans(frame, _no_downtime(), start_date=start, end_date=end)
+    shared = build_equipment_lifecycle_spans(
+        frame, _no_downtime(), start_date=start, end_date=end, with_unit_share=True
+    )
 
     # Gantt 가 보는 구간은 그대로다 — APW01A 는 석 달 내내 「가용」 한 구간.
     assert UNIT_SHARE_COLUMN not in plain.columns

@@ -4,6 +4,7 @@ import pickle
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
+from typing import NoReturn
 
 import duckdb
 import pandas as pd
@@ -608,7 +609,7 @@ def test_snapshot_cache_serializes_plain_payload_after_model_reload(
             self.preset = snapshot.preset
             self.tables = snapshot.tables
 
-        def __reduce__(self) -> object:
+        def __reduce__(self) -> NoReturn:
             raise pickle.PicklingError("stale ScenarioSnapshot class")
 
     class StaleDisplayOrder:
@@ -618,7 +619,7 @@ def test_snapshot_cache_serializes_plain_payload_after_model_reload(
             self.updated_at = display_order.updated_at
             self.rules = display_order.rules
 
-        def __reduce__(self) -> object:
+        def __reduce__(self) -> NoReturn:
             raise pickle.PicklingError("stale GlobalDisplayOrder class")
 
     stale_snapshot = StaleSnapshot()

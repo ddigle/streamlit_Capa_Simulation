@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.components.securement_heatmap import _tier
-from capa_simulation.services.home_decision import build_capacity_decision
+from capa_simulation.services.home_decision import CapacityDecision, build_capacity_decision
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 SECURE = 1.095
@@ -17,7 +17,7 @@ def _rates(rows: list[tuple[int, str, float | None]]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["생산계획년월", "공정", "확보율"])
 
 
-def _decision(frame: pd.DataFrame, included: list[str] | None = None):
+def _decision(frame: pd.DataFrame, included: list[str] | None = None) -> CapacityDecision:
     return build_capacity_decision(
         frame,
         included_processes=included,

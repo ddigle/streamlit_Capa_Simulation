@@ -13,6 +13,7 @@ SQL 만 떼어 돌리면 실제 적용 경로를 증명하지 못한다.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import duckdb
@@ -28,7 +29,7 @@ TARGET_TABLE = "rq_upeh"
 
 
 @pytest.fixture
-def connection(tmp_path: Path) -> duckdb.DuckDBPyConnection:
+def connection(tmp_path: Path) -> Iterator[duckdb.DuckDBPyConnection]:
     """빈 DB 에 전 마이그레이션을 적용한 연결. 스키마는 러너가 만든 것 그대로다."""
     con = duckdb.connect(str(tmp_path / "retry.duckdb"))
     apply_migrations(con)
@@ -62,11 +63,11 @@ def _plant_target(con: duckdb.DuckDBPyConnection, row_no: int, product: str, div
 
 
 def _division(con: duckdb.DuckDBPyConnection, product: str) -> str:
-    return str(
-        con.execute(
-            f'SELECT "WF 구분" FROM ref_data.{TARGET_TABLE} WHERE "제품정보" = ?', [product]
-        ).fetchone()[0]
-    )
+    row = con.execute(
+        f'SELECT "WF 구분" FROM ref_data.{TARGET_TABLE} WHERE "제품정보" = ?', [product]
+    ).fetchone()
+    assert row is not None, product
+    return str(row[0])
 
 
 def test_retry_converts_uppercase_top_from_the_source_product_map(

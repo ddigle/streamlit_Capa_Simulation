@@ -1,6 +1,10 @@
 # Purpose: HOME 제품별 비중 행의 수량 합산·색 칸 배정·칸별 비중과 도넛 Figure 모양을 고정한다.
 
+from collections.abc import Mapping
+from typing import Any
+
 import pandas as pd
+import plotly.graph_objects as go
 import pytest
 
 from capa_simulation.components.home_dimensions import (
@@ -26,6 +30,7 @@ from capa_simulation.services.display_order_scopes import PAGE_PLAN, TAB_PKG_PLA
 from capa_simulation.services.product_share import (
     OTHER_PRODUCT_LABEL,
     PRODUCT_SHARE_SLOT_COUNT,
+    ProductShareCell,
     assign_product_slots,
     build_product_share_cells,
     build_product_volume,
@@ -228,7 +233,9 @@ def test_an_unknown_basis_is_refused() -> None:
 # ---------------------------------------------------------------- Figure
 
 
-def _figures(cells: dict | None, labels: list[str], basis: str = "Wafer"):
+def _figures(
+    cells: Mapping[str, ProductShareCell] | None, labels: list[str], basis: str = "Wafer"
+) -> tuple[go.Figure, go.Figure]:
     density = pd.DataFrame(
         {
             "생산계획년월": [int(f"20{label[:2]}{label[3:]}") for label in labels],
@@ -253,7 +260,7 @@ def _figures(cells: dict | None, labels: list[str], basis: str = "Wafer"):
     )
 
 
-def _pies(figure) -> list:
+def _pies(figure: go.Figure) -> list[Any]:
     return [trace for trace in figure.data if trace.type == "pie"]
 
 
@@ -349,7 +356,7 @@ def test_the_row_stays_even_without_data() -> None:
     assert any("제품별 비중" in str(item.text) for item in label_figure.layout.annotations)
 
 
-def _top5_figure(names: list[str]):
+def _top5_figure(names: list[str]) -> dict[str, Any]:
     density = pd.DataFrame({"생산계획년월": [202609], "년월": ["26.09"], "부하량": [1.5]})
     top5 = pd.DataFrame(
         {

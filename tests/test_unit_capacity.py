@@ -2,6 +2,7 @@
 
 import pickle
 import re
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -57,11 +58,14 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
     vital = shared_detail[["생산계획년월", "공정", "양산구분"]].assign(편중률=1.0)
     module = pd.DataFrame({"공정": ["Process-A", "Process-B"], "모듈수": [2.0, 2.0]})
     run_day = shared_detail[["생산계획년월", "공정"]].assign(RUN_DAY=30.0)
+    # 결측 표기 두 가지를 섞는다. pandas-stubs 의 열 값 타입에는 NA·None 이 없다.
+    lot_blanks: list[Any] = [pd.NA, ""]
+    wf_blanks: list[Any] = [None, pd.NA]
     lot_ratio = shared_detail.assign(
         Area_Name=["main", "MI"],
-        **{"Lot 측정률": [pd.NA, ""]},
+        **{"Lot 측정률": lot_blanks},
     )
-    wf_ratio = shared_detail.assign(Area_Name=["Main", "MI"], WF측정률=[None, pd.NA])
+    wf_ratio = shared_detail.assign(Area_Name=["Main", "MI"], WF측정률=wf_blanks)
 
     result = calculate_unit_capacity(upeh, run_rate, vital, module, run_day, lot_ratio, wf_ratio)
 

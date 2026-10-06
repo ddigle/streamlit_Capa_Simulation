@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
 
 import pandas as pd
 import pytest
@@ -173,7 +173,16 @@ def _stub_component(monkeypatch: Any, sent: list[dict[str, Any]]) -> None:
 # ------------------------------------------------------- Top5 축 위쪽 여유
 
 
-def _lob_frames() -> dict[str, pd.DataFrame]:
+class _LobFrames(TypedDict):
+    """`build_lob_summary_figures(**frames)` 로 펼치는 네 프레임."""
+
+    monthly_density: pd.DataFrame
+    lob_summary: pd.DataFrame
+    bottleneck_capacity: pd.DataFrame
+    monthly_top5: pd.DataFrame
+
+
+def _lob_frames() -> _LobFrames:
     months = [202608]
     labels = ["26.08"]
     return {

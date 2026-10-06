@@ -23,7 +23,7 @@ def _master(*extra: dict[str, Any]) -> pd.DataFrame:
     """EQ-01·EQ-02(일정 다 있음)와 덧붙인 행. 덧붙인 행은 EQ-01 을 바탕으로 값만 바꾼다."""
     base = _equipment()
     records = base.to_dict(orient="records")
-    records += [{**records[0], **values} for values in extra]
+    records += [records[0] | values for values in extra]
     return pd.DataFrame(records, columns=base.columns)
 
 

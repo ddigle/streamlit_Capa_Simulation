@@ -23,7 +23,9 @@ def _insert(database: Path, value: int) -> None:
 
 def _count(database: Path) -> int:
     with connect(database) as connection:
-        return int(connection.execute("SELECT count(*) FROM probe").fetchone()[0])
+        row = connection.execute("SELECT count(*) FROM probe").fetchone()
+    assert row is not None
+    return int(row[0])
 
 
 def test_pin_keeps_the_instance_alive_and_checkpoints_when_released(tmp_path: Path) -> None:

@@ -28,7 +28,9 @@ def test_same_history_is_deduplicated_and_different_stacks_are_separate() -> Non
 
 
 @pytest.mark.parametrize("source_product,source_stack", [("다른 원본", "8H"), ("원본 B", "12H")])
-def test_conflicting_source_product_or_stack_is_rejected(source_product, source_stack) -> None:
+def test_conflicting_source_product_or_stack_is_rejected(
+    source_product: str, source_stack: str
+) -> None:
     base = VirtualProductRecord("가상 A", "8H", "원본 B", "8H")
     donor = VirtualProductRecord("가상 A", "8H", source_product, source_stack)
     with pytest.raises(ValueError, match="가상 A · 8H의 복제 원본"):

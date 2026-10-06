@@ -1,5 +1,7 @@
 # Purpose: 월별 표 두 종류가 공유하는 테두리·헤더선·월 경계선이 같은 도형인지 고정한다.
 
+from typing import Any
+
 import plotly.graph_objects as go
 
 from capa_simulation.components import grouped_monthly_table as grouped
@@ -18,7 +20,7 @@ MONTHS = ["202601", "202602", "202603", "202604", "202605", "202606", "202607"]
 WIDTHS = [120, 160, 90, 110]
 
 
-def _shapes(figure: go.Figure) -> list[dict[str, object]]:
+def _shapes(figure: go.Figure) -> list[dict[str, Any]]:
     # 격자 도우미는 누적함에 모으기만 한다. 반영은 표 모듈이 하므로 여기서 대신 부른다.
     # 여러 번 불러도 결과가 같아 이미 반영된 Figure 에도 그대로 쓸 수 있다.
     flush_layout_items(figure)
@@ -162,7 +164,7 @@ def test_both_tables_draw_the_same_classification_boundaries() -> None:
     expected = go.Figure()
     add_classification_boundaries(expected, WIDTHS)
 
-    def dividers(figure: go.Figure) -> list[dict[str, object]]:
+    def dividers(figure: go.Figure) -> list[dict[str, Any]]:
         return [
             shape
             for shape in _shapes(figure)

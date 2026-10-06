@@ -284,7 +284,7 @@ def _replaced_flag(database: str) -> None:
     if step == 0:
         before = equipment_buffer_generation()
         # 내용이 그대로인 제출은 세대를 올리지 않는다(버림 알림 오탐을 막는다).
-        replace_equipment_buffer(tuple(frame.copy() for frame in frames))
+        replace_equipment_buffer((frames[0].copy(), frames[1].copy(), frames[2].copy()))
         st.session_state["bumped"] = equipment_buffer_generation() > before
         other = frames[1].copy()
         other.loc[other["설비명"].eq("EQ-02"), "담당자"] = "담당B"

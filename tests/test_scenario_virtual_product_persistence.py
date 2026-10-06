@@ -38,12 +38,14 @@ def _table_counts(database: Path) -> dict[str, int]:
               AND table_type = 'BASE TABLE'
             """
         ).fetchall()
-        return {
-            f"{schema}.{table}": connection.execute(
+        counts: dict[str, int] = {}
+        for schema, table in tables:
+            row = connection.execute(
                 f"SELECT COUNT(*) FROM {quote(schema)}.{quote(table)}"
-            ).fetchone()[0]
-            for schema, table in tables
-        }
+            ).fetchone()
+            assert row is not None
+            counts[f"{schema}.{table}"] = row[0]
+        return counts
 
 
 def test_new_scenario_stores_initial_virtual_history_without_changing_source(
@@ -110,7 +112,7 @@ def test_new_scenario_stores_initial_virtual_history_without_changing_source(
     ],
 )
 def test_failed_virtual_history_rolls_back_the_entire_new_scenario(
-    tmp_path: Path, invalid_record, exception
+    tmp_path: Path, invalid_record: dict[str, str | None], exception: type[Exception]
 ) -> None:
     database = tmp_path / "scenario.duckdb"
     repository = _repository(database)
@@ -127,7 +129,7 @@ def test_failed_virtual_history_rolls_back_the_entire_new_scenario(
             _metadata("실패할 시나리오"),
             source.tables,
             source.preset,
-            virtual_products=[_record("Product-B"), invalid_record],
+            virtual_products=[_record("Product-B"), invalid_record],  # type: ignore[list-item]
         )
 
     assert _table_counts(database) == counts_before

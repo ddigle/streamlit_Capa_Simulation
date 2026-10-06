@@ -1,5 +1,6 @@
 # Purpose: 색·서체가 design/tokens.py 밖으로 새지 않는지 검사한다.
 
+import math
 import re
 from pathlib import Path
 
@@ -80,7 +81,10 @@ def contrast_ratio(one: str, other: str) -> float:
 
 def _oklab(linear: list[float]) -> tuple[float, float, float]:
     red, green, blue = linear
-    cube = lambda value: value ** (1 / 3) if value >= 0 else -((-value) ** (1 / 3))  # noqa: E731
+
+    def cube(value: float) -> float:
+        return float(value ** (1 / 3) if value >= 0 else -((-value) ** (1 / 3)))
+
     long = cube(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue)
     medium = cube(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue)
     short = cube(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue)
@@ -120,7 +124,7 @@ def _delta_e(one: str, other: str, vision: str | None = None) -> float:
         ]
 
     first, second = _oklab(prepare(one)), _oklab(prepare(other))
-    return 100 * sum((a - b) ** 2 for a, b in zip(first, second, strict=True)) ** 0.5
+    return 100 * math.sqrt(sum((a - b) ** 2 for a, b in zip(first, second, strict=True)))
 
 
 def _bullets(lines: list[str]) -> str:

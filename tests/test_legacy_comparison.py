@@ -97,8 +97,8 @@ def test_separate_plan_rows_are_summed_not_treated_as_a_conflict() -> None:
     이것을 값 불일치로 처리했다가 실제로 270키 중 149키를 대조에서 빠뜨렸다.
     """
     core = _core(
-        _plan_row(100.0, **{"Capa Code": "CAPA-1"}),
-        _plan_row(60.0, **{"Capa Code": "CAPA-2"}),
+        _plan_row(100.0).assign(**{"Capa Code": "CAPA-1"}),
+        _plan_row(60.0).assign(**{"Capa Code": "CAPA-2"}),
     )
 
     comparison = _compare(core, _calculated(160.0))
@@ -173,8 +173,8 @@ def test_plan_rows_that_differ_only_by_pack_code_are_summed_in_the_grain() -> No
     비워졌다 — 대조에서 통째로 빠지는 자리다.
     """
     core = _core(
-        _plan_row(100.0, **{"Pack Code": "PACK-1"}),
-        _plan_row(60.0, **{"Pack Code": "PACK-2"}),
+        _plan_row(100.0).assign(**{"Pack Code": "PACK-1"}),
+        _plan_row(60.0).assign(**{"Pack Code": "PACK-2"}),
     )
 
     comparison = _compare(core, _calculated(160.0))

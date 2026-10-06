@@ -73,12 +73,10 @@ def _frames(*, adjusted: dict[int, float], with_execution_columns: bool) -> dict
             base_capa[index] = capa[index] * ratio
             base_rates[index] = rates[index] * ratio
             deltas[index] = round((1 / ratio - 1) * 100, 1)
-        bottleneck = bottleneck.assign(
-            **{"기준 B/N Capa": base_capa, "확보율 증감": deltas, "실행 비고": [""] * 3}
-        )
-        top5 = top5.assign(
-            **{"기준 확보율": base_rates, "확보율 증감": deltas, "실행 비고": [""] * 3}
-        )
+        # 숫자 열과 글자 열이 섞여 값 타입을 하나로 좁힐 수 없다.
+        execution: dict[str, list[Any]] = {"확보율 증감": deltas, "실행 비고": [""] * 3}
+        bottleneck = bottleneck.assign(**{"기준 B/N Capa": base_capa}, **execution)
+        top5 = top5.assign(**{"기준 확보율": base_rates}, **execution)
     return {
         "monthly_density": pd.DataFrame(
             {"생산계획년월": MONTHS, "년월": LABELS, "부하량": [1.0, 1.1, 1.2]}

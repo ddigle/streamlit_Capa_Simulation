@@ -83,15 +83,15 @@ def test_no_module_level_capture_of_theme_dependent_colors() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
         # 1) 모듈 최상위 대입. 함수 **안**은 실행마다 도므로 안전하다.
-        for node in tree.body:
-            if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
+        for statement in tree.body:
+            if not isinstance(statement, (ast.Assign, ast.AnnAssign)) or statement.value is None:
                 continue
-            target = _assigned_name(node)
+            target = _assigned_name(statement)
             if (relative, target) in KNOWN_FROZEN:
                 continue
-            captured = _captured_token(node.value, theme_dependent)
+            captured = _captured_token(statement.value, theme_dependent)
             if captured:
-                offenders.append(f"{relative}:{node.lineno}  {target} = tokens.{captured}")
+                offenders.append(f"{relative}:{statement.lineno}  {target} = tokens.{captured}")
 
         # 2) 함수 기본 인자. `def` 를 읽을 때 **한 번** 평가되므로 모듈 최상위와 같다.
         #    `_month_surface(base=tokens.SURFACE)` 가 이 틈으로 샜다 — 어두운 테마로 시작한

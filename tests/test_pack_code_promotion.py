@@ -123,7 +123,7 @@ def test_pack_code_rows_survive_registration_and_are_summed_in_calculation() -> 
         detail_level="공정",
     )
     assert len(equivalent) == 1
-    ratio = 192.44 / float(equivalent.loc[0, "원수요_부하량"])
+    ratio = 192.44 / float(equivalent["원수요_부하량"].iloc[0])
     assert equivalent.loc[0, PKG_EQUIVALENT_COLUMN] == pytest.approx(
-        float(equivalent.loc[0, "일 표준 가능량"]) * ratio
+        float(equivalent["일 표준 가능량"].iloc[0]) * ratio
     )

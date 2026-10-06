@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -49,7 +50,7 @@ def test_the_empty_frame_types_it_as_a_number() -> None:
     assert empty_equipment_master()[CONVERSION_RATIO_COLUMN].dtype == "float64"
 
 
-def _master(**overrides: object) -> pd.DataFrame:
+def _master(**overrides: Any) -> pd.DataFrame:
     frame = _equipment().head(1).copy()
     for column, value in overrides.items():
         frame[column] = value
