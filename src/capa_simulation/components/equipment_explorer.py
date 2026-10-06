@@ -33,6 +33,7 @@ from capa_simulation.services.equipment_contract import (
     MILESTONES,
     PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
+    RELOCATION_DATE_COLUMN,
     STATUS_COUNT_COLUMNS,
 )
 from capa_simulation.services.equipment_units import (
@@ -67,7 +68,7 @@ _INACTIVE_COLUMNS = (
     ARRIVAL_DATE_COLUMN,
     "Qual일정",
     "반출일정",
-    "이설일",
+    RELOCATION_DATE_COLUMN,
 )
 _INACTIVE_MONTH_COLUMNS = (
     EQUIPMENT_ID_COLUMN,

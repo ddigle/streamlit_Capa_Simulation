@@ -24,6 +24,7 @@ from capa_simulation.services.equipment_contract import (
     PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
     REFERENCE_TEXT_COLUMNS,
+    RELOCATION_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
     UNIT_CONSISTENT_COLUMNS,
     VALID_BUILDINGS,
@@ -139,11 +140,13 @@ def prepare_equipment_master(
             .tolist()
         )
         raise ValueError(f"제진대·물류·반입·Qual 일정 순서가 올바르지 않습니다: {examples}")
-    both_exit_dates = result["반출일정"].notna() & result["이설일"].notna()
+    both_exit_dates = result["반출일정"].notna() & result[RELOCATION_DATE_COLUMN].notna()
     if both_exit_dates.any():
         examples = result.loc[both_exit_dates, EQUIPMENT_ID_COLUMN].head(5).tolist()
-        raise ValueError(f"반출일정과 이설일은 동시에 입력할 수 없습니다: {examples}")
-    for exit_column in ("반출일정", "이설일"):
+        raise ValueError(
+            f"반출일정과 {RELOCATION_DATE_COLUMN}은 동시에 입력할 수 없습니다: {examples}"
+        )
+    for exit_column in ("반출일정", RELOCATION_DATE_COLUMN):
         before_arrival = (
             result[exit_column].notna()
             & result[ARRIVAL_DATE_COLUMN].notna()

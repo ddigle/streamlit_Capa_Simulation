@@ -1640,14 +1640,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`equipment_csv._select_columns`) 중간에 컬럼이 끼어도 붙여넣기 표의 열이 밀리지 않는다.
   설비 식별 컬럼은 `EQUIPMENT_ID_COLUMN`(`설비명`)이고 비가동 일정도 같은 이름으로 설비를
   가리킨다. 이름을 문자열로 다시 적지 말고 `EQUIPMENT_ID_COLUMN`·`ARRIVAL_DATE_COLUMN`
-  (`반입일정`)·`STORAGE_FLAG_COLUMN`(`보관유무`)·`PARENT_EQUIPMENT_COLUMN`(`Main 설비`)을 쓴다.
-  화면 문장 속 「호기」(미배치 호기·호기 추가)와 단계 이름(「입고 예정」「보관 설비」, `SCHEDULE_STAGES`
-  의 「입고」)은 컬럼 이름이 아니라 그대로다.
+  (`반입일정`)·`RELOCATION_DATE_COLUMN`(`이설일정`)·`STORAGE_FLAG_COLUMN`(`보관유무`)·
+  `PARENT_EQUIPMENT_COLUMN`(`Main 설비`)을 쓴다. 화면 문장 속 「호기」(미배치 호기·호기 추가)와 단계
+  이름(「입고 예정」「보관 설비」「이설 예정」, `SCHEDULE_STAGES` 의 「입고」「이설」)은 컬럼 이름이
+  아니라 그대로다.
   - **옛 머리 이름은 입구에서 새 이름으로 바꿔 읽는다**(`LEGACY_EQUIPMENT_HEADER_ALIASES`·
     `LEGACY_DOWNTIME_HEADER_ALIASES`, `rename_legacy_headers`). 호기→설비명, 라인구분→공정구분,
     활용구분→투자구분, 분류1→구분, 분류2→사용기준, 분류3→설비가동현황, 모델→Model,
     입고일정→반입일정, 비고→설비이력(설비 마스터만), 장기보관여부→보관유무, 모체호기→Main 설비,
-    비가동 표의 호기→설비명. 공백만 다른 이름(「Main설비」·「모체 호기」)도 같은 이름이고, 옛
+    이설일→이설일정(2026-10-06 2차 결정), 비가동 표의 호기→설비명. 공백만 다른 이름(「Main설비」·「모체 호기」)도 같은 이름이고, 옛
     이름과 새 이름이 한 파일에 함께 오면 막는다. 비가동 일정·기존 보유대수의 `비고` 는 그대로다.
   - **`투자기준` 은 계약에서 빠졌다.** 그 열이 오면 읽지 않고 미리보기에 알림 한 줄을 남긴다
     (`ImportReview.notices`). 새 `투자Capa` 는 별개의 컬럼이라 값을 이어받지 않는다. 설비 DB 의

@@ -27,6 +27,7 @@ from capa_simulation.services.equipment_contract import (
     OPTIONAL_EQUIPMENT_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
     REFERENCE_TEXT_COLUMNS,
+    RELOCATION_DATE_COLUMN,
     SCHEDULE_STAGES,
     TRANSITION_EVENT_COLUMNS,
     UNIT_CONSISTENT_COLUMNS,
@@ -67,7 +68,7 @@ SPEC_ORDER = (
     "Qual일정",
     "확정상태",
     "반출일정",
-    "이설일",
+    "이설일정",
     "반입/Qual 이력",
     "호기이력",
     "설비이력",
@@ -154,6 +155,9 @@ def test_derived_constants_use_the_new_names() -> None:
     assert "반입일정" in DATE_COLUMNS and "입고일정" not in DATE_COLUMNS
     # 단계 이름은 바꾸지 않는다 — 컬럼 이름만 바뀐다.
     assert ("반입일정", "입고") in SCHEDULE_STAGES
+    assert RELOCATION_DATE_COLUMN == "이설일정"
+    assert ("이설일정", "이설") in SCHEDULE_STAGES
+    assert "이설일정" in DATE_COLUMNS and "이설일" not in DATE_COLUMNS
     assert UNIT_CONSISTENT_COLUMNS == (
         "공정소분류",
         "공정대분류",
@@ -247,6 +251,44 @@ def test_old_module_parent_column_keeps_grouping_modules() -> None:
     result = read_equipment_csv(old.to_csv(index=False).encode("utf-8-sig"))
 
     assert result["Main 설비"].tolist() == ["EQ-UNIT", "EQ-UNIT"]
+
+
+def test_relocation_date_from_an_old_header_keeps_its_value() -> None:
+    """10-06 첫 개편(36컬럼) 양식은 머리가 「이설일」이다. 값이 그대로 「이설일정」으로 온다."""
+    current = prepare_equipment_master(_equipment())
+    current.loc[0, RELOCATION_DATE_COLUMN] = pd.Timestamp("2026-12-01")
+    text = equipment_csv_bytes(current).decode("utf-8-sig")
+    header, _, body = text.partition("\n")
+    notices: list[str] = []
+
+    result = read_equipment_csv(
+        f"{header.replace('이설일정', '이설일')}\n{body}".encode("utf-8-sig"), notices=notices
+    )
+
+    assert result.columns.tolist() == list(EQUIPMENT_COLUMNS)
+    assert result.loc[0, "이설일정"] == pd.Timestamp("2026-12-01")
+    assert pd.isna(result.loc[1, "이설일정"])
+    # 이름만 바뀐 것이라 알림은 없다(빠진 컬럼·없는 선택 컬럼이 없다).
+    assert notices == []
+
+
+def test_relocation_old_header_also_converts_on_paste_and_in_the_old_layout() -> None:
+    current = prepare_equipment_master(_equipment())
+    current.loc[1, RELOCATION_DATE_COLUMN] = pd.Timestamp("2027-01-04")
+    old = _old_layout(current)
+    assert "이설일" in old.columns and "이설일정" not in old.columns
+
+    pasted = read_equipment_clipboard(old.to_csv(index=False, sep="\t"))
+
+    assert pasted.loc[1, "이설일정"] == pd.Timestamp("2027-01-04")
+
+
+def test_old_and_new_relocation_headers_together_are_rejected() -> None:
+    current = prepare_equipment_master(_equipment())
+    both = current.assign(이설일=current[RELOCATION_DATE_COLUMN])
+
+    with pytest.raises(ValueError, match=r"옛 이름과 새 이름이 함께.*이설일정 ← 이설일정 · 이설일"):
+        read_equipment_csv(both.to_csv(index=False).encode("utf-8-sig"))
 
 
 def test_spacing_variants_of_new_and_old_names_are_accepted() -> None:

@@ -64,7 +64,7 @@ def _equipment() -> pd.DataFrame:
         "Xsize": 12,
         "Ysize": 7,
         "반출일정": None,
-        "이설일": None,
+        "이설일정": None,
         "보관유무": "N",
         "기존설비여부": "N",
         "호기이력": None,
@@ -325,7 +325,7 @@ def test_equipment_rejects_unknown_qual_confirmation_status() -> None:
 def test_equipment_rejects_both_removal_and_relocation() -> None:
     equipment = _equipment()
     equipment.loc[0, "반출일정"] = "2026-09-01"
-    equipment.loc[0, "이설일"] = "2026-09-02"
+    equipment.loc[0, "이설일정"] = "2026-09-02"
 
     with pytest.raises(ValueError, match="동시에"):
         prepare_equipment_master(equipment)
