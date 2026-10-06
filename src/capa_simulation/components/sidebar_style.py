@@ -5,7 +5,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from capa_simulation.design import tokens
-from capa_simulation.navigation import SIDEBAR_SECTIONS, SidebarGroup, SidebarGroupSpec
+from capa_simulation.navigation import (
+    CONDITIONS_SECTION,
+    SIDEBAR_SECTIONS,
+    SidebarGroup,
+    SidebarGroupSpec,
+)
 from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, SIDEBAR_TOGGLE_SINK_KEY
 
 # 규칙 안 들여쓰기도 선택자 사이에 유지한다.
@@ -45,6 +50,39 @@ _APPLIED_OVERLAY_LEFT = "7.5rem"
 # 실행)의 흐림 구간이 클릭 뒤 60~290ms 였다(실측) — 그보다 길게, 계산이 걸리는 재실행의 로딩
 # 표시는 늦지 않게.
 STALE_DIM_DELAY = "0.3s"
+
+
+def lone_conditions_heading_selector(
+    *, scenario_box_key: str, month_box_key: str, bottleneck_box_key: str
+) -> str:
+    """「조회 조건」 제목 아래에 설 상자가 사이드바에 **하나도 없을 때만** 제목을 고르는 선택자.
+
+    제목은 `app.py` 가 페이지보다 먼저, 늘 같은 자리에 세운다. 자기 조건 카드만 세우는 화면(VOC·
+    Space 현황·가용설비 Main)이 카드를 그리기 전에 멈추는 드문 오류 경로(게시판·설비 DB 를 못
+    읽음)에서는 제목만 덩그러니 남는데, 그것을 파이썬이 아니라 CSS 가 감춘다. 파이썬으로 제목을
+    미뤘다 채우면(빈 칸 → 첫 카드가 채움) rerun 마다 그 사이 제목이 사라지고 아래 상자가 한 줄
+    올라갔다 내려왔다(8543 실측 — Space·가용설비 rerun 마다 65~90ms, 카드가 26px 위아래로 튐).
+    CSS 는 rerun 동안 지난 회차의 카드가 그대로 남아 있으므로 제목이 흔들리지 않고, 회차가 끝나
+    카드가 정말 없을 때만 감춘다.
+
+    제목 아래 상자는 공통 상자 셋(시나리오·리비전, 조회기간, B/N 집계 공정)과 조건 카드 전부다.
+    Streamlit 은 `key` 를 `st-key-<key>` 클래스로 달고, 제목 컨테이너는 사이드바 세로 블록의
+    `stLayoutWrapper` 안에 서므로 그 겉 칸째 감춰 간격도 남기지 않는다(겉 칸 구조가 바뀌어도 글자는
+    감추도록 제목 컨테이너 자신도 함께 고른다).
+    """
+    content = ", ".join(
+        (
+            f".st-key-{scenario_box_key}",
+            f".st-key-{month_box_key}",
+            f".st-key-{bottleneck_box_key}",
+            _CONDITION_CARDS,
+        )
+    )
+    root = f'[data-testid="stSidebarUserContent"]:not(:has({content}))'
+    heading = f".st-key-{CONDITIONS_SECTION.key}"
+    return _SELECTOR_JOINER.join(
+        (f'{root} [data-testid="stLayoutWrapper"]:has(> {heading})', f"{root} {heading}")
+    )
 
 
 def build_sidebar_stylesheet(
@@ -104,6 +142,11 @@ def build_sidebar_stylesheet(
         f'.st-key-{section.key} > [data-testid="stElementContainer"]:first-child'
         ' [data-testid="stCaptionContainer"] p'
         for section in SIDEBAR_SECTIONS
+    )
+    lone_conditions_heading_selectors = lone_conditions_heading_selector(
+        scenario_box_key=scenario_box_key,
+        month_box_key=month_box_key,
+        bottleneck_box_key=bottleneck_box_key,
     )
     # 곧바로 이동하는 링크 상자의 `→`. **그 상자 key 로 좁힌다** — 사이드바 링크 전체에 걸면
     # HOME 링크가 `::after` 로 그리는 광택 띠를 덮는다.
@@ -331,6 +374,11 @@ def build_sidebar_stylesheet(
             font-size: 0.8rem;
             font-weight: 700;
             letter-spacing: 0.02em;
+        }}
+        /* 홀로 남은 「조회 조건」 제목. 제목은 페이지보다 먼저 늘 같은 자리에 서고, 그 아래에 설
+           상자가 사이드바에 하나도 없을 때만 감춘다(`lone_conditions_heading_selector`). */
+        {lone_conditions_heading_selectors} {{
+            display: none;
         }}
         /* **펼친 요약 줄의 면색은 덮을 수 있다.** Streamlit 이 펼침 상태에만 붙이는 클래스로
            요약 줄에 면을 아주 살짝 눌러 칠한다(실측 RGB 밝게 251·252·253, 어둡게

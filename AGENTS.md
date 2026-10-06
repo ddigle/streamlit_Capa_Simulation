@@ -159,12 +159,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `app.py` 가 그대로 따른다 — 선언은 화면 코드가 실제로 읽는 것(전수 조사)이다. 한 탭만 읽는
     화면(가용설비 현황의 `Static/Dynamic`)은 `condition_tabs` 로 그 탭을 적고, `app.py` 가 열린
     탭(세션의 탭 값, 없으면 `stateful_tabs` 의 기억 칸)을 보고 가른다. 공통 조건을 하나도 읽지
-    않아도 조건 카드가 있으면 `has_condition_cards` 로 구역 제목을 세운다 — 다만 이때 제목은
-    **미뤄 둔다**(`sidebar_status.defer_sidebar_section`). `app.py` 는 제목 자리에 빈 칸만 세우고
-    그 회차의 첫 `condition_card` 가 채운다. 페이지가 카드를 그리기 전에 멈추는 드문 오류 경로
-    (VOC 게시판·설비 DB 를 못 읽음)에서 제목만 덩그러니 남지 않게 하려는 것이다. 지난 회차의 빈
-    칸이 다른 자리를 덮지 않도록 `app.py` 는 매 회차 미루거나(`defer_sidebar_section`) 버린다
-    (`forget_deferred_sidebar_section`). 공통 상자가 서는 화면은 예전처럼 곧바로 세운다. 세우지 않은 상자의
+    않아도 조건 카드가 있으면 `has_condition_cards` 로 구역 제목을 세운다. 제목은 **늘 페이지보다
+    먼저, 같은 자리에** 선다. 페이지가 카드를 그리기 전에 멈추는 드문 오류 경로(VOC 게시판·설비 DB
+    를 못 읽음)에서 제목만 덩그러니 남는 것은 **사이드바 CSS 가 감춘다** — 제목 아래에 설 상자
+    (시나리오·조회기간·B/N 상자, 조건 카드)가 사이드바에 하나도 없을 때만
+    (`sidebar_style.lone_conditions_heading_selector`, `:has()`). 파이썬으로 제목을 미뤘다 첫 카드가
+    채우게 하면 rerun 마다 그 사이 제목이 사라지고 카드가 26px 위아래로 튀었다(2026-10-07 8543 실측,
+    Space·가용설비 rerun 마다 65~90ms) — CSS 는 rerun 동안 지난 회차의 카드가 남아 있어 흔들리지
+    않는다. 세우지 않은 상자의
     선택은 사라지지 않는다(시나리오 선택은 `persist_state`, 조회기간은 `MONTH_RANGE_KEY`).
     세우지 않은 회차에는 적용 기간 자리표시자도 지운다(`forget_month_range_placeholder`).
   - **탭 이름 앞에는 탭이 하는 일을 말하는 아이콘을 단다**(`:material/…:` 라벨, 개선안 B).
@@ -1908,9 +1910,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 조회기간·시나리오 월 표기 `YYYY-MM` 은 `settings.format_month` 한 벌이다. 파생 시나리오의
     월 표기(`scenario_transform.format_month_range`·월 머지 검증 문구)도 이것을 쓴다.
   - `sidebar_status.render_sidebar_section` 이 구역 제목 한 줄을 그린다. 가로 컨테이너가
-    돌려준 부모에 직접 쓴다 — `st.sidebar.*` 는 `with` 문맥을 따르지 않는다. 미룬 제목
-    (`defer_sidebar_section`)은 같은 그리기를 빈 칸(`st.sidebar.empty()`) 안에 한다 — 빈 칸은
-    Streamlit 이 `display: none` 으로 그려 채워지지 않아도 사이드바 간격을 먹지 않는다.
+    돌려준 부모에 직접 쓴다 — `st.sidebar.*` 는 `with` 문맥을 따르지 않는다. 제목을 회차마다
+    지웠다 다시 세우지 않는다(위 「공통 상자」 — 홀로 남은 제목은 CSS 가 감춘다).
   - `sidebar_status.sidebar_expander` 가 **접힘 상태를 기억하는 사이드바 상자**를 만든다.
     `key` 와 상태를 추적하는 `on_change` 를 함께 줘야 확장 패널이 위젯이 되어 서버가 펼침 상태를
     읽고 쓴다. `expanded=` 는 주지 않는다 — 세션 값과 함께 주면 Streamlit 이 경고를 남긴다.
@@ -3476,16 +3477,24 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   해당 페이지·탭 범위의 마지막 우선순위로 자동 보강한다.
 - 지원 정렬방식은 `사용자지정`, `오름차순`, `내림차순`이다.
 - `사용자지정` 분류값의 중복은 **저장과 적용이 같은 키**로 판정한다 — `frame_contracts.match_key`
-  (앞뒤 공백·대소문자 무시)로 같은 페이지·탭·분류컬럼 안에서 겹치면 중복이다. 저장·가져오기
-  (범위 직접 편집·Excel 붙여넣기·CSV·`replace_global_display_order`)는 모두
+  (앞뒤 공백·대소문자 무시)로 같은 페이지·탭·분류컬럼 안의 **활성(`활성여부 = Y`) 규칙**끼리 겹치면
+  중복이다(적용도 활성 규칙만 본다. 글자까지 같은 중복은 꺼 둔 규칙도 예전처럼 막는다). 저장·
+  가져오기(범위 직접 편집·Excel 붙여넣기·CSV·`replace_global_display_order`)는 모두
   `display_order_editor.validate_display_order` 한 관문을 지나 `DisplayOrderValueClashError` 로
   막히고, 오류문은 겹친 값을 적은 표기 그대로 범위마다 적는다(앞 5개, 나머지는 「외 N건」).
-  이 검사 전에 저장된 프로필은 **읽는 길만** 견딘다(`allow_value_clashes=True` — 기동 때 경로 식별
-  컬럼 보강·첫 이관·로컬 시드 `data/input/RQ_DISPLAY_ORDER.csv` 읽기, Admin `표시순서 관리` 탭
-  열기·내려받기). 기동 보강은 그 프로필을 그대로
-  두고 미루며, Admin 탭이 겹친 값을 경고하고 그 범위를 쓰는 화면은 예전처럼 중복 오류를 낸다.
-  고쳐 저장하면 그 저장이 보강까지 한다. `data/input` Core Data 경로의 `RQ_DISPLAY_ORDER`
-  (`reference_transformer` → `transform_display_order`)는 이 검증을 지나지 않는다(전부터 그렇다).
+  - 프로필 전체를 바꾸는 저장(붙여넣기·CSV)은 어디에든 겹침이 있으면 막는다. **범위 하나를 고치는
+    직접 편집**은 고른 페이지·탭 안의 겹침(남겨 둔 것이든 새로 만든 것이든)만 막고, 다른 범위에
+    **이미 있던** 겹침은 넘긴다(`clashes_outside_scope` → `tolerated_clashes` 를 화면 저장·
+    `replace_global_display_order`·`prepare_global_display_order_rules` 까지 넘긴다). 프로필
+    전체를 다시 검사하면 두 범위에 예전 겹침이 있을 때 어느 범위를 고쳐도 다른 범위 때문에 막혀
+    고칠 길이 없었다(2026-10-07 리뷰 재현).
+  - 이 검사 전에 저장된 프로필은 **읽는 길만** 견딘다(`allow_value_clashes=True` — 기동 때 경로 식별
+    컬럼 보강·첫 이관·로컬 시드 `data/input/RQ_DISPLAY_ORDER.csv` 읽기, Admin `표시순서 관리` 탭
+    열기·내려받기). 기동 보강은 그 프로필을 그대로 두고 미루며, Admin 탭은 겹친 범위를 적고 범위마다
+    고치거나 내려받아 고친 뒤 붙여넣는 길을 경고로 알린다. 그 범위를 쓰는 화면은 정렬만 멈추는 것이
+    아니라 적용의 ValueError 로 그 부분에 오류를 띄운다. 고쳐 저장하면 그 저장이 보강까지 한다.
+  - `data/input` Core Data 경로의 `RQ_DISPLAY_ORDER`(`reference_transformer` →
+    `transform_display_order`)는 이 검증을 지나지 않는다(전부터 그렇다).
 - 공정 표시명(Proc Rename) 규칙은 한 문장이다 — **화면은 표시명, 파일은 원본.**
   화면에서 사람이 읽는 공정명은 빠짐없이 표시명이고, 적용 계층은 여섯이다.
   ① 월별 표의 분류 값(`value_labels=`, 치환은 `components/` 안에서만 한다),

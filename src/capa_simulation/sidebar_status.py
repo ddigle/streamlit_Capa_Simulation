@@ -14,11 +14,6 @@ from capa_simulation.services.month_columns import month_label
 # 그러면 한쪽의 "적용 · 범위" 가 다른 쪽 사이드바에 쓰이거나, 사라진 컨테이너에 써서
 # 아무 데도 나타나지 않는다.
 PLACEHOLDER_STATE_KEY = "sidebar_month_range_placeholder"
-# 공통 조건 없이 **자기 조건 카드만** 세우는 화면(VOC·Space 현황·가용설비 Main)의 「조회 조건」
-# 제목 자리. 제목을 미리 그리지 않고 빈 칸을 남겨 두었다가, 그 회차에 카드가 처음 설 때 채운다
-# (`condition_card`). 카드를 그리기 전에 멈추는 드문 오류 경로(VOC·설비 DB 를 못 읽음)에서
-# 제목만 덩그러니 남지 않게 한다. 위 자리표시자와 같은 까닭으로 세션에 둔다.
-DEFERRED_SECTION_KEY = "sidebar_deferred_section_heading"
 
 # HOME 이 그리는 B/N 집계 공정 상자. `app.py` 의 CSS 규칙이 이 key 를 읽는다 —
 # 상자를 그리는 쪽과 서식을 주는 쪽이 갈려 있어 이름을 한 곳에 둔다.
@@ -192,11 +187,7 @@ def condition_card(label: str, *, name: str, icon: str = ":material/tune:") -> D
     그 탭이 열렸을 때만 그려지는데, 안 그려진 회차에는 위젯 값이 버려지므로
     `sidebar_expander` 의 기억 칸이 되돌린다. 페이지가 그리는 요소라 파이썬 차례로는
     `Support` 뒤에 붙지만 CSS 의 `order` 가 `Support` 를 맨 아래로 민다.
-
-    공통 조건이 없는 화면에서는 이 회차의 첫 카드가 미뤄 둔 「조회 조건」 제목을 채운다
-    (`defer_sidebar_section`).
     """
-    _fill_deferred_section()
     return sidebar_expander(label, key=f"{CONDITION_CARD_PREFIX}{name}", icon=icon)
 
 
@@ -212,11 +203,7 @@ def render_sidebar_section(section: SidebarSectionSpec) -> None:
     `with` 로 감싼 채 `st.sidebar.caption` 을 부르면 글자가 컨테이너 밖으로 새고, 빈
     컨테이너는 화면에 그려지지도 않는다. 서식은 `sidebar_style.py` 가 `section.key` 로 건다.
     """
-    _draw_section(st.sidebar, section)
-
-
-def _draw_section(parent: DeltaGenerator, section: SidebarSectionSpec) -> None:
-    heading = parent.container(
+    heading = st.sidebar.container(
         key=section.key,
         horizontal=True,
         horizontal_alignment="distribute",
@@ -225,30 +212,6 @@ def _draw_section(parent: DeltaGenerator, section: SidebarSectionSpec) -> None:
     heading.caption(section.title, width="content")
     if section.hint:
         heading.caption(section.hint, width="content")
-
-
-def defer_sidebar_section(section: SidebarSectionSpec) -> None:
-    """구역 제목 자리에 빈 칸만 세워 두고, 그 회차에 조건 카드가 서면 그때 채운다.
-
-    `app.py` 가 **매 회차** 이것이나 `forget_deferred_sidebar_section` 중 하나를 페이지보다 먼저
-    부른다. 지난 회차의 빈 칸이 남아 있으면 그 자리에 다른 요소가 선 회차에 엉뚱한 곳을 덮는다.
-    빈 칸(`st.empty`)은 Streamlit 이 `display: none` 으로 그려 사이드바 간격을 먹지 않는다.
-    """
-    st.session_state[DEFERRED_SECTION_KEY] = (section, st.sidebar.empty())
-
-
-def forget_deferred_sidebar_section() -> None:
-    """이 회차에는 미뤄 둔 제목이 없다. 앞 회차가 남긴 빈 칸을 버린다."""
-    st.session_state.pop(DEFERRED_SECTION_KEY, None)
-
-
-def _fill_deferred_section() -> None:
-    deferred = st.session_state.pop(DEFERRED_SECTION_KEY, None)
-    if not isinstance(deferred, tuple) or len(deferred) != 2:
-        return
-    section, placeholder = deferred
-    if isinstance(section, SidebarSectionSpec) and isinstance(placeholder, DeltaGenerator):
-        _draw_section(placeholder, section)
 
 
 def register_month_range_placeholder(placeholder: DeltaGenerator) -> None:

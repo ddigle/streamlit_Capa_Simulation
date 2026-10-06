@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -99,7 +99,7 @@ from capa_simulation.persistence.voc_store import (
 )
 from capa_simulation.services.advance_load import prepare_advance_load
 from capa_simulation.services.advance_shipment import prepare_advance_shipment
-from capa_simulation.services.display_order_editor import DisplayOrderValueClashError
+from capa_simulation.services.display_order_editor import ClashKey, DisplayOrderValueClashError
 from capa_simulation.services.execution_capacity import prepare_execution_capacity
 from capa_simulation.services.key_process import normalize_key_process_presets
 from capa_simulation.services.past_data import prepare_past_table
@@ -325,9 +325,17 @@ class DuckDBScenarioRepository:
         rules: pd.DataFrame,
         *,
         source: str,
+        tolerated_clashes: Collection[ClashKey] = (),
     ) -> GlobalDisplayOrder:
-        """Atomically replace the shared profile without creating scenario revisions."""
-        prepared_rules = prepare_global_display_order_rules(rules)
+        """Atomically replace the shared profile without creating scenario revisions.
+
+        `tolerated_clashes` 는 범위 하나를 고치는 직접 편집 저장만 준다 — 다른 범위에 이미 있던
+        겹친 분류값(`display_order_editor.clashes_outside_scope`)이다. 비워 두면(붙여넣기·CSV·
+        일괄 교체) 프로필 어디에든 겹침이 있으면 막는다.
+        """
+        prepared_rules = prepare_global_display_order_rules(
+            rules, tolerated_clashes=tolerated_clashes
+        )
         source_label = required_text(source, "표시순서 변경 출처")
         with self._write_transaction() as connection:
             display_order_store.replace_global_display_order(

@@ -16,6 +16,7 @@ from capa_simulation.services.display_order_csv import (
 from capa_simulation.services.display_order_editor import (
     CLASH_REPORT_LIMIT,
     DisplayOrderValueClashError,
+    custom_value_clashes,
     display_label_mistakes,
     ensure_route_sequence_rules,
     replace_display_order_scope,
@@ -133,9 +134,10 @@ def test_every_save_and_import_path_rejects_a_case_clash() -> None:
 
 
 def test_a_stored_profile_with_a_clash_still_reads_and_downloads() -> None:
-    """검사 전에 저장된 프로필은 읽는 길(기동 보강·Admin 탭·내려받기)에서만 견딘다.
+    """검사 전에 저장된 프로필은 읽는 길(기동 보강·Admin 탭·내려받기)에서 견딘다.
 
-    다른 범위를 고쳐 저장하면 합친 결과가 다시 검사를 받아 겹친 값을 적은 오류로 막힌다.
+    겹침이 없는 다른 범위를 고쳐 저장하는 것은 그 겹침에 막히지 않는다 — 합친 결과는 고른 범위
+    안의 겹침만 본다. 프로필 전체를 다시 검사하면 이 저장이 막혔다.
     """
     stored = pd.concat([_rules(), _case_clash()], ignore_index=True)
 
@@ -144,12 +146,74 @@ def test_a_stored_profile_with_a_clash_still_reads_and_downloads() -> None:
     assert display_order_to_csv(stored, allow_value_clashes=True)
 
     edited = _rules().loc[_rules()["탭 구분"].eq("계획")].drop(columns=["페이지 구분", "탭 구분"])
-    with pytest.raises(DisplayOrderValueClashError, match="부하량 › 환산 › WF 구분"):
-        replace_display_order_scope(stored, "HOME", "계획", edited)
+    revised = replace_display_order_scope(stored, "HOME", "계획", edited)
+    assert [clash.identity for clash in custom_value_clashes(revised)] == [
+        ("부하량", "환산", "WF 구분", "top")
+    ]
     # 글자까지 같은 중복은 예전처럼 읽는 길에서도 막는다.
     exact = pd.concat([_rules(), _rules().iloc[[0]]], ignore_index=True)
     with pytest.raises(ValueError, match="분류값이 같은 페이지·탭·분류컬럼에서 중복"):
         validate_display_order(exact, allow_value_clashes=True)
+
+
+def _clash_in(tab: str, *, active: tuple[str, str] = ("Y", "Y")) -> pd.DataFrame:
+    return _case_clash().assign(**{"탭 구분": tab, "활성여부": list(active)})
+
+
+def test_two_clashing_scopes_can_be_fixed_one_scope_at_a_time() -> None:
+    """두 범위에 예전 겹침이 있어도 직접 편집으로 한 범위씩 고쳐 저장할 수 있다(리뷰 재현).
+
+    고른 범위만 바꾸는 저장이 다른 범위의 겹침까지 보면 어느 쪽을 고쳐도 다른 쪽 때문에 막혀,
+    「하나만 남기고 저장하세요」를 따를 길이 없었다.
+    """
+    stored = validate_display_order(
+        pd.concat([_clash_in("환산"), _clash_in("계획")], ignore_index=True),
+        allow_value_clashes=True,
+    )
+    fixed_conversion = _clash_in("환산").iloc[[0]].drop(columns=["페이지 구분", "탭 구분"])
+    first = replace_display_order_scope(stored, "부하량", "환산", fixed_conversion)
+    assert [(clash.page, clash.tab) for clash in custom_value_clashes(first)] == [
+        ("부하량", "계획")
+    ]
+
+    fixed_plan = _clash_in("계획").iloc[[1]].drop(columns=["페이지 구분", "탭 구분"])
+    second = replace_display_order_scope(first, "부하량", "계획", fixed_plan)
+    assert custom_value_clashes(second) == []
+    assert sorted(second["분류값"].tolist()) == ["TOP", "Top"]
+    # 다 고친 프로필은 저장 검사 그대로 통과한다.
+    validate_display_order(second)
+
+
+def test_the_edited_scope_must_end_clean_and_new_clashes_are_refused() -> None:
+    """고른 범위 안의 겹침은 남겨 둔 것이든 새로 만든 것이든 막는다."""
+    stored = validate_display_order(
+        pd.concat([_clash_in("환산"), _clash_in("계획")], ignore_index=True),
+        allow_value_clashes=True,
+    )
+    untouched = _clash_in("환산").drop(columns=["페이지 구분", "탭 구분"])
+    with pytest.raises(DisplayOrderValueClashError, match="부하량 › 환산 › WF 구분"):
+        replace_display_order_scope(stored, "부하량", "환산", untouched)
+
+    clean = validate_display_order(_rules())
+    introduced = _case_clash().drop(columns=["페이지 구분", "탭 구분"])
+    with pytest.raises(DisplayOrderValueClashError, match="HOME › 계획 › WF 구분"):
+        replace_display_order_scope(clean, "HOME", "계획", introduced)
+
+
+def test_inactive_rules_do_not_clash() -> None:
+    """적용은 활성 규칙만 보므로 겹침 검사도 그렇다. `Top`(Y)·`TOP`(N) 은 막지 않는다."""
+    profile = _clash_in("환산", active=("Y", "N"))
+
+    assert custom_value_clashes(profile) == []
+    validate_display_order(profile)
+    sorted_data = apply_display_order(
+        pd.DataFrame({"WF 구분": ["Core", "TOP"]}), profile, "부하량", "환산"
+    )
+    assert sorted_data["WF 구분"].tolist() == ["TOP", "Core"]
+    # 글자까지 같은 중복은 꺼 둔 규칙이라도 예전처럼 막는다 — 켜는 순간 겹친다.
+    exact = profile.assign(분류값=["Top", "Top"])
+    with pytest.raises(ValueError, match="분류값이 같은 페이지·탭·분류컬럼에서 중복"):
+        validate_display_order(exact)
 
 
 def test_display_order_csv_round_trip_supports_utf8_and_cp949() -> None:

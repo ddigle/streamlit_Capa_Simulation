@@ -63,9 +63,8 @@ class PageSpec:
     reads_scenario: bool = True
     reads_period: bool = True
     # 이 화면이 자기 조건 카드(`sidebar_status.condition_card`)를 세우는가. 공통 조건을 하나도
-    # 읽지 않는 화면도 카드가 있으면 「조회 조건」 제목을 세워야 한다 — `app.py` 가 페이지보다
-    # 먼저 제목 자리를 비워 두므로 페이지가 카드를 그릴지를 선언으로 미리 안다. 자리는 그 회차의
-    # 첫 카드가 채운다(카드 전에 멈춘 오류 경로에는 제목도 서지 않는다).
+    # 읽지 않는 화면도 카드가 있으면 「조회 조건」 제목을 세워야 한다 — 제목은 `app.py` 가
+    # 페이지보다 먼저 그리므로 페이지가 카드를 그릴지를 선언으로 미리 안다.
     has_condition_cards: bool = False
     # 공통 조건을 일부 탭에서만 읽으면 그 탭들. 비워 두면 `reads_*` 가 화면 전체에 걸린다.
     condition_tabs: ConditionTabs | None = None
