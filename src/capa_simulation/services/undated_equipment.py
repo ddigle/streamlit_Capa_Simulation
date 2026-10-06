@@ -12,10 +12,17 @@
   서므로 뺀다 — 그래서 기준일이 필요 없다.
 - **나눔** — 반입이 빈 행은 `반입 미정`, 반입은 있고 Qual 만 빈 행은 `Qual 미정` 이다. 겹치지 않아
   둘을 더하면 전체다.
-- **세는 법** — 행이 아니라 설비다. 모듈 행은 고정 지분(1 ÷ 같은 설비의 행 수,
-  `equipment_units.static_unit_shares`)을 더한다 — 네 모듈 중 하나만 일정이 비면 0.25대다. 날짜가
-  비어 보유 여부를 따질 수 없으므로 Qual 계획 표와 같은 고정 지분을 쓴다. 지분은 넘겨받은 호기
-  마스터 전체로 매기므로 **거르기 전의 표**(또는 모듈 묶음을 쪼개지 않는 조건으로 거른 표)를 넘긴다.
+- **세는 법** — 행이 아니라 설비이고, **Dynamic 이 날짜 때문에 실제로 빼는 몫**만 센다. Dynamic
+  의 대수 축은 그 시점 보유 중인 모듈 수로 1 을 나누므로(`equipment_units.held_unit_shares`)
+  기준일 없이 이렇게 옮긴다. 「보유할 수 있는 행」은 반입일정이 있거나 기존설비·보관 설비인 행이다.
+  - `반입 미정` — 반입이 빈 행인데 **같은 설비에 보유할 수 있는 행이 하나도 없을 때만**이다. 설비
+    전체가 들어오지 않았으므로 그 설비를 1대로 센다(해당 행들이 1 을 나눠 갖는다). 형제 모듈이
+    이미 들어와 있으면 그 설비는 형제로 1대가 차 있어 반입이 빈 모듈 몫은 Dynamic 에서 0 이다 —
+    세지 않는다.
+  - `Qual 미정` — 반입은 있고 Qual 이 빈 행. 그 설비에서 보유할 수 있는 행 수로 1 을 나눈
+    몫이다(모듈 넷 중 A·B 가용, C 는 Qual 없음, D 는 반입 없음 → C 의 1/3 = 0.33대).
+  지분은 넘겨받은 호기 마스터 전체로 매기므로 **거르기 전의 표**를 넘기고, 범위는 `processes`·
+  `unit_ids` 로 좁힌다(행마다 몫이 정해져 있어 호기 필터가 모듈 하나만 골라도 그 몫만 남는다).
 """
 
 from __future__ import annotations
@@ -35,7 +42,6 @@ from capa_simulation.services.equipment_units import (
     UNIT_KEY_COLUMN,
     UNIT_SHARE_COLUMN,
     format_unit_count,
-    static_unit_shares,
     unit_keys,
     unit_total,
 )
@@ -64,13 +70,18 @@ def undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
     prepared = prepare_equipment_master(equipment)
     if prepared.empty:
         return _empty()
-    shares = static_unit_shares(unit_keys(prepared))
+    keys = unit_keys(prepared)
     fresh = prepared["기존설비여부"].eq("N") & prepared[STORAGE_FLAG_COLUMN].eq("N")
     staying = prepared["반출일정"].isna() & prepared[RELOCATION_DATE_COLUMN].isna()
-    no_arrival = prepared[ARRIVAL_DATE_COLUMN].isna()
-    undated = fresh & staying & (no_arrival | prepared["Qual일정"].isna())
-    if not undated.any():
+    has_arrival = prepared[ARRIVAL_DATE_COLUMN].notna()
+    holdable = (has_arrival | ~fresh).astype("int64")
+    holdable_in_unit = holdable.groupby(keys).transform("sum")
+    no_arrival = fresh & staying & ~has_arrival & holdable_in_unit.eq(0)
+    no_qual = fresh & staying & has_arrival & prepared["Qual일정"].isna()
+    if not (no_arrival | no_qual).any():
         return _empty()
+    arrival_rows = no_arrival.astype("int64").groupby(keys).transform("sum")
+    shares = (1.0 / arrival_rows.where(no_arrival)).fillna(1.0 / holdable_in_unit.where(no_qual))
     kinds = pd.Series(UNDATED_QUAL, index=prepared.index, dtype="string").mask(
         no_arrival, UNDATED_ARRIVAL
     )
@@ -78,12 +89,12 @@ def undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
         {
             EQUIPMENT_ID_COLUMN: prepared[EQUIPMENT_ID_COLUMN].astype("string"),
             "공정소분류": prepared["공정소분류"].astype("string"),
-            UNIT_KEY_COLUMN: unit_keys(prepared),
+            UNIT_KEY_COLUMN: keys,
             UNIT_SHARE_COLUMN: shares.astype("float64"),
             UNDATED_KIND_COLUMN: kinds,
         }
     )
-    return result.loc[undated].reset_index(drop=True)
+    return result.loc[no_arrival | no_qual].reset_index(drop=True)
 
 
 def undated_counts(

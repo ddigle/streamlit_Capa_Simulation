@@ -44,11 +44,11 @@ from capa_simulation.services.equipment_units import (
     static_unit_shares,
     unit_transitions,
 )
-from capa_simulation.services.simulation_cache import get_weekly_equipment_availability
-from capa_simulation.services.undated_equipment import (
-    undated_equipment,
-    undated_equipment_notice,
+from capa_simulation.services.simulation_cache import (
+    get_undated_equipment,
+    get_weekly_equipment_availability,
 )
+from capa_simulation.services.undated_equipment import undated_equipment_notice
 
 QUESTION_KEY = "equipment_explorer_question"
 AS_OF_KEY = "equipment_explorer_as_of"
@@ -183,13 +183,22 @@ def _count_chart(frame: pd.DataFrame, column: str, colors: dict[str, str]) -> No
     st.altair_chart(chart, width="stretch")
 
 
-def _undated_caption(equipment: pd.DataFrame) -> None:
-    """일정(반입·Qual)이 비어 가용대수에 들지 못하는 신규 설비 한 줄. 0대면 그리지 않는다.
+def _undated_notice(equipment: pd.DataFrame, filtered: pd.DataFrame) -> str | None:
+    """일정(반입·Qual)이 비어 가용대수에 들지 못하는 신규 설비 한 줄. 0대면 `None`.
 
-    `equipment` 는 이 화면의 조건으로 거른 표다. 조건 컬럼(공정·공정구분·투자구분·공정대분류)은
-    모듈 행끼리 같아야 해서 거른 표도 모듈 묶음을 쪼개지 않는다 — 지분이 그대로다.
+    몫은 거르기 전 호기 마스터(`equipment`)로 매기고(캐시 — 같은 편집본이면 다시 검증하지 않는다)
+    이 화면의 조건으로 거른 호기(`filtered`)만 센다. 호기 마스터가 검증을 못 넘으면 알리지 않는다 —
+    그 오류는 결과 자리가 이미 알린다.
     """
-    notice = undated_equipment_notice(undated_equipment(equipment))
+    try:
+        undated = get_undated_equipment(equipment)
+    except ValueError:
+        return None
+    unit_ids = set(filtered[EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna())
+    return undated_equipment_notice(undated, unit_ids=unit_ids)
+
+
+def _undated_caption(notice: str | None) -> None:
     if notice is not None:
         st.caption(f":material/event_busy: {notice}")
 
@@ -203,6 +212,7 @@ def _availability(
     end: date,
     view: str,
     expression: str,
+    undated_notice: str | None = None,
 ) -> None:
     weekly = get_weekly_equipment_availability(
         baseline,
@@ -223,7 +233,7 @@ def _availability(
         f"　총 {_count(total)}대 · 가용 {_count(available)}대 · 비가동 {_count(inactive)}대"
         f" · 가용률 {available / total if total else 0:.1%}"
     )
-    _undated_caption(equipment)
+    _undated_caption(undated_notice)
     if view == "공정별 내역":
         st.markdown("#### 공정소분류별 현황")
         _table(
@@ -569,6 +579,10 @@ def render_equipment_explorer(
     filtered_baseline = (
         baseline.loc[baseline["공정"].isin(selected)].copy() if selected else baseline
     )
+    shows_status = question == "호기 현황" and view in ("상태 분포", "호기 목록")
+    undated_notice = (
+        _undated_notice(equipment, filtered) if question == "가용대수" or shows_status else None
+    )
     with st.container(border=True):
         if uses_period and start > end:
             st.error("시작일은 종료일보다 늦을 수 없습니다.")
@@ -595,6 +609,7 @@ def render_equipment_explorer(
                     end=end,
                     view=view,
                     expression=expression,
+                    undated_notice=undated_notice,
                 )
             elif question == "비가동 호기" and view == "그 달 전체":
                 # 기준일이 든 달을 본다. 기준 월을 따로 고르게 하면 축이 둘이 된다.
@@ -661,7 +676,7 @@ def render_equipment_explorer(
                     st.caption(
                         f"호기 마스터 {_rows_label(status)} · 집계형 기존 보유대수는 제외됩니다."
                     )
-                    _undated_caption(filtered)
+                    _undated_caption(undated_notice)
                     column, states, colors = (
                         "상태",
                         EQUIPMENT_STATUSES,

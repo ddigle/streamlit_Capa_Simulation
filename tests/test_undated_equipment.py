@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pandas as pd
+import pytest
 from test_equipment_availability import _equipment
 
 from capa_simulation.services.undated_equipment import (
@@ -100,3 +101,73 @@ def test_the_notice_follows_the_surrounding_process_and_unit_filters() -> None:
     assert only_b_unit is not None and only_b_unit.startswith("일정 미정 1대 (반입 미정 1)")
     assert undated_equipment_notice(rows, processes={"Process-C"}) is None
     assert undated_equipment_notice(rows, processes={"Process-A"}, unit_ids={"B-1"}) is None
+
+
+def _modules(unit: str, **per_tag: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for tag in "ABCD":
+        row = {"설비명": f"{unit}{tag}", "Main 설비": unit, "X좌표": None, "Y좌표": None}
+        row.update(per_tag.get(tag, {}))
+        rows.append(row)
+    return rows
+
+
+def test_a_module_counts_only_what_dynamic_leaves_out() -> None:
+    """A·B 가용, C 는 Qual 없음, D 는 반입 없음. Dynamic 은 들어온 셋(A·B·C)으로 1 을 나누므로
+    빠지는 것은 C 의 1/3 뿐이다 — D 는 형제가 설비를 채우고 있어 몫이 0 이다."""
+    rows = undated_equipment(
+        _master(
+            *_modules(
+                "MOD01",
+                C={"Qual일정": None, "확정상태": None},
+                D={**_NO_DATES, "확정상태": None},
+            )
+        )
+    )
+
+    assert rows["설비명"].tolist() == ["MOD01C"]
+    assert undated_counts(rows) == {UNDATED_ARRIVAL: 0.0, UNDATED_QUAL: pytest.approx(1 / 3)}
+    assert undated_equipment_notice(rows) == (
+        "일정 미정 0.33대 (Qual 미정 0.33) — 날짜가 들어올 때까지 가용대수에 세지 않습니다."
+    )
+    # 호기 필터가 D 하나만 골라도 셀 것이 없고, 넷을 다 고르면 같은 0.33 이다.
+    assert undated_equipment_notice(rows, unit_ids={"MOD01D"}) is None
+    assert undated_equipment_notice(rows, unit_ids={"MOD01A", "MOD01B", "MOD01C", "MOD01D"}) == (
+        undated_equipment_notice(rows)
+    )
+
+
+def test_a_unit_none_of_whose_modules_arrived_counts_in_full() -> None:
+    no_dates = {**_NO_DATES, "확정상태": None}
+    rows = undated_equipment(_master(*_modules("MOD02", **dict.fromkeys("ABCD", no_dates))))
+
+    assert undated_counts(rows) == {UNDATED_ARRIVAL: 1.0, UNDATED_QUAL: 0.0}
+    assert undated_equipment_notice(rows) is not None
+    assert undated_equipment_notice(rows).startswith("일정 미정 1대 (반입 미정 1)")  # type: ignore[union-attr]
+
+
+def test_an_existing_or_stored_sibling_holds_the_unit() -> None:
+    """기존설비·보관 모듈은 반입일정 없이도 보유로 친다(Dynamic 과 같다) — 형제의 반입 미정은
+    없고, Qual 미정 모듈의 몫은 그 형제까지 넣어 나눈다."""
+    rows = undated_equipment(
+        _master(
+            *_modules(
+                "MOD03",
+                A={**_NO_DATES, "기존설비여부": "Y", "확정상태": None},
+                B={**_NO_DATES, "보관유무": "Y", "확정상태": None},
+                C={"Qual일정": None, "확정상태": None},
+                D={**_NO_DATES, "확정상태": None},
+            )
+        )
+    )
+
+    assert rows["설비명"].tolist() == ["MOD03C"]
+    assert undated_counts(rows)[UNDATED_QUAL] == pytest.approx(1 / 3)
+
+
+def test_the_cached_wrapper_returns_the_same_rows() -> None:
+    from capa_simulation.services.simulation_cache import get_undated_equipment
+
+    master = _master({"설비명": "A-1", "Qual일정": None, "확정상태": None})
+
+    pd.testing.assert_frame_equal(get_undated_equipment(master), undated_equipment(master))

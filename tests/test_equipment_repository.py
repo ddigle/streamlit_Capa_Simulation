@@ -303,6 +303,28 @@ def test_legacy_revision_without_production_date_keeps_qual_blank(tmp_path: Path
     assert equipment.loc["EQ-OLD", "기존설비여부"] == "Y"
 
 
+def test_a_stored_legacy_qual_placeholder_reads_as_a_blank_qual(tmp_path: Path) -> None:
+    """옛 변환이 빈 Qual 에 채운 2262-04-11 을 다시 저장한 리비전이 있다. 그 날만 빈 Qual 로 읽고
+    (상태는 같은 셋업 진행중), 손대지 않은 저장은 새 리비전을 만들지 않는다."""
+    repository = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")
+    repository.initialize()
+    equipment = _equipment()
+    equipment.loc[1, "Qual일정"] = "2262-04-11"
+    repository.save_snapshot(_baseline(), equipment, _downtime())
+    with duckdb.connect(str(tmp_path / "equipment.duckdb")) as connection:
+        stored = connection.execute(
+            "SELECT qual_date FROM equipment_ops.equipment_master_snapshot ORDER BY source_row_no"
+        ).fetchall()
+    assert str(stored[1][0]) == "2262-04-11"
+
+    loaded = repository.load_snapshot(repository.latest_revision_id() or "").equipment
+
+    assert loaded.loc[0, "Qual일정"] == pd.Timestamp("2026-08-09")
+    assert pd.isna(loaded.loc[1, "Qual일정"])
+    assert repository.save_space_layout(_baseline(), loaded, _downtime()) is None
+    assert len(repository.list_revisions()) == 1
+
+
 def test_process_cutoff_round_trips_and_replaces_the_whole_table(tmp_path: Path) -> None:
     """Cut-off 는 통째로 갈아 끼운다 — 행을 지우는 것이 「산출에서 빼라」는 뜻이다."""
     repository = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")

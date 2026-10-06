@@ -40,6 +40,7 @@ from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
 )
+from capa_simulation.services.undated_equipment import undated_equipment
 from capa_simulation.services.unit_capacity import (
     CapacityAssumptions,
     calculate_unit_capacity,
@@ -531,6 +532,18 @@ def get_weekly_equipment_availability(
         start_date=start_date,
         end_date=end_date,
     )
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
+    """일정 미정 설비 행(`services/undated_equipment.undated_equipment`)을 rerun 사이에 다시 쓴다.
+
+    가용설비 현황은 위젯 하나에도 페이지 전체가 다시 돌고, 이 계산은 호기 마스터 검증
+    (`prepare_equipment_master`)을 거쳐 3천 행에 90ms 남짓 든다. 결과는 호기 마스터 내용만으로
+    정해지므로(기준일이 없다) 내용 해시가 곧 키다. Main 과 Static/Dynamic 이 같은(거르기 전) 표를
+    넘겨 한 벌을 함께 쓰고, 범위는 받은 쪽이 좁힌다.
+    """
+    return undated_equipment(equipment)
 
 
 CAPACITY_INPUT_TABLES = (

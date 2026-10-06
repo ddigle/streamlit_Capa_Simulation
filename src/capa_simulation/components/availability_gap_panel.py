@@ -64,10 +64,8 @@ from capa_simulation.services.securement_cross_check import (
     build_securement_cross_check,
     dynamic_available_equipment,
 )
-from capa_simulation.services.undated_equipment import (
-    undated_equipment,
-    undated_equipment_notice,
-)
+from capa_simulation.services.simulation_cache import get_undated_equipment
+from capa_simulation.services.undated_equipment import undated_equipment_notice
 
 __all__ = [
     "DETAIL_CATEGORY_KEY",
@@ -334,7 +332,7 @@ def _undated_rows(units: pd.DataFrame | None) -> pd.DataFrame | None:
     if units is None:
         return None
     try:
-        return undated_equipment(units)
+        return get_undated_equipment(units)
     except ValueError:
         return None
 

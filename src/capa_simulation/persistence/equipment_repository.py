@@ -194,8 +194,15 @@ EQUIPMENT_MASTER_DB_COLUMNS: Mapping[str, str] = MappingProxyType(
 )
 
 # 0008 이전 리비전은 환산비가 NULL 이다 — 기준 모델(1.0)로 읽는다.
+# 반입·Qual 이 필수이던 때 옛 리비전 변환은 빈 Qual 을 먼 미래(`LEGACY_QUAL_PLACEHOLDER`)로
+# 채웠고, 그 편집본을 다시 저장한 리비전에는 그 날짜가 남아 있다. 정확히 그 날만 빈 Qual 로
+# 읽는다 — 상태는 같고(빈 Qual = 셋업 진행중) 일정 미정 알림에 잡힌다. 그 날짜는 그 변환만 만들었다.
+LEGACY_QUAL_PLACEHOLDER = "2262-04-11"
 _EQUIPMENT_MASTER_READ_EXPRESSIONS: Mapping[str, str] = MappingProxyType(
-    {"conversion_ratio": f"COALESCE(conversion_ratio, {DEFAULT_CONVERSION_RATIO!r})"}
+    {
+        "conversion_ratio": f"COALESCE(conversion_ratio, {DEFAULT_CONVERSION_RATIO!r})",
+        "qual_date": f"NULLIF(qual_date, DATE '{LEGACY_QUAL_PLACEHOLDER}')",
+    }
 )
 
 _EQUIPMENT_MASTER_PROJECTION = ", ".join(
