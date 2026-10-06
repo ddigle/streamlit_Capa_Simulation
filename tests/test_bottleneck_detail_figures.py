@@ -20,6 +20,7 @@ from capa_simulation.components.home_figures import (
     build_bottleneck_detail_figures,
 )
 from capa_simulation.design import tokens
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTH_LABELS = ["26.01", "26.02", "26.03"]
 
@@ -67,8 +68,7 @@ def _build(details: pd.DataFrame) -> tuple[object, object]:
     return build_bottleneck_detail_figures(
         monthly_bottleneck_details=details,
         month_labels=MONTH_LABELS,
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
     )
 
 

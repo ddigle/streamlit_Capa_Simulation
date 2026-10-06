@@ -21,6 +21,7 @@ from capa_simulation.components.home_figures import (
 )
 from capa_simulation.design import tokens
 from capa_simulation.services.month_columns import build_past_month_labels
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 # 26.01 은 과거, 26.07·26.08 은 DB 계산 구간, 26년 은 둘이 섞인 연간 Total 이다.
 MONTH_LABELS = ["26.01", "26.07", "26.08", "26년"]
@@ -108,8 +109,7 @@ def _lob_month_figure(past: object | None) -> Any:
     _, month_figure = build_lob_summary_figures(
         **_lob_frames(),
         month_labels=MONTH_LABELS,
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         year_totals={"26년": {"부하량": 4.1, "Wafer 부하량": 34_000.0}},
         past_month_labels=past,
     )
@@ -186,6 +186,7 @@ def test_the_detail_table_without_past_labels_keeps_the_old_surfaces() -> None:
 def _bottleneck_month_figure(past: object | None) -> Any:
     details = pd.DataFrame(
         {
+            "생산계획년월": [202601, 202607, 202608],
             "년월": ["26.01", "26.07", "26.08"],
             "순위": [1, 1, 1],
             "공정": ["SAW"] * 3,
@@ -198,8 +199,7 @@ def _bottleneck_month_figure(past: object | None) -> Any:
     _, month_figure = build_bottleneck_detail_figures(
         monthly_bottleneck_details=details,
         month_labels=MONTH_LABELS,
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         year_total_labels=YEAR_TOTALS,
         past_month_labels=past,
     )

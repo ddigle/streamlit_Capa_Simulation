@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.services.process_picker import ProcessPickerItem, build_process_picker_summary
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 
 def _frame(rows: list[tuple[int, str, float | None]]) -> pd.DataFrame:
@@ -14,7 +15,11 @@ def _frame(rows: list[tuple[int, str, float | None]]) -> pd.DataFrame:
 
 def _summary(frame: pd.DataFrame, options: list[str], threshold: float = 1.0):
     return build_process_picker_summary(
-        frame, options, start_month=202601, end_month=202603, secure_threshold=threshold
+        frame,
+        options,
+        start_month=202601,
+        end_month=202603,
+        thresholds=SecurementThresholds(threshold, min(threshold, 0.9)),
     )
 
 
@@ -143,5 +148,34 @@ def test_invalid_threshold_is_rejected(threshold) -> None:
 def test_invalid_query_bounds_are_rejected(start, end) -> None:
     with pytest.raises(ValueError):
         build_process_picker_summary(
-            _frame([]), [], start_month=start, end_month=end, secure_threshold=1.0
+            _frame([]),
+            [],
+            start_month=start,
+            end_month=end,
+            thresholds=SecurementThresholds(1.0, 0.9),
         )
+
+
+def test_a_month_with_a_higher_threshold_can_make_a_process_fall_short() -> None:
+    """충족은 **모든 유효한 달이 그 달 기준을 넘을 때**다.
+
+    최저 달이 아닌 달이 더 높은 기준에 걸릴 수 있다.
+    """
+    frame = _frame([(202601, "A", 1.12), (202602, "A", 1.15)])
+    thresholds = SecurementThresholds(1.095, 0.995, monthly=((202602, 1.195, None),))
+
+    (item,) = build_process_picker_summary(
+        frame, ["A"], start_month=202601, end_month=202603, thresholds=thresholds
+    )
+
+    assert (item.minimum_rate, item.minimum_month) == (1.12, 202601)
+    assert item.group == "shortfall"
+    # 예외가 없으면 같은 값이 충족이다.
+    (plain,) = build_process_picker_summary(
+        frame,
+        ["A"],
+        start_month=202601,
+        end_month=202603,
+        thresholds=SecurementThresholds(1.095, 0.995),
+    )
+    assert plain.group == "sufficient"

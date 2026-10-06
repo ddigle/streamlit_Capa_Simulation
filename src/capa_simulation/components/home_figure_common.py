@@ -15,12 +15,18 @@ from __future__ import annotations
 import html
 import unicodedata
 from collections.abc import Callable, Collection, Container, Mapping, Sequence
-from typing import Any, Final, Literal, cast
+from typing import Any, Final, cast
 
 import pandas as pd
 import plotly.graph_objects as go
 
 from capa_simulation.design import tokens
+from capa_simulation.services.securement_threshold import (
+    SecurementThresholds,
+)
+from capa_simulation.services.securement_threshold import (
+    capacity_status as capacity_status,
+)
 
 # 상세 B/N 왼쪽 표의 머리글·순위 글자. `go.Table` 은 칸 글자를 세로 가운데에 세우지
 # 못한다 — plotly 6.9 `table.Cells` 에 `valign` 이 없어 한 줄짜리 글자가 칸 위 2.5px 에
@@ -443,30 +449,15 @@ def _grid_month_layout_options(
     }
 
 
-def capacity_status(
-    rate: float, *, secure_threshold: float, warning_threshold: float
-) -> Literal["secure", "warning", "shortage"]:
-    """확보율 하나를 확보·경고·부족 세 상태로 판정한다.
-
-    HOME 막대·히트맵의 색, 확보율 히트맵의 계단, 결론 한 줄의 색이 모두 이 부등호 하나를
-    본다. 경계를 각자 적으면 한쪽만 바꿨을 때 같은 값을 두고 화면마다 다른 말을 한다.
-    """
-    if rate > secure_threshold:
-        return "secure"
-    if rate >= warning_threshold:
-        return "warning"
-    return "shortage"
-
-
-def _capacity_color(rate: float, *, secure_threshold: float, warning_threshold: float) -> str:
-    """확보율을 확보·경고·부족 상태색으로 바꾼다."""
+def _capacity_color(rate: float, *, thresholds: SecurementThresholds, month: int) -> str:
+    """확보율을 **그 달의 실효 기준**으로 판정해 확보·경고·부족 상태색으로 바꾼다."""
     # 상태 → 색 짝은 **함수 안에서** 만든다. 모듈 상수로 올리면 처음 임포트한 순간의
     # 팔레트가 굳어 테마를 바꿔도 이 색만 따라오지 않는다.
     return {
         "secure": tokens.STATUS_SECURE,
         "warning": tokens.STATUS_WARNING,
         "shortage": tokens.STATUS_SHORTAGE,
-    }[capacity_status(rate, secure_threshold=secure_threshold, warning_threshold=warning_threshold)]
+    }[thresholds.status(rate, month)]
 
 
 def _text_width_units(text: str) -> float:

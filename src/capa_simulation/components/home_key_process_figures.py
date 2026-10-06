@@ -52,6 +52,7 @@ from capa_simulation.components.plotly_layout import (
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 KEY_PROCESS_HOVER_TEMPLATE = (
     "<b>%{customdata[0]} · %{customdata[1]}</b>"
@@ -88,8 +89,7 @@ def build_key_process_heatmap_figures(
     securement_rate: pd.DataFrame,
     key_processes: Sequence[str],
     month_labels: list[str],
-    secure_threshold: float,
-    warning_threshold: float,
+    thresholds: SecurementThresholds,
     process_labels: ProcessLabels | None = None,
     year_total_labels: Sequence[str] = (),
     past_month_labels: Collection[str] | None = None,
@@ -157,11 +157,7 @@ def build_key_process_heatmap_figures(
         cell_colors.append(
             tokens.SURFACE
             if missing_rate
-            else _capacity_color(
-                float(rate),
-                secure_threshold=secure_threshold,
-                warning_threshold=warning_threshold,
-            )
+            else _capacity_color(float(rate), thresholds=thresholds, month=int(row["생산계획년월"]))
         )
         hover_values.append(
             [

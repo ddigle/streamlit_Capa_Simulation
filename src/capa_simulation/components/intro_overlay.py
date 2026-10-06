@@ -183,6 +183,9 @@ def _data() -> dict[str, Any]:
                 {"title": "월별 시트"},
             ],
             "status": {"secure": "확보", "warning": "경고", "shortage": "부족"},
+            # B/N 확보율 행 범례. HOME·산출 결과 범례와 같은 세 이름이고 숫자를 적지 않는다
+            # (2026-10-06 사용자 결정). 막대 밑 상태 글자(`status`)와 따로 둔다.
+            "legend": {"secure": "초과 확보", "warning": "경고", "shortage": "부족"},
             "lowest": "최저",
         },
     }

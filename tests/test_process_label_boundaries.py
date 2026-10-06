@@ -13,6 +13,7 @@ from capa_simulation.components.hierarchical_monthly_table import (
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
+from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import build_home_simulation_cache_key
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -228,8 +229,7 @@ def _lob_month_figure(labels: object | None) -> object:
     _, month_figure = build_lob_summary_figures(
         **_lob_frames(),
         month_labels=["26.08"],
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         process_labels=labels,
     )
     return month_figure
@@ -250,6 +250,7 @@ def _rotated_annotation_texts(figure: object) -> list[str]:
 def _bottleneck_detail_frame() -> pd.DataFrame:
     return pd.DataFrame(
         {
+            "생산계획년월": [202608],
             "년월": ["26.08"],
             "순위": [1],
             "공정": ["SAW"],
@@ -267,8 +268,7 @@ def _bottleneck_detail_month_figure(labels: object | None) -> object:
     _, month_figure = build_bottleneck_detail_figures(
         monthly_bottleneck_details=_bottleneck_detail_frame(),
         month_labels=["26.08"],
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         process_labels=labels,
     )
     return month_figure

@@ -1,9 +1,11 @@
 # Purpose: 확보·경고 기준별 부족 공정과 추가 필요대수를 Static Capa 현황판에 표시한다.
 
-"""Static Capa 현황 요약 — 판정 기준은 사이드바 조건 카드, 설명은 Guide(2026-09-29 사용자 결정).
+"""Static Capa 현황 요약 — 판정 기준은 HOME → Preference, 설명은 Guide.
 
 본문에는 두 결과 상자(경고 기준 미달·확보 기준 추가 확보)만 남는다. 이 화면의 목적·담당 부서
-흐름과 추가 필요대수 계산식은 `guides/static_capa.md` 가 말한다.
+흐름과 추가 필요대수 계산식은 `guides/static_capa.md` 가 말한다(2026-09-29 사용자 결정).
+판정 기준은 시나리오와 무관한 공용 프로필이고 HOME → Preference 한 곳에서 정한다(2026-10-06
+사용자 결정). 사이드바 카드는 지금 쓰는 기준을 읽기 전용으로 보여 줄 뿐이다.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.home_preference import THRESHOLD_POINTER
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
@@ -28,20 +31,18 @@ from capa_simulation.page_bootstrap import (
     resolve_effective_months,
     scenario_capacity_and_demand,
 )
-from capa_simulation.scenario_preset_state import (
-    SECURE_THRESHOLD_KEY,
-    WARNING_THRESHOLD_KEY,
-    seed_threshold_defaults,
-)
+from capa_simulation.persistence.cache import load_global_securement_threshold
 from capa_simulation.scenario_state import (
     scenario_month_table,
 )
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.securement_rate import build_securement_shortfall_tables
+from capa_simulation.services.securement_threshold import securement_threshold_caption
 from capa_simulation.services.simulation_cache import (
     get_securement_rate,
     scenario_cache_key,
 )
+from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 
 
@@ -100,7 +101,9 @@ def _render_shortfall_table(
             "공정": st.column_config.TextColumn(width="large"),
             # 표는 확보율 오름차순이지만 62.3% 와 71.8% 의 **거리**는 숫자만으로 안 잡힌다.
             # 칸 안 막대 하나면 위에서 몇 줄까지가 진짜 급한 구간인지 훑는 순간 보인다.
-            # 길이의 기준은 확보 기준이다 — 기준을 바꾸면 막대도 함께 움직인다.
+            # 길이의 기준은 **기본** 확보 기준이다 — 기준을 바꾸면 막대도 함께 움직인다. 칸 하나의
+            # 눈금이라 달마다 바꿀 수 없다. 월별 예외로 기본값보다 높은 기준을 둔 달의 행은 막대가
+            # 끝까지 차도 그 달 기준에는 못 미친 것이다(표에 든 것 자체가 미달이라는 뜻이다).
             "확보율": st.column_config.ProgressColumn(
                 format="percent",
                 width="small",
@@ -143,40 +146,20 @@ process_labels = get_process_labels()
 render_page_header("Static Capa")
 render_page_guide("static_capa", title="Static Capa")
 
-seed_threshold_defaults(owner="static_capa")
-
-# 판정 기준은 이 화면이 읽는 조건이라 사이드바 조건 카드다. HOME 의 B/N 집계 공정 상자와 **같은
-# 세션 키**를 쓴다 — 한쪽에서 바꾸면 다른 쪽도 같은 기준으로 판정한다. 두 칸을 한 줄에 반씩
-# 놓고 칸 위 글자는 접는다(B/N 상자와 같은 모양). 어느 칸이 무엇인지는 왼쪽이 확보·오른쪽이
-# 경고라는 화면 전체의 차례와 `help` 가 말한다.
-with condition_card("판정 기준", name="static_capa", icon=":material/rule:"):
-    with st.form("static_capa_shortfall_threshold_form", border=False):
-        secure_column, warning_column = st.columns(2, gap="small")
-        with secure_column:
-            secure_threshold_percent = st.number_input(
-                "확보 기준 (%)",
-                label_visibility="collapsed",
-                min_value=0.0,
-                step=0.1,
-                key=SECURE_THRESHOLD_KEY,
-                persist_state="session",
-                help="확보 기준 (%)",
-            )
-        with warning_column:
-            warning_threshold_percent = st.number_input(
-                "경고 기준 (%)",
-                label_visibility="collapsed",
-                min_value=0.0,
-                step=0.1,
-                key=WARNING_THRESHOLD_KEY,
-                persist_state="session",
-                help="경고 기준 (%)",
-            )
-        st.form_submit_button("판정 기준 적용", type="primary", width="stretch")
-
-if warning_threshold_percent > secure_threshold_percent:
-    st.error("경고 기준은 확보 기준보다 클 수 없습니다.")
+# 판정 기준 입력은 없앴다. 거꾸로 된 짝(경고 > 확보)은 저장 단계에서 막으므로 여기서 멈출 일도 없다.
+# 판정은 행마다 **그 달의** 실효 기준이다(`build_securement_shortfall_tables`).
+try:
+    threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
+except BOOTSTRAP_ERRORS as exc:
+    st.error(bootstrap_error_message(exc))
     st.stop()
+thresholds = threshold_profile.thresholds
+secure_threshold = thresholds.default_secure
+# 카드는 지금 쓰는 기준을 읽기 전용으로 보인다. 월별 예외 수는 조회기간을 알아야 세므로 아래
+# 계산 뒤에 채운다 — 자리만 먼저 잡아 사이드바 차례를 그대로 둔다.
+with condition_card("판정 기준", name="static_capa", icon=":material/rule:"):
+    threshold_caption_slot = st.empty()
+    st.caption(THRESHOLD_POINTER)
 
 try:
     context = load_page_context()
@@ -212,13 +195,19 @@ try:
         required_equipment,
     )
     warning_shortfalls, secure_shortfalls = build_securement_shortfall_tables(
-        securement_rate,
-        warning_threshold=float(warning_threshold_percent) / 100.0,
-        secure_threshold=float(secure_threshold_percent) / 100.0,
+        securement_rate, thresholds=thresholds
     )
 except BOOTSTRAP_ERRORS as exc:
+    threshold_caption_slot.caption(
+        securement_threshold_caption(thresholds, start_month=0, end_month=0, with_warning=True)
+    )
     st.error(bootstrap_error_message(exc))
 else:
+    threshold_caption_slot.caption(
+        securement_threshold_caption(
+            thresholds, start_month=effective_start, end_month=effective_end, with_warning=True
+        )
+    )
     with st.container(border=True):
         st.markdown("#### :material/priority_high: 경고 기준 미달 :red-badge[집중 관리]")
         with metric_row(key="static_capa_warning_metrics"):
@@ -252,7 +241,7 @@ else:
                 warning_section=True,
                 key="static_capa_warning_shortfalls",
                 labels=process_labels,
-                secure_threshold=float(secure_threshold_percent) / 100.0,
+                secure_threshold=secure_threshold,
             )
 
     with st.container(border=True):
@@ -283,5 +272,5 @@ else:
                 warning_section=False,
                 key="static_capa_secure_shortfalls",
                 labels=process_labels,
-                secure_threshold=float(secure_threshold_percent) / 100.0,
+                secure_threshold=secure_threshold,
             )

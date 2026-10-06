@@ -45,7 +45,6 @@ from typing import Any
 import duckdb
 import streamlit as st
 
-from capa_simulation.components.home_figure_common import capacity_status
 from capa_simulation.components.intro_overlay import SUMMARY_LABEL
 from capa_simulation.components.page_guide import BUTTON_ID as GUIDE_BUTTON_ID
 from capa_simulation.components.process_labels import get_process_labels
@@ -55,6 +54,7 @@ from capa_simulation.io.reference_cache import reference_version_for_revision
 from capa_simulation.persistence.cache import (
     get_scenario_repository,
     load_global_display_order,
+    load_global_securement_threshold,
     load_scenario_snapshot,
 )
 from capa_simulation.persistence.models import OfficialReleaseSummary
@@ -65,6 +65,7 @@ from capa_simulation.services.official_summary import (
     build_official_summary,
     summary_months,
 )
+from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
     get_home_lob_without_edp,
@@ -123,11 +124,14 @@ def summary_payload(
     *,
     release_name: str,
     scenario_name: str,
-    secure_threshold: float,
-    warning_threshold: float,
+    thresholds: SecurementThresholds,
     process_label: Callable[[str], str],
 ) -> dict[str, Any]:
     """브라우저로 보낼 값. 반올림·차례를 고정해 같은 요약이면 늘 같은 값이 된다.
+
+    판정 기준은 시나리오와 무관한 공용 프로필(HOME → Preference)이다. B/N 막대 색과 기준선은
+    **달마다 그 달의 실효 기준**을 쓴다 — 기준 네 목록(`secure`·`warning`·`*_label`)이 `months` 와
+    같은 차례·같은 길이다.
 
     색은 **테마와 무관한** 다크 팔레트다 — 입장 화면은 한 벌의 어두운 화면이고, 현재 테마의
     토큰을 읽으면 테마를 바꿀 때마다 값이 달라져 다시 보낸다.
@@ -135,7 +139,7 @@ def summary_payload(
     colors = tokens.palette_value("dark", "PRODUCT_SHARE_COLORS")
     other = tokens.palette_value("dark", "PRODUCT_SHARE_OTHER")
     bottlenecks: list[dict[str, Any] | None] = []
-    for month in summary.bottlenecks:
+    for calendar_month, month in zip(summary.months, summary.bottlenecks, strict=True):
         if month is None:
             bottlenecks.append(None)
             continue
@@ -146,11 +150,7 @@ def summary_payload(
                 "need": _round(month.required, 1),
                 "have": _round(month.available, 1),
                 "short": month.short_units,
-                "status": capacity_status(
-                    month.rate,
-                    secure_threshold=secure_threshold,
-                    warning_threshold=warning_threshold,
-                ),
+                "status": thresholds.status(month.rate, calendar_month),
             }
         )
     labels = summary.labels
@@ -164,12 +164,17 @@ def summary_payload(
         "density": [_round(value, 2) for value in summary.density],
         "wafer": [_round(None if value is None else value / 1_000, 1) for value in summary.wafer],
         "bn": bottlenecks,
-        # 숫자는 기준선의 **자리**(정확한 값), `*_label` 은 범례·기준선 이름표에 적는 **글자**다 —
+        # 숫자는 기준선의 **자리**(정확한 값), `*_label` 은 기준선 이름표에 적는 **글자**다 —
         # 사사오입한 정수 퍼센트(109.5 → 110%). 109.7% 확보 막대가 선 위에 서야 하므로 둘을 나눈다.
-        "secure": round(secure_threshold * 100.0, 1),
-        "warning": round(warning_threshold * 100.0, 1),
-        "secure_label": threshold_percent_label(secure_threshold),
-        "warning_label": threshold_percent_label(warning_threshold),
+        # 달마다 하나씩이다. 값이 같은 달이 이어지면 JS 가 한 구간으로 묶어 긋는다.
+        "secure": [round(thresholds.secure_for(month) * 100.0, 1) for month in summary.months],
+        "warning": [round(thresholds.warning_for(month) * 100.0, 1) for month in summary.months],
+        "secure_label": [
+            threshold_percent_label(thresholds.secure_for(month)) for month in summary.months
+        ],
+        "warning_label": [
+            threshold_percent_label(thresholds.warning_for(month)) for month in summary.months
+        ],
         "products": [
             {"name": name, "color": other if slot is None else colors[slot % len(colors)]}
             for name, slot in zip(summary.products, summary.product_slots, strict=True)
@@ -178,7 +183,9 @@ def summary_payload(
     }
 
 
-def _build(database_path: str, release: OfficialReleaseSummary) -> dict[str, Any]:
+def _build(
+    database_path: str, release: OfficialReleaseSummary, thresholds: SecurementThresholds
+) -> dict[str, Any]:
     snapshot = load_scenario_snapshot(database_path, release.revision_id)
     tables = snapshot.tables
     preset = snapshot.preset
@@ -221,17 +228,18 @@ def _build(database_path: str, release: OfficialReleaseSummary) -> dict[str, Any
         summary,
         release_name=release.release_name,
         scenario_name=release.scenario_name,
-        secure_threshold=preset.secure_threshold,
-        warning_threshold=preset.warning_threshold,
+        thresholds=thresholds,
         process_label=get_process_labels().format_func(),
     )
 
 
-def _build_or_unavailable(database_path: str, release: OfficialReleaseSummary) -> dict[str, Any]:
+def _build_or_unavailable(
+    database_path: str, release: OfficialReleaseSummary, thresholds: SecurementThresholds
+) -> dict[str, Any]:
     """서버 캐시가 부르는 계산. 일시적일 수 있는 실패는 그대로 올려 캐시에 남기지 않고,
     그 밖의 실패(데이터 오류)는 「만들지 못함」으로 돌려 캐시에 남긴다."""
     try:
-        return _build(database_path, release)
+        return _build(database_path, release, thresholds)
     except _TRANSIENT_ERRORS:
         raise
     except Exception as exc:  # 다시 해도 같은 결과다 — 회차마다 다시 계산하지 않게 남긴다
@@ -247,15 +255,19 @@ def _look_up(database_path: str) -> dict[str, Any]:
         release = get_scenario_repository(database_path).latest_official_release()
         if release is None:
             return _unavailable("공식버전이 아직 없습니다.")
+        # 판정 기준은 공용 프로필이다(시나리오 프리셋 값이 아니다). 키에는 version 이 아니라 **내용
+        # 지문**을 넣는다 — 저장 전에는 version 이 0 이지만 기본값은 최신 공식버전 프리셋을 따른다.
+        thresholds = load_global_securement_threshold(database_path).thresholds
         cache_key = (
             release.official_release_id,
             # 시나리오 이름은 바꿔도 공식버전 id 가 그대로라 따로 넣는다(머리 줄 풍선이 쓴다).
             release.scenario_name,
             load_global_display_order(database_path).version,
             get_process_labels().version,
+            thresholds.digest,
         )
         return get_intro_summary_payload(
-            cache_key, _build=lambda: _build_or_unavailable(database_path, release)
+            cache_key, _build=lambda: _build_or_unavailable(database_path, release, thresholds)
         )
     except _TRANSIENT_ERRORS as exc:
         raise _Transient(f"{type(exc).__name__}: {exc}") from exc

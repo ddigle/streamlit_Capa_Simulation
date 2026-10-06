@@ -2,9 +2,9 @@
 
 """시뮬레이션 DuckDB 읽기의 Streamlit 캐시 경계.
 
-저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 아홉 종
+저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 열 종
 (표시순서·공정 표시명·비교 시나리오·선행·Summary 공지·Top5 대역·주요공정·실행 Capa·
-과거 구간)을 여기서만 캐시한다.
+과거 구간·확보율 판정 기준)을 여기서만 캐시한다.
 """
 
 from dataclasses import fields
@@ -22,6 +22,7 @@ from capa_simulation.persistence.models import (
     GlobalKeyProcess,
     GlobalPastData,
     GlobalProcessRename,
+    GlobalSecurementThreshold,
     GlobalSummaryNote,
     GlobalTop5Band,
     RevisionSummary,
@@ -177,6 +178,27 @@ def load_global_advance_load(database_path: str) -> GlobalAdvanceLoad:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_securement_threshold_payload(database_path: str) -> dict[str, Any]:
+    profile = get_scenario_repository(database_path).load_global_securement_threshold()
+    return _payload(profile, GlobalSecurementThreshold)
+
+
+def load_global_securement_threshold(database_path: str) -> GlobalSecurementThreshold:
+    """Share the securement judgement thresholds without caching their model class."""
+    return GlobalSecurementThreshold(**_load_global_securement_threshold_payload(database_path))
+
+
+def clear_global_securement_threshold_cache() -> None:
+    """판정 기준 프로필만 비운다.
+
+    다른 공용 프로필과 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다 — 어떤 `RQ_*` 표에도
+    오버레이되지 않고 확보율이 나온 뒤 판정할 때만 쓰인다. **공식버전을 새로 지정한 뒤에도
+    부른다** — 프로필을 아직 저장하지 않았으면 기본값이 최신 공식버전 프리셋에서 오기 때문이다.
+    """
+    _load_global_securement_threshold_payload.clear()
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
 def _load_global_summary_note_payload(database_path: str) -> dict[str, Any]:
     profile = get_scenario_repository(database_path).load_global_summary_note()
     return _payload(profile, GlobalSummaryNote)
@@ -311,6 +333,7 @@ def clear_global_process_rename_cache() -> None:
 
 def clear_scenario_repository() -> None:
     _load_global_advance_load_payload.clear()
+    _load_global_securement_threshold_payload.clear()
     _load_global_comparison_scenario_payload.clear()
     _load_global_execution_capacity_payload.clear()
     _load_global_top5_band_payload.clear()

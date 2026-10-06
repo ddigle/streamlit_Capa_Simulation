@@ -12,6 +12,10 @@ from datetime import date, datetime
 import pandas as pd
 
 from capa_simulation.persistence._sql_helpers import required_text
+from capa_simulation.services.securement_threshold import (
+    SecurementThresholds,
+    build_securement_thresholds,
+)
 
 # 표준 목표 Capa 조회·집계 설정의 저장 기본값. 화면 옵션 목록은 페이지가 소유하고,
 # 값이 비었을 때 되돌아갈 기본값만 프리셋과 함께 여기에 둔다.
@@ -73,6 +77,32 @@ class GlobalAdvanceLoad:
     source: str
     updated_at: datetime | None
     rows: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class GlobalSecurementThreshold:
+    """Scenario-independent securement thresholds: a default pair plus monthly overrides.
+
+    값은 비율이다(109.5% 는 1.095). `rows` 는 `생산계획년월`·`확보 기준`·`경고 기준` 이고
+    빈 칸은 그 달 그 항목이 기본값을 따른다는 뜻이다.
+
+    프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`, `updated_at=None`,
+    행 0건이고 기본값은 **최신 공식버전 리비전 프리셋의 값**(그것도 없으면 코드 기본값)이다 —
+    `fallback` 이 그 출처를 말한다. 저장하기 전에는 DB 에 쓰지 않는다.
+    """
+
+    version: int
+    source: str
+    updated_at: datetime | None
+    default_secure: float
+    default_warning: float
+    rows: pd.DataFrame
+    fallback: str = ""
+
+    @property
+    def thresholds(self) -> SecurementThresholds:
+        """판정에 넘길 해시 가능한 값. 달마다의 실효 기준은 `for_month` 가 답한다."""
+        return build_securement_thresholds(self.default_secure, self.default_warning, self.rows)
 
 
 @dataclass(frozen=True)

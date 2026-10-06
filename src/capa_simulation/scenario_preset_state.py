@@ -18,7 +18,6 @@ from capa_simulation.persistence.models import (
 )
 from capa_simulation.services.month_filter import MONTH_COLUMN, available_month_range
 from capa_simulation.settings import MONTH_SELECTION_END, MONTH_SELECTION_START, format_month
-from capa_simulation.shared_widget_state import carry_shared_widget_value
 
 PENDING_PRESET_KEY = "pending_scenario_preset"
 MONTH_RANGE_KEY = "production_month_range_v2"
@@ -26,12 +25,12 @@ MONTH_PICKER_KEY = "production_month_picker"
 PROCESS_SELECTION_KEY = "dashboard_bottleneck_process_selection"
 SECURE_THRESHOLD_KEY = "dashboard_secure_threshold_percent"
 WARNING_THRESHOLD_KEY = "dashboard_warning_threshold_percent"
-# 판정 기준은 리비전 프리셋이 소유하므로 기본값도 키 옆에 둔다. HOME 과 Static Capa 가
-# 같은 세션 키를 쓰는데 기본값을 따로 적어 두면 한쪽만 바뀌어도 드러나지 않는다.
+# 위 두 키는 **레거시**다(2026-10-06 사용자 결정). 판정 기준은 이제 HOME → Preference 의 공용
+# 프로필(`services/securement_threshold`)이 정하고, 리비전 프리셋의 `secure_threshold`·
+# `warning_threshold` 는 판정에 쓰지 않는다. 저장 구조를 바꾸지 않으려고 프리셋 값만 세션을 거쳐
+# 그대로 다음 리비전에 실어 보낸다 — 화면 위젯은 없다. 세션이 비어 있으면 아래 기본값을 싣는다.
 DEFAULT_SECURE_THRESHOLD_PERCENT = 109.5
 DEFAULT_WARNING_THRESHOLD_PERCENT = 99.5
-# 마지막으로 판정에 쓴 바른 (확보, 경고) 짝. 경고가 확보보다 큰 짝을 적용했을 때 대신 쓴다.
-LAST_VALID_THRESHOLDS_KEY = "dashboard_threshold_last_valid"
 STANDARD_TARGET_PROCESS_SELECTION_KEY = "standard_target_process_filter"
 STANDARD_TARGET_PROCESS_DEFAULT_KEY = "standard_target_process_default"
 # 표준 목표 Capa 「조회·집계 설정」도 리비전 프리셋이 소유하므로 세션 키를 여기서 선언한다.
@@ -40,56 +39,6 @@ STANDARD_TARGET_END_DATE_KEY = "standard_target_end_date"
 STANDARD_TARGET_SHOW_DETAIL_KEY = "standard_target_show_detail"
 STANDARD_TARGET_DETAIL_LEVEL_KEY = "standard_target_detail_level"
 STANDARD_TARGET_OUTPUT_METRIC_KEY = "standard_target_output_metric"
-
-
-def seed_threshold_defaults(*, owner: str) -> None:
-    """판정 기준 두 칸을 위젯보다 먼저 세션에 세운다. `owner` 는 그리는 페이지의 이름이다.
-
-    HOME 과 Static Capa 가 같은 세션 키를 공유한다. 어느 쪽을 먼저 열든 같은 값에서
-    출발해야 하므로 심는 절차도 키·기본값 옆인 여기 한 곳에 둔다. 비어 있으면 기본값을
-    심고, **다른 페이지에서 넘어온 회차에는 지금 값을 다시 적는다** — 그러지 않으면 넘어온
-    첫 회차의 위젯이 `min_value`(0)로 서서 세션 내내 0% 로 판정한다
-    (`shared_widget_state` 모듈 설명).
-    """
-    carry_shared_widget_value(
-        SECURE_THRESHOLD_KEY, default=DEFAULT_SECURE_THRESHOLD_PERCENT, owner=owner
-    )
-    carry_shared_widget_value(
-        WARNING_THRESHOLD_KEY, default=DEFAULT_WARNING_THRESHOLD_PERCENT, owner=owner
-    )
-
-
-def applied_threshold_pair(secure_percent: float, warning_percent: float) -> tuple[float, float]:
-    """판정에 쓸 (확보, 경고) 짝(%). 경고가 확보보다 크면 **직전에 쓴 바른 짝**을 돌려준다.
-
-    바른 짝이면 그것을 기억해 두고 그대로 돌려준다. 기억이 없으면 기본값이다. 기억 칸은
-    위젯이 아니라 세션 칸이라 페이지를 옮겨도 남는다.
-    """
-    if warning_percent <= secure_percent:
-        st.session_state[LAST_VALID_THRESHOLDS_KEY] = (secure_percent, warning_percent)
-        return secure_percent, warning_percent
-    remembered = st.session_state.get(LAST_VALID_THRESHOLDS_KEY)
-    if (
-        isinstance(remembered, tuple)
-        and len(remembered) == 2
-        and all(isinstance(value, int | float) for value in remembered)
-        and remembered[1] <= remembered[0]
-    ):
-        return float(remembered[0]), float(remembered[1])
-    return DEFAULT_SECURE_THRESHOLD_PERCENT, DEFAULT_WARNING_THRESHOLD_PERCENT
-
-
-def session_threshold(key: str, default_percent: float) -> float:
-    """세션의 판정 기준(%)을 비율로 바꾼다. 아직 아무도 위젯을 그리지 않았으면 기본값이다.
-
-    `_session_number` 와 달리 값이 이상해도 예외를 던지지 않는다. 저장을 막아야 하는
-    자리와 달리, 결과를 **읽어서 그리기만 하는** 화면이 기준 한 칸 때문에 멈추면 안 된다.
-    """
-    value = st.session_state.get(key, default_percent)
-    try:
-        return float(value) / 100.0
-    except (TypeError, ValueError):
-        return default_percent / 100.0
 
 
 def capture_scenario_preset(reference_tables: Mapping[str, pd.DataFrame]) -> ScenarioPreset:

@@ -10,7 +10,8 @@ HOME 은 월 열여덟 개와 공정 수십 개를 한 화면에 펼친다. 그 
 - 공정 필터(`included_processes`)를 그대로 받는다. 사용자가 공정을 걸러 놓았으면 요약도
   거른 뒤의 최저값을 말해야 한다. 거르기 전 값을 말하면 화면에 없는 공정을 가리킨다.
 - 구간 판정은 `securement_heatmap._tier` 와 **같은 부등호**를 쓴다. 경계가 갈리면 히트맵은
-  「경고」로 칠한 칸을 요약이 「부족」이라고 부른다.
+  「경고」로 칠한 칸을 요약이 「부족」이라고 부른다. 경계는 **그 달의 실효 기준**이다
+  (`services/securement_threshold`) — 월별 예외가 있는 달은 그 달 기준으로 센다.
 
 값이 없으면 0% 로 그리지 않고 「판정할 데이터 없음」으로 둔다 — 조회기간에 데이터가 없는
 것과 확보율이 0 인 것은 다른 일이다.
@@ -23,6 +24,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import require_columns
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 DECISION_COLUMNS = ("생산계획년월", "공정", "확보율")
 
@@ -52,8 +54,7 @@ def build_capacity_decision(
     securement_rate: pd.DataFrame,
     *,
     included_processes: list[str] | None,
-    secure_threshold: float,
-    warning_threshold: float,
+    thresholds: SecurementThresholds,
 ) -> CapacityDecision:
     """필터가 걸린 뒤의 공정·월 확보율에서 최저값과 구간별 개수를 낸다.
 
@@ -71,9 +72,13 @@ def build_capacity_decision(
         return CapacityDecision(None, None, None, 0, 0, 0)
 
     rates = prepared["확보율"]
+    # 행마다 그 달의 실효 기준을 맞대어 둔다. 월별 예외가 없으면 모든 행이 기본값이다.
+    pairs = [thresholds.for_month(int(value)) for value in prepared["생산계획년월"]]
+    secure_limits = pd.Series([pair[0] for pair in pairs], index=prepared.index, dtype="float64")
+    warning_limits = pd.Series([pair[1] for pair in pairs], index=prepared.index, dtype="float64")
     # `_tier` 와 같은 부등호다. 확보는 초과, 경고는 이상, 나머지가 부족이다.
-    shortage = int((rates < warning_threshold).sum())
-    warning = int((~(rates < warning_threshold) & ~(rates > secure_threshold)).sum())
+    shortage = int((rates < warning_limits).sum())
+    warning = int((~(rates < warning_limits) & ~(rates > secure_limits)).sum())
     worst = prepared.loc[rates.idxmin()]
     return CapacityDecision(
         process=str(worst["공정"]),

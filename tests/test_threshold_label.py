@@ -6,6 +6,10 @@ import pytest
 
 from capa_simulation.components.home_figure_common import capacity_status
 from capa_simulation.components.home_preference import status_legend_markup
+from capa_simulation.services.securement_threshold import (
+    SecurementThresholds,
+    securement_threshold_caption,
+)
 from capa_simulation.services.threshold_label import (
     MISSING_THRESHOLD_LABEL,
     threshold_percent_label,
@@ -46,15 +50,56 @@ def test_a_threshold_that_is_not_a_number_does_not_stop_the_screen(ratio: float)
     assert threshold_percent_label(ratio) == MISSING_THRESHOLD_LABEL
 
 
-def test_the_legend_shows_rounded_boundaries_while_judgement_stays_exact() -> None:
-    """범례는 110%·100% 로 적지만, 109.7% 는 확보·109.4% 는 경고로 판정한다(기준 109.5%)."""
-    markup = status_legend_markup(secure_threshold=1.095, warning_threshold=0.995)
+def test_the_legend_names_three_states_without_numbers() -> None:
+    """범례는 「초과 확보 · 경고 · 부족」 세 이름만 적는다(2026-10-06 사용자 결정).
 
-    assert "확보 110% 초과" in markup
-    assert "경고 100%~110%" in markup
-    assert "부족 100% 미만" in markup
-    assert "109" not in markup and "99%" not in markup
+    기준이 달마다 다를 수 있어 숫자 한 짝을 적으면 예외 달에서 거짓이 된다. 과거 구간 칩도 없다.
+    """
+    markup = status_legend_markup()
+
+    for name in ("초과 확보", "경고", "부족"):
+        assert name in markup
+    assert "%" not in markup
+    assert "과거 구간" not in markup
+
+
+def test_judgement_stays_exact_while_labels_are_rounded() -> None:
+    """화면 글자는 110%·100% 지만, 109.7% 는 확보·109.4% 는 경고로 판정한다(기준 109.5%)."""
     assert capacity_status(1.097, secure_threshold=1.095, warning_threshold=0.995) == "secure"
     assert capacity_status(1.094, secure_threshold=1.095, warning_threshold=0.995) == "warning"
     assert capacity_status(0.996, secure_threshold=1.095, warning_threshold=0.995) == "warning"
     assert capacity_status(0.994, secure_threshold=1.095, warning_threshold=0.995) == "shortage"
+
+
+def test_a_monthly_exception_moves_only_its_month() -> None:
+    """월별 예외는 그 달의 판정만 바꾼다. 빈 항목(경고)은 기본값을 따른다."""
+    thresholds = SecurementThresholds(1.095, 0.995, monthly=((202607, 1.195, None),))
+
+    assert thresholds.status(1.15, 202606) == "secure"
+    assert thresholds.status(1.15, 202607) == "warning"
+    assert thresholds.status(0.99, 202607) == "shortage"
+    assert thresholds.status(1.15, None) == "secure"
+
+
+def test_the_caption_names_the_default_and_counts_exceptions_in_the_period() -> None:
+    """공정 선택 창 캡션: 기본 기준과 **기간 안에서 기본값과 다른 달** 수."""
+    thresholds = SecurementThresholds(
+        1.095,
+        0.995,
+        monthly=((202607, 1.195, None), (202608, 1.095, None), (202701, 1.195, None)),
+    )
+
+    assert (
+        securement_threshold_caption(thresholds, start_month=202601, end_month=202612)
+        == "확보 기준 110% · 월별 예외 1개월"
+    )
+    assert (
+        securement_threshold_caption(SecurementThresholds(1.095, 0.995), start_month=1, end_month=2)
+        == "확보 기준 110%"
+    )
+    assert (
+        securement_threshold_caption(
+            thresholds, start_month=202601, end_month=202712, with_warning=True
+        )
+        == "확보 기준 110% · 경고 기준 100% · 월별 예외 2개월"
+    )

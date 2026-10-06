@@ -15,16 +15,16 @@ import html
 
 import streamlit as st
 
-from capa_simulation.components.home_figures import capacity_status
 from capa_simulation.design import tokens
 from capa_simulation.services.home_decision import CapacityDecision
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 NO_DATA_NOTICE = "조회기간에 판정할 확보율 데이터가 없습니다."
 
 
-def _tone(decision: CapacityDecision, *, secure_threshold: float, warning_threshold: float) -> str:
-    """최저 구간의 **면**색. `home_figures.capacity_status` 와 같은 부등호를 쓴다.
+def _tone(decision: CapacityDecision, *, thresholds: SecurementThresholds) -> str:
+    """최저 구간의 **면**색. `home_figures.capacity_status` 와 같은 부등호를 그 달의 기준으로 쓴다.
 
     `STATUS_*` 는 칸을 칠하고 그 위에 `TEXT` 를 얹는 색이다(토큰 설명). 글자색으로 쓰면 어두운
     테마에서 부족 2.0:1·경고 3.3:1 로 결론 문장이 읽히지 않았고, 밝은 테마의 확보 회색도 흰
@@ -40,14 +40,13 @@ def _tone(decision: CapacityDecision, *, secure_threshold: float, warning_thresh
         "secure": tokens.STATUS_SECURE,
         "warning": tokens.STATUS_WARNING,
         "shortage": tokens.STATUS_SHORTAGE,
-    }[capacity_status(rate, secure_threshold=secure_threshold, warning_threshold=warning_threshold)]
+    }[thresholds.status(rate, decision.month)]
 
 
 def render_home_capacity_decision(
     decision: CapacityDecision,
     *,
-    secure_threshold: float,
-    warning_threshold: float,
+    thresholds: SecurementThresholds,
     process_label: str | None = None,
     filtered: bool = False,
 ) -> None:
@@ -63,7 +62,7 @@ def render_home_capacity_decision(
     name = process_label or decision.process or ""
     month = month_label(decision.month) if decision.month is not None else ""
     rate = decision.rate or 0.0
-    tone = _tone(decision, secure_threshold=secure_threshold, warning_threshold=warning_threshold)
+    tone = _tone(decision, thresholds=thresholds)
     scope = "선택한 공정 기준" if filtered else "전체 공정 기준"
 
     chip = (

@@ -7,6 +7,7 @@ import pytest
 
 from capa_simulation.components.securement_heatmap import _tier
 from capa_simulation.services.home_decision import build_capacity_decision
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 SECURE = 1.095
 WARNING = 0.995
@@ -20,8 +21,7 @@ def _decision(frame: pd.DataFrame, included: list[str] | None = None):
     return build_capacity_decision(
         frame,
         included_processes=included,
-        secure_threshold=SECURE,
-        warning_threshold=WARNING,
+        thresholds=SecurementThresholds(SECURE, WARNING),
     )
 
 
@@ -64,8 +64,8 @@ def test_the_tier_counts_match_the_heatmap_rule() -> None:
     assert decision.below == 3
     # 같은 값을 히트맵 규칙에 넣어도 같은 수가 나온다.
     tiers = [
-        _tier(rate, secure_threshold=SECURE, warning_threshold=WARNING)
-        for rate in boundary["확보율"]
+        _tier(rate, thresholds=SecurementThresholds(SECURE, WARNING), month=int(month))
+        for rate, month in zip(boundary["확보율"], boundary["생산계획년월"], strict=True)
     ]
     assert tiers.count(1.0) == decision.warning
     assert tiers.count(0.0) == decision.shortage
@@ -92,3 +92,13 @@ def test_filtering_everything_out_reports_no_data() -> None:
     decision = _decision(_rates([(202601, "가", 0.5)]), ["없는공정"])
 
     assert not decision.has_data
+
+
+def test_each_month_is_judged_by_its_own_threshold() -> None:
+    """월별 예외가 있는 달은 **그 달의** 기준으로 센다. 같은 115% 라도 120% 기준 달에서는 경고다."""
+    frame = _rates([(202601, "가", 1.15), (202607, "가", 1.15)])
+    thresholds = SecurementThresholds(SECURE, WARNING, monthly=((202607, 1.195, None),))
+
+    decision = build_capacity_decision(frame, included_processes=None, thresholds=thresholds)
+
+    assert (decision.warning, decision.shortage) == (1, 0)

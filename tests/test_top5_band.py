@@ -12,6 +12,7 @@ from capa_simulation.components.home_figures import build_lob_summary_figures
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.design import tokens
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
+from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.top5_band import (
     DEFAULT_TOP5_MAX_RATE,
     DEFAULT_TOP5_MIN_RATE,
@@ -100,8 +101,7 @@ def _build(band: tuple[float, float]) -> object:
         monthly_top5=frames["monthly_top5"],
         month_labels=MONTHS,
         process_labels=LABELS,
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         top5_rate_band=band,
     )
     return month_figure
@@ -182,8 +182,7 @@ def test_equal_rates_draw_equal_bars_even_when_loads_differ() -> None:
         monthly_top5=frames["monthly_top5"],
         month_labels=["26.08", "26.09"],
         process_labels=LABELS,
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         top5_rate_band=(0.5, 2.0),
     )
 
@@ -231,8 +230,7 @@ def test_the_threshold_lines_skip_the_year_total_column() -> None:
         monthly_top5=frames["monthly_top5"],
         month_labels=months,
         process_labels=LABELS,
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         year_totals={"26년": {}},
     )
     year_total_index = months.index("26년")
@@ -268,8 +266,7 @@ def test_the_month_header_keeps_its_fill_when_threshold_lines_are_drawn() -> Non
         monthly_top5=frames["monthly_top5"],
         month_labels=months,
         process_labels=LABELS,
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         year_totals={"26년": {}},
     )
     rects = [shape for shape in month_figure.layout.shapes if shape.type == "rect"]
@@ -290,3 +287,31 @@ def test_migration_is_registered(tmp_path: Path) -> None:
     catalog = (root / "docs/migration_catalog.md").read_text(encoding="utf-8")
 
     assert "0022_global_top5_band.sql" in catalog
+
+
+def test_threshold_lines_step_with_a_monthly_exception() -> None:
+    """월별 예외가 있으면 기준선이 **그 달 칸 폭만큼** 그 달 높이로 갈린다.
+
+    기준이 바뀌지 않는 경고선은 한 줄 그대로다. 예외가 없으면 기준마다 이어진 월 구간 하나다.
+    """
+    frames = _frames()
+    frames["lob_summary"] = pd.concat(
+        [frames["lob_summary"].assign(생산계획년월=202607, 년월="26.07"), frames["lob_summary"]],
+        ignore_index=True,
+    )
+    _, month_figure = build_lob_summary_figures(
+        lob_summary=frames["lob_summary"],
+        monthly_density=frames["monthly_density"],
+        bottleneck_capacity=frames["bottleneck_capacity"],
+        monthly_top5=frames["monthly_top5"],
+        month_labels=["26.07", "26.08"],
+        process_labels=LABELS,
+        thresholds=SecurementThresholds(1.095, 0.995, monthly=((202608, 1.195, None),)),
+    )
+    threshold_lines = sorted(
+        (shape.y0, shape.x0, shape.x1)
+        for shape in month_figure.layout.shapes
+        if shape.type == "line" and shape.yref == "y2" and shape.y0 == shape.y1
+    )
+
+    assert threshold_lines == [(0.995, -0.5, 1.5), (1.095, -0.5, 0.5), (1.195, 0.5, 1.5)]

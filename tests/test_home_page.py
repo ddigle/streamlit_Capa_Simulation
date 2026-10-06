@@ -14,9 +14,10 @@ from capa_simulation.components.home_dimensions import (
     LOB_TOP_MARGIN_PX,
     LOB_VALUE_FONT_SIZE_PX,
 )
+from capa_simulation.components.home_preference import THRESHOLD_POINTER
 from capa_simulation.design import tokens
 from capa_simulation.home_state import PRODUCT_SHARE_BASIS_KEY
-from capa_simulation.scenario_preset_state import PROCESS_SELECTION_KEY, WARNING_THRESHOLD_KEY
+from capa_simulation.scenario_preset_state import PROCESS_SELECTION_KEY
 
 # cwd 가 아니라 이 파일 위치를 기준으로 잡는다. tests/ 안에서 pytest 를 돌려도 같은 페이지를 연다.
 HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
@@ -108,9 +109,13 @@ try:
                     namespace["securement_rate"], namespace["process_options"],
                     start_month=namespace["effective_start"],
                     end_month=namespace["effective_end"],
-                    secure_threshold=namespace["secure_threshold_percent"] / 100.0,
+                    thresholds=namespace["thresholds"],
                 ),
-                namespace["secure_threshold_percent"],
+                namespace["securement_threshold_caption"](
+                    namespace["thresholds"],
+                    start_month=namespace["effective_start"],
+                    end_month=namespace["effective_end"],
+                ),
                 namespace["effective_start"], namespace["effective_end"],
             )
 finally:
@@ -373,12 +378,16 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     app = _run(seeded_database)
 
     assert [element.value for element in app.title] == ["Capa LOB Summary"]
-    # 내장 시드 프리셋이 복원한 조회기간과 판정 기준
+    # 내장 시드 프리셋이 복원한 조회기간. 판정 기준은 사이드바에 입력 칸이 없고 Preference 의
+    # 공용 프로필이 정한다(2026-10-06 사용자 결정) — 저장 전에는 공식버전 프리셋 값을 쓴다.
     assert app.session_state["production_month_range_v2"] == ("2026-01", "2026-12")
-    assert [(widget.label, widget.value) for widget in app.sidebar.number_input] == [
-        ("확보 기준 (%)", 109.5),
-        ("경고 기준 (%)", 99.5),
-    ]
+    assert [widget.label for widget in app.sidebar.number_input] == []
+    assert THRESHOLD_POINTER in [element.value for element in app.sidebar.caption]
+    assert [
+        (widget.label, widget.value)
+        for widget in app.main.number_input
+        if widget.label.startswith("기본")
+    ] == [("기본 확보 기준(%)", 109.5), ("기본 경고 기준(%)", 99.5)]
 
     # 그리는 차례다 — 라벨 칸 넷을 먼저, 그 다음 월 칸 넷. 요약 라벨은 trace 0(격자와
     # 글자가 전부 layout 항목이다), 나머지 라벨 셋은 `go.Table` 하나씩이다. 월 칸은
@@ -412,10 +421,10 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
             "Summary 저장",
             "공정 선택 · 3 / 3",
             "과거 구간 저장",
-            "기준 적용",
             "선행 물량 저장",
             "실행 Capa 저장",
             "프리셋 저장",
+            "판정 기준 저장",
             "확보율 구간 저장",
         ]
     )
@@ -481,46 +490,43 @@ def _cache_state(app: AppTest) -> str:
     return states[0]
 
 
+def _save_default_warning(app: AppTest, percent: float) -> AppTest:
+    """Preference 의 판정 기준 편집기로 기본 경고 기준을 저장한다."""
+    next(
+        widget for widget in app.main.number_input if widget.label == "기본 경고 기준(%)"
+    ).set_value(percent)
+    next(button for button in app.button if button.label == "판정 기준 저장").click()
+    return app.run()
+
+
 def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -> None:
     app = _run(seeded_database)
     app.session_state["dashboard_show_performance"] = True
     app.run()
     assert _cache_state(app) == "적중"
+    before = _decision_caption(app)
 
-    # 판정 기준은 Figure 캐시 키에 포함되어야 한다(AGENTS.md 5장 불변조건 7).
-    # 위젯은 키로 집는다 — 라벨은 화면 문구라 바뀌고, 인덱스는 위젯이 늘면 다른 것을 가리킨다.
-    app.sidebar.number_input(key=WARNING_THRESHOLD_KEY).set_value(95.0)
-    app.get_by_key("dashboard_threshold_apply").click().run()
+    # 판정 기준은 Figure 캐시 키에 포함되어야 한다(AGENTS.md 5장 불변조건 7). 기준은 사이드바가
+    # 아니라 Preference 의 공용 프로필에서 바꾼다.
+    try:
+        app = _save_default_warning(app, 95.0)
 
-    assert not list(app.exception)
-    assert [widget.value for widget in app.sidebar.number_input] == [109.5, 95.0]
-    assert _cache_state(app) == "생성"
+        assert not list(app.exception), [element.message for element in app.exception]
+        assert not list(app.error), [element.value for element in app.error]
+        assert _cache_state(app) == "생성"
 
-    # 조건이 그대로면 다시 캐시를 재사용한다.
-    app.run()
-
-    assert _cache_state(app) == "적중"
+        # 조건이 그대로면 다시 캐시를 재사용한다.
+        app.run()
+        assert _cache_state(app) == "적중"
+    finally:
+        # 모듈 공용 DB 다. 뒤 테스트가 같은 기준(99.5%)에서 출발하게 되돌린다.
+        app = _save_default_warning(app, 99.5)
+    assert not list(app.error), [element.value for element in app.error]
+    assert _decision_caption(app) == before
 
 
 def _decision_caption(app: AppTest) -> str:
     return next(element.value for element in app.caption if "기준 미달" in element.value)
-
-
-def test_a_reversed_threshold_pair_is_not_applied(seeded_database: Path) -> None:
-    """경고가 확보보다 큰 짝은 알리기만 하고 **직전의 바른 짝으로** 계속 판정한다.
-
-    그대로 쓰면 경고 구간이 사라져 대시보드 전체가 「경고 0 · 부족 N」이 되었다 — 화면은
-    「다시 누르세요」라고 말하면서 이미 그 값으로 그리고 있었다(2026-10-05 E2E).
-    """
-    app = _run(seeded_database)
-    before = _decision_caption(app)
-
-    app.sidebar.number_input(key=WARNING_THRESHOLD_KEY).set_value(109.6)
-    app.get_by_key("dashboard_threshold_apply").click().run()
-
-    assert not list(app.exception), [element.message for element in app.exception]
-    assert _decision_caption(app) == before
-    assert any("직전 기준(확보 109.5% · 경고 99.5%)" in element.value for element in app.warning)
 
 
 def test_home_reports_a_missing_active_revision_instead_of_a_traceback(tmp_path: Path) -> None:

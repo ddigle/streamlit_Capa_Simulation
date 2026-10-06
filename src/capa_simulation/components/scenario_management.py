@@ -29,6 +29,7 @@ from capa_simulation.io.reference_cache import (
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
     clear_global_comparison_scenario_cache,
+    clear_global_securement_threshold_cache,
     clear_scenario_snapshot_cache,
     load_scenario_snapshot,
 )
@@ -495,6 +496,8 @@ def _render_official(
             # 입장 화면 Summary 가 새 공식버전을 다음 회차에 곧바로 싣게 한다
             # (평소에는 30초에 한 번 본다).
             forget_intro_summary_check()
+            # 판정 기준을 아직 저장하지 않았으면 기본값이 최신 공식버전 프리셋에서 온다.
+            clear_global_securement_threshold_cache()
             st.rerun()
     releases = repository.list_official_releases(limit=10)
     if releases:
@@ -556,6 +559,8 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
     clear_scenario_snapshot_cache()
     # 저장소가 이 시나리오를 가리키던 공용 비교 대상을 비웠다. 캐시는 경로 키라 따로 비운다.
     clear_global_comparison_scenario_cache()
+    # 보관한 시나리오의 공식버전이 판정 기준의 미저장 기본값을 정했을 수 있다.
+    clear_global_securement_threshold_cache()
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
     st.session_state[FLASH_KEY] = (
@@ -649,6 +654,8 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
         return
     clear_scenario_snapshot_cache()
     clear_global_comparison_scenario_cache()
+    # 지운 시나리오의 공식버전이 판정 기준의 미저장 기본값을 정했을 수 있다.
+    clear_global_securement_threshold_cache()
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
     st.session_state[FLASH_KEY] = (

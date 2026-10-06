@@ -24,6 +24,7 @@ from capa_simulation.services.key_process import (
     normalize_key_processes,
     resolve_preset_name,
 )
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTH_LABELS = ["26.01", "26.02", "26년", "27.01"]
 YEAR_TOTAL_LABELS = ["26년"]
@@ -46,8 +47,7 @@ def _figures(processes: list[str]) -> tuple[object, object]:
         securement_rate=_securement_frame(),
         key_processes=processes,
         month_labels=list(MONTH_LABELS),
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         year_total_labels=YEAR_TOTAL_LABELS,
     )
 

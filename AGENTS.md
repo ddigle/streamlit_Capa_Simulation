@@ -210,8 +210,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 전체 계산 결과를 조합하는 HOME 대시보드다.
   - Plotly Figure 묶음을 사용자 세션에 캐시하고 렌더링은 fragment로 분리한다.
   - 본문은 `Main`·`Preference`·`Past Data` 세 탭이다. `Main` 이 계획·LOB·주요공정·B/N
-    Figure 여덟 개를 그리고, `Preference`는 공용 프로필 편집기(비교 시나리오·선행·Summary·
-    Top5·주요공정·실행 Capa)를 두며 `Past Data`는 과거 구간 세 표를 받는다
+    Figure 여덟 개를 그리고, `Preference`는 공용 프로필 편집기(비교 시나리오·판정 기준·선행·
+    Summary·Top5·주요공정·실행 Capa)를 두며 `Past Data`는 과거 구간 세 표를 받는다
     (`components/past_data_management.py`). 요약만 그리는 경로는 없다.
   - **보는 조건 토글 여섯(선행·실행·GAP·상세·EDP 포함·Past Data 포함)과 `제품별 비중 단위`
     (Wafer·PKG 고르는 칸)는 사이드바 조건 카드 `LOB 표시 조건`**(`home_preference.render_home_view_card`,
@@ -432,7 +432,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     끝나면 `close()` 한다. **모든 종료 경로가 `close()` 를 지나야 한다** — 오류로 멈추면
     멈춰 선 막대가 오류 문구 위에 남는다. Figure 캐시 적중 경로는 건너뛴 단계 수만큼
     `advance()` 를 더 불러 두 경로의 단계 수를 맞춘다.
-  - B/N 임계값은 사이드바 form, 포함 공정은 선택 dialog의 적용 버튼으로 확정한다. 성능 진단 토글은
+  - 판정 기준(확보·경고)은 사이드바에 입력이 없고 `Preference` 의 공용 프로필이 정한다
+    (2026-10-06 사용자 결정 — 아래 `services/securement_threshold.py`). 사이드바 `B/N 집계 공정`
+    상자에는 「판정 기준은 HOME → Preference 에서 정합니다」 한 줄만 남는다. 포함 공정은 선택
+    dialog의 적용 버튼으로 확정한다. 성능 진단 토글은
     단계별 시간과 Figure 캐시 적중 여부만 표시한다. 그 상자(`BOTTLENECK_BOX_KEY`)는
     **HOME 만 그리는** 접히는 상자다. 다른 페이지에 갔다 오면 그 회차에 만들어지지 않은
     위젯이라 값이 버려지므로 `sidebar_expander` 의 기억 칸이 펼침 상태를 되돌린다.
@@ -560,8 +563,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     제공한다.
   - 경고 기준 미달 행은 경고 기준까지 필요한 대수와 확보 기준까지의 추가 대수를 함께
     표시하고, 경고 이상·확보 기준 미달 행은 확보 기준 추가대수로 별도 관리한다.
-  - 판정 기준(확보·경고 %)은 사이드바 조건 카드 `판정 기준` 이다. HOME B/N 집계 공정 상자와
-    같은 세션 키를 쓴다. 업무 로드맵(GO팀 투자 판단·기술팀 실행 개선)과 추가 필요대수 계산식은
+  - 판정 기준(확보·경고)은 HOME → Preference 의 공용 프로필이다(2026-10-06 사용자 결정). 사이드바
+    조건 카드 `판정 기준` 은 지금 기준을 읽기 전용으로 적고 정하는 곳을 가리킬 뿐이다. 업무 로드맵(GO팀 투자 판단·기술팀 실행 개선)과 추가 필요대수 계산식은
     Guide(`guides/static_capa.md`)로 옮겼고 본문에는 두 결과 상자만 남는다.
 - `app_pages/reference_integrity.py`
   - `Dynamic Capa` 상위 페이지(사이드바 그룹 머리, 표기 없음 — 성숙도는 본문 배지)이며 전체 공정 실현률·관리 우선순위를 요약하고 공정·제품·
@@ -1151,8 +1154,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `TableView.filters` 는 고른 필터 조건(비어 있지 않은 것만)이다. 보기를 「적용」하기 전의
     조건으로도 행을 고를 수 있게 밖으로 낸다 — 설비 표의 일괄 삭제가 쓴다.
 - `src/capa_simulation/components/securement_heatmap.py`
-  - 공정 × 월 확보율을 상태 3색 격자로 그린다. 경계는 HOME·Static Capa 와 같은 세션
-    값(`dashboard_*_threshold_percent`)을 읽는다. 연속 색을 쓰지 않는 이유는 같은 확보율이
+  - 공정 × 월 확보율을 상태 3색 격자로 그린다. 경계는 HOME·Static Capa 와 같은 공용 판정
+    기준 프로필(`load_global_securement_threshold`)을 읽는다. 연속 색을 쓰지 않는 이유는 같은 확보율이
     화면마다 다른 색 체계로 보이면 판정이 흐려지기 때문이다. 주요 공정별 최초 부족 월을
     적는 `shortage_summary` 도 여기 있다. **두 축 모두 범주**여야 한다 — `"26.07"` 을
     숫자로 두면 월 칸이 실수 축에 눌려 붙는다.
@@ -1337,7 +1340,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     올리며 이전 규칙은 보존하지 않는다 — 교체 전 CSV 다운로드가 유일한 되돌리기다.
   - 프리셋은 조회기간·B/N 포함 공정·표준 목표 Capa 공정 기본값·확보/경고 기준과
     표준 목표 Capa 「조회·집계 설정」(시작일·종료일·상세 토글·제품 분류 수준·출력 지표)을
-    소유한다. 조회·집계 설정 컬럼이 없던 과거 리비전은 NULL 로 읽혀 기본값으로 열린다.
+    소유한다. **프리셋의 확보/경고 기준은 레거시다**(2026-10-06) — 판정에 쓰지 않고 스키마도
+    그대로 두며, 공용 판정 기준 프로필이 한 번도 저장되지 않았을 때 그 기본값을 정하는 데만
+    최신 공식버전의 값을 읽는다. 레거시 프리셋은 경고 0 을 허용했으므로(옛 사이드바 칸 하한 0)
+    읽은 짝이 저장 규칙(둘 다 > 0, 경고 ≤ 확보)에 어긋나면 코드 기본값으로 대신하고 `fallback`
+    에 그 사실을 적는다. 조회·집계 설정 컬럼이 없던 과거 리비전은 NULL 로 읽혀 기본값으로 열린다.
   - 공식버전은 불변 리비전을 가리키는 append-only 발행 이력이며 최신 발행이 새 세션의
     기본 리비전이 된다.
   - 표준 목표 Capa의 수동 주차별 가용대수만 설비 DB의 비버전 최신값 테이블에
@@ -1360,14 +1367,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「조회·집계 설정」은 공통 위젯 생성 전에 대기 프리셋으로 복원한다. 세션 키 문자열과
     조회·집계 설정 기본값의 선언 자리는 `scenario_preset_state.py`·
     `persistence/models.py` 이며 페이지는 import 해서 쓴다.
-  - 판정 기준 기본값 심기(`seed_threshold_defaults`)와 %→비율 읽기(`session_threshold`),
-    HOME 이 경고 > 확보 짝 대신 직전의 바른 짝을 쓰는 `applied_threshold_pair` 도
-    `scenario_preset_state.py` 가 소유한다. `session_threshold` 는 `_session_number` 와 달리
-    값이 이상해도 예외 없이 기본값으로 떨어진다 — 읽어서 그리기만 하는 화면이 기준 한 칸
-    때문에 멈추면 안 된다.
+  - 판정 기준 세션 키(`dashboard_*_threshold_percent`)는 **레거시 운반용**이다. 화면 위젯이
+    없고, 복원한 프리셋 값을 다음 리비전 저장에 그대로 실어 보낼 뿐 판정에 쓰지 않는다.
   - 새 세션에서는 최신 공식 리비전을 한 번 자동 활성화한다.
 - `src/capa_simulation/shared_widget_state.py`
-  - **여러 페이지가 같은 key 로 그리는 위젯**(HOME·Static Capa 판정 기준, 샘플 데이터 스위치)의
+  - **여러 페이지가 같은 key 로 그리는 위젯**(샘플 데이터 스위치)의
     값을 페이지를 옮긴 첫 회차에도 브라우저에 다시 알린다(`carry_shared_widget_value`). 위젯 id 에
     페이지가 들어가 넘어온 첫 회차의 위젯은 기본값으로 서고, 그 기본값이 다음 rerun 에 세션을
     덮는다(2026-10-05 E2E — 판정 기준이 세션 내내 0.00). 그리는 자리가 바뀐 회차에만 다시 적어
@@ -1433,6 +1437,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `components/process_labels.py` 에만 둔다.
 - `required_equipment.py`: RQ_REQB 경로 연결과 소요대수
 - `securement_rate.py`: 공정별 확보율과 경고·확보 기준별 최소 정수 추가 필요대수
+- `securement_threshold.py`: 공용 확보율 판정 기준(2026-10-06 사용자 결정). 기본 확보·경고 한 짝과
+  월별 예외(빈칸 = 기본값)를 정규화·검증하고, 해시 가능한 `SecurementThresholds`(`for_month`·
+  `status`·`digest`)와 달마다의 실효 기준 표(`effective_securement_thresholds`)를 만든다. 확보·경고·부족
+  부등호 `capacity_status`(확보는 초과, 경고는 이상)와 화면 캡션 `securement_threshold_caption`
+  (기본값 + 기간 안 월별 예외 수)도 여기 있다. 판정하는 모든 곳은 행·칸의 달을 물어 그 달의 실효
+  기준을 쓴다 — 월별 예외가 없으면 모든 달이 기본값이라 예전 한 짝 판정과 같다. 값은 모두 **비율**
+  이고 입력하는 숫자는 실제 판정값(119.5% → 1.195)이다. 검증은 기본값과 **합친** 결과로 각 달의
+  경고 ≤ 확보를 본다 — 거꾸로 짝은 저장 단계에서 막으므로 화면에 「직전 짝 유지」 장치가 없다.
 - `threshold_label.py`: 판정 기준(비율)의 **표시 글자** 한 곳. `threshold_percent_label(1.095)` 는
   `"110%"` — 소수점에서 사사오입(half-up)한 정수 퍼센트다(8장 「판정 기준 표시」). 파이썬 `round`·
   서식 `:.0%` 는 반을 짝수 쪽으로 가르고(1.085 → 108%) `Decimal(1.095)` 는 이진 잡음으로 109% 가
@@ -1926,8 +1938,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     맞춰 조립된다. 생산계획의 달 이름과 막대 밑 두 줄(공정 이름·상태/부족 대수)은 점 위 값 글자와 같은
     14px 이고, 행 이름(`.sum-label .t`)은 20px 다. 행 이름 아래 설명은 단위가 필요한 생산계획
     (`Density · 억Gb`)만 두고 B/N 확보율·월별 시트는 범례가 뜻을 나른다 — 설명이 없는 행은 그 줄을
-    만들지 않는다(2026-10-03 사용자 결정). 기준선은 정확한 기준 자리에 긋고 이름표·범례는 사사오입한
-    글자(`secure_label`·`warning_label`)를 단다. 원래 화면에서는 툴바 `Summary` 단추(`intro_summary.summary_toolbar_script`, Guide 왼쪽)가
+    만들지 않는다(2026-10-03 사용자 결정). 기준선은 정확한 기준 자리에 긋고 이름표는 사사오입한
+    글자(`secure_label`·`warning_label`)를 단다. 기준은 **달마다** 오므로 같은 값이 이어지는 달끼리 한
+    구간으로 묶어 그 칸 폭만큼 긋고 값이 바뀌는 자리는 세로로 이어 계단으로 만들며, 이름표는 구간마다
+    단다(모든 달이 같으면 판 전체를 가로지르는 한 줄 — 예전과 같다). B/N 확보율 행 범례는 「초과 확보 ·
+    경고 · 부족」 세 이름뿐이고 숫자를 적지 않는다(`text.legend` — 막대 밑 상태 글자 `text.status` 와
+    따로다, 2026-10-06 사용자 결정). 원래 화면에서는 툴바 `Summary` 단추(`intro_summary.summary_toolbar_script`, Guide 왼쪽)가
     같은 요약을 다시 연다 — 화면이 그 단추 속으로 접힌다. 그래서 오버레이는 걷지 않고 **감춰 둔다**
     (워커 멈춤·캔버스 1px). 이미 들어간 탭은 요약 값이 닿을 때 감춘 오버레이를 미리 만들어 둔다. 요약에서
     Esc 는 Detail 과 같다. 요약을 만들지 못했으면(공식버전 없음·계산 오류) Summary 를 끄고 까닭을 단다.
@@ -1989,9 +2005,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `get_home_simulation`·`get_home_lob_without_edp` 를 부른다 — **무거운 시나리오 전체 Capa 계산
     (`get_full_capacity_outcome`)은 HOME·공식 발행 검사와 한 칸을 나눠 쓰고**, 여섯 달로 자른 결과는
     HOME 조회기간과 대개 달라 따로 캐시된다. 색은 테마와 무관한 다크 팔레트(`palette_value("dark", …)`),
-    값은 반올림·차례를 고정해 같은 요약이면 늘 같다. 상태(확보·경고·부족)는 `capacity_status` 한 곳이
-    가른다. 기준은 두 벌로 보낸다 — `secure`·`warning` 은 기준선 자리(정확한 %), `secure_label`·
-    `warning_label` 은 범례·이름표 글자(`threshold_percent_label`). 모든 페이지 앞이라 **어떤 예외도 밖으로 내보내지 않고**(`available: false` 와 까닭),
+    값은 반올림·차례를 고정해 같은 요약이면 늘 같다. 판정 기준은 시나리오 프리셋이 아니라 **공용 판정
+    기준 프로필**(`load_global_securement_threshold`)이고, 상태(확보·경고·부족)는 그 달의 실효 기준으로
+    `SecurementThresholds.status` 가 가른다. 기준은 두 벌을 **달마다 하나씩**(`months` 와 같은 길이의
+    목록) 보낸다 — `secure`·`warning` 은 기준선 자리(정확한 %), `secure_label`·`warning_label` 은
+    이름표 글자(`threshold_percent_label`). 서버 캐시 키에 기준의 내용 지문(`digest`)이 들어가고,
+    Preference 에서 기준을 저장하면 `forget_intro_summary_check` 로 그 세션도 곧바로 다시 확인한다. 모든 페이지 앞이라 **어떤 예외도 밖으로 내보내지 않고**(`available: false` 와 까닭),
     데이터 오류로 만들지 못한 결과는 서버 캐시에 남기고(새 공식버전을 지정하면 키가 바뀐다), DB 잠금·파일·
     메모리 오류는 남기지 않아 다음 확인 때 다시 해 본다 — 그때 세션이 들고 있던 요약은 지우지 않는다.
   - 툴바 단추는 Guide 처럼 테마 버튼 iframe 의 스크립트가 세우고 칠한다(`summary_toolbar_script` — 상태
@@ -2298,7 +2317,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/process_picker.py`
   - 최종 월별 확보율을 조회기간의 최소값·최초 동률 월·유효 월 수로 요약한다. 확보 기준
     미달·기준 초과·판정 없음으로 구분하되 입력 옵션 순서와 원본 공정 키를 보존한다.
-    경계는 HOME `capacity_status` 와 같다 — 기준과 같은 값은 미달 쪽이다.
+    경계는 HOME `capacity_status` 와 같다 — 기준과 같은 값은 미달 쪽이다. 기준 초과는 **유효한 모든
+    달이 그 달의 실효 확보 기준을 넘을 때**다(월별 예외가 없으면 「최저 > 기준」과 같다). 팝업 머리
+    줄은 `securement_threshold_caption`(「확보 기준 110% · 월별 예외 N개월」)이다.
     소요대수나 가용대수로 확보율을 다시 계산하지 않는다.
 - `src/capa_simulation/components/process_picker.py`
   - 요약을 세 구역의 168px 공정 버튼으로 그린다. 구역 안에서는 받은 순서를 유지하고
@@ -2327,9 +2348,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (제목·판정 색 범례), `Preference` 탭. 토글은 모두 이 모듈에 둔다 —
     `tests/test_scenario_activation.py` 가 여기서 토글 키를 AST 로 모은다.
   - 편집기의 저장 버튼(과 변경 메모)은 편집 칸 **위**이고, 저장 결과 알림은 그 바로 아래다.
-  - 탭 안의 편집기는 여섯이다 — 비교 시나리오 선택, 선행 투입 물량, `Summary 공지`,
-    Top5 대역, 주요공정 히트맵 프리셋, 실행 Capa. 모두 공용 프로필에 저장하고, 저장 상태를 적는
-    버전 캡션은 `profile_caption.py` 를 쓴다.
+  - 탭 안의 편집기는 일곱이다 — 비교 시나리오 선택, 확보율 판정 기준, 선행 투입 물량,
+    `Summary 공지`, Top5 대역, 주요공정 히트맵 프리셋, 실행 Capa. 모두 공용 프로필에 저장하고,
+    저장 상태를 적는 버전 캡션은 `profile_caption.py` 를 쓴다.
+  - **확보율 판정 기준**(`render_threshold_editor`, 2026-10-06 사용자 결정, 마이그레이션 0029)은
+    기본 확보·경고 두 칸(키 없는 `number_input` — Top5 와 같은 이유)과 월별 표(달이 열, 행은
+    `확보 기준`·`경고 기준`, 빈칸 = 기본값)다. 입력은 퍼센트, 저장은 비율이다. 기본값 두 칸의
+    하한은 0 이다 — 저장본이 무엇이든 칸이 그려져야 고칠 수 있고, 0 이하는 저장 검증이 거부한다.
+    조회기간 밖 달은 선행 물량처럼 보존한다(`merge_securement_threshold_edits`). 다만 표에 없는
+    달이 새 기본값과 거꾸로 짝이 되면 저장을 막으므로, 기간 밖 예외가 있을 때 폼에
+    「조회기간 밖 월별 기준 지우기」 체크를 두고, 그런 달 때문에 막히면 그 달과 고칠 길을 적어 거부한다. 저장은 **버전 대조**다 — 편집을
+    시작한 회차의 version 을 세션(`THRESHOLD_BASE_VERSION_KEY`)에 두고 저장 회차에 그 값을 넘겨,
+    쓰기 잠금 안에서 저장본과 다르면 `SecurementThresholdConflict` 로 거부한다. 검증 실패(값 ≤ 0,
+    기본값과 합친 어느 달의 경고 > 확보)도 그 달을 적어 거부한다.
   - **주요공정 히트맵은 이름 붙은 프리셋 여럿이다**(2026-09-29 사용자 요청, 마이그레이션 0028).
     Preference 의 `고칠 프리셋`(＋ 새 프리셋)·이름·공정으로 만들고 고치며, 저장·`기본으로`·삭제는
     모두 **묶음 전체의 교체**(`replace_global_key_process_presets`, version+1)다 — 차례와 이름 중복을
@@ -2618,9 +2649,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - Figure 생성 코드는 **가족별로 한 모듈씩**이다 — `home_lob_figures.py`(요약 LOB·Wafer·
     B/N Top5), `home_plan_detail_figures.py`(계획 세부수량 표), `home_key_process_figures.py`
     (주요공정 확보율 히트맵), `home_bottleneck_figures.py`(상세 B/N 공정). 넷을 넘나드는
-    조각 — 확보율 3색 판정 `capacity_status`, 실행 반영 hover 문구, 과거·연간 Total 면색,
+    조각 — 확보율 3색 판정색 `_capacity_color`, 실행 반영 hover 문구, 과거·연간 Total 면색,
     paper 좌표 격자 크롬(`_grid_*`·`_paper_*`) — 은 `home_figure_common.py` 한 곳에 있다.
-    `securement_heatmap`·`decision_summary` 의 판정도 같은 `capacity_status` 를 본다.
+    부등호 `capacity_status` 는 순수 함수라 `services/securement_threshold.py` 에 있고 여기서 다시
+    내보낸다. 판정하는 모든 곳(Figure 색·`securement_heatmap`·`decision_summary`·`home_decision`·
+    `process_picker`·`securement_rate`·Summary)은 **그 행·칸의 달**을 `SecurementThresholds` 에
+    물어(`status`·`for_month`) 그 달의 실효 기준으로 가른다. B/N Top 5 기준선은 이어진 월 구간을
+    다시 같은 값끼리 나눠(`_threshold_runs`) 그 달 높이에 긋는다.
   - `home_figures.py` 는 **코드를 갖지 않는 import 파사드**다. `__all__` 에 적힌 공개 이름만
     `from x import y as y` 로 다시 내보내므로, 가족 모듈이 더 쪼개져도 페이지·테스트의
     import 한 줄이 바뀌지 않는다. 새 공개 이름을 만들면 파사드의 재수출과 `__all__` 도
@@ -2639,7 +2674,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     자르는 곳은 서비스 한 곳이고 Figure 는 받은 프레임을 다시 자르지 않는다.
   - **Figure 묶음은 정확히 여덟 개다**(요약 2 + 계획 세부수량 2 + 주요공정 히트맵 2 +
     상세 B/N 2). `HomeFigureSet`의 이름 있는 여덟 필드로 생성·렌더링해 위치 혼동을 막는다.
-    캐시 키도 `HomeFigureCacheKey`의 이름으로 구성하되 기존 튜플 순서·해시를 유지한다.
+    캐시 키도 `HomeFigureCacheKey`의 이름으로 구성하되 기존 튜플 순서·해시를 유지한다. 판정 기준은
+    퍼센트 두 칸이 아니라 내용 지문 `threshold_digest`(`SecurementThresholds.digest`) 한 칸이다 —
+    월별 예외까지 담고, 저장 전 version 0 에서도 기본값이 바뀌면 갈린다.
     묶음 구조나 **그림 모양**(막대 폭·둥근 머리처럼 Figure 에 구워지는 것)을 바꿀 때는
     `HOME_FIGURE_SCHEMA_VERSION`도 올려 기존 세션의 옛 값을 다시 만들게 한다. 편집 없는
     리비전의 그림은 세션 공용 저장소에도 들어가고 그 토큰이 리비전에서 나온 고정값이라,
@@ -2725,6 +2762,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/display_order_store.py`: 공용 표시순서 프로필의 검증·이관·저장
 - `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·교체 SQL
 - `persistence/advance_load_store.py`: 공용 선행 투입 물량 프로필의 조회·교체 SQL
+- `persistence/securement_threshold_store.py`: 공용 확보율 판정 기준 프로필(0029)의 조회·교체 SQL과
+  버전 대조(`SecurementThresholdConflict`). 헤더에 기본 확보·경고 값 칸이 있어 헤더를 직접 쓴다.
+  미저장일 때의 기본값(최신 공식버전 프리셋 → 코드 기본값)은 Repository 가 정한다.
 - `persistence/execution_capacity_store.py`: 공용 실행 Capa 반영 프로필의 조회·교체 SQL
 - `persistence/key_process_store.py`: 공용 주요공정 프리셋 프로필의 조회·교체 SQL(헤더는 0024, 프리셋은 0028 의 두 표. 프리셋 차례의 맨 앞이 기본, 공정 차례가 곧 히트맵 행 순서)
 - `persistence/home_profile_store.py`: HOME 공용 Top5 구간·공지·GAP 비교 대상의 조회·교체와
@@ -2760,9 +2800,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `persistence` 는 Streamlit 을 부르지 않는다.
 - `persistence/migration_runner.py`, `equipment_migration_runner.py`: 각 DB의 패키지·스키마를
   그 엔진에 묶는 진입점
-- `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷과 공용 프로필 아홉 종
+- `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷과 공용 프로필 열 종
   (표시순서·공정 표시명·비교 시나리오·선행·Summary 공지·Top5 대역·주요공정·실행 Capa·과거
-  구간)의 Streamlit 캐시 경계. 설비 쪽은 설비 스냅샷과 층 도면 프로필·도면 요소, FAB 전체 도면
+  구간·확보율 판정 기준)의 Streamlit 캐시 경계. 판정 기준 캐시는 공식버전을 새로 지정할 때도
+  비운다(`clear_global_securement_threshold_cache`) — 미저장이면 기본값이 최신 공식버전에서 온다. 설비 쪽은 설비 스냅샷과 층 도면 프로필·도면 요소, FAB 전체 도면
   (`load_fab_layout` — 캔버스·배경 도면 행과 요소를 한 항목에)이다(`clear_floor_layout_cache` 가 층 셋과
   FAB 를 함께 비운다 — 팝업·저장의 기존 호출처가 그대로 FAB 까지 덮는다)
 - `persistence/equipment_repository.py`: 설비 운영 입력의 불변 전체 스냅샷 저장소
@@ -3238,12 +3279,15 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - **판정 기준 표시.** 확보·경고 기준(기본 109.5%·99.5%)을 화면에 **적는** 곳은 모두
   `services/threshold_label.threshold_percent_label` 로 사사오입한 정수 퍼센트를 쓴다 —
   109.5 → `110%`, 99.5 → `100%`. 업무의 원래 기준은 110%·100% 이고, 반 칸 낮춘 것은 아슬아슬하게
-  모자란 공정도 기준을 채운 것으로 넣으려는 장치다(2026-10-03 사용자 결정). 지금 적는 곳은 HOME·
-  확보율 히트맵 범례(`home_preference.status_legend_markup`), HOME B/N 공정 선택 팝업의 기간 줄,
-  입장 화면 Summary 의 범례·기준선 이름표다. **바꾸지 않는 것**: 판정(`capacity_status`·
+  모자란 공정도 기준을 채운 것으로 넣으려는 장치다(2026-10-03 사용자 결정). 지금 적는 곳은 HOME
+  B/N 공정 선택 팝업의 기간 줄(기본값 + 「월별 예외 N개월」), Static Capa 판정 기준 카드, 입장 화면
+  Summary 의 기준선 이름표(달마다 — 값이 바뀌는 구간마다 하나)다. **범례에는 숫자를 적지 않는다** —
+  HOME·확보율 히트맵(`home_preference.status_legend_markup`)·Summary 범례 모두 「초과 확보 · 경고 ·
+  부족」 세 이름뿐이고 과거 구간 칩도 없다(2026-10-06 사용자 결정 — 기준이 달마다 다를 수 있어 숫자
+  한 짝은 예외 달에서 거짓이 된다). **바꾸지 않는 것**: 판정(`capacity_status`·
   `securement_rate`·`process_picker` — 정확한 기준), 저장값(프리셋 비율), 기준을 고치는
   `number_input`(정확한 값을 보여야 고친다), 차트 기준선의 **자리**(109.7% 확보 막대가 선 위에
-  선다), 입력 오류 안내(「경고 기준(X%)이 확보 기준(Y%)보다 큽니다」 — 입력값을 그대로 말해야
+  선다), 입력 오류 안내(「경고 기준이 확보 기준보다 큰 달이 있습니다: 26.07(경고 X% > 확보 Y%)」 — 입력값을 그대로 말해야
   고칠 수 있고, 반올림하면 「110% 가 110% 보다 크다」가 된다). 새로 기준 숫자를 적는 화면도
   같은 함수를 쓴다.
 

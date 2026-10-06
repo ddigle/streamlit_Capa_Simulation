@@ -31,11 +31,7 @@ from capa_simulation.navigation import (
     STATIC_CAPA_SUBPAGES,
 )
 from capa_simulation.scenario_preset_state import (
-    DEFAULT_SECURE_THRESHOLD_PERCENT,
-    DEFAULT_WARNING_THRESHOLD_PERCENT,
     MONTH_RANGE_KEY,
-    SECURE_THRESHOLD_KEY,
-    WARNING_THRESHOLD_KEY,
 )
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.sidebar_status import BOTTLENECK_BOX_KEY, remembered_box_key
@@ -436,52 +432,6 @@ def test_an_opened_control_box_stays_open_across_reruns(_app: AppTest) -> None:
     # 페이지를 옮겨도 그대로다. 공통 상자는 그 조건을 읽는 페이지에서 `app.py` 가 그린다.
     app.switch_page(SCENARIO_MANAGEMENT.path).run()
     assert _control_boxes(app)[SCENARIO_BOX_KEY] is True
-
-
-def _threshold_inputs(app: AppTest) -> list[tuple[float, bool]]:
-    """판정 기준 두 칸이 **브라우저에 보낸** 값과 「이 값으로 그려라」 표지.
-
-    AppTest 의 `.value` 는 회차가 끝난 뒤의 세션 값을 읽어 브라우저가 실제로 받은 값을 가린다.
-    proto 의 `set_value` 가 거짓이면 브라우저는 서버 값이 아니라 위젯 기본값(0)을 그린다.
-    """
-    return [
-        (element.proto.value, element.proto.set_value)
-        for element in app.number_input
-        if element.key in {SECURE_THRESHOLD_KEY, WARNING_THRESHOLD_KEY}
-    ]
-
-
-@pytest.mark.parametrize(
-    ("first", "second"), [(STATIC_CAPA.path, HOME.path), (HOME.path, STATIC_CAPA.path)]
-)
-def test_thresholds_carry_over_on_the_first_switch_between_home_and_static_capa(
-    _app: AppTest, first: str, second: str
-) -> None:
-    """두 화면은 판정 기준 세션 키를 공유한다. 옮긴 **첫 회차**에도 그 값으로 그리고 계산한다.
-
-    위젯 id 에 페이지가 들어가서, 넘어온 첫 회차의 위젯은 새 id 로 등록되며 기본값 0 으로
-    섰다. 브라우저는 0.00 을 그렸고 다음 rerun 에서 그 0 을 다시 보내 세션 내내 「기준 미달 0」
-    이었다(2026-10-05 E2E).
-    """
-    app = _app
-    app.switch_page(first).run()
-    app.switch_page(second).run()
-    assert not list(app.exception), [element.message for element in app.exception]
-
-    expected = [
-        (DEFAULT_SECURE_THRESHOLD_PERCENT, True),
-        (DEFAULT_WARNING_THRESHOLD_PERCENT, True),
-    ]
-    assert _threshold_inputs(app) == expected
-    # 그 페이지에 머무는 다음 회차는 다시 적지 않는다(폼에 적고 아직 제출하지 않은 값을 지킨다).
-    # 브라우저가 이미 그 값을 갖고 있으므로 표지도 내리고 값은 세션에 그대로 남는다.
-    app.run()
-    assert [set_value for _, set_value in _threshold_inputs(app)] == [False, False]
-    assert [
-        element.value
-        for element in app.number_input
-        if element.key in {SECURE_THRESHOLD_KEY, WARNING_THRESHOLD_KEY}
-    ] == [DEFAULT_SECURE_THRESHOLD_PERCENT, DEFAULT_WARNING_THRESHOLD_PERCENT]
 
 
 def test_the_shared_sample_switch_stays_on_across_sample_pages(_app: AppTest) -> None:

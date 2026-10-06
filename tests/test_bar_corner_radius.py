@@ -26,6 +26,7 @@ from capa_simulation.components.home_figures import build_lob_summary_figures
 from capa_simulation.design import tokens
 from capa_simulation.services.availability_gap import DYNAMIC_SUBTOTAL_ROW, GAP_ROW, STATIC_ROW
 from capa_simulation.services.monthly_equipment_availability import BASELINE_CATEGORY
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTHS = [202601, 202602, 202603]
 LABELS = ["26.01", "26.02", "26.03"]
@@ -100,8 +101,7 @@ def _month_figure(*, adjusted: dict[int, float], with_execution_columns: bool) -
     _, month_figure = build_lob_summary_figures(
         **_frames(adjusted=adjusted, with_execution_columns=with_execution_columns),
         month_labels=LABELS,
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
     )
     return month_figure
 

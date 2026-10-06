@@ -26,6 +26,7 @@ from capa_simulation.services.month_columns import (
     build_past_month_labels,
     leading_past_column_count,
 )
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 # ------------------------------------------------------ 스크롤 시작 위치의 근거
 
@@ -228,8 +229,7 @@ def test_the_axis_leaves_only_the_label_its_pixels() -> None:
     _, month_figure = build_lob_summary_figures(
         **_lob_frames(),
         month_labels=["26.08"],
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
     )
     low, high = _top5_axis_range(month_figure)
     peak = _top5_peak(month_figure)
@@ -252,8 +252,7 @@ def test_a_longer_label_reserves_more_room() -> None:
     _, month_figure = build_lob_summary_figures(
         **frames,
         month_labels=["26.08"],
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
     )
     _, high = _top5_axis_range(month_figure)
     peak = _top5_peak(month_figure)
@@ -276,8 +275,7 @@ def test_the_bars_grew_against_the_old_ratio() -> None:
     _, month_figure = build_lob_summary_figures(
         **_lob_frames(),
         month_labels=["26.08"],
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
     )
     _, high = _top5_axis_range(month_figure)
     peak = _top5_peak(month_figure)
@@ -290,8 +288,7 @@ def test_the_label_gap_comes_from_the_same_constant() -> None:
     _, month_figure = build_lob_summary_figures(
         **_lob_frames(),
         month_labels=["26.08"],
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
     )
     rate_labels = [
         annotation

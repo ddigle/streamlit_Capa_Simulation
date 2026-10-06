@@ -74,6 +74,7 @@ from capa_simulation.services.product_share import (
     PRODUCT_SHARE_BASIS_WAFER,
     ProductShareCell,
 )
+from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.top5_band import (
     DEFAULT_TOP5_MAX_RATE,
     DEFAULT_TOP5_MIN_RATE,
@@ -545,6 +546,25 @@ def _contiguous_segments(indices: Sequence[int]) -> list[tuple[int, int]]:
     return segments
 
 
+def _threshold_runs(
+    segments: Sequence[tuple[int, int]], values: Sequence[float]
+) -> list[tuple[int, int, float]]:
+    """이어진 월 구간을 다시 **같은 기준값이 이어지는** 구간으로 쪼갠다. 끝은 포함이다.
+
+    `values[i]` 는 월 축 i 번째 칸의 실효 기준이다. 월별 예외가 없으면 구간마다 값이 하나라
+    입력 구간이 그대로 나온다 — 기준선 도형 수가 예전과 같다.
+    """
+    runs: list[tuple[int, int, float]] = []
+    for start, end in segments:
+        run_start = start
+        for index in range(start + 1, end + 1):
+            if values[index] != values[index - 1]:
+                runs.append((run_start, index - 1, values[index - 1]))
+                run_start = index
+        runs.append((run_start, end, values[end]))
+    return runs
+
+
 def _aligned_by_label(frame: pd.DataFrame | None, month_labels: list[str]) -> pd.DataFrame | None:
     """월 축 라벨 차례로 프레임을 맞춘다. 축에 없는 칸은 결측이 된다."""
     if frame is None or "년월" not in frame.columns:
@@ -674,8 +694,7 @@ def build_lob_summary_figures(
     bottleneck_capacity: pd.DataFrame,
     lob_summary: pd.DataFrame,
     month_labels: list[str],
-    secure_threshold: float,
-    warning_threshold: float,
+    thresholds: SecurementThresholds,
     process_labels: ProcessLabels | None = None,
     baseline_lob_summary: pd.DataFrame | None = None,
     comparison_density: pd.DataFrame | None = None,
@@ -690,6 +709,9 @@ def build_lob_summary_figures(
 
     `process_labels` 는 **화면 문자열에만** 쓴다. 프레임의 `공정` 값은 그대로 두므로
     월 위치 계산과 확보율 색 판정은 원본을 본다.
+
+    `thresholds` 는 공용 판정 기준이다. 막대 색과 Top 5 기준선은 **그 달의 실효 기준**을
+    쓴다 — 월별 예외가 없으면 모든 달이 기본값이라 예전 한 짝 기준과 같은 그림이다.
 
     `baseline_lob_summary` 는 선행 반영 **전**의 같은 요약이다. 주면 Density·Wafer 계획
     칸에 증감을 값 **위**에 작게 얹고 생산계획 LOB 에 기존 계획을 점선으로 함께 그린다.
@@ -876,12 +898,12 @@ def build_lob_summary_figures(
                 공정=labels.series(bottleneck_capacity["공정"])
             ),
             colors=[
-                _capacity_color(
-                    rate,
-                    secure_threshold=secure_threshold,
-                    warning_threshold=warning_threshold,
+                _capacity_color(rate, thresholds=thresholds, month=int(month))
+                for rate, month in zip(
+                    bottleneck_capacity["확보율"],
+                    bottleneck_capacity["생산계획년월"],
+                    strict=True,
                 )
-                for rate in bottleneck_capacity["확보율"]
             ],
             # 조정이 없으면 굵기가 모두 같다. 그때는 스칼라로 남겨 Figure 규격이 조정 전과
             # 다르지 않게 한다.
@@ -1012,12 +1034,10 @@ def build_lob_summary_figures(
                 공정=labels.series(monthly_top5["공정"])
             ),
             colors=[
-                _capacity_color(
-                    rate,
-                    secure_threshold=secure_threshold,
-                    warning_threshold=warning_threshold,
+                _capacity_color(rate, thresholds=thresholds, month=int(month))
+                for rate, month in zip(
+                    monthly_top5["확보율"], monthly_top5["생산계획년월"], strict=True
                 )
-                for rate in monthly_top5["확보율"]
             ],
             line_widths=(
                 top5_delta.outline_widths if top5_delta.traces else TOP5_BAR_OUTLINE_WIDTH_PX
@@ -1046,9 +1066,15 @@ def build_lob_summary_figures(
         # 선은 **월 칸 위에만** 긋는다. 연간 Total 열은 확보율을 더하지 않아 비워 둔
         # 칸인데 그 위로 선이 지나가면 합계에도 기준이 있는 것처럼 읽힌다. `add_hline`
         # 은 축 전체를 가로지르므로 쓸 수 없고, 이어진 월 구간마다 선분을 따로 긋는다.
+        #
+        # 기준은 **달마다** 다를 수 있다(월별 예외). 이어진 월 구간을 다시 「같은 값이 이어지는
+        # 구간」으로 나눠 그 높이에 긋는다. 예외가 없으면 값이 하나라 구간이 예전과 같다.
         month_line_segments = _contiguous_segments(
             [index for index, label in enumerate(month_labels) if label not in totals]
         )
+        month_by_position = [
+            None if pd.isna(month) else int(month) for month in aligned_summary["생산계획년월"]
+        ]
         #
         # **`add_shape`·`add_hline` 을 쓰지 않는다.** 그 둘은 `figure.layout.shapes` 에
         # 곧바로 쓰는데, 이 Figure 의 나머지 도형은 전부 `append_layout_items` 누적함에
@@ -1069,9 +1095,12 @@ def build_lob_summary_figures(
                 "line": {"color": tokens.LINE, "width": 1, "dash": "dot"},
                 "layer": "above",
             }
-            for threshold in (secure_threshold, warning_threshold)
+            for pick in (0, 1)
+            for segment_start, segment_end, threshold in _threshold_runs(
+                month_line_segments,
+                [thresholds.for_month(month)[pick] for month in month_by_position],
+            )
             if 0 < threshold <= top5_rate_band[1]
-            for segment_start, segment_end in month_line_segments
         ]
         append_layout_items(month_figure, shapes=threshold_shapes)
         for x_position, capa, rate in zip(

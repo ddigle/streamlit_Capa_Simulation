@@ -48,6 +48,7 @@ from capa_simulation.components.plotly_layout import (
 )
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 # 상세 B/N 공정 시트가 보여줄 순위 상한. 페이지가 서비스에 넘기는 값이고, 자르는 곳은
 # 서비스 한 곳이다. Figure 는 받은 프레임을 그대로 믿고 행 수를 `순위` 최대값으로만
@@ -144,8 +145,7 @@ def build_bottleneck_detail_figures(
     *,
     monthly_bottleneck_details: pd.DataFrame,
     month_labels: list[str],
-    secure_threshold: float,
-    warning_threshold: float,
+    thresholds: SecurementThresholds,
     process_labels: ProcessLabels | None = None,
     year_total_labels: Sequence[str] = (),
     past_month_labels: Collection[str] | None = None,
@@ -257,11 +257,7 @@ def build_bottleneck_detail_figures(
         bar_lengths.append(drawn_ratio * track_length)
         bar_outline_widths.append(0.0 if grew else tokens.BAR_OUTLINE_WIDTH_PX)
         bar_colors.append(
-            _capacity_color(
-                float(rate),
-                secure_threshold=secure_threshold,
-                warning_threshold=warning_threshold,
-            )
+            _capacity_color(float(rate), thresholds=thresholds, month=int(row["생산계획년월"]))
         )
 
     bottleneck_detail_label_figure = _grid_label_table_figure(

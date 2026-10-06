@@ -16,6 +16,7 @@ from capa_simulation.services.official_summary import (
     short_units,
     summary_months,
 )
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTHS = [202610, 202611, 202612, 202701, 202702, 202703]
 
@@ -148,8 +149,7 @@ def test_the_payload_is_rounded_theme_independent_and_serializable() -> None:
         summary,
         release_name="공식 v4",
         scenario_name="DEMO",
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         process_label=lambda process: f"<{process}>",
     )
 
@@ -157,9 +157,9 @@ def test_the_payload_is_rounded_theme_independent_and_serializable() -> None:
     assert payload["available"] is True
     assert payload["period"] == "26.10–27.03" and payload["count"] == 6
     assert payload["wafer"][0] == pytest.approx(211.0)
-    # 숫자는 기준선 자리라 정확하고, 범례·이름표 글자는 사사오입한 정수 퍼센트다.
-    assert (payload["secure"], payload["warning"]) == (109.5, 99.5)
-    assert (payload["secure_label"], payload["warning_label"]) == ("110%", "100%")
+    # 숫자는 기준선 자리라 정확하고, 이름표 글자는 사사오입한 정수 퍼센트다. 달마다 하나씩이다.
+    assert payload["secure"] == [109.5] * 6 and payload["warning"] == [99.5] * 6
+    assert payload["secure_label"] == ["110%"] * 6 and payload["warning_label"] == ["100%"] * 6
     first = payload["bn"][0]
     assert first == {
         "process": "<P-A>",
@@ -175,8 +175,7 @@ def test_the_payload_is_rounded_theme_independent_and_serializable() -> None:
         summary,
         release_name="공식 v4",
         scenario_name="DEMO",
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         process_label=lambda process: f"<{process}>",
     )
 
@@ -205,10 +204,18 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
     simulation_cache.get_intro_summary_payload.clear()
     env = SimpleNamespace(
-        session={}, now=1000.0, repo=_Repo("rel-1"), builds=[], fail=None, module=intro_summary
+        session={},
+        now=1000.0,
+        repo=_Repo("rel-1"),
+        builds=[],
+        fail=None,
+        module=intro_summary,
+        thresholds=SecurementThresholds(1.095, 0.995),
     )
 
-    def fake_build(path: str, release: SimpleNamespace) -> dict[str, object]:
+    def fake_build(
+        path: str, release: SimpleNamespace, thresholds: SecurementThresholds
+    ) -> dict[str, object]:
         env.builds.append(release.official_release_id)
         if env.fail is not None:
             raise env.fail
@@ -221,6 +228,11 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
         intro_summary, "load_global_display_order", lambda path: SimpleNamespace(version=1)
     )
     monkeypatch.setattr(intro_summary, "get_process_labels", lambda: SimpleNamespace(version=0))
+    monkeypatch.setattr(
+        intro_summary,
+        "load_global_securement_threshold",
+        lambda path: SimpleNamespace(thresholds=env.thresholds),
+    )
     monkeypatch.setattr(intro_summary, "_build", fake_build)
     yield env
     simulation_cache.get_intro_summary_payload.clear()
@@ -258,6 +270,16 @@ def test_publishing_an_official_version_rechecks_at_once(summary_env: SimpleName
     assert data("db")["release"] == "rel-1"  # 평소에는 30초에 한 번 본다
     summary_env.module.forget_intro_summary_check()
     assert data("db")["release"] == "rel-2"
+
+
+def test_changing_the_shared_thresholds_rebuilds_the_summary(summary_env: SimpleNamespace) -> None:
+    """판정 기준은 공용 프로필이다. 기준(내용 지문)이 바뀌면 같은 공식버전도 새로 만든다."""
+    data = summary_env.module.official_summary_data
+    data("db")
+    summary_env.thresholds = SecurementThresholds(1.095, 0.995, monthly=((202701, 1.195, None),))
+    summary_env.module.forget_intro_summary_check()
+    data("db")
+    assert summary_env.builds == ["rel-1", "rel-1"]
 
 
 def test_data_errors_are_kept_but_transient_errors_are_retried(
@@ -313,3 +335,20 @@ def test_other_always_failing_errors_are_kept_too(summary_env: SimpleNamespace) 
     summary_env.session.clear()
     assert data("db")["available"] is False
     assert summary_env.builds == ["rel-1"]
+
+
+def test_the_payload_judges_and_draws_each_month_by_its_own_threshold() -> None:
+    """월별 예외가 있는 달은 막대 색(상태)과 기준선 값·이름표가 그 달 기준을 따른다."""
+    summary = _summary()
+    july = summary.months[3]
+    payload = summary_payload(
+        summary,
+        release_name="공식 v4",
+        scenario_name="DEMO",
+        thresholds=SecurementThresholds(1.095, 0.995, monthly=((july, 1.195, None),)),
+        process_label=lambda process: process,
+    )
+
+    assert payload["secure"][3] == 119.5 and payload["secure_label"][3] == "120%"
+    assert payload["secure"][2] == 109.5 and payload["warning"][3] == 99.5
+    assert len(payload["secure"]) == len(payload["months"])

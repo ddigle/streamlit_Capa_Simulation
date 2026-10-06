@@ -9,7 +9,8 @@
 **연속 색이 아니라 상태 3색이다.** 확보율은 이 앱에서 이미 확보·경고·부족 세 상태로
 판정하고, 그 경계는 사용자가 정한다. 연속 그라데이션을 쓰면 화면마다 다른 색 체계가 두 개
 생기고, 105% 와 108% 의 미묘한 색차가 「경계를 넘었나」보다 도드라져 판정을 흐린다.
-`home_figures.capacity_status` 와 같은 색·같은 경계를 쓴다.
+`home_figures.capacity_status` 와 같은 색·같은 경계를 쓴다. 경계는 **그 달의 실효 기준**이다 —
+공용 판정 기준(`services/securement_threshold`)에 월별 예외가 있으면 그 달 열만 다른 경계로 칠한다.
 
 색만으로 뜻을 나르지 않도록 범례(`home_preference.status_legend_markup`)를 함께 그리고,
 칸이 적을 때는 숫자도 칸 안에 적는다.
@@ -28,13 +29,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from capa_simulation.components.home_figures import capacity_status
 from capa_simulation.components.home_preference import status_legend_markup
 from capa_simulation.components.plotly_layout import chart_canvas_layout, hover_chart_config
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 # 칸 높이. 표의 27px 보다 낮게 잡아 66공정이 한 화면에 들어오게 한다.
 CELL_HEIGHT_PX = 20
@@ -64,13 +65,24 @@ WARNING_TIER = 1.0
 SECURE_TIER = 2.0
 
 
-def _tier(rate: float, *, secure_threshold: float, warning_threshold: float) -> float:
-    """`home_figures.capacity_status` 와 같은 판정이다. 경계가 갈리면 두 화면이 다른 말을 한다."""
+def _tier(rate: float, *, thresholds: SecurementThresholds, month: int | None) -> float:
+    """`home_figures.capacity_status` 와 같은 판정이다. 경계가 갈리면 두 화면이 다른 말을 한다.
+
+    `month` 가 없으면(월이 아닌 열) 기본 기준으로 판정한다.
+    """
     return {
         "secure": SECURE_TIER,
         "warning": WARNING_TIER,
         "shortage": SHORTAGE_TIER,
-    }[capacity_status(rate, secure_threshold=secure_threshold, warning_threshold=warning_threshold)]
+    }[thresholds.status(rate, month)]
+
+
+def _column_month(column: object) -> int | None:
+    """월 컬럼 `"202601"` 의 `YYYYMM`. 월이 아닌 컬럼이면 `None` 이다."""
+    try:
+        return int(str(column))
+    except ValueError:
+        return None
 
 
 def _month_tick(column: object) -> str:
@@ -117,8 +129,7 @@ def build_securement_heatmap(
     table: pd.DataFrame,
     *,
     dimension_columns: Sequence[str],
-    secure_threshold: float,
-    warning_threshold: float,
+    thresholds: SecurementThresholds,
     labels: ProcessLabels | None = None,
 ) -> go.Figure | None:
     """공정 × 월 격자. 그릴 것이 없으면 `None` 이다."""
@@ -132,16 +143,11 @@ def build_securement_heatmap(
     ]
     rates = table[month_columns].apply(pd.to_numeric, errors="coerce")
 
+    column_months = [_column_month(column) for column in month_columns]
     tiers = [
         [
-            None
-            if pd.isna(value)
-            else _tier(
-                float(value),
-                secure_threshold=secure_threshold,
-                warning_threshold=warning_threshold,
-            )
-            for value in row
+            None if pd.isna(value) else _tier(float(value), thresholds=thresholds, month=month)
+            for value, month in zip(row, column_months, strict=True)
         ]
         for row in rates.to_numpy()
     ]
@@ -225,12 +231,12 @@ def shortage_summary(
     table: pd.DataFrame,
     *,
     dimension_columns: Sequence[str],
-    warning_threshold: float,
+    thresholds: SecurementThresholds,
     labels: ProcessLabels | None = None,
 ) -> pd.DataFrame:
     """공정별 **최초 부족 월**과 부족 개월 수. 부족이 없는 공정은 행이 없다.
 
-    경계는 히트맵의 부족(빨강)과 같다 — 경고 기준 미만이다. 그림에서 빨간 칸을 세어 답할
+    경계는 히트맵의 부족(빨강)과 같다 — **그 달의** 경고 기준 미만이다. 그림에서 빨간 칸을 세어 답할
     수 있는 것을 숫자로 먼저 적는 이유는, 그 답이 이 화면의 요점이기 때문이다.
     """
     keys = list(dimension_columns)
@@ -239,7 +245,12 @@ def shortage_summary(
         return pd.DataFrame(columns=list(SHORTAGE_SUMMARY_COLUMNS))
 
     rates = table[month_columns].apply(pd.to_numeric, errors="coerce")
-    shortage = rates.lt(warning_threshold) & rates.notna()
+    month_warnings = pd.Series(
+        [thresholds.warning_for(_column_month(column)) for column in month_columns],
+        index=rates.columns,
+        dtype="float64",
+    )
+    shortage = rates.lt(month_warnings, axis=1) & rates.notna()
     rows: list[dict[str, object]] = []
     for position, (_, flags) in enumerate(shortage.iterrows()):
         months = [column for column, is_short in zip(month_columns, flags, strict=True) if is_short]
@@ -264,8 +275,7 @@ def render_securement_heatmap(
     table: pd.DataFrame,
     *,
     dimension_columns: Sequence[str],
-    secure_threshold: float,
-    warning_threshold: float,
+    thresholds: SecurementThresholds,
     key: str,
     labels: ProcessLabels | None = None,
     owner_tab: OpenTab | None = None,
@@ -276,17 +286,11 @@ def render_securement_heatmap(
     figure = build_securement_heatmap(
         table,
         dimension_columns=dimension_columns,
-        secure_threshold=secure_threshold,
-        warning_threshold=warning_threshold,
+        thresholds=thresholds,
         labels=labels,
     )
     if figure is None:
         st.info("히트맵으로 그릴 확보율이 없습니다.")
         return
-    st.markdown(
-        status_legend_markup(
-            secure_threshold=secure_threshold, warning_threshold=warning_threshold
-        ),
-        unsafe_allow_html=True,
-    )
+    st.markdown(status_legend_markup(), unsafe_allow_html=True)
     st.plotly_chart(figure, width="stretch", key=key, config=hover_chart_config())

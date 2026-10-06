@@ -295,13 +295,32 @@ def test_summary_rows_keep_only_the_production_caption() -> None:
 
 
 def test_summary_threshold_text_is_the_rounded_label_and_the_line_stays_exact() -> None:
-    """범례·기준선 이름표는 파이썬이 사사오입한 글자(`*_label`)를 쓰고, 선 자리는 정확한 숫자다."""
-    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    """기준선 이름표는 파이썬이 사사오입한 글자(`*_label`)를 쓰고, 선 자리는 정확한 숫자다.
 
-    assert "summary.secure_label" in js and "summary.warning_label" in js
-    assert "[sum.warning, sum.warning_label," in js and "[sum.secure, sum.secure_label," in js
-    assert "L.yBar(v)" in js
-    assert not re.search(r">\$\{summary\.secure\}%`\]", js)
+    기준은 달마다 온다 — 같은 값이 이어지는 달끼리 한 구간으로 묶어 계단으로 긋고, 이름표는
+    구간마다 단다(2026-10-06 사용자 결정).
+    """
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    scene = js[js.index("function drawBars(") : js.index("function drawSheets(")]
+
+    assert "[sum.warning || [], sum.warning_label || []," in scene
+    assert "[sum.secure || [], sum.secure_label || []," in scene
+    assert "L.yBar(run.v)" in scene and "last.v === v" in scene
+    assert "run.label" in scene
+
+
+def test_summary_legend_names_three_states_without_numbers() -> None:
+    """범례는 「초과 확보 · 경고 · 부족」 세 이름만이고 기준 숫자를 적지 않는다.
+
+    막대 밑 상태 글자(`status`)는 「확보」 그대로다 — 범례 이름은 따로 보낸다.
+    """
+    text = intro_overlay._data()["text"]
+    assert text["legend"] == {"secure": "초과 확보", "warning": "경고", "shortage": "부족"}
+    assert text["status"]["secure"] == "확보"
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    labels = js[js.index("function buildLabels(") :]
+    labels = labels[: labels.index("const legend =")]
+    assert "legendText.secure" in labels and "secure_label" not in labels
 
 
 def test_summary_axis_and_bar_labels_match_the_point_value_size() -> None:

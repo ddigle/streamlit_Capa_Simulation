@@ -10,8 +10,9 @@ from capa_simulation.components.securement_heatmap import (
     shortage_summary,
 )
 from capa_simulation.design import tokens
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
-THRESHOLDS = {"secure_threshold": 1.095, "warning_threshold": 0.995}
+THRESHOLDS = {"thresholds": SecurementThresholds(1.095, 0.995)}
 
 
 def _table() -> pd.DataFrame:
@@ -87,7 +88,7 @@ def _wide_table() -> pd.DataFrame:
 
 
 def test_shortage_summary_answers_when_each_process_breaks() -> None:
-    summary = shortage_summary(_wide_table(), dimension_columns=["공정"], warning_threshold=0.995)
+    summary = shortage_summary(_wide_table(), dimension_columns=["공정"], **THRESHOLDS)
 
     assert list(summary["공정"]) == ["TEST", "MOLD", "SAW"]
     assert list(summary["최초 부족"]) == ["26.01", "26.02", "26.03"]
@@ -97,7 +98,7 @@ def test_shortage_summary_answers_when_each_process_breaks() -> None:
 def test_shortage_summary_skips_processes_that_never_break() -> None:
     table = pd.DataFrame({"공정": ["SAW"], "202601": [1.5]})
 
-    assert shortage_summary(table, dimension_columns=["공정"], warning_threshold=0.995).empty
+    assert shortage_summary(table, dimension_columns=["공정"], **THRESHOLDS).empty
 
 
 def test_every_process_row_keeps_its_name_when_many_are_shown() -> None:
@@ -188,3 +189,28 @@ def test_heatmap_hides_the_plotly_toolbar_but_keeps_hover() -> None:
     config = plotly_chart.call_args.kwargs["config"]
     assert config["displayModeBar"] is False
     assert not config.get("staticPlot", False)
+
+
+def test_a_month_with_its_own_threshold_is_judged_by_it() -> None:
+    """월별 예외가 있는 달 열만 그 달 기준으로 칠한다.
+
+    같은 115% 가 기본 달은 확보, 120% 기준 달은 경고다.
+    """
+    table = pd.DataFrame({"공정": ["SAW"], "202601": [1.15], "202602": [1.15]})
+    thresholds = SecurementThresholds(1.095, 0.995, monthly=((202602, 1.195, None),))
+
+    figure = build_securement_heatmap(table, dimension_columns=["공정"], thresholds=thresholds)
+
+    assert figure is not None
+    assert list(figure.data[0].z[0]) == [SECURE_TIER, WARNING_TIER]
+
+
+def test_shortage_summary_uses_each_months_warning_threshold() -> None:
+    """부족은 **그 달의** 경고 기준 미만이다. 경고 기준만 올린 달에서만 부족으로 센다."""
+    table = pd.DataFrame({"공정": ["SAW"], "202601": [1.05], "202602": [1.05]})
+    thresholds = SecurementThresholds(1.095, 0.995, monthly=((202602, 1.195, 1.095),))
+
+    summary = shortage_summary(table, dimension_columns=["공정"], thresholds=thresholds)
+
+    assert list(summary["최초 부족"]) == ["26.02"]
+    assert list(summary["부족 개월"]) == [1]

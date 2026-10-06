@@ -10,6 +10,7 @@
 import pandas as pd
 
 from capa_simulation.components.home_figures import build_lob_summary_figures
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTHS = [202601, 202602]
 MONTH_LABELS = ["26.01", "26.02"]
@@ -92,8 +93,7 @@ def test_the_comparison_gap_ignores_the_advance_load() -> None:
         bottleneck_capacity=_capacity(),
         lob_summary=advanced,
         month_labels=MONTH_LABELS,
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         baseline_lob_summary=baseline,
         comparison_density=comparison_density,
         comparison_wafer=comparison_wafer,
@@ -115,8 +115,7 @@ def test_without_an_advance_baseline_the_gap_uses_the_shown_values() -> None:
         bottleneck_capacity=_capacity(),
         lob_summary=shown,
         month_labels=MONTH_LABELS,
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         baseline_lob_summary=None,
         comparison_density=_monthly([8.0, 8.0]),
         comparison_wafer=_wafer([800.0, 800.0]),
@@ -134,8 +133,7 @@ def _month_gap_texts(*, advanced_wafer: float, comparison_wafer: float | None = 
         bottleneck_capacity=_capacity(),
         lob_summary=_summary([10.0, 10.0], [advanced_wafer] * 2),
         month_labels=MONTH_LABELS,
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         baseline_lob_summary=_summary([10.0, 10.0], [1000.0, 1000.0]),
         comparison_density=None if comparison is None else _monthly([10.0, 10.0]),
         comparison_wafer=comparison,

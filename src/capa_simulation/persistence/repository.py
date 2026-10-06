@@ -7,6 +7,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -28,6 +29,7 @@ from capa_simulation.persistence import (
     key_process_store,
     past_data_store,
     process_rename_store,
+    securement_threshold_store,
     sync_state,
 )
 from capa_simulation.persistence._sql_helpers import (
@@ -55,6 +57,7 @@ from capa_simulation.persistence.models import (
     GlobalKeyProcess,
     GlobalPastData,
     GlobalProcessRename,
+    GlobalSecurementThreshold,
     GlobalSummaryNote,
     GlobalTop5Band,
     OfficialReleaseSummary,
@@ -97,6 +100,12 @@ from capa_simulation.services.execution_capacity import prepare_execution_capaci
 from capa_simulation.services.key_process import normalize_key_process_presets
 from capa_simulation.services.past_data import prepare_past_table
 from capa_simulation.services.process_rename import prepare_process_rename_rules
+from capa_simulation.services.securement_threshold import (
+    DEFAULT_SECURE_THRESHOLD,
+    DEFAULT_WARNING_THRESHOLD,
+    empty_securement_threshold_rows,
+    validate_securement_thresholds,
+)
 from capa_simulation.services.top5_band import validate_top5_band
 from capa_simulation.services.voc_board import normalize_post, normalize_reply
 
@@ -542,6 +551,90 @@ class DuckDBScenarioRepository:
                 connection, prepared_rows, source=source_label
             )
         return self.load_global_advance_load()
+
+    def load_global_securement_threshold(self) -> GlobalSecurementThreshold:
+        """Load the scenario-independent securement judgement thresholds.
+
+        다른 공용 프로필과 같은 이유로 예외를 내지 않는다. 한 번도 저장하지 않았으면 기본값은
+        **최신 공식버전 리비전 프리셋의 확보·경고 값**이고, 공식버전이 없으면 코드 기본값이다.
+        이렇게 정한 값은 읽을 때만 쓰고 DB 에 쓰지 않는다 — 저장은 사용자가 Preference 에서 한다.
+        """
+        with self._connect() as connection:
+            header = securement_threshold_store.load_securement_threshold_header(connection)
+            if header is not None:
+                version, source, updated_at, default_secure, default_warning = header
+                return GlobalSecurementThreshold(
+                    version=version,
+                    source=source,
+                    updated_at=updated_at,
+                    default_secure=default_secure,
+                    default_warning=default_warning,
+                    rows=securement_threshold_store.load_securement_threshold_rows(connection),
+                )
+            fallback = connection.execute(
+                """
+                SELECT o.release_no, p.secure_threshold, p.warning_threshold
+                FROM app_meta.official_release o
+                JOIN app_meta.scenario_preset p ON p.revision_id = o.revision_id
+                ORDER BY o.release_no DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        code_default = GlobalSecurementThreshold(
+            version=0,
+            source="",
+            updated_at=None,
+            default_secure=DEFAULT_SECURE_THRESHOLD,
+            default_warning=DEFAULT_WARNING_THRESHOLD,
+            rows=empty_securement_threshold_rows(),
+            fallback="코드 기본값",
+        )
+        if fallback is None:
+            return code_default
+        release = f"공식 v{int(fallback[0])} 프리셋"
+        # 레거시 프리셋은 경고 0 이나 확보 = 경고를 허용했다(옛 사이드바 칸의 하한이 0 이었다).
+        # 저장 경로와 같은 규칙에 어긋나는 짝은 기본값으로 쓰지 않는다 — 0 기준은 모든 공정을
+        # 확보로 판정하고, 편집기 칸의 하한보다 낮아 Preference 탭이 그려지지도 않는다.
+        try:
+            secure, warning, _ = validate_securement_thresholds(
+                fallback[1], fallback[2], empty_securement_threshold_rows()
+            )
+        except ValueError:
+            return replace(code_default, fallback=f"코드 기본값({release} 값은 쓸 수 없어 대신)")
+        return replace(
+            code_default, default_secure=secure, default_warning=warning, fallback=release
+        )
+
+    def replace_global_securement_threshold(
+        self,
+        default_secure: float,
+        default_warning: float,
+        rows: pd.DataFrame,
+        *,
+        source: str,
+        expected_version: int,
+    ) -> GlobalSecurementThreshold:
+        """Atomically replace the shared securement thresholds after a version check.
+
+        다른 공용 프로필과 같은 결로 현재본만 남기고 version 을 올린다. 쓰기 잠금 안에서
+        `expected_version`(편집을 시작할 때 본 version)과 저장본을 대조해 다르면
+        `SecurementThresholdConflict`(ValueError)로 거부한다. 검증 — 모든 값 > 0, 기본값과 합친
+        각 달의 경고 ≤ 확보 — 에 어긋나도 ValueError 로 어느 달인지 알린다.
+        """
+        secure, warning, prepared = validate_securement_thresholds(
+            default_secure, default_warning, rows
+        )
+        source_label = required_text(source, "판정 기준 변경 출처")
+        with self._write_transaction() as connection:
+            securement_threshold_store.replace_global_securement_threshold(
+                connection,
+                default_secure=secure,
+                default_warning=warning,
+                prepared_rows=prepared,
+                source=source_label,
+                expected_version=expected_version,
+            )
+        return self.load_global_securement_threshold()
 
     def load_global_past_data(self) -> GlobalPastData:
         """Load the scenario-independent past-period profile.

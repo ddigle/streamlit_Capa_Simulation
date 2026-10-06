@@ -32,6 +32,7 @@ from capa_simulation.services.product_share import (
     combine_product_volume,
     past_product_volume,
 )
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 
 def _plan(rows: list[tuple[int, str, str, float]]) -> pd.DataFrame:
@@ -246,8 +247,7 @@ def _figures(cells: dict | None, labels: list[str], basis: str = "Wafer"):
         bottleneck_capacity=bottleneck,
         lob_summary=summary,
         month_labels=labels,
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
         product_share_cells=cells,
         product_share_basis=basis,
     )
@@ -368,8 +368,7 @@ def _top5_figure(names: list[str]):
         bottleneck_capacity=density.assign(공정=names[0], 확보율=0.9, **{"B/N Capa": 1.2}),
         lob_summary=density.assign(**{"Wafer 부하량": 12_000.0, "Wafer Capa": 11_000.0}),
         month_labels=["26.09"],
-        secure_threshold=1.095,
-        warning_threshold=0.995,
+        thresholds=SecurementThresholds(1.095, 0.995),
     )
     return {
         str(item.hovertext or item.text): item

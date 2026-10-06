@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.services.securement_rate import build_securement_shortfall_tables
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 
 def test_a_process_exactly_on_the_threshold_needs_no_equipment() -> None:
@@ -28,8 +29,7 @@ def test_a_process_exactly_on_the_threshold_needs_no_equipment() -> None:
 
     warning_rows, secure_rows = build_securement_shortfall_tables(
         securement,
-        warning_threshold=1.1,
-        secure_threshold=1.2,
+        thresholds=SecurementThresholds(1.2, 1.1),
     )
 
     assert warning_rows.empty
@@ -51,8 +51,7 @@ def test_shortfall_steps_partition_minimum_equipment_to_secure_threshold() -> No
 
     warning_rows, secure_rows = build_securement_shortfall_tables(
         securement,
-        warning_threshold=0.9,
-        secure_threshold=1.1,
+        thresholds=SecurementThresholds(1.1, 0.9),
     )
 
     assert warning_rows["공정"].tolist() == ["Urgent"]
@@ -83,8 +82,7 @@ def test_shortfall_excludes_zero_demand_and_recalculates_rate_from_counts() -> N
 
     warning_rows, secure_rows = build_securement_shortfall_tables(
         securement,
-        warning_threshold=0.95,
-        secure_threshold=1.05,
+        thresholds=SecurementThresholds(1.05, 0.95),
     )
 
     assert warning_rows["공정"].tolist() == ["Recalculated"]
@@ -113,6 +111,44 @@ def test_shortfall_rejects_invalid_thresholds(
     with pytest.raises(ValueError):
         build_securement_shortfall_tables(
             securement,
-            warning_threshold=warning_threshold,
-            secure_threshold=secure_threshold,
+            thresholds=SecurementThresholds(secure_threshold, warning_threshold),
         )
+
+
+def test_each_row_uses_its_months_threshold() -> None:
+    """기준은 행의 달마다다. 확보 기준만 올린 달은 같은 대수라도 확보 기준 미달 구획에 든다."""
+    securement = pd.DataFrame(
+        {
+            "생산계획년월": [202601, 202607],
+            "공정": ["Process", "Process"],
+            "가용대수": [11.5, 11.5],
+            "소요대수": [10.0, 10.0],
+            "확보율": [1.15, 1.15],
+        }
+    )
+    thresholds = SecurementThresholds(1.095, 0.995, monthly=((202607, 1.195, None),))
+
+    warning_rows, secure_rows = build_securement_shortfall_tables(securement, thresholds=thresholds)
+
+    assert warning_rows.empty
+    assert secure_rows["생산계획년월"].tolist() == [202607]
+    assert secure_rows["확보기준"].tolist() == [1.195]
+    assert secure_rows["경고기준"].tolist() == [0.995]
+    assert secure_rows["확보기준 추가대수"].tolist() == [1]
+
+
+def test_a_reversed_monthly_pair_is_rejected() -> None:
+    """저장 단계가 막는 거꾸로 된 짝이 직접 호출로 들어와도 계산하지 않는다."""
+    securement = pd.DataFrame(
+        {
+            "생산계획년월": [202607],
+            "공정": ["Process"],
+            "가용대수": [1.0],
+            "소요대수": [1.0],
+            "확보율": [1.0],
+        }
+    )
+    thresholds = SecurementThresholds(1.095, 0.995, monthly=((202607, 0.9, None),))
+
+    with pytest.raises(ValueError):
+        build_securement_shortfall_tables(securement, thresholds=thresholds)

@@ -63,8 +63,10 @@ class HomeFigureCacheKey(NamedTuple):
     end_month: int
     display_order_digest: str
     included_processes: tuple[str, ...]
-    secure_threshold_percent: float
-    warning_threshold_percent: float
+    # 판정 기준의 **내용 지문**(`SecurementThresholds.digest`) — 기본값과 월별 예외를 함께 담는다.
+    # 프로필 version 만으로는 모자란다. 저장 전에는 version 이 0 에 머물지만 기본값은 최신
+    # 공식버전 프리셋을 따라 바뀐다.
+    threshold_digest: str
     include_edp: bool
     plan_detail_customer: bool
     comparison_revision_id: str

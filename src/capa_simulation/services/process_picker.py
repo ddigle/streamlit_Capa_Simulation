@@ -8,6 +8,7 @@ from typing import Literal
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import normalize_month_column, require_columns
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 PICKER_COLUMNS = ("생산계획년월", "공정", "확보율")
 
@@ -29,15 +30,19 @@ def build_process_picker_summary(
     *,
     start_month: int,
     end_month: int,
-    secure_threshold: float,
+    thresholds: SecurementThresholds,
 ) -> tuple[ProcessPickerItem, ...]:
     """최종 확보율의 유효 최소값만 읽고 입력 옵션의 원본 키와 순서를 유지한다.
 
     포함 공정 선택으로 거르지 않아 현재 OFF인 공정도 같은 근거로 판단한다. NaN·무한대는
     유효한 월에서 제외하며, 숫자가 남지 않은 공정을 0% 또는 부족으로 바꾸지 않는다.
+
+    충족은 **유효한 모든 달이 그 달의 실효 확보 기준을 넘을 때**다(`thresholds`). 기준이 달마다
+    같으면 「최저 확보율 > 기준」과 같은 말이지만, 월별 예외가 있으면 최저가 아닌 달이 더 높은
+    기준에 걸릴 수 있다. 표시하는 최저 확보율·그 달은 판정과 따로 그대로 둔다.
     """
     require_columns(securement, PICKER_COLUMNS, "공정 선택 확보율")
-    if not isfinite(secure_threshold) or secure_threshold < 0:
+    if not isfinite(thresholds.default_secure) or thresholds.default_secure < 0:
         raise ValueError("공정 선택 확보 기준은 0 이상의 유한한 값이어야 합니다.")
     bounds = pd.DataFrame({"생산계획년월": [start_month, end_month]})
     normalize_month_column(bounds, "공정 선택 조회기간")
@@ -60,6 +65,10 @@ def build_process_picker_summary(
     for process, rows in prepared.groupby("공정", sort=False):
         minimum_rate = float(rows["확보율"].min())
         minimum_month = int(rows.loc[rows["확보율"].eq(minimum_rate), "생산계획년월"].min())
+        sufficient = all(
+            float(rate) > thresholds.secure_for(int(month))
+            for rate, month in zip(rows["확보율"], rows["생산계획년월"], strict=True)
+        )
         summaries[str(process)] = ProcessPickerItem(
             process=str(process),
             minimum_rate=minimum_rate,
@@ -68,7 +77,7 @@ def build_process_picker_summary(
             # HOME 의 `capacity_status` 와 같은 부등호다 — 확보는 기준 **초과**다. 기준과
             # 같은 값을 여기서만 충족으로 두면 HOME 결론이 「기준 미달」이라 세는 공정이
             # 아래 구역에 숨는다.
-            group="sufficient" if minimum_rate > secure_threshold else "shortfall",
+            group="sufficient" if sufficient else "shortfall",
         )
     return tuple(
         summaries.get(process, ProcessPickerItem(process, None, None, 0, "unavailable"))

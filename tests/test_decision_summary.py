@@ -11,14 +11,14 @@ import streamlit as st
 from capa_simulation.components.decision_summary import render_home_capacity_decision
 from capa_simulation.design import theme
 from capa_simulation.services.home_decision import CapacityDecision
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 theme.begin_run()
 render_home_capacity_decision(
     CapacityDecision(
         process="Laser & Saw", month=202807, rate=0.81, judged=10, warning=2, shortage=3
     ),
-    secure_threshold=1.095,
-    warning_threshold=0.995,
+    thresholds=SecurementThresholds(1.095, 0.995),
 )
 """
 

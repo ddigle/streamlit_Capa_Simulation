@@ -38,13 +38,7 @@ from capa_simulation.page_bootstrap import (
     resolve_effective_months,
     scenario_capacity_and_demand,
 )
-from capa_simulation.scenario_preset_state import (
-    DEFAULT_SECURE_THRESHOLD_PERCENT,
-    DEFAULT_WARNING_THRESHOLD_PERCENT,
-    SECURE_THRESHOLD_KEY,
-    WARNING_THRESHOLD_KEY,
-    session_threshold,
-)
+from capa_simulation.persistence.cache import load_global_securement_threshold
 from capa_simulation.scenario_state import scenario_month_table
 from capa_simulation.services.display_order import (
     apply_display_order,
@@ -78,6 +72,7 @@ from capa_simulation.services.unit_capacity import (
     unit_capacity_to_month_table,
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
+from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import remembered_expander, table_card
 
 KEY_PROCESS_FILTER_KEY = "securement_heatmap_key_processes"
@@ -178,6 +173,9 @@ try:
         PAGE_CALCULATION,
         TAB_SECUREMENT,
     )
+    # 판정 기준은 HOME → Preference 의 **공용 프로필**이다. 이 페이지는 위젯을 두지 않고
+    # HOME·Static Capa 와 같은 기준을 읽는다 — 같은 확보율이 화면마다 다른 색으로 보이면 안 된다.
+    threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
     # 원인 하나를 세 탭에 같이 보여 준다. 문구는 한 번만 만든다.
     bootstrap_message = bootstrap_error_message(exc)
@@ -447,13 +445,8 @@ else:
             )
 
     if open_tab is availability_tab:
-        # 판정 기준은 리비전 프리셋이 소유하는 **세션 공용 값**이다. 이 페이지는 위젯을 두지
-        # 않고 HOME·Static Capa 가 정한 경계를 그대로 읽는다 — 같은 확보율이 화면마다 다른 색으로
-        # 보이면 안 된다.
-        secure_threshold = session_threshold(SECURE_THRESHOLD_KEY, DEFAULT_SECURE_THRESHOLD_PERCENT)
-        warning_threshold = session_threshold(
-            WARNING_THRESHOLD_KEY, DEFAULT_WARNING_THRESHOLD_PERCENT
-        )
+        # 히트맵·부족 요약은 칸마다 **그 달의** 실효 기준으로 판정한다(월별 예외가 없으면 기본값).
+        thresholds = threshold_profile.thresholds
         with table_card(CARD_NAME):
             displayed_securement_table = render_column_filter_controls(
                 securement_table,
@@ -511,7 +504,7 @@ else:
                 shortages = shortage_summary(
                     heatmap_table,
                     dimension_columns=SECUREMENT_DIMENSIONS,
-                    warning_threshold=warning_threshold,
+                    thresholds=thresholds,
                     labels=process_labels,
                 )
                 if shortages.empty:
@@ -531,8 +524,7 @@ else:
                 render_securement_heatmap(
                     heatmap_table,
                     dimension_columns=SECUREMENT_DIMENSIONS,
-                    secure_threshold=secure_threshold,
-                    warning_threshold=warning_threshold,
+                    thresholds=thresholds,
                     key="securement_rate_heatmap",
                     labels=process_labels,
                     owner_tab=availability_tab,

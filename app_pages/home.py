@@ -23,6 +23,7 @@ from capa_simulation.components.home_preference import (
     COMPARISON_REVISION_KEY,
     COMPARISON_SCENARIO_KEY,
     KEY_PROCESS_PRESET_KEY,
+    THRESHOLD_POINTER,
     apply_pending_key_process_preset,
     render_home_preference,
     render_home_view_card,
@@ -84,18 +85,13 @@ from capa_simulation.persistence.cache import (
     load_global_execution_capacity,
     load_global_key_process,
     load_global_past_data,
+    load_global_securement_threshold,
     load_global_summary_note,
     load_global_top5_band,
     load_scenario_plan,
 )
 from capa_simulation.scenario_activation import active_persisted_scenario_id
-from capa_simulation.scenario_preset_state import (
-    PROCESS_SELECTION_KEY,
-    SECURE_THRESHOLD_KEY,
-    WARNING_THRESHOLD_KEY,
-    applied_threshold_pair,
-    seed_threshold_defaults,
-)
+from capa_simulation.scenario_preset_state import PROCESS_SELECTION_KEY
 from capa_simulation.scenario_state import (
     ensure_active_scenario,
 )
@@ -155,6 +151,7 @@ from capa_simulation.services.product_share import (
     combine_product_volume,
     past_product_volume,
 )
+from capa_simulation.services.securement_threshold import securement_threshold_caption
 from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
     get_home_comparison_plan,
@@ -162,7 +159,6 @@ from capa_simulation.services.simulation_cache import (
     get_home_plan_detail,
     get_home_simulation,
 )
-from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import (
     BOTTLENECK_BOX_KEY,
@@ -432,6 +428,8 @@ try:
     execution_profile = load_global_execution_capacity(str(DUCKDB_PATH.resolve()))
     top5_band_profile = load_global_top5_band(str(DUCKDB_PATH.resolve()))
     key_process_profile = load_global_key_process(str(DUCKDB_PATH.resolve()))
+    # 판정 기준은 시나리오와 무관한 공용 정책값이다. HOME → Preference 한 곳에서 정한다.
+    threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
     # 공지는 계산에 들어가지 않는 화면 문구다. 그래서 Figure 캐시 키에도 넣지 않는다 —
     # 넣으면 문구 한 줄을 고칠 때마다 여섯 Figure 를 다시 그린다.
     summary_profile = load_global_summary_note(str(DUCKDB_PATH.resolve()))
@@ -548,7 +546,7 @@ def toggle_process_dialog_selection(process: str) -> None:
 def show_process_filter_dialog(
     options: list[str],
     items: tuple[ProcessPickerItem, ...],
-    threshold_percent: float,
+    threshold_caption: str,
     start_month: int,
     end_month: int,
 ) -> None:
@@ -559,12 +557,9 @@ def show_process_filter_dialog(
 
     st.markdown(f"**선택 {len(selected_set)} / {len(options)}** · 체크된 버튼이 ON입니다.")
     # 기간·기준은 상태다. 판정 규칙(유효한 월 중 최저 확보율)과 hover 는 Guide 가 말한다.
-    # 기준은 사사오입한 정수 퍼센트로 적는다(`threshold_percent_label`). 공정을 가르는 판정은
-    # 정확한 값이다.
-    st.caption(
-        f"{month_label(start_month)}–{month_label(end_month)} · "
-        f"확보 기준 {threshold_percent_label(threshold_percent / 100.0)}"
-    )
+    # 기준은 사사오입한 정수 퍼센트로 적고(`threshold_percent_label`), 기본값과 다른 달이 기간
+    # 안에 있으면 그 수를 덧붙인다. 공정을 가르는 판정은 달마다 정확한 값이다.
+    st.caption(f"{month_label(start_month)}–{month_label(end_month)} · {threshold_caption}")
     # 적용은 타일 목록 **위** 작업 줄이다 — 공정이 많으면 목록 아래 버튼이 팝업 밖으로 밀린다.
     with st.container(horizontal=True, gap="small"):
         apply_selection = st.button(
@@ -614,51 +609,19 @@ def show_process_filter_dialog(
 
 
 included_processes = list(st.session_state[PROCESS_SELECTION_KEY])
-# 키와 기본값은 리비전 프리셋 소유다. Static Capa 본문의 같은 컨트롤과 세션 상태를
-# 공유하므로 여기서 문자열을 다시 적으면 조용히 끊어진다.
-seed_threshold_defaults(owner="home")
-# 다른 상자와 같이 **기본은 접힘**이다. 기준을 매번 고치는 것이 아니라 한 번 정해 두고
-# 보는 값이라, 들어오자마자 펴 두면 사이드바만 길어지고 정작 볼 목록이 밀린다. 필요할
-# 때 펴면 되고, 편 상태는 세션 동안 남는다 — 다른 페이지에 갔다 오면 그 회차에
-# 만들어지지 않은 위젯이라 값이 버려지므로 `sidebar_expander` 가 위젯이 아닌 칸에
-# 적어 둔 것을 되돌린다.
+# 판정 기준은 사이드바 입력이 아니라 HOME → Preference 의 공용 프로필 한 곳에서 정한다
+# (2026-10-06 사용자 결정). 기본값과 월별 예외를 한 값으로 들고 다니며, 판정하는 모든 곳이
+# 달마다 그 달의 실효 기준을 쓴다. 거꾸로 된 짝(경고 > 확보)은 저장 단계에서 막는다.
+thresholds = threshold_profile.thresholds
+# 다른 상자와 같이 **기본은 접힘**이다. 공정 선택은 한 번 정해 두고 보는 값이라, 들어오자마자
+# 펴 두면 사이드바만 길어지고 정작 볼 목록이 밀린다. 편 상태는 세션 동안 남는다 — 다른 페이지에
+# 갔다 오면 그 회차에 만들어지지 않은 위젯이라 값이 버려지므로 `sidebar_expander` 가 위젯이 아닌
+# 칸에 적어 둔 것을 되돌린다.
 with sidebar_expander(
     "B/N 집계 공정",
     key=BOTTLENECK_BOX_KEY,
     icon=":material/filter_alt:",
 ):
-    with st.form("dashboard_bottleneck_filter_form", border=False):
-        # 칸 위 글자 세 줄(`판정 기준`·`확보 기준 (%)`·`경고 기준 (%)`)을 지우고 두 칸을
-        # 한 줄에 반씩 놓는다. 사이드바에서 네 줄을 먹던 자리가 한 줄이 된다. 어느 칸이
-        # 무엇인지는 왼쪽이 확보·오른쪽이 경고라는 **화면 전체의 차례**(범례·색 순서와
-        # 같다)와 `help` 툴팁이 말한다. `collapsed` 는 글자만 감추고 접근성 이름은 남긴다.
-        secure_column, warning_column = st.columns(2, gap="small")
-        with secure_column:
-            secure_threshold_percent = st.number_input(
-                "확보 기준 (%)",
-                label_visibility="collapsed",
-                min_value=0.0,
-                step=0.1,
-                key=SECURE_THRESHOLD_KEY,
-                persist_state="session",
-                help=(
-                    "확보 기준 (%) — 이 값을 넘으면 확보, 경고 기준과 이 값 사이는 "
-                    "경고로 판정합니다."
-                ),
-            )
-        with warning_column:
-            warning_threshold_percent = st.number_input(
-                "경고 기준 (%)",
-                label_visibility="collapsed",
-                min_value=0.0,
-                step=0.1,
-                key=WARNING_THRESHOLD_KEY,
-                persist_state="session",
-                help=(
-                    "경고 기준 (%) — 이 값 미만은 부족, 이 값과 확보 기준 사이는 경고로 판정합니다."
-                ),
-            )
-        st.form_submit_button("기준 적용", width="stretch", key="dashboard_threshold_apply")
     # 고른 수를 버튼 안에 넣어 캡션 한 줄을 없앤다. 버튼을 누를지 말지 정하는 데 필요한
     # 숫자라 버튼과 떨어져 있을 이유가 없다.
     if st.button(
@@ -676,31 +639,17 @@ with sidebar_expander(
                 process_options,
                 start_month=effective_start,
                 end_month=effective_end,
-                secure_threshold=secure_threshold_percent / 100.0,
+                thresholds=thresholds,
             ),
-            secure_threshold_percent,
+            securement_threshold_caption(
+                thresholds, start_month=effective_start, end_month=effective_end
+            ),
             effective_start,
             effective_end,
         )
-    # 거꾸로 된 짝은 **적용하지 않는다.** 그대로 쓰면 경고 구간이 사라져 대시보드 전체가
-    # 「경고 0 · 부족 N」으로 판정된다(2026-10-05 E2E). 직전에 쓴 바른 짝으로 계속 그린다 —
-    # Static Capa 처럼 화면을 멈추면 고칠 값을 보며 고를 수 없다.
-    applied_secure, applied_warning = applied_threshold_pair(
-        secure_threshold_percent, warning_threshold_percent
-    )
-    if (applied_secure, applied_warning) != (secure_threshold_percent, warning_threshold_percent):
-        st.warning(
-            f"경고 기준({warning_threshold_percent:g}%)이 확보 기준"
-            f"({secure_threshold_percent:g}%)보다 큽니다. 경고 기준을 확보 기준 이하로 "
-            "낮추고 「기준 적용」을 다시 누르세요. 그때까지 직전 기준(확보 "
-            f"{applied_secure:g}% · 경고 {applied_warning:g}%)으로 판정합니다."
-        )
-    secure_threshold_percent, warning_threshold_percent = applied_secure, applied_warning
     if not process_options:
         st.caption("집계 가능한 공정이 없습니다.")
-
-secure_threshold = secure_threshold_percent / 100.0
-warning_threshold = warning_threshold_percent / 100.0
+    st.caption(THRESHOLD_POINTER)
 # 월 축에 완전한 해의 연간 Total 칸을 끼운다. 표·차트·가로 스크롤 폭이 모두 이 축 하나를
 # 본다 — 축을 두 벌로 만들면 칸이 어긋난다.
 month_labels, year_total_labels = build_month_axis(
@@ -728,8 +677,7 @@ figure_cache_key = HomeFigureCacheKey(
     end_month=effective_end,
     display_order_digest=home_simulation_cache_key[-1],
     included_processes=tuple(included_processes),
-    secure_threshold_percent=float(secure_threshold_percent),
-    warning_threshold_percent=float(warning_threshold_percent),
+    threshold_digest=thresholds.digest,
     include_edp=include_edp,
     plan_detail_customer=plan_detail_customer,
     # 비교는 이 한 값으로 충분하다. 「껐다」와 「켰지만 못 붙였다」는 그림이 똑같으므로
@@ -753,8 +701,7 @@ figure_cache_key = HomeFigureCacheKey(
 capacity_decision = build_capacity_decision(
     securement_rate,
     included_processes=included_processes,
-    secure_threshold=secure_threshold,
-    warning_threshold=warning_threshold,
+    thresholds=thresholds,
 )
 cached_figures = take_home_figures(figure_cache_key)
 figure_cache_hit = cached_figures is not None
@@ -810,8 +757,7 @@ if cached_figures is None:
         bottleneck_capacity=bottleneck_capacity,
         lob_summary=lob_summary,
         month_labels=month_labels,
-        secure_threshold=secure_threshold,
-        warning_threshold=warning_threshold,
+        thresholds=thresholds,
         process_labels=process_labels,
         baseline_lob_summary=baseline_lob_summary,
         comparison_density=comparison_density,
@@ -850,8 +796,7 @@ if cached_figures is None:
     ) = build_bottleneck_detail_figures(
         monthly_bottleneck_details=monthly_bottleneck_details,
         month_labels=month_labels,
-        secure_threshold=secure_threshold,
-        warning_threshold=warning_threshold,
+        thresholds=thresholds,
         process_labels=process_labels,
         year_total_labels=year_total_labels,
         past_month_labels=past_month_labels,
@@ -863,8 +808,7 @@ if cached_figures is None:
         securement_rate=securement_rate,
         key_processes=applied_key_processes,
         month_labels=month_labels,
-        secure_threshold=secure_threshold,
-        warning_threshold=warning_threshold,
+        thresholds=thresholds,
         process_labels=process_labels,
         year_total_labels=year_total_labels,
         past_month_labels=past_month_labels,
@@ -921,8 +865,7 @@ with main_tab:
     # 를 읽으므로 공정 필터를 바꾸면 요약도 같이 따라온다.
     render_home_capacity_decision(
         capacity_decision,
-        secure_threshold=secure_threshold,
-        warning_threshold=warning_threshold,
+        thresholds=thresholds,
         # 화면 이름만 바꾼다. 저장 키는 원본 공정명 그대로다.
         process_label=(
             process_labels.label(capacity_decision.process) if capacity_decision.process else None
@@ -936,9 +879,6 @@ with main_tab:
         # 두면 월 영역 위에 얹힌 가로 스크롤바와 겹친다.
         render_lob_title_row(
             unapplied_months=unapplied_advance_months,
-            secure_threshold=secure_threshold,
-            warning_threshold=warning_threshold,
-            has_past=bool(past_month_labels),
         )
         render_home_figures(
             cached_figures,
@@ -972,6 +912,7 @@ with preference_tab:
     render_home_preference(
         months=advance_months,
         month_labels=[month_label(value) for value in advance_months],
+        threshold_profile=threshold_profile,
         advance_profile=advance_profile,
         execution_profile=execution_profile,
         top5_band_profile=top5_band_profile,

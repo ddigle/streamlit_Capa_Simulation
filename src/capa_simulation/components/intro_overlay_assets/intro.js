@@ -641,7 +641,9 @@ function scene(port, gridOf) {
     const points = sum.density.map((v, i) => (v == null ? null : { x: colX(i), y: yLine(v), v }));
     // 막대: 0 에서 시작한다. 기준선과 가장 큰 값이 다 들어오도록 위를 잡는다.
     const rates = sum.bn.filter(Boolean).map((b) => b.rate);
-    const max = Math.max(130, ...rates.map((r) => r * 1.12), (sum.secure || 110) * 1.15);
+    // 기준은 달마다 하나다(`sum.secure[i]`). 가장 높은 기준선까지 들어오게 잡는다.
+    const topSecure = (sum.secure || []).filter((v) => v != null);
+    const max = Math.max(130, ...rates.map((r) => r * 1.12), (topSecure.length ? Math.max(...topSecure) : 110) * 1.15);
     // 아래 50px 는 막대 밑 두 줄(공정 이름·상태 — 둘 다 14px) 자리다. 기준선 자리는 정확한 기준이다.
     const barTop = bars.y + 24;
     const barBot = bars.y + bars.h - 50;
@@ -790,25 +792,52 @@ function scene(port, gridOf) {
     panel(bars.x, bars.y, bars.w, bars.h);
     // 기준선 둘은 몇 px 떨어져 있어 이름표를 양 끝에 나눠 단다(경고 기준은 왼쪽 선 아래, 확보 기준은 오른쪽 선 위).
     // 선은 정확한 기준(109.5) 자리에 긋고, 이름표는 사사오입한 글자(`*_label`, 110%)를 단다.
+    // 기준은 **달마다** 온다(월별 기준). 같은 값이 이어지는 달끼리 한 구간으로 묶어 그 칸 폭만큼 긋고,
+    // 값이 바뀌는 자리는 세로로 이어 계단으로 만든다. 이름표는 구간마다 단다. 모든 달이 같으면 구간이
+    // 하나라 판 전체를 가로지르는 선 한 줄이다.
     g.font = `500 10px ${bodyStack}`;
     g.textBaseline = "alphabetic";
-    for (const [v, label, dash, alignLeft] of [
-      [sum.warning, sum.warning_label, [4, 4], true],
-      [sum.secure, sum.secure_label, [1, 4], false],
+    const G = L.G;
+    const n = sum.months.length;
+    const edgeLeft = (i) => (i === 0 ? bars.x : G.cols[i] - G.gap / 2);
+    const edgeRight = (i) => (i === n - 1 ? bars.x + bars.w : G.cols[i] + G.colW + G.gap / 2);
+    for (const [values, labels, dash, alignLeft] of [
+      [sum.warning || [], sum.warning_label || [], [4, 4], true],
+      [sum.secure || [], sum.secure_label || [], [1, 4], false],
     ]) {
-      if (v == null) continue;
-      const y = Math.round(L.yBar(v)) + 0.5;
+      const runs = [];
+      for (let i = 0; i < n; i += 1) {
+        const v = values[i];
+        if (v == null) continue;
+        const last = runs[runs.length - 1];
+        if (last && last.end === i - 1 && last.v === v) last.end = i;
+        else runs.push({ start: i, end: i, v, label: labels[i] });
+      }
       g.strokeStyle = rgba(textColor, 0.28);
       g.lineWidth = 1;
       g.setLineDash(dash);
       g.beginPath();
-      g.moveTo(bars.x, y);
-      g.lineTo(bars.x + bars.w, y);
+      runs.forEach((run, r) => {
+        const y = Math.round(L.yBar(run.v)) + 0.5;
+        const x0 = edgeLeft(run.start);
+        const prev = runs[r - 1];
+        if (prev && prev.end === run.start - 1) {
+          g.moveTo(x0, Math.round(L.yBar(prev.v)) + 0.5);
+          g.lineTo(x0, y);
+        } else {
+          g.moveTo(x0, y);
+        }
+        g.lineTo(edgeRight(run.end), y);
+      });
       g.stroke();
       g.setLineDash([]);
       g.fillStyle = pal.muted;
       g.textAlign = alignLeft ? "left" : "right";
-      g.fillText(label || `${v}%`, alignLeft ? bars.x + 6 : bars.x + bars.w - 6, alignLeft ? y + 12 : y - 4);
+      runs.forEach((run) => {
+        const y = Math.round(L.yBar(run.v)) + 0.5;
+        const x = alignLeft ? edgeLeft(run.start) + 6 : edgeRight(run.end) - 6;
+        g.fillText(run.label || `${run.v}%`, x, alignLeft ? y + 12 : y - 4);
+      });
     }
     sum.bn.forEach((b, i) => {
       const cx = L.colX(i);
@@ -1505,11 +1534,13 @@ function createOverlay(api, data, initial, syncToolbar) {
 
   function buildLabels() {
     const rows = text.rows || [];
-    // 범례의 기준 숫자는 파이썬이 사사오입해 보낸 글자다(`secure_label` — 109.5 → 110%).
+    // 범례는 판정 세 색의 이름만 적는다(2026-10-06 사용자 결정). 기준 숫자는 달마다 다를 수 있어
+    // 막대 위 기준선 이름표가 말한다. 막대 밑 상태 글자(`text.status`)와 이름이 달라 따로 받는다.
+    const legendText = text.legend || {};
     const legendStatus = [
-      [palette["die-ok"], `${(text.status || {}).secure || ""} >${summary.secure_label || `${summary.secure}%`}`],
-      [palette["die-warn"], (text.status || {}).warning || ""],
-      [palette["die-short"], `${(text.status || {}).shortage || ""} <${summary.warning_label || `${summary.warning}%`}`],
+      [palette["die-ok"], legendText.secure || ""],
+      [palette["die-warn"], legendText.warning || ""],
+      [palette["die-short"], legendText.shortage || ""],
     ];
     const legend = (pairs) =>
       `<div class="legend">${pairs.map(([color, name]) => `<span><i style="background:${escapeHtml(color)}"></i>${escapeHtml(name)}</span>`).join("")}</div>`;

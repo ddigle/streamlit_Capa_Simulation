@@ -4,9 +4,9 @@
 
 **화면을 보는 조건(선행·실행·GAP·상세·EDP·Past Data·제품별 비중 단위)은 사이드바 조건
 카드**다(2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 상자에 흩어져
-있었다). 탭에는 비교
-시나리오·선행 투입 물량·`Summary 공지`·Top5 대역·주요공정·실행 Capa 편집기가 있고, 저장은 모두
-공용 프로필 교체다. 저장 버튼은 편집 칸 **위**다. 설명은 Guide(`guides/home.md`)다.
+있었다). 탭에는 비교 시나리오·확보율 판정 기준·선행 투입 물량·`Summary 공지`·Top5 대역·
+주요공정·실행 Capa 편집기가 있고, 저장은 모두 공용 프로필 교체다. 저장 버튼은 편집 칸
+**위**다. 설명은 Guide(`guides/home.md`)다.
 
 토글 **값은 계산보다 먼저** 필요하고 **위젯은 계산 뒤에** 그려진다. 그래서 `app_pages/home.py`
 는 위젯이 쓰는 세션 키를 직접 읽고, 여기서는 같은 키로 위젯을 만든다. 키와 기본값은 UI
@@ -56,6 +56,7 @@ from capa_simulation.persistence.cache import (
     clear_global_comparison_scenario_cache,
     clear_global_execution_capacity_cache,
     clear_global_key_process_cache,
+    clear_global_securement_threshold_cache,
     clear_global_summary_note_cache,
     clear_global_top5_band_cache,
     get_scenario_repository,
@@ -65,6 +66,7 @@ from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
     GlobalExecutionCapacity,
     GlobalKeyProcess,
+    GlobalSecurementThreshold,
     GlobalSummaryNote,
     GlobalTop5Band,
     RevisionSummary,
@@ -88,7 +90,13 @@ from capa_simulation.services.key_process import (
 from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.product_share import PRODUCT_SHARE_BASES
-from capa_simulation.services.threshold_label import threshold_percent_label
+from capa_simulation.services.securement_threshold import (
+    SECURE_COLUMN,
+    WARNING_COLUMN,
+    build_securement_thresholds,
+    merge_securement_threshold_edits,
+    reversed_threshold_months,
+)
 from capa_simulation.sidebar_status import condition_card
 
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
@@ -97,6 +105,15 @@ COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
 COMPARISON_REVISION_KEY = "home_preference_comparison_revision"
 ADVANCE_EDITOR_KEY = "home_preference_advance_editor"
 ADVANCE_NOTE_KEY = "home_preference_advance_note"
+THRESHOLD_EDITOR_KEY = "home_preference_threshold_editor"
+THRESHOLD_NOTE_KEY = "home_preference_threshold_note"
+THRESHOLD_CLEAR_OUTSIDE_KEY = "home_preference_threshold_clear_outside"
+# 판정 기준 편집을 시작할 때 본 공용 version. 저장 회차에는 이 회차가 새로 읽은 version 이 아니라
+# **앞 회차(사용자가 보고 고친 화면)** 의 version 을 대조해야 다른 세션의 먼저 저장을 잡는다.
+THRESHOLD_BASE_VERSION_KEY = "home_preference_threshold_base_version"
+THRESHOLD_FLASH_KEY = "home_threshold_flash"
+# 판정 기준 입력이 빠진 자리(HOME 사이드바·Static Capa)에 남기는 한 줄. 두 화면이 같은 글자를 쓴다.
+THRESHOLD_POINTER = "판정 기준은 HOME → Preference 에서 정합니다."
 # 주요공정 히트맵 프리셋. 사이드바에서 고른 프리셋(세션의 보는 조건)과 Preference 에서 고치는
 # 프리셋은 다른 칸이다 — 고치려고 고른 것이 보는 화면을 바꾸면 안 된다.
 KEY_PROCESS_PRESET_KEY = "home_key_process_preset"
@@ -176,36 +193,27 @@ def section_accent_bar_css() -> str:
     )
 
 
-def status_legend_markup(
-    *, secure_threshold: float, warning_threshold: float, has_past: bool = False
-) -> str:
+def status_legend_markup() -> str:
     """확보·경고·부족 세 색이 무슨 뜻인지 한 줄로 적는다.
 
     이 앱은 확보율을 세 색으로 판정해 놓고 **그 색이 무슨 뜻인지 화면 어디에도 적지
     않았다.** 처음 보는 사람은 회색 막대가 좋은 것인지 나쁜 것인지 알 길이 없다.
-    색만으로 뜻을 나르지 않으려면 이름과 경계 숫자가 같이 있어야 한다.
+    색만으로 뜻을 나르지 않으려면 이름이 같이 있어야 한다.
 
-    `has_past` 는 과거 구간 열이 실제로 그려졌을 때만 켠다. 그 열도 뜻을 면색 하나로만
-    나르는데, 판정 세 색과 달리 이름이 어디에도 없었다. 과거 열이 없는 실행에서까지 칩을
-    달면 화면에 없는 것을 설명하게 된다.
+    **경계 숫자는 적지 않는다**(2026-10-06 사용자 결정). 판정 기준은 달마다 다를 수 있어
+    (HOME → Preference 의 월별 기준) 숫자 한 짝으로 적으면 예외 달에서 거짓이 된다. 과거 구간
+    칩도 두지 않는다 — 범례는 판정 세 색만 말한다.
     """
-    # 경계 숫자는 사사오입한 정수 퍼센트다(`threshold_percent_label`) — 109.5% 는 110% 로
-    # 적는다. 칩 색을 가르는 판정은 정확한 기준을 그대로 쓴다.
-    secure = threshold_percent_label(secure_threshold)
-    warning = threshold_percent_label(warning_threshold)
     chips: tuple[tuple[str, str], ...] = (
-        (tokens.STATUS_SECURE, f"확보 {secure} 초과"),
-        (tokens.STATUS_WARNING, f"경고 {warning}~{secure}"),
-        (tokens.STATUS_SHORTAGE, f"부족 {warning} 미만"),
+        (tokens.STATUS_SECURE, "초과 확보"),
+        (tokens.STATUS_WARNING, "경고"),
+        (tokens.STATUS_SHORTAGE, "부족"),
     )
-    if has_past:
-        chips += ((tokens.SURFACE_PAST, "과거 구간"),)
     swatches = "".join(
         f'<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px">'
-        # 테두리가 `BORDER` 가 아니라 `LINE` 인 것은 과거 구간 칩(`SURFACE_PAST`) 때문이다.
-        # 그 면색은 페이지 바탕과 1.16:1 이라 칩이 사라지는데, `BORDER` 는 바탕과 1.25:1 이라
-        # 구해 주지 못한다. `LINE` 은 9.83:1 이고, 확보 막대가 트랙 위에서 같은 이유로 이미
-        # 쓰는 선이다(`tokens.BAR_OUTLINE_WIDTH_PX` 주석).
+        # 테두리는 `LINE` 이다. 확보 색(`STATUS_SECURE`)은 밝은 테마에서 바탕과 대비가 낮아
+        # 테두리 없이는 칩이 흐려진다 — 확보 막대가 트랙 위에서 같은 이유로 쓰는 선이다
+        # (`tokens.BAR_OUTLINE_WIDTH_PX` 주석).
         f'<span style="width:11px;height:11px;border-radius:3px;background:{color};'
         f'border:1px solid {tokens.LINE};display:inline-block"></span>'
         f'<span style="font-size:12px;color:{tokens.TEXT_MUTED}">{label}</span>'
@@ -286,13 +294,8 @@ def render_home_view_card(*, comparison_ready: bool) -> None:
 def render_lob_title_row(
     *,
     unapplied_months: Sequence[int],
-    secure_threshold: float,
-    warning_threshold: float,
-    has_past: bool,
 ) -> None:
     """`Capa LOB 현황` 제목과 오른쪽 끝의 판정 색 범례.
-
-    `has_past` 를 받는 것은 과거 구간 칩을 그 열이 실제로 있을 때만 달기 위해서다.
 
     **범례가 이 줄 안에 있는 이유.** 제목 줄과 Figure 사이 간격은 스크롤바 높이를 뺀
     나머지(`DASHBOARD_PANEL_TITLE_GAP_PX`)뿐이라 거의 0 이다. 범례를 두 줄 사이에 독립
@@ -306,17 +309,10 @@ def render_lob_title_row(
         gap="medium",
     ):
         st.markdown(section_title_markup("Capa LOB 현황"), unsafe_allow_html=True)
-        # 판정 색의 뜻과 경계 숫자. Top5 막대에 그은 기준선과 같은 값을 읽는다.
+        # 판정 색의 뜻. 경계 숫자는 Top5 막대에 그은 기준선이 말한다.
         # 아래 CSS 의 `margin-left:auto` 가 이 칸만 오른쪽 끝으로 민다.
         with st.container(key=STATUS_LEGEND_ROW_KEY):
-            st.markdown(
-                status_legend_markup(
-                    secure_threshold=secure_threshold,
-                    warning_threshold=warning_threshold,
-                    has_past=has_past,
-                ),
-                unsafe_allow_html=True,
-            )
+            st.markdown(status_legend_markup(), unsafe_allow_html=True)
     if unapplied_months:
         labels = _month_labels(unapplied_months)
         st.warning(
@@ -330,6 +326,7 @@ def render_home_preference(
     *,
     months: Sequence[int],
     month_labels: Sequence[str],
+    threshold_profile: GlobalSecurementThreshold,
     advance_profile: GlobalAdvanceLoad,
     execution_profile: GlobalExecutionCapacity,
     top5_band_profile: GlobalTop5Band,
@@ -342,11 +339,17 @@ def render_home_preference(
     database_path: str,
     active_scenario_id: str | None,
 ) -> None:
-    """비교 시나리오 선택과 Summary 공지·선행 물량·Top5 대역·주요공정·실행 Capa 입력 시트.
+    """비교 시나리오 선택과 판정 기준·Summary 공지·선행 물량·Top5 대역·주요공정·실행 Capa 입력 시트.
 
     보는 조건(EDP·Past Data 포함 등)은 사이드바 `LOB 표시 조건` 카드다(`render_home_view_card`).
     """
     _render_comparison_picker(database_path, active_scenario_id)
+    render_threshold_editor(
+        months=months,
+        month_labels=month_labels,
+        threshold_profile=threshold_profile,
+        database_path=database_path,
+    )
     _render_advance_editor(
         months=months,
         month_labels=month_labels,
@@ -566,6 +569,285 @@ def _comparison_label(
 def _revision_label(revision: RevisionSummary, is_active: bool) -> str:
     label = f"r{revision.revision_no} · {revision.revision_name}"
     return f"{label} · 현재 활성" if is_active else label
+
+
+def render_threshold_editor(
+    *,
+    months: Sequence[int],
+    month_labels: Sequence[str],
+    threshold_profile: GlobalSecurementThreshold,
+    database_path: str,
+) -> None:
+    """확보율 판정 기준 — 기본 확보·경고 두 칸과 월별 예외 표(2026-10-06 사용자 결정).
+
+    판정 기준은 시나리오와 무관한 공용 정책값이고 **여기 한 곳**에서만 정한다(사이드바 입력은
+    없앴다). 월별 표의 빈칸은 그 달 그 항목이 기본값을 따른다. 입력은 퍼센트(119.5)이고 저장은
+    비율(1.195)이다. 저장은 공용 프로필 교체이며 편집을 시작할 때 본 version 과 대조한다.
+    """
+    submitted_base = st.session_state.get(THRESHOLD_BASE_VERSION_KEY)
+    with st.container(border=True):
+        st.markdown("#### :material/rule: 확보율 판정 기준")
+        st.caption(
+            profile_version_caption(
+                threshold_profile,
+                empty=(
+                    f"아직 저장하지 않아 {threshold_profile.fallback} 값"
+                    f"(확보 {_exact_percent(threshold_profile.default_secure)} · 경고 "
+                    f"{_exact_percent(threshold_profile.default_warning)})을 씁니다"
+                ),
+                detail=_threshold_detail(threshold_profile),
+            )
+        )
+        stored = _thresholds_by_month(threshold_profile)
+        outside = sorted(set(stored) - set(months))
+        with st.form("home_threshold_form"):
+            # 작업 줄(저장·메모)은 표 **위**다 — 선행 물량 편집기와 같은 결이다.
+            with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+                submitted = st.form_submit_button(
+                    "판정 기준 저장",
+                    icon=":material/save:",
+                    type="primary",
+                )
+                note = st.text_input(
+                    "변경 메모",
+                    placeholder="예: 27년 이후 확보 기준 120% 적용",
+                    key=THRESHOLD_NOTE_KEY,
+                )
+            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
+            notice = st.container()
+            with notice:
+                render_flash(THRESHOLD_FLASH_KEY)
+            # **`key` 를 두지 않는다.** Top5 대역과 같은 이유다 — 키가 붙은 칸은 한 번 그려진 뒤
+            # 세션 값을 써서, 다른 사람이 바꾼 기본값을 이 화면이 못 본 채 저장 한 번으로 되돌린다.
+            secure_column, warning_column = st.columns(2)
+            with secure_column:
+                default_secure = st.number_input(
+                    "기본 확보 기준(%)",
+                    value=_percent_value(threshold_profile.default_secure),
+                    # 하한은 0 이다. 칸은 저장본·공식버전 프리셋이 무엇이든 그려져야 고칠 수 있고,
+                    # 0 이하 값은 저장 검증이 어느 칸인지 적어 거부한다.
+                    min_value=0.0,
+                    step=0.1,
+                    format="%.1f",
+                    help="이 값을 넘으면 확보입니다. 월별 표에서 비워 둔 달은 이 값을 씁니다.",
+                )
+            with warning_column:
+                default_warning = st.number_input(
+                    "기본 경고 기준(%)",
+                    value=_percent_value(threshold_profile.default_warning),
+                    min_value=0.0,
+                    step=0.1,
+                    format="%.1f",
+                    help="이 값 미만은 부족, 이 값과 확보 기준 사이는 경고입니다.",
+                )
+            edited: pd.DataFrame | None = None
+            if months:
+                table = pd.DataFrame(
+                    [
+                        [label, *[_cell_percent(stored.get(month), index) for month in months]]
+                        for index, label in enumerate((SECURE_COLUMN, WARNING_COLUMN))
+                    ],
+                    columns=[DIMENSION_COLUMN, *month_labels],
+                )
+                edited = st.data_editor(
+                    table,
+                    key=THRESHOLD_EDITOR_KEY,
+                    hide_index=True,
+                    num_rows="fixed",
+                    width="stretch",
+                    # 빈칸은 「기본값을 따른다」는 뜻이라 `None` 글자가 아니라 빈칸으로 그린다.
+                    placeholder="",
+                    disabled=[DIMENSION_COLUMN],
+                    column_config={
+                        DIMENSION_COLUMN: st.column_config.TextColumn(
+                            DIMENSION_COLUMN, width="small"
+                        ),
+                        **{
+                            label: st.column_config.NumberColumn(label, step=0.1, format="%.1f")
+                            for label in month_labels
+                        },
+                    },
+                )
+            else:
+                st.caption(
+                    "조회기간에 계획이 있는 달이 없어 월별 칸이 없습니다. 기본값만 저장합니다."
+                )
+            # 표에 보이지 않는 달은 여기서 고칠 수 없다. 그 달이 새 기본값과 거꾸로 짝이 되어 저장을
+            # 막을 때 조회기간을 바꾸지 않고도 풀 수 있게, 기간 밖 예외를 지우는 길을 둔다.
+            clear_outside = bool(
+                outside
+                and st.checkbox(
+                    f"조회기간 밖 월별 기준 {len(outside):,}개월 지우기({_month_labels(outside)})",
+                    key=THRESHOLD_CLEAR_OUTSIDE_KEY,
+                    help=(
+                        "체크하고 저장하면 표에 보이지 않는 달의 월별 기준을 지워 기본값을 "
+                        "따르게 합니다."
+                    ),
+                )
+            )
+        if not submitted:
+            st.session_state[THRESHOLD_BASE_VERSION_KEY] = threshold_profile.version
+            _render_threshold_out_of_range_notice(months, threshold_profile)
+            return
+        expected_version = (
+            submitted_base if isinstance(submitted_base, int) else threshold_profile.version
+        )
+        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
+        st.session_state[THRESHOLD_BASE_VERSION_KEY] = threshold_profile.version
+        try:
+            _save_thresholds(
+                database_path,
+                months=months,
+                month_labels=month_labels,
+                edited=edited,
+                default_secure=float(default_secure),
+                default_warning=float(default_warning),
+                threshold_profile=threshold_profile,
+                expected_version=expected_version,
+                source=note.strip() or "웹 직접 편집",
+                clear_outside=clear_outside,
+            )
+        except BOOTSTRAP_ERRORS as exc:
+            # 검증 실패(어느 달인지)와 버전 충돌은 ValueError 이고 원문이 고칠 곳을 말한다.
+            notice.error(str(exc) if isinstance(exc, ValueError) else bootstrap_error_message(exc))
+            # 충돌이면 다른 세션이 저장한 것이 아직 이 화면에 없을 수 있다. 다음 회차가 최신
+            # 저장본을 그리게 캐시를 비운다.
+            clear_global_securement_threshold_cache()
+        else:
+            queue_flash(THRESHOLD_FLASH_KEY, "확보율 판정 기준을 공용 설정으로 저장했습니다.")
+            st.rerun(scope="app")
+
+
+def _save_thresholds(
+    database_path: str,
+    *,
+    months: Sequence[int],
+    month_labels: Sequence[str],
+    edited: pd.DataFrame | None,
+    default_secure: float,
+    default_warning: float,
+    threshold_profile: GlobalSecurementThreshold,
+    expected_version: int,
+    source: str,
+    clear_outside: bool = False,
+) -> None:
+    """표에 보이는 달만 갈아 끼우고 조회기간 밖 저장분은 그대로 둔다(선행 물량과 같은 규칙).
+
+    `clear_outside` 면 조회기간 밖 월별 기준을 지운 뒤 합친다.
+    """
+    rows = threshold_profile.rows
+    if clear_outside:
+        rows = rows.loc[rows["생산계획년월"].isin([int(month) for month in months])]
+    if edited is not None and months:
+        secure_row = edited.iloc[0]
+        warning_row = edited.iloc[1]
+        rows = merge_securement_threshold_edits(
+            rows,
+            list(months),
+            [_ratio_or_none(secure_row[label]) for label in month_labels],
+            [_ratio_or_none(warning_row[label]) for label in month_labels],
+        )
+    _reject_hidden_reversed_months(months, default_secure / 100.0, default_warning / 100.0, rows)
+    get_scenario_repository(database_path).replace_global_securement_threshold(
+        default_secure / 100.0,
+        default_warning / 100.0,
+        rows,
+        source=source,
+        expected_version=expected_version,
+    )
+    clear_global_securement_threshold_cache()
+    # 입장 화면 Summary 도 같은 기준으로 판정한다. 이 세션이 들고 있는 요약은 `RECHECK_SECONDS`
+    # 동안 그대로 보내므로, 저장한 직후 다시 확인하게 한다(새 기준의 지문으로 새로 만든다).
+    # 함수 안에서 들인다 — `intro_summary` → `intro_overlay` → `home_rendering` 이 이 모듈을
+    # 들이므로 모듈 머리에 두면 순환한다.
+    from capa_simulation.components.intro_summary import forget_intro_summary_check
+
+    forget_intro_summary_check()
+
+
+def _reject_hidden_reversed_months(
+    months: Sequence[int],
+    default_secure: float,
+    default_warning: float,
+    rows: pd.DataFrame,
+) -> None:
+    """새 기본값과 합쳐 거꾸로 짝이 되는 달이 표에 보이지 않으면 고칠 길까지 적어 거부한다.
+
+    저장 검증도 같은 달을 거부하지만 그 문구만으로는 표에 없는 달을 어디서 고칠지 알 수 없다.
+    기본값 자체가 잘못된 경우는 저장 검증의 문구가 더 정확하므로 여기서는 보지 않는다.
+    """
+    if not 0 < default_warning <= default_secure:
+        return
+    visible = {int(month) for month in months}
+    hidden = [
+        month
+        for month in reversed_threshold_months(
+            build_securement_thresholds(default_secure, default_warning, rows)
+        )
+        if month not in visible
+    ]
+    if hidden:
+        raise ValueError(
+            f"조회기간 밖 달 {_month_labels(hidden)}은(는) 이 기본값과 합치면 경고 기준이 확보 "
+            "기준보다 큽니다. 표에 보이지 않는 달이라 조회기간을 넓혀 그 달을 고치거나, "
+            "「조회기간 밖 월별 기준 지우기」를 체크하고 저장하세요."
+        )
+
+
+def _render_threshold_out_of_range_notice(
+    months: Sequence[int],
+    threshold_profile: GlobalSecurementThreshold,
+) -> None:
+    """조회기간 밖에 남아 있는 월별 기준. 보이지 않는 값이 판정에 남는 것을 알린다."""
+    outside = sorted(set(_thresholds_by_month(threshold_profile)) - set(months))
+    if not outside:
+        return
+    st.caption(
+        f"조회기간 밖에 월별 기준이 저장된 달이 {len(outside):,}개 있습니다"
+        f"({_month_labels(outside)}). 표에는 보이지 않지만 그대로 보존되며, 저장해도 지워지지 "
+        "않습니다. 지우려면 「조회기간 밖 월별 기준 지우기」를 체크하고 저장하세요."
+    )
+
+
+def _threshold_detail(threshold_profile: GlobalSecurementThreshold) -> str:
+    """버전 캡션의 앞머리. 기본값과 월별 예외 수를 함께 적는다."""
+    base = (
+        f"기본 확보 {_exact_percent(threshold_profile.default_secure)} · "
+        f"경고 {_exact_percent(threshold_profile.default_warning)}"
+    )
+    count = len(threshold_profile.rows)
+    return f"{base} · 월별 예외 {count:,}개월" if count else base
+
+
+def _thresholds_by_month(
+    threshold_profile: GlobalSecurementThreshold,
+) -> dict[int, tuple[float | None, float | None]]:
+    return {
+        month: (secure, warning) for month, secure, warning in threshold_profile.thresholds.monthly
+    }
+
+
+def _percent_value(ratio: float) -> float:
+    """비율을 입력 칸의 퍼센트로. 1.195 × 100 = 119.49999… 가 칸에 그대로 보이지 않게 다듬는다."""
+    return round(float(ratio) * 100.0, 6)
+
+
+def _exact_percent(ratio: float) -> str:
+    """캡션용 정확한 퍼센트. 입력한 값(119.5)을 그대로 보여 준다."""
+    return f"{_percent_value(ratio):g}%"
+
+
+def _cell_percent(pair: tuple[float | None, float | None] | None, index: int) -> float | None:
+    if pair is None:
+        return None
+    value = pair[index]
+    return None if value is None else _percent_value(value)
+
+
+def _ratio_or_none(value: object) -> float | None:
+    """표 칸(퍼센트)을 비율로. 빈칸은 None — 그 달 그 항목은 기본값이다."""
+    numeric = pd.to_numeric(pd.Series([value], dtype="object"), errors="coerce").iloc[0]
+    return None if pd.isna(numeric) else float(numeric) / 100.0
 
 
 def _render_advance_editor(

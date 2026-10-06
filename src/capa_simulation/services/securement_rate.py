@@ -5,6 +5,7 @@ from math import ceil
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import normalize_month_column, require_columns
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 SECUREMENT_DIMENSIONS = ["공정"]
 SHORTFALL_COLUMNS = [
@@ -92,8 +93,7 @@ def securement_rate_to_month_table(data: pd.DataFrame) -> pd.DataFrame:
 def build_securement_shortfall_tables(
     securement_rate: pd.DataFrame,
     *,
-    warning_threshold: float,
-    secure_threshold: float,
+    thresholds: SecurementThresholds,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Split monthly equipment gaps into warning and secure-threshold steps.
 
@@ -101,10 +101,19 @@ def build_securement_shortfall_tables(
     incremental columns partition the minimum whole equipment count needed to
     reach the secure threshold. The second result contains processes that meet
     the warning threshold but remain below the secure threshold.
+
+    기준은 **행의 달마다** 그 달의 실효 기준이다(`thresholds.for_month`). `경고기준`·`확보기준`
+    컬럼이 행마다 그 값을 적는다. 월별 예외가 없으면 모든 행이 기본값이다.
     """
-    if warning_threshold < 0 or secure_threshold < 0:
+    # 저장 단계가 거꾸로 된 짝을 막지만, 이 함수는 저장본이 아닌 값도 받는다(테스트·직접 호출).
+    # 기본 짝과 월별 예외의 실효 짝을 모두 본다.
+    pairs_to_check = [
+        thresholds.for_month(None),
+        *(thresholds.for_month(month) for month in thresholds.exception_months),
+    ]
+    if any(secure < 0 or warning < 0 for secure, warning in pairs_to_check):
         raise ValueError("확보 기준과 경고 기준은 0 이상이어야 합니다.")
-    if warning_threshold > secure_threshold:
+    if any(warning > secure for secure, warning in pairs_to_check):
         raise ValueError("경고 기준은 확보 기준보다 클 수 없습니다.")
 
     required = ["생산계획년월", "공정", "가용대수", "소요대수", "확보율"]
@@ -113,20 +122,21 @@ def build_securement_shortfall_tables(
     _prepare_shortfall_input(result)
     result = result.loc[result["소요대수"].gt(0)].copy()
     result["확보율"] = result["가용대수"] / result["소요대수"]
-    result["경고기준"] = warning_threshold
-    result["확보기준"] = secure_threshold
+    pairs = [thresholds.for_month(int(month)) for month in result["생산계획년월"]]
+    result["경고기준"] = pd.Series([pair[1] for pair in pairs], index=result.index, dtype="float64")
+    result["확보기준"] = pd.Series([pair[0] for pair in pairs], index=result.index, dtype="float64")
 
-    warning_gap = result["소요대수"].mul(warning_threshold).sub(result["가용대수"])
-    secure_gap = result["소요대수"].mul(secure_threshold).sub(result["가용대수"])
+    warning_gap = result["소요대수"].mul(result["경고기준"]).sub(result["가용대수"])
+    secure_gap = result["소요대수"].mul(result["확보기준"]).sub(result["가용대수"])
     result["경고기준 필요대수"] = warning_gap.map(_ceil_positive).astype("int64")
     result["확보목표 총 필요대수"] = secure_gap.map(_ceil_positive).astype("int64")
     result["확보기준 추가대수"] = result["확보목표 총 필요대수"] - result["경고기준 필요대수"]
 
     sort_columns = ["생산계획년월", "확보율", "공정"]
-    warning_shortfalls = result.loc[result["확보율"].lt(warning_threshold)]
+    warning_shortfalls = result.loc[result["확보율"].lt(result["경고기준"])]
     warning_shortfalls = warning_shortfalls.sort_values(sort_columns, kind="stable")
     secure_shortfalls = result.loc[
-        result["확보율"].ge(warning_threshold) & result["확보율"].lt(secure_threshold)
+        result["확보율"].ge(result["경고기준"]) & result["확보율"].lt(result["확보기준"])
     ]
     secure_shortfalls = secure_shortfalls.sort_values(sort_columns, kind="stable")
     return (
