@@ -1,5 +1,9 @@
 [server]
 maxUploadSize = 1024
+# `static/` 의 파일을 `app/static/…` 으로 보낸다. 페이지 제목·상자 제목·큰 숫자의 Archivo 부분
+# 글꼴(`static/fonts/`, `components/typography.py`)이 여기로 온다 — 사내 PC 는 외부 글꼴 서버에 못 나간다.
+# 끄면 그 자리가 시스템 글꼴(Noto Sans KR → 맑은 고딕)로 떨어질 뿐 화면은 그대로 선다.
+enableStaticServing = true
 
 [browser]
 gatherUsageStats = false

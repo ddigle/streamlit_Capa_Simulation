@@ -1,9 +1,40 @@
-# Purpose: 상단 띠 CSS 와 껍데기 스타일이 접기 버튼·툴바 폭·메뉴·인쇄·인증 표시를 지키는지 고정한다.
+# Purpose: 상단 띠의 시나리오 두 줄·CSS·껍데기 스타일과 Admin 앱 정보의 규칙을 고정한다.
 
 import re
+from dataclasses import replace
+from datetime import datetime
 
-from capa_simulation.components.app_header import SHELL_STYLE, _header_css
-from capa_simulation.settings import APP_AUTH_CODE, APP_AUTH_EXPIRY
+from capa_simulation.components.app_credits import credit_lines
+from capa_simulation.components.app_header import (
+    SHELL_STYLE,
+    _header_css,
+    css_string,
+    header_lines,
+    source_type_label,
+)
+from capa_simulation.scenario_activation import ActiveScenarioLabel
+from capa_simulation.settings import (
+    APP_AUTH_CODE,
+    APP_AUTH_EXPIRY,
+    APP_CONTACT_EMAIL,
+    APP_NAME,
+    APP_OWNER_TEAM,
+    APP_VERSION,
+)
+
+LABEL = ActiveScenarioLabel(
+    scenario_id="scenario-1",
+    revision_id="revision-4",
+    scenario_name="DEMO 시나리오",
+    simulation_code="DEMO-CODE-70",
+    source_type="BIGDATAQUERY",
+    registered_at=datetime(2026, 9, 28, 10, 30),
+    revision_no=4,
+    revision_name="월간 보정",
+    saved_at=datetime(2026, 10, 5, 9, 0),
+    first_month=202607,
+    last_month=202812,
+)
 
 
 def test_sidebar_collapse_button_is_always_visible_on_screen() -> None:
@@ -17,8 +48,9 @@ def test_sidebar_collapse_button_is_always_visible_on_screen() -> None:
 
 
 def test_the_header_text_leaves_room_for_the_whole_toolbar() -> None:
-    """툴바(Summary·Guide·테마·Print·Deploy)가 1100px 창에서 355px 를 쓴다(⋮ 를 감추고 Print 를
-    더한 뒤 실측). 16rem(224px)만 비우면 머리 글자가 Summary 밑으로 들어갔다(2026-10-05 E2E)."""
+    """툴바가 Summary 를 품고 있던 때 1100px 창에서 355px 를 썼다(⋮ 를 감추고 Print 를 더한
+    뒤 실측). 16rem(224px)만 비우면 머리 글자가 툴바 밑으로 들어갔다(2026-10-05 E2E). Summary 를
+    사이드바 라벨로 옮겨 툴바가 좁아졌어도 그 폭은 지킨다."""
     widths = re.findall(r"max-width: calc\(100% - (\d+)rem\)", _header_css())
     root_px = 14
     assert widths and int(widths[0]) * root_px >= 355 + 21 + 12
@@ -117,6 +149,98 @@ def test_print_does_not_split_charts_but_lets_long_tables_break() -> None:
         assert table not in block
 
 
-def test_the_header_shows_the_auth_code_with_its_expiry() -> None:
-    """⋮ 메뉴의 About 이 없어져 인증 유효기간을 보여 줄 곳은 머리 띠 둘째 줄뿐이다."""
-    assert f"인증번호 {APP_AUTH_CODE}(유효기간 {APP_AUTH_EXPIRY})" in _header_css()
+def test_admin_credits_show_the_app_developer_and_auth_code_with_its_expiry() -> None:
+    """⋮ 메뉴의 About 이 없고 머리 띠는 시나리오를 싣는다 — 앱 정보는 Admin Area 맨 아래뿐이다."""
+    text = "\n".join(credit_lines())
+    assert f"인증번호 {APP_AUTH_CODE}(유효기간 {APP_AUTH_EXPIRY})" in text
+    for value in (APP_NAME, APP_VERSION, APP_OWNER_TEAM, APP_CONTACT_EMAIL):
+        assert value in text
+    # 머리 띠에서는 뺐다.
+    css = _header_css(*header_lines(LABEL, official=None, unsaved=False))
+    assert APP_AUTH_CODE not in css and APP_CONTACT_EMAIL not in css
+
+
+def test_the_header_names_the_official_version_with_its_source_registration() -> None:
+    """공식버전이면 위 줄 끝이 `공식 vN` 이고, 아래 줄은 원천과 등록일이다(2026-10-06 사용자
+    결정)."""
+    top, bottom = header_lines(LABEL, official=("revision-4", 4), unsaved=False)
+    assert top == "DEMO 시나리오 · r4 월간 보정 · 공식 v4"
+    assert bottom == "DEMO-CODE-70 · 적용 26.07–28.12 · BigDataQuery 26.09.28 등록"
+
+
+def test_a_saved_revision_shows_its_save_date_instead_of_the_registration() -> None:
+    """공식버전이 아닌 저장 리비전은 등록일 대신 리비전 저장일이다. 최신 공식버전이 다른 리비전이면
+    공식이 아니다 — 사이드바 시나리오 상자의 배지와 같은 판정이다."""
+    for official in (None, ("revision-other", 5)):
+        top, bottom = header_lines(LABEL, official=official, unsaved=False)
+        assert top == "DEMO 시나리오 · r4 월간 보정 · 저장된 리비전"
+        assert bottom == "DEMO-CODE-70 · 적용 26.07–28.12 · 26.10.05 저장"
+
+
+def test_unsaved_edits_win_the_status_slot() -> None:
+    """적용했지만 저장하지 않은 편집이 있으면 상태는 `미저장 변경` 이다(공식버전 위에서도)."""
+    top, bottom = header_lines(LABEL, official=("revision-4", 4), unsaved=True)
+    assert top.endswith(" · 미저장 변경")
+    assert "공식" not in top
+    # 아래 줄은 올라와 있는 리비전의 출처를 그대로 말한다.
+    assert bottom.endswith("BigDataQuery 26.09.28 등록")
+
+
+def test_the_header_leaves_out_the_period_it_does_not_know_and_the_view_range() -> None:
+    """계획에 월이 없으면 기간을 빼고 적는다. 조회기간은 어느 경우에도 싣지 않는다."""
+    _, bottom = header_lines(
+        replace(LABEL, first_month=None, last_month=None), official=None, unsaved=False
+    )
+    assert bottom == "DEMO-CODE-70 · 26.10.05 저장"
+    assert "조회" not in bottom
+
+
+def test_source_types_read_as_short_names() -> None:
+    assert source_type_label("BIGDATAQUERY") == "BigDataQuery"
+    assert source_type_label("BUILTIN_SYNTHETIC_SEED") == "내장 시드"
+    assert source_type_label("CSV_CORE_DATA_INITIAL_BOOTSTRAP") == "CSV"
+    assert source_type_label("SOMETHING_NEW") == "SOMETHING_NEW"
+
+
+def test_without_an_active_scenario_the_header_falls_back_to_the_app_name() -> None:
+    """활성 시나리오가 없으면 앱 이름 한 줄로 물러나고, 그 한 줄은 띠 가운데에 선다."""
+    top, bottom = header_lines(None, official=("revision-4", 4), unsaved=False)
+    assert (top, bottom) == (APP_NAME, "")
+    css = _header_css(top, bottom)
+    before = css[css.index('[data-testid="stHeader"]::before {') :]
+    before = before[: before.index("}")]
+    assert f'content: "{APP_NAME}";' in before
+    assert "top: calc(50% - 0.55rem);" in before
+    two_lines = _header_css("위", "아래")
+    assert "top: calc(50% - 1.1rem);" in two_lines
+
+
+def test_user_text_is_escaped_inside_the_css_string() -> None:
+    """시나리오명은 사용자 글이다. 따옴표·역슬래시가 CSS 문자열을 끊거나 `</style>` 이 스타일 요소를
+    끝내면 띠 전체가 깨진다. 줄바꿈은 한 줄 띠라 빈칸으로 바꾼다."""
+    assert css_string('a"b') == 'a\\"b'
+    assert css_string("a\\b") == "a\\\\b"
+    assert css_string("a\nb\tc") == "a b c"
+    assert css_string("</style>") == "\\3c /style\\3e "
+    assert css_string("한글 · r4") == "한글 · r4"
+    css = _header_css('x"</style><b>', "y")
+    assert "</style>" not in css and "<b>" not in css
+
+
+def test_scenario_text_cannot_be_rewritten_by_the_template_sentinels() -> None:
+    """두 줄은 맨 마지막에 넣는다. 시나리오명에 센티넬 글자가 들어 있어도 색으로 바뀌지 않는다."""
+    css = _header_css("__TEXT__ __ACCENT__", "__BOTTOM_LINE__")
+    assert 'content: "__TEXT__ __ACCENT__";' in css
+    assert 'content: "__BOTTOM_LINE__";' in css
+
+
+def test_the_sidebar_header_carries_no_pseudo_element_text() -> None:
+    """사이드바 머리칸의 앱 이름·버전 글은 걷었다 — 그 자리는 `S.PKG CAPA` 라벨이다(iframe
+    스크립트).
+    머리칸을 띠 위에 고정하는 규칙은 남는다."""
+    css = _header_css()
+    assert '[data-testid="stSidebarHeader"]::before' not in css
+    assert '[data-testid="stSidebarHeader"]::after' not in css
+    block = css[css.index('[data-testid="stSidebarHeader"] {') :]
+    block = block[: block.index("}")]
+    assert "position: sticky;" in block and "z-index: 11;" in block

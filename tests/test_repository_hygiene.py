@@ -55,6 +55,10 @@ ALLOWED_TOP_LEVEL = {
     "requirements-company.txt",
     "scripts/",
     "src/",
+    # Streamlit 정적 서빙(`.streamlit/config.toml` `enableStaticServing`)은 `app.py` 옆의 `static/`
+    # 만 `app/static/…` 으로 보낸다. 페이지 제목·상자 제목·큰 숫자의 Archivo 부분 글꼴
+    # (`static/fonts/`)이 여기 있다 — 사내 PC 는 외부 글꼴 서버(Google Fonts)에 못 나간다.
+    "static/",
     "tests/",
     "uv.lock",
 }

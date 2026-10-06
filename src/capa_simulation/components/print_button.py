@@ -119,7 +119,8 @@ _SCRIPT = """
 
 
 def print_toolbar_script() -> str:
-    """툴바에 `Print` 버튼을 얹는 스크립트. 테마 버튼 iframe 에 Guide·Summary 와 함께 싣는다."""
+    """툴바에 `Print` 버튼을 얹는 스크립트. 테마 버튼 iframe 에 Guide·사이드바 라벨과 함께
+    싣는다."""
     return _SCRIPT % {
         "id": BUTTON_ID,
         "label": "인쇄",

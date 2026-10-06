@@ -15,6 +15,7 @@ import html
 
 import streamlit as st
 
+from capa_simulation.components.typography import FIGURE_CLASS
 from capa_simulation.design import tokens
 from capa_simulation.services.home_decision import CapacityDecision
 from capa_simulation.services.month_columns import month_label
@@ -69,11 +70,13 @@ def render_home_capacity_decision(
         f"background:{tone};color:{tokens.TEXT};padding:0 0.3em;border-radius:4px;"
         "box-decoration-break:clone;-webkit-box-decoration-break:clone"
     )
+    # 확보율 칸만 큰 숫자 서체(`typography.FIGURE_CLASS` — Archivo 700 · 숫자 폭 고정)다.
+    # 공정·월 칸은 공정 이름(한글이 섞인다)이라 본문 서체로 둔다.
     with st.container(border=True, key="home_capacity_decision"):
         st.markdown(
             f"가장 낮은 확보율은 "
             f'<b style="{chip}">{html.escape(name)} · {month}</b> 입니다 — '
-            f'<b style="{chip}">{rate:.1%}</b>',
+            f'<b class="{FIGURE_CLASS}" style="{chip}">{rate:.1%}</b>',
             unsafe_allow_html=True,
         )
         # 「몇 건이 미달인가」는 「몇 건을 봤는가」 없이는 뜻이 없다. 분모를 함께 적는다.

@@ -9,9 +9,10 @@ APP_NAME = "S.PKG Capa Simulation"
 # 있으면 선택기의 허용 범위를 넓혀, 머지·연도 이동으로 만든 기간도 조회하게 한다.
 MONTH_SELECTION_START = 202501
 MONTH_SELECTION_END = 203012
-# 앱을 누가 만들었고 어떤 인증으로 배포되는지 알리는 메타다. 보여 주는 곳은 머리 띠
-# (`components/app_header.py`) 한 곳이다 — ⋮ 메뉴(About)는 감춘다. 담당 조직과 문의처는 실제
-# 값이고 인증번호는 아직 자리만 잡아 둔 표본이라, 사내 배포 전에 실제 값으로 바꾼다.
+# 앱을 누가 만들었고 어떤 인증으로 배포되는지 알리는 메타다. 보여 주는 곳은 Admin Area 맨
+# 아래(`components/app_credits.py`) 한 곳이다 — ⋮ 메뉴(About)는 감추고, 머리 띠는 적용 중인
+# 시나리오를 싣는다. 담당 조직과 문의처는 실제 값이고 인증번호는 아직 자리만 잡아 둔 표본이라,
+# 사내 배포 전에 실제 값으로 바꾼다.
 APP_VERSION = "0.9.0-demo"
 APP_BUILD_DATE = "2026-09-08"
 APP_OWNER_TEAM = "S.PKG 제조팀"

@@ -9,7 +9,7 @@ from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 from capa_simulation.components.app_header import render_app_header, render_shell_style
 from capa_simulation.components.equipment_data_workspace import has_unsaved_equipment_edits
 from capa_simulation.components.intro_overlay import render_intro_overlay
-from capa_simulation.components.intro_summary import render_intro_summary, summary_toolbar_script
+from capa_simulation.components.intro_summary import render_intro_summary, summary_label_script
 from capa_simulation.components.month_range_picker import render_month_range_picker
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
 from capa_simulation.components.print_button import print_toolbar_script
@@ -21,6 +21,7 @@ from capa_simulation.components.scenario_status import (
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.components.theme_toggle import render_theme_toggle, unsaved_edits_marker
+from capa_simulation.components.typography import render_typography_style
 from capa_simulation.design import theme
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.navigation import CONDITIONS_SECTION, PageSpec, build_navigation_pages
@@ -100,7 +101,7 @@ st.set_page_config(
     page_icon=":material/factory:",
     layout="wide",
     # `menu_items` 는 적지 않는다. ⋮ 메뉴는 통째로 감추고(`render_shell_style`), 개발자·인증 정보는
-    # 머리 띠(`render_app_header`)가 보여 준다.
+    # Admin Area 맨 아래(`components/app_credits.py`)가 보여 준다.
 )
 # 사이드바 상자를 여닫을 때 앱 전체 대신 다시 도는 빈 프래그먼트와, 이번 실행이 끝까지
 # 돌았는지의 표지(`sidebar_status.on_box_toggle`). 프래그먼트는 `st.stop()` 이 걸릴 수 있는
@@ -119,9 +120,9 @@ render_intro_overlay()
 # 헤더 오른쪽 Deploy 왼쪽 자리에 밝게/어둡게 버튼을 얹는다. Streamlit 이 테마를 기억하는 자리를
 # 그대로 쓰므로 위젯과 우리 Figure 가 함께 바뀐다. 테마를 바꾸는 길은 이 버튼 하나다(⋮ 메뉴는
 # 감춘다). 그 왼쪽의 `Guide` 버튼도 같은 iframe 에 싣는다. 기본은 감춰 두고 가이드를 단 페이지만
-# 보이게 한다. 맨 왼쪽의 `Summary` 는 원래 화면에서 공식버전 요약으로 돌아오는 단추다 — 요약이
-# 준비된 뒤에만 입장 화면 JS 가 보이게 한다. 테마 버튼 바로 오른쪽의 `Print` 는 감춘 메뉴의
-# 인쇄를 대신한다.
+# 보이게 한다. 테마 버튼 바로 오른쪽의 `Print` 는 감춘 메뉴의 인쇄를 대신한다. 사이드바
+# 머리칸의 `S.PKG CAPA` 라벨도 같은 iframe 이 세운다 — 원래 화면에서 공식버전 요약(Summary)으로
+# 돌아오는 길이고, 요약이 준비돼야 입장 화면 JS 가 누를 수 있게 한다.
 #
 # **입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
 # 스크립트가 새로고침하고 그 세션은 버려진다. 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기
@@ -130,9 +131,12 @@ render_intro_overlay()
 # 머리 띠(`render_app_header`)는 부트스트랩 뒤라, 거기에 두면 부트스트랩 오류 화면에 메뉴가
 # 남고 그 화면을 인쇄하면 사이드바가 찍히며, 새로 읽을 때마다 메뉴가 잠깐 보였다 사라진다.
 render_shell_style()
+# 페이지 제목·상자 제목·큰 숫자의 Archivo 부분 글꼴(정적 서빙)과 그 자리 규칙. 색이 없는 고정
+# 문자열이라 테마와 무관하고, 부트스트랩 오류 화면의 제목도 같은 서체로 서도록 여기서 보낸다.
+render_typography_style()
 render_guide_base_style()
 render_theme_toggle(
-    extra_scripts=(guide_toolbar_script(), summary_toolbar_script(), print_toolbar_script())
+    extra_scripts=(guide_toolbar_script(), summary_label_script(), print_toolbar_script())
 )
 
 # managed 모드에서만 동기화 표시를 켠다. local 모드(개발 PC·기본값)에서는 아무 일도 하지
@@ -152,6 +156,9 @@ with pinned_connections(DUCKDB_PATH):
         # DuckDB 파일은 프로세스 배타 잠금이다. 서버가 이미 떠 있는데 한 번 더 실행하면
         # 화면이 한 줄도 그려지기 전에 예외가 그대로 노출되고, Windows 로캘 탓에 원본
         # 메시지의 한글이 깨져 나온다. 사용자가 원인을 알 방법이 없어 안내로 바꾼다.
+        # 머리 띠도 이 화면에 세운다 — 아래 `st.stop()` 뒤의 자리에는 닿지 않는다. 세션만 읽으므로
+        # 실패한 부트스트랩을 다시 건드리지 않고, 올라온 시나리오가 없으면 앱 이름 한 줄이다.
+        render_app_header()
         st.error(bootstrap_error_message(exc), icon=":material/database_off:")
         with st.expander("원본 오류"):
             st.code(f"{type(exc).__name__}: {exc}")
@@ -186,6 +193,7 @@ with pinned_connections(DUCKDB_PATH):
         # 있으면 묻게 표지를 단다 — 어느 페이지에서 눌러도 같은 표지를 본다.
         + unsaved_edits_marker(has_unsaved_scenario_changes() or has_unsaved_equipment_edits())
     )
+    # 머리 띠의 「공식 vN」은 위 요약이 이 회차에 확인한 값을 읽는다 — 요약보다 뒤여야 한다.
     render_app_header()
     with st.sidebar.container(key="home_navigation"):
         st.page_link(pages.home, width="stretch")

@@ -1,4 +1,4 @@
-# Purpose: Admin Area 페이지와 Proc Rename 탭의 렌더링·저장 흐름을 검증한다.
+# Purpose: Admin Area 페이지와 Proc Rename 탭의 렌더링·저장 흐름, 맨 아래 앱 정보를 검증한다.
 
 from pathlib import Path
 
@@ -48,6 +48,10 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
     assert not any(area.label == "공정 표시명 표 붙여넣기" for area in app.text_area)
     assert app.button(key="admin_area_process_rename_open_paste")
     assert any("공용 버전 없음" in caption.value for caption in app.caption)
+    # 앱 이름·버전·개발자·인증 정보는 머리 띠가 아니라 이 화면 맨 아래 작은 글이다(2026-10-06).
+    from capa_simulation.components.app_credits import credit_lines
+
+    assert app.caption[-1].value == "  \n".join(credit_lines())
 
 
 def _rename_component_script(database_path: Path) -> str:

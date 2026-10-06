@@ -1,6 +1,6 @@
-# Purpose: 최신 공식버전의 6개월 요약을 입장 화면에 미리 보내고 툴바 Summary 단추를 세운다.
+# Purpose: 최신 공식버전의 6개월 요약을 입장 화면에 미리 보내고 사이드바 S.PKG CAPA 라벨을 세운다.
 
-"""입장 화면 `Summary` 의 데이터와 툴바 단추.
+"""입장 화면 `Summary` 의 데이터와 그것을 여는 사이드바 라벨.
 
 **선제 로딩.** 요약은 입장 화면의 로딩에 포함된다(2026-10-02 사용자 결정). `app.py` 가 공식
 시나리오 부트스트랩 바로 뒤, 페이지를 그리기 **전**에 `render_intro_summary` 를 부른다. 그 회차의
@@ -29,10 +29,14 @@ Detail 만 남긴다. 데이터 오류로 만들지 못한 결과는 서버 캐�
 (고치려면 새 공식버전을 지정해야 하고 그때 키가 바뀐다). DB 잠금 같은 일시적 실패는 남기지 않고
 다음 확인 때(`RECHECK_SECONDS` 뒤) 다시 해 본다.
 
-**툴바 단추.** 원래 화면에서 요약으로 돌아오는 `Summary` 는 Guide 처럼 테마 버튼 iframe 의
-스크립트(`summary_toolbar_script`)가 툴바에 끼워 넣고 칠한다 — Guide 와 같은 윤곽 단추에 앱 색 16px
-웨이퍼. 보임과 눌렀을 때의 동작은 입장 화면 JS(`window.__capaIntro`)가 맡는다 — 요약 데이터와 장면을
-가진 쪽이다.
+**최신 공식버전을 함께 기억한다.** 공식버전을 확인할 때 본 그 리비전 id·번호를 세션에 같이
+둔다(`latest_official_revision`). 머리 띠(`app_header`)가 「공식 vN」을 적을 때 그것만 읽어
+회차마다 DB 를 다시 보지 않는다.
+
+**사이드바 라벨.** 원래 화면에서 요약으로 돌아오는 길은 사이드바 머리칸의 `S.PKG CAPA` 라벨이다
+(2026-10-06 사용자 결정 — 툴바의 `Summary` 단추를 걷었다). 테마 버튼 iframe 의 스크립트
+(`summary_label_script`)가 머리칸에 끼워 넣고 칠한다. 누를 수 있는지와 눌렀을 때의 동작은 입장 화면
+JS(`window.__capaIntro`)가 맡는다 — 요약 데이터와 장면을 가진 쪽이다.
 """
 
 from __future__ import annotations
@@ -45,10 +49,15 @@ from typing import Any
 import duckdb
 import streamlit as st
 
-from capa_simulation.components.intro_overlay import SUMMARY_LABEL
-from capa_simulation.components.page_guide import BUTTON_ID as GUIDE_BUTTON_ID
+from capa_simulation.components.intro_overlay import (
+    BRAND,
+    SUMMARY_LABEL,
+    SUMMARY_LABEL_ARIA,
+    SUMMARY_LABEL_ID,
+    SUMMARY_LABEL_WAITING,
+)
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.theme_toggle import THEME_BUTTON_ID, TOOLBAR_SLOT
+from capa_simulation.components.theme_toggle import SIDEBAR_HEADER_SLOT
 from capa_simulation.design import tokens
 from capa_simulation.io.reference_cache import reference_version_for_revision
 from capa_simulation.persistence.cache import (
@@ -76,8 +85,6 @@ from capa_simulation.services.threshold_label import threshold_percent_label
 
 # 컴포넌트 칸의 key 이자 숨김 규칙의 훅.
 INTRO_SUMMARY_KEY = "capa_intro_summary"
-# 툴바 단추 id. 입장 화면 JS 의 `SUMMARY_BUTTON_ID` 와 같아야 한다(테스트가 잡는다).
-SUMMARY_BUTTON_ID = "capa-summary-button"
 # 이 세션이 마지막으로 보낸 요약과 그때 확인한 시각. HOME 이 주 업무 화면이라 이 부가
 # 기능이 HOME 의 회차를 무겁게 하면 안 된다(2026-10-03 사용자 결정). 그래서 같은 세션의
 # 회차는 이 값을 그대로 보내고, 공식버전이 바뀌었는지는 `RECHECK_SECONDS` 에 한 번만
@@ -250,11 +257,24 @@ class _Transient(Exception):
     """이번 확인이 일시적 실패로 끝났다. 세션이 들고 있던 값을 지우지 않는다."""
 
 
-def _look_up(database_path: str) -> dict[str, Any]:
+def _official_identity(release: OfficialReleaseSummary | None) -> dict[str, Any] | None:
+    if release is None:
+        return None
+    return {"revision_id": release.revision_id, "release_no": release.release_no}
+
+
+def _look_up(database_path: str) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """보낼 요약과, 그때 본 최신 공식버전(리비전 id·번호 — 없으면 `None`).
+
+    공식버전을 읽은 뒤의 실패로 요약을 만들지 못해도 공식버전 자체는 돌려준다 — 머리 띠의
+    「공식 vN」과 사이드바 배지가 서로 다른 말을 하지 않게 한다.
+    """
+    identity: dict[str, Any] | None = None
     try:
         release = get_scenario_repository(database_path).latest_official_release()
         if release is None:
-            return _unavailable("공식버전이 아직 없습니다.")
+            return _unavailable("공식버전이 아직 없습니다."), None
+        identity = _official_identity(release)
         # 판정 기준은 공용 프로필이다(시나리오 프리셋 값이 아니다). 키에는 version 이 아니라 **내용
         # 지문**을 넣는다 — 저장 전에는 version 이 0 이지만 기본값은 최신 공식버전 프리셋을 따른다.
         thresholds = load_global_securement_threshold(database_path).thresholds
@@ -266,13 +286,17 @@ def _look_up(database_path: str) -> dict[str, Any]:
             get_process_labels().version,
             thresholds.digest,
         )
-        return get_intro_summary_payload(
+        payload = get_intro_summary_payload(
             cache_key, _build=lambda: _build_or_unavailable(database_path, release, thresholds)
         )
+        return payload, identity
     except _TRANSIENT_ERRORS as exc:
         raise _Transient(f"{type(exc).__name__}: {exc}") from exc
     except Exception as exc:  # 모든 페이지 앞이다 — 어떤 실패든 이 화면 하나로 끝내야 한다
-        return _unavailable(f"공식버전 요약을 만들지 못했습니다: {type(exc).__name__}: {exc}")
+        return (
+            _unavailable(f"공식버전 요약을 만들지 못했습니다: {type(exc).__name__}: {exc}"),
+            identity,
+        )
 
 
 def official_summary_data(database_path: str) -> dict[str, Any]:
@@ -290,17 +314,38 @@ def official_summary_data(database_path: str) -> dict[str, Any]:
     ):
         return dict(held["data"])
     try:
-        data = _look_up(database_path)
+        data, official = _look_up(database_path)
     except _Transient as exc:
-        # DB 잠금 같은 일시적 실패로 멀쩡한 요약을 지우지 않는다(지우면 툴바 Summary 가
-        # 사라진다). 들고 있던 값을 그대로 두고, 다음 확인도 `RECHECK_SECONDS` 뒤에 한다 —
+        # DB 잠금 같은 일시적 실패로 멀쩡한 요약을 지우지 않는다(지우면 사이드바 라벨이 Summary
+        # 를 열지 못한다). 들고 있던 값을 그대로 두고, 다음 확인도 `RECHECK_SECONDS` 뒤에 한다 —
         # HOME 회차는 그대로 가볍다.
         kept = held.get("data") if isinstance(held, dict) else None
         data = (
             kept if isinstance(kept, dict) else _unavailable(f"공식버전을 읽지 못했습니다: {exc}")
         )
-    st.session_state[_SESSION_KEY] = {"checked_at": now, "data": data}
+        kept_official = held.get("official") if isinstance(held, dict) else None
+        official = kept_official if isinstance(kept_official, dict) else None
+    st.session_state[_SESSION_KEY] = {"checked_at": now, "data": data, "official": official}
     return dict(data)
+
+
+def latest_official_revision() -> tuple[str, int] | None:
+    """이 세션이 마지막으로 확인한 최신 공식버전의 (리비전 id, 공식버전 번호). 모르면 `None`.
+
+    `official_summary_data` 가 요약과 함께 `RECHECK_SECONDS` 에 한 번 본 값을 세션에서만 읽는다 —
+    머리 띠가 「공식 vN」을 적으려고 회차마다 DB 를 보지 않게 한다. `app.py` 는 요약을 머리 띠보다
+    먼저 보내므로 같은 회차의 값이다. 이 세션에서 공식버전을 지정하면 `forget_intro_summary_check`
+    로 다음 회차에 곧바로 다시 본다.
+    """
+    held = st.session_state.get(_SESSION_KEY)
+    official = held.get("official") if isinstance(held, dict) else None
+    if not isinstance(official, dict):
+        return None
+    revision_id = official.get("revision_id")
+    release_no = official.get("release_no")
+    if not isinstance(revision_id, str) or not isinstance(release_no, int):
+        return None
+    return revision_id, release_no
 
 
 def forget_intro_summary_check() -> None:
@@ -317,107 +362,154 @@ def render_intro_summary(database_path: str) -> None:
     _SUMMARY(key=INTRO_SUMMARY_KEY, data=official_summary_data(database_path))
 
 
-_TOOLBAR_SCRIPT = """
+# 사이드바 머리칸의 `S.PKG CAPA` 라벨. 누르면 Summary 가 열린다. 테마 버튼 iframe 에 실려 한
+# 번만 돈다.
+#
+# - **자리**: 사이드바 머리칸(`theme_toggle.SIDEBAR_HEADER_SLOT`) 맨 앞. 오른쪽 끝은 접기
+#   버튼이다. 머리칸은 React 가 다시 그릴 수 있어 라벨이 빠지면 다시 끼운다(관찰자를 끊지
+#   않는다 — 하는 일은 id 조회 한 번이다).
+# - **색**: 앱 테마를 따른다(입장 화면·Summary 와 달리). 두 테마의 스타일을 모두 싣고 테마
+#   버튼과 같은 규칙(`capaTheme.resolve`)으로 하나를 고른다 — iframe 내용은 회차마다 같아야
+#   한다(`theme_toggle`). 테마를 바꾸면 새로고침이라 한 번 고르면 된다.
+# - **누를 수 있는가**: 입장 화면 JS(`window.__capaIntro.decorate`)가 정한다 — 요약 데이터를
+#   가진 쪽이다. 누를 수 없을 때는 `aria-disabled` 와 풍선(`title`)에 까닭을 단다. 초점은
+#   받는다(Tab 으로 까닭을 읽을 수 있게). 입장 화면 JS 가 아직 없으면 준비 중으로 선다.
+# - **글꼴**: 입장 화면 워드마크와 같은 Archivo 800 · 폭 75% 부분 글꼴. 입장 화면 JS 가 본
+#   문서에 등록한 `CapaIntroDisplay` 를 그대로 쓴다(파일을 두 번 싣지 않는다). `S.PKG CAPA` 는
+#   그 부분 글꼴의 글자 목록(`intro_overlay.FONT_SUBSET_TEXT`)에 들어 있다.
+_LABEL_SCRIPT = """
 (function () {
   var parentWindow = window.parent;
   if (!parentWindow || parentWindow === window) return;
   var doc = parentWindow.document;
 
-  // 테마는 테마 버튼과 같은 키 규칙(같은 iframe 맨 앞의 `capaTheme`)으로 읽는다. 바꾸면 그 버튼이
-  // 새로고침하므로 한 번 읽으면 된다.
   function dark() {
     return typeof capaTheme !== "undefined" && capaTheme.resolve(parentWindow).choice === "Dark";
+  }
+
+  function addStyle() {
+    if (doc.getElementById("%(id)s-style")) return;
+    var style = doc.createElement("style");
+    style.id = "%(id)s-style";
+    style.textContent = dark() ? %(dark)s : %(light)s;
+    (doc.head || doc.body).appendChild(style);
   }
 
   function place() {
     var slot = doc.querySelector('%(slot)s');
     if (!slot) return false;
-    var button = doc.getElementById("%(id)s");
-    if (!button) {
-      var colors = dark() ? %(dark)s : %(light)s;
-      button = doc.createElement("button");
-      button.id = "%(id)s";
-      button.type = "button";
-      button.innerHTML = colors.icon + "<span>%(label)s</span>";
-      button.title = "공식버전 요약 보기";
-      button.setAttribute("aria-label", button.title);
-      // Guide 와 같은 윤곽 단추(본문 글꼴 13px/600 · 모서리 8px · 높이 27px)에 16px 웨이퍼 하나.
-      // `display:none` 은 **맨 끝**이다 — 요약이 준비되면 입장 화면 JS 가 보이게 한다.
-      button.style.cssText = [
-        "font:inherit", "font-size:13px", "font-weight:600", "line-height:1",
-        "align-items:center", "gap:6px", "box-sizing:border-box", "height:27px",
-        "padding:0 12px 0 8px", "margin-right:6px", "border-radius:8px", "cursor:pointer",
-        "white-space:nowrap", "background:transparent",
-        "border:1px solid " + colors.border, "color:" + colors.text, "display:none"
-      ].join(";");
-      button.onclick = function () {
+    addStyle();
+    var label = doc.getElementById("%(id)s");
+    if (!label) {
+      label = doc.createElement("button");
+      label.id = "%(id)s";
+      label.type = "button";
+      label.innerHTML = %(icon)s
+        + '<span class="capa-brand-word">%(brand)s</span>'
+        + '<span class="capa-brand-hint">%(hint)s</span>';
+      label.setAttribute("aria-label", "%(aria)s");
+      label.setAttribute("aria-disabled", "true");
+      label.title = "%(waiting)s";
+      label.onclick = function () {
+        if (label.getAttribute("aria-disabled") === "true") return;
         var api = parentWindow.__capaIntro;
-        if (api && typeof api.openSummary === "function") api.openSummary(button);
+        if (api && typeof api.openSummary === "function") api.openSummary(label);
       };
-      // Guide·테마 버튼보다 **왼쪽**에 선다.
-      var first = doc.getElementById("%(guide)s") || doc.getElementById("%(theme)s");
-      slot.insertBefore(button, first || slot.firstChild);
     }
+    if (label.parentNode !== slot) slot.insertBefore(label, slot.firstChild);
     var api = parentWindow.__capaIntro;
-    if (api && typeof api.decorate === "function") api.decorate(button);
+    if (api && typeof api.decorate === "function") api.decorate(label);
     return true;
   }
 
-  if (place()) return;
+  place();
   var observer = new parentWindow.MutationObserver(function () {
-    if (place()) observer.disconnect();
+    var slot = doc.querySelector('%(slot)s');
+    if (!slot) return;
+    var label = doc.getElementById("%(id)s");
+    if (!label || label.parentNode !== slot) place();
   });
   observer.observe(doc.body, { childList: true, subtree: true });
-  parentWindow.setTimeout(function () { observer.disconnect(); }, 8000);
 })();
 """
 
+# 사이드바 머리칸 띠(`app_header`)는 높이 3.75rem 이다. 라벨은 그 안에 한 줄로 선다. 오른쪽 끝
+# 접기 버튼 자리(28px + 틈 — 2.25rem)는 비우고, 사이드바를 좁게 끌면 안내 글자부터 줄어든다.
+_LABEL_CSS = """
+#__ID__ {
+  display: inline-flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0;
+  max-width: calc(100% - 2.25rem); height: 34px; margin: 0 auto 0 0; padding: 0 8px 0 6px;
+  box-sizing: border-box; border: 1px solid transparent; border-radius: 8px;
+  background: transparent; color: __TEXT__; cursor: pointer; white-space: nowrap; overflow: hidden;
+  font-family: __FONT_FAMILY__;
+}
+#__ID__ svg { width: 22px; height: 22px; flex: none; display: block; }
+#__ID__ .capa-brand-word {
+  font-family: "CapaIntroDisplay", __FONT_FAMILY__; font-weight: 800; font-stretch: 75%;
+  font-size: 19px; line-height: 1; letter-spacing: 0.01em; flex: none;
+}
+#__ID__ .capa-brand-hint {
+  font-size: 11px; font-weight: 600; color: __TEXT_MUTED__; overflow: hidden;
+  text-overflow: ellipsis; min-width: 0;
+}
+#__ID__:hover:not([aria-disabled="true"]) { background: __SURFACE__; border-color: __BORDER__; }
+#__ID__:hover:not([aria-disabled="true"]) .capa-brand-hint { color: __ACCENT__; }
+#__ID__:focus-visible { outline: 2px solid __ACCENT__; outline-offset: 2px; }
+#__ID__[aria-disabled="true"] { cursor: not-allowed; }
+#__ID__[aria-disabled="true"] .capa-brand-hint { opacity: 0.6; }
+"""
 
-def _toolbar_icon(ring: str, die: str) -> str:
-    """툴바용 16px 웨이퍼. 입장 화면 심볼(9칸)은 16px 에서 뭉개지고 가운데 주황은 앱에서 「경고」라,
-    노치 있는 링과 2×2 다이로 다시 그려 앱 색으로 칠한다."""
+
+def _label_icon() -> str:
+    """입장 화면 심볼과 같은 모양 — 노치 있는 링과 3×3 다이(`intro.js` 의 `waferLogo`). 링은 글자색,
+    다이는 앱 강조색이다. 가운데 다이도 강조색이다 — 앱에서 주황은 「경고」라 입장 화면처럼 칠하지
+    않는다."""
     dies = "".join(
-        f'<rect x="{x}" y="{y}" width="2.7" height="2.7" rx="0.5" fill="{die}"/>'
-        for y in (4.9, 8.4)
-        for x in (4.9, 8.4)
+        f'<rect x="{x}" y="{y}" width="13" height="13" rx="2" fill="var(--capa-brand-die)"/>'
+        for y in (27, 43.5, 60)
+        for x in (27, 43.5, 60)
     )
     return (
-        '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" '
-        'style="display:block;flex:none">'
-        f'<path d="M9 14.3 A6.4 6.4 0 1 0 7 14.3" fill="none" stroke="{ring}" '
-        'stroke-width="1.5" stroke-linecap="round"/>'
+        '<svg viewBox="0 0 100 100" aria-hidden="true">'
+        '<path d="M53 93.9 A44 44 0 1 0 47 93.9 L50 90.6 Z" fill="none" '
+        'stroke="currentColor" stroke-width="6"/>'
         f"{dies}</svg>"
     )
 
 
-def _toolbar_colors(mode: str) -> str:
+def _label_css(mode: str) -> str:
     def value(name: str) -> str:
         return str(tokens.palette_value(mode, name))
 
-    return json.dumps(
-        {
-            "border": value("BORDER"),
-            "text": value("TEXT"),
-            "icon": _toolbar_icon(value("TEXT_MUTED"), value("ACCENT")),
-        }
+    css = (
+        _LABEL_CSS.replace("__ID__", SUMMARY_LABEL_ID)
+        .replace("__FONT_FAMILY__", tokens.FONT_FAMILY)
+        .replace("__TEXT_MUTED__", value("TEXT_MUTED"))
+        .replace("__TEXT__", value("TEXT"))
+        .replace("__SURFACE__", value("SURFACE"))
+        .replace("__BORDER__", value("BORDER"))
+        .replace("__ACCENT__", value("ACCENT"))
     )
+    return css + f"#{SUMMARY_LABEL_ID} {{ --capa-brand-die: {value('ACCENT')}; }}\n"
 
 
-def summary_toolbar_script() -> str:
-    """툴바에 `Summary` 단추를 세우고 칠하는 스크립트. 테마 버튼 iframe 에 Guide 와 함께 싣는다.
+def summary_label_script() -> str:
+    """사이드바 머리칸에 `S.PKG CAPA` 라벨을 세우는 스크립트. 테마 버튼 iframe 에 Guide·Print
+    와 함께 싣는다.
 
-    **Guide 와 같은 윤곽 단추**에 앱 색으로 다시 그린 16px 웨이퍼 하나를 더한 모양이다(2026-10-03
-    사용자 결정 — 입장 화면 옷을 입은 검은 알약이 툴바와 결이 맞지 않았다). 두 테마 값을 모두 싣고
-    테마 버튼과 같은 키 규칙(`theme_toggle.THEME_RULE_SCRIPT`)으로 고른다 — iframe 내용은 회차마다
-    같아야 하므로(`theme_toggle`) 지금 테마를 따라 바뀌는 토큰을 넣지 않는다. 보임과 눌렀을 때의
-    동작은 입장 화면 JS 가 맡는다.
+    툴바의 `Summary` 단추를 대신한다(2026-10-06 사용자 결정 — 툴바는 Guide·테마·Print). 누르면 그
+    단추가 하던 일 그대로 입장 화면 JS 의 `openSummary` 를 부르고, Summary 를 닫으면 초점이 라벨로
+    돌아온다(`openFromApp` 이 연 단추를 기억한다). iframe 내용은 회차마다 같아야 하므로 두 테마의
+    스타일을 모두 싣고 테마 버튼과 같은 키 규칙으로 고른다.
     """
-    return _TOOLBAR_SCRIPT % {
-        "id": SUMMARY_BUTTON_ID,
-        "guide": GUIDE_BUTTON_ID,
-        "theme": THEME_BUTTON_ID,
-        "label": SUMMARY_LABEL,
-        "light": _toolbar_colors("light"),
-        "dark": _toolbar_colors("dark"),
-        "slot": TOOLBAR_SLOT,
+    return _LABEL_SCRIPT % {
+        "id": SUMMARY_LABEL_ID,
+        "slot": SIDEBAR_HEADER_SLOT,
+        "icon": json.dumps(_label_icon()),
+        "brand": BRAND,
+        "hint": SUMMARY_LABEL,
+        "aria": SUMMARY_LABEL_ARIA,
+        "waiting": SUMMARY_LABEL_WAITING,
+        "light": json.dumps(_label_css("light")),
+        "dark": json.dumps(_label_css("dark")),
     }

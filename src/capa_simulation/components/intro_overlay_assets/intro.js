@@ -24,8 +24,8 @@
 const HOST_ID = "capa-intro-host";
 const FONT_FAMILY = "CapaIntroDisplay";
 const NUMBER_FAMILY = "CapaIntroNumber";
-// 툴바 Summary 단추 id. `intro_summary.SUMMARY_BUTTON_ID` 와 같아야 한다.
-const SUMMARY_BUTTON_ID = "capa-summary-button";
+// 사이드바 머리칸의 S.PKG CAPA 라벨 id. `intro_overlay.SUMMARY_LABEL_ID` 와 같아야 한다.
+const SUMMARY_LABEL_ID = "capa-brand-label";
 // 이 탭에서 이미 들어갔다는 표시. 테마 버튼·새로고침은 새 세션을 만들지만 같은 탭이라 다시 띄우지 않는다.
 const ENTERED_KEY = "capa-intro-entered";
 const EASE = "cubic-bezier(.6,0,0,1)";
@@ -109,8 +109,12 @@ function release() {
   }
   const host = document.getElementById(HOST_ID);
   if (host) host.remove();
-  const button = document.getElementById(SUMMARY_BUTTON_ID);
-  if (button) button.style.display = "none";
+  // 사이드바 라벨은 남겨 두고 누를 수 없게만 한다 — 라벨은 앱 이름이기도 하다.
+  const label = document.getElementById(SUMMARY_LABEL_ID);
+  if (label) {
+    label.setAttribute("aria-disabled", "true");
+    label.title = (state && state.offTitle) || "";
+  }
   setInert(false);
 }
 
@@ -125,7 +129,7 @@ function setInert(on) {
   }
 }
 
-// HTML 글자(타이틀·라벨·단추·툴바 Summary)가 쓰는 글꼴. 워커는 따로 받는다(`fontBuffers`).
+// HTML 글자(타이틀·라벨·단추·사이드바 S.PKG CAPA 라벨)가 쓰는 글꼴. 워커는 따로 받는다(`fontBuffers`).
 function registerFont() {
   if (!document.fonts || typeof FontFace === "undefined") return;
   const have = new Set([...document.fonts].map((face) => face.family.replace(/"/g, "")));
@@ -1248,19 +1252,29 @@ function boot(api, data) {
     return overlay;
   };
 
-  // 툴바 Summary 단추. 테마 버튼 iframe 의 스크립트가 세우고 칠한다(intro_summary.summary_toolbar_script).
-  // 여기서는 보임만 정한다 — 요약이 있고 오버레이가 감춰져 있을 때만 선다.
+  // 사이드바 S.PKG CAPA 라벨. 테마 버튼 iframe 의 스크립트가 세우고 칠한다
+  // (intro_summary.summary_label_script). 여기서는 누를 수 있는지와 풍선만 정한다 — 라벨은 앱 이름이기도
+  // 해서 늘 보인다. 요약이 있으면 누를 수 있고, 없으면 그 까닭을 풍선에 단다.
+  const text = data.text || {};
+  api.offTitle = text.label_off || "";
+  let received = false;
+  let reason = "";
   function syncToolbar() {
-    const button = document.getElementById(SUMMARY_BUTTON_ID);
-    if (!button) return;
-    const show = !api.done && !!summary && (!overlay || !overlay.visible);
-    button.style.display = show ? "inline-flex" : "none";
+    const label = document.getElementById(SUMMARY_LABEL_ID);
+    if (!label) return;
+    const can = !api.done && !!summary;
+    label.setAttribute("aria-disabled", can ? "false" : "true");
+    if (can) label.title = text.label_open || "";
+    else if (api.done) label.title = text.label_off || "";
+    else label.title = received ? reason || text.label_off || "" : text.label_waiting || "";
   }
 
   api.setSummary = (payload) => {
     summary = payload && payload.available ? payload : null;
+    received = true;
+    reason = payload && !payload.available && payload.reason ? String(payload.reason) : "";
     // 요약이 없어 걷었던 오버레이(공식버전 계산 실패 뒤 Detail 등)는 새 요약이 오면 감춘 채 다시
-    // 만든다 — 그래야 새로고침 없이 툴바 Summary 가 살아난다.
+    // 만든다 — 그래야 새로고침 없이 사이드바 라벨이 Summary 를 다시 연다.
     if (summary && api.done) {
       api.done = false;
       overlay = null;
@@ -1408,7 +1422,7 @@ function createOverlay(api, data, initial, syncToolbar) {
   /* ------------------------------------------------ 상태: intro(입장) · summary(요약) · hidden(감춤) */
   let mode = intro ? "intro" : "hidden";
   let busy = false;
-  // 툴바 Summary 로 연 요약을 닫으면 포커스를 그 단추로 돌려준다. 돌려주지 않으면 body 에 남아
+  // 사이드바 라벨로 연 요약을 닫으면 포커스를 그 라벨로 돌려준다. 돌려주지 않으면 body 에 남아
   // 키보드 사용자가 제자리를 잃었다(Guide 는 돌려준다, 2026-10-05 E2E).
   let opener = null;
   const t0 = performance.now();
@@ -1758,7 +1772,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     const at = absoluteNow();
     sceneHandle.post({ type: "summary-on", at, charts: at + SUMMARY_TIMING.openChartsAt, rows: SUMMARY_TIMING.rows, look: SUMMARY_LOOK, instant: true, fromApp: true });
     scheduleLabels(SUMMARY_TIMING.openChartsAt);
-    // 화면이 Summary 단추 속으로 접히며 뒤의 요약이 드러난다.
+    // 화면이 사이드바 라벨 속으로 접히며 뒤의 요약이 드러난다.
     if (reduce) await anim(stage, [{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: "linear" });
     else await anim(stage, [{ "--capa-hole": `${radius}px` }, { "--capa-hole": "0px" }], { duration: FOLD_MS });
     stage.classList.remove("masked");

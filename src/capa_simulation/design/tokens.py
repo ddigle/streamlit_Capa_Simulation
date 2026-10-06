@@ -510,6 +510,11 @@ INTRO_PALETTE: Final[Mapping[str, str]] = MappingProxyType(
 # 깨진다. 폴백 스택을 반드시 함께 넘긴다.
 FONT_FAMILY: Final = "Noto Sans KR, Malgun Gothic, 'Apple SD Gothic Neo', sans-serif"
 FONT_FAMILY_NUMERIC: Final = "Calibri, " + FONT_FAMILY
+# 페이지 제목·상자 제목·큰 숫자(B 균형형, 2026-10-06 사용자 결정). 영문·숫자는 앱에 넣은 Archivo
+# 부분 글꼴(`components/typography.py` 가 `@font-face` 로 등록 — 인쇄 가능한 ASCII 만 든다)이고,
+# 한글은 그 뒤 `FONT_FAMILY` 로 떨어진다. 이름에 따옴표를 쓰지 않아 인라인 `style="..."` 에도
+# 들어간다.
+FONT_FAMILY_DISPLAY: Final = "CapaDisplay, " + FONT_FAMILY
 # 증감(+-) 표기는 화면 어디에서나 이 한 크기를 쓴다. 표 칸 12, 막대 13, 세부수량 10 으로
 # 갈려 있던 탓에 같은 뜻의 글자가 자리마다 달라 보였다.
 DELTA_FONT_SIZE_PX: Final = 12

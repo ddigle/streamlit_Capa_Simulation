@@ -44,6 +44,7 @@ from capa_simulation.scenario_activation import (
     active_persisted_scenario_id,
     clear_persisted_scenario_activation,
     has_unsaved_scenario_changes,
+    rename_active_scenario_label,
 )
 from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.scenario_state import (
@@ -432,6 +433,8 @@ def _render_rename(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     # 스냅샷 payload 는 시나리오명을 함께 담는다. 비우지 않으면 그 리비전에서 파생한 시나리오의
     # 원천명·출처 메모에 옛 이름이 남는다.
     clear_scenario_snapshot_cache()
+    # 머리 띠의 시나리오명은 활성화 때 떠 둔 값이다. 올라와 있는 시나리오면 같이 바꾼다.
+    rename_active_scenario_label(summary.scenario_id, renamed_summary.scenario_name)
     st.session_state[FLASH_KEY] = (
         f"시나리오명을 {with_direction_particle(renamed_summary.scenario_name)} 변경했습니다."
     )

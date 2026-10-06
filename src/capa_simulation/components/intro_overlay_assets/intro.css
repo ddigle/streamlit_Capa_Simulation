@@ -21,7 +21,7 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* Detail 로 들어갈 때는 누른 단추에서 구멍이 퍼지고, 툴바 Summary 로 돌아올 때는 그 단추로 구멍이
+/* Detail 로 들어갈 때는 누른 단추에서 구멍이 퍼지고, 사이드바 라벨로 돌아올 때는 그 라벨로 구멍이
    좁혀진다. 구멍 반지름은 intro.js 가 등록한 `--capa-hole` 이다. */
 .stage.masked {
   -webkit-mask-image: radial-gradient(

@@ -17,7 +17,7 @@
 Streamlit 1.63 은 그 키를 **번들을 읽는 순간의 경로**로 한 번만 정하고 한 번만 읽는다. 키가 페이지
 경로마다 따로라, 그대로 두면 한 페이지에서 고른 테마가 다른 페이지에 닿지 않는다. 그래서 고른 값의
 정본은 **앱 키 하나**(`THEME_APP_KEY`)이고, 경로별 Streamlit 키는 그 사본이다. 규칙은
-`THEME_RULE_SCRIPT` 한 벌이고 테마 버튼·Guide·툴바 Summary·입장 화면(`intro_overlay`)이 모두 그것을
+`THEME_RULE_SCRIPT` 한 벌이고 테마 버튼·Guide·사이드바 라벨·입장 화면(`intro_overlay`)이 모두 그것을
 쓴다 — 이 넷이 서로 다른 규칙을 보면 입장 화면이 새로고침을 잘못 예측해 끊기거나 10초를 기다린다.
 
 - **경로는 쓰는 순간 읽는다.** 이 iframe 은 앱 안에서 페이지를 옮겨도 남으므로, 처음 실행 때 계산해
@@ -85,12 +85,14 @@ import streamlit as st
 from capa_simulation.design import tokens
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 
-# Streamlit 과 맞춰야 하는 계약은 저장 키 모양(접두·접미)과 툴바 슬롯이다. 한 곳에 모아 두어야
-# 판올림에서 무엇을 확인해야 하는지가 분명하다. 툴바 슬롯과 테마 버튼 id 는 같은 툴바에 단추를
-# 얹는 Guide·Summary·Print 스크립트(`page_guide`·`intro_summary`·`print_button`)도 여기서 받아 쓴다.
+# Streamlit 과 맞춰야 하는 계약은 저장 키 모양(접두·접미)과 단추를 얹는 자리(툴바 슬롯·사이드바
+# 머리칸)다. 한 곳에 모아 두어야 판올림에서 무엇을 확인해야 하는지가 분명하다. 툴바 슬롯과 테마 버튼
+# id 는 같은 툴바에 단추를 얹는 Guide·Print 스크립트(`page_guide`·`print_button`)가, 사이드바
+# 머리칸은 같은 iframe 에 실리는 S.PKG CAPA 라벨 스크립트(`intro_summary`)가 여기서 받아 쓴다.
 THEME_STORAGE_PREFIX = "stActiveTheme-"
 THEME_STORAGE_SUFFIX = "-v2"
 TOOLBAR_SLOT = '[data-testid="stToolbarActions"]'
+SIDEBAR_HEADER_SLOT = '[data-testid="stSidebarHeader"]'
 THEME_BUTTON_ID = "capa-theme-toggle"
 # 앱이 고른 테마의 정본(`"Light"`·`"Dark"` 글자 그대로). 경로별 Streamlit 키는 이것의 사본이다.
 THEME_APP_KEY = "capa-theme"
@@ -348,7 +350,8 @@ _SCRIPT = """
 def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
     """헤더에 전환 버튼을 얹는다. `app.py` 가 한 번만 부른다.
 
-    `extra_scripts` 는 같은 툴바에 버튼을 얹는 **다른 스크립트**다(Guide·Summary·Print 버튼).
+    `extra_scripts` 는 툴바·사이드바 머리칸에 단추를 얹는 **다른 스크립트**다(Guide·Print 버튼과
+    사이드바 S.PKG CAPA 라벨).
     iframe 을 따로 두지 않고 여기에 함께 싣는다 — 높이 0 iframe 도 본문 맨 위에 요소 간격 한
     칸을 먹어서, 하나 더 두면 모든 화면이 그만큼 내려간다.
 

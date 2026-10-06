@@ -333,14 +333,15 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     """입장 화면은 무거운 부트스트랩보다 **먼저**, 그리고 **매 회차** 그려진다.
 
     먼저여야 그동안을 덮고, 매 회차여야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다. 툴바
-    iframe(테마·Guide·Summary·Print 단추)은 입장 화면 바로 뒤·부트스트랩 앞이다 — 첫 방문처럼 테마
-    스크립트가 새로고침할 로드는 그 세션이 버려지므로, 부트스트랩·요약을 돌기 전에 새로고침이
-    걸려야 한다.
+    iframe(Guide·테마·Print 단추와 사이드바 `S.PKG CAPA` 라벨)은 입장 화면 바로 뒤·부트스트랩
+    앞이다 — 첫 방문처럼 테마 스크립트가 새로고침할 로드는 그 세션이 버려지므로, 부트스트랩·요약을
+    돌기 전에 새로고침이 걸려야 한다.
     """
     import capa_simulation.components.app_header as app_header
     import capa_simulation.components.intro_overlay as intro_overlay
     import capa_simulation.components.intro_summary as intro_summary
     import capa_simulation.components.theme_toggle as theme_toggle
+    import capa_simulation.components.typography as typography
     import capa_simulation.scenario_activation as scenario_activation
 
     order: list[str] = []
@@ -360,6 +361,13 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
         original_shell_style()
 
     monkeypatch.setattr(app_header, "render_shell_style", _recording_shell_style)
+    original_typography = typography.render_typography_style
+
+    def _recording_typography() -> None:
+        order.append("type")
+        original_typography()
+
+    monkeypatch.setattr(typography, "render_typography_style", _recording_typography)
     monkeypatch.setattr(
         theme_toggle,
         "render_theme_toggle",
@@ -377,9 +385,13 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     # 요약은 부트스트랩 뒤·페이지 앞이다 — 로딩에 들어가고, 페이지가 멈춰도 이미 보냈다. 툴바는
     # Guide·Summary·Print 스크립트 셋을 함께 싣는다. ⋮ 메뉴 감춤과 인쇄 규칙을 담은 껍데기 스타일도
     # 부트스트랩 앞이다 — 부트스트랩 오류 화면(`st.stop()`)에서도 메뉴가 보이지 않고, 그 화면을
-    # 인쇄해도 사이드바가 빠져야 한다.
-    one_run = ["intro", "shell", "toolbar:3", "bootstrap", "summary"]
+    # 인쇄해도 사이드바가 빠져야 한다. 서체 스타일(페이지 제목 등의 Archivo)도 그 바로 뒤다 — 오류
+    # 화면의 제목도 같은 서체로 선다.
+    one_run = ["intro", "shell", "type", "toolbar:3", "bootstrap", "summary"]
     assert order == one_run * 2
+    # 고정 문자열을 회차마다 한 번씩 보낸다 — 빠진 회차에는 규칙이 사라진다.
+    sent = [el.proto.body for el in app.get("html") if el.proto.body == typography.TYPOGRAPHY_STYLE]
+    assert len(sent) == 1
 
 
 def test_the_intro_summary_sends_the_official_six_months_once_per_value(_app: AppTest) -> None:
@@ -400,6 +412,133 @@ def test_the_intro_summary_sends_the_official_six_months_once_per_value(_app: Ap
     for key in ("months", "density", "wafer", "bn", "mix"):
         assert len(first[key]) == count, key
     assert first["products"] and all(item["color"].startswith("#") for item in first["products"])
+
+
+def _header_style(app: AppTest) -> str:
+    """이 회차의 머리 띠 스타일(`stHeader` 가상요소 글이 든 `st.html`)."""
+    bodies = [
+        element.proto.body
+        for element in app.get("html")
+        if '[data-testid="stHeader"]::before' in element.proto.body
+    ]
+    assert len(bodies) == 1, len(bodies)
+    return str(bodies[0])
+
+
+def test_the_header_names_the_scenario_this_session_applied(_app: AppTest) -> None:
+    """머리 띠 위 줄은 이 세션에 적용 중인 시나리오·리비전과 상태다(2026-10-06 사용자 결정). 빈
+    저장소는 내장 시드를 공식 v1 로 올린다. 개발자·인증 정보는 머리 띠에서 빠졌다."""
+    from capa_simulation.services.builtin_seed import (
+        BUILTIN_SEED_REVISION_NAME,
+        BUILTIN_SEED_SCENARIO_NAME,
+        BUILTIN_SEED_SOURCE_CODE,
+    )
+    from capa_simulation.settings import APP_AUTH_CODE
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    style = _header_style(app)
+    assert (
+        f'content: "{BUILTIN_SEED_SCENARIO_NAME} · r1 {BUILTIN_SEED_REVISION_NAME} · 공식 v1";'
+        in style
+    )
+    assert f'content: "{BUILTIN_SEED_SOURCE_CODE} · 적용 26.01–26.12 · 내장 시드 ' in style
+    assert APP_AUTH_CODE not in style
+
+
+def test_the_header_reads_no_database_on_a_rerun(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HOME 을 무겁게 하지 않는다(2026-10-03 사용자 원칙). 머리 띠는 세션이 든 값만 읽는다 — 그리는
+    동안 시나리오 저장소 메서드도, DuckDB 연결도 한 번도 부르지 않는다."""
+    import capa_simulation.components.app_header as app_header
+    import capa_simulation.persistence._sql_helpers as sql_helpers
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    calls: list[str] = []
+    inside: list[int] = []
+    for name, value in list(vars(DuckDBScenarioRepository).items()):
+        if name.startswith("__") or not callable(value):
+            continue
+
+        def counted(
+            *args: object, __name: str = name, __func: Any = value, **kwargs: object
+        ) -> Any:
+            if inside:
+                calls.append(__name)
+            return __func(*args, **kwargs)
+
+        monkeypatch.setattr(DuckDBScenarioRepository, name, counted)
+    original_connect = sql_helpers.connect
+
+    def counted_connect(*args: object, **kwargs: object) -> Any:
+        if inside:
+            calls.append("connect")
+        return original_connect(*args, **kwargs)
+
+    monkeypatch.setattr(sql_helpers, "connect", counted_connect)
+    original_header = app_header.render_app_header
+    rendered: list[int] = []
+
+    def watched_header() -> None:
+        inside.append(1)
+        try:
+            original_header()
+        finally:
+            inside.pop()
+        rendered.append(1)
+
+    monkeypatch.setattr(app_header, "render_app_header", watched_header)
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    app.run()
+
+    assert len(rendered) == 2
+    assert calls == []
+
+
+def test_the_bootstrap_error_screen_still_shows_the_app_name_in_the_header(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """부트스트랩이 실패해 `st.stop()` 으로 끝나는 화면에도 머리 띠가 선다. 올라온 시나리오가
+    없으므로 앱 이름 한 줄이다(아래 줄은 비어 위 줄이 띠 가운데에 선다)."""
+    import capa_simulation.scenario_activation as scenario_activation
+    from capa_simulation.settings import APP_NAME
+
+    def _failing_bootstrap(*args: object, **kwargs: object) -> bool:
+        raise RuntimeError("부트스트랩 실패")
+
+    monkeypatch.setattr(
+        scenario_activation, "bootstrap_latest_official_scenario", _failing_bootstrap
+    )
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert len(app.error) == 1
+
+    style = _header_style(app)
+    assert f'content: "{APP_NAME}";' in style
+    assert 'content: "";' in style
+
+
+def test_the_header_marks_unsaved_edits(_app: AppTest) -> None:
+    """미저장 판정은 사이드바 시나리오 상자의 「미저장 변경」과 같은
+    함수다(`has_unsaved_scenario_changes`)."""
+    from capa_simulation.scenario_activation import ACTIVE_PERSISTED_SESSION_REVISION_KEY
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    # 저장 표시를 한 칸 뒤로 돌리면 지금 편집 번호와 달라져 미저장으로 읽힌다.
+    app.session_state[ACTIVE_PERSISTED_SESSION_REVISION_KEY] = (
+        app.session_state[ACTIVE_PERSISTED_SESSION_REVISION_KEY] - 1
+    )
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    style = _header_style(app)
+    assert ' · 미저장 변경";' in style
+    assert "공식 v1" not in style
 
 
 def test_the_control_boxes_open_collapsed_on_the_first_run(_app: AppTest) -> None:

@@ -14,8 +14,9 @@ HOME 첫 로딩은 몇 초가 걸린다. 그동안 빈 화면이 반쯤 그려�
   대수)·월별 시트(Density·Wafer 계획·제품 비중 도넛)가 차례로 조립된다. 값은
   `components/intro_summary.py` 가 따로 보낸다.
 
-원래 화면으로 들어간 뒤에는 툴바의 `Summary` 단추(`intro_summary.summary_toolbar_script`)가 같은
-요약을 다시 연다 — 화면이 그 단추 속으로 접히며 요약이 드러난다. 오버레이는 걷지 않고 감춰 둔다
+원래 화면으로 들어간 뒤에는 사이드바 머리칸의 `S.PKG CAPA` 라벨
+(`intro_summary.summary_label_script`)이 같은 요약을 다시 연다 — 화면이 그 라벨 속으로 접히며
+요약이 드러난다. 오버레이는 걷지 않고 감춰 둔다
 (워커는 멈추고 캔버스는 1px 로 줄인다).
 
 **어떻게 덮는가.** Components v2 하나를 `app.py` 맨 앞(부트스트랩 전)에 그린다. 그 JS 가
@@ -84,6 +85,14 @@ BRAND = "S.PKG CAPA"
 TITLE_LINES = ("S.PKG Capa", "Simulation")
 DETAIL_LABEL = "Detail"
 SUMMARY_LABEL = "Summary"
+# 원래 화면에서 Summary 를 다시 여는 사이드바 머리칸의 `S.PKG CAPA` 라벨(`intro_summary`).
+# id 는 `intro.js` 의 `SUMMARY_LABEL_ID` 와 같아야 한다(테스트가 잡는다). 풍선 글은 라벨
+# 스크립트(입장 화면 JS 가 뜨기 전)와 입장 화면 JS 가 같이 쓴다.
+SUMMARY_LABEL_ID = "capa-brand-label"
+SUMMARY_LABEL_ARIA = f"{BRAND} — Summary 열기"
+SUMMARY_LABEL_OPEN = "공식버전 요약 보기"
+SUMMARY_LABEL_WAITING = "공식버전 요약을 준비하는 중입니다"
+SUMMARY_LABEL_OFF = "공식버전 요약을 열 수 없습니다"
 # `archivo-capa.woff2` 를 만든 글자 목록. Google Fonts 의 `css2?family=Archivo:wdth,wght@75,800`
 # 에 `text=` 로 이 글자를 넘겨 받은 부분 글꼴이다. 위 넷과 시트의 달(`26.10`)에 새 글자를 쓰면 이
 # 목록으로 다시 받고 여기를 고친다(`tests/test_intro_overlay.py` 가 빠진 글자를 잡는다). 타이틀은
@@ -171,6 +180,10 @@ def _data() -> dict[str, Any]:
             "summary": SUMMARY_LABEL,
             "detail_title": "원래 화면으로 들어갑니다",
             "summary_title": "공식버전 요약을 봅니다",
+            # 사이드바 라벨의 풍선. 누를 수 없으면 요약이 보낸 까닭을 먼저 쓴다.
+            "label_open": SUMMARY_LABEL_OPEN,
+            "label_waiting": SUMMARY_LABEL_WAITING,
+            "label_off": SUMMARY_LABEL_OFF,
             "ready": "준비 완료",
             "hint": "처음 접속하면 계산 결과를 새로 만드느라 조금 더 걸립니다.",
             "slow": "계산이 길어지고 있습니다. 들어가면 HOME 진행 막대로 이어서 볼 수 있습니다.",

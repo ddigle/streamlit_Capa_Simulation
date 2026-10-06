@@ -1,6 +1,6 @@
 # 화면 디자인 규칙
 
-마지막 갱신일: 2026-10-05
+마지막 갱신일: 2026-10-06
 
 이 문서는 색·서체·표 밀도를 어디서 정하고 어떻게 쓰는지 규정한다. 규칙이 없으면 토큰을
 만들어도 다시 갈라진다. 실제로 갈라져 있었다 — 같은 "분류 컬럼 음영"이 HOME은
@@ -46,6 +46,51 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
 (`runtime/theme_util.py`의 `_parse_font_config`). 스택에 콜론을 넣으면 `<이름>:<URL>` 형식으로
 오인되므로 넣지 않는다.
 
+## 1-1. 서체 규칙 — 자리마다 한 벌 (B 균형형, 2026-10-06 사용자 결정)
+
+입장 화면·Summary 의 「영문·숫자는 Archivo, 한글은 Noto Sans KR」 짝을 본문 화면의 **세 자리**(페이지
+제목·상자 제목·큰 숫자)에만 넓힌다. 나머지는 지금 그대로다. `headingFont`(= `FONT_FAMILY`)는 바꾸지
+않는다 — 세 자리는 `components/typography.py` 의 스타일이 본문(`stMain`) 안에서만 덮는다.
+
+| 자리 | 서체 · 굵기 · 폭 | 크기 | 정하는 곳 |
+|---|---|---|---|
+| 페이지 제목(`st.title` h1) | `FONT_FAMILY_DISPLAY` 800 · 폭 100% · 자간 -0.01em | 30px(`headingFontSizes[0]`) | `typography.py` |
+| 상자·구획 제목(`####` h4, `st.subheader` h3, h2, HOME 구획 제목 `section_title_markup`) | `FONT_FAMILY_DISPLAY` 700 · 폭 100% | 그대로(h4 16px · h3 19px · 구획 20px) | `typography.py` |
+| HOME `Summary` 접힘 제목 | `FONT_FAMILY_DISPLAY` 700 | 20px | `home_rendering.summary_notice_style` |
+| 큰 숫자(`st.metric` 값, HOME 결론 줄의 확보율 칸 `typography.FIGURE_CLASS`) | `FONT_FAMILY_DISPLAY` 700 · 숫자 폭 고정(`tabular-nums`) | 그대로(metric 2.25rem · 결론 줄 본문 크기) | `typography.py`·`decision_summary.py` |
+| 본문 한글·캡션·알림 | Streamlit 본문 서체 | 14px(`baseFontSize`) | `config.toml` |
+| 표·차트 숫자 | `FONT_FAMILY_NUMERIC`(Calibri) | 표마다 | Plotly·`tokens` |
+| 사이드바 메뉴·상자 머리글 | 그대로 | 그대로 | `sidebar_style.py` |
+| 사이드바 `S.PKG CAPA` 워드마크 | Archivo 800 · 폭 75%(`CapaIntroDisplay`) | — | `intro_summary.py` |
+| 입장 화면 워드마크·타이틀·단추·시트의 달 | Archivo 800 · 폭 75%(`CapaIntroDisplay`) | — | `intro_overlay` |
+| Summary 차트 숫자 | Archivo 700 · 폭 100%(`CapaIntroNumber`) | — | `intro_overlay` |
+
+`FONT_FAMILY_DISPLAY` 는 `CapaDisplay, ` + `FONT_FAMILY` 다. Archivo 부분 글꼴에는 인쇄 가능한 ASCII 만
+들어 있어 한글은 스택의 다음 글꼴(Noto Sans KR → 맑은 고딕 굵게)로 그려진다. 브라우저 실측(8518,
+접두 경로 `/proxy/8518/`): 제목 줄 높이는 영문 제목(`Capa LOB Summary`)·한글 제목(`시나리오 관리`) 모두
+67.5px 로 스타일을 끈 것과 같고, HOME 결론 상자 높이도 같다. metric 카드는 1px 낮아졌다(99.5 → 98.5).
+
+**글꼴 파일과 전달.** 사내 PC 는 외부 글꼴 서버에 못 나가 Google Fonts 를 부르지 않는다. Archivo 700·800
+(폭 100%)의 ASCII 부분 글꼴 둘(`static/fonts/archivo-700.woff2` 8,588B · `archivo-800.woff2` 8,100B,
+SIL OFL 1.1 — 같은 폴더 `OFL.txt`)을 **Streamlit 정적 서빙**(`[server] enableStaticServing = true`)으로
+보낸다. 주소는 상대 경로 `app/static/fonts/…` 라 접두 경로 아래에서도 맞는다(8518 을
+`--server.baseUrlPath proxy/8518` 로 띄워 HOME·하위 페이지 직접 열기·페이지 이동에서 두 글꼴이
+`loaded`, 끝 빗금 없는 주소는 Streamlit 이 빗금 붙은 주소로 307). 서버는 woff2 를
+`application/octet-stream` 으로 보내지만(`nosniff`) Chrome 은 글꼴의 MIME 을 따지지 않아 그대로 쓴다.
+`font-display: swap`, `unicode-range: U+20-7E`.
+
+data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME 웜 rerun 20회 × 2벌 — 중앙값이
+340~441ms 로 회차 잡음이 두 방식 차이보다 커서 HOME 회차 시간으로는 갈리지 않는다). 그래서 그 요소
+하나를 따로 쟀다: 정적 서빙은 스타일 1,105B·직렬화+해시 14µs, data URI 는 23,341B·52µs 다. 회차마다
+보내야 하는 요소라 data URI 는 매 회차 23KB 를 직렬화·해시하고(10KB 이상이라 Streamlit 메시지 캐시가
+두 번째부터 참조로 줄이기는 한다), 정적 파일은 브라우저가 한 번 받아 캐시한다 — 가벼운 정적 서빙을
+골랐다. 입장 화면 글꼴 둘은 입장 화면 JS 가 `FontFace` 로 등록하고 워커 캔버스에도 넘기는 따로 된
+한 벌이라 합치지 않았다(이름도 `CapaDisplay` 와 갈린다).
+
+부분 글꼴을 다시 받는 법은 `typography.py` 머리 설명에 있다(글자 목록 `FONT_SUBSET_TEXT`).
+`tests/test_typography.py` 가 파일·라이선스·상대 경로·외부 서버 없음·`enableStaticServing`·선택자가
+본문 안인지를 지킨다.
+
 ## 2. 지켜야 할 규칙
 
 - **파이썬 코드에 색 리터럴을 쓰지 않는다.** `tests/test_design_tokens.py`가
@@ -54,7 +99,8 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
   으로 참조한다.
 - **서체는 `tokens.FONT_FAMILY`를 쓴다.** `"Malgun Gothic"` 단독 지정은 금지다. Windows
   전용 서체라 다른 OS에서 서체와 함께 **컬럼 폭 계산까지** 어긋난다. 숫자를 정렬해 보여야
-  하는 자리는 `FONT_FAMILY_NUMERIC`을 쓴다. 예외는 첫 접속 입장 화면의 워드마크 서체 하나다(4장).
+  하는 자리는 `FONT_FAMILY_NUMERIC`을 쓴다. 페이지 제목·상자 제목·큰 숫자는 `FONT_FAMILY_DISPLAY`
+  (1-1 절)이고, 그 밖의 예외는 첫 접속 입장 화면의 워드마크 서체 하나다(4장).
 - **토큰 이름은 값이 아니라 역할이다.** `BORDER`와 `STATUS_SECURE`는 현재 둘 다 zinc-300
   이지만 확보 상태색을 조정할 때 표 테두리가 함께 바뀌면 안 되므로 따로 둔다. 값이 같다고
   합치지 않는다.
@@ -104,8 +150,13 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
 `BAR_OUTLINE_WIDTH_PX` 굵기로 그어 만든다.
 
 상단 띠(화면 맨 위 `3.75rem`)는 본문 너비만 덮는 `stHeader` 와 사이드바 위쪽을 같은 색으로
-이어 붙여 만든다. 한쪽만 칠하면 색이 화면 중간에서 끊겨, 같은 줄에 놓인 앱 이름과 문의처가
-서로 다른 면 위에 앉는다. 칠하는 곳은 `components/app_header.py` 한 곳이다.
+이어 붙여 만든다. 한쪽만 칠하면 색이 화면 중간에서 끊겨, 같은 줄에 놓인 사이드바 `S.PKG CAPA`
+라벨과 시나리오 글이 서로 다른 면 위에 앉는다. 칠하는 곳은 `components/app_header.py` 한 곳이다.
+본문 쪽 띠에는 적용 중인 시나리오 두 줄(위 `TEXT` 600, 아래 `TEXT_MUTED`)과 왼쪽 `ACCENT` 3px 막대,
+사이드바 쪽에는 웨이퍼 심볼(링 `TEXT`·다이 `ACCENT`) + `S.PKG CAPA`(Archivo 800 · 폭 75%, 입장 화면
+워드마크와 같은 글꼴)를 둔다. 라벨은 앱 테마를 따르고(입장 화면·Summary 의 고정 팔레트와 다르다),
+올리면 `SURFACE` 면·`BORDER` 윤곽이 서고 안내 글자 `Summary` 가 `ACCENT` 가 된다. 초점은 `ACCENT` 2px
+윤곽이다.
 
 ## 2-2. 강조색은 상호작용에만 쓴다
 
@@ -265,12 +316,13 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
   부족)이다. 요약 차트의 글자 크기는 한 단계로 맞춘다 — 생산계획 점 위 값(700 14px)과 그 달 이름,
   B/N 막대 밑의 공정 이름·상태(부족 대수)가 모두 14px 이고, 행 이름은 20px 다. 행 이름 아래 설명은
   생산계획의 단위(`Density · 억Gb`) 하나만 둔다(2026-10-03 사용자 결정). 판정 기준 숫자는 사사오입한
-  정수 퍼센트로 적는다(AGENTS.md 8장 「판정 기준 표시」). 본문 화면에는 쓰지 않는다. **헤더 툴바의 `Summary` 단추는 이 한 벌을 쓰지 않는다** —
-  Guide 와 같은 윤곽 단추(본문 글꼴 13px/600 · 모서리 8px · 높이 27px · 테두리 `BORDER` · 글자 `TEXT`)에
-  앱 색으로 다시 그린 16px 웨이퍼(노치 있는 링 `TEXT_MUTED` · 다이 2×2 `ACCENT`)만 더한다. 떠오르는
-  움직임·입장 화면 색·압축 글꼴은 쓰지 않는다(2026-10-03 사용자 결정 — 검은 알약이 툴바와 결이
-  맞지 않았다). 테마 버튼 바로 오른쪽의 `Print` 단추(`components/print_button.py`)도 같은 윤곽
-  단추이고 글자만 둔다(2026-10-05 사용자 결정 — ⋮ 메뉴를 감추며 그 안의 인쇄를 옮겼다).
+  정수 퍼센트로 적는다(AGENTS.md 8장 「판정 기준 표시」). 본문 화면에는 쓰지 않는다. **Summary 를 여는 사이드바 머리칸의 `S.PKG CAPA` 라벨도 이 한 벌을
+  쓰지 않는다**(2-1 절) — 웨이퍼 심볼(노치 있는 링 `TEXT` · 다이 3×3 `ACCENT`)과 워드마크를 앱 테마
+  색으로 그리고, 입장 화면에서 빌려 오는 것은 워드마크 글꼴(Archivo 800 · 폭 75%) 하나다. 입장 화면의
+  어두운 색·떠오르는 움직임은 쓰지 않는다(2026-10-06 사용자 결정 — 툴바의 Summary 단추를 걷고 이
+  라벨로 옮겼다). 테마 버튼 바로 오른쪽의 `Print` 단추(`components/print_button.py`)는 Guide 와 같은
+  윤곽 단추(본문 글꼴 13px/600 · 모서리 8px · 높이 27px · 테두리 `BORDER` · 글자 `TEXT`)이고 글자만
+  둔다(2026-10-05 사용자 결정 — ⋮ 메뉴를 감추며 그 안의 인쇄를 옮겼다).
 - **인쇄**는 화면과 따로 다듬는다(2026-10-05 사용자 요청). `app_header.SHELL_STYLE` 의 `@media print`
   하나가 사이드바(펼쳐 있어도)·머리 띠와 툴바 단추·입장 화면/Summary 덮개를 빼고, 본문 폭 상한을 풀어
   종이 폭을 다 쓰게 한다. 색은 `print-color-adjust: exact` 로 화면 토큰 그대로 찍는다 — 인쇄용 팔레트를

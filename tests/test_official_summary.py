@@ -189,7 +189,7 @@ class _Repo:
     def __init__(self, release_id: str) -> None:
         self.calls = 0
         self.release = SimpleNamespace(
-            official_release_id=release_id, scenario_name="DEMO", revision_id="rev"
+            official_release_id=release_id, scenario_name="DEMO", revision_id="rev", release_no=1
         )
 
     def latest_official_release(self) -> SimpleNamespace:
@@ -309,7 +309,7 @@ def test_data_errors_are_kept_but_transient_errors_are_retried(
 def test_a_transient_failure_keeps_the_summary_already_held(summary_env: SimpleNamespace) -> None:
     """30초마다 하는 확인이 DB 잠금으로 실패해도 멀쩡한 요약을 지우지 않는다.
 
-    지우면 툴바 Summary 가 사라진다.
+    지우면 사이드바 `S.PKG CAPA` 라벨이 Summary 를 열지 못한다.
     """
     import duckdb
 
@@ -352,3 +352,20 @@ def test_the_payload_judges_and_draws_each_month_by_its_own_threshold() -> None:
     assert payload["secure"][3] == 119.5 and payload["secure_label"][3] == "120%"
     assert payload["secure"][2] == 109.5 and payload["warning"][3] == 99.5
     assert len(payload["secure"]) == len(payload["months"])
+
+
+def test_a_failure_after_reading_the_official_version_keeps_its_identity(
+    summary_env: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공식버전을 읽은 뒤 요약 준비가 실패해도 그 공식버전은 세션에 남는다.
+
+    남지 않으면 머리 띠는 「저장된 리비전」이라 적고 사이드바 배지는 「공식 vN」이라 적는다.
+    """
+    module = summary_env.module
+
+    def broken(path: str) -> SimpleNamespace:
+        raise RuntimeError("표시순서 모양")
+
+    monkeypatch.setattr(module, "load_global_display_order", broken)
+    assert module.official_summary_data("db")["available"] is False
+    assert module.latest_official_revision() == ("rev", 1)

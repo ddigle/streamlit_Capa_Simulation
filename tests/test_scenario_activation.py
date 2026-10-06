@@ -1,8 +1,10 @@
-# Purpose: 시나리오를 활성화할 때 버려야 하는 세션 값의 목록을 고정한다.
+# Purpose: 시나리오를 활성화할 때 버릴 세션 값의 목록과 떠 두는 머리 띠 이름표를 고정한다.
 
 import ast
 import inspect
 from pathlib import Path
+
+import pytest
 
 import capa_simulation.components.home_preference as home_preference
 from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS, PAST_DATA_TOGGLE_KEY
@@ -135,3 +137,92 @@ def test_no_key_in_the_list_is_a_fossil() -> None:
         "이 키를 만드는 곳이 저장소에 없습니다. 화면이 지워졌거나 철자가 틀렸습니다 — "
         "목록에서 빼거나 철자를 맞춥니다:\n" + "\n".join(fossils)
     )
+
+
+def _label_snapshot(*, registered_at: object, plan_months: tuple[int, ...]) -> object:
+    from datetime import datetime
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    from capa_simulation.services.month_filter import MONTH_COLUMN
+
+    return SimpleNamespace(
+        scenario=SimpleNamespace(
+            scenario_id="scenario-1",
+            scenario_name="DEMO 시나리오",
+            source_simulation_code="DEMO-CODE",
+            source_type="BIGDATAQUERY",
+            source_registered_at=registered_at,
+            created_at=datetime(2026, 10, 1, 8, 0),
+        ),
+        revision=SimpleNamespace(
+            revision_id="revision-2",
+            revision_no=2,
+            revision_name="보정",
+            created_at=datetime(2026, 10, 5, 9, 0),
+        ),
+        tables={"RQ_PKG_PLAN": pd.DataFrame({MONTH_COLUMN: list(plan_months)})},
+    )
+
+
+def test_the_header_label_is_taken_once_from_the_activated_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """머리 띠 이름표는 활성화할 때 스냅샷에서 한 번 떠 둔다. 원천 등록시점이 없으면 시나리오를 만든
+    시각이고, 시나리오 기간은 생산계획의 첫 달·끝 달이다. 다른 리비전이 올라와 있으면 믿지
+    않는다."""
+    from datetime import datetime
+    from types import SimpleNamespace
+
+    import capa_simulation.scenario_activation as activation
+
+    state: dict[str, object] = {}
+    monkeypatch.setattr(activation, "st", SimpleNamespace(session_state=state))
+    state[activation.ACTIVE_PERSISTED_REVISION_ID_KEY] = "revision-2"
+
+    activation._remember_label(
+        _label_snapshot(registered_at=datetime(2026, 9, 28), plan_months=(202609, 202607, 202812))
+    )
+    label = activation.active_scenario_label()
+    assert label is not None
+    assert label.registered_at == datetime(2026, 9, 28)
+    assert (label.first_month, label.last_month) == (202607, 202812)
+    assert (label.revision_no, label.revision_name, label.simulation_code) == (
+        2,
+        "보정",
+        "DEMO-CODE",
+    )
+
+    activation._remember_label(_label_snapshot(registered_at=None, plan_months=()))
+    label = activation.active_scenario_label()
+    assert label is not None
+    assert label.registered_at == datetime(2026, 10, 1, 8, 0)
+    assert (label.first_month, label.last_month) == (None, None)
+
+    state[activation.ACTIVE_PERSISTED_REVISION_ID_KEY] = "revision-other"
+    assert activation.active_scenario_label() is None
+
+
+def test_renaming_the_active_scenario_renames_its_header_label(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """이름표는 떠 둔 값이라 시나리오명을 바꾸면 따로 고친다. 다른 시나리오의 이름 변경은
+    무시한다."""
+    from datetime import datetime
+    from types import SimpleNamespace
+
+    import capa_simulation.scenario_activation as activation
+
+    state: dict[str, object] = {activation.ACTIVE_PERSISTED_REVISION_ID_KEY: "revision-2"}
+    monkeypatch.setattr(activation, "st", SimpleNamespace(session_state=state))
+    activation._remember_label(
+        _label_snapshot(registered_at=datetime(2026, 9, 28), plan_months=(202607,))
+    )
+
+    activation.rename_active_scenario_label("scenario-other", "남의 이름")
+    label = activation.active_scenario_label()
+    assert label is not None and label.scenario_name == "DEMO 시나리오"
+    activation.rename_active_scenario_label("scenario-1", "바뀐 이름")
+    label = activation.active_scenario_label()
+    assert label is not None and label.scenario_name == "바뀐 이름"

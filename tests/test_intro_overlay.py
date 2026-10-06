@@ -1,4 +1,4 @@
-# Purpose: 입장 화면의 등록 내용(틀·스타일·부분 글꼴)·같은 페이로드·Summary 연결을 검증한다.
+# Purpose: 입장 화면 등록 내용(틀·스타일·부분 글꼴)·같은 페이로드·Summary·사이드바 라벨을 검증한다.
 
 from __future__ import annotations
 
@@ -214,18 +214,23 @@ def test_intro_never_talks_back_to_python() -> None:
     assert not re.search(r"set(State|Trigger)Value\s*\(", js)
 
 
-def test_the_toolbar_button_and_the_overlay_agree_on_one_id() -> None:
-    """툴바 단추는 테마 iframe 스크립트가 세우고 입장 화면 JS 가 꾸민다 — 같은 id 를 봐야 한다."""
+def test_the_sidebar_label_and_the_overlay_agree_on_one_id() -> None:
+    """사이드바 라벨은 테마 iframe 스크립트가 세우고 입장 화면 JS 가 꾸민다 — 같은 id 다."""
     from capa_simulation.components import intro_summary
 
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
-    script = intro_summary.summary_toolbar_script()
+    script = intro_summary.summary_label_script()
 
-    assert f'const SUMMARY_BUTTON_ID = "{intro_summary.SUMMARY_BUTTON_ID}";' in js
-    assert f'"{intro_summary.SUMMARY_BUTTON_ID}"' in script
-    # 누르면 입장 화면 JS 가 연다. 스크립트 자체는 상태가 없어 회차마다 같은 문자열이다.
-    assert "api.openSummary(button)" in script
-    assert script == intro_summary.summary_toolbar_script()
+    assert f'const SUMMARY_LABEL_ID = "{intro_overlay.SUMMARY_LABEL_ID}";' in js
+    assert f'"{intro_overlay.SUMMARY_LABEL_ID}"' in script
+    # 누르면 입장 화면 JS 가 연다. 누를 수 없는 표시면 아무것도 하지 않는다. 스크립트 자체는 상태가
+    # 없어 회차마다 같은 문자열이다.
+    assert "api.openSummary(label)" in script
+    assert 'if (label.getAttribute("aria-disabled") === "true") return;' in script
+    assert script == intro_summary.summary_label_script()
+    # 툴바 Summary 단추는 걷었다(2026-10-06 사용자 결정 — 툴바는 Guide·테마·Print).
+    assert "capa-summary-button" not in js and "SUMMARY_BUTTON_ID" not in js
+    assert not hasattr(intro_summary, "summary_toolbar_script")
 
 
 def test_the_summary_payload_reaches_the_overlay_without_talking_back() -> None:
@@ -258,24 +263,54 @@ def test_the_summary_hides_its_slot_before_it_is_drawn(monkeypatch: pytest.Monke
     assert calls[1][1]["key"] == intro_summary.INTRO_SUMMARY_KEY
 
 
-def test_the_toolbar_summary_button_is_a_sibling_of_guide() -> None:
-    """툴바 Summary 는 Guide 와 같은 윤곽 단추에 앱 색 16px 웨이퍼다(2026-10-03 사용자 결정).
-
-    입장 화면 옷(검은 알약·압축 글꼴·떠오르는 움직임)을 입으면 툴바와 결이 어긋난다. 두 테마 값을 다
-    싣고 고르므로 iframe 내용은 테마와 상관없이 같은 문자열이다.
+def test_the_sidebar_label_is_the_wordmark_in_the_app_theme() -> None:
+    """사이드바 머리칸의 `S.PKG CAPA` 라벨은 입장 화면 심볼·워드마크와 같은 모양이고 색은 앱
+    테마를 따른다(2026-10-06 사용자 결정). 두 테마 값을 다 싣고 고르므로 iframe 내용은 테마와
+    상관없이 같은 문자열이다. 글꼴은 입장 화면 JS 가 본 문서에 등록한 부분 글꼴을 다시 쓴다(파일을
+    두 번 싣지 않는다).
     """
-    from capa_simulation.components import intro_summary, page_guide
+    from capa_simulation.components import intro_summary, theme_toggle
 
-    script = intro_summary.summary_toolbar_script()
+    script = intro_summary.summary_label_script()
     for mode in ("light", "dark"):
-        for name in ("BORDER", "TEXT", "TEXT_MUTED", "ACCENT"):
+        for name in ("TEXT", "TEXT_MUTED", "ACCENT", "SURFACE", "BORDER"):
             assert str(tokens.palette_value(mode, name)) in script, (mode, name)
-    for rule in ('"border-radius:8px"', '"font-size:13px"', '"font-weight:600"', '"line-height:1"'):
-        assert rule in script and rule in page_guide._SCRIPT, rule
-    assert "999px" not in script and "CapaIntroDisplay" not in script and "translate" not in script
-    # 꾸밈은 툴바 스크립트 한 곳이다. 입장 화면 JS 는 보임만 정한다.
+    # 고르는 규칙은 테마 버튼과 같은 한 벌이다.
+    assert "capaTheme.resolve(parentWindow)" in script
+    assert f"querySelector('{theme_toggle.SIDEBAR_HEADER_SLOT}')" in script
+    # 입장 화면 워드마크와 같은 글꼴(Archivo 800 · 폭 75%)과 글자.
+    assert '\\"CapaIntroDisplay\\"' in script
+    assert "font-weight: 800; font-stretch: 75%;" in script
+    assert intro_overlay.BRAND in script
+    assert set(intro_overlay.BRAND) <= set(intro_overlay.FONT_SUBSET_TEXT)
+    assert "FontFace" not in script and "woff2" not in script
+    # 입장 화면 심볼과 같은 노치 링 + 3×3 다이.
+    assert script.count("<rect ") == 9
+    assert "M53 93.9 A44 44 0 1 0 47 93.9 L50 90.6 Z" in script
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
-    assert "TOOLBAR_STYLE_ID" not in js and "capa-mini" not in js
+    assert "M53 93.9 A44 44 0 1 0 47 93.9 L50 90.6 Z" in js
+    # 키보드로 닿고(실제 단추) 읽는 이름이 있다.
+    assert 'label = doc.createElement("button");' in script
+    assert intro_overlay.SUMMARY_LABEL_ARIA in script
+    assert intro_overlay.SUMMARY_LABEL_ARIA == "S.PKG CAPA — Summary 열기"
+
+
+def test_the_sidebar_label_says_why_it_cannot_open_the_summary() -> None:
+    """요약이 없으면 라벨은 그대로 보이되 누를 수 없고, 풍선에 까닭을 단다. 라벨은 앱
+    이름이기도 해서 감추지 않는다 — 입장 화면 JS 는 `display` 를 만지지 않고 `aria-disabled` 와
+    `title` 만 정한다."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    sync = js[js.index("function syncToolbar()") : js.index("api.setSummary = (payload) =>")]
+    assert 'label.setAttribute("aria-disabled", can ? "false" : "true");' in sync
+    assert "reason || text.label_off" in sync and "text.label_waiting" in sync
+    assert "style.display" not in sync
+    release = js[js.index("function release()") : js.index("function setInert(on)")]
+    assert 'label.setAttribute("aria-disabled", "true");' in release
+    assert "style.display" not in release
+    text = intro_overlay._data()["text"]
+    assert text["label_open"] == intro_overlay.SUMMARY_LABEL_OPEN
+    assert text["label_waiting"] == intro_overlay.SUMMARY_LABEL_WAITING
+    assert text["label_off"] == intro_overlay.SUMMARY_LABEL_OFF
 
 
 def test_summary_rows_keep_only_the_production_caption() -> None:
@@ -339,8 +374,8 @@ def test_summary_axis_and_bar_labels_match_the_point_value_size() -> None:
     assert "10.5px" not in scene and "700 13px" not in scene
 
 
-def test_closing_the_toolbar_summary_returns_focus_to_its_button() -> None:
-    """툴바 Summary 로 연 요약을 Esc·Detail 로 닫으면 포커스가 그 단추로 돌아간다.
+def test_closing_the_summary_returns_focus_to_the_sidebar_label() -> None:
+    """사이드바 라벨로 연 요약을 Esc·Detail 로 닫으면 포커스가 그 라벨로 돌아간다.
 
     돌려주지 않으면 body 에 남아 키보드 사용자가 제자리를 잃었다(2026-10-05 E2E — Guide 는
     `#capa-guide-button` 으로 돌려준다). 처음 입장 화면은 연 단추가 없으니 돌려줄 곳도 없다.

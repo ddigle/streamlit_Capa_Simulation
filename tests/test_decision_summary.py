@@ -1,4 +1,4 @@
-# Purpose: HOME 결론 문장의 강조가 두 테마 모두에서 읽히는 색 짝으로 그려지는지 고정한다.
+# Purpose: HOME 결론 문장의 강조가 두 테마에서 읽히는 색 짝과 큰 숫자 서체로 그려지는지 고정한다.
 
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -43,3 +43,20 @@ def test_the_headline_highlight_puts_text_on_the_status_fill(mode: str) -> None:
     assert f'style="color:{shortage}"' not in headline
     # 공정명은 HTML 로 해석되지 않게 이스케이프한다.
     assert "Laser &amp; Saw" in headline
+
+
+def test_only_the_rate_wears_the_figure_typeface() -> None:
+    """큰 숫자 서체(Archivo 700 · 숫자 폭 고정)는 확보율 칸에만 건다. 공정·월 칸은 본문 서체다."""
+    from capa_simulation.components.typography import FIGURE_CLASS
+
+    app = AppTest.from_string(SCRIPT)
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    headline = next(
+        element.value for element in app.markdown if "가장 낮은 확보율" in element.value
+    )
+    assert headline.count(f'class="{FIGURE_CLASS}"') == 1
+    assert f'<b class="{FIGURE_CLASS}" style="' in headline
+    assert headline.index(f'class="{FIGURE_CLASS}"') > headline.index("Laser &amp; Saw")
+    assert "81.0%</b>" in headline

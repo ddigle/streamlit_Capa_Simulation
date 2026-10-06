@@ -1209,3 +1209,28 @@ def test_view_settings_change_the_preset_digest() -> None:
 
     assert base.digest() != replace(base, standard_target_detail_level="Stack").digest()
     assert base.digest() != replace(base, standard_target_start_date=date(2026, 8, 1)).digest()
+
+
+def test_scenario_summary_carries_the_source_registration_time(tmp_path: Path) -> None:
+    """머리 띠가 「{원천} {등록일} 등록」을 적는 원천 등록시점은 시나리오 요약과 스냅샷에 실린다.
+    원천에 등록시점이 없으면 비어 있다(머리 띠는 시나리오를 만든 시각으로 물러난다)."""
+    from datetime import datetime
+
+    repository = _repository(tmp_path / "scenario.duckdb")
+    preset = ScenarioPreset(start_month=202608, end_month=202608, included_processes=("Process-A",))
+    registered = datetime(2026, 9, 28, 10, 30)
+
+    with_time = repository.create_scenario(
+        replace(_metadata("With time"), source_registered_at=registered),
+        _reference_tables(),
+        preset,
+    )
+    without = repository.create_scenario(_metadata("Without time"), _reference_tables(), preset)
+
+    by_name = {summary.scenario_name: summary for summary in repository.list_scenarios()}
+    assert by_name["With time"].source_registered_at == registered
+    assert by_name["Without time"].source_registered_at is None
+    assert with_time.scenario.source_registered_at == registered
+    assert without.scenario.source_registered_at is None
+    loaded = repository.load_revision(with_time.revision.revision_id)
+    assert loaded.scenario.source_registered_at == registered

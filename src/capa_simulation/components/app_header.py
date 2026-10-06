@@ -1,19 +1,35 @@
-# Purpose: 상단 띠에 앱·개발자·인증 정보를 싣고, ⋮ 메뉴 감춤·인쇄 규칙을 껍데기 스타일로 보낸다.
+# Purpose: 상단 띠에 적용 중인 시나리오를 싣고 ⋮ 메뉴 감춤·인쇄 규칙을 껍데기 스타일로 보낸다.
 
-"""App name, developer, and clearance info pinned to the top bars.
+"""The scenario this session is looking at, pinned to the top bar.
 
 Streamlit 은 헤더(`stHeader`)에 위젯을 넣는 공식 API 를 주지 않는다. 대신 그 요소의
 가상요소 두 개에 글을 얹는다. 헤더는 `position: absolute` 라 자기 자신이 포함 블록이고
 왼쪽 끝이 사이드바 오른쪽에 붙어 있으므로, 사이드바를 접거나 폭을 끌어 바꿔도 글이 따라
 움직인다 — 좌표를 손으로 계산하는 `position: fixed` 배너와 갈리는 지점이다.
 
-사이드바 머리칸(`stSidebarHeader`)도 같은 높이라 같은 방법으로 앱 이름과 버전을 얹는다.
-두 글이 같은 선에 놓여 한 줄의 띠처럼 읽힌다. 오른쪽 끝은 접기 버튼 자리라 비워 둔다.
+**무엇을 싣는가**(2026-10-06 사용자 결정). 이 세션에 **적용 중인 시나리오**다(`header_lines`).
+- 위 줄(굵게): `{시나리오명} · r{N} {리비전명} · {상태}` — 상태는 `공식 v{N}`(최신
+  공식버전)·`저장된 리비전`·`미저장 변경`(적용했지만 저장하지 않은 편집 — 사이드바 시나리오
+  상자의 「미저장 변경」과 같은 판정 `has_unsaved_scenario_changes`).
+- 아래 줄(옅게): `{시뮬레이션 코드} · 적용 {YY.MM}–{YY.MM} · {원천} {YY.MM.DD} 등록`. 시나리오
+  기간은 생산계획에 있는 첫 달·끝 달이고 조회기간이 아니다(조회기간은 사이드바 조건 카드에 이미
+  있다). 공식버전이 아니면 등록일 대신 리비전 저장일(`{YY.MM.DD} 저장`)이다.
+- 값이 없으면(활성 시나리오가 없는 저장소 등) 앱 이름 한 줄로 물러난다.
+
+**HOME 을 무겁게 하지 않는다**(2026-10-03 사용자 원칙). 이 글은 회차마다 DB 를 보지 않는다 —
+시나리오 이름표는 활성화할 때 세션에 떠 둔 값(`scenario_activation.active_scenario_label`),
+최신 공식버전은 입장 화면 요약이 `RECHECK_SECONDS` 에 한 번 확인해 세션에 둔 값
+(`intro_summary.latest_official_revision`), 미저장 여부는 세션 판정이다.
 
 대가는 가상요소의 한계다. 줄마다 글 한 덩어리와 스타일 하나뿐이라 한 줄 안에서 굵기나
-색을 섞지 못하고, 링크·버튼처럼 누를 수 있는 것도 못 넣는다. 그래서 두 줄로 나눠 위는
-개발 정보, 아래는 인증 정보를 싣는다. 값은 `settings.py` 가 단일 근거이고, 이 띠가 그 값을
-보여 주는 유일한 자리다.
+색을 섞지 못하고, 링크·버튼처럼 누를 수 있는 것도 못 넣는다. 그래서 상태는 칩이 아니라 위 줄 끝의
+글자다. 칩을 그리려면 툴바 단추처럼 스크립트가 실제 요소를 넣어야 하는데, 그 iframe 은 회차마다
+내용이 같아야 해서(`theme_toggle`) 회차마다 바뀌는 값을 실을 길이 따로 필요하다 — 글자로 충분해
+가벼운 쪽을 골랐다. 시나리오명 등 사용자 글은 CSS 문자열로 이스케이프한다(`css_string`).
+
+사이드바 머리칸(`stSidebarHeader`)에는 글을 얹지 않는다. 그 자리는 `S.PKG CAPA` 라벨(누르면
+Summary — `intro_summary.summary_label_script`)이다. 앱 이름·버전·개발자·인증 정보는 Admin Area
+맨 아래(`components/app_credits.py`)로 옮겼다.
 
 Streamlit 의 ⋮ 메뉴(`stMainMenu`)도 여기서 통째로 감춘다(2026-10-05 사용자 결정). 사용자에게
 남길 메뉴 항목은 인쇄와 테마뿐이고, 둘 다 툴바 단추(`print_button`·`theme_toggle`)가 맡는다. 최소
@@ -34,26 +50,34 @@ Deploy 단추와 우리 단추가 앉는 툴바 슬롯은 그대로다. 인쇄 �
 비공식 경로다. Streamlit 을 올린 뒤에는 글이 헤더에 남아 있는지 눈으로 확인한다.
 """
 
+from datetime import datetime
+
 import streamlit as st
 
+from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.design import tokens
-from capa_simulation.settings import (
-    APP_AUTH_CODE,
-    APP_AUTH_EXPIRY,
-    APP_BUILD_DATE,
-    APP_CONTACT_EMAIL,
-    APP_HANDLING_NOTE,
-    APP_NAME,
-    APP_OWNER_TEAM,
-    APP_SECURITY_LEVEL,
-    APP_VERSION,
+from capa_simulation.scenario_activation import (
+    ActiveScenarioLabel,
+    active_scenario_label,
+    has_unsaved_scenario_changes,
 )
+from capa_simulation.services.month_columns import month_label
+from capa_simulation.settings import APP_NAME
 
-_TOP_LINE = f"{APP_OWNER_TEAM} · {APP_CONTACT_EMAIL}"
-_BOTTOM_LINE = (
-    f"v{APP_VERSION} ({APP_BUILD_DATE}) · {APP_SECURITY_LEVEL}"
-    f" · 인증번호 {APP_AUTH_CODE}(유효기간 {APP_AUTH_EXPIRY}) · {APP_HANDLING_NOTE}"
-)
+# 원천 유형(`app_meta.dataset.source_type`)을 머리 띠에 적는 이름. 목록에 없는 유형은 값
+# 그대로 적는다.
+SOURCE_TYPE_LABELS = {
+    "BIGDATAQUERY": "BigDataQuery",
+    "BUILTIN_SYNTHETIC_SEED": "내장 시드",
+    "DUCKDB_SCENARIO_CLONE": "복제",
+    "SCENARIO_MONTH_MERGE": "월 병합",
+    "SCENARIO_YEAR_SHIFT": "연도 이동",
+}
+# `CSV_CORE_DATA_INITIAL_BOOTSTRAP` 처럼 Core_Data.csv 에서 온 유형은 모두 「CSV」다.
+_CSV_SOURCE_PREFIX = "CSV_CORE_DATA"
+STATUS_OFFICIAL = "공식 v{release_no}"
+STATUS_SAVED = "저장된 리비전"
+STATUS_UNSAVED = "미저장 변경"
 
 # 부트스트랩 앞에서 보내는 껍데기 스타일. 색을 쓰지 않아 테마와 무관한 고정 문자열이다.
 #
@@ -67,7 +91,7 @@ _BOTTOM_LINE = (
 #   형제라, 사이드바가 빠지면 본문이 왼쪽 끝부터 종이 폭을 다 쓴다. 사이드바 머리 띠(`::before`)와
 #   접기 버튼도 함께 빠진다.
 # - 머리 띠는 요소째 뺀다. Streamlit 은 헤더의 자식만 감춰 우리 면·`::before`/`::after` 글이 남는다.
-#   툴바 단추(Summary·Guide·테마·Print)와 Deploy 도 이 안에 있다.
+#   툴바 단추(Guide·테마·Print)와 Deploy 도 이 안에 있다.
 # - 입장 화면·Summary 덮개(`#capa-intro-host`, `document.body` 에 붙은 호스트)는 열려 있어도 뺀다.
 # - 본문 폭 상한은 풀어 둔다(`layout="wide"` 가 이미 풀지만 못박는다).
 # - 색은 화면 그대로 찍는다. Streamlit 이 `html` 에 걸어 둔 것을 앱 뿌리에도 건다(물려받는 속성이라
@@ -149,9 +173,10 @@ _HEADER_TEMPLATE = """
   position: absolute;
   line-height: 1.1rem;
   left: 1.5rem;
-  /* 오른쪽 툴바(Summary·Guide·테마·Print·Deploy)가 쓰는 폭은 비워 둔다. 창이 좁아지면
-     글자를 밀어내지 않고 말줄임으로 끊는다. 1100px 창 실측 355px(⋮ 를 감추고 Print 를 더한 뒤)에
-     글자 시작 21px 과 틈 12px 를 더해 28rem 이다. 16rem 일 때는 글자가 Summary 밑으로
+  /* 오른쪽 툴바(Guide·테마·Print·Deploy)가 쓰는 폭은 비워 둔다. 창이 좁아지면 글자를 밀어내지
+     않고 말줄임으로 끊는다 — 두 줄이 따로 줄어 짧은 위 줄이 먼저 다 보인다. 28rem 은 툴바에
+     Summary 가 있던 때 1100px 창 실측 355px 에 글자 시작 21px 과 틈 12px 를 더한 값이다. Summary 를
+     사이드바 라벨로 옮겨 툴바가 좁아졌으니 넉넉하다. 16rem 일 때는 글자가 툴바 밑으로
      들어갔다(2026-10-05 E2E). */
   max-width: calc(100% - 28rem);
   overflow: hidden;
@@ -169,7 +194,7 @@ _HEADER_TEMPLATE = """
    따라간다 — 위에서부터 잰 고정값은 띠 높이를 바꾸는 순간 어긋난다. */
 [data-testid="stHeader"]::before {
   content: "__TOP_LINE__";
-  top: calc(50% - 1.1rem);
+  top: __TOP_OFFSET__;
   font-size: 0.78rem;
   font-weight: 600;
   color: __TEXT__;
@@ -190,46 +215,16 @@ _HEADER_TEMPLATE = """
   font-size: 0.9em;
 }
 
-/* 사이드바 머리칸. `relative` 로 두면 기준 상자는 되지만 사이드바 내용과 함께 스크롤돼
-   앱 이름이 위로 사라진다(실제로 그랬다). `sticky` 는 기준 상자 역할을 그대로 하면서
-   스크롤 영역 맨 위에 붙어 있는다 — 본문 헤더와 같이 고정으로 읽힌다.
+/* 사이드바 머리칸. `S.PKG CAPA` 라벨(`intro_summary.summary_label_script`)이 맨 앞에 선다.
+   `relative` 로 두면 사이드바 내용과 함께 스크롤돼 라벨이 위로 사라진다(앱 이름 글일 때 실제로
+   그랬다). `sticky` 는 스크롤 영역 맨 위에 붙어 있는다 — 본문 헤더와 같이 고정으로 읽힌다.
    접기 버튼은 흐름 배치라 이 지정에 움직이지 않는다. */
 [data-testid="stSidebarHeader"] {
   position: sticky;
   top: 0;
-  /* 띠 위로 올린다. 띠에 가리면 앱 이름도 접기 버튼도 묻힌다. */
+  /* 띠 위로 올린다. 띠에 가리면 라벨도 접기 버튼도 묻힌다. */
   z-index: 11;
-}
-
-[data-testid="stSidebarHeader"]::before,
-[data-testid="stSidebarHeader"]::after {
-  position: absolute;
-  line-height: 1.1rem;
-  left: 0;
-  /* 오른쪽 끝 접기 버튼 자리는 비운다. 사이드바를 좁게 끌면 말줄임으로 끊는다. */
-  max-width: calc(100% - 3rem);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  padding-left: 0.55rem;
-  border-left: 3px solid __ACCENT__;
-  font-family: __FONT_FAMILY__;
-  pointer-events: none;
-}
-
-[data-testid="stSidebarHeader"]::before {
-  content: "__APP_NAME__";
-  top: calc(50% - 1.1rem);
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: __TEXT__;
-}
-
-[data-testid="stSidebarHeader"]::after {
-  content: "__APP_VERSION__";
-  top: 50%;
-  font-size: 0.72rem;
-  color: __TEXT_MUTED__;
+  align-items: center;
 }
 
 /* 접기 버튼(<<)은 Streamlit 이 사이드바에 마우스를 올렸을 때만 `visibility: visible` 로 띄운다.
@@ -255,26 +250,99 @@ _HEADER_TEMPLATE = """
 """
 
 
-def _header_css() -> str:
-    """이 실행의 팔레트로 헤더 CSS 를 만든다."""
+def source_type_label(source_type: str) -> str:
+    """원천 유형을 머리 띠에 적는 이름."""
+    if source_type.startswith(_CSV_SOURCE_PREFIX):
+        return "CSV"
+    return SOURCE_TYPE_LABELS.get(source_type, source_type)
+
+
+def _day(value: datetime) -> str:
+    return value.strftime("%y.%m.%d")
+
+
+def header_lines(
+    label: ActiveScenarioLabel | None,
+    *,
+    official: tuple[str, int] | None,
+    unsaved: bool,
+) -> tuple[str, str]:
+    """머리 띠 두 줄(위·아래). 이름표가 없으면 앱 이름 한 줄이다(아래 줄은 빈 문자열).
+
+    `official` 은 최신 공식버전의 (리비전 id, 번호)다. 올라와 있는 리비전이 그것이면 공식버전이다.
+    미저장 변경이 있으면 상태는 그것이 먼저다 — 사이드바 시나리오 상자의 배지와 같은 차례다.
+    """
+    if label is None:
+        return APP_NAME, ""
+    is_official = official is not None and official[0] == label.revision_id
+    if unsaved:
+        status = STATUS_UNSAVED
+    elif official is not None and is_official:
+        status = STATUS_OFFICIAL.format(release_no=official[1])
+    else:
+        status = STATUS_SAVED
+    top = f"{label.scenario_name} · r{label.revision_no} {label.revision_name} · {status}"
+    parts = [label.simulation_code]
+    if label.first_month is not None and label.last_month is not None:
+        parts.append(f"적용 {month_label(label.first_month)}–{month_label(label.last_month)}")
+    if is_official:
+        parts.append(f"{source_type_label(label.source_type)} {_day(label.registered_at)} 등록")
+    else:
+        parts.append(f"{_day(label.saved_at)} 저장")
+    return top, " · ".join(parts)
+
+
+def css_string(text: str) -> str:
+    """CSS 문자열(`content: "..."`) 안에 넣을 수 있게 바꾼다.
+
+    역슬래시·큰따옴표는 앞에 역슬래시를, 줄바꿈 등 제어 문자는 빈칸으로 바꾼다(한 줄 띠다).
+    `<`·`>`·`&` 는 CSS 코드 포인트 이스케이프로 적는다 — 시나리오명에 `</style>` 이 들어 있어도
+    스타일 요소를 끝내지 못한다.
+    """
+    out: list[str] = []
+    for char in text:
+        if char in '\\"':
+            out.append("\\" + char)
+        elif char in "<>&":
+            out.append(f"\\{ord(char):x} ")
+        elif ord(char) < 0x20 or ord(char) == 0x7F:
+            out.append(" ")
+        else:
+            out.append(char)
+    return "".join(out)
+
+
+def _header_css(top: str = APP_NAME, bottom: str = "") -> str:
+    """이 실행의 팔레트와 두 줄로 헤더 CSS 를 만든다. 아래 줄이 비면 위 줄이 띠 가운데에 선다.
+
+    사용자 글이 든 두 줄은 **맨 마지막에** 넣는다 — 시나리오명에 센티넬 글자(`__TEXT__` 등)가 들어
+    있어도 다른 치환이 그것을 건드리지 못한다.
+    """
     return (
         _HEADER_TEMPLATE.replace("__ACCENT__", tokens.ACCENT)
         .replace("__SURFACE__", tokens.SURFACE)
         .replace("__BAR_BORDER__", tokens.BORDER)
         .replace("__BAR__", tokens.HEADER_BAR)
-        .replace("__APP_NAME__", APP_NAME)
-        .replace("__APP_VERSION__", f"v{APP_VERSION}")
         .replace("__FONT_FAMILY__", tokens.FONT_FAMILY)
         .replace("__TEXT_MUTED__", tokens.TEXT_MUTED)
         .replace("__TEXT__", tokens.TEXT)
-        .replace("__TOP_LINE__", _TOP_LINE)
-        .replace("__BOTTOM_LINE__", _BOTTOM_LINE)
+        .replace("__TOP_OFFSET__", "calc(50% - 1.1rem)" if bottom else "calc(50% - 0.55rem)")
+        .replace("__BOTTOM_LINE__", css_string(bottom))
+        .replace("__TOP_LINE__", css_string(top))
     )
 
 
 def render_app_header() -> None:
-    """헤더 글을 그린다. 페이지마다 부르지 말고 `app.py` 에서 한 번만 부른다."""
-    st.html(f"<style>{_header_css()}</style>")
+    """헤더 글을 그린다. 페이지마다 부르지 말고 `app.py` 에서 한 번만 부른다.
+
+    `render_intro_summary` **뒤**여야 한다 — 최신 공식버전은 그 회차에 요약이 확인한 값이다.
+    """
+    top, bottom = header_lines(
+        active_scenario_label(),
+        official=latest_official_revision(),
+        unsaved=has_unsaved_scenario_changes(),
+    )
+    st.html(f"<style>{_header_css(top, bottom)}</style>")
 
 
 def render_shell_style() -> None:

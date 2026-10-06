@@ -179,14 +179,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오 부트스트랩보다 앞에서 매 회차 부른다.** 앞이어야 첫 로딩을 덮고, 매 회차 같은
     내용이어야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다(이미 들어간 탭이면 브라우저가
     아무것도 하지 않는다). `app.py` 를 여는 AppTest 는 `render_intro_overlay` 를 바꿔 끼운다.
-  - **툴바 iframe(`render_guide_base_style` + `theme_toggle.render_theme_toggle` — 테마·Guide·Summary·
-    Print 단추)은 입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
+  - **툴바 iframe(`render_guide_base_style` + `theme_toggle.render_theme_toggle` — 테마·Guide·Print
+    단추와 사이드바 `S.PKG CAPA` 라벨)은 입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
     스크립트가 새로고침해 그 세션을 버리므로, 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기 전에
     새로고침이 걸린다. ⋮ 메뉴 감춤과 인쇄 규칙을 담은 껍데기 스타일(`app_header.render_shell_style`)도
     툴바 바로 앞, 부트스트랩 앞이다 — 머리 띠(`render_app_header`)는 부트스트랩 뒤라 거기에 두면
     부트스트랩 오류 화면에 메뉴가 남고 그 화면을 인쇄하면 사이드바가 찍히며, 새로 읽을 때마다 메뉴가
-    보였다 사라지며 툴바 단추가 밀린다. 차례 `입장 화면 → 껍데기 스타일 → 툴바 → 부트스트랩 → 요약` 은
-    `tests/test_app_navigation.py` 가 지킨다.
+    보였다 사라지며 툴바 단추가 밀린다. 그 바로 뒤가 앱 서체 스타일(`typography.render_typography_style`
+    — 페이지 제목·상자 제목·큰 숫자의 Archivo)이다. 차례 `입장 화면 → 껍데기 스타일 → 서체 → 툴바 →
+    부트스트랩 → 요약` 은 `tests/test_app_navigation.py` 가 지킨다.
   - **입장 화면 Summary 의 요약 값(`components/intro_summary.py`)은 공식 시나리오 부트스트랩
     바로 뒤, 페이지보다 앞에서 매 회차 보낸다.** 페이지가 `st.stop()` 하면 그 뒤로는 아무것도
     브라우저에 닿지 않고, 앞이어야 입장 화면 로딩에 포함된다. **이 부가 기능이 주 업무 화면(HOME)의
@@ -1370,6 +1371,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 판정 기준 세션 키(`dashboard_*_threshold_percent`)는 **레거시 운반용**이다. 화면 위젯이
     없고, 복원한 프리셋 값을 다음 리비전 저장에 그대로 실어 보낼 뿐 판정에 쓰지 않는다.
   - 새 세션에서는 최신 공식 리비전을 한 번 자동 활성화한다.
+  - 활성화할 때 머리 띠 이름표(시나리오명·코드·원천 유형과 등록시점·리비전 번호·이름·저장 시각·
+    생산계획 첫/끝 달)를 세션에 한 번 떠 둔다(`ACTIVE_SCENARIO_LABEL_KEY`, `active_scenario_label`).
+    회차마다 스냅샷 캐시(표 전체를 역직렬화한다)나 DB 를 보지 않으려는 것이다. 활성 리비전과 다르면
+    믿지 않고, 시나리오명을 바꾸면 `rename_active_scenario_label` 로 같이 고친다.
 - `src/capa_simulation/shared_widget_state.py`
   - **여러 페이지가 같은 key 로 그리는 위젯**(샘플 데이터 스위치)의
     값을 페이지를 옮긴 첫 회차에도 브라우저에 다시 알린다(`carry_shared_widget_value`). 위젯 id 에
@@ -1847,7 +1852,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     정하고 읽어서 키가 **페이지 경로마다 따로**다. 그래서 고른 값의 정본은 앱 키 `capa-theme`
     (`THEME_APP_KEY`)이고 경로별 Streamlit 키는 그 사본이다. 규칙은 `THEME_RULE_SCRIPT`(`capaTheme`)
     한 벌이고 툴바 iframe 맨 앞 스크립트와 입장 화면 등록 JS 앞에 같은 문자열로 실린다. 테마 버튼·
-    Guide·툴바 Summary·입장 화면의 새로고침 예측이 모두 이것만 부른다 — 저장 키를 따로 만들지 않는다.
+    Guide·사이드바 라벨·입장 화면의 새로고침 예측이 모두 이것만 부른다 — 저장 키를 따로 만들지 않는다.
     - 경로는 **쓰는 순간** `location.pathname` 으로 읽는다. 이 iframe 은 앱 안에서 페이지를 옮겨도
       남으므로 처음 실행 때 만든 키는 다른 페이지에서 틀린 키다.
     - 열릴 때(`sync`): 고른 값 = ⋮ 메뉴로 바꾼 값(안전망 — 아래) → 앱 키 → 지금 경로의 Streamlit 키(예전 판 값을
@@ -1880,9 +1885,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     폐기 예고를 찍어 2026-10-01 에 옮겼다.
   - **비공식 경로다.** `data-testid` 와 `localStorage` 키 모양은 판올림에서 바뀔 수 있다.
     Streamlit 을 올린 뒤에는 이 버튼이 보이는지 눈으로 확인한다. 툴바 슬롯 선택자(`TOOLBAR_SLOT`)와
-    테마 버튼 id(`THEME_BUTTON_ID`)는 이 모듈 한 곳에 두고, Guide·툴바 Summary·Print 스크립트도 문자열을
-    적지 않고 `%(slot)s`·`%(theme)s` 자리로 받는다 — 판올림에서 고칠 곳이 하나다.
-  - `extra_scripts` 로 같은 툴바에 버튼을 얹는 다른 스크립트(Guide·Summary·Print)를 함께 싣는다. iframe 을
+    테마 버튼 id(`THEME_BUTTON_ID`)·사이드바 머리칸 선택자(`SIDEBAR_HEADER_SLOT`)는 이 모듈 한 곳에
+    두고, Guide·Print·사이드바 라벨 스크립트도 문자열을 적지 않고 `%(slot)s`·`%(theme)s` 자리로
+    받는다 — 판올림에서 고칠 곳이 하나다.
+  - `extra_scripts` 로 툴바·사이드바 머리칸에 단추를 얹는 다른 스크립트(Guide·Print·사이드바
+    `S.PKG CAPA` 라벨)를 함께 싣는다. iframe 을
     따로 두지 않는다 — 높이를 접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다.
   - **iframe 내용은 회차마다 같아야 한다**(`tests/test_theme_toggle.py`). 바뀌면 Streamlit 이 iframe 을
     새로 만들고 옛 버튼의 `onclick` 이 죽는다. 키 규칙도 상수만 실린 고정 문자열이다.
@@ -1945,6 +1952,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     경고 · 부족」 세 이름뿐이고 숫자를 적지 않는다(`text.legend` — 막대 밑 상태 글자 `text.status` 와
     따로다, 2026-10-06 사용자 결정). 원래 화면에서는 툴바 `Summary` 단추(`intro_summary.summary_toolbar_script`, Guide 왼쪽)가
     같은 요약을 다시 연다 — 화면이 그 단추 속으로 접힌다. 그래서 오버레이는 걷지 않고 **감춰 둔다**
+    만들지 않는다(2026-10-03 사용자 결정). 기준선은 정확한 기준 자리에 긋고 이름표·범례는 사사오입한
+    글자(`secure_label`·`warning_label`)를 단다. 원래 화면에서는 사이드바 머리칸의 `S.PKG CAPA` 라벨(`intro_summary.summary_label_script`)이
+    같은 요약을 다시 연다 — 화면이 그 라벨 속으로 접힌다(2026-10-06 사용자 결정 — 툴바 Summary 단추는
+    걷었다). 그래서 오버레이는 걷지 않고 **감춰 둔다**
     (워커 멈춤·캔버스 1px). 이미 들어간 탭은 요약 값이 닿을 때 감춘 오버레이를 미리 만들어 둔다. 요약에서
     Esc 는 Detail 과 같다. 요약을 만들지 못했으면(공식버전 없음·계산 오류) Summary 를 끄고 까닭을 단다.
     덮개가 서 있는 동안(입장 화면·요약) Tab · Shift+Tab 은 덮개 안의 보이는 단추만 돈다(`onKey` →
@@ -1999,7 +2010,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가 빠진 글자를 잡는다). 한글은 시스템 본문 글꼴이고 워커 캔버스도 같은 글꼴 이름으로 그린다.
     `.gitattributes` 가 `*.woff2` 를 binary 로 둔다 — 줄바꿈 정규화가 닿으면 글꼴이 깨진다.
 - `src/capa_simulation/components/intro_summary.py`
-  - 입장 화면 Summary 의 **값**과 툴바 `Summary` 단추. 최신 공식버전(`latest_official_release`)
+  - 입장 화면 Summary 의 **값**과 그것을 여는 사이드바 `S.PKG CAPA` 라벨. 최신 공식버전(`latest_official_release`)
     하나를 `services/official_summary.py` 로 요약해 Components v2 `capa_intro_summary` 의 `data` 로
     보낸다. 계산은 공식 리비전의 결정적 키(`reference_version_for_revision`·`pristine_content_token`)로
     `get_home_simulation`·`get_home_lob_without_edp` 를 부른다 — **무거운 시나리오 전체 Capa 계산
@@ -2013,11 +2024,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Preference 에서 기준을 저장하면 `forget_intro_summary_check` 로 그 세션도 곧바로 다시 확인한다. 모든 페이지 앞이라 **어떤 예외도 밖으로 내보내지 않고**(`available: false` 와 까닭),
     데이터 오류로 만들지 못한 결과는 서버 캐시에 남기고(새 공식버전을 지정하면 키가 바뀐다), DB 잠금·파일·
     메모리 오류는 남기지 않아 다음 확인 때 다시 해 본다 — 그때 세션이 들고 있던 요약은 지우지 않는다.
-  - 툴바 단추는 Guide 처럼 테마 버튼 iframe 의 스크립트가 세우고 칠한다(`summary_toolbar_script` — 상태
-    없는 고정 문자열). 모양은 **Guide 와 같은 윤곽 단추에 앱 색 16px 웨이퍼**(링 `TEXT_MUTED`·다이
-    `ACCENT`)이고 두 테마 값을 다 실어 테마 버튼과 같은 저장 키로 고른다(2026-10-03 사용자 결정, 입장 화면
-    색·압축 글꼴·떠오르는 움직임은 쓰지 않는다). 보임과 눌렀을 때의 동작만 입장 화면 JS(`window.__capaIntro`)가
-    맡는다. 단추 id 는 `SUMMARY_BUTTON_ID` 하나를 두 쪽이 본다(`test_intro_overlay`).
+  - 공식버전을 확인할 때 본 최신 공식버전의 리비전 id·번호를 세션에 같이 둔다(`latest_official_revision`).
+    머리 띠(`app_header`)는 「공식 vN」을 그것만 읽어 정한다 — 회차마다 DB 를 보지 않는다. 확인 주기·
+    무효화(`RECHECK_SECONDS`·`forget_intro_summary_check`)는 요약과 같다.
+  - **사이드바 `S.PKG CAPA` 라벨**(2026-10-06 사용자 결정 — 툴바 `Summary` 단추를 대신한다. 툴바는
+    Guide·테마·Print). 테마 버튼 iframe 의 스크립트(`summary_label_script` — 상태 없는 고정 문자열)가
+    사이드바 머리칸(`theme_toggle.SIDEBAR_HEADER_SLOT`) 맨 앞에 실제 `<button>` 을 끼운다. 입장 화면과
+    같은 모양의 심볼(노치 링 + 3×3 다이, 다이는 모두 `ACCENT` — 앱에서 주황은 「경고」)과 `S.PKG CAPA`
+    워드마크(Archivo 800 · 폭 75% — 입장 화면 JS 가 등록한 `CapaIntroDisplay` 를 다시 쓴다, 글자는
+    `FONT_SUBSET_TEXT` 에 들어 있다), 옅은 `Summary` 안내 글자다. 색은 **앱 테마를 따른다** — 두 테마의
+    스타일을 다 싣고 `capaTheme.resolve` 로 고른다. 누르면 입장 화면 JS 의 `openSummary(label)` 을 부르고,
+    Summary 를 닫으면(Esc·Detail) 초점이 라벨로 돌아온다. Tab 초점·Enter 는 실제 단추라 그대로 되고,
+    `aria-label` 은 「S.PKG CAPA — Summary 열기」다. 누를 수 있는지는 입장 화면 JS 가 `aria-disabled` 와
+    풍선(`title` — 요약이 보낸 까닭·준비 중)으로만 정한다 — 라벨은 앱 이름이기도 해서 감추지 않는다.
+    머리칸은 React 가 다시 그릴 수 있어 관찰자를 끊지 않고 빠지면 다시 끼운다. 사이드바를 접으면 라벨도
+    함께 가려진다. 라벨 id 는 `intro_overlay.SUMMARY_LABEL_ID` 하나를 두 쪽이 본다(`test_intro_overlay`).
 - `src/capa_simulation/services/official_summary.py`
   - 공식버전 6개월 요약의 순수 계산. 기간은 리비전 프리셋의 조회 시작월과 생산계획 첫 달 중 **늦은
     쪽**부터 여섯 달(계획 끝을 넘지 않음, 연간 Total 없음). 생산계획 = HOME `Density (억Gb)`(`부하량`),
@@ -2028,11 +2049,27 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - Admin Area 편집 탭들이 함께 쓰는 팝업 칸(`admin_area_open_dialog`) 하나를 여닫는 콜백.
     탭이 닫혀도 매 회차 그리므로 칸이 탭마다 있으면 한 회차에 팝업이 둘 뜰 수 있다.
 - `src/capa_simulation/components/app_header.py`
-  - 화면 맨 위 띠의 면을 칠하고 앱 이름·버전·개발자·인증 정보를 모든 페이지에 표시한다.
-    Streamlit 이 헤더에 위젯을 넣는 API 를 주지 않아 `stHeader`·`stSidebarHeader` 의
-    가상요소에 글을 얹는다(글자만 가능, 링크·버튼 불가). 값은 `settings.py` 가 단일 근거이고
-    이 띠가 그 값을 보여 주는 유일한 자리다(⋮ 메뉴의 About 은 없다 — 인증 유효기간도 둘째 줄의
-    인증번호 뒤에 싣는다). `app.py` 에서 한 번만 부른다.
+  - 화면 맨 위 띠의 면을 칠하고 **이 세션에 적용 중인 시나리오**를 모든 페이지에 표시한다
+    (2026-10-06 사용자 결정). Streamlit 이 헤더에 위젯을 넣는 API 를 주지 않아 `stHeader` 의
+    가상요소 두 개에 글을 얹는다(글자만 가능, 한 줄 안에서 굵기·색을 섞을 수 없다 — 그래서 상태는 칩이
+    아니라 위 줄 끝의 글자다). `app.py` 에서 한 번만, **입장 화면 요약(`render_intro_summary`) 뒤에** 부른다.
+    - 위 줄(굵게): `{시나리오명} · r{N} {리비전명} · {상태}`. 상태는 `공식 v{N}`(올라와 있는 리비전이
+      최신 공식버전) · `저장된 리비전` · `미저장 변경`(`has_unsaved_scenario_changes` — 사이드바 시나리오
+      상자 배지와 같은 판정, 공식버전보다 먼저).
+    - 아래 줄(옅게): `{시뮬레이션 코드} · 적용 {YY.MM}–{YY.MM} · {원천} {YY.MM.DD} 등록`. 기간은 생산계획
+      (`RQ_PKG_PLAN`)의 첫 달·끝 달이고 조회기간은 싣지 않는다. 원천 이름은 `SOURCE_TYPE_LABELS`
+      (BigDataQuery·CSV·내장 시드·복제·월 병합·연도 이동), 등록일은 원천 등록시점(`source_registered_at`)
+      이고 없으면 시나리오를 만든 시각이다. 공식버전이 아니면 등록일 대신 리비전 저장일(`{YY.MM.DD} 저장`).
+    - **회차마다 DB 를 보지 않는다**(2026-10-03 사용자 원칙 — HOME 을 무겁게 하지 않는다). 이름표는
+      활성화 때 세션에 떠 둔 값(`scenario_activation.active_scenario_label`), 최신 공식버전은 요약이 확인해
+      둔 값(`intro_summary.latest_official_revision`)이다. `tests/test_app_navigation.py` 가 그리는 동안
+      저장소·연결 호출이 0 인지 지킨다.
+    - 사용자 글(시나리오명 등)은 `css_string` 으로 이스케이프한다(따옴표·역슬래시·제어 문자·`<>&`). 두
+      줄은 템플릿 치환의 **맨 마지막**에 넣어 센티넬 글자가 든 이름도 망가지지 않는다. 값이 없으면
+      앱 이름 한 줄로 물러나 띠 가운데에 선다. 좁은 창에서는 두 줄이 따로 말줄임으로 줄어 짧은 위 줄이
+      먼저 다 보인다.
+    - 사이드바 머리칸(`stSidebarHeader`)에는 글을 얹지 않는다 — 그 자리는 `S.PKG CAPA` 라벨
+      (`intro_summary`)이다. 이 파일은 머리칸을 띠 위에 고정(`sticky`·`z-index`)하는 규칙만 둔다.
   - **Streamlit 의 ⋮ 메뉴(`stMainMenu`)를 통째로 감춘다**(2026-10-05 사용자 결정). 사용자에게 남길
     항목은 인쇄·테마뿐이고 둘 다 툴바 단추(`print_button`·`theme_toggle`)가 맡는다. 감추는 규칙은 그
     요소 하나만 고른다 — Deploy 와 툴바 슬롯(`stToolbarActions`)은 그대로다. 그래서
@@ -2064,10 +2101,36 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 사이드바 접기 버튼(`stSidebarCollapseButton`)을 늘 보이게 한다(2026-10-03 사용자 요청).
     Streamlit 은 사이드바에 마우스를 올렸을 때만 `visibility: visible` 로 띄운다. 인쇄 숨김은
     남기려고 `@media screen` 안에서만 덮는다. 판올림 뒤 버튼이 늘 보이는지 눈으로 확인한다.
-  - 머리 글자는 오른쪽 툴바 폭(`28rem`, Summary·Guide·테마·Print·Deploy 1100px 창 실측 355px)을 비우고 말줄임으로
-    끊는다. 툴바에 단추를 더하면 이 폭도 다시 잰다(2026-10-05 E2E — 16rem 이라 글자가 단추 밑으로).
+  - 머리 글자는 오른쪽 툴바 폭(`28rem` — 툴바에 Summary 가 있던 때 1100px 창 실측 355px, 지금은
+    Guide·테마·Print·Deploy 로 더 좁다)을 비우고 말줄임으로 끊는다. 툴바에 단추를 더하면 이 폭도 다시 잰다(2026-10-05 E2E — 16rem 이라 글자가 단추 밑으로).
   - 본문 인라인 코드는 `0.9em` 이다. Streamlit 기본 0.75em 은 대체 글꼴로 그려지는 한글을 9~10px 로
     줄였다(2026-10-05 E2E). 같은 전역 스타일이라 이 파일에 둔다.
+- `src/capa_simulation/components/typography.py`
+  - 앱 전체 서체 — **B 균형형**(2026-10-06 사용자 결정). 본문(`[data-testid="stMain"]`) 안의 세 자리에만
+    `tokens.FONT_FAMILY_DISPLAY`(`CapaDisplay, ` + `FONT_FAMILY`)를 건다: 페이지 제목 h1 은 800·자간
+    -0.01em, 상자·구획 제목(h2·h3·h4, `role="heading"` 인 `section_title_markup`)은 700, 큰 숫자
+    (`stMetricValue`, `FIGURE_CLASS` — HOME 결론 줄의 확보율 칸)는 700·`tabular-nums`. 크기는 그대로다.
+    본문 한글·표·차트 숫자(`FONT_FAMILY_NUMERIC`)·사이드바·Plotly 안 글꼴·`headingFont` 는 건드리지
+    않는다. HOME `Summary` 접힘 제목은 `st.expander` 라 `home_rendering.summary_notice_style` 이 같은
+    스택을 건다. 자리 → 서체 표는 `docs/design_system.md` 1-1 절.
+  - 글꼴은 **Archivo 700·800(폭 100%)의 인쇄 가능한 ASCII 부분 글꼴**(`static/fonts/archivo-700.woff2`·
+    `archivo-800.woff2`, SIL OFL 1.1 — 같은 폴더 `OFL.txt`)을 **Streamlit 정적 서빙**
+    (`config.toml` `[server] enableStaticServing = true`)으로 상대 경로 `app/static/fonts/…` 에서 받는다.
+    Google Fonts 를 부르지 않는다(사내 PC 는 외부 글꼴 서버에 못 나간다). 상대 경로라 사내 WebIDE 의
+    `/proxy/<포트>/` 접두에서도 맞는다(`--server.baseUrlPath` 로 실측). `font-display: swap`,
+    `unicode-range: U+20-7E` — 한글만 든 글자에는 파일을 받지 않는다. data URI 로 싣는 길은 매 회차
+    23KB 를 보내는 요소가 되어 쓰지 않았다(측정은 design_system 1-1 절). 부분 글꼴을 다시 받는 법과
+    글자 목록(`FONT_SUBSET_TEXT`)은 모듈 머리 설명. **글꼴 파일은 `static/` 에 있어야 서빙된다** —
+    `app.py` 옆이 아니면 404 이고 그 자리가 시스템 글꼴로 떨어질 뿐 화면은 선다.
+  - 이름 `CapaDisplay` 는 입장 화면 JS 가 등록하는 `CapaIntroDisplay`(75%·800)·`CapaIntroNumber` 와
+    갈라 둔다 — 같은 이름이면 굵기·폭이 다른 두 벌이 한 이름 아래 섞인다. 스타일은 색이 없는 고정
+    문자열(`TYPOGRAPHY_STYLE`)이라 테마와 무관하고, `app.py` 가 껍데기 스타일 바로 뒤·부트스트랩 앞에서
+    매 회차 보낸다(`test_app_navigation` 이 차례를, `tests/test_typography.py` 가 파일·라이선스·상대
+    경로·외부 서버 없음·선택자 범위를 지킨다).
+- `src/capa_simulation/components/app_credits.py`
+  - 앱 이름·버전·빌드일·개발자·인증번호(유효기간)·취급 주의를 **Admin Area 맨 아래** 캡션 한 묶음
+    (`credit_lines`)으로 보여 준다(2026-10-06 사용자 결정 — 머리 띠에서 옮겼다). 값은 `settings.py` 가
+    단일 근거이고 ⋮ 메뉴의 About 이 없어 이 자리가 유일하다.
 - `src/capa_simulation/components/sidebar_style.py`
   - 탐색 그룹·활성 경로·기존 컨테이너 키와 현재 테마로 사이드바 스타일 문자열을 만든다.
     위젯 생성이나 HTML 주입은 하지 않는다. 생성된 HTML의 태그 안전성과 테마·활성 선택자를

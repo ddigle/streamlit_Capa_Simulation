@@ -17,7 +17,7 @@ SCENARIO_SUMMARY_SELECT = """
     SELECT s.scenario_id, d.dataset_id, s.scenario_name,
            s.source_simulation_code, s.source_simulation_name,
            d.source_type, s.status, s.active_revision_id,
-           r.revision_no, s.created_at, s.updated_at
+           r.revision_no, s.created_at, s.updated_at, d.source_registered_at
     FROM app_meta.scenario s
     JOIN app_meta.dataset d ON d.scenario_id = s.scenario_id
     JOIN app_meta.scenario_revision r ON r.revision_id = s.active_revision_id
@@ -37,6 +37,7 @@ def scenario_summary(row: Sequence[object]) -> ScenarioSummary:
         active_revision_no=as_int(row[8], "활성 리비전 번호"),
         created_at=as_datetime(row[9]),
         updated_at=as_datetime(row[10]),
+        source_registered_at=as_datetime(row[11]) if row[11] is not None else None,
     )
 
 

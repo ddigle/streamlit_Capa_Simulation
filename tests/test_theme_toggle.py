@@ -6,7 +6,7 @@ import pytest
 from streamlit.elements.html import _html_only_style_tags
 
 from capa_simulation.components import intro_summary, page_guide, print_button, theme_toggle
-from capa_simulation.components.intro_summary import summary_toolbar_script
+from capa_simulation.components.intro_summary import summary_label_script
 from capa_simulation.components.page_guide import guide_toolbar_script
 from capa_simulation.components.print_button import print_toolbar_script
 from capa_simulation.design import theme
@@ -42,7 +42,7 @@ def test_toolbar_iframe_is_identical_whatever_theme_python_resolved(
         monkeypatch.setattr(theme, "_read_client_mode", lambda mode=mode: mode)
         theme.begin_run()
         theme_toggle.render_theme_toggle(
-            extra_scripts=(guide_toolbar_script(), summary_toolbar_script(), print_toolbar_script())
+            extra_scripts=(guide_toolbar_script(), summary_label_script(), print_toolbar_script())
         )
 
     assert len(frames) == 2
@@ -83,11 +83,12 @@ def test_the_key_rule_is_the_first_script_and_keeps_one_app_wide_choice(
     """고른 테마의 정본은 앱 키 하나다. Streamlit 키는 경로마다 따로라 그것만 보면 한 페이지에서
     고른 테마가 다른 페이지에 닿지 않는다(하위 페이지 Dark 가 두 번 새로고침하고 밝게 끝났다).
 
-    규칙은 iframe 맨 앞 스크립트 한 벌이고, 버튼·Guide·Summary·Print 스크립트가 모두 그것을 부른다.
+    규칙은 iframe 맨 앞 스크립트 한 벌이고, 버튼·Guide·사이드바 라벨·Print 스크립트가 모두 그것을
+    부른다.
     """
     frames, _, _ = _render(monkeypatch)
     theme_toggle.render_theme_toggle(
-        extra_scripts=(guide_toolbar_script(), summary_toolbar_script(), print_toolbar_script())
+        extra_scripts=(guide_toolbar_script(), summary_label_script(), print_toolbar_script())
     )
     frame = frames[0]
     rule = theme_toggle.THEME_RULE_SCRIPT
@@ -192,10 +193,11 @@ def test_a_key_driven_reload_happens_at_most_once_per_tab() -> None:
 
 
 def test_toolbar_readers_use_the_shared_rule_instead_of_their_own_key() -> None:
-    """Guide·Summary·Print 단추의 색도 같은 규칙으로 고른다. 저장 키를 따로 두면 규칙이 갈라진다."""
+    """Guide·Print 단추와 사이드바 라벨의 색도 같은 규칙으로 고른다. 저장 키를 따로 두면 규칙이
+    갈라진다."""
     for script in (
         guide_toolbar_script(),
-        summary_toolbar_script(),
+        summary_label_script(),
         print_toolbar_script(),
         page_guide._SCRIPT,
     ):
@@ -207,18 +209,23 @@ def test_toolbar_readers_use_the_shared_rule_instead_of_their_own_key() -> None:
 
 
 def test_toolbar_scripts_take_the_slot_and_button_id_from_one_place() -> None:
-    """툴바 슬롯·테마 버튼 id 는 `theme_toggle` 한 곳에 있다. Guide·Summary·Print 원문이 값을 직접
-    적으면 판올림에서 한 곳만 고쳐 다른 단추가 조용히 사라진다."""
-    templates = (page_guide._SCRIPT, intro_summary._TOOLBAR_SCRIPT, print_button._SCRIPT)
+    """툴바 슬롯·사이드바 머리칸·테마 버튼 id 는 `theme_toggle` 한 곳에 있다. Guide·Print·사이드바
+    라벨 원문이 값을 직접 적으면 판올림에서 한 곳만 고쳐 다른 단추가 조용히 사라진다."""
+    templates = (page_guide._SCRIPT, intro_summary._LABEL_SCRIPT, print_button._SCRIPT)
     for template in templates:
         assert theme_toggle.TOOLBAR_SLOT not in template
+        assert theme_toggle.SIDEBAR_HEADER_SLOT not in template
         assert theme_toggle.THEME_BUTTON_ID not in template
         assert "querySelector('%(slot)s')" in template
     assert 'getElementById("%(theme)s")' in page_guide._SCRIPT
     assert 'getElementById("%(theme)s")' in print_button._SCRIPT
-    for script in (guide_toolbar_script(), summary_toolbar_script(), print_toolbar_script()):
+    for script in (guide_toolbar_script(), print_toolbar_script()):
         assert f"querySelector('{theme_toggle.TOOLBAR_SLOT}')" in script
         assert f'getElementById("{theme_toggle.THEME_BUTTON_ID}")' in script
+    # 사이드바 라벨은 툴바가 아니라 사이드바 머리칸에 선다.
+    label = summary_label_script()
+    assert f"querySelector('{theme_toggle.SIDEBAR_HEADER_SLOT}')" in label
+    assert theme_toggle.TOOLBAR_SLOT not in label
 
 
 def test_the_theme_button_asks_before_a_reload_drops_unsaved_edits(

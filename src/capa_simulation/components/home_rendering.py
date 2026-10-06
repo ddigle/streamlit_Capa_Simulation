@@ -317,7 +317,9 @@ def summary_notice_style() -> str:
     보다 작아 두 상자가 다른 화면에서 온 것처럼 보인다. 제목 글자와 앞의 강조 막대를
     구획 제목(`section_title_markup`)과 **같은 상수**로 맞춘다. 막대를 `▍` 글자로 두면
     높이가 상속한 글자 크기를 따라가 이 상자(20px)에서만 크게 나왔다 — 사각형을 px 로
-    그리면 어느 제목 옆에 놓아도 같다.
+    그리면 어느 제목 옆에 놓아도 같다. 서체도 구획 제목과 같은 짝(`tokens.FONT_FAMILY_DISPLAY`
+    700 — `components/typography.py`)이다. 구획 제목은 앱 전체 규칙이 `role="heading"` 으로 잡지만
+    이 제목은 `st.expander` 의 `summary` 라 여기서 건다.
 
     **본문은 내용만큼 자란다.** 높이를 주거나 `overflow` 를 걸면 긴 공지가 잘려 스크롤
     안에 숨는데, 공지는 접힘을 펴는 순간 전부 보여야 하는 글이다.
@@ -334,6 +336,7 @@ def summary_notice_style() -> str:
         display: inline-flex;
         align-items: center;
         gap: {SECTION_BAR_GAP_PX}px;
+        font-family: {tokens.FONT_FAMILY_DISPLAY};
         font-size: {SECTION_TITLE_FONT_PX}px;
         font-weight: 700;
         line-height: 1.2;

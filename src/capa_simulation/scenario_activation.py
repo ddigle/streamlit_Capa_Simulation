@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
 from typing import cast
 
 import pandas as pd
@@ -29,11 +31,17 @@ from capa_simulation.scenario_state import (
     clear_active_scenario,
     reset_active_scenario,
 )
+from capa_simulation.services.month_filter import available_month_range
 
 ACTIVE_PERSISTED_SCENARIO_ID_KEY = "active_persisted_scenario_id"
 ACTIVE_PERSISTED_REVISION_ID_KEY = "active_persisted_revision_id"
 ACTIVE_PERSISTED_SESSION_REVISION_KEY = "active_persisted_session_revision"
 OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY = "official_scenario_bootstrap_attempted"
+# 머리 띠가 「지금 이 세션에 적용 중인 시나리오」를 적을 값. 활성화할 때 한 번 스냅샷에서 떠 두고
+# 회차마다는 이것만 읽는다 — HOME 의 회차가 DB 를 다시 보거나 캐시된 스냅샷(표 전체를 매번
+# 역직렬화한다)을 꺼내지 않게 한다(2026-10-03 사용자 원칙). 핫리로드 뒤에도 읽히게 클래스가
+# 아니라 평범한 dict 로 둔다.
+ACTIVE_SCENARIO_LABEL_KEY = "active_scenario_label"
 
 # HOME 토글 키와 기본값은 UI 의존성이 없는 `home_state` 에서 함께 가져온다. 화면 모듈을
 # 거꾸로 import 하지 않아 순환이 없고, 키를 바꾸거나 토글을 추가해도 초기화가 함께 바뀐다.
@@ -64,6 +72,80 @@ _STALE_UI_KEYS = (
 )
 
 
+@dataclass(frozen=True)
+class ActiveScenarioLabel:
+    """머리 띠에 적는 활성 시나리오의 이름표. 값은 활성화한 스냅샷에서 한 번 떠 둔 것이다."""
+
+    scenario_id: str
+    revision_id: str
+    scenario_name: str
+    simulation_code: str
+    source_type: str
+    # 원천 등록시점. 원천에 등록시점이 없으면(내장 시드·CSV·복제) 시나리오를 만든 시각이다.
+    registered_at: datetime
+    revision_no: int
+    revision_name: str
+    # 리비전을 저장한 시각.
+    saved_at: datetime
+    # 시나리오 기간 — 생산계획(`RQ_PKG_PLAN`)에 있는 첫 달·끝 달. 조회기간과 다르다.
+    first_month: int | None
+    last_month: int | None
+
+
+def _plan_months(snapshot: ScenarioSnapshot) -> tuple[int | None, int | None]:
+    plan = snapshot.tables.get("RQ_PKG_PLAN")
+    if plan is None:
+        return None, None
+    try:
+        first, last = available_month_range(plan, "RQ_PKG_PLAN")
+    except (ValueError, TypeError):
+        # 계획이 비었거나 월이 없는 리비전도 활성화는 된다. 머리 띠는 기간만 빼고 적는다.
+        return None, None
+    return first, last
+
+
+def _remember_label(snapshot: ScenarioSnapshot) -> None:
+    scenario = snapshot.scenario
+    revision = snapshot.revision
+    first, last = _plan_months(snapshot)
+    st.session_state[ACTIVE_SCENARIO_LABEL_KEY] = {
+        "scenario_id": scenario.scenario_id,
+        "revision_id": revision.revision_id,
+        "scenario_name": scenario.scenario_name,
+        "simulation_code": scenario.source_simulation_code,
+        "source_type": scenario.source_type,
+        "registered_at": scenario.source_registered_at or scenario.created_at,
+        "revision_no": revision.revision_no,
+        "revision_name": revision.revision_name,
+        "saved_at": revision.created_at,
+        "first_month": first,
+        "last_month": last,
+    }
+
+
+def active_scenario_label() -> ActiveScenarioLabel | None:
+    """이 세션에 올라와 있는 리비전의 이름표. 아직 활성화하지 않았거나 값이 어긋나면 `None`.
+
+    세션만 읽는다(DB·캐시를 보지 않는다). 이름표의 리비전이 지금 활성 리비전과 다르면 믿지 않는다.
+    """
+    held = st.session_state.get(ACTIVE_SCENARIO_LABEL_KEY)
+    if not isinstance(held, dict):
+        return None
+    if held.get("revision_id") != active_persisted_revision_id():
+        return None
+    try:
+        return ActiveScenarioLabel(**held)
+    except TypeError:
+        return None
+
+
+def rename_active_scenario_label(scenario_id: str, scenario_name: str) -> None:
+    """시나리오명을 바꿨을 때 그 시나리오가 올라와 있으면 이름표의 이름도 바꾼다."""
+    held = st.session_state.get(ACTIVE_SCENARIO_LABEL_KEY)
+    if isinstance(held, dict) and held.get("scenario_id") == scenario_id:
+        st.session_state[ACTIVE_SCENARIO_LABEL_KEY] = {**held, "scenario_name": scenario_name}
+
+
 def activate_persisted_snapshot(snapshot: ScenarioSnapshot) -> ActiveScenario:
     """Publish tables and queue the preset before the next app-level widget render."""
     version = activate_persisted_reference_tables(
@@ -78,6 +160,7 @@ def activate_persisted_snapshot(snapshot: ScenarioSnapshot) -> ActiveScenario:
     st.session_state[ACTIVE_PERSISTED_SCENARIO_ID_KEY] = snapshot.scenario.scenario_id
     st.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] = snapshot.revision.revision_id
     st.session_state[ACTIVE_PERSISTED_SESSION_REVISION_KEY] = active["revision"]
+    _remember_label(snapshot)
     for key in _STALE_UI_KEYS:
         st.session_state.pop(key, None)
     queue_scenario_preset(snapshot.preset)
@@ -110,6 +193,7 @@ def clear_persisted_scenario_activation() -> None:
         ACTIVE_PERSISTED_REVISION_ID_KEY,
         ACTIVE_PERSISTED_SESSION_REVISION_KEY,
         OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY,
+        ACTIVE_SCENARIO_LABEL_KEY,
         *_STALE_UI_KEYS,
     ):
         st.session_state.pop(key, None)

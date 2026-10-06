@@ -355,6 +355,9 @@ class ScenarioSummary:
     active_revision_no: int
     created_at: datetime
     updated_at: datetime
+    # 원천이 사내 DB 에 등록된 시각(BigDataQuery 등록시점). 내장 시드·CSV·복제처럼 원천 등록시점이
+    # 없는 시나리오는 비어 있다.
+    source_registered_at: datetime | None = None
 
 
 @dataclass(frozen=True)
