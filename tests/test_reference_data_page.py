@@ -21,6 +21,18 @@ import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
+import capa_simulation.settings as settings
+
+# 페이지가 판정 기준 같은 공용 프로필을 `settings.DUCKDB_PATH` 에서 읽는다. 그대로 두면 저장소의
+# 실제 DB 를 열고 마이그레이션까지 건다. 프로세스마다 하나인 임시 폴더로 돌린다 — 테스트가 끝나면
+# conftest 가 원래 경로로 되돌린다.
+import os as _os
+import tempfile as _tempfile
+
+_isolated_data = Path(_tempfile.gettempdir()) / f"capa_reference_page_test_{_os.getpid()}"
+_isolated_data.mkdir(exist_ok=True)
+settings.DUCKDB_PATH = _isolated_data / "capa_simulation.duckdb"
+settings.EQUIPMENT_DUCKDB_PATH = _isolated_data / "equipment_availability.duckdb"
 
 
 def empty_display_order():
