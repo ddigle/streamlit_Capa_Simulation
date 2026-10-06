@@ -251,7 +251,7 @@ def test_process_picker_bulk_actions_restore_applied_values_and_apply_empty_or_a
     "group_rate,other_rate,group_title,group_first",
     [
         (0.8, 1.3, "확보 기준 미달", True),
-        (1.3, 0.8, "기준 초과", False),
+        (1.3, 0.8, "확보 기준 충족", False),
         (float("nan"), 0.8, "확보율 없음", False),
     ],
 )

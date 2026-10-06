@@ -1445,9 +1445,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `securement_threshold.py`: 공용 확보율 판정 기준(2026-10-06 사용자 결정). 기본 확보·경고 한 짝과
   월별 예외(빈칸 = 기본값)를 정규화·검증하고, 해시 가능한 `SecurementThresholds`(`for_month`·
   `status`·`digest`)와 달마다의 실효 기준 표(`effective_securement_thresholds`)를 만든다. 확보·경고·부족
-  부등호 `capacity_status`(확보는 초과, 경고는 이상)와 화면 캡션 `securement_threshold_caption`
+  부등호 `capacity_status`(확보·경고 모두 기준 **이상** — 기준과 같은 확보율은 확보다, 2026-10-06
+  사용자 결정)와 화면 캡션 `securement_threshold_caption`
   (기본값 + 기간 안 월별 예외 수)도 여기 있다. 판정하는 모든 곳은 행·칸의 달을 물어 그 달의 실효
-  기준을 쓴다 — 월별 예외가 없으면 모든 달이 기본값이라 예전 한 짝 판정과 같다. 값은 모두 **비율**
+  기준을 쓴다 — 월별 예외가 없으면 모든 달이 기본값이라 예전 한 짝 판정과 같다. 부등호는 이 함수
+  한 곳에만 있다 — HOME 결론(`home_decision`)·B/N 공정 선택(`process_picker`)도 `status` 를 지나고
+  각자 다시 적지 않는다(같은 값을 두고 화면마다 다른 말을 하던 자리다). 값은 모두 **비율**
   이고 입력하는 숫자는 실제 판정값(119.5% → 1.195)이다. 검증은 기본값과 **합친** 결과로 각 달의
   경고 ≤ 확보를 본다 — 거꾸로 짝은 저장 단계에서 막으므로 화면에 「직전 짝 유지」 장치가 없다.
 - `threshold_label.py`: 판정 기준(비율)의 **표시 글자** 한 곳. `threshold_percent_label(1.095)` 는
@@ -1968,7 +1971,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     만들지 않는다(2026-10-03 사용자 결정). 기준선은 정확한 기준 자리에 긋고 이름표는 사사오입한
     글자(`secure_label`·`warning_label`)를 단다. 기준은 **달마다** 오므로 같은 값이 이어지는 달끼리 한
     구간으로 묶어 그 칸 폭만큼 긋고 값이 바뀌는 자리는 세로로 이어 계단으로 만들며, 이름표는 구간마다
-    단다(모든 달이 같으면 판 전체를 가로지르는 한 줄 — 예전과 같다). B/N 확보율 행 범례는 「초과 확보 ·
+    단다(모든 달이 같으면 판 전체를 가로지르는 한 줄 — 예전과 같다). B/N 확보율 행 범례는 「확보 ·
     경고 · 부족」 세 이름뿐이고 숫자를 적지 않는다(`text.legend` — 막대 밑 상태 글자 `text.status` 와
     따로다, 2026-10-06 사용자 결정). 원래 화면에서는 툴바 `Summary` 단추(`intro_summary.summary_toolbar_script`, Guide 왼쪽)가
     같은 요약을 다시 연다 — 화면이 그 단추 속으로 접힌다. 그래서 오버레이는 걷지 않고 **감춰 둔다**
@@ -2399,9 +2402,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     통째로 덮인다. `seen=None`(기준 없음)과 `seen=[]`(직전에 옵션이 없었다)은 다르다.
 - `src/capa_simulation/services/process_picker.py`
   - 최종 월별 확보율을 조회기간의 최소값·최초 동률 월·유효 월 수로 요약한다. 확보 기준
-    미달·기준 초과·판정 없음으로 구분하되 입력 옵션 순서와 원본 공정 키를 보존한다.
-    경계는 HOME `capacity_status` 와 같다 — 기준과 같은 값은 미달 쪽이다. 기준 초과는 **유효한 모든
-    달이 그 달의 실효 확보 기준을 넘을 때**다(월별 예외가 없으면 「최저 > 기준」과 같다). 팝업 머리
+    미달·확보 기준 충족·판정 없음으로 구분하되 입력 옵션 순서와 원본 공정 키를 보존한다.
+    경계는 HOME 과 같은 `SecurementThresholds.status` 를 지난다 — 기준과 같은 값은 충족(확보) 쪽이다
+    (2026-10-06 사용자 결정). 충족은 **유효한 모든 달이 그 달의 판정으로 확보일 때**다(월별 예외가
+    없으면 「최저 ≥ 기준」과 같다). 팝업 머리
     줄은 `securement_threshold_caption`(「확보 기준 110% · 월별 예외 N개월」)이다.
     소요대수나 가용대수로 확보율을 다시 계산하지 않는다.
 - `src/capa_simulation/components/process_picker.py`
@@ -3365,8 +3369,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   모자란 공정도 기준을 채운 것으로 넣으려는 장치다(2026-10-03 사용자 결정). 지금 적는 곳은 HOME
   B/N 공정 선택 팝업의 기간 줄(기본값 + 「월별 예외 N개월」), Static Capa 판정 기준 카드, 입장 화면
   Summary 의 기준선 이름표(달마다 — 값이 바뀌는 구간마다 하나)다. **범례에는 숫자를 적지 않는다** —
-  HOME·확보율 히트맵(`home_preference.status_legend_markup`)·Summary 범례 모두 「초과 확보 · 경고 ·
-  부족」 세 이름뿐이고 과거 구간 칩도 없다(2026-10-06 사용자 결정 — 기준이 달마다 다를 수 있어 숫자
+  HOME(`home_preference.status_legend_markup`)·Summary 범례 모두 「확보 · 경고 · 부족」 세 이름뿐이고
+  과거 구간 칩도 없다(2026-10-06 사용자 결정 — 기준이 달마다 다를 수 있어 숫자
   한 짝은 예외 달에서 거짓이 된다). **바꾸지 않는 것**: 판정(`capacity_status`·
   `securement_rate`·`process_picker` — 정확한 기준), 저장값(프리셋 비율), 기준을 고치는
   `number_input`(정확한 값을 보여야 고친다), 차트 기준선의 **자리**(109.7% 확보 막대가 선 위에

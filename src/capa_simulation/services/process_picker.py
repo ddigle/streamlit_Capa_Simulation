@@ -37,8 +37,8 @@ def build_process_picker_summary(
     포함 공정 선택으로 거르지 않아 현재 OFF인 공정도 같은 근거로 판단한다. NaN·무한대는
     유효한 월에서 제외하며, 숫자가 남지 않은 공정을 0% 또는 부족으로 바꾸지 않는다.
 
-    충족은 **유효한 모든 달이 그 달의 실효 확보 기준을 넘을 때**다(`thresholds`). 기준이 달마다
-    같으면 「최저 확보율 > 기준」과 같은 말이지만, 월별 예외가 있으면 최저가 아닌 달이 더 높은
+    충족은 **유효한 모든 달이 그 달의 판정으로 확보일 때**다(`thresholds.status`). 기준이 달마다
+    같으면 「최저 확보율 ≥ 기준」과 같은 말이지만, 월별 예외가 있으면 최저가 아닌 달이 더 높은
     기준에 걸릴 수 있다. 표시하는 최저 확보율·그 달은 판정과 따로 그대로 둔다.
     """
     require_columns(securement, PICKER_COLUMNS, "공정 선택 확보율")
@@ -65,8 +65,10 @@ def build_process_picker_summary(
     for process, rows in prepared.groupby("공정", sort=False):
         minimum_rate = float(rows["확보율"].min())
         minimum_month = int(rows.loc[rows["확보율"].eq(minimum_rate), "생산계획년월"].min())
+        # 부등호를 여기 다시 적지 않고 HOME 과 같은 판정(`capacity_status`)을 지난다. 경계를
+        # 따로 적으면 한쪽만 바뀌어, HOME 결론이 「기준 미달」이라 세는 공정이 아래 구역에 숨는다.
         sufficient = all(
-            float(rate) > thresholds.secure_for(int(month))
+            thresholds.status(float(rate), int(month)) == "secure"
             for rate, month in zip(rows["확보율"], rows["생산계획년월"], strict=True)
         )
         summaries[str(process)] = ProcessPickerItem(
@@ -74,9 +76,6 @@ def build_process_picker_summary(
             minimum_rate=minimum_rate,
             minimum_month=minimum_month,
             valid_month_count=int(rows["생산계획년월"].nunique()),
-            # HOME 의 `capacity_status` 와 같은 부등호다 — 확보는 기준 **초과**다. 기준과
-            # 같은 값을 여기서만 충족으로 두면 HOME 결론이 「기준 미달」이라 세는 공정이
-            # 아래 구역에 숨는다.
             group="sufficient" if sufficient else "shortfall",
         )
     return tuple(

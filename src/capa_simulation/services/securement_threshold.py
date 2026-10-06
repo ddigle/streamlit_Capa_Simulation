@@ -47,11 +47,12 @@ def capacity_status(
 ) -> CapacityStatus:
     """확보율 하나를 확보·경고·부족 세 상태로 판정한다.
 
-    HOME 막대·히트맵의 색, 확보율 히트맵의 계단, 결론 한 줄의 색, Summary 막대 색이 모두 이
-    부등호 하나를 본다. 경계를 각자 적으면 한쪽만 바꿨을 때 같은 값을 두고 화면마다 다른 말을
-    한다. 확보는 기준 **초과**, 경고는 경고 기준 **이상**, 나머지가 부족이다.
+    HOME 막대·히트맵의 색, 확보율 히트맵의 계단, 결론 한 줄의 색, Summary 막대 색, B/N 공정
+    선택의 구역이 모두 이 부등호 하나를 본다. 경계를 각자 적으면 한쪽만 바꿨을 때 같은 값을 두고
+    화면마다 다른 말을 한다. 확보는 확보 기준 **이상**, 경고는 경고 기준 **이상**, 나머지가
+    부족이다 — 기준과 같은 확보율은 확보다(2026-10-06 사용자 결정).
     """
-    if rate > secure_threshold:
+    if rate >= secure_threshold:
         return "secure"
     if rate >= warning_threshold:
         return "warning"

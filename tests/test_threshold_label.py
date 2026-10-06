@@ -51,14 +51,15 @@ def test_a_threshold_that_is_not_a_number_does_not_stop_the_screen(ratio: float)
 
 
 def test_the_legend_names_three_states_without_numbers() -> None:
-    """범례는 「초과 확보 · 경고 · 부족」 세 이름만 적는다(2026-10-06 사용자 결정).
+    """범례는 「확보 · 경고 · 부족」 세 이름만 적는다(2026-10-06 사용자 결정).
 
     기준이 달마다 다를 수 있어 숫자 한 짝을 적으면 예외 달에서 거짓이 된다. 과거 구간 칩도 없다.
     """
     markup = status_legend_markup()
 
-    for name in ("초과 확보", "경고", "부족"):
+    for name in ("확보", "경고", "부족"):
         assert name in markup
+    assert "초과" not in markup
     assert "%" not in markup
     assert "과거 구간" not in markup
 
@@ -67,8 +68,17 @@ def test_judgement_stays_exact_while_labels_are_rounded() -> None:
     """화면 글자는 110%·100% 지만, 109.7% 는 확보·109.4% 는 경고로 판정한다(기준 109.5%)."""
     assert capacity_status(1.097, secure_threshold=1.095, warning_threshold=0.995) == "secure"
     assert capacity_status(1.094, secure_threshold=1.095, warning_threshold=0.995) == "warning"
+    assert capacity_status(0.995, secure_threshold=1.095, warning_threshold=0.995) == "warning"
     assert capacity_status(0.996, secure_threshold=1.095, warning_threshold=0.995) == "warning"
     assert capacity_status(0.994, secure_threshold=1.095, warning_threshold=0.995) == "shortage"
+
+
+def test_a_rate_equal_to_the_secure_threshold_is_secure() -> None:
+    """기준과 같은 확보율은 확보다(2026-10-06 사용자 결정). 경고 기준과 같은 쪽(이상)으로 맞춘다."""
+    assert capacity_status(1.095, secure_threshold=1.095, warning_threshold=0.995) == "secure"
+    thresholds = SecurementThresholds(1.095, 0.995, monthly=((202607, 1.195, None),))
+    assert thresholds.status(1.195, 202607) == "secure"
+    assert thresholds.status(1.1949, 202607) == "warning"
 
 
 def test_a_monthly_exception_moves_only_its_month() -> None:

@@ -108,7 +108,7 @@ def render_process_picker(
     """버튼에만 표시명을 쓰고 콜백에는 언제나 원본 공정 키를 넘긴다."""
     groups = (
         ("shortfall", "확보 기준 미달"),
-        ("sufficient", "기준 초과"),
+        ("sufficient", "확보 기준 충족"),
         ("unavailable", "확보율 없음"),
     )
     if not any(item.group == "shortfall" for item in items):

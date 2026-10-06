@@ -53,15 +53,15 @@ def test_the_tier_counts_match_the_heatmap_rule() -> None:
     boundary = _rates(
         [
             (202601, "초과", SECURE + 0.001),
-            (202602, "경계_확보", SECURE),  # 초과가 아니므로 경고다
+            (202602, "경계_확보", SECURE),  # 이상이므로 확보다(2026-10-06 사용자 결정)
             (202603, "경계_경고", WARNING),  # 이상이므로 경고다
             (202604, "미만", WARNING - 0.001),
         ]
     )
     decision = _decision(boundary)
 
-    assert (decision.warning, decision.shortage) == (2, 1)
-    assert decision.below == 3
+    assert (decision.warning, decision.shortage) == (1, 1)
+    assert decision.below == 2
     # 같은 값을 히트맵 규칙에 넣어도 같은 수가 나온다.
     tiers = [
         _tier(rate, thresholds=SecurementThresholds(SECURE, WARNING), month=int(month))

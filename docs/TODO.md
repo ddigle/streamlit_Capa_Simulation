@@ -363,10 +363,14 @@
   다른 두 값은 저장을 통과하고 그 범위를 쓰는 화면에서 ValueError 가 난다. HOME 은 공정
   옵션 정렬을 `BOOTSTRAP_ERRORS` 안으로 옮겨 traceback 대신 안내가 뜨게 했다. 뿌리는 저장
   검증을 적용과 같은 키로 맞추는 것이다.
-- [ ] 확보 기준과 **같은** 확보율의 판정이 화면마다 둘로 갈린다. HOME(`capacity_status`)과
+- [x] 확보 기준과 **같은** 확보율의 판정이 화면마다 둘로 갈린다. HOME(`capacity_status`)과
   B/N 공정 선택은 「초과해야 확보」라 같은 값을 기준 미달로 보고, Static Capa 부족 현황
   (`build_securement_shortfall_tables` 의 `lt`)은 미달로 세지 않는다. 계산된 월에서는 거의
-  안 걸리지만 과거 구간 입력(1.00 등)에서는 걸린다. 한쪽으로 정한다.
+  안 걸리지만 과거 구간 입력(1.00 등)에서는 걸린다. 한쪽으로 정한다. **2026-10-06 사용자 결정 —
+  기준과 같으면 확보다(이상).** `capacity_status` 를 `>=` 로 바꾸고, 부등호를 따로 적던 HOME 결론
+  (`home_decision`)과 B/N 공정 선택(`process_picker`)은 `SecurementThresholds.status` 를 지나게 했다
+  (Static Capa 부족 현황은 이미 그 쪽이었다). 범례 이름 「초과 확보」는 「확보」로, 공정 선택의 구역
+  이름 「기준 초과」는 「확보 기준 충족」으로 바꿨다.
 - [ ] `test_process_picker_preserves_shared_order_within_each_securement_group` 이
   `len(originals) == 3` 으로 내장 시드의 공정 수에 묶여 있다. 시드 공정이 늘면 계약과
   무관하게 깨진다 — 앞 셋만 골라 쓰고 나머지 확보율도 정해 주는 모양으로 푼다.

@@ -205,7 +205,7 @@ def status_legend_markup() -> str:
     칩도 두지 않는다 — 범례는 판정 세 색만 말한다.
     """
     chips: tuple[tuple[str, str], ...] = (
-        (tokens.STATUS_SECURE, "초과 확보"),
+        (tokens.STATUS_SECURE, "확보"),
         (tokens.STATUS_WARNING, "경고"),
         (tokens.STATUS_SHORTAGE, "부족"),
     )
@@ -629,7 +629,10 @@ def render_threshold_editor(
                     min_value=0.0,
                     step=0.1,
                     format="%.1f",
-                    help="이 값을 넘으면 확보입니다. 월별 표에서 비워 둔 달은 이 값을 씁니다.",
+                    help=(
+                        "확보율이 이 값 이상이면 확보입니다. 월별 표에서 비워 둔 달은 이 값을 "
+                        "씁니다."
+                    ),
                 )
             with warning_column:
                 default_warning = st.number_input(
@@ -638,7 +641,7 @@ def render_threshold_editor(
                     min_value=0.0,
                     step=0.1,
                     format="%.1f",
-                    help="이 값 미만은 부족, 이 값과 확보 기준 사이는 경고입니다.",
+                    help="이 값 미만은 부족, 이 값 이상·확보 기준 미만은 경고입니다.",
                 )
             edited: pd.DataFrame | None = None
             if months:

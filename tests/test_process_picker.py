@@ -82,10 +82,10 @@ def test_nan_infinite_and_absent_months_do_not_become_zero_or_shortfall() -> Non
 
 
 @pytest.mark.parametrize("threshold", [0.0, 1.0, 1.095])
-def test_equal_threshold_is_shortfall_like_home_and_only_strictly_higher_is_sufficient(
+def test_equal_threshold_is_sufficient_like_home_and_only_lower_is_shortfall(
     threshold,
 ) -> None:
-    """HOME 은 기준과 같은 확보율을 경고(기준 미달)로 센다. 선택 화면도 같아야 한다."""
+    """HOME 은 기준과 같은 확보율을 확보로 센다(2026-10-06 사용자 결정). 선택 화면도 같아야 한다."""
     frame = _frame(
         [
             (202601, "동일", threshold),
@@ -95,7 +95,7 @@ def test_equal_threshold_is_shortfall_like_home_and_only_strictly_higher_is_suff
     )
 
     assert [item.group for item in _summary(frame, ["동일", "초과", "미만"], threshold)] == [
-        "shortfall",
+        "sufficient",
         "sufficient",
         "shortfall",
     ]
@@ -157,7 +157,7 @@ def test_invalid_query_bounds_are_rejected(start, end) -> None:
 
 
 def test_a_month_with_a_higher_threshold_can_make_a_process_fall_short() -> None:
-    """충족은 **모든 유효한 달이 그 달 기준을 넘을 때**다.
+    """충족은 **모든 유효한 달이 그 달 기준 이상일 때**다.
 
     최저 달이 아닌 달이 더 높은 기준에 걸릴 수 있다.
     """

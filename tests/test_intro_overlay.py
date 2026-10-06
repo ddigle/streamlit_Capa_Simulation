@@ -345,12 +345,13 @@ def test_summary_threshold_text_is_the_rounded_label_and_the_line_stays_exact() 
 
 
 def test_summary_legend_names_three_states_without_numbers() -> None:
-    """범례는 「초과 확보 · 경고 · 부족」 세 이름만이고 기준 숫자를 적지 않는다.
+    """범례는 「확보 · 경고 · 부족」 세 이름만이고 기준 숫자를 적지 않는다.
 
-    막대 밑 상태 글자(`status`)는 「확보」 그대로다 — 범례 이름은 따로 보낸다.
+    막대 밑 상태 글자(`status`)도 지금은 같은 이름이지만 범례 이름은 따로 보낸다 — 둘은 뜻이
+    갈릴 수 있는 자리다(범례는 색의 뜻, 상태 글자는 그 달의 판정).
     """
     text = intro_overlay._data()["text"]
-    assert text["legend"] == {"secure": "초과 확보", "warning": "경고", "shortage": "부족"}
+    assert text["legend"] == {"secure": "확보", "warning": "경고", "shortage": "부족"}
     assert text["status"]["secure"] == "확보"
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
     labels = js[js.index("function buildLabels(") :]
