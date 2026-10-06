@@ -3,8 +3,11 @@
 """산출 결과 — 표를 보는 조건은 사이드바 `표 조건` 카드, 설명은 Guide(2026-09-29 사용자 결정).
 
 세 탭이 **한 카드**를 쓰고 안의 내용만 열린 탭 것으로 바뀐다(대당 Capa: 표시 방식·집계
-수준·공정 필터 / 소요대수: 상세·필터 / 확보율: 필터·히트맵 주요 공정). 카드는 열린 탭 하나의
-것만 서므로 닫힌 탭의 선택은 `persist_state` 가 지킨다. 본문에는 결과·제외 알림·표만 남는다.
+수준·공정 필터 / 소요대수: 상세·필터 / 확보율: 필터). 카드는 열린 탭 하나의 것만 서므로 닫힌
+탭의 선택은 `persist_state` 가 지킨다. 본문에는 결과·제외 알림·표만 남는다.
+
+확보율 탭의 `히트맵` 은 **표와 같은 행**을 그린다 — 표 조건 카드의 필터가 히트맵에도 걸린다
+(2026-10-06 사용자 결정). HOME 주요공정 프리셋과는 무관하다.
 """
 
 import pandas as pd
@@ -24,10 +27,7 @@ from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.securement_heatmap import (
-    render_securement_heatmap,
-    shortage_summary,
-)
+from capa_simulation.components.securement_heatmap import render_securement_heatmap
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.page_bootstrap import (
@@ -75,7 +75,6 @@ from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HI
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import remembered_expander, table_card
 
-KEY_PROCESS_FILTER_KEY = "securement_heatmap_key_processes"
 HEATMAP_EXPANDER_KEY = "securement_heatmap_expander"
 # 사이드바 `표 조건` 카드 이름. 세 탭이 한 카드를 쓴다.
 CARD_NAME = "calculation_result"
@@ -209,8 +208,6 @@ else:
     )
     process_options = process_order["공정"].astype(str).tolist()
     prune_list_selection(process_filter_key, process_options)
-    key_process_options = securement_table[SECUREMENT_DIMENSIONS[0]].astype(str).tolist()
-    prune_list_selection(KEY_PROCESS_FILTER_KEY, key_process_options)
 
     with unit_capacity_tab:
         render_capacity_assumption_notice(assumptions)
@@ -445,7 +442,7 @@ else:
             )
 
     if open_tab is availability_tab:
-        # 히트맵·부족 요약은 칸마다 **그 달의** 실효 기준으로 판정한다(월별 예외가 없으면 기본값).
+        # 히트맵은 칸마다 **그 달의** 실효 기준으로 판정한다(월별 예외가 없으면 기본값).
         thresholds = threshold_profile.thresholds
         with table_card(CARD_NAME):
             displayed_securement_table = render_column_filter_controls(
@@ -453,16 +450,6 @@ else:
                 SECUREMENT_DIMENSIONS,
                 key_prefix="securement_filter",
                 value_labels=process_labels.value_labels(),
-            )
-            # 히트맵 대상은 위 표 필터와 따로 둔다 — 표는 값을 뒤지는 화면이고 히트맵은 관리
-            # 대상만 남겨 두고 보는 화면이라 쓰임이 다르다.
-            selected_key_processes = st.multiselect(
-                "히트맵 주요 공정",
-                options=key_process_options,
-                placeholder="전체 공정",
-                key=KEY_PROCESS_FILTER_KEY,
-                persist_state="session",
-                format_func=process_labels.format_func(),
             )
         with availability_tab:
             securement_export = build_hierarchical_monthly_export(
@@ -489,40 +476,14 @@ else:
                 value_labels=process_labels.value_labels(),
                 owner_tab=availability_tab,
             )
-            # 표는 숫자를 답하고 히트맵은 모양을 답한다. 「주요 공정이 **언제** 무너지나」는
-            # 66행을 훑어서 알 것이 아니다.
+            # 표는 숫자를 답하고 히트맵은 모양을 답한다. 「어느 공정이 **언제** 무너지나」는
+            # 66행을 훑어서 알 것이 아니다. 행은 **위 표와 같다**(표 조건 카드의 필터) — 따로 고르는
+            # 목록을 두지 않는다(2026-10-06 사용자 결정).
             # 편 상자는 다른 탭에 갔다 와도 편 채다. 닫힌 탭의 본문은 그리지 않으므로 `key` 없는
             # 상자는 돌아올 때 새로 만들어져 접혔다(2026-10-01 브라우저 점검).
-            with remembered_expander("주요 공정 × 월 히트맵", key=HEATMAP_EXPANDER_KEY):
-                heatmap_table = securement_table
-                if selected_key_processes:
-                    heatmap_table = securement_table.loc[
-                        securement_table[SECUREMENT_DIMENSIONS[0]]
-                        .astype(str)
-                        .isin(selected_key_processes)
-                    ]
-                shortages = shortage_summary(
-                    heatmap_table,
-                    dimension_columns=SECUREMENT_DIMENSIONS,
-                    thresholds=thresholds,
-                    labels=process_labels,
-                )
-                if shortages.empty:
-                    st.success("선택한 공정은 조회 기간에 부족 구간이 없습니다.")
-                else:
-                    # 「언제」가 이 화면의 요점이다. 빨간 칸을 세는 것보다 숫자가 빠르다.
-                    st.warning(
-                        f"{len(shortages):,}개 공정에 부족 구간이 있습니다. "
-                        f"가장 이른 부족은 {shortages['최초 부족'].iloc[0]} 입니다."
-                    )
-                    st.dataframe(
-                        shortages,
-                        hide_index=True,
-                        width="content",
-                        key="securement_shortage_summary",
-                    )
+            with remembered_expander("히트맵", key=HEATMAP_EXPANDER_KEY):
                 render_securement_heatmap(
-                    heatmap_table,
+                    displayed_securement_table,
                     dimension_columns=SECUREMENT_DIMENSIONS,
                     thresholds=thresholds,
                     key="securement_rate_heatmap",

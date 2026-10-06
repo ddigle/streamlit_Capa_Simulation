@@ -1244,7 +1244,7 @@ def test_calculation_result_guide_carries_what_left_the_body() -> None:
         "`부하량 ÷ 대당 Capa`",
         "`가용대수 ÷ 소요대수`",
         "경로 수",
-        "히트맵 주요 공정",
+        "표 조건 카드의 필터가 히트맵에도",
         "칸 안 숫자와 hover 는 자르지 않은 확보율",
     ):
         assert text in guide, text

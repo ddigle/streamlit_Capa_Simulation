@@ -12,13 +12,12 @@
 `home_figures.capacity_status` 와 같은 색·같은 경계를 쓴다. 경계는 **그 달의 실효 기준**이다 —
 공용 판정 기준(`services/securement_threshold`)에 월별 예외가 있으면 그 달 열만 다른 경계로 칠한다.
 
-색만으로 뜻을 나르지 않도록 범례(`home_preference.status_legend_markup`)를 함께 그리고,
-칸이 적을 때는 숫자도 칸 안에 적는다.
+**범례를 그리지 않는다**(2026-10-06 사용자 결정). 세 색은 HOME `Capa LOB 현황` 범례와 같은
+판정색이고, 색만으로 뜻을 나르지 않도록 칸 위에 마우스를 올리면 **실제 확보율**이 나오며 칸이
+적을 때는 숫자도 칸 안에 적는다.
 
-**주요 공정을 지정해서 본다.** 66개를 다 깔면 모양은 보여도 「어느 것을 봐야 하나」가 없다.
-관리 대상 공정 몇 개만 남기면 그 공정들이 **언제** 무너지는지가 가로로 읽힌다.
-`shortage_summary()` 가 그 「언제」를 최초 부족 월과 개월 수로 따로 적는다 — 색을 세는
-것보다 숫자가 빠르다.
+**행은 호출하는 화면이 정한다.** 산출 결과 확보율 탭은 표 조건 카드의 필터를 거친 표를 그대로
+넘긴다 — 표와 히트맵이 같은 공정을 본다. 따로 고르는 주요 공정 목록이나 부족 요약은 없다.
 """
 
 from __future__ import annotations
@@ -29,7 +28,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from capa_simulation.components.home_preference import status_legend_markup
 from capa_simulation.components.plotly_layout import chart_canvas_layout, hover_chart_config
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
@@ -224,53 +222,6 @@ def build_securement_heatmap(
     return figure
 
 
-SHORTAGE_SUMMARY_COLUMNS = ("공정", "최초 부족", "부족 개월")
-
-
-def shortage_summary(
-    table: pd.DataFrame,
-    *,
-    dimension_columns: Sequence[str],
-    thresholds: SecurementThresholds,
-    labels: ProcessLabels | None = None,
-) -> pd.DataFrame:
-    """공정별 **최초 부족 월**과 부족 개월 수. 부족이 없는 공정은 행이 없다.
-
-    경계는 히트맵의 부족(빨강)과 같다 — **그 달의** 경고 기준 미만이다. 그림에서 빨간 칸을 세어 답할
-    수 있는 것을 숫자로 먼저 적는 이유는, 그 답이 이 화면의 요점이기 때문이다.
-    """
-    keys = list(dimension_columns)
-    month_columns = [column for column in table.columns if column not in set(keys)]
-    if table.empty or not month_columns or not keys:
-        return pd.DataFrame(columns=list(SHORTAGE_SUMMARY_COLUMNS))
-
-    rates = table[month_columns].apply(pd.to_numeric, errors="coerce")
-    month_warnings = pd.Series(
-        [thresholds.warning_for(_column_month(column)) for column in month_columns],
-        index=rates.columns,
-        dtype="float64",
-    )
-    shortage = rates.lt(month_warnings, axis=1) & rates.notna()
-    rows: list[dict[str, object]] = []
-    for position, (_, flags) in enumerate(shortage.iterrows()):
-        months = [column for column, is_short in zip(month_columns, flags, strict=True) if is_short]
-        if not months:
-            continue
-        name = table[keys[0]].iloc[position]
-        rows.append(
-            {
-                "공정": labels.label(name) if labels is not None else str(name),
-                "최초 부족": _month_tick(months[0]),
-                "부족 개월": len(months),
-            }
-        )
-    summary = pd.DataFrame(rows, columns=list(SHORTAGE_SUMMARY_COLUMNS))
-    # 빨리 무너지는 것부터, 같은 달이면 오래 무너지는 것부터 본다.
-    return summary.sort_values(["최초 부족", "부족 개월"], ascending=[True, False]).reset_index(
-        drop=True
-    )
-
-
 def render_securement_heatmap(
     table: pd.DataFrame,
     *,
@@ -292,5 +243,4 @@ def render_securement_heatmap(
     if figure is None:
         st.info("히트맵으로 그릴 확보율이 없습니다.")
         return
-    st.markdown(status_legend_markup(), unsafe_allow_html=True)
     st.plotly_chart(figure, width="stretch", key=key, config=hover_chart_config())

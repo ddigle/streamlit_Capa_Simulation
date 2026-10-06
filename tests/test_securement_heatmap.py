@@ -7,7 +7,6 @@ from capa_simulation.components.securement_heatmap import (
     SHORTAGE_TIER,
     WARNING_TIER,
     build_securement_heatmap,
-    shortage_summary,
 )
 from capa_simulation.design import tokens
 from capa_simulation.services.securement_threshold import SecurementThresholds
@@ -74,31 +73,6 @@ def test_empty_table_draws_nothing() -> None:
         )
         is None
     )
-
-
-def _wide_table() -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "공정": ["SAW", "MOLD", "TEST"],
-            "202601": [1.2, 1.2, 0.5],
-            "202602": [1.2, 0.8, 0.4],
-            "202603": [0.7, 0.9, 1.3],
-        }
-    )
-
-
-def test_shortage_summary_answers_when_each_process_breaks() -> None:
-    summary = shortage_summary(_wide_table(), dimension_columns=["공정"], **THRESHOLDS)
-
-    assert list(summary["공정"]) == ["TEST", "MOLD", "SAW"]
-    assert list(summary["최초 부족"]) == ["26.01", "26.02", "26.03"]
-    assert list(summary["부족 개월"]) == [2, 2, 1]
-
-
-def test_shortage_summary_skips_processes_that_never_break() -> None:
-    table = pd.DataFrame({"공정": ["SAW"], "202601": [1.5]})
-
-    assert shortage_summary(table, dimension_columns=["공정"], **THRESHOLDS).empty
 
 
 def test_every_process_row_keeps_its_name_when_many_are_shown() -> None:
@@ -179,7 +153,7 @@ def test_heatmap_hides_the_plotly_toolbar_but_keeps_hover() -> None:
 
     with (
         patch.object(securement_heatmap, "tab_is_hidden", return_value=False),
-        patch.object(securement_heatmap.st, "markdown"),
+        patch.object(securement_heatmap.st, "markdown") as markdown,
         patch.object(securement_heatmap.st, "plotly_chart") as plotly_chart,
     ):
         securement_heatmap.render_securement_heatmap(
@@ -189,6 +163,8 @@ def test_heatmap_hides_the_plotly_toolbar_but_keeps_hover() -> None:
     config = plotly_chart.call_args.kwargs["config"]
     assert config["displayModeBar"] is False
     assert not config.get("staticPlot", False)
+    # 범례는 그리지 않는다(2026-10-06 사용자 결정) — 뜻은 hover 의 확보율과 칸 숫자가 나른다.
+    markdown.assert_not_called()
 
 
 def test_a_month_with_its_own_threshold_is_judged_by_it() -> None:
@@ -205,12 +181,11 @@ def test_a_month_with_its_own_threshold_is_judged_by_it() -> None:
     assert list(figure.data[0].z[0]) == [SECURE_TIER, WARNING_TIER]
 
 
-def test_shortage_summary_uses_each_months_warning_threshold() -> None:
-    """부족은 **그 달의** 경고 기준 미만이다. 경고 기준만 올린 달에서만 부족으로 센다."""
-    table = pd.DataFrame({"공정": ["SAW"], "202601": [1.05], "202602": [1.05]})
-    thresholds = SecurementThresholds(1.095, 0.995, monthly=((202602, 1.195, 1.095),))
+def test_a_rate_equal_to_the_secure_threshold_is_painted_secure() -> None:
+    """기준과 같은 확보율은 확보다(2026-10-06 사용자 결정). HOME 그림과 같은 경계다."""
+    table = pd.DataFrame({"공정": ["SAW"], "202601": [1.095], "202602": [0.995]})
 
-    summary = shortage_summary(table, dimension_columns=["공정"], thresholds=thresholds)
+    figure = build_securement_heatmap(table, dimension_columns=["공정"], **THRESHOLDS)
 
-    assert list(summary["최초 부족"]) == ["26.02"]
-    assert list(summary["부족 개월"]) == [1]
+    assert figure is not None
+    assert list(figure.data[0].z[0]) == [SECURE_TIER, WARNING_TIER]
