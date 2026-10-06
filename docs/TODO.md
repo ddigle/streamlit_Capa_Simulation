@@ -1433,9 +1433,19 @@ pytest **1,256 통과·예상 실패 2개**(493.90초), worktree 격리 검사 �
   구성 요소 실측 적중 161+50ms → 52ms. 페이지 교차 A/B(같은 기계 상태): process_securement
   1,298~1,407 → 1,048~1,100ms, static_capa 331 → 122ms. 가짜 active 3개에 파일 고유 토큰.
   `a34996c`
-- [ ] **B3 E7 create_scenario 의 ref_data 편집 14표 이중 저장** — 전체 행의 33.7% 가 rev1 사본과
+- [x] **B3 E7 create_scenario 의 ref_data 편집 14표 이중 저장** — 전체 행의 33.7% 가 rev1 사본과
   완전 동일, 읽는 코드 0. 재구축 34.09 → 24.92MB. E8(ATTACH 재구축) 결정과 묶는다. 권장 채택.
-  채택 시 `compare_legacy_results.py` 대조 기준을 rev1 로.
+  채택 시 `compare_legacy_results.py` 대조 기준을 rev1 로. **2026-10-06 사용자 결정 — 채택**(구현
+  2026-10-07): `create_scenario` 가 리비전 표 14개를 리비전 1(`rev_data`)에만, 나머지 둘
+  (`RQ_DISPLAY_ORDER`·`RQ_MODULE`, `repository.DATASET_TABLES`)만 `ref_data` 에 적는다. 옛 사본은
+  지우지 않고 마이그레이션도 없다(E8 재구축과는 묶지 않았다 — 옛 데이터셋의 사본을 걷는 일은 E8 을
+  할 때 다시 본다). `ref_data` 를 읽는 곳 점검: `load_revision`·`display_order_store` 첫 이관은 리비전
+  표가 아닌 두 표만 읽어 그대로, `compare_legacy_results.py` 는 리비전 1 기준(내장 시드에서 옛
+  `ref_data` 기준과 출력이 글자까지 같다), `inspect_top_remigration.py` 의 2·3번은 두 스키마를 따로
+  센다. 세 진단 스크립트는 사본이 있는 데이터셋 수를 첫머리에 찍는다. `validate_duckdb_persistence.py`
+  는 스냅샷(`load_revision`)으로 왕복을 보므로 그대로다. 샘플 관측(내장 합성 시드 96행 새
+  부트스트랩): `ref_data` 649 → 21행, `ref_data`+`rev_data` 1,277 → 649행, 파일 5,189,632 →
+  4,714,496바이트(−9.2%). `tests/test_duckdb_repository.py` 가 표마다 저장 위치를 고정한다.
 - [x] **B4 시나리오 관리 탭 본문 건너뛰기** — 세 탭을 `with tab:` 으로 항상 그리고
   `on_change="rerun"` 을 뺐다(탭 전환 rerun 없음). 표시순서 탭의 검증 47ms + CSV 46ms 는
   공용 버전 키 `_validated_display_order` 캐시로 상쇄. 기본 탭 warm rerun 508 → 508~521ms

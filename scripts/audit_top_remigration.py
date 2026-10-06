@@ -27,6 +27,11 @@ NBSP·타입 갈림·빈 타입을 모두 태워 14개 표 전부 예측과 실�
 
 **읽기만 한다.** `read_only=True` 로 열고 제품명·고객명은 찍지 않는다 — 개수와 시각만이다.
 
+`ref_data` 는 데이터셋 단위, `rev_data` 는 리비전 단위다. 2026-10-06 사용자 결정(B3) 뒤 만든
+데이터셋은 리비전 표를 **`rev_data` 에만** 적고 `ref_data` 에는 사본이 없다 — 그 데이터셋은
+`ref_data` 줄에서 0 이고 3번 재고 출처의 데이터셋 목록에도 나오지 않는다. 출력 첫머리에 사본이
+있는 데이터셋 수를 함께 찍는다.
+
 사용:
 
     uv run --no-sync python scripts/audit_top_remigration.py
@@ -77,6 +82,17 @@ def _rows(connection: duckdb.DuckDBPyConnection, sql: str) -> list[tuple[object,
 def _scalar(connection: duckdb.DuckDBPyConnection, sql: str) -> int:
     rows = _rows(connection, sql)
     return int(rows[0][0]) if rows and rows[0][0] is not None else 0
+
+
+def _ref_data_coverage(connection: duckdb.DuckDBPyConnection) -> None:
+    """`ref_data` 에 리비전 표 사본이 있는 데이터셋 수. 결정 B3 뒤 만든 데이터셋은 사본이 없다."""
+    total = _scalar(connection, "SELECT count(*) FROM app_meta.dataset")
+    covered = _scalar(connection, "SELECT count(DISTINCT dataset_id) FROM ref_data.rq_pkg_plan")
+    print(
+        f"ref_data 에 리비전 표 사본이 있는 데이터셋 {covered:,} / 전체 {total:,} — "
+        "나머지는 사본 없이 rev_data(리비전)에만 있다(2026-10-06 결정 B3 뒤 만든 데이터셋)"
+    )
+    print()
 
 
 def _edp_source_products() -> str:
@@ -202,6 +218,7 @@ def main() -> int:
     print(f"파일 {DUCKDB_PATH}")
     print("`0026` 적용 뒤 감사 — 읽기만 하고 제품명·고객명은 찍지 않는다\n")
     try:
+        _ref_data_coverage(connection)
         contaminated = _contamination(connection)
         leftover = _leftover(connection)
         _stock_origin(connection)

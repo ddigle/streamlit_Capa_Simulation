@@ -150,6 +150,13 @@ REVISION_TABLES: dict[str, str] = {
         "RQ_EQP_AVBL",
     )
 }
+# 데이터셋(`ref_data`)에만 사는 표 — 리비전 표가 아닌 나머지(`RQ_DISPLAY_ORDER`·`RQ_MODULE`).
+# 리비전 표 14개는 리비전(`rev_data`)에만 적는다. 스냅샷은 그 14개를 `rev_data` 에서만 읽고
+# 리비전은 불변이라, 데이터셋에 같은 사본을 두면 읽는 곳 없이 행만 늘었다(2026-10-06 사용자
+# 결정 B3). 이 결정 전에 만든 데이터셋의 `ref_data` 사본은 지우지 않고 둔다(마이그레이션 없음).
+DATASET_TABLES: dict[str, str] = {
+    name: table for name, table in REFERENCE_TABLES.items() if name not in REVISION_TABLES
+}
 
 # 시나리오가 소유한 행이 사는 스키마.
 _OWNED_SCHEMAS = ("app_meta", "raw_data", "ref_data", "rev_data", "result_data")
@@ -804,7 +811,7 @@ class DuckDBScenarioRepository:
             if normalized_source is not None and source_profile is not None:
                 insert_core_data(connection, dataset_id, normalized_source)
                 insert_source_profile(connection, dataset_id, source_profile)
-            for logical_name, table_name in REFERENCE_TABLES.items():
+            for logical_name, table_name in DATASET_TABLES.items():
                 insert_frame(
                     connection,
                     schema="ref_data",

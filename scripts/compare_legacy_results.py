@@ -8,6 +8,11 @@
 기본은 가장 최근 데이터셋을 쓴다. `--dataset-id` 로 다른 데이터셋을 고를 수 있다.
 DuckDB 는 같은 파일에 모드가 다른 연결을 허용하지 않으므로 **앱을 끄고 실행한다.**
 
+계산에 넣는 RQ 표는 그 데이터셋 시나리오의 **리비전 1**(`rev_data`, 원천에서 처음 만든 리비전)이다.
+원천이 있는 등록(BigDataQuery·CSV·내장 시드)은 리비전 1 에 변환 결과를 그대로 적으므로 원천과 같은
+기준이다. 데이터셋 쪽(`ref_data`)에는 리비전 표의 사본을 더 적지 않는다(2026-10-06 사용자 결정 B3) —
+그 전에 만든 데이터셋에만 사본이 남아 있어 그쪽을 읽으면 새 데이터셋에서 빈 표가 된다.
+
 읽어 온 원시 행은 `build_q_core_data` 로 파생 프레임을 만든 뒤에 대조에 넘긴다.
 기존 결과를 접는 단위가 `RQ_PKG_PLAN` 업무 키인데 그 키의 `양산구분` 이 파생 단계에서
 만들어지기 때문이다.
@@ -69,15 +74,31 @@ def _latest_dataset_id(connection: duckdb.DuckDBPyConnection) -> str:
     return str(row[0])
 
 
-def _tables_for(connection: duckdb.DuckDBPyConnection, dataset_id: str) -> dict[str, pd.DataFrame]:
+def _first_revision_id(connection: duckdb.DuckDBPyConnection, dataset_id: str) -> str:
+    """데이터셋 시나리오의 리비전 1. 원천에서 처음 만든 리비전이라 대조 기준이다."""
+    row = connection.execute(
+        """
+        SELECT r.revision_id
+        FROM app_meta.scenario_revision r
+        JOIN app_meta.dataset d ON d.scenario_id = r.scenario_id
+        WHERE d.dataset_id = ? AND r.revision_no = 1
+        """,
+        [dataset_id],
+    ).fetchone()
+    if row is None:
+        raise SystemExit(f"데이터셋 {dataset_id} 의 리비전 1 이 없습니다.")
+    return str(row[0])
+
+
+def _tables_for(connection: duckdb.DuckDBPyConnection, revision_id: str) -> dict[str, pd.DataFrame]:
     """기술 키를 뺀 RQ 프레임을 계산 서비스가 받는 형태로 돌려준다."""
     tables: dict[str, pd.DataFrame] = {}
     for physical, logical in _NEEDED_TABLES.items():
         query = (
-            "SELECT * EXCLUDE (dataset_id, source_row_no) "
-            f"FROM ref_data.{physical} WHERE dataset_id = ?"
+            "SELECT * EXCLUDE (revision_id, source_row_no) "
+            f"FROM rev_data.{physical} WHERE revision_id = ? ORDER BY source_row_no"
         )
-        tables[logical] = connection.execute(query, [dataset_id]).fetch_df()
+        tables[logical] = connection.execute(query, [revision_id]).fetch_df()
     return tables
 
 
@@ -114,7 +135,8 @@ def main() -> int:
             "FROM raw_data.core_data WHERE dataset_id = ?",
             [dataset_id],
         ).fetch_df()
-        tables = _tables_for(connection, dataset_id)
+        revision_id = _first_revision_id(connection, dataset_id)
+        tables = _tables_for(connection, revision_id)
     finally:
         connection.close()
 
@@ -131,7 +153,7 @@ def main() -> int:
         "EQ(억Gb)": calculate_density_load(tables["RQ_PKG_PLAN"], tables["RQ_CHIP_EQ"]),
     }
 
-    print(f"데이터셋 {dataset_id} · 원천 {len(core):,}행")
+    print(f"데이터셋 {dataset_id} · 리비전 1 {revision_id} · 원천 {len(core):,}행")
     _report_candidate_columns(raw)
 
     frames: list[pd.DataFrame] = []

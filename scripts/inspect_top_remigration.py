@@ -22,6 +22,11 @@
 **읽기만 한다.** `read_only=True` 로 열어 쓰기 경로를 막았다. 제품명·고객명은 찍지 않고
 **개수만** 보고한다 — `제품타입`(`HBM`·`EDP-TSV`)은 제품군 이름이라 그대로 적는다.
 
+`ref_data` 는 데이터셋 단위, `rev_data` 는 리비전 단위다. 2026-10-06 사용자 결정(B3) 뒤 만든
+데이터셋은 리비전 표(이 스크립트가 보는 표 전부)를 **`rev_data` 에만** 적고 `ref_data` 에는 사본이
+없다 — 그 데이터셋은 `ref_data` 줄에서 0 이다. 그래서 2·3번은 두 스키마를 따로 세고, 출력
+첫머리에 사본이 있는 데이터셋 수를 함께 찍는다.
+
 사용:
 
     uv run --no-sync python scripts/inspect_top_remigration.py
@@ -78,6 +83,17 @@ def _scalar(connection: duckdb.DuckDBPyConnection, sql: str) -> int:
     return int(rows[0][0]) if rows and rows[0][0] is not None else 0
 
 
+def _ref_data_coverage(connection: duckdb.DuckDBPyConnection) -> None:
+    """`ref_data` 에 리비전 표 사본이 있는 데이터셋 수. 결정 B3 뒤 만든 데이터셋은 사본이 없다."""
+    total = _scalar(connection, "SELECT count(*) FROM app_meta.dataset")
+    covered = _scalar(connection, "SELECT count(DISTINCT dataset_id) FROM ref_data.rq_pkg_plan")
+    print(
+        f"ref_data 에 리비전 표 사본이 있는 데이터셋 {covered:,} / 전체 {total:,} — "
+        "나머지는 사본 없이 rev_data(리비전)에만 있다(2026-10-06 결정 B3 뒤 만든 데이터셋)"
+    )
+    print()
+
+
 def _product_type_shapes(connection: duckdb.DuckDBPyConnection) -> None:
     print("1) `제품타입` 의 실제 표기 — 재이관이 맞대는 리터럴이 이 중에 있어야 한다")
     rows = _rows(
@@ -108,24 +124,31 @@ def _product_name_drift(connection: duckdb.DuckDBPyConnection) -> None:
     if drifted:
         print("    ** 0 이 아니다. 원천 이름으로 맞대는 조인은 그 제품에서 빗나간다 —")
         print("       재이관 SQL 이 파생과 같은 규칙으로 줄여서 조인해야 한다. **")
-    orphan = _scalar(
-        connection,
-        'SELECT count(*) FROM ref_data.rq_pkg_plan WHERE "제품타입" IS NULL',
-    )
-    print(f"    `rq_pkg_plan.제품타입` 이 비어 있는 행 {orphan:,}개 (0013 백필이 놓친 자리)")
+    for schema in ("ref_data", "rev_data"):
+        orphan = _scalar(
+            connection,
+            f'SELECT count(*) FROM {schema}.rq_pkg_plan WHERE "제품타입" IS NULL',
+        )
+        print(f"    {schema}.rq_pkg_plan.제품타입 빈 행 {orphan:,}개 (0013 백필이 놓친 자리)")
     print()
 
 
 def _conflicting_types(connection: duckdb.DuckDBPyConnection) -> None:
     print("3) 제품 단위 판별이 위험한 자리 — 있으면 HBM 행까지 끌려간다")
-    mixed = _scalar(
-        connection,
-        'SELECT count(*) FROM (SELECT dataset_id, "제품정보" FROM ref_data.rq_pkg_plan '
-        'WHERE "제품타입" IS NOT NULL AND trim("제품타입") <> \'\' '
-        'GROUP BY dataset_id, "제품정보" '
-        'HAVING count(DISTINCT upper(trim("제품타입"))) > 1)',
-    )
-    print(f"    한 데이터셋 안에서 `제품타입` 이 갈리는 제품 {mixed:,}종")
+    mixed = 0
+    for schema, scope, unit in (
+        ("ref_data", "dataset_id", "데이터셋"),
+        ("rev_data", "revision_id", "리비전"),
+    ):
+        count = _scalar(
+            connection,
+            f'SELECT count(*) FROM (SELECT {scope}, "제품정보" FROM {schema}.rq_pkg_plan '
+            'WHERE "제품타입" IS NOT NULL AND trim("제품타입") <> \'\' '
+            f'GROUP BY {scope}, "제품정보" '
+            'HAVING count(DISTINCT upper(trim("제품타입"))) > 1)',
+        )
+        mixed += count
+        print(f"    한 {unit} 안에서 `제품타입` 이 갈리는 제품 {count:,}종 ({schema})")
     # 빈 문자열도 센다. `0026` 이 `IS NULL` 과 `trim(...) = ''` 을 같이 거르므로 여기서
     # `IS NULL` 만 보면 사전 점검과 마이그레이션의 조건이 갈린다.
     unset = _scalar(
@@ -243,6 +266,7 @@ def main() -> int:
     print(f"파일 {DUCKDB_PATH}")
     print("재이관 전제 점검 — 읽기만 하고 제품명·고객명은 찍지 않는다\n")
     try:
+        _ref_data_coverage(connection)
         _product_type_shapes(connection)
         _product_name_drift(connection)
         _conflicting_types(connection)

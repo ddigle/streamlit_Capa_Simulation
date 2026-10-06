@@ -23,7 +23,11 @@ from capa_simulation.persistence.cache import (
     clear_scenario_repository,
     load_scenario_snapshot,
 )
-from capa_simulation.persistence.repository import REFERENCE_TABLES, REVISION_TABLES
+from capa_simulation.persistence.repository import (
+    DATASET_TABLES,
+    REFERENCE_TABLES,
+    REVISION_TABLES,
+)
 from capa_simulation.services.display_order_editor import (
     ROUTE_SEQUENCE_COLUMNS,
     ROUTE_SEQUENCE_SCOPES,
@@ -280,6 +284,45 @@ def test_create_and_load_scenario_snapshot(tmp_path: Path) -> None:
         }
     assert "equipment_ops" not in schemas
     assert "equipment_meta" not in schemas
+
+
+def test_revision_tables_are_written_only_to_the_revision(tmp_path: Path) -> None:
+    """리비전 표 14개는 리비전(`rev_data`)에만, 나머지 둘은 데이터셋(`ref_data`)에만 적는다.
+
+    스냅샷은 리비전 표를 `rev_data` 에서만 읽고 리비전은 불변이라 데이터셋 사본은 읽는 곳 없이
+    행만 늘었다(2026-10-06 사용자 결정 B3). 스냅샷 왕복은 그대로다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    source = _reference_tables()
+    snapshot = repository.create_scenario(
+        _metadata(), source, ScenarioPreset(202608, 202608, ("Process-A",))
+    )
+
+    assert set(DATASET_TABLES) == {"RQ_DISPLAY_ORDER", "RQ_MODULE"}
+    assert set(DATASET_TABLES) | set(REVISION_TABLES) == set(REFERENCE_TABLES)
+    with duckdb.connect(str(database_path), read_only=True) as connection:
+        for logical_name, table_name in REFERENCE_TABLES.items():
+            dataset_rows = connection.execute(
+                f"SELECT count(*) FROM ref_data.{table_name} WHERE dataset_id = ?",
+                [snapshot.scenario.dataset_id],
+            ).fetchone()
+            in_dataset = int(dataset_rows[0]) if dataset_rows else 0
+            if logical_name in REVISION_TABLES:
+                assert in_dataset == 0, logical_name
+                revision_rows = connection.execute(
+                    f"SELECT count(*) FROM rev_data.{table_name} WHERE revision_id = ?",
+                    [snapshot.revision.revision_id],
+                ).fetchone()
+                assert revision_rows is not None
+                assert int(revision_rows[0]) == len(source[logical_name]), logical_name
+            else:
+                assert in_dataset == len(source[logical_name]), logical_name
+    reloaded = repository.load_revision(
+        snapshot.revision.revision_id, apply_global_display_order=False
+    )
+    for logical_name in REFERENCE_TABLES:
+        assert len(reloaded.tables[logical_name]) == len(source[logical_name]), logical_name
 
 
 def test_global_display_order_migrates_and_replaces_independently(tmp_path: Path) -> None:

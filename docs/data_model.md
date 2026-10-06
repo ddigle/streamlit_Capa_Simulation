@@ -1,6 +1,6 @@
 # DuckDB 데이터 모델
 
-마지막 갱신일: 2026-09-10
+마지막 갱신일: 2026-10-07
 
 ## 운영 원칙
 
@@ -42,7 +42,7 @@ app_meta.scenario 1 ── 1 app_meta.dataset
        │                       │
        │                       ├── N raw_data.core_data
        │                       ├── 78 raw_data.source_column_profile
-       │                       └── N ref_data.rq_* (16개 기본 스냅샷)
+       │                       └── N ref_data.rq_* (데이터셋 소유 2개 — 표시순서·모듈수)
        │
        └── N app_meta.scenario_revision
                     │
@@ -132,16 +132,22 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
 
 ### `ref_data`
 
-시나리오 생성 시 데이터셋 소유로 복제하는 RQ 16개다.
+시나리오를 만들 때 데이터셋 소유로 적는 RQ 표다. 표는 16개 모두 있지만(스키마는 그대로) **새
+데이터셋은 리비전 표가 아닌 둘만** 적는다(`repository.DATASET_TABLES`).
 
 ```text
-RQ_PKG_PLAN        RQ_YLD           RQ_CHIP_QTY
-RQ_CHIP_EQ         RQ_DISPLAY_ORDER RQ_REQB
-RQ_UPEH            RQ_RUN_RATE      RQ_VITAL
-RQ_MODULE          RQ_RUN_DAY       RQ_LOT_RATIO
-RQ_WF_RATIO        RQ_EQP_OWN       RQ_EQP_LENT
-RQ_EQP_AVBL
+RQ_DISPLAY_ORDER   RQ_MODULE
 ```
+
+나머지 14개(아래 `rev_data`)는 리비전 1 에만 적는다(2026-10-06 사용자 결정 B3). 스냅샷은 그
+14개를 `rev_data` 에서만 읽고 리비전은 불변이라, 데이터셋 사본은 읽는 곳 없이 행만 늘었다 — 내장
+시드를 새로 부트스트랩하면 `ref_data` 649 → 21행, `ref_data`+`rev_data` 1,277 → 649행, 파일
+5,189,632 → 4,714,496바이트(−9.2%)다(샘플 관측: `scripts/generate_sample_core_data.py` 리터럴에서
+나온 내장 합성 시드 96행). **이 결정 전에 만든 데이터셋의 14개 사본은 지우지 않고 그대로 둔다**
+(마이그레이션 없음). 그 사본을 읽는 코드는 없고, 진단 스크립트(`inspect_top_remigration.py`·
+`audit_top_remigration.py`·`inspect_wf_division.py`)는 두 스키마를 따로 세면서 사본이 있는
+데이터셋 수를 함께 찍는다. `compare_legacy_results.py` 의 대조 기준은 데이터셋 시나리오의 리비전
+1 이다. 0014·0026 같은 마이그레이션은 이 표들에 남은 옛 사본도 함께 고친다.
 
 기술 키는 `(dataset_id, source_row_no)`다. `source_row_no`는 DataFrame의 현재 행 순서를
 1부터 부여하며, 원본 컬럼명과 순서를 유지한다. 업무 고유 키는
@@ -168,9 +174,10 @@ RQ_CHIP_QTY  RQ_CHIP_EQ
 부터 업무 키(계약 `derived_keys` 8키의 마지막)이고 `제품타입`은 값 컬럼이다. 컬럼 순서는
 DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 리비전 왕복 동등성이 깨진다.
 
-기술 키는 `(revision_id, source_row_no)`다. 리비전을 읽을 때 이 14개는 `ref_data`의 같은
-이름 테이블을 대체하고, 나머지 읽기 전용 테이블은 데이터셋 기본 스냅샷을 사용한다.
-`RQ_REQB`는 STEP 구성 변경을 리비전별로 재현하기 위해 데이터셋 기본본과 별도로 저장한다.
+기술 키는 `(revision_id, source_row_no)`다. 리비전을 읽을 때 이 14개는 `rev_data` 에서만 읽고,
+나머지 둘(`RQ_DISPLAY_ORDER`·`RQ_MODULE`)은 데이터셋 `ref_data` 를 사용한다. 새 데이터셋은 이
+14개를 `ref_data` 에 적지 않으므로 리비전 1 이 원천 변환 결과의 유일한 사본이다.
+`RQ_REQB`는 STEP 구성 변경을 리비전별로 재현하기 위해 리비전마다 저장한다.
 `RQ_DISPLAY_ORDER`의 데이터셋 기본본과 과거 리비전 복사본은 호환용으로 남길 수 있지만,
 런타임 화면 정렬에는 `app_meta.global_display_order_rule`의 현재 공용 프로필을 우선한다.
 
