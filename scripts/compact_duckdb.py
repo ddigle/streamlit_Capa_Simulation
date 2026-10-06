@@ -31,6 +31,7 @@ import duckdb
 
 from capa_simulation.persistence import sync_state
 from capa_simulation.persistence._sql_helpers import DUCKDB_BLOCK_SIZE
+from capa_simulation.services.korean_particle import with_direction_particle
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
 MIB = 1024 * 1024
@@ -180,7 +181,7 @@ def compact(database_path: Path, args: argparse.Namespace) -> bool:
     shutil.move(str(database_path), str(backup))
     shutil.move(str(target), str(database_path))
     if args.keep_backup:
-        print(f"  원본을 {backup.name} 으로 남겼습니다.")
+        print(f"  원본을 {with_direction_particle(backup.name)} 남겼습니다.")
     else:
         backup.unlink()
     return True

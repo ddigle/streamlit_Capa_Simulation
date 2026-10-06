@@ -409,6 +409,12 @@ STEP·MCP 키 도입 전에 첫 행 선택 방식으로 저장한 사내 검증 
 .\.venv\Scripts\python.exe scripts\bootstrap_initial_duckdb_scenario.py --source-code <새 원천 코드> --scenario-name <시나리오 이름>
 ```
 
+`--replace-existing` 없이 돌렸는데 같은 원천 코드의 시나리오가 이미 있으면, 스크립트는 그
+시나리오의 활성 리비전을 공식버전으로 지정합니다. 그 리비전에 가상 제품이 들어 있으면
+화면의 공식버전 지정처럼 확인을 받습니다 — 제품 · Stack 목록을 찍고 지정하지 않은 채 0 이
+아닌 코드로 끝납니다. 실적과 대조할 수 없는 값임을 알고도 지정하려면
+`--allow-virtual-products` 를 붙여 다시 실행합니다.
+
 사내 조회에 쓰는
 `src/capa_simulation/io/company_bigdataquery_adapter.py`의 `QUERY_TEMPLATE`과
 `SOURCE_COLUMN_MAPPING`은 실제 원천 테이블의 SQL·컬럼명으로 이미 채워져 있고, 남은

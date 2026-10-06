@@ -30,7 +30,7 @@ import streamlit as st
 
 from capa_simulation.components.home_figures import capacity_status
 from capa_simulation.components.home_preference import status_legend_markup
-from capa_simulation.components.plotly_layout import chart_canvas_layout
+from capa_simulation.components.plotly_layout import chart_canvas_layout, hover_chart_config
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
@@ -46,6 +46,16 @@ MAX_CHART_HEIGHT_PX = 900
 MIN_LABELLED_ROW_PX = 13
 # 칸이 낮을 때의 공정 이름 글자 크기. 칸 높이보다 3px 작아야 위아래 이름이 붙지 않는다.
 DENSE_TICK_FONT_PX = 10
+# 월 눈금. 칸 폭은 브라우저에서야 정해지므로(`width="stretch"`) 가로로 둘지 세울지는 Plotly 가
+# 그린 뒤 글자 폭과 칸 폭을 재어 고른다(`autotickangles`) — 들어가면 가로, 겹치면 세운다. 세워도
+# 겹칠 만큼 달이 많을 때만 서버가 달을 솎는다. 1280px 창에서 70공정을 그리면 격자가 약 700px 이고,
+# 세운 「26.07」 한 줄(11px 글씨)에는 16px 이 있어야 이웃과 붙지 않는다 — 그래서 눈금은 43개까지다.
+MONTH_TICK_ANGLES = (0, -90)
+NARROWEST_GRID_PX = 700
+ROTATED_MONTH_SLOT_PX = 16
+MAX_MONTH_TICKS = NARROWEST_GRID_PX // ROTATED_MONTH_SLOT_PX
+# 솎을 때의 간격(개월). 달력과 맞는 간격만 쓴다 — 홀수 달·분기 첫 달·반기 첫 달처럼 읽힌다.
+MONTH_TICK_STEPS = (1, 2, 3, 4, 6, 12)
 # 이보다 칸이 많으면 숫자를 적지 않는다. 6pt 글씨로 가득 찬 격자는 모양도 숫자도 못 읽는다.
 MAX_LABELLED_CELLS = 180
 
@@ -69,6 +79,28 @@ def _month_tick(column: object) -> str:
         return month_label(int(str(column)))
     except ValueError:
         return str(column)
+
+
+def _month_tick_step(month_count: int) -> int:
+    """눈금 간격(개월). 세운 눈금이 `MAX_MONTH_TICKS` 개를 넘지 않는 가장 촘촘한 달력 간격이다."""
+    for step in MONTH_TICK_STEPS:
+        if -(-month_count // step) <= MAX_MONTH_TICKS:
+            return step
+    return MONTH_TICK_STEPS[-1]
+
+
+def _thinned_month_ticks(month_columns: Sequence[object], step: int) -> list[str]:
+    """간격 `step` 으로 남길 눈금. 1월에서부터 세어 달력과 맞춘다(`step` 이 3 이면 1·4·7·10월)."""
+    kept: list[str] = []
+    for position, column in enumerate(month_columns):
+        try:
+            month = int(str(column)) % 100
+        except ValueError:
+            # 월이 아닌 컬럼은 차례로 센다(`_month_tick` 처럼 멈추지 않는다).
+            month = position + 1
+        if (month - 1) % step == 0:
+            kept.append(_month_tick(column))
+    return kept
 
 
 def _discrete_colorscale() -> list[list[float | str]]:
@@ -164,7 +196,25 @@ def build_securement_heatmap(
         dtick=1,
         tickfont={"size": 11 if row_px >= 14 else DENSE_TICK_FONT_PX},
     )
-    figure.update_xaxes(type="category", title=None, side="top", tickangle=0)
+    # 월 축은 위에 둔다. 각도는 고정하지 않는다 — 고정한 가로 눈금은 칸이 좁아지면(1280px 창·30개월)
+    # 「26.0726.08」처럼 이웃과 붙었다. `automargin` 이 세운 눈금만큼 위 여백을 늘린다. 두 축 모두
+    # 확대를 막는다 — 격자 한 장을 확대할 일이 없고, 툴바를 끄면(`hover_chart_config`) 되돌릴 단추도
+    # 없다. 툴바가 오른쪽 위 월 눈금을 덮던 것도 툴바를 끄는 것으로 걷는다.
+    month_ticks: dict[str, object] = {}
+    step = _month_tick_step(len(month_columns))
+    if step > 1:
+        kept = _thinned_month_ticks(month_columns, step)
+        month_ticks = {"tickmode": "array", "tickvals": kept, "ticktext": kept}
+    figure.update_xaxes(
+        type="category",
+        title=None,
+        side="top",
+        autotickangles=list(MONTH_TICK_ANGLES),
+        automargin=True,
+        fixedrange=True,
+        **month_ticks,
+    )
+    figure.update_yaxes(fixedrange=True)
     return figure
 
 
@@ -239,4 +289,4 @@ def render_securement_heatmap(
         ),
         unsafe_allow_html=True,
     )
-    st.plotly_chart(figure, width="stretch", key=key, config={"staticPlot": False})
+    st.plotly_chart(figure, width="stretch", key=key, config=hover_chart_config())

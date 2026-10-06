@@ -18,6 +18,11 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from capa_simulation.services.korean_particle import (
+    direction_particle,
+    topic_particle,
+    with_topic_particle,
+)
 from capa_simulation.services.performance_actuals import (
     ALL_METRICS,
     EFFICIENCY_METRIC,
@@ -64,7 +69,8 @@ def _shortfall_answer(monthly: pd.DataFrame, window: str) -> SampleAnswer:
     worst = trouble.iloc[0] if not trouble.empty else None
     conclusion = (
         f"{window} 기준으로 효율이 기준에 못 미치는 공정은 {len(trouble):,}개입니다. "
-        f"가장 나쁜 곳은 **{worst['공정']}** 로 기간 평균 {float(worst['Gap']):.1%}p, "
+        f"가장 나쁜 곳은 **{worst['공정']}** {direction_particle(str(worst['공정']))} "
+        f"기간 평균 {float(worst['Gap']):.1%}p, "
         f"{int(worst['연속 미달'])}개월 연속 미달입니다."
         if worst is not None
         else f"{window} 기준으로 효율이 기준에 못 미치는 공정이 없습니다."
@@ -101,9 +107,9 @@ def _cause_answer(monthly: pd.DataFrame, window: str) -> SampleAnswer:
     evidence = pd.DataFrame(rows)
     target = str(evidence["공정"].iloc[0])
     return SampleAnswer(
-        question=f"{target} 은 왜 부족해?",
+        question=f"{with_topic_particle(target)} 왜 부족해?",
         conclusion=(
-            f"**{target}** 은 효율·UPEH·수율 세 지표가 모두 기준을 밑돕니다. "
+            f"**{target}** {topic_particle(target)} 효율·UPEH·수율 세 지표가 모두 기준을 밑돕니다. "
             "세 지표가 함께 내려가면 설비 한 대의 성능이 아니라 공정 조건이나 "
             "기준값 자체를 의심할 차례입니다."
         ),

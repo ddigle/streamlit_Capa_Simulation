@@ -266,5 +266,5 @@ def test_a_nonpositive_density_value_is_still_an_error() -> None:
     )
     only_planned = PLAN.loc[PLAN["제품정보"].eq("DEMO_OK")]
 
-    with pytest.raises(ValueError, match="구분_EQ은 0보다 커야"):
+    with pytest.raises(ValueError, match="구분_EQ 값은 0보다 커야"):
         calculate_density_load(only_planned, density)

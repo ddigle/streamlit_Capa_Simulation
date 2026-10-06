@@ -155,10 +155,10 @@ def order_problems(state: Mapping[str, object], manifest: Mapping[str, object]) 
     incoming_stamp = str(manifest.get("stamp") or "")
     if applied_stamp and incoming_stamp:
         if incoming_stamp == applied_stamp:
-            problems.append(f"중단: {incoming_stamp} 은 이미 적용했습니다.")
+            problems.append(f"중단: 이 묶음({incoming_stamp})은 이미 적용했습니다.")
         elif incoming_stamp < applied_stamp:
             problems.append(
-                f"중단: {incoming_stamp} 은 적용해 둔 {applied_stamp} 보다 과거입니다. "
+                f"중단: 이 묶음({incoming_stamp})은 적용해 둔 {applied_stamp} 보다 과거입니다. "
                 "옛 메일을 연 것이 아닌지 확인하세요."
             )
     applied_commit = str(state.get("commit") or "")

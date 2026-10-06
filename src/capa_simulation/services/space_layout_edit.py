@@ -41,6 +41,7 @@ from capa_simulation.services.floor_layout_profile import (
     normalize_canvas_size,
     rounded_to_canvas,
 )
+from capa_simulation.services.korean_particle import with_topic_particle
 
 POSITION_COLUMNS: Final = ("X좌표", "Y좌표")
 SIZE_COLUMNS: Final = ("Xsize", "Ysize")
@@ -298,7 +299,9 @@ def _parse_created(
     if not existing:
         # 호기 마스터 계약: 기존설비가 아니면 입고·Qual 일정(입고 ≤ Qual)과 확정상태가 필수다.
         if arrival is None or qual is None:
-            raise ValueError(f"신규 설비 {unit_id} 는 입고일정과 Qual일정이 필요합니다.")
+            raise ValueError(
+                f"신규 설비 {with_topic_particle(unit_id)} 입고일정과 Qual일정이 필요합니다."
+            )
         if qual < arrival:
             raise ValueError(f"새 호기 {unit_id} 의 Qual일정이 입고일정보다 빠릅니다.")
         if confirm not in QUAL_CONFIRMATION_STATUSES:

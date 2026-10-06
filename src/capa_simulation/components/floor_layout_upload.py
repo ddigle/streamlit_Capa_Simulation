@@ -59,6 +59,7 @@ from capa_simulation.services.floor_layout_profile import (
     image_pixel_size,
     normalize_canvas_size,
 )
+from capa_simulation.services.korean_particle import with_direction_particle
 
 # 이 화면의 위젯 키는 모두 이 접두에서 파생한다. 리터럴 접두를 자리마다 다시
 # 적으면 다른 모듈과 겹쳐도 `test_session_key_collisions` 가 볼 축이 없다.
@@ -311,7 +312,8 @@ def _floor_layout_dialog(
             disabled=profile is None or delete_blocked,
             help=(
                 "지우면 캔버스가 기본 "
-                f"{default_width:g} × {default_height:g} 로 돌아가는데 그 밖에 도면 "
+                f"{default_width:g} × {with_direction_particle(f'{default_height:g}')} "
+                "돌아가는데 그 밖에 도면 "
                 "요소가 있어 지울 수 없습니다. 도면 요소는 지워도 남습니다."
                 if delete_blocked
                 else "배경 도면과 캔버스 치수를 지웁니다. 도면 요소는 남습니다."
@@ -403,14 +405,16 @@ def _render_current_state(profile: _DrawingProfile | None, default_canvas: Canva
     if profile is None:
         st.info(
             "저장된 도면도 캔버스도 없습니다. 캔버스는 기본값 "
-            f"{default_canvas[0]:g} × {default_canvas[1]:g}로 그립니다.",
+            f"{default_canvas[0]:g} × {with_direction_particle(f'{default_canvas[1]:g}')} "
+            "그립니다.",
             icon=":material/image_not_supported:",
         )
         return
     if profile.image_data_uri is None:
         st.info(
             "배경 도면이 없고 캔버스 치수만 저장되어 있습니다. 배치도는 저장된 "
-            f"{profile.canvas_width:g} × {profile.canvas_height:g}로 그립니다.",
+            f"{profile.canvas_width:g} × "
+            f"{with_direction_particle(f'{profile.canvas_height:g}')} 그립니다.",
             icon=":material/grid_on:",
         )
         return

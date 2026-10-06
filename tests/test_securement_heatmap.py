@@ -122,3 +122,69 @@ def test_every_process_row_keeps_its_name_when_many_are_shown() -> None:
     assert (yaxis.tickmode, yaxis.dtick) == ("linear", 1)
     assert (figure.layout.height - CHART_CHROME_PX) / len(names) >= MIN_LABELLED_ROW_PX
     assert yaxis.tickfont.size < MIN_LABELLED_ROW_PX
+
+
+def _months(count: int) -> list[str]:
+    """2026년 1월부터 `count` 개월의 `YYYYMM` 컬럼."""
+    return [f"{2026 + index // 12}{index % 12 + 1:02d}" for index in range(count)]
+
+
+def test_month_axis_turns_its_labels_instead_of_letting_them_touch() -> None:
+    """고정한 가로 눈금은 1280px 창·30개월에서 「26.0726.08」처럼 붙었다(2026-10-06 사용자 보고).
+
+    칸 폭은 브라우저에서야 정해지므로 각도는 Plotly 가 재어 고른다 — 들어가면 가로, 겹치면 세운다.
+    툴바가 오른쪽 위 월 눈금을 덮던 것은 툴바를 끄고 확대를 막는 것으로 걷는다.
+    """
+    from capa_simulation.components.securement_heatmap import MONTH_TICK_ANGLES
+
+    months = _months(30)
+    table = pd.DataFrame({"공정": ["SAW", "MOLD"], **{month: [1.0, 0.9] for month in months}})
+
+    figure = build_securement_heatmap(table, dimension_columns=["공정"], **THRESHOLDS)
+
+    assert figure is not None
+    xaxis = figure.layout.xaxis
+    assert xaxis.tickangle is None
+    assert tuple(xaxis.autotickangles) == MONTH_TICK_ANGLES
+    assert MONTH_TICK_ANGLES[0] == 0
+    assert (xaxis.side, xaxis.automargin, xaxis.fixedrange) == ("top", True, True)
+    assert figure.layout.yaxis.fixedrange is True
+    # 30개월은 세우면 모두 들어간다 — 솎지 않는다.
+    assert xaxis.tickmode is None
+
+
+def test_month_axis_thins_to_calendar_steps_only_when_turned_labels_would_still_touch() -> None:
+    from capa_simulation.components.securement_heatmap import MAX_MONTH_TICKS
+
+    months = _months(72)
+    table = pd.DataFrame({"공정": ["SAW"], **{month: [1.0] for month in months}})
+
+    figure = build_securement_heatmap(table, dimension_columns=["공정"], **THRESHOLDS)
+
+    assert figure is not None
+    xaxis = figure.layout.xaxis
+    assert xaxis.tickmode == "array"
+    assert len(xaxis.tickvals) <= MAX_MONTH_TICKS
+    # 홀수 달(1·3·5…월)만 남는다. 눈금 값은 칸 이름과 같아 hover 는 모든 달을 그대로 말한다.
+    assert list(xaxis.tickvals[:3]) == ["26.01", "26.03", "26.05"]
+    assert list(xaxis.ticktext) == list(xaxis.tickvals)
+    assert set(xaxis.tickvals) <= set(figure.data[0].x)
+
+
+def test_heatmap_hides_the_plotly_toolbar_but_keeps_hover() -> None:
+    from unittest.mock import patch
+
+    from capa_simulation.components import securement_heatmap
+
+    with (
+        patch.object(securement_heatmap, "tab_is_hidden", return_value=False),
+        patch.object(securement_heatmap.st, "markdown"),
+        patch.object(securement_heatmap.st, "plotly_chart") as plotly_chart,
+    ):
+        securement_heatmap.render_securement_heatmap(
+            _table(), dimension_columns=["공정"], key="heatmap", **THRESHOLDS
+        )
+
+    config = plotly_chart.call_args.kwargs["config"]
+    assert config["displayModeBar"] is False
+    assert not config.get("staticPlot", False)

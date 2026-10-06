@@ -402,7 +402,7 @@ def test_a_process_only_in_the_equipment_side_shows_no_gap_and_says_why() -> Non
     # 그림은 Static 과 Dynamic 을 맞대는 자리라 그리지 않고 까닭을 말한다.
     assert not app.get("plotly_chart")
     infos = " ".join(item.value for item in app.info)
-    assert "「Wire Bond」는 기준정보(Static)에 없는 공정이라 GAP 을 내지 않습니다" in infos
+    assert "「Wire Bond」 공정은 기준정보(Static)에 없어 GAP 을 내지 않습니다" in infos
 
     _select_view(app, "분류별 내역")
     matrix = app.dataframe[0].value
@@ -416,7 +416,7 @@ def test_a_process_only_in_the_reference_side_shows_its_static_without_gap() -> 
     app = _run()
     app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
     assert not app.get("plotly_chart")
-    assert "「Probe」는 Dynamic 이 나오지 않은 공정" in " ".join(item.value for item in app.info)
+    assert "「Probe」 공정은 Dynamic 이 나오지 않아" in " ".join(item.value for item in app.info)
 
     _select_view(app, "분류별 내역")
     matrix = app.dataframe[0].value
@@ -437,7 +437,7 @@ def test_the_cross_check_leaves_out_a_process_missing_from_the_reference() -> No
     assert not app.exception
     assert not app.dataframe
     infos = " ".join(item.value for item in app.info)
-    assert "「Wire Bond」는 기준정보(Static)에 없는 공정이라 확보율을 맞대지 않습니다" in infos
+    assert "「Wire Bond」 공정은 기준정보(Static)에 없어 확보율을 맞대지 않습니다" in infos
 
     # 맞댈 공정이 없을 때 이름이 어긋난 공정이 있으면 이름도 까닭으로 든다.
     app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()

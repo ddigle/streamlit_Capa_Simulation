@@ -260,17 +260,17 @@ def _validate_production_month(series: pd.Series) -> None:
 
 def _mapping(value: object, label: str) -> dict[str, object]:
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
-        raise ValueError(f"{label}은 객체여야 합니다.")
+        raise ValueError(f"{label} 값은 객체여야 합니다.")
     return cast(dict[str, object], value)
 
 
 def _text(value: object, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{label}은 비어 있지 않은 문자열이어야 합니다.")
+        raise ValueError(f"{label} 값은 비어 있지 않은 문자열이어야 합니다.")
     return value
 
 
 def _integer(value: object, label: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool):
-        raise ValueError(f"{label}은 정수여야 합니다.")
+        raise ValueError(f"{label} 값은 정수여야 합니다.")
     return value

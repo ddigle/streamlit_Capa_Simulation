@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import require_columns
+from capa_simulation.services.korean_particle import with_direction_particle
 from capa_simulation.services.virtual_product import (
     PRODUCT_KEY_COLUMNS,
     VirtualProductRecord,
@@ -40,7 +41,8 @@ def merge_virtual_product_records(
                     f"가상제품 복제 이력이 충돌하여 저장할 수 없습니다: "
                     f"{record.product} · {record.stack}의 복제 원본이 "
                     f"{previous.source_product} · {previous.source_stack} / "
-                    f"{record.source_product} · {record.source_stack}으로 다릅니다. "
+                    f"{record.source_product} · "
+                    f"{with_direction_particle(record.source_stack)} 다릅니다. "
                     "복제 원본이 일치하는 리비전을 선택하세요."
                 )
         else:

@@ -747,7 +747,7 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
     # 계획에 없는 제품의 기준정보 한 줄 때문에 화면이 멈추던 것이 그 자리였다.
     for column in ("구분_Chip", "구분_EQ"):
         if calculation[column].le(0).any():
-            raise ValueError(f"RQ_CHIP_EQ.{column}은 0보다 커야 합니다.")
+            raise ValueError(f"RQ_CHIP_EQ.{column} 값은 0보다 커야 합니다.")
 
     calculation["물량"] = (
         calculation["생산수량"] * calculation["구분_Chip"] * calculation["구분_EQ"] / 100_000

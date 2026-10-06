@@ -485,11 +485,10 @@ def _one_sided_reason(process: str | None, comparison: GapComparison) -> str | N
     if process is None:
         return None
     if process in comparison.dynamic_only:
-        return f"「{process}」는 기준정보(Static)에 없는 공정이라 GAP 을 내지 않습니다."
+        return f"「{process}」 공정은 기준정보(Static)에 없어 GAP 을 내지 않습니다."
     if process in comparison.static_only:
         return (
-            f"「{process}」는 Dynamic 이 나오지 않은 공정(Cut-off·설비 없음)이라 GAP 을 내지 "
-            "않습니다."
+            f"「{process}」 공정은 Dynamic 이 나오지 않아(Cut-off·설비 없음) GAP 을 내지 않습니다."
         )
     return None
 
@@ -524,7 +523,7 @@ def _render_cell_units(*, row: str, month: int, contributions: pd.DataFrame) -> 
     elif row in (DYNAMIC_SUBTOTAL_ROW, DYNAMIC_WEIGHTED_ROW):
         categories = _SUBTOTAL_CATEGORIES
     else:
-        st.info(f"「{row}」는 기준정보 값이라 호기 목록이 없습니다. 분류나 소계 칸을 누르세요.")
+        st.info(f"「{row}」 행은 기준정보 값이라 호기 목록이 없습니다. 분류나 소계 칸을 누르세요.")
         return
     rows = contributions.loc[
         contributions["생산계획년월"].eq(month) & contributions["분류"].isin(categories)
@@ -624,7 +623,7 @@ def _render_securement_cross_check(
             "Static 가용대수가 없어 맞대지 않았습니다 — 공정명은 위 경고를 봅니다."
         )
     if process is not None and process in check.dynamic_only_processes:
-        st.info(f"「{process}」는 기준정보(Static)에 없는 공정이라 확보율을 맞대지 않습니다.")
+        st.info(f"「{process}」 공정은 기준정보(Static)에 없어 확보율을 맞대지 않습니다.")
         return
 
     rows = check.rows

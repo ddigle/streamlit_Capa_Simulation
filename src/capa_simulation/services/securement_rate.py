@@ -144,7 +144,7 @@ def _prepare_keys_and_value(data: pd.DataFrame, value_column: str, table_name: s
     if data[value_column].isna().any():
         raise ValueError(f"{table_name}.{value_column}에 숫자가 아닌 값이 있습니다.")
     if data[value_column].lt(0).any():
-        raise ValueError(f"{table_name}.{value_column}은 0 이상이어야 합니다.")
+        raise ValueError(f"{table_name}.{value_column} 값은 0 이상이어야 합니다.")
 
 
 def _prepare_shortfall_input(data: pd.DataFrame) -> None:
@@ -159,7 +159,7 @@ def _prepare_shortfall_input(data: pd.DataFrame) -> None:
         if data[column].isna().any():
             raise ValueError(f"확보율.{column}에 숫자가 아닌 값이 있습니다.")
         if data[column].lt(0).any():
-            raise ValueError(f"확보율.{column}은 0 이상이어야 합니다.")
+            raise ValueError(f"확보율.{column} 값은 0 이상이어야 합니다.")
 
 
 def _ceil_positive(value: float) -> int:

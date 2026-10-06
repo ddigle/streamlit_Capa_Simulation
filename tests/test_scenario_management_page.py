@@ -482,7 +482,7 @@ def test_rename_refreshes_the_cached_snapshot_name(tmp_path: Path) -> None:
     app.run()
     assert not app.exception
 
-    assert any("이름 바꾼 시나리오 으로 변경했습니다" in item.value for item in app.success)
+    assert any("이름 바꾼 시나리오로 변경했습니다" in item.value for item in app.success)
     refreshed = load_scenario_snapshot(str(database_path), revision_id)
     assert refreshed.scenario.scenario_name == "이름 바꾼 시나리오"
 

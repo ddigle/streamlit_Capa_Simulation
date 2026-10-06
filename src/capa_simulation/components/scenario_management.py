@@ -51,7 +51,7 @@ from capa_simulation.scenario_state import (
     session_virtual_products,
 )
 from capa_simulation.services.builtin_seed import BUILTIN_SEED_SOURCE_CODE
-from capa_simulation.services.korean_particle import object_particle
+from capa_simulation.services.korean_particle import object_particle, with_direction_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.scenario_virtual_products import (
     inherit_virtual_product_records,
@@ -431,7 +431,9 @@ def _render_rename(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     # 스냅샷 payload 는 시나리오명을 함께 담는다. 비우지 않으면 그 리비전에서 파생한 시나리오의
     # 원천명·출처 메모에 옛 이름이 남는다.
     clear_scenario_snapshot_cache()
-    st.session_state[FLASH_KEY] = f"시나리오명을 {renamed_summary.scenario_name} 으로 변경했습니다."
+    st.session_state[FLASH_KEY] = (
+        f"시나리오명을 {with_direction_particle(renamed_summary.scenario_name)} 변경했습니다."
+    )
     st.session_state.pop(ACTION_KEY, None)
     st.rerun()
 

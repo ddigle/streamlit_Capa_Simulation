@@ -103,13 +103,13 @@ class MarkBox(Protocol):
 
 def _number(value: object, field: str, mark_id: str) -> float:
     if value is None or isinstance(value, bool):
-        raise ValueError(f"도면 요소 {mark_id} 의 {field} 가 비었습니다.")
+        raise ValueError(f"도면 요소 {mark_id} 의 {field} 값이 비었습니다.")
     try:
         number = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"도면 요소 {mark_id} 의 {field} 는 숫자여야 합니다.") from exc
+        raise ValueError(f"도면 요소 {mark_id} 의 {field} 값은 숫자여야 합니다.") from exc
     if not math.isfinite(number):
-        raise ValueError(f"도면 요소 {mark_id} 의 {field} 는 숫자여야 합니다.")
+        raise ValueError(f"도면 요소 {mark_id} 의 {field} 값은 숫자여야 합니다.")
     return round(number, CANVAS_DECIMALS)
 
 

@@ -223,7 +223,7 @@ def _nullable_integer(series: pd.Series, label: str) -> pd.Series:
     invalid = numeric.isna() & ~source_missing
     fractional = numeric.notna() & numeric.mod(1).ne(0)
     if invalid.any() or fractional.any():
-        raise ValueError(f"RQ_DISPLAY_ORDER {label}은 정수여야 합니다.")
+        raise ValueError(f"RQ_DISPLAY_ORDER {label} 값은 정수여야 합니다.")
     return numeric.astype("Int64")
 
 

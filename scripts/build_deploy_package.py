@@ -328,7 +328,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("사내 전용 자리를 침범하는 파일이 세트에 있습니다:", file=sys.stderr)
         for path in intruding:
             print(f"  - {path}", file=sys.stderr)
-        print(f"  ({', '.join(INTERNAL_ONLY_PREFIXES)} 는 사내만 씁니다)", file=sys.stderr)
+        print(f"  ({', '.join(INTERNAL_ONLY_PREFIXES)} 경로는 사내만 씁니다)", file=sys.stderr)
         return 1
 
     if args.list_only:

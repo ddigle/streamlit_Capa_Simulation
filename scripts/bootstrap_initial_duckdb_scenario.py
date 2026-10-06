@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -37,6 +38,27 @@ def _free_scenario_name(repository: DuckDBScenarioRepository, name: str) -> str:
     return f"{name} ({datetime.now():%Y-%m-%d %H:%M})"
 
 
+def _virtual_product_block(repository: DuckDBScenarioRepository, revision_id: str) -> str | None:
+    """공식버전으로 지정할 리비전에 가상 제품이 있으면 멈추는 까닭을, 없으면 `None` 을 돌려준다.
+
+    화면(시나리오 관리 → 공식버전 지정)은 가상 제품이 든 리비전을 확인 체크 뒤에야 지정한다.
+    가상 제품은 실적과 대조할 수 없는 값이라, 이 CLI 도 같은 확인을 `--allow-virtual-products`
+    로 따로 받는다.
+    """
+    products = repository.list_virtual_products(revision_id)
+    if products.empty:
+        return None
+    labels = ", ".join(
+        f"{product} · {stack}"
+        for product, stack in zip(products["제품정보"], products["Stack"], strict=True)
+    )
+    return (
+        f"이 리비전에는 가상 제품 {len(products):,}건이 포함되어 있습니다({labels}). "
+        "실적과 대조할 수 없는 값입니다. 공식버전으로 지정하지 않았습니다 — 그대로 지정하려면 "
+        "--allow-virtual-products 를 붙여 다시 실행하세요."
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--database", type=Path, default=DUCKDB_PATH)
@@ -58,6 +80,14 @@ def parse_args() -> argparse.Namespace:
         help=(
             "현재 변환 계약으로 대체 시나리오를 생성·공식 발행한 뒤 "
             "같은 원천 코드의 기존 활성 시나리오를 보관"
+        ),
+    )
+    parser.add_argument(
+        "--allow-virtual-products",
+        action="store_true",
+        help=(
+            "기존 시나리오의 활성 리비전에 가상 제품이 있어도 공식버전으로 지정한다 "
+            "(화면의 「가상 제품이 포함된 것을 확인했습니다」 체크에 해당)"
         ),
     )
     return parser.parse_args()
@@ -84,6 +114,10 @@ def main() -> None:
                 f"r{scenario.active_revision_no}, official v{latest.release_no}"
             )
             return
+        blocked = _virtual_product_block(repository, scenario.active_revision_id)
+        if blocked is not None and not args.allow_virtual_products:
+            print(blocked, file=sys.stderr)
+            raise SystemExit(1)
         release = repository.publish_official_revision(
             scenario.scenario_id,
             scenario.active_revision_id,

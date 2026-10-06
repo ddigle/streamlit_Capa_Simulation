@@ -1368,6 +1368,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     timers.forEach((id) => window.clearTimeout(id));
     window.clearInterval(poller);
     document.removeEventListener("keydown", onKey);
+    document.removeEventListener("focusin", onFocusIn);
     window.removeEventListener("resize", onResize);
     sceneHandle.stop();
   };
@@ -1773,11 +1774,42 @@ function createOverlay(api, data, initial, syncToolbar) {
     syncToolbar();
   }
 
+  // 덮개가 서 있는 동안 Tab · Shift+Tab 은 덮개 안의 단추만 돈다. 아래 앱(#root)은 inert 라
+  // 건너뛰지만 덮개 호스트가 body 의 마지막이라, Detail 다음 Tab 은 페이지를 떠나 브라우저
+  // 주소창으로 나갔다(2026-10-06 E2E). 보이지 않는 단추(접혀 들어간 Summary)는 돌지 않는다.
+  function focusables() {
+    return $$("button, [href], input, select, textarea, [tabindex]").filter(
+      (el) =>
+        !el.disabled &&
+        !el.hidden &&
+        el.tabIndex >= 0 &&
+        el.getClientRects().length > 0 &&
+        getComputedStyle(el).visibility !== "hidden",
+    );
+  }
+  function cycleFocus(event) {
+    event.preventDefault();
+    const items = focusables();
+    if (!items.length) return;
+    const index = items.indexOf(shadow.activeElement);
+    const step = event.shiftKey ? -1 : 1;
+    const next = index < 0 ? (event.shiftKey ? items.length - 1 : 0) : (index + step + items.length) % items.length;
+    items[next].focus({ preventScroll: true });
+  }
+  // Tab 말고도 포커스가 덮개 밖으로 갈 수 있다(앱 다시 그리기 등). 그러면 덮개 첫 단추로 데려온다.
+  function onFocusIn(event) {
+    if (mode === "hidden" || event.target === host || host.style.display === "none") return;
+    const items = focusables();
+    if (items.length) items[0].focus({ preventScroll: true });
+  }
+
   function onKey(event) {
-    if (mode === "intro" && event.key === "Enter" && !detail.disabled && event.target === document.body) toDetail();
+    if (mode !== "hidden" && event.key === "Tab") cycleFocus(event);
+    else if (mode === "intro" && event.key === "Enter" && !detail.disabled && event.target === document.body) toDetail();
     else if (mode === "summary" && event.key === "Escape") toDetail();
   }
   document.addEventListener("keydown", onKey);
+  document.addEventListener("focusin", onFocusIn);
   detail.addEventListener("click", () => {
     if (!detail.disabled) toDetail();
   });

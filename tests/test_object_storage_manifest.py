@@ -346,7 +346,7 @@ def test_pull_messages_pick_the_object_particle_by_the_last_sound() -> None:
     head = _pointer(2)
 
     assert manifest.decision_message(PullDecision.DOWNLOAD, "equipment", head=head).startswith(
-        "가용설비를 원격 seq 2 으로"
+        "가용설비를 원격 seq 2로"
     )
     assert manifest.decision_message(PullDecision.DOWNLOAD, "simulation", head=head).startswith(
         "시뮬레이션을 원격"
@@ -354,6 +354,13 @@ def test_pull_messages_pick_the_object_particle_by_the_last_sound() -> None:
     assert "원격 seq 2를 받습니다" in manifest.decision_message(
         PullDecision.LOCAL_MISSING, "simulation", head=head
     )
+    # 「은/는」·「으로/로」도 끝소리로 고른다 — 「가용설비 은」·「seq 3 로」가 아니다.
+    assert manifest.decision_message(PushDecision.UP_TO_DATE, "equipment", head=head).startswith(
+        "가용설비는 원격과 같습니다"
+    )
+    assert manifest.decision_message(
+        PullDecision.DOWNLOAD, "equipment", head=_pointer(3)
+    ).startswith("가용설비를 원격 seq 3으로")
 
 
 def test_push_and_pull_messages_do_not_collide_on_shared_enum_values() -> None:
@@ -367,5 +374,5 @@ def test_push_and_pull_messages_do_not_collide_on_shared_enum_values() -> None:
     push = manifest.decision_message(PushDecision.UP_TO_DATE, "simulation", head=head)
     pull = manifest.decision_message(PullDecision.UP_TO_DATE, "simulation", head=head)
 
-    assert push == "시뮬레이션 은 원격과 같습니다(원격 seq 1)."
-    assert pull == "시뮬레이션 은 이미 원격 seq 1 입니다."
+    assert push == "시뮬레이션은 원격과 같습니다(원격 seq 1)."
+    assert pull == "시뮬레이션은 이미 원격 seq 1 입니다."

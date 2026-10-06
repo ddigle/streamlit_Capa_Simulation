@@ -29,7 +29,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Final, Literal
 
-from capa_simulation.services.korean_particle import with_object_particle
+from capa_simulation.services.korean_particle import (
+    with_direction_particle,
+    with_object_particle,
+    with_topic_particle,
+)
 
 POINTER_SCHEMA_VERSION: Final = 1
 # 내림차순 키를 만들 때 쓰는 시퀀스 공간. 12자리 고정폭이라 seq 는 0 이상 이 값 이하만 쓴다.
@@ -417,7 +421,9 @@ def decision_message(
     details = dict(extra or {})
     push_messages: Mapping[PushDecision, str] = {
         PushDecision.PUBLISH: f"{label} 변경을 올립니다(원격 {generation}).",
-        PushDecision.UP_TO_DATE: f"{label} 은 원격과 같습니다(원격 {generation}).",
+        PushDecision.UP_TO_DATE: (
+            f"{with_topic_particle(label)} 원격과 같습니다(원격 {generation})."
+        ),
         PushDecision.PARENT_MOVED: (
             f"{label} 원격이 먼저 앞섰습니다(원격 {generation}). 로컬 저장은 그대로 있습니다 — "
             "resolve 로 어느 쪽을 남길지 정하세요."
@@ -436,9 +442,10 @@ def decision_message(
     # 담으면 같은 값끼리 키가 충돌해 뒤에 적은 pull 문구가 push 문구를 덮어쓴다.
     pull_messages: Mapping[PullDecision, str] = {
         PullDecision.DOWNLOAD: (
-            f"{with_object_particle(label)} 원격 {generation} 으로 내려받습니다."
+            f"{with_object_particle(label)} 원격 "
+            f"{with_direction_particle(generation)} 내려받습니다."
         ),
-        PullDecision.UP_TO_DATE: f"{label} 은 이미 원격 {generation} 입니다.",
+        PullDecision.UP_TO_DATE: f"{with_topic_particle(label)} 이미 원격 {generation} 입니다.",
         PullDecision.AMBIGUOUS: (
             f"{label} 로컬 DB 가 어느 세대에서 왔는지 알 수 없습니다. 자동으로 덮지 않습니다 — "
             "adopt 로 어느 쪽을 기준으로 삼을지 정하세요."

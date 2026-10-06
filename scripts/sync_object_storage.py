@@ -34,6 +34,10 @@ from capa_simulation.page_bootstrap import (  # noqa: E402
 )
 from capa_simulation.persistence import snapshot_export, sync_state  # noqa: E402
 from capa_simulation.services import object_storage_manifest as manifest  # noqa: E402
+from capa_simulation.services.korean_particle import (  # noqa: E402
+    with_direction_particle,
+    with_topic_particle,
+)
 from capa_simulation.services.object_storage_manifest import (  # noqa: E402
     DATASET_LABELS,
     DatasetName,
@@ -164,7 +168,7 @@ def command_profile(args: argparse.Namespace) -> int:
     ):
         print(f"aws configure set {name} {value} --profile $PROF")
     print()
-    print(f"# 네임스페이스 {object_storage.NAMESPACE_NOTE} 는 프로필에 매여 있습니다.")
+    print(f"# 네임스페이스({object_storage.NAMESPACE_NOTE})는 프로필에 매여 있습니다.")
     print("# 체크섬 두 줄은 AWS CLI 2.23+ 와 ECS 의 비호환 우회입니다(Dell KB 000299507).")
     return 0
 
@@ -567,7 +571,7 @@ def command_resolve(args: argparse.Namespace) -> int:
             sha256=promoted.sha256,
             snapshot_key=promoted.snapshot_key,
         )
-        print(f"{label} : seq {promoted.seq} 로 승격했습니다.")
+        print(f"{label} : {with_direction_particle(f'seq {promoted.seq}')} 승격했습니다.")
     return 1 if failures else 0
 
 
@@ -577,7 +581,7 @@ def command_adopt(args: argparse.Namespace) -> int:
         label = DATASET_LABELS[dataset]
         database_path = DATASET_PATHS[dataset]
         if args.source == "remote":
-            print(f"[안내] {label} 은 pull --force 로 원격을 받으세요.")
+            print(f"[안내] {with_topic_particle(label)} pull --force 로 원격을 받으세요.")
             continue
         head = read_head(client, dataset)
         if head is None:

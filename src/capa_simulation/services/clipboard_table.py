@@ -49,5 +49,7 @@ def parse_clipboard_table(content: str, label: str) -> pd.DataFrame:
 
     result.columns = [str(column).lstrip("\ufeff").strip() for column in result.columns]
     if len(result.columns) == 1 and "\t" not in normalized.partition("\n")[0]:
-        raise ValueError(f"{label}은 Excel에서 헤더를 포함한 여러 셀을 복사해 붙여넣어야 합니다.")
+        raise ValueError(
+            f"{label} 붙여넣기는 Excel에서 헤더를 포함한 여러 셀을 복사해 넣어야 합니다."
+        )
     return result.dropna(how="all").reset_index(drop=True)

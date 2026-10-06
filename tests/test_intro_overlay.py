@@ -332,3 +332,25 @@ def test_closing_the_toolbar_summary_returns_focus_to_its_button() -> None:
     closing = js[js.index("async function toDetail()") : js.index("function hide()")]
     assert closing.index("hide();") < closing.index("opener.focus(")
     assert "opener = null;" in closing
+
+
+def test_tab_stays_inside_the_overlay_while_it_is_open() -> None:
+    """덮개가 서 있으면 Tab · Shift+Tab 이 덮개 안 단추만 돈다(2026-10-06 E2E).
+
+    아래 앱(#root)은 inert 지만 덮개 호스트가 body 의 마지막이라, Detail 다음 Tab 이 페이지를
+    떠나 브라우저 주소창으로 나갔다. Esc 로 닫는 길과 툴바 단추로 포커스를 돌려주는 길은 그대로다.
+    """
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    on_key = js[js.index("function onKey(event)") :]
+    on_key = on_key[: on_key.index("\n  }\n")]
+    assert 'mode !== "hidden" && event.key === "Tab"' in on_key
+    assert on_key.index("cycleFocus(event)") < on_key.index('event.key === "Escape"')
+    assert 'mode === "summary" && event.key === "Escape") toDetail();' in on_key
+    cycle = js[js.index("function cycleFocus(event)") : js.index("function onFocusIn(event)")]
+    assert "event.preventDefault();" in cycle
+    assert "shadow.activeElement" in cycle
+    focusables = js[js.index("function focusables()") : js.index("function cycleFocus(event)")]
+    for guard in ("!el.disabled", "!el.hidden", 'visibility !== "hidden"'):
+        assert guard in focusables, guard
+    assert 'document.addEventListener("focusin", onFocusIn);' in js
+    assert 'document.removeEventListener("focusin", onFocusIn);' in js
