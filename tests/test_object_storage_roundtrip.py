@@ -22,6 +22,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from capa_simulation import settings as app_settings
 from capa_simulation.io.object_storage import CommandResult, StorageSettings
 from capa_simulation.persistence import snapshot_export, sync_state
 from capa_simulation.persistence._sql_helpers import connect
@@ -158,7 +159,7 @@ def harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     database = tmp_path / "capa_simulation.duckdb"
     _seed(database, rows=10)
 
-    monkeypatch.setattr(snapshot_export.settings, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
     monkeypatch.setattr(script, "DATASET_PATHS", {"simulation": database})
 
     store = FakeStore()
@@ -182,7 +183,8 @@ def harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
 
 def _run(harness: SimpleNamespace, *argv: str) -> int:
-    return harness.script.main(["--dataset", "simulation", *argv])
+    status: int = harness.script.main(["--dataset", "simulation", *argv])
+    return status
 
 
 def test_init_uploads_a_snapshot_and_publishes_a_pointer(harness: SimpleNamespace) -> None:

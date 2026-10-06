@@ -3,6 +3,7 @@
 import re
 
 import pytest
+import streamlit as st
 from streamlit.elements.html import _html_only_style_tags
 
 from capa_simulation.components import intro_summary, page_guide, print_button, theme_toggle
@@ -22,8 +23,8 @@ def _render(monkeypatch: pytest.MonkeyPatch) -> tuple[list[str], list[object], l
         frames.append(src)
         heights.append(kwargs.get("height"))
 
-    monkeypatch.setattr(theme_toggle.st, "iframe", fake_iframe)
-    monkeypatch.setattr(theme_toggle.st, "html", lambda body, **_kwargs: styles.append(body))
+    monkeypatch.setattr(st, "iframe", fake_iframe)
+    monkeypatch.setattr(st, "html", lambda body, **_kwargs: styles.append(body))
     return frames, heights, styles
 
 

@@ -117,7 +117,7 @@ def test_fab_edit_applies_to_the_session_and_the_same_save_button_writes_it(
 
     assert not app.exception, [item.message for item in app.exception]
     assert any("이 세션에 적용했습니다" in item.value for item in app.success)
-    assert any("S.PKG FAB 전체 배치" in item.value for item in app.get("markdown"))
+    assert any("S.PKG FAB 전체 배치" in item.value for item in app.markdown)
     # FAB 만 바뀐 저장은 리비전을 만들지 않아 메모가 남을 곳이 없다 — 칸을 세우지 않는다.
     assert not [item for item in app.text_input if item.label == "변경 메모"]
     after = _fab_calls(editor_calls, editing=True)[-1]
@@ -134,7 +134,7 @@ def test_fab_edit_applies_to_the_session_and_the_same_save_button_writes_it(
     assert len(stored) == len(edited)
     c1 = next(mark for mark in stored if mark.link == ("C1", "1F"))
     assert c1.color == "violet"
-    assert not any("저장 안 한 배치 변경" in item.value for item in app.get("markdown"))
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     # 저장은 콜백이라 FAB 편집 토글이 꺼지지 않는다.
     assert app.toggle(key=FAB_EDIT_KEY).value is True
 
@@ -167,7 +167,7 @@ def test_fab_edit_and_save_work_without_any_saved_equipment(
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert any("S.PKG FAB 전체 배치" in item.value for item in app.get("markdown"))
+    assert any("S.PKG FAB 전체 배치" in item.value for item in app.markdown)
     assert not [item for item in app.text_input if item.label == "변경 메모"]
     app.button(key="space_layout_save").click().run()
 
@@ -222,7 +222,7 @@ def test_a_fab_edit_applied_before_the_sample_is_turned_on_cannot_be_saved_but_c
     assert not app.exception, [item.message for item in app.exception]
     assert app.toggle(key=FAB_EDIT_KEY).disabled
     # 대기분은 남고 저장만 꺼진다. 까닭은 상자 안내와 단추 풍선에 있다.
-    assert any("S.PKG FAB 전체 배치" in item.value for item in app.get("markdown"))
+    assert any("S.PKG FAB 전체 배치" in item.value for item in app.markdown)
     save = app.button(key="space_layout_save")
     assert save.disabled and "샘플 스위치를 끄면" in save.help
     assert any("샘플 스위치를 끄면 저장할 수 있습니다" in item.value for item in app.caption)
@@ -232,7 +232,7 @@ def test_a_fab_edit_applied_before_the_sample_is_turned_on_cannot_be_saved_but_c
     app.button(key="space_layout_discard").click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not any("저장 안 한 배치 변경" in item.value for item in app.get("markdown"))
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     assert repository.load_fab_layout_profile() is None
     clear_equipment_repository()
 
@@ -297,7 +297,7 @@ def test_a_stale_fab_apply_says_the_drawing_was_reloaded(
         "FAB 도면이 바뀌어" in item.value and "다시 고친 뒤 적용" in item.value
         for item in app.warning
     )
-    assert not any("저장 안 한 배치 변경" in item.value for item in app.get("markdown"))
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     clear_equipment_repository()
 
 
@@ -314,7 +314,7 @@ def test_a_block_without_a_floor_is_refused(
 
     assert not app.exception
     assert any("연결 층" in item.value for item in app.error)
-    assert not any("저장 안 한 배치 변경" in item.value for item in app.get("markdown"))
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     clear_equipment_repository()
 
 
@@ -342,7 +342,7 @@ def test_a_fab_save_after_someone_else_saved_is_refused_and_can_be_discarded(
 
     assert not app.exception
     assert any("다른 사용자가 먼저" in item.value for item in app.error)
-    assert any("S.PKG FAB 전체 배치" in item.value for item in app.get("markdown"))
+    assert any("S.PKG FAB 전체 배치" in item.value for item in app.markdown)
     assert [
         mark.mark_id for mark in DuckDBEquipmentRepository(database).load_fab_layout_marks()
     ] == ["B"]
@@ -351,7 +351,7 @@ def test_a_fab_save_after_someone_else_saved_is_refused_and_can_be_discarded(
     assert any("FAB 배치만 버리기" in item.value for item in app.error)
     app.button(key="space_layout_discard_fab").click().run()
     assert not app.exception
-    assert not any("저장 안 한 배치 변경" in item.value for item in app.get("markdown"))
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     clear_equipment_repository()
 
 
@@ -373,7 +373,7 @@ def test_emptying_the_fab_on_a_small_canvas_is_refused_at_apply(
     assert not app.exception
     assert any("적용하지 못했습니다" in item.value for item in app.error)
     assert any("기본 배치" in item.value for item in app.error)
-    assert not any("저장 안 한 배치 변경" in item.value for item in app.get("markdown"))
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     clear_equipment_repository()
 
 

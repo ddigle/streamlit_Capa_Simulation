@@ -311,8 +311,8 @@ def test_process_picker_preserves_shared_order_within_each_securement_group(
     clear_global_process_rename_cache()
     original_simulation = simulation_cache.get_home_simulation
 
-    def simulation_with_group_rates(*args, **kwargs):
-        result = list(original_simulation(*args, **kwargs))
+    def simulation_with_group_rates(*args: Any, **kwargs: Any) -> tuple[Any, ...]:
+        result: list[Any] = list(original_simulation(*args, **kwargs))
         securement = result[3].copy()
         # 계산식은 실제 경로를 쓰고, 선택 UI의 세 구역을 만들 최종 확보율만 고정한다. 고른
         # 세 공정 밖의 공정은 모두 셋째 구역이다 — 두 구역의 개수와 차례에 끼지 않는다.
@@ -458,7 +458,7 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     )
     # 제목 아래 설명 문구와 계획 세부수량 CSV 는 탭 자리를 내주고 사라졌다. 남은 내려받기는
     # Past Data 탭의 양식 세 개뿐이다.
-    assert [button.label for button in app.get("download_button")] == ["양식 CSV"] * 3
+    assert [button.label for button in app.download_button] == ["양식 CSV"] * 3
 
 
 def test_home_puts_the_charts_in_a_main_tab_next_to_preference(seeded_database: Path) -> None:
@@ -1089,7 +1089,7 @@ def test_the_lob_panel_border_closes_on_the_bottom_edge(seeded_database: Path) -
     assert bottom_px == pytest.approx(figure.layout.height)
 
     def _widest(target_y: float) -> float:
-        return max(shape.line.width for shape in horizontals if shape.y0 == target_y)
+        return float(max(shape.line.width for shape in horizontals if shape.y0 == target_y))
 
     # 맨 끝줄의 획은 절반이 잘린다. 위 테두리와 같은 굵기로 그려야 보이는 두께가 같다.
     assert _widest(bottom_y) == _widest(1)

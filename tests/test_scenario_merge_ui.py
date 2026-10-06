@@ -1,11 +1,13 @@
 # Purpose: 월 머지의 출처 미리보기·겹침 선택과 원본을 보존하는 신규 저장 흐름을 검증한다.
 
+from collections.abc import Iterable
 from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
@@ -25,10 +27,11 @@ def _monthly_tables(months: list[int]) -> dict[str, pd.DataFrame]:
     return tables
 
 
+Sources = tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot, ScenarioSnapshot]
+
+
 @pytest.fixture
-def sources(
-    tmp_path: Path,
-) -> tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot, ScenarioSnapshot]:
+def sources(tmp_path: Path) -> Sources:
     database = tmp_path / "merge.duckdb"
     repository = DuckDBScenarioRepository(database)
     repository.initialize()
@@ -67,7 +70,7 @@ render_scenario_month_merge(get_scenario_repository(database_path), database_pat
     return app
 
 
-def _save_button(app: AppTest):
+def _save_button(app: AppTest) -> Button:
     return next(button for button in app.button if button.label == "새 시나리오로 저장")
 
 
@@ -75,7 +78,11 @@ def _preview(app: AppTest) -> pd.DataFrame:
     return next(item.value for item in app.dataframe if "결과 월 수" in item.value.columns)
 
 
-def _with_history(repository, source, records):
+def _with_history(
+    repository: DuckDBScenarioRepository,
+    source: ScenarioSnapshot,
+    records: Iterable[VirtualProductRecord],
+) -> ScenarioSnapshot:
     return repository.save_revision(
         source.scenario.scenario_id,
         source.tables,
@@ -86,7 +93,7 @@ def _with_history(repository, source, records):
     )
 
 
-def test_merge_preserves_both_histories_and_deduplicates_same_origin(sources) -> None:
+def test_merge_preserves_both_histories_and_deduplicates_same_origin(sources: Sources) -> None:
     repository, database, base, donor = sources
     shared = VirtualProductRecord("Product-A", "8H", "원본 A", "8H")
     extra = VirtualProductRecord("Product-A", "12H", "원본 B", "8H")
@@ -119,7 +126,9 @@ def test_merge_preserves_both_histories_and_deduplicates_same_origin(sources) ->
 
 
 @pytest.mark.parametrize("origin", [("다른 제품", "8H"), ("원본 A", "12H")])
-def test_history_conflict_blocks_save_and_revision_change_recovers(sources, origin) -> None:
+def test_history_conflict_blocks_save_and_revision_change_recovers(
+    sources: Sources, origin: tuple[str, str]
+) -> None:
     repository, database, base, donor = sources
     base_record = VirtualProductRecord("Product-A", "8H", "원본 A", "8H")
     base = _with_history(repository, base, (base_record,))
@@ -151,7 +160,7 @@ def test_history_conflict_blocks_save_and_revision_change_recovers(sources, orig
     )
 
 
-def test_preview_reports_monthless_differences_and_does_not_save(sources) -> None:
+def test_preview_reports_monthless_differences_and_does_not_save(sources: Sources) -> None:
     repository, database, base, donor = sources
     app = _app(database, base, donor)
 
@@ -167,7 +176,7 @@ def test_preview_reports_monthless_differences_and_does_not_save(sources) -> Non
     assert not _save_button(app).disabled
 
 
-def test_overlapping_months_block_save_until_the_source_changes(sources) -> None:
+def test_overlapping_months_block_save_until_the_source_changes(sources: Sources) -> None:
     repository, database, base, donor = sources
     app = _app(database, base, donor)
 
@@ -184,7 +193,9 @@ def test_overlapping_months_block_save_until_the_source_changes(sources) -> None
     assert set(_preview(app)["결과 월 수"]) == {3}
 
 
-def _overlapping_donor(repository, donor):
+def _overlapping_donor(
+    repository: DuckDBScenarioRepository, donor: ScenarioSnapshot
+) -> ScenarioSnapshot:
     tables = dict(donor.tables)
     tables.update(
         {
@@ -204,13 +215,15 @@ def _overlapping_donor(repository, donor):
     return repository.load_revision(saved.revision.revision_id, apply_global_display_order=False)
 
 
-def _source_rows(app):
+def _source_rows(app: AppTest) -> pd.DataFrame:
     return next(
         item.value for item in app.dataframe if "사용할 시나리오" in item.value.columns
     ).set_index("월")
 
 
-def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(sources) -> None:
+def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(
+    sources: Sources,
+) -> None:
     repository, database, base, donor = sources
     donor = _overlapping_donor(repository, donor)
     app = _app(database, base, donor)
@@ -246,6 +259,7 @@ def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(sourc
             saved.tables["RQ_PKG_PLAN"].set_index("생산계획년월").loc[202701, "생산수량"]
             == quantity
         )
+        assert saved.revision.note is not None
         assert f"2027-01: {label}" in saved.revision.note
         for name in MONTHLY_TABLES:
             expected = (
@@ -285,7 +299,7 @@ def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(sourc
             pd.testing.assert_frame_equal(reloaded.tables[name], frame)
 
 
-def test_overlap_choice_never_overrides_virtual_history_conflict(sources) -> None:
+def test_overlap_choice_never_overrides_virtual_history_conflict(sources: Sources) -> None:
     repository, database, base, donor = sources
     donor = _overlapping_donor(repository, donor)
     base = _with_history(repository, base, (VirtualProductRecord("Product-A", "8H", "A", "8H"),))
@@ -299,7 +313,9 @@ def test_overlap_choice_never_overrides_virtual_history_conflict(sources) -> Non
     assert len(repository.list_scenarios()) == 2
 
 
-def test_save_keeps_originals_and_active_draft_and_refreshes_changed_range(sources) -> None:
+def test_save_keeps_originals_and_active_draft_and_refreshes_changed_range(
+    sources: Sources,
+) -> None:
     repository, database, base, donor = sources
     app = _app(database, base, donor)
     sentinel = {"revision": 17, "content_token": "미저장 편집 토큰", "tables": {"사용자 값": 42}}
@@ -320,9 +336,11 @@ def test_save_keeps_originals_and_active_draft_and_refreshes_changed_range(sourc
     merged = repository.load_revision(created.active_revision_id, apply_global_display_order=False)
     assert len(merged.tables) == 16
     assert (merged.preset.start_month, merged.preset.end_month) == (202701, 202802)
-    assert base.revision.revision_id in merged.revision.note
-    assert donor.revision.revision_id in merged.revision.note
-    assert "UI 저장 검증" in merged.revision.note
+    note = merged.revision.note
+    assert note is not None
+    assert base.revision.revision_id in note
+    assert donor.revision.revision_id in note
+    assert "UI 저장 검증" in note
     for name in MONTHLY_TABLES:
         expected = pd.concat([base.tables[name], donor.tables[name]], ignore_index=True)
         pd.testing.assert_frame_equal(merged.tables[name], expected)

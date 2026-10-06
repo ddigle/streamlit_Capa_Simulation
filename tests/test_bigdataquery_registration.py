@@ -97,7 +97,7 @@ registration.render_bigdataquery_registration(repository, "demo.duckdb")
 """
 
 
-def _run(**session):
+def _run(**session: object) -> AppTest:
     app = AppTest.from_string(STEP_SCRIPT)
     for key, value in session.items():
         app.session_state[key] = value
@@ -135,7 +135,8 @@ def test_selecting_a_row_prefills_the_registration_form() -> None:
     assert values["원천 시뮬레이션명"] == "알파 시뮬"
     assert values["저장할 시나리오명"] == "알파 시뮬 (DEMO-A-001)"
     assert values["원천 DB 등록시점 (선택)"] == "2026-09-02 03:04:05"
-    assert "PLAN 알파(DEMO-PLAN-1)" in app.text_area[0].value
+    memo = app.text_area[0].value
+    assert memo is not None and "PLAN 알파(DEMO-PLAN-1)" in memo
 
 
 def test_reselecting_the_same_row_keeps_user_edits() -> None:
@@ -254,7 +255,8 @@ def test_an_old_code_seen_on_several_days_gets_a_window_across_all_of_them() -> 
     captions = " ".join(item.value for item in app.caption)
     assert "고른 코드의 원천 등록일: 2025-10-01 ~ 2025-11-02." in captions
     # 메모의 상세 조회기간은 저장할 때 실제로 조회한 기간으로 붙는다(칸을 고칠 수 있어서).
-    assert "상세 조회기간" not in app.text_area[0].value
+    memo = app.text_area[0].value
+    assert memo is not None and "상세 조회기간" not in memo
 
 
 SUBMIT_SCRIPT = """

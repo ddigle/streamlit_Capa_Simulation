@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Error
 
 TEST_SCRIPT = r"""
 from pathlib import Path
@@ -543,7 +544,7 @@ def _open_step_dialog(app: AppTest) -> AppTest:
 
 def _download(app: AppTest, key: str) -> dict[str, str]:
     """`render_csv_download` 가 실제로 그린 버튼 하나를 키로 찾는다."""
-    labels = {button.key: button.label for button in app.download_button}
+    labels = {button.key: button.label for button in app.download_button if button.key is not None}
     assert key in labels, f"CSV 다운로드 버튼이 없습니다: {sorted(labels)}"
     captured = app.session_state["captured_downloads"][key]
     return {"label": labels[key], "file_name": captured["file_name"]}
@@ -895,7 +896,7 @@ def test_an_apply_error_shows_right_under_the_button_above_the_sheet() -> None:
     error = next(
         index
         for index, node in enumerate(elements)
-        if getattr(node, "type", None) == "error" and "PROBE_APPLY_ERROR" in str(node.value)
+        if isinstance(node, Error) and "PROBE_APPLY_ERROR" in str(node.value)
     )
     sheet = next(
         index

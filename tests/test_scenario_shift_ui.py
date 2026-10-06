@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
@@ -18,9 +19,11 @@ from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
 from capa_simulation.services.virtual_product import VirtualProductRecord, records_to_frame
 
+Source = tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot]
+
 
 @pytest.fixture
-def source(tmp_path: Path) -> tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot]:
+def source(tmp_path: Path) -> Source:
     database = tmp_path / "shift.duckdb"
     repository = DuckDBScenarioRepository(database)
     repository.initialize()
@@ -59,7 +62,7 @@ render_scenario_year_shift(get_scenario_repository(database_path), database_path
     return app
 
 
-def _save_button(app: AppTest):
+def _save_button(app: AppTest) -> Button:
     return next(button for button in app.button if button.label == "새 시나리오로 저장")
 
 
@@ -67,7 +70,7 @@ def _ranges(app: AppTest) -> dict[str, str]:
     return {item.label: item.value for item in app.metric}
 
 
-def test_shift_preserves_selected_revision_history_and_can_shift_it_again(source) -> None:
+def test_shift_preserves_selected_revision_history_and_can_shift_it_again(source: Source) -> None:
     repository, database, original = source
     record = VirtualProductRecord("Product-A", "8H", "복제 원본", "12H")
     original = repository.save_revision(
@@ -110,7 +113,7 @@ def test_shift_preserves_selected_revision_history_and_can_shift_it_again(source
     )
 
 
-def test_zero_shift_has_preview_but_no_save_and_invalid_shift_recovers(source) -> None:
+def test_zero_shift_has_preview_but_no_save_and_invalid_shift_recovers(source: Source) -> None:
     repository, database, snapshot = source
     app = _app(database, snapshot)
 
@@ -136,7 +139,7 @@ def test_zero_shift_has_preview_but_no_save_and_invalid_shift_recovers(source) -
     assert not _save_button(app).disabled
 
 
-def test_save_keeps_source_and_draft_and_changed_years_refresh_the_preview(source) -> None:
+def test_save_keeps_source_and_draft_and_changed_years_refresh_the_preview(source: Source) -> None:
     repository, database, original = source
     app = _app(database, original)
     sentinel = {"revision": 9, "content_token": "편집 토큰", "tables": {"편집값": 123}}
@@ -158,9 +161,11 @@ def test_save_keeps_source_and_draft_and_changed_years_refresh_the_preview(sourc
     shifted = repository.load_revision(created.active_revision_id, apply_global_display_order=False)
     assert len(shifted.tables) == 16
     assert (shifted.preset.start_month, shifted.preset.end_month) == (202801, 202812)
-    assert original.revision.revision_id in shifted.revision.note
-    assert "+1년" in shifted.revision.note
-    assert "직접 선택한 연도" in shifted.revision.note
+    note = shifted.revision.note
+    assert note is not None
+    assert original.revision.revision_id in note
+    assert "+1년" in note
+    assert "직접 선택한 연도" in note
     for name in MONTHLY_TABLES:
         expected = original.tables[name].assign(
             생산계획년월=pd.Series(
@@ -225,7 +230,9 @@ def test_save_keeps_source_and_draft_and_changed_years_refresh_the_preview(sourc
     assert _save_button(app).disabled
 
 
-def test_source_defaults_to_active_revision_and_preserves_explicit_selection(source) -> None:
+def test_source_defaults_to_active_revision_and_preserves_explicit_selection(
+    source: Source,
+) -> None:
     repository, database, original = source
     latest = repository.save_revision(
         original.scenario.scenario_id,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from datetime import date
 from types import SimpleNamespace
 
@@ -44,7 +45,9 @@ def test_catalog_query_renders_only_the_two_date_slots() -> None:
     assert "{" not in query
 
 
-def test_unconfigured_catalog_sql_is_rejected_before_package_import(monkeypatch) -> None:
+def test_unconfigured_catalog_sql_is_rejected_before_package_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     imported = False
 
     def fake_import(_: str) -> object:
@@ -52,7 +55,7 @@ def test_unconfigured_catalog_sql_is_rejected_before_package_import(monkeypatch)
         imported = True
         return object()
 
-    monkeypatch.setattr(adapter.importlib, "import_module", fake_import)
+    monkeypatch.setattr(importlib, "import_module", fake_import)
 
     with pytest.raises(RuntimeError, match="목록 조회 SQL이 아직 설정되지 않았습니다"):
         catalog.fetch_simulation_catalog(
@@ -68,7 +71,9 @@ def test_missing_date_slot_is_rejected() -> None:
         catalog.build_catalog_query(WINDOW, query_template="SELECT 1 WHERE a >= '{start_date}'")
 
 
-def test_window_longer_than_the_limit_is_rejected_before_import(monkeypatch) -> None:
+def test_window_longer_than_the_limit_is_rejected_before_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     imported = False
 
     def fake_import(_: str) -> object:
@@ -76,7 +81,7 @@ def test_window_longer_than_the_limit_is_rejected_before_import(monkeypatch) -> 
         imported = True
         return object()
 
-    monkeypatch.setattr(adapter.importlib, "import_module", fake_import)
+    monkeypatch.setattr(importlib, "import_module", fake_import)
     too_wide = QueryWindow(start_date=date(2025, 1, 1), end_date=date(2026, 9, 8))
 
     with pytest.raises(ValueError, match="최대 366일"):
@@ -85,7 +90,7 @@ def test_window_longer_than_the_limit_is_rejected_before_import(monkeypatch) -> 
     assert not imported
 
 
-def test_catalog_result_keeps_contract_columns_only(monkeypatch) -> None:
+def test_catalog_result_keeps_contract_columns_only(monkeypatch: pytest.MonkeyPatch) -> None:
     """여분 컬럼·뒤섞인 순서에서도 5컬럼·0..n-1 인덱스로 정렬한다.
 
     화면 선택이 위치 인덱스로 돌아오므로 여기서 컬럼·인덱스를 고정하지 않으면 라벨과
@@ -97,7 +102,7 @@ def test_catalog_result_keeps_contract_columns_only(monkeypatch) -> None:
     frame.index = [7]
 
     monkeypatch.setattr(
-        adapter.importlib,
+        importlib,
         "import_module",
         lambda _: SimpleNamespace(getData=lambda **_kwargs: frame),
     )
@@ -108,9 +113,9 @@ def test_catalog_result_keeps_contract_columns_only(monkeypatch) -> None:
     assert result.index.tolist() == [0]
 
 
-def test_non_dataframe_result_raises_type_error(monkeypatch) -> None:
+def test_non_dataframe_result_raises_type_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        adapter.importlib,
+        importlib,
         "import_module",
         lambda _: SimpleNamespace(getData=lambda **_kwargs: [1, 2, 3]),
     )
@@ -119,10 +124,10 @@ def test_non_dataframe_result_raises_type_error(monkeypatch) -> None:
         catalog.fetch_simulation_catalog(WINDOW)
 
 
-def test_missing_alias_raises_value_error(monkeypatch) -> None:
+def test_missing_alias_raises_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
     frame = _catalog_frame().drop(columns=["plan_code"])
     monkeypatch.setattr(
-        adapter.importlib,
+        importlib,
         "import_module",
         lambda _: SimpleNamespace(getData=lambda **_kwargs: frame),
     )
@@ -131,7 +136,9 @@ def test_missing_alias_raises_value_error(monkeypatch) -> None:
         catalog.fetch_simulation_catalog(WINDOW)
 
 
-def test_get_data_is_called_with_the_shared_keyword_contract(monkeypatch) -> None:
+def test_get_data_is_called_with_the_shared_keyword_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: dict[str, object] = {}
 
     def fake_get_data(*, param: str, convert_type: bool, verbose: bool) -> pd.DataFrame:
@@ -139,7 +146,7 @@ def test_get_data_is_called_with_the_shared_keyword_contract(monkeypatch) -> Non
         return _catalog_frame()
 
     monkeypatch.setattr(
-        adapter.importlib,
+        importlib,
         "import_module",
         lambda _: SimpleNamespace(getData=fake_get_data),
     )

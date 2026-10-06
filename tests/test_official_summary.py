@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from types import SimpleNamespace
 
 import pandas as pd
 import pytest
+import streamlit as st
 
 from capa_simulation.components.intro_summary import summary_payload
 from capa_simulation.design import tokens
 from capa_simulation.services.official_summary import (
+    OfficialSummary,
     build_official_summary,
     shift_month,
     short_units,
@@ -77,7 +80,7 @@ def _volume(edp: bool) -> pd.DataFrame:
     )
 
 
-def _summary() -> object:
+def _summary() -> OfficialSummary:
     density = pd.DataFrame(
         {"생산계획년월": MONTHS, "부하량": [14.97, 15.24, 14.8, 14.33, 14.57, 15.42]}
     )
@@ -99,15 +102,18 @@ def _summary() -> object:
 def test_the_bottleneck_is_the_lowest_process_inside_the_saved_filter() -> None:
     summary = _summary()
 
-    processes = [month.process for month in summary.bottlenecks]
+    bottlenecks = [month for month in summary.bottlenecks if month is not None]
+    # 여섯 달 모두 필터 안 공정이 있어 B/N 이 빈 달은 없다.
+    assert len(bottlenecks) == len(summary.bottlenecks)
+    processes = [month.process for month in bottlenecks]
     # P-LOW 는 필터 밖이라 한 번도 B/N 이 되지 않는다. P-B 가 내려와 P-A 아래로 지나간다.
     assert "P-LOW" not in processes
     assert processes[0] == "P-A" and processes[-1] == "P-B"
-    first = summary.bottlenecks[0]
+    first = bottlenecks[0]
     assert first.rate == pytest.approx(0.94)
     assert (first.required, first.available, first.short_units) == (34.0, 32.0, 2)
     # 소요보다 가용이 많으면 부족 대수는 0 이다.
-    assert summary.bottlenecks[-1].short_units == 0
+    assert bottlenecks[-1].short_units == 0
 
 
 def test_monthly_values_and_product_mix_follow_the_six_months() -> None:
@@ -198,7 +204,7 @@ class _Repo:
 
 
 @pytest.fixture
-def summary_env(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
     from capa_simulation.components import intro_summary
     from capa_simulation.services import simulation_cache
 
@@ -221,7 +227,7 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
             raise env.fail
         return {"available": True, "release": release.official_release_id}
 
-    monkeypatch.setattr(intro_summary.st, "session_state", env.session)
+    monkeypatch.setattr(st, "session_state", env.session)
     monkeypatch.setattr(intro_summary, "time", SimpleNamespace(monotonic=lambda: env.now))
     monkeypatch.setattr(intro_summary, "get_scenario_repository", lambda path: env.repo)
     monkeypatch.setattr(

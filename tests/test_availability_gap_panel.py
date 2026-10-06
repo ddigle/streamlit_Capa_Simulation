@@ -315,7 +315,7 @@ def test_the_unit_list_shows_every_contribution_behind_the_counts() -> None:
     for category in ("기존보유", "가용"):
         listed = units.loc[units["분류"].eq(category), "대수"].sum()
         assert listed == pytest.approx(matrix.loc[category, "26.10"])
-    assert any(button.label == "CSV 다운로드" for button in app.get("download_button"))
+    assert any(button.label == "CSV 다운로드" for button in app.download_button)
 
     app.multiselect(key=DETAIL_CATEGORY_KEY).set_value(["가용"]).run()
     assert set(app.dataframe[0].value["분류"]) == {"가용"}

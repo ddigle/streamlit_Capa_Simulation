@@ -11,7 +11,7 @@ from capa_simulation.components.securement_heatmap import (
 from capa_simulation.design import tokens
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
-THRESHOLDS = {"thresholds": SecurementThresholds(1.095, 0.995)}
+THRESHOLDS = SecurementThresholds(1.095, 0.995)
 
 
 def _table() -> pd.DataFrame:
@@ -25,7 +25,7 @@ def _table() -> pd.DataFrame:
 
 
 def test_tiers_match_the_three_status_bands() -> None:
-    figure = build_securement_heatmap(_table(), dimension_columns=["공정"], **THRESHOLDS)
+    figure = build_securement_heatmap(_table(), dimension_columns=["공정"], thresholds=THRESHOLDS)
 
     assert figure is not None
     heatmap = figure.data[0]
@@ -37,14 +37,14 @@ def test_tiers_match_the_three_status_bands() -> None:
 
 def test_hover_keeps_the_uncut_rate() -> None:
     """색만 3계단으로 접는다. 숫자는 실제 확보율이어야 한다."""
-    figure = build_securement_heatmap(_table(), dimension_columns=["공정"], **THRESHOLDS)
+    figure = build_securement_heatmap(_table(), dimension_columns=["공정"], thresholds=THRESHOLDS)
 
     assert figure is not None
     assert figure.data[0].customdata[0][0] == 120.0
 
 
 def test_colorscale_has_no_blend_between_the_three_steps() -> None:
-    figure = build_securement_heatmap(_table(), dimension_columns=["공정"], **THRESHOLDS)
+    figure = build_securement_heatmap(_table(), dimension_columns=["공정"], thresholds=THRESHOLDS)
 
     assert figure is not None
     colors = [color for _, color in figure.data[0].colorscale]
@@ -59,7 +59,7 @@ def test_colorscale_has_no_blend_between_the_three_steps() -> None:
 
 
 def test_months_are_read_top_down_like_the_table() -> None:
-    figure = build_securement_heatmap(_table(), dimension_columns=["공정"], **THRESHOLDS)
+    figure = build_securement_heatmap(_table(), dimension_columns=["공정"], thresholds=THRESHOLDS)
 
     assert figure is not None
     assert list(figure.data[0].x) == ["26.01", "26.02"]
@@ -69,7 +69,7 @@ def test_months_are_read_top_down_like_the_table() -> None:
 def test_empty_table_draws_nothing() -> None:
     assert (
         build_securement_heatmap(
-            pd.DataFrame(columns=["공정"]), dimension_columns=["공정"], **THRESHOLDS
+            pd.DataFrame(columns=["공정"]), dimension_columns=["공정"], thresholds=THRESHOLDS
         )
         is None
     )
@@ -90,7 +90,7 @@ def test_every_process_row_keeps_its_name_when_many_are_shown() -> None:
     names = [f"P{index:02d}" for index in range(70)]
     table = pd.DataFrame({"공정": names, "202601": [1.0] * 70})
 
-    figure = build_securement_heatmap(table, dimension_columns=["공정"], **THRESHOLDS)
+    figure = build_securement_heatmap(table, dimension_columns=["공정"], thresholds=THRESHOLDS)
 
     assert figure is not None
     yaxis = figure.layout.yaxis
@@ -115,7 +115,7 @@ def test_month_axis_turns_its_labels_instead_of_letting_them_touch() -> None:
     months = _months(30)
     table = pd.DataFrame({"공정": ["SAW", "MOLD"], **{month: [1.0, 0.9] for month in months}})
 
-    figure = build_securement_heatmap(table, dimension_columns=["공정"], **THRESHOLDS)
+    figure = build_securement_heatmap(table, dimension_columns=["공정"], thresholds=THRESHOLDS)
 
     assert figure is not None
     xaxis = figure.layout.xaxis
@@ -134,7 +134,7 @@ def test_month_axis_thins_to_calendar_steps_only_when_turned_labels_would_still_
     months = _months(72)
     table = pd.DataFrame({"공정": ["SAW"], **{month: [1.0] for month in months}})
 
-    figure = build_securement_heatmap(table, dimension_columns=["공정"], **THRESHOLDS)
+    figure = build_securement_heatmap(table, dimension_columns=["공정"], thresholds=THRESHOLDS)
 
     assert figure is not None
     xaxis = figure.layout.xaxis
@@ -149,15 +149,17 @@ def test_month_axis_thins_to_calendar_steps_only_when_turned_labels_would_still_
 def test_heatmap_hides_the_plotly_toolbar_but_keeps_hover() -> None:
     from unittest.mock import patch
 
+    import streamlit as st
+
     from capa_simulation.components import securement_heatmap
 
     with (
         patch.object(securement_heatmap, "tab_is_hidden", return_value=False),
-        patch.object(securement_heatmap.st, "markdown") as markdown,
-        patch.object(securement_heatmap.st, "plotly_chart") as plotly_chart,
+        patch.object(st, "markdown") as markdown,
+        patch.object(st, "plotly_chart") as plotly_chart,
     ):
         securement_heatmap.render_securement_heatmap(
-            _table(), dimension_columns=["공정"], key="heatmap", **THRESHOLDS
+            _table(), dimension_columns=["공정"], key="heatmap", thresholds=THRESHOLDS
         )
 
     config = plotly_chart.call_args.kwargs["config"]
@@ -185,7 +187,7 @@ def test_a_rate_equal_to_the_secure_threshold_is_painted_secure() -> None:
     """기준과 같은 확보율은 확보다(2026-10-06 사용자 결정). HOME 그림과 같은 경계다."""
     table = pd.DataFrame({"공정": ["SAW"], "202601": [1.095], "202602": [0.995]})
 
-    figure = build_securement_heatmap(table, dimension_columns=["공정"], **THRESHOLDS)
+    figure = build_securement_heatmap(table, dimension_columns=["공정"], thresholds=THRESHOLDS)
 
     assert figure is not None
     assert list(figure.data[0].z[0]) == [SECURE_TIER, WARNING_TIER]

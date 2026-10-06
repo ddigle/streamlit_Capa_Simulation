@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 import pytest
+import streamlit as st
 
 import capa_simulation.components.intro_overlay as intro_overlay
 from capa_simulation.components.home_rendering import HOME_LOADING_STAGES
@@ -97,7 +98,7 @@ def test_render_sends_the_hide_rule_first_and_an_unchanging_payload(
     같아야 Streamlit 이 큰 등록 메시지를 다시 보내지 않고 JS 도 다시 불리지 않는다.
     """
     calls: list[tuple[str, Any]] = []
-    monkeypatch.setattr(intro_overlay.st, "html", lambda body: calls.append(("html", body)))
+    monkeypatch.setattr(st, "html", lambda body: calls.append(("html", body)))
     monkeypatch.setattr(intro_overlay, "_INTRO", lambda **kwargs: calls.append(("intro", kwargs)))
 
     intro_overlay.render_intro_overlay()
@@ -248,7 +249,7 @@ def test_the_summary_hides_its_slot_before_it_is_drawn(monkeypatch: pytest.Monke
     from capa_simulation.components import intro_summary
 
     calls: list[tuple[str, Any]] = []
-    monkeypatch.setattr(intro_summary.st, "html", lambda body: calls.append(("html", body)))
+    monkeypatch.setattr(st, "html", lambda body: calls.append(("html", body)))
     monkeypatch.setattr(
         intro_summary, "_SUMMARY", lambda **kwargs: calls.append(("summary", kwargs))
     )

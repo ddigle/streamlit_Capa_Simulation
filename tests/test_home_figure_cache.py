@@ -1,9 +1,11 @@
 # Purpose: HOME Figure 캐시의 내용·테마·스키마 분리, 최근 사용 순서와 세션 공유를 검증한다.
 
 import pickle
+from typing import Any
 
 import plotly.graph_objects as go
 import pytest
+import streamlit as st
 
 from capa_simulation.components import home_rendering
 from capa_simulation.components.home_rendering import (
@@ -15,13 +17,14 @@ from capa_simulation.components.home_rendering import (
     store_home_figures,
     take_home_figures,
 )
+from capa_simulation.design import theme
 from capa_simulation.services.simulation_cache import SharedBlobStore
 
 
 @pytest.fixture
 def cache_key(monkeypatch: pytest.MonkeyPatch) -> HomeFigureCacheKey:
-    monkeypatch.setattr(home_rendering.st, "session_state", {})
-    monkeypatch.setattr(home_rendering.theme, "current_mode", lambda: "light")
+    monkeypatch.setattr(st, "session_state", {})
+    monkeypatch.setattr(theme, "current_mode", lambda: "light")
     return HomeFigureCacheKey(
         schema_version=HOME_FIGURE_SCHEMA_VERSION,
         process_label_version=2,
@@ -106,13 +109,13 @@ def test_figure_cache_keeps_each_theme_separate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store_home_figures(cache_key, figures)
-    monkeypatch.setattr(home_rendering.theme, "current_mode", lambda: "dark")
+    monkeypatch.setattr(theme, "current_mode", lambda: "dark")
     assert take_home_figures(cache_key) is None
 
     dark_figures = figures._replace(lob_months=go.Figure())
     store_home_figures(cache_key, dark_figures)
     assert take_home_figures(cache_key) is dark_figures
-    monkeypatch.setattr(home_rendering.theme, "current_mode", lambda: "light")
+    monkeypatch.setattr(theme, "current_mode", lambda: "light")
     assert take_home_figures(cache_key) is figures
 
 
@@ -134,7 +137,9 @@ def test_old_plain_figure_tuples_are_invalidated_by_the_new_schema(
 ) -> None:
     # 실행 중인 브라우저 세션은 코드가 바뀌어도 옛 dict·일반 tuple 을 가지고 있을 수 있다.
     old_key = tuple(cache_key._replace(schema_version=41))
-    home_figure_cache()[("light", old_key)] = tuple(figures)
+    # 타입이 맞지 않는 옛 모양을 일부러 심는다. 세션 dict 를 타입 없이 다룬다.
+    stale_session_cache: dict[Any, Any] = home_figure_cache()
+    stale_session_cache[("light", old_key)] = tuple(figures)
 
     assert HOME_FIGURE_SCHEMA_VERSION > 41
     assert take_home_figures(cache_key) is None
@@ -170,7 +175,7 @@ def shared_store(monkeypatch: pytest.MonkeyPatch) -> SharedBlobStore:
 
 
 def _new_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(home_rendering.st, "session_state", {})
+    monkeypatch.setattr(st, "session_state", {})
 
 
 def test_a_new_session_reuses_the_figures_drawn_for_the_same_revision(

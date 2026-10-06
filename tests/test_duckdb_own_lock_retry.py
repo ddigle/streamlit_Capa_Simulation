@@ -3,6 +3,7 @@
 import os
 import threading
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import pytest
@@ -45,13 +46,13 @@ def test_connect_waits_out_a_lock_this_process_holds(
     real_connect = duckdb.connect
     attempts: list[int] = []
 
-    def closing_instance(*args: object, **kwargs: object) -> duckdb.DuckDBPyConnection:
+    def closing_instance(*args: Any, **kwargs: Any) -> duckdb.DuckDBPyConnection:
         attempts.append(1)
         if len(attempts) <= 3:
             raise _lock_error(os.getpid())
         return real_connect(*args, **kwargs)
 
-    monkeypatch.setattr(_sql_helpers.duckdb, "connect", closing_instance)
+    monkeypatch.setattr(duckdb, "connect", closing_instance)
     monkeypatch.setattr(_sql_helpers, "OWN_LOCK_POLL_SECONDS", 0.0)
 
     with connect(tmp_path / "own.duckdb") as connection:
@@ -78,7 +79,7 @@ def test_connect_raises_every_other_failure_at_once(
         attempts.append(1)
         raise error
 
-    monkeypatch.setattr(_sql_helpers.duckdb, "connect", locked)
+    monkeypatch.setattr(duckdb, "connect", locked)
 
     with pytest.raises(duckdb.IOException):
         connect(tmp_path / "other.duckdb")
@@ -95,7 +96,7 @@ def test_connect_gives_up_after_the_wait_budget(
         attempts.append(1)
         raise _lock_error(os.getpid())
 
-    monkeypatch.setattr(_sql_helpers.duckdb, "connect", stuck)
+    monkeypatch.setattr(duckdb, "connect", stuck)
     monkeypatch.setattr(_sql_helpers, "OWN_LOCK_WAIT_SECONDS", 0.05)
     monkeypatch.setattr(_sql_helpers, "OWN_LOCK_POLL_SECONDS", 0.005)
 
@@ -112,13 +113,13 @@ def test_an_unnamed_sharing_violation_is_retried_briefly(
     real_connect = duckdb.connect
     attempts: list[int] = []
 
-    def unnamed_then_open(*args: object, **kwargs: object) -> duckdb.DuckDBPyConnection:
+    def unnamed_then_open(*args: Any, **kwargs: Any) -> duckdb.DuckDBPyConnection:
         attempts.append(1)
         if len(attempts) <= 2:
             raise duckdb.IOException('IO Error: Cannot open file "C:/app/data/x.duckdb": ???')
         return real_connect(*args, **kwargs)
 
-    monkeypatch.setattr(_sql_helpers.duckdb, "connect", unnamed_then_open)
+    monkeypatch.setattr(duckdb, "connect", unnamed_then_open)
     monkeypatch.setattr(_sql_helpers, "OWN_LOCK_POLL_SECONDS", 0.0)
 
     with connect(tmp_path / "unnamed.duckdb") as connection:
@@ -136,7 +137,7 @@ def test_an_unnamed_failure_in_a_missing_folder_is_raised_at_once(
         attempts.append(1)
         raise duckdb.IOException('IO Error: Cannot open file "C:/nowhere/x.duckdb": ???')
 
-    monkeypatch.setattr(_sql_helpers.duckdb, "connect", missing)
+    monkeypatch.setattr(duckdb, "connect", missing)
 
     with pytest.raises(duckdb.IOException):
         connect(tmp_path / "no-such-folder" / "x.duckdb")

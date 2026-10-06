@@ -13,7 +13,11 @@
 from __future__ import annotations
 
 import html
+from collections.abc import Iterator
 from pathlib import Path
+
+import pytest
+import streamlit as st
 
 from capa_simulation.components.home_rendering import render_summary_notice
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -69,7 +73,7 @@ def test_a_blank_only_notice_is_not_shown(tmp_path: Path) -> None:
 # ------------------------------------------------------------------ 화면 표시
 
 
-def test_an_empty_notice_draws_nothing(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_an_empty_notice_draws_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     """내용이 없으면 상자 자체를 그리지 않는다. 늘 비어 있는 `Summary` 는 잡음이다."""
     drawn: list[str] = []
     _stub_streamlit(monkeypatch, drawn)
@@ -80,7 +84,9 @@ def test_an_empty_notice_draws_nothing(monkeypatch) -> None:  # type: ignore[no-
     assert drawn == []
 
 
-def test_a_notice_is_collapsed_by_default_and_keeps_the_text_verbatim(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_a_notice_is_collapsed_by_default_and_keeps_the_text_verbatim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """펼친 채로 뜨면 긴 글 하나가 대시보드를 화면 밖으로 민다.
 
     글은 원문 그대로다 — 마크다운으로 넘기면 줄 앞의 `#` 이 제목이 되어 적은 사람이
@@ -100,25 +106,25 @@ def test_a_notice_is_collapsed_by_default_and_keeps_the_text_verbatim(monkeypatc
     assert "white-space: pre-wrap" in body
 
 
-def _stub_streamlit(monkeypatch, drawn: list[str], expanded: list[bool] | None = None) -> None:  # type: ignore[no-untyped-def]
+def _stub_streamlit(
+    monkeypatch: pytest.MonkeyPatch, drawn: list[str], expanded: list[bool] | None = None
+) -> None:
     """`render_summary_notice` 가 부르는 Streamlit 조각만 가로챈다."""
     from contextlib import contextmanager
 
-    import capa_simulation.components.home_rendering as rendering
-
     @contextmanager
-    def fake_expander(label: str, *, expanded: bool = False):  # type: ignore[no-untyped-def]
+    def fake_expander(label: str, *, expanded: bool = False) -> Iterator[None]:
         assert label == "Summary"
         if expanded_log is not None:
             expanded_log.append(expanded)
         yield
 
     @contextmanager
-    def fake_container(**_: object):  # type: ignore[no-untyped-def]
+    def fake_container(**_: object) -> Iterator[None]:
         yield
 
     expanded_log = expanded
-    monkeypatch.setattr(rendering.st, "html", drawn.append)
-    monkeypatch.setattr(rendering.st, "markdown", lambda text, **_: drawn.append(text))
-    monkeypatch.setattr(rendering.st, "expander", fake_expander)
-    monkeypatch.setattr(rendering.st, "container", fake_container)
+    monkeypatch.setattr(st, "html", drawn.append)
+    monkeypatch.setattr(st, "markdown", lambda text, **_: drawn.append(text))
+    monkeypatch.setattr(st, "expander", fake_expander)
+    monkeypatch.setattr(st, "container", fake_container)

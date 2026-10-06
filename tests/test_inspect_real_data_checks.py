@@ -27,6 +27,7 @@ import pytest
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.bigdataquery_catalog import CATALOG_COLUMNS
+from capa_simulation.io.company_bigdataquery_adapter import BDQ_USER_NAME_ENV
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.equipment_contract import (
@@ -304,7 +305,7 @@ def test_a_locked_database_stops_with_the_app_running_message(
     def locked(*_args: object, **_kwargs: object) -> duckdb.DuckDBPyConnection:
         raise duckdb.IOException(f"Could not set lock on file {SENTINEL}")
 
-    monkeypatch.setattr(checks.duckdb, "connect", locked)
+    monkeypatch.setattr(duckdb, "connect", locked)
 
     code, output = _run(capsys, "--only", "env", "--database", str(simulation_db))
 
@@ -419,7 +420,7 @@ def test_bigdataquery_block_measures_windows_without_naming_codes(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setitem(sys.modules, "bigdataquery", _fake_bigdataquery())
-    monkeypatch.setenv(checks.BDQ_USER_NAME_ENV, f"{SENTINEL}USER")
+    monkeypatch.setenv(BDQ_USER_NAME_ENV, f"{SENTINEL}USER")
 
     code, output = _run(capsys, "--only", "bdq", "--bdq-sample", "5")
 
@@ -464,7 +465,7 @@ def test_bigdataquery_without_an_account_says_what_to_set(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setitem(sys.modules, "bigdataquery", _fake_bigdataquery(need_user=True))
-    monkeypatch.delenv(checks.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.delenv(BDQ_USER_NAME_ENV, raising=False)
 
     code, output = _run(capsys, "--only", "bdq")
 

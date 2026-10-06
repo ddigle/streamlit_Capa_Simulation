@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from capa_simulation import settings as app_settings
 from capa_simulation.persistence import snapshot_export
 from capa_simulation.persistence._sql_helpers import connect
 
@@ -13,7 +14,7 @@ from capa_simulation.persistence._sql_helpers import connect
 @pytest.fixture()
 def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """`data/temp/objectstore` 를 임시 경로로 옮긴다. 개발 PC 의 실제 DB 를 건드리지 않는다."""
-    monkeypatch.setattr(snapshot_export.settings, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
     return tmp_path
 
 

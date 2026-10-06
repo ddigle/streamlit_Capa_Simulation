@@ -278,7 +278,9 @@ def test_csv_review_and_future_open_downtime_history(tmp_path: Path) -> None:
     app = _app(path)
     assert not app.exception
     assert not app.error
-    start, end = app.date_input("equipment_history_event_range_v3").value
+    picked = app.date_input("equipment_history_event_range_v3").value
+    assert isinstance(picked, tuple) and len(picked) == 2
+    start, end = picked
     assert start == future
     assert end >= start
 
@@ -431,7 +433,9 @@ def test_pasting_the_exported_current_data_back_round_trips_through_the_workspac
 
     app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
     assert not app.exception
-    latest = repository.load_snapshot(repository.latest_revision_id())
+    latest_id = repository.latest_revision_id()
+    assert latest_id is not None
+    latest = repository.load_snapshot(latest_id)
     assert latest.revision.revision_no == 2
     assert_frame_equal(
         latest.equipment.reset_index(drop=True), master.reset_index(drop=True), check_dtype=False

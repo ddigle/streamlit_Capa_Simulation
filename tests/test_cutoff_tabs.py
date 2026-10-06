@@ -109,7 +109,9 @@ def test_the_panel_accepts_a_real_static_frame(tmp_path: Path) -> None:
     「truth value of a DataFrame is ambiguous」로 죽던 자리다. `None` 일 때는 멀쩡해서
     AppTest 가 시뮬레이션 DB 를 못 읽는 동안 그 버그가 통과했다 — 실제 화면에서만 터졌다.
     """
-    from capa_simulation.components import availability_gap_panel
+    from capa_simulation.components.availability_gap_figure import (
+        build_availability_gap_figure,
+    )
 
     spans = pd.DataFrame(
         {
@@ -134,7 +136,7 @@ def test_the_panel_accepts_a_real_static_frame(tmp_path: Path) -> None:
     assert matrix.loc[DYNAMIC_SUBTOTAL_ROW, "202610"] == 4.0
     assert matrix.loc[GAP_ROW, "202610"] == -2.0
     # Figure 가 실제로 만들어지는지도 본다 — 빈 행이 섞여도 죽지 않아야 한다.
-    figure = availability_gap_panel.build_availability_gap_figure(matrix)
+    figure = build_availability_gap_figure(matrix)
     assert len(figure.data) == 3
 
 

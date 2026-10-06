@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from datetime import date, timedelta
 from pathlib import Path
@@ -19,7 +20,7 @@ def _module(get_data: object) -> SimpleNamespace:
     return SimpleNamespace(getData=get_data)
 
 
-def test_the_requester_account_reaches_get_data(monkeypatch) -> None:
+def test_the_requester_account_reaches_get_data(monkeypatch: pytest.MonkeyPatch) -> None:
     """환경변수에 계정이 있으면 `user_name` 으로 실려야 한다.
 
     사내 WebIDE 에서 이 값이 안 실려 조회가 통째로 막혀 있었다 — 로그인도 토큰도 정상인데
@@ -28,7 +29,7 @@ def test_the_requester_account_reaches_get_data(monkeypatch) -> None:
     captured: dict[str, object] = {}
     monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, "  AD_ACCOUNT  ")
     monkeypatch.setattr(
-        adapter.importlib,
+        importlib,
         "import_module",
         lambda _: _module(lambda **kwargs: captured.update(kwargs) or pd.DataFrame({"a": [1]})),
     )
@@ -38,7 +39,7 @@ def test_the_requester_account_reaches_get_data(monkeypatch) -> None:
     assert captured["user_name"] == "AD_ACCOUNT", "앞뒤 공백을 떼고 넘겨야 한다"
 
 
-def test_no_requester_account_means_no_argument(monkeypatch) -> None:
+def test_no_requester_account_means_no_argument(monkeypatch: pytest.MonkeyPatch) -> None:
     """값이 없으면 **인자를 아예 넘기지 않는다.**
 
     Windows 에서는 패키지가 로그인 이름으로 요청자를 스스로 식별해 지금도 인자 없이 돈다.
@@ -48,7 +49,7 @@ def test_no_requester_account_means_no_argument(monkeypatch) -> None:
     captured: dict[str, object] = {}
     monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
     monkeypatch.setattr(
-        adapter.importlib,
+        importlib,
         "import_module",
         lambda _: _module(lambda **kwargs: captured.update(kwargs) or pd.DataFrame({"a": [1]})),
     )
@@ -59,33 +60,37 @@ def test_no_requester_account_means_no_argument(monkeypatch) -> None:
     assert set(captured) == {"param", "convert_type", "verbose"}
 
 
-def test_a_rejected_blank_account_names_the_variable_to_set(monkeypatch) -> None:
+def test_a_rejected_blank_account_names_the_variable_to_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """서버가 빈값을 거부하면 패키지 문구 대신 채울 환경변수를 알려야 한다."""
 
     def refuse(**_kwargs: object) -> pd.DataFrame:
         raise ValueError("Parameter user_name is necessary.")
 
     monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
-    monkeypatch.setattr(adapter.importlib, "import_module", lambda _: _module(refuse))
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(refuse))
 
     with pytest.raises(RuntimeError, match=adapter.BDQ_USER_NAME_ENV):
         adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
 
 
-def test_an_unrelated_failure_is_not_disguised(monkeypatch) -> None:
+def test_an_unrelated_failure_is_not_disguised(monkeypatch: pytest.MonkeyPatch) -> None:
     """계정과 상관없는 실패까지 계정 안내로 바꾸면 진짜 원인이 가려진다."""
 
     def refuse(**_kwargs: object) -> pd.DataFrame:
         raise ValueError("table not found")
 
     monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
-    monkeypatch.setattr(adapter.importlib, "import_module", lambda _: _module(refuse))
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(refuse))
 
     with pytest.raises(ValueError, match="table not found"):
         adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
 
 
-def test_unconfigured_query_is_rejected_before_package_import(monkeypatch) -> None:
+def test_unconfigured_query_is_rejected_before_package_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     imported = False
 
     def fake_import(_: str) -> object:
@@ -93,7 +98,7 @@ def test_unconfigured_query_is_rejected_before_package_import(monkeypatch) -> No
         imported = True
         return object()
 
-    monkeypatch.setattr(adapter.importlib, "import_module", fake_import)
+    monkeypatch.setattr(importlib, "import_module", fake_import)
     # 모듈 기본 SQL 은 사내 조회문으로 채워져 있다. 미설정 경로를 보려면 표식이 남은
     # 템플릿을 명시로 준다.
     provider = adapter.BigDataQueryCoreDataProvider(
@@ -107,7 +112,7 @@ def test_unconfigured_query_is_rejected_before_package_import(monkeypatch) -> No
     assert not imported
 
 
-def test_provider_returns_renamed_dataframe_without_csv(monkeypatch) -> None:
+def test_provider_returns_renamed_dataframe_without_csv(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     def fake_get_data(*, param: str, convert_type: bool, verbose: bool) -> pd.DataFrame:
@@ -120,7 +125,7 @@ def test_provider_returns_renamed_dataframe_without_csv(monkeypatch) -> None:
         return pd.DataFrame({"db_product": ["Product*_A"], "공정": ["ASSY"], "모듈수": [2]})
 
     monkeypatch.setattr(
-        adapter.importlib,
+        importlib,
         "import_module",
         lambda _: SimpleNamespace(getData=fake_get_data),
     )
@@ -167,7 +172,7 @@ def test_mpga_test_module_count_exception_normalizes_to_one() -> None:
     )
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(
-            adapter.importlib,
+            importlib,
             "import_module",
             lambda _: SimpleNamespace(getData=lambda **_kwargs: frame),
         )
@@ -178,7 +183,7 @@ def test_mpga_test_module_count_exception_normalizes_to_one() -> None:
 
 @pytest.mark.parametrize("missing_column", ["공정", "모듈수"])
 def test_provider_reports_missing_columns_before_source_adjustment(
-    monkeypatch, missing_column
+    monkeypatch: pytest.MonkeyPatch, missing_column: str
 ) -> None:
     frame = pd.DataFrame({"공정": ["MPGA TEST"], "모듈수": [0.955]}).drop(columns=missing_column)
     monkeypatch.setattr(
@@ -190,7 +195,9 @@ def test_provider_reports_missing_columns_before_source_adjustment(
         provider.fetch("SIM-001")
 
 
-def test_provider_reports_mapping_collisions_before_source_adjustment(monkeypatch) -> None:
+def test_provider_reports_mapping_collisions_before_source_adjustment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     frame = pd.DataFrame({"공정": ["MPGA TEST"], "모듈수": [0.955], "module_count": [2]})
     monkeypatch.setattr(
         adapter, "load_bigdataquery_module", lambda: _module(lambda **_kwargs: frame)
@@ -301,7 +308,7 @@ def test_the_detail_window_defaults_to_a_few_days_around_the_registration_date()
     assert window.days == 11
 
 
-def test_provider_passes_the_window_into_the_query(monkeypatch) -> None:
+def test_provider_passes_the_window_into_the_query(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     def fake_get_data(*, param: str, convert_type: bool, verbose: bool) -> pd.DataFrame:
@@ -309,7 +316,7 @@ def test_provider_passes_the_window_into_the_query(monkeypatch) -> None:
         return pd.DataFrame({"제품정보": ["Product-A"], "공정": ["ASSY"], "모듈수": [2]})
 
     monkeypatch.setattr(
-        adapter.importlib,
+        importlib,
         "import_module",
         lambda _: SimpleNamespace(getData=fake_get_data),
     )
@@ -327,10 +334,12 @@ def test_provider_passes_the_window_into_the_query(monkeypatch) -> None:
     assert captured["param"] == "SELECT 'SIM-001' WHERE t >= '2026-09-01' AND t < '2026-09-09'"
 
 
-def test_empty_result_is_rejected_before_the_module_count_exception(monkeypatch) -> None:
+def test_empty_result_is_rejected_before_the_module_count_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """0행 가드가 rename 뒤에 있으면 `KeyError('모듈수')` 로 먼저 터진다."""
     monkeypatch.setattr(
-        adapter.importlib,
+        importlib,
         "import_module",
         lambda _: SimpleNamespace(getData=lambda **_kwargs: pd.DataFrame()),
     )
@@ -350,7 +359,7 @@ def test_catalog_sql_is_not_mixed_into_the_detail_template() -> None:
     assert "SELECT DISTINCT" not in adapter.QUERY_TEMPLATE
 
 
-def test_package_probe_does_not_import_the_module(monkeypatch) -> None:
+def test_package_probe_does_not_import_the_module(monkeypatch: pytest.MonkeyPatch) -> None:
     imported = False
 
     def fake_import(_: str) -> object:
@@ -358,7 +367,7 @@ def test_package_probe_does_not_import_the_module(monkeypatch) -> None:
         imported = True
         return object()
 
-    monkeypatch.setattr(adapter.importlib, "import_module", fake_import)
+    monkeypatch.setattr(importlib, "import_module", fake_import)
 
     adapter.is_bigdataquery_package_available()
 

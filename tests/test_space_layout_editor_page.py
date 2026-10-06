@@ -92,7 +92,7 @@ def test_an_apply_lands_in_the_draft_and_one_save_writes_master_and_marks(
 
     assert not app.exception, [item.message for item in app.exception]
     assert any("편집본에 적용했습니다" in item.value for item in app.success)
-    panel = app.get("markdown")
+    panel = app.markdown
     assert any("호기 배치 1건 · 도면 요소 1개 층" in item.value for item in panel)
     # 설비 리비전이 생기는 저장이라 메모 칸이 선다(FAB 만 바뀐 저장에서만 숨긴다).
     assert [item for item in app.text_input if item.label == "변경 메모"]
@@ -111,7 +111,7 @@ def test_an_apply_lands_in_the_draft_and_one_save_writes_master_and_marks(
     saved = repository.load_snapshot(str(repository.latest_revision_id()))
     assert saved.equipment.set_index("설비명").loc["EQ-01", "X좌표"] == 40.0
     assert [mark.mark_id for mark in repository.load_floor_layout_marks("C1", "1F")] == ["D1"]
-    assert not any("저장 안 한 배치 변경" in item.value for item in app.get("markdown"))
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     # 저장은 콜백이라 회차를 끊지 않는다 — 아래의 `배치 편집` 토글이 꺼지지 않고 편집기가 새
     # 저장본으로 다시 선다(본문에서 저장하고 st.rerun() 하면 안 그린 토글 상태가 버려졌다).
     assert app.toggle(key="space_layout_edit_mode").value is True
@@ -172,7 +172,7 @@ def test_a_bad_apply_is_refused_with_its_reason_and_leaves_the_draft(
     assert not app.exception
     assert any(message in item.value for item in app.error)
     assert editor_calls[-1]["epoch"] == epoch
-    assert not any("저장 안 한 배치 변경" in item.value for item in app.get("markdown"))
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     clear_equipment_repository()
 
 

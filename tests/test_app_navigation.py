@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Caption, Expander, Status
 
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.scenario_status import SCENARIO_BOX_KEY
@@ -201,7 +202,7 @@ def _app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
 # `Status`, 없으면 `Expander` — `element_tree.py` 의 `expandable` 분기). 아이콘은 서식이지
 # 종류가 아니므로 둘 다 본다. 지금은 사이드바 상자가 전부 아이콘을 달아 `Status` 뿐이지만,
 # 아이콘 없는 상자가 하나라도 생기면 한쪽만 보는 헬퍼는 그 상자를 통째로 잃는다.
-_EXPANDER_ELEMENTS = {"Status", "Expander"}
+_EXPANDER_ELEMENTS = (Status, Expander)
 
 
 def _expanded(app: AppTest) -> dict[str, bool]:
@@ -216,7 +217,7 @@ def _expanded(app: AppTest) -> dict[str, bool]:
     return {
         element.label: element.proto.expanded
         for element in app.sidebar
-        if type(element).__name__ in _EXPANDER_ELEMENTS and element.label in group_titles
+        if isinstance(element, _EXPANDER_ELEMENTS) and element.label in group_titles
     }
 
 
@@ -229,7 +230,7 @@ def _control_boxes(app: AppTest) -> dict[str, bool]:
     """
     found: dict[str, bool] = {}
     for element in app.sidebar:
-        if type(element).__name__ not in _EXPANDER_ELEMENTS:
+        if not isinstance(element, _EXPANDER_ELEMENTS):
             continue
         widget_id = str(element.proto.id)
         if widget_id:
@@ -308,9 +309,10 @@ def test_the_scenario_box_opens_the_database_that_settings_points_to_at_run_time
     정상적으로 있을 수 있어서다. 상자가 연 경로를 그대로 적어 둔다.
     """
     import capa_simulation.components.scenario_status as scenario_status
+    from capa_simulation.persistence.cache import get_scenario_repository
 
     opened: list[str] = []
-    original = scenario_status.get_scenario_repository
+    original = get_scenario_repository
 
     def _recording(database_path: str) -> Any:
         opened.append(database_path)
@@ -351,7 +353,7 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     order: list[str] = []
     original_bootstrap = scenario_activation.bootstrap_latest_official_scenario
 
-    def _recording_bootstrap(*args: object, **kwargs: object) -> object:
+    def _recording_bootstrap(*args: Any, **kwargs: Any) -> object:
         order.append("bootstrap")
         return original_bootstrap(*args, **kwargs)
 
@@ -476,7 +478,7 @@ def test_the_header_reads_no_database_on_a_rerun(
         monkeypatch.setattr(DuckDBScenarioRepository, name, counted)
     original_connect = sql_helpers.connect
 
-    def counted_connect(*args: object, **kwargs: object) -> Any:
+    def counted_connect(*args: Any, **kwargs: Any) -> Any:
         if inside:
             calls.append("connect")
         return original_connect(*args, **kwargs)
@@ -680,7 +682,7 @@ def test_the_conditions_heading_stands_right_before_the_scenario_box(
     assert keys[heading + 1] == SCENARIO_BOX_KEY, keys
     # 선언한 두 글자가 실제로 들어 있다. 빈 컨테이너는 화면에 그려지지도 않는다.
     heading_block = list(app.sidebar.children.values())[heading]
-    captions = [element.value for element in heading_block if type(element).__name__ == "Caption"]
+    captions = [element.value for element in heading_block if isinstance(element, Caption)]
     assert captions == [CONDITIONS_SECTION.title, CONDITIONS_SECTION.hint]
 
 
@@ -750,7 +752,7 @@ def _range_caption(app: AppTest) -> str:
         for node in app.sidebar.children.values()
         if str(getattr(getattr(node, "proto", None), "id", "") or "").endswith(placeholder_key)
     ]
-    (caption,) = [element.value for element in block if type(element).__name__ == "Caption"]
+    (caption,) = [element.value for element in block if isinstance(element, Caption)]
     return str(caption)
 
 

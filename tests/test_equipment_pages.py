@@ -2,10 +2,12 @@
 
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Expander, Multiselect, Status
 from test_floor_layout_profile import _png
 
 from capa_simulation.components import space_layout_editor
@@ -80,7 +82,7 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     assert app.session_state["equipment_master_draft_v3"].empty
     assert not any("Qual 확정상태 실행관리" in item.value for item in app.markdown)
 
-    def _filter(label: str) -> object:
+    def _filter(label: str) -> Multiselect[Any]:
         return next(widget for widget in app.multiselect if widget.label == label)
 
     _filter("공정구분").set_value(["Line-A"])
@@ -181,6 +183,7 @@ def test_space_page_with_the_sample_switch_off_keeps_a_card_under_the_sidebar_ti
 
     assert not app.exception
     card = app.sidebar.get_by_key(f"{CONDITION_CARD_PREFIX}space")
+    assert isinstance(card, (Status, Expander))
     assert card.label.endswith("Space 조건")
     assert any("조회할 호기가 없습니다" in item.value for item in app.sidebar.caption)
     # 조건 위젯은 서지 않는다 — 고를 호기가 없다.

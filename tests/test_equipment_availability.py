@@ -188,9 +188,10 @@ def test_weekly_counts_use_qual_and_downtime() -> None:
 
 def test_weekly_counts_prepare_equipment_once(monkeypatch: pytest.MonkeyPatch) -> None:
     from capa_simulation.services import equipment_availability
+    from capa_simulation.services.equipment_validation import prepare_equipment_master
 
     prepare_calls = 0
-    original_prepare = equipment_availability.prepare_equipment_master
+    original_prepare = prepare_equipment_master
 
     def counted_prepare(data: pd.DataFrame) -> pd.DataFrame:
         nonlocal prepare_calls

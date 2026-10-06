@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
-from streamlit.testing.v1.element_tree import Button
+from streamlit.testing.v1.element_tree import Button, Expander, Status
 from streamlit.testing.v1.errors import AppTestError
 from test_all_pages_render import _page_script
 
@@ -144,6 +144,7 @@ def test_archived_box_keeps_its_identity_when_the_flash_disappears(tmp_path: Pat
     assert not app.exception
     assert any("보관했습니다" in item.value for item in app.success)
     box = app.main.get_by_key(ARCHIVED_EXPANDER_KEY)
+    assert isinstance(box, (Expander, Status))
     assert box.label == "보관된 시나리오 1건"
     flashed = box._block_id
     assert flashed
