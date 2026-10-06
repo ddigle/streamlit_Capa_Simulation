@@ -368,7 +368,10 @@
   Repository 교체가 모두 이 한 관문을 지난다(`tests/test_display_order_editor.py`·
   `test_duckdb_repository.py`). 검사 전에 저장된 프로필과 기동마다 읽는 로컬 시드
   (`data/input/RQ_DISPLAY_ORDER.csv`)는 앱 기동을 막지 않게 읽는 길만 견딘다 — 기동 보강은 미루고
-  Admin `표시순서 관리` 탭이 경고한다(AGENTS.md 8장).
+  Admin `표시순서 관리` 탭이 경고한다(AGENTS.md 8장). **리뷰 후속(2026-10-07)**: 겹침은 적용처럼 활성
+  규칙만 본다(`Top`(Y)·`TOP`(N) 은 막지 않음). 직접 편집은 고른 범위 안의 겹침만 막고 다른 범위에
+  이미 있던 겹침은 저장 사슬 끝(Repository)까지 넘긴다 — 두 범위에 예전 겹침이 있으면 어느 쪽을 고쳐도
+  다른 쪽 때문에 막히던 교착을 풀었다. Admin 경고는 겹친 범위와 범위마다 고치는 길을 적는다.
 - [x] 확보 기준과 **같은** 확보율의 판정이 화면마다 둘로 갈린다. HOME(`capacity_status`)과
   B/N 공정 선택은 「초과해야 확보」라 같은 값을 기준 미달로 보고, Static Capa 부족 현황
   (`build_securement_shortfall_tables` 의 `lt`)은 미달로 세지 않는다. 계산된 월에서는 거의

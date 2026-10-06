@@ -139,8 +139,14 @@ repository.initialize_global_display_order(
 def _reject(*_args, **_kwargs):
     raise ValueError("거절된 저장")
 
+# 모듈 속성을 바꾸므로 그린 뒤 되돌린다 — 되돌리지 않으면 같은 프로세스의 다음 테스트 저장까지
+# 이 함수가 막는다.
+saving = display_order_management._save_global_display_order
 display_order_management._save_global_display_order = _reject
-display_order_management.render_display_order_management(repository)
+try:
+    display_order_management.render_display_order_management(repository)
+finally:
+    display_order_management._save_global_display_order = saving
 '''
     app = AppTest.from_string(script).run(timeout=30)
     assert not app.exception
@@ -215,3 +221,80 @@ render_display_order_management(repository)
     )
     assert not app.exception
     assert any("`Top` · `TOP`" in element.value for element in app.error)
+
+
+def test_the_direct_editor_fixes_one_clashing_scope_while_another_remains(tmp_path: Path) -> None:
+    """두 범위에 예전 겹침이 있을 때 직접 편집으로 한 범위를 고쳐 저장하면 저장된다(리뷰 재현).
+
+    화면의 저장 사슬(`_save_global_display_order` → Repository)이 다른 범위의 겹침을 넘기지 않으면
+    어느 범위를 고쳐도 막혔다. AppTest 는 편집표 칸을 고칠 수 없어, 이 스크립트 안에서만
+    `st.data_editor` 가 「고친 표」(고른 범위의 첫 줄만 남긴 것)를 돌려주게 한다.
+    """
+    database_path = tmp_path / "display-order-two-clashes.duckdb"
+    script = f'''
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+from capa_simulation.components.display_order_management import render_display_order_management
+from capa_simulation.persistence import display_order_store
+from capa_simulation.persistence._sql_helpers import connect
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+database = Path(r"{database_path}")
+repository = DuckDBScenarioRepository(database)
+repository.initialize()
+if not database.with_suffix(".seeded").exists():
+    rows = []
+    for tab in ("계획", "환산"):
+        for order, value in enumerate(("Top", "TOP"), start=1):
+            rows.append(
+                {{
+                    "페이지 구분": "부하량",
+                    "탭 구분": tab,
+                    "정렬우선순위": 1,
+                    "분류컬럼": "WF 구분",
+                    "정렬방식": "사용자지정",
+                    "분류값": value,
+                    "값표시순서": order,
+                    "활성여부": "Y",
+                }}
+            )
+    with connect(database) as connection:
+        display_order_store.insert_global_display_order(
+            connection, pd.DataFrame(rows), version=1, source="검사 전 저장본"
+        )
+    database.with_suffix(".seeded").write_text("1")
+
+original_editor = st.data_editor
+
+
+def _fixed_editor(frame, **kwargs):
+    original_editor(frame, **kwargs)
+    return frame.iloc[[0]].reset_index(drop=True)
+
+
+st.data_editor = _fixed_editor
+try:
+    render_display_order_management(repository)
+finally:
+    st.data_editor = original_editor
+'''
+    app = AppTest.from_string(script).run(timeout=30)
+    assert not app.exception, [item.message for item in app.exception]
+    warning = " ".join(element.value for element in app.warning)
+    assert "부하량 › 계획" in warning and "부하량 › 환산" in warning
+    assert "범위마다 따로 고칠 수 있습니다" in warning
+    assert app.selectbox(key="display_order_tab").value == "계획"
+
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click().run(
+        timeout=30
+    )
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [element.value for element in app.error]
+    assert any("공용 설정으로 저장했습니다" in element.value for element in app.success)
+    # 고친 범위는 사라지고 남은 범위만 경고한다.
+    warning = " ".join(element.value for element in app.warning)
+    assert "부하량 › 환산" in warning and "부하량 › 계획" not in warning

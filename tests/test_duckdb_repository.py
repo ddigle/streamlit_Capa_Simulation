@@ -455,6 +455,47 @@ def test_a_stored_case_clash_does_not_stop_startup(tmp_path: Path) -> None:
     assert not set(ROUTE_SEQUENCE_COLUMNS) & set(profile.rules["분류컬럼"])
 
 
+def test_a_scope_fix_saves_while_another_scope_still_clashes(tmp_path: Path) -> None:
+    """직접 편집의 저장 사슬 끝(Repository)도 다른 범위에 이미 있던 겹침을 넘긴다(리뷰 재현).
+
+    화면이 고른 범위를 깨끗이 해도 Repository 가 프로필 전체를 다시 검사하면 두 범위에 겹침이
+    있을 때 어느 저장도 통과하지 못했다. 붙여넣기처럼 넘길 겹침을 주지 않는 저장은 그대로 막힌다.
+    """
+    from capa_simulation.services.display_order_editor import (
+        clashes_outside_scope,
+        replace_display_order_scope,
+    )
+
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    stored = pd.concat(
+        [_case_clash_rules("부하량", "환산"), _case_clash_rules("부하량", "계획")],
+        ignore_index=True,
+    )
+    with connect(database_path) as connection:
+        display_order_store.insert_global_display_order(
+            connection, stored, version=1, source="검사 전 저장본"
+        )
+    current = repository.initialize_global_display_order(_reference_tables()["RQ_DISPLAY_ORDER"])
+
+    with pytest.raises(DisplayOrderValueClashError):
+        repository.replace_global_display_order(current.rules, source="전체 붙여넣기")
+
+    for tab, keep in (("환산", 0), ("계획", 1)):
+        fixed = (
+            _case_clash_rules("부하량", tab).iloc[[keep]].drop(columns=["페이지 구분", "탭 구분"])
+        )
+        revised = replace_display_order_scope(current.rules, "부하량", tab, fixed)
+        current = repository.replace_global_display_order(
+            revised,
+            source=f"직접 편집 · 부하량/{tab}",
+            tolerated_clashes=clashes_outside_scope(current.rules, "부하량", tab),
+        )
+
+    assert sorted(current.rules["분류값"].tolist()) == ["TOP", "Top"]
+    assert current.version == 3
+
+
 def test_a_seed_with_a_case_clash_does_not_stop_startup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

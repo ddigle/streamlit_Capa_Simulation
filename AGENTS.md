@@ -3471,16 +3471,24 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   해당 페이지·탭 범위의 마지막 우선순위로 자동 보강한다.
 - 지원 정렬방식은 `사용자지정`, `오름차순`, `내림차순`이다.
 - `사용자지정` 분류값의 중복은 **저장과 적용이 같은 키**로 판정한다 — `frame_contracts.match_key`
-  (앞뒤 공백·대소문자 무시)로 같은 페이지·탭·분류컬럼 안에서 겹치면 중복이다. 저장·가져오기
-  (범위 직접 편집·Excel 붙여넣기·CSV·`replace_global_display_order`)는 모두
+  (앞뒤 공백·대소문자 무시)로 같은 페이지·탭·분류컬럼 안의 **활성(`활성여부 = Y`) 규칙**끼리 겹치면
+  중복이다(적용도 활성 규칙만 본다. 글자까지 같은 중복은 꺼 둔 규칙도 예전처럼 막는다). 저장·
+  가져오기(범위 직접 편집·Excel 붙여넣기·CSV·`replace_global_display_order`)는 모두
   `display_order_editor.validate_display_order` 한 관문을 지나 `DisplayOrderValueClashError` 로
   막히고, 오류문은 겹친 값을 적은 표기 그대로 범위마다 적는다(앞 5개, 나머지는 「외 N건」).
-  이 검사 전에 저장된 프로필은 **읽는 길만** 견딘다(`allow_value_clashes=True` — 기동 때 경로 식별
-  컬럼 보강·첫 이관·로컬 시드 `data/input/RQ_DISPLAY_ORDER.csv` 읽기, Admin `표시순서 관리` 탭
-  열기·내려받기). 기동 보강은 그 프로필을 그대로
-  두고 미루며, Admin 탭이 겹친 값을 경고하고 그 범위를 쓰는 화면은 예전처럼 중복 오류를 낸다.
-  고쳐 저장하면 그 저장이 보강까지 한다. `data/input` Core Data 경로의 `RQ_DISPLAY_ORDER`
-  (`reference_transformer` → `transform_display_order`)는 이 검증을 지나지 않는다(전부터 그렇다).
+  - 프로필 전체를 바꾸는 저장(붙여넣기·CSV)은 어디에든 겹침이 있으면 막는다. **범위 하나를 고치는
+    직접 편집**은 고른 페이지·탭 안의 겹침(남겨 둔 것이든 새로 만든 것이든)만 막고, 다른 범위에
+    **이미 있던** 겹침은 넘긴다(`clashes_outside_scope` → `tolerated_clashes` 를 화면 저장·
+    `replace_global_display_order`·`prepare_global_display_order_rules` 까지 넘긴다). 프로필
+    전체를 다시 검사하면 두 범위에 예전 겹침이 있을 때 어느 범위를 고쳐도 다른 범위 때문에 막혀
+    고칠 길이 없었다(2026-10-07 리뷰 재현).
+  - 이 검사 전에 저장된 프로필은 **읽는 길만** 견딘다(`allow_value_clashes=True` — 기동 때 경로 식별
+    컬럼 보강·첫 이관·로컬 시드 `data/input/RQ_DISPLAY_ORDER.csv` 읽기, Admin `표시순서 관리` 탭
+    열기·내려받기). 기동 보강은 그 프로필을 그대로 두고 미루며, Admin 탭은 겹친 범위를 적고 범위마다
+    고치거나 내려받아 고친 뒤 붙여넣는 길을 경고로 알린다. 그 범위를 쓰는 화면은 정렬만 멈추는 것이
+    아니라 적용의 ValueError 로 그 부분에 오류를 띄운다. 고쳐 저장하면 그 저장이 보강까지 한다.
+  - `data/input` Core Data 경로의 `RQ_DISPLAY_ORDER`(`reference_transformer` →
+    `transform_display_order`)는 이 검증을 지나지 않는다(전부터 그렇다).
 - 공정 표시명(Proc Rename) 규칙은 한 문장이다 — **화면은 표시명, 파일은 원본.**
   화면에서 사람이 읽는 공정명은 빠짐없이 표시명이고, 적용 계층은 여섯이다.
   ① 월별 표의 분류 값(`value_labels=`, 치환은 `components/` 안에서만 한다),

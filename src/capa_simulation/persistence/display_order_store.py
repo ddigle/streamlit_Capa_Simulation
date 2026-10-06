@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
+
 import duckdb
 import pandas as pd
 
@@ -16,7 +18,7 @@ from capa_simulation.persistence._sql_helpers import (
     reset_profile,
 )
 from capa_simulation.persistence.models import GlobalDisplayOrder
-from capa_simulation.services.display_order_editor import ensure_route_sequence_rules
+from capa_simulation.services.display_order_editor import ClashKey, ensure_route_sequence_rules
 from capa_simulation.services.frame_contracts import require_exact_columns
 
 GLOBAL_DISPLAY_ORDER_COLUMNS = (
@@ -40,11 +42,20 @@ def validate_global_display_order_frame(frame: pd.DataFrame) -> None:
 
 
 def prepare_global_display_order_rules(
-    frame: pd.DataFrame, *, allow_value_clashes: bool = False
+    frame: pd.DataFrame,
+    *,
+    allow_value_clashes: bool = False,
+    tolerated_clashes: Collection[ClashKey] = (),
 ) -> pd.DataFrame:
-    """저장 전 검증과 경로 식별 컬럼 보강. 겹친 분류값 허용은 이미 있는 값을 옮길 때만 켠다."""
+    """저장 전 검증과 경로 식별 컬럼 보강.
+
+    겹친 분류값 허용(`allow_value_clashes`)은 이미 있는 값을 옮길 때만 켠다. 범위 하나를 고치는
+    직접 편집 저장은 다른 범위에 이미 있던 겹침만 `tolerated_clashes` 로 넘긴다.
+    """
     validate_global_display_order_frame(frame)
-    return ensure_route_sequence_rules(frame, allow_value_clashes=allow_value_clashes)
+    return ensure_route_sequence_rules(
+        frame, allow_value_clashes=allow_value_clashes, tolerated_clashes=tolerated_clashes
+    )
 
 
 def display_order_frames_equal(left: pd.DataFrame, right: pd.DataFrame) -> bool:

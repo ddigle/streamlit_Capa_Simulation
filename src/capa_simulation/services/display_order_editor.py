@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping, Sequence
+from typing import NamedTuple
 
 import pandas as pd
 
@@ -53,32 +54,70 @@ class DisplayOrderValueClashError(ValueError):
     """
 
 
-def custom_value_clashes(rules: pd.DataFrame) -> list[tuple[tuple[str, str, str], list[str]]]:
-    """사용자지정 규칙 가운데 같은 페이지·탭·분류컬럼에서 `match_key` 가 겹치는 값들.
+# 겹침 하나를 가리키는 키 — (페이지 구분, 탭 구분, 분류컬럼, `match_key`).
+ClashKey = tuple[str, str, str, str]
 
-    적용(`display_order.apply_display_order`)이 분류값을 맞대는 형태와 같은 키로 본다 —
-    대소문자와 앞뒤 공백만 다른 두 값은 같은 값이다. 글자 그대로 보면 저장은 통과하고 그
-    범위를 쓰는 화면에서야 ValueError 가 났다. 돌려주는 값은 **원래 표기** 그대로다.
+
+class ValueClash(NamedTuple):
+    """한 페이지·탭·분류컬럼 안에서 `match_key` 가 같은 활성 사용자지정 분류값 묶음."""
+
+    page: str
+    tab: str
+    column: str
+    key: str
+    # 적은 표기 그대로다. 줄인 키(`top`)로 알리면 어느 행인지 찾을 수 없다.
+    values: tuple[str, ...]
+
+    @property
+    def identity(self) -> ClashKey:
+        return (self.page, self.tab, self.column, self.key)
+
+
+def custom_value_clashes(rules: pd.DataFrame) -> list[ValueClash]:
+    """활성 사용자지정 규칙 가운데 같은 페이지·탭·분류컬럼에서 `match_key` 가 겹치는 값들.
+
+    적용(`display_order.apply_display_order`)이 분류값을 맞대는 형태와 같은 키로 보고, 적용처럼
+    **활성(`활성여부 = Y`) 규칙만** 본다 — 대소문자와 앞뒤 공백만 다른 두 값은 같은 값이고, 꺼 둔
+    규칙은 화면에 걸리지 않는다. 글자 그대로 보면 저장은 통과하고 그 범위를 쓰는 화면에서야
+    ValueError 가 났다. 돌려주는 값은 **원래 표기** 그대로다.
     """
     if rules.empty or not {*_SCOPE_COLUMNS, "정렬방식", "분류값"} <= set(rules.columns):
         return []
-    custom = rules.loc[rules["정렬방식"].eq("사용자지정")]
-    if custom.empty:
+    custom = rules["정렬방식"].eq("사용자지정")
+    if "활성여부" in rules.columns:
+        custom &= rules["활성여부"].astype("string").str.strip().str.upper().eq("Y").fillna(False)
+    active = rules.loc[custom]
+    if active.empty:
         return []
-    keyed = custom.loc[:, [*_SCOPE_COLUMNS, "분류값"]].assign(__key=match_key(custom["분류값"]))
+    keyed = active.loc[:, [*_SCOPE_COLUMNS, "분류값"]].assign(__key=match_key(active["분류값"]))
     duplicated = keyed.duplicated([*_SCOPE_COLUMNS, "__key"], keep=False)
-    clashes: list[tuple[tuple[str, str, str], list[str]]] = []
+    clashes: list[ValueClash] = []
     for group, rows in keyed.loc[duplicated].groupby([*_SCOPE_COLUMNS, "__key"], sort=False):
-        page, tab, column, _ = (str(value) for value in group)
-        clashes.append(((page, tab, column), rows["분류값"].astype(str).tolist()))
+        page, tab, column, key = (str(value) for value in group)
+        clashes.append(ValueClash(page, tab, column, key, tuple(rows["분류값"].astype(str))))
     return clashes
 
 
-def describe_value_clashes(clashes: list[tuple[tuple[str, str, str], list[str]]]) -> str:
+def clashes_outside_scope(rules: pd.DataFrame, page: str, tab: str) -> frozenset[ClashKey]:
+    """고르지 않은 페이지·탭에 **이미** 있는 겹침. 한 범위만 고치는 저장이 그것에 막히지 않게 한다.
+
+    직접 편집은 한 범위씩 저장한다. 저장 검사가 프로필 전체의 겹침을 보면, 두 범위에 예전 겹침이
+    있을 때 어느 쪽을 고쳐도 다른 쪽 때문에 막혀 고칠 길이 없다. 고르는 범위 안의 겹침은 여기 들지
+    않으므로 그 범위는 언제나 깨끗해야 저장된다.
+    """
+    return frozenset(
+        clash.identity
+        for clash in custom_value_clashes(rules)
+        if (clash.page, clash.tab) != (page, tab)
+    )
+
+
+def describe_value_clashes(clashes: Sequence[ValueClash]) -> str:
     """겹친 값을 범위마다 한 덩어리로 적는다. 앞 `CLASH_REPORT_LIMIT` 개만, 나머지는 건수."""
     parts = [
-        f"{page} › {tab} › {column}: " + " · ".join(f"`{value}`" for value in values)
-        for (page, tab, column), values in clashes[:CLASH_REPORT_LIMIT]
+        f"{clash.page} › {clash.tab} › {clash.column}: "
+        + " · ".join(f"`{value}`" for value in clash.values)
+        for clash in clashes[:CLASH_REPORT_LIMIT]
     ]
     rest = len(clashes) - CLASH_REPORT_LIMIT
     if rest > 0:
@@ -86,13 +125,28 @@ def describe_value_clashes(clashes: list[tuple[tuple[str, str, str], list[str]]]
     return "; ".join(parts)
 
 
+def reject_value_clashes(rules: pd.DataFrame, *, tolerated: Collection[ClashKey] = ()) -> None:
+    """활성 사용자지정 분류값이 겹치면 막는다. `tolerated` 의 겹침(다른 범위에 있던 것)만 넘긴다."""
+    clashes = [clash for clash in custom_value_clashes(rules) if clash.identity not in tolerated]
+    if clashes:
+        raise DisplayOrderValueClashError(
+            "사용자지정 분류값이 같은 페이지·탭·분류컬럼에서 중복됩니다(대소문자·앞뒤 공백만 "
+            "다른 값도 같은 값으로 봅니다): " + describe_value_clashes(clashes)
+        )
+
+
 def validate_display_order(
-    source: pd.DataFrame, *, allow_value_clashes: bool = False
+    source: pd.DataFrame,
+    *,
+    allow_value_clashes: bool = False,
+    tolerated_clashes: Collection[ClashKey] = (),
 ) -> pd.DataFrame:
     """Return normalized rules or reject every incomplete/conflicting row.
 
     `allow_value_clashes` 는 **이미 저장된 프로필을 읽는 길**만 켠다(기동 보강·Admin 탭 열기·
-    내려받기). 그때도 글자까지 같은 중복은 예전처럼 막는다. 저장·가져오기는 끄고 부른다.
+    내려받기). `tolerated_clashes` 는 범위 하나를 고치는 직접 편집 저장이 **다른 범위에 이미 있던**
+    겹침만 넘기게 한다(`clashes_outside_scope`). 어느 쪽이든 글자까지 같은 중복은 예전처럼 막고,
+    붙여넣기·CSV 처럼 프로필 전체를 바꾸는 저장은 둘 다 끄고 부른다.
     """
     if not isinstance(source, pd.DataFrame):
         raise TypeError("표시순서 설정은 pandas DataFrame이어야 합니다.")
@@ -127,13 +181,10 @@ def validate_display_order(
     custom_rules = normalized.loc[custom]
     custom_key = [*scope_column, "분류값"]
     if not allow_value_clashes:
-        clashes = custom_value_clashes(custom_rules)
-        if clashes:
-            raise DisplayOrderValueClashError(
-                "사용자지정 분류값이 같은 페이지·탭·분류컬럼에서 중복됩니다(대소문자·앞뒤 공백만 "
-                "다른 값도 같은 값으로 봅니다): " + describe_value_clashes(clashes)
-            )
-    elif custom_rules.duplicated(custom_key).any():
+        reject_value_clashes(custom_rules, tolerated=tolerated_clashes)
+    # 겹침 검사는 화면에 걸리는 활성 규칙만 본다. 글자까지 같은 중복은 꺼 둔 규칙도 막는다 —
+    # 전부터 그랬고, 켜는 순간 겹친다.
+    if custom_rules.duplicated(custom_key).any():
         raise ValueError("사용자지정 분류값이 같은 페이지·탭·분류컬럼에서 중복됩니다.")
     custom_order_key = [*scope_column, "값표시순서"]
     if custom_rules.duplicated(custom_order_key).any():
@@ -157,8 +208,9 @@ def replace_display_order_scope(
 ) -> pd.DataFrame:
     """Replace one page/tab rule set while preserving all other scopes.
 
-    지금 프로필은 겹친 값을 견디며 읽고(저장된 그대로다), 합친 결과는 저장과 같은 검사를
-    받는다 — 다른 범위에 예전 겹침이 남아 있으면 그 값을 적은 오류로 막힌다.
+    지금 프로필은 겹친 값을 견디며 읽고(저장된 그대로다), 합친 결과는 **고르는 범위 안에서**
+    겹침이 없어야 한다. 다른 범위에 이미 있던 겹침은 넘긴다 — 그것까지 막으면 두 범위에 겹침이
+    있을 때 어느 쪽도 고쳐 저장할 수 없다. 저장 사슬은 같은 `clashes_outside_scope` 를 받는다.
     """
     page_name = _required_text(page, "페이지 구분")
     tab_name = _required_text(tab, "탭 구분")
@@ -173,14 +225,21 @@ def replace_display_order_scope(
         tab_name
     )
     merged = pd.concat([normalized_current.loc[~mask], rules], ignore_index=True)
-    return validate_display_order(merged)
+    return validate_display_order(
+        merged, tolerated_clashes=clashes_outside_scope(normalized_current, page_name, tab_name)
+    )
 
 
 def ensure_route_sequence_rules(
-    source: pd.DataFrame, *, allow_value_clashes: bool = False
+    source: pd.DataFrame,
+    *,
+    allow_value_clashes: bool = False,
+    tolerated_clashes: Collection[ClashKey] = (),
 ) -> pd.DataFrame:
     """Keep STEP and MCP as the final configured hierarchy in route-aware scopes."""
-    normalized = validate_display_order(source, allow_value_clashes=allow_value_clashes)
+    normalized = validate_display_order(
+        source, allow_value_clashes=allow_value_clashes, tolerated_clashes=tolerated_clashes
+    )
     result = normalized.copy()
     for page, tab in ROUTE_SEQUENCE_SCOPES:
         scope = result["페이지 구분"].eq(page) & result["탭 구분"].eq(tab)
@@ -219,7 +278,9 @@ def ensure_route_sequence_rules(
             [*result.to_dict("records"), *additions],
             columns=DISPLAY_ORDER_COLUMNS,
         )
-    return validate_display_order(result, allow_value_clashes=allow_value_clashes)
+    return validate_display_order(
+        result, allow_value_clashes=allow_value_clashes, tolerated_clashes=tolerated_clashes
+    )
 
 
 def _required_text(value: str, label: str) -> str:

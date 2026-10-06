@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
+
 import pandas as pd
 import streamlit as st
 
@@ -29,6 +31,9 @@ from capa_simulation.services.display_order_csv import (
 )
 from capa_simulation.services.display_order_editor import (
     DISPLAY_ORDER_RULE_COLUMNS,
+    ClashKey,
+    ValueClash,
+    clashes_outside_scope,
     custom_value_clashes,
     describe_value_clashes,
     display_label_mistakes,
@@ -51,7 +56,7 @@ def _validated_display_order(
     database_path: str,
     version: int,
     _rules: pd.DataFrame,
-) -> tuple[pd.DataFrame, bytes, list[tuple[tuple[str, str, str], list[str]]]]:
+) -> tuple[pd.DataFrame, bytes, list[ValueClash]]:
     """검증한 규칙·내려받기 CSV·겹친 분류값. 모두 순수 함수라 공용 버전이 같으면 결과도 같다.
 
     검증 47ms + CSV 46ms(안에서 검증을 한 번 더 한다)를 rerun 마다 하고 있었다. 이 탭은
@@ -101,12 +106,7 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
     render_flash("display_order_flash")
     _render_label_warnings()
     if clashes:
-        st.warning(
-            "대소문자·앞뒤 공백만 다른 사용자지정 분류값이 있습니다. 화면은 둘을 같은 값으로 보아 "
-            "그 범위의 정렬이 멈추고, 이대로는 저장도 막힙니다. 하나만 남기고 저장하세요: "
-            + describe_value_clashes(clashes),
-            icon=":material/warning:",
-        )
+        _render_clash_warning(clashes)
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, display_order)
@@ -243,7 +243,17 @@ def _render_direct_editor(
             pd.DataFrame(edited),
         )
         source = note.strip() or f"웹 직접 편집 · {selected_page}/{selected_tab}"
-        _save_global_display_order(repository, revised, source=source)
+        # 고른 범위만 바꾸는 저장이다. 다른 범위에 이미 있던 겹친 분류값은 저장 사슬 끝까지 넘겨,
+        # 두 범위에 예전 겹침이 있어도 한 범위씩 고쳐 저장할 수 있게 한다. 고른 범위 안의 겹침과
+        # 새로 생긴 겹침은 그대로 막힌다.
+        _save_global_display_order(
+            repository,
+            revised,
+            source=source,
+            tolerated_clashes=clashes_outside_scope(
+                display_order, str(selected_page), str(selected_tab)
+            ),
+        )
         # 표시명을 적으면 저장은 통과하고 정렬만 조용히 걸리지 않는다. 막지 않고 알린다.
         mistakes = display_label_mistakes(pd.DataFrame(edited), COLUMN_LABELS)
         if mistakes:
@@ -256,6 +266,25 @@ def _render_direct_editor(
             "표시순서를 모든 시나리오의 공용 설정으로 저장했습니다.",
         )
         st.rerun()
+
+
+def _render_clash_warning(clashes: list[ValueClash]) -> None:
+    """저장된 프로필의 겹친 분류값을 알리고, 범위마다 고치는 길을 적는다.
+
+    적용(`apply_display_order`)은 겹침을 ValueError 로 막으므로 그 범위를 쓰는 화면은 정렬만 멈추는
+    것이 아니라 그 부분에 오류를 띄운다. 직접 편집은 고르는 범위 안의 겹침만 보므로(다른 범위의
+    예전 겹침은 넘긴다) 범위 하나씩 고쳐 저장할 수 있다.
+    """
+    scopes = list(dict.fromkeys(f"{clash.page} › {clash.tab}" for clash in clashes))
+    st.warning(
+        "대소문자·앞뒤 공백만 다른 **활성** 사용자지정 분류값이 있습니다. 그 범위를 쓰는 화면은 "
+        "둘을 같은 값으로 보아 표시순서 중복 오류를 띄우고 그 부분을 그리지 못합니다. "
+        f"고칠 범위: {', '.join(scopes)}. **범위마다 따로 고칠 수 있습니다** — 아래 직접 편집에서 "
+        "그 페이지·탭을 골라 하나만 남기거나 활성여부를 N 으로 바꿔 저장하세요(다른 범위의 겹침은 "
+        "그 저장을 막지 않습니다). 한 번에 고치려면 CSV 를 내려받아 고친 뒤 Excel 붙여넣기로 "
+        "전체를 바꾸세요. 겹친 값: " + describe_value_clashes(clashes),
+        icon=":material/warning:",
+    )
 
 
 def _render_label_warnings() -> None:
@@ -278,9 +307,13 @@ def _save_global_display_order(
     display_order: pd.DataFrame,
     *,
     source: str,
+    tolerated_clashes: Collection[ClashKey] = (),
 ) -> None:
-    validated = validate_display_order(display_order)
-    profile = repository.replace_global_display_order(validated, source=source)
+    """저장한다. 붙여넣기는 프로필 전체를 바꾸므로 `tolerated_clashes` 없이 부른다."""
+    validated = validate_display_order(display_order, tolerated_clashes=tolerated_clashes)
+    profile = repository.replace_global_display_order(
+        validated, source=source, tolerated_clashes=tolerated_clashes
+    )
     clear_global_display_order_cache()
     try:
         apply_global_display_order(profile.rules)
