@@ -371,7 +371,7 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
     유지하면 합계 행이 배경에 가라앉는다.
   - 색이 구워진 캐시는 세션 Figure 캐시 하나뿐이라(전역 캐시 32개를 전수 확인했다)
     테마가 바뀌면 그것만 비운다.
-  - 전환은 **헤더 오른쪽 Deploy 왼쪽의 버튼**이다(`components/theme_toggle.py`). 고른 값의
+  - 전환은 **헤더 오른쪽 툴바의 버튼**(Guide 와 Print 사이)이다(`components/theme_toggle.py`). 고른 값의
     정본은 `localStorage` 의 앱 키 `capa-theme`(`THEME_APP_KEY`) 하나이고, Streamlit 이
     페이지 경로마다 따로 두는 테마 키(`stActiveTheme-<경로>-v2`)는 그 사본이다. 누르면 앱 키와
     경로별 키를 함께 바꾸고 새로고침하므로 위젯과 Figure 가 함께 바뀐다. **처음 여는 화면은

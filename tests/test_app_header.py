@@ -66,23 +66,22 @@ def test_narrow_windows_reserve_only_what_todays_toolbar_uses() -> None:
     """1400px 보다 좁은 창은 지금 툴바 실측으로 비움 폭을 잡는다(2026-10-07).
 
     28rem 그대로면 1100px 창(사이드바 300px)에서 글자 폭이 408px 뿐이라 긴 이름이 잘렸다. 그 창의
-    실측: 툴바 단추 묶음이 Deploy 까지 250px, Deploy 없이 197px(테마 글자가 `Light` 면 2px 더).
-    여기에 글자 시작(펼침 21px · 접힘 4rem), 띠 안쪽 여백·선 11px(최대 폭은 글자 칸에만 걸린다)과
-    틈 12px 가 들어가야 글자가 툴바 밑으로 가지 않는다.
+    실측: 툴바 단추 묶음(Guide·테마·Print)이 197px(테마 글자가 `Light` 면 2px 더). 여기에 글자
+    시작(펼침 21px · 접힘 4rem), 띠 안쪽 여백·선 11px(최대 폭은 글자 칸에만 걸린다)과 틈 12px 가
+    들어가야 글자가 툴바 밑으로 가지 않는다. Deploy 는 껍데기 스타일이 늘 감추므로(2026-10-07
+    사용자 결정) 그 몫을 따로 비우지 않는다.
     """
     css = _header_css()
     assert NARROW_MEDIA in css
     narrow = css.split(NARROW_MEDIA)[1]
-    deploy, no_deploy, collapsed_deploy, collapsed_no_deploy = (
+    expanded, collapsed = (
         float(value) * 14 for value in re.findall(r"max-width: calc\(100% - ([\d.]+)rem\)", narrow)
     )
     light, frame, gap = 2, 11, 12
-    assert 250 + light + 21 + frame + gap <= deploy < 28 * 14
-    assert 197 + light + 21 + frame + gap <= no_deploy < deploy
-    assert 250 + light + 4 * 14 + frame + gap <= collapsed_deploy
-    assert 197 + light + 4 * 14 + frame + gap <= collapsed_no_deploy < collapsed_deploy
-    # Deploy 가 없는 툴바(사내)를 가르는 것은 `:has()` 다.
-    assert ':not(:has([data-testid="stAppDeployButton"]))' in narrow
+    assert 197 + light + 21 + frame + gap <= expanded < 28 * 14
+    assert 197 + light + 4 * 14 + frame + gap <= collapsed < 30.5 * 14
+    # 감춘 Deploy 는 DOM 에 남아 있어 `:has()` 로 가르면 늘 「있음」 쪽이 걸린다 — 가르지 않는다.
+    assert "stAppDeployButton" not in css
 
 
 def test_inline_code_in_body_text_is_close_to_the_body_size() -> None:
@@ -106,23 +105,28 @@ def _split_shell_style() -> tuple[str, str]:
     return css.replace(blocks[0], ""), blocks[0]
 
 
-def test_the_streamlit_main_menu_is_hidden_and_nothing_else() -> None:
+def test_the_streamlit_main_menu_and_deploy_are_hidden_and_nothing_else() -> None:
     """⋮ 메뉴는 통째로 감춘다(2026-10-05 사용자 결정 — 인쇄·테마는 툴바 단추가 맡는다). 최소 모드는
-    테마 항목을 남겨 메뉴가 사라지지 않는다. 화면에 걸리는 규칙은 메뉴 하나만 고른다 — Deploy 와
-    우리 단추가 앉는 툴바 슬롯은 그대로여야 한다. 규칙은 머리 띠 CSS 가 아니라 부트스트랩 앞에서
-    따로 나가는 껍데기 스타일에 있다(차례는 `test_app_navigation` 이 지킨다)."""
-    # 좁은 창 규칙은 Deploy 가 **있는지**를 `:has()` 로 볼 뿐 그것에 서식을 걸지 않는다.
-    deploy_probe = ':has([data-testid="stAppDeployButton"])'
-    for css in (SHELL_STYLE, _header_css().replace(deploy_probe, "")):
+    테마 항목을 남겨 메뉴가 사라지지 않는다. Deploy 단추도 감춘다(2026-10-07 사용자 결정 — 개발
+    모드에서만 서는 Community Cloud 배포 창이라 이 앱에 쓸 일이 없다). 화면에 걸리는 규칙은 이 둘만
+    고른다 — 우리 단추가 앉는 툴바 슬롯은 그대로여야 한다. 규칙은 머리 띠 CSS 가 아니라 부트스트랩
+    앞에서 따로 나가는 껍데기 스타일에 있다(차례는 `test_app_navigation` 이 지킨다)."""
+    for css in (SHELL_STYLE, _header_css()):
         assert "stToolbarActions" not in css
-        assert "stAppDeployButton" not in css
     screen, _ = _split_shell_style()
     rules = re.findall(r"([^{}]+)\{([^{}]*)\}", screen)
-    assert [(selector.strip(), rule.strip()) for selector, rule in rules] == [
-        ('[data-testid="stMainMenu"]', "display: none !important;")
+    assert [
+        ({selector.strip() for selector in selectors.split(",")}, rule.strip())
+        for selectors, rule in rules
+    ] == [
+        (
+            {'[data-testid="stMainMenu"]', '[data-testid="stAppDeployButton"]'},
+            "display: none !important;",
+        )
     ]
     # 머리 띠는 부트스트랩 뒤에야 나가므로 거기에 두 벌 두지 않는다.
     assert "stMainMenu" not in _header_css()
+    assert "stAppDeployButton" not in _header_css()
 
 
 def test_print_always_leaves_out_the_sidebar_header_and_overlay() -> None:

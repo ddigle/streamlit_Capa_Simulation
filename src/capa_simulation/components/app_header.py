@@ -1,4 +1,4 @@
-# Purpose: 상단 띠에 적용 중인 시나리오를 싣고 ⋮ 메뉴 감춤·인쇄 규칙을 껍데기 스타일로 보낸다.
+# Purpose: 상단 띠에 적용 시나리오를 싣고 메뉴·Deploy 감춤과 인쇄 규칙을 껍데기 스타일로 보낸다.
 
 """The scenario this session is looking at, pinned to the top bar.
 
@@ -34,14 +34,20 @@ Summary — `intro_summary.summary_label_script`)이다. 앱 이름·버전·개
 Streamlit 의 ⋮ 메뉴(`stMainMenu`)도 여기서 통째로 감춘다(2026-10-05 사용자 결정). 사용자에게
 남길 메뉴 항목은 인쇄와 테마뿐이고, 둘 다 툴바 단추(`print_button`·`theme_toggle`)가 맡는다. 최소
 모드(`client.toolbarMode = "minimal"`)는 테마 항목을 남겨 메뉴가 사라지지 않으므로 쓰지 않는다 —
-Deploy 단추와 우리 단추가 앉는 툴바 슬롯은 그대로다. 인쇄 규칙(`@media print`)도 같은 스타일에
-싣는다(2026-10-05 사용자 요청 — 화면에 펼쳐 둔 사이드바도 인쇄에서는 늘 뺀다). 이 둘을 담은 앞선
-껍데기 스타일(`SHELL_STYLE`, `render_shell_style`)만은 머리 띠 CSS 와 따로 **부트스트랩보다 앞에서**
-보낸다. 머리 띠는 부트스트랩·요약 뒤에야 나가서,
-거기에 두면 부트스트랩 오류 화면(`st.stop()`)에는 메뉴가 그대로 남고, 새로 읽을 때마다 부트스트랩이
-끝날 때까지 메뉴가 보였다 사라지며 툴바 단추가 옆으로 밀린다. 인쇄 규칙도 앞에 있어야 오류 화면을
-인쇄할 때 사이드바가 빠진다. 메뉴는 Streamlit 의 정적 껍데기라 첫 delta 가 닿기 전 아주 잠깐은 보일
-수 있다 — 파이썬이 그보다 앞설 길은 없다.
+우리 단추가 앉는 툴바 슬롯은 그대로다.
+
+Streamlit 의 Deploy 단추(`stAppDeployButton`)도 감춘다(2026-10-07 사용자 결정). Streamlit 은
+localhost 접속(개발 모드)에서만 그것을 세우는데, 누르면 Community Cloud 배포 창이 열릴 뿐 이
+앱에는 쓸 일이 없다. `client.toolbarMode = "viewer"` 도 Deploy 를 걷지만 개발 PC 의 캐시 비우기
+단축키(`c`)까지 함께 끄므로 쓰지 않는다 — 감추는 것은 단추 하나로 둔다(1.63 번들 확인).
+
+인쇄 규칙(`@media print`)도 같은 스타일에 싣는다(2026-10-05 사용자 요청 — 화면에 펼쳐 둔
+사이드바도 인쇄에서는 늘 뺀다). 이것들을 담은 앞선 껍데기 스타일(`SHELL_STYLE`,
+`render_shell_style`)만은 머리 띠 CSS 와 따로 **부트스트랩보다 앞에서** 보낸다. 머리 띠는
+부트스트랩·요약 뒤에야 나가서, 거기에 두면 부트스트랩 오류 화면(`st.stop()`)에는 메뉴가 그대로
+남고, 새로 읽을 때마다 부트스트랩이 끝날 때까지 메뉴가 보였다 사라지며 툴바 단추가 옆으로 밀린다.
+인쇄 규칙도 앞에 있어야 오류 화면을 인쇄할 때 사이드바가 빠진다. 메뉴·Deploy 는 Streamlit 의
+정적 껍데기라 첫 delta 가 닿기 전 아주 잠깐은 보일 수 있다 — 파이썬이 그보다 앞설 길은 없다.
 
 띠의 면은 페이지 바탕보다 한 단계만 눌러(`tokens.HEADER_BAR`) 앱 머리와 본문을 나눈다.
 글자색은 본문과 같다 — 면이 밝아 뒤집을 이유가 없다.
@@ -81,8 +87,10 @@ STATUS_UNSAVED = "미저장 변경"
 
 # 부트스트랩 앞에서 보내는 껍데기 스타일. 색을 쓰지 않아 테마와 무관한 고정 문자열이다.
 #
-# 첫 규칙은 Streamlit 의 ⋮ 메뉴다. 인쇄·테마는 툴바 단추가 맡으므로 단추째 감춘다. 감추는 것은 이
-# 요소 하나다 — Deploy 와 툴바 슬롯(`stToolbarActions`)은 형제라 영향이 없다.
+# 첫 규칙은 Streamlit 의 ⋮ 메뉴와 Deploy 단추다. 인쇄·테마는 툴바 단추가 맡으므로 메뉴는 단추째
+# 감추고, Deploy(개발 모드에서만 서는 Community Cloud 배포 창)는 이 앱에 쓸 일이 없어
+# 감춘다(2026-10-07 사용자 결정). 감추는 것은 이 두 요소뿐이다 — 우리 단추가 앉는 툴바
+# 슬롯(`stToolbarActions`)은 형제라 영향이 없다.
 #
 # 나머지는 인쇄 규칙 한 덩어리다. 화면에는 아무것도 바꾸지 않는다. 선택자는 모두 1.63 번들에서
 # `data-testid` 로 확인한 것이다 — 판올림 뒤 인쇄 미리보기로 다시 본다.
@@ -91,7 +99,7 @@ STATUS_UNSAVED = "미저장 변경"
 #   형제라, 사이드바가 빠지면 본문이 왼쪽 끝부터 종이 폭을 다 쓴다. 사이드바 머리 띠(`::before`)와
 #   접기 버튼도 함께 빠진다.
 # - 머리 띠는 요소째 뺀다. Streamlit 은 헤더의 자식만 감춰 우리 면·`::before`/`::after` 글이 남는다.
-#   툴바 단추(Guide·테마·Print)와 Deploy 도 이 안에 있다.
+#   툴바 단추(Guide·테마·Print)도 이 안에 있다.
 # - 입장 화면·Summary 덮개(`#capa-intro-host`, `document.body` 에 붙은 호스트)는 열려 있어도 뺀다.
 # - 본문 폭 상한은 풀어 둔다(`layout="wide"` 가 이미 풀지만 못박는다).
 # - 색은 화면 그대로 찍는다. Streamlit 이 `html` 에 걸어 둔 것을 앱 뿌리에도 건다(물려받는 속성이라
@@ -105,7 +113,10 @@ STATUS_UNSAVED = "미저장 변경"
 #   있고 DOM 에 표지가 없어 `data-testid` 로 고를 수 없으므로 걸지 않는다.
 # - 용지 방향은 브라우저 인쇄 창에 맡긴다(`@page` 에 `size` 를 두지 않는다). 여백만 정한다.
 SHELL_STYLE = """<style>
-[data-testid="stMainMenu"] { display: none !important; }
+[data-testid="stMainMenu"],
+[data-testid="stAppDeployButton"] {
+  display: none !important;
+}
 @media print {
   @page { margin: 10mm; }
   [data-testid="stSidebar"],
@@ -173,7 +184,7 @@ _HEADER_TEMPLATE = """
   position: absolute;
   line-height: 1.1rem;
   left: 1.5rem;
-  /* 오른쪽 툴바(Guide·테마·Print·Deploy)가 쓰는 폭은 비워 둔다. 창이 좁아지면 글자를 밀어내지
+  /* 오른쪽 툴바(Guide·테마·Print)가 쓰는 폭은 비워 둔다. 창이 좁아지면 글자를 밀어내지
      않고 말줄임으로 끊는다 — 두 줄이 따로 줄어 짧은 위 줄이 먼저 다 보인다. 28rem 은 툴바에
      Summary 가 있던 때 1100px 창 실측 355px 에 글자 시작 21px 과 틈 12px 를 더한 값이다. 1400px
      보다 좁은 창은 지금 툴바 실측으로 다시 잡는다(`_NARROW_HEADER_RULES`). 16rem 일 때는 글자가
@@ -251,13 +262,12 @@ _HEADER_TEMPLATE = """
 
 # 1400px 보다 좁은 창에서만 오른쪽 비움 폭을 지금 툴바의 실측에 맞춘다(2026-10-07). 위의 28rem 은
 # 툴바에 Summary 가 있던 때 값이라, 1100px 창(사이드바 300px)에서 글자 폭이 408px 뿐이어서 긴
-# 시나리오명·코드가 말줄임으로 잘렸다. 그 창의 실측(1rem = 14px): 툴바 단추 묶음은 Guide·테마·Print
-# 와 개발 모드의 Deploy 까지 850px 부터(머리 띠 오른쪽 끝까지 250px), Deploy 가 없으면 903px 부터
-# (197px)다. 여기에 글자 시작 21px, 왼쪽 띠 안쪽 여백·선 11px(최대 폭은 글자 칸에만 걸린다),
-# 틈 12px, 테마 단추 글자가 `Light` 일 때 넓어지는 2px 를 더하면 296px·243px 라 21.5rem·17.5rem
-# 으로 둔다(글자 칸 499px·555px — 위 28rem 일 때는 408px). Deploy 는 Streamlit 이 localhost
-# 접속에서만 세우므로 사내 WebIDE 에서는 보통 없는 쪽이다 — 그 여부를 `:has()` 로 가른다.
-# 사이드바를 접은 경우는 위 규칙과 같이 2.5rem 을 더 뺀다. 1400px 이상은 그대로 둔다.
+# 시나리오명·코드가 말줄임으로 잘렸다. 그 창의 실측(1rem = 14px): 툴바 단추 묶음 Guide·테마·Print
+# 는 903px 부터(머리 띠 오른쪽 끝까지 197px)다. 여기에 글자 시작 21px, 왼쪽 띠 안쪽 여백·선
+# 11px(최대 폭은 글자 칸에만 걸린다), 틈 12px, 테마 단추 글자가 `Light` 일 때 넓어지는 2px 를
+# 더하면 243px 라 17.5rem 으로 둔다(글자 칸 555px — 위 28rem 일 때는 408px). Deploy 단추는
+# 껍데기 스타일(`SHELL_STYLE`)이 늘 감추므로 그 몫은 비우지 않는다. 사이드바를 접은 경우는 위 규칙과
+# 같이 2.5rem 을 더 뺀다. 1400px 이상은 그대로 둔다.
 #
 # 말줄임이 끝내 남는 아주 긴 이름에 전체 글을 띄우는 풍선은 두지 않는다. 글은 가상요소라 `title`
 # 을 달 자리가 없고(`pointer-events: none`), 풍선을 달려면 스크립트로 실제 요소를 넣어야 한다 —
@@ -266,22 +276,12 @@ _NARROW_HEADER_RULES = """
 @media (max-width: 1399.98px) {
   [data-testid="stHeader"]::before,
   [data-testid="stHeader"]::after {
-    max-width: calc(100% - 21.5rem);
-  }
-  [data-testid="stHeader"]:not(:has([data-testid="stAppDeployButton"]))::before,
-  [data-testid="stHeader"]:not(:has([data-testid="stAppDeployButton"]))::after {
     max-width: calc(100% - 17.5rem);
   }
   [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
     [data-testid="stHeader"]::before,
   [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
     [data-testid="stHeader"]::after {
-    max-width: calc(100% - 24rem);
-  }
-  [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
-    [data-testid="stHeader"]:not(:has([data-testid="stAppDeployButton"]))::before,
-  [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
-    [data-testid="stHeader"]:not(:has([data-testid="stAppDeployButton"]))::after {
     max-width: calc(100% - 20rem);
   }
 }
@@ -384,7 +384,7 @@ def render_app_header() -> None:
 
 
 def render_shell_style() -> None:
-    """⋮ 메뉴 감춤과 인쇄 규칙을 보낸다. `app.py` 가 부트스트랩보다 앞에서 매 회차 한 번 부른다.
+    """⋮ 메뉴·Deploy 감춤과 인쇄 규칙을 보낸다. `app.py` 가 부트스트랩 앞에서 매 회차 한 번 부른다.
 
     스타일만 든 `st.html` 이라 본문 자리를 먹지 않는다.
     """

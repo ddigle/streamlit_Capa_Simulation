@@ -1992,7 +1992,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 모든 페이지의 제목·설명·상태 배지. 두 상태 접미(`(구현중)`·`(Data확보중)`)는 제목에서
     떼어 배지로 보여준다. 사이드바 라벨과 같은 문자열을 써야 하며 어긋나면 테스트가 잡는다.
 - `src/capa_simulation/components/theme_toggle.py`
-  - 헤더 오른쪽 **Deploy 바로 왼쪽**(`[data-testid="stToolbarActions"]`)에 밝게/어둡게
+  - 헤더 오른쪽 툴바 슬롯(`[data-testid="stToolbarActions"]`, Guide 와 Print 사이)에 밝게/어둡게
     버튼을 얹는다. Streamlit 1.63 에는 앱 안에서 테마를 바꾸는 공개 API 가 없다 —
     파이썬 쪽에서 우리 토큰만 뒤집으면 Plotly·표만 어두워지고 위젯·사이드바는 밝은 채로
     남아 반쯤 어두운 화면이 된다.
@@ -2235,24 +2235,29 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       먼저 다 보인다.
     - 오른쪽 툴바 몫으로 비우는 폭은 1400px 이상에서 28rem(접으면 30.5rem)이고, **그보다 좁은 창은
       지금 툴바의 실측**으로 잡는다(`_NARROW_HEADER_RULES`, 2026-10-07). 1100px 창 실측 단추 묶음
-      Deploy 포함 250px·없이 197px 에 글자 시작·띠 안쪽 여백·틈·`Light` 글자 몫을 더해 21.5rem·17.5rem
-      (접으면 24rem·20rem)이다 — 글자 칸이 408px 에서 499px·555px 가 된다. Deploy 는 Streamlit 이
-      localhost 접속에서만 세우므로(사내 WebIDE 는 보통 없다) 유무를 `:has()` 로 가른다. 툴바 단추를
-      더하거나 바꾸면 이 값을 다시 잰다(`tests/test_app_header.py`). 끝내 넘치는 이름에 전체 글
+      (Guide·테마·Print) 197px 에 글자 시작·띠 안쪽 여백·틈·`Light` 글자 몫을 더해 17.5rem(접으면
+      20rem)이다 — 글자 칸이 408px 에서 555px 가 된다. Deploy 는 껍데기 스타일이 늘 감추므로(아래)
+      그 몫은 비우지 않는다. 감춘 단추도 DOM 에는 남아 `:has()` 로 유무를 가르면 늘 「있음」 쪽이
+      걸리므로 가르지 않는다. 툴바 단추를 더하거나 바꾸면 이 값을 다시 잰다(`tests/test_app_header.py`). 끝내 넘치는 이름에 전체 글
       풍선은 없다 — 가상요소에는 `title` 을 달 수 없고 실제 요소를 넣는 스크립트는 이 모듈이 HOME
       무게 때문에 피한 길이다. 전체 이름은 사이드바 시나리오 상자에 있다.
     - 사이드바 머리칸(`stSidebarHeader`)에는 글을 얹지 않는다 — 그 자리는 `S.PKG CAPA` 라벨
       (`intro_summary`)이다. 이 파일은 머리칸을 띠 위에 고정(`sticky`·`z-index`)하는 규칙만 둔다.
   - **Streamlit 의 ⋮ 메뉴(`stMainMenu`)를 통째로 감춘다**(2026-10-05 사용자 결정). 사용자에게 남길
     항목은 인쇄·테마뿐이고 둘 다 툴바 단추(`print_button`·`theme_toggle`)가 맡는다. 감추는 규칙은 그
-    요소 하나만 고른다 — Deploy 와 툴바 슬롯(`stToolbarActions`)은 그대로다. 그래서
+    요소와 아래 Deploy 만 고른다 — 우리 단추가 앉는 툴바 슬롯(`stToolbarActions`)은 그대로다. 그래서
     `set_page_config` 에 `menu_items` 를 적지 않는다. 이 규칙은 머리 띠 CSS 와 따로 껍데기 스타일
     (`SHELL_STYLE`)에 담아 `render_shell_style()` 로 **부트스트랩 앞에서** 보낸다(위 진입점 차례). 메뉴는 Streamlit 의 정적
     껍데기라 첫 delta 가 닿기 전 아주 잠깐은 보일 수 있다. 판올림 뒤 메뉴가 다시 보이지 않는지 확인한다.
+  - **Streamlit 의 Deploy 단추(`stAppDeployButton`)도 감춘다**(2026-10-07 사용자 결정). Streamlit 은
+    localhost 접속(개발 모드)에서만 그것을 세우고, 누르면 Community Cloud 배포 창이 열릴 뿐 이 앱에는
+    쓸 일이 없다. 같은 껍데기 스타일의 메뉴 규칙에 선택자 하나로 더했다. `client.toolbarMode =
+    "viewer"` 도 Deploy 를 걷지만 개발 PC 의 캐시 비우기 단축키(`c`)까지 끄므로 쓰지 않는다(1.63 번들
+    확인). 판올림 뒤 Deploy 가 다시 보이지 않는지 확인한다.
   - **인쇄에서는 사이드바를 늘 뺀다**(2026-10-05 사용자 요청 — 화면에 펼쳐 둔 사이드바도). 같은 껍데기
     스타일의 `@media print` 덩어리 **하나**에 인쇄 규칙을 모두 둔다 — 부트스트랩 앞에서 나가므로 오류
     화면 인쇄에도 걸리고, 화면 렌더링은 바뀌지 않는다. 빼는 것은 사이드바(`stSidebar`, Streamlit 은 펼친
-    사이드바를 `display: initial` 로 찍으므로 `!important`)·머리 띠(`stHeader` 요소째 — 툴바 단추·Deploy
+    사이드바를 `display: initial` 로 찍으므로 `!important`)·머리 띠(`stHeader` 요소째 — 툴바 단추
     포함)·입장 화면/Summary 덮개(`#capa-intro-host`)다. 본문은 폭 상한을 풀어 종이 폭을 다 쓴다. 색은
     `print-color-adjust: exact` 로 화면 그대로 찍는다. 쪽 사이에서 자르지 않는 것(`break-inside: avoid`)은
     Vega 차트(`stVegaLiteChart`)·CCv2 칸(`stBidiComponentIsolated`·`stBidiComponentRegular`, Space 배치
@@ -2275,7 +2280,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Streamlit 은 사이드바에 마우스를 올렸을 때만 `visibility: visible` 로 띄운다. 인쇄 숨김은
     남기려고 `@media screen` 안에서만 덮는다. 판올림 뒤 버튼이 늘 보이는지 눈으로 확인한다.
   - 머리 글자는 오른쪽 툴바 폭(`28rem` — 툴바에 Summary 가 있던 때 1100px 창 실측 355px, 지금은
-    Guide·테마·Print·Deploy 로 더 좁다)을 비우고 말줄임으로 끊는다. 툴바에 단추를 더하면 이 폭도 다시 잰다(2026-10-05 E2E — 16rem 이라 글자가 단추 밑으로).
+    Guide·테마·Print 로 더 좁다)을 비우고 말줄임으로 끊는다. 툴바에 단추를 더하면 이 폭도 다시 잰다(2026-10-05 E2E — 16rem 이라 글자가 단추 밑으로).
   - 본문 인라인 코드는 `0.9em` 이다. Streamlit 기본 0.75em 은 대체 글꼴로 그려지는 한글을 9~10px 로
     줄였다(2026-10-05 E2E). 같은 전역 스타일이라 이 파일에 둔다.
 - `src/capa_simulation/components/typography.py`
