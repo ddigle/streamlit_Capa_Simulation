@@ -1028,6 +1028,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     말없이 버려 저장이 아무 일도 없이 사라졌다). 거절 알림은 `st.rerun()` 없이 같은 회차에 그린다
     — 사이드바에서 rerun 하면 페이지 편집표를 그리기 전에 회차가 끝나 그 편집 상태가 지워진다.
     조회기간 상자도 같은 목록으로 「기간을 바꾸면 사라진다」를 적는다.
+  - 저장 폼은 `clear_on_submit` 을 쓰지 않는다. 그것은 거절된 저장(적용 전 편집 미확인·계산 검사·
+    빈 리비전명 등 저장 오류)에도 리비전명·메모를 지웠다. 저장에 성공한 회차가 표지
+    (`SAVE_FORM_CLEAR_KEY`)를 남기고 다음 회차가 칸(`SAVE_REVISION_NAME_KEY`·`SAVE_REVISION_NOTE_KEY`)을
+    그리기 전에 빈 값을 적는다 — VOC 글쓰기와 같은 방식이다.
   - 저장은 가상 제품 이력(`scenario_management.revision_virtual_product_rows`)을
     `save_revision(virtual_products=...)` 로 넘긴다. 이력은 **부모 리비전**(불러온 리비전, 복제라면
     복제하는 활성 리비전)의 `app_meta.revision_virtual_product` 에 이 세션의 등록을 더한 것이다

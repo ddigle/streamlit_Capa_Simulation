@@ -48,6 +48,12 @@ SIDEBAR_SYNC_TOKEN_KEY = "sidebar_scenario_sync_token"
 SIDEBAR_FLASH_KEY = "sidebar_scenario_flash"
 # 성공 알림과 함께 띄울 경고. 저장은 됐지만 남은 계산 오류가 있을 때 쓴다.
 SIDEBAR_FLASH_WARNING_KEY = "sidebar_scenario_flash_warning"
+# 저장 팝업의 리비전명·메모 칸, 그리고 그 둘을 비우라는 표지. 표지는 **저장에 성공한 회차**에만
+# 서고, 다음 회차가 칸을 그리기 전에 비운다. 거절된 저장(적용 전 편집 미확인·계산 검사·저장
+# 오류)은 적은 글을 그대로 둔다.
+SAVE_REVISION_NAME_KEY = "sidebar_revision_name"
+SAVE_REVISION_NOTE_KEY = "sidebar_revision_note"
+SAVE_FORM_CLEAR_KEY = "sidebar_revision_save_clear"
 # 사이드바 박스 key 이자 CSS 훅. 확장 패널의 펼침 상태도 이 key 로 오간다.
 SCENARIO_BOX_KEY = "sidebar_scenario_box"
 SCENARIO_BOX_TITLE = "시나리오·리비전"
@@ -358,16 +364,22 @@ def _render_revision_save(
                 "적용하지 않은 편집을 버리고 저장",
                 key="sidebar_save_discards_pending_edits",
             )
-        with st.form("sidebar_revision_save_form", clear_on_submit=True):
+        # `clear_on_submit` 을 쓰지 않는다. 그것은 **거절된 저장**에도 리비전명·메모를 지워, 막힌
+        # 까닭을 고친 뒤 처음부터 다시 적어야 했다. 성공한 회차가 남긴 표지로 다음 회차에만 비운다
+        # (VOC 글쓰기와 같은 방식). 칸을 그리기 **전**이어야 세션 값이 위젯에 실린다.
+        if st.session_state.pop(SAVE_FORM_CLEAR_KEY, False):
+            st.session_state[SAVE_REVISION_NAME_KEY] = ""
+            st.session_state[SAVE_REVISION_NOTE_KEY] = ""
+        with st.form("sidebar_revision_save_form"):
             revision_name = st.text_input(
                 "새 리비전명",
                 placeholder="예: 공정 조건 변경안",
-                key="sidebar_revision_name",
+                key=SAVE_REVISION_NAME_KEY,
             )
             note = st.text_area(
                 "변경 메모",
                 height=80,
-                key="sidebar_revision_note",
+                key=SAVE_REVISION_NOTE_KEY,
             )
             # **저장 버튼은 잠그지 않는다**(2026-10-01 브라우저 E2E). 잠긴 버튼으로 온 제출은
             # Streamlit 이 서버에서 버려 `submitted` 가 그냥 False 가 된다. 보여 준 회차에는 적용 전
@@ -428,6 +440,7 @@ def _render_revision_save(
             )
             if verdict.message:
                 st.session_state[SIDEBAR_FLASH_WARNING_KEY] = verdict.message
+            st.session_state[SAVE_FORM_CLEAR_KEY] = True
             st.rerun()
 
 

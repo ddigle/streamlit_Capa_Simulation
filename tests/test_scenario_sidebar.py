@@ -392,3 +392,56 @@ def test_without_unapplied_edits_nothing_extra_is_asked(sidebar_app: AppTest) ->
     assert not app.exception
     assert not app.button(key="sidebar_load_revision").disabled
     assert "sidebar_save_discards_pending_edits" not in {box.key for box in app.checkbox}
+
+
+def _fill_and_save(app: AppTest, name: str, note: str) -> AppTest:
+    app.text_input(key=target.SAVE_REVISION_NAME_KEY).set_value(name)
+    app.text_area(key=target.SAVE_REVISION_NOTE_KEY).set_value(note)
+    app = app.run()
+    save_button = next(button for button in app.button if button.label == "신규 리비전 저장")
+    return save_button.click().run()
+
+
+def test_a_refused_save_keeps_the_typed_name_and_memo(sidebar_app: AppTest) -> None:
+    """거절된 저장은 적은 리비전명·메모를 지우지 않는다(2026-10-01 E2E 후속).
+
+    `clear_on_submit` 은 제출만 보면 비워, 계산 검사나 적용 전 편집 확인에 막힌 저장도 적은 글을
+    잃었다. 막힌 까닭을 고치고 그대로 다시 누르면 되어야 한다.
+
+    AppTest 는 `clear_on_submit` 의 비우기를 흉내 내지 않아(그것은 브라우저 쪽 동작이다) 이
+    테스트만으로는 옛 결함이 재현되지 않는다. 거절 쪽은 브라우저로 확인했고, 여기서는 거절과
+    재시도가 적은 글로 이어지는 흐름을 고정한다. 성공 쪽 비우기는 아래 테스트가 잡는다.
+    """
+    app = sidebar_app
+    app.session_state["test_save_verdict"] = GateVerdict(False, "이번 편집이 깨뜨린 것입니다")
+    app = _fill_and_save(app.run(), "막힐 저장안", "고친 까닭")
+
+    assert not app.exception
+    assert "test_saved_revision_name" not in app.session_state
+    assert app.text_input(key=target.SAVE_REVISION_NAME_KEY).value == "막힐 저장안"
+    assert app.text_area(key=target.SAVE_REVISION_NOTE_KEY).value == "고친 까닭"
+
+    # 적용 전 편집을 확인하지 않아 막힌 저장도 같다.
+    app.session_state["test_save_verdict"] = GateVerdict(True)
+    app.session_state["test_pending_edits"] = ["기준 정보 · UPEH"]
+    app = _fill_and_save(app.run(), "확인 없이 누른 저장안", "메모 그대로")
+    assert "test_saved_revision_name" not in app.session_state
+    assert app.text_input(key=target.SAVE_REVISION_NAME_KEY).value == "확인 없이 누른 저장안"
+    assert app.text_area(key=target.SAVE_REVISION_NOTE_KEY).value == "메모 그대로"
+
+    # 까닭을 고치고 그대로 다시 누르면 적어 둔 이름으로 저장된다.
+    app = app.checkbox(key="sidebar_save_discards_pending_edits").check().run()
+    save_button = next(button for button in app.button if button.label == "신규 리비전 저장")
+    app = save_button.click().run()
+    assert app.session_state["test_saved_revision_name"] == "확인 없이 누른 저장안"
+
+
+def test_a_successful_save_clears_the_name_and_memo(sidebar_app: AppTest) -> None:
+    """저장에 성공하면 다음 회차의 칸이 빈다 — 한 번 더 눌러 같은 이름의 리비전이 또 서지 않게."""
+    app = _fill_and_save(sidebar_app.run(), "성공할 저장안", "남지 않을 메모")
+
+    assert not app.exception
+    assert app.session_state["test_saved_revision_name"] == "성공할 저장안"
+    assert app.text_input(key=target.SAVE_REVISION_NAME_KEY).value == ""
+    assert app.text_area(key=target.SAVE_REVISION_NOTE_KEY).value == ""
+    assert target.SAVE_FORM_CLEAR_KEY not in app.session_state
