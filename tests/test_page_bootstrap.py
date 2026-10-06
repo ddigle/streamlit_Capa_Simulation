@@ -5,14 +5,21 @@ import pytest
 
 from capa_simulation import page_bootstrap
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, PageContext, resolve_effective_months
+from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
+from capa_simulation.scenario_state import pristine_content_token
 
 
 def _context(start: int, end: int) -> PageContext:
     return PageContext(
         reference_version=1,
         reference_tables={},
-        display_order=pd.DataFrame(),
-        active_scenario={},
+        display_order=None,
+        active_scenario={
+            "reference_version": 1,
+            "revision": 0,
+            "content_token": pristine_content_token(1),
+            "tables": {},
+        },
         selected_start_month=start,
         selected_end_month=end,
     )
@@ -22,7 +29,9 @@ def _source(months: list[int]) -> pd.DataFrame:
     return pd.DataFrame({"생산계획년월": months, "값": [1.0] * len(months)})
 
 
-def test_effective_months_are_the_intersection_with_the_source(monkeypatch) -> None:
+def test_effective_months_are_the_intersection_with_the_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     applied: list[tuple[int, int]] = []
     monkeypatch.setattr(
         page_bootstrap, "show_applied_month_range", lambda s, e: applied.append((s, e))
@@ -39,7 +48,9 @@ def test_effective_months_are_the_intersection_with_the_source(monkeypatch) -> N
     assert applied == [(202603, 202609)]
 
 
-def test_disjoint_ranges_raise_the_page_specific_message(monkeypatch) -> None:
+def test_disjoint_ranges_raise_the_page_specific_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(page_bootstrap, "show_applied_month_range", lambda s, e: None)
 
     with pytest.raises(ValueError, match="선택 범위에 소요대수 산출 기준이 없습니다"):
@@ -109,7 +120,9 @@ def test_database_error_message_follows_who_holds_the_lock() -> None:
     assert page_bootstrap.bootstrap_error_message(ValueError("한국어 문장")) == "한국어 문장"
 
 
-def test_month_range_falls_back_when_the_widget_state_is_missing_or_broken(monkeypatch) -> None:
+def test_month_range_falls_back_when_the_widget_state_is_missing_or_broken(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """`st.session_state` 전역을 교체하면 AppTest 기반 페이지 테스트를 오염시킨다.
 
     실제 Streamlit 런타임 없이 검증해야 하므로 모듈이 참조하는 `st` 만 바꿔치기한다.
@@ -119,11 +132,12 @@ def test_month_range_falls_back_when_the_widget_state_is_missing_or_broken(monke
         def __init__(self, state: dict[str, object]) -> None:
             self.session_state = state
 
-    for broken in (
+    broken_states: tuple[dict[str, object], ...] = (
         {},
-        {page_bootstrap.MONTH_RANGE_KEY: "202601"},
-        {page_bootstrap.MONTH_RANGE_KEY: ("2026-01",)},
-    ):
+        {MONTH_RANGE_KEY: "202601"},
+        {MONTH_RANGE_KEY: ("2026-01",)},
+    )
+    for broken in broken_states:
         monkeypatch.setattr(page_bootstrap, "st", _FakeStreamlit(broken))
         start, end = page_bootstrap.selected_month_range()
         assert start < end
@@ -131,7 +145,7 @@ def test_month_range_falls_back_when_the_widget_state_is_missing_or_broken(monke
     monkeypatch.setattr(
         page_bootstrap,
         "st",
-        _FakeStreamlit({page_bootstrap.MONTH_RANGE_KEY: ("2026-03", "2026-08")}),
+        _FakeStreamlit({MONTH_RANGE_KEY: ("2026-03", "2026-08")}),
     )
     assert page_bootstrap.selected_month_range() == (202603, 202608)
 
@@ -156,7 +170,7 @@ def test_date_range_value_reads_every_shape_the_range_picker_returns() -> None:
 
 
 def test_prune_list_selection_drops_values_the_current_options_no_longer_have(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """옵션이 계산 결과라 시나리오·조회기간이 바뀌면 옛 선택이 옵션 밖으로 나간다."""
 

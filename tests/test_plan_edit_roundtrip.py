@@ -1,5 +1,7 @@
 # Purpose: PKG PLAN 편집 왕복과 계산 캐시 키가 사용자의 입력과 어긋나지 않는지 고정한다.
 
+from typing import TypedDict
+
 import pandas as pd
 import pytest
 
@@ -61,8 +63,8 @@ def test_edited_quantities_survive_the_roundtrip() -> None:
 
     rebuilt = plan_to_edit_table(plan_from_edit_table(wide))
 
-    assert float(rebuilt.loc[0, "202601"]) == 0.0
-    assert float(rebuilt.loc[0, "202602"]) == 777.0
+    assert rebuilt.loc[0, "202601"] == 0.0
+    assert rebuilt.loc[0, "202602"] == 777.0
 
 
 def test_calculation_boundary_drops_unplanned_rows() -> None:
@@ -80,6 +82,13 @@ def test_calculation_boundary_drops_unplanned_rows() -> None:
     assert sorted(set(drop_unplanned_rows(long_plan)["제품정보"])) == ["DEMO_P1"]
 
 
+class _CacheKeyCommon(TypedDict):
+    reference_version: int
+    start_month: int
+    end_month: int
+    display_order: pd.DataFrame
+
+
 def test_home_cache_key_separates_different_scenario_contents() -> None:
     """서로 다른 시나리오 내용이 같은 HOME 캐시 키를 가지면 안 된다.
 
@@ -88,7 +97,7 @@ def test_home_cache_key_separates_different_scenario_contents() -> None:
     프로세스 전역이라 다른 브라우저 세션과도 겹쳤다. 그래서 HOME 이 예전 계획의 결과를
     그대로 보여줬다.
     """
-    common = {
+    common: _CacheKeyCommon = {
         "reference_version": 1,
         "start_month": 202601,
         "end_month": 202612,

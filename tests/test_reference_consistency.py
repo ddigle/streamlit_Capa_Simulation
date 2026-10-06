@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import pandas as pd
 import pytest
 
@@ -63,7 +65,9 @@ def _ratio(rows: list[dict[str, object]], value_column: str) -> pd.DataFrame:
     return frame
 
 
-def _tables(lot_rows: list[dict[str, object]], wf_rows: list[dict[str, object]]) -> dict:
+def _tables(
+    lot_rows: list[dict[str, object]], wf_rows: list[dict[str, object]]
+) -> dict[str, pd.DataFrame]:
     return {
         "RQ_LOT_RATIO": _ratio(lot_rows, "Lot 측정률"),
         "RQ_WF_RATIO": _ratio(wf_rows, "WF측정률"),
@@ -78,7 +82,7 @@ def test_filling_an_empty_month_is_reported_as_a_new_path() -> None:
     added = added_performance_keys(before, after)
 
     assert len(added) == 1
-    assert int(added.loc[0, "생산계획년월"]) == 202609
+    assert added.loc[0, "생산계획년월"] == 202609
 
 
 def test_both_ratio_tables_are_reported_at_once() -> None:
@@ -233,13 +237,13 @@ def test_the_cleared_message_asks_for_a_value_above_zero() -> None:
 
 
 def _required_tables(
-    run_rate: dict[int, float | None],
-    vital: dict[int, float | None],
-    run_day: dict[int, float | None],
+    run_rate: Mapping[int, float | None],
+    vital: Mapping[int, float | None],
+    run_day: Mapping[int, float | None],
 ) -> dict[str, pd.DataFrame]:
     """Process-A·양산 한 경로가 쓰는 세 표. 값이 `None` 인 달은 행이 없다."""
 
-    def frame(values: dict[int, float | None], value_column: str, mass: bool) -> pd.DataFrame:
+    def frame(values: Mapping[int, float | None], value_column: str, mass: bool) -> pd.DataFrame:
         rows = [
             {
                 "생산계획년월": month,

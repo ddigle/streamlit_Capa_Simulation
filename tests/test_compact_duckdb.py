@@ -178,3 +178,20 @@ def test_missing_sidecar_reminds_to_stop_the_app(
     assert script.compact(database, _args(dry_run=True)) is False
 
     assert "[확인]" in capsys.readouterr().out
+
+
+def test_main_exit_status_fails_when_a_requested_database_is_missing(
+    script: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """직접 지정한 파일이 없는 것은 대개 경로 오타다. 건너뛰고 0 으로 끝나면 성공으로 보인다."""
+    database = tmp_path / "sim.duckdb"
+    _make_database(database)
+    typo = tmp_path / "sim.duckdbb"
+
+    assert script.main(["--database", str(database), "--dry-run"]) == 0
+    capsys.readouterr()
+
+    assert script.main(["--database", str(database), "--database", str(typo), "--dry-run"]) == 1
+    output = capsys.readouterr().out
+    assert "[건너뜀]" in output
+    assert "[실패]" in output

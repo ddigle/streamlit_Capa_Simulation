@@ -16,10 +16,13 @@
 닫힌 탭에서는 Figure 를 그리지 않는다. 탭을 누르면 rerun 이 돌아 그때 보이는 상태로 그린다.
 """
 
+from __future__ import annotations
+
 import re
 from pathlib import Path
 
 import plotly.graph_objects as go
+import pytest
 
 from capa_simulation.components.monthly_table_base import header_label, render_split_scroll_table
 from capa_simulation.components.tab_state import tab_is_hidden
@@ -38,6 +41,12 @@ class _FakeTab:
 
     def __init__(self, is_open: bool | None) -> None:
         self.open = is_open
+
+    def __enter__(self) -> _FakeTab:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
 
 
 def _month_figure() -> go.Figure:
@@ -60,7 +69,7 @@ def test_hidden_tab_is_only_the_definitely_closed_one() -> None:
     assert tab_is_hidden(None) is False
 
 
-def test_closed_tab_draws_nothing(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_closed_tab_draws_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     """닫힌 탭에서는 Figure 를 하나도 그리지 않는다."""
     drawn: list[object] = []
     monkeypatch.setattr(

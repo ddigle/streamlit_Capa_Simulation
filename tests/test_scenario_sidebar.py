@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch
 
 import pandas as pd
@@ -15,11 +16,13 @@ from capa_simulation.components.scenario_status import (
     SIDEBAR_REVISION_KEY,
     SIDEBAR_SCENARIO_KEY,
 )
-from capa_simulation.scenario_state import VIRTUAL_PRODUCTS_KEY
+from capa_simulation.scenario_state import VIRTUAL_PRODUCTS_KEY, pristine_content_token
 from capa_simulation.services.virtual_product import VirtualProductRecord
 
 
-def scenario(scenario_id, name, code, revision_id, revision_no):
+def scenario(
+    scenario_id: str, name: str, code: str, revision_id: str, revision_no: int
+) -> SimpleNamespace:
     return SimpleNamespace(
         scenario_id=scenario_id,
         scenario_name=name,
@@ -30,7 +33,7 @@ def scenario(scenario_id, name, code, revision_id, revision_no):
     )
 
 
-def revision(revision_id, scenario_id, revision_no, name):
+def revision(revision_id: str, scenario_id: str, revision_no: int, name: str) -> SimpleNamespace:
     return SimpleNamespace(
         revision_id=revision_id,
         scenario_id=scenario_id,
@@ -50,16 +53,16 @@ REVISIONS = {
 
 
 class FakeRepository:
-    def list_scenarios(self):
+    def list_scenarios(self) -> list[SimpleNamespace]:
         return SCENARIOS
 
-    def list_revisions(self, scenario_id):
+    def list_revisions(self, scenario_id: str) -> list[SimpleNamespace]:
         return REVISIONS[scenario_id]
 
-    def latest_official_release(self):
+    def latest_official_release(self) -> None:
         return None
 
-    def list_virtual_products(self, revision_id):
+    def list_virtual_products(self, revision_id: str) -> pd.DataFrame:
         # 불러온 리비전(`revision-1`)의 가상 제품 이력. 테스트가 세션에 넣어 둔다.
         st.session_state["test_history_revision"] = revision_id
         return pd.DataFrame(
@@ -67,7 +70,13 @@ class FakeRepository:
             columns=["제품정보", "Stack", "원본 제품정보", "원본 Stack"],
         )
 
-    def save_revision(self, scenario_id, tables, preset, **kwargs):
+    def save_revision(
+        self,
+        scenario_id: str,
+        tables: dict[str, pd.DataFrame],
+        preset: object,
+        **kwargs: Any,
+    ) -> SimpleNamespace:
         st.session_state["test_saved_revision_name"] = kwargs["revision_name"]
         st.session_state["test_saved_virtual_products"] = list(kwargs.get("virtual_products", ()))
         return SimpleNamespace(
@@ -78,7 +87,7 @@ class FakeRepository:
         )
 
 
-def load_snapshot(_database_path, revision_id):
+def load_snapshot(_database_path: object, revision_id: str) -> SimpleNamespace:
     selected = next(
         item
         for revisions in REVISIONS.values()
@@ -118,7 +127,8 @@ target.render_scenario_controls(
 @pytest.fixture
 def sidebar_app() -> Iterator[AppTest]:
     """callback은 스크립트보다 먼저 실행되므로 모든 rerun을 같은 patch로 감싼다."""
-    replacements = {
+    # 가짜의 모양이 제각각이라(함수·람다·클래스) 값 타입을 하나로 좁히지 않는다.
+    replacements: dict[str, Any] = {
         "get_scenario_repository": lambda _path: FakeRepository(),
         "load_scenario_snapshot": load_snapshot,
         "active_persisted_scenario_id": lambda: "scenario-1",
@@ -136,6 +146,7 @@ def sidebar_app() -> Iterator[AppTest]:
         "ensure_active_scenario": lambda _tables, _version: {
             "reference_version": 1,
             "revision": 1,
+            "content_token": pristine_content_token(1),
             "tables": {},
         },
         "revision_tables_for_save": lambda _active, tables: {"RQ_REQB": tables["RQ_REQB"].copy()},

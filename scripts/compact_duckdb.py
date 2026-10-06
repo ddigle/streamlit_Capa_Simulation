@@ -37,7 +37,7 @@ from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 MIB = 1024 * 1024
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--database",
@@ -66,7 +66,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="바꿔치기한 원본을 <파일명>.before_compact 로 남긴다.",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def table_row_counts(connection: duckdb.DuckDBPyConnection, catalog: str) -> dict[str, int]:
@@ -187,20 +187,35 @@ def compact(database_path: Path, args: argparse.Namespace) -> bool:
     return True
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    """종료 코드를 돌려준다. `--database` 로 지정한 파일이 없으면 1 이다.
+
+    생략했을 때의 운영 DB 두 개는 없을 수 있다(가용설비 DB 는 그 화면을 처음 열 때 생긴다).
+    그러나 직접 지정한 파일이 없는 것은 대개 경로 오타라, 건너뛰고 0 으로 끝내면 아무것도
+    하지 않았는데 성공으로 보인다.
+    """
+    args = parse_args(argv)
     if args.block_size < 16384 or args.block_size > 262144:
         raise SystemExit("[중단] --block-size 는 16384 이상 262144 이하여야 합니다.")
     if args.block_size & (args.block_size - 1):
         raise SystemExit("[중단] --block-size 는 2의 거듭제곱이어야 합니다.")
 
+    requested = bool(args.database)
     targets = args.database or [DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH]
     replaced = 0
+    missing = 0
     for database_path in targets:
-        if compact(database_path.resolve(), args):
+        resolved = database_path.resolve()
+        if requested and not resolved.exists():
+            missing += 1
+        if compact(resolved, args):
             replaced += 1
     if replaced:
         print(f"\n{replaced}개 파일을 재구축본으로 교체했습니다.")
+    if missing:
+        print(f"\n[실패] 지정한 파일 {missing}개를 찾지 못했습니다. 경로를 확인하세요.")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

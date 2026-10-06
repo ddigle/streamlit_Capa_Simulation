@@ -477,7 +477,7 @@ def test_logic_analysis_resolves_a_boundary_week_to_its_owning_month() -> None:
 
     assert len(target) == 1
     assert target.at[0, "Weeknum"] == BOUNDARY_WEEK
-    assert int(target.at[0, "생산계획년월"]) == BOUNDARY_WEEK_MONTH
-    assert float(target.at[0, "일 표준 가능량"]) == pytest.approx(DAILY_STANDARD)
+    assert target.at[0, "생산계획년월"] == BOUNDARY_WEEK_MONTH
+    assert target.at[0, "일 표준 가능량"] == pytest.approx(DAILY_STANDARD)
     # Mix 근거 표도 같은 달의 행으로만 채워져야 한다.
     assert contributions["생산계획년월"].astype("int64").tolist() == [BOUNDARY_WEEK_MONTH]

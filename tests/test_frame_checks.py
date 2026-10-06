@@ -9,7 +9,7 @@ from capa_simulation.services.frame_checks import assert_unique_keys, strip_text
 def test_assert_unique_keys_passes_when_every_key_combination_is_unique() -> None:
     data = pd.DataFrame({"공정": ["EDS", "TEST"], "제품정보": ["A", "A"], "값": [1, 2]})
 
-    assert assert_unique_keys(data, ["공정", "제품정보"], "RQ_YLD 연결 키가") is None
+    assert_unique_keys(data, ["공정", "제품정보"], "RQ_YLD 연결 키가")
 
 
 def test_assert_unique_keys_keeps_the_caller_message_prefix_and_particle() -> None:
@@ -46,7 +46,7 @@ def test_assert_unique_keys_accepts_a_tuple_of_keys() -> None:
 def test_strip_text_columns_edits_in_place_and_leaves_other_columns_alone() -> None:
     data = pd.DataFrame({"공정": [" EDS "], "메모": [" 그대로 "], "값": [1]})
 
-    assert strip_text_columns(data, ["공정"]) is None
+    strip_text_columns(data, ["공정"])
     assert data["공정"].tolist() == ["EDS"]
     assert str(data["공정"].dtype) == "string"
     assert data["메모"].tolist() == [" 그대로 "]

@@ -3,7 +3,12 @@
 import pandas as pd
 import pytest
 
-from capa_simulation.scenario_state import ActiveScenario, replace_month_range, scenario_month_table
+from capa_simulation.scenario_state import (
+    ActiveScenario,
+    pristine_content_token,
+    replace_month_range,
+    scenario_month_table,
+)
 
 
 def test_replace_month_range_preserves_unselected_months() -> None:
@@ -61,6 +66,7 @@ def test_scenario_month_table_copies_only_selected_rows() -> None:
     scenario: ActiveScenario = {
         "reference_version": 1,
         "revision": 2,
+        "content_token": pristine_content_token(1),
         "tables": {"RQ_PKG_PLAN": source},
     }
 

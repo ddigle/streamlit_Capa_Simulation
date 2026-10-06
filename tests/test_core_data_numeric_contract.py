@@ -50,7 +50,7 @@ def test_a_decimal_module_count_loads_instead_of_stopping_the_import() -> None:
 
     normalized = normalize_core_data(frame)
 
-    assert float(normalized.loc[0, "모듈수"]) == pytest.approx(2.5)
+    assert normalized.loc[0, "모듈수"] == pytest.approx(2.5)
 
 
 def test_true_integer_columns_still_reject_decimals() -> None:

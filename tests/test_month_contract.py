@@ -71,10 +71,10 @@ def test_calendar_limits_and_values_outside_the_ui_range_remain_valid() -> None:
     original = values.copy()
     expected = pd.Series([101, 999912, 200001, 203112], index=values.index, name=values.name)
 
-    assert _validate_production_month(values) is None
+    _validate_production_month(values)
     pd.testing.assert_series_equal(normalize_months(values, "RQ_TEST"), expected)
     data = values.to_frame(name="월")
-    assert normalize_month_column(data, "RQ_TEST", column="월") is None
+    normalize_month_column(data, "RQ_TEST", column="월")
     pd.testing.assert_series_equal(data["월"], expected.rename("월"))
     assert available_month_range(values.to_frame(name="생산계획년월"), "RQ_TEST") == (101, 999912)
     pd.testing.assert_series_equal(values, original)
@@ -103,7 +103,7 @@ def test_valid_nullable_months_keep_the_existing_int64_result_dtype() -> None:
 def test_empty_input_policy_belongs_to_each_boundary() -> None:
     values = pd.Series([], dtype="Int64", name="생산계획년월")
 
-    assert _validate_production_month(values) is None
+    _validate_production_month(values)
     pd.testing.assert_series_equal(normalize_months(values, "RQ_TEST"), values.astype("int64"))
     data = values.to_frame()
     normalize_month_column(data, "RQ_TEST")
@@ -127,9 +127,9 @@ def test_filter_boundaries_require_whole_calendar_months(invalid: object) -> Non
     data = pd.DataFrame({"생산계획년월": [202601]})
 
     with pytest.raises(ValueError, match="시작년월은 YYYYMM 형식이어야 합니다"):
-        filter_month_range(data, invalid, 202612, "RQ_TEST")
+        filter_month_range(data, invalid, 202612, "RQ_TEST")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="종료년월은 YYYYMM 형식이어야 합니다"):
-        filter_month_range(data, 202601, invalid, "RQ_TEST")
+        filter_month_range(data, 202601, invalid, "RQ_TEST")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("invalid", [1, -99, 1000001, 1e100, 2**64])

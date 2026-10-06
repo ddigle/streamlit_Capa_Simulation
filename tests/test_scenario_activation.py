@@ -2,6 +2,7 @@
 
 import ast
 import inspect
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,12 @@ import pytest
 import capa_simulation.components.home_preference as home_preference
 from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS, PAST_DATA_TOGGLE_KEY
 from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
+from capa_simulation.persistence.models import (
+    RevisionSummary,
+    ScenarioPreset,
+    ScenarioSnapshot,
+    ScenarioSummary,
+)
 from capa_simulation.scenario_activation import _STALE_UI_KEYS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -100,11 +107,10 @@ def test_the_figure_cache_key_has_one_owner() -> None:
     소유자는 `io/reference_cache` 하나다 — pandas·streamlit 만 보는 잎이라 셋 다 여기서
     가져올 수 있고, `components` 쪽에 두면 `scenario_activation` 이 import 하지 못한다.
     """
-    from capa_simulation.components.home_rendering import (
-        HOME_FIGURE_CACHE_KEY as rendering_key,
-    )
+    import capa_simulation.components.home_rendering as home_rendering
 
-    assert rendering_key is HOME_FIGURE_CACHE_KEY
+    # 다시 내보내는 이름이 아니라서 모듈 이름공간에서 직접 읽는다.
+    assert vars(home_rendering)["HOME_FIGURE_CACHE_KEY"] is HOME_FIGURE_CACHE_KEY
     assert HOME_FIGURE_CACHE_KEY in _STALE_UI_KEYS
 
 
@@ -139,29 +145,39 @@ def test_no_key_in_the_list_is_a_fossil() -> None:
     )
 
 
-def _label_snapshot(*, registered_at: object, plan_months: tuple[int, ...]) -> object:
-    from datetime import datetime
-    from types import SimpleNamespace
-
+def _label_snapshot(
+    *, registered_at: datetime | None, plan_months: tuple[int, ...]
+) -> ScenarioSnapshot:
     import pandas as pd
 
     from capa_simulation.services.month_filter import MONTH_COLUMN
 
-    return SimpleNamespace(
-        scenario=SimpleNamespace(
+    return ScenarioSnapshot(
+        scenario=ScenarioSummary(
             scenario_id="scenario-1",
+            dataset_id="dataset-1",
             scenario_name="DEMO 시나리오",
             source_simulation_code="DEMO-CODE",
+            source_simulation_name="DEMO 원천",
             source_type="BIGDATAQUERY",
-            source_registered_at=registered_at,
+            status="active",
+            active_revision_id="revision-2",
+            active_revision_no=2,
             created_at=datetime(2026, 10, 1, 8, 0),
+            updated_at=datetime(2026, 10, 5, 9, 0),
+            source_registered_at=registered_at,
         ),
-        revision=SimpleNamespace(
+        revision=RevisionSummary(
             revision_id="revision-2",
+            scenario_id="scenario-1",
             revision_no=2,
             revision_name="보정",
+            parent_revision_id=None,
+            note=None,
+            reference_hash="hash",
             created_at=datetime(2026, 10, 5, 9, 0),
         ),
+        preset=ScenarioPreset(start_month=202601, end_month=202612, included_processes=()),
         tables={"RQ_PKG_PLAN": pd.DataFrame({MONTH_COLUMN: list(plan_months)})},
     )
 

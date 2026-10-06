@@ -290,8 +290,8 @@ def test_merging_past_detail_keeps_the_display_order() -> None:
     merged = merge_past_plan_detail(detail, past, ["제품정보", "Stack"])
 
     assert list(merged["제품정보"]) == ["HBM라", "HBM다E", "HBM나"]
-    assert float(merged.loc[0, "25.12"]) == 5.0
-    assert float(merged.loc[0, "26.01"]) == 10.0
+    assert merged.loc[0, "25.12"] == 5.0
+    assert merged.loc[0, "26.01"] == 10.0
 
 
 def test_a_product_only_in_the_past_lands_where_the_display_order_says() -> None:
