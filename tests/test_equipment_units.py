@@ -1,9 +1,9 @@
-# Purpose: 모체호기로 묶은 모듈 행이 대수 축에서 설비 한 대로 세어지는지 고정한다.
+# Purpose: Main 설비로 묶은 모듈 행이 대수 축에서 설비 한 대로 세어지는지 고정한다.
 
 """모듈 행 넷 = 설비 한 대.
 
 CoW Bonder 처럼 모듈로 관리하는 공정은 설비 한 대(APW01)를 모듈 행 넷(APW01A~D)으로 적고
-`모체호기` 로 묶는다. 대수 축(「몇 대인가」)은 묶음을 한 대로 세고, 능력 축(「몇 대 몫을
+`Main 설비` 로 묶는다. 대수 축(「몇 대인가」)은 묶음을 한 대로 세고, 능력 축(「몇 대 몫을
 하나」)은 모듈 행의 환산비(0.25)를 더한다. 비모듈 행은 지금까지와 똑같이 행 하나가 한 대다.
 """
 
@@ -70,18 +70,18 @@ def _row(
     row: dict[str, object] = {column: None for column in EQUIPMENT_COLUMNS}
     row.update(
         {
-            "호기": unit,
+            "설비명": unit,
             "공정소분류": PROCESS,
             "공정대분류": "B/N",
-            "라인구분": "L1",
-            "활용구분": "양산",
+            "공정구분": "L1",
+            "투자구분": "양산",
             "동": building,
             "층": "1F",
-            "입고일정": arrival,
+            "반입일정": arrival,
             "Qual일정": qual,
             "확정상태": "완료",
             "반출일정": removal,
-            "장기보관여부": "N",
+            "보관유무": "N",
             "기존설비여부": "N",
             "레이아웃표시": "N",
             "환산비": ratio,
@@ -96,7 +96,7 @@ def _modules(**overrides: dict[str, object]) -> pd.DataFrame:
     rows = [_row(f"APW01{suffix}", "APW01", 0.25) for suffix in "ABCD"]
     rows.append(_row("DA01", None, 1.2))
     for row in rows:
-        row.update(overrides.get(str(row["호기"]), {}))
+        row.update(overrides.get(str(row["설비명"]), {}))
     return pd.DataFrame(rows, columns=list(EQUIPMENT_COLUMNS))
 
 
@@ -104,7 +104,7 @@ def _pm(unit: str = "APW01B") -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
-                "호기": unit,
+                "설비명": unit,
                 "비가동유형": "고장",
                 "시작일": "2026-03-01",
                 "종료일": "2026-03-31",
@@ -128,7 +128,7 @@ def _no_baseline() -> pd.DataFrame:
 
 
 def test_the_key_is_the_parent_when_given_and_the_unit_otherwise() -> None:
-    frame = pd.DataFrame({"호기": ["A1", "A2", "B1"], PARENT_EQUIPMENT_COLUMN: ["A", "  ", None]})
+    frame = pd.DataFrame({"설비명": ["A1", "A2", "B1"], PARENT_EQUIPMENT_COLUMN: ["A", "  ", None]})
 
     assert unit_keys(frame).tolist() == ["A", "A2", "B1"]
     # 컬럼이 없던 표(옛 리비전·옛 양식)는 행 하나가 한 대다.
@@ -170,12 +170,12 @@ def test_fractional_counts_are_written_without_trailing_zeros() -> None:
 
 
 def test_the_parent_is_normalized_and_old_frames_without_it_still_pass() -> None:
-    frame = _modules(APW01A={PARENT_EQUIPMENT_COLUMN: "  APW01 "}, DA01={"모체호기": "  "})
+    frame = _modules(APW01A={PARENT_EQUIPMENT_COLUMN: "  APW01 "}, DA01={"Main 설비": "  "})
 
     prepared = prepare_equipment_master(frame)
 
     assert prepared[PARENT_EQUIPMENT_COLUMN].tolist()[:1] == ["APW01"]
-    assert pd.isna(prepared.loc[prepared["호기"].eq("DA01"), PARENT_EQUIPMENT_COLUMN].item())
+    assert pd.isna(prepared.loc[prepared["설비명"].eq("DA01"), PARENT_EQUIPMENT_COLUMN].item())
     legacy = prepare_equipment_master(frame.drop(columns=[PARENT_EQUIPMENT_COLUMN]))
     assert legacy[PARENT_EQUIPMENT_COLUMN].isna().all()
 
@@ -187,17 +187,17 @@ def test_a_parent_that_is_also_a_standalone_unit_is_rejected() -> None:
         ignore_index=True,
     )
 
-    with pytest.raises(ValueError, match="모체호기"):
+    with pytest.raises(ValueError, match="Main 설비"):
         prepare_equipment_master(frame)
 
 
-@pytest.mark.parametrize("column", ["동", "공정소분류", "활용구분"])
+@pytest.mark.parametrize("column", ["동", "공정소분류", "투자구분"])
 def test_modules_of_one_unit_must_agree_on_filter_columns(column: str) -> None:
     """필터가 설비 하나를 쪼개면 지분 합이 1 이 아니게 된다."""
     value = "C2" if column == "동" else "OTHER"
     frame = _modules(APW01D={column: value})
 
-    with pytest.raises(ValueError, match="모체호기"):
+    with pytest.raises(ValueError, match="Main 설비"):
         prepare_equipment_master(frame)
 
 
@@ -235,7 +235,7 @@ def test_removing_one_module_leaves_the_unit_whole() -> None:
     frame = _modules(APW01D={"반출일정": "2026-05-10"})
 
     status = build_equipment_status_as_of(frame, _no_downtime(), as_of=date(2026, 6, 15))
-    shares = status.set_index("호기")[UNIT_SHARE_COLUMN]
+    shares = status.set_index("설비명")[UNIT_SHARE_COLUMN]
 
     assert shares["APW01D"] == 0.0
     assert shares[["APW01A", "APW01B", "APW01C"]].sum() == pytest.approx(1.0)
@@ -244,7 +244,7 @@ def test_removing_one_module_leaves_the_unit_whole() -> None:
 
 def test_a_unit_not_yet_arrived_is_one_planned_unit() -> None:
     frame = _modules(
-        **{f"APW01{s}": {"입고일정": "2026-09-01", "Qual일정": "2026-09-20"} for s in "ABCD"}
+        **{f"APW01{s}": {"반입일정": "2026-09-01", "Qual일정": "2026-09-20"} for s in "ABCD"}
     )
 
     status = build_equipment_status_as_of(frame, _no_downtime(), as_of=date(2026, 6, 15))
@@ -262,9 +262,9 @@ def test_spans_split_where_a_sibling_changes_the_share_only_when_asked() -> None
 
     # Gantt 가 보는 구간은 그대로다 — APW01A 는 석 달 내내 「가용」 한 구간.
     assert UNIT_SHARE_COLUMN not in plain.columns
-    assert len(plain.loc[plain["호기"].eq("APW01A")]) == 1
+    assert len(plain.loc[plain["설비명"].eq("APW01A")]) == 1
     # 대수를 셀 구간은 D 가 빠지는 날 끊긴다(0.25 → 1/3).
-    module_a = shared.loc[shared["호기"].eq("APW01A")]
+    module_a = shared.loc[shared["설비명"].eq("APW01A")]
     assert module_a[UNIT_SHARE_COLUMN].round(6).tolist() == [0.25, round(1 / 3, 6)]
     assert module_a["상태"].unique().tolist() == ["가용"]
 
@@ -285,7 +285,7 @@ def test_monthly_counts_units_while_the_converted_count_sums_ratios() -> None:
         _no_baseline(),
         cutoff,
         [202606],
-        conversion_ratios=dict(zip(frame["호기"], frame["환산비"], strict=True)),
+        conversion_ratios=dict(zip(frame["설비명"], frame["환산비"], strict=True)),
     )
     subtotal = available_subtotal(monthly).iloc[0]
 
@@ -311,7 +311,7 @@ def test_transition_events_carry_the_unit_key() -> None:
 
 
 def test_a_paste_without_the_parent_column_is_still_accepted() -> None:
-    """모체호기가 생기기 전의 31열 표도 그대로 읽힌다."""
+    """Main 설비 컬럼이 없는 옛 표도 그대로 읽힌다."""
     frame = _modules().drop(columns=[PARENT_EQUIPMENT_COLUMN])
     content = frame.to_csv(sep="\t", index=False)
 
@@ -371,7 +371,7 @@ def test_space_counts_add_up_without_a_negative_zero() -> None:
 def test_one_placed_module_places_the_whole_unit() -> None:
     """상자는 모듈 한 행에만 그린다. 그래도 설비는 통째로 배치된 것이다."""
     status = build_equipment_status_as_of(_modules(), _no_downtime(), as_of=date(2026, 3, 15))
-    placed = status.loc[status["호기"].isin(["APW01A", "DA01"])]
+    placed = status.loc[status["설비명"].isin(["APW01A", "DA01"])]
 
     counted = placed_unit_rows(status, placed)
 
@@ -405,7 +405,7 @@ def test_one_down_module_per_unit_is_not_read_as_whole_units() -> None:
 def test_a_unit_transition_is_confirmed_when_any_module_is() -> None:
     """확정상태가 모듈마다 다르면 정렬 순서가 답을 정하면 안 된다."""
     frame = _modules(APW01A={"확정상태": "계획"}, APW01C={"확정상태": "계획"})
-    frame.loc[frame["호기"].eq("APW01D"), "확정상태"] = "계획"
+    frame.loc[frame["설비명"].eq("APW01D"), "확정상태"] = "계획"
     events = build_milestone_transition_events(
         frame,
         start_date=date(2026, 1, 1),
@@ -419,19 +419,21 @@ def test_a_unit_transition_is_confirmed_when_any_module_is() -> None:
     assert qual.set_index(UNIT_KEY_COLUMN)["Qual확정"].to_dict() == {"APW01": True, "DA01": True}
 
 
-@pytest.mark.parametrize("header", ["모체 호기", "모체호기(선택)"])
+@pytest.mark.parametrize("header", ["Main 설비(선택)", "모체호기(선택)", "모체 호기(선택)"])
 def test_a_misspelled_parent_header_is_rejected_not_blanked(header: str) -> None:
     content = (
         _modules().rename(columns={PARENT_EQUIPMENT_COLUMN: header}).to_csv(sep="\t", index=False)
     )
 
-    with pytest.raises(ValueError, match="모체호기 열 이름이 다릅니다"):
+    with pytest.raises(ValueError, match="Main 설비 열 이름이 다릅니다"):
         read_equipment_clipboard(content)
 
 
 def test_a_csv_header_with_a_trailing_space_is_still_the_parent() -> None:
     prepared = prepare_equipment_master(_modules())
-    payload = equipment_csv_bytes(prepared).decode("utf-8-sig").replace("모체호기", "모체호기 ", 1)
+    payload = (
+        equipment_csv_bytes(prepared).decode("utf-8-sig").replace("Main 설비", "Main 설비 ", 1)
+    )
 
     result = read_equipment_csv(payload.encode("utf-8-sig"))
 

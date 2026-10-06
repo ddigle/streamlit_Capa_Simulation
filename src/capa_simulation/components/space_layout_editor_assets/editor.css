@@ -181,7 +181,7 @@
 .sle-addunit-form { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; padding: 6px; border: 1px solid var(--sle-border); border-radius: 6px; font-size: 0.78rem; }
 .sle-addunit-form[hidden] { display: none; }
 .sle-form-row { display: flex; align-items: center; gap: 5px; color: var(--sle-muted); }
-.sle-form-row > span:first-child { width: 2.4em; flex: none; }
+.sle-form-row > span:first-child { width: 4.4em; flex: none; }
 .sle-form-row input[type="text"], .sle-form-row input[type="date"], .sle-form-row select { flex: 1; min-width: 0; }
 .sle input[type="date"] {
   font: inherit; font-size: 0.78rem; padding: 2px 4px; border-radius: 8px; color-scheme: light dark;

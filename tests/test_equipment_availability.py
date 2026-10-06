@@ -50,49 +50,49 @@ def _equipment() -> pd.DataFrame:
     defaults: dict[str, object] = {
         "공정대분류": "B/N",
         "공정소분류": "Process-A",
-        "라인구분": None,
-        "활용구분": "양산",
-        "투자기준": None,
+        "공정구분": None,
+        "투자구분": "양산",
+        "투자Capa": None,
         "담당자": "담당A",
         "Maker": None,
-        "모델": None,
-        "분류1": None,
-        "분류2": None,
-        "분류3": None,
+        "Model": None,
+        "구분": None,
+        "사용기준": None,
+        "설비가동현황": None,
         "동": "C1",
         "층": "1F",
         "Xsize": 12,
         "Ysize": 7,
         "반출일정": None,
         "이설일": None,
-        "장기보관여부": "N",
+        "보관유무": "N",
         "기존설비여부": "N",
         "호기이력": None,
-        "비고": None,
+        "설비이력": None,
         "레이아웃표시": "Y",
         "확정상태": "확정",
     }
     rows = [
         {
             **defaults,
-            "호기": "EQ-01",
+            "설비명": "EQ-01",
             "X좌표": 10,
             "Y좌표": 10,
             "제진대일정": "2026-08-01",
             "물류일정": "2026-08-03",
-            "입고일정": "2026-08-04",
+            "반입일정": "2026-08-04",
             "Qual일정": "2026-08-09",
         },
         {
             **defaults,
-            "호기": "EQ-02",
+            "설비명": "EQ-02",
             "X좌표": 30,
             "Y좌표": 10,
             "제진대일정": "2026-08-08",
             "물류일정": "2026-08-10",
-            "입고일정": "2026-08-11",
+            "반입일정": "2026-08-11",
             "Qual일정": "2026-08-21",
-            "비고": "셋업 중",
+            "설비이력": "셋업 중",
         },
     ]
     return pd.DataFrame(rows, columns=EQUIPMENT_COLUMNS)
@@ -101,7 +101,7 @@ def _equipment() -> pd.DataFrame:
 def _downtime() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "호기": ["EQ-01"],
+            "설비명": ["EQ-01"],
             "비가동유형": ["고장"],
             "시작일": ["2026-08-10"],
             "종료일": ["2026-08-20"],
@@ -152,9 +152,9 @@ def test_sample_units_cover_every_active_status() -> None:
         "보관 설비",
         "운영 비가동",
     }
-    assert equipment["분류1"].unique().tolist() == ["임시 샘플"]
+    assert equipment["구분"].unique().tolist() == ["임시 샘플"]
     # 비가동 호기는 모두 마스터에 있어야 한다. 없으면 검증이 프레임 전체를 거부한다.
-    assert set(downtime["호기"]) <= set(equipment["호기"])
+    assert set(downtime["설비명"]) <= set(equipment["설비명"])
     assert set(equipment["확정상태"].dropna()) == {"계획", "확정", "완료", "지연"}
 
 
@@ -243,11 +243,11 @@ def test_removal_excludes_owned_available_and_layout_from_effective_date() -> No
 
 def test_storage_and_existing_equipment_do_not_require_arrival_or_qual() -> None:
     equipment = _equipment()
-    equipment.loc[0, ["입고일정", "Qual일정"]] = None
+    equipment.loc[0, ["반입일정", "Qual일정"]] = None
     equipment.loc[0, "기존설비여부"] = "Y"
     equipment.loc[0, "확정상태"] = None
-    equipment.loc[1, ["입고일정", "Qual일정"]] = None
-    equipment.loc[1, "장기보관여부"] = "Y"
+    equipment.loc[1, ["반입일정", "Qual일정"]] = None
+    equipment.loc[1, "보관유무"] = "Y"
     equipment.loc[1, "확정상태"] = None
 
     prepared = prepare_equipment_master(equipment)
@@ -267,7 +267,7 @@ def test_transition_events_include_completed_and_planned_stages() -> None:
 
     assert set(result["전환단계"]) == {"물류", "입고", "제진대", "Qual"}
     assert result["일정상태"].value_counts().to_dict() == {"완료": 3, "예정": 3}
-    qual = result.loc[result["호기"].eq("EQ-01") & result["전환단계"].eq("Qual")].iloc[0]
+    qual = result.loc[result["설비명"].eq("EQ-01") & result["전환단계"].eq("Qual")].iloc[0]
     assert qual["이전단계"] == "입고"
     assert qual["확정상태"] == "확정"
     assert qual["기준일대비"] == "D-1"
@@ -280,7 +280,7 @@ def test_inactive_equipment_includes_setup_and_operational_downtime() -> None:
         as_of=date(2026, 8, 16),
     )
 
-    assert result["호기"].tolist() == ["EQ-01", "EQ-02"]
+    assert result["설비명"].tolist() == ["EQ-01", "EQ-02"]
     assert result["상태"].tolist() == ["운영 비가동", "셋업 진행중"]
 
 
@@ -340,7 +340,7 @@ def test_downtime_rejects_duplicate_natural_key() -> None:
 
 def test_downtime_rejects_unknown_equipment() -> None:
     downtime = _downtime()
-    downtime.loc[0, "호기"] = "UNKNOWN"
+    downtime.loc[0, "설비명"] = "UNKNOWN"
 
     with pytest.raises(ValueError, match="없는 설비"):
         prepare_downtime_schedule(downtime, equipment=_equipment())
@@ -363,7 +363,7 @@ def test_cached_weekly_availability_matches_direct_call() -> None:
     pd.testing.assert_frame_equal(cached, expected)
 
     # 화면 필터가 바뀌면(= 프레임 내용이 바뀌면) 캐시가 아니라 새 결과가 나와야 한다.
-    narrowed = equipment.loc[equipment["호기"].eq("EQ-01")].copy()
+    narrowed = equipment.loc[equipment["설비명"].eq("EQ-01")].copy()
     assert not get_weekly_equipment_availability(baseline, narrowed, downtime, **window).equals(
         cached
     )
@@ -383,19 +383,19 @@ def _october_fleet() -> tuple[pd.DataFrame, pd.DataFrame]:
         "기존설비여부": "Y",
         "제진대일정": None,
         "물류일정": None,
-        "입고일정": None,
+        "반입일정": None,
         "Qual일정": None,
         "확정상태": None,
     }
     rows = [
-        {**template, "호기": "EQ-WEEKDAY"},
-        {**template, "호기": "EQ-CARRY"},
-        {**template, "호기": "EQ-NEIGHBOR"},
+        {**template, "설비명": "EQ-WEEKDAY"},
+        {**template, "설비명": "EQ-CARRY"},
+        {**template, "설비명": "EQ-NEIGHBOR"},
         {
             **template,
-            "호기": "EQ-REMOVAL",
+            "설비명": "EQ-REMOVAL",
             "기존설비여부": "N",
-            "입고일정": "2026-10-05",
+            "반입일정": "2026-10-05",
             "Qual일정": "2026-10-09",
             "반출일정": "2026-11-30",
             "확정상태": "계획",
@@ -404,7 +404,7 @@ def _october_fleet() -> tuple[pd.DataFrame, pd.DataFrame]:
     equipment = pd.DataFrame(rows, columns=EQUIPMENT_COLUMNS)
     downtime = pd.DataFrame(
         {
-            "호기": ["EQ-WEEKDAY", "EQ-CARRY", "EQ-NEIGHBOR"],
+            "설비명": ["EQ-WEEKDAY", "EQ-CARRY", "EQ-NEIGHBOR"],
             "비가동유형": ["고장", "고장", "고장"],
             "시작일": ["2026-10-05", "2026-09-28", "2026-11-02"],
             "종료일": ["2026-10-10", "2026-10-02", "2026-11-06"],
@@ -420,7 +420,7 @@ def _sunday_union(equipment: pd.DataFrame, downtime: pd.DataFrame) -> set[str]:
     units: set[str] = set()
     for day in (4, 11, 18, 25):
         frame = build_inactive_equipment(equipment, downtime, as_of=date(2026, 10, day))
-        units |= {str(unit) for unit in frame["호기"]}
+        units |= {str(unit) for unit in frame["설비명"]}
     return units
 
 
@@ -430,7 +430,7 @@ def test_month_view_catches_a_weekday_downtime_the_sunday_samples_miss() -> None
 
     result = build_inactive_equipment_in_month(equipment, downtime, month=date(2026, 10, 15))
 
-    assert "EQ-WEEKDAY" in set(result["호기"])
+    assert "EQ-WEEKDAY" in set(result["설비명"])
     assert "EQ-WEEKDAY" not in _sunday_union(equipment, downtime)
 
 
@@ -444,7 +444,7 @@ def test_month_view_catches_a_setup_unit_whose_status_name_is_masked_by_removal(
     month = date(2026, 10, 15)
     moments = inactive_equipment_moments(equipment, downtime, month=month)
 
-    result = build_inactive_equipment_in_month(equipment, downtime, month=month).set_index("호기")
+    result = build_inactive_equipment_in_month(equipment, downtime, month=month).set_index("설비명")
 
     assert "EQ-REMOVAL" in result.index
     assert result.at["EQ-REMOVAL", "상태"] == "반출 예정"
@@ -456,7 +456,7 @@ def test_month_view_ignores_a_unit_that_is_idle_only_in_a_neighbouring_month() -
     equipment, downtime = _october_fleet()
 
     units = set(
-        build_inactive_equipment_in_month(equipment, downtime, month=date(2026, 10, 15))["호기"]
+        build_inactive_equipment_in_month(equipment, downtime, month=date(2026, 10, 15))["설비명"]
     )
 
     assert "EQ-NEIGHBOR" not in units
@@ -469,17 +469,19 @@ def test_month_view_reports_the_first_and_last_moment_each_unit_was_caught() -> 
     month = date(2026, 10, 15)
     caught: dict[str, list[date]] = {}
     for moment in inactive_equipment_moments(equipment, downtime, month=month):
-        for unit in build_inactive_equipment(equipment, downtime, as_of=moment)["호기"]:
+        for unit in build_inactive_equipment(equipment, downtime, as_of=moment)["설비명"]:
             caught.setdefault(str(unit), []).append(moment)
 
-    result = build_inactive_equipment_in_month(equipment, downtime, month=month).set_index("호기")
+    result = build_inactive_equipment_in_month(equipment, downtime, month=month).set_index("설비명")
 
     assert caught
     for unit, days in caught.items():
         assert result.at[unit, "비가동 시작"] == min(days)
         assert result.at[unit, "비가동 종료"] == max(days)
-    # 두 컬럼은 호기 바로 뒤 1·2번째 자리다.
-    assert list(result.columns[:2]) == ["비가동 시작", "비가동 종료"]
+    # 두 컬럼은 설비명 바로 뒤 자리다.
+    columns = list(build_inactive_equipment_in_month(equipment, downtime, month=month).columns)
+    at = columns.index("설비명")
+    assert columns[at + 1 : at + 3] == ["비가동 시작", "비가동 종료"]
 
 
 def test_month_view_matches_a_direct_union_over_the_same_moments() -> None:
@@ -489,12 +491,12 @@ def test_month_view_matches_a_direct_union_over_the_same_moments() -> None:
     expected: set[str] = set()
     for moment in inactive_equipment_moments(equipment, downtime, month=month):
         frame = build_inactive_equipment(equipment, downtime, as_of=moment)
-        expected |= {str(unit) for unit in frame["호기"]}
+        expected |= {str(unit) for unit in frame["설비명"]}
 
     result = build_inactive_equipment_in_month(equipment, downtime, month=month)
 
     assert expected
-    assert {str(unit) for unit in result["호기"]} == expected
+    assert {str(unit) for unit in result["설비명"]} == expected
 
 
 def test_month_view_degrades_to_an_empty_table_for_an_empty_fleet() -> None:
@@ -505,7 +507,8 @@ def test_month_view_degrades_to_an_empty_table_for_an_empty_fleet() -> None:
     result = build_inactive_equipment_in_month(equipment, downtime, month=month)
 
     assert result.empty
-    assert list(result.columns[1:3]) == ["비가동 시작", "비가동 종료"]
+    at = list(result.columns).index("설비명")
+    assert list(result.columns[at + 1 : at + 3]) == ["비가동 시작", "비가동 종료"]
     assert inactive_equipment_moments(equipment, downtime, month=month) == [
         date(2026, 10, 1),
         date(2026, 10, 4),

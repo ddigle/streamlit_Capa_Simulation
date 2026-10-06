@@ -37,6 +37,8 @@ from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
+    LEGACY_EQUIPMENT_HEADER_ALIASES,
+    OPTIONAL_EQUIPMENT_COLUMNS,
     empty_downtime_schedule,
     empty_equipment_baseline,
 )
@@ -58,9 +60,9 @@ def _master(ids: list[str]) -> pd.DataFrame:
     return prepare_equipment_master(
         pd.DataFrame(
             {
-                "호기": ids,
+                "설비명": ids,
                 "공정소분류": ["Die Attach"] * len(ids),
-                "장기보관여부": ["N"] * len(ids),
+                "보관유무": ["N"] * len(ids),
                 "기존설비여부": ["Y"] * len(ids),
                 "레이아웃표시": ["N"] * len(ids),
             }
@@ -128,7 +130,7 @@ def test_thirty_rows_are_reviewed_then_saved_once_with_other_tables_preserved(
     downtime = prepare_downtime_schedule(
         pd.DataFrame(
             {
-                "호기": ["OLD-001"],
+                "설비명": ["OLD-001"],
                 "비가동유형": ["고장"],
                 "시작일": ["2026-10-01"],
                 "종료일": ["2026-10-03"],
@@ -166,7 +168,7 @@ def test_changed_input_and_target_cannot_save_the_previous_review(tmp_path: Path
     app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
     repository = _repository(path)
     assert not repository.list_revisions()
-    assert app.session_state[PREVIEW_KEY].candidate[1]["호기"].tolist() == ["SECOND"]
+    assert app.session_state[PREVIEW_KEY].candidate[1]["설비명"].tolist() == ["SECOND"]
     assert any("미리보기를 갱신" in info.value for info in app.info)
     app.selectbox(TARGET_KEY).set_value("기존 보유대수")
     app.text_area(CLIPBOARD_KEY).set_value("공정\t분류\t기존보유대수\t비고\nP\t전체\t7\t사용자 값")
@@ -214,7 +216,7 @@ def test_editor_change_after_review_requires_review_again(tmp_path: Path) -> Non
     generation = app.session_state[generation_key] if generation_key in app.session_state else 0
     widget_key = f"{EQUIPMENT_EDITOR_KEY}__g{generation}" if generation else EQUIPMENT_EDITOR_KEY
     app.session_state[widget_key] = {
-        "edited_rows": {0: {"비고": "검토 뒤 수정"}},
+        "edited_rows": {0: {"설비이력": "검토 뒤 수정"}},
         "added_rows": [],
         "deleted_rows": [],
     }
@@ -223,7 +225,32 @@ def test_editor_change_after_review_requires_review_again(tmp_path: Path) -> Non
     assert len(repository.list_revisions()) == 1
     app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
     saved = repository.load_snapshot(repository.list_revisions()[0].revision_id)
-    assert saved.equipment.set_index("호기").loc["EXISTING", "비고"] == "검토 뒤 수정"
+    assert saved.equipment.set_index("설비명").loc["EXISTING", "설비이력"] == "검토 뒤 수정"
+
+
+def test_an_old_header_paste_is_renamed_and_the_dropped_column_is_announced(
+    tmp_path: Path,
+) -> None:
+    """사내의 옛 머리 엑셀을 그대로 붙여넣어도 저장되고, 빠진 `투자기준` 은 알림 한 줄로 남는다."""
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    legacy = (
+        _master(["OLD-HEADER"])
+        .drop(columns=list(OPTIONAL_EQUIPMENT_COLUMNS))
+        .rename(columns={new: old for old, new in LEGACY_EQUIPMENT_HEADER_ALIASES.items()})
+        .assign(투자기준="322K")
+    )
+    app = _app(path)
+
+    _preview(app, legacy.to_csv(index=False, sep="	"))
+
+    assert any("투자기준" in item.value for item in app.info)
+    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
+    assert not app.exception
+    assert not app.error
+    saved = repository.load_snapshot(repository.list_revisions()[0].revision_id)
+    assert saved.equipment["설비명"].tolist() == ["OLD-HEADER"]
+    assert list(saved.equipment.columns) == list(EQUIPMENT_COLUMNS)
 
 
 def test_csv_review_and_future_open_downtime_history(tmp_path: Path) -> None:
@@ -233,7 +260,7 @@ def test_csv_review_and_future_open_downtime_history(tmp_path: Path) -> None:
     downtime = prepare_downtime_schedule(
         pd.DataFrame(
             {
-                "호기": ["EQ-FUTURE"],
+                "설비명": ["EQ-FUTURE"],
                 "비가동유형": ["고장"],
                 "시작일": [future],
                 "종료일": [None],

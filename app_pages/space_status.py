@@ -71,6 +71,8 @@ from capa_simulation.persistence.equipment_cache import (
 from capa_simulation.services.equipment_availability import build_space_equipment_status
 from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWNTIME_TARGET
 from capa_simulation.services.equipment_contract import (
+    DATE_COLUMNS,
+    EQUIPMENT_ID_COLUMN,
     empty_downtime_schedule,
     empty_equipment_master,
 )
@@ -194,7 +196,7 @@ def _units(value: float) -> str:
     return f"{format_unit_count(value)}대"
 
 
-_PLACED_HELP = "도면에 그린 설비입니다. 모체호기로 묶은 모듈 행은 합쳐 1대입니다."
+_PLACED_HELP = "도면에 그린 설비입니다. Main 설비로 묶은 모듈 행은 합쳐 1대입니다."
 _UNPLACED_HELP = "레이아웃표시 Y 인데 좌표가 없어 도면에 그리지 못한 설비입니다."
 _OCCUPANCY_HELP = (
     "도면에 그린 호기 사각형 면적 합 ÷ 캔버스 면적. 캔버스 단위의 상대값이며 "
@@ -666,7 +668,7 @@ def _render_layout_editor(
         applied = parse_editor_apply(
             submission.payload,
             editor_ids={str(item["id"]) for item in inputs.items},
-            master_ids=set(frames[1]["호기"].dropna().astype(str).str.strip()),
+            master_ids=set(frames[1][EQUIPMENT_ID_COLUMN].dropna().astype(str).str.strip()),
             floor=key,
             floors=ALL_FLOORS,
             canvas=canvas,
@@ -1031,14 +1033,7 @@ else:
         placeholder="",
         column_config={
             column: st.column_config.DateColumn(column, format="YYYY-MM-DD")
-            for column in (
-                "제진대일정",
-                "물류일정",
-                "입고일정",
-                "Qual일정",
-                "반출일정",
-                "이설일",
-            )
+            for column in DATE_COLUMNS
         },
     )
     # 층별 호기 목록은 현장 배치 검토에 그대로 쓰인다.

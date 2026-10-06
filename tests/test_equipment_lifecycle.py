@@ -23,13 +23,13 @@ def _equipment(**overrides: object) -> pd.DataFrame:
     row: dict[str, object] = dict.fromkeys(EQUIPMENT_COLUMNS, None)
     row.update(
         {
-            "호기": "EQ-1",
+            "설비명": "EQ-1",
             "공정대분류": "조립",
             "공정소분류": "SAW",
-            "입고일정": date(2026, 2, 1),
+            "반입일정": date(2026, 2, 1),
             "Qual일정": date(2026, 3, 1),
             "확정상태": "계획",
-            "장기보관여부": "N",
+            "보관유무": "N",
             "기존설비여부": "N",
             "레이아웃표시": "N",
         }
@@ -65,7 +65,7 @@ def test_downtime_turns_off_the_day_after_it_ends() -> None:
     downtime = pd.DataFrame(
         [
             {
-                "호기": "EQ-1",
+                "설비명": "EQ-1",
                 "비가동유형": "PM",
                 "시작일": date(2026, 4, 1),
                 "종료일": date(2026, 4, 10),
@@ -112,7 +112,7 @@ def test_gantt_reports_how_many_units_it_could_not_draw() -> None:
     """자른 것을 세지 않으면 「이게 전부」로 읽힌다."""
     spans = pd.DataFrame(
         {
-            "호기": [f"EQ-{index:02d}" for index in range(6)],
+            "설비명": [f"EQ-{index:02d}" for index in range(6)],
             "공정소분류": ["SAW"] * 6,
             "공정대분류": ["조립"] * 6,
             "상태": ["가용"] * 6,
@@ -131,7 +131,7 @@ def test_a_single_day_span_keeps_a_visible_width() -> None:
     """Plotly 의 구간 끝은 배타적이다. 하루짜리를 그대로 넘기면 폭 0 이 된다."""
     spans = pd.DataFrame(
         {
-            "호기": ["EQ-1"],
+            "설비명": ["EQ-1"],
             "공정소분류": ["SAW"],
             "공정대분류": ["조립"],
             "상태": ["가용"],

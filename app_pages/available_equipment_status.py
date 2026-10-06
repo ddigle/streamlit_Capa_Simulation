@@ -41,6 +41,9 @@ from capa_simulation.persistence.equipment_cache import (
     load_latest_equipment_snapshot,
 )
 from capa_simulation.services.equipment_availability import build_equipment_lifecycle_spans
+from capa_simulation.services.equipment_contract import (
+    EQUIPMENT_ID_COLUMN,
+)
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_baseline,
@@ -280,7 +283,7 @@ with gap_tab:
             gap_ratios = {
                 str(unit).strip(): float(ratio)
                 for unit, ratio in zip(
-                    dashboard_equipment.get("호기", []),
+                    dashboard_equipment.get(EQUIPMENT_ID_COLUMN, []),
                     dashboard_equipment.get("환산비", []),
                     strict=False,
                 )

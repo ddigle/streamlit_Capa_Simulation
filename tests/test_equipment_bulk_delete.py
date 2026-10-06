@@ -35,14 +35,14 @@ def _frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     )
     equipment = pd.DataFrame(
         {
-            "호기": ["E1", "E2", "E3", " E4 "],
+            "설비명": ["E1", "E2", "E3", " E4 "],
             "공정소분류": ["DEMO_A", "DEMO_A", "DEMO_B", "DEMO_B"],
             "동": ["A동", "B동", "A동", "A동"],
         }
     )
     downtime = pd.DataFrame(
         {
-            "호기": ["E1", "E1", "E3", "E9"],
+            "설비명": ["E1", "E1", "E3", "E9"],
             "비가동유형": ["PM", "고장", "PM", "PM"],
             "시작일": [
                 pd.Timestamp("2026-10-01"),
@@ -65,7 +65,7 @@ def test_the_same_key_reads_the_same_whatever_shape_it_arrives_in() -> None:
 
 
 def test_only_checked_cells_count_and_untouched_ones_arrive_as_none() -> None:
-    edited = pd.DataFrame({"선택": [True, None, False], "호기": ["E1", "E2", "E3"]})
+    edited = pd.DataFrame({"선택": [True, None, False], "설비명": ["E1", "E2", "E3"]})
 
     assert checked_keys(edited, "선택", EQUIPMENT_TARGET) == {("E1",)}
 
@@ -89,8 +89,8 @@ def test_deleting_machines_takes_their_downtime_with_them() -> None:
     baseline, equipment, downtime = apply_deletion(frames, plan)
 
     assert (plan.target_count, plan.cascaded_downtime_count) == (2, 3)
-    assert equipment["호기"].str.strip().tolist() == ["E2", "E4"]
-    assert downtime["호기"].tolist() == ["E9"]
+    assert equipment["설비명"].str.strip().tolist() == ["E2", "E4"]
+    assert downtime["설비명"].tolist() == ["E9"]
     assert baseline.equals(frames[0])
 
 
@@ -119,13 +119,13 @@ def test_undo_puts_rows_back_but_never_duplicates_a_key() -> None:
     frames = _frames()
     plan = plan_deletion(frames, EQUIPMENT_TARGET, {("E1",), ("E3",)})
     after = apply_deletion(frames, plan)
-    readded = pd.concat([after[1], pd.DataFrame({"호기": ["E1"], "공정소분류": ["DEMO_A"]})])
+    readded = pd.concat([after[1], pd.DataFrame({"설비명": ["E1"], "공정소분류": ["DEMO_A"]})])
     after = (after[0], readded.reset_index(drop=True), after[2])
 
     (baseline, equipment, downtime), skipped = restore_rows(after, plan.removed)
 
     assert skipped == 1
-    assert sorted(equipment["호기"].str.strip()) == ["E1", "E2", "E3", "E4"]
+    assert sorted(equipment["설비명"].str.strip()) == ["E1", "E2", "E3", "E4"]
     assert len(downtime) == 4
     assert baseline.equals(frames[0])
 

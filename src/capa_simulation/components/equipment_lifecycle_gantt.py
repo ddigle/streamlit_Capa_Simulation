@@ -26,7 +26,10 @@ import streamlit as st
 from capa_simulation.components.plotly_layout import chart_canvas_layout
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
-from capa_simulation.services.equipment_contract import EQUIPMENT_STATUSES
+from capa_simulation.services.equipment_contract import (
+    EQUIPMENT_ID_COLUMN,
+    EQUIPMENT_STATUSES,
+)
 
 ROW_HEIGHT_PX = 22
 CHART_CHROME_PX = 110
@@ -45,13 +48,13 @@ def build_equipment_lifecycle_gantt(
     if spans.empty:
         return None, 0
 
-    units = spans["호기"].astype(str).drop_duplicates().sort_values().tolist()
+    units = spans[EQUIPMENT_ID_COLUMN].astype(str).drop_duplicates().sort_values().tolist()
     hidden_units = max(0, len(units) - max_units)
     drawn_units = units[:max_units]
-    drawn = spans.loc[spans["호기"].astype(str).isin(drawn_units)].copy()
+    drawn = spans.loc[spans[EQUIPMENT_ID_COLUMN].astype(str).isin(drawn_units)].copy()
 
     frame = drawn.copy()
-    frame["호기"] = frame["호기"].astype(str)
+    frame[EQUIPMENT_ID_COLUMN] = frame[EQUIPMENT_ID_COLUMN].astype(str)
     frame["상태"] = frame["상태"].astype(str)
     frame["시작"] = pd.to_datetime(frame["시작일"])
     # Plotly 의 구간은 끝을 **배타적**으로 읽는다. 마지막 날을 포함시키려면 하루를 더한다 —
@@ -62,11 +65,11 @@ def build_equipment_lifecycle_gantt(
         frame,
         x_start="시작",
         x_end="끝",
-        y="호기",
+        y=EQUIPMENT_ID_COLUMN,
         color="상태",
         color_discrete_map=dict(tokens.EQUIPMENT_STAGE_COLORS),
         category_orders={
-            "호기": drawn_units,
+            EQUIPMENT_ID_COLUMN: drawn_units,
             "상태": list(EQUIPMENT_STATUSES),
         },
         custom_data=["상태", "공정소분류", "시작일", "종료일"],

@@ -4,7 +4,7 @@
 
 모듈로 관리하는 공정(CoW Bonder 등)은 설비 한 대를 모듈마다 한 행으로 적는다 — 모듈마다
 입고·Qual·반출 일정과 비가동이 따로 있기 때문이다(APW01 → APW01A·B·C·D). 같은 설비의 행은
-`모체호기` 에 설비 ID 를 똑같이 적어 묶는다. 비모듈 공정은 모체호기를 비워 두고, 행 하나가
+`Main 설비` 에 설비 ID 를 똑같이 적어 묶는다. 비모듈 공정은 Main 설비를 비워 두고, 행 하나가
 설비 한 대다.
 
 그래서 숫자가 두 축으로 갈린다.
@@ -28,6 +28,7 @@ import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
     CONVERSION_RATIO_COLUMN,
+    EQUIPMENT_ID_COLUMN,
     PARENT_EQUIPMENT_COLUMN,
 )
 
@@ -40,8 +41,8 @@ UNIT_COUNT_DECIMALS = 6
 
 
 def unit_keys(equipment: pd.DataFrame) -> pd.Series:
-    """행마다 설비키. 모체호기가 있으면 모체호기, 없으면 호기 자신이다."""
-    units = equipment["호기"].astype("string").str.strip()
+    """행마다 설비키. Main 설비가 있으면 Main 설비, 없으면 호기 자신이다."""
+    units = equipment[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
     if PARENT_EQUIPMENT_COLUMN not in equipment.columns:
         return units
     parents = equipment[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip()
@@ -133,6 +134,6 @@ def module_group_warnings(equipment: pd.DataFrame) -> list[str]:
     if not suspicious:
         return []
     return [
-        "모체호기로 묶은 모듈 행의 환산비가 모두 1 입니다 — 능력이 모듈 수만큼 부풀려집니다. "
+        "Main 설비로 묶은 모듈 행의 환산비가 모두 1 입니다 — 능력이 모듈 수만큼 부풀려집니다. "
         f"모듈 행에는 1 ÷ 모듈수(4모듈이면 0.25)를 적습니다: {suspicious[:5]}"
     ]

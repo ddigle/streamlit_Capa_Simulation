@@ -107,7 +107,7 @@ def _palette() -> dict[str, str]:
 
 
 def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """브라우저로 보낼 호기. 숫자 아님은 None 으로, 모체호기는 글자일 때만 묶음으로."""
+    """브라우저로 보낼 호기. 숫자 아님은 None 으로, Main 설비는 글자일 때만 묶음으로."""
     return [
         {
             "id": str(item["id"]),
@@ -299,7 +299,7 @@ def render_space_layout_editor(
 
     - ``changes``: 바뀐 호기. 놓인 호기는 좌표·크기, 트레이로 뺀 호기는 크기만(있으면) 든다.
       다른 층으로 보낸 호기는 ``moveTo`` 에 그 층 이름(「C2 2F」)을 단다. 편집기에서 새로 넣은
-      호기는 ``created`` 에 폼 값을 든다. 항목의 ``group``(모체호기)이 같은 호기는 한 덩어리로
+      호기는 ``created`` 에 폼 값을 든다. 항목의 ``group``(Main 설비)이 같은 호기는 한 덩어리로
       움직인다.
     - ``canvas``: 편집 영역을 바꿨을 때만 ``{width, height}``.
     - ``marks``: 도면 요소를 바꿨을 때만 이 층 요소 전체 목록, 아니면 None.

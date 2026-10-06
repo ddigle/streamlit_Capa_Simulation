@@ -49,7 +49,7 @@ def _ids(items: tuple[dict[str, Any], ...], *, placed: bool) -> list[str]:
 
 
 def _parse(payload: dict[str, Any], master: pd.DataFrame, **overrides: Any) -> EditorApply:
-    ids = set(master["호기"].astype(str))
+    ids = set(master["설비명"].astype(str))
     options: dict[str, Any] = {
         "editor_ids": ids,
         "master_ids": ids,
@@ -64,11 +64,18 @@ def _parse(payload: dict[str, Any], master: pd.DataFrame, **overrides: Any) -> E
 
 def test_inputs_split_the_floor_into_drawing_and_tray() -> None:
     master = _master(
-        {"호기": "EQ-TRAY", "X좌표": None, "Y좌표": None},
-        {"호기": "EQ-FLOORLESS", "동": None, "층": None, "X좌표": None, "Y좌표": None},
-        {"호기": "EQ-N", "레이아웃표시": "N", "X좌표": 90.0, "Y좌표": 50.0, "Xsize": 5, "Ysize": 5},
-        {"호기": "EQ-ELSEWHERE", "동": "C2", "층": "2F", "X좌표": None, "Y좌표": None},
-        {"호기": "EQ-GONE", "반출일정": "2026-08-20", "X좌표": 70.0},
+        {"설비명": "EQ-TRAY", "X좌표": None, "Y좌표": None},
+        {"설비명": "EQ-FLOORLESS", "동": None, "층": None, "X좌표": None, "Y좌표": None},
+        {
+            "설비명": "EQ-N",
+            "레이아웃표시": "N",
+            "X좌표": 90.0,
+            "Y좌표": 50.0,
+            "Xsize": 5,
+            "Ysize": 5,
+        },
+        {"설비명": "EQ-ELSEWHERE", "동": "C2", "층": "2F", "X좌표": None, "Y좌표": None},
+        {"설비명": "EQ-GONE", "반출일정": "2026-08-20", "X좌표": 70.0},
     )
 
     inputs = editor_inputs(_status(master), floor=FLOOR)
@@ -84,8 +91,8 @@ def test_inputs_split_the_floor_into_drawing_and_tray() -> None:
 
 def test_a_module_group_standing_on_the_floor_keeps_its_coordless_siblings_off_the_tray() -> None:
     master = _master(
-        {"호기": "M-1", "모체호기": "BIG", "X좌표": 50.0, "Y좌표": 30.0},
-        {"호기": "M-2", "모체호기": "BIG", "X좌표": None, "Y좌표": None},
+        {"설비명": "M-1", "Main 설비": "BIG", "X좌표": 50.0, "Y좌표": 30.0},
+        {"설비명": "M-2", "Main 설비": "BIG", "X좌표": None, "Y좌표": None},
     )
 
     inputs = editor_inputs(_status(master), floor=FLOOR)
@@ -103,7 +110,7 @@ def test_arrivals_from_another_floor_are_drawn_last() -> None:
 
 
 def test_apply_places_moves_unplaces_and_keeps_the_size() -> None:
-    master = _master({"호기": "EQ-TRAY", "X좌표": None, "Y좌표": None, "Xsize": 4, "Ysize": 3})
+    master = _master({"설비명": "EQ-TRAY", "X좌표": None, "Y좌표": None, "Xsize": 4, "Ysize": 3})
     apply = _parse(
         {
             "changes": [
@@ -116,7 +123,7 @@ def test_apply_places_moves_unplaces_and_keeps_the_size() -> None:
     )
 
     result = apply_layout_edits(master, apply, floor=FLOOR, canvases={}, default_canvas=CANVAS)
-    by_id = result.set_index("호기")
+    by_id = result.set_index("설비명")
 
     assert (by_id.loc["EQ-01", "X좌표"], by_id.loc["EQ-01", "Y좌표"]) == (40.0, 20.0)
     # 트레이로 빼면 X·Y 만 비우고 크기는 남긴다.
@@ -149,7 +156,7 @@ def test_a_unit_sent_to_a_smaller_floor_is_pushed_inside_its_canvas() -> None:
     result = apply_layout_edits(
         master, apply, floor=FLOOR, canvases={OTHER: (60.0, 40.0)}, default_canvas=CANVAS
     )
-    row = result.set_index("호기").loc["EQ-01"]
+    row = result.set_index("설비명").loc["EQ-01"]
 
     assert (row["동"], row["층"], row["X좌표"], row["Y좌표"]) == ("C2", "2F", 48.0, 33.0)
 
@@ -168,15 +175,15 @@ def test_a_unit_bigger_than_the_target_floor_lands_in_its_tray() -> None:
     result = apply_layout_edits(
         master, apply, floor=FLOOR, canvases={OTHER: (10.0, 10.0)}, default_canvas=CANVAS
     )
-    row = result.set_index("호기").loc["EQ-01"]
+    row = result.set_index("설비명").loc["EQ-01"]
 
     assert row["동"] == "C2" and pd.isna(row["X좌표"]) and row["Xsize"] == 12
 
 
 def test_moving_one_module_moves_the_whole_group_to_the_floor() -> None:
     master = _master(
-        {"호기": "M-1", "모체호기": "BIG", "X좌표": 50.0, "Y좌표": 30.0},
-        {"호기": "M-2", "모체호기": "BIG", "X좌표": None, "Y좌표": None},
+        {"설비명": "M-1", "Main 설비": "BIG", "X좌표": 50.0, "Y좌표": 30.0},
+        {"설비명": "M-2", "Main 설비": "BIG", "X좌표": None, "Y좌표": None},
     )
     apply = _parse(
         {
@@ -188,7 +195,7 @@ def test_moving_one_module_moves_the_whole_group_to_the_floor() -> None:
     )
 
     result = apply_layout_edits(master, apply, floor=FLOOR, canvases={}, default_canvas=CANVAS)
-    floors = result.set_index("호기").loc[["M-1", "M-2"], ["동", "층"]]
+    floors = result.set_index("설비명").loc[["M-1", "M-2"], ["동", "층"]]
 
     # 모듈 행은 동·층이 같아야 저장된다. 편집기에 없던 형제도 같이 옮긴다.
     assert floors.drop_duplicates().values.tolist() == [["C2", "2F"]]
@@ -221,13 +228,13 @@ def test_a_created_unit_fills_only_what_the_form_asked() -> None:
     )
 
     result = apply_layout_edits(master, apply, floor=FLOOR, canvases={}, default_canvas=CANVAS)
-    row = result.set_index("호기").loc["NEW-1"]
+    row = result.set_index("설비명").loc["NEW-1"]
 
-    assert (row["공정대분류"], row["활용구분"], row["확정상태"]) == ("B/N", "양산", "계획")
+    assert (row["공정대분류"], row["투자구분"], row["확정상태"]) == ("B/N", "양산", "계획")
     assert row["호기이력"] == NEW_UNIT_HISTORY and pd.isna(row["담당자"])
     assert (row["동"], row["X좌표"], row["Xsize"]) == ("C1", 60.0, 8.0)
     prepare_equipment_master(result, floor_canvases={FLOOR: CANVAS})
-    assert layout_changes(master, result)["구분"].tolist() == ["새 호기"]
+    assert layout_changes(master, result)["변경"].tolist() == ["새 호기"]
 
 
 @pytest.mark.parametrize(
@@ -249,7 +256,7 @@ def test_a_created_unit_fills_only_what_the_form_asked() -> None:
         ),
         (
             {"id": "NEW", "placed": False, "w": 1, "h": 1, "created": {"process": "Process-A"}},
-            "입고일정과 Qual일정",
+            "반입일정과 Qual일정",
         ),
         (
             {"id": "NEW", "placed": False, "w": 1, "h": 1, "created": {"process": "X"}},
@@ -287,8 +294,8 @@ def test_an_unknown_mark_rejects_instead_of_vanishing() -> None:
 
 def test_warnings_name_overlaps_and_covered_marks_but_skip_exited_units() -> None:
     master = _master(
-        {"호기": "EQ-OVER", "X좌표": 15.0, "Y좌표": 12.0},
-        {"호기": "EQ-GONE", "반출일정": "2026-08-20", "X좌표": 12.0},
+        {"설비명": "EQ-OVER", "X좌표": 15.0, "Y좌표": 12.0},
+        {"설비명": "EQ-GONE", "반출일정": "2026-08-20", "X좌표": 12.0},
     )
     marks = prepare_floor_layout_marks(
         [{"id": "D1", "kind": "door", "x": 33, "y": 12, "w": 3, "h": 2}], CANVAS
@@ -311,7 +318,7 @@ def test_changes_list_layout_edits_and_count_the_rest_apart() -> None:
 
     changes = layout_changes(saved, buffer)
 
-    assert changes["구분"].tolist() == ["트레이로 빼기(크기 유지)", "층 이동"]
+    assert changes["변경"].tolist() == ["트레이로 빼기(크기 유지)", "층 이동"]
     assert changes.loc[0, "새"] == "C1 1F · 미배치 12×7"
     assert other_change_count(saved, buffer) == 1
     assert other_change_count(saved, saved.iloc[[0]]) == 1
@@ -349,14 +356,20 @@ def test_a_created_unit_does_not_make_every_other_row_look_edited() -> None:
     result = apply_layout_edits(master, apply, floor=FLOOR, canvases={}, default_canvas=CANVAS)
 
     assert other_change_count(master, result) == 0
-    assert result["입고일정"].dtype == master["입고일정"].dtype
+    assert result["반입일정"].dtype == master["반입일정"].dtype
 
 
 def test_hidden_siblings_leave_their_old_coordinates_behind_when_the_group_moves() -> None:
     """편집기에 없던 형제(반출 완료)가 옛 층 좌표를 지닌 채 따라가면 새 층에서 거부된다."""
     master = _master(
-        {"호기": "M-1", "모체호기": "BIG", "X좌표": 50.0, "Y좌표": 30.0},
-        {"호기": "M-2", "모체호기": "BIG", "X좌표": 80.0, "Y좌표": 50.0, "반출일정": "2026-08-20"},
+        {"설비명": "M-1", "Main 설비": "BIG", "X좌표": 50.0, "Y좌표": 30.0},
+        {
+            "설비명": "M-2",
+            "Main 설비": "BIG",
+            "X좌표": 80.0,
+            "Y좌표": 50.0,
+            "반출일정": "2026-08-20",
+        },
     )
     apply = _parse(
         {
@@ -370,7 +383,7 @@ def test_hidden_siblings_leave_their_old_coordinates_behind_when_the_group_moves
     result = apply_layout_edits(
         master, apply, floor=FLOOR, canvases={OTHER: (40.0, 30.0)}, default_canvas=CANVAS
     )
-    sibling = result.set_index("호기").loc["M-2"]
+    sibling = result.set_index("설비명").loc["M-2"]
 
     assert (sibling["동"], sibling["층"]) == ("C2", "2F")
     assert pd.isna(sibling["X좌표"]) and sibling["Xsize"] == 12
@@ -379,27 +392,27 @@ def test_hidden_siblings_leave_their_old_coordinates_behind_when_the_group_moves
 
 def test_units_placed_edge_to_edge_are_not_an_overlap() -> None:
     master = _master(
-        {"호기": "EQ-A", "X좌표": 8.1, "Y좌표": 40.0, "Xsize": 1.2, "Ysize": 1.0},
-        {"호기": "EQ-B", "X좌표": 9.3, "Y좌표": 40.0, "Xsize": 1.0, "Ysize": 1.0},
+        {"설비명": "EQ-A", "X좌표": 8.1, "Y좌표": 40.0, "Xsize": 1.2, "Ysize": 1.0},
+        {"설비명": "EQ-B", "X좌표": 9.3, "Y좌표": 40.0, "Xsize": 1.0, "Ysize": 1.0},
     )
 
     assert layout_warnings(_status(master), {}) == []
 
 
 def test_a_floorless_unit_given_a_floor_is_listed_as_such() -> None:
-    saved = _master({"호기": "EQ-F", "동": None, "층": None, "X좌표": None, "Y좌표": None})
+    saved = _master({"설비명": "EQ-F", "동": None, "층": None, "X좌표": None, "Y좌표": None})
     buffer = saved.copy()
-    buffer.loc[buffer["호기"].eq("EQ-F"), ["동", "층"]] = ["C2", "2F"]
+    buffer.loc[buffer["설비명"].eq("EQ-F"), ["동", "층"]] = ["C2", "2F"]
 
-    assert layout_changes(saved, buffer)["구분"].tolist() == ["층 지정(미배치)"]
+    assert layout_changes(saved, buffer)["변경"].tolist() == ["층 지정(미배치)"]
 
 
 @pytest.mark.parametrize(
     ("unit_id", "message"),
-    [("BIG", "모체호기로 쓰는 이름"), ("APW\xa0101", "특수 공백")],
+    [("BIG", "Main 설비로 쓰는 이름"), ("APW\xa0101", "특수 공백")],
 )
 def test_a_new_unit_name_is_refused_with_its_real_reason(unit_id: str, message: str) -> None:
-    master = _master({"호기": "M-1", "모체호기": "BIG"})
+    master = _master({"설비명": "M-1", "Main 설비": "BIG"})
     with pytest.raises(ValueError, match=message):
         _parse(
             {
@@ -419,7 +432,7 @@ def test_a_new_unit_name_is_refused_with_its_real_reason(unit_id: str, message: 
 
 
 def test_the_viewer_gets_saved_units_with_process_and_downtime_detail() -> None:
-    master = _master({"호기": "M-1", "모체호기": "BIG", "X좌표": 50.0, "Y좌표": 30.0})
+    master = _master({"설비명": "M-1", "Main 설비": "BIG", "X좌표": 50.0, "Y좌표": 30.0})
     status = _status(master)
     located = status.loc[status["동"].eq("C1") & status["X좌표"].notna()]
 

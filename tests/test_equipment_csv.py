@@ -80,19 +80,18 @@ def _incoming_baseline(process: str, category: str, count: float, note: str) -> 
     )
 
 
-def test_equipment_csv_template_round_trips_with_32_columns() -> None:
+def test_equipment_csv_template_round_trips_with_36_columns() -> None:
     result = read_equipment_csv(equipment_csv_template())
 
-    assert len(result.columns) == 32
+    assert len(result.columns) == 36
     assert "사업부" not in result.columns
-    assert result.columns.tolist()[5:7] == ["투자기준", "담당자"]
-    # 새 컬럼은 **맨 끝**에만 붙는다. 중간에 끼우면 기존 붙여넣기 표의 열이 통째로 한 칸씩
-    # 밀린다.
-    assert result.columns.tolist()[-2:] == ["환산비", "모체호기"]
+    assert "투자기준" not in result.columns
+    assert result.columns.tolist() == list(EQUIPMENT_COLUMNS)
     assert len(result) == 1
-    assert result.loc[0, "호기"] == SAMPLE_EQUIPMENT_ID
+    assert result.loc[0, "설비명"] == SAMPLE_EQUIPMENT_ID
     assert result.loc[0, "담당자"] == SAMPLE_EQUIPMENT_MANAGER
-    assert result.loc[0, "비고"] == SAMPLE_EQUIPMENT_NOTE
+    assert result.loc[0, "설비이력"] == SAMPLE_EQUIPMENT_NOTE
+    assert result.loc[0, "투자Capa"] == "299K"
     assert result.loc[0, "확정상태"] == "계획"
     assert result.loc[0, "환산비"] == 1.0
 
@@ -101,9 +100,11 @@ def test_equipment_csv_template_lists_choice_rows_without_equipment_id() -> None
     raw = pd.read_csv(BytesIO(equipment_csv_template()), dtype="object")
 
     assert len(raw) == 1 + len(EQUIPMENT_CHOICE_ROWS)
-    choices = raw.loc[raw["호기"].isna()]
+    choices = raw.loc[raw["설비명"].isna()]
     assert len(choices) == len(EQUIPMENT_CHOICE_ROWS)
-    assert choices["활용구분"].tolist() == ["WLP", "2.5D", "HCB"]
+    assert choices["투자구분"].tolist() == ["WLP", "2.5D", "HCB"]
+    # 안내 행의 예시 값이 계약에 없는 이름으로 적혀 조용히 사라지지 않았다.
+    assert choices["투자Capa"].dropna().tolist() == ["322K"]
     assert set(raw["확정상태"]) == set(QUAL_CONFIRMATION_STATUSES)
 
 
@@ -113,7 +114,7 @@ def test_downtime_csv_template_has_no_id_and_round_trips() -> None:
 
     assert len(downtime_csv_template().decode("utf-8-sig").splitlines()) == 2
     assert "비가동ID" not in result.columns
-    assert result.loc[0, "호기"] == SAMPLE_EQUIPMENT_ID
+    assert result.loc[0, "설비명"] == SAMPLE_EQUIPMENT_ID
     assert result.loc[0, "비고"] == SAMPLE_DOWNTIME_NOTE
 
 
@@ -130,9 +131,9 @@ def test_equipment_templates_round_trip_through_excel_clipboard() -> None:
     downtime = read_downtime_clipboard(downtime_text, equipment=equipment)
 
     assert len(equipment) == 1
-    assert equipment.loc[0, "호기"] == SAMPLE_EQUIPMENT_ID
+    assert equipment.loc[0, "설비명"] == SAMPLE_EQUIPMENT_ID
     assert equipment.loc[0, "담당자"] == SAMPLE_EQUIPMENT_MANAGER
-    assert downtime.loc[0, "호기"] == SAMPLE_EQUIPMENT_ID
+    assert downtime.loc[0, "설비명"] == SAMPLE_EQUIPMENT_ID
 
 
 def test_equipment_csv_merge_and_preview_replace_by_equipment_id() -> None:
@@ -147,7 +148,7 @@ def test_equipment_csv_merge_and_preview_replace_by_equipment_id() -> None:
     assert "공정소분류" in preview.loc[0, "변경컬럼"]
     assert "Process-A → Changed" in preview.loc[0, "변경내용"]
     assert len(result) == 2
-    assert result.loc[result["호기"].eq("EQ-01"), "공정소분류"].item() == "Changed"
+    assert result.loc[result["설비명"].eq("EQ-01"), "공정소분류"].item() == "Changed"
 
 
 def test_preview_reads_blank_cells_the_same_after_the_scalar_fast_path() -> None:
@@ -158,19 +159,19 @@ def test_preview_reads_blank_cells_the_same_after_the_scalar_fast_path() -> None
     빠르게 만드는 것보다 **판정이 한 칸도 달라지지 않는 것**이 중요하므로 세 경우를 못박는다.
     """
     current = _equipment()
-    # EQ-02 는 비고가 차 있고 분류1 은 비어 있다. 두 칸을 한 행에서 함께 본다.
-    incoming = current.loc[current["호기"].eq("EQ-02")].copy()
-    incoming.loc[incoming.index[0], "비고"] = pd.NA
-    incoming.loc[incoming.index[0], "분류1"] = pd.NA
+    # EQ-02 는 설비이력이 차 있고 구분은 비어 있다. 두 칸을 한 행에서 함께 본다.
+    incoming = current.loc[current["설비명"].eq("EQ-02")].copy()
+    incoming.loc[incoming.index[0], "설비이력"] = pd.NA
+    incoming.loc[incoming.index[0], "구분"] = pd.NA
 
     preview = build_equipment_import_preview(current, incoming)
 
     # 값이 있던 칸이 비었다 → 변경으로 잡히고 "(빈 값)" 으로 적힌다.
     assert preview.loc[0, "Import구분"] == "대체"
-    assert "비고" in preview.loc[0, "변경컬럼"]
+    assert "설비이력" in preview.loc[0, "변경컬럼"]
     assert "(빈 값)" in preview.loc[0, "변경내용"]
     # 원래도 비어 있던 칸은 변경이 아니다 — 양쪽 결측은 같은 값으로 본다.
-    assert "분류1" not in preview.loc[0, "변경컬럼"]
+    assert "구분" not in preview.loc[0, "변경컬럼"].split(", ")
 
 
 def test_preview_does_not_depend_on_the_incoming_index() -> None:
@@ -206,7 +207,7 @@ def test_downtime_merge_and_preview_use_natural_key() -> None:
 
 def test_import_preview_marks_new_rows() -> None:
     incoming = _equipment().iloc[[0]].copy()
-    incoming.loc[incoming.index[0], "호기"] = "EQ-NEW"
+    incoming.loc[incoming.index[0], "설비명"] = "EQ-NEW"
 
     preview = build_equipment_import_preview(_equipment(), incoming)
 
@@ -374,10 +375,10 @@ def test_exported_dates_are_plain_days_not_timestamps() -> None:
 
 
 def test_export_guards_identifier_values_excel_would_rewrite_and_reading_strips_them() -> None:
-    """`0123` 같은 호기는 Excel 이 `123` 으로 바꾼다. 식별 컬럼만 `="…"` 로 묶어 내보내고,
+    """`0123` 같은 설비명은 Excel 이 `123` 으로 바꾼다. 식별 컬럼만 `="…"` 로 묶어 내보내고,
     고치지 않고 그대로 되돌린 파일은 읽는 쪽이 껍데기를 벗겨 같은 값으로 읽는다."""
     equipment = prepare_equipment_master(_equipment())
-    equipment.loc[equipment.index[0], "호기"] = "0123"
+    equipment.loc[equipment.index[0], "설비명"] = "0123"
 
     payload = equipment_csv_bytes(equipment)
     text = payload.decode("utf-8-sig")
@@ -387,7 +388,7 @@ def test_export_guards_identifier_values_excel_would_rewrite_and_reading_strips_
     assert '"=""0123"""' in text
     # 숫자·날짜 컬럼은 묶지 않는다 — 숫자로 읽히는 것이 맞고 날짜는 Excel 이 그대로 돌려준다.
     assert text.count('=""') == 1
-    assert read_equipment_csv(payload)["호기"].iloc[0] == "0123"
+    assert read_equipment_csv(payload)["설비명"].iloc[0] == "0123"
     _assert_same_table(read_equipment_csv(payload), equipment)
 
 

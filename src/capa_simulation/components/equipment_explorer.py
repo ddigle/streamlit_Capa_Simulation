@@ -26,7 +26,9 @@ from capa_simulation.services.equipment_availability import (
     inactive_equipment_moments,
 )
 from capa_simulation.services.equipment_contract import (
+    ARRIVAL_DATE_COLUMN,
     DATE_COLUMNS,
+    EQUIPMENT_ID_COLUMN,
     EQUIPMENT_STATUSES,
     MILESTONES,
     PARENT_EQUIPMENT_COLUMN,
@@ -58,8 +60,21 @@ TRANSITION_SCHEDULE_KEY = "equipment_transition_schedule_filter"
 TRANSITION_CONFIRMATION_KEY = "equipment_transition_confirmation_filter"
 QUESTIONS = ("가용대수", "호기 현황", "비가동 호기", "Qual 일정", "단계 전환")
 TRANSITION_STAGES = tuple(label for _, label in MILESTONES)
-_INACTIVE_COLUMNS = ("호기", "공정소분류", "상태", "입고일정", "Qual일정", "반출일정", "이설일")
-_INACTIVE_MONTH_COLUMNS = ("호기", "비가동 시작", "비가동 종료", *_INACTIVE_COLUMNS[1:])
+_INACTIVE_COLUMNS = (
+    EQUIPMENT_ID_COLUMN,
+    "공정소분류",
+    "상태",
+    ARRIVAL_DATE_COLUMN,
+    "Qual일정",
+    "반출일정",
+    "이설일",
+)
+_INACTIVE_MONTH_COLUMNS = (
+    EQUIPMENT_ID_COLUMN,
+    "비가동 시작",
+    "비가동 종료",
+    *_INACTIVE_COLUMNS[1:],
+)
 
 
 # 주차별 설비 현황의 막대 폭을 주 수와 잇는 실측값(1600px 창에서 17주일 때 막대 53px).
@@ -109,21 +124,24 @@ def _rows_label(frame: pd.DataFrame, *, partial: bool = False) -> str:
     rows = len(frame)
     # 행 수와 설비 수가 같은지로 가르지 않는다. 설비마다 모듈 하나씩 멈춘 표는 둘이 같아도
     # 모듈 행이다 — 그것이 바로 「비가동 1대」로 읽히면 안 되는 경우다.
-    if UNIT_KEY_COLUMN not in frame.columns or not frame[UNIT_KEY_COLUMN].ne(frame["호기"]).any():
+    if (
+        UNIT_KEY_COLUMN not in frame.columns
+        or not frame[UNIT_KEY_COLUMN].ne(frame[EQUIPMENT_ID_COLUMN]).any()
+    ):
         return f"{rows:,}대"
     units = int(frame[UNIT_KEY_COLUMN].nunique())
     return f"호기 행 {rows:,} · 설비 {units:,}대" + ("에 걸침" if partial else "")
 
 
 def _with_parent(columns: Sequence[str], frame: pd.DataFrame) -> list[str]:
-    """모듈 행이 있을 때만 `호기` 옆에 `모체호기` 를 보인다. 비모듈 표에는 빈 칸만 늘어난다."""
+    """모듈 행이 있을 때만 `설비명` 옆에 `Main 설비` 를 보인다. 비모듈 표에는 빈 칸만 늘어난다."""
     result = list(columns)
     if (
         PARENT_EQUIPMENT_COLUMN in frame.columns
         and frame[PARENT_EQUIPMENT_COLUMN].notna().any()
-        and "호기" in result
+        and EQUIPMENT_ID_COLUMN in result
     ):
-        result.insert(result.index("호기") + 1, PARENT_EQUIPMENT_COLUMN)
+        result.insert(result.index(EQUIPMENT_ID_COLUMN) + 1, PARENT_EQUIPMENT_COLUMN)
     return result
 
 
@@ -243,7 +261,7 @@ def _availability(
         )
         .properties(height=300)
     )
-    # 읽는 법(각 주 일요일 상태, 환산비 미적용, 모체호기 묶음)은 가용설비 현황 Guide 가 말한다.
+    # 읽는 법(각 주 일요일 상태, 환산비 미적용, Main 설비 묶음)은 가용설비 현황 Guide 가 말한다.
     st.altair_chart(chart, width="stretch")
 
 
@@ -280,13 +298,13 @@ def _transitions(
         return
     if view == "전환 일정 목록":
         # 설비키는 모듈 행이 있을 때만 보인다. 비모듈 행은 호기와 같은 값이라 칸만 는다.
-        has_modules = bool(events[UNIT_KEY_COLUMN].ne(events["호기"]).any())
+        has_modules = bool(events[UNIT_KEY_COLUMN].ne(events[EQUIPMENT_ID_COLUMN]).any())
         st.dataframe(
             events,
             hide_index=True,
             width="stretch",
             column_config={
-                "호기": st.column_config.TextColumn(pinned=True),
+                EQUIPMENT_ID_COLUMN: st.column_config.TextColumn(pinned=True),
                 "전환일": st.column_config.DateColumn(format="YYYY-MM-DD"),
                 UNIT_KEY_COLUMN: st.column_config.TextColumn("설비") if has_modules else None,
             },
@@ -486,13 +504,17 @@ def render_equipment_explorer(
                     width="stretch" if in_card else 240,
                 )
         # 카드 안에는 접는 틀을 한 겹 더 두지 않는다 — 카드가 이미 접힌다.
-        extra = st.container() if in_card else st.expander("추가 조건 · 라인 / 활용 / 공정대분류")
+        extra = (
+            st.container()
+            if in_card
+            else st.expander("추가 조건 · 공정구분 / 투자구분 / 공정대분류")
+        )
         with extra:
             with st.container(horizontal=not in_card, gap="small"):
                 filters = [("공정소분류", selected)]
                 for column, key in (
-                    ("라인구분", LINE_TYPE_KEY),
-                    ("활용구분", UTILIZATION_TYPE_KEY),
+                    ("공정구분", LINE_TYPE_KEY),
+                    ("투자구분", UTILIZATION_TYPE_KEY),
                     ("공정대분류", LARGE_PROCESS_KEY),
                 ):
                     values = st.multiselect(
@@ -524,7 +546,9 @@ def render_equipment_explorer(
         if values:
             filtered = filtered.loc[filtered[column].isin(values)]
     filtered = filtered.copy()
-    filtered_downtime = downtime.loc[downtime["호기"].isin(filtered["호기"])].copy()
+    filtered_downtime = downtime.loc[
+        downtime[EQUIPMENT_ID_COLUMN].isin(filtered[EQUIPMENT_ID_COLUMN])
+    ].copy()
     filtered_baseline = (
         baseline.loc[baseline["공정"].isin(selected)].copy() if selected else baseline
     )
@@ -608,9 +632,10 @@ def render_equipment_explorer(
                     )
                     if view == "호기 목록":
                         _table(
-                            status.sort_values(["Qual일정", "호기"]),
+                            status.sort_values(["Qual일정", EQUIPMENT_ID_COLUMN]),
                             columns=_with_parent(
-                                ["호기", "공정소분류", "Qual일정", "확정상태", "상태"], status
+                                [EQUIPMENT_ID_COLUMN, "공정소분류", "Qual일정", "확정상태", "상태"],
+                                status,
                             ),
                         )
                         return
@@ -628,7 +653,14 @@ def render_equipment_explorer(
                         _table(
                             status,
                             columns=_with_parent(
-                                ["호기", "공정소분류", "상태", "입고일정", "Qual일정"], status
+                                [
+                                    EQUIPMENT_ID_COLUMN,
+                                    "공정소분류",
+                                    "상태",
+                                    ARRIVAL_DATE_COLUMN,
+                                    "Qual일정",
+                                ],
+                                status,
                             ),
                         )
                         return

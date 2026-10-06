@@ -10,9 +10,12 @@ from datetime import date
 import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
+    ARRIVAL_DATE_COLUMN,
     DEFAULT_CONVERSION_RATIO,
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
+    EQUIPMENT_ID_COLUMN,
+    STORAGE_FLAG_COLUMN,
 )
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_schedule,
@@ -194,18 +197,18 @@ def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
     """
     anchor = pd.Timestamp(anchor_date or date.today()).normalize()
     common = {
+        "구분": "임시 샘플",
         "공정대분류": "B/N",
-        "라인구분": "Line-A",
-        "활용구분": "양산",
-        "투자기준": "샘플",
-        "담당자": "샘플 담당자",
         "Maker": "Sample Maker",
-        "모델": "Sample Model",
-        "분류1": "임시 샘플",
-        "분류2": None,
-        "분류3": None,
+        "Model": "Sample Model",
+        "공정구분": "Line-A",
+        "투자Capa": None,
+        "투자구분": "양산",
+        "사용기준": None,
+        "담당자": "샘플 담당자",
+        "설비가동현황": None,
         "호기이력": "화면 검토용 샘플",
-        "비고": "화면 검토용 샘플 · DB 미저장",
+        "설비이력": "화면 검토용 샘플 · DB 미저장",
         "레이아웃표시": "Y",
     }
     records: list[dict[str, object]] = []
@@ -214,7 +217,7 @@ def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
         schedule = _fleet_schedule(kind, index)
         records.append(
             {
-                "호기": equipment_id,
+                EQUIPMENT_ID_COLUMN: equipment_id,
                 **common,
                 "공정소분류": _FLEET_PROCESSES[index % len(_FLEET_PROCESSES)],
                 "동": building,
@@ -225,12 +228,12 @@ def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
                 "Ysize": _FLEET_UNIT_SIZE[1],
                 "제진대일정": _offset_date(anchor, schedule.vibration),
                 "물류일정": _offset_date(anchor, schedule.logistics),
-                "입고일정": _offset_date(anchor, schedule.arrival),
+                ARRIVAL_DATE_COLUMN: _offset_date(anchor, schedule.arrival),
                 "Qual일정": _offset_date(anchor, schedule.qual),
                 "확정상태": schedule.confirmation,
                 "반출일정": _offset_date(anchor, schedule.removal),
                 "이설일": _offset_date(anchor, schedule.relocation),
-                "장기보관여부": schedule.storage,
+                STORAGE_FLAG_COLUMN: schedule.storage,
                 "기존설비여부": schedule.existing,
                 # 같은 공정에 생산성이 다른 모델이 섞인 모습을 샘플에서도 볼 수 있게 둔다.
                 # 전부 1.0 이면 빈 DB 로 여는 사람은 이 컬럼이 무엇을 하는지 알 수 없다.
@@ -262,7 +265,7 @@ def sample_downtime_schedule(*, anchor_date: date | None = None) -> pd.DataFrame
         for span_index, (begins, ends) in enumerate(spans):
             records.append(
                 {
-                    "호기": equipment_id,
+                    EQUIPMENT_ID_COLUMN: equipment_id,
                     "비가동유형": _DOWNTIME_KINDS[(index + span_index) % len(_DOWNTIME_KINDS)],
                     "시작일": anchor + pd.Timedelta(days=begins),
                     "종료일": anchor + pd.Timedelta(days=ends),
@@ -288,7 +291,7 @@ def _fleet_slots() -> list[tuple[str, str, str, float, float]]:
 def _fleet_schedule(kind: str, index: int) -> _FleetSchedule:
     """상태 하나를 일정 여섯 개로 푼다. 검증 규칙이 요구하는 순서를 여기서 지킨다.
 
-    제진대 ≤ 물류 ≤ 입고 ≤ Qual 이어야 하고, 장기보관·기존설비가 아닌 호기는 입고·Qual·
+    제진대 ≤ 물류 ≤ 입고 ≤ Qual 이어야 하고, 보관·기존설비가 아닌 호기는 입고·Qual·
     확정상태가 모두 있어야 한다. 반출일정과 이설일은 함께 둘 수 없다.
     """
     if kind == "보관":

@@ -50,7 +50,10 @@ from capa_simulation.services.equipment_bulk_delete import (
 from capa_simulation.services.equipment_contract import (
     DATE_COLUMNS,
     DOWNTIME_TYPES,
+    EQUIPMENT_ID_COLUMN,
+    PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
+    STORAGE_FLAG_COLUMN,
     VALID_BUILDINGS,
     VALID_FLOORS,
     empty_downtime_schedule,
@@ -173,6 +176,8 @@ class ImportReview:
     source: Frames
     candidate: Frames
     changes: pd.DataFrame
+    # 원문을 읽으며 남긴 알림(빠진 옛 컬럼 `투자기준` 을 떼어 냄 등). 미리보기와 함께 남는다.
+    notices: tuple[str, ...] = ()
 
     def matches(self, target: str, payload: str | bytes, source: Frames) -> bool:
         return (
@@ -776,11 +781,12 @@ def build_import_review(
     **전에** 예시 줄만 빼므로 지운 행이 재검토에서 되살아나지 않는다.
     """
     baseline, equipment, downtime = source
+    notices: list[str] = []
     if target == "호기 마스터":
         incoming = (
-            read_equipment_csv(payload, floor_canvases=floor_canvases)
+            read_equipment_csv(payload, floor_canvases=floor_canvases, notices=notices)
             if isinstance(payload, bytes)
-            else read_equipment_clipboard(payload, floor_canvases=floor_canvases)
+            else read_equipment_clipboard(payload, floor_canvases=floor_canvases, notices=notices)
         )
         changes = build_equipment_import_preview(equipment, incoming)
         equipment = merge_equipment_rows(equipment, incoming, floor_canvases=floor_canvases)
@@ -811,7 +817,12 @@ def build_import_review(
     else:
         raise ValueError("등록할 표를 다시 선택하세요.")
     return ImportReview(
-        target, payload, _copy_frames(source), (baseline, equipment, downtime), changes
+        target,
+        payload,
+        _copy_frames(source),
+        (baseline, equipment, downtime),
+        changes,
+        tuple(notices),
     )
 
 
@@ -1051,22 +1062,29 @@ def _render_editors(
             prefix="equipment_master_view",
             filters=(
                 "공정소분류",
-                "라인구분",
-                "활용구분",
+                "공정구분",
+                "투자구분",
                 "공정대분류",
                 "동",
                 "층",
                 "확정상태",
-                "장기보관여부",
+                STORAGE_FLAG_COLUMN,
                 "기존설비여부",
                 "레이아웃표시",
-                "모체호기",
+                PARENT_EQUIPMENT_COLUMN,
             ),
-            locked=("호기", "공정소분류", "장기보관여부", "기존설비여부", "레이아웃표시"),
+            locked=(
+                EQUIPMENT_ID_COLUMN,
+                "공정소분류",
+                STORAGE_FLAG_COLUMN,
+                "기존설비여부",
+                "레이아웃표시",
+            ),
             label="호기 마스터 · 표 보기 설정",
         )
+        # 설비명은 고정하지 않는다. 고정 열은 Streamlit 이 맨 앞으로 옮겨 계약 차례(6번째)가 깨진다.
         config: dict[str, Any] = {
-            "호기": st.column_config.TextColumn(required=True, pinned=True),
+            EQUIPMENT_ID_COLUMN: st.column_config.TextColumn(required=True),
             "공정소분류": st.column_config.TextColumn(required=True),
             "동": st.column_config.SelectboxColumn(options=list(VALID_BUILDINGS)),
             "층": st.column_config.SelectboxColumn(options=list(VALID_FLOORS)),
@@ -1083,13 +1101,15 @@ def _render_editors(
                 min_value=0.1, max_value=max_extent[1], step=1.0
             ),
             "확정상태": st.column_config.SelectboxColumn(options=list(QUAL_CONFIRMATION_STATUSES)),
-            "장기보관여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),
+            STORAGE_FLAG_COLUMN: st.column_config.SelectboxColumn(
+                options=["N", "Y"], required=True
+            ),
             "기존설비여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),
             "레이아웃표시": st.column_config.SelectboxColumn(options=["Y", "N"], required=True),
             # `step` 을 주지 않는다. Streamlit 은 step 의 소수 자릿수만큼 입력을 **잘라** 저장한다
             # (step=0.1 이면 0.25 → 0.2). 모듈 행의 0.25·0.125 가 그대로 들어가야 한다.
             "환산비": st.column_config.NumberColumn(min_value=0.01),
-            "모체호기": st.column_config.TextColumn(
+            PARENT_EQUIPMENT_COLUMN: st.column_config.TextColumn(
                 help=(
                     "모듈 행을 설비 한 대로 묶는 설비 ID 입니다(APW01A~D → APW01). "
                     "비모듈 설비는 비웁니다."
@@ -1142,8 +1162,8 @@ def _render_editors(
             downtime,
             key=DOWNTIME_EDITOR_KEY,
             prefix="equipment_downtime_view",
-            filters=("호기", "비가동유형"),
-            locked=("호기", "비가동유형", "시작일"),
+            filters=(EQUIPMENT_ID_COLUMN, "비가동유형"),
+            locked=(EQUIPMENT_ID_COLUMN, "비가동유형", "시작일"),
             label="운영 비가동 일정 · 표 보기 설정",
         )
         types = sorted(set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str)))
@@ -1154,7 +1174,7 @@ def _render_editors(
             key=DOWNTIME_EDITOR_KEY,
             target=DOWNTIME_TARGET,
             column_config={
-                "호기": st.column_config.TextColumn(required=True, pinned=True),
+                EQUIPMENT_ID_COLUMN: st.column_config.TextColumn(required=True, pinned=True),
                 "비가동유형": st.column_config.SelectboxColumn(options=types, required=True),
                 "시작일": st.column_config.DateColumn(format="YYYY-MM-DD", required=True),
                 "종료일": st.column_config.DateColumn(format="YYYY-MM-DD"),
@@ -1232,7 +1252,7 @@ def _render_history(repository: DuckDBEquipmentRepository) -> None:
                 ("공정소분류", "process"),
                 ("동", "building"),
                 ("층", "floor"),
-                ("호기", "id"),
+                (EQUIPMENT_ID_COLUMN, "id"),
             ):
                 filters[column] = st.multiselect(
                     column,
@@ -1259,7 +1279,7 @@ def _render_history(repository: DuckDBEquipmentRepository) -> None:
         if selected:
             equipment = equipment.loc[equipment[column].isin(selected)]
     if any(filters.values()):
-        downtime = downtime.loc[downtime["호기"].isin(equipment["호기"])]
+        downtime = downtime.loc[downtime[EQUIPMENT_ID_COLUMN].isin(equipment[EQUIPMENT_ID_COLUMN])]
     if downtime_types:
         downtime = downtime.loc[downtime["비가동유형"].isin(downtime_types)]
     start, end = date_range_value(event_range, default_range)
@@ -1311,7 +1331,7 @@ def render_equipment_data_workspace(
             "저장할 때 세 표 전체가 새 리비전으로 보관됩니다."
         )
     pending = st.session_state.get(PREVIEW_KEY)
-    # 알림(오류·안내·예시 행·모체호기 묶음)은 수가 회차마다 다르다. **늘 서 있는 한 칸** 안에
+    # 알림(오류·안내·예시 행·Main 설비 묶음)은 수가 회차마다 다르다. **늘 서 있는 한 칸** 안에
     # 그려 아래 key 있는 펼침·탭의 자리를 고정한다 — 자리가 밀리면 `st.rerun()` 으로 끊긴
     # 저장 회차의 사본이 화면에 남는다(2026-10-05 E2E).
     with st.container():
@@ -1341,7 +1361,7 @@ def render_equipment_data_workspace(
         master = pending.candidate[1] if isinstance(pending, ImportReview) else frames[1]
         for message in module_group_warnings(master):
             st.warning(message, icon=":material/view_module:")
-    # 표마다 무엇을 키로 대체하는지·모체호기·환산비 같은 작성 기준은 Guide 가 말한다. 여기는
+    # 표마다 무엇을 키로 대체하는지·Main 설비·환산비 같은 작성 기준은 Guide 가 말한다. 여기는
     # 내려받기만 남긴다.
     with st.expander(
         "입력 양식 · 현재 데이터 내려받기", expanded=False, key=DOWNLOADS_EXPANDER_KEY
@@ -1412,6 +1432,8 @@ def render_equipment_data_workspace(
                 )
             if isinstance(pending, ImportReview):
                 st.markdown(f"**{pending.target} · 저장할 변경 {len(pending.changes):,}행**")
+                for message in pending.notices:
+                    st.info(message, icon=":material/info:")
                 with st.container(horizontal=True):
                     st.metric("신규", f"{int(pending.changes['Import구분'].eq('신규').sum()):,}건")
                     st.metric(

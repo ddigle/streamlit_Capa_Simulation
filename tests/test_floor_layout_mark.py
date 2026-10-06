@@ -145,7 +145,7 @@ def test_a_failed_master_check_writes_neither_canvas_nor_marks(tmp_path: Path) -
     repository = _repository(tmp_path / "equipment.duckdb")
     repository.save_snapshot(_baseline(), _equipment(), _downtime())
     broken = _equipment()
-    broken.loc[1, "호기"] = broken.loc[0, "호기"]
+    broken.loc[1, "설비명"] = broken.loc[0, "설비명"]
 
     with pytest.raises(ValueError, match="중복"):
         repository.save_snapshot(

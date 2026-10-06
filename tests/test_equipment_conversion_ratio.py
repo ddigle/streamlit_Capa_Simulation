@@ -33,14 +33,15 @@ from capa_simulation.services.equipment_contract import (
 from capa_simulation.services.equipment_validation import prepare_equipment_master
 
 
-def test_the_column_keeps_its_place_at_the_end_of_the_contract() -> None:
-    """중간에 끼우면 기존 붙여넣기 표의 열이 통째로 한 칸씩 밀린다.
+def test_the_column_keeps_its_place_in_the_contract() -> None:
+    """계약 차례는 `환산비` 다음이 `Main 설비` 이고 메모 세 칸이 맨 뒤다.
 
-    뒤에 붙은 것은 선택 컬럼 `모체호기` 하나뿐이다 — 31열 양식은 그대로 읽힌다.
+    파일 입구는 컬럼 이름으로 고르므로 옛 차례의 표도 그대로 읽힌다.
     """
-    assert EQUIPMENT_COLUMNS[-2] == CONVERSION_RATIO_COLUMN
-    assert EQUIPMENT_COLUMNS[-1] == PARENT_EQUIPMENT_COLUMN
-    assert len(EQUIPMENT_COLUMNS) == 32
+    ratio = EQUIPMENT_COLUMNS.index(CONVERSION_RATIO_COLUMN)
+    assert EQUIPMENT_COLUMNS[ratio + 1] == PARENT_EQUIPMENT_COLUMN
+    assert EQUIPMENT_COLUMNS[-3:] == ("메모1", "메모2", "메모3")
+    assert len(EQUIPMENT_COLUMNS) == 36
 
 
 def test_the_empty_frame_types_it_as_a_number() -> None:

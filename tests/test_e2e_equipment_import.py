@@ -302,11 +302,11 @@ def _wide_preview_pair(rows: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     template = read_equipment_csv(equipment_csv_template())
     repeated = pd.concat([template] * rows, ignore_index=True)
-    repeated["호기"] = [f"EQ{index:05d}" for index in range(len(repeated))]
+    repeated["설비명"] = [f"EQ{index:05d}" for index in range(len(repeated))]
     incoming = prepare_equipment_master(repeated)
     current = incoming.copy()
     for column in current.columns:
-        if column == "호기":
+        if column == "설비명":
             continue
         if current[column].dtype == "object" or str(current[column].dtype) == "string":
             current[column] = "이전값"
@@ -468,24 +468,24 @@ def test_the_preview_marks_the_same_cells_blank_on_both_paths() -> None:
     assert csv_preview.loc[1, "변경내용"] == "비고: (빈 값) → NA"
 
 
-def test_the_31_column_master_reads_the_same_on_both_paths() -> None:
-    """네 컬럼짜리 표뿐 아니라 날짜·숫자가 섞인 31열에서도 두 경로가 같아야 한다.
+def test_the_full_width_master_reads_the_same_on_both_paths() -> None:
+    """네 컬럼짜리 표뿐 아니라 날짜·숫자가 섞인 설비 마스터 전체 열에서도 두 경로가 같아야 한다.
 
     빈 칸이 날짜면 `NaT`, 좌표면 `NaN` 이 되고 글자면 `<NA>` 가 된다. 결측 판정이 경로마다
     다르면 이 셋이 전부 갈라지므로, 폭이 넓은 표에서 한 번 더 묶어 둔다.
     """
     template = pd.read_csv(BytesIO(equipment_csv_template()), **TEXT_TABLE_READ_OPTIONS)
     edited = template.iloc[[0]].fillna("").astype(str).copy()
-    # 업무 값으로서의 `NA` 하나와, 비워 둔 날짜·비고 하나씩.
-    edited.loc[:, "분류1"] = "NA"
+    # 업무 값으로서의 `NA` 하나와, 비워 둔 날짜·설비이력 하나씩.
+    edited.loc[:, "구분"] = "NA"
     edited.loc[:, "반출일정"] = ""
-    edited.loc[:, "비고"] = ""
+    edited.loc[:, "설비이력"] = ""
     rows = [list(edited.columns), *edited.values.tolist()]
 
     from_csv = read_equipment_csv(_csv_bytes(rows))
     from_clipboard = read_equipment_clipboard(_tab_text(rows))
 
     assert_frame_equal(from_csv, from_clipboard)
-    assert from_csv.loc[0, "분류1"] == "NA"
+    assert from_csv.loc[0, "구분"] == "NA"
     assert pd.isna(from_csv.loc[0, "반출일정"])
-    assert pd.isna(from_csv.loc[0, "비고"])
+    assert pd.isna(from_csv.loc[0, "설비이력"])

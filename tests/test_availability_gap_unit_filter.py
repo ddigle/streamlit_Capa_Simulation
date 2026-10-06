@@ -31,15 +31,15 @@ def _filter_app() -> None:
 
     units = pd.DataFrame(
         {
-            "호기": ["EQ-1", "EQ-2", "EQ-3"],
+            "설비명": ["EQ-1", "EQ-2", "EQ-3"],
             "공정소분류": ["Die Attach", "Die Attach", "Etch"],
-            "라인구분": ["Line-A", "Line-B", "Line-A"],
-            "모델": ["M-1", "M-2", " "],
+            "공정구분": ["Line-A", "Line-B", "Line-A"],
+            "Model": ["M-1", "M-2", " "],
         }
     )
     spans = pd.DataFrame(
         {
-            "호기": units["호기"],
+            "설비명": units["설비명"],
             "공정소분류": units["공정소분류"],
             "상태": ["가용"] * 3,
             "시작일": [date(2020, 1, 1)] * 3,
@@ -109,7 +109,7 @@ def test_unit_filter_sums_only_the_chosen_units_by_category() -> None:
     assert before.loc[DYNAMIC_SUBTOTAL_ROW, "26.10"] == 11.0
     assert STATIC_ROW in before.index
 
-    _filter(app, "라인구분", ["Line-A"])
+    _filter(app, "공정구분", ["Line-A"])
     matrix = _matrix(app)
     # Line-A 는 EQ-1(Die Attach)·EQ-3(Etch) 둘. 기존보유는 호기 속성이 없어 빠진다.
     assert matrix.loc["가용", "26.10"] == 2.0
@@ -128,30 +128,30 @@ def test_unit_filter_sums_only_the_chosen_units_by_category() -> None:
     app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
     assert not app.exception
     units = _matrix(app)
-    assert units["호기"].tolist() == ["EQ-1"]
+    assert units["설비명"].tolist() == ["EQ-1"]
 
 
 def test_removing_a_column_releases_its_values() -> None:
     """컬럼을 빼면 그 값 선택도 풀린다. 남기면 다시 고를 때 잊은 조건이 되살아난다."""
     app = _run()
-    _filter(app, "라인구분", ["Line-B"])
+    _filter(app, "공정구분", ["Line-B"])
     assert _matrix(app).loc["가용", "26.10"] == 1.0
 
     app.multiselect(key=UNIT_FILTER_COLUMNS_KEY).set_value([]).run()
     assert not app.exception
-    assert app.session_state[unit_filter_key("라인구분")] == []
+    assert app.session_state[unit_filter_key("공정구분")] == []
     assert _matrix(app).loc[DYNAMIC_SUBTOTAL_ROW, "26.10"] == 11.0
 
-    app.multiselect(key=UNIT_FILTER_COLUMNS_KEY).set_value(["라인구분"]).run()
-    assert app.multiselect(key=unit_filter_key("라인구분")).value == []
+    app.multiselect(key=UNIT_FILTER_COLUMNS_KEY).set_value(["공정구분"]).run()
+    assert app.multiselect(key=unit_filter_key("공정구분")).value == []
 
 
 def test_blank_values_are_not_offered_and_a_chosen_column_with_no_value_filters_nothing() -> None:
     app = _run()
-    app.multiselect(key=UNIT_FILTER_COLUMNS_KEY).set_value(["모델"]).run()
+    app.multiselect(key=UNIT_FILTER_COLUMNS_KEY).set_value(["Model"]).run()
     assert not app.exception
     # 빈 칸(공백만 있는 값)은 고를 값이 아니다.
-    assert app.multiselect(key=unit_filter_key("모델")).options == ["M-1", "M-2"]
+    assert app.multiselect(key=unit_filter_key("Model")).options == ["M-1", "M-2"]
     # 컬럼만 고르고 값을 안 고르면 아무것도 거르지 않는다.
     assert _matrix(app).loc[DYNAMIC_SUBTOTAL_ROW, "26.10"] == 11.0
 
@@ -164,7 +164,7 @@ def test_the_caption_counts_only_the_units_inside_the_chosen_process() -> None:
     18대 중 Die Attach 3대).
     """
     app = _run()
-    _filter(app, "라인구분", ["Line-A"])
+    _filter(app, "공정구분", ["Line-A"])
     captions = " ".join(caption.value for caption in app.caption)
     assert "호기 2개만 더합니다" in captions
 

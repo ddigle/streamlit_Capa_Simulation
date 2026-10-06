@@ -31,7 +31,7 @@ from capa_simulation.services.weekly_availability_input import (
 
 def _repository(path: Path) -> DuckDBEquipmentRepository:
     repository = DuckDBEquipmentRepository(path)
-    assert repository.initialize() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13)
+    assert repository.initialize() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15)
     assert repository.initialize() == ()
     return repository
 
@@ -238,15 +238,15 @@ def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (3, 4, 5, 6, 7, 8, 9, 10, 11, 13)
+    assert repository.initialize() == (3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15)
     snapshot = repository.load_snapshot("legacy-r1")
 
-    assert snapshot.equipment.loc[0, "호기"] == "EQ-LEGACY"
+    assert snapshot.equipment.loc[0, "설비명"] == "EQ-LEGACY"
     assert snapshot.equipment.loc[0, "공정소분류"] == "Process-A"
     assert snapshot.equipment.loc[0, "Qual일정"] == pd.Timestamp("2026-08-10")
     assert snapshot.equipment.loc[0, "확정상태"] == "계획"
     assert snapshot.downtime.columns.tolist() == [
-        "호기",
+        "설비명",
         "비가동유형",
         "시작일",
         "종료일",

@@ -32,7 +32,7 @@ def _unit_shares(equipment: pd.DataFrame) -> pd.Series:
 
 
 def equipment_unit_total(equipment: pd.DataFrame) -> float:
-    """행이 아니라 설비 대수. 모체호기로 묶은 모듈 행 넷이 한 대다."""
+    """행이 아니라 설비 대수. Main 설비로 묶은 모듈 행 넷이 한 대다."""
     return unit_total(_unit_shares(equipment))
 
 

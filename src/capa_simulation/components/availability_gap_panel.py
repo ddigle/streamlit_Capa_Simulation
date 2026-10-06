@@ -15,7 +15,7 @@
 같은 칸을 더하면 표의 값이다.
 
 **분류별 내역은 호기 마스터의 컬럼으로 호기를 좁혀 더할 수 있다**(`호기 필터`, 2026-09-29 사용자
-요청). 공정처럼 조건 카드에서 컬럼(라인구분·모델·동 …)과 값을 고르면 **그 호기만** 분류대로
+요청). 공정처럼 조건 카드에서 컬럼(공정구분·Model·동 …)과 값을 고르면 **그 호기만** 분류대로
 다시 더한다 — 대수 표·칸의 호기·호기 목록이 모두 같은 호기 집합을 본다. 필터가 걸리면
 `기존보유`(호기 마스터 밖의 집계 대수)와 `Static`·`GAP`(기준정보의 공정 단위 값)은 호기 속성이
 없어 표에서 뺀다 — 걸러진 Dynamic 을 거르지 않은 Static 과 맞대면 GAP 이 거짓말을 한다.
@@ -44,6 +44,12 @@ from capa_simulation.services.availability_gap import (
     GapComparison,
     build_availability_gap,
     gap_matrix,
+)
+from capa_simulation.services.equipment_contract import (
+    EQUIPMENT_ID_COLUMN,
+    INVESTMENT_CAPA_COLUMN,
+    PARENT_EQUIPMENT_COLUMN,
+    STORAGE_FLAG_COLUMN,
 )
 from capa_simulation.services.equipment_units import format_unit_count
 from capa_simulation.services.month_columns import month_label
@@ -83,22 +89,22 @@ _UNIT_FILTER_KEY_PREFIX = "equipment_gap_unit_filter_v1"
 # 날짜·좌표·환산비처럼 호기마다 다른 연속값은 고를 값이 아니라 뺀다.
 UNIT_FILTER_COLUMNS = (
     "공정대분류",
-    "라인구분",
-    "활용구분",
-    "투자기준",
+    "공정구분",
+    "투자구분",
+    INVESTMENT_CAPA_COLUMN,
     "담당자",
     "Maker",
-    "모델",
-    "분류1",
-    "분류2",
-    "분류3",
+    "Model",
+    "구분",
+    "사용기준",
+    "설비가동현황",
     "동",
     "층",
     "확정상태",
-    "장기보관여부",
+    STORAGE_FLAG_COLUMN,
     "기존설비여부",
-    "모체호기",
-    "호기",
+    PARENT_EQUIPMENT_COLUMN,
+    EQUIPMENT_ID_COLUMN,
 )
 _ALL_PROCESSES = "전체 합계"
 _RESULT_VIEWS = ("가용대수 비교", "분류별 내역", "확보율 교차검증")
@@ -338,7 +344,7 @@ def _scoped_contributions(
 ) -> pd.DataFrame:
     """표와 같은 범위의 호기별 기여. 목록을 볼 때만 만든다 — 대수 표만 보면 들지 않는 비용이다.
 
-    `chosen_units` 가 있으면 그 호기만 남긴다. 기존보유 줄은 `호기` 가 비어 함께 빠진다 — 호기
+    `chosen_units` 가 있으면 그 호기만 남긴다. 기존보유 줄은 `설비명` 이 비어 함께 빠진다 — 호기
     필터를 건 대수 표(`_unit_filtered_matrix`)와 같은 범위다.
     """
     contributions = build_monthly_equipment_contributions(
@@ -346,7 +352,7 @@ def _scoped_contributions(
     )
     kept = contributions["공정"].astype(str).isin(scope)
     if chosen_units is not None:
-        kept &= contributions["호기"].isin(chosen_units).fillna(False).astype(bool)
+        kept &= contributions[EQUIPMENT_ID_COLUMN].isin(chosen_units).fillna(False).astype(bool)
     return contributions.loc[kept].reset_index(drop=True)
 
 
@@ -396,7 +402,7 @@ def _render_unit_filters(units: pd.DataFrame, scope: set[str]) -> tuple[set[str]
         options=offered,
         key=UNIT_FILTER_COLUMNS_KEY,
         persist_state="session",
-        placeholder="컬럼 선택 · 라인구분·모델·동 …",
+        placeholder="컬럼 선택 · 공정구분·Model·동 …",
         on_change=_drop_unchosen_values,
         args=(columns,),
     )
@@ -443,7 +449,7 @@ def _render_unit_filters(units: pd.DataFrame, scope: set[str]) -> tuple[set[str]
         return None, []
     # 공정 범위 안의 호기만 돌려준다. 표는 어차피 범위로 다시 좁히지만, 본문 캡션이 이 수를
     # 「호기 N개만 더합니다」로 적는다 — 범위 밖 호기까지 세면 그 수가 표와 어긋났다(2026-10-01).
-    unit_ids = _text_values(units["호기"]).loc[kept & in_scope]
+    unit_ids = _text_values(units[EQUIPMENT_ID_COLUMN]).loc[kept & in_scope]
     return set(unit_ids.dropna()), applied
 
 
@@ -464,7 +470,7 @@ def _unit_filtered_matrix(
     않는다, 2026-10-01). 거르는 줄은 걸러진 Dynamic 을 거르지 않은 Static 과 맞대지 않는다는
     이 경로의 약속을 서비스 규칙과 따로 지킨다.
     """
-    unit_ids = _text_values(spans["호기"])
+    unit_ids = _text_values(spans[EQUIPMENT_ID_COLUMN])
     chosen_spans = spans.loc[unit_ids.isin(chosen_units).fillna(False).astype(bool)]
     monthly = build_monthly_equipment_availability(
         chosen_spans, pd.DataFrame(), cutoff, months, conversion_ratios=conversion_ratios
@@ -499,14 +505,17 @@ def _unit_table(rows: pd.DataFrame, *, with_month: bool) -> pd.DataFrame:
     설비키는 모듈 행이 있을 때만 보인다(비모듈은 호기와 같은 값이라 칸만 는다).
     """
     table = rows.copy()
-    is_baseline = table["호기"].isna()
-    table["호기"] = (
-        table["호기"]
+    is_baseline = table[EQUIPMENT_ID_COLUMN].isna()
+    table[EQUIPMENT_ID_COLUMN] = (
+        table[EQUIPMENT_ID_COLUMN]
         .astype("string")
         .mask(is_baseline, "기존보유 · " + table["기존보유분류"].astype("string").fillna("전체"))
     )
-    columns = ["공정", "분류", "호기"]
-    if bool(table["설비키"].notna().any() and table["설비키"].ne(rows["호기"]).fillna(False).any()):
+    columns = ["공정", "분류", EQUIPMENT_ID_COLUMN]
+    if bool(
+        table["설비키"].notna().any()
+        and table["설비키"].ne(rows[EQUIPMENT_ID_COLUMN]).fillna(False).any()
+    ):
         table = table.rename(columns={"설비키": "설비"})
         columns.append("설비")
     columns += ["기여일수", "구간일수", "대수", "환산대수"]

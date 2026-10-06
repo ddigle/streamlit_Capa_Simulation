@@ -67,9 +67,9 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     filter_labels = {
         widget.label
         for widget in app.multiselect
-        if widget.label in {"라인구분", "활용구분", "공정대분류", "공정소분류"}
+        if widget.label in {"공정구분", "투자구분", "공정대분류", "공정소분류"}
     }
-    assert filter_labels == {"라인구분", "활용구분", "공정대분류", "공정소분류"}
+    assert filter_labels == {"공정구분", "투자구분", "공정대분류", "공정소분류"}
     # 거르는 조건은 사이드바 카드, 무엇을 볼지(볼 내용·보기·표현)는 본문이다(2026-09-29 결정).
     assert {widget.label for widget in app.sidebar.multiselect} >= filter_labels
     assert "볼 내용" in {widget.label for widget in app.main.segmented_control}
@@ -83,8 +83,8 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     def _filter(label: str) -> object:
         return next(widget for widget in app.multiselect if widget.label == label)
 
-    _filter("라인구분").set_value(["Line-A"])
-    _filter("활용구분").set_value(["양산"])
+    _filter("공정구분").set_value(["Line-A"])
+    _filter("투자구분").set_value(["양산"])
     app.run()
 
     assert not app.exception
@@ -292,15 +292,15 @@ def _seeded_equipment(database_path: Path) -> None:
     repository.initialize()
     equipment = empty_equipment_master()
     equipment.loc[0] = {column: None for column in equipment.columns}
-    equipment.loc[0, "호기"] = "EQ-1"
+    equipment.loc[0, "설비명"] = "EQ-1"
     equipment.loc[0, "공정소분류"] = "DEMO_PROC"
-    equipment.loc[0, "장기보관여부"] = "N"
+    equipment.loc[0, "보관유무"] = "N"
     equipment.loc[0, "기존설비여부"] = "Y"
     equipment.loc[0, "레이아웃표시"] = "N"
     equipment.loc[0, "담당자"] = "숨김 컬럼 보존"
     downtime = empty_downtime_schedule()
     downtime.loc[0] = {column: None for column in downtime.columns}
-    downtime.loc[0, "호기"] = "EQ-1"
+    downtime.loc[0, "설비명"] = "EQ-1"
     downtime.loc[0, "비가동유형"] = "고장"
     downtime.loc[0, "시작일"] = date(2026, 1, 1)
     repository.save_snapshot(
@@ -370,7 +370,7 @@ def test_hiding_a_column_keeps_its_values_in_the_saved_frame(tmp_path: Path) -> 
     saved = repository.load_snapshot(revisions[0].revision_id)
     assert saved.baseline["비고"].tolist() == ["숨겨도 유지할 값"]
     assert saved.equipment["담당자"].tolist() == ["숨김 컬럼 보존"]
-    assert saved.downtime["호기"].tolist() == ["EQ-1"]
+    assert saved.downtime["설비명"].tolist() == ["EQ-1"]
 
 
 def test_the_empty_page_lists_the_three_inputs_with_counts_and_links(tmp_path: Path) -> None:

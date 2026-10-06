@@ -141,7 +141,7 @@ def test_saving_equipment_uses_the_floor_canvas_and_loading_stays_readable(
         repository.save_snapshot(_baseline(), _equipment(), _downtime())
 
     reloaded = repository.load_snapshot(saved.revision.revision_id)
-    assert reloaded.equipment["호기"].tolist() == ["EQ-01", "EQ-02"]
+    assert reloaded.equipment["설비명"].tolist() == ["EQ-01", "EQ-02"]
 
 
 def test_shrunk_canvas_error_on_an_unrelated_save_names_the_floor_canvas_and_the_fix(

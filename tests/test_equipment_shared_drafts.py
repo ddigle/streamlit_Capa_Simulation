@@ -40,7 +40,7 @@ def _space_first(database: str) -> None:
         st.session_state[f"{EQUIPMENT_EDITOR_KEY}_applied_view"] = "옛 보기"
         before = equipment_buffer_generation()
         moved = frames[1].copy()
-        moved.loc[moved["호기"].eq("EQ-01"), "X좌표"] = 55.0
+        moved.loc[moved["설비명"].eq("EQ-01"), "X좌표"] = 55.0
         replace_equipment_buffer((frames[0], moved, frames[2]))
         st.session_state["generation_bumped"] = equipment_buffer_generation() > before
         st.session_state["applied_view_dropped"] = (
@@ -48,7 +48,7 @@ def _space_first(database: str) -> None:
         )
     # 다음 회차에 RawData 쪽이 같은 helper 로 다시 세워도 Space 편집이 남아야 한다.
     buffer = st.session_state[BUFFER_KEY][1]
-    st.session_state["x"] = float(buffer.loc[buffer["호기"].eq("EQ-01"), "X좌표"].iloc[0])
+    st.session_state["x"] = float(buffer.loc[buffer["설비명"].eq("EQ-01"), "X좌표"].iloc[0])
 
 
 def test_an_edit_made_in_space_first_survives_when_rawdata_seeds_later(tmp_path: Path) -> None:
@@ -85,7 +85,7 @@ def _save_with_pending_layout(database: str, revision_optional: bool) -> None:
     master = frames[1].copy()
     if not revision_optional:
         # 넓힌 캔버스(130) 안에만 들어가는 자리. 저장된 캔버스(기본 100)로 검증하면 막힌다.
-        master.loc[master["호기"].eq("EQ-01"), "X좌표"] = 110.0
+        master.loc[master["설비명"].eq("EQ-01"), "X좌표"] = 110.0
     stage_floor_canvas(("C1", "1F"), (130.0, 60.0))
     stage_floor_marks(
         ("C1", "1F"),
@@ -159,7 +159,7 @@ def _edit_then_someone_saves(database: str) -> None:
             ),
         )
         other = frames[1].copy()
-        other.loc[other["호기"].eq("EQ-02"), "담당자"] = "담당B"
+        other.loc[other["설비명"].eq("EQ-02"), "담당자"] = "담당B"
         repository.save_snapshot(frames[0], other, frames[2], note="다른 사람")
         return
     st.session_state["notice"] = pop_discarded_notice()
@@ -287,7 +287,7 @@ def _replaced_flag(database: str) -> None:
         replace_equipment_buffer(tuple(frame.copy() for frame in frames))
         st.session_state["bumped"] = equipment_buffer_generation() > before
         other = frames[1].copy()
-        other.loc[other["호기"].eq("EQ-02"), "담당자"] = "담당B"
+        other.loc[other["설비명"].eq("EQ-02"), "담당자"] = "담당B"
         repository.save_snapshot(frames[0], other, frames[2], note="다른 사람")
 
 

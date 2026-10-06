@@ -217,13 +217,13 @@ export default function (component) {
     return parts.join(' · ') + (opensFloor(item) ? ' · 누르면 열기' : '')
   }
   const hasSize = (item) => Number.isFinite(item.w) && item.w > 0 && Number.isFinite(item.h) && item.h > 0
-  const unitTip = (item) => `${item.label} · ${item.stage || ''}${item.detail ? ` · ${item.detail}` : ''}${item.group ? ` · 모체 ${item.group}` : ''}${item.arrived ? ' · 다른 층에서 옴' : ''}`
+  const unitTip = (item) => `${item.label} · ${item.stage || ''}${item.detail ? ` · ${item.detail}` : ''}${item.group ? ` · Main 설비 ${item.group}` : ''}${item.arrived ? ' · 다른 층에서 옴' : ''}`
   const sameGeometry = (a, b) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
   const sameNumber = (p, q) => p === q || (Number.isNaN(p) && Number.isNaN(q))
   const sameSize = (a, b) => sameNumber(a.w, b.w) && sameNumber(a.h, b.h)
   // 이 층 도면에 서 있는가. 다른 층으로 보낸 호기는 좌표를 지닌 채 이 층에서만 빠진다.
   const onCanvas = (m) => m.placed && !m.moveTo
-  // 모체호기로 묶은 모듈 행은 한 덩어리다. 묶음이 없으면 자기 하나.
+  // Main 설비로 묶은 모듈 행은 한 덩어리다. 묶음이 없으면 자기 하나.
   const members = (item) => (item.group ? [...S.items.values()].filter((m) => m.group === item.group) : [item])
   const placedMembers = (item) => members(item).filter(onCanvas)
   // 고른 것들. S.selected 는 그중 기준(마지막으로 누른) 것이다.
@@ -891,7 +891,7 @@ export default function (component) {
     } else if (isMark(single)) {
       inspectorName.textContent = `${MARK_KINDS[single.kind].name}${single.label ? ` · ${single.label}` : ''}`
     } else if (single.group) {
-      inspectorName.textContent = `${single.label} · 모체 ${single.group} (모듈 ${members(single).length})`
+      inspectorName.textContent = `${single.label} · Main 설비 ${single.group} (모듈 ${members(single).length})`
     } else {
       inspectorName.textContent = single.label
     }
@@ -978,7 +978,7 @@ export default function (component) {
   function pickText(item) {
     if (isMark(item)) return `선택 ${MARK_KINDS[item.kind]?.name || item.kind}${item.label ? ` · ${item.label}` : ''}`
     return `선택 ${item.label} · ${item.stage || '-'}${item.detail ? ` · ${item.detail}` : ''}`
-      + `${item.group ? ` · 모체 ${item.group}` : ''} · X ${item.x} · Y ${item.y} · ${item.w}×${item.h}`
+      + `${item.group ? ` · Main 설비 ${item.group}` : ''} · X ${item.x} · Y ${item.y} · ${item.w}×${item.h}`
   }
 
   function updateStatus() {
@@ -1784,8 +1784,8 @@ export default function (component) {
   }
 
   // ---------------------------------------------------------------- 편집기에서 호기 추가
-  // 적용 전까지는 이 편집기 안에만 있다(층 미정·미배치). 호기 마스터가 꼭 요구하는 값만 받는다 — 공정·라인·
-  // 활용·크기, 그리고 신규 설비면 입고·Qual 일정과 확정상태(기존 설비는 일정이 없어도 된다). 다른 호기의
+  // 적용 전까지는 이 편집기 안에만 있다(층 미정·미배치). 호기 마스터가 꼭 요구하는 값만 받는다 — 공정·공정구분·
+  // 투자구분·크기, 그리고 신규 설비면 반입·Qual 일정과 확정상태(기존 설비는 일정이 없어도 된다). 다른 호기의
   // 일정·확정상태를 베끼지 않는다. 마스터의 나머지 칸은 가용설비에서 채운다.
   const fillSelect = (node, values, blank) => {
     const wanted = [blank === undefined ? null : blank, ...values].filter((v) => v !== null)
@@ -1818,13 +1818,13 @@ export default function (component) {
     const w = newW.value === '' ? hintW : roundTo(Number(newW.value))
     const h = newH.value === '' ? hintH : roundTo(Number(newH.value))
     let error = ''
-    if (!id) error = '호기를 적어 주세요.'
+    if (!id) error = '설비명을 적어 주세요.'
     else if (EXISTING_IDS.has(id) || S.items.has(id)) error = `${id} 는 이미 있는 호기입니다.`
     else if (!newProcess.value) error = '공정을 골라 주세요.'
     else if (!(w > 0 && h > 0 && w <= MAX_EXTENT && h <= MAX_EXTENT)) error = `크기는 0 보다 크고 ${MAX_EXTENT} 이하여야 합니다.`
     const existing = newKind.value === 'existing'
-    if (!error && !existing && (!newArrival.value || !newQual.value)) error = '신규 설비는 입고일정과 Qual일정이 필요합니다(기존 설비는 없어도 됩니다).'
-    else if (!error && !existing && newQual.value < newArrival.value) error = 'Qual일정은 입고일정보다 빠를 수 없습니다.'
+    if (!error && !existing && (!newArrival.value || !newQual.value)) error = '신규 설비는 반입일정과 Qual일정이 필요합니다(기존 설비는 없어도 됩니다).'
+    else if (!error && !existing && newQual.value < newArrival.value) error = 'Qual일정은 반입일정보다 빠를 수 없습니다.'
     newError.textContent = error
     if (error) return
     const item = {

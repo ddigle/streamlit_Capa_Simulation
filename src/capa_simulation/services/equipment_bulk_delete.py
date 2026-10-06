@@ -9,7 +9,7 @@
 
 **행 번호로 기억하지 않는다.** 편집본은 제출할 때마다 다시 만들어지고, 필터 없이 행을
 지우면 `st.data_editor` 가 번호를 다시 매긴다. 번호는 다음 실행이면 다른 행을 가리킨다.
-대신 각 표의 업무 키 — 호기 / 공정+분류 / 호기+비가동유형+시작일 — 로 기억한다. 검증 전
+대신 각 표의 업무 키 — 설비명 / 공정+분류 / 설비명+비가동유형+시작일 — 로 기억한다. 검증 전
 편집본에는 같은 키가 둘일 수 있는데, 그러면 둘 다 지운다. 그것이 맞는 답이다.
 
 **호기를 지우면 그 호기의 비가동 일정도 같이 뺀다**(2026-09-28 사용자 결정). 남겨 두면
@@ -29,6 +29,8 @@ import pandas as pd
 from capa_simulation.services.equipment_contract import (
     BASELINE_KEY_COLUMNS,
     DOWNTIME_KEY_COLUMNS,
+    EQUIPMENT_ID_COLUMN,
+    EQUIPMENT_KEY_COLUMNS,
 )
 
 EQUIPMENT_TARGET = "호기 마스터"
@@ -38,7 +40,7 @@ DOWNTIME_TARGET = "비가동 일정"
 # 표 이름 → (편집본 튜플 안의 자리, 업무 키). 튜플 차례는 화면 탭 차례와 다르다.
 TARGET_LAYOUT: Mapping[str, tuple[int, tuple[str, ...]]] = {
     BASELINE_TARGET: (0, BASELINE_KEY_COLUMNS),
-    EQUIPMENT_TARGET: (1, ("호기",)),
+    EQUIPMENT_TARGET: (1, EQUIPMENT_KEY_COLUMNS),
     DOWNTIME_TARGET: (2, DOWNTIME_KEY_COLUMNS),
 }
 _DATE_KEY_COLUMNS = frozenset({"시작일"})
@@ -139,8 +141,8 @@ def plan_deletion(frames: Frames, target: str, keys: Iterable[RowKey]) -> Deleti
     if target == EQUIPMENT_TARGET and not removed[position].empty:
         machines = {key[0] for key in row_keys(removed[position], EQUIPMENT_TARGET)}
         downtime = frames[2]
-        if not downtime.empty and "호기" in downtime.columns:
-            owned = downtime["호기"].map(normalize_key_value).isin(machines)
+        if not downtime.empty and EQUIPMENT_ID_COLUMN in downtime.columns:
+            owned = downtime[EQUIPMENT_ID_COLUMN].map(normalize_key_value).isin(machines)
             removed[2] = downtime.loc[owned]
     return DeletionPlan(target=target, removed=(removed[0], removed[1], removed[2]))
 

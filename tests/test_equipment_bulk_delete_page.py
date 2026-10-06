@@ -84,8 +84,10 @@ def _seeded(tmp_path: Path) -> _Seed:
         note="일괄 삭제 화면 검증",
     )
 
-    building_of = dict(zip(equipment["호기"].astype(str), equipment["동"].astype(str), strict=True))
-    downtime_buildings = downtime["호기"].astype(str).map(building_of)
+    building_of = dict(
+        zip(equipment["설비명"].astype(str), equipment["동"].astype(str), strict=True)
+    )
+    downtime_buildings = downtime["설비명"].astype(str).map(building_of)
     building = sorted(set(downtime_buildings.dropna()))[0]
     building_machines = frozenset(
         machine for machine, owner in building_of.items() if owner == building
@@ -105,11 +107,11 @@ def _seeded(tmp_path: Path) -> _Seed:
 
 
 def _machines(app: AppTest) -> list[str]:
-    return sorted(app.session_state[BUFFER_KEY][1]["호기"].astype(str))
+    return sorted(app.session_state[BUFFER_KEY][1]["설비명"].astype(str))
 
 
 def _downtime_machines(app: AppTest) -> list[str]:
-    return sorted(app.session_state[BUFFER_KEY][2]["호기"].astype(str))
+    return sorted(app.session_state[BUFFER_KEY][2]["설비명"].astype(str))
 
 
 def test_select_by_an_unapplied_filter_then_delete_confirm_and_undo(tmp_path: Path) -> None:

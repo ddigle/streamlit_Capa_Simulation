@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from io import BytesIO
 from typing import Any
 
@@ -21,8 +22,15 @@ from capa_simulation.services.equipment_contract import (
     DOWNTIME_COLUMNS,
     DOWNTIME_KEY_COLUMNS,
     EQUIPMENT_COLUMNS,
+    EQUIPMENT_ID_COLUMN,
+    EQUIPMENT_KEY_COLUMNS,
+    LEGACY_DOWNTIME_HEADER_ALIASES,
+    LEGACY_EQUIPMENT_HEADER_ALIASES,
+    OBSOLETE_EQUIPMENT_COLUMNS,
     OPTIONAL_EQUIPMENT_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
+    compact_header,
+    rename_legacy_headers,
 )
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_schedule,
@@ -48,11 +56,11 @@ SAMPLE_BASELINE_CATEGORY = "전체"
 SAMPLE_BASELINE_COUNT = 12
 SAMPLE_BASELINE_TEMPLATE_NOTE = "집계 근거 기록"
 
-# 호기를 비워 둔 안내 행. 열별 허용값만 나열하며 `prepare_equipment_master` 가 버린다.
+# 설비명을 비워 둔 안내 행. 열별 허용값만 나열하며 `prepare_equipment_master` 가 버린다.
 EQUIPMENT_CHOICE_ROWS: tuple[dict[str, str], ...] = (
-    {"라인구분": "PKG", "활용구분": "WLP", "투자기준": "322K", "확정상태": "확정"},
-    {"활용구분": "2.5D", "확정상태": "완료"},
-    {"활용구분": "HCB", "확정상태": "지연"},
+    {"공정구분": "PKG", "투자Capa": "322K", "투자구분": "WLP", "확정상태": "확정"},
+    {"투자구분": "2.5D", "확정상태": "완료"},
+    {"투자구분": "HCB", "확정상태": "지연"},
 )
 
 
@@ -82,40 +90,44 @@ def equipment_csv_template() -> bytes:
         pd.DataFrame(
             [
                 {
-                    "호기": SAMPLE_EQUIPMENT_ID,
+                    "구분": "",
                     "공정대분류": "Wafer_Sorter",
                     "공정소분류": "Wafer_Sorter_P878",
-                    "라인구분": "FRONT",
-                    "활용구분": "HBM",
-                    "투자기준": "299K",
-                    "담당자": SAMPLE_EQUIPMENT_MANAGER,
                     "Maker": "KOREATECHNO",
-                    "모델": "KTLMS-3404B",
-                    "분류1": "",
-                    "분류2": "",
-                    "분류3": "",
+                    "Model": "KTLMS-3404B",
+                    EQUIPMENT_ID_COLUMN: SAMPLE_EQUIPMENT_ID,
+                    "공정구분": "FRONT",
+                    "투자Capa": "299K",
+                    "투자구분": "HBM",
+                    "사용기준": "",
                     "동": "C1",
                     "층": "4F",
+                    "담당자": SAMPLE_EQUIPMENT_MANAGER,
+                    "설비가동현황": "",
                     "X좌표": "",
                     "Y좌표": "",
                     "Xsize": "",
                     "Ysize": "",
                     "제진대일정": "2026-09-01",
                     "물류일정": "2026-09-03",
-                    "입고일정": "2026-09-05",
+                    "반입일정": "2026-09-05",
                     "Qual일정": "2026-09-16",
                     "확정상태": "계획",
                     "반출일정": "",
                     "이설일": "",
-                    "장기보관여부": "N",
-                    "기존설비여부": "N",
+                    "반입/Qual 이력": "",
                     "호기이력": "호기 변동 이력 기록",
-                    "비고": SAMPLE_EQUIPMENT_NOTE,
+                    "설비이력": SAMPLE_EQUIPMENT_NOTE,
+                    "보관유무": "N",
+                    "기존설비여부": "N",
                     "레이아웃표시": "N",
                     # 기준 모델이 1 이다. 비워 두면 검증이 1 로 채운다.
                     "환산비": "1",
                     # 모듈로 관리하는 설비만 적는다(APW01A~D → APW01). 비모듈은 비운다.
                     PARENT_EQUIPMENT_COLUMN: "",
+                    "메모1": "",
+                    "메모2": "",
+                    "메모3": "",
                 },
                 *EQUIPMENT_CHOICE_ROWS,
             ],
@@ -129,7 +141,7 @@ def downtime_csv_template() -> bytes:
         pd.DataFrame(
             [
                 {
-                    "호기": SAMPLE_EQUIPMENT_ID,
+                    EQUIPMENT_ID_COLUMN: SAMPLE_EQUIPMENT_ID,
                     "비가동유형": "고장",
                     "시작일": "2026-10-01",
                     "종료일": "2026-10-03",
@@ -146,9 +158,9 @@ def downtime_csv_template() -> bytes:
 # 컬럼만** 지킨다. 행을 가르는 값이 `0123` → `123` 으로 바뀌면 같은 행이 새 행으로 들어와
 # 표 전체가 어긋나지만, 좌표·대수·환산비는 숫자로 읽히는 것이 맞고 날짜는 Excel 이 그대로
 # 돌려준다(한국어 Excel 로 실측). 그래서 숫자·날짜 컬럼에는 씌우지 않는다.
-EQUIPMENT_GUARDED_COLUMNS: tuple[str, ...] = ("호기", PARENT_EQUIPMENT_COLUMN)
+EQUIPMENT_GUARDED_COLUMNS: tuple[str, ...] = (EQUIPMENT_ID_COLUMN, PARENT_EQUIPMENT_COLUMN)
 BASELINE_GUARDED_COLUMNS: tuple[str, ...] = BASELINE_KEY_COLUMNS
-DOWNTIME_GUARDED_COLUMNS: tuple[str, ...] = ("호기", "비가동유형")
+DOWNTIME_GUARDED_COLUMNS: tuple[str, ...] = (EQUIPMENT_ID_COLUMN, "비가동유형")
 
 
 def equipment_csv_bytes(equipment: pd.DataFrame) -> bytes:
@@ -188,35 +200,36 @@ def _export_csv_bytes(
 
 
 def read_baseline_csv(payload: bytes) -> pd.DataFrame:
-    return prepare_equipment_baseline(_read_csv(payload, BASELINE_COLUMNS, "기존 보유대수"))
+    return prepare_equipment_baseline(_read_csv(payload, _BASELINE_HEADERS))
 
 
 def read_equipment_csv(
     payload: bytes,
     *,
     floor_canvases: FloorCanvasMap | None = None,
+    notices: list[str] | None = None,
 ) -> pd.DataFrame:
-    """`floor_canvases` 를 넘기면 읽는 즉시 층별 캔버스 좌표 상한까지 검사한다."""
+    """`floor_canvases` 를 넘기면 읽는 즉시 층별 캔버스 좌표 상한까지 검사한다.
+
+    옛 머리 이름은 새 이름으로 바꿔 읽는다. 빠진 옛 컬럼(`투자기준`)을 떼어 냈으면 그 알림
+    문구를 `notices` 에 덧붙인다.
+    """
     return prepare_equipment_master(
-        _read_csv(payload, EQUIPMENT_COLUMNS, "호기 마스터", optional=OPTIONAL_EQUIPMENT_COLUMNS),
+        _read_csv(payload, _EQUIPMENT_HEADERS, notices=notices),
         floor_canvases=floor_canvases,
     )
 
 
 def read_downtime_csv(payload: bytes, *, equipment: pd.DataFrame) -> pd.DataFrame:
     return prepare_downtime_schedule(
-        _read_csv(payload, DOWNTIME_COLUMNS, "비가동 일정"),
+        _read_csv(payload, _DOWNTIME_HEADERS),
         equipment=equipment,
     )
 
 
 def read_baseline_clipboard(content: str) -> pd.DataFrame:
     return prepare_equipment_baseline(
-        _select_columns(
-            parse_clipboard_table(content, "기존 보유대수"),
-            BASELINE_COLUMNS,
-            "기존 보유대수",
-        )
+        _select_columns(parse_clipboard_table(content, _BASELINE_HEADERS.label), _BASELINE_HEADERS)
     )
 
 
@@ -251,14 +264,17 @@ def read_equipment_clipboard(
     content: str,
     *,
     floor_canvases: FloorCanvasMap | None = None,
+    notices: list[str] | None = None,
 ) -> pd.DataFrame:
-    """`floor_canvases` 를 넘기면 붙여넣기 시점에 층별 캔버스 좌표 상한까지 검사한다."""
+    """`floor_canvases` 를 넘기면 붙여넣기 시점에 층별 캔버스 좌표 상한까지 검사한다.
+
+    머리 이름 변환과 `notices` 는 `read_equipment_csv` 와 같다.
+    """
     return prepare_equipment_master(
         _select_columns(
-            parse_clipboard_table(content, "호기 마스터"),
-            EQUIPMENT_COLUMNS,
-            "호기 마스터",
-            optional=OPTIONAL_EQUIPMENT_COLUMNS,
+            parse_clipboard_table(content, _EQUIPMENT_HEADERS.label),
+            _EQUIPMENT_HEADERS,
+            notices=notices,
         ),
         floor_canvases=floor_canvases,
     )
@@ -266,11 +282,7 @@ def read_equipment_clipboard(
 
 def read_downtime_clipboard(content: str, *, equipment: pd.DataFrame) -> pd.DataFrame:
     return prepare_downtime_schedule(
-        _select_columns(
-            parse_clipboard_table(content, "비가동 일정"),
-            DOWNTIME_COLUMNS,
-            "비가동 일정",
-        ),
+        _select_columns(parse_clipboard_table(content, _DOWNTIME_HEADERS.label), _DOWNTIME_HEADERS),
         equipment=equipment,
     )
 
@@ -287,7 +299,7 @@ def merge_equipment_rows(
 ) -> pd.DataFrame:
     """`floor_canvases` 를 넘기면 편집본에 적용하기 전에 층별 좌표 상한까지 검사한다."""
     return prepare_equipment_master(
-        _merge_by_keys(current, incoming, ("호기",)),
+        _merge_by_keys(current, incoming, EQUIPMENT_KEY_COLUMNS),
         floor_canvases=floor_canvases,
     )
 
@@ -313,7 +325,7 @@ def build_equipment_import_preview(
     current: pd.DataFrame,
     incoming: pd.DataFrame,
 ) -> pd.DataFrame:
-    return _build_import_preview(current, incoming, ("호기",))
+    return _build_import_preview(current, incoming, EQUIPMENT_KEY_COLUMNS)
 
 
 def build_downtime_import_preview(
@@ -323,13 +335,37 @@ def build_downtime_import_preview(
     return _build_import_preview(current, incoming, DOWNTIME_KEY_COLUMNS)
 
 
+@dataclass(frozen=True)
+class _TableHeaders:
+    """입구 하나가 받는 표의 머리 계약. 옛 이름 변환표는 표마다 따로다."""
+
+    label: str
+    columns: tuple[str, ...]
+    optional: tuple[str, ...] = ()
+    aliases: Mapping[str, str] = field(default_factory=dict)
+    obsolete: tuple[str, ...] = ()
+
+
+_EQUIPMENT_HEADERS = _TableHeaders(
+    "호기 마스터",
+    EQUIPMENT_COLUMNS,
+    optional=OPTIONAL_EQUIPMENT_COLUMNS,
+    aliases=LEGACY_EQUIPMENT_HEADER_ALIASES,
+    obsolete=OBSOLETE_EQUIPMENT_COLUMNS,
+)
+_DOWNTIME_HEADERS = _TableHeaders(
+    "비가동 일정", DOWNTIME_COLUMNS, aliases=LEGACY_DOWNTIME_HEADER_ALIASES
+)
+_BASELINE_HEADERS = _TableHeaders("기존 보유대수", BASELINE_COLUMNS)
+
+
 def _read_csv(
     payload: bytes,
-    columns: tuple[str, ...],
-    label: str,
+    headers: _TableHeaders,
     *,
-    optional: tuple[str, ...] = (),
+    notices: list[str] | None = None,
 ) -> pd.DataFrame:
+    label = headers.label
     if not payload:
         raise ValueError(f"{label} CSV 파일이 비어 있습니다.")
     last_error: UnicodeDecodeError | None = None
@@ -338,7 +374,7 @@ def _read_csv(
             # 붙여넣기 경로와 같은 옵션을 쓴다. pandas 기본값은 `NA`·`N/A` 를 결측으로
             # 바꾸므로, 같은 파일이 전송 경로에 따라 다른 결측 판정을 받는다.
             frame = pd.read_csv(BytesIO(payload), encoding=encoding, **TEXT_TABLE_READ_OPTIONS)
-            # 붙여넣기 경로처럼 머리글 앞뒤 공백을 뗀다. Excel 이 저장한 「모체호기 」가
+            # 붙여넣기 경로처럼 머리글 앞뒤 공백을 뗀다. Excel 이 저장한 「Main 설비 」가
             # 없는 열로 읽히면 선택 컬럼은 조용히 빈 칸이 된다.
             frame.columns = [str(column).strip() for column in frame.columns]
             break
@@ -346,30 +382,42 @@ def _read_csv(
             last_error = exc
     else:
         raise ValueError(f"{label} CSV 인코딩은 UTF-8 또는 CP949여야 합니다.") from last_error
-    return _select_columns(frame, columns, label, optional=optional)
+    return _select_columns(frame, headers, notices=notices)
 
 
 def _select_columns(
     frame: pd.DataFrame,
-    columns: tuple[str, ...],
-    label: str,
+    headers: _TableHeaders,
     *,
-    optional: tuple[str, ...] = (),
+    notices: list[str] | None = None,
 ) -> pd.DataFrame:
-    """계약 컬럼만 계약 차례로 고른다.
+    """옛 머리 이름을 새 이름으로 바꾼 뒤 계약 컬럼만 계약 차례로 고른다.
 
-    `optional` 은 없어도 되는 컬럼이다. 없으면 빈 칸으로 채운다 — 그 컬럼이 생기기 전의 양식
-    (`모체호기` 가 없는 31열)도 그대로 읽힌다. 다만 **대체 행의 그 칸은 빈 값으로 바뀐다.**
-    미리보기가 「변경컬럼」에 그 칸을 적어 알린다.
+    옛 이름 변환이 **먼저**다. 뒤에 하면 옛 이름(「모체호기」)이 아래의 닮은 이름 검사를
+    빠져나가 선택 컬럼이 조용히 빈 칸이 된다. 빠진 옛 컬럼(`투자기준`)은 떼어 내고 알림 한
+    줄을 `notices` 에 덧붙인다.
+
+    `headers.optional` 은 없어도 되는 컬럼이다. 없으면 빈 칸으로 채운다 — 그 컬럼이 생기기
+    전의 양식도 그대로 읽힌다. 다만 **대체 행의 그 칸은 빈 값으로 바뀐다.** 미리보기가
+    「변경컬럼」에 그 칸을 적어 알린다.
     """
-    missing = [column for column in optional if column not in frame.columns]
-    # 이름이 조금 틀린 선택 컬럼(「모체 호기」·「모체호기(선택)」)을 빈 칸으로 읽으면 모듈
-    # 행이 모두 따로 세어진다. 필수 컬럼은 이름이 틀리면 막히는데 선택 컬럼만 조용하면 안 된다.
+    label, columns = headers.label, headers.columns
+    frame, dropped = rename_legacy_headers(
+        frame, columns, headers.aliases, label, obsolete=headers.obsolete
+    )
+    if notices is not None:
+        notices.extend(dropped)
+    missing = [column for column in headers.optional if column not in frame.columns]
+    # 이름이 조금 틀린 선택 컬럼(「Main 설비(선택)」·「모체호기(선택)」)을 빈 칸으로 읽으면
+    # 모듈 행이 모두 따로 세어진다. 필수 컬럼은 이름이 틀리면 막히는데 선택 컬럼만 조용하면
+    # 안 된다. 옛 이름으로 적은 닮은 이름도 잡는다.
     for column in missing:
+        names = [column, *(old for old, new in headers.aliases.items() if new == column)]
         lookalikes = [
             str(header)
             for header in frame.columns
-            if header not in columns and column in "".join(str(header).split())
+            if header not in columns
+            and any(compact_header(name) in compact_header(header) for name in names)
         ]
         if lookalikes:
             raise ValueError(
@@ -378,6 +426,11 @@ def _select_columns(
             )
     if missing:
         frame = frame.reindex(columns=[*frame.columns, *missing])
+        if notices is not None:
+            notices.append(
+                f"{label}에 {' · '.join(missing)} 열이 없어 빈칸으로 읽었습니다. 이 파일로 바꾸는 "
+                "행은 그 칸의 저장된 값이 지워집니다 — 「변경컬럼」을 확인하세요."
+            )
     require_columns(frame, columns, label)
     selected = frame.loc[:, columns].copy()
     # 내보내기가 식별 컬럼에 씌운 `="…"` 껍데기를 벗긴다. Excel 을 거친 값은 이미 벗겨져

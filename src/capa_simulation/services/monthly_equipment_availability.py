@@ -65,6 +65,9 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from capa_simulation.services.equipment_contract import (
+    EQUIPMENT_ID_COLUMN,
+)
 from capa_simulation.services.equipment_units import UNIT_KEY_COLUMN, UNIT_SHARE_COLUMN
 from capa_simulation.services.process_cutoff import cutoff_lookup
 from capa_simulation.services.wd_window import WdWindow, wd_window
@@ -95,13 +98,13 @@ MONTHLY_AVAILABILITY_COLUMNS = (
     "가용반영",
 )
 
-# 호기 목록 한 줄. `호기` 가 비면 기존보유 줄이고 `기존보유분류` 가 그 분류들이다.
+# 호기 목록 한 줄. `설비명` 이 비면 기존보유 줄이고 `기존보유분류` 가 그 분류들이다.
 # `기여일수` 는 그 달 W/D 구간(`구간일수`)과 겹친 날 수다 — 기존보유는 안분하지 않아 비운다.
 MONTHLY_CONTRIBUTION_COLUMNS = (
     "생산계획년월",
     "공정",
     "분류",
-    "호기",
+    EQUIPMENT_ID_COLUMN,
     "설비키",
     "기존보유분류",
     "기여일수",
@@ -248,21 +251,29 @@ def build_monthly_equipment_contributions(
     if not rows:
         return _empty_contributions()
     raw = pd.DataFrame(rows)
-    keys = ["생산계획년월", "공정", "분류", "호기", "설비키", "기존보유분류", "구간일수"]
-    for column in ("호기", "설비키", "기존보유분류"):
+    keys = [
+        "생산계획년월",
+        "공정",
+        "분류",
+        EQUIPMENT_ID_COLUMN,
+        "설비키",
+        "기존보유분류",
+        "구간일수",
+    ]
+    for column in (EQUIPMENT_ID_COLUMN, "설비키", "기존보유분류"):
         raw[column] = raw[column].fillna("")
     result = raw.groupby(keys, as_index=False, sort=False).agg(
         {"기여일수": "sum", "대수": "sum", "환산대수": "sum"}
     )
-    for column in ("호기", "설비키", "기존보유분류"):
+    for column in (EQUIPMENT_ID_COLUMN, "설비키", "기존보유분류"):
         result[column] = result[column].replace("", pd.NA).astype("string")
-    baseline_rows = result["호기"].isna()
+    baseline_rows = result[EQUIPMENT_ID_COLUMN].isna()
     result["기여일수"] = result["기여일수"].astype("Int64").mask(baseline_rows)
     result["생산계획년월"] = result["생산계획년월"].astype("int64")
     result["구간일수"] = result["구간일수"].astype("int64")
     order = {category.name: index for index, category in enumerate(CATEGORIES)}
     result = result.sort_values(
-        by=["생산계획년월", "공정", "분류", "호기"],
+        by=["생산계획년월", "공정", "분류", EQUIPMENT_ID_COLUMN],
         key=lambda column: column.map(order) if column.name == "분류" else column,
         na_position="first",
         kind="stable",
@@ -276,7 +287,7 @@ def _empty_contributions() -> pd.DataFrame:
             "생산계획년월": pd.Series(dtype="int64"),
             "공정": pd.Series(dtype="string"),
             "분류": pd.Series(dtype="string"),
-            "호기": pd.Series(dtype="string"),
+            EQUIPMENT_ID_COLUMN: pd.Series(dtype="string"),
             "설비키": pd.Series(dtype="string"),
             "기존보유분류": pd.Series(dtype="string"),
             "기여일수": pd.Series(dtype="Int64"),
@@ -326,7 +337,7 @@ def _baseline_rows(
                     "생산계획년월": window.year_month,
                     "공정": str(process_name),
                     "분류": BASELINE_CATEGORY.name,
-                    "호기": None,
+                    EQUIPMENT_ID_COLUMN: None,
                     "설비키": None,
                     "기존보유분류": labels.get(str(process_name)) or "전체",
                     "기여일수": 0,
@@ -353,11 +364,13 @@ def _prorated_rows(
         if UNIT_SHARE_COLUMN in spans.columns
         else pd.Series(1.0, index=spans.index)
     )
-    unit_keys = spans[UNIT_KEY_COLUMN] if UNIT_KEY_COLUMN in spans.columns else spans["호기"]
+    unit_keys = (
+        spans[UNIT_KEY_COLUMN] if UNIT_KEY_COLUMN in spans.columns else spans[EQUIPMENT_ID_COLUMN]
+    )
     # `itertuples` 는 한글 컬럼명을 그대로 속성으로 주지만 이름이 겹치면 말없이 `_3` 으로
     # 바꾼다. 필요한 컬럼만 짝지어 도는 편이 빠르고 그 위험도 없다.
     columns = zip(
-        spans["호기"],
+        spans[EQUIPMENT_ID_COLUMN],
         spans["공정소분류"],
         spans["상태"],
         spans["시작일"],
@@ -388,7 +401,7 @@ def _prorated_rows(
                         "생산계획년월": window.year_month,
                         "공정": process,
                         "분류": category.name,
-                        "호기": unit,
+                        EQUIPMENT_ID_COLUMN: unit,
                         "설비키": str(raw_key or unit).strip(),
                         "기존보유분류": None,
                         "기여일수": overlap,

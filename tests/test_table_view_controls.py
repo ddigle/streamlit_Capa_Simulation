@@ -10,7 +10,7 @@ from capa_simulation.components.table_view_controls import TableView, merge_edit
 def _fleet() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "호기": ["E1", "E2", "E3", "E4"],
+            "설비명": ["E1", "E2", "E3", "E4"],
             "공정소분류": ["가", "나", "가", "나"],
             "비고": ["", "", "", ""],
         }
@@ -26,7 +26,7 @@ def test_an_unfiltered_edit_is_the_whole_table() -> None:
     merged = merge_edited_rows(original, edited, filtered=False)
 
     assert len(merged) == 3
-    assert "E2" not in merged["호기"].tolist()
+    assert "E2" not in merged["설비명"].tolist()
 
 
 def test_a_filtered_edit_never_drops_the_hidden_rows() -> None:
@@ -46,7 +46,7 @@ def test_a_filtered_edit_never_drops_the_hidden_rows() -> None:
     merged = merge_edited_rows(original, edited, filtered=True)
 
     assert len(merged) == len(original)
-    assert merged["호기"].tolist() == ["E1", "E2", "E3", "E4"]
+    assert merged["설비명"].tolist() == ["E1", "E2", "E3", "E4"]
     assert merged.loc[0, "비고"] == "점검"
     # 보이지 않던 행은 글자 하나도 달라지지 않는다.
     pd.testing.assert_frame_equal(merged.loc[[1, 3]], original.loc[[1, 3]])
@@ -57,11 +57,11 @@ def test_editing_a_key_column_keeps_its_place() -> None:
     original = _fleet()
     visible = original.loc[[1]]
     edited = visible.copy()
-    edited.loc[1, "호기"] = "E2-renamed"
+    edited.loc[1, "설비명"] = "E2-renamed"
 
     merged = merge_edited_rows(original, edited, filtered=True)
 
-    assert merged["호기"].tolist() == ["E1", "E2-renamed", "E3", "E4"]
+    assert merged["설비명"].tolist() == ["E1", "E2-renamed", "E3", "E4"]
 
 
 def test_a_filtered_view_locks_row_addition() -> None:
@@ -84,7 +84,7 @@ def _view_app() -> None:
     from capa_simulation.components.editor_state import editor_widget_key
     from capa_simulation.components.table_view_controls import render_table_view_controls
 
-    fleet = pd.DataFrame({"호기": ["E1", "E2", "E3"], "공정소분류": ["가", "나", "가"]})
+    fleet = pd.DataFrame({"설비명": ["E1", "E2", "E3"], "공정소분류": ["가", "나", "가"]})
     render_table_view_controls(
         fleet, key_prefix="view_test", editor_key="view_test_editor", filter_columns=["공정소분류"]
     )

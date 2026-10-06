@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
+
 import pandas as pd
 
 BASELINE_COLUMNS = ("공정", "분류", "기존보유대수", "비고")
@@ -13,48 +16,62 @@ BASELINE_COLUMNS = ("공정", "분류", "기존보유대수", "비고")
 BASELINE_KEY_COLUMNS = ("공정", "분류")
 
 EQUIPMENT_COLUMNS = (
-    "호기",
+    "구분",
     "공정대분류",
     "공정소분류",
-    "라인구분",
-    "활용구분",
-    "투자기준",
-    "담당자",
     "Maker",
-    "모델",
-    "분류1",
-    "분류2",
-    "분류3",
+    "Model",
+    "설비명",
+    "공정구분",
+    "투자Capa",
+    "투자구분",
+    "사용기준",
     "동",
     "층",
+    "담당자",
+    "설비가동현황",
     "X좌표",
     "Y좌표",
     "Xsize",
     "Ysize",
     "제진대일정",
     "물류일정",
-    "입고일정",
+    "반입일정",
     "Qual일정",
     "확정상태",
     "반출일정",
     "이설일",
-    "장기보관여부",
-    "기존설비여부",
+    "반입/Qual 이력",
     "호기이력",
-    "비고",
+    "설비이력",
+    "보관유무",
+    "기존설비여부",
     "레이아웃표시",
     "환산비",
-    "모체호기",
+    "Main 설비",
+    "메모1",
+    "메모2",
+    "메모3",
 )
 
-DOWNTIME_COLUMNS = ("호기", "비가동유형", "시작일", "종료일", "상세사유", "비고")
+# 설비 한 대(모듈 행이면 모듈 하나)를 가리키는 식별 컬럼. 설비 마스터의 자연키이고 비가동
+# 일정이 같은 이름으로 설비를 가리킨다.
+EQUIPMENT_ID_COLUMN = "설비명"
 
-DOWNTIME_KEY_COLUMNS = ("호기", "비가동유형", "시작일")
+EQUIPMENT_KEY_COLUMNS = (EQUIPMENT_ID_COLUMN,)
+
+DOWNTIME_COLUMNS = (EQUIPMENT_ID_COLUMN, "비가동유형", "시작일", "종료일", "상세사유", "비고")
+
+DOWNTIME_KEY_COLUMNS = (EQUIPMENT_ID_COLUMN, "비가동유형", "시작일")
+
+# 반입일정이 설비가 들어오는 날이다. 단계 이름(「입고 예정」·SCHEDULE_STAGES 의 「입고」)은
+# 컬럼 이름과 따로 움직이며 바꾸지 않는다.
+ARRIVAL_DATE_COLUMN = "반입일정"
 
 DATE_COLUMNS = (
     "제진대일정",
     "물류일정",
-    "입고일정",
+    ARRIVAL_DATE_COLUMN,
     "Qual일정",
     "반출일정",
     "이설일",
@@ -63,7 +80,7 @@ DATE_COLUMNS = (
 SCHEDULE_STAGES = (
     ("제진대일정", "제진대"),
     ("물류일정", "물류"),
-    ("입고일정", "입고"),
+    (ARRIVAL_DATE_COLUMN, "입고"),
     ("Qual일정", "Qual"),
     ("반출일정", "반출"),
     ("이설일", "이설"),
@@ -98,7 +115,7 @@ STATUS_COUNT_COLUMNS = {
 }
 
 TRANSITION_EVENT_COLUMNS = (
-    "호기",
+    EQUIPMENT_ID_COLUMN,
     "공정대분류",
     "공정소분류",
     "동",
@@ -129,19 +146,24 @@ WEEKLY_COLUMNS = (
     *STATUS_COUNT_COLUMNS.values(),
 )
 
+# 빈 칸을 허용하는 글자 컬럼. 앞뒤 공백을 떼고 빈 글자는 빈 칸으로 맞춘다.
 REFERENCE_TEXT_COLUMNS = (
+    "구분",
     "공정대분류",
-    "라인구분",
-    "활용구분",
-    "투자기준",
-    "담당자",
     "Maker",
-    "모델",
-    "분류1",
-    "분류2",
-    "분류3",
+    "Model",
+    "공정구분",
+    "투자Capa",
+    "투자구분",
+    "사용기준",
+    "담당자",
+    "설비가동현황",
+    "반입/Qual 이력",
     "호기이력",
-    "비고",
+    "설비이력",
+    "메모1",
+    "메모2",
+    "메모3",
 )
 
 COORDINATE_COLUMNS = ("X좌표", "Y좌표", "Xsize", "Ysize")
@@ -158,7 +180,7 @@ COORDINATE_COLUMNS = ("X좌표", "Y좌표", "Xsize", "Ysize")
 # 곱하지 않는다 — 환산비를 곱하면 열 대가 열다섯 대가 된다. 대수 축은 대신 `설비지분` 을
 # 곱한다(`services/equipment_units.py`).
 #
-# 모듈 행(아래 `모체호기`)에는 「그 행이 기준 설비 몇 대 몫인가」를 적는다. 4모듈 설비의
+# 모듈 행(아래 `Main 설비`)에는 「그 행이 기준 설비 몇 대 몫인가」를 적는다. 4모듈 설비의
 # 모듈 행은 1 ÷ 4 = 0.25 이고, 모듈 생산성이 기준과 다르면 곱한다(0.25 × 1.2 = 0.30).
 #
 # 빈 칸은 1.0 이다. 대부분의 공정은 모델이 하나뿐이라 적을 것이 없고, 그때 빈 칸을 0 으로
@@ -169,21 +191,32 @@ DEFAULT_CONVERSION_RATIO = 1.0
 
 NUMERIC_COLUMNS = (*COORDINATE_COLUMNS, CONVERSION_RATIO_COLUMN)
 
-# ---------------------------------------------------------------------- 모체호기
+# --------------------------------------------------------------------- Main 설비
 # 모듈로 관리하는 공정(CoW Bonder 등)은 설비 한 대를 모듈마다 한 행으로 적고, 같은
-# 설비의 행에 설비 ID 를 똑같이 적어 묶는다(APW01A~D → 모체호기 APW01). 비모듈 공정은
+# 설비의 행에 설비 ID 를 똑같이 적어 묶는다(APW01A~D → Main 설비 APW01). 비모듈 공정은
 # 비워 둔다 — 행 하나가 설비 한 대다. 대수 축은 이 묶음을 한 대로 센다
 # (`services/equipment_units.py`).
-#
-# **선택 컬럼이다.** 이 컬럼이 없던 파일·리비전·편집본은 모두 빈 칸으로 읽는다
-# (`with_optional_equipment_columns`). 계약 맨 끝에 둔다 — 중간에 끼우면 붙여넣기 열이 밀린다.
-PARENT_EQUIPMENT_COLUMN = "모체호기"
+PARENT_EQUIPMENT_COLUMN = "Main 설비"
 
-OPTIONAL_EQUIPMENT_COLUMNS = (PARENT_EQUIPMENT_COLUMN,)
+# 투자 당시의 설비 능력 표기(예 "322K"). 계산에 쓰지 않는 글자 값이다. 옛 계약의 `투자기준` 과는
+# 다른 컬럼이다 — 그 값은 이어받지 않는다(아래 `OBSOLETE_EQUIPMENT_COLUMNS`).
+INVESTMENT_CAPA_COLUMN = "투자Capa"
+
+MEMO_COLUMNS = ("메모1", "메모2", "메모3")
+
+# **선택 컬럼이다.** 이 컬럼들이 없던 파일·리비전·편집본은 모두 빈 칸으로 읽는다
+# (`with_optional_equipment_columns`). 파일 입구는 컬럼 이름으로 고르므로 계약 중간에 있어도
+# 열이 밀리지 않는다.
+OPTIONAL_EQUIPMENT_COLUMNS = (
+    INVESTMENT_CAPA_COLUMN,
+    "반입/Qual 이력",
+    PARENT_EQUIPMENT_COLUMN,
+    *MEMO_COLUMNS,
+)
 
 # 한 설비의 모듈 행끼리 같아야 하는 컬럼. 화면 필터가 이 값들로 행을 거르므로, 다르면
 # 필터가 설비 하나를 쪼개 지분 합이 1 이 아니게 된다.
-UNIT_CONSISTENT_COLUMNS = ("공정소분류", "공정대분류", "라인구분", "활용구분", "동", "층")
+UNIT_CONSISTENT_COLUMNS = ("공정소분류", "공정대분류", "공정구분", "투자구분", "동", "층")
 
 
 def with_optional_equipment_columns(frame: pd.DataFrame) -> pd.DataFrame:
@@ -197,7 +230,99 @@ def with_optional_equipment_columns(frame: pd.DataFrame) -> pd.DataFrame:
     return filled
 
 
-FLAG_COLUMNS = ("장기보관여부", "기존설비여부", "레이아웃표시")
+# ------------------------------------------------------------------ 옛 머리 이름
+# 사내에는 옛 이름으로 적은 엑셀·CSV 가 이미 있다. 설비 표를 받는 모든 입구(CSV 올리기·붙여넣기)가
+# 이 표 하나로 옛 이름을 새 이름으로 바꿔 읽는다. **표마다 따로다** — `비고` 는 설비 마스터에서만
+# `설비이력` 이 되고, 비가동 일정·기존 보유대수의 `비고` 는 그대로다.
+LEGACY_EQUIPMENT_HEADER_ALIASES: Mapping[str, str] = MappingProxyType(
+    {
+        "호기": EQUIPMENT_ID_COLUMN,
+        "라인구분": "공정구분",
+        "활용구분": "투자구분",
+        "분류1": "구분",
+        "분류2": "사용기준",
+        "분류3": "설비가동현황",
+        "모델": "Model",
+        "입고일정": ARRIVAL_DATE_COLUMN,
+        "비고": "설비이력",
+        "장기보관여부": "보관유무",
+        "모체호기": PARENT_EQUIPMENT_COLUMN,
+    }
+)
+
+LEGACY_DOWNTIME_HEADER_ALIASES: Mapping[str, str] = MappingProxyType({"호기": EQUIPMENT_ID_COLUMN})
+
+# 계약에서 빠진 옛 컬럼. 이 열이 오면 읽지 않고 알림 한 줄을 남긴다. 저장소의 옛 값
+# (`investment_basis`)은 지우지 않고 읽지만 않는다 — 되살릴 수 있게.
+OBSOLETE_EQUIPMENT_COLUMNS = ("투자기준",)
+
+
+def compact_header(header: object) -> str:
+    """머리 이름 비교용. 공백을 모두 빼고 대소문자를 가리지 않는다.
+
+    「Main설비」·「모체 호기」·「MAIN 설비」·「투자CAPA」도 같은 이름으로 본다. 영문이 든 선택
+    컬럼이 대소문자만 달라 모르는 열로 버려지면 빈 칸으로 조용히 읽히기 때문이다.
+    """
+    return "".join(str(header).split()).casefold()
+
+
+def rename_legacy_headers(
+    frame: pd.DataFrame,
+    columns: tuple[str, ...],
+    aliases: Mapping[str, str],
+    label: str,
+    *,
+    obsolete: tuple[str, ...] = (),
+) -> tuple[pd.DataFrame, tuple[str, ...]]:
+    """옛 머리 이름을 새 이름으로 바꾸고, 빠진 옛 컬럼은 떼어 낸 뒤 알림 문구와 함께 돌려준다.
+
+    공백·대소문자만 다른 이름(「Main설비」·「MAIN 설비」)도 계약 이름으로 맞춘다. 옛 이름과
+    새 이름이 함께 오면 어느 쪽이 맞는지 알 수 없으므로 막는다. 원본은 건드리지 않는다.
+    """
+    targets = {compact_header(column): column for column in columns}
+    for old, new in aliases.items():
+        targets.setdefault(compact_header(old), new)
+    dropped = {compact_header(column): column for column in obsolete}
+    renames: dict[object, str] = {}
+    removed: list[object] = []
+    for header in frame.columns:
+        key = compact_header(header)
+        if key in dropped:
+            removed.append(header)
+        elif key in targets and targets[key] != header:
+            renames[header] = targets[key]
+    if not renames and not removed:
+        return frame, ()
+    result = frame.drop(columns=removed).rename(columns=renames)
+    names = [str(column) for column in result.columns]
+    duplicated = sorted({name for name in names if names.count(name) > 1})
+    if duplicated:
+        sources = {
+            name: [
+                str(header)
+                for header in frame.columns
+                if targets.get(compact_header(header)) == name
+            ]
+            for name in duplicated
+        }
+        detail = ", ".join(f"{name} ← {' · '.join(found)}" for name, found in sources.items())
+        raise ValueError(
+            f"{label}에 같은 컬럼을 가리키는 옛 이름과 새 이름이 함께 있습니다({detail}). "
+            "하나만 남기세요."
+        )
+    notices = tuple(
+        f"{label}의 「{dropped[compact_header(header)]}」 열은 빠진 컬럼이라 읽지 않았습니다"
+        f"(새 컬럼 「{INVESTMENT_CAPA_COLUMN}」 는 별개의 컬럼입니다)."
+        if dropped[compact_header(header)] == "투자기준"
+        else f"{label}의 「{dropped[compact_header(header)]}」 열은 빠진 컬럼이라 읽지 않았습니다."
+        for header in removed
+    )
+    return result, notices
+
+
+STORAGE_FLAG_COLUMN = "보관유무"
+
+FLAG_COLUMNS = (STORAGE_FLAG_COLUMN, "기존설비여부", "레이아웃표시")
 
 VALID_BUILDINGS = tuple(f"C{index}" for index in range(1, 6))
 

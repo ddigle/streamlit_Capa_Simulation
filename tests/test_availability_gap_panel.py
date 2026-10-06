@@ -35,7 +35,7 @@ def _panel_app() -> None:
 
     spans = pd.DataFrame(
         {
-            "호기": ["EQ-1", "EQ-2"],
+            "설비명": ["EQ-1", "EQ-2"],
             "공정소분류": ["Die Attach", "Etch"],
             "상태": ["가용", "가용"],
             "시작일": [date(2020, 1, 1)] * 2,
@@ -69,7 +69,7 @@ def _panel_app() -> None:
                 spans,
                 pd.DataFrame(
                     {
-                        "호기": ["EQ-9"],
+                        "설비명": ["EQ-9"],
                         "공정소분류": ["Wire Bond"],
                         "상태": ["가용"],
                         "시작일": [date(2020, 1, 1)],
@@ -281,8 +281,8 @@ def test_the_unit_list_shows_every_contribution_behind_the_counts() -> None:
     units = app.dataframe[0].value
     # Probe 는 한쪽에만 있어 표에서 빠진다 — 목록도 같은 범위다.
     assert set(units["공정"]) == {"Die Attach", "Etch"}
-    assert {"월", "분류", "호기", "기여일수", "대수", "환산대수"} <= set(units.columns)
-    assert set(units.loc[units["분류"].eq("기존보유"), "호기"]) == {"기존보유 · 전체"}
+    assert {"월", "분류", "설비명", "기여일수", "대수", "환산대수"} <= set(units.columns)
+    assert set(units.loc[units["분류"].eq("기존보유"), "설비명"]) == {"기존보유 · 전체"}
     for category in ("기존보유", "가용"):
         listed = units.loc[units["분류"].eq(category), "대수"].sum()
         assert listed == pytest.approx(matrix.loc[category, "26.10"])
@@ -306,7 +306,7 @@ def test_a_clicked_cell_lists_its_units_and_adds_up_to_the_cell() -> None:
     assert not app.exception
     assert len(app.dataframe) == 2
     cell = app.dataframe[1].value
-    assert cell["호기"].tolist() == ["EQ-1"]
+    assert cell["설비명"].tolist() == ["EQ-1"]
     assert cell["대수"].sum() == pytest.approx(app.dataframe[0].value.loc["가용", "26.10"])
 
     # 소계 칸은 소계에 드는 분류(기존보유·가용)를 모아 보인다.
@@ -368,7 +368,7 @@ def test_the_unit_list_keeps_full_precision_so_thirds_add_up_to_one() -> None:
             "생산계획년월": [202610] * 3,
             "공정": ["Bonder"] * 3,
             "분류": ["가용"] * 3,
-            "호기": ["APW01A", "APW01B", "APW01C"],
+            "설비명": ["APW01A", "APW01B", "APW01C"],
             "설비키": ["APW01"] * 3,
             "기존보유분류": pd.Series([pd.NA] * 3, dtype="string"),
             "기여일수": [31] * 3,

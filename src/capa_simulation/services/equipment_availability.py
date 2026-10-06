@@ -15,8 +15,11 @@ from typing import cast
 import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
+    ARRIVAL_DATE_COLUMN,
+    EQUIPMENT_ID_COLUMN,
     SCHEDULE_STAGES,
     STATUS_COUNT_COLUMNS,
+    STORAGE_FLAG_COLUMN,
     TRANSITION_EVENT_COLUMNS,
     WEEKLY_COLUMNS,
 )
@@ -74,8 +77,12 @@ def _build_equipment_status_from_prepared(
 
     timestamp = as_of
     existing = result["기존설비여부"].eq("Y")
-    storage = result["장기보관여부"].eq("Y")
-    arrived = existing | storage | (result["입고일정"].notna() & result["입고일정"].le(timestamp))
+    storage = result[STORAGE_FLAG_COLUMN].eq("Y")
+    arrived = (
+        existing
+        | storage
+        | (result[ARRIVAL_DATE_COLUMN].notna() & result[ARRIVAL_DATE_COLUMN].le(timestamp))
+    )
     removal_complete = result["반출일정"].notna() & result["반출일정"].le(timestamp)
     relocation_complete = result["이설일"].notna() & result["이설일"].le(timestamp)
     exited = removal_complete | relocation_complete
@@ -83,8 +90,10 @@ def _build_equipment_status_from_prepared(
     qualified = existing | (result["Qual일정"].notna() & result["Qual일정"].le(timestamp))
 
     active_downtime = _active_downtime(prepared_downtime, timestamp)
-    reason_by_equipment = active_downtime.groupby("호기")["비가동유형"].agg(_joined_unique)
-    result["비가동유형"] = result["호기"].map(reason_by_equipment).astype("string")
+    reason_by_equipment = active_downtime.groupby(EQUIPMENT_ID_COLUMN)["비가동유형"].agg(
+        _joined_unique
+    )
+    result["비가동유형"] = result[EQUIPMENT_ID_COLUMN].map(reason_by_equipment).astype("string")
     offline = result["비가동유형"].notna() & owned
     available = owned & qualified & ~storage & ~offline
 
@@ -110,11 +119,18 @@ def _build_equipment_status_from_prepared(
 
 
 # 상태가 바뀔 수 있는 날은 정해져 있다. 판정이 보는 컬럼이 그것뿐이기 때문이다 —
-# `입고일정`·`Qual일정`·`반출일정`·`이설일` 은 그날 `le` 로 넘어가고, 비가동은 `시작일` 에
+# `반입일정`·`Qual일정`·`반출일정`·`이설일` 은 그날 `le` 로 넘어가고, 비가동은 `시작일` 에
 # 켜져 `종료일` 다음 날 꺼진다. 다른 날에는 같은 판정이 나오므로 샘플링할 이유가 없다.
-_TIMELINE_EVENT_COLUMNS = ("입고일정", "Qual일정", "반출일정", "이설일")
+_TIMELINE_EVENT_COLUMNS = (ARRIVAL_DATE_COLUMN, "Qual일정", "반출일정", "이설일")
 
-LIFECYCLE_SPAN_COLUMNS = ("호기", "공정소분류", "공정대분류", "상태", "시작일", "종료일")
+LIFECYCLE_SPAN_COLUMNS = (
+    EQUIPMENT_ID_COLUMN,
+    "공정소분류",
+    "공정대분류",
+    "상태",
+    "시작일",
+    "종료일",
+)
 _MOMENT_COLUMN = "_시점"
 
 
@@ -155,7 +171,7 @@ def build_equipment_lifecycle_spans(
     start = pd.Timestamp(start_date)
     end = pd.Timestamp(end_date)
     breakpoints = _lifecycle_breakpoints(prepared, prepared_downtime, start=start, end=end)
-    process_by_unit = prepared.set_index("호기")[["공정소분류", "공정대분류"]]
+    process_by_unit = prepared.set_index(EQUIPMENT_ID_COLUMN)[["공정소분류", "공정대분류"]]
 
     open_spans: dict[str, tuple[str, float, pd.Timestamp]] = {}
     rows: list[dict[str, object]] = []
@@ -164,7 +180,7 @@ def build_equipment_lifecycle_spans(
         unit: str, status: str, share: float, began: pd.Timestamp, finished: pd.Timestamp
     ) -> None:
         row: dict[str, object] = {
-            "호기": unit,
+            EQUIPMENT_ID_COLUMN: unit,
             "공정소분류": process_by_unit.at[unit, "공정소분류"],
             "공정대분류": process_by_unit.at[unit, "공정대분류"],
             "상태": status,
@@ -185,7 +201,7 @@ def build_equipment_lifecycle_spans(
             else pd.Series(1.0, index=status_frame.index)
         )
         for unit, status, share in zip(
-            status_frame["호기"], status_frame["상태"], shares, strict=True
+            status_frame[EQUIPMENT_ID_COLUMN], status_frame["상태"], shares, strict=True
         ):
             state = (str(status), float(share))
             previous = open_spans.get(str(unit))
@@ -199,11 +215,11 @@ def build_equipment_lifecycle_spans(
         close(unit, status, share, began, end)
     result = pd.DataFrame(rows, columns=columns)
     if with_unit_share:
-        key_by_unit = dict(zip(prepared["호기"], unit_keys(prepared), strict=True))
-        result[UNIT_KEY_COLUMN] = result["호기"].map(key_by_unit)
+        key_by_unit = dict(zip(prepared[EQUIPMENT_ID_COLUMN], unit_keys(prepared), strict=True))
+        result[UNIT_KEY_COLUMN] = result[EQUIPMENT_ID_COLUMN].map(key_by_unit)
     # 길이가 0 인 구간은 같은 날 두 번 바뀐 것이다. 그리면 폭 없는 막대라 보이지 않는다.
     result = result.loc[result["종료일"] >= result["시작일"]]
-    return result.sort_values(["호기", "시작일"]).reset_index(drop=True)
+    return result.sort_values([EQUIPMENT_ID_COLUMN, "시작일"]).reset_index(drop=True)
 
 
 def _lifecycle_breakpoints(
@@ -391,14 +407,14 @@ def build_inactive_equipment_in_month(
     「운영 비가동」·「셋업 진행중」을 이름으로 골라 세는 집계는 그 호기를 통째로 잃는다.
     이름 목록은 사다리가 한 칸 늘 때마다 조용히 틀려지기도 한다. 그래서 시점 표와 **같은
     술어**(`build_inactive_equipment` = 보유 & ~가용)를 `inactive_equipment_moments` 의
-    시점마다 다시 물어 `호기` 로 union 한다.
+    시점마다 다시 물어 `설비명` 으로 union 한다.
 
     `month` 는 그 달의 아무 날짜라도 된다(기준일을 그대로 넘긴다). `moments` 를 주면 그
     시점 집합을 그대로 쓴다 — 화면이 캡션에 적는 시점 개수와 실제로 잰 시점이 어긋나지
     않게 하려는 것이다.
 
-    결과는 시점 표와 같은 컬럼 앞에 `비가동 시작`·`비가동 종료`를 붙인 것이다. 이 둘은
-    구간의 실제 시작·끝이 아니라 **그 호기가 비가동으로 잡힌 시점의 최소·최대**다.
+    결과는 시점 표와 같은 컬럼의 `설비명` 바로 뒤에 `비가동 시작`·`비가동 종료`를 붙인 것이다.
+    이 둘은 구간의 실제 시작·끝이 아니라 **그 호기가 비가동으로 잡힌 시점의 최소·최대**다.
     """
     if moments is None:
         moments = inactive_equipment_moments(equipment, downtime, month=month)
@@ -412,15 +428,19 @@ def build_inactive_equipment_in_month(
         ],
         ignore_index=True,
     )
-    caught = stacked.groupby("호기")[_MOMENT_COLUMN].agg(["min", "max"])
+    caught = stacked.groupby(EQUIPMENT_ID_COLUMN)[_MOMENT_COLUMN].agg(["min", "max"])
     result = (
-        stacked.drop_duplicates("호기", keep="first")
+        stacked.drop_duplicates(EQUIPMENT_ID_COLUMN, keep="first")
         .drop(columns=[_MOMENT_COLUMN])
         .reset_index(drop=True)
     )
-    result.insert(1, "비가동 시작", result["호기"].map(caught["min"]))
-    result.insert(2, "비가동 종료", result["호기"].map(caught["max"]))
-    return result.sort_values(["비가동 시작", "호기"], kind="stable").reset_index(drop=True)
+    # 두 컬럼은 `설비명` 바로 뒤에 붙인다.
+    after_id = cast(int, result.columns.get_loc(EQUIPMENT_ID_COLUMN)) + 1
+    result.insert(after_id, "비가동 시작", result[EQUIPMENT_ID_COLUMN].map(caught["min"]))
+    result.insert(after_id + 1, "비가동 종료", result[EQUIPMENT_ID_COLUMN].map(caught["max"]))
+    return result.sort_values(["비가동 시작", EQUIPMENT_ID_COLUMN], kind="stable").reset_index(
+        drop=True
+    )
 
 
 def build_space_equipment_status(
@@ -449,7 +469,15 @@ def build_milestone_transition_events(
     if prepared.empty:
         return pd.DataFrame(columns=TRANSITION_EVENT_COLUMNS)
     prepared = prepared.assign(**{UNIT_KEY_COLUMN: unit_keys(prepared)})
-    identity_columns = ["호기", "공정대분류", "공정소분류", "동", "층", "확정상태", UNIT_KEY_COLUMN]
+    identity_columns = [
+        EQUIPMENT_ID_COLUMN,
+        "공정대분류",
+        "공정소분류",
+        "동",
+        "층",
+        "확정상태",
+        UNIT_KEY_COLUMN,
+    ]
     date_columns = [column for column, _ in SCHEDULE_STAGES]
     events = prepared.melt(
         id_vars=identity_columns,
@@ -463,7 +491,7 @@ def build_milestone_transition_events(
     previous_stage = {
         "제진대일정": "착수 전",
         "물류일정": "제진대",
-        "입고일정": "물류",
+        ARRIVAL_DATE_COLUMN: "물류",
         "Qual일정": "입고",
         "반출일정": "가용/보관",
         "이설일": "가용/보관",
@@ -488,7 +516,9 @@ def build_milestone_transition_events(
     events["기준일대비"] = (
         events["전환일"].sub(as_of_timestamp).dt.days.map(_format_day_difference).astype("string")
     )
-    events = events.sort_values(["전환일", "단계순서", "공정소분류", "호기"], kind="stable")
+    events = events.sort_values(
+        ["전환일", "단계순서", "공정소분류", EQUIPMENT_ID_COLUMN], kind="stable"
+    )
     return events.loc[:, TRANSITION_EVENT_COLUMNS].reset_index(drop=True)
 
 

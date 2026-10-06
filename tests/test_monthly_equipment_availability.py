@@ -37,9 +37,9 @@ def cutoff_table(days: float, process: str = PROCESS) -> pd.DataFrame:
 
 
 def spans(rows: list[tuple[str, str, date, date]]) -> pd.DataFrame:
-    return pd.DataFrame(rows, columns=["호기", "상태", "시작일", "종료일"]).assign(
+    return pd.DataFrame(rows, columns=["설비명", "상태", "시작일", "종료일"]).assign(
         공정소분류=PROCESS
-    )[["호기", "공정소분류", "상태", "시작일", "종료일"]]
+    )[["설비명", "공정소분류", "상태", "시작일", "종료일"]]
 
 
 def empty_baseline() -> pd.DataFrame:
@@ -286,7 +286,7 @@ def test_the_unit_list_adds_up_to_the_count_table_cell_by_cell() -> None:
     baseline = pd.DataFrame(
         {"공정": ["DEMO_Bonder"] * 2, "분류": ["A", "B"], "기존보유대수": [1.5, 2.0]}
     )
-    ratios = dict(zip(frame["호기"], frame["환산비"], strict=True))
+    ratios = dict(zip(frame["설비명"], frame["환산비"], strict=True))
     months = [202602, 202603, 202605, 202606]
 
     table = build_monthly_equipment_availability(
@@ -305,7 +305,7 @@ def test_the_unit_list_adds_up_to_the_count_table_cell_by_cell() -> None:
     assert joined["환산대수"].tolist() == pytest.approx(joined["환산대수_목록"].tolist())
 
     # 한 달 안에서 구간이 끊긴 모듈도 한 줄이다. 5월의 A 는 0.25 로 10일, 1/3 로 21일.
-    may_a = units.loc[units["생산계획년월"].eq(202605) & units["호기"].eq("APW01A")]
+    may_a = units.loc[units["생산계획년월"].eq(202605) & units["설비명"].eq("APW01A")]
     assert len(may_a) == 1
     assert may_a["기여일수"].item() == 31
     assert may_a["대수"].item() == pytest.approx(10 / 31 * 0.25 + 21 / 31 / 3)

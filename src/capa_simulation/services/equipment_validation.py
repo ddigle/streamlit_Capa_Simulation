@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
+    ARRIVAL_DATE_COLUMN,
     BASELINE_COLUMNS,
     BASELINE_KEY_COLUMNS,
     CONVERSION_RATIO_COLUMN,
@@ -18,10 +19,12 @@ from capa_simulation.services.equipment_contract import (
     DOWNTIME_COLUMNS,
     DOWNTIME_KEY_COLUMNS,
     EQUIPMENT_COLUMNS,
+    EQUIPMENT_ID_COLUMN,
     FLAG_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
     REFERENCE_TEXT_COLUMNS,
+    STORAGE_FLAG_COLUMN,
     UNIT_CONSISTENT_COLUMNS,
     VALID_BUILDINGS,
     VALID_FLOORS,
@@ -64,7 +67,8 @@ def prepare_equipment_master(
     *,
     floor_canvases: FloorCanvasMap | None = None,
 ) -> pd.DataFrame:
-    """호기 마스터 32컬럼 계약을 정규화하고 검증한다. 선택 컬럼(모체호기)은 없으면 빈 칸이다.
+    """호기 마스터 36컬럼 계약을 정규화하고 검증한다. 선택 컬럼은 없으면 빈 칸이다
+    (`OPTIONAL_EQUIPMENT_COLUMNS`).
 
     `floor_canvases` 를 넘기면 층별 캔버스 폭·높이를 상한으로 좌표를 검사한다. 넘기지
     않으면 상한 검사를 건너뛴다 — 이미 저장된 리비전은 캔버스가 줄어든 뒤에도 열려야 한다.
@@ -72,26 +76,26 @@ def prepare_equipment_master(
     data = with_optional_equipment_columns(data)
     require_columns(data, EQUIPMENT_COLUMNS, "호기 마스터")
     result = data.loc[:, EQUIPMENT_COLUMNS].copy()
-    result = _drop_blank_rows(result, ("호기",))
+    result = _drop_blank_rows(result, (EQUIPMENT_ID_COLUMN,))
     if result.empty:
         return empty_equipment_master()
 
-    _normalize_required_text(result, ("호기", "공정소분류"), "호기 마스터")
+    _normalize_required_text(result, (EQUIPMENT_ID_COLUMN, "공정소분류"), "호기 마스터")
     for column in REFERENCE_TEXT_COLUMNS + ("동", "층"):
         result[column] = _optional_text(result[column])
     result["확정상태"] = _optional_text(result["확정상태"])
     result[PARENT_EQUIPMENT_COLUMN] = _optional_text(result[PARENT_EQUIPMENT_COLUMN])
-    duplicated = result["호기"].duplicated(keep=False)
+    duplicated = result[EQUIPMENT_ID_COLUMN].duplicated(keep=False)
     if duplicated.any():
-        examples = result.loc[duplicated, "호기"].drop_duplicates().head(5).tolist()
-        raise ValueError(f"호기는 중복될 수 없습니다: {examples}")
+        examples = result.loc[duplicated, EQUIPMENT_ID_COLUMN].drop_duplicates().head(5).tolist()
+        raise ValueError(f"설비명은 중복될 수 없습니다: {examples}")
     _validate_unit_groups(result)
 
     for column in FLAG_COLUMNS:
         result[column] = result[column].astype("string").str.strip().str.upper()
         invalid = ~result[column].isin(["Y", "N"])
         if invalid.any():
-            examples = result.loc[invalid, "호기"].head(5).tolist()
+            examples = result.loc[invalid, EQUIPMENT_ID_COLUMN].head(5).tolist()
             raise ValueError(f"{column}는 Y 또는 N이어야 합니다: {examples}")
 
     for column in COORDINATE_COLUMNS:
@@ -101,54 +105,62 @@ def prepare_equipment_master(
 
     for column in DATE_COLUMNS:
         result[column] = _normalize_date(result[column], column)
-    ordinary = result["장기보관여부"].eq("N") & result["기존설비여부"].eq("N")
-    missing_required_dates = ordinary & (result["입고일정"].isna() | result["Qual일정"].isna())
+    ordinary = result[STORAGE_FLAG_COLUMN].eq("N") & result["기존설비여부"].eq("N")
+    missing_required_dates = ordinary & (
+        result[ARRIVAL_DATE_COLUMN].isna() | result["Qual일정"].isna()
+    )
     if missing_required_dates.any():
-        examples = result.loc[missing_required_dates, "호기"].head(5).tolist()
+        examples = result.loc[missing_required_dates, EQUIPMENT_ID_COLUMN].head(5).tolist()
         raise ValueError(
-            f"장기보관·기존설비가 아닌 호기는 입고일정과 Qual일정이 필수입니다: {examples}"
+            f"보관·기존설비가 아닌 호기는 반입일정과 Qual일정이 필수입니다: {examples}"
         )
     missing_confirmation = ordinary & result["확정상태"].isna()
     if missing_confirmation.any():
-        examples = result.loc[missing_confirmation, "호기"].head(5).tolist()
-        raise ValueError(f"장기보관·기존설비가 아닌 호기는 Qual 확정상태가 필수입니다: {examples}")
+        examples = result.loc[missing_confirmation, EQUIPMENT_ID_COLUMN].head(5).tolist()
+        raise ValueError(f"보관·기존설비가 아닌 호기는 Qual 확정상태가 필수입니다: {examples}")
     invalid_confirmation = result["확정상태"].notna() & ~result["확정상태"].isin(
         QUAL_CONFIRMATION_STATUSES
     )
     if invalid_confirmation.any():
-        examples = result.loc[invalid_confirmation, "호기"].head(5).tolist()
+        examples = result.loc[invalid_confirmation, EQUIPMENT_ID_COLUMN].head(5).tolist()
         raise ValueError(f"확정상태는 계획·확정·완료·지연 중 하나여야 합니다: {examples}")
     invalid_setup_order = (
-        result["입고일정"].notna()
+        result[ARRIVAL_DATE_COLUMN].notna()
         & result["Qual일정"].notna()
-        & result["Qual일정"].lt(result["입고일정"])
+        & result["Qual일정"].lt(result[ARRIVAL_DATE_COLUMN])
     )
-    invalid_pre_arrival = _invalid_optional_order(result, ("제진대일정", "물류일정", "입고일정"))
+    invalid_pre_arrival = _invalid_optional_order(
+        result, ("제진대일정", "물류일정", ARRIVAL_DATE_COLUMN)
+    )
     if (invalid_setup_order | invalid_pre_arrival).any():
-        examples = result.loc[invalid_setup_order | invalid_pre_arrival, "호기"].head(5).tolist()
-        raise ValueError(f"제진대·물류·입고·Qual 일정 순서가 올바르지 않습니다: {examples}")
+        examples = (
+            result.loc[invalid_setup_order | invalid_pre_arrival, EQUIPMENT_ID_COLUMN]
+            .head(5)
+            .tolist()
+        )
+        raise ValueError(f"제진대·물류·반입·Qual 일정 순서가 올바르지 않습니다: {examples}")
     both_exit_dates = result["반출일정"].notna() & result["이설일"].notna()
     if both_exit_dates.any():
-        examples = result.loc[both_exit_dates, "호기"].head(5).tolist()
+        examples = result.loc[both_exit_dates, EQUIPMENT_ID_COLUMN].head(5).tolist()
         raise ValueError(f"반출일정과 이설일은 동시에 입력할 수 없습니다: {examples}")
     for exit_column in ("반출일정", "이설일"):
         before_arrival = (
             result[exit_column].notna()
-            & result["입고일정"].notna()
-            & result[exit_column].lt(result["입고일정"])
+            & result[ARRIVAL_DATE_COLUMN].notna()
+            & result[exit_column].lt(result[ARRIVAL_DATE_COLUMN])
         )
         if before_arrival.any():
-            examples = result.loc[before_arrival, "호기"].head(5).tolist()
-            raise ValueError(f"{exit_column}은 입고일정보다 빠를 수 없습니다: {examples}")
+            examples = result.loc[before_arrival, EQUIPMENT_ID_COLUMN].head(5).tolist()
+            raise ValueError(f"{exit_column}은 반입일정보다 빠를 수 없습니다: {examples}")
     return result.reset_index(drop=True)
 
 
 def _validate_unit_groups(result: pd.DataFrame) -> None:
-    """모체호기로 묶은 모듈 행이 한 설비로 셀 수 있는 모양인지 본다.
+    """Main 설비로 묶은 모듈 행이 한 설비로 셀 수 있는 모양인지 본다.
 
-    - 모체호기는 다른 행의 호기와 같을 수 없다. 설비 행(APW01)과 모듈 행(APW01A~D)을 함께
+    - Main 설비는 다른 행의 설비명과 같을 수 없다. 설비 행(APW01)과 모듈 행(APW01A~D)을 함께
       두면 같은 설비가 두 번 세어진다.
-    - 한 설비의 모듈 행끼리 공정·라인·활용·동·층이 같아야 한다. 화면 필터가 이 값들로
+    - 한 설비의 모듈 행끼리 공정·공정구분·투자구분·동·층이 같아야 한다. 화면 필터가 이 값들로
       행을 거르므로, 다르면 필터가 설비를 쪼개 지분 합이 1 이 아니게 된다.
     """
     parents = result[PARENT_EQUIPMENT_COLUMN]
@@ -156,21 +168,21 @@ def _validate_unit_groups(result: pd.DataFrame) -> None:
     if not named.any():
         return
     # 자기 호기를 적은 것은 무해하다(묶음 1행 = 지분 1). 다른 행의 호기를 가리킬 때만 막는다.
-    units = result["호기"].astype("string")
+    units = result[EQUIPMENT_ID_COLUMN].astype("string")
     colliding = named & parents.isin(set(units)) & parents.ne(units)
     if colliding.any():
         examples = parents.loc[colliding].drop_duplicates().head(5).tolist()
         raise ValueError(
-            "모체호기는 다른 행의 호기와 같을 수 없습니다 — 설비 행과 모듈 행을 함께 두면 "
+            "Main 설비는 다른 행의 설비명과 같을 수 없습니다 — 설비 행과 모듈 행을 함께 두면 "
             f"같은 설비가 두 번 세어집니다. 설비 행을 지우고 모듈 행만 남기세요: {examples}"
         )
-    keys = parents.where(named, result["호기"])
+    keys = parents.where(named, result[EQUIPMENT_ID_COLUMN])
     for column in UNIT_CONSISTENT_COLUMNS:
         values = result[column].astype("string").fillna("")
         mixed = values.groupby(keys).nunique().gt(1)
         if mixed.any():
             examples = mixed.loc[mixed].index.tolist()[:5]
-            raise ValueError(f"같은 모체호기의 모듈 행은 {column} 이 같아야 합니다: {examples}")
+            raise ValueError(f"같은 Main 설비의 모듈 행은 {column} 이 같아야 합니다: {examples}")
 
 
 def prepare_downtime_schedule(
@@ -184,7 +196,7 @@ def prepare_downtime_schedule(
     result = _drop_blank_rows(result, DOWNTIME_KEY_COLUMNS)
     if result.empty:
         return empty_downtime_schedule()
-    _normalize_required_text(result, ("호기", "비가동유형"), "비가동 일정")
+    _normalize_required_text(result, (EQUIPMENT_ID_COLUMN, "비가동유형"), "비가동 일정")
     for column in ("상세사유", "비고"):
         result[column] = _optional_text(result[column])
     result["시작일"] = _normalize_date(result["시작일"], "시작일")
@@ -194,7 +206,7 @@ def prepare_downtime_schedule(
     duplicated = result.duplicated(list(DOWNTIME_KEY_COLUMNS), keep=False)
     if duplicated.any():
         examples = _key_examples(result.loc[duplicated], DOWNTIME_KEY_COLUMNS)
-        raise ValueError(f"호기·비가동유형·시작일이 중복되었습니다: {examples}")
+        raise ValueError(f"설비명·비가동유형·시작일이 중복되었습니다: {examples}")
     invalid_end = result["종료일"].notna() & result["종료일"].lt(result["시작일"])
     if invalid_end.any():
         examples = _key_examples(result.loc[invalid_end], DOWNTIME_KEY_COLUMNS)
@@ -210,7 +222,8 @@ def _validate_downtime_equipment(
     prepared_equipment: pd.DataFrame,
 ) -> None:
     unknown = prepared_downtime.loc[
-        ~prepared_downtime["호기"].isin(prepared_equipment["호기"]), "호기"
+        ~prepared_downtime[EQUIPMENT_ID_COLUMN].isin(prepared_equipment[EQUIPMENT_ID_COLUMN]),
+        EQUIPMENT_ID_COLUMN,
     ]
     if not unknown.empty:
         examples = unknown.drop_duplicates().head(5).tolist()
@@ -248,7 +261,9 @@ def _validate_locations_and_coordinates(
     invalid_building = result["동"].notna() & ~result["동"].isin(VALID_BUILDINGS)
     invalid_floor = result["층"].notna() & ~result["층"].isin(VALID_FLOORS)
     if (invalid_building | invalid_floor).any():
-        examples = result.loc[invalid_building | invalid_floor, "호기"].head(5).tolist()
+        examples = (
+            result.loc[invalid_building | invalid_floor, EQUIPMENT_ID_COLUMN].head(5).tolist()
+        )
         raise ValueError(f"동은 C1~C5, 층은 1F~6F 범위여야 합니다: {examples}")
     position = result.loc[:, ["X좌표", "Y좌표"]].notna()
     size = result.loc[:, ["Xsize", "Ysize"]].notna()
@@ -274,7 +289,7 @@ def _validate_locations_and_coordinates(
     )
     for broken, message in rules:
         if broken.any():
-            examples = result.loc[broken, "호기"].head(5).tolist()
+            examples = result.loc[broken, EQUIPMENT_ID_COLUMN].head(5).tolist()
             raise ValueError(f"{message}: {examples}")
     complete = has_position & has_size
     if floor_canvases is None:
@@ -322,7 +337,7 @@ def _outside_canvas_message(
         need_height = max(height, round(float(top), CANVAS_DECIMALS))
         label = "동·층 미지정" if unplaced else f"{building} {floor}"
         source = "" if stored is not None else "(저장된 캔버스 없음 · 기본값)"
-        examples = rows["호기"].head(5).tolist()
+        examples = rows[EQUIPMENT_ID_COLUMN].head(5).tolist()
         floors.append(
             f"{label} 캔버스 {width:g} × {height:g}{source} — 이 층 호기를 모두 담으려면 "
             f"{need_width:g} × {need_height:g} 이상: {examples}"
@@ -387,11 +402,11 @@ def _normalize_conversion_ratio(result: pd.DataFrame) -> pd.Series:
     ratio = pd.to_numeric(raw, errors="coerce")
     unreadable = ~blank & ratio.isna()
     if unreadable.any():
-        examples = result.loc[unreadable, "호기"].head(5).tolist()
+        examples = result.loc[unreadable, EQUIPMENT_ID_COLUMN].head(5).tolist()
         raise ValueError(f"환산비를 숫자로 읽을 수 없습니다: {examples}")
     not_positive = ~blank & ratio.le(0)
     if not_positive.any():
-        examples = result.loc[not_positive, "호기"].head(5).tolist()
+        examples = result.loc[not_positive, EQUIPMENT_ID_COLUMN].head(5).tolist()
         raise ValueError(f"환산비는 0보다 큰 숫자여야 합니다: {examples}")
     return ratio.mask(blank, DEFAULT_CONVERSION_RATIO).astype("float64")
 
@@ -407,7 +422,7 @@ def _readable_number(result: pd.DataFrame, column: str) -> pd.Series:
     number = pd.to_numeric(raw, errors="coerce")
     unreadable = ~blank & number.isna()
     if unreadable.any():
-        examples = result.loc[unreadable, "호기"].head(5).tolist()
+        examples = result.loc[unreadable, EQUIPMENT_ID_COLUMN].head(5).tolist()
         raise ValueError(f"{column}를 숫자로 읽을 수 없습니다: {examples}")
     return number.mask(blank).astype("float64")
 

@@ -10,7 +10,7 @@
 2. **검증** — 브라우저가 보낸 적용값을 다시 검사한다. 하나라도 어긋나면 `ValueError` 로 적용
    전체를 거부한다. 조용히 버리면 그 편집이 사라진 채 화면은 적용된 것처럼 보인다.
 3. **반영** — 검증한 변경을 편집본 호기 마스터에 얹는다. 트레이로 빼도 크기는 남기고, 다른
-   층으로 보낸 호기는 그 층 캔버스 안으로 민다. 모체호기 묶음은 동·층을 함께 맞춘다(모듈 행은
+   층으로 보낸 호기는 그 층 캔버스 안으로 민다. Main 설비 묶음은 동·층을 함께 맞춘다(모듈 행은
    동·층이 같아야 저장된다).
 
 좌표 계약은 Space 배치도와 같다: 원점은 왼쪽 아래, 상자는 (X, Y) → (X+Xsize, Y+Ysize).
@@ -27,8 +27,11 @@ from typing import Any, Final, cast
 import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
+    ARRIVAL_DATE_COLUMN,
+    EQUIPMENT_ID_COLUMN,
     PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
+    STORAGE_FLAG_COLUMN,
 )
 from capa_simulation.services.equipment_units import unit_keys
 from capa_simulation.services.fab_layout import floor_label
@@ -139,7 +142,7 @@ def _iso_date(value: object, field: str, unit_id: str) -> date | None:
 
 
 def _parents(frame: pd.DataFrame) -> pd.Series:
-    """행마다 모체호기(앞뒤 공백 제거, 비면 NA). 선택 컬럼이라 없는 표도 받는다."""
+    """행마다 Main 설비(앞뒤 공백 제거, 비면 NA). 선택 컬럼이라 없는 표도 받는다."""
     if PARENT_EQUIPMENT_COLUMN not in frame.columns:
         return pd.Series(pd.NA, index=frame.index, dtype="string")
     parents = frame[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip()
@@ -163,7 +166,7 @@ def editor_inputs(
     """설비 편집본의 호기 상태(`build_space_equipment_status` 결과)에서 이 층 편집기 입력을 만든다.
 
     - 도면: 레이아웃반영여부(레이아웃표시 Y · 반출·이설 전) 이고 이 층에 X·Y·크기가 다 있는 호기
-    - 트레이: 같은 대상 중 X·Y 가 없고 이 층이거나 층 미정인 호기. 모체호기 묶음의 다른 모듈이
+    - 트레이: 같은 대상 중 X·Y 가 없고 이 층이거나 층 미정인 호기. Main 설비 묶음의 다른 모듈이
       이 층 도면에 서 있으면 그 형제는 트레이에 따로 내놓지 않는다(상자를 한 모듈에만 그린 설비).
     - 영역 하한: 이 층에 좌표가 있지만 편집기에 안 나오는 호기(N·반출 완료 …)가 차지한 범위.
       저장 검증은 그런 행에도 캔버스 상한을 걸므로 영역을 그보다 줄이지 못하게 한다.
@@ -205,10 +208,12 @@ def editor_inputs(
         _placed=placed[shown], _floorless=floorless[shown], _parent=parents[shown]
     )
     # 다른 층에서 옮겨 온 호기는 같은 좌표로 와 기존 호기를 덮을 수 있다 — 맨 뒤(맨 위에 그림)로.
-    order = rows["호기"].astype("string").isin(arrivals).astype(int).argsort(kind="stable")
+    order = (
+        rows[EQUIPMENT_ID_COLUMN].astype("string").isin(arrivals).astype(int).argsort(kind="stable")
+    )
     items: list[dict[str, Any]] = []
     for row in rows.iloc[order].to_dict(orient="records"):
-        unit_id = str(row["호기"]).strip()
+        unit_id = str(row[EQUIPMENT_ID_COLUMN]).strip()
         parent = row["_parent"]
         items.append(
             {
@@ -252,13 +257,13 @@ def new_unit_options(master: pd.DataFrame) -> dict[str, Any]:
         ]
         for name, group in sized.groupby("공정소분류")
     }
-    unit_ids = set(master["호기"].dropna().astype(str).str.strip())
-    # 모체호기 이름도 새 호기 이름으로 쓸 수 없다(설비 한 대가 두 번 세어진다).
+    unit_ids = set(master[EQUIPMENT_ID_COLUMN].dropna().astype(str).str.strip())
+    # Main 설비 이름도 새 호기 이름으로 쓸 수 없다(설비 한 대가 두 번 세어진다).
     parent_ids = set(_parents(master).dropna().astype(str))
     return {
         "processes": choices("공정소분류"),
-        "lines": choices("라인구분"),
-        "uses": choices("활용구분"),
+        "lines": choices("공정구분"),
+        "uses": choices("투자구분"),
         "sizeHints": hints,
         "existingIds": sorted(unit_ids | parent_ids),
         "parentIds": sorted(parent_ids),
@@ -280,7 +285,7 @@ def _parse_created(
     if not unit_id.isprintable():
         raise ValueError(f"새 호기 이름에 탭·줄바꿈·특수 공백을 쓸 수 없습니다: {unit_id!r}")
     if unit_id in options.get("parentIds", ()):
-        raise ValueError(f"이미 모체호기로 쓰는 이름입니다: {unit_id}")
+        raise ValueError(f"이미 Main 설비로 쓰는 이름입니다: {unit_id}")
     if unit_id in taken:
         raise ValueError(f"이미 있는 호기입니다: {unit_id}")
     process = _text(raw.get("process")).strip()
@@ -289,21 +294,21 @@ def _parse_created(
     if process not in options.get("processes", ()):
         raise ValueError(f"새 호기 {unit_id} 의 공정소분류를 고를 수 없는 값입니다: {process!r}")
     if line and line not in options.get("lines", ()):
-        raise ValueError(f"새 호기 {unit_id} 의 라인구분을 고를 수 없는 값입니다: {line!r}")
+        raise ValueError(f"새 호기 {unit_id} 의 공정구분을 고를 수 없는 값입니다: {line!r}")
     if use and use not in options.get("uses", ()):
-        raise ValueError(f"새 호기 {unit_id} 의 활용구분을 고를 수 없는 값입니다: {use!r}")
+        raise ValueError(f"새 호기 {unit_id} 의 투자구분을 고를 수 없는 값입니다: {use!r}")
     existing = raw.get("existing") is True
-    arrival = _iso_date(raw.get("arrival"), "입고일정", unit_id)
+    arrival = _iso_date(raw.get("arrival"), ARRIVAL_DATE_COLUMN, unit_id)
     qual = _iso_date(raw.get("qual"), "Qual일정", unit_id)
     confirm = _text(raw.get("confirm")).strip()
     if not existing:
-        # 호기 마스터 계약: 기존설비가 아니면 입고·Qual 일정(입고 ≤ Qual)과 확정상태가 필수다.
+        # 호기 마스터 계약: 기존설비가 아니면 반입·Qual 일정(반입 ≤ Qual)과 확정상태가 필수다.
         if arrival is None or qual is None:
             raise ValueError(
-                f"신규 설비 {with_topic_particle(unit_id)} 입고일정과 Qual일정이 필요합니다."
+                f"신규 설비 {with_topic_particle(unit_id)} 반입일정과 Qual일정이 필요합니다."
             )
         if qual < arrival:
-            raise ValueError(f"새 호기 {unit_id} 의 Qual일정이 입고일정보다 빠릅니다.")
+            raise ValueError(f"새 호기 {unit_id} 의 Qual일정이 반입일정보다 빠릅니다.")
         if confirm not in QUAL_CONFIRMATION_STATUSES:
             raise ValueError(f"새 호기 {unit_id} 의 확정상태를 골라 주세요.")
     return CreatedUnit(
@@ -423,14 +428,14 @@ def created_unit_row(unit: CreatedUnit, master: pd.DataFrame, size: CanvasSize) 
     ].dropna()
     row.update(
         {
-            "호기": unit.unit_id,
+            EQUIPMENT_ID_COLUMN: unit.unit_id,
             "공정소분류": unit.process,
             "공정대분류": parents.iloc[0] if not parents.empty else None,
-            "라인구분": unit.line or None,
-            "활용구분": unit.use or None,
-            "장기보관여부": "N",
+            "공정구분": unit.line or None,
+            "투자구분": unit.use or None,
+            STORAGE_FLAG_COLUMN: "N",
             "기존설비여부": "Y" if unit.existing else "N",
-            "입고일정": pd.Timestamp(unit.arrival) if unit.arrival else None,
+            ARRIVAL_DATE_COLUMN: pd.Timestamp(unit.arrival) if unit.arrival else None,
             "Qual일정": pd.Timestamp(unit.qual) if unit.qual else None,
             "확정상태": unit.confirm or None,
             "레이아웃표시": "Y",
@@ -459,7 +464,14 @@ def _aligned(extra: pd.DataFrame, like: pd.DataFrame) -> pd.DataFrame:
 
 
 def _id_mask(frame: pd.DataFrame, unit_id: str) -> pd.Series:
-    return frame["호기"].astype("string").str.strip().eq(unit_id).fillna(False).astype(bool)
+    return (
+        frame[EQUIPMENT_ID_COLUMN]
+        .astype("string")
+        .str.strip()
+        .eq(unit_id)
+        .fillna(False)
+        .astype(bool)
+    )
 
 
 def _fit_moved_into_canvases(
@@ -468,7 +480,7 @@ def _fit_moved_into_canvases(
     canvases: Mapping[FloorKey, CanvasSize],
     default_canvas: CanvasSize,
 ) -> None:
-    """좌표째 다른 층으로 보낸 호기를 그 층 영역 안으로 민다. 모체호기 묶음은 모양째 옮기고,
+    """좌표째 다른 층으로 보낸 호기를 그 층 영역 안으로 민다. Main 설비 묶음은 모양째 옮기고,
     묶음(또는 호기)이 영역보다 크면 그 층 트레이로 보낸다(크기는 남긴다)."""
     groups: dict[tuple[FloorKey, str], list[pd.Series]] = {}
     keys = unit_keys(master)
@@ -499,13 +511,13 @@ def _fit_moved_into_canvases(
 
 
 def _harmonize_groups(master: pd.DataFrame, changed_ids: Sequence[str]) -> None:
-    """바뀐 모듈 행의 동·층을 같은 모체호기의 모든 행에 맞춘다(편집기에 없던 형제 포함).
+    """바뀐 모듈 행의 동·층을 같은 Main 설비의 모든 행에 맞춘다(편집기에 없던 형제 포함).
 
     편집기에 없던 형제(반출 완료·레이아웃표시 N …)가 이 맞춤으로 **층이 바뀌면** 그 X·Y 를 비운다.
     옛 층 좌표를 지닌 채 따라가면 새 층 캔버스 밖이라 거부되거나 새 층에 유령 영역을 남긴다.
     크기는 남긴다(크기만 있는 행은 받는다)."""
     parents = _parents(master)
-    ids = master["호기"].astype("string").str.strip()
+    ids = master[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
     changed = set(changed_ids)
     done: set[str] = set()
     for unit_id in changed_ids:
@@ -617,7 +629,7 @@ def layout_warnings(
                     and a["Y좌표"] < b["_top"]
                     and b["Y좌표"] < a["_top"]
                 ):
-                    pairs.append(f"{a['호기']} ↔ {b['호기']} ({name})")
+                    pairs.append(f"{a[EQUIPMENT_ID_COLUMN]} ↔ {b[EQUIPMENT_ID_COLUMN]} ({name})")
         for mark in marks_by_floor.get((str(building), str(floor)), ()):
             if not mark.blocks:
                 continue
@@ -632,7 +644,7 @@ def layout_warnings(
                     and record["Y좌표"] < mark_top
                     and mark.y < record["_top"]
                 ):
-                    blocked.append(f"{record['호기']} → {mark.name} ({name})")
+                    blocked.append(f"{record[EQUIPMENT_ID_COLUMN]} → {mark.name} ({name})")
     messages = []
     for title, rows_text in (
         ("겹친 호기", pairs),
@@ -673,11 +685,13 @@ def _comparable(value: object) -> str:
 
 
 def layout_changes(saved: pd.DataFrame, buffer: pd.DataFrame) -> pd.DataFrame:
-    """저장본과 편집본의 배치 칸 차이(호기마다 한 줄): 호기·모체호기·구분·이전·새."""
-    saved_rows = {str(row["호기"]).strip(): row for row in saved.to_dict(orient="records")}
+    """저장본과 편집본의 배치 칸 차이(호기마다 한 줄): 설비명·Main 설비·구분·이전·새."""
+    saved_rows = {
+        str(row[EQUIPMENT_ID_COLUMN]).strip(): row for row in saved.to_dict(orient="records")
+    }
     rows = []
     for row in buffer.to_dict(orient="records"):
-        unit_id = str(row["호기"]).strip()
+        unit_id = str(row[EQUIPMENT_ID_COLUMN]).strip()
         before = saved_rows.get(unit_id)
         parent = row.get(PARENT_EQUIPMENT_COLUMN)
         parent_text = str(parent) if _present(parent) else ""
@@ -686,9 +700,9 @@ def layout_changes(saved: pd.DataFrame, buffer: pd.DataFrame) -> pd.DataFrame:
                 continue
             rows.append(
                 {
-                    "호기": unit_id,
-                    "모체호기": parent_text,
-                    "구분": "새 호기",
+                    EQUIPMENT_ID_COLUMN: unit_id,
+                    PARENT_EQUIPMENT_COLUMN: parent_text,
+                    "변경": "새 호기",
                     "이전": "",
                     "새": _where(row),
                 }
@@ -713,20 +727,26 @@ def layout_changes(saved: pd.DataFrame, buffer: pd.DataFrame) -> pd.DataFrame:
             kind = "이동·크기"
         rows.append(
             {
-                "호기": unit_id,
-                "모체호기": parent_text,
-                "구분": kind,
+                EQUIPMENT_ID_COLUMN: unit_id,
+                PARENT_EQUIPMENT_COLUMN: parent_text,
+                "변경": kind,
                 "이전": _where(before),
                 "새": _where(row),
             }
         )
-    return pd.DataFrame(rows, columns=["호기", "모체호기", "구분", "이전", "새"])
+    return pd.DataFrame(
+        rows, columns=[EQUIPMENT_ID_COLUMN, PARENT_EQUIPMENT_COLUMN, "변경", "이전", "새"]
+    )
 
 
 def other_change_count(saved: pd.DataFrame, buffer: pd.DataFrame) -> int:
     """배치 칸이 아닌 차이가 있는 호기 수(RawData 의 저장 안 한 다른 편집). 지운 호기도 센다."""
-    saved_rows = {str(row["호기"]).strip(): row for row in saved.to_dict(orient="records")}
-    buffer_rows = {str(row["호기"]).strip(): row for row in buffer.to_dict(orient="records")}
+    saved_rows = {
+        str(row[EQUIPMENT_ID_COLUMN]).strip(): row for row in saved.to_dict(orient="records")
+    }
+    buffer_rows = {
+        str(row[EQUIPMENT_ID_COLUMN]).strip(): row for row in buffer.to_dict(orient="records")
+    }
     others = [column for column in buffer.columns if column not in PLACE_COLUMNS]
     count = len(saved_rows.keys() - buffer_rows.keys())
     for unit_id, row in buffer_rows.items():
@@ -757,14 +777,17 @@ def unsaved_unit_ids(
 ) -> tuple[set[str], set[str]]:
     """(저장본에 없는 새 호기, 다른 층에서 이 층으로 옮겨 왔지만 아직 저장하지 않은 호기)."""
     saved_floor = {
-        str(row["호기"]).strip(): (_comparable(row.get("동")), _comparable(row.get("층")))
+        str(row[EQUIPMENT_ID_COLUMN]).strip(): (
+            _comparable(row.get("동")),
+            _comparable(row.get("층")),
+        )
         for row in saved.to_dict(orient="records")
     }
     here = (floor[0], floor[1])
     new_ids: set[str] = set()
     arrived: set[str] = set()
     for row in buffer.to_dict(orient="records"):
-        unit_id = str(row["호기"]).strip()
+        unit_id = str(row[EQUIPMENT_ID_COLUMN]).strip()
         before = saved_floor.get(unit_id)
         if before is None:
             new_ids.add(unit_id)
@@ -785,8 +808,8 @@ def viewer_items(located: pd.DataFrame) -> list[dict[str, Any]]:
         downtime = _text(row.get("비가동유형")).strip()
         items.append(
             {
-                "id": str(row["호기"]).strip(),
-                "label": str(row["호기"]).strip(),
+                "id": str(row[EQUIPMENT_ID_COLUMN]).strip(),
+                "label": str(row[EQUIPMENT_ID_COLUMN]).strip(),
                 "stage": _text(row.get("상태")),
                 "x": finite_or_none(row["X좌표"]),
                 "y": finite_or_none(row["Y좌표"]),

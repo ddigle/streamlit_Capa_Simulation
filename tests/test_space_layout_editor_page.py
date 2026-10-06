@@ -109,7 +109,7 @@ def test_an_apply_lands_in_the_draft_and_one_save_writes_master_and_marks(
     assert not app.exception, [item.message for item in app.exception]
     assert any("r2" in item.value for item in app.success)
     saved = repository.load_snapshot(str(repository.latest_revision_id()))
-    assert saved.equipment.set_index("호기").loc["EQ-01", "X좌표"] == 40.0
+    assert saved.equipment.set_index("설비명").loc["EQ-01", "X좌표"] == 40.0
     assert [mark.mark_id for mark in repository.load_floor_layout_marks("C1", "1F")] == ["D1"]
     assert not any("저장 안 한 배치 변경" in item.value for item in app.get("markdown"))
     # 저장은 콜백이라 회차를 끊지 않는다 — 아래의 `배치 편집` 토글이 꺼지지 않고 편집기가 새
@@ -235,7 +235,7 @@ def test_an_invalid_rawdata_draft_does_not_take_the_space_page_down(
     app, _ = _open_editor(tmp_path)
     baseline, master, downtime = app.session_state["equipment_workspace_buffers_v1"]
     broken = master.copy()
-    broken.loc[broken["호기"].eq("EQ-01"), "X좌표"] = 40.0
+    broken.loc[broken["설비명"].eq("EQ-01"), "X좌표"] = 40.0
     broken = pd.concat([broken, broken.iloc[[1]]], ignore_index=True)  # 호기 중복
     app.session_state["equipment_workspace_buffers_v1"] = (baseline, broken, downtime)
     app.run()
@@ -252,7 +252,7 @@ def test_a_new_as_of_that_changes_the_roster_resets_the_editor(
     """기준일로 편집 대상이 바뀌면(반출을 마친 호기가 빠진다) epoch 도 바뀌어야 한다. 그대로면
     브라우저가 옛 목록을 쥔 채 「이 편집기에 없는 호기」로 적용 전체가 거부된다."""
     equipment = _equipment()
-    equipment.loc[equipment["호기"].eq("EQ-02"), "반출일정"] = "2026-11-15"
+    equipment.loc[equipment["설비명"].eq("EQ-02"), "반출일정"] = "2026-11-15"
     monkeypatch.setattr(
         "test_space_layout_editor_page._equipment", lambda: equipment.copy(), raising=True
     )

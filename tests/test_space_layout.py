@@ -32,7 +32,7 @@ def _space_equipment() -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
-                "호기": "EQ-01",
+                "설비명": "EQ-01",
                 "공정소분류": "A",
                 "동": "C1",
                 "층": "1F",
@@ -47,7 +47,7 @@ def _space_equipment() -> pd.DataFrame:
                 "비가동유형": None,
             },
             {
-                "호기": "EQ-02",
+                "설비명": "EQ-02",
                 "공정소분류": "A",
                 "동": "C1",
                 "층": "1F",
@@ -62,7 +62,7 @@ def _space_equipment() -> pd.DataFrame:
                 "비가동유형": None,
             },
             {
-                "호기": "EQ-03",
+                "설비명": "EQ-03",
                 "공정소분류": "B",
                 "동": "C2",
                 "층": "2F",

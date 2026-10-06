@@ -31,21 +31,21 @@ def _render_fixture() -> None:
     equipment = empty_equipment_master()
     for index, unit in enumerate(("EQ-REPAIR", "EQ-READY", "EQ-QUAL", "EQ-OTHER")):
         equipment.loc[index] = {column: None for column in equipment.columns}
-        equipment.loc[index, "호기"] = unit
+        equipment.loc[index, "설비명"] = unit
         equipment.loc[index, "공정소분류"] = "Other" if unit == "EQ-OTHER" else "Die Attach"
-        equipment.loc[index, "라인구분"] = "Line-A"
-        equipment.loc[index, "활용구분"] = "양산"
+        equipment.loc[index, "공정구분"] = "Line-A"
+        equipment.loc[index, "투자구분"] = "양산"
         equipment.loc[index, "공정대분류"] = "조립"
-        equipment.loc[index, "장기보관여부"] = "N"
+        equipment.loc[index, "보관유무"] = "N"
         equipment.loc[index, "기존설비여부"] = "Y"
         equipment.loc[index, "레이아웃표시"] = "N"
     equipment.loc[2, "기존설비여부"] = "N"
-    equipment.loc[2, "입고일정"] = date(2026, 10, 1)
+    equipment.loc[2, "반입일정"] = date(2026, 10, 1)
     equipment.loc[2, "Qual일정"] = date(2026, 10, 10)
     equipment.loc[2, "확정상태"] = "계획"
     downtime = empty_downtime_schedule()
     downtime.loc[0] = {column: None for column in downtime.columns}
-    downtime.loc[0, "호기"] = "EQ-REPAIR"
+    downtime.loc[0, "설비명"] = "EQ-REPAIR"
     downtime.loc[0, "비가동유형"] = "고장"
     downtime.loc[0, "시작일"] = date(2026, 10, 5)
     downtime.loc[0, "종료일"] = date(2026, 10, 7)
@@ -82,13 +82,13 @@ def test_inactive_units_follow_the_chosen_day_not_the_week_end() -> None:
     app.multiselect(SMALL_PROCESS_KEY).set_value(["Die Attach"]).run()
 
     _assert_one_result(app)
-    assert set(app.dataframe[0].value["호기"]) == {"EQ-REPAIR", "EQ-QUAL"}
+    assert set(app.dataframe[0].value["설비명"]) == {"EQ-REPAIR", "EQ-QUAL"}
     assert any("2026-10-06" in item.value for item in app.markdown)
 
     app.date_input(AS_OF_KEY).set_value(date(2026, 10, 8)).run()
 
     _assert_one_result(app)
-    assert app.dataframe[0].value["호기"].tolist() == ["EQ-QUAL"]
+    assert app.dataframe[0].value["설비명"].tolist() == ["EQ-QUAL"]
 
     app.date_input(AS_OF_KEY).set_value(date(2026, 10, 11)).run()
 
@@ -115,7 +115,7 @@ def test_each_question_and_representation_replaces_the_previous_result() -> None
     assert not app.dataframe
     app.selectbox("equipment_explorer_unit_view").set_value("호기 목록").run()
     _assert_one_result(app)
-    assert set(app.dataframe[0].value["호기"]) == {"EQ-REPAIR", "EQ-READY", "EQ-QUAL", "EQ-OTHER"}
+    assert set(app.dataframe[0].value["설비명"]) == {"EQ-REPAIR", "EQ-READY", "EQ-QUAL", "EQ-OTHER"}
     # 집계형 보유대수 5대는 호기 목록에 가상의 행으로 들어가지 않는다.
     assert len(app.dataframe[0].value) == 4
 
@@ -125,7 +125,7 @@ def test_each_question_and_representation_replaces_the_previous_result() -> None
 
     app.segmented_control(QUESTION_KEY).set_value("Qual 일정").run()
     _assert_one_result(app)
-    assert app.dataframe[0].value["호기"].tolist() == ["EQ-QUAL"]
+    assert app.dataframe[0].value["설비명"].tolist() == ["EQ-QUAL"]
     app.selectbox("equipment_explorer_qual_view").set_value("확정상태 분포").run()
     _assert_one_result(app)
     app.segmented_control("equipment_explorer_expression_확정상태 분포").set_value("표").run()
@@ -155,7 +155,7 @@ def test_hidden_main_preserves_the_question_date_and_process_selection() -> None
     assert app.segmented_control(QUESTION_KEY).value == "비가동 호기"
     assert app.multiselect(SMALL_PROCESS_KEY).value == ["Die Attach"]
     assert app.date_input(AS_OF_KEY).value == date(2026, 10, 8)
-    assert app.dataframe[0].value["호기"].tolist() == ["EQ-QUAL"]
+    assert app.dataframe[0].value["설비명"].tolist() == ["EQ-QUAL"]
 
 
 def test_the_month_view_catches_what_the_chosen_day_misses() -> None:
@@ -177,8 +177,10 @@ def test_the_month_view_catches_what_the_chosen_day_misses() -> None:
     app.selectbox(INACTIVE_VIEW_KEY).set_value("그 달 전체").run()
 
     _assert_one_result(app)
-    assert set(app.dataframe[0].value["호기"]) == {"EQ-REPAIR", "EQ-QUAL"}
-    assert list(app.dataframe[0].value.columns[:3]) == ["호기", "비가동 시작", "비가동 종료"]
+    assert set(app.dataframe[0].value["설비명"]) == {"EQ-REPAIR", "EQ-QUAL"}
+    shown = list(app.dataframe[0].value.columns)
+    at = shown.index("설비명")
+    assert shown[at + 1 : at + 3] == ["비가동 시작", "비가동 종료"]
     assert any("2026-10 달 전체" in item.value for item in app.markdown)
     assert app.date_input(AS_OF_KEY).value == date(2026, 10, 11)
 
@@ -231,7 +233,7 @@ def test_stage_transitions_read_the_period_and_split_done_from_planned_by_the_da
 
     app.selectbox(TRANSITION_VIEW_KEY).set_value("전환 일정 목록").run()
     _assert_one_result(app)
-    assert app.dataframe[0].value["호기"].tolist() == ["EQ-QUAL", "EQ-QUAL"]
+    assert app.dataframe[0].value["설비명"].tolist() == ["EQ-QUAL", "EQ-QUAL"]
 
     app.selectbox(TRANSITION_SCHEDULE_KEY).set_value("예정").run()
     _assert_one_result(app)

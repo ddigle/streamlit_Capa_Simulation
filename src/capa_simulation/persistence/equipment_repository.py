@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from types import MappingProxyType
 from uuid import uuid4
 
 import duckdb
@@ -30,10 +31,14 @@ from capa_simulation.persistence.equipment_migration_runner import (
     apply_equipment_migrations,
 )
 from capa_simulation.services.equipment_contract import (
+    ARRIVAL_DATE_COLUMN,
     BASELINE_COLUMNS,
     DEFAULT_CONVERSION_RATIO,
     DOWNTIME_COLUMNS,
+    DOWNTIME_KEY_COLUMNS,
     EQUIPMENT_COLUMNS,
+    EQUIPMENT_ID_COLUMN,
+    STORAGE_FLAG_COLUMN,
     VALID_BUILDINGS,
     VALID_FLOORS,
     empty_equipment_master,
@@ -139,6 +144,78 @@ _REVISION_SUMMARY_PROJECTION = """
                        END,
                        r.created_at
 """
+
+
+# 설비 마스터 계약(한글) ↔ `equipment_master_snapshot` 컬럼(영문). 읽기 별칭과 쓰기 이름이 모두
+# 이 표 하나에서 나온다 — 화면 이름을 바꿔도 이 표의 왼쪽만 바꾸면 기존 리비전이 그대로 이어진다.
+# DB 컬럼 이름은 옛 화면 이름에서 온 것이 많다(`line_type` = 공정구분, `classification_1` = 구분).
+# `investment_basis`(옛 `투자기준`)는 계약에서 빠졌다. **값은 지우지 않고 읽지도 쓰지도 않는다**
+# — 되살릴 수 있게 남겨 둔다. `business_unit` 도 같은 처지다.
+EQUIPMENT_MASTER_DB_COLUMNS: Mapping[str, str] = MappingProxyType(
+    {
+        "구분": "classification_1",
+        "공정대분류": "process_large",
+        "공정소분류": "process_small",
+        "Maker": "maker",
+        "Model": "model_name",
+        EQUIPMENT_ID_COLUMN: "equipment_id",
+        "공정구분": "line_type",
+        "투자Capa": "investment_capa",
+        "투자구분": "utilization_type",
+        "사용기준": "classification_2",
+        "동": "building",
+        "층": "floor_name",
+        "담당자": "manager_name",
+        "설비가동현황": "classification_3",
+        "X좌표": "x_coordinate",
+        "Y좌표": "y_coordinate",
+        "Xsize": "x_size",
+        "Ysize": "y_size",
+        "제진대일정": "vibration_table_date",
+        "물류일정": "logistics_date",
+        "반입일정": "arrival_date",
+        "Qual일정": "qual_date",
+        "확정상태": "qual_confirmation_status",
+        "반출일정": "removal_date",
+        "이설일": "relocation_date",
+        "반입/Qual 이력": "arrival_qual_history",
+        "호기이력": "equipment_history",
+        "설비이력": "note",
+        "보관유무": "long_term_storage_flag",
+        "기존설비여부": "existing_equipment_flag",
+        "레이아웃표시": "layout_display_flag",
+        "환산비": "conversion_ratio",
+        "Main 설비": "parent_equipment_id",
+        "메모1": "memo_1",
+        "메모2": "memo_2",
+        "메모3": "memo_3",
+    }
+)
+
+# 0008 이전 리비전은 환산비가 NULL 이다 — 기준 모델(1.0)로 읽는다.
+_EQUIPMENT_MASTER_READ_EXPRESSIONS: Mapping[str, str] = MappingProxyType(
+    {"conversion_ratio": f"COALESCE(conversion_ratio, {DEFAULT_CONVERSION_RATIO!r})"}
+)
+
+_EQUIPMENT_MASTER_PROJECTION = ", ".join(
+    f'{_EQUIPMENT_MASTER_READ_EXPRESSIONS.get(db_column, db_column)} AS "{column}"'
+    for column, db_column in EQUIPMENT_MASTER_DB_COLUMNS.items()
+)
+
+DOWNTIME_DB_COLUMNS: Mapping[str, str] = MappingProxyType(
+    {
+        EQUIPMENT_ID_COLUMN: "equipment_id",
+        "비가동유형": "downtime_type",
+        "시작일": "start_date",
+        "종료일": "end_date",
+        "상세사유": "detail",
+        "비고": "note",
+    }
+)
+
+_DOWNTIME_PROJECTION = ", ".join(
+    f'{db_column} AS "{column}"' for column, db_column in DOWNTIME_DB_COLUMNS.items()
+)
 
 
 class DuckDBEquipmentRepository:
@@ -1251,29 +1328,8 @@ def _load_equipment_master(
     revision_id: str,
 ) -> pd.DataFrame:
     return connection.execute(
-        """
-        SELECT equipment_id AS "호기", process_large AS "공정대분류",
-               process_small AS "공정소분류", line_type AS "라인구분",
-               utilization_type AS "활용구분",
-               investment_basis AS "투자기준", manager_name AS "담당자",
-               maker AS "Maker",
-               model_name AS "모델", classification_1 AS "분류1",
-               classification_2 AS "분류2", classification_3 AS "분류3",
-               building AS "동", floor_name AS "층",
-               x_coordinate AS "X좌표", y_coordinate AS "Y좌표",
-               x_size AS "Xsize", y_size AS "Ysize",
-               vibration_table_date AS "제진대일정",
-               logistics_date AS "물류일정", arrival_date AS "입고일정",
-               qual_date AS "Qual일정",
-               qual_confirmation_status AS "확정상태",
-               removal_date AS "반출일정",
-               relocation_date AS "이설일",
-               long_term_storage_flag AS "장기보관여부",
-               existing_equipment_flag AS "기존설비여부",
-               equipment_history AS "호기이력", note AS "비고",
-               layout_display_flag AS "레이아웃표시",
-               COALESCE(conversion_ratio, 1.0) AS "환산비",
-               parent_equipment_id AS "모체호기"
+        f"""
+        SELECT {_EQUIPMENT_MASTER_PROJECTION}
         FROM equipment_ops.equipment_master_snapshot
         WHERE revision_id = ? ORDER BY source_row_no
         """,
@@ -1287,7 +1343,7 @@ def _load_legacy_equipment(
 ) -> pd.DataFrame:
     legacy = connection.execute(
         """
-        SELECT equipment_id AS "호기", process_name AS "공정",
+        SELECT equipment_id AS "설비명", process_name AS "공정",
                classification AS "분류", building AS "동", floor_name AS "층",
                x_coordinate AS "X", y_coordinate AS "Y", width_value AS "너비",
                infrastructure_complete_date AS "사전인프라완료일",
@@ -1311,7 +1367,7 @@ def _load_legacy_schedule(
 ) -> pd.DataFrame:
     legacy = connection.execute(
         """
-        SELECT equipment_id AS "호기", process_name AS "공정",
+        SELECT equipment_id AS "설비명", process_name AS "공정",
                classification AS "분류", arrival_date AS "입고일",
                setup_start_date AS "하드웨어셋업완료일",
                setup_complete_date AS "양산전환일", note AS "비고"
@@ -1330,10 +1386,8 @@ def _load_downtime_schedule(
     revision_id: str,
 ) -> pd.DataFrame:
     return connection.execute(
-        """
-        SELECT equipment_id AS "호기", downtime_type AS "비가동유형",
-               start_date AS "시작일", end_date AS "종료일",
-               detail AS "상세사유", note AS "비고"
+        f"""
+        SELECT {_DOWNTIME_PROJECTION}
         FROM equipment_ops.downtime_schedule_snapshot
         WHERE revision_id = ? ORDER BY source_row_no
         """,
@@ -1346,23 +1400,22 @@ def _load_legacy_downtime(
     revision_id: str,
 ) -> pd.DataFrame:
     legacy = connection.execute(
-        """
-        SELECT equipment_id AS "호기", downtime_type AS "비가동유형", start_date AS "시작일",
-               end_date AS "종료일", detail AS "상세사유", note AS "비고"
+        f"""
+        SELECT {_DOWNTIME_PROJECTION}
         FROM equipment_ops.downtime_snapshot
         WHERE revision_id = ? ORDER BY source_row_no
         """,
         [revision_id],
     ).fetchdf()
-    return legacy.drop_duplicates(["호기", "비가동유형", "시작일"], keep="last")
+    return legacy.drop_duplicates(list(DOWNTIME_KEY_COLUMNS), keep="last")
 
 
 def _convert_legacy_equipment(legacy: pd.DataFrame) -> pd.DataFrame:
     result = pd.DataFrame(index=legacy.index, columns=EQUIPMENT_COLUMNS)
-    result["호기"] = legacy["호기"]
+    result[EQUIPMENT_ID_COLUMN] = legacy[EQUIPMENT_ID_COLUMN]
     result["공정대분류"] = legacy["공정"]
     result["공정소분류"] = legacy["공정"]
-    result["분류1"] = legacy["분류"]
+    result["구분"] = legacy["분류"]
     result["동"] = legacy.get("동")
     result["층"] = legacy.get("층")
     result["X좌표"] = legacy.get("X")
@@ -1373,18 +1426,18 @@ def _convert_legacy_equipment(legacy: pd.DataFrame) -> pd.DataFrame:
     legacy_qual = legacy.get("양산전환일")
     legacy_arrival = legacy.get("입고일")
     if isinstance(legacy_arrival, pd.Series) and isinstance(legacy_qual, pd.Series):
-        result["입고일정"] = legacy_arrival.fillna(legacy_qual)
+        result[ARRIVAL_DATE_COLUMN] = legacy_arrival.fillna(legacy_qual)
     else:
-        result["입고일정"] = legacy_arrival
+        result[ARRIVAL_DATE_COLUMN] = legacy_arrival
     if isinstance(legacy_qual, pd.Series):
         result["Qual일정"] = legacy_qual.fillna(pd.Timestamp("2262-04-11"))
     else:
         result["Qual일정"] = pd.Timestamp("2262-04-11")
-    result["장기보관여부"] = "N"
-    has_legacy_schedule = result["입고일정"].notna()
+    result[STORAGE_FLAG_COLUMN] = "N"
+    has_legacy_schedule = result[ARRIVAL_DATE_COLUMN].notna()
     result["기존설비여부"] = has_legacy_schedule.map({True: "N", False: "Y"})
     result["확정상태"] = has_legacy_schedule.map({True: "계획", False: None})
-    result["비고"] = legacy.get("비고")
+    result["설비이력"] = legacy.get("비고")
     result["레이아웃표시"] = has_coordinates.map({True: "Y", False: "N"})
     # 옛 리비전에는 모델별 생산성 구분이 없었다. 전부 기준 모델로 본다.
     result["환산비"] = DEFAULT_CONVERSION_RATIO
@@ -1418,48 +1471,12 @@ def _insert_equipment(
     revision_id: str,
     frame: pd.DataFrame,
 ) -> None:
-    incoming = frame.rename(
-        columns={
-            "호기": "equipment_id",
-            "공정대분류": "process_large",
-            "공정소분류": "process_small",
-            "라인구분": "line_type",
-            "활용구분": "utilization_type",
-            "투자기준": "investment_basis",
-            "담당자": "manager_name",
-            "Maker": "maker",
-            "모델": "model_name",
-            "분류1": "classification_1",
-            "분류2": "classification_2",
-            "분류3": "classification_3",
-            "동": "building",
-            "층": "floor_name",
-            "X좌표": "x_coordinate",
-            "Y좌표": "y_coordinate",
-            "Xsize": "x_size",
-            "Ysize": "y_size",
-            "제진대일정": "vibration_table_date",
-            "물류일정": "logistics_date",
-            "입고일정": "arrival_date",
-            "Qual일정": "qual_date",
-            "확정상태": "qual_confirmation_status",
-            "반출일정": "removal_date",
-            "이설일": "relocation_date",
-            "장기보관여부": "long_term_storage_flag",
-            "기존설비여부": "existing_equipment_flag",
-            "호기이력": "equipment_history",
-            "비고": "note",
-            "레이아웃표시": "layout_display_flag",
-            "환산비": "conversion_ratio",
-            "모체호기": "parent_equipment_id",
-        }
-    )
     _insert_snapshot(
         connection,
         schema="equipment_ops",
         table_name="equipment_master_snapshot",
         revision_id=revision_id,
-        frame=incoming,
+        frame=frame.rename(columns=dict(EQUIPMENT_MASTER_DB_COLUMNS)),
     )
 
 
@@ -1468,22 +1485,12 @@ def _insert_downtime(
     revision_id: str,
     frame: pd.DataFrame,
 ) -> None:
-    incoming = frame.rename(
-        columns={
-            "호기": "equipment_id",
-            "비가동유형": "downtime_type",
-            "시작일": "start_date",
-            "종료일": "end_date",
-            "상세사유": "detail",
-            "비고": "note",
-        }
-    )
     _insert_snapshot(
         connection,
         schema="equipment_ops",
         table_name="downtime_schedule_snapshot",
         revision_id=revision_id,
-        frame=incoming,
+        frame=frame.rename(columns=dict(DOWNTIME_DB_COLUMNS)),
     )
 
 

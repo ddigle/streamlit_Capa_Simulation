@@ -34,7 +34,7 @@ MONTHS = [202610]
 def monthly_for(units: int, *, cutoff: float = 0) -> pd.DataFrame:
     spans = pd.DataFrame(
         {
-            "호기": [f"EQ-{index}" for index in range(units)],
+            "설비명": [f"EQ-{index}" for index in range(units)],
             "공정소분류": [PROCESS] * units,
             "상태": ["가용"] * units,
             "시작일": [date(2020, 1, 1)] * units,
@@ -223,7 +223,7 @@ def test_the_weighted_subtotal_is_reported_but_left_out_of_the_gap() -> None:
     """환산 소계는 보이되 GAP 에 안 들어간다 — Static 은 대수라 단위가 어긋난다."""
     spans = pd.DataFrame(
         {
-            "호기": ["EQ-1"],
+            "설비명": ["EQ-1"],
             "공정소분류": [PROCESS],
             "상태": ["가용"],
             "시작일": [date(2020, 1, 1)],
@@ -258,7 +258,7 @@ def test_a_month_the_static_side_has_no_data_for_gets_no_gap() -> None:
     months = [202610, 202611]
     spans = pd.DataFrame(
         {
-            "호기": ["EQ-0", "EQ-1"],
+            "설비명": ["EQ-0", "EQ-1"],
             "공정소분류": [PROCESS, PROCESS],
             "상태": ["가용", "가용"],
             "시작일": [date(2020, 1, 1)] * 2,

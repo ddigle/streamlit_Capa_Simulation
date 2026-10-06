@@ -20,9 +20,9 @@ from capa_simulation.services.equipment_validation import prepare_equipment_mast
 
 def _row(**values: Any) -> dict[str, Any]:
     row: dict[str, Any] = {
-        "호기": "EQ-1",
+        "설비명": "EQ-1",
         "공정소분류": "Die Attach",
-        "장기보관여부": "N",
+        "보관유무": "N",
         "기존설비여부": "Y",
         "레이아웃표시": "Y",
         "동": None,

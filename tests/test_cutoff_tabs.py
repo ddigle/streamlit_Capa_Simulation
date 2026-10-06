@@ -113,7 +113,7 @@ def test_the_panel_accepts_a_real_static_frame(tmp_path: Path) -> None:
 
     spans = pd.DataFrame(
         {
-            "호기": ["EQ-1"],
+            "설비명": ["EQ-1"],
             "공정소분류": ["Die Attach"],
             "상태": ["가용"],
             "시작일": [date(2020, 1, 1)],
