@@ -123,6 +123,8 @@ def test_pack_code_rows_survive_registration_and_are_summed_in_calculation() -> 
         detail_level="공정",
     )
     assert len(equivalent) == 1
+    # 열을 먼저 고른다. `df.loc[행, 열]` 은 pandas-stubs 에서 complex 까지 든 합집합이라
+    # 산술·`float()` 에 넘길 수 없다.
     ratio = 192.44 / float(equivalent["원수요_부하량"].iloc[0])
     assert equivalent.loc[0, PKG_EQUIVALENT_COLUMN] == pytest.approx(
         float(equivalent["일 표준 가능량"].iloc[0]) * ratio

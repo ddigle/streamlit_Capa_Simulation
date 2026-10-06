@@ -40,6 +40,8 @@ def test_reference_clipboard_round_trip_preserves_template_row_order() -> None:
     )
 
     assert result["공정"].tolist() == ["Process-B", "Process-A"]
+    # 붙여넣기 왕복은 값을 글자로 돌려준다. 열을 먼저 고르는 것은 `df.loc[행, 열]` 이
+    # pandas-stubs 에서 complex 까지 든 합집합이라 `float()` 에 넘길 수 없어서다.
     assert float(result["202608"].loc[1]) == pytest.approx(0.75)
 
 
