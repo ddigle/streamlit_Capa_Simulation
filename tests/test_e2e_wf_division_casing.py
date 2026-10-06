@@ -254,30 +254,22 @@ def test_the_rule_order_is_kept_whatever_case_the_rule_is_written_in() -> None:
     ]
 
 
-@pytest.mark.xfail(
-    reason=(
-        "저장 시점 검사(`validate_display_order`)는 아직 글자 그대로 맞댄다. "
-        "`Top` 이 있는 화면에 사용자가 원천 표기 `TOP` 을 한 줄 더 넣으면 저장은 통과하고, "
-        "그 화면을 그릴 때마다 `apply_display_order` 가 중복으로 막아 페이지가 선다."
-    ),
-    strict=True,
-)
 def test_the_editor_rejects_two_rules_that_differ_only_in_case() -> None:
-    """대소문자만 다른 두 규칙은 **저장할 때** 막아야 한다.
+    """대소문자만 다른 두 규칙은 **저장할 때** 막는다.
 
     맞대어 보는 쪽이 대소문자를 없앤 뒤로 `Top` 과 `TOP` 은 같은 값 하나에 걸린다. 그리는
-    쪽은 그것을 중복으로 거부하는데 저장하는 쪽은 서로 다른 값으로 보고 받아 준다. 그래서
-    사용자는 저장에 성공한 규칙 때문에 화면이 서는 것을 보게 된다 — 고칠 자리를 알려 주는
-    것은 저장 시점이지 그리는 시점이 아니다.
+    쪽은 그것을 중복으로 거부하므로 저장하는 쪽도 같은 키(`match_key`)로 본다 — 고칠 자리를
+    알려 주는 것은 저장 시점이지 그리는 시점이 아니다. 오류문은 두 표기를 그대로 적는다.
     """
     profile = _wf_division_rules(["Top", "TOP", "Core"])
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="`Top` · `TOP`"):
         validate_display_order(profile)
 
 
 def test_a_case_only_duplicate_stops_the_screen_today() -> None:
-    """위 결함이 사용자에게 어떻게 보이는지 남겨 둔다. 저장이 통과하면 그리는 자리가 선다."""
+    """저장 검사 **전에** 저장된 프로필이 화면에서 어떻게 보이는지 남겨 둔다 — 그리는 자리가
+    중복으로 선다. 이제 저장은 막히지만 그런 프로필은 남아 있을 수 있다."""
     profile = _wf_division_rules(["Top", "TOP", "Core"])
     data = pd.DataFrame({WF_DIVISION_COLUMN: [SOURCE_TOP, "Core"]})
 

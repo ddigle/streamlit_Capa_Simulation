@@ -337,34 +337,43 @@ def test_a_broken_securement_display_order_shows_an_error_instead_of_a_traceback
 ) -> None:
     """공정 옵션 정렬이 HOME 의 `BOOTSTRAP_ERRORS` 경계 안에 있어야 한다.
 
-    저장 검증은 사용자지정 값 중복을 정확 일치로 보고 적용은 대소문자를 무시하고 본다.
-    그래서 대소문자만 다른 두 값이 저장을 통과한다. 정렬이 경계 밖이면 그 규칙 하나로
-    HOME 전체가 traceback 을 남기고 멈춘다.
+    이제 저장 검증이 적용과 같은 키(`match_key`)로 보아 대소문자만 다른 두 값을 막는다. 그래도
+    그 검사 **전에** 저장된 프로필은 남아 있을 수 있다 — 저장 경로를 건너 프로필에 바로 넣어 그
+    상태를 만든다. 기동은 막히지 않고, 정렬이 경계 밖이면 그 규칙 하나로 HOME 전체가 traceback
+    을 남기고 멈춘다.
     """
-    from capa_simulation.persistence.cache import clear_global_display_order_cache
-    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.persistence import display_order_store
+    from capa_simulation.persistence._sql_helpers import connect, reset_profile, transaction
+    from capa_simulation.persistence.cache import (
+        clear_global_display_order_cache,
+        clear_scenario_repository,
+    )
     from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
 
     database = tmp_path / "broken_order.duckdb"
     app = _run_process_dialog_app(database)
     process = sorted(app.session_state[PROCESS_SELECTION_KEY])[0]
     assert process.upper() != process.lower()
-    DuckDBScenarioRepository(database).replace_global_display_order(
-        pd.DataFrame(
-            {
-                "페이지 구분": [PAGE_CALCULATION] * 2,
-                "탭 구분": [TAB_SECUREMENT] * 2,
-                "정렬우선순위": [1] * 2,
-                "분류컬럼": ["공정"] * 2,
-                "정렬방식": ["사용자지정"] * 2,
-                "분류값": [process.upper(), process.lower()],
-                "값표시순서": [1, 2],
-                "활성여부": ["Y"] * 2,
-            }
-        ),
-        source="대소문자만 다른 표시순서 규칙",
+    stored = pd.DataFrame(
+        {
+            "페이지 구분": [PAGE_CALCULATION] * 2,
+            "탭 구분": [TAB_SECUREMENT] * 2,
+            "정렬우선순위": [1] * 2,
+            "분류컬럼": ["공정"] * 2,
+            "정렬방식": ["사용자지정"] * 2,
+            "분류값": [process.upper(), process.lower()],
+            "값표시순서": [1, 2],
+            "활성여부": ["Y"] * 2,
+        }
     )
+    with connect(database) as connection, transaction(connection):
+        version = reset_profile(connection, "global_display_order", "global_display_order_rule")
+        display_order_store.insert_global_display_order(
+            connection, stored, version=version, source="검사 전에 저장된 대소문자 중복"
+        )
     clear_global_display_order_cache()
+    # 저장소는 프로세스마다 한 번 만들며 그때 기동 보강을 돈다. 새로 만들어 그 길도 지나게 한다.
+    clear_scenario_repository()
 
     app = AppTest.from_string(
         _home_script(database, retain_process_dialog=True), default_timeout=300

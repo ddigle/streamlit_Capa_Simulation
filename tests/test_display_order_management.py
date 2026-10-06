@@ -159,3 +159,59 @@ display_order_management.render_display_order_management(repository)
         )
     ]
     assert order.index("error") < order.index("editor"), order
+
+
+def test_a_stored_case_clash_opens_the_tab_with_a_warning(tmp_path: Path) -> None:
+    """검사 전에 저장된 `Top`·`TOP` 이 있어도 탭이 열리고, 겹친 값을 경고한다.
+
+    탭이 저장 검증으로 열리지 않으면 그 값을 고칠 화면이 없다. 내려받기도 그대로 선다.
+    """
+    database_path = tmp_path / "display-order-clash.duckdb"
+    script = f'''
+from pathlib import Path
+
+import pandas as pd
+
+from capa_simulation.components.display_order_management import render_display_order_management
+from capa_simulation.persistence import display_order_store
+from capa_simulation.persistence._sql_helpers import connect
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+database = Path(r"{database_path}")
+repository = DuckDBScenarioRepository(database)
+repository.initialize()
+if not database.with_suffix(".seeded").exists():
+    with connect(database) as connection:
+        display_order_store.insert_global_display_order(
+            connection,
+            pd.DataFrame(
+                {{
+                    "페이지 구분": ["부하량", "부하량"],
+                    "탭 구분": ["환산", "환산"],
+                    "정렬우선순위": [1, 1],
+                    "분류컬럼": ["WF 구분", "WF 구분"],
+                    "정렬방식": ["사용자지정", "사용자지정"],
+                    "분류값": ["Top", "TOP"],
+                    "값표시순서": [1, 2],
+                    "활성여부": ["Y", "Y"],
+                }}
+            ),
+            version=1,
+            source="검사 전 저장본",
+        )
+    database.with_suffix(".seeded").write_text("1")
+render_display_order_management(repository)
+'''
+    app = AppTest.from_string(script).run(timeout=30)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert len(app.get("download_button")) == 1
+    warnings = [element.value for element in app.warning]
+    assert any("부하량 › 환산 › WF 구분: `Top` · `TOP`" in value for value in warnings), warnings
+
+    # 그대로 저장하면 막히고 겹친 값을 알린다.
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click().run(
+        timeout=30
+    )
+    assert not app.exception
+    assert any("`Top` · `TOP`" in element.value for element in app.error)

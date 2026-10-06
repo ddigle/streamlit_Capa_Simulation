@@ -27,6 +27,7 @@ from capa_simulation.persistence.repository import REFERENCE_TABLES, REVISION_TA
 from capa_simulation.services.display_order_editor import (
     ROUTE_SEQUENCE_COLUMNS,
     ROUTE_SEQUENCE_SCOPES,
+    DisplayOrderValueClashError,
 )
 from capa_simulation.services.reference_transformer import build_reference_tables
 
@@ -361,6 +362,82 @@ def test_global_display_order_init_still_augments_an_existing_profile(
     marked.clear()
     assert repository.initialize_global_display_order(raw).version == 2
     assert marked == []
+
+
+def _case_clash_rules(page: str, tab: str) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "페이지 구분": [page] * 2,
+            "탭 구분": [tab] * 2,
+            "정렬우선순위": [1] * 2,
+            "분류컬럼": ["WF 구분"] * 2,
+            "정렬방식": ["사용자지정"] * 2,
+            "분류값": ["Top", "TOP"],
+            "값표시순서": [1, 2],
+            "활성여부": ["Y"] * 2,
+        }
+    )
+
+
+def test_saving_a_case_clash_is_refused(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "scenario.duckdb")
+    created = repository.initialize_global_display_order(_reference_tables()["RQ_DISPLAY_ORDER"])
+
+    with pytest.raises(DisplayOrderValueClashError, match="`Top` · `TOP`"):
+        repository.replace_global_display_order(
+            _case_clash_rules("부하량", "환산"), source="대소문자만 다른 값"
+        )
+    assert repository.load_global_display_order().version == created.version
+
+
+def test_a_stored_case_clash_does_not_stop_startup(tmp_path: Path) -> None:
+    """저장 검사가 생기기 전에 저장된 프로필이 있어도 기동은 막히지 않는다.
+
+    기동마다 도는 경로 식별 컬럼 보강이 그 프로필을 저장 검사로 다시 보면 앱 전체가 열리지
+    않는다. 보강은 미루고 프로필을 그대로 돌려준다 — 겹친 값은 화면과 Admin 탭이 알린다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    page, tab = ROUTE_SEQUENCE_SCOPES[0]
+    stored = _case_clash_rules(page, tab)
+    with connect(database_path) as connection:
+        display_order_store.insert_global_display_order(
+            connection, stored, version=1, source="검사 전 저장본"
+        )
+
+    profile = repository.initialize_global_display_order(_reference_tables()["RQ_DISPLAY_ORDER"])
+
+    assert profile.version == 1
+    assert profile.rules["분류값"].tolist() == ["Top", "TOP"]
+    assert not set(ROUTE_SEQUENCE_COLUMNS) & set(profile.rules["분류컬럼"])
+
+
+def test_a_seed_with_a_case_clash_does_not_stop_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """기동마다 읽는 로컬 시드(`data/input/RQ_DISPLAY_ORDER.csv`)에 겹친 값이 있어도 기동한다.
+
+    시드는 저장된 프로필이 있으면 쓰이지도 않는데, 저장 검사로 읽으면 그 파일 한 줄 때문에
+    앱 전체가 열리지 않는다. 프로필이 없으면 시드가 그대로 첫 프로필이 되고 화면이 알린다.
+    """
+    from capa_simulation.services import builtin_seed
+
+    seed_csv = tmp_path / "RQ_DISPLAY_ORDER.csv"
+    seed_csv.write_bytes(
+        _case_clash_rules("부하량", "환산").to_csv(index=False).encode("utf-8-sig")
+    )
+    monkeypatch.setattr(builtin_seed, "LOCAL_DISPLAY_ORDER_CSV_PATH", seed_csv)
+    fallback = builtin_seed.load_builtin_display_order()
+    assert fallback["분류값"].tolist() == ["Top", "TOP"]
+
+    fresh = _repository(tmp_path / "fresh.duckdb").initialize_global_display_order(fallback)
+    assert fresh.rules["분류값"].tolist() == ["Top", "TOP"]
+
+    existing = _repository(tmp_path / "existing.duckdb")
+    created = existing.initialize_global_display_order(_reference_tables()["RQ_DISPLAY_ORDER"])
+    again = existing.initialize_global_display_order(fallback)
+    assert again.version == created.version
+    assert again.rules["분류값"].tolist() == created.rules["분류값"].tolist()
 
 
 def test_transaction_surfaces_the_commit_failure_cause(tmp_path: Path) -> None:

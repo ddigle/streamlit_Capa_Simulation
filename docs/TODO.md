@@ -358,11 +358,17 @@
   변경). `test_sample_baseline_matches_development_process_sample` 은 리터럴을 자기 자신과
   비교하던 것을 버리고 기대값을 생성기에서 읽어 공정 순서와 값을 한 줄씩 대조한다 — 생성기를
   고치면 이 테스트가 리터럴도 같이 고치라고 알린다.
-- [ ] 표시순서 저장 검증(`validate_display_order`)은 사용자지정 분류값 중복을 **정확 일치**로
+- [x] 표시순서 저장 검증(`validate_display_order`)은 사용자지정 분류값 중복을 **정확 일치**로
   보는데, 적용(`apply_display_order`)은 `match_key`(대소문자·공백 무시)로 본다. 대소문자만
   다른 두 값은 저장을 통과하고 그 범위를 쓰는 화면에서 ValueError 가 난다. HOME 은 공정
   옵션 정렬을 `BOOTSTRAP_ERRORS` 안으로 옮겨 traceback 대신 안내가 뜨게 했다. 뿌리는 저장
-  검증을 적용과 같은 키로 맞추는 것이다.
+  검증을 적용과 같은 키로 맞추는 것이다. **2026-10-07(2026-10-06 사용자 결정)**: 저장 검증이
+  같은 페이지·탭·분류컬럼 안의 `match_key` 겹침을 `DisplayOrderValueClashError` 로 막고 겹친 값을
+  적은 표기 그대로 범위마다 적는다(앞 5개, 「외 N건」). 범위 직접 편집·Excel 붙여넣기·CSV·
+  Repository 교체가 모두 이 한 관문을 지난다(`tests/test_display_order_editor.py`·
+  `test_duckdb_repository.py`). 검사 전에 저장된 프로필과 기동마다 읽는 로컬 시드
+  (`data/input/RQ_DISPLAY_ORDER.csv`)는 앱 기동을 막지 않게 읽는 길만 견딘다 — 기동 보강은 미루고
+  Admin `표시순서 관리` 탭이 경고한다(AGENTS.md 8장).
 - [x] 확보 기준과 **같은** 확보율의 판정이 화면마다 둘로 갈린다. HOME(`capacity_status`)과
   B/N 공정 선택은 「초과해야 확보」라 같은 값을 기준 미달로 보고, Static Capa 부족 현황
   (`build_securement_shortfall_tables` 의 `lt`)은 미달로 세지 않는다. 계산된 월에서는 거의

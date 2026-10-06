@@ -29,6 +29,8 @@ from capa_simulation.services.display_order_csv import (
 )
 from capa_simulation.services.display_order_editor import (
     DISPLAY_ORDER_RULE_COLUMNS,
+    custom_value_clashes,
+    describe_value_clashes,
     display_label_mistakes,
     replace_display_order_scope,
     validate_display_order,
@@ -49,16 +51,23 @@ def _validated_display_order(
     database_path: str,
     version: int,
     _rules: pd.DataFrame,
-) -> tuple[pd.DataFrame, bytes]:
-    """검증한 규칙과 내려받기 CSV. 둘 다 순수 함수라 공용 버전이 같으면 결과도 같다.
+) -> tuple[pd.DataFrame, bytes, list[tuple[tuple[str, str, str], list[str]]]]:
+    """검증한 규칙·내려받기 CSV·겹친 분류값. 모두 순수 함수라 공용 버전이 같으면 결과도 같다.
 
     검증 47ms + CSV 46ms(안에서 검증을 한 번 더 한다)를 rerun 마다 하고 있었다. 이 탭은
     닫혀 있어도 항상 그리므로(폼 입력값 보존) 그 비용이 페이지의 모든 rerun 에 실린다.
     규칙은 교체할 때마다 version 이 오르므로 키에 version 만 있으면 된다.
+
+    저장된 프로필이라 대소문자만 다른 분류값은 견딘다(`allow_value_clashes`). 그 검사가 생기기
+    전에 저장된 프로필이 있으면 이 탭이 열려야 그 값을 고칠 수 있다 — 화면 위 경고가 알린다.
     """
     del database_path, version
-    validated = validate_display_order(_rules)
-    return validated, display_order_to_csv(validated)
+    validated = validate_display_order(_rules, allow_value_clashes=True)
+    return (
+        validated,
+        display_order_to_csv(validated, allow_value_clashes=True),
+        custom_value_clashes(validated),
+    )
 
 
 def render_display_order_management(repository: DuckDBScenarioRepository) -> None:
@@ -66,7 +75,7 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
     database_path = str(repository.database_path)
     try:
         profile = load_global_display_order(database_path)
-        display_order, csv_bytes = _validated_display_order(
+        display_order, csv_bytes, clashes = _validated_display_order(
             database_path, profile.version, profile.rules
         )
     except BOOTSTRAP_ERRORS as exc:
@@ -91,6 +100,13 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
         )
     render_flash("display_order_flash")
     _render_label_warnings()
+    if clashes:
+        st.warning(
+            "대소문자·앞뒤 공백만 다른 사용자지정 분류값이 있습니다. 화면은 둘을 같은 값으로 보아 "
+            "그 범위의 정렬이 멈추고, 이대로는 저장도 막힙니다. 하나만 남기고 저장하세요: "
+            + describe_value_clashes(clashes),
+            icon=":material/warning:",
+        )
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, display_order)

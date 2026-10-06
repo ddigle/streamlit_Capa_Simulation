@@ -19,14 +19,25 @@ from capa_simulation.services.display_order_editor import (
 from capa_simulation.services.frame_contracts import require_exact_columns
 
 
-def display_order_to_csv(display_order: pd.DataFrame) -> bytes:
-    """Return a validated UTF-8 CSV that can be imported without modification."""
-    validated = validate_display_order(display_order)
+def display_order_to_csv(
+    display_order: pd.DataFrame, *, allow_value_clashes: bool = False
+) -> bytes:
+    """Return a validated UTF-8 CSV that can be imported without modification.
+
+    저장된 프로필을 내려받을 때는 `allow_value_clashes` 를 켠다. 대소문자만 다른 분류값이 남은
+    예전 프로필도 내려받아 Excel 에서 고칠 수 있어야 한다 — 그 파일은 겹친 값을 고쳐야 다시
+    올라간다.
+    """
+    validated = validate_display_order(display_order, allow_value_clashes=allow_value_clashes)
     return validated.to_csv(index=False).encode("utf-8-sig")
 
 
-def display_order_from_csv(content: bytes) -> pd.DataFrame:
-    """Parse UTF-8 or CP949 display-order CSV and validate its complete contract."""
+def display_order_from_csv(content: bytes, *, allow_value_clashes: bool = False) -> pd.DataFrame:
+    """Parse UTF-8 or CP949 display-order CSV and validate its complete contract.
+
+    `allow_value_clashes` 는 기동 때 읽는 로컬 시드 파일(`data/input/RQ_DISPLAY_ORDER.csv`)만 켠다 —
+    사용자가 지금 올리는 파일이 아니라 이미 놓여 있는 파일이라 그것으로 기동을 막지 않는다.
+    """
     if not content:
         raise ValueError("표시순서 CSV 파일이 비어 있습니다.")
     parsed: pd.DataFrame | None = None
@@ -41,7 +52,7 @@ def display_order_from_csv(content: bytes) -> pd.DataFrame:
     if parsed is None:
         raise ValueError("표시순서 CSV는 UTF-8 또는 CP949 인코딩이어야 합니다.")
 
-    return validate_display_order_import(parsed)
+    return validate_display_order_import(parsed, allow_value_clashes=allow_value_clashes)
 
 
 def display_order_from_clipboard(content: str) -> pd.DataFrame:
@@ -49,7 +60,9 @@ def display_order_from_clipboard(content: str) -> pd.DataFrame:
     return validate_display_order_import(parse_clipboard_table(content, "표시순서"))
 
 
-def validate_display_order_import(parsed: pd.DataFrame) -> pd.DataFrame:
+def validate_display_order_import(
+    parsed: pd.DataFrame, *, allow_value_clashes: bool = False
+) -> pd.DataFrame:
     """Validate the full display-order import contract independently of its transport."""
     require_exact_columns(
         parsed.columns,
@@ -59,4 +72,4 @@ def validate_display_order_import(parsed: pd.DataFrame) -> pd.DataFrame:
         strip=True,
     )
     parsed.columns = list(DISPLAY_ORDER_COLUMNS)
-    return validate_display_order(parsed)
+    return validate_display_order(parsed, allow_value_clashes=allow_value_clashes)

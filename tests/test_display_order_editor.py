@@ -14,6 +14,8 @@ from capa_simulation.services.display_order_csv import (
     display_order_to_csv,
 )
 from capa_simulation.services.display_order_editor import (
+    CLASH_REPORT_LIMIT,
+    DisplayOrderValueClashError,
     display_label_mistakes,
     ensure_route_sequence_rules,
     replace_display_order_scope,
@@ -61,6 +63,93 @@ def test_display_order_rejects_duplicate_custom_order() -> None:
 
     with pytest.raises(ValueError, match="값표시순서.*중복"):
         validate_display_order(source)
+
+
+def _case_clash() -> pd.DataFrame:
+    """`Top` 과 `TOP` 은 적용(`apply_display_order`)이 같은 값으로 본다."""
+    return pd.DataFrame(
+        {
+            "페이지 구분": ["부하량"] * 2,
+            "탭 구분": ["환산"] * 2,
+            "정렬우선순위": [1] * 2,
+            "분류컬럼": ["WF 구분"] * 2,
+            "정렬방식": ["사용자지정"] * 2,
+            "분류값": ["Top", "TOP"],
+            "값표시순서": [1, 2],
+            "활성여부": ["Y"] * 2,
+        }
+    )
+
+
+def test_save_validation_uses_the_same_key_as_apply() -> None:
+    """대소문자만 다른 두 값은 저장에서 막힌다. 전에는 통과하고 화면에서 ValueError 가 났다."""
+    clash = _case_clash()
+    with pytest.raises(ValueError, match="RQ_DISPLAY_ORDER의 사용자지정 값이 중복"):
+        apply_display_order(pd.DataFrame({"WF 구분": ["Top"]}), clash, "부하량", "환산")
+
+    with pytest.raises(DisplayOrderValueClashError) as caught:
+        validate_display_order(clash)
+
+    message = str(caught.value)
+    assert "부하량 › 환산 › WF 구분" in message
+    # 적은 표기 그대로 알린다 — 줄인 키(`top`)로 적으면 어느 행인지 찾을 수 없다.
+    assert "`Top`" in message and "`TOP`" in message
+
+
+def test_values_differing_only_in_outer_spaces_also_clash() -> None:
+    clash = _case_clash().assign(분류값=[" Top", "top "])
+
+    with pytest.raises(DisplayOrderValueClashError, match="Top"):
+        validate_display_order(clash)
+
+
+def test_the_clash_message_names_at_most_five_scopes() -> None:
+    frames = [
+        _case_clash().assign(**{"탭 구분": f"탭{index}"}) for index in range(CLASH_REPORT_LIMIT + 2)
+    ]
+
+    with pytest.raises(DisplayOrderValueClashError) as caught:
+        validate_display_order(pd.concat(frames, ignore_index=True))
+
+    message = str(caught.value)
+    assert message.count("`Top` · `TOP`") == CLASH_REPORT_LIMIT
+    assert "외 2건" in message
+
+
+def test_every_save_and_import_path_rejects_a_case_clash() -> None:
+    """편집 저장·CSV·Excel 붙여넣기가 모두 같은 관문(`validate_display_order`)을 지난다."""
+    clash = _case_clash()
+    current = _rules()
+    edited = clash.drop(columns=["페이지 구분", "탭 구분"])
+
+    with pytest.raises(DisplayOrderValueClashError):
+        replace_display_order_scope(current, "부하량", "환산", edited)
+    with pytest.raises(DisplayOrderValueClashError):
+        display_order_from_csv(clash.to_csv(index=False).encode("utf-8-sig"))
+    with pytest.raises(DisplayOrderValueClashError):
+        display_order_from_clipboard(clash.to_csv(index=False, sep="	"))
+    with pytest.raises(DisplayOrderValueClashError):
+        ensure_route_sequence_rules(clash)
+
+
+def test_a_stored_profile_with_a_clash_still_reads_and_downloads() -> None:
+    """검사 전에 저장된 프로필은 읽는 길(기동 보강·Admin 탭·내려받기)에서만 견딘다.
+
+    다른 범위를 고쳐 저장하면 합친 결과가 다시 검사를 받아 겹친 값을 적은 오류로 막힌다.
+    """
+    stored = pd.concat([_rules(), _case_clash()], ignore_index=True)
+
+    validated = validate_display_order(stored, allow_value_clashes=True)
+    assert len(validated) == len(stored)
+    assert display_order_to_csv(stored, allow_value_clashes=True)
+
+    edited = _rules().loc[_rules()["탭 구분"].eq("계획")].drop(columns=["페이지 구분", "탭 구분"])
+    with pytest.raises(DisplayOrderValueClashError, match="부하량 › 환산 › WF 구분"):
+        replace_display_order_scope(stored, "HOME", "계획", edited)
+    # 글자까지 같은 중복은 예전처럼 읽는 길에서도 막는다.
+    exact = pd.concat([_rules(), _rules().iloc[[0]]], ignore_index=True)
+    with pytest.raises(ValueError, match="분류값이 같은 페이지·탭·분류컬럼에서 중복"):
+        validate_display_order(exact, allow_value_clashes=True)
 
 
 def test_display_order_csv_round_trip_supports_utf8_and_cp949() -> None:

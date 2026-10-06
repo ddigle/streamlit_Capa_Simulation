@@ -17,7 +17,7 @@ from capa_simulation.services.display_order_scopes import (
     TAB_UPEH,
     TAB_WF_RATIO,
 )
-from capa_simulation.services.frame_contracts import require_columns
+from capa_simulation.services.frame_contracts import match_key, require_columns
 
 DISPLAY_ORDER_COLUMNS = (
     "페이지 구분",
@@ -38,10 +38,62 @@ ROUTE_SEQUENCE_SCOPES = (
     (PAGE_REFERENCE, TAB_WF_RATIO),
     (PAGE_CALCULATION, TAB_REQUIRED),
 )
+# 중복 오류문에 적는 범위 수. 그 뒤는 「외 N건」으로 줄인다 — 붙여넣은 표 전체가 잘못이면
+# 오류문이 화면을 덮는다.
+CLASH_REPORT_LIMIT = 5
+_SCOPE_COLUMNS = ("페이지 구분", "탭 구분", "분류컬럼")
 
 
-def validate_display_order(source: pd.DataFrame) -> pd.DataFrame:
-    """Return normalized rules or reject every incomplete/conflicting row."""
+class DisplayOrderValueClashError(ValueError):
+    """사용자지정 분류값이 맞대어 보는 형태(`match_key`)로 겹친다.
+
+    저장·가져오기는 이것으로 막는다. 따로 둔 까닭은 **이미 저장된 프로필**을 읽는 길이 이것만
+    견디게 하려는 것이다 — 이 규칙 전에 저장된 프로필에 `Top`·`TOP` 이 함께 있으면, 기동마다
+    도는 보강이나 Admin 표시순서 탭이 이 오류로 죽어 고칠 화면에조차 못 들어간다.
+    """
+
+
+def custom_value_clashes(rules: pd.DataFrame) -> list[tuple[tuple[str, str, str], list[str]]]:
+    """사용자지정 규칙 가운데 같은 페이지·탭·분류컬럼에서 `match_key` 가 겹치는 값들.
+
+    적용(`display_order.apply_display_order`)이 분류값을 맞대는 형태와 같은 키로 본다 —
+    대소문자와 앞뒤 공백만 다른 두 값은 같은 값이다. 글자 그대로 보면 저장은 통과하고 그
+    범위를 쓰는 화면에서야 ValueError 가 났다. 돌려주는 값은 **원래 표기** 그대로다.
+    """
+    if rules.empty or not {*_SCOPE_COLUMNS, "정렬방식", "분류값"} <= set(rules.columns):
+        return []
+    custom = rules.loc[rules["정렬방식"].eq("사용자지정")]
+    if custom.empty:
+        return []
+    keyed = custom.loc[:, [*_SCOPE_COLUMNS, "분류값"]].assign(__key=match_key(custom["분류값"]))
+    duplicated = keyed.duplicated([*_SCOPE_COLUMNS, "__key"], keep=False)
+    clashes: list[tuple[tuple[str, str, str], list[str]]] = []
+    for group, rows in keyed.loc[duplicated].groupby([*_SCOPE_COLUMNS, "__key"], sort=False):
+        page, tab, column, _ = (str(value) for value in group)
+        clashes.append(((page, tab, column), rows["분류값"].astype(str).tolist()))
+    return clashes
+
+
+def describe_value_clashes(clashes: list[tuple[tuple[str, str, str], list[str]]]) -> str:
+    """겹친 값을 범위마다 한 덩어리로 적는다. 앞 `CLASH_REPORT_LIMIT` 개만, 나머지는 건수."""
+    parts = [
+        f"{page} › {tab} › {column}: " + " · ".join(f"`{value}`" for value in values)
+        for (page, tab, column), values in clashes[:CLASH_REPORT_LIMIT]
+    ]
+    rest = len(clashes) - CLASH_REPORT_LIMIT
+    if rest > 0:
+        parts.append(f"외 {rest}건")
+    return "; ".join(parts)
+
+
+def validate_display_order(
+    source: pd.DataFrame, *, allow_value_clashes: bool = False
+) -> pd.DataFrame:
+    """Return normalized rules or reject every incomplete/conflicting row.
+
+    `allow_value_clashes` 는 **이미 저장된 프로필을 읽는 길**만 켠다(기동 보강·Admin 탭 열기·
+    내려받기). 그때도 글자까지 같은 중복은 예전처럼 막는다. 저장·가져오기는 끄고 부른다.
+    """
     if not isinstance(source, pd.DataFrame):
         raise TypeError("표시순서 설정은 pandas DataFrame이어야 합니다.")
     require_columns(source, DISPLAY_ORDER_COLUMNS, "표시순서")
@@ -74,7 +126,14 @@ def validate_display_order(source: pd.DataFrame) -> pd.DataFrame:
 
     custom_rules = normalized.loc[custom]
     custom_key = [*scope_column, "분류값"]
-    if custom_rules.duplicated(custom_key).any():
+    if not allow_value_clashes:
+        clashes = custom_value_clashes(custom_rules)
+        if clashes:
+            raise DisplayOrderValueClashError(
+                "사용자지정 분류값이 같은 페이지·탭·분류컬럼에서 중복됩니다(대소문자·앞뒤 공백만 "
+                "다른 값도 같은 값으로 봅니다): " + describe_value_clashes(clashes)
+            )
+    elif custom_rules.duplicated(custom_key).any():
         raise ValueError("사용자지정 분류값이 같은 페이지·탭·분류컬럼에서 중복됩니다.")
     custom_order_key = [*scope_column, "값표시순서"]
     if custom_rules.duplicated(custom_order_key).any():
@@ -96,13 +155,17 @@ def replace_display_order_scope(
     tab: str,
     edited_rules: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Replace one page/tab rule set while preserving all other scopes."""
+    """Replace one page/tab rule set while preserving all other scopes.
+
+    지금 프로필은 겹친 값을 견디며 읽고(저장된 그대로다), 합친 결과는 저장과 같은 검사를
+    받는다 — 다른 범위에 예전 겹침이 남아 있으면 그 값을 적은 오류로 막힌다.
+    """
     page_name = _required_text(page, "페이지 구분")
     tab_name = _required_text(tab, "탭 구분")
     missing = [column for column in DISPLAY_ORDER_RULE_COLUMNS if column not in edited_rules]
     if missing:
         raise ValueError(f"편집 규칙 컬럼이 없습니다: {', '.join(missing)}")
-    normalized_current = validate_display_order(current)
+    normalized_current = validate_display_order(current, allow_value_clashes=True)
     rules = edited_rules.loc[:, list(DISPLAY_ORDER_RULE_COLUMNS)].dropna(how="all").copy()
     rules.insert(0, "탭 구분", tab_name)
     rules.insert(0, "페이지 구분", page_name)
@@ -113,9 +176,11 @@ def replace_display_order_scope(
     return validate_display_order(merged)
 
 
-def ensure_route_sequence_rules(source: pd.DataFrame) -> pd.DataFrame:
+def ensure_route_sequence_rules(
+    source: pd.DataFrame, *, allow_value_clashes: bool = False
+) -> pd.DataFrame:
     """Keep STEP and MCP as the final configured hierarchy in route-aware scopes."""
-    normalized = validate_display_order(source)
+    normalized = validate_display_order(source, allow_value_clashes=allow_value_clashes)
     result = normalized.copy()
     for page, tab in ROUTE_SEQUENCE_SCOPES:
         scope = result["페이지 구분"].eq(page) & result["탭 구분"].eq(tab)
@@ -154,7 +219,7 @@ def ensure_route_sequence_rules(source: pd.DataFrame) -> pd.DataFrame:
             [*result.to_dict("records"), *additions],
             columns=DISPLAY_ORDER_COLUMNS,
         )
-    return validate_display_order(result)
+    return validate_display_order(result, allow_value_clashes=allow_value_clashes)
 
 
 def _required_text(value: str, label: str) -> str:

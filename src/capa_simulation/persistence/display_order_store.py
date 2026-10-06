@@ -39,9 +39,12 @@ def validate_global_display_order_frame(frame: pd.DataFrame) -> None:
         raise ValueError("공용 표시순서에는 한 개 이상의 규칙이 필요합니다.")
 
 
-def prepare_global_display_order_rules(frame: pd.DataFrame) -> pd.DataFrame:
+def prepare_global_display_order_rules(
+    frame: pd.DataFrame, *, allow_value_clashes: bool = False
+) -> pd.DataFrame:
+    """저장 전 검증과 경로 식별 컬럼 보강. 겹친 분류값 허용은 이미 있는 값을 옮길 때만 켠다."""
     validate_global_display_order_frame(frame)
-    return ensure_route_sequence_rules(frame)
+    return ensure_route_sequence_rules(frame, allow_value_clashes=allow_value_clashes)
 
 
 def display_order_frames_equal(left: pd.DataFrame, right: pd.DataFrame) -> bool:
@@ -206,7 +209,10 @@ def initialize_global_display_order(
             initial = prepared_fallback
             source = "초기 표시순서 시드"
         else:
-            initial = prepare_global_display_order_rules(migrated)
+            # 사용자가 지금 저장하는 값이 아니라 예전에 저장된 값을 옮기는 것이다. 대소문자만
+            # 다른 분류값이 섞여 있어도 막지 않는다 — 막으면 앱이 기동하지 못한다. 그 값은
+            # 그 범위를 쓰는 화면과 Admin 표시순서 탭이 알린다.
+            initial = prepare_global_display_order_rules(migrated, allow_value_clashes=True)
             source = "기존 시나리오 표시순서 이관"
             if len(initial) < len(prepared_fallback):
                 initial = prepared_fallback

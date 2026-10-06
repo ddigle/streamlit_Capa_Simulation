@@ -99,6 +99,7 @@ from capa_simulation.persistence.voc_store import (
 )
 from capa_simulation.services.advance_load import prepare_advance_load
 from capa_simulation.services.advance_shipment import prepare_advance_shipment
+from capa_simulation.services.display_order_editor import DisplayOrderValueClashError
 from capa_simulation.services.execution_capacity import prepare_execution_capacity
 from capa_simulation.services.key_process import normalize_key_process_presets
 from capa_simulation.services.past_data import prepare_past_table
@@ -284,14 +285,22 @@ class DuckDBScenarioRepository:
         올린다. 없다고 읽은 뒤의 경합은 store 가 트랜잭션 안에서 헤더를 다시 확인해 막는다.
         아래 보강 단계는 프로필이 있어도 매번 돈다.
         """
-        prepared_fallback = prepare_global_display_order_rules(fallback)
+        # 시드는 기동마다 준비하지만 프로필이 이미 있으면 쓰이지 않는다. 로컬 시드 CSV 에 대소문자만
+        # 다른 분류값이 있어도 여기서 기동을 막지 않는다(아래 저장된 프로필과 같은 까닭).
+        prepared_fallback = prepare_global_display_order_rules(fallback, allow_value_clashes=True)
         with self._connect() as connection:
             exists = load_profile_header(connection, "global_display_order") is not None
         if not exists:
             with self._write_transaction() as connection:
                 display_order_store.initialize_global_display_order(connection, prepared_fallback)
         profile = self.load_global_display_order()
-        prepared = prepare_global_display_order_rules(profile.rules)
+        try:
+            prepared = prepare_global_display_order_rules(profile.rules)
+        except DisplayOrderValueClashError:
+            # 저장 검증이 대소문자만 다른 분류값을 막기 **전에** 저장된 프로필이다. 여기서 죽으면
+            # 앱이 기동하지 못한다. 보강은 미루고 그대로 둔다 — 그 범위를 쓰는 화면이 중복을
+            # 알리고, Admin 표시순서 탭에서 고쳐 저장하면 그 저장이 보강까지 한다.
+            return profile
         if not display_order_frames_equal(profile.rules, prepared):
             return self.replace_global_display_order(
                 prepared,

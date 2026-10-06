@@ -1803,7 +1803,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `CANVAS_DECIMALS` 자리)도 여기 하나다 — `space_layout_edit`·`fab_layout` 이 import 한다(`space_layout_edit`
   가 `fab_layout` 을 import 하므로 거꾸로 두면 순환이다).
 - `display_order_editor.py`, `display_order_csv.py`: 웹 편집 표시순서 규칙의 검증·범위
-  교체·CSV 직렬화와 수동 입력 `RQ_DISPLAY_ORDER` 변환
+  교체·CSV 직렬화와 수동 입력 `RQ_DISPLAY_ORDER` 변환. 사용자지정 분류값 중복은 적용과 같은
+  `match_key` 로 본다(`custom_value_clashes`, 8장)
 
 ### 화면 공통 계층
 
@@ -3364,6 +3365,17 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   항상 마지막 분류 계층으로 둔다. 기존 공용 프로필에 두 규칙이 없으면 Repository가
   해당 페이지·탭 범위의 마지막 우선순위로 자동 보강한다.
 - 지원 정렬방식은 `사용자지정`, `오름차순`, `내림차순`이다.
+- `사용자지정` 분류값의 중복은 **저장과 적용이 같은 키**로 판정한다 — `frame_contracts.match_key`
+  (앞뒤 공백·대소문자 무시)로 같은 페이지·탭·분류컬럼 안에서 겹치면 중복이다. 저장·가져오기
+  (범위 직접 편집·Excel 붙여넣기·CSV·`replace_global_display_order`)는 모두
+  `display_order_editor.validate_display_order` 한 관문을 지나 `DisplayOrderValueClashError` 로
+  막히고, 오류문은 겹친 값을 적은 표기 그대로 범위마다 적는다(앞 5개, 나머지는 「외 N건」).
+  이 검사 전에 저장된 프로필은 **읽는 길만** 견딘다(`allow_value_clashes=True` — 기동 때 경로 식별
+  컬럼 보강·첫 이관·로컬 시드 `data/input/RQ_DISPLAY_ORDER.csv` 읽기, Admin `표시순서 관리` 탭
+  열기·내려받기). 기동 보강은 그 프로필을 그대로
+  두고 미루며, Admin 탭이 겹친 값을 경고하고 그 범위를 쓰는 화면은 예전처럼 중복 오류를 낸다.
+  고쳐 저장하면 그 저장이 보강까지 한다. `data/input` Core Data 경로의 `RQ_DISPLAY_ORDER`
+  (`reference_transformer` → `transform_display_order`)는 이 검증을 지나지 않는다(전부터 그렇다).
 - 공정 표시명(Proc Rename) 규칙은 한 문장이다 — **화면은 표시명, 파일은 원본.**
   화면에서 사람이 읽는 공정명은 빠짐없이 표시명이고, 적용 계층은 여섯이다.
   ① 월별 표의 분류 값(`value_labels=`, 치환은 `components/` 안에서만 한다),
