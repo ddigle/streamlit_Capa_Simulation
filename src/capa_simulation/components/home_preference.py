@@ -23,6 +23,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.monthly_table_base import text_width_units
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import (
     HasProfileVersion as VersionedProfile,
@@ -933,6 +934,23 @@ _ADVANCE_SHIPMENT_EDITOR = _MonthlyAmountEditor(
     row_label=ADVANCE_SHIPMENT_ROW_LABEL,
     saved_message="선행 입고 실적을 공용 설정으로 저장했습니다.",
 )
+# 두 편집기가 같이 쓰는 `구분` 칸 폭(px). 두 상자의 행 이름 가운데 가장 긴 것에 맞춘다 —
+# `small`(75px)이면 「선행 입고 실적」이 「선행 입고 실ㅈ」로 잘린다. 폭이 하나라 두 상자의 달
+# 칸이 같은 자리에 선다. 글자 폭은 분류 칸과 같은 셈(`text_width_units` × 글자 단위 px)이고,
+# 칸 좌우 여백을 더한다.
+_MONTHLY_AMOUNT_LABEL_PADDING_PX = 20
+_MONTHLY_AMOUNT_LABEL_WIDTH_PX = round(
+    max(
+        text_width_units(text)
+        for text in (
+            DIMENSION_COLUMN,
+            _ADVANCE_LOAD_EDITOR.row_label,
+            _ADVANCE_SHIPMENT_EDITOR.row_label,
+        )
+    )
+    * tokens.CLASSIFICATION_TEXT_UNIT_PX
+    + _MONTHLY_AMOUNT_LABEL_PADDING_PX
+)
 
 
 def _render_advance_editor(
@@ -1042,7 +1060,9 @@ def _render_monthly_amount_editor(
                 placeholder="",
                 disabled=[DIMENSION_COLUMN],
                 column_config={
-                    DIMENSION_COLUMN: st.column_config.TextColumn(DIMENSION_COLUMN, width="small"),
+                    DIMENSION_COLUMN: st.column_config.TextColumn(
+                        DIMENSION_COLUMN, width=_MONTHLY_AMOUNT_LABEL_WIDTH_PX
+                    ),
                     **{
                         label: st.column_config.NumberColumn(label, step=0.01, format="%.2f")
                         for label in month_labels

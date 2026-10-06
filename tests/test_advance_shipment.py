@@ -1,5 +1,6 @@
 # Purpose: 공용 선행 입고 실적 프로필의 정규화·저장·편집기와 LOB 칸 글자의 계약을 고정한다.
 
+import json
 from pathlib import Path
 
 import duckdb
@@ -7,10 +8,14 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.home_preference as home_preference
 from capa_simulation.components.home_preference import ADVANCE_SHIPMENT_EDITOR_KEY
+from capa_simulation.components.monthly_table_base import text_width_units
 from capa_simulation.persistence.migration_runner import load_migrations
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.advance_load import ADVANCE_LOAD_ROW_LABEL
 from capa_simulation.services.advance_shipment import (
+    ADVANCE_SHIPMENT_ROW_LABEL,
     advance_shipment_notes,
     empty_advance_shipment,
     merge_advance_shipment_edits,
@@ -188,6 +193,24 @@ def test_the_editor_saves_the_visible_months_and_shows_them_again(database: Path
     assert table.iloc[0]["구분"] == "선행 입고 실적"
     assert table.iloc[0][["26.01", "26.02", "26.03"]].tolist() == [1.25, 0.0, -2.5]
     assert any("v2" in caption.value for caption in reloaded.caption)
+
+
+def test_the_row_name_column_fits_the_longest_name_of_both_editors(database: Path) -> None:
+    """`구분` 칸이 두 상자(선행 B/O·선행 입고 실적)의 가장 긴 행 이름을 다 보인다.
+
+    `small`(75px)이면 「선행 입고 실적」이 「선행 입고 실ㅈ」로 잘린다. 두 상자는 같은 폼이라
+    같은 폭이고, 달 칸은 폭을 정하지 않아 남는 폭을 나눠 쓴다.
+    """
+    app = _editor_app(database)
+    (editor,) = app.dataframe
+    columns = json.loads(editor.proto.columns)
+
+    width = columns["구분"]["width"]
+    assert width == home_preference._MONTHLY_AMOUNT_LABEL_WIDTH_PX
+    # 표 글자는 14px 이고 한글 한 자가 그만큼이다. 칸 좌우 여백(8px 씩)을 더해도 들어가야 한다.
+    for label in (ADVANCE_LOAD_ROW_LABEL, ADVANCE_SHIPMENT_ROW_LABEL):
+        assert width >= text_width_units(label) * 14 + 16, label
+    assert all("width" not in columns[month] for month in ("26.01", "26.02", "26.03"))
 
 
 def test_the_note_keeps_the_delta_size_until_it_would_touch_the_centred_delta() -> None:

@@ -2617,7 +2617,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `merge_advance_shipment_edits` — 규칙은 `services/monthly_amount.py` 한 곳). 조회기간을 좁힌 채
     저장한 사람이 보이지 않는 달의 입력을 모르는 새 날리면 안 된다. 두 편집기는 같은 폼
     (`_render_monthly_amount_editor`)이고 글자·키만 다르다(선행 B/O 의 폼·편집표·메모 키는 예전
-    그대로). 두 편집기의 달은 `Capa LOB 현황` 월 축(연간 Total 제외) 그대로라 `Past Data 포함` 을
+    그대로). `구분` 칸 폭도 하나다 — 두 상자의 행 이름 가운데 가장 긴 것(「선행 입고 실적」)에
+    맞춘 `_MONTHLY_AMOUNT_LABEL_WIDTH_PX`(`small` 75px 이면 「선행 입고 실ㅈ」로 잘린다)라 두 표의 달 칸이
+    같은 자리에 선다. 두 편집기의 달은 `Capa LOB 현황` 월 축(연간 Total 제외) 그대로라 `Past Data 포함` 을
     켰으면 과거 구간 달도 열린다 — 선행 입고 실적은 실적이라 지난 달에 넣는 값이다. 선행 입고 실적
     편집기는 `render_advance_shipment_editor` 로 공개해 AppTest 가 따로 연다.
   - `Summary 공지` 는 **빈 문구도 저장한다.** 공지를 내리는 것도 결정이고, 그때도 version
