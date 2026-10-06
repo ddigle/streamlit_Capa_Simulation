@@ -901,6 +901,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     불러오기·이름 수정·공식버전 지정·삭제를 그 한 건에 대해 수행한다. 표의 `순서` 칸을
     고쳐 저장하면 누적 순서를 다시 매긴다(`scenario.list_order`). 두 건 이상 체크하면
     작업 칸을 열지 않는다.
+  - 공식버전 지정(`_render_official`)은 고른 리비전의 가상 제품 이력
+    (`app_meta.revision_virtual_product` → `list_virtual_products`)이 있으면 제품 · Stack 목록과
+    「실적과 대조할 수 없는 값입니다」 경고를 보이고, 확인 체크(`official_confirm_key` —
+    리비전마다 다른 칸이라 앞 리비전의 확인이 따라오지 않는다)를 받아야 지정 버튼을 연다
+    (2026-10-06 사용자 결정). 체크는 폼 **밖**에 둔다 — 폼 안의 체크는 누를 때 다시 그리지
+    않아 버튼을 풀 수 없다. 제출 회차에도 확인을 다시 본다. 가상 제품이 없으면 화면은 전과
+    같다. `capacity_gate` 의 발행 검사는 그대로 함께 돈다. 화면 밖 발행은 이 확인을 거치지
+    않는다 — `application_bootstrap` 은 가상 제품이 없는 내장 시드만 발행하고,
+    `scripts/bootstrap_initial_duckdb_scenario.py` 는 운영자가 직접 돌리는 초기 이관 CLI 다.
   - 목록에서 치우는 기본 수단은 **보관**(`archive_scenario`)이다. `app_meta.scenario.status`
     를 `ARCHIVED` 로 바꿔 목록에서 숨기고 새 리비전 저장·공식버전 지정을 막을 뿐, 행은
     남는다(`restore_scenario` 로 되돌린다). `list_scenarios` 는 기본으로 보관본을 빼며,

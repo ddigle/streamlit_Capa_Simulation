@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Button
+from streamlit.testing.v1.errors import AppTestError
 from test_all_pages_render import _page_script
 
 from capa_simulation.components.scenario_management import (
@@ -15,6 +17,8 @@ from capa_simulation.components.scenario_management import (
     FLASH_KEY,
     LIST_EDITOR_KEY,
     MODE_KEY,
+    REVISION_SELECT_KEY,
+    official_confirm_key,
 )
 from capa_simulation.persistence.cache import (
     clear_global_comparison_scenario_cache,
@@ -538,3 +542,133 @@ def test_archive_and_delete_drop_the_cached_comparison_target(tmp_path: Path) ->
         scenario.scenario_id for scenario in repository.list_scenarios(include_archived=True)
     }
     assert load_global_comparison_scenario(database).scenario_id is None
+
+
+OFFICIAL_BUTTON = "선택 리비전을 공식버전으로 지정"
+VIRTUAL_CONFIRM_LABEL = "가상 제품이 포함된 것을 확인했습니다"
+
+
+def _open_official(app: AppTest, database_path: Path, scenario_id: str, revision_id: str) -> None:
+    """목록에서 그 시나리오를 고르고 리비전을 정한 뒤 「공식버전 지정」 칸을 연다."""
+    _check_row(app, database_path, scenario_id)
+    app.run()
+    app.session_state[REVISION_SELECT_KEY] = revision_id
+    app.session_state[ACTION_KEY] = "official"
+    app.run()
+    assert not app.exception
+
+
+def _official_button(app: AppTest) -> Button:
+    return next(button for button in app.button if button.label == OFFICIAL_BUTTON)
+
+
+def test_official_release_of_a_revision_with_virtual_products_needs_a_confirmation(
+    tmp_path: Path,
+) -> None:
+    """가상 제품이 든 리비전은 확인 체크 전에 공식버전으로 지정되지 않는다(2026-10-06 사용자 결정).
+
+    가상 제품은 실적과 대조할 수 없는 값이다. 그런 리비전이 모두의 첫 화면이 되기 전에 지정하는
+    사람이 제품 · Stack 목록을 보고 확인해야 한다. 계산 검사(`official_publish_verdict`)는 그대로
+    함께 돈다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+    official = repository.load_revision(release.revision_id)
+    virtual_products = [
+        {
+            "product": "DEMO_VIRTUAL",
+            "stack": "8H",
+            "source_product": "DEMO_SOURCE",
+            "source_stack": "8H",
+        }
+    ]
+    saved = repository.save_revision(
+        official.scenario.scenario_id,
+        official.tables,
+        official.preset,
+        revision_name="가상 제품 포함",
+        parent_revision_id=release.revision_id,
+        virtual_products=virtual_products,
+    )
+    revision_id = saved.revision.revision_id
+    other = repository.save_revision(
+        official.scenario.scenario_id,
+        official.tables,
+        official.preset,
+        revision_name="가상 제품 포함 2",
+        parent_revision_id=revision_id,
+        virtual_products=virtual_products,
+    )
+    other_revision_id = other.revision.revision_id
+
+    app = AppTest.from_string(script, default_timeout=120)
+    _open_official(app, database_path, saved.scenario.scenario_id, revision_id)
+    assert (
+        "이 리비전에는 가상 제품 1건이 포함되어 있습니다(DEMO_VIRTUAL · 8H). "
+        "실적과 대조할 수 없는 값입니다. 그대로 공식버전으로 지정할까요?"
+    ) in [item.value for item in app.warning]
+    assert _official_button(app).disabled
+
+    # 잠긴 버튼은 누를 수 없다(AppTest 도 브라우저처럼 거절한다). 발행 이력은 그대로다.
+    with pytest.raises(AppTestError):
+        _official_button(app).click()
+    assert repository.count_official_releases(saved.scenario.scenario_id) == 1
+
+    app.checkbox(key=official_confirm_key(revision_id)).check()
+    app.run()
+    assert not app.exception
+    assert not _official_button(app).disabled
+
+    # 확인은 리비전마다 따로다. 한 리비전에 남긴 체크가 가상 제품이 든 다른 리비전의 지정을
+    # 열어 주면, 확인하지 않은 리비전이 공식버전이 된다.
+    app.selectbox(key=REVISION_SELECT_KEY).set_value(other_revision_id)
+    app.run()
+    assert not app.exception
+    assert _official_button(app).disabled
+
+    app.selectbox(key=REVISION_SELECT_KEY).set_value(revision_id)
+    app.run()
+    assert not app.exception
+    # 다른 리비전을 보는 동안 그리지 않은 체크는 지워진다. 돌아오면 다시 확인해야 한다.
+    assert _official_button(app).disabled
+    app.checkbox(key=official_confirm_key(revision_id)).check()
+    app.run()
+    assert not app.exception
+    assert not _official_button(app).disabled
+    _official_button(app).click()
+    app.run()
+    assert not app.exception
+
+    latest = repository.latest_official_release()
+    assert latest is not None and latest.revision_id == revision_id
+    assert latest.release_no == 2
+    assert any(item.value.startswith("공식 v2 · ") for item in app.success)
+
+
+def test_official_release_without_virtual_products_asks_nothing(tmp_path: Path) -> None:
+    """가상 제품이 없는 리비전은 전과 같다 — 경고·확인 체크 없이 버튼이 바로 열린다."""
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+
+    app = AppTest.from_string(script, default_timeout=120)
+    _open_official(app, database_path, release.scenario_id, release.revision_id)
+    assert not any("가상 제품" in item.value for item in app.warning)
+    assert VIRTUAL_CONFIRM_LABEL not in {widget.label for widget in app.checkbox}
+    assert not _official_button(app).disabled
+
+    _official_button(app).click()
+    app.run()
+    assert not app.exception
+
+    latest = repository.latest_official_release()
+    assert latest is not None and latest.release_no == 2
+    assert latest.revision_id == release.revision_id
+    assert any(item.value.startswith("공식 v2 · ") for item in app.success)

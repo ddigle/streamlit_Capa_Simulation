@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import cast
 
@@ -76,6 +76,9 @@ ACTION_KEY = "scenario_list_action"
 ACTION_OWNER_KEY = "scenario_list_action_owner"
 DELETE_CONFIRM_KEY = "scenario_list_delete_confirm"
 ARCHIVE_CONFIRM_KEY = "scenario_list_archive_confirm"
+# 가상 제품이 든 리비전을 공식버전으로 지정할 때의 확인 체크. 리비전마다 따로 받는다
+# (`official_confirm_key`).
+OFFICIAL_CONFIRM_KEY = "scenario_list_official_virtual_confirm"
 ARCHIVED_SELECT_KEY = "scenario_list_archived_id"
 # 접힘 칸의 key. 위젯이 아니라 브라우저가 펼침을 기억하는 이름이다(`_render_archived_scenarios`).
 ARCHIVED_EXPANDER_KEY = "scenario_list_archived_expander"
@@ -439,6 +442,17 @@ def _render_official(
     summary: ScenarioSummary,
     revision_id: str,
 ) -> None:
+    # 가상 제품은 실적과 대조할 수 없는 값이다. 그런 리비전이 모두의 첫 화면이 되기 전에
+    # 지정하는 사람이 그 사실을 보고 확인하게 한다(2026-10-06 사용자 결정). 확인 체크는 폼
+    # **밖**에 둔다 — 폼 안의 체크는 누를 때 다시 그리지 않아 지정 버튼을 풀 수 없다.
+    virtual_products = virtual_product_records(repository.list_virtual_products(revision_id))
+    confirmed = True
+    if virtual_products:
+        st.warning(official_virtual_product_warning(virtual_products), icon=":material/warning:")
+        confirmed = st.checkbox(
+            "가상 제품이 포함된 것을 확인했습니다",
+            key=official_confirm_key(revision_id),
+        )
     with st.form("scenario_official_form"):
         release_name = st.text_input("공식버전명", value=f"{summary.scenario_name} 공식안")
         release_note = st.text_area("공식 지정 메모", height=80)
@@ -446,9 +460,13 @@ def _render_official(
             "선택 리비전을 공식버전으로 지정",
             icon=":material/publish:",
             type="primary",
+            disabled=not confirmed,
             width="stretch",
         )
-    if official_submitted:
+    if official_submitted and not confirmed:
+        # 버튼 잠금은 화면의 약속일 뿐이다. 제출 회차에도 확인을 다시 본다.
+        st.error("가상 제품이 포함된 것을 확인해야 공식버전으로 지정할 수 있습니다.")
+    elif official_submitted:
         try:
             # 공식버전은 모두의 첫 화면이다. 계산이 안 되는 리비전을 지정하면 모두의 HOME 이
             # 멈춘다. 검사는 HOME 과 같은 캐시 칸을 써서, 통과하면 HOME 이 이미 데워져 있다.
@@ -471,6 +489,7 @@ def _render_official(
                 f"{object_particle(release.release_name)} 지정했습니다."
             )
             st.session_state.pop(ACTION_KEY, None)
+            st.session_state.pop(official_confirm_key(revision_id), None)
             # 입장 화면 Summary 가 새 공식버전을 다음 회차에 곧바로 싣게 한다
             # (평소에는 30초에 한 번 본다).
             forget_intro_summary_check()
@@ -493,6 +512,20 @@ def _render_official(
             hide_index=True,
             width="stretch",
         )
+
+
+def official_confirm_key(revision_id: str) -> str:
+    """가상 제품 확인 체크의 key. 리비전을 바꾸면 다른 칸이라 앞 리비전의 확인이 따라오지 않는다."""
+    return f"{OFFICIAL_CONFIRM_KEY}_{revision_id}"
+
+
+def official_virtual_product_warning(records: Sequence[VirtualProductRecord]) -> str:
+    """공식버전 지정 전에 보일 가상 제품 확인 문장. 제품 · Stack 을 모두 적는다."""
+    products = ", ".join(f"{record.product} · {record.stack}" for record in records)
+    return (
+        f"이 리비전에는 가상 제품 {len(records)}건이 포함되어 있습니다({products}). "
+        "실적과 대조할 수 없는 값입니다. 그대로 공식버전으로 지정할까요?"
+    )
 
 
 def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSummary) -> None:
