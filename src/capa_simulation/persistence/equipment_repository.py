@@ -38,6 +38,7 @@ from capa_simulation.services.equipment_contract import (
     DOWNTIME_KEY_COLUMNS,
     EQUIPMENT_COLUMNS,
     EQUIPMENT_ID_COLUMN,
+    RELOCATION_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
     VALID_BUILDINGS,
     VALID_FLOORS,
@@ -177,7 +178,7 @@ EQUIPMENT_MASTER_DB_COLUMNS: Mapping[str, str] = MappingProxyType(
         "Qual일정": "qual_date",
         "확정상태": "qual_confirmation_status",
         "반출일정": "removal_date",
-        "이설일": "relocation_date",
+        RELOCATION_DATE_COLUMN: "relocation_date",
         "반입/Qual 이력": "arrival_qual_history",
         "호기이력": "equipment_history",
         "설비이력": "note",
@@ -193,8 +194,15 @@ EQUIPMENT_MASTER_DB_COLUMNS: Mapping[str, str] = MappingProxyType(
 )
 
 # 0008 이전 리비전은 환산비가 NULL 이다 — 기준 모델(1.0)로 읽는다.
+# 반입·Qual 이 필수이던 때 옛 리비전 변환은 빈 Qual 을 먼 미래(`LEGACY_QUAL_PLACEHOLDER`)로
+# 채웠고, 그 편집본을 다시 저장한 리비전에는 그 날짜가 남아 있다. 정확히 그 날만 빈 Qual 로
+# 읽는다 — 상태는 같고(빈 Qual = 셋업 진행중) 일정 미정 알림에 잡힌다. 그 날짜는 그 변환만 만들었다.
+LEGACY_QUAL_PLACEHOLDER = "2262-04-11"
 _EQUIPMENT_MASTER_READ_EXPRESSIONS: Mapping[str, str] = MappingProxyType(
-    {"conversion_ratio": f"COALESCE(conversion_ratio, {DEFAULT_CONVERSION_RATIO!r})"}
+    {
+        "conversion_ratio": f"COALESCE(conversion_ratio, {DEFAULT_CONVERSION_RATIO!r})",
+        "qual_date": f"NULLIF(qual_date, DATE '{LEGACY_QUAL_PLACEHOLDER}')",
+    }
 )
 
 _EQUIPMENT_MASTER_PROJECTION = ", ".join(
@@ -1072,7 +1080,7 @@ def _stored_floor_marks(
     rows = connection.execute(
         """
         SELECT mark_id, mark_kind, x_coordinate, y_coordinate, x_size, y_size, rotation_deg,
-               label, color_key, hatch, keep_out
+               label, color_key, hatch, keep_out, font_size, font_color
         FROM equipment_ops.floor_layout_mark
         WHERE building = ? AND floor_name = ?
         ORDER BY source_row_no
@@ -1092,6 +1100,8 @@ def _stored_floor_marks(
             color=str(row[8]) if row[8] is not None else "",
             hatch=bool(row[9]),
             keep_out=bool(row[10]),
+            font_size=int(row[11]) if row[11] is not None else None,
+            font_color=str(row[12]) if row[12] is not None else "",
         )
         for row in rows
     )
@@ -1127,11 +1137,18 @@ def _replace_floor_marks(
                 "color_key": mark.color or None,
                 "hatch": mark.hatch,
                 "keep_out": mark.keep_out,
+                "font_size": mark.font_size,
+                "font_color": mark.font_color or None,
             }
             for index, mark in enumerate(marks, start=1)
         ]
     )
-    insert_by_name(connection, schema="equipment_ops", table_name="floor_layout_mark", frame=frame)
+    insert_by_name(
+        connection,
+        schema="equipment_ops",
+        table_name="floor_layout_mark",
+        frame=_with_font_size_type(frame),
+    )
 
 
 def _stored_image_digest(
@@ -1191,7 +1208,7 @@ def _stored_fab_marks(connection: duckdb.DuckDBPyConnection) -> tuple[FabLayoutM
     rows = connection.execute(
         """
         SELECT mark_id, mark_kind, x_coordinate, y_coordinate, x_size, y_size, rotation_deg,
-               label, color_key, hatch, link_building, link_floor
+               label, color_key, hatch, link_building, link_floor, font_size, font_color
         FROM equipment_ops.fab_layout_mark
         ORDER BY source_row_no
         """
@@ -1211,6 +1228,8 @@ def _stored_fab_marks(connection: duckdb.DuckDBPyConnection) -> tuple[FabLayoutM
             link=(str(row[10]), str(row[11]))
             if row[10] is not None and row[11] is not None
             else None,
+            font_size=int(row[12]) if row[12] is not None else None,
+            font_color=str(row[13]) if row[13] is not None else "",
         )
         for row in rows
     )
@@ -1284,11 +1303,24 @@ def _replace_fab_marks(
                 "keep_out": False,
                 "link_building": mark.link[0] if mark.link is not None else None,
                 "link_floor": mark.link[1] if mark.link is not None else None,
+                "font_size": mark.font_size,
+                "font_color": mark.font_color or None,
             }
             for index, mark in enumerate(marks, start=1)
         ]
     )
-    insert_by_name(connection, schema="equipment_ops", table_name="fab_layout_mark", frame=frame)
+    insert_by_name(
+        connection,
+        schema="equipment_ops",
+        table_name="fab_layout_mark",
+        frame=_with_font_size_type(frame),
+    )
+
+
+def _with_font_size_type(frame: pd.DataFrame) -> pd.DataFrame:
+    """글자 크기 칸을 정수(빈 값 허용)로 맞춘다. 정수와 None 이 섞이면 pandas 가 실수(NaN)로,
+    모두 None 이면 객체로 만든다 — 어느 쪽이든 INTEGER 칸에 넣기 전에 형을 고정한다."""
+    return frame.assign(font_size=frame["font_size"].astype("Int64"))
 
 
 def _insert_floor_layout(
@@ -1429,14 +1461,14 @@ def _convert_legacy_equipment(legacy: pd.DataFrame) -> pd.DataFrame:
         result[ARRIVAL_DATE_COLUMN] = legacy_arrival.fillna(legacy_qual)
     else:
         result[ARRIVAL_DATE_COLUMN] = legacy_arrival
-    if isinstance(legacy_qual, pd.Series):
-        result["Qual일정"] = legacy_qual.fillna(pd.Timestamp("2262-04-11"))
-    else:
-        result["Qual일정"] = pd.Timestamp("2262-04-11")
+    # 옛 양산전환일이 없으면 Qual일정도 비운다 — 신규 호기의 빈 Qual 은 「셋업 진행중」에 머문다.
+    result["Qual일정"] = legacy_qual if isinstance(legacy_qual, pd.Series) else None
     result[STORAGE_FLAG_COLUMN] = "N"
     has_legacy_schedule = result[ARRIVAL_DATE_COLUMN].notna()
     result["기존설비여부"] = has_legacy_schedule.map({True: "N", False: "Y"})
-    result["확정상태"] = has_legacy_schedule.map({True: "계획", False: None})
+    # 확정상태는 Qual 일정의 값이라 Qual일정이 있는 신규 호기에만 「계획」을 둔다.
+    has_legacy_qual = has_legacy_schedule & result["Qual일정"].notna()
+    result["확정상태"] = has_legacy_qual.map({True: "계획", False: None})
     result["설비이력"] = legacy.get("비고")
     result["레이아웃표시"] = has_coordinates.map({True: "Y", False: "N"})
     # 옛 리비전에는 모델별 생산성 구분이 없었다. 전부 기준 모델로 본다.

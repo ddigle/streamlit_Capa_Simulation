@@ -302,15 +302,16 @@ def _parse_created(
     qual = _iso_date(raw.get("qual"), "Qual일정", unit_id)
     confirm = _text(raw.get("confirm")).strip()
     if not existing:
-        # 호기 마스터 계약: 기존설비가 아니면 반입·Qual 일정(반입 ≤ Qual)과 확정상태가 필수다.
-        if arrival is None or qual is None:
-            raise ValueError(
-                f"신규 설비 {with_topic_particle(unit_id)} 반입일정과 Qual일정이 필요합니다."
-            )
-        if qual < arrival:
+        # 호기 마스터 계약: 반입·Qual 일정은 비워도 되고(둘 다 있으면 반입 ≤ Qual), 확정상태는
+        # Qual일정이 있을 때만 필수다. Qual일정 없이 고른 확정상태도 받는다.
+        if arrival is not None and qual is not None and qual < arrival:
             raise ValueError(f"새 호기 {unit_id} 의 Qual일정이 반입일정보다 빠릅니다.")
-        if confirm not in QUAL_CONFIRMATION_STATUSES:
-            raise ValueError(f"새 호기 {unit_id} 의 확정상태를 골라 주세요.")
+        if confirm and confirm not in QUAL_CONFIRMATION_STATUSES:
+            raise ValueError(f"새 호기 {unit_id} 의 확정상태를 고를 수 없는 값입니다: {confirm!r}")
+        if qual is not None and not confirm:
+            raise ValueError(
+                f"신규 설비 {with_topic_particle(unit_id)} Qual일정이 있어 확정상태가 필요합니다."
+            )
     return CreatedUnit(
         unit_id=unit_id,
         process=process,

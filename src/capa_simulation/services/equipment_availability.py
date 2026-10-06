@@ -17,6 +17,7 @@ import pandas as pd
 from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
     EQUIPMENT_ID_COLUMN,
+    RELOCATION_DATE_COLUMN,
     SCHEDULE_STAGES,
     STATUS_COUNT_COLUMNS,
     STORAGE_FLAG_COLUMN,
@@ -84,7 +85,9 @@ def _build_equipment_status_from_prepared(
         | (result[ARRIVAL_DATE_COLUMN].notna() & result[ARRIVAL_DATE_COLUMN].le(timestamp))
     )
     removal_complete = result["반출일정"].notna() & result["반출일정"].le(timestamp)
-    relocation_complete = result["이설일"].notna() & result["이설일"].le(timestamp)
+    relocation_complete = result[RELOCATION_DATE_COLUMN].notna() & result[
+        RELOCATION_DATE_COLUMN
+    ].le(timestamp)
     exited = removal_complete | relocation_complete
     owned = arrived & ~exited
     qualified = existing | (result["Qual일정"].notna() & result["Qual일정"].le(timestamp))
@@ -102,7 +105,7 @@ def _build_equipment_status_from_prepared(
     status.loc[available] = "가용"
     status.loc[storage & owned] = "보관 설비"
     status.loc[result["반출일정"].notna() & ~removal_complete] = "반출 예정"
-    status.loc[result["이설일"].notna() & ~relocation_complete] = "이설 예정"
+    status.loc[result[RELOCATION_DATE_COLUMN].notna() & ~relocation_complete] = "이설 예정"
     status.loc[offline] = "운영 비가동"
     status.loc[removal_complete] = "반출 완료"
     status.loc[relocation_complete] = "이설 완료"
@@ -119,9 +122,9 @@ def _build_equipment_status_from_prepared(
 
 
 # 상태가 바뀔 수 있는 날은 정해져 있다. 판정이 보는 컬럼이 그것뿐이기 때문이다 —
-# `반입일정`·`Qual일정`·`반출일정`·`이설일` 은 그날 `le` 로 넘어가고, 비가동은 `시작일` 에
+# `반입일정`·`Qual일정`·`반출일정`·`이설일정` 은 그날 `le` 로 넘어가고, 비가동은 `시작일` 에
 # 켜져 `종료일` 다음 날 꺼진다. 다른 날에는 같은 판정이 나오므로 샘플링할 이유가 없다.
-_TIMELINE_EVENT_COLUMNS = (ARRIVAL_DATE_COLUMN, "Qual일정", "반출일정", "이설일")
+_TIMELINE_EVENT_COLUMNS = (ARRIVAL_DATE_COLUMN, "Qual일정", "반출일정", RELOCATION_DATE_COLUMN)
 
 LIFECYCLE_SPAN_COLUMNS = (
     EQUIPMENT_ID_COLUMN,
@@ -494,7 +497,7 @@ def build_milestone_transition_events(
         ARRIVAL_DATE_COLUMN: "물류",
         "Qual일정": "입고",
         "반출일정": "가용/보관",
-        "이설일": "가용/보관",
+        RELOCATION_DATE_COLUMN: "가용/보관",
     }
     order = {column: index for index, column in enumerate(date_columns)}
     events["단계순서"] = events["단계컬럼"].map(order).astype("int64")

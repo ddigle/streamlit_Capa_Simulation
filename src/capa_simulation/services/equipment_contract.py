@@ -40,7 +40,7 @@ EQUIPMENT_COLUMNS = (
     "Qual일정",
     "확정상태",
     "반출일정",
-    "이설일",
+    "이설일정",
     "반입/Qual 이력",
     "호기이력",
     "설비이력",
@@ -68,13 +68,17 @@ DOWNTIME_KEY_COLUMNS = (EQUIPMENT_ID_COLUMN, "비가동유형", "시작일")
 # 컬럼 이름과 따로 움직이며 바꾸지 않는다.
 ARRIVAL_DATE_COLUMN = "반입일정"
 
+# 다른 자리로 옮기는 날이다. 단계 이름(「이설」)과 상태(「이설 예정」·「이설 완료」)는
+# 컬럼 이름과 따로 움직이며 바꾸지 않는다.
+RELOCATION_DATE_COLUMN = "이설일정"
+
 DATE_COLUMNS = (
     "제진대일정",
     "물류일정",
     ARRIVAL_DATE_COLUMN,
     "Qual일정",
     "반출일정",
-    "이설일",
+    RELOCATION_DATE_COLUMN,
 )
 
 SCHEDULE_STAGES = (
@@ -83,7 +87,7 @@ SCHEDULE_STAGES = (
     (ARRIVAL_DATE_COLUMN, "입고"),
     ("Qual일정", "Qual"),
     ("반출일정", "반출"),
-    ("이설일", "이설"),
+    (RELOCATION_DATE_COLUMN, "이설"),
 )
 
 QUAL_CONFIRMATION_STATUSES = ("계획", "확정", "완료", "지연")
@@ -244,6 +248,7 @@ LEGACY_EQUIPMENT_HEADER_ALIASES: Mapping[str, str] = MappingProxyType(
         "분류3": "설비가동현황",
         "모델": "Model",
         "입고일정": ARRIVAL_DATE_COLUMN,
+        "이설일": RELOCATION_DATE_COLUMN,
         "비고": "설비이력",
         "장기보관여부": "보관유무",
         "모체호기": PARENT_EQUIPMENT_COLUMN,

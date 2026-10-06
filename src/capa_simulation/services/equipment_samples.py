@@ -15,6 +15,7 @@ from capa_simulation.services.equipment_contract import (
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
     EQUIPMENT_ID_COLUMN,
+    RELOCATION_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
 )
 from capa_simulation.services.equipment_validation import (
@@ -232,7 +233,7 @@ def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
                 "Qual일정": _offset_date(anchor, schedule.qual),
                 "확정상태": schedule.confirmation,
                 "반출일정": _offset_date(anchor, schedule.removal),
-                "이설일": _offset_date(anchor, schedule.relocation),
+                RELOCATION_DATE_COLUMN: _offset_date(anchor, schedule.relocation),
                 STORAGE_FLAG_COLUMN: schedule.storage,
                 "기존설비여부": schedule.existing,
                 # 같은 공정에 생산성이 다른 모델이 섞인 모습을 샘플에서도 볼 수 있게 둔다.
@@ -291,8 +292,9 @@ def _fleet_slots() -> list[tuple[str, str, str, float, float]]:
 def _fleet_schedule(kind: str, index: int) -> _FleetSchedule:
     """상태 하나를 일정 여섯 개로 푼다. 검증 규칙이 요구하는 순서를 여기서 지킨다.
 
-    제진대 ≤ 물류 ≤ 입고 ≤ Qual 이어야 하고, 보관·기존설비가 아닌 호기는 입고·Qual·
-    확정상태가 모두 있어야 한다. 반출일정과 이설일은 함께 둘 수 없다.
+    제진대 ≤ 물류 ≤ 입고 ≤ Qual 이어야 하고, Qual 이 있는 신규 호기는 확정상태가 있어야 한다.
+    반출일정과 이설일정은 함께 둘 수 없다. 샘플은 상태를 보이려고 신규 호기마다 입고·Qual 을 둔다
+    (일정은 비워도 저장되지만 그러면 입고 예정·셋업 진행중에 머문다).
     """
     if kind == "보관":
         return _FleetSchedule(storage="Y")

@@ -29,6 +29,7 @@ from capa_simulation.services.equipment_contract import (
     OBSOLETE_EQUIPMENT_COLUMNS,
     OPTIONAL_EQUIPMENT_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
+    RELOCATION_DATE_COLUMN,
     compact_header,
     rename_legacy_headers,
 )
@@ -114,7 +115,7 @@ def equipment_csv_template() -> bytes:
                     "Qual일정": "2026-09-16",
                     "확정상태": "계획",
                     "반출일정": "",
-                    "이설일": "",
+                    RELOCATION_DATE_COLUMN: "",
                     "반입/Qual 이력": "",
                     "호기이력": "호기 변동 이력 기록",
                     "설비이력": SAMPLE_EQUIPMENT_NOTE,

@@ -33,6 +33,8 @@ from capa_simulation.services.floor_layout_mark import (
     MARKS_PER_FLOOR_MAX,
     mark_box,
     mark_flag,
+    mark_font_color,
+    mark_font_size,
     mark_id_of,
     mark_label,
     mark_rotation,
@@ -128,6 +130,9 @@ class FabLayoutMark:
     link: FloorKey | None = None
     rotation: int = 0
     hatch: bool = False
+    # 이름표·블록 글자의 크기(None 은 자동)와 색 키(빈 값은 기본). 층 요소와 같은 계약이다.
+    font_size: int | None = None
+    font_color: str = ""
 
     def editor_payload(self) -> dict[str, Any]:
         """편집기(브라우저)에 보내는 모양. 층 도면 요소와 같은 키에 `link`(「C1 1F」)를 더한다.
@@ -145,6 +150,8 @@ class FabLayoutMark:
             "hatch": self.hatch,
             "keepOut": False,
             "link": floor_label(self.link) if self.link is not None else "",
+            "fontSize": self.font_size,
+            "fontColor": self.font_color,
         }
 
 
@@ -319,6 +326,7 @@ def prepare_fab_layout_marks(
     받는 키는 편집기 계약(층 요소와 같고 `link` 를 더한다). 종류는 `FAB_MARK_KINDS`, 개수는 층과
     같은 상한이다. **층 블록은 연결(「C1 1F」, FAB 의 30개 층)이 필수**이고 색은 기본(빈 값) 또는
     `MARK_COLOR_KEYS` 다. 영역 색은 층 도면과 같다(비면 회색). 블록이 아닌 요소의 연결은 버린다.
+    글자 크기·색(`fontSize`·`fontColor`)은 층 요소와 같은 규칙으로 모든 종류가 갖는다.
     두 블록이 같은 층을 가리키는 것은 막지 않는다(`duplicate_block_links` 로 경고만)."""
     if len(marks) > MARKS_PER_FLOOR_MAX:
         raise ValueError(f"FAB 도면 요소는 {MARKS_PER_FLOOR_MAX}개까지입니다: {len(marks)}개")
@@ -352,6 +360,8 @@ def prepare_fab_layout_marks(
                 link=link,
                 rotation=mark_rotation(raw, mark_id),
                 hatch=kind == "zone" and mark_flag(raw.get("hatch")),
+                font_size=mark_font_size(raw, mark_id),
+                font_color=mark_font_color(raw, mark_id),
             )
         )
     return tuple(prepared)

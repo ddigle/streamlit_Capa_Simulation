@@ -31,7 +31,7 @@ from capa_simulation.services.weekly_availability_input import (
 
 def _repository(path: Path) -> DuckDBEquipmentRepository:
     repository = DuckDBEquipmentRepository(path)
-    assert repository.initialize() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15)
+    assert repository.initialize() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17)
     assert repository.initialize() == ()
     return repository
 
@@ -238,7 +238,7 @@ def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15)
+    assert repository.initialize() == (3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17)
     snapshot = repository.load_snapshot("legacy-r1")
 
     assert snapshot.equipment.loc[0, "설비명"] == "EQ-LEGACY"
@@ -253,6 +253,76 @@ def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
         "상세사유",
         "비고",
     ]
+
+
+def test_legacy_revision_without_production_date_keeps_qual_blank(tmp_path: Path) -> None:
+    """옛 양산전환일이 없으면 Qual일정도 비운다(먼 미래 날짜로 채우지 않는다). 확정상태는 Qual 이
+    있는 행에만 「계획」이다."""
+    database_path = tmp_path / "legacy-no-qual.duckdb"
+    migrations = load_equipment_migrations()
+    with duckdb.connect(str(database_path)) as connection:
+        for migration in migrations[:2]:
+            connection.execute(migration.sql)
+            connection.execute(
+                """
+                INSERT INTO equipment_meta.schema_migration (version, name, checksum)
+                VALUES (?, ?, ?)
+                """,
+                [migration.version, migration.name, migration.checksum],
+            )
+        connection.execute(
+            """
+            INSERT INTO equipment_ops.revision (
+                revision_id, revision_no, note, baseline_hash, schedule_hash,
+                equipment_hash, downtime_hash
+            ) VALUES ('legacy-r1', 1, 'legacy', 'b', 's', 'e', 'd')
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO equipment_ops.equipment_snapshot (
+                revision_id, source_row_no, equipment_id, process_name,
+                classification, arrival_date, production_transition_date
+            ) VALUES
+                ('legacy-r1', 1, 'EQ-NOQUAL', 'Process-A', '전체', DATE '2026-08-01', NULL),
+                ('legacy-r1', 2, 'EQ-QUAL', 'Process-A', '전체', DATE '2026-08-01',
+                 DATE '2026-08-10'),
+                ('legacy-r1', 3, 'EQ-OLD', 'Process-A', '전체', NULL, NULL)
+            """
+        )
+
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.initialize()
+    equipment = repository.load_snapshot("legacy-r1").equipment.set_index("설비명")
+
+    assert pd.isna(equipment.loc["EQ-NOQUAL", "Qual일정"])
+    assert pd.isna(equipment.loc["EQ-NOQUAL", "확정상태"])
+    assert equipment.loc["EQ-NOQUAL", "기존설비여부"] == "N"
+    assert equipment.loc["EQ-QUAL", "확정상태"] == "계획"
+    assert pd.isna(equipment.loc["EQ-OLD", "Qual일정"])
+    assert equipment.loc["EQ-OLD", "기존설비여부"] == "Y"
+
+
+def test_a_stored_legacy_qual_placeholder_reads_as_a_blank_qual(tmp_path: Path) -> None:
+    """옛 변환이 빈 Qual 에 채운 2262-04-11 을 다시 저장한 리비전이 있다. 그 날만 빈 Qual 로 읽고
+    (상태는 같은 셋업 진행중), 손대지 않은 저장은 새 리비전을 만들지 않는다."""
+    repository = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")
+    repository.initialize()
+    equipment = _equipment()
+    equipment.loc[1, "Qual일정"] = "2262-04-11"
+    repository.save_snapshot(_baseline(), equipment, _downtime())
+    with duckdb.connect(str(tmp_path / "equipment.duckdb")) as connection:
+        stored = connection.execute(
+            "SELECT qual_date FROM equipment_ops.equipment_master_snapshot ORDER BY source_row_no"
+        ).fetchall()
+    assert str(stored[1][0]) == "2262-04-11"
+
+    loaded = repository.load_snapshot(repository.latest_revision_id() or "").equipment
+
+    assert loaded.loc[0, "Qual일정"] == pd.Timestamp("2026-08-09")
+    assert pd.isna(loaded.loc[1, "Qual일정"])
+    assert repository.save_space_layout(_baseline(), loaded, _downtime()) is None
+    assert len(repository.list_revisions()) == 1
 
 
 def test_process_cutoff_round_trips_and_replaces_the_whole_table(tmp_path: Path) -> None:

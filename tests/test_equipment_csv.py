@@ -281,10 +281,32 @@ def test_baseline_clipboard_takes_the_same_number_rule_as_the_editor() -> None:
     assert result.loc[0, "기존보유대수"] == 1.5
     assert pd.isna(result.loc[0, "비고"])
 
-    with pytest.raises(ValueError, match="기존보유대수는 0 이상의 숫자여야 합니다."):
+    with pytest.raises(ValueError, match="기존보유대수는 0 이상의 숫자여야 합니다"):
         read_baseline_clipboard(f"{BASELINE_HEADER}\nProcess-A\t전체\t1,200\t\n")
-    with pytest.raises(ValueError, match="기존보유대수는 0 이상의 숫자여야 합니다."):
+    with pytest.raises(ValueError, match="기존보유대수는 0 이상의 숫자여야 합니다"):
         read_baseline_clipboard(f"{BASELINE_HEADER}\nProcess-A\t전체\t-1\t\n")
+
+
+def test_baseline_count_error_names_the_failing_rows_by_process_and_category() -> None:
+    """어느 행이 틀렸는지 공정·분류로 알린다(최대 다섯). 맞는 행은 적지 않는다."""
+    bad = "".join(f"Process-{index}\t분류{index}\t-{index}\t\n" for index in range(1, 8))
+    content = f"{BASELINE_HEADER}\nProcess-OK\t전체\t2.25\t\n{bad}"
+
+    with pytest.raises(ValueError) as caught:
+        read_baseline_clipboard(content)
+
+    message = str(caught.value)
+    assert message.startswith("기존보유대수는 0 이상의 숫자여야 합니다: ")
+    assert "Process-1 / 분류1" in message and "Process-5 / 분류5" in message
+    assert "Process-6" not in message and "Process-OK" not in message
+
+
+def test_baseline_count_keeps_two_decimals_through_paste_and_export() -> None:
+    """모듈 단위 기존 보유(0.25대)가 붙여넣기·내보내기에서 첫째 자리로 잘리지 않는다."""
+    pasted = read_baseline_clipboard(f"{BASELINE_HEADER}\nProcess-A\t전체\t0.25\t\n")
+
+    assert pasted.loc[0, "기존보유대수"] == 0.25
+    assert ",0.25," in baseline_csv_bytes(pasted).decode("utf-8-sig")
 
 
 def test_baseline_clipboard_names_the_missing_contract_column() -> None:

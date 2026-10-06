@@ -43,6 +43,19 @@ def _render_fixture() -> None:
     equipment.loc[2, "반입일정"] = date(2026, 10, 1)
     equipment.loc[2, "Qual일정"] = date(2026, 10, 10)
     equipment.loc[2, "확정상태"] = "계획"
+    import streamlit as st
+
+    if st.session_state.get("undated_unit", False):
+        # 반입·Qual 일정이 빈 신규 호기. 가용대수에 들지 않는다는 한 줄이 떠야 한다.
+        equipment.loc[4] = {column: None for column in equipment.columns}
+        equipment.loc[4, ["설비명", "공정소분류", "공정구분", "투자구분", "공정대분류"]] = [
+            "EQ-NODATE",
+            "Die Attach",
+            "Line-A",
+            "양산",
+            "조립",
+        ]
+        equipment.loc[4, ["보관유무", "기존설비여부", "레이아웃표시"]] = ["N", "N", "N"]
     downtime = empty_downtime_schedule()
     downtime.loc[0] = {column: None for column in downtime.columns}
     downtime.loc[0, "설비명"] = "EQ-REPAIR"
@@ -250,3 +263,29 @@ def test_stage_transitions_read_the_period_and_split_done_from_planned_by_the_da
     app.multiselect(TRANSITION_CONFIRMATION_KEY).set_value(["계획"]).run()
     _assert_one_result(app)
     assert app.dataframe[0].value["전환단계"].tolist() == ["Qual"]
+
+
+def _undated(app: AppTest) -> list[str]:
+    return [caption.value for caption in app.caption if "일정 미정" in caption.value]
+
+
+def test_undated_new_unit_is_named_under_availability_and_status_summary() -> None:
+    app = AppTest.from_function(_render_fixture, default_timeout=30)
+    app.session_state["undated_unit"] = True
+    app.run()
+    assert not app.exception
+
+    assert [text.split(" — ")[0] for text in _undated(app)] == [
+        ":material/event_busy: 일정 미정 1대 (반입 미정 1)"
+    ]
+    app.segmented_control(key=QUESTION_KEY).set_value("호기 현황").run()
+    assert len(_undated(app)) == 1
+    # 공정 조건 밖이면 세지 않는다.
+    app.multiselect(key=SMALL_PROCESS_KEY).set_value(["Other"]).run()
+    assert _undated(app) == []
+
+
+def test_no_undated_line_when_every_new_unit_has_dates() -> None:
+    app = _app()
+
+    assert _undated(app) == []

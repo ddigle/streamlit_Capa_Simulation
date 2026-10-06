@@ -24,6 +24,7 @@ from capa_simulation.services.equipment_contract import (
     PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
     REFERENCE_TEXT_COLUMNS,
+    RELOCATION_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
     UNIT_CONSISTENT_COLUMNS,
     VALID_BUILDINGS,
@@ -51,8 +52,10 @@ def prepare_equipment_baseline(data: pd.DataFrame) -> pd.DataFrame:
         return empty_equipment_baseline()
     _normalize_required_text(result, BASELINE_KEY_COLUMNS, "기존 보유대수")
     counts = pd.to_numeric(result["기존보유대수"], errors="coerce")
-    if not (counts.notna() & counts.ge(0)).all():
-        raise ValueError("기존보유대수는 0 이상의 숫자여야 합니다.")
+    invalid_counts = ~(counts.notna() & counts.ge(0))
+    if invalid_counts.any():
+        examples = _key_examples(result.loc[invalid_counts], BASELINE_KEY_COLUMNS)
+        raise ValueError(f"기존보유대수는 0 이상의 숫자여야 합니다: {examples}")
     result["기존보유대수"] = counts.astype("float64")
     result["비고"] = _optional_text(result["비고"])
     duplicated = result.duplicated(list(BASELINE_KEY_COLUMNS), keep=False)
@@ -105,19 +108,16 @@ def prepare_equipment_master(
 
     for column in DATE_COLUMNS:
         result[column] = _normalize_date(result[column], column)
+    # 반입·Qual 일정은 비워도 된다(2026-10-06 사용자 결정) — 반입이 비면 「입고 예정」, 반입만 있고
+    # Qual 이 비면 「셋업 진행중」에 머물러 날짜가 들어올 때까지 가용대수에 들지 않는다. 확정상태는
+    # Qual 일정의 실행관리 값이라 Qual일정이 있는 신규 호기에만 필수다.
     ordinary = result[STORAGE_FLAG_COLUMN].eq("N") & result["기존설비여부"].eq("N")
-    missing_required_dates = ordinary & (
-        result[ARRIVAL_DATE_COLUMN].isna() | result["Qual일정"].isna()
-    )
-    if missing_required_dates.any():
-        examples = result.loc[missing_required_dates, EQUIPMENT_ID_COLUMN].head(5).tolist()
-        raise ValueError(
-            f"보관·기존설비가 아닌 호기는 반입일정과 Qual일정이 필수입니다: {examples}"
-        )
-    missing_confirmation = ordinary & result["확정상태"].isna()
+    missing_confirmation = ordinary & result["Qual일정"].notna() & result["확정상태"].isna()
     if missing_confirmation.any():
         examples = result.loc[missing_confirmation, EQUIPMENT_ID_COLUMN].head(5).tolist()
-        raise ValueError(f"보관·기존설비가 아닌 호기는 Qual 확정상태가 필수입니다: {examples}")
+        raise ValueError(
+            f"Qual일정이 있는 호기(보관·기존설비 제외)는 Qual 확정상태가 필수입니다: {examples}"
+        )
     invalid_confirmation = result["확정상태"].notna() & ~result["확정상태"].isin(
         QUAL_CONFIRMATION_STATUSES
     )
@@ -132,18 +132,35 @@ def prepare_equipment_master(
     invalid_pre_arrival = _invalid_optional_order(
         result, ("제진대일정", "물류일정", ARRIVAL_DATE_COLUMN)
     )
-    if (invalid_setup_order | invalid_pre_arrival).any():
-        examples = (
-            result.loc[invalid_setup_order | invalid_pre_arrival, EQUIPMENT_ID_COLUMN]
-            .head(5)
-            .tolist()
-        )
+    # 신규 호기는 빈 일정을 건너뛰고 **있는 날짜끼리** 차례를 본다 — 반입이 비어도 물류 ≤ Qual
+    # 이다. 보관·기존설비는 예전처럼 이웃한 둘만 본다(그런 저장본이 다시 열려야 한다). 신규 호기는
+    # 이 규칙이 생기기 전에 반입·Qual 이 필수였으므로 이미 저장된 리비전이 새로 막히지 않는다.
+    invalid_chain = ordinary & _invalid_present_order(
+        result, ("제진대일정", "물류일정", ARRIVAL_DATE_COLUMN, "Qual일정")
+    )
+    invalid_order = invalid_setup_order | invalid_pre_arrival | invalid_chain
+    if invalid_order.any():
+        examples = result.loc[invalid_order, EQUIPMENT_ID_COLUMN].head(5).tolist()
         raise ValueError(f"제진대·물류·반입·Qual 일정 순서가 올바르지 않습니다: {examples}")
-    both_exit_dates = result["반출일정"].notna() & result["이설일"].notna()
+    # 들어온 적 없는 신규 호기를 내보낼 수는 없다. 받아 두면 반입 없이 「반출 완료」가 되어 어느
+    # 대수에도 들지 않고 일정 미정 알림에서도 빠진다.
+    exit_without_arrival = (
+        ordinary
+        & result[ARRIVAL_DATE_COLUMN].isna()
+        & (result["반출일정"].notna() | result[RELOCATION_DATE_COLUMN].notna())
+    )
+    if exit_without_arrival.any():
+        examples = result.loc[exit_without_arrival, EQUIPMENT_ID_COLUMN].head(5).tolist()
+        raise ValueError(
+            f"반입일정이 없는 신규 설비에는 반출·이설일정을 넣을 수 없습니다: {examples}"
+        )
+    both_exit_dates = result["반출일정"].notna() & result[RELOCATION_DATE_COLUMN].notna()
     if both_exit_dates.any():
         examples = result.loc[both_exit_dates, EQUIPMENT_ID_COLUMN].head(5).tolist()
-        raise ValueError(f"반출일정과 이설일은 동시에 입력할 수 없습니다: {examples}")
-    for exit_column in ("반출일정", "이설일"):
+        raise ValueError(
+            f"반출일정과 {RELOCATION_DATE_COLUMN}은 동시에 입력할 수 없습니다: {examples}"
+        )
+    for exit_column in ("반출일정", RELOCATION_DATE_COLUMN):
         before_arrival = (
             result[exit_column].notna()
             & result[ARRIVAL_DATE_COLUMN].notna()
@@ -380,6 +397,17 @@ def _invalid_optional_order(data: pd.DataFrame, columns: tuple[str, ...]) -> pd.
     invalid = pd.Series(False, index=data.index)
     for left, right in zip(columns, columns[1:], strict=False):
         invalid |= data[left].notna() & data[right].notna() & data[right].lt(data[left])
+    return invalid
+
+
+def _invalid_present_order(data: pd.DataFrame, columns: tuple[str, ...]) -> pd.Series:
+    """빈 칸을 건너뛰고 있는 날짜를 바로 앞의 **있는** 날짜와 견준다(앞이 더 늦으면 참)."""
+    invalid = pd.Series(False, index=data.index)
+    previous = data[columns[0]]
+    for column in columns[1:]:
+        current = data[column]
+        invalid |= current.notna() & previous.notna() & current.lt(previous)
+        previous = current.where(current.notna(), previous)
     return invalid
 
 
