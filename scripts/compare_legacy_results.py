@@ -20,6 +20,9 @@ DuckDB 는 같은 파일에 모드가 다른 연결을 허용하지 않으므로
 매 실행마다 **대조 후보 컬럼의 채움 상태**를 먼저 찍는다. 지금 로컬 샘플은 `소요대수` 가
 비어 있어 두 지표만 대조하지만, 그것은 업무 사실이 아니라 합성 샘플의 사정이다. 실데이터가
 들어와 값이 차면 이 진단이 사람보다 먼저 알려 준다.
+
+**사외 디버깅용이다.** 허용을 넘은 키는 제품정보·Stack 을 그대로 찍는다. 사내 실데이터로는
+`scripts/inspect_real_data_checks.py --only legacy`(런북 8장)를 쓴다 — 같은 대조를 분포로만 찍는다.
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ from capa_simulation.services.core_data_derivation import build_q_core_data  # n
 from capa_simulation.services.legacy_comparison import (  # noqa: E402
     COMPARISONS,
     compare_metric,
+    difference_distribution,
     summarize_comparison,
 )
 from capa_simulation.services.load_calculator import (  # noqa: E402
@@ -119,7 +123,15 @@ def _report_candidate_columns(raw: pd.DataFrame) -> None:
         print(f"  {column:<14} 값 {filled:>7,}/{len(raw):,} · 고유값 {values.nunique():>5,}{note}")
 
 
+def _rate(value: float | None) -> str:
+    return "-" if value is None else f"{value:.4%}"
+
+
 def main() -> int:
+    # Windows 콘솔 기본 코드페이지(cp949)는 이 출력의 기호를 못 쓴다.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database", default=str(DUCKDB_PATH), help="시뮬레이션 DuckDB 경로")
     parser.add_argument("--dataset-id", default=None, help="비우면 가장 최근 데이터셋")
@@ -170,6 +182,12 @@ def main() -> int:
             f" · 값 불일치 {summary['값 불일치']:,}건 (기존 쪽을 접을 수 없어 뺐다)"
             f"\n  신규에만 있음 {summary['신규에만 있음']:,}건 (기존이 비워 둔 자리를 채운다)"
             f" · 기존에만 있음 {summary['기존에만 있음']:,}건 (신규가 놓친 자리)"
+        )
+        spread = difference_distribution(comparison)
+        over = dict(spread.over)
+        print(
+            f"  차이율 분포 — 중앙 {_rate(spread.median)} · p95 {_rate(spread.p95)}"
+            f" · >0.1% {over[0.001]:,}키 · >1% {over[0.01]:,}키"
         )
         worst = comparison.dropna(subset=["차이율"]).nlargest(5, "차이율")
         if not worst.empty and float(worst["차이율"].iloc[0]) > args.tolerance:

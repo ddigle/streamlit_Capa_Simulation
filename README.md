@@ -196,6 +196,8 @@ scripts/                       초기 이관·통합 검증·벤치마크·오�
 scripts/sync_object_storage.py
                                스냅샷 진단·초기화와 수동 pull·push 운영 도구
 scripts/compact_duckdb.py      회수되지 않은 DuckDB 사공간을 재구축으로 걷어내는 도구
+scripts/inspect_real_data_checks.py
+                               사내 실데이터로만 답이 나오는 확인을 읽기 전용으로 재어 집계만 찍는 도구(사내 런북 8장)
 tests/                         계산·캐시·시나리오·화면 테스트
 docs/TODO.md                   결정 이력과 작업 목록
 docs/data_model.md             DuckDB 데이터 모델
@@ -885,7 +887,7 @@ DuckDB도 페이지 최초 접근 시 스키마가 생성되고, 실제 리비�
 
 ## 현재 주요 미구현 항목
 
-- 사내 환경에서의 BigDataQuery 접속·조회 검증
+- 사내 환경에서의 BigDataQuery 접속·조회 검증(확인 절차는 `docs/internal_update_runbook.md` 8장 — 결과 대기)
 - 시나리오·공식버전·표시순서 관리의 사용자 권한과 승인자 이력
 - BOX·PCB 부하량과 Capa 산식
 - `MCP_Chip_Ratio` 소요대수 보정

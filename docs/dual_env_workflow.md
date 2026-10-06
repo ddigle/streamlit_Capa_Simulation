@@ -243,6 +243,9 @@ uv run --no-sync python scripts/apply_deploy_package.py <ZIP> --reconcile-only
 
 ## 4. 사외에서 해야 할 일
 <우선순위대로. 사내에서 할 수 있는 일과 갈라 적는다.>
+
+## 5. 실데이터 확인 (런북 8장)
+<`scripts/inspect_real_data_checks.py` 의 출력 블록을 고치지 않고 그대로. 양식은 런북 8-6.>
 ```
 
 ---

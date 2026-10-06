@@ -31,12 +31,20 @@
 가 만든 것이라 `소요대수` 를 아예 채우지 않는다. 실데이터에는 값이 있을 수 있으므로
 `scripts/compare_legacy_results.py` 가 매 실행마다 후보 컬럼의 채움 상태를 찍어, 쓸 수 있게
 되면 사람이 아니라 실행 결과가 알려 주게 해 두었다.
+
+사내 실데이터에서는 키별 값을 밖으로 낼 수 없다. 그래서 대조 결과를 **분포로만** 접는
+`difference_distribution`(차이율)·`ratio_distribution`(기존 ÷ 신규) 를 둔다 —
+`scripts/inspect_real_data_checks.py` 가 이 둘로 리뷰 문서에 옮길 집계를 만든다. 대조 키와 접는
+단위는 `compare_metric` 의 `keys`·`grain` 으로 바꿀 수 있다(소요대수는 경로 키로 접는다).
 """
 
 from __future__ import annotations
 
+import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from capa_simulation.io.core_data_source import CoreDataContract, load_core_data_contract
@@ -88,6 +96,9 @@ def compare_metric(
     calculated: pd.DataFrame,
     metric: LegacyMetric,
     contract: CoreDataContract | None = None,
+    *,
+    keys: Sequence[str] = tuple(COMPARISON_KEYS),
+    grain: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """기존 컬럼과 신규 계산을 대조 키 단위 합계로 맞춰 본다.
 
@@ -96,15 +107,23 @@ def compare_metric(
 
     한쪽에만 있는 키도 결과에 남긴다. 빠진 쪽은 0 이 아니라 결측으로 두어 "값이 0" 과
     "그 키가 없음" 을 구분한다.
+
+    `keys` 는 양쪽을 잇는 대조 키, `grain` 은 기존 값이 한 번만 기록되는 단위다(기본은
+    `legacy_grain`). 기존 쪽은 `grain` 안의 반복을 접은 뒤 `keys` 로 더하므로 `keys` 는
+    `grain` 안에 있어야 한다. 결과의 앞 칸은 `keys` 차례 그대로다.
     """
     selected = contract or load_core_data_contract()
-    grain = legacy_grain(selected)
-    require_columns(core, [*grain, metric.legacy_column], "Core Data")
-    require_columns(calculated, [*COMPARISON_KEYS, metric.new_column], "신규 계산")
+    key_list = list(dict.fromkeys(keys))
+    grain_list = list(dict.fromkeys(grain if grain is not None else legacy_grain(selected)))
+    outside = [key for key in key_list if key not in grain_list]
+    if outside:
+        raise ValueError(f"대조 키가 접는 단위 밖에 있습니다: {outside}")
+    require_columns(core, [*grain_list, metric.legacy_column], "Core Data")
+    require_columns(calculated, [*key_list, metric.new_column], "신규 계산")
 
-    legacy = _legacy_totals(core, metric.legacy_column, grain)
-    fresh = _summed(calculated, metric.new_column, "신규값")
-    merged = legacy.merge(fresh, on=COMPARISON_KEYS, how="outer", validate="one_to_one")
+    legacy = _legacy_totals(core, metric.legacy_column, grain_list, key_list)
+    fresh = _summed(calculated, metric.new_column, "신규값", key_list)
+    merged = legacy.merge(fresh, on=key_list, how="outer", validate="one_to_one")
     # outer 조인으로 생긴 결측은 "불일치 아님" 이다. `eq(True)` 가 결측을 False 로 접는다.
     merged["값 불일치"] = merged["값 불일치"].eq(True)
 
@@ -113,9 +132,8 @@ def compare_metric(
     # 기존값이 0 이면 비율이 무한대가 된다. 절대 차이만 남기고 비율은 비운다.
     denominator = merged["기존값"].abs()
     merged["차이율"] = (merged["차이"].abs() / denominator).where(denominator.gt(0))
-    return merged.loc[:, COMPARISON_COLUMNS].sort_values(
-        ["지표", *COMPARISON_KEYS], ignore_index=True
-    )
+    columns = [*key_list, *COMPARISON_COLUMNS[len(COMPARISON_KEYS) :]]
+    return merged.loc[:, columns].sort_values(["지표", *key_list], ignore_index=True)
 
 
 def summarize_comparison(
@@ -164,15 +182,139 @@ def summarize_comparison(
     }
 
 
-def _summed(frame: pd.DataFrame, value_column: str, output_name: str) -> pd.DataFrame:
+@dataclass(frozen=True)
+class DifferenceDistribution:
+    """키별 차이율(|신규 − 기존| ÷ |기존|)을 분포로만 접은 것. 키·값은 담지 않는다.
+
+    대상은 `summarize_comparison` 의 「대조 건수」와 같은 키(양쪽에 값이 있고 접을 수 있었던
+    키) 가운데 기존값이 0 이 아닌 것이다. `sum_ratio` 는 그 키들의 Σ신규 ÷ Σ기존 — 합계 자체는
+    업무 물량이라 비율로만 남긴다.
+    """
+
+    keys: int
+    median: float | None
+    p95: float | None
+    maximum: float | None
+    over: tuple[tuple[float, int], ...]
+    sum_ratio: float | None
+
+
+@dataclass(frozen=True)
+class RatioDistribution:
+    """키별 기존 ÷ 신규 비율의 분포. 단위·정의가 같은지 값을 내보내지 않고 가늠하는 증거다.
+
+    두 값이 모두 양수인 키만 본다(`undefined` 는 나머지 대조 키 수). `near` 는 (기준, 키 수) —
+    비율이 기준의 ±`tolerance` 안에 든 키다. `decades` 는 (k, 키 수) — 비율을 10^k 자릿수로
+    반올림해 센 것이다(1000 배 단위 차이가 한눈에 보인다).
+    """
+
+    keys: int
+    undefined: int
+    median: float | None
+    p5: float | None
+    p95: float | None
+    tolerance: float
+    near: tuple[tuple[float, int], ...]
+    decades: tuple[tuple[int, int], ...]
+
+
+# 「거의 같다」 기준. 단위가 1000 배 갈렸는지 가리는 용도라 반올림 오차보다 넉넉하게 둔다.
+NEAR_TOLERANCE = 0.05
+NEAR_TARGETS: tuple[float, ...] = (1.0, 1_000.0, 0.001)
+DIFFERENCE_THRESHOLDS: tuple[float, ...] = (0.001, 0.01)
+
+
+def _matched_rows(comparison: pd.DataFrame) -> pd.DataFrame:
+    """`summarize_comparison` 의 「대조 건수」 와 같은 행 — 양쪽에 값이 있고 접을 수 있었던 키."""
+    conflicting = comparison["값 불일치"].astype(bool)
+    present = comparison["기존값"].notna() & comparison["신규값"].notna()
+    return comparison.loc[present & ~conflicting]
+
+
+def _quantile(values: pd.Series, q: float) -> float | None:
+    return None if values.empty else float(np.quantile(values.to_numpy(dtype="float64"), q))
+
+
+def difference_distribution(
+    comparison: pd.DataFrame,
+    thresholds: Sequence[float] = DIFFERENCE_THRESHOLDS,
+) -> DifferenceDistribution:
+    """`compare_metric` 결과의 차이율 분포. 임계(기본 0.1%·1%)를 넘는 키 수를 함께 센다."""
+    matched = _matched_rows(comparison)
+    rates = pd.to_numeric(matched["차이율"], errors="coerce").dropna().astype("float64")
+    legacy_total = float(pd.to_numeric(matched["기존값"], errors="coerce").sum())
+    fresh_total = float(pd.to_numeric(matched["신규값"], errors="coerce").sum())
+    return DifferenceDistribution(
+        keys=int(len(rates)),
+        median=_quantile(rates, 0.5),
+        p95=_quantile(rates, 0.95),
+        maximum=None if rates.empty else float(rates.max()),
+        over=tuple((float(limit), int(rates.gt(limit).sum())) for limit in thresholds),
+        sum_ratio=fresh_total / legacy_total if legacy_total else None,
+    )
+
+
+def ratio_distribution(
+    comparison: pd.DataFrame,
+    *,
+    targets: Sequence[float] = NEAR_TARGETS,
+    tolerance: float = NEAR_TOLERANCE,
+) -> RatioDistribution:
+    """`compare_metric` 결과의 기존 ÷ 신규 비율 분포."""
+    matched = _matched_rows(comparison)
+    legacy = pd.to_numeric(matched["기존값"], errors="coerce").astype("float64")
+    fresh = pd.to_numeric(matched["신규값"], errors="coerce").astype("float64")
+    return describe_ratios(legacy, fresh, targets=targets, tolerance=tolerance)
+
+
+def describe_ratios(
+    numerator: pd.Series,
+    denominator: pd.Series,
+    *,
+    targets: Sequence[float] = NEAR_TARGETS,
+    tolerance: float = NEAR_TOLERANCE,
+) -> RatioDistribution:
+    """같은 길이의 두 수열로 비율 분포를 만든다. 두 값이 모두 양수인 자리만 센다.
+
+    키 대조 없이 행 단위로 정의 후보(예: `GOOD_DIE ÷ Net Die`)를 볼 때도 쓴다.
+    """
+    top = pd.to_numeric(numerator, errors="coerce").astype("float64").reset_index(drop=True)
+    bottom = pd.to_numeric(denominator, errors="coerce").astype("float64").reset_index(drop=True)
+    usable = top.gt(0) & bottom.gt(0)
+    ratios = (top.loc[usable] / bottom.loc[usable]).astype("float64")
+    near = tuple(
+        (float(target), int(((ratios / target) - 1.0).abs().le(tolerance).sum()))
+        for target in targets
+    )
+    decade_counts: dict[int, int] = {}
+    for value in ratios:
+        decade = int(math.floor(math.log10(value) + 0.5))
+        decade_counts[decade] = decade_counts.get(decade, 0) + 1
+    return RatioDistribution(
+        keys=int(len(ratios)),
+        undefined=int(len(top) - len(ratios)),
+        median=_quantile(ratios, 0.5),
+        p5=_quantile(ratios, 0.05),
+        p95=_quantile(ratios, 0.95),
+        tolerance=tolerance,
+        near=near,
+        decades=tuple(sorted(decade_counts.items())),
+    )
+
+
+def _summed(
+    frame: pd.DataFrame, value_column: str, output_name: str, keys: list[str]
+) -> pd.DataFrame:
     """신규 계산 쪽. 키 하나에 여러 행이 나올 수 있으므로 더한다."""
-    prepared = _normalized(frame, COMPARISON_KEYS, value_column)
-    grouped = prepared.groupby(COMPARISON_KEYS, as_index=False, dropna=False)[[value_column]].sum()
-    grouped.columns = [*COMPARISON_KEYS, output_name]
+    prepared = _normalized(frame, keys, value_column)
+    grouped = prepared.groupby(keys, as_index=False, dropna=False)[[value_column]].sum()
+    grouped.columns = [*keys, output_name]
     return grouped
 
 
-def _legacy_totals(frame: pd.DataFrame, value_column: str, grain: list[str]) -> pd.DataFrame:
+def _legacy_totals(
+    frame: pd.DataFrame, value_column: str, grain: list[str], keys: list[str]
+) -> pd.DataFrame:
     """기존 결과 쪽. 그레인 안의 경로 반복을 접은 뒤 대조 키로 합산한다.
 
     한 그레인 안에서 값이 갈리면 접을 수 없다. 그 대조 키는 `값 불일치` 로 표시하고
@@ -186,7 +328,7 @@ def _legacy_totals(frame: pd.DataFrame, value_column: str, grain: list[str]) -> 
         }
     )
     folded["_불일치"] = folded["_고유값수"].gt(1)
-    grouped = folded.groupby(COMPARISON_KEYS, as_index=False, dropna=False).agg(
+    grouped = folded.groupby(keys, as_index=False, dropna=False).agg(
         기존값=pd.NamedAgg(column=value_column, aggfunc="sum"),
         **{"값 불일치": pd.NamedAgg(column="_불일치", aggfunc="any")},
     )

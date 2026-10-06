@@ -17,13 +17,17 @@
 """
 
 import pandas as pd
+import pytest
 
 from capa_simulation.io.core_data_source import load_core_data_contract
 from capa_simulation.services.legacy_comparison import (
     COMPARISON_KEYS,
     LegacyMetric,
     compare_metric,
+    describe_ratios,
+    difference_distribution,
     legacy_grain,
+    ratio_distribution,
     summarize_comparison,
 )
 
@@ -179,3 +183,85 @@ def test_plan_rows_that_differ_only_by_pack_code_are_summed_in_the_grain() -> No
     assert comparison["기존값"].iloc[0] == 160.0
     assert bool(comparison["값 불일치"].iloc[0]) is False
     assert summarize_comparison(comparison)["값 불일치"] == 0
+
+
+# ------------------------------------------------------------- 분포로만 접기 (사내 실데이터 확인용)
+
+
+def _keyed(legacy: list[float | None], fresh: list[float | None]) -> pd.DataFrame:
+    """제품마다 계획 한 줄. `None` 은 그쪽에 키가 없다는 뜻이다."""
+    core_rows = [
+        _plan_row(value, routes=3, 제품정보=f"Product-{index}")
+        for index, value in enumerate(legacy)
+        if value is not None
+    ]
+    calculated = pd.concat(
+        [
+            _calculated(value, 제품정보=f"Product-{index}")
+            for index, value in enumerate(fresh)
+            if value is not None
+        ],
+        ignore_index=True,
+    )
+    return _compare(_core(*core_rows), calculated)
+
+
+def test_difference_distribution_counts_only_comparable_keys() -> None:
+    """한쪽에만 있는 키·기존 0 인 키는 차이율 분포에 들지 않는다. 합계는 비율로만 남는다."""
+    comparison = _keyed(
+        [100.0, 100.0, 100.0, 0.0, 50.0, None], [100.0, 100.5, 120.0, 5.0, None, 7.0]
+    )
+
+    spread = difference_distribution(comparison)
+
+    assert spread.keys == 3
+    assert spread.median == pytest.approx(0.005)
+    assert spread.maximum == pytest.approx(0.2)
+    assert dict(spread.over) == {0.001: 2, 0.01: 1}
+    # 대조 건수(기존 0 포함 4키)의 Σ신규 ÷ Σ기존.
+    assert spread.sum_ratio == pytest.approx((100.0 + 100.5 + 120.0 + 5.0) / 300.0)
+
+
+def test_ratio_distribution_shows_a_thousandfold_unit_gap() -> None:
+    """단위가 1000 배 갈리면 비율이 1000 근처에 몰린다 — 값을 내보내지 않고 단위를 가린다."""
+    comparison = _keyed([1000.0, 2010.0, 3.0, 0.0], [1.0, 2.0, 3.0, 4.0])
+
+    spread = ratio_distribution(comparison)
+
+    assert spread.keys == 3
+    # 기존 0 인 키는 대조 건수에 들지만 비율은 없다.
+    assert spread.undefined == 1
+    assert dict(spread.near) == {1.0: 1, 1000.0: 2, 0.001: 0}
+    assert dict(spread.decades) == {0: 1, 3: 2}
+
+
+def test_describe_ratios_skips_non_positive_pairs() -> None:
+    spread = describe_ratios(pd.Series([2.0, 0.0, -1.0, 4.0]), pd.Series([1.0, 1.0, 1.0, None]))
+
+    assert spread.keys == 1
+    assert spread.undefined == 3
+    assert spread.median == 2.0
+
+
+def test_custom_keys_fold_inside_their_grain_before_summing() -> None:
+    """소요대수처럼 경로마다 값이 다른 컬럼은 경로 키까지 접는 단위로 잡아야 더해진다."""
+    core = pd.concat(
+        [
+            _plan_row(1.5, routes=2, 공정="P1"),
+            _plan_row(2.5, routes=2, 공정="P2"),
+        ],
+        ignore_index=True,
+    )
+    calculated = _calculated(1.5, 2.5).assign(공정=["P1", "P2"])
+    metric = LegacyMetric(label="소요대수", legacy_column="WF수(매)", new_column="물량")
+    keys = ["생산계획년월", "공정"]
+
+    folded = compare_metric(
+        core, calculated, metric, CONTRACT, keys=keys, grain=[*legacy_grain(CONTRACT), "공정"]
+    )
+
+    assert folded.columns[:2].tolist() == keys
+    assert folded["기존값"].tolist() == [1.5, 2.5]
+    assert folded["차이"].tolist() == [0.0, 0.0]
+    with pytest.raises(ValueError, match="접는 단위 밖"):
+        compare_metric(core, calculated, metric, CONTRACT, keys=keys)
