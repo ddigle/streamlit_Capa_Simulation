@@ -54,7 +54,9 @@ pythonpath = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-extend-exclude = [".venv*"]
+# `review/` 는 사내가 쓰는 리뷰 문서 자리다. ruff 0.16 은 Markdown 의 ```python 블록까지 포맷 검사해서
+# 사내 리뷰 문서 하나가 4대 관문을 떨어뜨렸다(202610061748 리뷰). 코드가 아니므로 검사에서 뺀다.
+extend-exclude = [".venv*", "review"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

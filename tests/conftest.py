@@ -13,9 +13,31 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from streamlit.runtime.scriptrunner import ScriptRunnerEvent
+from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
 import capa_simulation.settings as settings
 from capa_simulation.components import space_layout_editor
+
+
+def script_stopped_with_its_data(self: LocalScriptRunner) -> bool:
+    """SHUTDOWN 이 목록에 들어오고 **그 이벤트의 데이터까지** 들어온 뒤에만 끝났다고 본다.
+
+    Streamlit 1.63 AppTest 의 경쟁 상태를 막는다. 스크립트 스레드의 기록기는 `events` 에 먼저 넣고
+    `event_data` 에 나중에 넣는데, 기다리는 쪽(`require_widgets_deltas`)은 `events` 에 SHUTDOWN 이
+    보이는 순간 돌아가 `event_data[-1]["client_state"]` 를 읽는다. 그 사이에 데이터가 아직 안
+    들어왔으면 직전 이벤트의 데이터를 읽어 `KeyError: 'client_state'` 로 죽는다 — 바쁜 PC 에서만
+    드물게 난다(사내 202610061748 리뷰, `test_scenario_shift_ui`). 두 목록 길이가 같아질 때까지
+    기다리게 바꾼다. Streamlit 을 올리면 이 대역이 아직 필요한지 다시 본다.
+    """
+    events = list(self.events)
+    return ScriptRunnerEvent.SHUTDOWN in events and len(self.event_data) >= len(events)
+
+
+# AppTest 가 쓰는 확인 함수를 위 판정으로 바꿔 끼운다. 모든 AppTest 가 같은 클래스를 쓰므로
+# 한 번이면 된다.
+LocalScriptRunner.script_stopped = script_stopped_with_its_data  # type: ignore[method-assign]
+
 
 # 저장소의 실제 DB 자리. 테스트가 경로를 갈아끼우기 **전** 값을 잡아 둔다.
 _REPOSITORY_DATABASES = (settings.DUCKDB_PATH, settings.EQUIPMENT_DUCKDB_PATH)
