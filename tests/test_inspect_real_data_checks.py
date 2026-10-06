@@ -250,6 +250,54 @@ def test_an_unknown_demand_basis_is_counted_not_named(
     assert "- 그 밖의 소요기준 1종 1행 1공정(값은 적지 않는다)" in output
 
 
+def test_a_newer_clone_dataset_is_not_taken_for_the_source(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """복제·월 병합·연도 이동은 리비전 1 이 원천 그대로가 아니다. 더 최근이어도 고르지 않는다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "INSERT INTO app_meta.dataset (dataset_id, scenario_id, source_type, imported_at, "
+            "pipeline_version, status) "
+            "SELECT 'clone-dataset', 'clone-scenario', 'DUCKDB_SCENARIO_CLONE', "
+            "imported_at + INTERVAL 1 DAY, pipeline_version, status FROM app_meta.dataset"
+        )
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "데이터셋(전체 2개 · 원천에서 온 것 1개) · 원천 종류 `BUILTIN_SYNTHETIC_SEED`" in output
+    assert "⚠" not in output
+
+
+def test_derived_source_types_are_the_ones_the_app_writes() -> None:
+    """이름이 바뀌면 복제가 원천으로 잘못 골린다. 앱 코드에 같은 글자가 있어야 한다."""
+    sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (PROJECT_ROOT / "src" / "capa_simulation").rglob("*.py")
+    )
+    for source_type in checks.DERIVED_SOURCE_TYPES:
+        assert f'"{source_type}"' in sources
+
+
+def test_output_file_holds_the_same_markdown(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "real_data_check.md"
+
+    code, output = _run(
+        capsys, "--only", "env,reqb", "--database", str(simulation_db), "--output", str(target)
+    )
+
+    assert code == 0
+    written = target.read_bytes().decode("utf-8")
+    assert b"\r" not in target.read_bytes()
+    assert written.strip() == output.strip()
+    assert SENTINEL not in written
+
+
 def test_a_locked_database_stops_with_the_app_running_message(
     simulation_db: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

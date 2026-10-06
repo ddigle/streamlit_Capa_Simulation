@@ -179,10 +179,18 @@ WHERE impala_insert_time >= '{start_date}'
 GROUP BY substr(cast(impala_insert_time AS string), 1, 10)
 """
 
+# 다른 시나리오에서 만든 데이터셋의 원천 종류(`components/` 의 복제·월 병합·연도 이동이 적는 값).
+DERIVED_SOURCE_TYPES: Final[tuple[str, ...]] = (
+    "DUCKDB_SCENARIO_CLONE",
+    "SCENARIO_MONTH_MERGE",
+    "SCENARIO_YEAR_SHIFT",
+)
+
 _CODE_RULE: Final = "^[A-Za-z0-9._-]+$"
 _DEFAULT_WINDOW: Final = f"−{DETAIL_WINDOW_DAYS_BEFORE}~+{DETAIL_WINDOW_DAYS_AFTER}일"
 _LOCK_MESSAGE: Final = (
-    "DB 를 열지 못했습니다. 앱이 떠 있으면 먼저 끄세요 — DuckDB 는 프로세스 배타 잠금입니다."
+    "DB 를 열지 못했습니다. 앱이 떠 있으면 먼저 끄세요 — DuckDB 는 프로세스 배타 잠금입니다. "
+    "앱이 꺼져 있는데도 이 줄이 나오면 파일 손상일 수 있다 — 그대로 리뷰 문서에 적는다."
 )
 
 
@@ -460,9 +468,20 @@ class SourceData:
     tables: dict[str, pd.DataFrame] = field(default_factory=dict)
 
 
+_SOURCE_DATASET_FILTER: Final = (
+    f"source_type NOT IN ({', '.join('?' for _ in DERIVED_SOURCE_TYPES)}) "
+    "AND EXISTS (SELECT 1 FROM raw_data.core_data AS c WHERE c.dataset_id = d.dataset_id)"
+)
+
+
 def _dataset_row(
     connection: duckdb.DuckDBPyConnection, dataset_id: str | None
 ) -> tuple[str, str, str, object] | None:
+    """`--dataset-id` 가 없으면 원천에서 온 데이터셋 가운데 가장 최근 것.
+
+    복제·월 병합·연도 이동은 다른 시나리오에서 만든 데이터셋이라 리비전 1 이 원천 그대로가 아니다
+    (복제는 원천 행도 없다). 가장 최근이 그런 것이면 대조가 조용히 원천이 아닌 것을 보게 된다.
+    """
     if dataset_id:
         row = connection.execute(
             "SELECT dataset_id, scenario_id, source_type, imported_at FROM app_meta.dataset "
@@ -471,8 +490,9 @@ def _dataset_row(
         ).fetchone()
     else:
         row = connection.execute(
-            "SELECT dataset_id, scenario_id, source_type, imported_at FROM app_meta.dataset "
-            "ORDER BY imported_at DESC LIMIT 1"
+            "SELECT dataset_id, scenario_id, source_type, imported_at FROM app_meta.dataset AS d "
+            f"WHERE {_SOURCE_DATASET_FILTER} ORDER BY imported_at DESC LIMIT 1",
+            list(DERIVED_SOURCE_TYPES),
         ).fetchone()
     if row is None:
         return None
@@ -490,10 +510,19 @@ def load_source(session: Session) -> SourceData | None:
     try:
         picked = _dataset_row(connection, session.dataset_id)
         if picked is None:
-            session._source_failure = "데이터셋이 없다(시나리오를 등록한 적이 없다)"
+            session._source_failure = (
+                "그 데이터셋이 없다"
+                if session.dataset_id
+                else "원천에서 온 데이터셋이 없다(복제·월 병합·연도 이동뿐이거나 등록한 적이 없다)"
+            )
             return None
         dataset_id, scenario_id, source_type, imported_at = picked
         total = _scalar(connection, "SELECT count(*) FROM app_meta.dataset")
+        sources = _scalar(
+            connection,
+            f"SELECT count(*) FROM app_meta.dataset AS d WHERE {_SOURCE_DATASET_FILTER}",
+            DERIVED_SOURCE_TYPES,
+        )
         revision = connection.execute(
             "SELECT revision_id FROM app_meta.scenario_revision "
             "WHERE scenario_id = ? AND revision_no = 1",
@@ -528,12 +557,20 @@ def load_source(session: Session) -> SourceData | None:
     except (duckdb.Error, RuntimeError) as exc:
         session._source_failure = _failure(exc)
         return None
-    which = "`--dataset-id` 로 고른" if session.dataset_id else "가장 최근에 적재한"
+    which = (
+        "`--dataset-id` 로 고른"
+        if session.dataset_id
+        else "원천에서 온 것 가운데 가장 최근에 적재한"
+    )
     stamp = str(imported_at)[:10] if imported_at is not None else "?"
     label = (
-        f"{which} 데이터셋(전체 {total:,}개 중) · 원천 종류 `{source_type}` · 적재 {stamp} · "
-        f"원천 {len(raw):,}행 · 계산은 그 시나리오의 리비전 1(원천 그대로)"
+        f"{which} 데이터셋(전체 {total:,}개 · 원천에서 온 것 {sources:,}개) · 원천 종류 "
+        f"`{source_type}` · 적재 {stamp} · 원천 {len(raw):,}행 · 계산은 그 시나리오의 리비전 1"
     )
+    if source_type in DERIVED_SOURCE_TYPES or raw.empty:
+        label += " · **⚠ 원천에서 온 데이터셋이 아니다 — 리비전 1 이 원천 그대로가 아닐 수 있다**"
+    else:
+        label += "(원천 그대로)"
     session._source = SourceData(dataset_label=label, raw=raw, tables=tables)
     return session._source
 
@@ -1705,6 +1742,12 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         action="store_true",
         help=f"{CATALOG_MAX_DAYS}일 목록 조회를 건너뛴다(너무 오래 걸릴 때)",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="같은 출력을 이 파일에도 쓴다(UTF-8). 저장소 밖 경로를 준다 — 런북 8-0",
+    )
     parser.add_argument("--today", type=date.fromisoformat, default=None, help=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
@@ -1751,11 +1794,11 @@ def main(argv: Sequence[str] | None = None, *, probe: BigDataQueryProbe | None =
         print(_LOCK_MESSAGE)
         return 1
 
-    print(
+    chunks = [
         "<!-- inspect_real_data_checks.py — 아래 블록을 리뷰 문서 "
-        "「실데이터 확인」 절에 그대로 붙인다 -->"
-    )
-    print()
+        "「실데이터 확인」 절에 그대로 붙인다 -->\n"
+    ]
+    print(chunks[0])
     try:
         for name in CHECKS:
             if name not in selected:
@@ -1776,9 +1819,12 @@ def main(argv: Sequence[str] | None = None, *, probe: BigDataQueryProbe | None =
                     max_window=not args.bdq_no_max_window,
                     probe=probe,
                 )
-            print("\n".join(block))
+            chunks.append("\n".join(block))
+            print(chunks[-1])
     finally:
         session.close()
+    if args.output is not None:
+        Path(args.output).write_bytes(("\n".join(chunks) + "\n").encode("utf-8"))
     return 0
 
 
