@@ -45,6 +45,7 @@ from capa_simulation.components.home_dimensions import (
     TOP5_PROCESS_LABEL_YSHIFT_PX,
     TOP5_RATE_LABEL_GAP_PX,
     TOP5_WAFER_LABEL_XSHIFT_PX,
+    corner_note_font_size_px,
     top5_axis_headroom_px,
     top5_process_label_room_px,
 )
@@ -755,6 +756,17 @@ def build_lob_summary_figures(
     wafer_plan_comparison_gaps = _value_gaps(
         raw_summary, aligned_comparison_wafer, "Wafer 부하량", _WAFER_GAP_FORMAT, scale=1_000
     )
+    # 선행 입고 실적 글자 크기 — 같은 띠 가운데의 선행 B/O 증감과 칸 경계 사이에 다 들어가는 가장
+    # 큰 크기(12px 부터). 행 전체가 한 크기다.
+    advance_shipment_font_size = (
+        corner_note_font_size_px(
+            [note for note, _ in advance_shipment_notes],
+            density_gaps,
+            cell_width_px=tokens.MONTH_COLUMN_WIDTH_PX,
+        )
+        if advance_shipment_notes is not None
+        else None
+    )
     month_positions = list(range(len(month_labels)))
     month_position_by_value = {
         int(month): index
@@ -868,6 +880,7 @@ def build_lob_summary_figures(
             gaps=gaps,
             lower_gaps=lower_gaps,
             corner_notes=corner_notes,
+            corner_note_font_size=advance_shipment_font_size,
         )
     if bottleneck_capacity["B/N Capa"].notna().any():
         bottleneck_positions = [

@@ -270,6 +270,7 @@ def add_fixed_table_row(
     gaps: list[str] | None = None,
     lower_gaps: list[str] | None = None,
     corner_notes: Sequence[tuple[str, str]] | None = None,
+    corner_note_font_size: int | None = None,
 ) -> None:
     """Draw a fixed-height row without Plotly Table's internal scroll layer.
 
@@ -279,8 +280,9 @@ def add_fixed_table_row(
     `corner_notes` 는 칸 **오른쪽 위**에 적을 `(글자, hover 글자)` 다(선행 입고 실적). 값 위 증감과
     같은 높이에 서되 오른쪽 끝(`CORNER_NOTE_RIGHT_PADDING_PX`)에 붙는다 — 값·증감·칸 경계 어느
     것도 움직이거나 줄이지 않고 남은 자리에 놓는다. 색은 증감과 갈리는 `ADVANCE_SHIPMENT_TEXT`,
-    크기는 증감과 같은 `DELTA_FONT_SIZE_PX` 다. hover 글자는 그 주석에 직접 단다(trace 를 더하지
-    않는다).
+    크기는 `corner_note_font_size`(없으면 증감과 같은 `DELTA_FONT_SIZE_PX` — 줄일지는 칸 폭을 아는
+    호출부가 `home_dimensions.corner_note_font_size_px` 로 정한다)다. hover 글자는 그 주석에 직접
+    단다(trace 를 더하지 않는다).
 
     **값은 증감이 있든 없든 같은 크기로 칸 한가운데에 선다.** 증감을 끼우려고 값을 줄이거나
     밀면 토글 하나에 표 전체의 숫자가 흔들린다. 두 줄이 들어갈 자리는 행 높이가 미리 비워
@@ -364,7 +366,7 @@ def add_fixed_table_row(
                     "yshift": shift + delta_shift,
                     "font": {
                         "color": tokens.ADVANCE_SHIPMENT_TEXT,
-                        "size": tokens.DELTA_FONT_SIZE_PX,
+                        "size": corner_note_font_size or tokens.DELTA_FONT_SIZE_PX,
                         "family": tokens.FONT_FAMILY_NUMERIC,
                     },
                 }

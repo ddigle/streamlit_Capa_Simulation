@@ -188,3 +188,35 @@ def test_the_editor_saves_the_visible_months_and_shows_them_again(database: Path
     assert table.iloc[0]["구분"] == "선행 입고 실적"
     assert table.iloc[0][["26.01", "26.02", "26.03"]].tolist() == [1.25, 0.0, -2.5]
     assert any("v2" in caption.value for caption in reloaded.caption)
+
+
+def test_the_note_keeps_the_delta_size_until_it_would_touch_the_centred_delta() -> None:
+    """칸 오른쪽 위 글자는 12px 에서 시작해 들어가지 않을 때만 줄인다(행 전체가 한 크기).
+
+    칸은 100px, 가운데에 선행 B/O 증감이 선다. 숫자 폭은 Calibri 실측(12px `+12.34` 33.3px)과 같다.
+    """
+    from capa_simulation.components.home_dimensions import (
+        CORNER_NOTE_MIN_FONT_SIZE_PX,
+        corner_note_font_size_px,
+        numeric_text_width_px,
+    )
+
+    assert numeric_text_width_px("+12.34", 12) == pytest.approx(33.3, abs=0.2)
+    # 흔한 크기(B/O +12.34 · 입고 +12.3)는 그대로 12px 이다.
+    assert (
+        corner_note_font_size_px(
+            ["+12.3", "", "-12.3"], ["+12.34", "", "-12.34"], cell_width_px=100
+        )
+        == 12
+    )
+    # 증감이 없으면 칸 왼쪽까지 쓸 수 있다.
+    assert corner_note_font_size_px(["+1,234.5"], None, cell_width_px=100) == 12
+    # 한 칸이라도 들어가지 않으면 행 전체를 줄인다.
+    assert (
+        corner_note_font_size_px(["+12.3", "+123.4"], ["+12.34", "+12.34"], cell_width_px=100) == 9
+    )
+    # 하한 아래로는 줄이지 않는다.
+    assert (
+        corner_note_font_size_px(["+12,345.6"], ["+12,345.67"], cell_width_px=100)
+        == CORNER_NOTE_MIN_FONT_SIZE_PX
+    )

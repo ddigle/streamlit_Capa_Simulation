@@ -430,8 +430,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     add_fixed_table_row(corner_notes=...)`). 자리는 값 위 선행 B/O 증감과 **같은 높이**(같은
     `yshift`)이고 칸 오른쪽 경계에서 `CORNER_NOTE_RIGHT_PADDING_PX` 안쪽이다 — 그 띠는 값 글리프와
     `DELTA_GUTTER_PX`, 행 위 경계와 `ROW_EDGE_PADDING_PX` 만큼 떨어져 있어 기존 글자를 움직이거나
-    줄이지 않는다. 가운데 선 증감과는 가로로만 떨어진다. 글자는 증감과 같은 `DELTA_FONT_SIZE_PX`,
-    색은 증감색과 갈리는 `tokens.ADVANCE_SHIPMENT_TEXT`(두 테마 모두 월 칸 면 4.5:1 이상)다. hover 는
+    줄이지 않는다. 가운데 선 증감과는 가로로만 떨어진다. 글자 크기는 증감과 같은
+    `DELTA_FONT_SIZE_PX`(12px)에서 시작해 **들어가지 않을 때만** 행 전체를 한 단계씩 줄인다(하한
+    `CORNER_NOTE_MIN_FONT_SIZE_PX` 9px, `home_dimensions.corner_note_font_size_px`) — 가운데 증감과
+    `DELTA_GUTTER_PX`, 칸 경계와 `CORNER_NOTE_RIGHT_PADDING_PX` 에 Plotly 의 정수 px 자리 반올림 1px
+    (`TEXT_PLACEMENT_SLACK_PX`)을 더해 잰다. 폭은 Calibri 숫자 모형(`numeric_text_width_px`, 숫자 0.507em)
+    이다 — `_calibri_width_units` 의 숫자 0.58 은 영문 공정명용이라 16% 넓다. 2026-10-07 Chrome 실측(칸
+    100×42px, 값 `1,233.46`): 선행 B/O `+12.34` 옆 `+12.3` 은 12px 로 서고 증감과 2.7px·칸 오른쪽
+    경계와 2.7px·행 위 경계와 3px·값 글리프와 1px(선행 B/O 증감과 같은 간격) 떨어진다. `+12.34` 옆
+    `+123.4` 가 한 칸이라도 있으면 행 전체가 9px 로 서고 그 칸의 틈은 4.7px 이다. 색은 증감색과 갈리는
+    `tokens.ADVANCE_SHIPMENT_TEXT`(두 테마 모두 월 칸 면 4.5:1 이상)다. hover 는
     주석의 `hovertext`(「선행 입고 실적 +1.2억Gb」)라 trace 수가 늘지 않는다. 연간 Total 칸에는 적지
     않고, 과거 구간 달은 축에 있으면 적는다. 자릿수에서 0 으로 보이는 값(`+0.0`)은 적지 않는다.
     토글과 프로필 version(꺼져 있으면 0)은 `HomeFigureCacheKey` 의 마지막 두 칸
