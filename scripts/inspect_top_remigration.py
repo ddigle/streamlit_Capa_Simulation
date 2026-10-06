@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
@@ -70,7 +71,7 @@ NORMALIZED_PRODUCT = (
 )
 
 
-def _rows(connection: duckdb.DuckDBPyConnection, sql: str) -> list[tuple[object, ...]]:
+def _rows(connection: duckdb.DuckDBPyConnection, sql: str) -> list[tuple[Any, ...]]:
     try:
         return connection.execute(sql).fetchall()
     except duckdb.Error as exc:

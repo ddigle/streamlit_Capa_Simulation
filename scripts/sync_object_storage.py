@@ -51,7 +51,7 @@ from capa_simulation.settings import (  # noqa: E402
     EQUIPMENT_DUCKDB_PATH,
 )
 
-DATASET_PATHS = {
+DATASET_PATHS: dict[DatasetName, Path] = {
     "simulation": DUCKDB_PATH,
     "equipment": EQUIPMENT_DUCKDB_PATH,
 }
@@ -128,12 +128,12 @@ def build_client(args: argparse.Namespace) -> ObjectStorageClient:
     return ObjectStorageClient(settings=build_settings(args))
 
 
-def datasets(args: argparse.Namespace) -> list[str]:
+def datasets(args: argparse.Namespace) -> list[DatasetName]:
     return list(DATASET_PATHS) if args.dataset == "all" else [args.dataset]
 
 
 # --------------------------------------------------------------------------- 조회 도우미
-def read_head(client: ObjectStorageClient, dataset: str) -> manifest.Pointer | None:
+def read_head(client: ObjectStorageClient, dataset: DatasetName) -> manifest.Pointer | None:
     """원격 HEAD 포인터. 없으면 None."""
     records = client.list_objects(manifest.head_prefix(dataset), max_keys=8)
     key = manifest.select_head_key([record.key for record in records])
@@ -143,12 +143,12 @@ def read_head(client: ObjectStorageClient, dataset: str) -> manifest.Pointer | N
     return manifest.pointer_from_json(text, pointer_key=key)
 
 
-def read_fork(client: ObjectStorageClient, dataset: str) -> tuple[str, ...]:
+def read_fork(client: ObjectStorageClient, dataset: DatasetName) -> tuple[str, ...]:
     records = client.list_objects(manifest.head_prefix(dataset), max_keys=8)
     return manifest.detect_fork([record.key for record in records])
 
 
-def local_state(dataset: str) -> sync_state.SyncState | None:
+def local_state(dataset: DatasetName) -> sync_state.SyncState | None:
     return sync_state.read_state(DATASET_PATHS[dataset])
 
 
@@ -273,7 +273,7 @@ def command_probe(args: argparse.Namespace) -> int:
 
 def _publish(
     client: ObjectStorageClient,
-    dataset: str,
+    dataset: DatasetName,
     *,
     parent: manifest.Pointer | None,
     note: str,
@@ -357,7 +357,7 @@ def _publish(
 
     sync_state.adopt_generation(
         database_path,
-        dataset=dataset,  # type: ignore[arg-type]
+        dataset=dataset,
         seq=pointer.seq,
         sha256=result.sha256_hex,
         snapshot_key=pointer.snapshot_key,
@@ -469,15 +469,15 @@ def command_pull(args: argparse.Namespace) -> int:
         client.get_file(head.snapshot_key, download, expected_bytes=head.size_bytes)
         snapshot_export.verify_snapshot(
             download,
-            dataset=dataset,  # type: ignore[arg-type]
+            dataset=dataset,
             expected_sha256=head.sha256,
             expected_size=head.size_bytes,
-            code_version=snapshot_export.code_migration_version(dataset),  # type: ignore[arg-type]
+            code_version=snapshot_export.code_migration_version(dataset),
         )
         backup = snapshot_export.install_snapshot(download, database_path)
         sync_state.adopt_generation(
             database_path,
-            dataset=dataset,  # type: ignore[arg-type]
+            dataset=dataset,
             seq=head.seq,
             sha256=head.sha256,
             snapshot_key=head.snapshot_key,
@@ -545,13 +545,13 @@ def command_resolve(args: argparse.Namespace) -> int:
             continue
         pointer = manifest.next_pointer(
             head,
-            dataset=dataset,  # type: ignore[arg-type]
+            dataset=dataset,
             token=uuid.uuid4().hex[:8],
             sha256=state.unpublished_sha256 or "",
             md5_base64="",
             size_bytes=remote.size_bytes,
             source_db_bytes=0,
-            migration_version=snapshot_export.code_migration_version(dataset),  # type: ignore[arg-type]
+            migration_version=snapshot_export.code_migration_version(dataset),
             app_version=APP_VERSION,
             author=snapshot_export.author_label(),
             created_at_utc=snapshot_export.utc_timestamp(),
@@ -567,7 +567,7 @@ def command_resolve(args: argparse.Namespace) -> int:
         )
         sync_state.adopt_generation(
             database_path,
-            dataset=dataset,  # type: ignore[arg-type]
+            dataset=dataset,
             seq=promoted.seq,
             sha256=promoted.sha256,
             snapshot_key=promoted.snapshot_key,
@@ -591,7 +591,7 @@ def command_adopt(args: argparse.Namespace) -> int:
         # 로컬을 기준으로 삼는다 = 원격 세대를 부모로 기록하고 변경 있음으로 둔다.
         sync_state.adopt_generation(
             database_path,
-            dataset=dataset,  # type: ignore[arg-type]
+            dataset=dataset,
             seq=head.seq,
             sha256=head.sha256,
             snapshot_key=head.snapshot_key,
