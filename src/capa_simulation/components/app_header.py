@@ -1,4 +1,4 @@
-# Purpose: 상단 띠에 적용 시나리오를 싣고 메뉴·Deploy 감춤과 인쇄 규칙을 껍데기 스타일로 보낸다.
+# Purpose: 상단 띠에 적용 시나리오를 싣고 메뉴·Deploy·제목 링크 감춤과 인쇄 규칙을 앞서 보낸다.
 
 """The scenario this session is looking at, pinned to the top bar.
 
@@ -92,6 +92,13 @@ STATUS_UNSAVED = "미저장 변경"
 # 감춘다(2026-10-07 사용자 결정). 감추는 것은 이 두 요소뿐이다 — 우리 단추가 앉는 툴바
 # 슬롯(`stToolbarActions`)은 형제라 영향이 없다.
 #
+# 둘째 규칙은 제목 옆 링크 아이콘이다(2026-10-07 사용자 결정 — 이 앱은 제목으로 바로 가는 주소를
+# 쓰지 않는다). Streamlit 은 페이지 제목(`st.title`)·`st.subheader`·마크다운 제목(`#### …`) 모두에
+# 같은 칸(`stHeaderActionElements`)을 붙이고 그 안에 `#제목` 링크를 두어 마우스를 올리면 띄운다.
+# 그 링크 하나만 요소째 뺀다 — 같은 칸의 `help=` 풍선은 남는다. `opacity` 가 아니라 `display`
+# 로 빼야 Tab 순서에서도 빠진다(Streamlit 은 키보드 포커스에 링크를 다시 띄운다). 선택자는 1.63
+# 번들에서 확인했다. 제목마다 `anchor=False` 를 주는 길은 마크다운 제목에 닿지 않아 쓰지 않는다.
+#
 # 나머지는 인쇄 규칙 한 덩어리다. 화면에는 아무것도 바꾸지 않는다. 선택자는 모두 1.63 번들에서
 # `data-testid` 로 확인한 것이다 — 판올림 뒤 인쇄 미리보기로 다시 본다.
 # - 사이드바는 펼쳐 있어도 뺀다. Streamlit 은 인쇄에서 `display: 접힘 ? none : initial` 로 펼친
@@ -115,6 +122,9 @@ STATUS_UNSAVED = "미저장 변경"
 SHELL_STYLE = """<style>
 [data-testid="stMainMenu"],
 [data-testid="stAppDeployButton"] {
+  display: none !important;
+}
+[data-testid="stHeaderActionElements"] > a[href^="#"] {
   display: none !important;
 }
 @media print {
@@ -384,8 +394,9 @@ def render_app_header() -> None:
 
 
 def render_shell_style() -> None:
-    """⋮ 메뉴·Deploy 감춤과 인쇄 규칙을 보낸다. `app.py` 가 부트스트랩 앞에서 매 회차 한 번 부른다.
+    """⋮ 메뉴·Deploy·제목 링크 감춤과 인쇄 규칙을 보낸다.
 
-    스타일만 든 `st.html` 이라 본문 자리를 먹지 않는다.
+    `app.py` 가 부트스트랩 앞에서 매 회차 한 번 부른다. 스타일만 든 `st.html` 이라 본문 자리를
+    먹지 않는다.
     """
     st.html(SHELL_STYLE)

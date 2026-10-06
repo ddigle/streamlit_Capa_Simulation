@@ -122,11 +122,35 @@ def test_the_streamlit_main_menu_and_deploy_are_hidden_and_nothing_else() -> Non
         (
             {'[data-testid="stMainMenu"]', '[data-testid="stAppDeployButton"]'},
             "display: none !important;",
-        )
+        ),
+        ({HEADING_ANCHOR_SELECTOR}, "display: none !important;"),
     ]
     # 머리 띠는 부트스트랩 뒤에야 나가므로 거기에 두 벌 두지 않는다.
     assert "stMainMenu" not in _header_css()
     assert "stAppDeployButton" not in _header_css()
+
+
+# Streamlit 1.63 이 제목(`st.title`·`st.subheader`·마크다운 `#`)마다 붙이는 칸과 그 안의
+# `#제목` 링크.
+HEADING_ANCHOR_SELECTOR = '[data-testid="stHeaderActionElements"] > a[href^="#"]'
+
+
+def test_heading_anchor_links_are_hidden_but_help_tooltips_stay() -> None:
+    """제목 옆 링크 아이콘은 늘 뺀다(2026-10-07 사용자 결정 — 제목 주소를 쓰지 않는다).
+
+    한 규칙이 페이지 제목·`st.subheader`·마크다운 제목을 다 덮는다 — 셋 다 같은 칸에 같은 링크를
+    둔다. 링크 하나만 고른다: 같은 칸의 `help=` 풍선까지 빼면 제목에 단 도움말이 사라진다.
+    `opacity` 로 숨기면 Tab 으로 포커스가 닿아 다시 뜨므로 `display: none` 이다. 화면 규칙이라
+    인쇄 덩어리 밖, 부트스트랩 앞 껍데기 스타일에 있다.
+    """
+    screen, printed = _split_shell_style()
+    assert re.search(
+        re.escape(HEADING_ANCHOR_SELECTOR) + r" \{\s*display: none !important;\s*\}", screen
+    )
+    assert "stHeaderActionElements" not in printed
+    # 칸 전체(`stHeaderActionElements` 단독)를 고르는 규칙은 없다.
+    assert not re.search(r'\[data-testid="stHeaderActionElements"\]\s*[,{]', SHELL_STYLE)
+    assert "stHeaderActionElements" not in _header_css()
 
 
 def test_print_always_leaves_out_the_sidebar_header_and_overlay() -> None:

@@ -1991,6 +1991,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/page_header.py`
   - 모든 페이지의 제목·설명·상태 배지. 두 상태 접미(`(구현중)`·`(Data확보중)`)는 제목에서
     떼어 배지로 보여준다. 사이드바 라벨과 같은 문자열을 써야 하며 어긋나면 테스트가 잡는다.
+    제목 옆 링크 아이콘은 여기서 끄지 않는다 — `app_header` 껍데기 스타일이 모든 제목에서 뺀다.
 - `src/capa_simulation/components/theme_toggle.py`
   - 헤더 오른쪽 툴바 슬롯(`[data-testid="stToolbarActions"]`, Guide 와 Print 사이)에 밝게/어둡게
     버튼을 얹는다. Streamlit 1.63 에는 앱 안에서 테마를 바꾸는 공개 API 가 없다 —
@@ -2254,6 +2255,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     쓸 일이 없다. 같은 껍데기 스타일의 메뉴 규칙에 선택자 하나로 더했다. `client.toolbarMode =
     "viewer"` 도 Deploy 를 걷지만 개발 PC 의 캐시 비우기 단축키(`c`)까지 끄므로 쓰지 않는다(1.63 번들
     확인). 판올림 뒤 Deploy 가 다시 보이지 않는지 확인한다.
+  - **제목 옆 링크 아이콘을 늘 뺀다**(2026-10-07 사용자 결정 — 이 앱은 제목으로 바로 가는 주소를 쓰지
+    않는다). Streamlit 은 페이지 제목(`st.title`)·`st.subheader`·마크다운 제목(`#### …` 상자 제목 등)
+    모두에 같은 칸(`stHeaderActionElements`)을 붙이고 그 안의 `#제목` 링크를 마우스를 올리면 띄운다.
+    같은 껍데기 스타일의 규칙 하나(`[data-testid="stHeaderActionElements"] > a[href^="#"]`)가 그
+    링크만 요소째 뺀다 — 같은 칸의 `help=` 풍선은 남는다. `display: none` 이어야 Tab 순서에서도
+    빠진다(Streamlit 은 키보드 포커스에 링크를 다시 띄운다). 제목마다 `anchor=False` 를 주는 길은
+    마크다운 제목에 닿지 않아 두 갈래가 되므로 쓰지 않는다. 앱 안에 `#제목` 주소로 가는 링크는 없다.
+    판올림 뒤 제목에 마우스를 올려 아이콘이 뜨지 않는지 본다.
   - **인쇄에서는 사이드바를 늘 뺀다**(2026-10-05 사용자 요청 — 화면에 펼쳐 둔 사이드바도). 같은 껍데기
     스타일의 `@media print` 덩어리 **하나**에 인쇄 규칙을 모두 둔다 — 부트스트랩 앞에서 나가므로 오류
     화면 인쇄에도 걸리고, 화면 렌더링은 바뀌지 않는다. 빼는 것은 사이드바(`stSidebar`, Streamlit 은 펼친
