@@ -11,7 +11,7 @@
 
 고정하는 것은 셋이다.
 
-1. HOME 토글 여섯 개가 **전부 풀린다.** 토글은 모두 기준정보 위에 무언가를 얹거나 빼는
+1. HOME 토글 일곱 개가 **전부 풀린다.** 토글은 모두 기준정보 위에 무언가를 얹거나 빼는
    스위치라 앞 시나리오를 전제로 켠 것이 새 계획 위에 남으면 안 된다.
 2. 같은 전환에서 **탭과 조회 조건은 남는다.** 무엇을 보고 있는지는 값에 닿지 않는다.
 3. 전환 뒤 화면이 **새 리비전의 수치**를 보여 준다. 옛 그림이 캐시에 남아 있으면 안 된다.
@@ -43,6 +43,7 @@ import capa_simulation.components.month_range_picker as month_range_picker
 import capa_simulation.settings as settings
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.components.home_preference import (
+    ADVANCE_SHIPMENT_TOGGLE_KEY,
     ADVANCE_TOGGLE_KEY,
     COMPARISON_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
@@ -75,11 +76,12 @@ DETAIL_LEVEL_KEY = "unit_capacity_detail_level"
 REQUIRED_DETAIL_KEY = "required_equipment_detail"
 PAGE_FILTER_KEYS = (DETAIL_LEVEL_KEY, REQUIRED_DETAIL_KEY)
 
-# 여섯 토글의 기본값. 「풀린다」는 이 값으로 돌아간다는 뜻이고, `Past Data 포함` 만 켬이라
-# 다섯은 꺼지고 하나는 켜진다. 목록이 여섯인지 지키는 것은 `tests/test_scenario_activation.py`
-# 의 AST 그물이고, 여기서는 그 여섯이 **실제 실행에서** 풀리는지만 본다.
+# 일곱 토글의 기본값. 「풀린다」는 이 값으로 돌아간다는 뜻이고, `Past Data 포함` 만 켬이라
+# 여섯은 꺼지고 하나는 켜진다. 목록이 일곱인지 지키는 것은 `tests/test_scenario_activation.py`
+# 의 AST 그물이고, 여기서는 그 일곱이 **실제 실행에서** 풀리는지만 본다.
 TOGGLE_DEFAULTS: Mapping[str, bool] = {
     ADVANCE_TOGGLE_KEY: False,
+    ADVANCE_SHIPMENT_TOGGLE_KEY: False,
     EXECUTION_TOGGLE_KEY: False,
     COMPARISON_TOGGLE_KEY: False,
     PLAN_DETAIL_CUSTOMER_KEY: False,
@@ -130,7 +132,7 @@ def _session_value(app: AppTest, key: str) -> Any:
 def _toggle_values(app: AppTest) -> dict[str, Any]:
     """토글을 **화면이 읽는 방식으로** 읽는다 — 칸이 없으면 기본값이다.
 
-    여섯 토글은 사이드바 `LOB 표시 조건` 카드라 Main 이 아닌 탭에서는 위젯이 그려지지 않는다.
+    일곱 토글은 사이드바 `LOB 표시 조건` 카드라 Main 이 아닌 탭에서는 위젯이 그려지지 않는다.
     전환이 칸을 버리고 나면 Main 을 열기 전까지 칸 자체가 없는데, `app_pages/home.py` 는
     그 자리를 `st.session_state.get(키, 기본값)` 으로 읽으므로 없는 것이 곧 기본값이다.
     없는 칸을 「풀리지 않았다」로 세면 실제와 다른 실패가 된다.
@@ -204,7 +206,7 @@ def _seed_two_revisions(database: Path) -> tuple[str, str]:
         revision_name="계획 2배",
         note="시나리오 전환 검사용",
     )
-    # 「GAP」 토글은 비교 대상이 있어야 눌린다. 여섯 토글을 모두 켜 두려면 여기서 심는다.
+    # 「GAP」 토글은 비교 대상이 있어야 눌린다. 일곱 토글을 모두 켜 두려면 여기서 심는다.
     repository.replace_global_comparison_scenario(
         baseline.scenario.scenario_id,
         baseline.revision.revision_id,
@@ -251,7 +253,7 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
         preference_tab = _tab_label(app, "Preference")
         main_tab = _tab_label(app, "Main")
 
-        # 2. 사용자가 여섯 토글을 모두 기본값과 다르게 두고, Preference 탭을 보고 있다.
+        # 2. 사용자가 일곱 토글을 모두 기본값과 다르게 두고, Preference 탭을 보고 있다.
         for key, default in TOGGLE_DEFAULTS.items():
             app.session_state[key] = not default
         app.session_state[HOME_TAB_KEY] = preference_tab
@@ -283,7 +285,7 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
         app.run()
         failures.extend(f"전환 뒤 Main 탭: {element.message}" for element in app.exception)
         numbers_after = tuple(_DRAWN_FIGURES)
-        # Main 에서는 여섯 토글이 모두 다시 그려진다. 숨은 탭에서 칸이 없던 「상세 계획」까지
+        # Main 에서는 일곱 토글이 모두 다시 그려진다. 숨은 탭에서 칸이 없던 「상세 계획」까지
         # 실제 위젯 값으로 확인할 수 있는 자리가 여기다.
         toggles_after_main = _toggle_values(app)
         drawn_toggle_keys = tuple(str(toggle.key) for toggle in app.toggle)
@@ -351,7 +353,7 @@ def test_the_user_really_had_every_toggle_flipped(switch: SwitchObservation) -> 
 
 
 def test_loading_another_revision_releases_every_home_toggle(switch: SwitchObservation) -> None:
-    """여섯 토글이 **전부** 기본값으로 돌아간다.
+    """일곱 토글이 **전부** 기본값으로 돌아간다.
 
     토글은 모두 기준정보 위에 무언가를 얹거나 빼는 스위치이고, 켠 사람은 **그 시나리오**를
     보며 켰다. 켠 채로 바뀌면 얹힌 것이 새 계획 위에 남는데 — 실행 Capa 증감은 확보율을
@@ -372,7 +374,7 @@ def test_loading_another_revision_releases_every_home_toggle(switch: SwitchObser
 def test_the_released_toggles_are_still_released_back_on_the_main_tab(
     switch: SwitchObservation,
 ) -> None:
-    """Main 으로 돌아와 여섯 위젯이 다시 그려져도 기본값이다.
+    """Main 으로 돌아와 일곱 위젯이 다시 그려져도 기본값이다.
 
     전환 회차의 화면은 Preference 탭이라 토글 칸(사이드바 카드)이 아예 없었다. 그 칸이 다시
     생기는 자리가 여기이므로, 풀린 것이 **위젯 값으로도** 풀렸는지는 여기서만 확인된다.
