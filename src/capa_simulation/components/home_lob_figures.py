@@ -704,6 +704,7 @@ def build_lob_summary_figures(
     past_month_labels: Collection[str] | None = None,
     product_share_cells: Mapping[str, ProductShareCell] | None = None,
     product_share_basis: str = PRODUCT_SHARE_BASIS_WAFER,
+    advance_shipment_notes: Sequence[tuple[str, str]] | None = None,
 ) -> tuple[go.Figure, go.Figure]:
     """생산계획·Wafer Capa·Bottleneck·제품별 비중 요약 Figure 한 쌍을 만든다.
 
@@ -713,9 +714,13 @@ def build_lob_summary_figures(
     `thresholds` 는 공용 판정 기준이다. 막대 색과 Top 5 기준선은 **그 달의 실효 기준**을
     쓴다 — 월별 예외가 없으면 모든 달이 기본값이라 예전 한 짝 기준과 같은 그림이다.
 
-    `baseline_lob_summary` 는 선행 반영 **전**의 같은 요약이다. 주면 Density·Wafer 계획
+    `baseline_lob_summary` 는 선행 B/O 반영 **전**의 같은 요약이다. 주면 Density·Wafer 계획
     칸에 증감을 값 **위**에 작게 얹고 생산계획 LOB 에 기존 계획을 점선으로 함께 그린다.
     Wafer Capa 는 `계획 × 확보율` 이라 선행 전후가 정확히 같으므로 증감을 적지 않는다.
+
+    `advance_shipment_notes` 는 월 축 칸마다 `(글자, hover)` 인 선행 입고 실적이다
+    (`services/advance_shipment.advance_shipment_notes`). 주면 Density 칸 **오른쪽 위**에 적는다 —
+    값·증감 자리는 그대로다. 계산에는 들어가지 않는 표시값이다.
 
     `comparison_density`·`comparison_wafer` 는 비교 시나리오의 같은 월별 표다. 주면 값
     **아래**에 증감을 적는다. 위아래를 나눠 둔 것은 한 칸에 둘이 함께 붙을 수 있어서다.
@@ -740,7 +745,7 @@ def build_lob_summary_figures(
         aligned_summary, aligned_baseline, "Wafer 부하량", _WAFER_GAP_FORMAT, scale=1_000
     )
     # GAP 은 **원 데이터끼리의** 차이다. 선행을 켜면 `aligned_summary` 는 이미 선행이 반영된
-    # 값이라 그대로 빼면 비교 시나리오와의 차이에 내가 넣은 선행 물량이 섞인다. 비교
+    # 값이라 그대로 빼면 비교 시나리오와의 차이에 내가 넣은 선행 B/O 가 섞인다. 비교
     # 시나리오 쪽에는 선행이 반영되지 않으므로(선행은 이 화면에만 얹는 공용 설정이다)
     # 기준을 선행 전 값으로 맞춘다. 선행이 꺼져 있으면 둘이 같은 프레임이다.
     raw_summary = aligned_baseline if aligned_baseline is not None else aligned_summary
@@ -788,6 +793,7 @@ def build_lob_summary_figures(
             True,
             None,
             None,
+            None,
         ),
         (
             _axis_values(aligned_summary, month_labels, totals, "부하량", "{:,.2f}"),
@@ -796,6 +802,7 @@ def build_lob_summary_figures(
             False,
             density_gaps,
             density_comparison_gaps,
+            advance_shipment_notes,
         ),
         (
             _axis_values(
@@ -806,6 +813,7 @@ def build_lob_summary_figures(
             False,
             wafer_plan_gaps,
             wafer_plan_comparison_gaps,
+            None,
         ),
         (
             # Wafer Capa 는 연간 Total 을 적지 않는다. 월별 Capa 의 단순 합은 연간 Capa 가
@@ -814,6 +822,7 @@ def build_lob_summary_figures(
             value_fills,
             20,
             False,
+            None,
             None,
             None,
         ),
@@ -847,6 +856,7 @@ def build_lob_summary_figures(
         month_bold,
         gaps,
         lower_gaps,
+        corner_notes,
     ) in zip(lob_table_domains, month_table_rows, strict=True):
         add_fixed_table_row(
             month_figure,
@@ -857,6 +867,7 @@ def build_lob_summary_figures(
             bold=month_bold,
             gaps=gaps,
             lower_gaps=lower_gaps,
+            corner_notes=corner_notes,
         )
     if bottleneck_capacity["B/N Capa"].notna().any():
         bottleneck_positions = [
@@ -936,14 +947,14 @@ def build_lob_summary_figures(
         # 겹쳐 어느 쪽이 지금 기준인지 읽히지 않는다.
         month_figure.add_trace(
             go.Scatter(
-                name="Density (선행 전)",
+                name="Density (선행 B/O 전)",
                 x=month_positions,
                 y=_axis_series(aligned_baseline, "부하량"),
                 customdata=month_labels,
                 mode="lines",
                 line={"color": tokens.TEXT_MUTED, "width": 2, "dash": "dot"},
                 cliponaxis=False,
-                hovertemplate="%{customdata} · 선행 전<br>%{y:,.2f} 억Gb<extra></extra>",
+                hovertemplate="%{customdata} · 선행 B/O 전<br>%{y:,.2f} 억Gb<extra></extra>",
             ),
             row=2,
             col=1,

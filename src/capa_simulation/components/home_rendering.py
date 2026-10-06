@@ -83,6 +83,11 @@ class HomeFigureCacheKey(NamedTuple):
     # `제품별 비중` 행의 단위. 제품별 수량 자체는 위의 내용 토큰·기간·EDP·선행·과거 칸이 이미
     # 가른다 — 단위만 새로 갈린다.
     product_share_basis: str
+    # 「선행 입고」 토글과 선행 입고 실적 프로필 version(토글이 꺼져 있으면 0). Density 칸 오른쪽
+    # 위 글자가 Figure 에 구워지므로 키에 든다 — Summary 공지와 다르다. 뒤에 붙여 앞 칸의 차례를
+    # 지킨다.
+    show_advance_shipment: bool
+    advance_shipment_profile_version: int
 
 
 class HomeFigureSet(NamedTuple):
@@ -109,8 +114,9 @@ HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 # 저장소에도 들어가고 그 토큰은 리비전에서 나온 고정값이라, 올리지 않으면 새 세션과 다른
 # 사용자까지 옛 그림을 받는다. 42 는 이름 있는 묶음, 43 은 막대 둥근 머리·LOB 폭 70px,
 # 44 는 `제품별 비중` 도넛 행과 `B/N Top 5` 구분 글자의 세로 가운데, 45 는 공용 칸에 Figure
-# 대신 `to_dict()` 목록을 넣는 저장 형식.
-HOME_FIGURE_SCHEMA_VERSION = 45
+# 대신 `to_dict()` 목록을 넣는 저장 형식, 46 은 기준과 같은 확보율의 색(확보)·선행 B/O 이름
+# (`Density (선행 B/O 전)`)·선행 입고 실적 칸 글자.
+HOME_FIGURE_SCHEMA_VERSION = 46
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지

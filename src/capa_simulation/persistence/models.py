@@ -80,6 +80,21 @@ class GlobalAdvanceLoad:
 
 
 @dataclass(frozen=True)
+class GlobalAdvanceShipment:
+    """Scenario-independent 선행 입고 실적 profile in 억Gb per plan month (display only).
+
+    선행 B/O(`GlobalAdvanceLoad`)와 같은 모양이다. 생산계획에 이미 든 물량이라 계산에 들어가지
+    않고 HOME `Capa LOB 현황` Density 칸에 값만 적는다. 프로필이 한 번도 저장되지 않은 상태가
+    정상이다. 그때는 `version=0`, `updated_at=None`, 행 0건이다.
+    """
+
+    version: int
+    source: str
+    updated_at: datetime | None
+    rows: pd.DataFrame
+
+
+@dataclass(frozen=True)
 class GlobalSecurementThreshold:
     """Scenario-independent securement thresholds: a default pair plus monthly overrides.
 

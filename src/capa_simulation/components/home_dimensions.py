@@ -41,6 +41,10 @@ DELTA_GUTTER_PX = 2
 # 행 경계선과 글자 사이의 틈. 0 이면 글자가 경계선에 붙어 읽힌다.
 ROW_EDGE_PADDING_PX = 3
 
+# 칸 오른쪽 위 글자(선행 입고 실적)와 칸 오른쪽 경계 사이의 틈. 그 글자는 선행 B/O 증감과 같은
+# 띠(값 위)에 서되 오른쪽 끝에 붙으므로, 가운데에 선 증감과는 가로로만 떨어진다.
+CORNER_NOTE_RIGHT_PADDING_PX = 4
+
 
 def delta_line_shift_px(value_font_size: int) -> float:
     """값 글리프 가운데에서 증감 글리프 가운데까지의 거리."""
@@ -297,7 +301,7 @@ LOB_PRODUCT_SHARE_MIN_DRAWN_SHARE = 0.025
 LOB_BOTTOM_MARGIN_PX = 0
 
 # LOB 두 Figure 만 제목 자리를 쓰지 않는다. `Capa LOB 현황` 은 Plotly 주석이 아니라
-# Streamlit 이 그려서 그 옆에 「선행 전망」 토글을 둔다. 여백을 남겨 두면 표 위에 빈 띠가 생긴다.
+# Streamlit 이 그려서 그 옆에 판정 색 범례를 둔다. 여백을 남겨 두면 표 위에 빈 띠가 생긴다.
 LOB_TOP_MARGIN_PX = 0
 
 LOB_FIGURE_HEIGHT_PX = (

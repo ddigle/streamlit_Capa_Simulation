@@ -211,10 +211,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 전체 계산 결과를 조합하는 HOME 대시보드다.
   - Plotly Figure 묶음을 사용자 세션에 캐시하고 렌더링은 fragment로 분리한다.
   - 본문은 `Main`·`Preference`·`Past Data` 세 탭이다. `Main` 이 계획·LOB·주요공정·B/N
-    Figure 여덟 개를 그리고, `Preference`는 공용 프로필 편집기(비교 시나리오·판정 기준·선행·
-    Summary·Top5·주요공정·실행 Capa)를 두며 `Past Data`는 과거 구간 세 표를 받는다
+    Figure 여덟 개를 그리고, `Preference`는 공용 프로필 편집기(비교 시나리오·판정 기준·선행 B/O·
+    선행 입고 실적·Summary·Top5·주요공정·실행 Capa)를 두며 `Past Data`는 과거 구간 세 표를 받는다
     (`components/past_data_management.py`). 요약만 그리는 경로는 없다.
-  - **보는 조건 토글 여섯(선행·실행·GAP·상세·EDP 포함·Past Data 포함)과 `제품별 비중 단위`
+  - **보는 조건 토글 일곱(선행 B/O·선행 입고·실행·GAP·상세·EDP 포함·Past Data 포함)과 `제품별 비중 단위`
     (Wafer·PKG 고르는 칸)는 사이드바 조건 카드 `LOB 표시 조건`**(`home_preference.render_home_view_card`,
     Main 탭이 열렸을 때만)이다
     (2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 에 흩어져 있었다).
@@ -284,8 +284,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `get_home_plan_detail` 이 돌아 토글을 건드린 사람만 계산을 치른다.
   - 과거 구간을 넣으면 조회 가능 범위가 그만큼 넓어진다. 계산 원천의 월 범위로만 자르면
     넣어 둔 과거가 절대 조회 범위에 들어오지 못한다.
-  - 과거 달에는 `선행 전망` 만 걸린다. EDP 제외와 비교 GAP 은 걸 근거가 없다 — 과거는 입력값
-    하나뿐이라 EDP 를 뗄 수도, 비교할 계획도 없다.
+  - 과거 달에는 `선행 B/O` 만 걸린다. EDP 제외와 비교 GAP 은 걸 근거가 없다 — 과거는 입력값
+    하나뿐이라 EDP 를 뗄 수도, 비교할 계획도 없다. 「선행 입고」 글자는 계산이 아니라 표시라
+    과거 달에도 그대로 적힌다.
   - 과거 구간 열은 **바탕을 한 단계 눌러** 칠한다. 숫자만으로는 계산 결과와 입력해 둔 지난
     이력이 구분되지 않는다. 판정은 `services/month_columns.build_past_month_labels()` 하나가
     하고 GAP 경계(`gap_month_labels`)와 같은 근거를 본다. 색은 바탕색마다 대응하는 짝
@@ -397,8 +398,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`_centered_cell_text`). 계획 세부수량의 분류 칸은 늘 그렇게 서고, 월 칸은 GAP 이
     꺼져 있을 때(`comparison_detail is None`)만 그렇게 선다. 빈 칸에는 붙이지 않는다 —
     값이 없는 자리에 줄만 생긴다.
-  - 시나리오를 바꾸면 **HOME 토글을 전부 끈다**(`_STALE_UI_KEYS`). 선행·실행·GAP·상세·
-    EDP 포함·Past Data 포함 여섯 개다. 모두 기준정보 위에 무언가를 얹거나 빼는 스위치이고
+  - 시나리오를 바꾸면 **HOME 토글을 전부 끈다**(`_STALE_UI_KEYS`). 선행 B/O·선행 입고·실행·GAP·
+    상세·EDP 포함·Past Data 포함 일곱 개다. 모두 기준정보 위에 무언가를 얹거나 빼는 스위치이고
     켠 사람은 **그 시나리오**를 보며 켰다 — 켠 채로 바꾸면 얹힌 것이 새 계획 위에 남는데,
     실행 Capa 증감은 확보율을 통해 B/N 순위·Top5 막대·히트맵까지 바꾼다. 화면에는 토글이
     켜져 있으니 사용자는 그것을 새 시나리오의 원래 값으로 읽는다. `Past Data 포함` 만
@@ -415,9 +416,27 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     나눠 쓴다. 이 순서를 바꾸면 두 화면이 조용히 따로 계산한다.
   - `EDP 포함` 의 기본값은 **끔**이다. 바꿀 때는 `home_state.HOME_TOGGLE_DEFAULTS`를
     고친다. 첫 계산과 위젯이 이 선언 한 곳을 함께 읽는다.
-  - `선행 전망` 을 켜면 공용 선행 물량으로 변동률을 내 계획·확보율에 건다. 변동률은 **화면이
+  - `선행 B/O` 를 켜면 공용 선행 B/O 프로필로 변동률을 내 계획·확보율에 건다(2026-10-06 사용자
+    결정으로 화면 이름만 「선행 전망」·「선행 투입 물량」에서 바꿨다 — 세션 키 `home_show_advance`·
+    저장 표·컬럼 `선행 물량`·계산·표시 자리는 그대로다). 선행 B/O 는 S.PKG FRONT 공정의 끝인
+    B/O(Bond Out)에서 계획보다 앞서 만든 재공이라 **생산계획에 없는 부하**다. 변동률은 **화면이
     지금 쓰는 계획** 기준이다(EDP 를 뺀 화면이면 뺀 계획). 그래야 어느 상태에서든 Capa 가
-    그대로이고 Density 증감이 입력값과 정확히 같다.
+    그대로이고 Density 증감이 입력값과 정확히 같다. 원래는 FRONT 공정에만 걸려야 하지만 공정
+    분류가 아직 없어 모든 공정에 건다(`services/advance_load.py` 모듈 설명).
+  - **`선행 입고`(2026-10-06 사용자 결정)는 계산을 바꾸지 않는다.** 선행 입고(라인 기준 입고가
+    계획보다 앞선 것)는 이미 생산계획에 든 물량이라, 켜면 공용 선행 입고 실적 프로필
+    (`app_meta.global_advance_shipment*`, 0031)의 값을 `Capa LOB 현황` Density 칸 **오른쪽 위**에
+    `{:+.1f}` 로 적기만 한다(`services/advance_shipment.advance_shipment_notes` → `plotly_layout.
+    add_fixed_table_row(corner_notes=...)`). 자리는 값 위 선행 B/O 증감과 **같은 높이**(같은
+    `yshift`)이고 칸 오른쪽 경계에서 `CORNER_NOTE_RIGHT_PADDING_PX` 안쪽이다 — 그 띠는 값 글리프와
+    `DELTA_GUTTER_PX`, 행 위 경계와 `ROW_EDGE_PADDING_PX` 만큼 떨어져 있어 기존 글자를 움직이거나
+    줄이지 않는다. 가운데 선 증감과는 가로로만 떨어진다. 글자는 증감과 같은 `DELTA_FONT_SIZE_PX`,
+    색은 증감색과 갈리는 `tokens.ADVANCE_SHIPMENT_TEXT`(두 테마 모두 월 칸 면 4.5:1 이상)다. hover 는
+    주석의 `hovertext`(「선행 입고 실적 +1.2억Gb」)라 trace 수가 늘지 않는다. 연간 Total 칸에는 적지
+    않고, 과거 구간 달은 축에 있으면 적는다. 자릿수에서 0 으로 보이는 값(`+0.0`)은 적지 않는다.
+    토글과 프로필 version(꺼져 있으면 0)은 `HomeFigureCacheKey` 의 마지막 두 칸
+    (`show_advance_shipment`·`advance_shipment_profile_version`)이다 — Summary 공지와 달리 Figure 에
+    구워지는 글자다. 입장 화면 Summary 는 이 값을 쓰지 않는다.
   - 제목 아래 설명 문구, `계획·B/N 상세표 표시` 토글, `계획 세부수량 CSV` 는 탭이 그 자리를
     쓰면서 없앴다.
   - 네 구획 제목(`Capa LOB 현황`·`계획 세부수량`·`주요공정 확보율`·`상세 B/N 공정`)은
@@ -1354,7 +1373,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 표준 목표 Capa의 수동 주차별 가용대수만 설비 DB의 비버전 최신값 테이블에
     공정·Weeknum 기준으로 갱신한다.
 - `src/capa_simulation/home_state.py`
-  - HOME 토글 여섯 개의 세션 키와 불변 기본값을 선언한다. UI·저장소 import 없이
+  - HOME 토글 일곱 개의 세션 키와 불변 기본값을 선언한다. UI·저장소 import 없이
     페이지 계산·위젯·시나리오 전환 초기화가 같은 목록을 공유한다. 기존 키 문자열은 유지한다.
 - `src/capa_simulation/scenario_state.py`
   - 사용자 세션별 활성 시나리오와 `revision`(편집 카운터)·`content_token`(내용 토큰)을 관리한다.
@@ -2438,14 +2457,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (제목·판정 색 범례), `Preference` 탭. 토글은 모두 이 모듈에 둔다 —
     `tests/test_scenario_activation.py` 가 여기서 토글 키를 AST 로 모은다.
   - 편집기의 저장 버튼(과 변경 메모)은 편집 칸 **위**이고, 저장 결과 알림은 그 바로 아래다.
-  - 탭 안의 편집기는 일곱이다 — 비교 시나리오 선택, 확보율 판정 기준, 선행 투입 물량,
+  - 탭 안의 편집기는 여덟이다 — 비교 시나리오 선택, 확보율 판정 기준, 선행 B/O, 선행 입고 실적,
     `Summary 공지`, Top5 대역, 주요공정 히트맵 프리셋, 실행 Capa. 모두 공용 프로필에 저장하고,
     저장 상태를 적는 버전 캡션은 `profile_caption.py` 를 쓴다.
   - **확보율 판정 기준**(`render_threshold_editor`, 2026-10-06 사용자 결정, 마이그레이션 0029)은
     기본 확보·경고 두 칸(키 없는 `number_input` — Top5 와 같은 이유)과 월별 표(달이 열, 행은
     `확보 기준`·`경고 기준`, 빈칸 = 기본값)다. 입력은 퍼센트, 저장은 비율이다. 기본값 두 칸의
     하한은 0 이다 — 저장본이 무엇이든 칸이 그려져야 고칠 수 있고, 0 이하는 저장 검증이 거부한다.
-    조회기간 밖 달은 선행 물량처럼 보존한다(`merge_securement_threshold_edits`). 다만 표에 없는
+    조회기간 밖 달은 선행 B/O 처럼 보존한다(`merge_securement_threshold_edits`). 다만 표에 없는
     달이 새 기본값과 거꾸로 짝이 되면 저장을 막으므로, 기간 밖 예외가 있을 때 폼에
     「조회기간 밖 월별 기준 지우기」 체크를 두고, 그런 달 때문에 막히면 그 달과 고칠 길을 적어 거부한다. 저장은 **버전 대조**다 — 편집을
     시작한 회차의 version 을 세션(`THRESHOLD_BASE_VERSION_KEY`)에 두고 저장 회차에 그 값을 넘겨,
@@ -2466,8 +2485,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     없음」으로 남겨 저장해도 그대로이고, 빼려면 목록에서 직접 지운다(선택지에서 빼 두었을 때는 이름만
     바꿔도 지워졌다). 사이드바 카드는 그런 공정을 세지 않고 따로 적으며, 프리셋의 공정이 하나도
     없으면 격자는 `KEY_PROCESS_ABSENT_NOTICE`(「고르세요」가 아니다)를 남긴다.
-  - 선행 물량 저장은 **표에 보이는 달만** 갈아 끼운다(`merge_advance_load_edits`). 조회기간을
-    좁힌 채 저장한 사람이 보이지 않는 달의 입력을 모르는 새 날리면 안 된다.
+  - 선행 B/O·선행 입고 실적 저장은 **표에 보이는 달만** 갈아 끼운다(`merge_advance_load_edits`·
+    `merge_advance_shipment_edits` — 규칙은 `services/monthly_amount.py` 한 곳). 조회기간을 좁힌 채
+    저장한 사람이 보이지 않는 달의 입력을 모르는 새 날리면 안 된다. 두 편집기는 같은 폼
+    (`_render_monthly_amount_editor`)이고 글자·키만 다르다(선행 B/O 의 폼·편집표·메모 키는 예전
+    그대로). 두 편집기의 달은 `Capa LOB 현황` 월 축(연간 Total 제외) 그대로라 `Past Data 포함` 을
+    켰으면 과거 구간 달도 열린다 — 선행 입고 실적은 실적이라 지난 달에 넣는 값이다. 선행 입고 실적
+    편집기는 `render_advance_shipment_editor` 로 공개해 AppTest 가 따로 연다.
   - `Summary 공지` 는 **빈 문구도 저장한다.** 공지를 내리는 것도 결정이고, 그때도 version
     이 올라야 다른 세션의 캐시가 풀린다. 저장 화면은 「미저장」과 「내림」을 구분해
     보여 준다 — 화면에서는 둘 다 아무것도 뜨지 않지만 뜻이 다르다.
@@ -2487,16 +2511,26 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     평범한 속성 주석은 불변이라 `GlobalDisplayOrder.updated_at: datetime` 이
     `datetime | None` 에 맞지 않아 mypy strict 가 거절한다.
 - `src/capa_simulation/services/advance_load.py`
-  - 선행 투입 물량 정규화와 월별 Capa 부하 변동률. `변동률 = 기존 계획 ÷ 선행 반영 계획`
+  - 선행 B/O(계획 밖 B/O 재공, 화면 이름 2026-10-06) 정규화와 월별 Capa 부하 변동률.
+    `변동률 = 기존 계획 ÷ 선행 반영 계획`
     이고 확보율에 곱하고 Wafer 는 나눈다. 그래서 `계획 × 확보율` 인 Capa 가 **정확히
-    그대로**다 — 선행 투입은 물량을 앞으로 옮긴 것이지 설비를 늘린 것이 아니다.
+    그대로**다 — 선행 B/O 는 부하를 늘린 것이지 설비를 늘린 것이 아니다. 지금은 모든 공정에
+    걸린다 — FRONT 공정에만 좁힐 공정 분류가 아직 없다(모듈 설명).
   - 한 달 안에서는 모든 공정에 같은 수를 곱하므로 **B/N 공정 순위가 바뀌지 않는다.**
   - 선행 반영 계획이 0 이하가 되는 달은 변동률을 낼 수 없다. 그 달만 미적용으로 두고
     화면이 알린다 — 한 달의 과한 입력으로 대시보드 전체가 사라지면 어디가 잘못됐는지
     볼 수 없다.
   - 역산(`revert_advance_from_securement`)도 여기다. 선행 전후를 한 그림에 그릴 때 선행
-    반영 확보율을 변동률로 **나눠** 선행 전 값을 되돌린다. 정방향과 달리 변동률 표에 없는
-    달을 1 로 채우지 않아 그 달은 결측이 된다 — 맞추는 것은 화면 출력이 바뀌는 별도 결정이다.
+    반영 확보율을 변동률로 **나눠** 선행 전 값을 되돌린다. 변동률 표에 없는 달은 정방향처럼
+    1 로 둔다(2026-10-06 사용자 결정 — 전에는 결측이 되어 그 달의 선행 전 확보율이 빈칸이었다).
+- `src/capa_simulation/services/advance_shipment.py`
+  - 선행 입고 실적(2026-10-06) 정규화·편집 병합과 LOB 칸 글자(`advance_shipment_notes` — 월 축
+    라벨마다 `(글자, hover)`). 계산에 들어가지 않는 표시값이다. 저장 컬럼은 `선행 입고`, 부호는
+    입력한 그대로다.
+- `src/capa_simulation/services/monthly_amount.py`
+  - 월별 억Gb 한 칸짜리 공용 프로필(선행 B/O·선행 입고 실적)의 공통 규칙 — 정규화(0·빈칸 지움,
+    YYYYMM·중복 검사), 보인 달만 갈아 끼우는 병합, `{YYYYMM: 값}` 사전. 두 모듈은 컬럼 이름과
+    문구 주어만 넘긴다 — 규칙을 두 곳에 적으면 한쪽만 고쳐져 두 편집기가 같은 입력을 다르게 저장한다.
 - `src/capa_simulation/services/execution_capacity.py`
   - 실행 Capa 반영의 값 정규화와 확보율 증감 적용. `조정 확보율 = 기준 확보율 + 증감/100`
     (**퍼센트포인트 차감**)이고, 조정이 한 건도 없어도 `기준 확보율`·`확보율 증감`·
@@ -2851,7 +2885,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/models.py`: Repository 가 주고받는 타입
 - `persistence/display_order_store.py`: 공용 표시순서 프로필의 검증·이관·저장
 - `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·교체 SQL
-- `persistence/advance_load_store.py`: 공용 선행 투입 물량 프로필의 조회·교체 SQL
+- `persistence/advance_load_store.py`: 공용 선행 B/O 프로필(0018)의 조회·교체 SQL
+- `persistence/advance_shipment_store.py`: 공용 선행 입고 실적 프로필(0031)의 조회·교체 SQL
 - `persistence/securement_threshold_store.py`: 공용 확보율 판정 기준 프로필(0029)의 조회·교체 SQL과
   버전 대조(`SecurementThresholdConflict`). 헤더에 기본 확보·경고 값 칸이 있어 헤더를 직접 쓴다.
   미저장일 때의 기본값(최신 공식버전 프리셋 → 코드 기본값)은 Repository 가 정한다.
@@ -2890,9 +2925,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `persistence` 는 Streamlit 을 부르지 않는다.
 - `persistence/migration_runner.py`, `equipment_migration_runner.py`: 각 DB의 패키지·스키마를
   그 엔진에 묶는 진입점
-- `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷과 공용 프로필 열 종
-  (표시순서·공정 표시명·비교 시나리오·선행·Summary 공지·Top5 대역·주요공정·실행 Capa·과거
-  구간·확보율 판정 기준)의 Streamlit 캐시 경계. 판정 기준 캐시는 공식버전을 새로 지정할 때도
+- `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷과 공용 프로필 열한 종
+  (표시순서·공정 표시명·비교 시나리오·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·주요공정·
+  실행 Capa·과거 구간·확보율 판정 기준)의 Streamlit 캐시 경계. 판정 기준 캐시는 공식버전을 새로 지정할 때도
   비운다(`clear_global_securement_threshold_cache`) — 미저장이면 기본값이 최신 공식버전에서 온다. 설비 쪽은 설비 스냅샷과 층 도면 프로필·도면 요소, FAB 전체 도면
   (`load_fab_layout` — 캔버스·배경 도면 행과 요소를 한 항목에)이다(`clear_floor_layout_cache` 가 층 셋과
   FAB 를 함께 비운다 — 팝업·저장의 기존 호출처가 그대로 FAB 까지 덮는다)
@@ -3545,8 +3580,9 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - DuckDB 쓰기 직렬화는 단일 Streamlit 서버 프로세스 범위다. 다중 서버 프로세스로
   확장할 때는 별도 쓰기 서비스 또는 서버형 DB로 전환한다.
 - 증감 표기색은 **글자색**(`DELTA_INCREASE`·`DELTA_DECREASE`)과 **면색**
-  (`DELTA_AREA_INCREASE`·`DELTA_AREA_DECREASE`)이 다르다. 앞은 값 위에 작게 적는 선행
-  증감이고 뒤는 실행 Capa 증감 **구간 자체**를 칠한다. 면색으로 글자색을 쓰면 막대 안에서
+  (`DELTA_AREA_INCREASE`·`DELTA_AREA_DECREASE`)이 다르다. 앞은 값 위에 작게 적는 선행 B/O
+  증감이고 뒤는 실행 Capa 증감 **구간 자체**를 칠한다. 같은 띠 오른쪽 끝의 선행 입고 실적 글자는
+  세 번째 글자색(`ADVANCE_SHIPMENT_TEXT`, 청록)이다 — 증감의 갈색·파랑과 갈린다. 면색으로 글자색을 쓰면 막대 안에서
   글자보다 무거워진다. 휘도 단조 검사는 `STATUS_*` 셋만 보므로 이 둘은 그 검사 대상이
   아니지만, 막대 트랙·확보 막대에서 떨어지는지는 토큰 주석의 대비값으로 확인한다.
 - BOX·PCB 는 산식 확정 전까지 대당 Capa·소요대수 계산에서 빼 두었다. **제외가 아니라

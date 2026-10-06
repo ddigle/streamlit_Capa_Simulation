@@ -185,6 +185,33 @@ def test_status_fills_carry_readable_numbers() -> None:
     )
 
 
+# 선행 입고 실적 글자가 서는 월 칸 면. 연간 Total 칸에는 적지 않는다.
+MONTH_CELL_SURFACES = ("SURFACE", "SURFACE_SUBTLE", "SURFACE_PAST", "SURFACE_PAST_SUBTLE")
+SMALL_TEXT_MINIMUM = 4.5  # 12px 글자
+
+
+def test_the_advance_shipment_note_reads_on_every_month_cell_and_apart_from_deltas() -> None:
+    """Density 칸 오른쪽 위 선행 입고 실적 글자는 같은 띠의 선행 B/O 증감(`DELTA_*`)과 갈려야 한다.
+
+    바탕은 흰 면·줄무늬·과거 구간 둘 — 그 모두에서 12px 글자 기준 4.5:1 을 넘어야 한다.
+    """
+    failures: list[str] = []
+    for mode, palette in tokens._PALETTES.items():
+        color = palette["ADVANCE_SHIPMENT_TEXT"]
+        for surface in MONTH_CELL_SURFACES:
+            ratio = contrast_ratio(color, palette[surface])
+            if ratio < SMALL_TEXT_MINIMUM:
+                failures.append(f"{mode} {surface} 위 {ratio:.2f}:1")
+        for delta in ("DELTA_INCREASE", "DELTA_DECREASE"):
+            normal = _delta_e(color, palette[delta])
+            if normal < NORMAL_FLOOR:
+                failures.append(f"{mode} {delta} 와 정상시야 ΔE {normal:.1f}")
+            worst = min(_delta_e(color, palette[delta], vision) for vision in CVD_MATRICES)
+            if worst < CVD_TARGET:
+                failures.append(f"{mode} {delta} 와 색각이상 ΔE {worst:.1f}")
+    assert not failures, "선행 입고 실적 글자색이 맞지 않습니다:" + _bullets(failures)
+
+
 def test_every_equipment_status_has_its_own_color() -> None:
     """색이 모자라면 Altair 가 팔레트를 순환해 다른 상태가 같은 색으로 그려진다."""
     from capa_simulation.services.equipment_contract import EQUIPMENT_STATUSES

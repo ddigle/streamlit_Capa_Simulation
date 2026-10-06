@@ -1,4 +1,4 @@
-# Purpose: 선행 투입 물량 정규화와 Capa 부하 변동률 산출의 계약을 고정한다.
+# Purpose: 선행 B/O 정규화와 Capa 부하 변동률 산출의 계약을 고정한다.
 
 from pathlib import Path
 
@@ -246,11 +246,11 @@ def test_reverting_the_advance_returns_the_original_securement_rate() -> None:
     )
 
 
-def test_reverting_a_month_outside_the_ratio_leaves_a_missing_rate() -> None:
-    """변동률 표에 없는 달은 역산에서 결측이 된다 — 지금 화면이 그리는 값을 고정한다.
+def test_reverting_a_month_outside_the_ratio_keeps_its_rate() -> None:
+    """변동률 표에 없는 달은 역산에서도 1 로 둔다 — 정방향과 같다(2026-10-06 사용자 결정).
 
-    정방향은 없는 달을 1 로 채우지만 역산은 채우지 않는다. 이 비대칭을 맞추는 것은 화면
-    출력이 달라지는 별도 결정이라 여기서는 현재 동작을 그대로 묶어 둔다.
+    정방향이 그 달을 건드리지 않았으니 되돌릴 것도 없다. 결측으로 나누면 선행 전 확보율이
+    오류도 경고도 없이 빈칸이 된다.
     """
     monthly_density = pd.DataFrame({"생산계획년월": [202601, 202603], "부하량": [50.0, 80.0]})
     ratio = build_advance_load_ratio(
@@ -266,5 +266,9 @@ def test_reverting_a_month_outside_the_ratio_leaves_a_missing_rate() -> None:
 
     reverted = revert_advance_from_securement(securement, ratio)
 
-    assert bool(reverted.loc[reverted["생산계획년월"].eq(202602), "확보율"].isna().all())
-    assert not bool(reverted.loc[reverted["생산계획년월"].ne(202602), "확보율"].isna().any())
+    assert not bool(reverted["확보율"].isna().any())
+    assert float(reverted.loc[reverted["생산계획년월"].eq(202602), "확보율"].iloc[0]) == 1.4
+    # 변동률이 있는 달은 그대로 나눈다.
+    assert float(reverted.loc[reverted["생산계획년월"].eq(202601), "확보율"].iloc[0]) == (
+        pytest.approx(1.5 * 60.0 / 50.0)
+    )

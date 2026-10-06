@@ -59,6 +59,7 @@ from capa_simulation.components.process_picker import render_process_picker
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.home_state import (
+    ADVANCE_SHIPMENT_TOGGLE_KEY,
     ADVANCE_TOGGLE_KEY,
     COMPARISON_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
@@ -82,6 +83,7 @@ from capa_simulation.performance import PerformanceTrace
 from capa_simulation.persistence.cache import (
     get_scenario_repository,
     load_global_advance_load,
+    load_global_advance_shipment,
     load_global_execution_capacity,
     load_global_key_process,
     load_global_past_data,
@@ -103,6 +105,7 @@ from capa_simulation.services.advance_load import (
     revert_advance_from_securement,
     unapplicable_advance_months,
 )
+from capa_simulation.services.advance_shipment import advance_shipment_notes
 from capa_simulation.services.dashboard import (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
     PRODUCTION_DETAIL_DIMENSIONS,
@@ -212,8 +215,15 @@ if product_share_basis not in PRODUCT_SHARE_BASES:
 include_past = bool(
     st.session_state.get(PAST_DATA_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY])
 )
+# 「선행 B/O」 — 계획 밖 B/O 재공을 부하에 더한다. 키 이름(advance)은 세션 계약이라 그대로다.
 show_advance = bool(
     st.session_state.get(ADVANCE_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[ADVANCE_TOGGLE_KEY])
+)
+# 「선행 입고」 — 계산은 그대로 두고 Density 칸에 선행 입고 실적을 적기만 한다.
+show_advance_shipment = bool(
+    st.session_state.get(
+        ADVANCE_SHIPMENT_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[ADVANCE_SHIPMENT_TOGGLE_KEY]
+    )
 )
 show_execution = bool(
     st.session_state.get(EXECUTION_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[EXECUTION_TOGGLE_KEY])
@@ -438,6 +448,9 @@ try:
     securement_rate = apply_execution_adjustment(securement_rate, execution_rows)
     clamped_execution = clamped_execution_adjustments(securement_rate)
     advance_profile = load_global_advance_load(str(DUCKDB_PATH.resolve()))
+    # 선행 입고 실적은 계산에 들어가지 않는 표시값이다. 편집기는 토글과 무관하게 늘 저장본을 보여
+    # 줘야 하므로 늘 읽는다(공용 캐시라 값싸다).
+    advance_shipment_profile = load_global_advance_shipment(str(DUCKDB_PATH.resolve()))
     baseline_density = monthly_density
     baseline_wafer = monthly_wafer
     advance_ratio: pd.DataFrame | None = None
@@ -694,6 +707,12 @@ figure_cache_key = HomeFigureCacheKey(
     key_processes=tuple(applied_key_processes),
     key_process_profile_version=key_process_profile.version,
     product_share_basis=product_share_basis,
+    # 선행 입고 실적 글자는 Figure 에 구워진다. 토글이 꺼져 있으면 프로필이 바뀌어도 그림이 같으므로
+    # version 을 0 으로 접어 같은 칸을 나눠 쓴다(선행 B/O 와 같은 규칙).
+    show_advance_shipment=show_advance_shipment,
+    advance_shipment_profile_version=(
+        advance_shipment_profile.version if show_advance_shipment else 0
+    ),
 )
 # 결론 요약은 **캐시 밖**에서 낸다. 아래 순위 집계는 캐시가 맞으면 건너뛰지만 이 집계는
 # 같은 프레임 위의 마스크 한 번이라 건너뛸 값이 없다 — 대신 캐시 적중·미적중에서 늘 같은
@@ -767,6 +786,12 @@ if cached_figures is None:
         past_month_labels=past_month_labels,
         product_share_cells=product_share_cells,
         product_share_basis=product_share_basis,
+        # 월 축 칸마다의 선행 입고 실적. 연간 Total 칸은 비고, Past Data 달은 축에 있으면 적는다.
+        advance_shipment_notes=(
+            advance_shipment_notes(advance_shipment_profile.rows, month_labels)
+            if show_advance_shipment
+            else None
+        ),
     )
     displayed_detail = production_detail
     aligned_comparison_detail: pd.DataFrame | None = None
@@ -907,13 +932,15 @@ with past_tab:
     # 「저장 0행」으로 보이고, 저장이 그 빈 값을 DB 에 되쓴다.
     render_past_data_management(str(DUCKDB_PATH.resolve()), stored_past_profile)
 with preference_tab:
-    # 선행 물량은 실제 달에만 넣는다. 화면 축에 끼운 연간 Total 칸은 입력할 자리가 아니다.
+    # 선행 B/O·선행 입고 실적은 실제 달에만 넣는다. 화면 축에 끼운 연간 Total 칸은 입력할 자리가
+    # 아니다. 달은 `Capa LOB 현황` 월 축 그대로라 Past Data 를 켰으면 과거 구간 달도 든다.
     advance_months = [int(value) for value in baseline_density["생산계획년월"]]
     render_home_preference(
         months=advance_months,
         month_labels=[month_label(value) for value in advance_months],
         threshold_profile=threshold_profile,
         advance_profile=advance_profile,
+        advance_shipment_profile=advance_shipment_profile,
         execution_profile=execution_profile,
         top5_band_profile=top5_band_profile,
         key_process_profile=key_process_profile,

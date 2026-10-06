@@ -283,7 +283,7 @@ def merge_securement_threshold_edits(
     secure_values: Sequence[object],
     warning_values: Sequence[object],
 ) -> pd.DataFrame:
-    """화면에 보인 달만 갈아 끼우고 조회기간 밖 저장분은 그대로 둔다(선행 물량과 같은 규칙).
+    """화면에 보인 달만 갈아 끼우고 조회기간 밖 저장분은 그대로 둔다(선행 B/O 와 같은 규칙).
 
     빈칸(None·NaN·빈 글자)은 「그 달은 기본값」이다. 두 칸이 다 비면 그 달의 예외가 지워진다.
     """

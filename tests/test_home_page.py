@@ -399,10 +399,11 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
 
     # 보는 조건 토글은 모두 사이드바 `LOB 표시 조건` 카드다(2026-09-29 사용자 결정 — 전에는
     # 제목 줄과 Preference 의 표시 기준에 흩어져 있었다). 순서는 계산이 얹히는 순서와 같다 —
-    # 선행 전망(계획 이동) → 실행 Loss(기준정보 밖 변수) → GAP(비교 표기) → 보는 폭(상세 계획·EDP·
-    # Past). 라벨은 2026-09-29 사용자 결정이다.
+    # 선행 B/O(계획 밖 재공)·선행 입고(표시만) → 실행 Loss(기준정보 밖 변수) → GAP(비교 표기) →
+    # 보는 폭(상세 계획·EDP·Past). 라벨은 2026-09-29·2026-10-06 사용자 결정이다.
     assert [widget.label for widget in app.sidebar.toggle] == [
-        "선행 전망",
+        "선행 B/O",
+        "선행 입고",
         "실행 Loss",
         "GAP",
         "상세 계획",
@@ -421,7 +422,8 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
             "Summary 저장",
             "공정 선택 · 3 / 3",
             "과거 구간 저장",
-            "선행 물량 저장",
+            "선행 B/O 저장",
+            "선행 입고 저장",
             "실행 Capa 저장",
             "프리셋 저장",
             "판정 기준 저장",
@@ -640,9 +642,96 @@ def test_advance_scales_the_plan_and_rate_but_leaves_capacity_alone(
     assert after["Density"].y[0] == pytest.approx(first_month_density + 2.5)
     assert after["B/N 공정"].y[0] == pytest.approx(first_month_capacity)
     # 기존 계획은 표식·라벨 없는 점선으로 함께 남는다.
-    assert after["Density (선행 전)"].y[0] == pytest.approx(first_month_density)
-    assert after["Density (선행 전)"].mode == "lines"
-    assert after["Density (선행 전)"].line.dash == "dot"
+    assert after["Density (선행 B/O 전)"].y[0] == pytest.approx(first_month_density)
+    assert after["Density (선행 B/O 전)"].mode == "lines"
+    assert after["Density (선행 B/O 전)"].line.dash == "dot"
+
+
+def _corner_notes(app: AppTest) -> dict[str, tuple[str, str, float]]:
+    """LOB 월 Figure 의 Density 칸 오른쪽 위 글자(선행 입고 실적) — 월 라벨 → (글자, hover, x)."""
+    figure = app.session_state["spy_figures"]["production_lob_months"]
+    labels = _lob_month_labels(app)
+    notes: dict[str, tuple[str, str, float]] = {}
+    for annotation in figure.layout.annotations:
+        if annotation.xanchor != "right" or annotation.font.color != tokens.ADVANCE_SHIPMENT_TEXT:
+            continue
+        index = round(float(annotation.x) * len(labels)) - 1
+        notes[labels[index]] = (
+            str(annotation.text),
+            str(annotation.hovertext),
+            float(annotation.x),
+        )
+    return notes
+
+
+def test_the_advance_shipment_toggle_writes_notes_in_the_density_cells(tmp_path: Path) -> None:
+    """「선행 입고」 를 켜면 선행 입고 실적이 Density 칸 오른쪽 위에 적힌다(과거 달 포함).
+
+    계산은 바꾸지 않는다 — 값·선 모두 그대로이고 글자만 더해진다. 토글과 프로필 version 은
+    Figure 캐시 키에 든다.
+    """
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database_path = tmp_path / "scenario.duckdb"
+    _seed_past_months(database_path, [202512])
+    DuckDBScenarioRepository(database_path).replace_global_advance_shipment(
+        pd.DataFrame({"생산계획년월": [202512, 202601, 202602], "선행 입고": [1.2, -0.5, 0.0]}),
+        source="테스트",
+    )
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    app.session_state["production_month_range_v2"] = ("2025-12", "2026-12")
+    app.session_state["dashboard_show_performance"] = True
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state["home_show_advance_shipment"] is False
+    assert _corner_notes(app) == {}
+    before_density = _lob_traces(app)["Density"].y
+    before_slots = _value_slots(app)
+
+    app.session_state["home_show_advance_shipment"] = True
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _cache_state(app) == "생성"
+    notes = _corner_notes(app)
+    labels = _lob_month_labels(app)
+    assert {label: note[:2] for label, note in notes.items()} == {
+        "25.12": ("+1.2", "선행 입고 실적 +1.2억Gb"),
+        "26.01": ("-0.5", "선행 입고 실적 -0.5억Gb"),
+    }
+    # 칸 오른쪽 끝에 붙는다 — x 는 그 칸의 오른쪽 경계다.
+    assert notes["26.01"][2] == pytest.approx((labels.index("26.01") + 1) / len(labels))
+    # 값의 자리·크기와 Density 선은 그대로다.
+    assert _value_slots(app) == before_slots
+    assert list(_lob_traces(app)["Density"].y) == list(before_density)
+
+    app.session_state["home_show_advance_shipment"] = False
+    app.run()
+    assert _cache_state(app) == "적중"
+    assert _corner_notes(app) == {}
+
+
+def test_the_advance_shipment_editor_offers_past_months_too(tmp_path: Path) -> None:
+    """선행 입고 실적은 실적이라 지난 달에 넣는다 — 편집기 칸은 LOB 월 축의 과거 달까지 연다."""
+    database_path = tmp_path / "scenario.duckdb"
+    _seed_past_months(database_path, [202512, 202511])
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    app.session_state["production_month_range_v2"] = ("2025-11", "2026-12")
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    editors = {
+        str(frame.value.iloc[0]["구분"]): list(frame.value.columns)
+        for frame in app.dataframe
+        if "구분" in frame.value.columns and len(frame.value) == 1
+    }
+    assert editors["선행 입고 실적"][1:3] == ["25.11", "25.12"]
+    # 칸은 LOB 월 축(연간 Total 을 뺀 달)과 같다.
+    assert editors["선행 입고 실적"][1:] == [
+        label for label in _lob_month_labels(app) if "." in label
+    ]
 
 
 def _lob_traces(app: AppTest) -> dict[str, Any]:

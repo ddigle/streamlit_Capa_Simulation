@@ -2,9 +2,9 @@
 
 """시뮬레이션 DuckDB 읽기의 Streamlit 캐시 경계.
 
-저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 열 종
-(표시순서·공정 표시명·비교 시나리오·선행·Summary 공지·Top5 대역·주요공정·실행 Capa·
-과거 구간·확보율 판정 기준)을 여기서만 캐시한다.
+저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 열한 종
+(표시순서·공정 표시명·비교 시나리오·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·주요공정·
+실행 Capa·과거 구간·확보율 판정 기준)을 여기서만 캐시한다.
 """
 
 from dataclasses import fields
@@ -16,6 +16,7 @@ import streamlit as st
 
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
+    GlobalAdvanceShipment,
     GlobalComparisonScenario,
     GlobalDisplayOrder,
     GlobalExecutionCapacity,
@@ -178,6 +179,26 @@ def load_global_advance_load(database_path: str) -> GlobalAdvanceLoad:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_advance_shipment_payload(database_path: str) -> dict[str, Any]:
+    profile = get_scenario_repository(database_path).load_global_advance_shipment()
+    return _payload(profile, GlobalAdvanceShipment)
+
+
+def load_global_advance_shipment(database_path: str) -> GlobalAdvanceShipment:
+    """Share the 선행 입고 실적 profile without caching its model class."""
+    return GlobalAdvanceShipment(**_load_global_advance_shipment_payload(database_path))
+
+
+def clear_global_advance_shipment_cache() -> None:
+    """선행 입고 실적 프로필만 비운다.
+
+    선행 B/O 와 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다 — 어떤 `RQ_*` 표에도
+    오버레이되지 않고 계산에도 들어가지 않는 화면 표시값이다.
+    """
+    _load_global_advance_shipment_payload.clear()
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
 def _load_global_securement_threshold_payload(database_path: str) -> dict[str, Any]:
     profile = get_scenario_repository(database_path).load_global_securement_threshold()
     return _payload(profile, GlobalSecurementThreshold)
@@ -305,9 +326,9 @@ def clear_global_past_data_cache() -> None:
 
 
 def clear_global_advance_load_cache() -> None:
-    """선행 물량 프로필만 비운다.
+    """선행 B/O 프로필만 비운다.
 
-    표시명과 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다. 선행 물량은 어떤 `RQ_*`
+    표시명과 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다. 선행 B/O 는 어떤 `RQ_*`
     표에도 오버레이되지 않고 화면 산출 직전에만 곱해진다.
     """
     _load_global_advance_load_payload.clear()
@@ -333,6 +354,7 @@ def clear_global_process_rename_cache() -> None:
 
 def clear_scenario_repository() -> None:
     _load_global_advance_load_payload.clear()
+    _load_global_advance_shipment_payload.clear()
     _load_global_securement_threshold_payload.clear()
     _load_global_comparison_scenario_payload.clear()
     _load_global_execution_capacity_payload.clear()

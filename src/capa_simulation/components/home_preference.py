@@ -2,9 +2,9 @@
 
 """HOME 사이드바 `LOB 표시 조건` 카드, `Capa LOB 현황` 제목 줄, `Preference` 탭.
 
-**화면을 보는 조건(선행·실행·GAP·상세·EDP·Past Data·제품별 비중 단위)은 사이드바 조건
-카드**다(2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 상자에 흩어져
-있었다). 탭에는 비교 시나리오·확보율 판정 기준·선행 투입 물량·`Summary 공지`·Top5 대역·
+**화면을 보는 조건(선행 B/O·선행 입고·실행·GAP·상세·EDP·Past Data·제품별 비중 단위)은 사이드바
+조건 카드**다(2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 상자에 흩어져
+있었다). 탭에는 비교 시나리오·확보율 판정 기준·선행 B/O·선행 입고 실적·`Summary 공지`·Top5 대역·
 주요공정·실행 Capa 편집기가 있고, 저장은 모두 공용 프로필 교체다. 저장 버튼은 편집 칸
 **위**다. 설명은 Guide(`guides/home.md`)다.
 
@@ -16,15 +16,22 @@
 from __future__ import annotations
 
 import html
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import dataclass
 
 import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.profile_caption import (
+    HasProfileVersion as VersionedProfile,
+)
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.design import tokens
+from capa_simulation.home_state import (
+    ADVANCE_SHIPMENT_TOGGLE_KEY as ADVANCE_SHIPMENT_TOGGLE_KEY,
+)
 from capa_simulation.home_state import (
     ADVANCE_TOGGLE_KEY as ADVANCE_TOGGLE_KEY,
 )
@@ -53,6 +60,7 @@ from capa_simulation.home_state import (
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
     clear_global_advance_load_cache,
+    clear_global_advance_shipment_cache,
     clear_global_comparison_scenario_cache,
     clear_global_execution_capacity_cache,
     clear_global_key_process_cache,
@@ -64,6 +72,7 @@ from capa_simulation.persistence.cache import (
 )
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
+    GlobalAdvanceShipment,
     GlobalExecutionCapacity,
     GlobalKeyProcess,
     GlobalSecurementThreshold,
@@ -75,7 +84,13 @@ from capa_simulation.persistence.models import (
 from capa_simulation.scenario_activation import active_persisted_revision_id
 from capa_simulation.services.advance_load import (
     ADVANCE_LOAD_ROW_LABEL,
+    ADVANCE_LOAD_VALUE_COLUMN,
     merge_advance_load_edits,
+)
+from capa_simulation.services.advance_shipment import (
+    ADVANCE_SHIPMENT_ROW_LABEL,
+    advance_shipment_by_month,
+    merge_advance_shipment_edits,
 )
 from capa_simulation.services.execution_capacity import (
     EXECUTION_CAPACITY_COLUMNS,
@@ -89,6 +104,7 @@ from capa_simulation.services.key_process import (
 )
 from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.monthly_amount import amounts_by_month
 from capa_simulation.services.product_share import PRODUCT_SHARE_BASES
 from capa_simulation.services.securement_threshold import (
     SECURE_COLUMN,
@@ -105,6 +121,9 @@ COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
 COMPARISON_REVISION_KEY = "home_preference_comparison_revision"
 ADVANCE_EDITOR_KEY = "home_preference_advance_editor"
 ADVANCE_NOTE_KEY = "home_preference_advance_note"
+ADVANCE_SHIPMENT_EDITOR_KEY = "home_preference_advance_shipment_editor"
+ADVANCE_SHIPMENT_NOTE_KEY = "home_preference_advance_shipment_note"
+ADVANCE_SHIPMENT_FLASH_KEY = "home_advance_shipment_flash"
 THRESHOLD_EDITOR_KEY = "home_preference_threshold_editor"
 THRESHOLD_NOTE_KEY = "home_preference_threshold_note"
 THRESHOLD_CLEAR_OUTSIDE_KEY = "home_preference_threshold_clear_outside"
@@ -237,10 +256,18 @@ def render_home_view_card(*, comparison_ready: bool) -> None:
     않으면 고장으로 읽힌다 — 그래서 막힌 까닭만은 툴팁으로 남긴다. 각 토글의 뜻은 Guide 다.
     """
     with condition_card("LOB 표시 조건", name="home"):
+        # 「선행 B/O」 는 계획 밖 B/O 재공을 부하에 더하고(확보율이 그만큼 낮아진다), 「선행 입고」
+        # 는 계획 안의 선행 입고 실적을 Density 칸에 적기만 한다(2026-10-06 사용자 결정).
         st.toggle(
-            "선행 전망",
+            "선행 B/O",
             value=HOME_TOGGLE_DEFAULTS[ADVANCE_TOGGLE_KEY],
             key=ADVANCE_TOGGLE_KEY,
+            persist_state="session",
+        )
+        st.toggle(
+            "선행 입고",
+            value=HOME_TOGGLE_DEFAULTS[ADVANCE_SHIPMENT_TOGGLE_KEY],
+            key=ADVANCE_SHIPMENT_TOGGLE_KEY,
             persist_state="session",
         )
         st.toggle(
@@ -316,7 +343,7 @@ def render_lob_title_row(
     if unapplied_months:
         labels = _month_labels(unapplied_months)
         st.warning(
-            f"선행 반영 계획이 0 이하가 되어 적용하지 못한 달이 있습니다: {labels}. "
+            f"선행 B/O 반영 계획이 0 이하가 되어 적용하지 못한 달이 있습니다: {labels}. "
             "해당 달은 기존 계획 그대로 그립니다.",
             icon=":material/report:",
         )
@@ -328,6 +355,7 @@ def render_home_preference(
     month_labels: Sequence[str],
     threshold_profile: GlobalSecurementThreshold,
     advance_profile: GlobalAdvanceLoad,
+    advance_shipment_profile: GlobalAdvanceShipment,
     execution_profile: GlobalExecutionCapacity,
     top5_band_profile: GlobalTop5Band,
     key_process_profile: GlobalKeyProcess,
@@ -339,7 +367,8 @@ def render_home_preference(
     database_path: str,
     active_scenario_id: str | None,
 ) -> None:
-    """비교 시나리오 선택과 판정 기준·Summary 공지·선행 물량·Top5 대역·주요공정·실행 Capa 입력 시트.
+    """비교 시나리오 선택과 판정 기준·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·주요공정·실행
+    Capa 입력 시트.
 
     보는 조건(EDP·Past Data 포함 등)은 사이드바 `LOB 표시 조건` 카드다(`render_home_view_card`).
     """
@@ -354,6 +383,12 @@ def render_home_preference(
         months=months,
         month_labels=month_labels,
         advance_profile=advance_profile,
+        database_path=database_path,
+    )
+    render_advance_shipment_editor(
+        months=months,
+        month_labels=month_labels,
+        advance_shipment_profile=advance_shipment_profile,
         database_path=database_path,
     )
     _render_summary_note_editor(
@@ -601,7 +636,7 @@ def render_threshold_editor(
         stored = _thresholds_by_month(threshold_profile)
         outside = sorted(set(stored) - set(months))
         with st.form("home_threshold_form"):
-            # 작업 줄(저장·메모)은 표 **위**다 — 선행 물량 편집기와 같은 결이다.
+            # 작업 줄(저장·메모)은 표 **위**다 — 선행 B/O 편집기와 같은 결이다.
             with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
                 submitted = st.form_submit_button(
                     "판정 기준 저장",
@@ -734,7 +769,7 @@ def _save_thresholds(
     source: str,
     clear_outside: bool = False,
 ) -> None:
-    """표에 보이는 달만 갈아 끼우고 조회기간 밖 저장분은 그대로 둔다(선행 물량과 같은 규칙).
+    """표에 보이는 달만 갈아 끼우고 조회기간 밖 저장분은 그대로 둔다(선행 B/O 와 같은 규칙).
 
     `clear_outside` 면 조회기간 밖 월별 기준을 지운 뒤 합친다.
     """
@@ -853,6 +888,53 @@ def _ratio_or_none(value: object) -> float | None:
     return None if pd.isna(numeric) else float(numeric) / 100.0
 
 
+@dataclass(frozen=True)
+class _MonthlyAmountEditor:
+    """월별 억Gb 한 줄 편집기(선행 B/O·선행 입고 실적)의 글자와 키.
+
+    두 편집기는 모양·저장 규칙(`services/monthly_amount`)이 같고 이름과 저장 자리만 다르다. 폼을
+    두 벌 적으면 한쪽만 고쳐져 두 상자가 다르게 움직인다. 키는 편집기마다 따로다 — 선행 B/O 의
+    키는 예전 이름 그대로 둬 남아 있는 세션 값이 이어진다.
+    """
+
+    title: str
+    empty: str
+    form_key: str
+    save_label: str
+    note_key: str
+    placeholder: str
+    flash_key: str
+    editor_key: str
+    row_label: str
+    saved_message: str
+
+
+_ADVANCE_LOAD_EDITOR = _MonthlyAmountEditor(
+    title="#### :material/fast_forward: 선행 B/O",
+    empty="아직 넣은 선행 B/O 가 없습니다",
+    form_key="home_advance_load_form",
+    save_label="선행 B/O 저장",
+    note_key=ADVANCE_NOTE_KEY,
+    placeholder="예: 26.07 선행 B/O 재공 반영",
+    flash_key="home_advance_flash",
+    editor_key=ADVANCE_EDITOR_KEY,
+    row_label=ADVANCE_LOAD_ROW_LABEL,
+    saved_message="선행 B/O 를 공용 설정으로 저장했습니다.",
+)
+_ADVANCE_SHIPMENT_EDITOR = _MonthlyAmountEditor(
+    title="#### :material/local_shipping: 선행 입고 실적",
+    empty="아직 넣은 선행 입고 실적이 없습니다",
+    form_key="home_advance_shipment_form",
+    save_label="선행 입고 저장",
+    note_key=ADVANCE_SHIPMENT_NOTE_KEY,
+    placeholder="예: 26.03 선행 입고 실적 반영",
+    flash_key=ADVANCE_SHIPMENT_FLASH_KEY,
+    editor_key=ADVANCE_SHIPMENT_EDITOR_KEY,
+    row_label=ADVANCE_SHIPMENT_ROW_LABEL,
+    saved_message="선행 입고 실적을 공용 설정으로 저장했습니다.",
+)
+
+
 def _render_advance_editor(
     *,
     months: Sequence[int],
@@ -860,38 +942,99 @@ def _render_advance_editor(
     advance_profile: GlobalAdvanceLoad,
     database_path: str,
 ) -> None:
+    """선행 B/O — 계획 밖으로 앞서 만든 B/O 재공(억Gb). 「선행 B/O」 토글을 켠 화면의 계획에
+    더한다."""
+
+    def save(values: Sequence[object], source: str) -> None:
+        frame = merge_advance_load_edits(advance_profile.rows, list(months), values)
+        get_scenario_repository(database_path).replace_global_advance_load(frame, source=source)
+        clear_global_advance_load_cache()
+
+    _render_monthly_amount_editor(
+        _ADVANCE_LOAD_EDITOR,
+        months=months,
+        month_labels=month_labels,
+        profile=advance_profile,
+        stored=amounts_by_month(advance_profile.rows, ADVANCE_LOAD_VALUE_COLUMN),
+        save=save,
+    )
+
+
+def render_advance_shipment_editor(
+    *,
+    months: Sequence[int],
+    month_labels: Sequence[str],
+    advance_shipment_profile: GlobalAdvanceShipment,
+    database_path: str,
+) -> None:
+    """선행 입고 실적 — 계획보다 앞서 입고한 물량(억Gb).
+
+    계산은 바꾸지 않고 「선행 입고」 토글을 켜면 Density 칸 오른쪽 위에 적는다.
+
+    `months` 는 HOME `Capa LOB 현황` 월 축의 달 그대로다 — Past Data 를 켰으면 과거 구간 달도
+    든다(실적이라 지난 달에 넣는 값이다). 조회기간 밖 저장분은 선행 B/O 처럼 보존한다.
+    """
+
+    def save(values: Sequence[object], source: str) -> None:
+        frame = merge_advance_shipment_edits(advance_shipment_profile.rows, list(months), values)
+        get_scenario_repository(database_path).replace_global_advance_shipment(frame, source=source)
+        clear_global_advance_shipment_cache()
+
+    _render_monthly_amount_editor(
+        _ADVANCE_SHIPMENT_EDITOR,
+        months=months,
+        month_labels=month_labels,
+        profile=advance_shipment_profile,
+        stored=advance_shipment_by_month(advance_shipment_profile.rows),
+        save=save,
+    )
+
+
+def _render_monthly_amount_editor(
+    editor: _MonthlyAmountEditor,
+    *,
+    months: Sequence[int],
+    month_labels: Sequence[str],
+    profile: VersionedProfile,
+    stored: Mapping[int, float],
+    save: Callable[[Sequence[object], str], None],
+) -> None:
+    """월별 억Gb 한 줄 편집기. 저장은 **표에 보이는 달만** 갈아 끼운다(`save` 가 병합한다).
+
+    보이지 않는 달까지 함께 지우면 조회기간을 좁힌 채 저장한 사람이 다른 달의 입력을 모르는 새
+    날린다.
+    """
     with st.container(border=True):
-        st.markdown("#### :material/fast_forward: 선행 투입 물량")
-        st.caption(profile_version_caption(advance_profile, empty="아직 넣은 선행 물량이 없습니다"))
+        st.markdown(editor.title)
+        st.caption(profile_version_caption(profile, empty=editor.empty))
         if not months:
             st.info("조회기간에 계획이 있는 달이 없어 입력할 칸이 없습니다.")
             return
-        stored = _stored_by_month(advance_profile)
         table = pd.DataFrame(
-            [[ADVANCE_LOAD_ROW_LABEL, *[stored.get(month, 0.0) for month in months]]],
+            [[editor.row_label, *[stored.get(month, 0.0) for month in months]]],
             columns=[DIMENSION_COLUMN, *month_labels],
         )
-        with st.form("home_advance_load_form"):
+        with st.form(editor.form_key):
             # 작업 줄(저장·메모)은 표 **위**다 — 표를 고친 뒤 버튼을 찾지 않게 한다. 버튼이
             # 왼쪽이다 — 오른쪽 끝에 두면 표 위에 떠오르는 도구 막대(보기·내려받기·검색)에 가린다.
             with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
                 submitted = st.form_submit_button(
-                    "선행 물량 저장",
+                    editor.save_label,
                     icon=":material/save:",
                     type="primary",
                 )
                 note = st.text_input(
                     "변경 메모",
-                    placeholder="예: 26.07 선행 투입분 반영",
-                    key=ADVANCE_NOTE_KEY,
+                    placeholder=editor.placeholder,
+                    key=editor.note_key,
                 )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
             with notice:
-                render_flash("home_advance_flash")
+                render_flash(editor.flash_key)
             edited = st.data_editor(
                 table,
-                key=ADVANCE_EDITOR_KEY,
+                key=editor.editor_key,
                 hide_index=True,
                 num_rows="fixed",
                 width="stretch",
@@ -907,30 +1050,21 @@ def _render_advance_editor(
                 },
             )
         if not submitted:
-            _render_out_of_range_notice(months, advance_profile)
+            _render_out_of_range_notice(months, stored)
             return
+        row = edited.iloc[0]
         try:
-            _save_advance_load(
-                database_path,
-                months=months,
-                month_labels=month_labels,
-                edited=edited,
-                advance_profile=advance_profile,
-                source=note.strip() or "웹 직접 편집",
-            )
+            save([row[label] for label in month_labels], note.strip() or "웹 직접 편집")
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
         else:
-            queue_flash("home_advance_flash", "선행 투입 물량을 공용 설정으로 저장했습니다.")
+            queue_flash(editor.flash_key, editor.saved_message)
             st.rerun()
 
 
-def _render_out_of_range_notice(
-    months: Sequence[int],
-    advance_profile: GlobalAdvanceLoad,
-) -> None:
-    """조회기간 밖에 남아 있는 입력분. 보이지 않는 값이 계산에 남는 것을 알린다."""
-    outside = sorted(set(_stored_by_month(advance_profile)) - set(months))
+def _render_out_of_range_notice(months: Sequence[int], stored: Mapping[int, float]) -> None:
+    """조회기간 밖에 남아 있는 입력분. 보이지 않는 값이 화면에 남는 것을 알린다."""
+    outside = sorted(set(stored) - set(months))
     if not outside:
         return
     labels = _month_labels(outside)
@@ -940,43 +1074,9 @@ def _render_out_of_range_notice(
     )
 
 
-def _save_advance_load(
-    database_path: str,
-    *,
-    months: Sequence[int],
-    month_labels: Sequence[str],
-    edited: pd.DataFrame,
-    advance_profile: GlobalAdvanceLoad,
-    source: str,
-) -> None:
-    """표에 보이는 달만 갈아 끼우고 조회기간 밖 입력분은 그대로 둔다.
-
-    보이지 않는 달까지 함께 지우면 조회기간을 좁힌 채 저장한 사람이 다른 달의 입력을
-    모르는 새 날린다.
-    """
-    row = edited.iloc[0]
-    frame = merge_advance_load_edits(
-        advance_profile.rows,
-        list(months),
-        [row[label] for label in month_labels],
-    )
-    get_scenario_repository(database_path).replace_global_advance_load(frame, source=source)
-    clear_global_advance_load_cache()
-
-
 def _month_labels(months: Sequence[int]) -> str:
     """차트 월 칸과 같은 `YY.MM` 표기. 안내 문구가 표와 같은 낱말을 써야 찾을 수 있다."""
     return ", ".join(month_label(month) for month in months)
-
-
-def _stored_by_month(advance_profile: GlobalAdvanceLoad) -> dict[int, float]:
-    rows = advance_profile.rows
-    if rows.empty:
-        return {}
-    return {
-        int(month): float(value)
-        for month, value in zip(rows["생산계획년월"], rows["선행 물량"], strict=True)
-    }
 
 
 def _render_summary_note_editor(

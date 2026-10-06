@@ -7,7 +7,10 @@ from types import MappingProxyType
 
 EDP_TOGGLE_KEY = "home_preference_include_edp"
 PAST_DATA_TOGGLE_KEY = "home_preference_include_past"
+# 화면 이름은 「선행 B/O」다. 키는 세션 계약이라 예전 이름(advance) 그대로 둔다.
 ADVANCE_TOGGLE_KEY = "home_show_advance"
+# 「선행 입고」 — 선행 입고 실적을 Density 칸에 적기만 한다(계산은 바꾸지 않는다).
+ADVANCE_SHIPMENT_TOGGLE_KEY = "home_show_advance_shipment"
 EXECUTION_TOGGLE_KEY = "home_show_execution"
 PLAN_DETAIL_CUSTOMER_KEY = "home_preference_plan_detail_customer"
 COMPARISON_TOGGLE_KEY = "home_show_comparison"
@@ -24,6 +27,7 @@ HOME_TOGGLE_DEFAULTS: Mapping[str, bool] = MappingProxyType(
         EDP_TOGGLE_KEY: False,
         PAST_DATA_TOGGLE_KEY: True,
         ADVANCE_TOGGLE_KEY: False,
+        ADVANCE_SHIPMENT_TOGGLE_KEY: False,
         EXECUTION_TOGGLE_KEY: False,
         PLAN_DETAIL_CUSTOMER_KEY: False,
         COMPARISON_TOGGLE_KEY: False,

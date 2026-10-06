@@ -11,6 +11,7 @@ from typing import Any
 import plotly.graph_objects as go
 
 from capa_simulation.components.home_dimensions import (
+    CORNER_NOTE_RIGHT_PADDING_PX,
     delta_ink_yshift_px,
     delta_line_shift_px,
     value_ink_yshift_px,
@@ -268,11 +269,18 @@ def add_fixed_table_row(
     bold: bool,
     gaps: list[str] | None = None,
     lower_gaps: list[str] | None = None,
+    corner_notes: Sequence[tuple[str, str]] | None = None,
 ) -> None:
     """Draw a fixed-height row without Plotly Table's internal scroll layer.
 
     `gaps` 는 값 **위**, `lower_gaps` 는 값 **아래**에 적을 증감 문구다. 빈 문자열이면 그
     칸에는 아무것도 적지 않는다.
+
+    `corner_notes` 는 칸 **오른쪽 위**에 적을 `(글자, hover 글자)` 다(선행 입고 실적). 값 위 증감과
+    같은 높이에 서되 오른쪽 끝(`CORNER_NOTE_RIGHT_PADDING_PX`)에 붙는다 — 값·증감·칸 경계 어느
+    것도 움직이거나 줄이지 않고 남은 자리에 놓는다. 색은 증감과 갈리는 `ADVANCE_SHIPMENT_TEXT`,
+    크기는 증감과 같은 `DELTA_FONT_SIZE_PX` 다. hover 글자는 그 주석에 직접 단다(trace 를 더하지
+    않는다).
 
     **값은 증감이 있든 없든 같은 크기로 칸 한가운데에 선다.** 증감을 끼우려고 값을 줄이거나
     밀면 토글 하나에 표 전체의 숫자가 흔들린다. 두 줄이 들어갈 자리는 행 높이가 미리 비워
@@ -281,6 +289,8 @@ def add_fixed_table_row(
     value_count = max(len(values), 1)
     upper_texts = _gap_texts(gaps, len(values))
     lower_texts = _gap_texts(lower_gaps, len(values))
+    if corner_notes is not None and len(corner_notes) != len(values):
+        raise ValueError("칸 오른쪽 위 글자 개수가 값 개수와 다릅니다.")
     middle = (domain[0] + domain[1]) / 2
     # 세 글자를 **글리프 가운데** 기준으로 고르게 벌린다. 상자 기준으로 놓으면 같은 거리를
     # 주어도 위쪽 틈이 아래쪽보다 넓어 보인다.
@@ -330,6 +340,30 @@ def add_fixed_table_row(
                     "yshift": gap_shift,
                     "font": {
                         "color": delta_color(gap_text),
+                        "size": tokens.DELTA_FONT_SIZE_PX,
+                        "family": tokens.FONT_FAMILY_NUMERIC,
+                    },
+                }
+            )
+        note, note_hover = corner_notes[value_index] if corner_notes is not None else ("", "")
+        if note:
+            annotations.append(
+                {
+                    "x": (value_index + 1) / value_count,
+                    "y": middle,
+                    "xref": "paper",
+                    "yref": "paper",
+                    "text": html.escape(note),
+                    "hovertext": html.escape(note_hover),
+                    "showarrow": False,
+                    "xanchor": "right",
+                    "yanchor": "middle",
+                    "xshift": -CORNER_NOTE_RIGHT_PADDING_PX,
+                    # 값 위 증감과 **같은 높이**다. 그 띠는 값 글리프와 `DELTA_GUTTER_PX`, 행 위
+                    # 경계와 `ROW_EDGE_PADDING_PX` 만큼 떨어져 있어 위아래로 겹칠 것이 없다.
+                    "yshift": shift + delta_shift,
+                    "font": {
+                        "color": tokens.ADVANCE_SHIPMENT_TEXT,
                         "size": tokens.DELTA_FONT_SIZE_PX,
                         "family": tokens.FONT_FAMILY_NUMERIC,
                     },

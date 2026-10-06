@@ -23,6 +23,7 @@ from capa_simulation.io.core_data_source import (
 )
 from capa_simulation.persistence import (
     advance_load_store,
+    advance_shipment_store,
     display_order_store,
     execution_capacity_store,
     home_profile_store,
@@ -51,6 +52,7 @@ from capa_simulation.persistence.display_order_store import (
 from capa_simulation.persistence.migration_runner import SchemaAheadOfCode, apply_migrations
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
+    GlobalAdvanceShipment,
     GlobalComparisonScenario,
     GlobalDisplayOrder,
     GlobalExecutionCapacity,
@@ -96,6 +98,7 @@ from capa_simulation.persistence.voc_store import (
     update_voc_post_resolved,
 )
 from capa_simulation.services.advance_load import prepare_advance_load
+from capa_simulation.services.advance_shipment import prepare_advance_shipment
 from capa_simulation.services.execution_capacity import prepare_execution_capacity
 from capa_simulation.services.key_process import normalize_key_process_presets
 from capa_simulation.services.past_data import prepare_past_table
@@ -348,7 +351,7 @@ class DuckDBScenarioRepository:
     def load_global_execution_capacity(self) -> GlobalExecutionCapacity:
         """Load the scenario-independent execution-capacity profile.
 
-        선행 물량 프로필과 같은 이유로 예외를 내지 않는다. 한 번도 저장하지 않은 상태가
+        선행 B/O 프로필과 같은 이유로 예외를 내지 않는다. 한 번도 저장하지 않은 상태가
         정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
         """
         with self._connect() as connection:
@@ -545,12 +548,40 @@ class DuckDBScenarioRepository:
         해제)도 정상 저장이며 version 은 올라간다.
         """
         prepared_rows = prepare_advance_load(rows)
-        source_label = required_text(source, "선행 물량 변경 출처")
+        source_label = required_text(source, "선행 B/O 변경 출처")
         with self._write_transaction() as connection:
             advance_load_store.replace_global_advance_load(
                 connection, prepared_rows, source=source_label
             )
         return self.load_global_advance_load()
+
+    def load_global_advance_shipment(self) -> GlobalAdvanceShipment:
+        """Load the scenario-independent 선행 입고 실적 profile (display only).
+
+        다른 공용 프로필과 같은 이유로 예외를 내지 않는다. 한 번도 저장하지 않은 상태가
+        정상이고 여기서 죽으면 첫 저장 전까지 HOME 이 열리지 않는다.
+        """
+        with self._connect() as connection:
+            return advance_shipment_store.load_global_advance_shipment(connection)
+
+    def replace_global_advance_shipment(
+        self,
+        rows: pd.DataFrame,
+        *,
+        source: str,
+    ) -> GlobalAdvanceShipment:
+        """Atomically replace the shared 선행 입고 실적 profile without a scenario revision.
+
+        선행 B/O 와 같은 결로 현재본만 남기고 version 을 올린다. 행 0건(전체 해제)도 정상
+        저장이며 version 은 올라간다. 부호는 입력한 그대로 저장한다.
+        """
+        prepared_rows = prepare_advance_shipment(rows)
+        source_label = required_text(source, "선행 입고 실적 변경 출처")
+        with self._write_transaction() as connection:
+            advance_shipment_store.replace_global_advance_shipment(
+                connection, prepared_rows, source=source_label
+            )
+        return self.load_global_advance_shipment()
 
     def load_global_securement_threshold(self) -> GlobalSecurementThreshold:
         """Load the scenario-independent securement judgement thresholds.

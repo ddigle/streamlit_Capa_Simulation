@@ -80,10 +80,16 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
 ### `app_meta`
 
 - `schema_migration`: 적용한 SQL 마이그레이션 버전과 체크섬
-- `global_advance_load`·`global_advance_load_month`: 시나리오와 독립된 공용 선행 투입 물량
-  프로필(마이그레이션 0018). 월이 기본키라 한 달에 한 값이고, 교체마다 version 이 오르며
-  이전 값은 보존하지 않는다. 화면 산출 직전에만 곱해지고 어떤 `RQ_*` 표에도 오버레이되지
-  않는다.
+- `global_advance_load`·`global_advance_load_month`: 시나리오와 독립된 공용 **선행 B/O**
+  프로필(마이그레이션 0018 — 화면 이름은 2026-10-06 에 「선행 투입 물량」에서 「선행 B/O」로
+  바꿨고 표·컬럼 이름 `선행 물량` 은 그대로다). 계획 밖으로 앞서 만든 B/O 재공(억Gb)이라 계획에
+  더한다. 월이 기본키라 한 달에 한 값이고, 교체마다 version 이 오르며 이전 값은 보존하지
+  않는다. 화면 산출 직전에만 곱해지고 어떤 `RQ_*` 표에도 오버레이되지 않는다.
+- `global_advance_shipment`·`global_advance_shipment_month`: 시나리오와 독립된 공용 **선행 입고
+  실적** 프로필(마이그레이션 0031). 계획보다 앞서 입고한 물량(억Gb, 부호는 입력한 그대로)이고
+  생산계획에 이미 들어 있으므로 **계산에 들어가지 않는다** — HOME `Capa LOB 현황` Density 칸
+  오른쪽 위에 적기만 한다. 모양·교체 규칙은 선행 B/O 와 같다(월 기본키, 0 은 행 없음, 교체마다
+  version+1, 소유 컬럼 없음).
 - `global_execution_capacity`·`global_execution_capacity_row`: 시나리오와 독립된 공용 실행
   Capa 반영 프로필(마이그레이션 0021). `(생산계획년월, 공정)` 이 기본키라 한 달·한 공정에 한
   값이고, 교체마다 version 이 오르며 이전 값은 보존하지 않는다. `증감 확보율` 의 단위는

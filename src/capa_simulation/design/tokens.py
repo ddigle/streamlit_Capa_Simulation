@@ -108,6 +108,12 @@ _LIGHT: Final[dict[str, Any]] = {
     # 옮긴 것이 그래서다(그 면에서 3.54:1 이었다).
     "DELTA_INCREASE": "#A14100",
     "DELTA_DECREASE": "#1D4ED8",
+    # 선행 입고 실적을 Density 칸 오른쪽 위에 적는 글자색. 같은 띠에 선 선행 B/O 증감(`DELTA_*`)과
+    # 갈려야 하므로 그 두 계열(갈색·파랑)이 아닌 청록이다 — 정상 시야 ΔE ≥ 21·색각이상 ≥ 10.
+    # 12px 글자라 4.5:1 이 기준이고, 글자가 서는 월 칸 면(흰 면·줄무늬·과거 구간 둘) 모두에서
+    # 4.96:1 이상이다. `ACCENT`(#0F766E)는 과거 구간 면에서 4.25:1 이라 쓰지 않는다. 연간 Total
+    # 칸에는 적지 않는다.
+    "ADVANCE_SHIPMENT_TEXT": "#0E6B5E",
     # --------------------------------------------------------------- 실행 증감 면색
     # 실행 Capa 반영으로 확보율이 줄거나 늘어난 **구간 자체**를 칠하는 면색이다. 위의
     # `DELTA_*` 는 값 위에 작게 적는 **글자색**이라 역할이 다르고, 면색으로 쓰면 막대 안에서
@@ -268,6 +274,8 @@ _DARK: Final[dict[str, Any]] = {
     # 증감 글자색은 어두운 면에서 읽혀야 하므로 라이트보다 밝은 짝으로 간다.
     "DELTA_INCREASE": "#FBBF24",
     "DELTA_DECREASE": "#7DA8FF",
+    # 어두운 월 칸 면 모두에서 7.3:1 이상, 증감색과 정상 시야 ΔE ≥ 18·색각이상 ≥ 13.
+    "ADVANCE_SHIPMENT_TEXT": "#2DD4BF",
     "DELTA_AREA_DECREASE": "#F9A8D4",
     "DELTA_AREA_INCREASE": "#84CC16",
     "BAR_TRACK": "#31313A",
@@ -387,6 +395,7 @@ if TYPE_CHECKING:
     # 알린다. `Final` 은 값 없이 쓸 수 없어 더미를 주는데, 이 블록이 실행되지 않으므로
     # 그 더미는 화면에 새지 않는다. 이름이 모듈에 없어야 `__getattr__` 이 불린다.
     ACCENT: Final[str] = ""
+    ADVANCE_SHIPMENT_TEXT: Final[str] = ""
     BAR_TRACK: Final[str] = ""
     BORDER: Final[str] = ""
     BORDER_STRONG: Final[str] = ""
