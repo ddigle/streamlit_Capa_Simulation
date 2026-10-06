@@ -36,7 +36,7 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다(PowerShell
 .\.venv\Scripts\python.exe -m streamlit run app.py     # 앱 실행
 .\.venv\Scripts\python.exe -m ruff format --check .
 .\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe -m mypy                      # strict, app.py·app_pages·src 만
+.\.venv\Scripts\python.exe -m mypy                      # strict, app.py·app_pages·src·tests·scripts
 .\.venv\Scripts\python.exe -m pytest
 ```
 
@@ -51,8 +51,11 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다(PowerShell
 (영속성 통합 검증), `scripts\generate_sample_core_data.py`(합성 Core Data 생성).
 `scripts\build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖는다).
 
-`mypy`는 `tests/`·`scripts/`를 검사하지 않는다. Streamlit 화면·상태를 바꿨으면
-`streamlit.testing.v1.AppTest` 또는 실제 브라우저로 페이지 진입·수정·왕복을 추가 검증한다.
+`mypy`는 `tests/`·`scripts/`까지 같은 strict 로 검사한다. 테스트에서 끄는 것은 pandas 스칼라
+합집합 마찰인 `operator` 하나뿐이고 모듈 셋으로 좁혀 두었다(`pyproject.toml` 의 overrides).
+파일 하나만 볼 때도 저장소 루트에서 돌린다(`mypy_path` 가 상대경로다). Streamlit 화면·상태를
+바꿨으면 `streamlit.testing.v1.AppTest` 또는 실제 브라우저로 페이지 진입·수정·왕복을 추가
+검증한다.
 
 DuckDB 파일은 프로세스 배타 잠금이다. 앱 서버가 떠 있으면 같은 DB를 여는 스크립트·테스트가
 `duckdb.IOException`으로 실패한다 — 가상환경 손상이 아니다.

@@ -4,8 +4,9 @@
 
 판정 로직은 한 줄도 여기 두지 않는다. 키 계약과 pull·push 판정은
 `services/object_storage_manifest.py`, 스냅샷 만들기·설치는 `persistence/snapshot_export.py`,
-`aws` 호출은 `io/object_storage.py` 가 맡는다. `scripts/` 는 mypy strict 검사 밖이라
-데이터 유실을 좌우하는 판단을 여기 두면 검사도 단위 테스트도 받지 못한다.
+`aws` 호출은 `io/object_storage.py` 가 맡는다. 데이터 유실을 좌우하는 판단은 IO 와 떼어
+순수 함수로 두어야 단위 테스트가 그대로 부를 수 있다. 여기서는 인자를 읽고 그 판정과
+IO 를 잇기만 한다.
 
 **앱을 끈 상태에서 쓴다.** DuckDB 파일은 프로세스 배타 잠금이라 앱이 떠 있으면 설치가
 실패한다. `status`·`doctor`·`probe` 는 앱이 떠 있어도 안전하다.

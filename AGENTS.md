@@ -88,7 +88,22 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
 ```
 
 `mypy`는 `pyproject.toml`의 `files` 설정에 따라 `app.py`·`app_pages/`·
-`src/capa_simulation/`만 검사한다. `tests/`와 `scripts/`는 타입 검사 범위 밖이다.
+`src/capa_simulation/`·`tests/`·`scripts/`를 모두 strict 로 검사한다.
+
+- `tests/` 에는 `__init__.py` 를 두지 않는다. 넣으면 pytest 가 `tests/` 대신 저장소 루트를
+  `sys.path` 에 넣어 테스트끼리의 맨이름 import(`from test_equipment_availability import ...`)가
+  죽는다. `scripts/` 에도 없다. 그래서 mypy 는 두 폴더의 모듈을 `test_dashboard`·
+  `compact_duckdb` 같은 맨이름으로 보고, overrides 의 `module` 도 그 이름으로 적는다
+  (`tests.*` 는 아무것도 잡지 않고, `test_*` 같은 접두 와일드카드는 mypy 가 거절한다).
+- `mypy_path = "tests, scripts"` 는 테스트가 `scripts/` 모듈을 맨이름으로 부르는 것을 파일
+  하나만 검사할 때도 찾게 한다. 상대경로라 저장소 루트에서 돌린다.
+- 테스트에서 끄는 오류 코드는 pandas-stubs 가 `df.loc[행, 열]` 한 칸을 열두 갈래 합집합으로
+  돌려줘 생기는 `operator` 하나이고, 그 자리가 있는 모듈 셋에만 건다. `arg-type`·
+  `typeddict-item`·`index` 는 끄지 않는다 — 테스트가 계약을 어긴 값을 굳히는 실제 결손이
+  그 코드로 잡힌다. 마찰은 코드로 푼다: `**dict` 언팩은 `TypedDict`, `st.column_config`
+  합집합은 `type` 키로 좁히기, AppTest 노드는 `app.markdown` 같은 타입 있는 접근자나
+  `isinstance(node, Caption)`, `.loc[r, c]` 를 숫자로 볼 때는 변환 없이 비교(숫자인지까지 본다).
+- 계약을 **일부러** 어기는 입력(검증 경로 시험)만 그 줄에 `# type: ignore[코드]` 를 단다.
 
 Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는
 사용자 프로필의 Python 3.10 실행 파일 접근이 차단되어 `Unable to create process` 또는
@@ -1624,7 +1639,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   가변 포인터(`current.json`)를 쓰지 않는다 — 그것이 유일한 read-modify-write 지점이고 앞사람
   저장이 사라지는 경로가 거기서만 생긴다. 포인터를 내림차순 불변 키의 시퀀스로 두면 같은
   seq 에 포인터가 둘인 것 자체가 분기의 물증이 된다. 판정을 `scripts/` 가 아니라 여기 두는
-  이유는 `scripts/` 가 mypy strict 검사 밖이기 때문이다.
+  이유는 데이터 유실을 좌우하는 판정이 `aws`·파일 IO 와 섞이지 않은 순수 함수여야 단위
+  테스트가 그대로 부를 수 있기 때문이다. `scripts/sync_object_storage.py` 는 인자를 읽고 이
+  판정과 IO 를 잇기만 한다.
 
 - `bigdataquery_catalog_view.py`: 시뮬레이션 코드 목록을 표시·검색용으로 정리하고 등록 폼
   기본값을 만든다. Streamlit 을 import 하지 않는 순수 계층이다. 코드·PLAN 조합당 한 행만

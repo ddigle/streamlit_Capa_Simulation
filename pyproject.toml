@@ -62,11 +62,28 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.mypy]
 python_version = "3.10"
 strict = true
-files = ["app.py", "app_pages", "src/capa_simulation"]
+# `tests`·`scripts` 도 같은 strict 로 본다. 두 폴더에는 `__init__.py` 가 없어(`tests/` 에 넣으면
+# pytest 가 저장소 루트를 sys.path 에 넣어 테스트끼리의 맨이름 import 가 죽는다) 모듈 이름이
+# `test_dashboard`·`compact_duckdb` 같은 맨이름이다. 아래 overrides 도 그 이름으로 적는다
+# (`tests.*` 는 아무것도 잡지 않고, `test_*` 같은 접두 와일드카드는 mypy 가 거절한다).
+files = ["app.py", "app_pages", "src/capa_simulation", "tests", "scripts"]
+# `tests/test_deploy_package.py` 처럼 테스트가 `scripts/` 모듈을 맨이름으로 부르는 것을 찾는
+# 경로. 위 `files` 전체를 돌릴 때는 없어도 찾지만, 파일 하나만 넘길 때(`mypy tests/x.py`,
+# 편집기)는 이것이 있어야 찾는다. 상대경로라 저장소 루트에서 돌린다.
+mypy_path = "tests, scripts"
 
 [[tool.mypy.overrides]]
 module = ["duckdb", "duckdb.*", "plotly", "plotly.*"]
 ignore_missing_imports = true
+
+# pandas-stubs 는 `df.loc[행, 열]` 한 칸을 str·bytes·date·complex 등 열두 갈래 합집합으로
+# 돌려준다. 문자열 칸에 `in`, 숫자 칸에 `*` 를 걸면 갈래마다 operator 오류가 나서 cast 를 덧대야
+# 한다. 그 자리가 있는 모듈에서만 이 코드 하나를 끈다. `arg-type`·`typeddict-item`·`index` 는
+# 끄지 않는다 — 테스트가 계약을 어긴 값(빈 `ActiveScenario` 등)을 굳히던 결손이 그 코드로 잡혔다.
+# 모듈을 더할 때는 그 모듈의 operator 오류가 전부 이 마찰인지 먼저 본다.
+[[tool.mypy.overrides]]
+module = ["test_dashboard", "test_e2e_equipment_import", "test_equipment_csv"]
+disable_error_code = ["operator"]
 
 [tool.setuptools.package-data]
 # 이게 없으면 tests·scripts 에서 mypy 를 돌릴 때 실제 타입 오류 대신

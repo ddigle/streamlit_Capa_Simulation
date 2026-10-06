@@ -1296,38 +1296,67 @@ Mold Wafer 이고, 그 이후 Wafer 단위 투입 공정도 대체로 같다. St
   조용히 두 배가 된다. 13개 컬럼 전부가 키인 경로 표라 값 충돌은 생기지 않고 중복만
   접힌다. 현재 데이터에는 중복이 0건이라 계산 결과가 바뀌지 않는다.
 
-### 타입 검사 범위 (부분 처리)
+### 타입 검사 범위 (완료 — 2026-10-07, 사용자 결정 3-5 (b))
 
 - [x] `src/capa_simulation/py.typed` 를 추가했다. 이게 없어서 `tests`·`scripts` 에 mypy 를
   돌리면 실제 오류 대신 "missing library stubs or py.typed marker" 만 42건 나왔다. 이제
   진짜 오류가 보인다.
-- [ ] `pyproject.toml` 의 mypy `files` 에 `tests`·`scripts` 를 넣는다. 2026-09-13 실측으로
-  `--explicit-package-bases tests scripts` 는 **188건 / 37파일** 이다(checked 114 source
-  files, mypy 1.20.2 · pandas 2.3.3 + pandas-stubs · streamlit 1.63.0 · plotly 6.9.0).
-  코드별로 attr-defined 39 · typeddict-item 38 · arg-type 37 · index 17 · no-untyped-def 16 ·
-  operator 12 · import-not-found 11 · 나머지 18(no-untyped-call 5 · union-attr 3 ·
-  no-any-return 3 · override 2 · list-item 2 · func-returns-value 1 · type-var 1 · misc 1).
-- [ ] 1단계는 `[tool.mypy]` 에 `mypy_path = "tests, scripts"` 한 줄이다. 코드를 한 줄도
-  고치지 않고 **188 → 176** 으로 준다(실측). `import-not-found` 11건은 전부 검색경로
-  문제다 — 10건은 테스트가 다른 테스트 모듈을 bare 이름으로 부르는 것이고(pytest 의
-  prepend 모드가 `tests/` 를 `sys.path[0]` 에 넣어 주는 데 기댄다), 1건은
-  `tests/test_deploy_package.py` 가 `sys.path` 에 끼워 넣는 `scripts/` 다. 이 한 줄은 기본
-  `mypy` 실행(139 files)에 영향이 없다. 상대경로는 cwd 기준이라 저장소 루트에서 돌려야 한다.
-- [ ] `tests/__init__.py` 는 넣지 않는다. pytest 는 `__init__.py` 가 없는 첫 상위를
-  pkg_root 로 잡아 `sys.path[0]` 에 넣는다. `__init__.py` 를 넣으면 pkg_root 가 저장소
-  루트로 올라가 위 10건의 import 가 전부 `ModuleNotFoundError` 로 죽는다.
-- [ ] 남은 176건 중 **스텁·라이브러리 마찰이 77건(41%)** 이라 `cast` 만 늘어난다 — streamlit
-  `ColumnConfig` TypedDict 합집합 42 · `df.loc[r, c]` 의 pandas 스칼라 합집합 23 ·
-  `f(**dict)` 언팩 12. 나머지 99건이 고칠 값어치가 있고, 그중 74건이 여섯 줄에 몰려 있다.
-- [ ] 런타임·계약이 걸린 실제 결손: `tests/test_page_bootstrap.py` 가 `display_order` 에
-  `pd.DataFrame()` 를 넘기는데 필드 타입은 `PreparedDisplayOrder | None` 이다. 같은 파일과
-  `tests/test_scenario_state.py` 의 `ActiveScenario` 리터럴에 `content_token` 이 없어
-  **캐시 키 불변조건을 안 지키는 모양을 테스트가 굳히고 있다.**
-  `scripts/compact_duckdb.py` 의 `sys.exit(main())` 은 `main() -> None` 이라 항상 0 이다.
-- [ ] `files` 를 넓히는 시점은 결정 대기다. (a) 176건을 0으로 만든 뒤 넓히거나,
-  (b) 지금 넓히면서 `[[tool.mypy.overrides]] module = ["tests.*"]` 로 스텁 마찰 77건을
-  완화하고 진짜 결손 99건만 걸리게 한다. (b)는 즉시 켜지지만 테스트 코드의 strict 수준이
-  영구히 낮아진다.
+- [x] `pyproject.toml` 의 mypy `files` 에 `tests`·`scripts` 를 넣고 `mypy_path = "tests, scripts"`
+  를 더했다. `strict = true` 는 그대로다. 검사 대상은 **224 → 455 소스**이고 결과는 0건이다.
+  - 넓힌 직후(코드 그대로) 실측: **609건 / 79파일**, 같은 줄의 합집합 갈래를 한 건으로 세면
+    **377자리**. 코드별 줄(자리): arg-type 132(82) · operator 118(11) · attr-defined 105(105) ·
+    no-untyped-def 67(67) · union-attr 59(25) · typeddict-item 38(4) · no-untyped-call 27(27) ·
+    index 22(20) · call-overload 10(9) · misc 7(4) · func-returns-value 6(6) · type-arg 3 ·
+    no-any-return 3 · assignment 3 · type-var 2 · override 2 · list-item 2(1) · dict-item 2 ·
+    var-annotated 1. (mypy 1.20.2 · pandas 2.3.3 + pandas-stubs · streamlit 1.63.0 · plotly 6.9.0)
+  - 2026-09-13 의 188건보다 많은 것은 그 사이 테스트가 늘어서다(그때 114 소스).
+  - `mypy_path` 는 **전체 실행의 건수를 바꾸지 않는다**(609 → 609, import-not-found 0 → 0).
+    `files` 에 폴더를 넣으면 그 폴더가 검색 경로가 되어 테스트끼리의 맨이름 import 는 이미
+    찾는다. 이 줄이 일하는 곳은 파일 하나만 넘기는 실행이다 — 없으면
+    `tests/test_deploy_package.py`·`tests/test_inspect_real_data_checks.py` 가 `scripts/` 모듈을
+    못 찾는다(각 import-not-found 1건). 2026-09-13 의 「188 → 176」은
+    `--explicit-package-bases tests scripts` 로 돌렸을 때의 수라 지금 설정에는 맞지 않는다.
+- [x] `tests/__init__.py` 는 넣지 않았다. pytest 는 `__init__.py` 가 없는 첫 상위를 pkg_root 로
+  잡아 `sys.path[0]` 에 넣는다. 넣으면 pkg_root 가 저장소 루트로 올라가 테스트끼리의 맨이름
+  import 가 `ModuleNotFoundError` 로 죽는다. 그래서 mypy 도 두 폴더의 모듈을 맨이름
+  (`test_dashboard`·`compact_duckdb`)으로 보고, **`module = ["tests.*"]` 는 아무것도 잡지
+  않는다**(실측). `test_*` 같은 접두 와일드카드는 mypy 가 설정 오류로 거절한다.
+- [x] 완화는 **`operator` 하나를 모듈 셋에만** 걸었다(`test_dashboard`·`test_e2e_equipment_import`·
+  `test_equipment_csv`, 9자리 — 문자열 칸 `in` 8 · 숫자 칸 `*` 1). pandas-stubs 가
+  `df.loc[행, 열]` 한 칸을 열두 갈래 합집합으로 돌려줘 문자열 칸의 `in`·숫자 칸의 `*` 가
+  갈래마다 걸리는 자리다. `arg-type`·`typeddict-item`·
+  `index` 는 끄지 않았다 — 아래 실제 결손이 바로 그 코드로 잡혔다. 나머지 마찰은 cast 없이 코드로
+  풀었다: `**dict` 언팩은 `TypedDict`(`_LobFrames`·`_Window`·`_CacheKeyCommon`)나 `.assign`,
+  `st.column_config` 합집합은 `type_config["type"]` 으로 좁히기, AppTest 의 `Element | Block` 은
+  `app.markdown`·`app.download_button` 접근자와 `isinstance(node, Caption)`, 모듈이 다시
+  내보내지 않는 이름(`home_rendering.st`·`adapter.importlib`·`_sql_helpers.duckdb`)은 같은 객체를
+  원래 모듈에서 직접 패치, Figure 를 돌려주는 도우미의 `-> object` 는 `go.Figure`.
+- [x] 런타임·계약이 걸린 실제 결손을 고쳤다.
+  - `tests/test_page_bootstrap.py` — `display_order=pd.DataFrame()` 을 `None` 으로,
+    `active_scenario={}` 를 `content_token`(`pristine_content_token`)까지 갖춘 값으로.
+  - `tests/test_scenario_state.py` 의 `ActiveScenario` 리터럴, 그리고 같은 모양을 mypy 가 못 보는
+    자리에 두던 `tests/test_scenario_sidebar.py` 의 가짜 `ensure_active_scenario` 에
+    `content_token` 을 넣었다. 캐시 키 불변조건을 어기는 모양을 테스트가 굳히지 않는다.
+  - `scripts/compact_duckdb.py` — `main() -> int`. 「항상 0」은 정확히는 실패 경로가
+    `SystemExit("[중단] …")` 으로 1 을 내므로 **`--database` 로 지정한 파일이 없을 때만** 해당했다
+    (`[건너뜀]` 을 찍고 0 — 경로 오타가 성공으로 보였다). 이제 지정한 파일이 없으면 1 이다. 생략
+    시의 운영 DB 두 개는 여전히 없으면 건너뛴다. `main(argv)` 를 받게 해 시험을 더했다.
+  - `scripts/sync_object_storage.py` — `dataset` 을 `str` 로 받고 `# type: ignore[arg-type]` 8개로
+    막던 것을 `DatasetName` 으로 받게 했다(무시 주석 전부 제거).
+  - 숫자 칸을 `float(...)`·`int(...)` 로 감싸 비교하던 단언은 글자 `"2.5"` 가 남아도 통과했다.
+    변환 없이 비교해 숫자인지까지 보게 했다(`test_core_data_numeric_contract` 등 다섯 파일, 전부
+    통과). 붙여넣기 왕복처럼 값이 원래 글자인 `test_reference_csv` 는 변환을 남겼다.
+  - 반환값이 없는 함수에 `assert f(...) is None` 을 걸던 다섯 자리는 실패할 수 없는 단언이라
+    호출만 남겼다(예외가 나면 실패한다).
+  - `tests/test_scenario_activation.py` 의 이름표 스냅샷은 `SimpleNamespace` 로 필드 절반만
+    흉내 냈다. 실제 `ScenarioSnapshot` 으로 만든다. `tests/test_hidden_tab_rendering.py` 의
+    가짜 탭은 `OpenTab` 프로토콜(`__enter__`·`__exit__`)을 채우지 못했다.
+- [x] 실행 시간(같은 PC, 빈 캐시 폴더로 잰 콜드 / 바로 다시 돈 웜, 최대 작업 집합):
+  넓히기 전 224 소스 **43.1초 · 524 MiB / 0.6초 · 82 MiB**, 넓힌 뒤 455 소스
+  **56.7초 · 599 MiB / 0.6초 · 89 MiB**. CI 는 매번 콜드라 이 PC 기준으로 약 14초가 는다.
+- [ ] 이미 있던 `# type: ignore` 중 Figure 를 `object` 로 받아 생긴 것(`test_top5_band.py`·
+  `test_plan_detail_figures.py`·`test_lob_summary_gaps.py` 등)은 이번에 손대지 않았다. 오류가
+  아니어서다. 도우미의 반환 타입을 `go.Figure` 로 바꾸면 지울 수 있다.
 
 ### 예정된 후속
 

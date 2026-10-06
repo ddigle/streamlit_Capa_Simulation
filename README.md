@@ -885,6 +885,10 @@ DuckDB도 페이지 최초 접근 시 스키마가 생성되고, 실제 리비�
 .\.venv\Scripts\python.exe scripts\validate_duckdb_persistence.py
 ```
 
+`mypy` 는 `app.py`·`app_pages/`·`src/`·`tests/`·`scripts/` 를 모두 strict 로 검사합니다
+(범위와 테스트에서 끄는 오류 코드는 `pyproject.toml` 의 `[tool.mypy]`). 저장소 루트에서
+돌립니다.
+
 ## 현재 주요 미구현 항목
 
 - 사내 환경에서의 BigDataQuery 접속·조회 검증(확인 절차는 `docs/internal_update_runbook.md` 8장 — 결과 대기)
