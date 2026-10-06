@@ -302,9 +302,9 @@ if using_sample_equipment:
         st.caption("호기 마스터가 비어 있어 데모 fleet 을 표시합니다.")
     else:
         no_fleet = True
-        # 카드를 세우고 까닭을 적는다. 사이드바 「조회 조건」 제목도 이 카드가 채운다 — 카드 없이
-        # 지나가면 이 화면의 조건 자리가 통째로 사라져 왜 고를 것이 없는지 알 길이 없다. 가용설비
-        # 현황의 같은 자리와 같은 모양이다.
+        # 카드를 세우고 까닭을 적는다. 카드 없이 지나가면 사이드바 CSS 가 홀로 남은 「조회 조건」
+        # 제목까지 감춰 이 화면의 조건 자리가 통째로 사라지고, 왜 고를 것이 없는지 알 길이 없다.
+        # 가용설비 현황의 같은 자리와 같은 모양이다.
         with condition_card(SPACE_CARD_LABEL, name=SPACE_CARD_NAME):
             st.caption("조회할 호기가 없습니다. 가용설비 현황에서 입력하거나 샘플 데이터를 켜세요.")
         render_pending_source(

@@ -200,3 +200,35 @@ def test_the_toggle_sink_is_hidden_and_short_runs_do_not_dim_the_body() -> None:
     assert _rules_with(block, f"transition: opacity 0s linear {STALE_DIM_DELAY} !important;") == [
         ['[data-stale="true"]']
     ]
+
+
+def test_a_lone_conditions_heading_is_hidden_by_css_only() -> None:
+    """「조회 조건」 제목 아래에 설 상자가 사이드바에 하나도 없을 때만 제목을 감춘다.
+
+    제목은 페이지보다 먼저 늘 같은 자리에 선다 — 파이썬이 제목을 미뤘다 채우면 rerun 마다 제목이
+    사라지고 카드가 위아래로 튀었다(2026-10-07 8543 실측). 카드를 그리기 전에 멈추는 오류 경로에서
+    제목만 남는 것은 이 규칙이 감춘다. 조건이 되는 상자는 공통 상자 셋과 조건 카드 전부다.
+    """
+    from capa_simulation.components.sidebar_style import lone_conditions_heading_selector
+    from capa_simulation.navigation import CONDITIONS_SECTION
+
+    block = _style_block()
+    selector = lone_conditions_heading_selector(
+        scenario_box_key="test_scenario",
+        month_box_key="test_month",
+        bottleneck_box_key="test_bottleneck",
+    )
+    rule = re.search(re.escape(selector) + r"\s*\{\s*display: none;\s*\}", block)
+    assert rule is not None
+    for content in (
+        ".st-key-test_scenario",
+        ".st-key-test_month",
+        ".st-key-test_bottleneck",
+        f'[class*="st-key-{CONDITION_CARD_PREFIX}"]',
+    ):
+        assert content in selector
+    # 겉 칸째 감춰 간격도 남기지 않는다. 제목 컨테이너 자신도 고른다.
+    heading = f".st-key-{CONDITIONS_SECTION.key}"
+    assert f'[data-testid="stLayoutWrapper"]:has(> {heading})' in selector
+    assert selector.rstrip().endswith(heading)
+    assert selector.startswith('[data-testid="stSidebarUserContent"]:not(:has(')

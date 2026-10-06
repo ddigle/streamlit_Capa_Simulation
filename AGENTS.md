@@ -159,12 +159,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `app.py` 가 그대로 따른다 — 선언은 화면 코드가 실제로 읽는 것(전수 조사)이다. 한 탭만 읽는
     화면(가용설비 현황의 `Static/Dynamic`)은 `condition_tabs` 로 그 탭을 적고, `app.py` 가 열린
     탭(세션의 탭 값, 없으면 `stateful_tabs` 의 기억 칸)을 보고 가른다. 공통 조건을 하나도 읽지
-    않아도 조건 카드가 있으면 `has_condition_cards` 로 구역 제목을 세운다 — 다만 이때 제목은
-    **미뤄 둔다**(`sidebar_status.defer_sidebar_section`). `app.py` 는 제목 자리에 빈 칸만 세우고
-    그 회차의 첫 `condition_card` 가 채운다. 페이지가 카드를 그리기 전에 멈추는 드문 오류 경로
-    (VOC 게시판·설비 DB 를 못 읽음)에서 제목만 덩그러니 남지 않게 하려는 것이다. 지난 회차의 빈
-    칸이 다른 자리를 덮지 않도록 `app.py` 는 매 회차 미루거나(`defer_sidebar_section`) 버린다
-    (`forget_deferred_sidebar_section`). 공통 상자가 서는 화면은 예전처럼 곧바로 세운다. 세우지 않은 상자의
+    않아도 조건 카드가 있으면 `has_condition_cards` 로 구역 제목을 세운다. 제목은 **늘 페이지보다
+    먼저, 같은 자리에** 선다. 페이지가 카드를 그리기 전에 멈추는 드문 오류 경로(VOC 게시판·설비 DB
+    를 못 읽음)에서 제목만 덩그러니 남는 것은 **사이드바 CSS 가 감춘다** — 제목 아래에 설 상자
+    (시나리오·조회기간·B/N 상자, 조건 카드)가 사이드바에 하나도 없을 때만
+    (`sidebar_style.lone_conditions_heading_selector`, `:has()`). 파이썬으로 제목을 미뤘다 첫 카드가
+    채우게 하면 rerun 마다 그 사이 제목이 사라지고 카드가 26px 위아래로 튀었다(2026-10-07 8543 실측,
+    Space·가용설비 rerun 마다 65~90ms) — CSS 는 rerun 동안 지난 회차의 카드가 남아 있어 흔들리지
+    않는다. 세우지 않은 상자의
     선택은 사라지지 않는다(시나리오 선택은 `persist_state`, 조회기간은 `MONTH_RANGE_KEY`).
     세우지 않은 회차에는 적용 기간 자리표시자도 지운다(`forget_month_range_placeholder`).
   - **탭 이름 앞에는 탭이 하는 일을 말하는 아이콘을 단다**(`:material/…:` 라벨, 개선안 B).
@@ -1908,9 +1910,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 조회기간·시나리오 월 표기 `YYYY-MM` 은 `settings.format_month` 한 벌이다. 파생 시나리오의
     월 표기(`scenario_transform.format_month_range`·월 머지 검증 문구)도 이것을 쓴다.
   - `sidebar_status.render_sidebar_section` 이 구역 제목 한 줄을 그린다. 가로 컨테이너가
-    돌려준 부모에 직접 쓴다 — `st.sidebar.*` 는 `with` 문맥을 따르지 않는다. 미룬 제목
-    (`defer_sidebar_section`)은 같은 그리기를 빈 칸(`st.sidebar.empty()`) 안에 한다 — 빈 칸은
-    Streamlit 이 `display: none` 으로 그려 채워지지 않아도 사이드바 간격을 먹지 않는다.
+    돌려준 부모에 직접 쓴다 — `st.sidebar.*` 는 `with` 문맥을 따르지 않는다. 제목을 회차마다
+    지웠다 다시 세우지 않는다(위 「공통 상자」 — 홀로 남은 제목은 CSS 가 감춘다).
   - `sidebar_status.sidebar_expander` 가 **접힘 상태를 기억하는 사이드바 상자**를 만든다.
     `key` 와 상태를 추적하는 `on_change` 를 함께 줘야 확장 패널이 위젯이 되어 서버가 펼침 상태를
     읽고 쓴다. `expanded=` 는 주지 않는다 — 세션 값과 함께 주면 Streamlit 이 경고를 남긴다.

@@ -34,7 +34,11 @@ from capa_simulation.scenario_preset_state import (
     MONTH_RANGE_KEY,
 )
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
-from capa_simulation.sidebar_status import BOTTLENECK_BOX_KEY, remembered_box_key
+from capa_simulation.sidebar_status import (
+    BOTTLENECK_BOX_KEY,
+    CONDITION_CARD_PREFIX,
+    remembered_box_key,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
@@ -841,13 +845,29 @@ def test_a_screen_with_only_its_own_card_keeps_the_heading(_app: AppTest) -> Non
     }
 
 
-def test_a_card_only_screen_that_stops_before_its_card_shows_no_heading(
+def _heading_content_keys(app: AppTest) -> set[str]:
+    """「조회 조건」 제목 아래에 설 상자 가운데 사이드바 최상위에 있는 것의 key.
+
+    사이드바 CSS(`sidebar_style.lone_conditions_heading_selector`)는 이것이 하나도 없을 때만 제목을
+    감춘다. AppTest 는 CSS 를 계산하지 않으므로 그 조건이 되는 칸을 직접 본다.
+    """
+    return {
+        key
+        for key in _sidebar_keys(app)
+        if key in {SCENARIO_BOX_KEY, _app_constant("MONTH_BOX_KEY"), BOTTLENECK_BOX_KEY}
+        or key.startswith(CONDITION_CARD_PREFIX)
+    }
+
+
+def test_a_card_only_screen_that_stops_before_its_card_leaves_the_heading_alone(
     _app: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """카드를 그리기 전에 멈춘 회차에는 「조회 조건」 제목만 덩그러니 남지 않는다.
+    """카드를 그리기 전에 멈춘 회차에는 제목 아래 상자가 하나도 없어 CSS 가 제목을 감춘다.
 
-    공통 조건이 없는 화면의 제목은 미뤄 두었다가 첫 카드가 설 때 채운다. VOC 게시판을 읽지
-    못하면 페이지는 오류만 적고 멈추는데, 전에는 제목이 페이지보다 먼저 서 혼자 남았다.
+    제목은 늘 페이지보다 먼저 같은 자리에 선다 — 회차마다 미뤘다 채우면 rerun 마다 제목이 사라지고
+    카드가 튀었다(2026-10-07 8543 실측). VOC 게시판을 읽지 못하면 페이지는 오류만 적고 멈추는데,
+    그때 제목 아래 상자가 없다는 것(CSS 가 감추는 조건)을 여기서 본다. 규칙 자체는
+    `tests/test_sidebar_stylesheet.py` 가 지킨다.
     """
     from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
@@ -862,13 +882,15 @@ def test_a_card_only_screen_that_stops_before_its_card_shows_no_heading(
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert any("VOC 게시판을 읽지 못함" in element.value for element in app.error)
-    assert _common_boxes(app) == set()
+    assert _common_boxes(app) == {"heading"}
+    assert _heading_content_keys(app) == set()
 
-    # 다시 읽히면 같은 세션의 다음 회차에 제목과 카드가 함께 선다.
+    # 다시 읽히면 같은 세션의 다음 회차에 카드가 서 제목이 다시 보인다(제목 칸은 그대로다).
     monkeypatch.setattr(DuckDBScenarioRepository, "list_voc_posts", readable)
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == {"heading"}
+    assert _heading_content_keys(app) == {f"{CONDITION_CARD_PREFIX}voc"}
 
 
 def test_a_screen_that_reads_only_the_scenario_shows_only_its_box(_app: AppTest) -> None:
