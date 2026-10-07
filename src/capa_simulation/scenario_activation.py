@@ -47,14 +47,16 @@ ACTIVE_SCENARIO_LABEL_KEY = "active_scenario_label"
 # 거꾸로 import 하지 않아 순환이 없고, 키를 바꾸거나 토글을 추가해도 초기화가 함께 바뀐다.
 # Figure 캐시 키도 `io/reference_cache` 의 선언 한 곳을 쓴다.
 #
-# 담는 것은 두 가지다.
+# 시나리오를 바꿀 때 푸는 것은 두 가지다(`_STALE_UI_KEYS` 가 둘을 합친 목록이다).
 #
-# 1. **앞 시나리오의 값이 담긴 칸.** 지우지 않으면 새 시나리오 화면에 옛 수치가 그려진다.
-# 2. **HOME 의 토글 전부.** 토글은 모두 기준정보 위에 무언가를 얹거나 빼는 스위치이고,
-#    켠 사람은 **그 시나리오**를 보며 켰다. 켠 채로 시나리오를 바꾸면 얹힌 것이 새 계획
-#    위에 그대로 남는데 — 실행 Capa 증감은 확보율을 통해 B/N 순위·Top5 막대·히트맵까지
+# 1. **앞 시나리오의 값이 담긴 칸**(`_STALE_VALUE_KEYS`). 지우지 않으면 새 시나리오 화면에 옛
+#    수치가 그려진다. 위젯이 아니라서 지우면 그만이다.
+# 2. **HOME 의 토글 전부**(`HOME_TOGGLE_DEFAULTS`). 토글은 모두 기준정보 위에 무언가를 얹거나
+#    빼는 스위치이고, 켠 사람은 **그 시나리오**를 보며 켰다. 켠 채로 시나리오를 바꾸면 얹힌 것이
+#    새 계획 위에 그대로 남는데 — 실행 Capa 증감은 확보율을 통해 B/N 순위·Top5 막대·히트맵까지
 #    바꾼다 — 화면에는 토글이 켜져 있으니 사용자는 그것을 새 시나리오의 원래 값으로 읽는다.
-#    새 시나리오는 있는 그대로 먼저 보이고, 얹을 것은 사용자가 다시 켠다.
+#    새 시나리오는 있는 그대로 먼저 보이고, 얹을 것은 사용자가 다시 켠다. **토글은 지우지 않고
+#    기본값을 적는다** — 까닭은 `_release_stale_ui_state` 에 있다.
 #
 # 탭과 조회 조건(필터·분류 수준)은 **넣지 않는다.** 그것들은 무엇을 보고 있는지일 뿐 값에
 # 닿지 않으므로, 지우면 시나리오를 바꿀 때마다 보던 자리를 다시 찾아야 한다.
@@ -62,14 +64,37 @@ ACTIVE_SCENARIO_LABEL_KEY = "active_scenario_label"
 # 「HOME 의 토글 전부」를 손으로 세지 않는다. `tests/test_scenario_activation.py` 가
 # `home_preference` 의 토글 키를 훑어 빠진 것을 잡는다 — 「실행 Loss」가 나중에 추가되면서
 # 목록에 들어오지 않아 이 규칙이 한동안 반쪽이었던 적이 있다.
-_STALE_UI_KEYS = (
+_STALE_VALUE_KEYS = (
     "load_conversion_source_token",
     "reference_data_source_token",
     "load_conversion_own_change",
     "reference_data_own_change",
     HOME_FIGURE_CACHE_KEY,
-    *HOME_TOGGLE_DEFAULTS,
 )
+_STALE_UI_KEYS = (*_STALE_VALUE_KEYS, *HOME_TOGGLE_DEFAULTS)
+
+
+def _release_stale_ui_state() -> None:
+    """앞 시나리오의 값이 담긴 칸은 지우고, HOME 토글에는 기본값을 **적는다.**
+
+    토글 칸을 지우기(`pop`)만 하면 서버는 기본값으로 그리지만 브라우저는 그 사실을 듣지 못한다.
+    Streamlit 은 위젯 값이 세션 API 로 **새로 적혔을 때만** 브라우저에 새 값을 보내는데, 지운
+    칸은 적힌 것이 아니라 없어진 것이다. 그래서 화면에는 토글이 켜진 채 남고, 다음 조작 하나가
+    그 옛 값을 되보내 토글이 되살아났다 — 그 조작은 「다른 위젯도 바뀐」 상호작용이 되어 빈
+    프래그먼트 대신 앱 전체를 다시 돌렸다(2026-10-08 안정화 점검 B1, AGENTS 9장 「pop 하지
+    말고 새 값을 적는다」).
+
+    적은 값이 브라우저에 닿으려면 **그 회차에 토글 위젯이 만들어지기 전에** 적어야 한다(만든
+    뒤에는 Streamlit 이 적기를 막는다). 부르는 곳은 모두 그 조건을 지킨다 — 사이드바 「불러오기」·
+    「신규 리비전 저장」과 시나리오 관리 화면은 토글을 그리지 않는 자리에서 적고 곧바로
+    `st.rerun()` 한다(그 재실행은 세션을 다지지 않아 적은 값이 「새 값」인 채로 다음 회차의 토글에
+    닿는다). 새 세션의 공식버전 부트스트랩은 `navigation.run()` 앞이다. 토글이 기본값을 위젯
+    `value=` 로 받지 않는 것도 이 때문이다 — `components/home_preference.render_home_view_card`.
+    """
+    for key in _STALE_VALUE_KEYS:
+        st.session_state.pop(key, None)
+    for key, default in HOME_TOGGLE_DEFAULTS.items():
+        st.session_state[key] = default
 
 
 @dataclass(frozen=True)
@@ -161,8 +186,7 @@ def activate_persisted_snapshot(snapshot: ScenarioSnapshot) -> ActiveScenario:
     st.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] = snapshot.revision.revision_id
     st.session_state[ACTIVE_PERSISTED_SESSION_REVISION_KEY] = active["revision"]
     _remember_label(snapshot)
-    for key in _STALE_UI_KEYS:
-        st.session_state.pop(key, None)
+    _release_stale_ui_state()
     queue_scenario_preset(snapshot.preset)
     return active
 
@@ -194,9 +218,9 @@ def clear_persisted_scenario_activation() -> None:
         ACTIVE_PERSISTED_SESSION_REVISION_KEY,
         OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY,
         ACTIVE_SCENARIO_LABEL_KEY,
-        *_STALE_UI_KEYS,
     ):
         st.session_state.pop(key, None)
+    _release_stale_ui_state()
 
 
 def active_persisted_scenario_id() -> str | None:

@@ -253,33 +253,38 @@ def render_home_view_card(*, comparison_ready: bool) -> None:
     토글은 값을 바꾸기만 하고 아무것도 계산하지 않는다. 다음 실행에서 `home.py` 가 이 키를
     읽어 계산에 반영한다. 안 그려진 회차(다른 탭)에도 값은 `persist_state` 가 지킨다.
 
+    **토글의 기본값은 위젯 `value=` 가 아니라 세션에 심는다.** 시나리오를 바꾸면
+    `scenario_activation` 이 토글 칸에 기본값을 **적어** 브라우저에 밀어 넣는데(지우기만 하면
+    브라우저가 옛 값을 들고 있다가 되보낸다), `value=` 로 켬(`Past Data 포함`)을 준 위젯에 세션
+    값까지 적으면 Streamlit 이 둘을 함께 썼다고 경고한다. 칸이 없을 때만 심으므로 사용자가 바꾼
+    값과 `persist_state` 가 지킨 값은 건드리지 않는다.
+
     비교 시나리오를 고르지 않았으면 「GAP」 을 누를 수 없다. 켤 수는 있는데 아무것도 바뀌지
     않으면 고장으로 읽힌다 — 그래서 막힌 까닭만은 툴팁으로 남긴다. 각 토글의 뜻은 Guide 다.
     """
+    for key, default in HOME_TOGGLE_DEFAULTS.items():
+        if key not in st.session_state:
+            st.session_state[key] = default
     with condition_card("LOB 표시 조건", name="home"):
         # 「선행 B/O」 는 계획 밖 B/O 재공을 부하에 더하고(확보율이 그만큼 낮아진다), 「선행 입고」
         # 는 계획 안의 선행 입고 실적을 Density 칸에 적기만 한다(2026-10-06 사용자 결정).
         st.toggle(
             "선행 B/O",
-            value=HOME_TOGGLE_DEFAULTS[ADVANCE_TOGGLE_KEY],
             key=ADVANCE_TOGGLE_KEY,
             persist_state="session",
         )
         st.toggle(
             "선행 입고",
-            value=HOME_TOGGLE_DEFAULTS[ADVANCE_SHIPMENT_TOGGLE_KEY],
             key=ADVANCE_SHIPMENT_TOGGLE_KEY,
             persist_state="session",
         )
         st.toggle(
             "실행 Loss",
-            value=HOME_TOGGLE_DEFAULTS[EXECUTION_TOGGLE_KEY],
             key=EXECUTION_TOGGLE_KEY,
             persist_state="session",
         )
         st.toggle(
             "GAP",
-            value=HOME_TOGGLE_DEFAULTS[COMPARISON_TOGGLE_KEY],
             key=COMPARISON_TOGGLE_KEY,
             persist_state="session",
             disabled=not comparison_ready,
@@ -287,21 +292,18 @@ def render_home_view_card(*, comparison_ready: bool) -> None:
         )
         st.toggle(
             "상세 계획",
-            value=HOME_TOGGLE_DEFAULTS[PLAN_DETAIL_CUSTOMER_KEY],
             key=PLAN_DETAIL_CUSTOMER_KEY,
             persist_state="session",
         )
         # 기본은 **끔**이다. LOB 로 읽는 수치는 EDP 를 뺀 값이 기준이다.
         st.toggle(
             "EDP 포함",
-            value=HOME_TOGGLE_DEFAULTS[EDP_TOGGLE_KEY],
             key=EDP_TOGGLE_KEY,
             persist_state="session",
         )
         # 기본은 **켬**이다. 과거 이력까지 이어 보는 것이 이 화면의 기본 쓰임이다.
         st.toggle(
             "Past Data 포함",
-            value=HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY],
             key=PAST_DATA_TOGGLE_KEY,
             persist_state="session",
         )

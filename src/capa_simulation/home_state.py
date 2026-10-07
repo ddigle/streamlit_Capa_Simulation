@@ -20,8 +20,10 @@ COMPARISON_TOGGLE_KEY = "home_show_comparison"
 PRODUCT_SHARE_BASIS_KEY = "home_product_share_basis"
 PRODUCT_SHARE_BASIS_DEFAULT = "Wafer"
 
-# 계산은 위젯보다 먼저 실행되므로 두 곳이 같은 기본값을 읽는다. 시나리오를 바꿀 때도
-# 이 키들만 지워 기본 표시로 돌아가며, 탭·조회 조건과 공용 프로필 선택은 유지한다.
+# 계산은 위젯보다 먼저 실행되므로 두 곳이 같은 기본값을 읽는다 — 계산은 칸이 없을 때의 값으로,
+# 사이드바 카드는 칸이 없을 때 세션에 심는 값으로(위젯 `value=` 로 주지 않는다). 시나리오를
+# 바꿀 때도 이 키들에만 기본값을 다시 **적어**(지우면 브라우저가 옛 값을 되보낸다) 기본 표시로
+# 돌아가며, 탭·조회 조건과 공용 프로필 선택은 유지한다.
 HOME_TOGGLE_DEFAULTS: Mapping[str, bool] = MappingProxyType(
     {
         EDP_TOGGLE_KEY: False,

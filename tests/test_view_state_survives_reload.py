@@ -120,23 +120,27 @@ LABELS = ("UPEH", "효율")
 with st.sidebar:
     if st.session_state.get("load_clicked") is True:
         st.session_state["load_clicked"] = False
-        # `activate_persisted_snapshot` 이 하는 일과 같다.
+        # `activate_persisted_snapshot` 이 하는 일과 같다 — 토글 칸은 지우지 않고 기본값을 적는다.
         for key in st.session_state.get("stale_keys", ()):
-            st.session_state.pop(key, None)
+            st.session_state[key] = False
         st.rerun()
 
 stateful_tabs(LABELS, key="page_tab")
 st.session_state["seen_toggle"] = st.toggle(
-    "선행 B/O", value=False, key="home_show_advance", persist_state="session"
+    "선행 B/O", key="home_show_advance", persist_state="session"
 )
 """
 
 
 def test_a_toggle_is_released_even_though_it_persists() -> None:
-    """`persist_state="session"` 이 `pop` 을 무력화하지 않는다.
+    """`persist_state="session"` 이 시나리오 전환의 기본값 쓰기를 무력화하지 않는다.
 
     토글이 화면에서 사라져도 값이 남게 하는 것과, 시나리오를 바꿀 때 그 값을 버리는 것은
     서로 다른 장치다. 둘이 부딪히면 토글이 영영 안 꺼지므로 실제 실행으로 확인한다.
+
+    버리는 쪽은 칸을 지우지(`pop`) 않고 기본값을 **적는다.** 지우면 서버만 기본값으로 그리고
+    브라우저에는 새 값을 보내지 않아(`set_value` 없음) 토글이 켜진 채 보이다가 다음 조작에
+    되살아났다(2026-10-08 안정화 점검 B1). 그래서 서버 값과 함께 브라우저에 보낸 값도 본다.
     """
     app = AppTest.from_string(TOGGLE_SCRIPT)
     app.session_state["stale_keys"] = ("home_show_advance",)
@@ -150,6 +154,10 @@ def test_a_toggle_is_released_even_though_it_persists() -> None:
 
     assert not app.exception
     assert _state(app, "seen_toggle") is False, "시나리오를 바꿔도 토글이 켜진 채 남았습니다."
+    toggle = app.toggle(key="home_show_advance")
+    assert (toggle.proto.set_value, toggle.proto.value) == (True, False), (
+        "서버가 풀린 토글 값을 브라우저에 보내지 않았습니다 — 화면에는 켜진 채 남습니다."
+    )
 
 
 def test_the_tab_survives_the_same_reload_that_releases_the_toggle() -> None:

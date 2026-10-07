@@ -143,6 +143,28 @@ def _toggle_values(app: AppTest) -> dict[str, Any]:
     }
 
 
+def _shown_toggle_values(app: AppTest, held: Mapping[str, bool]) -> dict[str, bool]:
+    """사이드바 토글이 **브라우저에 보이는** 값.
+
+    AppTest 의 위젯 값(`toggle.value`)은 서버 세션에서 읽고, 다음 실행에 보내는 위젯 상태도
+    거기서 만든다. 그래서 「브라우저는 옛 값을 들고 있다가 되보낸다」가 AppTest 에서는 저절로
+    일어나지 않는다 — 시나리오를 불러온 뒤 토글이 화면에는 켜진 채 남던 결함(2026-10-08 안정화
+    점검 B1)을 서버 값만 보던 이 파일이 못 잡은 까닭이다.
+
+    브라우저는 서버가 그 위젯에 `set_value` 를 실어 보낼 때만 값을 바꾼다. 아니면 들고 있던
+    값(`held`)을, 새로 붙는 위젯이면 위젯 기본값(`proto.default`)을 보인다. 그 규칙을 여기서
+    흉내 낸다.
+    """
+    shown: dict[str, bool] = {}
+    for toggle in app.sidebar.toggle:
+        key = str(toggle.key)
+        if toggle.proto.set_value:
+            shown[key] = bool(toggle.proto.value)
+        else:
+            shown[key] = held.get(key, bool(toggle.proto.default))
+    return shown
+
+
 def _tab_label(app: AppTest, needle: str) -> str:
     """라벨을 손으로 적지 않는다. 아이콘 접두사가 붙어 있어 화면에서 읽어 오는 편이 낫다."""
     for tab in app.tabs:
@@ -159,6 +181,7 @@ class SwitchObservation:
     toggles_before: Mapping[str, Any]
     toggles_after: Mapping[str, Any]
     toggles_after_main: Mapping[str, Any]
+    toggles_shown_after_main: Mapping[str, bool]
     drawn_toggle_keys: tuple[str, ...]
     view_before: Mapping[str, Any]
     view_after: Mapping[str, Any]
@@ -288,6 +311,8 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
         # Main 에서는 일곱 토글이 모두 다시 그려진다. 숨은 탭에서 칸이 없던 「상세 계획」까지
         # 실제 위젯 값으로 확인할 수 있는 자리가 여기다.
         toggles_after_main = _toggle_values(app)
+        # 전환 회차의 화면은 Preference 라 카드가 없었다 — 브라우저에는 다시 새로 붙는 위젯이다.
+        toggles_shown_after_main = _shown_toggle_values(app, {})
         drawn_toggle_keys = tuple(str(toggle.key) for toggle in app.toggle)
 
         # 5. 페이지 국소 조회 조건을 건드린 뒤 **그 페이지에서** 다시 불러온다. 프리셋이
@@ -319,6 +344,7 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
             toggles_before=toggles_before,
             toggles_after=toggles_after,
             toggles_after_main=toggles_after_main,
+            toggles_shown_after_main=toggles_shown_after_main,
             drawn_toggle_keys=drawn_toggle_keys,
             view_before=view_before,
             view_after=view_after,
@@ -384,6 +410,9 @@ def test_the_released_toggles_are_still_released_back_on_the_main_tab(
     missing = [key for key in TOGGLE_DEFAULTS if key not in switch.drawn_toggle_keys]
     assert not missing, f"Main 탭인데 토글 위젯이 그려지지 않았습니다: {missing}"
     assert switch.toggles_after_main == dict(TOGGLE_DEFAULTS)
+    # 서버 값만이 아니라 **브라우저가 보이는 값**도 기본값이다. 위젯은 기본값을 `value=` 로
+    # 받지 않으므로(`Past Data 포함` 의 위젯 기본은 끔), 켬은 서버가 밀어 줘야 보인다.
+    assert switch.toggles_shown_after_main == dict(TOGGLE_DEFAULTS)
 
 
 def test_the_open_tab_survives_the_same_load(switch: SwitchObservation) -> None:
@@ -482,6 +511,12 @@ def test_toggles_flipped_in_the_card_on_main_are_released_by_a_load(
 
     위의 모듈 시나리오는 Preference 탭에서 세션 값을 직접 바꾸므로 **그려진 위젯 값**이 풀리는지는
     보지 않는다. 여기서는 카드의 위젯으로 켜고, 불러오기 뒤 같은 위젯이 기본값으로 서는지 본다.
+
+    서버 값만 보면 이 검사는 결함이 있을 때도 통과했다(2026-10-08 안정화 점검 B1). 불러오기가
+    토글 칸을 지우기만 하자 서버는 기본값으로 그렸지만 브라우저에는 새 값을 보내지 않아 토글이
+    켜진 채 보였고, 다음 조작이 그 옛 값을 되보내 토글이 되살아났다. 그래서 불러온 회차에
+    서버가 **브라우저에 새 값을 보냈는지**(`set_value`)를 보고, 브라우저가 보이는 값을 그대로
+    되보내는 다음 조작을 흉내 내 토글이 되살아나지 않는지 본다(`_shown_toggle_values`).
     """
     database = tmp_path / "scenario.duckdb"
     _, other = _seed_two_revisions(database)
@@ -494,6 +529,8 @@ def test_toggles_flipped_in_the_card_on_main_are_released_by_a_load(
     app = AppTest.from_file(str(APP_PATH), default_timeout=600)
     app.run()
     assert not app.exception, [element.message for element in app.exception]
+    # 첫 화면부터 브라우저에 기본값이 보인다 — `Past Data 포함` 의 켬은 카드가 세션에 심은 값이다.
+    assert _shown_toggle_values(app, {}) == dict(TOGGLE_DEFAULTS)
     for key, default in TOGGLE_DEFAULTS.items():
         app.toggle(key=key).set_value(not default)
     app.run()
@@ -501,9 +538,27 @@ def test_toggles_flipped_in_the_card_on_main_are_released_by_a_load(
     flipped = {key: not default for key, default in TOGGLE_DEFAULTS.items()}
     # GAP 은 비교 대상이 없으면 잠겨 계산에는 안 걸리지만 위젯 값은 켠 그대로다.
     assert {toggle.key: toggle.value for toggle in app.sidebar.toggle} == flipped
+    assert _shown_toggle_values(app, flipped) == flipped
 
     app.session_state[SIDEBAR_REVISION_KEY] = other
     app.button(LOAD_BUTTON_KEY).click().run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert {toggle.key: toggle.value for toggle in app.sidebar.toggle} == dict(TOGGLE_DEFAULTS)
+    pushed = {
+        str(toggle.key): (toggle.proto.set_value, toggle.proto.value)
+        for toggle in app.sidebar.toggle
+    }
+    assert pushed == {key: (True, default) for key, default in TOGGLE_DEFAULTS.items()}, (
+        "불러온 회차에 서버가 토글의 새 값을 브라우저에 보내지 않았습니다 — 화면에는 앞 "
+        f"시나리오에서 켠 토글이 그대로 보입니다: {pushed}"
+    )
+    shown = _shown_toggle_values(app, flipped)
+    assert shown == dict(TOGGLE_DEFAULTS)
+
+    # 다음 조작 — 브라우저는 보이는 값을 그대로 되보낸다. 옛 값이 남아 있었다면 여기서 되살아난다.
+    for toggle in app.sidebar.toggle:
+        toggle.set_value(shown[str(toggle.key)])
     app.run()
     assert not app.exception, [element.message for element in app.exception]
     assert {toggle.key: toggle.value for toggle in app.sidebar.toggle} == dict(TOGGLE_DEFAULTS)
+    assert _shown_toggle_values(app, shown) == dict(TOGGLE_DEFAULTS)

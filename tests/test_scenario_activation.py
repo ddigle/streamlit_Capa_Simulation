@@ -73,6 +73,87 @@ def test_every_home_toggle_has_one_shared_default() -> None:
     )
 
 
+def test_home_toggles_take_their_default_from_the_session_not_from_value() -> None:
+    """HOME 토글 위젯에는 `value=` 를 주지 않는다 — 기본값은 카드가 세션에 심는다.
+
+    시나리오를 바꾸면 토글 칸에 기본값을 **적어** 브라우저에 밀어 넣는다. `value=True`
+    (`Past Data 포함`)를 준 위젯에 세션 값까지 적으면 Streamlit 이 둘을 함께 썼다고 경고하므로,
+    새 토글이 `value=` 를 다시 들고 오면 여기서 잡는다.
+    """
+    source = Path(inspect.getfile(home_preference)).read_text(encoding="utf-8")
+    offenders: list[int] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        function = node.func
+        if not (isinstance(function, ast.Attribute) and function.attr == "toggle"):
+            continue
+        if any(item.arg == "value" for item in node.keywords) or node.args[1:]:
+            offenders.append(node.lineno)
+    assert not offenders, f"`value=` 를 받은 HOME 토글이 있습니다(행): {offenders}"
+
+
+def _fake_session(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    """`scenario_activation` 이 보는 세션을 dict 로 바꾸고 앞 시나리오의 흔적을 채워 둔다."""
+    from types import SimpleNamespace
+
+    import capa_simulation.scenario_activation as activation
+
+    state: dict[str, object] = {key: f"앞 시나리오의 {key}" for key in activation._STALE_VALUE_KEYS}
+    state.update({key: not default for key, default in HOME_TOGGLE_DEFAULTS.items()})
+    monkeypatch.setattr(activation, "st", SimpleNamespace(session_state=state))
+    return state
+
+
+def _assert_released(state: dict[str, object]) -> None:
+    """값 칸은 지워지고, 토글 칸은 **남은 채** 기본값이 적혀 있다.
+
+    토글 칸이 없어지면(`pop`) 서버는 기본값으로 그리지만 브라우저는 그 사실을 듣지 못해 옛 값을
+    들고 있다가 다음 조작에 되보낸다(2026-10-08 안정화 점검 B1). 칸이 있고 값이 기본값이어야
+    Streamlit 이 다음에 위젯을 만들 때 브라우저에 새 값을 보낸다.
+    """
+    from capa_simulation.scenario_activation import _STALE_VALUE_KEYS
+
+    assert not [key for key in _STALE_VALUE_KEYS if key in state]
+    toggles = {key: state.get(key, "칸 없음") for key in HOME_TOGGLE_DEFAULTS}
+    assert toggles == dict(HOME_TOGGLE_DEFAULTS)
+
+
+def test_activating_a_snapshot_writes_the_toggle_defaults_instead_of_dropping_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import capa_simulation.scenario_activation as activation
+
+    state = _fake_session(monkeypatch)
+    monkeypatch.setattr(activation, "activate_persisted_reference_tables", lambda *a, **k: 3)
+    monkeypatch.setattr(activation, "activate_scenario_tables", lambda *a, **k: {"revision": 7})
+    monkeypatch.setattr(activation, "queue_scenario_preset", lambda preset: None)
+
+    activation.activate_persisted_snapshot(
+        _label_snapshot(registered_at=None, plan_months=(202607,))
+    )
+
+    _assert_released(state)
+    assert state[activation.ACTIVE_PERSISTED_REVISION_ID_KEY] == "revision-2"
+
+
+def test_clearing_the_activation_writes_the_toggle_defaults_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """시나리오를 보관·삭제해 활성화를 걷을 때도 같다 — 이어서 공식버전 부트스트랩이 돈다."""
+    import capa_simulation.scenario_activation as activation
+
+    state = _fake_session(monkeypatch)
+    state[activation.ACTIVE_PERSISTED_REVISION_ID_KEY] = "revision-2"
+    monkeypatch.setattr(activation, "clear_persisted_reference_tables", lambda: None)
+    monkeypatch.setattr(activation, "clear_active_scenario", lambda: None)
+
+    activation.clear_persisted_scenario_activation()
+
+    _assert_released(state)
+    assert activation.ACTIVE_PERSISTED_REVISION_ID_KEY not in state
+
+
 def test_view_state_is_not_cleared() -> None:
     """탭과 조회 조건은 지우지 않는다. 무엇을 보고 있는지일 뿐 값에 닿지 않는다.
 
@@ -87,6 +168,9 @@ def test_view_state_is_not_cleared() -> None:
 
 def test_only_previous_values_and_home_toggles_are_dropped() -> None:
     """목록에 남는 것은 **앞 시나리오의 값이 담긴 칸**과 HOME 토글뿐이다."""
+    from capa_simulation.scenario_activation import _STALE_VALUE_KEYS
+
+    assert set(_STALE_VALUE_KEYS) == set(_STALE_UI_KEYS) - _home_toggle_keys()
     assert set(_STALE_UI_KEYS) - _home_toggle_keys() == {
         "load_conversion_source_token",
         "reference_data_source_token",
