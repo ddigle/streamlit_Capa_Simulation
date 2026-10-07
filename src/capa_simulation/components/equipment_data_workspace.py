@@ -84,9 +84,11 @@ from capa_simulation.services.equipment_csv import (
 from capa_simulation.services.equipment_samples import untouched_sample_baseline_rows
 from capa_simulation.services.equipment_units import module_group_warnings
 from capa_simulation.services.equipment_validation import (
+    UnitGroupCollisionError,
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_baseline,
     prepare_equipment_master,
+    unit_group_collision_message,
 )
 from capa_simulation.services.fab_layout import FabLayoutBase, FabLayoutMark
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
@@ -783,13 +785,27 @@ def build_import_review(
     baseline, equipment, downtime = source
     notices: list[str] = []
     if target == "호기 마스터":
-        incoming = (
-            read_equipment_csv(payload, floor_canvases=floor_canvases, notices=notices)
-            if isinstance(payload, bytes)
-            else read_equipment_clipboard(payload, floor_canvases=floor_canvases, notices=notices)
-        )
+        try:
+            incoming = (
+                read_equipment_csv(payload, floor_canvases=floor_canvases, notices=notices)
+                if isinstance(payload, bytes)
+                else read_equipment_clipboard(
+                    payload, floor_canvases=floor_canvases, notices=notices
+                )
+            )
+        except UnitGroupCollisionError as exc:
+            # 붙여넣은 표 안에서 부딪혔다 — 양쪽 모두 붙여넣은 행이다.
+            raise ValueError(
+                unit_group_collision_message(exc.collisions, pasted=_collision_names(exc))
+            ) from exc
         changes = build_equipment_import_preview(equipment, incoming)
-        equipment = merge_equipment_rows(equipment, incoming, floor_canvases=floor_canvases)
+        try:
+            equipment = merge_equipment_rows(equipment, incoming, floor_canvases=floor_canvases)
+        except UnitGroupCollisionError as exc:
+            # 검증은 병합된 표만 본다. 어느 쪽이 붙여넣은 행인지 붙여 다시 알린다 — 붙여넣기는
+            # 설비명 기준 upsert 라 편집본 쪽 행을 지우지 못한다.
+            pasted = set(incoming[EQUIPMENT_ID_COLUMN].dropna().astype(str))
+            raise ValueError(unit_group_collision_message(exc.collisions, pasted=pasted)) from exc
         downtime = merge_downtime_rows(downtime, empty_downtime_schedule(), equipment=equipment)
         baseline = prepare_equipment_baseline(baseline)
     elif target == "기존 보유대수":
@@ -824,6 +840,11 @@ def build_import_review(
         changes,
         tuple(notices),
     )
+
+
+def _collision_names(exc: UnitGroupCollisionError) -> set[str]:
+    """충돌에 든 설비명 전부(설비 행과 모듈 행)."""
+    return {*exc.collisions, *(name for modules in exc.collisions.values() for name in modules)}
 
 
 def _save_snapshot(repository: DuckDBEquipmentRepository, frames: Frames, note: str) -> None:

@@ -49,7 +49,11 @@ from capa_simulation.services.equipment_units import (
     unit_keys,
     unit_transitions,
 )
-from capa_simulation.services.equipment_validation import prepare_equipment_master
+from capa_simulation.services.equipment_validation import (
+    UnitGroupCollisionError,
+    prepare_equipment_master,
+    unit_group_collision_message,
+)
 from capa_simulation.services.monthly_equipment_availability import (
     available_subtotal,
     build_monthly_equipment_availability,
@@ -189,8 +193,39 @@ def test_a_parent_that_is_also_a_standalone_unit_is_rejected() -> None:
         ignore_index=True,
     )
 
-    with pytest.raises(ValueError, match="Main 설비"):
+    with pytest.raises(UnitGroupCollisionError, match="Main 설비") as raised:
         prepare_equipment_master(frame)
+
+    # 충돌한 **양쪽 설비명**을 적는다 — 설비 행과 그 이름을 Main 설비로 적은 모듈 행 넷.
+    assert raised.value.collisions == {"APW01": ("APW01A", "APW01B", "APW01C", "APW01D")}
+    message = str(raised.value)
+    assert "설비 행 APW01 · 모듈 행 APW01A, APW01B, APW01C, APW01D" in message
+    # 직접 편집·저장 경로의 고칠 길: 두 행이 모두 지금 표에 있으니 한쪽을 지운다.
+    assert "한쪽만 남기세요" in message
+    assert "붙여넣기" not in message
+
+
+def test_a_paste_collision_names_where_each_side_came_from() -> None:
+    """붙여넣기는 설비명 기준 upsert 라 이미 있는 행을 지우지 못한다 — 출처와 그 사실을 말한다.
+
+    점검 A3(2026-10-08): 저장본에 모듈 행 12A·12B 가 있는데 설비 행 12 를 붙여넣으면 「설비 행을
+    지우고 모듈 행만 남기세요: ['12']」라고만 해, 붙여넣은 것이 바로 그 설비 행이라 거꾸로 읽혔다.
+    """
+    collisions = {"SMP-DAF-12": ("SMP-DAF-12A", "SMP-DAF-12B")}
+
+    message = unit_group_collision_message(collisions, pasted={"SMP-DAF-12"})
+
+    assert "설비 행 SMP-DAF-12(붙여넣기) · 모듈 행 SMP-DAF-12A, SMP-DAF-12B(편집본)" in message, (
+        message
+    )
+    assert "붙여넣기는 저장된 행을 지우지 않습니다 — " in message
+    assert "직접 편집에서 지운 뒤 다시 미리보세요" in message
+    # 양쪽이 모두 붙여넣은 표 안에 있으면 붙여넣을 표를 고친다.
+    inside = unit_group_collision_message(
+        collisions, pasted={"SMP-DAF-12", "SMP-DAF-12A", "SMP-DAF-12B"}
+    )
+    assert "붙여넣을 표에서 한쪽을 빼고 다시 미리보세요." in inside
+    assert "직접 편집" not in inside
 
 
 @pytest.mark.parametrize("column", ["동", "공정소분류", "투자구분"])

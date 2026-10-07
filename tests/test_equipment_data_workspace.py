@@ -464,6 +464,46 @@ def test_current_data_downloads_say_when_the_buffer_differs_from_the_saved_revis
     assert "호기 마스터 현재 데이터 · 2행" in [button.label for button in app.download_button]
 
 
+def test_pasting_a_unit_row_over_saved_modules_names_both_sides_and_the_way_out(
+    tmp_path: Path,
+) -> None:
+    """저장본에 모듈 행 12A·12B(Main 설비 12)가 있을 때 설비 행 12 를 붙여넣고 미리본다(점검 A3).
+
+    오류는 붙여넣은 설비 행과 저장된 모듈 행을 **출처와 함께** 적고, 붙여넣기로는 저장된 행을 지울
+    수 없으니 직접 편집에서 지우라고 말한다 — 예전 문구는 「설비 행을 지우고 모듈 행만 남기세요:
+    ['SMP-DAF-12']」라 붙여넣은 바로 그 행을 가리켰다.
+    """
+    import csv
+    import io
+
+    from capa_simulation.services.equipment_contract import PARENT_EQUIPMENT_COLUMN
+    from capa_simulation.services.equipment_csv import equipment_csv_bytes
+
+    repository = _repository(tmp_path / "equipment.duckdb")
+    modules = _master(["SMP-DAF-12A", "SMP-DAF-12B"])
+    modules[PARENT_EQUIPMENT_COLUMN] = "SMP-DAF-12"
+    repository.save_snapshot(
+        empty_equipment_baseline(), modules, empty_downtime_schedule(), note="모듈 행"
+    )
+    app = _app(tmp_path / "equipment.duckdb")
+    rows = csv.reader(io.StringIO(equipment_csv_bytes(_master(["SMP-DAF-12"])).decode("utf-8-sig")))
+    app.selectbox(TARGET_KEY).set_value("호기 마스터")
+    app.text_area(CLIPBOARD_KEY).set_value("\n".join("\t".join(row) for row in rows))
+    app.button(PREVIEW_BUTTON_KEY).click().run()
+
+    assert not app.exception
+    errors = [str(item.value) for item in app.error]
+    assert len(errors) == 1, errors
+    assert "설비 행 SMP-DAF-12(붙여넣기) · 모듈 행 SMP-DAF-12A, SMP-DAF-12B(편집본)" in errors[0], (
+        errors[0]
+    )
+    assert (
+        "붙여넣기는 저장된 행을 지우지 않습니다 — 편집본 쪽 행을 없애려면 직접 편집에서 지운 뒤 "
+        "다시 미리보세요." in errors[0]
+    )
+    assert PREVIEW_KEY not in app.session_state
+
+
 def _keyed_blocks(app: AppTest) -> dict[str | None, str]:
     """이 회차의 탭 묶음·접힘 칸을 (key → 브라우저가 상태를 기억하는 블록 id)로."""
     return {

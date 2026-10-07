@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 import pandas as pd
@@ -172,6 +173,79 @@ def prepare_equipment_master(
     return result.reset_index(drop=True)
 
 
+_COLLISION_EXAMPLES = 5
+_COLLISION_HEAD = (
+    "Main 설비는 다른 행의 설비명과 같을 수 없습니다 — 설비 행과 그 설비를 Main 설비로 적은 모듈 "
+    "행을 함께 두면 같은 설비가 두 번 세어집니다"
+)
+
+
+class UnitGroupCollisionError(ValueError):
+    """Main 설비가 다른 행의 설비명과 같다. `collisions` 는 {설비 행 이름: 그 이름을 Main 설비로
+    적은 모듈 행 이름들}이다.
+
+    문구만으로는 어느 쪽이 붙여넣은 행인지 모른다 — 검증은 병합된 표 하나만 보기 때문이다.
+    붙여넣기 미리보기는 이 예외를 잡아 양쪽의 출처를 붙인 문구(`unit_group_collision_message`)로
+    다시 알린다. 문자열을 다시 읽지 않도록 이름을 그대로 싣는다.
+    """
+
+    def __init__(self, collisions: Mapping[str, Sequence[str]]) -> None:
+        self.collisions = {parent: tuple(modules) for parent, modules in collisions.items()}
+        super().__init__(unit_group_collision_message(self.collisions))
+
+    def __reduce__(self) -> tuple[type[UnitGroupCollisionError], tuple[dict[str, tuple[str, ...]]]]:
+        return (type(self), (self.collisions,))
+
+
+def unit_group_collision_message(
+    collisions: Mapping[str, Sequence[str]],
+    *,
+    pasted: Collection[str] | None = None,
+) -> str:
+    """충돌한 **양쪽 설비명**(설비 행과 그 이름을 Main 설비로 적은 모듈 행)을 적은 오류 문구.
+
+    `pasted` 가 없으면 직접 편집·저장 경로다 — 두 행이 모두 지금 표에 있으니 한쪽을 지우라고
+    한다. `pasted`(붙여넣은 표의 설비명)를 주면 이름마다 출처(붙여넣기/편집본)를 붙이고,
+    **붙여넣기는 이미 있는 행을 지우지 않는다**는 것을 말한다 — 붙여넣기는 설비명 기준으로 행을
+    더하거나 바꿀 뿐이라, 편집본 쪽 행을 없애는 길은 직접 편집뿐이다(2026-10-08 점검 A3, 사내
+    AWB05 와 같은 꼴: 모듈 행이 저장된 설비의 설비 행을 다시 붙여넣었다).
+    """
+    shown = list(collisions.items())[:_COLLISION_EXAMPLES]
+    pasted_names = set(pasted) if pasted is not None else None
+
+    def names(values: Sequence[str]) -> str:
+        if pasted_names is None:
+            return ", ".join(values)
+        groups: list[tuple[str, list[str]]] = []
+        for value in values:
+            origin = "붙여넣기" if value in pasted_names else "편집본"
+            if groups and groups[-1][0] == origin:
+                groups[-1][1].append(value)
+            else:
+                groups.append((origin, [value]))
+        return ", ".join(f"{', '.join(group)}({origin})" for origin, group in groups)
+
+    pairs = " / ".join(
+        f"설비 행 {names([parent])} · 모듈 행 {names(modules)}" for parent, modules in shown
+    )
+    more = f" 외 {len(collisions) - len(shown)}건" if len(collisions) > len(shown) else ""
+    if pasted_names is None:
+        remedy = (
+            "한쪽만 남기세요 — 모듈로 나눠 세려면 설비 행을, 한 대로 세려면 모듈 행을 지우거나 "
+            "그 행의 Main 설비를 비웁니다."
+        )
+    else:
+        every = {*collisions, *(module for modules in collisions.values() for module in modules)}
+        if every <= pasted_names:
+            remedy = "붙여넣을 표에서 한쪽을 빼고 다시 미리보세요."
+        else:
+            remedy = (
+                "붙여넣기는 저장된 행을 지우지 않습니다 — 편집본 쪽 행을 없애려면 직접 편집에서 "
+                "지운 뒤 다시 미리보세요. 붙여넣은 쪽이 잘못이면 그 행을 빼고 다시 붙여넣으세요."
+            )
+    return f"{_COLLISION_HEAD}: {pairs}{more}. {remedy}"
+
+
 def _validate_unit_groups(result: pd.DataFrame) -> None:
     """Main 설비로 묶은 모듈 행이 한 설비로 셀 수 있는 모양인지 본다.
 
@@ -188,11 +262,10 @@ def _validate_unit_groups(result: pd.DataFrame) -> None:
     units = result[EQUIPMENT_ID_COLUMN].astype("string")
     colliding = named & parents.isin(set(units)) & parents.ne(units)
     if colliding.any():
-        examples = parents.loc[colliding].drop_duplicates().head(5).tolist()
-        raise ValueError(
-            "Main 설비는 다른 행의 설비명과 같을 수 없습니다 — 설비 행과 모듈 행을 함께 두면 "
-            f"같은 설비가 두 번 세어집니다. 설비 행을 지우고 모듈 행만 남기세요: {examples}"
-        )
+        collisions: dict[str, tuple[str, ...]] = {}
+        for parent, module in zip(parents.loc[colliding], units.loc[colliding], strict=True):
+            collisions[str(parent)] = (*collisions.get(str(parent), ()), str(module))
+        raise UnitGroupCollisionError(collisions)
     keys = parents.where(named, result[EQUIPMENT_ID_COLUMN])
     for column in UNIT_CONSISTENT_COLUMNS:
         values = result[column].astype("string").fillna("")
