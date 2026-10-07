@@ -62,6 +62,7 @@ from capa_simulation.services.securement_threshold import (
     DEFAULT_WARNING_THRESHOLD,
     SecurementThresholds,
 )
+from capa_simulation.services.undated_equipment import undated_equipment_notice
 from capa_simulation.services.usage_basis import usage_exclusion_notice
 from capa_simulation.settings import DUCKDB_PATH
 
@@ -192,6 +193,7 @@ def render_required_shortening_tab(
     shown = scope if selected else [process for process in ordered if process in short]
 
     _render_unmatched(plan)
+    _render_undated_notice(equipment, selected=scope if selected else None)
     _render_usage_notice(equipment, selected=scope if selected else None)
     if not plan.processes:
         st.info(
@@ -295,6 +297,24 @@ def _render_month_range(options: list[int]) -> list[int]:
     if int(start) > int(end):
         st.caption("시작 월이 끝 월보다 늦어 바꿔 읽었습니다.")
     return [month for month in options if first <= month <= last]
+
+
+def _render_undated_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | None) -> None:
+    """반입·Qual 일정이 비어 가용·후보에 들지 못하는 신규 설비 한 줄. 0대면 그리지 않는다.
+
+    Main·Static/Dynamic 과 같은 함수·같은 문구에 「단축 후보에도 들지 않습니다」를 붙인다 — 이
+    탭은 Qual 일정이 있는 호기만 당기므로, 알리지 않으면 「그 호기를 당기면 될 텐데 왜 추가N 이
+    필요한가」로 읽힌다. 범위는 옆 줄(사용기준 제외)과 같다: 공정을 고르면 그 공정, 고르지 않으면
+    호기 마스터 전체 — 호기가 모두 일정 미정인 공정은 Dynamic 이 없어 「맞대지 못한 공정」에만
+    남기 때문이다.
+    """
+    try:
+        undated = simulation_cache.get_undated_equipment(equipment)
+    except ValueError:
+        return
+    notice = undated_equipment_notice(undated, processes=selected)
+    if notice is not None:
+        st.caption(f":material/event_busy: {notice} 단축 후보에도 들지 않습니다.")
 
 
 def _render_usage_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | None) -> None:

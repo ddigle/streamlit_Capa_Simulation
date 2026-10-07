@@ -28,6 +28,10 @@ from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.navigation import EQUIPMENT_SHORTENING_TAB
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.services.equipment_contract import (
+    empty_downtime_schedule,
+    empty_equipment_baseline,
+)
 from capa_simulation.services.equipment_samples import sample_equipment_master
 from capa_simulation.services.required_shortening import (
     KIND_NEW,
@@ -386,6 +390,44 @@ def test_the_plan_summary_uses_homes_key_with_past_data(tmp_path: Path) -> None:
     assert not app.exception
     key = app.session_state["captured_home_key"]
     assert (key[2], key[3]) == (past, months[-1])
+    clear_equipment_repository()
+
+
+def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path) -> None:
+    """일정 미정 신규 호기는 Dynamic 에도 단축 후보에도 들지 않는다 — 다른 탭과 같은 한 줄로 알린다.
+
+    알리지 않으면 「그 호기를 당기면 될 텐데 왜 추가N 이 필요한가」로 읽힌다(2026-10-08 점검 A5).
+    """
+    database_path = _database(tmp_path)
+    sample = sample_equipment_master()
+    master = pd.concat([sample, sample.iloc[[0]]], ignore_index=True)
+    last = master.index[-1]
+    process = str(master.at[last, "공정소분류"])
+    master.loc[last, "설비명"] = "UNDATED-NEW-01"
+    blank = ["반입일정", "Qual일정", "확정상태", "반출일정", "이설일정", "X좌표", "Y좌표"]
+    master.loc[last, [*blank, "Xsize", "Ysize"]] = None
+    master.loc[last, ["기존설비여부", "보관유무", "레이아웃표시"]] = "N"
+    master.loc[last, "사용기준"] = "HBM"
+    DuckDBEquipmentRepository(database_path).save_snapshot(
+        empty_equipment_baseline(), master, empty_downtime_schedule(), note="일정 미정 호기"
+    )
+
+    app = _run(database_path)
+
+    assert not app.exception, [element.message for element in app.exception]
+    captions = [str(item.value) for item in app.main.caption]
+    expected = (
+        ":material/event_busy: 일정 미정 1대 (반입 미정 1) — 날짜가 들어올 때까지 가용대수에 "
+        "세지 않습니다. 단축 후보에도 들지 않습니다."
+    )
+    assert expected in captions, captions
+    # 공정을 고르면 그 공정만 센다 — 다른 공정만 고르면 줄이 사라진다.
+    others = [
+        name for name in app.multiselect(key=SHORTENING_PROCESS_KEY).options if name != process
+    ]
+    narrowed = app.multiselect(key=SHORTENING_PROCESS_KEY).set_value(others[:1]).run()
+    assert not narrowed.exception
+    assert not any("일정 미정" in str(item.value) for item in narrowed.main.caption)
     clear_equipment_repository()
 
 
