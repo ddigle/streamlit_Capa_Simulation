@@ -437,12 +437,17 @@ def plan_required_shortening(
     months: Sequence[int],
     today: date,
     levels: Sequence[float] = TARGET_LEVELS,
+    spans: pd.DataFrame | None = None,
 ) -> ShorteningPlan:
     """호기 마스터·비가동·기존보유·Cut-off·소요대수로 다섯 목표의 단축 일정을 낸다.
 
     **어느 DB 도 열지 않는다.** 가용은 Static/Dynamic 탭과 같은 길로 만든다 — W/D 구간이 Cut-off
     만큼 앞으로 밀리므로 호기 구간은 `span_date_range` 가 알려 주는 범위로 만들고, 지분이 바뀌는
     날에도 끊는다(`with_unit_share=True`).
+
+    `spans` 는 그 구간을 이미 만들어 둔 것이다(`simulation_cache` 가 Static/Dynamic 과 나눠 쓰는
+    캐시). **같은 마스터·비가동으로 `span_date_range(months, cutoff)` 범위를 `with_unit_share=True`
+    로 만든 표여야 한다** — 주지 않으면 여기서 만든다.
     """
     ordered = tuple(sorted({int(month) for month in months}))
     lookup = cutoff_lookup(cutoff)
@@ -458,9 +463,10 @@ def plan_required_shortening(
             pd.DataFrame(), baseline, cutoff, ordered, conversion_ratios={}
         )
     else:
-        spans = build_equipment_lifecycle_spans(
-            equipment, downtime, start_date=span[0], end_date=span[1], with_unit_share=True
-        )
+        if spans is None:
+            spans = build_equipment_lifecycle_spans(
+                equipment, downtime, start_date=span[0], end_date=span[1], with_unit_share=True
+            )
         ratios = {
             str(unit).strip(): float(ratio)
             for unit, ratio in zip(

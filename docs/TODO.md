@@ -645,6 +645,18 @@
   않았다(사내 AWB05 와 같은 꼴). 검증이 `UnitGroupCollisionError` 에 양쪽 설비명을 싣고, 붙여넣기 미리보기가
   이름마다 출처(붙여넣기/편집본)와 「붙여넣기는 저장된 행을 지우지 않습니다 — 직접 편집에서 지운 뒤 다시
   미리보세요」를 붙인다. 직접 편집 경로는 「한쪽만 남기세요」.
+- [x] **Static/Dynamic 보기 전환마다 구간·월별·GAP 을 캐시 없이 다시 계산하던 것**(2026-10-08 밤샘 점검
+  A2) — 조회 결과(가용대수 비교 ↔ 분류별 내역 ↔ 확보율 교차검증)나 같은 탭의 위젯 하나에 생애주기 구간
+  (`_build_equipment_status_from_prepared` 아홉 번)과 월별 Dynamic·GAP 이 다시 돌았다(계측 1.25~1.31초,
+  데모 전환 0.82~0.91초, 3천 행 복제 구간 6개월 1.45초·32개월 2.35초). 필요단축일정과 같은 방식으로
+  `simulation_cache` 에 내용 지문 키 래퍼 셋(`get_equipment_lifecycle_spans` → `get_availability_comparison`
+  → `get_monthly_equipment_contributions`)을 두었다. 키는 실제 입력 전부 — 마스터·비가동 지문 + 구간 범위,
+  구간·기존보유·Cut-off 지문 + 달 + 환산비 지문(구간 표에 환산비가 없다) + Static 지문. 세 함수는 오늘을
+  읽지 않는다(오늘은 기본 조회기간·샘플 fleet 으로 들어와 그 지문이 덮는다). 필요단축일정도 구간을 같은
+  캐시에서 받아(`plan_required_shortening(spans=)`) 시나리오·기존보유·오늘만 바뀐 계획은 구간을 다시 만들지
+  않는다. 두 탭의 구간 범위는 다르게 잡혀(Static/Dynamic 은 조회기간까지 넓힌다) 같은 엔트리를 나누는 것은
+  범위가 같을 때뿐이다. `tests/test_equipment_view_cache.py` 가 입력(마스터 한 칸·비가동·범위·오늘·Cut-off·
+  달·환산비·기존보유·Static)마다 키가 갈리고 캐시 결과 = 새 계산인지 본다.
 - [x] **필요단축일정 CSV 세 벌을 rerun 마다 만들던 것**(2026-10-08 밤샘 점검 A10) — 계획은 캐시 적중인데
   `_render_downloads` 가 목표만 바꾼 rerun 에도 `unit_export_frame` 두 번과 직렬화를 치렀다(데모 0.040초).
   바이트를 계획 키 + 목표·공정 차례·달 키로 캐시한다(`simulation_cache.get_required_shortening_csvs`).

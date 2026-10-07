@@ -730,6 +730,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     GAP 을 낸다. **이 페이지에서 시뮬레이션 DB 를 여는 탭은 이것과 `필요단축일정` 둘**이고, 못
     읽어도 그 탭 안에서만 알린다 — 이 페이지는 활성 시나리오 없이도 열리는 유일한 계산 계열
     화면이라 통째로 막으면 Cut-off 를 적으러 들어올 수도 없다.
+  - Static/Dynamic 의 생애주기 구간은 `simulation_cache.get_equipment_lifecycle_spans`(키 =
+    마스터·비가동 내용 지문 + 구간 범위)로 받는다. 이 페이지에는 fragment 가 없어 조회 결과·공정·
+    표시 하나만 바꿔도 전체가 다시 돌고, 상태 판정을 바뀌는 날마다 다시 하는 구간이 그때마다
+    들었다(2026-10-08 점검 A2 — 데모 0.34초, 3천 행 복제 32개월 2.35초). 필요단축일정과 같은 캐시라
+    범위가 같으면 한 벌을 나눈다.
   - **`필요단축일정`**(2026-10-07 사용자 결정, 시안 B 「공정 카드형」)은 Dynamic 가용(환산 소계)이
     시나리오 소요대수 x 목표 확보율에 모자란 공정·월을 채우려면 신규 호기 Qual 을 며칠 당겨야 하는지
     보인다. 페이지는 GAP 탭과 같은 입력(활성 시나리오 소요대수 `get_scenario_capacity_and_demand`,
@@ -1604,6 +1609,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     덮는다) + 달 + 오늘이다. 목표·공정을 바꾸는 rerun 은 이 결과를 고르기만 한다. 결과에는 CSV 가
     호기 줄에 붙일 마스터 속성(`ShorteningPlan.unit_master`)도 실린다 — 호기 마스터에서만 나오므로
     키의 마스터 내용 지문이 그것까지 덮고, 화면은 rerun 마다 마스터를 다시 검증하지 않는다.
+  - Static/Dynamic 은 `get_equipment_lifecycle_spans`(구간, 키 `equipment_span_cache_key` = 마스터·
+    비가동 지문 + 범위) → `get_availability_comparison`(월별 Dynamic + Static 비교, 키
+    `dynamic_monthly_cache_key` = 구간·기존보유·Cut-off 지문 + 달 + **환산비 지문** — 구간 표에
+    환산비 칸이 없어 따로 싣는다 — 에 Static 지문을 더한 `availability_comparison_cache_key`) →
+    `get_monthly_equipment_contributions`(호기별 기여, 월별 키)로 부른다(2026-10-08 점검 A2). 세
+    서비스 함수는 오늘·설정을 읽지 않는다 — 오늘은 페이지의 기본 조회기간과 샘플 fleet 을 거쳐 날짜·
+    마스터 지문으로 들어온다. 사용기준 HBM 규칙 같은 코드 상수는 키에 넣지 않는다(배포는 프로세스를
+    새로 띄운다). `get_required_shortening` 도 구간을 같은 `get_equipment_lifecycle_spans` 에서 받는다
+    — 키의 마스터·비가동 지문을 그대로 쓰므로, 시나리오·기존보유·오늘만 바뀐 계획은 구간을 다시 만들지
+    않는다.
   - `get_required_shortening_csvs` 는 그 탭의 CSV 세 벌 바이트를 계획 키 + 화면이 고르는 것(목표·공정
     차례·달)으로 캐시한다(2026-10-08 점검 A10 — 목표만 바꾼 rerun 이 세 표를 다시 만들고 직렬화했다).
     `_plan` 은 같은 계획 키로 받은 계획이어야 한다. 바이트를 지연 생성(콜러블)으로 만들지는 않는다(TODO
@@ -2950,7 +2965,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (90·100·110·120·130%)에 모자란 공정·월마다 신규 호기 Qual 을 며칠 당겨야 하는지, 당길 호기가
     바닥나면 가상 호기 「추가N」이 언제까지 Qual 을 마쳐야 하는지 낸다. **어느 DB 도 열지 않는다.**
   - 가용은 Static/Dynamic 탭과 같은 길(`span_date_range` 로 넓힌 생애주기 구간 →
-    `build_monthly_equipment_availability` → `dynamic_available_equipment`)이고, 소요는
+    `build_monthly_equipment_availability` → `dynamic_available_equipment`)이다. 구간은 `spans` 로
+    이미 만든 것을 받을 수 있다(같은 마스터·비가동, 그 범위, `with_unit_share=True` — 캐시 경계가
+    Static/Dynamic 과 나눠 쓰는 구간을 넘긴다). 소요는
     `calculate_securement_rate` 로 `(월, 공정)` 에 모은다 — 교차검증과 같은 함수다. 공정은 같은
     이름일 때만 맞대고 한쪽에만 있는 공정은 목록(`required_only`·`availability_only`·
     `missing_cutoff`)으로 돌려준다.
@@ -3120,6 +3137,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - DB는 페이지 호출부가 읽고 프레임과 오류를 넘긴다. 시뮬레이션 조회 실패는 이 탭에서만
     알리며 Main·설정·입력을 막지 않는다. 양쪽에 없는 공정 경고와 전체 합계의 단측 공정
     제외, 교차검증에서 Static으로 대체한 공정 안내를 유지한다.
+  - 월별 Dynamic·비교·호기별 기여는 `simulation_cache` 의 내용 지문 키 래퍼로 받는다
+    (`get_availability_comparison`·`get_monthly_equipment_contributions`) — 조회 결과·공정·표시·분류를
+    바꾸는 rerun 은 결과를 고르기만 한다. 호기 필터를 건 행렬(`_unit_filtered_matrix`)은 필터를 건
+    회차에만 돌아 캐시하지 않았다.
   - 세 결과 모두 일정 미정 줄 아래에 사용기준 제외 줄을 같은 범위(공정·호기 필터)로 둔다. 호기가
     모두 HBM 이 아닌 공정은 Dynamic 이 기존보유뿐이거나 없어, 없으면 「기준정보에만 있는 공정」으로
     뜬다 — 그 까닭은 이 줄이 말한다(그 경고 문구는 고치지 않았다).
@@ -3485,7 +3506,12 @@ RQ_MODULE
 9. **설비 운영 이력은 시나리오와 물리적으로 분리한다.** 가용설비 현황은 전용 DuckDB,
    전용 마이그레이션·Repository·캐시와 페이지 전용 조회기간을 사용하고 저장마다 새 전체
    스냅샷을 만든다. `Static/Dynamic`·`필요단축일정` 탭만 시뮬레이션 기준정보·소요대수를 읽어
-   비교하며 설비 운영 저장과 Main·설정·입력 화면은 시뮬레이션 DB에 의존하지 않는다.
+   비교하며 설비 운영 저장과 Main·설정·입력 화면은 시뮬레이션 DB에 의존하지 않는다. 두 탭의
+   비싼 계산(생애주기 구간 → 월별 Dynamic → Static 비교, 필요단축일정 계획·CSV)은
+   `simulation_cache` 의 내용 지문 키 래퍼로만 부른다 — 키는 그 함수의 **실제 입력 전부**(마스터·
+   비가동·기존보유·Cut-off·Static·구간의 `frame_digest`, 구간 범위, 달, 환산비 지문, 필요단축일정은
+   시나리오 키와 오늘)다. 입력을 하나라도 빼면 낡은 값이 나오므로 새 입력을 더하면 키도 더한다
+   (`tests/test_equipment_view_cache.py` 가 입력마다 키가 갈리고 캐시 결과 = 새 계산인지 본다).
 10. **실적 이력을 시나리오에 복제하지 않는다.** 표준 Capa는 시나리오·리비전별로 보존하고,
     실적 효율과 생산실적은 원천 갱신 주기별 배치와 등록시각을 가진 누적 이력으로 관리한다.
     분석 시 선택한 표준 리비전과 조회 시점의 실적 이력을 연결한다.

@@ -56,7 +56,6 @@ from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.monthly_equipment_availability import (
     CATEGORIES,
     build_monthly_equipment_availability,
-    build_monthly_equipment_contributions,
     processes_in,
     span_date_range,
 )
@@ -65,6 +64,11 @@ from capa_simulation.services.securement_cross_check import (
     dynamic_available_equipment,
 )
 from capa_simulation.services.simulation_cache import (
+    DynamicMonthlyCacheKey,
+    availability_comparison_cache_key,
+    dynamic_monthly_cache_key,
+    get_availability_comparison,
+    get_monthly_equipment_contributions,
     get_undated_equipment,
     get_usage_excluded_equipment,
 )
@@ -178,14 +182,27 @@ def render_availability_gap_panel(
             "조회기간의 시작일을 앞당기세요."
         )
 
-    monthly = build_monthly_equipment_availability(
-        spans, baseline, cutoff, months, conversion_ratios=conversion_ratios
-    )
     # **`or` 를 쓰지 않는다.** 프레임에 `or` 를 걸면 `__bool__` 이 불려
     # 「truth value of a DataFrame is ambiguous」로 죽는다. 빈 프레임도 거짓이라
     # 값이 있는 쪽에서만 터지는데, 그 경로가 곧 실제 화면이다.
     static = pd.DataFrame() if static_availability is None else static_availability
-    comparison = build_availability_gap(monthly, static, months)
+    # 월별 분해와 비교는 입력 전부의 내용 지문으로 캐시한다 — 조회 결과·공정·표시를 바꾸는 rerun 은
+    # 결과를 고르기만 한다(2026-10-08 점검 A2).
+    monthly_key = dynamic_monthly_cache_key(
+        spans=spans,
+        baseline=baseline,
+        cutoff=cutoff,
+        months=months,
+        conversion_ratios=conversion_ratios,
+    )
+    monthly, comparison = get_availability_comparison(
+        availability_comparison_cache_key(monthly_key, static=static),
+        _spans=spans,
+        _baseline=baseline,
+        _cutoff=cutoff,
+        _static=static,
+        _conversion_ratios=conversion_ratios,
+    )
 
     if static_error:
         st.warning(f"Static 가용대수를 읽지 못해 Dynamic 만 표시합니다 — {static_error}")
@@ -302,7 +319,7 @@ def render_availability_gap_panel(
     if detail_mode == "호기 목록":
         _render_unit_list(
             _scoped_contributions(
-                spans, baseline, cutoff, months, conversion_ratios, scope, chosen_units
+                monthly_key, spans, baseline, cutoff, conversion_ratios, scope, chosen_units
             ),
             controls=controls,
         )
@@ -329,7 +346,7 @@ def render_availability_gap_panel(
                 row=str(display.index[int(position)]),
                 month=month_by_label[column],
                 contributions=_scoped_contributions(
-                    spans, baseline, cutoff, months, conversion_ratios, scope, chosen_units
+                    monthly_key, spans, baseline, cutoff, conversion_ratios, scope, chosen_units
                 ),
             )
 
@@ -389,21 +406,26 @@ def matrix_table_key(process: str | None, months: Sequence[int], rows: Sequence[
 
 
 def _scoped_contributions(
+    monthly_key: DynamicMonthlyCacheKey,
     spans: pd.DataFrame,
     baseline: pd.DataFrame,
     cutoff: pd.DataFrame,
-    months: list[int],
     conversion_ratios: Mapping[str, float] | None,
     scope: set[str],
     chosen_units: set[str] | None = None,
 ) -> pd.DataFrame:
     """표와 같은 범위의 호기별 기여. 목록을 볼 때만 만든다 — 대수 표만 보면 들지 않는 비용이다.
 
-    `chosen_units` 가 있으면 그 호기만 남긴다. 기존보유 줄은 `설비명` 이 비어 함께 빠진다 — 호기
-    필터를 건 대수 표(`_unit_filtered_matrix`)와 같은 범위다.
+    기여 줄 전체는 월별과 같은 키(`monthly_key`, 달이 그 안에 있다)로 캐시하고 범위는 여기서
+    좁힌다. `chosen_units` 가 있으면 그 호기만 남긴다. 기존보유 줄은 `설비명` 이 비어 함께 빠진다
+    — 호기 필터를 건 대수 표(`_unit_filtered_matrix`)와 같은 범위다.
     """
-    contributions = build_monthly_equipment_contributions(
-        spans, baseline, cutoff, months, conversion_ratios=conversion_ratios
+    contributions = get_monthly_equipment_contributions(
+        monthly_key,
+        _spans=spans,
+        _baseline=baseline,
+        _cutoff=cutoff,
+        _conversion_ratios=conversion_ratios,
     )
     kept = contributions["공정"].astype(str).isin(scope)
     if chosen_units is not None:

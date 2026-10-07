@@ -5,13 +5,14 @@
 import hashlib
 import threading
 from collections import OrderedDict
-from collections.abc import Callable, Hashable, Mapping
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from datetime import date
 from typing import Any, NamedTuple
 
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.services.availability_gap import GapComparison, build_availability_gap
 from capa_simulation.services.capacity_reference_editor import build_reference_edit_table
 from capa_simulation.services.dashboard import (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
@@ -21,6 +22,7 @@ from capa_simulation.services.dashboard import (
 )
 from capa_simulation.services.display_order import PreparedDisplayOrder
 from capa_simulation.services.equipment_availability import (
+    build_equipment_lifecycle_spans,
     build_space_equipment_status,
     build_weekly_equipment_availability,
 )
@@ -32,6 +34,11 @@ from capa_simulation.services.load_calculator import (
     filter_edp_plan,
 )
 from capa_simulation.services.month_filter import MONTH_COLUMN, filter_month_range
+from capa_simulation.services.monthly_equipment_availability import (
+    build_monthly_equipment_availability,
+    build_monthly_equipment_contributions,
+    span_date_range,
+)
 from capa_simulation.services.product_share import build_product_volume
 from capa_simulation.services.required_equipment import (
     calculate_required_equipment,
@@ -898,8 +905,23 @@ def get_required_shortening(
     프레임은 해시하지 않는다 — 키(`required_shortening_cache_key`)가 내용 지문과 시나리오 키를
     모두 싣는다. `_required_equipment` 는 키의 시나리오 키로 받은 바로 그 소요대수여야 한다.
     호기 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
+
+    호기 구간은 Static/Dynamic 과 **같은 구간 캐시**(`get_equipment_lifecycle_spans`)에서 받는다.
+    키의 마스터·비가동 지문을 그대로 쓰므로 다시 해시하지 않는다. 시나리오·기존보유·오늘만 바뀌어
+    이 결과가 새로 돌 때도 구간(3천 행·32개월에 2초 남짓, 샘플 관측)은 다시 만들지 않고, 두 탭의
+    구간 범위가 같으면 한 벌을 나눈다.
     """
-    _, _, _, _, _, months, today = cache_key
+    _, equipment_digest, downtime_digest, _, _, months, today = cache_key
+    span = span_date_range(months, _cutoff) if months else None
+    spans = (
+        get_equipment_lifecycle_spans(
+            (equipment_digest, downtime_digest, span[0].isoformat(), span[1].isoformat()),
+            _equipment=_equipment,
+            _downtime=_downtime,
+        )
+        if span is not None
+        else None
+    )
     return plan_required_shortening(
         equipment=_equipment,
         downtime=_downtime,
@@ -908,6 +930,7 @@ def get_required_shortening(
         required_equipment=_required_equipment,
         months=months,
         today=date.fromisoformat(today),
+        spans=spans,
     )
 
 
@@ -941,3 +964,136 @@ def get_required_shortening_csvs(
         frame.to_csv(index=False).encode("utf-8-sig") for frame in frames
     )
     return units, all_levels, process_months
+
+
+# Static/Dynamic 의 구간 → 월별 → 비교. 필요단축일정과 같은 방식이다 — 프레임은 `_` 인자로 해시하지
+# 않고, 키가 **함수의 실제 입력 전부**를 내용 지문으로 싣는다. 세 서비스 함수는 오늘 날짜·설정을
+# 읽지 않는다(오늘은 페이지의 기본 조회기간과 샘플 fleet 을 거쳐 들어오고, 그 둘은 날짜·마스터
+# 지문이 덮는다). 사용기준 HBM 규칙·분류 표 같은 코드 상수는 키에 넣지 않는다 — 배포는 프로세스를
+# 새로 띄운다.
+
+# (호기 마스터 내용 지문, 비가동 내용 지문, 구간 시작, 구간 끝)
+EquipmentSpanCacheKey = tuple[str, str, str, str]
+
+
+def equipment_span_cache_key(
+    *,
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    start_date: date,
+    end_date: date,
+) -> EquipmentSpanCacheKey:
+    """`get_equipment_lifecycle_spans` 의 키. 마스터·비가동은 저장 안 한 편집본·샘플일 수 있어 내용
+    지문이다. `required_shortening_cache_key` 의 두 지문과 같은 함수라 필요단축일정과 키가 겹친다.
+    """
+    return (
+        frame_digest(equipment),
+        frame_digest(downtime),
+        start_date.isoformat(),
+        end_date.isoformat(),
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_equipment_lifecycle_spans(
+    cache_key: EquipmentSpanCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+) -> pd.DataFrame:
+    """세는 데 쓰는 호기 생애주기 구간(`build_equipment_lifecycle_spans(with_unit_share=True)`).
+
+    Static/Dynamic 은 보기(가용대수 비교 · 분류별 내역 · 확보율 교차검증)나 같은 탭의 위젯 하나만
+    바꿔도 페이지 전체가 다시 돌아, 상태 판정을 바뀌는 날마다 다시 하는 이 계산이 매번 들었다
+    (2026-10-08 점검 A2 — 데모 19행 0.34초, 3천 행 복제 6개월 1.45초·32개월 2.35초). 필요단축일정도
+    이 캐시를 쓴다(`get_required_shortening`).
+
+    `_equipment`·`_downtime` 은 키의 두 지문을 만든 바로 그 프레임이어야 한다. 마스터가 계약을
+    어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
+    """
+    _, _, start, end = cache_key
+    return build_equipment_lifecycle_spans(
+        _equipment,
+        _downtime,
+        start_date=date.fromisoformat(start),
+        end_date=date.fromisoformat(end),
+        with_unit_share=True,
+    )
+
+
+# (구간·기존보유·Cut-off 내용 지문, 달, 환산비 지문)
+DynamicMonthlyCacheKey = tuple[str, str, str, tuple[int, ...], str]
+
+
+def dynamic_monthly_cache_key(
+    *,
+    spans: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    months: Sequence[int],
+    conversion_ratios: Mapping[str, float] | None,
+) -> DynamicMonthlyCacheKey:
+    """월별 Dynamic(`build_monthly_equipment_availability`·`_contributions`)의 키.
+
+    **환산비는 따로 싣는다** — 구간 표에는 환산비 칸이 없어 구간 지문이 그것을 덮지 않는다. 없음과
+    빈 매핑은 서비스가 같게 읽으므로(`conversion_ratios or {}`) 같은 지문이다.
+    """
+    ratios = sorted((str(unit), float(ratio)) for unit, ratio in (conversion_ratios or {}).items())
+    return (
+        frame_digest(spans),
+        frame_digest(baseline),
+        frame_digest(cutoff),
+        tuple(int(month) for month in months),
+        hashlib.sha256(repr(ratios).encode("utf-8")).hexdigest(),
+    )
+
+
+# (월별 키, Static 내용 지문)
+AvailabilityComparisonCacheKey = tuple[DynamicMonthlyCacheKey, str]
+
+
+def availability_comparison_cache_key(
+    monthly_key: DynamicMonthlyCacheKey, *, static: pd.DataFrame
+) -> AvailabilityComparisonCacheKey:
+    """`get_availability_comparison` 의 키. Static(`RQ_EQP_AVBL`)은 공정 × 월이라 작아 내용을
+    해시한다 — 기준정보 판·시나리오 토큰으로 대신하지 않는다."""
+    return (monthly_key, frame_digest(static))
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_availability_comparison(
+    cache_key: AvailabilityComparisonCacheKey,
+    _spans: pd.DataFrame,
+    _baseline: pd.DataFrame,
+    _cutoff: pd.DataFrame,
+    _static: pd.DataFrame,
+    _conversion_ratios: Mapping[str, float] | None,
+) -> tuple[pd.DataFrame, GapComparison]:
+    """Static/Dynamic 의 월별 Dynamic 분해와 Static 대비 비교(`build_availability_gap`).
+
+    보기 전환마다 다시 돌던 둘을 묶어 둔다(점검 A2). 프레임·매핑은 키를 만든 바로 그 값이어야
+    한다(`dynamic_monthly_cache_key` + `availability_comparison_cache_key`).
+    """
+    (_, _, _, months, _), _ = cache_key
+    monthly = build_monthly_equipment_availability(
+        _spans, _baseline, _cutoff, months, conversion_ratios=_conversion_ratios
+    )
+    return monthly, build_availability_gap(monthly, _static, months)
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_monthly_equipment_contributions(
+    cache_key: DynamicMonthlyCacheKey,
+    _spans: pd.DataFrame,
+    _baseline: pd.DataFrame,
+    _cutoff: pd.DataFrame,
+    _conversion_ratios: Mapping[str, float] | None,
+) -> pd.DataFrame:
+    """분류별 내역의 호기별 기여(`build_monthly_equipment_contributions`).
+
+    `호기 목록` 과 칸 누르기가 쓰고, 분류·표시를 바꾸는 rerun 마다 다시 만들지 않는다. 키는 월별과
+    같다(`dynamic_monthly_cache_key`).
+    """
+    _, _, _, months, _ = cache_key
+    return build_monthly_equipment_contributions(
+        _spans, _baseline, _cutoff, months, conversion_ratios=_conversion_ratios
+    )

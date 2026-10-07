@@ -47,7 +47,6 @@ from capa_simulation.persistence.equipment_cache import (
     load_floor_layout_canvases,
     load_latest_equipment_snapshot,
 )
-from capa_simulation.services.equipment_availability import build_equipment_lifecycle_spans
 from capa_simulation.services.equipment_contract import (
     EQUIPMENT_ID_COLUMN,
 )
@@ -59,6 +58,8 @@ from capa_simulation.services.equipment_samples import (
 from capa_simulation.services.floor_layout_profile import max_canvas_extent
 from capa_simulation.services.monthly_equipment_availability import processes_in, span_date_range
 from capa_simulation.services.simulation_cache import (
+    equipment_span_cache_key,
+    get_equipment_lifecycle_spans,
     get_scenario_capacity_and_demand,
     scenario_cache_key,
 )
@@ -274,13 +275,18 @@ with gap_tab:
         span_start = min(start_date, required_span[0]) if required_span else start_date
         span_end = max(end_date, required_span[1]) if required_span else end_date
         try:
-            # 지분이 바뀌는 날에도 구간을 끊는다. 대수 축이 모듈 행을 설비 한 대로 센다.
-            gap_spans = build_equipment_lifecycle_spans(
-                dashboard_equipment,
-                dashboard_downtime,
-                start_date=span_start,
-                end_date=span_end,
-                with_unit_share=True,
+            # 지분이 바뀌는 날에도 구간을 끊는다. 대수 축이 모듈 행을 설비 한 대로 센다. 보기·위젯을
+            # 바꾸는 rerun 마다 다시 만들지 않도록 마스터·비가동 내용 지문과 범위로 캐시한다 —
+            # 필요단축일정과 같은 캐시라 범위가 같으면 한 벌을 나눈다.
+            gap_spans = get_equipment_lifecycle_spans(
+                equipment_span_cache_key(
+                    equipment=dashboard_equipment,
+                    downtime=dashboard_downtime,
+                    start_date=span_start,
+                    end_date=span_end,
+                ),
+                _equipment=dashboard_equipment,
+                _downtime=dashboard_downtime,
             )
         except ValueError as exc:
             st.error(str(exc))
