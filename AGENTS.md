@@ -203,7 +203,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **사이드바 맨 아래는 앱 정보 카드다**(2026-10-07 사용자 결정 — Admin Area 본문 맨 아래에서
     옮겼다). 앱·버전·빌드 한 줄과 개발 팀·문의처 한 줄(`components/app_credits.py`)을
     `Support` 상자 뒤, `navigation.run()` **앞**에서 그린다 — 페이지가 `st.stop()` 해도 카드는
-    남는다. 페이지가 더하는 조건 카드보다 파이썬 차례로는 앞이므로 맨 아래 자리와 바닥 고정은
+    남는다. **`Support` 와 이 카드는 그룹 상자 바로 뒤, 「조회 조건」 구역보다 먼저** 그린다.
+    Streamlit 은 사이드바 요소를 key 가 아니라 순번으로 맞춰 갈아 끼우는데, 조회 조건 상자는
+    화면마다 수가 달라 그 뒤에 그리면 페이지를 옮길 때 둘의 순번이 밀린다. 그러면 지난 회차의
+    사본이 옛 순번에 흐린 채 실행이 끝날 때까지 남고, CSS `order`·`sticky` 가 그 사본까지 맨
+    아래로 끌어내려 둘이 두 벌로 보였다(2026-10-08). 이 둘 앞에는 화면마다 수가 같은 것(HOME
+    링크·그룹 상자)만 세운다 — `tests/test_app_navigation.py` 가 화면마다 순번이 같은지 본다.
+    파이썬 차례로는 조건 구역·페이지 조건 카드보다 앞이므로 맨 아래 자리와 바닥 고정은
     사이드바 CSS 가 지킨다(아래 `sidebar_style.py` 항목). 부트스트랩 오류 화면은 사이드바를
     세우기 전에 멈추므로 카드가 없다.
   - 사이드바 CSS 문자열은 `components/sidebar_style.py`가 탐색 그룹·활성 경로·컨테이너
@@ -2039,7 +2045,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     상자(`sidebar_expander`)라 기본 접힘·연 상태 기억을 그대로 받는다. key 는
     `condition_card_<이름>` 이고 `sidebar_style.py` 가 **이 접두어 하나로** 모든 카드에 조건
     상자 서식(청록 면·`ACCENT` 아이콘·`⌄`)을 건다 — 카드를 더할 때 서식 쪽을 고치지 않는다.
-    페이지가 그리는 요소라 파이썬 차례로는 `Support` 뒤지만 CSS `order` 가 `Support` 를 민다.
+    페이지가 그리는 요소라 파이썬 차례로는 `Support`·앱 정보 카드 뒤지만 CSS `order` 가 둘을 민다.
 - `src/capa_simulation/design/tokens.py`
   - 색·서체·표 치수를 역할 이름으로 단일 정의한다. 파이썬 코드에 색 리터럴을 쓰지
     않는다. 규칙은 `docs/design_system.md` 를 따른다. Figure 공통 유틸리티는 여기가 아니라
