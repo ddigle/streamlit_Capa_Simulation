@@ -88,6 +88,8 @@ ARCHIVED_EXPANDER_KEY = "scenario_list_archived_expander"
 IDENTIFIER_EXPANDER_KEY = "scenario_store_identifier_expander"
 # 복제 폼 입력칸의 세대. 저장에 성공하면 올라 다음 회차에 빈 폼으로 선다(`clone_field_key`).
 CLONE_FORM_GENERATION_KEY = "scenario_create_form_generation"
+# 「새 리비전 저장」 폼 두 칸의 key 세대. 저장에 성공할 때마다 오른다(`revision_field_key`).
+REVISION_FORM_GENERATION_KEY = "scenario_revision_form_generation"
 REVISION_SELECT_KEY = "scenario_list_revision_id"
 SELECT_COLUMN = "선택"
 ORDER_COLUMN = "순서"
@@ -778,6 +780,18 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
         st.rerun()
 
 
+def revision_field_key(field: str) -> str:
+    """「새 리비전 저장」 폼 한 칸의 위젯 키. 저장에 성공할 때마다 세대가 바뀐다.
+
+    key 가 없던 때는 저장에 성공해도 적은 리비전명·메모가 그대로 남아, 한 번 더 누르면 같은
+    이름의 리비전이 또 섰다. 사이드바 저장 팝업(`scenario_status.save_field_key`)·복제 폼
+    (`clone_field_key`)과 같은 방식으로 성공한 회차에만 key 를 바꿔 새 빈 칸으로 세운다 — 거절된
+    저장(계산 검사·저장 오류)은 세대를 그대로 두어 적은 글이 남는다.
+    """
+    generation = int(st.session_state.get(REVISION_FORM_GENERATION_KEY, 0))
+    return f"scenario_revision_{field}_g{generation}"
+
+
 def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
     scenario_id = active_persisted_scenario_id()
     if scenario_id is None:
@@ -789,8 +803,8 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
         st.error(f"리비전 기준정보를 불러오지 못했습니다: {bootstrap_error_message(exc)}")
         return
     with st.form("scenario_revision_form"):
-        revision_name = st.text_input("새 리비전명")
-        note = st.text_area("변경 메모", height=100)
+        revision_name = st.text_input("새 리비전명", key=revision_field_key("name"))
+        note = st.text_area("변경 메모", height=100, key=revision_field_key("note"))
         revision_submitted = st.form_submit_button(
             "새 리비전 저장",
             icon=":material/save_as:",
@@ -837,6 +851,9 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
         )
         if verdict.message:
             st.session_state[FLASH_WARNING_KEY] = verdict.message
+        st.session_state[REVISION_FORM_GENERATION_KEY] = (
+            int(st.session_state.get(REVISION_FORM_GENERATION_KEY, 0)) + 1
+        )
         st.rerun()
 
 

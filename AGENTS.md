@@ -3463,6 +3463,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/scenario_management.py`,
   `bigdataquery_registration.py`
   - 시나리오 관리 페이지의 두 탭 UI.
+  - 「현재 활성 RQ 복제」·「새 리비전 저장」 폼의 입력 칸은 **저장에 성공한 회차에만** key 세대를
+    올려 새 빈 칸으로 세운다(`clone_field_key`·`revision_field_key`). 남기면 한 번 더 눌러 같은
+    이름이 또 서고, 세션 칸만 비우면 브라우저가 옛 글을 되보낸다. 거절된 저장은 적은 글이 남는다.
   - 파생 시나리오의 원본 리비전 선택과 신규 저장 폼은 `components/scenario_transform.py`,
     월 축이 있는 12표·없는 4표의 복사와 검증은 `services/scenario_transform.py`가 맡는다.
     저장은 새 데이터셋과 초기 리비전을 만들며 현재 활성 편집본을 바꾸지 않는다.

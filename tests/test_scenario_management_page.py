@@ -301,9 +301,18 @@ def test_revision_save_keeps_the_session_virtual_products(tmp_path: Path) -> Non
     next(widget for widget in app.text_input if widget.label == "새 리비전명").set_value(
         "가상 제품 포함"
     )
+    next(widget for widget in app.text_area if widget.label == "변경 메모").set_value(
+        "남지 않을 메모"
+    )
     next(button for button in app.button if button.label == "새 리비전 저장").click()
     app.run()
     assert not app.exception
+    # 저장에 성공하면 두 칸이 새 key 의 빈 위젯으로 선다 — 남아 있으면 한 번 더 눌러 같은 이름의
+    # 리비전이 또 선다. key 가 바뀌어야 브라우저도 옛 글을 들고 있지 않는다.
+    name_box = next(widget for widget in app.text_input if widget.label == "새 리비전명")
+    note_box = next(widget for widget in app.text_area if widget.label == "변경 메모")
+    assert (name_box.key, name_box.value) == ("scenario_revision_name_g1", "")
+    assert (note_box.key, note_box.value) == ("scenario_revision_note_g1", "")
 
     repository = DuckDBScenarioRepository(database_path)
     (saved,) = [
@@ -325,6 +334,33 @@ def test_revision_save_keeps_the_session_virtual_products(tmp_path: Path) -> Non
             "원본 Stack": "8H",
         }
     ]
+
+
+def test_a_refused_revision_save_keeps_the_typed_name_and_memo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """계산 검사에 막힌 「새 리비전 저장」은 적은 리비전명·메모를 남긴다(key 세대 그대로)."""
+    import capa_simulation.components.scenario_management as scenario_management
+    from capa_simulation.components.capacity_gate import GateVerdict
+
+    monkeypatch.setattr(
+        scenario_management,
+        "revision_save_verdict",
+        lambda *args: GateVerdict(False, "이번 편집이 깨뜨린 것입니다"),
+    )
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+    app.segmented_control(key=MODE_KEY).set_value("리비전 저장").run()
+    app.text_input(key="scenario_revision_name_g0").set_value("막힐 리비전")
+    app.text_area(key="scenario_revision_note_g0").set_value("고친 까닭")
+    next(button for button in app.button if button.label == "새 리비전 저장").click()
+    app.run()
+
+    assert not app.exception
+    assert any("이번 편집이 깨뜨린" in item.value for item in app.error)
+    assert app.text_input(key="scenario_revision_name_g0").value == "막힐 리비전"
+    assert app.text_area(key="scenario_revision_note_g0").value == "고친 까닭"
 
 
 def _register_virtual(app: AppTest, product: str) -> VirtualProductRecord:
