@@ -84,9 +84,13 @@ _MONTHS_CSV_KEY = "equipment_shortening_months_csv"
 # 표 첫 칸(행 이름)과 월 칸의 최소 폭. 달이 많으면 가로로 흐른다.
 _LABEL_COLUMN_PX = 170
 _MONTH_COLUMN_MIN_PX = 84
-# 호기 줄: 이름 칸 · 타임라인 · 단축일수 칸.
-_UNIT_NAME_PX = 210
-_UNIT_RESULT_PX = 130
+# 호기 줄: 이름·일정 칸 · 타임라인 · 단축일수 칸. 한 줄에 이름과 「기존 MM.DD → 단축 MM.DD」 를
+# 나란히 두므로 이름 칸이 넓고, 오른쪽은 「−N일」 하나뿐이라 좁다.
+_UNIT_NAME_PX = 250
+_UNIT_RESULT_PX = 70
+# 타임라인 한 줄의 높이와 표지(선·◀·●·◌)의 세로 가운데. 표지는 모두 이 가운데에 맞춘다.
+_TRACK_HEIGHT_PX = 24
+_TRACK_CENTER_PX = _TRACK_HEIGHT_PX / 2
 _TRACK_MIN_PX = 480
 # 타임라인 위 달 이름의 최대 개수. 넘으면 몇 달씩 건너뛴다.
 _MAX_AXIS_LABELS = 12
@@ -494,8 +498,9 @@ def _percent(level: float) -> str:
     return f"{round(level * 100)}%"
 
 
-def _short_date(day: date) -> str:
-    return f"{day:%y.%m.%d}"
+def _month_day(day: date) -> str:
+    """호기 줄의 날짜. 연도는 줄의 풍선(`title`)에 남긴다."""
+    return f"{day:%m.%d}"
 
 
 def _signed(value: float) -> str:
@@ -577,20 +582,23 @@ def _style() -> str:
 .shk-units-legend {{font-size:12px;color:{tokens.TEXT_MUTED}}}
 .shk-unit {{display:grid;grid-template-columns:{_UNIT_NAME_PX}px minmax({_TRACK_MIN_PX}px,1fr)
   {_UNIT_RESULT_PX}px;align-items:center;gap:10px;background:{tokens.SURFACE_SUBTLE};
-  border:1px solid {tokens.BORDER};border-radius:8px;padding:6px 10px}}
+  border:1px solid {tokens.BORDER};border-radius:8px;padding:3px 10px}}
 .shk-unit-axis {{background:none;border:none;padding:0 10px}}
+.shk-unit-label {{display:flex;align-items:baseline;gap:8px;min-width:0;white-space:nowrap}}
 .shk-unit-name {{font-weight:700;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap}}
-.shk-unit-dates {{font-size:11.5px;color:{tokens.TEXT_MUTED};white-space:nowrap}}
-.shk-track {{position:relative;height:30px}}
+  white-space:nowrap;min-width:0}}
+.shk-unit-dates {{flex:none;font-size:13px;color:{tokens.TEXT};white-space:nowrap;
+  font-variant-numeric:tabular-nums}}
+.shk-unit-dates .shk-muted {{font-size:12px}}
+.shk-track {{position:relative;height:{_TRACK_HEIGHT_PX}px}}
 .shk-axis {{position:relative;height:16px;font-size:10.5px;color:{tokens.TEXT_MUTED}}}
 .shk-grid-line {{position:absolute;top:0;bottom:0;width:1px;background:{tokens.BORDER}}}
 .shk-today {{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed {tokens.TEXT_MUTED}}}
-.shk-result {{text-align:right;display:flex;flex-direction:column;gap:1px}}
-.shk-cut {{font-family:{display};font-weight:800;font-size:16px;color:{tokens.ACCENT}}}
-.shk-new {{align-self:flex-end;font-weight:700;font-size:12.5px;border-radius:999px;
+.shk-result {{display:flex;justify-content:flex-end;align-items:center;white-space:nowrap}}
+.shk-cut {{font-family:{display};font-weight:800;font-size:16px;line-height:1.2;
+  color:{tokens.ACCENT}}}
+.shk-new {{font-weight:700;font-size:12.5px;border-radius:999px;
   padding:1px 10px;background:{tokens.STATUS_SHORTAGE};color:{tokens.TEXT}}}
-.shk-gain {{font-size:11.5px;color:{tokens.TEXT_MUTED}}}
 .shk-empty {{font-size:12.5px;color:{tokens.TEXT_MUTED};padding:6px 2px}}
 </style>
 """
@@ -843,7 +851,7 @@ def _units_markup(
     )
     legend = (
         '<div class="shk-units-legend">호기별 단축 — ● 기존 Qual · ◀ 목표 Qual · '
-        "◌ 신규 필요 Qual · 칸은 달</div>"
+        "◌ 신규 필요 Qual · 칸은 달 · 줄에 올리면 기여 시작·늘어난 환산대수·모듈 수</div>"
     )
     if units.empty:
         message = (
@@ -873,50 +881,67 @@ def _units_markup(
 
 
 def _unit_row(row: dict[str, object], axis: tuple[date, date], lines: str) -> str:
+    """호기 하나를 **한 줄**로 — 이름과 「기존 MM.DD → 단축 MM.DD」, 타임라인, 「−N일」.
+
+    가상 호기 「추가N」은 이름과 「필요 MM.DD」, 타임라인, 「신규」 다(2026-10-07 사용자 요청).
+    기여 시작일·늘어난 환산대수·모듈 수·해소 기여 월은 줄에서 걷고 줄의 풍선(`title`)에 연도까지
+    남긴다 — CSV 는 모든 칸을 그대로 낸다.
+    """
     name = _escape(row["호기"])
     target = row["목표 Qual"]
     assert isinstance(target, date)
     start = target + timedelta(days=1)
     gain = f"+{float(str(row['늘어난 환산대수'])):,.2f}대"
     modules = _whole(row["모듈 수"]) or 1
-    module_note = f" · 모듈 {modules}" if modules > 1 else ""
     left = _position(target, axis)
+    center = _TRACK_CENTER_PX
+    details = [str(row["호기"])]
     if row["구분"] == KIND_NEW:
-        dates = f"신규 필요 Qual {_short_date(target)} (기여 {_short_date(start)})"
+        dates = f'<span class="shk-muted">필요</span> {_month_day(target)}'
+        details.append(f"신규 필요 Qual {target:%Y-%m-%d}")
         # 부족 면색을 채우고 점선 테두리는 글자색이다 — 어두운 테마의 부족색(`STATUS_SHORTAGE`)은
         # 선으로만 그리면 바탕에 묻힌다(2026-10-07 브라우저 확인).
         marks = (
-            f'<span style="position:absolute;top:7px;left:calc({left:.3f}% - 8px);width:16px;'
-            f"height:16px;border-radius:50%;border:2px dashed {tokens.TEXT};"
+            f'<span style="position:absolute;top:{center - 8:g}px;left:calc({left:.3f}% - 8px);'
+            f"width:16px;height:16px;border-radius:50%;border:2px dashed {tokens.TEXT};"
             f'background:{tokens.STATUS_SHORTAGE};box-sizing:border-box"></span>'
         )
-        result = f'<span class="shk-new">신규</span><span class="shk-gain">{gain}</span>'
+        result = '<span class="shk-new">신규</span>'
     else:
         original = row["기존 Qual"]
         assert isinstance(original, date)
         right = _position(original, axis)
-        dates = f"{_short_date(original)} → {_short_date(target)} (기여 {_short_date(start)})"
+        cut = _whole(row["단축일수"]) or 0
+        dates = (
+            f'<span class="shk-muted">기존</span> {_month_day(original)} → '
+            f'<span class="shk-muted">단축</span> {_month_day(target)}'
+        )
+        details += [
+            f"기존 Qual {original:%Y-%m-%d} → 목표 Qual {target:%Y-%m-%d}",
+            f"−{cut}일",
+        ]
         marks = (
-            f'<span style="position:absolute;top:14px;height:3px;border-radius:2px;'
+            f'<span style="position:absolute;top:{center - 1.5:g}px;height:3px;border-radius:2px;'
             f'background:{tokens.ACCENT};left:{left:.3f}%;width:{max(right - left, 0):.3f}%">'
             "</span>"
-            f'<span style="position:absolute;top:9px;left:calc({left:.3f}% - 2px);width:0;'
-            "height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;"
-            f'border-right:10px solid {tokens.ACCENT}"></span>'
-            f'<span style="position:absolute;top:9px;left:calc({right:.3f}% - 6px);width:13px;'
-            f"height:13px;border-radius:50%;background:{tokens.TEXT_MUTED};"
+            f'<span style="position:absolute;top:{center - 6:g}px;left:calc({left:.3f}% - 2px);'
+            "width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid "
+            f'transparent;border-right:10px solid {tokens.ACCENT}"></span>'
+            f'<span style="position:absolute;top:{center - 6.5:g}px;left:calc({right:.3f}% - 6px);'
+            f"width:13px;height:13px;border-radius:50%;background:{tokens.TEXT_MUTED};"
             f'border:2px solid {tokens.SURFACE_SUBTLE};box-sizing:border-box"></span>'
         )
-        result = (
-            f'<span class="shk-cut">−{_whole(row["단축일수"]) or 0}일</span>'
-            f'<span class="shk-gain">{gain}</span>'
-        )
-    title = f"{row['호기']} · 해소 기여 월 {row['해소 기여 월'] or '-'}"
+        result = f'<span class="shk-cut">−{cut}일</span>'
+    details += [
+        f"기여 시작 {start:%Y-%m-%d}",
+        f"늘어난 환산대수 {gain}",
+        *([f"모듈 {modules}"] if modules > 1 else []),
+        f"해소 기여 월 {row['해소 기여 월'] or '-'}",
+    ]
     return (
-        f'<div class="shk-unit" title="{_escape(title)}">'
-        f'<div style="display:flex;flex-direction:column;gap:1px;min-width:0">'
-        f'<span class="shk-unit-name">{name}{_escape(module_note)}</span>'
-        f'<span class="shk-unit-dates">{_escape(dates)}</span></div>'
+        f'<div class="shk-unit" title="{_escape(" · ".join(details))}">'
+        f'<div class="shk-unit-label"><span class="shk-unit-name">{name}</span>'
+        f'<span class="shk-unit-dates">{dates}</span></div>'
         f'<div class="shk-track">{lines}{marks}</div>'
         f'<div class="shk-result">{result}</div></div>'
     )

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import codecs
 import io
+import re
 from datetime import date
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from test_equipment_pages import _open_tab
 from capa_simulation.components.required_shortening_panel import (
     SHORTENING_LEVEL_KEY,
     SHORTENING_PROCESS_KEY,
+    _unit_row,
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.navigation import EQUIPMENT_SHORTENING_TAB
@@ -242,6 +244,9 @@ def test_the_tab_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) -
     assert "12.50" in body and "198K" in body
     # 소요 6.0 x 110% 는 샘플 가용으로 모자라는 공정이 있다 — 공정을 안 고르면 그 공정만 카드다.
     assert _cards(app), body[:500]
+    # 호기 줄은 한 줄이다 — 늘어난 환산대수 줄과 「(기여 …)」 는 줄에 없고 풍선에만 있다.
+    assert 'class="shk-unit"' in body
+    assert "shk-gain" not in body and "(기여 " not in body
     # 조건 카드에는 기간과 공정이, 본문 머리에는 목표 확보율이 선다.
     assert {"시작 월", "끝 월"} <= {widget.label for widget in app.sidebar.selectbox}
     assert "공정 (표시순서)" in {widget.label for widget in app.sidebar.multiselect}
@@ -394,3 +399,66 @@ def test_an_empty_fleet_explains_the_empty_card(tmp_path: Path) -> None:
     assert any("등록된 호기가 없습니다" in str(item.value) for item in app.info)
     assert not _cards(app)
     clear_equipment_repository()
+
+
+def _visible(markup: str) -> str:
+    """풍선(`title`)을 뺀 줄 글자."""
+    return re.sub(r'title="[^"]*"', "", markup)
+
+
+def test_a_shortened_unit_row_is_one_line_with_the_full_detail_in_its_title() -> None:
+    """왼쪽은 이름과 「기존 MM.DD → 단축 MM.DD」, 오른쪽은 「−N일」 하나다(2026-10-07 사용자 요청).
+
+    기여 시작일·늘어난 환산대수·모듈 수·연도는 줄에서 빠지고 풍선에 남는다.
+    """
+    axis = (date(2026, 10, 1), date(2027, 1, 1))
+    row: dict[str, object] = {
+        "호기": "EQ<LONG>-0001",
+        "구분": KIND_SHORTENED,
+        "기존 Qual": date(2026, 12, 10),
+        "목표 Qual": date(2026, 10, 7),
+        "단축일수": 64,
+        "늘어난 환산대수": 0.29,
+        "모듈 수": 2,
+        "해소 기여 월": "26.10",
+    }
+
+    markup = _unit_row(row, axis, "")
+    visible = _visible(markup)
+
+    assert '<span class="shk-unit-name">EQ&lt;LONG&gt;-0001</span>' in markup
+    assert (
+        '<span class="shk-muted">기존</span> 12.10 → <span class="shk-muted">단축</span> 10.07'
+    ) in visible
+    assert '<div class="shk-result"><span class="shk-cut">−64일</span></div>' in visible
+    for gone in ("기여", "+0.29대", "모듈", "26.12.10", "2026"):
+        assert gone not in visible, gone
+    title = re.search(r'title="([^"]*)"', markup)
+    assert title is not None
+    assert title.group(1) == (
+        "EQ&lt;LONG&gt;-0001 · 기존 Qual 2026-12-10 → 목표 Qual 2026-10-07 · −64일 · "
+        "기여 시작 2026-10-08 · 늘어난 환산대수 +0.29대 · 모듈 2 · 해소 기여 월 26.10"
+    )
+
+
+def test_a_virtual_unit_row_says_when_it_is_needed_and_new() -> None:
+    """가상 호기는 이름과 「필요 MM.DD」, 오른쪽은 「신규」 하나다."""
+    axis = (date(2026, 10, 1), date(2027, 1, 1))
+    row: dict[str, object] = {
+        "호기": "추가1",
+        "구분": KIND_NEW,
+        "기존 Qual": None,
+        "목표 Qual": date(2026, 11, 3),
+        "단축일수": None,
+        "늘어난 환산대수": 0.26,
+        "모듈 수": None,
+        "해소 기여 월": "26.11",
+    }
+
+    markup = _unit_row(row, axis, "")
+    visible = _visible(markup)
+
+    assert '<span class="shk-muted">필요</span> 11.03' in visible
+    assert '<div class="shk-result"><span class="shk-new">신규</span></div>' in visible
+    assert "−" not in visible and "기여" not in visible and "+0.26대" not in visible
+    assert "신규 필요 Qual 2026-11-03 · 기여 시작 2026-11-04 · 늘어난 환산대수 +0.26대" in markup
