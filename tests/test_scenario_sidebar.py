@@ -345,7 +345,12 @@ def test_unapplied_edits_gate_both_load_and_save(sidebar_app: AppTest) -> None:
     # 않고 누르면 저장하지 않고 그렇다고 알린다(아래 테스트가 잠그지 않는 까닭을 말한다).
     app = _save(app, "체크 없이 누른 저장안")
     assert "test_saved_revision_name" not in app.session_state
-    assert any("저장하지 않았습니다" in item.value for item in app.warning)
+    refusals = [item.value for item in app.warning if "저장하지 않았습니다" in item.value]
+    assert refusals
+    # 거절돼도 리비전명·메모는 남는다(`SAVE_FORM_CLEAR_KEY`). 다시 적으라고 하면 지금 동작과
+    # 어긋난 안내가 된다 — 체크하고 다시 누르기만 하면 된다.
+    assert all("체크한 뒤 다시 저장하세요" in text for text in refusals), refusals
+    assert not any("다시 적어" in text for text in refusals), refusals
     app = app.checkbox(key="sidebar_save_discards_pending_edits").check().run()
     app = _save(app, "편집을 버린 저장안")
     assert app.session_state["test_saved_revision_name"] == "편집을 버린 저장안"
