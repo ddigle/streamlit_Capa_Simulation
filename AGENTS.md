@@ -412,6 +412,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`_save_comparison_revision`)는 고른 시나리오의 실제 리비전일 때만 쓴다. 하나를 나눠 쓰던 때는
     시나리오를 바꾸면 앞 시나리오의 리비전이 함께 와서, 공용 프로필이 이미 그 시나리오의 다른
     리비전을 가리키면(다른 탭·사용자가 바꾼 경우) 고른 것이 저장되지 않아 화면과 프로필이 갈렸다.
+    두 콜백은 `_replace_comparison_profile` 로 쓰고, **실제로 썼을 때만** 입장 화면 Summary 확인을
+    비운다(`_recheck_intro_summary` — `tests/test_summary_recheck_paths.py`).
   - **선행은 월 총량에만 건다.** Density·Wafer·확보율 셋에만 적용하고 계획 세부수량에는
     반영하지 않는다(2026-09-12 확정). 선행은 그 달에 앞당겨 넣은 총량이라 제품·거래선별로
     쪼갤 근거가 없다. 그래서 선행을 켜면 상단 Wafer 계획과 하단 세부수량 합이 어긋나는데,

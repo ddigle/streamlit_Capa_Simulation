@@ -58,15 +58,49 @@ def _forgotten(state: dict[str, Any]) -> bool:
     return intro_summary._SESSION_KEY not in state
 
 
+class _ComparisonRepo(_Repo):
+    """비교 저장 콜백이 받은 값이 실제 id 인지 볼 때 읽는 두 목록. 읽기는 적지 않는다."""
+
+    def list_scenarios(self) -> list[SimpleNamespace]:
+        return [SimpleNamespace(scenario_id="S")]
+
+    def list_revisions(self, scenario_id: str) -> list[SimpleNamespace]:
+        return [SimpleNamespace(revision_id="R")]
+
+
+@pytest.mark.parametrize("callback", ["_save_comparison_scenario", "_save_comparison_revision"])
 def test_choosing_a_comparison_rechecks_the_summary(
-    session: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    session: dict[str, Any], monkeypatch: pytest.MonkeyPatch, callback: str
 ) -> None:
-    repo = _Repo()
+    """비교 시나리오·리비전 상자의 저장 콜백은 각자 공용 프로필을 쓰고 Summary 확인을 비운다."""
+    repo = _ComparisonRepo()
     monkeypatch.setattr(home_preference, "get_scenario_repository", lambda path: repo)
+    monkeypatch.setattr(
+        home_preference,
+        "load_global_comparison_scenario",
+        lambda path: SimpleNamespace(scenario_id=None, revision_id=None),
+    )
     session[home_preference.COMPARISON_SCENARIO_KEY] = "S"
     session[home_preference.COMPARISON_REVISION_KEY] = "R"
-    home_preference._save_comparison_choice(DB)
+    getattr(home_preference, callback)(DB)
     assert repo.calls == ["replace_global_comparison_scenario"] and _forgotten(session)
+
+
+def test_an_unchanged_comparison_choice_neither_writes_nor_rechecks(
+    session: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """프로필과 같은 짝이면 쓰지 않으므로 Summary 를 다시 확인할 까닭도 없다."""
+    repo = _ComparisonRepo()
+    monkeypatch.setattr(home_preference, "get_scenario_repository", lambda path: repo)
+    monkeypatch.setattr(
+        home_preference,
+        "load_global_comparison_scenario",
+        lambda path: SimpleNamespace(scenario_id="S", revision_id="R"),
+    )
+    session[home_preference.COMPARISON_SCENARIO_KEY] = "S"
+    session[home_preference.COMPARISON_REVISION_KEY] = "R"
+    home_preference._save_comparison_revision(DB)
+    assert repo.calls == [] and not _forgotten(session)
 
 
 def test_filling_the_comparison_revision_rechecks_the_summary(
