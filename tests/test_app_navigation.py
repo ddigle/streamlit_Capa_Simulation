@@ -380,6 +380,7 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
         lambda extra_scripts=(): order.append(f"toolbar:{len(extra_scripts)}"),
     )
     monkeypatch.setattr(intro_summary, "render_intro_summary", lambda path: order.append("summary"))
+    monkeypatch.setattr(intro_summary, "warm_intro_summary", lambda path: order.append("warm"))
     monkeypatch.setattr(
         scenario_activation, "bootstrap_latest_official_scenario", _recording_bootstrap
     )
@@ -393,11 +394,42 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     # 부트스트랩 앞이다 — 부트스트랩 오류 화면(`st.stop()`)에서도 메뉴가 보이지 않고, 그 화면을
     # 인쇄해도 사이드바가 빠져야 한다. 서체 스타일(페이지 제목 등의 Archivo)도 그 바로 뒤다 — 오류
     # 화면의 제목도 같은 서체로 선다.
-    one_run = ["intro", "shell", "type", "toolbar:3", "bootstrap", "summary"]
+    # 「준비 중」으로 보낸 Summary GAP 은 페이지를 다 그린 **뒤** 만든다(`warm_intro_summary`).
+    one_run = ["intro", "shell", "type", "toolbar:3", "bootstrap", "summary", "warm"]
     assert order == one_run * 2
     # 고정 문자열을 회차마다 한 번씩 보낸다 — 빠진 회차에는 규칙이 사라진다.
     sent = [el.proto.body for el in app.get("html") if el.proto.body == typography.TYPOGRAPHY_STYLE]
     assert len(sent) == 1
+
+
+def test_the_summary_gap_is_warmed_after_a_page_that_stops(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """페이지가 `st.stop()` 해도 Summary GAP 은 페이지 뒤에서 만든다(페이지보다 앞에서는 않는다)."""
+    import streamlit as st
+
+    import capa_simulation.components.intro_summary as intro_summary
+
+    order: list[str] = []
+    real_navigation = st.navigation
+
+    def _stopping_navigation(*args: Any, **kwargs: Any) -> Any:
+        page = real_navigation(*args, **kwargs)
+
+        def _run() -> None:
+            order.append("page")
+            st.stop()
+
+        monkeypatch.setattr(page, "run", _run)
+        return page
+
+    monkeypatch.setattr(st, "navigation", _stopping_navigation)
+    monkeypatch.setattr(intro_summary, "render_intro_summary", lambda path: order.append("summary"))
+    monkeypatch.setattr(intro_summary, "warm_intro_summary", lambda path: order.append("warm"))
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert order == ["summary", "page", "warm"]
 
 
 def test_the_intro_summary_sends_the_official_six_months_once_per_value(_app: AppTest) -> None:

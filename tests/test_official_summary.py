@@ -222,6 +222,7 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
         profile_reads=0,
         parts=[],
         part_fail=None,
+        comparison_target=("S-CMP", "R-CMP"),
     )
 
     def fake_profiles(path: str) -> SimpleNamespace:
@@ -230,7 +231,9 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
             advance=SimpleNamespace(version=env.versions["advance"]),
             shipment=SimpleNamespace(version=env.versions["shipment"]),
             comparison=SimpleNamespace(
-                version=env.versions["comparison"], scenario_id="S-CMP", revision_id="R-CMP"
+                version=env.versions["comparison"],
+                scenario_id=env.comparison_target[0],
+                revision_id=env.comparison_target[1],
             ),
         )
 
@@ -368,6 +371,23 @@ def test_a_changed_comparison_is_built_after_the_page_and_sent_on_the_next_run(
     after = data("db")
     assert after["toggles"]["comparison"]["version"] == 1
     assert summary_env.repo.calls == calls and summary_env.builds == ["rel-1"]
+
+
+@pytest.mark.parametrize("target", [(None, None), ("S-OFFICIAL", "rev")])
+def test_a_comparison_that_needs_no_plan_is_answered_at_once(
+    summary_env: SimpleNamespace, target: tuple[str | None, str | None]
+) -> None:
+    """비교 대상을 비우거나 공식버전 자신으로 두면 까닭만 내면 된다 — 미루지 않는다."""
+    module = summary_env.module
+    module.official_summary_data("db")
+    summary_env.parts.clear()
+    summary_env.comparison_target = target
+    summary_env.versions["comparison"] += 1
+    module.forget_intro_summary_check()
+    sent = module.official_summary_data("db")
+    assert summary_env.parts == ["comparison"]
+    assert "pending" not in sent["toggles"]["comparison"]
+    assert summary_env.session[module._SESSION_KEY]["pending"] is False
 
 
 def test_warming_does_nothing_when_nothing_is_pending(summary_env: SimpleNamespace) -> None:

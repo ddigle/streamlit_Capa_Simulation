@@ -581,7 +581,9 @@ def _toggle_parts(
             ("comparison", official, order_version, comparison.version)
             + (comparison.scenario_id or "", comparison.revision_id or ""),
             lambda: _comparison_part(database_path, release, comparison, context),
-            True,
+            # 비교 대상이 없거나 공식버전 자신이면 까닭만 내면 된다(DB·환산 없음) — 미루지 않는다.
+            bool(comparison.scenario_id and comparison.revision_id)
+            and comparison.revision_id != release.revision_id,
         ),
     ]
     parts: dict[str, Any] = {}
