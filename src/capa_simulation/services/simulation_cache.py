@@ -37,8 +37,11 @@ from capa_simulation.services.required_equipment import (
     calculate_required_equipment,
 )
 from capa_simulation.services.required_shortening import (
+    TARGET_LEVELS,
     ShorteningPlan,
     plan_required_shortening,
+    process_month_export_frame,
+    unit_export_frame,
 )
 from capa_simulation.services.route_step_editor import route_step_catalog, route_step_summary
 from capa_simulation.services.securement_rate import calculate_securement_rate
@@ -906,3 +909,35 @@ def get_required_shortening(
         months=months,
         today=date.fromisoformat(today),
     )
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_required_shortening_csvs(
+    cache_key: RequiredShorteningCacheKey,
+    level: float,
+    processes: tuple[str, ...],
+    months: tuple[int, ...],
+    _plan: ShorteningPlan,
+) -> tuple[bytes, bytes, bytes]:
+    """필요단축일정 CSV 세 벌의 바이트 — 고른 목표의 호기별, 다섯 목표의 호기별, 고른 목표의
+    공정·월.
+
+    탭이 열린 rerun 마다(목표만 바꿔도) 세 표를 다시 만들고 직렬화했다(2026-10-08 점검 A10).
+    계획은 이미 `get_required_shortening` 이 캐시하므로, 그 키에 화면이 고르는 것(목표·공정 차례·
+    달)만 더한 키로 바이트를 둔다. `processes` 는 **화면의 차례 그대로**다 — CSV 의 공정 차례가
+    그것을 따른다. `_plan` 은 같은 `cache_key` 로 받은 바로 그 계획이어야 한다(해시하지 않는다).
+    지연 생성(콜러블)은 쓰지 않는다(TODO [결정] — 콜러블의 예외는 삼켜지고 AppTest 가 바이트를 못
+    본다).
+
+    바이트는 BOM 이 붙은 UTF-8 이다 — Excel 이 한글을 깨뜨리지 않게(`table_toolbar.CSV_MIME` 과 짝).
+    """
+    del cache_key
+    frames = (
+        unit_export_frame(_plan, (level,), processes),
+        unit_export_frame(_plan, TARGET_LEVELS, processes),
+        process_month_export_frame(_plan, (level,), processes, months),
+    )
+    units, all_levels, process_months = (
+        frame.to_csv(index=False).encode("utf-8-sig") for frame in frames
+    )
+    return units, all_levels, process_months

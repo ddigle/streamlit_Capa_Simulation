@@ -54,8 +54,6 @@ from capa_simulation.services.required_shortening import (
     LevelPlan,
     ShorteningPlan,
     level_percent,
-    process_month_export_frame,
-    unit_export_frame,
 )
 from capa_simulation.services.securement_threshold import (
     DEFAULT_SECURE_THRESHOLD,
@@ -205,7 +203,7 @@ def render_required_shortening_tab(
     thresholds = _thresholds()
     st.html(_style())
     st.html(_kpi_markup(level_plan, level, scope, short, selected=bool(selected)))
-    _render_downloads(plan, scope, level, months)
+    _render_downloads(key, plan, scope, level, months)
     st.html(
         _lob_markup(
             months,
@@ -358,43 +356,43 @@ def _render_unmatched(plan: ShorteningPlan) -> None:
 
 
 def _render_downloads(
-    plan: ShorteningPlan, scope: Sequence[str], level: float, months: Sequence[int]
+    key: simulation_cache.RequiredShorteningCacheKey,
+    plan: ShorteningPlan,
+    scope: Sequence[str],
+    level: float,
+    months: Sequence[int],
 ) -> None:
     """CSV 세 벌 — 고른 목표의 호기별 단축 일정, 다섯 목표를 한 파일로, 고른 목표의 공정 x 월.
 
     범위는 셋 다 화면과 같다(조건 카드의 공정, 비우면 맞댄 공정 전체 · 고른 달). 표는 캐시된 결과를
-    고르기만 해 만든다 — 다섯 목표가 이미 계산돼 있고 마스터 속성도 결과에 실려 있다. 바이트는 탭이
-    열린 실행에서만 만든다(숨은 탭은 이 함수까지 오지 않는다).
+    고르기만 해 만든다 — 다섯 목표가 이미 계산돼 있고 마스터 속성도 결과에 실려 있다. 바이트는
+    계획 키에 목표·공정 차례·달을 더한 키로 캐시한다(`get_required_shortening_csvs`) — 목표만 바꾼
+    rerun 이 세 표를 다시 만들지 않는다. 숨은 탭은 이 함수까지 오지 않는다.
     """
     span = f"{months[0]}_{months[-1]}" if months else "empty"
     percent = level_percent(level)
-    units = unit_export_frame(plan, (level,), scope)
-    all_levels = unit_export_frame(plan, TARGET_LEVELS, scope)
-    process_months = process_month_export_frame(plan, (level,), scope, months)
+    units, all_levels, process_months = simulation_cache.get_required_shortening_csvs(
+        key, float(level), tuple(scope), tuple(int(month) for month in months), _plan=plan
+    )
     with st.container(horizontal=True, gap="small"):
         render_csv_download(
-            data=_csv_bytes(units),
+            data=units,
             file_name=f"required_shortening_units_{percent}pct_{span}.csv",
             key=_UNITS_CSV_KEY,
             label="호기별 단축 일정 CSV",
         )
         render_csv_download(
-            data=_csv_bytes(all_levels),
+            data=all_levels,
             file_name=f"required_shortening_units_all_levels_{span}.csv",
             key=_UNITS_ALL_LEVELS_CSV_KEY,
             label="호기별 단축 일정 CSV · 목표 전체",
         )
         render_csv_download(
-            data=_csv_bytes(process_months),
+            data=process_months,
             file_name=f"required_shortening_process_months_{percent}pct_{span}.csv",
             key=_MONTHS_CSV_KEY,
             label="공정·월 CSV",
         )
-
-
-def _csv_bytes(frame: pd.DataFrame) -> bytes:
-    """Excel 이 한글을 깨뜨리지 않게 BOM 을 붙인다(`table_toolbar.CSV_MIME` 과 짝)."""
-    return frame.to_csv(index=False).encode("utf-8-sig")
 
 
 # ------------------------------------------------------------------ 데이터 고르기

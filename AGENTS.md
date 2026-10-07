@@ -1604,6 +1604,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     덮는다) + 달 + 오늘이다. 목표·공정을 바꾸는 rerun 은 이 결과를 고르기만 한다. 결과에는 CSV 가
     호기 줄에 붙일 마스터 속성(`ShorteningPlan.unit_master`)도 실린다 — 호기 마스터에서만 나오므로
     키의 마스터 내용 지문이 그것까지 덮고, 화면은 rerun 마다 마스터를 다시 검증하지 않는다.
+  - `get_required_shortening_csvs` 는 그 탭의 CSV 세 벌 바이트를 계획 키 + 화면이 고르는 것(목표·공정
+    차례·달)으로 캐시한다(2026-10-08 점검 A10 — 목표만 바꾼 rerun 이 세 표를 다시 만들고 직렬화했다).
+    `_plan` 은 같은 계획 키로 받은 계획이어야 한다. 바이트를 지연 생성(콜러블)으로 만들지는 않는다(TODO
+    [결정]).
 
 ### 계산 서비스
 
@@ -3172,8 +3176,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     파일로, `목표 확보율(%)` 칸으로 가른다), `공정·월 CSV`(고른 목표, `목표 확보율(%)` 칸 추가). 범위는
     셋 다 화면과 같다(조건 카드의 공정 — 비우면 맞댄 공정 전체 — 를 표시순서로, 고른 달). 표는 서비스의
     `unit_export_frame`·`process_month_export_frame` 이 캐시된 결과를 고르기만 해 만든다(다시 계산하지
-    않는다). 바이트는 탭이 열린 실행에서만 만들고 지연 생성(콜러블)은 쓰지 않는다(TODO 의 [결정]
-    「내려받기 버튼의 CSV 를 지연 생성으로 바꾸지 않는다」). `utf-8-sig`, `table_toolbar.render_csv_download`.
+    않는다). 바이트는 탭이 열린 실행에서만, 계획 키 + 목표·공정 차례·달 키로 캐시해 꺼내고
+    (`simulation_cache.get_required_shortening_csvs` — 목표만 바꾼 rerun 이 세 표를 다시 만들지 않는다)
+    지연 생성(콜러블)은 쓰지 않는다(TODO 의 [결정] 「내려받기 버튼의 CSV 를 지연 생성으로 바꾸지 않는다」).
+    `utf-8-sig`, `table_toolbar.render_csv_download`.
 - `src/capa_simulation/components/availability_gap_figure.py`
   - Static 대 Dynamic 월별 비교 Figure.
   - **그림은 비교를, 표가 분해를 맡는다.** 분류가 열이라 열 가지 색을 쓰면 서로 구분되지
