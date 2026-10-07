@@ -64,9 +64,33 @@ class StepChangeResult:
     affected_variants: int
 
 
+def route_step_tables(upeh: pd.DataFrame, reqb: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """`(route_step_summary(reqb), route_step_catalog(upeh, reqb))` 와 같은 두 표를 한 번에 낸다.
+
+    두 함수를 따로 부르면 같은 `RQ_REQB` 를 두 번 전처리한다(깊은 복사·문자열 정리·소요기준
+    정규화). STEP 구성 탭의 캐시가 빗나간 첫 진입에서는 그 전처리가 계산 대부분을 차지하므로,
+    여기서 한 번만 하고 준비된 프레임을 두 몸체에 함께 넘긴다. 두 몸체는 컬럼을 골라 묶기만 하고
+    받은 프레임을 고치지 않는다. 검사 순서는 두 함수를 차례로 부를 때와 같다 — `RQ_REQB` 다음
+    `RQ_UPEH`.
+    """
+    paths = _prepare(reqb, _REQB_COLUMNS, "RQ_REQB")
+    performance = _prepare(upeh, _UPEH_COLUMNS, "RQ_UPEH")
+    return _summary_of(paths), _catalog_of(performance, paths)
+
+
 def route_step_summary(reqb: pd.DataFrame) -> pd.DataFrame:
     """Count distinct MCP/STEP pairs without multiplying Capa/Customer/CS variants."""
-    data = _prepare(reqb, _REQB_COLUMNS, "RQ_REQB")
+    return _summary_of(_prepare(reqb, _REQB_COLUMNS, "RQ_REQB"))
+
+
+def route_step_catalog(upeh: pd.DataFrame, reqb: pd.DataFrame) -> pd.DataFrame:
+    """Return one selectable row per route group and distinct MCP/STEP pair."""
+    performance = _prepare(upeh, _UPEH_COLUMNS, "RQ_UPEH")
+    return _catalog_of(performance, _prepare(reqb, _REQB_COLUMNS, "RQ_REQB"))
+
+
+def _summary_of(data: pd.DataFrame) -> pd.DataFrame:
+    """전처리한 `RQ_REQB` 의 경로·월별 STEP 수와 수요 변형 수."""
     group_columns = ["생산계획년월", *ROUTE_GROUP_COLUMNS]
     if data.empty:
         return pd.DataFrame(columns=[*group_columns, "STEP 수", "수요 변형 수"])
@@ -90,10 +114,8 @@ def route_step_summary(reqb: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def route_step_catalog(upeh: pd.DataFrame, reqb: pd.DataFrame) -> pd.DataFrame:
-    """Return one selectable row per route group and distinct MCP/STEP pair."""
-    performance = _prepare(upeh, _UPEH_COLUMNS, "RQ_UPEH")
-    paths = _prepare(reqb, _REQB_COLUMNS, "RQ_REQB")
+def _catalog_of(performance: pd.DataFrame, paths: pd.DataFrame) -> pd.DataFrame:
+    """전처리한 `RQ_UPEH`·`RQ_REQB` 로 경로·STEP 쌍마다 한 줄인 선택 목록."""
     catalog_columns = [
         *ROUTE_GROUP_COLUMNS,
         *STEP_PAIR_COLUMNS,

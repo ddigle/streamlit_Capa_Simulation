@@ -49,7 +49,7 @@ from capa_simulation.services.required_shortening import (
     process_month_export_frame,
     unit_export_frame,
 )
-from capa_simulation.services.route_step_editor import route_step_catalog, route_step_summary
+from capa_simulation.services.route_step_editor import route_step_tables
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
@@ -262,9 +262,10 @@ def get_route_step_tables(
     둘 다 순수 함수인데 rerun 마다 다시 만들고 있었다(721~963ms, 탭이 닫혀 있어도). 목록은
     작업·경로 선택 위젯의 options 라 숨은 탭에서도 있어야 하므로 건너뛰지 않고 캐시한다.
     키는 (reference_version, content_token, start_month, end_month) — 프레임은 해시하지 않는다.
+    캐시가 빗나가면 `route_step_tables` 가 `RQ_REQB` 를 한 번만 전처리해 두 표에 나눠 준다.
     """
     del cache_key
-    return route_step_summary(_reqb), route_step_catalog(_upeh, _reqb)
+    return route_step_tables(_upeh, _reqb)
 
 
 # 기준 정보 편집표 칸 수. 편집표 여섯 개가 나눠 쓴다 — 한 시나리오·기간에 열린 탭 몇 개면

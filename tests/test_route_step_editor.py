@@ -3,6 +3,7 @@
 import pandas as pd
 import pytest
 
+import capa_simulation.services.route_step_editor as route_step_editor
 from capa_simulation.services.reference_consistency import (
     added_performance_keys,
     missing_ratio_rows,
@@ -11,7 +12,9 @@ from capa_simulation.services.route_step_editor import (
     ROUTE_GROUP_COLUMNS,
     clone_route_step,
     delete_route_step,
+    route_step_catalog,
     route_step_summary,
+    route_step_tables,
 )
 
 
@@ -194,3 +197,65 @@ def test_clone_step_finds_ratio_rows_whatever_the_area_name_case() -> None:
     lot = changed.replacements["RQ_LOT_RATIO"]
     assert _new_step_months(lot) == [202608, 202609]
     assert set(lot["Area_Name"]) == {"MAIN"}
+
+
+def _messy_route_tables() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """전처리가 실제로 하는 일(공백 정리·소요기준 정규화·월 정수화)이 결과에 드러나는 입력.
+
+    UPEH 에만 있는 달과 REQB 에만 있는 STEP 도 넣어, 요약(REQB 만 본다)과 목록(둘의 교집합)이
+    서로 다른 행을 내게 한다.
+    """
+    tables = _tables()
+    upeh = tables["RQ_UPEH"].copy()
+    reqb = tables["RQ_REQB"].copy()
+    reqb["공정"] = " Process-A "
+    reqb["소요기준"] = "chip"
+    reqb["생산계획년월"] = reqb["생산계획년월"].astype(str)
+    extra_month = upeh[upeh["생산계획년월"].eq(202609)].assign(생산계획년월=202610)
+    upeh = pd.concat([upeh, extra_month], ignore_index=True)
+    only_in_reqb = reqb[reqb["MCP_SEQ"].eq("M1")].assign(MCP_SEQ="M9", STEP_SEQ="S9")
+    reqb = pd.concat([reqb, only_in_reqb], ignore_index=True)
+    return upeh, reqb
+
+
+def test_route_step_tables_equals_the_two_public_functions() -> None:
+    """한 번에 낸 두 표는 두 공개 함수를 따로 부른 결과와 같다(빈 표 포함)."""
+    upeh, reqb = _messy_route_tables()
+    upeh_before, reqb_before = upeh.copy(deep=True), reqb.copy(deep=True)
+
+    summary, catalog = route_step_tables(upeh, reqb)
+
+    pd.testing.assert_frame_equal(summary, route_step_summary(reqb))
+    pd.testing.assert_frame_equal(catalog, route_step_catalog(upeh, reqb))
+    # 입력은 고치지 않는다 — 캐시 래퍼가 활성 시나리오의 표를 그대로 넘긴다.
+    pd.testing.assert_frame_equal(upeh, upeh_before)
+    pd.testing.assert_frame_equal(reqb, reqb_before)
+    assert not summary.empty and not catalog.empty
+    assert "M9" not in set(catalog["MCP_SEQ"]), "목록은 UPEH 에도 있는 STEP 만 담는다"
+
+    empty_summary, empty_catalog = route_step_tables(upeh.iloc[0:0], reqb.iloc[0:0])
+    pd.testing.assert_frame_equal(empty_summary, route_step_summary(reqb.iloc[0:0]))
+    pd.testing.assert_frame_equal(empty_catalog, route_step_catalog(upeh.iloc[0:0], reqb.iloc[0:0]))
+
+
+def test_route_step_tables_prepares_each_table_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """같은 `RQ_REQB` 를 요약과 목록이 따로 전처리하지 않는다 — 표마다 한 번이다.
+
+    캐시가 빗나간 STEP 구성 탭 첫 진입에서 전처리(깊은 복사·문자열 정리)가 계산 대부분이었고,
+    두 함수를 차례로 부르면 `RQ_REQB` 를 두 번 했다.
+    """
+    prepared: list[str] = []
+    original = route_step_editor._prepare
+
+    def _counting_prepare(
+        data: pd.DataFrame, required: tuple[str, ...], table_name: str
+    ) -> pd.DataFrame:
+        prepared.append(table_name)
+        return original(data, required, table_name)
+
+    monkeypatch.setattr(route_step_editor, "_prepare", _counting_prepare)
+    upeh, reqb = _messy_route_tables()
+
+    route_step_tables(upeh, reqb)
+
+    assert sorted(prepared) == ["RQ_REQB", "RQ_UPEH"]

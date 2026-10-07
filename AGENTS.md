@@ -1648,7 +1648,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   남는 표와 제외 건수를 한 번에 낸다. 둘 다 쓰는 화면은 이것을 부르고,
   `prepare_standard_target_required_equipment`·`standard_target_exception_row_count` 는 한쪽만
   필요한 호출부용 래퍼다
-- `route_step_editor.py`: MCP·STEP 고유 조합 수와 네 경로 테이블의 일괄 복제·삭제
+- `route_step_editor.py`: MCP·STEP 고유 조합 수와 네 경로 테이블의 일괄 복제·삭제. 요약과 선택
+  목록을 함께 내는 자리(`simulation_cache.get_route_step_tables`)는 `route_step_tables` 를 불러
+  `RQ_REQB` 를 한 번만 전처리한다 — 두 공개 함수를 차례로 부르면 같은 표를 두 번 깊은 복사·정규화한다
 - `process_rename.py`: 공용 공정 표시명의 값 정규화(앞뒤 공백·U+00A0), 1:1 검증과
   CSV·붙여넣기 직렬화. **치환은 여기 없다** — 표시명을 실제로 갈아 끼우는 헬퍼는
   `components/process_labels.py` 에만 둔다.
