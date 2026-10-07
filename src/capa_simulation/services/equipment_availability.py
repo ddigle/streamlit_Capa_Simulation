@@ -19,6 +19,8 @@ from capa_simulation.services.equipment_contract import (
     COUNT_CATEGORY_COLUMN,
     COUNTED_COLUMN,
     EQUIPMENT_ID_COLUMN,
+    EXIT_FOLLOWS_COLUMN,
+    EXIT_STARTS_COLUMN,
     RELOCATION_DATE_COLUMN,
     SCHEDULE_STAGES,
     STATUS_COUNT_COLUMNS,
@@ -134,6 +136,8 @@ def _build_equipment_status_from_prepared(
 # `반입일정`·`Qual일정`·`반출일정`·`이설일정` 은 그날 `le` 로 넘어가고, 비가동은 `시작일` 에
 # 켜져 `종료일` 다음 날 꺼진다. 다른 날에는 같은 판정이 나오므로 샘플링할 이유가 없다.
 _TIMELINE_EVENT_COLUMNS = (ARRIVAL_DATE_COLUMN, "Qual일정", "반출일정", RELOCATION_DATE_COLUMN)
+# 그 가운데 설비가 나가는 날(판정의 `exited`). 세는 구간이 이 날에 닿는 경계를 따로 적는다.
+_EXIT_DATE_COLUMNS = ("반출일정", RELOCATION_DATE_COLUMN)
 
 LIFECYCLE_SPAN_COLUMNS = (
     EQUIPMENT_ID_COLUMN,
@@ -163,6 +167,13 @@ def build_equipment_lifecycle_spans(
     잃는다. 월별 대수(`monthly_equipment_availability`)가 켜서 쓴다. 끄면(기본) 상태 이름이
     바뀔 때만 끊어 생애주기 Gantt 가 지금처럼 그린다.
 
+    켜면 `반출이설시작`·`반출이설직전` 도 붙인다 — 구간 시작일, 또는 종료일 다음 날이 그 설비키의
+    반출·이설일정인가. **구간의 날짜는 그대로 상태가 바뀐 날이다**(Gantt 와 같다). 월별 기여는
+    바뀐 다음 날부터지만 반출·이설로 가용을 잃는 것은 그날부터라(2026-10-08 사용자 결정) 월별이 이
+    표시를 보고 그 경계만 밀지 않는다. 설비키 단위로 보는 것은 모듈 하나가 나가는 날 형제의 지분도
+    같이 바뀌기 때문이다 — 나간 모듈만 당일로 두고 형제의 지분 경계를 다음 날로 밀면 그날 하루
+    설비가 한 대보다 적게 세어진다.
+
     **판정 규칙을 다시 적지 않는다.** 상태가 바뀔 수 있는 날마다
     `_build_equipment_status_from_prepared` 를 그대로 부르고, 이어지는 같은 상태를 한 구간
     으로 묶는다. 규칙을 옮겨 적으면 이 화면만 조용히 다른 이야기를 하게 된다 — 주차별
@@ -176,7 +187,14 @@ def build_equipment_lifecycle_spans(
     columns = [
         *LIFECYCLE_SPAN_COLUMNS,
         *(
-            (UNIT_SHARE_COLUMN, UNIT_KEY_COLUMN, COUNT_CATEGORY_COLUMN, COUNTED_COLUMN)
+            (
+                UNIT_SHARE_COLUMN,
+                UNIT_KEY_COLUMN,
+                COUNT_CATEGORY_COLUMN,
+                COUNTED_COLUMN,
+                EXIT_STARTS_COLUMN,
+                EXIT_FOLLOWS_COLUMN,
+            )
             if with_unit_share
             else ()
         ),
@@ -248,7 +266,8 @@ def build_equipment_lifecycle_spans(
         close(unit, status, category, share, began, end)
     result = pd.DataFrame(rows, columns=columns)
     if with_unit_share:
-        key_by_unit = dict(zip(prepared[EQUIPMENT_ID_COLUMN], unit_keys(prepared), strict=True))
+        keys = unit_keys(prepared)
+        key_by_unit = dict(zip(prepared[EQUIPMENT_ID_COLUMN], keys, strict=True))
         result[UNIT_KEY_COLUMN] = result[EQUIPMENT_ID_COLUMN].map(key_by_unit)
         # 사용기준은 날짜와 상관없는 호기 속성이라 구간을 끊지 않는다. 호기마다 한 번 매긴다.
         counted_by_unit = dict(
@@ -256,6 +275,21 @@ def build_equipment_lifecycle_spans(
         )
         result[COUNTED_COLUMN] = (
             result[EQUIPMENT_ID_COLUMN].map(counted_by_unit).fillna(False).astype("bool")
+        )
+        exit_days = _exit_days_by_key(prepared, keys)
+        unit_exits = [exit_days.get(str(key), frozenset()) for key in result[UNIT_KEY_COLUMN]]
+        result[EXIT_STARTS_COLUMN] = pd.Series(
+            [began in days for began, days in zip(result["시작일"], unit_exits, strict=True)],
+            index=result.index,
+            dtype="bool",
+        )
+        result[EXIT_FOLLOWS_COLUMN] = pd.Series(
+            [
+                finished + timedelta(days=1) in days
+                for finished, days in zip(result["종료일"], unit_exits, strict=True)
+            ],
+            index=result.index,
+            dtype="bool",
         )
     # 길이가 0 인 구간은 같은 날 두 번 바뀐 것이다. 그리면 폭 없는 막대라 보이지 않는다.
     result = result.loc[result["종료일"] >= result["시작일"]]
@@ -278,6 +312,18 @@ def _lifecycle_breakpoints(
         finished = pd.to_datetime(prepared_downtime["종료일"].dropna())
         moments.update((finished + pd.Timedelta(days=1)).tolist())
     return sorted(moment for moment in moments if start <= moment <= end)
+
+
+def _exit_days_by_key(prepared: pd.DataFrame, keys: pd.Series) -> dict[str, frozenset[date]]:
+    """설비키마다 반출·이설일정. 모듈 하나가 나가는 날 형제의 지분도 바뀌어 묶음 단위로 모은다."""
+    days: dict[str, set[date]] = {}
+    for column in _EXIT_DATE_COLUMNS:
+        present = prepared[column].notna().to_numpy()
+        for key, moment in zip(
+            keys.loc[present], pd.to_datetime(prepared.loc[present, column]), strict=True
+        ):
+            days.setdefault(str(key), set()).add(moment.date())
+    return {key: frozenset(found) for key, found in days.items()}
 
 
 def build_weekly_equipment_availability(

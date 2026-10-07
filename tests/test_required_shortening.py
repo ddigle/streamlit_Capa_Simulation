@@ -257,6 +257,39 @@ def test_an_always_available_unit_fills_the_first_month_exactly() -> None:
     assert level.units.empty
 
 
+@pytest.mark.parametrize("exit_column", ["removal", "relocation"])
+def test_a_leaving_unit_stops_counting_on_its_exit_day(exit_column: str) -> None:
+    """반출·이설일 당일은 가용이 아니다(2026-10-08 사용자 결정) — 가용은 엔진과 같은 길이다.
+
+    Cut-off 10 의 5월 구간 `(4/20, 5/21]`. 5/11 에 나가는 OLD1 은 4/21~5/10 의 20일만 기여하고
+    (예전엔 나가는 날까지 21일), Qual 5/1 후보 A1 은 지금처럼 다음 날 5/2 부터 20일을 기여한다.
+    11.5대가 필요하면 모자란 6.5/31 대를 덮으려고 A1 을 7일(예전엔 6일) 당긴다. 나가는 호기는
+    후보가 아니다.
+    """
+    exit_day = date(2026, 5, 11)
+    rows = [
+        _unit(
+            "OLD1",
+            date(2026, 1, 10),
+            arrival=date(2026, 1, 1),
+            confirmation="완료",
+            removal=exit_day if exit_column == "removal" else None,
+            relocation=exit_day if exit_column == "relocation" else None,
+        ),
+        _unit("A1", date(2026, 5, 1)),
+    ]
+
+    level = _plan(rows, {MAY: 11.5}).at(1.0)
+
+    assert _engine(rows, _downtime(), [MAY])[MAY] == pytest.approx(10 + 40 / 31)
+    assert _month(level, MAY)["가용대수"] == pytest.approx(10 + 40 / 31)
+    units = _units(level)
+    assert set(units) == {"A1"}
+    assert units["A1"]["목표 Qual"] == date(2026, 4, 24)
+    assert units["A1"]["단축일수"] == 7
+    assert units["A1"]["늘어난 환산대수"] == pytest.approx(7 / 31)
+
+
 def test_the_engine_agrees_with_the_plan_once_the_quals_are_moved() -> None:
     """계획대로 Qual 을 옮기고 가상 호기를 호기로 더해 엔진에 다시 넣으면 달마다 단축 후 가용이다.
 

@@ -35,7 +35,8 @@ Cutoff 는 그 공정 이후 입고(마지막 공정)까지의 표준 납기이�
 즉 **다음 날부터** 기여한다. 그래서 호출자는 `D + 1일` 을 구간 시작으로 넘긴다.
 `services/equipment_availability.py` 의 시점 판정(`Qual일정 <= 기준일`)은 완료 당일을
 가용으로 세므로 **그쪽과 하루가 다르다** — 그쪽은 「오늘 쓸 수 있나」를 묻고 여기는
-「이 달 생산에 며칠 보탰나」를 묻는다.
+「이 달 생산에 며칠 보탰나」를 묻는다. **반출·이설로 가용을 잃는 날은 예외다** — 그날부터
+기여하지 않아 시점 판정과 같은 날 빠진다(`services/monthly_equipment_availability.py`).
 """
 
 from __future__ import annotations

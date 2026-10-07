@@ -305,11 +305,12 @@ def test_the_unit_list_adds_up_to_the_count_table_cell_by_cell() -> None:
     assert joined["대수"].tolist() == pytest.approx(joined["대수_목록"].tolist())
     assert joined["환산대수"].tolist() == pytest.approx(joined["환산대수_목록"].tolist())
 
-    # 한 달 안에서 구간이 끊긴 모듈도 한 줄이다. 5월의 A 는 0.25 로 10일, 1/3 로 21일.
+    # 한 달 안에서 구간이 끊긴 모듈도 한 줄이다. 5월의 A 는 0.25 로 9일, 1/3 로 22일 — 형제 D 가
+    # 5/10 에 나가는 날부터 남은 셋이 한 대를 채운다(반출일 당일은 D 의 기여가 아니다).
     may_a = units.loc[units["생산계획년월"].eq(202605) & units["설비명"].eq("APW01A")]
     assert len(may_a) == 1
     assert may_a["기여일수"].item() == 31
-    assert may_a["대수"].item() == pytest.approx(10 / 31 * 0.25 + 21 / 31 / 3)
+    assert may_a["대수"].item() == pytest.approx(9 / 31 * 0.25 + 22 / 31 / 3)
     assert set(units["설비키"].dropna()) == {"APW01", "DA01"}
     # 기존보유는 공정 단위 한 줄이고, 어느 분류를 더했는지 적는다.
     held = units.loc[units["분류"].eq("기존보유") & units["생산계획년월"].eq(202603)]
