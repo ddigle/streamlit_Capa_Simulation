@@ -41,6 +41,7 @@ def prepare_sample(database_path: Path) -> dict[str, object]:
     from capa_simulation.application_bootstrap import ensure_initial_scenario
     from capa_simulation.persistence.models import ScenarioCreate
     from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.advance_shipment import ADVANCE_SHIPMENT_VALUE_COLUMN
     from capa_simulation.services.builtin_seed import load_builtin_display_order
     from capa_simulation.services.frame_contracts import match_key
     from capa_simulation.services.product_type import EDP_PRODUCT_TYPE, PRODUCT_TYPE_COLUMN
@@ -77,6 +78,10 @@ def prepare_sample(database_path: Path) -> dict[str, object]:
     repository.replace_global_advance_load(
         pd.DataFrame({"생산계획년월": [month], "선행 물량": [2.5]}), source="합성 벤치마크"
     )
+    repository.replace_global_advance_shipment(
+        pd.DataFrame({"생산계획년월": [month], ADVANCE_SHIPMENT_VALUE_COLUMN: [1.5]}),
+        source="합성 벤치마크",
+    )
     repository.replace_global_execution_capacity(
         pd.DataFrame(
             {"생산계획년월": [month], "공정": [process], "증감 확보율": [-5.0], "비고": ["합성"]}
@@ -88,6 +93,7 @@ def prepare_sample(database_path: Path) -> dict[str, object]:
         "rq_rows": {name: len(frame) for name, frame in snapshot.tables.items()},
         "month_count": int(plan["생산계획년월"].nunique()),
         "advance_rows": len(repository.load_global_advance_load().rows),
+        "advance_shipment_rows": len(repository.load_global_advance_shipment().rows),
         "execution_rows": len(repository.load_global_execution_capacity().rows),
         "comparison_plan_factor": 0.9,
         "edp_plan_rows": int(match_key(plan[PRODUCT_TYPE_COLUMN]).eq(EDP_PRODUCT_TYPE).sum()),
@@ -120,6 +126,7 @@ def run_phase(app: AppTest, phase: str) -> dict[str, object]:
 
 def measure_phases(app: AppTest) -> list[dict[str, object]]:
     from capa_simulation.components.home_preference import (
+        ADVANCE_SHIPMENT_TOGGLE_KEY,
         ADVANCE_TOGGLE_KEY,
         COMPARISON_REVISION_KEY,
         COMPARISON_TOGGLE_KEY,
@@ -136,6 +143,7 @@ def measure_phases(app: AppTest) -> list[dict[str, object]]:
     for phase, key in (
         ("plan_detail_customer", PLAN_DETAIL_CUSTOMER_KEY),
         ("advance", ADVANCE_TOGGLE_KEY),
+        ("advance_shipment", ADVANCE_SHIPMENT_TOGGLE_KEY),
         ("execution", EXECUTION_TOGGLE_KEY),
         ("comparison", COMPARISON_TOGGLE_KEY),
         ("edp", EDP_TOGGLE_KEY),
@@ -153,6 +161,10 @@ def measure_phases(app: AppTest) -> list[dict[str, object]]:
             applied.show_advance and applied.advance_profile_version > 0
         ):
             raise RuntimeError("선행 프로필이 Figure에 적용되지 않았습니다.")
+        if phase == "advance_shipment" and not (
+            applied.show_advance_shipment and applied.advance_shipment_profile_version > 0
+        ):
+            raise RuntimeError("선행 입고 프로필이 Figure에 적용되지 않았습니다.")
         if phase == "execution" and not (
             applied.show_execution and applied.execution_profile_version > 0
         ):
