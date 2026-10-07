@@ -86,8 +86,8 @@ _MONTHS_CSV_KEY = "equipment_shortening_months_csv"
 # 표 첫 칸(행 이름)과 월 칸의 최소 폭. 달이 많으면 가로로 흐른다.
 _LABEL_COLUMN_PX = 170
 _MONTH_COLUMN_MIN_PX = 84
-# 호기 줄: 이름·일정 칸 · 타임라인 · 단축일수 칸. 한 줄에 이름과 「기존 MM.DD → 단축 MM.DD」 를
-# 나란히 두므로 이름 칸이 넓고, 오른쪽은 「−N일」 하나뿐이라 좁다.
+# 호기 줄: 이름·일정 칸 · 타임라인 · 단축일수 칸. 한 줄에 이름과 「기존 MM.DD → 단축 MM.DD」
+# (해가 다르면 `YY.MM.DD`)를 나란히 두므로 이름 칸이 넓고, 오른쪽은 「−N일」 하나뿐이라 좁다.
 _UNIT_NAME_PX = 250
 _UNIT_RESULT_PX = 70
 # 타임라인 한 줄의 높이와 표지(선·◀·●·◌)의 세로 가운데. 표지는 모두 이 가운데에 맞춘다.
@@ -522,9 +522,10 @@ def _percent(level: float) -> str:
     return f"{round(level * 100)}%"
 
 
-def _month_day(day: date) -> str:
-    """호기 줄의 날짜. 연도는 줄의 풍선(`title`)에 남긴다."""
-    return f"{day:%m.%d}"
+def _month_day(day: date, *, today: date) -> str:
+    """호기 줄의 날짜. 올해면 `MM.DD`, 해가 다르면 `YY.MM.DD` 다(2026-10-08 사용자 결정 — 해를 넘는
+    단축이 「02.25 → 10.08」 처럼 거꾸로 읽혔다). 전체 날짜는 줄의 풍선(`title`)에도 있다."""
+    return f"{day:%m.%d}" if day.year == today.year else f"{day:%y.%m.%d}"
 
 
 def _signed(value: float) -> str:
@@ -896,7 +897,9 @@ def _units_markup(
         f'<div class="shk-axis">{labels}</div><span></span></div>'
     ]
     for row in units.to_dict("records"):
-        rows.append(_unit_row({str(k): v for k, v in row.items()}, axis, lines + today_mark))
+        rows.append(
+            _unit_row({str(k): v for k, v in row.items()}, axis, lines + today_mark, today=today)
+        )
     return (
         f'<div class="shk-units">{legend}<div class="shk-scroll"><div style="min-width:'
         f"{_UNIT_NAME_PX + _TRACK_MIN_PX + _UNIT_RESULT_PX + 60}px;display:flex;"
@@ -904,7 +907,7 @@ def _units_markup(
     )
 
 
-def _unit_row(row: dict[str, object], axis: tuple[date, date], lines: str) -> str:
+def _unit_row(row: dict[str, object], axis: tuple[date, date], lines: str, *, today: date) -> str:
     """호기 하나를 **한 줄**로 — 이름과 「기존 MM.DD → 단축 MM.DD」, 타임라인, 「−N일」.
 
     가상 호기 「추가N」은 이름과 「필요 MM.DD」, 타임라인, 「신규」 다(2026-10-07 사용자 요청).
@@ -921,7 +924,7 @@ def _unit_row(row: dict[str, object], axis: tuple[date, date], lines: str) -> st
     center = _TRACK_CENTER_PX
     details = [str(row["호기"])]
     if row["구분"] == KIND_NEW:
-        dates = f'<span class="shk-muted">필요</span> {_month_day(target)}'
+        dates = f'<span class="shk-muted">필요</span> {_month_day(target, today=today)}'
         details.append(f"신규 필요 Qual {target:%Y-%m-%d}")
         # 부족 면색을 채우고 점선 테두리는 글자색이다 — 어두운 테마의 부족색(`STATUS_SHORTAGE`)은
         # 선으로만 그리면 바탕에 묻힌다(2026-10-07 브라우저 확인).
@@ -937,8 +940,8 @@ def _unit_row(row: dict[str, object], axis: tuple[date, date], lines: str) -> st
         right = _position(original, axis)
         cut = _whole(row["단축일수"]) or 0
         dates = (
-            f'<span class="shk-muted">기존</span> {_month_day(original)} → '
-            f'<span class="shk-muted">단축</span> {_month_day(target)}'
+            f'<span class="shk-muted">기존</span> {_month_day(original, today=today)} → '
+            f'<span class="shk-muted">단축</span> {_month_day(target, today=today)}'
         )
         details += [
             f"기존 Qual {original:%Y-%m-%d} → 목표 Qual {target:%Y-%m-%d}",

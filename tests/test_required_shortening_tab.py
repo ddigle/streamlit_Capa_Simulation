@@ -451,7 +451,7 @@ def _visible(markup: str) -> str:
 def test_a_shortened_unit_row_is_one_line_with_the_full_detail_in_its_title() -> None:
     """왼쪽은 이름과 「기존 MM.DD → 단축 MM.DD」, 오른쪽은 「−N일」 하나다(2026-10-07 사용자 요청).
 
-    기여 시작일·늘어난 환산대수·모듈 수·연도는 줄에서 빠지고 풍선에 남는다.
+    기여 시작일·늘어난 환산대수·모듈 수는 줄에서 빠지고 풍선에 남는다. 올해 날짜는 연도 없이 적는다.
     """
     axis = (date(2026, 10, 1), date(2027, 1, 1))
     row: dict[str, object] = {
@@ -465,7 +465,7 @@ def test_a_shortened_unit_row_is_one_line_with_the_full_detail_in_its_title() ->
         "해소 기여 월": "26.10",
     }
 
-    markup = _unit_row(row, axis, "")
+    markup = _unit_row(row, axis, "", today=date(2026, 10, 8))
     visible = _visible(markup)
 
     assert '<span class="shk-unit-name">EQ&lt;LONG&gt;-0001</span>' in markup
@@ -483,6 +483,41 @@ def test_a_shortened_unit_row_is_one_line_with_the_full_detail_in_its_title() ->
     )
 
 
+def test_a_row_date_in_another_year_carries_its_year() -> None:
+    """해가 다른 날짜만 `YY.MM.DD` 로 적는다(2026-10-08 사용자 결정). 「기존 02.25 → 단축 10.08」 처럼
+    해를 넘는 단축이 거꾸로 읽히고, 2027·2028 의 「필요 09.21」·「필요 09.22」 가 같은 꼴로 보였다."""
+    axis = (date(2026, 10, 1), date(2028, 12, 1))
+    today = date(2026, 10, 8)
+    shortened: dict[str, object] = {
+        "호기": "SMP-LG-11",
+        "구분": KIND_SHORTENED,
+        "기존 Qual": date(2027, 2, 25),
+        "목표 Qual": date(2026, 10, 8),
+        "단축일수": 140,
+        "늘어난 환산대수": 1.0,
+        "모듈 수": None,
+        "해소 기여 월": "26.11",
+    }
+    virtual: dict[str, object] = {
+        "호기": "추가3",
+        "구분": KIND_NEW,
+        "기존 Qual": None,
+        "목표 Qual": date(2028, 9, 22),
+        "단축일수": None,
+        "늘어난 환산대수": 0.3,
+        "모듈 수": None,
+        "해소 기여 월": "28.10",
+    }
+
+    shortened_visible = _visible(_unit_row(shortened, axis, "", today=today))
+    virtual_visible = _visible(_unit_row(virtual, axis, "", today=today))
+
+    assert (
+        '<span class="shk-muted">기존</span> 27.02.25 → <span class="shk-muted">단축</span> 10.08'
+    ) in shortened_visible
+    assert '<span class="shk-muted">필요</span> 28.09.22' in virtual_visible
+
+
 def test_a_virtual_unit_row_says_when_it_is_needed_and_new() -> None:
     """가상 호기는 이름과 「필요 MM.DD」, 오른쪽은 「신규」 하나다."""
     axis = (date(2026, 10, 1), date(2027, 1, 1))
@@ -497,7 +532,7 @@ def test_a_virtual_unit_row_says_when_it_is_needed_and_new() -> None:
         "해소 기여 월": "26.11",
     }
 
-    markup = _unit_row(row, axis, "")
+    markup = _unit_row(row, axis, "", today=date(2026, 10, 8))
     visible = _visible(markup)
 
     assert '<span class="shk-muted">필요</span> 11.03' in visible
