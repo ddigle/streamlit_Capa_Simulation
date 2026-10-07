@@ -214,27 +214,18 @@ def test_the_advance_shipment_note_reads_on_every_month_cell() -> None:
 
 
 # 사이드바 `S.PKG CAPA` 라벨이 서는 면 — 머리 띠와 올렸을 때의 면.
-LABEL_SURFACES = ("HEADER_BAR", "SURFACE")
-GRAPHIC_MINIMUM = 3.0  # 그림 요소(WCAG 1.4.11)
 
 
-def test_the_brand_centre_die_reads_on_the_sidebar_label() -> None:
-    """메인 심볼 가운데 다이(`BRAND_DIE_WARM`)는 라벨이 서는 두 면에서 3:1 을 넘어야 한다.
+def test_the_brand_centre_die_is_one_orange_everywhere() -> None:
+    """메인 심볼 가운데 다이(`BRAND_DIE_WARM`)는 두 테마 모두 입장 화면 `die-warn` 과 같은 주황이다.
 
-    두 곳 모두 주황으로 둔다(2026-10-07 사용자 결정). 경고 상태색(`STATUS_WARNING`)을 빌리지
-    않는 것은 밝은 머리 띠에서 2:1 남짓이라서다 — 그래서 입장 화면 `die-warn` 과 같은 색상을
-    어둡게 내린 토큰을 따로 둔다. 어두운 테마는 입장 화면 값 그대로다.
+    밝은 머리 띠에서 3:1 을 넘기려고 같은 색상을 어둡게 내렸던 값은 갈색으로 보였다 — 2026-10-08
+    사용자 결정으로 두 곳을 같은 주황으로 맞췄다. 로고의 한 칸이라 그림 요소 대비 기준의 예외다.
+    경고 상태색(`STATUS_WARNING`)과는 다른 값이어야 한다 — 상태색이 아니다.
     """
-    failures: list[str] = []
     for mode, palette in tokens._PALETTES.items():
-        for surface in LABEL_SURFACES:
-            ratio = contrast_ratio(palette["BRAND_DIE_WARM"], palette[surface])
-            if ratio < GRAPHIC_MINIMUM:
-                failures.append(f"{mode} {surface} 위 {ratio:.2f}:1")
-    assert not failures, "가운데 다이가 라벨 면에서 읽히지 않습니다:" + _bullets(failures)
-    light = tokens._PALETTES["light"]
-    assert contrast_ratio(light["STATUS_WARNING"], light["HEADER_BAR"]) < GRAPHIC_MINIMUM
-    assert tokens._PALETTES["dark"]["BRAND_DIE_WARM"] == tokens.INTRO_PALETTE["die-warn"]
+        assert palette["BRAND_DIE_WARM"] == tokens.INTRO_PALETTE["die-warn"], mode
+        assert palette["BRAND_DIE_WARM"] != palette["STATUS_WARNING"], mode
 
 
 def test_every_equipment_status_has_its_own_color() -> None:
