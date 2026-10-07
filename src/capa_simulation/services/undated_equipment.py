@@ -5,8 +5,10 @@
 반입·Qual 일정은 비워도 저장된다(2026-10-06 사용자 결정). 그런 신규 호기는 반입이 비면 「입고
 예정」, 반입만 있고 Qual 이 비면 「셋업 진행중」에 머물러 **날짜가 들어올 때까지 가용대수에 들지
 않는다.** Dynamic 가용대수를 읽는 자리(가용설비 현황 Main·Static/Dynamic·필요단축일정)가 그
-대수를 한 줄로 알린다 — 말하지 않으면 「설비가 모자라다」로 읽힌다. 필요단축일정에서는 단축
-후보도 아니다(당길 Qual 일정이 없다).
+대수를 한 줄로 알린다 — 말하지 않으면 「설비가 모자라다」로 읽힌다. 필요단축일정에서는 그 가운데
+**Qual 일정이 없는 몫**만 「단축 후보에도 들지 않는다」고 덧붙인다(`undated_candidate_note`). 단축
+후보는 Qual 일정만 보고 반입일정은 하한으로 보지 않으므로(2026-10-07 결정), 반입만 빈 호기는 Dynamic
+에는 없어도 단축 후보다.
 
 - **대상** — 사용기준이 HBM 이고(`equipment_contract.counts_for_capacity` — 다른 행은 날짜를
   채워도 가용대수에 들지 않는다) 기존설비여부 N · 보관유무 N 이며 반출일정·이설일정이 모두 빈 행
@@ -14,7 +16,8 @@
   없어 이미 나간 호기와 나갈 호기를 가를 수 없고, 나갈 호기는 날짜를 채워도 실행일에 빠지는 호기다.
   반입은 있고 Qual 만 빈 채 나갈 호기는 그래서 세지 않는다(드문 경우).
 - **나눔** — 반입이 빈 행은 `반입 미정`, 반입은 있고 Qual 만 빈 행은 `Qual 미정` 이다. 겹치지 않아
-  둘을 더하면 전체다.
+  둘을 더하면 전체다. `반입 미정` 에는 Qual 이 있는 행과 없는 행이 함께 들므로, 단축 후보가
+  아닌 몫은 미정구분이 아니라 `Qual일정있음` 칸으로 가른다.
 - **세는 법** — 행이 아니라 설비이고, **Dynamic 이 날짜 때문에 실제로 빼는 몫**만 센다. Dynamic
   의 대수 축은 그 시점 보유 중인 모듈 수로 1 을 나누므로(`equipment_units.held_unit_shares`)
   기준일 없이 이렇게 옮긴다. 「보유할 수 있는 행」은 반입일정이 있거나 기존설비·보관 설비인 행이다.
@@ -57,21 +60,23 @@ UNDATED_KIND_COLUMN: Final = "미정구분"
 UNDATED_ARRIVAL: Final = "반입 미정"
 UNDATED_QUAL: Final = "Qual 미정"
 UNDATED_KINDS: Final = (UNDATED_ARRIVAL, UNDATED_QUAL)
+QUAL_SCHEDULED_COLUMN: Final = "Qual일정있음"
 UNDATED_COLUMNS: Final = (
     EQUIPMENT_ID_COLUMN,
     "공정소분류",
     UNIT_KEY_COLUMN,
     UNIT_SHARE_COLUMN,
     UNDATED_KIND_COLUMN,
+    QUAL_SCHEDULED_COLUMN,
 )
 
 
 def undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
     """호기 마스터(검증 전 편집본도 받는다)에서 일정 미정 행을 고른다.
 
-    돌려주는 칸은 `UNDATED_COLUMNS`(설비명·공정소분류·설비키·설비지분·미정구분)다. 호기 마스터가
-    검증을 통과하지 못하면 `ValueError` 다 — 화면은 같은 표로 다른 계산도 하므로 이미 그 자리에서
-    오류를 알린다.
+    돌려주는 칸은 `UNDATED_COLUMNS`(설비명·공정소분류·설비키·설비지분·미정구분·Qual일정있음)다.
+    호기 마스터가 검증을 통과하지 못하면 `ValueError` 다 — 화면은 같은 표로 다른 계산도 하므로 이미
+    그 자리에서 오류를 알린다.
     """
     prepared = prepare_equipment_master(equipment)
     if prepared.empty:
@@ -100,6 +105,7 @@ def undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
             UNIT_KEY_COLUMN: keys,
             UNIT_SHARE_COLUMN: shares.astype("float64"),
             UNDATED_KIND_COLUMN: kinds,
+            QUAL_SCHEDULED_COLUMN: prepared["Qual일정"].notna().astype("bool"),
         }
     )
     return result.loc[chosen].reset_index(drop=True)
@@ -116,12 +122,7 @@ def undated_counts(
     `processes` 를 주면 그 공정소분류만, `unit_ids` 를 주면 그 설비명만 센다 — 둘러싼 대수가
     건 조건과 같은 범위를 세기 위해서다.
     """
-    kept = pd.Series(True, index=undated.index)
-    if processes is not None:
-        kept &= undated["공정소분류"].isin(set(processes)).fillna(False).astype(bool)
-    if unit_ids is not None:
-        kept &= undated[EQUIPMENT_ID_COLUMN].isin(set(unit_ids)).fillna(False).astype(bool)
-    rows = undated.loc[kept]
+    rows = _scoped(undated, processes, unit_ids)
     return {
         kind: unit_total(rows.loc[rows[UNDATED_KIND_COLUMN].eq(kind), UNIT_SHARE_COLUMN])
         for kind in UNDATED_KINDS
@@ -151,6 +152,48 @@ def undated_equipment_notice(
     )
 
 
+def undated_candidate_note(
+    undated: pd.DataFrame,
+    *,
+    processes: Collection[str] | None = None,
+    unit_ids: Collection[str] | None = None,
+) -> str | None:
+    """필요단축일정이 일정 미정 줄 뒤에 붙이는 말. 단축 후보가 아닌 몫이 없으면 `None`.
+
+    단축 후보는 **Qual 일정이 있는** 신규 호기다(`required_shortening.shortening_candidates` —
+    반입은 보지 않는다). 그래서 일정 미정 가운데 Qual 일정이 없는 몫만 후보가 아니다 — 반입만 빈
+    호기는 Dynamic 에는 없어도 당길 수 있다. 미정구분으로 가르지 않는다: `반입 미정` 에는 Qual 까지
+    빈 행(후보 아님)과 Qual 이 있는 행(후보)이 함께 든다.
+
+    - 모두 Qual 일정이 없으면 「단축 후보에도 들지 않습니다.」
+    - 일부만이면 「그 가운데 Qual 일정이 없는 N대는 단축 후보에도 들지 않습니다.」
+    """
+    rows = _scoped(undated, processes, unit_ids)
+    total = round(unit_total(rows[UNIT_SHARE_COLUMN]), 6)
+    unscheduled = rows.loc[~rows[QUAL_SCHEDULED_COLUMN].astype(bool)]
+    missing = round(unit_total(unscheduled[UNIT_SHARE_COLUMN]), 6)
+    if missing <= 0:
+        return None
+    if missing >= total:
+        return "단축 후보에도 들지 않습니다."
+    return (
+        f"그 가운데 Qual 일정이 없는 {format_unit_count(missing)}대는 단축 후보에도 들지 않습니다."
+    )
+
+
+def _scoped(
+    undated: pd.DataFrame,
+    processes: Collection[str] | None,
+    unit_ids: Collection[str] | None,
+) -> pd.DataFrame:
+    kept = pd.Series(True, index=undated.index)
+    if processes is not None:
+        kept &= undated["공정소분류"].isin(set(processes)).fillna(False).astype(bool)
+    if unit_ids is not None:
+        kept &= undated[EQUIPMENT_ID_COLUMN].isin(set(unit_ids)).fillna(False).astype(bool)
+    return undated.loc[kept]
+
+
 def _empty() -> pd.DataFrame:
     return pd.DataFrame(
         {
@@ -159,5 +202,6 @@ def _empty() -> pd.DataFrame:
             UNIT_KEY_COLUMN: pd.Series(dtype="string"),
             UNIT_SHARE_COLUMN: pd.Series(dtype="float64"),
             UNDATED_KIND_COLUMN: pd.Series(dtype="string"),
+            QUAL_SCHEDULED_COLUMN: pd.Series(dtype="bool"),
         }
     )

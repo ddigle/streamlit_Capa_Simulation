@@ -13,6 +13,7 @@ from capa_simulation.services.undated_equipment import (
     UNDATED_COLUMNS,
     UNDATED_KIND_COLUMN,
     UNDATED_QUAL,
+    undated_candidate_note,
     undated_counts,
     undated_equipment,
     undated_equipment_notice,
@@ -171,3 +172,48 @@ def test_the_cached_wrapper_returns_the_same_rows() -> None:
     master = _master({"설비명": "A-1", "Qual일정": None, "확정상태": None})
 
     pd.testing.assert_frame_equal(get_undated_equipment(master), undated_equipment(master))
+
+
+# 필요단축일정의 덧붙임 — 후보 조건(`shortening_candidates`)과 맞는지 함께 본다.
+_ARRIVAL_ONLY = {"설비명": "ARRIVAL-ONLY", "반입일정": None, "확정상태": "계획"}
+_QUAL_BLANK = {"설비명": "QUAL-BLANK", "Qual일정": None, "확정상태": None}
+_BOTH_BLANK = {"설비명": "BOTH-BLANK", **_NO_DATES, "확정상태": None}
+
+
+def _candidate_names(master: pd.DataFrame) -> set[str]:
+    from capa_simulation.services.equipment_contract import empty_downtime_schedule
+    from capa_simulation.services.required_shortening import shortening_candidates
+
+    units = shortening_candidates(master, empty_downtime_schedule())
+    return {module.equipment_id for unit in units for module in unit.modules}
+
+
+@pytest.mark.parametrize(
+    ("rows", "note", "candidates"),
+    [
+        # 반입만 비면 `반입 미정` 이지만 Qual 일정이 있어 단축 후보다 — 「후보가 아님」은 없다.
+        ((_ARRIVAL_ONLY,), None, {"ARRIVAL-ONLY"}),
+        ((_QUAL_BLANK,), "단축 후보에도 들지 않습니다.", set()),
+        # 반입·Qual 이 다 비면 `반입 미정` 이고 후보도 아니다 — 미정구분으로 가르면 틀린다.
+        ((_BOTH_BLANK,), "단축 후보에도 들지 않습니다.", set()),
+        (
+            (_ARRIVAL_ONLY, _QUAL_BLANK, _BOTH_BLANK),
+            "그 가운데 Qual 일정이 없는 2대는 단축 후보에도 들지 않습니다.",
+            {"ARRIVAL-ONLY"},
+        ),
+    ],
+)
+def test_only_units_without_a_qual_date_are_called_non_candidates(
+    rows: tuple[dict[str, Any], ...], note: str | None, candidates: set[str]
+) -> None:
+    """「단축 후보에도 들지 않습니다」는 Qual 일정이 없는 몫에만 붙는다(2026-10-08 리뷰)."""
+    master = _master(*rows)
+    undated = undated_equipment(master)
+
+    assert set(undated["설비명"]) == {row["설비명"] for row in rows}
+    assert undated_candidate_note(undated) == note
+    # 말과 계산이 같은 규칙이다 — 일정 미정 가운데 후보인 것은 Qual 일정이 있는 호기뿐이다.
+    named = {row["설비명"] for row in rows}
+    assert _candidate_names(master) & named == candidates
+    # 공정이 범위 밖이면 말도 없다.
+    assert undated_candidate_note(undated, processes=["다른 공정"]) is None
