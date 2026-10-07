@@ -67,6 +67,21 @@ const SUMMARY_TIMING = Object.freeze({
 const SUMMARY_LOOK = Object.freeze({ fade: 0.2, mono: 1 });
 const EXIT_MS = 950;
 const FOLD_MS = 850;
+// 메인 심볼 — C 링 + 3×3 다이(2026-10-07 사용자 결정, 뷰박스 100). 반지름 41 링의 오른쪽 ±35° 를 열어
+// 「C」로 두고(굵기 9 · 둥근 끝), 크기 12 · 모서리 2 다이 아홉을 28 · 44 · 60 에 둔다. 사이드바 라벨
+// (`intro_overlay.MARK_RING_PATH` · `MARK_DIE_ORIGINS`)과 탭 아이콘(`static/icons/capa_mark.svg`)이 같은
+// 모양이고 `test_intro_overlay` 가 셋을 맞춰 본다. 장면(`scene()`)은 이 이름을 못 보므로 값을 따로 적는다.
+const MARK_RING = "M83.59 26.48 A41 41 0 1 0 83.59 73.52";
+const MARK_DIES = [28, 44, 60];
+// 머리 심볼 모션(2026-10-07 사용자 결정 — 모션 시안 넷 중 셋). 「그리며 모이기」는 다이가 바깥에서
+// 시계 방향으로(왼쪽 위부터) 서고 가운데가 마지막이다.
+const MARK_DRAW_MS = 1700;
+const MARK_SCAN_MS = 1800;
+const MARK_SPIN_MS = 1500;
+const MARK_DRAW_ORDER = [0, 1, 2, 5, 8, 7, 6, 3];
+// 앱에서 Summary 를 열 때 머리 심볼을 다시 그리기 시작하는 때(누른 때부터 ms). 화면이 라벨 쪽으로
+// 접히며(FOLD_MS) 머리 자리를 늦게 드러내므로 그 중간쯤이다.
+const MARK_REDRAW_AFTER_MS = 400;
 
 export default function (component) {
   // 같은 페이지에서 다시 불리는 경우(테마 변경 등)는 이미 떠 있거나 끝난 것이다.
@@ -193,15 +208,179 @@ function escapeHtml(text) {
   return String(text).replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 }
 
-function waferLogo(palette) {
-  const cells = [];
-  for (const y of [27, 43.5, 60]) {
-    for (const x of [27, 43.5, 60]) {
-      const fill = x === 43.5 && y === 43.5 ? palette["die-warn"] : palette.accent;
-      cells.push(`<rect x="${x}" y="${y}" width="13" height="13" rx="2" fill="${fill}"/>`);
-    }
+// 머리 심볼. 링은 글자색, 다이는 강조색이고 가운데만 주황(`die-warn`)이다. 링과 다이를 **두 장의 SVG**
+// 로 겹친다 — 링이 도는 움직임(스캔·스핀)을 SVG 안의 `<g>` 가 아니라 바깥 `<svg>` 상자의 transform 에
+// 건다. SVG 안 요소의 transform 은 메인 스레드에서만 돌고, 스캔은 로딩 중, 곧 메인 스레드가 막히는
+// 동안 돈다 — 바깥 상자라야 브라우저가 합성기로 넘길 여지가 있다. `pathLength` 는 그리며 모이기의 대시
+// 길이(100)다.
+function brandMark(palette) {
+  const dies = [];
+  MARK_DIES.forEach((y, row) =>
+    MARK_DIES.forEach((x, col) => {
+      const fill = row === 1 && col === 1 ? palette["die-warn"] : palette.accent;
+      dies.push(`<rect class="die" x="${x}" y="${y}" width="12" height="12" rx="2" fill="${fill}"/>`);
+    }),
+  );
+  return (
+    `<svg class="mark-ring" viewBox="0 0 100 100" aria-hidden="true"><path d="${MARK_RING}" pathLength="100" fill="none" stroke="${palette.text}" stroke-width="9" stroke-linecap="round"/></svg>` +
+    `<svg class="mark-dies" viewBox="0 0 100 100" aria-hidden="true">${dies.join("")}</svg>`
+  );
+}
+
+// 머리 심볼의 움직임. 링만 돌고 다이는 제자리다. 끝 모습은 늘 그린 그대로의 심볼이라, 어느 순간에
+// 취소해도 그 모습으로 돌아간다. 다음 움직임은 앞 움직임을 걷고 시작한다 — 앞의 끝 모습과 다음의
+// 첫 모습이 같아 이음매가 없다. `cancel` 은 이어 걸린 흐름(`settle`)도 끊는다.
+function markMotion(host, palette) {
+  const ring = host.querySelector(".mark-ring");
+  const path = ring.querySelector("path");
+  const dies = [...host.querySelectorAll(".die")];
+  const core = dies[4];
+  const idle = palette["die-idle"];
+  let generation = 0;
+  const live = [];
+  const clear = () => live.splice(0).forEach((animation) => animation.cancel());
+  const play = (el, keyframes, options) => {
+    const animation = el.animate(keyframes, { fill: "both", ...options });
+    live.push(animation);
+    return animation;
+  };
+  const finished = (list) =>
+    Promise.all(list.map((animation) => animation.finished)).then(
+      () => true,
+      () => false,
+    );
+
+  // 2 「그리며 모이기」 — 링이 C 의 위쪽 끝에서 펜으로 긋듯 이어지고, 다이가 바깥부터 차례로 튀어나와
+  // 서며, 주황 가운데가 마지막에 들어온다. 대시 [100, 110] 을 105 → 0 으로 당긴다 — 틈을 길이보다 길게
+  // 두어야 처음 모습에 둥근 끝 점이 남지 않는다.
+  function draw(delay) {
+    clear();
+    const options = { duration: MARK_DRAW_MS, delay };
+    const dash = (offset) => ({ strokeDasharray: "100 110", strokeDashoffset: offset });
+    const list = [play(path, [{ ...dash(105), easing: "cubic-bezier(.6,0,.2,1)" }, { ...dash(0), offset: 0.45 }, dash(0)], options)];
+    MARK_DRAW_ORDER.forEach((index, k) => {
+      const start = 0.42 + k * 0.045;
+      list.push(
+        play(
+          dies[index],
+          [
+            { transform: "scale(0)", opacity: 0, offset: 0 },
+            { transform: "scale(0)", opacity: 0, offset: start, easing: "cubic-bezier(.3,1.6,.5,1)" },
+            { transform: "scale(1)", opacity: 1, offset: Math.min(0.98, start + 0.16) },
+            { transform: "scale(1)", opacity: 1 },
+          ],
+          options,
+        ),
+      );
+    });
+    list.push(
+      play(
+        core,
+        [
+          { transform: "scale(0)", opacity: 0, offset: 0 },
+          { transform: "scale(0)", opacity: 0, offset: 0.82, easing: "cubic-bezier(.3,1.8,.5,1)" },
+          { transform: "scale(1.15)", opacity: 1, offset: 0.93 },
+          { transform: "scale(1)", opacity: 1 },
+        ],
+        options,
+      ),
+    );
+    return finished(list);
   }
-  return `<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M53 93.9 A44 44 0 1 0 47 93.9 L50 90.6 Z" fill="none" stroke="${palette.text}" stroke-width="5"/>${cells.join("")}</svg>`;
+
+  // 3 「검사 스캔」 한 바퀴 — C 의 열린 틈이 한 바퀴 돌고, 틈이 지난 다이부터 회색에서 제 색으로 켜진다
+  // (가운데는 마지막). 바퀴 첫머리에 다이를 잠깐 회색으로 되돌리므로 바퀴를 이어 돌려도 끊김이 없다.
+  function scan() {
+    clear();
+    const options = { duration: MARK_SCAN_MS };
+    const list = [
+      play(
+        ring,
+        [
+          { transform: "rotate(0deg)", easing: "cubic-bezier(.5,0,.5,1)" },
+          { transform: "rotate(366deg)", offset: 0.78, easing: "cubic-bezier(.4,0,.6,1)" },
+          { transform: "rotate(357deg)", offset: 0.9 },
+          { transform: "rotate(360deg)" },
+        ],
+        options,
+      ),
+    ];
+    dies.forEach((die, index) => {
+      const color = die.getAttribute("fill");
+      const angle = ((Math.atan2(Math.floor(index / 3) - 1, (index % 3) - 1) * 180) / Math.PI + 360) % 360;
+      const lit = die === core ? 0.8 : 0.05 + (angle / 360) * 0.7;
+      list.push(
+        play(
+          die,
+          [
+            { fill: color, transform: "scale(1)", offset: 0 },
+            { fill: idle, transform: "scale(1)", offset: 0.03 },
+            { fill: idle, transform: "scale(1)", offset: lit },
+            { fill: color, transform: "scale(1.25)", offset: lit + 0.05 },
+            { fill: color, transform: "scale(1)", offset: lit + 0.12 },
+            { fill: color, transform: "scale(1)" },
+          ],
+          options,
+        ),
+      );
+    });
+    return finished(list);
+  }
+
+  // 1 「반동 스핀」 — 뒤로 살짝 감았다가 한 바퀴 돌고, 제자리를 조금 지나쳐 두 번 흔들리며 멈춘다.
+  // 멈추는 순간 가운데 다이가 한 번 톡 튄다.
+  function spin() {
+    clear();
+    const options = { duration: MARK_SPIN_MS };
+    return finished([
+      play(
+        ring,
+        [
+          { transform: "rotate(0deg) scale(1)", easing: "cubic-bezier(.3,0,.6,1)" },
+          { transform: "rotate(-30deg) scale(.94)", offset: 0.15, easing: "cubic-bezier(.25,.9,.3,1)" },
+          { transform: "rotate(374deg) scale(1.02)", offset: 0.62, easing: "cubic-bezier(.4,0,.6,1)" },
+          { transform: "rotate(354deg) scale(1)", offset: 0.76, easing: "cubic-bezier(.4,0,.6,1)" },
+          { transform: "rotate(364deg) scale(1)", offset: 0.88, easing: "cubic-bezier(.4,0,.6,1)" },
+          { transform: "rotate(360deg) scale(1)" },
+        ],
+        options,
+      ),
+      play(
+        core,
+        [
+          { transform: "scale(1)", offset: 0 },
+          { transform: "scale(1)", offset: 0.62 },
+          { transform: "scale(1.35)", offset: 0.7 },
+          { transform: "scale(.92)", offset: 0.78 },
+          { transform: "scale(1)", offset: 0.86 },
+          { transform: "scale(1)" },
+        ],
+        options,
+      ),
+    ]);
+  }
+
+  // 다 그린 뒤: 아직 읽는 중이면 스캔을 이어 돌리고, 준비되면 그 바퀴를 마저 돈 다음 스핀 한 번으로
+  // 멈춘다. 이미 준비됐으면 스캔 없이 곧장 스핀이다.
+  async function settle(isReady) {
+    const mine = generation;
+    while (!isReady()) {
+      if (!(await scan()) || mine !== generation) return;
+    }
+    if (mine === generation) await spin();
+  }
+
+  return {
+    draw(delay) {
+      generation += 1;
+      return draw(delay);
+    },
+    settle,
+    cancel() {
+      generation += 1;
+      clear();
+    },
+  };
 }
 
 // Summary 의 격자(CSS px). 왼쪽 행 이름 칸 + 여섯 달 칸, 세 줄(선 · 막대 · 시트). 메인 스레드(행 이름
@@ -350,10 +529,10 @@ function scene(port, gridOf) {
   let symbolDies = [];
   let mapDies = [];
   let fontsReady = Promise.resolve();
-  // 테두리 길이(뷰박스 100 단위): 노치를 뺀 원호 + 노치 두 변.
-  const RIM_START = Math.atan2(43.9, 3);
-  const RIM_END = Math.atan2(43.9, -3);
-  const RIM_LEN = 44 * (TAU - (RIM_END - RIM_START)) + 2 * Math.hypot(3, 3.3);
+  // 가운데 심볼 링의 길이(뷰박스 100 단위): 반지름 41 원에서 오른쪽 ±35° 를 뺀 호. 모양은 머리 줄의
+  // 메인 심볼과 같다 — 장면은 바깥 이름을 못 보므로 값을 그대로 적는다.
+  const RIM_OPEN = (35 * Math.PI) / 180;
+  const RIM_LEN = 41 * (TAU - 2 * RIM_OPEN);
 
   // ---- Summary 상태
   let sum = null;
@@ -366,18 +545,14 @@ function scene(port, gridOf) {
   let veilTween = null;
 
   function build() {
+    // 가운데 심볼의 다이 아홉. 중심이 34 · 50 · 66(메인 심볼의 다이 자리 + 크기 절반 6)이고 가운데만
+    // 주황이다.
     symbolDies = [];
-    const step = 7.4;
-    const size = 6;
-    let n = 0;
-    for (let y = -5; y <= 5; y++) {
-      for (let x = -5; x <= 5; x++) {
-        const far = Math.hypot(Math.abs(x * step) + size / 2, Math.abs(y * step) + size / 2);
-        if (far > 40) continue;
+    for (let y = -1; y <= 1; y++) {
+      for (let x = -1; x <= 1; x++) {
         const order = ((Math.atan2(y, x) + Math.PI) / TAU) * 0.7 + (Math.hypot(x, y) / 6) * 0.3;
-        const fill = n % 13 === 5 ? pal["die-warn"] : n === 31 ? pal["die-short"] : pal.accent;
-        symbolDies.push({ x: 50 + x * step, y: 50 + y * step, order, fill });
-        n += 1;
+        const fill = x === 0 && y === 0 ? pal["die-warn"] : pal.accent;
+        symbolDies.push({ x: 50 + x * 16, y: 50 + y * 16, order, fill });
       }
     }
     mapDies = [];
@@ -438,8 +613,8 @@ function scene(port, gridOf) {
     return { S, gap, fs, cx, cy };
   }
 
-  // 웨이퍼 테두리. 대시 양끝은 이음 없이 끊기므로 둥근 끝으로 맞물리게 그리고, 다 그리면 대시를
-  // 걷어 닫힌 경로의 모서리 이음으로 마감한다(노치 옆 틈이 없게).
+  // 가운데 심볼 — 메인 심볼(C 링 + 3×3 다이)을 크게 그린다. 링은 C 의 위쪽 끝(−35°)에서 왼쪽을 돌아
+  // 아래 끝(+35°)까지 펜으로 긋듯 이어지고(대시 길이 = 호 길이, 둥근 끝), 다이는 차례로 커지며 선다.
   function drawSymbol(t, L) {
     const k = L.S / 100;
     g.save();
@@ -448,13 +623,9 @@ function scene(port, gridOf) {
     const p = EASE(clamp01((t - 260) / 1000));
     if (p > 0) {
       g.beginPath();
-      g.moveTo(53, 93.9);
-      g.arc(50, 50, 44, RIM_START, RIM_END, true);
-      g.lineTo(50, 90.6);
-      g.closePath();
-      g.lineWidth = 1.6;
+      g.arc(50, 50, 41, -RIM_OPEN, RIM_OPEN, true);
+      g.lineWidth = 9;
       g.lineCap = "round";
-      g.lineJoin = "round";
       g.strokeStyle = pal.text;
       g.setLineDash(p < 1 ? [RIM_LEN * p, RIM_LEN + 10] : []);
       g.stroke();
@@ -464,11 +635,11 @@ function scene(port, gridOf) {
     for (const d of symbolDies) {
       const e = OUT(clamp01((t - 780 - d.order * 620) / 320));
       if (e <= 0) continue;
-      const s = 6 * (0.3 + 0.7 * e);
+      const s = 12 * (0.3 + 0.7 * e);
       g.globalAlpha = base * e;
       g.fillStyle = d.fill;
       g.beginPath();
-      if (g.roundRect) g.roundRect(d.x - s / 2, d.y - s / 2, s, s, 0.8 * (s / 6));
+      if (g.roundRect) g.roundRect(d.x - s / 2, d.y - s / 2, s, s, 2 * (s / 12));
       else g.rect(d.x - s / 2, d.y - s / 2, s, s);
       g.fill();
     }
@@ -1577,7 +1748,8 @@ function createOverlay(api, data, initial, syncToolbar) {
   for (const [name, value] of Object.entries(vars)) if (value) stage.style.setProperty(name, value);
 
   $('[data-slot="brand"]').textContent = data.brand || "";
-  $('[data-slot="logo"]').innerHTML = waferLogo(palette);
+  $('[data-slot="logo"]').innerHTML = brandMark(palette);
+  const mark = markMotion($('[data-slot="logo"]'), palette);
   const title = $('[data-slot="title"]');
   (data.title || []).forEach((line, index) => {
     if (index) title.appendChild(document.createElement("br"));
@@ -2024,6 +2196,8 @@ function createOverlay(api, data, initial, syncToolbar) {
     const at = absoluteNow();
     sceneHandle.post({ type: "summary-on", at, charts: at + SUMMARY_TIMING.openChartsAt, rows: SUMMARY_TIMING.rows, look: SUMMARY_LOOK, instant: true, fromApp: true });
     scheduleLabels(SUMMARY_TIMING.openChartsAt);
+    // 머리 심볼은 접히는 화면이 그 자리(사이드바 라벨 곁)를 드러낼 즈음 다시 그려진다.
+    if (!reduce) mark.draw(MARK_REDRAW_AFTER_MS);
     // 화면이 사이드바 라벨 속으로 접히며 뒤의 요약이 드러난다.
     if (reduce) await anim(stage, [{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: "linear" });
     else await anim(stage, [{ "--capa-hole": `${radius}px` }, { "--capa-hole": "0px" }], { duration: FOLD_MS });
@@ -2055,6 +2229,7 @@ function createOverlay(api, data, initial, syncToolbar) {
 
   function hide() {
     mode = "hidden";
+    mark.cancel();
     host.style.display = "none";
     stage.classList.remove("masked");
     cancelAll([stage]);
@@ -2171,6 +2346,10 @@ function createOverlay(api, data, initial, syncToolbar) {
     } else {
       revealEntry(REVEAL_AT_MS + TEXT_AFTER_REVEAL_MS);
       timers.push(window.setTimeout(introFinished, REVEAL_AT_MS + REVEAL_MS));
+      // 머리 심볼은 떠오르면서 그려지고, 아직 읽는 중이면 스캔하다가 준비되면 한 번 돌고 멈춘다.
+      mark.draw(REVEAL_AT_MS + TEXT_AFTER_REVEAL_MS).then((drawn) => {
+        if (drawn && alive) mark.settle(() => ready);
+      });
     }
   }
 

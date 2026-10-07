@@ -81,6 +81,11 @@ _LIGHT: Final[dict[str, Any]] = {
     # 적용하지 않은 편집이 남은 탭 옆의 점. 사이드바 `미저장 변경` 배지(`:orange-badge[]`)와
     # 같은 뜻이라 `.streamlit/config.toml` 의 `orangeColor` 와 같은 값이다.
     "PENDING_MARK": "#B45309",
+    # 메인 심볼(C 링 + 3×3 다이)의 가운데 다이. 입장 화면 `die-warn`(#D29A3A)과 같은 색상(H 38°)을
+    # 앱 면에서 읽히게 어둡게 내린 값이다. **상태색이 아니라 심볼의 고정 강조색**이다 — 가운데
+    # 다이를 두 곳 모두 주황으로 둔다(2026-10-07 사용자 결정). `STATUS_WARNING`(#FB923C)은 라벨이
+    # 서는 머리 띠(`HEADER_BAR`)에서 2.0:1 이라 쓰지 않는다. 머리 띠 3.5:1 · 흰 면 4.0:1.
+    "BRAND_DIE_WARM": "#A67726",
     # ------------------------------------------------------------------- 부분합 면
     # 환산 결과표의 제품 Total → 양산구분 Total → 전체 합계로 갈수록 짙어진다.
     "SURFACE_PRODUCT_TOTAL": "#F0F1F2",
@@ -265,6 +270,8 @@ _DARK: Final[dict[str, Any]] = {
     # teal-700 은 어두운 면에서 3:1 을 못 넘는다. 한 단계 올린다.
     "ACCENT": "#2DD4BF",
     "PENDING_MARK": "#F0B37A",  # `[theme.dark]` 의 `orangeColor`
+    # 메인 심볼 가운데 다이. 어두운 면에서는 입장 화면 `die-warn` 그대로 읽힌다(머리 띠 7.0:1).
+    "BRAND_DIE_WARM": "#D29A3A",
     # 합계 3단도 위로 갈수록 밝다. 같은 방향을 유지하면 합계 행이 배경에 가라앉는다.
     "SURFACE_PRODUCT_TOTAL": "#26262C",
     "CLASSIFICATION_PRODUCT_TOTAL": "#33333C",
@@ -435,6 +442,7 @@ if TYPE_CHECKING:
     BAR_TRACK: Final[str] = ""
     BORDER: Final[str] = ""
     BORDER_STRONG: Final[str] = ""
+    BRAND_DIE_WARM: Final[str] = ""
     CHART_CANVAS: Final[str] = ""
     CLASSIFICATION_GRAND_TOTAL: Final[str] = ""
     CLASSIFICATION_PRODUCTION_TOTAL: Final[str] = ""

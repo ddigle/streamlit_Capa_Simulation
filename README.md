@@ -26,7 +26,7 @@ GitHub에서 소스만 받은 빈 환경은 첫 실행 시 DuckDB 스키마를 �
 - 월간 공정별 대당 Capa를 일 단위로 환산하고 Excel 붙여넣기의 주차별 가용대수를 적용하는
   표준 목표 Capa 산출과 단일 공정·주차의 제품·Stack·WF 속성별 Mix 로직 분석
 - Density·Wafer Capa 요약과 계획·B/N 상세표를 `Main` 탭에 함께 그리는 HOME 대시보드
-- 탭을 처음 열 때 첫 로딩을 덮는 입장 화면(웨이퍼 심볼·`S.PKG CAPA` 인트로, 진행 단계, `Detail`)과
+- 탭을 처음 열 때 첫 로딩을 덮는 입장 화면(메인 심볼·`S.PKG CAPA` 인트로, 진행 단계, `Detail`)과
   최신 공식버전 6개월을 모션으로 그리는 `Summary` 요약 화면
 - 기존 제품의 기준정보를 복제해 what-if 에 쓰는 가상 제품 등록
 - 제품타입별 WF 구분 분리(EDP-TSV 의 `Top`은 앱 안에서 `Top_e`로 표시)
@@ -151,8 +151,8 @@ app.py                         Streamlit 실행 진입점과 공통 사이드바
 app_pages/                     페이지별 UI
 static/fonts/                  페이지 제목·상자 제목·큰 숫자의 Archivo 부분 글꼴(정적 서빙
                                `app/static/…`, 사내망에 외부 글꼴이 없어 저장소에 둔다)
-static/icons/                  브라우저 탭 아이콘 `factory.svg`(Material Symbols Rounded,
-                               Apache-2.0 — 같은 폴더 `LICENSE-Apache-2.0.txt`)
+static/icons/                  브라우저 탭 아이콘 `capa_mark.svg`(앱의 메인 심볼 — C 링 + 3×3 다이,
+                               탭 바탕의 밝기에 따라 색이 바뀐다)
 src/capa_simulation/navigation.py
                                사이드바 페이지 목록 선언
 src/capa_simulation/page_bootstrap.py
@@ -244,16 +244,20 @@ AGENTS.md                      개발 에이전트용 구조·규칙 문서
 긴 이름은 말줄임(…)으로 끝나며, 전체 이름은 사이드바 `시나리오·리비전` 상자에 있습니다. 앱 이름·
 버전·빌드일과 개발 팀·문의처는 모든 화면 **사이드바 맨 아래**의 작은 카드 두 줄입니다. 카드는
 사이드바 바닥에 붙어 있어, 사이드바 목록이 길면 목록이 그 밑으로 지나갑니다.
-브라우저 탭 아이콘은 앱에 든 SVG 파일(`static/icons/factory.svg`, Google Material Symbols Rounded
-`factory`, Apache License 2.0)을 Streamlit 이 data URI 로 실어 보내므로, 외부 아이콘 서버
-(fonts.gstatic.com)에 나가지 않고 사내의 URL 경로 접두에도 영향을 받지 않습니다.
+앱의 심볼은 웨이퍼 링의 오른쪽을 연 「C」(CAPA)와 그 안의 다이 3×3 이고 가운데 다이만 주황입니다.
+입장 화면 머리·사이드바 `S.PKG CAPA` 라벨·브라우저 탭 아이콘이 모두 이 심볼입니다. 사이드바 심볼은
+12초마다 한 바퀴 돌고, 마우스를 올리면 살짝 감겼다 돌아옵니다(운영체제의 「동작 줄이기」가 켜져 있으면
+움직이지 않습니다). 탭 아이콘은 앱에 든 SVG 파일(`static/icons/capa_mark.svg`)을 Streamlit 이 data URI
+로 실어 보내므로, 외부 아이콘 서버(fonts.gstatic.com)에 나가지 않고 사내의 URL 경로 접두에도 영향을
+받지 않습니다. 브라우저 탭이 밝으면 링이 검게, 어두우면 밝게 그려집니다.
 페이지 제목·상자 제목·수치 카드의 큰 숫자는 영문·숫자를 Archivo, 한글을 Noto Sans KR(없으면 맑은
 고딕)로 그립니다. Archivo 는 앱에 든 작은 글꼴 파일(`static/fonts/`, 영문·숫자만)을 Streamlit 정적
 서빙(`.streamlit/config.toml` 의 `enableStaticServing = true`)으로 받으므로 외부 글꼴 서버에 나가지
 않습니다. 본문·표·차트 숫자·사이드바 메뉴의 서체는 그대로입니다.
-탭을 처음 열면 첫 로딩 동안 입장 화면이 앱을 덮습니다. 웨이퍼 심볼과 `S.PKG CAPA` 가 화면 전체로
+탭을 처음 열면 첫 로딩 동안 입장 화면이 앱을 덮습니다. 심볼과 `S.PKG CAPA` 가 화면 전체로
 펼쳐진 뒤 여섯 단계 막대가 요약 준비와 HOME 계산 진행을 따라 차고, 다 그려지면 `Detail`·`Summary`
-가 켜집니다. `Detail` 은 원래 화면(상세)으로 들어가고, `Summary` 는 같은 자리에서 **최신 공식버전의
+가 켜집니다. 왼쪽 위 작은 심볼은 그려지며 나타나, 읽는 동안 C 의 틈이 돌며 다이를 켜다가 준비가
+끝나면 한 번 돌고 멈춥니다. `Detail` 은 원래 화면(상세)으로 들어가고, `Summary` 는 같은 자리에서 **최신 공식버전의
 6개월 요약**(생산계획·B/N 확보율과 부족 대수·월별 Density·Wafer 계획·제품 비중)을 모션으로 그립니다.
 원래 화면에서는 사이드바 왼쪽 위 `S.PKG CAPA` 라벨을 누르면 언제든 요약으로 돌아오고, 요약의
 `Detail`(또는 Esc)로 다시 들어갑니다. 같은 탭에서는 새로고침·테마 전환을 해도 입장 화면이 다시 뜨지 않습니다(새 탭에서는 다시

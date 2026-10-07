@@ -51,6 +51,8 @@ import streamlit as st
 
 from capa_simulation.components.intro_overlay import (
     BRAND,
+    MARK_DIE_ORIGINS,
+    MARK_RING_PATH,
     SUMMARY_LABEL,
     SUMMARY_LABEL_ARIA,
     SUMMARY_LABEL_ID,
@@ -377,6 +379,10 @@ def render_intro_summary(database_path: str) -> None:
 # - **글꼴**: 입장 화면 워드마크와 같은 Archivo 800 · 폭 75% 부분 글꼴. 입장 화면 JS 가 본
 #   문서에 등록한 `CapaIntroDisplay` 를 그대로 쓴다(파일을 두 번 싣지 않는다). `S.PKG CAPA` 는
 #   그 부분 글꼴의 글자 목록(`intro_overlay.FONT_SUBSET_TEXT`)에 들어 있다.
+# - **움직임**: 심볼의 C 링이 12초마다 「반동 스핀」을 한 번 하고(첫 바퀴는 2초 뒤), 올리거나
+#   Tab 초점이 닿으면 「살짝 감기」를 한다(2026-10-07 사용자 결정). 둘 다 CSS @keyframes 뿐이다 —
+#   타이머도 rerun 도 없다. 라벨은 한 번 만든 단추를 계속 쓰고, 머리칸이 다시 그려져 다시 끼울
+#   때만 주기가 처음(2초 뒤 첫 바퀴)부터 다시 돈다. 움직임 줄이기를 켠 사용자에게는 걸지 않는다.
 _LABEL_SCRIPT = """
 (function () {
   var parentWindow = window.parent;
@@ -444,6 +450,12 @@ _LABEL_CSS = """
   font-family: __FONT_FAMILY__;
 }
 #__ID__ svg { width: 22px; height: 22px; flex: none; display: block; }
+#__ID__ svg .capa-mark-turn, #__ID__ svg .capa-mark-spin {
+  transform-box: view-box; transform-origin: 50px 50px;
+}
+#__ID__ svg .capa-mark-breathe, #__ID__ svg .capa-mark-pop {
+  transform-box: fill-box; transform-origin: center;
+}
 #__ID__ .capa-brand-word {
   font-family: "CapaIntroDisplay", __FONT_FAMILY__; font-weight: 800; font-stretch: 75%;
   font-size: 19px; line-height: 1; letter-spacing: 0.01em; flex: none;
@@ -457,23 +469,71 @@ _LABEL_CSS = """
 #__ID__:focus-visible { outline: 2px solid __ACCENT__; outline-offset: 2px; }
 #__ID__[aria-disabled="true"] { cursor: not-allowed; }
 #__ID__[aria-disabled="true"] .capa-brand-hint { opacity: 0.6; }
+@media (prefers-reduced-motion: no-preference) {
+  #__ID__ .capa-mark-spin { animation: capa-mark-spin 12s 2s infinite; }
+  #__ID__ .capa-mark-pop { animation: capa-mark-pop 12s linear 2s infinite; }
+  #__ID__:hover:not([aria-disabled="true"]) .capa-mark-turn,
+  #__ID__:focus-visible .capa-mark-turn { animation: capa-mark-nudge 0.52s; }
+  #__ID__:hover:not([aria-disabled="true"]) .capa-mark-breathe,
+  #__ID__:focus-visible .capa-mark-breathe { animation: capa-mark-breathe 0.52s linear; }
+}
+@keyframes capa-mark-spin {
+  0% { transform: rotate(0deg) scale(1); animation-timing-function: cubic-bezier(.3,0,.6,1); }
+  1.875% {
+    transform: rotate(-30deg) scale(.94); animation-timing-function: cubic-bezier(.25,.9,.3,1);
+  }
+  7.75% {
+    transform: rotate(374deg) scale(1.02); animation-timing-function: cubic-bezier(.4,0,.6,1);
+  }
+  9.5% { transform: rotate(354deg) scale(1); animation-timing-function: cubic-bezier(.4,0,.6,1); }
+  11% { transform: rotate(364deg) scale(1); animation-timing-function: cubic-bezier(.4,0,.6,1); }
+  12.5%, 100% { transform: rotate(360deg) scale(1); }
+}
+@keyframes capa-mark-pop {
+  0%, 7.75% { transform: scale(1); }
+  8.75% { transform: scale(1.35); }
+  9.75% { transform: scale(.92); }
+  10.75%, 100% { transform: scale(1); }
+}
+@keyframes capa-mark-nudge {
+  0% { transform: rotate(0deg); animation-timing-function: cubic-bezier(.3,0,.5,1); }
+  30% { transform: rotate(-30deg); animation-timing-function: cubic-bezier(.3,1.7,.5,1); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes capa-mark-breathe {
+  0%, 20% { transform: scale(1); }
+  45% { transform: scale(1.25); }
+  70%, 100% { transform: scale(1); }
+}
 """
 
 
 def _label_icon() -> str:
-    """입장 화면 심볼과 같은 모양 — 노치 있는 링과 3×3 다이(`intro.js` 의 `waferLogo`). 링은 글자색,
-    다이는 앱 강조색이다. 가운데 다이도 강조색이다 — 앱에서 주황은 「경고」라 입장 화면처럼 칠하지
-    않는다."""
-    dies = "".join(
-        f'<rect x="{x}" y="{y}" width="13" height="13" rx="2" fill="var(--capa-brand-die)"/>'
-        for y in (27, 43.5, 60)
-        for x in (27, 43.5, 60)
-    )
+    """메인 심볼 — C 링 + 3×3 다이(`intro_overlay.MARK_RING_PATH` · `MARK_DIE_ORIGINS`, 입장 화면
+    `intro.js` 의 `brandMark` 와 같은 모양). 링은 글자색, 다이는 앱 강조색이고 가운데 다이는
+    주황(`BRAND_DIE_WARM`)이다 — 상태색이 아니라 심볼의 고정 강조색이라 입장 화면과 같은 자리에
+    같은 색 계열을 둔다(2026-10-07 사용자 결정).
+
+    링은 `<g>` 두 겹에 싼다 — 바깥(`capa-mark-turn`)은 올렸을 때의 「살짝 감기」, 안
+    (`capa-mark-spin`)은 12초마다의 「반동 스핀」이 transform 을 따로 가져 서로 덮지 않는다. 가운데
+    다이도 같은 까닭으로 두 겹이다(`capa-mark-breathe` · `capa-mark-pop`). 다이는 돌지 않는다."""
+    dies: list[str] = []
+    for row, y in enumerate(MARK_DIE_ORIGINS):
+        for col, x in enumerate(MARK_DIE_ORIGINS):
+            rect = f'x="{x}" y="{y}" width="12" height="12" rx="2"'
+            if (row, col) == (1, 1):
+                dies.append(
+                    f'<g class="capa-mark-breathe"><rect class="capa-mark-pop" {rect} '
+                    'fill="var(--capa-brand-core)"/></g>'
+                )
+            else:
+                dies.append(f'<rect {rect} fill="var(--capa-brand-die)"/>')
     return (
         '<svg viewBox="0 0 100 100" aria-hidden="true">'
-        '<path d="M53 93.9 A44 44 0 1 0 47 93.9 L50 90.6 Z" fill="none" '
-        'stroke="currentColor" stroke-width="6"/>'
-        f"{dies}</svg>"
+        '<g class="capa-mark-turn"><g class="capa-mark-spin">'
+        f'<path d="{MARK_RING_PATH}" fill="none" stroke="currentColor" stroke-width="9" '
+        'stroke-linecap="round"/></g></g>'
+        f"{''.join(dies)}</svg>"
     )
 
 
@@ -490,7 +550,10 @@ def _label_css(mode: str) -> str:
         .replace("__BORDER__", value("BORDER"))
         .replace("__ACCENT__", value("ACCENT"))
     )
-    return css + f"#{SUMMARY_LABEL_ID} {{ --capa-brand-die: {value('ACCENT')}; }}\n"
+    return css + (
+        f"#{SUMMARY_LABEL_ID} {{ --capa-brand-die: {value('ACCENT')}; "
+        f"--capa-brand-core: {value('BRAND_DIE_WARM')}; }}\n"
+    )
 
 
 def summary_label_script() -> str:

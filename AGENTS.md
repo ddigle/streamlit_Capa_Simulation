@@ -120,12 +120,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 
 - `app.py`
   - 유일한 실행 진입점이다.
-  - 브라우저 탭 아이콘은 `settings.FAVICON_PATH`(`static/icons/factory.svg` — Material Symbols Rounded
-    `factory`, Apache-2.0, 같은 폴더 `LICENSE-Apache-2.0.txt`)의 **문자열 경로**다. Streamlit 1.63 은
-    `.svg` 로 끝나는 파일을 읽어 `data:image/svg+xml;base64,…` 로 싣는다 — `:material/…:` 이름은
-    프런트엔드가 fonts.gstatic.com 에서 받아 사내망에서 끊기고, data URI 는 URL 경로 접두
-    (`server.baseUrlPath`)와도 무관하다. 파일은 `<svg` 로 시작해야 한다(앞에 주석·BOM 을 두면 경로
-    문자열이 그대로 나간다, `tests/test_settings.py`).
+  - 브라우저 탭 아이콘은 `settings.FAVICON_PATH`(`static/icons/capa_mark.svg` — 앱의 메인 심볼, 아래
+    `intro_overlay` 의 「메인 심볼」)의 **문자열 경로**다. Streamlit 1.63 은 `.svg` 로 끝나는 파일을 읽어
+    글자 그대로 `data:image/svg+xml;base64,…` 로 싣는다 — `:material/…:` 이름은 프런트엔드가
+    fonts.gstatic.com 에서 받아 사내망에서 끊기고, data URI 는 URL 경로 접두(`server.baseUrlPath`)와도
+    무관하다. 파일은 `<svg` 로 시작해야 한다(앞에 주석·BOM 을 두면 경로 문자열이 그대로 나간다 — 주석은
+    `<svg>` 안에 둔다, `tests/test_settings.py`). 탭 바탕이 밝든 어둡든 읽히게 파일 안의 `<style>` 이
+    `prefers-color-scheme` 에 따라 링(`TEXT`)·다이(`ACCENT`)·가운데 다이(`BRAND_DIE_WARM`)를 그 테마의
+    토큰 값으로 바꾼다. 매체 조건을 모르는 브라우저에서는 링이 양쪽에서 읽히는 중간 회색이다. 토큰을
+    바꾸면 이 파일의 값도 같이 고친다(`test_settings` 가 대조한다).
   - 페이지 목록과 사이드바 박스는 `navigation.py` 의 `SIDEBAR_GROUPS` 선언에서 받아
     그리기만 한다. 박스 컨테이너 key 와 CSS 선택자도 같은 선언에서 나온다. 공통 사이드바와
     조회기간은 여기서 관리한다.
@@ -2166,11 +2169,32 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않는다(먼저 서면 뒤에 오는 테마 버튼이 슬롯 끝에 붙어 차례가 뒤집힌다).
 - `src/capa_simulation/components/intro_overlay.py`
   - **탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면**(2026-10-02 사용자 결정 — 4시안 중 B안
-    수정본). 웨이퍼 심볼과 `S.PKG CAPA` 워드마크가 원형으로 화면 전체로 펼쳐지고, 입장 화면의
+    수정본). 메인 심볼과 `S.PKG CAPA` 워드마크가 원형으로 화면 전체로 펼쳐지고, 입장 화면의
     단계 막대 여섯이 진행을 보여 준다(시나리오 → 요약 → 기준정보 → 부하량·Capa → 확보율 → HOME, 실제로
     끝나는 차례). 다 그려지면 단추 둘이 켜진다. **`Detail`** 은 누른 단추에서 구멍이 퍼지며 원래 화면이
     드러나고, 들어가면 `sessionStorage` 에 적어 **같은 탭에서는 다시 띄우지 않는다**(테마 버튼·
     새로고침은 새 세션이지만 같은 탭이다).
+  - **메인 심볼**(2026-10-07 사용자 결정 — 시안 「D · C 링」): 뷰박스 100 에서 반지름 41 링의 오른쪽
+    ±35° 를 열어 「C」(CAPA 의 머리글자이자 웨이퍼 링)로 두고(굵기 9 · 둥근 끝), 크기 12 · 모서리 2 다이
+    3×3 을 28 · 44 · 60 에 둔다. 링은 글자색, 다이는 강조색, **가운데 다이는 주황**이다 — 상태색(경고)이
+    아니라 심볼의 고정 강조색이라 입장 화면(`die-warn`)과 사이드바 라벨(`BRAND_DIE_WARM`) 모두 주황이다.
+    모양은 `intro_overlay.MARK_RING_PATH` · `MARK_DIE_ORIGINS` 와 `intro.js` 의 `MARK_RING` · `MARK_DIES`
+    두 벌이고, 그리는 곳은 넷이다 — 입장 화면 머리 줄(`brandMark`, 30px)·입장 화면 가운데 장면
+    (`drawSymbol`, 워커라 값을 따로 적는다)·사이드바 라벨(`intro_summary._label_icon`, 22px)·탭 아이콘
+    (`static/icons/capa_mark.svg`). `test_intro_overlay` 가 넷의 호와 다이 자리를 맞춰 본다. 뒤쪽 웨이퍼
+    맵(`drawMap`)의 V 노치는 심볼이 아니라 웨이퍼 그림이라 그대로 둔다.
+  - **머리 심볼 모션**(2026-10-07 사용자 결정 — 모션 시안 `DAPem8Fm9o1dM1ejLCrvsR` 넷 중 셋, `markMotion`):
+    입장 화면 머리가 떠오를 때 「그리며 모이기」(1.7초 — 링이 C 의 위쪽 끝에서 이어지고 바깥 다이 여덟이
+    차례로, 주황 가운데가 마지막), 아직 읽는 동안 「검사 스캔」(1.8초 한 바퀴 반복 — C 의 틈이 돌며 다이가
+    회색 `die-idle` 에서 제 색으로 켜진다), 준비되면(`ready` — 「준비 완료」) 그 바퀴를 마저 돈 뒤 「반동
+    스핀」(1.5초) 한 번으로 멈춘다. 그리기가 끝날 때 이미 준비됐으면 스캔 없이 곧장 스핀이다. 앱에서
+    Summary 를 열 때(`openFromApp`)는 「그리며 모이기」 한 번(`MARK_REDRAW_AFTER_MS` 뒤 — 접히는 화면이
+    머리 자리를 드러낼 즈음). 입장 화면에서 Summary 로 갈 때는 머리가 이미 서 있어 다시 그리지 않는다.
+    링과 다이를 두 장의 SVG 로 겹쳐 링이 도는 움직임은 바깥 `<svg>` 상자의 transform 이다(SVG 안
+    요소의 transform 은 메인 스레드에서만 돈다 — 바깥 상자라야 합성기로 넘길 여지가 있다). 그리기의
+    대시·다이 크기·다이 색은 메인 스레드 애니메이션이라 로딩으로 막히면 잠깐 멈췄다 잇고, 스캔 바퀴
+    사이도 그만큼 벌어진다(8550 첫 방문에서 1.8초 바퀴가 한 번 3.3초 간격으로 이어졌다). 움직임 줄이기면 아무것도 걸지 않는다. 오버레이를 감추면(`hide`) 멈춘다.
+    끝 모습은 늘 그린 그대로의 심볼이라 언제 취소해도 그 모습이다. 뒤쪽 장면의 시간표는 바꾸지 않았다.
   - **`Summary`** 는 같은 오버레이 안에서 **최신 공식버전의 여섯 달 요약**을 모션으로 그린다(역할
     분리: 앱 안은 상세, 입장 화면은 요약 — 2026-10-02 사용자 결정, 최종 시안 아티팩트
     `RjdbkmrAgBp2TnQbyRZy9D`). 타이틀·로딩 막대가 위로 빠지고, Summary 는 Detail 밑으로 접히고, Detail 은
@@ -2280,7 +2304,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **사이드바 `S.PKG CAPA` 라벨**(2026-10-06 사용자 결정 — 툴바 `Summary` 단추를 대신한다. 툴바는
     Guide·테마·Print). 테마 버튼 iframe 의 스크립트(`summary_label_script` — 상태 없는 고정 문자열)가
     사이드바 머리칸(`theme_toggle.SIDEBAR_HEADER_SLOT`) 맨 앞에 실제 `<button>` 을 끼운다. 입장 화면과
-    같은 모양의 심볼(노치 링 + 3×3 다이, 다이는 모두 `ACCENT` — 앱에서 주황은 「경고」)과 `S.PKG CAPA`
+    같은 메인 심볼(C 링 + 3×3 다이, 다이는 `ACCENT` · 가운데 다이는 `BRAND_DIE_WARM` 주황 — 2026-10-07
+    사용자 결정, 심볼의 고정 강조색이지 「경고」가 아니다)과 `S.PKG CAPA`
     워드마크(Archivo 800 · 폭 75% — 입장 화면 JS 가 등록한 `CapaIntroDisplay` 를 다시 쓴다, 글자는
     `FONT_SUBSET_TEXT` 에 들어 있다), 옅은 `Summary` 안내 글자다. 색은 **앱 테마를 따른다** — 두 테마의
     스타일을 다 싣고 `capaTheme.resolve` 로 고른다. 누르면 입장 화면 JS 의 `openSummary(label)` 을 부르고,
@@ -2289,6 +2314,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     풍선(`title` — 요약이 보낸 까닭·준비 중)으로만 정한다 — 라벨은 앱 이름이기도 해서 감추지 않는다.
     머리칸은 React 가 다시 그릴 수 있어 관찰자를 끊지 않고 빠지면 다시 끼운다. 사이드바를 접으면 라벨도
     함께 가려진다. 라벨 id 는 `intro_overlay.SUMMARY_LABEL_ID` 하나를 두 쪽이 본다(`test_intro_overlay`).
+  - **사이드바 심볼 모션**(2026-10-07 사용자 결정): C 링이 **12초마다 「반동 스핀」** 을 한 번 하고(첫
+    바퀴는 2초 뒤 — 첫 그림과 겹치지 않게), 올리거나 Tab 초점이 닿으면 「살짝 감기」(0.52초 — 뒤로 30°
+    감겼다 튕겨 돌아오고 가운데 다이가 한 번 숨 쉰다, 누를 수 없을 때는 올려도 하지 않는다)를 한다.
+    **CSS @keyframes 뿐**이다 — 타이머·rerun 없음. 1.5초 모션을 12초 주기의 앞 12.5% 에 넣었다. 두 움직임이
+    transform 을 서로 덮지 않게 링은 `<g>` 두 겹(바깥 `capa-mark-turn` 감기 · 안 `capa-mark-spin` 스핀),
+    가운데 다이도 두 겹(`capa-mark-breathe` · `capa-mark-pop`)이다. 다이는 돌지 않는다. 움직임은 모두
+    `@media (prefers-reduced-motion: no-preference)` 안에서만 건다. 라벨은 한 번 만든 단추를 rerun 내내
+    계속 쓰므로(8550 실측 — 사이드바 토글 rerun 에도 같은 노드, 애니메이션 시각이 이어진다) 주기가
+    흔들리지 않는다. 머리칸이 통째로 다시 그려져 다시 끼울 때만 주기가 처음부터 다시 돈다. 입장 화면·
+    Summary 머리 심볼에는 이 주기를 걸지 않는다(자기 모션이 있다).
 - `src/capa_simulation/services/official_summary.py`
   - 공식버전 6개월 요약의 순수 계산. 기간은 리비전 프리셋의 조회 시작월과 생산계획 첫 달 중 **늦은
     쪽**부터 여섯 달(계획 끝을 넘지 않음, 연간 Total 없음). 생산계획 = HOME `Density (억Gb)`(`부하량`),

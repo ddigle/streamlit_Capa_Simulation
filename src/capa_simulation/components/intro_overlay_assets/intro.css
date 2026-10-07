@@ -152,10 +152,19 @@
   flex: none;
 }
 
+/* 메인 심볼은 링 한 장과 다이 한 장을 같은 칸에 겹친다. 링 장은 상자째 가운데(뷰박스 50, 50)를 축으로
+   돌고, 다이는 제 가운데를 축으로 커진다(intro.js 의 markMotion). */
 .logo svg {
+  grid-area: 1 / 1;
   display: block;
   width: 100%;
   height: 100%;
+  overflow: visible;
+}
+
+.logo .die {
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
 /* 심볼 옆 라벨·메인 타이틀·단추·인트로 워드마크는 한 서체(Archivo 800 · 폭 75%)다.

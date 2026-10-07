@@ -20,8 +20,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # 브라우저 탭 아이콘. `:material/…:` 이름을 주면 프런트엔드가 fonts.gstatic.com 에서 받아 오는데
 # 사내 WebIDE 는 그 주소에 못 나갈 수 있다. 저장소의 SVG 파일 경로를 주면 Streamlit 이 파일을 읽어
 # `data:image/svg+xml;base64,…` 로 실어 보내므로 외부 주소도, 사내의 URL 경로 접두도 타지 않는다.
-# 글리프는 Material Symbols Rounded `factory`(Apache-2.0 — 같은 폴더 `LICENSE-Apache-2.0.txt`)다.
-FAVICON_PATH = PROJECT_ROOT / "static" / "icons" / "factory.svg"
+# 그림은 앱의 메인 심볼(C 링 + 3×3 다이 — `intro_overlay.MARK_RING_PATH`)이다. 파일 안의
+# `<style>` 이 탭 바탕의 밝기(`prefers-color-scheme`)에 따라 링·다이 색을 두 테마 토큰 값으로
+# 바꾼다.
+FAVICON_PATH = PROJECT_ROOT / "static" / "icons" / "capa_mark.svg"
 DATA_DIR = PROJECT_ROOT / "data"
 INPUT_DIR = DATA_DIR / "input"
 DUCKDB_PATH = DATA_DIR / "capa_simulation.duckdb"

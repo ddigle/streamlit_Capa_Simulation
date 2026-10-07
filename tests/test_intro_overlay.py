@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import re
 from typing import Any
 
@@ -285,15 +286,191 @@ def test_the_sidebar_label_is_the_wordmark_in_the_app_theme() -> None:
     assert intro_overlay.BRAND in script
     assert set(intro_overlay.BRAND) <= set(intro_overlay.FONT_SUBSET_TEXT)
     assert "FontFace" not in script and "woff2" not in script
-    # 입장 화면 심볼과 같은 노치 링 + 3×3 다이.
+    # 입장 화면 심볼과 같은 C 링 + 3×3 다이(모양 대조는 아래 메인 심볼 테스트).
     assert script.count("<rect ") == 9
-    assert "M53 93.9 A44 44 0 1 0 47 93.9 L50 90.6 Z" in script
-    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
-    assert "M53 93.9 A44 44 0 1 0 47 93.9 L50 90.6 Z" in js
+    assert intro_overlay.MARK_RING_PATH in script
     # 키보드로 닿고(실제 단추) 읽는 이름이 있다.
     assert 'label = doc.createElement("button");' in script
     assert intro_overlay.SUMMARY_LABEL_ARIA in script
     assert intro_overlay.SUMMARY_LABEL_ARIA == "S.PKG CAPA — Summary 열기"
+
+
+_RECT = re.compile(r'<rect [^>]*?x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" rx="(\d+)"')
+_RING = re.compile(r'<path [^>]*?d="([^"]+)"[^>]*>')
+
+
+def _mark_parts(svg: str) -> tuple[list[str], list[tuple[int, ...]]]:
+    """SVG 문자열에서 링 경로(d)와 다이 사각형(x, y, 폭, 높이, 모서리)을 뽑는다. 색은 자리마다 달라
+    대조하지 않는다."""
+    rings = _RING.findall(svg)
+    dies = [tuple(int(value) for value in match) for match in _RECT.findall(svg)]
+    return rings, dies
+
+
+def test_the_main_mark_has_one_geometry_everywhere() -> None:
+    """메인 심볼(C 링 + 3×3 다이, 2026-10-07 사용자 결정)은 입장 화면 머리 줄·입장 화면 가운데
+    장면·사이드바 라벨·탭 아이콘 네 곳에 그린다. 한 곳만 고치면 서로 다른 심볼이 된다.
+
+    링은 반지름 41 원의 오른쪽 ±35° 를 연 호다 — 위쪽 끝(−35°)에서 큰 호(1)·반시계(0)로 왼쪽을
+    돌아 아래쪽 끝(+35°)에 닿는다. 다이는 크기 12 · 모서리 2 를 28 · 44 · 60 의 곱에 둔다.
+    """
+    from capa_simulation.components import intro_summary
+    from capa_simulation.settings import FAVICON_PATH
+
+    radius, opening = 41, math.radians(35)
+    x_end = 50 + radius * math.cos(opening)
+    y_top, y_bottom = 50 - radius * math.sin(opening), 50 + radius * math.sin(opening)
+    ring = f"M{x_end:.2f} {y_top:.2f} A41 41 0 1 0 {x_end:.2f} {y_bottom:.2f}"
+    assert intro_overlay.MARK_RING_PATH == ring
+    assert intro_overlay.MARK_DIE_ORIGINS == (28, 44, 60)
+    dies = [(x, y, 12, 12, 2) for y in (28, 44, 60) for x in (28, 44, 60)]
+
+    # 입장 화면 머리 줄: 상수 둘과 그것을 쓰는 틀.
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    assert _prelude_constant(js, "MARK_RING") == ring
+    found = re.search(r"^const MARK_DIES = \[([\d, ]+)\];$", js, flags=re.MULTILINE)
+    assert found and tuple(int(v) for v in found.group(1).split(",")) == (28, 44, 60)
+    head = _function_source(js, "brandMark")
+    assert 'd="${MARK_RING}" pathLength="100" fill="none"' in head
+    assert 'stroke-width="9" stroke-linecap="round"' in head
+    assert 'x="${x}" y="${y}" width="12" height="12" rx="2"' in head
+    assert "MARK_DIES.forEach((y, row) =>" in head and "MARK_DIES.forEach((x, col) =>" in head
+
+    # 가운데 장면(워커라 상수를 못 본다): 같은 호·굵기·다이 중심(28 + 6 = 34 …)·크기.
+    scene = _scene_source(js)
+    assert "const RIM_OPEN = (35 * Math.PI) / 180;" in scene
+    assert "const RIM_LEN = 41 * (TAU - 2 * RIM_OPEN);" in scene
+    assert "g.arc(50, 50, 41, -RIM_OPEN, RIM_OPEN, true);" in scene
+    assert "g.lineWidth = 9;" in scene
+    assert "symbolDies.push({ x: 50 + x * 16, y: 50 + y * 16, order, fill });" in scene
+    assert [50 + step * 16 - 6 for step in (-1, 0, 1)] == [28, 44, 60]
+    assert "const s = 12 * (0.3 + 0.7 * e);" in scene
+    assert "A44" not in js and "93.9" not in js
+
+    # 사이드바 라벨과 탭 아이콘.
+    for svg in (intro_summary._label_icon(), FAVICON_PATH.read_text(encoding="utf-8")):
+        rings, rects = _mark_parts(svg)
+        assert rings == [ring]
+        assert sorted(rects, key=lambda r: (r[1], r[0])) == dies
+        assert 'stroke-width="9"' in svg and 'stroke-linecap="round"' in svg
+
+
+def test_the_head_mark_draws_scans_while_loading_then_spins_once() -> None:
+    """입장 화면 머리 심볼의 움직임(2026-10-07 사용자 결정 — 모션 시안 넷 중 셋).
+
+    머리가 처음 설 때 「그리며 모이기」, 아직 읽는 동안 「검사 스캔」 반복, 준비되면 그 바퀴를
+    마치고 「반동 스핀」 한 번. 앱에서 Summary 를 열 때도 「그리며 모이기」 한 번. 움직임 줄이기면
+    아무것도 걸지 않는다(그린 그대로의 심볼). 링은 바깥 `<svg>` 상자째 돌아 합성기가 돌린다.
+    """
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+
+    head = _function_source(js, "brandMark")
+    assert head.count("<svg ") == 2
+    assert '<svg class="mark-ring"' in head and '<svg class="mark-dies"' in head
+    assert ".logo .die {\n  transform-box: fill-box;\n  transform-origin: center;\n}" in css
+    assert "grid-area: 1 / 1;" in css
+
+    motion = _function_source(js, "markMotion")
+    for name in ("function draw(delay)", "function scan()", "function spin()", "settle(isReady)"):
+        assert name in motion, name
+    assert 'host.querySelector(".mark-ring")' in motion
+    # 그리며 모이기: 대시를 당겨 긋고, 바깥 여덟 다이 뒤에 가운데가 마지막.
+    assert "strokeDashoffset" in motion and "MARK_DRAW_ORDER.forEach" in motion
+    order = re.search(r"^const MARK_DRAW_ORDER = (\[[\d, ]+\]);$", js, flags=re.MULTILINE)
+    assert order and sorted(json.loads(order.group(1))) == [0, 1, 2, 3, 5, 6, 7, 8]
+    # 스캔: 다이를 회색(die-idle)에서 제 색으로. 스핀: 회전 키프레임이 시안과 같다.
+    assert 'const idle = palette["die-idle"];' in motion
+    for frame in ("rotate(-30deg) scale(.94)", "rotate(374deg) scale(1.02)", "rotate(360deg)"):
+        assert frame in motion, frame
+    settle = motion[motion.index("async function settle(isReady)") :]
+    assert settle.index("while (!isReady())") < settle.index("await scan()")
+    assert settle.index("await scan()") < settle.index("await spin()")
+
+    # 언제 거는가: 머리가 떠오를 때(움직임 줄이기가 아닐 때만) 그리고, 준비 여부로 이어 간다.
+    begin = _function_source(js, "createOverlay")
+    begin = begin[begin.index("  function begin() {") :]
+    begin = begin[: begin.index("\n  }\n")]
+    reduced, moving = begin.split("} else {")
+    assert "mark." not in reduced
+    assert "mark.draw(REVEAL_AT_MS + TEXT_AFTER_REVEAL_MS)" in moving
+    assert "mark.settle(() => ready)" in moving
+    opening = js[
+        js.index("async function openFromApp(button)") : js.index("async function toDetail()")
+    ]
+    assert "if (!reduce) mark.draw(MARK_REDRAW_AFTER_MS);" in opening
+    summary_from_entry = js[js.index("async function summaryFromEntry()") :]
+    summary_from_entry = summary_from_entry[: summary_from_entry.index("\n  }\n")]
+    assert "mark." not in summary_from_entry
+    hide = js[js.index("  function hide() {") :]
+    assert "mark.cancel();" in hide[: hide.index("\n  }\n")]
+
+
+def _label_css_rules(css: str) -> tuple[str, str]:
+    """움직임 줄이기가 아닐 때만 거는 블록과 그 밖을 나눈다."""
+    start = css.index("@media (prefers-reduced-motion: no-preference) {")
+    end = css.index("\n}\n", start)
+    return css[start:end], css[:start] + css[end:]
+
+
+def test_the_sidebar_label_spins_every_twelve_seconds_and_nudges_on_hover() -> None:
+    """사이드바 라벨의 C 링은 12초마다 「반동 스핀」을 한 번 하고(첫 바퀴는 2초 뒤), 올리거나 Tab
+    초점이 닿으면 「살짝 감기」를 한다(2026-10-07 사용자 결정). CSS 만으로 돈다 — 타이머·rerun 이
+    없다. 두 움직임이 서로의 transform 을 덮지 않게 링을 `<g>` 두 겹(바깥 감기 · 안 스핀)에, 가운데
+    다이도 두 겹(바깥 숨 · 안 톡)에 싼다. 다이는 돌지 않는다. 움직임 줄이기면 걸지 않는다."""
+    from capa_simulation.components import intro_summary
+
+    icon = intro_summary._label_icon()
+    assert '<g class="capa-mark-turn"><g class="capa-mark-spin"><path ' in icon
+    assert '<g class="capa-mark-breathe"><rect class="capa-mark-pop" ' in icon
+    assert icon.count("<g ") == 3
+
+    for mode in ("light", "dark"):
+        css = intro_summary._label_css(mode)
+        moving, still = _label_css_rules(css)
+        # 움직임은 모두 그 블록 안에서만 건다.
+        assert "animation:" not in still
+        assert "animation: capa-mark-spin 12s 2s infinite;" in moving
+        assert "animation: capa-mark-pop 12s linear 2s infinite;" in moving
+        assert "animation: capa-mark-nudge 0.52s;" in moving
+        assert "animation: capa-mark-breathe 0.52s linear;" in moving
+        assert ':hover:not([aria-disabled="true"]) .capa-mark-turn' in moving
+        assert ":focus-visible .capa-mark-turn" in moving
+        for name in ("spin", "pop", "nudge", "breathe"):
+            assert f"@keyframes capa-mark-{name} {{" in still, name
+        # 1.5초 모션을 12초 주기의 앞 12.5% 에 넣었다(시안 15% · 62% · 76% · 88% → ×0.125).
+        spin = still[still.index("@keyframes capa-mark-spin {") :]
+        for offset, frame in (
+            ("1.875%", "rotate(-30deg) scale(.94)"),
+            ("7.75%", "rotate(374deg) scale(1.02)"),
+            ("9.5%", "rotate(354deg) scale(1)"),
+            ("11%", "rotate(364deg) scale(1)"),
+            ("12.5%, 100%", "rotate(360deg) scale(1)"),
+        ):
+            assert re.search(rf"{re.escape(offset)} \{{\s*transform: {re.escape(frame)};", spin)
+        # 링은 뷰박스 가운데(50, 50)를 축으로, 가운데 다이는 제 가운데를 축으로 움직인다.
+        assert "transform-box: view-box; transform-origin: 50px 50px;" in css
+        assert "transform-box: fill-box; transform-origin: center;" in css
+
+
+def test_the_centre_die_is_the_brand_warm_token_in_both_themes() -> None:
+    """가운데 다이는 두 곳 모두 주황이다(2026-10-07 사용자 결정 — 상태색이 아니라 심볼의 고정
+    강조색). 사이드바 라벨은 앱 테마 토큰(`BRAND_DIE_WARM`)을, 입장 화면은 자기 팔레트의
+    `die-warn` 을 쓴다. 나머지 다이는 앱 강조색 그대로다."""
+    from capa_simulation.components import intro_summary
+
+    icon = intro_summary._label_icon()
+    assert icon.count('fill="var(--capa-brand-core)"') == 1
+    assert icon.count('fill="var(--capa-brand-die)"') == 8
+    for mode in ("light", "dark"):
+        css = intro_summary._label_css(mode)
+        warm = tokens.palette_value(mode, "BRAND_DIE_WARM")
+        accent = tokens.palette_value(mode, "ACCENT")
+        assert f"--capa-brand-core: {warm};" in css
+        assert f"--capa-brand-die: {accent};" in css
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    head = _function_source(js, "brandMark")
+    assert 'row === 1 && col === 1 ? palette["die-warn"] : palette.accent' in head
 
 
 def test_the_sidebar_label_says_why_it_cannot_open_the_summary() -> None:

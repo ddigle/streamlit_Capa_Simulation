@@ -2,9 +2,10 @@
 
 """첫 접속 입장 화면(인트로 오버레이)과 Summary 요약 화면.
 
-HOME 첫 로딩은 몇 초가 걸린다. 그동안 빈 화면이 반쯤 그려지는 대신 웨이퍼 심볼과 `S.PKG CAPA`
-워드마크가 나타나 원형으로 화면 전체로 펼쳐지고, 입장 화면이 단계 막대로 진행을 보여 준다. 앱이
-다 그려지면 단추 둘이 켜진다.
+HOME 첫 로딩은 몇 초가 걸린다. 그동안 빈 화면이 반쯤 그려지는 대신 메인 심볼(C 링 + 3×3 다이)과
+`S.PKG CAPA` 워드마크가 나타나 원형으로 화면 전체로 펼쳐지고, 입장 화면이 단계 막대로 진행을 보여
+준다. 앱이 다 그려지면 단추 둘이 켜진다. 머리 줄의 작은 심볼은 떠오르며 그려지고(그리며 모이기),
+아직 읽는 동안 C 의 틈이 돌며 다이를 켜다가(검사 스캔) 준비되면 한 번 돌고 멈춘다(반동 스핀).
 
 - **Detail** — 원래 화면(HOME 등)으로 들어간다. 누른 단추에서 원이 퍼지며 앱이 드러난다.
 - **Summary** — 같은 오버레이 안에서 **최신 공식버전의 여섯 달 요약**을 모션으로 그린다(역할
@@ -82,6 +83,12 @@ _ASSETS = Path(__file__).with_name("intro_overlay_assets")
 INTRO_OVERLAY_KEY = "capa_intro_overlay"
 
 BRAND = "S.PKG CAPA"
+# 메인 심볼 — C 링 + 3×3 다이(2026-10-07 사용자 결정, 뷰박스 100). 반지름 41 링의 오른쪽 ±35° 를
+# 열어 「C」로 두고(굵기 9 · 둥근 끝), 크기 12 · 모서리 2 다이 아홉을 아래 세 자리의 곱에 둔다.
+# 입장 화면(`intro.js` 의 `MARK_RING` · `MARK_DIES`)·사이드바 라벨(`intro_summary`)·탭 아이콘
+# (`static/icons/capa_mark.svg`)이 같은 모양이다 — `tests/test_intro_overlay.py` 가 셋을 맞춰 본다.
+MARK_RING_PATH = "M83.59 26.48 A41 41 0 1 0 83.59 73.52"
+MARK_DIE_ORIGINS = (28, 44, 60)
 TITLE_LINES = ("S.PKG Capa", "Simulation")
 DETAIL_LABEL = "Detail"
 SUMMARY_LABEL = "Summary"
