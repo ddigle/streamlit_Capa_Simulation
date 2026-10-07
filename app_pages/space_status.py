@@ -68,7 +68,6 @@ from capa_simulation.persistence.equipment_cache import (
     load_floor_layout_summaries,
     load_latest_equipment_snapshot,
 )
-from capa_simulation.services.equipment_availability import build_space_equipment_status
 from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWNTIME_TARGET
 from capa_simulation.services.equipment_contract import (
     DATE_COLUMNS,
@@ -104,6 +103,7 @@ from capa_simulation.services.floor_layout_profile import (
     FloorKey,
     FloorLayoutProfile,
 )
+from capa_simulation.services.simulation_cache import get_space_equipment_status
 from capa_simulation.services.space_layout_edit import (
     apply_layout_edits,
     editor_inputs,
@@ -328,7 +328,7 @@ fab_editable = not showing_sample
 if no_fleet:
     # 고를 호기가 없어 조건 위젯을 세우지 않는다(카드에는 위의 까닭 한 줄).
     as_of = today
-    all_status = build_space_equipment_status(equipment, downtime, as_of=as_of)
+    all_status = get_space_equipment_status(equipment, downtime, as_of=as_of)
     selected_processes: list[str] = []
     selected_stages: list[str] = []
 else:
@@ -342,7 +342,7 @@ else:
             key="space_status_as_of",
             persist_state="session",
         )
-        all_status = build_space_equipment_status(equipment, downtime, as_of=as_of)
+        all_status = get_space_equipment_status(equipment, downtime, as_of=as_of)
         selected_processes = st.multiselect(
             "공정소분류",
             options=all_status["공정소분류"].dropna().drop_duplicates().tolist(),
@@ -543,7 +543,7 @@ def _render_layout_warnings(
 ) -> None:
     """편집본의 겹침·가림 경고. RawData 의 검증 실패 편집이 남아 있으면 경고만 건너뛴다."""
     try:
-        status = build_space_equipment_status(frames[1], frames[2], as_of=as_of)
+        status = get_space_equipment_status(frames[1], frames[2], as_of=as_of)
     except ValueError as exc:
         # 저장·버리기는 둔다(저장하면 같은 까닭으로 막히고, 버리면 풀린다).
         st.caption(
@@ -613,7 +613,7 @@ def _render_layout_editor(
     stored_marks = load_floor_layout_marks(equipment_database_path, building, floor)
     marks = pending_floor_marks().get(key, stored_marks)
     try:
-        status = build_space_equipment_status(frames[1], frames[2], as_of=as_of)
+        status = get_space_equipment_status(frames[1], frames[2], as_of=as_of)
     except ValueError as exc:
         st.error(
             "가용설비 현황 RawData 에 검증을 통과하지 못한 저장 안 한 편집이 있어 배치 편집기를 "

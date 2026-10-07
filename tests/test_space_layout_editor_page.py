@@ -338,3 +338,82 @@ def test_the_floor_detail_keeps_its_place_while_the_unsaved_panel_comes_and_goes
     assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     assert _top_level(app) == layout
     clear_equipment_repository()
+
+
+def _count_status_builds(monkeypatch: pytest.MonkeyPatch) -> list[date]:
+    """`build_space_equipment_status` 를 실제로 돌린 횟수(기준일)를 센다. 캐시는 비우고 시작한다 —
+    키가 내용 지문이라 앞 테스트가 같은 표로 채운 칸이 남는다."""
+    from capa_simulation.services import simulation_cache
+    from capa_simulation.services.equipment_availability import build_space_equipment_status
+
+    builds: list[date] = []
+
+    def counting(equipment: pd.DataFrame, downtime: pd.DataFrame, *, as_of: date) -> pd.DataFrame:
+        builds.append(as_of)
+        return build_space_equipment_status(equipment, downtime, as_of=as_of)
+
+    monkeypatch.setattr(simulation_cache, "build_space_equipment_status", counting)
+    simulation_cache._cached_space_equipment_status.clear()
+    return builds
+
+
+def test_the_space_status_wrapper_builds_once_per_content_and_as_of(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from capa_simulation.services.equipment_availability import build_space_equipment_status
+    from capa_simulation.services.simulation_cache import get_space_equipment_status
+
+    builds = _count_status_builds(monkeypatch)
+    master, downtime = _equipment(), _downtime()
+    as_of = date(2026, 10, 1)
+    expected = build_space_equipment_status(master, downtime, as_of=as_of)
+
+    first = get_space_equipment_status(master, downtime, as_of=as_of)
+    pd.testing.assert_frame_equal(first, expected)
+    # 받은 쪽이 고쳐 써도 캐시는 그대로다(부를 때마다 새 사본).
+    first.loc[:, "상태"] = "고친 값"
+    again = get_space_equipment_status(master.copy(), downtime.copy(), as_of=as_of)
+    pd.testing.assert_frame_equal(again, expected)
+    assert builds == [as_of]
+
+    # 기준일이나 표 내용이 바뀌면 다시 판정한다.
+    later = date(2026, 12, 1)
+    pd.testing.assert_frame_equal(
+        get_space_equipment_status(master, downtime, as_of=later),
+        build_space_equipment_status(master, downtime, as_of=later),
+    )
+    moved = master.copy()
+    moved.loc[moved["설비명"].eq("EQ-01"), "X좌표"] = 40.0
+    pd.testing.assert_frame_equal(
+        get_space_equipment_status(moved, downtime, as_of=as_of),
+        build_space_equipment_status(moved, downtime, as_of=as_of),
+    )
+    assert builds == [as_of, later, as_of]
+
+
+def test_editing_and_applying_judge_each_table_content_once(
+    tmp_path: Path, editor_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """배치 편집은 한 회차에 저장본(조건 카드·요약)과 편집본(편집기·겹침 경고)을 따로 판정하고,
+    적용은 `st.rerun()` 으로 두 회차를 돈다. 같은 내용은 한 번만 판정한다 — 캐시가 없을 때는
+    편집을 켜면 2번, 적용 한 번에 5~6번 같은 판정을 했다(2026-10-08 계측)."""
+    builds = _count_status_builds(monkeypatch)
+    app, _ = _open_editor(tmp_path)
+    # 보기 회차에 저장본을 한 번 판정한다. 편집을 켠 회차의 편집본은 저장본과 내용이 같아 다시 쓴다.
+    assert len(builds) == 1
+
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-01", "placed": True, "x": 40, "y": 20, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("저장 안 한 배치 변경" in item.value for item in app.markdown)
+    # 새 편집본 한 번 — 겹침 경고와 편집기가 함께 쓴다.
+    assert len(builds) == 2
+    app.run()
+    assert len(builds) == 2
+    clear_equipment_repository()

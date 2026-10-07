@@ -944,6 +944,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이다. 하나라도 바뀌면(적용, RawData 제출, 팝업 캔버스 저장, 저장, 기준일로 대상이 바뀜) 브라우저가
     새 값으로 다시 서고, 같으면 진행 중인 편집과 배율을 지킨다. 같은 epoch 에서 배경 도면만 바뀌면
     JS 가 배경만 다시 깐다. 옛 epoch 로 온 적용은 반영하지 않고 알린다.
+  - 기준일 상태는 페이지가 직접 판정하지 않고 `simulation_cache.get_space_equipment_status` 로
+    받는다(2026-10-08). 편집 중에는 한 회차에 저장본(조건 카드·요약)과 편집본(편집기·겹침 경고)을
+    따로 판정하고 `적용` 은 `st.rerun()` 으로 두 회차를 도는데, 내용 지문 키라 같은 표는 한 번만
+    판정한다 — 편집을 막 켠 편집본은 저장본과 내용이 같아 그 판정을 다시 쓴다.
   - 저장 안 한 배치 상자는 RawData 의 검증 실패 편집이 있어도 페이지를 죽이지 않는다(경고 계산만
     건너뛴다). 저장 콜백은 `BOOTSTRAP_ERRORS` 를 잡아 문구로 남기고, 그 오류는 상자를 안 그리는
     회차에도 한 번 보인 뒤 버린다. 경고용 도면 요소는 편집본에 호기가 선 층만 읽는다.
@@ -1561,6 +1565,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `scenario_cache_key` + 표시순서 다이제스트 + 표 이름·분류 컬럼·값 컬럼·화면 범위로 캐시한다.
     프레임과 `PreparedDisplayOrder` 는 `_` 인자라 해시하지 않는다. 표시순서만 바꿔도 행 차례가
     바뀌는지는 `tests/test_reference_data_page.py` 의 표시순서 교체 테스트가 여섯 표 모두 지킨다.
+  - `get_space_equipment_status` 는 Space 현황의 기준일 상태(`build_space_equipment_status`)를
+    `space_status_cache_key` — 호기 마스터·비가동 일정 **내용 지문**(`frame_digest`)·기준일·
+    `COUNTED_USAGE_BASIS` — 로 캐시한다(프레임은 `_` 인자). 표는 저장 안 한 편집본일 수 있어
+    리비전 번호나 편집본 세대(세션마다 0 부터 센다)를 키로 쓰지 않는다. 검증에 실패한 편집본의
+    `ValueError` 는 캐시하지 않고 그대로 낸다.
   - `shared_home_figure_store()`(`st.cache_resource`)는 HOME Figure 묶음을 세션끼리 나누는
     프로세스 공용 LRU 다. **값은 pickle 바이트**로 둔다 — 객체를 그대로 나누면 한 세션이
     꺼낸 Figure 를 고칠 때 남의 화면이 바뀐다. 편집 없는 리비전(`pristine-` 토큰)의 그림만

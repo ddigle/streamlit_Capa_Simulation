@@ -21,8 +21,10 @@ from capa_simulation.services.dashboard import (
 )
 from capa_simulation.services.display_order import PreparedDisplayOrder
 from capa_simulation.services.equipment_availability import (
+    build_space_equipment_status,
     build_weekly_equipment_availability,
 )
+from capa_simulation.services.equipment_contract import COUNTED_USAGE_BASIS
 from capa_simulation.services.load_calculator import (
     DemandBasis,
     build_monthly_volume,
@@ -597,6 +599,53 @@ def get_usage_excluded_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
     쓰고 범위는 받은 쪽이 좁힌다.
     """
     return usage_excluded_equipment(equipment)
+
+
+# (호기 마스터 내용 지문, 비가동 일정 내용 지문, 기준일, 가용대수에 세는 사용기준).
+SpaceStatusCacheKey = tuple[str, str, str, tuple[str, ...]]
+
+
+def space_status_cache_key(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, *, as_of: date
+) -> SpaceStatusCacheKey:
+    """Space 기준일 상태의 키. 판정이 보는 입력을 모두 싣는다.
+
+    두 표는 저장 안 한 편집본일 수 있어 리비전·편집본 세대가 아니라 내용 지문이다 — 세대
+    번호는 세션마다 0 부터 세어 내용이 달라도 겹친다. 사용기준 규칙(`COUNTED_USAGE_BASIS`)은
+    코드 상수지만 결과의 `가용대수반영` 을 정하므로 함께 싣는다.
+    """
+    return (
+        frame_digest(equipment),
+        frame_digest(downtime),
+        as_of.isoformat(),
+        tuple(COUNTED_USAGE_BASIS),
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_space_equipment_status(
+    cache_key: SpaceStatusCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+    _as_of: date,
+) -> pd.DataFrame:
+    return build_space_equipment_status(_equipment, _downtime, as_of=_as_of)
+
+
+def get_space_equipment_status(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, *, as_of: date
+) -> pd.DataFrame:
+    """Space 현황의 기준일 상태(`build_space_equipment_status`)를 같은 내용이면 다시 쓴다.
+
+    배치 편집 중에는 한 회차에 저장본(조건 카드·FAB·층 요약)과 편집본(편집기·겹침 경고)을
+    따로 판정하고, `적용` 은 `st.rerun()` 으로 두 회차를 돈다 — 캐시가 없을 때 적용 한 번에
+    같은 판정을 5~6번(3천 행에 한 번 0.13초 남짓) 했다. 판정은 호기 마스터 검증을 거치므로
+    검증에 실패한 편집본은 `ValueError` 를 그대로 낸다(예외는 캐시하지 않는다). 받은 프레임은
+    부를 때마다 새 사본이라 고쳐 써도 캐시가 바뀌지 않는다.
+    """
+    return _cached_space_equipment_status(
+        space_status_cache_key(equipment, downtime, as_of=as_of), equipment, downtime, as_of
+    )
 
 
 CAPACITY_INPUT_TABLES = (
