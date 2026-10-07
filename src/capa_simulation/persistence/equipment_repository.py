@@ -151,7 +151,8 @@ _REVISION_SUMMARY_PROJECTION = """
 # 이 표 하나에서 나온다 — 화면 이름을 바꿔도 이 표의 왼쪽만 바꾸면 기존 리비전이 그대로 이어진다.
 # DB 컬럼 이름은 옛 화면 이름에서 온 것이 많다(`line_type` = 공정구분, `classification_1` = 구분).
 # `investment_basis`(옛 `투자기준`)는 계약에서 빠졌다. **값은 지우지 않고 읽지도 쓰지도 않는다**
-# — 되살릴 수 있게 남겨 둔다. `business_unit` 도 같은 처지다.
+# — 과거 리비전의 이력이라서다. 되살리지 않기로 확정했다(2026-10-07).
+# `business_unit` 도 같은 처지다.
 EQUIPMENT_MASTER_DB_COLUMNS: Mapping[str, str] = MappingProxyType(
     {
         "구분": "classification_1",

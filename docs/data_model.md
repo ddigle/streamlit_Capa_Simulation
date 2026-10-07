@@ -211,7 +211,8 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   이름 바꿈은 매핑만 바꿔 기존 리비전이 그대로 이어진다. 투자Capa·반입/Qual 이력·메모1~3 은
   `0015` 의 nullable 컬럼(`investment_capa`·`arrival_qual_history`·`memo_1~3`)이다.
   `business_unit` 과 `investment_basis`(옛 `투자기준`)는 입력 계약에 없지만 그 값을 담은 과거
-  리비전이 남아 있어 컬럼을 유지한다. 신규 리비전에서는 NULL 이다.
+  리비전이 남아 있어 컬럼을 유지한다. 신규 리비전에서는 NULL 이다. `투자기준` 은 되살리지 않기로
+  확정했다(2026-10-07 사용자 결정).
 - `downtime_schedule_snapshot`: 설비명·유형·시작일 자연키와 종료일·상세사유·비고의
   전체 스냅샷
 - `standard_target_weekly_availability`: 표준 목표 Capa 수동 입력용 공정·Weeknum별
