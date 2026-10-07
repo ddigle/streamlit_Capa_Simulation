@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Block
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
 
@@ -178,6 +179,44 @@ def test_fab_edit_and_save_work_without_any_saved_equipment(
     # 캔버스만 바꿨으니 요소는 여전히 기본 배치다(요소 행이 없다).
     assert repository.load_fab_layout_marks() == ()
     assert repository.list_revisions() == []
+    clear_equipment_repository()
+
+
+def _fab_box_index(app: AppTest) -> int:
+    """본문 맨 윗단에서 FAB 상자(그 안의 `배치 편집` 토글로 가린다)의 순번."""
+    return next(
+        index
+        for index, node in enumerate(app.main.children.values())
+        if isinstance(node, Block)
+        and any(toggle.key == FAB_EDIT_KEY for toggle in node.get("toggle"))
+    )
+
+
+def test_the_fab_box_keeps_its_place_while_the_unsaved_panel_comes_and_goes(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """설비 저장본이 없는 화면은 FAB 대기분이 생겨야 저장 안 한 배치 상자가 선다. 그 자리가 늘 서
+    있지 않으면 첫 적용·저장 때 FAB 상자의 순번이 밀려 브라우저가 편집기를 새로 마운트한다."""
+    database = tmp_path / "fab_slot.duckdb"
+    app = _app(database, saved_fleet=False, sample=False).run()
+    app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
+    before = _fab_box_index(app)
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": _fab_calls(editor_calls, editing=True)[-1]["epoch"],
+        "changes": [],
+        "canvas": {"width": 120, "height": 70},
+        "marks": None,
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("S.PKG FAB 전체 배치" in item.value for item in app.markdown)
+    assert _fab_box_index(app) == before
+    app.button(key="space_layout_save").click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
+    assert _fab_box_index(app) == before
     clear_equipment_repository()
 
 

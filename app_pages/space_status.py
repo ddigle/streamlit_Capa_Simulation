@@ -807,8 +807,13 @@ with st.container(horizontal=True, gap="small", vertical_alignment="center", key
         width=170,
     )
 
-if editable or pending_fab_layout() is not None:
-    _render_unsaved_layout_panel(buffer_frames if editable else None)
+# 저장 안 한 배치 상자의 자리는 늘 서 있다(내용만 비었다 찼다). 상자가 첫 적용에 새로
+# 서거나 저장·버리기로 사라질 때 아래 층 상세·FAB 상자의 순번이 밀리면, Streamlit 은 요소를
+# key 가 아니라 순번으로 갈아 끼우므로 편집기를 새로 마운트한다. 그 사이 본문 높이가 화면
+# 높이로 무너져 스크롤이 맨 위로 튀고, 브라우저에 둔 편집기 상태(서랍·배율)도 잃는다.
+with st.container(key="space_unsaved_layout_slot"):
+    if editable or pending_fab_layout() is not None:
+        _render_unsaved_layout_panel(buffer_frames if editable else None)
 
 if selected is None:
     placements = floor_placements(
@@ -926,11 +931,14 @@ else:
     invalid_rows = invalid_equipment_rows(
         floor_equipment, canvas_width=canvas_width, canvas_height=canvas_height
     )
-    if invalid_rows:
-        st.warning(
-            f"캔버스 {canvas_width:g} × {canvas_height:g}를 벗어난 호기가 있습니다: "
-            + ", ".join(map(str, invalid_rows))
-        )
+    # 경고 자리도 늘 서 있다 — 저장으로 경고가 생기거나 사라질 때 아래 층 상세가 밀리지 않게(위 상자
+    # 자리와 같은 까닭).
+    with st.container(key="space_floor_canvas_warning_slot"):
+        if invalid_rows:
+            st.warning(
+                f"캔버스 {canvas_width:g} × {canvas_height:g}를 벗어난 호기가 있습니다: "
+                + ", ".join(map(str, invalid_rows))
+            )
 
     floor_counted = counted_equipment.loc[
         counted_equipment["동"].eq(selected_building) & counted_equipment["층"].eq(selected_floor)

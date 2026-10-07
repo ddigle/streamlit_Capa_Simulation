@@ -14,6 +14,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Block
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
 
@@ -281,4 +282,59 @@ def test_a_save_error_is_shown_once_even_without_pending_changes(
 
     app.run()
     assert not any("배치를 저장하지 못했습니다" in item.value for item in app.error)
+    clear_equipment_repository()
+
+
+def _top_level(app: AppTest) -> list[tuple[str, str]]:
+    """본문 맨 윗단의 순서 — (요소 종류, key). Streamlit 은 요소를 key 가 아니라 이 순번으로 갈아
+    끼운다. 층 상세 상자(key 없음)는 그 안의 `배치 편집` 토글로 가린다."""
+    layout: list[tuple[str, str]] = []
+    for node in app.main.children.values():
+        block_id = str(getattr(getattr(node, "proto", None), "id", "") or "")
+        name = block_id.split("-", 2)[-1] if block_id.startswith("$$ID-") else ""
+        if isinstance(node, Block) and any(
+            toggle.key == "space_layout_edit_mode" for toggle in node.get("toggle")
+        ):
+            name = "층 상세"
+        layout.append((type(node).__name__, name))
+    return layout
+
+
+def test_the_floor_detail_keeps_its_place_while_the_unsaved_panel_comes_and_goes(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """저장 안 한 배치 상자는 첫 적용에 서고 저장·버리기로 사라진다. 그 자리가 늘 서 있지
+    않으면 아래 층 상세의 순번이 밀려 브라우저가 편집기를 새로 마운트한다 — 본문 높이가
+    무너져 스크롤이 맨 위로 튀고 서랍·배율을 잃었다(2026-10-08 브라우저 확인). 맨 윗단 순서는
+    상자 유무와 상관없이 같아야 한다."""
+    app, _ = _open_editor(tmp_path)
+    layout = _top_level(app)
+    assert ("Block", "space_unsaved_layout_slot") in layout
+    assert layout.index(("Block", "space_unsaved_layout_slot")) < layout.index(("Block", "층 상세"))
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
+
+    def apply_one_move(x: float) -> None:
+        app.session_state[FAKE_APPLY_KEY] = {
+            "epoch": editor_calls[-1]["epoch"],
+            "changes": [{"id": "EQ-01", "placed": True, "x": x, "y": 20, "w": 12, "h": 7}],
+            "canvas": None,
+            "marks": None,
+        }
+        app.run()
+        assert not app.exception, [item.message for item in app.exception]
+        assert any("저장 안 한 배치 변경" in item.value for item in app.markdown)
+
+    apply_one_move(40)
+    assert _top_level(app) == layout
+
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
+    assert _top_level(app) == layout
+
+    apply_one_move(50)
+    app.button(key="space_layout_discard").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
+    assert _top_level(app) == layout
     clear_equipment_repository()
