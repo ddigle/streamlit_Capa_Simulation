@@ -846,8 +846,8 @@ def _unit_row(row: dict[str, object], axis: tuple[date, date], lines: str) -> st
     left = _position(target, axis)
     if row["구분"] == KIND_NEW:
         dates = f"신규 필요 Qual {_short_date(target)} (기여 {_short_date(start)})"
-        # 부족 면색을 채우고 점선 테두리는 글자색이다 — 어두운 테마의 부족색(#8F0040)은 선으로만
-        # 그리면 바탕에 묻힌다(2026-10-07 브라우저 확인).
+        # 부족 면색을 채우고 점선 테두리는 글자색이다 — 어두운 테마의 부족색(`STATUS_SHORTAGE`)은
+        # 선으로만 그리면 바탕에 묻힌다(2026-10-07 브라우저 확인).
         marks = (
             f'<span style="position:absolute;top:7px;left:calc({left:.3f}% - 8px);width:16px;'
             f"height:16px;border-radius:50%;border:2px dashed {tokens.TEXT};"
