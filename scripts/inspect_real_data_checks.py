@@ -14,7 +14,7 @@
 | 8-1 | `env` | 두 DB 의 마이그레이션 번호·주요 표 행 수, 적용 배포, `ref_data` 사본 |
 | 8-2 | `legacy` | 원천의 기존 결과 컬럼과 신규 계산의 차이율·비율 분포 |
 | 8-3 | `reqb` | 원천 `RQ_REQB` 의 소요기준별 행·공정 수 |
-| 8-4 | `equipment` | 설비 DB 의 2262-04-11 Qual·환산비 0.2 모듈 행·일정 미정 대수 |
+| 8-4 | `equipment` | 설비 DB 의 2262-04-11 Qual·환산비 0.2 모듈 행·일정 미정·사용기준 HBM |
 | 8-5 | `bdq` | 목록 조회 시간·`reg_date` 꼴·코드 규칙 위반·기간별 행 수·표본 적재일 |
 
 **지키는 것 셋.**
@@ -96,8 +96,16 @@ from capa_simulation.services.bigdataquery_catalog_view import (  # noqa: E402
     normalize_catalog,
 )
 from capa_simulation.services.core_data_derivation import build_q_core_data  # noqa: E402
-from capa_simulation.services.equipment_contract import EQUIPMENT_ID_COLUMN  # noqa: E402
-from capa_simulation.services.equipment_units import format_unit_count  # noqa: E402
+from capa_simulation.services.equipment_contract import (  # noqa: E402
+    EQUIPMENT_ID_COLUMN,
+    USAGE_BASIS_COLUMN,
+    counts_for_capacity,
+    usage_basis_key,
+)
+from capa_simulation.services.equipment_units import (  # noqa: E402
+    format_unit_count,
+    unit_keys,
+)
 from capa_simulation.services.frame_contracts import (  # noqa: E402
     AREA_NAMES,
     DEMAND_BASES,
@@ -134,6 +142,10 @@ from capa_simulation.services.undated_equipment import (  # noqa: E402
     undated_equipment,
 )
 from capa_simulation.services.unit_capacity import calculate_unit_capacity  # noqa: E402
+from capa_simulation.services.usage_basis import (  # noqa: E402
+    usage_excluded_count,
+    usage_excluded_equipment,
+)
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH  # noqa: E402
 
 CHECKS: Final[tuple[str, ...]] = ("env", "legacy", "reqb", "equipment", "bdq")
@@ -1074,7 +1086,7 @@ def check_reqb(session: Session) -> list[str]:
 
 
 def check_equipment(session: Session) -> list[str]:
-    lines = _heading("8-4", "설비 DB — 옛 Qual 자리표·환산비 0.2·일정 미정", "equipment")
+    lines = _heading("8-4", "설비 DB — 옛 Qual 자리표·환산비 0.2·일정 미정·사용기준", "equipment")
     connection = session.equipment
     if connection is None:
         return [*lines, f"- 설비 DB — {session.equipment_failure}", ""]
@@ -1189,6 +1201,7 @@ def _undated_lines(
         undated = undated_equipment(snapshot.equipment)
     except Exception as exc:  # 검증 오류 문구는 설비명을 싣는다. 종류만 적는다
         return [f"- 일정 미정 — {_failure(exc)}"]
+    usage_line = _usage_basis_line(snapshot.equipment)
     counts = undated_counts(undated)
     rows_by_kind = {
         kind: int(undated[UNDATED_KIND_COLUMN].eq(kind).sum()) for kind in UNDATED_KINDS
@@ -1218,7 +1231,31 @@ def _undated_lines(
         f"- 일정 미정(`services/undated_equipment.py`, 화면 알림과 같은 셈) — {parts}",
         f"- 그 가운데 Qual 미정 행이 옛 자리표 {LEGACY_QUAL_PLACEHOLDER} 에서 온 것 "
         f"{placeholder_units:,}행",
+        usage_line,
     ]
+
+
+def _usage_basis_line(equipment: pd.DataFrame) -> str:
+    """사용기준 HBM 행 수와 가용대수에서 빠지는 설비 대수. 값(사용기준 글자)은 찍지 않는다.
+
+    Dynamic 가용대수는 사용기준이 HBM 인 호기만 센다(2026-10-07 사용자 결정). 사용기준을 비워 둔
+    옛 리비전은 그 결정으로 Dynamic 에서 빠지므로 배포마다 이 수를 받아 본다.
+    """
+    try:
+        counted = counts_for_capacity(equipment)
+        blank = usage_basis_key(equipment[USAGE_BASIS_COLUMN]).isna()
+        excluded_units = usage_excluded_count(usage_excluded_equipment(equipment))
+        total_units = int(unit_keys(equipment).nunique())
+    except Exception as exc:  # 검증 오류 문구는 설비명을 싣는다. 종류만 적는다
+        return f"- 사용기준 — {_failure(exc)}"
+    hbm_rows = int(counted.sum())
+    blank_rows = int(blank.sum())
+    other_rows = len(equipment) - hbm_rows - blank_rows
+    return (
+        "- 사용기준(`equipment_contract.counts_for_capacity`, Dynamic 가용대수는 HBM 만 센다) — "
+        f"HBM {hbm_rows:,}행 · 다른 값 {other_rows:,}행 · 빈 칸 {blank_rows:,}행 / 가용대수에서 "
+        f"빠지는 설비 {format_unit_count(excluded_units)}대(설비 {total_units:,}대 중)"
+    )
 
 
 # ---------------------------------------------------------------------------------- 8-5 bdq

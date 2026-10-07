@@ -7,9 +7,11 @@
 않는다.** Dynamic 가용대수를 읽는 자리(가용설비 현황 Main·Static/Dynamic)가 그 대수를 한 줄로 알린다
 — 말하지 않으면 「설비가 모자라다」로 읽힌다.
 
-- **대상** — 기존설비여부 N · 보관유무 N 이고 반출일정·이설일정이 모두 빈 행 가운데 반입일정 또는
-  Qual일정이 빈 행. 반출·이설 날짜가 있는 행은 상태가 「반출 예정」·「이설 예정」(지나면 완료)으로
-  서므로 뺀다 — 그래서 기준일이 필요 없다.
+- **대상** — 사용기준이 HBM 이고(`equipment_contract.counts_for_capacity` — 다른 행은 날짜를
+  채워도 가용대수에 들지 않는다) 기존설비여부 N · 보관유무 N 이며 반출일정·이설일정이 모두 빈 행
+  가운데 반입일정 또는 Qual일정이 빈 행. 반출·이설 날짜가 있는 행은 뺀다 — 이 알림은 기준일이
+  없어 이미 나간 호기와 나갈 호기를 가를 수 없고, 나갈 호기는 날짜를 채워도 실행일에 빠지는 호기다.
+  반입은 있고 Qual 만 빈 채 나갈 호기는 그래서 세지 않는다(드문 경우).
 - **나눔** — 반입이 빈 행은 `반입 미정`, 반입은 있고 Qual 만 빈 행은 `Qual 미정` 이다. 겹치지 않아
   둘을 더하면 전체다.
 - **세는 법** — 행이 아니라 설비이고, **Dynamic 이 날짜 때문에 실제로 빼는 몫**만 센다. Dynamic
@@ -23,6 +25,8 @@
     몫이다(모듈 넷 중 A·B 가용, C 는 Qual 없음, D 는 반입 없음 → C 의 1/3 = 0.33대).
   지분은 넘겨받은 호기 마스터 전체로 매기므로 **거르기 전의 표**를 넘기고, 범위는 `processes`·
   `unit_ids` 로 좁힌다(행마다 몫이 정해져 있어 호기 필터가 모듈 하나만 골라도 그 몫만 남는다).
+  사용기준도 몫을 다 매긴 뒤에 거른다 — Dynamic 이 설비지분을 형제 전체로 매기고 HBM 이 아닌 행의
+  몫만 빼는 것과 같은 셈이다.
 """
 
 from __future__ import annotations
@@ -37,6 +41,7 @@ from capa_simulation.services.equipment_contract import (
     EQUIPMENT_ID_COLUMN,
     RELOCATION_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
+    counts_for_capacity,
 )
 from capa_simulation.services.equipment_units import (
     UNIT_KEY_COLUMN,
@@ -78,7 +83,9 @@ def undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
     holdable_in_unit = holdable.groupby(keys).transform("sum")
     no_arrival = fresh & staying & ~has_arrival & holdable_in_unit.eq(0)
     no_qual = fresh & staying & has_arrival & prepared["Qual일정"].isna()
-    if not (no_arrival | no_qual).any():
+    # 몫은 사용기준과 상관없이 매기고 HBM 행만 남긴다(모듈 docstring).
+    chosen = (no_arrival | no_qual) & counts_for_capacity(prepared)
+    if not chosen.any():
         return _empty()
     arrival_rows = no_arrival.astype("int64").groupby(keys).transform("sum")
     shares = (1.0 / arrival_rows.where(no_arrival)).fillna(1.0 / holdable_in_unit.where(no_qual))
@@ -94,7 +101,7 @@ def undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
             UNDATED_KIND_COLUMN: kinds,
         }
     )
-    return result.loc[no_arrival | no_qual].reset_index(drop=True)
+    return result.loc[chosen].reset_index(drop=True)
 
 
 def undated_counts(

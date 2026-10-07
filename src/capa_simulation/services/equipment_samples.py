@@ -11,12 +11,14 @@ import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
+    COUNTED_USAGE_BASIS,
     DEFAULT_CONVERSION_RATIO,
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
     EQUIPMENT_ID_COLUMN,
     RELOCATION_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
+    USAGE_BASIS_COLUMN,
 )
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_schedule,
@@ -205,7 +207,6 @@ def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
         "공정구분": "Line-A",
         "투자Capa": None,
         "투자구분": "양산",
-        "사용기준": None,
         "담당자": "샘플 담당자",
         "설비가동현황": None,
         "호기이력": "화면 검토용 샘플",
@@ -239,6 +240,7 @@ def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
                 # 같은 공정에 생산성이 다른 모델이 섞인 모습을 샘플에서도 볼 수 있게 둔다.
                 # 전부 1.0 이면 빈 DB 로 여는 사람은 이 컬럼이 무엇을 하는지 알 수 없다.
                 "환산비": _fleet_conversion_ratio(index),
+                USAGE_BASIS_COLUMN: _fleet_usage_basis(index),
             }
         )
     return prepare_equipment_master(pd.DataFrame(records, columns=EQUIPMENT_COLUMNS))
@@ -334,6 +336,17 @@ def _fleet_schedule(kind: str, index: int) -> _FleetSchedule:
     if kind == "이설예정":
         return replace(settled, relocation=30 + index % 60)
     return settled
+
+
+# 사용기준이 HBM 이 아닌 샘플 호기 자리. Dynamic 가용대수는 HBM 만 세므로(`counts_for_capacity`)
+# 이 호기들은 배치도·호기 목록에는 서고 가용대수에서는 빠진다 — 그 알림 줄이 샘플에서도 보이게 둔다.
+_FLEET_NON_HBM_SLOTS = (8, 25)
+_FLEET_NON_HBM_BASIS = "범용"
+
+
+def _fleet_usage_basis(index: int) -> str:
+    """사용기준. 대부분 HBM 이고 몇 대만 다른 값이다."""
+    return _FLEET_NON_HBM_BASIS if index in _FLEET_NON_HBM_SLOTS else COUNTED_USAGE_BASIS[0]
 
 
 def _fleet_conversion_ratio(index: int) -> float:

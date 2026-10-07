@@ -10,7 +10,8 @@ Dynamic 가용대수(호기 일정을 Cut-off W/D 구간에 일할한 환산대�
 ## 가용과 소요
 
 - 가용은 `build_monthly_equipment_availability` 의 **환산 소계**(`기존보유` + `가용`)다 —
-  Static/Dynamic 탭의 Dynamic 과 같은 줄에서 나온다. 비가동도 그대로 반영된다.
+  Static/Dynamic 탭의 Dynamic 과 같은 줄에서 나온다. 비가동도 그대로 반영되고, 사용기준이 HBM 인
+  호기만 들며, 실행일 전의 반출·이설 예정 호기도 가용이면 든다.
 - 소요는 시나리오의 소요대수를 `calculate_securement_rate` 로 `(월, 공정)` 에 모은 값이다 —
   확보율 교차검증(`securement_cross_check`)과 같은 함수, 같은 집계다.
 - 공정은 호기 마스터 `공정소분류` 와 시뮬레이션 `공정` 이 **같은 이름일 때만** 맞댄다. 한쪽에만
@@ -52,10 +53,11 @@ Dynamic 가용대수(호기 일정을 Cut-off W/D 구간에 일할한 환산대�
 
 ## 후보
 
-신규 호기(`기존설비여부` N, `보관유무` N) 가운데 Qual일정이 있고 확정상태가 「완료」가 아니며
+신규 호기(`기존설비여부` N, `보관유무` N) 가운데 사용기준이 HBM 이고(`counts_for_capacity` — 다른
+호기는 가용대수에 들지 않으니 당겨도 늘지 않는다) Qual일정이 있고 확정상태가 「완료」가 아니며
 반출·이설 일정이 없는 것. 모듈 행은 설비키(`Main 설비`, 없으면 `설비명`)로 묶어 **한 대로 함께
 당긴다** — 묶음의 Qual 은 가장 늦은 모듈의 Qual 이고, 목표 날짜보다 늦은 모듈만 그 날짜로 온다.
-묶음의 환산비는 모듈 행 환산비의 합이다.
+묶음의 환산비는 모듈 행 환산비의 합이다. 묶음에 HBM 이 아닌 모듈이 섞이면 HBM 모듈만 묶는다.
 
 **반입일정은 보지 않는다**(하한이 아니다). 상태 판정 엔진은 반입 전을 「입고 예정」으로 세므로
 당긴 날짜가 반입보다 이르면 엔진으로 다시 재면 0 이 된다 — 그래서 늘어나는 몫은 엔진을 다시
@@ -90,6 +92,7 @@ from capa_simulation.services.equipment_contract import (
     PARENT_EQUIPMENT_COLUMN,
     RELOCATION_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
+    counts_for_capacity,
 )
 from capa_simulation.services.equipment_units import unit_keys
 from capa_simulation.services.equipment_validation import (
@@ -369,6 +372,8 @@ def shortening_candidates(
             & ~confirmation.eq(COMPLETED_CONFIRMATION).fillna(False)
             & prepared["반출일정"].isna()
             & prepared[RELOCATION_DATE_COLUMN].isna()
+            # 사용기준이 HBM 이 아닌 호기는 당겨도 가용대수가 늘지 않는다 — 후보로 끌어오지 않는다.
+            & counts_for_capacity(prepared)
         )
         .fillna(False)
         .astype(bool)

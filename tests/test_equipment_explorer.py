@@ -36,6 +36,8 @@ def _render_fixture() -> None:
         equipment.loc[index, "공정구분"] = "Line-A"
         equipment.loc[index, "투자구분"] = "양산"
         equipment.loc[index, "공정대분류"] = "조립"
+        # Dynamic 가용대수는 사용기준이 HBM 인 호기만 센다(2026-10-07 사용자 결정).
+        equipment.loc[index, "사용기준"] = "HBM"
         equipment.loc[index, "보관유무"] = "N"
         equipment.loc[index, "기존설비여부"] = "Y"
         equipment.loc[index, "레이아웃표시"] = "N"
@@ -55,7 +57,29 @@ def _render_fixture() -> None:
             "양산",
             "조립",
         ]
-        equipment.loc[4, ["보관유무", "기존설비여부", "레이아웃표시"]] = ["N", "N", "N"]
+        equipment.loc[4, ["사용기준", "보관유무", "기존설비여부", "레이아웃표시"]] = [
+            "HBM",
+            "N",
+            "N",
+            "N",
+        ]
+    if st.session_state.get("non_hbm_unit", False):
+        # 사용기준이 HBM 이 아닌 기존 설비. 가용대수에서 빠지고 호기 현황에는 남는다.
+        row = len(equipment)
+        equipment.loc[row] = {column: None for column in equipment.columns}
+        equipment.loc[row, ["설비명", "공정소분류", "공정구분", "투자구분", "공정대분류"]] = [
+            "EQ-NONHBM",
+            "Die Attach",
+            "Line-A",
+            "양산",
+            "조립",
+        ]
+        equipment.loc[row, ["사용기준", "보관유무", "기존설비여부", "레이아웃표시"]] = [
+            "범용",
+            "N",
+            "Y",
+            "N",
+        ]
     downtime = empty_downtime_schedule()
     downtime.loc[0] = {column: None for column in downtime.columns}
     downtime.loc[0, "설비명"] = "EQ-REPAIR"
@@ -283,6 +307,35 @@ def test_undated_new_unit_is_named_under_availability_and_status_summary() -> No
     # 공정 조건 밖이면 세지 않는다.
     app.multiselect(key=SMALL_PROCESS_KEY).set_value(["Other"]).run()
     assert _undated(app) == []
+
+
+def _usage(app: AppTest) -> list[str]:
+    return [caption.value for caption in app.caption if "사용기준이 HBM" in caption.value]
+
+
+def test_non_hbm_units_leave_the_availability_count_but_stay_in_the_unit_status() -> None:
+    """사용기준이 HBM 이 아닌 호기는 가용대수에서 빠지고 한 줄로 알린다. 호기 현황은 그대로 센다."""
+    plain = AppTest.from_function(_render_fixture, default_timeout=30)
+    plain.run()
+    app = AppTest.from_function(_render_fixture, default_timeout=30)
+    app.session_state["non_hbm_unit"] = True
+    app.run()
+    assert not app.exception
+
+    assert _usage(plain) == []
+    assert _usage(app) == [
+        ":material/filter_alt_off: 사용기준이 HBM 이 아닌 1대(호기 마스터 기준)는 가용대수에서 "
+        "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
+    ]
+    # 마지막 주 요약의 총·가용 대수는 그 호기가 없는 표와 같다.
+    summary = [item.value for item in app.caption if item.value.startswith("마지막 주")]
+    assert summary == [item.value for item in plain.caption if item.value.startswith("마지막 주")]
+
+    app.segmented_control(key=QUESTION_KEY).set_value("호기 현황").run()
+    app.segmented_control("equipment_explorer_expression_상태 분포").set_value("표").run()
+    assert _usage(app) == []
+    counts = app.dataframe[0].value.set_index("상태")["설비대수"]
+    assert counts["가용"] == 3.0
 
 
 def test_no_undated_line_when_every_new_unit_has_dates() -> None:

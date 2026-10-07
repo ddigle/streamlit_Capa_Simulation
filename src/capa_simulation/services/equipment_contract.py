@@ -106,6 +106,21 @@ EQUIPMENT_STATUSES = (
     "이설 완료",
 )
 
+# 상태 판정(`equipment_availability`)이 상태 이름 옆에 붙이는 집계 컬럼 둘.
+#
+# - `집계분류` — 대수를 셀 때 쓰는 분류. **가용 판정이 먼저다**: 가용이면 「가용」, 아니면 상태 이름
+#   그대로다. 상태 이름은 사다리 아래쪽이 위쪽을 덮어, 반출·이설일정이 적힌 호기는 가용인 날에도
+#   「반출 예정」·「이설 예정」이다. 그 이름으로 세면 실행일 전까지 멀쩡히 쓰는 호기가 가용대수에서
+#   통째로 빠진다. 그래서 세는 자리(주차·월별 대수)는 이 컬럼을 보고, 이름을 보여 주는 자리
+#   (상태 분포·호기 목록·생애주기 Gantt·Space)는 `상태` 를 본다. 이 컬럼의 「반출 예정」·
+#   「이설 예정」은 가용이 아닌(셋업 중·보관·입고 전) 예정 호기만 남는다.
+# - `가용대수반영` — 그 행을 대수에 세는가(`counts_for_capacity`, 사용기준 HBM).
+COUNT_CATEGORY_COLUMN = "집계분류"
+COUNTED_COLUMN = "가용대수반영"
+
+# 주차별 집계의 분류 대수 컬럼. **키는 `집계분류` 값이다** — 「가용호기대수」는 가용 판정을 받은
+# 호기 전체(반출·이설 예정이어도 실행일 전이면 든다)라 `가용대수 = 기존보유대수 + 가용호기대수`
+# 이고, 「반출예정대수」·「이설예정대수」는 가용이 아닌 예정 호기다.
 STATUS_COUNT_COLUMNS = {
     "입고 예정": "입고예정대수",
     "셋업 진행중": "셋업중대수",
@@ -328,6 +343,42 @@ def rename_legacy_headers(
 STORAGE_FLAG_COLUMN = "보관유무"
 
 FLAG_COLUMNS = (STORAGE_FLAG_COLUMN, "기존설비여부", "레이아웃표시")
+
+# ------------------------------------------------------------------- 사용기준
+# **Dynamic 가용대수에 세는 호기는 사용기준이 이 값인 행뿐이다**(2026-10-07 사용자 결정). 다른 제품
+# Capa 를 함께 반영하게 되면 사용기준별로 나눠 집계할 것이고, 그때까지는 HBM 만 유효 대수다.
+# 배치(Space)·호기 목록·상태 분포·RawData 편집과 검증은 이 규칙을 보지 않는다 — 세지 않을 뿐
+# 호기는 그대로 있다.
+#
+# 대조는 **앞뒤 공백을 떼고 대소문자를 가리지 않는 완전 일치**다. 「 hbm 」은 세고 「HBM3E」·
+# 「HBM 양산」처럼 다른 글자가 붙은 값과 빈 칸은 세지 않는다. 기존 보유대수 표에는 사용기준이
+# 없으므로 그 대수는 지금처럼 `기존보유` 로 센다.
+#
+# 행(모듈 행이면 모듈 하나)마다 본다. 대수 축은 행의 설비지분에 이 판정을 곱하므로 모듈 넷 중 둘만
+# HBM 인 설비는 0.5대다. 분류별 집계로 넓힐 때는 이 판정 대신 `usage_basis_key` 로 묶으면 된다.
+USAGE_BASIS_COLUMN = "사용기준"
+
+COUNTED_USAGE_BASIS: tuple[str, ...] = ("HBM",)
+
+
+def usage_basis_key(values: pd.Series) -> pd.Series:
+    """사용기준 대조용 글자. 앞뒤 공백을 떼고 대소문자를 접는다. 빈 칸은 결측이다."""
+    text = values.astype("string").str.strip().str.casefold()
+    return text.mask(text.eq(""))
+
+
+def counts_for_capacity(frame: pd.DataFrame) -> pd.Series:
+    """행마다 Dynamic 가용대수(Capa)에 세는가. 사용기준이 `COUNTED_USAGE_BASIS` 와 같으면 참이다.
+
+    검증 전 편집본도 받는다(대조가 공백·대소문자를 스스로 정리한다). 사용기준 컬럼이 없는 표는
+    모든 행이 빈 칸과 같다 — 세지 않는다.
+    """
+    if USAGE_BASIS_COLUMN not in frame.columns:
+        return pd.Series(False, index=frame.index, dtype="bool")
+    wanted = {value.strip().casefold() for value in COUNTED_USAGE_BASIS}
+    keys = usage_basis_key(frame[USAGE_BASIS_COLUMN])
+    return keys.isin(wanted).fillna(False).astype("bool")
+
 
 VALID_BUILDINGS = tuple(f"C{index}" for index in range(1, 6))
 

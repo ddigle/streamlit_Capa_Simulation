@@ -77,6 +77,7 @@ def _unit(
             "설비명": name,
             "공정소분류": process,
             "공정대분류": "B/N",
+            "사용기준": "HBM",
             "반입일정": arrival,
             "Qual일정": qual,
             "확정상태": confirmation if qual is not None else None,

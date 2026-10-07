@@ -100,7 +100,8 @@ def equipment_csv_template() -> bytes:
                     "공정구분": "FRONT",
                     "투자Capa": "299K",
                     "투자구분": "HBM",
-                    "사용기준": "",
+                    # Dynamic 가용대수는 사용기준이 HBM 인 호기만 센다(`counts_for_capacity`).
+                    "사용기준": "HBM",
                     "동": "C1",
                     "층": "4F",
                     "담당자": SAMPLE_EQUIPMENT_MANAGER,

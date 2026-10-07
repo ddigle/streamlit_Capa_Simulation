@@ -16,6 +16,8 @@ import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
+    COUNT_CATEGORY_COLUMN,
+    COUNTED_COLUMN,
     EQUIPMENT_ID_COLUMN,
     RELOCATION_DATE_COLUMN,
     SCHEDULE_STAGES,
@@ -23,6 +25,7 @@ from capa_simulation.services.equipment_contract import (
     STORAGE_FLAG_COLUMN,
     TRANSITION_EVENT_COLUMNS,
     WEEKLY_COLUMNS,
+    counts_for_capacity,
 )
 from capa_simulation.services.equipment_units import (
     UNIT_COUNT_DECIMALS,
@@ -68,6 +71,8 @@ def _build_equipment_status_from_prepared(
             ("상태", "string"),
             ("보유여부", "boolean"),
             ("가용여부", "boolean"),
+            (COUNT_CATEGORY_COLUMN, "string"),
+            (COUNTED_COLUMN, "bool"),
             ("레이아웃반영여부", "boolean"),
             ("비가동유형", "string"),
             (UNIT_KEY_COLUMN, "string"),
@@ -112,6 +117,10 @@ def _build_equipment_status_from_prepared(
     result["상태"] = status
     result["보유여부"] = owned.astype("boolean")
     result["가용여부"] = available.astype("boolean")
+    # 세는 자리는 이름이 아니라 가용 판정을 본다. 반출·이설일정이 적힌 호기는 실행일 전까지 이름이
+    # 「반출 예정」·「이설 예정」이지만 가용이면 가용으로 센다(`equipment_contract` 의 집계분류).
+    result[COUNT_CATEGORY_COLUMN] = status.mask(available.fillna(False).astype("bool"), "가용")
+    result[COUNTED_COLUMN] = counts_for_capacity(result)
     result["레이아웃반영여부"] = (result["레이아웃표시"].eq("Y") & ~exited).astype("boolean")
     # 지분은 **이 시점의 보유**로 매긴다. 모듈을 떼어 반출해도 남은 모듈이 한 대를 채우고,
     # 입고 전 모듈은 형제가 보유 중인 동안 0 이다.
@@ -147,9 +156,11 @@ def build_equipment_lifecycle_spans(
 ) -> pd.DataFrame:
     """호기별 생애주기 구간. 점 이벤트(일정 컬럼)를 구간으로 접는다.
 
-    `with_unit_share` 를 켜면 `설비지분`·`설비키` 컬럼을 붙이고, **지분이 바뀌는 날에도** 구간을
-    끊는다. 모듈 형제의 입고·반출로 지분이 바뀌면 상태는 그대로여도 대수 축 몫이 달라지기
-    때문이다. 월별 대수(`monthly_equipment_availability`)가 켜서 쓴다. 끄면(기본) 상태가
+    `with_unit_share` 를 켜면 세는 데 쓰는 구간이 된다. `설비지분`·`설비키`·`집계분류`·
+    `가용대수반영` 컬럼을 붙이고, **지분이나 집계분류가 바뀌는 날에도** 구간을 끊는다. 모듈
+    형제의 입고·반출로 지분이 바뀌면 상태는 그대로여도 대수 축 몫이 달라지고, 반출일정이 적힌
+    호기는 셋업 중·Qual 후가 모두 「반출 예정」 한 이름이라 이름으로만 끊으면 가용이 된 날을
+    잃는다. 월별 대수(`monthly_equipment_availability`)가 켜서 쓴다. 끄면(기본) 상태 이름이
     바뀔 때만 끊어 생애주기 Gantt 가 지금처럼 그린다.
 
     **판정 규칙을 다시 적지 않는다.** 상태가 바뀔 수 있는 날마다
@@ -164,7 +175,11 @@ def build_equipment_lifecycle_spans(
         raise ValueError("생애주기 조회 시작일은 종료일보다 늦을 수 없습니다.")
     columns = [
         *LIFECYCLE_SPAN_COLUMNS,
-        *((UNIT_SHARE_COLUMN, UNIT_KEY_COLUMN) if with_unit_share else ()),
+        *(
+            (UNIT_SHARE_COLUMN, UNIT_KEY_COLUMN, COUNT_CATEGORY_COLUMN, COUNTED_COLUMN)
+            if with_unit_share
+            else ()
+        ),
     ]
     prepared = prepare_equipment_master(equipment)
     if prepared.empty:
@@ -176,11 +191,17 @@ def build_equipment_lifecycle_spans(
     breakpoints = _lifecycle_breakpoints(prepared, prepared_downtime, start=start, end=end)
     process_by_unit = prepared.set_index(EQUIPMENT_ID_COLUMN)[["공정소분류", "공정대분류"]]
 
-    open_spans: dict[str, tuple[str, float, pd.Timestamp]] = {}
+    # 열린 구간 하나는 (상태, 집계분류, 지분, 시작일)이다. 앞 셋 중 하나라도 바뀌면 끊는다.
+    open_spans: dict[str, tuple[str, str, float, pd.Timestamp]] = {}
     rows: list[dict[str, object]] = []
 
     def close(
-        unit: str, status: str, share: float, began: pd.Timestamp, finished: pd.Timestamp
+        unit: str,
+        status: str,
+        category: str,
+        share: float,
+        began: pd.Timestamp,
+        finished: pd.Timestamp,
     ) -> None:
         row: dict[str, object] = {
             EQUIPMENT_ID_COLUMN: unit,
@@ -192,6 +213,7 @@ def build_equipment_lifecycle_spans(
         }
         if with_unit_share:
             row[UNIT_SHARE_COLUMN] = share
+            row[COUNT_CATEGORY_COLUMN] = category
         rows.append(row)
 
     for moment in breakpoints:
@@ -203,23 +225,38 @@ def build_equipment_lifecycle_spans(
             if with_unit_share
             else pd.Series(1.0, index=status_frame.index)
         )
-        for unit, status, share in zip(
-            status_frame[EQUIPMENT_ID_COLUMN], status_frame["상태"], shares, strict=True
+        # Gantt(끈 쪽)는 이름만 본다 — 집계분류를 이름으로 채우면 끊는 자리가 지금과 같다.
+        categories = (
+            status_frame[COUNT_CATEGORY_COLUMN] if with_unit_share else status_frame["상태"]
+        )
+        for unit, status, category, share in zip(
+            status_frame[EQUIPMENT_ID_COLUMN],
+            status_frame["상태"],
+            categories,
+            shares,
+            strict=True,
         ):
-            state = (str(status), float(share))
+            state = (str(status), str(category), float(share))
             previous = open_spans.get(str(unit))
-            if previous is not None and previous[:2] == state:
+            if previous is not None and previous[:3] == state:
                 continue
             if previous is not None:
                 # 앞 구간은 이 날 **전날**까지다. 같은 날 두 상태가 겹쳐 보이면 안 된다.
-                close(str(unit), *previous[:2], previous[2], moment - pd.Timedelta(days=1))
+                close(str(unit), *previous[:3], previous[3], moment - pd.Timedelta(days=1))
             open_spans[str(unit)] = (*state, moment)
-    for unit, (status, share, began) in open_spans.items():
-        close(unit, status, share, began, end)
+    for unit, (status, category, share, began) in open_spans.items():
+        close(unit, status, category, share, began, end)
     result = pd.DataFrame(rows, columns=columns)
     if with_unit_share:
         key_by_unit = dict(zip(prepared[EQUIPMENT_ID_COLUMN], unit_keys(prepared), strict=True))
         result[UNIT_KEY_COLUMN] = result[EQUIPMENT_ID_COLUMN].map(key_by_unit)
+        # 사용기준은 날짜와 상관없는 호기 속성이라 구간을 끊지 않는다. 호기마다 한 번 매긴다.
+        counted_by_unit = dict(
+            zip(prepared[EQUIPMENT_ID_COLUMN], counts_for_capacity(prepared), strict=True)
+        )
+        result[COUNTED_COLUMN] = (
+            result[EQUIPMENT_ID_COLUMN].map(counted_by_unit).fillna(False).astype("bool")
+        )
     # 길이가 0 인 구간은 같은 날 두 번 바뀐 것이다. 그리면 폭 없는 막대라 보이지 않는다.
     result = result.loc[result["종료일"] >= result["시작일"]]
     return result.sort_values([EQUIPMENT_ID_COLUMN, "시작일"]).reset_index(drop=True)
@@ -251,7 +288,11 @@ def build_weekly_equipment_availability(
     start_date: date,
     end_date: date,
 ) -> pd.DataFrame:
-    """Aggregate owned, available, and lifecycle counts by ISO week and small process."""
+    """ISO 주차·공정소분류별 총대수·가용대수·비가동대수와 분류 대수(각 주 일요일 판정).
+
+    호기 마스터 쪽은 **사용기준이 HBM 인 행만** 센다(`equipment_contract.counts_for_capacity`).
+    기존 보유대수는 사용기준이 없어 지금처럼 모두 센다.
+    """
     if start_date > end_date:
         raise ValueError("주차별 조회 시작일은 종료일보다 늦을 수 없습니다.")
     prepared_baseline = prepare_equipment_baseline(baseline)
@@ -281,8 +322,13 @@ def build_weekly_equipment_availability(
         )
         # 행을 세지 않고 설비지분을 더한다. 모듈 행 넷이 한 대로, 모듈 하나의 PM 이 0.25대로
         # 잡힌다. 그래서 정수로 자르지 않는다 — 자르면 0.75 가 0 이 된다.
-        share = status[UNIT_SHARE_COLUMN].astype("float64")
+        # 사용기준이 HBM 이 아닌 행은 지분을 0 으로 본다(`counts_for_capacity`). 가용만 빼면
+        # 「비가동 = 보유 - 가용」이 그 호기를 모두 비가동으로 세므로 보유·분류 대수에서도 뺀다.
+        share = status[UNIT_SHARE_COLUMN].astype("float64") * status[COUNTED_COLUMN].astype(
+            "float64"
+        )
         weighted = status.assign(
+            _지분=share,
             _보유=status["보유여부"].fillna(False).astype("float64") * share,
             _가용=status["가용여부"].fillna(False).astype("float64") * share,
         )
@@ -290,8 +336,10 @@ def build_weekly_equipment_availability(
             보유호기=("_보유", "sum"),
             가용호기=("_가용", "sum"),
         )
+        # 분류 대수는 상태 이름이 아니라 집계분류로 센다 — 실행일 전의 반출·이설 예정 호기가
+        # 가용이면 가용호기대수에 든다(`equipment_contract.STATUS_COUNT_COLUMNS`).
         status_counts = (
-            weighted.groupby(["공정소분류", "상태"], observed=True)[UNIT_SHARE_COLUMN]
+            weighted.groupby(["공정소분류", COUNT_CATEGORY_COLUMN], observed=True)["_지분"]
             .sum()
             .unstack(fill_value=0)
             if not weighted.empty

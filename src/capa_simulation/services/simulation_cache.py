@@ -50,6 +50,7 @@ from capa_simulation.services.unit_capacity import (
     calculate_unit_capacity,
     capacity_assumptions,
 )
+from capa_simulation.services.usage_basis import usage_excluded_equipment
 from capa_simulation.services.weighted_unit_capacity import (
     effective_process_capacity_to_month_table,
 )
@@ -585,6 +586,17 @@ def get_undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
     넘겨 한 벌을 함께 쓰고, 범위는 받은 쪽이 좁힌다.
     """
     return undated_equipment(equipment)
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_usage_excluded_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
+    """사용기준이 HBM 이 아니어서 가용대수에 세지 않는 행(`services/usage_basis`)을 다시 쓴다.
+
+    일정 미정(`get_undated_equipment`)과 같은 까닭이다 — 호기 마스터 검증을 거치고 결과가 호기
+    마스터 내용만으로 정해진다. Main·Static/Dynamic·필요단축일정이 거르기 전 표를 넘겨 한 벌을 함께
+    쓰고 범위는 받은 쪽이 좁힌다.
+    """
+    return usage_excluded_equipment(equipment)
 
 
 CAPACITY_INPUT_TABLES = (

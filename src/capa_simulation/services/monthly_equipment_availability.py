@@ -25,11 +25,22 @@
 - `기존보유` — 호기 마스터에 아직 못 올린 설비의 단순 대수 합. **안분하지 않는다**
   (`baseline_snapshot` 에 날짜 컬럼이 없어 언제부터 있었는지 알 수 없다). 호기 마스터가
   채워질수록 이 항목이 줄고 안분되는 항목이 는다.
-- `가용` — 입고·Qual 을 지나고 반출·이설 전이며 비가동이 아닌 상태.
+- `가용` — 입고·Qual 을 지나고 반출·이설 전이며 비가동·보관이 아닌 호기. **가용 판정으로
+  고른다**(구간의 `집계분류`). 반출·이설일정이 적힌 호기는 실행일 전까지 상태 이름이 「반출
+  예정」·「이설 예정」이지만, 그날 가용이면 여기에 든다 — 이름으로 고르면 날짜를 적는 순간
+  멀쩡히 쓰는 호기가 첫날부터 빠졌다(2026-10-07 사용자 결정으로 고침).
 
 나머지 여덟은 **왜 못 쓰는지**를 보여 주는 참고 행이다. 화면은 `부호` 로 늘고 주는 것을
 표시하되 `가용반영` 이 참인 행만 소계에 넣는다. 여덟을 합계에 넣으면 아직 들어오지도
-않은 설비가 가용대수로 세어진다.
+않은 설비가 가용대수로 세어진다. 그래서 `반출 예정`·`이설 예정` 행에는 **가용이 아닌**
+예정 호기(셋업 중·보관·입고 전)만 남는다.
+
+## 사용기준 HBM 만 센다
+
+호기 마스터의 기여 줄은 **사용기준이 HBM 인 행만** 만든다(구간의 `가용대수반영`,
+`equipment_contract.counts_for_capacity`, 2026-10-07 사용자 결정). 다른 행은 참고 행에도 들지
+않는다 — 이 표는 HBM Capa 의 가용대수를 분해한 것이다. 행마다 보므로 모듈 넷 중 둘만 HBM 인
+설비는 지분대로 0.5대다. `기존보유` 는 사용기준이 없어 지금처럼 센다.
 
 ## 대수와 환산대수는 다른 질문이다
 
@@ -66,6 +77,8 @@ from datetime import date, timedelta
 import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
+    COUNT_CATEGORY_COLUMN,
+    COUNTED_COLUMN,
     EQUIPMENT_ID_COLUMN,
 )
 from capa_simulation.services.equipment_units import UNIT_KEY_COLUMN, UNIT_SHARE_COLUMN
@@ -208,8 +221,9 @@ def build_monthly_equipment_availability(
 ) -> pd.DataFrame:
     """월별·공정별·분류별 기여 대수.
 
-    `spans` 는 `build_equipment_lifecycle_spans` 의 결과(`호기·공정소분류·상태·시작일·
-    종료일`)이고, `baseline` 은 `공정·기존보유대수` 를 가진 기존보유 표다. 둘의 공정
+    `spans` 는 `build_equipment_lifecycle_spans(with_unit_share=True)` 의 결과(`호기·공정소분류·
+    상태·시작일·종료일` 에 `설비지분`·`집계분류`·`가용대수반영`)이고, `baseline` 은 `공정·
+    기존보유대수` 를 가진 기존보유 표다. 둘의 공정
     이름은 같은 이름 공간으로 본다 — 저장소에 그것을 강제하는 장치가 없으므로 부르는
     쪽이 `missing_cutoff_processes` 로 어긋남을 화면에 드러내야 한다.
 
@@ -373,24 +387,48 @@ def _prorated_rows(
     unit_keys = (
         spans[UNIT_KEY_COLUMN] if UNIT_KEY_COLUMN in spans.columns else spans[EQUIPMENT_ID_COLUMN]
     )
+    # 분류는 가용 판정으로 고른 `집계분류` 다(모듈 docstring). 그 컬럼이 없는 구간(손으로 만든
+    # 표·Gantt 용 구간)은 상태 이름 그대로 — 가용 판정을 모르니 이름이 곧 분류다.
+    categories = (
+        spans[COUNT_CATEGORY_COLUMN] if COUNT_CATEGORY_COLUMN in spans.columns else spans["상태"]
+    )
+    # 사용기준이 HBM 이 아닌 호기는 기여 줄을 만들지 않는다. 지분만 0 으로 두면 환산대수(환산비를
+    # 곱하는 축)에 남는다. 컬럼이 없는 구간은 걸러 오지 않은 것으로 보고 모두 센다.
+    counted = (
+        spans[COUNTED_COLUMN].fillna(False).astype("bool")
+        if COUNTED_COLUMN in spans.columns
+        else pd.Series(True, index=spans.index)
+    )
     # `itertuples` 는 한글 컬럼명을 그대로 속성으로 주지만 이름이 겹치면 말없이 `_3` 으로
     # 바꾼다. 필요한 컬럼만 짝지어 도는 편이 빠르고 그 위험도 없다.
     columns = zip(
         spans[EQUIPMENT_ID_COLUMN],
         spans["공정소분류"],
-        spans["상태"],
+        categories,
         spans["시작일"],
         spans["종료일"],
         shares,
         unit_keys,
+        counted,
         strict=True,
     )
-    for raw_unit, raw_process, raw_status, raw_start, raw_end, raw_share, raw_key in columns:
+    for (
+        raw_unit,
+        raw_process,
+        raw_category,
+        raw_start,
+        raw_end,
+        raw_share,
+        raw_key,
+        is_counted,
+    ) in columns:
+        if not is_counted:
+            continue
         process = str(raw_process or "").strip()
         month_windows = windows.get(process)
         if not month_windows:
             continue
-        category = _BY_NAME.get(str(raw_status))
+        category = _BY_NAME.get(str(raw_category))
         if category is None or not category.prorated:
             continue
         ratio = float(conversion_ratios.get(str(raw_unit or "").strip(), 1.0))

@@ -46,9 +46,11 @@ from capa_simulation.services.equipment_units import (
 )
 from capa_simulation.services.simulation_cache import (
     get_undated_equipment,
+    get_usage_excluded_equipment,
     get_weekly_equipment_availability,
 )
 from capa_simulation.services.undated_equipment import undated_equipment_notice
+from capa_simulation.services.usage_basis import usage_exclusion_notice
 
 QUESTION_KEY = "equipment_explorer_question"
 AS_OF_KEY = "equipment_explorer_as_of"
@@ -203,6 +205,25 @@ def _undated_caption(notice: str | None) -> None:
         st.caption(f":material/event_busy: {notice}")
 
 
+def _usage_notice(equipment: pd.DataFrame, filtered: pd.DataFrame) -> str | None:
+    """사용기준이 HBM 이 아니어서 가용대수에서 뺀 설비 한 줄. 0대면 `None`.
+
+    일정 미정 줄과 같은 범위(이 화면의 조건으로 거른 호기)를 센다. 호기 마스터가 검증을 못 넘으면
+    알리지 않는다 — 그 오류는 결과 자리가 이미 알린다.
+    """
+    try:
+        excluded = get_usage_excluded_equipment(equipment)
+    except ValueError:
+        return None
+    unit_ids = set(filtered[EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna())
+    return usage_exclusion_notice(excluded, unit_ids=unit_ids)
+
+
+def _usage_caption(notice: str | None) -> None:
+    if notice is not None:
+        st.caption(f":material/filter_alt_off: {notice}")
+
+
 def _availability(
     baseline: pd.DataFrame,
     equipment: pd.DataFrame,
@@ -213,6 +234,7 @@ def _availability(
     view: str,
     expression: str,
     undated_notice: str | None = None,
+    usage_notice: str | None = None,
 ) -> None:
     weekly = get_weekly_equipment_availability(
         baseline,
@@ -223,6 +245,7 @@ def _availability(
     )
     if weekly.empty:
         st.info("조건에 맞는 설비가 없습니다. 공정이나 조회기간을 바꿔 보세요.")
+        _usage_caption(usage_notice)
         return
     latest = weekly.loc[weekly["주차시작일"].eq(weekly["주차시작일"].max())]
     available = float(latest["가용대수"].sum())
@@ -234,6 +257,7 @@ def _availability(
         f" · 가용률 {available / total if total else 0:.1%}"
     )
     _undated_caption(undated_notice)
+    _usage_caption(usage_notice)
     if view == "공정별 내역":
         st.markdown("#### 공정소분류별 현황")
         _table(
@@ -583,6 +607,9 @@ def render_equipment_explorer(
     undated_notice = (
         _undated_notice(equipment, filtered) if question == "가용대수" or shows_status else None
     )
+    # 사용기준 제외는 대수를 세는 `가용대수` 에서만 알린다. 호기 현황(상태 분포·호기 목록)은 이름을
+    # 보이는 자리라 HBM 이 아닌 호기도 그대로 센다.
+    usage_notice = _usage_notice(equipment, filtered) if question == "가용대수" else None
     with st.container(border=True):
         if uses_period and start > end:
             st.error("시작일은 종료일보다 늦을 수 없습니다.")
@@ -610,6 +637,7 @@ def render_equipment_explorer(
                     view=view,
                     expression=expression,
                     undated_notice=undated_notice,
+                    usage_notice=usage_notice,
                 )
             elif question == "비가동 호기" and view == "그 달 전체":
                 # 기준일이 든 달을 본다. 기준 월을 따로 고르게 하면 축이 둘이 된다.

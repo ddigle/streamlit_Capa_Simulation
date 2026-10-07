@@ -57,7 +57,8 @@ def _equipment() -> pd.DataFrame:
         "Maker": None,
         "Model": None,
         "구분": None,
-        "사용기준": None,
+        # Dynamic 가용대수는 사용기준이 HBM 인 호기만 센다(2026-10-07 사용자 결정).
+        "사용기준": "HBM",
         "설비가동현황": None,
         "동": "C1",
         "층": "1F",

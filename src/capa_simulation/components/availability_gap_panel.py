@@ -64,8 +64,12 @@ from capa_simulation.services.securement_cross_check import (
     build_securement_cross_check,
     dynamic_available_equipment,
 )
-from capa_simulation.services.simulation_cache import get_undated_equipment
+from capa_simulation.services.simulation_cache import (
+    get_undated_equipment,
+    get_usage_excluded_equipment,
+)
 from capa_simulation.services.undated_equipment import undated_equipment_notice
+from capa_simulation.services.usage_basis import usage_exclusion_notice
 
 __all__ = [
     "DETAIL_CATEGORY_KEY",
@@ -211,10 +215,13 @@ def render_availability_gap_panel(
         )
     process = None if selected == _ALL_PROCESSES else selected
     undated = _undated_rows(units)
+    usage_excluded = _usage_excluded_rows(units)
 
     if result_view == "확보율 교차검증":
         _render_undated_notice(
-            undated, {process} if process is not None else set(monthly["공정"].astype(str))
+            undated,
+            usage_excluded,
+            {process} if process is not None else set(monthly["공정"].astype(str)),
         )
         _render_securement_cross_check(
             monthly=monthly,
@@ -250,7 +257,7 @@ def render_availability_gap_panel(
     # 전체 합계는 표와 같은 공정만 본다 — 한쪽에만 있는 공정을 뺀 범위다.
     scope = {process} if process is not None else set(scoped["공정"].dropna().astype(str))
     if result_view == "가용대수 비교":
-        _render_undated_notice(undated, scope)
+        _render_undated_notice(undated, usage_excluded, scope)
         if one_sided is not None:
             # 그림은 Static 과 Dynamic 을 나란히 세우고 그 차이를 막대 위에 적는다. 한쪽이
             # 없으면 맞댈 것이 없고, 비운 GAP 을 그림이 0 으로 채워 「+0.00」이 붙는다.
@@ -291,7 +298,7 @@ def render_availability_gap_panel(
             if matrix.empty:
                 st.info("호기 필터에 든 호기가 조회기간에 더할 대수가 없습니다.")
                 return
-    _render_undated_notice(undated, scope, chosen_units)
+    _render_undated_notice(undated, usage_excluded, scope, chosen_units)
     if detail_mode == "호기 목록":
         _render_unit_list(
             _scoped_contributions(
@@ -337,17 +344,34 @@ def _undated_rows(units: pd.DataFrame | None) -> pd.DataFrame | None:
         return None
 
 
+def _usage_excluded_rows(units: pd.DataFrame | None) -> pd.DataFrame | None:
+    """사용기준이 HBM 이 아니어서 Dynamic 에 세지 않는 호기. 표가 없거나 못 읽으면 `None`."""
+    if units is None:
+        return None
+    try:
+        return get_usage_excluded_equipment(units)
+    except ValueError:
+        return None
+
+
 def _render_undated_notice(
     undated: pd.DataFrame | None,
+    excluded: pd.DataFrame | None,
     scope: Collection[str],
     chosen_units: Collection[str] | None = None,
 ) -> None:
-    """둘러싼 대수와 같은 범위(공정, 호기 필터)의 일정 미정 설비 한 줄. 0대면 그리지 않는다."""
-    if undated is None:
-        return
-    notice = undated_equipment_notice(undated, processes=scope, unit_ids=chosen_units)
-    if notice is not None:
-        st.caption(f":material/event_busy: {notice}")
+    """둘러싼 대수와 같은 범위(공정, 호기 필터)의 일정 미정·사용기준 제외 설비 한 줄씩.
+
+    0대인 줄은 그리지 않는다.
+    """
+    if undated is not None:
+        notice = undated_equipment_notice(undated, processes=scope, unit_ids=chosen_units)
+        if notice is not None:
+            st.caption(f":material/event_busy: {notice}")
+    if excluded is not None:
+        usage = usage_exclusion_notice(excluded, processes=scope, unit_ids=chosen_units)
+        if usage is not None:
+            st.caption(f":material/filter_alt_off: {usage}")
 
 
 def matrix_table_key(process: str | None, months: Sequence[int], rows: Sequence[str]) -> str:
