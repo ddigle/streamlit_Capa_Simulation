@@ -211,6 +211,26 @@ export default function (component) {
   }
   // 글자 폭 어림(em). 한글은 1, 나머지는 0.6.
   const emWidth = (text) => [...text].reduce((sum, ch) => sum + (ch.charCodeAt(0) >= 0x1100 ? 1 : 0.6), 0)
+  // 호기 이름표의 글자 폭(em). 이름표와 같은 서체·굵기(600, `.sle-label`)를 캔버스로 재고 이름마다 한 번
+  // 기억한다 — 글자 수 어림은 한글·굵은 대문자를 덜 쳐서 이름이 상자를 넘어 옆 상자 이름과 붙어 보였다.
+  // 재지 못하면 어림이다. 서체를 아직 받는 중에 잰 값은 기억하지 않는다(받은 뒤 다시 잰다).
+  const labelEm = (text) => {
+    const memo = S.labelEm || (S.labelEm = new Map())
+    if (memo.has(text)) return memo.get(text)
+    let em = emWidth(text)
+    try {
+      const ctx = S.measureCtx || (S.measureCtx = document.createElement('canvas').getContext('2d'))
+      if (ctx) {
+        ctx.font = `600 100px ${getComputedStyle(host).fontFamily}`
+        const measured = ctx.measureText(text).width / 100
+        if (measured > 0) em = measured
+      }
+    } catch (error) {
+      em = emWidth(text)
+    }
+    if (!document.fonts || document.fonts.status === 'loaded') memo.set(text, em)
+    return em
+  }
   const snapshot = (item) => ({
     x: item.x, y: item.y, w: item.w, h: item.h, placed: item.placed, moveTo: item.moveTo, sizeGuessed: item.sizeGuessed,
     rot: item.rot, label: item.label, color: item.color, hatch: item.hatch, keepOut: item.keepOut, link: item.link,
@@ -465,9 +485,10 @@ export default function (component) {
       label.setAttribute('x', item.x + item.w / 2)
       label.setAttribute('y', top + item.h / 2)
       // 글자는 사각형 폭에 맞춰 줄이고 화면에서 14px 를 넘지 않게 한다. 7px 아래면 숨긴다(밀집 층) —
-      // 확대하면 다시 보인다. 이름은 선택하면 상태줄·옆 칸에, 올려 두면 풍선에 나온다.
+      // 확대하면 다시 보인다. 이름은 선택하면 상태줄·옆 칸에, 올려 두면 풍선에 나온다. 폭은 잰 글자 폭이라
+      // 이름이 상자 밖으로 넘치지 않는다.
       const upp = unitsPerPx()
-      const fitFont = (item.w * 0.94) / Math.max(item.label.length * 0.62, 1)
+      const fitFont = (item.w * 0.94) / Math.max(labelEm(item.label), 1)
       const fontSize = Math.min(item.h * 0.32, fitFont, 14 * upp)
       label.setAttribute('font-size', fontSize)
       label.style.display = fontSize / upp < 7 ? 'none' : ''

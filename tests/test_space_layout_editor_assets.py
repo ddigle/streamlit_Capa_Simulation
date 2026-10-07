@@ -216,3 +216,18 @@ def test_a_column_draws_its_name_above_it() -> None:
     ]
     assert "item.kind === 'column'" in outside
     assert "item.kind === 'column'\n        ? 'up'" in outside
+
+
+def test_a_unit_label_is_fitted_by_its_measured_width() -> None:
+    """호기 이름표는 잰 글자 폭으로 상자 폭에 맞춘다. 글자 수 어림(한 글자 0.62em)은 한글·굵은
+    대문자를 덜 쳐서 C1 4F 의 「설비호기1」이 상자를 넘어 옆 「SAMPLE1」과 붙어 보였다(2026-10-08).
+    재는 굵기는 이름표 CSS 의 굵기와 같아야 한다. 7px 아래 숨김 규칙은 그대로다."""
+    position = JS[JS.index("function position(") : JS.index("function drawMark(")]
+    assert "labelEm(item.label)" in position
+    assert "item.label.length" not in position
+    assert "fontSize / upp < 7 ? 'none' : ''" in position
+    measure = JS[JS.index("const labelEm = ") : JS.index("const snapshot = ")]
+    assert "measureText(text)" in measure and "`600 100px ${" in measure
+    assert "font-weight: 600" in _rule(".sle-label")
+    # 서체를 받는 중에 잰 값은 기억하지 않는다 — 받기 전 대체 서체의 폭이 굳지 않게.
+    assert "document.fonts.status === 'loaded'" in measure
