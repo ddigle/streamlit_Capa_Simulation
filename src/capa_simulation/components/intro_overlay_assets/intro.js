@@ -1557,7 +1557,7 @@ function scene(port, gridOf) {
         const h = (L.barBot - before) * s;
         if (h > 1) {
           g.globalAlpha = k * m;
-          g.strokeStyle = rgba(textColor, 0.55);
+          g.strokeStyle = rgba(textColor, 0.4);
           g.lineWidth = 1;
           g.setLineDash([3, 3]);
           rr(cx - L.bw / 2 + 0.5, L.barBot - h + 0.5, L.bw - 1, h - 1, Math.min(4, h / 2));

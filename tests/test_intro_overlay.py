@@ -682,6 +682,9 @@ def test_summary_toggles_sit_right_after_the_docked_detail() -> None:
     # 휴대폰 폭에서는 머리 줄 밑 둘째 줄로 내린다 — 머리 줄과 Detail 은 움직이지 않는다.
     narrow = css[css.index("@media (max-width: 760px) {") : css.index("@keyframes slide")]
     assert re.search(r"\.toggles \{\s*position: absolute;", narrow)
+    # 머리 줄이 빠듯하면 라벨은 한 줄을 지키고 공식버전 칩이 말줄임으로 준다(768px 에서 접혔다).
+    assert re.search(r"\.brand \{\s*flex: none;\s*white-space: nowrap;", css)
+    assert re.search(r"\.asof \.chip \{\s*flex: 0 1 auto;\s*min-width: 0;", css)
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
     entry = _between(js, "async function summaryFromEntry(", "function snapToSummary(")
     assert entry.index("dockDetail(true);") < entry.index("revealToggles(true);")

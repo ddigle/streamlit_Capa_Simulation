@@ -176,6 +176,13 @@
   letter-spacing: 0.03em;
 }
 
+/* 라벨은 한 줄을 지킨다 — 머리 줄이 빠듯하면 오른쪽 공식버전 칩·기간 글자가 먼저 줄어든다(토글 셋이 선 뒤
+   768px 창에서 `S.PKG CAPA` 가 두 줄로 접혔다). */
+.brand {
+  flex: none;
+  white-space: nowrap;
+}
+
 .dock {
   display: flex;
   align-items: center;
@@ -296,7 +303,10 @@
 }
 
 .asof .chip {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 4px 7px;
   border-radius: 4px;
   background: var(--accent);
