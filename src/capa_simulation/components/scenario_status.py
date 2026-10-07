@@ -32,6 +32,7 @@ from capa_simulation.persistence.models import RevisionSummary, ScenarioSummary
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import (
     activate_persisted_snapshot,
+    activate_saved_revision,
     active_persisted_revision_id,
     active_persisted_scenario_id,
     discard_unsaved_scenario_changes,
@@ -428,7 +429,8 @@ def _render_revision_save(
                     note=note.strip() or None,
                     virtual_products=virtual_products,
                 )
-                activate_persisted_snapshot(snapshot)
+                # 방금 보던 내용을 그대로 적은 리비전이라 HOME 토글은 켜 둔 채 둔다.
+                activate_saved_revision(snapshot)
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"신규 리비전을 저장하지 못했습니다: {bootstrap_error_message(exc)}")
             return None

@@ -58,6 +58,12 @@ ACTIVE_SCENARIO_LABEL_KEY = "active_scenario_label"
 #    새 시나리오는 있는 그대로 먼저 보이고, 얹을 것은 사용자가 다시 켠다. **토글은 지우지 않고
 #    기본값을 적는다** — 까닭은 `_release_stale_ui_state` 에 있다.
 #
+# 토글을 푸는 것은 **보는 내용이 바뀌는 경로**뿐이다 — 불러오기·부트스트랩·활성화 해제·새
+# 시나리오(복제·BigDataQuery 등록). 활성 시나리오의 새 리비전 저장(`activate_saved_revision`)은
+# 방금 보던 내용을 그대로 적은 것이라 토글의 전제가 바뀌지 않으므로 토글을 건드리지 않는다. 값
+# 칸은 저장에서도 버린다 — 리비전이 바뀌어 편집 화면의 원본 토큰이 달라지고(적용하지 않은 편집은
+# 저장·불러오기에 사라진다는 약속), Figure 캐시 칸은 새 리비전의 내용 토큰으로 다시 채워진다.
+#
 # 탭과 조회 조건(필터·분류 수준)은 **넣지 않는다.** 그것들은 무엇을 보고 있는지일 뿐 값에
 # 닿지 않으므로, 지우면 시나리오를 바꿀 때마다 보던 자리를 다시 찾아야 한다.
 #
@@ -74,8 +80,11 @@ _STALE_VALUE_KEYS = (
 _STALE_UI_KEYS = (*_STALE_VALUE_KEYS, *HOME_TOGGLE_DEFAULTS)
 
 
-def _release_stale_ui_state() -> None:
+def _release_stale_ui_state(*, release_toggles: bool) -> None:
     """앞 시나리오의 값이 담긴 칸은 지우고, HOME 토글에는 기본값을 **적는다.**
+
+    `release_toggles=False`(활성 시나리오의 새 리비전 저장)이면 값 칸만 지우고 토글 칸은 그대로
+    둔다 — 적지도 지우지도 않으므로 브라우저가 들고 있는 값과 서버 값이 계속 같다.
 
     토글 칸을 지우기(`pop`)만 하면 서버는 기본값으로 그리지만 브라우저는 그 사실을 듣지 못한다.
     Streamlit 은 위젯 값이 세션 API 로 **새로 적혔을 때만** 브라우저에 새 값을 보내는데, 지운
@@ -85,14 +94,16 @@ def _release_stale_ui_state() -> None:
     말고 새 값을 적는다」).
 
     적은 값이 브라우저에 닿으려면 **그 회차에 토글 위젯이 만들어지기 전에** 적어야 한다(만든
-    뒤에는 Streamlit 이 적기를 막는다). 부르는 곳은 모두 그 조건을 지킨다 — 사이드바 「불러오기」·
-    「신규 리비전 저장」과 시나리오 관리 화면은 토글을 그리지 않는 자리에서 적고 곧바로
-    `st.rerun()` 한다(그 재실행은 세션을 다지지 않아 적은 값이 「새 값」인 채로 다음 회차의 토글에
-    닿는다). 새 세션의 공식버전 부트스트랩은 `navigation.run()` 앞이다. 토글이 기본값을 위젯
-    `value=` 로 받지 않는 것도 이 때문이다 — `components/home_preference.render_home_view_card`.
+    뒤에는 Streamlit 이 적기를 막는다). 부르는 곳은 모두 그 조건을 지킨다 — 사이드바 「불러오기」와
+    시나리오 관리 화면·BigDataQuery 등록은 토글을 그리지 않는 자리에서 적고 곧바로 `st.rerun()`
+    한다(그 재실행은 세션을 다지지 않아 적은 값이 「새 값」인 채로 다음 회차의 토글에 닿는다).
+    새 세션의 공식버전 부트스트랩은 `navigation.run()` 앞이다. 토글이 기본값을 위젯 `value=` 로
+    받지 않는 것도 이 때문이다 — `components/home_preference.render_home_view_card`.
     """
     for key in _STALE_VALUE_KEYS:
         st.session_state.pop(key, None)
+    if not release_toggles:
+        return
     for key, default in HOME_TOGGLE_DEFAULTS.items():
         st.session_state[key] = default
 
@@ -172,7 +183,26 @@ def rename_active_scenario_label(scenario_id: str, scenario_name: str) -> None:
 
 
 def activate_persisted_snapshot(snapshot: ScenarioSnapshot) -> ActiveScenario:
-    """Publish tables and queue the preset before the next app-level widget render."""
+    """보는 내용을 다른 리비전으로 바꾼다 — 불러오기·부트스트랩·새 시나리오. HOME 토글을 푼다.
+
+    표를 올리고 프리셋을 다음 위젯 그리기 앞에 걸어 둔다. 같은 시나리오의 다른 리비전을 불러올
+    때도 푼다 — 리비전마다 내용이 다르다.
+    """
+    return _activate(snapshot, release_toggles=True)
+
+
+def activate_saved_revision(snapshot: ScenarioSnapshot) -> ActiveScenario:
+    """방금 저장한 **활성 시나리오의 새 리비전**을 올린다. HOME 토글은 건드리지 않는다.
+
+    저장한 리비전은 세션이 보던 내용을 그대로 적은 것이라 토글을 켠 전제(그 시나리오, 그 내용)가
+    바뀌지 않는다. 풀면 저장할 때마다 켜 둔 선행 B/O·실행 Loss 를 다시 켜야 한다. 스냅샷이 지금
+    활성인 시나리오의 것이 아니면 내용이 바뀐 것이므로 `activate_persisted_snapshot` 처럼 푼다.
+    """
+    same_scenario = snapshot.scenario.scenario_id == active_persisted_scenario_id()
+    return _activate(snapshot, release_toggles=not same_scenario)
+
+
+def _activate(snapshot: ScenarioSnapshot, *, release_toggles: bool) -> ActiveScenario:
     version = activate_persisted_reference_tables(
         snapshot.tables,
         snapshot.revision.revision_id,
@@ -186,7 +216,7 @@ def activate_persisted_snapshot(snapshot: ScenarioSnapshot) -> ActiveScenario:
     st.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] = snapshot.revision.revision_id
     st.session_state[ACTIVE_PERSISTED_SESSION_REVISION_KEY] = active["revision"]
     _remember_label(snapshot)
-    _release_stale_ui_state()
+    _release_stale_ui_state(release_toggles=release_toggles)
     queue_scenario_preset(snapshot.preset)
     return active
 
@@ -220,7 +250,7 @@ def clear_persisted_scenario_activation() -> None:
         ACTIVE_SCENARIO_LABEL_KEY,
     ):
         st.session_state.pop(key, None)
-    _release_stale_ui_state()
+    _release_stale_ui_state(release_toggles=True)
 
 
 def active_persisted_scenario_id() -> str | None:

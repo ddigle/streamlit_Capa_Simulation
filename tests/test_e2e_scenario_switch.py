@@ -51,7 +51,10 @@ from capa_simulation.components.home_preference import (
     PAST_DATA_TOGGLE_KEY,
     PLAN_DETAIL_CUSTOMER_KEY,
 )
-from capa_simulation.components.scenario_status import SIDEBAR_REVISION_KEY
+from capa_simulation.components.scenario_status import (
+    SAVE_REVISION_NAME_KEY,
+    SIDEBAR_REVISION_KEY,
+)
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import ACTIVE_PERSISTED_REVISION_ID_KEY
@@ -562,3 +565,49 @@ def test_toggles_flipped_in_the_card_on_main_are_released_by_a_load(
     assert not app.exception, [element.message for element in app.exception]
     assert {toggle.key: toggle.value for toggle in app.sidebar.toggle} == dict(TOGGLE_DEFAULTS)
     assert _shown_toggle_values(app, shown) == dict(TOGGLE_DEFAULTS)
+
+
+def test_toggles_survive_saving_a_revision_of_the_same_scenario(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사이드바 「신규 리비전 저장」은 HOME 토글을 풀지 않는다 — 화면에도, 계산에도.
+
+    저장한 리비전은 방금 보던 내용을 그대로 적은 것이라 토글을 켠 전제가 바뀌지 않는다. 시나리오를
+    바꾸는 불러오기와 달리 토글 칸을 적지도 지우지도 않으므로, 서버 값과 브라우저가 보이는 값이
+    모두 켠 그대로이고 브라우저가 그 값을 되보내는 다음 조작 뒤에도 그대로다.
+    """
+    database = tmp_path / "scenario.duckdb"
+    _seed_two_revisions(database)
+    monkeypatch.setattr(settings, "DUCKDB_PATH", database)
+    monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", tmp_path / "equipment.duckdb")
+    monkeypatch.setattr(month_range_picker, "render_month_range_picker", _month_range_stub)
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
+    monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
+    app = AppTest.from_file(str(APP_PATH), default_timeout=600)
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    for key, default in TOGGLE_DEFAULTS.items():
+        app.toggle(key=key).set_value(not default)
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    flipped = {key: not default for key, default in TOGGLE_DEFAULTS.items()}
+    revision_before = _session_value(app, ACTIVE_PERSISTED_REVISION_ID_KEY)
+
+    app.text_input(key=SAVE_REVISION_NAME_KEY).set_value("토글 유지 확인")
+    app.run()
+    save_button = next(button for button in app.button if button.label == "신규 리비전 저장")
+    save_button.click().run()
+    assert not app.exception, [element.message for element in app.exception]
+    revision_after = _session_value(app, ACTIVE_PERSISTED_REVISION_ID_KEY)
+    assert revision_after not in (None, revision_before), "저장이 새 리비전을 올리지 않았습니다."
+
+    assert {toggle.key: toggle.value for toggle in app.sidebar.toggle} == flipped
+    shown = _shown_toggle_values(app, flipped)
+    assert shown == flipped, f"저장 뒤 브라우저에 보이는 토글이 켠 값과 다릅니다: {shown}"
+
+    for toggle in app.sidebar.toggle:
+        toggle.set_value(shown[str(toggle.key)])
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert {toggle.key: toggle.value for toggle in app.sidebar.toggle} == flipped

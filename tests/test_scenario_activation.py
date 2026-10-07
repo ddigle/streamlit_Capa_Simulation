@@ -154,6 +154,96 @@ def test_clearing_the_activation_writes_the_toggle_defaults_too(
     assert activation.ACTIVE_PERSISTED_REVISION_ID_KEY not in state
 
 
+def test_saving_a_revision_of_the_active_scenario_keeps_the_toggles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """활성 시나리오의 새 리비전 저장은 HOME 토글을 건드리지 않는다. 값 칸은 그대로 버린다.
+
+    저장한 리비전은 방금 보던 내용을 그대로 적은 것이라 토글의 전제가 바뀌지 않는다. 값 칸은
+    리비전이 바뀌어 편집 화면의 원본 토큰·Figure 캐시가 새로 서야 하므로 버린다.
+    """
+    import capa_simulation.scenario_activation as activation
+
+    state = _fake_session(monkeypatch)
+    flipped = {key: not default for key, default in HOME_TOGGLE_DEFAULTS.items()}
+    state[activation.ACTIVE_PERSISTED_SCENARIO_ID_KEY] = "scenario-1"
+    monkeypatch.setattr(activation, "activate_persisted_reference_tables", lambda *a, **k: 3)
+    monkeypatch.setattr(activation, "activate_scenario_tables", lambda *a, **k: {"revision": 7})
+    monkeypatch.setattr(activation, "queue_scenario_preset", lambda preset: None)
+
+    activation.activate_saved_revision(_label_snapshot(registered_at=None, plan_months=(202607,)))
+
+    assert not [key for key in activation._STALE_VALUE_KEYS if key in state]
+    assert {key: state[key] for key in HOME_TOGGLE_DEFAULTS} == flipped
+    assert state[activation.ACTIVE_PERSISTED_REVISION_ID_KEY] == "revision-2"
+
+
+def test_a_saved_revision_of_another_scenario_releases_the_toggles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """저장 경로라도 올리는 리비전이 지금 활성인 시나리오의 것이 아니면 내용이 바뀐 것이다."""
+    import capa_simulation.scenario_activation as activation
+
+    state = _fake_session(monkeypatch)
+    state[activation.ACTIVE_PERSISTED_SCENARIO_ID_KEY] = "scenario-other"
+    monkeypatch.setattr(activation, "activate_persisted_reference_tables", lambda *a, **k: 3)
+    monkeypatch.setattr(activation, "activate_scenario_tables", lambda *a, **k: {"revision": 7})
+    monkeypatch.setattr(activation, "queue_scenario_preset", lambda preset: None)
+
+    activation.activate_saved_revision(_label_snapshot(registered_at=None, plan_months=(202607,)))
+
+    _assert_released(state)
+
+
+def _activation_calls_by_function() -> dict[str, tuple[set[str], set[str]]]:
+    """활성화를 부르는 함수마다 (부르는 활성화 함수, 그 함수 안의 모든 호출 이름)."""
+    names = {"activate_persisted_snapshot", "activate_saved_revision"}
+    found: dict[str, tuple[set[str], set[str]]] = {}
+    for root in (PROJECT_ROOT / "app_pages", PROJECT_ROOT / "src"):
+        for path in root.rglob("*.py"):
+            if path.name == "scenario_activation.py":
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if not isinstance(node, ast.FunctionDef):
+                    continue
+                calls: set[str] = set()
+                for inner in ast.walk(node):
+                    if isinstance(inner, ast.Call):
+                        function = inner.func
+                        if isinstance(function, ast.Name):
+                            calls.add(function.id)
+                        elif isinstance(function, ast.Attribute):
+                            calls.add(function.attr)
+                if calls & names:
+                    found[f"{path.name}:{node.name}"] = (calls & names, calls)
+    return found
+
+
+def test_only_saving_a_revision_keeps_the_toggles() -> None:
+    """활성화 경로 표를 코드로 고정한다 — 새 리비전을 저장하는 함수(`save_revision`)만 토글을
+    두는 `activate_saved_revision` 을 부르고, 나머지(불러오기·새 시나리오 복제·BigDataQuery
+    등록)는 모두 토글을 푸는 `activate_persisted_snapshot` 을 부른다."""
+    found = _activation_calls_by_function()
+    assert found, "활성화를 부르는 함수를 하나도 찾지 못했습니다 — 그물부터 고칩니다."
+    wrong = {
+        name: sorted(used)
+        for name, (used, calls) in found.items()
+        if used
+        != (
+            {"activate_saved_revision"}
+            if "save_revision" in calls
+            else {"activate_persisted_snapshot"}
+        )
+    }
+    assert not wrong, f"활성화 경로가 표와 다릅니다: {wrong}"
+    savers = sorted(name for name, (_, calls) in found.items() if "save_revision" in calls)
+    # 저장 경로는 사이드바 「신규 리비전 저장」과 시나리오 관리 「새 리비전 저장」 둘이다.
+    assert savers == [
+        "scenario_management.py:_render_revision_save",
+        "scenario_status.py:_render_revision_save",
+    ], savers
+
+
 def test_view_state_is_not_cleared() -> None:
     """탭과 조회 조건은 지우지 않는다. 무엇을 보고 있는지일 뿐 값에 닿지 않는다.
 

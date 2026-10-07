@@ -40,6 +40,7 @@ from capa_simulation.persistence.repository import (
 )
 from capa_simulation.scenario_activation import (
     activate_persisted_snapshot,
+    activate_saved_revision,
     active_persisted_revision_id,
     active_persisted_scenario_id,
     clear_persisted_scenario_activation,
@@ -763,6 +764,8 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:
+        # 내용은 지금 활성 RQ 그대로지만 **다른 시나리오**가 된다 — 시나리오를 바꾸는 경로처럼
+        # HOME 토글을 푼다.
         activate_persisted_snapshot(snapshot)
         st.session_state[FLASH_KEY] = (
             f"{snapshot.scenario.scenario_name}"
@@ -825,7 +828,8 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:
-        activate_persisted_snapshot(snapshot)
+        # 방금 보던 내용을 그대로 적은 리비전이라 HOME 토글은 켜 둔 채 둔다.
+        activate_saved_revision(snapshot)
         st.session_state[FLASH_KEY] = (
             f"새 리비전 r{snapshot.revision.revision_no}"
             f"{object_particle(str(snapshot.revision.revision_no))} 저장했습니다."

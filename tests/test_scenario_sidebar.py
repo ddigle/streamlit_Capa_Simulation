@@ -109,7 +109,14 @@ def _activate(snapshot: SimpleNamespace) -> None:
     비우지 않는 가짜로는 활성화 **뒤에** 목록을 읽는 저장도 통과해 버린다.
     """
     st.session_state["test_activated_revision"] = snapshot.revision.revision_id
+    st.session_state["test_activation_path"] = "바꾸기"
     st.session_state.pop(VIRTUAL_PRODUCTS_KEY, None)
+
+
+def _activate_saved(snapshot: SimpleNamespace) -> None:
+    """저장 경로의 활성화. HOME 토글을 풀지 않는 쪽이라 어느 경로로 왔는지 따로 적는다."""
+    _activate(snapshot)
+    st.session_state["test_activation_path"] = "저장"
 
 
 TEST_SCRIPT = """
@@ -138,6 +145,7 @@ def sidebar_app() -> Iterator[AppTest]:
             "test_reset_to_version", version
         ),
         "activate_persisted_snapshot": _activate,
+        "activate_saved_revision": _activate_saved,
         "get_effective_reference_version": lambda: 1,
         "get_effective_reference_tables": lambda: {
             "RQ_REQB": pd.DataFrame({"공정": ["공정 A"]}),
@@ -183,6 +191,8 @@ def test_sidebar_selects_and_loads_another_revision(sidebar_app: AppTest) -> Non
 
     assert not app.exception
     assert app.session_state["test_activated_revision"] == "revision-2"
+    # 불러오기는 보는 내용을 바꾸므로 HOME 토글을 푸는 경로다.
+    assert app.session_state["test_activation_path"] == "바꾸기"
 
 
 def test_sidebar_saves_current_state_as_a_new_revision(sidebar_app: AppTest) -> None:
@@ -196,6 +206,8 @@ def test_sidebar_saves_current_state_as_a_new_revision(sidebar_app: AppTest) -> 
     assert not app.exception
     assert app.session_state["test_saved_revision_name"] == "사이드바 저장안"
     assert app.session_state["test_activated_revision"] == "revision-3"
+    # 방금 보던 내용을 적은 리비전이라 HOME 토글을 풀지 않는 경로로 올린다.
+    assert app.session_state["test_activation_path"] == "저장"
 
 
 def test_sidebar_save_keeps_the_session_virtual_products(sidebar_app: AppTest) -> None:
