@@ -522,9 +522,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     어둡게 `rgb(233,233,236)` 로 그려졌다. hover 는
     주석의 `hovertext`(「선행 입고 실적 +1.2억Gb」)라 trace 수가 늘지 않는다. 연간 Total 칸에는 적지
     않고, 과거 구간 달은 축에 있으면 적는다. 자릿수에서 0 으로 보이는 값(`+0.0`)은 적지 않는다.
-    토글과 프로필 version(꺼져 있으면 0)은 `HomeFigureCacheKey` 의 마지막 두 칸
-    (`show_advance_shipment`·`advance_shipment_profile_version`)이다 — Summary 공지와 달리 Figure 에
-    구워지는 글자다. 입장 화면 Summary 는 이 키를 쓰지 않는다 — 머리 줄 「선행 입고」 토글이 같은 프로필을
+    토글과 프로필 version(꺼져 있으면 0)은 `HomeFigureCacheKey` 의 두 칸
+    (`show_advance_shipment`·`advance_shipment_profile_version`)이고 **LOB 묶음 키에만** 든다 —
+    Summary 공지와 달리 Figure 에 구워지는 글자지만 다른 세 묶음은 이 글자를 그리지 않는다. 입장
+    화면 Summary 는 이 키를 쓰지 않는다 — 머리 줄 「선행 입고」 토글이 같은 프로필을
     `advance_shipment_notes` 로 읽어 월별 시트 Density 값 옆에 적는다(`intro_summary`).
   - 제목 아래 설명 문구, `계획·B/N 상세표 표시` 토글, `계획 세부수량 CSV` 는 탭이 그 자리를
     쓰면서 없앴다.
@@ -539,13 +540,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그만큼 밀린다. 줄 높이는 제목이 잡으므로 막대가 사라져도 아래가 움직이지 않는다.
     계산 단계마다 `advance()` 하고
     끝나면 `close()` 한다. **모든 종료 경로가 `close()` 를 지나야 한다** — 오류로 멈추면
-    멈춰 선 막대가 오류 문구 위에 남는다. Figure 캐시 적중 경로는 건너뛴 단계 수만큼
-    `advance()` 를 더 불러 두 경로의 단계 수를 맞춘다.
+    멈춰 선 막대가 오류 문구 위에 남는다. Figure 단계는 묶음이 몇 개 맞든 **같은 횟수**(순위
+    집계 뒤 한 번, 그림 뒤 한 번)만 `advance()` 해 모든 경로의 단계 수가 같다.
   - 판정 기준(확보·경고)은 사이드바에 입력이 없고 `Preference` 의 공용 프로필이 정한다
     (2026-10-06 사용자 결정 — 아래 `services/securement_threshold.py`). 사이드바 `B/N 집계 공정`
     상자에는 「판정 기준은 HOME → Preference 에서 정합니다」 한 줄만 남는다. 포함 공정은 선택
     dialog의 적용 버튼으로 확정한다. 성능 진단 토글은
-    단계별 시간과 Figure 캐시 적중 여부만 표시한다. 그 상자(`BOTTLENECK_BOX_KEY`)는
+    단계별 시간과 Figure 캐시 결과(네 묶음이 다 맞으면 「적중」, 아니면 「생성」과 새로 만든
+    묶음 이름)만 표시한다. 그 상자(`BOTTLENECK_BOX_KEY`)는
     **HOME 만 그리는** 접히는 상자다. 다른 페이지에 갔다 오면 그 회차에 만들어지지 않은
     위젯이라 값이 버려지므로 `sidebar_expander` 의 기억 칸이 펼침 상태를 되돌린다.
 - `app_pages/load_conversion.py` (화면 이름 `생산 계획`)
@@ -1420,6 +1422,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 두 시나리오의 기간 계획 물량 차이를 분류별 덤벨로 세운다. 한쪽에만 있는 분류는 다른
     쪽을 0 으로 봐야 빠진 계획이 길이로 드러난다. 연결선 색은 상태색이 아니라 `DELTA_*`
     다 — 늘고 주는 것은 좋고 나쁨이 아니다.
+  - 그림은 `build_plan_comparison_dumbbell` 이 만들고 `render_plan_comparison_dumbbell` 은 **받은
+    그림만** 그린다. 접힌 `st.expander` 의 본문도 회차마다 돌아서, 그리는 쪽이 만들면 HOME 을 다시
+    돌릴 때마다 덤벨을 새로 만들었다(GAP 을 켜 둔 동안). HOME 은 입력(세부수량·비교 세부수량·
+    분류)이 같은 계획 세부수량 Figure 묶음에 함께 넣어 캐시한다.
 - `src/capa_simulation/components/source_quality.py`
   - 활성 시나리오 원천 78컬럼의 결측률·카디널리티 표. `load_source_profile` 이 이미 주는
     `null_count`·`unique_count` 를 쓰므로 새 조인이 없다. 등급을 글자로도 적어 막대 길이
@@ -1614,6 +1620,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     상수(사용기준 규칙 `COUNTED_USAGE_BASIS`·분류 표 등)는 싣지 않는다.** 상수가 바뀌려면 배포로
     프로세스가 새로 뜨고 캐시는 프로세스 메모리라 그때 함께 빈다. 상수를 키에 넣는 래퍼와 넣지 않는
     래퍼가 섞이면 「무엇이 키인가」를 래퍼마다 따로 따져야 한다(2026-10-08 리뷰로 하나로 정했다).
+    **HOME Figure 키의 `schema_version`(`HOME_FIGURE_SCHEMA_VERSION`)은 예외다** — 그림 모양을 바꾸면
+    올려 공용 칸(`shared_home_figure_store`)의 옛 그림을 버린다. 떠 있는 서버는 고친 페이지 코드를
+    프로세스를 새로 띄우지 않고 다시 읽으므로, 이 번호가 없으면 그 프로세스의 세션·공용 칸에 남은 옛
+    모양 그림이 새 코드 화면에 나온다.
   - HOME 전체 계산 그래프는 reference version·`content_token`·조회기간·표시순서 해시의 명시적 경량 키로 조회해 warm
     rerun의 대형 DataFrame 해싱을 피하고, 하위 계산 캐시는 다른 페이지와 계속 공유한다.
   - **표시순서는 `reference_version` 을 바꾸지 않고 바뀐다**(`reference_cache.
@@ -1632,12 +1642,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     키에 넣지 않는다(위 키 방침). 표는 저장 안 한 편집본일 수 있어
     리비전 번호나 편집본 세대(세션마다 0 부터 센다)를 키로 쓰지 않는다. 검증에 실패한 편집본의
     `ValueError` 는 캐시하지 않고 그대로 낸다.
-  - `shared_home_figure_store()`(`st.cache_resource`)는 HOME Figure 묶음을 세션끼리 나누는
-    프로세스 공용 LRU 다. **값은 pickle 바이트**로 둔다 — 객체를 그대로 나누면 한 세션이
-    꺼낸 Figure 를 고칠 때 남의 화면이 바뀐다. 편집 없는 리비전(`pristine-` 토큰)의 그림만
-    들어오고, 키가 내용 전체를 말하므로 비우지 않는다. 바이트의 내용은 Figure 가 아니라
-    `HomeFigureSet` 필드 차례의 `to_dict()` 목록이고, 꺼낼 때 `go.Figure(d, _validate=False)`
-    로 검증 생성자를 건너뛴다(`components/home_rendering.py`). `_validate` 는 Plotly 비공개
+  - `shared_home_figure_store(bundle)`(`st.cache_resource`)는 HOME Figure 묶음 하나(LOB·계획
+    세부수량·주요공정·상세 B/N)를 세션끼리 나누는 프로세스 공용 LRU 다. **묶음마다 저장소가
+    따로다** — 한 LRU 에 섞으면 조합이 가장 많은 LOB 가 다른 묶음을 내쫓는다. 칸은 묶음마다 32
+    (`SHARED_HOME_FIGURE_MAX_ENTRIES`, 다 차도 네 묶음 합이 묶기 전 한 벌 32칸과 같다). **값은
+    pickle 바이트**로 둔다 — 객체를 그대로 나누면 한 세션이 꺼낸 Figure 를 고칠 때 남의 화면이
+    바뀐다. 편집 없는 리비전(`pristine-` 토큰)의 그림만 들어오고, 키가 내용 전체를 말하므로
+    비우지 않는다. 바이트의 내용은 Figure 가 아니라 그 묶음 필드 차례의 `to_dict()` 목록(없는
+    덤벨은 None)이고, 꺼낼 때 `go.Figure(d, _validate=False)` 로 검증 생성자를 건너뛴다
+    (`components/home_rendering.py`). 복원한 그림은 빈 칸(`title: {}`)이 빠지고 칸 차례가
+    달라 JSON 문자열로는 새로 만든 그림과 다르지만 Plotly 에게는 같은 그림이다. `_validate` 는 Plotly 비공개
     인자라 `plotly>=5.24,<7` 고정과 `tests/test_home_figure_cache.py` 의 공용 칸 왕복 테스트가
     지킨다. 저장 형식을 바꾸면 `HOME_FIGURE_SCHEMA_VERSION` 을 올린다 — 오래 떠 있는
     프로세스의 공용 칸에 옛 형식이 남아 있다.
@@ -3411,6 +3425,31 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     다른 세션이 만든 묶음을 공용 저장소에서 복원한다(새로고침한 세션이 Figure 생성을
     건너뛴다). 편집 중인 세션의 그림은 공용 저장소에 넣지 않는다 — 남이 쓸 일이 없고
     남의 칸만 밀어낸다.
+  - **캐시는 묶음 넷으로 갈린다**(2026-10-08, 밤샘 점검 B2·B7) — `LOB`(요약 2)·`계획 세부수량`
+    (2 + 접힌 비교 덤벨)·`주요공정`(히트맵 2)·`상세 B/N`(2). 전에는 키 하나에 모든 토글이 들어가
+    토글 하나를 새 조합으로 바꿀 때마다 네 묶음을 모두 다시 만들고 pickle 했다(합성 표본 계측:
+    `선행 입고` 켬 2.81초 중 LOB 0.70·상세 B/N 0.49·히트맵 0.18·세부수량 0.08·pickle 0.26). 페이지는
+    화면 조건 전부를 `HomeFigureCacheKey` 한 벌에 이름으로 채우고, 묶음 키(`LobFigureKey`·
+    `PlanDetailFigureKey`·`KeyProcessFigureKey`·`BottleneckFigureKey`)는 그 가운데 **그 묶음이 읽는
+    칸만 같은 이름으로** 고른다(`home_figure_key`). 어느 묶음이 무엇을 읽는지는 `home_rendering`
+    의 **의존 표**가 정본이다 — 코드로 따라간 것이고, 짐작으로 줄이지 않는다. 짚어 둘 것:
+    - EDP 는 상세 B/N 에 닿는다(Wafer Capa = Wafer 부하량 × 확보율). 히트맵에는 **선행 B/O 를
+      켰을 때만** 닿는다 — 변동률을 화면 계획(EDP 를 뺀 화면이면 뺀 계획)으로 내어 확보율에
+      곱하기 때문이다(`advance_ratio_includes_edp`).
+    - 월 축(`month_labels`·연간 Total·과거·GAP 경계)은 **축 자체**를 네 묶음 키에 넣는다. EDP
+      를 뺀 계획에는 EDP 만 있던 달이 없어 축이 토글을 따라 움직이는데, 토글 값으로 짐작하면
+      그 경우를 놓친다.
+    - 선행 B/O 는 세부수량에 걸지 않으므로 계획 세부수량 묶음에 없다. 선행 입고·제품별 비중
+      단위·Top 5 구간은 LOB 에만, 상세 계획은 세부수량에만, 주요공정 프리셋은 히트맵에만 든다.
+    - B/N 단일 순위 집계는 그것을 읽는 LOB·상세 B/N 중 하나라도 새로 만들 때만 돈다. 결론 요약
+      (`build_capacity_decision`)은 지금처럼 캐시 밖이다.
+    키에 조건을 더할 때는 `HomeFigureCacheKey` 에 칸을 더하고 그 조건을 읽는 묶음 키에 **같은
+    이름**으로 넣은 뒤 `tests/test_home_figure_cache.py` 의 의존 표 사본(`EXPECTED_DEPENDENTS`)도
+    고친다 — 어느 묶음에도 넣지 않은 칸은 그 시험이 잡는다. `tests/test_home_figure_cache_
+    equivalence.py` 는 실제 HOME 을 토글 무작위 차례로 돌리며 걸음마다 「캐시를 거친 그림」과
+    「캐시 없이 새로 만든 그림」(덤벨 포함)이 같은지, 테마 두 벌·새 세션의 공용 칸 복원·편집
+    세션을 본다. 이 데이터에는 EDP 행·EDP 만 있는 달·비교·선행·실행·선행 입고·과거 구간·주요공정
+    프리셋 셋이 들어 있어 조건마다 그림이 실제로 바뀐다.
   - 상세 B/N 은 `go.Table` 이 아니라 카테시안 xy 다. 월 오프셋은 `go.Bar` 의 `base`
     로 주고, hover 표적 막대·트랙 막대·확보율 막대·공정명 텍스트 trace 네 개만 쓴다.
     hover 표적은 `HIT_TARGET` 색으로 행 전체 높이를 덮어 칸 어디서나 툴팁이 뜨게 하고,
@@ -3418,17 +3457,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     줄이고 그래도 넘치면 말줄임하며, 전체 이름은 hover 의 `customdata` 에만 있다.
     순위 상한 `BOTTLENECK_DETAIL_RANK_LIMIT` 은 여기서 정하고 서비스에 인자로 넘긴다.
     자르는 곳은 서비스 한 곳이고 Figure 는 받은 프레임을 다시 자르지 않는다.
-  - **Figure 묶음은 정확히 여덟 개다**(요약 2 + 계획 세부수량 2 + 주요공정 히트맵 2 +
-    상세 B/N 2). `HomeFigureSet`의 이름 있는 여덟 필드로 생성·렌더링해 위치 혼동을 막는다.
-    캐시 키도 `HomeFigureCacheKey`의 이름으로 구성하되 기존 튜플 순서·해시를 유지한다. 판정 기준은
+  - **화면에 그리는 Figure 는 정확히 여덟 개다**(요약 2 + 계획 세부수량 2 + 주요공정 히트맵 2 +
+    상세 B/N 2). 네 묶음에서 `HomeFigureSet`의 이름 있는 여덟 필드로 모아 렌더링해 위치 혼동을
+    막는다. 비교 덤벨은 계획 세부수량 묶음에 들지만 접힌 상자에 따로 그린다. 판정 기준은
     퍼센트 두 칸이 아니라 내용 지문 `threshold_digest`(`SecurementThresholds.digest`) 한 칸이다 —
     월별 예외까지 담고, 저장 전 version 0 에서도 기본값이 바뀌면 갈린다.
     묶음 구조나 **그림 모양**(막대 폭·둥근 머리처럼 Figure 에 구워지는 것)을 바꿀 때는
     `HOME_FIGURE_SCHEMA_VERSION`도 올려 기존 세션의 옛 값을 다시 만들게 한다. 편집 없는
     리비전의 그림은 세션 공용 저장소에도 들어가고 그 토큰이 리비전에서 나온 고정값이라,
     올리지 않으면 새 세션·다른 사용자까지 옛 그림을 받는다(이름 있는 묶음 42, 막대 둥근
-    머리·LOB 폭 43, 제품별 비중 도넛 44, 공용 칸 `to_dict()` 저장 형식 45). 테마 분리와 LRU
-    최대 8개 정책은 같다.
+    머리·LOB 폭 43, 제품별 비중 도넛 44, 공용 칸 `to_dict()` 저장 형식 45, 묶음별 칸 48). 테마
+    분리는 묶음마다 같고, 세션 LRU 는 **묶음마다 8칸**(`HOME_FIGURE_CACHE_MAX_ENTRIES`)이다. 묶음
+    키가 묶기 전 키의 일부만 고른 것이라 같은 8칸이면 적중이 묶기 전보다 줄지 않고, 다 찼을 때
+    메모리도 묶기 전 8벌과 같다(세션당 약 10MB — 70공정·32개월 로컬 DB 사본의 샘플 관측: 한 벌
+    LOB 0.75·상세 B/N 0.26·히트맵 0.13·세부수량 0.08MB). 묶음 칸들은 세션 키
+    `HOME_FIGURE_CACHE_KEY` 하나 아래에 모여 시나리오 전환·표시순서 교체가 한꺼번에 버린다.
+    묶기 전 모양이 남은 세션은 통째로 버린다.
   - **값 막대만 머리가 둥글다.** 생산계획 LOB 의 B/N 막대는 `tokens.BAR_CORNER_RADIUS_WIDE_PX`
     (8px), B/N Top 5 는 `BAR_CORNER_RADIUS_NARROW_PX`(3px)를 trace 의 `marker.cornerradius`
     스칼라로 준다. `layout.barcornerradius` 는 쓰지 않는다 — 그림 전체 기본값이 되어 증감
@@ -3669,7 +3713,9 @@ RQ_MODULE
    `시나리오 관리`에서 저장한 리비전만 DuckDB에 영구 보존된다.
 7. **완성 Figure 캐시 키에는 출력에 영향을 주는 모든 조건을 포함한다.**
    `ActiveScenario.content_token`, reference version, 조회기간, B/N 공정 선택, 임계값, 상세
-   토글 상태와 Figure schema version을 누락하지 않는다.
+   토글 상태와 Figure schema version을 누락하지 않는다. HOME 처럼 묶음별로 키를 가르면 묶음
+   키는 **그 묶음의 그림에 닿는 조건 전부**다 — 빼는 근거는 코드로 따라간 의존 표이고,
+   확신이 서지 않으면 넓게 둔다(틀린 그림이 느린 그림보다 나쁘다).
 8. **과거 리비전을 갱신하지 않는다.** 변경은 새 전체 리비전으로만 저장하고, 과거
    리비전에서 저장하면 해당 리비전을 부모로 갖는 새 분기를 만든다.
 9. **설비 운영 이력은 시나리오와 물리적으로 분리한다.** 가용설비 현황은 전용 DuckDB,

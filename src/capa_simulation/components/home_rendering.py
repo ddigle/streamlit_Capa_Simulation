@@ -1,4 +1,4 @@
-# Purpose: HOME Figure 캐시(세션·세션 공용)와 화면 렌더링·성능 표시를 담당한다.
+# Purpose: HOME Figure 캐시(묶음별 세션·세션 공용 칸)와 화면 렌더링·성능 표시를 담당한다.
 
 """Session and shared figure caches and rendering for the HOME dashboard."""
 
@@ -6,9 +6,10 @@ from __future__ import annotations
 
 import html
 import pickle
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from typing import Any, NamedTuple, cast
+from dataclasses import dataclass
+from typing import Any, Generic, NamedTuple, TypeVar, cast
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -48,7 +49,13 @@ from capa_simulation.services.simulation_cache import shared_home_figure_store
 
 
 class HomeFigureCacheKey(NamedTuple):
-    """그림을 바꾸는 입력을 이름으로 명시하며 기존 튜플의 순서·동등성·해시를 유지한다.
+    """HOME 그림을 바꾸는 **화면 조건 전부**를 이름으로 적는다. 캐시 칸 이름은 이것이 아니다.
+
+    페이지는 이 한 벌만 채우고, 캐시는 묶음마다 제 몫의 칸만 **같은 이름으로** 골라 만든
+    키(`LobFigureKey` 등, `home_figure_key`)로 찾는다. 토글 하나가 닿지 않는 묶음까지 다시
+    그리지 않으려는 것이다. 칸을 손으로 옮겨 적지 않으므로 이름이 어긋날 일이 없고, 여기 칸을
+    더하면 어느 묶음이 읽는지 정해 그 키에도 같은 이름으로 넣어야 한다(`tests/
+    test_home_figure_cache.py` 가 어느 묶음에도 없는 칸을 잡는다).
 
     내용은 편집 카운터가 아니라 `content_token` 으로 구분한다. 표시명은 계산 입력이
     아니라 라벨이므로 계산 캐시 대신 여기서만 버전을 본다. 비교 리비전과 주요공정은
@@ -84,14 +91,168 @@ class HomeFigureCacheKey(NamedTuple):
     # 가른다 — 단위만 새로 갈린다.
     product_share_basis: str
     # 「선행 입고」 토글과 선행 입고 실적 프로필 version(토글이 꺼져 있으면 0). Density 칸 오른쪽
-    # 위 글자가 Figure 에 구워지므로 키에 든다 — Summary 공지와 다르다. 뒤에 붙여 앞 칸의 차례를
-    # 지킨다.
+    # 끝 글자가 Figure 에 구워지므로 키에 든다 — Summary 공지와 다르다.
+    show_advance_shipment: bool
+    advance_shipment_profile_version: int
+    # 주요공정 히트맵이 그릴 공정이 하나도 없을 때 남기는 한 줄. 프리셋이 비었는지(고르라)와
+    # 프리셋의 공정이 이 화면에 없는지(없다)가 갈리는데, 둘 다 `key_processes` 가 `()` 라 그것만
+    # 으로는 갈리지 않는다 — 프리셋만 바꿨을 때 앞 프리셋의 안내가 남았다.
+    key_process_empty_notice: str
+    # 월 축. 네 묶음이 모두 이 축 위에 그린다. 축은 계산 결과에서 나오므로(EDP 를 뺀 계획에는
+    # EDP 만 있던 달이 없다, 과거 구간이 앞에 붙는다) 토글 값으로 짐작하지 않고 **축 자체**를
+    # 넣는다. 과거·GAP 경계는 집합이라 정렬해 담는다.
+    month_labels: tuple[str, ...]
+    year_total_labels: tuple[str, ...]
+    past_month_labels: tuple[str, ...]
+    gap_month_labels: tuple[str, ...]
+
+    @property
+    def advance_ratio_includes_edp(self) -> bool:
+        """선행 B/O 변동률이 EDP 를 넣은 계획에서 나왔나. 선행이 꺼져 있으면 늘 False 다.
+
+        변동률은 **화면이 지금 쓰는 계획**(EDP 를 뺀 화면이면 뺀 계획)으로 내어 확보율에 곱한다
+        (`build_advance_load_ratio`). 그래서 선행을 켜면 확보율 — 곧 주요공정 히트맵 — 이 EDP
+        토글을 따라 움직이고, 끄면 움직이지 않는다. EDP 만 바꿀 때 히트맵을 다시 그리지 않으려고
+        `include_edp` 를 그대로 넣지 않고 이렇게 접는다(`show_advance` 는 따로 키에 있다).
+        """
+        return self.include_edp and self.show_advance
+
+
+# 묶음별 의존 표 — `app_pages/home.py` 의 프레임 흐름을 코드로 따라가 정했다. 줄일 때는 짐작이
+# 아니라 그 흐름을 다시 따라가서 줄인다(틀린 그림은 느린 그림보다 나쁘다).
+#
+#   조건                          LOB  계획 세부수량  주요공정  상세 B/N
+#   원천·기간·표시순서·과거·월 축   O    O             O         O     (1)
+#   공정 표시명                    O    -             O         O     (2)
+#   판정 기준                      O    -             O         O
+#   B/N 집계 공정                  O    -             -         O     (3)
+#   EDP 포함                       O    O             △         O     (4)
+#   상세 계획(Customer)            -    O             -         -
+#   GAP(실제로 붙은 비교 리비전)    O    O             -         -     (5)
+#   선행 B/O                       O    -             O         O     (6)
+#   실행 Loss                      O    -             O         O
+#   Top 5 구간                     O    -             -         -
+#   제품별 비중 단위               O    -             -         -
+#   선행 입고                      O    -             -         -     (7)
+#   주요공정 프리셋·빈 안내        -    -             O         -
+#   테마                           네 묶음 모두 칸 이름 앞(`_themed_key`)
+#
+#   (1) 모든 프레임과 월 축. 계획 세부수량 묶음에는 비교 덤벨이 함께 든다.
+#   (2) 세부수량·덤벨은 공정명을 쓰지 않는다.
+#   (3) 순위 집계 입력. 히트맵은 B/N 집계 공정이 아니라 주요공정 목록을 그린다.
+#   (4) 상세 B/N 의 Wafer Capa 는 Wafer 부하량 × 확보율이다. △ 는 선행 B/O 를 켰을 때만이다 —
+#       변동률을 화면 계획(EDP 를 뺀 화면이면 뺀 계획)으로 내어 확보율에 곱한다
+#       (`HomeFigureCacheKey.advance_ratio_includes_edp`).
+#   (5) Density·Wafer 계획 증감, 세부수량 증감·덤벨. 비교 Density·Wafer 는 분류와 무관하다.
+#   (6) Density·Wafer·확보율에 변동률을 건다. 세부수량에는 걸지 않는다.
+#   (7) Density 칸 글자. 계산은 바꾸지 않는다.
+#
+# 「O」 칸을 「-」 로 바꾸면 그 조건을 바꿔도 옛 그림이 나온다. 반대로 「-」 를 「O」 로 바꾸는
+# 것은 느려질 뿐 틀리지 않는다 — 확신이 서지 않으면 넓게 둔다.
+
+
+class HomeFigureBaseKey(NamedTuple):
+    """네 묶음이 모두 읽는 것 — 계산 원천·조회기간·표시순서·과거 구간과 그 위의 월 축."""
+
+    schema_version: int
+    reference_version: int
+    content_token: str
+    start_month: int
+    end_month: int
+    display_order_digest: str
+    past_profile_version: int
+    month_labels: tuple[str, ...]
+    year_total_labels: tuple[str, ...]
+    past_month_labels: tuple[str, ...]
+    gap_month_labels: tuple[str, ...]
+
+
+class LobFigureKey(NamedTuple):
+    """`Capa LOB 현황` — 거의 모든 토글이 닿는다. 상세 계획·주요공정만 닿지 않는다."""
+
+    base: HomeFigureBaseKey
+    process_label_version: int
+    threshold_digest: str
+    included_processes: tuple[str, ...]
+    include_edp: bool
+    comparison_revision_id: str
+    show_advance: bool
+    advance_profile_version: int
+    show_execution: bool
+    execution_profile_version: int
+    top5_band_version: int
+    top5_min_rate: float
+    top5_max_rate: float
+    product_share_basis: str
     show_advance_shipment: bool
     advance_shipment_profile_version: int
 
 
+class PlanDetailFigureKey(NamedTuple):
+    """`계획 세부수량` 과 접힌 비교 덤벨 — 계획 세부수량과 비교 계획만 읽는다."""
+
+    base: HomeFigureBaseKey
+    include_edp: bool
+    plan_detail_customer: bool
+    comparison_revision_id: str
+
+
+class KeyProcessFigureKey(NamedTuple):
+    """`주요공정 확보율` 히트맵 — 최종 확보율과 고른 주요공정만 읽는다."""
+
+    base: HomeFigureBaseKey
+    process_label_version: int
+    threshold_digest: str
+    show_advance: bool
+    advance_profile_version: int
+    advance_ratio_includes_edp: bool
+    show_execution: bool
+    execution_profile_version: int
+    key_processes: tuple[str, ...]
+    key_process_profile_version: int
+    key_process_empty_notice: str
+
+
+class BottleneckFigureKey(NamedTuple):
+    """`상세 B/N 공정` — B/N 순위(최종 확보율·집계 공정)와 그 달 Wafer 부하량을 읽는다."""
+
+    base: HomeFigureBaseKey
+    process_label_version: int
+    threshold_digest: str
+    included_processes: tuple[str, ...]
+    include_edp: bool
+    show_advance: bool
+    advance_profile_version: int
+    show_execution: bool
+    execution_profile_version: int
+
+
+class LobFigures(NamedTuple):
+    labels: go.Figure
+    months: go.Figure
+
+
+class PlanDetailFigures(NamedTuple):
+    labels: go.Figure
+    months: go.Figure
+    # 접힌 「시나리오 비교 · 차이 큰 분류」 덤벨. 비교가 붙지 않았거나 차이가 하나도 없으면
+    # None 이다. 입력(세부수량·비교 세부수량·분류)이 이 묶음과 같아 함께 둔다 — 따로 두면 접혀
+    # 있어도 회차마다 다시 만든다.
+    comparison_dumbbell: go.Figure | None
+
+
+class KeyProcessFigures(NamedTuple):
+    labels: go.Figure
+    months: go.Figure
+
+
+class BottleneckFigures(NamedTuple):
+    labels: go.Figure
+    months: go.Figure
+
+
 class HomeFigureSet(NamedTuple):
-    """네 구획의 라벨·월 Figure 를 화면 순서대로 담는다."""
+    """네 구획의 라벨·월 Figure 를 화면 순서대로 담는다. 네 묶음에서 한 벌로 모은 것이다."""
 
     lob_labels: go.Figure
     lob_months: go.Figure
@@ -103,10 +264,42 @@ class HomeFigureSet(NamedTuple):
     bottleneck_months: go.Figure
 
 
-# EDP 포함/제외 × 선행 ON/OFF 네 가지 상태를 사람이 오가며 비교한다. 3 칸이면 되돌릴
-# 때마다 차트를 다시 조립해 2 초를 쓴다. 한 칸은 Figure 여덟 개다 — 구획이 하나 늘어
-# 칸당 메모리가 33% 올랐지만, 늘어난 두 Figure 는 주요공정 상한(15행)이 묶고 있어
-# 여덟 칸을 그대로 둔다.
+KeyT = TypeVar("KeyT", bound=tuple[Any, ...])
+FiguresT = TypeVar("FiguresT", bound=tuple[Any, ...])
+
+
+@dataclass(frozen=True)
+class HomeFigureBundle(Generic[KeyT, FiguresT]):
+    """따로 캐시하는 Figure 묶음 하나. `name` 은 세션·공용 칸 이름, `title` 은 성능 진단 표시다."""
+
+    name: str
+    title: str
+    key_type: type[KeyT]
+    figures_type: type[FiguresT]
+
+
+LOB_FIGURES = HomeFigureBundle("lob", "LOB", LobFigureKey, LobFigures)
+PLAN_DETAIL_FIGURES = HomeFigureBundle(
+    "plan_detail", "계획 세부수량", PlanDetailFigureKey, PlanDetailFigures
+)
+KEY_PROCESS_FIGURES = HomeFigureBundle(
+    "key_process", "주요공정", KeyProcessFigureKey, KeyProcessFigures
+)
+BOTTLENECK_FIGURES = HomeFigureBundle(
+    "bottleneck", "상세 B/N", BottleneckFigureKey, BottleneckFigures
+)
+HOME_FIGURE_BUNDLES: tuple[HomeFigureBundle[Any, Any], ...] = (
+    LOB_FIGURES,
+    PLAN_DETAIL_FIGURES,
+    KEY_PROCESS_FIGURES,
+    BOTTLENECK_FIGURES,
+)
+
+# 세션 칸은 **묶음마다** 여덟이다. 키가 묶기 전 키의 일부만 고른 것이라 같은 여덟 칸이면 어느
+# 묶음이든 적중이 묶기 전보다 줄지 않고(같은 조작 순서에서 LRU 거리가 늘지 않는다), 다 찼을 때
+# 메모리도 묶기 전 여덟 벌과 같다. 객체 크기는 LOB 약 0.75MB·상세 B/N 0.26MB·주요공정 0.13MB·
+# 계획 세부수량 0.08MB 로 한 벌 약 1.2MB, 묶음마다 여덟이면 세션당 약 10MB 다(70공정·32개월 로컬
+# DB 사본의 샘플 관측). LOB 는 토글 일곱이 닿아 조합이 가장 많지만 가장 크기도 해 늘리지 않는다.
 HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 
 # 캐시에 든 옛 그림을 버리게 하는 번호. 묶음 구조뿐 아니라 **그림 모양**(막대 폭·둥근 머리
@@ -116,8 +309,8 @@ HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 # 44 는 `제품별 비중` 도넛 행과 `B/N Top 5` 구분 글자의 세로 가운데, 45 는 공용 칸에 Figure
 # 대신 `to_dict()` 목록을 넣는 저장 형식, 46 은 기준과 같은 확보율의 색(확보)·선행 B/O 이름
 # (`Density (선행 B/O 전)`)·선행 입고 실적 칸 글자, 47 은 그 글자의 자리(값과 같은 높이)·고정
-# 크기·색.
-HOME_FIGURE_SCHEMA_VERSION = 47
+# 크기·색, 48 은 묶음별 칸(네 묶음 + 계획 세부수량 묶음의 비교 덤벨).
+HOME_FIGURE_SCHEMA_VERSION = 48
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지
@@ -131,6 +324,20 @@ HOME_LOADING_STAGES = (
 )
 
 
+def home_figure_key(bundle: HomeFigureBundle[KeyT, Any], conditions: HomeFigureCacheKey) -> KeyT:
+    """화면 조건에서 그 묶음이 읽는 칸만 **같은 이름으로** 골라 묶음 키를 만든다."""
+    return _project(bundle.key_type, conditions)
+
+
+def _project(key_type: type[KeyT], conditions: HomeFigureCacheKey) -> KeyT:
+    fields: tuple[str, ...] = cast(Any, key_type)._fields
+    values = [
+        _project(HomeFigureBaseKey, conditions) if name == "base" else getattr(conditions, name)
+        for name in fields
+    ]
+    return cast(Callable[..., KeyT], key_type)(*values)
+
+
 # 캐시 칸은 **테마별로 갈린다.** Plotly Figure 는 색을 구워 넣으므로 밝은 테마에서 만든
 # 그림을 어두운 테마가 쓰면 흰 배경에 밝은 회색 글자가 얹힌다.
 #
@@ -140,78 +347,112 @@ HOME_LOADING_STAGES = (
 # 이 앱의 테마 버튼은 `localStorage` 를 쓰고 새로고침하므로 **정확히 그 두 순간**에 걸린다.
 # 비우는 방식이면 그때 잘못 읽은 테마로 만든 그림이 그대로 눌러앉지만, 키로 가르면 다음
 # 실행에서 값이 바로잡히는 순간 칸이 달라져 저절로 다시 그린다.
-ThemedFigureCacheKey = tuple[str, HomeFigureCacheKey]
+ThemedFigureCacheKey = tuple[str, tuple[Any, ...]]
 
 
-def home_figure_cache() -> dict[ThemedFigureCacheKey, HomeFigureSet]:
-    cached = st.session_state.setdefault(HOME_FIGURE_CACHE_KEY, {})
-    return cast(dict[ThemedFigureCacheKey, HomeFigureSet], cached)
+def home_figure_cache(
+    bundle: HomeFigureBundle[Any, FiguresT],
+) -> dict[ThemedFigureCacheKey, FiguresT]:
+    """그 묶음의 세션 칸. 묶음 칸들은 세션 키 하나(`HOME_FIGURE_CACHE_KEY`) 아래에 모인다.
+
+    한 키 아래 두는 것은 시나리오 전환(`_STALE_UI_KEYS`)·표시순서 교체가 그 키 하나를 지워
+    네 묶음을 한꺼번에 버리기 때문이다.
+    """
+    root = st.session_state.get(HOME_FIGURE_CACHE_KEY)
+    if not isinstance(root, dict) or not all(isinstance(name, str) for name in root):
+        # 묶음을 가르기 전 모양(칸 이름이 (테마, 키) 튜플)이 남은 세션은 통째로 버린다. 그 칸들은
+        # 어느 묶음의 LRU 에도 들지 않아 세션이 끝날 때까지 밀려나지 않는다.
+        root = {}
+        st.session_state[HOME_FIGURE_CACHE_KEY] = root
+    return cast(dict[ThemedFigureCacheKey, FiguresT], root.setdefault(bundle.name, {}))
 
 
-def _themed_key(cache_key: HomeFigureCacheKey) -> ThemedFigureCacheKey:
+def latest_home_figure_key(cache_root: object, bundle: HomeFigureBundle[KeyT, Any]) -> KeyT | None:
+    """세션 칸(`st.session_state[HOME_FIGURE_CACHE_KEY]`)에서 그 묶음이 가장 최근에 쓴 키.
+
+    벤치마크가 「켠 토글이 그림에 실제로 적용됐나」를 보는 창구다. 꺼내 쓴 칸도 맨 뒤로 옮기므로
+    (`take_home_figures`) 맨 뒤가 이번 회차에 화면에 나간 그림의 키다.
+    """
+    if not isinstance(cache_root, dict):
+        return None
+    entries = cache_root.get(bundle.name)
+    if not isinstance(entries, dict) or not entries:
+        return None
+    _, key = next(reversed(entries))
+    return cast(KeyT, key)
+
+
+def _themed_key(key: tuple[Any, ...]) -> ThemedFigureCacheKey:
     """이 실행의 테마를 앞에 붙인 칸 이름. 그림을 만든 팔레트와 같은 값이다."""
-    return (theme.current_mode(), cache_key)
+    return (theme.current_mode(), key)
 
 
-def take_home_figures(cache_key: HomeFigureCacheKey) -> HomeFigureSet | None:
-    """꺼내면서 **가장 최근에 쓴 칸**으로 옮긴다.
+def take_home_figures(
+    bundle: HomeFigureBundle[Any, FiguresT],
+    conditions: HomeFigureCacheKey,
+) -> FiguresT | None:
+    """그 묶음의 그림을 꺼내면서 **가장 최근에 쓴 칸**으로 옮긴다.
 
     dict 는 넣은 차례만 기억한다. 꺼내 쓰기만 하면 차례가 그대로여서, 칸이 넘칠 때
-    `store_home_figures` 가 방금 쓴 칸을 버린다. 토글 조합은 다섯이라 최대 32 가지인데 칸은
-    여덟이라 축출이 실제로 일어난다.
+    `store_home_figures` 가 방금 쓴 칸을 버린다. 토글 조합은 LOB 만 해도 백스물여덟 가지인데
+    칸은 여덟이라 축출이 실제로 일어난다.
     """
-    cache = home_figure_cache()
-    themed = _themed_key(cache_key)
+    cache = home_figure_cache(bundle)
+    themed = _themed_key(home_figure_key(bundle, conditions))
     figures = cache.pop(themed, None)
-    if figures is None and is_pristine_content_token(cache_key.content_token):
+    if figures is None and is_pristine_content_token(conditions.content_token):
         # 세션 칸이 비었으면 다른 세션이 같은 리비전으로 만든 그림을 본다. 새로고침한
         # 세션이 Figure 생성을 건너뛴다. 세션 칸에도 넣어 같은 세션의 다음 실행은 복원도
         # 건너뛴다.
-        blob = shared_home_figure_store().get(themed)
+        blob = shared_home_figure_store(bundle.name).get(themed)
         if blob is not None:
-            figures = _figures_from_blob(blob)
+            figures = _figures_from_blob(bundle, blob)
     if figures is not None:
         _remember(cache, themed, figures)
     return figures
 
 
 def store_home_figures(
-    cache_key: HomeFigureCacheKey,
-    figures: HomeFigureSet,
+    bundle: HomeFigureBundle[Any, FiguresT],
+    conditions: HomeFigureCacheKey,
+    figures: FiguresT,
 ) -> None:
-    cache = home_figure_cache()
-    themed = _themed_key(cache_key)
+    cache = home_figure_cache(bundle)
+    themed = _themed_key(home_figure_key(bundle, conditions))
     _remember(cache, themed, figures)
     # 편집 중인 세션의 그림은 남이 쓸 일이 없다. 공용 칸에 넣으면 남의 칸만 밀어낸다.
-    if is_pristine_content_token(cache_key.content_token):
-        shared_home_figure_store().put(themed, _figures_to_blob(figures))
+    if is_pristine_content_token(conditions.content_token):
+        shared_home_figure_store(bundle.name).put(themed, _figures_to_blob(figures))
 
 
 # 공용 칸의 값은 **바이트**다 — 객체를 그대로 나누면 한 세션이 꺼낸 Figure 를 고칠 때 남의
 # 화면이 바뀐다. Figure 를 통째로 pickle 하면 꺼낼 때 `Figure(...)` 검증 생성자가 모든 속성을
 # 다시 검사해 새 세션마다 그 비용을 치른다. 그래서 필드 차례대로 `to_dict()` 목록을 넣고,
-# 꺼낼 때는 검증 없이 다시 세운다 — 넣은 dict 는 이미 검증을 마친 Figure 에서 나왔다.
+# 꺼낼 때는 검증 없이 다시 세운다 — 넣은 dict 는 이미 검증을 마친 Figure 에서 나왔다. 없는
+# 그림(비교가 없을 때의 덤벨)은 None 그대로 둔다.
 # `_validate` 는 Plotly 의 **비공개** 인자다(`plotly>=5.24,<7` 고정). 인자가 사라지면
 # `go.Figure` 가 모르는 속성으로 거절하므로 `tests/test_home_figure_cache.py` 의 공용 칸
 # 왕복 테스트가 먼저 깨진다.
-def _figures_to_blob(figures: HomeFigureSet) -> bytes:
-    return pickle.dumps([figure.to_dict() for figure in figures], protocol=pickle.HIGHEST_PROTOCOL)
+def _figures_to_blob(figures: tuple[Any, ...]) -> bytes:
+    specs = [None if figure is None else figure.to_dict() for figure in figures]
+    return pickle.dumps(specs, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def _figures_from_blob(blob: bytes) -> HomeFigureSet:
-    specs: list[dict[str, Any]] = pickle.loads(blob)
-    return HomeFigureSet(
+def _figures_from_blob(bundle: HomeFigureBundle[Any, FiguresT], blob: bytes) -> FiguresT:
+    specs: list[dict[str, Any] | None] = pickle.loads(blob)
+    fields: tuple[str, ...] = cast(Any, bundle.figures_type)._fields
+    return cast(Callable[..., FiguresT], bundle.figures_type)(
         **{
-            name: go.Figure(spec, _validate=False)
-            for name, spec in zip(HomeFigureSet._fields, specs, strict=True)
+            name: None if spec is None else go.Figure(spec, _validate=False)
+            for name, spec in zip(fields, specs, strict=True)
         }
     )
 
 
 def _remember(
-    cache: dict[ThemedFigureCacheKey, HomeFigureSet],
+    cache: dict[ThemedFigureCacheKey, FiguresT],
     themed: ThemedFigureCacheKey,
-    figures: HomeFigureSet,
+    figures: FiguresT,
 ) -> None:
     """가장 최근에 쓴 칸으로 넣고 넘치는 칸을 오래된 것부터 버린다."""
     cache.pop(themed, None)
@@ -229,13 +470,20 @@ HOME_PERFORMANCE_KEY = "dashboard_show_performance"
 def render_home_performance(
     trace: PerformanceTrace,
     *,
-    cache_hit: bool,
+    rebuilt: Sequence[str],
     enabled: bool,
 ) -> None:
+    """단계별 시간과 Figure 캐시 결과. `rebuilt` 는 이번 회차에 새로 만든 묶음의 표시 이름이다.
+
+    한 줄 요약은 네 묶음이 모두 맞았을 때만 「적중」이고 하나라도 만들었으면 「생성」이다.
+    어느 묶음을 만들었는지는 다음 줄이 적는다.
+    """
     if not enabled:
         return
     with st.sidebar.expander("HOME 실행 시간", expanded=True):
-        st.caption(f"Figure 캐시: {'적중' if cache_hit else '생성'}")
+        st.caption(f"Figure 캐시: {'생성' if rebuilt else '적중'}")
+        if rebuilt:
+            st.caption(f"새로 만든 묶음: {' · '.join(rebuilt)}")
         st.dataframe(
             pd.DataFrame(trace.rows()),
             hide_index=True,

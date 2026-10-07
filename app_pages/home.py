@@ -32,11 +32,19 @@ from capa_simulation.components.home_preference import (
     seed_comparison_selection,
 )
 from capa_simulation.components.home_rendering import (
+    BOTTLENECK_FIGURES,
     HOME_FIGURE_SCHEMA_VERSION,
     HOME_LOADING_STAGES,
     HOME_PERFORMANCE_KEY,
+    KEY_PROCESS_FIGURES,
+    LOB_FIGURES,
+    PLAN_DETAIL_FIGURES,
+    BottleneckFigures,
     HomeFigureCacheKey,
     HomeFigureSet,
+    KeyProcessFigures,
+    LobFigures,
+    PlanDetailFigures,
     home_dashboard_panel,
     render_home_figures,
     render_home_performance,
@@ -52,6 +60,7 @@ from capa_simulation.components.past_data_management import (
     render_past_data_management,
 )
 from capa_simulation.components.plan_comparison_dumbbell import (
+    build_plan_comparison_dumbbell,
     render_plan_comparison_dumbbell,
 )
 from capa_simulation.components.process_labels import get_process_labels
@@ -671,7 +680,6 @@ with sidebar_expander(
 month_labels, year_total_labels = build_month_axis(
     [int(value) for value in monthly_density["생산계획년월"]]
 )
-year_totals = build_year_totals(monthly_density, monthly_wafer, year_total_labels)
 # GAP 은 DB 계산 구간에서만 뜻을 갖는다. 과거 구간은 시나리오와 분리된 공용 프로필
 # (`app_meta.global_past_*`)에서 오므로 현재와 비교 시나리오가 같은 값을 받는다 — 그
 # 구간의 차이는 언제나 0 이고, 비교 프레임에는 과거가 병합되지 않아 그대로 두면 과거
@@ -684,7 +692,17 @@ past_month_labels = build_past_month_labels(month_labels, year_total_labels, gap
 # 가로 스크롤의 시작 위치도 같은 경계를 본다. 앞머리의 과거 칸을 지나야 DB 계산 구간의
 # 첫 달이 화면 왼쪽에 선다.
 leading_past_months = leading_past_column_count(month_labels, past_month_labels)
-figure_cache_key = HomeFigureCacheKey(
+# 히트맵에 그릴 공정이 없을 때의 안내. 프리셋이 비었으면 고르라고, 프리셋의 공정이 이 화면에
+# 없으면 없다고 말한다.
+key_process_empty_notice = (
+    KEY_PROCESS_ABSENT_NOTICE
+    if key_process_profile.processes_of(key_process_preset)
+    else KEY_PROCESS_EMPTY_NOTICE
+)
+# 그림을 바꾸는 화면 조건 전부. 캐시는 묶음(LOB·계획 세부수량·주요공정·상세 B/N)마다 이 가운데
+# 제 몫만 골라 키로 쓴다(`home_rendering` 의 의존 표) — 토글 하나에 닿지 않는 묶음은 다시 그리지
+# 않는다.
+figure_conditions = HomeFigureCacheKey(
     schema_version=HOME_FIGURE_SCHEMA_VERSION,
     process_label_version=process_labels.version,
     reference_version=reference_version,
@@ -716,6 +734,11 @@ figure_cache_key = HomeFigureCacheKey(
     advance_shipment_profile_version=(
         advance_shipment_profile.version if show_advance_shipment else 0
     ),
+    key_process_empty_notice=key_process_empty_notice,
+    month_labels=tuple(month_labels),
+    year_total_labels=tuple(year_total_labels),
+    past_month_labels=tuple(sorted(past_month_labels)),
+    gap_month_labels=tuple(sorted(gap_month_labels)),
 )
 # 결론 요약은 **캐시 밖**에서 낸다. 아래 순위 집계는 캐시가 맞으면 건너뛰지만 이 집계는
 # 같은 프레임 위의 마스크 한 번이라 건너뛸 값이 없다 — 대신 캐시 적중·미적중에서 늘 같은
@@ -725,24 +748,32 @@ capacity_decision = build_capacity_decision(
     included_processes=included_processes,
     thresholds=thresholds,
 )
-cached_figures = take_home_figures(figure_cache_key)
-figure_cache_hit = cached_figures is not None
-if cached_figures is None:
+# 묶음마다 따로 꺼낸다. 아래 계산은 **그것을 읽는 묶음을 새로 만들 때만** 돈다 — 적중한 묶음을
+# 위해 순위 집계·도넛 칸·비교 정렬을 다시 돌리지 않는다.
+lob_figures = take_home_figures(LOB_FIGURES, figure_conditions)
+plan_detail_figures = take_home_figures(PLAN_DETAIL_FIGURES, figure_conditions)
+key_process_figures = take_home_figures(KEY_PROCESS_FIGURES, figure_conditions)
+bottleneck_figures = take_home_figures(BOTTLENECK_FIGURES, figure_conditions)
+home_trace.mark("Figure 캐시 조회")
+rebuilt_figures: list[str] = []
+# B/N 단일 순위는 LOB(Top 1·Top 5)와 상세 B/N 이 함께 읽는다. 둘 다 맞았으면 집계하지 않는다.
+bottleneck_ranking: pd.DataFrame | None = None
+if lob_figures is None or bottleneck_figures is None:
     bottleneck_ranking = build_monthly_bottleneck_ranking(
         securement_rate,
         included_processes=included_processes,
     )
+    home_trace.mark("B/N 단일 순위")
+# 진행 막대는 어느 묶음이 맞든 같은 횟수만 넘긴다 — 경로마다 단계 수가 같아야 끝이 100% 로 맞는다.
+loading.advance()
+if lob_figures is None:
+    assert bottleneck_ranking is not None
     monthly_bottlenecks = build_monthly_bottlenecks_from_ranking(bottleneck_ranking)
     bottleneck_capacity = build_bottleneck_capacity(monthly_density, monthly_bottlenecks)
     monthly_top5 = build_monthly_bottleneck_top5_from_ranking(
         bottleneck_ranking,
         monthly_density,
         monthly_wafer=monthly_wafer,
-    )
-    monthly_bottleneck_details = build_monthly_bottleneck_details_from_ranking(
-        bottleneck_ranking,
-        monthly_wafer,
-        rank_limit=BOTTLENECK_DETAIL_RANK_LIMIT,
     )
     lob_summary = build_production_lob_summary(
         monthly_density,
@@ -771,8 +802,6 @@ if cached_figures is None:
         month_labels=month_labels,
         year_total_labels=year_total_labels,
     )
-    home_trace.mark("B/N 단일 순위·파생")
-    loading.advance()
     label_figure, month_figure = build_lob_summary_figures(
         monthly_density=monthly_density,
         monthly_top5=monthly_top5,
@@ -784,7 +813,7 @@ if cached_figures is None:
         baseline_lob_summary=baseline_lob_summary,
         comparison_density=comparison_density,
         comparison_wafer=comparison_wafer,
-        year_totals=year_totals,
+        year_totals=build_year_totals(monthly_density, monthly_wafer, year_total_labels),
         top5_rate_band=top5_band_profile.band,
         past_month_labels=past_month_labels,
         product_share_cells=product_share_cells,
@@ -796,6 +825,10 @@ if cached_figures is None:
             else None
         ),
     )
+    lob_figures = LobFigures(labels=label_figure, months=month_figure)
+    store_home_figures(LOB_FIGURES, figure_conditions, lob_figures)
+    rebuilt_figures.append(LOB_FIGURES.title)
+if plan_detail_figures is None:
     displayed_detail = production_detail
     aligned_comparison_detail: pd.DataFrame | None = None
     if comparison_detail is not None:
@@ -818,21 +851,26 @@ if cached_figures is None:
         gap_month_labels=gap_month_labels,
         past_month_labels=past_month_labels,
     )
-    (
-        bottleneck_detail_label_figure,
-        bottleneck_detail_month_figure,
-    ) = build_bottleneck_detail_figures(
-        monthly_bottleneck_details=monthly_bottleneck_details,
-        month_labels=month_labels,
-        thresholds=thresholds,
-        process_labels=process_labels,
-        year_total_labels=year_total_labels,
-        past_month_labels=past_month_labels,
+    plan_detail_figures = PlanDetailFigures(
+        labels=detail_label_figure,
+        months=detail_month_figure,
+        # 표의 칸마다 붙는 증감은 「이 달 이 분류가 얼마나 달랐나」를 답하지만 「무엇이 가장
+        # 크게 달라졌나」는 답하지 못한다. 순서를 만드는 것이 덤벨의 몫이다. 접힌 상자 안이라도
+        # 회차마다 만들지 않도록 이 묶음과 함께 캐시한다.
+        comparison_dumbbell=(
+            build_plan_comparison_dumbbell(
+                production_detail,
+                comparison_detail,
+                dimensions=plan_detail_dimensions,
+            )
+            if comparison_detail is not None
+            else None
+        ),
     )
-    (
-        key_process_label_figure,
-        key_process_month_figure,
-    ) = build_key_process_heatmap_figures(
+    store_home_figures(PLAN_DETAIL_FIGURES, figure_conditions, plan_detail_figures)
+    rebuilt_figures.append(PLAN_DETAIL_FIGURES.title)
+if key_process_figures is None:
+    key_process_label_figure, key_process_month_figure = build_key_process_heatmap_figures(
         securement_rate=securement_rate,
         key_processes=applied_key_processes,
         month_labels=month_labels,
@@ -840,31 +878,46 @@ if cached_figures is None:
         process_labels=process_labels,
         year_total_labels=year_total_labels,
         past_month_labels=past_month_labels,
-        empty_notice=(
-            KEY_PROCESS_ABSENT_NOTICE
-            if key_process_profile.processes_of(key_process_preset)
-            else KEY_PROCESS_EMPTY_NOTICE
+        empty_notice=key_process_empty_notice,
+    )
+    key_process_figures = KeyProcessFigures(
+        labels=key_process_label_figure, months=key_process_month_figure
+    )
+    store_home_figures(KEY_PROCESS_FIGURES, figure_conditions, key_process_figures)
+    rebuilt_figures.append(KEY_PROCESS_FIGURES.title)
+if bottleneck_figures is None:
+    assert bottleneck_ranking is not None
+    bottleneck_label_figure, bottleneck_month_figure = build_bottleneck_detail_figures(
+        monthly_bottleneck_details=build_monthly_bottleneck_details_from_ranking(
+            bottleneck_ranking,
+            monthly_wafer,
+            rank_limit=BOTTLENECK_DETAIL_RANK_LIMIT,
         ),
+        month_labels=month_labels,
+        thresholds=thresholds,
+        process_labels=process_labels,
+        year_total_labels=year_total_labels,
+        past_month_labels=past_month_labels,
     )
-    # 순서가 곧 화면 순서다. 주요공정 히트맵은 계획 세부수량과 상세 B/N 사이 구획이다.
-    cached_figures = HomeFigureSet(
-        lob_labels=label_figure,
-        lob_months=month_figure,
-        plan_detail_labels=detail_label_figure,
-        plan_detail_months=detail_month_figure,
-        key_process_labels=key_process_label_figure,
-        key_process_months=key_process_month_figure,
-        bottleneck_labels=bottleneck_detail_label_figure,
-        bottleneck_months=bottleneck_detail_month_figure,
+    bottleneck_figures = BottleneckFigures(
+        labels=bottleneck_label_figure, months=bottleneck_month_figure
     )
-    store_home_figures(figure_cache_key, cached_figures)
+    store_home_figures(BOTTLENECK_FIGURES, figure_conditions, bottleneck_figures)
+    rebuilt_figures.append(BOTTLENECK_FIGURES.title)
+if rebuilt_figures:
     home_trace.mark("Figure 생성")
-else:
-    home_trace.mark("Figure 캐시 조회")
-    # 캐시가 맞으면 순위 집계와 차트 생성을 건너뛴다. 건너뛴 단계만큼 막대도 함께 넘겨야
-    # 두 경로의 진행 단계 수가 같아지고 끝이 100% 로 맞는다.
-    loading.advance()
 loading.advance()
+# 순서가 곧 화면 순서다. 주요공정 히트맵은 계획 세부수량과 상세 B/N 사이 구획이다.
+cached_figures = HomeFigureSet(
+    lob_labels=lob_figures.labels,
+    lob_months=lob_figures.months,
+    plan_detail_labels=plan_detail_figures.labels,
+    plan_detail_months=plan_detail_figures.months,
+    key_process_labels=key_process_figures.labels,
+    key_process_months=key_process_figures.months,
+    bottleneck_labels=bottleneck_figures.labels,
+    bottleneck_months=bottleneck_figures.months,
+)
 
 # 차트가 든 탭은 `stateful_tabs` 로 만든다. `key` 와 `on_change="rerun"` 이 있어야 서버가
 # 어느 탭이 열렸는지 알고, 숨은 채로 그려 머리글이 밀리는 것을 막을 수 있다.
@@ -920,13 +973,11 @@ with main_tab:
             ),
         )
     if comparison_detail is not None:
-        # 표의 칸마다 붙는 증감은 「이 달 이 분류가 얼마나 달랐나」를 답하지만 「무엇이 가장
-        # 크게 달라졌나」는 답하지 못한다. 순서를 만드는 것이 덤벨의 몫이다.
+        # 덤벨은 계획 세부수량 묶음과 함께 만들어 두었다(비교가 붙은 키에서만). 여기서는 그리기만
+        # 한다 — None 이면 두 계획의 차이가 없다는 안내가 선다.
         with st.expander("시나리오 비교 · 차이 큰 분류", expanded=False):
             render_plan_comparison_dumbbell(
-                production_detail,
-                comparison_detail,
-                dimensions=plan_detail_dimensions,
+                plan_detail_figures.comparison_dumbbell,
                 key="home_plan_comparison_dumbbell",
                 owner_tab=main_tab,
             )
@@ -959,6 +1010,6 @@ home_trace.mark("Plotly 전달")
 loading.close()
 render_home_performance(
     home_trace,
-    cache_hit=figure_cache_hit,
+    rebuilt=rebuilt_figures,
     enabled=show_home_performance,
 )

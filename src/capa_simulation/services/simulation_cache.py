@@ -68,8 +68,10 @@ from capa_simulation.services.weighted_unit_capacity import (
 
 HomeSimulationCacheKey = tuple[int, str, int, int, str]
 
-# 세션끼리 나누는 HOME Figure 묶음의 칸 수. 한 칸은 pickle 로 약 0.3MB 다(70공정·30개월
-# 샘플 관측) — 32칸이면 10MB 안쪽이다.
+# 세션끼리 나누는 HOME Figure 의 칸 수 — **묶음마다** 따로 센다(`shared_home_figure_store`).
+# 네 묶음 한 벌이 pickle 로 약 0.34MB 다(LOB 0.13·상세 B/N 0.14·주요공정 0.04·계획 세부수량
+# 0.02 — 70공정·32개월 로컬 DB 사본의 샘플 관측). 묶음마다 32칸이면 다 차도 네 묶음 합이 한 벌
+# 32칸, 곧 묶음을 가르기 전 상한(약 11MB)과 같다.
 SHARED_HOME_FIGURE_MAX_ENTRIES = 32
 
 
@@ -105,14 +107,17 @@ class SharedBlobStore:
 
 
 @st.cache_resource(show_spinner=False)
-def shared_home_figure_store() -> SharedBlobStore:
-    """HOME Figure 묶음을 세션끼리 나누는 저장소. 키가 내용 전체를 말하므로 비울 일이 없다.
+def shared_home_figure_store(bundle: str) -> SharedBlobStore:
+    """HOME Figure 묶음 하나(`bundle` — LOB·계획 세부수량·주요공정·상세 B/N)를 세션끼리 나누는
+    저장소. 키가 내용 전체를 말하므로 비울 일이 없다.
 
-    키는 (테마, `HomeFigureCacheKey`) 다. 편집 없는 리비전(`pristine-` 토큰)의 그림만
-    들어온다 — 새로고침한 세션이 Figure 생성을 건너뛰고 복원만 치른다. 값의 형식과 복원은
-    `components/home_rendering.py` 가 정한다(`to_dict()` 목록, 검증 없이 다시 세워 여덟 개에
-    약 0.05초 — 합성 표본의 샘플 관측).
+    **묶음마다 저장소가 따로다.** 한 LRU 에 섞으면 토글 조합이 가장 많은 LOB 가 칸을 밀어
+    조합이 적은 묶음까지 내쫓는다. 키는 (테마, 그 묶음의 키)다. 편집 없는 리비전(`pristine-`
+    토큰)의 그림만 들어온다 — 새로고침한 세션이 Figure 생성을 건너뛰고 복원만 치른다. 값의
+    형식과 복원은 `components/home_rendering.py` 가 정한다(`to_dict()` 목록, 검증 없이 다시
+    세워 여덟 개에 약 0.05초 — 합성 표본의 샘플 관측).
     """
+    del bundle  # 캐시 칸을 가르는 인자일 뿐 저장소 모양은 묶음과 무관하다.
     return SharedBlobStore(SHARED_HOME_FIGURE_MAX_ENTRIES)
 
 

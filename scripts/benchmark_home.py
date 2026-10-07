@@ -25,10 +25,14 @@ from importlib.metadata import version
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import perf_counter
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pandas as pd
 from streamlit.testing.v1 import AppTest
+
+if TYPE_CHECKING:
+    from capa_simulation.components.home_rendering import LobFigureKey
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -100,9 +104,18 @@ def prepare_sample(database_path: Path) -> dict[str, object]:
     }
 
 
-def run_phase(app: AppTest, phase: str) -> dict[str, object]:
+def applied_lob_key(app: AppTest) -> "LobFigureKey":
+    """이번 회차 화면에 나간 LOB 묶음의 Figure 키. 켠 토글이 그림에 실제로 적용됐는지 본다."""
+    from capa_simulation.components.home_rendering import LOB_FIGURES, latest_home_figure_key
     from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
 
+    applied = latest_home_figure_key(app.session_state[HOME_FIGURE_CACHE_KEY], LOB_FIGURES)
+    if applied is None:
+        raise RuntimeError("LOB Figure 캐시가 비어 있습니다.")
+    return applied
+
+
+def run_phase(app: AppTest, phase: str) -> dict[str, object]:
     started_at = perf_counter()
     app.run()
     elapsed = perf_counter() - started_at
@@ -111,8 +124,7 @@ def run_phase(app: AppTest, phase: str) -> dict[str, object]:
     if exceptions or errors:
         raise RuntimeError(f"{phase} 실행 실패: {exceptions + errors}")
     chart_count = len(app.get("plotly_chart"))
-    cache = app.session_state[HOME_FIGURE_CACHE_KEY]
-    applied = next(reversed(cache))[1]
+    applied = applied_lob_key(app)
     # 비교가 붙으면 격자 여덟 Figure 아래에 분류별 덤벨 하나가 추가된다.
     expected_charts = 0 if phase == "hidden_main_tab" else 8 + bool(applied.comparison_revision_id)
     if chart_count != expected_charts:
@@ -134,7 +146,6 @@ def measure_phases(app: AppTest) -> list[dict[str, object]]:
         EXECUTION_TOGGLE_KEY,
         PLAN_DETAIL_CUSTOMER_KEY,
     )
-    from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
 
     results = [run_phase(app, "cold_summary"), run_phase(app, "warm_summary")]
 
@@ -155,8 +166,7 @@ def measure_phases(app: AppTest) -> list[dict[str, object]]:
         result = run_phase(app, f"on_{phase}")
         if app.session_state[key] is not True:
             raise RuntimeError(f"{phase} 토글이 적용되지 않았습니다.")
-        cache = app.session_state[HOME_FIGURE_CACHE_KEY]
-        applied = next(reversed(cache))[1]
+        applied = applied_lob_key(app)
         if phase == "advance" and not (
             applied.show_advance and applied.advance_profile_version > 0
         ):

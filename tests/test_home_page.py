@@ -519,6 +519,14 @@ def _cache_state(app: AppTest) -> str:
     return states[0]
 
 
+def _rebuilt_bundles(app: AppTest) -> set[str]:
+    """성능 진단이 적은 「새로 만든 묶음」. 네 묶음이 다 맞았으면 빈 집합이다."""
+    for element in app.caption:
+        if element.value.startswith("새로 만든 묶음: "):
+            return set(element.value.removeprefix("새로 만든 묶음: ").split(" · "))
+    return set()
+
+
 def _save_default_warning(app: AppTest, percent: float) -> AppTest:
     """Preference 의 판정 기준 편집기로 기본 경고 기준을 저장한다."""
     next(
@@ -543,6 +551,8 @@ def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -
         assert not list(app.exception), [element.message for element in app.exception]
         assert not list(app.error), [element.value for element in app.error]
         assert _cache_state(app) == "생성"
+        # 판정 기준은 색을 칠하는 세 묶음에만 닿는다. 계획 세부수량은 그대로 꺼낸다.
+        assert _rebuilt_bundles(app) == {"LOB", "주요공정", "상세 B/N"}
 
         # 조건이 그대로면 다시 캐시를 재사용한다.
         app.run()
@@ -618,11 +628,13 @@ def test_the_two_display_toggles_are_part_of_the_figure_cache_key(
     app.run()
     assert _cache_state(app) == "적중"
 
-    # `EDP 포함` 의 기본은 꺼짐이다. 켜면 새로 그려야 한다.
+    # `EDP 포함` 의 기본은 꺼짐이다. 켜면 새로 그려야 한다 — LOB 로 표현되는 값을 읽는 세 묶음만.
+    # 히트맵은 확보율만 읽고, 선행 B/O 가 꺼져 있으면 확보율은 EDP 와 무관하다.
     app.session_state["home_preference_include_edp"] = True
     app.run()
     assert not list(app.exception)
     assert _cache_state(app) == "생성"
+    assert _rebuilt_bundles(app) == {"LOB", "계획 세부수량", "상세 B/N"}
 
     app.session_state["home_preference_include_edp"] = False
     app.run()
@@ -633,6 +645,8 @@ def test_the_two_display_toggles_are_part_of_the_figure_cache_key(
     app.run()
     assert not list(app.exception)
     assert _cache_state(app) == "생성"
+    # 선행 B/O 는 세부수량에 걸지 않는다.
+    assert _rebuilt_bundles(app) == {"LOB", "주요공정", "상세 B/N"}
 
 
 def test_advance_scales_the_plan_and_rate_but_leaves_capacity_alone(
@@ -733,6 +747,8 @@ def test_the_advance_shipment_toggle_writes_notes_in_the_density_cells(tmp_path:
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert _cache_state(app) == "생성"
+    # 글자만 더해지는 LOB 묶음 하나만 다시 그린다.
+    assert _rebuilt_bundles(app) == {"LOB"}
     notes = _corner_notes(app)
     labels = _lob_month_labels(app)
     assert {label: note[:2] for label, note in notes.items()} == {

@@ -161,23 +161,21 @@ def build_plan_comparison_dumbbell(
 
 
 def render_plan_comparison_dumbbell(
-    current_detail: pd.DataFrame,
-    comparison_detail: pd.DataFrame,
+    figure: go.Figure | None,
     *,
-    dimensions: Sequence[str],
     key: str,
     top_n: int = DEFAULT_TOP_N,
     owner_tab: OpenTab | None = None,
 ) -> None:
-    """숨은 탭에서는 그리지 않는다. 다른 Plotly 그림과 같은 이유다."""
+    """`build_plan_comparison_dumbbell` 이 만든 그림을 그린다. None 이면 차이가 없다는 안내다.
+
+    **그림은 받기만 한다.** 접힌 상자 안이라도 본문은 회차마다 돌므로, 여기서 만들면 HOME 을
+    다시 돌릴 때마다 덤벨을 새로 만든다. HOME 은 계획 세부수량 Figure 묶음과 함께 캐시한다.
+    숨은 탭에서는 그리지 않는다. 다른 Plotly 그림과 같은 이유다. `top_n` 은 그림을 만들 때 쓴
+    값이고 캡션에만 적는다.
+    """
     if tab_is_hidden(owner_tab):
         return
-    figure = build_plan_comparison_dumbbell(
-        current_detail,
-        comparison_detail,
-        dimensions=dimensions,
-        top_n=top_n,
-    )
     if figure is None:
         st.info("두 시나리오의 계획 물량이 같습니다.")
         return
