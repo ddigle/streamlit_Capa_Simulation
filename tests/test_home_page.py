@@ -1427,8 +1427,14 @@ def test_presets_are_made_renamed_promoted_and_deleted_from_preference(tmp_path:
 
     # B 를 기본으로 올린다.
     app.selectbox(key=target).set_value("B 그룹").run()
+    labels_before = set(app.selectbox(key=target).options)
     app.button(key="home_key_process_preset_default").click().run()
     assert repository.load_global_key_process().preset_names == ("B 그룹", "A 그룹(개정)")
+    # 선택지 라벨은 기본이 바뀌어도 같다 — 라벨이 바뀌면 브라우저가 옛 라벨을 되보낸다. 무엇이
+    # 기본인지는 캡션이 말한다.
+    assert set(app.selectbox(key=target).options) == labels_before
+    assert not [label for label in labels_before if "기본" in label]
+    assert any("「B 그룹」" in caption.value and "기본" in caption.value for caption in app.caption)
 
     # 삭제는 확인을 체크해야 열린다.
     assert app.button(key="home_key_process_preset_delete").disabled

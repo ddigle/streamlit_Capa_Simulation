@@ -1421,12 +1421,16 @@ def _render_key_process_editor(
         _apply_pending_selection(KEY_PROCESS_EDIT_TARGET_KEY)
         if st.session_state.get(KEY_PROCESS_EDIT_TARGET_KEY) not in targets:
             st.session_state[KEY_PROCESS_EDIT_TARGET_KEY] = targets[0]
+        # 선택지 라벨에 「· 기본」을 붙이지 않는다. 기본(맨 앞)은 `기본으로`·삭제로 바뀌는데, 라벨이
+        # 따라 바뀌면 브라우저가 옛 라벨을 되보내 바뀐 값으로 읽힌다(AGENTS 9장 — 선택 상자 라벨에
+        # 회차마다 바뀌는 상태를 넣지 않는다). 무엇이 기본인지는 아래 캡션이 말한다.
         target = st.selectbox(
             "고칠 프리셋",
             options=targets,
             key=KEY_PROCESS_EDIT_TARGET_KEY,
-            format_func=lambda name: f"{name} · 기본" if names and name == names[0] else str(name),
         )
+        if names:
+            st.caption(f"기본 프리셋(새로 연 HOME 이 처음 보는 것)은 「{names[0]}」입니다.")
         is_new = target == NEW_KEY_PROCESS_PRESET
         current = () if is_new else profile.processes_of(target)
         known_options = set(process_options)
