@@ -74,3 +74,20 @@ def test_top_n_limits_the_rows() -> None:
 
     assert figure is not None
     assert list(figure.data[0].y) == ["P16", "P17", "P18", "P19", "P20"]
+
+
+def test_only_the_compared_months_count() -> None:
+    """견줄 달(`months`)만 더한다. 과거 구간 달은 현재 쪽에만 공용 프로필 값이 병합돼 있어 함께
+    더하면 과거 입력 전액이 거짓 차이로 잡혔다(2026-10-08 사용자 결정 — 표의 GAP 과 같은 규칙)."""
+    current = pd.DataFrame({"제품정보": ["A", "B"], "26.01": [40.0, 10.0], "26.07": [100.0, 50.0]})
+    comparison = pd.DataFrame({"제품정보": ["A", "B"], "26.07": [100.0, 30.0]})
+
+    figure = build_plan_comparison_dumbbell(
+        current, comparison, dimensions=DIMENSIONS, months={"26.07"}
+    )
+    every_month = build_plan_comparison_dumbbell(current, comparison, dimensions=DIMENSIONS)
+
+    assert figure is not None
+    # 26.07 만 보면 A 는 같고 B 만 20 늘었다.
+    assert list(figure.data[0].y) == ["B"]
+    assert every_month is not None and "A" in list(every_month.data[0].y)

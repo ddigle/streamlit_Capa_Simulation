@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -36,10 +36,19 @@ CHART_CHROME_PX = 90
 DEFAULT_TOP_N = 12
 
 
-def _period_totals(detail: pd.DataFrame, dimensions: Sequence[str]) -> pd.DataFrame:
-    """분류별 기간 합계 한 컬럼으로 접는다. 월 컬럼이 없으면 합계는 0 이다."""
+def _period_totals(
+    detail: pd.DataFrame, dimensions: Sequence[str], months: Collection[str] | None
+) -> pd.DataFrame:
+    """분류별 기간 합계 한 컬럼으로 접는다. 월 컬럼이 없으면 합계는 0 이다.
+
+    `months` 를 주면 그 달 칸만 더한다 — 나머지 칸(과거 구간)은 견줄 짝이 없는 달이다.
+    """
     keys = list(dimensions)
-    month_columns = [column for column in detail.columns if column not in set(keys)]
+    month_columns = [
+        column
+        for column in detail.columns
+        if column not in set(keys) and (months is None or column in months)
+    ]
     frame = detail[keys].astype("string").copy()
     if month_columns:
         values = detail[month_columns].apply(pd.to_numeric, errors="coerce")
@@ -56,8 +65,14 @@ def build_plan_comparison_dumbbell(
     *,
     dimensions: Sequence[str],
     top_n: int = DEFAULT_TOP_N,
+    months: Collection[str] | None = None,
 ) -> go.Figure | None:
-    """차이가 큰 순으로 상위 `top_n` 분류. 차이가 하나도 없으면 `None` 이다."""
+    """차이가 큰 순으로 상위 `top_n` 분류. 차이가 하나도 없으면 `None` 이다.
+
+    `months` 는 견줄 달(HOME 의 `gap_month_labels` — DB 계산 구간)이다. 과거 구간 달은 현재 쪽에만
+    공용 프로필 값이 병합되고 비교 쪽에는 없어, 함께 더하면 과거 입력 전액이 거짓 차이로 잡힌다 —
+    표의 GAP 이 그 달을 건너뛰는 것과 같은 규칙이다(2026-10-08 사용자 결정). 주지 않으면 모든 달 칸.
+    """
     keys = list(dimensions)
     if not keys or current_detail.empty and comparison_detail.empty:
         return None
@@ -68,8 +83,8 @@ def build_plan_comparison_dumbbell(
 
     # 한쪽에만 있는 분류가 이 화면의 요점이다. 빠진 제품은 결측이 아니라 0 으로 읽어야
     # 「없어졌다」가 길이로 드러난다.
-    merged = _period_totals(current_detail, keys).merge(
-        _period_totals(comparison_detail, keys),
+    merged = _period_totals(current_detail, keys, months).merge(
+        _period_totals(comparison_detail, keys, months),
         on=keys,
         how="outer",
         suffixes=("_현재", "_비교"),

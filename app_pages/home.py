@@ -866,6 +866,8 @@ if plan_detail_figures is None:
                 production_detail,
                 comparison_detail,
                 dimensions=plan_detail_dimensions,
+                # 표의 GAP 과 같은 달만 견준다 — 과거 구간은 현재 쪽에만 병합돼 있다.
+                months=gap_month_labels,
             )
             if comparison_detail is not None
             else None
