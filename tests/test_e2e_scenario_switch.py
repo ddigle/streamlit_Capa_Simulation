@@ -520,6 +520,12 @@ def test_toggles_flipped_in_the_card_on_main_are_released_by_a_load(
     켜진 채 보였고, 다음 조작이 그 옛 값을 되보내 토글이 되살아났다. 그래서 불러온 회차에
     서버가 **브라우저에 새 값을 보냈는지**(`set_value`)를 보고, 브라우저가 보이는 값을 그대로
     되보내는 다음 조작을 흉내 내 토글이 되살아나지 않는지 본다(`_shown_toggle_values`).
+
+    **이 검사가 지키는 것은 결과(화면과 서버가 함께 풀린다)다.** 어느 장치가 그 결과를 내는지는
+    가리지 않는다 — 활성화가 토글 칸을 지우기(`pop`)로 되돌아가도, 카드가 칸이 없을 때 기본값을
+    심어(`render_home_view_card`) 같은 회차에 `set_value` 가 나가므로 여기서는 통과한다(2026-10-08
+    적대적 리뷰 F2). 「활성화는 지우지 않고 적는다」는 약속은 `tests/test_scenario_activation.py`
+    (`_assert_released`)와 `tests/test_view_state_survives_reload.py` 가 지킨다.
     """
     database = tmp_path / "scenario.duckdb"
     _, other = _seed_two_revisions(database)
