@@ -733,7 +733,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **`필요단축일정`**(2026-10-07 사용자 결정, 시안 B 「공정 카드형」)은 Dynamic 가용(환산 소계)이
     시나리오 소요대수 x 목표 확보율에 모자란 공정·월을 채우려면 신규 호기 Qual 을 며칠 당겨야 하는지
     보인다. 페이지는 GAP 탭과 같은 입력(활성 시나리오 소요대수 `get_scenario_capacity_and_demand`,
-    `load_process_cutoff`, `dashboard_*` 세 표)을 모아 `components/required_shortening_panel.py` 에
+    저장된 Cut-off(Preference 가 한 번 읽어 돌려준 값), `dashboard_*` 세 표)을 모아 `components/required_shortening_panel.py` 에
     넘기고, 시나리오를 못 읽으면 그 탭 안에서만 경고한다. 넓힌 생애주기 구간·환산비는 고른 달이
     정해진 뒤 `simulation_cache.get_required_shortening` 이 같은 함수로 만든다. 다섯 목표(90~130%)를 한
     번에 캐시하고 목표·공정 선택은 고르기만 한다. 계산 규칙은 `services/required_shortening.py` 항목이다.
@@ -3090,10 +3090,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     말한다 — 저장본과 다른지는 내보낼 바이트를 비교해 판단한다. 파일 이름은
     `equipment_master_r3_20260924.csv` 꼴이고 편집본이면 `_edited` 가 붙는다. 내보내기는
     읽기만 하며 파일은 브라우저 다운로드로만 나간다.
+  - 이 작업 공간은 숨은 탭에서도 rerun 마다 그려지므로 **고친 것이 없으면 직렬화하지 않는다**
+    (2026-10-08 점검 A9 — 목표 하나만 바꾼 rerun 에 CSV 여섯 벌과 저장 이력 DB 읽기가 실렸다). 표마다
+    최신 저장본과 `DataFrame.equals` 이면 리비전 캐시의 바이트(`equipment_cache.
+    load_equipment_csv_payloads`, 키 = DB 경로·리비전 id — 리비전은 고칠 수 없고 직렬화는 결정적이다)를
+    쓰고, 다르면 지금처럼 직렬화해 바이트로 견준다(dtype 만 다른 같은 파일을 「편집본」으로 적지 않게).
+    저장 이력 목록은 `load_equipment_revision_summaries`(키 = 최신 리비전 id — 리비전은 덧붙이기만 한다)를
+    쓰고 그 id 는 페이지가 이미 읽은 최신 저장본에서 받는다. 내려받기 바이트를 지연 생성(콜러블)으로
+    바꾸지는 않는다(TODO [결정]).
 - `src/capa_simulation/components/cutoff_management.py`
   - 가용설비 현황 `Preference`의 Cut-off 설정. 편집표·저장·CSV 왕복과 **빠진 공정 안내**.
   - 저장된 값을 돌려준다(편집 중인 초안이 아니다). 옆 탭의 GAP 이 저장 안 된 값으로 숫자를
-    내면 화면에 보이는 수와 계산에 쓰인 수가 달라진다 — 가장 나쁜 종류의 어긋남이다.
+    내면 화면에 보이는 수와 계산에 쓰인 수가 달라진다 — 가장 나쁜 종류의 어긋남이다. 페이지는
+    이 반환값을 Static/Dynamic·필요단축일정에 그대로 넘긴다(한 회차 한 번 읽기 — 탭마다 다시 읽어
+    rerun 마다 DB 를 세 번 열었다). 저장은 그 자리에서 `st.rerun()` 하므로 낡은 값이 남지 않는다.
   - 저장 알림은 flash 다 — `st.success` 뒤에 곧바로 `st.rerun()` 을 부르면 한 번도 보이지
     않는다. `설비 공정으로 채우기`·저장은 초안을 갈아 끼우므로 편집표를 `discard_editor` 로
     새 위젯으로 세운다(행 위치 델타가 다른 공정에 붙지 않게 — 세션 칸만 지우면 브라우저가 다시
@@ -3349,7 +3359,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   실행 Capa·과거 구간·확보율 판정 기준)의 Streamlit 캐시 경계. 판정 기준 캐시는 공식버전을 새로 지정할 때도
   비운다(`clear_global_securement_threshold_cache`) — 미저장이면 기본값이 최신 공식버전에서 온다. 설비 쪽은 설비 스냅샷과 층 도면 프로필·도면 요소, FAB 전체 도면
   (`load_fab_layout` — 캔버스·배경 도면 행과 요소를 한 항목에)이다(`clear_floor_layout_cache` 가 층 셋과
-  FAB 를 함께 비운다 — 팝업·저장의 기존 호출처가 그대로 FAB 까지 덮는다)
+  FAB 를 함께 비운다 — 팝업·저장의 기존 호출처가 그대로 FAB 까지 덮는다), RawData 의 저장 이력 목록
+  (`load_equipment_revision_summaries`, 키 = 최신 리비전 id)과 리비전 하나의 세 표 CSV 바이트
+  (`load_equipment_csv_payloads`, 키 = 리비전 id)다 — 둘 다 리비전이 덧붙이기만 하는 불변이라 맞는
+  키이고, `clear_equipment_snapshot_cache` 가 스냅샷과 함께 비운다
 - `persistence/equipment_repository.py`: 설비 운영 입력의 불변 전체 스냅샷 저장소
   - `save_snapshot`·`save_space_layout` 은 **연결 하나·트랜잭션 하나**에서 저장된 캔버스 읽기
     → 미저장 캔버스 덮기 → 호기·요소 검증 → 리비전 → 캔버스 UPDATE → 층 요소 교체를 한다.

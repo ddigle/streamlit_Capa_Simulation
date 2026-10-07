@@ -229,8 +229,10 @@ with main_tab:
             )
 
 with preference_tab:
-    # 입력 폼을 계속 생성해 탭 왕복 중 미제출 편집을 보존한다.
-    render_cutoff_management(
+    # 입력 폼을 계속 생성해 탭 왕복 중 미제출 편집을 보존한다. 돌려받는 **저장된** Cut-off 를
+    # Static/Dynamic·필요단축일정이 그대로 쓴다 — 탭마다 다시 읽으면 rerun 마다 DB 를 세 번 열었다.
+    # 저장은 그 자리에서 `st.rerun()` 하므로 이 회차에 낡은 값이 남지 않는다.
+    stored_cutoff = render_cutoff_management(
         repository, equipment_processes=processes_in(dashboard_equipment, dashboard_baseline)
     )
 
@@ -239,7 +241,6 @@ with gap_tab:
         assert conditions_card is not None
         with conditions_card:
             start_date, end_date = render_equipment_period(today=today, width="stretch")
-        stored_cutoff = repository.load_process_cutoff()
         # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지 탭은 설비 DB 만 열고 활성
         # 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 탭 안에서 알리고, 다른
         # 탭을 막지 않는다 — 페이지가 통째로 죽으면 Cut-off 를 적으러 들어올 수도 없다.
@@ -361,7 +362,7 @@ with shortening_tab:
                 equipment=dashboard_equipment,
                 downtime=dashboard_downtime,
                 baseline=dashboard_baseline,
-                cutoff=repository.load_process_cutoff(),
+                cutoff=stored_cutoff,
                 today=today,
                 context=shortening_context,
                 required_equipment=shortening_required,

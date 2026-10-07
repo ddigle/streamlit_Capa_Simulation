@@ -464,6 +464,102 @@ def test_current_data_downloads_say_when_the_buffer_differs_from_the_saved_revis
     assert "호기 마스터 현재 데이터 · 2행" in [button.label for button in app.download_button]
 
 
+def test_current_data_downloads_reuse_the_revision_bytes_until_the_buffer_changes(
+    tmp_path: Path,
+) -> None:
+    """고친 것이 없으면 rerun 마다 CSV 를 다시 만들지 않는다(점검 A9) — 바이트는 그대로다.
+
+    작업 공간은 숨은 탭에서도 rerun 마다 그려진다. 예전에는 내보낼 셋과 저장본과 견줄 셋, 여섯 번을
+    매번 직렬화했다. 이제 저장본과 같은 표는 리비전 캐시의 바이트를 쓰고, 고친 표만 직렬화한다.
+    """
+    from capa_simulation.services.equipment_csv import equipment_csv_bytes
+
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    saved_master = _master(["EQ-01", "EQ-02"])
+    repository.save_snapshot(
+        empty_equipment_baseline(), saved_master, empty_downtime_schedule(), note="원본"
+    )
+    app = AppTest.from_string(
+        f"""
+from pathlib import Path
+import streamlit as st
+import capa_simulation.components.equipment_data_workspace as workspace
+from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+
+calls = st.session_state.setdefault("serialized", [])
+captured = st.session_state.setdefault("captured", {{}})
+originals = (workspace.equipment_csv_bytes, workspace.render_csv_download)
+
+def counting(frame):
+    calls.append(len(frame))
+    return originals[0](frame)
+
+def capturing(*, data, file_name, key=None, label=""):
+    captured[key] = data
+    return originals[1](data=data, file_name=file_name, key=key, label=label)
+
+repository = DuckDBEquipmentRepository(Path({str(path)!r}))
+repository.initialize()
+snapshot = repository.load_snapshot(repository.latest_revision_id())
+try:
+    workspace.equipment_csv_bytes = counting
+    workspace.render_csv_download = capturing
+    workspace.render_equipment_data_workspace(
+        repository=repository, latest_snapshot=snapshot,
+        baseline=snapshot.baseline, equipment=snapshot.equipment, downtime=snapshot.downtime,
+        floor_canvases={{}}, max_extent=(100.0, 60.0),
+    )
+finally:
+    workspace.equipment_csv_bytes, workspace.render_csv_download = originals
+""",
+        default_timeout=20,
+    ).run()
+    key = "equipment_master_current_download_v1"
+
+    assert not app.exception
+    assert app.session_state["serialized"] == []
+    assert app.session_state["captured"][key] == equipment_csv_bytes(saved_master)
+    assert "저장본과 같음" in " ".join(str(item.value) for item in app.caption)
+    app.run()
+    assert app.session_state["serialized"] == []
+
+    edited_master = _master(["EQ-01", "EQ-02", "EQ-03"])
+    baseline, _equipment, downtime = app.session_state[BUFFER_KEY]
+    app.session_state[BUFFER_KEY] = (baseline, edited_master, downtime)
+    app.run()
+
+    assert not app.exception
+    # 고친 표(편집본 호기 마스터) 하나만 직렬화한다. 견줄 저장본 쪽은 리비전 캐시다.
+    assert app.session_state["serialized"] == [3]
+    assert app.session_state["captured"][key] == equipment_csv_bytes(edited_master)
+    assert "저장하지 않은 변경 포함" in " ".join(str(item.value) for item in app.caption)
+
+
+def test_the_history_list_follows_the_latest_revision_without_rereading(tmp_path: Path) -> None:
+    """저장 이력 목록은 최신 리비전 id 를 키로 캐시한다 — 새로 저장하면 새 키라 목록이 는다."""
+    from capa_simulation.persistence.equipment_cache import load_equipment_revision_summaries
+
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    assert load_equipment_revision_summaries(str(path), None) == ()
+    first = repository.save_snapshot(
+        empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="첫"
+    )
+    listed = load_equipment_revision_summaries(str(path), first.revision.revision_id)
+    assert [item.note for item in listed] == ["첫"]
+
+    second = repository.save_snapshot(
+        empty_equipment_baseline(),
+        _master(["EQ-01", "EQ-02"]),
+        empty_downtime_schedule(),
+        note="둘",
+    )
+    listed = load_equipment_revision_summaries(str(path), second.revision.revision_id)
+    assert [item.note for item in listed] == ["둘", "첫"]
+    assert [item.revision_no for item in listed] == [2, 1]
+
+
 def test_pasting_a_unit_row_over_saved_modules_names_both_sides_and_the_way_out(
     tmp_path: Path,
 ) -> None:

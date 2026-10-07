@@ -25,6 +25,8 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_snapshot_cache,
     clear_floor_layout_cache,
+    load_equipment_csv_payloads,
+    load_equipment_revision_summaries,
     load_equipment_snapshot,
 )
 from capa_simulation.persistence.equipment_repository import (
@@ -646,6 +648,7 @@ def _render_current_data_downloads(
     *,
     saved: Frames,
     latest_snapshot: EquipmentSnapshot | None,
+    database_path: str,
 ) -> None:
     """세 표의 **현재 데이터**를 내려받는 버튼 셋. 양식 버튼 아래에 같은 차례로 선다.
 
@@ -655,20 +658,38 @@ def _render_current_data_downloads(
     「변경 미리보기」·저장 중 하나를 눌러야 버퍼에 들어오므로, 그 사실을 캡션이 말한다.
     저장본과 다른지는 **내보낼 바이트를 비교**해 판단한다 — 파일이 달라질 때만 「편집본」이다.
 
+    바이트는 표마다 **저장 리비전과 같은 표면 리비전 캐시**(`load_equipment_csv_payloads`)에서
+    꺼낸다. 이 작업 공간은 숨은 탭에서도 rerun 마다 그려지므로, 고친 것이 없을 때 여섯 번의
+    직렬화(내보낼 셋 + 견줄 셋)를 매번 치르고 있었다. 같은지는 `DataFrame.equals`(값·dtype·차례)로
+    가르고, 다르면 지금처럼 직렬화해 바이트로 견준다 — dtype 만 달라 같은 파일이 되는 경우도
+    「편집본」으로 잘못 적지 않는다. 지연 생성(콜러블)은 쓰지 않는다(TODO [결정]).
+
     내보내기는 읽기만 한다. 버퍼·미리보기·저장 상태를 건드리지 않고, 파일은 브라우저
     다운로드로만 나간다(저장소 안에 쓰지 않는다).
     """
     buffered_baseline, buffered_equipment, buffered_downtime = frames
     saved_baseline, saved_equipment, saved_downtime = saved
-    payloads = (
-        equipment_csv_bytes(buffered_equipment),
-        baseline_csv_bytes(buffered_baseline),
-        downtime_csv_bytes(buffered_downtime),
+    serializers = (equipment_csv_bytes, baseline_csv_bytes, downtime_csv_bytes)
+    stored: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None = None
+    stored_bytes: tuple[bytes, bytes, bytes] | None = None
+    if latest_snapshot is not None:
+        stored = (latest_snapshot.equipment, latest_snapshot.baseline, latest_snapshot.downtime)
+        stored_bytes = load_equipment_csv_payloads(
+            database_path, latest_snapshot.revision.revision_id
+        )
+
+    def table_bytes(position: int, frame: pd.DataFrame) -> bytes:
+        if stored is not None and stored_bytes is not None and frame.equals(stored[position]):
+            return stored_bytes[position]
+        return serializers[position](frame)
+
+    payloads = tuple(
+        table_bytes(position, frame)
+        for position, frame in enumerate((buffered_equipment, buffered_baseline, buffered_downtime))
     )
-    edited = payloads != (
-        equipment_csv_bytes(saved_equipment),
-        baseline_csv_bytes(saved_baseline),
-        downtime_csv_bytes(saved_downtime),
+    edited = payloads != tuple(
+        table_bytes(position, frame)
+        for position, frame in enumerate((saved_equipment, saved_baseline, saved_downtime))
     )
     basis = (
         f"저장본 r{latest_snapshot.revision.revision_no}"
@@ -1232,8 +1253,9 @@ def _render_editors(
     )
 
 
-def _render_history(repository: DuckDBEquipmentRepository) -> None:
-    revisions = repository.list_revisions()
+def _render_history(repository: DuckDBEquipmentRepository, latest_revision_id: str | None) -> None:
+    # 리비전은 덧붙이기만 하므로 최신 id 가 목록을 정한다 — rerun 마다 DB 를 읽지 않는다.
+    revisions = load_equipment_revision_summaries(str(repository.database_path), latest_revision_id)
     if not revisions:
         st.info("첫 리비전을 저장하면 이곳에서 저장 시점별 데이터를 확인할 수 있습니다.")
         return
@@ -1410,7 +1432,10 @@ def render_equipment_data_workspace(
                     data=payload, file_name=filename, key=key, label=f"{label} 양식"
                 )
         _render_current_data_downloads(
-            frames, saved=(baseline, equipment, downtime), latest_snapshot=latest_snapshot
+            frames,
+            saved=(baseline, equipment, downtime),
+            latest_snapshot=latest_snapshot,
+            database_path=str(repository.database_path),
         )
     with st.form(WORKSPACE_FORM_KEY, border=False, enter_to_submit=False):
         # 두 저장(입력·직접 편집)이 같이 쓰는 메모라 탭 **위**에 둔다 — 저장 버튼이 표 위로
@@ -1484,7 +1509,10 @@ def render_equipment_data_workspace(
             edited = editor.frames
         with history_tab:
             try:
-                _render_history(repository)
+                _render_history(
+                    repository,
+                    latest_snapshot.revision.revision_id if latest_snapshot is not None else None,
+                )
             except BOOTSTRAP_ERRORS as exc:
                 st.error(
                     "저장 이력을 읽지 못했습니다: "
