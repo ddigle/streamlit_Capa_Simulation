@@ -10,8 +10,10 @@
 싣지 않는다(2026-10-07 사용자 결정).
 
 `app.py` 가 페이지보다 **먼저**(`navigation.run()` 앞) 그린다 — 페이지가 `st.stop()` 해도 카드는
-남는다. 파이썬 차례로는 페이지가 더하는 조건 카드보다 앞에 서지만, 맨 아래 자리와 바닥 고정은
-사이드바 CSS(`sidebar_style.build_sidebar_stylesheet`)가 이 key 로 잡는다.
+남는다. 그것도 화면마다 수가 달라지는 조회 조건 구역보다 앞(그룹 상자 바로 뒤의 `Support` 다음)
+이라 어느 화면에서나 사이드바의 같은 순번이다 — 순번이 밀리면 페이지를 옮기는 동안 지난 회차의
+사본이 흐리게 남아 카드가 두 벌로 보인다. 맨 아래 자리와 바닥 고정은 파이썬 차례가 아니라 사이드바
+CSS(`sidebar_style.build_sidebar_stylesheet`)가 이 key 로 잡는다.
 """
 
 from __future__ import annotations

@@ -962,6 +962,42 @@ def test_the_app_credits_card_survives_a_screen_that_stops_early(
     assert f"st-key-{CONDITION_CARD_PREFIX}" not in f"st-key-{APP_CREDITS_KEY}"
 
 
+def test_support_and_the_credits_card_keep_one_sidebar_slot_on_every_screen(
+    _app: AppTest,
+) -> None:
+    """`Support` 상자와 앱 정보 카드는 화면마다 사이드바 최상위의 **같은 순번**이다.
+
+    Streamlit 은 사이드바 요소를 key 가 아니라 순번으로 맞춰 갈아 끼운다. 순번이 화면마다 다르면
+    페이지를 옮기는 동안 지난 회차의 사본이 옛 순번에 흐리게 남고, CSS 의 `order`·`sticky` 가 그
+    사본까지 맨 아래로 끌어내려 두 벌로 보인다. 그래서 둘은 화면마다 수가 달라지는 조회 조건
+    구역보다 앞에 선다. 고른 화면은 공통 조건이 모두 서는 HOME, 아무것도 서지 않는 Chatbot,
+    제목만 서는 VOC, 시나리오만 서는 시나리오 관리다.
+    """
+    from capa_simulation.components.app_credits import APP_CREDITS_KEY
+
+    support_key = _app_constant("ADMIN_BOX_KEY")
+    app = _app.run()
+    slots: dict[str, tuple[int, int]] = {}
+    for page_path in (
+        HOME.path,
+        CAPA_CHATBOT.path,
+        ADMIN_BOX_PAGES[0].path,
+        SCENARIO_MANAGEMENT.path,
+        ADMIN_AREA.path,
+        HOME.path,
+    ):
+        if page_path != HOME.path or slots:
+            app.switch_page(page_path).run()
+        assert not list(app.exception), [element.message for element in app.exception]
+        keys = _sidebar_keys(app)
+        assert keys.count(support_key) == 1 and keys.count(APP_CREDITS_KEY) == 1, keys
+        slots[page_path] = (keys.index(support_key), keys.index(APP_CREDITS_KEY))
+        if CONDITIONS_SECTION.key in keys:
+            assert keys.index(APP_CREDITS_KEY) < keys.index(CONDITIONS_SECTION.key), keys
+
+    assert len(set(slots.values())) == 1, slots
+
+
 def test_a_screen_that_reads_only_the_scenario_shows_only_its_box(_app: AppTest) -> None:
     app = _app.run()
     app.switch_page(ADMIN_AREA.path).run()

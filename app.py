@@ -242,6 +242,48 @@ with pinned_connections(DUCKDB_PATH):
             for page in group.subpages:
                 st.page_link(page, width="stretch")
 
+    # `Support` 상자와 앱 정보 카드는 **조회 조건 구역보다 먼저** 그린다. 화면에서는 둘 다
+    # 사이드바 맨 아래다 — 관리 기능과 앱 정보라 계산 조건보다 아래, 가장 먼 곳이다. 그 자리는
+    # 파이썬 차례가 아니라 CSS 의 `order` 가 지킨다(`sidebar_style`). 페이지가 더하는 조건 카드는
+    # `navigation.run()` 안에서 그려져 파이썬 차례로는 어차피 이 둘보다 뒤다.
+    # 파이썬 차례를 여기로 당기는 까닭은 **화면마다 같은 순번**에 서게 하는 것이다. Streamlit 은
+    # 사이드바 요소를 key 가 아니라 순번으로 맞춰 갈아 끼운다. 아래 조건 상자는 화면마다 수가
+    # 달라 그 뒤에 그리면 페이지를 옮길 때 이 둘의 순번이 밀리고, 지난 회차의 같은 상자가 옛
+    # 순번에 흐린 사본으로 실행이 끝날 때까지 남는다. CSS 의 `order`·`sticky` 는 그 사본까지 맨
+    # 아래로 끌어내려 `Support` 와 카드가 두 벌로 겹쳐 보였다(브라우저 실측). 이 앞에는 화면마다
+    # 수가 같은 것(HOME 링크와 그룹 상자)만 세운다.
+    # **다른 상자와 완전히 같은 양식이다.** 테두리도 요약 줄 글자도 아이콘도 페이지
+    # 그룹과 같게 둔다 — 계산 흐름 밖이라는 것은 서식이 아니라 위 CSS 가 지키는 맨 아래라는
+    # 자리와 그 앞 간격이 말한다.
+    # 이름은 `Support` 다. 전에는 `Preference` 였는데 HOME·가용설비 현황 본문의 같은 이름
+    # 탭(그 화면의 표시 설정, 아이콘 `tune`)과 낱말·아이콘이 모두 겹쳐, 링크 목록인 이
+    # 상자를 설정으로 읽게 했다. 안에 선 두 화면 — 공용 설정을 고치는 `Admin Area` 와
+    # 질문·요청·오류 신고를 받는 VOC — 은 모두 앱을 쓰는 사람을 돕는 자리다. 아이콘은
+    # 사이드바에서 아무도 쓰지 않는 `support` 다. 상수 `ADMIN_BOX_KEY` 는 그대로다 — 값을
+    # 바꾸면 세션이 기억하던 펼침 상태만 새 칸으로 갈린다.
+    # 이 상자 안의 화면(Admin Area·VOC)으로 **들어온 회차에만** 상자를 편다. 접혀 있으면
+    # 「지금 여기」 표시가 상자 안에 가려져 사이드바 어디에도 지금 자리가 보이지 않는다.
+    # 떠날 때 억지로 접지 않는다 — 조회 컨트롤 상자는 사용자가 여닫은 대로 기억한다
+    # (`sidebar_expander`). 위젯을 만들기 **전**에 써야 한다. 만든 뒤에 쓰면 Streamlit 이
+    # 예외를 낸다.
+    support_paths = {pages.admin_area.url_path, *(page.url_path for page in pages.admin_box_pages)}
+    if page_changed and navigation.url_path in support_paths:
+        st.session_state[ADMIN_BOX_KEY] = True
+    with sidebar_expander("Support", key=ADMIN_BOX_KEY, icon=":material/support:"):
+        with st.container(key="admin_area_navigation"):
+            st.page_link(pages.admin_area, width="stretch")
+            # VOC 는 계산 화면이 아니라 사람이 쓰는 자리다. 계산 그룹 어디에도 속하지 않아
+            # 이 상자에 함께 세운다 — 「말할 곳」을 찾는 사람은 맨 아래를 본다. **하위가
+            # 아니라 같은 층위**다. 관리 화면과 게시판은 서로를 포함하지 않으므로 들여쓰기도
+            # 계층선도 두지 않는다.
+            for page in pages.admin_box_pages:
+                st.page_link(page, width="stretch")
+
+    # 앱 이름·버전·빌드와 개발 팀·문의처 두 줄. **페이지보다 먼저** 그린다 — 페이지가 `st.stop()`
+    # 하면 그 뒤로는 아무것도 브라우저에 닿지 않는다. 사이드바 맨 아래 자리와 바닥 고정(목록이 길면
+    # 그 밑으로 지나간다)은 CSS 가 이 카드의 key 로 지킨다.
+    render_app_credits()
+
     # 여기서부터 상자들은 다른 화면으로 가는 목록이 아니라 **지금 화면의 계산 조건**이다.
     # 그 경계에 구역 제목 한 줄을 세운다. 시나리오 상자 **앞**이어야 한다 — 아래 적용 기간
     # 자리표시자와 조회기간 상자 사이에 끼면 자리표시자가 제 상자의 요약 줄에 얹히지 못한다.
@@ -327,42 +369,6 @@ with pinned_connections(DUCKDB_PATH):
         # 안 세운 회차에는 적용 기간 자리표시자도 없다. 앞 회차에 등록한 칸을 지워야 이 화면이
         # 사라진 칸에 「✓ 적용」을 쓰지 않는다.
         forget_month_range_placeholder()
-
-    # 관리 기능이라 조회 컨트롤보다 아래, 사이드바에서 가장 먼 곳에 둔다. 페이지가 자기
-    # 사이드바 요소를 더하는 것은 `navigation.run()` 안이라 파이썬 차례로는 뒤에 둘 수
-    # 없다 — 맨 아래를 지키는 것은 위 CSS 의 `order` 다.
-    # **다른 상자와 완전히 같은 양식이다.** 테두리도 요약 줄 글자도 아이콘도 페이지
-    # 그룹과 같게 둔다 — 계산 흐름 밖이라는 것은 서식이 아니라 위 CSS 가 지키는 맨 아래라는
-    # 자리와 그 앞 간격이 말한다.
-    # 이름은 `Support` 다. 전에는 `Preference` 였는데 HOME·가용설비 현황 본문의 같은 이름
-    # 탭(그 화면의 표시 설정, 아이콘 `tune`)과 낱말·아이콘이 모두 겹쳐, 링크 목록인 이
-    # 상자를 설정으로 읽게 했다. 안에 선 두 화면 — 공용 설정을 고치는 `Admin Area` 와
-    # 질문·요청·오류 신고를 받는 VOC — 은 모두 앱을 쓰는 사람을 돕는 자리다. 아이콘은
-    # 사이드바에서 아무도 쓰지 않는 `support` 다. 상수 `ADMIN_BOX_KEY` 는 그대로다 — 값을
-    # 바꾸면 세션이 기억하던 펼침 상태만 새 칸으로 갈린다.
-    # 이 상자 안의 화면(Admin Area·VOC)으로 **들어온 회차에만** 상자를 편다. 접혀 있으면
-    # 「지금 여기」 표시가 상자 안에 가려져 사이드바 어디에도 지금 자리가 보이지 않는다.
-    # 떠날 때 억지로 접지 않는다 — 조회 컨트롤 상자는 사용자가 여닫은 대로 기억한다
-    # (`sidebar_expander`). 위젯을 만들기 **전**에 써야 한다. 만든 뒤에 쓰면 Streamlit 이
-    # 예외를 낸다.
-    support_paths = {pages.admin_area.url_path, *(page.url_path for page in pages.admin_box_pages)}
-    if page_changed and navigation.url_path in support_paths:
-        st.session_state[ADMIN_BOX_KEY] = True
-    with sidebar_expander("Support", key=ADMIN_BOX_KEY, icon=":material/support:"):
-        with st.container(key="admin_area_navigation"):
-            st.page_link(pages.admin_area, width="stretch")
-            # VOC 는 계산 화면이 아니라 사람이 쓰는 자리다. 계산 그룹 어디에도 속하지 않아
-            # 이 상자에 함께 세운다 — 「말할 곳」을 찾는 사람은 맨 아래를 본다. **하위가
-            # 아니라 같은 층위**다. 관리 화면과 게시판은 서로를 포함하지 않으므로 들여쓰기도
-            # 계층선도 두지 않는다.
-            for page in pages.admin_box_pages:
-                st.page_link(page, width="stretch")
-
-    # 앱 이름·버전·빌드와 개발 팀·문의처 두 줄. **페이지보다 먼저** 그린다 — 페이지가 `st.stop()`
-    # 하면 그 뒤로는 아무것도 브라우저에 닿지 않는다. 사이드바 맨 아래 자리와 바닥 고정(목록이 길면
-    # 그 밑으로 지나간다)은 위 CSS 가 이 카드의 key 로 지킨다 — 페이지가 더하는 조건 카드는 파이썬
-    # 차례로 이 뒤에 서므로 `order` 로 민다.
-    render_app_credits()
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
     # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명이 같다 — 페이지가 끝나거나
