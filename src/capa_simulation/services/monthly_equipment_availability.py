@@ -174,12 +174,18 @@ def span_date_range(months: Sequence[int], cutoff: pd.DataFrame) -> tuple[date, 
     Cut-off 가 크면 그 달의 W/D 구간이 앞으로 크게 밀린다 — 조회기간만큼만 구간을
     만들면 첫 달이 조용히 모자라게 세어진다. 부르는 쪽이 이 값으로
     `build_equipment_lifecycle_spans` 의 범위를 넓힌다.
+
+    **시작은 첫 구간의 앞 경계(`boundary_start`)다 — 첫날(`first_day`)이 아니다.** 상태는 바뀐
+    다음 날부터 기여하므로(`_prorated_rows` 가 구간 양 끝을 하루씩 민다) 구간의 첫 기여일을
+    정하는 것은 **그 전날**의 상태다. 첫날부터 만들면 조회 시작 전부터 가용이던 호기도 첫날에
+    기여하지 못해 첫 달이 호기마다 `1/구간일수` 씩 모자랐다(2026-10-07 리뷰 — 늘 가용인 30대가
+    29.03대로 세어졌다).
     """
     windows = _windows_for(months, cutoff)
     if not windows:
         return None
     every = [window for group in windows.values() for window in group]
-    return min(w.first_day for w in every), max(w.boundary_end for w in every)
+    return min(w.boundary_start for w in every), max(w.boundary_end for w in every)
 
 
 def _windows_for(months: Sequence[int], cutoff: pd.DataFrame) -> dict[str, tuple[WdWindow, ...]]:

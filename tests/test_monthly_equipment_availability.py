@@ -141,7 +141,8 @@ def test_span_date_range_reaches_back_by_the_cutoff() -> None:
     """Cut-off 가 크면 구간을 그만큼 앞에서부터 만들어야 한다."""
     window = span_date_range([202610], cutoff_table(45))
 
-    assert window == (date(2026, 8, 17), date(2026, 9, 16))
+    # 첫 구간 `(8/16, 9/16]` 의 앞 경계부터다 — 첫 기여일 8/17 을 정하는 것은 8/16 의 상태다.
+    assert window == (date(2026, 8, 16), date(2026, 9, 16))
 
 
 def test_span_date_range_is_none_without_any_cutoff() -> None:
