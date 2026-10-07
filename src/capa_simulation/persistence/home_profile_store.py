@@ -136,6 +136,26 @@ def replace_global_comparison_scenario(
     )
 
 
+def touch_global_comparison_scenario(
+    connection: duckdb.DuckDBPyConnection,
+    scenario_id: str,
+) -> None:
+    """공용 GAP 비교 대상이 이 시나리오를 가리키면 `version` 만 올린다(이름을 바꿨을 때).
+
+    입장 화면 Summary 의 GAP 은 비교 시나리오 이름을 풍선에 적고, 그 값은 이 프로필의 `version`
+    을 키로 서버에 남는다. 이름만 바뀌면 키가 그대로라 옛 이름이 남았다. 가리키는 대상은 그대로다.
+    캐시는 경로 키이므로 호출부가 비운다(`clear_global_comparison_scenario_cache`).
+    """
+    connection.execute(
+        """
+        UPDATE app_meta.global_comparison_scenario
+        SET version = version + 1
+        WHERE scenario_id = ?
+        """,
+        [scenario_id],
+    )
+
+
 def clear_global_comparison_scenario(
     connection: duckdb.DuckDBPyConnection,
     scenario_id: str,

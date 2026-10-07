@@ -433,6 +433,10 @@ def _render_rename(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     # 스냅샷 payload 는 시나리오명을 함께 담는다. 비우지 않으면 그 리비전에서 파생한 시나리오의
     # 원천명·출처 메모에 옛 이름이 남는다.
     clear_scenario_snapshot_cache()
+    # 비교 대상이 이 시나리오면 저장소가 그 프로필 version 을 올렸다 — 입장 화면 Summary GAP 풍선의
+    # 이름이 바뀐다. 캐시는 경로 키라 따로 비우고, 이 세션은 곧바로 다시 확인한다.
+    clear_global_comparison_scenario_cache()
+    forget_intro_summary_check()
     # 머리 띠의 시나리오명은 활성화 때 떠 둔 값이다. 올라와 있는 시나리오면 같이 바꾼다.
     rename_active_scenario_label(summary.scenario_id, renamed_summary.scenario_name)
     st.session_state[FLASH_KEY] = (

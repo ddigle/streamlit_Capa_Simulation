@@ -68,3 +68,29 @@ def test_a_scenario_without_a_revision_is_allowed(tmp_path: Path) -> None:
     saved = _repository(tmp_path).replace_global_comparison_scenario("SCN-1", None, source="테스트")
 
     assert (saved.scenario_id, saved.revision_id) == ("SCN-1", None)
+
+
+def test_renaming_the_compared_scenario_bumps_the_version(tmp_path: Path) -> None:
+    """입장 화면 Summary GAP 은 비교 시나리오 이름을 풍선에 적고 그 값의 서버 키가 이 version 이다 —
+    이름만 바꿔도 version 이 올라야 옛 이름이 남지 않는다. 다른 시나리오 이름은 건드리지 않는다."""
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+
+    repository = _repository(tmp_path)
+    ensure_initial_scenario(repository)
+    scenario = repository.list_scenarios()[0]
+    revision = repository.list_revisions(scenario.scenario_id)[0]
+    repository.replace_global_comparison_scenario(
+        scenario.scenario_id, revision.revision_id, source="테스트"
+    )
+
+    repository.rename_scenario(scenario.scenario_id, "새 이름")
+
+    renamed = repository.load_global_comparison_scenario()
+    assert renamed.version == 2
+    assert (renamed.scenario_id, renamed.revision_id) == (
+        scenario.scenario_id,
+        revision.revision_id,
+    )
+    repository.replace_global_comparison_scenario("SCN-OTHER", None, source="다른 대상")
+    repository.rename_scenario(scenario.scenario_id, "또 다른 이름")
+    assert repository.load_global_comparison_scenario().version == 3

@@ -2270,13 +2270,16 @@ function createOverlay(api, data, initial, syncToolbar) {
     return spec.title || "";
   }
 
-  // 단추의 눌림·쓸 수 있음·풍선을 지금 값에 맞춘다. 켤 수 없게 된 토글은 끈다.
+  // 단추의 눌림·쓸 수 있음·풍선을 지금 값에 맞춘다. 켤 수 없다고 **정해진** 토글만 끈다 — 요약이 잠깐
+  // 없거나(공식버전을 못 읽은 일시적 실패) 그 몫이 「준비 중」(`pending` — 비교 값을 페이지 뒤에서
+  // 만드는 중)이면 고른 상태를 지키고 단추만 잠근다. 값이 닿으면 그 모습으로 그린다.
   function syncToggles() {
     toggleButtons.forEach((button) => {
       const key = button.dataset.key;
       const spec = toggleSpecs.find((item) => item.key === key) || {};
+      const part = toggleOf(key);
       const can = canToggle(key);
-      if (!can) view[key] = false;
+      if (summary && part && !part.available && !part.pending) view[key] = false;
       button.setAttribute("aria-disabled", can ? "false" : "true");
       button.setAttribute("aria-pressed", view[key] ? "true" : "false");
       button.title = toggleTitle(spec);
@@ -2307,19 +2310,33 @@ function createOverlay(api, data, initial, syncToolbar) {
   toggleButtons.forEach((button) => button.addEventListener("click", () => pressToggle(button)));
 
   // Summary 가 조립될 때 Detail 옆에 하나씩 떠오른다. 원래 화면에서 다시 열 때(`snapToSummary`)는 바로 선다.
+  // 떠오르는 동안(아직 투명한 동안)은 `inert` 로 묶어 Tab 이 보이지 않는 단추에 닿지 않게 하고, 마지막
+  // 단추가 다 선 뒤 푼다.
+  let revealRound = 0;
   function revealToggles(animate) {
+    const round = (revealRound += 1);
+    const moving = [];
     toggleButtons.forEach((button, index) => {
       button.getAnimations().forEach((a) => a.cancel());
       button.style.opacity = "1";
       if (animate && !reduce) {
-        button.animate([{ opacity: 0, transform: "translateX(-10px)" }, { opacity: 1, transform: "none" }], {
-          duration: 560,
-          delay: SUMMARY_TIMING.asofDelay + index * 70,
-          easing: OUT,
-          fill: "backwards",
-        });
+        moving.push(
+          button.animate([{ opacity: 0, transform: "translateX(-10px)" }, { opacity: 1, transform: "none" }], {
+            duration: 560,
+            delay: SUMMARY_TIMING.asofDelay + index * 70,
+            easing: OUT,
+            fill: "backwards",
+          }).finished,
+        );
       }
     });
+    toggleBox.inert = moving.length > 0;
+    if (moving.length) {
+      Promise.allSettled(moving).then(() => {
+        // 그사이 다시 드러냈으면(닫았다 다시 연 때) 그 차례가 푼다.
+        if (round === revealRound) toggleBox.inert = false;
+      });
+    }
   }
 
   /* ------------------------------------------------ 상태: intro(입장) · summary(요약) · hidden(감춤) */
@@ -2786,6 +2803,7 @@ function createOverlay(api, data, initial, syncToolbar) {
       (el) =>
         !el.disabled &&
         !el.hidden &&
+        !el.closest("[inert]") &&
         el.tabIndex >= 0 &&
         el.getClientRects().length > 0 &&
         getComputedStyle(el).visibility !== "hidden",

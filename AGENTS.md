@@ -1597,6 +1597,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     인자라 `plotly>=5.24,<7` 고정과 `tests/test_home_figure_cache.py` 의 공용 칸 왕복 테스트가
     지킨다. 저장 형식을 바꾸면 `HOME_FIGURE_SCHEMA_VERSION` 을 올린다 — 오래 떠 있는
     프로세스의 공용 칸에 옛 형식이 남아 있다.
+  - `shared_intro_toggle_store()`(`st.cache_resource`)는 입장 화면 Summary 토글 몫(선행 B/O·선행
+    입고·GAP)을 세션끼리 나누는 공용 LRU 다(값은 JSON 바이트). `st.cache_data` 가 아닌 까닭은 **있는지
+    먼저 봐야** 해서다 — GAP 이 없으면 HOME 앞에서 만들지 않고 「준비 중」으로 보낸다
+    (`components/intro_summary._toggle_parts`).
   - **대당 Capa·소요대수는 시나리오 전체 기간으로 한 번 계산하고 조회기간은 잘라 쓴다**
     (`get_full_capacity_outcome` → `slice_capacity_months`). 월끼리 섞이는 계산(누적·이월·
     보간)이 없어 자른 결과가 그 기간만 계산한 결과와 행 차례까지 같다
@@ -2410,13 +2414,34 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `advance_shipment_notes`, GAP 은 `simulation_cache.get_home_comparison_plan`(공식버전 기준정보로
     환산, EDP 제외) → `build_comparison_summary`. 증감 글자는 HOME 과 같은 형식·숨김 규칙
     (`services/plan_gap.py`)이다. 세 공용 프로필(선행 B/O·선행 입고 실적·비교 대상)은 **공식버전을
-    확인할 때만**(`RECHECK_SECONDS`) 캐시된 로더로 읽고(`load_toggle_profiles`), 서버 캐시 키
-    (`IntroSummaryCacheKey`)에 세 version 과 비교 시나리오·리비전 id 를 넣는다. 그 프로필을 이 세션에서
-    저장하면(`home_preference` 의 비교 대상·선행 B/O·선행 입고 저장, 시나리오 보관·삭제) 곧바로 다시
-    확인한다(`forget_intro_summary_check`). 비교 리비전 확인(`comparison_part`)은 HOME 의
-    `_owned_comparison_revision` 과 같지만 DB 오류를 잡지 않고 올린다 — 잠금으로 GAP 을 끈 결과가 캐시에
-    남지 않게. 한 토글의 데이터 오류는 그 토글만 끈다(`_guarded`). 비교 시나리오 이름은 키에 없어 이름을
-    바꾸면 다음 키 변화 때까지 풍선에 옛 이름이 남는다.
+    확인할 때만**(`RECHECK_SECONDS`) 캐시된 로더로 읽는다(`load_toggle_profiles`).
+    - **서버 캐시는 둘이다**(2026-10-08 적대적 검토 후속). 요약 한 벌은 예전 키 그대로
+      (`get_intro_summary_payload` — 공식버전·시나리오 이름·표시순서·공정 표시명·판정 기준 지문)이고, 토글
+      몫은 몫마다 따로 `simulation_cache.shared_intro_toggle_store`(공용 LRU, JSON 바이트)에 둔다 — 키는
+      공식버전 id 와 그 몫이 쓰는 것뿐(선행 B/O: 표시순서·공정 표시명·판정 기준·선행 B/O version, 선행
+      입고: 그 version, GAP: 표시순서·비교 version·비교 시나리오·리비전 id). 몫은 요약을 만든 프레임
+      (`_context` — 보내기 전에 뗀다)만으로 만들어, 선행 B/O 를 저장한 회차에 리비전 스냅샷·요약을 다시
+      풀지 않는다. 합성 DB 사본 실측(검토자 사본, 안쪽 캐시 데워진 상태): 선행 B/O 저장 뒤 HOME 앞
+      확인 약 95ms(같은 확인의 바닥 약 70ms — 대부분 `latest_official_release` 조회. 전에는 요약 전체를
+      다시 만들어 약 400ms 더), 선행 입고 약 60ms, 판정 기준 저장은 요약을 다시 만들어 약 350ms(전과
+      비슷하다).
+    - **GAP 은 HOME 앞에서 무겁게 만들지 않는다.** 비교 몫이 서버에 없으면(비교 대상을 바꾼 직후) 요약이
+      이미 서버에 있는 회차에는 GAP 을 「준비 중」(`pending` — `COMPARISON_PENDING`)으로 보내고, 페이지를
+      다 그린 **뒤** `app.py` 가 부르는 `warm_intro_summary` 가 만들어 서버와 이 세션 값에 둔다(실측 약
+      1.5초 → HOME 앞에서는 약 60ms). 다음 회차(화면이 다시 그려질 때)에 브라우저로 간다 — rerun 을 일부러
+      걸지 않으므로 사용자가 아무것도 건드리지 않으면 「준비 중」이 남는다. 요약을 처음 만드는 회차(서버가
+      빈 때 — 입장 화면이 로딩을 덮는다)에는 GAP 도 함께 만든다. 일시적 실패로 못 만든 몫도 「준비 중」으로
+      두고 서버에 남기지 않으며, 페이지 뒤 재시도는 한 확인 주기에 한 번이다. 브라우저는 「준비 중」·요약
+      없음 때 켜 둔 토글을 끄지 않는다(`intro.js` `syncToggles`).
+    - 그 프로필을 이 세션에서 저장하면(`home_preference` 의 비교 대상·선행 B/O·선행 입고·판정 기준 저장,
+      시나리오 보관·삭제·이름 변경) 곧바로 다시 확인한다(`forget_intro_summary_check` —
+      `tests/test_summary_recheck_paths.py` 가 길마다 지킨다). 비교 대상 시나리오의 이름을 바꾸면 저장소가
+      비교 프로필 version 을 올려(`home_profile_store.touch_global_comparison_scenario`) GAP 풍선의 이름이
+      바뀐다. 비교 리비전 확인(`comparison_part`)은 HOME 의 `_owned_comparison_revision` 과 같지만 DB 오류를
+      잡지 않고 올린다 — 잠금으로 GAP 을 끈 결과가 서버에 남지 않게. 한 토글의 데이터 오류는 그 토글만
+      끈다(`_guarded`).
+    - Wafer 값은 HOME 칸 글자(`{:,.0f}K`)와 같은 **천 매 단위 정수**로 보낸다(`_wafer_payload`) — 소수
+      한 자리로 보내고 브라우저가 다시 반올림하면 148,460매가 HOME 「148K」, 요약 「149K」였다.
   - 공식버전을 확인할 때 본 최신 공식버전의 리비전 id·번호를 세션에 같이 둔다(`latest_official_revision`).
     머리 띠(`app_header`)는 「공식 vN」을 그것만 읽어 정한다 — 회차마다 DB 를 보지 않는다. 확인 주기·
     무효화(`RECHECK_SECONDS`·`forget_intro_summary_check`)는 요약과 같다.

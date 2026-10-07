@@ -261,14 +261,17 @@ def build_advance_summary(
     securement_rate: pd.DataFrame,
     included_processes: Sequence[str],
     advance_rows: pd.DataFrame,
-    base: OfficialSummary,
 ) -> AdvanceSummary:
     """HOME 「선행 B/O」 토글과 같은 계산으로 요약의 Density·Wafer·B/N 을 다시 낸다.
 
-    `monthly_density`·`monthly_wafer` 는 요약이 그리는 계획(EDP 제외)이고 `base` 는 그것으로 만든
-    요약이다. 증감 글자는 `base` 와의 차이다.
+    `monthly_density`·`monthly_wafer`·`securement_rate` 는 요약이 그리는 계획(EDP 제외)과 확보율
+    이다 — `build_official_summary` 에 넘긴 것과 같은 프레임. 증감 글자는 같은 프레임으로 낸 원래
+    값(요약과 같은 함수)과의 차이라, 요약 한 벌을 다시 만들지 않는다.
     """
     month_list = list(months)
+    base_density = _monthly_values(monthly_density, "부하량", month_list)
+    base_wafer = _monthly_values(monthly_wafer, "Wafer 부하량", month_list)
+    base_bottlenecks = _bottlenecks(securement_rate, included_processes, month_list)
     ratio = build_advance_load_ratio(monthly_density, advance_rows)
     density = apply_advance_to_density(monthly_density, ratio)
     wafer = apply_advance_to_wafer(monthly_wafer, ratio)
@@ -293,18 +296,18 @@ def build_advance_summary(
         bottlenecks=tuple(bottlenecks),
         density_delta=tuple(
             format_gap(_difference(new, old), DENSITY_GAP_FORMAT)
-            for new, old in zip(density_values, base.density, strict=True)
+            for new, old in zip(density_values, base_density, strict=True)
         ),
         wafer_delta=tuple(
             format_gap(_difference(new, old), WAFER_GAP_FORMAT, scale=WAFER_GAP_SCALE)
-            for new, old in zip(wafer_values, base.wafer, strict=True)
+            for new, old in zip(wafer_values, base_wafer, strict=True)
         ),
         rate_delta=tuple(
             _rate_delta(
                 None if new is None else new.rate,
                 None if old is None else old.rate,
             )
-            for new, old in zip(bottlenecks, base.bottlenecks, strict=True)
+            for new, old in zip(bottlenecks, base_bottlenecks, strict=True)
         ),
         applied=tuple(month for month in month_list if month in applied_months),
         unapplied=tuple(
@@ -341,16 +344,20 @@ def _difference(new: float | None, old: float | None) -> float | None:
 def build_comparison_summary(
     *,
     months: Sequence[int],
-    base: OfficialSummary,
+    monthly_density: pd.DataFrame,
+    monthly_wafer: pd.DataFrame,
     comparison_density: pd.DataFrame,
     comparison_wafer: pd.DataFrame,
 ) -> ComparisonSummary:
     """요약(선행 전)과 비교 시나리오의 같은 달 계획 차이.
 
+    `monthly_density`·`monthly_wafer` 는 요약이 그리는 계획(EDP 제외, 선행 전)이고
     `comparison_density`·`comparison_wafer` 는 비교 시나리오의 계획을 공식버전의 기준정보로 환산한
     월별 표다(`simulation_cache.get_home_comparison_plan` — HOME GAP 과 같은 함수).
     """
     month_list = list(months)
+    own_density = _monthly_values(monthly_density, "부하량", month_list)
+    own_wafer = _monthly_values(monthly_wafer, "Wafer 부하량", month_list)
     density = _monthly_values(comparison_density, "부하량", month_list)
     wafer = _monthly_values(comparison_wafer, "Wafer 부하량", month_list)
     return ComparisonSummary(
@@ -358,10 +365,10 @@ def build_comparison_summary(
         wafer=tuple(wafer),
         density_gap=tuple(
             format_gap(_difference(own, other), DENSITY_GAP_FORMAT)
-            for own, other in zip(base.density, density, strict=True)
+            for own, other in zip(own_density, density, strict=True)
         ),
         wafer_gap=tuple(
             format_gap(_difference(own, other), WAFER_GAP_FORMAT, scale=WAFER_GAP_SCALE)
-            for own, other in zip(base.wafer, wafer, strict=True)
+            for own, other in zip(own_wafer, wafer, strict=True)
         ),
     )

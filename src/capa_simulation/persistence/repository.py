@@ -1108,6 +1108,8 @@ class DuckDBScenarioRepository:
             ).fetchone()
             if changed is None:
                 raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
+            # 비교 대상의 이름이 바뀐 것을 입장 화면 Summary GAP 이 알게 한다(그 값의 키가 version).
+            home_profile_store.touch_global_comparison_scenario(connection, scenario_id)
         for scenario in self.list_scenarios():
             if scenario.scenario_id == scenario_id:
                 return scenario

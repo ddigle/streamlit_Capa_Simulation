@@ -690,6 +690,14 @@ def test_summary_toggles_sit_right_after_the_docked_detail() -> None:
     assert entry.index("dockDetail(true);") < entry.index("revealToggles(true);")
     snap = _between(js, "function snapToSummary(", "function holeAt(")
     assert "revealToggles(false);" in snap
+    # 떠오르는 동안(아직 투명한 동안)은 inert 로 묶어 Tab 이 닿지 않고, 덮개 안 Tab 순환도 건너뛴다.
+    reveal = _between(
+        js, "function revealToggles(", "/* ------------------------------------------------ 상태"
+    )
+    assert "toggleBox.inert = moving.length > 0;" in reveal
+    assert "if (round === revealRound) toggleBox.inert = false;" in reveal
+    focusables = _between(js, "function focusables()", "function cycleFocus(event)")
+    assert '!el.closest("[inert]")' in focusables
 
 
 def test_summary_toggles_are_pressed_buttons_with_reasons_when_off() -> None:
@@ -705,8 +713,9 @@ def test_summary_toggles_are_pressed_buttons_with_reasons_when_off() -> None:
     assert 'button.setAttribute("aria-disabled", can ? "false" : "true");' in toggles
     assert 'if (button.getAttribute("aria-disabled") === "true") return;' in toggles
     assert "button.title = toggleTitle(spec);" in toggles
-    # 켤 수 없게 된 토글은 끈다. 상태는 탭이 살아 있는 동안만(창의 `__capaIntro`) 기억한다.
-    assert "if (!can) view[key] = false;" in toggles
+    # 켤 수 없다고 정해진 토글만 끈다 — 요약이 잠깐 없거나(일시적 실패) 그 몫이 「준비 중」이면 고른
+    # 상태를 지킨다. 상태는 탭이 살아 있는 동안만(창의 `__capaIntro`) 기억한다.
+    assert "if (summary && part && !part.available && !part.pending) view[key] = false;" in toggles
     assert "sessionStorage" not in toggles and "localStorage" not in toggles
     # 라벨은 본문 글꼴이다 — 부분 글꼴에 한글·`B`·`/` 가 없다.
     css = (ASSETS / "intro.css").read_text(encoding="utf-8")

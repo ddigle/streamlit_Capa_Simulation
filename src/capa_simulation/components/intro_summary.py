@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, NamedTuple
 
 import duckdb
@@ -111,6 +111,7 @@ from capa_simulation.services.simulation_cache import (
     get_home_lob_without_edp,
     get_home_simulation,
     get_intro_summary_payload,
+    shared_intro_toggle_store,
 )
 from capa_simulation.services.threshold_label import threshold_percent_label
 
@@ -138,6 +139,11 @@ COMPARISON_OFF_MISSING = (
 )
 COMPARISON_OFF_SELF = "비교 대상이 이 공식버전 자신이라 차이가 없습니다"
 COMPARISON_OFF_UNCOVERED = "비교 시나리오에 요약 기간의 계획이 없습니다"
+# 비교 값을 아직 서버에 만들어 두지 않아 이번 회차에는 보내지 못한 때(`_toggle_parts`). 페이지를 다
+# 그린 뒤 만들어 두고 다음 회차에 싣는다 — 켜 둔 GAP 은 끄지 않는다(intro.js `syncToggles`).
+COMPARISON_PENDING = "비교 시나리오 값을 준비하는 중입니다 — 화면이 다시 그려지면 켤 수 있습니다"
+# 서버 캐시에 든 요약 값에서 토글 몫이 쓸 재료를 담는 칸. 브라우저로 보내기 전에 뗀다.
+_CONTEXT = "_context"
 
 
 class ToggleProfiles(NamedTuple):
@@ -146,16 +152,6 @@ class ToggleProfiles(NamedTuple):
     advance: GlobalAdvanceLoad
     shipment: GlobalAdvanceShipment
     comparison: GlobalComparisonScenario
-
-    def cache_key(self) -> tuple[int, int, int, str, str]:
-        """서버 캐시 키에 넣는 몫 — 세 프로필의 version 과 비교 대상(시나리오·리비전)."""
-        return (
-            self.advance.version,
-            self.shipment.version,
-            self.comparison.version,
-            self.comparison.scenario_id or "",
-            self.comparison.revision_id or "",
-        )
 
 
 def load_toggle_profiles(database_path: str) -> ToggleProfiles:
@@ -200,9 +196,13 @@ def _density_payload(values: Sequence[float | None]) -> list[float | None]:
     return [_round(value, 2) for value in values]
 
 
-def _wafer_payload(values: Sequence[float | None]) -> list[float | None]:
-    """Wafer 는 천 매(K) 단위 한 자리로 보낸다."""
-    return [_round(None if value is None else value / 1_000, 1) for value in values]
+def _wafer_payload(values: Sequence[float | None]) -> list[int | None]:
+    """Wafer 는 HOME 칸과 같은 글자(`{:,.0f}K`)의 숫자 — 천 매 단위 정수로 보낸다.
+
+    소수로 보내고 브라우저가 다시 반올림하면 두 번 반올림한다(148,460매가 HOME 「148K」, 요약
+    「149K」였다). 파이썬 형식으로 한 번만 반올림해 HOME 과 같은 정수를 싣는다.
+    """
+    return [None if value is None else int(f"{value / 1_000:.0f}") for value in values]
 
 
 def _bottleneck_payload(
@@ -284,7 +284,7 @@ def summary_payload(
 
 
 def advance_payload(
-    summary: OfficialSummary,
+    months: Sequence[int],
     advance: AdvanceSummary,
     *,
     thresholds: SecurementThresholds,
@@ -301,7 +301,7 @@ def advance_payload(
         "density": _density_payload(advance.density),
         "wafer": _wafer_payload(advance.wafer),
         "bn": _bottleneck_payload(
-            summary.months, advance.bottlenecks, thresholds=thresholds, process_label=process_label
+            months, advance.bottlenecks, thresholds=thresholds, process_label=process_label
         ),
         "density_delta": list(advance.density_delta),
         "wafer_delta": list(advance.wafer_delta),
@@ -350,14 +350,17 @@ def comparison_part(
     release: OfficialReleaseSummary,
     profile: GlobalComparisonScenario,
     *,
-    summary: OfficialSummary,
+    months: Sequence[int],
+    monthly_density: pd.DataFrame,
+    monthly_wafer: pd.DataFrame,
     load_plan: ComparisonPlanLoader,
 ) -> dict[str, Any]:
     """비교 대상을 확인하고 GAP 값을 만든다.
 
     HOME 의 `_owned_comparison_revision` 과 같은 확인(그 리비전이 아직 그 시나리오 것인가)을 하되,
-    DB 오류는 잡지 않고 올린다 — 일시적 실패로 GAP 을 끈 결과가 서버 캐시에 남지 않게 한다.
-    `load_plan` 은 리비전 id 로 비교 계획의 월별 Density·Wafer 를 낸다.
+    DB 오류는 잡지 않고 올린다 — 일시적 실패로 GAP 을 끈 결과가 서버에 남지 않게 한다.
+    `monthly_density`·`monthly_wafer` 는 요약의 계획(EDP 제외, 선행 전)이고, `load_plan` 은
+    리비전 id 로 비교 계획의 월별 Density·Wafer 를 낸다.
     """
     if profile.scenario_id is None or profile.revision_id is None:
         return _unavailable(COMPARISON_OFF_NONE)
@@ -384,8 +387,9 @@ def comparison_part(
     )
     comparison_density, comparison_wafer = load_plan(revision.revision_id)
     comparison = build_comparison_summary(
-        months=summary.months,
-        base=summary,
+        months=months,
+        monthly_density=monthly_density,
+        monthly_wafer=monthly_wafer,
         comparison_density=comparison_density,
         comparison_wafer=comparison_wafer,
     )
@@ -393,11 +397,13 @@ def comparison_part(
 
 
 def _build(
-    database_path: str,
-    release: OfficialReleaseSummary,
-    thresholds: SecurementThresholds,
-    profiles: ToggleProfiles,
+    database_path: str, release: OfficialReleaseSummary, thresholds: SecurementThresholds
 ) -> dict[str, Any]:
+    """요약 한 벌(토글 몫 없이). 토글 몫이 쓸 재료를 `_context` 로 함께 둔다 — 보내기 전에 뗀다.
+
+    재료는 요약을 만든 바로 그 프레임(계획은 EDP 제외)이다. 토글 몫은 이것만으로 만들어 서버
+    캐시에 든 요약·리비전 스냅샷을 다시 풀지 않는다.
+    """
     snapshot = load_scenario_snapshot(database_path, release.revision_id)
     tables = snapshot.tables
     preset = snapshot.preset
@@ -436,77 +442,168 @@ def _build(
         display_order=display_order,
         included_processes=preset.included_processes,
     )
-    process_label = get_process_labels().format_func()
     payload = summary_payload(
         summary,
         release_name=release.release_name,
         scenario_name=release.scenario_name,
         thresholds=thresholds,
-        process_label=process_label,
+        process_label=get_process_labels().format_func(),
     )
+    payload[_CONTEXT] = {
+        "months": list(months),
+        "included": list(preset.included_processes),
+        "home_key": cache_key,
+        "density": monthly_density,
+        "wafer": monthly_wafer,
+        "securement": securement_rate,
+    }
+    return payload
 
-    def advance() -> dict[str, Any]:
-        if profiles.advance.rows.empty:
-            return _unavailable(ADVANCE_OFF_EMPTY)
-        outcome = build_advance_summary(
-            months=months,
-            monthly_density=monthly_density,
-            monthly_wafer=monthly_wafer,
-            securement_rate=securement_rate,
-            included_processes=preset.included_processes,
-            advance_rows=profiles.advance.rows,
-            base=summary,
-        )
-        return advance_payload(summary, outcome, thresholds=thresholds, process_label=process_label)
 
-    def shipment() -> dict[str, Any]:
-        notes = advance_shipment_notes(profiles.shipment.rows, summary.labels)
-        return shipment_payload([text for text, _hover in notes])
+def _build_or_unavailable(
+    database_path: str, release: OfficialReleaseSummary, thresholds: SecurementThresholds
+) -> dict[str, Any]:
+    """서버 캐시가 부르는 계산. 일시적일 수 있는 실패는 그대로 올려 캐시에 남기지 않고,
+    그 밖의 실패(데이터 오류)는 「만들지 못함」으로 돌려 캐시에 남긴다."""
+    try:
+        return _build(database_path, release, thresholds)
+    except _TRANSIENT_ERRORS:
+        raise
+    except Exception as exc:  # 다시 해도 같은 결과다 — 회차마다 다시 계산하지 않게 남긴다
+        return _unavailable(f"공식버전 요약을 만들지 못했습니다: {type(exc).__name__}: {exc}")
 
-    def comparison_plan(revision_id: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+
+def _advance_part(
+    context: Mapping[str, Any],
+    profile: GlobalAdvanceLoad,
+    thresholds: SecurementThresholds,
+    process_label: Callable[[str], str],
+) -> dict[str, Any]:
+    """선행 B/O 몫 — 요약을 만든 프레임에 HOME 과 같은 함수로 선행 B/O 를 건다."""
+    if profile.rows.empty:
+        return _unavailable(ADVANCE_OFF_EMPTY)
+    months = list(context["months"])
+    outcome = build_advance_summary(
+        months=months,
+        monthly_density=context["density"],
+        monthly_wafer=context["wafer"],
+        securement_rate=context["securement"],
+        included_processes=context["included"],
+        advance_rows=profile.rows,
+    )
+    return advance_payload(months, outcome, thresholds=thresholds, process_label=process_label)
+
+
+def _shipment_part(context: Mapping[str, Any], profile: GlobalAdvanceShipment) -> dict[str, Any]:
+    """선행 입고 몫 — HOME `Capa LOB 현황` 이 Density 칸에 적는 글자 그대로."""
+    labels = [month_label(int(month)) for month in context["months"]]
+    return shipment_payload([text for text, _hover in advance_shipment_notes(profile.rows, labels)])
+
+
+def _comparison_part(
+    database_path: str,
+    release: OfficialReleaseSummary,
+    profile: GlobalComparisonScenario,
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    """GAP 몫. 비교 계획을 공식버전 기준정보로 환산하는 데에만 리비전 스냅샷이 든다(그때만 푼다)."""
+
+    def load_plan(revision_id: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+        tables = load_scenario_snapshot(database_path, release.revision_id).tables
         # HOME GAP 과 같은 함수다 — 비교 리비전의 계획만 가져와 공식버전의 기준정보로 환산한다.
         density, wafer, _detail = get_home_comparison_plan(
-            cache_key=cache_key,
+            cache_key=context["home_key"],
             _tables=tables,
             _comparison_plan=load_scenario_plan(database_path, revision_id),
-            _display_order=display_order,
+            _display_order=tables["RQ_DISPLAY_ORDER"],
             comparison_revision_id=revision_id,
             include_edp=False,
             detail_dimensions=tuple(PRODUCTION_DETAIL_DIMENSIONS),
         )
         return density, wafer
 
-    payload["toggles"] = {
-        "advance": _guarded("선행 B/O", advance),
-        "shipment": _guarded("선행 입고", shipment),
-        "comparison": _guarded(
-            "GAP",
-            lambda: comparison_part(
-                database_path,
-                release,
-                profiles.comparison,
-                summary=summary,
-                load_plan=comparison_plan,
-            ),
-        ),
-    }
-    return payload
+    return comparison_part(
+        database_path,
+        release,
+        profile,
+        months=list(context["months"]),
+        monthly_density=context["density"],
+        monthly_wafer=context["wafer"],
+        load_plan=load_plan,
+    )
 
 
-def _build_or_unavailable(
+def _pending() -> dict[str, Any]:
+    return {"available": False, "pending": True, "reason": COMPARISON_PENDING}
+
+
+def _toggle_parts(
     database_path: str,
     release: OfficialReleaseSummary,
     thresholds: SecurementThresholds,
-    profiles: ToggleProfiles,
-) -> dict[str, Any]:
-    """서버 캐시가 부르는 계산. 일시적일 수 있는 실패는 그대로 올려 캐시에 남기지 않고,
-    그 밖의 실패(데이터 오류)는 「만들지 못함」으로 돌려 캐시에 남긴다."""
-    try:
-        return _build(database_path, release, thresholds, profiles)
-    except _TRANSIENT_ERRORS:
-        raise
-    except Exception as exc:  # 다시 해도 같은 결과다 — 회차마다 다시 계산하지 않게 남긴다
-        return _unavailable(f"공식버전 요약을 만들지 못했습니다: {type(exc).__name__}: {exc}")
+    context: Mapping[str, Any],
+    *,
+    defer: bool,
+) -> tuple[dict[str, Any], bool]:
+    """토글 셋의 값과, 이번에 「준비 중」으로 남긴 몫이 있는지.
+
+    몫마다 따로 서버에 한 벌씩 둔다(`shared_intro_toggle_store`). 키는 공식버전 id 와 그 몫이 쓰는
+    것뿐이라 선행 B/O 를 저장해도 요약·다른 몫은 그대로 꺼낸다. 선행 B/O·선행 입고는 요약 재료만으로
+    수 ms 라 바로 만든다. GAP 은 처음 만들 때 비교 리비전 계획을 읽고 환산해야 해서(합성 사본 약
+    1.4초) `defer` 면 HOME 페이지 **앞**에서 치르지 않고 「준비 중」으로 보낸 뒤 페이지를 그린 다음
+    `warm_intro_summary` 가 만든다. 일시적 실패도 「준비 중」으로 두고 남기지 않는다.
+    """
+    store = shared_intro_toggle_store()
+    profiles = load_toggle_profiles(database_path)
+    official = release.official_release_id
+    order_version = load_global_display_order(database_path).version
+    labels = get_process_labels()
+    comparison = profiles.comparison
+    specs: list[tuple[str, str, tuple[Any, ...], Callable[[], dict[str, Any]], bool]] = [
+        (
+            "advance",
+            "선행 B/O",
+            ("advance", official, order_version, labels.version, thresholds.digest)
+            + (profiles.advance.version,),
+            lambda: _advance_part(context, profiles.advance, thresholds, labels.format_func()),
+            False,
+        ),
+        (
+            "shipment",
+            "선행 입고",
+            ("shipment", official, profiles.shipment.version),
+            lambda: _shipment_part(context, profiles.shipment),
+            False,
+        ),
+        (
+            "comparison",
+            "GAP",
+            ("comparison", official, order_version, comparison.version)
+            + (comparison.scenario_id or "", comparison.revision_id or ""),
+            lambda: _comparison_part(database_path, release, comparison, context),
+            True,
+        ),
+    ]
+    parts: dict[str, Any] = {}
+    pending = False
+    for name, title, key, build, deferrable in specs:
+        blob = store.get(key)
+        if blob is not None:
+            parts[name] = json.loads(blob)
+            continue
+        if deferrable and defer:
+            parts[name] = _pending()
+            pending = True
+            continue
+        try:
+            part = _guarded(title, build)
+        except _TRANSIENT_ERRORS:
+            parts[name] = _pending()
+            pending = True
+            continue
+        store.put(key, json.dumps(part, ensure_ascii=False).encode("utf-8"))
+        parts[name] = part
+    return parts, pending
 
 
 class _Transient(Exception):
@@ -519,23 +616,24 @@ def _official_identity(release: OfficialReleaseSummary | None) -> dict[str, Any]
     return {"revision_id": release.revision_id, "release_no": release.release_no}
 
 
-def _look_up(database_path: str) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    """보낼 요약과, 그때 본 최신 공식버전(리비전 id·번호 — 없으면 `None`).
+def _look_up(
+    database_path: str, *, defer: bool = True
+) -> tuple[dict[str, Any], dict[str, Any] | None, bool]:
+    """보낼 요약, 그때 본 최신 공식버전(리비전 id·번호 — 없으면 `None`), 「준비 중」 몫이 있는지.
 
     공식버전을 읽은 뒤의 실패로 요약을 만들지 못해도 공식버전 자체는 돌려준다 — 머리 띠의
-    「공식 vN」과 사이드바 배지가 서로 다른 말을 하지 않게 한다.
+    「공식 vN」과 사이드바 배지가 서로 다른 말을 하지 않게 한다. 요약을 이번에 새로 만들었으면
+    (서버에 처음 — 입장 화면이 로딩을 덮는 때다) GAP 도 미루지 않고 함께 만든다.
     """
     identity: dict[str, Any] | None = None
     try:
         release = get_scenario_repository(database_path).latest_official_release()
         if release is None:
-            return _unavailable("공식버전이 아직 없습니다."), None
+            return _unavailable("공식버전이 아직 없습니다."), None, False
         identity = _official_identity(release)
         # 판정 기준은 공용 프로필이다(시나리오 프리셋 값이 아니다). 키에는 version 이 아니라 **내용
         # 지문**을 넣는다 — 저장 전에는 version 이 0 이지만 기본값은 최신 공식버전 프리셋을 따른다.
         thresholds = load_global_securement_threshold(database_path).thresholds
-        # 토글 셋이 쓰는 공용 프로필. 캐시된 로더라 확인 때마다 DB 를 열지 않는다.
-        profiles = load_toggle_profiles(database_path)
         cache_key: IntroSummaryCacheKey = (
             release.official_release_id,
             # 시나리오 이름은 바꿔도 공식버전 id 가 그대로라 따로 넣는다(머리 줄 풍선이 쓴다).
@@ -543,19 +641,30 @@ def _look_up(database_path: str) -> tuple[dict[str, Any], dict[str, Any] | None]
             load_global_display_order(database_path).version,
             get_process_labels().version,
             thresholds.digest,
-            *profiles.cache_key(),
         )
-        payload = get_intro_summary_payload(
-            cache_key,
-            _build=lambda: _build_or_unavailable(database_path, release, thresholds, profiles),
+        built = False
+
+        def build() -> dict[str, Any]:
+            nonlocal built
+            built = True
+            return _build_or_unavailable(database_path, release, thresholds)
+
+        payload = get_intro_summary_payload(cache_key, _build=build)
+        context = payload.pop(_CONTEXT, None)
+        if not payload.get("available") or not isinstance(context, Mapping):
+            return payload, identity, False
+        toggles, pending = _toggle_parts(
+            database_path, release, thresholds, context, defer=defer and not built
         )
-        return payload, identity
+        payload["toggles"] = toggles
+        return payload, identity, pending
     except _TRANSIENT_ERRORS as exc:
         raise _Transient(f"{type(exc).__name__}: {exc}") from exc
     except Exception as exc:  # 모든 페이지 앞이다 — 어떤 실패든 이 화면 하나로 끝내야 한다
         return (
             _unavailable(f"공식버전 요약을 만들지 못했습니다: {type(exc).__name__}: {exc}"),
             identity,
+            False,
         )
 
 
@@ -573,8 +682,9 @@ def official_summary_data(database_path: str) -> dict[str, Any]:
         and now - float(held.get("checked_at", -RECHECK_SECONDS)) < RECHECK_SECONDS
     ):
         return dict(held["data"])
+    pending = False
     try:
-        data, official = _look_up(database_path)
+        data, official, pending = _look_up(database_path)
     except _Transient as exc:
         # DB 잠금 같은 일시적 실패로 멀쩡한 요약을 지우지 않는다(지우면 사이드바 라벨이 Summary
         # 를 열지 못한다). 들고 있던 값을 그대로 두고, 다음 확인도 `RECHECK_SECONDS` 뒤에 한다 —
@@ -585,8 +695,41 @@ def official_summary_data(database_path: str) -> dict[str, Any]:
         )
         kept_official = held.get("official") if isinstance(held, dict) else None
         official = kept_official if isinstance(kept_official, dict) else None
-    st.session_state[_SESSION_KEY] = {"checked_at": now, "data": data, "official": official}
+    st.session_state[_SESSION_KEY] = {
+        "checked_at": now,
+        "data": data,
+        "official": official,
+        "pending": pending,
+    }
     return dict(data)
+
+
+def warm_intro_summary(database_path: str) -> None:
+    """이번 회차에 「준비 중」으로 보낸 토글 몫(GAP)을 **페이지를 다 그린 뒤** 만들어 둔다.
+
+    `app.py` 가 `navigation.run()` 뒤(페이지가 `st.stop()` 한 때도)에 부른다. 만든 값은 서버에
+    남고 이 세션의 요약도 고쳐 두어 다음 회차에 브라우저로 간다 — 이번 회차의 요약은 이미 보냈다.
+    「준비 중」이 없으면 아무것도 하지 않고(세션 하나 읽기), 실패하면 `RECHECK_SECONDS` 뒤 다시 해
+    본다. 어떤 실패도 밖으로 내보내지 않는다 — 페이지는 이미 그렸다.
+    """
+    held = st.session_state.get(_SESSION_KEY)
+    if not isinstance(held, dict) or not held.get("pending"):
+        return
+    now = time.monotonic()
+    if now - float(held.get("warmed_at", -RECHECK_SECONDS)) < RECHECK_SECONDS:
+        return
+    held["warmed_at"] = now
+    try:
+        data, official, pending = _look_up(database_path, defer=False)
+    except Exception:  # 페이지는 이미 그렸다 — 다음 확인에 맡긴다
+        return
+    st.session_state[_SESSION_KEY] = {
+        "checked_at": now,
+        "data": data,
+        "official": official,
+        "pending": pending,
+        "warmed_at": now,
+    }
 
 
 def latest_official_revision() -> tuple[str, int] | None:

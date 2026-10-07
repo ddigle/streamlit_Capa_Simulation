@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from types import SimpleNamespace
 
 import pandas as pd
@@ -209,6 +209,7 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
     from capa_simulation.services import simulation_cache
 
     simulation_cache.get_intro_summary_payload.clear()
+    simulation_cache.shared_intro_toggle_store.clear()
     env = SimpleNamespace(
         session={},
         now=1000.0,
@@ -219,31 +220,41 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
         thresholds=SecurementThresholds(1.095, 0.995),
         versions={"advance": 0, "shipment": 0, "comparison": 0},
         profile_reads=0,
+        parts=[],
+        part_fail=None,
     )
 
     def fake_profiles(path: str) -> SimpleNamespace:
         env.profile_reads += 1
-        versions = dict(env.versions)
         return SimpleNamespace(
-            cache_key=lambda: (
-                versions["advance"],
-                versions["shipment"],
-                versions["comparison"],
-                "S-CMP",
-                "R-CMP",
-            )
+            advance=SimpleNamespace(version=env.versions["advance"]),
+            shipment=SimpleNamespace(version=env.versions["shipment"]),
+            comparison=SimpleNamespace(
+                version=env.versions["comparison"], scenario_id="S-CMP", revision_id="R-CMP"
+            ),
         )
 
     def fake_build(
-        path: str,
-        release: SimpleNamespace,
-        thresholds: SecurementThresholds,
-        profiles: SimpleNamespace,
+        path: str, release: SimpleNamespace, thresholds: SecurementThresholds
     ) -> dict[str, object]:
         env.builds.append(release.official_release_id)
         if env.fail is not None:
             raise env.fail
-        return {"available": True, "release": release.official_release_id}
+        # 토글 몫이 쓸 재료(`_context`)는 브라우저로 가기 전에 떼어진다.
+        return {
+            "available": True,
+            "release": release.official_release_id,
+            "_context": {"months": [202610]},
+        }
+
+    def fake_part(name: str) -> Callable[..., dict[str, object]]:
+        def build(*args: object) -> dict[str, object]:
+            env.parts.append(name)
+            if env.part_fail is not None:
+                raise env.part_fail
+            return {"available": True, "part": name, "version": env.versions[name]}
+
+        return build
 
     monkeypatch.setattr(st, "session_state", env.session)
     monkeypatch.setattr(intro_summary, "time", SimpleNamespace(monotonic=lambda: env.now))
@@ -251,7 +262,11 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
     monkeypatch.setattr(
         intro_summary, "load_global_display_order", lambda path: SimpleNamespace(version=1)
     )
-    monkeypatch.setattr(intro_summary, "get_process_labels", lambda: SimpleNamespace(version=0))
+    monkeypatch.setattr(
+        intro_summary,
+        "get_process_labels",
+        lambda: SimpleNamespace(version=0, format_func=lambda: str),
+    )
     monkeypatch.setattr(
         intro_summary,
         "load_global_securement_threshold",
@@ -259,8 +274,11 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
     )
     monkeypatch.setattr(intro_summary, "load_toggle_profiles", fake_profiles)
     monkeypatch.setattr(intro_summary, "_build", fake_build)
+    for name in ("advance", "shipment", "comparison"):
+        monkeypatch.setattr(intro_summary, f"_{name}_part", fake_part(name))
     yield env
     simulation_cache.get_intro_summary_payload.clear()
+    simulation_cache.shared_intro_toggle_store.clear()
 
 
 def test_home_reruns_reuse_the_session_value_without_touching_the_db(
@@ -293,18 +311,90 @@ def test_toggle_profiles_are_read_only_when_the_official_version_is_checked(
     assert summary_env.profile_reads == 2 and summary_env.builds == ["rel-1"]
 
 
-@pytest.mark.parametrize("profile", ["advance", "shipment", "comparison"])
-def test_a_saved_toggle_profile_rebuilds_the_summary(
+def test_the_summary_sends_the_toggle_parts_but_not_their_ingredients(
+    summary_env: SimpleNamespace,
+) -> None:
+    sent = summary_env.module.official_summary_data("db")
+    assert "_context" not in sent
+    assert {name: part["part"] for name, part in sent["toggles"].items()} == {
+        "advance": "advance",
+        "shipment": "shipment",
+        "comparison": "comparison",
+    }
+    # 서버에 처음 만드는 요약(입장 화면이 로딩을 덮는 때)은 GAP 도 미루지 않는다.
+    assert summary_env.parts == ["advance", "shipment", "comparison"]
+
+
+@pytest.mark.parametrize("profile", ["advance", "shipment"])
+def test_a_saved_toggle_profile_rebuilds_only_its_own_part(
     summary_env: SimpleNamespace, profile: str
 ) -> None:
-    """프로필 version 이 서버 캐시 키에 있다 — 저장하면(version 이 오르면) 같은 공식버전도
-    새로 만든다."""
+    """토글 몫은 요약과 따로 서버에 둔다 — 선행 B/O·선행 입고를 저장해도 요약과 다른 몫은 다시
+    만들지 않는다(그 회차에 HOME 보다 먼저 리비전 스냅샷을 다시 풀던 것)."""
     data = summary_env.module.official_summary_data
     data("db")
+    summary_env.parts.clear()
     summary_env.versions[profile] += 1
     summary_env.module.forget_intro_summary_check()
+    sent = data("db")
+    assert summary_env.builds == ["rel-1"]
+    assert summary_env.parts == [profile]
+    assert sent["toggles"][profile]["version"] == 1
+
+
+def test_a_changed_comparison_is_built_after_the_page_and_sent_on_the_next_run(
+    summary_env: SimpleNamespace,
+) -> None:
+    """비교 대상을 바꾼 회차에는 GAP 을 HOME 앞에서 만들지 않는다 — 「준비 중」으로 보내고
+    `warm_intro_summary`(페이지 뒤)가 만들어 다음 회차에 싣는다. 켜 둔 GAP 은 브라우저가 지킨다."""
+    module = summary_env.module
+    data = module.official_summary_data
     data("db")
-    assert summary_env.builds == ["rel-1", "rel-1"]
+    summary_env.parts.clear()
+    summary_env.versions["comparison"] += 1
+    module.forget_intro_summary_check()
+    sent = data("db")
+    assert summary_env.parts == []
+    assert sent["toggles"]["comparison"] == {
+        "available": False,
+        "pending": True,
+        "reason": module.COMPARISON_PENDING,
+    }
+    assert sent["toggles"]["advance"]["available"] is True
+    module.warm_intro_summary("db")
+    assert summary_env.parts == ["comparison"]
+    summary_env.now += 1  # 다음 회차 — 다시 확인하지 않고 세션 값을 보낸다
+    calls = summary_env.repo.calls
+    after = data("db")
+    assert after["toggles"]["comparison"]["version"] == 1
+    assert summary_env.repo.calls == calls and summary_env.builds == ["rel-1"]
+
+
+def test_warming_does_nothing_when_nothing_is_pending(summary_env: SimpleNamespace) -> None:
+    module = summary_env.module
+    module.official_summary_data("db")
+    calls = summary_env.repo.calls
+    module.warm_intro_summary("db")
+    assert summary_env.repo.calls == calls
+
+
+def test_a_transient_failure_in_a_part_stays_pending_and_is_not_kept(
+    summary_env: SimpleNamespace,
+) -> None:
+    """DB 잠금 같은 일시적 실패로 만든 토글 몫은 서버에 남기지 않는다 — 「준비 중」으로 두고 페이지
+    뒤에서 다시 해 본다(같은 확인 주기 안에서는 한 번만)."""
+    import duckdb
+
+    module = summary_env.module
+    summary_env.part_fail = duckdb.IOException("잠김")
+    sent = module.official_summary_data("db")
+    assert all(part.get("pending") for part in sent["toggles"].values())
+    summary_env.part_fail = None
+    module.warm_intro_summary("db")
+    module.warm_intro_summary("db")
+    assert summary_env.parts.count("advance") == 2
+    summary_env.now += 1
+    assert module.official_summary_data("db")["toggles"]["advance"]["available"] is True
 
 
 def test_a_new_session_takes_the_summary_from_the_server_cache(

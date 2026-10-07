@@ -10,7 +10,11 @@ from capa_simulation.components.app_credits import render_app_credits
 from capa_simulation.components.app_header import render_app_header, render_shell_style
 from capa_simulation.components.equipment_data_workspace import has_unsaved_equipment_edits
 from capa_simulation.components.intro_overlay import render_intro_overlay
-from capa_simulation.components.intro_summary import render_intro_summary, summary_label_script
+from capa_simulation.components.intro_summary import (
+    render_intro_summary,
+    summary_label_script,
+    warm_intro_summary,
+)
 from capa_simulation.components.month_range_picker import render_month_range_picker
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
 from capa_simulation.components.print_button import print_toolbar_script
@@ -385,10 +389,15 @@ with pinned_connections(DUCKDB_PATH):
     render_schema_ahead_warning(get_scenario_repository(str(DUCKDB_PATH.resolve())).schema_ahead)
     # 끝까지 돈 실행 뒤에만 상자 여닫기가 본문을 건너뛴다. 페이지가 `st.stop()` 으로 멈춘 것도
     # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다.
+    # 입장 화면 Summary 의 GAP 몫이 「준비 중」으로 나갔으면 페이지를 다 그린 **뒤**에 만들어 둔다 —
+    # 비교 대상을 바꾼 회차에 HOME 보다 먼저 비교 계획을 환산하지 않게(다음 회차에 싣는다). 페이지가
+    # `st.stop()` 해도 한다. rerun 으로 끊긴 회차에서는 하지 않는다.
     try:
         with equipment_pin:
             navigation.run()
     except StopException:
         app_run["complete"] = True
+        warm_intro_summary(str(DUCKDB_PATH.resolve()))
         raise
     app_run["complete"] = True
+    warm_intro_summary(str(DUCKDB_PATH.resolve()))

@@ -128,7 +128,6 @@ def test_advance_values_come_from_the_same_functions_as_home() -> None:
         securement_rate=_securement(),
         included_processes=INCLUDED,
         advance_rows=ADVANCE_ROWS,
-        base=base,
     )
     lob_summary, baseline, bottlenecks = _home_advance_frames()
 
@@ -171,10 +170,9 @@ def test_the_advance_payload_judges_each_month_and_keeps_the_summary_shape() -> 
         securement_rate=_securement(),
         included_processes=INCLUDED,
         advance_rows=ADVANCE_ROWS,
-        base=base,
     )
     payload = intro_summary.advance_payload(
-        base, advance, thresholds=THRESHOLDS, process_label=lambda process: process
+        MONTHS, advance, thresholds=THRESHOLDS, process_label=lambda process: process
     )
     plain = intro_summary.summary_payload(
         base,
@@ -195,7 +193,6 @@ def test_the_advance_payload_judges_each_month_and_keeps_the_summary_shape() -> 
 
 
 def test_advance_without_an_applied_month_is_off_with_a_reason() -> None:
-    base = _summary()
     for rows, reason in (
         (
             pd.DataFrame({"생산계획년월": [202801], "선행 물량": [1.0]}),
@@ -213,10 +210,9 @@ def test_advance_without_an_applied_month_is_off_with_a_reason() -> None:
             securement_rate=_securement(),
             included_processes=INCLUDED,
             advance_rows=rows,
-            base=base,
         )
         payload = intro_summary.advance_payload(
-            base, advance, thresholds=THRESHOLDS, process_label=str
+            MONTHS, advance, thresholds=THRESHOLDS, process_label=str
         )
         assert payload == {"available": False, "reason": reason}
 
@@ -243,11 +239,11 @@ def _comparison_frames() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def test_gap_is_the_raw_plan_minus_the_comparison_like_home() -> None:
     """HOME 은 GAP 을 선행 **전** 요약에서 잰다(`build_lob_summary_figures` 의 `raw_summary`)."""
-    base = _summary()
     comparison_density, comparison_wafer = _comparison_frames()
     comparison = build_comparison_summary(
         months=MONTHS,
-        base=base,
+        monthly_density=_density(),
+        monthly_wafer=_wafer(),
         comparison_density=comparison_density,
         comparison_wafer=comparison_wafer,
     )
@@ -276,11 +272,14 @@ def test_gap_is_the_raw_plan_minus_the_comparison_like_home() -> None:
 
 
 def test_gap_without_any_comparison_month_is_off() -> None:
-    base = _summary()
     empty = pd.DataFrame({"생산계획년월": [202801], "년월": ["28.01"], "부하량": [1.0]})
     empty_wafer = empty.rename(columns={"부하량": "Wafer 부하량"})
     comparison = build_comparison_summary(
-        months=MONTHS, base=base, comparison_density=empty, comparison_wafer=empty_wafer
+        months=MONTHS,
+        monthly_density=_density(),
+        monthly_wafer=_wafer(),
+        comparison_density=empty,
+        comparison_wafer=empty_wafer,
     )
     assert not comparison.covered
     assert intro_summary.comparison_payload(comparison, name="x") == {
@@ -351,7 +350,9 @@ def _part(monkeypatch: pytest.MonkeyPatch, repo: _Repo, profile: SimpleNamespace
         "db",
         release,  # type: ignore[arg-type]
         profile,  # type: ignore[arg-type]
-        summary=_summary(),
+        months=MONTHS,
+        monthly_density=_density(),
+        monthly_wafer=_wafer(),
         load_plan=lambda revision_id: _comparison_frames(),
     )
 
@@ -387,3 +388,106 @@ def test_a_data_error_turns_off_only_that_toggle() -> None:
     payload = intro_summary._guarded("선행 B/O", broken)
     assert payload["available"] is False
     assert payload["reason"].startswith("선행 B/O 값을 만들지 못했습니다: ValueError")
+
+
+# --------------------------------------------------------------- Wafer 글자와 요약 배선
+
+
+@pytest.mark.parametrize(
+    ("wafer", "expected"),
+    [(148460.0, 148), (148500.0, 148), (148501.0, 149), (149500.0, 150), (499.0, 0), (None, None)],
+)
+def test_wafer_is_sent_as_the_integer_home_writes(
+    wafer: float | None, expected: int | None
+) -> None:
+    """Wafer 는 HOME 칸 글자(`{:,.0f}K`)와 같은 정수로 보낸다 — 소수 한 자리로 보내고 브라우저가
+    다시 반올림하면 148,460매가 HOME 「148K」, 요약 「149K」가 됐다(두 번 반올림)."""
+    assert intro_summary._wafer_payload([wafer]) == [expected]
+    if wafer is not None and expected is not None:
+        assert f"{wafer / 1_000:,.0f}K" == f"{expected:,}K"
+
+
+class _Release(SimpleNamespace):
+    pass
+
+
+def _wired(monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], dict[str, Any]]:
+    """`_build` 를 가짜 HOME 계산에 물린다. EDP 를 포함한 계획은 일부러 다른 값(+100)이다."""
+    seen: dict[str, Any] = {}
+    plan = pd.DataFrame({"생산계획년월": MONTHS + [202704]})
+    snapshot = SimpleNamespace(
+        tables={"RQ_PKG_PLAN": plan, "RQ_DISPLAY_ORDER": None},
+        preset=SimpleNamespace(start_month=202601, included_processes=INCLUDED),
+    )
+    with_edp = _density().assign(부하량=_density()["부하량"] + 100)
+    wafer_with_edp = _wafer().assign(**{"Wafer 부하량": _wafer()["Wafer 부하량"] + 100_000})
+
+    def cache_key(**kwargs: Any) -> tuple[Any, ...]:
+        seen["key"] = kwargs
+        return ("home", kwargs["start_month"], kwargs["end_month"])
+
+    monkeypatch.setattr(intro_summary, "load_scenario_snapshot", lambda path, rev: snapshot)
+    monkeypatch.setattr(intro_summary, "reference_version_for_revision", lambda rev: 7)
+    monkeypatch.setattr(intro_summary, "build_home_simulation_cache_key", cache_key)
+    monkeypatch.setattr(
+        intro_summary,
+        "get_home_simulation",
+        lambda **kwargs: (with_edp, None, wafer_with_edp, _securement(), None, _volume()),
+    )
+    monkeypatch.setattr(
+        intro_summary,
+        "get_home_lob_without_edp",
+        lambda **kwargs: (_density(), None, _wafer(), _volume()),
+    )
+    monkeypatch.setattr(
+        intro_summary, "get_process_labels", lambda: SimpleNamespace(format_func=lambda: str)
+    )
+    release = _Release(
+        revision_id="R-OFFICIAL",
+        release_name="공식 v1",
+        scenario_name="DEMO",
+        official_release_id="O",
+    )
+    payload = intro_summary._build("db", release, THRESHOLDS)  # type: ignore[arg-type]
+    return payload, seen
+
+
+def test_the_summary_and_its_parts_use_the_edp_free_six_month_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """요약·선행 B/O·GAP 은 HOME 토글 기본값(EDP 제외)의 계획과 요약 여섯 달 키를 쓴다 — EDP 를
+    포함한 프레임이 들어가면 값이 100 만큼 어긋나 실패한다."""
+    payload, seen = _wired(monkeypatch)
+    context = payload[intro_summary._CONTEXT]
+    assert payload["density"][0] == pytest.approx(14.97)
+    assert seen["key"]["start_month"] == MONTHS[0] and seen["key"]["end_month"] == MONTHS[-1]
+    assert context["months"] == MONTHS and context["home_key"] == ("home", MONTHS[0], MONTHS[-1])
+    # 선행 B/O 는 프로필의 행으로, 같은 EDP 제외 계획에 건다.
+    advance = intro_summary._advance_part(
+        context,
+        SimpleNamespace(rows=ADVANCE_ROWS),  # type: ignore[arg-type]
+        THRESHOLDS,
+        str,
+    )
+    assert advance["density"][2] == pytest.approx(round(14.8 + 3.0, 2))
+    # GAP 은 같은 키·EDP 제외로 비교 계획을 환산한다.
+    calls: list[dict[str, Any]] = []
+
+    def comparison_plan(**kwargs: Any) -> tuple[pd.DataFrame, pd.DataFrame, None]:
+        calls.append(kwargs)
+        density, wafer = _comparison_frames()
+        return density, wafer, None
+
+    monkeypatch.setattr(intro_summary, "get_home_comparison_plan", comparison_plan)
+    monkeypatch.setattr(intro_summary, "load_scenario_plan", lambda path, rev: pd.DataFrame())
+    monkeypatch.setattr(intro_summary, "get_scenario_repository", lambda path: _Repo(["R-1"]))
+    gap = intro_summary._comparison_part(
+        "db",
+        _Release(revision_id="R-OFFICIAL"),  # type: ignore[arg-type]
+        _profile("S-CMP", "R-1"),  # type: ignore[arg-type]
+        context,
+    )
+    assert calls[0]["include_edp"] is False
+    assert calls[0]["cache_key"] == context["home_key"]
+    assert calls[0]["comparison_revision_id"] == "R-1"
+    assert gap["density_gap"][0] == "+0.97"

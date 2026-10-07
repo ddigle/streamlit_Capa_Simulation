@@ -557,11 +557,13 @@ def get_home_comparison_plan(
 # 같은 값(최신 공식버전)을 보므로 서버에 한 벌만 둔다 — 세션마다 다시 만들면
 # 새 탭·F5·테마 전환마다 HOME 보다 먼저 0.5초를 썼다(로컬 합성 DB 사본에서 잰 소요시간).
 # 키는 (공식버전 id, 그 시나리오 이름, 공용 표시순서 판, 공정 표시명 판, 공용 판정 기준의
-# 내용 지문, 선행 B/O 판, 선행 입고 실적 판, 비교 대상 판, 비교 시나리오 id, 비교 리비전 id)이고
-# 요약과 토글 셋의 값에 들어가는 것을 모두 덮는다(공식·비교 리비전은 고칠 수 없다). `_build` 는
-# 키에 넣지 않는다.
+# 내용 지문)이고 요약에 들어가는 것을 모두 덮는다(공식 리비전은 고칠 수 없다). `_build` 는
+# 키에 넣지 않는다. 머리 줄 토글 셋의 몫은 여기 넣지 않는다 — 아래 `shared_intro_toggle_store`
+# 에 몫마다 따로 둔다(선행 B/O 를 저장해도 이 요약을 다시 만들지 않게).
 # 일시적일 수 있는 실패(DB 잠금 등)는 `_build` 가 예외로 올리므로 여기 남지 않는다.
-IntroSummaryCacheKey = tuple[str, str, int, int, str, int, int, int, str, str]
+IntroSummaryCacheKey = tuple[str, str, int, int, str]
+# 토글 몫(선행 B/O·선행 입고·GAP) 칸 수. 한 칸은 JSON 몇 KB 다.
+INTRO_TOGGLE_MAX_ENTRIES = 24
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -570,6 +572,17 @@ def get_intro_summary_payload(
     _build: Callable[[], dict[str, Any]],
 ) -> dict[str, Any]:
     return _build()
+
+
+@st.cache_resource(show_spinner=False)
+def shared_intro_toggle_store() -> SharedBlobStore:
+    """입장 화면 Summary 토글 몫(`components/intro_summary._toggle_parts`)을 세션끼리 나누는 저장소.
+
+    `st.cache_data` 와 달리 **있는지 먼저 볼 수 있어야** 한다 — 비교 GAP 은 처음 만들 때 무거워
+    없으면 HOME 페이지 앞에서 만들지 않고 「준비 중」으로 보낸 뒤 페이지 뒤에서 만든다. 키는
+    공식버전 id 와 그 몫이 쓰는 프로필 판뿐이고, 값은 JSON 바이트라 꺼내는 쪽마다 제 사본을 받는다.
+    """
+    return SharedBlobStore(INTRO_TOGGLE_MAX_ENTRIES)
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
