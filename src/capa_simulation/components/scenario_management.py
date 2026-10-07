@@ -562,6 +562,8 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
     clear_scenario_snapshot_cache()
     # 저장소가 이 시나리오를 가리키던 공용 비교 대상을 비웠다. 캐시는 경로 키라 따로 비운다.
     clear_global_comparison_scenario_cache()
+    # 입장 화면 Summary 의 GAP 도 그 비교 대상을 쓴다 — 이 세션은 곧바로 다시 확인한다.
+    forget_intro_summary_check()
     # 보관한 시나리오의 공식버전이 판정 기준의 미저장 기본값을 정했을 수 있다.
     clear_global_securement_threshold_cache()
     if summary.scenario_id == active_persisted_scenario_id():
@@ -657,6 +659,8 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
         return
     clear_scenario_snapshot_cache()
     clear_global_comparison_scenario_cache()
+    # 입장 화면 Summary 의 GAP 도 그 비교 대상을 쓴다 — 이 세션은 곧바로 다시 확인한다.
+    forget_intro_summary_check()
     # 지운 시나리오의 공식버전이 판정 기준의 미저장 기본값을 정했을 수 있다.
     clear_global_securement_threshold_cache()
     if summary.scenario_id == active_persisted_scenario_id():

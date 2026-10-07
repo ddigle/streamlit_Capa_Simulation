@@ -18,6 +18,18 @@ HOME 은 고른 시나리오·조회기간·토글로 **상세**를 보여 준�
 HOME 토글의 **기본값**과 같은 화면이다 — EDP 제외, 선행·실행 Capa 반영 없음. 과거 구간은 이 기간에
 들어오지 않는다(시작월이 생산계획의 첫 달 이후다).
 
+Summary 머리 줄의 토글 셋(선행 B/O·선행 입고·GAP)이 켜졌을 때의 값도 여기서 함께 낸다.
+토글은 브라우저 안에서만 바뀌므로 세 갈래를 미리 다 계산해 보낸다. **HOME 의 같은 토글과 같은
+함수**를 쓴다.
+
+- **선행 B/O**(`build_advance_summary`): `build_advance_load_ratio` 로 변동률을 내
+  `apply_advance_to_*` 로 Density·Wafer·확보율에 건다. 변동률은 화면이 쓰는 계획(EDP 제외)
+  기준이다. B/N 공정은 바뀌지 않는다(한 달 안의 모든 공정에 같은 수를 곱한다). 소요·가용대수는
+  HOME 처럼 그대로다.
+- **GAP**(`build_comparison_summary`): 비교 시나리오 계획과의 차이 = 선행 **전** 값 − 비교 값.
+  HOME 이 선행을 켜도 GAP 을 원 데이터끼리 재는 것과 같다(`home_lob_figures`).
+- 증감 글자는 HOME 과 같은 형식·숨김 규칙(`services/plan_gap.py`)이다.
+
 이 모듈은 프레임만 받는 순수 계산이다. 공식버전을 찾고 캐시된 HOME 계산을 부르는 일은
 `components/intro_summary.py` 가 한다.
 """
@@ -30,6 +42,13 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from capa_simulation.services.advance_load import (
+    apply_advance_to_density,
+    apply_advance_to_securement,
+    apply_advance_to_wafer,
+    build_advance_load_ratio,
+    prepare_advance_load,
+)
 from capa_simulation.services.dashboard import (
     build_monthly_bottleneck_ranking,
     build_monthly_bottlenecks_from_ranking,
@@ -37,6 +56,13 @@ from capa_simulation.services.dashboard import (
 from capa_simulation.services.display_order import DisplayOrderInput
 from capa_simulation.services.frame_contracts import require_columns
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.plan_gap import (
+    DENSITY_GAP_FORMAT,
+    GAP_EPSILON,
+    WAFER_GAP_FORMAT,
+    WAFER_GAP_SCALE,
+    format_gap,
+)
 from capa_simulation.services.product_share import (
     OTHER_PRODUCT_LABEL,
     PRODUCT_SHARE_BASIS_WAFER,
@@ -195,4 +221,147 @@ def build_official_summary(
         products=tuple(products),
         product_slots=tuple(product_slots),
         mix=mix,
+    )
+
+
+@dataclass(frozen=True)
+class AdvanceSummary:
+    """선행 B/O 를 켠 요약. 튜플은 모두 요약의 `months` 와 같은 차례·같은 길이다.
+
+    `density_delta`·`wafer_delta`·`rate_delta` 는 HOME 이 값 위·막대 안에 적는 증감 글자 그대로다
+    (적을 것이 없는 달은 빈 글자). `applied` 는 선행 B/O 가 실제로 걸린 달, `unapplied` 는 입력은
+    있지만 반영하면 계획이 0 이하가 되어 걸지 못한 달이다(HOME 화면 경고와 같은 규칙).
+    """
+
+    density: tuple[float | None, ...]
+    wafer: tuple[float | None, ...]
+    bottlenecks: tuple[BottleneckMonth | None, ...]
+    density_delta: tuple[str, ...]
+    wafer_delta: tuple[str, ...]
+    rate_delta: tuple[str, ...]
+    applied: tuple[int, ...]
+    unapplied: tuple[int, ...]
+
+
+def _rate_delta(rate: float | None, base: float | None) -> str:
+    """HOME B/N 막대 안 증감(`home_lob_figures._bottleneck_rate_labels`)과 같은 글자."""
+    if rate is None or base is None:
+        return ""
+    difference = rate - base
+    if math.isnan(difference) or abs(difference) < GAP_EPSILON:
+        return ""
+    return f"{difference * 100:+.0f}%"
+
+
+def build_advance_summary(
+    *,
+    months: Sequence[int],
+    monthly_density: pd.DataFrame,
+    monthly_wafer: pd.DataFrame,
+    securement_rate: pd.DataFrame,
+    included_processes: Sequence[str],
+    advance_rows: pd.DataFrame,
+    base: OfficialSummary,
+) -> AdvanceSummary:
+    """HOME 「선행 B/O」 토글과 같은 계산으로 요약의 Density·Wafer·B/N 을 다시 낸다.
+
+    `monthly_density`·`monthly_wafer` 는 요약이 그리는 계획(EDP 제외)이고 `base` 는 그것으로 만든
+    요약이다. 증감 글자는 `base` 와의 차이다.
+    """
+    month_list = list(months)
+    ratio = build_advance_load_ratio(monthly_density, advance_rows)
+    density = apply_advance_to_density(monthly_density, ratio)
+    wafer = apply_advance_to_wafer(monthly_wafer, ratio)
+    securement = apply_advance_to_securement(securement_rate, ratio)
+    density_values = _monthly_values(density, "부하량", month_list)
+    wafer_values = _monthly_values(wafer, "Wafer 부하량", month_list)
+    bottlenecks = _bottlenecks(securement, included_processes, month_list)
+    entered = prepare_advance_load(advance_rows)
+    inputs = {
+        int(month)
+        for month, amount in zip(entered["생산계획년월"], entered["선행 물량"], strict=True)
+        if float(amount) != 0.0
+    }
+    applied_months = {
+        int(month)
+        for month, amount in zip(ratio["생산계획년월"], ratio["선행 물량"], strict=True)
+        if float(amount) != 0.0
+    }
+    return AdvanceSummary(
+        density=tuple(density_values),
+        wafer=tuple(wafer_values),
+        bottlenecks=tuple(bottlenecks),
+        density_delta=tuple(
+            format_gap(_difference(new, old), DENSITY_GAP_FORMAT)
+            for new, old in zip(density_values, base.density, strict=True)
+        ),
+        wafer_delta=tuple(
+            format_gap(_difference(new, old), WAFER_GAP_FORMAT, scale=WAFER_GAP_SCALE)
+            for new, old in zip(wafer_values, base.wafer, strict=True)
+        ),
+        rate_delta=tuple(
+            _rate_delta(
+                None if new is None else new.rate,
+                None if old is None else old.rate,
+            )
+            for new, old in zip(bottlenecks, base.bottlenecks, strict=True)
+        ),
+        applied=tuple(month for month in month_list if month in applied_months),
+        unapplied=tuple(
+            month for month in month_list if month in inputs and month not in applied_months
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class ComparisonSummary:
+    """GAP — 비교 시나리오 계획과의 차이. 튜플은 요약의 `months` 와 같은 차례·같은 길이다.
+
+    `density`·`wafer` 는 비교 시나리오 쪽 값(없는 달은 None), `*_gap` 은 HOME 이 값 아래에 적는
+    GAP 글자 그대로다(요약 값 − 비교 값, 적을 것이 없는 달은 빈 글자).
+    """
+
+    density: tuple[float | None, ...]
+    wafer: tuple[float | None, ...]
+    density_gap: tuple[str, ...]
+    wafer_gap: tuple[str, ...]
+
+    @property
+    def covered(self) -> bool:
+        """비교 시나리오가 이 기간의 달을 하나라도 가졌는가."""
+        return any(value is not None for value in self.density) or any(
+            value is not None for value in self.wafer
+        )
+
+
+def _difference(new: float | None, old: float | None) -> float | None:
+    return None if new is None or old is None else new - old
+
+
+def build_comparison_summary(
+    *,
+    months: Sequence[int],
+    base: OfficialSummary,
+    comparison_density: pd.DataFrame,
+    comparison_wafer: pd.DataFrame,
+) -> ComparisonSummary:
+    """요약(선행 전)과 비교 시나리오의 같은 달 계획 차이.
+
+    `comparison_density`·`comparison_wafer` 는 비교 시나리오의 계획을 공식버전의 기준정보로 환산한
+    월별 표다(`simulation_cache.get_home_comparison_plan` — HOME GAP 과 같은 함수).
+    """
+    month_list = list(months)
+    density = _monthly_values(comparison_density, "부하량", month_list)
+    wafer = _monthly_values(comparison_wafer, "Wafer 부하량", month_list)
+    return ComparisonSummary(
+        density=tuple(density),
+        wafer=tuple(wafer),
+        density_gap=tuple(
+            format_gap(_difference(own, other), DENSITY_GAP_FORMAT)
+            for own, other in zip(base.density, density, strict=True)
+        ),
+        wafer_gap=tuple(
+            format_gap(_difference(own, other), WAFER_GAP_FORMAT, scale=WAFER_GAP_SCALE)
+            for own, other in zip(base.wafer, wafer, strict=True)
+        ),
     )

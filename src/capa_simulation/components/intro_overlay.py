@@ -207,6 +207,35 @@ def _data() -> dict[str, Any]:
             # (2026-10-06 사용자 결정). 막대 밑 상태 글자(`status`)와 따로 둔다.
             "legend": {"secure": "확보", "warning": "경고", "shortage": "부족"},
             "lowest": "최저",
+            # Summary 머리 줄의 보는 조건 토글 셋(Detail 오른쪽). 브라우저 안에서만 켜고 끈다 —
+            # 값은 요약이 미리 보낸 `toggles` 다(`intro_summary`). `short` 는 머리 줄이 좁을 때의
+            # 이름이다. 라벨은 본문 글꼴로 쓴다 — 부분 글꼴에 한글·`B`·`/` 가 없다.
+            "toggles": [
+                {
+                    "key": "advance",
+                    "label": "선행 B/O",
+                    "short": "B/O",
+                    "title": "계획 밖 B/O 재공을 부하에 더합니다 — HOME 「선행 B/O」와 같은 계산",
+                },
+                {
+                    "key": "shipment",
+                    "label": "선행 입고",
+                    "short": "입고",
+                    "title": "선행 입고 실적을 Density 값 옆에 적습니다 — 계산은 그대로입니다",
+                },
+                {
+                    "key": "comparison",
+                    "label": "GAP",
+                    "short": "GAP",
+                    "title": "비교 시나리오(HOME → Preference)와의 계획 차이",
+                },
+            ],
+            "toggles_group": "요약 보기 조건",
+            # 말풍선·낭독용 표에 쓰는 이름.
+            "advance_before": "선행 B/O 전",
+            "advance_unapplied": "반영하지 못한 달",
+            "shipment_note": "선행 입고 실적",
+            "comparison_value": "비교",
         },
     }
 

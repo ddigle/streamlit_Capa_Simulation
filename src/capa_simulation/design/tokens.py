@@ -557,6 +557,13 @@ INTRO_PALETTE: Final[Mapping[str, str]] = MappingProxyType(
         # 입장 화면 `Summary`(테두리만 있는 단추)의 테두리와 눌러 볼 때의 면.
         "ghost-line": "rgba(236, 236, 239, 0.45)",
         "ghost-hover": "rgba(236, 236, 239, 0.08)",
+        # Summary 머리 줄 토글(선행 B/O·선행 입고·GAP)이 켜졌을 때의 면과 테두리 — 강조색을 옅게.
+        "toggle-on": "rgba(95, 184, 172, 0.16)",
+        "toggle-on-line": "rgba(95, 184, 172, 0.75)",
+        # GAP 증감 글자의 부호색. 앱 어두운 테마의 증감색(`DELTA_INCREASE`·`DELTA_DECREASE`)과 같은
+        # 값이다 — HOME GAP 과 같은 방향을 같은 색으로 읽는다.
+        "gap-up": "#FBBF24",
+        "gap-down": "#7DA8FF",
     }
 )
 # ----------------------------------------------------------------------- 서체

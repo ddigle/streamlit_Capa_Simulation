@@ -519,7 +519,7 @@ def test_summary_threshold_text_is_the_rounded_label_and_the_line_stays_exact() 
 
     assert "[sum.warning || [], sum.warning_label || []," in scene
     assert "[sum.secure || [], sum.secure_label || []," in scene
-    assert "L.yBar(run.v)" in scene and "last.v === v" in scene
+    assert "yBar(run.v)" in scene and "last.v === v" in scene
     assert "run.label" in scene
 
 
@@ -554,7 +554,7 @@ def test_summary_axis_and_bar_labels_match_the_point_value_size() -> None:
     assert "fit(b.process" in scene
     process_font = scene[: scene.index("fit(b.process")].rsplit("g.font = ", 1)[1]
     assert process_font.startswith("`500 14px ")
-    assert "g.font = `700 ${L.statusPx}px ${bodyStack}`;" in scene
+    assert "g.font = `700 ${statusPx}px ${bodyStack}`;" in scene
     assert "fitPx(shown.map(statusText), 700, 14, " in layout
     assert "10.5px" not in scene and "700 13px" not in scene
 
@@ -582,7 +582,8 @@ def test_summary_sheet_text_is_fitted_once_in_the_layout() -> None:
     assert "const sheet = layoutSheets(G, n);" in js
     # 그리기는 배치가 정한 크기·모양만 쓴다 — 고정 18px 값 글자나 프레임마다 재는 일이 없다.
     assert "measureText" not in draw and "700 18px" not in draw
-    assert "g.font = `700 ${K.px}px ${numStack}`;" in draw
+    assert "g.font = `700 ${px}px ${numStack}`;" in draw
+    assert "const px = mA > 0 ? K.px + (K.pxA - K.px) * mA : K.px;" in draw
     assert "K.stacked" in draw and "s.kv[r]" in draw
     # 너무 작은 도넛은 그리지 않고, 말풍선 자리도 함께 없앤다.
     assert "fits >= 40 ? fits : 0" in layout
@@ -602,7 +603,7 @@ def test_summary_labels_pick_a_free_spot_once_in_the_layout() -> None:
 
     assert layout.count("freeSpot(") == 2
     assert "lineObstacles" in layout and "barObstacles" in layout and "backed: true" in layout
-    assert "L.tickLabels" in draw_line and "fillText(`${v.toFixed(" not in draw_line
+    assert "V.tickLabels" in draw_line and "fillText(`${v.toFixed(" not in draw_line
     assert "spot.backed" in draw_bars and "measureText" not in draw_bars
 
 
@@ -659,3 +660,91 @@ def test_tab_stays_inside_the_overlay_while_it_is_open() -> None:
         assert guard in focusables, guard
     assert 'document.addEventListener("focusin", onFocusIn);' in js
     assert 'document.removeEventListener("focusin", onFocusIn);' in js
+
+
+# --------------------------------------------------------- Summary 토글 셋(선행 B/O·선행 입고·GAP)
+
+
+def test_summary_toggles_sit_right_after_the_docked_detail() -> None:
+    """토글 셋은 머리 줄에서 Detail(도킹 자리) 바로 오른쪽이다 — Tab 차례가 Detail 다음이고, 입장
+    화면에서는 보이지 않다가 Summary 가 조립될 때 떠오른다."""
+    html = (ASSETS / "intro.html").read_text(encoding="utf-8")
+    head = html[html.index('<header class="head">') : html.index("</header>")]
+    assert (
+        head.index('data-slot="dock"')
+        < head.index('data-slot="toggles"')
+        < head.index('data-slot="asof"')
+    )
+    assert 'role="group"' in head
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+    assert re.search(r"\.toggles \{[^}]*visibility: hidden;", css)
+    assert re.search(r"\.stage\.summary \.toggles \{\s*visibility: visible;", css)
+    # 휴대폰 폭에서는 머리 줄 밑 둘째 줄로 내린다 — 머리 줄과 Detail 은 움직이지 않는다.
+    narrow = css[css.index("@media (max-width: 760px) {") : css.index("@keyframes slide")]
+    assert re.search(r"\.toggles \{\s*position: absolute;", narrow)
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    entry = _between(js, "async function summaryFromEntry(", "function snapToSummary(")
+    assert entry.index("dockDetail(true);") < entry.index("revealToggles(true);")
+    snap = _between(js, "function snapToSummary(", "function holeAt(")
+    assert "revealToggles(false);" in snap
+
+
+def test_summary_toggles_are_pressed_buttons_with_reasons_when_off() -> None:
+    """누름 상태는 `aria-pressed` 이고, 켤 수 없으면 `aria-disabled` 로 두고 풍선에 까닭을 단다 —
+    `disabled` 가 아니라 Tab 으로 닿아 까닭을 읽는다. Space · Enter 는 단추가 click 으로 바꾼다."""
+    text = intro_overlay._data()["text"]
+    assert [item["key"] for item in text["toggles"]] == ["advance", "shipment", "comparison"]
+    assert [item["label"] for item in text["toggles"]] == ["선행 B/O", "선행 입고", "GAP"]
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    toggles = _between(js, "const view = api.view ||", "function revealToggles(")
+    assert 'aria-pressed="false" aria-disabled="true"' in toggles
+    assert 'button.setAttribute("aria-pressed"' in toggles
+    assert 'button.setAttribute("aria-disabled", can ? "false" : "true");' in toggles
+    assert 'if (button.getAttribute("aria-disabled") === "true") return;' in toggles
+    assert "button.title = toggleTitle(spec);" in toggles
+    # 켤 수 없게 된 토글은 끈다. 상태는 탭이 살아 있는 동안만(창의 `__capaIntro`) 기억한다.
+    assert "if (!can) view[key] = false;" in toggles
+    assert "sessionStorage" not in toggles and "localStorage" not in toggles
+    # 라벨은 본문 글꼴이다 — 부분 글꼴에 한글·`B`·`/` 가 없다.
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+    assert re.search(r"\.tg \{[^}]*font: 600 13px/1 var\(--body\);", css)
+    assert not set("B/선행입고") <= set(intro_overlay.FONT_SUBSET_TEXT)
+
+
+def test_summary_toggles_change_only_the_browser_and_move_from_where_they_are() -> None:
+    """토글은 장면에 `view` 메시지만 보낸다(rerun 없음). 장면은 누를 때마다 **지금 값에서** 새
+    목표로 트윈을 다시 걸고, 움직임을 줄였으면 바로 바뀐다. 워커가 죽으면 마지막 `view` 를
+    되살린다."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    assert 'sceneHandle.post({ type: "view", view: { ...view }, instant: !!instant });' in js
+    assert '"summary-on", "view", "run", "resize"' in js
+    scene = _scene_source(js)
+    assert "function retarget(ch, want, t, instant)" in scene
+    assert "const cur = tweenValue(tw, t, OUT);" in scene
+    assert "retarget(ch, want[ch], t, reduce || !!m.instant)" in scene
+    # 기본 모습은 토글이 없던 때와 같은 배치다 — 토글 값이 범위 안이면 축을 넓히지 않는다.
+    layout = _between(js, "function layoutSummary(", "function layoutSheets(")
+    assert "const lineBase = lineLayout(lineCtx, range, sum.density, null, null);" in layout
+    assert "return hi === range.hi && lo === range.lo ? range : { lo, hi };" in layout
+    draw_line = _between(js, "function drawLine(", "function drawBars(")
+    assert "const now = lineNow();" in draw_line and "now.yLine(" in draw_line
+
+
+def test_reduced_motion_draws_on_messages_instead_of_a_frame_loop() -> None:
+    """움직임을 줄였으면 그림이 시간에 따라 바뀌지 않는다 — 프레임 루프를 세우지 않고 그림을 바꾸는
+    메시지(토글 포함)를 받을 때만 한 번 그린다(B4: 정지 그림을 매 프레임 다시 그려 CPU 를 썼다)."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    scene = _scene_source(js)
+    loop = scene[scene.index("  function loop() {") :]
+    loop = loop[: loop.index("\n  }\n")]
+    assert (
+        loop.index("if (reduce) {") < loop.index("paintOnce();") < loop.index("nextFrame(frame);")
+    )
+    handler = scene[scene.index("port.onmessage = (event) => {") :]
+    for kind in ("begin", "progress", "resize", "summary-on", "view"):
+        branch = handler[handler.index(f'm.type === "{kind}"') :]
+        branch = branch[: branch.index("} else if")]
+        assert "loop();" in branch, kind
+    summary_branch = handler[handler.index('m.type === "summary")') :]
+    summary_branch = summary_branch[: summary_branch.index("} else if")]
+    assert "layoutSummary();" in summary_branch and "loop();" in summary_branch

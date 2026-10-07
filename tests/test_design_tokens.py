@@ -495,3 +495,11 @@ def test_space_block_tints_are_opaque_and_carry_the_default_ink() -> None:
     assert not weak, "\n".join(weak)
     # 글자 색 × 색 블록의 모자란 짝 수. 바뀌면 팔레트가 바뀐 것이다 — 위 설명과 함께 고친다.
     assert shortfalls == {"light": 33, "dark": 17}
+
+
+def test_summary_gap_colors_are_the_dark_delta_colors() -> None:
+    """입장 화면 Summary 의 GAP 부호색은 HOME(어두운 테마) GAP 증감색과 같은 값이다 — 같은
+    방향을 같은 색으로 읽는다. 입장 화면 팔레트는 테마와 무관한 한 벌이라 어두운 짝을 따른다."""
+    dark = tokens._PALETTES["dark"]
+    assert tokens.INTRO_PALETTE["gap-up"] == dark["DELTA_INCREASE"]
+    assert tokens.INTRO_PALETTE["gap-down"] == dark["DELTA_DECREASE"]

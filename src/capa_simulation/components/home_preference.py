@@ -417,6 +417,20 @@ def render_home_preference(
     )
 
 
+def _recheck_intro_summary() -> None:
+    """이 세션의 다음 회차가 입장 화면 Summary 를 곧바로 다시 확인하게 한다.
+
+    Summary 는 판정 기준·선행 B/O·선행 입고 실적·비교 대상 공용 프로필을 쓴다. 이 세션이 들고
+    있는 요약은 `RECHECK_SECONDS` 동안 그대로 보내므로, 그 프로필을 저장한 직후 부른다 — 다른
+    세션은 다음 확인 때 새 version 의 키로 새 값을 받는다. 함수 안에서 들인다 —
+    `intro_summary` → `intro_overlay` → `home_rendering` 이 이 모듈을 들이므로 모듈 머리에 두면
+    순환한다.
+    """
+    from capa_simulation.components.intro_summary import forget_intro_summary_check
+
+    forget_intro_summary_check()
+
+
 def seed_comparison_selection(database_path: str) -> None:
     """비교 대상 공용 프로필을 세션에 심는다. 이미 세션 값이 있으면 덮지 않는다.
 
@@ -562,6 +576,7 @@ def _persist_comparison_choice(database_path: str, revision_ids: Collection[str]
     except (*BOOTSTRAP_ERRORS, ValueError):
         return
     clear_global_comparison_scenario_cache()
+    _recheck_intro_summary()
 
 
 def _save_comparison_choice(database_path: str) -> None:
@@ -589,6 +604,7 @@ def _save_comparison_choice(database_path: str) -> None:
     except (*BOOTSTRAP_ERRORS, ValueError):
         return
     clear_global_comparison_scenario_cache()
+    _recheck_intro_summary()
 
 
 def _comparison_label(
@@ -795,13 +811,8 @@ def _save_thresholds(
         expected_version=expected_version,
     )
     clear_global_securement_threshold_cache()
-    # 입장 화면 Summary 도 같은 기준으로 판정한다. 이 세션이 들고 있는 요약은 `RECHECK_SECONDS`
-    # 동안 그대로 보내므로, 저장한 직후 다시 확인하게 한다(새 기준의 지문으로 새로 만든다).
-    # 함수 안에서 들인다 — `intro_summary` → `intro_overlay` → `home_rendering` 이 이 모듈을
-    # 들이므로 모듈 머리에 두면 순환한다.
-    from capa_simulation.components.intro_summary import forget_intro_summary_check
-
-    forget_intro_summary_check()
+    # 입장 화면 Summary 도 같은 기준으로 판정한다(새 기준의 지문으로 새로 만든다).
+    _recheck_intro_summary()
 
 
 def _reject_hidden_reversed_months(
@@ -967,6 +978,7 @@ def _render_advance_editor(
         frame = merge_advance_load_edits(advance_profile.rows, list(months), values)
         get_scenario_repository(database_path).replace_global_advance_load(frame, source=source)
         clear_global_advance_load_cache()
+        _recheck_intro_summary()
 
     _render_monthly_amount_editor(
         _ADVANCE_LOAD_EDITOR,
@@ -998,6 +1010,7 @@ def render_advance_shipment_editor(
         frame = merge_advance_shipment_edits(advance_shipment_profile.rows, list(months), values)
         get_scenario_repository(database_path).replace_global_advance_shipment(frame, source=source)
         clear_global_advance_shipment_cache()
+        _recheck_intro_summary()
 
     _render_monthly_amount_editor(
         _ADVANCE_SHIPMENT_EDITOR,

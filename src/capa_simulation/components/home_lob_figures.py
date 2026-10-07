@@ -70,6 +70,13 @@ from capa_simulation.components.plotly_layout import (
 )
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
+from capa_simulation.services.plan_gap import (
+    DENSITY_GAP_FORMAT,
+    GAP_EPSILON,
+    WAFER_GAP_FORMAT,
+    WAFER_GAP_SCALE,
+    plan_gap_texts,
+)
 from capa_simulation.services.product_share import (
     PRODUCT_SHARE_BASIS_WAFER,
     ProductShareCell,
@@ -522,15 +529,6 @@ def _banded_rate_heights(
     return [0.0 if pd.isna(rate) else clamp_rate(float(rate), band) for rate in rates]
 
 
-# 증감이 이 값보다 작으면 적지 않는다. 화면에 보이는 자릿수에서 달라지지 않은 칸까지
-# `+0.00` 을 달면 무엇이 움직였는지 오히려 안 읽힌다.
-_GAP_EPSILON = 5e-3
-# Wafer 계획 증감의 글자(천 매 단위). 값 칸(`2K`)과 같은 0 자리로 쓰면 5~499 매가 `+0K`·`-0K` 로
-# 찍혀 0 이 아닌 증감이 0 으로 읽혔다(2026-10-01 브라우저 점검). 한 자리를 더 쓰고, 그 자리에서도
-# 0 으로 보이는 증감(50 매 미만)은 `_visible_gap` 이 적지 않는다.
-_WAFER_GAP_FORMAT = "{:+,.1f}K"
-
-
 def _contiguous_segments(indices: Sequence[int]) -> list[tuple[int, int]]:
     """이어진 정수를 `(시작, 끝)` 구간으로 접는다. 끝은 포함이다.
 
@@ -598,39 +596,6 @@ def _axis_values(
     return rendered
 
 
-def _value_gaps(
-    current: pd.DataFrame,
-    baseline: pd.DataFrame | None,
-    column: str,
-    number_format: str,
-    *,
-    scale: float = 1.0,
-) -> list[str] | None:
-    """칸마다 적을 증감 문구. 기준이 없거나 달라진 칸이 없으면 `None` 이다."""
-    if baseline is None or column not in current.columns or column not in baseline.columns:
-        return None
-    differences = (
-        pd.to_numeric(current[column], errors="coerce").to_numpy()
-        - pd.to_numeric(baseline[column], errors="coerce").to_numpy()
-    ) / scale
-    gaps = [
-        ""
-        if pd.isna(value) or abs(value) < _GAP_EPSILON
-        else _visible_gap(number_format.format(value))
-        for value in differences
-    ]
-    return gaps if any(gaps) else None
-
-
-def _visible_gap(text: str) -> str:
-    """증감 글자 하나. 형식 자릿수에서 0 으로 보이면(`+0.0K`·`-0.00`) 적지 않는다.
-
-    `_GAP_EPSILON` 은 소수 둘째 자리 형식에 맞춘 값이라 자릿수가 다른 형식에는 맞지 않는다.
-    글자로 판정하면 형식이 무엇이든 「0 이 아닌 증감이 0 으로 찍히는」 칸이 생기지 않는다.
-    """
-    return text if any(character in "123456789" for character in text) else ""
-
-
 def _bottleneck_rate_labels(
     bottleneck_capacity: pd.DataFrame,
     baseline: pd.DataFrame | None,
@@ -656,7 +621,7 @@ def _bottleneck_rate_labels(
             continue
         body = _bar_rate_text(rate)
         difference = rate - base_rate if pd.notna(base_rate) else float("nan")
-        if pd.isna(difference) or abs(difference) < _GAP_EPSILON:
+        if pd.isna(difference) or abs(difference) < GAP_EPSILON:
             labels.append(body)
             continue
         color = delta_color(f"{difference:+.0%}")
@@ -741,20 +706,28 @@ def build_lob_summary_figures(
     aligned_comparison_density = _aligned_by_label(comparison_density, month_labels)
     aligned_comparison_wafer = _aligned_by_label(comparison_wafer, month_labels)
     assert aligned_summary is not None
-    density_gaps = _value_gaps(aligned_summary, aligned_baseline, "부하량", "{:+,.2f}")
-    wafer_plan_gaps = _value_gaps(
-        aligned_summary, aligned_baseline, "Wafer 부하량", _WAFER_GAP_FORMAT, scale=1_000
+    density_gaps = plan_gap_texts(aligned_summary, aligned_baseline, "부하량", DENSITY_GAP_FORMAT)
+    wafer_plan_gaps = plan_gap_texts(
+        aligned_summary,
+        aligned_baseline,
+        "Wafer 부하량",
+        WAFER_GAP_FORMAT,
+        scale=WAFER_GAP_SCALE,
     )
     # GAP 은 **원 데이터끼리의** 차이다. 선행을 켜면 `aligned_summary` 는 이미 선행이 반영된
     # 값이라 그대로 빼면 비교 시나리오와의 차이에 내가 넣은 선행 B/O 가 섞인다. 비교
     # 시나리오 쪽에는 선행이 반영되지 않으므로(선행은 이 화면에만 얹는 공용 설정이다)
     # 기준을 선행 전 값으로 맞춘다. 선행이 꺼져 있으면 둘이 같은 프레임이다.
     raw_summary = aligned_baseline if aligned_baseline is not None else aligned_summary
-    density_comparison_gaps = _value_gaps(
-        raw_summary, aligned_comparison_density, "부하량", "{:+,.2f}"
+    density_comparison_gaps = plan_gap_texts(
+        raw_summary, aligned_comparison_density, "부하량", DENSITY_GAP_FORMAT
     )
-    wafer_plan_comparison_gaps = _value_gaps(
-        raw_summary, aligned_comparison_wafer, "Wafer 부하량", _WAFER_GAP_FORMAT, scale=1_000
+    wafer_plan_comparison_gaps = plan_gap_texts(
+        raw_summary,
+        aligned_comparison_wafer,
+        "Wafer 부하량",
+        WAFER_GAP_FORMAT,
+        scale=WAFER_GAP_SCALE,
     )
     month_positions = list(range(len(month_labels)))
     month_position_by_value = {

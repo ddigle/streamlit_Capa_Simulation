@@ -426,7 +426,8 @@ function summaryGrid(W, H) {
  * 워커를 못 쓰면 같은 함수를 메인 스레드에서 `port` 흉내로 돌린다. 시각은 절대값(timeOrigin + now)이다.
  *
  * 메시지: init · begin(at) · progress(reached·total·ready) · resize · summary(값) ·
- *         summary-on(at·charts·rows·look·veil·instant) · pause · resume(크기) · stats · stop
+ *         summary-on(at·charts·rows·look·veil·instant) · view(토글 셋·instant) · pause · resume(크기) ·
+ *         stats · stop
  * 회신: stats · summary-ready · hits(말풍선 자리)
  * ============================================================================================ */
 function scene(port, gridOf) {
@@ -543,6 +544,52 @@ function scene(port, gridOf) {
   let lookTween = null;
   let veil = 1;
   let veilTween = null;
+  let accentColor = [0, 0, 0, 1];
+
+  // ---- 머리 줄 토글 셋(선행 B/O·선행 입고·GAP). `viewWant` 는 켜려는 모습(0·1)이다. 움직임은 달마다 하나씩의
+  // 트윈(`months` — 달 하나 `ms`, 달 사이 시차 `lag`, ease-out)과 축처럼 한 번에 움직이는 트윈(`all`)이다. 누를
+  // 때마다 **지금 값에서** 새 목표로 트윈을 다시 건다 — 움직이는 중에 다시 눌러도 튀지 않고 이어 간다. 아직
+  // 출발하지 않은 달만 시차를 두고, 남은 거리가 짧으면 그만큼 빨리 닿는다. 켜고 끄는 두 방향 모두 ease-out 이라
+  // 끌 때도 누르는 즉시 움직인다. 움직임을 줄인 사용자에게는 바로 바뀐다.
+  const VIEW_MOTION = {
+    bo: { ms: 600, lag: 70 },
+    ship: { ms: 420, lag: 80 },
+    gap: { ms: 480, lag: 80 },
+  };
+  const VIEW_MONTHS = 6;
+  const viewWant = { bo: 0, ship: 0, gap: 0 };
+  const rest = (v) => ({ from: v, to: v, start: 0, dur: 0 });
+  const viewTween = {};
+  for (const ch of Object.keys(viewWant)) {
+    viewTween[ch] = { all: rest(0), months: Array.from({ length: VIEW_MONTHS }, () => rest(0)) };
+  }
+  // 그리는 순간의 시각. `draw` 가 맨 앞에서 맞춘다.
+  let viewAt = 0;
+  function tweenValue(tw, t, ease) {
+    if (tw.dur <= 0 || t >= tw.start + tw.dur) return tw.to;
+    if (t <= tw.start) return tw.from;
+    return tw.from + (tw.to - tw.from) * ease((t - tw.start) / tw.dur);
+  }
+  function retarget(ch, want, t, instant) {
+    const motion = VIEW_MOTION[ch];
+    const state = viewTween[ch];
+    state.months = state.months.map((tw, i) => {
+      const cur = tweenValue(tw, t, OUT);
+      if (instant) return rest(want);
+      const waiting = Math.abs(cur - (1 - want)) < 1e-6;
+      return { from: cur, to: want, start: t + (waiting ? i * motion.lag : 0), dur: motion.ms * Math.max(0.35, Math.abs(want - cur)) };
+    });
+    const cur = tweenValue(state.all, t, IN_OUT);
+    const span = motion.ms + motion.lag * (VIEW_MONTHS - 1);
+    state.all = instant ? rest(want) : { from: cur, to: want, start: t, dur: span * Math.max(0.35, Math.abs(want - cur)) };
+  }
+  const monthMix = (ch, i) => tweenValue(viewTween[ch].months[Math.min(i, VIEW_MONTHS - 1)], viewAt, OUT);
+  const viewMix = (ch) => tweenValue(viewTween[ch].all, viewAt, IN_OUT);
+  // 토글 값 — 켤 수 있는 것(`available`)만. 없으면 null 이라 그 토글은 그림을 바꾸지 않는다.
+  function toggleData(key) {
+    const t = sum && sum.toggles ? sum.toggles[key] : null;
+    return t && t.available ? t : null;
+  }
 
   function build() {
     // 가운데 심볼의 다이 아홉. 중심이 34 · 50 · 66(메인 심볼의 다이 자리 + 크기 절반 6)이고 가운데만
@@ -841,6 +888,12 @@ function scene(port, gridOf) {
   }
 
   // 배치는 값이 닿을 때와 창 크기가 바뀔 때 한 번 정한다. 프레임마다는 그리기만 한다.
+  //
+  // 머리 줄 토글(선행 B/O·GAP)이 그림을 바꾸는 몫도 **여기서 한 번** 정한다. 변형마다(`base` 기본 · `A`
+  // 선행 B/O · `G` GAP · `AG` 둘 다) 선의 축 범위·눈금 글자 자리와 막대의 위끝·기준선 이름표 자리를 따로
+  // 잡아 두고, 그리기는 토글 진행만큼 그 사이를 잇는다. `base` 는 토글이 없던 때와 같은 계산이라 셋을 다
+  // 끄면 지금 화면 그대로다. 토글 값이 지금 범위 안이면 범위를 그대로 둔다(`extendRange`) — 켜도 축은
+  // 제자리이고 값만 차오른다. 범위 밖으로 나가는 값이 있을 때만 그만큼 넓힌다.
   function layoutSummary() {
     if (!sum || !gridOf) {
       sumL = null;
@@ -851,21 +904,106 @@ function scene(port, gridOf) {
     const line = { x: G.spanX, y: G.rows[0].y, w: G.spanW, h: G.rows[0].h };
     const bars = { x: G.spanX, y: G.rows[1].y, w: G.spanW, h: G.rows[1].h };
     const colX = (i) => G.cols[i] + G.colW / 2;
-    // 선: 값 범위의 위아래에 여백을 두고 눈금 셋 안팎이 서게 한다.
-    const vals = sum.density.filter((v) => v != null);
+    const adv = toggleData("advance");
+    const cmp = toggleData("comparison");
+    // 아래 30px 는 달 이름(14px — 점 위 값 글자와 같은 크기) 자리다.
+    const lineTop = line.y + 30;
+    const lineBot = line.y + line.h - 30;
+    const lineCtx = { line, colX, lineTop, lineBot };
+    const range = baseRange(sum.density);
+    const rangeA = adv ? extendRange(range, adv.density) : range;
+    const rangeG = cmp ? extendRange(range, cmp.density) : range;
+    const lineBase = lineLayout(lineCtx, range, sum.density, null, null);
+    const lineA = adv ? lineLayout(lineCtx, rangeA, adv.density, sum.density, null) : lineBase;
+    const lineG = cmp ? lineLayout(lineCtx, rangeG, sum.density, null, cmp.density) : lineBase;
+    const lineAG =
+      adv && cmp
+        ? lineLayout(
+            lineCtx,
+            { lo: Math.min(rangeA.lo, rangeG.lo), hi: Math.max(rangeA.hi, rangeG.hi) },
+            adv.density,
+            sum.density,
+            cmp.density,
+          )
+        : adv
+          ? lineA
+          : lineG;
+    // 막대: 0 에서 시작한다. 기준선과 가장 큰 값이 다 들어오도록 위를 잡는다.
+    const rates = sum.bn.filter(Boolean).map((b) => b.rate);
+    // 기준은 달마다 하나다(`sum.secure[i]`). 가장 높은 기준선까지 들어오게 잡는다.
+    const topSecure = (sum.secure || []).filter((v) => v != null);
+    const max = Math.max(130, ...rates.map((r) => r * 1.12), (topSecure.length ? Math.max(...topSecure) : 110) * 1.15);
+    // 선행 B/O 로 확보율이 오르는 달(음수 입력)만 위끝을 넓힌다 — 내려앉는 달은 같은 축이다.
+    const maxA = adv ? Math.max(max, ...adv.bn.filter(Boolean).map((b) => b.rate * 1.12)) : max;
+    // 아래 50px 는 막대 밑 두 줄(공정 이름·상태 — 둘 다 14px) 자리다. 기준선 자리는 정확한 기준이다.
+    const barTop = bars.y + 24;
+    const barBot = bars.y + bars.h - 50;
+    const bw = Math.min(54, G.colW * 0.42);
+    // 기준선. 기준은 **달마다** 온다(월별 기준). 같은 값이 이어지는 달끼리 한 구간으로 묶어 그 칸 폭만큼
+    // 긋고, 값이 바뀌는 자리는 세로로 이어 계단으로 만든다. 모든 달이 같으면 판 전체를 가로지르는 선 한 줄이다.
+    const edgeLeft = (i) => (i === 0 ? bars.x : G.cols[i] - G.gap / 2);
+    const edgeRight = (i) => (i === n - 1 ? bars.x + bars.w : G.cols[i] + G.colW + G.gap / 2);
+    const barCtx = { G, bars, colX, barTop, barBot, bw, edgeLeft, edgeRight, n };
+    const barBase = barLayout(barCtx, sum.bn, max);
+    const barA = adv ? barLayout(barCtx, adv.bn, maxA) : barBase;
+    const sheet = layoutSheets(G, n);
+    // 선행 B/O 를 켠 값 글자. 같은 모양(한 줄·두 줄·접기) 안에서 크기만 다시 맞춘다 — 기본보다 크지 않다.
+    sheet.pxA = adv ? sheetValuePx(sheet, [adv.density, adv.wafer], n) : sheet.px;
+    const sheets = sheet.cards;
+    sumL = {
+      G,
+      line,
+      bars,
+      colX,
+      lineTop,
+      lineBot,
+      lineV: { base: lineBase, A: lineA, G: lineG, AG: lineAG },
+      barTop,
+      barBot,
+      bw,
+      edgeLeft,
+      edgeRight,
+      barV: { base: barBase, A: barA },
+      sheet,
+      sheets,
+    };
+    postHits();
+  }
+
+  // 선의 값 범위(지금 화면 그대로) — 값의 위아래에 폭의 60% 씩 여백을 둔다.
+  function baseRange(values) {
+    const vals = values.filter((v) => v != null);
     let lo = vals.length ? Math.min(...vals) : 0;
     let hi = vals.length ? Math.max(...vals) : 1;
     const span = Math.max(hi - lo, Math.abs(hi) * 0.02, 0.1);
     lo -= span * 0.6;
     hi += span * 0.6;
+    return { lo, hi };
+  }
+
+  // 토글이 더하는 값이 범위 안이면 범위를 그대로 돌려준다. 밖으로 나가는 쪽만 그 값 + 범위의 8% 까지
+  // 넓힌다 — 점이 판 위끝(lineTop)에 닿아도 값 글자는 판 안이다.
+  function extendRange(range, values) {
+    const vals = (values || []).filter((v) => v != null);
+    if (!vals.length) return range;
+    const pad = (range.hi - range.lo) * 0.08;
+    const top = Math.max(...vals);
+    const bottom = Math.min(...vals);
+    const hi = top > range.hi ? top + pad : range.hi;
+    const lo = bottom < range.lo ? bottom - pad : range.lo;
+    return hi === range.hi && lo === range.lo ? range : { lo, hi };
+  }
+
+  // 선 한 변형의 배치. `values` 는 그 변형의 점, `before` 는 선행 B/O 전 점선(없으면 null), `ghost` 는 비교
+  // 시나리오 점(없으면 null)이다. 눈금 글자 자리를 고를 때 셋을 모두 장애물로 본다.
+  function lineLayout(C, range, values, before, ghost) {
+    const { line, colX, lineTop, lineBot } = C;
+    const { lo, hi } = range;
     const step = niceStep((hi - lo) / 3);
     const ticks = [];
     for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) ticks.push(v);
-    // 아래 30px 는 달 이름(14px — 점 위 값 글자와 같은 크기) 자리다.
-    const lineTop = line.y + 30;
-    const lineBot = line.y + line.h - 30;
     const yLine = (v) => lineBot - ((v - lo) / (hi - lo)) * Math.max(1, lineBot - lineTop);
-    const points = sum.density.map((v, i) => (v == null ? null : { x: colX(i), y: yLine(v), v }));
+    const points = values.map((v, i) => (v == null ? null : { x: colX(i), y: yLine(v), v }));
     // 눈금 글자는 왼쪽 끝(기본) → 오른쪽 끝 → 눈금선 아래 왼쪽·오른쪽 차례로, 점·점 위 값·선·달 이름과
     // 겹치지 않는 첫 자리에 단다. 칸이 좁으면 첫 점이 왼쪽 끝 눈금 글자 자리에 온다. 어디에도 자리가
     // 없으면 그 눈금 글자는 쓰지 않는다 — 값은 점 위에 있다.
@@ -877,6 +1015,15 @@ function scene(port, gridOf) {
     }
     for (let k = 1; k < drawn.length; k++) {
       lineObstacles.push(...segmentBoxes(drawn[k - 1].x, drawn[k - 1].y, drawn[k].x, drawn[k].y));
+    }
+    // 선행 B/O 전 점선과 비교 시나리오 유령 선도 장애물이다(토글을 켠 변형에만 있다).
+    for (const series of [before, ghost]) {
+      if (!series) continue;
+      const marks = series.map((v, i) => (v == null ? null : { x: colX(i), y: yLine(v) })).filter(Boolean);
+      for (const pt of marks) lineObstacles.push({ x: pt.x - 5, y: pt.y - 5, w: 10, h: 10 });
+      for (let k = 1; k < marks.length; k++) {
+        lineObstacles.push(...segmentBoxes(marks[k - 1].x, marks[k - 1].y, marks[k].x, marks[k].y));
+      }
     }
     g.font = `500 14px ${bodyStack}`;
     sum.months.forEach((m, i) => lineObstacles.push(textBox(m, colX(i), line.y + line.h - 9, "center", 14)));
@@ -900,32 +1047,26 @@ function scene(port, gridOf) {
         line,
       );
       if (spot) lineObstacles.push(spot.box);
-      return spot && { text, x: spot.x, y: spot.y, align: spot.align };
+      // `dy` 는 눈금선에서 글자 바탕선까지 — 축이 움직이는 동안에는 지금 눈금선 자리에 이만큼 띄워 단다.
+      return spot && { text, x: spot.x, y: spot.y, align: spot.align, v, dy: spot.y - y };
     });
-    // 막대: 0 에서 시작한다. 기준선과 가장 큰 값이 다 들어오도록 위를 잡는다.
-    const rates = sum.bn.filter(Boolean).map((b) => b.rate);
-    // 기준은 달마다 하나다(`sum.secure[i]`). 가장 높은 기준선까지 들어오게 잡는다.
-    const topSecure = (sum.secure || []).filter((v) => v != null);
-    const max = Math.max(130, ...rates.map((r) => r * 1.12), (topSecure.length ? Math.max(...topSecure) : 110) * 1.15);
-    // 아래 50px 는 막대 밑 두 줄(공정 이름·상태 — 둘 다 14px) 자리다. 기준선 자리는 정확한 기준이다.
-    const barTop = bars.y + 24;
-    const barBot = bars.y + bars.h - 50;
+    return { lo, hi, step, ticks, tickLabels, yLine, points };
+  }
+
+  // 막대 한 변형의 배치. `bn` 은 그 변형의 B/N(달마다 하나 또는 null), `max` 는 막대 축의 위끝이다.
+  function barLayout(B, bn, max) {
+    const { G, bars, colX, barTop, barBot, bw, edgeLeft, edgeRight, n } = B;
     const yBar = (v) => barBot - (v / max) * Math.max(1, barBot - barTop);
-    const bw = Math.min(54, G.colW * 0.42);
     let lowest = -1;
-    sum.bn.forEach((b, i) => {
-      if (b && (lowest < 0 || b.rate < sum.bn[lowest].rate)) lowest = i;
+    bn.forEach((b, i) => {
+      if (b && (lowest < 0 || b.rate < bn[lowest].rate)) lowest = i;
     });
     // 막대 위 확보율(15px)과 막대 밑 상태(14px)는 제 칸 폭 안에만 쓴다 — 칸 사이 간격이 옆 칸 글자와의
     // 틈으로 남는다. 넘치면 여섯 칸을 같은 크기로 함께 줄인다(넓은 화면에서는 그대로다).
     const room = Math.max(1, G.colW - 2);
-    const shown = sum.bn.filter(Boolean);
+    const shown = bn.filter(Boolean);
     const ratePx = fitPx(shown.map((b) => `${round(b.rate, 1)}%`), 700, 15, 10, numStack, room);
     const statusPx = fitPx(shown.map(statusText), 700, 14, 10, bodyStack, room);
-    // 기준선. 기준은 **달마다** 온다(월별 기준). 같은 값이 이어지는 달끼리 한 구간으로 묶어 그 칸 폭만큼
-    // 긋고, 값이 바뀌는 자리는 세로로 이어 계단으로 만든다. 모든 달이 같으면 판 전체를 가로지르는 선 한 줄이다.
-    const edgeLeft = (i) => (i === 0 ? bars.x : G.cols[i] - G.gap / 2);
-    const edgeRight = (i) => (i === n - 1 ? bars.x + bars.w : G.cols[i] + G.colW + G.gap / 2);
     const thresholds = [
       [sum.warning || [], sum.warning_label || [], [4, 4], true],
       [sum.secure || [], sum.secure_label || [], [1, 4], false],
@@ -945,7 +1086,7 @@ function scene(port, gridOf) {
     // 구간 다른 끝 → 막대 사이 → 선의 다른 쪽 차례로 옮긴다. 어디에도 자리가 없으면 기본 자리에 바탕을 깔아 단다.
     const barObstacles = [];
     g.font = `700 ${ratePx}px ${numStack}`;
-    sum.bn.forEach((b, i) => {
+    bn.forEach((b, i) => {
       if (!b) return;
       const top = yBar(b.rate);
       barObstacles.push({ x: colX(i) - bw / 2, y: top, w: bw, h: barBot - top });
@@ -953,7 +1094,7 @@ function scene(port, gridOf) {
     });
     if (lowest >= 0) {
       g.font = `600 11px ${bodyStack}`;
-      barObstacles.push(textBox(sum.text.lowest, colX(lowest), yBar(sum.bn[lowest].rate) - 30, "center", 11));
+      barObstacles.push(textBox(sum.text.lowest, colX(lowest), yBar(bn[lowest].rate) - 30, "center", 11));
     }
     for (const t of thresholds) {
       t.runs.forEach((run, r) => {
@@ -983,36 +1124,16 @@ function scene(port, gridOf) {
         barObstacles.push(run.spot.box);
       }
     }
-    const sheet = layoutSheets(G, n);
-    const sheets = sheet.cards;
-    sumL = {
-      G,
-      line,
-      bars,
-      colX,
-      ticks,
-      tickLabels,
-      step,
-      lineBot,
-      points,
-      yLine,
-      max,
-      barTop,
-      barBot,
-      yBar,
-      bw,
-      lowest,
-      ratePx,
-      statusPx,
-      thresholds,
-      edgeLeft,
-      edgeRight,
-      sheet,
-      sheets,
-    };
-    // 말풍선 자리. 그리는 자리와 같은 값으로 메인 스레드에 돌려준다. 그리지 않는 도넛(`box` 0)은 자리도 없다.
+    return { max, yBar, lowest, ratePx, statusPx, thresholds };
+  }
+
+  // 말풍선 자리. 그리는 자리와 같은 값으로 메인 스레드에 돌려준다. 그리지 않는 도넛(`box` 0)은 자리도 없다.
+  // 선의 점은 토글을 켜면 움직이므로 **켜려는 모습**(`viewWant`)의 자리를 보낸다.
+  function postHits() {
+    if (!sumL) return;
+    const L = sumL;
     const hits = [];
-    sheets.forEach((s) => {
+    L.sheets.forEach((s) => {
       if (!s.box) return;
       const r = s.box * 0.36;
       const half = s.box * 0.065;
@@ -1022,11 +1143,17 @@ function scene(port, gridOf) {
         acc += share;
       }
     });
-    points.forEach((pt, i) => {
+    const variant = L.lineV[viewWant.bo ? (viewWant.gap ? "AG" : "A") : viewWant.gap ? "G" : "base"];
+    variant.points.forEach((pt, i) => {
       if (pt) hits.push({ k: "line", i, x: pt.x, y: pt.y, r: 16 });
     });
     sum.bn.forEach((b, i) => {
-      if (b) hits.push({ k: "bar", i, x: G.cols[i], y: bars.y, w: G.colW, h: bars.h });
+      if (b) hits.push({ k: "bar", i, x: L.G.cols[i], y: L.bars.y, w: L.G.colW, h: L.bars.h });
+    });
+    // 시트의 글자 쪽(달·Density·Wafer — 도넛 위). 좁은 화면에서 시트에 다 못 적는 증감을 말풍선이 말한다.
+    L.sheets.forEach((s) => {
+      const bottom = s.box ? s.cy - s.box * 0.45 : s.y + s.h;
+      hits.push({ k: "sheet", i: s.i, x: s.x, y: s.y, w: s.w, h: Math.max(0, bottom - s.y) });
     });
     port.postMessage({ type: "hits", hits });
   }
@@ -1110,39 +1237,96 @@ function scene(port, gridOf) {
     return { ...fitted, wrap, rows, monthPx, cards };
   }
 
+  // 선행 B/O 를 켠 값 글자 크기. 배치(`layoutSheets`)가 정한 모양(한 줄·두 줄·접기)은 그대로 두고 값 글자만
+  // 다시 맞춘다 — 기본 크기보다 커지지 않는다. 값이 길어져 이름을 덮는 일이 없게 한다.
+  function sheetValuePx(K, columns, n) {
+    let px = K.px;
+    K.rows.forEach((row, r) => {
+      const w = widest(`700 ${SHEET_VALUE_PX}px ${numStack}`, columns[r].slice(0, n).map((v) => valueText(v, row.digits)));
+      const room = K.inner - row.unitW - 2 - (K.stacked ? 0 : row.labelW + 8);
+      if (w > 0) px = Math.min(px, Math.floor(((SHEET_VALUE_PX * room) / w) * 2) / 2);
+    });
+    return Math.max(8, px);
+  }
+
+  // 지금 선의 축과 변형별 무게. 축(lo·hi)은 토글 진행만큼 기본 범위에서 넓힌 범위로 옮겨 가고, 눈금은 변형
+  // 사이를 엇갈려 바꾼다. 셋을 다 끄면 `base` 하나에 무게 1 이라 배치 그대로 그린다.
+  function lineNow() {
+    const V = sumL.lineV;
+    const kA = viewMix("bo");
+    const kG = viewMix("gap");
+    const lo = Math.min(V.base.lo + kA * (V.A.lo - V.base.lo), V.base.lo + kG * (V.G.lo - V.base.lo));
+    const hi = Math.max(V.base.hi + kA * (V.A.hi - V.base.hi), V.base.hi + kG * (V.G.hi - V.base.hi));
+    const span = Math.max(1, sumL.lineBot - sumL.lineTop);
+    const yLine = (v) => sumL.lineBot - ((v - lo) / (hi - lo)) * span;
+    const weights = new Map();
+    const add = (variant, w) => {
+      if (w > 0.0005) weights.set(variant, (weights.get(variant) || 0) + w);
+    };
+    add(V.base, (1 - kA) * (1 - kG));
+    add(V.A, kA * (1 - kG));
+    add(V.G, (1 - kA) * kG);
+    add(V.AG, kA * kG);
+    return { lo, hi, yLine, weights };
+  }
+
+  // 그 달의 Density — 선행 B/O 를 켜는 만큼 원래 값에서 선행 반영 값으로 차오른다(숫자도 함께 센다).
+  function densityNow(adv, i) {
+    const v = sum.density[i];
+    if (v == null || !adv) return v;
+    const a = adv.density[i];
+    const m = monthMix("bo", i);
+    return a == null || m <= 0 ? v : v + (a - v) * m;
+  }
+
   function drawLine(c) {
     const L = sumL;
     const k = OUT(clamp01((c - 60) / 700));
     if (k <= 0) return;
     const { line } = L;
+    const adv = toggleData("advance");
+    const cmp = toggleData("comparison");
+    const now = lineNow();
     g.save();
     g.globalAlpha = k;
     g.translate(0, 18 * (1 - k));
     panel(line.x, line.y, line.w, line.h);
     g.font = `500 10px ${bodyStack}`;
     g.textBaseline = "alphabetic";
-    // 눈금 글자는 간격의 자릿수만큼 찍고(0.05 간격이면 둘째 자리), 자리는 배치가 골라 둔 곳이다.
-    for (const v of L.ticks) {
-      const y = L.yLine(v);
-      g.strokeStyle = rgba(textColor, 0.08);
-      g.lineWidth = 1;
-      g.beginPath();
-      g.moveTo(line.x, Math.round(y) + 0.5);
-      g.lineTo(line.x + line.w, Math.round(y) + 0.5);
-      g.stroke();
+    // 눈금 글자는 간격의 자릿수만큼 찍고(0.05 간격이면 둘째 자리), 자리는 배치가 골라 둔 곳이다. 축이 움직이는
+    // 동안에는 변형마다의 눈금을 무게만큼 겹쳐 그린다(지금 축의 자리에).
+    for (const [V, w] of now.weights) {
+      for (const v of V.ticks) {
+        const y = now.yLine(v);
+        g.strokeStyle = rgba(textColor, 0.08 * w);
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(line.x, Math.round(y) + 0.5);
+        g.lineTo(line.x + line.w, Math.round(y) + 0.5);
+        g.stroke();
+      }
     }
     g.fillStyle = pal.faint;
-    for (const t of L.tickLabels) {
-      if (!t) continue;
-      g.textAlign = t.align;
-      g.fillText(t.text, t.x, t.y);
+    for (const [V, w] of now.weights) {
+      const settled = V.lo === now.lo && V.hi === now.hi;
+      g.globalAlpha = k * w;
+      for (const t of V.tickLabels) {
+        if (!t) continue;
+        g.textAlign = t.align;
+        g.fillText(t.text, t.x, settled ? t.y : now.yLine(t.v) + t.dy);
+      }
     }
+    g.globalAlpha = k;
     // 달 이름은 점 위 값 글자(14px)와 같은 크기다(2026-10-03 사용자 결정).
     g.font = `500 14px ${bodyStack}`;
     g.textAlign = "center";
     g.fillStyle = pal.muted;
     sum.months.forEach((m, i) => g.fillText(m, L.colX(i), line.y + line.h - 9));
-    const pts = L.points.filter(Boolean);
+    const points = sum.density.map((_, i) => {
+      const v = densityNow(adv, i);
+      return v == null ? null : { x: L.colX(i), y: now.yLine(v), v };
+    });
+    const pts = points.filter(Boolean);
     if (pts.length) {
       // 영역은 선이 다 그어질 즈음 번진다.
       const area = OUT(clamp01((c - 700) / 800));
@@ -1161,6 +1345,8 @@ function scene(port, gridOf) {
         g.fill();
         g.globalAlpha = k;
       }
+      if (adv) drawAdvanceBand(k, now, points);
+      if (cmp) drawGhost(c, k, now, cmp);
       // 선은 왼쪽부터 길이 비율로 그어진다.
       const p = EASE(clamp01((c - 250) / 1000));
       if (p > 0 && pts.length > 1) {
@@ -1186,7 +1372,7 @@ function scene(port, gridOf) {
         g.lineCap = "round";
         g.stroke();
       }
-      L.points.forEach((pt, i) => {
+      points.forEach((pt, i) => {
         if (!pt) return;
         const e = OUT(clamp01((c - 350 - i * 140) / 500));
         if (e <= 0) return;
@@ -1208,30 +1394,128 @@ function scene(port, gridOf) {
     g.restore();
   }
 
+  // 선행 B/O 가 더한 몫 — 원래 선(점선)과 새 선 사이를 강조색으로 옅게 칠한다. 달마다 진행이 달라 몫이 시차를
+  // 두고 아래에서 위로 차오른다(음수 입력이면 아래로 내려간다). HOME 의 「Density (선행 B/O 전)」 점선과 같은 뜻이다.
+  function drawAdvanceBand(k, now, points) {
+    const before = sum.density.map((v, i) => (v == null ? null : { x: sumL.colX(i), y: now.yLine(v) }));
+    let shown = 0;
+    for (let i = 0; i < points.length; i++) if (points[i]) shown = Math.max(shown, monthMix("bo", i));
+    if (shown <= 0.001) return;
+    g.save();
+    g.globalAlpha = k;
+    g.fillStyle = rgba(parseColor(pal.accent), 0.3);
+    g.beginPath();
+    for (let i = 1; i < points.length; i++) {
+      const a0 = before[i - 1];
+      const a1 = before[i];
+      const b0 = points[i - 1];
+      const b1 = points[i];
+      if (!a0 || !a1 || !b0 || !b1) continue;
+      g.moveTo(a0.x, a0.y);
+      g.lineTo(b0.x, b0.y);
+      g.lineTo(b1.x, b1.y);
+      g.lineTo(a1.x, a1.y);
+      g.closePath();
+    }
+    g.fill();
+    g.globalAlpha = k * shown;
+    g.strokeStyle = pal.muted;
+    g.lineWidth = 1.5;
+    g.setLineDash([2, 4]);
+    g.beginPath();
+    let open = false;
+    for (const pt of before) {
+      if (!pt) {
+        open = false;
+        continue;
+      }
+      if (open) g.lineTo(pt.x, pt.y);
+      else g.moveTo(pt.x, pt.y);
+      open = true;
+    }
+    g.stroke();
+    g.setLineDash([]);
+    g.restore();
+  }
+
+  // 비교 시나리오 쪽 값 — 속이 빈 유령 점과 끊긴 선. 달마다 시차를 두고 살짝 내려앉으며 나타난다. 차이 글자는
+  // 월별 시트가 값 아래에 단다(HOME 처럼 값 아래).
+  function drawGhost(c, k, now, cmp) {
+    const marks = cmp.density.map((v, i) => {
+      if (v == null) return null;
+      const m = monthMix("gap", i) * OUT(clamp01((c - 350 - i * 140) / 500));
+      return { x: sumL.colX(i), y: now.yLine(v) - 6 * (1 - m), m };
+    });
+    if (!marks.some((pt) => pt && pt.m > 0.001)) return;
+    g.save();
+    g.strokeStyle = pal.muted;
+    g.lineWidth = 1.5;
+    g.setLineDash([5, 4]);
+    for (let i = 1; i < marks.length; i++) {
+      const a = marks[i - 1];
+      const b = marks[i];
+      if (!a || !b) continue;
+      const m = Math.min(a.m, b.m);
+      if (m <= 0.001) continue;
+      g.globalAlpha = k * m * 0.85;
+      g.beginPath();
+      g.moveTo(a.x, a.y);
+      g.lineTo(b.x, b.y);
+      g.stroke();
+    }
+    g.setLineDash([]);
+    for (const pt of marks) {
+      if (!pt || pt.m <= 0.001) continue;
+      g.globalAlpha = k * pt.m;
+      g.beginPath();
+      g.arc(pt.x, pt.y, 3.5, 0, TAU);
+      g.fillStyle = pal.surface;
+      g.fill();
+      g.stroke();
+    }
+    g.restore();
+  }
+
   function drawBars(c) {
     const L = sumL;
     const k = OUT(clamp01((c - 60) / 700));
     if (k <= 0) return;
     const { bars } = L;
+    const adv = toggleData("advance");
+    // 막대 축의 위끝·글자 크기는 선행 B/O 진행만큼 두 변형 사이를 옮겨 간다. 끄면 기본 변형 그대로다.
+    const B0 = L.barV.base;
+    const BA = L.barV.A;
+    const kA = adv ? viewMix("bo") : 0;
+    const max = B0.max + kA * (BA.max - B0.max);
+    const yBar = max === B0.max ? B0.yBar : (v) => L.barBot - (v / max) * Math.max(1, L.barBot - L.barTop);
+    const ratePx = B0.ratePx + kA * (BA.ratePx - B0.ratePx);
+    const statusPx = B0.statusPx + kA * (BA.statusPx - B0.statusPx);
+    // 그 달의 확보율 — 선행 B/O 를 켜는 만큼 새 확보율로 내려앉는다(숫자도 함께 센다).
+    const rateNow = (i) => {
+      const b = sum.bn[i];
+      const a = adv ? adv.bn[i] : null;
+      const m = a ? monthMix("bo", i) : 0;
+      return m > 0 ? b.rate + (a.rate - b.rate) * m : b.rate;
+    };
     g.save();
     g.globalAlpha = k;
     g.translate(0, 18 * (1 - k));
     panel(bars.x, bars.y, bars.w, bars.h);
-    // 기준선(구간·계단)과 이름표 자리는 배치(`layoutSummary`)가 정한다. 선은 정확한 기준(109.5) 자리에 긋고,
+    // 기준선(구간·계단)과 이름표 자리는 배치(`barLayout`)가 정한다. 선은 정확한 기준(109.5) 자리에 긋고,
     // 이름표는 사사오입한 글자(`*_label`, 110%)를 단다. 선은 막대 밑에, 이름표는 막대 위에 그린다 — 자리가
     // 없어 바탕을 깐 이름표가 막대에 가리지 않게.
     g.textBaseline = "alphabetic";
-    for (const t of L.thresholds) {
+    for (const t of B0.thresholds) {
       g.strokeStyle = rgba(textColor, 0.28);
       g.lineWidth = 1;
       g.setLineDash(t.dash);
       g.beginPath();
       t.runs.forEach((run, r) => {
-        const y = Math.round(L.yBar(run.v)) + 0.5;
+        const y = Math.round(yBar(run.v)) + 0.5;
         const x0 = L.edgeLeft(run.start);
         const prev = t.runs[r - 1];
         if (prev && prev.end === run.start - 1) {
-          g.moveTo(x0, Math.round(L.yBar(prev.v)) + 0.5);
+          g.moveTo(x0, Math.round(yBar(prev.v)) + 0.5);
           g.lineTo(x0, y);
         } else {
           g.moveTo(x0, y);
@@ -1250,9 +1534,16 @@ function scene(port, gridOf) {
         g.fillText("—", cx, L.barBot + 19);
         return;
       }
-      const color = statusColor(b.status);
+      const a = adv ? adv.bn[i] : null;
+      const m = a ? monthMix("bo", i) : 0;
+      // 판정(확보·경고·부족)이 바뀌면 막대 색이 두 상태색 사이를 엇갈려 바뀐다.
+      const color =
+        m > 0 && a.status !== b.status
+          ? mix(parseColor(statusColor(b.status)), parseColor(statusColor(a.status)), m)
+          : statusColor(b.status);
       const s = EASE(clamp01((c - 250 - i * 90) / 800));
-      const top = L.yBar(b.rate);
+      const rate = rateNow(i);
+      const top = yBar(rate);
       const full = L.barBot - top;
       if (s > 0 && full > 0) {
         const h = full * s;
@@ -1260,12 +1551,27 @@ function scene(port, gridOf) {
         g.fillStyle = color;
         g.fill();
       }
-      const a = clamp01((c - 800 - i * 90) / 400);
-      if (a > 0) {
-        g.globalAlpha = k * a;
-        g.font = `700 ${L.ratePx}px ${numStack}`;
+      // 선행 B/O 전 막대의 윤곽 — 얼마나 내려앉았는지(또는 올라섰는지) 남겨 둔다.
+      if (m > 0.001 && s > 0 && Math.abs(a.rate - b.rate) >= 0.05) {
+        const before = yBar(b.rate);
+        const h = (L.barBot - before) * s;
+        if (h > 1) {
+          g.globalAlpha = k * m;
+          g.strokeStyle = rgba(textColor, 0.55);
+          g.lineWidth = 1;
+          g.setLineDash([3, 3]);
+          rr(cx - L.bw / 2 + 0.5, L.barBot - h + 0.5, L.bw - 1, h - 1, Math.min(4, h / 2));
+          g.stroke();
+          g.setLineDash([]);
+          g.globalAlpha = k;
+        }
+      }
+      const appear = clamp01((c - 800 - i * 90) / 400);
+      if (appear > 0) {
+        g.globalAlpha = k * appear;
+        g.font = `700 ${ratePx}px ${numStack}`;
         g.fillStyle = pal.text;
-        g.fillText(`${round(b.rate, 1)}%`, cx, top - 7);
+        g.fillText(`${round(rate, 1)}%`, cx, top - 7);
         g.globalAlpha = k;
       }
       // 막대 밑 두 줄(공정 이름·상태)은 생산계획 값 글자와 같은 14px 다(2026-10-03 사용자 결정). 상태 글자는
@@ -1273,39 +1579,53 @@ function scene(port, gridOf) {
       g.font = `500 14px ${bodyStack}`;
       g.fillStyle = pal.muted;
       g.fillText(fit(b.process, L.G.colW - 8), cx, L.barBot + 19);
-      // 부족 대수 — 부족한 달만 숫자로 세우고(상태색), 나머지는 상태 이름만 단다.
+      // 부족 대수 — 부족한 달만 숫자로 세우고(상태색), 나머지는 상태 이름만 단다. 선행 B/O 로 판정이 바뀌면
+      // 두 글자가 엇갈려 바뀐다.
       const a2 = clamp01((c - 900 - i * 90) / 400);
       if (a2 > 0) {
-        g.globalAlpha = k * a2;
-        g.font = `700 ${L.statusPx}px ${bodyStack}`;
-        g.fillStyle = isShort(b) ? color : pal.muted;
-        g.fillText(statusText(b), cx, L.barBot + 38);
+        g.font = `700 ${statusPx}px ${bodyStack}`;
+        const states = m > 0.001 && statusText(a) !== statusText(b) ? [[b, 1 - m], [a, m]] : [[m > 0.5 && a ? a : b, 1]];
+        for (const [x, w] of states) {
+          if (w <= 0.001) continue;
+          g.globalAlpha = k * a2 * w;
+          g.fillStyle = isShort(x) ? statusColor(x.status) : pal.muted;
+          g.fillText(statusText(x), cx, L.barBot + 38);
+        }
         g.globalAlpha = k;
       }
     });
     g.font = `500 10px ${bodyStack}`;
-    for (const t of L.thresholds) {
-      for (const run of t.runs) {
-        const spot = run.spot;
-        if (spot.backed) {
-          rr(spot.box.x, spot.box.y, spot.box.w, spot.box.h, 3);
-          g.fillStyle = rgba(surface, 0.86);
-          g.fill();
+    const labelSets = BA === B0 || kA <= 0 ? [[B0, 1]] : kA >= 1 ? [[BA, 1]] : [[B0, 1 - kA], [BA, kA]];
+    for (const [V, w] of labelSets) {
+      g.globalAlpha = k * w;
+      for (const t of V.thresholds) {
+        for (const run of t.runs) {
+          const spot = run.spot;
+          // 이름표는 그 변형의 선 자리에서 고른 것이다 — 축이 움직이면 지금 선 자리만큼 함께 옮긴다.
+          const dy = V.max === max ? 0 : yBar(run.v) - V.yBar(run.v);
+          if (spot.backed) {
+            rr(spot.box.x, spot.box.y + dy, spot.box.w, spot.box.h, 3);
+            g.fillStyle = rgba(surface, 0.86);
+            g.fill();
+          }
+          g.fillStyle = pal.muted;
+          g.textAlign = spot.align;
+          g.fillText(run.label, spot.x, spot.y + dy);
         }
-        g.fillStyle = pal.muted;
-        g.textAlign = spot.align;
-        g.fillText(run.label, spot.x, spot.y);
       }
     }
-    if (L.lowest >= 0) {
-      const e = OUT(clamp01((c - 1500) / 500));
-      if (e > 0) {
-        const b = sum.bn[L.lowest];
-        g.globalAlpha = k * e;
+    g.globalAlpha = k;
+    // 「최저」는 확보율이 가장 낮은 달 막대 위다. 선행 B/O 로 그 달이 바뀌면 두 자리를 엇갈려 바꾼다.
+    const lows = B0.lowest === BA.lowest ? [[B0.lowest, 1]] : [[B0.lowest, 1 - kA], [BA.lowest, kA]];
+    const e = OUT(clamp01((c - 1500) / 500));
+    if (e > 0) {
+      for (const [index, w] of lows) {
+        if (index < 0 || w <= 0.001) continue;
+        g.globalAlpha = k * e * w;
         g.font = `600 11px ${bodyStack}`;
         g.textAlign = "center";
         g.fillStyle = pal["die-short"];
-        g.fillText(sum.text.lowest, L.colX(L.lowest), L.yBar(b.rate) - 30 + 3 * (1 - e));
+        g.fillText(sum.text.lowest, L.colX(index), yBar(rateNow(index)) - 30 + 3 * (1 - e));
       }
     }
     g.restore();
@@ -1314,6 +1634,9 @@ function scene(port, gridOf) {
   function drawSheets(c) {
     const L = sumL;
     const K = L.sheet;
+    const adv = toggleData("advance");
+    const ship = toggleData("shipment");
+    const cmp = toggleData("comparison");
     for (const s of L.sheets) {
       const i = s.i;
       const e = OUT(clamp01((c - 120 - i * 110) / 760));
@@ -1346,13 +1669,18 @@ function scene(port, gridOf) {
         /* 자간을 모르는 캔버스 */
       }
       const cnt = COUNT(clamp01((c - 260 - i * 110) / 900));
+      // 선행 B/O 진행(그 달). 값이 원래 값에서 선행 반영 값으로 차오르고 글자 크기는 두 배치 사이를 옮겨 간다.
+      const mA = adv ? monthMix("bo", i) : 0;
+      const px = mA > 0 ? K.px + (K.pxA - K.px) * mA : K.px;
       // 이름은 왼쪽, 값과 단위는 오른쪽. 한 줄(`stacked` 아님)이면 셋이 같은 바탕선이고, 두 줄이면 이름이
       // 값 위 줄로 올라간다. 글자 크기·모양은 배치(`layoutSheets`)가 여섯 칸에 한 번 정해 둔 것이다.
       K.rows.forEach((row, r) => {
         const top = s.kv[r];
-        const base = K.stacked ? top + SHEET_LABEL_LINE + Math.round(K.px * 0.85) + 1 : top + 17;
+        const base = K.stacked ? top + SHEET_LABEL_LINE + Math.round(px * 0.85) + 1 : top + 17;
         const right = s.x + s.w - padX;
-        const value = row.values[i];
+        const own = row.values[i];
+        const target = adv ? (r === 0 ? adv.density : adv.wafer)[i] : own;
+        const value = own == null || target == null || mA <= 0 ? own : own + (target - own) * mA;
         g.font = `500 11px ${bodyStack}`;
         g.textAlign = "left";
         g.fillStyle = pal.muted;
@@ -1360,9 +1688,32 @@ function scene(port, gridOf) {
         g.textAlign = "right";
         g.font = `500 10px ${bodyStack}`;
         g.fillText(row.unit, right, base);
-        g.font = `700 ${K.px}px ${numStack}`;
-        g.fillStyle = pal.text;
+        g.font = `700 ${px}px ${numStack}`;
+        // 선행 B/O 가 바꾼 값은 토글 표식과 같은 강조색으로 물든다 — 끄면 본문 글자색으로 돌아온다.
+        g.fillStyle = mA > 0 && target !== own ? mix(textColor, accentColor, 0.6 * mA) : pal.text;
         g.fillText(value == null ? "—" : (value * cnt).toFixed(row.digits), right - row.unitW - 2, base);
+        // GAP — 비교 시나리오와의 차이를 값 아래에 단다(HOME 처럼 값 아래, 오른쪽 끝을 값에 맞춘다). 부호색은
+        // 늘림·줄임 둘이고, 달마다 시차를 두고 아래에서 떠오른다.
+        const gap = cmp ? (r === 0 ? cmp.density_gap : cmp.wafer_gap)[i] : "";
+        const mG = gap ? monthMix("gap", i) : 0;
+        if (mG > 0.001) {
+          g.globalAlpha = e * mG;
+          g.font = `700 10px ${numStack}`;
+          g.fillStyle = gap.trim().startsWith("-") ? pal["gap-down"] : pal["gap-up"];
+          g.fillText(gap, right - row.unitW - 2, base + 12 + 4 * (1 - mG));
+          g.globalAlpha = e;
+        }
+        // 선행 입고 실적 — Density 값 옆(단위 위, 칸 오른쪽 끝)에 작게 붙는다. 계산에 들어가지 않는 표시값이라
+        // 선·막대는 그대로이고, 달마다 시차를 두고 오른쪽에서 미끄러져 붙는다.
+        const note = r === 0 && ship ? ship.notes[i] : "";
+        const mS = note ? monthMix("ship", i) : 0;
+        if (mS > 0.001) {
+          g.globalAlpha = e * mS;
+          g.font = `700 10px ${numStack}`;
+          g.fillStyle = pal.text;
+          g.fillText(note, right + 8 * (1 - mS), base - Math.round(px * 0.72) - 3);
+          g.globalAlpha = e;
+        }
       });
       // 도넛: 조각마다 50ms 씩 늦게 자란다. 조각 사이는 둘레의 0.9% 를 비운다.
       const slices = sum.mix[i] || [];
@@ -1418,6 +1769,7 @@ function scene(port, gridOf) {
   }
 
   function draw(at) {
+    viewAt = at;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, W, H);
     // 시작 전(테마 새로고침을 기다리는 동안)에는 아무것도 그리지 않는다 — 아래 HTML 바탕(앱 바탕색)만 보인다.
@@ -1489,7 +1841,23 @@ function scene(port, gridOf) {
     nextFrame(frame);
   }
 
+  // 움직임을 줄인 사용자에게는 그림이 시간에 따라 바뀌지 않는다 — 웨이퍼는 멈춰 있고(`drawMap` 의 t = 0) 요약과
+  // 토글은 끝 모습이다. 그래서 프레임 루프를 세우지 않고, 그림을 바꾸는 메시지(init · begin · progress · resize ·
+  // summary · summary-on · view · resume)를 받을 때와 글꼴이 올라왔을 때만 한 번 그린다. 루프를 세우면 같은
+  // 그림을 매 프레임 다시 그리느라 렌더러·GPU 가 헛돈다(헤드리스 실측: 「준비 완료」 대기 10초에 CPU 3.05초).
+  // 진행값(펼침 `shown` · 안정 `settle` · 토글 진행)은 그리는 순간의 목표로 바로 맞춘다.
+  function paintOnce() {
+    if (stopped || paused || !g) return;
+    shown = ready ? 1 : Math.min(0.97, (reached + 0.45) / total);
+    settle = ready ? 1 : 0;
+    draw(now());
+  }
+
   function loop() {
+    if (reduce) {
+      paintOnce();
+      return;
+    }
     if (looping || stopped || paused || !g) return;
     looping = true;
     last = 0;
@@ -1510,6 +1878,7 @@ function scene(port, gridOf) {
       frame0 = parseColor(m.frame0 || pal.surface);
       surface = parseColor(pal.surface);
       textColor = parseColor(pal.text);
+      accentColor = parseColor(pal.accent);
       g = canvas.getContext("2d");
       resize(m.width, m.height, m.dpr);
       if (paused) {
@@ -1523,19 +1892,25 @@ function scene(port, gridOf) {
       ]);
       initAt = now();
       loop();
+      // 움직임을 줄였으면 글꼴이 올라온 뒤 한 번 더 그린다(루프가 없어 다음 프레임이 없다).
+      fontsReady.then(() => loop());
     } else if (m.type === "begin") {
       beginAt = m.at;
+      loop();
     } else if (m.type === "progress") {
       reached = m.reached;
       total = Math.max(1, m.total);
       ready = !!m.ready;
+      loop();
     } else if (m.type === "resize") {
       resize(m.width, m.height, m.dpr);
+      loop();
     } else if (m.type === "summary") {
       sum = m.summary || null;
       fontsReady.then(() => {
         layoutSummary();
         port.postMessage({ type: "summary-ready", ok: !!sum });
+        loop();
       });
     } else if (m.type === "summary-on") {
       if (m.fromApp) {
@@ -1558,6 +1933,18 @@ function scene(port, gridOf) {
         lookTween = { from: { ...look }, to, at: m.lookAt, ms: m.lookMs, ease: EASE };
         veilTween = { from: { veil }, to: { veil: 0 }, at: m.veilAt, ms: m.veilMs, ease: (x) => x };
       }
+      loop();
+    } else if (m.type === "view") {
+      // 머리 줄 토글. 켜려는 모습만 바꾸고 진행은 프레임이 옮긴다(지금 값에서 이어 간다).
+      const v = m.view || {};
+      const want = { bo: v.advance ? 1 : 0, ship: v.shipment ? 1 : 0, gap: v.comparison ? 1 : 0 };
+      const t = now();
+      for (const ch of Object.keys(want)) {
+        if (want[ch] !== viewWant[ch] || reduce || m.instant) retarget(ch, want[ch], t, reduce || !!m.instant);
+        viewWant[ch] = want[ch];
+      }
+      postHits();
+      loop();
     } else if (m.type === "pause") {
       paused = true;
       if (canvas) {
@@ -1631,7 +2018,7 @@ function startScene(canvas, init, onReply) {
       const key = m.type === "pause" || m.type === "resume" ? "run" : m.type;
       // 지웠다 다시 넣어 마지막으로 받은 차례를 지킨다(Map 은 있는 키의 자리를 그대로 둔다) — 그래야
       // 되살린 장면이 resume 뒤의 resize 처럼 나중 값을 나중에 받는다.
-      if (["begin", "progress", "summary", "summary-on", "run", "resize"].includes(key)) {
+      if (["begin", "progress", "summary", "summary-on", "view", "run", "resize"].includes(key)) {
         replay.delete(key);
         replay.set(key, m);
       }
@@ -1740,6 +2127,11 @@ function createOverlay(api, data, initial, syncToolbar) {
     "--ghost-line": palette["ghost-line"],
     "--ghost-hover": palette["ghost-hover"],
     "--panel-line": palette["panel-line"],
+    "--faint": palette.faint,
+    "--toggle-on": palette["toggle-on"],
+    "--toggle-on-line": palette["toggle-on-line"],
+    "--gap-up": palette["gap-up"],
+    "--gap-down": palette["gap-down"],
     "--tip": palette.tip,
     "--tip-shadow": palette["tip-shadow"],
     "--body": data.font_body || "sans-serif",
@@ -1840,6 +2232,95 @@ function createOverlay(api, data, initial, syncToolbar) {
   const anim = (el, keyframes, options = {}) =>
     el.animate(keyframes, { fill: "both", easing: EASE, ...options }).finished.catch(() => {});
   const revealAnimations = new Map();
+
+  /* -------------------------------------------- 보는 조건 토글 셋(선행 B/O · 선행 입고 · GAP) */
+  // Summary 머리 줄에서 Detail 오른쪽에 조금 띄워 선다(입장 화면에서는 보이지 않는다). 브라우저 안에서만 켜고
+  // 끈다 — 파이썬으로 아무것도 보내지 않아 rerun 이 없고, 값은 요약이 미리 보낸 `toggles` 다. 장면(워커)에는
+  // 켜려는 모습만 보내고 움직임은 장면이 그린다. 상태는 이 탭이 살아 있는 동안 기억한다(`api.view` — Summary
+  // 를 닫았다 다시 열어도 그대로, 새로 고치면 셋 다 꺼짐). 켤 수 없는 토글은 `aria-disabled` 로 두고 풍선에
+  // 까닭을 단다 — `disabled` 가 아니라 Tab 으로 닿아 까닭을 읽을 수 있다.
+  const view = api.view || (api.view = { advance: false, shipment: false, comparison: false });
+  let viewSent = false;
+  const toggleSpecs = Array.isArray(text.toggles) ? text.toggles : [];
+  const toggleBox = $('[data-slot="toggles"]');
+  toggleBox.setAttribute("aria-label", text.toggles_group || "");
+  toggleBox.innerHTML = toggleSpecs
+    .map(
+      (spec) =>
+        `<button type="button" class="tg" data-key="${escapeHtml(spec.key)}" aria-pressed="false" aria-disabled="true" aria-label="${escapeHtml(spec.label)}">` +
+        `<i class="sw" aria-hidden="true"></i><span class="full" aria-hidden="true">${escapeHtml(spec.label)}</span>` +
+        `<span class="short" aria-hidden="true">${escapeHtml(spec.short || spec.label)}</span></button>`,
+    )
+    .join("");
+  const toggleButtons = $$(".tg");
+  const toggleOf = (key) => (summary && summary.toggles && summary.toggles[key]) || null;
+  const canToggle = (key) => {
+    const t = toggleOf(key);
+    return !!(t && t.available);
+  };
+  const isOn = (key) => !!view[key] && canToggle(key);
+
+  function toggleTitle(spec) {
+    const t = toggleOf(spec.key);
+    if (!t || !t.available) return (t && t.reason) || reasonText || "";
+    if (spec.key === "comparison" && t.name) return `${spec.title || ""} · ${t.name}`;
+    if (spec.key === "advance" && t.unapplied && t.unapplied.length) {
+      return `${spec.title || ""} (${text.advance_unapplied || ""} ${t.unapplied.join(", ")})`;
+    }
+    return spec.title || "";
+  }
+
+  // 단추의 눌림·쓸 수 있음·풍선을 지금 값에 맞춘다. 켤 수 없게 된 토글은 끈다.
+  function syncToggles() {
+    toggleButtons.forEach((button) => {
+      const key = button.dataset.key;
+      const spec = toggleSpecs.find((item) => item.key === key) || {};
+      const can = canToggle(key);
+      if (!can) view[key] = false;
+      button.setAttribute("aria-disabled", can ? "false" : "true");
+      button.setAttribute("aria-pressed", view[key] ? "true" : "false");
+      button.title = toggleTitle(spec);
+    });
+  }
+
+  function postView(instant) {
+    sceneHandle.post({ type: "view", view: { ...view }, instant: !!instant });
+  }
+
+  function pressToggle(button) {
+    if (button.getAttribute("aria-disabled") === "true") return;
+    const key = button.dataset.key;
+    view[key] = !view[key];
+    button.setAttribute("aria-pressed", view[key] ? "true" : "false");
+    postView(false);
+    buildTable();
+    tip.style.opacity = "0";
+    // 켤 때 표식이 한 번 톡 차오른다(움직임을 줄인 사용자에게는 없다).
+    if (view[key] && !reduce) {
+      button.querySelector(".sw").animate([{ transform: "scale(.6)" }, { transform: "scale(1.45)", offset: 0.55 }, { transform: "scale(1)" }], {
+        duration: 360,
+        easing: OUT,
+      });
+    }
+  }
+  // Space · Enter 는 단추가 스스로 click 으로 바꾼다. Esc 는 지금처럼 Detail 로 나간다(`onKey`).
+  toggleButtons.forEach((button) => button.addEventListener("click", () => pressToggle(button)));
+
+  // Summary 가 조립될 때 Detail 옆에 하나씩 떠오른다. 원래 화면에서 다시 열 때(`snapToSummary`)는 바로 선다.
+  function revealToggles(animate) {
+    toggleButtons.forEach((button, index) => {
+      button.getAnimations().forEach((a) => a.cancel());
+      button.style.opacity = "1";
+      if (animate && !reduce) {
+        button.animate([{ opacity: 0, transform: "translateX(-10px)" }, { opacity: 1, transform: "none" }], {
+          duration: 560,
+          delay: SUMMARY_TIMING.asofDelay + index * 70,
+          easing: OUT,
+          fill: "backwards",
+        });
+      }
+    });
+  }
 
   /* ------------------------------------------------ 상태: intro(입장) · summary(요약) · hidden(감춤) */
   let mode = intro ? "intro" : "hidden";
@@ -1964,6 +2445,12 @@ function createOverlay(api, data, initial, syncToolbar) {
         },
       });
     }
+    // 켤 수 없게 된 토글은 끈다. 이 장면이 처음 받는 상태면 움직임 없이 그 모습으로 시작한다(탭이 기억한
+    // 상태로 새 오버레이를 만든 때).
+    syncToggles();
+    postView(!viewSent);
+    viewSent = true;
+    buildTable();
     if (mode === "intro") update();
     else render();
   }
@@ -1990,17 +2477,33 @@ function createOverlay(api, data, initial, syncToolbar) {
     $(".asof .chip").textContent = summary.release || "";
     $(".asof .period").textContent = `${summary.period} · ${(text.months || "").replace("{n}", summary.count)}`;
     asof.title = summary.scenario || "";
-    // 차트는 캔버스라 낭독기가 읽지 못한다. 같은 값을 숨은 표로 둔다.
+    placeLabels();
+  }
+
+  // 차트는 캔버스라 낭독기가 읽지 못한다. 같은 값을 숨은 표로 둔다 — 켠 토글의 값도 함께(선행 B/O 를 켜면
+  // 그 값, 선행 입고·GAP 은 칸을 더한다).
+  function buildTable() {
+    if (!summary) return;
+    const adv = isOn("advance") ? toggleOf("advance") : null;
+    const ship = isOn("shipment") ? toggleOf("shipment") : null;
+    const cmp = isOn("comparison") ? toggleOf("comparison") : null;
     const head = ["", "Density(억Gb)", "Wafer 계획(K)", "B/N 공정", "확보율(%)", "부족 대수"];
+    if (ship) head.push(`${text.shipment_note || ""}(억Gb)`);
+    if (cmp) head.push("GAP Density(억Gb)", "GAP Wafer(K)");
     const body = summary.months.map((month, i) => {
-      const b = summary.bn[i];
-      return [month, summary.density[i] ?? "", summary.wafer[i] ?? "", b ? b.process : "", b ? b.rate : "", b && b.short != null ? b.short : ""];
+      const b = (adv ? adv.bn : summary.bn)[i];
+      const density = (adv ? adv.density : summary.density)[i];
+      const wafer = (adv ? adv.wafer : summary.wafer)[i];
+      const row = [month, density ?? "", wafer ?? "", b ? b.process : "", b ? b.rate : "", b && b.short != null ? b.short : ""];
+      if (ship) row.push(ship.notes[i] || "");
+      if (cmp) row.push(cmp.density_gap[i] || "", cmp.wafer_gap[i] || "");
+      return row;
     });
+    const labelsOn = toggleSpecs.filter((spec) => isOn(spec.key)).map((spec) => spec.label);
     table.innerHTML =
-      `<caption>${escapeHtml(summary.release || "")} ${escapeHtml(summary.period || "")}</caption>` +
+      `<caption>${escapeHtml(summary.release || "")} ${escapeHtml(summary.period || "")}${labelsOn.length ? ` · ${escapeHtml(labelsOn.join(", "))}` : ""}</caption>` +
       `<tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr>` +
       body.map((r) => `<tr>${r.map((v) => `<td>${escapeHtml(v)}</td>`).join("")}</tr>`).join("");
-    placeLabels();
   }
 
   // 행 이름 자리. 넓은 화면은 왼쪽 칸에 줄 높이만큼, 좁은 화면은 줄 위 띠(`head`)에 차트 폭만큼 둔다 —
@@ -2044,23 +2547,50 @@ function createOverlay(api, data, initial, syncToolbar) {
       }
     }
     for (const h of hits) {
-      if (h.k === "bar" && x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) return h;
+      if ((h.k === "bar" || h.k === "sheet") && x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) return h;
     }
     return null;
   }
+  // 말풍선은 켠 토글의 값으로 말한다 — 선행 B/O 를 켰으면 반영 값과 그 전 값, 선행 입고·GAP 을 켰으면 그 줄을 더한다.
   function tipHtml(h) {
     const month = summary.months[h.i];
-    if (h.k === "line") return `<b>${escapeHtml(month)}</b> 생산계획 <b>${Number(summary.density[h.i]).toFixed(2)}</b>억Gb`;
+    const adv = isOn("advance") ? toggleOf("advance") : null;
+    const ship = isOn("shipment") ? toggleOf("shipment") : null;
+    const cmp = isOn("comparison") ? toggleOf("comparison") : null;
+    const dim = (html) => `<br><span class="dim">${html}</span>`;
+    const fixed = (v, d) => (v == null ? "—" : Number(v).toFixed(d));
+    const shipLine = () => (ship && ship.notes[h.i] ? dim(`${escapeHtml(text.shipment_note || "")} ${escapeHtml(ship.notes[h.i])}억Gb`) : "");
+    if (h.k === "line") {
+      let html = `<b>${escapeHtml(month)}</b> 생산계획 <b>${Number((adv ? adv.density : summary.density)[h.i]).toFixed(2)}</b>억Gb`;
+      if (adv && adv.density_delta[h.i]) html += dim(`${escapeHtml(text.advance_before || "")} ${fixed(summary.density[h.i], 2)} · 선행 B/O ${escapeHtml(adv.density_delta[h.i])}`);
+      html += shipLine();
+      if (cmp && cmp.density[h.i] != null) {
+        const gap = cmp.density_gap[h.i];
+        html += dim(`${escapeHtml(text.comparison_value || "")} ${fixed(cmp.density[h.i], 2)}${gap ? ` · GAP ${escapeHtml(gap)}` : ""}`);
+      }
+      return html;
+    }
     if (h.k === "seg") {
       const p = summary.products[h.p] || {};
       const share = (summary.mix[h.i] || []).find(([index]) => index === h.p);
       return `<b>${escapeHtml(p.name || "")}</b> · ${share ? (share[1] * 100).toFixed(1) : ""}% <span class="dim">${escapeHtml(month)}</span>`;
     }
-    const b = summary.bn[h.i];
+    if (h.k === "sheet") {
+      let html = `<b>${escapeHtml(month)}</b> Density <b>${fixed((adv ? adv.density : summary.density)[h.i], 2)}</b>억Gb · Wafer 계획 <b>${fixed((adv ? adv.wafer : summary.wafer)[h.i], 0)}</b>K`;
+      if (adv && (adv.density_delta[h.i] || adv.wafer_delta[h.i])) {
+        html += dim(`선행 B/O ${escapeHtml(adv.density_delta[h.i] || "—")} · ${escapeHtml(adv.wafer_delta[h.i] || "—")}`);
+      }
+      html += shipLine();
+      if (cmp) html += dim(`GAP ${escapeHtml(cmp.density_gap[h.i] || "—")} · ${escapeHtml(cmp.wafer_gap[h.i] || "—")}`);
+      return html;
+    }
+    const base = summary.bn[h.i];
+    const b = (adv && adv.bn[h.i]) || base;
     const st = (text.status || {})[b.status] || "";
     const short = b.status === "shortage" && b.short ? `${(text.status || {}).shortage || ""} <b>${b.short}대</b>` : st;
     const units = b.need != null && b.have != null ? `<br><span class="dim">소요 ${b.need}대 / 보유 ${b.have}대</span>` : "";
-    return `<b>${escapeHtml(month)}</b> B/N ${escapeHtml(b.process)}<br>확보율 <b>${b.rate}%</b> · ${short}${units}`;
+    const before = adv && adv.rate_delta[h.i] ? dim(`${escapeHtml(text.advance_before || "")} ${base.rate}% · ${escapeHtml(adv.rate_delta[h.i])}`) : "";
+    return `<b>${escapeHtml(month)}</b> B/N ${escapeHtml(b.process)}<br>확보율 <b>${b.rate}%</b> · ${short}${units}${before}`;
   }
   stage.addEventListener("pointermove", (event) => {
     const h = mode === "summary" && summary ? hitAt(event.clientX, event.clientY) : null;
@@ -2133,6 +2663,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     });
     // 3) Detail 이 심볼·라벨 옆으로.
     dockDetail(true);
+    revealToggles(true);
     anim(asof, [{ opacity: 0, transform: "translateX(12px)" }, { opacity: 1, transform: "none" }], { duration: reduce ? 1 : 700, delay: reduce ? 0 : T.asofDelay, easing: OUT });
     main.style.visibility = "hidden";
     detail.focus({ preventScroll: true });
@@ -2153,6 +2684,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     introDone = true;
     render();
     dockDetail(false);
+    revealToggles(false);
     main.style.visibility = "hidden";
     asof.style.opacity = "1";
   }

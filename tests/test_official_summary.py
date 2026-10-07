@@ -217,10 +217,28 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
         fail=None,
         module=intro_summary,
         thresholds=SecurementThresholds(1.095, 0.995),
+        versions={"advance": 0, "shipment": 0, "comparison": 0},
+        profile_reads=0,
     )
 
+    def fake_profiles(path: str) -> SimpleNamespace:
+        env.profile_reads += 1
+        versions = dict(env.versions)
+        return SimpleNamespace(
+            cache_key=lambda: (
+                versions["advance"],
+                versions["shipment"],
+                versions["comparison"],
+                "S-CMP",
+                "R-CMP",
+            )
+        )
+
     def fake_build(
-        path: str, release: SimpleNamespace, thresholds: SecurementThresholds
+        path: str,
+        release: SimpleNamespace,
+        thresholds: SecurementThresholds,
+        profiles: SimpleNamespace,
     ) -> dict[str, object]:
         env.builds.append(release.official_release_id)
         if env.fail is not None:
@@ -239,6 +257,7 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
         "load_global_securement_threshold",
         lambda path: SimpleNamespace(thresholds=env.thresholds),
     )
+    monkeypatch.setattr(intro_summary, "load_toggle_profiles", fake_profiles)
     monkeypatch.setattr(intro_summary, "_build", fake_build)
     yield env
     simulation_cache.get_intro_summary_payload.clear()
@@ -257,6 +276,35 @@ def test_home_reruns_reuse_the_session_value_without_touching_the_db(
     assert data("db") == first
     # 다시 확인해도 같은 공식버전이면 서버 캐시에서 꺼낸다 — 다시 만들지 않는다.
     assert summary_env.repo.calls == 2 and summary_env.builds == ["rel-1"]
+
+
+def test_toggle_profiles_are_read_only_when_the_official_version_is_checked(
+    summary_env: SimpleNamespace,
+) -> None:
+    """토글 셋의 공용 프로필(선행 B/O·선행 입고·비교 대상)은 30초에 한 번 하는 확인 때만 읽는다 —
+    HOME 회차는 세션 값만 보낸다."""
+    data = summary_env.module.official_summary_data
+    data("db")
+    summary_env.now += 10
+    data("db")
+    assert summary_env.profile_reads == 1
+    summary_env.now += summary_env.module.RECHECK_SECONDS
+    data("db")
+    assert summary_env.profile_reads == 2 and summary_env.builds == ["rel-1"]
+
+
+@pytest.mark.parametrize("profile", ["advance", "shipment", "comparison"])
+def test_a_saved_toggle_profile_rebuilds_the_summary(
+    summary_env: SimpleNamespace, profile: str
+) -> None:
+    """프로필 version 이 서버 캐시 키에 있다 — 저장하면(version 이 오르면) 같은 공식버전도
+    새로 만든다."""
+    data = summary_env.module.official_summary_data
+    data("db")
+    summary_env.versions[profile] += 1
+    summary_env.module.forget_intro_summary_check()
+    data("db")
+    assert summary_env.builds == ["rel-1", "rel-1"]
 
 
 def test_a_new_session_takes_the_summary_from_the_server_cache(

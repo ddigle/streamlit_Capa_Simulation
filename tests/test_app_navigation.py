@@ -418,6 +418,11 @@ def test_the_intro_summary_sends_the_official_six_months_once_per_value(_app: Ap
     for key in ("months", "density", "wafer", "bn", "mix"):
         assert len(first[key]) == count, key
     assert first["products"] and all(item["color"].startswith("#") for item in first["products"])
+    # 머리 줄 토글 셋의 값도 같은 회차에 함께 간다. 빈 저장소에는 선행 B/O·선행 입고 입력도 비교
+    # 대상도 없으므로 셋 다 켤 수 없고 까닭을 단다.
+    toggles = first["toggles"]
+    assert set(toggles) == {"advance", "shipment", "comparison"}
+    assert all(part["available"] is False and part["reason"] for part in toggles.values())
 
 
 def _header_style(app: AppTest) -> str:

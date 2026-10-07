@@ -29,6 +29,15 @@ Detail 만 남긴다. 데이터 오류로 만들지 못한 결과는 서버 캐�
 (고치려면 새 공식버전을 지정해야 하고 그때 키가 바뀐다). DB 잠금 같은 일시적 실패는 남기지 않고
 다음 확인 때(`RECHECK_SECONDS` 뒤) 다시 해 본다.
 
+**토글 셋의 값도 함께 보낸다.** Summary 머리 줄의 「선행 B/O」·「선행 입고」·「GAP」은
+브라우저 안에서만 켜고 끈다(rerun 이 없다). 그래서 세 갈래의 값을 요약과 함께 미리 만들어
+`toggles` 로 싣는다 — HOME 의 같은 토글과 같은 함수다(`services/official_summary.py`). 쓰는
+공용 프로필(선행 B/O·선행 입고 실적·비교 시나리오)은 공식버전을 확인할 때(`RECHECK_SECONDS` 에
+한 번)만 캐시된 로더로 읽고, 각 프로필의 version 과 비교 대상을 서버 캐시 키에 넣어 프로필이
+바뀌면 새로 만든다. 켤 수 없는 토글은 까닭을 단다(`available: false`) — 요약 기간에 입력이
+없거나, 비교 대상이 없거나 지워졌거나 공식버전 자신일 때다. 한 토글의 값을 만들다 데이터 오류가
+나도 그 토글만 끄고 요약은 그대로 보낸다.
+
 **최신 공식버전을 함께 기억한다.** 공식버전을 확인할 때 본 그 리비전 id·번호를 세션에 같이
 둔다(`latest_official_revision`). 머리 띠(`app_header`)가 「공식 vN」을 적을 때 그것만 읽어
 회차마다 DB 를 다시 보지 않는다.
@@ -43,10 +52,11 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import Any, NamedTuple
 
 import duckdb
+import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.intro_overlay import (
@@ -64,21 +74,40 @@ from capa_simulation.design import tokens
 from capa_simulation.io.reference_cache import reference_version_for_revision
 from capa_simulation.persistence.cache import (
     get_scenario_repository,
+    load_global_advance_load,
+    load_global_advance_shipment,
+    load_global_comparison_scenario,
     load_global_display_order,
     load_global_securement_threshold,
+    load_scenario_plan,
     load_scenario_snapshot,
 )
-from capa_simulation.persistence.models import OfficialReleaseSummary
+from capa_simulation.persistence.models import (
+    GlobalAdvanceLoad,
+    GlobalAdvanceShipment,
+    GlobalComparisonScenario,
+    OfficialReleaseSummary,
+)
 from capa_simulation.scenario_state import pristine_content_token
+from capa_simulation.services.advance_shipment import advance_shipment_notes
+from capa_simulation.services.dashboard import PRODUCTION_DETAIL_DIMENSIONS
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.official_summary import (
+    AdvanceSummary,
+    BottleneckMonth,
+    ComparisonSummary,
     OfficialSummary,
+    build_advance_summary,
+    build_comparison_summary,
     build_official_summary,
     summary_months,
 )
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import (
+    IntroSummaryCacheKey,
     build_home_simulation_cache_key,
+    get_home_comparison_plan,
     get_home_lob_without_edp,
     get_home_simulation,
     get_intro_summary_payload,
@@ -98,6 +127,45 @@ RECHECK_SECONDS = 30.0
 # 다시 해 본다. 그 밖의 실패는 다시 해도 같은 결과(데이터 오류)라 「만들지 못함」을 서버
 # 캐시에 남긴다 — 고치려면 새 공식버전을 지정해야 하고 그때 키가 바뀐다.
 _TRANSIENT_ERRORS = (duckdb.Error, OSError, MemoryError)
+
+# 켤 수 없는 토글의 까닭. Summary 머리 줄 토글의 풍선에 한 줄로 단다.
+ADVANCE_OFF_EMPTY = "요약 기간에 넣은 선행 B/O 가 없습니다 (HOME → Preference)"
+ADVANCE_OFF_UNAPPLICABLE = "선행 B/O 를 더하면 계획이 0 이하가 되는 달뿐이라 반영할 수 없습니다"
+SHIPMENT_OFF_EMPTY = "요약 기간에 넣은 선행 입고 실적이 없습니다 (HOME → Preference)"
+COMPARISON_OFF_NONE = "비교 시나리오를 고르지 않았습니다 (HOME → Preference)"
+COMPARISON_OFF_MISSING = (
+    "고른 비교 리비전을 찾을 수 없습니다 (HOME → Preference 에서 다시 고릅니다)"
+)
+COMPARISON_OFF_SELF = "비교 대상이 이 공식버전 자신이라 차이가 없습니다"
+COMPARISON_OFF_UNCOVERED = "비교 시나리오에 요약 기간의 계획이 없습니다"
+
+
+class ToggleProfiles(NamedTuple):
+    """Summary 토글 셋이 쓰는 공용 프로필. 공식버전을 확인할 때만 읽는다(캐시된 로더)."""
+
+    advance: GlobalAdvanceLoad
+    shipment: GlobalAdvanceShipment
+    comparison: GlobalComparisonScenario
+
+    def cache_key(self) -> tuple[int, int, int, str, str]:
+        """서버 캐시 키에 넣는 몫 — 세 프로필의 version 과 비교 대상(시나리오·리비전)."""
+        return (
+            self.advance.version,
+            self.shipment.version,
+            self.comparison.version,
+            self.comparison.scenario_id or "",
+            self.comparison.revision_id or "",
+        )
+
+
+def load_toggle_profiles(database_path: str) -> ToggleProfiles:
+    """세 공용 프로필. 모두 `persistence/cache` 의 캐시된 로더라 저장한 뒤에만 DB 를 연다."""
+    return ToggleProfiles(
+        advance=load_global_advance_load(database_path),
+        shipment=load_global_advance_shipment(database_path),
+        comparison=load_global_comparison_scenario(database_path),
+    )
+
 
 # 받은 값을 입장 화면 JS 에 넘기기만 한다. 오버레이가 아직 없으면 창에 두고 뜰 때 읽는다.
 _JS = """
@@ -128,6 +196,41 @@ def _round(value: float | None, digits: int) -> float | None:
     return None if value is None else round(value, digits)
 
 
+def _density_payload(values: Sequence[float | None]) -> list[float | None]:
+    return [_round(value, 2) for value in values]
+
+
+def _wafer_payload(values: Sequence[float | None]) -> list[float | None]:
+    """Wafer 는 천 매(K) 단위 한 자리로 보낸다."""
+    return [_round(None if value is None else value / 1_000, 1) for value in values]
+
+
+def _bottleneck_payload(
+    months: Sequence[int],
+    bottlenecks: Sequence[BottleneckMonth | None],
+    *,
+    thresholds: SecurementThresholds,
+    process_label: Callable[[str], str],
+) -> list[dict[str, Any] | None]:
+    """달마다 B/N 하나. 판정은 그 달의 실효 기준이다."""
+    result: list[dict[str, Any] | None] = []
+    for calendar_month, month in zip(months, bottlenecks, strict=True):
+        if month is None:
+            result.append(None)
+            continue
+        result.append(
+            {
+                "process": str(process_label(month.process)),
+                "rate": round(month.rate * 100.0, 1),
+                "need": _round(month.required, 1),
+                "have": _round(month.available, 1),
+                "short": month.short_units,
+                "status": thresholds.status(month.rate, calendar_month),
+            }
+        )
+    return result
+
+
 def summary_payload(
     summary: OfficialSummary,
     *,
@@ -147,21 +250,9 @@ def summary_payload(
     """
     colors = tokens.palette_value("dark", "PRODUCT_SHARE_COLORS")
     other = tokens.palette_value("dark", "PRODUCT_SHARE_OTHER")
-    bottlenecks: list[dict[str, Any] | None] = []
-    for calendar_month, month in zip(summary.months, summary.bottlenecks, strict=True):
-        if month is None:
-            bottlenecks.append(None)
-            continue
-        bottlenecks.append(
-            {
-                "process": str(process_label(month.process)),
-                "rate": round(month.rate * 100.0, 1),
-                "need": _round(month.required, 1),
-                "have": _round(month.available, 1),
-                "short": month.short_units,
-                "status": thresholds.status(month.rate, calendar_month),
-            }
-        )
+    bottlenecks = _bottleneck_payload(
+        summary.months, summary.bottlenecks, thresholds=thresholds, process_label=process_label
+    )
     labels = summary.labels
     return {
         "available": True,
@@ -170,8 +261,8 @@ def summary_payload(
         "period": f"{labels[0]}–{labels[-1]}" if labels else "",
         "count": len(labels),
         "months": list(labels),
-        "density": [_round(value, 2) for value in summary.density],
-        "wafer": [_round(None if value is None else value / 1_000, 1) for value in summary.wafer],
+        "density": _density_payload(summary.density),
+        "wafer": _wafer_payload(summary.wafer),
         "bn": bottlenecks,
         # 숫자는 기준선의 **자리**(정확한 값), `*_label` 은 기준선 이름표에 적는 **글자**다 —
         # 사사오입한 정수 퍼센트(109.5 → 110%). 109.7% 확보 막대가 선 위에 서야 하므로 둘을 나눈다.
@@ -192,8 +283,120 @@ def summary_payload(
     }
 
 
+def advance_payload(
+    summary: OfficialSummary,
+    advance: AdvanceSummary,
+    *,
+    thresholds: SecurementThresholds,
+    process_label: Callable[[str], str],
+) -> dict[str, Any]:
+    """「선행 B/O」를 켠 값. 요약과 같은 반올림·같은 모양이라 JS 가 달마다 그 사이를 잇는다.
+
+    소요·가용·부족 대수는 HOME 처럼 그대로다 — 선행 B/O 는 확보율만 변동률만큼 옮긴다.
+    """
+    if not advance.applied:
+        return _unavailable(ADVANCE_OFF_UNAPPLICABLE if advance.unapplied else ADVANCE_OFF_EMPTY)
+    return {
+        "available": True,
+        "density": _density_payload(advance.density),
+        "wafer": _wafer_payload(advance.wafer),
+        "bn": _bottleneck_payload(
+            summary.months, advance.bottlenecks, thresholds=thresholds, process_label=process_label
+        ),
+        "density_delta": list(advance.density_delta),
+        "wafer_delta": list(advance.wafer_delta),
+        "rate_delta": list(advance.rate_delta),
+        "unapplied": [month_label(month) for month in advance.unapplied],
+    }
+
+
+def shipment_payload(notes: Sequence[str]) -> dict[str, Any]:
+    """「선행 입고」를 켠 값 — 달마다 Density 옆에 적을 글자(HOME 과 같은 `+#.#`, 없으면 빈칸)."""
+    texts = [str(text) for text in notes]
+    if not any(texts):
+        return _unavailable(SHIPMENT_OFF_EMPTY)
+    return {"available": True, "notes": texts}
+
+
+def comparison_payload(comparison: ComparisonSummary, *, name: str) -> dict[str, Any]:
+    """「GAP」을 켠 값 — 비교 시나리오 쪽 값(유령 표식 자리)과 HOME 과 같은 GAP 글자."""
+    if not comparison.covered:
+        return _unavailable(COMPARISON_OFF_UNCOVERED)
+    return {
+        "available": True,
+        "name": name,
+        "density": _density_payload(comparison.density),
+        "wafer": _wafer_payload(comparison.wafer),
+        "density_gap": list(comparison.density_gap),
+        "wafer_gap": list(comparison.wafer_gap),
+    }
+
+
+def _guarded(name: str, build: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """토글 하나의 값. 데이터 오류는 그 토글만 끄고, 일시적 실패는 올려 캐시에 남기지 않는다."""
+    try:
+        return build()
+    except _TRANSIENT_ERRORS:
+        raise
+    except Exception as exc:  # 요약 전체를 잃지 않는다 — 그 토글만 까닭을 달고 끈다
+        return _unavailable(f"{name} 값을 만들지 못했습니다: {type(exc).__name__}: {exc}")
+
+
+ComparisonPlanLoader = Callable[[str], tuple[pd.DataFrame, pd.DataFrame]]
+
+
+def comparison_part(
+    database_path: str,
+    release: OfficialReleaseSummary,
+    profile: GlobalComparisonScenario,
+    *,
+    summary: OfficialSummary,
+    load_plan: ComparisonPlanLoader,
+) -> dict[str, Any]:
+    """비교 대상을 확인하고 GAP 값을 만든다.
+
+    HOME 의 `_owned_comparison_revision` 과 같은 확인(그 리비전이 아직 그 시나리오 것인가)을 하되,
+    DB 오류는 잡지 않고 올린다 — 일시적 실패로 GAP 을 끈 결과가 서버 캐시에 남지 않게 한다.
+    `load_plan` 은 리비전 id 로 비교 계획의 월별 Density·Wafer 를 낸다.
+    """
+    if profile.scenario_id is None or profile.revision_id is None:
+        return _unavailable(COMPARISON_OFF_NONE)
+    if profile.revision_id == release.revision_id:
+        return _unavailable(COMPARISON_OFF_SELF)
+    repository = get_scenario_repository(database_path)
+    revision = next(
+        (
+            item
+            for item in repository.list_revisions(profile.scenario_id)
+            if item.revision_id == profile.revision_id
+        ),
+        None,
+    )
+    if revision is None:
+        return _unavailable(COMPARISON_OFF_MISSING)
+    scenario_name = next(
+        (
+            item.scenario_name
+            for item in repository.list_scenarios(include_archived=True)
+            if item.scenario_id == profile.scenario_id
+        ),
+        "",
+    )
+    comparison_density, comparison_wafer = load_plan(revision.revision_id)
+    comparison = build_comparison_summary(
+        months=summary.months,
+        base=summary,
+        comparison_density=comparison_density,
+        comparison_wafer=comparison_wafer,
+    )
+    return comparison_payload(comparison, name=f"{scenario_name} r{revision.revision_no}".strip())
+
+
 def _build(
-    database_path: str, release: OfficialReleaseSummary, thresholds: SecurementThresholds
+    database_path: str,
+    release: OfficialReleaseSummary,
+    thresholds: SecurementThresholds,
+    profiles: ToggleProfiles,
 ) -> dict[str, Any]:
     snapshot = load_scenario_snapshot(database_path, release.revision_id)
     tables = snapshot.tables
@@ -233,22 +436,73 @@ def _build(
         display_order=display_order,
         included_processes=preset.included_processes,
     )
-    return summary_payload(
+    process_label = get_process_labels().format_func()
+    payload = summary_payload(
         summary,
         release_name=release.release_name,
         scenario_name=release.scenario_name,
         thresholds=thresholds,
-        process_label=get_process_labels().format_func(),
+        process_label=process_label,
     )
+
+    def advance() -> dict[str, Any]:
+        if profiles.advance.rows.empty:
+            return _unavailable(ADVANCE_OFF_EMPTY)
+        outcome = build_advance_summary(
+            months=months,
+            monthly_density=monthly_density,
+            monthly_wafer=monthly_wafer,
+            securement_rate=securement_rate,
+            included_processes=preset.included_processes,
+            advance_rows=profiles.advance.rows,
+            base=summary,
+        )
+        return advance_payload(summary, outcome, thresholds=thresholds, process_label=process_label)
+
+    def shipment() -> dict[str, Any]:
+        notes = advance_shipment_notes(profiles.shipment.rows, summary.labels)
+        return shipment_payload([text for text, _hover in notes])
+
+    def comparison_plan(revision_id: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+        # HOME GAP 과 같은 함수다 — 비교 리비전의 계획만 가져와 공식버전의 기준정보로 환산한다.
+        density, wafer, _detail = get_home_comparison_plan(
+            cache_key=cache_key,
+            _tables=tables,
+            _comparison_plan=load_scenario_plan(database_path, revision_id),
+            _display_order=display_order,
+            comparison_revision_id=revision_id,
+            include_edp=False,
+            detail_dimensions=tuple(PRODUCTION_DETAIL_DIMENSIONS),
+        )
+        return density, wafer
+
+    payload["toggles"] = {
+        "advance": _guarded("선행 B/O", advance),
+        "shipment": _guarded("선행 입고", shipment),
+        "comparison": _guarded(
+            "GAP",
+            lambda: comparison_part(
+                database_path,
+                release,
+                profiles.comparison,
+                summary=summary,
+                load_plan=comparison_plan,
+            ),
+        ),
+    }
+    return payload
 
 
 def _build_or_unavailable(
-    database_path: str, release: OfficialReleaseSummary, thresholds: SecurementThresholds
+    database_path: str,
+    release: OfficialReleaseSummary,
+    thresholds: SecurementThresholds,
+    profiles: ToggleProfiles,
 ) -> dict[str, Any]:
     """서버 캐시가 부르는 계산. 일시적일 수 있는 실패는 그대로 올려 캐시에 남기지 않고,
     그 밖의 실패(데이터 오류)는 「만들지 못함」으로 돌려 캐시에 남긴다."""
     try:
-        return _build(database_path, release, thresholds)
+        return _build(database_path, release, thresholds, profiles)
     except _TRANSIENT_ERRORS:
         raise
     except Exception as exc:  # 다시 해도 같은 결과다 — 회차마다 다시 계산하지 않게 남긴다
@@ -280,16 +534,20 @@ def _look_up(database_path: str) -> tuple[dict[str, Any], dict[str, Any] | None]
         # 판정 기준은 공용 프로필이다(시나리오 프리셋 값이 아니다). 키에는 version 이 아니라 **내용
         # 지문**을 넣는다 — 저장 전에는 version 이 0 이지만 기본값은 최신 공식버전 프리셋을 따른다.
         thresholds = load_global_securement_threshold(database_path).thresholds
-        cache_key = (
+        # 토글 셋이 쓰는 공용 프로필. 캐시된 로더라 확인 때마다 DB 를 열지 않는다.
+        profiles = load_toggle_profiles(database_path)
+        cache_key: IntroSummaryCacheKey = (
             release.official_release_id,
             # 시나리오 이름은 바꿔도 공식버전 id 가 그대로라 따로 넣는다(머리 줄 풍선이 쓴다).
             release.scenario_name,
             load_global_display_order(database_path).version,
             get_process_labels().version,
             thresholds.digest,
+            *profiles.cache_key(),
         )
         payload = get_intro_summary_payload(
-            cache_key, _build=lambda: _build_or_unavailable(database_path, release, thresholds)
+            cache_key,
+            _build=lambda: _build_or_unavailable(database_path, release, thresholds, profiles),
         )
         return payload, identity
     except _TRANSIENT_ERRORS as exc:

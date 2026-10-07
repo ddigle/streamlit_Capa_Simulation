@@ -492,7 +492,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않고, 과거 구간 달은 축에 있으면 적는다. 자릿수에서 0 으로 보이는 값(`+0.0`)은 적지 않는다.
     토글과 프로필 version(꺼져 있으면 0)은 `HomeFigureCacheKey` 의 마지막 두 칸
     (`show_advance_shipment`·`advance_shipment_profile_version`)이다 — Summary 공지와 달리 Figure 에
-    구워지는 글자다. 입장 화면 Summary 는 이 값을 쓰지 않는다.
+    구워지는 글자다. 입장 화면 Summary 는 이 키를 쓰지 않는다 — 머리 줄 「선행 입고」 토글이 같은 프로필을
+    `advance_shipment_notes` 로 읽어 월별 시트 Density 값 옆에 적는다(`intro_summary`).
   - 제목 아래 설명 문구, `계획·B/N 상세표 표시` 토글, `계획 세부수량 CSV` 는 탭이 그 자리를
     쓰면서 없앴다.
   - 네 구획 제목(`Capa LOB 현황`·`계획 세부수량`·`주요공정 확보율`·`상세 B/N 공정`)은
@@ -2282,7 +2283,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (워커 멈춤·캔버스 1px). 이미 들어간 탭은 요약 값이 닿을 때 감춘 오버레이를 미리 만들어 둔다. 요약에서
     Esc 는 Detail 과 같다. 요약을 만들지 못했으면(공식버전 없음·계산 오류) Summary 를 끄고 까닭을 단다.
     덮개가 서 있는 동안(입장 화면·요약) Tab · Shift+Tab 은 덮개 안의 보이는 단추만 돈다(`onKey` →
-    `cycleFocus`, 입장 화면은 Detail ↔ Summary, 요약은 Detail 하나). `#root` 는 inert 지만 호스트가
+    `cycleFocus`, 입장 화면은 Detail ↔ Summary, 요약은 Detail → 토글 셋). `#root` 는 inert 지만 호스트가
     body 의 마지막이라 가두지 않으면 Detail 다음 Tab 이 브라우저 주소창으로 나간다. 다른 까닭으로
     포커스가 덮개 밖에 닿아도 `focusin` 이 첫 단추로 데려온다. 툴바 Summary 로 연 요약을 닫으면
     포커스는 그 단추로 돌아간다(`opener`).
@@ -2300,6 +2301,41 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이름표는 바탕을 깔아 기본 자리에 둔다. **760px 이하**(intro.css 의 `@media` 와 같은 경계)는 행 이름
     칸을 없애고 이름을 각 줄 **위 띠**(`summaryGrid` 의 `rows[i].head`)에 올려 이름·설명·범례를 한 줄로
     잇는다 — 칸을 남기면 여섯 달 칸이 30px 로 줄어 달·값·막대 글자가 서로 겹쳤다(390px).
+  - **Summary 머리 줄 토글 셋 — 선행 B/O · 선행 입고 · GAP**(2026-10-08 사용자 요청). Detail 이 도킹한 자리
+    **바로 오른쪽에 조금 띄워**(14px) 같은 줄·같은 높이로 선다(`intro.html` 의 `data-slot="toggles"` —
+    `.dock` 다음이라 Tab 차례가 Detail 다음이다). Detail 과 같은 계열의 작은 알약(30px)이고 켜고 꺼도 크기가
+    같아 머리 줄이 흔들리지 않는다. 입장 화면에서는 보이지 않다가(`visibility: hidden` — Tab 차례에도 없다)
+    Summary 가 조립될 때 Detail 도킹 뒤 하나씩 떠오른다(`revealToggles`, 원래 화면에서 다시 열면 바로 선다).
+    누름 상태는 `aria-pressed` 이고, 켜지면 면·테두리가 강조색으로 물들고 왼쪽 표식이 차오른다. 표식 색이
+    그 토글이 그림에 쓰는 색이라 범례를 겸한다(선행 B/O 강조색 · 선행 입고 글자색 · GAP 늘림/줄임 두 색).
+    글자는 본문 글꼴(부분 글꼴에 한글·`B`·`/` 가 없다). 820px 이하는 줄인 이름(`B/O`·`입고`·`GAP`), 760px
+    이하(휴대폰)는 머리 줄 밑 둘째 줄(요약 첫 줄 이름 띠 위의 빈 자리)로 내려 온전한 이름으로 선다.
+    - **브라우저 안에서만 바뀐다 — rerun 이 없다.** 파이썬으로 아무것도 보내지 않고, 세 갈래의 값은
+      요약과 함께 미리 온 `toggles`(`intro_summary`)다. 메인 스레드는 장면에 `view` 메시지(켜려는 모습)만
+      보내고 움직임은 장면(워커)이 그린다. 워커가 죽으면 마지막 `view` 를 되살린다(`replay`).
+    - **기본은 셋 다 꺼짐**이고 끄면 지금 화면과 같다 — 장면의 배치는 변형마다(`base` · `A` 선행 B/O ·
+      `G` GAP · `AG`) 축 범위·눈금 글자 자리·막대 위끝·기준선 이름표 자리를 `layoutSummary` 에서 한 번
+      정하고, `base` 는 토글이 없던 때와 같은 계산이다. 토글 값이 지금 범위 안이면 범위를 넓히지 않아
+      (`extendRange`) 켜도 축은 제자리이고 값만 움직인다. 밖으로 나가는 값이 있을 때만 그만큼 넓히고 축도
+      같은 진행으로 옮겨 간다. 2026-10-08 헤드리스 대조: 셋을 다 끈 그리기 호출(상태 포함)이 이전 `intro.js`
+      와 조립 중·끝 모두 같고, 켰다 끈 끝 모습도 같다.
+    - **상태는 탭이 살아 있는 동안 기억한다**(`window.__capaIntro.view` — Summary 를 닫았다 다시 열어도
+      그대로, 새로 고치면 꺼짐). 공용 프로필이 아니다(HOME 토글처럼 보는 사람의 상태).
+    - **켤 수 없으면 끈 채 `aria-disabled` 로 두고 풍선(`title`)에 까닭을 단다** — `disabled` 가 아니라
+      Tab 으로 닿아 까닭을 읽는다. 요약 기간에 선행 B/O·선행 입고 입력이 없을 때, 선행 B/O 를 더하면 계획이
+      0 이하가 되는 달뿐일 때, 비교 시나리오가 없거나·그 리비전이 사라졌거나·공식버전 자신일 때, 비교
+      시나리오에 요약 기간의 계획이 없을 때다. 켜 둔 토글이 새 요약에서 켤 수 없게 되면 끈다.
+    - **움직임은 뜻을 말한다**(2026-10-08 대신 정함). 달마다 트윈 하나(ease-out, 달 사이 시차)이고
+      누를 때마다 **지금 값에서** 새 목표로 다시 건다(`retarget` — 움직이는 중에 다시 눌러도 튀지 않고,
+      아직 출발하지 않은 달만 시차를 둔다. 켜고 끄는 두 방향 모두 ease-out 이라 끌 때도 바로 움직인다).
+      **선행 B/O** — 생산계획 점이 선행 반영 값으로 차오르고(0.6초, 달 사이 70ms) 원래 선은 점선으로 남으며
+      둘 사이가 강조색으로 옅게 칠해진다(더한 몫). 점 위 값과 월별 시트의 Density·Wafer 값이 함께 세어
+      오르고 시트 값은 강조색으로 물든다. B/N 막대는 새 확보율로 내려앉고(점선 윤곽이 선행 전 높이를
+      남긴다) 판정이 바뀌면 막대 색과 상태 글자가 엇갈려 바뀐다. **선행 입고** — 선·막대는 그대로이고
+      월별 시트 Density 값 옆(단위 위, 칸 오른쪽 끝)에 `+#.#` 가 달마다 오른쪽에서 미끄러져 붙는다(0.42초,
+      80ms). **GAP** — 생산계획에 비교 시나리오 값이 속 빈 유령 점과 끊긴 선으로 달마다 내려앉으며 나타나고,
+      시트 Density·Wafer 값 **아래**(HOME 처럼)에 증감 글자가 부호색으로 떠오른다(0.48초, 80ms).
+      움직임을 줄이면 모두 바로 바뀐다. 말풍선(시트 글자 쪽 포함)과 낭독용 표는 켠 토글의 값으로 말한다.
   - Components v2 하나이고, HTML·CSS·JS 는 `intro_overlay_assets/` 의 파일이다. JS 가 화면을
     **`document.body` 에 붙인 자기 호스트**(shadow root)에 그린다 — 컴포넌트 칸 안에서는
     Streamlit 머리말·사이드바의 쌓임 맥락 아래에 깔린다. 칸은 스타일만 든 `st.html` 로 접어
@@ -2317,6 +2353,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     안에 따로 둔다. Summary 시간표는 절대 시각으로 메시지에 싣는다 — `test_intro_overlay` 가 지킨다).
     워커·OffscreenCanvas 가 없거나 워커가 죽으면 같은 장면을 메인 스레드에서 돌린다. Detail 퇴장과 툴바
     Summary 복귀만 메인 스레드의 마스크(`--capa-hole`, `CSS.registerProperty`)다 — 그때는 앱이 한가하다.
+    **움직임을 줄인 사용자에게는 프레임 루프를 세우지 않는다**(2026-10-08 결함 B4). 그 화면은 시간에 따라
+    바뀌지 않는 정지 그림이라(웨이퍼 t = 0 · 요약 끝 모습) 루프가 같은 그림을 매 프레임 다시 그리며
+    렌더러·GPU 를 썼다(헤드리스 실측: 「준비 완료」 대기 10초에 CPU 3.05초). 그림을 바꾸는 메시지(init ·
+    begin · progress · resize · summary · summary-on · view · resume)를 받을 때와 글꼴이 올라왔을 때만
+    `paintOnce` 로 한 번 그린다.
   - **「다 그렸다」는 파이썬이 알릴 수 없다.** `st.stop()` 뒤로는 어떤 요소도 브라우저에 닿지
     않는다(13개 화면이 멈춘다). JS 가 `[data-testid="stApp"]` 의 `data-test-script-state` 가
     `notRunning` 이 되는 것을 본다. 단계 막대는 요약 값이 닿은 것(`summary`)과 HOME 본문
@@ -2361,6 +2402,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Preference 에서 기준을 저장하면 `forget_intro_summary_check` 로 그 세션도 곧바로 다시 확인한다. 모든 페이지 앞이라 **어떤 예외도 밖으로 내보내지 않고**(`available: false` 와 까닭),
     데이터 오류로 만들지 못한 결과는 서버 캐시에 남기고(새 공식버전을 지정하면 키가 바뀐다), DB 잠금·파일·
     메모리 오류는 남기지 않아 다음 확인 때 다시 해 본다 — 그때 세션이 들고 있던 요약은 지우지 않는다.
+  - **토글 셋의 값**(`toggles` — `advance`·`shipment`·`comparison`)을 요약과 함께 보낸다. 각각
+    `available` 과 값 또는 까닭이다. HOME 의 같은 토글과 같은 함수다: 선행 B/O 는
+    `official_summary.build_advance_summary`(→ `apply_advance_to_*`), 선행 입고는
+    `advance_shipment_notes`, GAP 은 `simulation_cache.get_home_comparison_plan`(공식버전 기준정보로
+    환산, EDP 제외) → `build_comparison_summary`. 증감 글자는 HOME 과 같은 형식·숨김 규칙
+    (`services/plan_gap.py`)이다. 세 공용 프로필(선행 B/O·선행 입고 실적·비교 대상)은 **공식버전을
+    확인할 때만**(`RECHECK_SECONDS`) 캐시된 로더로 읽고(`load_toggle_profiles`), 서버 캐시 키
+    (`IntroSummaryCacheKey`)에 세 version 과 비교 시나리오·리비전 id 를 넣는다. 그 프로필을 이 세션에서
+    저장하면(`home_preference` 의 비교 대상·선행 B/O·선행 입고 저장, 시나리오 보관·삭제) 곧바로 다시
+    확인한다(`forget_intro_summary_check`). 비교 리비전 확인(`comparison_part`)은 HOME 의
+    `_owned_comparison_revision` 과 같지만 DB 오류를 잡지 않고 올린다 — 잠금으로 GAP 을 끈 결과가 캐시에
+    남지 않게. 한 토글의 데이터 오류는 그 토글만 끈다(`_guarded`). 비교 시나리오 이름은 키에 없어 이름을
+    바꾸면 다음 키 변화 때까지 풍선에 옛 이름이 남는다.
   - 공식버전을 확인할 때 본 최신 공식버전의 리비전 id·번호를 세션에 같이 둔다(`latest_official_revision`).
     머리 띠(`app_header`)는 「공식 vN」을 그것만 읽어 정한다 — 회차마다 DB 를 보지 않는다. 확인 주기·
     무효화(`RECHECK_SECONDS`·`forget_intro_summary_check`)는 요약과 같다.
@@ -2393,6 +2447,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     B/N = 프리셋 `B/N 집계 공정` 안에서 달마다 확보율이 가장 낮은 공정(HOME 과 같은 순위 함수), 부족
     대수 = `소요대수 − 가용대수` 올림, 제품 비중 = Wafer 기준(색 칸은 EDP 포함 수량으로). HOME 토글
     기본값(EDP 제외·선행·실행 반영 없음)과 같은 화면이다(2026-10-02 사용자 결정).
+  - Summary 머리 줄 토글 셋이 켜졌을 때의 값도 낸다. `build_advance_summary` — HOME 「선행 B/O」와 같은
+    차례(`build_advance_load_ratio` → `apply_advance_to_density/wafer/securement` → 같은 B/N 순위)로
+    Density·Wafer·B/N 을 다시 내고, 증감 글자(값 위 `{:+,.2f}`·`{:+,.1f}K`, 막대 안 `{:+.0f}%`)와 반영한
+    달·반영하지 못한 달을 함께 둔다. 소요·가용·부족 대수는 HOME 처럼 그대로다. `build_comparison_summary` —
+    GAP = 선행 **전** 요약 − 비교 값(HOME 이 선행을 켜도 GAP 을 원 데이터끼리 재는 것과 같다).
+- `src/capa_simulation/services/plan_gap.py`
+  - 계획 증감 글자(선행 B/O 전후·비교 GAP)의 형식과 0 근처를 적지 않는 규칙(`GAP_EPSILON`·`visible_gap`·
+    `plan_gap_texts`·`format_gap`). HOME `home_lob_figures` 와 입장 화면 Summary 가 함께 쓴다 — 두 화면의
+    증감이 같은 말을 하게 한 곳에 둔다.
 - `src/capa_simulation/components/admin_dialog.py`
   - Admin Area 편집 탭들이 함께 쓰는 팝업 칸(`admin_area_open_dialog`) 하나를 여닫는 콜백.
     탭이 닫혀도 매 회차 그리므로 칸이 탭마다 있으면 한 회차에 팝업이 둘 뜰 수 있다.
