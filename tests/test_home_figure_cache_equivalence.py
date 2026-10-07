@@ -10,6 +10,8 @@ Figure 캐시는 묶음(LOB·계획 세부수량·주요공정·상세 B/N)마�
 - 토글 일곱(선행 B/O·선행 입고·실행 Loss·GAP·상세 계획·EDP 포함·Past Data 포함)·제품별 비중
   단위·주요공정 프리셋·테마를 **무작위 차례로** 바꾸고, 자주 되돌린다(되돌릴 때 캐시가 맞는다).
   켜고 끄는 차례가 달라도 낡은 묶음이 섞여 나오지 않아야 한다.
+- 서로 얽히는 조건 다섯(선행 B/O·EDP·조회기간·실행 Loss·Past Data)은 서른두 조합을 그레이 코드
+  차례로 모두 지난다 — 무작위 걸음이 놓치는 드문 모서리를 막는다.
 - 걸음마다 같은 세션 상태로 한 번 더 돌리되 캐시를 꺼서(꺼내지도 넣지도 않는다) 새로 만든
   그림과 Plotly JSON 이 한 글자도 다르지 않은지 본다. 덤벨(접힌 비교 상자)도 같다.
 - 데이터는 토글이 실제로 그림을 바꾸도록 준비한다: EDP 제품 행(EDP 만 있는 달 하나 — 끄면 월
@@ -63,6 +65,12 @@ TOGGLES = (
 )
 DUMBBELL_CHART_KEY = "home_plan_comparison_dumbbell"
 EDP_ONLY_MONTH = 202612
+# 조회기간. 끝을 EDP 만 있는 달(26.12) 앞에서 자르면 EDP 가 월 축을 움직이지 않는다 — 그래야 축
+# 변화에 가려지지 않고 「EDP 가 정말 그 묶음에 닿는가」(선행 B/O 를 켠 히트맵, 상세 B/N 의 Wafer
+# Capa)를 따로 본다. 그래서 이 범위도 무작위로 바꾸는 조건 하나다.
+RANGE_KEY = "production_month_range_v2"
+FULL_RANGE = ("2025-11", "2026-12")
+SHORT_RANGE = ("2025-11", "2026-11")
 
 
 def _script(database_path: Path) -> str:
@@ -245,7 +253,7 @@ def _open(database_path: Path, state: dict[str, Any] | None = None) -> AppTest:
     app = AppTest.from_string(_script(database_path), default_timeout=300)
     app.run()
     _assert_clean(app)
-    app.session_state["production_month_range_v2"] = ("2025-11", "2026-12")
+    app.session_state[RANGE_KEY] = FULL_RANGE
     app.session_state["dashboard_show_performance"] = True
     for key, value in (state or {}).items():
         app.session_state[key] = value
@@ -302,7 +310,7 @@ def _assert_same_as_fresh(app: AppTest, label: str) -> tuple[dict[str, Any], set
 
 
 def _state(app: AppTest) -> dict[str, Any]:
-    keys = (*TOGGLES, PRODUCT_SHARE_BASIS_KEY, PRESET_KEY, THEME_KEY)
+    keys = (*TOGGLES, PRODUCT_SHARE_BASIS_KEY, PRESET_KEY, THEME_KEY, RANGE_KEY)
     return {key: app.session_state[key] for key in keys if key in app.session_state}
 
 
@@ -315,12 +323,15 @@ def _flip(app: AppTest, dimension: str, rng: random.Random) -> None:
     elif dimension == PRESET_KEY:
         current = app.session_state[PRESET_KEY]
         app.session_state[PRESET_KEY] = rng.choice([name for name in PRESETS if name != current])
+    elif dimension == RANGE_KEY:
+        short = tuple(app.session_state[RANGE_KEY]) == SHORT_RANGE
+        app.session_state[RANGE_KEY] = FULL_RANGE if short else SHORT_RANGE
     else:
         dark = app.session_state[THEME_KEY] == "dark"
         app.session_state[THEME_KEY] = "light" if dark else "dark"
 
 
-DIMENSIONS = (*TOGGLES, PRODUCT_SHARE_BASIS_KEY, PRESET_KEY, THEME_KEY)
+DIMENSIONS = (*TOGGLES, PRODUCT_SHARE_BASIS_KEY, PRESET_KEY, THEME_KEY, RANGE_KEY)
 
 
 def test_the_conditions_really_change_the_figures(database: Path) -> None:
@@ -328,7 +339,9 @@ def test_the_conditions_really_change_the_figures(database: Path) -> None:
     app = _open(database, {THEME_KEY: "light"})
     base = _drawn(app, fresh=True)
     assert app.session_state[PRESET_KEY] == PRESETS[0]
-    for dimension in DIMENSIONS:
+    # 조회기간은 EDP 를 끈(기본) 동안에는 그림을 바꾸지 않는다 — 26.12 가 어차피 축에 없다. 아래
+    # EDP 단락이 범위의 몫을 본다.
+    for dimension in (item for item in DIMENSIONS if item != RANGE_KEY):
         before = _state(app)
         _flip(app, dimension, random.Random(0))
         changed = _drawn(app, fresh=True)
@@ -340,6 +353,25 @@ def test_the_conditions_really_change_the_figures(database: Path) -> None:
     app.session_state[EDP_TOGGLE_KEY] = True
     with_edp = _drawn(app, fresh=True)
     assert '"26.12"' in json.dumps(with_edp["key_process_heatmap_months"])
+
+    # 축을 움직이지 않는 범위에서 EDP 가 닿는 곳. 선행 B/O 를 끄면 히트맵은 그대로, 켜면 바뀐다
+    # (변동률이 화면 계획 기준). 상세 B/N 은 Wafer Capa 때문에 늘 바뀐다.
+    app.session_state[RANGE_KEY] = SHORT_RANGE
+    for advance in (False, True):
+        app.session_state[ADVANCE_TOGGLE_KEY] = advance
+        app.session_state[EDP_TOGGLE_KEY] = False
+        without = _drawn(app, fresh=True)
+        app.session_state[EDP_TOGGLE_KEY] = True
+        within = _drawn(app, fresh=True)
+        assert (
+            without["production_lob_months"]["layout"]["xaxis"]["ticktext"]
+            == (within["production_lob_months"]["layout"]["xaxis"]["ticktext"])
+        )
+        assert without["bottleneck_detail_months"] != within["bottleneck_detail_months"]
+        heatmap_moved = (
+            without["key_process_heatmap_months"] != within["key_process_heatmap_months"]
+        )
+        assert heatmap_moved is advance, advance
 
 
 @pytest.mark.parametrize("seed", [11, 23, 37])
@@ -369,6 +401,45 @@ def test_random_toggle_orders_never_serve_a_stale_bundle(database: Path, seed: i
     assert partial_hits > 0
 
 
+# 서로 얽히는 조건 다섯. 선행 B/O 는 EDP 를 히트맵까지 끌고 가고(변동률), 조회기간은 EDP 가 월 축을
+# 움직이는지를 정하며, 실행 Loss·Past Data 는 확보율과 축을 바꾼다. 무작위 걸음은 이 조합의 드문
+# 모서리(선행 켬·짧은 범위에서 EDP 를 뒤집는 것)를 놓칠 수 있다 — 실제로 히트맵 키에서 EDP 를 뺀
+# 변이를 무작위 세 시드는 놓치고 아래 두 시험은 잡았다.
+INTERACTING = (
+    ADVANCE_TOGGLE_KEY,
+    EDP_TOGGLE_KEY,
+    RANGE_KEY,
+    EXECUTION_TOGGLE_KEY,
+    PAST_DATA_TOGGLE_KEY,
+)
+
+
+def test_a_gray_code_sweep_over_the_interacting_conditions(database: Path) -> None:
+    """얽히는 조건 다섯의 서른두 조합을 그레이 코드 차례로 모두 지난다 — 걸음마다 하나만 바뀐다.
+
+    한 조건을 뒤집은 바로 다음 회차는 앞 조합의 묶음이 칸에 남아 있으므로, 그 조건을 키에서 잘못
+    뺀 묶음이 있으면 앞 그림이 그대로 나와 여기서 걸린다. 서른두 조합 모두에서 그 조건 저마다를
+    여러 배경으로 뒤집는다.
+    """
+    app = _open(
+        database,
+        {
+            THEME_KEY: "light",
+            ADVANCE_TOGGLE_KEY: False,
+            EDP_TOGGLE_KEY: False,
+            EXECUTION_TOGGLE_KEY: False,
+            PAST_DATA_TOGGLE_KEY: True,
+            COMPARISON_TOGGLE_KEY: True,
+        },
+    )
+    _assert_same_as_fresh(app, "그레이 코드 시작")
+    rng = random.Random(0)
+    for step in range(1, 2 ** len(INTERACTING)):
+        dimension = INTERACTING[(step & -step).bit_length() - 1]
+        _flip(app, dimension, rng)
+        _assert_same_as_fresh(app, f"그레이 코드 {step}: {dimension}")
+
+
 def test_a_single_toggle_rebuilds_only_the_bundles_it_reaches(database: Path) -> None:
     """의존 표가 페이지에서도 그대로인지. 켤 때 새로 만드는 묶음과 끌 때 모두 적중을 본다.
 
@@ -396,10 +467,16 @@ def test_a_single_toggle_rebuilds_only_the_bundles_it_reaches(database: Path) ->
         (PLAN_DETAIL_CUSTOMER_KEY, True, {plan}),
         (COMPARISON_TOGGLE_KEY, True, {lob, plan}),
         (EXECUTION_TOGGLE_KEY, True, {lob, heatmap, bottleneck}),
-        # 선행 B/O 가 꺼져 있으면 EDP 는 히트맵에 닿지 않는다. 다만 이 데이터는 EDP 만 있는 달이
-        # 있어 월 축이 바뀌므로 네 묶음이 모두 다시 그려진다 — 축이 키에 있는 까닭이다.
+        # 전체 범위에서는 EDP 만 있는 달(26.12)이 EDP 를 따라 축에서 빠지고 들어오므로 네 묶음이
+        # 모두 다시 그려진다 — 축이 키에 있는 까닭이다.
         (EDP_TOGGLE_KEY, True, {lob, plan, heatmap, bottleneck}),
+        # 그 달 앞에서 자르면 축이 그대로다. 선행 B/O 가 꺼져 있으면 EDP 는 히트맵에 닿지 않는다.
+        (RANGE_KEY, SHORT_RANGE, {lob, plan, heatmap, bottleneck}),
+        (EDP_TOGGLE_KEY, False, {lob, plan, bottleneck}),
         (ADVANCE_TOGGLE_KEY, True, {lob, heatmap, bottleneck}),
+        # 선행 B/O 를 켜면 변동률이 화면 계획 기준이라 EDP 가 히트맵에도 닿는다. 세부수량은 두 걸음
+        # 앞(짧은 범위·EDP 켬)에서 같은 조건으로 만들어 두어 적중한다.
+        (EDP_TOGGLE_KEY, True, {lob, heatmap, bottleneck}),
         (PRESET_KEY, PRESETS[1], {heatmap}),
         (THEME_KEY, "dark", {lob, plan, heatmap, bottleneck}),
     ]
