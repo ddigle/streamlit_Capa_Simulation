@@ -484,8 +484,9 @@ def test_a_shortened_unit_row_is_one_line_with_the_full_detail_in_its_title() ->
 
 
 def test_a_row_date_in_another_year_carries_its_year() -> None:
-    """해가 다른 날짜만 `YY.MM.DD` 로 적는다(2026-10-08 사용자 결정). 「기존 02.25 → 단축 10.08」 처럼
-    해를 넘는 단축이 거꾸로 읽히고, 2027·2028 의 「필요 09.21」·「필요 09.22」 가 같은 꼴로 보였다."""
+    """해가 다른 날짜만 `YY.MM.DD` 로 적는다(2026-10-08 사용자 결정). 「기존 02.25 → 단축
+    10.08」 처럼 해를 넘는 단축이 거꾸로 읽히고, 2027·2028 의 「필요 09.21」·「필요 09.22」 가 같은
+    꼴로 보였다."""
     axis = (date(2026, 10, 1), date(2028, 12, 1))
     today = date(2026, 10, 8)
     shortened: dict[str, object] = {
