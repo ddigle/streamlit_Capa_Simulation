@@ -50,10 +50,10 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
     assert any("공용 버전 없음" in caption.value for caption in app.caption)
     # 앱 정보는 이 화면이 아니라 모든 화면 사이드바 맨 아래 카드다(2026-10-07 사용자 결정). 카드는
     # `app.py` 가 그리므로 이 화면만 돌린 여기에는 그 글이 한 줄도 없다.
-    from capa_simulation.settings import APP_BUILD_DATE, APP_CONTACT_EMAIL
+    from capa_simulation.settings import APP_CONTACT_EMAIL, APP_VERSION
 
     assert not any(
-        APP_CONTACT_EMAIL in caption.value or APP_BUILD_DATE in caption.value
+        APP_CONTACT_EMAIL in caption.value or APP_VERSION in caption.value
         for caption in app.caption
     )
 

@@ -946,7 +946,7 @@ def _credit_card_captions(app: AppTest) -> list[str]:
 
 
 def _assert_two_credit_lines(captions: list[str]) -> None:
-    """앱·버전·빌드 한 줄과 개발 팀·문의처 한 줄, 그것뿐이다(2026-10-07 사용자 결정)."""
+    """앱·버전·배포 한 줄과 개발 팀·문의처 한 줄, 그것뿐이다(2026-10-07 사용자 결정)."""
     from capa_simulation.components.app_credits import credit_lines
 
     assert captions == ["  \n".join(credit_lines())]

@@ -204,7 +204,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     떠날 때 접지 않고, 같은 페이지 안에서 사용자가 접으면 그대로 둔다. 상수
     `ADMIN_BOX_KEY` 는 그대로다 — 상자에 서는 것은 여전히 `Admin Area` 와 VOC 다.
   - **사이드바 맨 아래는 앱 정보 카드다**(2026-10-07 사용자 결정 — Admin Area 본문 맨 아래에서
-    옮겼다). 앱·버전·빌드 한 줄과 개발 팀·문의처 한 줄(`components/app_credits.py`)을
+    옮겼다). 앱·버전·배포 한 줄과 개발 팀·문의처 한 줄(`components/app_credits.py`)을
     `Support` 상자 뒤, `navigation.run()` **앞**에서 그린다 — 페이지가 `st.stop()` 해도 카드는
     남는다. **`Support` 와 이 카드는 그룹 상자 바로 뒤, 「조회 조건」 구역보다 먼저** 그린다.
     Streamlit 은 사이드바 요소를 key 가 아니라 순번으로 맞춰 갈아 끼우는데, 조회 조건 상자는
@@ -215,6 +215,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     파이썬 차례로는 조건 구역·페이지 조건 카드보다 앞이므로 맨 아래 자리와 바닥 고정은
     사이드바 CSS 가 지킨다(아래 `sidebar_style.py` 항목). 부트스트랩 오류 화면은 사이드바를
     세우기 전에 멈추므로 카드가 없다.
+    **첫 줄 끝은 적용된 배포 번호다**(2026-10-08 사용자 결정 — 손으로 적던 `APP_BUILD_DATE` 는 걷었다).
+    사내 적용 기록 `.deploy/applied.json`(`settings.DEPLOY_STATE_PATH`, `apply_deploy_package.py` 가 씀)의
+    `stamp` 를 「배포 202610081234」 로, 기록이 없는 사외는 「사외 개발」 로 적는다. 기록은 프로세스에서 한 번만
+    읽는다(배포 적용은 앱을 내린 뒤라 다시 뜰 때 새 값).
   - 사이드바 CSS 문자열은 `components/sidebar_style.py`가 탐색 그룹·활성 경로·컨테이너
     키를 받아 만든다. 테마 초기화와 `st.html` 주입 순서는 진입점이 소유한다.
   - 모든 페이지에 필요한 전역 위젯은 `navigation.run()`보다 앞에 둔다.

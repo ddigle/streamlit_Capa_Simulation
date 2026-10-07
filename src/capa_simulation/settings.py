@@ -13,7 +13,6 @@ MONTH_SELECTION_END = 203012
 # 사이드바 맨 아래의 앱 정보 카드(`components/app_credits.py`) 한 곳이다 — ⋮ 메뉴(About)는
 # 감추고, 머리 띠는 적용 중인 시나리오를 싣는다. 담당 조직과 문의처는 실제 값이다.
 APP_VERSION = "0.9.0-demo"
-APP_BUILD_DATE = "2026-09-08"
 APP_OWNER_TEAM = "S.PKG 제조팀"
 APP_CONTACT_EMAIL = "hoyeon.jeon@samsung.com"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -24,6 +23,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # `<style>` 이 탭 바탕의 밝기(`prefers-color-scheme`)에 따라 링·다이 색을 두 테마 토큰 값으로
 # 바꾼다.
 FAVICON_PATH = PROJECT_ROOT / "static" / "icons" / "capa_mark.svg"
+# 사내에서 배포 ZIP 을 적용하면 `scripts/apply_deploy_package.py` 가 남기는 적용 기록. 앱 정보
+# 카드가 여기서 적용된 배포 번호(`stamp`)를 읽는다 — 사외(개발 PC)에는 없다.
+DEPLOY_STATE_PATH = PROJECT_ROOT / ".deploy" / "applied.json"
 DATA_DIR = PROJECT_ROOT / "data"
 INPUT_DIR = DATA_DIR / "input"
 DUCKDB_PATH = DATA_DIR / "capa_simulation.duckdb"

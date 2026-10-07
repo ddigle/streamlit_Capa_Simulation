@@ -3,6 +3,7 @@
 import re
 from dataclasses import replace
 from datetime import datetime
+from pathlib import Path
 
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import (
@@ -14,7 +15,6 @@ from capa_simulation.components.app_header import (
 )
 from capa_simulation.scenario_activation import ActiveScenarioLabel
 from capa_simulation.settings import (
-    APP_BUILD_DATE,
     APP_CONTACT_EMAIL,
     APP_NAME,
     APP_OWNER_TEAM,
@@ -212,8 +212,8 @@ def test_the_app_credits_are_two_lines_without_the_clearance_sentence() -> None:
     """
     import capa_simulation.settings as settings
 
-    assert credit_lines() == (
-        f"{APP_NAME} v{APP_VERSION} · 빌드 {APP_BUILD_DATE}",
+    assert credit_lines(stamp="202610081234") == (
+        f"{APP_NAME} v{APP_VERSION} · 배포 202610081234",
         f"개발 {APP_OWNER_TEAM} · {APP_CONTACT_EMAIL}",
     )
     text = "\n".join(credit_lines())
@@ -223,7 +223,25 @@ def test_the_app_credits_are_two_lines_without_the_clearance_sentence() -> None:
         assert not hasattr(settings, name), name
     # 머리 띠에는 싣지 않는다.
     css = _header_css(*header_lines(LABEL, official=None, unsaved=False))
-    assert APP_CONTACT_EMAIL not in css and APP_BUILD_DATE not in css
+    assert APP_CONTACT_EMAIL not in css and "배포 " not in css
+    assert not hasattr(settings, "APP_BUILD_DATE")
+
+
+def test_the_credits_show_the_applied_deploy_stamp_or_say_outside(tmp_path: Path) -> None:
+    """첫 줄 끝은 사내 적용 기록의 배포 번호, 기록이 없으면 「사외 개발」 이다(2026-10-08 사용자
+    결정 — 손으로 적던 빌드일은 배포마다 고치지 않아 2026-09-08 로 남아 있었다). 깨진 기록도
+    「사외 개발」. 기록은 프로세스에서 한 번만 읽으므로 경우마다 다른 경로를 쓴다."""
+    from capa_simulation.components.app_credits import OUTSIDE_BUILD_LABEL, deployed_stamp
+
+    assert deployed_stamp(tmp_path / "missing" / "applied.json") is None
+    state = tmp_path / ".deploy" / "applied.json"
+    state.parent.mkdir()
+    state.write_text('{"stamp": "202610081234", "commit": "abc"}', encoding="utf-8")
+    assert deployed_stamp(state) == "202610081234"
+    broken = tmp_path / "broken.json"
+    broken.write_text("{", encoding="utf-8")
+    assert deployed_stamp(broken) is None
+    assert credit_lines(stamp="")[0].endswith(f" · {OUTSIDE_BUILD_LABEL}")
 
 
 def test_the_header_names_the_official_version_with_its_source_registration() -> None:
