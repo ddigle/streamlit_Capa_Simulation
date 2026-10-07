@@ -594,10 +594,52 @@ def test_pasting_a_unit_row_over_saved_modules_names_both_sides_and_the_way_out(
         errors[0]
     )
     assert (
-        "붙여넣기는 저장된 행을 지우지 않습니다 — 편집본 쪽 행을 없애려면 직접 편집에서 지운 뒤 "
-        "다시 미리보세요." in errors[0]
+        "붙여넣기는 이미 있는(편집본의) 행을 지우지 않습니다 — 편집본 쪽 행을 없애려면 "
+        "직접 편집에서 지운 뒤 다시 미리보세요." in errors[0]
     )
     assert PREVIEW_KEY not in app.session_state
+
+
+def _collision_review(buffer: pd.DataFrame, pasted: pd.DataFrame) -> str:
+    """붙여넣기 미리보기가 낸 충돌 문구(호기 마스터). 충돌이 없으면 실패한다."""
+    import pytest
+
+    from capa_simulation.services.equipment_csv import equipment_csv_bytes
+
+    with pytest.raises(ValueError, match="Main 설비") as raised:
+        build_import_review(
+            "호기 마스터",
+            equipment_csv_bytes(pasted),
+            (empty_equipment_baseline(), buffer, empty_downtime_schedule()),
+            floor_canvases={},
+        )
+    return str(raised.value)
+
+
+def test_paste_review_marks_names_by_where_they_already_are() -> None:
+    """출처는 붙여넣기 **전** 편집본과 견준다(리뷰 후속).
+
+    - 편집본에 설비 행 X 와 모듈 행 X-A 가 함께 있고(검증 전 편집본) X 를 다시 붙여넣으면 X 는
+      「붙여넣기·편집본」이다 — 붙여넣을 표에서만 빼면 다시 막힌다.
+    - 같은 편집본에 무관한 호기만 붙여넣으면 충돌은 편집본 안의 것이다 — 붙여넣기 안내를 붙이지
+      않고 직접 편집에서 고치라고만 한다.
+    """
+    from capa_simulation.services.equipment_contract import PARENT_EQUIPMENT_COLUMN
+
+    unit = _master(["EQ-X"])
+    module = _master(["EQ-X-A"])
+    module[PARENT_EQUIPMENT_COLUMN] = "EQ-X"
+    other = _master(["EQ-OTHER"])
+    buffer = pd.concat([unit, module, other], ignore_index=True)
+
+    again = _collision_review(buffer, unit)
+    assert "설비 행 EQ-X(붙여넣기·편집본) · 모듈 행 EQ-X-A(편집본)" in again, again
+    assert "두 곳 모두에서 빼야 합니다" in again
+
+    unrelated = _collision_review(buffer, other)
+    assert "설비 행 EQ-X(편집본) · 모듈 행 EQ-X-A(편집본)" in unrelated, unrelated
+    assert "붙여넣기 전 편집본에 이미 있던 충돌입니다" in unrelated
+    assert "붙여넣기는" not in unrelated
 
 
 def _keyed_blocks(app: AppTest) -> dict[str | None, str]:

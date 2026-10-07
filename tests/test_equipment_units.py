@@ -212,20 +212,55 @@ def test_a_paste_collision_names_where_each_side_came_from() -> None:
     지우고 모듈 행만 남기세요: ['12']」라고만 해, 붙여넣은 것이 바로 그 설비 행이라 거꾸로 읽혔다.
     """
     collisions = {"SMP-DAF-12": ("SMP-DAF-12A", "SMP-DAF-12B")}
+    modules = {"SMP-DAF-12A", "SMP-DAF-12B"}
 
-    message = unit_group_collision_message(collisions, pasted={"SMP-DAF-12"})
+    message = unit_group_collision_message(collisions, pasted={"SMP-DAF-12"}, existing=modules)
 
     assert "설비 행 SMP-DAF-12(붙여넣기) · 모듈 행 SMP-DAF-12A, SMP-DAF-12B(편집본)" in message, (
         message
     )
-    assert "붙여넣기는 저장된 행을 지우지 않습니다 — " in message
+    # 편집본은 저장 안 한 편집을 담을 수 있다 — 「저장된」이 아니라 「이미 있는(편집본의)」 행이다.
+    assert "붙여넣기는 이미 있는(편집본의) 행을 지우지 않습니다 — " in message
     assert "직접 편집에서 지운 뒤 다시 미리보세요" in message
+    assert "두 곳 모두" not in message
     # 양쪽이 모두 붙여넣은 표 안에 있으면 붙여넣을 표를 고친다.
     inside = unit_group_collision_message(
         collisions, pasted={"SMP-DAF-12", "SMP-DAF-12A", "SMP-DAF-12B"}
     )
     assert "붙여넣을 표에서 한쪽을 빼고 다시 미리보세요." in inside
     assert "직접 편집" not in inside
+
+
+def test_a_name_pasted_again_over_the_buffer_is_marked_as_both() -> None:
+    """편집본에도 있는 이름을 다시 붙여넣었으면 출처는 둘 다다 — 한 곳에서만 빼면 다시 막힌다."""
+    collisions = {"SMP-DAF-12": ("SMP-DAF-12A", "SMP-DAF-12B")}
+    existing = {"SMP-DAF-12", "SMP-DAF-12A", "SMP-DAF-12B"}
+
+    message = unit_group_collision_message(collisions, pasted={"SMP-DAF-12"}, existing=existing)
+
+    assert "설비 행 SMP-DAF-12(붙여넣기·편집본) · 모듈 행 SMP-DAF-12A, SMP-DAF-12B(편집본)" in (
+        message
+    ), message
+    assert message.endswith(" (붙여넣기·편집본) 이름은 두 곳 모두에서 빼야 합니다.")
+    # 모두 붙여넣었더라도 편집본에 있던 이름이 끼면 붙여넣을 표만 고쳐서는 풀리지 않는다.
+    every = unit_group_collision_message(collisions, pasted=existing, existing=existing)
+    assert "붙여넣을 표에서 한쪽을 빼고" not in every
+    assert "직접 편집에서 지운 뒤" in every
+
+
+def test_a_collision_already_in_the_buffer_is_not_blamed_on_the_paste() -> None:
+    """붙여넣은 이름이 충돌에 하나도 없으면 편집본 안의 충돌이다 — 직접 편집에서 고치라고만 한다."""
+    collisions = {"SMP-DAF-12": ("SMP-DAF-12A",)}
+
+    message = unit_group_collision_message(
+        collisions, pasted={"OTHER-01"}, existing={"SMP-DAF-12", "SMP-DAF-12A", "OTHER-01"}
+    )
+
+    assert "설비 행 SMP-DAF-12(편집본) · 모듈 행 SMP-DAF-12A(편집본)" in message, message
+    assert message.endswith(
+        "붙여넣기 전 편집본에 이미 있던 충돌입니다 — 직접 편집에서 한쪽을 지운 뒤 다시 미리보세요."
+    )
+    assert "붙여넣기는" not in message
 
 
 @pytest.mark.parametrize("column", ["동", "공정소분류", "투자구분"])

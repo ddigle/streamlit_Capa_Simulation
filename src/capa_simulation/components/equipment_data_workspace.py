@@ -821,12 +821,18 @@ def build_import_review(
             ) from exc
         changes = build_equipment_import_preview(equipment, incoming)
         try:
-            equipment = merge_equipment_rows(equipment, incoming, floor_canvases=floor_canvases)
+            merged = merge_equipment_rows(equipment, incoming, floor_canvases=floor_canvases)
         except UnitGroupCollisionError as exc:
-            # 검증은 병합된 표만 본다. 어느 쪽이 붙여넣은 행인지 붙여 다시 알린다 — 붙여넣기는
-            # 설비명 기준 upsert 라 편집본 쪽 행을 지우지 못한다.
-            pasted = set(incoming[EQUIPMENT_ID_COLUMN].dropna().astype(str))
-            raise ValueError(unit_group_collision_message(exc.collisions, pasted=pasted)) from exc
+            # 검증은 병합된 표만 본다. 이름마다 붙여넣기·편집본 어디에 있었는지 붙여 다시 알린다
+            # — 붙여넣기는 설비명 기준 upsert 라 편집본 쪽 행을 지우지 못한다.
+            raise ValueError(
+                unit_group_collision_message(
+                    exc.collisions,
+                    pasted=_equipment_names(incoming),
+                    existing=_equipment_names(equipment),
+                )
+            ) from exc
+        equipment = merged
         downtime = merge_downtime_rows(downtime, empty_downtime_schedule(), equipment=equipment)
         baseline = prepare_equipment_baseline(baseline)
     elif target == "기존 보유대수":
@@ -866,6 +872,14 @@ def build_import_review(
 def _collision_names(exc: UnitGroupCollisionError) -> set[str]:
     """충돌에 든 설비명 전부(설비 행과 모듈 행)."""
     return {*exc.collisions, *(name for modules in exc.collisions.values() for name in modules)}
+
+
+def _equipment_names(frame: pd.DataFrame) -> set[str]:
+    """표의 설비명(앞뒤 공백을 뗀다 — 편집본은 검증 전일 수 있다)."""
+    if EQUIPMENT_ID_COLUMN not in frame.columns:
+        return set()
+    names = frame[EQUIPMENT_ID_COLUMN].dropna().astype(str).str.strip()
+    return set(names.loc[names.ne("")])
 
 
 def _save_snapshot(repository: DuckDBEquipmentRepository, frames: Frames, note: str) -> None:

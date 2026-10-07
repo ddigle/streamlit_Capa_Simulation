@@ -201,24 +201,39 @@ def unit_group_collision_message(
     collisions: Mapping[str, Sequence[str]],
     *,
     pasted: Collection[str] | None = None,
+    existing: Collection[str] = (),
 ) -> str:
     """충돌한 **양쪽 설비명**(설비 행과 그 이름을 Main 설비로 적은 모듈 행)을 적은 오류 문구.
 
     `pasted` 가 없으면 직접 편집·저장 경로다 — 두 행이 모두 지금 표에 있으니 한쪽을 지우라고
-    한다. `pasted`(붙여넣은 표의 설비명)를 주면 이름마다 출처(붙여넣기/편집본)를 붙이고,
-    **붙여넣기는 이미 있는 행을 지우지 않는다**는 것을 말한다 — 붙여넣기는 설비명 기준으로 행을
-    더하거나 바꿀 뿐이라, 편집본 쪽 행을 없애는 길은 직접 편집뿐이다(2026-10-08 점검 A3, 사내
-    AWB05 와 같은 꼴: 모듈 행이 저장된 설비의 설비 행을 다시 붙여넣었다).
+    한다. `pasted`(붙여넣은 표의 설비명)를 주면 붙여넣기 미리보기다. `existing` 은 붙여넣기 **전**
+    편집본의 설비명이다. 이름마다 출처를 붙인다 — 붙여넣기에만 있으면 (붙여넣기), 편집본에만
+    있으면 (편집본), 둘 다에 있으면 (붙여넣기·편집본). 둘 다에 있는 이름은 한 곳에서만 빼면 다시
+    막히므로 그렇게 적는다. 고칠 길은 출처를 따른다(2026-10-08 점검 A3·리뷰, 사내 AWB05 와 같은
+    꼴: 모듈 행이 저장된 설비의 설비 행을 다시 붙여넣었다).
+
+    - 붙여넣은 이름이 충돌에 하나도 없다 — 편집본 안에서 이미 부딪힌 것이다. 붙여넣기와 상관없으니
+      직접 편집에서 한쪽을 지우라고만 한다.
+    - 충돌한 이름이 모두 붙여넣기에만 있다 — 붙여넣을 표 안에서 부딪혔다. 그 표를 고친다.
+    - 그 밖 — **붙여넣기는 설비명 기준으로 행을 더하거나 바꿀 뿐 이미 있는(편집본의) 행을 지우지
+      않는다.** 편집본 쪽 행을 없애는 길은 직접 편집뿐이다.
     """
     shown = list(collisions.items())[:_COLLISION_EXAMPLES]
     pasted_names = set(pasted) if pasted is not None else None
+    existing_names = set(existing)
+
+    def origin_of(value: str) -> str:
+        assert pasted_names is not None
+        if value in pasted_names:
+            return "붙여넣기·편집본" if value in existing_names else "붙여넣기"
+        return "편집본"
 
     def names(values: Sequence[str]) -> str:
         if pasted_names is None:
             return ", ".join(values)
         groups: list[tuple[str, list[str]]] = []
         for value in values:
-            origin = "붙여넣기" if value in pasted_names else "편집본"
+            origin = origin_of(value)
             if groups and groups[-1][0] == origin:
                 groups[-1][1].append(value)
             else:
@@ -236,13 +251,21 @@ def unit_group_collision_message(
         )
     else:
         every = {*collisions, *(module for modules in collisions.values() for module in modules)}
-        if every <= pasted_names:
+        if not every & pasted_names:
+            remedy = (
+                "붙여넣기 전 편집본에 이미 있던 충돌입니다 — 직접 편집에서 한쪽을 지운 뒤 다시 "
+                "미리보세요."
+            )
+        elif every <= pasted_names - existing_names:
             remedy = "붙여넣을 표에서 한쪽을 빼고 다시 미리보세요."
         else:
             remedy = (
-                "붙여넣기는 저장된 행을 지우지 않습니다 — 편집본 쪽 행을 없애려면 직접 편집에서 "
-                "지운 뒤 다시 미리보세요. 붙여넣은 쪽이 잘못이면 그 행을 빼고 다시 붙여넣으세요."
+                "붙여넣기는 이미 있는(편집본의) 행을 지우지 않습니다 — 편집본 쪽 행을 없애려면 "
+                "직접 편집에서 지운 뒤 다시 미리보세요. 붙여넣은 쪽이 잘못이면 그 행을 빼고 다시 "
+                "붙여넣으세요."
             )
+            if every & pasted_names & existing_names:
+                remedy += " (붙여넣기·편집본) 이름은 두 곳 모두에서 빼야 합니다."
     return f"{_COLLISION_HEAD}: {pairs}{more}. {remedy}"
 
 
