@@ -361,12 +361,22 @@ def test_the_space_status_wrapper_builds_once_per_content_and_as_of(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from capa_simulation.services.equipment_availability import build_space_equipment_status
-    from capa_simulation.services.simulation_cache import get_space_equipment_status
+    from capa_simulation.services.simulation_cache import (
+        frame_digest,
+        get_space_equipment_status,
+        space_status_cache_key,
+    )
 
     builds = _count_status_builds(monkeypatch)
     master, downtime = _equipment(), _downtime()
     as_of = date(2026, 10, 1)
     expected = build_space_equipment_status(master, downtime, as_of=as_of)
+    # 키는 입력의 내용 지문과 기준일뿐이다 — 사용기준 규칙 같은 코드 상수는 넣지 않는다(키 방침).
+    assert space_status_cache_key(master, downtime, as_of=as_of) == (
+        frame_digest(master),
+        frame_digest(downtime),
+        as_of.isoformat(),
+    )
 
     first = get_space_equipment_status(master, downtime, as_of=as_of)
     pd.testing.assert_frame_equal(first, expected)

@@ -1565,6 +1565,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - HOME 단계별 소요시간을 측정하며 업무 데이터는 기록하지 않는다.
 - `src/capa_simulation/services/simulation_cache.py`
   - 주요 계산 함수의 content-addressed `st.cache_data` 래퍼다.
+  - **키 방침(하나다)** — 키는 그 함수의 실제 입력 전부(내용 지문·범위·날짜·선택값)를 싣고, **코드
+    상수(사용기준 규칙 `COUNTED_USAGE_BASIS`·분류 표 등)는 싣지 않는다.** 상수가 바뀌려면 배포로
+    프로세스가 새로 뜨고 캐시는 프로세스 메모리라 그때 함께 빈다. 상수를 키에 넣는 래퍼와 넣지 않는
+    래퍼가 섞이면 「무엇이 키인가」를 래퍼마다 따로 따져야 한다(2026-10-08 리뷰로 하나로 정했다).
   - HOME 전체 계산 그래프는 reference version·`content_token`·조회기간·표시순서 해시의 명시적 경량 키로 조회해 warm
     rerun의 대형 DataFrame 해싱을 피하고, 하위 계산 캐시는 다른 페이지와 계속 공유한다.
   - **표시순서는 `reference_version` 을 바꾸지 않고 바뀐다**(`reference_cache.
@@ -1578,8 +1582,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     프레임과 `PreparedDisplayOrder` 는 `_` 인자라 해시하지 않는다. 표시순서만 바꿔도 행 차례가
     바뀌는지는 `tests/test_reference_data_page.py` 의 표시순서 교체 테스트가 여섯 표 모두 지킨다.
   - `get_space_equipment_status` 는 Space 현황의 기준일 상태(`build_space_equipment_status`)를
-    `space_status_cache_key` — 호기 마스터·비가동 일정 **내용 지문**(`frame_digest`)·기준일·
-    `COUNTED_USAGE_BASIS` — 로 캐시한다(프레임은 `_` 인자). 표는 저장 안 한 편집본일 수 있어
+    `space_status_cache_key` — 호기 마스터·비가동 일정 **내용 지문**(`frame_digest`)·기준일 — 로
+    캐시한다(프레임은 `_` 인자). 사용기준 규칙(`COUNTED_USAGE_BASIS`)은 결과에 닿지만 코드 상수라
+    키에 넣지 않는다(위 키 방침). 표는 저장 안 한 편집본일 수 있어
     리비전 번호나 편집본 세대(세션마다 0 부터 센다)를 키로 쓰지 않는다. 검증에 실패한 편집본의
     `ValueError` 는 캐시하지 않고 그대로 낸다.
   - `shared_home_figure_store()`(`st.cache_resource`)는 HOME Figure 묶음을 세션끼리 나누는
@@ -1615,8 +1620,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     환산비 칸이 없어 따로 싣는다 — 에 Static 지문을 더한 `availability_comparison_cache_key`) →
     `get_monthly_equipment_contributions`(호기별 기여, 월별 키)로 부른다(2026-10-08 점검 A2). 세
     서비스 함수는 오늘·설정을 읽지 않는다 — 오늘은 페이지의 기본 조회기간과 샘플 fleet 을 거쳐 날짜·
-    마스터 지문으로 들어온다. 사용기준 HBM 규칙 같은 코드 상수는 키에 넣지 않는다(배포는 프로세스를
-    새로 띄운다). `get_required_shortening` 도 구간을 같은 `get_equipment_lifecycle_spans` 에서 받는다
+    마스터 지문으로 들어온다. 사용기준 HBM 규칙 같은 코드 상수는 키에 넣지 않는다(위 키 방침).
+    `get_required_shortening` 도 구간을 같은 `get_equipment_lifecycle_spans` 에서 받는다
     — 키의 마스터·비가동 지문을 그대로 쓰므로, 시나리오·기존보유·오늘만 바뀐 계획은 구간을 다시 만들지
     않는다.
   - `get_required_shortening_csvs` 는 그 탭의 CSV 세 벌 바이트를 계획 키 + 화면이 고르는 것(목표·공정
@@ -3517,7 +3522,8 @@ RQ_MODULE
    비싼 계산(생애주기 구간 → 월별 Dynamic → Static 비교, 필요단축일정 계획·CSV)은
    `simulation_cache` 의 내용 지문 키 래퍼로만 부른다 — 키는 그 함수의 **실제 입력 전부**(마스터·
    비가동·기존보유·Cut-off·Static·구간의 `frame_digest`, 구간 범위, 달, 환산비 지문, 필요단축일정은
-   시나리오 키와 오늘)다. 입력을 하나라도 빼면 낡은 값이 나오므로 새 입력을 더하면 키도 더한다
+   시나리오 키와 오늘)다. 코드 상수는 넣지 않는다(배포로 프로세스가 새로 뜨면 캐시가 빈다,
+   `simulation_cache` 항목의 키 방침). 입력을 하나라도 빼면 낡은 값이 나오므로 새 입력을 더하면 키도 더한다
    (`tests/test_equipment_view_cache.py` 가 입력마다 키가 갈리고 캐시 결과 = 새 계산인지 본다).
 10. **실적 이력을 시나리오에 복제하지 않는다.** 표준 Capa는 시나리오·리비전별로 보존하고,
     실적 효율과 생산실적은 원천 갱신 주기별 배치와 등록시각을 가진 누적 이력으로 관리한다.

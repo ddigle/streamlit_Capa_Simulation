@@ -26,7 +26,6 @@ from capa_simulation.services.equipment_availability import (
     build_space_equipment_status,
     build_weekly_equipment_availability,
 )
-from capa_simulation.services.equipment_contract import COUNTED_USAGE_BASIS
 from capa_simulation.services.load_calculator import (
     DemandBasis,
     build_monthly_volume,
@@ -173,7 +172,12 @@ def display_order_digest(display_order: pd.DataFrame) -> str:
 
 
 def frame_digest(frame: pd.DataFrame) -> str:
-    """프레임 내용의 SHA-256. 컬럼·dtype·행 값을 모두 덮는다 — 같은 글자면 같은 내용이다."""
+    """프레임 내용의 SHA-256. 컬럼·dtype·행 값을 모두 덮는다 — 같은 글자면 같은 내용이다.
+
+    **키 방침** — 이 모듈의 래퍼 키는 함수의 실제 입력 전부(이 지문·범위·날짜·선택값)를 싣고,
+    **코드 상수(사용기준 규칙 `COUNTED_USAGE_BASIS`·분류 표 등)는 싣지 않는다.** 상수가 바뀌려면
+    배포로 프로세스가 새로 뜨고, 캐시는 프로세스 메모리라 그때 함께 빈다.
+    """
     digest = hashlib.sha256()
     digest.update("\x1f".join(map(str, frame.columns)).encode("utf-8"))
     digest.update("\x1f".join(map(str, frame.dtypes)).encode("utf-8"))
@@ -611,8 +615,8 @@ def get_usage_excluded_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
     return usage_excluded_equipment(equipment)
 
 
-# (호기 마스터 내용 지문, 비가동 일정 내용 지문, 기준일, 가용대수에 세는 사용기준).
-SpaceStatusCacheKey = tuple[str, str, str, tuple[str, ...]]
+# (호기 마스터 내용 지문, 비가동 일정 내용 지문, 기준일).
+SpaceStatusCacheKey = tuple[str, str, str]
 
 
 def space_status_cache_key(
@@ -621,15 +625,10 @@ def space_status_cache_key(
     """Space 기준일 상태의 키. 판정이 보는 입력을 모두 싣는다.
 
     두 표는 저장 안 한 편집본일 수 있어 리비전·편집본 세대가 아니라 내용 지문이다 — 세대
-    번호는 세션마다 0 부터 세어 내용이 달라도 겹친다. 사용기준 규칙(`COUNTED_USAGE_BASIS`)은
-    코드 상수지만 결과의 `가용대수반영` 을 정하므로 함께 싣는다.
+    번호는 세션마다 0 부터 세어 내용이 달라도 겹친다. 사용기준 규칙(`COUNTED_USAGE_BASIS`)처럼
+    결과에 닿는 코드 상수는 넣지 않는다 — 이 모듈의 키 방침(`frame_digest` 아래 주석)이다.
     """
-    return (
-        frame_digest(equipment),
-        frame_digest(downtime),
-        as_of.isoformat(),
-        tuple(COUNTED_USAGE_BASIS),
-    )
+    return (frame_digest(equipment), frame_digest(downtime), as_of.isoformat())
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
@@ -969,8 +968,7 @@ def get_required_shortening_csvs(
 # Static/Dynamic 의 구간 → 월별 → 비교. 필요단축일정과 같은 방식이다 — 프레임은 `_` 인자로 해시하지
 # 않고, 키가 **함수의 실제 입력 전부**를 내용 지문으로 싣는다. 세 서비스 함수는 오늘 날짜·설정을
 # 읽지 않는다(오늘은 페이지의 기본 조회기간과 샘플 fleet 을 거쳐 들어오고, 그 둘은 날짜·마스터
-# 지문이 덮는다). 사용기준 HBM 규칙·분류 표 같은 코드 상수는 키에 넣지 않는다 — 배포는 프로세스를
-# 새로 띄운다.
+# 지문이 덮는다). 코드 상수는 키에 넣지 않는다(`frame_digest` 의 키 방침).
 
 # (호기 마스터 내용 지문, 비가동 내용 지문, 구간 시작, 구간 끝)
 EquipmentSpanCacheKey = tuple[str, str, str, str]
