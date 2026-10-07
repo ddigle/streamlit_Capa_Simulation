@@ -359,8 +359,8 @@ def test_unapplied_edits_gate_both_load_and_save(sidebar_app: AppTest) -> None:
     assert "test_saved_revision_name" not in app.session_state
     refusals = [item.value for item in app.warning if "저장하지 않았습니다" in item.value]
     assert refusals
-    # 거절돼도 리비전명·메모는 남는다(`SAVE_FORM_CLEAR_KEY`). 다시 적으라고 하면 지금 동작과
-    # 어긋난 안내가 된다 — 체크하고 다시 누르기만 하면 된다.
+    # 거절돼도 리비전명·메모는 남는다(`SAVE_FORM_GENERATION_KEY` 가 그대로다). 다시 적으라고
+    # 하면 지금 동작과 어긋난 안내가 된다 — 체크하고 다시 누르기만 하면 된다.
     assert all("체크한 뒤 다시 저장하세요" in text for text in refusals), refusals
     assert not any("다시 적어" in text for text in refusals), refusals
     app = app.checkbox(key="sidebar_save_discards_pending_edits").check().run()
@@ -422,9 +422,14 @@ def test_without_unapplied_edits_nothing_extra_is_asked(sidebar_app: AppTest) ->
     assert "sidebar_save_discards_pending_edits" not in {box.key for box in app.checkbox}
 
 
-def _fill_and_save(app: AppTest, name: str, note: str) -> AppTest:
-    app.text_input(key=target.SAVE_REVISION_NAME_KEY).set_value(name)
-    app.text_area(key=target.SAVE_REVISION_NOTE_KEY).set_value(note)
+def _field_key(base: str, generation: int) -> str:
+    """`scenario_status.save_field_key` 가 그 세대에 내는 key. 테스트는 세션 밖이라 직접 짓는다."""
+    return base if generation == 0 else f"{base}__g{generation}"
+
+
+def _fill_and_save(app: AppTest, name: str, note: str, *, generation: int = 0) -> AppTest:
+    app.text_input(key=_field_key(target.SAVE_REVISION_NAME_KEY, generation)).set_value(name)
+    app.text_area(key=_field_key(target.SAVE_REVISION_NOTE_KEY, generation)).set_value(note)
     app = app.run()
     save_button = next(button for button in app.button if button.label == "신규 리비전 저장")
     return save_button.click().run()
@@ -465,11 +470,30 @@ def test_a_refused_save_keeps_the_typed_name_and_memo(sidebar_app: AppTest) -> N
 
 
 def test_a_successful_save_clears_the_name_and_memo(sidebar_app: AppTest) -> None:
-    """저장에 성공하면 다음 회차의 칸이 빈다 — 한 번 더 눌러 같은 이름의 리비전이 또 서지 않게."""
+    """저장에 성공하면 다음 회차의 칸이 빈다 — 한 번 더 눌러 같은 이름의 리비전이 또 서지 않게.
+
+    **세션 칸에 빈 값을 적는 것으로는 브라우저가 비워지지 않았다**(2026-10-08 안정화 점검). 두 칸은
+    닫힌 저장 팝업 안이라 브라우저가 새 값을 받지 못하고 옛 이름·메모를 들고 있다가 다음 조작에
+    되보냈다. 그래서 성공한 회차에만 두 칸의 key 세대를 올려 **새 위젯**으로 세운다 — AppTest 는
+    브라우저 쪽을 흉내 내지 않으므로, 여기서는 key 가 바뀌어 옛 위젯이 사라졌는지를 본다.
+    """
     app = _fill_and_save(sidebar_app.run(), "성공할 저장안", "남지 않을 메모")
 
     assert not app.exception
     assert app.session_state["test_saved_revision_name"] == "성공할 저장안"
-    assert app.text_input(key=target.SAVE_REVISION_NAME_KEY).value == ""
-    assert app.text_area(key=target.SAVE_REVISION_NOTE_KEY).value == ""
-    assert target.SAVE_FORM_CLEAR_KEY not in app.session_state
+    assert app.session_state[target.SAVE_FORM_GENERATION_KEY] == 1
+    keys = {widget.key for widget in [*app.text_input, *app.text_area]}
+    assert target.SAVE_REVISION_NAME_KEY not in keys
+    assert target.SAVE_REVISION_NOTE_KEY not in keys
+    assert app.text_input(key=_field_key(target.SAVE_REVISION_NAME_KEY, 1)).value == ""
+    assert app.text_area(key=_field_key(target.SAVE_REVISION_NOTE_KEY, 1)).value == ""
+
+    # 새 칸으로도 저장되고, 그 뒤 거절된 저장은 다시 적은 글을 남긴다(세대가 오르지 않는다).
+    app = _fill_and_save(app, "두 번째 저장안", "두 번째 메모", generation=1)
+    assert app.session_state["test_saved_revision_name"] == "두 번째 저장안"
+    assert app.session_state[target.SAVE_FORM_GENERATION_KEY] == 2
+    app.session_state["test_save_verdict"] = GateVerdict(False, "이번 편집이 깨뜨린 것입니다")
+    app = _fill_and_save(app.run(), "막힐 세 번째", "남을 메모", generation=2)
+    assert app.session_state[target.SAVE_FORM_GENERATION_KEY] == 2
+    assert app.text_input(key=_field_key(target.SAVE_REVISION_NAME_KEY, 2)).value == "막힐 세 번째"
+    assert app.text_area(key=_field_key(target.SAVE_REVISION_NOTE_KEY, 2)).value == "남을 메모"
