@@ -60,22 +60,34 @@ Dynamic 가용대수(호기 일정을 Cut-off W/D 구간에 일할한 환산대�
 **반입일정은 보지 않는다**(하한이 아니다). 상태 판정 엔진은 반입 전을 「입고 예정」으로 세므로
 당긴 날짜가 반입보다 이르면 엔진으로 다시 재면 0 이 된다 — 그래서 늘어나는 몫은 엔진을 다시
 돌리지 않고 위 식으로 낸다. 그 호기의 **운영 비가동 일정**과 겹친 날은 엔진처럼 기여하지 않는다.
+
+## 내보내기
+
+`unit_export_frame` 은 호기마다 한 줄로 기존 일정 → 단축 일정과 호기 마스터 속성, 대상 월의
+부족을 펼친 표다(「호기별 단축 일정 CSV」). 목표 여럿을 넘기면 목표마다 블록으로 잇고
+`목표 확보율(%)` 칸으로 가른다. 마스터 속성은 계산할 때 후보마다 한 번 모아 결과
+(`ShorteningPlan.unit_master`)에 싣는다 — 화면이 rerun 마다 호기 마스터를 다시 검증하지 않게.
+모듈 묶음은 **옮기는 모듈 행**의 값이고, 묶음 안에서 값이 갈리면 글자는 서로 다른 값을 모듈
+차례로 「, 」로 잇고 반입일정은 가장 늦은 모듈의 날이다(묶음 Qual 과 같은 규칙). 가상 호기
+「추가N」은 마스터에 없으므로 속성·기존 일정이 빈칸이다.
 """
 
 from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 
 from capa_simulation.services.equipment_availability import build_equipment_lifecycle_spans
 from capa_simulation.services.equipment_contract import (
+    ARRIVAL_DATE_COLUMN,
     CONVERSION_RATIO_COLUMN,
     EQUIPMENT_ID_COLUMN,
+    PARENT_EQUIPMENT_COLUMN,
     RELOCATION_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
 )
@@ -97,7 +109,9 @@ __all__ = [
     "DEFAULT_TARGET_LEVEL",
     "KIND_NEW",
     "KIND_SHORTENED",
+    "LEVEL_COLUMN",
     "PROCESS_MONTH_COLUMNS",
+    "PROCESS_MONTH_EXPORT_COLUMNS",
     "STATUS_CARRIED",
     "STATUS_CARRIED_BOTH",
     "STATUS_CARRIED_NEW",
@@ -107,15 +121,20 @@ __all__ = [
     "STATUS_SHORTENED",
     "STATUS_WITH_NEW",
     "TARGET_LEVELS",
+    "UNIT_EXPORT_COLUMNS",
+    "UNIT_MASTER_COLUMNS",
     "UNIT_PLAN_COLUMNS",
     "VIRTUAL_UNIT_PREFIX",
     "CandidateModule",
     "CandidateUnit",
     "LevelPlan",
     "ShorteningPlan",
+    "level_percent",
     "plan_from_availability",
     "plan_required_shortening",
+    "process_month_export_frame",
     "shortening_candidates",
+    "unit_export_frame",
     "unit_number",
 ]
 
@@ -166,6 +185,53 @@ UNIT_PLAN_COLUMNS = (
     "해소 기여 월",
     "모듈 수",
 )
+
+LEVEL_COLUMN = "목표 확보율(%)"
+"""내보내기 표의 목표 칸. 90·100·110·120·130 정수다(`level_percent`)."""
+
+# 내보내기 표가 호기 줄에 붙이는 호기 마스터 속성. 이름은 마스터 계약 그대로다.
+_MASTER_TEXT_COLUMNS = (
+    "공정대분류",
+    "공정소분류",
+    "Model",
+    "동",
+    "층",
+    "투자구분",
+    PARENT_EQUIPMENT_COLUMN,
+)
+UNIT_MASTER_COLUMNS = (
+    "호기",
+    *_MASTER_TEXT_COLUMNS,
+    EQUIPMENT_ID_COLUMN,
+    "모듈 수",
+    CONVERSION_RATIO_COLUMN,
+    ARRIVAL_DATE_COLUMN,
+    "확정상태",
+)
+"""후보 호기(모듈 묶음은 한 대)마다 마스터 속성 한 줄. `설비명` 은 묶음의 모듈 행을 잇는다."""
+
+UNIT_EXPORT_COLUMNS = (
+    LEVEL_COLUMN,
+    "공정",
+    "Cut-off(일)",
+    "호기",
+    "구분",
+    *UNIT_MASTER_COLUMNS[1:],
+    "기존 Qual 완료일",
+    "기존 기여 시작일",
+    "목표 Qual 완료일",
+    "목표 기여 시작일",
+    "단축일수",
+    "늘어난 환산대수",
+    "대상 월",
+    "대상 월 부족 대수(단축 전)",
+    "대상 월 부족 대수(단축 후)",
+    "해소 기여 월",
+)
+"""「호기별 단축 일정 CSV」 의 칸. 날짜는 `YYYY-MM-DD`, 달은 `YYYY-MM` 글자다."""
+
+PROCESS_MONTH_EXPORT_COLUMNS = (LEVEL_COLUMN, *PROCESS_MONTH_COLUMNS)
+"""「공정·월 CSV」 의 칸 — 공정 x 월 표 앞에 목표 칸을 붙인다."""
 
 _ONE_DAY = timedelta(days=1)
 # 부동소수 끝자리를 털어 내는 자리. `securement_rate._ceil_positive` 와 같은 9자리다 — 0 이어야 할
@@ -251,6 +317,12 @@ class ShorteningPlan:
     candidate_units: int = 0
     """맞댄 공정의 단축 후보 대수(모듈 묶음은 한 대)."""
 
+    unit_master: pd.DataFrame = field(default_factory=lambda: _empty_unit_master())
+    """후보 호기마다 마스터 속성 한 줄(`UNIT_MASTER_COLUMNS`). 내보내기가 `호기` 로 붙인다.
+
+    호기 마스터에서 나오므로 캐시 키의 마스터 내용 지문이 이것도 덮는다.
+    """
+
     def at(self, level: float) -> LevelPlan:
         """고른 목표의 결과. 미리 계산하지 않은 목표면 KeyError 다."""
         for plan in self.levels:
@@ -263,6 +335,11 @@ def unit_number(name: str) -> int | None:
     """호기 이름 끝의 숫자. 없으면 None — 번호가 있는 호기 뒤에 선다."""
     found = _TRAILING_NUMBER.search(name)
     return int(found.group(1)) if found else None
+
+
+def level_percent(level: float) -> int:
+    """목표 확보율의 백분율 정수(1.1 → 110). 내보내기의 목표 칸과 파일 이름이 쓴다."""
+    return round(level * 100)
 
 
 def _unit_order(name: str) -> tuple[int, int, str]:
@@ -425,7 +502,76 @@ def plan_required_shortening(
         availability_only=tuple(sorted(availability_processes - required_processes)),
         missing_cutoff=tuple(missing_cutoff),
         candidate_units=len(candidates),
+        unit_master=_unit_master(prepared, candidates),
     )
+
+
+def _unit_master(prepared: pd.DataFrame, candidates: Sequence[CandidateUnit]) -> pd.DataFrame:
+    """후보마다 마스터 속성 한 줄. `prepared` 는 `prepare_equipment_master` 를 거친 표다.
+
+    모듈 묶음은 **옮기는 모듈 행**(`CandidateUnit.modules`)만 본다 — 모듈 수·환산비가 계산이 쓴 그
+    묶음의 것이어야 `늘어난 환산대수` 와 맞는다. 공정대분류·공정소분류·투자구분·동·층은 검증이 묶음
+    안에서 같게 막아 두고, 그 밖의 글자(Model·확정상태)가 갈리면 서로 다른 값을 모듈 차례로 잇는다.
+    반입일정은 가장 늦은 모듈의 날이다 — 묶음 Qual 이 가장 늦은 모듈의 Qual 인 것과 같다.
+    """
+    if prepared.empty or not candidates:
+        return _empty_unit_master()
+    ids = prepared[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    wanted = {module.equipment_id for unit in candidates for module in unit.modules}
+    chosen = ids.isin(wanted).fillna(False).to_numpy()
+    by_id = {
+        str(equipment_id): {str(key): value for key, value in row.items()}
+        for equipment_id, row in zip(
+            ids.loc[chosen], prepared.loc[chosen].to_dict("records"), strict=True
+        )
+    }
+    rows: list[dict[str, object]] = []
+    for unit in candidates:
+        members = [by_id[module.equipment_id] for module in unit.modules]
+        arrivals = [
+            day for member in members if (day := _as_date(member[ARRIVAL_DATE_COLUMN])) is not None
+        ]
+        row: dict[str, object] = {"호기": unit.unit}
+        for column in (*_MASTER_TEXT_COLUMNS, "확정상태"):
+            row[column] = _distinct_text(member[column] for member in members)
+        row[EQUIPMENT_ID_COLUMN] = ", ".join(module.equipment_id for module in unit.modules)
+        row["모듈 수"] = len(unit.modules)
+        row[CONVERSION_RATIO_COLUMN] = round(unit.ratio, _DECIMALS)
+        row[ARRIVAL_DATE_COLUMN] = max(arrivals) if arrivals else None
+        rows.append(row)
+    frame = pd.DataFrame(rows, columns=list(UNIT_MASTER_COLUMNS))
+    frame["모듈 수"] = frame["모듈 수"].astype("int64")
+    frame[CONVERSION_RATIO_COLUMN] = frame[CONVERSION_RATIO_COLUMN].astype("float64")
+    return frame
+
+
+def _distinct_text(values: Iterable[object]) -> str | None:
+    """빈칸을 빼고 서로 다른 값을 처음 나온 차례로 「, 」로 잇는다. 하나도 없으면 None."""
+    seen: list[str] = []
+    for value in values:
+        if _blank(value):
+            continue
+        text = str(value).strip()
+        if text and text not in seen:
+            seen.append(text)
+    return ", ".join(seen) if seen else None
+
+
+def _blank(value: object) -> bool:
+    """표 칸이 비었는가 — None·`pd.NA`·NaN·NaT."""
+    return (
+        value is None
+        or value is pd.NA
+        or value is pd.NaT
+        or (isinstance(value, float) and math.isnan(value))
+    )
+
+
+def _as_date(value: object) -> date | None:
+    """표 칸의 날짜. `pd.NaT` 도 `datetime` 이라 먼저 걸러야 한다."""
+    if _blank(value) or not isinstance(value, date):
+        return None
+    return value.date() if isinstance(value, datetime) else value
 
 
 def _required_in_months(required_equipment: pd.DataFrame, months: Sequence[int]) -> pd.DataFrame:
@@ -805,3 +951,168 @@ def _empty_process_months() -> pd.DataFrame:
 
 def _empty_units() -> pd.DataFrame:
     return pd.DataFrame({column: pd.Series(dtype="object") for column in UNIT_PLAN_COLUMNS})
+
+
+def _empty_unit_master() -> pd.DataFrame:
+    frame = pd.DataFrame({column: pd.Series(dtype="object") for column in UNIT_MASTER_COLUMNS})
+    frame["모듈 수"] = frame["모듈 수"].astype("int64")
+    frame[CONVERSION_RATIO_COLUMN] = frame[CONVERSION_RATIO_COLUMN].astype("float64")
+    return frame
+
+
+# ---------------------------------------------------------------------- 내보내기
+
+
+def unit_export_frame(
+    plan: ShorteningPlan,
+    levels: Sequence[float],
+    processes: Sequence[str] | None = None,
+) -> pd.DataFrame:
+    """호기마다 한 줄 — 「호기별 단축 일정 CSV」 의 표(`UNIT_EXPORT_COLUMNS`).
+
+    `levels` 마다 블록으로 잇고 `목표 확보율(%)` 칸으로 가른다. 공정은 `processes` 차례(화면의 표시
+    순서)이고, 없으면 맞댄 공정 전체다. 공정 안은 계산 결과의 차례(당긴 호기는 기존 Qual 순, 그
+    뒤에 가상 호기)다. 달은 고르지 않는다 — 결과는 이미 고른 달로만 계산한 것이다.
+
+    - `기존/목표 기여 시작일` 은 Qual 다음 날이다(`services/wd_window.py` 의 규약).
+    - `대상 월 부족 대수(단축 전/후)` 는 그 목표에서 대상 월의 `목표대수 - 가용대수` 를 0 아래로
+      자른 양수다. 단축 후는 **그 목표의 모든 단축·가상 호기를 반영한 뒤**의 값이라 호기 하나의 몫이
+      아니다.
+    - 가상 호기 「추가N」은 마스터 속성·기존 일정·단축일수가 빈칸이다.
+    """
+    names = list(plan.processes) if processes is None else [str(name) for name in processes]
+    master = {
+        str(row["호기"]): {str(key): value for key, value in row.items()}
+        for row in plan.unit_master.to_dict("records")
+    }
+    rows: list[dict[str, object]] = []
+    for level in levels:
+        level_plan = plan.at(level)
+        months = level_plan.process_months
+        gaps = {
+            (str(process), int(month)): (float(before), float(after))
+            for process, month, before, after in zip(
+                months["공정"],
+                months["생산계획년월"],
+                months["과부족"],
+                months["단축후과부족"],
+                strict=True,
+            )
+        }
+        by_process: dict[str, list[dict[str, object]]] = {}
+        for record in level_plan.units.to_dict("records"):
+            row = {str(key): value for key, value in record.items()}
+            by_process.setdefault(str(row["공정"]), []).append(row)
+        for process in names:
+            for row in by_process.get(process, []):
+                rows.append(
+                    _export_row(
+                        row,
+                        level=level,
+                        cutoff_days=plan.cutoff_days.get(process),
+                        master=master,
+                        gaps=gaps,
+                    )
+                )
+    frame = pd.DataFrame(rows, columns=list(UNIT_EXPORT_COLUMNS))
+    for column in (LEVEL_COLUMN, "Cut-off(일)", "모듈 수", "단축일수"):
+        frame[column] = pd.to_numeric(frame[column]).astype("Int64")
+    for column in (
+        CONVERSION_RATIO_COLUMN,
+        "늘어난 환산대수",
+        "대상 월 부족 대수(단축 전)",
+        "대상 월 부족 대수(단축 후)",
+    ):
+        frame[column] = pd.to_numeric(frame[column]).astype("float64")
+    return frame
+
+
+def _export_row(
+    row: Mapping[str, object],
+    *,
+    level: float,
+    cutoff_days: int | None,
+    master: Mapping[str, Mapping[str, object]],
+    gaps: Mapping[tuple[str, int], tuple[float, float]],
+) -> dict[str, object]:
+    process = str(row["공정"])
+    shortened = row["구분"] == KIND_SHORTENED
+    attributes = master.get(str(row["호기"]), {}) if shortened else {}
+    original = _as_date(row["기존 Qual"]) if shortened else None
+    target = _as_date(row["목표 Qual"])
+    month = _whole_number(row["대상 월"])
+    before, after = (math.nan, math.nan)
+    if month is not None:
+        before, after = gaps.get((process, month), (math.nan, math.nan))
+    contributed = "" if _blank(row["해소 기여 월"]) else str(row["해소 기여 월"])
+    return {
+        LEVEL_COLUMN: level_percent(level),
+        "공정": process,
+        "Cut-off(일)": cutoff_days,
+        "호기": row["호기"],
+        "구분": row["구분"],
+        **{column: attributes.get(column) for column in UNIT_MASTER_COLUMNS[1:]},
+        ARRIVAL_DATE_COLUMN: _iso_date(_as_date(attributes.get(ARRIVAL_DATE_COLUMN))),
+        "기존 Qual 완료일": _iso_date(original),
+        "기존 기여 시작일": _iso_date(original + _ONE_DAY if original else None),
+        "목표 Qual 완료일": _iso_date(target),
+        "목표 기여 시작일": _iso_date(target + _ONE_DAY if target else None),
+        "단축일수": None if _blank(row["단축일수"]) else row["단축일수"],
+        # 하루씩 더한 몫이라 끝자리에 부동소수 찌꺼기가 남는다(1.0 이 0.9999999999999993).
+        "늘어난 환산대수": round(float(str(row["늘어난 환산대수"])), _DECIMALS),
+        "대상 월": _iso_month(month),
+        "대상 월 부족 대수(단축 전)": _shortage(before),
+        "대상 월 부족 대수(단축 후)": _shortage(after),
+        "해소 기여 월": ", ".join(
+            _iso_month(int(part)) or "" for part in contributed.split(",") if part.strip()
+        ),
+    }
+
+
+def process_month_export_frame(
+    plan: ShorteningPlan,
+    levels: Sequence[float],
+    processes: Sequence[str] | None = None,
+    months: Sequence[int] | None = None,
+) -> pd.DataFrame:
+    """「공정·월 CSV」 의 표(`PROCESS_MONTH_EXPORT_COLUMNS`).
+
+    목표마다 블록이고 공정은 `processes` 차례, 공정 안은 달 차례다.
+    """
+    names = list(plan.processes) if processes is None else [str(name) for name in processes]
+    wanted = list(plan.months if months is None else (int(month) for month in months))
+    order = {name: index for index, name in enumerate(names)}
+    blocks: list[pd.DataFrame] = []
+    for level in levels:
+        frame = plan.at(level).process_months
+        chosen = frame.loc[frame["공정"].isin(names) & frame["생산계획년월"].isin(wanted)].copy()
+        chosen["_order"] = chosen["공정"].map(order)
+        chosen = chosen.sort_values(["_order", "생산계획년월"], kind="stable").drop(
+            columns="_order"
+        )
+        chosen.insert(0, LEVEL_COLUMN, level_percent(level))
+        blocks.append(chosen)
+    if not blocks:
+        return pd.DataFrame(columns=list(PROCESS_MONTH_EXPORT_COLUMNS))
+    return pd.concat(blocks, ignore_index=True).loc[:, list(PROCESS_MONTH_EXPORT_COLUMNS)]
+
+
+def _whole_number(value: object) -> int | None:
+    """표 칸의 정수(`Int64` 의 빈칸은 None)."""
+    return None if _blank(value) else int(str(value))
+
+
+def _iso_date(day: date | None) -> str | None:
+    return day.isoformat() if day is not None else None
+
+
+def _iso_month(month: int | None) -> str | None:
+    """`202605` → `2026-05`."""
+    return None if month is None else f"{month // 100}-{month % 100:02d}"
+
+
+def _shortage(gap: float) -> float | None:
+    """과부족(음수가 부족)을 부족 대수(양수, 채웠으면 0)로. 그 달 행이 없으면 None."""
+    if math.isnan(gap):
+        return None
+    return max(0.0, round(-gap, _DECIMALS))

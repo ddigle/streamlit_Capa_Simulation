@@ -828,6 +828,9 @@ def get_required_shortening(
 ) -> ShorteningPlan:
     """다섯 목표의 필요단축일정. 목표·공정 선택은 이 결과를 고르기만 하므로 다시 계산하지 않는다.
 
+    결과에는 CSV 가 호기 줄에 붙일 마스터 속성(`ShorteningPlan.unit_master`)도 실린다 — 호기
+    마스터에서만 나오므로 키의 마스터 내용 지문이 그것까지 덮는다.
+
     프레임은 해시하지 않는다 — 키(`required_shortening_cache_key`)가 내용 지문과 시나리오 키를
     모두 싣는다. `_required_equipment` 는 키의 시나리오 키로 받은 바로 그 소요대수여야 한다.
     호기 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).

@@ -1,4 +1,4 @@
-# Purpose: 필요단축일정 계산의 기여일 산식·단축 차례·최소 단축·가상 호기·후보 조건을 고정한다.
+# Purpose: 필요단축일정의 기여일 산식·단축 차례·최소 단축·가상 호기·후보 조건과 CSV 표를 고정한다.
 
 """필요단축일정(`services/required_shortening.py`).
 
@@ -28,6 +28,8 @@ from capa_simulation.services.process_cutoff import prepare_process_cutoff
 from capa_simulation.services.required_shortening import (
     KIND_NEW,
     KIND_SHORTENED,
+    LEVEL_COLUMN,
+    PROCESS_MONTH_EXPORT_COLUMNS,
     STATUS_CARRIED,
     STATUS_CARRIED_BOTH,
     STATUS_CARRIED_NEW,
@@ -37,10 +39,13 @@ from capa_simulation.services.required_shortening import (
     STATUS_SHORTENED,
     STATUS_WITH_NEW,
     TARGET_LEVELS,
+    UNIT_EXPORT_COLUMNS,
     LevelPlan,
     ShorteningPlan,
     plan_required_shortening,
+    process_month_export_frame,
     shortening_candidates,
+    unit_export_frame,
     unit_number,
 )
 from capa_simulation.services.securement_cross_check import dynamic_available_equipment
@@ -64,6 +69,7 @@ def _unit(
     storage: str = "N",
     removal: date | None = None,
     relocation: date | None = None,
+    attributes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     row: dict[str, Any] = dict.fromkeys(EQUIPMENT_COLUMNS)
     row.update(
@@ -81,6 +87,7 @@ def _unit(
             "Main 설비": parent,
             "반출일정": removal,
             "이설일정": relocation,
+            **(attributes or {}),
         }
     )
     return row
@@ -546,3 +553,288 @@ def test_a_process_without_a_cutoff_is_named() -> None:
     )
     assert plan.missing_cutoff == ("Mold",)
     assert plan.processes == ()
+
+
+# ---------------------------------------------------------------------- 내보내기(CSV 표)
+
+
+def _export_rows(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    return {
+        str(row["호기"]): {str(key): value for key, value in row.items()}
+        for row in frame.to_dict("records")
+    }
+
+
+def _worked_example() -> ShorteningPlan:
+    return _plan(
+        [
+            _unit("A1", date(2026, 5, 1)),
+            _unit("B2", date(2026, 5, 31)),
+            _unit("C3", date(2026, 6, 15)),
+        ],
+        {MAY: 12 + 20 / 31},
+    )
+
+
+def test_the_unit_export_has_the_user_facing_columns_in_order() -> None:
+    """칸 차례는 사용자가 읽는 차례다 — 목표·공정·호기 → 마스터 속성 → 일정 → 효과 → 대상 월."""
+    frame = unit_export_frame(_worked_example(), (1.0,))
+
+    assert tuple(frame.columns) == UNIT_EXPORT_COLUMNS
+    assert list(frame.columns) == [
+        "목표 확보율(%)",
+        "공정",
+        "Cut-off(일)",
+        "호기",
+        "구분",
+        "공정대분류",
+        "공정소분류",
+        "Model",
+        "동",
+        "층",
+        "투자구분",
+        "Main 설비",
+        "설비명",
+        "모듈 수",
+        "환산비",
+        "반입일정",
+        "확정상태",
+        "기존 Qual 완료일",
+        "기존 기여 시작일",
+        "목표 Qual 완료일",
+        "목표 기여 시작일",
+        "단축일수",
+        "늘어난 환산대수",
+        "대상 월",
+        "대상 월 부족 대수(단축 전)",
+        "대상 월 부족 대수(단축 후)",
+        "해소 기여 월",
+    ]
+    assert list(frame["호기"]) == ["A1", "B2", "C3"]
+    assert set(frame[LEVEL_COLUMN]) == {100}
+    assert set(frame["Cut-off(일)"]) == {10}
+
+
+def test_the_unit_export_dates_are_iso_and_contribution_starts_the_next_day() -> None:
+    """기여 시작일 = Qual + 1 — 달이 넘어가도(B2 기존 Qual 5/31 → 6/1)."""
+    rows = _export_rows(unit_export_frame(_worked_example(), (1.0,)))
+
+    assert rows["A1"]["기존 Qual 완료일"] == "2026-05-01"
+    assert rows["A1"]["기존 기여 시작일"] == "2026-05-02"
+    assert rows["A1"]["목표 Qual 완료일"] == "2026-04-20"
+    assert rows["A1"]["목표 기여 시작일"] == "2026-04-21"
+    assert rows["A1"]["단축일수"] == 11
+    assert rows["B2"]["기존 Qual 완료일"] == "2026-05-31"
+    assert rows["B2"]["기존 기여 시작일"] == "2026-06-01"
+    assert rows["B2"]["단축일수"] == 41
+    # 하루씩 더한 몫의 끝자리 찌꺼기는 털어 낸다(1.0 이 0.9999999999999993 으로 남지 않게).
+    assert rows["B2"]["늘어난 환산대수"] == 1.0
+    assert rows["C3"]["늘어난 환산대수"] == pytest.approx(20 / 31)
+    assert rows["A1"]["대상 월"] == "2026-05"
+    assert rows["A1"]["해소 기여 월"] == "2026-05"
+
+
+def test_the_unit_export_shows_the_target_months_shortage_before_and_after() -> None:
+    """5월 과부족 -2.0 → 부족 대수 단축 전 2.0, 단축 후 0(그 목표의 모든 단축을 반영한 뒤)."""
+    rows = _export_rows(unit_export_frame(_worked_example(), (1.0,)))
+
+    for name in ("A1", "B2", "C3"):
+        assert rows[name]["대상 월 부족 대수(단축 전)"] == pytest.approx(2.0)
+        assert rows[name]["대상 월 부족 대수(단축 후)"] == 0.0
+
+
+def test_the_shortage_after_stays_when_the_new_unit_cap_rolls_back() -> None:
+    """하루 남은 10월 — EQ1 을 바닥(10/20)까지 당겨도 1/31 만 늘고 가상 호기는 상한을 넘어 걷힌다.
+
+    호기 줄의 단축 후 부족은 그 달에 남은 부족(2 - 1/31)이다.
+    """
+    plan = plan_required_shortening(
+        equipment=_master([_unit("EQ1", date(2026, 11, 30))]),
+        downtime=_downtime(),
+        baseline=_baseline(4.0),
+        cutoff=_cutoff(),
+        required_equipment=_required({202610: 6.0}),
+        months=[202610],
+        today=date(2026, 10, 20),
+    )
+    assert _month(plan.at(1.0), 202610)["상태"] == STATUS_NEW_LIMIT
+    rows = _export_rows(unit_export_frame(plan, (1.0,)))
+
+    assert list(rows) == ["EQ1"]
+    assert rows["EQ1"]["목표 Qual 완료일"] == "2026-10-20"
+    assert rows["EQ1"]["대상 월"] == "2026-10"
+    assert rows["EQ1"]["대상 월 부족 대수(단축 전)"] == pytest.approx(2.0)
+    assert rows["EQ1"]["대상 월 부족 대수(단축 후)"] == pytest.approx(2 - 1 / 31)
+
+
+def test_a_module_group_exports_the_groups_shared_attributes() -> None:
+    """모듈 묶음은 한 줄이다 — 설비명은 모듈 행을 잇고, 환산비는 모듈 합, 반입일정은 가장 늦은 모듈.
+
+    묶음 안에서 같게 막힌 값(공정대분류·동·층·투자구분)은 그대로, 갈리는 글자(Model·확정상태)는
+    서로 다른 값을 모듈 차례로 잇는다.
+    """
+    shared = {"동": "C2", "층": "3F", "투자구분": "신규투자"}
+    plan = _plan(
+        [
+            _unit(
+                "APW01A",
+                date(2026, 5, 10),
+                ratio=0.5,
+                parent="APW01",
+                arrival=date(2026, 4, 1),
+                attributes={**shared, "Model": "BOND-X"},
+            ),
+            _unit(
+                "APW01B",
+                date(2026, 5, 12),
+                ratio=0.5,
+                parent="APW01",
+                arrival=date(2026, 4, 3),
+                confirmation="확정",
+                attributes={**shared, "Model": "BOND-Y"},
+            ),
+        ],
+        {MAY: 10 + (11 + 9) * 0.5 / 31 + 21 / 31},
+    )
+    rows = _export_rows(unit_export_frame(plan, (1.0,)))
+
+    assert list(rows) == ["APW01"]
+    unit = rows["APW01"]
+    assert unit["설비명"] == "APW01A, APW01B"
+    assert unit["Main 설비"] == "APW01"
+    assert unit["모듈 수"] == 2
+    assert unit["환산비"] == pytest.approx(1.0)
+    assert unit["공정대분류"] == "B/N"
+    assert unit["공정소분류"] == PROCESS
+    assert (unit["동"], unit["층"], unit["투자구분"]) == ("C2", "3F", "신규투자")
+    assert unit["Model"] == "BOND-X, BOND-Y"
+    assert unit["확정상태"] == "계획, 확정"
+    assert unit["반입일정"] == "2026-04-03"
+    # 묶음 Qual 은 가장 늦은 모듈(5/12)이다.
+    assert unit["기존 Qual 완료일"] == "2026-05-12"
+    assert unit["목표 Qual 완료일"] == "2026-04-20"
+    assert unit["단축일수"] == 22
+
+
+def test_a_single_unit_exports_its_own_master_row() -> None:
+    plan = _plan(
+        [
+            _unit(
+                "EQ7",
+                date(2026, 5, 10),
+                ratio=1.5,
+                arrival=date(2026, 4, 2),
+                attributes={"Model": "DA-9", "동": "C1", "층": "2F", "투자구분": "증설"},
+            )
+        ],
+        {MAY: 10 + 1.5 * 11 / 31 + 0.3},
+    )
+    unit = _export_rows(unit_export_frame(plan, (1.0,)))["EQ7"]
+
+    assert unit["설비명"] == "EQ7"
+    assert pd.isna(unit["Main 설비"])
+    assert unit["모듈 수"] == 1
+    assert unit["환산비"] == pytest.approx(1.5)
+    assert (unit["Model"], unit["동"], unit["층"]) == ("DA-9", "C1", "2F")
+    assert unit["투자구분"] == "증설"
+    assert unit["반입일정"] == "2026-04-02"
+    assert unit["확정상태"] == "계획"
+
+
+def test_virtual_units_export_blank_master_attributes_and_original_dates() -> None:
+    """「추가N」은 마스터에 없는 호기다 — 속성·기존 일정·단축일수는 빈칸, 목표 일정·효과만 있다."""
+    plan = _plan([], {MAY: 11.5})
+    frame = unit_export_frame(plan, (1.0,))
+    rows = _export_rows(frame)
+
+    assert list(rows) == ["추가1", "추가2"]
+    virtual = rows["추가2"]
+    assert virtual["구분"] == KIND_NEW
+    for column in (
+        "공정대분류",
+        "공정소분류",
+        "Model",
+        "동",
+        "층",
+        "투자구분",
+        "Main 설비",
+        "설비명",
+        "모듈 수",
+        "환산비",
+        "반입일정",
+        "확정상태",
+        "기존 Qual 완료일",
+        "기존 기여 시작일",
+        "단축일수",
+    ):
+        assert pd.isna(virtual[column]), column
+    assert virtual["목표 Qual 완료일"] == "2026-05-05"
+    assert virtual["목표 기여 시작일"] == "2026-05-06"
+    assert virtual["늘어난 환산대수"] == pytest.approx(16 / 31)
+    assert virtual["대상 월"] == "2026-05"
+    assert virtual["대상 월 부족 대수(단축 전)"] == pytest.approx(1.5)
+    assert virtual["대상 월 부족 대수(단축 후)"] == 0.0
+    # 빈칸은 CSV 에서 빈 칸이다(`<NA>`·`nan` 글자가 아니다).
+    csv = frame.to_csv(index=False)
+    assert "<NA>" not in csv and "nan" not in csv.lower()
+
+
+def test_the_month_list_carries_into_later_months_as_iso_months() -> None:
+    plan = _plan([_unit("EQ1", date(2026, 7, 15))], {MAY: 12.0, JUNE: 12.0})
+    rows = _export_rows(unit_export_frame(plan, (1.0,)))
+
+    assert rows["EQ1"]["해소 기여 월"] == "2026-05, 2026-06"
+
+
+def test_all_levels_export_stacks_five_level_blocks() -> None:
+    """목표 다섯을 한 파일로 — 목표마다 블록이고, 블록은 그 목표 하나만 낸 표와 같다."""
+    plan = _plan(
+        [_unit("EQ1", date(2026, 6, 25)), _unit("EQ2", date(2026, 7, 10))],
+        {MAY: 12.0},
+    )
+    frame = unit_export_frame(plan, TARGET_LEVELS)
+
+    assert tuple(frame.columns) == UNIT_EXPORT_COLUMNS
+    assert list(dict.fromkeys(frame[LEVEL_COLUMN])) == [90, 100, 110, 120, 130]
+    assert len(frame) == sum(len(plan.at(level).units) for level in TARGET_LEVELS)
+    blocks = [unit_export_frame(plan, (level,)) for level in TARGET_LEVELS]
+    pd.testing.assert_frame_equal(frame, pd.concat(blocks, ignore_index=True))
+    for level, block in zip(TARGET_LEVELS, blocks, strict=True):
+        assert set(block[LEVEL_COLUMN]) == {round(level * 100)}
+        assert len(block) == len(plan.at(level).units) > 0
+
+
+def test_the_exports_follow_the_given_process_order_and_scope() -> None:
+    """공정은 넘긴 차례(화면의 표시순서)이고 넘기지 않은 공정은 빠진다.
+
+    공정·월 표에는 목표 칸이 앞에 붙고 목표마다 블록이다.
+    """
+    required = pd.concat([_required({MAY: 12.0}), _required({MAY: 6.0}, process="Mold")])
+    plan = plan_required_shortening(
+        equipment=_master(
+            [_unit("EQ1", date(2026, 6, 25)), _unit("MD1", date(2026, 6, 20), process="Mold")]
+        ),
+        downtime=_downtime(),
+        baseline=pd.concat([_baseline(10.0), _baseline(5.0, process="Mold")], ignore_index=True),
+        cutoff=pd.concat([_cutoff(), _cutoff(process="Mold")], ignore_index=True),
+        required_equipment=required,
+        months=[MAY],
+        today=EARLY,
+    )
+    assert plan.processes == (PROCESS, "Mold")
+
+    ordered = unit_export_frame(plan, (1.0,), ["Mold", PROCESS])
+    assert list(dict.fromkeys(ordered["공정"])) == ["Mold", PROCESS]
+    only_mold = unit_export_frame(plan, (1.0,), ["Mold"])
+    assert set(only_mold["공정"]) == {"Mold"}
+
+    months = process_month_export_frame(plan, (1.0, 1.1), ["Mold", PROCESS], [MAY])
+    assert tuple(months.columns) == PROCESS_MONTH_EXPORT_COLUMNS
+    assert list(months.columns[:2]) == [LEVEL_COLUMN, "공정"]
+    assert list(zip(months[LEVEL_COLUMN], months["공정"], strict=True)) == [
+        (100, "Mold"),
+        (100, PROCESS),
+        (110, "Mold"),
+        (110, PROCESS),
+    ]
+    assert process_month_export_frame(plan, (1.0,), ["Mold"], [JUNE]).empty
