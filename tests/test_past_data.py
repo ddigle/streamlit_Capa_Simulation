@@ -12,6 +12,7 @@ from capa_simulation.services.past_data import (
     PAST_DETAIL_COLUMNS,
     PAST_MONTH_COLUMNS,
     PAST_SECUREMENT_COLUMNS,
+    display_month_range,
     empty_past_table,
     merge_past_frame,
     merge_past_months,
@@ -667,3 +668,16 @@ def test_a_paste_the_dialog_cannot_read_queues_nothing_so_save_cannot_wipe_the_t
     kept = repository.load_global_past_data()
     assert kept.version == stored.version
     pd.testing.assert_frame_equal(kept.securement, stored.securement)
+
+
+def test_the_display_range_reaches_back_to_the_past_months() -> None:
+    """HOME 이 그리는 달(= HOME 캐시 키의 달). 과거 구간이 원천 범위를 넓히고 조회기간이 자른다."""
+    widened = display_month_range((202501, 202812), (202607, 202812), [202601, 202602])
+    assert (widened.available_start, widened.available_end) == (202601, 202812)
+    assert (widened.start, widened.end, widened.empty) == (202601, 202812, False)
+
+    plain = display_month_range((202501, 202812), (202607, 202812), [])
+    assert (plain.start, plain.end) == (202607, 202812)
+
+    outside = display_month_range((202501, 202512), (202607, 202812), [])
+    assert outside.empty

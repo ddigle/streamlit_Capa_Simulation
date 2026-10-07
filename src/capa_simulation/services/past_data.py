@@ -14,6 +14,9 @@ B/N 순위는 확보율 오름차순이다. 그래서 공정명을 따로 받지
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
@@ -57,6 +60,41 @@ _BLANK_AS_ZERO: dict[str, bool] = {
 }
 # 못 읽는 칸 예시는 이만큼만 적는다. 사용자가 어느 행인지 찾을 수 있으면 된다.
 _EXAMPLE_LIMIT = 3
+
+
+@dataclass(frozen=True)
+class DisplayMonthRange:
+    """HOME 이 그리는 달. 계산 원천의 범위를 과거 구간만큼 넓힌 뒤 조회기간으로 자른다."""
+
+    available_start: int
+    available_end: int
+    start: int
+    end: int
+
+    @property
+    def empty(self) -> bool:
+        """조회기간과 데이터 범위가 겹치지 않는다."""
+        return self.start > self.end
+
+
+def display_month_range(
+    selected: tuple[int, int], source: tuple[int, int], past_months: Iterable[int]
+) -> DisplayMonthRange:
+    """조회기간 `selected` 와 계산 원천 범위 `source` 를 과거 구간 달로 넓혀 맞댄 범위.
+
+    과거 구간은 계산 원천의 월 범위 밖에 있으므로, 원천 범위로만 자르면 넣어 둔 과거가 조회 범위에
+    들어오지 못한다. **HOME 계산 캐시 키의 달이 이 값이다** — HOME 과 같은 계획을 보이는 화면이
+    이 함수로 범위를 내야 키가 맞아 캐시를 나눈다(가용설비 현황 `필요단축일정`).
+    """
+    months = [int(month) for month in past_months]
+    available_start = min([int(source[0]), *months])
+    available_end = max([int(source[1]), *months])
+    return DisplayMonthRange(
+        available_start=available_start,
+        available_end=available_end,
+        start=max(int(selected[0]), available_start),
+        end=min(int(selected[1]), available_end),
+    )
 
 
 def empty_past_table(columns: tuple[str, ...]) -> pd.DataFrame:

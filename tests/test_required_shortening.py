@@ -17,17 +17,23 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from capa_simulation.services.equipment_availability import build_equipment_lifecycle_spans
 from capa_simulation.services.equipment_contract import EQUIPMENT_COLUMNS
+from capa_simulation.services.equipment_validation import prepare_equipment_master
 from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_availability,
+    span_date_range,
 )
 from capa_simulation.services.process_cutoff import prepare_process_cutoff
 from capa_simulation.services.required_shortening import (
     KIND_NEW,
     KIND_SHORTENED,
     STATUS_CARRIED,
+    STATUS_CARRIED_BOTH,
+    STATUS_CARRIED_NEW,
     STATUS_EXPIRED,
     STATUS_MET,
+    STATUS_NEW_LIMIT,
     STATUS_SHORTENED,
     STATUS_WITH_NEW,
     TARGET_LEVELS,
@@ -184,26 +190,106 @@ def test_the_worked_example_pulls_each_unit_only_as_far_as_needed() -> None:
     assert units["A1"]["해소 기여 월"] == str(MAY)
 
 
+def _engine(
+    rows: list[dict[str, Any]],
+    downtime: pd.DataFrame,
+    months: list[int],
+    *,
+    baseline: float = 10.0,
+) -> dict[int, float]:
+    """Static/Dynamic 탭과 같은 길(넓힌 구간 → 월별 안분 → 환산 소계)로 잰 Dynamic 가용."""
+    master = _master(rows)
+    span = span_date_range(months, _cutoff())
+    assert span is not None
+    spans = build_equipment_lifecycle_spans(
+        master, downtime, start_date=span[0], end_date=span[1], with_unit_share=True
+    )
+    prepared = prepare_equipment_master(master)
+    ratios = {
+        str(unit): float(ratio)
+        for unit, ratio in zip(prepared["설비명"], prepared["환산비"], strict=True)
+    }
+    monthly = build_monthly_equipment_availability(
+        spans, _baseline(baseline), _cutoff(), months, conversion_ratios=ratios
+    )
+    dynamic = dynamic_available_equipment(monthly)
+    return {
+        int(month): float(value)
+        for month, value in zip(dynamic["생산계획년월"], dynamic["가용대수"], strict=True)
+    }
+
+
 def test_the_unit_already_counted_matches_the_dynamic_availability() -> None:
     """가용은 Static/Dynamic 탭의 환산 소계와 같은 길이다. A 의 5/2 부터의 20일이 이미 들어 있다."""
-    units = _master([_unit("A1", date(2026, 5, 1))])
     plan = _plan([_unit("A1", date(2026, 5, 1))], {MAY: 11.0})
-    from capa_simulation.services.equipment_availability import build_equipment_lifecycle_spans
 
-    spans = build_equipment_lifecycle_spans(
-        units,
-        _downtime(),
-        start_date=date(2026, 4, 21),
-        end_date=date(2026, 5, 21),
-        with_unit_share=True,
-    )
-    monthly = build_monthly_equipment_availability(spans, _baseline(10.0), _cutoff(), [MAY])
-    dynamic = dynamic_available_equipment(monthly)
-
-    assert _month(plan.at(1.0), MAY)["가용대수"] == pytest.approx(
-        float(dynamic["가용대수"].iloc[0])
-    )
+    engine = _engine([_unit("A1", date(2026, 5, 1))], _downtime(), [MAY])
+    assert _month(plan.at(1.0), MAY)["가용대수"] == pytest.approx(engine[MAY])
+    assert engine[MAY] == pytest.approx(10 + 20 / 31)
     assert _month(plan.at(1.0), MAY)["소요대수"] == pytest.approx(11.0)
+
+
+def test_an_always_available_unit_fills_the_first_month_exactly() -> None:
+    """조회 전부터 가용인 호기는 **첫 달**에도 정확히 1대다 — 엔진도 계산도.
+
+    호기 구간을 첫 구간의 첫날(`first_day`)부터 만들면 그 첫날의 기여를 정하는 전날 상태가 빠져
+    호기마다 1/31 씩 모자랐다. 늘 가용인 30대가 29.03대로 세어지고 가짜 「추가1」이 붙었다
+    (2026-10-07 리뷰). `span_date_range` 가 앞 경계부터 돌려주어 Static/Dynamic 도 함께 고쳐진다.
+    """
+    old = [
+        _unit(f"OLD{i}", date(2026, 1, 10), arrival=date(2026, 1, 1), confirmation="완료")
+        for i in range(30)
+    ]
+    assert _engine(old, _downtime(), [MAY, JUNE], baseline=0.0) == pytest.approx(
+        {MAY: 30.0, JUNE: 30.0}
+    )
+    level = _plan(old, {MAY: 30.0, JUNE: 30.0}, baseline=0.0).at(1.0)
+    assert _month(level, MAY)["가용대수"] == pytest.approx(30.0)
+    assert _month(level, MAY)["상태"] == STATUS_MET
+    assert level.units.empty
+
+
+def test_the_engine_agrees_with_the_plan_once_the_quals_are_moved() -> None:
+    """계획대로 Qual 을 옮기고 가상 호기를 호기로 더해 엔진에 다시 넣으면 달마다 단축 후 가용이다.
+
+    모듈 묶음(환산비가 다른 두 모듈)·환산비 1.5·비가동이 섞인 경우다. 반입은 하한이 아니므로
+    (사용자 결정) 옮긴 호기의 반입은 목표 Qual 로 당긴다 — 엔진은 반입 전을 입고 예정으로 센다.
+    """
+    months = [MAY, JUNE, 202607, 202608]
+    rows = [
+        _unit("OLD1", date(2026, 1, 10), arrival=date(2026, 1, 1)),
+        _unit("U1", date(2026, 6, 15), ratio=1.5),
+        _unit("M1", date(2026, 6, 10), ratio=0.5, parent="G9"),
+        _unit("M2", date(2026, 7, 5), ratio=0.7, parent="G9"),
+        _unit("U3", date(2026, 7, 20)),
+    ]
+    downtime = _downtime(
+        [("U3", date(2026, 6, 1), date(2026, 6, 5)), ("U1", date(2026, 5, 10), date(2026, 5, 12))]
+    )
+    need = {MAY: 3.0, JUNE: 4.0, 202607: 5.0, 202608: 5.0}
+    level = _plan(rows, need, baseline=0.0, downtime=downtime, months=months).at(1.0)
+    statuses = [_month(level, month)["상태"] for month in months]
+    assert statuses == [STATUS_SHORTENED, STATUS_SHORTENED, STATUS_WITH_NEW, STATUS_CARRIED_NEW]
+
+    targets: dict[str, date] = {}
+    moved = []
+    for unit in level.units.to_dict("records"):
+        target = unit["목표 Qual"]
+        assert isinstance(target, date)
+        if unit["구분"] == KIND_NEW:
+            moved.append(_unit(str(unit["호기"]), target, arrival=target))
+        else:
+            targets[str(unit["호기"])] = target
+    for row in rows:
+        target = targets.get(str(row["Main 설비"] or row["설비명"]))
+        if target is not None and row["Qual일정"] > target:
+            row = {**row, "Qual일정": target, "반입일정": min(row["반입일정"], target)}
+        moved.append(row)
+
+    engine = _engine(moved, downtime, months, baseline=0.0)
+    for month in months:
+        assert engine[month] == pytest.approx(_month(level, month)["단축후가용대수"])
+        assert engine[month] >= need[month] - 1e-9
 
 
 def test_a_tie_goes_to_the_lower_unit_number() -> None:
@@ -294,8 +380,49 @@ def test_an_earlier_pull_carries_into_later_months() -> None:
     assert list(units) == ["EQ1", "추가1"]
     assert _month(level, MAY)["상태"] == STATUS_WITH_NEW
     june = _month(level, JUNE)
-    assert june["상태"] == STATUS_CARRIED
+    # 6월은 당긴 EQ1 과 5월의 추가1 이 함께 채운다.
+    assert june["상태"] == STATUS_CARRIED_BOTH
     assert june["단축후가용대수"] == pytest.approx(12.0)
+
+
+def test_a_later_month_names_what_covered_it() -> None:
+    """손대지 않고 채워진 달은 앞 달의 무엇이 채웠는지 말한다 — 단축이면 단축, 가상 호기면 신규."""
+    pulled = _plan([_unit("EQ1", date(2026, 7, 15))], {MAY: 11.0, JUNE: 11.0}).at(1.0)
+    assert _month(pulled, JUNE)["상태"] == STATUS_CARRIED
+
+    added = _plan([], {MAY: 11.0, JUNE: 11.0}).at(1.0)
+    assert list(added.units["호기"]) == ["추가1"]
+    assert _month(added, JUNE)["상태"] == STATUS_CARRIED_NEW
+
+
+def test_hitting_the_new_unit_cap_rolls_that_month_back() -> None:
+    """하루 남은 10월에 2.0대가 모자라면 가상 호기 62대(한 대 1/31)가 필요해 상한(50)을 넘는다.
+
+    그 달에 더한 가상 호기는 모두 걷고 「신규로도 못 채움」으로 남은 부족을 보인다. 11월은 걷은
+    뒤의 가용으로 제 가상 호기(한 대씩 온전한 1대)를 받는다 — 걷지 않으면 11월이 그 50대를 공짜로
+    받아 실제 부족 10대를 가렸다(2026-10-07 리뷰).
+    """
+    months = [202610, 202611, 202612]
+    plan = plan_required_shortening(
+        equipment=_master([]),
+        downtime=_downtime(),
+        baseline=_baseline(4.0),
+        cutoff=_cutoff(),
+        required_equipment=_required({202610: 6.0, 202611: 14.0, 202612: 14.0}),
+        months=months,
+        today=date(2026, 10, 20),
+    )
+    level = plan.at(1.0)
+    october = _month(level, 202610)
+    assert october["상태"] == STATUS_NEW_LIMIT
+    assert october["단축후가용대수"] == pytest.approx(4.0)
+    assert october["단축후과부족"] == pytest.approx(-2.0)
+    # 남은 것은 11월 몫 10대뿐이다(KPI 「신규 필요」 가 세는 표).
+    assert len(level.units) == 10
+    assert set(level.units["대상 월"]) == {202611}
+    assert list(level.units["늘어난 환산대수"]) == pytest.approx([1.0] * 10)
+    assert _month(level, 202611)["단축후가용대수"] == pytest.approx(14.0)
+    assert _month(level, 202612)["상태"] == STATUS_CARRIED_NEW
 
 
 def test_module_rows_move_together_as_one_unit() -> None:

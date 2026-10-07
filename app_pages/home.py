@@ -137,6 +137,7 @@ from capa_simulation.services.month_columns import (
 )
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.past_data import (
+    display_month_range,
     merge_past_frame,
     merge_past_months,
     merge_past_plan_detail,
@@ -275,11 +276,14 @@ try:
             securement=past_profile.securement.iloc[:0],
         )
     past_months = [int(value) for value in past_profile.monthly["생산계획년월"]]
-    available_start = min([source_start, *past_months])
-    available_end = max([source_end, *past_months])
-    effective_start = max(selected_start, available_start)
-    effective_end = min(selected_end, available_end)
-    if effective_start > effective_end:
+    # 이 범위가 HOME 계산 캐시 키의 달이다. 같은 계획을 보이는 화면(필요단축일정)이 같은 함수로
+    # 범위를 내야 캐시를 나눈다.
+    display_range = display_month_range(
+        (selected_start, selected_end), (source_start, source_end), past_months
+    )
+    available_start, available_end = display_range.available_start, display_range.available_end
+    effective_start, effective_end = display_range.start, display_range.end
+    if display_range.empty:
         show_month_range_unavailable()
         raise ValueError(
             "선택 범위에 생산계획 데이터가 없습니다 "

@@ -38,8 +38,17 @@ Dynamic 가용대수(호기 일정을 Cut-off W/D 구간에 일할한 환산대�
    않는다.
 4. 후보가 바닥나면 환산비 1 의 가상 호기 「추가N」을 더한다. Qual 은 그 달의 남은 부족을 덮는 가장
    늦은 날이고, 한 대로 모자라면 바닥 날짜로 한 대씩 더 둔다. 가상 호기도 뒤 달에 남는다.
+   **오늘이 구간 안인 달은 한 대가 남은 날만큼만 덮는다** — 오늘이 구간 끝에 가까울수록 대수가 늘고,
+   그 대수가 뒤 달에 온전한 1대씩으로 남아 뒤 달 가용이 필요보다 크게 넘친다. 그래도 그 달을 다 채울
+   때까지 더한다(사용자 결정 2026-10-07: 지금대로).
 5. 그 달 구간이 이미 오늘로 끝났으면(`max(구간 앞, 오늘) >= 구간 끝`) 당겨서 채울 수 없으므로
    「단축으로 못 채움(기한 지남)」으로 두고 넘어간다.
+6. 한 달에 가상 호기가 상한(`_MAX_VIRTUAL_UNITS_PER_MONTH`)을 넘으면 그 달에 더한 가상 호기를
+   **모두 걷고** 「신규로도 못 채움(남은 날 부족)」으로 남은 부족을 보인다. 남겨 두면 뒤 달이 그
+   몫을 공짜로 받아 실제 부족을 가린다. 그 달에 당긴 실제 호기는 그대로 둔다.
+7. 원래 모자랐는데 그 달에 손대지 않고 채워진 달은 무엇이 채웠는지 적는다 — 앞 달의 단축이면
+   「앞달 단축으로 해소」, 앞 달의 가상 호기면 「앞달 신규로 해소」, 둘 다면
+   「앞달 단축·신규로 해소」.
 
 ## 후보
 
@@ -90,6 +99,8 @@ __all__ = [
     "KIND_SHORTENED",
     "PROCESS_MONTH_COLUMNS",
     "STATUS_CARRIED",
+    "STATUS_CARRIED_BOTH",
+    "STATUS_CARRIED_NEW",
     "STATUS_EXPIRED",
     "STATUS_MET",
     "STATUS_NEW_LIMIT",
@@ -122,6 +133,8 @@ KIND_NEW = "신규"
 STATUS_MET = "충족"
 STATUS_SHORTENED = "단축으로 해소"
 STATUS_CARRIED = "앞달 단축으로 해소"
+STATUS_CARRIED_NEW = "앞달 신규로 해소"
+STATUS_CARRIED_BOTH = "앞달 단축·신규로 해소"
 STATUS_WITH_NEW = "신규 포함 해소"
 STATUS_EXPIRED = "단축으로 못 채움(기한 지남)"
 STATUS_NEW_LIMIT = "신규로도 못 채움(남은 날 부족)"
@@ -158,8 +171,8 @@ _ONE_DAY = timedelta(days=1)
 # 부동소수 끝자리를 털어 내는 자리. `securement_rate._ceil_positive` 와 같은 9자리다 — 0 이어야 할
 # 과부족이 -1e-15 로 남으면 그것이 「부족」으로 읽혀 호기 하나를 쓸데없이 당긴다.
 _DECIMALS = 9
-# 한 공정·한 달에 더하는 가상 호기의 상한. 구간이 거의 지난 이번 달은 한 대가 1/31 대만 덮어
-# 수십 대가 필요하다고 나올 수 있다 — 그 이상은 「신규로도 못 채움」으로 알린다.
+# 한 공정·한 달에 더하는 가상 호기의 상한(폭주 방지). 구간이 거의 지난 이번 달은 한 대가 1/31 대만
+# 덮어 수십 대가 필요하다고 나올 수 있다 — 넘으면 그 달의 가상 호기를 걷고 「신규로도 못 채움」이다.
 _MAX_VIRTUAL_UNITS_PER_MONTH = 50
 _TRAILING_NUMBER = re.compile(r"(\d+)\s*$")
 
@@ -572,6 +585,11 @@ def _plan_process(
                 action = action or STATUS_SHORTENED
                 continue
             if added >= _MAX_VIRTUAL_UNITS_PER_MONTH:
+                # 그 달에 더한 가상 호기를 **모두 걷는다.** 남기면 뒤 달이 그 몫을 공짜로 받아
+                # 실제 부족을 가린다 — 뒤 달은 걷은 뒤의 가용으로 제 가상 호기를 따로 받는다.
+                for virtual in virtuals[-added:]:
+                    _remove_virtual(virtual, windows, after)
+                del virtuals[-added:]
                 action = STATUS_NEW_LIMIT
                 break
             shortfall = required[index] * level - after[index]
@@ -584,16 +602,30 @@ def _plan_process(
             action = STATUS_WITH_NEW
         actions.append(action)
     status = [
-        _month_status(base[index] - required[index] * level, actions[index])
-        for index in range(len(windows))
+        _month_status(
+            base[index] - required[index] * level,
+            actions[index],
+            pulled=any(_adds(state.extra, window.year_month) for state in states),
+            added=any(_adds(virtual.extra, window.year_month) for virtual in virtuals),
+        )
+        for index, window in enumerate(windows)
     ]
     return _ProcessOutcome(windows, base, after, required, status, states, virtuals)
 
 
-def _month_status(before_gap: float, action: str) -> str:
+def _adds(extra: Mapping[int, float], year_month: int) -> bool:
+    return round(extra.get(year_month, 0.0), _DECIMALS) > 0
+
+
+def _month_status(before_gap: float, action: str, *, pulled: bool, added: bool) -> str:
+    """원래 모자랐는데 이 달에 손대지 않고 채워졌으면, 앞 달의 무엇이 채웠는지를 가른다."""
     if not _short(-before_gap):
         return STATUS_MET
-    return action or STATUS_CARRIED
+    if action:
+        return action
+    if added and pulled:
+        return STATUS_CARRIED_BOTH
+    return STATUS_CARRIED_NEW if added else STATUS_CARRIED
 
 
 def _next_candidate(states: list[_UnitState], floor: date, tried: set[str]) -> _UnitState | None:
@@ -648,6 +680,12 @@ def _virtual_unit(name: str, window: WdWindow, floor: date, shortfall: float) ->
     return _VirtualState(
         name=name, target=target, month=window.year_month, gain=covered / window.days
     )
+
+
+def _remove_virtual(virtual: _VirtualState, windows: list[WdWindow], after: list[float]) -> None:
+    """`_add_virtual` 이 더한 몫을 그대로 뺀다."""
+    for index, window in enumerate(windows):
+        after[index] -= virtual.extra.get(window.year_month, 0.0)
 
 
 def _add_virtual(virtual: _VirtualState, windows: list[WdWindow], after: list[float]) -> None:

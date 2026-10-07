@@ -20,6 +20,7 @@ from capa_simulation.components.required_shortening_panel import (
     SHORTENING_LEVEL_KEY,
     SHORTENING_PROCESS_KEY,
 )
+from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.navigation import EQUIPMENT_SHORTENING_TAB
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -40,10 +41,21 @@ def _months(count: int = 6) -> list[int]:
     return months
 
 
-def _script(database_path: Path, *, fail_scenario: bool = False) -> str:
+def _shift(month: int, delta: int) -> int:
+    year, index = divmod(month // 100 * 12 + month % 100 - 1 + delta, 12)
+    return year * 100 + index + 1
+
+
+def _script(
+    database_path: Path,
+    *,
+    fail_scenario: bool = False,
+    past_months: tuple[int, ...] = (),
+    sidebar_first: int | None = None,
+) -> str:
     simulation_path = database_path.with_name(f"{database_path.stem}_simulation.duckdb")
     months = _months()
-    first, last = months[0], months[-1]
+    first, last = sidebar_first or months[0], months[-1]
     return f"""
 from pathlib import Path
 from types import SimpleNamespace
@@ -90,7 +102,14 @@ originals = (
     simulation_cache.get_scenario_capacity_and_demand,
     simulation_cache.get_home_simulation,
     persistence_cache.load_global_securement_threshold,
+    persistence_cache.load_global_past_data,
 )
+
+
+def home_simulation(**kwargs):
+    # HOME 과 같은 키로 부르는지 보려고 받은 키를 잡아 둔다.
+    st.session_state["captured_home_key"] = kwargs["cache_key"]
+    return density, None, wafer, None, None, None
 
 
 def missing_scenario(_tables, _version):
@@ -106,11 +125,12 @@ simulation_cache.get_scenario_capacity_and_demand = lambda cache_key, **_kwargs:
     pd.DataFrame(),
     required.loc[required["생산계획년월"].between(cache_key[2], cache_key[3])],
 )
-simulation_cache.get_home_simulation = lambda **_kwargs: (
-    density, None, wafer, None, None, None
-)
+simulation_cache.get_home_simulation = home_simulation
 persistence_cache.load_global_securement_threshold = lambda _path: SimpleNamespace(
     thresholds=SecurementThresholds(1.095, 0.995)
+)
+persistence_cache.load_global_past_data = lambda _path: SimpleNamespace(
+    monthly=pd.DataFrame({{"생산계획년월": {list(past_months)!r}}})
 )
 try:
     st.session_state["production_month_range_v2"] = ("{first // 100}-{first % 100:02d}",
@@ -125,6 +145,7 @@ finally:
         simulation_cache.get_scenario_capacity_and_demand,
         simulation_cache.get_home_simulation,
         persistence_cache.load_global_securement_threshold,
+        persistence_cache.load_global_past_data,
     ) = originals
 """
 
@@ -146,10 +167,20 @@ def _database(tmp_path: Path) -> Path:
     return database_path
 
 
-def _run(database_path: Path, *, fail_scenario: bool = False) -> AppTest:
-    app = AppTest.from_string(
-        _script(database_path, fail_scenario=fail_scenario), default_timeout=120
-    ).run()
+def _run(
+    database_path: Path,
+    *,
+    fail_scenario: bool = False,
+    past_months: tuple[int, ...] = (),
+    sidebar_first: int | None = None,
+) -> AppTest:
+    script = _script(
+        database_path,
+        fail_scenario=fail_scenario,
+        past_months=past_months,
+        sidebar_first=sidebar_first,
+    )
+    app = AppTest.from_string(script, default_timeout=120).run()
     return _open_tab(app, TAB)
 
 
@@ -241,4 +272,32 @@ def test_a_missing_scenario_stops_only_this_tab(tmp_path: Path) -> None:
     _open_tab(app, "Preference")
     assert not app.exception
     assert any(button.label == "Cut-off 저장" for button in app.button)
+    clear_equipment_repository()
+
+
+def test_the_plan_summary_uses_homes_key_with_past_data(tmp_path: Path) -> None:
+    """Density·Wafer 는 HOME 과 **같은 키**로 부른다 — 과거 구간(Past Data)이 있으면 그 달까지다.
+
+    HOME 의 키 달은 조회기간 ∩ (계획 범위를 과거 달까지 넓힌 범위)다. 계획 범위만 보면 과거 구간이
+    있을 때 키가 갈려 HOME 계산을 한 번 더 했다(2026-10-07 리뷰).
+    """
+    months = _months()
+    past = _shift(months[0], -6)
+    app = _run(_database(tmp_path), past_months=(past,), sidebar_first=_shift(months[0], -12))
+
+    assert not app.exception
+    key = app.session_state["captured_home_key"]
+    assert (key[2], key[3]) == (past, months[-1])
+    clear_equipment_repository()
+
+
+def test_an_empty_fleet_explains_the_empty_card(tmp_path: Path) -> None:
+    """호기가 없고 샘플도 끄면 고를 조건이 없다 — 카드를 비워 두지 않고 까닭을 한 줄 적는다."""
+    app = _run(_database(tmp_path))
+    app = app.toggle(key=SAMPLE_TOGGLE_KEY).set_value(False).run()
+
+    assert not app.exception
+    assert any("조회할 호기가 없습니다" in str(item.value) for item in app.sidebar.caption)
+    assert any("등록된 호기가 없습니다" in str(item.value) for item in app.info)
+    assert not _cards(app)
     clear_equipment_repository()

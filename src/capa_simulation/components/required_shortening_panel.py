@@ -34,6 +34,7 @@ from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.typography import FIGURE_CLASS
 from capa_simulation.design import tokens
+from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS, PAST_DATA_TOGGLE_KEY
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PageContext,
@@ -43,6 +44,7 @@ from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
+from capa_simulation.services.past_data import display_month_range
 from capa_simulation.services.required_shortening import (
     DEFAULT_TARGET_LEVEL,
     KIND_NEW,
@@ -392,21 +394,35 @@ def _thresholds() -> SecurementThresholds:
 def _lob_rows(context: PageContext, months: Sequence[int]) -> _LobRows:
     """Density·Wafer 계획. HOME 과 **같은 캐시 키**로 부른다.
 
-    HOME 을 본 뒤면 다시 계산하지 않는다.
+    키의 달은 HOME 과 같은 함수(`past_data.display_month_range`)로 낸다 — 조회기간 ∩ 계산 원천
+    범위를 **과거 구간(Past Data) 달까지 넓힌** 범위이고, 과거 구간을 넣을지는 HOME 의 `Past Data
+    포함` 토글 값을 그대로 따른다. 그래야 HOME 을 본 뒤에는 다시 계산하지 않는다.
     """
     try:
-        source_start, source_end = available_month_range(
-            context.reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN"
+        source = available_month_range(context.reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN")
+        include_past = bool(
+            st.session_state.get(PAST_DATA_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY])
         )
-        start = max(context.selected_start_month, source_start)
-        end = min(context.selected_end_month, source_end)
-        if start > end:
+        past_months = (
+            [
+                int(month)
+                for month in persistence_cache.load_global_past_data(
+                    str(DUCKDB_PATH.resolve())
+                ).monthly["생산계획년월"]
+            ]
+            if include_past
+            else []
+        )
+        display_range = display_month_range(
+            (context.selected_start_month, context.selected_end_month), source, past_months
+        )
+        if display_range.empty:
             return _LobRows({}, {}, "조회기간에 생산계획이 없습니다.")
         home_key = simulation_cache.build_home_simulation_cache_key(
             reference_version=context.reference_version,
             scenario_token=str(context.active_scenario["content_token"]),
-            start_month=start,
-            end_month=end,
+            start_month=display_range.start,
+            end_month=display_range.end,
             display_order=context.reference_tables["RQ_DISPLAY_ORDER"],
         )
         density, _, wafer, *_ = simulation_cache.get_home_simulation(

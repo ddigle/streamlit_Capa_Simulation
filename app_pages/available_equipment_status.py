@@ -200,11 +200,11 @@ dashboard_baseline = (
 # 탭을 옮겨도 편 채로 남는다(카드를 세우는 탭은 `navigation` 의 `card_labels` 선언과 같아야 한다).
 # Preference(Cut-off)·RawData 의 표 보기 설정은 그 표의 입력 폼과 한 몸이라 본문에 둔다.
 conditions_card = condition_card("설비 조회 조건", name="equipment") if viewing_tab_open else None
-# 호기가 없고 샘플도 끈 Main 에는 고를 조건이 없다. 빈 카드 대신 까닭을 한 줄 적는다 — 카드를
-# 아예 빼면 사이드바에서 이 화면의 조건 자리가 통째로 사라져 까닭을 알 수 없다.
+# 호기가 없고 샘플도 끈 Main·필요단축일정에는 고를 조건이 없다. 빈 카드 대신 까닭을 한 줄 적는다
+# — 카드를 아예 빼면 사이드바에서 이 화면의 조건 자리가 통째로 사라져 까닭을 알 수 없다.
 if (
     conditions_card is not None
-    and not tab_is_hidden(main_tab)
+    and (not tab_is_hidden(main_tab) or not tab_is_hidden(shortening_tab))
     and using_dashboard_sample
     and not show_sample_fleet
 ):
