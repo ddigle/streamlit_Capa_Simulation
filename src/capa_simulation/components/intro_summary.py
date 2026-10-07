@@ -68,7 +68,7 @@ from capa_simulation.components.intro_overlay import (
     SUMMARY_LABEL_ID,
     SUMMARY_LABEL_WAITING,
 )
-from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.theme_toggle import SIDEBAR_HEADER_SLOT
 from capa_simulation.design import tokens
 from capa_simulation.io.reference_cache import reference_version_for_revision
@@ -123,6 +123,10 @@ INTRO_SUMMARY_KEY = "capa_intro_summary"
 # 본다(그 조회가 회차마다 7~9ms 였다). 이 세션에서 공식버전을 지정하면
 # `forget_intro_summary_check` 가 곧바로 다시 보게 한다.
 _SESSION_KEY = "intro_official_summary"
+# 이 세션이 요약을 한 번이라도 보냈는가. 아직이면 입장 화면이 로딩을 덮는 때라 GAP 도 페이지 앞에서
+# 함께 만든다. 공식버전을 지정한 뒤 확인을 비워도(`forget_intro_summary_check`) 이 표지는 남는다 —
+# 저장한 회차에 HOME 앞에서 무거운 GAP 을 만들지 않게.
+_SEEN_KEY = "intro_official_summary_seen"
 RECHECK_SECONDS = 30.0
 # 일시적일 수 있는 실패. 이것만 서버 캐시에 남기지 않고 다음 확인 때(`RECHECK_SECONDS` 뒤)
 # 다시 해 본다. 그 밖의 실패는 다시 해도 같은 결과(데이터 오류)라 「만들지 못함」을 서버
@@ -164,14 +168,22 @@ def load_toggle_profiles(database_path: str) -> ToggleProfiles:
 
 
 # 받은 값을 입장 화면 JS 에 넘기기만 한다. 오버레이가 아직 없으면 창에 두고 뜰 때 읽는다.
+#
+# **다시 받아 오기 한 길만 파이썬으로 보낸다.** 입장 화면이 Summary 를 열 때 「준비 중」 몫(페이지
+# 뒤에서 만드는 GAP)이 있으면 `window.__capaSummaryRefresh` 를 부른다(intro.js — 한 번 열 때 한 번).
+# 그 trigger 가 rerun 한 번을 부르고(덮개가 앱을 가리고 있다), 그 회차가 페이지 뒤에서 만들어 둔
+# 값을 보낸다(`_refresh_requested`). 그 밖에는 아무것도 보내지 않는다 — rerun 은 첫 실행 도중이면 그
+# 실행을 끊는다.
+_REFRESH = "refresh"
 _JS = """
 export default function (component) {
   const data = component.data || null;
   window.__capaSummary = data;
+  window.__capaSummaryRefresh = () => component.setTriggerValue("REFRESH", Date.now());
   const api = window.__capaIntro;
   if (api && typeof api.setSummary === "function") api.setSummary(data);
 }
-"""
+""".replace("REFRESH", _REFRESH)
 
 _SUMMARY = st.components.v2.component("capa_intro_summary", js=_JS)
 
@@ -543,6 +555,8 @@ def _toggle_parts(
     thresholds: SecurementThresholds,
     context: Mapping[str, Any],
     *,
+    order_version: int,
+    labels: ProcessLabels,
     defer: bool,
 ) -> tuple[dict[str, Any], bool]:
     """토글 셋의 값과, 이번에 「준비 중」으로 남긴 몫이 있는지.
@@ -551,13 +565,13 @@ def _toggle_parts(
     것뿐이라 선행 B/O 를 저장해도 요약·다른 몫은 그대로 꺼낸다. 선행 B/O·선행 입고는 요약 재료만으로
     수 ms 라 바로 만든다. GAP 은 처음 만들 때 비교 리비전 계획을 읽고 환산해야 해서(합성 사본 약
     1.4초) `defer` 면 HOME 페이지 **앞**에서 치르지 않고 「준비 중」으로 보낸 뒤 페이지를 그린 다음
-    `warm_intro_summary` 가 만든다. 일시적 실패도 「준비 중」으로 두고 남기지 않는다.
+    `warm_intro_summary` 가 만든다. 일시적 실패도 「준비 중」으로 두고 남기지 않는다. 표시순서·공정
+    표시명 판은 요약 키를 만들 때 읽은 그 값(`order_version`·`labels`)이다 — 따로 다시 읽으면 그
+    사이 저장된 판이 요약과 몫에 갈라 들어간다.
     """
     store = shared_intro_toggle_store()
     profiles = load_toggle_profiles(database_path)
     official = release.official_release_id
-    order_version = load_global_display_order(database_path).version
-    labels = get_process_labels()
     comparison = profiles.comparison
     specs: list[tuple[str, str, tuple[Any, ...], Callable[[], dict[str, Any]], bool]] = [
         (
@@ -624,8 +638,8 @@ def _look_up(
     """보낼 요약, 그때 본 최신 공식버전(리비전 id·번호 — 없으면 `None`), 「준비 중」 몫이 있는지.
 
     공식버전을 읽은 뒤의 실패로 요약을 만들지 못해도 공식버전 자체는 돌려준다 — 머리 띠의
-    「공식 vN」과 사이드바 배지가 서로 다른 말을 하지 않게 한다. 요약을 이번에 새로 만들었으면
-    (서버에 처음 — 입장 화면이 로딩을 덮는 때다) GAP 도 미루지 않고 함께 만든다.
+    「공식 vN」과 사이드바 배지가 서로 다른 말을 하지 않게 한다. `defer` 가 거짓이면(이 세션이 아직
+    요약을 받은 적이 없다 — 입장 화면이 로딩을 덮는 때, 또는 페이지 뒤 데우기) GAP 도 함께 만든다.
     """
     identity: dict[str, Any] | None = None
     try:
@@ -636,27 +650,30 @@ def _look_up(
         # 판정 기준은 공용 프로필이다(시나리오 프리셋 값이 아니다). 키에는 version 이 아니라 **내용
         # 지문**을 넣는다 — 저장 전에는 version 이 0 이지만 기본값은 최신 공식버전 프리셋을 따른다.
         thresholds = load_global_securement_threshold(database_path).thresholds
+        order_version = load_global_display_order(database_path).version
+        labels = get_process_labels()
         cache_key: IntroSummaryCacheKey = (
             release.official_release_id,
             # 시나리오 이름은 바꿔도 공식버전 id 가 그대로라 따로 넣는다(머리 줄 풍선이 쓴다).
             release.scenario_name,
-            load_global_display_order(database_path).version,
-            get_process_labels().version,
+            order_version,
+            labels.version,
             thresholds.digest,
         )
-        built = False
-
-        def build() -> dict[str, Any]:
-            nonlocal built
-            built = True
-            return _build_or_unavailable(database_path, release, thresholds)
-
-        payload = get_intro_summary_payload(cache_key, _build=build)
+        payload = get_intro_summary_payload(
+            cache_key, _build=lambda: _build_or_unavailable(database_path, release, thresholds)
+        )
         context = payload.pop(_CONTEXT, None)
         if not payload.get("available") or not isinstance(context, Mapping):
             return payload, identity, False
         toggles, pending = _toggle_parts(
-            database_path, release, thresholds, context, defer=defer and not built
+            database_path,
+            release,
+            thresholds,
+            context,
+            order_version=order_version,
+            labels=labels,
+            defer=defer,
         )
         payload["toggles"] = toggles
         return payload, identity, pending
@@ -686,7 +703,9 @@ def official_summary_data(database_path: str) -> dict[str, Any]:
         return dict(held["data"])
     pending = False
     try:
-        data, official, pending = _look_up(database_path)
+        data, official, pending = _look_up(
+            database_path, defer=bool(st.session_state.get(_SEEN_KEY))
+        )
     except _Transient as exc:
         # DB 잠금 같은 일시적 실패로 멀쩡한 요약을 지우지 않는다(지우면 사이드바 라벨이 Summary
         # 를 열지 못한다). 들고 있던 값을 그대로 두고, 다음 확인도 `RECHECK_SECONDS` 뒤에 한다 —
@@ -703,6 +722,7 @@ def official_summary_data(database_path: str) -> dict[str, Any]:
         "official": official,
         "pending": pending,
     }
+    st.session_state[_SEEN_KEY] = True
     return dict(data)
 
 
@@ -720,17 +740,18 @@ def warm_intro_summary(database_path: str) -> None:
     now = time.monotonic()
     if now - float(held.get("warmed_at", -RECHECK_SECONDS)) < RECHECK_SECONDS:
         return
-    held["warmed_at"] = now
     try:
         data, official, pending = _look_up(database_path, defer=False)
     except Exception:  # 페이지는 이미 그렸다 — 다음 확인에 맡긴다
+        held["warmed_at"] = now
         return
     st.session_state[_SESSION_KEY] = {
         "checked_at": now,
         "data": data,
         "official": official,
         "pending": pending,
-        "warmed_at": now,
+        # 다시 해도 「준비 중」이면(일시적 실패) 이 확인 주기 동안은 더 하지 않는다.
+        "warmed_at": now if pending else -RECHECK_SECONDS,
     }
 
 
@@ -758,13 +779,30 @@ def forget_intro_summary_check() -> None:
     st.session_state.pop(_SESSION_KEY, None)
 
 
+def _refresh_requested() -> None:
+    """입장 화면이 「준비 중」 몫을 다시 받아 오려 한다(Summary 를 열 때 한 번).
+
+    페이지 뒤 데우기가 끝났으면 세션 값이 이미 새 값이라 이번 회차가 그대로 보낸다. 아직 「준비
+    중」이면 이번 회차에 곧바로 다시 확인한다 — 다른 세션이 그 사이 만들어 둔 값을 받고, 없으면 이번
+    페이지 뒤에서 다시 데운다.
+    """
+    held = st.session_state.get(_SESSION_KEY)
+    if isinstance(held, dict) and held.get("pending"):
+        held["checked_at"] = -RECHECK_SECONDS
+        held.pop("warmed_at", None)
+
+
 def render_intro_summary(database_path: str) -> None:
     """공식버전 요약을 보낸다. `app.py` 가 부트스트랩 뒤·페이지 앞에서 **매 회차** 한 번 부른다.
 
     회차마다 같은 값이라 브라우저 쪽 JS 는 처음 한 번만 돈다. 어떤 실패도 앱을 멈추지 않는다.
     """
     st.html(_HIDE_STYLE)
-    _SUMMARY(key=INTRO_SUMMARY_KEY, data=official_summary_data(database_path))
+    _SUMMARY(
+        key=INTRO_SUMMARY_KEY,
+        data=official_summary_data(database_path),
+        on_refresh_change=_refresh_requested,
+    )
 
 
 # 사이드바 머리칸의 `S.PKG CAPA` 라벨. 누르면 Summary 가 열린다. 테마 버튼 iframe 에 실려 한

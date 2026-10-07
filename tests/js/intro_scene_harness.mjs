@@ -3,6 +3,7 @@
 // `tests/test_intro_scene_behavior.py` 가 node(또는 bun)로 부른다. 인자: intro.js 경로, 요약 값 JSON 경로,
 // 팔레트 JSON 경로. 결과는 JSON 한 덩어리로 stdout 에 찍는다. 시간·난수·프레임은 여기서 정한다 — 같은
 // 입력이면 같은 그리기 호출이 나온다. 그리기 호출은 (이름, 인자, 그 순간의 그리기 상태)로 기록한다.
+import crypto from "crypto";
 import fs from "fs";
 
 const [, , introPath, payloadPath, palettePath] = process.argv;
@@ -122,6 +123,16 @@ const plainFrames = await snapshots(plain);
 [300, 1200, 3000].forEach((at, i) => {
   results[`off_equals_plain_${at}`] = same(offFrames[i], plainFrames[i]);
 });
+// 기본 장면 자체의 지문 — 조립이 끝난 요약 그리기 호출(웨이퍼 맵은 시각·삼각함수라 뺀다: 프레임의 둘째
+// `save` 부터가 요약이다). 숫자는 소수 둘째 자리로 줄여 엔진(node·bun)의 끝자리 차이를 덮는다.
+{
+  const end = plainFrames[2];
+  const saves = end.map((call, i) => (call[0] === "save" ? i : -1)).filter((i) => i >= 0);
+  const coarse = (v) => (typeof v === "number" ? Math.round(v * 100) / 100 : Array.isArray(v) ? v.map(coarse) : v);
+  const summaryCalls = end.slice(saves[1]).map((call) => call.map(coarse));
+  results.base_fingerprint = crypto.createHash("sha256").update(JSON.stringify(summaryCalls)).digest("hex");
+  results.base_calls = summaryCalls.length;
+}
 
 // 2) 셋을 켰다 다 끄면 같은 시각의 기본 그림과 같다.
 const toggled = await open(payload);

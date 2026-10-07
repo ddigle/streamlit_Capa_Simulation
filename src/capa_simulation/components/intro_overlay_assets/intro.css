@@ -285,6 +285,17 @@
   outline-offset: 3px;
 }
 
+/* 값을 페이지 뒤에서 만드는 중(「준비 중」) — 표식이 천천히 숨 쉰다. 켜 둔 것은 끌 수 있다. */
+.tg[data-pending] .sw {
+  animation: tg-wait 1.4s ease-in-out infinite;
+}
+
+@keyframes tg-wait {
+  50% {
+    opacity: 0.08;
+  }
+}
+
 .asof {
   display: flex;
   align-items: center;
@@ -706,5 +717,9 @@
   .tg,
   .tg .sw {
     transition: none;
+  }
+
+  .tg[data-pending] .sw {
+    animation: none;
   }
 }

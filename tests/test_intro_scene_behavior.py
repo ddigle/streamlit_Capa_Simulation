@@ -3,13 +3,15 @@
 """소스 문자열이 아니라 **돌려 본 결과**로 지키는 것들.
 
 `tests/js/intro_scene_harness.mjs` 가 `intro.js` 의 `scene()` 을 가짜 캔버스로 돌리고 그리기 호출을
-(이름, 인자, 그 순간 상태)로 기록한다. node 가 없는 PC 에서는 bun 으로 돌고, 둘 다 없으면 건너뛴다
-(CI 러너에는 node 가 있다).
+(이름, 인자, 그 순간 상태)로 기록한다. node 가 없는 PC 에서는 bun 으로 돌고, 둘 다 없으면 건너뛴다 —
+GitHub Actions 에서는 건너뛰지 않고 실패한다(`test_migration_parity` 와 같은 규칙, 러너에는 node 가
+있다).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -35,6 +37,10 @@ MONTHS = [202610, 202611, 202612, 202701, 202702, 202703]
 LABELS = [month_label(month) for month in MONTHS]
 INCLUDED = ["P-A", "P-B"]
 THRESHOLDS = SecurementThresholds(1.095, 0.995)
+# 토글 셋을 다 끈 기본 장면(조립이 끝난 요약 그리기 호출)의 지문. 토글을 붙이기 전 `intro.js`
+# 와 같은 값이다(2026-10-08 대조 — bun·V8 모두). 기본 화면을 일부러 바꾸면 실패 문구의 새 지문으로
+# 고친다.
+BASE_FINGERPRINT = "798a2937ec27e46738ade5af468c728b64858dd5a25c7d269c12c2637c39a7ce"
 
 
 def _runtime() -> str | None:
@@ -126,6 +132,8 @@ def _payload() -> dict[str, Any]:
 def scene_results(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
     runtime = _runtime()
     if runtime is None:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail("CI 러너에 node 가 없다 — 장면 동작 검사를 건너뛸 수 없다")
         pytest.skip("node·bun 이 없다 — CI 에서 돈다")
     folder = tmp_path_factory.mktemp("intro-scene")
     payload_path = folder / "payload.json"
@@ -151,6 +159,16 @@ def test_toggles_off_draw_exactly_the_summary_without_toggles(
     """기본(셋 다 꺼짐)은 토글 값이 없던 요약과 같은 그리기다 — 조립 중에도 끝에도."""
     for at in (300, 1200, 3000):
         assert scene_results[f"off_equals_plain_{at}"] is True, at
+
+
+def test_the_default_scene_keeps_its_fingerprint(scene_results: dict[str, Any]) -> None:
+    """기본 장면 자체가 바뀌는 회귀를 잡는다 — 토글 값 있음·없음이 같이 바뀌면 위 비교로는 안
+    보인다."""
+    assert scene_results["base_fingerprint"] == BASE_FINGERPRINT, (
+        "기본(셋 다 꺼짐) 장면의 그리기가 바뀌었다. 일부러 바꾼 것이면 BASE_FINGERPRINT 를 "
+        f"{scene_results['base_fingerprint']} 로 고친다"
+        f"(요약 그리기 호출 {scene_results['base_calls']}개)."
+    )
 
 
 def test_turning_everything_off_returns_to_the_same_picture(scene_results: dict[str, Any]) -> None:

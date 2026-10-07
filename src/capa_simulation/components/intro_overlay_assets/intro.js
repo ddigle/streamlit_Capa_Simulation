@@ -1939,6 +1939,14 @@ function scene(port, gridOf) {
       const v = m.view || {};
       const want = { bo: v.advance ? 1 : 0, ship: v.shipment ? 1 : 0, gap: v.comparison ? 1 : 0 };
       const t = now();
+      // 값이 막 닿은 토글(켜 둔 채 「준비 중」이던 것) — 꺼진 자리에서 다시 움직여 들어온다.
+      const channel = { advance: "bo", shipment: "ship", comparison: "gap" };
+      for (const key of m.restart || []) {
+        const ch = channel[key];
+        if (!ch) continue;
+        viewTween[ch] = { all: rest(0), months: Array.from({ length: VIEW_MONTHS }, () => rest(0)) };
+        viewWant[ch] = 0;
+      }
       for (const ch of Object.keys(want)) {
         if (want[ch] !== viewWant[ch] || reduce || m.instant) retarget(ch, want[ch], t, reduce || !!m.instant);
         viewWant[ch] = want[ch];
@@ -2279,20 +2287,25 @@ function createOverlay(api, data, initial, syncToolbar) {
       const spec = toggleSpecs.find((item) => item.key === key) || {};
       const part = toggleOf(key);
       const can = canToggle(key);
-      if (summary && part && !part.available && !part.pending) view[key] = false;
-      button.setAttribute("aria-disabled", can ? "false" : "true");
+      const pending = !!(part && part.pending);
+      if (summary && part && !part.available && !pending) view[key] = false;
+      // 「준비 중」이면 켜기만 잠근다 — 켜 둔 것은 끌 수 있어야 한다.
+      button.setAttribute("aria-disabled", can || (pending && view[key]) ? "false" : "true");
       button.setAttribute("aria-pressed", view[key] ? "true" : "false");
+      button.toggleAttribute("data-pending", pending);
       button.title = toggleTitle(spec);
     });
   }
 
-  function postView(instant) {
-    sceneHandle.post({ type: "view", view: { ...view }, instant: !!instant });
+  // `restart` 는 값이 막 닿은 토글이다 — 켜 둔 채 기다렸으면 그 토글만 처음부터 다시 움직여 들어온다.
+  function postView(instant, restart = []) {
+    sceneHandle.post({ type: "view", view: { ...view }, instant: !!instant, restart });
   }
 
   function pressToggle(button) {
     if (button.getAttribute("aria-disabled") === "true") return;
     const key = button.dataset.key;
+    if (!view[key] && !canToggle(key)) return;
     view[key] = !view[key];
     button.setAttribute("aria-pressed", view[key] ? "true" : "false");
     postView(false);
@@ -2312,6 +2325,18 @@ function createOverlay(api, data, initial, syncToolbar) {
   // Summary 가 조립될 때 Detail 옆에 하나씩 떠오른다. 원래 화면에서 다시 열 때(`snapToSummary`)는 바로 선다.
   // 떠오르는 동안(아직 투명한 동안)은 `inert` 로 묶어 Tab 이 보이지 않는 단추에 닿지 않게 하고, 마지막
   // 단추가 다 선 뒤 푼다.
+  // Summary 를 열 때 「준비 중」 몫(페이지 뒤에서 만드는 GAP)이 있으면 요약 값을 **한 번** 다시 받아 온다
+  // (`intro_summary` 의 받은 값 JS 가 둔 `__capaSummaryRefresh` — rerun 한 번. 덮개가 앱을 가린다). 한 번
+  // 열 때 한 번뿐이다 — 그래도 「준비 중」이면 그대로 두고, 다음에 열 때 다시 한 번 묻는다.
+  let refreshAsked = false;
+  function askRefreshIfPending() {
+    if (refreshAsked || !summary || !summary.toggles) return;
+    const waiting = Object.values(summary.toggles).some((part) => part && part.pending);
+    if (!waiting || typeof window.__capaSummaryRefresh !== "function") return;
+    refreshAsked = true;
+    window.__capaSummaryRefresh();
+  }
+
   let revealRound = 0;
   function revealToggles(animate) {
     const round = (revealRound += 1);
@@ -2448,6 +2473,7 @@ function createOverlay(api, data, initial, syncToolbar) {
 
   /* ------------------------------------------------------------ 요약 값·행 이름·낭독용 표 */
   function setSummary(payload) {
+    const readyBefore = Object.fromEntries(toggleSpecs.map((spec) => [spec.key, canToggle(spec.key)]));
     summaryArrived = true;
     summary = payload && payload.available ? payload : null;
     reasonText = payload && !payload.available ? String(payload.reason || "") : "";
@@ -2463,9 +2489,10 @@ function createOverlay(api, data, initial, syncToolbar) {
       });
     }
     // 켤 수 없게 된 토글은 끈다. 이 장면이 처음 받는 상태면 움직임 없이 그 모습으로 시작한다(탭이 기억한
-    // 상태로 새 오버레이를 만든 때).
+    // 상태로 새 오버레이를 만든 때). 켜 둔 채 「준비 중」이던 토글에 값이 닿으면 그 토글은 움직여 들어온다.
+    const arrived = toggleSpecs.map((spec) => spec.key).filter((key) => view[key] && !readyBefore[key] && canToggle(key));
     syncToggles();
-    postView(!viewSent);
+    postView(!viewSent, viewSent ? arrived : []);
     viewSent = true;
     buildTable();
     if (mode === "intro") update();
@@ -2652,6 +2679,10 @@ function createOverlay(api, data, initial, syncToolbar) {
     mode = "summary";
     window.clearInterval(poller);
     stage.classList.add("summary");
+    // 토글은 이 순간부터 보이는 자리(투명)라 Tab 이 닿는다 — 다 떠오를 때까지 묶는다(`revealToggles`).
+    if (!reduce) toggleBox.inert = true;
+    refreshAsked = false;
+    askRefreshIfPending();
     hint.hidden = true;
     timers.forEach((id) => window.clearTimeout(id));
     const T = SUMMARY_TIMING;
@@ -2731,6 +2762,8 @@ function createOverlay(api, data, initial, syncToolbar) {
     }
     snapToSummary();
     mode = "summary";
+    refreshAsked = false;
+    askRefreshIfPending();
     const radius = holeAt(button || detail);
     cancelAll([stage]);
     stage.style.opacity = "";

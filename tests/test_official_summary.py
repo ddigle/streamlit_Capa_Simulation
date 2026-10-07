@@ -390,6 +390,68 @@ def test_a_comparison_that_needs_no_plan_is_answered_at_once(
     assert summary_env.session[module._SESSION_KEY]["pending"] is False
 
 
+def test_a_session_that_has_its_summary_defers_the_gap_even_on_a_rebuild(
+    summary_env: SimpleNamespace,
+) -> None:
+    """요약을 다시 만드는 회차(판정 기준·표시순서 저장, 공식버전 교체 뒤)라도 이 세션이 요약을 이미
+    받았으면 GAP 은 페이지 뒤에서 만든다 — 「처음 받는 세션(입장 로딩)」만 페이지 앞에서 함께
+    만든다."""
+    module = summary_env.module
+    module.official_summary_data("db")
+    summary_env.parts.clear()
+    summary_env.thresholds = SecurementThresholds(1.195, 0.995)
+    summary_env.versions["comparison"] += 1
+    module.forget_intro_summary_check()
+    sent = module.official_summary_data("db")
+    assert summary_env.builds == ["rel-1", "rel-1"]
+    assert (
+        sent["toggles"]["comparison"]["pending"] is True and "comparison" not in summary_env.parts
+    )
+    # 새 탭(이 세션이 아직 요약을 받은 적 없음)은 입장 화면이 덮으므로 GAP 도 함께 만든다.
+    summary_env.session.clear()
+    fresh = module.official_summary_data("db")
+    assert fresh["toggles"]["comparison"]["version"] == 1
+
+
+def test_a_refresh_request_rechecks_a_pending_summary_at_once(
+    summary_env: SimpleNamespace,
+) -> None:
+    """Summary 를 열 때의 다시 받아 오기 — 「준비 중」을 든 세션은 그 회차에 곧바로 다시 확인해,
+    그 사이(다른 세션의 페이지 뒤에서) 만들어진 값을 싣는다. 평소에는 아무것도 하지 않는다."""
+    module = summary_env.module
+    module.official_summary_data("db")
+    summary_env.versions["comparison"] += 1
+    module.forget_intro_summary_check()
+    assert module.official_summary_data("db")["toggles"]["comparison"]["pending"] is True
+    module._look_up("db", defer=False)  # 다른 세션의 페이지 뒤 데우기
+    summary_env.now += 1
+    assert module.official_summary_data("db")["toggles"]["comparison"].get("pending") is True
+    module._refresh_requested()
+    assert module.official_summary_data("db")["toggles"]["comparison"]["version"] == 1
+    calls = summary_env.repo.calls
+    module._refresh_requested()  # 「준비 중」이 없으면 다시 확인하지 않는다
+    module.official_summary_data("db")
+    assert summary_env.repo.calls == calls
+
+
+def test_a_failed_warm_waits_one_recheck_period(summary_env: SimpleNamespace) -> None:
+    """페이지 뒤 데우기가 또 일시적 실패면 그 확인 주기 동안은 다시 하지 않는다(회차마다 무거운
+    재시도를 막는다). 성공하면 표지를 남기지 않는다."""
+    import duckdb
+
+    module = summary_env.module
+    summary_env.part_fail = duckdb.IOException("잠김")
+    module.official_summary_data("db")
+    module.warm_intro_summary("db")
+    tries = summary_env.parts.count("comparison")
+    module.warm_intro_summary("db")
+    assert summary_env.parts.count("comparison") == tries
+    summary_env.now += module.RECHECK_SECONDS
+    summary_env.part_fail = None
+    module.warm_intro_summary("db")
+    assert module.official_summary_data("db")["toggles"]["comparison"]["available"] is True
+
+
 def test_warming_does_nothing_when_nothing_is_pending(summary_env: SimpleNamespace) -> None:
     module = summary_env.module
     module.official_summary_data("db")

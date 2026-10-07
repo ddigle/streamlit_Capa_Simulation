@@ -241,7 +241,11 @@ def test_the_summary_payload_reaches_the_overlay_without_talking_back() -> None:
 
     assert "window.__capaSummary = data;" in intro_summary._JS
     assert "api.setSummary(data)" in intro_summary._JS
-    assert not re.search(r"set(State|Trigger)Value\s*\(", intro_summary._JS)
+    # 파이썬으로 가는 길은 「준비 중」 몫을 다시 받아 오는 trigger 하나뿐이다(rerun 한 번).
+    assert re.findall(r"set(State|Trigger)Value\s*\(", intro_summary._JS) == ["Trigger"]
+    assert 'window.__capaSummaryRefresh = () => component.setTriggerValue("refresh"' in (
+        intro_summary._JS
+    )
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
     assert "window.__capaSummary !== undefined" in js
 
@@ -263,6 +267,7 @@ def test_the_summary_hides_its_slot_before_it_is_drawn(monkeypatch: pytest.Monke
     assert [kind for kind, _ in calls] == ["html", "summary"]
     assert f".st-key-{intro_summary.INTRO_SUMMARY_KEY}" in calls[0][1]
     assert calls[1][1]["key"] == intro_summary.INTRO_SUMMARY_KEY
+    assert calls[1][1]["on_refresh_change"] is intro_summary._refresh_requested
 
 
 def test_the_sidebar_label_is_the_wordmark_in_the_app_theme() -> None:
@@ -691,6 +696,12 @@ def test_summary_toggles_sit_right_after_the_docked_detail() -> None:
     snap = _between(js, "function snapToSummary(", "function holeAt(")
     assert "revealToggles(false);" in snap
     # 떠오르는 동안(아직 투명한 동안)은 inert 로 묶어 Tab 이 닿지 않고, 덮개 안 Tab 순환도 건너뛴다.
+    # 「summary」 를 거는 그 자리에서 묶는다 — 토글은 그 순간부터 보이는 자리(투명)다.
+    assert (
+        entry.index('stage.classList.add("summary");')
+        < entry.index("if (!reduce) toggleBox.inert = true;")
+        < entry.index("dockDetail(true);")
+    )
     reveal = _between(
         js, "function revealToggles(", "/* ------------------------------------------------ 상태"
     )
@@ -710,12 +721,17 @@ def test_summary_toggles_are_pressed_buttons_with_reasons_when_off() -> None:
     toggles = _between(js, "const view = api.view ||", "function revealToggles(")
     assert 'aria-pressed="false" aria-disabled="true"' in toggles
     assert 'button.setAttribute("aria-pressed"' in toggles
-    assert 'button.setAttribute("aria-disabled", can ? "false" : "true");' in toggles
+    # 「준비 중」이면 켜기만 잠근다 — 켜 둔 것은 끌 수 있다.
+    assert (
+        'button.setAttribute("aria-disabled", can || (pending && view[key]) ? "false" : "true");'
+        in (toggles)
+    )
+    assert "if (!view[key] && !canToggle(key)) return;" in toggles
     assert 'if (button.getAttribute("aria-disabled") === "true") return;' in toggles
     assert "button.title = toggleTitle(spec);" in toggles
     # 켤 수 없다고 정해진 토글만 끈다 — 요약이 잠깐 없거나(일시적 실패) 그 몫이 「준비 중」이면 고른
     # 상태를 지킨다. 상태는 탭이 살아 있는 동안만(창의 `__capaIntro`) 기억한다.
-    assert "if (summary && part && !part.available && !part.pending) view[key] = false;" in toggles
+    assert "if (summary && part && !part.available && !pending) view[key] = false;" in toggles
     assert "sessionStorage" not in toggles and "localStorage" not in toggles
     # 라벨은 본문 글꼴이다 — 부분 글꼴에 한글·`B`·`/` 가 없다.
     css = (ASSETS / "intro.css").read_text(encoding="utf-8")
@@ -728,7 +744,12 @@ def test_summary_toggles_change_only_the_browser_and_move_from_where_they_are() 
     목표로 트윈을 다시 걸고, 움직임을 줄였으면 바로 바뀐다. 워커가 죽으면 마지막 `view` 를
     되살린다."""
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
-    assert 'sceneHandle.post({ type: "view", view: { ...view }, instant: !!instant });' in js
+    assert (
+        'sceneHandle.post({ type: "view", view: { ...view }, instant: !!instant, restart });' in js
+    )
+    # 켜 둔 채 「준비 중」이던 토글에 값이 닿으면 그 토글만 꺼진 자리에서 다시 움직여 들어온다.
+    assert "postView(!viewSent, viewSent ? arrived : []);" in js
+    assert "for (const key of m.restart || [])" in _scene_source(js)
     assert '"summary-on", "view", "run", "resize"' in js
     scene = _scene_source(js)
     assert "function retarget(ch, want, t, instant)" in scene
@@ -760,3 +781,18 @@ def test_reduced_motion_draws_on_messages_instead_of_a_frame_loop() -> None:
     summary_branch = handler[handler.index('m.type === "summary")') :]
     summary_branch = summary_branch[: summary_branch.index("} else if")]
     assert "layoutSummary();" in summary_branch and "loop();" in summary_branch
+
+
+def test_opening_the_summary_asks_once_for_pending_parts() -> None:
+    """「준비 중」 몫(페이지 뒤에서 만드는 GAP)이 있을 때만, 한 번 열 때 한 번만 다시 받아 온다 —
+    평소 Summary 열기에는 rerun 이 없다."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    ask = _between(js, "function askRefreshIfPending()", "let revealRound = 0;")
+    assert "if (refreshAsked || !summary || !summary.toggles) return;" in ask
+    assert 'if (!waiting || typeof window.__capaSummaryRefresh !== "function") return;' in ask
+    assert ask.index("refreshAsked = true;") < ask.index("window.__capaSummaryRefresh();")
+    for opening in ("async function summaryFromEntry(", "async function openFromApp(button)"):
+        body = js[js.index(opening) :]
+        body = body[: body.index("\n  }\n")]
+        assert body.index("refreshAsked = false;") < body.index("askRefreshIfPending();"), opening
+    assert js.count("window.__capaSummaryRefresh();") == 1
