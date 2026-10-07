@@ -28,8 +28,8 @@ Streamlit 은 헤더(`stHeader`)에 위젯을 넣는 공식 API 를 주지 않�
 가벼운 쪽을 골랐다. 시나리오명 등 사용자 글은 CSS 문자열로 이스케이프한다(`css_string`).
 
 사이드바 머리칸(`stSidebarHeader`)에는 글을 얹지 않는다. 그 자리는 `S.PKG CAPA` 라벨(누르면
-Summary — `intro_summary.summary_label_script`)이다. 앱 이름·버전·개발자·인증 정보는 Admin Area
-맨 아래(`components/app_credits.py`)로 옮겼다.
+Summary — `intro_summary.summary_label_script`)이다. 앱 이름·버전·빌드와 개발 팀·문의처는 모든
+화면 사이드바 맨 아래에 고정한 앱 정보 카드(`components/app_credits.py`)에 있다.
 
 Streamlit 의 ⋮ 메뉴(`stMainMenu`)도 여기서 통째로 감춘다(2026-10-05 사용자 결정). 사용자에게
 남길 메뉴 항목은 인쇄와 테마뿐이고, 둘 다 툴바 단추(`print_button`·`theme_toggle`)가 맡는다. 최소

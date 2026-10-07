@@ -200,6 +200,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     **들어온 회차에만**(`page_changed`) 상자를 편다 — 접혀 있으면 「지금 여기」가 가려진다.
     떠날 때 접지 않고, 같은 페이지 안에서 사용자가 접으면 그대로 둔다. 상수
     `ADMIN_BOX_KEY` 는 그대로다 — 상자에 서는 것은 여전히 `Admin Area` 와 VOC 다.
+  - **사이드바 맨 아래는 앱 정보 카드다**(2026-10-07 사용자 결정 — Admin Area 본문 맨 아래에서
+    옮겼다). 앱·버전·빌드 한 줄과 개발 팀·문의처 한 줄(`components/app_credits.py`)을
+    `Support` 상자 뒤, `navigation.run()` **앞**에서 그린다 — 페이지가 `st.stop()` 해도 카드는
+    남는다. 페이지가 더하는 조건 카드보다 파이썬 차례로는 앞이므로 맨 아래 자리와 바닥 고정은
+    사이드바 CSS 가 지킨다(아래 `sidebar_style.py` 항목). 부트스트랩 오류 화면은 사이드바를
+    세우기 전에 멈추므로 카드가 없다.
   - 사이드바 CSS 문자열은 `components/sidebar_style.py`가 탐색 그룹·활성 경로·컨테이너
     키를 받아 만든다. 테마 초기화와 `st.html` 주입 순서는 진입점이 소유한다.
   - 모든 페이지에 필요한 전역 위젯은 `navigation.run()`보다 앞에 둔다.
@@ -2338,9 +2344,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     매 회차 보낸다(`test_app_navigation` 이 차례를, `tests/test_typography.py` 가 파일·라이선스·상대
     경로·외부 서버 없음·선택자 범위를 지킨다).
 - `src/capa_simulation/components/app_credits.py`
-  - 앱 이름·버전·빌드일·개발자·인증번호(유효기간)·취급 주의를 **Admin Area 맨 아래** 캡션 한 묶음
-    (`credit_lines`)으로 보여 준다(2026-10-06 사용자 결정 — 머리 띠에서 옮겼다). 값은 `settings.py` 가
-    단일 근거이고 ⋮ 메뉴의 About 이 없어 이 자리가 유일하다.
+  - 앱 이름·버전·빌드일과 개발 팀·문의처 **두 줄**(`credit_lines`)을 **모든 화면 사이드바 맨
+    아래**의 작은 카드(`APP_CREDITS_KEY`)로 보여 준다(2026-10-07 사용자 결정). Admin Area 본문에는
+    없다. 값은 `settings.py` 가 단일 근거이고 ⋮ 메뉴의 About 이 없어 이 자리가 유일하다. 보안 등급·
+    인증번호(유효기간)·취급 주의 문장은 싣지 않으며(같은 결정) 그것만 쓰던 설정 상수
+    (`APP_SECURITY_LEVEL`·`APP_AUTH_CODE`·`APP_AUTH_EXPIRY`·`APP_HANDLING_NOTE`)도 두지 않는다.
+  - 그리는 것은 캡션 한 묶음뿐이다. 자리(맨 아래)·바닥 고정·면·윗선·글 크기는
+    `sidebar_style.py` 가 이 key 로 건다. key 는 조건 카드 접두어(`condition_card_`)를 품지 않는다 —
+    CSS 가 조건 카드를 클래스 부분 일치로 세어 「조회 조건」 제목을 살린다.
 - `src/capa_simulation/components/sidebar_style.py`
   - 탐색 그룹·활성 경로·기존 컨테이너 키와 현재 테마로 사이드바 스타일 문자열을 만든다.
     위젯 생성이나 HTML 주입은 하지 않는다. 생성된 HTML의 태그 안전성과 테마·활성 선택자를
@@ -2363,6 +2374,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **`order` 를 받는 요소가 상자와 확장 패널이 다르다.** `st.container` 는 `.st-key-*` 가
     바깥 래퍼 한 겹 안이고, 확장 패널은 `.st-key-*` 요소 자신이 세로 블록의 직접 자식이다.
     `Support` 상자를 맨 아래에 고정하는 규칙은 둘 다 건다. 앞 간격도 **같은 규칙**에 둔다.
+  - **앱 정보 카드는 사이드바 바닥에 고정한다**(2026-10-07 사용자 결정). 카드의 바깥 래퍼
+    (`stLayoutWrapper:has(> .st-key-sidebar_app_credits)`)에 `order: APP_CREDITS_ORDER`(100,
+    `Support` 99 뒤)·`position: sticky; bottom: 0`·`margin-top: auto`·`z-index: 3`(적용 기간 글자 2
+    위, Streamlit 머리칸 11 아래)를 건다. 목록이 길면 그 밑으로 지나가므로 면은 사이드바 면
+    (`SURFACE`, 두 테마 모두 `[theme.sidebar] backgroundColor` 와 같다)이고 윗선은 `BORDER` 다.
+    면을 좌우 여백까지 펴는 것은 `box-shadow` 확산 + `clip-path` 다 — 폭·음수 여백으로 늘리면
+    스크롤 칸(`overflow-x: auto`)에 가로 스크롤이 생긴다. 짧을 때 바닥에 서도록 스크롤 칸
+    (`stSidebarContent`)부터 맨 위 세로 블록까지 `>` 로만 세로 flex 로 잇고 `flex: 1 0 auto` 로
+    늘리며, 사용자 칸의 아래 여백(84px)은 걷는다. **머리칸(`stSidebarHeader`)은 `flex-shrink: 0`**
+    이어야 한다 — Streamlit 이 `min-height: 0` 을 걸어 두어 목록이 길면 머리칸이 눌려(실측 52.5 →
+    34px) 라벨이 HOME 에 겹쳤다. 캡션 칸의 아래 음수 여백(-1rem)도 걷는다(남기면 글이 카드 밖
+    바닥 아래로 14px 흘러 잘린다). 선택자는 1.63 DOM(`stSidebarContent` 이 스크롤 칸, 그 안
+    `stSidebarHeader`·`stSidebarUserContent` > `div` > `stVerticalBlock`)에 기대므로 판올림 때
+    브라우저로 바닥 좌표를 다시 잰다.
 - `src/capa_simulation/components/column_filter.py`
   - 분류 컬럼별 다중선택 필터와 초기화 버튼. 선택값으로 거른 프레임을 돌려준다.
     `value_labels` 는 `format_func` 로 표시만 바꾼다. 옵션 값과 세션 저장값은 원본이다.

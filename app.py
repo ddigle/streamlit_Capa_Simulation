@@ -6,6 +6,7 @@ from pathlib import Path
 import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
+from capa_simulation.components.app_credits import render_app_credits
 from capa_simulation.components.app_header import render_app_header, render_shell_style
 from capa_simulation.components.equipment_data_workspace import has_unsaved_equipment_edits
 from capa_simulation.components.intro_overlay import render_intro_overlay
@@ -102,8 +103,8 @@ st.set_page_config(
     # 문자열 경로여야 한다 — Streamlit 은 `.svg` 로 끝나는 **파일**만 읽어 data URI 로 싣는다.
     page_icon=str(FAVICON_PATH),
     layout="wide",
-    # `menu_items` 는 적지 않는다. ⋮ 메뉴는 통째로 감추고(`render_shell_style`), 개발자·인증 정보는
-    # Admin Area 맨 아래(`components/app_credits.py`)가 보여 준다.
+    # `menu_items` 는 적지 않는다. ⋮ 메뉴는 통째로 감추고(`render_shell_style`), 앱 버전·개발 정보는
+    # 모든 화면 사이드바 맨 아래의 앱 정보 카드(`components/app_credits.py`)가 보여 준다.
 )
 # 사이드바 상자를 여닫을 때 앱 전체 대신 다시 도는 빈 프래그먼트와, 이번 실행이 끝까지
 # 돌았는지의 표지(`sidebar_status.on_box_toggle`). 프래그먼트는 `st.stop()` 이 걸릴 수 있는
@@ -356,6 +357,12 @@ with pinned_connections(DUCKDB_PATH):
             # 계층선도 두지 않는다.
             for page in pages.admin_box_pages:
                 st.page_link(page, width="stretch")
+
+    # 앱 이름·버전·빌드와 개발 팀·문의처 두 줄. **페이지보다 먼저** 그린다 — 페이지가 `st.stop()`
+    # 하면 그 뒤로는 아무것도 브라우저에 닿지 않는다. 사이드바 맨 아래 자리와 바닥 고정(목록이 길면
+    # 그 밑으로 지나간다)은 위 CSS 가 이 카드의 key 로 지킨다 — 페이지가 더하는 조건 카드는 파이썬
+    # 차례로 이 뒤에 서므로 `order` 로 민다.
+    render_app_credits()
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
     # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명이 같다 — 페이지가 끝나거나

@@ -433,13 +433,13 @@ def _header_style(app: AppTest) -> str:
 
 def test_the_header_names_the_scenario_this_session_applied(_app: AppTest) -> None:
     """머리 띠 위 줄은 이 세션에 적용 중인 시나리오·리비전과 상태다(2026-10-06 사용자 결정). 빈
-    저장소는 내장 시드를 공식 v1 로 올린다. 개발자·인증 정보는 머리 띠에서 빠졌다."""
+    저장소는 내장 시드를 공식 v1 로 올린다. 개발 정보는 머리 띠에 없다(사이드바 맨 아래 카드)."""
     from capa_simulation.services.builtin_seed import (
         BUILTIN_SEED_REVISION_NAME,
         BUILTIN_SEED_SCENARIO_NAME,
         BUILTIN_SEED_SOURCE_CODE,
     )
-    from capa_simulation.settings import APP_AUTH_CODE
+    from capa_simulation.settings import APP_CONTACT_EMAIL
 
     app = _app.run()
     assert not list(app.exception), [element.message for element in app.exception]
@@ -450,7 +450,7 @@ def test_the_header_names_the_scenario_this_session_applied(_app: AppTest) -> No
         in style
     )
     assert f'content: "{BUILTIN_SEED_SOURCE_CODE} · 적용 26.01–26.12 · 내장 시드 ' in style
-    assert APP_AUTH_CODE not in style
+    assert APP_CONTACT_EMAIL not in style
 
 
 def test_the_header_reads_no_database_on_a_rerun(
@@ -893,6 +893,73 @@ def test_a_card_only_screen_that_stops_before_its_card_leaves_the_heading_alone(
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == {"heading"}
     assert _heading_content_keys(app) == {f"{CONDITION_CARD_PREFIX}voc"}
+
+
+# ------------------------------------------------------------ 사이드바 맨 아래 앱 정보 카드
+
+
+def _credit_card_captions(app: AppTest) -> list[str]:
+    """사이드바 최상위의 앱 정보 카드 안 캡션들. 카드가 정확히 하나여야 한다."""
+    from capa_simulation.components.app_credits import APP_CREDITS_KEY
+
+    keys = _sidebar_keys(app)
+    assert keys.count(APP_CREDITS_KEY) == 1, keys
+    block = list(app.sidebar.children.values())[keys.index(APP_CREDITS_KEY)]
+    return [element.value for element in block if isinstance(element, Caption)]
+
+
+def _assert_two_credit_lines(captions: list[str]) -> None:
+    """앱·버전·빌드 한 줄과 개발 팀·문의처 한 줄, 그것뿐이다(2026-10-07 사용자 결정)."""
+    from capa_simulation.components.app_credits import credit_lines
+
+    assert captions == ["  \n".join(credit_lines())]
+    (text,) = captions
+    assert len(text.split("\n")) == 2, text
+    assert "인증번호" not in text and "반출" not in text
+
+
+@pytest.mark.parametrize("page_path", [HOME.path, SCENARIO_MANAGEMENT.path, ADMIN_AREA.path])
+def test_the_app_credits_card_stands_in_the_sidebar_on_every_screen(
+    _app: AppTest, page_path: str
+) -> None:
+    """앱 정보는 모든 화면의 사이드바 카드 하나다. Admin Area 본문에는 없다.
+
+    사이드바 맨 아래 자리와 바닥 고정은 CSS(`sidebar_style`)가 지키고 규칙은
+    `tests/test_sidebar_stylesheet.py` 가 본다. 여기서는 카드가 서는지와 그 두 줄을 본다.
+    """
+    from capa_simulation.settings import APP_CONTACT_EMAIL
+
+    app = _app.run()
+    if page_path != HOME.path:
+        app.switch_page(page_path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    _assert_two_credit_lines(_credit_card_captions(app))
+    assert not any(APP_CONTACT_EMAIL in caption.value for caption in app.main.caption)
+
+
+def test_the_app_credits_card_survives_a_screen_that_stops_early(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """카드는 페이지보다 **먼저** 그린다 — 페이지가 `st.stop()` 해도 남는다. VOC 게시판을 읽지
+    못하면 VOC 는 오류만 적고 멈춘다. 그 회차에도 카드가 서고, 「조회 조건」 제목을 살리는 상자로
+    세지 않는다(제목은 CSS 가 감춘다)."""
+    from capa_simulation.components.app_credits import APP_CREDITS_KEY
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    def _unreadable(_self: object) -> pd.DataFrame:
+        raise RuntimeError("VOC 게시판을 읽지 못함")
+
+    app = _app.run()
+    monkeypatch.setattr(DuckDBScenarioRepository, "list_voc_posts", _unreadable)
+    app.switch_page(ADMIN_BOX_PAGES[0].path).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert any("VOC 게시판을 읽지 못함" in element.value for element in app.error)
+    _assert_two_credit_lines(_credit_card_captions(app))
+    assert _heading_content_keys(app) == set()
+    # CSS 는 조건 카드를 클래스 **부분 일치**(`[class*="st-key-condition_card_"]`)로 센다.
+    assert f"st-key-{CONDITION_CARD_PREFIX}" not in f"st-key-{APP_CREDITS_KEY}"
 
 
 def test_a_screen_that_reads_only_the_scenario_shows_only_its_box(_app: AppTest) -> None:

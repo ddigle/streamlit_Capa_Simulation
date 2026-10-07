@@ -1,4 +1,4 @@
-# Purpose: 상단 띠의 시나리오 두 줄·CSS·껍데기 스타일과 Admin 앱 정보의 규칙을 고정한다.
+# Purpose: 상단 띠의 시나리오 두 줄·CSS·껍데기 스타일과 사이드바 앱 정보 두 줄의 규칙을 고정한다.
 
 import re
 from dataclasses import replace
@@ -14,8 +14,7 @@ from capa_simulation.components.app_header import (
 )
 from capa_simulation.scenario_activation import ActiveScenarioLabel
 from capa_simulation.settings import (
-    APP_AUTH_CODE,
-    APP_AUTH_EXPIRY,
+    APP_BUILD_DATE,
     APP_CONTACT_EMAIL,
     APP_NAME,
     APP_OWNER_TEAM,
@@ -205,15 +204,26 @@ def test_print_does_not_split_charts_but_lets_long_tables_break() -> None:
         assert table not in block
 
 
-def test_admin_credits_show_the_app_developer_and_auth_code_with_its_expiry() -> None:
-    """⋮ 메뉴의 About 이 없고 머리 띠는 시나리오를 싣는다 — 앱 정보는 Admin Area 맨 아래뿐이다."""
+def test_the_app_credits_are_two_lines_without_the_clearance_sentence() -> None:
+    """⋮ 메뉴의 About 이 없고 머리 띠는 시나리오를 싣는다 — 앱 정보는 사이드바 맨 아래 카드뿐이다.
+
+    두 줄이다 — 앱·버전·빌드, 개발 팀·문의처. 보안 등급·인증번호(유효기간)·취급 주의 문장은 싣지
+    않고, 그것만 쓰는 설정 상수도 두지 않는다(2026-10-07 사용자 결정).
+    """
+    import capa_simulation.settings as settings
+
+    assert credit_lines() == (
+        f"{APP_NAME} v{APP_VERSION} · 빌드 {APP_BUILD_DATE}",
+        f"개발 {APP_OWNER_TEAM} · {APP_CONTACT_EMAIL}",
+    )
     text = "\n".join(credit_lines())
-    assert f"인증번호 {APP_AUTH_CODE}(유효기간 {APP_AUTH_EXPIRY})" in text
-    for value in (APP_NAME, APP_VERSION, APP_OWNER_TEAM, APP_CONTACT_EMAIL):
-        assert value in text
-    # 머리 띠에서는 뺐다.
+    for removed in ("인증번호", "유효기간", "반출", "CONFIDENTIAL"):
+        assert removed not in text
+    for name in ("APP_SECURITY_LEVEL", "APP_AUTH_CODE", "APP_AUTH_EXPIRY", "APP_HANDLING_NOTE"):
+        assert not hasattr(settings, name), name
+    # 머리 띠에는 싣지 않는다.
     css = _header_css(*header_lines(LABEL, official=None, unsaved=False))
-    assert APP_AUTH_CODE not in css and APP_CONTACT_EMAIL not in css
+    assert APP_CONTACT_EMAIL not in css and APP_BUILD_DATE not in css
 
 
 def test_the_header_names_the_official_version_with_its_source_registration() -> None:

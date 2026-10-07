@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import streamlit as st
 
-from capa_simulation.components.app_credits import render_app_credits
 from capa_simulation.components.display_order_management import (
     render_display_order_management,
 )
@@ -73,7 +72,3 @@ with source_quality_tab:
             st.info(bootstrap_error_message(exc))
         else:
             render_source_quality(source_profile, source_rows)
-
-# 앱 이름·버전·개발자·인증 정보. 머리 띠는 적용 중인 시나리오를 싣고, 앱 자체의 정보는
-# 여기 맨 아래다.
-render_app_credits()

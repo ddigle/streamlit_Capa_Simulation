@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from capa_simulation.components.app_credits import APP_CREDITS_KEY
 from capa_simulation.design import tokens
 from capa_simulation.navigation import (
     CONDITIONS_SECTION,
@@ -50,6 +51,11 @@ _APPLIED_OVERLAY_LEFT = "7.5rem"
 # 실행)의 흐림 구간이 클릭 뒤 60~290ms 였다(실측) — 그보다 길게, 계산이 걸리는 재실행의 로딩
 # 표시는 늦지 않게.
 STALE_DIM_DELAY = "0.3s"
+# 앱 정보 카드(`components/app_credits.py`)의 flex `order`. `Support`(99)보다 뒤라야 사이드바 맨
+# 아래다. 카드 면을 좌우 여백까지 펴는 그림자 폭 — 스크롤 칸이 제 안쪽 여백 끝에서 잘라 주므로
+# 그 여백(실측 17.5px)보다 넉넉하면 된다.
+APP_CREDITS_ORDER = 100
+_APP_CREDITS_BLEED = "3rem"
 
 
 def lone_conditions_heading_selector(
@@ -591,6 +597,78 @@ def build_sidebar_stylesheet(
         .st-key-{admin_box_key} {{
             order: 99;
             margin-top: 0.9rem;
+        }}
+        /* **앱 정보 카드는 사이드바 바닥에 고정한다**(2026-10-07 사용자 결정). 목록·조건 카드가
+           길어지면 그 밑으로 지나가 가려진다 — 카드가 밀려 내려가지도, 목록이 카드를 덮지도 않는다.
+           짧으면 마지막 상자 바로 아래가 아니라 사이드바 바닥에 선다.
+
+           짧을 때 바닥에 세우려면 맨 위 세로 블록이 스크롤 칸 높이를 다 채워야 카드의
+           `margin-top: auto` 가 남는 높이를 가져간다. 스크롤 칸(`stSidebarContent`)부터 그
+           세로 블록까지 세로 flex 로 잇고 늘린다. `>` 로만 잇는다 — 상자 안의 세로 블록까지
+           늘리면 상자가 부푼다.
+           모두 **줄어들지 않게** 둔다. Streamlit 이 머리칸·사용자 칸에 `min-height: 0` 을 걸어
+           두어, 줄어들 수 있으면 목록이 길 때 스크롤 대신 눌린다 — 머리칸이 넘친 만큼 눌려
+           (실측 52.5 → 34px) `S.PKG CAPA` 라벨이 HOME 위에 겹쳤다.
+           사용자 칸의 아래 여백(Streamlit 84px)은 걷는다. 남겨 두면 끝까지 내렸을 때 카드가
+           바닥에서 그만큼 떠 있다. */
+        [data-testid="stSidebarContent"] {{
+            display: flex;
+            flex-direction: column;
+        }}
+        [data-testid="stSidebarHeader"] {{
+            flex-shrink: 0;
+        }}
+        [data-testid="stSidebarUserContent"] {{
+            flex: 1 0 auto;
+            display: flex;
+            flex-direction: column;
+            padding-bottom: 0;
+        }}
+        [data-testid="stSidebarUserContent"] > div {{
+            flex: 1 0 auto;
+            display: flex;
+            flex-direction: column;
+        }}
+        [data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"] {{
+            flex: 1 0 auto;
+        }}
+        /* 카드(`st.container`)는 바깥 래퍼가 flex 항목이다. `order` 가 페이지가 더하는 조건 카드와
+           `Support` 뒤로 밀고, `sticky` 가 스크롤 칸 바닥에 붙인다. `fixed` 는 쓰지 않는다 — 접고
+           펴는 동안의 `transform` 과 끌어서 바꾸는 폭을 따라가지 못한다.
+           면은 사이드바 면(`SURFACE`)이라 밑으로 지나가는 목록을 가리고, 윗선이 경계를 말한다.
+           `z-index` 는 적용 기간 글자(2)보다 위, 사이드바 머리칸(Streamlit 11)보다 아래다.
+           면을 좌우 여백까지 펴는 것은 **그림자**다. 폭을 늘리면 스크롤 칸에 가로 스크롤이 생기지만
+           그림자는 스크롤 넓이에 들지 않는다. 위아래로 번지지 않게 `clip-path` 로 잘라 낸다. */
+        [data-testid="stLayoutWrapper"]:has(> .st-key-{APP_CREDITS_KEY}) {{
+            order: {APP_CREDITS_ORDER};
+            margin-top: auto;
+            position: sticky;
+            bottom: 0;
+            z-index: 3;
+            padding: 0.45rem 0 0.6rem;
+            background-color: {tokens.SURFACE};
+            border-top: 1px solid {tokens.BORDER};
+            box-shadow: 0 0 0 {_APP_CREDITS_BLEED} {tokens.SURFACE};
+            clip-path: inset(0 -{_APP_CREDITS_BLEED});
+        }}
+        /* 작은 글 두 줄 — 크기는 구역 제목의 설명 글(0.75rem)과 같다. 좁은 사이드바에서는 줄이
+           접히고, 띄어 쓸 곳이 없는 메일 주소도 칸 안에서 끊는다. Streamlit 은 캡션 칸에 아래
+           음수 여백(-1rem)을 걸어 다음 요소에 붙이는데, 여기서는 그만큼 글이 카드 밖으로 흘러
+           바닥 아래로 잘린다(실측 14px) — 걷는다. */
+        .st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] {{
+            margin-bottom: 0;
+        }}
+        .st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] p {{
+            margin: 0;
+            font-size: 0.75rem;
+            line-height: 1.45;
+            color: {tokens.TEXT_MUTED};
+            overflow-wrap: anywhere;
+        }}
+        /* 문의처는 마크다운이 메일 링크로 만든다. 누를 수 있는 곳이라 `ACCENT` 다 — 그대로 두면
+           어두운 테마에서 Streamlit 기본 링크색(거의 흰색)으로 떠 작은 글 가운데 혼자 튄다. */
+        .st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] a {{
+            color: {tokens.ACCENT};
         }}
         /* 상자 여닫기 콜백이 다시 돌리는 빈 프래그먼트의 본문 칸. 아무것도 그리지 않지만 칸이
            서면 본문 맨 위에 간격이 하나 생긴다(`sidebar_status.SIDEBAR_TOGGLE_SINK_KEY`). */

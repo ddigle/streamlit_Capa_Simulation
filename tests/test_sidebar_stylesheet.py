@@ -182,6 +182,76 @@ def test_the_support_box_sits_last_and_apart() -> None:
     assert _rules_with(block, "margin-top: 0.9rem;") == [rule]
 
 
+def _declarations(block: str, selectors: list[str]) -> list[str]:
+    """선택자 목록이 정확히 `selectors` 인 규칙 하나의 선언들. 주석은 걷어 내고 읽는다."""
+    without_comments = re.sub(r"/\*.*?\*/", "", block, flags=re.S)
+    bodies = [
+        match.group(2)
+        for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", without_comments)
+        if [part.strip() for part in match.group(1).split(",") if part.strip()] == selectors
+    ]
+    assert len(bodies) == 1, (selectors, len(bodies))
+    return [line.strip() for line in bodies[0].split(";") if line.strip()]
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_the_app_credits_card_is_pinned_to_the_sidebar_bottom(
+    mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """앱 정보 카드는 사이드바 **맨 아래에 고정**된다(2026-10-07 사용자 결정).
+
+    - 맨 아래: `order` 가 `Support`(99)보다 크다. 카드는 페이지보다 먼저 그려 파이썬 차례로는 조건
+      카드 앞이라 `order` 만이 자리를 지킨다.
+    - 고정: 스크롤 칸 바닥에 `sticky`. 목록이 길면 그 밑으로 지나가므로 면은 사이드바 면
+      (`SURFACE`)이고 윗선이 경계다. 적용 기간 글자(z 2)보다 위에 선다.
+    - 짧을 때 바닥: `margin-top: auto` 가 남는 높이를 가져가도록 스크롤 칸에서 맨 위 세로 블록까지
+      세로 flex 로 늘린다. 머리칸은 눌리지 않게, 사용자 칸 아래 여백은 걷는다.
+    """
+    from capa_simulation.components.app_credits import APP_CREDITS_KEY
+    from capa_simulation.components.sidebar_style import APP_CREDITS_ORDER
+
+    monkeypatch.setattr(theme, "current_mode", lambda: mode)
+    block = _style_block()
+
+    assert APP_CREDITS_ORDER > 99
+    card = _declarations(
+        block, [f'[data-testid="stLayoutWrapper"]:has(> .st-key-{APP_CREDITS_KEY})']
+    )
+    for declaration in (
+        f"order: {APP_CREDITS_ORDER}",
+        "margin-top: auto",
+        "position: sticky",
+        "bottom: 0",
+        "z-index: 3",
+        f"background-color: {tokens.SURFACE}",
+        f"border-top: 1px solid {tokens.BORDER}",
+    ):
+        assert declaration in card, (declaration, card)
+    (sticky,) = _rules_with(block, "position: sticky;")
+    assert sticky == [f'[data-testid="stLayoutWrapper"]:has(> .st-key-{APP_CREDITS_KEY})']
+
+    content = _declarations(block, ['[data-testid="stSidebarContent"]'])
+    assert {"display: flex", "flex-direction: column"} <= set(content)
+    assert "flex-shrink: 0" in _declarations(block, ['[data-testid="stSidebarHeader"]'])
+    user = _declarations(block, ['[data-testid="stSidebarUserContent"]'])
+    assert {"flex: 1 0 auto", "padding-bottom: 0"} <= set(user)
+    assert _rules_with(block, "flex: 1 0 auto;") == [
+        ['[data-testid="stSidebarUserContent"]'],
+        ['[data-testid="stSidebarUserContent"] > div'],
+        ['[data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"]'],
+    ]
+    # 캡션 칸의 음수 아래 여백을 걷어 글이 카드 밖으로 흐르지 않는다.
+    caption = _declarations(
+        block, [f'.st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"]']
+    )
+    assert caption == ["margin-bottom: 0"]
+    # 글은 작은 보조색, 메일 링크는 두 테마 모두 토큰의 `ACCENT` 다.
+    text = _declarations(block, [f'.st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] p'])
+    assert f"color: {tokens.TEXT_MUTED}" in text
+    link = _declarations(block, [f'.st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] a'])
+    assert link == [f"color: {tokens.ACCENT}"]
+
+
 def test_the_toggle_sink_is_hidden_and_short_runs_do_not_dim_the_body() -> None:
     """사이드바 상자를 여닫을 때 도는 빈 프래그먼트의 칸은 숨기고, 짧은 실행은 본문을 흐리지 않는다.
 

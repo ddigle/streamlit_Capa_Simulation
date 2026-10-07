@@ -9,18 +9,13 @@ APP_NAME = "S.PKG Capa Simulation"
 # 있으면 선택기의 허용 범위를 넓혀, 머지·연도 이동으로 만든 기간도 조회하게 한다.
 MONTH_SELECTION_START = 202501
 MONTH_SELECTION_END = 203012
-# 앱을 누가 만들었고 어떤 인증으로 배포되는지 알리는 메타다. 보여 주는 곳은 Admin Area 맨
-# 아래(`components/app_credits.py`) 한 곳이다 — ⋮ 메뉴(About)는 감추고, 머리 띠는 적용 중인
-# 시나리오를 싣는다. 담당 조직과 문의처는 실제 값이고 인증번호는 아직 자리만 잡아 둔 표본이라,
-# 사내 배포 전에 실제 값으로 바꾼다.
+# 앱의 버전·빌드일과 누가 만들었는지(담당 조직·문의처) 알리는 메타다. 보여 주는 곳은 모든 화면
+# 사이드바 맨 아래의 앱 정보 카드(`components/app_credits.py`) 한 곳이다 — ⋮ 메뉴(About)는
+# 감추고, 머리 띠는 적용 중인 시나리오를 싣는다. 담당 조직과 문의처는 실제 값이다.
 APP_VERSION = "0.9.0-demo"
 APP_BUILD_DATE = "2026-09-08"
 APP_OWNER_TEAM = "S.PKG 제조팀"
 APP_CONTACT_EMAIL = "hoyeon.jeon@samsung.com"
-APP_SECURITY_LEVEL = "DEMO-CONFIDENTIAL"
-APP_AUTH_CODE = "DEMO-AUTH-0000"
-APP_AUTH_EXPIRY = "2026-12-31"
-APP_HANDLING_NOTE = "반출·사외 공유 금지"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # 브라우저 탭 아이콘. `:material/…:` 이름을 주면 프런트엔드가 fonts.gstatic.com 에서 받아 오는데
 # 사내 WebIDE 는 그 주소에 못 나갈 수 있다. 저장소의 SVG 파일 경로를 주면 Streamlit 이 파일을 읽어
