@@ -196,6 +196,14 @@ def test_pressing_again_mid_motion_continues_from_where_it_is(
     assert min(third) < third[0] and third[-1] == pytest.approx(third[0])
 
 
+def test_a_value_that_arrives_for_a_waiting_toggle_moves_in(scene_results: dict[str, Any]) -> None:
+    """켜 둔 채 「준비 중」이던 GAP 에 값이 닿으면 툭 나타나지 않고 꺼진 자리에서 다시 들어온다."""
+    settled, first, later = scene_results["restart_alpha"]
+    assert settled == pytest.approx(1.0, abs=0.01)
+    assert first < 0.2
+    assert later == pytest.approx(1.0, abs=0.01)
+
+
 def test_reduced_motion_has_no_frame_loop_and_draws_on_messages(
     scene_results: dict[str, Any],
 ) -> None:

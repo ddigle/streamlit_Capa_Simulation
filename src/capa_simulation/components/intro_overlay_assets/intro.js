@@ -2307,7 +2307,8 @@ function createOverlay(api, data, initial, syncToolbar) {
     const key = button.dataset.key;
     if (!view[key] && !canToggle(key)) return;
     view[key] = !view[key];
-    button.setAttribute("aria-pressed", view[key] ? "true" : "false");
+    // 눌림·잠금·풍선을 다시 맞춘다 — 「준비 중」에 끈 토글은 이제 켤 수 없으니 잠긴다.
+    syncToggles();
     postView(false);
     buildTable();
     tip.style.opacity = "0";

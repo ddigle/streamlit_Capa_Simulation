@@ -127,6 +127,10 @@ _SESSION_KEY = "intro_official_summary"
 # 함께 만든다. 공식버전을 지정한 뒤 확인을 비워도(`forget_intro_summary_check`) 이 표지는 남는다 —
 # 저장한 회차에 HOME 앞에서 무거운 GAP 을 만들지 않게.
 _SEEN_KEY = "intro_official_summary_seen"
+# 입장 화면이 Summary 를 열며 「준비 중」 몫을 다시 받아 오라 했다(`_refresh_requested`). 그 회차는
+# 미루지 않는다 — 사용자가 덮개 위에서 그 값을 기다리고 있고, 앞 회차의 페이지 뒤 데우기는 그
+# trigger 의 rerun 에 끊겼을 수 있다(그리는 도중에 열면 Streamlit 이 그 회차를 끊고 새로 돈다).
+_REFRESH_KEY = "intro_official_summary_refresh"
 RECHECK_SECONDS = 30.0
 # 일시적일 수 있는 실패. 이것만 서버 캐시에 남기지 않고 다음 확인 때(`RECHECK_SECONDS` 뒤)
 # 다시 해 본다. 그 밖의 실패는 다시 해도 같은 결과(데이터 오류)라 「만들지 못함」을 서버
@@ -703,8 +707,9 @@ def official_summary_data(database_path: str) -> dict[str, Any]:
         return dict(held["data"])
     pending = False
     try:
+        refresh = bool(st.session_state.pop(_REFRESH_KEY, False))
         data, official, pending = _look_up(
-            database_path, defer=bool(st.session_state.get(_SEEN_KEY))
+            database_path, defer=bool(st.session_state.get(_SEEN_KEY)) and not refresh
         )
     except _Transient as exc:
         # DB 잠금 같은 일시적 실패로 멀쩡한 요약을 지우지 않는다(지우면 사이드바 라벨이 Summary
@@ -783,13 +788,14 @@ def _refresh_requested() -> None:
     """입장 화면이 「준비 중」 몫을 다시 받아 오려 한다(Summary 를 열 때 한 번).
 
     페이지 뒤 데우기가 끝났으면 세션 값이 이미 새 값이라 이번 회차가 그대로 보낸다. 아직 「준비
-    중」이면 이번 회차에 곧바로 다시 확인한다 — 다른 세션이 그 사이 만들어 둔 값을 받고, 없으면 이번
-    페이지 뒤에서 다시 데운다.
+    중」이면 이번 회차에 곧바로 다시 확인하고 **미루지 않고** 만든다 — 사용자가 덮개 위에서
+    기다리고, 앞 회차의 페이지 뒤 데우기는 이 rerun 에 끊겼을 수 있다(그 회차를 그리는 도중에 열면).
     """
     held = st.session_state.get(_SESSION_KEY)
     if isinstance(held, dict) and held.get("pending"):
         held["checked_at"] = -RECHECK_SECONDS
         held.pop("warmed_at", None)
+        st.session_state[_REFRESH_KEY] = True
 
 
 def render_intro_summary(database_path: str) -> None:

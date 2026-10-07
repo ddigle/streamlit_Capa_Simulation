@@ -2389,7 +2389,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     부른다. **예외는 하나**: Summary 를 열 때 「준비 중」 몫(페이지 뒤에서 만드는 GAP)이 있으면 요약
     컴포넌트의 `refresh` trigger 를 **한 번 열 때 한 번** 건다(`askRefreshIfPending` →
     `window.__capaSummaryRefresh`, `intro_summary._refresh_requested`). 덮개가 앱을 가린 채 rerun 한 번이
-    돌고 그 회차가 페이지 뒤에서 만든 값을 보낸다. 앱이 다 그려진 뒤에만 열 수 있어 첫 실행을 끊지 않는다.
+    돈다. 그 회차는 GAP 을 **미루지 않고** 만든다 — 사용자가 덮개 위에서 기다리고, 앞 회차를 그리는 도중에
+    열었으면 Streamlit 이 그 회차를 끊어 페이지 뒤 데우기가 돌지 못했다(8545 실측 — 처음에는 「준비 중」이
+    그대로 남았다). 앱이 다 그려진 뒤에만 열 수 있어 첫 실행을 끊지 않는다.
   - **글꼴은 저장소에 든 부분 글꼴 둘이다**(`archivo-capa.woff2` Archivo 800·폭 75% — 워드마크·타이틀·
     단추·시트의 달, `archivo-capa-number.woff2` Archivo 700·폭 100% — 차트 숫자·단위, SIL OFL 1.1 —
     같은 폴더 `OFL.txt`). 사내망에는 외부 글꼴이 없다. Google Fonts `css2?family=Archivo:wdth,wght@…` 에

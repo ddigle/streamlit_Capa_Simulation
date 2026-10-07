@@ -158,6 +158,22 @@ const base = await open(payload);
 base.tick(offAt - 16);
 results.back_to_base = base.now() + 16 === offAt && same(base.frame(), offFrame);
 
+// 3-1) 켜 둔 채 「준비 중」이던 GAP 에 값이 닿으면(`restart`) 꺼진 자리에서 다시 움직여 들어온다 — 유령 점의
+// 투명도가 0 근처에서 다시 1 로 오른다.
+{
+  const ghost = await open(payload);
+  ghost.tick(ghost.now() + 3000);
+  ghost.send(view(false, false, true));
+  ghost.tick(ghost.now() + 2000);
+  const alphaOf = (frame) =>
+    Math.max(0, ...frame.filter((c) => c[0] === "stroke" && String(c[c.length - 1]).split("|")[2] === PALETTE.muted).map((c) => Number(String(c[c.length - 1]).split("|")[0])));
+  const settled = alphaOf(ghost.frame());
+  ghost.send({ ...view(false, false, true), restart: ["comparison"] });
+  const first = alphaOf(ghost.frame());
+  ghost.tick(ghost.now() + 2000);
+  results.restart_alpha = [settled, first, alphaOf(ghost.frame())];
+}
+
 // 4) 움직임을 줄였으면 프레임 루프가 없고, 메시지를 받을 때만 한 번 그린다.
 const reduced = await open(payload, { reduce: true });
 results.reduce_queued = reduced.queued();

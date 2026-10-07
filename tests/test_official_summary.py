@@ -428,6 +428,14 @@ def test_a_refresh_request_rechecks_a_pending_summary_at_once(
     assert module.official_summary_data("db")["toggles"]["comparison"].get("pending") is True
     module._refresh_requested()
     assert module.official_summary_data("db")["toggles"]["comparison"]["version"] == 1
+    # 아무도 데우지 못했어도(앞 회차의 데우기가 그 rerun 에 끊긴 때) 다시 받아 오는 회차는 미루지
+    # 않는다.
+    summary_env.versions["comparison"] += 1
+    module.forget_intro_summary_check()
+    assert module.official_summary_data("db")["toggles"]["comparison"]["pending"] is True
+    summary_env.now += 1
+    module._refresh_requested()
+    assert module.official_summary_data("db")["toggles"]["comparison"]["version"] == 2
     calls = summary_env.repo.calls
     module._refresh_requested()  # 「준비 중」이 없으면 다시 확인하지 않는다
     module.official_summary_data("db")
