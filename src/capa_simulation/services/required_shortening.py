@@ -496,7 +496,7 @@ def plan_from_availability(
             LevelPlan(
                 level=float(level),
                 process_months=_frame(month_rows, PROCESS_MONTH_COLUMNS, _empty_process_months()),
-                units=_frame(unit_rows, UNIT_PLAN_COLUMNS, _empty_units()),
+                units=_unit_frame(unit_rows),
             )
         )
     return tuple(results)
@@ -746,6 +746,15 @@ def _frame(
     if not rows:
         return empty
     return pd.DataFrame(rows, columns=list(columns))
+
+
+def _unit_frame(rows: list[dict[str, object]]) -> pd.DataFrame:
+    """호기 표. 정수 칸은 가상 호기의 빈칸 때문에 실수로 바뀌지 않게 `Int64` 로 못박는다."""
+    frame = _frame(rows, UNIT_PLAN_COLUMNS, _empty_units())
+    for column in ("단축일수", "대상 월", "모듈 수"):
+        frame[column] = pd.to_numeric(frame[column]).astype("Int64")
+    frame["늘어난 환산대수"] = pd.to_numeric(frame["늘어난 환산대수"]).astype("float64")
+    return frame
 
 
 def _empty_process_months() -> pd.DataFrame:

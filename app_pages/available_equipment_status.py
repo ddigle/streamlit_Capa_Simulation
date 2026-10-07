@@ -1,4 +1,4 @@
-# Purpose: 설비 조회·월별 비교·Cut-off 설정·입력 작업을 연결하고 저장본과 데모의 경계를 관리한다.
+# Purpose: 설비 조회·월별 비교·필요단축일정·Cut-off·입력을 연결하고 저장본과 데모의 경계를 관리한다.
 
 from __future__ import annotations
 
@@ -26,11 +26,18 @@ from capa_simulation.components.equipment_explorer import (
 )
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.required_shortening_panel import render_required_shortening_tab
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
-from capa_simulation.navigation import EQUIPMENT_GAP_TAB, EQUIPMENT_MAIN_TAB, EQUIPMENT_TAB_KEY
+from capa_simulation.navigation import (
+    EQUIPMENT_GAP_TAB,
+    EQUIPMENT_MAIN_TAB,
+    EQUIPMENT_SHORTENING_TAB,
+    EQUIPMENT_TAB_KEY,
+)
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
+    PageContext,
     bootstrap_error_message,
     load_page_context,
     render_schema_ahead_warning,
@@ -143,15 +150,18 @@ using_dashboard_sample = equipment.empty
 
 first_action = st.empty()
 sample_notice = st.empty()
-main_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
+main_tab, gap_tab, preference_tab, rawdata_tab, shortening_tab = stateful_tabs(
     [
         EQUIPMENT_MAIN_TAB,
         EQUIPMENT_GAP_TAB,
         TAB_PREFERENCE,
         TAB_RAWDATA,
+        EQUIPMENT_SHORTENING_TAB,
     ],
     key=EQUIPMENT_TAB_KEY,
 )
+# 조회 결과를 그리는 탭(설비 조건 카드·샘플 스위치가 서는 탭). Preference·RawData 는 입력 폼이다.
+viewing_tab_open = any(not tab_is_hidden(tab) for tab in (main_tab, gap_tab, shortening_tab))
 if latest_snapshot is None and not tab_is_hidden(main_tab):
     with first_action.container():
         with st.container(horizontal=True, vertical_alignment="center"):
@@ -163,7 +173,7 @@ if latest_snapshot is None and not tab_is_hidden(main_tab):
         # 이 안내는 저장본이 없을 때만 선다 — 저장된 호기·비가동은 0건이다.
         _render_first_data_checklist((0, 0, len(cutoff)))
 show_sample_fleet = bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
-if using_dashboard_sample and (not tab_is_hidden(main_tab) or not tab_is_hidden(gap_tab)):
+if using_dashboard_sample and viewing_tab_open:
     with sample_notice.container():
         show_sample_fleet = render_sample_switch(
             key="equipment_sample_switch", source="설비 운영 DB"
@@ -186,14 +196,10 @@ dashboard_baseline = (
 )
 
 # 조회 조건은 사이드바 조건 카드 `설비 조회 조건` 이다(2026-09-29 사용자 결정). Main·
-# Static/Dynamic 두 탭이 **한 카드**를 쓰고 안의 내용만 열린 탭 것이다 — 한 번 편 카드는 탭을
-# 옮겨도 편 채로 남는다(카드를 세우는 탭은 `navigation` 의 `card_labels` 선언과 같아야 한다).
+# Static/Dynamic·필요단축일정이 **한 카드**를 쓰고 안의 내용만 열린 탭 것이다 — 한 번 편 카드는
+# 탭을 옮겨도 편 채로 남는다(카드를 세우는 탭은 `navigation` 의 `card_labels` 선언과 같아야 한다).
 # Preference(Cut-off)·RawData 의 표 보기 설정은 그 표의 입력 폼과 한 몸이라 본문에 둔다.
-conditions_card = (
-    condition_card("설비 조회 조건", name="equipment")
-    if not tab_is_hidden(main_tab) or not tab_is_hidden(gap_tab)
-    else None
-)
+conditions_card = condition_card("설비 조회 조건", name="equipment") if viewing_tab_open else None
 # 호기가 없고 샘플도 끈 Main 에는 고를 조건이 없다. 빈 카드 대신 까닭을 한 줄 적는다 — 카드를
 # 아예 빼면 사이드바에서 이 화면의 조건 자리가 통째로 사라져 까닭을 알 수 없다.
 if (
@@ -318,3 +324,48 @@ with rawdata_tab:
         max_extent=max_extent,
         drafts_replaced=drafts_replaced,
     )
+
+
+with shortening_tab:
+    if not tab_is_hidden(shortening_tab):
+        if using_dashboard_sample and not show_sample_fleet:
+            st.info(
+                "등록된 호기가 없습니다. RawData에서 호기 마스터를 입력하거나 "
+                "샘플 데이터를 켜서 화면을 살펴보세요."
+            )
+        else:
+            # Static/Dynamic 과 같은 입력을 같은 길로 모은다. 소요대수는 활성 시나리오에 있으므로
+            # **이 탭 안에서만** 예외를 잡아 알린다 — 다른 탭과 Cut-off 입력은 막지 않는다.
+            # 호기 구간(`span_date_range` 로 넓힌 `build_equipment_lifecycle_spans`)과 환산비는
+            # 고른 달이 정해진 뒤 `get_required_shortening` 이 같은 함수로 만든다.
+            shortening_context: PageContext | None = None
+            shortening_required: pd.DataFrame | None = None
+            shortening_error: str | None = None
+            try:
+                shortening_context = load_page_context()
+                _, shortening_required = get_scenario_capacity_and_demand(
+                    scenario_cache_key(
+                        shortening_context.reference_version,
+                        shortening_context.active_scenario,
+                        shortening_context.selected_start_month,
+                        shortening_context.selected_end_month,
+                    ),
+                    _scenario_tables=shortening_context.active_scenario["tables"],
+                    _reference_tables=shortening_context.reference_tables,
+                )
+            except BOOTSTRAP_ERRORS as exc:
+                shortening_error = bootstrap_error_message(
+                    exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
+                )
+            render_required_shortening_tab(
+                equipment=dashboard_equipment,
+                downtime=dashboard_downtime,
+                baseline=dashboard_baseline,
+                cutoff=repository.load_process_cutoff(),
+                today=today,
+                context=shortening_context,
+                required_equipment=shortening_required,
+                scenario_error=shortening_error,
+                owner_tab=shortening_tab,
+                conditions=conditions_card,
+            )

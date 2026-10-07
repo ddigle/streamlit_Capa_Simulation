@@ -160,15 +160,17 @@ DYNAMIC_CAPA = PageSpec(
     reads_scenario=False,
     reads_period=False,
 )
-# 가용설비 현황의 탭. 공통 조건을 읽는 탭이 하나뿐이라 사이드바(`app.py`)가 열린 탭을 봐야 하고,
+# 가용설비 현황의 탭. 공통 조건을 읽는 탭이 일부뿐이라 사이드바(`app.py`)가 열린 탭을 봐야 하고,
 # 그래서 라벨을 여기 한 곳에 둔다 — 페이지도 이 이름을 읽는다.
 EQUIPMENT_TAB_KEY = "equipment_active_tab"
 EQUIPMENT_MAIN_TAB = ":material/dashboard: Main"
 EQUIPMENT_GAP_TAB = ":material/compare_arrows: Static/Dynamic"
+EQUIPMENT_SHORTENING_TAB = ":material/event_upcoming: 필요단축일정"
 # 순서는 사용자가 정한 조회 흐름이다 — 설비·공간 같은 **자원 현황**을 먼저 보고, 효율·
 # UPEH·수율 **실적**을 지나, 마지막에 그 결과가 쌓인 재공을 본다.
 DYNAMIC_CAPA_SUBPAGES = (
-    # 설비 DB 만 본다. `Static/Dynamic` 탭만 활성 시나리오·조회기간으로 확보율을 맞대어 본다.
+    # 설비 DB 만 본다. `Static/Dynamic`·`필요단축일정` 탭만 활성 시나리오·조회기간으로 소요대수를
+    # 맞대어 본다.
     PageSpec(
         "app_pages/available_equipment_status.py",
         _data_pending("가용설비 현황"),
@@ -176,9 +178,11 @@ DYNAMIC_CAPA_SUBPAGES = (
         condition_tabs=ConditionTabs(
             EQUIPMENT_TAB_KEY,
             first=EQUIPMENT_MAIN_TAB,
-            labels=frozenset({EQUIPMENT_GAP_TAB}),
-            # `설비 조회 조건` 카드는 Main·Static/Dynamic 에만 선다.
-            card_labels=frozenset({EQUIPMENT_MAIN_TAB, EQUIPMENT_GAP_TAB}),
+            labels=frozenset({EQUIPMENT_GAP_TAB, EQUIPMENT_SHORTENING_TAB}),
+            # `설비 조회 조건` 카드는 Main·Static/Dynamic·필요단축일정에만 선다.
+            card_labels=frozenset(
+                {EQUIPMENT_MAIN_TAB, EQUIPMENT_GAP_TAB, EQUIPMENT_SHORTENING_TAB}
+            ),
         ),
         has_condition_cards=True,
         # 스냅샷·도면·컷오프를 따로 읽어 rerun 마다 설비 DB 를 서너 번 연다.

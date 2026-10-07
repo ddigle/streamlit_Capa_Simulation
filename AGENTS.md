@@ -171,8 +171,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     작업 줄의 버튼과 팝업이다. HOME 의 B/N 집계 공정 상자도 같은 역할이다.
   - **공통 상자(시나리오·리비전, 조회기간)도 그 화면이 읽을 때만 선다**(2026-09-29 사용자
     결정). 무엇을 읽는지는 `navigation.PageSpec` 의 `reads_scenario`·`reads_period` 가 선언하고
-    `app.py` 가 그대로 따른다 — 선언은 화면 코드가 실제로 읽는 것(전수 조사)이다. 한 탭만 읽는
-    화면(가용설비 현황의 `Static/Dynamic`)은 `condition_tabs` 로 그 탭을 적고, `app.py` 가 열린
+    `app.py` 가 그대로 따른다 — 선언은 화면 코드가 실제로 읽는 것(전수 조사)이다. 일부 탭만 읽는
+    화면(가용설비 현황의 `Static/Dynamic`·`필요단축일정`)은 `condition_tabs` 로 그 탭을 적고, `app.py` 가 열린
     탭(세션의 탭 값, 없으면 `stateful_tabs` 의 기억 칸)을 보고 가른다. 공통 조건을 하나도 읽지
     않아도 조건 카드가 있으면 `has_condition_cards` 로 구역 제목을 세운다. 제목은 **늘 페이지보다
     먼저, 같은 자리에** 선다. 페이지가 카드를 그리기 전에 멈추는 드문 오류 경로(VOC 게시판·설비 DB
@@ -643,12 +643,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     링크는 공용 `components/page_link.py` 를 쓴다.
   - 현재 수치는 결정론적 데모이고 샘플 스위치로 끌 수 있다.
 - `app_pages/available_equipment_status.py`
-  - `Main`·`Static/Dynamic`·`Preference`·`RawData` 네 탭이다
+  - `Main`·`Static/Dynamic`·`Preference`·`RawData`·`필요단축일정` 다섯 탭이다
     (`stateful_tabs`, key·라벨은 `navigation.EQUIPMENT_*` 한 곳).
   - **조회 조건은 사이드바 조건 카드 `설비 조회 조건`**(이름 `equipment`)이다(2026-09-29 사용자
-    결정). `Main`·`Static/Dynamic` 두 탭이 한 카드를 쓰고 내용만 열린 탭 것이다 — 페이지가 카드를
-    만들어 `conditions=` 로 넘기고 컴포넌트가 제 위젯을 그 안에 그린다(안 넘기면 예전처럼 본문
-    제자리 — 컴포넌트를 홀로 띄우는 테스트가 쓴다). 카드를 세우는 탭은 `navigation` 의
+    결정). `Main`·`Static/Dynamic`·`필요단축일정` 세 탭이 한 카드를 쓰고 내용만 열린 탭 것이다 —
+    페이지가 카드를 만들어 `conditions=` 로 넘기고 컴포넌트가 제 위젯을 그 안에 그린다(안 넘기면
+    예전처럼 본문 제자리 — 컴포넌트를 홀로 띄우는 테스트가 쓴다). 카드를 세우는 탭은 `navigation` 의
     `ConditionTabs.card_labels` 와 같아야 한다. Preference(Cut-off)·RawData 의 표 보기 설정은 그
     표의 입력 폼과 한 몸이라 본문에 둔다. 설명은 Guide(`guides/available_equipment_status.md`)다.
   - **하위 보기 전환은 본문이다**(2026-09-29 사용자 결정). 탭 안에서 무엇을 볼지 고르는 전환 —
@@ -694,9 +694,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     빼라」는 편집이라 부분 upsert 로는 뜻을 표현할 수 없다. 키에 `product_scope` 를 미리
     열어 두었고 지금은 모두 `'*'` 다.
   - `Static/Dynamic` 은 기준정보 `RQ_EQP_AVBL`(Static)과 호기 일정 안분(Dynamic)을 맞대어
-    GAP 을 낸다. **이 페이지에서 시뮬레이션 DB 를 여는 유일한 탭**이고, 못 읽어도 그 탭
-    안에서만 알린다 — 이 페이지는 활성 시나리오 없이도 열리는 유일한 계산 계열 화면이라
-    통째로 막으면 Cut-off 를 적으러 들어올 수도 없다.
+    GAP 을 낸다. **이 페이지에서 시뮬레이션 DB 를 여는 탭은 이것과 `필요단축일정` 둘**이고, 못
+    읽어도 그 탭 안에서만 알린다 — 이 페이지는 활성 시나리오 없이도 열리는 유일한 계산 계열
+    화면이라 통째로 막으면 Cut-off 를 적으러 들어올 수도 없다.
+  - **`필요단축일정`**(2026-10-07 사용자 결정, 시안 B 「공정 카드형」)은 Dynamic 가용(환산 소계)이
+    시나리오 소요대수 x 목표 확보율에 모자란 공정·월을 채우려면 신규 호기 Qual 을 며칠 당겨야 하는지
+    보인다. 페이지는 GAP 탭과 같은 입력(활성 시나리오 소요대수 `get_scenario_capacity_and_demand`,
+    `load_process_cutoff`, `dashboard_*` 세 표)을 모아 `components/required_shortening_panel.py` 에
+    넘기고, 시나리오를 못 읽으면 그 탭 안에서만 경고한다. 넓힌 생애주기 구간·환산비는 고른 달이
+    정해진 뒤 `simulation_cache.get_required_shortening` 이 같은 함수로 만든다. 다섯 목표(90~130%)를 한
+    번에 캐시하고 목표·공정 선택은 고르기만 한다. 계산 규칙은 `services/required_shortening.py` 항목이다.
+    **DB 에 쓰지 않는다.**
   - 월별 Dynamic 가용대수는 `(전월 말일 - cutoff, 당월 말일 - cutoff]` 반열린 구간과 겹친
     일수로 안분한다(`services/wd_window.py`). 구간 길이는 늘 그 달의 달력일수이고 열두
     구간의 합이 365일이어야 한다. **가용 소계에 드는 분류는 `기존보유`·`가용` 둘뿐이고**
@@ -2929,6 +2937,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이름)으로 남고 Streamlit 은 표가 바뀌어도 선택을 들고 있어, 공정을 바꾸면 전에 누른 위치가
     **누르지 않은 분류**를 가리켰다(브라우저 실측). 빈 선택을 코드로 밀어 넣는 방법은 첫 변경에만
     먹는다 — 화면이 같은 선택 값을 두 번째부터 무시한다.
+- `src/capa_simulation/components/required_shortening_panel.py`
+  - 가용설비 현황 `필요단축일정` 탭(시안 B 「공정 카드형」). 카드에 시작 월·끝 월(사이드바 조회기간
+    가운데 소요대수가 있는 범위, 기본 전체)과 공정(표시순서 = 확보율 표의 공용 순서)을, 본문 머리 줄
+    오른쪽에 `목표 확보율`(기본 110%)을 둔다. 모두 `persist_state`. **공정을 비우면 고른 목표에서 한
+    달이라도 모자란 공정 전체**가 카드로 선다(필터의 「미선택 시 전체」 관례를 「미선택 시 목표 미달 전체」
+    로 읽는다). KPI·B/N 의 범위는 고른 공정, 비우면 맞댄 공정 전체다.
+  - 화면은 `st.html` 이다(마크다운 파서는 빈 줄에서 HTML 블록을 끊는다). 색은 실행마다 `tokens` 에서
+    읽어 두 테마를 따르고, `STATUS_*` 는 면색이라 그 위 글자는 `TEXT` 다. 호기·공정 이름은
+    `html.escape` 한다. 큰 숫자는 `FONT_FAMILY_DISPLAY`(Archivo 부분 글꼴)다 — 외부 글꼴을 부르지 않는다.
+  - `계획 · LOB 요약` 의 Density·Wafer 는 HOME 과 **같은 키**(`build_home_simulation_cache_key`, 조회기간
+    ∩ 계획 범위)로 `get_home_simulation` 을 불러 HOME 캐시를 나눈다(EDP 포함). `Dynamic B/N 확보율 현재 /
+    단축 후` 는 범위 공정 가운데 가용 ÷ 소요가 가장 낮은 값이고, 칩 색은 HOME 공용 판정 기준이다.
+  - 카드: 머리(이름·Cut-off·배지 「최대 부족 x대 · 단축 n대 · 신규 m대」/「목표 충족」), 월 표(가용·
+    소요·확보율 칩·과부족, 「→ 단축 후」), 호기 줄(● 기존 Qual ◀ 목표 Qual, 사이 선, 달 격자·오늘 점선,
+    −N일·+x.xx대, 가상 호기는 점선 원·「신규」). 축은 고른 달의 달력 범위이고 밖의 날짜는 끝에 붙인다.
+  - CSV 두 벌(호기 단축·공정 x 월)은 고른 목표·공정 범위 그대로다(`table_toolbar.render_csv_download`).
 - `src/capa_simulation/components/availability_gap_figure.py`
   - Static 대 Dynamic 월별 비교 Figure.
   - **그림은 비교를, 표가 분해를 맡는다.** 분류가 열이라 열 가지 색을 쓰면 서로 구분되지
@@ -3230,8 +3254,8 @@ RQ_MODULE
    리비전에서 저장하면 해당 리비전을 부모로 갖는 새 분기를 만든다.
 9. **설비 운영 이력은 시나리오와 물리적으로 분리한다.** 가용설비 현황은 전용 DuckDB,
    전용 마이그레이션·Repository·캐시와 페이지 전용 조회기간을 사용하고 저장마다 새 전체
-   스냅샷을 만든다. `Static/Dynamic` 탭만 시뮬레이션 기준정보·소요대수를 읽어 비교하며
-   설비 운영 저장과 Main·설정·입력 화면은 시뮬레이션 DB에 의존하지 않는다.
+   스냅샷을 만든다. `Static/Dynamic`·`필요단축일정` 탭만 시뮬레이션 기준정보·소요대수를 읽어
+   비교하며 설비 운영 저장과 Main·설정·입력 화면은 시뮬레이션 DB에 의존하지 않는다.
 10. **실적 이력을 시나리오에 복제하지 않는다.** 표준 Capa는 시나리오·리비전별로 보존하고,
     실적 효율과 생산실적은 원천 갱신 주기별 배치와 등록시각을 가진 누적 이력으로 관리한다.
     분석 시 선택한 표준 리비전과 조회 시점의 실적 이력을 연결한다.
