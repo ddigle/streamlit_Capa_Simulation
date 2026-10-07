@@ -1528,6 +1528,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`get_period_capacity_error`). **실패도 결과로 캐시한다**(`CapacityOutcome`) — 예외는
     캐시되지 않아 오류 화면을 여는 실행마다 몇 초씩 다시 돈다. `ValueError`(기준정보 계약
     위반)만 담고, 그 밖의 예외는 코드 결함이라 그대로 올린다.
+  - `get_required_shortening` 은 가용설비 현황 `필요단축일정` 의 다섯 목표 결과를 한 번에 캐시한다.
+    키(`required_shortening_cache_key`)는 시나리오 키(소요대수를 대신한다 — 3MB 를 해시하지
+    않는다) + 호기 마스터·비가동·기존보유·Cut-off 의 내용 지문(`frame_digest`, 저장 안 한 편집본도
+    덮는다) + 달 + 오늘이다. 목표·공정을 바꾸는 rerun 은 이 결과를 고르기만 한다.
 
 ### 계산 서비스
 
@@ -2766,6 +2770,26 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **HOME·B/N 은 여전히 Static 을 본다.** 전역 전환은 하지 않았다 — 캐시 키가
     `(reference_version, content_token, 조회기간)` 뿐이라 설비 DB·Cut-off 가 바뀌어도
     안 깨지고, Cut-off 미기재 공정에서 계산이 멈춘다. 둘을 풀기 전에는 비교만 한다.
+- `src/capa_simulation/services/required_shortening.py`
+  - 가용설비 현황 `필요단축일정` 의 순수 계산. Dynamic 가용(환산 소계)이 소요대수 x 목표 확보율
+    (90·100·110·120·130%)에 모자란 공정·월마다 신규 호기 Qual 을 며칠 당겨야 하는지, 당길 호기가
+    바닥나면 가상 호기 「추가N」이 언제까지 Qual 을 마쳐야 하는지 낸다. **어느 DB 도 열지 않는다.**
+  - 가용은 Static/Dynamic 탭과 같은 길(`span_date_range` 로 넓힌 생애주기 구간 →
+    `build_monthly_equipment_availability` → `dynamic_available_equipment`)이고, 소요는
+    `calculate_securement_rate` 로 `(월, 공정)` 에 모은다 — 교차검증과 같은 함수다. 공정은 같은
+    이름일 때만 맞대고 한쪽에만 있는 공정은 목록(`required_only`·`availability_only`·
+    `missing_cutoff`)으로 돌려준다.
+  - **늘어나는 몫은 엔진을 다시 돌리지 않고 기여일로 센다.** 반입일정을 하한으로 보지 않기로
+    했는데(2026-10-07 사용자 결정) 상태 엔진은 반입 전을 「입고 예정」으로 세어, 당긴 Qual 을 엔진에
+    다시 넣으면 0 이 된다. 그래서 `환산비 x |(max(t, 구간 앞), min(q, 구간 끝)]| / 구간일수` 를 하루씩
+    더하고, 그 호기의 운영 비가동과 겹친 날만 엔진처럼 뺀다.
+  - 차례: 달마다 바닥 `max(구간 앞 경계, 오늘)` 보다 Qual 이 늦은 후보를 Qual 오름차순(같으면 이름 끝
+    숫자 → 이름)으로 골라 **모자란 만큼만** 당긴다. 앞 달의 단축·가상 호기는 뒤 달 가용에 이어진다.
+    구간이 이미 끝난 달은 「단축으로 못 채움(기한 지남)」이다. 한 달에 가상 호기 50대를 넘기면 멈추고
+    「신규로도 못 채움(남은 날 부족)」으로 둔다 — 구간이 거의 지난 이번 달은 한 대가 1/31 대만 덮는다.
+  - 후보는 기존설비 N·보관 N·Qual 있음·확정상태 ≠ 완료·반출/이설 없음이고, 모듈 행은 설비키로 묶어
+    한 대로 당긴다(묶음 Qual = 가장 늦은 모듈, 목표보다 늦은 모듈만 옮긴다). `늘어난 환산대수` 는 당긴
+    달에 는 몫이고 `해소 기여 월` 은 그 호기가 몫을 보탠, 원래 부족했던 달이다.
 - `src/capa_simulation/services/availability_gap.py`
   - Static(`RQ_EQP_AVBL`)과 Dynamic 을 한 표로 맞대어 GAP 을 낸다. 프레임 둘을 받아 하나를
     돌려주는 순수 함수다.

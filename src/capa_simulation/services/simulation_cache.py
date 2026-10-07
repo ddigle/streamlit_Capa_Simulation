@@ -34,6 +34,10 @@ from capa_simulation.services.product_share import build_product_volume
 from capa_simulation.services.required_equipment import (
     calculate_required_equipment,
 )
+from capa_simulation.services.required_shortening import (
+    ShorteningPlan,
+    plan_required_shortening,
+)
 from capa_simulation.services.route_step_editor import route_step_catalog, route_step_summary
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.standard_target_capacity import (
@@ -152,15 +156,52 @@ def display_order_digest(display_order: pd.DataFrame) -> str:
     결과를 캐시하는 래퍼는 이 값도 키에 넣어야 한다 — 빠뜨리면 Admin 에서 순서를 바꾼 뒤에도
     옛 순서가 남는다.
     """
+    return frame_digest(display_order)
+
+
+def frame_digest(frame: pd.DataFrame) -> str:
+    """프레임 내용의 SHA-256. 컬럼·dtype·행 값을 모두 덮는다 — 같은 글자면 같은 내용이다."""
     digest = hashlib.sha256()
-    digest.update("\x1f".join(map(str, display_order.columns)).encode("utf-8"))
-    digest.update("\x1f".join(map(str, display_order.dtypes)).encode("utf-8"))
+    digest.update("\x1f".join(map(str, frame.columns)).encode("utf-8"))
+    digest.update("\x1f".join(map(str, frame.dtypes)).encode("utf-8"))
     digest.update(
-        pd.util.hash_pandas_object(display_order, index=True, categorize=True)
+        pd.util.hash_pandas_object(frame, index=True, categorize=True)
         .to_numpy(dtype="uint64")
         .tobytes()
     )
     return digest.hexdigest()
+
+
+# (시나리오 키, 호기 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 오늘).
+RequiredShorteningCacheKey = tuple[ScenarioCacheKey, str, str, str, str, tuple[int, ...], str]
+
+
+def required_shortening_cache_key(
+    scenario_key: ScenarioCacheKey,
+    *,
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    months: tuple[int, ...],
+    today: date,
+) -> RequiredShorteningCacheKey:
+    """필요단축일정 결과의 키. **소요대수는 해시하지 않고 시나리오 키가 대신한다.**
+
+    소요대수(약 3MB)는 `(reference_version, content_token, 조회기간)` 이 정하므로 그 키를 그대로
+    싣는다 — 내용을 해시하면 적중에도 수십 ms 를 쓴다. 설비 쪽 네 표는 저장 안 한 편집본일 수
+    있어 리비전 번호가 아니라 내용 지문이다. 오늘이 바뀌면 바닥(`max(구간 앞, 오늘)`)이 달라지므로
+    날짜도 키에 든다.
+    """
+    return (
+        scenario_key,
+        frame_digest(equipment),
+        frame_digest(downtime),
+        frame_digest(baseline),
+        frame_digest(cutoff),
+        tuple(int(month) for month in months),
+        today.isoformat(),
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -773,4 +814,31 @@ def get_scenario_capacity_and_demand(
     return (
         slice_capacity_months(outcome.unit_capacity, start_month, end_month),
         slice_capacity_months(outcome.required_equipment, start_month, end_month),
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_required_shortening(
+    cache_key: RequiredShorteningCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+    _baseline: pd.DataFrame,
+    _cutoff: pd.DataFrame,
+    _required_equipment: pd.DataFrame,
+) -> ShorteningPlan:
+    """다섯 목표의 필요단축일정. 목표·공정 선택은 이 결과를 고르기만 하므로 다시 계산하지 않는다.
+
+    프레임은 해시하지 않는다 — 키(`required_shortening_cache_key`)가 내용 지문과 시나리오 키를
+    모두 싣는다. `_required_equipment` 는 키의 시나리오 키로 받은 바로 그 소요대수여야 한다.
+    호기 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
+    """
+    _, _, _, _, _, months, today = cache_key
+    return plan_required_shortening(
+        equipment=_equipment,
+        downtime=_downtime,
+        baseline=_baseline,
+        cutoff=_cutoff,
+        required_equipment=_required_equipment,
+        months=months,
+        today=date.fromisoformat(today),
     )
