@@ -468,7 +468,7 @@ def _render_comparison_picker(database_path: str) -> None:
     **선택지 라벨에는 활성 상태를 붙이지 않는다.** Streamlit 1.63 선택 상자는 고른 항목의 라벨
     글자를 주고받는다. 라벨이 활성 리비전에 따라 바뀌면(전에는 「· 현재 활성」·「· 현재
     시나리오」를 붙였다) 시나리오를 불러온 뒤 브라우저가 옛 라벨을 되보내고, 서버는 그것을
-    바뀐 값으로 읽어 다음 조작 하나를 앱 전체 재실행으로 만들고 `_save_comparison_choice` 가
+    바뀐 값으로 읽어 다음 조작 하나를 앱 전체 재실행으로 만들고 저장 콜백이
     그 **라벨 글자**를 리비전 id 자리에 공용 프로필로 저장했다(2026-10-08 안정화 점검 계측).
     """
     with st.container(border=True):
@@ -496,7 +496,7 @@ def _render_comparison_picker(database_path: str) -> None:
             format_func=lambda value: _comparison_label(scenario_by_id, value),
             key=COMPARISON_SCENARIO_KEY,
             persist_state="session",
-            on_change=_save_comparison_choice,
+            on_change=_save_comparison_scenario,
             args=(database_path,),
         )
         if scenario_id is None:
@@ -524,7 +524,7 @@ def _render_comparison_picker(database_path: str) -> None:
             format_func=lambda value: _revision_label(revision_by_id[value]),
             key=COMPARISON_REVISION_KEY,
             persist_state="session",
-            on_change=_save_comparison_choice,
+            on_change=_save_comparison_revision,
             args=(database_path,),
         )
         # **위젯 기본값은 `on_change` 를 부르지 않는다.** 시나리오만 고르면 그 시점의
@@ -570,13 +570,10 @@ def _persist_comparison_choice(database_path: str, revision_ids: Collection[str]
     위젯이 생기기 전이라 `revision_id=None` 으로 저장하고, 뒤이어 잡히는 리비전 기본값은
     세션에만 들어간다. 그 한 칸을 여기서 채운다 — 위젯이 다 그려진 뒤라 기본값이 보인다.
 
-    비어 있는 것만 메우면 부족하다. 두 선택 상자가 콜백 하나를 공유해 **어느 쪽이 눌렸는지
-    모르므로**, 시나리오만 S1→S2 로 바꾸면 세션에 남아 있던 S1 의 리비전과 함께
-    `(S2, S1의 리비전)` 이 그대로 저장된다. 다음 rerun 에서 화면은 남의 리비전을 버리고
-    S2 의 기본값을 잡지만, 프로필의 칸은 비어 있지 않으므로 어긋난 짝이 DB 에 그대로 남는다.
-
-    그래서 「비었는가」가 아니라 **「그 시나리오의 리비전 집합 안에 있는가」**로 판정한다.
-    집합은 피커가 이미 읽어 둔 것을 받으므로 DB 를 더 읽지 않는다.
+    시나리오 상자의 콜백(`_save_comparison_scenario`)도 리비전 칸을 비운 채 저장하므로, 그 칸을
+    채우는 것이 이 함수다. 비어 있는 것만 메우지 않고 **「그 시나리오의 리비전 집합 안에
+    있는가」**로 판정한다 — 프로필에 어긋난 짝(그 시나리오의 것이 아닌 리비전)이 남아 있으면 그것도
+    바로잡는다. 집합은 피커가 이미 읽어 둔 것을 받으므로 DB 를 더 읽지 않는다.
 
     **그 밖의 불일치는 쓰지 않는다.** 프로필은 시나리오에 딸리지 않은 공용 값이라 다른
     사용자도 같은 행을 쓴다. 「세션과 다르다」를 「세션이 최신이다」로 읽으면, 남이 방금
@@ -584,7 +581,8 @@ def _persist_comparison_choice(database_path: str, revision_ids: Collection[str]
     탭도 매 rerun 실행되므로, 두 사람이 서로의 선택을 계속 뒤집는 핑퐁이 된다. 아무도
     아무것도 고르지 않아도 쓰기가 일어나 `version` 이 오르고 DB 가 dirty 로 표시된다.
 
-    사용자가 실제로 고른 값은 `_save_comparison_choice` 가 맡는다. 여기는 메우는 일만 한다.
+    사용자가 실제로 고른 값은 두 상자의 콜백(`_save_comparison_scenario`·
+    `_save_comparison_revision`)이 맡는다. 여기는 메우는 일만 한다.
 
     **저장에 실패해도 화면을 멈추지 않는다.** 이번 화면은 세션 값으로 이미 동작하고,
     남기지 못한 것은 다음 세션에서 기본값이 안 뜨는 정도의 일이다.
@@ -609,34 +607,58 @@ def _persist_comparison_choice(database_path: str, revision_ids: Collection[str]
     _recheck_intro_summary()
 
 
-def _save_comparison_choice(database_path: str) -> None:
-    """고른 비교 대상을 공용 프로필에 남긴다.
+def _save_comparison_scenario(database_path: str) -> None:
+    """비교 **시나리오** 상자의 콜백. 고른 시나리오를 리비전 칸을 비운 채 공용 프로필에 남긴다.
 
     선택 위젯이라 저장 버튼을 따로 두지 않는다 — 고르는 것이 곧 결정이고, 버튼을 한 번 더
     누르게 하면 눌렀는지 아닌지가 화면에 남지 않는다.
 
+    **리비전은 여기서 정하지 않는다.** 시나리오를 바꾼 순간 세션의 리비전은 앞 시나리오의 것이다.
+    같은 회차에 피커가 그 시나리오의 리비전(세션 값이 그 시나리오의 것이 아니면 첫 리비전)을 잡고,
+    `_persist_comparison_choice` 가 비운 칸을 그 값으로 메운다. 두 상자가 콜백 하나를 나눠 쓰던
+    때는 앞 시나리오의 리비전이 함께 와서, 공용 프로필이 이미 그 시나리오의 다른 리비전을 가리키면
+    고른 것이 저장되지 않았다(2026-10-08 적대적 리뷰 F1).
+
     **저장에 실패해도 화면을 멈추지 않는다.** 비교 대상은 이번 화면에서 이미 세션 값으로
     동작하고, 남기지 못한 것은 다음 세션에서 기본값이 안 뜨는 정도의 일이다. 그것 때문에
     대시보드가 서면 손해가 더 크다.
-
-    **값이 실제로 바뀐 경우에만 쓴다.** 콜백은 Streamlit 이 「바뀌었다」고 본 회차마다 불리는데,
-    브라우저가 같은 항목을 다른 글자로 되보낸 경우에도 그렇게 본다. 프로필과 같은 짝이면 쓰지
-    않는다 — 공용 프로필이라 쓸 때마다 `version` 이 오르고 DB 가 dirty 가 된다. 쓸 짝은
-    `_comparison_pair_to_save` 가 가린다.
     """
     scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
-    revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
     if scenario_id is None:
         # 시나리오를 비우면 리비전은 남의 것이 된다. 짝을 맞춰 함께 비운다.
-        revision_id = None
         st.session_state.pop(COMPARISON_REVISION_KEY, None)
+    _replace_comparison_profile(
+        database_path, lambda repository: _scenario_choice(repository, scenario_id)
+    )
+
+
+def _save_comparison_revision(database_path: str) -> None:
+    """비교 **리비전** 상자의 콜백. 고른 리비전이 고른 시나리오의 것일 때만 공용 프로필에 남긴다."""
+    scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
+    revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
+    _replace_comparison_profile(
+        database_path,
+        lambda repository: _revision_choice(repository, scenario_id, revision_id),
+    )
+
+
+def _replace_comparison_profile(
+    database_path: str,
+    choose: Callable[[DuckDBScenarioRepository], tuple[str | None, str | None] | None],
+) -> None:
+    """`choose` 가 낸 짝을 공용 프로필에 쓴다. 짝이 없거나 프로필과 같으면 쓰지 않는다.
+
+    콜백은 Streamlit 이 「바뀌었다」고 본 회차마다 불리는데, 브라우저가 같은 항목을 다른 글자로
+    되보낸 경우에도 그렇게 본다. 공용 프로필이라 쓸 때마다 `version` 이 오르고 DB 가 dirty 가
+    되므로 같은 짝은 다시 쓰지 않는다.
+    """
     try:
         repository = get_scenario_repository(database_path)
-        profile = load_global_comparison_scenario(database_path)
-        chosen = _comparison_pair_to_save(
-            repository, (profile.scenario_id, profile.revision_id), scenario_id, revision_id
-        )
+        chosen = choose(repository)
         if chosen is None:
+            return
+        profile = load_global_comparison_scenario(database_path)
+        if (profile.scenario_id, profile.revision_id) == chosen:
             return
         repository.replace_global_comparison_scenario(
             chosen[0], chosen[1], source="HOME 비교 대상 선택"
@@ -647,38 +669,29 @@ def _save_comparison_choice(database_path: str) -> None:
     _recheck_intro_summary()
 
 
-def _comparison_pair_to_save(
-    repository: DuckDBScenarioRepository,
-    saved: tuple[str | None, str | None],
-    scenario_id: object,
-    revision_id: object,
+def _scenario_choice(
+    repository: DuckDBScenarioRepository, scenario_id: object
 ) -> tuple[str | None, str | None] | None:
-    """콜백이 받은 값에서 프로필에 쓸 짝을 낸다. 쓸 것이 없으면 `None`.
-
-    - 프로필(`saved`)과 같은 짝이면 쓰지 않는다.
-    - 실제 시나리오 id 가 아니면(브라우저가 되보낸 옛 라벨 글자) 쓰지 않는다. 그 회차의 피커가
-      값을 선택지 안으로 되돌린다.
-    - 리비전이 그 시나리오의 것이 아니면, 시나리오를 바꾼 것일 때만 리비전 칸을 비워 쓴다 —
-      두 상자가 콜백 하나를 나눠 써서 시나리오를 바꾸면 앞 시나리오의 리비전이 따라온다. 같은
-      회차에 피커가 새 시나리오의 첫 리비전을 잡고 `_persist_comparison_choice` 가 메운다. 같은
-      시나리오인데 리비전만 엉뚱하면 옛 라벨 글자이므로 쓰지 않는다.
-    """
+    """시나리오 상자가 받은 값의 저장할 짝. 실제 시나리오 id 가 아니면(라벨 글자 등) `None`."""
     if scenario_id is None:
-        chosen: tuple[str | None, str | None] = (None, None)
-    else:
-        chosen_scenario = str(scenario_id)
-        scenario_ids = {scenario.scenario_id for scenario in repository.list_scenarios()}
-        if chosen_scenario not in scenario_ids:
-            return None
-        chosen_revision = None if revision_id is None else str(revision_id)
-        if chosen_revision is not None and chosen_revision not in {
-            revision.revision_id for revision in repository.list_revisions(chosen_scenario)
-        }:
-            if chosen_scenario == saved[0]:
-                return None
-            chosen_revision = None
-        chosen = (chosen_scenario, chosen_revision)
-    return None if chosen == saved else chosen
+        return None, None
+    chosen = str(scenario_id)
+    if chosen not in {scenario.scenario_id for scenario in repository.list_scenarios()}:
+        return None
+    return chosen, None
+
+
+def _revision_choice(
+    repository: DuckDBScenarioRepository, scenario_id: object, revision_id: object
+) -> tuple[str | None, str | None] | None:
+    """리비전 상자가 받은 값의 저장할 짝. 고른 시나리오의 실제 리비전이 아니면 `None`."""
+    if scenario_id is None or revision_id is None:
+        return None
+    chosen_scenario, chosen_revision = str(scenario_id), str(revision_id)
+    revision_ids = {revision.revision_id for revision in repository.list_revisions(chosen_scenario)}
+    if chosen_revision not in revision_ids:
+        return None
+    return chosen_scenario, chosen_revision
 
 
 def _comparison_label(scenarios: dict[str, ScenarioSummary], value: str | None) -> str:

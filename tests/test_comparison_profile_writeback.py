@@ -23,7 +23,8 @@ import capa_simulation.components.home_preference as home_preference
 from capa_simulation.components.home_preference import (
     COMPARISON_REVISION_KEY,
     COMPARISON_SCENARIO_KEY,
-    _comparison_pair_to_save,
+    _revision_choice,
+    _scenario_choice,
 )
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
@@ -239,16 +240,24 @@ def test_the_comparison_labels_do_not_follow_the_active_revision(
 SAVE_SCRIPT = """
 import streamlit as st
 
-from capa_simulation.components.home_preference import _save_comparison_choice
+import capa_simulation.components.home_preference as home_preference
 
-_save_comparison_choice(st.session_state["database_path"])
+getattr(home_preference, st.session_state["callback"])(st.session_state["database_path"])
 st.write("done")
 """
 
 
-def _save(database: Path, scenario_id: object, revision_id: object) -> None:
+def _save(
+    database: Path,
+    scenario_id: object,
+    revision_id: object,
+    *,
+    callback: str = "_save_comparison_revision",
+) -> None:
+    """두 상자의 콜백 가운데 하나를 그 세션 값으로 부른다. 기본은 리비전 상자의 콜백이다."""
     app = AppTest.from_string(SAVE_SCRIPT, default_timeout=120)
     app.session_state["database_path"] = str(database)
+    app.session_state["callback"] = callback
     app.session_state[COMPARISON_SCENARIO_KEY] = scenario_id
     app.session_state[COMPARISON_REVISION_KEY] = revision_id
     app.run()
@@ -288,13 +297,19 @@ def test_a_label_sent_back_instead_of_an_id_is_not_written(tmp_path: Path) -> No
 
     _save(database, scenario_id, "r1 · 초기 리비전 · 현재 활성")
     _save(database, "내장 시드 시나리오 · 현재 시나리오", official_id)
+    _save(
+        database,
+        "내장 시드 시나리오 · 현재 시나리오",
+        official_id,
+        callback="_save_comparison_scenario",
+    )
 
     assert _saved_profile(database) == (scenario_id, official_id)
     assert _profile_version(database) == version
 
 
 class _FakeRepository:
-    """시나리오 S1·S2 와 각자의 리비전 둘. `_comparison_pair_to_save` 가 읽는 두 목록만 있다."""
+    """시나리오 S1·S2 와 각자의 리비전 둘. 두 콜백이 읽는 두 목록만 있다."""
 
     def list_scenarios(self) -> list[SimpleNamespace]:
         return [SimpleNamespace(scenario_id="S1"), SimpleNamespace(scenario_id="S2")]
@@ -303,17 +318,98 @@ class _FakeRepository:
         return [SimpleNamespace(revision_id=f"{scenario_id}-R{number}") for number in (1, 2)]
 
 
-def test_switching_the_scenario_drops_the_previous_scenarios_revision() -> None:
-    """시나리오를 바꾸면 앞 시나리오의 리비전이 따라온다 — 그 칸은 비워 쓴다(피커가 메운다).
-
-    같은 시나리오인데 리비전만 엉뚱하면 옛 라벨 글자이므로 쓰지 않는다.
+def test_each_box_saves_only_what_it_chooses() -> None:
+    """시나리오 상자는 시나리오만(리비전 칸은 비워 — 피커가 메운다), 리비전 상자는 그 시나리오의
+    실제 리비전만 낸다. 앞 시나리오의 리비전이 따라와도 시나리오 선택은 버려지지 않는다.
     """
     repository: Any = _FakeRepository()
-    saved = ("S1", "S1-R1")
 
-    assert _comparison_pair_to_save(repository, saved, "S2", "S1-R1") == ("S2", None)
-    assert _comparison_pair_to_save(repository, saved, "S1", "S1-R1") is None
-    assert _comparison_pair_to_save(repository, saved, "S1", "S1-R2") == ("S1", "S1-R2")
-    assert _comparison_pair_to_save(repository, saved, None, "S1-R1") == (None, None)
-    assert _comparison_pair_to_save(repository, saved, "S1", "r1 · 초기") is None
-    assert _comparison_pair_to_save(repository, saved, "S1 의 옛 라벨", None) is None
+    assert _scenario_choice(repository, "S2") == ("S2", None)
+    assert _scenario_choice(repository, None) == (None, None)
+    assert _scenario_choice(repository, "S2 의 라벨 글자") is None
+    assert _revision_choice(repository, "S2", "S2-R1") == ("S2", "S2-R1")
+    assert _revision_choice(repository, "S2", "S1-R1") is None
+    assert _revision_choice(repository, "S2", "r1 · 초기") is None
+    assert _revision_choice(repository, None, "S1-R1") is None
+    assert _revision_choice(repository, "S1", None) is None
+
+
+def _two_scenarios(database: Path) -> tuple[str, str, str, str, str]:
+    """내장 시드 시나리오 S1 과, 리비전이 둘인 시나리오 S2 를 만든다.
+
+    (S1, S1 공식 리비전, S2, S2 옛 리비전, S2 새 리비전). 선택지는 리비전 번호 내림차순이라 S2 의
+    첫 항목은 새 리비전이다.
+    """
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+    from capa_simulation.persistence.models import ScenarioCreate
+
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    release = ensure_initial_scenario(repository).release
+    assert release is not None
+    base = repository.load_revision(release.revision_id)
+    tables = {name: frame.copy() for name, frame in base.tables.items()}
+    second = repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="비교용 시나리오",
+            source_simulation_code="COMPARE",
+            source_simulation_name="비교용 시나리오",
+            source_type="DUCKDB_SCENARIO_CLONE",
+            pipeline_version="duckdb-rq-snapshot-v3",
+        ),
+        tables,
+        base.preset,
+    )
+    newer = repository.save_revision(
+        second.scenario.scenario_id, tables, base.preset, revision_name="비교용 새 리비전"
+    )
+    return (
+        str(base.scenario.scenario_id),
+        str(base.revision.revision_id),
+        str(second.scenario.scenario_id),
+        str(second.revision.revision_id),
+        str(newer.revision.revision_id),
+    )
+
+
+def test_choosing_a_scenario_is_saved_even_when_the_profile_already_points_there(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공용 프로필이 이미 그 시나리오(다른 리비전)를 가리켜도, 고른 시나리오는 화면 그대로 저장된다.
+
+    사내 공용 DB 라 다른 탭·사용자가 프로필을 바꾸는 일이 흔하다. 이 세션은 (S1, S1 리비전)을 보고
+    있고 프로필은 남이 고른 (S2, S2 옛 리비전)일 때 비교 시나리오를 S2 로 고르면, 화면은 S2 의 첫
+    리비전(새 리비전)과 견준다. 프로필도 그 짝이어야 한다 — 「고르는 것이 곧 저장」.
+
+    콜백 하나를 두 상자가 나눠 쓰던 때는 시나리오 콜백이 앞 시나리오의 리비전을 함께 받아 「같은
+    시나리오의 엉뚱한 리비전(옛 라벨)」으로 읽고 쓰지 않았다. 프로필이 이미 S2 의 멀쩡한 리비전이라
+    `_persist_comparison_choice` 도 메우지 않아, 화면과 프로필이 갈렸다(2026-10-08 적대적 리뷰 F1).
+    """
+    database = tmp_path / "scenario.duckdb"
+    s1, s1_revision, s2, s2_older, s2_newer = _two_scenarios(database)
+    DuckDBScenarioRepository(database).replace_global_comparison_scenario(
+        s1, s1_revision, source="이 세션이 본 값"
+    )
+    monkeypatch.setattr(home_preference, "active_persisted_revision_id", lambda: None)
+    app = AppTest.from_string(PICKER_SCRIPT, default_timeout=120)
+    app.session_state["database_path"] = str(database)
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert app.selectbox(key=COMPARISON_SCENARIO_KEY).value == s1
+
+    # 다른 사용자가 같은 서버에서 공용 프로필을 (S2, 옛 리비전)으로 바꾼다. 그 사용자의 저장도
+    # 프로세스 공용 캐시를 비우므로 여기서 같이 비운다.
+    DuckDBScenarioRepository(database).replace_global_comparison_scenario(
+        s2, s2_older, source="다른 사용자"
+    )
+    from capa_simulation.persistence.cache import clear_global_comparison_scenario_cache
+
+    clear_global_comparison_scenario_cache()
+
+    app.selectbox(key=COMPARISON_SCENARIO_KEY).set_value(s2).run()
+    assert not app.exception, [element.message for element in app.exception]
+    shown = app.selectbox(key=COMPARISON_REVISION_KEY).value
+    assert shown == s2_newer
+    assert _saved_profile(database) == (s2, shown), (
+        "화면은 S2 의 첫 리비전과 견주는데 공용 프로필에는 남이 고른 리비전이 남았습니다."
+    )
