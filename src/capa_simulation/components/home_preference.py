@@ -82,6 +82,7 @@ from capa_simulation.persistence.models import (
     RevisionSummary,
     ScenarioSummary,
 )
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import active_persisted_revision_id
 from capa_simulation.services.advance_load import (
     ADVANCE_LOAD_ROW_LABEL,
@@ -368,14 +369,13 @@ def render_home_preference(
     unmatched_execution: pd.DataFrame,
     clamped_execution: pd.DataFrame,
     database_path: str,
-    active_scenario_id: str | None,
 ) -> None:
     """비교 시나리오 선택과 판정 기준·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·주요공정·실행
     Capa 입력 시트.
 
     보는 조건(EDP·Past Data 포함 등)은 사이드바 `LOB 표시 조건` 카드다(`render_home_view_card`).
     """
-    _render_comparison_picker(database_path, active_scenario_id)
+    _render_comparison_picker(database_path)
     render_threshold_editor(
         months=months,
         month_labels=month_labels,
@@ -457,13 +457,19 @@ def seed_comparison_selection(database_path: str) -> None:
         st.session_state[COMPARISON_REVISION_KEY] = profile.revision_id
 
 
-def _render_comparison_picker(database_path: str, active_scenario_id: str | None) -> None:
+def _render_comparison_picker(database_path: str) -> None:
     """GAP 의 비교 대상. 시나리오와 리비전까지 골라 그 리비전의 계획을 쓴다.
 
     **지금 활성인 시나리오도 고를 수 있다.** 리비전이 달라지며 계획이 얼마나 바뀌었는지가
     비교의 중요한 쓰임이고, 시나리오가 하나뿐이면 그것을 빼는 순간 고를 것이 없어진다.
-    지금 활성인 리비전을 그대로 고르면 자기와 견주는 셈이라 증감이 전부 0 이므로, 그
-    자리에는 표시를 붙여 알린다.
+    지금 활성인 리비전을 그대로 고르면 자기와 견주는 셈이라 증감이 전부 0 이므로, 상자
+    아래 캡션으로 알린다(`_comparison_active_note`).
+
+    **선택지 라벨에는 활성 상태를 붙이지 않는다.** Streamlit 1.63 선택 상자는 고른 항목의 라벨
+    글자를 주고받는다. 라벨이 활성 리비전에 따라 바뀌면(전에는 「· 현재 활성」·「· 현재
+    시나리오」를 붙였다) 시나리오를 불러온 뒤 브라우저가 옛 라벨을 되보내고, 서버는 그것을
+    바뀐 값으로 읽어 다음 조작 하나를 앱 전체 재실행으로 만들고 `_save_comparison_choice` 가
+    그 **라벨 글자**를 리비전 id 자리에 공용 프로필로 저장했다(2026-10-08 안정화 점검 계측).
     """
     with st.container(border=True):
         st.markdown("#### :material/compare_arrows: 비교 시나리오")
@@ -487,7 +493,7 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
         scenario_id = st.selectbox(
             "비교 시나리오",
             options=[None, *scenario_by_id],
-            format_func=lambda value: _comparison_label(scenario_by_id, value, active_scenario_id),
+            format_func=lambda value: _comparison_label(scenario_by_id, value),
             key=COMPARISON_SCENARIO_KEY,
             persist_state="session",
             on_change=_save_comparison_choice,
@@ -515,9 +521,7 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
         st.selectbox(
             "비교 리비전",
             options=list(revision_by_id),
-            format_func=lambda value: _revision_label(
-                revision_by_id[value], value == active_revision_id
-            ),
+            format_func=lambda value: _revision_label(revision_by_id[value]),
             key=COMPARISON_REVISION_KEY,
             persist_state="session",
             on_change=_save_comparison_choice,
@@ -528,11 +532,35 @@ def _render_comparison_picker(database_path: str, active_scenario_id: str | None
         # 잡히는 리비전 기본값은 세션에만 들어간다. 그러면 다음 세션에서 짝이 맞지 않아
         # 「GAP」 토글이 꺼진 채로 뜨고, Preference 를 한 번 다녀와야 켜진다.
         _persist_comparison_choice(database_path, revision_by_id.keys())
-        if st.session_state.get(COMPARISON_REVISION_KEY) == active_revision_id:
-            st.caption(
-                "지금 화면이 쓰고 있는 리비전입니다. 자기와 견주는 셈이라 증감이 모두 "
-                "0 으로 나옵니다."
-            )
+        note = _comparison_active_note(
+            selected_revision_id=st.session_state.get(COMPARISON_REVISION_KEY),
+            active_revision=(
+                revision_by_id.get(active_revision_id) if active_revision_id is not None else None
+            ),
+        )
+        if note is not None:
+            st.caption(note)
+
+
+def _comparison_active_note(
+    *,
+    selected_revision_id: object,
+    active_revision: RevisionSummary | None,
+) -> str | None:
+    """고른 비교 대상과 지금 화면에 올라온 리비전의 관계를 상자 아래 한 줄로 적는다.
+
+    선택지 라벨에 붙이던 활성 표시를 여기로 옮겼다. `active_revision` 은 비교 시나리오의 리비전
+    가운데 지금 활성인 것이다 — 비교 시나리오가 활성 시나리오가 아니면 없다.
+    """
+    if active_revision is None:
+        return None
+    if selected_revision_id == active_revision.revision_id:
+        return (
+            "지금 화면이 쓰고 있는 리비전입니다. 자기와 견주는 셈이라 증감이 모두 0 으로 나옵니다."
+        )
+    return (
+        f"지금 화면에는 이 시나리오의 {_revision_label(active_revision)} 리비전이 올라와 있습니다."
+    )
 
 
 def _persist_comparison_choice(database_path: str, revision_ids: Collection[str]) -> None:
@@ -590,6 +618,11 @@ def _save_comparison_choice(database_path: str) -> None:
     **저장에 실패해도 화면을 멈추지 않는다.** 비교 대상은 이번 화면에서 이미 세션 값으로
     동작하고, 남기지 못한 것은 다음 세션에서 기본값이 안 뜨는 정도의 일이다. 그것 때문에
     대시보드가 서면 손해가 더 크다.
+
+    **값이 실제로 바뀐 경우에만 쓴다.** 콜백은 Streamlit 이 「바뀌었다」고 본 회차마다 불리는데,
+    브라우저가 같은 항목을 다른 글자로 되보낸 경우에도 그렇게 본다. 프로필과 같은 짝이면 쓰지
+    않는다 — 공용 프로필이라 쓸 때마다 `version` 이 오르고 DB 가 dirty 가 된다. 쓸 짝은
+    `_comparison_pair_to_save` 가 가린다.
     """
     scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
     revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
@@ -598,10 +631,15 @@ def _save_comparison_choice(database_path: str) -> None:
         revision_id = None
         st.session_state.pop(COMPARISON_REVISION_KEY, None)
     try:
-        get_scenario_repository(database_path).replace_global_comparison_scenario(
-            None if scenario_id is None else str(scenario_id),
-            None if revision_id is None else str(revision_id),
-            source="HOME 비교 대상 선택",
+        repository = get_scenario_repository(database_path)
+        profile = load_global_comparison_scenario(database_path)
+        chosen = _comparison_pair_to_save(
+            repository, (profile.scenario_id, profile.revision_id), scenario_id, revision_id
+        )
+        if chosen is None:
+            return
+        repository.replace_global_comparison_scenario(
+            chosen[0], chosen[1], source="HOME 비교 대상 선택"
         )
     except (*BOOTSTRAP_ERRORS, ValueError):
         return
@@ -609,20 +647,50 @@ def _save_comparison_choice(database_path: str) -> None:
     _recheck_intro_summary()
 
 
-def _comparison_label(
-    scenarios: dict[str, ScenarioSummary],
-    value: str | None,
-    active_scenario_id: str | None,
-) -> str:
+def _comparison_pair_to_save(
+    repository: DuckDBScenarioRepository,
+    saved: tuple[str | None, str | None],
+    scenario_id: object,
+    revision_id: object,
+) -> tuple[str | None, str | None] | None:
+    """콜백이 받은 값에서 프로필에 쓸 짝을 낸다. 쓸 것이 없으면 `None`.
+
+    - 프로필(`saved`)과 같은 짝이면 쓰지 않는다.
+    - 실제 시나리오 id 가 아니면(브라우저가 되보낸 옛 라벨 글자) 쓰지 않는다. 그 회차의 피커가
+      값을 선택지 안으로 되돌린다.
+    - 리비전이 그 시나리오의 것이 아니면, 시나리오를 바꾼 것일 때만 리비전 칸을 비워 쓴다 —
+      두 상자가 콜백 하나를 나눠 써서 시나리오를 바꾸면 앞 시나리오의 리비전이 따라온다. 같은
+      회차에 피커가 새 시나리오의 첫 리비전을 잡고 `_persist_comparison_choice` 가 메운다. 같은
+      시나리오인데 리비전만 엉뚱하면 옛 라벨 글자이므로 쓰지 않는다.
+    """
+    if scenario_id is None:
+        chosen: tuple[str | None, str | None] = (None, None)
+    else:
+        chosen_scenario = str(scenario_id)
+        scenario_ids = {scenario.scenario_id for scenario in repository.list_scenarios()}
+        if chosen_scenario not in scenario_ids:
+            return None
+        chosen_revision = None if revision_id is None else str(revision_id)
+        if chosen_revision is not None and chosen_revision not in {
+            revision.revision_id for revision in repository.list_revisions(chosen_scenario)
+        }:
+            if chosen_scenario == saved[0]:
+                return None
+            chosen_revision = None
+        chosen = (chosen_scenario, chosen_revision)
+    return None if chosen == saved else chosen
+
+
+def _comparison_label(scenarios: dict[str, ScenarioSummary], value: str | None) -> str:
+    """비교 시나리오 선택지의 글. 활성 상태와 무관하게 늘 같다 — `_render_comparison_picker`."""
     if value is None:
         return "선택 안 함"
-    name = scenarios[value].scenario_name
-    return f"{name} · 현재 시나리오" if value == active_scenario_id else name
+    return scenarios[value].scenario_name
 
 
-def _revision_label(revision: RevisionSummary, is_active: bool) -> str:
-    label = f"r{revision.revision_no} · {revision.revision_name}"
-    return f"{label} · 현재 활성" if is_active else label
+def _revision_label(revision: RevisionSummary) -> str:
+    """비교 리비전 선택지의 글. 활성 상태와 무관하게 늘 같다 — `_render_comparison_picker`."""
+    return f"r{revision.revision_no} · {revision.revision_name}"
 
 
 def render_threshold_editor(

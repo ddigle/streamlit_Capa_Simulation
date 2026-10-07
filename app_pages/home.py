@@ -92,7 +92,6 @@ from capa_simulation.persistence.cache import (
     load_global_top5_band,
     load_scenario_plan,
 )
-from capa_simulation.scenario_activation import active_persisted_scenario_id
 from capa_simulation.scenario_preset_state import PROCESS_SELECTION_KEY
 from capa_simulation.scenario_state import (
     ensure_active_scenario,
@@ -955,7 +954,6 @@ with preference_tab:
         unmatched_execution=unmatched_execution,
         clamped_execution=clamped_execution,
         database_path=str(DUCKDB_PATH.resolve()),
-        active_scenario_id=active_persisted_scenario_id(),
     )
 home_trace.mark("Plotly 전달")
 loading.close()
