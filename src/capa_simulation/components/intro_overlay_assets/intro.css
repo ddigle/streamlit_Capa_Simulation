@@ -237,7 +237,7 @@
 }
 
 .tg[data-key="advance"] {
-  --sw: var(--accent);
+  --sw: var(--advance);
 }
 
 .tg[data-key="shipment"] {

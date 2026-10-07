@@ -560,6 +560,10 @@ INTRO_PALETTE: Final[Mapping[str, str]] = MappingProxyType(
         # Summary 머리 줄 토글(선행 B/O·선행 입고·GAP)이 켜졌을 때의 면과 테두리 — 강조색을 옅게.
         "toggle-on": "rgba(95, 184, 172, 0.16)",
         "toggle-on-line": "rgba(95, 184, 172, 0.75)",
+        # 선행 B/O 가 더한 몫 — 생산계획 선 아래 띠와 바뀐 시트 값의 물듦, 토글 표식. 확보(청록)·
+        # 경고·부족 막대색과 GAP 부호색·제품 비중 여섯 색 어느 것과도 OKLab ΔE 16 이상 떨어진
+        # 연보라다(2026-10-08 사용자 결정 — 강조색 청록을 쓰면 「확보」 막대와 헷갈렸다).
+        "advance": "#F0ABFC",
         # GAP 증감 글자의 부호색. 앱 어두운 테마의 증감색(`DELTA_INCREASE`·`DELTA_DECREASE`)과 같은
         # 값이다 — HOME GAP 과 같은 방향을 같은 색으로 읽는다.
         "gap-up": "#FBBF24",

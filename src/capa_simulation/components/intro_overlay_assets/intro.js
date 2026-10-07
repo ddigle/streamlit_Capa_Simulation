@@ -544,7 +544,7 @@ function scene(port, gridOf) {
   let lookTween = null;
   let veil = 1;
   let veilTween = null;
-  let accentColor = [0, 0, 0, 1];
+  let advanceColor = [0, 0, 0, 1];
 
   // ---- 머리 줄 토글 셋(선행 B/O·선행 입고·GAP). `viewWant` 는 켜려는 모습(0·1)이다. 움직임은 달마다 하나씩의
   // 트윈(`months` — 달 하나 `ms`, 달 사이 시차 `lag`, ease-out)과 축처럼 한 번에 움직이는 트윈(`all`)이다. 누를
@@ -1403,7 +1403,7 @@ function scene(port, gridOf) {
     if (shown <= 0.001) return;
     g.save();
     g.globalAlpha = k;
-    g.fillStyle = rgba(parseColor(pal.accent), 0.3);
+    g.fillStyle = rgba(parseColor(pal.advance), 0.3);
     g.beginPath();
     for (let i = 1; i < points.length; i++) {
       const a0 = before[i - 1];
@@ -1689,8 +1689,8 @@ function scene(port, gridOf) {
         g.font = `500 10px ${bodyStack}`;
         g.fillText(row.unit, right, base);
         g.font = `700 ${px}px ${numStack}`;
-        // 선행 B/O 가 바꾼 값은 토글 표식과 같은 강조색으로 물든다 — 끄면 본문 글자색으로 돌아온다.
-        g.fillStyle = mA > 0 && target !== own ? mix(textColor, accentColor, 0.6 * mA) : pal.text;
+        // 선행 B/O 가 바꾼 값은 토글 표식과 같은 선행 B/O 색으로 물든다 — 끄면 본문 글자색으로 돌아온다.
+        g.fillStyle = mA > 0 && target !== own ? mix(textColor, advanceColor, 0.6 * mA) : pal.text;
         g.fillText(value == null ? "—" : (value * cnt).toFixed(row.digits), right - row.unitW - 2, base);
         // GAP — 비교 시나리오와의 차이를 값 아래에 단다(HOME 처럼 값 아래, 오른쪽 끝을 값에 맞춘다). 부호색은
         // 늘림·줄임 둘이고, 달마다 시차를 두고 아래에서 떠오른다.
@@ -1878,7 +1878,7 @@ function scene(port, gridOf) {
       frame0 = parseColor(m.frame0 || pal.surface);
       surface = parseColor(pal.surface);
       textColor = parseColor(pal.text);
-      accentColor = parseColor(pal.accent);
+      advanceColor = parseColor(pal.advance);
       g = canvas.getContext("2d");
       resize(m.width, m.height, m.dpr);
       if (paused) {
@@ -2138,6 +2138,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     "--faint": palette.faint,
     "--toggle-on": palette["toggle-on"],
     "--toggle-on-line": palette["toggle-on-line"],
+    "--advance": palette.advance,
     "--gap-up": palette["gap-up"],
     "--gap-down": palette["gap-down"],
     "--tip": palette.tip,
