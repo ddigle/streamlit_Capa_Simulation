@@ -47,6 +47,8 @@ from capa_simulation.services.space_layout_edit import (
     new_unit_options,
     other_change_count,
     parse_editor_apply,
+    reserved_names,
+    table_changed,
     unsaved_unit_ids,
 )
 
@@ -333,6 +335,190 @@ def test_a_self_named_group_following_its_unit_is_not_another_edit() -> None:
     assert other_change_count(saved, buffer, PendingRenames(units={"SOLO-2": "SOLO"})) == 0
 
 
+def _downtime_two() -> pd.DataFrame:
+    """EQ-01(고장)·EQ-02(공사) 비가동 일정 — 맞바꿈에서 두 호기의 일정이 서로 따라가는지 본다."""
+    first = _downtime()
+    return pd.concat(
+        [first, first.assign(설비명=["EQ-02"], 비가동유형=["공사"])], ignore_index=True
+    )
+
+
+def _apply_in_turn(
+    saved: pd.DataFrame, downtime: pd.DataFrame, *applies: tuple[NameChange, ...]
+) -> tuple[pd.DataFrame, pd.DataFrame, PendingRenames]:
+    """적용을 차례로 얹고 세션의 이름 지도를 잇는다(페이지와 같은 차례)."""
+    master, schedule, pending = saved, downtime, PendingRenames()
+    for renames in applies:
+        master, schedule = apply_name_changes(master, schedule, renames)
+        pending = compose_renames(pending, _apply(*renames), saved=saved)
+    return master, schedule, pending
+
+
+SWAP = (NameChange("unit", "EQ-01", "EQ-02"), NameChange("unit", "EQ-02", "EQ-01"))
+SWAPPED = {"EQ-01": "EQ-02", "EQ-02": "EQ-01"}
+CHAINED = {"EQ-X": "EQ-01", "EQ-01": "EQ-02"}
+
+
+@pytest.mark.parametrize(
+    ("applies", "expected"),
+    [
+        pytest.param((SWAP,), SWAPPED, id="swap-in-one-apply"),
+        pytest.param(
+            (
+                (NameChange("unit", "EQ-01", "T"),),
+                (NameChange("unit", "EQ-02", "EQ-01"),),
+                (NameChange("unit", "T", "EQ-02"),),
+            ),
+            SWAPPED,
+            id="swap-over-three-applies",
+        ),
+        pytest.param(
+            ((NameChange("unit", "EQ-01", "EQ-X"), NameChange("unit", "EQ-02", "EQ-01")),),
+            CHAINED,
+            id="a-to-x-and-b-to-a-in-one-apply",
+        ),
+        pytest.param(
+            ((NameChange("unit", "EQ-01", "EQ-X"),), (NameChange("unit", "EQ-02", "EQ-01"),)),
+            CHAINED,
+            id="a-to-x-then-b-to-a",
+        ),
+    ],
+)
+def test_swaps_and_chains_read_as_renames_in_the_unsaved_lists(
+    applies: tuple[tuple[NameChange, ...], ...], expected: dict[str, str]
+) -> None:
+    """옛 이름이 편집본에 남아 있어도 같은 지도의 다른 항목이 그 이름을 이어받았으면 이름
+    바꿈이다."""
+    saved, downtime = _master(), _downtime_two()
+    buffer, schedule, pending = _apply_in_turn(saved, downtime, *applies)
+
+    names = name_changes(saved, buffer, pending)
+
+    assert live_renames(pending, saved, buffer).units == expected
+    assert dict(zip(names["새 이름"], names["이전 이름"], strict=True)) == expected
+    # 자리는 그대로이고(저장본의 옛 이름 행과 견준다) RawData 의 다른 편집·새 호기도 아니다.
+    assert layout_changes(saved, buffer, pending).empty
+    assert other_change_count(saved, buffer, pending) == 0
+    assert unsaved_unit_ids(saved, buffer, FLOOR, pending) == (set(), set())
+    renamed_saved = downtime_with_renames(downtime, pending, saved=saved, buffer=buffer)
+    assert not table_changed(renamed_saved, schedule)
+
+
+def test_a_group_swap_reads_as_two_group_renames() -> None:
+    saved = _master(
+        {"설비명": "M-1", "Main 설비": "BIG", "X좌표": 50.0, "Y좌표": 30.0},
+        {"설비명": "S-1", "Main 설비": "SMALL", "X좌표": 70.0, "Y좌표": 40.0},
+    )
+    swap = (NameChange("group", "BIG", "SMALL"), NameChange("group", "SMALL", "BIG"))
+    buffer, _, pending = _apply_in_turn(saved, _downtime(), swap)
+
+    assert live_renames(pending, saved, buffer).groups == {"SMALL": "BIG", "BIG": "SMALL"}
+    assert other_change_count(saved, buffer, pending) == 0
+
+
+def test_a_rawdata_revert_or_a_new_row_on_the_old_name_still_drops_the_entry() -> None:
+    saved = _master()
+    buffer, _ = apply_name_changes(saved, _downtime(), [NameChange("unit", "EQ-01", "A")])
+    pending = PendingRenames(units={"A": "EQ-01"})
+    # RawData 에서 A 를 EQ-01 로 되돌렸다 — 지금 이름이 편집본에 없다.
+    reverted = buffer.assign(설비명=buffer["설비명"].replace({"A": "EQ-01"}))
+    # RawData 에서 옛 이름 EQ-01 로 새 행을 넣었다 — 옛 이름을 이어받은 항목이 지도에 없다.
+    reused = pd.concat([buffer, buffer.iloc[[0]].assign(설비명="EQ-01")], ignore_index=True)
+
+    assert live_renames(pending, saved, reverted).units == {}
+    assert live_renames(pending, saved, reused).units == {}
+    # 이어받은 항목이 죽으면 그것에 기대던 항목도 다시 본다 — A→X·B→A 뒤 RawData 에서 옛 이름 B 로
+    # 새 행을 넣으면 A 항목(옛 이름 B 가 편집본에 있고 이어받은 항목 없음)이 죽고, 그러면 X 항목도
+    # 옛 이름 A 를 이어받은 항목을 잃는다.
+    chained, _, chain = _apply_in_turn(
+        saved,
+        _downtime(),
+        (NameChange("unit", "EQ-01", "EQ-X"), NameChange("unit", "EQ-02", "EQ-01")),
+    )
+    with_new_b = pd.concat([chained, chained.iloc[[0]].assign(설비명="EQ-02")], ignore_index=True)
+    assert live_renames(chain, saved, chained).units == CHAINED
+    assert live_renames(chain, saved, with_new_b).units == {}
+
+
+# ------------------------------------------------------------------ 편집본에 없어도 못 쓰는 이름
+
+
+def _created(unit_id: str) -> dict[str, Any]:
+    return {
+        "id": unit_id,
+        "placed": False,
+        "w": 8,
+        "h": 5,
+        "created": {"process": "Process-A", "existing": True},
+    }
+
+
+def test_a_name_deleted_in_rawdata_and_not_saved_cannot_be_taken() -> None:
+    """옛 EQ-02 를 지우고 다른 호기가 그 이름을 이으면 저장 뒤 두 설비의 이력이 섞인다."""
+    saved = _master()
+    buffer = saved.loc[saved["설비명"].ne("EQ-02")].reset_index(drop=True)
+    reserved = reserved_names(saved, buffer, _downtime(), None)
+
+    assert reserved.deleted == {"EQ-02"} and not reserved.orphan_downtime
+    with pytest.raises(ValueError, match="저장본의 EQ-02를 RawData 에서 지우고 아직 저장하지"):
+        _parse(_rename(("unit", "EQ-01", "eq-02")), buffer, reserved=reserved)
+    with pytest.raises(ValueError, match="새 호기 이름 EQ-02는 쓸 수 없습니다"):
+        _parse({"changes": [_created("EQ-02")]}, buffer, reserved=reserved)
+
+
+def test_a_name_emptied_by_an_unsaved_rename_may_be_taken() -> None:
+    saved = _master()
+    buffer, schedule = apply_name_changes(saved, _downtime(), [NameChange("unit", "EQ-01", "EQ-X")])
+    pending = PendingRenames(units={"EQ-X": "EQ-01"})
+    reserved = reserved_names(saved, buffer, schedule, pending)
+
+    assert not reserved.deleted and not reserved.orphan_downtime
+    apply = _parse(_rename(("unit", "EQ-02", "EQ-01")), buffer, reserved=reserved)
+    assert apply.unit_renames == {"EQ-02": "EQ-01"}
+
+
+def test_a_name_held_by_orphan_downtime_rows_cannot_be_taken() -> None:
+    """호기 마스터에 없는 설비명의 비가동 일정은 그 이름을 쓰는 호기에 말없이 붙는다."""
+    saved = _master()
+    downtime = pd.concat([_downtime(), _downtime().assign(설비명=["GHOST"])], ignore_index=True)
+    reserved = reserved_names(saved, saved, downtime, None)
+
+    assert reserved.orphan_downtime == {"GHOST"} and not reserved.deleted
+    with pytest.raises(ValueError, match="호기 마스터에 없는 설비명 GHOST을\\(를\\) 가리키는"):
+        _parse(_rename(("unit", "EQ-01", "ghost")), saved, reserved=reserved)
+    with pytest.raises(ValueError, match="비가동 일정을 먼저 고치거나 지우세요"):
+        _parse({"changes": [_created("GHOST")]}, saved, reserved=reserved)
+
+
+def test_a_new_unit_name_is_compared_like_a_rename() -> None:
+    """새 호기 이름도 대소문자·앞뒤 공백 무시로 겹침을 본다(같은 적용의 다른 새 호기 포함)."""
+    with pytest.raises(ValueError, match="이미 있는 호기입니다: eq-01\\(EQ-01\\)"):
+        _parse({"changes": [_created("eq-01")]}, _master())
+    with pytest.raises(ValueError, match="이미 있는 호기입니다: n-1\\(N-1\\)"):
+        _parse({"changes": [_created("N-1"), _created("n-1")]}, _master())
+    with pytest.raises(ValueError, match="이미 Main 설비로 쓰는 이름입니다: big\\(BIG\\)"):
+        _parse({"changes": [_created("big")]}, _bundle_master())
+
+
+def test_typed_names_stay_with_the_unit_they_were_typed_for() -> None:
+    """이름 칸의 글자는 칸에 들어갈 때 고른 대상의 것이다(2026-10-08 병합 전 리뷰).
+
+    서랍 칩·팔레트는 누를 때 기본 동작을 막아 초점이 이름 칸에 남는다 — 고르는 것을 바꾸기 전에 적던
+    글자를 그 대상에 확정하고(`commitTyping`), change 는 칸에 들어갈 때 묶은 대상에만 쓴다. JS 는
+    AppTest 가 돌리지 못하므로 글자로 붙잡고 실제 동작은 브라우저로 본다."""
+    js = (space_layout_editor._ASSETS / "editor.js").read_text(encoding="utf-8")
+    set_selection = js[js.index("function setSelection(") :]
+    ghost = js[js.index("function ghostDrag(") :]
+    add_form = js[js.index("addForm.onsubmit") :]
+    add_form = add_form[: add_form.index("newError.textContent")]
+
+    assert set_selection.splitlines()[1].strip() == "commitTyping()"
+    assert "commitTyping()" in ghost[: ghost.index("event.preventDefault()")]
+    assert "S.items.get(S.unitLabelFor)" in js and "S.items.get(S.markLabelFor)" in js
+    # 새 호기 폼도 지금 이름으로 겹침을 본다(편집기 열쇠는 옛 이름이다).
+    assert "nameClash(id" in add_form and "S.items.has(id)" not in add_form
+
+
 # ------------------------------------------------------------------ 페이지
 
 
@@ -425,6 +611,10 @@ def test_a_group_rename_is_saved_on_every_module_row(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
     app, database = _open_editor(tmp_path, _bundle_master())
+    # RawData 에서 방금 지운 모듈 행(M-3). 묶음 이름을 바꾼 뒤 되살리면 옛 Main 설비 BIG 으로 돌아와
+    # 한 설비가 둘로 갈린다(검증은 통과한다) — 그래서 어느 이름 바꿈이든 되돌리기를 버린다.
+    removed = _bundle_master().loc[lambda frame: frame["설비명"].eq("M-3")]
+    app.session_state[LAST_REMOVED_KEY] = (_baseline().iloc[:0], removed, _downtime().iloc[:0])
     app.session_state[FAKE_APPLY_KEY] = {
         "epoch": editor_calls[-1]["epoch"],
         "changes": [],
@@ -436,6 +626,12 @@ def test_a_group_rename_is_saved_on_every_module_row(
     assert {item["group"] for item in editor_calls[-1]["items"] if item["id"].startswith("M-")} == {
         "BIG-2"
     }
+    assert LAST_REMOVED_KEY not in app.session_state
+    # 묶음 이름만 바꾸면 비가동 일정은 따라갈 것이 없다 — 알림도 그렇게 말한다.
+    assert any(
+        "이름 바꿈 1건도 넣었습니다." in item.value and "비가동" not in item.value
+        for item in app.success
+    )
     app.button(key="space_layout_save").click().run()
 
     repository = DuckDBEquipmentRepository(database)
@@ -464,4 +660,40 @@ def test_a_colliding_rename_is_refused_and_leaves_the_draft(
     # 편집기는 그대로(같은 epoch — 브라우저의 편집이 남는다), 편집본도 그대로다.
     assert editor_calls[-1]["epoch"] == epoch
     assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
+    clear_equipment_repository()
+
+
+def test_a_swap_shows_the_unsaved_box_and_saves_both_names_with_their_downtime(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """맞바꾼 두 이름은 둘 다 편집본에 있어도 이름 바꿈이다 — 상자·`배치 저장` 이 서야 한다."""
+    app, database = _open_editor(tmp_path, _equipment())
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [],
+        "renames": [
+            {"kind": "unit", "from": "EQ-01", "to": "EQ-02"},
+            {"kind": "unit", "from": "EQ-02", "to": "EQ-01"},
+        ],
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("이름 바꿈 2건" in item.value for item in app.markdown)
+    assert not any("호기 배치" in item.value for item in app.markdown)
+    assert not any("다른 편집" in item.value or "표 편집도" in item.value for item in app.caption)
+    items = {item["id"]: item for item in editor_calls[-1]["items"]}
+    assert (items["EQ-02"]["x"], items["EQ-01"]["x"]) == (10.0, 30.0)
+    assert not items["EQ-02"]["isNew"] and not items["EQ-01"]["isNew"]
+
+    app.button(key="space_layout_save").click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    repository = DuckDBEquipmentRepository(database)
+    latest = repository.load_snapshot(str(repository.latest_revision_id()))
+    assert latest.equipment.set_index("설비명").loc[["EQ-02", "EQ-01"], "X좌표"].tolist() == [
+        10.0,
+        30.0,
+    ]
+    assert latest.downtime["설비명"].tolist() == ["EQ-02"]
     clear_equipment_repository()

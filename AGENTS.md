@@ -1004,7 +1004,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Main 설비와 **비가동 일정의 설비명**을 함께 바꾼 뒤, 저장 때와 같은 `prepare_equipment_master` 와
     (이름을 바꿨으면) `prepare_downtime_for_prepared_equipment` 검사를 지금 한다. 편집본은 세 표째
     `replace_equipment_buffer`, 저장 안 한 이름 지도는 `compose_renames` → `stage_unit_renames`, RawData
-    선택은 `follow_unit_renames` 다. `저장 안 한 배치 변경` 상자는 `name_changes` 로 `이름 바꿈 N건`·`바꾼
+    선택·되돌리기는 `follow_unit_renames(설비명, Main 설비)` 다(어느 이름 바꿈이든 되돌리기를 버린다). 적용을
+    읽을 때 `reserved_names`(RawData 에서 지우고 저장 안 한 저장본 이름, 호기 마스터에 없는 설비명을 가리키는
+    비가동 일정)를 넘겨 새 설비명으로 못 쓰게 한다. `저장 안 한 배치 변경` 상자는 `name_changes` 로 `이름 바꿈 N건`·`바꾼
     이름` 표를 세우고, `layout_changes`·`other_change_count`·`unsaved_unit_ids` 와 비가동 일정 비교
     (`downtime_with_renames`)에 같은 지도를 넘겨 이름 바꿈을 「지운 호기 + 새 호기」·RawData 편집으로 세지
     않는다. 저장은 늘 하던 `배치 저장`(새 리비전, 지난 리비전은 옛 이름 그대로)이다. 필요단축일정 진척 비교
@@ -1264,7 +1266,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     위젯을 건드린 회차가 적용 전 이름 바꿈을 되돌리지 않게). 겹침은 브라우저가 먼저 막고(`nameClash` —
     호기 마스터 전체 이름 `existingIds` 에서 편집기 호기·묶음은 지금 이름으로 보고, 대소문자·앞뒤 공백만
     다른 이름도 같은 이름) 짧은 문구를 `편집 영역` 칸 알림에 쓴다. 파이썬이 적용 때 같은 규칙으로 다시 본다.
-    상태 줄은 묶음이면 `Main 설비 <이름>` 을 함께 적는다.
+    상태 줄은 묶음이면 `Main 설비 <이름>` 을 함께 적는다. **새 호기 폼도 같은 `nameClash`**(지금 이름 기준)로
+    겹침을 본다 — `S.items` 의 열쇠는 옛 이름이라 이름 검사에 쓰지 않고, 이름을 바꾼 새 호기가 쥔 열쇠와 겹치면
+    새 열쇠(`<이름>~<번호>`)를 쓴다(새 호기 적용값의 이름은 `label`).
+  - **이름 칸의 글자는 칸에 들어갈 때 고른 대상의 것이다**(2026-10-08 병합 전 리뷰). 호기 `이름`·요소 `이름`
+    칸은 focus 때 대상 id(`S.unitLabelFor`·`S.markLabelFor`)를 묶고 change 는 그 대상에만 쓴다. 고르는 것을
+    바꾸는 길(`setSelection`, 서랍 칩·팔레트의 `ghostDrag`, 도면 누르기)은 먼저 `commitTyping` 으로 칸을 떠나 적던
+    글자를 옛 대상에 확정한다 — 칩·팔레트는 pointerdown 에서 기본 동작을 막아 초점이 칸에 남고, 그대로 두면 다음
+    Enter 가 새로 고른 호기에 이름을 붙였다(Shift/Ctrl 칩 고르기·요소 넣기는 적던 글자를 말없이 버렸다). 확정 중
+    (`S.committing`)의 이름 바꿈은 목록을 다시 만들지 않고 글자만 고친다(`repaint`) — 누른 칩·상자가 그 자리에서
+    사라지면 그 누르기·끌기가 끊긴다. 서랍 차례는 다음 다시 그리기 때 맞춰진다.
   - **요소 이름표 글자 크기·색**(2026-10-06 사용자 결정). 모든 도면 요소(영역·반입구·문·기둥·글자·동선·
     FAB 층 블록 — 호기 상자는 아니다)가 `fontSize`(null = 자동, 또는 `data.fontSizes` = `MARK_FONT_SIZES`
     9·11·13·16·20·24 화면 px)와 `fontColor`('' = 기본 `--sle-mark-ink`, 또는 영역 색 키)를 갖는다. 선택 칸의
@@ -2206,9 +2217,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     바꾸기와 같은 적용 안의 맞바꿈(A→B·B→A)은 된다. 저장 검증(`prepare_equipment_master`, 글자 그대로)보다
     엄하다. 반영 `apply_name_changes` 는 `apply_layout_edits` **뒤**에 한꺼번에 바꾸고(자리·크기 그대로),
     비가동 일정의 설비명이 따라가며, 자기 설비명을 Main 설비로 적은 한 행짜리 묶음은 Main 설비도 따라간다.
+  - **편집본에 호기가 없어도 못 쓰는 설비명**(`ReservedNames`·`reserved_names`, 2026-10-08 병합 전 리뷰).
+    `deleted` — 저장본에 있는데 RawData 에서 지우고 아직 저장하지 않은 이름(다른 호기가 이으면 저장 뒤 같은 이름의
+    다른 설비가 되어 옛 이력·기준선과 섞인다. Space 이름 바꿈으로 비운 이름은 아니다 — 살아 있는 지도의 옛 이름은
+    뺀다). `orphan_downtime` — 호기 마스터에 없는 설비명을 가리키는 비가동 일정(그 이름을 쓰면 일정이 말없이 붙는다).
+    이름 바꿈(설비명)과 새 호기 모두에 걸고, 까닭과 할 일(지운 것을 저장하거나 되돌리기, 그 비가동 일정 고치기)을
+    문구에 적는다. 새 호기 이름(`_parse_created`)도 이름 바꾸기와 같이 `scalar_match_key` 로 설비명·Main 설비·같은
+    적용의 다른 새 호기와 견준다(`eq-01` 은 `EQ-01` 이 있으면 안 된다).
   - 저장 안 한 이름 바꿈은 `PendingRenames`(지금 이름 → 저장본 이름)다. `compose_renames` 가 잇고(A→B→C 는
     C→A, 되돌리면 빠진다, 저장본에 없던 새 호기는 기억하지 않는다), `live_renames` 가 지금도 맞는 항목만
-    남긴다(RawData 에서 그 사이 지우거나 되돌린 이름). `layout_changes`·`other_change_count`·
+    남긴다 — 지금 이름이 편집본에 있고, 옛 이름이 편집본에 없거나 **그 옛 이름을 같은 지도의 살아 있는 다른 항목이
+    이어받았을 때**(맞바꿈 A↔B·A→X 뒤 B→A, 고정점까지 다시 본다). RawData 에서 되돌린 이름(지금 이름이 없음)과
+    옛 이름으로 새로 넣은 행(이어받은 항목 없음)은 버린다. `layout_changes`·`other_change_count`·
     `unsaved_unit_ids` 는 이 지도로 저장본의 옛 이름 행과 견주고, `name_changes`(바꿈마다 한 줄)·
     `downtime_with_renames`(저장본 비가동 일정을 새 이름으로 — 따라간 설비명을 RawData 편집으로 세지 않게)가
     상자를 돕는다. 이름 바꿈으로 설명되는 Main 설비 차이(그 묶음 바꿈·자기 이름 묶음의 따라감)는 다른
@@ -3474,10 +3494,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `stage_unit_renames`)는 저장 안 한 이름 바꿈(지금 이름 → 저장본 이름, 설비명·Main 설비 —
     `services/space_layout_edit.PendingRenames`)이다. 호기는 설비명으로만 짝지어지므로 이것이 없으면 이름을
     바꾼 호기가 「지운 호기 + 새 호기」로 읽힌다. 편집본과 함께 버려진다 — `reset_equipment_drafts` 와
-    `ensure_equipment_drafts` 의 다시 세우기(옛 편집본 칸 목록)가 비운다. `follow_unit_renames` 는 설비명을
-    업무 키로 기억한 칸을 따라 옮긴다: RawData 선택(호기 마스터·비가동 일정의 첫 칸)은 새 이름으로, `방금
-    삭제 되돌리기`(`LAST_REMOVED_KEY`)는 버린다(지운 행을 되살리면 옛 이름을 가리키거나 지운 호기의 이름을
-    새 이름이 다시 써 비가동 일정이 엉뚱한 호기에 붙는다). 붙여넣기 Import 함수는 건드리지 않는다.
+    `ensure_equipment_drafts` 의 다시 세우기(옛 편집본 칸 목록)가 비운다. `follow_unit_renames(설비명, Main
+    설비)` 는 이름을 기억한 칸을 따라 옮긴다: RawData 선택(호기 마스터·비가동 일정의 첫 칸)은 새 설비명으로,
+    `방금 삭제 되돌리기`(`LAST_REMOVED_KEY`)는 **어느 이름 바꿈이든**(묶음 이름만 바꿔도) 버린다 — 지운 행을
+    되살리면 옛 설비명을 가리키거나 지운 호기의 이름을 새 이름이 다시 써 비가동 일정이 엉뚱한 호기에 붙고, 지운
+    모듈 행은 옛 Main 설비로 돌아와 한 설비가 둘로 갈린다(검증은 통과한다). 붙여넣기 Import 함수는 건드리지 않는다.
   - `ImportReview`는 대상 표·원문·원본 세 표·저장 후보를 함께 보관한다. 최종 저장 시
     대상·원문·원본이 달라졌으면 미리보기만 갱신하고 다시 확인받는다. 보지 않은 변경을
     이전 확인으로 저장하지 않는다. 붙여넣기와 CSV 업로드를 동시에 받으면 하나를 고르게 한다.

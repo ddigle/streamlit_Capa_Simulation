@@ -819,6 +819,8 @@ export default function (component) {
       if (!item) continue
       chip.querySelector('.sle-chip-swatch').style.background = color(item)
       chip.querySelector('.sle-chip-name').textContent = item.group || item.label
+      // 서랍 칩의 풍선(호기 이름, 묶음은 모듈 이름 목록)도 이름 바꿈을 따라간다. 보낸 칩은 따로 적는다.
+      if (!chip.classList.contains('is-leaving') && chip.__entry && !item.group) chip.title = item.label
     }
   }
 
@@ -1174,7 +1176,24 @@ export default function (component) {
     syncInspector()
   }
 
+  // 이름 칸(호기 `이름`·요소 `이름`)에 적던 글자는 그 칸에 들어갈 때 고른 대상의 것이다. 고르는 것이 바뀌기 전에 칸을
+  // 떠나 그 대상에 확정한다 — 서랍 칩·팔레트는 누를 때 기본 동작을 막아 초점이 칸에 남아, 그대로 두면 다음 Enter 가
+  // 새로 고른 호기에 이름을 붙였다(2026-10-08 병합 전 리뷰). 확정 중에는 목록을 다시 만들지 않는다 — 누른 칩이 그
+  // 자리에서 사라지면 끌기·누르기가 끊긴다(`S.committing`, `renameUnit`).
+  function commitTyping() {
+    for (const input of [unitLabel, markLabel]) {
+      if (!isFocused(input)) continue
+      S.committing = true
+      try {
+        input.blur()
+      } finally {
+        S.committing = false
+      }
+    }
+  }
+
   function setSelection(ids, primary) {
+    commitTyping()
     S.selection = new Set(ids.filter((id) => S.items.has(id)))
     S.selected = primary && S.selection.has(primary) ? primary : ([...S.selection].pop() ?? null)
     markSelection()
@@ -1265,6 +1284,8 @@ export default function (component) {
   // 트레이 칩·팔레트에서 끌어 도면에 놓는다. 끌지 않고 누르기만 하면 onClick.
   function ghostDrag(event, label, onDrop, onClick) {
     if (event.button !== 0) return
+    // 아래 preventDefault 가 초점 옮기기를 막는다 — 적던 이름은 지금 대상에 먼저 확정한다(`commitTyping`).
+    commitTyping()
     event.preventDefault()
     const source = event.currentTarget
     source.setPointerCapture(event.pointerId)
@@ -1574,7 +1595,10 @@ export default function (component) {
       m.label = name
     }
     S.note = ''
-    renderItems()
+    // 고르는 것을 바꾸는 중의 확정(`commitTyping`)이면 글자만 고친다 — 목록을 다시 만들면 방금 누른 칩·상자가 사라져
+    // 그 누르기가 끊긴다. 서랍 차례는 다음 다시 그리기 때 맞춰진다.
+    if (S.committing) repaint()
+    else renderItems()
     updateStatus()
   }
 
@@ -1728,6 +1752,8 @@ export default function (component) {
     const p = toUser(event)
     if (!p) return
     event.preventDefault()
+    // 도면에 초점을 옮기기 전에 적던 이름을 확정한다 — 그 사이 누른 호기의 상자가 다시 만들어지지 않게.
+    commitTyping()
     svg.focus({ preventScroll: true })
     if (VIEW) {
       // 보기 전용: 끌면 화면 이동(확대했을 때), 끌지 않고 떼면 누른 호기를 고른다.
@@ -2021,16 +2047,33 @@ export default function (component) {
     const chosen = selectedItems()
     return chosen.length === 1 && isMark(chosen[0]) ? chosen[0] : null
   }
+  // 두 이름 칸은 들어갈 때 고른 대상에 묶는다(`S.markLabelFor`·`S.unitLabelFor`). change 는 칸을 떠날 때 나므로, 그
+  // 사이 고른 것이 바뀌어도 적던 글자가 새로 고른 대상에 붙지 않는다(`commitTyping` 이 먼저 확정하지만 그것을 거치지
+  // 않는 길까지 막는다).
+  const singleSelected = () => {
+    const chosen = selectedItems()
+    return chosen.length === 1 ? chosen[0] : null
+  }
+  markLabel.onfocus = () => {
+    const one = singleSelected()
+    S.markLabelFor = one && isMark(one) ? one.id : null
+  }
+  markLabel.onblur = () => { S.markLabelFor = null }
   markLabel.onchange = () => {
-    const mark = selectedMark()
+    const mark = S.items.get(S.markLabelFor)
     const value = markLabel.value.trim().slice(0, 40)
-    if (mark && value !== (mark.label || '')) setMarkProps(mark, { label: value })
+    if (mark && isMark(mark) && value !== (mark.label || '')) setMarkProps(mark, { label: value })
+    else syncInspector()
   }
   markLabel.onkeydown = (event) => { if (event.key === 'Enter') markLabel.blur() }
+  unitLabel.onfocus = () => {
+    const one = singleSelected()
+    S.unitLabelFor = one && isUnit(one) && !one.moveTo ? one.id : null
+  }
+  unitLabel.onblur = () => { S.unitLabelFor = null }
   unitLabel.onchange = () => {
-    const chosen = selectedItems()
-    const item = chosen.length === 1 && isUnit(chosen[0]) && !chosen[0].moveTo ? chosen[0] : null
-    if (item) renameUnit(item, unitLabel.value)
+    const item = S.items.get(S.unitLabelFor)
+    if (item && isUnit(item) && !item.moveTo) renameUnit(item, unitLabel.value)
     else syncInspector()
   }
   unitLabel.onkeydown = (event) => {
@@ -2039,8 +2082,8 @@ export default function (component) {
     // Esc 는 고치던 글자를 버린다(지금 이름으로 되돌리고 칸을 떠난다 — 바뀐 것이 없으니 change 가 나지 않는다).
     event.preventDefault()
     event.stopPropagation()
-    const chosen = selectedItems()
-    unitLabel.value = chosen.length === 1 && isUnit(chosen[0]) ? renameTarget(chosen[0]).name : ''
+    const item = S.items.get(S.unitLabelFor)
+    unitLabel.value = item && isUnit(item) ? renameTarget(item).name : ''
     unitLabel.blur()
   }
   markColor.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { color: markColor.value }) }
@@ -2100,9 +2143,12 @@ export default function (component) {
     const [hintW, hintH] = sizeHint()
     const w = newW.value === '' ? hintW : roundTo(Number(newW.value))
     const h = newH.value === '' ? hintH : roundTo(Number(newH.value))
+    // 이름 바꾸기와 같은 겹침 검사다 — 편집기 호기는 지금(바꾼) 이름으로 보고, 대소문자·앞뒤 공백만 다른 이름도
+    // 같은 이름이다(파이썬 `_parse_created` 도 같다). 키(`S.items` 의 열쇠)는 옛 이름이라 이름 검사에 쓰지 않는다.
+    const clash = id ? nameClash(id, { created: true, label: id, group: null }, false) : null
     let error = ''
     if (!id) error = '설비명을 적어 주세요.'
-    else if (EXISTING_IDS.has(id) || S.items.has(id)) error = `${id} 는 이미 있는 호기입니다.`
+    else if (clash) error = `${id} 는 이미 있는 이름입니다(${clash}).`
     else if (!newProcess.value) error = '공정을 골라 주세요.'
     else if (!(w > 0 && h > 0 && w <= MAX_EXTENT && h <= MAX_EXTENT)) error = `크기는 0 보다 크고 ${MAX_EXTENT} 이하여야 합니다.`
     const existing = newKind.value === 'existing'
@@ -2110,21 +2156,25 @@ export default function (component) {
     else if (!error && !existing && newQual.value && !newConfirm.value) error = 'Qual일정을 넣으면 확정상태를 골라 주세요.'
     newError.textContent = error
     if (error) return
+    // 열쇠는 편집기 안에서만 쓴다(적용값의 새 호기 이름은 `label`). 이름을 바꾼 새 호기가 이 이름을 열쇠로 쥐고
+    // 있으면 다른 열쇠를 쓴다 — 같은 열쇠로 덮으면 그 호기가 사라진다.
+    let key = id
+    while (S.items.has(key)) { S.seq += 1; key = `${id}~${S.seq}` }
     const item = {
-      id, kind: 'unit', label: id, stage: existing ? '가용' : '입고 예정', group: null, x: NaN, y: NaN, w, h,
+      id: key, kind: 'unit', label: id, stage: existing ? '가용' : '입고 예정', group: null, x: NaN, y: NaN, w, h,
       placed: false, moveTo: null, isNew: true, arrived: false, floorless: true, sizeGuessed: false,
       created: {
         process: newProcess.value, line: newLine.value, use: newUse.value, existing,
         arrival: existing ? '' : newArrival.value, qual: existing ? '' : newQual.value, confirm: existing ? '' : newConfirm.value,
       },
     }
-    S.items.set(id, item)
-    pushUndo([{ op: 'create', id }])
+    S.items.set(key, item)
+    pushUndo([{ op: 'create', id: key }])
     newId.value = ''
     newW.value = ''
     newH.value = ''
     renderItems()
-    setSelection([id], id)
+    setSelection([key], key)
   }
 
   // ---------------------------------------------------------------- 단추

@@ -52,6 +52,7 @@ from capa_simulation.services.floor_layout_profile import (
 from capa_simulation.services.frame_contracts import scalar_match_key
 from capa_simulation.services.korean_particle import (
     with_direction_particle,
+    with_object_particle,
     with_topic_particle,
 )
 
@@ -139,6 +140,22 @@ class PendingRenames:
 
     def __bool__(self) -> bool:
         return bool(self.units or self.groups)
+
+
+@dataclass(frozen=True)
+class ReservedNames:
+    """편집본 호기 마스터에 없지만 새 설비명(새 호기·이름 바꿈)으로 쓸 수 없는 이름
+    (`reserved_names`).
+
+    - `deleted`: 저장본에 있는데 RawData 에서 지우고 아직 저장하지 않은 설비명. 다른 호기가 그
+      이름을 이으면 저장 뒤 같은 이름의 다른 설비가 되어 옛 이력(진척 비교 기준선 등)과 섞인다.
+      Space 에서 이름을 바꿔 비운 이름은 아니다 — 그것은 다시 써도 된다.
+    - `orphan_downtime`: 호기 마스터에 없는 설비명을 가리키는 비가동 일정(보통 저장이 막는다). 그
+      이름을 쓰면 그 일정이 말없이 새 이름의 호기에 붙는다.
+    """
+
+    deleted: frozenset[str] = frozenset()
+    orphan_downtime: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -331,17 +348,56 @@ def _require_name(name: str, subject: str) -> None:
         raise ValueError(f"{subject}에 탭·줄바꿈·특수 공백을 쓸 수 없습니다: {name!r}")
 
 
+def _same_name(name: str, names: Collection[str]) -> str | None:
+    """`names` 가운데 `name` 과 같은 이름(대소문자·앞뒤 공백 무시, `scalar_match_key`)."""
+    key = scalar_match_key(name)
+    return next((other for other in names if scalar_match_key(other) == key), None)
+
+
+def _named(name: str, other: str) -> str:
+    """겹친 이름이 글자까지 같으면 그대로, 대소문자·공백만 다르면 그 이름을 덧붙인다."""
+    return name if other == name else f"{name}({other})"
+
+
+def _reserved_reasons(reserved: ReservedNames) -> dict[str, str]:
+    """편집본에 호기가 없어도 새 설비명으로 쓸 수 없는 이름(열쇠) → 까닭."""
+    reasons: dict[str, str] = {}
+    for name in sorted(reserved.orphan_downtime):
+        reasons[scalar_match_key(name)] = (
+            f"호기 마스터에 없는 설비명 {with_object_particle(name)} 가리키는 비가동 일정이 "
+            "RawData 편집본에 남아 있어 그 일정이 이 호기에 붙습니다 — 그 비가동 일정을 먼저 "
+            "고치거나 지우세요"
+        )
+    for name in sorted(reserved.deleted):
+        reasons[scalar_match_key(name)] = (
+            f"저장본의 {with_object_particle(name)} RawData 에서 지우고 아직 저장하지 않았습니다 "
+            "— 그 이름을 이으면 저장 뒤 옛 호기의 이력과 섞이니, 지운 것을 먼저 저장하거나 "
+            "되돌리세요"
+        )
+    return reasons
+
+
 def _parse_created(
     unit_id: str,
     raw: Mapping[str, Any],
     taken: set[str],
     options: Mapping[str, Sequence[str]],
+    reserved: Mapping[str, str],
 ) -> CreatedUnit:
+    """새 호기 하나. 이름은 설비명·Main 설비와 대소문자·앞뒤 공백 무시로도 겹칠 수 없다(이름
+    바꾸기와 같은 규칙)."""
     _require_name(unit_id, "새 호기 이름")
-    if unit_id in options.get("parentIds", ()):
-        raise ValueError(f"이미 Main 설비로 쓰는 이름입니다: {unit_id}")
-    if unit_id in taken:
-        raise ValueError(f"이미 있는 호기입니다: {unit_id}")
+    parent = _same_name(unit_id, options.get("parentIds", ()))
+    if parent is not None:
+        raise ValueError(f"이미 Main 설비로 쓰는 이름입니다: {_named(unit_id, parent)}")
+    holder = _same_name(unit_id, taken)
+    if holder is not None:
+        raise ValueError(f"이미 있는 호기입니다: {_named(unit_id, holder)}")
+    if scalar_match_key(unit_id) in reserved:
+        raise ValueError(
+            f"새 호기 이름 {with_topic_particle(unit_id)} 쓸 수 없습니다 — "
+            f"{reserved[scalar_match_key(unit_id)]}."
+        )
     process = _text(raw.get("process")).strip()
     line = _text(raw.get("line")).strip()
     use = _text(raw.get("use")).strip()
@@ -425,6 +481,7 @@ def _require_distinct_names(
     master_ids: Collection[str],
     group_ids: Collection[str],
     created_ids: Collection[str],
+    reserved: Mapping[str, str],
 ) -> None:
     """바꾼 뒤에도 설비명·Main 설비 이름이 겹치지 않는지 본다(호기 마스터 전체 — 다른 층·
     미배치·레이아웃 제외 포함). 겹침은 `scalar_match_key` 로 본다 — 대소문자·앞뒤 공백만 다른 두
@@ -435,6 +492,8 @@ def _require_distinct_names(
       이름과 겹칠 수 없다. 자기 대소문자만 바꾸는 것은 된다. 자기 설비명을 Main 설비로 적은 한
       행짜리 묶음은 Main 설비가 따라가므로 그 묶음과는 겹치지 않는다.
     - Main 설비 이름을 바꾸면: 어떤 설비명과도, 다른 Main 설비 이름과도 겹칠 수 없다.
+    - 설비명은 편집본에 호기가 없어도 `reserved`(`_reserved_reasons` — RawData 에서 지우고 저장 안
+      한 저장본 이름, 호기 마스터에 없는 설비명을 가리키는 비가동 일정)와도 겹칠 수 없다.
     """
     units = {change.old: change.new for change in renames if change.kind == "unit"}
     groups = {change.old: change.new for change in renames if change.kind == "group"}
@@ -492,6 +551,10 @@ def _require_distinct_names(
                 raise refuse(subject, change.new, reason)
         for _, reason in other_kind.get(key, []):
             raise refuse(subject, change.new, reason)
+        if change.kind == "unit" and key in reserved:
+            raise ValueError(
+                f"{subject} {with_topic_particle(change.new)} 쓸 수 없습니다 — {reserved[key]}."
+            )
 
 
 def parse_editor_apply(
@@ -504,14 +567,17 @@ def parse_editor_apply(
     canvas: CanvasSize,
     unit_options: Mapping[str, Sequence[str]],
     editor_groups: Collection[str] = frozenset(),
+    reserved: ReservedNames | None = None,
 ) -> EditorApply:
     """브라우저 적용값을 검증한다. **하나라도 어긋나면 `ValueError`** — 일부만 반영하지 않는다.
 
     `editor_ids` 는 이번 편집기에 보낸 호기, `master_ids` 는 편집본의 모든 호기(새 호기 중복 검사).
     `editor_groups` 는 이번 편집기에 보낸 호기의 Main 설비(이름을 바꿀 수 있는 묶음)이고, Main 설비
-    전체 목록은 `unit_options["parentIds"]` 다. 다른 층으로 보낸 호기의 좌표는 그 층 영역을 여기서
-    모르므로 범위를 보지 않는다 — `apply_layout_edits` 가 그 층 캔버스 안으로 민다.
+    전체 목록은 `unit_options["parentIds"]` 다. `reserved`(`reserved_names`)는 편집본에 호기가
+    없어도 새 설비명(새 호기·이름 바꿈)으로 쓸 수 없는 이름이다. 다른 층으로 보낸 호기의 좌표는 그
+    층 영역을 여기서 모르므로 범위를 보지 않는다 — `apply_layout_edits` 가 그 층 캔버스 안으로 민다.
     """
+    held = _reserved_reasons(reserved or ReservedNames())
     targets = {floor_label(key): key for key in floors if key != floor}
     new_canvas: CanvasSize | None = None
     raw_canvas = payload.get("canvas")
@@ -539,9 +605,9 @@ def parse_editor_apply(
         if raw.get("created") is not None:
             if not isinstance(raw.get("created"), Mapping):
                 raise ValueError(f"새 호기 {unit_id} 의 값을 읽지 못했습니다.")
-            created.append(
-                _parse_created(unit_id, raw["created"], master_ids | editor_ids, unit_options)
-            )
+            # 같은 적용에서 먼저 넣은 새 호기와도 겹칠 수 없다(대소문자·앞뒤 공백 무시).
+            taken = master_ids | editor_ids | {unit.unit_id for unit in created}
+            created.append(_parse_created(unit_id, raw["created"], taken, unit_options, held))
         elif unit_id not in editor_ids:
             raise ValueError(f"이 편집기에 없는 호기입니다: {unit_id}")
         move_to: FloorKey | None = None
@@ -591,6 +657,7 @@ def parse_editor_apply(
         master_ids=master_ids | editor_ids,
         group_ids=set(unit_options.get("parentIds", ())),
         created_ids={unit.unit_id for unit in created},
+        reserved=held,
     )
     return EditorApply(
         changes=tuple(changes),
@@ -856,26 +923,56 @@ def compose_renames(
 def live_renames(
     pending: PendingRenames | None, saved: pd.DataFrame, buffer: pd.DataFrame
 ) -> PendingRenames:
-    """지금도 맞는 항목만 남긴다 — 지금 이름이 편집본에 있고, 저장본 이름이 저장본에는 있으나
-    편집본에는 없을 때. RawData 에서 그 사이 지우거나 되돌린 이름은 이름 바꿈으로 읽지 않는다."""
+    """지금도 맞는 항목만 남긴다 — 지금 이름이 편집본에 있고 저장본 이름이 저장본에 있으며, 저장본
+    이름이 편집본에 없거나 **그 이름을 이 지도의 다른 살아 있는 항목이 이어받았을 때**(맞바꿈 A↔B,
+    A→X 뒤 B→A). RawData 에서 그 사이 되돌린 이름(지금 이름이 편집본에 없음)과 옛 이름을 새로 쓴
+    행(옛 이름이 편집본에 있는데 이어받은 항목이 없음)은 이름 바꿈으로 읽지 않는다."""
     if not pending:
         return PendingRenames()
-    saved_ids = _name_set(saved[EQUIPMENT_ID_COLUMN])
-    buffer_ids = _name_set(buffer[EQUIPMENT_ID_COLUMN])
-    saved_groups = _name_set(_parents(saved))
-    buffer_groups = _name_set(_parents(buffer))
     return PendingRenames(
-        units={
-            now: origin
-            for now, origin in pending.units.items()
-            if now in buffer_ids and origin in saved_ids and origin not in buffer_ids
-        },
-        groups={
-            now: origin
-            for now, origin in pending.groups.items()
-            if now in buffer_groups and origin in saved_groups and origin not in buffer_groups
-        },
+        units=_live_entries(
+            pending.units,
+            saved=_name_set(saved[EQUIPMENT_ID_COLUMN]),
+            buffer=_name_set(buffer[EQUIPMENT_ID_COLUMN]),
+        ),
+        groups=_live_entries(
+            pending.groups, saved=_name_set(_parents(saved)), buffer=_name_set(_parents(buffer))
+        ),
     )
+
+
+def _live_entries(
+    entries: Mapping[str, str], *, saved: set[str], buffer: set[str]
+) -> dict[str, str]:
+    """`live_renames` 의 한 지도. 옛 이름이 편집본에 남아 있으면 그 이름을 지금 이름으로 쓰는 다른
+    항목도 살아 있어야 한다 — 하나가 죽으면 그것에 기대던 항목도 다시 본다(고정점까지)."""
+    live = {now: origin for now, origin in entries.items() if now in buffer and origin in saved}
+    while True:
+        dead = [now for now, origin in live.items() if origin in buffer and origin not in live]
+        if not dead:
+            return live
+        for now in dead:
+            live.pop(now)
+
+
+def reserved_names(
+    saved: pd.DataFrame,
+    buffer: pd.DataFrame,
+    downtime: pd.DataFrame,
+    renames: PendingRenames | None,
+) -> ReservedNames:
+    """편집본(`buffer` 호기 마스터·`downtime` 비가동 일정)에 호기가 없어도 새 설비명으로 쓸 수 없는
+    이름. 저장본에서 사라진 이름 가운데 저장 안 한 이름 바꿈(`renames`)으로 비운 것은 지운 것이
+    아니다."""
+    buffer_ids = _name_set(buffer[EQUIPMENT_ID_COLUMN])
+    renamed_away = set(live_renames(renames, saved, buffer).units.values())
+    deleted = _name_set(saved[EQUIPMENT_ID_COLUMN]) - buffer_ids - renamed_away
+    orphan = (
+        _name_set(downtime[EQUIPMENT_ID_COLUMN]) - buffer_ids
+        if EQUIPMENT_ID_COLUMN in downtime.columns
+        else set()
+    )
+    return ReservedNames(deleted=frozenset(deleted), orphan_downtime=frozenset(orphan))
 
 
 def name_changes(

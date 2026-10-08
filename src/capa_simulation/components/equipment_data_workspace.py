@@ -389,15 +389,16 @@ def stage_unit_renames(renames: PendingRenames) -> None:
         st.session_state.pop(PENDING_RENAMES_KEY, None)
 
 
-def follow_unit_renames(renames: Mapping[str, str]) -> None:
-    """Space 편집기가 설비명을 바꿨다(옛 이름 → 새 이름). 설비명을 업무 키로 기억한 RawData 칸을
-    따라 옮긴다 — 호기 마스터·비가동 일정의 선택은 새 이름으로 옮기고, `방금 삭제 되돌리기` 는
-    버린다(지운 행이 옛 이름을 가리키거나, 지운 호기의 이름을 새 이름이 다시 써 되살리면 비가동
-    일정이 엉뚱한 호기에 붙는다)."""
-    if not renames:
+def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -> None:
+    """Space 편집기가 이름을 바꿨다(설비명 `renames`·Main 설비 `groups`, 옛 이름 → 새 이름). 이름을
+    기억한 RawData 칸을 따라 옮긴다 — 호기 마스터·비가동 일정의 선택은 새 설비명으로 옮기고,
+    `방금 삭제 되돌리기` 는 **어느 이름이든 바꾸면** 버린다. 지운 행은 옛 이름을 지니므로 되살리면
+    비가동 일정이 옛 설비명을 가리키거나 엉뚱한 호기에 붙고, 지운 모듈 행은 옛 Main 설비로 돌아와
+    한 설비가 둘로 갈린다(검증은 통과해 그대로 저장된다)."""
+    if not renames and not groups:
         return
     selection = _current_selection()
-    if selection:
+    if selection and renames:
         st.session_state[SELECTION_KEY] = {
             target: (
                 frozenset((renames.get(key[0], key[0]), *key[1:]) for key in keys)

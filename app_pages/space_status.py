@@ -122,6 +122,7 @@ from capa_simulation.services.space_layout_edit import (
     new_unit_options,
     other_change_count,
     parse_editor_apply,
+    reserved_names,
     table_changed,
     unsaved_unit_ids,
     viewer_items,
@@ -718,6 +719,11 @@ def _render_layout_editor(
             canvas=canvas,
             unit_options=options,
             editor_groups={str(item["group"]) for item in inputs.items if item.get("group")},
+            # 편집본에 없지만 새 설비명으로 쓸 수 없는 이름 — RawData 에서 지우고 저장 안 한 저장본
+            # 이름, 호기 마스터에 없는 설비명을 가리키는 비가동 일정.
+            reserved=reserved_names(
+                latest_snapshot.equipment, frames[1], frames[2], pending_unit_renames()
+            ),
         )
         next_canvases = {**canvases, **({key: applied.canvas} if applied.canvas else {})}
         master = apply_layout_edits(
@@ -743,7 +749,7 @@ def _render_layout_editor(
         stage_unit_renames(
             compose_renames(pending_unit_renames(), applied, saved=latest_snapshot.equipment)
         )
-        follow_unit_renames(applied.unit_renames)
+        follow_unit_renames(applied.unit_renames, applied.group_renames)
     if applied.canvas is not None:
         unchanged = applied.canvas == (
             stored_canvas or (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
