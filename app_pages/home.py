@@ -199,11 +199,14 @@ def _owned_comparison_revision(
     return revision_id if any(item.revision_id == revision_id for item in revisions) else None
 
 
+# Guide 를 진행 막대보다 먼저 단다. 막대 자리는 가이드가 있는 화면인지(숨은 Guide 트리거)로 툴바
+# 단추 묶음의 폭을 가르므로, 막대가 먼저 그려지면 다른 화면에서 HOME 으로 올 때 첫 프레임만 Guide
+# 몫(65px)만큼 오른쪽에 섰다가 옮겨 간다(8551 실측 18ms). 둘 다 가벼운 요소라 차례만 바꾼다.
+render_page_guide("home", title="HOME")
 # 진행 표시는 화면 맨 위 띠(툴바 단추 바로 왼쪽)에 앉는다(2026-10-08 사용자 결정). 본문 흐름에
 # 두면 막대가 뜨고 질 때마다 아래 차트가 그만큼 밀려 보던 자리가 흔들린다. 띠 위에 고정되므로
 # 막대가 뜨고 져도 본문이 움직이지 않고, 어느 탭·어느 스크롤 자리에서든 같은 자리에서 읽힌다.
 loading = LoadingProgress(render_page_header_with_status("Capa LOB Summary"), HOME_LOADING_STAGES)
-render_page_guide("home", title="HOME")
 # 성능 진단은 **위젯이 아니라 세션 스위치**다. 사이드바에 토글을 두면 모든 사용자가 늘
 # 보는 자리를 개발용 계측 하나가 차지한다. 단계별 소요 시간은 `scripts/benchmark_home.py`
 # 로 재는 것이 정본이고, 화면에서 봐야 할 때만 이 키를 세션에 직접 넣는다.

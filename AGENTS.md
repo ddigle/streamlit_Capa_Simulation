@@ -2660,7 +2660,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     - 자리·크기(1rem = 14px): 오른쪽 끝을 창 오른쪽에서 15rem(툴바 묶음 197~199px + 틈 11~13px), 폭
       15rem(가장 긴 단계 글자 0.72rem 194px), 높이 띠와 같은 3.75rem, 층 999991(헤더 999990 위·모바일
       사이드바 999995·팝업 아래 — 입장 화면 덮개 밑에 깔린다). 가이드가 없는 화면(숨은 Guide 트리거가
-      없다)은 10.5rem. 마우스를 받지 않고, 인쇄에서는 껍데기 스타일이 뺀다.
+      없다)은 10.5rem. 그래서 가이드를 다는 화면은 `render_page_guide` 를 이 자리보다 **먼저** 부른다 —
+      늦으면 다른 화면에서 넘어올 때 첫 프레임만 65px 오른쪽에 섰다가 옮겨 간다(HOME 실측 18ms). 마우스를
+      받지 않고, 인쇄에서는 껍데기 스타일이 뺀다.
     - 모양: 단계 글자 0.72rem `TEXT_MUTED`(띠 아래 줄과 같다) 위, 4px 막대(바탕 `BORDER`·채움 `ACCENT`)
       아래. `st.progress` 의 `data-testid`(`stProgress`·`stMarkdownContainer`·`stProgressBarTrack`)로 고른다.
     - **막대가 떠 있는 동안만 시나리오 두 줄이 비켜 말줄임으로 줄어든다**(`:has(… stProgress)` — 33.5rem,
