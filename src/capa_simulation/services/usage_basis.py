@@ -4,15 +4,15 @@
 
 Dynamic 가용대수는 **사용기준이 HBM·EDP 인 호기만** 센다(`equipment_contract.counts_for_capacity`,
 2026-10-08 사용자 결정). 나머지 호기는 배치(Space)·호기 목록·상태 분포에는 그대로 있고
-가용대수에서만 빠진다. 말하지 않으면 「호기 마스터에는 열 대인데 가용대수는 여섯」이 설명 없이
+가용대수에서만 빠진다. 말하지 않으면 「설비 마스터에는 열 대인데 가용대수는 여섯」이 설명 없이
 남으므로, 가용대수를 보이는 자리(가용설비 현황 Main `가용대수`·Static/Dynamic·필요단축일정)가 이
 대수를 한 줄로 알린다.
 
-- **대상** — 사용기준이 HBM·EDP 가 아닌 행(빈 칸 포함). 날짜를 보지 않는다 — 호기 마스터에 있는
+- **대상** — 사용기준이 HBM·EDP 가 아닌 행(빈 칸 포함). 날짜를 보지 않는다 — 설비 마스터에 있는
   그대로를 센다(이미 반출된 호기도 마스터에 남아 있으면 센다).
 - **세는 법** — 행이 아니라 설비다. 보유와 상관없는 셈이라 고정 지분(`static_unit_shares`, 1 ÷
   같은 설비키의 행 수)을 더한다. 모듈 넷 중 둘만 세지 않는 값이면 0.5대다.
-- 지분은 넘겨받은 호기 마스터 전체로 매기므로 **거르기 전의 표**를 넘기고, 범위는 `processes`·
+- 지분은 넘겨받은 설비 마스터 전체로 매기므로 **거르기 전의 표**를 넘기고, 범위는 `processes`·
   `unit_ids` 로 좁힌다(일정 미정 알림 `undated_equipment` 와 같은 꼴이다).
 """
 
@@ -49,9 +49,9 @@ USAGE_EXCLUDED_COLUMNS: Final = (
 
 
 def usage_excluded_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
-    """호기 마스터(검증 전 편집본도 받는다)에서 사용기준 때문에 가용대수에 세지 않는 행을 고른다.
+    """설비 마스터(검증 전 편집본도 받는다)에서 사용기준 때문에 가용대수에 세지 않는 행을 고른다.
 
-    돌려주는 칸은 `USAGE_EXCLUDED_COLUMNS` 다. 호기 마스터가 검증을 통과하지 못하면
+    돌려주는 칸은 `USAGE_EXCLUDED_COLUMNS` 다. 설비 마스터가 검증을 통과하지 못하면
     `ValueError` 다 — 화면은 같은 표로 다른 계산도 하므로 이미 그 자리에서 오류를 알린다.
     """
     prepared = prepare_equipment_master(equipment)
@@ -95,7 +95,7 @@ def usage_exclusion_notice(
     processes: Collection[str] | None = None,
     unit_ids: Collection[str] | None = None,
 ) -> str | None:
-    """「사용기준이 HBM·EDP 가 아닌 N대(호기 마스터 기준)는 가용대수에서 뺐습니다 — …」 한 줄.
+    """「사용기준이 HBM·EDP 가 아닌 N대(설비 마스터 기준)는 가용대수에서 뺐습니다 — …」 한 줄.
 
     0대면 `None`(그리지 않는다).
     """
@@ -105,7 +105,7 @@ def usage_exclusion_notice(
     basis = "·".join(COUNTED_USAGE_BASIS)
     # 조사는 마지막 값(EDP)의 읽기를 따른다 — 값을 바꾸면 조사도 같이 본다.
     return (
-        f"사용기준이 {basis} 가 아닌 {format_unit_count(count)}대(호기 마스터 기준)는 가용대수에서 "
+        f"사용기준이 {basis} 가 아닌 {format_unit_count(count)}대(설비 마스터 기준)는 가용대수에서 "
         "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
     )
 

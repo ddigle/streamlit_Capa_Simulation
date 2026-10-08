@@ -273,7 +273,7 @@ def render_required_shortening_tab(
     if not plan.processes:
         st.info(
             "시나리오 소요대수와 Dynamic 가용대수에 같은 이름으로 함께 있는 공정이 없습니다. "
-            "Cut-off·호기 마스터의 공정소분류가 시나리오 공정명과 같은지 확인하세요."
+            "Cut-off·설비 마스터의 공정소분류가 시나리오 공정명과 같은지 확인하세요."
         )
         return
 
@@ -469,7 +469,7 @@ def _render_process_filter(
     )
     absent = absent_filter_processes(profile.processes, set(ordered))
     if absent:
-        # 공용 설정이라 다른 시나리오·호기 마스터에는 그 공정이 있다. 말없이 빠지면 왜 덜 골라졌는지
+        # 공용 설정이라 다른 시나리오·설비 마스터에는 그 공정이 있다. 말없이 빠지면 왜 덜 골라졌는지
         # 알 수 없다(HOME 주요공정 프리셋의 「이 화면에 없음」과 같은 까닭).
         st.caption(
             "공용 설정의 공정 가운데 지금 맞댄 공정에 없어 고를 수 없는 것: "
@@ -528,7 +528,7 @@ def _render_undated_notice(equipment: pd.DataFrame, *, selected: Sequence[str] |
     후보도 아니라고 덧붙인다(`undated_candidate_note`) — 이 탭은 Qual 일정이 있는 호기만 당기므로,
     알리지 않으면 「그 호기를 당기면 될 텐데 왜 추가N 이 필요한가」로 읽힌다. 반입만 빈 호기는 Qual
     일정이 있어 후보이므로 그 말을 하지 않는다. 범위는 옆 줄(사용기준 제외)과 같다: 공정을 고르면
-    그 공정, 고르지 않으면 호기 마스터 전체 — 호기가 모두 일정 미정인 공정은 Dynamic 이 없어
+    그 공정, 고르지 않으면 설비 마스터 전체 — 호기가 모두 일정 미정인 공정은 Dynamic 이 없어
     「맞대지 못한 공정」에만 남기 때문이다.
     """
     try:
@@ -545,9 +545,9 @@ def _render_undated_notice(equipment: pd.DataFrame, *, selected: Sequence[str] |
 def _render_usage_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | None) -> None:
     """사용기준이 HBM·EDP 가 아니어서 가용·후보에서 뺀 설비 한 줄. 0대면 그리지 않는다.
 
-    공정을 고르면 그 공정만, 고르지 않으면 호기 마스터 전체를 센다 — 호기가 모두 HBM·EDP 가 아닌
+    공정을 고르면 그 공정만, 고르지 않으면 설비 마스터 전체를 센다 — 호기가 모두 HBM·EDP 가 아닌
     공정은 Dynamic 이 없어 「맞대지 못한 공정」에만 남으므로 맞댄 공정으로 좁히면 그 까닭이
-    사라진다. 호기 마스터가 검증을 못 넘으면 알리지 않는다(계산 자리가 이미 알린다).
+    사라진다. 설비 마스터가 검증을 못 넘으면 알리지 않는다(계산 자리가 이미 알린다).
     """
     try:
         excluded = simulation_cache.get_usage_excluded_equipment(equipment)
@@ -561,7 +561,7 @@ def _render_usage_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | N
 def _render_unmatched(plan: ShorteningPlan) -> None:
     """맞대지 못한 공정은 비교하지 않고 이름만 알린다.
 
-    조용히 빠지면 부족이 이유 없이 작아 보인다. 이름은 **원본**이다 — 호기 마스터·Cut-off 의
+    조용히 빠지면 부족이 이유 없이 작아 보인다. 이름은 **원본**이다 — 설비 마스터·Cut-off 의
     이름을 맞추라는 안내라 표시명을 적으면 마스터에 없는 이름을 찾게 된다(AGENTS 8장, 원본 키를
     확인하는 화면).
     """
@@ -576,7 +576,7 @@ def _render_unmatched(plan: ShorteningPlan) -> None:
         parts.append(f"그 가운데 Cut-off 미기재 {len(plan.missing_cutoff)}개")
     with st.expander(":material/link_off: 맞대지 못한 공정 — " + " · ".join(parts)):
         st.caption(
-            "호기 마스터 `공정소분류` 와 시나리오 `공정` 이 같은 이름일 때만 맞댑니다. "
+            "설비 마스터 `공정소분류` 와 시나리오 `공정` 이 같은 이름일 때만 맞댑니다. "
             "Cut-off 를 적지 않은 공정은 Dynamic 가용을 낼 수 없어 시나리오 쪽에만 남습니다. "
             "아래 이름은 공정 표시명이 아니라 원본 공정명입니다."
         )

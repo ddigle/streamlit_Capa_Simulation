@@ -515,7 +515,7 @@ def test_non_hbm_units_are_named_in_every_view_in_the_scope_the_counts_use() -> 
     app = _run(undated_units=True, non_hbm_units=True)
 
     assert _usage_captions(app) == [
-        ":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 2대(호기 마스터 기준)는 가용대수에서 "
+        ":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 2대(설비 마스터 기준)는 가용대수에서 "
         "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
     ]
     app.selectbox(key=PROCESS_FILTER_KEY).set_value("Die Attach").run()

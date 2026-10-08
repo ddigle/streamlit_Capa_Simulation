@@ -3,7 +3,7 @@
 """필요단축일정 진척 비교(AppTest).
 
 `test_required_shortening_tab` 의 페이지 흉내(시나리오 쪽 갈아 끼우기)를 그대로 쓴다. 샘플 fleet
-에서는 기준선을 저장하지 않으므로 샘플 호기 마스터를 **저장본으로** 넣고 시작한다.
+에서는 기준선을 저장하지 않으므로 샘플 설비 마스터를 **저장본으로** 넣고 시작한다.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ PROGRESS_CSV_KEY = "equipment_shortening_progress_csv"
 
 
 def _saved_database(tmp_path: Path) -> tuple[Path, pd.DataFrame]:
-    """샘플 호기 마스터를 저장본(r1)으로 넣은 설비 DB."""
+    """샘플 설비 마스터를 저장본(r1)으로 넣은 설비 DB."""
     database_path = _database(tmp_path)
     master = sample_equipment_master()
     DuckDBEquipmentRepository(database_path).save_snapshot(
@@ -80,7 +80,7 @@ def _progress_csv(app: AppTest) -> pd.DataFrame:
 
 
 def _shift_quals(database_path: Path, master: pd.DataFrame, moves: dict[str, int]) -> pd.DataFrame:
-    """고른 호기의 Qual 을 며칠씩 옮겨 새 리비전으로 저장한다(호기 마스터 RawData 편집과 같다)."""
+    """고른 호기의 Qual 을 며칠씩 옮겨 새 리비전으로 저장한다(설비 마스터 RawData 편집과 같다)."""
     changed = master.copy()
     for name, days in moves.items():
         rows = changed["설비명"].eq(name)

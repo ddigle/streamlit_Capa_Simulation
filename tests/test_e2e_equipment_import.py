@@ -254,21 +254,21 @@ def test_a_paste_that_only_repeats_the_template_process_name_is_still_the_user_s
 
 @pytest.mark.xfail(
     reason=(
-        "양식 예시 가드가 기존 보유대수에만 있다. 호기 마스터 양식의 예시 호기 SAM01 은 "
+        "양식 예시 가드가 기존 보유대수에만 있다. 설비 마스터 양식의 예시 호기 SAM01 은 "
         "그대로 붙여넣어도 저장까지 간다 — 같은 위험인데 한 표만 막혀 있다. 고칠지 말지는 "
         "사람이 정한다. 가드가 생기면 이 표시를 떼어라."
     ),
 )
 def test_the_untouched_master_template_row_is_stopped_at_save(tmp_path: Path) -> None:
-    """호기 마스터 양식의 예시 한 줄도 기존 보유대수와 같은 자리에서 막혀야 한다.
+    """설비 마스터 양식의 예시 한 줄도 기존 보유대수와 같은 자리에서 막혀야 한다.
 
     `SAM01` 은 담당자 「홍길동」까지 붙은 표본 값인데 네 일정과 확정상태가 다 차 있어
-    `prepare_equipment_master` 를 그냥 통과한다. 저장되면 호기 마스터에만 있고 현장에는 없는
+    `prepare_equipment_master` 를 그냥 통과한다. 저장되면 설비 마스터에만 있고 현장에는 없는
     호기 하나가 그 리비전의 총대수·가용대수에 남는다. 기존 보유대수 쪽이 오늘 막힌 것과
     출처도 결과도 같다.
 
-    비가동 일정 양식은 같은 `SAM01` 을 참조하는데, 호기 마스터에 없으면 붙여넣기 단계에서
-    이미 막히므로 이 구멍은 호기 마스터 한 곳이다.
+    비가동 일정 양식은 같은 `SAM01` 을 참조하는데, 설비 마스터에 없으면 붙여넣기 단계에서
+    이미 막히므로 이 구멍은 설비 마스터 한 곳이다.
     """
     app = AppTest.from_string(_page_script(tmp_path / "master_guard.duckdb"), default_timeout=90)
     _seed_user_drafts(app)
@@ -277,7 +277,7 @@ def test_the_untouched_master_template_row_is_stopped_at_save(tmp_path: Path) ->
     _preview_import(
         app,
         _as_clipboard_text(equipment_csv_template()),
-        target="호기 마스터",
+        target="설비 마스터",
     )
 
     assert app.session_state[MASTER_DRAFT_KEY].empty
@@ -295,7 +295,7 @@ def test_the_untouched_master_template_row_is_stopped_at_save(tmp_path: Path) ->
 
 
 def _wide_preview_pair(rows: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """31열 호기 마스터에서 **키를 뺀 모든 글자 컬럼이 달라진** 최악에 가까운 한 쌍.
+    """31열 설비 마스터에서 **키를 뺀 모든 글자 컬럼이 달라진** 최악에 가까운 한 쌍.
 
     미리보기는 바뀐 컬럼을 찾느라 행마다 30번 비교하고, 바뀐 칸마다 한 번 더 문자열로
     바꾼다. 편집한 마스터를 통째로 다시 붙여넣는 것이 실제로 이 모양이라, 상한은 이 경로에서

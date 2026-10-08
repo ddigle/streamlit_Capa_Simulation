@@ -94,7 +94,7 @@ MONTHS = (202610, 202611, 202612)
 def _fleet(
     anchor: date = ANCHOR,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """샘플 fleet(호기 마스터·비가동·기존보유)과 그 공정 전부에 Cut-off 10일."""
+    """샘플 fleet(설비 마스터·비가동·기존보유)과 그 공정 전부에 Cut-off 10일."""
     equipment = sample_equipment_master(anchor_date=anchor)
     processes = sorted(set(equipment["공정소분류"].astype(str)))
     cutoff = prepare_process_cutoff(

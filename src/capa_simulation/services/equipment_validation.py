@@ -71,20 +71,20 @@ def prepare_equipment_master(
     *,
     floor_canvases: FloorCanvasMap | None = None,
 ) -> pd.DataFrame:
-    """호기 마스터 36컬럼 계약을 정규화하고 검증한다. 선택 컬럼은 없으면 빈 칸이다
+    """설비 마스터 36컬럼 계약을 정규화하고 검증한다. 선택 컬럼은 없으면 빈 칸이다
     (`OPTIONAL_EQUIPMENT_COLUMNS`).
 
     `floor_canvases` 를 넘기면 층별 캔버스 폭·높이를 상한으로 좌표를 검사한다. 넘기지
     않으면 상한 검사를 건너뛴다 — 이미 저장된 리비전은 캔버스가 줄어든 뒤에도 열려야 한다.
     """
     data = with_optional_equipment_columns(data)
-    require_columns(data, EQUIPMENT_COLUMNS, "호기 마스터")
+    require_columns(data, EQUIPMENT_COLUMNS, "설비 마스터")
     result = data.loc[:, EQUIPMENT_COLUMNS].copy()
     result = _drop_blank_rows(result, (EQUIPMENT_ID_COLUMN,))
     if result.empty:
         return empty_equipment_master()
 
-    _normalize_required_text(result, (EQUIPMENT_ID_COLUMN, "공정소분류"), "호기 마스터")
+    _normalize_required_text(result, (EQUIPMENT_ID_COLUMN, "공정소분류"), "설비 마스터")
     for column in REFERENCE_TEXT_COLUMNS + ("동", "층"):
         result[column] = _optional_text(result[column])
     result["확정상태"] = _optional_text(result["확정상태"])
@@ -340,7 +340,7 @@ def _validate_downtime_equipment(
     ]
     if not unknown.empty:
         examples = unknown.drop_duplicates().head(5).tolist()
-        raise ValueError(f"호기 마스터에 없는 설비의 비가동 일정이 있습니다: {examples}")
+        raise ValueError(f"설비 마스터에 없는 설비의 비가동 일정이 있습니다: {examples}")
 
 
 def prepare_downtime_for_prepared_equipment(
@@ -427,7 +427,7 @@ def _outside_canvas_message(
     """캔버스를 벗어난 호기를 동·층별로 묶어 **원인과 고칠 곳**까지 적는다.
 
     누가 층 캔버스를 줄여 두면, 뒤에 다른 사람이 무관한 기존보유대수 한 칸만 고쳐 저장해도
-    호기 마스터 전체 검증이 이 오류로 막힌다. 예전 문구는 호기 이름만 적어서 원인이 캔버스
+    설비 마스터 전체 검증이 이 오류로 막힌다. 예전 문구는 호기 이름만 적어서 원인이 캔버스
     라는 것도, 어디서 고치는지도 알 수 없었다(2026-09-29 버그 보고). 검사 범위는 그대로
     두고(바뀐 행만 보면 검증이 약해진다) 문구만 넓힌다 — 층 이름·캔버스 크기·그 층 호기를
     담는 데 필요한 크기·해결 방법.
@@ -457,7 +457,7 @@ def _outside_canvas_message(
         )
     return (
         "Space 블럭이 층 캔버스 범위를 벗어났습니다 — 그 동·층의 캔버스가 호기 좌표보다 "
-        f"좁습니다. {'; '.join(floors[:3])}. 호기 마스터 저장은 모든 호기를 한 번에 검증하므로 "
+        f"좁습니다. {'; '.join(floors[:3])}. 설비 마스터 저장은 모든 호기를 한 번에 검증하므로 "
         "그 층과 무관한 칸만 고쳐도 같은 오류로 막힙니다. Space 현황의 그 동·층 상세 레이아웃에서 "
         "「도면·캔버스 편집」으로 캔버스를 넓히거나, 가용설비 현황에서 그 호기의 X좌표·Y좌표·"
         "Xsize·Ysize 를 고치세요."

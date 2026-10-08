@@ -153,7 +153,7 @@ def test_select_by_an_unapplied_filter_then_delete_confirm_and_undo(tmp_path: Pa
 
 
 def test_a_confirmed_deletion_saves_without_orphaned_downtime(tmp_path: Path) -> None:
-    """호기만 지우고 일정을 남기면 저장이 「호기 마스터에 없는 설비의 비가동 일정」으로 막힌다."""
+    """호기만 지우고 일정을 남기면 저장이 「설비 마스터에 없는 설비의 비가동 일정」으로 막힌다."""
     seed = _seeded(tmp_path)
     app = AppTest.from_string(_page_script(seed.database), default_timeout=120).run()
     app.multiselect(key=BUILDING_FILTER_KEY).set_value([seed.building])

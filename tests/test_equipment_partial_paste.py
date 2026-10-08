@@ -1,6 +1,6 @@
-# Purpose: 호기 마스터 일부 열 붙여넣기가 붙여넣은 열만 바꾸고 검증·차단 규칙을 지키는지 검사한다.
+# Purpose: 설비 마스터 일부 열 붙여넣기가 붙여넣은 열만 바꾸고 검증·차단 규칙을 지키는지 검사한다.
 
-"""호기 마스터 일부 열 붙여넣기(2026-10-08 사용자 요청).
+"""설비 마스터 일부 열 붙여넣기(2026-10-08 사용자 요청).
 
 `설비명` 은 꼭 있고 나머지 열은 바꿀 것만 넣는다. 기존 호기는 붙여넣은 열만 바뀌고, 새 호기는
 지금 필요한 열이 다 있어야 하며, 검증은 병합된 전체 표에서 그대로 돈다. 미리보기 경계
@@ -60,7 +60,7 @@ def _review(payload: str | bytes, equipment: pd.DataFrame | None = None) -> Impo
     else:
         downtime = empty_downtime_schedule()
     return build_import_review(
-        "호기 마스터",
+        "설비 마스터",
         payload,
         (empty_equipment_baseline(), equipment, downtime),
         floor_canvases={},
@@ -264,7 +264,7 @@ def test_a_misspelled_header_in_a_partial_paste_is_rejected_with_a_hint() -> Non
         _review(payload)
 
     message = str(raised.value)
-    assert "호기 마스터에 없는 열이 있습니다: 「Qual일졍」(「Qual일정」?)" in message
+    assert "설비 마스터에 없는 열이 있습니다: 「Qual일졍」(「Qual일정」?)" in message
     assert "그 열을 빼고 다시 붙여넣으세요" in message
 
 
@@ -275,7 +275,7 @@ def test_an_unknown_header_in_a_full_paste_is_skipped_with_a_notice() -> None:
 
     review = _review(full.to_csv(sep="\t", index=False))
 
-    assert review.notices == ("호기 마스터에 없는 열 「확인」은 읽지 않았습니다.",)
+    assert review.notices == ("설비 마스터에 없는 열 「확인」은 읽지 않았습니다.",)
     assert review.changes["Import구분"].tolist() == ["대체", "대체"]
     assert review.changes["변경컬럼"].tolist() == ["변경 없음", "변경 없음"]
 
@@ -290,7 +290,7 @@ def test_a_misspelled_header_is_rejected_even_when_every_other_column_is_pasted(
     full[header] = "새 메모"
 
     with pytest.raises(
-        ValueError, match=re.escape(f"호기 마스터에 없는 열이 있습니다: 「{header}」")
+        ValueError, match=re.escape(f"설비 마스터에 없는 열이 있습니다: 「{header}」")
     ):
         _review(full.to_csv(sep="\t", index=False))
 
@@ -323,7 +323,7 @@ def test_duplicate_headers_are_rejected_on_both_paths(as_csv: bool, partial: boo
     entry = "CSV" if as_csv else "붙여넣기"
 
     with pytest.raises(
-        ValueError, match=re.escape(f"호기 마스터 {entry} 컬럼명이 중복되었습니다: ['담당자']")
+        ValueError, match=re.escape(f"설비 마스터 {entry} 컬럼명이 중복되었습니다: ['담당자']")
     ):
         _review(text.encode("utf-8-sig") if as_csv else text)
 
@@ -372,7 +372,7 @@ def test_a_partial_paste_onto_a_duplicated_name_in_the_buffer_is_rejected() -> N
         _review(_tab(("설비명", "반입일정"), ("EQ-01", "2026-08-05")), _duplicated_buffer())
 
     message = str(raised.value)
-    assert "편집본(호기 마스터)에 같은 설비명이 둘 이상 있습니다: EQ-01" in message
+    assert "편집본(설비 마스터)에 같은 설비명이 둘 이상 있습니다: EQ-01" in message
     assert "직접 편집에서 중복된 행을 먼저 정리한 뒤" in message
 
 
@@ -417,7 +417,7 @@ def test_a_partial_paste_is_previewed_and_saved_leaving_the_other_columns_alone(
         note="원본",
     )
     app = _app(path)
-    app.selectbox(TARGET_KEY).set_value("호기 마스터")
+    app.selectbox(TARGET_KEY).set_value("설비 마스터")
     app.text_area(CLIPBOARD_KEY).set_value(
         _tab(("설비명", "설비이력"), ("EQ-01", "10월 점검"), ("EQ-02", "셋업 완료"))
     )

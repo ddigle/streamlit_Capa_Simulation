@@ -9,11 +9,11 @@
    없으면 미배치 트레이에 놓는다. 동·층이 빈 호기는 모든 층 트레이에 뜬다.
 2. **검증** — 브라우저가 보낸 적용값을 다시 검사한다. 하나라도 어긋나면 `ValueError` 로 적용
    전체를 거부한다. 조용히 버리면 그 편집이 사라진 채 화면은 적용된 것처럼 보인다.
-3. **반영** — 검증한 변경을 편집본 호기 마스터에 얹는다. 트레이로 빼도 크기는 남기고, 다른
+3. **반영** — 검증한 변경을 편집본 설비 마스터에 얹는다. 트레이로 빼도 크기는 남기고, 다른
    층으로 보낸 호기는 그 층 캔버스 안으로 민다. Main 설비 묶음은 동·층을 함께 맞춘다(모듈 행은
    동·층이 같아야 저장된다).
 
-**이름 바꾸기**(2026-10-08 사용자 결정 「설비명 자체를 바꾸기」)는 표시 별칭이 아니라 호기 마스터의
+**이름 바꾸기**(2026-10-08 사용자 결정 「설비명 자체를 바꾸기」)는 표시 별칭이 아니라 설비 마스터의
 설비명(묶음이면 그 Main 설비)을 바꾼다. 비가동 일정의 설비명이 따라가고, 같은 세션의 저장 안 한 이름
 바꿈은 `PendingRenames`(지금 이름 → 저장본 이름)로 기억해 변경 목록이 「지우고 새로 넣음」이 아니라
 「이름 바꿈」으로 읽히게 한다.
@@ -84,7 +84,7 @@ class UnitChange:
 
 @dataclass(frozen=True)
 class CreatedUnit:
-    """편집기에서 새로 넣은 호기. 호기 마스터가 꼭 요구하는 값만 받는다."""
+    """편집기에서 새로 넣은 호기. 설비 마스터가 꼭 요구하는 값만 받는다."""
 
     unit_id: str
     process: str
@@ -144,13 +144,13 @@ class PendingRenames:
 
 @dataclass(frozen=True)
 class ReservedNames:
-    """편집본 호기 마스터에 없지만 새 설비명(새 호기·이름 바꿈)으로 쓸 수 없는 이름
+    """편집본 설비 마스터에 없지만 새 설비명(새 호기·이름 바꿈)으로 쓸 수 없는 이름
     (`reserved_names`).
 
     - `deleted`: 저장본에 있는데 RawData 에서 지우고 아직 저장하지 않은 설비명. 다른 호기가 그
       이름을 이으면 저장 뒤 같은 이름의 다른 설비가 되어 옛 이력(진척 비교 기준선 등)과 섞인다.
       Space 에서 이름을 바꿔 비운 이름은 아니다 — 그것은 다시 써도 된다.
-    - `orphan_downtime`: 호기 마스터에 없는 설비명을 가리키는 비가동 일정(보통 저장이 막는다). 그
+    - `orphan_downtime`: 설비 마스터에 없는 설비명을 가리키는 비가동 일정(보통 저장이 막는다). 그
       이름을 쓰면 그 일정이 말없이 새 이름의 호기에 붙는다.
     """
 
@@ -364,7 +364,7 @@ def _reserved_reasons(reserved: ReservedNames) -> dict[str, str]:
     reasons: dict[str, str] = {}
     for name in sorted(reserved.orphan_downtime):
         reasons[scalar_match_key(name)] = (
-            f"호기 마스터에 없는 설비명 {with_object_particle(name)} 가리키는 비가동 일정이 "
+            f"설비 마스터에 없는 설비명 {with_object_particle(name)} 가리키는 비가동 일정이 "
             "RawData 편집본에 남아 있어 그 일정이 이 호기에 붙습니다 — 그 비가동 일정을 먼저 "
             "고치거나 지우세요"
         )
@@ -412,7 +412,7 @@ def _parse_created(
     qual = _iso_date(raw.get("qual"), "Qual일정", unit_id)
     confirm = _text(raw.get("confirm")).strip()
     if not existing:
-        # 호기 마스터 계약: 반입·Qual 일정은 비워도 되고(둘 다 있으면 반입 ≤ Qual), 확정상태는
+        # 설비 마스터 계약: 반입·Qual 일정은 비워도 되고(둘 다 있으면 반입 ≤ Qual), 확정상태는
         # Qual일정이 있을 때만 필수다. Qual일정 없이 고른 확정상태도 받는다.
         if arrival is not None and qual is not None and qual < arrival:
             raise ValueError(f"새 호기 {unit_id} 의 Qual일정이 반입일정보다 빠릅니다.")
@@ -483,7 +483,7 @@ def _require_distinct_names(
     created_ids: Collection[str],
     reserved: Mapping[str, str],
 ) -> None:
-    """바꾼 뒤에도 설비명·Main 설비 이름이 겹치지 않는지 본다(호기 마스터 전체 — 다른 층·
+    """바꾼 뒤에도 설비명·Main 설비 이름이 겹치지 않는지 본다(설비 마스터 전체 — 다른 층·
     미배치·레이아웃 제외 포함). 겹침은 `scalar_match_key` 로 본다 — 대소문자·앞뒤 공백만 다른 두
     이름은 같은 이름이다. 저장 검증(`prepare_equipment_master`)은 글자 그대로 견주므로 그보다
     엄하다. 바꾼 뒤의 상태로 보므로 같은 적용에서 A→X·B→A 처럼 비운 이름을 다시 쓰는 것은 받는다.
@@ -493,7 +493,7 @@ def _require_distinct_names(
       행짜리 묶음은 Main 설비가 따라가므로 그 묶음과는 겹치지 않는다.
     - Main 설비 이름을 바꾸면: 어떤 설비명과도, 다른 Main 설비 이름과도 겹칠 수 없다.
     - 설비명은 편집본에 호기가 없어도 `reserved`(`_reserved_reasons` — RawData 에서 지우고 저장 안
-      한 저장본 이름, 호기 마스터에 없는 설비명을 가리키는 비가동 일정)와도 겹칠 수 없다.
+      한 저장본 이름, 설비 마스터에 없는 설비명을 가리키는 비가동 일정)와도 겹칠 수 없다.
     """
     units = {change.old: change.new for change in renames if change.kind == "unit"}
     groups = {change.old: change.new for change in renames if change.kind == "group"}
@@ -533,7 +533,7 @@ def _require_distinct_names(
     def refuse(subject: str, new: str, reason: str) -> ValueError:
         return ValueError(
             f"{subject} {with_topic_particle(new)} 쓸 수 없습니다 — {reason}. 설비명·Main 설비 "
-            f"이름은 호기 마스터 전체(다른 층·미배치 포함)에서 하나여야 하고, {_SAME_NAME_NOTE}."
+            f"이름은 설비 마스터 전체(다른 층·미배치 포함)에서 하나여야 하고, {_SAME_NAME_NOTE}."
         )
 
     for change in renames:
@@ -799,7 +799,7 @@ def apply_layout_edits(
     canvases: Mapping[FloorKey, CanvasSize],
     default_canvas: CanvasSize,
 ) -> pd.DataFrame:
-    """검증한 적용값을 편집본 호기 마스터에 얹은 새 프레임을 돌려준다(원본은 그대로).
+    """검증한 적용값을 편집본 설비 마스터에 얹은 새 프레임을 돌려준다(원본은 그대로).
 
     - 놓기·옮기기·크기: 그 층, X·Y·크기, 레이아웃표시 Y
     - 트레이로 빼기: X·Y 만 비우고 크기는 남긴다. 동·층은 그대로(그 층 트레이에 남는다)
@@ -845,7 +845,7 @@ def apply_layout_edits(
 def apply_name_changes(
     master: pd.DataFrame, downtime: pd.DataFrame, renames: Sequence[NameChange]
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """검증한 이름 바꿈을 호기 마스터와 비가동 일정에 얹은 새 프레임 둘을 돌려준다(원본은 그대로).
+    """검증한 이름 바꿈을 설비 마스터와 비가동 일정에 얹은 새 프레임 둘을 돌려준다(원본은 그대로).
 
     `apply_layout_edits` **뒤에** 부른다 — 배치 변경은 옛 설비명으로 온다. 바꿈은 한꺼번에 한다(A↔B
     처럼 서로 바꾼 이름도 맞게 간다). 좌표·크기 등 나머지 칸은 그대로라 배치가 남는다.
@@ -961,7 +961,7 @@ def reserved_names(
     downtime: pd.DataFrame,
     renames: PendingRenames | None,
 ) -> ReservedNames:
-    """편집본(`buffer` 호기 마스터·`downtime` 비가동 일정)에 호기가 없어도 새 설비명으로 쓸 수 없는
+    """편집본(`buffer` 설비 마스터·`downtime` 비가동 일정)에 호기가 없어도 새 설비명으로 쓸 수 없는
     이름. 저장본에서 사라진 이름 가운데 저장 안 한 이름 바꿈(`renames`)으로 비운 것은 지운 것이
     아니다."""
     buffer_ids = _name_set(buffer[EQUIPMENT_ID_COLUMN])
@@ -1219,7 +1219,7 @@ def other_change_count(
 
 
 def table_changed(saved: pd.DataFrame, buffer: pd.DataFrame) -> bool:
-    """두 표의 내용이 다른가(값의 형 차이는 무시). 호기 마스터 밖의 RawData 편집(기존 보유대수·
+    """두 표의 내용이 다른가(값의 형 차이는 무시). 설비 마스터 밖의 RawData 편집(기존 보유대수·
     비가동 일정)을 알린다. 「다르다」로 잘못 보면 메모 칸이 더 뜰 뿐이라 행 순서도 견준다."""
     if list(saved.columns) != list(buffer.columns) or len(saved) != len(buffer):
         return True

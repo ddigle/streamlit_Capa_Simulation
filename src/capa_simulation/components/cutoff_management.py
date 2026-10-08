@@ -82,7 +82,7 @@ def render_cutoff_management(
             "설비 공정으로 채우기",
             icon=":material/playlist_add:",
             help=(
-                "호기 마스터와 기존보유대수에 있는데 표에 없는 공정을 빈 행으로 덧붙입니다. "
+                "설비 마스터와 기존보유대수에 있는데 표에 없는 공정을 빈 행으로 덧붙입니다. "
                 "적어 둔 값은 그대로 둡니다."
             ),
             width="content",

@@ -14,10 +14,10 @@
 뜬다. 목록은 대수 표와 **같은 기여 줄**(`build_monthly_equipment_contributions`)에서 나와
 같은 칸을 더하면 표의 값이다.
 
-**분류별 내역은 호기 마스터의 컬럼으로 호기를 좁혀 더할 수 있다**(`호기 필터`, 2026-09-29 사용자
+**분류별 내역은 설비 마스터의 컬럼으로 호기를 좁혀 더할 수 있다**(`호기 필터`, 2026-09-29 사용자
 요청). 공정처럼 조건 카드에서 컬럼(공정구분·Model·동 …)과 값을 고르면 **그 호기만** 분류대로
 다시 더한다 — 대수 표·칸의 호기·호기 목록이 모두 같은 호기 집합을 본다. 필터가 걸리면
-`기존보유`(호기 마스터 밖의 집계 대수)와 `Static`·`GAP`(기준정보의 공정 단위 값)은 호기 속성이
+`기존보유`(설비 마스터 밖의 집계 대수)와 `Static`·`GAP`(기준정보의 공정 단위 값)은 호기 속성이
 없어 표에서 뺀다 — 걸러진 Dynamic 을 거르지 않은 Static 과 맞대면 GAP 이 거짓말을 한다.
 """
 
@@ -95,7 +95,7 @@ DETAIL_CATEGORY_KEY = "equipment_gap_detail_category_v1"
 MATRIX_TABLE_KEY = "equipment_gap_matrix_table_v1"
 UNIT_FILTER_COLUMNS_KEY = "equipment_gap_unit_filter_columns_v1"
 _UNIT_FILTER_KEY_PREFIX = "equipment_gap_unit_filter_v1"
-# 분류별 내역을 더할 호기를 좁히는 호기 마스터 컬럼. 공정(`공정소분류`)은 위 `공정` 이 맡는다.
+# 분류별 내역을 더할 호기를 좁히는 설비 마스터 컬럼. 공정(`공정소분류`)은 위 `공정` 이 맡는다.
 # 날짜·좌표·환산비처럼 호기마다 다른 연속값은 고를 값이 아니라 뺀다.
 UNIT_FILTER_COLUMNS = (
     "공정대분류",
@@ -155,7 +155,7 @@ def render_availability_gap_panel(
     숨은 탭은 계산과 렌더링을 건너뛰고, 두 선택값은 세션에 남긴다.
 
     거르는 조건(공정·분류)은 `conditions`(사이드바 조건 카드)에 선다. 주지 않으면 본문 제자리에
-    그린다 — 홀로 띄우는 테스트가 쓴다. `units` 는 `spans` 를 만든 호기 마스터이고, 주면 분류별
+    그린다 — 홀로 띄우는 테스트가 쓴다. `units` 는 `spans` 를 만든 설비 마스터이고, 주면 분류별
     내역에 `호기 필터` 가 선다. **무엇을 볼지 고르는 전환(조회 결과·표시)은 본문이다**
     — 탭 안의 하위 탭과 같은 것이라 카드에 넣으면 지금 어느 결과를 보는지 본문에서 사라진다
     (2026-09-29 사용자 결정). 읽는 법(Static·Dynamic 의 뜻, 소계에 드는 분류)은 가용설비 현황
@@ -268,7 +268,7 @@ def render_availability_gap_panel(
         return
 
     if not processes_in(spans, baseline):
-        st.caption("호기 마스터와 기존보유대수가 모두 비어 있어 Dynamic 이 0 입니다.")
+        st.caption("설비 마스터와 기존보유대수가 모두 비어 있어 Dynamic 이 0 입니다.")
 
     one_sided = _one_sided_reason(process, comparison)
     # 전체 합계는 표와 같은 공정만 본다 — 한쪽에만 있는 공정을 뺀 범위다.
@@ -439,7 +439,7 @@ def unit_filter_key(column: str) -> str:
 
 
 def _text_values(values: pd.Series) -> pd.Series:
-    """필터가 대조하는 문자열. 호기 마스터는 자유 텍스트라 앞뒤 공백을 떼고 빈 칸은 값이 없다."""
+    """필터가 대조하는 문자열. 설비 마스터는 자유 텍스트라 앞뒤 공백을 떼고 빈 칸은 값이 없다."""
     text = values.astype("string").str.strip()
     return text.mask(text.eq(""))
 
@@ -459,11 +459,11 @@ def _drop_unchosen_values(columns: Sequence[str]) -> None:
 
 
 def _render_unit_filters(units: pd.DataFrame, scope: set[str]) -> tuple[set[str] | None, list[str]]:
-    """분류별 내역을 더할 호기를 호기 마스터의 컬럼으로 좁힌다. 걸린 값이 없으면 `None`.
+    """분류별 내역을 더할 호기를 설비 마스터의 컬럼으로 좁힌다. 걸린 값이 없으면 `None`.
 
     컬럼을 먼저 고르고 그 컬럼의 값만 세운다 — 열일곱 컬럼을 다 세우면 사이드바가 필터로
     덮인다. 값 목록은 지금 범위(공정)의 호기에서 나오되, 이미 고른 값은 범위를 옮겨도 남긴다
-    (다른 공정을 봤다 돌아와도 선택이 그대로다). 호기 마스터에 없는 값만 떨군다.
+    (다른 공정을 봤다 돌아와도 선택이 그대로다). 설비 마스터에 없는 값만 떨군다.
     """
     columns = [column for column in UNIT_FILTER_COLUMNS if column in units.columns]
     present = {column: _text_values(units[column]) for column in columns}
@@ -762,6 +762,6 @@ def _render_unmatched(dynamic_only: list[str], static_only: list[str]) -> None:
             f"{', '.join(static_only[:8])}{' …' if len(static_only) > 8 else ''}"
         )
     st.warning(
-        "두 쪽의 공정명이 맞지 않는 자리가 있습니다. 호기 마스터의 `공정소분류` 와 "
+        "두 쪽의 공정명이 맞지 않는 자리가 있습니다. 설비 마스터의 `공정소분류` 와 "
         "기준정보의 `공정` 이 같은 값이어야 맞댈 수 있습니다.\n" + "\n".join(lines)
     )

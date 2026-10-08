@@ -82,7 +82,7 @@ def test_a_filter_picks_the_rows_it_would_show_and_no_filter_picks_all() -> None
 
 
 def test_deleting_machines_takes_their_downtime_with_them() -> None:
-    """남겨 두면 저장이 「호기 마스터에 없는 설비의 비가동 일정」으로 막힌다."""
+    """남겨 두면 저장이 「설비 마스터에 없는 설비의 비가동 일정」으로 막힌다."""
     frames = _frames()
 
     plan = plan_deletion(frames, EQUIPMENT_TARGET, {("E1",), ("E3",)})

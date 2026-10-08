@@ -300,17 +300,17 @@ if editable:
     discarded_notice = pop_discarded_notice()
     if discarded_notice:
         notices.warning(discarded_notice, icon=":material/sync_problem:")
-# 설비 샘플 화면(호기 마스터가 비어 샘플 스위치를 켠 상태)인가. 이때는 FAB 편집도 끈다 — 합성 fleet
+# 설비 샘플 화면(설비 마스터가 비어 샘플 스위치를 켠 상태)인가. 이때는 FAB 편집도 끈다 — 합성 fleet
 # 위에서 고친 FAB 가 실제 저장소에 들어간다(2026-10-03 사용자 결정 2).
 showing_sample = False
 # 호기가 없고 샘플을 끈 상태. 조건 카드에 까닭 한 줄만 두고, 빈 fleet 으로 FAB·층 목록을 그린다 —
 # FAB 배치는 설비 리비전과 무관한 현행값이라 설비 저장본이 없어도 고치고 저장한다(결정 2).
 no_fleet = False
 if using_sample_equipment:
-    # 스위치는 호기 마스터가 비었을 때만 뜻이 있다. 실데이터가 있으면 끌 것이 없다.
+    # 스위치는 설비 마스터가 비었을 때만 뜻이 있다. 실데이터가 있으면 끌 것이 없다.
     if render_sample_switch(key="space_sample_switch", source="설비 운영 DB"):
         showing_sample = True
-        st.caption("호기 마스터가 비어 있어 데모 fleet 을 표시합니다.")
+        st.caption("설비 마스터가 비어 있어 데모 fleet 을 표시합니다.")
     else:
         no_fleet = True
         # 카드를 세우고 까닭을 적는다. 카드 없이 지나가면 사이드바 CSS 가 홀로 남은 「조회 조건」
@@ -445,7 +445,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         canvases = pending_floor_canvases()
         marks = pending_floor_marks()
         others = other_change_count(latest_snapshot.equipment, frames[1], renames)
-        # 저장은 세 표를 다 견준다. 호기 마스터 밖의 편집도 리비전을 만드니 따로 말한다.
+        # 저장은 세 표를 다 견준다. 설비 마스터 밖의 편집도 리비전을 만드니 따로 말한다.
         # 비가동 일정은 저장본에 이름 바꿈을 얹어 견준다 — 따라간 설비명은 RawData 편집이 아니다.
         renamed_downtime = downtime_with_renames(
             latest_snapshot.downtime, renames, saved=latest_snapshot.equipment, buffer=frames[1]
@@ -506,13 +506,13 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             with st.expander(f"바뀐 호기 {len(changes)}건"):
                 st.dataframe(changes, hide_index=True, width="stretch")
         if not names.empty:
-            # 이름 바꿈은 호기 마스터의 설비명(묶음이면 Main 설비) 자체를 바꾼다(2026-10-08 사용자
+            # 이름 바꿈은 설비 마스터의 설비명(묶음이면 Main 설비) 자체를 바꾼다(2026-10-08 사용자
             # 결정). 비가동 일정은 따라가고, 진척 비교 기준선·바깥 Excel 은 따라가지 않는다(Guide).
             with st.expander(f"바꾼 이름 {len(names)}건"):
                 st.dataframe(names, hide_index=True, width="stretch")
                 st.caption(
                     "저장하면 새 리비전부터 새 이름입니다. 지난 리비전과 필요단축일정 진척 비교 "
-                    "기준선은 옛 이름 그대로이고, 호기 마스터를 바깥 Excel 에서 붙여넣어 관리하면 "
+                    "기준선은 옛 이름 그대로이고, 설비 마스터를 바깥 Excel 에서 붙여넣어 관리하면 "
                     "그 Excel 의 이름도 바꿔야 합니다."
                 )
         if fab_pending is not None and fab_pending.marks is not None:
@@ -720,7 +720,7 @@ def _render_layout_editor(
             unit_options=options,
             editor_groups={str(item["group"]) for item in inputs.items if item.get("group")},
             # 편집본에 없지만 새 설비명으로 쓸 수 없는 이름 — RawData 에서 지우고 저장 안 한 저장본
-            # 이름, 호기 마스터에 없는 설비명을 가리키는 비가동 일정.
+            # 이름, 설비 마스터에 없는 설비명을 가리키는 비가동 일정.
             reserved=reserved_names(
                 latest_snapshot.equipment, frames[1], frames[2], pending_unit_renames()
             ),

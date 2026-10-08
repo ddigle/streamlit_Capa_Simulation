@@ -14,7 +14,7 @@ Dynamic 가용대수(호기 일정을 Cut-off W/D 구간에 일할한 환산대�
   호기만 들며, 실행일 전의 반출·이설 예정 호기도 가용이면 든다(실행일 당일부터는 빠진다).
 - 소요는 시나리오의 소요대수를 `calculate_securement_rate` 로 `(월, 공정)` 에 모은 값이다 —
   확보율 교차검증(`securement_cross_check`)과 같은 함수, 같은 집계다.
-- 공정은 호기 마스터 `공정소분류` 와 시뮬레이션 `공정` 이 **같은 이름일 때만** 맞댄다. 한쪽에만
+- 공정은 설비 마스터 `공정소분류` 와 시뮬레이션 `공정` 이 **같은 이름일 때만** 맞댄다. 한쪽에만
   있는 공정은 목록으로 돌려주고 비교하지 않는다.
 
 ## 기여 규칙
@@ -65,10 +65,10 @@ Dynamic 가용대수(호기 일정을 Cut-off W/D 구간에 일할한 환산대�
 
 ## 내보내기
 
-`unit_export_frame` 은 호기마다 한 줄로 기존 일정 → 단축 일정과 호기 마스터 속성, 대상 월의
+`unit_export_frame` 은 호기마다 한 줄로 기존 일정 → 단축 일정과 설비 마스터 속성, 대상 월의
 부족을 펼친 표다(「호기별 단축 일정 CSV」). 목표 여럿을 넘기면 목표마다 블록으로 잇고
 `목표 확보율(%)` 칸으로 가른다. 마스터 속성은 계산할 때 후보마다 한 번 모아 결과
-(`ShorteningPlan.unit_master`)에 싣는다 — 화면이 rerun 마다 호기 마스터를 다시 검증하지 않게.
+(`ShorteningPlan.unit_master`)에 싣는다 — 화면이 rerun 마다 설비 마스터를 다시 검증하지 않게.
 모듈 묶음은 **옮기는 모듈 행**의 값이고, 묶음 안에서 값이 갈리면 글자는 서로 다른 값을 모듈
 차례로 「, 」로 잇고 반입일정은 가장 늦은 모듈의 날이다(묶음 Qual 과 같은 규칙). 가상 호기
 「추가N」은 마스터에 없으므로 속성·기존 일정이 빈칸이다.
@@ -192,7 +192,7 @@ UNIT_PLAN_COLUMNS = (
 LEVEL_COLUMN = "목표 확보율(%)"
 """내보내기 표의 목표 칸. 90·100·110·120·130 정수다(`level_percent`)."""
 
-# 내보내기 표가 호기 줄에 붙이는 호기 마스터 속성. 이름은 마스터 계약 그대로다.
+# 내보내기 표가 호기 줄에 붙이는 설비 마스터 속성. 이름은 마스터 계약 그대로다.
 _MASTER_TEXT_COLUMNS = (
     "공정대분류",
     "공정소분류",
@@ -309,7 +309,7 @@ class ShorteningPlan:
     cutoff_days: Mapping[str, int]
     levels: tuple[LevelPlan, ...]
     required_only: tuple[str, ...] = ()
-    """시나리오 소요대수에만 있는 공정. Cut-off 가 없거나 호기 마스터에 없는 이름이다."""
+    """시나리오 소요대수에만 있는 공정. Cut-off 가 없거나 설비 마스터에 없는 이름이다."""
 
     availability_only: tuple[str, ...] = ()
     """Dynamic 가용에만 있고 시나리오에 없는 공정."""
@@ -323,7 +323,7 @@ class ShorteningPlan:
     unit_master: pd.DataFrame = field(default_factory=lambda: _empty_unit_master())
     """후보 호기마다 마스터 속성 한 줄(`UNIT_MASTER_COLUMNS`). 내보내기가 `호기` 로 붙인다.
 
-    호기 마스터에서 나오므로 캐시 키의 마스터 내용 지문이 이것도 덮는다.
+    설비 마스터에서 나오므로 캐시 키의 마스터 내용 지문이 이것도 덮는다.
     """
 
     def at(self, level: float) -> LevelPlan:
@@ -440,7 +440,7 @@ def plan_required_shortening(
     levels: Sequence[float] = TARGET_LEVELS,
     spans: pd.DataFrame | None = None,
 ) -> ShorteningPlan:
-    """호기 마스터·비가동·기존보유·Cut-off·소요대수로 다섯 목표의 단축 일정을 낸다.
+    """설비 마스터·비가동·기존보유·Cut-off·소요대수로 다섯 목표의 단축 일정을 낸다.
 
     **어느 DB 도 열지 않는다.** 가용은 Static/Dynamic 탭과 같은 길로 만든다 — W/D 구간이 Cut-off
     만큼 앞으로 밀리므로 호기 구간은 `span_date_range` 가 알려 주는 범위로 만들고, 지분이 바뀌는

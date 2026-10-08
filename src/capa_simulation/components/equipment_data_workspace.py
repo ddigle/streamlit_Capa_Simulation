@@ -172,7 +172,7 @@ EDITOR_TABS_KEY = "equipment_workspace_editor_tabs_v1"
 DOWNLOADS_EXPANDER_KEY = "equipment_workspace_downloads_v1"
 HISTORY_FILTER_EXPANDER_KEY = "equipment_history_filters_v1"
 _EDITOR_KEYS = (BASELINE_EDITOR_KEY, EQUIPMENT_EDITOR_KEY, DOWNTIME_EDITOR_KEY)
-_TARGETS = ("호기 마스터", "기존 보유대수", "비가동 일정")
+_TARGETS = ("설비 마스터", "기존 보유대수", "비가동 일정")
 Frames = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
 
 
@@ -391,7 +391,7 @@ def stage_unit_renames(renames: PendingRenames) -> None:
 
 def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -> None:
     """Space 편집기가 이름을 바꿨다(설비명 `renames`·Main 설비 `groups`, 옛 이름 → 새 이름). 이름을
-    기억한 RawData 칸을 따라 옮긴다 — 호기 마스터·비가동 일정의 선택은 새 설비명으로 옮기고,
+    기억한 RawData 칸을 따라 옮긴다 — 설비 마스터·비가동 일정의 선택은 새 설비명으로 옮기고,
     `방금 삭제 되돌리기` 는 **어느 이름이든 바꾸면** 버린다. 지운 행은 옛 이름을 지니므로 되살리면
     비가동 일정이 옛 설비명을 가리키거나 엉뚱한 호기에 붙고, 지운 모듈 행은 옛 Main 설비로 돌아와
     한 설비가 둘로 갈린다(검증은 통과해 그대로 저장된다)."""
@@ -673,7 +673,7 @@ def _save_equipment_frames(
     reset_equipment_drafts()
     layouts = " 층 캔버스·도면 요소도 함께 저장했습니다." if canvases or marks else ""
     if saved is None:
-        return f"호기 마스터가 바뀌지 않아 새 리비전 없이 층 캔버스·도면 요소만 저장했습니다.{fab}"
+        return f"설비 마스터가 바뀌지 않아 새 리비전 없이 층 캔버스·도면 요소만 저장했습니다.{fab}"
     return (
         f"설비 운영 데이터 r{saved.revision.revision_no}"
         f"{object_particle(str(saved.revision.revision_no))} 저장했습니다. "
@@ -863,7 +863,7 @@ def build_import_review(
     baseline, equipment, downtime = source
     notices: list[str] = []
     cautions: list[str] = []
-    if target == "호기 마스터":
+    if target == "설비 마스터":
         # 붙여넣은 열만 바꾼다(2026-10-08 사용자 요청). 붙여넣지 않은 열은 편집본 값으로 채운
         # 36컬럼 표가 오므로 아래 미리보기·병합·병합 뒤 전체 검증은 전체 열 붙여넣기와 같은 길이다.
         try:
@@ -1231,7 +1231,7 @@ def _render_editors(
                 "기존설비여부",
                 "레이아웃표시",
             ),
-            label="호기 마스터 · 표 보기 설정",
+            label="설비 마스터 · 표 보기 설정",
         )
         # 설비명은 고정하지 않는다. 고정 열은 Streamlit 이 맨 앞으로 옮겨 계약 차례(6번째)가 깨진다.
         config: dict[str, Any] = {
@@ -1449,7 +1449,7 @@ def _render_history(repository: DuckDBEquipmentRepository, latest_revision_id: s
     )
     for label, frame in (
         ("기존 보유대수", historical.baseline),
-        ("호기 마스터", equipment),
+        ("설비 마스터", equipment),
         ("비가동 일정", downtime),
     ):
         with st.expander(label, expanded=True):
@@ -1476,7 +1476,7 @@ def render_equipment_data_workspace(
     frames = ensure_equipment_drafts(latest_snapshot)
     if latest_snapshot is None:
         st.info(
-            "아직 저장된 설비 데이터가 없습니다. 호기 마스터를 붙여넣고 "
+            "아직 저장된 설비 데이터가 없습니다. 설비 마스터를 붙여넣고 "
             "변경 내용을 확인해 첫 리비전을 저장하세요."
         )
     else:
@@ -1570,7 +1570,7 @@ def render_equipment_data_workspace(
                     key=CLIPBOARD_KEY,
                     height=200,
                     placeholder=(
-                        "헤더를 포함해 Ctrl+V로 붙여넣으세요. 호기 마스터는 설비명과 바꿀 열만 "
+                        "헤더를 포함해 Ctrl+V로 붙여넣으세요. 설비 마스터는 설비명과 바꿀 열만 "
                         "넣어도 됩니다."
                     ),
                 )

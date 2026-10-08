@@ -6,12 +6,12 @@
 이다. Core_Data 에서 `설비보유 - 설비대여평가` 로 한 번에 파생되어 저장된 월별 한 줄
 값이고, 확보율이 보는 것이 이 값이다.
 
-**Dynamic** 은 호기 마스터의 일정과 비가동을 공정별 Cut-off 로 안분해 만든 값이다
+**Dynamic** 은 설비 마스터의 일정과 비가동을 공정별 Cut-off 로 안분해 만든 값이다
 (`services/monthly_equipment_availability.py`). 둘의 차이가 GAP 이다.
 
 ## 두 DB 를 잇는 가정
 
-Static 의 `공정` 은 원본 공정명이고 Dynamic 의 `공정소분류` 는 호기 마스터의 자유
+Static 의 `공정` 은 원본 공정명이고 Dynamic 의 `공정소분류` 는 설비 마스터의 자유
 텍스트다. **둘이 같은 이름 공간이라는 것을 강제하는 장치가 저장소에 없다.** 그래서
 여기서는 같은 값으로 조인하되 **어느 한쪽에만 있는 공정을 따로 돌려준다**
 (`GapComparison.dynamic_only`·`static_only`). 화면은 그 목록을 반드시 드러내야 한다 —

@@ -369,7 +369,7 @@ def untouched_sample_baseline_rows(baseline: pd.DataFrame) -> pd.DataFrame:
     `sample_equipment_baseline()` 은 설비 DB 가 비었을 때 **화면 표시용**으로만 채워 넣는
     값인데, 그대로 저장하면 불변 리비전에 영구 기록된다. 그 숫자는 합성 생성기
     `scripts/generate_sample_core_data.py` 의 `PROCESS_SPECS.owned` 를 옮겨 적은 고정
-    리터럴이고 공정명도 그 생성기가 정한 합성 이름이다. 실제 공정명이 다르면 호기 마스터와 절대
+    리터럴이고 공정명도 그 생성기가 정한 합성 이름이다. 실제 공정명이 다르면 설비 마스터와 절대
     붙지 않는 유령 공정이 총대수·가용대수·가용률에 영원히 섞인다.
 
     값을 하나라도 고쳤으면 그 행은 사용자의 것이므로 걸러 내지 않는다. **네 컬럼이 모두

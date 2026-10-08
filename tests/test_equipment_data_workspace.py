@@ -103,7 +103,7 @@ render_equipment_data_workspace(
     ).run()
 
 
-def _preview(app: AppTest, text: str, target: str = "호기 마스터") -> None:
+def _preview(app: AppTest, text: str, target: str = "설비 마스터") -> None:
     app.selectbox(TARGET_KEY).set_value(target)
     app.text_area(CLIPBOARD_KEY).set_value(text)
     app.button(PREVIEW_BUTTON_KEY).click().run()
@@ -270,7 +270,7 @@ def test_csv_review_and_future_open_downtime_history(tmp_path: Path) -> None:
     )
     source = (empty_equipment_baseline(), equipment, downtime)
     review = build_import_review(
-        "호기 마스터", equipment.to_csv(index=False).encode("utf-8-sig"), source, floor_canvases={}
+        "설비 마스터", equipment.to_csv(index=False).encode("utf-8-sig"), source, floor_canvases={}
     )
     assert review.changes["Import구분"].tolist() == ["대체"]
     repository = _repository(path)
@@ -385,7 +385,7 @@ def test_current_data_downloads_stand_beside_the_templates_and_name_their_basis(
     app = _app(tmp_path / "equipment.duckdb")
 
     labels = [button.label for button in app.download_button]
-    assert "호기 마스터 현재 데이터 · 2행" in labels
+    assert "설비 마스터 현재 데이터 · 2행" in labels
     assert "기존 보유대수 현재 데이터 · 0행" in labels
     assert "비가동 일정 현재 데이터 · 0행" in labels
     # 양식 버튼 셋은 그대로 남는다.
@@ -461,7 +461,7 @@ def test_current_data_downloads_say_when_the_buffer_differs_from_the_saved_revis
 
     captions = " ".join(str(item.value) for item in app.caption)
     assert "저장하지 않은 변경 포함" in captions
-    assert "호기 마스터 현재 데이터 · 2행" in [button.label for button in app.download_button]
+    assert "설비 마스터 현재 데이터 · 2행" in [button.label for button in app.download_button]
 
 
 def test_current_data_downloads_reuse_the_revision_bytes_until_the_buffer_changes(
@@ -530,7 +530,7 @@ finally:
     app.run()
 
     assert not app.exception
-    # 고친 표(편집본 호기 마스터) 하나만 직렬화한다. 견줄 저장본 쪽은 리비전 캐시다.
+    # 고친 표(편집본 설비 마스터) 하나만 직렬화한다. 견줄 저장본 쪽은 리비전 캐시다.
     assert app.session_state["serialized"] == [3]
     assert app.session_state["captured"][key] == equipment_csv_bytes(edited_master)
     assert "저장하지 않은 변경 포함" in " ".join(str(item.value) for item in app.caption)
@@ -583,7 +583,7 @@ def test_pasting_a_unit_row_over_saved_modules_names_both_sides_and_the_way_out(
     )
     app = _app(tmp_path / "equipment.duckdb")
     rows = csv.reader(io.StringIO(equipment_csv_bytes(_master(["SMP-DAF-12"])).decode("utf-8-sig")))
-    app.selectbox(TARGET_KEY).set_value("호기 마스터")
+    app.selectbox(TARGET_KEY).set_value("설비 마스터")
     app.text_area(CLIPBOARD_KEY).set_value("\n".join("\t".join(row) for row in rows))
     app.button(PREVIEW_BUTTON_KEY).click().run()
 
@@ -601,14 +601,14 @@ def test_pasting_a_unit_row_over_saved_modules_names_both_sides_and_the_way_out(
 
 
 def _collision_review(buffer: pd.DataFrame, pasted: pd.DataFrame) -> str:
-    """붙여넣기 미리보기가 낸 충돌 문구(호기 마스터). 충돌이 없으면 실패한다."""
+    """붙여넣기 미리보기가 낸 충돌 문구(설비 마스터). 충돌이 없으면 실패한다."""
     import pytest
 
     from capa_simulation.services.equipment_csv import equipment_csv_bytes
 
     with pytest.raises(ValueError, match="Main 설비") as raised:
         build_import_review(
-            "호기 마스터",
+            "설비 마스터",
             equipment_csv_bytes(pasted),
             (empty_equipment_baseline(), buffer, empty_downtime_schedule()),
             floor_canvases={},
@@ -656,7 +656,7 @@ def test_inner_tabs_keep_their_identity_when_a_notice_appears_above_the_form(
 ) -> None:
     """폼 위 알림이 생겨 자리가 밀려도 안쪽 탭·접힘 칸이 같은 블록 id 를 가진다.
 
-    key 없는 탭은 자리가 한 칸 밀리는 회차에 새로 마운트되어 「입력」·「호기 마스터」로
+    key 없는 탭은 자리가 한 칸 밀리는 회차에 새로 마운트되어 「입력」·「설비 마스터」로
     돌아갔다(삭제 확정·저장 직후 이력 조회, 2026-10-01 브라우저 실측). 브라우저는 고른 탭·
     펼침을 **블록 id** 로 기억하므로, 알림이 있든 없든 id 가 같고 비어 있지 않아야 한다.
     """

@@ -334,7 +334,7 @@ def test_the_view_controls_render_for_each_editable_table(tmp_path: Path) -> Non
 
     assert not app.exception
     labels = [expandable.label for expandable in app.status]
-    for table in ("기존 보유대수", "호기 마스터", "운영 비가동 일정"):
+    for table in ("기존 보유대수", "설비 마스터", "운영 비가동 일정"):
         assert f"{table} · 표 보기 설정" in labels, table
     # 다른 탭이 붙어도 각 입력표의 키로 찾는다.
     for prefix in ("equipment_baseline_view", "equipment_master_view", "equipment_downtime_view"):
@@ -392,7 +392,7 @@ def test_the_empty_page_lists_the_three_inputs_with_counts_and_links(tmp_path: P
 
     assert not app.exception
     rendered = [element.value for element in app.markdown]
-    assert "✗ **호기 마스터** 0건" in rendered
+    assert "✗ **설비 마스터** 0건" in rendered
     assert "✗ **운영 비가동 일정** 0건" in rendered
     # 저장된 것은 ✓ 로 구분한다. 세 줄 중 이 줄만 tmp DB 에 따라 값이 달라진다.
     assert "✓ **공정별 Cut-off** 1건" in rendered

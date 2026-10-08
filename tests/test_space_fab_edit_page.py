@@ -288,7 +288,7 @@ def test_a_fab_save_with_an_unsaved_baseline_or_downtime_edit_keeps_the_memo(
     value: object,
     label: str,
 ) -> None:
-    """저장은 세 표를 다 견준다. 호기 마스터 밖 RawData 편집이 남아 있으면 FAB 와 함께 저장해도 새
+    """저장은 세 표를 다 견준다. 설비 마스터 밖 RawData 편집이 남아 있으면 FAB 와 함께 저장해도 새
     리비전이 생기니, 메모 칸을 두고 그 편집을 상자 안내에 말하며 적은 메모가 리비전에 남는다."""
     database = tmp_path / f"fab_memo_{table}.duckdb"
     app = _app(database, saved_fleet=True).run()

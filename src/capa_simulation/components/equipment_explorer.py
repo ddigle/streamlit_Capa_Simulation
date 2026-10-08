@@ -188,8 +188,8 @@ def _count_chart(frame: pd.DataFrame, column: str, colors: dict[str, str]) -> No
 def _undated_notice(equipment: pd.DataFrame, filtered: pd.DataFrame) -> str | None:
     """일정(반입·Qual)이 비어 가용대수에 들지 못하는 신규 설비 한 줄. 0대면 `None`.
 
-    몫은 거르기 전 호기 마스터(`equipment`)로 매기고(캐시 — 같은 편집본이면 다시 검증하지 않는다)
-    이 화면의 조건으로 거른 호기(`filtered`)만 센다. 호기 마스터가 검증을 못 넘으면 알리지 않는다 —
+    몫은 거르기 전 설비 마스터(`equipment`)로 매기고(캐시 — 같은 편집본이면 다시 검증하지 않는다)
+    이 화면의 조건으로 거른 호기(`filtered`)만 센다. 설비 마스터가 검증을 못 넘으면 알리지 않는다 —
     그 오류는 결과 자리가 이미 알린다.
     """
     try:
@@ -208,7 +208,7 @@ def _undated_caption(notice: str | None) -> None:
 def _usage_notice(equipment: pd.DataFrame, filtered: pd.DataFrame) -> str | None:
     """사용기준이 HBM·EDP 가 아니어서 가용대수에서 뺀 설비 한 줄. 0대면 `None`.
 
-    일정 미정 줄과 같은 범위(이 화면의 조건으로 거른 호기)를 센다. 호기 마스터가 검증을 못 넘으면
+    일정 미정 줄과 같은 범위(이 화면의 조건으로 거른 호기)를 센다. 설비 마스터가 검증을 못 넘으면
     알리지 않는다 — 그 오류는 결과 자리가 이미 알린다.
     """
     try:
@@ -330,9 +330,9 @@ def _transitions(
 ) -> None:
     """조회기간에 제진대·물류·입고·Qual·반출·이설 일정이 든 호기를 전환 한 건씩 편다.
 
-    기준일 이전 일정은 **완료**, 이후는 **예정**이다(호기 마스터에 적힌 날과 기준일을 견준 결과).
+    기준일 이전 일정은 **완료**, 이후는 **예정**이다(설비 마스터에 적힌 날과 기준일을 견준 결과).
     건수는 설비 단위다 — 모듈 행이 같은 날 같은 단계로 넘어가면 1건(`unit_transitions`).
-    동·층·좌표를 보지 않고 걸러진 호기 마스터 전체를 본다.
+    동·층·좌표를 보지 않고 걸러진 설비 마스터 전체를 본다.
     """
     events = build_milestone_transition_events(
         equipment, start_date=start, end_date=end, as_of=as_of
@@ -702,7 +702,7 @@ def render_equipment_explorer(
                 else:
                     st.markdown(f"#### 호기 생애주기 상태 · {as_of:%Y-%m-%d}")
                     st.caption(
-                        f"호기 마스터 {_rows_label(status)} · 집계형 기존 보유대수는 제외됩니다."
+                        f"설비 마스터 {_rows_label(status)} · 집계형 기존 보유대수는 제외됩니다."
                     )
                     _undated_caption(undated_notice)
                     column, states, colors = (

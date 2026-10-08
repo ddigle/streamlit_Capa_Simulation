@@ -356,7 +356,7 @@ def test_the_exclusion_notice_counts_units_and_disappears_at_zero() -> None:
     assert usage_excluded_count(excluded, unit_ids={"MIX-B"}) == pytest.approx(0.5)
     notice = usage_exclusion_notice(excluded, processes={PROCESS})
     assert notice == (
-        "사용기준이 HBM·EDP 가 아닌 1.5대(호기 마스터 기준)는 가용대수에서 뺐습니다 — "
+        "사용기준이 HBM·EDP 가 아닌 1.5대(설비 마스터 기준)는 가용대수에서 뺐습니다 — "
         "배치·호기 목록에는 그대로 있습니다."
     )
     assert usage_exclusion_notice(excluded, unit_ids={"HBM-1"}) is None

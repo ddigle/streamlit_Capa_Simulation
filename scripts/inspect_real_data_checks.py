@@ -507,7 +507,7 @@ def check_env(session: Session, *, now: datetime, root: Path = PROJECT_ROOT) -> 
         revision_id, revision_no, contract = latest
         rows.append(["최신 설비 리비전", f"r{revision_no} · 계약 v{contract}"])
         for label, table in (
-            ("최신 리비전 호기 마스터", "equipment_master_snapshot"),
+            ("최신 리비전 설비 마스터", "equipment_master_snapshot"),
             ("최신 리비전 기존 보유대수", "baseline_snapshot"),
             ("최신 리비전 비가동 일정", "downtime_schedule_snapshot"),
         ):
@@ -1346,7 +1346,7 @@ def check_equipment(session: Session) -> list[str]:
     if contract < 3:
         lines.extend(
             [
-                "- 최신 리비전이 옛 계약(v2)이라 호기 마스터 표가 없다 — "
+                "- 최신 리비전이 옛 계약(v2)이라 설비 마스터 표가 없다 — "
                 "이 절의 수는 모두 0 이 정상",
                 "",
             ]
@@ -1356,7 +1356,7 @@ def check_equipment(session: Session) -> list[str]:
     master = "equipment_ops.equipment_master_snapshot"
     for label, sql, params in (
         (
-            "최신 리비전 호기 마스터 행",
+            "최신 리비전 설비 마스터 행",
             f"SELECT count(*) FROM {master} WHERE revision_id = ?",
             [revision_id],
         ),

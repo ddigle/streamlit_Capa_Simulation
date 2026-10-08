@@ -336,7 +336,7 @@ def build_weekly_equipment_availability(
 ) -> pd.DataFrame:
     """ISO 주차·공정소분류별 총대수·가용대수·비가동대수와 분류 대수(각 주 일요일 판정).
 
-    호기 마스터 쪽은 **사용기준이 HBM·EDP 인 행만** 센다(`equipment_contract.counts_for_capacity`).
+    설비 마스터 쪽은 **사용기준이 HBM·EDP 인 행만** 센다(`equipment_contract.counts_for_capacity`).
     기존 보유대수는 사용기준이 없어 지금처럼 모두 센다.
     """
     if start_date > end_date:
@@ -466,7 +466,7 @@ def inactive_equipment_moments(
     ·Qual일에 경계가 생기지 않는다. 그 호기의 비가동 구간이 한 주보다 짧고 일요일을 비껴
     가면 이름 화이트리스트와 똑같이 통째로 빠진다.
 
-    호기 마스터가 비면 월초와 일요일만 남는다. 그 시점들로 재도 결과는 빈 표라 화면이
+    설비 마스터가 비면 월초와 일요일만 남는다. 그 시점들로 재도 결과는 빈 표라 화면이
     답을 못 내는 일은 없다.
     """
     month_start, month_end = _month_bounds(month)

@@ -321,7 +321,7 @@ class DuckDBEquipmentRepository:
         floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None,
     ) -> EquipmentSnapshot | None:
         """`save_snapshot` 과 같되, 세 표가 최신 리비전과 같으면 **리비전을 만들지 않고**
-        캔버스·도면 요소만 쓴다(Space 에서 요소만 고친 저장이 호기 마스터를 복제하지 않게).
+        캔버스·도면 요소만 쓴다(Space 에서 요소만 고친 저장이 설비 마스터를 복제하지 않게).
         새 리비전을 만들었으면 그 스냅샷, 아니면 None."""
         revision_id = self._save(
             baseline,
@@ -1744,7 +1744,7 @@ def _revision_summary(row: Sequence[object]) -> EquipmentRevisionSummary:
         revision_no=as_int(row[1], "리비전 번호"),
         note=str(row[2]) if row[2] is not None else None,
         baseline_row_count=as_int(row[3], "기존 보유대수 행 수"),
-        equipment_row_count=as_int(row[4], "호기 마스터 행 수"),
+        equipment_row_count=as_int(row[4], "설비 마스터 행 수"),
         downtime_row_count=as_int(row[5], "비가동 일정 행 수"),
         created_at=as_datetime(row[6]),
     )

@@ -13,9 +13,9 @@
 편집본에는 같은 키가 둘일 수 있는데, 그러면 둘 다 지운다. 그것이 맞는 답이다.
 
 **호기를 지우면 그 호기의 비가동 일정도 같이 뺀다**(2026-09-28 사용자 결정). 남겨 두면
-저장이 「호기 마스터에 없는 설비의 비가동 일정이 있습니다」로 막힌다.
+저장이 「설비 마스터에 없는 설비의 비가동 일정이 있습니다」로 막힌다.
 
-이 모듈은 `streamlit` 을 모른다. 편집본 세 표는 `(기존 보유대수, 호기 마스터, 비가동 일정)`
+이 모듈은 `streamlit` 을 모른다. 편집본 세 표는 `(기존 보유대수, 설비 마스터, 비가동 일정)`
 차례의 튜플이다 — 작업 공간(`components/equipment_data_workspace.py`)의 `Frames` 와 같다.
 """
 
@@ -33,7 +33,7 @@ from capa_simulation.services.equipment_contract import (
     EQUIPMENT_KEY_COLUMNS,
 )
 
-EQUIPMENT_TARGET = "호기 마스터"
+EQUIPMENT_TARGET = "설비 마스터"
 BASELINE_TARGET = "기존 보유대수"
 DOWNTIME_TARGET = "비가동 일정"
 

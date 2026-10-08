@@ -123,7 +123,7 @@ def load_equipment_revision_summaries(
 
 @st.cache_data(show_spinner=False, max_entries=8)
 def load_equipment_csv_payloads(database_path: str, revision_id: str) -> tuple[bytes, bytes, bytes]:
-    """저장 리비전 하나의 세 표 CSV 바이트(호기 마스터·기존 보유대수·비가동 일정 차례).
+    """저장 리비전 하나의 세 표 CSV 바이트(설비 마스터·기존 보유대수·비가동 일정 차례).
 
     RawData 「현재 데이터」 내려받기는 편집본이 저장본과 같을 때 이 바이트를 그대로 쓴다 — 리비전은
     고칠 수 없고 직렬화는 결정적이라 같은 리비전이면 같은 파일이다. 그래서 rerun 마다 세 표(와

@@ -325,7 +325,7 @@ def test_non_hbm_units_leave_the_availability_count_but_stay_in_the_unit_status(
 
     assert _usage(plain) == []
     assert _usage(app) == [
-        ":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 1대(호기 마스터 기준)는 가용대수에서 "
+        ":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 1대(설비 마스터 기준)는 가용대수에서 "
         "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
     ]
     # 마지막 주 요약의 총·가용 대수는 그 호기가 없는 표와 같다.

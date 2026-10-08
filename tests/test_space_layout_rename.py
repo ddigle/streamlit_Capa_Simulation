@@ -1,6 +1,6 @@
 # Purpose: Space 편집기의 호기 이름 바꾸기 검증·반영·비가동 연쇄·미저장 기억을 검사한다.
 
-"""이름 바꾸기는 표시 별칭이 아니라 호기 마스터의 설비명 자체다(2026-10-08 사용자 결정 「가」).
+"""이름 바꾸기는 표시 별칭이 아니라 설비 마스터의 설비명 자체다(2026-10-08 사용자 결정 「가」).
 
 서비스 쪽은 적용값 읽기(`parse_editor_apply` 의 `renames`)·겹침 검사·반영(`apply_name_changes`)·
 세션의 저장 안 한 이름 지도(`PendingRenames`)를 본다. 페이지 쪽은 JS 대역으로 적용값을 넣어
@@ -122,7 +122,7 @@ def test_a_rename_to_the_same_name_is_dropped_but_a_case_change_is_kept() -> Non
         ([("unit", "EQ-01", "EQ\t101")], "탭·줄바꿈·특수 공백"),
         ([("unit", "EQ-01", "eq-02")], "이미 있는 설비명입니다\\(EQ-02\\)"),
         ([("unit", "EQ-01", " big ")], "이미 Main 설비 이름입니다\\(BIG\\)"),
-        # 편집기에 없는 형제(M-3)도 호기 마스터의 이름이다.
+        # 편집기에 없는 형제(M-3)도 설비 마스터의 이름이다.
         ([("unit", "EQ-01", "m-3")], "이미 있는 설비명입니다\\(M-3\\)"),
         (
             [("group", "BIG", "EQ-02")],
@@ -478,13 +478,13 @@ def test_a_name_emptied_by_an_unsaved_rename_may_be_taken() -> None:
 
 
 def test_a_name_held_by_orphan_downtime_rows_cannot_be_taken() -> None:
-    """호기 마스터에 없는 설비명의 비가동 일정은 그 이름을 쓰는 호기에 말없이 붙는다."""
+    """설비 마스터에 없는 설비명의 비가동 일정은 그 이름을 쓰는 호기에 말없이 붙는다."""
     saved = _master()
     downtime = pd.concat([_downtime(), _downtime().assign(설비명=["GHOST"])], ignore_index=True)
     reserved = reserved_names(saved, saved, downtime, None)
 
     assert reserved.orphan_downtime == {"GHOST"} and not reserved.deleted
-    with pytest.raises(ValueError, match="호기 마스터에 없는 설비명 GHOST을\\(를\\) 가리키는"):
+    with pytest.raises(ValueError, match="설비 마스터에 없는 설비명 GHOST을\\(를\\) 가리키는"):
         _parse(_rename(("unit", "EQ-01", "ghost")), saved, reserved=reserved)
     with pytest.raises(ValueError, match="비가동 일정을 먼저 고치거나 지우세요"):
         _parse({"changes": [_created("GHOST")]}, saved, reserved=reserved)

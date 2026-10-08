@@ -352,7 +352,7 @@ def test_old_and_new_name_for_the_same_column_together_are_rejected() -> None:
 
     with pytest.raises(ValueError, match="옛 이름과 새 이름이 함께"):
         rename_legacy_headers(
-            frame, EQUIPMENT_COLUMNS, LEGACY_EQUIPMENT_HEADER_ALIASES, "호기 마스터"
+            frame, EQUIPMENT_COLUMNS, LEGACY_EQUIPMENT_HEADER_ALIASES, "설비 마스터"
         )
 
 
@@ -526,16 +526,16 @@ def test_import_review_carries_the_dropped_column_notice() -> None:
     old = _old_layout(equipment).to_csv(index=False)
 
     from_file = build_import_review(
-        "호기 마스터", old.encode("utf-8-sig"), source, floor_canvases={}
+        "설비 마스터", old.encode("utf-8-sig"), source, floor_canvases={}
     )
     from_paste = build_import_review(
-        "호기 마스터",
+        "설비 마스터",
         _old_layout(equipment).to_csv(index=False, sep="\t"),
         source,
         floor_canvases={},
     )
     fresh = build_import_review(
-        "호기 마스터", equipment_csv_bytes(equipment), source, floor_canvases={}
+        "설비 마스터", equipment_csv_bytes(equipment), source, floor_canvases={}
     )
 
     for review in (from_file, from_paste):

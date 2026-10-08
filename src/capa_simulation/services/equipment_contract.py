@@ -249,7 +249,7 @@ UNIT_CONSISTENT_COLUMNS = ("공정소분류", "공정대분류", "공정구분",
 
 
 def with_optional_equipment_columns(frame: pd.DataFrame) -> pd.DataFrame:
-    """선택 컬럼이 없는 호기 마스터에 빈 칸으로 채워 넣는다. 원본은 건드리지 않는다."""
+    """선택 컬럼이 없는 설비 마스터에 빈 칸으로 채워 넣는다. 원본은 건드리지 않는다."""
     missing = [column for column in OPTIONAL_EQUIPMENT_COLUMNS if column not in frame.columns]
     if not missing:
         return frame

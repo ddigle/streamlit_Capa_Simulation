@@ -55,7 +55,7 @@ SAMPLE_EQUIPMENT_ID = "SAM01"
 SAMPLE_EQUIPMENT_MANAGER = "홍길동"
 SAMPLE_EQUIPMENT_NOTE = "이력 기록"
 SAMPLE_DOWNTIME_NOTE = "내용 기록"
-# 기존 보유대수 양식의 예시 한 줄. `공정` 은 호기 마스터의 `공정소분류` 와 이어 붙는 값이다.
+# 기존 보유대수 양식의 예시 한 줄. `공정` 은 설비 마스터의 `공정소분류` 와 이어 붙는 값이다.
 # 비고 상수 이름에 `TEMPLATE` 을 넣는다. `equipment_samples.SAMPLE_BASELINE_NOTE` 는 저장
 # 가드가 손대지 않은 개발 샘플 행을 가려내는 표식이라 같은 이름을 쓰면 의미가 뒤섞인다.
 SAMPLE_BASELINE_PROCESS = "Wafer_Sorter_P878"
@@ -172,7 +172,7 @@ DOWNTIME_GUARDED_COLUMNS: tuple[str, ...] = (EQUIPMENT_ID_COLUMN, "비가동유�
 
 
 def equipment_csv_bytes(equipment: pd.DataFrame) -> bytes:
-    """호기 마스터 **현재 데이터** 그대로. 다시 붙여넣으면 통과하는 것이 이 함수의 계약이다.
+    """설비 마스터 **현재 데이터** 그대로. 다시 붙여넣으면 통과하는 것이 이 함수의 계약이다.
 
     행은 `공정소분류` → `설비명` 오름차순이다(2026-10-08 사용자 요청). 글자 속 숫자는 수로 견준다 —
     `EQ2` 가 `EQ10` 앞이다. 빈 값은 뒤로 간다. 붙여넣기는 설비명으로 맞추므로 차례는 읽는 쪽과
@@ -277,7 +277,7 @@ def untouched_template_baseline_rows(baseline: pd.DataFrame) -> pd.DataFrame:
     """양식에 실어 보낸 **예시 한 줄이 그대로 남은** 행만 골라낸다.
 
     예시 행은 네 컬럼이 다 채워져 있어 `prepare_equipment_baseline` 을 그냥 통과한다. 지우지
-    않고 저장하면 존재하지 않는 공정 하나가 불변 리비전에 영구 기록되고, 호기 마스터에 붙지
+    않고 저장하면 존재하지 않는 공정 하나가 불변 리비전에 영구 기록되고, 설비 마스터에 붙지
     않는 유령 공정이 총대수·가용대수·가용률에 영원히 섞인다.
 
     `equipment_samples.untouched_sample_baseline_rows` 와 **같은 위험, 다른 출처**다. 저쪽은
@@ -322,7 +322,7 @@ def read_equipment_clipboard(
 
 @dataclass(frozen=True)
 class EquipmentPaste:
-    """편집본에 맞춰 채운 호기 마스터 붙여넣기(또는 CSV) 한 건.
+    """편집본에 맞춰 채운 설비 마스터 붙여넣기(또는 CSV) 한 건.
 
     - `rows` — 검증을 마친 36컬럼 표. 붙여넣지 않은 열은 편집본의 그 호기 값이고, 새 호기는
       빈 칸이다. `merge_equipment_rows` 에 그대로 넘긴다.
@@ -348,7 +348,7 @@ def read_equipment_update(
     floor_canvases: FloorCanvasMap | None = None,
     notices: list[str] | None = None,
 ) -> EquipmentPaste:
-    """호기 마스터 붙여넣기(글) 또는 CSV(바이트)를 **붙여넣은 열만 바꾸는** 행으로 읽는다.
+    """설비 마스터 붙여넣기(글) 또는 CSV(바이트)를 **붙여넣은 열만 바꾸는** 행으로 읽는다.
 
     2026-10-08 사용자 요청 — 컬럼이 많으니 기준인 `설비명` 과 바꿀 열만 넣어도 검사하고 반영한다.
 
@@ -389,7 +389,7 @@ def read_equipment_update(
     if ambiguous:
         more = f" 외 {len(ambiguous) - 5}건" if len(ambiguous) > 5 else ""
         raise ValueError(
-            f"편집본(호기 마스터)에 같은 설비명이 둘 이상 있습니다: {', '.join(ambiguous[:5])}"
+            f"편집본(설비 마스터)에 같은 설비명이 둘 이상 있습니다: {', '.join(ambiguous[:5])}"
             f"{more} — 붙여넣지 않은 열을 어느 행의 값으로 둘지 알 수 없습니다. 직접 편집에서 "
             "중복된 행을 먼저 정리한 뒤 다시 미리보세요."
         )
@@ -436,7 +436,7 @@ def _new_units_message(names: Sequence[object], needed: Sequence[str]) -> str:
     shown = ", ".join(str(name) for name in names[:5])
     more = f" 외 {len(names) - 5}건" if len(names) > 5 else ""
     return (
-        f"지금 호기 마스터에 없는 설비명 {len(names):,}건({shown}{more})은 새 호기로 추가되는데, "
+        f"지금 설비 마스터에 없는 설비명 {len(names):,}건({shown}{more})은 새 호기로 추가되는데, "
         f"새 호기에 필요한 열 {len(needed)}개가 붙여넣은 표에 없습니다: {' · '.join(needed)}. "
         "새 호기를 넣으려면 이 열도 함께 붙여넣거나, 새 호기만 양식(전체 열)으로 따로 "
         "붙여넣으세요. 기존 호기만 고치려던 것이면 설비명이 맞는지 확인하세요."
@@ -535,7 +535,7 @@ class _TableHeaders:
 
 
 _EQUIPMENT_HEADERS = _TableHeaders(
-    "호기 마스터",
+    "설비 마스터",
     EQUIPMENT_COLUMNS,
     optional=OPTIONAL_EQUIPMENT_COLUMNS,
     aliases=LEGACY_EQUIPMENT_HEADER_ALIASES,
@@ -704,8 +704,8 @@ def _select_update_columns(
         raise ValueError(
             f"{label}에 없는 열이 있습니다: {_describe_unknown_headers(unknown, missing)}. "
             "붙여넣지 않은 열은 기존 값을 그대로 두므로 이름이 틀린 열을 빼고 읽으면 바꾸려던 열이 "
-            "그대로 남습니다 — 머리글을 호기 마스터 열 이름으로 고치거나 그 열을 빼고 다시 "
-            "붙여넣으세요(호기 마스터 36개 열이 모두 있을 때만 모르는 열을 읽지 않고 넘깁니다)."
+            "그대로 남습니다 — 머리글을 설비 마스터 열 이름으로 고치거나 그 열을 빼고 다시 "
+            "붙여넣으세요(설비 마스터 36개 열이 모두 있을 때만 모르는 열을 읽지 않고 넘깁니다)."
         )
     if unknown and notices is not None:
         notices.append(

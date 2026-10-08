@@ -433,7 +433,7 @@ def test_exporting_an_empty_table_gives_a_header_only_file_that_reads_back_empty
 
 
 def test_the_master_csv_lists_units_by_process_then_name() -> None:
-    """호기 마스터 CSV 는 `공정소분류` → `설비명` 오름차순이다(2026-10-08 사용자 요청). 글자 속
+    """설비 마스터 CSV 는 `공정소분류` → `설비명` 오름차순이다(2026-10-08 사용자 요청). 글자 속
     숫자는 수로 견주고(`EQ2` 가 `EQ10` 앞) 대소문자는 가리지 않으며, 빈 공정은 맨 뒤다."""
     equipment = pd.DataFrame(
         {

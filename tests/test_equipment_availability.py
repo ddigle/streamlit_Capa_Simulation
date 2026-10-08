@@ -531,7 +531,7 @@ def test_month_view_matches_a_direct_union_over_the_same_moments() -> None:
 
 
 def test_month_view_degrades_to_an_empty_table_for_an_empty_fleet() -> None:
-    """호기 마스터가 비면 시점은 월초와 일요일로 줄고 결과는 같은 컬럼의 빈 표다."""
+    """설비 마스터가 비면 시점은 월초와 일요일로 줄고 결과는 같은 컬럼의 빈 표다."""
     equipment, downtime = empty_equipment_master(), empty_downtime_schedule()
     month = date(2026, 10, 15)
 

@@ -110,7 +110,7 @@ def _render_first_data_checklist(counts: tuple[int, int, int]) -> None:
     맞는지부터 따져야 한다. Cut-off 는 저장본이 없는 이 자리에서만 한 번 더 읽는다.
     """
     steps = (
-        ("호기 마스터", "RawData 에서 붙여넣기", TAB_RAWDATA, "equipment_first_data_master_v1"),
+        ("설비 마스터", "RawData 에서 붙여넣기", TAB_RAWDATA, "equipment_first_data_master_v1"),
         ("운영 비가동 일정", "RawData 에서 붙여넣기", TAB_RAWDATA, "equipment_first_data_down_v1"),
         ("공정별 Cut-off", "Preference 에서 보기", TAB_PREFERENCE, "equipment_first_data_cut_v1"),
     )
@@ -181,7 +181,7 @@ viewing_tab_open = any(not tab_is_hidden(tab) for tab in (main_tab, gap_tab, sho
 if latest_snapshot is None and not tab_is_hidden(main_tab):
     with first_action.container():
         with st.container(horizontal=True, vertical_alignment="center"):
-            st.markdown("**처음 사용하시나요?** 호기 마스터를 붙여넣어 첫 데이터를 저장하세요.")
+            st.markdown("**처음 사용하시나요?** 설비 마스터를 붙여넣어 첫 데이터를 저장하세요.")
             st.button(
                 "설비 데이터 입력", icon=":material/add:", type="primary", on_click=_open_input
             )
@@ -231,7 +231,7 @@ with main_tab:
     if not tab_is_hidden(main_tab):
         if using_dashboard_sample and not show_sample_fleet:
             st.info(
-                "등록된 호기가 없습니다. RawData에서 호기 마스터를 입력하거나 "
+                "등록된 호기가 없습니다. RawData에서 설비 마스터를 입력하거나 "
                 "샘플 데이터를 켜서 화면을 살펴보세요."
             )
         else:
@@ -352,7 +352,7 @@ with shortening_tab:
     if not tab_is_hidden(shortening_tab):
         if using_dashboard_sample and not show_sample_fleet:
             st.info(
-                "등록된 호기가 없습니다. RawData에서 호기 마스터를 입력하거나 "
+                "등록된 호기가 없습니다. RawData에서 설비 마스터를 입력하거나 "
                 "샘플 데이터를 켜서 화면을 살펴보세요."
             )
         else:

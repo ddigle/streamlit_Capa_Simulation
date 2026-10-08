@@ -196,7 +196,7 @@ def frame_digest(frame: pd.DataFrame) -> str:
     return digest.hexdigest()
 
 
-# (시나리오 키, 호기 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 오늘).
+# (시나리오 키, 설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 오늘).
 RequiredShorteningCacheKey = tuple[ScenarioCacheKey, str, str, str, str, tuple[int, ...], str]
 
 
@@ -621,8 +621,8 @@ def get_weekly_equipment_availability(
 def get_undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
     """일정 미정 설비 행(`services/undated_equipment.undated_equipment`)을 rerun 사이에 다시 쓴다.
 
-    가용설비 현황은 위젯 하나에도 페이지 전체가 다시 돌고, 이 계산은 호기 마스터 검증
-    (`prepare_equipment_master`)을 거쳐 3천 행에 90ms 남짓 든다. 결과는 호기 마스터 내용만으로
+    가용설비 현황은 위젯 하나에도 페이지 전체가 다시 돌고, 이 계산은 설비 마스터 검증
+    (`prepare_equipment_master`)을 거쳐 3천 행에 90ms 남짓 든다. 결과는 설비 마스터 내용만으로
     정해지므로(기준일이 없다) 내용 해시가 곧 키다. Main 과 Static/Dynamic 이 같은(거르기 전) 표를
     넘겨 한 벌을 함께 쓰고, 범위는 받은 쪽이 좁힌다.
     """
@@ -633,14 +633,14 @@ def get_undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
 def get_usage_excluded_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
     """사용기준이 HBM·EDP 가 아니어서 가용대수에 세지 않는 행(`services/usage_basis`)을 다시 쓴다.
 
-    일정 미정(`get_undated_equipment`)과 같은 까닭이다 — 호기 마스터 검증을 거치고 결과가 호기
+    일정 미정(`get_undated_equipment`)과 같은 까닭이다 — 설비 마스터 검증을 거치고 결과가 호기
     마스터 내용만으로 정해진다. Main·Static/Dynamic·필요단축일정이 거르기 전 표를 넘겨 한 벌을 함께
     쓰고 범위는 받은 쪽이 좁힌다.
     """
     return usage_excluded_equipment(equipment)
 
 
-# (호기 마스터 내용 지문, 비가동 일정 내용 지문, 기준일).
+# (설비 마스터 내용 지문, 비가동 일정 내용 지문, 기준일).
 SpaceStatusCacheKey = tuple[str, str, str]
 
 
@@ -673,7 +673,7 @@ def get_space_equipment_status(
 
     배치 편집 중에는 한 회차에 저장본(조건 카드·FAB·층 요약)과 편집본(편집기·겹침 경고)을
     따로 판정하고, `적용` 은 `st.rerun()` 으로 두 회차를 돈다 — 캐시가 없을 때 적용 한 번에
-    같은 판정을 5~6번(3천 행에 한 번 0.13초 남짓) 했다. 판정은 호기 마스터 검증을 거치므로
+    같은 판정을 5~6번(3천 행에 한 번 0.13초 남짓) 했다. 판정은 설비 마스터 검증을 거치므로
     검증에 실패한 편집본은 `ValueError` 를 그대로 낸다(예외는 캐시하지 않는다). 받은 프레임은
     부를 때마다 새 사본이라 고쳐 써도 캐시가 바뀌지 않는다.
     """
@@ -928,7 +928,7 @@ def get_required_shortening(
 
     프레임은 해시하지 않는다 — 키(`required_shortening_cache_key`)가 내용 지문과 시나리오 키를
     모두 싣는다. `_required_equipment` 는 키의 시나리오 키로 받은 바로 그 소요대수여야 한다.
-    호기 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
+    설비 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
 
     호기 구간은 Static/Dynamic 과 **같은 구간 캐시**(`get_equipment_lifecycle_spans`)에서 받는다.
     키의 마스터·비가동 지문을 그대로 쓰므로 다시 해시하지 않는다. 시나리오·기존보유·오늘만 바뀌어
@@ -1037,7 +1037,7 @@ def get_shortening_progress_csv(
 # 읽지 않는다(오늘은 페이지의 기본 조회기간과 샘플 fleet 을 거쳐 들어오고, 그 둘은 날짜·마스터
 # 지문이 덮는다). 코드 상수는 키에 넣지 않는다(`frame_digest` 의 키 방침).
 
-# (호기 마스터 내용 지문, 비가동 내용 지문, 구간 시작, 구간 끝)
+# (설비 마스터 내용 지문, 비가동 내용 지문, 구간 시작, 구간 끝)
 EquipmentSpanCacheKey = tuple[str, str, str, str]
 
 

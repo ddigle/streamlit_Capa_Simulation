@@ -117,7 +117,7 @@ def unit_transitions(events: pd.DataFrame) -> pd.DataFrame:
 
 
 def module_group_warnings(equipment: pd.DataFrame) -> list[str]:
-    """저장은 막지 않지만 알릴 것. 검증을 통과한 호기 마스터를 받는다.
+    """저장은 막지 않지만 알릴 것. 검증을 통과한 설비 마스터를 받는다.
 
     모듈 행 여럿을 묶었는데 환산비가 모두 1 이면 능력 축이 모듈 수만큼 부풀려진다(4모듈이면
     4대 몫). 모듈 행에는 보통 1 ÷ 모듈수(0.25)를 적는다.
