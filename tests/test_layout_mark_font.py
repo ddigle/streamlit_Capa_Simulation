@@ -215,7 +215,7 @@ def test_migration_0017_keeps_existing_marks_as_auto_and_default(tmp_path: Path)
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (17,)
+    assert repository.initialize() == (17, 19)
 
     (floor,) = repository.load_floor_layout_marks("C1", "1F")
     (block,) = repository.load_fab_layout_marks()

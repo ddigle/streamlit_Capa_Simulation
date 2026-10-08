@@ -375,4 +375,6 @@ with shortening_tab:
                 scenario_error=shortening_error,
                 owner_tab=shortening_tab,
                 conditions=conditions_card,
+                # 거르는 조건(기간·공정)은 이 DB 의 공용 프로필이다(0019).
+                equipment_database_path=equipment_database_path,
             )

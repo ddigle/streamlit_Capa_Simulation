@@ -84,6 +84,12 @@ from capa_simulation.services.process_cutoff import (
     empty_process_cutoff,
     prepare_process_cutoff,
 )
+from capa_simulation.services.shortening_filter_profile import (
+    ShorteningFilterProfile,
+    merge_filter_processes,
+    normalize_filter_month,
+    normalize_filter_processes,
+)
 from capa_simulation.services.weekly_availability_input import prepare_weekly_availability
 
 _WRITE_LOCK = threading.RLock()
@@ -545,6 +551,67 @@ class DuckDBEquipmentRepository:
             return empty_process_cutoff()
         return prepare_process_cutoff(result)
 
+    def load_shortening_filter_profile(self) -> ShorteningFilterProfile:
+        """필요단축일정 공용 조회 조건(0019). 한 번도 저장하지 않았으면 `version` 0 의 빈 값."""
+        with self._connect() as connection:
+            return _read_shortening_filter(connection)
+
+    def save_shortening_filter_months(
+        self, start_month: object, end_month: object, *, source: str
+    ) -> bool:
+        """공용 조회 조건의 **기간만** 갈아 쓴다. 공정은 그대로다. 썼으면 True.
+
+        Cut-off 처럼 리비전 없는 현행값이라 그 자리에서 고친다. 저장된 값과 같으면 쓰지 않는다 —
+        공용 행이라 쓸 때마다 `version` 이 오르고 DB 가 dirty 가 된다. 견주기와 쓰기를 한
+        트랜잭션에서 한다(콜백 하나에 연결 하나).
+        """
+        start, end = normalize_filter_month(start_month), normalize_filter_month(end_month)
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            current = _read_shortening_filter(connection)
+            if (current.start_month, current.end_month) == (start, end):
+                return False
+            _write_shortening_filter_header(connection, current, start, end, source)
+            outcome.wrote = True
+        return True
+
+    def save_shortening_filter_processes(
+        self, selected: Sequence[object], *, visible: Sequence[str], source: str
+    ) -> bool:
+        """공용 조회 조건의 **공정만** 갈아 쓴다. 기간은 그대로다. 썼으면 True.
+
+        `visible` 은 화면이 보여 준 선택지다 — 그 밖의 저장 공정은 남긴다
+        (`services/shortening_filter_profile.merge_filter_processes`). 같으면 쓰지 않는다.
+        """
+        visible_set = set(normalize_filter_processes(visible))
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            current = _read_shortening_filter(connection)
+            merged = merge_filter_processes(current.processes, selected, visible_set)
+            if merged == current.processes:
+                return False
+            _write_shortening_filter_header(
+                connection, current, current.start_month, current.end_month, source
+            )
+            connection.execute(
+                "DELETE FROM equipment_ops.shortening_filter_process WHERE profile_id = 1"
+            )
+            if merged:
+                insert_by_name(
+                    connection,
+                    schema="equipment_ops",
+                    table_name="shortening_filter_process",
+                    frame=pd.DataFrame(
+                        {
+                            "profile_id": 1,
+                            "process_name": list(merged),
+                            "sort_order": range(len(merged)),
+                        }
+                    ),
+                )
+            outcome.wrote = True
+        return True
+
     def save_floor_layout_image(
         self,
         building: str,
@@ -892,6 +959,68 @@ class DuckDBEquipmentRepository:
 def _require_floor_key(building: str, floor: str) -> None:
     if building not in VALID_BUILDINGS or floor not in VALID_FLOORS:
         raise ValueError(f"동은 C1~C5, 층은 1F~6F 범위여야 합니다: {building} {floor}")
+
+
+def _read_shortening_filter(connection: duckdb.DuckDBPyConnection) -> ShorteningFilterProfile:
+    """열린 연결에서 필요단축일정 공용 조회 조건을 읽는다. 헤더가 없으면 빈 값(`version` 0)."""
+    header = connection.execute(
+        """
+        SELECT start_month, end_month, version, source, updated_at
+        FROM equipment_ops.shortening_filter_profile
+        WHERE profile_id = 1
+        """
+    ).fetchone()
+    if header is None:
+        return ShorteningFilterProfile()
+    processes = connection.execute(
+        """
+        SELECT process_name
+        FROM equipment_ops.shortening_filter_process
+        WHERE profile_id = 1
+        ORDER BY sort_order, process_name
+        """
+    ).fetchall()
+    return ShorteningFilterProfile(
+        start_month=None if header[0] is None else int(header[0]),
+        end_month=None if header[1] is None else int(header[1]),
+        processes=tuple(str(row[0]) for row in processes),
+        version=int(header[2]),
+        source=str(header[3]),
+        updated_at=header[4],
+    )
+
+
+def _write_shortening_filter_header(
+    connection: duckdb.DuckDBPyConnection,
+    current: ShorteningFilterProfile,
+    start_month: int | None,
+    end_month: int | None,
+    source: str,
+) -> None:
+    """헤더 한 행을 다음 `version` 으로 쓴다. 쓰기 트랜잭션 안에서만 부른다.
+
+    행이 있으면 키가 아닌 칸만 UPDATE 하고 없으면 넣는다 — 공정 자식 행은 건드리지 않는다.
+    """
+    values = [start_month, end_month, current.version + 1, source]
+    if current.version == 0:
+        connection.execute(
+            """
+            INSERT INTO equipment_ops.shortening_filter_profile (
+                profile_id, start_month, end_month, version, source
+            ) VALUES (1, ?, ?, ?, ?)
+            """,
+            values,
+        )
+        return
+    connection.execute(
+        """
+        UPDATE equipment_ops.shortening_filter_profile
+        SET start_month = ?, end_month = ?, version = ?, source = ?,
+            updated_at = current_timestamp
+        WHERE profile_id = 1
+        """,
+        values,
+    )
 
 
 def _latest_revision(connection: duckdb.DuckDBPyConnection) -> tuple[str, int] | None:

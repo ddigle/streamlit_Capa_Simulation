@@ -1,4 +1,4 @@
-# Purpose: 필요단축일정 탭의 그림·목표 전환·공정 필터·CSV 세 벌과 시나리오 없을 때 정지를 검사한다.
+# Purpose: 필요단축일정 탭의 그림·목표·공정 필터·CSV·공용 조회 조건·표시명·시나리오 없음을 검사한다.
 
 """필요단축일정 탭(AppTest).
 
@@ -16,12 +16,16 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import pytest
+import streamlit.elements.lib.policies as policies
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_tab
 
 from capa_simulation.components.required_shortening_panel import (
+    SHORTENING_END_KEY,
     SHORTENING_LEVEL_KEY,
     SHORTENING_PROCESS_KEY,
+    SHORTENING_START_KEY,
     _unit_row,
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
@@ -40,6 +44,7 @@ from capa_simulation.services.required_shortening import (
     PROCESS_MONTH_EXPORT_COLUMNS,
     UNIT_EXPORT_COLUMNS,
 )
+from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
@@ -67,6 +72,7 @@ def _script(
     fail_scenario: bool = False,
     past_months: tuple[int, ...] = (),
     sidebar_first: int | None = None,
+    labels: dict[str, str] | None = None,
 ) -> str:
     simulation_path = database_path.with_name(f"{database_path.stem}_simulation.duckdb")
     months = _months()
@@ -78,11 +84,13 @@ from types import SimpleNamespace
 import pandas as pd
 import streamlit as st
 
+import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
 import capa_simulation.settings as settings
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.services.equipment_samples import sample_equipment_master
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
@@ -119,6 +127,8 @@ originals = (
     persistence_cache.load_global_securement_threshold,
     persistence_cache.load_global_past_data,
 )
+# 공정 표시명. 갈아 끼우지 않으면 진짜 조회가 시뮬레이션 DB 를 만들고 마이그레이션을 모두 건다.
+original_get_process_labels = process_labels_module.get_process_labels
 
 
 def home_simulation(**kwargs):
@@ -161,6 +171,9 @@ persistence_cache.load_global_securement_threshold = lambda _path: SimpleNamespa
 persistence_cache.load_global_past_data = lambda _path: SimpleNamespace(
     monthly=pd.DataFrame({{"생산계획년월": {list(past_months)!r}}})
 )
+process_labels_module.get_process_labels = lambda: ProcessLabels(
+    version=1, labels={dict(labels or {})!r}
+)
 try:
     # streamlit 모듈 자체를 바꾸는 패치라 원복이 반드시 돌아야 한다.
     st.download_button = record_download_button
@@ -178,6 +191,7 @@ finally:
         persistence_cache.load_global_securement_threshold,
         persistence_cache.load_global_past_data,
     ) = originals
+    process_labels_module.get_process_labels = original_get_process_labels
     st.download_button = original_download_button
 """
 
@@ -205,12 +219,14 @@ def _run(
     fail_scenario: bool = False,
     past_months: tuple[int, ...] = (),
     sidebar_first: int | None = None,
+    labels: dict[str, str] | None = None,
 ) -> AppTest:
     script = _script(
         database_path,
         fail_scenario=fail_scenario,
         past_months=past_months,
         sidebar_first=sidebar_first,
+        labels=labels,
     )
     app = AppTest.from_string(script, default_timeout=120).run()
     return _open_tab(app, TAB)
@@ -540,3 +556,194 @@ def test_a_virtual_unit_row_says_when_it_is_needed_and_new() -> None:
     assert '<div class="shk-result"><span class="shk-new">신규</span></div>' in visible
     assert "−" not in visible and "기여" not in visible and "+0.26대" not in visible
     assert "신규 필요 Qual 2026-11-03 · 기여 시작 2026-11-04 · 늘어난 환산대수 +0.26대" in markup
+
+
+# ------------------------------------------------------- 공용 조회 조건 프로필(0019)
+
+
+def _processes() -> list[str]:
+    return sorted(set(sample_equipment_master()["공정소분류"]))
+
+
+def _profile(database_path: Path) -> ShorteningFilterProfile:
+    return DuckDBEquipmentRepository(database_path).load_shortening_filter_profile()
+
+
+def test_a_new_session_opens_with_the_shared_filter_profile(tmp_path: Path) -> None:
+    """세션에 값이 없으면 공용 프로필로 심는다 — 지금 맞댄 공정에 없는 공정만 빼고(프로필에는
+    남는다).
+
+    심기는 프로필에 쓰지 않는다 — 공용 행이라 쓰면 version 이 오르고 남의 선택을 되쓴다.
+    """
+    database_path = _database(tmp_path)
+    months = _months()
+    first = _processes()[0]
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.save_shortening_filter_months(months[1], months[3], source="test")
+    repository.save_shortening_filter_processes(
+        [first, "ABSENT-PROC"], visible=[first, "ABSENT-PROC"], source="test"
+    )
+
+    app = _run(database_path)
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert app.session_state[SHORTENING_START_KEY] == months[1]
+    assert app.session_state[SHORTENING_END_KEY] == months[3]
+    assert app.multiselect(key=SHORTENING_PROCESS_KEY).value == [first]
+    assert _cards(app) == [first]
+    captions = " ".join(str(item.value) for item in app.sidebar.caption)
+    assert "공용 설정" in captions
+    assert "ABSENT-PROC" in captions and "공용 설정에는 남습니다" in captions
+    stored = _profile(database_path)
+    assert stored.version == 2
+    assert stored.processes == (first, "ABSENT-PROC")
+    clear_equipment_repository()
+
+
+def test_changing_the_filter_saves_it_for_every_new_session(tmp_path: Path) -> None:
+    """바꾸면 그 자리에서 저장하고, 새 세션(다른 사용자)은 그 값으로 연다. 기간·공정은 따로 쓴다."""
+    database_path = _database(tmp_path)
+    months = _months()
+    app = _run(database_path)
+    assert _profile(database_path).version == 0, "처음 열기만 해서는 쓰지 않는다"
+
+    app = app.selectbox(key=SHORTENING_START_KEY).set_value(months[2]).run()
+    assert not app.exception
+    stored = _profile(database_path)
+    assert (stored.start_month, stored.end_month, stored.processes) == (months[2], months[-1], ())
+    assert stored.version == 1
+
+    chosen = list(app.multiselect(key=SHORTENING_PROCESS_KEY).options)[1]
+    app = app.multiselect(key=SHORTENING_PROCESS_KEY).set_value([chosen]).run()
+    assert not app.exception
+    stored = _profile(database_path)
+    assert (stored.start_month, stored.processes) == (months[2], (chosen,))
+    assert stored.version == 2
+
+    # 목표 확보율은 공용 설정이 아니다 — 바꿔도 쓰지 않는다.
+    app = app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(0.9).run()
+    assert _profile(database_path).version == 2
+
+    other = _run(database_path)
+    assert not other.exception
+    assert other.session_state[SHORTENING_START_KEY] == months[2]
+    assert other.session_state[SHORTENING_END_KEY] == months[-1]
+    assert other.multiselect(key=SHORTENING_PROCESS_KEY).value == [chosen]
+    assert _cards(other) == [chosen]
+
+    # 비우면 「미선택 = 목표 미달 공정 전체」가 공용 설정이 된다.
+    cleared = other.multiselect(key=SHORTENING_PROCESS_KEY).set_value([]).run()
+    assert not cleared.exception
+    assert _profile(database_path).processes == ()
+    clear_equipment_repository()
+
+
+def test_a_profile_month_outside_the_options_falls_back_to_the_default(tmp_path: Path) -> None:
+    """저장된 달이 지금 고를 수 없는 달이면 코드 기본값(조회기간 전체)으로 연다. 프로필은
+    그대로다."""
+    database_path = _database(tmp_path)
+    months = _months()
+    early, late = _shift(months[0], -24), _shift(months[-1], 24)
+    DuckDBEquipmentRepository(database_path).save_shortening_filter_months(
+        early, late, source="test"
+    )
+
+    app = _run(database_path)
+
+    assert not app.exception
+    assert app.session_state[SHORTENING_START_KEY] == months[0]
+    assert app.session_state[SHORTENING_END_KEY] == months[-1]
+    stored = _profile(database_path)
+    assert (stored.start_month, stored.end_month, stored.version) == (early, late, 1)
+    clear_equipment_repository()
+
+
+def test_seeding_the_filter_raises_no_widget_value_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """심은 세션 값과 위젯 기본값(`index=`·`default=`)을 함께 주면 Streamlit 이 경고한다(AGENTS
+    9장).
+
+    경고는 프로세스에 한 번만 찍히므로 그 표시를 되돌려 놓고 잰다.
+    """
+    database_path = _database(tmp_path)
+    months = _months()
+    first = _processes()[0]
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.save_shortening_filter_months(months[1], months[2], source="test")
+    repository.save_shortening_filter_processes([first], visible=[first], source="test")
+    warnings: list[object] = []
+    monkeypatch.setattr(policies, "_shown_default_value_warning", False)
+    monkeypatch.setattr(policies._LOGGER, "warning", lambda *args, **_kwargs: warnings.append(args))
+
+    app = _run(database_path)
+    app = app.selectbox(key=SHORTENING_END_KEY).set_value(months[4]).run()
+
+    assert not app.exception
+    assert warnings == []
+    clear_equipment_repository()
+
+
+# ------------------------------------------------------- 공정 표시명(Proc Rename)
+
+
+def test_process_display_names_label_the_screen_but_values_stay_original(tmp_path: Path) -> None:
+    """선택지·카드 제목·B/N 공정은 표시명이고, 세션·공용 프로필·CSV `공정` 은 원본이다."""
+    database_path = _database(tmp_path)
+    first, second = _processes()[:2]
+    DuckDBEquipmentRepository(database_path).save_shortening_filter_processes(
+        [first], visible=[first], source="test"
+    )
+    labels = {first: "표시-첫공정", second: "표시-둘째공정"}
+
+    app = _run(database_path, labels=labels)
+
+    assert not app.exception, [element.message for element in app.exception]
+    picker = app.multiselect(key=SHORTENING_PROCESS_KEY)
+    assert "표시-첫공정" in picker.options and first not in picker.options
+    assert picker.value == [first]
+    assert app.session_state[SHORTENING_PROCESS_KEY] == [first]
+    assert _cards(app) == ["표시-첫공정"]
+    body = _html(app)
+    assert f'title="원본 공정명 {first}"' in body
+    # 고른 공정 하나라 B/N 아래 공정 이름은 그 공정이다.
+    assert '<span class="shk-sub" title="표시-첫공정">표시-첫공정</span>' in body
+    _, units = _csv(app, "equipment_shortening_units_csv")
+    assert set(units["공정"]) <= {first}
+    for key in (
+        "equipment_shortening_units_csv",
+        "equipment_shortening_units_all_levels_csv",
+        "equipment_shortening_months_csv",
+    ):
+        data = app.session_state["captured_downloads"][key]["data"]
+        assert "표시-" not in data.decode("utf-8-sig"), key
+
+    changed = picker.set_value([second]).run()
+    assert not changed.exception
+    assert _cards(changed) == ["표시-둘째공정"]
+    assert _profile(database_path).processes == (second,)
+    clear_equipment_repository()
+
+
+def test_the_unmatched_list_keeps_the_original_names(tmp_path: Path) -> None:
+    """「맞대지 못한 공정」은 마스터·Cut-off 이름을 맞추라는 안내라 원본 이름이다."""
+    database_path = _database(tmp_path)
+    repository = DuckDBEquipmentRepository(database_path)
+    processes = _processes()
+    # 첫 공정의 Cut-off 를 빼면 그 공정은 시나리오 쪽에만 남는다.
+    repository.save_process_cutoff(
+        pd.DataFrame(
+            {
+                "공정": processes[1:],
+                "Cutoff일수": [10.0] * (len(processes) - 1),
+                "비고": [None] * (len(processes) - 1),
+            }
+        )
+    )
+
+    app = _run(database_path, labels={processes[0]: "표시-빠진공정"})
+
+    assert not app.exception
+    texts = " ".join(str(item.value) for item in app.text)
+    assert processes[0] in texts and "표시-빠진공정" not in texts
+    clear_equipment_repository()

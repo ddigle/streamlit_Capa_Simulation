@@ -25,6 +25,7 @@ from capa_simulation.services.floor_layout_profile import (
     FloorLayoutCanvas,
     FloorLayoutProfile,
 )
+from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 
 
 class _EquipmentSnapshotPayload(TypedDict):
@@ -232,6 +233,22 @@ def load_fab_layout(
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def _load_shortening_filter_payload(database_path: str) -> dict[str, Any]:
+    profile = get_equipment_repository(database_path).load_shortening_filter_profile()
+    return _payload(profile, ShorteningFilterProfile)
+
+
+def load_shortening_filter_profile(database_path: str) -> ShorteningFilterProfile:
+    """필요단축일정 공용 조회 조건. 탭이 열린 회차마다 부르므로 캐시한다 — 저장하는 쪽(그 탭의
+    `on_change` 콜백)이 쓴 뒤 `clear_shortening_filter_cache` 로 비운다. 설비 리비전과 무관하다."""
+    return ShorteningFilterProfile(**_load_shortening_filter_payload(database_path))
+
+
+def clear_shortening_filter_cache() -> None:
+    _load_shortening_filter_payload.clear()
+
+
 def clear_floor_layout_cache() -> None:
     """층·FAB 도면·캔버스·도면 요소 캐시를 비운다. 도면만 바꾼 저장(팝업)은 설비 리비전과 무관하므로
     스냅샷 캐시는 비우지 않는다 — 리비전과 캔버스·요소를 함께 쓴 저장은 부른 쪽이 둘 다 비운다."""
@@ -250,4 +267,5 @@ def clear_equipment_snapshot_cache() -> None:
 def clear_equipment_repository() -> None:
     clear_equipment_snapshot_cache()
     clear_floor_layout_cache()
+    clear_shortening_filter_cache()
     get_equipment_repository.clear()

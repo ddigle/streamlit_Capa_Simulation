@@ -785,7 +785,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     넘기고, 시나리오를 못 읽으면 그 탭 안에서만 경고한다. 넓힌 생애주기 구간·환산비는 고른 달이
     정해진 뒤 `simulation_cache.get_required_shortening` 이 같은 함수로 만든다. 다섯 목표(90~130%)를 한
     번에 캐시하고 목표·공정 선택은 고르기만 한다. 계산 규칙은 `services/required_shortening.py` 항목이다.
-    **DB 에 쓰지 않는다.**
+    **계산은 DB 에 쓰지 않는다** — 쓰는 것은 거르는 조건(시작 월·끝 월·공정)의 **공용 프로필** 하나다
+    (2026-10-08 사용자 요청, 설비 DB `0019`). 같은 화면의 Cut-off 처럼 설비 DB 의 리비전 없는 현행값이고,
+    페이지가 설비 DB 경로(`equipment_database_path=`)를 넘기면 패널이 심고 저장한다(규칙은 패널 항목).
+    목표 확보율은 세션 값이다. 화면의 공정 이름은 공용 **공정 표시명**이다(이 탭만 — 나머지 탭은 아직
+    원본, `docs/TODO.md`). 표시명 조회는 패널이 한다 — 이 페이지 파일은 `process_labels` 를 들이지 않는다
+    (`tests/test_process_label_boundaries.py` 가 RawData·호기 마스터 경로로 지킨다).
   - 월별 Dynamic 가용대수는 `(전월 말일 - cutoff, 당월 말일 - cutoff]` 반열린 구간과 겹친
     일수로 안분한다(`services/wd_window.py`). 구간 길이는 늘 그 달의 달력일수이고 열두
     구간의 합이 365일이어야 한다. **가용 소계에 드는 분류는 `기존보유`·`가용` 둘뿐이고**
@@ -3117,6 +3122,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `missing_cutoff_processes` 로 반드시 드러낸다.
   - `제품구분` 은 나중에 제품 축이 붙을 자리다. 지금은 모두 `*` 이고, 부르는 쪽이 사전
     하나만 보도록 `cutoff_lookup` 한 곳에 가둬 두었다.
+- `src/capa_simulation/services/shortening_filter_profile.py`
+  - 가용설비 현황 `필요단축일정` 의 공용 조회 조건(시작 월·끝 월·공정, 설비 DB `0019`) 모델
+    `ShorteningFilterProfile`(`version` 0 = 저장 안 함)과 Streamlit·DB 를 모르는 규칙 — 달 정규화
+    (`YYYYMM`, 달 1~12), 공정 정규화(공백·빈 값·중복), 심을 달(`seeded_filter_month` — 지금 고를 수 있는
+    달일 때만), 고를 수 없는 저장 공정(`absent_filter_processes`), 저장할 공정 목록(`merge_filter_processes`
+    — 고른 공정 + 화면에 없던 저장 공정, 모두 비우면 빈 목록). 값은 원본 공정명이다.
 - `src/capa_simulation/services/monthly_equipment_availability.py`
   - **`span_date_range` 는 첫 구간의 앞 경계(`boundary_start`)부터 돌려준다**(2026-10-07 리뷰). 상태는
     바뀐 다음 날부터 기여하므로 첫 기여일을 정하는 것은 그 전날 상태다. 예전처럼 첫날(`first_day`)부터
@@ -3386,6 +3397,27 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     오른쪽에 `목표 확보율`(기본 110%)을 둔다. 모두 `persist_state`. **공정을 비우면 고른 목표에서 한
     달이라도 모자란 공정 전체**가 카드로 선다(필터의 「미선택 시 전체」 관례를 「미선택 시 목표 미달 전체」
     로 읽는다). KPI·B/N 의 범위는 고른 공정, 비우면 맞댄 공정 전체다.
+  - **거르는 조건 셋(시작 월·끝 월·공정)은 공용 프로필이다**(2026-10-08 사용자 요청 — 설비 DB `0019`,
+    규칙 `services/shortening_filter_profile.py`, SQL `equipment_repository.save_shortening_filter_*`, 캐시
+    `equipment_cache.load_shortening_filter_profile`). HOME 비교 대상 관례 그대로 **세션에 값이 없을 때만**
+    프로필로 심는다 — 달은 지금 고를 수 있는 달일 때만(아니면 조회기간 첫·끝 달), 공정은 지금 맞댄 공정에
+    없는 것만 빼고(`prune_list_selection` 의 `default`, 프로필에서는 지우지 않고 카드에 「고를 수 없는 것」
+    캡션). 위젯에 `index=`·`default=` 를 주지 않는다(AGENTS 9장 경고). **저장은 위젯 `on_change` 에서만**
+    한다 — 기간 상자는 기간만, 공정 상자는 공정만 쓰고(남의 다른 쪽 선택을 되쓰지 않게), Repository 가 같은
+    트랜잭션에서 견주어 같으면 쓰지 않는다(연결 하나, version·dirty 를 올리지 않음). 심기·가지치기·조회기간
+    변경으로 옮긴 값은 쓰지 않는다 — 공용 행이라 쓰면 남이 고른 값을 되쓴다(`_persist_comparison_choice`
+    의 핑퐁과 같은 까닭). 공정을 저장할 때 **그 위젯이 보여 주지 않은 저장 공정은 남긴다**(다른 시나리오·
+    마스터에는 있다). 다만 모두 비우면 빈 목록이다 — 남은 공정만 저장하면 「미선택 = 목표 미달 전체」가
+    「그 공정만」으로 뒤집힌다. 콜백 값에 선택지 밖 글자가 섞이면(표시명이 바뀐 직후 브라우저가 옛 라벨을
+    되보낸 경우) 쓰지 않는다. 저장 실패는 화면을 멈추지 않는다. 카드에 「공용 설정 — 바꾸면 모든 사용자의
+    기본 조회 조건이 됩니다」 캡션. 목표 확보율은 세션 값이다.
+  - **공정 이름은 공용 공정 표시명이다**(2026-10-08 사용자 요청) — 공정 선택지의 `format_func`, 카드
+    제목·`aria-label`(원본과 다르면 제목 풍선에 「원본 공정명 …」), LOB 요약의 Dynamic B/N 공정. 값(세션·
+    프로필·계산 캐시 키·CSV 세 벌의 `공정`)은 원본이다. 표시명은 `st.html` 을 만들 때만 입히고 계산
+    (`get_required_shortening`)·CSV(`get_required_shortening_csvs`) 캐시에 닿지 않으므로 Admin 에서 고치면
+    다음 회차에 그대로 보인다. 「맞대지 못한 공정」은 마스터·Cut-off 이름을 맞추라는 안내라 **원본**이다(8장
+    ③ 원본 키를 확인하는 화면) — 캡션에 그렇다고 적는다. 표시명 조회(`process_labels.get_process_labels`)는
+    모듈 속성으로 불러 테스트가 갈아 끼운다(진짜 조회는 시뮬레이션 DB 를 연다 — 5장 9 의 두 탭 예외 안).
   - 「맞대지 못한 공정」 아래에 일정 미정 줄과 사용기준 제외 줄을 차례로 둔다(둘 다 공정을 고르면 그 공정,
     비우면 호기 마스터 전체 — 호기가 모두 일정 미정이거나 HBM 이 아닌 공정은 맞댄 공정에 없으므로 좁히면
     까닭이 사라진다). 일정 미정 줄은 Main·Static/Dynamic 과 같은 `undated_equipment_notice` 문구 뒤에
@@ -3646,8 +3678,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   FAB 를 함께 비운다 — 팝업·저장의 기존 호출처가 그대로 FAB 까지 덮는다), RawData 의 저장 이력 목록
   (`load_equipment_revision_summaries`, 키 = 최신 리비전 id)과 리비전 하나의 세 표 CSV 바이트
   (`load_equipment_csv_payloads`, 키 = 리비전 id)다 — 둘 다 리비전이 덧붙이기만 하는 불변이라 맞는
-  키이고, `clear_equipment_snapshot_cache` 가 스냅샷과 함께 비운다
+  키이고, `clear_equipment_snapshot_cache` 가 스냅샷과 함께 비운다. 필요단축일정 공용 조회 조건
+  (`load_shortening_filter_profile`, 키 = DB 경로)은 그 탭의 저장 콜백이 쓴 뒤
+  `clear_shortening_filter_cache` 로 비운다(설비 리비전과 무관하다)
 - `persistence/equipment_repository.py`: 설비 운영 입력의 불변 전체 스냅샷 저장소
+  - **필요단축일정 공용 조회 조건**(`0019`)은 리비전 없는 현행값이다 — `save_shortening_filter_months`
+    (기간만)·`save_shortening_filter_processes`(공정만, 화면이 보여 주지 않은 저장 공정은 남긴다)가
+    `_write_transaction` 안에서 지금 값을 읽어 견주고 다를 때만 헤더 UPDATE(처음은 INSERT)·version+1 을
+    한다. 같으면 `_WriteOutcome(wrote=False)` 라 dirty 도 세우지 않고 False 를 돌려준다.
   - `save_snapshot`·`save_space_layout` 은 **연결 하나·트랜잭션 하나**에서 저장된 캔버스 읽기
     → 미저장 캔버스 덮기 → 호기·요소 검증 → 리비전 → 캔버스 UPDATE → 층 요소 교체를 한다.
     캔버스를 따로 저장한 뒤 리비전을 저장하면 두 트랜잭션으로 갈려, 호기 검증이 실패해도
@@ -3765,7 +3803,8 @@ RQ_MODULE
 9. **설비 운영 이력은 시나리오와 물리적으로 분리한다.** 가용설비 현황은 전용 DuckDB,
    전용 마이그레이션·Repository·캐시와 페이지 전용 조회기간을 사용하고 저장마다 새 전체
    스냅샷을 만든다. `Static/Dynamic`·`필요단축일정` 탭만 시뮬레이션 기준정보·소요대수를 읽어
-   비교하며 설비 운영 저장과 Main·설정·입력 화면은 시뮬레이션 DB에 의존하지 않는다. 두 탭의
+   비교하며(필요단축일정은 화면 라벨인 공용 공정 표시명도 읽는다 — 공용 조회 조건 프로필은 설비 DB
+   `0019` 다) 설비 운영 저장과 Main·설정·입력 화면은 시뮬레이션 DB에 의존하지 않는다. 두 탭의
    비싼 계산(생애주기 구간 → 월별 Dynamic → Static 비교, 필요단축일정 계획·CSV)은
    `simulation_cache` 의 내용 지문 키 래퍼로만 부른다 — 키는 그 함수의 **실제 입력 전부**(마스터·
    비가동·기존보유·Cut-off·Static·구간의 `frame_digest`, 구간 범위, 달, 환산비 지문, 필요단축일정은
@@ -4154,10 +4193,11 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   된다. 옵션에는 그 표의 값 전체를 넣는다 — 옵션에 없는 값은 셀이 빈칸으로 그려진다.
 - 표시명이 닿으면 안 되는 곳은 다섯 갈래다. ① 왕복 CSV·클립보드 양식(기준정보 월별
   편집기, 설비대수, 주차별 가용대수, 표시순서, Proc Rename 규칙 자체), ② 보고용 CSV
-  전부(월별 표 CSV, 제외 목록 CSV, Static Capa 부족 현황 CSV) — 그대로 옮겨 쓰는
-  파일이다, ③ 원본 키를 편집·확인하는 화면(표시순서 관리의 `분류값`, Proc Rename 탭의
-  `보유 공정` 목록), ④ `services/` 의 예외 메시지(원본을 고치라는 안내다)와 프리셋·세션
-  저장값, ⑤ 설비 DB 의 `공정대분류`·`공정소분류`. 경계는 `services/` 가
+  전부(월별 표 CSV, 제외 목록 CSV, Static Capa 부족 현황 CSV, 필요단축일정 CSV 세 벌) — 그대로
+  옮겨 쓰는 파일이다, ③ 원본 키를 편집·확인하는 화면(표시순서 관리의 `분류값`, Proc Rename 탭의
+  `보유 공정` 목록, 필요단축일정 「맞대지 못한 공정」), ④ `services/` 의 예외 메시지(원본을 고치라는 안내다)와 프리셋·세션
+  저장값, ⑤ 설비 DB 의 `공정대분류`·`공정소분류`(필요단축일정 공용 조회 조건의 공정 목록도 원본이다).
+  경계는 `services/` 가
   `components/process_labels.py` 를 import 하지 않는 것으로 강제하고
   `tests/test_process_label_boundaries.py`·`tests/test_process_rename.py` 가 검사한다.
 - `st.dataframe` 그리드 우상단의 내장 `Download as CSV`·복사는 화면 프레임을 그대로

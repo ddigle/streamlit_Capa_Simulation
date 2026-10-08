@@ -11,6 +11,15 @@
 한 달이라도 모자란 공정 전체**를 카드로 보인다 — 공정 필터의 「미선택 시 전체」 관례를 「미선택 시
 목표 미달 전체」로 읽는다. 목표를 바꾸면 카드 목록도 따라 바뀐다.
 
+**거르는 조건 셋은 공용 프로필이다**(2026-10-08 사용자 요청, 설비 DB 0019). 세션에 값이 없을 때만
+프로필로 심고(HOME 비교 대상과 같은 관례), 사용자가 바꾸면 그 위젯의 `on_change` 가 그 자리에서
+저장한다 — 심기·가지치기는 프로필에 쓰지 않는다(공용 행이라 쓰면 남의 선택을 되쓴다). 목표
+확보율은 세션 값이다. 규칙은 `services/shortening_filter_profile.py` 다.
+
+**화면의 공정 이름은 공용 공정 표시명(Proc Rename)이다**(2026-10-08 사용자 요청) — 공정 선택지의
+라벨, 카드 제목, LOB 요약의 B/N 공정. 값(세션·프로필·계산 키·CSV `공정`)은 원본이다. 「맞대지 못한
+공정」은 이름을 맞추라는 안내라 원본을 그대로 적는다(AGENTS 8장 — 원본 키를 확인하는 화면).
+
 화면은 HOME 「Capa LOB Summary」 결의 HTML 이다(`st.html`). 색은 모두 `design/tokens` 에서 실행마다
 읽어 밝은·어두운 테마를 따른다. 상태색(`STATUS_*`)은 면색이라 그 위 글자는 `TEXT` 다. 호기·공정
 이름은 사용자가 적은 글이라 모두 이스케이프한다.
@@ -28,8 +37,10 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.typography import FIGURE_CLASS
@@ -39,6 +50,11 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PageContext,
     prune_list_selection,
+)
+from capa_simulation.persistence.equipment_cache import (
+    clear_shortening_filter_cache,
+    get_equipment_repository,
+    load_shortening_filter_profile,
 )
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
@@ -59,6 +75,11 @@ from capa_simulation.services.securement_threshold import (
     DEFAULT_SECURE_THRESHOLD,
     DEFAULT_WARNING_THRESHOLD,
     SecurementThresholds,
+)
+from capa_simulation.services.shortening_filter_profile import (
+    ShorteningFilterProfile,
+    absent_filter_processes,
+    seeded_filter_month,
 )
 from capa_simulation.services.undated_equipment import (
     undated_candidate_note,
@@ -82,6 +103,9 @@ SHORTENING_PROCESS_KEY = "equipment_shortening_process_filter_v1"
 _UNITS_CSV_KEY = "equipment_shortening_units_csv"
 _UNITS_ALL_LEVELS_CSV_KEY = "equipment_shortening_units_all_levels_csv"
 _MONTHS_CSV_KEY = "equipment_shortening_months_csv"
+# 공용 조회 조건 프로필에 남기는 출처 글.
+_MONTHS_SOURCE = "필요단축일정 조회 기간"
+_PROCESSES_SOURCE = "필요단축일정 공정 선택"
 
 # 표 첫 칸(행 이름)과 월 칸의 최소 폭. 달이 많으면 가로로 흐른다.
 _LABEL_COLUMN_PX = 170
@@ -119,6 +143,7 @@ def render_required_shortening_tab(
     scenario_error: str | None = None,
     owner_tab: OpenTab | None = None,
     conditions: DeltaGenerator | None = None,
+    equipment_database_path: str | None = None,
 ) -> None:
     """필요단축일정 탭 본문. 숨은 탭이면 아무것도 하지 않는다.
 
@@ -126,6 +151,9 @@ def render_required_shortening_tab(
 
     `context`·`required_equipment` 는 페이지가 활성 시나리오에서 읽어 넘긴다. 못 읽었으면
     `scenario_error` 에 까닭이 오고 **이 탭 안에서만** 알린다 — 다른 탭은 그대로 쓴다.
+
+    `equipment_database_path` 는 공용 조회 조건 프로필이 사는 설비 DB 다. 없으면(컴포넌트를 홀로
+    띄우는 자리) 조건은 세션 값뿐이다.
     """
     if tab_is_hidden(owner_tab):
         return
@@ -153,8 +181,16 @@ def render_required_shortening_tab(
     if not month_options:
         st.info("조회기간에 월이 없습니다.")
         return
+    profile = _filter_profile(equipment_database_path)
     with controls:
-        months = _render_month_range(month_options)
+        if equipment_database_path is not None:
+            st.caption(
+                ":material/groups: 공용 설정 — 기간·공정을 바꾸면 모든 사용자의 기본 조회 조건이 "
+                "됩니다."
+            )
+        months = _render_month_range(
+            month_options, profile=profile, database_path=equipment_database_path
+        )
 
     key = simulation_cache.required_shortening_cache_key(
         simulation_cache.scenario_cache_key(
@@ -179,14 +215,12 @@ def render_required_shortening_tab(
         return
 
     ordered = _ordered_processes(plan, context)
-    prune_list_selection(SHORTENING_PROCESS_KEY, ordered)
+    # 화면에서만 갈아 끼운다 — 계산·CSV 캐시 키에는 닿지 않으므로 표시명을 고치면 다음 회차에 그대로
+    # 보인다(공용 프로필 캐시는 Admin 저장이 비운다).
+    labels = process_labels_module.get_process_labels()
     with controls:
-        selected = st.multiselect(
-            "공정 (표시순서)",
-            options=ordered,
-            placeholder="미선택 시 목표 미달 공정 전체",
-            key=SHORTENING_PROCESS_KEY,
-            persist_state="session",
+        selected = _render_process_filter(
+            ordered, profile=profile, labels=labels, database_path=equipment_database_path
         )
     level_plan = plan.at(level)
     scope = [process for process in ordered if process in set(selected)] if selected else ordered
@@ -214,6 +248,7 @@ def render_required_shortening_tab(
             level_plan,
             scope,
             thresholds,
+            labels,
         )
     )
     st.caption(
@@ -232,6 +267,7 @@ def render_required_shortening_tab(
         st.html(
             _card_markup(
                 process,
+                labels.label(process),
                 plan.cutoff_days.get(process, 0),
                 level_plan,
                 months,
@@ -267,16 +303,41 @@ def _render_header(today: date) -> float:
     return float(level)
 
 
-def _render_month_range(options: list[int]) -> list[int]:
+def _filter_profile(database_path: str | None) -> ShorteningFilterProfile:
+    """공용 조회 조건. 경로가 없거나 못 읽으면 빈 프로필(= 코드 기본값)이다 — 화면은 떠야 한다."""
+    if database_path is None:
+        return ShorteningFilterProfile()
+    try:
+        return load_shortening_filter_profile(database_path)
+    except BOOTSTRAP_ERRORS:
+        return ShorteningFilterProfile()
+
+
+def _render_month_range(
+    options: list[int],
+    *,
+    profile: ShorteningFilterProfile | None = None,
+    database_path: str | None = None,
+) -> list[int]:
     """시작 월·끝 월. 기본은 사이드바 조회기간 전체이고 그 안에서만 고른다.
 
-    소요대수를 그 기간으로 받기 때문이다.
+    소요대수를 그 기간으로 받기 때문이다. **세션에 값이 없으면** 공용 프로필의 달로 심는다(지금
+    고를 수 있는 달일 때만 — 아니면 위 기본값). 위젯에 `index=` 를 주지 않고 세션에만 적는다(AGENTS
+    9장 — 기본값과 세션 API 를 함께 쓰면 경고). 사용자가 바꾸면 `on_change` 가 프로필에 저장한다.
     """
-    for key, fallback in ((SHORTENING_START_KEY, options[0]), (SHORTENING_END_KEY, options[-1])):
+    stored = profile if profile is not None else ShorteningFilterProfile()
+    for key, saved, fallback in (
+        (SHORTENING_START_KEY, stored.start_month, options[0]),
+        (SHORTENING_END_KEY, stored.end_month, options[-1]),
+    ):
+        if key not in st.session_state:
+            st.session_state[key] = seeded_filter_month(saved, options, fallback)
         # 조회기간이 바뀌어 옛 값이 옵션에 없으면 **새 값을 적는다**(pop 하면 브라우저가 옛 선택을
         # 계속 보인다 — AGENTS 9장).
-        if st.session_state.get(key) not in options:
+        elif st.session_state.get(key) not in options:
             st.session_state[key] = fallback
+    on_change = _save_month_range if database_path is not None else None
+    args = (database_path, tuple(options)) if database_path is not None else None
     start_column, end_column = st.columns(2)
     with start_column:
         start = st.selectbox(
@@ -285,6 +346,8 @@ def _render_month_range(options: list[int]) -> list[int]:
             format_func=month_label,
             key=SHORTENING_START_KEY,
             persist_state="session",
+            on_change=on_change,
+            args=args,
         )
     with end_column:
         end = st.selectbox(
@@ -293,11 +356,91 @@ def _render_month_range(options: list[int]) -> list[int]:
             format_func=month_label,
             key=SHORTENING_END_KEY,
             persist_state="session",
+            on_change=on_change,
+            args=args,
         )
     first, last = sorted((int(start), int(end)))
     if int(start) > int(end):
         st.caption("시작 월이 끝 월보다 늦어 바꿔 읽었습니다.")
     return [month for month in options if first <= month <= last]
+
+
+def _render_process_filter(
+    ordered: list[str],
+    *,
+    profile: ShorteningFilterProfile,
+    labels: ProcessLabels,
+    database_path: str | None,
+) -> list[str]:
+    """공정 다중 선택(표시순서). 선택지는 맞댄 공정이고 라벨은 공정 표시명, 값은 원본이다.
+
+    **세션에 값이 없으면** 공용 프로필의 공정으로 심는다 — 지금 맞댄 공정에 없는 것만 빼고
+    (`prune_list_selection` 의 `default`). 프로필에서는 지우지 않는다. 사용자가 바꾸면
+    `on_change` 가 저장한다(그때도 화면에 없던 저장 공정은 남긴다 — `merge_filter_processes`).
+    """
+    prune_list_selection(SHORTENING_PROCESS_KEY, ordered, default=profile.processes)
+    selected = st.multiselect(
+        "공정 (표시순서)",
+        options=ordered,
+        format_func=labels.format_func(),
+        placeholder="미선택 시 목표 미달 공정 전체",
+        key=SHORTENING_PROCESS_KEY,
+        persist_state="session",
+        on_change=_save_processes if database_path is not None else None,
+        args=(database_path, tuple(ordered)) if database_path is not None else None,
+    )
+    absent = absent_filter_processes(profile.processes, set(ordered))
+    if absent:
+        # 공용 설정이라 다른 시나리오·호기 마스터에는 그 공정이 있다. 말없이 빠지면 왜 덜 골라졌는지
+        # 알 수 없다(HOME 주요공정 프리셋의 「이 화면에 없음」과 같은 까닭).
+        st.caption(
+            "공용 설정의 공정 가운데 지금 맞댄 공정에 없어 고를 수 없는 것: "
+            + ", ".join(labels.label(process) for process in absent)
+            + " — 공용 설정에는 남습니다."
+        )
+    return [str(process) for process in selected]
+
+
+def _save_month_range(database_path: str, options: tuple[int, ...]) -> None:
+    """시작 월·끝 월 상자의 콜백. 고른 기간을 공용 프로필에 남긴다(공정은 그대로).
+
+    선택 위젯이라 저장 버튼을 따로 두지 않는다 — 고르는 것이 곧 결정이다(HOME 비교 대상과 같다).
+    값이 그 상자의 달이 아니면 쓰지 않는다. 같은 기간이면 Repository 가 쓰지 않는다. **저장에
+    실패해도 화면을 멈추지 않는다** — 이번 화면은 세션 값으로 이미 동작하고, 남기지 못한 것은 다음
+    세션의 기본값이 안 바뀌는 정도의 일이다.
+    """
+    start = st.session_state.get(SHORTENING_START_KEY)
+    end = st.session_state.get(SHORTENING_END_KEY)
+    if start not in options or end not in options:
+        return
+    try:
+        wrote = get_equipment_repository(database_path).save_shortening_filter_months(
+            start, end, source=_MONTHS_SOURCE
+        )
+    except BOOTSTRAP_ERRORS:
+        return
+    if wrote:
+        clear_shortening_filter_cache()
+
+
+def _save_processes(database_path: str, visible: tuple[str, ...]) -> None:
+    """공정 선택의 콜백. 고른 공정을 공용 프로필에 남긴다(기간은 그대로).
+
+    선택지에 없는 값이 섞여 오면 쓰지 않는다 — 공정 표시명이 바뀐 직후 브라우저가 옛 라벨을
+    되보내는 경우다(AGENTS 9장 — 선택 상자는 라벨 글자를 주고받는다). 그 값을 그대로 쓰면 사용자가
+    고르지 않은 빠짐이 공용 설정이 된다. 실패해도 화면은 멈추지 않는다(`_save_month_range`).
+    """
+    selected = st.session_state.get(SHORTENING_PROCESS_KEY)
+    if not isinstance(selected, list) or any(str(value) not in visible for value in selected):
+        return
+    try:
+        wrote = get_equipment_repository(database_path).save_shortening_filter_processes(
+            [str(value) for value in selected], visible=visible, source=_PROCESSES_SOURCE
+        )
+    except BOOTSTRAP_ERRORS:
+        return
+    if wrote:
+        clear_shortening_filter_cache()
 
 
 def _render_undated_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | None) -> None:
@@ -340,7 +483,9 @@ def _render_usage_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | N
 def _render_unmatched(plan: ShorteningPlan) -> None:
     """맞대지 못한 공정은 비교하지 않고 이름만 알린다.
 
-    조용히 빠지면 부족이 이유 없이 작아 보인다.
+    조용히 빠지면 부족이 이유 없이 작아 보인다. 이름은 **원본**이다 — 호기 마스터·Cut-off 의
+    이름을 맞추라는 안내라 표시명을 적으면 마스터에 없는 이름을 찾게 된다(AGENTS 8장, 원본 키를
+    확인하는 화면).
     """
     groups = [
         ("시나리오에만 있는 공정", plan.required_only),
@@ -354,7 +499,8 @@ def _render_unmatched(plan: ShorteningPlan) -> None:
     with st.expander(":material/link_off: 맞대지 못한 공정 — " + " · ".join(parts)):
         st.caption(
             "호기 마스터 `공정소분류` 와 시나리오 `공정` 이 같은 이름일 때만 맞댑니다. "
-            "Cut-off 를 적지 않은 공정은 Dynamic 가용을 낼 수 없어 시나리오 쪽에만 남습니다."
+            "Cut-off 를 적지 않은 공정은 Dynamic 가용을 낼 수 없어 시나리오 쪽에만 남습니다. "
+            "아래 이름은 공정 표시명이 아니라 원본 공정명입니다."
         )
         for label, names in (*groups, ("Cut-off 미기재", plan.missing_cutoff)):
             if names:
@@ -698,7 +844,9 @@ def _lob_markup(
     level_plan: LevelPlan,
     scope: Sequence[str],
     thresholds: SecurementThresholds,
+    labels: ProcessLabels,
 ) -> str:
+    """계획 두 줄과 Dynamic B/N 두 줄. B/N 아래 공정 이름은 공정 표시명이다."""
     frame = level_plan.process_months.loc[level_plan.process_months["공정"].isin(list(scope))]
     rows = [_month_header(months)]
     rows.append('<div class="shk-row-muted">Density (억Gb)</div>')
@@ -726,9 +874,10 @@ def _lob_markup(
                 rows.append('<div><span class="shk-muted">—</span></div>')
                 continue
             rate, process = found
+            name = _escape(labels.label(process))
             rows.append(
                 f"<div>{_rate_chip(rate, month, thresholds)}"
-                f'<span class="shk-sub" title="{_escape(process)}">{_escape(process)}</span></div>'
+                f'<span class="shk-sub" title="{name}">{name}</span></div>'
             )
     error = (
         f'<div class="shk-sub">계획 값을 읽지 못했습니다 — {_escape(lob.error)}</div>'
@@ -749,6 +898,7 @@ def _lob_markup(
 
 def _card_markup(
     process: str,
+    display_name: str,
     cutoff_days: int,
     level_plan: LevelPlan,
     months: Sequence[int],
@@ -756,6 +906,9 @@ def _card_markup(
     thresholds: SecurementThresholds,
     today: date,
 ) -> str:
+    """공정 카드 하나. 고르기는 원본 `process` 로, 제목·`aria-label` 은 `display_name`(공정
+    표시명)으로 한다 — 표시명이 원본과 다르면 제목 풍선에 원본을 남긴다(CSV `공정` 칸은 원본이다).
+    """
     frame = level_plan.process_months
     rows = frame.loc[frame["공정"].eq(process) & frame["생산계획년월"].isin(list(months))]
     by_month = {
@@ -777,10 +930,12 @@ def _card_markup(
         )
     table = _card_table(by_month, months, level, thresholds)
     timeline = _units_markup(units, months, today=today, short=worst < 0)
+    name = _escape(display_name)
+    original = f' title="원본 공정명 {_escape(process)}"' if display_name != process else ""
     return (
-        f'<section class="shk-card" aria-label="{_escape(process)}">'
+        f'<section class="shk-card" aria-label="{name}">'
         '<div class="shk-card-head"><div>'
-        f'<span class="shk-card-name">{_escape(process)}</span>'
+        f'<span class="shk-card-name"{original}>{name}</span>'
         f'<span class="shk-card-cutoff">Cut-off {cutoff_days}일</span></div>{badge}</div>'
         f'<div class="shk-card-body shk-scroll">{table}</div>{timeline}</section>'
     )
