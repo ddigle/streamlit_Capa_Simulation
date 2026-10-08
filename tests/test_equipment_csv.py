@@ -430,3 +430,19 @@ def test_exporting_an_empty_table_gives_a_header_only_file_that_reads_back_empty
         lines = payload.decode("utf-8-sig").splitlines()
         assert lines == [",".join(columns)]
         assert back(payload).empty
+
+
+def test_the_master_csv_lists_units_by_process_then_name() -> None:
+    """호기 마스터 CSV 는 `공정소분류` → `설비명` 오름차순이다(2026-10-08 사용자 요청). 글자 속
+    숫자는 수로 견주고(`EQ2` 가 `EQ10` 앞) 대소문자는 가리지 않으며, 빈 공정은 맨 뒤다."""
+    equipment = pd.DataFrame(
+        {
+            "설비명": ["EQ10", "EQ2", "ab-1", "EQ1", "Z9", "EQ3"],
+            "공정소분류": ["Die Attach", "Die Attach", "AWB", "Die Attach", None, "awb"],
+        }
+    )
+
+    text = equipment_csv_bytes(equipment).decode("utf-8-sig")
+    names = [line.split(",")[EQUIPMENT_COLUMNS.index("설비명")] for line in text.splitlines()[1:]]
+
+    assert names == ["ab-1", "EQ3", "EQ1", "EQ2", "EQ10", "Z9"]

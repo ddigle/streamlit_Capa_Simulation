@@ -231,3 +231,54 @@ def test_a_unit_label_is_fitted_by_its_measured_width() -> None:
     assert "font-weight: 600" in _rule(".sle-label")
     # 서체를 받는 중에 잰 값은 기억하지 않는다 — 받기 전 대체 서체의 폭이 굳지 않게.
     assert "document.fonts.status === 'loaded'" in measure
+
+
+def test_dropping_from_the_tray_keeps_the_tray_scroll_position() -> None:
+    """놓은 뒤에도 서랍 스크롤이 보던 자리다(2026-10-08 사용자 요청 — 이어서 놓을 때마다 맨 위로
+    돌아갔다).
+
+    `renderItems` 가 서랍 목록을 비웠다 다시 채우는 동안 목록 높이가 줄어 브라우저가 스크롤을 0 으로
+    잘라 낸다. 비우기 전에 서랍(`.sle-tray`, 스크롤 칸)의 `scrollTop` 을 기억했다 다 채운 뒤
+    되돌린다.
+    """
+    body = JS[JS.index("function renderItems()") : JS.index("function markSelection()")]
+    assert body.index("const trayScroll = trayBox.scrollTop") < body.index(
+        "trayList.replaceChildren()"
+    )
+    assert body.index("trayList.append(") < body.index("trayBox.scrollTop = trayScroll")
+
+
+def test_several_tray_chips_can_be_picked_and_dropped_together() -> None:
+    """Ctrl·Shift(⌘)+누르기로 서랍 칩 여럿을 고르고, 고른 칩 하나를 끌면 모두 한 격자로 함께
+    놓인다.
+
+    배치는 모듈 설비를 한 번에 놓는 격자(`placeFromTray`)를 그대로 쓴다. 고르지 않은 칩을 끌면
+    지금처럼 그 칩만 놓이고, 수식키 없이 누르면 그 칩 하나만 골라진다. 놓은 뒤에는 놓은 것이 모두
+    골라진 채다.
+    """
+    chip = JS[JS.index("function buildChip(") : JS.index("function renderItems()")]
+    assert "const additive = event.shiftKey || event.ctrlKey || event.metaKey" in chip
+    assert "placeManyFromTray(lead, picked, p)" in chip
+    assert "additive ? toggleTrayPick(list) : select(lead.id)" in chip
+    many = JS[JS.index("function placeManyFromTray(") : JS.index("function placeFromTray(")]
+    assert "placeFromTray(lead, list, p," in many
+    place = JS[JS.index("function placeFromTray(") : JS.index("function addMark(")]
+    assert "S.selection = new Set(name ? list.map((m) => m.id) : [lead.id])" in place
+    assert "Ctrl·Shift" in HTML
+
+
+def test_the_tray_lists_units_by_name_and_can_be_searched() -> None:
+    """서랍 칩은 보이는 이름의 오름차순(숫자는 수로)이고, 검색 칸에 이름 일부를 치면 그 호기만
+    남아 바로 끌어 놓을 수 있다(2026-10-08 사용자 요청). 검색은 목록을 다시 만들지 않고 칩만
+    감추며, 가려진 칩은 고른 채여도 함께 놓이지 않는다. 검색어가 있으면 Esc 는 서랍을 접기 전에
+    검색어부터 지운다."""
+    entries = JS[JS.index("function trayEntries(") : JS.index("function trayMatches(")]
+    assert "TRAY_ORDER.compare(chipName(a), chipName(b))" in entries
+    assert "new Intl.Collator('ko', { numeric: true" in JS
+    assert 'class="sle-tray-search"' in HTML and 'type="search"' in HTML
+    assert 'class="sle-tray-empty" hidden' in HTML
+    apply = JS[JS.index("function applyTrayFilter(") : JS.index("function buildChip(")]
+    assert "chip.hidden = !visible" in apply and "trayCount.textContent" in apply
+    picked = JS[JS.index("function pickedTrayEntries(") : JS.index("function toggleTrayPick(")]
+    assert "trayMatches(entry)" in picked
+    assert "traySearch.onkeydown" in JS and "S.trayQuery = ''" in JS

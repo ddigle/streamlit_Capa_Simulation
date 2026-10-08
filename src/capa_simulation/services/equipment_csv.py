@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from io import BytesIO
@@ -166,8 +167,40 @@ DOWNTIME_GUARDED_COLUMNS: tuple[str, ...] = (EQUIPMENT_ID_COLUMN, "비가동유�
 
 
 def equipment_csv_bytes(equipment: pd.DataFrame) -> bytes:
-    """호기 마스터 **현재 데이터** 그대로. 다시 붙여넣으면 통과하는 것이 이 함수의 계약이다."""
-    return _export_csv_bytes(equipment, EQUIPMENT_COLUMNS, EQUIPMENT_GUARDED_COLUMNS)
+    """호기 마스터 **현재 데이터** 그대로. 다시 붙여넣으면 통과하는 것이 이 함수의 계약이다.
+
+    행은 `공정소분류` → `설비명` 오름차순이다(2026-10-08 사용자 요청). 글자 속 숫자는 수로 견준다 —
+    `EQ2` 가 `EQ10` 앞이다. 빈 값은 뒤로 간다. 붙여넣기는 설비명으로 맞추므로 차례는 읽는 쪽과
+    무관하다.
+    """
+    return _export_csv_bytes(
+        _sorted_equipment(equipment), EQUIPMENT_COLUMNS, EQUIPMENT_GUARDED_COLUMNS
+    )
+
+
+_DIGIT_RUN = re.compile(r"(\d+)")
+
+
+def _natural_key(value: object) -> tuple[bool, tuple[int | str, ...]]:
+    """사람이 읽는 오름차순 키 — 빈 값은 뒤, 글자는 대소문자 무시, 숫자 덩어리는 수로."""
+    text = "" if value is None or (isinstance(value, float) and np.isnan(value)) else str(value)
+    text = text.strip().casefold()
+    if text in {"", "nan", "<na>", "none", "nat"}:
+        return (True, ())
+    parts = tuple(int(part) if part.isdigit() else part for part in _DIGIT_RUN.split(text))
+    return (False, parts)
+
+
+def _sorted_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
+    """`공정소분류` → `설비명` 오름차순. 둘 중 없는 컬럼은 건너뛴다(같은 값끼리는 원래 차례)."""
+    keys = [column for column in ("공정소분류", EQUIPMENT_ID_COLUMN) if column in equipment.columns]
+    if not keys or len(equipment) < 2:
+        return equipment
+    columns = [equipment[column].tolist() for column in keys]
+    order = sorted(
+        range(len(equipment)), key=lambda row: tuple(_natural_key(c[row]) for c in columns)
+    )
+    return equipment.iloc[order]
 
 
 def baseline_csv_bytes(baseline: pd.DataFrame) -> bytes:

@@ -116,6 +116,7 @@
             <div class="sle-tray-title">미배치 호기 <span class="sle-tray-count"></span></div>
             <button type="button" class="sle-drawer-close" title="서랍 접기 (Esc)">접기</button>
           </div>
+          <input class="sle-tray-search" type="search" placeholder="호기 검색" aria-label="미배치 호기 검색" autocomplete="off" spellcheck="false">
           <div class="sle-addunit">
             <button type="button" class="sle-addunit-toggle" aria-expanded="false">+ 호기 추가</button>
             <form class="sle-addunit-form" hidden>
@@ -139,11 +140,12 @@
             </form>
           </div>
           <div class="sle-tray-list"></div>
+          <p class="sle-tray-empty" hidden>찾는 호기가 없습니다.</p>
           <div class="sle-leaving" hidden>
             <div class="sle-tray-title">다른 층으로 보냄</div>
             <div class="sle-leaving-list"></div>
           </div>
-          <p class="sle-tray-hint">끌어서 도면에 놓으면 그 자리에 배치됩니다. 서랍은 열린 채라 이어서 놓을 수 있고, 놓은 호기가 서랍 아래면 도면이 옆으로 비킵니다(접으면 제자리). 누르기만 하면 골라져 다른 층으로 보낼 수 있습니다. <b>층 미정</b> 호기는 모든 층 트레이에 보입니다.</p>
+          <p class="sle-tray-hint">이름 오름차순이고, 위 검색 칸에 이름 일부를 치면 그 호기만 남아 바로 끌 수 있습니다. 끌어서 도면에 놓으면 그 자리에 배치됩니다. 서랍은 열린 채라 이어서 놓을 수 있고, 놓은 호기가 서랍 아래면 도면이 옆으로 비킵니다(접으면 제자리). 누르기만 하면 골라져 다른 층으로 보낼 수 있습니다. <b>Ctrl·Shift</b> 를 누른 채 누르면 여러 대를 고르고, 고른 것 하나를 끌면 모두 함께 놓입니다. <b>층 미정</b> 호기는 모든 층 트레이에 보입니다.</p>
         </aside>
       </div>
     </div>

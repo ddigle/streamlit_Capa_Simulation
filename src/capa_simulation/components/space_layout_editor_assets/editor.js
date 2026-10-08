@@ -99,6 +99,8 @@ export default function (component) {
   const trayBox = q('.sle-tray')
   const trayList = q('.sle-tray-list')
   const trayCount = q('.sle-tray-count')
+  const traySearch = q('.sle-tray-search')
+  const trayEmpty = q('.sle-tray-empty')
   const leavingBox = q('.sle-leaving')
   const leavingList = q('.sle-leaving-list')
   const statusBox = q('.sle-status')
@@ -664,6 +666,10 @@ export default function (component) {
   }
 
   // 트레이 칩. 묶음은 칩 하나다(대표 = 처음 만난 모듈).
+  // 서랍 칩은 보이는 이름의 오름차순이다(2026-10-08 사용자 요청). 숫자는 수로 견준다 — `EQ2` 가 `EQ10` 앞.
+  const TRAY_ORDER = new Intl.Collator('ko', { numeric: true, sensitivity: 'base' })
+  const chipName = (entry) => String(entry.lead.group || entry.lead.label || '')
+
   function trayEntries(keep) {
     const seen = new Set()
     const out = []
@@ -673,7 +679,32 @@ export default function (component) {
       for (const m of list) seen.add(m.id)
       out.push({ lead: item, list })
     }
-    return out
+    return out.sort((a, b) => TRAY_ORDER.compare(chipName(a), chipName(b)))
+  }
+
+  // 서랍 검색 — 찾는 호기만 남겨 바로 끌어 놓게 한다(2026-10-08 사용자 요청). 묶음 이름·호기 이름 어느 쪽에
+  // 들어 있어도 맞고 대소문자는 가리지 않는다. 검색어는 같은 편집기의 다음 실행에도 이어진다(S 에 둔다).
+  function trayMatches(entry) {
+    const query = String(S.trayQuery || '').trim().toLowerCase()
+    if (!query) return true
+    const names = [entry.lead.group, entry.lead.label, ...entry.list.map((m) => m.label)]
+    return names.some((name) => String(name || '').toLowerCase().includes(query))
+  }
+
+  // 그려 둔 칩에 검색을 건다 — 목록을 다시 만들지 않고 칩만 감춘다. 수는 「보이는/전체」로 적는다.
+  function applyTrayFilter() {
+    let total = 0
+    let shown = 0
+    for (const chip of trayList.children) {
+      const units = chip.__entry ? chip.__entry.list.length : 0
+      const visible = !chip.__entry || trayMatches(chip.__entry)
+      chip.hidden = !visible
+      total += units
+      if (visible) shown += units
+    }
+    const searching = Boolean(String(S.trayQuery || '').trim())
+    trayCount.textContent = searching ? `${shown}/${total}대` : `${total}대`
+    trayEmpty.hidden = !(searching && total > 0 && shown === 0)
   }
 
   function buildChip({ lead, list }, leaving) {
@@ -681,6 +712,7 @@ export default function (component) {
     chip.className = 'sle-chip'
     chip.dataset.id = lead.id
     chip.__ids = list.map((m) => m.id)
+    chip.__entry = { lead, list }
     const swatch = document.createElement('span')
     swatch.className = 'sle-chip-swatch'
     swatch.style.background = color(lead)
@@ -708,12 +740,19 @@ export default function (component) {
       return chip
     }
     chip.title = lead.group ? `${list.map((m) => m.label).join(', ')} — 함께 놓입니다` : lead.label
-    chip.onpointerdown = (event) => ghostDrag(
-      event,
-      lead.group ? `${lead.group} (모듈 ${list.length})` : lead.label,
-      (p) => placeFromTray(lead, list, p),
-      () => select(lead.id),
-    )
+    chip.onpointerdown = (event) => {
+      // Ctrl·Shift(⌘)를 누른 채 누르면 서랍 안에서 여러 대를 고른다. 고른 칩 하나를 끌면 고른 것이 모두 함께 놓인다.
+      const additive = event.shiftKey || event.ctrlKey || event.metaKey
+      const picked = pickedTrayEntries()
+      const together = picked.length > 1 && picked.some((entry) => entry.lead.id === lead.id)
+      const units = together ? picked.reduce((n, entry) => n + entry.list.length, 0) : 0
+      ghostDrag(
+        event,
+        together ? `${picked.length}개 함께 (${units}대)` : lead.group ? `${lead.group} (모듈 ${list.length})` : lead.label,
+        (p) => (together ? placeManyFromTray(lead, picked, p) : placeFromTray(lead, list, p)),
+        () => (additive ? toggleTrayPick(list) : select(lead.id)),
+      )
+    }
     if (lead.created) {
       // 편집기에서 방금 넣은 호기는 적용 전이라 여기서 바로 뺄 수 있다.
       const remove = document.createElement('button')
@@ -729,6 +768,9 @@ export default function (component) {
   }
 
   function renderItems() {
+    // 서랍 목록을 비웠다 다시 채우는 동안 목록 높이가 줄어 브라우저가 서랍 스크롤을 맨 위로 잘라 낸다. 놓은 뒤에도
+    // 보던 자리에서 이어 놓게 그 자리를 기억했다 되돌린다(2026-10-08 사용자 요청).
+    const trayScroll = trayBox.scrollTop
     layer.replaceChildren()
     zonesLayer.replaceChildren()
     marksLayer.replaceChildren()
@@ -752,8 +794,9 @@ export default function (component) {
       leavingList.append(buildChip(entry, true))
     }
     leavingBox.hidden = leaving.length === 0
-    trayCount.textContent = `${trayN}대`
+    applyTrayFilter()
     drawerCount.textContent = leavingN ? `${trayN} · 보냄 ${leavingN}` : String(trayN)
+    trayBox.scrollTop = trayScroll
     markSelection()
     markOverlaps()
   }
@@ -1231,7 +1274,29 @@ export default function (component) {
     source.onlostpointercapture = (e) => { if (source.onpointerup) finish(e, false) }
   }
 
-  function placeFromTray(lead, list, p) {
+  // 서랍에서 고른 칩들(미배치 호기 묶음 가운데 하나라도 골라진 것). 서랍 차례 그대로다.
+  function pickedTrayEntries() {
+    // 검색으로 가려진 칩은 고른 채여도 함께 놓지 않는다 — 보이는 것만 끌려간다.
+    return trayEntries((m) => !m.placed && !m.moveTo)
+      .filter((entry) => trayMatches(entry) && entry.list.some((m) => S.selection.has(m.id)))
+  }
+
+  // 서랍 칩을 더하거나 뺀다. 도면 위 호기는 함께 고르지 않는다 — 서랍에서 고른 것만 함께 끌어 놓는다.
+  function toggleTrayPick(list) {
+    const tray = new Set(trayEntries((m) => !m.placed && !m.moveTo).flatMap((entry) => entry.list.map((m) => m.id)))
+    const ids = new Set([...S.selection].filter((id) => tray.has(id)))
+    const on = list.every((m) => ids.has(m.id))
+    for (const m of list) on ? ids.delete(m.id) : ids.add(m.id)
+    setSelection([...ids], on ? null : list[0].id)
+  }
+
+  // 고른 칩 여럿을 한 번에 놓는다 — 모두 한 격자로 붙여(`placeFromTray` 와 같은 배치) 놓은 자리가 가운데다.
+  function placeManyFromTray(lead, picked, p) {
+    const list = picked.flatMap((entry) => entry.list)
+    placeFromTray(lead, list, p, `${picked.length}개(${list.length}대)`)
+  }
+
+  function placeFromTray(lead, list, p, name) {
     // 크기는 실제 설비 치수라 영역에 맞춰 자르지 않는다. 없을 때만 추정 크기(같은 공정의 가운데 크기)를 쓰고
     // 그 사실을 기억한다 — 다시 트레이로 빼면 추정 크기를 버려 「크기 없음」으로 돌아간다.
     const sizes = list.map((m) => ({
@@ -1245,7 +1310,7 @@ export default function (component) {
     const cellW = Math.max(...sizes.map((size) => size.w))
     const cellH = Math.max(...sizes.map((size) => size.h))
     if (cols * cellW > W() || rows * cellH > H()) {
-      S.note = `${lead.group || lead.label} (${roundTo(cols * cellW)}×${roundTo(rows * cellH)}) 가 편집 영역 ${W()}×${H()} 보다 커서 놓지 않았습니다 — 영역을 넓힌 뒤 놓으세요`
+      S.note = `${name || lead.group || lead.label} (${roundTo(cols * cellW)}×${roundTo(rows * cellH)}) 가 편집 영역 ${W()}×${H()} 보다 커서 놓지 않았습니다 — 영역을 넓힌 뒤 놓으세요`
       updateStatus()
       return
     }
@@ -1270,7 +1335,8 @@ export default function (component) {
       fit(m)
     }
     commit(entries)
-    S.selection = new Set([lead.id])
+    // 여럿을 함께 놓았으면 놓은 것을 모두 고른 채로 둔다 — 그대로 끌어 자리를 옮길 수 있다.
+    S.selection = new Set(name ? list.map((m) => m.id) : [lead.id])
     S.selected = lead.id
     renderItems()
     updateStatus()
@@ -2008,6 +2074,21 @@ export default function (component) {
     event.stopPropagation()
     setDrawer(false)
     drawerTab.focus({ preventScroll: true })
+  }
+  traySearch.value = S.trayQuery || ''
+  traySearch.oninput = () => {
+    S.trayQuery = traySearch.value
+    applyTrayFilter()
+    trayBox.scrollTop = 0
+  }
+  // 검색어가 있으면 Esc 는 서랍을 접기 전에 검색어부터 지운다.
+  traySearch.onkeydown = (event) => {
+    if (event.key !== 'Escape' || !traySearch.value) return
+    event.preventDefault()
+    event.stopPropagation()
+    traySearch.value = ''
+    S.trayQuery = ''
+    applyTrayFilter()
   }
   setDrawer(S.drawerOpen)
 

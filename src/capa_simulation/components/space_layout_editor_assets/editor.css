@@ -159,6 +159,11 @@
 .sle-tray-title { font-weight: 700; font-size: 0.85rem; margin-bottom: 6px; }
 .sle-tray-count { color: var(--sle-muted); font-weight: 400; }
 .sle-tray-list { display: flex; flex-direction: column; gap: 4px; }
+.sle input.sle-tray-search { width: 100%; box-sizing: border-box; margin: 0 0 6px; padding: 4px 8px; font-size: 0.8rem; border: 1px solid var(--sle-border); border-radius: 6px; background: var(--sle-surface); color: var(--sle-text); }
+.sle input.sle-tray-search:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 1px; }
+.sle-chip[hidden] { display: none; }
+.sle-tray-empty { font-size: 0.75rem; color: var(--sle-muted); margin: 4px 0; }
+.sle-tray-empty[hidden] { display: none; }
 .sle-chip {
   display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px;
   border: 1px solid var(--sle-border); cursor: grab; font-size: 0.8rem; touch-action: none; user-select: none;
