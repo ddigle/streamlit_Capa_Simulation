@@ -28,14 +28,18 @@ import pytest
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.bigdataquery_catalog import CATALOG_COLUMNS
 from capa_simulation.io.company_bigdataquery_adapter import BDQ_USER_NAME_ENV
+from capa_simulation.io.core_data_source import load_core_data_contract
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.core_data_derivation import build_q_core_data
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
 )
+from capa_simulation.services.legacy_comparison import COMPARISONS
+from capa_simulation.services.required_equipment import REQB_COLUMNS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -202,6 +206,12 @@ def test_db_checks_print_aggregates_and_never_the_planted_names(
     # 소요대수는 원천에 값이 차면 대조까지 간다.
     assert "신규 경로 키 72 중 원천 경로에 있는 키 72 (100.00%)" in output
     assert "| 경로 키 13 · 같은 경로 반복을 접음 | 72 |" in output
+    # 기존 값이 표지값 하나라 60 배 무리가 없다 — 가르기는 한 줄로 끝난다.
+    assert "- ≈60 배 가르기 — 비율이 정의된 경로 키 72 가운데 ≈60 이 없어 건너뛴다" in output
+    # Chip 부하량은 정식 대조 표의 한 줄이다. 답이 난 탐색 비율(GOOD_DIE 등)은 더 찍지 않는다.
+    assert "| Chip `Plan_Chip(K개)` | 24 |" in output
+    assert "GOOD_DIE` ÷" not in output
+    assert "Plan_Chip(K개) · GOOD_DIE" not in output
     assert "계획 줄×WF 구분" in output  # PCB 절
     # 설비 — 잘린 환산비·옛 자리표·일정 미정.
     assert "| **모듈 행 환산비 0.2** — 다시 입력할 행 | 4 |" in output
@@ -261,6 +271,111 @@ def test_an_unknown_demand_basis_is_counted_not_named(
     assert code == 0
     _assert_no_leak(output)
     assert "- 그 밖의 소요기준 1종 1행 1공정(값은 적지 않는다)" in output
+
+
+def _plant_sixty_fold(path: Path) -> tuple[int, int, int]:
+    """원천 `소요대수` 를 신규 × 60(MI 공정 전부 · WF 공정의 202607 이후) 또는 × 1 로 다시 싣는다.
+
+    표지값도 더 심는다 — 계약 밖 `WF 구분`(내장 시드의 `Base`)과 원천에만 있는 `메이커`·`모델명`.
+    돌려주는 것은 (≈60 키, MI 키, WF 공정의 ≈1 키).
+    """
+    with duckdb.connect(str(path)) as connection:
+        tables = connection.execute(
+            "SELECT table_schema, table_name FROM information_schema.columns "
+            "WHERE column_name = 'WF 구분' AND table_schema IN ('raw_data', 'rev_data', 'ref_data')"
+        ).fetchall()
+        for schema, table in tables:
+            connection.execute(
+                f'UPDATE {schema}.{table} SET "WF 구분" = ? WHERE "WF 구분" = ?',
+                [f"{SENTINEL}WF", "Base"],
+            )
+        connection.execute(
+            'UPDATE raw_data.core_data SET "메이커" = ?, "모델명" = ?',
+            [f"{SENTINEL}MAKER", f"{SENTINEL}MODEL"],
+        )
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation, _, _ = checks._open_read_only(path)
+    source = checks.load_source(session)
+    session.close()
+    assert source is not None
+    core = build_q_core_data(source.raw, load_core_data_contract())
+    required = checks._required_equipment(source.tables)
+
+    def keyed(frame: pd.DataFrame) -> pd.DataFrame:
+        keys = pd.DataFrame(
+            {key: frame[key].astype("string").str.strip() for key in REQB_COLUMNS},
+            index=frame.index,
+        )
+        keys["생산계획년월"] = pd.to_numeric(frame["생산계획년월"]).astype("Int64").astype("string")
+        return keys
+
+    route = keyed(core.loc[core["Area_Name"].notna()])
+    route["_행"] = route.index
+    fresh = keyed(required).assign(신규=required["소요대수"].to_numpy())
+    merged = route.merge(fresh, on=REQB_COLUMNS, how="inner")
+    sixty = merged["Area_Name"].eq("MI") | (
+        merged["소요기준"].eq("WF") & merged["생산계획년월"].ge("202607")
+    )
+    merged["기존"] = merged["신규"] * sixty.map({True: 60.0, False: 1.0})
+    with duckdb.connect(str(path)) as connection:
+        row_numbers = [
+            int(row[0])
+            for row in connection.execute(
+                "SELECT source_row_no FROM raw_data.core_data ORDER BY source_row_no"
+            ).fetchall()
+        ]
+        connection.execute('UPDATE raw_data.core_data SET "소요대수" = NULL')
+        connection.executemany(
+            'UPDATE raw_data.core_data SET "소요대수" = ? WHERE source_row_no = ?',
+            [
+                [float(value), row_numbers[int(index)]]
+                for index, value in zip(merged["_행"], merged["기존"], strict=True)
+            ],
+        )
+    wf_agree = int((merged["소요기준"].eq("WF") & ~sixty).sum())
+    return int(sixty.sum()), int(merged["Area_Name"].eq("MI").sum()), wf_agree
+
+
+def test_the_sixty_fold_group_is_localized_by_counts_only(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """일부러 만든 ×60 무리(MI 공정 전부 · WF 공정의 뒤 여섯 달)를 가르기가 찾는다. 값은 안 샌다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    suspects, mi_keys, wf_agree = _plant_sixty_fold(path)
+    total = 72
+    assert 0 < wf_agree < suspects < total
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "Base" not in output
+    assert "**소요대수 ≈60 배 가르기**" in output
+    assert (
+        f"- 비율이 정의된 경로 키 {total} — ≈60 {suspects}(그 가운데 60 ±0.1% 안 {suspects}) · "
+        f"≈1 {total - suspects} · 그 밖 0 · 비율이 정의되지 않은 키 0"
+    ) in output
+    # 속성 — MI 경로는 전부 ≈60 이다. 계약 밖 WF 구분은 이름 없이 종류 수만.
+    assert f"| MI 경로 | {mi_keys} | 0 | 0 |" in output
+    assert "| WF 구분 CORE |" in output
+    assert "| WF 구분 그 밖(1종) |" in output
+    # 공정 — WF 공정 하나가 섞였고, 달이 그것을 가른다. 설비 칸은 값이 하나라 못 가른다.
+    assert "**≈60 과 ≈1 이 섞임 1**" in output
+    assert "| `생산계획년월` | 1 | 0 | 0 |" in output
+    assert "| `제품정보` | 0 | 1 | 0 |" in output
+    assert "| `메이커` | 0 | 1 | 0 |" in output
+    # 인자 — ST(MI)·RUN_DAY(달×공정)는 ≈1 을 건드리지 않고 고치고, 공정 단위 모듈수는 WF 공정의
+    # ≈1 키를 같이 어긋나게 한다.
+    assert re.search(rf"\| ST \| MI \| {mi_keys} / 0 \|.*\| {mi_keys} / {mi_keys} \| 0 \|", output)
+    assert re.search(rf"\| RUN_DAY \| 전부 \|.*\| {suspects} / {suspects} \| 0 \|", output)
+    assert re.search(rf"\| 모듈수 \| 전부 \|.*\| {mi_keys} / {suspects} \| {wf_agree} \|", output)
+    # 원천 범주 칸 — 표지값 모델명 하나를 두 무리가 같이 쓴다(값은 적지 않는다).
+    assert "| `모델명` | 1 / 1 / 0 | 1 | 0 (0키) | 0 | - |" in output
+
+
+def test_every_formal_comparison_has_a_new_calculation() -> None:
+    assert {metric.legacy_column for metric in COMPARISONS} == set(checks.LOAD_BUILDERS)
 
 
 def test_a_newer_clone_dataset_is_not_taken_for_the_source(

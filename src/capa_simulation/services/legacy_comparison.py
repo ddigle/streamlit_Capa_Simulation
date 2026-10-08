@@ -19,18 +19,20 @@
 `값 불일치` 로 세어 밖으로 내보낸다 — 실데이터에서는 경로마다 다른 값이 실려 오는 것이
 정상일 수 있고, 그러면 이 대조 자체를 다시 설계해야 한다는 신호다.
 
-**대조 대상은 지금 두 개뿐이다.**
+**정식 대조(`COMPARISONS`)는 셋이다.**
 
-| 기존 컬럼 | 신규 계산 | 단위 |
-|---|---|---|
-| `WF수(매)` | `calculate_wafer_load` 의 물량 | 매 |
-| `EQ(억Gb)` | `calculate_density_load` 의 물량 | 억Gb |
+| 기존 컬럼 | 신규 계산 | 단위 | 대조 키 |
+|---|---|---|---|
+| `WF수(매)` | `calculate_wafer_load` 의 물량 | 매 | `COMPARISON_KEYS` |
+| `EQ(억Gb)` | `calculate_density_load` 의 물량 | 억Gb | `COMPARISON_KEYS` |
+| `Plan_Chip(K개)` | `calculate_chip_load` 의 물량 | K개 | 계획 줄(Pack Code 합산) × WF 구분 |
 
-`소요대수`·`PCB수(K매)`·`Plan_Chip(K개)`·`GOOD_DIE` 를 넣지 않은 것은 **업무 사실이 아니라
-지금 손에 있는 합성 샘플의 사정** 때문이다. 로컬 샘플은 `scripts/generate_sample_core_data.py`
-가 만든 것이라 `소요대수` 를 아예 채우지 않는다. 실데이터에는 값이 있을 수 있으므로
-`scripts/compare_legacy_results.py` 가 매 실행마다 후보 컬럼의 채움 상태를 찍어, 쓸 수 있게
-되면 사람이 아니라 실행 결과가 알려 주게 해 두었다.
+`Plan_Chip(K개)` 는 사내 실데이터(리뷰 202610071831 8-2)에서 신규 Chip 부하량과 계획 줄 단위로
+1,264키 중 1,248키가 ≈1 이라 같은 정의로 보고 넣었다(2026-10-08 사용자 결정). `GOOD_DIE` 는
+부하량이 아니라 웨이퍼당 양품 다이 쪽 속성이라 넣지 않는다. `PCB수(K매)` 는 신규 산식이 없다.
+`소요대수` 는 값이 경로 행마다 달라 대조 단위가 다르다 — 사내 확인 스크립트가 경로 키로 따로
+대조하고, 기존÷신규가 ≈60 인 무리를 가르는 집계(아래 「소요대수 ≈60 배 가르기」)도 거기서 쓴다.
+로컬 합성 샘플은 `소요대수` 를 채우지 않는다(`scripts/generate_sample_core_data.py`).
 
 사내 실데이터에서는 키별 값을 밖으로 낼 수 없다. 그래서 대조 결과를 **분포로만** 접는
 `difference_distribution`(차이율)·`ratio_distribution`(기존 ÷ 신규) 를 둔다 —
@@ -48,7 +50,20 @@ import numpy as np
 import pandas as pd
 
 from capa_simulation.io.core_data_source import CoreDataContract, load_core_data_contract
-from capa_simulation.services.frame_contracts import require_columns
+from capa_simulation.services.frame_contracts import (
+    match_key,
+    normalize_demand_basis,
+    require_columns,
+)
+from capa_simulation.services.load_calculator import CHIP_KEYS, YIELD_KEYS
+from capa_simulation.services.required_equipment import LOAD_KEYS, REQB_COLUMNS
+from capa_simulation.services.unit_capacity import (
+    MODULE_KEYS,
+    PERFORMANCE_KEYS,
+    RUN_DAY_KEYS,
+    RUN_RATE_KEYS,
+    VITAL_KEYS,
+)
 
 # 원천 행과 신규 계산 행을 잇는 키. 둘 다 이 조합을 갖고 있다.
 COMPARISON_KEYS: list[str] = ["생산계획년월", "제품정보", "Stack", "WF 구분"]
@@ -69,16 +84,22 @@ DEFAULT_TOLERANCE = 0.005
 
 @dataclass(frozen=True)
 class LegacyMetric:
-    """대조할 지표 하나. 기존 컬럼과 신규 계산 결과를 같은 단위로 맞춰 둔다."""
+    """대조할 지표 하나. 기존 컬럼과 신규 계산 결과를 같은 단위로 맞춰 둔다.
+
+    `plan_line` 이 참이면 대조 키가 `COMPARISON_KEYS` 가 아니라 **계획 줄(Pack Code 합산) ×
+    WF 구분**(`plan_line_keys`)이다. 계획 줄마다 맞대므로 월×제품×Stack 합계보다 엄격하다.
+    """
 
     label: str
     legacy_column: str
     new_column: str = "물량"
+    plan_line: bool = False
 
 
 COMPARISONS: tuple[LegacyMetric, ...] = (
     LegacyMetric(label="Wafer 부하량 (매)", legacy_column="WF수(매)"),
     LegacyMetric(label="Density (억Gb)", legacy_column="EQ(억Gb)"),
+    LegacyMetric(label="Chip 부하량 (K개)", legacy_column="Plan_Chip(K개)", plan_line=True),
 )
 
 
@@ -91,13 +112,23 @@ def legacy_grain(contract: CoreDataContract) -> list[str]:
     return [*contract.derived_keys["RQ_PKG_PLAN"], "WF 구분"]
 
 
+def plan_line_keys(contract: CoreDataContract) -> list[str]:
+    """계획 줄(Pack Code 합산) × WF 구분. 부하량 계산 결과에는 `Pack Code` 가 없다 — 합산된다."""
+    return [key for key in legacy_grain(contract) if key != "Pack Code"]
+
+
+def metric_keys(metric: LegacyMetric, contract: CoreDataContract) -> list[str]:
+    """그 지표의 대조 키."""
+    return plan_line_keys(contract) if metric.plan_line else list(COMPARISON_KEYS)
+
+
 def compare_metric(
     core: pd.DataFrame,
     calculated: pd.DataFrame,
     metric: LegacyMetric,
     contract: CoreDataContract | None = None,
     *,
-    keys: Sequence[str] = tuple(COMPARISON_KEYS),
+    keys: Sequence[str] | None = None,
     grain: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """기존 컬럼과 신규 계산을 대조 키 단위 합계로 맞춰 본다.
@@ -108,12 +139,12 @@ def compare_metric(
     한쪽에만 있는 키도 결과에 남긴다. 빠진 쪽은 0 이 아니라 결측으로 두어 "값이 0" 과
     "그 키가 없음" 을 구분한다.
 
-    `keys` 는 양쪽을 잇는 대조 키, `grain` 은 기존 값이 한 번만 기록되는 단위다(기본은
-    `legacy_grain`). 기존 쪽은 `grain` 안의 반복을 접은 뒤 `keys` 로 더하므로 `keys` 는
-    `grain` 안에 있어야 한다. 결과의 앞 칸은 `keys` 차례 그대로다.
+    `keys` 는 양쪽을 잇는 대조 키(비우면 지표의 `metric_keys`), `grain` 은 기존 값이 한 번만
+    기록되는 단위다(기본은 `legacy_grain`). 기존 쪽은 `grain` 안의 반복을 접은 뒤 `keys` 로
+    더하므로 `keys` 는 `grain` 안에 있어야 한다. 결과의 앞 칸은 `keys` 차례 그대로다.
     """
     selected = contract or load_core_data_contract()
-    key_list = list(dict.fromkeys(keys))
+    key_list = list(dict.fromkeys(keys if keys is not None else metric_keys(metric, selected)))
     grain_list = list(dict.fromkeys(grain if grain is not None else legacy_grain(selected)))
     outside = [key for key in key_list if key not in grain_list]
     if outside:
@@ -346,3 +377,473 @@ def _normalized(frame: pd.DataFrame, keys: list[str], value_column: str) -> pd.D
     )
     prepared[value_column] = pd.to_numeric(prepared[value_column], errors="coerce")
     return prepared.dropna(subset=[value_column])
+
+
+# ---------------------------------------------------------------- 소요대수 ≈60 배 가르기
+#
+# 사내 실데이터(리뷰 202610071831·202610080745 8-2)에서 경로 키 27,568개 가운데 약 절반이 기존 =
+# 신규 × 60 이었고 WF 소요기준에 몰렸다. 분↔시간 같은 단위 어긋남으로 보이지만 **어느 쪽이 틀렸는지
+# 모른다.** 아래 함수들은 그 무리가 어디서 나는지를 값 없이 개수로 가른다(2026-10-08 사용자 결정).
+# 세 무리 — 기존 ÷ 신규가 ≈60, ≈1(각 ±`NEAR_TOLERANCE`), 그 밖 — 로 나누고 무리마다 속성·공정·산식
+# 인자를 견준다. 입력은 `compare_metric(keys=REQB_COLUMNS)` 결과(경로 키 13)다.
+
+SUSPECT_RATIO = 60.0
+SUSPECT_GROUP = "≈60"
+AGREE_GROUP = "≈1"
+OTHER_GROUP = "그 밖"
+RATIO_GROUPS: tuple[str, ...] = (SUSPECT_GROUP, AGREE_GROUP, OTHER_GROUP)
+GROUP_COLUMN = "무리"
+RATIO_COLUMN = "기존÷신규"
+# 단위 상수가 원인이면 비율이 60 에 딱 붙는다. ±5% 안이지만 퍼져 있으면 다른 원인이다.
+TIGHT_TOLERANCE = 0.001
+# 키 하나에 원천 경로 행의 값이 여럿이면 이 표지로 묶는다(값은 찍지 않는다).
+MANY_VALUES = "<여럿>"
+# 신규 계산 결과(`calculate_required_equipment`)에서 읽는 인자의 표 이름.
+RESULT_TABLE = "신규 계산"
+
+
+@dataclass(frozen=True)
+class RatioGroups:
+    """비율이 정의된 대조 키(두 값이 모두 양수)에 `무리`·`기존÷신규` 칸을 단 것."""
+
+    frame: pd.DataFrame
+    undefined: int
+    tight: int
+
+    def size(self, group: str) -> int:
+        return int(self.frame[GROUP_COLUMN].eq(group).sum())
+
+
+def ratio_groups(comparison: pd.DataFrame, *, tolerance: float = NEAR_TOLERANCE) -> RatioGroups:
+    """`compare_metric` 결과를 세 무리로 나눈다. `undefined` 는 비율이 없는 대조 건수다.
+
+    대상은 `ratio_distribution` 과 같은 키라 두 표의 수가 맞아떨어진다.
+    """
+    matched = _matched_rows(comparison)
+    legacy = pd.to_numeric(matched["기존값"], errors="coerce").astype("float64")
+    fresh = pd.to_numeric(matched["신규값"], errors="coerce").astype("float64")
+    usable = legacy.gt(0) & fresh.gt(0)
+    frame = matched.loc[usable].copy()
+    ratio = (legacy.loc[usable] / fresh.loc[usable]).astype("float64")
+    frame[RATIO_COLUMN] = ratio
+    frame[GROUP_COLUMN] = OTHER_GROUP
+    frame.loc[_near(ratio, 1.0, tolerance), GROUP_COLUMN] = AGREE_GROUP
+    frame.loc[_near(ratio, SUSPECT_RATIO, tolerance), GROUP_COLUMN] = SUSPECT_GROUP
+    return RatioGroups(
+        frame=frame.reset_index(drop=True),
+        undefined=int(len(matched) - int(usable.sum())),
+        tight=int(_near(ratio, SUSPECT_RATIO, TIGHT_TOLERANCE).sum()),
+    )
+
+
+@dataclass(frozen=True)
+class ProcessConsistency:
+    """공정마다 그 키들이 어느 무리에 드는가. 다섯 칸의 합이 `processes` 다."""
+
+    processes: int
+    all_suspect: int
+    all_agree: int
+    all_other: int
+    mixed: int  # ≈60 과 ≈1 이 함께 있다(그 밖이 끼어도)
+    partly_other: int  # ≈60·≈1 가운데 하나와 그 밖
+
+
+def process_consistency(frame: pd.DataFrame, process: str = "공정") -> ProcessConsistency:
+    present = (
+        pd.crosstab(_match_column(frame, process), frame[GROUP_COLUMN])
+        .reindex(columns=list(RATIO_GROUPS), fill_value=0)
+        .gt(0)
+    )
+    suspect = present[SUSPECT_GROUP]
+    agree = present[AGREE_GROUP]
+    other = present[OTHER_GROUP]
+    return ProcessConsistency(
+        processes=int(len(present)),
+        all_suspect=int((suspect & ~agree & ~other).sum()),
+        all_agree=int((agree & ~suspect & ~other).sum()),
+        all_other=int((other & ~suspect & ~agree).sum()),
+        mixed=int((suspect & agree).sum()),
+        partly_other=int((other & (suspect ^ agree)).sum()),
+    )
+
+
+@dataclass(frozen=True)
+class SplitCount:
+    """≈60 과 ≈1 이 섞인 공정 가운데 그 속성이 둘을 가르는 공정 수.
+
+    `splits` — 공정 안에서 속성 값마다 무리가 하나뿐이다. `trivial` — 그렇지만 값이 키마다 달라
+    저절로 갈린 것이라 증거가 못 된다. `fails` — 한 값 안에 두 무리가 섞여 있다.
+    """
+
+    attribute: str
+    splits: int
+    fails: int
+    trivial: int
+
+
+def split_mixed_processes(
+    frame: pd.DataFrame, attributes: Sequence[str], process: str = "공정"
+) -> tuple[SplitCount, ...]:
+    """≈60 과 ≈1 이 함께 있는 공정만 골라, 속성마다 두 무리를 가르는지 센다(그 밖 키는 뺀다)."""
+    pair = frame.loc[frame[GROUP_COLUMN].isin((SUSPECT_GROUP, AGREE_GROUP))]
+    owner = _match_column(pair, process)
+    kinds = pair[GROUP_COLUMN].groupby(owner).nunique()
+    mixed = pair.loc[owner.isin(set(kinds.index[kinds.gt(1)]))]
+    results: list[SplitCount] = []
+    for attribute in attributes:
+        if attribute not in mixed.columns:
+            continue
+        cells = pd.DataFrame(
+            {
+                "공정": _match_column(mixed, process),
+                "값": _match_column(mixed, attribute),
+                "무리": mixed[GROUP_COLUMN],
+            }
+        )
+        pure = cells.groupby(["공정", "값"])["무리"].nunique().eq(1).groupby(level="공정").all()
+        values = cells.groupby("공정")["값"].nunique()
+        size = cells.groupby("공정").size()
+        trivial = pure & values.eq(size)
+        results.append(
+            SplitCount(
+                attribute=attribute,
+                splits=int((pure & ~trivial).sum()),
+                fails=int((~pure).sum()),
+                trivial=int(trivial.sum()),
+            )
+        )
+    return tuple(results)
+
+
+@dataclass(frozen=True)
+class Quantiles:
+    keys: int
+    p5: float | None
+    median: float | None
+    p95: float | None
+
+
+def group_spread(frame: pd.DataFrame, values: pd.Series) -> dict[str, Quantiles]:
+    """무리마다 값의 p5·중앙·p95. `values` 는 `frame` 과 같은 인덱스다(빈 값은 뺀다)."""
+    numeric = pd.to_numeric(values, errors="coerce").astype("float64")
+    spread: dict[str, Quantiles] = {}
+    for group in RATIO_GROUPS:
+        part = numeric.loc[frame[GROUP_COLUMN].eq(group)].dropna()
+        spread[group] = Quantiles(
+            keys=int(len(part)),
+            p5=_quantile(part, 0.05),
+            median=_quantile(part, 0.5),
+            p95=_quantile(part, 0.95),
+        )
+    return spread
+
+
+def median_ratio(spread: dict[str, Quantiles]) -> float | None:
+    """≈60 무리 중앙 ÷ ≈1 무리 중앙. 60 이나 1/60 근처면 그 인자가 단위째 다르다."""
+    suspect = spread[SUSPECT_GROUP].median
+    agree = spread[AGREE_GROUP].median
+    if suspect is None or agree is None or agree == 0:
+        return None
+    return suspect / agree
+
+
+@dataclass(frozen=True)
+class ScalingCheck:
+    """한 인자를 60 배로 고쳐 다시 계산한 결과(`scaling_check`)."""
+
+    applicable: int  # 그 인자가 산식에 걸리는 ≈60 키
+    fixed: int
+    collateral: int
+
+
+def scaling_check(
+    frame: pd.DataFrame,
+    keys: Sequence[str],
+    applies: pd.Series | None = None,
+    *,
+    factor: float = SUSPECT_RATIO,
+    tolerance: float = NEAR_TOLERANCE,
+) -> ScalingCheck:
+    """그 인자를 신규가 60 배가 되는 쪽으로 고쳐 다시 계산하면 ≈60 키가 몇이나 ≈1 이 되는가.
+
+    소요대수 = 부하량 ÷ 대당 Capa 는 인자들의 곱·나눗셈이다. 그래서 **키 하나만 보면 어느 인자를
+    고쳐도 똑같이 60 배가 맞는다** — 그것으로는 인자를 가를 수 없다. 가르는 것은 인자 값이 정해지는
+    단위(`keys`)다. 인자 값 하나는 그 단위를 같이 쓰는 경로 키 모두에 걸리므로, 고침도 인자 값
+    단위로 한다.
+
+    - `fixed` — ≈1 키와 같이 쓰지 않는 인자 값만 고쳤을 때 ≈1 이 되는 ≈60 키.
+    - `collateral` — ≈60 키가 쓰는 인자 값을 모두 고치면 함께 바뀌어 ≈1 을 벗어나는 ≈1 키.
+
+    `fixed` 가 `applicable` 과 같고 `collateral` 이 0 이면 그 인자 하나로 60 배가 설명된다.
+    `applies` 는 그 인자가 산식에 걸리는 키다(UPEH 는 Main, ST 는 MI 에만 걸린다). 걸리지 않는
+    키는 고쳐도 값이 바뀌지 않는다.
+    """
+    if applies is None:
+        reach = pd.Series(True, index=frame.index)
+    else:
+        reach = applies.reindex(frame.index, fill_value=False).astype(bool)
+    group = frame[GROUP_COLUMN]
+    suspect = group.eq(SUSPECT_GROUP) & reach
+    agree = group.eq(AGREE_GROUP) & reach
+    entity = _key_ids(frame, keys)
+    touched = reach & entity.isin(set(entity.loc[suspect]))
+    shared = entity.isin(set(entity.loc[agree]))
+    legacy = pd.to_numeric(frame["기존값"], errors="coerce").astype("float64")
+    fresh = pd.to_numeric(frame["신규값"], errors="coerce").astype("float64")
+
+    def near_one(scaled: pd.Series) -> pd.Series:
+        rescaled = fresh.where(~scaled, fresh * factor)
+        return _near(legacy / rescaled, 1.0, tolerance)
+
+    return ScalingCheck(
+        applicable=int(suspect.sum()),
+        fixed=int((suspect & near_one(touched & ~shared)).sum()),
+        collateral=int((agree & ~near_one(touched)).sum()),
+    )
+
+
+@dataclass(frozen=True)
+class FormulaInput:
+    """소요대수 산식의 인자 하나 — 어느 표의 어느 칸이고, 값이 어느 단위로 정해지며, 어디에 걸리나.
+
+    `keys` 는 인자 값이 정해지는 단위(`scaling_check` 가 공유를 판정한다), `join_keys` 는 값을
+    읽어 오는 키다(비우면 `keys`). `bases`·`area` 가 비면 모든 키에 걸린다. `volume` 이면 업무
+    물량이라 절대값을 찍지 않는다.
+    """
+
+    label: str
+    table: str
+    column: str
+    keys: tuple[str, ...]
+    join_keys: tuple[str, ...] = ()
+    bases: tuple[str, ...] = ()
+    area: str | None = None
+    volume: bool = False
+
+    @property
+    def lookup_keys(self) -> tuple[str, ...]:
+        return self.join_keys or self.keys
+
+
+_PERFORMANCE_INPUT_KEYS = (*PERFORMANCE_KEYS, "소요기준")
+
+# 산식(AGENTS.md 6장): 소요대수 = 부하량 ÷ 대당 Capa,
+# 대당 Capa = 환산_UPEH × 24 × CAPA_RUN_RATE ÷ 편중률 × 모듈수 × RUN_DAY ÷ Lot 측정률 ÷ WF측정률,
+# 환산_UPEH = UPEH(Main) 또는 3600 ÷ ST(MI), CHIP·PKG 는 ÷ 1000.
+# WF 부하량 = 생산수량 × 1000 × 구분_Chip ÷ EDS ÷ BE ÷ Net Die,
+# CHIP 부하량 = 생산수량 × 구분_Chip ÷ BE, PKG 부하량 = 생산수량.
+# Dummy 는 (1 − EDS) 가 더 걸려 수율이 곱으로만 들지 않는다.
+FORMULA_INPUTS: tuple[FormulaInput, ...] = (
+    FormulaInput(
+        "부하량",
+        RESULT_TABLE,
+        "부하량",
+        keys=tuple(LOAD_KEYS),
+        join_keys=tuple(REQB_COLUMNS),
+        volume=True,
+    ),
+    FormulaInput("구분_Chip", "RQ_CHIP_QTY", "구분_Chip", tuple(CHIP_KEYS), bases=("CHIP", "WF")),
+    FormulaInput("Net Die", "RQ_CHIP_QTY", "Net Die", tuple(CHIP_KEYS), bases=("WF",)),
+    FormulaInput("EDS_수율", "RQ_YLD", "EDS_수율", tuple(YIELD_KEYS), bases=("WF",)),
+    FormulaInput("BE_수율", "RQ_YLD", "BE_수율", tuple(YIELD_KEYS), bases=("CHIP", "WF")),
+    FormulaInput("UPEH", "RQ_UPEH", "UPEH", _PERFORMANCE_INPUT_KEYS, area="Main"),
+    FormulaInput("ST", "RQ_UPEH", "ST", _PERFORMANCE_INPUT_KEYS, area="MI"),
+    FormulaInput("CAPA_RUN_RATE", "RQ_RUN_RATE", "CAPA_RUN_RATE", tuple(RUN_RATE_KEYS)),
+    FormulaInput("편중률", "RQ_VITAL", "편중률", tuple(VITAL_KEYS)),
+    FormulaInput("모듈수", "RQ_MODULE", "모듈수", tuple(MODULE_KEYS)),
+    FormulaInput("RUN_DAY", "RQ_RUN_DAY", "RUN_DAY", tuple(RUN_DAY_KEYS)),
+    FormulaInput("Lot 측정률", "RQ_LOT_RATIO", "Lot 측정률", tuple(PERFORMANCE_KEYS)),
+    FormulaInput("WF측정률", "RQ_WF_RATIO", "WF측정률", tuple(PERFORMANCE_KEYS)),
+)
+
+
+def attach_formula_inputs(
+    frame: pd.DataFrame,
+    required: pd.DataFrame,
+    tables: dict[str, pd.DataFrame],
+    inputs: Sequence[FormulaInput] = FORMULA_INPUTS,
+) -> pd.DataFrame:
+    """키마다 산식 인자 값을 붙인다(칸 이름은 `label`). 표나 칸이 없으면 빈 칸이다.
+
+    값은 계산이 받는 리비전 표 그대로다 — 계산이 빈 측정률·0 을 1.0 으로 메우는 것은 하지 않는다.
+    """
+    result = frame.copy()
+    for item in inputs:
+        source = required if item.table == RESULT_TABLE else tables.get(item.table)
+        needed = [*item.lookup_keys, item.column]
+        if source is None or any(column not in source.columns for column in needed):
+            result[item.label] = np.nan
+            continue
+        result[item.label] = _lookup(frame, source, item.lookup_keys, item.column)
+    return result
+
+
+def input_applies(frame: pd.DataFrame, item: FormulaInput) -> pd.Series:
+    """그 인자가 산식에 걸리는 키."""
+    reach = pd.Series(True, index=frame.index)
+    if item.bases:
+        bases = {basis.casefold() for basis in item.bases}
+        reach &= _match_column(frame, "소요기준").isin(bases)
+    if item.area is not None:
+        reach &= _match_column(frame, "Area_Name").eq(item.area.casefold())
+    return reach
+
+
+def hourly_rate(frame: pd.DataFrame) -> pd.Series:
+    """계산이 쓰는 환산_UPEH — Main 은 UPEH, MI 는 3600 ÷ ST, CHIP·PKG 는 ÷ 1000.
+
+    `attach_formula_inputs` 가 붙인 `UPEH`·`ST` 칸을 쓴다.
+    """
+    area = _match_column(frame, "Area_Name")
+    upeh = pd.to_numeric(frame["UPEH"], errors="coerce").astype("float64")
+    st = pd.to_numeric(frame["ST"], errors="coerce").astype("float64")
+    rate = upeh.where(area.eq("main"))
+    rate = rate.mask(area.eq("mi"), 3600.0 / st.where(st.gt(0)))
+    per_kea = _match_column(frame, "소요기준").isin({"chip", "pkg"})
+    return rate.mask(per_kea, rate / 1000.0)
+
+
+def time_agreement(frame: pd.DataFrame) -> pd.Series:
+    """UPEH × ST ÷ 3600 — 두 시간 칸이 다 있는 키에서 서로 맞는지(초 단위 ST 면 1 근처)."""
+    upeh = pd.to_numeric(frame["UPEH"], errors="coerce").astype("float64")
+    st = pd.to_numeric(frame["ST"], errors="coerce").astype("float64")
+    return (upeh * st / 3600.0).where(upeh.gt(0) & st.gt(0))
+
+
+def folded_route_totals(
+    frame: pd.DataFrame, route: pd.DataFrame, column: str, grain: Sequence[str]
+) -> pd.Series:
+    """원천 경로 행의 값을 기존 소요대수와 같은 규칙(`grain` 안에서 접고 경로 키로 합산)으로 붙인다.
+
+    `일 필요` 처럼 기존 시스템이 경로 행마다 실어 보낸 중간값을 키 단위로 견줄 때 쓴다.
+    """
+    if column not in route.columns:
+        return pd.Series(np.nan, index=frame.index, dtype="float64")
+    grain_list = list(dict.fromkeys([*grain, *REQB_COLUMNS]))
+    totals = _legacy_totals(route, column, grain_list, list(REQB_COLUMNS))
+    return _lookup(frame, totals, REQB_COLUMNS, "기존값")
+
+
+@dataclass(frozen=True)
+class CategoryContrast:
+    """원천 범주 컬럼 하나의 무리별 값 종류. 값 자체는 담지 않는다."""
+
+    column: str
+    distinct: dict[str, int]
+    shared: int  # ≈60·≈1 둘 다에 있는 값 종류
+    suspect_only: int  # ≈60 에만 있는 값 종류
+    suspect_only_keys: int  # 그 값을 가진 ≈60 키
+    agree_only: int  # ≈1 에만 있는 값 종류
+    numeric_ratio: float | None  # 숫자로 읽히는 값의 무리 중앙 ≈60 ÷ ≈1
+
+
+@dataclass(frozen=True)
+class RouteLink:
+    """무리를 단 경로 키와 원천 경로 행의 짝. 원천에만 있는 칸(기존 시스템의 값)을 키에 붙인다.
+
+    `pairs` 는 (`_키`, `_원천`) — `frame` 인덱스와 `route` 인덱스다. 키 하나에 원천 행이 여럿일 수
+    있다(Pack Code 가 다른 계획 줄).
+    """
+
+    frame: pd.DataFrame
+    route: pd.DataFrame
+    pairs: pd.DataFrame
+
+    @classmethod
+    def build(
+        cls, frame: pd.DataFrame, route: pd.DataFrame, keys: Sequence[str] = tuple(REQB_COLUMNS)
+    ) -> RouteLink:
+        key_list = list(keys)
+        left = pd.DataFrame({key: _match_column(frame, key) for key in key_list})
+        left["_키"] = frame.index
+        right = pd.DataFrame({key: _match_column(route, key) for key in key_list})
+        right["_원천"] = route.index
+        pairs = left.merge(right, on=key_list, how="inner").loc[:, ["_키", "_원천"]]
+        return cls(frame=frame, route=route, pairs=pairs.reset_index(drop=True))
+
+    def texts(self, column: str) -> pd.DataFrame:
+        """(`_키`, `무리`, `값`) — 빈 값은 뺀다."""
+        if column not in self.route.columns:
+            return pd.DataFrame(columns=["_키", GROUP_COLUMN, "값"])
+        values = self.route[column].astype("string").str.strip()
+        texts = pd.DataFrame(
+            {
+                "_키": self.pairs["_키"].to_numpy(),
+                GROUP_COLUMN: self.frame[GROUP_COLUMN].reindex(self.pairs["_키"]).to_numpy(),
+                "값": values.reindex(self.pairs["_원천"]).to_numpy(),
+            }
+        )
+        filled = texts["값"].astype("string").fillna("").ne("")
+        return texts.loc[filled.astype(bool)].reset_index(drop=True)
+
+    def numbers(self, column: str) -> pd.Series:
+        """키마다 원천 값의 중앙(숫자로 읽히는 것만)."""
+        texts = self.texts(column)
+        numeric = pd.to_numeric(texts["값"], errors="coerce").astype("float64")
+        per_key = numeric.groupby(texts["_키"]).median()
+        return per_key.reindex(self.frame.index).astype("float64")
+
+    def labels(self, column: str) -> pd.Series:
+        """키마다 원천 값 — 하나뿐이면 그 값, 여럿이면 `MANY_VALUES`, 없으면 빈 칸."""
+        texts = self.texts(column)
+        grouped = texts.groupby("_키")["값"]
+        single = grouped.first().where(grouped.nunique().eq(1), MANY_VALUES)
+        return single.reindex(self.frame.index).astype("string")
+
+    def contrast(self, column: str) -> CategoryContrast | None:
+        """무리별 값 종류와 겹침. 컬럼이 없거나 값이 하나도 없으면 `None`."""
+        texts = self.texts(column)
+        if texts.empty:
+            return None
+        sets = {
+            group: set(texts.loc[texts[GROUP_COLUMN].eq(group), "값"].dropna())
+            for group in RATIO_GROUPS
+        }
+        suspect_only = sets[SUSPECT_GROUP] - sets[AGREE_GROUP]
+        holders = texts.loc[
+            texts[GROUP_COLUMN].eq(SUSPECT_GROUP) & texts["값"].isin(suspect_only), "_키"
+        ]
+        spread = group_spread(self.frame, self.numbers(column))
+        return CategoryContrast(
+            column=column,
+            distinct={group: len(values) for group, values in sets.items()},
+            shared=len(sets[SUSPECT_GROUP] & sets[AGREE_GROUP]),
+            suspect_only=len(suspect_only),
+            suspect_only_keys=int(holders.nunique()),
+            agree_only=len(sets[AGREE_GROUP] - sets[SUSPECT_GROUP]),
+            numeric_ratio=median_ratio(spread),
+        )
+
+
+def _near(values: pd.Series, target: float, tolerance: float) -> pd.Series:
+    return ((values / target) - 1.0).abs().le(tolerance).fillna(False).astype(bool)
+
+
+def _match_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    """맞대기 전용 값 — 월은 정수, 소요기준은 `normalize_demand_basis` 를 거쳐 `match_key`."""
+    values = frame[column]
+    if column == "생산계획년월":
+        values = pd.to_numeric(values, errors="coerce").astype("Int64")
+    elif column == "소요기준":
+        values = normalize_demand_basis(values)
+    return match_key(values)
+
+
+def _key_ids(frame: pd.DataFrame, keys: Sequence[str]) -> pd.Series:
+    """`keys` 조합마다 번호 하나. 인자 값 하나를 같이 쓰는 키는 같은 번호다."""
+    key_list = list(keys)
+    matched = pd.DataFrame({key: _match_column(frame, key) for key in key_list})
+    return matched.groupby(key_list, sort=False, dropna=False).ngroup()
+
+
+def _lookup(
+    target: pd.DataFrame, source: pd.DataFrame, keys: Sequence[str], column: str
+) -> pd.Series:
+    """`source` 의 `column` 을 `keys` 로 `target` 행마다 읽는다. 키가 겹치면 첫 값이다."""
+    key_list = list(keys)
+    left = pd.DataFrame({key: _match_column(target, key) for key in key_list})
+    right = pd.DataFrame({key: _match_column(source, key) for key in key_list})
+    right["_값"] = pd.to_numeric(source[column], errors="coerce").to_numpy(dtype="float64")
+    folded = right.groupby(key_list, sort=False, dropna=False)["_값"].first().reset_index()
+    merged = left.merge(folded, on=key_list, how="left", validate="many_to_one")
+    return pd.Series(merged["_값"].to_numpy(dtype="float64"), index=target.index)

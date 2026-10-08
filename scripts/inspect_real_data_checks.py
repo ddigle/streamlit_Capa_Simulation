@@ -12,7 +12,7 @@
 | 블록 | `--only` | 무엇을 |
 |---|---|---|
 | 8-1 | `env` | 두 DB 의 마이그레이션 번호·주요 표 행 수, 적용 배포, `ref_data` 사본 |
-| 8-2 | `legacy` | 원천의 기존 결과 컬럼과 신규 계산의 차이율·비율 분포 |
+| 8-2 | `legacy` | 기존 결과 컬럼과 신규 계산의 차이율·비율 분포, 소요대수 ≈60 배 가르기 |
 | 8-3 | `reqb` | 원천 `RQ_REQB` 의 소요기준별 행·공정 수 |
 | 8-4 | `equipment` | 설비 DB 의 2262-04-11 Qual·환산비 0.2 모듈 행·일정 미정·사용기준 HBM·EDP |
 | 8-5 | `bdq` | 목록 조회 시간·`reg_date` 꼴·코드 규칙 위반·기간별 행 수·표본 적재일 |
@@ -112,26 +112,50 @@ from capa_simulation.services.frame_contracts import (  # noqa: E402
     AREA_NAMES,
     DEMAND_BASES,
     UNIMPLEMENTED_BASES,
+    match_key,
     normalize_demand_basis,
 )
 from capa_simulation.services.legacy_comparison import (  # noqa: E402
+    AGREE_GROUP,
+    COMPARISONS,
+    FORMULA_INPUTS,
+    GROUP_COLUMN,
     NEAR_TARGETS,
     NEAR_TOLERANCE,
+    OTHER_GROUP,
+    RATIO_GROUPS,
+    SUSPECT_GROUP,
     DifferenceDistribution,
+    FormulaInput,
     LegacyMetric,
+    Quantiles,
     RatioDistribution,
+    RouteLink,
+    ScalingCheck,
+    attach_formula_inputs,
     compare_metric,
     describe_ratios,
     difference_distribution,
+    folded_route_totals,
+    group_spread,
+    hourly_rate,
+    input_applies,
     legacy_grain,
+    median_ratio,
+    process_consistency,
     ratio_distribution,
+    ratio_groups,
+    scaling_check,
+    split_mixed_processes,
     summarize_comparison,
+    time_agreement,
 )
 from capa_simulation.services.load_calculator import (  # noqa: E402
     calculate_chip_load,
     calculate_density_load,
     calculate_wafer_load,
 )
+from capa_simulation.services.product_type import WF_DIVISIONS_BY_PRODUCT_TYPE  # noqa: E402
 from capa_simulation.services.required_equipment import (  # noqa: E402
     REQB_COLUMNS,
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
@@ -166,6 +190,52 @@ LEGACY_CANDIDATES: Final[tuple[str, ...]] = (
 # 소요기준 PKG 의 계수 단위. 이름을 찍어도 되는 것은 계약 어휘(코드에 적힌 분류명)뿐이다.
 KNOWN_BASES: Final[tuple[str, ...]] = (*DEMAND_BASES, *sorted(UNIMPLEMENTED_BASES))
 BUFFER_DIVISION: Final = "BUFFER"
+# `WF 구분` 의 계약 어휘. 이 밖의 값은 이름을 찍지 않고 종류 수만 센다.
+DECLARED_DIVISIONS: Final[tuple[str, ...]] = tuple(
+    dict.fromkeys(name for names in WF_DIVISIONS_BY_PRODUCT_TYPE.values() for name in names)
+)
+
+# 정식 대조(`COMPARISONS`)마다 표의 이름과 신규 계산. 대조 목록에 지표를 더하면 여기도 더한다.
+LoadBuilder = Callable[[dict[str, pd.DataFrame]], pd.DataFrame]
+LOAD_BUILDERS: Final[dict[str, tuple[str, LoadBuilder]]] = {
+    "WF수(매)": (
+        "Wafer",
+        lambda t: calculate_wafer_load(t["RQ_PKG_PLAN"], t["RQ_YLD"], t["RQ_CHIP_QTY"]),
+    ),
+    "EQ(억Gb)": ("Density", lambda t: calculate_density_load(t["RQ_PKG_PLAN"], t["RQ_CHIP_EQ"])),
+    "Plan_Chip(K개)": (
+        "Chip",
+        lambda t: calculate_chip_load(t["RQ_PKG_PLAN"], t["RQ_YLD"], t["RQ_CHIP_QTY"]),
+    ),
+}
+
+# 소요대수 ≈60 배 가르기. 섞인 공정을 가를 후보 — 경로 키 13 가운데 공정·소요기준을 뺀 것과,
+# 원천에만 있는 설비 칸(키에 값이 여럿이면 한 묶음으로 센다).
+SPLIT_ATTRIBUTES: Final[tuple[str, ...]] = (
+    "Area_Name",
+    "WF 구분",
+    "생산계획년월",
+    "양산구분",
+    "제품정보",
+    "Stack",
+    "Capa Code",
+    "Customer",
+    "CS",
+    "STEP_SEQ",
+    "MCP_SEQ",
+)
+ROUTE_SPLITTERS: Final[tuple[str, ...]] = ("메이커", "모델명")
+# 기존 시스템이 경로 행마다 실어 보내고 신규 산식에는 없는 칸. 값은 찍지 않고 종류 수만 센다.
+ROUTE_CATEGORIES: Final[tuple[str, ...]] = (
+    "메이커",
+    "모델명",
+    "Para",
+    "Step수",
+    "Shot Time",
+    "Shot수",
+    "Index Time",
+)
+ROUTE_NUMBERS: Final[tuple[str, ...]] = ("Side반영률", "MCP_Chip_Ratio")
 
 # 설비 모듈 행 환산비 — 직접 편집 칸의 `step=0.1` 이 0.25 를 0.2 로 자르던 결함의 흔적.
 TRUNCATED_RATIO: Final = 0.2
@@ -830,59 +900,274 @@ def _requirement_section(core: pd.DataFrame, tables: dict[str, pd.DataFrame]) ->
     ]
     if ratio_rows:
         lines.extend([*_table(_RATIO_HEADERS, ratio_rows), ""])
+    path = results[0].comparison
+    if path is not None:
+        try:
+            lines.extend(_ratio_breakdown(path, compared, required, tables, finest))
+        except Exception as exc:  # 가르기가 실패해도 아래 절은 계속 잰다
+            lines.extend([f"- ≈60 배 가르기 {_failure(exc)}", ""])
     return lines
 
 
-def _chip_keys(contract_grain: Sequence[str]) -> list[str]:
-    """Chip 부하량 결과가 갖는 계획 키 — `Pack Code` 는 계산 계층이 합산해 없다."""
-    return [key for key in contract_grain if key != "Pack Code"]
+# ------------------------------------------------------------------ 8-2 소요대수 ≈60 배 가르기
 
 
-def _definition_rows(core: pd.DataFrame, grain: Sequence[str]) -> list[list[str]]:
-    """행 단위 정의 후보. 계획 줄 × WF 구분 에 한 번씩만 센다(경로 반복은 같은 값이다)."""
-    rows: list[list[str]] = []
-    candidates: tuple[tuple[str, str, Callable[[pd.DataFrame], pd.Series]], ...] = (
-        (
-            "`Plan_Chip(K개)` ÷ (생산수량 × 구분_Chip)",
-            "Plan_Chip(K개)",
-            lambda f: f["생산수량"] * f["구분_Chip"],
-        ),
-        (
-            "`Plan_Chip(K개)` ÷ (생산수량 × 구분_Chip ÷ BE_수율) — 신규 Chip 부하량 식",
-            "Plan_Chip(K개)",
-            lambda f: f["생산수량"] * f["구분_Chip"] / f["BE_수율"],
-        ),
-        ("`GOOD_DIE` ÷ Net Die", "GOOD_DIE", lambda f: f["Net Die"]),
-        ("`GOOD_DIE` ÷ (Net Die × EDS_수율)", "GOOD_DIE", lambda f: f["Net Die"] * f["EDS_수율"]),
-    )
-    inputs = ["생산수량", "구분_Chip", "BE_수율", "EDS_수율", "Net Die"]
-    for label, column, denominator in candidates:
-        if not _filled(core, column):
-            continue
-        try:
-            needed = list(dict.fromkeys([*grain, column, *inputs]))
-            cells = core.loc[:, needed].drop_duplicates(subset=list(grain))
-            numeric = cells.loc[:, [column, *inputs]].apply(pd.to_numeric, errors="coerce")
-            rows.append(_ratio_row(label, describe_ratios(numeric[column], denominator(numeric))))
-        except Exception as exc:  # 원천 형이 달라도 다른 후보는 계속 본다
-            rows.append([label, _failure(exc), *["-"] * 8])
+def _ratio_breakdown(
+    path: pd.DataFrame,
+    route: pd.DataFrame,
+    required: pd.DataFrame,
+    tables: dict[str, pd.DataFrame],
+    grain: Sequence[str],
+) -> list[str]:
+    """경로 키 대조를 기존÷신규 ≈60·≈1·그 밖 세 무리로 나눠 어디서 60 배가 나는지 센다.
+
+    사내 리뷰 202610071831·202610080745 에서 경로 키 절반이 기존 = 신규 × 60 이었다. 어느 쪽이
+    틀렸는지 모르므로 판정하지 않고 가르기만 한다 — 속성·공정·산식 인자·원천 칸마다 개수와 분포.
+    """
+    groups = ratio_groups(path)
+    frame = groups.frame
+    if groups.size(SUSPECT_GROUP) == 0:
+        return [
+            f"- ≈60 배 가르기 — 비율이 정의된 경로 키 {len(frame):,} 가운데 ≈60 이 없어 건너뛴다",
+            "",
+        ]
+    link = RouteLink.build(frame, route)
+    sizes = {group: groups.size(group) for group in RATIO_GROUPS}
+    lines = [
+        "**소요대수 ≈60 배 가르기** — 위 `경로 키 13` 대조의 키를 기존÷신규 ≈60 · ≈1(각 ±"
+        f"{NEAR_TOLERANCE:.0%}) · 그 밖 세 무리로 나눠 60 배가 어디서 나는지 개수로 본다. "
+        "어느 쪽이 틀렸는지는 판정하지 않는다.",
+        "",
+        f"- 비율이 정의된 경로 키 {len(frame):,} — ≈60 {sizes[SUSPECT_GROUP]:,}"
+        f"(그 가운데 60 ±0.1% 안 {groups.tight:,}) · ≈1 {sizes[AGREE_GROUP]:,} · 그 밖 "
+        f"{sizes[OTHER_GROUP]:,} · 비율이 정의되지 않은 키 {groups.undefined:,}",
+        "",
+        "무리마다 속성별 키 수 — 한 줄에 몰리면 그 속성이 60 배를 가른다. WF 구분은 계약 어휘만 "
+        "이름을 적고 나머지는 종류 수만 적는다.",
+        "",
+        *_table(["속성", *RATIO_GROUPS], _group_attribute_rows(frame)),
+        "",
+    ]
+    lines.extend(_process_split_lines(frame, link))
+    lines.extend(_formula_input_lines(frame, required, tables, link, route, grain))
+    lines.extend(_route_category_lines(link, route))
+    return lines
+
+
+def _group_attribute_rows(frame: pd.DataFrame) -> list[list[str]]:
+    group = frame[GROUP_COLUMN]
+
+    def row(label: str, mask: pd.Series) -> list[str]:
+        return [label, *(_count(int((mask & group.eq(name)).sum())) for name in RATIO_GROUPS)]
+
+    rows = [row("키", pd.Series(True, index=frame.index))]
+    basis = match_key(normalize_demand_basis(frame["소요기준"]))
+    for name in DEMAND_BASES:
+        mask = basis.eq(name.casefold())
+        if mask.any():
+            rows.append(row(f"소요기준 {name}", mask))
+    area = match_key(frame["Area_Name"])
+    for name in AREA_NAMES:
+        mask = area.eq(name.casefold())
+        if mask.any():
+            rows.append(row(f"{name} 경로", mask))
+    division = match_key(frame["WF 구분"])
+    declared = {name.casefold(): name for name in DECLARED_DIVISIONS}
+    for key, name in declared.items():
+        mask = division.eq(key)
+        if mask.any():
+            rows.append(row(f"WF 구분 {name.upper()}", mask))
+    others = ~division.isin(set(declared))
+    if others.any():
+        rows.append(row(f"WF 구분 그 밖({division.loc[others].nunique():,}종)", others))
     return rows
 
 
-def _good_die_constancy(core: pd.DataFrame) -> str | None:
-    if not _filled(core, "GOOD_DIE"):
-        return None
-    keys = ["제품정보", "Stack", "WF 구분"]
-    values = core.loc[:, [*keys, "GOOD_DIE"]].copy()
-    values["GOOD_DIE"] = pd.to_numeric(values["GOOD_DIE"], errors="coerce")
-    distinct = values.dropna(subset=["GOOD_DIE"]).groupby(keys, dropna=False)["GOOD_DIE"].nunique()
-    constant = int(distinct.eq(1).sum())
-    return (
-        f"- `GOOD_DIE` 는 제품정보×Stack×WF 구분 키 {len(distinct):,}개 중 {constant:,}개에서 값이 "
-        f"하나뿐이고 {len(distinct) - constant:,}개에서 달·계획 줄마다 갈린다"
-        "(하나뿐이면 물량이 아니라 "
-        "제품 속성일 가능성이 크다)"
+def _process_split_lines(frame: pd.DataFrame, link: RouteLink) -> list[str]:
+    consistency = process_consistency(frame)
+    lines = [
+        f"- 공정 {consistency.processes:,}개 — 키가 전부 ≈60 {consistency.all_suspect:,} · 전부 ≈1 "
+        f"{consistency.all_agree:,} · 전부 그 밖 {consistency.all_other:,} · **≈60 과 ≈1 이 섞임 "
+        f"{consistency.mixed:,}** · ≈60·≈1 하나와 그 밖이 섞임 {consistency.partly_other:,}",
+        "",
+    ]
+    if consistency.mixed == 0:
+        return lines
+    candidates = frame.copy()
+    splitters = list(SPLIT_ATTRIBUTES)
+    for column in ROUTE_SPLITTERS:
+        if not link.texts(column).empty:
+            candidates[column] = link.labels(column)
+            splitters.append(column)
+    rows = [
+        [f"`{count.attribute}`", _count(count.splits), _count(count.fails), _count(count.trivial)]
+        for count in split_mixed_processes(candidates, splitters)
+    ]
+    lines.extend(
+        [
+            f"≈60 과 ≈1 이 섞인 공정 {consistency.mixed:,}개를 무엇이 가르나 — 공정 안에서 "
+            "그 칸 값마다 무리가 하나뿐이면 「가름」, 값이 키마다 달라 저절로 갈린 것은 "
+            "「자명」(증거가 못 된다).",
+            "",
+            *_table(["칸", "가름", "못 가름", "자명"], rows),
+            "",
+        ]
     )
+    return lines
+
+
+def _reach_label(item: FormulaInput) -> str:
+    if item.area is not None:
+        return item.area
+    if item.bases:
+        return "·".join(item.bases)
+    return "전부"
+
+
+def _spread_cell(quantiles: Quantiles, *, volume: bool) -> str:
+    if quantiles.keys == 0:
+        return "-"
+    if volume:
+        return "(물량)"
+    return f"{_ratio(quantiles.p5)} · {_ratio(quantiles.median)} · {_ratio(quantiles.p95)}"
+
+
+def _input_row(
+    label: str,
+    reach: str,
+    spread: dict[str, Quantiles],
+    *,
+    volume: bool = False,
+    check: ScalingCheck | None = None,
+) -> list[str]:
+    other = spread[OTHER_GROUP]
+    return [
+        label,
+        reach,
+        f"{spread[SUSPECT_GROUP].keys:,} / {spread[AGREE_GROUP].keys:,}",
+        _spread_cell(spread[SUSPECT_GROUP], volume=volume),
+        _spread_cell(spread[AGREE_GROUP], volume=volume),
+        "(물량)" if volume and other.keys else _ratio(other.median),
+        _ratio(median_ratio(spread)),
+        "-" if check is None else f"{check.fixed:,} / {check.applicable:,}",
+        "-" if check is None else _count(check.collateral),
+    ]
+
+
+_INPUT_HEADERS: Final = (
+    "인자",
+    "걸리는 곳",
+    "값 있는 키 ≈60 / ≈1",
+    "≈60 p5 · 중앙 · p95",
+    "≈1 p5 · 중앙 · p95",
+    "그 밖 중앙",
+    "중앙 ≈60÷≈1",
+    "60 배로 고침",
+    "같이 어긋남",
+)
+
+
+def _formula_input_lines(
+    frame: pd.DataFrame,
+    required: pd.DataFrame,
+    tables: dict[str, pd.DataFrame],
+    link: RouteLink,
+    route: pd.DataFrame,
+    grain: Sequence[str],
+) -> list[str]:
+    inputs = attach_formula_inputs(frame, required, tables)
+    rows: list[list[str]] = []
+    for item in FORMULA_INPUTS:
+        reach = input_applies(inputs, item)
+        rows.append(
+            _input_row(
+                item.label,
+                _reach_label(item),
+                group_spread(inputs, inputs[item.label].where(reach)),
+                volume=item.volume,
+                check=scaling_check(inputs, item.keys, reach),
+            )
+        )
+    load = pd.to_numeric(inputs["부하량"], errors="coerce").astype("float64")
+    run_day = pd.to_numeric(inputs["RUN_DAY"], errors="coerce").astype("float64")
+    daily_load = (load / run_day).where(run_day.gt(0) & load.gt(0))
+    daily_need = folded_route_totals(inputs, route, "일 필요", grain)
+    derived: list[tuple[str, pd.Series]] = [
+        ("환산_UPEH (CHIP·PKG ÷1000)", hourly_rate(inputs)),
+        ("UPEH × ST ÷ 3600 (둘 다 있는 키)", time_agreement(inputs)),
+        ("원천 `일 필요` ÷ (부하량 ÷ RUN_DAY)", daily_need / daily_load),
+        *[(f"원천 `{column}`", link.numbers(column)) for column in ROUTE_NUMBERS],
+    ]
+    rows.extend(_input_row(label, "-", group_spread(inputs, values)) for label, values in derived)
+    return [
+        "산식 인자 — 무리별 p5 · 중앙 · p95 와 중앙의 비(≈60 ÷ ≈1 이 60 이나 0.0167 근처면 "
+        "그 인자가 단위째 다르다). 「60 배로 고침」은 ≈1 키가 쓰지 않는 인자 값만 신규가 60 배가 "
+        "되는 쪽으로 고쳐 다시 계산했을 때 ≈1 이 되는 ≈60 키 / 그 인자가 걸리는 ≈60 키, "
+        "「같이 어긋남」은 ≈60 키가 쓰는 인자 값을 모두 고치면 함께 ≈1 을 벗어나는 ≈1 키다. "
+        "고침이 전부이고 어긋남이 0 인 인자만 혼자서 60 배를 설명한다(산식이 곱이라 키 하나로는 "
+        "어느 인자든 맞춰진다).",
+        "",
+        *_table(_INPUT_HEADERS, rows),
+        "",
+        "- 상수(하루 24시간 · MI 의 3600 ÷ ST · CHIP·PKG 의 ÷1000)는 인자 값처럼 가를 수 없다 — "
+        "3600 은 MI, ÷1000 은 CHIP·PKG 에만 걸리므로 위 속성 표의 Main/MI·소요기준 줄이 그 "
+        "답이다. `원천 …` 줄은 기존 시스템이 실어 보낸 값이라 신규 산식에 없다 — `일 필요` 가 "
+        "하루 부하라면 그 줄이 ≈60 무리에서도 1 근처일 때 60 배는 부하가 아니라 능력(대당 Capa) "
+        "쪽에 있다.",
+        "",
+    ]
+
+
+def _route_category_lines(link: RouteLink, route: pd.DataFrame) -> list[str]:
+    rows: list[list[str]] = []
+    for column in ROUTE_CATEGORIES:
+        label = f"`{column}`"
+        if column not in route.columns:
+            rows.append([label, "원천에 컬럼 없음", *["-"] * 4])
+            continue
+        contrast = link.contrast(column)
+        if contrast is None:
+            rows.append([label, "값 없음", *["-"] * 4])
+            continue
+        distinct = contrast.distinct
+        rows.append(
+            [
+                label,
+                " / ".join(f"{distinct[group]:,}" for group in RATIO_GROUPS),
+                _count(contrast.shared),
+                f"{contrast.suspect_only:,} ({contrast.suspect_only_keys:,}키)",
+                _count(contrast.agree_only),
+                _ratio(contrast.numeric_ratio),
+            ]
+        )
+    return [
+        "원천 범주 칸 — 무리별 값 종류 수만 센다(값은 적지 않는다). ≈60 에만 있는 값이 ≈60 키 "
+        "대부분을 덮으면 그 칸(설비 모델·시간 표기 등)이 60 배를 가른다. 숫자로 읽히는 값은 무리 "
+        "중앙의 비도 본다.",
+        "",
+        *_table(
+            [
+                "원천 칸",
+                "값 종류 ≈60 / ≈1 / 그 밖",
+                "≈60·≈1 둘 다",
+                "≈60 에만(그 값을 가진 ≈60 키)",
+                "≈1 에만",
+                "숫자 중앙 ≈60÷≈1",
+            ],
+            rows,
+        ),
+        "",
+    ]
+
+
+def _with_raw_columns(
+    core: pd.DataFrame, raw: pd.DataFrame, columns: Sequence[str]
+) -> pd.DataFrame:
+    """파생 프레임이 떨어뜨린 원천 칸(`메이커`·`모델명` 등)을 행 순서 그대로 되붙인다."""
+    missing = [column for column in columns if column not in core and column in raw]
+    if not missing or not core.index.equals(raw.index):
+        return core
+    return core.assign(**{column: raw[column] for column in missing})
 
 
 def _pcb_section(raw: pd.DataFrame, core: pd.DataFrame, grain: Sequence[str]) -> list[str]:
@@ -943,69 +1228,25 @@ def check_legacy(session: Session) -> list[str]:
 
     lines.extend(
         [
-            "**부하량** — 대조 키 `생산계획년월 × 제품정보 × Stack × WF 구분`"
-            "(값은 계획 줄 × WF 구분에서 "
-            "접은 뒤 더함).",
+            "**부하량** — 대조 키 `생산계획년월 × 제품정보 × Stack × WF 구분`, Chip 은 계획 줄"
+            "(Pack Code 합산) × WF 구분(값은 계획 줄 × WF 구분에서 접은 뒤 더함).",
             "",
         ]
     )
-
-    def wafer() -> pd.DataFrame:
-        return calculate_wafer_load(tables["RQ_PKG_PLAN"], tables["RQ_YLD"], tables["RQ_CHIP_QTY"])
-
-    def density() -> pd.DataFrame:
-        return calculate_density_load(tables["RQ_PKG_PLAN"], tables["RQ_CHIP_EQ"])
-
     load_results: list[ComparisonResult] = []
-    for label, column, build in (
-        ("Wafer `WF수(매)`", "WF수(매)", wafer),
-        ("Density `EQ(억Gb)`", "EQ(억Gb)", density),
-    ):
-        if not _filled(core, column):
+    for metric in COMPARISONS:
+        name, build = LOAD_BUILDERS[metric.legacy_column]
+        label = f"{name} `{metric.legacy_column}`"
+        if not _filled(core, metric.legacy_column):
             load_results.append(ComparisonResult(label=label, failure="원천이 비어 대조 불가"))
             continue
-        metric = LegacyMetric(label=label, legacy_column=column)
-        load_results.append(_guarded(label, partial(_compare_built, core, build, metric, contract)))
+        load_results.append(
+            _guarded(label, partial(_compare_built, core, partial(build, tables), metric, contract))
+        )
     lines.extend([*_table(_DIFFERENCE_HEADERS, [_difference_row(r) for r in load_results]), ""])
 
-    lines.extend(_requirement_section(core, tables))
+    lines.extend(_requirement_section(_with_raw_columns(core, raw, ROUTE_CATEGORIES), tables))
     lines.extend(_pcb_section(raw, core, grain))
-
-    lines.extend(
-        [
-            "**Plan_Chip(K개) · GOOD_DIE** — 신규 Chip 부하량(K개)과의 비율. "
-            "대조 키는 계획 줄(Pack Code "
-            "합산) × WF 구분.",
-            "",
-        ]
-    )
-    chip_rows: list[list[str]] = []
-    try:
-        chip = calculate_chip_load(tables["RQ_PKG_PLAN"], tables["RQ_YLD"], tables["RQ_CHIP_QTY"])
-    except Exception as exc:  # 기준정보 오류면 계산이 멈춘다
-        chip = None
-        lines.append(f"- 신규 Chip 부하량 계산 {_failure(exc)}")
-    if chip is not None:
-        keys = _chip_keys(grain)
-        for column in ("Plan_Chip(K개)", "GOOD_DIE"):
-            label = f"`{column}` ÷ 신규 Chip 부하량"
-            if not _filled(core, column):
-                chip_rows.append([label, "원천이 비어 대조 불가", *["-"] * 8])
-                continue
-            metric = LegacyMetric(label=column, legacy_column=column)
-            result = _guarded(
-                label, partial(compare_metric, core, chip, metric, contract, keys=keys)
-            )
-            if result.comparison is None:
-                chip_rows.append([label, result.failure or "-", *["-"] * 8])
-            else:
-                chip_rows.append(_ratio_row(label, ratio_distribution(result.comparison)))
-    chip_rows.extend(_definition_rows(core, grain))
-    if chip_rows:
-        lines.extend([*_table(_RATIO_HEADERS, chip_rows), ""])
-    constancy = _good_die_constancy(core)
-    if constancy:
-        lines.append(constancy)
     lines.extend(
         [
             f"- ≈ 는 기준의 ±{NEAR_TOLERANCE:.0%} 안. 기준 "

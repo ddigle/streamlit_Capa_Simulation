@@ -17,9 +17,9 @@ DuckDB 는 같은 파일에 모드가 다른 연결을 허용하지 않으므로
 기존 결과를 접는 단위가 `RQ_PKG_PLAN` 업무 키인데 그 키의 `양산구분` 이 파생 단계에서
 만들어지기 때문이다.
 
-매 실행마다 **대조 후보 컬럼의 채움 상태**를 먼저 찍는다. 지금 로컬 샘플은 `소요대수` 가
-비어 있어 두 지표만 대조하지만, 그것은 업무 사실이 아니라 합성 샘플의 사정이다. 실데이터가
-들어와 값이 차면 이 진단이 사람보다 먼저 알려 준다.
+매 실행마다 **대조 후보 컬럼의 채움 상태**를 먼저 찍는다. 대조는 `COMPARISONS` 의 세 부하량
+(Wafer·Density·Chip)이다. 로컬 샘플은 `소요대수` 가 비어 있지만 그것은 업무 사실이 아니라 합성
+샘플의 사정이다 — 실데이터의 소요대수는 사내 확인 스크립트가 경로 키로 따로 대조한다.
 
 **사외 디버깅용이다.** 허용을 넘은 키는 제품정보·Stack 을 그대로 찍는다. 사내 실데이터로는
 `scripts/inspect_real_data_checks.py --only legacy`(런북 8장)를 쓴다 — 같은 대조를 분포로만 찍는다.
@@ -46,6 +46,7 @@ from capa_simulation.services.legacy_comparison import (  # noqa: E402
     summarize_comparison,
 )
 from capa_simulation.services.load_calculator import (  # noqa: E402
+    calculate_chip_load,
     calculate_density_load,
     calculate_wafer_load,
 )
@@ -163,6 +164,9 @@ def main() -> int:
             tables["RQ_PKG_PLAN"], tables["RQ_YLD"], tables["RQ_CHIP_QTY"]
         ),
         "EQ(억Gb)": calculate_density_load(tables["RQ_PKG_PLAN"], tables["RQ_CHIP_EQ"]),
+        "Plan_Chip(K개)": calculate_chip_load(
+            tables["RQ_PKG_PLAN"], tables["RQ_YLD"], tables["RQ_CHIP_QTY"]
+        ),
     }
 
     print(f"데이터셋 {dataset_id} · 리비전 1 {revision_id} · 원천 {len(core):,}행")

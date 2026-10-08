@@ -2837,11 +2837,24 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     뒤 대조 키로 **합산**한다. 접는 층을 대조 키에서 잡으면 서로 다른 계획 줄까지 뭉개져
     대조가 조용히 절반으로 줄어든다 — 실제로 그렇게 만들었다가 270키 중 121키만 보고
     "완전 일치" 라고 보고했다. 실행은 `scripts/compare_legacy_results.py`.
-  - 대조 키와 접는 단위는 `compare_metric(keys=, grain=)` 로 바꾼다(기본은 위 단위). 소요대수는
-    값이 경로 행마다 달라 경로 키까지 접는 단위로 잡는다. 사내 실데이터는 키별 값을 밖으로 낼 수
-    없으므로 `difference_distribution`(차이율 중앙·p95·최대·임계 초과 키 수·Σ신규÷Σ기존)과
+  - 정식 대조 `COMPARISONS` 는 Wafer `WF수(매)`·Density `EQ(억Gb)`·Chip `Plan_Chip(K개)` 셋이다. Chip 은
+    `LegacyMetric(plan_line=True)` 라 대조 키가 **계획 줄(Pack Code 합산) × WF 구분**(`plan_line_keys`)이다
+    (사내 리뷰 202610071831 에서 1,264키 중 1,248키 ≈1 — 2026-10-08 사용자 결정). `GOOD_DIE` 는 부하량이
+    아니라 넣지 않는다. 지표를 더하면 `scripts/compare_legacy_results.py` 의 계산 사전과
+    `scripts/inspect_real_data_checks.py` 의 `LOAD_BUILDERS` 도 같이 더한다(테스트가 후자를 대조한다).
+  - 대조 키와 접는 단위는 `compare_metric(keys=, grain=)` 로 바꾼다(`keys` 를 비우면 지표의
+    `metric_keys`). 소요대수는 값이 경로 행마다 달라 경로 키까지 접는 단위로 잡는다. 사내 실데이터는 키별
+    값을 밖으로 낼 수 없으므로 `difference_distribution`(차이율 중앙·p95·최대·임계 초과 키 수·Σ신규÷Σ기존)과
     `ratio_distribution`·`describe_ratios`(기존 ÷ 신규의 p5·중앙·p95, ≈1·≈1000·≈0.001 키 수, 10^k
     자릿수)로 **분포만** 접는다 — `scripts/inspect_real_data_checks.py`(사내 런북 8장)가 쓴다.
+  - **소요대수 ≈60 배 가르기**(2026-10-08 사용자 결정). 사내에서 경로 키 절반이 기존 = 신규 × 60 이었고
+    어느 쪽이 틀렸는지 모른다. `ratio_groups` 가 경로 키를 ≈60·≈1(±`NEAR_TOLERANCE`)·그 밖으로 나누고,
+    `process_consistency`·`split_mixed_processes`(섞인 공정을 가르는 칸), `attach_formula_inputs`·
+    `group_spread`·`median_ratio`(산식 인자 분포), `RouteLink`(원천에만 있는 칸의 무리별 값 종류),
+    `scaling_check` 가 그 무리를 개수로만 가른다. **`scaling_check` 는 인자 값 단위로 고친다** — 산식이
+    곱이라 키 하나로는 어느 인자를 60 배 해도 맞으므로, 인자 값을 같이 쓰는 ≈1 키가 몇이나 어긋나는지
+    (`collateral`)가 인자를 가른다. `FORMULA_INPUTS` 는 `unit_capacity`·`required_equipment`·
+    `load_calculator` 의 연결 키를 그대로 쓰므로 산식이 바뀌면 여기도 고친다.
 - `src/capa_simulation/components/tab_state.py`
   - 열린 탭을 서버가 알게 하는 `stateful_tabs` 와 판정용 `tab_is_hidden`. 차트가 든 탭은
     반드시 이것으로 만든다. 숨겨진 탭 안에서 Plotly 표를 그리면 글자 폭 측정이 0 이라
@@ -4505,11 +4518,12 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   `MPGA TEST` 의 소수 `모듈수` 는 사내 BigDataQuery 관측이라 근거가 있다.
 - **실데이터로만 답이 나오는 질문은 사내에서 잰다.** `scripts/inspect_real_data_checks.py` 가 두 DB 를
   `read_only` 로 열어(저장소 `initialize()` 는 마이그레이션을 걸어 쓰므로 부르지 않는다) 기존 결과 대조
-  분포·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery 를 재고, **개수·비율·dtype·초만** Markdown 블록으로
-  찍는다 — 이름·코드·키별 값·합계 물량·파일 경로·예외 문구를 찍지 않는다(이 앱의 오류 문구에는 식별값이
-  실린다). 사내 런북(`docs/internal_update_runbook.md`) 8장이 배포마다 부르고 결과는 리뷰 문서로
-  돌아온다. 블록을 더할 때는 `tests/test_inspect_real_data_checks.py` 의 표지값(`ZZSENTINEL…`) 검사를
-  함께 늘린다.
+  분포(소요대수 ≈60 배 무리 가르기 포함)·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery 를 재고,
+  **개수·비율·dtype·초만** Markdown 블록으로 찍는다 — 이름·코드·키별 값·합계 물량·파일 경로·예외 문구를
+  찍지 않는다(이 앱의 오류 문구에는 식별값이 실린다). 값 이름은 계약 어휘(소요기준·Main/MI·`WF 구분` 선언
+  목록)만 찍고 그 밖은 종류 수로 센다. 사내 런북(`docs/internal_update_runbook.md`) 8장이 배포마다 부르고
+  결과는 리뷰 문서로 돌아온다. 블록을 더할 때는 `tests/test_inspect_real_data_checks.py` 의
+  표지값(`ZZSENTINEL…`) 검사를 함께 늘린다.
 
 실제로 이 규칙이 없어서, 표본의 `Mold` 소요기준이 `CHIP` 인 것을 근거로 사용자의 공정
 설명이 데이터와 충돌한다고 보고한 적이 있다. 충돌 상대는 실데이터가 아니라 생성기였다.

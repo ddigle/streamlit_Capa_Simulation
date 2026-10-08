@@ -21,15 +21,37 @@ import pytest
 
 from capa_simulation.io.core_data_source import load_core_data_contract
 from capa_simulation.services.legacy_comparison import (
+    AGREE_GROUP,
     COMPARISON_KEYS,
+    COMPARISONS,
+    FORMULA_INPUTS,
+    GROUP_COLUMN,
+    MANY_VALUES,
+    OTHER_GROUP,
+    SUSPECT_GROUP,
+    FormulaInput,
     LegacyMetric,
+    ProcessConsistency,
+    RouteLink,
+    ScalingCheck,
+    attach_formula_inputs,
     compare_metric,
     describe_ratios,
     difference_distribution,
+    folded_route_totals,
+    group_spread,
+    input_applies,
     legacy_grain,
+    median_ratio,
+    plan_line_keys,
+    process_consistency,
     ratio_distribution,
+    ratio_groups,
+    scaling_check,
+    split_mixed_processes,
     summarize_comparison,
 )
+from capa_simulation.services.required_equipment import REQB_COLUMNS
 
 METRIC = LegacyMetric(label="Wafer 부하량 (매)", legacy_column="WF수(매)")
 CONTRACT = load_core_data_contract()
@@ -265,3 +287,213 @@ def test_custom_keys_fold_inside_their_grain_before_summing() -> None:
     assert folded["차이"].tolist() == [0.0, 0.0]
     with pytest.raises(ValueError, match="접는 단위 밖"):
         compare_metric(core, calculated, metric, CONTRACT, keys=keys)
+
+
+# ------------------------------------------------------------- Chip 부하량 정식 대조 (2026-10-08)
+
+
+def test_plan_chip_is_a_formal_comparison_on_plan_lines() -> None:
+    """`Plan_Chip(K개)` 는 계획 줄(Pack Code 합산) × WF 구분으로 맞댄다. `GOOD_DIE` 는 빠진다."""
+    chip = next(metric for metric in COMPARISONS if metric.legacy_column == "Plan_Chip(K개)")
+    assert chip.plan_line
+    assert "GOOD_DIE" not in {metric.legacy_column for metric in COMPARISONS}
+    assert plan_line_keys(CONTRACT) == [k for k in legacy_grain(CONTRACT) if k != "Pack Code"]
+
+    renamed = {"WF수(매)": "Plan_Chip(K개)"}
+    core = _core(
+        _plan_row(100.0).assign(**{"Pack Code": "PACK-1"}).rename(columns=renamed),
+        _plan_row(60.0).assign(**{"Pack Code": "PACK-2"}).rename(columns=renamed),
+        _plan_row(7.0).assign(**{"Capa Code": "CAPA-2"}).rename(columns=renamed),
+    )
+    plan_fields = {key: value for key, value in _PLAN_DEFAULTS.items() if key != "Pack Code"}
+    calculated = pd.concat(
+        [
+            _calculated(100.0, 60.0).assign(**plan_fields),
+            _calculated(7.0).assign(**{**plan_fields, "Capa Code": "CAPA-2"}),
+        ],
+        ignore_index=True,
+    )
+
+    comparison = compare_metric(core, calculated, chip, CONTRACT)
+
+    # 계획 줄마다 한 칸 — 월×제품×Stack×WF 구분 하나로 뭉치지 않는다. Pack Code 둘은 더한다.
+    assert len(comparison) == 2
+    assert sorted(comparison["기존값"].tolist()) == [7.0, 160.0]
+    assert comparison["차이"].tolist() == [0.0, 0.0]
+
+
+# ------------------------------------------------------------- 소요대수 ≈60 배 가르기
+
+
+def _path_key(
+    process: str, area: str, basis: str, month: int, product: str, legacy: float, fresh: float
+) -> dict[str, object]:
+    """`compare_metric(keys=REQB_COLUMNS)` 결과 한 줄과 같은 꼴."""
+    return {
+        "생산계획년월": month,
+        "Area_Name": area,
+        "공정": process,
+        "양산구분": "양산",
+        "제품정보": product,
+        "Stack": "8H",
+        "Capa Code": "CAPA-1",
+        "Customer": "고객가",
+        "CS": "MP",
+        "WF 구분": "Core",
+        "STEP_SEQ": f"{process}-S1",
+        "MCP_SEQ": "1A",
+        "소요기준": basis,
+        "기존값": legacy,
+        "신규값": fresh,
+        "값 불일치": False,
+    }
+
+
+def _sixty_fold_paths() -> pd.DataFrame:
+    """공정 셋 × 두 달 × 두 제품. 일부러 ×60 무리를 만든다.
+
+    - `P-MI`(MI · CHIP) — 전부 기존 = 신규 × 60.
+    - `P-WF`(Main · WF) — 202608 만 × 60, 202607 은 × 1. 달이 이 공정을 가른다.
+    - `P-OK`(Main · CHIP) — 전부 × 1. `P-MI` 와 부하량(공정 없는 키)을 같이 쓴다.
+    """
+    rows: list[dict[str, object]] = []
+    for month in (202607, 202608):
+        for product in ("Product-A", "Product-B"):
+            rows.append(_path_key("P-MI", "MI", "CHIP", month, product, 60.0, 1.0))
+            fold = 60.0 if month == 202608 else 1.0
+            rows.append(_path_key("P-WF", "Main", "WF", month, product, 2.0 * fold, 2.0))
+            rows.append(_path_key("P-OK", "Main", "CHIP", month, product, 3.0, 3.0))
+    return pd.DataFrame(rows)
+
+
+def _formula_input(label: str) -> FormulaInput:
+    return next(item for item in FORMULA_INPUTS if item.label == label)
+
+
+def test_ratio_groups_split_sixty_one_and_the_rest() -> None:
+    pairs: list[tuple[float, float | None]] = [
+        (60.0, 1.0),
+        (61.5, 1.0),
+        (1.02, 1.0),
+        (7.0, 1.0),
+        (0.0, 1.0),
+        (5.0, None),
+    ]
+    frame = pd.DataFrame(
+        [
+            _path_key("P", "Main", "WF", 202608, f"Product-{index}", legacy, fresh or float("nan"))
+            for index, (legacy, fresh) in enumerate(pairs)
+        ]
+    )
+
+    groups = ratio_groups(frame)
+
+    assert groups.frame[GROUP_COLUMN].tolist() == [
+        SUSPECT_GROUP,
+        SUSPECT_GROUP,
+        AGREE_GROUP,
+        OTHER_GROUP,
+    ]
+    # 기존 0 은 대조 건수에 들지만 비율이 없다. 신규가 빈 키는 대조 건수부터 아니다.
+    assert groups.undefined == 1
+    # 61.5 는 ±5% 안이지만 60 에 딱 붙지는 않는다 — 단위 상수라면 딱 붙는다.
+    assert groups.tight == 1
+
+
+def test_process_consistency_finds_the_mixed_process_and_what_splits_it() -> None:
+    groups = ratio_groups(_sixty_fold_paths())
+    frame = groups.frame.assign(순번=range(len(groups.frame)))
+
+    assert groups.size(SUSPECT_GROUP) == 6
+    assert groups.size(AGREE_GROUP) == 6
+    assert process_consistency(frame) == ProcessConsistency(
+        processes=3, all_suspect=1, all_agree=1, all_other=0, mixed=1, partly_other=0
+    )
+    splits = {
+        count.attribute: (count.splits, count.fails, count.trivial)
+        for count in split_mixed_processes(frame, ["생산계획년월", "제품정보", "순번"])
+    }
+    assert splits == {"생산계획년월": (1, 0, 0), "제품정보": (0, 1, 0), "순번": (0, 0, 1)}
+
+
+def test_scaling_one_input_by_sixty_counts_what_it_fixes_and_what_it_breaks() -> None:
+    """키 하나로는 어느 인자든 60 배를 맞춘다. 가르는 것은 인자 값을 같이 쓰는 ≈1 키다."""
+    frame = ratio_groups(_sixty_fold_paths()).frame
+
+    def check(label: str) -> ScalingCheck:
+        item = _formula_input(label)
+        return scaling_check(frame, item.keys, input_applies(frame, item))
+
+    # ST 는 MI 에만 걸리고, MI 공정은 전부 ×60 이다 — 혼자서 그 넷을 설명한다.
+    assert check("ST") == ScalingCheck(applicable=4, fixed=4, collateral=0)
+    # UPEH 는 Main 에만 — P-WF 의 202608 둘. 값이 달마다 정해져 202607 과 나눠 쓰지 않는다.
+    assert check("UPEH") == ScalingCheck(applicable=2, fixed=2, collateral=0)
+    # 달×공정 단위 인자는 여섯 모두를 ≈1 하나 건드리지 않고 고친다.
+    assert check("RUN_DAY") == ScalingCheck(applicable=6, fixed=6, collateral=0)
+    # 공정 단위 모듈수는 P-WF 를 고치면 그 공정의 ≈1 둘이 같이 60 배가 된다.
+    assert check("모듈수") == ScalingCheck(applicable=6, fixed=4, collateral=2)
+    # 부하량은 공정이 없는 키라 P-MI 와 P-OK 가 같이 쓴다 — P-MI 를 고치면 P-OK 넷이 어긋난다.
+    assert check("부하량") == ScalingCheck(applicable=6, fixed=2, collateral=4)
+    # Net Die 는 WF 에만 걸린다 — P-WF 의 202608 둘.
+    assert check("Net Die").applicable == 2
+
+
+def test_formula_inputs_are_read_per_key_and_a_minutes_input_stands_out() -> None:
+    """≈60 무리의 RUN_DAY 만 60 분의 1 이면 무리 중앙의 비가 그것을 드러낸다. 표 표기는 흡수한다."""
+    frame = ratio_groups(_sixty_fold_paths()).frame
+    run_day = pd.DataFrame(
+        {
+            "생산계획년월": ["202607", "202608", "202607", "202608", "202607", "202608"],
+            "공정": [" P-MI", "P-MI", "p-wf", "P-WF", "P-OK", "P-OK "],
+            "RUN_DAY": [0.5, 0.5, 30.0, 0.5, 30.0, 30.0],
+        }
+    )
+    required = frame.loc[:, REQB_COLUMNS].assign(부하량=10.0)
+
+    inputs = attach_formula_inputs(frame, required, {"RQ_RUN_DAY": run_day})
+
+    spread = group_spread(inputs, inputs["RUN_DAY"])
+    assert spread[SUSPECT_GROUP].median == 0.5
+    assert spread[AGREE_GROUP].median == 30.0
+    assert median_ratio(spread) == pytest.approx(1 / 60)
+    assert inputs["부하량"].eq(10.0).all()
+    # 표가 없으면 빈 칸이다 — 멈추지 않는다.
+    assert inputs["UPEH"].isna().all()
+
+
+def test_route_columns_are_counted_by_group_without_values() -> None:
+    frame = ratio_groups(_sixty_fold_paths()).frame
+    route = frame.loc[:, REQB_COLUMNS].copy()
+    route["모델명"] = frame[GROUP_COLUMN].map({SUSPECT_GROUP: "M-60", AGREE_GROUP: "M-1"})
+    # ≈1 키 하나는 경로 행이 둘이고 모델이 갈린다.
+    first_agree = frame.index[frame[GROUP_COLUMN].eq(AGREE_GROUP)][0]
+    extra = route.loc[[first_agree]].assign(모델명="M-1b")
+    route = pd.concat([route, extra], ignore_index=True)
+
+    link = RouteLink.build(frame, route)
+    contrast = link.contrast("모델명")
+
+    assert contrast is not None
+    assert contrast.distinct == {SUSPECT_GROUP: 1, AGREE_GROUP: 2, OTHER_GROUP: 0}
+    assert (contrast.shared, contrast.suspect_only, contrast.suspect_only_keys) == (0, 1, 6)
+    assert contrast.agree_only == 2
+    assert int(link.labels("모델명").eq(MANY_VALUES).sum()) == 1
+    assert link.contrast("없는 칸") is None
+
+
+def test_route_totals_fold_repeats_and_sum_pack_codes() -> None:
+    """`일 필요` 는 기존 소요대수와 같은 규칙 — 같은 계획 줄의 반복은 접고 Pack Code 는 더한다."""
+    frame = ratio_groups(_sixty_fold_paths()).frame.iloc[:2]
+    first, second = frame.loc[:, REQB_COLUMNS].to_dict("records")
+    route = pd.DataFrame(
+        [
+            {**first, "Pack Code": "PK-1", "일 필요": 2.0},
+            {**first, "Pack Code": "PK-2", "일 필요": 3.0},
+            {**second, "Pack Code": "PK-1", "일 필요": 4.0},
+            {**second, "Pack Code": "PK-1", "일 필요": 4.0},
+        ]
+    )
+
+    totals = folded_route_totals(frame, route, "일 필요", legacy_grain(CONTRACT))
+
+    assert totals.tolist() == [5.0, 4.0]
