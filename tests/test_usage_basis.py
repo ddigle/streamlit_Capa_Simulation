@@ -1,8 +1,8 @@
-# Purpose: 사용기준 HBM 호기만 Dynamic 가용대수·단축 후보·일정 미정에 세는 규칙과 알림을 검증한다.
+# Purpose: 사용기준 HBM·EDP 호기만 Dynamic 가용대수·단축 후보·일정 미정에 세는 규칙과 알림을 본다.
 
-"""사용기준 HBM 규칙(2026-10-07 사용자 결정).
+"""사용기준 HBM·EDP 규칙(2026-10-07 HBM 결정, 2026-10-08 사용자 결정 「HBM이랑 EDP만 센다」).
 
-「사용기준이 HBM 인 호기만 Dynamic 가용대수로 센다. 배치는 그대로 둔다.」 규칙은
+「사용기준이 HBM·EDP 인 호기만 Dynamic 가용대수로 센다. 배치는 그대로 둔다.」 규칙은
 `equipment_contract.counts_for_capacity` 한 곳이고, 세는 자리(주차·월별 대수, 교차검증이 쓰는 환산
 소계, 필요단축일정 후보, 일정 미정 알림)는 모두 그것을 본다. 기존 보유대수 표는 사용기준이 없어
 지금처럼 센다.
@@ -118,8 +118,13 @@ def _weekly(equipment: pd.DataFrame, baseline: pd.DataFrame | None = None) -> pd
         ("hbm", True),
         (" HBM ", True),
         ("\tHbm\n", True),
+        ("EDP", True),
+        ("edp", True),
+        (" Edp ", True),
         ("HBM3E", False),
         ("HBM 양산", False),
+        ("EDP-TSV", False),
+        ("HBM·EDP", False),
         ("범용", False),
         ("", False),
         ("   ", False),
@@ -127,14 +132,16 @@ def _weekly(equipment: pd.DataFrame, baseline: pd.DataFrame | None = None) -> pd
         (pd.NA, False),
     ],
 )
-def test_only_an_exact_hbm_counts_ignoring_case_and_spaces(basis: object, counted: bool) -> None:
+def test_only_an_exact_hbm_or_edp_counts_ignoring_case_and_spaces(
+    basis: object, counted: bool
+) -> None:
     frame = pd.DataFrame({"사용기준": [basis]})
 
     assert counts_for_capacity(frame).tolist() == [counted]
 
 
 def test_the_counted_basis_is_declared_once() -> None:
-    assert COUNTED_USAGE_BASIS == ("HBM",)
+    assert COUNTED_USAGE_BASIS == ("HBM", "EDP")
 
 
 def test_a_frame_without_the_column_counts_nothing() -> None:
@@ -159,7 +166,7 @@ def test_the_status_frame_carries_the_flag_but_keeps_every_unit() -> None:
 
 
 def test_the_weekly_count_leaves_out_non_hbm_units_entirely() -> None:
-    """HBM 이 아닌 호기는 가용뿐 아니라 총대수·비가동·분류 칸에서도 빠진다 — 가용만 빼면 그
+    """HBM·EDP 가 아닌 호기는 가용뿐 아니라 총대수·비가동·분류 칸에서도 빠진다 — 가용만 빼면 그
     호기가 모두 비가동으로 세어진다. 기존 보유대수는 사용기준이 없어 그대로 센다.
     """
     equipment = _master(
@@ -182,7 +189,7 @@ def test_the_weekly_count_leaves_out_non_hbm_units_entirely() -> None:
 
 
 def test_the_monthly_table_counts_only_hbm_on_both_axes() -> None:
-    """대수와 환산대수 둘 다 HBM 만 센다 — 교차검증·필요단축일정이 쓰는 환산 소계도 같다."""
+    """대수와 환산대수 둘 다 세는 값만 센다 — 교차검증·필요단축일정이 쓰는 환산 소계도 같다."""
     equipment = _master(
         _unit("HBM-1", "HBM", 환산비=1.5),
         _unit("OTH-1", "범용", 환산비=2.0),
@@ -206,6 +213,40 @@ def test_the_monthly_table_counts_only_hbm_on_both_axes() -> None:
     assert set(contributions["설비명"].dropna()) == {"HBM-1"}
     cross = dynamic_available_equipment(monthly)
     assert cross["가용대수"].tolist() == pytest.approx([4.5])
+
+
+def test_edp_units_count_alongside_hbm_on_every_axis() -> None:
+    """EDP 호기는 HBM 호기와 한 가용대수로 센다 — 주차·월별(대수·환산)·후보·일정 미정, 제외 알림에는
+    들지 않는다."""
+    future = {"Qual일정": "2026-08-01", "확정상태": "계획"}
+    equipment = _master(
+        _unit("HBM-1", "HBM", 환산비=1.5),
+        _unit("EDP-1", " edp ", 환산비=2.0),
+        _unit("OTH-1", "범용"),
+        _unit("EDP-F", "EDP", **future),
+        _unit("EDP-U", "EDP", **{"Qual일정": None, "확정상태": None}),
+    )
+    ratios = {"HBM-1": 1.5, "EDP-1": 2.0}
+
+    weekly = _weekly(equipment)
+    monthly = build_monthly_equipment_availability(
+        _spans(equipment),
+        _baseline(0.0).iloc[0:0],
+        _cutoff_zero(),
+        [202602],
+        conversion_ratios=ratios,
+    )
+
+    assert weekly["가용호기대수"] == 2.0
+    assert weekly["총대수"] == 4.0
+    by_category = monthly.set_index("분류")["대수"]
+    # 셋업 중인 EDP 둘은 참고 행에 들고, 「범용」 호기는 어느 행에도 들지 않는다.
+    assert by_category["가용"] == 2.0
+    assert by_category.sum() == pytest.approx(4.0)
+    assert available_subtotal(monthly).iloc[0]["Dynamic가용환산대수"] == pytest.approx(3.5)
+    assert {unit.unit for unit in shortening_candidates(equipment, _no_downtime())} == {"EDP-F"}
+    assert undated_equipment(equipment)["설비명"].tolist() == ["EDP-U"]
+    assert usage_excluded_equipment(equipment)["설비명"].tolist() == ["OTH-1"]
 
 
 def test_the_baseline_still_counts_when_no_unit_is_hbm() -> None:
@@ -249,7 +290,8 @@ def test_a_module_group_counts_the_share_of_its_hbm_rows() -> None:
 
 
 def test_shortening_never_pulls_a_non_hbm_unit() -> None:
-    """HBM 이 아닌 호기는 당겨도 가용대수가 늘지 않는다 — 후보가 아니다. 섞인 묶음은 HBM 모듈만."""
+    """HBM·EDP 가 아닌 호기는 당겨도 가용대수가 늘지 않는다 — 후보가 아니다. 섞인 묶음은 세는
+    모듈만."""
     future = {"Qual일정": "2026-08-01", "확정상태": "계획"}
     equipment = _master(
         _unit("HBM-1", "HBM", **future),
@@ -314,7 +356,7 @@ def test_the_exclusion_notice_counts_units_and_disappears_at_zero() -> None:
     assert usage_excluded_count(excluded, unit_ids={"MIX-B"}) == pytest.approx(0.5)
     notice = usage_exclusion_notice(excluded, processes={PROCESS})
     assert notice == (
-        "사용기준이 HBM 이 아닌 1.5대(호기 마스터 기준)는 가용대수에서 뺐습니다 — "
+        "사용기준이 HBM·EDP 가 아닌 1.5대(호기 마스터 기준)는 가용대수에서 뺐습니다 — "
         "배치·호기 목록에는 그대로 있습니다."
     )
     assert usage_exclusion_notice(excluded, unit_ids={"HBM-1"}) is None

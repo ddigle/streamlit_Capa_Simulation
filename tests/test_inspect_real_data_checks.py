@@ -120,7 +120,7 @@ def _equipment_row(
             "공정대분류": "B/N",
             "공정구분": "L1",
             "투자구분": "양산",
-            # 일정 미정 알림은 Dynamic 이 세는 호기(사용기준 HBM)만 센다(2026-10-07 사용자 결정).
+            # 일정 미정 알림은 Dynamic 이 세는 호기(사용기준 HBM·EDP)만 센다(2026-10-08 결정).
             "사용기준": usage,
             "동": "C1",
             "층": "1F",
@@ -150,7 +150,9 @@ def equipment_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
         _equipment_row(f"{SENTINEL}EQ-Q", None, 1.0, arrival="2026-02-01", qual="2262-04-11")
     )
     rows.append(_equipment_row(f"{SENTINEL}EQ-A", None, 1.0, arrival=None, qual=None, status=None))
-    # 사용기준이 HBM 이 아닌 호기 — 값은 표지값이라 찍히면 누출이다.
+    # 사용기준이 EDP 인 호기는 HBM 과 함께 센다(2026-10-08 사용자 결정) — 줄에 따로 센다.
+    rows.append(_equipment_row(f"{SENTINEL}EQ-E", None, 1.0, usage="EDP"))
+    # 사용기준이 HBM·EDP 가 아닌 호기 — 값은 표지값이라 찍히면 누출이다.
     rows.append(_equipment_row(f"{SENTINEL}EQ-U", None, 1.0, usage=f"{SENTINEL}USAGE"))
     rows.append(_equipment_row(f"{SENTINEL}EQ-B", None, 1.0, usage=None))
     repository.save_snapshot(
@@ -207,7 +209,10 @@ def test_db_checks_print_aggregates_and_never_the_planted_names(
     assert "| Qual일정 = 2262-04-11 (최신 리비전, 이제 빈 Qual 로 읽음) | 1 |" in output
     assert "반입 미정 1대(1행) · Qual 미정 1대(1행)" in output
     assert "옛 자리표 2262-04-11 에서 온 것 1행" in output
-    assert "HBM 6행 · 다른 값 1행 · 빈 칸 1행 / 가용대수에서 빠지는 설비 2대(설비 5대 중)" in output
+    assert (
+        "HBM 6행 · EDP 1행 · 다른 값 1행 · 빈 칸 1행 / 가용대수에서 빠지는 설비 2대(설비 6대 중)"
+        in output
+    )
 
 
 def test_an_error_message_carrying_names_is_reported_by_kind_only(

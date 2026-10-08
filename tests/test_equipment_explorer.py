@@ -36,7 +36,7 @@ def _render_fixture() -> None:
         equipment.loc[index, "공정구분"] = "Line-A"
         equipment.loc[index, "투자구분"] = "양산"
         equipment.loc[index, "공정대분류"] = "조립"
-        # Dynamic 가용대수는 사용기준이 HBM 인 호기만 센다(2026-10-07 사용자 결정).
+        # Dynamic 가용대수는 사용기준이 HBM·EDP 인 호기만 센다(2026-10-08 사용자 결정).
         equipment.loc[index, "사용기준"] = "HBM"
         equipment.loc[index, "보관유무"] = "N"
         equipment.loc[index, "기존설비여부"] = "Y"
@@ -64,7 +64,7 @@ def _render_fixture() -> None:
             "N",
         ]
     if st.session_state.get("non_hbm_unit", False):
-        # 사용기준이 HBM 이 아닌 기존 설비. 가용대수에서 빠지고 호기 현황에는 남는다.
+        # 사용기준이 HBM·EDP 가 아닌 기존 설비. 가용대수에서 빠지고 호기 현황에는 남는다.
         row = len(equipment)
         equipment.loc[row] = {column: None for column in equipment.columns}
         equipment.loc[row, ["설비명", "공정소분류", "공정구분", "투자구분", "공정대분류"]] = [
@@ -314,7 +314,8 @@ def _usage(app: AppTest) -> list[str]:
 
 
 def test_non_hbm_units_leave_the_availability_count_but_stay_in_the_unit_status() -> None:
-    """사용기준이 HBM 이 아닌 호기는 가용대수에서 빠지고 한 줄로 알린다. 호기 현황은 그대로 센다."""
+    """사용기준이 HBM·EDP 가 아닌 호기는 가용대수에서 빠지고 한 줄로 알린다. 호기 현황은 그대로
+    센다."""
     plain = AppTest.from_function(_render_fixture, default_timeout=30)
     plain.run()
     app = AppTest.from_function(_render_fixture, default_timeout=30)
@@ -324,7 +325,7 @@ def test_non_hbm_units_leave_the_availability_count_but_stay_in_the_unit_status(
 
     assert _usage(plain) == []
     assert _usage(app) == [
-        ":material/filter_alt_off: 사용기준이 HBM 이 아닌 1대(호기 마스터 기준)는 가용대수에서 "
+        ":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 1대(호기 마스터 기준)는 가용대수에서 "
         "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
     ]
     # 마지막 주 요약의 총·가용 대수는 그 호기가 없는 표와 같다.

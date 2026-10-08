@@ -48,12 +48,12 @@ Guide 「반출·이설일정 **전날까지** 가용」에 코드를 맞췄다)
 않은 설비가 가용대수로 세어진다. 그래서 `반출 예정`·`이설 예정` 행에는 **가용이 아닌**
 예정 호기(셋업 중·보관·입고 전)만 남는다.
 
-## 사용기준 HBM 만 센다
+## 사용기준 HBM·EDP 만 센다
 
-호기 마스터의 기여 줄은 **사용기준이 HBM 인 행만** 만든다(구간의 `가용대수반영`,
-`equipment_contract.counts_for_capacity`, 2026-10-07 사용자 결정). 다른 행은 참고 행에도 들지
-않는다 — 이 표는 HBM Capa 의 가용대수를 분해한 것이다. 행마다 보므로 모듈 넷 중 둘만 HBM 인
-설비는 지분대로 0.5대다. `기존보유` 는 사용기준이 없어 지금처럼 센다.
+호기 마스터의 기여 줄은 **사용기준이 HBM·EDP 인 행만** 만든다(구간의 `가용대수반영`,
+`equipment_contract.counts_for_capacity`, 2026-10-08 사용자 결정). 다른 행은 참고 행에도 들지
+않는다 — 이 표는 HBM·EDP Capa 의 가용대수를 분해한 것이다. 행마다 보므로 모듈 넷 중 둘만 세는
+값인 설비는 지분대로 0.5대다. `기존보유` 는 사용기준이 없어 지금처럼 센다.
 
 ## 대수와 환산대수는 다른 질문이다
 
@@ -412,8 +412,8 @@ def _prorated_rows(
     categories = (
         spans[COUNT_CATEGORY_COLUMN] if COUNT_CATEGORY_COLUMN in spans.columns else spans["상태"]
     )
-    # 사용기준이 HBM 이 아닌 호기는 기여 줄을 만들지 않는다. 지분만 0 으로 두면 환산대수(환산비를
-    # 곱하는 축)에 남는다. 컬럼이 없는 구간은 걸러 오지 않은 것으로 보고 모두 센다.
+    # 사용기준이 HBM·EDP 가 아닌 호기는 기여 줄을 만들지 않는다. 지분만 0 으로 두면 환산대수
+    # (환산비를 곱하는 축)에 남는다. 컬럼이 없는 구간은 걸러 오지 않은 것으로 보고 모두 센다.
     counted = (
         spans[COUNTED_COLUMN].fillna(False).astype("bool")
         if COUNTED_COLUMN in spans.columns

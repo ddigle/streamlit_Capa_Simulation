@@ -336,7 +336,7 @@ def build_weekly_equipment_availability(
 ) -> pd.DataFrame:
     """ISO 주차·공정소분류별 총대수·가용대수·비가동대수와 분류 대수(각 주 일요일 판정).
 
-    호기 마스터 쪽은 **사용기준이 HBM 인 행만** 센다(`equipment_contract.counts_for_capacity`).
+    호기 마스터 쪽은 **사용기준이 HBM·EDP 인 행만** 센다(`equipment_contract.counts_for_capacity`).
     기존 보유대수는 사용기준이 없어 지금처럼 모두 센다.
     """
     if start_date > end_date:
@@ -368,7 +368,7 @@ def build_weekly_equipment_availability(
         )
         # 행을 세지 않고 설비지분을 더한다. 모듈 행 넷이 한 대로, 모듈 하나의 PM 이 0.25대로
         # 잡힌다. 그래서 정수로 자르지 않는다 — 자르면 0.75 가 0 이 된다.
-        # 사용기준이 HBM 이 아닌 행은 지분을 0 으로 본다(`counts_for_capacity`). 가용만 빼면
+        # 사용기준이 HBM·EDP 가 아닌 행은 지분을 0 으로 본다(`counts_for_capacity`). 가용만 빼면
         # 「비가동 = 보유 - 가용」이 그 호기를 모두 비가동으로 세므로 보유·분류 대수에서도 뺀다.
         share = status[UNIT_SHARE_COLUMN].astype("float64") * status[COUNTED_COLUMN].astype(
             "float64"

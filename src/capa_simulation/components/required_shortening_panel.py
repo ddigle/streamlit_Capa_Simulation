@@ -543,11 +543,11 @@ def _render_undated_notice(equipment: pd.DataFrame, *, selected: Sequence[str] |
 
 
 def _render_usage_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | None) -> None:
-    """사용기준이 HBM 이 아니어서 가용·후보에서 뺀 설비 한 줄. 0대면 그리지 않는다.
+    """사용기준이 HBM·EDP 가 아니어서 가용·후보에서 뺀 설비 한 줄. 0대면 그리지 않는다.
 
-    공정을 고르면 그 공정만, 고르지 않으면 호기 마스터 전체를 센다 — 호기가 모두 HBM 이 아닌 공정은
-    Dynamic 이 없어 「맞대지 못한 공정」에만 남으므로 맞댄 공정으로 좁히면 그 까닭이 사라진다.
-    호기 마스터가 검증을 못 넘으면 알리지 않는다(계산 자리가 이미 알린다).
+    공정을 고르면 그 공정만, 고르지 않으면 호기 마스터 전체를 센다 — 호기가 모두 HBM·EDP 가 아닌
+    공정은 Dynamic 이 없어 「맞대지 못한 공정」에만 남으므로 맞댄 공정으로 좁히면 그 까닭이
+    사라진다. 호기 마스터가 검증을 못 넘으면 알리지 않는다(계산 자리가 이미 알린다).
     """
     try:
         excluded = simulation_cache.get_usage_excluded_equipment(equipment)
@@ -692,7 +692,7 @@ def _render_progress(
     rows = simulation_cache.get_shortening_progress(
         key, baseline.summary.baseline_id, float(level), _plan=plan, _baseline=baseline
     )
-    view = progress_view(rows, ordered=ordered, scope=scope, selected=selected)
+    view = progress_view(rows, ordered=ordered, scope=scope, selected=selected, months=months)
     st.html(_style())
     st.html(progress_style())
     st.html(progress_summary_markup(view, baseline, level, selected=selected))
@@ -718,7 +718,6 @@ def _render_progress(
                 labels.label(process),
                 plan.cutoff_days.get(process),
                 view,
-                months,
                 today=plan.today,
             )
         )
@@ -729,7 +728,6 @@ def _render_progress(
                 labels.label(process),
                 baseline.cutoff_days.get(process),
                 view,
-                months,
                 today=plan.today,
                 outside=True,
             )

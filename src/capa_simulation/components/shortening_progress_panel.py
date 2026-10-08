@@ -16,6 +16,9 @@
 - 비교 화면은 요약(단축 필요일수 합계 과거 → 현재, 호기 변동, 신규 투자) → CSV 줄 → 범위가 다르면
   한 줄 → 공정 카드다. 카드는 호기마다 **과거**(회색: ◀ 필요 시점 ── ○ 확보 시점)와 **현재**(진하게:
   ◀ ━━ ●) 두 줄이 같은 달 축 위에 선다. 늘어난 호기·새로 필요한 호기의 현재 줄은 증가색이다.
+- 카드의 달 축은 지금 조회 달을 **보이는 카드의 두 시점 날짜가 모두 들도록 앞뒤로 넓힌** 것이다
+  (2026-10-08 사용자 결정 「넓히기」). `progress_view` 가 화면마다 한 번 정하고 모든 카드가 같은
+  축을 쓴다 — 카드끼리 같은 날이 같은 자리에 선다. 범위 차이 알림·CSV 는 지금 조회 달 그대로다.
 
 색은 모두 `design/tokens` 에서 실행마다 읽는다(밝은·어두운 테마). 줄임·해소는 `ACCENT`, 늘어남·
 신규 필요는 `DELTA_INCREASE`(증감 글자색), 변동 없음·신규 유지·범위 밖·필요 시점 지남은
@@ -39,6 +42,7 @@ from capa_simulation.components.shortening_timeline import (
     month_day,
     timeline_axis,
     timeline_grid_lines,
+    timeline_months_covering,
     timeline_position,
 )
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -122,6 +126,8 @@ _LANE_PX = 18
 _LANE_CENTER_PX = _LANE_PX / 2
 _LANE_GAP_PX = 4
 _MAX_AXIS_LABELS = 12
+# 두 줄 타임라인에 서는 날짜 칸. 카드의 달 축은 이 날짜가 모두 들도록 넓힌다.
+_LANE_DATE_COLUMNS = ("과거 필요 시점", "과거 확보 시점", "현재 필요 시점", "현재 확보 시점")
 
 
 @dataclass(frozen=True)
@@ -137,12 +143,17 @@ class BaselineSaveContext:
 
 @dataclass(frozen=True)
 class ProgressView:
-    """비교 화면에 세울 카드. 지금 범위의 공정(화면 차례)과 기준선에만 있던 공정."""
+    """비교 화면에 세울 카드. 지금 범위의 공정(화면 차례)과 기준선에만 있던 공정.
+
+    `axis_months` 는 모든 카드가 함께 쓰는 달 축이다 — 지금 조회 달을 카드 두 시점의 날짜가 모두
+    들도록 앞뒤로 넓힌 것(`timeline_months_covering`).
+    """
 
     rows: pd.DataFrame
     cards: tuple[str, ...]
     outside: tuple[str, ...]
     summary: ProgressSummary
+    axis_months: tuple[int, ...]
 
     @property
     def csv_processes(self) -> tuple[str, ...]:
@@ -357,13 +368,15 @@ def progress_view(
     ordered: Sequence[str],
     scope: Sequence[str],
     selected: bool,
+    months: Sequence[int],
 ) -> ProgressView:
-    """비교 화면의 카드 목록과 요약.
+    """비교 화면의 카드 목록·요약과 카드가 함께 쓸 달 축.
 
     공정을 고르면 그 공정을 모두 카드로 세운다(두 시점 모두 단축할 호기가 없어도). 고르지 않으면
     지금 맞댄 공정 가운데 **어느 한 시점이라도** 단축할 호기가 있는 공정, 그 뒤에 기준선에만 있던
     공정(「지금 범위 밖」, 접어 둔다)이다. 요약은 지금 범위(`scope`)만 센다 — 범위 밖 공정은 견줄
-    짝이 없다.
+    짝이 없다. 달 축은 지금 조회 달(`months`)을 세울 카드의 두 시점 날짜가 모두 들도록 넓힌다 —
+    세우지 않는 공정의 날짜로는 넓히지 않는다.
     """
     present = set(rows.loc[rows["상태"].ne(PROGRESS_OUT_OF_SCOPE), "공정"])
     cards = (
@@ -374,11 +387,15 @@ def progress_view(
         if selected
         else tuple(dict.fromkeys(rows.loc[rows["상태"].eq(PROGRESS_OUT_OF_SCOPE), "공정"]))
     )
+    shown = rows.loc[rows["공정"].isin([*cards, *outside]), list(_LANE_DATE_COLUMNS)]
     return ProgressView(
         rows=rows,
         cards=cards,
         outside=tuple(str(process) for process in outside),
         summary=summarize_progress(rows, scope),
+        axis_months=timeline_months_covering(
+            months, (_day(value) for value in shown.to_numpy().ravel())
+        ),
     )
 
 
@@ -648,7 +665,6 @@ def progress_card_markup(
     display_name: str,
     cutoff_days: int | None,
     view: ProgressView,
-    months: Sequence[int],
     *,
     today: date,
     outside: bool = False,
@@ -656,7 +672,8 @@ def progress_card_markup(
     """공정 카드 하나 — 머리에 공정 합계 과거 → 현재와 증감, 호기마다 두 줄.
 
     `outside` 면 기준선에만 있던 공정이다 — 「지금 범위 밖」 으로 접어 둔다(`<details>`). 제목은
-    공정 표시명이고 다르면 풍선에 원본을 남긴다.
+    공정 표시명이고 다르면 풍선에 원본을 남긴다. 달 축은 화면의 모든 카드가 함께 쓰는
+    `view.axis_months` 다.
     """
     rows = view.rows.loc[view.rows["공정"].eq(process)]
     summary = summarize_progress(rows)
@@ -667,7 +684,7 @@ def progress_card_markup(
         if cutoff_days is not None
         else ""
     )
-    body = _units_markup(rows, months, today=today)
+    body = _units_markup(rows, view.axis_months, today=today)
     if outside:
         return (
             f'<details class="shk-prog-out" aria-label="진척 {name}"><summary>'

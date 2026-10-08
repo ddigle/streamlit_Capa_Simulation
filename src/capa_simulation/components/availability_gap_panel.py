@@ -362,7 +362,7 @@ def _undated_rows(units: pd.DataFrame | None) -> pd.DataFrame | None:
 
 
 def _usage_excluded_rows(units: pd.DataFrame | None) -> pd.DataFrame | None:
-    """사용기준이 HBM 이 아니어서 Dynamic 에 세지 않는 호기. 표가 없거나 못 읽으면 `None`."""
+    """사용기준이 HBM·EDP 가 아니어서 Dynamic 에 세지 않는 호기. 표가 없거나 못 읽으면 `None`."""
     if units is None:
         return None
     try:

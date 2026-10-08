@@ -10,7 +10,7 @@
 후보는 Qual 일정만 보고 반입일정은 하한으로 보지 않으므로(2026-10-07 결정), 반입만 빈 호기는 Dynamic
 에는 없어도 단축 후보다.
 
-- **대상** — 사용기준이 HBM 이고(`equipment_contract.counts_for_capacity` — 다른 행은 날짜를
+- **대상** — 사용기준이 HBM·EDP 이고(`equipment_contract.counts_for_capacity` — 다른 행은 날짜를
   채워도 가용대수에 들지 않는다) 기존설비여부 N · 보관유무 N 이며 반출일정·이설일정이 모두 빈 행
   가운데 반입일정 또는 Qual일정이 빈 행. 반출·이설 날짜가 있는 행은 뺀다 — 이 알림은 기준일이
   없어 이미 나간 호기와 나갈 호기를 가를 수 없고, 나갈 호기는 날짜를 채워도 실행일에 빠지는 호기다.
@@ -29,8 +29,8 @@
     몫이다(모듈 넷 중 A·B 가용, C 는 Qual 없음, D 는 반입 없음 → C 의 1/3 = 0.33대).
   지분은 넘겨받은 호기 마스터 전체로 매기므로 **거르기 전의 표**를 넘기고, 범위는 `processes`·
   `unit_ids` 로 좁힌다(행마다 몫이 정해져 있어 호기 필터가 모듈 하나만 골라도 그 몫만 남는다).
-  사용기준도 몫을 다 매긴 뒤에 거른다 — Dynamic 이 설비지분을 형제 전체로 매기고 HBM 이 아닌 행의
-  몫만 빼는 것과 같은 셈이다.
+  사용기준도 몫을 다 매긴 뒤에 거른다 — Dynamic 이 설비지분을 형제 전체로 매기고 HBM·EDP 가 아닌
+  행의 몫만 빼는 것과 같은 셈이다.
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ def undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
     holdable_in_unit = holdable.groupby(keys).transform("sum")
     no_arrival = fresh & staying & ~has_arrival & holdable_in_unit.eq(0)
     no_qual = fresh & staying & has_arrival & prepared["Qual일정"].isna()
-    # 몫은 사용기준과 상관없이 매기고 HBM 행만 남긴다(모듈 docstring).
+    # 몫은 사용기준과 상관없이 매기고 HBM·EDP 행만 남긴다(모듈 docstring).
     chosen = (no_arrival | no_qual) & counts_for_capacity(prepared)
     if not chosen.any():
         return _empty()

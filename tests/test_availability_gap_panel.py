@@ -100,7 +100,7 @@ def _panel_app() -> None:
         from capa_simulation.services.equipment_contract import EQUIPMENT_COLUMNS
 
         # 날짜가 빈 신규 호기 둘(Die Attach 반입 미정, Etch Qual 미정)과 일정이 다 있는 EQ-1.
-        # `non_hbm_units` 를 켜면 사용기준이 HBM 이 아닌 호기 둘(공정마다 하나)을 더한다.
+        # `non_hbm_units` 를 켜면 사용기준이 HBM·EDP 가 아닌 호기 둘(공정마다 하나)을 더한다.
         rows: list[tuple[str, str, date | None, date | None, str | None, str | None]] = [
             ("EQ-1", "Die Attach", date(2020, 1, 1), date(2020, 1, 5), "완료", "HBM"),
             ("EQ-NEW", "Die Attach", None, None, None, "HBM"),
@@ -509,17 +509,18 @@ def _usage_captions(app: AppTest) -> list[str]:
 
 
 def test_non_hbm_units_are_named_in_every_view_in_the_scope_the_counts_use() -> None:
-    """사용기준이 HBM 이 아닌 호기는 가용대수에서 빠진다 — 세 결과 모두 같은 범위로 한 줄 알린다."""
+    """사용기준이 HBM·EDP 가 아닌 호기는 가용대수에서 빠진다 — 세 결과 모두 같은 범위로 한 줄
+    알린다."""
     assert _usage_captions(_run(undated_units=True)) == []
     app = _run(undated_units=True, non_hbm_units=True)
 
     assert _usage_captions(app) == [
-        ":material/filter_alt_off: 사용기준이 HBM 이 아닌 2대(호기 마스터 기준)는 가용대수에서 "
+        ":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 2대(호기 마스터 기준)는 가용대수에서 "
         "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
     ]
     app.selectbox(key=PROCESS_FILTER_KEY).set_value("Die Attach").run()
     assert [text.split("(")[0] for text in _usage_captions(app)] == [
-        ":material/filter_alt_off: 사용기준이 HBM 이 아닌 1대"
+        ":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 1대"
     ]
     for view in ("분류별 내역", "확보율 교차검증"):
         _select_view(app, view)

@@ -207,8 +207,9 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   Space X/Y 좌표와 X/Y 크기, 제진대·물류·반입·Qual·반출·이설 일정, Qual 실행관리용
   확정상태, 반입/Qual 이력·호기이력·설비이력, 보관유무·기존설비여부·레이아웃표시, 환산비·
   Main 설비, 메모1~3 을 저장하는 전체 스냅샷. **`사용기준`(`classification_2`)은 참고 속성이
-  아니라 가용대수 대상을 가른다** — Dynamic 가용대수·필요단축일정은 이 값이 `HBM`(앞뒤 공백·대소문자
-  무시, 완전 일치)인 행만 센다(2026-10-07 사용자 결정, `equipment_contract.counts_for_capacity`).
+  아니라 가용대수 대상을 가른다** — Dynamic 가용대수·필요단축일정은 이 값이 `HBM` 또는 `EDP`(앞뒤
+  공백·대소문자 무시, 완전 일치)인 행만 한 가용대수로 센다(2026-10-08 사용자 결정,
+  `equipment_contract.counts_for_capacity`).
   저장 형식은 바뀌지 않았고 빈 값으로 저장된 옛 리비전의 호기는 그 결정으로 가용대수에서 빠진다.
   `baseline_snapshot` 에는 사용기준이 없어 기존 보유대수는 늘 센다. DB 컬럼은 영문이고 한글 계약 이름과의 매핑은
   `persistence/equipment_repository.py` 의 `EQUIPMENT_MASTER_DB_COLUMNS` 한 곳이다 — 2026-10-06
