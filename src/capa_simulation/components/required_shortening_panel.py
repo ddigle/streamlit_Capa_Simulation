@@ -20,6 +20,11 @@
 라벨, 카드 제목, LOB 요약의 B/N 공정. 값(세션·프로필·계산 키·CSV `공정`)은 원본이다. 「맞대지 못한
 공정」은 이름을 맞추라는 안내라 원본을 그대로 적는다(AGENTS 8장 — 원본 키를 확인하는 화면).
 
+**진척 비교**(2026-10-08 사용자 요청, 시안 B)는 본문 머리의 `진척 비교` 상자에서 저장해 둔 기준선을
+고르면 KPI·LOB·공정 카드 자리를 요약과 호기마다 과거·현재 두 줄 카드로 바꾼다
+(`shortening_progress_panel`). `비교 안 함`(기본)이면 이 화면은 그대로이고 기준선 목록 캐시만
+읽는다. 기준선 저장·지우기 팝오버는 CSV 단추 줄에 선다.
+
 화면은 HOME 「Capa LOB Summary」 결의 HTML 이다(`st.html`). 색은 모두 `design/tokens` 에서 실행마다
 읽어 밝은·어두운 테마를 따른다. 상태색(`STATUS_*`)은 면색이라 그 위 글자는 `TEXT` 다. 호기·공정
 이름은 사용자가 적은 글이라 모두 이스케이프한다.
@@ -28,7 +33,7 @@
 from __future__ import annotations
 
 import html
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -41,6 +46,25 @@ import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.shortening_progress_panel import (
+    NO_COMPARISON,
+    BaselineSaveContext,
+    load_baseline_options,
+    load_selected_baseline,
+    progress_card_markup,
+    progress_style,
+    progress_summary_markup,
+    progress_view,
+    render_baseline_controls,
+    render_baseline_notice,
+    render_compare_select,
+    render_progress_csv,
+    scope_note,
+)
+from capa_simulation.components.shortening_timeline import month_day as _month_day
+from capa_simulation.components.shortening_timeline import timeline_axis as _axis
+from capa_simulation.components.shortening_timeline import timeline_grid_lines as _grid_lines
+from capa_simulation.components.shortening_timeline import timeline_position as _position
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.typography import FIGURE_CLASS
@@ -55,6 +79,10 @@ from capa_simulation.persistence.equipment_cache import (
     clear_shortening_filter_cache,
     get_equipment_repository,
     load_shortening_filter_profile,
+)
+from capa_simulation.scenario_activation import (
+    active_scenario_label,
+    has_unsaved_scenario_changes,
 )
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
@@ -75,6 +103,11 @@ from capa_simulation.services.securement_threshold import (
     DEFAULT_SECURE_THRESHOLD,
     DEFAULT_WARNING_THRESHOLD,
     SecurementThresholds,
+)
+from capa_simulation.services.shortening_baseline import (
+    BaselineProvenance,
+    ShorteningBaseline,
+    ShorteningBaselineSummary,
 )
 from capa_simulation.services.shortening_filter_profile import (
     ShorteningFilterProfile,
@@ -144,6 +177,9 @@ def render_required_shortening_tab(
     owner_tab: OpenTab | None = None,
     conditions: DeltaGenerator | None = None,
     equipment_database_path: str | None = None,
+    equipment_revision_id: str | None = None,
+    equipment_revision_no: int | None = None,
+    baseline_refusal: str | None = None,
 ) -> None:
     """필요단축일정 탭 본문. 숨은 탭이면 아무것도 하지 않는다.
 
@@ -152,15 +188,19 @@ def render_required_shortening_tab(
     `context`·`required_equipment` 는 페이지가 활성 시나리오에서 읽어 넘긴다. 못 읽었으면
     `scenario_error` 에 까닭이 오고 **이 탭 안에서만** 알린다 — 다른 탭은 그대로 쓴다.
 
-    `equipment_database_path` 는 공용 조회 조건 프로필이 사는 설비 DB 다. 없으면(컴포넌트를 홀로
-    띄우는 자리) 조건은 세션 값뿐이다.
+    `equipment_database_path` 는 공용 조회 조건 프로필과 진척 비교 기준선이 사는 설비 DB 다. 없으면
+    (컴포넌트를 홀로 띄우는 자리) 조건은 세션 값뿐이고 진척 비교 상자·기준선 저장을 세우지 않는다.
+    `equipment_revision_id`·`equipment_revision_no` 는 화면의 호기가 나온 저장 리비전(기준선 머리에
+    남긴다), `baseline_refusal` 은 기준선을 저장하지 않을 까닭(샘플 fleet)이다.
     """
     if tab_is_hidden(owner_tab):
         return
     controls: AbstractContextManager[object] = (
         conditions if conditions is not None else nullcontext()
     )
-    level = _render_header(today)
+    baselines = load_baseline_options(equipment_database_path)
+    level, compare_id = _render_header(today, baselines)
+    render_baseline_notice()
 
     if scenario_error is not None or context is None or required_equipment is None:
         st.warning(
@@ -237,10 +277,36 @@ def render_required_shortening_tab(
         )
         return
 
+    save = _save_context(
+        plan,
+        today=today,
+        context=context,
+        database_path=equipment_database_path,
+        revision=(equipment_revision_id, equipment_revision_no),
+        refusal=baseline_refusal,
+    )
+    compared = load_selected_baseline(equipment_database_path, compare_id)
+    if compared is not None:
+        _render_progress(
+            key,
+            plan,
+            compared,
+            level=level,
+            months=months,
+            ordered=ordered,
+            scope=scope,
+            selected=bool(selected),
+            labels=labels,
+            save=save,
+        )
+        return
+
     thresholds = _thresholds()
     st.html(_style())
     st.html(_kpi_markup(level_plan, level, scope, short, selected=bool(selected)))
-    _render_downloads(key, plan, scope, level, months)
+    _render_downloads(
+        key, plan, scope, level, months, extra=lambda: render_baseline_controls(save, None)
+    )
     st.html(
         _lob_markup(
             months,
@@ -281,11 +347,19 @@ def render_required_shortening_tab(
 # ------------------------------------------------------------------ 위젯
 
 
-def _render_header(today: date) -> float:
-    """제목과 오른쪽 `목표 확보율`. 제목 옆에 두므로 가로 컨테이너가 아니라 컬럼이다(AGENTS 9장)."""
+def _render_header(
+    today: date, baselines: Sequence[ShorteningBaselineSummary] | None
+) -> tuple[float, str]:
+    """제목과 오른쪽 `진척 비교`·`목표 확보율`. 제목 옆에 두므로 가로 컨테이너가 아니라 컬럼이다
+    (AGENTS 9장). 둘 다 무엇을 볼지라 본문 머리다 — 거르는 조건(기간·공정)만 조건 카드에 둔다.
+    `baselines` 가 None 이면(설비 DB 없음) 진척 비교 상자를 세우지 않는다."""
     if SHORTENING_LEVEL_KEY not in st.session_state:
         st.session_state[SHORTENING_LEVEL_KEY] = DEFAULT_TARGET_LEVEL
-    title, picker = st.columns([4, 1], vertical_alignment="bottom")
+    compare_column: DeltaGenerator | None = None
+    if baselines is None:
+        title, picker = st.columns([4, 1], vertical_alignment="bottom")
+    else:
+        title, compare_column, picker = st.columns([3, 1.5, 1], vertical_alignment="bottom")
     with title:
         st.markdown("#### :material/event_upcoming: 필요단축일정")
         st.caption(
@@ -300,7 +374,11 @@ def _render_header(today: date) -> float:
             key=SHORTENING_LEVEL_KEY,
             persist_state="session",
         )
-    return float(level)
+    compare = NO_COMPARISON
+    if compare_column is not None and baselines is not None:
+        with compare_column:
+            compare = render_compare_select(baselines)
+    return float(level), compare
 
 
 def _filter_profile(database_path: str | None) -> ShorteningFilterProfile:
@@ -513,8 +591,12 @@ def _render_downloads(
     scope: Sequence[str],
     level: float,
     months: Sequence[int],
+    *,
+    extra: Callable[[], None] | None = None,
 ) -> None:
     """CSV 세 벌 — 고른 목표의 호기별 단축 일정, 다섯 목표를 한 파일로, 고른 목표의 공정 x 월.
+
+    `extra` 는 같은 줄 뒤에 세울 것(진척 비교 CSV·기준선 저장·지우기 팝오버)이다.
 
     범위는 셋 다 화면과 같다(조건 카드의 공정, 비우면 맞댄 공정 전체 · 고른 달). 표는 캐시된 결과를
     고르기만 해 만든다 — 다섯 목표가 이미 계산돼 있고 마스터 속성도 결과에 실려 있다. 바이트는
@@ -544,6 +626,113 @@ def _render_downloads(
             file_name=f"required_shortening_process_months_{percent}pct_{span}.csv",
             key=_MONTHS_CSV_KEY,
             label="공정·월 CSV",
+        )
+        if extra is not None:
+            extra()
+
+
+def _save_context(
+    plan: ShorteningPlan,
+    *,
+    today: date,
+    context: PageContext,
+    database_path: str | None,
+    revision: tuple[str | None, int | None],
+    refusal: str | None,
+) -> BaselineSaveContext | None:
+    """「기준선 저장」 이 얼릴 계획과 머리에 남길 출처. 설비 DB 가 없는 자리면 None(단추 없음).
+
+    미저장 시나리오 편집도 거절한다 — 기준선은 모든 사용자가 보는 고칠 수 없는 기록인데 그 편집은
+    이 세션에만 있다. 시나리오 이름표는 세션에서만 읽는다(없으면 이름 없이 남긴다).
+    """
+    if database_path is None:
+        return None
+    if refusal is None and has_unsaved_scenario_changes():
+        refusal = (
+            "저장하지 않은 시나리오 편집이 있어 기준선을 저장하지 않습니다 — 사이드바에서 "
+            "시나리오를 저장하거나 편집을 되돌린 뒤 다시 누르세요."
+        )
+    label = active_scenario_label()
+    return BaselineSaveContext(
+        database_path=database_path,
+        plan=plan,
+        today=today,
+        provenance=BaselineProvenance(
+            equipment_revision_id=revision[0],
+            equipment_revision_no=revision[1],
+            reference_version=context.reference_version,
+            scenario_id=label.scenario_id if label is not None else None,
+            scenario_name=label.scenario_name if label is not None else None,
+            scenario_revision_id=label.revision_id if label is not None else None,
+            scenario_revision_no=label.revision_no if label is not None else None,
+            scenario_content_token=str(context.active_scenario["content_token"]),
+        ),
+        refusal=refusal,
+    )
+
+
+def _render_progress(
+    key: simulation_cache.RequiredShorteningCacheKey,
+    plan: ShorteningPlan,
+    baseline: ShorteningBaseline,
+    *,
+    level: float,
+    months: Sequence[int],
+    ordered: Sequence[str],
+    scope: Sequence[str],
+    selected: bool,
+    labels: ProcessLabels,
+    save: BaselineSaveContext | None,
+) -> None:
+    """진척 비교 화면 — 요약 → CSV 줄 → 범위 차이 한 줄 → 공정 카드(호기마다 두 줄).
+
+    짝짓기는 계획 키 + 기준선 id + 목표로 캐시한다(`get_shortening_progress`) — 공정 선택만 바꾼
+    rerun 은 다시 짝짓지 않는다. 계획·LOB 요약은 그리지 않는다(`비교 안 함` 으로 돌아가면 그대로다).
+    """
+    rows = simulation_cache.get_shortening_progress(
+        key, baseline.summary.baseline_id, float(level), _plan=plan, _baseline=baseline
+    )
+    view = progress_view(rows, ordered=ordered, scope=scope, selected=selected)
+    st.html(_style())
+    st.html(progress_style())
+    st.html(progress_summary_markup(view, baseline, level, selected=selected))
+
+    def controls() -> None:
+        render_progress_csv(key, baseline, view, level, plan.today)
+        render_baseline_controls(save, baseline.summary)
+
+    _render_downloads(key, plan, scope, level, months, extra=controls)
+    note = scope_note(baseline, plan, months, labels, lapsed=view.summary.lapsed)
+    if note is not None:
+        st.caption(note)
+    if not view.cards and not view.outside:
+        st.success(
+            f"목표 {_percent(level)} 에서 기준선과 지금 모두 단축할 호기가 없습니다.",
+            icon=":material/check_circle:",
+        )
+        return
+    for process in view.cards:
+        st.html(
+            progress_card_markup(
+                process,
+                labels.label(process),
+                plan.cutoff_days.get(process),
+                view,
+                months,
+                today=plan.today,
+            )
+        )
+    for process in view.outside:
+        st.html(
+            progress_card_markup(
+                process,
+                labels.label(process),
+                baseline.cutoff_days.get(process),
+                view,
+                months,
+                today=plan.today,
+                outside=True,
+            )
         )
 
 
@@ -666,12 +855,6 @@ def _month_values(frame: pd.DataFrame, column: str, wanted: set[int]) -> dict[in
 
 def _percent(level: float) -> str:
     return f"{round(level * 100)}%"
-
-
-def _month_day(day: date, *, today: date) -> str:
-    """호기 줄의 날짜. 올해면 `MM.DD`, 해가 다르면 `YY.MM.DD` 다(2026-10-08 사용자 결정 — 해를 넘는
-    단축이 「02.25 → 10.08」 처럼 거꾸로 읽혔다). 전체 날짜는 줄의 풍선(`title`)에도 있다."""
-    return f"{day:%m.%d}" if day.year == today.year else f"{day:%y.%m.%d}"
 
 
 def _signed(value: float) -> str:
@@ -989,28 +1172,6 @@ def _card_table(
         else:
             cells.append(f'<div><span class="shk-num">{_signed(gap)}</span></div>')
     return f'<div class="shk-grid" style="{_grid_style(months)}">{"".join(cells)}</div>'
-
-
-def _axis(months: Sequence[int]) -> tuple[date, date]:
-    first = date(months[0] // 100, months[0] % 100, 1)
-    year, month = divmod(months[-1], 100)
-    following = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
-    return first, following
-
-
-def _position(day: date, axis: tuple[date, date]) -> float:
-    span = (axis[1] - axis[0]).days
-    return min(100.0, max(0.0, (day - axis[0]).days / span * 100))
-
-
-def _grid_lines(months: Sequence[int], axis: tuple[date, date]) -> str:
-    lines = []
-    for month in months[1:]:
-        start = date(month // 100, month % 100, 1)
-        lines.append(
-            f'<span class="shk-grid-line" style="left:{_position(start, axis):.3f}%"></span>'
-        )
-    return "".join(lines)
 
 
 def _units_markup(

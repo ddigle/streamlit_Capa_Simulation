@@ -25,6 +25,10 @@ from capa_simulation.services.floor_layout_profile import (
     FloorLayoutCanvas,
     FloorLayoutProfile,
 )
+from capa_simulation.services.shortening_baseline import (
+    ShorteningBaseline,
+    ShorteningBaselineSummary,
+)
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 
 
@@ -249,6 +253,62 @@ def clear_shortening_filter_cache() -> None:
     _load_shortening_filter_payload.clear()
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def _load_shortening_baselines_payload(database_path: str) -> list[dict[str, Any]]:
+    return [
+        _payload(summary, ShorteningBaselineSummary)
+        for summary in get_equipment_repository(database_path).list_shortening_baselines()
+    ]
+
+
+def load_shortening_baselines(database_path: str) -> tuple[ShorteningBaselineSummary, ...]:
+    """필요단축일정 기준선 목록(0021, 최근 저장이 위). 탭이 열린 회차마다 「진척 비교」 선택지로
+    부르므로 캐시한다 — 저장·지우기 쪽이 `clear_shortening_baseline_cache` 로 비운다."""
+    return tuple(
+        ShorteningBaselineSummary(**payload)
+        for payload in _load_shortening_baselines_payload(database_path)
+    )
+
+
+class _ShorteningBaselinePayload(TypedDict):
+    summary: dict[str, Any]
+    processes: tuple[str, ...]
+    cutoff_days: dict[str, int]
+    units: pd.DataFrame
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _load_shortening_baseline_payload(
+    database_path: str, baseline_id: str
+) -> _ShorteningBaselinePayload:
+    baseline = get_equipment_repository(database_path).load_shortening_baseline(baseline_id)
+    return {
+        "summary": _payload(baseline.summary, ShorteningBaselineSummary),
+        "processes": baseline.processes,
+        "cutoff_days": dict(baseline.cutoff_days),
+        "units": baseline.units,
+    }
+
+
+def load_shortening_baseline(database_path: str, baseline_id: str) -> ShorteningBaseline:
+    """기준선 한 벌. **기준선은 고칠 수 없어** id 만으로 내용이 정해진다 — 키는 id 다. 없으면
+    `ValueError`(캐시에 남지 않는다)."""
+    payload = _load_shortening_baseline_payload(database_path, baseline_id)
+    return ShorteningBaseline(
+        summary=ShorteningBaselineSummary(**payload["summary"]),
+        processes=payload["processes"],
+        cutoff_days=payload["cutoff_days"],
+        units=payload["units"],
+    )
+
+
+def clear_shortening_baseline_cache() -> None:
+    """기준선 목록과 본문 캐시를 비운다. 저장은 목록만 바꾸지만 지우기와 한 함수로 둔다 — 본문은
+    id 로만 닿아 비워도 다음에 고른 한 벌만 다시 읽는다."""
+    _load_shortening_baselines_payload.clear()
+    _load_shortening_baseline_payload.clear()
+
+
 def clear_floor_layout_cache() -> None:
     """층·FAB 도면·캔버스·도면 요소 캐시를 비운다. 도면만 바꾼 저장(팝업)은 설비 리비전과 무관하므로
     스냅샷 캐시는 비우지 않는다 — 리비전과 캔버스·요소를 함께 쓴 저장은 부른 쪽이 둘 다 비운다."""
@@ -268,4 +328,5 @@ def clear_equipment_repository() -> None:
     clear_equipment_snapshot_cache()
     clear_floor_layout_cache()
     clear_shortening_filter_cache()
+    clear_shortening_baseline_cache()
     get_equipment_repository.clear()

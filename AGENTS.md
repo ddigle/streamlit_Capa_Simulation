@@ -785,9 +785,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     넘기고, 시나리오를 못 읽으면 그 탭 안에서만 경고한다. 넓힌 생애주기 구간·환산비는 고른 달이
     정해진 뒤 `simulation_cache.get_required_shortening` 이 같은 함수로 만든다. 다섯 목표(90~130%)를 한
     번에 캐시하고 목표·공정 선택은 고르기만 한다. 계산 규칙은 `services/required_shortening.py` 항목이다.
-    **계산은 DB 에 쓰지 않는다** — 쓰는 것은 거르는 조건(시작 월·끝 월·공정)의 **공용 프로필** 하나다
-    (2026-10-08 사용자 요청, 설비 DB `0019`). 같은 화면의 Cut-off 처럼 설비 DB 의 리비전 없는 현행값이고,
-    페이지가 설비 DB 경로(`equipment_database_path=`)를 넘기면 패널이 심고 저장한다(규칙은 패널 항목).
+    **계산은 DB 에 쓰지 않는다** — 쓰는 것은 거르는 조건(시작 월·끝 월·공정)의 **공용 프로필**
+    (2026-10-08 사용자 요청, 설비 DB `0019`)과 **진척 비교 기준선**(같은 날 요청, 설비 DB `0021`) 둘이다.
+    프로필은 같은 화면의 Cut-off 처럼 설비 DB 의 리비전 없는 현행값이고, 기준선은 그때 계획을 얼린 고칠
+    수 없는 공용 기록이다. 페이지가 설비 DB 경로(`equipment_database_path=`)를 넘기면 패널이 심고 저장한다
+    (규칙은 패널 항목). 기준선 머리에 남길 설비 저장 리비전(`equipment_revision_id`·`_no`, 샘플 fleet 이면
+    None)과 저장을 막을 까닭(`baseline_refusal` — 샘플 fleet)도 페이지가 넘긴다(`_baseline_refusal`).
+    미저장 설비 편집은 막지 않는다 — 그 편집은 편집본(buffer)에만 있고 계산은 저장본 사본(draft)만 읽는다.
     목표 확보율은 세션 값이다. 화면의 공정 이름은 공용 **공정 표시명**이다(이 탭만 — 나머지 탭은 아직
     원본, `docs/TODO.md`). 표시명 조회는 패널이 한다 — 이 페이지 파일은 `process_labels` 를 들이지 않는다
     (`tests/test_process_label_boundaries.py` 가 RawData·호기 마스터 경로로 지킨다).
@@ -1711,6 +1715,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     차례·달)으로 캐시한다(2026-10-08 점검 A10 — 목표만 바꾼 rerun 이 세 표를 다시 만들고 직렬화했다).
     `_plan` 은 같은 계획 키로 받은 계획이어야 한다. 바이트를 지연 생성(콜러블)으로 만들지는 않는다(TODO
     [결정]).
+  - `get_shortening_progress` 는 필요단축일정 **진척 비교**의 짝지은 행(`compare_progress`)을 계획 키 +
+    기준선 id + 목표로 캐시한다. 기준선은 고칠 수 없고 id 는 uuid 라 id 가 내용을 정한다. 공정 선택만 바꾼
+    rerun 은 다시 짝짓지 않고, `비교 안 함` 회차는 이 함수까지 오지 않는다. `get_shortening_progress_csv` 는
+    그 행의 「진척 비교 CSV」 바이트를 같은 키 + 화면의 카드 차례로 캐시한다(지연 생성 아님). `_plan`·
+    `_baseline`·`_rows` 는 그 키로 받은 바로 그것이어야 한다(해시하지 않는다).
 
 ### 계산 서비스
 
@@ -3128,6 +3137,42 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`YYYYMM`, 달 1~12), 공정 정규화(공백·빈 값·중복), 심을 달(`seeded_filter_month` — 지금 고를 수 있는
     달일 때만), 고를 수 없는 저장 공정(`absent_filter_processes`), 저장할 공정 목록(`merge_filter_processes`
     — 고른 공정 + 화면에 없던 저장 공정, 모두 비우면 빈 목록). 값은 원본 공정명이다.
+- `src/capa_simulation/services/shortening_baseline.py`
+  - 가용설비 현황 `필요단축일정` **진척 비교의 기준선**(2026-10-08 사용자 요청, 설비 DB `0021`) 모델과
+    규칙. Streamlit·DB 를 모른다. 기준선은 「기준선 저장」을 누른 그때 계획(`ShorteningPlan`)을 **그대로
+    얼린 것**이다 — `freeze_plan(plan, name=, provenance=)` 이 다섯 목표의 호기 표(`baseline_units_frame`,
+    `BASELINE_UNIT_COLUMNS` = 목표 확보율(%)·`UNIT_PLAN_COLUMNS` 의 공정·호기·구분·기존 Qual·목표 Qual·
+    단축일수·늘어난 환산대수·대상 월·해소 기여 월·모듈 수 + `unit_master` 의 설비명·환산비, 기여 시작은 목표
+    Qual 다음 날이라 싣지 않는다), 그때 맞댄 공정·Cut-off, 머리(그날 오늘·조회 시작·끝 월·출처
+    `BaselineProvenance` — 저장한 사람·설비 리비전 id/번호·reference version·시나리오 id/이름/리비전
+    id/번호·내용 토큰)를 `ShorteningBaselineDraft` 로 낸다. 가상 호기 「추가N」은 설비명·환산비가 빈칸이다.
+  - 이름은 앞뒤 공백을 걷고 비면 거절(`normalize_baseline_name`, 60자까지), 기본은 `YYYY-MM-DD 기준선`
+    (`default_baseline_name`). 겹치는 이름은 저장 쪽이 거절한다. 목록 라벨은 「이름 · 저장일」
+    (`baseline_label` — 기준선은 고칠 수 없어 회차마다 바뀌지 않는다, 9장 선택 상자 라벨 규칙).
+  - `normalize_baseline_units` 는 얼릴 때와 DB 에서 읽을 때(날짜가 `datetime64` 로 온다) 같은 형으로 맞춘다
+    — 날짜는 `date`(빈칸 None), 정수는 `Int64`, 환산 몫은 9자리 반올림. `ShorteningBaseline.units_at(level)`
+    이 고른 목표의 표(목표 칸 없이)를 준다.
+- `src/capa_simulation/services/shortening_progress.py`
+  - 필요단축일정 진척 비교의 순수 함수(시안 B 「호기마다 과거·현재 두 줄」). 입력은 같은 목표의 호기 표 두
+    벌(과거 = `ShorteningBaseline.units_at`, 현재 = `LevelPlan.units`)과 지금 맞댄 공정이고, 출력은 짝지은
+    행(`PROGRESS_COLUMNS` — 과거·현재의 필요 시점(목표 Qual)·확보 시점(기존 Qual)·단축일수, 단축일수 증감,
+    필요·확보 시점 이동(일), 모듈 수, 상태)이다. 원인(UPEH·효율·납기·계획)은 보지 않는다 — 날짜 이동만이다.
+  - **짝짓기**: 공정 안에서만. 당긴 호기는 같은 호기(설비명, 모듈 묶음은 설비키)끼리, 가상 호기 「추가N」은
+    공정 안 차례(추가1, 추가2 …)끼리다. 당긴 호기와 가상 호기는 이름이 같아도 섞지 않는다.
+  - **상태**: 둘 다 있는 당긴 호기는 단축일수가 줄면 `개선`·늘면 `악화`·같으면 `변동 없음`(두 시점이 같은
+    날수만큼 움직여도 변동 없음 — 이동은 따로 남는다), 둘 다 있는 가상 호기는 `신규 유지`, 지금에만 있으면
+    `신규 필요`, 과거에만 있으면 `해소`, 기준선 공정이 지금 맞댄 공정에 없으면 `지금 범위 밖`(짝짓지 않는다
+    — 해소가 아니다). `단축일수 증감` 은 현재 − 과거이고 한쪽에만 있는 당긴 호기는 없는 쪽을 0일로 센다 —
+    그래서 공정·전체 증감이 합계의 차이와 같다. 가상 호기는 단축일수가 없어 비운다.
+  - **`필요 시점 지남`**(병합 전 리뷰): `compare_progress(..., today=)` 는 지금 계획의 오늘을 받는다. 과거
+    필요 시점이 그보다 앞인 행은 이 상태이고 증감·합계·추가N 대수에서 **양쪽 모두** 뺀다 — 지금 계획은
+    오늘보다 앞으로 당길 수 없어(`required_shortening` 의 바닥 `max(구간 시작, 오늘)`), 기준선을 저장한 뒤
+    오늘이 지나기만 해도 필요 시점이 오늘로 밀려 「개선」·「해소」·「N일 줄임」 으로 읽혔다. 오늘 바로 그날은
+    견준다(엄격한 `<`). 필요 시점이 지난 과거 추가N 은 홀로 서고 남은 추가N 끼리 차례로 짝짓는다. 화면은
+    두 줄을 그대로 그리고 배지·호기 변동 줄에 「필요 시점 지남」, 합계 칸과 `scope_note` 에 뺀 대수를 적는다.
+  - `summarize_progress(rows, processes)` 는 고른 공정의 합계(당긴 호기의 단축일수)·상태별 수·가상 호기 수
+    (과거·현재)·`필요 시점 지남` 대수와 그 행의 지금 단축일수 합(`lapsed_current_days`), `scope_difference` 는 기준선과 지금의 조회 달·맞댄 공정 차이, `progress_export_frame` 은
+    「진척 비교 CSV」 표(`PROGRESS_EXPORT_COLUMNS` = 목표 확보율(%) + 행, 시점은 `YYYY-MM-DD`)다.
 - `src/capa_simulation/services/monthly_equipment_availability.py`
   - **`span_date_range` 는 첫 구간의 앞 경계(`boundary_start`)부터 돌려준다**(2026-10-07 리뷰). 상태는
     바뀐 다음 날부터 기여하므로 첫 기여일을 정하는 것은 그 전날 상태다. 예전처럼 첫날(`first_day`)부터
@@ -3451,6 +3496,48 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`simulation_cache.get_required_shortening_csvs` — 목표만 바꾼 rerun 이 세 표를 다시 만들지 않는다)
     지연 생성(콜러블)은 쓰지 않는다(TODO 의 [결정] 「내려받기 버튼의 CSV 를 지연 생성으로 바꾸지 않는다」).
     `utf-8-sig`, `table_toolbar.render_csv_download`.
+  - **진척 비교**(2026-10-08 사용자 요청, 시안 B). 본문 머리 `목표 확보율` 왼쪽에 `진척 비교` 상자(기준선
+    목록, 기본 `비교 안 함` — 세션 값, `persist_state`)를 두고, CSV 줄 뒤에 「기준선 저장」(과 고른 기준선이
+    있으면 「기준선 지우기」) 팝오버를 세운다. 기준선을 고르면 KPI·LOB·공정 카드 자리를 진척 요약과 두 줄
+    카드로 바꾼다(`_render_progress` → `shortening_progress_panel`). `비교 안 함` 이면 화면이 그대로이고
+    기준선 목록 캐시만 읽는다. 「기준선 저장」 의 출처는 `_save_context` 가 모은다 — 미저장 시나리오 편집
+    (`has_unsaved_scenario_changes`)이면 페이지가 넘긴 까닭(샘플)처럼 저장을 거절한다 — 시나리오 편집은 활성
+    시나리오 표에 실려 계산에 든다.
+- `src/capa_simulation/components/shortening_progress_panel.py`
+  - 필요단축일정 진척 비교의 고르기·저장·지우기와 그림. `required_shortening_panel` 이 부른다.
+  - `진척 비교` 상자(`SHORTENING_COMPARE_KEY`)의 「비교 안 함」 은 문자열 센티널 `NO_COMPARISON` 이다(기준선
+    id 는 uuid hex 라 겹치지 않는다). 세션에 없거나 고른 기준선이 목록에서 사라졌으면 센티널을 **적는다**
+    (9장 — pop 금지). 라벨은 「이름 · 저장일」.
+  - **저장**: 팝오버 안 `st.form` — 이름(기본 `YYYY-MM-DD 기준선`, `value=` 로만 주고 세션에 적지 않는다)과
+    저장한 사람(선택, `persist_state` — VOC 작성자처럼 다시 적지 않게). 제출 단추는 잠그지 않고 `on_click`
+    콜백(`_save_baseline`)이 위젯보다 먼저 돌아 새 기준선이 그 회차의 목록에 선다. 얼리는 계획은 단추를
+    그린 회차의 것(사용자가 보던 화면)이다. 성공하면 기준선 캐시를 비우고 이름 칸의 key 세대를 올린다(닫힌
+    팝오버 안의 칸은 세션에 적은 값을 받지 못한다 — 사이드바 저장 폼과 같은 까닭). 빈칸·겹친 이름·저장
+    실패는 쓰지 않고 토스트로 알린다(토스트라 아래 위젯 자리를 밀지 않는다). 거절할 까닭(샘플 fleet·미저장
+    시나리오 편집)이 있으면 폼 대신 그 까닭을 적는다 — 기준선은 모든 사용자가 보는 고칠
+    수 없는 기록이라 합성값이나 이 세션에만 있는 편집본에서 만들지 않는다.
+  - **지우기**: 고른 기준선이 있을 때만 서고, 그 기준선 id 를 붙인 확인 칸(`persist_state` 없음 — 9장)을
+    체크해야 콜백이 지운다(한 기준선에서 체크해 둔 채 다른 기준선을 고르면 한 번에 지워지지 않게). 지우면
+    캐시를 비우고 `진척 비교` 를 「비교 안 함」 으로 적는다.
+  - **화면**: 요약 세 칸 — 단축 필요일수 합계(지금 범위의 당긴 호기 단축일수 합, 과거·현재 가로 막대 두 줄과
+    「N일 줄임/늘어남」), 호기 변동(개선·악화·변동 없음·신규·해소, 신규 유지가 있으면 그것도)과 신규
+    투자(추가N) 과거 → 현재, 기준선(이름·저장 시각·저장한 사람·그날 오늘·조회 달·설비 리비전·시나리오).
+    그다음 CSV 줄(「진척 비교 CSV」 추가), 조회 달·맞댄 공정이 기준선과 다르면 한 줄(`scope_note` — 범위
+    차이로 생긴 변동이 섞일 수 있다), 공정 카드다. 공정을 고르면 그 공정을 모두, 비우면 어느 한 시점이라도
+    단축할 호기가 있는 공정을 표시순서로, 그 뒤에 기준선에만 있던 공정을 「지금 범위 밖」 으로 접어 둔다
+    (`<details>` — 위젯이 아니라 상태가 없다).
+  - **카드**: 머리에 공정 합계 「과거 N일 → 현재 M일」 과 증감. 호기마다 `과거`(회색 가는 선 — ◀ 필요 시점
+    ── ○ 확보 시점)·`현재`(굵은 선 — ◀ ━━ ●) 두 줄이 같은 달 축 위에 서고 오늘 점선은 두 줄을 꿰뚫는다.
+    이름 아래 배지(「N일 줄임」·「해소」 = `ACCENT`, 「N일 늘어남」·「신규 필요」 = `DELTA_INCREASE`, 「변동
+    없음」·「신규 유지」·「지금 범위 밖」 = `TEXT_MUTED`)와 「필요 +18일 · 확보 −13일」(움직인 시점만).
+    늘어남·신규 필요의 현재 줄은 `DELTA_INCREASE`, 그 밖은 `ACCENT` 다. 가상 호기는 ◌ 하나. 오른쪽은 줄마다
+    「기존 → 필요 −N일」(가상 호기는 「필요 MM.DD 신규」, 없어진 쪽은 「단축 불필요」·「신규 불필요」)이고
+    날짜는 기존 호기 줄과 같은 `month_day`(올해가 아니면 `YY.MM.DD`), 전체 날짜는 줄의 풍선이다. 새 토큰은
+    없다. 공정 이름은 표시명(풍선에 원본)이다.
+- `src/capa_simulation/components/shortening_timeline.py`
+  - 필요단축일정 호기 타임라인의 달 축(`timeline_axis`)·위치(`timeline_position`, 축 밖은 양 끝으로 자른다)·
+    달 경계선(`timeline_grid_lines`)·날짜 글자(`month_day`). 공정 카드의 한 줄 타임라인과 진척 비교의 두 줄
+    타임라인이 같은 축을 써야 해서 한 곳에 둔다.
 - `src/capa_simulation/components/availability_gap_figure.py`
   - Static 대 Dynamic 월별 비교 Figure.
   - **그림은 비교를, 표가 분해를 맡는다.** 분류가 열이라 열 가지 색을 쓰면 서로 구분되지
@@ -3640,6 +3727,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/home_profile_store.py`: HOME 공용 Top5 구간·공지·GAP 비교 대상의 조회·교체와
   시나리오 삭제·보관 시 비교 대상 해제 SQL
 - `persistence/voc_store.py`: VOC 게시판 글·답글의 조회·삽입·삭제 SQL
+- `persistence/shortening_baseline_store.py`: 설비 DB 필요단축일정 기준선(`0021`)의 머리·공정·호기 행 넣기·
+  목록·읽기·지우기 SQL(UPDATE 없음). 얼린 호기 표 칸 ↔ DB 컬럼 매핑(`BASELINE_UNIT_DB_COLUMNS`)을 갖는다.
 - `persistence/past_data_store.py`: 공용 과거 구간 프로필 세 표의 조회·교체 SQL
 - `persistence/preset_store.py`: 리비전 프리셋 저장·복원
 - `persistence/source_data_store.py`: 원천 Core Data raw 와 컬럼 프로파일
@@ -3680,12 +3769,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`load_equipment_csv_payloads`, 키 = 리비전 id)다 — 둘 다 리비전이 덧붙이기만 하는 불변이라 맞는
   키이고, `clear_equipment_snapshot_cache` 가 스냅샷과 함께 비운다. 필요단축일정 공용 조회 조건
   (`load_shortening_filter_profile`, 키 = DB 경로)은 그 탭의 저장 콜백이 쓴 뒤
-  `clear_shortening_filter_cache` 로 비운다(설비 리비전과 무관하다)
+  `clear_shortening_filter_cache` 로 비운다(설비 리비전과 무관하다). 필요단축일정 기준선은 목록
+  (`load_shortening_baselines`, 키 = DB 경로)과 한 벌(`load_shortening_baseline`, 키 = 기준선 id — 고칠 수
+  없어 id 가 내용을 정한다)이고 저장·지우기 콜백이 `clear_shortening_baseline_cache` 로 둘 다 비운다
 - `persistence/equipment_repository.py`: 설비 운영 입력의 불변 전체 스냅샷 저장소
   - **필요단축일정 공용 조회 조건**(`0019`)은 리비전 없는 현행값이다 — `save_shortening_filter_months`
     (기간만)·`save_shortening_filter_processes`(공정만, 화면이 보여 주지 않은 저장 공정은 남긴다)가
     `_write_transaction` 안에서 지금 값을 읽어 견주고 다를 때만 헤더 UPDATE(처음은 INSERT)·version+1 을
     한다. 같으면 `_WriteOutcome(wrote=False)` 라 dirty 도 세우지 않고 False 를 돌려준다.
+  - **필요단축일정 기준선**(`0021`)은 고칠 수 없는 공용 기록이다 — `save_shortening_baseline(draft)`·
+    `list_shortening_baselines`·`load_shortening_baseline`(없으면 `ValueError`)·`delete_shortening_baseline`
+    넷뿐이고 갈아 쓰는 메서드가 없다. 저장은 쓰기 잠금·트랜잭션 안에서 이름 중복을 먼저 보고 거절한 뒤
+    머리·공정·호기 행을 넣는다(UNIQUE 가 뒷받침). 저장 시각은 이 PC 벽시계(초 단위)다. 지우기는 자식 행부터
+    한 트랜잭션에서 지우고, 없던 id 면 쓰지 않고 False(dirty 없음)다. SQL 은 `shortening_baseline_store`.
   - `save_snapshot`·`save_space_layout` 은 **연결 하나·트랜잭션 하나**에서 저장된 캔버스 읽기
     → 미저장 캔버스 덮기 → 호기·요소 검증 → 리비전 → 캔버스 UPDATE → 층 요소 교체를 한다.
     캔버스를 따로 저장한 뒤 리비전을 저장하면 두 트랜잭션으로 갈려, 호기 검증이 실패해도
@@ -3804,11 +3900,12 @@ RQ_MODULE
    전용 마이그레이션·Repository·캐시와 페이지 전용 조회기간을 사용하고 저장마다 새 전체
    스냅샷을 만든다. `Static/Dynamic`·`필요단축일정` 탭만 시뮬레이션 기준정보·소요대수를 읽어
    비교하며(필요단축일정은 화면 라벨인 공용 공정 표시명도 읽는다 — 공용 조회 조건 프로필은 설비 DB
-   `0019` 다) 설비 운영 저장과 Main·설정·입력 화면은 시뮬레이션 DB에 의존하지 않는다. 두 탭의
+   `0019`, 진척 비교 기준선은 설비 DB `0021` 이다) 설비 운영 저장과 Main·설정·입력 화면은 시뮬레이션
+   DB에 의존하지 않는다. 두 탭의
    비싼 계산(생애주기 구간 → 월별 Dynamic → Static 비교, 필요단축일정 계획·CSV)은
    `simulation_cache` 의 내용 지문 키 래퍼로만 부른다 — 키는 그 함수의 **실제 입력 전부**(마스터·
    비가동·기존보유·Cut-off·Static·구간의 `frame_digest`, 구간 범위, 달, 환산비 지문, 필요단축일정은
-   시나리오 키와 오늘)다. 코드 상수는 넣지 않는다(배포로 프로세스가 새로 뜨면 캐시가 빈다,
+   시나리오 키와 오늘, 진척 비교는 그 계획 키 + 기준선 id + 목표)다. 코드 상수는 넣지 않는다(배포로 프로세스가 새로 뜨면 캐시가 빈다,
    `simulation_cache` 항목의 키 방침). 입력을 하나라도 빼면 낡은 값이 나오므로 새 입력을 더하면 키도 더한다
    (`tests/test_equipment_view_cache.py` 가 입력마다 키가 갈리고 캐시 결과 = 새 계산인지 본다).
 10. **실적 이력을 시나리오에 복제하지 않는다.** 표준 Capa는 시나리오·리비전별로 보존하고,

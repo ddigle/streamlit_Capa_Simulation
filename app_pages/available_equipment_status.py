@@ -81,6 +81,21 @@ def _months_between(start: date, end: date) -> list[int]:
     return months
 
 
+def _baseline_refusal(*, sample: bool) -> str | None:
+    """필요단축일정 「기준선 저장」 을 막을 까닭. 기준선은 모든 사용자가 보는 고칠 수 없는 기록이라
+    합성 샘플에서 만들지 않는다.
+
+    미저장 설비 편집(RawData 제출·Space 배치)은 막지 않는다 — 그 편집은 편집본(buffer)에만 있고
+    계산은 저장본 사본(draft)만 읽으므로, 화면의 계획은 늘 저장 리비전 그대로다.
+    """
+    if sample:
+        return (
+            "샘플 데이터를 보는 중이라 기준선을 저장하지 않습니다 — 공용 기록은 저장된 호기 "
+            "마스터에서만 만듭니다."
+        )
+    return None
+
+
 def _open_tab(label: str) -> None:
     st.session_state[EQUIPMENT_TAB_KEY] = label
 
@@ -375,6 +390,18 @@ with shortening_tab:
                 scenario_error=shortening_error,
                 owner_tab=shortening_tab,
                 conditions=conditions_card,
-                # 거르는 조건(기간·공정)은 이 DB 의 공용 프로필이다(0019).
+                # 거르는 조건(기간·공정)은 이 DB 의 공용 프로필이고(0019) 진척 비교 기준선도 이 DB
+                # 다(0021). 기준선 머리에 화면의 호기가 나온 저장 리비전을 남긴다.
                 equipment_database_path=equipment_database_path,
+                equipment_revision_id=(
+                    None
+                    if using_dashboard_sample or latest_snapshot is None
+                    else latest_snapshot.revision.revision_id
+                ),
+                equipment_revision_no=(
+                    None
+                    if using_dashboard_sample or latest_snapshot is None
+                    else latest_snapshot.revision.revision_no
+                ),
+                baseline_refusal=_baseline_refusal(sample=using_dashboard_sample),
             )

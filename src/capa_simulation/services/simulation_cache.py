@@ -51,6 +51,8 @@ from capa_simulation.services.required_shortening import (
 )
 from capa_simulation.services.route_step_editor import route_step_tables
 from capa_simulation.services.securement_rate import calculate_securement_rate
+from capa_simulation.services.shortening_baseline import ShorteningBaseline
+from capa_simulation.services.shortening_progress import compare_progress, progress_export_frame
 from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
@@ -986,6 +988,48 @@ def get_required_shortening_csvs(
         frame.to_csv(index=False).encode("utf-8-sig") for frame in frames
     )
     return units, all_levels, process_months
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_shortening_progress(
+    cache_key: RequiredShorteningCacheKey,
+    baseline_id: str,
+    level: float,
+    _plan: ShorteningPlan,
+    _baseline: ShorteningBaseline,
+) -> pd.DataFrame:
+    """필요단축일정 진척 비교 — 고른 목표에서 기준선(과거)과 지금 계획(현재)을 짝지은 행.
+
+    계획은 `get_required_shortening` 이 이미 캐시하므로, 그 키에 기준선 id·목표만 더한다. **기준선은
+    고칠 수 없어** id 가 내용을 정한다(지우고 같은 id 로 다시 생기는 일이 없다 — uuid). `_plan` 은
+    같은 `cache_key` 로 받은 바로 그 계획, `_baseline` 은 그 id 로 읽은 기준선이어야 한다(해시하지
+    않는다). 「비교 안 함」 회차는 이 함수까지 오지 않는다.
+    """
+    del cache_key, baseline_id
+    return compare_progress(
+        _baseline.units_at(level),
+        _plan.at(level).units,
+        current_processes=_plan.processes,
+        today=_plan.today,
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_shortening_progress_csv(
+    cache_key: RequiredShorteningCacheKey,
+    baseline_id: str,
+    level: float,
+    processes: tuple[str, ...],
+    _rows: pd.DataFrame,
+) -> bytes:
+    """「진척 비교 CSV」 의 바이트(BOM 이 붙은 UTF-8). `processes` 는 화면의 카드 차례다.
+
+    필요단축일정 CSV 세 벌과 같은 규칙이다 — 키 캐시이고 지연 생성(콜러블)은 쓰지 않는다. `_rows` 는
+    같은 계획 키·기준선·목표로 받은 `get_shortening_progress` 의 결과여야 한다.
+    """
+    del cache_key, baseline_id
+    frame = progress_export_frame(_rows, level=level, processes=processes)
+    return frame.to_csv(index=False).encode("utf-8-sig")
 
 
 # Static/Dynamic 의 구간 → 월별 → 비교. 필요단축일정과 같은 방식이다 — 프레임은 `_` 인자로 해시하지

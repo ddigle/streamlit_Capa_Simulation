@@ -30,6 +30,13 @@ from capa_simulation.persistence.equipment_migration_runner import (
     SchemaAheadOfCode,
     apply_equipment_migrations,
 )
+from capa_simulation.persistence.shortening_baseline_store import (
+    baseline_name_exists,
+    delete_baseline,
+    insert_baseline,
+    list_baselines,
+    load_baseline,
+)
 from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
     BASELINE_COLUMNS,
@@ -83,6 +90,11 @@ from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.process_cutoff import (
     empty_process_cutoff,
     prepare_process_cutoff,
+)
+from capa_simulation.services.shortening_baseline import (
+    ShorteningBaseline,
+    ShorteningBaselineDraft,
+    ShorteningBaselineSummary,
 )
 from capa_simulation.services.shortening_filter_profile import (
     ShorteningFilterProfile,
@@ -611,6 +623,60 @@ class DuckDBEquipmentRepository:
                 )
             outcome.wrote = True
         return True
+
+    def save_shortening_baseline(
+        self, draft: ShorteningBaselineDraft, *, saved_at: datetime | None = None
+    ) -> ShorteningBaselineSummary:
+        """필요단축일정 기준선을 새로 저장한다(0021). 고칠 수 없는 공용 기록이다.
+
+        같은 이름이 있으면 `ValueError` 로 거절한다 — 견주기와 넣기를 한 쓰기 잠금·트랜잭션에서
+        해서 두 사람이 같은 이름을 동시에 저장해도 하나만 들어간다. 저장 시각은 이 PC 의 벽시계다
+        (목록의 저장일이 사용자가 본 날과 같아야 한다).
+        """
+        baseline_id = uuid4().hex
+        moment = (saved_at or datetime.now()).replace(microsecond=0)
+        with self._write_transaction() as connection:
+            if baseline_name_exists(connection, draft.name):
+                raise ValueError(f"같은 이름의 기준선이 이미 있습니다: {draft.name}")
+            insert_baseline(connection, baseline_id=baseline_id, draft=draft, saved_at=moment)
+        source = draft.provenance
+        return ShorteningBaselineSummary(
+            baseline_id=baseline_id,
+            name=draft.name,
+            saved_at=moment,
+            plan_today=draft.plan_today,
+            start_month=draft.start_month,
+            end_month=draft.end_month,
+            saved_by=source.saved_by,
+            equipment_revision_id=source.equipment_revision_id,
+            equipment_revision_no=source.equipment_revision_no,
+            reference_version=source.reference_version,
+            scenario_id=source.scenario_id,
+            scenario_name=source.scenario_name,
+            scenario_revision_id=source.scenario_revision_id,
+            scenario_revision_no=source.scenario_revision_no,
+            scenario_content_token=source.scenario_content_token,
+        )
+
+    def list_shortening_baselines(self) -> tuple[ShorteningBaselineSummary, ...]:
+        """모든 필요단축일정 기준선 머리. 최근에 저장한 것이 위다."""
+        with self._connect() as connection:
+            return tuple(list_baselines(connection))
+
+    def load_shortening_baseline(self, baseline_id: str) -> ShorteningBaseline:
+        """기준선 한 벌. 없으면(누가 지웠으면) `ValueError` 다."""
+        with self._connect() as connection:
+            baseline = load_baseline(connection, baseline_id)
+        if baseline is None:
+            raise ValueError(f"기준선을 찾지 못했습니다(지워졌을 수 있습니다): {baseline_id}")
+        return baseline
+
+    def delete_shortening_baseline(self, baseline_id: str) -> bool:
+        """기준선 한 벌을 지운다. 없었으면 아무것도 쓰지 않고 False."""
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            outcome.wrote = delete_baseline(connection, baseline_id)
+        return outcome.wrote
 
     def save_floor_layout_image(
         self,
