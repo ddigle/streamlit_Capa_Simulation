@@ -226,7 +226,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오 부트스트랩보다 앞에서 매 회차 부른다.** 앞이어야 첫 로딩을 덮고, 매 회차 같은
     내용이어야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다(이미 들어간 탭이면 브라우저가
     아무것도 하지 않는다). `app.py` 를 여는 AppTest 는 `render_intro_overlay` 를 바꿔 끼운다.
-  - **툴바 iframe(`render_guide_base_style` + `theme_toggle.render_theme_toggle` — 테마·Guide·Print
+  - **툴바 iframe(`render_guide_base_style` + `theme_toggle.render_theme_toggle` — Guide·Print·테마
     단추와 사이드바 `S.PKG CAPA` 라벨)은 입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
     스크립트가 새로고침해 그 세션을 버리므로, 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기 전에
     새로고침이 걸린다. ⋮ 메뉴 감춤과 인쇄 규칙을 담은 껍데기 스타일(`app_header.render_shell_style`)도
@@ -539,10 +539,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - Figure 바깥 테두리는 `paper` 0/1 위에 놓여 획의 절반이 캔버스 밖으로 잘린다. 네 변 모두
     보정 폭(`OUTER_BORDER_WIDTH_PX * 2`)으로 그려야 보이는 굵기가 같다 — 위쪽만 빼먹으면
     그 변만 절반으로 얇다.
-  - `LoadingProgress` 막대는 **제목 줄 안**, `Capa LOB Summary` 오른쪽에 둔다
-    (`render_page_header_with_status`). 본문 흐름에 두면 막대가 뜨고 질 때마다 아래 차트가
-    그만큼 밀린다. 줄 높이는 제목이 잡으므로 막대가 사라져도 아래가 움직이지 않는다.
-    계산 단계마다 `advance()` 하고
+  - `LoadingProgress` 막대는 **화면 맨 위 머리 띠, 툴바 단추 바로 왼쪽**에 둔다(2026-10-08 사용자
+    결정 — 전에는 `Capa LOB Summary` 제목 줄 오른쪽). 자리는 `render_page_header_with_status` 가 만든
+    키 컨테이너이고 띠에 고정하는 CSS 는 `app_header` 다(아래 두 항목). 본문 흐름에서 빠져 있어 막대가
+    뜨고 져도 본문이 움직이지 않고(2026-10-08 실측 — 탭 위치 123.5px 가 막대가 있을 때·없을 때·예전
+    배치에서 같다), 스크롤해도 같은 자리에서 읽힌다. 계산 단계마다 `advance()` 하고
     끝나면 `close()` 한다. **모든 종료 경로가 `close()` 를 지나야 한다** — 오류로 멈추면
     멈춰 선 막대가 오류 문구 위에 남는다. Figure 단계는 묶음이 몇 개 맞든 **같은 횟수**(순위
     집계 뒤 한 번, 그림 뒤 한 번)만 `advance()` 해 모든 경로의 단계 수가 같다.
@@ -2249,8 +2250,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 모든 페이지의 제목·설명·상태 배지. 두 상태 접미(`(구현중)`·`(Data확보중)`)는 제목에서
     떼어 배지로 보여준다. 사이드바 라벨과 같은 문자열을 써야 하며 어긋나면 테스트가 잡는다.
     제목 옆 링크 아이콘은 여기서 끄지 않는다 — `app_header` 껍데기 스타일이 모든 제목에서 뺀다.
+  - `render_page_header_with_status` 는 다른 페이지와 같은 `st.title` 뒤에 **키 컨테이너
+    (`STATUS_SLOT_KEY`) 안의 `st.empty()`** 를 진행 표시 자리로 돌려준다. 그 자리를 머리 띠의 툴바 단추
+    바로 왼쪽에 고정하는 것은 `app_header` 의 CSS 다 — 이 함수를 부르는 페이지는 막대가 저절로 띠에
+    선다. 자리가 본문 흐름 밖이라 제목 줄을 컬럼으로 나누지 않는다 — 제목은 다른 페이지와 같은 `st.title` 이다.
 - `src/capa_simulation/components/theme_toggle.py`
-  - 헤더 오른쪽 툴바 슬롯(`[data-testid="stToolbarActions"]`, Guide 와 Print 사이)에 밝게/어둡게
+  - 헤더 오른쪽 툴바 슬롯(`[data-testid="stToolbarActions"]`, 맨 오른쪽)에 밝게/어둡게
     버튼을 얹는다. Streamlit 1.63 에는 앱 안에서 테마를 바꾸는 공개 API 가 없다 —
     파이썬 쪽에서 우리 토큰만 뒤집으면 Plotly·표만 어두워지고 위젯·사이드바는 밝은 채로
     남아 반쯤 어두운 화면이 된다.
@@ -2300,6 +2305,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `extra_scripts` 로 툴바·사이드바 머리칸에 단추를 얹는 다른 스크립트(Guide·Print·사이드바
     `S.PKG CAPA` 라벨)를 함께 싣는다. iframe 을
     따로 두지 않는다 — 높이를 접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다.
+  - **툴바 차례는 `Guide · Print · 테마`다**(2026-10-08 사용자 결정 — 전에는 Guide·테마·Print). 차례는
+    `TOOLBAR_BUTTON_ORDER`(세 단추 id 도 이 모듈에 있다) 한 벌이고, iframe 에서 키 규칙 바로 뒤에 실리는
+    차례 규칙(`TOOLBAR_ORDER_SCRIPT` — `capaToolbar.place`)으로 세 스크립트가 모두 선다: 자기보다 뒤
+    차례인 단추 중 이미 선 첫 단추 앞, 없으면 슬롯 끝. 어느 스크립트가 먼저 슬롯을 찾든(슬롯이 늦게
+    그려지면 각자 지켜보다 선다) 차례가 같다 — 여섯 도착 차례 모두 브라우저로 확인했다. Guide 는 가이드
+    없는 화면에서 CSS 로 감춰질 뿐 DOM 의 제 자리에 있다. 차례 규칙은 키 규칙(`THEME_RULE_SCRIPT`)에
+    넣지 않는다 — 그 규칙은 입장 화면 등록 JS 에도 실린다. 단추를 더하면 차례 목록에 넣고 머리 띠
+    비움 폭(`app_header`)을 다시 잰다.
   - **iframe 내용은 회차마다 같아야 한다**(`tests/test_theme_toggle.py`). 바뀌면 Streamlit 이 iframe 을
     새로 만들고 옛 버튼의 `onclick` 이 죽는다. 키 규칙도 상수만 실린 고정 문자열이다.
   - 테마 전환은 새로고침이라 **새 세션**이다. 저장하지 않은 시나리오·설비 편집이 있으면 누른 순간
@@ -2307,8 +2320,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `app.py` 가 늘 그리는 사이드바 스타일 끝의 CSS 변수(`unsaved_edits_marker`)다. 묻는 것은 그 두
     편집뿐이고, 탭·필터·VOC 작성자 같은 화면 상태는 여전히 처음으로 돌아간다.
 - `src/capa_simulation/components/page_guide.py`
-  - 헤더 테마 버튼 **바로 왼쪽**의 `Guide` 버튼과 화면별 사용 안내 대화상자(2026-09-28 사용자
-    결정 — 설명 문구를 본문에서 빼고 Guide 로). 원문은 `guides/<페이지 파일 이름>.md` 다.
+  - 헤더 툴바 **맨 왼쪽**의 `Guide` 버튼(차례 `Guide · Print · 테마` — `theme_toggle` 의 차례 규칙)과
+    화면별 사용 안내 대화상자(2026-09-28 사용자 결정 — 설명 문구를 본문에서 빼고 Guide 로). 원문은 `guides/<페이지 파일 이름>.md` 다.
   - 툴바에 스크립트로 끼운 버튼은 누른 신호를 파이썬으로 보내지 못한다. 그래서 페이지가
     본문에 **숨긴 Streamlit 버튼**(`page_guide_trigger`)을 두고, 툴바 버튼이 그것을 대신
     누른다. 파이썬은 버튼 값을 읽어 `st.dialog` 로 가이드를 연다(Streamlit 이 그려 표·강조를 쓴다).
@@ -2320,8 +2333,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오 관리·가용설비 현황·Space 현황·Admin Area·VOC. 본문에서 뺀 설명을 옮긴 것이라 각
     화면 테스트가 옮긴 핵심 문구가 Guide 에 있는지 대조한다(`test_*_guide_carries_*`).
 - `src/capa_simulation/components/print_button.py`
-  - 헤더 테마 버튼 **바로 오른쪽**의 `Print` 버튼(2026-10-05 사용자 결정 — ⋮ 메뉴를 통째로 감추며
-    그 안의 인쇄를 툴바로 옮겼다). 최소 모드(`client.toolbarMode = "minimal"`)는 테마 항목을 남겨
+  - 헤더 툴바의 **Guide 와 테마 버튼 사이** `Print` 버튼(2026-10-05 사용자 결정 — ⋮ 메뉴를 통째로
+    감추며 그 안의 인쇄를 툴바로 옮겼다. 자리는 2026-10-08 사용자 결정 — 차례 `Guide · Print · 테마`). 최소 모드(`client.toolbarMode = "minimal"`)는 테마 항목을 남겨
     메뉴가 사라지지 않으므로 쓰지 않는다.
   - 동작은 Streamlit 메뉴의 Print 와 같다. `.stApp` 의 `data-test-script-state` 가 `running`·
     `rerunRequested`·`stopRequested` 이면 500ms 뒤에 다시 보고, 멈췄을 때 앱 창의 `print()` 를 부른다
@@ -2335,8 +2348,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     회차마다 같은 상수 하나다.
   - Guide 와 같은 윤곽 단추(13px/600 · 모서리 8px · 높이 27px · `BORDER`/`TEXT`)이고 `aria-label` 은
     「인쇄」다. 테마 버튼 iframe 에 함께 싣고(`extra_scripts`), 색은 같은 키 규칙(`capaTheme`)으로
-    두 테마 값 중에서 고른다 — iframe 내용은 회차마다 같아야 한다. 테마 버튼이 서기 전에는 서지
-    않는다(먼저 서면 뒤에 오는 테마 버튼이 슬롯 끝에 붙어 차례가 뒤집힌다).
+    두 테마 값 중에서 고른다 — iframe 내용은 회차마다 같아야 한다. 자리는 `theme_toggle` 의 차례
+    규칙(`capaToolbar.place`)이 정하므로 테마 버튼을 기다리지 않는다 — 먼저 서면 끝에 섰다가 뒤에 오는
+    테마 버튼이 그 뒤에 붙는다.
 - `src/capa_simulation/components/intro_overlay.py`
   - **탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면**(2026-10-02 사용자 결정 — 4시안 중 B안
     수정본). 메인 심볼과 `S.PKG CAPA` 워드마크가 원형으로 화면 전체로 펼쳐지고, 입장 화면의
@@ -2567,7 +2581,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     머리 띠(`app_header`)는 「공식 vN」을 그것만 읽어 정한다 — 회차마다 DB 를 보지 않는다. 확인 주기·
     무효화(`RECHECK_SECONDS`·`forget_intro_summary_check`)는 요약과 같다.
   - **사이드바 `S.PKG CAPA` 라벨**(2026-10-06 사용자 결정 — 툴바 `Summary` 단추를 대신한다. 툴바는
-    Guide·테마·Print). 테마 버튼 iframe 의 스크립트(`summary_label_script` — 상태 없는 고정 문자열)가
+    Guide·Print·테마). 테마 버튼 iframe 의 스크립트(`summary_label_script` — 상태 없는 고정 문자열)가
     사이드바 머리칸(`theme_toggle.SIDEBAR_HEADER_SLOT`) 맨 앞에 실제 `<button>` 을 끼운다. 입장 화면과
     같은 메인 심볼(C 링 + 3×3 다이, 다이는 `ACCENT` · 가운데 다이는 `BRAND_DIE_WARM` 주황 — 2026-10-07
     사용자 결정, 심볼의 고정 강조색이지 「경고」가 아니다)과 `S.PKG CAPA`
@@ -2629,7 +2643,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       먼저 다 보인다.
     - 오른쪽 툴바 몫으로 비우는 폭은 1400px 이상에서 28rem(접으면 30.5rem)이고, **그보다 좁은 창은
       지금 툴바의 실측**으로 잡는다(`_NARROW_HEADER_RULES`, 2026-10-07). 1100px 창 실측 단추 묶음
-      (Guide·테마·Print) 197px 에 글자 시작·띠 안쪽 여백·틈·`Light` 글자 몫을 더해 17.5rem(접으면
+      (Guide·Print·테마 — 2026-10-08 차례를 바꿔도 같은 폭) 197px 에 글자 시작·띠 안쪽 여백·틈·`Light` 글자 몫을 더해 17.5rem(접으면
       20rem)이다 — 글자 칸이 408px 에서 555px 가 된다. Deploy 는 껍데기 스타일이 늘 감추므로(아래)
       그 몫은 비우지 않는다. 감춘 단추도 DOM 에는 남아 `:has()` 로 유무를 가르면 늘 「있음」 쪽이
       걸리므로 가르지 않는다. 툴바 단추를 더하거나 바꾸면 이 값을 다시 잰다(`tests/test_app_header.py`). 끝내 넘치는 이름에 전체 글
@@ -2637,6 +2651,29 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       무게 때문에 피한 길이다. 전체 이름은 사이드바 시나리오 상자에 있다.
     - 사이드바 머리칸(`stSidebarHeader`)에는 글을 얹지 않는다 — 그 자리는 `S.PKG CAPA` 라벨
       (`intro_summary`)이다. 이 파일은 머리칸을 띠 위에 고정(`sticky`·`z-index`)하는 규칙만 둔다.
+  - **진행 막대 자리를 띠 안, 툴바 단추 바로 왼쪽에 고정한다**(2026-10-08 사용자 결정 — HOME
+    `Capa LOB Summary` 의 로딩 막대를 머리 띠로, `_status_slot_css`). 띠는 가상요소뿐이라 실제 요소를 넣을 수
+    없어, `page_header.render_page_header_with_status` 가 본문에 둔 키 컨테이너를 `position: fixed` 로 띠
+    위에 얹는다. 고정하는 것은 **그 컨테이너를 감싼 `stLayoutWrapper`**(`STATUS_SLOT_SELECTOR`)다 — 본문
+    세로 블록의 flex 항목이 그것이라, 안쪽 블록만 고정하면 감싼 칸이 흐름에 남아 요소 간격 한 칸을 먹는다.
+    고정 배치는 flex 항목이 아니라 간격도 먹지 않고, 막대가 뜨고 져도 본문이 움직이지 않는다(8551 실측).
+    - 자리·크기(1rem = 14px): 오른쪽 끝을 창 오른쪽에서 15rem(툴바 묶음 197~199px + 틈 11~13px), 폭
+      15rem(가장 긴 단계 글자 0.72rem 194px), 높이 띠와 같은 3.75rem, 층 999991(헤더 999990 위·모바일
+      사이드바 999995·팝업 아래 — 입장 화면 덮개 밑에 깔린다). 가이드가 없는 화면(숨은 Guide 트리거가
+      없다)은 10.5rem. 마우스를 받지 않고, 인쇄에서는 껍데기 스타일이 뺀다.
+    - 모양: 단계 글자 0.72rem `TEXT_MUTED`(띠 아래 줄과 같다) 위, 4px 막대(바탕 `BORDER`·채움 `ACCENT`)
+      아래. `st.progress` 의 `data-testid`(`stProgress`·`stMarkdownContainer`·`stProgressBarTrack`)로 고른다.
+    - **막대가 떠 있는 동안만 시나리오 두 줄이 비켜 말줄임으로 줄어든다**(`:has(… stProgress)` — 33.5rem,
+      접으면 36rem). 덮지 않는다. 막대가 사라지면 원래 폭으로 돌아온다 — 막대 없는 화면의 글자 폭을 늘
+      좁혀 두지 않으려고 고른 값이다. 1100px 창(펼침)에서 글자 칸 555px → 331px.
+    - 900px 보다 좁은 창은 단계 이름을 화면에서 빼고(읽기 도구·입장 화면이 읽는 글자는 남긴다 — `display:
+      none` 이 아니라 1px 로 접는다) 막대와 퍼센트(`aria-valuenow` 가상요소)만 6.5rem 에 둔다. 768px
+      창(사이드바가 저절로 접힌다)에서 글자 칸 488px → 383px(단계 이름까지 두면 264px).
+    - 막대가 떠 있는 동안 Streamlit 의 실행 표시(`stStatusWidget` — 달리는 사람·Stop)는 **실행 중 모양일
+      때만** 감춘다. 오래 도는 실행에서만 툴바 단추 바로 왼쪽 81px 에 서서 막대와 자리가 겹치고, 막대가
+      같은 말을 더 자세히 한다. 연결 끊김 같은 다른 상태는 그대로 보인다. 그동안 Stop 은 없다.
+    - 비공식 경로다. 판올림 뒤 HOME 을 새로 읽어(캐시를 비우면 오래 돈다) 막대가 띠에 서는지, 달리는
+      사람과 겹치지 않는지 본다. 툴바 단추를 더하거나 바꾸면 이 자리도 다시 잰다(`tests/test_app_header.py`).
   - **Streamlit 의 ⋮ 메뉴(`stMainMenu`)를 통째로 감춘다**(2026-10-05 사용자 결정). 사용자에게 남길
     항목은 인쇄·테마뿐이고 둘 다 툴바 단추(`print_button`·`theme_toggle`)가 맡는다. 감추는 규칙은 그
     요소와 아래 Deploy 만 고른다 — 우리 단추가 앉는 툴바 슬롯(`stToolbarActions`)은 그대로다. 그래서
@@ -2682,7 +2719,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Streamlit 은 사이드바에 마우스를 올렸을 때만 `visibility: visible` 로 띄운다. 인쇄 숨김은
     남기려고 `@media screen` 안에서만 덮는다. 판올림 뒤 버튼이 늘 보이는지 눈으로 확인한다.
   - 머리 글자는 오른쪽 툴바 폭(`28rem` — 툴바에 Summary 가 있던 때 1100px 창 실측 355px, 지금은
-    Guide·테마·Print 로 더 좁다)을 비우고 말줄임으로 끊는다. 툴바에 단추를 더하면 이 폭도 다시 잰다(2026-10-05 E2E — 16rem 이라 글자가 단추 밑으로).
+    Guide·Print·테마로 더 좁다)을 비우고 말줄임으로 끊는다. 툴바에 단추를 더하면 이 폭도 다시 잰다(2026-10-05 E2E — 16rem 이라 글자가 단추 밑으로).
   - 본문 인라인 코드는 `0.9em` 이다. Streamlit 기본 0.75em 은 대체 글꼴로 그려지는 한글을 9~10px 로
     줄였다(2026-10-05 E2E). 같은 전역 스타일이라 이 파일에 둔다.
 - `src/capa_simulation/components/typography.py`
@@ -3324,7 +3361,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `tests/test_flash_messages.py` 가 실제 실행으로 고정하고, 같은 함정(성공 문구 바로 뒤
     rerun)을 소스에서 찾는 AST 그물도 함께 둔다.
 - `src/capa_simulation/components/loading_progress.py`
-  - 계산이 오래 걸리는 페이지가 본문 맨 위에 띄우는 진행 막대다. 단계 목록
+  - 계산이 오래 걸리는 페이지가 띄우는 진행 막대다. 그릴 자리는 넘겨받는다 — 페이지는
+    `render_page_header_with_status` 의 자리를 넘기고 그 자리는 머리 띠 안이다(2026-10-08 사용자 결정,
+    `app_header`). 막대는 `st.progress` 그대로라 입장 화면이 그 요소(`stProgress`)의 퍼센트를 읽는다. 단계 목록
     (`LoadingStage`)을 미리 선언하고 호출부는 `advance()` 만 부른다 — 호출부가 퍼센트를
     직접 적으면 단계를 더하고 뺄 때 누적값이 어긋나고 화면에서만 드러난다.
   - 누적 퍼센트는 단계 수 균등 분할이 아니라 **측정한 소요 시간 비율**로 정한다. HOME 은

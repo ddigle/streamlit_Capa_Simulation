@@ -1009,7 +1009,7 @@ def summary_label_script() -> str:
     """사이드바 머리칸에 `S.PKG CAPA` 라벨을 세우는 스크립트. 테마 버튼 iframe 에 Guide·Print
     와 함께 싣는다.
 
-    툴바의 `Summary` 단추를 대신한다(2026-10-06 사용자 결정 — 툴바는 Guide·테마·Print). 누르면 그
+    툴바의 `Summary` 단추를 대신한다(2026-10-06 사용자 결정 — 툴바는 Guide·Print·테마). 누르면 그
     단추가 하던 일 그대로 입장 화면 JS 의 `openSummary` 를 부르고, Summary 를 닫으면 초점이 라벨로
     돌아온다(`openFromApp` 이 연 단추를 기억한다). iframe 내용은 회차마다 같아야 하므로 두 테마의
     스타일을 모두 싣고 테마 버튼과 같은 키 규칙으로 고른다.

@@ -339,7 +339,7 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     """입장 화면은 무거운 부트스트랩보다 **먼저**, 그리고 **매 회차** 그려진다.
 
     먼저여야 그동안을 덮고, 매 회차여야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다. 툴바
-    iframe(Guide·테마·Print 단추와 사이드바 `S.PKG CAPA` 라벨)은 입장 화면 바로 뒤·부트스트랩
+    iframe(Guide·Print·테마 단추와 사이드바 `S.PKG CAPA` 라벨)은 입장 화면 바로 뒤·부트스트랩
     앞이다 — 첫 방문처럼 테마 스크립트가 새로고침할 로드는 그 세션이 버려지므로, 부트스트랩·요약을
     돌기 전에 새로고침이 걸려야 한다.
     """

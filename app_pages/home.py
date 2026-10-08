@@ -199,9 +199,9 @@ def _owned_comparison_revision(
     return revision_id if any(item.revision_id == revision_id for item in revisions) else None
 
 
-# 진행 표시는 제목 줄 안에 둔다. 본문 흐름에 두면 막대가 뜨고 질 때마다 아래 차트가 그만큼
-# 밀려 보던 자리가 흔들린다. 줄 높이는 제목이 잡으므로 막대가 사라져도 아래가 움직이지 않고,
-# 어느 탭을 보고 있든 같은 자리에서 읽힌다.
+# 진행 표시는 화면 맨 위 띠(툴바 단추 바로 왼쪽)에 앉는다(2026-10-08 사용자 결정). 본문 흐름에
+# 두면 막대가 뜨고 질 때마다 아래 차트가 그만큼 밀려 보던 자리가 흔들린다. 띠 위에 고정되므로
+# 막대가 뜨고 져도 본문이 움직이지 않고, 어느 탭·어느 스크롤 자리에서든 같은 자리에서 읽힌다.
 loading = LoadingProgress(render_page_header_with_status("Capa LOB Summary"), HOME_LOADING_STAGES)
 render_page_guide("home", title="HOME")
 # 성능 진단은 **위젯이 아니라 세션 스위치**다. 사이드바에 토글을 두면 모든 사용자가 늘

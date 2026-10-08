@@ -1,4 +1,4 @@
-# Purpose: 상단 띠에 적용 시나리오를 싣고 메뉴·Deploy·제목 링크 감춤과 인쇄 규칙을 앞서 보낸다.
+# Purpose: 상단 띠에 적용 시나리오와 진행 막대 자리를 싣고 메뉴 감춤·인쇄 규칙을 앞서 보낸다.
 
 """The scenario this session is looking at, pinned to the top bar.
 
@@ -52,6 +52,15 @@ localhost 접속(개발 모드)에서만 그것을 세우는데, 누르면 Commu
 띠의 면은 페이지 바탕보다 한 단계만 눌러(`tokens.HEADER_BAR`) 앱 머리와 본문을 나눈다.
 글자색은 본문과 같다 — 면이 밝아 뒤집을 이유가 없다.
 
+**진행 막대 자리**(2026-10-08 사용자 결정 — HOME `Capa LOB Summary` 의 로딩 막대를 머리 띠로).
+페이지가 `page_header.render_page_header_with_status` 로 만든 자리(`STATUS_SLOT_KEY` 컨테이너)를 이
+띠의 툴바 단추 바로 왼쪽에 고정한다(`_status_slot_css`). 띠는 가상요소뿐이라 실제 요소를 넣을 수
+없으므로, 본문에 있는 컨테이너를 `position: fixed` 로 띠 위에 얹는다 — 고정 배치된 칸은 본문
+흐름에서 빠져 flex 항목도 요소 간격도 아니어서, 막대가 뜨고 져도 본문은 움직이지 않는다. 막대가 떠
+있는 동안에만 시나리오 두 줄이 그 몫을 비켜 말줄임으로 줄어든다(덮지 않는다). 막대가 사라지면 두
+줄은 원래 폭으로 돌아온다 — 띠 글자가 잠깐 줄었다 펴지는 것은 막대가 없는 화면의 글자 폭을 늘 좁혀
+두는 것보다 낫다고 보고 고른 값이다.
+
 `data-testid` 는 emotion 클래스와 달리 판올림 사이에 비교적 안정적이지만 어디까지나
 비공식 경로다. Streamlit 을 올린 뒤에는 글이 헤더에 남아 있는지 눈으로 확인한다.
 """
@@ -61,6 +70,8 @@ from datetime import datetime
 import streamlit as st
 
 from capa_simulation.components.intro_summary import latest_official_revision
+from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY
+from capa_simulation.components.page_header import STATUS_SLOT_KEY
 from capa_simulation.design import tokens
 from capa_simulation.scenario_activation import (
     ActiveScenarioLabel,
@@ -85,6 +96,11 @@ STATUS_OFFICIAL = "공식 v{release_no}"
 STATUS_SAVED = "저장된 리비전"
 STATUS_UNSAVED = "미저장 변경"
 
+# 진행 막대 자리(`page_header.STATUS_SLOT_KEY`)를 본문 흐름에서 빼는 요소. Streamlit 은 키를 단
+# 컨테이너(`st-key-<키>`)를 `stLayoutWrapper` 로 한 번 감싸고, 본문 세로 블록의 flex 항목은 그
+# 감싼 칸이다 — 안쪽 블록만 고정하면 감싼 칸이 흐름에 남아 요소 간격 한 칸을 먹는다(1.63 확인).
+STATUS_SLOT_SELECTOR = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{STATUS_SLOT_KEY})'
+
 # 부트스트랩 앞에서 보내는 껍데기 스타일. 색을 쓰지 않아 테마와 무관한 고정 문자열이다.
 #
 # 첫 규칙은 Streamlit 의 ⋮ 메뉴와 Deploy 단추다. 인쇄·테마는 툴바 단추가 맡으므로 메뉴는 단추째
@@ -106,7 +122,9 @@ STATUS_UNSAVED = "미저장 변경"
 #   형제라, 사이드바가 빠지면 본문이 왼쪽 끝부터 종이 폭을 다 쓴다. 사이드바 머리 띠(`::before`)와
 #   접기 버튼도 함께 빠진다.
 # - 머리 띠는 요소째 뺀다. Streamlit 은 헤더의 자식만 감춰 우리 면·`::before`/`::after` 글이 남는다.
-#   툴바 단추(Guide·테마·Print)도 이 안에 있다.
+#   툴바 단추(Guide·Print·테마)도 이 안에 있다. 띠 위에 고정한 진행 막대 자리
+#   (`STATUS_SLOT_SELECTOR`)는 본문에 있는 요소라 따로 뺀다 — 고정 배치는 인쇄의 쪽마다
+#   되풀이되어 찍힌다.
 # - 입장 화면·Summary 덮개(`#capa-intro-host`, `document.body` 에 붙은 호스트)는 열려 있어도 뺀다.
 # - 본문 폭 상한은 풀어 둔다(`layout="wide"` 가 이미 풀지만 못박는다).
 # - 색은 화면 그대로 찍는다. Streamlit 이 `html` 에 걸어 둔 것을 앱 뿌리에도 건다(물려받는 속성이라
@@ -131,6 +149,7 @@ SHELL_STYLE = """<style>
   @page { margin: 10mm; }
   [data-testid="stSidebar"],
   [data-testid="stHeader"],
+  __STATUS_SLOT__,
   #capa-intro-host {
     display: none !important;
   }
@@ -148,7 +167,7 @@ SHELL_STYLE = """<style>
     break-inside: avoid;
   }
 }
-</style>"""
+</style>""".replace("__STATUS_SLOT__", STATUS_SLOT_SELECTOR)
 
 # CSS 는 중괄호가 많아 f-string 으로 두면 전부 이스케이프해야 한다. 색·글자 자리에
 # 센티넬을 두고 **그릴 때마다** 치환한다.
@@ -194,7 +213,7 @@ _HEADER_TEMPLATE = """
   position: absolute;
   line-height: 1.1rem;
   left: 1.5rem;
-  /* 오른쪽 툴바(Guide·테마·Print)가 쓰는 폭은 비워 둔다. 창이 좁아지면 글자를 밀어내지
+  /* 오른쪽 툴바(Guide·Print·테마)가 쓰는 폭은 비워 둔다. 창이 좁아지면 글자를 밀어내지
      않고 말줄임으로 끊는다 — 두 줄이 따로 줄어 짧은 위 줄이 먼저 다 보인다. 28rem 은 툴바에
      Summary 가 있던 때 1100px 창 실측 355px 에 글자 시작 21px 과 틈 12px 를 더한 값이다. 1400px
      보다 좁은 창은 지금 툴바 실측으로 다시 잡는다(`_NARROW_HEADER_RULES`). 16rem 일 때는 글자가
@@ -272,12 +291,12 @@ _HEADER_TEMPLATE = """
 
 # 1400px 보다 좁은 창에서만 오른쪽 비움 폭을 지금 툴바의 실측에 맞춘다(2026-10-07). 위의 28rem 은
 # 툴바에 Summary 가 있던 때 값이라, 1100px 창(사이드바 300px)에서 글자 폭이 408px 뿐이어서 긴
-# 시나리오명·코드가 말줄임으로 잘렸다. 그 창의 실측(1rem = 14px): 툴바 단추 묶음 Guide·테마·Print
-# 는 903px 부터(머리 띠 오른쪽 끝까지 197px)다. 여기에 글자 시작 21px, 왼쪽 띠 안쪽 여백·선
-# 11px(최대 폭은 글자 칸에만 걸린다), 틈 12px, 테마 단추 글자가 `Light` 일 때 넓어지는 2px 를
-# 더하면 243px 라 17.5rem 으로 둔다(글자 칸 555px — 위 28rem 일 때는 408px). Deploy 단추는
-# 껍데기 스타일(`SHELL_STYLE`)이 늘 감추므로 그 몫은 비우지 않는다. 사이드바를 접은 경우는 위 규칙과
-# 같이 2.5rem 을 더 뺀다. 1400px 이상은 그대로 둔다.
+# 시나리오명·코드가 말줄임으로 잘렸다. 그 창의 실측(1rem = 14px): 툴바 단추 묶음 Guide·Print·테마 는
+# 903px 부터(머리 띠 오른쪽 끝까지 197px)다(차례를 바꾼 2026-10-08 에도 같은 폭이다). 여기에 글자
+# 시작 21px, 왼쪽 띠 안쪽 여백·선 11px(최대 폭은 글자 칸에만 걸린다), 틈 12px, 테마 단추 글자가
+# `Light` 일 때 넓어지는 2px 를 더하면 243px 라 17.5rem 으로 둔다(글자 칸 555px — 위 28rem 일 때는
+# 408px). Deploy 단추는 껍데기 스타일(`SHELL_STYLE`)이 늘 감추므로 그 몫은 비우지 않는다. 사이드바를
+# 접은 경우는 위 규칙과 같이 2.5rem 을 더 뺀다. 1400px 이상은 그대로 둔다.
 #
 # 말줄임이 끝내 남는 아주 긴 이름에 전체 글을 띄우는 풍선은 두지 않는다. 글은 가상요소라 `title`
 # 을 달 자리가 없고(`pointer-events: none`), 풍선을 달려면 스크립트로 실제 요소를 넣어야 한다 —
@@ -293,6 +312,150 @@ _NARROW_HEADER_RULES = """
   [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
     [data-testid="stHeader"]::after {
     max-width: calc(100% - 20rem);
+  }
+}
+"""
+
+# 진행 막대 자리 — 띠 안, 툴바 단추 바로 왼쪽(2026-10-08 사용자 결정). 치수는 1rem = 14px 실측이다.
+# - 자리: 툴바 단추 묶음(Guide·Print·테마)은 머리 띠 오른쪽 끝에서 197px(테마 글자가 `Light` 면
+#   199px) 안쪽에서 시작한다(1440·1100·768px 창 모두 같다). 막대 칸 오른쪽 끝을 창 오른쪽에서
+#   15rem(210px)에 두어 Guide 와 11~13px 띄운다. 가이드가 없는 화면은 Guide 가 감춰져 묶음이 65px
+#   짧으므로 10.5rem 이다 — 가이드를 단 화면에만 있는 숨은 버튼(`GUIDE_TRIGGER_KEY`)으로 가른다.
+# - 폭: 15rem. 가장 긴 단계 글자(「기준정보와 활성 시나리오를 확인하는 중 · 0%」)가 0.72rem 에서
+#   194px 다. 넘치면 말줄임이다. 위아래는 띠 가운데(단계 글자 위, 4px 막대 아래)다.
+# - 층: 헤더(999990) 바로 위. Streamlit 의 모바일 사이드바(999995)·팝업(1000059)과 입장 화면
+#   덮개(`#capa-intro-host`)보다 아래라, 그것들이 열려 있으면 막대는 그 밑에 깔린다.
+# - 막대가 떠 있는 동안만 시나리오 두 줄의 최대 폭을 줄인다(`__LOADING__`). 글자 칸 왼쪽 끝(띠
+#   왼쪽 1.5rem + 안쪽 여백 0.55rem + 선 3px)에서 막대 왼쪽 끝까지 틈 12px 를 남기면 33.2rem 이라
+#   33.5rem(사이드바를 접어 글자가 4rem 에서 시작하면 36rem)이다. 1400px 이상의 28rem 보다 늘
+#   넓어 창 폭과 상관없이 이 값 하나다. 1100px 창(사이드바 펼침)에서 글자 칸은 555px 에서 331px 로
+#   줄고 긴 이름은 막대가 떠 있는 동안만 말줄임이다(덮지 않는다).
+# - 막대가 떠 있는 동안 Streamlit 의 실행 표시(달리는 사람·Stop, `stStatusWidget`)는 감춘다. 그
+#   표시는 툴바 단추 바로 왼쪽 81px 에 오래 도는 실행에서만 서서 막대와 같은 자리를 쓰고, 막대가
+#   같은 말(아직 돈다)을 더 자세히 한다. 감추는 것은 실행 중 모양(`stStatusWidgetRunningIcon`)일
+#   때뿐이라 연결 끊김 같은 다른 상태는 그대로 보인다. 막대를 그 왼쪽으로 늘 비켜 두면 짧은 실행
+#   (실행 표시가 서지 않는다)마다 막대가 단추에서 93px 떨어져 뜨고 글자 칸도 그만큼 더 줄어 버렸다.
+# - 900px 보다 좁은 창은 단계 이름을 화면에서 빼고(읽기 도구와 입장 화면이 읽는 글자는 남긴다)
+#   막대와 퍼센트만 6.5rem 에 둔다. 768px 창(사이드바가 저절로 접힌다)에서 글자 칸은 막대가 없을
+#   때 488px, 떠 있는 동안 383px 이다 — 단계 이름까지 두면 264px 라 시나리오명이 반 넘게 잘렸다.
+#   퍼센트는 막대 요소의 `aria-valuenow` 를 가상요소로 적는다(단계 글자는 「이름 · N%」 한
+#   덩어리라 떼어 낼 수 없다).
+# - 색은 토큰이다: 단계 글자 `TEXT_MUTED`(띠 아래 줄과 같은 크기·색), 퍼센트 `TEXT`, 막대 바탕
+#   `BORDER`, 채움 `ACCENT`. 띠 면(`HEADER_BAR`) 위에서 두 테마 모두 읽힌다.
+# - 읽는 칸이라 마우스를 받지 않는다(`pointer-events: none`) — 빈 칸이 띠의 클릭을 가로채지
+#   않는다. 인쇄에서는 껍데기 스타일이 뺀다.
+# 선택자는 1.63 의 `data-testid`(`stProgress`·`stMarkdownContainer`·`stProgressBarTrack`·
+# `stStatusWidget`·`stStatusWidgetRunningIcon`)와 `role="progressbar"` 다 — 판올림 뒤 HOME 을 새로
+# 읽어 막대가 띠에 서는지, 오래 도는 실행에서 달리는 사람이 막대와 겹치지 않는지 본다.
+_STATUS_SLOT_TEMPLATE = """
+__SLOT__ {
+  position: fixed;
+  top: 0;
+  right: 15rem;
+  width: 15rem;
+  height: 3.75rem;
+  margin: 0;
+  z-index: 999991;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  pointer-events: none;
+}
+[data-testid="stAppViewContainer"]:not(:has(.st-key-__GUIDE_KEY__)) __SLOT__ {
+  right: 10.5rem;
+}
+.st-key-__SLOT_KEY__ {
+  height: 100%;
+  justify-content: center;
+  gap: 0;
+}
+.st-key-__SLOT_KEY__ [data-testid="stProgress"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.st-key-__SLOT_KEY__ [data-testid="stProgress"] > div:has(> [data-testid="stMarkdownContainer"]) {
+  padding-bottom: 0;
+}
+.st-key-__SLOT_KEY__ [data-testid="stProgress"] [data-testid="stMarkdownContainer"] p {
+  margin: 0;
+  font-family: __FONT_FAMILY__;
+  font-size: 0.72rem;
+  line-height: 1.1rem;
+  color: __TEXT_MUTED__;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-key-__SLOT_KEY__ [data-testid="stProgressBarTrack"] {
+  height: 4px !important;
+  min-height: 0 !important;
+  border-radius: 2px !important;
+  background: __BORDER__ !important;
+}
+.st-key-__SLOT_KEY__ [data-testid="stProgressBarTrack"] > div {
+  border-radius: 2px !important;
+  background: __ACCENT__ !important;
+}
+__LOADING__
+  [data-testid="stHeader"]::before,
+__LOADING__
+  [data-testid="stHeader"]::after {
+  max-width: calc(100% - 33.5rem);
+}
+__LOADING_COLLAPSED__
+  [data-testid="stHeader"]::before,
+__LOADING_COLLAPSED__
+  [data-testid="stHeader"]::after {
+  max-width: calc(100% - 36rem);
+}
+__LOADING__
+  [data-testid="stStatusWidget"]:has([data-testid="stStatusWidgetRunningIcon"]) {
+  visibility: hidden;
+}
+@media (max-width: 899.98px) {
+  __SLOT__ {
+    width: 6.5rem;
+  }
+  .st-key-__SLOT_KEY__ [data-testid="stProgress"] [data-testid="stMarkdownContainer"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .st-key-__SLOT_KEY__ [data-testid="stProgress"] {
+    gap: 0;
+  }
+  .st-key-__SLOT_KEY__ [role="progressbar"] {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .st-key-__SLOT_KEY__ [data-testid="stProgressBarTrack"] {
+    flex: 1 1 auto;
+  }
+  .st-key-__SLOT_KEY__ [role="progressbar"]::after {
+    content: attr(aria-valuenow) "%";
+    flex: none;
+    font-family: __FONT_FAMILY__;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.1rem;
+    color: __TEXT__;
+  }
+  __LOADING__
+    [data-testid="stHeader"]::before,
+  __LOADING__
+    [data-testid="stHeader"]::after {
+    max-width: calc(100% - 25rem);
+  }
+  __LOADING_COLLAPSED__
+    [data-testid="stHeader"]::before,
+  __LOADING_COLLAPSED__
+    [data-testid="stHeader"]::after {
+    max-width: calc(100% - 27.5rem);
   }
 }
 """
@@ -367,17 +530,47 @@ def _header_css(top: str = APP_NAME, bottom: str = "") -> str:
     있어도 다른 치환이 그것을 건드리지 못한다.
     """
     return (
-        _HEADER_TEMPLATE.replace("__ACCENT__", tokens.ACCENT)
-        .replace("__SURFACE__", tokens.SURFACE)
-        .replace("__BAR_BORDER__", tokens.BORDER)
-        .replace("__BAR__", tokens.HEADER_BAR)
+        (
+            _HEADER_TEMPLATE.replace("__ACCENT__", tokens.ACCENT)
+            .replace("__SURFACE__", tokens.SURFACE)
+            .replace("__BAR_BORDER__", tokens.BORDER)
+            .replace("__BAR__", tokens.HEADER_BAR)
+            .replace("__FONT_FAMILY__", tokens.FONT_FAMILY)
+            .replace("__TEXT_MUTED__", tokens.TEXT_MUTED)
+            .replace("__TEXT__", tokens.TEXT)
+            .replace("__TOP_OFFSET__", "calc(50% - 1.1rem)" if bottom else "calc(50% - 0.55rem)")
+            .replace("__BOTTOM_LINE__", css_string(bottom))
+            .replace("__TOP_LINE__", css_string(top))
+        )
+        + _NARROW_HEADER_RULES
+        + _status_slot_css()
+    )
+
+
+def _status_slot_css() -> str:
+    """진행 막대 자리를 띠 안에 고정하는 규칙. 색은 이 실행의 팔레트다(`_header_css` 와 같은 까닭).
+
+    머리 띠 규칙 **뒤에** 붙는다 — 막대가 떠 있는 동안 두 줄의 최대 폭을 줄이는 규칙이 같은 구체도의
+    접힘·좁은 창 규칙을 이겨야 한다.
+    """
+    # 막대가 떠 있는 상태. 사이드바를 접은 때는 글자가 4rem 에서 시작해 한 갈래 더 둔다.
+    loading = (
+        '[data-testid="stAppViewContainer"]'
+        f':has(.st-key-{STATUS_SLOT_KEY} [data-testid="stProgress"])'
+    )
+    collapsed = loading + ':has([data-testid="stSidebar"][aria-expanded="false"])'
+    return (
+        _STATUS_SLOT_TEMPLATE.replace("__LOADING_COLLAPSED__", collapsed)
+        .replace("__LOADING__", loading)
+        .replace("__SLOT__", STATUS_SLOT_SELECTOR)
+        .replace("__SLOT_KEY__", STATUS_SLOT_KEY)
+        .replace("__GUIDE_KEY__", GUIDE_TRIGGER_KEY)
         .replace("__FONT_FAMILY__", tokens.FONT_FAMILY)
         .replace("__TEXT_MUTED__", tokens.TEXT_MUTED)
         .replace("__TEXT__", tokens.TEXT)
-        .replace("__TOP_OFFSET__", "calc(50% - 1.1rem)" if bottom else "calc(50% - 0.55rem)")
-        .replace("__BOTTOM_LINE__", css_string(bottom))
-        .replace("__TOP_LINE__", css_string(top))
-    ) + _NARROW_HEADER_RULES
+        .replace("__BORDER__", tokens.BORDER)
+        .replace("__ACCENT__", tokens.ACCENT)
+    )
 
 
 def render_app_header() -> None:

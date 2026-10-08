@@ -230,7 +230,7 @@ def test_the_sidebar_label_and_the_overlay_agree_on_one_id() -> None:
     assert "api.openSummary(label)" in script
     assert 'if (label.getAttribute("aria-disabled") === "true") return;' in script
     assert script == intro_summary.summary_label_script()
-    # 툴바 Summary 단추는 걷었다(2026-10-06 사용자 결정 — 툴바는 Guide·테마·Print).
+    # 툴바 Summary 단추는 걷었다(2026-10-06 사용자 결정 — 툴바는 Guide·Print·테마).
     assert "capa-summary-button" not in js and "SUMMARY_BUTTON_ID" not in js
     assert not hasattr(intro_summary, "summary_toolbar_script")
 

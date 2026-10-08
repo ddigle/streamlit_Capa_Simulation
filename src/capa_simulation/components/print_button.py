@@ -1,4 +1,4 @@
-# Purpose: 헤더 테마 버튼 바로 오른쪽에 화면을 인쇄하는 Print 버튼을 얹는 툴바 스크립트를 만든다.
+# Purpose: 헤더 툴바의 Guide 와 테마 버튼 사이에 화면 인쇄 Print 버튼을 얹는 스크립트를 만든다.
 
 """툴바 `Print` 버튼.
 
@@ -23,8 +23,10 @@ Streamlit 의 인쇄용 CSS 가 정한다(헤더·사이드바 접기 버튼 등
 새로 읽기로만 바뀌고, 그때 단추도 다시 선다. 브라우저 인쇄(Ctrl+P)는 가로채지 않는다.
 
 다른 툴바 단추처럼 테마 버튼 iframe 에 함께 싣는다(`theme_toggle.render_theme_toggle` 의
-`extra_scripts`). 모양은 Guide 와 같은 윤곽 단추이고, 색은 같은 키 규칙(`capaTheme`)으로 고른다 —
-iframe 내용은 회차마다 같아야 하므로 지금 테마의 토큰을 싣지 않고 두 테마 값을 모두 싣는다.
+`extra_scripts`). 자리는 Guide 와 테마 버튼 사이다(2026-10-08 사용자 결정 — 툴바 차례
+`Guide · Print · 테마`, 차례 규칙 `capaToolbar`). 모양은 Guide 와 같은 윤곽 단추이고, 색은 같은
+키 규칙(`capaTheme`)으로 고른다 — iframe 내용은 회차마다 같아야 하므로 지금 테마의 토큰을 싣지
+않고 두 테마 값을 모두 싣는다.
 
 **비공식 경로다.** 툴바 슬롯과 `data-test-script-state` 는 판올림에서 바뀔 수 있다. 슬롯이
 바뀌면 버튼이 안 생길 뿐이고, 실행 상태 표지가 없어지면 기다리지 않고 바로 인쇄한다.
@@ -32,10 +34,11 @@ iframe 내용은 회차마다 같아야 하므로 지금 테마의 토큰을 싣
 
 from __future__ import annotations
 
-from capa_simulation.components.theme_toggle import THEME_BUTTON_ID, TOOLBAR_SLOT
+from capa_simulation.components.theme_toggle import PRINT_BUTTON_ID, TOOLBAR_SLOT
 from capa_simulation.design import tokens
 
-BUTTON_ID = "capa-print-button"
+# id 와 툴바 차례는 다른 툴바 단추와 함께 `theme_toggle` 한 곳에 있다(`TOOLBAR_BUTTON_ORDER`).
+BUTTON_ID = PRINT_BUTTON_ID
 # 어두운 테마에서 Print 를 누르면 먼저 묻는 말. 스크립트의 JS 문자열에 그대로 들어가므로 큰따옴표·
 # 역슬래시·줄바꿈을 넣지 않는다.
 DARK_PRINT_CONFIRM = (
@@ -75,10 +78,6 @@ _SCRIPT = """
     var slot = doc.querySelector('%(slot)s');
     if (!slot) return false;
     if (doc.getElementById("%(id)s")) return true;
-    // 테마 버튼 **바로 오른쪽**에 선다. 테마 버튼이 서기 전이면 기다린다 — 먼저 서면 뒤에 오는
-    // 테마 버튼이 슬롯 끝에 붙어 차례가 뒤집힌다.
-    var theme = doc.getElementById("%(theme)s");
-    if (!theme) return false;
     var isDark = dark();
     var button = doc.createElement("button");
     button.id = "%(id)s";
@@ -104,7 +103,10 @@ _SCRIPT = """
       if (isDark && !parentWindow.confirm("%(dark_confirm)s")) return;
       printWhenIdle();
     };
-    slot.insertBefore(button, theme.nextSibling);
+    // Guide 와 테마 버튼 **사이**다(차례 규칙 `capaToolbar` — Guide · Print · 테마). 테마 버튼이
+    // 먼저 섰으면 그 앞에, 아직이면 끝에 서고 뒤에 오는 테마 버튼이 이 단추 뒤에 붙는다.
+    if (typeof capaToolbar !== "undefined") capaToolbar.place(slot, button);
+    else slot.appendChild(button);
     return true;
   }
 
@@ -132,5 +134,4 @@ def print_toolbar_script() -> str:
         "light_ink": tokens.palette_value("light", "TEXT"),
         "dark_ink": tokens.palette_value("dark", "TEXT"),
         "slot": TOOLBAR_SLOT,
-        "theme": THEME_BUTTON_ID,
     }

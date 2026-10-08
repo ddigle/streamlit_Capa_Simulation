@@ -1,4 +1,4 @@
-# Purpose: 상단 띠의 시나리오 두 줄·CSS·껍데기 스타일과 사이드바 앱 정보 두 줄의 규칙을 고정한다.
+# Purpose: 상단 띠의 시나리오 두 줄·진행 막대 자리·껍데기 스타일과 사이드바 앱 정보 규칙을 고정한다.
 
 import re
 from dataclasses import replace
@@ -8,11 +8,15 @@ from pathlib import Path
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import (
     SHELL_STYLE,
+    STATUS_SLOT_SELECTOR,
     _header_css,
+    _status_slot_css,
     css_string,
     header_lines,
     source_type_label,
 )
+from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY
+from capa_simulation.components.page_header import STATUS_SLOT_KEY
 from capa_simulation.scenario_activation import ActiveScenarioLabel
 from capa_simulation.settings import (
     APP_CONTACT_EMAIL,
@@ -65,14 +69,15 @@ def test_narrow_windows_reserve_only_what_todays_toolbar_uses() -> None:
     """1400px 보다 좁은 창은 지금 툴바 실측으로 비움 폭을 잡는다(2026-10-07).
 
     28rem 그대로면 1100px 창(사이드바 300px)에서 글자 폭이 408px 뿐이라 긴 이름이 잘렸다. 그 창의
-    실측: 툴바 단추 묶음(Guide·테마·Print)이 197px(테마 글자가 `Light` 면 2px 더). 여기에 글자
+    실측: 툴바 단추 묶음(Guide·Print·테마)이 197px(테마 글자가 `Light` 면 2px 더). 여기에 글자
     시작(펼침 21px · 접힘 4rem), 띠 안쪽 여백·선 11px(최대 폭은 글자 칸에만 걸린다)과 틈 12px 가
     들어가야 글자가 툴바 밑으로 가지 않는다. Deploy 는 껍데기 스타일이 늘 감추므로(2026-10-07
     사용자 결정) 그 몫을 따로 비우지 않는다.
     """
     css = _header_css()
     assert NARROW_MEDIA in css
-    narrow = css.split(NARROW_MEDIA)[1]
+    # 그 미디어 덩어리만 본다 — 뒤에 붙는 진행 막대 자리 규칙에도 최대 폭이 있다.
+    narrow = css.split(NARROW_MEDIA)[1].split("\n}\n")[0]
     expanded, collapsed = (
         float(value) * 14 for value in re.findall(r"max-width: calc\(100% - ([\d.]+)rem\)", narrow)
     )
@@ -81,6 +86,115 @@ def test_narrow_windows_reserve_only_what_todays_toolbar_uses() -> None:
     assert 197 + light + 4 * 14 + frame + gap <= collapsed < 30.5 * 14
     # 감춘 Deploy 는 DOM 에 남아 있어 `:has()` 로 가르면 늘 「있음」 쪽이 걸린다 — 가르지 않는다.
     assert "stAppDeployButton" not in css
+
+
+def _rule(css: str, selector: str) -> str:
+    """`selector {` 로 시작하는 첫 규칙의 본문."""
+    start = css.index(selector + " {")
+    return css[start : css.index("}", start)]
+
+
+def _rem(block: str, prop: str) -> float:
+    match = re.search(rf"{prop}: ([\d.]+)rem;", block)
+    assert match is not None, prop
+    return float(match.group(1))
+
+
+def test_the_progress_slot_is_pinned_in_the_header_band_out_of_the_flow() -> None:
+    """HOME `Capa LOB Summary` 의 로딩 막대는 머리 띠의 툴바 단추 바로 왼쪽에 앉는다(2026-10-08
+    사용자 결정). 띠는 가상요소뿐이라 본문의 키 컨테이너를 고정 배치로 띠 위에 얹는다.
+
+    고정하는 것은 `stLayoutWrapper`(본문 세로 블록의 flex 항목)다 — 안쪽 블록만 고정하면 감싼 칸이
+    흐름에 남아 요소 간격 한 칸을 먹고, 막대가 뜨고 질 때 아래가 움직이지는 않아도 모든 회차에
+    본문이 그만큼 내려간다. 층은 헤더(999990) 위·모바일 사이드바(999995) 아래이고, 빈 칸이 띠의
+    클릭을 가로채지 않게 마우스를 받지 않는다.
+    """
+    assert STATUS_SLOT_SELECTOR == (
+        f'[data-testid="stLayoutWrapper"]:has(> .st-key-{STATUS_SLOT_KEY})'
+    )
+    css = _status_slot_css()
+    slot = _rule(css, STATUS_SLOT_SELECTOR)
+    assert "position: fixed;" in slot
+    assert "top: 0;" in slot
+    assert "height: 3.75rem;" in slot  # 띠 높이(`_HEADER_TEMPLATE` 의 3.75rem)와 같다.
+    assert "pointer-events: none;" in slot
+    z_index = re.search(r"z-index: (\d+);", slot)
+    assert z_index is not None and 999990 < int(z_index.group(1)) < 999995
+    # 툴바 단추 묶음 실측 197px(`Light` 면 199px)과 틈 10px 이상. 가이드가 없는 화면은 Guide
+    # (58.7px + 여백 6px)만큼 오른쪽으로 붙는다.
+    right, width = _rem(slot, "right"), _rem(slot, "width")
+    assert 197 + 2 + 10 <= right * 14 < 197 + 2 + 20
+    no_guide = _rule(
+        css,
+        f'[data-testid="stAppViewContainer"]:not(:has(.st-key-{GUIDE_TRIGGER_KEY})) '
+        + STATUS_SLOT_SELECTOR,
+    )
+    assert 197 - 65 + 2 + 10 <= _rem(no_guide, "right") * 14 < right * 14
+    # 가장 긴 단계 글자(0.72rem 에서 194px)가 다 들어간다.
+    assert width * 14 >= 194
+    # 머리 띠 규칙 뒤에 붙는다 — 막대가 떠 있는 동안의 최대 폭이 같은 구체도의 규칙을 이긴다.
+    header = _header_css()
+    assert header.endswith(css)
+    assert header.index(NARROW_MEDIA) < header.index(css)
+
+
+def test_the_scenario_lines_yield_to_the_bar_only_while_it_is_visible() -> None:
+    """막대가 떠 있는 동안만 시나리오 두 줄이 막대 몫을 비켜 말줄임으로 줄어든다 — 덮지 않는다.
+    막대가 사라지면(`LoadingProgress.close` → 빈 자리) 두 줄은 원래 폭으로 돌아온다. 900px 보다
+    좁은 창은 단계 이름을 화면에서 빼고 막대와 퍼센트만 둔다(768px 창에서 글자 칸 264px → 383px).
+    """
+    css = _status_slot_css()
+    slot = _rule(css, STATUS_SLOT_SELECTOR)
+    right, width = _rem(slot, "right"), _rem(slot, "width")
+    loading = (
+        '[data-testid="stAppViewContainer"]'
+        f':has(.st-key-{STATUS_SLOT_KEY} [data-testid="stProgress"])'
+    )
+    collapsed = ':has([data-testid="stSidebar"][aria-expanded="false"])'
+    wide, narrow = css.split("@media (max-width: 899.98px)")
+    widths = [float(value) for value in re.findall(r"max-width: calc\(100% - ([\d.]+)rem\)", wide)]
+    assert len(widths) == 2
+    # 글자 칸 왼쪽 끝(펼침 1.5rem + 여백 0.55rem + 선 3px, 접힘은 4rem 부터) + 틈 12px + 막대 칸.
+    frame, gap = 0.55 + 3 / 14, 12 / 14
+    assert widths[0] >= 1.5 + frame + gap + right + width
+    assert widths[1] >= 4 + frame + gap + right + width
+    # 1400px 이상의 평소 비움(28rem)보다 넓다 — 창 폭과 상관없이 이 값이 걸린다.
+    assert min(widths) > 28
+    assert loading + '\n  [data-testid="stHeader"]::before' in wide
+    assert loading + collapsed + '\n  [data-testid="stHeader"]::after' in wide
+    # 좁은 창: 단계 이름은 화면에서만 빼고(입장 화면이 `innerText` 로 읽는다) 퍼센트를
+    # 가상요소로 적는다.
+    compact = _rem(_rule(narrow, "  " + STATUS_SLOT_SELECTOR), "width")
+    assert compact < width
+    assert "clip-path: inset(50%);" in narrow
+    assert "display: none" not in narrow
+    assert 'content: attr(aria-valuenow) "%";' in narrow
+    narrow_widths = [
+        float(value) for value in re.findall(r"max-width: calc\(100% - ([\d.]+)rem\)", narrow)
+    ]
+    assert narrow_widths[0] >= 1.5 + frame + gap + right + compact
+    assert narrow_widths[1] >= 4 + frame + gap + right + compact
+    # 색은 이 실행의 토큰이다(센티넬이 남지 않는다).
+    assert "__" not in css.replace(f"st-key-{STATUS_SLOT_KEY}", "").replace(
+        f"st-key-{GUIDE_TRIGGER_KEY}", ""
+    )
+
+
+def test_streamlits_running_widget_steps_aside_only_while_the_bar_runs() -> None:
+    """오래 도는 실행에서 Streamlit 의 실행 표시(달리는 사람·Stop)는 툴바 단추 바로 왼쪽 81px 에
+    서서 막대와 같은 자리를 쓴다. 막대가 떠 있고 그 표시가 실행 중 모양일 때만 감춘다 — 연결 끊김
+    같은 다른 상태는 그대로 보인다."""
+    css = _status_slot_css()
+    rule = re.search(
+        r'\[data-testid="stAppViewContainer"\]:has\(\.st-key-'
+        + STATUS_SLOT_KEY
+        + r' \[data-testid="stProgress"\]\)\s+'
+        r'\[data-testid="stStatusWidget"\]:has\(\[data-testid="stStatusWidgetRunningIcon"\]\) \{'
+        r"\s*visibility: hidden;\s*\}",
+        css,
+    )
+    assert rule is not None
+    assert css.count("stStatusWidget") == 2
 
 
 def test_inline_code_in_body_text_is_close_to_the_body_size() -> None:
@@ -163,6 +277,7 @@ def test_print_always_leaves_out_the_sidebar_header_and_overlay() -> None:
     assert selectors == {
         '[data-testid="stSidebar"]',
         '[data-testid="stHeader"]',
+        STATUS_SLOT_SELECTOR,
         "#capa-intro-host",
     }
     # 본문은 종이 폭을 다 쓴다.

@@ -1,5 +1,6 @@
-# Purpose: 헤더 툴바 iframe 내용이 회차마다 같고 테마 키 규칙이 앱 키 하나를 따르는지 고정한다.
+# Purpose: 헤더 툴바 iframe 내용이 회차마다 같고 테마 키·단추 차례 규칙이 한 벌인지 고정한다.
 
+import json
 import re
 
 import pytest
@@ -218,15 +219,57 @@ def test_toolbar_scripts_take_the_slot_and_button_id_from_one_place() -> None:
         assert theme_toggle.SIDEBAR_HEADER_SLOT not in template
         assert theme_toggle.THEME_BUTTON_ID not in template
         assert "querySelector('%(slot)s')" in template
-    assert 'getElementById("%(theme)s")' in page_guide._SCRIPT
-    assert 'getElementById("%(theme)s")' in print_button._SCRIPT
     for script in (guide_toolbar_script(), print_toolbar_script()):
         assert f"querySelector('{theme_toggle.TOOLBAR_SLOT}')" in script
-        assert f'getElementById("{theme_toggle.THEME_BUTTON_ID}")' in script
+    # 단추 id 도 같은 곳에 있다. Guide·Print 모듈의 id 는 그 사본이다.
+    assert page_guide.BUTTON_ID == theme_toggle.GUIDE_BUTTON_ID
+    assert print_button.BUTTON_ID == theme_toggle.PRINT_BUTTON_ID
+    for button_id in theme_toggle.TOOLBAR_BUTTON_ORDER:
+        for template in templates:
+            assert button_id not in template
     # 사이드바 라벨은 툴바가 아니라 사이드바 머리칸에 선다.
     label = summary_label_script()
     assert f"querySelector('{theme_toggle.SIDEBAR_HEADER_SLOT}')" in label
     assert theme_toggle.TOOLBAR_SLOT not in label
+
+
+def test_toolbar_buttons_stand_in_one_shared_order_guide_print_theme(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """툴바 차례는 `Guide · Print · 테마`다(2026-10-08 사용자 결정). 세 스크립트 중 어느 것이 먼저
+    슬롯을 찾을지 정해져 있지 않으므로 각자 「바로 옆 단추」를 기준으로 서면 늦게 선 단추가 차례를
+    뒤집는다. 차례는 한 벌(`TOOLBAR_BUTTON_ORDER`)이고 세 단추가 모두 같은 규칙(`capaToolbar.place`)
+    으로 선다 — 자기보다 뒤 차례인 단추 중 이미 선 첫 단추 앞, 없으면 끝. 여섯 가지 도착 차례 모두
+    같은 차례가 되는 것은 브라우저에서 확인했다(2026-10-08, 8551).
+    """
+    assert theme_toggle.TOOLBAR_BUTTON_ORDER == (
+        theme_toggle.GUIDE_BUTTON_ID,
+        theme_toggle.PRINT_BUTTON_ID,
+        theme_toggle.THEME_BUTTON_ID,
+    )
+    rule = theme_toggle.TOOLBAR_ORDER_SCRIPT
+    assert "%(" not in rule
+    assert json.dumps(list(theme_toggle.TOOLBAR_BUTTON_ORDER)) in rule
+    place = _function_body(rule, "place")
+    assert "slot.insertBefore(button, later);" in place
+    assert "slot.appendChild(button);" in place
+    assert place.index("insertBefore") < place.index("appendChild")
+
+    frames, _, _ = _render(monkeypatch)
+    theme_toggle.render_theme_toggle(extra_scripts=(guide_toolbar_script(), print_toolbar_script()))
+    frame = frames[0]
+    # 키 규칙 바로 뒤, 단추 스크립트들보다 앞에 실린다. 키 규칙에는 넣지 않는다 — 그 규칙은 입장
+    # 화면 등록 JS 에도 실린다.
+    assert frame.startswith(
+        f"<script>{theme_toggle.THEME_RULE_SCRIPT}</script><script>{rule}</script>"
+    )
+    assert "capaToolbar" not in theme_toggle.THEME_RULE_SCRIPT
+    # 테마 버튼도 슬롯 끝에 바로 붙지 않고 같은 규칙으로 선다.
+    theme_script = frame[frame.index(rule) + len(rule) : frame.index(guide_toolbar_script())]
+    assert "capaToolbar.place(slot, button);" in theme_script
+    assert "slot.appendChild(button)" not in theme_script
+    for script in (guide_toolbar_script(), print_toolbar_script()):
+        assert "capaToolbar.place(slot, button);" in _function_body(script, "place")
 
 
 def test_the_theme_button_asks_before_a_reload_drops_unsaved_edits(
@@ -254,7 +297,7 @@ def test_the_theme_button_asks_before_a_reload_drops_unsaved_edits(
     assert theme_toggle.unsaved_edits_marker(False) == ""
 
 
-def test_the_print_button_sits_right_of_the_theme_button_and_waits_for_an_idle_run(
+def test_the_print_button_sits_between_guide_and_theme_and_waits_for_an_idle_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """⋮ 메뉴를 감추며 그 안의 Print 를 툴바 단추로 옮겼다(2026-10-05 사용자 결정). Streamlit 메뉴의
@@ -273,10 +316,10 @@ def test_the_print_button_sits_right_of_the_theme_button_and_waits_for_an_idle_r
     assert 'state === "running"' in wait
     assert "parentWindow.setTimeout(printWhenIdle, 500);" in wait
     assert wait.index("setTimeout(printWhenIdle") < wait.index("parentWindow.print()")
-    # 테마 버튼 바로 오른쪽에 선다. 테마 버튼이 서기 전이면 기다려 차례가 뒤집히지 않게 한다.
+    # 자리는 공용 차례 규칙이 정한다(Guide · Print · 테마). 테마 버튼을 기다리지 않는다.
     place = _function_body(script, "place")
-    assert "if (!theme) return false;" in place
-    assert "slot.insertBefore(button, theme.nextSibling);" in place
+    assert "capaToolbar.place(slot, button);" in place
+    assert "theme" not in place.replace("capaTheme", "")
     # Guide 와 같은 윤곽 단추다.
     assert '"font-size:13px", "font-weight:600"' in place
     assert '"border-radius:8px"' in place

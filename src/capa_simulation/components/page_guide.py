@@ -1,4 +1,4 @@
-# Purpose: 헤더 테마 버튼 옆 Guide 버튼과 화면별 사용 안내 대화상자를 그린다.
+# Purpose: 헤더 툴바 맨 왼쪽 Guide 버튼과 화면별 사용 안내 대화상자를 그린다.
 
 """화면 설명은 본문이 아니라 **Guide** 에 둔다(2026-09-28 사용자 결정).
 
@@ -32,12 +32,13 @@ from pathlib import Path
 
 import streamlit as st
 
-from capa_simulation.components.theme_toggle import THEME_BUTTON_ID, TOOLBAR_SLOT
+from capa_simulation.components.theme_toggle import GUIDE_BUTTON_ID, TOOLBAR_SLOT
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import forget_page_dialogs
 
 GUIDE_TRIGGER_KEY = "page_guide_trigger"
-BUTTON_ID = "capa-guide-button"
+# id 와 툴바 차례는 다른 툴바 단추와 함께 `theme_toggle` 한 곳에 있다(`TOOLBAR_BUTTON_ORDER`).
+BUTTON_ID = GUIDE_BUTTON_ID
 GUIDE_DIR = Path(__file__).resolve().parents[1] / "guides"
 # 툴바 버튼이 누를 숨은 버튼. Streamlit 은 `key` 를 `st-key-<key>` 클래스로 단다.
 _TRIGGER_SELECTOR = f".st-key-{GUIDE_TRIGGER_KEY} button"
@@ -87,9 +88,10 @@ _SCRIPT = """
         bubbles: true, cancelable: true, view: parentWindow, detail: 1
       }));
     };
-    // 테마 버튼 **바로 왼쪽**에 선다. 테마 버튼이 아직 없으면 슬롯 맨 앞에 둔다.
-    var theme = doc.getElementById("%(theme)s");
-    slot.insertBefore(button, theme || slot.firstChild);
+    // 툴바 **맨 왼쪽**이다(차례 규칙 `capaToolbar` — Guide · Print · 테마). 다른 단추가 먼저
+    // 섰든 아직이든 같은 자리에 선다.
+    if (typeof capaToolbar !== "undefined") capaToolbar.place(slot, button);
+    else slot.insertBefore(button, slot.firstChild);
     return true;
   }
 
@@ -127,7 +129,6 @@ def guide_toolbar_script() -> str:
         "light_ink": tokens.palette_value("light", "TEXT"),
         "dark_ink": tokens.palette_value("dark", "TEXT"),
         "slot": TOOLBAR_SLOT,
-        "theme": THEME_BUTTON_ID,
     }
 
 

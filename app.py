@@ -126,8 +126,9 @@ theme.begin_run()
 render_intro_overlay()
 # 헤더 오른쪽 툴바 슬롯에 밝게/어둡게 버튼을 얹는다. Streamlit 이 테마를 기억하는 자리를
 # 그대로 쓰므로 위젯과 우리 Figure 가 함께 바뀐다. 테마를 바꾸는 길은 이 버튼 하나다(⋮ 메뉴는
-# 감춘다). 그 왼쪽의 `Guide` 버튼도 같은 iframe 에 싣는다. 기본은 감춰 두고 가이드를 단 페이지만
-# 보이게 한다. 테마 버튼 바로 오른쪽의 `Print` 는 감춘 메뉴의 인쇄를 대신한다. 사이드바
+# 감춘다). `Guide` · `Print` 버튼도 같은 iframe 에 싣고, 툴바 차례는 `Guide · Print · 테마`다
+# (`theme_toggle.TOOLBAR_BUTTON_ORDER`). Guide 는 기본은 감춰 두고 가이드를 단 페이지만 보이게
+# 한다. `Print` 는 감춘 메뉴의 인쇄를 대신한다. 사이드바
 # 머리칸의 `S.PKG CAPA` 라벨도 같은 iframe 이 세운다 — 원래 화면에서 공식버전 요약(Summary)으로
 # 돌아오는 길이고, 요약이 준비돼야 입장 화면 JS 가 누를 수 있게 한다.
 #

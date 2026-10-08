@@ -17,18 +17,9 @@ from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.navigation import DATA_PENDING_SUFFIX, IMPLEMENTING_SUFFIX
 
-# 제목 오른쪽 진행 표시 자리의 폭. 단계 이름과 퍼센트가 한 줄에 들어가는 최소치다.
-STATUS_SLOT_WIDTH_PX = 320
-
-# 제목 줄을 나누는 비율. 왼쪽 칸이 제목보다 조금 넓어 진행 표시가 제목 바로 옆에서
-# 시작한다. 왼쪽을 더 좁히면 제목이 두 줄로 접히고, 더 넓히면 진행 표시가 제목에서
-# 멀찍이 떨어진다.
-# 제목이 앞, 진행 표시가 뒤다. **진행 슬롯은 `STATUS_SLOT_WIDTH_PX` 로 폭이 고정**이라
-# 비율을 크게 줘도 남는 자리를 놀릴 뿐인데, 예전 `(2, 3)` 이 그랬다 — 본문 900px 에서
-# 진행 쪽이 540px 을 받아 220px 을 놀리는 동안 제목은 360px 로 잘렸다. 뒤집으면 제목이
-# 540px 이 된다. 대신 진행 쪽 여유가 40px 로 줄어, 본문이 800px 보다 좁아지면 슬롯이
-# 넘친다(예전에는 533px 까지 버텼다).
-TITLE_STATUS_COLUMN_RATIO = (3, 2)
+# 진행 표시 자리(`render_page_header_with_status`)의 컨테이너 키. Streamlit 은 이것을 `st-key-<키>`
+# 클래스로 달고, 머리 띠 CSS(`app_header`)가 그 자리를 화면 맨 위 띠 안에 고정한다.
+STATUS_SLOT_KEY = "page_header_status"
 
 # 화면이 어느 단계인지 알려주는 배지. 본문이 이미 쓰던 어휘를 그대로 쓴다.
 # 사이드바 접미는 둘(`(구현중)`·`(Data확보중)`)이고 본문 성숙도는 여기서 더 잘게 나눈다
@@ -80,26 +71,20 @@ def render_page_header_with_status(
     description: str | None = None,
     badges: str | None = None,
 ) -> DeltaGenerator:
-    """제목 오른쪽에 진행 표시 자리를 둔 머리말. 그 자리를 쓸 `st.empty()` 를 돌려준다.
+    """진행 표시 자리를 둔 머리말. 그 자리를 쓸 `st.empty()` 를 돌려준다.
 
-    진행 막대를 본문 흐름에 그대로 두면 뜨고 질 때마다 아래의 모든 것이 그만큼 위아래로
-    밀린다. 차트를 보는 중에 그 움직임이 그대로 보인다. 제목 줄 안에 넣으면 줄 높이를
-    제목이 잡고 있으므로 막대가 사라져도 아래가 움직이지 않는다.
+    그 자리는 본문이 아니라 **화면 맨 위 띠**(Streamlit 헤더, 왼쪽에 시나리오 두 줄·오른쪽에 툴바
+    단추)에 앉는다 — 툴바 단추 바로 왼쪽이다(2026-10-08 사용자 결정). 자리를 잡는 CSS 는 띠의
+    다른 규칙과 함께 `app_header` 가 보낸다(키 `STATUS_SLOT_KEY`).
+
+    진행 막대를 본문 흐름에 그대로 두면 뜨고 질 때마다 아래의 모든 것이 그만큼 위아래로 밀린다.
+    여기서는 컨테이너를 본문 흐름에서 빼서(`position: fixed`) 띠 위에 얹으므로, 막대가 뜨고 져도
+    본문은 한 픽셀도 움직이지 않는다. 고정 배치된 칸은 flex 항목이 아니라 요소 간격도 먹지 않는다.
+    제목은 다른 페이지와 같은 `st.title` 이다 — 자리가 본문 흐름 밖이라 제목 줄을 나눌 일이 없다.
     """
     heading, status_badge = _split_status_suffix(title)
-    # 가로 컨테이너가 아니라 컬럼으로 나눈다. **가로 컨테이너 안의 `h1` 은 Streamlit 이
-    # 위아래 여백을 지운다.** 그러면 이 머리말을 쓰는 페이지만 제목이 그만큼 위로 올라가
-    # 앱 헤더에 닿고, 같은 자리에 있어야 할 다른 페이지 제목과 눈높이가 어긋난다.
-    # 컬럼은 그 여백을 그대로 두므로 제목 줄 높이가 다른 페이지와 같다.
-    #
-    # **컬럼에는 `wrap=False` 를 걸지 않는다.** 가로 flex 블록에 `wrap=False` 를 주면
-    # Streamlit 이 `overflow-x: auto` 를 걸고 세로 축은 `visible` 로 남는데, CSS 는 한 축이
-    # `auto` 면 나머지 `visible` 을 `auto` 로 계산한다. 그래서 제목 줄에 쓰지도 않는 세로
-    # 스크롤바가 생긴다. 제목이 두 줄이 되는 것은 아래 `st.title(..., wrap=False)` 가 따로
-    # 막는다 — 그쪽은 `overflow: hidden` + 말줄임이라 스크롤바를 만들지 않는다.
-    title_column, status_column = st.columns(TITLE_STATUS_COLUMN_RATIO, vertical_alignment="center")
-    title_column.title(heading, wrap=False)
-    with status_column, st.container(width=STATUS_SLOT_WIDTH_PX):
+    st.title(heading)
+    with st.container(key=STATUS_SLOT_KEY):
         slot = st.empty()
     _render_marks(status_badge, badges, description)
     return slot

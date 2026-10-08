@@ -67,7 +67,9 @@ G1-D0). 그 겹침은 `_sql_helpers.connect` 가 기다려 푼다. OS 가 밝을
 
 버튼이 앉는 자리는 `[data-testid="stToolbarActions"]` 다 — 툴바 오른쪽 끝의 빈 슬롯이고(그
 오른쪽의 Streamlit Deploy 단추는 `app_header` 의 껍데기 스타일이 감춘다), React 가 툴바를 다시
-그려도 주입한 노드가 살아남는 것을 확인했다.
+그려도 주입한 노드가 살아남는 것을 확인했다. 테마 버튼은 그 슬롯의 **맨 오른쪽**이다 — 툴바
+차례는 `Guide · Print · 테마`(2026-10-08 사용자 결정)이고 세 스크립트가 같은 차례 규칙
+(`TOOLBAR_ORDER_SCRIPT`)으로 선다.
 
 **비공식 경로임을 분명히 해 둔다.** `data-testid` 와 `localStorage` 키 모양은 Streamlit 이
 판올림에서 바꿀 수 있다. 슬롯이 바뀌면 버튼이 **안 생길 뿐**이다 — 스크립트가 슬롯을 못 찾으면
@@ -79,6 +81,7 @@ G1-D0). 그 겹침은 `_sql_helpers.connect` 가 기다려 푼다. OS 가 밝을
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 
 import streamlit as st
@@ -87,14 +90,20 @@ from capa_simulation.design import tokens
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 
 # Streamlit 과 맞춰야 하는 계약은 저장 키 모양(접두·접미)과 단추를 얹는 자리(툴바 슬롯·사이드바
-# 머리칸)다. 한 곳에 모아 두어야 판올림에서 무엇을 확인해야 하는지가 분명하다. 툴바 슬롯과 테마 버튼
-# id 는 같은 툴바에 단추를 얹는 Guide·Print 스크립트(`page_guide`·`print_button`)가, 사이드바
+# 머리칸)다. 한 곳에 모아 두어야 판올림에서 무엇을 확인해야 하는지가 분명하다. 툴바 슬롯과 단추 id·
+# 차례는 같은 툴바에 단추를 얹는 Guide·Print 스크립트(`page_guide`·`print_button`)가, 사이드바
 # 머리칸은 같은 iframe 에 실리는 S.PKG CAPA 라벨 스크립트(`intro_summary`)가 여기서 받아 쓴다.
 THEME_STORAGE_PREFIX = "stActiveTheme-"
 THEME_STORAGE_SUFFIX = "-v2"
 TOOLBAR_SLOT = '[data-testid="stToolbarActions"]'
 SIDEBAR_HEADER_SLOT = '[data-testid="stSidebarHeader"]'
+GUIDE_BUTTON_ID = "capa-guide-button"
+PRINT_BUTTON_ID = "capa-print-button"
 THEME_BUTTON_ID = "capa-theme-toggle"
+# 툴바 단추의 왼쪽 → 오른쪽 차례(2026-10-08 사용자 결정 — Guide · Print · 테마). 단추를 세우는
+# 스크립트가 셋이고 어느 것이 먼저 슬롯을 찾을지 정해져 있지 않으므로(슬롯이 늦게 그려지면 각자
+# 지켜보다 선다) 셋 모두 이 차례 한 벌로 자리를 고른다(`capaToolbar.place`).
+TOOLBAR_BUTTON_ORDER = (GUIDE_BUTTON_ID, PRINT_BUTTON_ID, THEME_BUTTON_ID)
 # 앱이 고른 테마의 정본(`"Light"`·`"Dark"` 글자 그대로). 경로별 Streamlit 키는 이것의 사본이다.
 THEME_APP_KEY = "capa-theme"
 # 경로마다 「우리가 그 경로의 Streamlit 키에 마지막으로 적은 값」. 뒤에 경로를 붙인다.
@@ -236,6 +245,36 @@ THEME_RULE_SCRIPT = _THEME_RULE_TEMPLATE % {
     "suffix": THEME_STORAGE_SUFFIX,
 }
 
+# 툴바 단추 차례 규칙 한 벌(`TOOLBAR_BUTTON_ORDER`). 툴바 iframe 에서 키 규칙 바로 뒤에 실려 테마·
+# Guide·Print 스크립트가 모두 부른다. 키 규칙(`THEME_RULE_SCRIPT`)에 넣지 않는 것은 그 규칙이 입장
+# 화면 등록 JS 에도 실리기 때문이다 — 입장 화면은 툴바에 단추를 세우지 않는다.
+#
+# 자기보다 **뒤 차례인 단추 중 이미 선 첫 단추** 앞에 서고, 그런 단추가 없으면 슬롯 끝에 붙는다.
+# 단추마다 이 규칙으로 서면 어느 단추가 먼저 서든 차례가 같다(먼저 선 단추들은 이미 차례대로다).
+# Guide 는 가이드가 없는 화면에서 CSS 로 감춰질 뿐 DOM 에는 제 자리에 있어, 보였다 감춰져도 차례가
+# 그대로다. 차례 목록에 없는 단추는 끝에 붙는다.
+_TOOLBAR_ORDER_TEMPLATE = """
+var capaToolbar = (function () {
+  var ORDER = %(order)s;
+
+  function place(slot, button) {
+    var rank = ORDER.indexOf(button.id);
+    var start = rank < 0 ? ORDER.length : rank + 1;
+    for (var index = start; index < ORDER.length; index += 1) {
+      var later = slot.ownerDocument.getElementById(ORDER[index]);
+      if (later && later.parentNode === slot) {
+        slot.insertBefore(button, later);
+        return;
+      }
+    }
+    slot.appendChild(button);
+  }
+
+  return { place: place };
+})();
+"""
+TOOLBAR_ORDER_SCRIPT = _TOOLBAR_ORDER_TEMPLATE % {"order": json.dumps(list(TOOLBAR_BUTTON_ORDER))}
+
 # `st.iframe` 은 높이 0 을 받지 않는다(양수 px·`"stretch"`·`"content"` 만 — 0 이면
 # `StreamlitInvalidHeightError` 로 페이지가 선다). 1px 로 띄우고 아래 규칙으로 0 으로 접는다.
 # `"content"` 는 스크립트뿐인 문서라도 기본 150px 칸을 잡아 모든 화면을 그만큼 내린다.
@@ -257,7 +296,7 @@ _SCRIPT = """
 (function () {
   var parentWindow = window.parent;
   if (!parentWindow || parentWindow === window) return;
-  if (typeof capaTheme === "undefined") return;
+  if (typeof capaTheme === "undefined" || typeof capaToolbar === "undefined") return;
   var doc = parentWindow.document;
 
   // 주소의 조회 인자를 고친다. **`location.replace` 를 쓰지 않는다** — 이 iframe 의
@@ -331,7 +370,8 @@ _SCRIPT = """
       syncParam(next.toLowerCase());
       parentWindow.location.reload();
     };
-    slot.appendChild(button);
+    // 툴바 맨 오른쪽이다(차례 규칙 `capaToolbar` — Guide · Print · 테마).
+    capaToolbar.place(slot, button);
     return true;
   }
 
@@ -354,7 +394,8 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
     `extra_scripts` 는 툴바·사이드바 머리칸에 단추를 얹는 **다른 스크립트**다(Guide·Print 버튼과
     사이드바 S.PKG CAPA 라벨).
     iframe 을 따로 두지 않고 여기에 함께 싣는다 — 높이 0 iframe 도 본문 맨 위에 요소 간격 한
-    칸을 먹어서, 하나 더 두면 모든 화면이 그만큼 내려간다.
+    칸을 먹어서, 하나 더 두면 모든 화면이 그만큼 내려간다. 맨 앞에는 키 규칙(`capaTheme`)과 툴바
+    차례 규칙(`capaToolbar`)이 실려 뒤의 스크립트가 모두 그것을 부른다.
 
     `st.iframe` 하나를 쓰고 높이를 0 으로 접는다(`_COLLAPSE_STYLE`). `st.html` 은 스크립트를
     실행하지 않으므로 iframe 이 아니면 부모 창에 닿을 수 없다. 예전의 `components.v1.html` 은
@@ -363,7 +404,7 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
     """
     st.html(_COLLAPSE_STYLE)
     st.iframe(
-        f"<script>{THEME_RULE_SCRIPT}</script>"
+        f"<script>{THEME_RULE_SCRIPT}</script><script>{TOOLBAR_ORDER_SCRIPT}</script>"
         + _SCRIPT
         % {
             "slot": TOOLBAR_SLOT,
