@@ -1102,10 +1102,12 @@ def _formula_input_lines(
     return [
         "산식 인자 — 무리별 p5 · 중앙 · p95 와 중앙의 비(≈60 ÷ ≈1 이 60 이나 0.0167 근처면 "
         "그 인자가 단위째 다르다). 「60 배로 고침」은 ≈1 키가 쓰지 않는 인자 값만 신규가 60 배가 "
-        "되는 쪽으로 고쳐 다시 계산했을 때 ≈1 이 되는 ≈60 키 / 그 인자가 걸리는 ≈60 키, "
-        "「같이 어긋남」은 ≈60 키가 쓰는 인자 값을 모두 고치면 함께 ≈1 을 벗어나는 ≈1 키다. "
-        "고침이 전부이고 어긋남이 0 인 인자만 혼자서 60 배를 설명한다(산식이 곱이라 키 하나로는 "
-        "어느 인자든 맞춰진다).",
+        "되는 쪽으로 고쳐 다시 계산했을 때 ≈1 이 되는 ≈60 키 / 그 인자가 걸리는 ≈60 키(분모가 "
+        "첫 줄의 ≈60 전체보다 작으면 그 인자는 ≈60 무리 일부에만 걸린다), 「같이 어긋남」은 ≈60 "
+        "키가 쓰는 인자 값을 모두 고치면 함께 ≈1 을 벗어나는 ≈1 키다. 고침이 ≈60 전체이고 "
+        "어긋남이 0 인 인자만 혼자서 60 배를 설명한다(산식이 곱이라 키 하나로는 어느 인자든 "
+        "맞춰진다). 공정마다 무리가 하나뿐이면 공정 단위보다 잘게 정해지는 인자는 모두 그렇게 "
+        "보인다 — 그때 가르는 것은 공정을 넘어 값을 나눠 쓰는 부하량·제품 단위 인자와 위 표들이다.",
         "",
         *_table(_INPUT_HEADERS, rows),
         "",
@@ -1235,8 +1237,11 @@ def check_legacy(session: Session) -> list[str]:
     )
     load_results: list[ComparisonResult] = []
     for metric in COMPARISONS:
-        name, build = LOAD_BUILDERS[metric.legacy_column]
+        name, build = LOAD_BUILDERS.get(metric.legacy_column, (metric.label, None))
         label = f"{name} `{metric.legacy_column}`"
+        if build is None:
+            load_results.append(ComparisonResult(label=label, failure="신규 계산 연결 없음"))
+            continue
         if not _filled(core, metric.legacy_column):
             load_results.append(ComparisonResult(label=label, failure="원천이 비어 대조 불가"))
             continue
