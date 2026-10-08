@@ -173,9 +173,10 @@ def test_the_default_scene_keeps_its_fingerprint(scene_results: dict[str, Any]) 
 
 def test_turning_everything_off_returns_to_the_same_picture(scene_results: dict[str, Any]) -> None:
     assert scene_results["back_to_base"] is True
-    # 켜면 GAP(값 아래)·선행 입고(값 옆) 글자가 실제로 그려진다.
+    # 켜면 GAP(값 아래)·선행 입고 글자가 실제로 그려진다. 선행 입고는 두 곳 — 생산계획 점 위 값
+    # 글자 위와 월별 시트 Density 값 옆(2026-10-08 사용자 요청)이라 달마다 두 번이다.
     texts = scene_results["on_texts"]
-    assert "+2.0" in texts and "+1.3" in texts
+    assert texts.count("+2.0") == 2 and texts.count("+1.3") == 2
     assert any(text.startswith("-") and text.endswith("K") for text in texts)
 
 

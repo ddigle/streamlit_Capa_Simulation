@@ -949,6 +949,8 @@ function scene(port, gridOf) {
     const sheet = layoutSheets(G, n);
     // 선행 B/O 를 켠 값 글자. 같은 모양(한 줄·두 줄·접기) 안에서 크기만 다시 맞춘다 — 기본보다 크지 않다.
     sheet.pxA = adv ? sheetValuePx(sheet, [adv.density, adv.wafer], n) : sheet.px;
+    const shipT = toggleData("shipment");
+    for (const card of sheet.cards) card.notePx = shipNotePx(sheet, card, shipT ? shipT.notes[card.i] : "");
     const sheets = sheet.cards;
     sumL = {
       G,
@@ -992,6 +994,22 @@ function scene(port, gridOf) {
     const hi = top > range.hi ? top + pad : range.hi;
     const lo = bottom < range.lo ? bottom - pad : range.lo;
     return hi === range.hi && lo === range.lo ? range : { lo, hi };
+  }
+
+  // 월별 시트의 선행 입고 글자 크기(달마다). 기본은 생산계획 달 이름과 같은 `SHIP_NOTE_PX` 이고 값 글자(기본·
+  // 선행 B/O 둘 중 작은 쪽)보다 크지 않다. 두 줄 배치(좁은 창)에서는 글자가 이름(「Density」) 줄 높이에 서므로
+  // 이름과 겹치지 않는 크기까지 줄인다(9px 까지). 글자 폭을 재는 일은 배치에서 한 번이다 — 그리기는 재지 않는다.
+  function shipNotePx(K, card, note) {
+    let px = Math.min(SHIP_NOTE_PX, Math.round(Math.min(K.px, K.pxA)));
+    if (!note || !K.stacked) return px;
+    g.font = `500 11px ${bodyStack}`;
+    const room = card.w - K.pad * 2 - g.measureText(K.rows[0].text).width - 4;
+    g.font = `600 ${px}px ${numStack}`;
+    while (px > 9 && g.measureText(note).width > room) {
+      px -= 1;
+      g.font = `600 ${px}px ${numStack}`;
+    }
+    return px;
   }
 
   // 선 한 변형의 배치. `values` 는 그 변형의 점, `before` 는 선행 B/O 전 점선(없으면 null), `ghost` 는 비교
@@ -1171,6 +1189,9 @@ function scene(port, gridOf) {
   const SHEET_VALUE_PX = 18;
   const SHEET_VALUE_FLOOR = 14;
   const SHEET_LABEL_LINE = 13;
+  // 선행 입고 실적 글자 크기 — 생산계획 판의 달 이름(14px)과 같다(2026-10-08 사용자 결정). 생산계획 점 위 값
+  // 글자 위와 월별 시트 Density 값 옆 두 곳에 같은 크기로 단다(시트는 값 글자보다 크지 않게).
+  const SHIP_NOTE_PX = 14;
   function layoutSheets(G, n) {
     const rows = [
       { label: "Density", values: sum.density, digits: 2, unit: "억Gb" },
@@ -1287,6 +1308,7 @@ function scene(port, gridOf) {
     const adv = toggleData("advance");
     const cmp = toggleData("comparison");
     const now = lineNow();
+    const shipNotes = lineShipNotes(L, now, adv);
     g.save();
     g.globalAlpha = k;
     g.translate(0, 18 * (1 - k));
@@ -1313,7 +1335,12 @@ function scene(port, gridOf) {
       for (const t of V.tickLabels) {
         if (!t) continue;
         g.textAlign = t.align;
-        g.fillText(t.text, t.x, settled ? t.y : now.yLine(t.v) + t.dy);
+        const ty = settled ? t.y : now.yLine(t.v) + t.dy;
+        // 선행 입고 글자와 겹치는 눈금 글자는 그 글자가 붙는 만큼 흐려진다(배치는 토글과 무관하게 그대로다).
+        const hide = shipNotes.reduce((m, n) => (overlaps(textBox(t.text, t.x, ty, t.align, 10), n.box) ? Math.max(m, n.m) : m), 0);
+        if (hide >= 0.999) continue;
+        g.globalAlpha = k * w * (1 - hide);
+        g.fillText(t.text, t.x, ty);
       }
     }
     g.globalAlpha = k;
@@ -1390,8 +1417,43 @@ function scene(port, gridOf) {
         g.fillStyle = pal.text;
         g.fillText(round(pt.v, 2), pt.x, y - 12);
       });
+      // 선행 입고 실적 — 점 위 값 글자 위에 달 이름과 같은 크기로 단다. 계산에 들어가지 않는 표시값이라 선·점은
+      // 그대로이고, 달마다 시차를 두고 아래에서 떠오른다.
+      for (const n of shipNotes) {
+        g.globalAlpha = k * n.m;
+        g.font = `600 ${SHIP_NOTE_PX}px ${numStack}`;
+        g.textAlign = n.align;
+        g.fillStyle = pal.text;
+        g.fillText(n.text, n.x, n.y + 4 * (1 - n.m));
+      }
     }
     g.restore();
+  }
+
+  // 생산계획 판의 선행 입고 글자 자리. 값 글자 바로 위(가운데)가 기본이고, 점이 판 위끝에 붙어 그 자리가 판
+  // 밖으로 나가면 값 글자 오른쪽(같은 바탕선)에 단다. 켜진 만큼(`m`)만 돌려준다 — 끄면 빈 목록이다.
+  function lineShipNotes(L, now, adv) {
+    const ship = toggleData("shipment");
+    if (!ship) return [];
+    const notes = [];
+    sum.density.forEach((_, i) => {
+      const text = ship.notes[i];
+      const m = text ? monthMix("ship", i) : 0;
+      const v = densityNow(adv, i);
+      if (m <= 0.001 || v == null) return;
+      const x = L.colX(i);
+      const labelY = now.yLine(v) - 12;
+      let spot = { x, y: labelY - SHIP_NOTE_PX - 3, align: "center" };
+      g.font = `600 ${SHIP_NOTE_PX}px ${numStack}`;
+      if (textBox(text, spot.x, spot.y, spot.align, SHIP_NOTE_PX).y < L.line.y + 2) {
+        g.font = `700 14px ${numStack}`;
+        const half = g.measureText(round(v, 2)).width / 2;
+        spot = { x: x + half + 6, y: labelY, align: "left" };
+        g.font = `600 ${SHIP_NOTE_PX}px ${numStack}`;
+      }
+      notes.push({ text, m, ...spot, box: textBox(text, spot.x, spot.y, spot.align, SHIP_NOTE_PX) });
+    });
+    return notes;
   }
 
   // 선행 B/O 가 더한 몫 — 원래 선(점선)과 새 선 사이를 강조색으로 옅게 칠한다. 달마다 진행이 달라 몫이 시차를
@@ -1703,13 +1765,15 @@ function scene(port, gridOf) {
           g.fillText(gap, right - row.unitW - 2, base + 12 + 4 * (1 - mG));
           g.globalAlpha = e;
         }
-        // 선행 입고 실적 — Density 값 옆(단위 위, 칸 오른쪽 끝)에 작게 붙는다. 계산에 들어가지 않는 표시값이라
+        // 선행 입고 실적 — Density 값 옆(단위 위, 칸 오른쪽 끝)에 달 이름 크기(`SHIP_NOTE_PX`)로 붙는다. 표시값이라
         // 선·막대는 그대로이고, 달마다 시차를 두고 오른쪽에서 미끄러져 붙는다.
         const note = r === 0 && ship ? ship.notes[i] : "";
         const mS = note ? monthMix("ship", i) : 0;
         if (mS > 0.001) {
           g.globalAlpha = e * mS;
-          g.font = `700 10px ${numStack}`;
+          // 크기는 배치가 달마다 한 번 정해 둔 것이다(`shipNotePx`) — 값 글자보다 크지 않게 여기서만 누른다.
+          const notePx = Math.min(s.notePx || SHIP_NOTE_PX, Math.round(px));
+          g.font = `600 ${notePx}px ${numStack}`;
           g.fillStyle = pal.text;
           g.fillText(note, right + 8 * (1 - mS), base - Math.round(px * 0.72) - 3);
           g.globalAlpha = e;
