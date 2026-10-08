@@ -2331,7 +2331,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     아니라 심볼의 고정 강조색이라 입장 화면(`die-warn`)과 사이드바 라벨(`BRAND_DIE_WARM`) 모두 주황이다.
     모양은 `intro_overlay.MARK_RING_PATH` · `MARK_DIE_ORIGINS` 와 `intro.js` 의 `MARK_RING` · `MARK_DIES`
     두 벌이고, 그리는 곳은 넷이다 — 입장 화면 머리 줄(`brandMark`, 30px)·입장 화면 가운데 장면
-    (`drawSymbol`, 워커라 값을 따로 적는다)·사이드바 라벨(`intro_summary._label_icon`, 22px)·탭 아이콘
+    (`drawSymbol`, 워커라 값을 따로 적는다)·사이드바 라벨(`intro_summary._label_icon`, 30px — Summary 머리 심볼과 같은 크기)·탭 아이콘
     (`static/icons/capa_mark.svg`). `test_intro_overlay` 가 넷의 호와 다이 자리를 맞춰 본다. 뒤쪽 웨이퍼
     맵(`drawMap`)의 V 노치는 심볼이 아니라 웨이퍼 그림이라 그대로 둔다.
   - **머리 심볼 모션**(2026-10-07 사용자 결정 — 모션 시안 `DAPem8Fm9o1dM1ejLCrvsR` 넷 중 셋, `markMotion`):

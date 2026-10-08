@@ -886,17 +886,19 @@ _LABEL_SCRIPT = """
 })();
 """
 
-# 사이드바 머리칸 띠(`app_header`)는 높이 3.75rem 이다. 라벨은 그 안에 한 줄로 선다. 오른쪽 끝
+# 사이드바 머리칸 띠(`app_header`)는 높이 3.75rem 이다. 라벨은 그 안에 한 줄로 선다. 심볼은
+# 입장 화면·Summary 머리 심볼(`intro.css` 의 `.logo`)과 같은 30px, 글자와의 틈 10px, 글자 18px
+# 다(2026-10-08 사용자 요청 — 같은 크기로). 오른쪽 끝
 # 접기 버튼 자리(28px + 틈 — 2.25rem)는 비우고, 사이드바를 좁게 끌면 안내 글자부터 줄어든다.
 _LABEL_CSS = """
 #__ID__ {
-  display: inline-flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0;
+  display: inline-flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 0;
   max-width: calc(100% - 2.25rem); height: 34px; margin: 0 auto 0 0; padding: 0 8px 0 6px;
   box-sizing: border-box; border: 1px solid transparent; border-radius: 8px;
   background: transparent; color: __TEXT__; cursor: pointer; white-space: nowrap; overflow: hidden;
   font-family: __FONT_FAMILY__;
 }
-#__ID__ svg { width: 22px; height: 22px; flex: none; display: block; }
+#__ID__ svg { width: 30px; height: 30px; flex: none; display: block; margin-right: 3px; }
 #__ID__ svg .capa-mark-turn, #__ID__ svg .capa-mark-spin {
   transform-box: view-box; transform-origin: 50px 50px;
 }
@@ -905,7 +907,7 @@ _LABEL_CSS = """
 }
 #__ID__ .capa-brand-word {
   font-family: "CapaIntroDisplay", __FONT_FAMILY__; font-weight: 800; font-stretch: 75%;
-  font-size: 19px; line-height: 1; letter-spacing: 0.01em; flex: none;
+  font-size: 18px; line-height: 1; letter-spacing: 0.01em; flex: none;
 }
 #__ID__ .capa-brand-hint {
   font-size: 11px; font-weight: 600; color: __TEXT_MUTED__; overflow: hidden;
