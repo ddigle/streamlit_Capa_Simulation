@@ -249,6 +249,8 @@
 .sle-markprops[hidden], .sle-sendto[hidden], .sle-zone-only[hidden], .sle-mark-rotate[hidden] {
   display: inline-flex; visibility: hidden; pointer-events: none;
 }
+/* 고른 호기 하나의 이름(설비명, 모듈 묶음이면 Main 설비). 층 보내기 칸 안이라 그 칸과 함께 숨는다. */
+.sle-unit-name { margin-right: 6px; }
 /* 층 블록(FAB 편집) 속성 — 연결 층·색·[열기]. 영역 속성·돌리기와 한 칸에 겹친다. */
 .sle-block-props { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .sle-block-props[hidden] { display: inline-flex; visibility: hidden; pointer-events: none; }

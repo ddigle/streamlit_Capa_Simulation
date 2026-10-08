@@ -114,6 +114,7 @@ export default function (component) {
   const inspectorName = q('.sle-inspector-name')
   const fieldInputs = [...host.querySelectorAll('.sle-fields input')]
   const sendBox = q('.sle-sendto')
+  const unitLabel = q('.sle-unit-label')
   const moveSelect = q('.sle-move-floor')
   const moveButton = q('.sle-move')
   const markProps = q('.sle-markprops')
@@ -235,8 +236,8 @@ export default function (component) {
   }
   const snapshot = (item) => ({
     x: item.x, y: item.y, w: item.w, h: item.h, placed: item.placed, moveTo: item.moveTo, sizeGuessed: item.sizeGuessed,
-    rot: item.rot, label: item.label, color: item.color, hatch: item.hatch, keepOut: item.keepOut, link: item.link,
-    fontSize: item.fontSize, fontColor: item.fontColor,
+    rot: item.rot, label: item.label, group: item.group, color: item.color, hatch: item.hatch, keepOut: item.keepOut,
+    link: item.link, fontSize: item.fontSize, fontColor: item.fontColor,
   })
   // 층 블록 글자: 첫 줄은 이름(없으면 연결 층), 다음 줄은 배치·미배치 대수. 풍선에는 점유율까지.
   const blockHead = (item) => item.label || item.link || '연결 없음'
@@ -498,7 +499,7 @@ export default function (component) {
       drawMark(group, item, top)
     }
     positionHandles(group, item, top)
-    group.classList.toggle('is-changed', isChanged(item))
+    group.classList.toggle('is-changed', isChanged(item) || isRenamed(item))
   }
 
   // 요소는 돌리기 전 크기(lw×lh)의 제자리 좌표로 그린 뒤 가운데를 축으로 돌린다. 0° 일 때 아래 변이 벽이다.
@@ -837,6 +838,27 @@ export default function (component) {
     if (!item.placed) return !sameSize(o, item)
     return !sameGeometry(o, item)
   }
+  // 이름을 바꿨는가(설비명, 또는 모듈 묶음의 Main 설비). 배치 변경과 따로 보낸다 — 이름만 바꾼 호기는 `changes` 에
+  // 넣지 않는다. 편집기에서 새로 넣은 호기는 이름을 고쳐도 그 이름의 새 호기다(바꿈이 아니다).
+  function isRenamed(item) {
+    if (!isUnit(item) || item.created) return false
+    const o = S.original.get(item.id)
+    return Boolean(o) && (o.label !== item.label || (o.group || null) !== (item.group || null))
+  }
+  // 적용값의 `renames`. 설비명은 호기마다, Main 설비는 묶음마다 한 항목이다. 자기 설비명을 Main 설비로 적은 한 행짜리
+  // 묶음은 설비명 한 항목이다(파이썬이 Main 설비를 따라 바꾼다).
+  function renames() {
+    const out = []
+    const groups = new Map()
+    for (const item of S.items.values()) {
+      if (!isRenamed(item)) continue
+      const o = S.original.get(item.id)
+      if (o.label !== item.label) out.push({ kind: 'unit', from: item.id, to: item.label })
+      else if (o.group && !groups.has(o.group)) groups.set(o.group, item.group)
+    }
+    for (const [from, to] of groups) out.push({ kind: 'group', from, to })
+    return out
+  }
   const canvasChanged = () => S.canvas.w !== S.originalCanvas.w || S.canvas.h !== S.originalCanvas.h
   // 도면 요소의 변경 건수 = 새로 넣은 것 + 바뀐 것 + 지운 것.
   function markChangeCount() {
@@ -947,7 +969,8 @@ export default function (component) {
     const out = []
     for (const item of S.items.values()) {
       if (!isUnit(item) || !isChanged(item)) continue
-      const change = { id: item.id, placed: item.placed }
+      // 새 호기는 지금 이름으로 만든다(적용 전에 이름을 고쳤을 수 있다). 있던 호기는 옛 설비명이다.
+      const change = { id: item.created ? item.label : item.id, placed: item.placed }
       if (item.created) change.created = item.created
       if (item.moveTo) change.moveTo = item.moveTo
       if (Number.isFinite(item.w) && Number.isFinite(item.h)) Object.assign(change, { w: item.w, h: item.h })
@@ -1012,6 +1035,17 @@ export default function (component) {
     const canSend = units.length > 0 && units.every((m) => !m.moveTo) && OTHER_FLOORS.length > 0
     moveSelect.disabled = !canSend
     moveButton.disabled = !canSend
+    // 이름: 호기 하나를 골랐을 때만. 모듈 묶음이면 그 Main 설비(묶음 이름)를 고친다.
+    const named = single && isUnit(single) && !single.moveTo ? single : null
+    unitLabel.disabled = !named
+    if (!isFocused(unitLabel)) unitLabel.value = named ? renameTarget(named).name : ''
+    unitLabel.title = !named
+      ? '호기 하나를 고르면 이름을 바꿉니다'
+      : (renameTarget(named).bundle
+        ? '모듈 묶음의 Main 설비 이름입니다 — 묶음의 모든 모듈 행(편집기에 없는 형제 포함)에 적용됩니다.'
+        : '설비명입니다 — 적용·저장하면 호기 마스터의 설비명이 바뀌고 비가동 일정이 따라갑니다.')
+        + ' 호기 마스터 전체(다른 층·미배치 포함)의 설비명·Main 설비와 겹칠 수 없고, 대소문자·앞뒤 공백만 다른'
+        + ' 이름도 같은 이름입니다. Enter·칸 밖 누르기로 바꾸고 Esc 로 되돌립니다'
     const mark = single && isMark(single) ? single : null
     markProps.hidden = !mark
     // 색 목록은 처음부터 채운다 — 숨긴 칸도 자리를 차지하니 처음 고를 때 넓어지면 칸 줄이 한 번 튄다.
@@ -1094,7 +1128,7 @@ export default function (component) {
     }
     const chosen = selectedItems()
     const item = chosen.length === 1 ? chosen[0] : null
-    const changed = changes().length + markChangeCount() + (canvasChanged() ? 1 : 0)
+    const changed = changes().length + renames().length + markChangeCount() + (canvasChanged() ? 1 : 0)
     statusBox.replaceChildren()
     const add = (text, strong) => {
       if (statusBox.childNodes.length) statusBox.append(document.createTextNode(' · '))
@@ -1114,7 +1148,7 @@ export default function (component) {
       add('선택 ', item.label)
       if (onCanvas(item)) add(`X ${item.x} · Y ${item.y} · 크기 ${item.w}×${item.h}`)
       else add('트레이(미배치) — 위 칸에서 다른 층으로 보낼 수 있습니다')
-      if (item.group) add(`모듈 ${members(item).length}대가 함께 움직입니다 — 하나만 옮기려면 Alt+끌기`)
+      if (item.group) add(`Main 설비 ${item.group} · 모듈 ${members(item).length}대가 함께 움직입니다 — 하나만 옮기려면 Alt+끌기`)
     } else {
       add(HINT)
     }
@@ -1470,6 +1504,80 @@ export default function (component) {
     updateStatus()
   }
 
+  // ---------------------------------------------------------------- 이름 바꾸기
+  // 표시 별칭이 아니라 호기 마스터의 설비명을 바꾼다(2026-10-08 사용자 결정). 모듈 묶음(Main 설비가 자기 설비명이
+  // 아닌 호기)은 묶음 이름(Main 설비)을 바꾼다 — 모듈 행 하나의 설비명은 RawData 에서 고친다. 자기 설비명을 Main
+  // 설비로 적은 한 행짜리 묶음은 설비명을 바꾸고 Main 설비가 따라간다. 적용 전까지는 이 편집기 안에만 있고 파이썬이
+  // 적용 때 다시 검사한다(겹침 규칙이 같다).
+  const renameTarget = (item) => {
+    const bundle = Boolean(item.group && item.group !== item.label)
+    return { bundle, name: bundle ? item.group : item.label }
+  }
+  // 이름 비교 열쇠 — 대소문자·앞뒤 공백만 다른 두 이름은 같은 이름이다(파이썬 `match_key`).
+  const nameKey = (value) => String(value ?? '').trim().toLowerCase()
+  // 설비명 글자 다듬기(호기 추가 폼과 같다): 제어 문자·특수 공백은 보통 공백으로, 겹친 공백은 하나로, 40자까지.
+  const cleanName = (value) => String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f-\u009f\u00a0\u1680\u2000-\u200f\u2028-\u202f\u205f\u3000\ufeff]/g, ' ')
+    .replace(/ {2,}/g, ' ')
+    .trim()
+    .slice(0, 40)
+  // 이 이름을 이미 쓰는 것. 호기 마스터 전체(다른 층·미배치 포함)의 설비명·Main 설비에서, 이 편집기 호기·묶음은
+  // 지금(바꾼) 이름으로 본다. 자기 자신(묶음이면 그 묶음 이름)은 빼고, 새로 넣은 호기는 이미 있던 이름 전체를 피한다.
+  function nameClash(name, item, bundle) {
+    const key = nameKey(name)
+    const inside = new Set()
+    for (const m of S.items.values()) {
+      if (!isUnit(m)) continue
+      const o = S.original.get(m.id)
+      if (!o) continue
+      inside.add(o.label)
+      if (o.group) inside.add(o.group)
+    }
+    for (const other of EXISTING_IDS) {
+      if ((item.created || !inside.has(other)) && nameKey(other) === key) return other
+    }
+    // 묶음 이름은 자기 모듈 행의 설비명과도 겹칠 수 없다. 호기 이름은 자기 이름(과 따라가는 자기 묶음)만 뺀다.
+    const ownGroup = bundle || item.group === item.label ? item.group : null
+    for (const m of S.items.values()) {
+      if (!isUnit(m)) continue
+      if ((bundle || m !== item) && nameKey(m.label) === key) return m.label
+      if (m.group && m.group !== ownGroup && nameKey(m.group) === key) return m.group
+    }
+    return null
+  }
+  function renameUnit(item, raw) {
+    const target = renameTarget(item)
+    const name = cleanName(raw)
+    if (!name || name === target.name) {
+      S.note = name ? '' : '이름은 비울 수 없습니다'
+      unitLabel.value = target.name
+      updateStatus()
+      return
+    }
+    const clash = nameClash(name, item, target.bundle)
+    if (clash) {
+      // 문구는 짧게 둔다(이 칸이 길어지면 칸 줄이 접혀 도면이 내려간다). 대소문자 규칙은 이름 칸 풍선이 말한다.
+      S.note = `이름 ${name}: 이미 쓰는 이름(${clash})이라 바꾸지 않았습니다`
+      unitLabel.value = target.name
+      updateStatus()
+      return
+    }
+    const list = target.bundle ? [...S.items.values()].filter((m) => isUnit(m) && m.group === item.group) : [item]
+    pushUndo(list.map((m) => ({ op: 'set', id: m.id, before: snapshot(m) })))
+    for (const m of list) {
+      if (target.bundle) {
+        m.group = name
+        continue
+      }
+      // 자기 설비명을 Main 설비로 적은 한 행짜리 묶음은 Main 설비도 따라간다.
+      if (m.group && m.group === m.label) m.group = name
+      m.label = name
+    }
+    S.note = ''
+    renderItems()
+    updateStatus()
+  }
+
   function undo() {
     const last = S.undo.pop()
     if (!last) return
@@ -1597,12 +1705,13 @@ export default function (component) {
     drawStatic()
     renderItems()
   } else {
-    // 같은 epoch: 기하는 브라우저가 쥔 것을 지키고, 단계·라벨처럼 보기만 바뀐 것은 합친다.
+    // 같은 epoch: 기하는 브라우저가 쥔 것을 지키고, 단계·라벨처럼 보기만 바뀐 것은 합친다. 적용하지 않은 이름
+    // 바꿈은 브라우저가 쥔 편집이다 — 다른 위젯을 건드린 회차가 그것을 옛 이름으로 되돌리지 않게 둔다.
     for (const raw of data.items || []) {
       const item = S.items.get(String(raw.id))
       if (!item) continue
       item.stage = String(raw.stage || '')
-      item.label = String(raw.label ?? raw.id)
+      if (!isRenamed(item)) item.label = String(raw.label ?? raw.id)
       item.detail = String(raw.detail || '')
     }
     if ((data.backgroundImage || null) !== S.bgImage) {
@@ -1918,6 +2027,22 @@ export default function (component) {
     if (mark && value !== (mark.label || '')) setMarkProps(mark, { label: value })
   }
   markLabel.onkeydown = (event) => { if (event.key === 'Enter') markLabel.blur() }
+  unitLabel.onchange = () => {
+    const chosen = selectedItems()
+    const item = chosen.length === 1 && isUnit(chosen[0]) && !chosen[0].moveTo ? chosen[0] : null
+    if (item) renameUnit(item, unitLabel.value)
+    else syncInspector()
+  }
+  unitLabel.onkeydown = (event) => {
+    if (event.key === 'Enter') unitLabel.blur()
+    if (event.key !== 'Escape') return
+    // Esc 는 고치던 글자를 버린다(지금 이름으로 되돌리고 칸을 떠난다 — 바뀐 것이 없으니 change 가 나지 않는다).
+    event.preventDefault()
+    event.stopPropagation()
+    const chosen = selectedItems()
+    unitLabel.value = chosen.length === 1 && isUnit(chosen[0]) ? renameTarget(chosen[0]).name : ''
+    unitLabel.blur()
+  }
   markColor.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { color: markColor.value }) }
   markFontSize.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { fontSize: fontSizeOf(markFontSize.value) }) }
   markFontColor.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { fontColor: markFontColor.value }) }
@@ -1971,7 +2096,7 @@ export default function (component) {
   q('.sle-addunit-close').onclick = () => { addForm.hidden = true; addToggle.setAttribute('aria-expanded', 'false') }
   addForm.onsubmit = (event) => {
     event.preventDefault()
-    const id = newId.value.replace(/[\u0000-\u001f\u007f-\u009f\u00a0\u1680\u2000-\u200f\u2028-\u202f\u205f\u3000\ufeff]/g, ' ').replace(/ {2,}/g, ' ').trim()
+    const id = cleanName(newId.value)
     const [hintW, hintH] = sizeHint()
     const w = newW.value === '' ? hintW : roundTo(Number(newW.value))
     const h = newH.value === '' ? hintH : roundTo(Number(newH.value))
@@ -2048,11 +2173,13 @@ export default function (component) {
   }
   applyButton.onclick = () => {
     const unitChanges = changes()
+    const nameChanges = renames()
     const marksChanged = markChangeCount() > 0
-    if (!unitChanges.length && !marksChanged && !canvasChanged()) return
+    if (!unitChanges.length && !nameChanges.length && !marksChanged && !canvasChanged()) return
     setTriggerValue('apply', {
       epoch: S.epoch,
       changes: unitChanges,
+      renames: nameChanges,
       canvas: canvasChanged() ? { width: W(), height: H() } : null,
       marks: marksChanged ? marksPayload() : null,
     })

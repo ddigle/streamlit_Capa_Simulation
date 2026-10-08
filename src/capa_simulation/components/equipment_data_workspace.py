@@ -96,6 +96,7 @@ from capa_simulation.services.fab_layout import FabLayoutBase, FabLayoutMark
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
 from capa_simulation.services.korean_particle import object_particle
+from capa_simulation.services.space_layout_edit import PendingRenames
 
 FLASH_KEY = "equipment_status_flash"
 BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
@@ -146,6 +147,10 @@ PENDING_BASES_KEY = "equipment_pending_floor_bases_v1"
 # 같은 `모두 버리기` 가 버린다. 남이 새 리비전을 저장해도 버리지 않는다 — 리비전과 상관없고, 남이
 # FAB 를 먼저 바꿨는지는 저장 때 본 저장값으로 따로 견준다.
 PENDING_FAB_KEY = "equipment_pending_fab_layout_v1"
+# Space 편집기에서 바꾼 저장 안 한 이름(지금 이름 → 저장본 이름, 설비명·Main 설비). 편집본과
+# 함께 버려진다. 호기는 설비명으로만 짝지어지므로 이것이 없으면 이름을 바꾼 호기가 「지운 호기 +
+# 새 호기」로 읽힌다(`services/space_layout_edit.PendingRenames`).
+PENDING_RENAMES_KEY = "equipment_pending_unit_renames_v1"
 # 다른 사람이 새 리비전을 저장해 이 세션의 저장 안 한 편집을 버렸을 때 한 번 띄우는 알림.
 DISCARDED_NOTICE_KEY = "equipment_workspace_discarded_v1"
 # 이번 회차 맨 위에서 편집본을 새 저장본으로 갈아 끼웠다는 표시. 그 회차의 RawData 제출은 옛
@@ -229,6 +234,7 @@ def reset_equipment_drafts() -> None:
         PENDING_MARKS_KEY,
         PENDING_BASES_KEY,
         PENDING_FAB_KEY,
+        PENDING_RENAMES_KEY,
         _SEEDED_GENERATION_KEY,
     ):
         st.session_state.pop(key, None)
@@ -318,9 +324,15 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             )
         )
         st.session_state[_REVISION_KEY] = token
-        # 선택·삭제 대기·되돌리기·미저장 층 배치는 옛 편집본의 것이다. 새 저장본 위에서
+        # 선택·삭제 대기·되돌리기·이름 바꿈·미저장 층 배치는 옛 편집본의 것이다. 새 저장본 위에서
         # 쓰이면 안 된다.
-        stale = [PREVIEW_KEY, SELECTION_KEY, PENDING_DELETE_KEY, LAST_REMOVED_KEY]
+        stale = [
+            PREVIEW_KEY,
+            SELECTION_KEY,
+            PENDING_DELETE_KEY,
+            LAST_REMOVED_KEY,
+            PENDING_RENAMES_KEY,
+        ]
         if replaced:
             stale += [PENDING_CANVASES_KEY, PENDING_MARKS_KEY, PENDING_BASES_KEY]
         for key in stale:
@@ -354,6 +366,47 @@ def replace_equipment_buffer(frames: Frames) -> None:
     _remember_edits(frames)
     st.session_state.pop(PREVIEW_KEY, None)
     st.session_state.pop(PENDING_DELETE_KEY, None)
+
+
+def pending_unit_renames() -> PendingRenames:
+    """Space 편집기에서 바꾼 저장 안 한 이름(지금 이름 → 저장본 이름)."""
+    value = st.session_state.get(PENDING_RENAMES_KEY)
+    if not isinstance(value, dict):
+        return PendingRenames()
+    return PendingRenames(
+        units=dict(value.get("units") or {}), groups=dict(value.get("groups") or {})
+    )
+
+
+def stage_unit_renames(renames: PendingRenames) -> None:
+    """저장 안 한 이름 지도를 둔다(비면 지운다). 편집본과 함께 버려지고 저장하면 비워진다."""
+    if renames:
+        st.session_state[PENDING_RENAMES_KEY] = {
+            "units": dict(renames.units),
+            "groups": dict(renames.groups),
+        }
+    else:
+        st.session_state.pop(PENDING_RENAMES_KEY, None)
+
+
+def follow_unit_renames(renames: Mapping[str, str]) -> None:
+    """Space 편집기가 설비명을 바꿨다(옛 이름 → 새 이름). 설비명을 업무 키로 기억한 RawData 칸을
+    따라 옮긴다 — 호기 마스터·비가동 일정의 선택은 새 이름으로 옮기고, `방금 삭제 되돌리기` 는
+    버린다(지운 행이 옛 이름을 가리키거나, 지운 호기의 이름을 새 이름이 다시 써 되살리면 비가동
+    일정이 엉뚱한 호기에 붙는다)."""
+    if not renames:
+        return
+    selection = _current_selection()
+    if selection:
+        st.session_state[SELECTION_KEY] = {
+            target: (
+                frozenset((renames.get(key[0], key[0]), *key[1:]) for key in keys)
+                if target in (EQUIPMENT_TARGET, DOWNTIME_TARGET)
+                else keys
+            )
+            for target, keys in selection.items()
+        }
+    st.session_state.pop(LAST_REMOVED_KEY, None)
 
 
 def pending_floor_canvases() -> dict[FloorKey, CanvasSize]:

@@ -999,6 +999,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     호기 마스터가 그대로면 리비전 없이 캔버스·요소만 쓴다. 편집본 전체를 저장하므로 RawData 의
     저장 안 한 다른 편집도 함께 들어가며 그 건수를 말한다. 알림 키는 `SPACE_FLASH_KEY` 다 —
     가용설비의 `FLASH_KEY` 는 그쪽 페이지가 소비한다.
+  - **이름 바꾸기**(2026-10-08 사용자 결정 「가. 설비명 자체를 바꾸기」). 편집기 선택 칸 `이름` 의 바꿈은
+    `적용` 의 `renames` 로 온다. 배치 변경(옛 이름으로 온다)을 먼저 얹고 `apply_name_changes` 로 설비명·
+    Main 설비와 **비가동 일정의 설비명**을 함께 바꾼 뒤, 저장 때와 같은 `prepare_equipment_master` 와
+    (이름을 바꿨으면) `prepare_downtime_for_prepared_equipment` 검사를 지금 한다. 편집본은 세 표째
+    `replace_equipment_buffer`, 저장 안 한 이름 지도는 `compose_renames` → `stage_unit_renames`, RawData
+    선택은 `follow_unit_renames` 다. `저장 안 한 배치 변경` 상자는 `name_changes` 로 `이름 바꿈 N건`·`바꾼
+    이름` 표를 세우고, `layout_changes`·`other_change_count`·`unsaved_unit_ids` 와 비가동 일정 비교
+    (`downtime_with_renames`)에 같은 지도를 넘겨 이름 바꿈을 「지운 호기 + 새 호기」·RawData 편집으로 세지
+    않는다. 저장은 늘 하던 `배치 저장`(새 리비전, 지난 리비전은 옛 이름 그대로)이다. 필요단축일정 진척 비교
+    기준선과 바깥 Excel 은 따라가지 않는다 — 그 사실을 상자 캡션과 Guide 에 적는다.
   - 편집기 epoch 는 층·저장본 토큰·편집본 세대·그 층 캔버스·요소 지문·**편집 대상 호기 목록 지문**
     이다. 하나라도 바뀌면(적용, RawData 제출, 팝업 캔버스 저장, 저장, 기준일로 대상이 바뀜) 브라우저가
     새 값으로 다시 서고, 같으면 진행 중인 편집과 배율을 지킨다. 같은 epoch 에서 배경 도면만 바뀌면
@@ -1240,8 +1250,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     등록한다(`_EDITOR`). AppTest 는 JS 를 돌리지 못하고, 한 프로세스의 두 번째 AppTest 에서 진짜
     컴포넌트를 부르면 「not registered」로 죽으므로 테스트는 `_EDITOR` 를 대역으로 바꾼다 — Space 첫 화면(FAB)부터
     이 컴포넌트라 `tests/conftest.py` 가 모든 테스트에 말 없는 대역을 깔고, 받은 값을 보는 테스트는 제 대역으로 덮는다.
-  - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보낸다(`changes`·`canvas`·`marks`). 색은 등록 CSS
+  - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보낸다(`changes`·`renames`·`canvas`·`marks`). 색은 등록 CSS
     가 아니라 회차마다 `data.palette` 로 넘긴다. 받은 값의 검증은 서비스(`parse_editor_apply`)다.
+  - **호기 이름 바꾸기**(2026-10-08 사용자 결정 「가. 설비명 자체를 바꾸기」 — 표시 별칭이 아니다). 호기
+    하나를 고르면 선택 칸의 `이름`(`.sle-unit-label`, 층 보내기 칸 `.sle-sendto` 안이라 그 칸과 함께 숨고 FAB
+    에는 없다, 40자)으로 바꾼다. Enter·칸 밖이 브라우저 안에서 확정하고 Esc 는 버린다. 단위 호기는
+    `item.label`(설비명)을, **모듈 묶음**(Main 설비가 자기 설비명이 아닌 호기)은 편집기 안 모든 형제의
+    `item.group`(Main 설비)을 바꾸고, 자기 설비명을 Main 설비로 적은 한 행짜리 묶음은 둘이 함께 간다.
+    `snapshot` 에 `group` 이 있어 `실행 취소`·`처음 상태로`(`initFromData`)가 되돌린다. 이름만 바꾼 호기는
+    배치 변경(`changes`)이 아니라 따로 `renames`(``[{kind: unit|group, from, to}]`` — 설비명은 호기마다
+    옛 설비명 `id` 로, Main 설비는 묶음마다 하나)로 간다. `changes` 의 `id` 는 늘 옛 설비명이고, 적용 전에
+    이름을 고친 새 호기만 지금 이름이다. 같은 epoch 회차의 라벨 합치기는 바꾼 이름을 덮지 않는다(다른
+    위젯을 건드린 회차가 적용 전 이름 바꿈을 되돌리지 않게). 겹침은 브라우저가 먼저 막고(`nameClash` —
+    호기 마스터 전체 이름 `existingIds` 에서 편집기 호기·묶음은 지금 이름으로 보고, 대소문자·앞뒤 공백만
+    다른 이름도 같은 이름) 짧은 문구를 `편집 영역` 칸 알림에 쓴다. 파이썬이 적용 때 같은 규칙으로 다시 본다.
+    상태 줄은 묶음이면 `Main 설비 <이름>` 을 함께 적는다.
   - **요소 이름표 글자 크기·색**(2026-10-06 사용자 결정). 모든 도면 요소(영역·반입구·문·기둥·글자·동선·
     FAB 층 블록 — 호기 상자는 아니다)가 `fontSize`(null = 자동, 또는 `data.fontSizes` = `MARK_FONT_SIZES`
     9·11·13·16·20·24 화면 px)와 `fontColor`('' = 기본 `--sle-mark-ink`, 또는 영역 색 키)를 갖는다. 선택 칸의
@@ -2174,6 +2197,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     붙인다 — 빈 날짜 칸이 object 로 붙으면 다른 호기까지 「RawData 의 다른 편집」으로 세어졌다.
   - 묶음 맞춤으로 층이 바뀌는 형제 가운데 이번 적용에 없던 행(반출 완료·N)은 X·Y 를 비운다(크기는
     남긴다). 새 호기 이름은 Main 설비 이름과도 겹칠 수 없다(`parentIds`).
+  - **이름 바꾸기**(2026-10-08 사용자 결정 — 설비명 자체). 적용값 `renames` 는 `NameChange`(`unit` =
+    설비명, `group` = 그 Main 설비를 쓰는 **모든 행**)로 읽는다. 바꿀 수 있는 것은 이 편집기의 호기·묶음
+    (`editor_groups`)뿐이고 새 이름은 새 호기와 같은 글자 규칙(`_require_name`, 1~40자·특수 공백 없음)이다.
+    겹침(`_require_distinct_names`)은 **바꾼 뒤의 상태**를 호기 마스터 전체(다른 층·미배치·N 포함)에서
+    `scalar_match_key`(대소문자·앞뒤 공백 무시)로 본다 — 설비명은 다른 설비명·새로 넣는 호기·같은 적용의
+    다른 바꿈·Main 설비 이름과, Main 설비는 모든 설비명·다른 Main 설비와 겹칠 수 없다. 자기 대소문자만
+    바꾸기와 같은 적용 안의 맞바꿈(A→B·B→A)은 된다. 저장 검증(`prepare_equipment_master`, 글자 그대로)보다
+    엄하다. 반영 `apply_name_changes` 는 `apply_layout_edits` **뒤**에 한꺼번에 바꾸고(자리·크기 그대로),
+    비가동 일정의 설비명이 따라가며, 자기 설비명을 Main 설비로 적은 한 행짜리 묶음은 Main 설비도 따라간다.
+  - 저장 안 한 이름 바꿈은 `PendingRenames`(지금 이름 → 저장본 이름)다. `compose_renames` 가 잇고(A→B→C 는
+    C→A, 되돌리면 빠진다, 저장본에 없던 새 호기는 기억하지 않는다), `live_renames` 가 지금도 맞는 항목만
+    남긴다(RawData 에서 그 사이 지우거나 되돌린 이름). `layout_changes`·`other_change_count`·
+    `unsaved_unit_ids` 는 이 지도로 저장본의 옛 이름 행과 견주고, `name_changes`(바꿈마다 한 줄)·
+    `downtime_with_renames`(저장본 비가동 일정을 새 이름으로 — 따라간 설비명을 RawData 편집으로 세지 않게)가
+    상자를 돕는다. 이름 바꿈으로 설명되는 Main 설비 차이(그 묶음 바꿈·자기 이름 묶음의 따라감)는 다른
+    편집으로 세지 않는다.
 - `floor_layout_profile.py`: 층 배경 도면의 순수 계층. PNG·JPEG 헤더를 직접 읽어 픽셀
   치수를 얻고(새 의존성 없이), 캔버스 기본값을 폭 100 고정·높이 100×h/w 로 만든다.
   상한은 도면당 2MB(`MAX_FLOOR_LAYOUT_BYTES`)와 전 층·FAB 전체 도면 합계 30MB
@@ -3431,6 +3470,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     미저장 FAB 전체 배치(`stage_fab_layout`·`pending_fab_layout`·`rebase_fab_canvas`)도 같은 helper 가
     설비 편집보다 먼저 별도 쓰기로 저장한다(`save_pending_fab_layout`, 리비전 없음). `frames` 가 None 이면
     FAB 만 쓴다(Space 의 설비 저장본 없는 화면).
+  - **Space 이름 바꾸기의 세션 칸**(2026-10-08). `PENDING_RENAMES_KEY`(`pending_unit_renames`·
+    `stage_unit_renames`)는 저장 안 한 이름 바꿈(지금 이름 → 저장본 이름, 설비명·Main 설비 —
+    `services/space_layout_edit.PendingRenames`)이다. 호기는 설비명으로만 짝지어지므로 이것이 없으면 이름을
+    바꾼 호기가 「지운 호기 + 새 호기」로 읽힌다. 편집본과 함께 버려진다 — `reset_equipment_drafts` 와
+    `ensure_equipment_drafts` 의 다시 세우기(옛 편집본 칸 목록)가 비운다. `follow_unit_renames` 는 설비명을
+    업무 키로 기억한 칸을 따라 옮긴다: RawData 선택(호기 마스터·비가동 일정의 첫 칸)은 새 이름으로, `방금
+    삭제 되돌리기`(`LAST_REMOVED_KEY`)는 버린다(지운 행을 되살리면 옛 이름을 가리키거나 지운 호기의 이름을
+    새 이름이 다시 써 비가동 일정이 엉뚱한 호기에 붙는다). 붙여넣기 Import 함수는 건드리지 않는다.
   - `ImportReview`는 대상 표·원문·원본 세 표·저장 후보를 함께 보관한다. 최종 저장 시
     대상·원문·원본이 달라졌으면 미리보기만 갱신하고 다시 확인받는다. 보지 않은 변경을
     이전 확인으로 저장하지 않는다. 붙여넣기와 CSV 업로드를 동시에 받으면 하나를 고르게 한다.

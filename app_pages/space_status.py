@@ -14,9 +14,11 @@ from capa_simulation.components.equipment_data_workspace import (
     effective_floor_canvases,
     ensure_equipment_drafts,
     equipment_buffer_generation,
+    follow_unit_renames,
     pending_fab_layout,
     pending_floor_canvases,
     pending_floor_marks,
+    pending_unit_renames,
     pop_discarded_notice,
     pop_drafts_replaced,
     replace_equipment_buffer,
@@ -26,6 +28,7 @@ from capa_simulation.components.equipment_data_workspace import (
     stage_fab_layout,
     stage_floor_canvas,
     stage_floor_marks,
+    stage_unit_renames,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.floor_layout_upload import (
@@ -80,7 +83,10 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_master,
 )
 from capa_simulation.services.equipment_units import format_unit_count, placed_unit_rows
-from capa_simulation.services.equipment_validation import prepare_equipment_master
+from capa_simulation.services.equipment_validation import (
+    prepare_downtime_for_prepared_equipment,
+    prepare_equipment_master,
+)
 from capa_simulation.services.fab_layout import (
     FLOOR_KEYS,
     FabLayoutMark,
@@ -106,9 +112,13 @@ from capa_simulation.services.floor_layout_profile import (
 from capa_simulation.services.simulation_cache import get_space_equipment_status
 from capa_simulation.services.space_layout_edit import (
     apply_layout_edits,
+    apply_name_changes,
+    compose_renames,
+    downtime_with_renames,
     editor_inputs,
     layout_changes,
     layout_warnings,
+    name_changes,
     new_unit_options,
     other_change_count,
     parse_editor_apply,
@@ -428,26 +438,41 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
     fab_pending = pending_fab_layout()
     if frames is not None:
         assert latest_snapshot is not None
-        changes = layout_changes(latest_snapshot.equipment, frames[1])
+        renames = pending_unit_renames()
+        changes = layout_changes(latest_snapshot.equipment, frames[1], renames)
+        names = name_changes(latest_snapshot.equipment, frames[1], renames)
         canvases = pending_floor_canvases()
         marks = pending_floor_marks()
-        others = other_change_count(latest_snapshot.equipment, frames[1])
+        others = other_change_count(latest_snapshot.equipment, frames[1], renames)
         # 저장은 세 표를 다 견준다. 호기 마스터 밖의 편집도 리비전을 만드니 따로 말한다.
+        # 비가동 일정은 저장본에 이름 바꿈을 얹어 견준다 — 따라간 설비명은 RawData 편집이 아니다.
+        renamed_downtime = downtime_with_renames(
+            latest_snapshot.downtime, renames, saved=latest_snapshot.equipment, buffer=frames[1]
+        )
         side_tables = [
             label
             for label, saved, buffer in (
                 (BASELINE_TARGET, latest_snapshot.baseline, frames[0]),
-                (DOWNTIME_TARGET, latest_snapshot.downtime, frames[2]),
+                (DOWNTIME_TARGET, renamed_downtime, frames[2]),
             )
             if table_changed(saved, buffer)
         ]
     else:
-        changes, canvases, marks, others, side_tables = pd.DataFrame(), {}, {}, 0, []
-    if changes.empty and not canvases and not marks and fab_pending is None:
+        changes, names, canvases, marks, others, side_tables = (
+            pd.DataFrame(),
+            pd.DataFrame(),
+            {},
+            {},
+            0,
+            [],
+        )
+    if changes.empty and names.empty and not canvases and not marks and fab_pending is None:
         if isinstance(error, str):
             st.error(f"배치를 저장하지 못했습니다: {error}")
         return
     parts = [f"호기 배치 {len(changes)}건"] if not changes.empty else []
+    if not names.empty:
+        parts.append(f"이름 바꿈 {len(names)}건")
     if canvases:
         parts.append(f"편집 영역 {len(canvases)}개 층")
     if marks:
@@ -479,6 +504,16 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         if not changes.empty:
             with st.expander(f"바뀐 호기 {len(changes)}건"):
                 st.dataframe(changes, hide_index=True, width="stretch")
+        if not names.empty:
+            # 이름 바꿈은 호기 마스터의 설비명(묶음이면 Main 설비) 자체를 바꾼다(2026-10-08 사용자
+            # 결정). 비가동 일정은 따라가고, 진척 비교 기준선·바깥 Excel 은 따라가지 않는다(Guide).
+            with st.expander(f"바꾼 이름 {len(names)}건"):
+                st.dataframe(names, hide_index=True, width="stretch")
+                st.caption(
+                    "저장하면 새 리비전부터 새 이름입니다. 지난 리비전과 필요단축일정 진척 비교 "
+                    "기준선은 옛 이름 그대로이고, 호기 마스터를 바깥 Excel 에서 붙여넣어 관리하면 "
+                    "그 Excel 의 이름도 바꿔야 합니다."
+                )
         if fab_pending is not None and fab_pending.marks is not None:
             for label in duplicate_block_links(fab_pending.marks):
                 st.caption(
@@ -491,7 +526,14 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         note_key = f"{SAVE_NOTE_KEY}_{int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0))}"
         # 메모는 설비 리비전에만 남는다. 설비 쪽 차이가 하나도 없는(FAB 만 바뀐) 저장은 리비전을
         # 만들지 않으니 칸을 두지 않는다.
-        fab_only = changes.empty and not canvases and not marks and not others and not side_tables
+        fab_only = (
+            changes.empty
+            and names.empty
+            and not canvases
+            and not marks
+            and not others
+            and not side_tables
+        )
         # 저장·버리기는 **콜백**이다. 본문에서 저장하고 `st.rerun()` 하면 이 상자 아래 위젯
         # (층 상세의 `배치 편집` 토글 등)이 그 회차에 그려지지 않은 것으로 끝나 상태가 버려진다 —
         # 저장하자마자 편집기가 꺼졌다(2026-10-01 브라우저 확인). 콜백은 다음 회차 전에 돈다.
@@ -620,7 +662,9 @@ def _render_layout_editor(
             f"열 수 없습니다. RawData 에서 고치거나 버린 뒤 여세요: {exc}"
         )
         return
-    new_ids, arrived_ids = unsaved_unit_ids(latest_snapshot.equipment, frames[1], key)
+    new_ids, arrived_ids = unsaved_unit_ids(
+        latest_snapshot.equipment, frames[1], key, pending_unit_renames()
+    )
     inputs = editor_inputs(status, floor=key, new_ids=new_ids, arrived_ids=arrived_ids)
     options = new_unit_options(frames[1])
     st.caption(
@@ -673,6 +717,7 @@ def _render_layout_editor(
             floors=ALL_FLOORS,
             canvas=canvas,
             unit_options=options,
+            editor_groups={str(item["group"]) for item in inputs.items if item.get("group")},
         )
         next_canvases = {**canvases, **({key: applied.canvas} if applied.canvas else {})}
         master = apply_layout_edits(
@@ -682,14 +727,23 @@ def _render_layout_editor(
             canvases=next_canvases,
             default_canvas=(DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT),
         )
+        # 이름 바꿈은 배치 변경(옛 이름으로 온다) 뒤에 얹고 비가동 일정의 설비명도 함께 바꾼다.
+        master, downtime = apply_name_changes(master, frames[2], applied.renames)
         # 저장 때와 같은 검사를 지금 한다 — 저장 단추에서야 막히면 무엇이 문제인지 멀어진다.
-        prepare_equipment_master(master, floor_canvases=next_canvases)
+        prepared = prepare_equipment_master(master, floor_canvases=next_canvases)
+        if applied.renames:
+            prepare_downtime_for_prepared_equipment(downtime, prepared)
     except ValueError as exc:
         st.error(f"적용하지 못했습니다: {exc}")
         return
     stored_canvas = floor_canvases.get(key)
     base = (stored_canvas, marks_fingerprint(stored_marks))
-    replace_equipment_buffer((frames[0], master, frames[2]))
+    replace_equipment_buffer((frames[0], master, downtime))
+    if applied.renames:
+        stage_unit_renames(
+            compose_renames(pending_unit_renames(), applied, saved=latest_snapshot.equipment)
+        )
+        follow_unit_renames(applied.unit_renames)
     if applied.canvas is not None:
         unchanged = applied.canvas == (
             stored_canvas or (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
@@ -698,9 +752,16 @@ def _render_layout_editor(
     if applied.marks is not None:
         unchanged = marks_fingerprint(applied.marks) == marks_fingerprint(stored_marks)
         stage_floor_marks(key, None if unchanged else applied.marks, base=base)
+    renamed = (
+        f" 이름 바꿈 {len(applied.renames)}건도 넣었습니다"
+        + ("(비가동 일정의 설비명이 따라갑니다)." if applied.unit_renames else ".")
+        if applied.renames
+        else ""
+    )
     queue_flash(
         SPACE_FLASH_KEY,
-        f"{building} {floor} 배치를 편집본에 적용했습니다. 저장해야 다른 사람 화면에 반영됩니다.",
+        f"{building} {floor} 배치를 편집본에 적용했습니다. 저장해야 다른 사람 화면에 반영됩니다."
+        + renamed,
     )
     st.rerun()
 
