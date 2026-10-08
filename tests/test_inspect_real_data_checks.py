@@ -479,3 +479,21 @@ def test_bigdataquery_without_an_account_says_what_to_set(
     assert code == 0
     assert "요청자 계정 필요 — `CAPA_BDQ_USER_NAME` 를 넣고" in output
     assert "목록 조회가 모두 실패해 나머지는 건너뛴다" in output
+
+
+def test_code_rule_counts_do_not_rely_on_pandas_string_reductions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`describe_codes` 는 위반 수를 파이썬으로 센다. pandas 2.2 는 문자열 Series 의 `.map` 결과를
+    문자열로 돌려줘 `.sum()` 이 `Cannot perform reduction 'sum' with string dtype` 으로 죽었다(사내
+    리뷰 202610070927·202610071831 의 8-5). 그 판의 동작을 흉내 내도 같은 줄이 나와야 한다."""
+    codes = pd.Series(["GOOD_CODE1", "가나다", "bad code", None, "  "], dtype="string")
+    expected = checks.describe_codes(codes)
+
+    def _string_map(self: pd.Series, *args: object, **kwargs: object) -> pd.Series:
+        raise TypeError("Cannot perform reduction 'sum' with string dtype")
+
+    monkeypatch.setattr(pd.Series, "map", _string_map)
+    assert checks.describe_codes(codes) == expected
+    assert "코드 5개 중 4개" in expected
+    assert "빈 값 2" in expected and "비ASCII 1" in expected

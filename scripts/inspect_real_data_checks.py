@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 import time
 from collections.abc import Callable, Iterable, Sequence
@@ -1430,13 +1431,18 @@ def describe_registered_at(values: pd.Series) -> list[str]:
 
 
 def describe_codes(codes: pd.Series) -> str:
-    """`catb_sim_info_id` 규칙 위반 수와 까닭의 종류. 코드는 찍지 않는다."""
-    distinct = pd.Series(codes.astype("string").fillna("").unique())
-    invalid = distinct.loc[[not is_valid_simulation_code(str(code)) for code in distinct]]
-    empty = int(invalid.str.strip().eq("").sum())
-    spaced = int(invalid.str.strip().str.contains(r"\s", regex=True).sum())
-    non_ascii = int(invalid.map(lambda code: not str(code).isascii()).sum())
-    others = int(len(invalid)) - empty - spaced - non_ascii
+    """`catb_sim_info_id` 규칙 위반 수와 까닭의 종류. 코드는 찍지 않는다.
+
+    세는 일은 파이썬으로 한다 — pandas 2.2 는 문자열 Series 에 `.map` 을 걸면 참/거짓도
+    문자열로 돌려줘 `.sum()` 이 `Cannot perform reduction 'sum' with string dtype` 으로 죽었다
+    (사내 리뷰 202610070927·202610071831 의 8-5). 판올림마다 갈리는 dtype 추론에 기대지 않는다.
+    """
+    distinct = [str(code) for code in codes.astype("string").fillna("").unique()]
+    invalid = [code for code in distinct if not is_valid_simulation_code(code)]
+    empty = sum(1 for code in invalid if not code.strip())
+    spaced = sum(1 for code in invalid if re.search(r"\s", code.strip()))
+    non_ascii = sum(1 for code in invalid if not code.isascii())
+    others = len(invalid) - empty - spaced - non_ascii
     return (
         f"- `catb_sim_info_id` 규칙(`{_CODE_RULE}`) 위반 — 코드 {len(distinct):,}개 중 "
         f"{len(invalid):,}개 (빈 값 {empty:,} · 가운데 공백 {spaced:,} · 비ASCII {non_ascii:,} · "
