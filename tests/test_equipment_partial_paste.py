@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 from io import BytesIO
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from capa_simulation.components.equipment_data_workspace import (
 from capa_simulation.services.equipment_contract import (
     EQUIPMENT_COLUMNS,
     OPTIONAL_EQUIPMENT_COLUMNS,
+    empty_downtime_schedule,
     empty_equipment_baseline,
 )
 from capa_simulation.services.equipment_csv import equipment_csv_bytes, read_equipment_update
@@ -50,8 +52,13 @@ def _current() -> pd.DataFrame:
 
 
 def _review(payload: str | bytes, equipment: pd.DataFrame | None = None) -> ImportReview:
-    equipment = _current() if equipment is None else equipment
-    downtime = prepare_downtime_schedule(_downtime(), equipment=equipment)
+    """`equipment` 는 붙여넣기 전 편집본이다. 검증을 통과하지 못하는 편집본(겹친 설비명)도 받도록
+    그때는 비가동 일정을 비운다 — 비가동 검증이 편집본을 먼저 검증해 버린다."""
+    if equipment is None:
+        equipment = _current()
+        downtime = prepare_downtime_schedule(_downtime(), equipment=equipment)
+    else:
+        downtime = empty_downtime_schedule()
     return build_import_review(
         "호기 마스터",
         payload,
@@ -68,6 +75,13 @@ def _row(frame: pd.DataFrame, name: str) -> pd.Series:
 
 def _tab(*rows: tuple[str, ...]) -> str:
     return "\n".join("\t".join(row) for row in rows)
+
+
+def _exported(equipment: pd.DataFrame) -> pd.DataFrame:
+    """현재 데이터 내려받기를 Excel 에서 연 것과 같은 글자 표(전체 36열)."""
+    return pd.read_csv(
+        BytesIO(equipment_csv_bytes(equipment)), dtype="object", keep_default_na=False
+    )
 
 
 # ------------------------------------------------------------------- 기존 호기: 붙여넣은 열만
@@ -191,6 +205,28 @@ def test_validation_uses_the_kept_values_of_the_existing_unit() -> None:
         _review(_tab(("설비명", "반출일정"), ("EQ-01", "2026-08-01")))
 
 
+def test_a_collision_with_a_kept_value_names_the_edit_buffer_as_a_source() -> None:
+    """붙여넣은 표 안의 충돌이라도 붙여넣지 않은 열(Main 설비)은 편집본 값이다.
+
+    EQ-02 는 편집본에서 U1 의 모듈이다. 새 호기 U1 과 EQ-02 를 함께 붙여넣으면(Main 설비 열 없이)
+    채운 표에서 부딪힌다 — EQ-02 는 편집본에도 있으니 (붙여넣기·편집본)이어야 한다. (붙여넣기)라고
+    적으면 「붙여넣을 표에서 빼라」가 되는데 편집본 쪽 Main 설비 때문에 다시 막힌다.
+    """
+    raw = _equipment()
+    raw["Main 설비"] = [None, "U1"]
+    current = prepare_equipment_master(raw)
+    exported = _exported(current)
+    exported.loc[0, "설비명"] = "U1"
+    payload = exported.drop(columns=list(OPTIONAL_EQUIPMENT_COLUMNS)).to_csv(sep="\t", index=False)
+
+    with pytest.raises(ValueError) as raised:
+        _review(payload, current)
+
+    message = str(raised.value)
+    assert "설비 행 U1(붙여넣기) · 모듈 행 EQ-02(붙여넣기·편집본)" in message, message
+    assert "두 곳 모두에서 빼야 합니다" in message
+
+
 def test_a_rule_broken_only_in_the_merged_table_still_blocks() -> None:
     """EQ-02 를 EQ-01 의 모듈로 붙여넣는다. 붙여넣은 표만 보면 EQ-01 이 없어 문제가 없고,
     편집본과 합친 표에서야 설비 행 EQ-01 과 그 모듈 행이 함께 있다."""
@@ -233,9 +269,8 @@ def test_a_misspelled_header_in_a_partial_paste_is_rejected_with_a_hint() -> Non
 
 
 def test_an_unknown_header_in_a_full_paste_is_skipped_with_a_notice() -> None:
-    """필수 열이 다 있으면 모르는 열은 읽지 않고 넘긴다 — 다만 알린다."""
-    current = _current()
-    full = pd.read_csv(BytesIO(equipment_csv_bytes(current)), dtype="object", keep_default_na=False)
+    """36열이 모두 있으면 모르는 열은 어느 열의 오타일 수 없다 — 읽지 않고 넘기되 알린다."""
+    full = _exported(_current())
     full["확인"] = "o"
 
     review = _review(full.to_csv(sep="\t", index=False))
@@ -245,11 +280,114 @@ def test_an_unknown_header_in_a_full_paste_is_skipped_with_a_notice() -> None:
     assert review.changes["변경컬럼"].tolist() == ["변경 없음", "변경 없음"]
 
 
-def test_an_empty_trailing_column_from_the_excel_range_is_ignored() -> None:
-    review = _review("설비명\t담당자\t\nEQ-01\t담당B\t\n")
+@pytest.mark.parametrize("header", ["메모-1", "Memo1", "메모_1", "메모１"])
+def test_a_misspelled_header_is_rejected_even_when_every_other_column_is_pasted(
+    header: str,
+) -> None:
+    """붙여넣지 않은 열은 그대로 남으므로, 전체 열 붙여넣기라도 한 열의 이름이 틀리면 그 열이
+    조용히 안 바뀐다 — 막는다. 「Memo1」처럼 글자가 닮지 않은 오타도 이름만으로는 가를 수 없다."""
+    full = _exported(_current()).rename(columns={"메모1": header})
+    full[header] = "새 메모"
+
+    with pytest.raises(
+        ValueError, match=re.escape(f"호기 마스터에 없는 열이 있습니다: 「{header}」")
+    ):
+        _review(full.to_csv(sep="\t", index=False))
+
+
+def test_a_full_width_typo_points_at_the_column_it_looks_like() -> None:
+    with pytest.raises(ValueError, match=re.escape("「메모１」(「메모1」?)")):
+        _review(_tab(("설비명", "메모１"), ("EQ-01", "새 메모")))
+
+
+def test_an_unrelated_extra_column_blocks_when_any_contract_column_is_missing() -> None:
+    """옛 양식처럼 선택 컬럼이 빠진 붙여넣기에 상관없는 보조 열이 있어도 막는다 — 빠진 열의
+    오타인지 이름만으로 알 수 없다. 그 열을 빼고 다시 붙여넣으면 된다."""
+    full = _exported(_current()).drop(columns=["메모3"])
+    full["확인"] = "o"
+
+    with pytest.raises(ValueError, match="36개 열이 모두 있을 때만 모르는 열을 읽지 않고 넘깁니다"):
+        _review(full.to_csv(sep="\t", index=False))
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("as_csv", [False, True])
+def test_duplicate_headers_are_rejected_on_both_paths(as_csv: bool, partial: bool) -> None:
+    """CSV 는 pandas 가 둘째 「담당자」를 「담당자.1」로 바꿔 읽는다. 붙여넣기처럼 막아야 한 열의
+    값이 조용히 빠지지 않는다."""
+    full = _exported(_current())
+    if partial:
+        full = full.loc[:, ["설비명", "담당자"]]
+    full.insert(len(full.columns), "담당자_둘째", "새 담당")
+    text = full.to_csv(index=False, sep="," if as_csv else "\t").replace("담당자_둘째", "담당자")
+    entry = "CSV" if as_csv else "붙여넣기"
+
+    with pytest.raises(
+        ValueError, match=re.escape(f"호기 마스터 {entry} 컬럼명이 중복되었습니다: ['담당자']")
+    ):
+        _review(text.encode("utf-8-sig") if as_csv else text)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "설비명\t담당자\t\nEQ-01\t담당B\t\n",
+        "설비명\t담당자\t\t\nEQ-01\t담당B\t\t\n",
+        "설비명\t담당자\t\t\t\nEQ-01\t담당B\t\t \t\n",
+        "설비명\t담당자\t \nEQ-01\t담당B\t\n",
+        "설비명,담당자,\nEQ-01,담당B,\n".encode("utf-8-sig"),
+        "설비명,담당자,,\nEQ-01,담당B,,\n".encode("utf-8-sig"),
+        "설비명,담당자, , \nEQ-01,담당B,, \n".encode("utf-8-sig"),
+    ],
+    ids=["tab-1", "tab-2", "tab-3-space-cell", "tab-space-header", "csv-1", "csv-2", "csv-spaces"],
+)
+def test_empty_trailing_columns_from_the_excel_range_are_ignored(payload: str | bytes) -> None:
+    """Excel 범위 끝에 딸려 온 빈 열(머리글도 값도 빈 열)은 몇 개든 뺀다 — 붙여넣기·CSV 같게."""
+    review = _review(payload)
 
     assert _row(review.candidate[1], "EQ-01")["담당자"] == "담당B"
     assert review.changes.columns.tolist() == [*INFO_COLUMNS, "설비명", "담당자"]
+
+
+def test_a_column_with_values_but_no_header_is_rejected() -> None:
+    with pytest.raises(ValueError, match=re.escape("「(머리글 없음 · 3번째 열)」")):
+        _review("설비명\t담당자\t\nEQ-01\t담당B\t값\n")
+
+
+# ------------------------------------------------------------------- 편집본의 겹친 설비명
+
+
+def _duplicated_buffer() -> pd.DataFrame:
+    """EQ-01 이 두 행인 편집본(저장 전 직접 편집). 둘째 행은 담당자가 다르다."""
+    current = _current()
+    second = current.loc[current["설비명"].eq("EQ-01")].copy()
+    second["담당자"] = pd.Series("편집 중", index=second.index, dtype="string")
+    return pd.concat([current, second], ignore_index=True)
+
+
+def test_a_partial_paste_onto_a_duplicated_name_in_the_buffer_is_rejected() -> None:
+    """두 행 중 어느 쪽 값으로 나머지 열을 채울지 모른다. 한쪽을 고르면 병합이 두 행을 다 바꿔
+    중복이 조용히 사라지고 다른 행의 값을 잃는다."""
+    with pytest.raises(ValueError) as raised:
+        _review(_tab(("설비명", "반입일정"), ("EQ-01", "2026-08-05")), _duplicated_buffer())
+
+    message = str(raised.value)
+    assert "편집본(호기 마스터)에 같은 설비명이 둘 이상 있습니다: EQ-01" in message
+    assert "직접 편집에서 중복된 행을 먼저 정리한 뒤" in message
+
+
+def test_a_duplicate_that_the_paste_does_not_touch_still_fails_the_merged_validation() -> None:
+    with pytest.raises(ValueError, match=re.escape("설비명은 중복될 수 없습니다: ['EQ-01']")):
+        _review(_tab(("설비명", "담당자"), ("EQ-02", "담당C")), _duplicated_buffer())
+
+
+def test_a_full_paste_still_replaces_both_duplicated_rows() -> None:
+    """모든 열을 붙여넣으면 채울 것이 없다 — 붙여넣은 행이 두 행을 대신한다(전체 열 대체)."""
+    review = _review(_exported(_current()).to_csv(sep="\t", index=False), _duplicated_buffer())
+
+    saved = review.candidate[1]
+    assert saved["설비명"].tolist() == ["EQ-01", "EQ-02"]
+    assert _row(saved, "EQ-01")["담당자"] == "담당A"
 
 
 def test_rows_without_an_equipment_name_are_dropped_like_in_a_full_paste() -> None:

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import difflib
 import re
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from io import BytesIO
@@ -16,6 +17,8 @@ import pandas as pd
 
 from capa_simulation.services.clipboard_table import (
     TEXT_TABLE_READ_OPTIONS,
+    drop_empty_unnamed_columns,
+    is_unnamed_header,
     parse_clipboard_table,
 )
 from capa_simulation.services.equipment_contract import (
@@ -377,7 +380,19 @@ def read_equipment_update(
     pasted[EQUIPMENT_ID_COLUMN] = ids.loc[named]
     pasted = pasted.reset_index(drop=True)
 
-    base = _rows_by_equipment_id(current)
+    base, duplicated = _rows_by_equipment_id(current)
+    kept = [column for column in EQUIPMENT_COLUMNS if column not in columns]
+    # 편집본에 같은 설비명이 둘이면 붙여넣지 않은 열을 어느 행에서 채울지 정할 수 없다. 한쪽을 골라
+    # 채우면 병합이 두 행을 다 바꿔 중복이 조용히 하나로 줄고 다른 행의 값이 사라진다. 모든 열을
+    # 붙여넣었으면 채울 것이 없어 붙여넣은 행이 두 행을 대신한다(전체 열 대체).
+    ambiguous = sorted(set(pasted[EQUIPMENT_ID_COLUMN]) & duplicated) if kept else []
+    if ambiguous:
+        more = f" 외 {len(ambiguous) - 5}건" if len(ambiguous) > 5 else ""
+        raise ValueError(
+            f"편집본(호기 마스터)에 같은 설비명이 둘 이상 있습니다: {', '.join(ambiguous[:5])}"
+            f"{more} — 붙여넣지 않은 열을 어느 행의 값으로 둘지 알 수 없습니다. 직접 편집에서 "
+            "중복된 행을 먼저 정리한 뒤 다시 미리보세요."
+        )
     matched = pasted[EQUIPMENT_ID_COLUMN].isin(base.index)
     # 새 호기 검사는 검증 **앞**이다. 뒤에 하면 「공정소분류에 누락값」 같은 엉뚱한 문구가
     # 먼저 뜬다.
@@ -391,19 +406,19 @@ def read_equipment_update(
             _new_units_message(pasted.loc[~matched, EQUIPMENT_ID_COLUMN].tolist(), needed)
         )
     filled = pasted.reindex(columns=list(EQUIPMENT_COLUMNS))
-    for column in EQUIPMENT_COLUMNS:
-        if column not in columns:
-            # 새 호기는 비어 있다(위 검사로 선택 컬럼만 남았다).
-            filled[column] = pasted[EQUIPMENT_ID_COLUMN].map(base[column])
+    for column in kept:
+        # 새 호기는 비어 있다(위 검사로 선택 컬럼만 남았다).
+        filled[column] = pasted[EQUIPMENT_ID_COLUMN].map(base[column])
     rows = prepare_equipment_master(filled, floor_canvases=floor_canvases)
     return EquipmentPaste(rows, columns, _cleared_cells(base, rows, columns))
 
 
-def _rows_by_equipment_id(current: pd.DataFrame) -> pd.DataFrame:
-    """편집본을 설비명(앞뒤 공백을 뗀다 — 편집본은 검증 전일 수 있다)으로 찾는 표.
+def _rows_by_equipment_id(current: pd.DataFrame) -> tuple[pd.DataFrame, set[str]]:
+    """(편집본을 설비명으로 찾는 표, 편집본에 둘 이상 있는 설비명).
 
-    설비명이 빈 행은 맞출 수 없으니 뺀다. 같은 이름이 둘이면 마지막 행이다 — 미리보기
-    (`_build_import_preview`)가 대조하는 행과 같다. `map` 은 겹친 인덱스를 받지 않는다.
+    설비명은 앞뒤 공백을 떼고 맞춘다 — 편집본은 검증 전일 수 있다. 설비명이 빈 행은 맞출 수
+    없으니 뺀다. 찾는 표는 이름마다 한 행이다(`map` 은 겹친 인덱스를 받지 않는다). 겹친 이름을
+    붙여넣었는지는 호출부가 둘째 값으로 가른다.
     """
     frame = with_optional_equipment_columns(current)
     require_columns(frame, EQUIPMENT_COLUMNS, _EQUIPMENT_HEADERS.label)
@@ -411,7 +426,10 @@ def _rows_by_equipment_id(current: pd.DataFrame) -> pd.DataFrame:
     named = (ids.notna() & ids.ne("")).fillna(False).to_numpy()
     keyed = frame.loc[named, list(EQUIPMENT_COLUMNS)].copy()
     keyed[EQUIPMENT_ID_COLUMN] = ids.loc[named]
-    return keyed.drop_duplicates(EQUIPMENT_ID_COLUMN, keep="last").set_index(EQUIPMENT_ID_COLUMN)
+    duplicated = keyed[EQUIPMENT_ID_COLUMN].duplicated(keep=False)
+    names = {str(name) for name in keyed.loc[duplicated, EQUIPMENT_ID_COLUMN]}
+    unique = keyed.drop_duplicates(EQUIPMENT_ID_COLUMN, keep="last")
+    return unique.set_index(EQUIPMENT_ID_COLUMN), names
 
 
 def _new_units_message(names: Sequence[object], needed: Sequence[str]) -> str:
@@ -559,7 +577,29 @@ def _read_csv_frame(payload: bytes, label: str) -> pd.DataFrame:
             last_error = exc
     else:
         raise ValueError(f"{label} CSV 인코딩은 UTF-8 또는 CP949여야 합니다.") from last_error
-    return frame
+    _reject_duplicate_csv_headers(frame, label)
+    return drop_empty_unnamed_columns(frame)
+
+
+# pandas 가 겹친 머리글의 둘째부터 붙이는 이름(「담당자」 → 「담당자.1」).
+_MANGLED_HEADER = re.compile(r"(.+)\.(\d+)")
+
+
+def _reject_duplicate_csv_headers(frame: pd.DataFrame, label: str) -> None:
+    """겹친 머리글을 붙여넣기(`parse_clipboard_table`)처럼 막는다.
+
+    pandas 는 겹친 머리글의 둘째를 「담당자.1」로 바꿔 읽어 모르는 열이 되고, 앞뒤 공백만 다른
+    머리글(「담당자」·「담당자 」)은 공백을 뗀 뒤 같은 이름 둘이 된다. 어느 쪽이든 한 열의 값이
+    조용히 빠진다. 빈 머리글은 세지 않는다(`drop_empty_unnamed_columns` 가 다룬다).
+    """
+    names = [str(column) for column in frame.columns]
+    duplicated = {name for name in names if not is_unnamed_header(name) and names.count(name) > 1}
+    for name in names:
+        mangled = _MANGLED_HEADER.fullmatch(name)
+        if mangled and mangled.group(1) in names and not is_unnamed_header(mangled.group(1)):
+            duplicated.add(mangled.group(1))
+    if duplicated:
+        raise ValueError(f"{label} CSV 컬럼명이 중복되었습니다: {sorted(duplicated)[:5]}")
 
 
 def _select_columns(
@@ -627,10 +667,6 @@ def _reject_lookalike_headers(
             )
 
 
-# 머리글이 빈 열. 두 입구 모두 pandas 가 「Unnamed: 3」 같은 이름을 붙인다.
-_UNNAMED_HEADER = re.compile(r"Unnamed: \d+")
-
-
 def _select_update_columns(
     frame: pd.DataFrame,
     *,
@@ -642,10 +678,12 @@ def _select_update_columns(
 
     - `설비명` 하나만 꼭 있어야 하고, 나머지는 있는 열만 계약 차례로 고른다(빈 칸을 채우지 않는다).
     - 설비명 말고 고를 열이 없으면 막는다 — 아무것도 바꾸지 않는 붙여넣기다.
-    - **모르는 머리글**: 필수 컬럼이 다 있는 붙여넣기는 읽지 않고 넘기되 알림 한 줄을 남긴다. 필수
-      컬럼이 하나라도 빠진 붙여넣기(일부 열만 고른 것)에서는 막는다 — 고른 열마다 바꾸려는 뜻이
-      있으니, 이름이 틀린 열(「Qual일졍」)을 조용히 빼면 사용자는 바꿨다고 믿는데 그 열은 그대로다.
-      머리글이 빈 열은 값도 비어 있으면 Excel 이 범위 끝에 딸려 보낸 것이라 그냥 뺀다.
+    - **모르는 머리글**: 계약 36열이 **모두** 있으면 읽지 않고 넘기되 알림 한 줄을 남긴다. 한
+      열이라도 빠졌으면(선택 컬럼 포함) 막는다 — 붙여넣지 않은 열은 기존 값을 그대로 두므로, 그
+      모르는 열이 빠진 열의 오타(「Qual일졍」·「메모-1」·「Memo1」)라면 사용자는 바꿨다고 믿는데
+      그 열은 그대로다. 오타와 상관없는 열은 이름만으로 가를 수 없다(「Memo1」은 「메모1」과 글자가
+      닮지 않았다).
+      머리글도 값도 빈 열은 두 입구(`parse_clipboard_table`·`_read_csv_frame`)가 이미 뺐다.
     """
     headers = _EQUIPMENT_HEADERS
     label, contract = headers.label, headers.columns
@@ -654,12 +692,6 @@ def _select_update_columns(
     )
     if notices is not None:
         notices.extend(dropped)
-    empty_unnamed = [
-        header
-        for header in frame.columns
-        if _UNNAMED_HEADER.fullmatch(str(header)) and _blank_cells(frame[header]).all()
-    ]
-    frame = frame.drop(columns=empty_unnamed)
     missing = [column for column in contract if column not in frame.columns]
     _reject_lookalike_headers(frame, headers, [c for c in missing if c in headers.optional])
     if EQUIPMENT_ID_COLUMN not in frame.columns:
@@ -668,12 +700,12 @@ def _select_update_columns(
             f"바꿀지 {EQUIPMENT_ID_COLUMN}으로 찾습니다. 머리글 줄까지 함께 복사했는지 확인하세요."
         )
     unknown = [str(header) for header in frame.columns if header not in contract]
-    partial = any(column not in headers.optional for column in missing)
-    if unknown and partial:
+    if unknown and missing:
         raise ValueError(
             f"{label}에 없는 열이 있습니다: {_describe_unknown_headers(unknown, missing)}. "
-            "바꿀 열만 붙여넣을 때 이름이 틀린 열을 빼고 읽으면 그 열은 바뀌지 않으므로 막습니다 — "
-            "머리글을 호기 마스터 열 이름으로 고치거나 그 열을 빼고 다시 붙여넣으세요."
+            "붙여넣지 않은 열은 기존 값을 그대로 두므로 이름이 틀린 열을 빼고 읽으면 바꾸려던 열이 "
+            "그대로 남습니다 — 머리글을 호기 마스터 열 이름으로 고치거나 그 열을 빼고 다시 "
+            "붙여넣으세요(호기 마스터 36개 열이 모두 있을 때만 모르는 열을 읽지 않고 넘깁니다)."
         )
     if unknown and notices is not None:
         notices.append(
@@ -691,15 +723,31 @@ def _select_update_columns(
     return selected
 
 
+# 머리글이 비었지만 값이 있는 열의 이름(`drop_empty_unnamed_columns` 가 붙인다).
+_BLANK_HEADER_POSITION = re.compile(r"Unnamed: (\d+)")
+
+
 def _describe_unknown_headers(unknown: Sequence[str], missing: Sequence[str]) -> str:
-    """모르는 머리글마다 빠진 열 가운데 가장 닮은 이름을 붙인다(옛 이름도 견준다)."""
-    candidates = {compact_header(column): column for column in missing}
+    """모르는 머리글마다 빠진 열 가운데 가장 닮은 이름을 붙인다(옛 이름도 견준다).
+
+    전각 글자(「메모１」)는 반각으로 펴서 견준다 — 펴지 않으면 「메모1」·「메모2」·「메모3」이
+    똑같이 닮아 엉뚱한 쪽을 가리킨다.
+    """
+
+    def folded(header: str) -> str:
+        return compact_header(unicodedata.normalize("NFKC", header))
+
+    candidates = {folded(column): column for column in missing}
     for old, new in LEGACY_EQUIPMENT_HEADER_ALIASES.items():
         if new in missing:
-            candidates.setdefault(compact_header(old), new)
+            candidates.setdefault(folded(old), new)
     described = []
     for header in unknown:
-        close = difflib.get_close_matches(compact_header(header), list(candidates), n=1, cutoff=0.6)
+        blank = _BLANK_HEADER_POSITION.fullmatch(header)
+        if blank:
+            described.append(f"「(머리글 없음 · {int(blank.group(1)) + 1}번째 열)」")
+            continue
+        close = difflib.get_close_matches(folded(header), list(candidates), n=1, cutoff=0.6)
         hint = f"(「{candidates[close[0]]}」?)" if close else ""
         described.append(f"「{header}」{hint}")
     return ", ".join(described)

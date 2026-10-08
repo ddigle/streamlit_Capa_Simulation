@@ -47,6 +47,7 @@ from capa_simulation.services.equipment_csv import (
     read_baseline_csv,
     read_equipment_clipboard,
     read_equipment_csv,
+    read_equipment_update,
 )
 from capa_simulation.services.equipment_validation import (
     prepare_equipment_baseline,
@@ -489,3 +490,33 @@ def test_the_full_width_master_reads_the_same_on_both_paths() -> None:
     assert from_csv.loc[0, "구분"] == "NA"
     assert pd.isna(from_csv.loc[0, "반출일정"])
     assert pd.isna(from_csv.loc[0, "설비이력"])
+
+
+@pytest.mark.parametrize("partial", [False, True], ids=["full", "partial"])
+def test_the_master_update_reads_the_same_on_both_paths(partial: bool) -> None:
+    """화면이 실제로 타는 입구(`read_equipment_update`)에서도 CSV 와 붙여넣기가 같아야 한다.
+
+    전체 열과 일부 열(설비명 · 구분 · 반출일정 · 설비이력) 둘 다 본다. 일부 열은 나머지 열을
+    편집본에서 채우므로, 붙여넣은 칸의 결측 판정과 지우는 칸 수까지 두 경로가 같아야 한다.
+    """
+    template = pd.read_csv(BytesIO(equipment_csv_template()), **TEXT_TABLE_READ_OPTIONS)
+    current = prepare_equipment_master(template)
+    edited = template.iloc[[0]].fillna("").astype(str).copy()
+    edited.loc[:, "구분"] = "NA"
+    edited.loc[:, "반출일정"] = ""
+    edited.loc[:, "설비이력"] = ""
+    if partial:
+        edited = edited.loc[:, ["설비명", "구분", "반출일정", "설비이력"]]
+    rows = [list(edited.columns), *edited.values.tolist()]
+
+    from_csv = read_equipment_update(_csv_bytes(rows), current)
+    from_clipboard = read_equipment_update(_tab_text(rows), current)
+
+    assert from_csv.columns == from_clipboard.columns
+    assert_frame_equal(from_csv.rows, from_clipboard.rows)
+    # 양식 예시의 설비이력(「이력 기록」)을 빈 칸으로 지운다. 비어 있던 반출일정은 지움이 아니다.
+    assert from_csv.cleared_cells == from_clipboard.cleared_cells == 1
+    assert from_csv.rows.loc[0, "구분"] == "NA"
+    assert pd.isna(from_csv.rows.loc[0, "반출일정"])
+    assert pd.isna(from_csv.rows.loc[0, "설비이력"])
+    assert from_csv.rows.loc[0, "담당자"] == current.loc[0, "담당자"]

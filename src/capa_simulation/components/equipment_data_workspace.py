@@ -817,9 +817,15 @@ def build_import_review(
                 payload, equipment, floor_canvases=floor_canvases, notices=notices
             )
         except UnitGroupCollisionError as exc:
-            # 붙여넣은 표 안에서 부딪혔다 — 양쪽 모두 붙여넣은 행이다.
+            # 붙여넣은 행끼리 부딪혔다. 다만 붙여넣지 않은 열(Main 설비 등)은 편집본 값이라
+            # 편집본에도 있는 이름은 (붙여넣기·편집본)으로 적는다 — 붙여넣을 표에서만 빼면
+            # 다시 막힌다.
             raise ValueError(
-                unit_group_collision_message(exc.collisions, pasted=_collision_names(exc))
+                unit_group_collision_message(
+                    exc.collisions,
+                    pasted=_collision_names(exc),
+                    existing=_equipment_names(equipment),
+                )
             ) from exc
         incoming = paste.rows
         changes = build_equipment_import_preview(equipment, incoming, columns=paste.columns)

@@ -26,3 +26,30 @@ def test_parse_clipboard_table_rejects_non_table_content(content: str) -> None:
 def test_parse_clipboard_table_rejects_duplicate_headers() -> None:
     with pytest.raises(ValueError, match="중복"):
         parse_clipboard_table("공정\t공정\nA\tB", "테스트 표")
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "공정\t값\t\t\nA\t1\t\t\n",
+        "공정\t값\t\t\t\nA\t1\t\t \t\n",
+        "공정\t값\t \nA\t1\t\n",
+        "공정\t값\t \t \nA\t1\t\t\n",
+    ],
+    ids=["two-empty", "three-empty-space-cell", "space-header", "two-space-headers"],
+)
+def test_parse_clipboard_table_drops_empty_trailing_columns(content: str) -> None:
+    """Excel 범위 끝에 딸려 온 빈 열은 몇 개든 뺀다. 빈 머리글끼리는 중복으로 세지 않는다."""
+    result = parse_clipboard_table(content, "테스트 표")
+
+    assert result.columns.tolist() == ["공정", "값"]
+    assert result["값"].tolist() == ["1"]
+
+
+def test_parse_clipboard_table_keeps_a_headerless_column_that_has_values() -> None:
+    """머리글만 빈 열은 값을 버리지 않고 「Unnamed: 위치」로 남긴다 — 받는 쪽이 모르는 열로
+    다룬다."""
+    result = parse_clipboard_table("공정\t값\t \nA\t1\t메모\n", "테스트 표")
+
+    assert result.columns.tolist() == ["공정", "값", "Unnamed: 2"]
+    assert result["Unnamed: 2"].tolist() == ["메모"]
