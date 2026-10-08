@@ -63,6 +63,7 @@ from capa_simulation.services.equipment_contract import (
     empty_equipment_master,
 )
 from capa_simulation.services.equipment_csv import (
+    EquipmentPaste,
     baseline_csv_bytes,
     baseline_csv_template,
     build_baseline_import_preview,
@@ -79,8 +80,7 @@ from capa_simulation.services.equipment_csv import (
     read_baseline_csv,
     read_downtime_clipboard,
     read_downtime_csv,
-    read_equipment_clipboard,
-    read_equipment_csv,
+    read_equipment_update,
     untouched_template_baseline_rows,
 )
 from capa_simulation.services.equipment_samples import untouched_sample_baseline_rows
@@ -180,8 +180,11 @@ class ImportReview:
     source: Frames
     candidate: Frames
     changes: pd.DataFrame
-    # 원문을 읽으며 남긴 알림(빠진 옛 컬럼 `투자기준` 을 떼어 냄 등). 미리보기와 함께 남는다.
+    # 원문을 읽으며 남긴 알림(빠진 옛 컬럼 `투자기준` 을 떼어 냄, 붙여넣은 열만 바꾼다 등).
+    # 미리보기와 함께 남는다.
     notices: tuple[str, ...] = ()
+    # 저장하면 값이 지워지는 칸처럼 저장 전에 눈에 띄어야 하는 것. 경고로 그린다.
+    cautions: tuple[str, ...] = ()
 
     def matches(self, target: str, payload: str | bytes, source: Frames) -> bool:
         return (
@@ -805,21 +808,21 @@ def build_import_review(
     """
     baseline, equipment, downtime = source
     notices: list[str] = []
+    cautions: list[str] = []
     if target == "호기 마스터":
+        # 붙여넣은 열만 바꾼다(2026-10-08 사용자 요청). 붙여넣지 않은 열은 편집본 값으로 채운
+        # 36컬럼 표가 오므로 아래 미리보기·병합·병합 뒤 전체 검증은 전체 열 붙여넣기와 같은 길이다.
         try:
-            incoming = (
-                read_equipment_csv(payload, floor_canvases=floor_canvases, notices=notices)
-                if isinstance(payload, bytes)
-                else read_equipment_clipboard(
-                    payload, floor_canvases=floor_canvases, notices=notices
-                )
+            paste = read_equipment_update(
+                payload, equipment, floor_canvases=floor_canvases, notices=notices
             )
         except UnitGroupCollisionError as exc:
             # 붙여넣은 표 안에서 부딪혔다 — 양쪽 모두 붙여넣은 행이다.
             raise ValueError(
                 unit_group_collision_message(exc.collisions, pasted=_collision_names(exc))
             ) from exc
-        changes = build_equipment_import_preview(equipment, incoming)
+        incoming = paste.rows
+        changes = build_equipment_import_preview(equipment, incoming, columns=paste.columns)
         try:
             merged = merge_equipment_rows(equipment, incoming, floor_canvases=floor_canvases)
         except UnitGroupCollisionError as exc:
@@ -835,6 +838,15 @@ def build_import_review(
         equipment = merged
         downtime = merge_downtime_rows(downtime, empty_downtime_schedule(), equipment=equipment)
         baseline = prepare_equipment_baseline(baseline)
+        scope = _paste_scope_notice(paste, new_rows=int(changes["Import구분"].eq("신규").sum()))
+        if scope is not None:
+            notices.append(scope)
+        if paste.cleared_cells:
+            cautions.append(
+                f"붙여넣은 빈칸이 기존 값 {paste.cleared_cells:,}칸을 지웁니다 — 「변경내용」의 "
+                "(빈 값)을 확인하세요. 지우지 않으려면 그 칸을 채우거나 그 열을 빼고 다시 "
+                "붙여넣으세요."
+            )
     elif target == "기존 보유대수":
         incoming = (
             read_baseline_csv(payload)
@@ -866,7 +878,30 @@ def build_import_review(
         (baseline, equipment, downtime),
         changes,
         tuple(notices),
+        tuple(cautions),
     )
+
+
+def _paste_scope_notice(paste: EquipmentPaste, *, new_rows: int) -> str | None:
+    """붙여넣은 열과 그대로 두는 열을 한 줄로. 모든 열을 붙여넣었으면 말할 것이 없다."""
+    kept = paste.kept_columns
+    if not kept:
+        return None
+    pasted = [column for column in paste.columns if column != EQUIPMENT_ID_COLUMN]
+    # 짧은 쪽 이름을 적는다 — 서른 개를 늘어놓으면 읽히지 않는다.
+    if len(pasted) <= len(kept):
+        text = (
+            f"붙여넣은 열 {len(pasted)}개({' · '.join(pasted)})만 바꿉니다 — 나머지 "
+            f"{len(kept)}개 열은 기존 호기의 값을 그대로 둡니다."
+        )
+    else:
+        text = (
+            f"붙여넣은 열 {len(pasted)}개만 바꿉니다 — 붙여넣지 않은 {len(kept)}개 열"
+            f"({' · '.join(kept)})은 기존 호기의 값을 그대로 둡니다."
+        )
+    if new_rows:
+        text += f" 새 호기 {new_rows:,}건은 그 열이 빈칸입니다."
+    return text
 
 
 def _collision_names(exc: UnitGroupCollisionError) -> set[str]:
@@ -1474,7 +1509,10 @@ def render_equipment_data_workspace(
                     "Excel 표 붙여넣기",
                     key=CLIPBOARD_KEY,
                     height=200,
-                    placeholder="헤더를 포함한 전체 표를 Ctrl+V로 붙여넣으세요.",
+                    placeholder=(
+                        "헤더를 포함해 Ctrl+V로 붙여넣으세요. 호기 마스터는 설비명과 바꿀 열만 "
+                        "넣어도 됩니다."
+                    ),
                 )
             with upload_column:
                 uploaded = st.file_uploader("또는 CSV 파일 업로드", type=["csv"], key=UPLOAD_KEY)
@@ -1496,6 +1534,8 @@ def render_equipment_data_workspace(
                 st.markdown(f"**{pending.target} · 저장할 변경 {len(pending.changes):,}행**")
                 for message in pending.notices:
                     st.info(message, icon=":material/info:")
+                for message in pending.cautions:
+                    st.warning(message, icon=":material/ink_eraser:")
                 with st.container(horizontal=True):
                     st.metric("신규", f"{int(pending.changes['Import구분'].eq('신규').sum()):,}건")
                     st.metric(

@@ -511,11 +511,16 @@ def test_migration_0015_adds_nullable_columns_and_keeps_investment_basis(tmp_pat
 
 
 def test_import_review_carries_the_dropped_column_notice() -> None:
+    """옛 양식에는 새 선택 컬럼이 없다. RawData 붙여넣기는 붙여넣은 열만 바꾸므로 그 칸의 저장된
+    값을 지키고(2026-10-08 일부 열 붙여넣기), 그대로 둔 열을 알림 한 줄로 말한다."""
     from capa_simulation.components.equipment_data_workspace import build_import_review
     from capa_simulation.services.equipment_contract import empty_equipment_baseline
     from capa_simulation.services.equipment_validation import prepare_downtime_schedule
 
-    equipment = prepare_equipment_master(_equipment())
+    raw = _text_columns(_equipment())
+    raw["투자Capa"] = "322K"
+    raw.loc[1, "메모2"] = "지킬 메모"
+    equipment = prepare_equipment_master(raw)
     downtime = prepare_downtime_schedule(_downtime(), equipment=equipment)
     source = (empty_equipment_baseline(), equipment, downtime)
     old = _old_layout(equipment).to_csv(index=False)
@@ -535,6 +540,12 @@ def test_import_review_carries_the_dropped_column_notice() -> None:
 
     for review in (from_file, from_paste):
         assert len(review.notices) == 2 and "투자기준" in review.notices[0]
-        assert "빈칸으로 읽었습니다" in review.notices[1]
+        assert "붙여넣지 않은 5개 열" in review.notices[1]
+        assert "그대로 둡니다" in review.notices[1]
+        assert review.cautions == ()
         assert review.changes["Import구분"].tolist() == ["대체", "대체"]
+        assert review.changes["변경컬럼"].tolist() == ["변경 없음", "변경 없음"]
+        saved = review.candidate[1].set_index("설비명")
+        assert saved["투자Capa"].tolist() == ["322K", "322K"]
+        assert saved.loc["EQ-02", "메모2"] == "지킬 메모"
     assert fresh.notices == ()

@@ -1808,6 +1808,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   하나를 함께 쓴다), 읽는 쪽 `_select_columns` 가 그 껍데기를 벗긴다. 좌표·대수·환산비·
   날짜는 묶지 않는다 — 숫자로 읽히는 것이 맞고 한국어 Excel 은 날짜를 그대로 돌려준다(실측). 빈 표는
   헤더 한 줄만 나간다.
+  **호기 마스터 일부 열 붙여넣기**(2026-10-08 사용자 요청)는 `read_equipment_update(payload, current)` 다
+  (붙여넣기 글·CSV 바이트 모두). 머리에 `설비명` 만 꼭 있고 나머지는 있는 열만 고른다
+  (`_select_update_columns`). 편집본에 있는 설비명은 붙여넣지 않은 열을 그 호기 값으로 채우고, 붙여넣은
+  열의 빈 칸은 「지운다」다(전체 열과 같다). 편집본에 없는 설비명(새 호기)은 선택 컬럼 밖 30개가 다
+  있어야 하고, 하나라도 없으면 새 호기 수·빠진 열·고칠 길을 적어 **검증 앞에서** 막는다(뒤에 두면
+  「공정소분류에 누락값」이 먼저 뜬다). 채운 36컬럼 표(`EquipmentPaste.rows`)는 검증을 거쳐 기존
+  `build_equipment_import_preview(columns=붙여넣은 열)`·`merge_equipment_rows` 를 그대로 타므로 병합된
+  전체 표 검증이 전체 열 붙여넣기와 같다. 미리보기는 붙여넣은 열만 견주고 보여 준다 — 붙여넣지 않은
+  열까지 견주면 편집본의 다듬기 전 값(「 HBM 」)이 「변경」으로 잡힌다. `cleared_cells` 는 기존 값을
+  붙여넣은 빈 칸이 지우는 수다(검증 뒤 값으로 센다 — 빈 환산비는 1 이 되므로 세지 않는다). 머리글이 빈
+  열은 값도 비었으면 뺀다(Excel 범위 끝). **모르는 머리글**은 필수 컬럼이 하나라도 빠진 붙여넣기에서 막고
+  (닮은 열 이름을 `difflib` 로 붙인다), 필수 컬럼이 다 있으면 읽지 않고 넘기되 알림 한 줄을 남긴다 —
+  일부 열만 고른 붙여넣기에서 이름이 틀린 열을 조용히 빼면 바꿨다고 믿은 열이 그대로 남는다. 설비명
+  말고 열이 없으면 막는다. `read_equipment_csv`·`read_equipment_clipboard` 는 표 전체를 읽는 입구로
+  남는다(빠진 선택 컬럼을 빈 칸으로 채운다). 비가동 일정·기존 보유대수 붙여넣기는 그대로다.
 - `dashboard.py`: HOME 월별 집계, B/N 단일 월별 순위에서 파생하는 Top 1·Top 5·순위 상한을
   인자로 받는 상세, Wafer Capa
 - `dynamic_capacity.py`: 표준 Capa에 실적 효율·UPEH·Rundown·생산실적을 순차 반영하는
@@ -1982,8 +1997,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `투자Capa`·`반입/Qual 이력`·`Main 설비`·`메모1~3` 은 **선택 컬럼**
     (`OPTIONAL_EQUIPMENT_COLUMNS`)이다. 없던 파일·붙여넣기·리비전·편집본은 모두 빈 칸으로
     읽는다(`with_optional_equipment_columns`, `equipment_csv._TableHeaders.optional`).
-    그래서 옛 양식도 그대로 들어오지만, 그 양식으로 **대체한 행의 선택 컬럼은 빈 값이 된다** —
-    미리보기의 변경컬럼이 알린다. 이름이 조금 틀린 선택 컬럼(「Main 설비(선택)」·「모체호기(선택)」)
+    그래서 옛 양식도 그대로 들어온다. RawData 붙여넣기는 붙여넣은 열만 바꾸므로
+    (`read_equipment_update`) 옛 양식으로 대체한 행의 선택 컬럼 값은 그대로 남는다. 이름이 조금 틀린 선택 컬럼(「Main 설비(선택)」·「모체호기(선택)」)
     은 빈 칸으로 읽지 않고 막는다. `Main 설비` 의 저장 컬럼은 설비 DB `0010` 의
     `parent_equipment_id`, 나머지 다섯은 `0015` 의 `investment_capa`·`arrival_qual_history`·
     `memo_1~3` 이다. 한글↔영문 매핑은 `equipment_repository.EQUIPMENT_MASTER_DB_COLUMNS` 한 곳이다.
@@ -3407,6 +3422,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `ImportReview`는 대상 표·원문·원본 세 표·저장 후보를 함께 보관한다. 최종 저장 시
     대상·원문·원본이 달라졌으면 미리보기만 갱신하고 다시 확인받는다. 보지 않은 변경을
     이전 확인으로 저장하지 않는다. 붙여넣기와 CSV 업로드를 동시에 받으면 하나를 고르게 한다.
+  - 호기 마스터 입력은 `read_equipment_update`(일부 열 붙여넣기, `equipment_csv.py` 항목)를 탄다.
+    `build_import_review` 가 붙여넣은 열·그대로 두는 열을 `notices` 한 줄로(모든 열이면 없다), 기존 값을
+    지우는 칸 수를 `ImportReview.cautions` 로 남기고 미리보기가 각각 `st.info`·`st.warning` 으로 그린다.
+    둘 다 입력 탭 안이라 폼 위 알림 칸의 자리에 닿지 않는다. 표 안 충돌(`UnitGroupCollisionError`)은
+    채운 표에서 한 번, 병합된 표에서 한 번 잡는 것이 전과 같다.
   - 손대지 않은 예시 행은 저장이 막기 전에 폼 위에서 알리고 `예시 행 N건 지우기`로 편집
     버퍼와 검토 후보에서 함께 뺀다. 지우기가 켠 세션 플래그를 재검토가 보고 merge **전에**
     원문에서 같은 행을 거르므로 지운 행이 되살아나지 않는다. 건수는 저장 가드와 같은 두
