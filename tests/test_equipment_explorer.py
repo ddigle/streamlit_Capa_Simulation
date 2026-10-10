@@ -82,6 +82,23 @@ def _render_fixture() -> None:
             "Y",
             "N",
         ]
+    if st.session_state.get("extra_unit_process"):
+        # 데이터 쪽에서 공정 하나가 새로 생긴다(선택지가 바뀐다 — 위젯은 건드리지 않는다).
+        row = len(equipment)
+        equipment.loc[row] = {column: None for column in equipment.columns}
+        equipment.loc[row, ["설비명", "공정소분류", "공정구분", "투자구분", "공정대분류"]] = [
+            "EQ-EXTRA",
+            st.session_state["extra_unit_process"],
+            "Line-A",
+            "양산",
+            "조립",
+        ]
+        equipment.loc[row, ["사용기준", "보관유무", "기존설비여부", "레이아웃표시"]] = [
+            "HBM",
+            "N",
+            "Y",
+            "N",
+        ]
     downtime = empty_downtime_schedule()
     downtime.loc[0] = {column: None for column in downtime.columns}
     downtime.loc[0, "설비명"] = "EQ-REPAIR"
@@ -453,3 +470,30 @@ def test_whitespace_variants_of_a_mapped_process_stay_apart() -> None:
 
     app.multiselect(SMALL_PROCESS_KEY).set_value(["Die Attach "]).run()
     assert app.session_state[SMALL_PROCESS_KEY] == ["Die Attach "]
+
+
+def test_a_held_process_keeps_its_value_when_its_text_changes_in_the_browser() -> None:
+    """브라우저는 고른 **글자**를 들고 있다가 되보낸다(일반 AppTest 는 이 결함을 못 본다).
+
+    `Other` 의 표시명이 `Wire Bond` 인데 원본 Wire Bond 호기가 없을 때 고른 뒤 그 호기가 생기면,
+    그 선택의 글자가 「Wire Bond (Other)」 로 바뀐다. 잡은 값을 매 회차 세션에 다시 적지 않으면
+    브라우저가 옛 글자를 되보내 다음 조작에 원본 Wire Bond 로 조용히 바뀌었다(2026-10-10 재검증
+    S2a).
+    """
+    from widget_browser import BrowserChoice
+
+    app = AppTest.from_function(_render_fixture, default_timeout=30)
+    app.session_state["label_map"] = {"Other": "Wire Bond"}
+    browser = BrowserChoice(app, "multiselect", SMALL_PROCESS_KEY)
+    browser.start()
+    browser.pick(["Wire Bond"])
+    browser.run()
+    assert app.session_state[SMALL_PROCESS_KEY] == ["Other"]
+
+    app.session_state["extra_unit_process"] = "Wire Bond"
+    for _ in range(3):
+        browser.run()
+        assert not app.exception
+        assert app.session_state[SMALL_PROCESS_KEY] == ["Other"]
+    assert browser.wire == ["Wire Bond (Other)"]
+    assert any("공정소분류: Wire Bond (Other)" in item.value for item in app.caption)

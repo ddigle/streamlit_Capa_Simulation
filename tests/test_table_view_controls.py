@@ -117,6 +117,8 @@ def _labelled_filter_app() -> None:
     from capa_simulation.components.table_view_controls import render_table_view_controls
 
     data = pd.DataFrame({"공정": ["DA", "DA2", "WB"], "Cutoff일수": [1.0, 2.0, 3.0]})
+    if st.session_state.get("without_da", False):
+        data = data.loc[data["공정"] != "DA"]
     view = render_table_view_controls(
         data,
         key_prefix="labelled_view",
@@ -143,3 +145,26 @@ def test_a_colliding_filter_label_still_filters_the_chosen_process() -> None:
     assert not app.exception
     assert app.session_state["labelled_view_filter_공정"] == ["DA2"]
     assert app.session_state["visible_processes"] == ["DA2"]
+
+
+def test_a_held_filter_value_keeps_its_value_when_its_text_changes_in_the_browser() -> None:
+    """원본 DA 가 없을 때 「DA」(= DA2)를 고른 뒤 DA 가 생기면 글자가 「DA (DA2)」 로 바뀐다 —
+    매 회차 세션에 다시 적지 않으면 브라우저가 옛 글자로 DA 를 되살렸다(2026-10-10 재검증)."""
+    from streamlit.testing.v1 import AppTest
+    from widget_browser import BrowserChoice
+
+    app = AppTest.from_function(_labelled_filter_app)
+    app.session_state["without_da"] = True
+    browser = BrowserChoice(app, "multiselect", "labelled_view_filter_공정")
+    browser.start()
+    browser.pick(["DA"])
+    browser.run()
+    assert app.session_state["labelled_view_filter_공정"] == ["DA2"]
+
+    app.session_state["without_da"] = False
+    for _ in range(3):
+        browser.run()
+        assert not app.exception
+        assert app.session_state["labelled_view_filter_공정"] == ["DA2"]
+        assert app.session_state["visible_processes"] == ["DA2"]
+    assert browser.wire == ["DA (DA2)"]

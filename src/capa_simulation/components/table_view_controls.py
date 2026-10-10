@@ -29,6 +29,7 @@ import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.page_bootstrap import prune_list_selection
 
 FILTERED_NOTICE = (
     "필터가 걸려 있어 행 추가·삭제를 잠갔습니다. 보이지 않는 행도 저장에는 그대로 "
@@ -111,12 +112,16 @@ def render_table_view_controls(
                     option_text = ProcessLabels(labels=labels or {}).unique_format_func(options)
                     if labels:
                         options = sorted(options, key=lambda value: (option_text(value), value))
+                    filter_key = f"{key_prefix}_filter_{column}"
+                    # 잡은 값을 매 회차 세션에 다시 적는다(선택지에 없는 값은 뺀다). 적은 값만
+                    # 브라우저에 가므로 보이는 글자가 바뀌어도 새 글자를 받는다(2026-10-10 재검증).
+                    prune_list_selection(filter_key, options)
                     selections[column] = st.multiselect(
                         column,
                         options=options,
                         format_func=option_text if labels else str,
                         placeholder="전체",
-                        key=f"{key_prefix}_filter_{column}",
+                        key=filter_key,
                         persist_state="session",
                         width=220,
                     )

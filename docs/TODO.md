@@ -772,7 +772,9 @@
   Gantt 풍선. Static/Dynamic — `공정` 선택지·칸의 호기·호기 목록·확보율 교차검증 표(비교 그림에는 공정 글자가
   없다). Preference — `표 보기 설정` 의 공정 필터 선택지만. 네 선택 상자(필요단축일정 포함)는 보이는 글자가 겹치면
   「표시명 (원본)」 으로 가른다(병합 전 리뷰 — 같은 글자면 다른 공정이 돌아왔다, `ProcessLabels.unique_format_func`).
-  **원본으로 남긴 곳**: 선택값(세션)·표 키, 호기 목록
+  그 글자는 선택지에 따라 바뀔 수 있어 네 상자 모두 위젯 앞에서 매 회차 잡은 값을 세션에 다시 적는다
+  (`page_bootstrap.prune_choice`·`prune_list_selection` — 적지 않으면 브라우저가 옛 글자를 되보내 다른 공정으로
+  바뀌었다, 재검증·실제 브라우저. `tests/widget_browser.py` 의 `BrowserChoice` 로 고정). **원본으로 남긴 곳**: 선택값(세션)·표 키, 호기 목록
   CSV·Cut-off CSV, Cut-off 편집표 `공정` 칸과 「Cut-off 를 적지 않은 공정」 경고(그 이름을 새 행에 적어야
   맞댄다), 「두 쪽의 공정명이 맞지 않는 자리」 경고와 한쪽에만 있는 공정의 까닭(설비 마스터·기준정보에서 고칠
   이름 — 「맞대지 못한 공정」과 같은 갈래), RawData 입력. **대신 정한 것(사용자 확인)**: Cut-off 편집표에 읽기
@@ -790,8 +792,10 @@
   (245·671), `app_pages/wip_status.py`(195), `app_pages/reference_integrity.py`(278),
   `components/column_filter.py`(77 — 공정별 확보율 필터), `components/home_preference.py`(1441·1631),
   `components/performance_actual_screen.py`(211). `components/month_editor.py`(338)의 `SelectboxColumn` 은
-  편집 결과를 값으로 돌려주므로(AGENTS 8장 ⑤) 같은 문제인지 먼저 잰다. 상자마다 그 상자의 선택지로 부르고, 표지값이 있으면 `reserved` 로 넘긴다. 위젯마다 겹치는 표시명을
-  골라 세션 값이 원본인지 보는 AppTest 를 더한다.
+  편집 결과를 값으로 돌려주므로(AGENTS 8장 ⑤) 같은 문제인지 먼저 잰다. 상자마다 그 상자의 선택지로 부르고,
+  표지값이 있으면 `reserved` 로 넘기고, 위젯 앞에서 매 회차 `prune_choice`·`prune_list_selection` 으로 잡은 값을
+  다시 적는다. 위젯마다 겹치는 표시명을 골라 세션 값이 원본인지 보는 테스트를 `BrowserChoice`(브라우저처럼 글자를
+  들고 다니는 대역)로 더한다 — 일반 AppTest 는 글자가 바뀌는 회차의 결함을 못 본다.
 - [x] **필요단축일정 조회 조건 공용 프로필 · 공정 표시명(2026-10-08 사용자 요청)** — 「설비 조회 조건은
   공용프로필로 저장되게끔 해 조회기간과 공정」, 「공정명은 proc rename 기준으로 표기」. 시작 월·끝 월·공정을
   설비 DB `0019`(`equipment_ops.shortening_filter_profile` 한 행 + `shortening_filter_process`)에 두고, 세션에

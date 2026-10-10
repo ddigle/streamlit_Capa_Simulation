@@ -37,6 +37,7 @@ from capa_simulation.components.plotly_layout import hover_chart_config
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.page_bootstrap import prune_choice
 from capa_simulation.services.availability_gap import (
     DYNAMIC_SUBTOTAL_ROW,
     DYNAMIC_WEIGHTED_ROW,
@@ -216,7 +217,7 @@ def render_availability_gap_panel(
     if static_error:
         st.warning(f"Static 가용대수를 읽지 못해 Dynamic 만 표시합니다 — {static_error}")
 
-    _render_unmatched(comparison.dynamic_only, comparison.static_only)
+    _render_unmatched(comparison.dynamic_only, comparison.static_only, labels)
 
     result_view = st.segmented_control(
         "조회 결과",
@@ -228,21 +229,24 @@ def render_availability_gap_panel(
     )
     # 값은 원본 공정명이고 글자만 표시명이다. 보이는 글자가 다른 공정이나 `전체 합계` 와 겹치면
     # 「표시명 (원본)」 으로 가른다 — 겹친 글자로는 고른 것과 다른 공정이 돌아오고, `전체 합계` 와
-    # 겹치면 다음 회차의 기본값이 그 공정으로 바뀌었다(`unique_format_func`). 차례는 보이는 글자의
-    # 가나다순이다(표시명이 없으면 지금처럼 원본 순서). `전체 합계` 는 맨 앞 그대로다.
+    # 겹치면 다음 회차의 기본값이 그 공정으로 바뀌었다(`unique_format_func`). 겹침은 조회 달과
+    # 상관없는 이 탭의 공정 전체(설비·기존보유·Cut-off·Static)로 가른다 — 달을 옮겨 선택지가
+    # 바뀌어도 글자가 덜 흔들린다. 차례는 보이는 글자의 가나다순(표시명이 없으면 지금처럼 원본
+    # 순서)이고 `전체 합계` 는 맨 앞 그대로다.
     processes = set(comparison.rows["공정"].dropna().astype(str))
-    process_format = labels.unique_format_func(
-        [_ALL_PROCESSES, *processes], reserved=(_ALL_PROCESSES,)
-    )
+    known = processes | set(processes_in(spans, baseline))
+    for frame in (cutoff, static):
+        if "공정" in frame.columns:
+            known |= set(frame["공정"].dropna().astype(str))
+    process_format = labels.unique_format_func([_ALL_PROCESSES, *known], reserved=(_ALL_PROCESSES,))
     options = [
         _ALL_PROCESSES,
         *sorted(processes, key=lambda name: (process_format(name), name)),
     ]
-    if (
-        PROCESS_FILTER_KEY in st.session_state
-        and st.session_state[PROCESS_FILTER_KEY] not in options
-    ):
-        st.session_state.pop(PROCESS_FILTER_KEY)
+    # 잡은 값을 매 회차 세션에 다시 적는다(없어졌으면 `전체 합계`). 적은 값만 브라우저에 가므로,
+    # 보이는 글자가 바뀌는 회차에도 브라우저가 새 글자를 받아 옛 글자로 다른 공정을 되보내지 않는다
+    # (2026-10-10 재검증). 지우지(`pop`) 않는다 — AGENTS 9장.
+    prune_choice(PROCESS_FILTER_KEY, options, default=_ALL_PROCESSES)
     with controls:
         selected = st.selectbox(
             "공정",
@@ -277,10 +281,12 @@ def render_availability_gap_panel(
         excluded = set(comparison.dynamic_only) | set(comparison.static_only)
         scoped = comparison.rows.loc[~comparison.rows["공정"].isin(excluded)]
         if excluded:
+            # 상자 글자가 이름과 다를 때만 그렇다고 적는다 — 표시명이 없으면 예전 문장 그대로다.
+            relabelled = any(process_format(name) != name for name in excluded)
             st.caption(
                 f"전체 합계에서 한쪽에만 있는 공정 {len(excluded)}개를 뺐습니다. "
-                "그 공정은 조회 조건의 `공정` 에서 골라 따로 봅니다(상자는 공정 표시명으로 "
-                "보입니다)."
+                "그 공정은 조회 조건의 `공정` 에서 이름을 골라 따로 봅니다."
+                + (" 상자에는 공정 표시명으로 보입니다." if relabelled else "")
             )
     else:
         scoped = comparison.rows
@@ -782,10 +788,23 @@ def _render_securement_cross_check(
     st.dataframe(labels.frame(display.round(3)), hide_index=True, width="stretch")
 
 
-def _render_unmatched(dynamic_only: list[str], static_only: list[str]) -> None:
-    """한쪽에만 있는 공정. **조용히 떨어지면 GAP 이 이유 없이 커 보인다.**"""
+def _render_unmatched(
+    dynamic_only: list[str], static_only: list[str], labels: ProcessLabels
+) -> None:
+    """한쪽에만 있는 공정. **조용히 떨어지면 GAP 이 이유 없이 커 보인다.**
+
+    이름은 원본 공정명이다(설비 마스터·기준정보에서 고칠 이름). 나열한 이름 가운데 표시명이 붙은
+    것이 있을 때만 그렇다고 한 문장 더 적는다 — 상자에는 표시명만 보이기 때문이다.
+    """
     if not dynamic_only and not static_only:
         return
+    listed = [*dynamic_only[:8], *static_only[:8]]
+    note = (
+        " 아래 이름은 공정 표시명이 아니라 원본 공정명입니다 — 조회 조건의 `공정` 상자에는 "
+        "표시명으로 보입니다."
+        if any(labels.label(name) != name for name in listed)
+        else ""
+    )
     lines = []
     if dynamic_only:
         lines.append(
@@ -799,6 +818,5 @@ def _render_unmatched(dynamic_only: list[str], static_only: list[str]) -> None:
         )
     st.warning(
         "두 쪽의 공정명이 맞지 않는 자리가 있습니다. 설비 마스터의 `공정소분류` 와 "
-        "기준정보의 `공정` 이 같은 값이어야 맞댈 수 있습니다. 아래 이름은 공정 표시명이 아니라 "
-        "원본 공정명입니다 — 조회 조건의 `공정` 상자에는 표시명으로 보입니다.\n" + "\n".join(lines)
+        "기준정보의 `공정` 이 같은 값이어야 맞댈 수 있습니다." + note + "\n" + "\n".join(lines)
     )

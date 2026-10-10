@@ -184,6 +184,10 @@ def prune_list_selection(
     옵션이 계산 결과라 시나리오·조회기간이 바뀌면 목록이 통째로 달라진다. 옛 선택을
     그대로 두면 `st.multiselect` 가 옵션에 없는 기본값을 받아 오류를 내거나 조용히 빈
     화면을 그린다. 아직 아무것도 고르지 않은 세션에는 `default` 를 심는다.
+
+    **위젯 앞에서 매 회차 부른다.** 세션에 새로 적은 값만 브라우저에 간다(`set_value`). 선택지의
+    보이는 글자가 회차마다 바뀔 수 있는 상자(공정 표시명의 「표시명 (원본)」 가르기)는 적지 않으면
+    브라우저가 옛 글자를 들고 있다가 다음 조작에 되보내 다른 값으로 바뀐다(2026-10-10 재검증).
     """
     allowed = set(options)
     saved = st.session_state.get(key)
@@ -192,6 +196,19 @@ def prune_list_selection(
     pruned = [str(value) for value in saved if str(value) in allowed]
     st.session_state[key] = pruned
     return pruned
+
+
+def prune_choice(key: str, options: Sequence[str], *, default: str) -> str:
+    """`prune_list_selection` 의 단일 선택(`st.selectbox`) 짝.
+
+    저장된 값이 지금 옵션에 있으면 그대로, 없거나 아직 없으면 `default` 를 세션에 **되쓴다** —
+    지우지(`pop`) 않는다(AGENTS 9장 「pop 하지 말고 새 값을 적는다」). 위젯 앞에서 매 회차 부른다.
+    적은 값만 브라우저에 가므로, 선택지 글자가 바뀌어도 브라우저가 새 글자를 받는다.
+    """
+    saved = st.session_state.get(key)
+    value = str(saved) if saved is not None and str(saved) in set(options) else default
+    st.session_state[key] = value
+    return value
 
 
 def load_page_context() -> PageContext:

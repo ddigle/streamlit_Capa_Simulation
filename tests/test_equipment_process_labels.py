@@ -15,6 +15,7 @@ from pathlib import Path
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_tab, _page_script
+from widget_browser import BrowserChoice
 
 from capa_simulation.components.availability_gap_panel import PROCESS_FILTER_KEY
 from capa_simulation.components.equipment_explorer import SMALL_PROCESS_KEY
@@ -117,17 +118,25 @@ def test_the_page_labels_every_viewing_tab_and_follows_a_changed_profile(tmp_pat
     # Static/Dynamic — `공정` 선택지는 표시명, 값은 원본이다.
     app = _open_tab(app, "Static/Dynamic")
     assert not app.exception, [item.message for item in app.exception]
-    picker = app.selectbox(key=PROCESS_FILTER_KEY)
-    assert "표시-둘째공정" in picker.options and second not in picker.options
-    app.selectbox(key=PROCESS_FILTER_KEY).select(second).run()
+    # 이 상자는 브라우저처럼 다룬다 — 브라우저는 고른 **글자**를 들고 있다가 다음 조작마다 되보낸다
+    # (일반 AppTest 는 회차마다 세션 값으로 글자를 다시 만들어 이 차이를 못 본다).
+    browser = BrowserChoice(app, "selectbox", PROCESS_FILTER_KEY)
+    browser.sync()
+    assert "표시-둘째공정" in browser.options() and second not in browser.options()
+    browser.pick("표시-둘째공정")
+    browser.run()
     assert app.session_state[PROCESS_FILTER_KEY] == second
 
-    # 표시명을 고치면 다음 회차에 그대로 따라온다 — 표시명은 캐시 결과의 복사본에만 입히므로 계산
-    # 캐시를 비우지 않아도 된다(Admin 저장이 비우는 것은 표시명 프로필 캐시 하나다).
+    # 표시명을 고치면(Admin 저장) 다음 회차에 그대로 따라온다 — 표시명은 캐시 결과의 복사본에만
+    # 입히므로 계산 캐시를 비우지 않아도 된다(Admin 저장이 비우는 것은 표시명 프로필 캐시 하나다).
+    # 브라우저는 옛 글자 「표시-둘째공정」 을 들고 있다. 페이지가 잡은 값을 매 회차 세션에 다시 적어
+    # 새 글자를 보내므로 다음 조작에도 선택이 빠지지 않는다(2026-10-10 재검증 — 적지 않으면 한 조작
+    # 뒤 `전체 합계` 로 돌아갔다).
     _save_labels(database_path, {second: "표시-고친공정"})
-    app.run()
-    assert not app.exception
-    picker = app.selectbox(key=PROCESS_FILTER_KEY)
-    assert "표시-고친공정" in picker.options and "표시-둘째공정" not in picker.options
-    assert app.session_state[PROCESS_FILTER_KEY] == second
+    for _ in range(2):
+        browser.run()
+        assert not app.exception
+        assert app.session_state[PROCESS_FILTER_KEY] == second
+    assert "표시-고친공정" in browser.options() and "표시-둘째공정" not in browser.options()
+    assert browser.wire == "표시-고친공정"
     clear_equipment_repository()

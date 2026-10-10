@@ -157,7 +157,7 @@ def _panel_app() -> None:
     )
 
 
-def _run(**state: bool) -> AppTest:
+def _run(**state: object) -> AppTest:
     app = AppTest.from_function(_panel_app, default_timeout=30)
     for key, value in state.items():
         app.session_state[key] = value
@@ -620,6 +620,69 @@ def test_name_mismatch_notices_keep_the_original_process_names() -> None:
     assert "「Wire Bond」 공정은 기준정보(Static)에 없어" in infos and "표시-WB" not in infos
     # 경고는 그 이름이 원본이라고 밝힌다 — 상자에는 표시명만 보이므로.
     assert "아래 이름은 공정 표시명이 아니라 원본 공정명입니다" in warnings
+
+
+def test_the_original_name_notes_appear_only_when_a_listed_name_is_relabelled() -> None:
+    """표시명이 하나도 없으면 경고·캡션이 예전 문장 그대로다 — 「상자에는 표시명으로 보입니다」 를
+    적을 까닭이 없다(2026-10-10 재검증)."""
+    plain = _run(wire_bond_units=True)
+    warnings = " ".join(item.value for item in plain.warning)
+    captions = " ".join(item.value for item in plain.caption)
+    assert "Wire Bond" in warnings and "표시명" not in warnings
+    assert "한쪽에만 있는 공정 2개를 뺐습니다" in captions and "표시명" not in captions
+
+    # 나열된 이름(Wire Bond·Probe)에 표시명이 없으면 다른 공정에 표시명이 있어도 적지 않는다.
+    app = _run(wire_bond_units=True, label_map={"Die Attach": "표시-DA"})
+    assert "표시명" not in " ".join(item.value for item in app.warning)
+    assert "표시명" not in " ".join(item.value for item in app.caption)
+
+    labelled = _run(wire_bond_units=True, labels=True)
+    assert "상자에는 공정 표시명으로 보입니다" in " ".join(item.value for item in labelled.caption)
+
+
+def test_a_held_process_keeps_its_value_when_its_text_changes_in_the_browser() -> None:
+    """브라우저는 고른 **글자**를 들고 있다가 되보낸다(일반 AppTest 는 이 결함을 못 본다).
+
+    `Die Attach` 의 표시명이 `Etch` 인데 Etch 가 없을 때 고른 뒤 Etch 가 들어오면, 그 선택의 글자가
+    「Etch (Die Attach)」 로 바뀐다. 잡은 값을 매 회차 세션에 다시 적지 않으면 브라우저가 옛 글자
+    `Etch` 를 되보내 다음 조작에 원본 Etch 로 조용히 바뀌었다(2026-10-10 재검증 S1a).
+    """
+    from widget_browser import BrowserChoice
+
+    app = AppTest.from_function(_panel_app, default_timeout=30)
+    app.session_state["label_map"] = {"Die Attach": "Etch"}
+    app.session_state["omit_etch"] = True
+    browser = BrowserChoice(app, "selectbox", PROCESS_FILTER_KEY)
+    browser.start()
+    browser.pick("Etch")
+    browser.run()
+    assert app.session_state[PROCESS_FILTER_KEY] == "Die Attach"
+
+    app.session_state["omit_etch"] = False
+    for _ in range(3):
+        browser.run()
+        assert not app.exception
+        assert app.session_state[PROCESS_FILTER_KEY] == "Die Attach"
+    assert browser.wire == "Etch (Die Attach)"
+
+
+def test_a_held_process_survives_a_new_display_name_in_the_browser() -> None:
+    """Admin 에서 표시명을 바꾸면 브라우저의 옛 글자가 선택지에 없어 한 조작 뒤 선택이 빠졌다."""
+    from widget_browser import BrowserChoice
+
+    app = AppTest.from_function(_panel_app, default_timeout=30)
+    app.session_state["label_map"] = {"Die Attach": "표시-DA"}
+    browser = BrowserChoice(app, "selectbox", PROCESS_FILTER_KEY)
+    browser.start()
+    browser.pick("표시-DA")
+    browser.run()
+    for new_label in ("표시-DA2", "Probe"):
+        app.session_state["label_map"] = {"Die Attach": new_label}
+        for _ in range(2):
+            browser.run()
+            assert not app.exception
+            assert app.session_state[PROCESS_FILTER_KEY] == "Die Attach"
+    assert browser.wire == "Probe (Die Attach)"
 
 
 def test_a_display_name_equal_to_another_process_still_picks_the_right_process() -> None:

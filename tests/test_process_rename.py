@@ -212,12 +212,39 @@ def test_unique_format_func_splits_whitespace_variants_of_a_mapped_process() -> 
 
 
 def test_unique_format_func_keeps_every_text_distinct_even_after_splitting() -> None:
-    """가른 글자가 또 다른 선택지와 같으면 뒤의 것에 차례를 붙인다."""
+    """가른 글자가 또 다른 선택지와 같으면 표시명이 붙은 선택지에만 차례를 붙인다."""
     labels = _labels([("X", "Y (Z)"), ("Z", "Y")])
 
     shown = _shown(labels, ["X", "Y", "Z"])
-    assert len(set(shown)) == 3
-    assert shown[:2] == ["Y (Z)", "Y"]
+    assert shown == ["Y (Z)", "Y", "Y (Z) (2)"]
+
+
+def test_unique_format_func_never_renames_an_unlabelled_original_and_ignores_option_order() -> None:
+    """마지막 수단 「 (2)」 는 표시명 없는 원본·표지값에 붙지 않고, 어느 쪽에 붙는지가 선택지를
+    넘긴 차례(set 순회)를 따르지 않는다(2026-10-10 재검증)."""
+    labels = _labels([("A", "X"), ("B", "X (A)")])
+    options = ["A", "B", "X", "X (A) (2)", "전체 합계"]
+    expected: dict[str, str] | None = None
+    for start in range(len(options)):
+        rotated = options[start:] + options[:start]
+        formatter = labels.unique_format_func(rotated, reserved=("전체 합계",))
+        shown = {option: formatter(option) for option in options}
+        assert len(set(shown.values())) == len(options)
+        # 표시명 없는 원본과 표지값은 언제나 글자 그대로다.
+        assert shown["X"] == "X" and shown["X (A) (2)"] == "X (A) (2)"
+        assert shown["전체 합계"] == "전체 합계"
+        expected = expected or shown
+        assert shown == expected, rotated
+
+
+def test_a_value_outside_the_options_never_reads_as_another_option() -> None:
+    """선택지에 없는 값(세션에 남은 옛 값)의 글자는 어떤 선택지 글자와도 겹치지 않는다 — 원본 글자
+    그대로면 그 글자를 표시명으로 가진 다른 선택지로 읽혔다(2026-10-10 재검증)."""
+    formatter = _labels([("A", "X")]).unique_format_func(["A", "B"])
+    shown = {formatter(option) for option in ("A", "B")}
+
+    assert formatter("X") not in shown
+    assert formatter("X").rstrip("\u2060") == "X"
 
 
 def test_frame_relabels_only_the_named_column_and_keeps_blanks() -> None:
@@ -231,6 +258,40 @@ def test_frame_relabels_only_the_named_column_and_keeps_blanks() -> None:
     assert shown["설비명"].tolist() == ["DA2"] * 4
     assert data["공정"].tolist()[2] == "DA2"
     assert ProcessLabels().frame(data) is data
+
+
+def _stale_choice_app() -> None:
+    """원본 `X` 를 잡은 뒤 `X` 가 선택지에서 빠지면, `A` 의 표시명 `X` 만 그 글자로 남는다."""
+    import streamlit as st
+
+    from capa_simulation.components.process_labels import ProcessLabels
+
+    processes = {"A", "B"} | ({"X"} if st.session_state.get("has_x", True) else set())
+    formatter = ProcessLabels(version=1, labels={"A": "X"}).unique_format_func(processes)
+    options = sorted(processes, key=lambda name: (formatter(name), name))
+    st.multiselect("공정", options, format_func=formatter, key="stale_choice")
+
+
+def test_a_held_original_that_leaves_the_options_is_dropped_not_swapped() -> None:
+    """브라우저는 고른 글자 `X` 를 들고 있다. `X` 가 빠진 회차에 그 값이 표시명 `X` 인 `A` 로 읽히면
+    안 된다 — 첫 회차에 선택이 비고 서버가 그 사실을 브라우저에 적어 보낸다(`set_value`)."""
+    from streamlit.testing.v1 import AppTest
+    from widget_browser import BrowserChoice
+
+    browser = BrowserChoice(AppTest.from_function(_stale_choice_app), "multiselect", "stale_choice")
+    app = browser.start()
+    assert browser.options() == ["B", "X", "X (A)"]
+    browser.pick(["X"])
+    browser.run()
+    assert app.session_state["stale_choice"] == ["X"]
+
+    app.session_state["has_x"] = False
+    browser.run()
+    assert not app.exception
+    assert app.session_state["stale_choice"] == []
+    assert browser.last_set_value
+    browser.run()
+    assert app.session_state["stale_choice"] == []
 
 
 # ---------------------------------------------------------------- 저장 왕복

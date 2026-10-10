@@ -18,6 +18,7 @@ from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
+from capa_simulation.page_bootstrap import prune_list_selection
 from capa_simulation.services.equipment_availability import (
     build_equipment_lifecycle_spans,
     build_equipment_status_as_of,
@@ -532,6 +533,10 @@ def render_equipment_explorer(
             owned = set(_options(equipment, PROCESS_COLUMN)) | set(_options(baseline, "공정"))
             process_format = labels.unique_format_func(owned)
             process_options = sorted(owned, key=lambda process: (process_format(process), process))
+            # 잡은 값을 매 회차 세션에 다시 적는다(선택지에 없는 값은 뺀다). 적은 값만 브라우저에
+            # 가므로, 보이는 글자가 바뀌는 회차에도 브라우저가 새 글자를 받는다 — 적지 않으면 옛
+            # 글자를 다음 조작에 되보내 다른 공정으로 바뀌었다(2026-10-10 재검증).
+            prune_list_selection(SMALL_PROCESS_KEY, process_options)
             selected = st.multiselect(
                 "공정소분류",
                 process_options,
