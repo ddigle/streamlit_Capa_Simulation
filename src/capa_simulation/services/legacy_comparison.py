@@ -34,6 +34,11 @@
 대조하고, 기존÷신규가 ≈60 인 무리를 가르는 집계(아래 「소요대수 ≈60 배 가르기」)도 거기서 쓴다.
 로컬 합성 샘플은 `소요대수` 를 채우지 않는다(`scripts/generate_sample_core_data.py`).
 
+Wafer `WF수(매)` 는 사내 실데이터에서 계획 줄 × WF 구분 안에서도 경로 행마다 갈렸다(경로
+값이다). 신규 계산에는 경로마다 갈리는 Wafer 값이 없으므로, 아래 「Wafer 경로 값 가르기」가
+원천 경로 값이 어느 경로 칸을 따라 갈리는지를 개수로 가른다. 계획 줄 대조는 연속성을 위해
+그대로 둔다.
+
 사내 실데이터에서는 키별 값을 밖으로 낼 수 없다. 그래서 대조 결과를 **분포로만** 접는
 `difference_distribution`(차이율)·`ratio_distribution`(기존 ÷ 신규) 를 둔다 —
 `scripts/inspect_real_data_checks.py` 가 이 둘로 리뷰 문서에 옮길 집계를 만든다. 대조 키와 접는
@@ -813,6 +818,311 @@ class RouteLink:
             agree_only=len(sets[AGREE_GROUP] - sets[SUSPECT_GROUP]),
             numeric_ratio=median_ratio(spread),
         )
+
+
+# ---------------------------------------------------------------- Wafer `WF수(매)` 경로 값 가르기
+#
+# 사내 실데이터(리뷰 202610071831 8-2)에서 Wafer 대조 296키 가운데 287키가 `값 불일치` 였다 —
+# 같은 계획 줄 × WF 구분 안에서도 경로(공정) 행마다 원천 `WF수(매)` 가 갈린다. 계획 줄 값이
+# 아니라 경로 값이라 대조를 경로 단위로 다시 본다(2026-10-10 사용자 결정). **신규 계산에는
+# 경로마다 갈리는 Wafer 값이 없다** — `required_equipment` 는 계획 줄(Pack Code 합산) × WF 구분의
+# Wafer 부하량을 그 계획 줄의 모든 WF 경로에 같은 `부하량` 으로 붙이고, 측정률은 부하가 아니라
+# 대당 Capa 의 분모로 들며, Step수·Side반영률은 산식에 없다. 그래서 아래 함수들은 원천 경로 값이
+# 무엇으로 갈리는지를 값 없이 개수로 가른다.
+
+# 칸 안의 값이 「한 값」인지 — (최대 − 최소) ≤ 이 비율 × 최대 절댓값. 곱·나눗셈 뒤의
+# 반올림만 넘긴다.
+ROUTE_SPLIT_TOLERANCE = TIGHT_TOLERANCE
+# 계획 줄 × WF 구분 칸 안에서 경로 행마다 달라질 수 있는 칸. 계획 줄 키는 칸 안에서 한 값이라
+# 넣지 않는다.
+WAFER_ROUTE_ATTRIBUTES: tuple[str, ...] = (
+    "소요기준",
+    "Area_Name",
+    "공정",
+    "STEP_SEQ",
+    "MCP_SEQ",
+    "Step수",
+    "Para",
+)
+# 원천 경로 값과 같은 단위(매)라 곱·나눗셈이 아니라 더하기·빼기로 견주는 칸.
+WAFER_ROUTE_ADDEND = "TEST WF수(매)"
+
+
+@dataclass(frozen=True)
+class RouteFactor:
+    """경로 값을 가를 후보 하나 — 원천 경로 칸(여럿이면 곱)."""
+
+    label: str
+    columns: tuple[str, ...]
+
+
+WAFER_ROUTE_FACTORS: tuple[RouteFactor, ...] = (
+    RouteFactor("Lot 측정률", ("Lot 측정률",)),
+    RouteFactor("WF측정률", ("WF측정률",)),
+    RouteFactor("Lot 측정률 × WF측정률", ("Lot 측정률", "WF측정률")),
+    RouteFactor("Side반영률", ("Side반영률",)),
+    RouteFactor("MCP_Chip_Ratio", ("MCP_Chip_Ratio",)),
+    RouteFactor("CUM_수율", ("CUM_수율",)),
+    RouteFactor("Step수", ("Step수",)),
+    RouteFactor("Para", ("Para",)),
+    RouteFactor("Shot수", ("Shot수",)),
+    RouteFactor("일 필요", ("일 필요",)),
+)
+
+
+def route_factor_values(frame: pd.DataFrame, factor: RouteFactor) -> pd.Series:
+    """행마다 후보 값 — 칸들의 곱. 칸이 없거나 숫자로 읽히지 않으면 빈 값이다.
+
+    글자 칸(`Step수`·`Para`·`Shot수`)도 숫자로 읽히면 읽는다.
+    """
+    if any(column not in frame.columns for column in factor.columns):
+        return pd.Series(np.nan, index=frame.index, dtype="float64")
+    product = pd.Series(1.0, index=frame.index, dtype="float64")
+    for column in factor.columns:
+        product = product * pd.to_numeric(frame[column], errors="coerce").astype("float64")
+    return product
+
+
+@dataclass(frozen=True)
+class RouteValueSpread:
+    """계획 줄 × WF 구분 칸이 경로마다 갈리는 정도.
+
+    `split` 은 `compare_metric` 이 `값 불일치` 로 떨어뜨리는 규칙(칸 안 고유값이 둘 이상) 그대로다.
+    `route_split` 은 경로 행(Area_Name 있음)·양수 값만 남겨 `tolerance` 를 넘게 갈리는 칸이다 —
+    아래 가르기(`split_route_cells`·`fold_route_cells`)가 보는 칸이다. 둘의 차는 계획 줄 행·0 값이
+    만든 갈림이다.
+    """
+
+    cells: int
+    split: int
+    route_cells: int
+    route_split: int
+
+
+@dataclass(frozen=True)
+class RouteCells:
+    """경로 행·양수 값만 남긴 원천 행과 칸 번호·값. `split` 은 갈리는 칸 번호다."""
+
+    frame: pd.DataFrame
+    cell: pd.Series
+    values: pd.Series
+    split: frozenset[int]
+
+    def split_rows(self) -> pd.Series:
+        return self.cell.isin(self.split)
+
+
+def _varies(values: pd.Series, cell: pd.Series, tolerance: float) -> pd.Series:
+    """칸마다 값이 갈리나 — (최대 − 최소) > `tolerance` × 최대 절댓값. 인덱스는 칸 번호다."""
+    grouped = values.groupby(cell)
+    high = grouped.max()
+    low = grouped.min()
+    scale = pd.concat([high.abs(), low.abs()], axis=1).max(axis=1)
+    return (high - low).gt(scale * tolerance)
+
+
+def route_cells(
+    core: pd.DataFrame,
+    value_column: str,
+    grain: Sequence[str],
+    *,
+    tolerance: float = ROUTE_SPLIT_TOLERANCE,
+) -> tuple[RouteValueSpread, RouteCells]:
+    """기존 값이 한 번만 실린다고 본 칸(`grain`, 보통 `legacy_grain`)이 경로마다 갈리는지 센다."""
+    values = pd.to_numeric(core[value_column], errors="coerce").astype("float64")
+    present = core.loc[values.notna()]
+    cell_all = _key_ids(present, grain)
+    distinct = values.loc[present.index].groupby(cell_all).nunique()
+    area = present["Area_Name"].astype("string").str.strip().fillna("")
+    route_mask = area.ne("") & values.loc[present.index].gt(0)
+    route = present.loc[route_mask]
+    cell = cell_all.loc[route.index]
+    route_values = values.loc[route.index]
+    varies = _varies(route_values, cell, tolerance)
+    split = frozenset(int(index) for index in varies.index[varies])
+    spread = RouteValueSpread(
+        cells=int(len(distinct)),
+        split=int(distinct.gt(1).sum()),
+        route_cells=int(cell.nunique()),
+        route_split=len(split),
+    )
+    return spread, RouteCells(frame=route, cell=cell, values=route_values, split=split)
+
+
+def split_route_cells(
+    cells: RouteCells,
+    attributes: Sequence[str] = WAFER_ROUTE_ATTRIBUTES,
+    *,
+    tolerance: float = ROUTE_SPLIT_TOLERANCE,
+) -> tuple[SplitCount, ...]:
+    """갈리는 칸마다 그 속성 값 안에서 경로 값이 한 값인지 센다(`SplitCount` 와 같은 세 칸).
+
+    `splits` — 칸 안에서 속성 값마다 한 값이다. `trivial` — 그렇지만 속성 값이 행마다 달라 저절로
+    그렇게 된 것이라 증거가 못 된다. `fails` — 한 속성 값 안에서도 갈린다.
+    """
+    rows = cells.split_rows()
+    frame = cells.frame.loc[rows]
+    cell = cells.cell.loc[rows]
+    values = cells.values.loc[rows]
+    results: list[SplitCount] = []
+    for attribute in attributes:
+        if attribute not in frame.columns:
+            continue
+        pair = pd.DataFrame(
+            {"칸": cell.to_numpy(), "값": _match_column(frame, attribute).to_numpy()},
+            index=frame.index,
+        )
+        sub_cell = pair.groupby(["칸", "값"], sort=False).ngroup()
+        owner = pair["칸"].groupby(sub_cell).first()
+        pure = (~_varies(values, sub_cell, tolerance)).groupby(owner).all()
+        distinct = pair.groupby("칸")["값"].nunique().reindex(pure.index)
+        size = pair.groupby("칸").size().reindex(pure.index)
+        trivial = pure & distinct.eq(size)
+        results.append(
+            SplitCount(
+                attribute=attribute,
+                splits=int((pure & ~trivial).sum()),
+                fails=int((~pure).sum()),
+                trivial=int(trivial.sum()),
+            )
+        )
+    return tuple(results)
+
+
+@dataclass(frozen=True)
+class FactorFold:
+    """갈리는 칸이 후보를 나누거나 곱하면 한 값이 되는가. 값은 담지 않는다.
+
+    `testable` — 갈리는 칸 가운데 모든 행에 후보 값(양수)이 있는 칸. `constant` — 그 가운데
+    후보가 칸 안에서 한 값이라 후보로는 가를 수 없는 칸. `divided` 가 `testable − constant` 에
+    가까우면 원천 경로 값 = 계획 줄 값 × 후보다(후보의 단위·배율과 무관 — 칸 안의 비만 본다).
+    """
+
+    label: str
+    testable: int
+    constant: int
+    divided: int
+    multiplied: int
+
+
+def fold_route_cells(
+    cells: RouteCells,
+    factor: pd.Series,
+    *,
+    label: str,
+    tolerance: float = ROUTE_SPLIT_TOLERANCE,
+) -> FactorFold:
+    """`factor` 는 `cells.frame` 과 같은 인덱스의 후보 값이다(`route_factor_values`)."""
+    rows = cells.split_rows()
+    cell = cells.cell.loc[rows]
+    values = cells.values.loc[rows]
+    candidate = factor.reindex(cell.index).astype("float64")
+    complete = candidate.gt(0).groupby(cell).all()
+    testable = cell.isin(set(complete.index[complete]))
+    cell = cell.loc[testable]
+    values = values.loc[testable]
+    candidate = candidate.loc[testable]
+    return FactorFold(
+        label=label,
+        testable=int(cell.nunique()),
+        constant=int((~_varies(candidate, cell, tolerance)).sum()),
+        divided=int((~_varies(values / candidate, cell, tolerance)).sum()),
+        multiplied=int((~_varies(values * candidate, cell, tolerance)).sum()),
+    )
+
+
+@dataclass(frozen=True)
+class AddendFold:
+    """같은 단위 칸(`TEST WF수(매)`)을 빼거나 더하면 갈리는 칸이 한 값이 되는가."""
+
+    testable: int
+    subtracted: int
+    added: int
+
+
+def fold_route_addend(
+    cells: RouteCells, column: str = WAFER_ROUTE_ADDEND, *, tolerance: float = ROUTE_SPLIT_TOLERANCE
+) -> AddendFold:
+    """모든 행에 그 칸 값(0 포함)이 있는 갈리는 칸만 본다. 칸이 없으면 모두 0 이다."""
+    if column not in cells.frame.columns:
+        return AddendFold(testable=0, subtracted=0, added=0)
+    rows = cells.split_rows()
+    cell = cells.cell.loc[rows]
+    values = cells.values.loc[rows]
+    addend = pd.to_numeric(cells.frame.loc[rows, column], errors="coerce").astype("float64")
+    complete = addend.notna().groupby(cell).all()
+    testable = cell.isin(set(complete.index[complete]))
+    cell = cell.loc[testable]
+    return AddendFold(
+        testable=int(cell.nunique()),
+        subtracted=int(
+            (~_varies(values.loc[testable] - addend.loc[testable], cell, tolerance)).sum()
+        ),
+        added=int((~_varies(values.loc[testable] + addend.loc[testable], cell, tolerance)).sum()),
+    )
+
+
+def measured_wafer_load(required: pd.DataFrame, tables: dict[str, pd.DataFrame]) -> pd.Series:
+    """`부하량 × Lot 측정률 × WF측정률` — 소요대수가 실제로 나누는 부하.
+
+    측정률은 부하가 아니라 대당 Capa 의 분모로 들지만, 곱으로 옮기면 이 값이 된다.
+
+    측정률이 비었거나 0 이면 계산과 같이 1.0 이다. 음수 행은 계산이 이미 뺐다.
+    """
+    measured = [item for item in FORMULA_INPUTS if item.label in {"Lot 측정률", "WF측정률"}]
+    inputs = attach_formula_inputs(required, required, tables, measured)
+    load = pd.to_numeric(required["부하량"], errors="coerce").astype("float64")
+    for item in measured:
+        ratio = pd.to_numeric(inputs[item.label], errors="coerce").astype("float64")
+        load = load * ratio.where(ratio.gt(0), 1.0)
+    return load
+
+
+@dataclass(frozen=True)
+class FactorAgreement:
+    """경로 키마다 기존 ÷ 신규가 후보를 따라가는가. 값은 담지 않는다.
+
+    `keys` — 비율과 후보 값(양수)이 다 있는 키. `off_one` — 그 가운데 후보가 1 이 아닌 키(1 인 키는
+    따라가는지 가를 수 없다). 그 키들을 기존 ÷ 신규가 후보(`near_factor`)·1 ÷ 후보(`near_inverse`)·1
+    (`near_one` — 후보와 무관)에 붙는지 센다. 셋 모두 `tolerance` 안이다.
+    """
+
+    label: str
+    keys: int
+    off_one: int
+    near_factor: int
+    near_inverse: int
+    near_one: int
+
+
+def factor_agreement(
+    frame: pd.DataFrame,
+    factor: pd.Series,
+    *,
+    label: str,
+    tolerance: float = TIGHT_TOLERANCE,
+) -> FactorAgreement:
+    """`frame` 은 `ratio_groups(...).frame`(비율 칸이 있다), `factor` 는 같은 인덱스의 키별
+    후보 값이다."""
+    ratio = pd.to_numeric(frame[RATIO_COLUMN], errors="coerce").astype("float64")
+    candidate = factor.reindex(frame.index).astype("float64")
+    usable = ratio.gt(0) & candidate.gt(0)
+    off = usable & ~_near(candidate, 1.0, tolerance)
+    return FactorAgreement(
+        label=label,
+        keys=int(usable.sum()),
+        off_one=int(off.sum()),
+        near_factor=int((off & _near(ratio / candidate, 1.0, tolerance)).sum()),
+        near_inverse=int((off & _near(ratio * candidate, 1.0, tolerance)).sum()),
+        near_one=int((off & _near(ratio, 1.0, tolerance)).sum()),
+    )
+
+
+def route_factor_by_key(link: RouteLink, factor: RouteFactor) -> pd.Series:
+    """키마다 후보 값 — 짝지은 원천 경로 행의 후보 값 중앙(`RouteLink.numbers` 와 같은 규칙)."""
+    column = "_후보"
+    route = link.route.assign(**{column: route_factor_values(link.route, factor)})
+    return RouteLink(frame=link.frame, route=route, pairs=link.pairs).numbers(column)
 
 
 def _near(values: pd.Series, target: float, tolerance: float) -> pd.Series:

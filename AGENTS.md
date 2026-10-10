@@ -2987,6 +2987,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     곱이라 키 하나로는 어느 인자를 60 배 해도 맞으므로, 인자 값을 같이 쓰는 ≈1 키가 몇이나 어긋나는지
     (`collateral`)가 인자를 가른다. `FORMULA_INPUTS` 는 `unit_capacity`·`required_equipment`·
     `load_calculator` 의 연결 키를 그대로 쓰므로 산식이 바뀌면 여기도 고친다.
+  - **Wafer 경로 값 가르기**(2026-10-10 사용자 결정). 사내에서 Wafer `WF수(매)` 가 계획 줄 × WF 구분 안에서도
+    경로마다 갈렸다(296키 중 287키 `값 불일치`). 신규 계산에는 경로마다 갈리는 Wafer 값이 없으므로(WF 경로의
+    `부하량` 은 계획 줄 Wafer 그대로, 측정률은 대당 Capa 의 분모) `route_cells`·`split_route_cells`(무엇이
+    가르나)·`fold_route_cells`·`fold_route_addend`(경로 칸으로 나누거나 빼면 칸이 한 값이 되나 — 칸 안의 비만
+    보아 단위와 무관)·`factor_agreement`·`route_factor_by_key`(경로 키의 기존÷신규가 그 칸을 따라가나)·
+    `measured_wafer_load`(측정률을 부하로 옮긴 값)가 개수로 가른다. 후보 칸은 `WAFER_ROUTE_FACTORS`·
+    `WAFER_ROUTE_ATTRIBUTES` 한 곳에 둔다. 계획 줄 대조(`COMPARISONS`)는 그대로다.
 - `src/capa_simulation/components/tab_state.py`
   - 열린 탭을 서버가 알게 하는 `stateful_tabs` 와 판정용 `tab_is_hidden`. 차트가 든 탭은
     반드시 이것으로 만든다. 숨겨진 탭 안에서 Plotly 표를 그리면 글자 폭 측정이 0 이라

@@ -12,7 +12,7 @@
 | 블록 | `--only` | 무엇을 |
 |---|---|---|
 | 8-1 | `env` | 두 DB 의 마이그레이션 번호·주요 표 행 수, 적용 배포, `ref_data` 사본 |
-| 8-2 | `legacy` | 기존 결과 컬럼과 신규 계산의 차이율·비율 분포, 소요대수 ≈60 배 가르기 |
+| 8-2 | `legacy` | 기존 결과와 신규 계산의 차이율·비율 분포, Wafer 경로 값·소요대수 ≈60 배 가르기 |
 | 8-3 | `reqb` | 원천 `RQ_REQB` 의 소요기준별 행·공정 수 |
 | 8-4 | `equipment` | 설비 DB 의 2262-04-11 Qual·환산비 0.2 모듈 행·일정 미정·사용기준 HBM·EDP |
 | 8-5 | `bdq` | 목록 조회 시간·`reg_date` 꼴·코드 규칙 위반·전 코드 적재일·표본 적재일·사본 여부 |
@@ -126,29 +126,42 @@ from capa_simulation.services.legacy_comparison import (  # noqa: E402
     NEAR_TOLERANCE,
     OTHER_GROUP,
     RATIO_GROUPS,
+    ROUTE_SPLIT_TOLERANCE,
     SUSPECT_GROUP,
+    TIGHT_TOLERANCE,
+    WAFER_ROUTE_ADDEND,
+    WAFER_ROUTE_FACTORS,
     DifferenceDistribution,
     FormulaInput,
     LegacyMetric,
     Quantiles,
     RatioDistribution,
+    RouteCells,
     RouteLink,
     ScalingCheck,
     attach_formula_inputs,
     compare_metric,
     describe_ratios,
     difference_distribution,
+    factor_agreement,
+    fold_route_addend,
+    fold_route_cells,
     folded_route_totals,
     group_spread,
     hourly_rate,
     input_applies,
     legacy_grain,
+    measured_wafer_load,
     median_ratio,
     process_consistency,
     ratio_distribution,
     ratio_groups,
+    route_cells,
+    route_factor_by_key,
+    route_factor_values,
     scaling_check,
     split_mixed_processes,
+    split_route_cells,
     summarize_comparison,
     time_agreement,
 )
@@ -849,13 +862,14 @@ def _required_equipment(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
     )
 
 
-def _requirement_section(core: pd.DataFrame, tables: dict[str, pd.DataFrame]) -> list[str]:
+def _requirement_section(
+    core: pd.DataFrame, tables: dict[str, pd.DataFrame], calculated: Required
+) -> list[str]:
     lines = ["**소요대수** — 신규는 리비전 1 로 다시 계산한 `RQ_REQB` 행별 소요대수다.", ""]
     contract = load_core_data_contract()
-    try:
-        required = _required_equipment(tables)
-    except Exception as exc:  # 기준정보 오류면 계산이 멈춘다. 종류만 적는다
-        return [*lines, f"- 신규 소요대수 계산 {_failure(exc)} — 대조하지 않았다", ""]
+    required = calculated.frame
+    if required is None:
+        return [*lines, f"- 신규 소요대수 계산 {calculated.failure} — 대조하지 않았다", ""]
     route = _route_frame(core)
     exclusions = required.attrs.get(REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR)
     excluded_keys = (
@@ -1189,6 +1203,190 @@ def _route_category_lines(link: RouteLink, route: pd.DataFrame) -> list[str]:
     ]
 
 
+# ------------------------------------------------------------------ 8-2 Wafer 경로 값 가르기
+
+
+@dataclass(frozen=True)
+class Required:
+    """리비전 1 로 다시 계산한 `RQ_REQB` 행별 결과. 실패하면 예외 종류만 남는다."""
+
+    frame: pd.DataFrame | None
+    failure: str | None = None
+
+
+def _calculate_required(tables: dict[str, pd.DataFrame]) -> Required:
+    try:
+        return Required(frame=_required_equipment(tables))
+    except Exception as exc:  # 기준정보 오류면 계산이 멈춘다. 종류만 적는다
+        return Required(frame=None, failure=_failure(exc))
+
+
+def _wafer_route_tables(cells: RouteCells) -> list[str]:
+    split_rows = [
+        [f"`{count.attribute}`", _count(count.splits), _count(count.fails), _count(count.trivial)]
+        for count in split_route_cells(cells)
+    ]
+    fold_rows: list[list[str]] = []
+    for factor in WAFER_ROUTE_FACTORS:
+        fold = fold_route_cells(cells, route_factor_values(cells.frame, factor), label=factor.label)
+        fold_rows.append(
+            [
+                f"`{fold.label}`",
+                _count(fold.testable),
+                _count(fold.constant),
+                _count(fold.divided),
+                _count(fold.multiplied),
+            ]
+        )
+    addend = fold_route_addend(cells)
+    return [
+        "갈리는 칸을 무엇이 가르나 — 칸 안에서 그 칸 값마다 `WF수(매)` 가 한 값이면 "
+        "「가름」, 칸 값이 행마다 달라 저절로 그렇게 된 것은 「자명」(증거가 못 된다).",
+        "",
+        *_table(["칸", "가름", "못 가름", "자명"], split_rows),
+        "",
+        "경로 칸으로 나누거나 곱하면 한 값이 되나 — 갈리는 칸 가운데 모든 행에 그 칸 "
+        "값(양수)이 있는 칸만 본다. 「÷ 로 한 값」이 `값이 다 있는 칸` − `칸 안에서 한 값` 에 "
+        "가까우면 원천 경로 값 = 계획 줄 값 × 그 칸이다(칸 안의 비만 보므로 그 칸의 "
+        "단위·배율과 무관하다).",
+        "",
+        *_table(
+            [
+                "경로 칸",
+                "값이 다 있는 칸",
+                "칸 안에서 한 값(가를 수 없음)",
+                "÷ 로 한 값",
+                "× 로 한 값",
+            ],
+            fold_rows,
+        ),
+        "",
+        f"- `{WAFER_ROUTE_ADDEND}`(같은 단위) — 모든 행에 값이 있는 갈리는 칸 "
+        f"{addend.testable:,} 가운데 빼면 한 값 {addend.subtracted:,} · 더하면 한 값 "
+        f"{addend.added:,}",
+        "",
+    ]
+
+
+def _wafer_route_comparison(
+    core: pd.DataFrame,
+    tables: dict[str, pd.DataFrame],
+    required: Required,
+    grain: Sequence[str],
+    contract: CoreDataContract,
+) -> list[str]:
+    column = "WF수(매)"
+    if required.frame is None:
+        return [f"- 신규 계산 {required.failure} — 경로 키로 맞대지 않았다", ""]
+    route = _route_frame(core)
+    wf_route = route.loc[route["소요기준"].eq("WF").fillna(False).astype(bool)]
+    fresh = required.frame
+    wf_fresh = fresh.loc[
+        normalize_demand_basis(fresh["소요기준"]).eq("WF").fillna(False).astype(bool)
+    ].copy()
+    finest = [*grain, *REQB_COLUMNS]
+
+    def compared(new_column: str) -> pd.DataFrame:
+        if new_column not in wf_fresh.columns:
+            wf_fresh[new_column] = measured_wafer_load(wf_fresh, tables)
+        metric = LegacyMetric(label="Wafer 경로", legacy_column=column, new_column=new_column)
+        return compare_metric(wf_route, wf_fresh, metric, contract, keys=REQB_COLUMNS, grain=finest)
+
+    results = [
+        _guarded("WF 경로 키 13 · 신규 `부하량`", lambda: compared("부하량")),
+        _guarded(
+            "WF 경로 키 13 · 신규 `부하량 × Lot 측정률 × WF측정률`",
+            lambda: compared("측정 반영 부하량"),
+        ),
+    ]
+    lines = [
+        "신규와 경로 키 13 으로 맞대기 — 소요기준 WF 경로만(CHIP·PKG 경로의 `부하량` 은 "
+        "Wafer 가 아니다). 같은 경로 반복은 접고 Pack Code 는 더한다(소요대수와 같은 접기). "
+        "둘째 줄은 측정률을 부하 쪽으로 옮긴 값이다(소요대수가 실제로 나누는 부하).",
+        "",
+        *_table(_DIFFERENCE_HEADERS, [_difference_row(result) for result in results]),
+        "",
+    ]
+    ratio_rows = [
+        _ratio_row(f"기존÷신규 · {result.label}", ratio_distribution(result.comparison))
+        for result in results
+        if result.comparison is not None
+    ]
+    if ratio_rows:
+        lines.extend([*_table(_RATIO_HEADERS, ratio_rows), ""])
+    path = results[0].comparison
+    if path is None:
+        return lines
+    frame = ratio_groups(path).frame
+    link = RouteLink.build(frame, wf_route)
+    rows: list[list[str]] = []
+    for factor in WAFER_ROUTE_FACTORS:
+        agreement = factor_agreement(frame, route_factor_by_key(link, factor), label=factor.label)
+        rows.append(
+            [
+                f"`{agreement.label}`",
+                _count(agreement.keys),
+                _count(agreement.off_one),
+                _count(agreement.near_factor),
+                _count(agreement.near_inverse),
+                _count(agreement.near_one),
+            ]
+        )
+    lines.extend(
+        [
+            "기존÷신규(`부하량`)가 경로 칸을 따라가나 — 경로 키마다 그 키 원천 경로 행의 칸 "
+            f"값(중앙)과 견준다. **이 표의 ≈ 는 ±{TIGHT_TOLERANCE:.1%}** 다(위 표들의 "
+            f"±{NEAR_TOLERANCE:.0%} 가 아니다). `≈ 칸` 이 `칸 ≠1 인 키` 에 가까우면 원천 경로 "
+            "값 = 신규 계획 줄 Wafer × 그 칸이다.",
+            "",
+            *_table(
+                ["경로 칸", "키", "칸 ≠1 인 키", "그 가운데 기존÷신규 ≈ 칸", "≈ 1÷칸", "≈1"],
+                rows,
+            ),
+            "",
+        ]
+    )
+    return lines
+
+
+def _wafer_route_section(
+    core: pd.DataFrame,
+    tables: dict[str, pd.DataFrame],
+    required: Required,
+    grain: Sequence[str],
+    contract: CoreDataContract,
+) -> list[str]:
+    """Wafer `WF수(매)` 를 경로 단위로 본다(2026-10-10 사용자 결정).
+
+    원천 안에서 경로 값이 무엇으로 갈리는지 가르고, 신규 계산과 경로 키 13 으로 맞댄다.
+    """
+    column = "WF수(매)"
+    lines = [
+        "**Wafer `WF수(매)` 경로 값** — 위 표의 Wafer `값 불일치` 는 계획 줄 × WF 구분 안에서 "
+        "경로 행마다 `WF수(매)` 가 갈려서다(계획 줄 값이 아니라 경로 값). 신규 계산에는 경로마다 "
+        "갈리는 Wafer 값이 없다 — 소요기준 WF 경로의 `부하량` 은 계획 줄(Pack Code 합산) × "
+        "WF 구분의 Wafer 부하량을 그 계획 줄의 모든 WF 경로에 같은 값으로 붙인 것이고, 측정률은 "
+        "대당 Capa 의 분모로만 든다. 그래서 원천 경로 값이 무엇으로 갈리는지를 개수로 가른다.",
+        "",
+    ]
+    if not _filled(core, column):
+        return [*lines, "- 원천 `WF수(매)` 가 비어 있다", ""]
+    spread, cells = route_cells(core, column, grain)
+    lines.extend(
+        [
+            f"- 계획 줄 × WF 구분 칸 {spread.cells:,} 가운데 값이 갈리는 칸 {spread.split:,}(위 "
+            f"`값 불일치` 가 여기서 난다) · 경로 행(Area_Name 있음)·양수만 남기면 칸 "
+            f"{spread.route_cells:,} 가운데 ±{ROUTE_SPLIT_TOLERANCE:.1%} 를 넘게 갈리는 칸 "
+            f"**{spread.route_split:,}** — 아래 두 표는 이 칸만 본다",
+            "",
+        ]
+    )
+    if spread.route_split:
+        lines.extend(_wafer_route_tables(cells))
+    lines.extend(_wafer_route_comparison(core, tables, required, grain, contract))
+    return lines
+
+
 def _with_raw_columns(
     core: pd.DataFrame, raw: pd.DataFrame, columns: Sequence[str]
 ) -> pd.DataFrame:
@@ -1277,7 +1475,11 @@ def check_legacy(session: Session) -> list[str]:
         )
     lines.extend([*_table(_DIFFERENCE_HEADERS, [_difference_row(r) for r in load_results]), ""])
 
-    lines.extend(_requirement_section(_with_raw_columns(core, raw, ROUTE_CATEGORIES), tables))
+    required = _calculate_required(tables)
+    lines.extend(_wafer_route_section(core, tables, required, grain, contract))
+    lines.extend(
+        _requirement_section(_with_raw_columns(core, raw, ROUTE_CATEGORIES), tables, required)
+    )
     lines.extend(_pcb_section(raw, core, grain))
     lines.extend(
         [

@@ -39,7 +39,7 @@ from capa_simulation.services.equipment_contract import (
     PARENT_EQUIPMENT_COLUMN,
 )
 from capa_simulation.services.legacy_comparison import COMPARISONS
-from capa_simulation.services.required_equipment import REQB_COLUMNS
+from capa_simulation.services.required_equipment import LOAD_KEYS, REQB_COLUMNS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -372,6 +372,89 @@ def test_the_sixty_fold_group_is_localized_by_counts_only(
     assert re.search(rf"\| 모듈수 \| 전부 \|.*\| {mi_keys} / {suspects} \| {wf_agree} \|", output)
     # 원천 범주 칸 — 표지값 모델명 하나를 두 무리가 같이 쓴다(값은 적지 않는다).
     assert "| `모델명` | 1 / 1 / 0 | 1 | 0 (0키) | 0 | - |" in output
+
+
+def _plant_route_wafers(path: Path) -> int:
+    """경로 행의 `WF수(매)` 를 신규 계획 줄 Wafer 부하량 × `Step수` 로 다시 싣는다(STEP 마다 2·3·4).
+
+    계획 행은 그대로 둔다 — 사내처럼 같은 계획 줄 × WF 구분 안에서 경로마다 값이 갈린다. 계획 줄
+    값을 신규 계산으로 두므로 경로 키 맞대기의 기존÷신규가 그 경로의 Step수 가 된다. 돌려주는 것은
+    갈리는 계획 줄 × WF 구분 칸 수.
+    """
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation, _, _ = checks._open_read_only(path)
+    source = checks.load_source(session)
+    session.close()
+    assert source is not None
+    core = build_q_core_data(source.raw, load_core_data_contract())
+    required = checks._required_equipment(source.tables)
+    plan = [key for key in LOAD_KEYS if key != "소요기준"]
+    wafer = required.loc[required["소요기준"].eq("WF")]
+    loads = _keyed(wafer, plan).assign(부하량=wafer["부하량"].to_numpy()).drop_duplicates(plan)
+    routes = core.loc[core["Area_Name"].notna()]
+    merged = _keyed(routes, plan).assign(_행=routes.index).merge(loads, on=plan, how="inner")
+    steps = {step: count for count, step in enumerate(sorted(routes["STEP_SEQ"].unique()), 2)}
+    merged["Step수"] = routes.loc[merged["_행"], "STEP_SEQ"].map(steps).to_numpy()
+    with duckdb.connect(str(path)) as connection:
+        row_numbers = [
+            int(row[0])
+            for row in connection.execute(
+                "SELECT source_row_no FROM raw_data.core_data ORDER BY source_row_no"
+            ).fetchall()
+        ]
+        connection.executemany(
+            'UPDATE raw_data.core_data SET "Step수" = ?, "WF수(매)" = ? WHERE source_row_no = ?',
+            [
+                [str(step), float(load) * step, row_numbers[int(index)]]
+                for index, load, step in zip(
+                    merged["_행"], merged["부하량"], merged["Step수"], strict=True
+                )
+            ],
+        )
+    return int(merged.loc[merged["부하량"].gt(0), plan].drop_duplicates().shape[0])
+
+
+def _keyed(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
+    """맞대기용 키 — 글자는 앞뒤 공백을 떼고 월은 정수 글자로."""
+    keyed = pd.DataFrame(
+        {key: frame[key].astype("string").str.strip() for key in keys}, index=frame.index
+    )
+    keyed["생산계획년월"] = pd.to_numeric(frame["생산계획년월"]).astype("Int64").astype("string")
+    return keyed
+
+
+def test_route_wafer_values_are_split_by_the_column_that_carries_them(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """원천 경로 `WF수(매)` 가 Step수 를 따라 갈리면 가르기 표와 신규 맞대기가 그 칸을 짚는다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    cells = _plant_route_wafers(path)
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "**Wafer `WF수(매)` 경로 값**" in output
+    # 계획 줄 대조는 그대로 남고, 이제 값 불일치로 떨어진다.
+    assert re.search(r"\| Wafer `WF수\(매\)` \| 0 \|.*\| \d+ \| 0 \| 0 \|", output)
+    assert (
+        f"- 계획 줄 × WF 구분 칸 {cells} 가운데 값이 갈리는 칸 {cells}(위 `값 불일치` 가 여기서 "
+        f"난다) · 경로 행(Area_Name 있음)·양수만 남기면 칸 {cells} 가운데 ±0.1% 를 넘게 갈리는 칸 "
+        f"**{cells}**"
+    ) in output
+    # Step수 는 경로마다 하나라 「자명」이고, 계획 줄 칸 안에서 한 값인 Para 는 가르지 못한다.
+    assert f"| `Step수` | 0 | 0 | {cells} |" in output
+    assert f"| `Para` | 0 | {cells} | 0 |" in output
+    # Step수 로 나누면 모든 칸이 한 값이 된다. 칸 안에서 한 값인 Side반영률 은 가를 수 없다.
+    assert f"| `Step수` | {cells} | 0 | {cells} | 0 |" in output
+    assert f"| `Side반영률` | {cells} | {cells} | 0 | 0 |" in output
+    assert "| `Lot 측정률` | " in output
+    # 신규(계획 줄 Wafer)와 경로 키로 맞대면 기존÷신규가 WF 경로의 Step수 를 따라간다. 측정률은
+    # 1 이 아니어도 따라가지 않는다.
+    assert "| WF 경로 키 13 · 신규 `부하량` |" in output
+    assert re.search(r"\| `Step수` \| (\d+) \| \1 \| \1 \| 0 \| 0 \|", output)
+    assert re.search(r"\| `WF측정률` \| (\d+) \| \1 \| 0 \| 0 \| 0 \|", output)
 
 
 def test_every_formal_comparison_has_a_new_calculation() -> None:

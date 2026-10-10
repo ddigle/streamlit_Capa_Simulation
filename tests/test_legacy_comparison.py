@@ -28,27 +28,42 @@ from capa_simulation.services.legacy_comparison import (
     GROUP_COLUMN,
     MANY_VALUES,
     OTHER_GROUP,
+    RATIO_COLUMN,
     SUSPECT_GROUP,
+    WAFER_ROUTE_FACTORS,
+    AddendFold,
+    FactorAgreement,
+    FactorFold,
     FormulaInput,
     LegacyMetric,
     ProcessConsistency,
+    RouteFactor,
     RouteLink,
+    RouteValueSpread,
     ScalingCheck,
     attach_formula_inputs,
     compare_metric,
     describe_ratios,
     difference_distribution,
+    factor_agreement,
+    fold_route_addend,
+    fold_route_cells,
     folded_route_totals,
     group_spread,
     input_applies,
     legacy_grain,
+    measured_wafer_load,
     median_ratio,
     plan_line_keys,
     process_consistency,
     ratio_distribution,
     ratio_groups,
+    route_cells,
+    route_factor_by_key,
+    route_factor_values,
     scaling_check,
     split_mixed_processes,
+    split_route_cells,
     summarize_comparison,
 )
 from capa_simulation.services.required_equipment import REQB_COLUMNS
@@ -497,3 +512,159 @@ def test_route_totals_fold_repeats_and_sum_pack_codes() -> None:
     totals = folded_route_totals(frame, route, "일 필요", legacy_grain(CONTRACT))
 
     assert totals.tolist() == [5.0, 4.0]
+
+
+# ------------------------------------------------------------------ Wafer 경로 값 가르기
+
+
+def _route_row(
+    product: str,
+    process: str,
+    area: str | None,
+    basis: str | None,
+    value: float,
+    **extra: object,
+) -> dict[str, object]:
+    """원천 한 행 — 계획 줄 키는 `_plan_row` 와 같고 경로 칸을 더한다. `area` 가 없으면 계획 행."""
+    return {
+        "생산계획년월": 202608,
+        "제품정보": product,
+        "Stack": "8H",
+        "WF 구분": "Core",
+        **_PLAN_DEFAULTS,
+        "Area_Name": area,
+        "공정": process,
+        "STEP_SEQ": f"{process}-S1",
+        "MCP_SEQ": "1A",
+        "소요기준": basis,
+        "Para": "1",
+        "WF측정률": 0.5,
+        "Lot 측정률": 1.0,
+        "WF수(매)": value,
+        **extra,
+    }
+
+
+def _wafer_routes() -> pd.DataFrame:
+    """계획 줄 셋. 원천 경로 값 = 계획 줄 값 × Step수 로 갈리게 심는다.
+
+    - A — 계획 행(100) + 경로 넷(Step수 2·3·4·3). Step수 3 이 둘이라 Step수 가 「가름」이다.
+    - B — 경로 둘(Step수 2·3), `Lot 측정률` 이 비었다 — 그 후보로는 판정할 수 없다.
+    - C — 경로 값이 모두 같고 0 인 행 하나 — 0 만 빼면 갈리지 않는다.
+    """
+    rows = [
+        _route_row("A", "-", None, None, 100.0),
+        _route_row("A", "P1", "Main", "CHIP", 200.0, Step수="2"),
+        _route_row("A", "P2", "Main", "WF", 300.0, Step수="3"),
+        _route_row("A", "P3", "MI", "CHIP", 400.0, Step수="4"),
+        _route_row("A", "P4", "Main", "WF", 300.0, Step수="3"),
+        _route_row("B", "P1", "Main", "CHIP", 100.0, Step수="2", **{"Lot 측정률": None}),
+        _route_row("B", "P2", "Main", "WF", 150.0, Step수="3", **{"Lot 측정률": None}),
+        _route_row("C", "P1", "Main", "CHIP", 70.0, Step수="2"),
+        _route_row("C", "P2", "Main", "WF", 70.0, Step수="3"),
+        _route_row("C", "P3", "MI", "CHIP", 0.0, Step수="4"),
+    ]
+    return pd.DataFrame(rows)
+
+
+def _factor(label: str) -> RouteFactor:
+    return next(factor for factor in WAFER_ROUTE_FACTORS if factor.label == label)
+
+
+def test_route_cells_count_the_split_that_plan_rows_and_zeros_do_not_explain() -> None:
+    spread, cells = route_cells(_wafer_routes(), "WF수(매)", legacy_grain(CONTRACT))
+
+    # 셋 모두 `compare_metric` 이 접지 못하는 칸이다. 그 가운데 C 는 0 행만 빼면 한 값이다.
+    assert spread == RouteValueSpread(cells=3, split=3, route_cells=3, route_split=2)
+    assert len(cells.frame) == 8  # 계획 행과 0 행은 빠진다
+
+
+def test_route_splits_are_told_by_the_attribute_that_carries_the_factor() -> None:
+    _, cells = route_cells(_wafer_routes(), "WF수(매)", legacy_grain(CONTRACT))
+
+    splits = {
+        count.attribute: (count.splits, count.fails, count.trivial)
+        for count in split_route_cells(cells, ["소요기준", "Step수", "Para", "없는 칸"])
+    }
+
+    # A 의 CHIP 경로 둘은 값이 다르다(못 가름). B 는 경로마다 소요기준이 달라 저절로 갈린다(자명).
+    assert splits == {"소요기준": (0, 1, 1), "Step수": (1, 0, 1), "Para": (0, 2, 0)}
+
+
+def test_dividing_by_the_carrying_column_folds_every_split_cell() -> None:
+    _, cells = route_cells(_wafer_routes(), "WF수(매)", legacy_grain(CONTRACT))
+
+    def fold(label: str) -> FactorFold:
+        factor = _factor(label)
+        return fold_route_cells(cells, route_factor_values(cells.frame, factor), label=label)
+
+    assert fold("Step수") == FactorFold("Step수", testable=2, constant=0, divided=2, multiplied=0)
+    # 칸 안에서 한 값인 칸은 무엇으로 나눠도 갈림이 남는다.
+    assert fold("WF측정률") == FactorFold(
+        "WF측정률", testable=2, constant=2, divided=0, multiplied=0
+    )
+    # B 에는 Lot 측정률이 없다 — 판정할 수 있는 칸은 A 하나다. 곱 후보도 같다.
+    assert fold("Lot 측정률").testable == 1
+    assert fold("Lot 측정률 × WF측정률") == FactorFold(
+        "Lot 측정률 × WF측정률", testable=1, constant=1, divided=0, multiplied=0
+    )
+    # 원천에 없는 칸은 판정할 칸이 없다.
+    assert fold("Shot수").testable == 0
+
+
+def test_a_same_unit_column_is_tried_by_subtraction() -> None:
+    frame = pd.DataFrame(
+        [
+            _route_row("A", f"P{index}", "Main", "WF", 100.0 + test, **{"TEST WF수(매)": test})
+            for index, test in enumerate((0.0, 10.0, 20.0))
+        ]
+    )
+    _, cells = route_cells(frame, "WF수(매)", legacy_grain(CONTRACT))
+
+    assert fold_route_addend(cells) == AddendFold(testable=1, subtracted=1, added=0)
+    assert fold_route_addend(cells, "없는 칸") == AddendFold(testable=0, subtracted=0, added=0)
+
+
+def test_factor_agreement_tells_following_from_inverse_and_unrelated() -> None:
+    frame = pd.DataFrame({RATIO_COLUMN: [3.0, 2.0, 1.0, 0.5, 1.0, 2.0]})
+    factor = pd.Series([3.0, 2.0, 1.0, 2.0, 4.0, None])
+
+    agreement = factor_agreement(frame, factor, label="Step수")
+
+    # 후보가 1 인 키는 가를 수 없고, 후보가 빈 키는 세지 않는다.
+    assert agreement == FactorAgreement(
+        label="Step수", keys=5, off_one=4, near_factor=2, near_inverse=1, near_one=1
+    )
+
+
+def test_route_factors_are_read_per_key_from_the_source_route_rows() -> None:
+    frame = ratio_groups(_sixty_fold_paths()).frame.iloc[:2]
+    first, second = frame.loc[:, REQB_COLUMNS].to_dict("records")
+    route = pd.DataFrame(
+        [
+            {**first, "Lot 측정률": 0.5, "WF측정률": 0.4},
+            {**first, "Lot 측정률": 0.5, "WF측정률": 0.4},
+            {**second, "Lot 측정률": "글자", "WF측정률": 0.4},
+        ]
+    )
+
+    values = route_factor_by_key(RouteLink.build(frame, route), _factor("Lot 측정률 × WF측정률"))
+
+    assert values.iloc[0] == pytest.approx(0.2)
+    assert pd.isna(values.iloc[1])
+
+
+def test_measured_wafer_load_moves_the_measurement_ratios_onto_the_load() -> None:
+    """측정률은 대당 Capa 의 분모다. 비었거나 0 이면 계산과 같이 1.0 이다."""
+    keys = ratio_groups(_sixty_fold_paths()).frame.loc[:, REQB_COLUMNS].iloc[:3]
+    required = keys.assign(부하량=[10.0, 10.0, 10.0])
+    performance = [key for key in REQB_COLUMNS if key not in {"Capa Code", "Customer", "CS"}]
+    ratios = keys.loc[:, performance].drop(columns="소요기준")
+    tables = {
+        "RQ_LOT_RATIO": ratios.iloc[:2].assign(**{"Lot 측정률": [0.5, 0.0]}),
+        "RQ_WF_RATIO": ratios.iloc[:1].assign(WF측정률=[0.4]),
+    }
+
+    load = measured_wafer_load(required, tables)
+
+    assert load.tolist() == pytest.approx([2.0, 10.0, 10.0])
