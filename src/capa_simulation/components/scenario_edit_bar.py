@@ -96,6 +96,20 @@ def pending_edit_labels(current_page: str | None) -> list[str]:
     return labels
 
 
+def forget_pending_edits() -> None:
+    """원본을 바꾸는 동작(사이드바 팝업의 불러오기·저장·되돌리기, 조회기간 적용)이 성공한 뒤 부른다.
+
+    적용하지 않은 편집은 원본이 바뀌면 다음 회차에 페이지가 비운다
+    (`reset_editors_on_source_change`). 그런데 사이드바(`app.py`)는 페이지보다 먼저 돌아, 그
+    회차에는 아직 비우기 전의 편집표를 「적용 전 편집」으로 센다. 전에는 사이드바 버튼이 앱 전체
+    실행 한가운데서 `st.rerun()` 해 페이지 위젯 값이 버려졌으므로 드러나지 않았는데, 팝업
+    (프래그먼트) 안의 동작은 페이지 위젯을 건드리지 않아 패널 맨 위 경고가 한 회차 남았다
+    (2026-10-10 브라우저 실측). 목록을 비워 두면 페이지가 다음 회차에 비운 뒤 다시 적는다 — 그 사이
+    사이드바는 버려질 편집을 세지 않는다.
+    """
+    st.session_state.pop(_PENDING_REGISTRY_KEY, None)
+
+
 def pending_edits_notice(labels: Sequence[str]) -> str:
     """사이드바 조건 패널 맨 위 주황 한 줄. 시나리오·조회기간 두 줄이 함께 쓴다.
 

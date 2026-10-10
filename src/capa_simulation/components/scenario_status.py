@@ -34,7 +34,10 @@ import capa_simulation.settings as settings
 from capa_simulation.components.capacity_gate import revision_save_verdict
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.intro_summary import latest_official_revision
-from capa_simulation.components.scenario_edit_bar import pending_edit_labels
+from capa_simulation.components.scenario_edit_bar import (
+    forget_pending_edits,
+    pending_edit_labels,
+)
 from capa_simulation.components.scenario_management import (
     revision_tables_for_save,
     revision_virtual_product_rows,
@@ -189,6 +192,18 @@ def open_scenario_dialog() -> None:
 def close_scenario_dialog() -> None:
     """팝업을 닫는다 — X·바깥 클릭·Esc(`on_dismiss`)와 성공한 동작이 부른다."""
     st.session_state.pop(SCENARIO_DIALOG_KEY, None)
+
+
+def _finish(flash: str) -> None:
+    """원본을 바꾼 동작(불러오기·저장·되돌리기)의 끝. 알림을 남기고 팝업을 닫고 앱을 다시 돌린다.
+
+    적용하지 않은 편집 목록도 비운다 — 다음 회차에 페이지가 그 편집을 버리기 전에 사이드바가 먼저
+    「적용 전 편집」으로 세지 않게(`scenario_edit_bar.forget_pending_edits`).
+    """
+    st.session_state[SIDEBAR_FLASH_KEY] = flash
+    forget_pending_edits()
+    close_scenario_dialog()
+    st.rerun()
 
 
 def scenario_dialog_is_open() -> bool:
@@ -385,9 +400,7 @@ def _render_load(
         discard_unsaved_scenario_changes(
             get_effective_reference_tables(), get_effective_reference_version()
         )
-        st.session_state[SIDEBAR_FLASH_KEY] = "저장하지 않은 편집을 버렸습니다."
-        close_scenario_dialog()
-        st.rerun()
+        _finish("저장하지 않은 편집을 버렸습니다.")
     if load_clicked:
         try:
             snapshot = load_scenario_snapshot(
@@ -397,13 +410,11 @@ def _render_load(
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"리비전을 불러오지 못했습니다: {bootstrap_error_message(exc)}")
             return
-        st.session_state[SIDEBAR_FLASH_KEY] = (
+        _finish(
             f"{snapshot.scenario.scenario_name} "
             f"r{snapshot.revision.revision_no}"
             f"{object_particle(str(snapshot.revision.revision_no))} 불러왔습니다."
         )
-        close_scenario_dialog()
-        st.rerun()
 
 
 def _pending_edits_notice(pending_edits: Sequence[str]) -> str:
@@ -520,16 +531,14 @@ def _render_revision_save(
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"신규 리비전을 저장하지 못했습니다: {bootstrap_error_message(exc)}")
         return
-    st.session_state[SIDEBAR_FLASH_KEY] = (
+    if verdict.message:
+        st.session_state[SIDEBAR_FLASH_WARNING_KEY] = verdict.message
+    st.session_state[SAVE_FORM_GENERATION_KEY] = save_form_generation() + 1
+    _finish(
         f"신규 리비전 r{snapshot.revision.revision_no}"
         f"{object_particle(str(snapshot.revision.revision_no))} 저장했습니다."
         + virtual_product_save_notice(len(virtual_products))
     )
-    if verdict.message:
-        st.session_state[SIDEBAR_FLASH_WARNING_KEY] = verdict.message
-    st.session_state[SAVE_FORM_GENERATION_KEY] = save_form_generation() + 1
-    close_scenario_dialog()
-    st.rerun()
 
 
 def save_form_generation() -> int:

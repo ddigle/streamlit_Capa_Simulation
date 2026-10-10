@@ -25,7 +25,10 @@ from streamlit.delta_generator import DeltaGenerator
 # AppTest 에 없다). 이름을 직접 import 하면 교체를 무시하므로 부를 때 모듈에서 찾는다.
 import capa_simulation.components.month_range_picker as month_range_picker
 from capa_simulation.components.condition_field import condition_field
-from capa_simulation.components.scenario_edit_bar import pending_edit_labels
+from capa_simulation.components.scenario_edit_bar import (
+    forget_pending_edits,
+    pending_edit_labels,
+)
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.page_bootstrap import PAGE_DIALOG_SUFFIX, forget_page_dialogs
 from capa_simulation.scenario_preset_state import MONTH_PICKER_KEY, MONTH_RANGE_KEY
@@ -151,7 +154,11 @@ def render_period_dialog_body(*, page_file: str | None) -> None:
         "「적용」을 눌러야 화면이 이 기간으로 바뀝니다."
     )
     if st.button("적용", key=PERIOD_APPLY_KEY, type="primary", icon=":material/check:"):
-        st.session_state[MONTH_RANGE_KEY] = (selected_start, selected_end)
+        if (selected_start, selected_end) != (start, end):
+            st.session_state[MONTH_RANGE_KEY] = (selected_start, selected_end)
+            # 기간이 바뀌면 편집표의 원본이 바뀌어 다음 회차에 페이지가 적용하지 않은 편집을 버린다.
+            # 그 전에 사이드바가 버려질 편집을 세지 않게 목록을 비운다.
+            forget_pending_edits()
         close_period_dialog()
         st.rerun()
 

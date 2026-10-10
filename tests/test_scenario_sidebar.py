@@ -283,9 +283,13 @@ def test_the_dialog_selects_and_loads_another_revision(sidebar_app: AppTest) -> 
     app = app.selectbox(key=SIDEBAR_SCENARIO_KEY).select("scenario-2").run()
     assert app.radio(key=SIDEBAR_REVISION_KEY).value == "revision-2"
 
+    # 적용하지 않은 편집 목록은 페이지가 다음 회차에 편집표를 비우기 전에 사이드바가 먼저 센다.
+    # 불러오기가 원본을 바꿨으니 목록을 비워 패널 맨 위 경고가 한 회차 남지 않게 한다.
+    app.session_state["scenario_pending_edit_registry"] = {"reference_data.py": ()}
     app = app.button(key="sidebar_load_revision").click().run()
 
     assert not app.exception
+    assert "scenario_pending_edit_registry" not in app.session_state
     assert app.session_state["test_activated_revision"] == "revision-2"
     # 불러오기는 보는 내용을 바꾸므로 HOME 토글을 푸는 경로다.
     assert app.session_state["test_activation_path"] == "바꾸기"
