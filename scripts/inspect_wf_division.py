@@ -85,8 +85,9 @@ def _ref_data_coverage(connection: duckdb.DuckDBPyConnection) -> None:
     total_count = int(total[0]) if total and total[0] is not None else 0
     covered_count = int(covered[0]) if covered and covered[0] is not None else 0
     print(
-        f"ref_data 에 리비전 표 사본이 있는 데이터셋 {covered_count:,} / 전체 {total_count:,} — "
-        "나머지는 사본 없이 rev_data(리비전)에만 있다(B3 뒤 만든 것·0033 이 사본을 지운 것)\n"
+        f"ref_data 에 리비전 표 사본이 남은 데이터셋 {covered_count:,} / 전체 {total_count:,} — "
+        "남은 것은 리비전 1 과 달라 0033 이 남긴 사본(결함 아님), "
+        "나머지는 rev_data(리비전)에만 있다\n"
     )
 
 

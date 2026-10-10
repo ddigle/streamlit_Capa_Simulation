@@ -97,8 +97,9 @@ def _ref_data_coverage(connection: duckdb.DuckDBPyConnection) -> None:
     )
     covered = _scalar(connection, f"SELECT count(*) FROM ({datasets})")
     print(
-        f"ref_data 에 리비전 표 사본이 있는 데이터셋 {covered:,} / 전체 {total:,} — "
-        "나머지는 사본 없이 rev_data(리비전)에만 있다(B3 뒤 만든 것·0033 이 사본을 지운 것)"
+        f"ref_data 에 리비전 표 사본이 남은 데이터셋 {covered:,} / 전체 {total:,} — "
+        "남은 것은 리비전 1 과 달라 0033 이 남긴 사본(결함 아님), "
+        "나머지는 rev_data(리비전)에만 있다"
     )
     print()
 
