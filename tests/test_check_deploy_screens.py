@@ -288,20 +288,6 @@ def test_an_io_error_that_is_not_a_lock_is_not_a_user_app(tmp_path: Path) -> Non
         screens.locked_databases([broken], connect=connect)
 
 
-@pytest.mark.parametrize(
-    ("message", "expected"),
-    [
-        ('IO Error: Could not set lock on file "x": Conflicting lock (PID 4412)', True),
-        ("IO Error: File is already open in python.exe (PID 12)", True),
-        ('IO Error: Cannot open file "x": 다른 프로세스가 파일을 사용 중', True),
-        ("IO Error: The file is not a valid DuckDB database file!", False),
-    ],
-)
-def test_lock_errors_are_told_apart(message: str, expected: bool) -> None:
-    assert screens.is_lock_error(duckdb.IOException(message)) is expected
-    assert screens.is_lock_error(ValueError(message)) is False
-
-
 def test_a_real_closed_database_is_not_locked(tmp_path: Path) -> None:
     path = tmp_path / "x.duckdb"
     duckdb.connect(str(path)).close()
@@ -451,7 +437,8 @@ def test_a_busy_port_is_2(monkeypatch: pytest.MonkeyPatch) -> None:
 
     args = screens.parse_args(["--port", "8559"])
 
-    assert screens.preflight(args) == screens.EXIT_NOT_READY
+    result = screens.preflight(args)
+    assert result is not None and result[0] == screens.EXIT_NOT_READY
 
 
 def test_an_unexpected_exception_is_2_with_only_its_type(
@@ -518,6 +505,7 @@ def _app(
     port_open: bool = False,
     seen: dict[str, Any] | None = None,
     child_paths: tuple[Path, Path] = EXPECTED_PATHS,
+    contain: bool = False,
 ) -> StreamlitApp:
     clock = _Clock()
 
@@ -533,7 +521,7 @@ def _app(
         port_probe=lambda port: port_open,
         path_probe=lambda env, root: child_paths,
         start_timeout=5,
-        contain=False,
+        contain=contain,
         clock=clock,
         sleep=clock.sleep,
     )
@@ -847,7 +835,12 @@ class _Run:
     """가짜 앱·브라우저로 main 을 끝까지 돌린다(Playwright·실제 앱 없이)."""
 
     def __init__(
-        self, monkeypatch: pytest.MonkeyPatch, items: list[Item], *, problem: str | None = None
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        items: list[Item],
+        *,
+        problem: str | None = None,
+        fail_start: bool = False,
     ) -> None:
         self.calls: list[str] = []
         calls = self.calls
@@ -859,6 +852,8 @@ class _Run:
                 self.port_released = True
 
             def __enter__(self) -> FakeApp:
+                if fail_start:
+                    raise AppStartError("앱이 5초 안에 답하지 않았습니다")
                 calls.append("start")
                 return self
 
@@ -950,6 +945,308 @@ def test_ctrl_c_inside_an_item_still_stops_the_app(
         screens.main(["--playwright-dir", str(tmp_path)])
 
     assert run.calls == ["start", "stop"]
+
+
+# ---------------------------------------------------------------------------------- 세 번째 리뷰
+
+
+def test_deferral_is_3_so_it_cannot_be_mistaken_for_a_kill_or_a_crash() -> None:
+    # Windows `TerminateProcess` 와 파이썬의 처리 안 된 예외는 1 로 끝난다.
+    assert screens.EXIT_DEFERRED == 3
+    assert {screens.EXIT_OK, screens.EXIT_NOT_READY, screens.EXIT_DEFERRED} == {0, 2, 3}
+
+
+def test_a_broken_app_import_exits_2_with_only_its_type() -> None:
+    code = (
+        "import runpy, sys; sys.modules['capa_simulation.settings'] = None; "
+        f"runpy.run_path({str(PROJECT_ROOT / 'scripts' / 'check_deploy_screens.py')!r}, "
+        "run_name='__main__')"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+
+    assert completed.returncode == 2
+    assert "앱 모듈을 불러오지 못했습니다 — " in completed.stdout
+    assert "Traceback" not in completed.stderr
+
+
+def test_a_tilde_is_expanded_once_for_both_the_check_and_the_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 검사할 때만 `~` 를 풀고 쓸 때 글자 그대로 쓰면 `<작업 폴더>\~\out.md`(저장소 안)에 쓴다.
+    workdir, home = tmp_path / "repo-root", tmp_path / "home"
+    workdir.mkdir()
+    home.mkdir()
+    monkeypatch.chdir(workdir)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+
+    code = screens.main(["--output", "~/out.md", "--playwright-dir", str(tmp_path / "no-pw")])
+
+    assert code == screens.EXIT_NOT_READY
+    assert not (workdir / "~").exists()
+    assert "멈춤 — Playwright 없음" in (home / "out.md").read_text(encoding="utf-8")
+
+
+def test_options_are_normalised_in_place(tmp_path: Path) -> None:
+    args = _args(output=tmp_path / "a" / ".." / "out.md", shots=tmp_path / "shots")
+
+    assert screens.refused_paths(args) == []
+    assert args.output == (tmp_path / "out.md").resolve()
+    assert args.shots == (tmp_path / "shots").resolve()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="대체 데이터 스트림은 Windows(NTFS)만")
+def test_an_alternate_data_stream_is_refused(tmp_path: Path) -> None:
+    args = _args(output=Path(str(tmp_path / "x.md") + ":stream"))
+
+    assert screens.refused_paths(args) == ["--output"]
+
+
+def test_an_existing_file_with_another_hard_link_is_refused(tmp_path: Path) -> None:
+    original = tmp_path / "inside.md"
+    original.write_text("", encoding="utf-8")
+    alias = tmp_path / "outside.md"
+    try:
+        os.link(original, alias)
+    except OSError:
+        pytest.skip("하드 링크를 만들 수 없다")
+
+    assert screens.refused_paths(_args(output=alias)) == ["--output"]
+    assert screens.refused_paths(_args(output=tmp_path / "new.md")) == []
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        (
+            'IO Error: Could not set lock on file "x": Conflicting lock is held in python (PID 7)',
+            True,
+        ),
+        ("IO Error: File is already open in python.exe (PID 12)", True),
+        ('IO Error: Could not set lock on file "x"', True),
+        (
+            "IO Error: Corrupt database file: computed checksum 1 does not match stored checksum 2 "
+            "in block at location 12288",
+            False,
+        ),
+        ('IO Error: Could not read all bytes from file "C:\\Block\\x.duckdb": wanted=4096', False),
+        ('IO Error: Cannot open file "x.duckdb": 액세스가 거부되었습니다.', False),
+        ('IO Error: Cannot open file "x.duckdb": 다른 프로세스가 파일을 사용 중', False),
+    ],
+)
+def test_lock_errors_are_told_apart_by_fixed_phrases(message: str, expected: bool) -> None:
+    # 경로를 모르는 「Cannot open file」 은 잠금으로 보지 않는다 — 액세스 거부와 같은 꼴이다.
+    assert screens.is_lock_error(duckdb.IOException(message)) is expected
+    assert screens.is_lock_error(ValueError(message)) is False
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="공유 위반 판정은 Windows 만")
+def test_cannot_open_file_is_a_lock_only_while_another_handle_holds_the_file(
+    tmp_path: Path,
+) -> None:
+    held = tmp_path / "held.duckdb"
+    held.write_bytes(b"x")
+    message = duckdb.IOException('IO Error: Cannot open file "held.duckdb": 다른 프로세스가')
+    denied = duckdb.IOException('IO Error: Cannot open file "d": 액세스가 거부되었습니다.')
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateFileW.restype = wintypes.HANDLE
+        kernel32.CreateFileW.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        ]
+        # 공유 없이 쥔다 — 다른 프로세스가 DuckDB 파일을 쥔 것과 같은 공유 위반이 난다.
+        handle = kernel32.CreateFileW(str(held), 0x80000000, 0, None, 3, 0x80, None)
+        try:
+            assert screens.is_lock_error(message, held)
+        finally:
+            kernel32.CloseHandle(wintypes.HANDLE(handle))
+        assert not screens.is_lock_error(message, held)
+    # 디렉터리는 액세스 거부다 — 잠금이 아니다.
+    assert not screens.is_lock_error(denied, tmp_path)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="리뷰 재현은 Windows")
+def test_a_directory_in_place_of_a_database_is_not_a_user_app(tmp_path: Path) -> None:
+    folder = tmp_path / "x.duckdb"
+    folder.mkdir()
+
+    with pytest.raises(duckdb.Error):
+        screens.locked_databases([folder])
+
+
+def _stale_output(tmp_path: Path) -> Path:
+    output = tmp_path / "screens.md"
+    output.write_text("지난 실행의 블록 · DB 잠금 없음 · 끝까지 돎\n", encoding="utf-8")
+    return output
+
+
+@pytest.mark.parametrize(
+    ("scan", "locked", "line", "code"),
+    [
+        (2, [], "미룸 — 사용자 앱이 떠 있습니다", 3),
+        (None, [], "미룸 — 프로세스를 살피지 못했습니다", 3),
+        (0, [Path("x.duckdb")], "미룸 — 사용자 앱이 떠 있습니다", 3),
+        (0, "broken", "멈춤 — DB 를 열지 못했습니다(IOException)", 2),
+    ],
+)
+def test_an_early_end_replaces_the_last_output_with_one_fixed_line(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    scan: int | None,
+    locked: object,
+    line: str,
+    code: int,
+) -> None:
+    _ready_for_preflight(monkeypatch)
+    monkeypatch.setattr(screens, "running_app_count", lambda: scan)
+
+    def lock_check(paths: object) -> object:
+        if locked == "broken":
+            raise duckdb.IOException("broken")
+        return locked
+
+    monkeypatch.setattr(screens, "locked_databases", lock_check)
+    output = _stale_output(tmp_path)
+
+    assert screens.main(["--playwright-dir", str(tmp_path), "--output", str(output)]) == code
+
+    text = output.read_text(encoding="utf-8")
+    assert text == screens.status_block(line)
+    assert "지난 실행" not in text and "DB 잠금 없음" not in text
+
+
+def test_an_app_that_does_not_start_leaves_a_fixed_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _Run(monkeypatch, [Item("ok", "읽기 항목", lambda screen: "있음")], fail_start=True)
+    output = _stale_output(tmp_path)
+
+    code = screens.main(["--playwright-dir", str(tmp_path), "--output", str(output)])
+
+    assert code == screens.EXIT_NOT_READY
+    assert output.read_text(encoding="utf-8") == screens.status_block(
+        "멈춤 — 앱이 뜨지 않았습니다: 앱이 5초 안에 답하지 않았습니다"
+    )
+
+
+def test_items_skipped_by_the_budget_make_the_run_fail(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    called: list[str] = []
+
+    def item(screen: Screen) -> str:
+        called.append("item")
+        return "있음"
+
+    items = [Item("a", "첫 항목", item), Item("b", "둘째 항목", item)]
+    _Run(monkeypatch, items)
+
+    code = screens.main(["--playwright-dir", str(tmp_path), "--budget-minutes", "0"])
+
+    out = capsys.readouterr().out
+    assert code == screens.EXIT_NOT_READY
+    assert called == []
+    assert "**예산 넘어 2 항목 안 돎**" in out and "끝까지 돎" not in out
+
+
+def test_the_browser_context_has_a_default_timeout() -> None:
+    timeouts: list[int] = []
+
+    class TimedBrowser(_FakeBrowser):
+        def new_context(self, **options: Any) -> SimpleNamespace:
+            return SimpleNamespace(set_default_timeout=timeouts.append, new_page=lambda: "page")
+
+    api = SimpleNamespace(sync_playwright=lambda: _FakeDriver(TimedBrowser()))
+
+    with screens.open_browser(api, "chrome"):
+        pass
+
+    assert timeouts == [screens.ACTION_TIMEOUT_MS]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Job Object 는 Windows 만")
+def test_no_job_means_no_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(screens, "_create_kill_on_close_job", lambda: None)
+    seen: dict[str, Any] = {}
+
+    with pytest.raises(AppStartError, match="Job"), _app(_FakeProcess(), seen=seen, contain=True):
+        pass
+
+    assert seen == {}
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Job Object 는 Windows 만")
+def test_a_suspended_child_that_cannot_join_the_job_is_killed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed: list[int] = []
+    monkeypatch.setattr(screens, "_create_kill_on_close_job", lambda: 77)
+    monkeypatch.setattr(screens, "_adopt_and_resume", lambda job, process: False)
+    monkeypatch.setattr(screens, "_close_job", closed.append)
+    process = _FakeProcess()
+    seen: dict[str, Any] = {}
+
+    with pytest.raises(AppStartError, match="Job"), _app(process, seen=seen, contain=True):
+        pass
+
+    assert seen["creationflags"] & screens._CREATE_SUSPENDED
+    assert "kill" in process.calls
+    assert closed == [77]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Job Object 는 Windows 만")
+def test_an_error_between_start_and_resume_still_kills_the_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken(job: int, process: object) -> bool:
+        raise RuntimeError("깨우기 전 실패")
+
+    monkeypatch.setattr(screens, "_create_kill_on_close_job", lambda: 77)
+    monkeypatch.setattr(screens, "_adopt_and_resume", broken)
+    monkeypatch.setattr(screens, "_close_job", lambda job: None)
+    process = _FakeProcess()
+
+    with pytest.raises(RuntimeError), _app(process, contain=True):
+        pass
+
+    assert "kill" in process.calls
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="PR_SET_PDEATHSIG 는 Linux 만")
+def test_linux_containment_failure_stops_the_start() -> None:
+    def popen(command: list[str], **options: Any) -> _FakeProcess:
+        assert options["preexec_fn"] is screens._die_with_parent
+        raise subprocess.SubprocessError("Exception occurred in preexec_fn.")
+
+    app = StreamlitApp(
+        8559,
+        popen=popen,
+        probe=lambda url: True,
+        port_probe=lambda port: False,
+        path_probe=lambda env, root: EXPECTED_PATHS,
+    )
+
+    with pytest.raises(AppStartError), app:
+        pass
+
+    assert app.contained is False
 
 
 # ---------------------------------------------------------------------------------- 화면 계약

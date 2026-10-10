@@ -19,13 +19,16 @@ shadow root 안이라 `document.querySelector` 로 닿지 않는다(로케이터
 1분 넘게 걸린다(사외 합성 표본에서 앱 기동·입장 화면 포함 약 1분, 사내 실데이터는 더). 에이전트는
 앞단 호출 제한(10분)에 걸리지 않게 **백그라운드로** 돌리고 `--output` 파일을 읽는다.
 
-**종료 코드.** 0 끝까지 돎 · 1 미룸(사용자 앱이 떠 있거나, 떠 있는지 살피지 못함 — 앱을 끄지
-않는다. 이 뜻에만 쓴다) · 2 그 밖 모두(경로·Playwright·포트·DB 를 열지 못함·앱 기동·앱 오류 화면·
-브라우저·예상 밖 예외 — 예외는 종류만 찍는다).
+**종료 코드.** 0 끝까지 돎 · 2 준비 안 됨·멈춤(경로·Playwright·포트·DB 를 열지 못함·앱 기동·
+앱 오류 화면·브라우저·예산 넘음·예상 밖 예외 — 예외는 종류만 찍는다) · 3 미룸(사용자 앱이 떠 있거나,
+떠 있는지 살피지 못함 — 앱을 끄지 않는다). 미룸을 1 로 두지 않는 것은 강제 종료와 파이썬의 처리 안
+된 예외가 1 로 끝나기 때문이다. `--output` 은 경로 검사를 지나면 곧바로 「확인 시작 — 아직 항목
+없음」으로 덮어쓰고(지난 실행의 블록이 남지 않게), 일찍 끝나면 「미룸 — …」·「멈춤 — …」 한 줄로,
+항목이 돌면 그때마다 전체 블록으로 바꾼다.
 
 **하는 일.** 사용자 앱이 떠 있는지 먼저 본다 — `streamlit run … app.py` 프로세스, 그리고
 두 DuckDB 를 열 수 있는지. 있으면 「사용자 앱이 떠 있습니다 — 화면 확인은 미룹니다」 한 줄과
-코드 1 로 멈춘다(사용자 앱은 절대 끄지 않는다). 앱은 rerun 동안만 DB 를 쥐어 가만히 떠 있는
+코드 3 으로 멈춘다(사용자 앱은 절대 끄지 않는다). 앱은 rerun 동안만 DB 를 쥐어 가만히 떠 있는
 앱은 잠금 확인을 지나치므로 프로세스를 함께 본다(살피지 못하면 없다고 넘기지 않고 미룬다).
 그다음 `127.0.0.1:--port` 에 이 저장소의 앱을 따로 띄우고(자식의 `PYTHONPATH` 맨 앞에 이
 저장소의 `src` — 사전 확인과 같은 DB 를 여는지 띄우기 전에 견준다) `/_stcore/health` 를 기다린
@@ -89,31 +92,38 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Final, Protocol
 
-import duckdb
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from capa_simulation.components.theme_toggle import (  # noqa: E402
-    GUIDE_BUTTON_ID,
-    PRINT_BUTTON_ID,
-    THEME_BUTTON_ID,
-    TOOLBAR_BUTTON_ORDER,
-)
-from capa_simulation.persistence._sql_helpers import lock_holder_pid  # noqa: E402
-from capa_simulation.persistence.equipment_migration_runner import (  # noqa: E402
-    load_equipment_migrations,
-)
-from capa_simulation.persistence.migration_runner import load_migrations  # noqa: E402
-from capa_simulation.settings import (  # noqa: E402
-    DEPLOY_STATE_PATH,
-    DUCKDB_PATH,
-    EQUIPMENT_DUCKDB_PATH,
-)
+# 앱 모듈을 못 부르면(가상환경·배포 어긋남) 종류만 찍고 2 로 끝낸다. 그냥 두면 traceback 과 함께
+# 1 로 끝난다.
+try:
+    import duckdb
+
+    from capa_simulation.components.theme_toggle import (  # noqa: E402
+        GUIDE_BUTTON_ID,
+        PRINT_BUTTON_ID,
+        THEME_BUTTON_ID,
+        TOOLBAR_BUTTON_ORDER,
+    )
+    from capa_simulation.persistence._sql_helpers import lock_holder_pid  # noqa: E402
+    from capa_simulation.persistence.equipment_migration_runner import (  # noqa: E402
+        load_equipment_migrations,
+    )
+    from capa_simulation.persistence.migration_runner import load_migrations  # noqa: E402
+    from capa_simulation.settings import (  # noqa: E402
+        DEPLOY_STATE_PATH,
+        DUCKDB_PATH,
+        EQUIPMENT_DUCKDB_PATH,
+    )
+except Exception as _import_error:  # noqa: BLE001 — 종류만 찍는다
+    print(f"앱 모듈을 불러오지 못했습니다 — {type(_import_error).__name__}")
+    raise SystemExit(2) from None
 
 EXIT_OK: Final = 0
-# 미룬다 — 사용자 앱이 떠 있거나(프로세스·DB 잠금) 떠 있는지 살피지 못했다. 이 뜻에만 쓴다.
-EXIT_DEFERRED: Final = 1
+# 미룬다 — 사용자 앱이 떠 있거나(프로세스·DB 잠금) 떠 있는지 살피지 못했다. 이 뜻에만 쓴다. 1 이
+# 아닌 것은 강제 종료(`TerminateProcess`)와 처리 안 된 예외가 1 로 끝나기 때문이다.
+EXIT_DEFERRED: Final = 3
 # 그 밖 모두 — 경로·Playwright·포트·DB 를 열지 못함·앱 기동·앱 오류 화면·브라우저·예상 밖 예외.
 EXIT_NOT_READY: Final = 2
 
@@ -164,10 +174,32 @@ TOOLBAR_LABELS: Final[dict[str, str]] = {
 
 # ---------------------------------------------------------------------------------- 경로
 
+# 경로 옵션(옵션 이름, argparse 속성).
+_PATH_OPTIONS: Final = (
+    ("--output", "output"),
+    ("--shots", "shots"),
+    ("--playwright-dir", "playwright_dir"),
+)
+
 
 def _device_or_unc(text: str) -> bool:
     """`\\\\?\\…`·`\\\\.\\…`·`\\\\localhost\\C$\\…` 같은 장치·UNC 꼴인가."""
     return text.startswith(("\\\\", "//"))
+
+
+def _stream_or_link(path: Path) -> bool:
+    """Windows 대체 데이터 스트림(`파일:스트림`) 꼴이거나, 이미 있는 파일인데 하드 링크가 둘
+    이상인가.
+
+    둘 다 저장소 밖 이름으로 저장소 안 파일을 가리킬 수 있다 — 스트림은 그 파일에 붙고, 하드 링크는
+    같은 파일이다. 어느 저장소 파일과 이어졌는지 다 찾을 수 없으니 그 꼴이면 거절한다.
+    """
+    if sys.platform == "win32" and ":" in os.path.splitdrive(str(path))[1]:
+        return True
+    try:
+        return path.is_file() and path.stat().st_nlink > 1
+    except OSError:
+        return False
 
 
 def inside_repository(path: Path, root: Path = PROJECT_ROOT) -> bool:
@@ -175,14 +207,14 @@ def inside_repository(path: Path, root: Path = PROJECT_ROOT) -> bool:
 
     장치·UNC 꼴은 앞머리가 다른 드라이브처럼 보여 문자열 비교를 빠져나가므로
     (`\\\\?\\C:\\<저장소>`, `\\\\localhost\\C$\\<저장소>`) 어디를 가리키든 거절한다 — 저장소 밖이면
-    드라이브 경로로 주면 된다.
-    그 밖에는 ① 정규화한 문자열로 견주고(아직 없는 경로) ② 가장 깊은 있는 조상과 그 위 조상들을
-    `os.path.samefile` 로 저장소 루트와 견준다(드라이브 별칭·연결 폴더). Windows 는 대소문자를
-    가리지 않으므로 `normcase` 로 견준다.
+    드라이브 경로로 주면 된다. 그 밖에는 ① 정규화한 문자열로 견주고(아직 없는 경로) ② 가장 깊은 있는
+    조상과 그 위 조상들을 `os.path.samefile` 로 저장소 루트와 견준다(드라이브 별칭·연결 폴더).
+    Windows 는 대소문자를 가리지 않으므로 `normcase` 로 견준다. `~` 는 풀지 않는다 — 옵션 값은
+    `refused_paths` 가 한 번 풀어 둔 것을 쓰므로 검사와 쓰기가 같은 경로를 본다.
     """
     if _device_or_unc(str(path)):
         return True
-    resolved = path.expanduser().resolve()
+    resolved = path.resolve()
     target = os.path.normcase(os.path.abspath(resolved))
     base = os.path.normcase(os.path.abspath(root.resolve()))
     if target == base or target.startswith(base.rstrip("\\/") + os.sep):
@@ -204,13 +236,30 @@ def inside_repository(path: Path, root: Path = PROJECT_ROOT) -> bool:
 
 
 def refused_paths(args: argparse.Namespace, root: Path = PROJECT_ROOT) -> list[str]:
-    """거절할 경로 옵션의 이름. 비어 있어야 돈다. 경로 자체는 찍지 않는다."""
-    named = (
-        ("--output", args.output),
-        ("--shots", args.shots),
-        ("--playwright-dir", args.playwright_dir),
-    )
-    return [name for name, value in named if value is not None and inside_repository(value, root)]
+    """경로 옵션을 한 번 정규화하고(`expanduser().resolve()`) 거절할 옵션 이름을 돌려준다.
+
+    정규화한 값을 `args` 에 다시 넣는다 — 검사·폴더 만들기·쓰기·Playwright 가 모두 그 값을 쓴다
+    (`~\\out.md` 를 검사할 때만 풀고 쓸 때는 글자 그대로 쓰면
+    `<작업 폴더>\\~\\out.md` 가 된다). 경로 자체는 찍지 않는다.
+    """
+    refused: list[str] = []
+    for flag, name in _PATH_OPTIONS:
+        raw = getattr(args, name)
+        if raw is None:
+            continue
+        if _device_or_unc(str(raw)) or _stream_or_link(Path(raw)):
+            refused.append(flag)
+            continue
+        try:
+            value = Path(raw).expanduser().resolve()
+        except (OSError, RuntimeError):
+            refused.append(flag)
+            continue
+        if _device_or_unc(str(value)) or _stream_or_link(value) or inside_repository(value, root):
+            refused.append(flag)
+            continue
+        setattr(args, name, value)
+    return refused
 
 
 # ---------------------------------------------------------------------------------- 준비
@@ -233,14 +282,59 @@ def load_playwright(directory: Path) -> Any | None:
         return None
 
 
-def is_lock_error(exc: BaseException) -> bool:
-    """DuckDB 의 잠금 오류인가 — 다른 프로세스가 파일을 쥐었다. 깨진 파일 같은 다른 IO 오류는
-    아니다. 잠금 문구는 쥔 프로세스(`(PID n)`)를 적고, Windows 는 가끔 그것 없이 공유 위반
-    (「Cannot open file」)만 준다(`_sql_helpers` 와 같은 판정)."""
+# DuckDB 잠금 오류의 고정 문구. 「lock」 부분 문자열로는 가리지 않는다 — 깨진 파일 문구의
+# 「… in block at location …」 과 경로 속 글자에도 걸린다.
+_LOCK_PHRASES: Final = ("Could not set lock on file", "Conflicting lock")
+# Windows 공유·잠금 위반(`ERROR_SHARING_VIOLATION`·`ERROR_LOCK_VIOLATION`).
+_SHARING_ERRORS: Final = (32, 33)
+
+
+def _sharing_violation(path: Path) -> bool:
+    """Windows: 그 파일을 공유 셋 다 허락하고 열어 공유·잠금 위반이 나는가 — 다른 프로세스가 쥐었다.
+
+    열리거나 다른 오류(액세스 거부·디렉터리 등)면 잠금이 아니다.
+    """
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    generic_read, share_all, open_existing, normal = 0x80000000, 0x1 | 0x2 | 0x4, 3, 0x80
+    handle = kernel32.CreateFileW(
+        str(path), generic_read, share_all, None, open_existing, normal, None
+    )
+    if handle is None or handle == wintypes.HANDLE(-1).value:
+        return ctypes.get_last_error() in _SHARING_ERRORS
+    kernel32.CloseHandle(wintypes.HANDLE(handle))
+    return False
+
+
+def is_lock_error(exc: BaseException, path: Path | None = None) -> bool:
+    """DuckDB 의 잠금 오류인가 — 다른 프로세스가 파일을 쥐었다.
+
+    쥔 프로세스(`(PID n)`)를 적거나 DuckDB 잠금 고정 문구면 잠금이다. Windows 는 가끔 그것 없이
+    「Cannot open file …」 만 주는데 액세스 거부·디렉터리도 같은 꼴이라, 경로를 알면 그 파일을 직접
+    열어 공유 위반인지 본다. 그 밖(깨진 파일 등)은 잠금이 아니다 — 사용자 앱 탓이 아니다.
+    """
     if not isinstance(exc, duckdb.IOException):
         return False
+    if lock_holder_pid(exc) is not None:
+        return True
     text = str(exc)
-    return lock_holder_pid(exc) is not None or "lock" in text.lower() or "Cannot open file" in text
+    if any(phrase in text for phrase in _LOCK_PHRASES):
+        return True
+    return path is not None and "Cannot open file" in text and _sharing_violation(path)
 
 
 def locked_databases(
@@ -249,7 +343,7 @@ def locked_databases(
     """다른 프로세스가 잡고 있는 DB. DuckDB 는 프로세스 배타 잠금이라 `read_only` 로도 못 연다.
 
     없는 파일은 건너뛴다(앱이 처음 열 때 만든다). 연 연결은 바로 닫는다 — 띄울 앱이 열어야 한다.
-    잠금이 아닌 오류(깨진 파일 등)는 그대로 올린다 — 사용자 앱 탓이 아니다.
+    잠금이 아닌 오류(깨진 파일·액세스 거부 등)는 그대로 올린다 — 사용자 앱 탓이 아니다.
     """
     locked: list[Path] = []
     for path in paths:
@@ -258,7 +352,7 @@ def locked_databases(
         try:
             connection = connect(str(path), read_only=True)
         except duckdb.IOException as exc:
-            if not is_lock_error(exc):
+            if not is_lock_error(exc, path):
                 raise
             locked.append(path)
             continue
@@ -572,8 +666,9 @@ def _create_kill_on_close_job() -> int | None:
 
 
 def _adopt_and_resume(job: int, process: Any) -> bool:
-    """멈춘 채 만든 프로세스를 잡에 넣고 깨운다. 잡에 못 넣어도 깨운다(앱은 돈다). 깨우지 못하면
-    False — 부른 쪽이 그 프로세스를 끝낸다."""
+    """멈춘 채 만든 프로세스를 잡에 넣고 깨운다. 잡에 넣지 못했거나 깨우지 못하면 False — 부른 쪽이
+    그 프로세스를 끝낸다(잡 밖에서 앱을 돌리지 않는다). 깨우기는 `ntdll.NtResumeProcess` 다(문서에
+    없는 진입점이지만 널리 쓰이고 테스트가 실제로 돌린다)."""
     if sys.platform != "win32":
         return False
     import ctypes
@@ -581,7 +676,8 @@ def _adopt_and_resume(job: int, process: Any) -> bool:
 
     handle = wintypes.HANDLE(int(process._handle))
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.AssignProcessToJobObject(wintypes.HANDLE(job), handle)
+    if not kernel32.AssignProcessToJobObject(wintypes.HANDLE(job), handle):
+        return False
     ntdll = ctypes.WinDLL("ntdll")
     return int(ntdll.NtResumeProcess(handle)) == 0
 
@@ -597,13 +693,15 @@ def _close_job(job: int) -> None:
 
 
 def _die_with_parent() -> None:
-    """Linux: 이 스크립트가 끝나면 자식 앱도 SIGTERM 을 받는다(`PR_SET_PDEATHSIG`)."""
-    try:
-        import ctypes
+    """Linux: 이 스크립트가 끝나면 자식 앱도 SIGTERM 을 받는다(`PR_SET_PDEATHSIG`). 자식에서 돈다.
 
-        ctypes.CDLL(None).prctl(1, signal.SIGTERM)
-    except (OSError, AttributeError):
-        pass
+    걸지 못하면 예외를 올린다 — `Popen` 이 `SubprocessError` 로 끝나 앱이 묶이지 않은 채 돌지
+    않는다.
+    """
+    import ctypes
+
+    if ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGTERM) != 0:
+        raise OSError(ctypes.get_errno(), "prctl(PR_SET_PDEATHSIG)")
 
 
 class StreamlitApp:
@@ -672,17 +770,32 @@ class StreamlitApp:
             options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
             if self._contain:
                 self._job = _create_kill_on_close_job()
-                if self._job is not None:
-                    options["creationflags"] |= _CREATE_SUSPENDED
+                if self._job is None:
+                    raise AppStartError("확인용 앱을 Job 에 넣지 못했습니다(잡을 만들지 못함)")
+                options["creationflags"] |= _CREATE_SUSPENDED
         elif self._contain and sys.platform.startswith("linux"):
             options["preexec_fn"] = _die_with_parent
-            self.contained = True
-        self.process = self._popen(app_command(self.port), **options)
+        try:
+            self.process = self._popen(app_command(self.port), **options)
+        except (OSError, subprocess.SubprocessError) as exc:
+            self._release_job()
+            raise AppStartError(f"확인용 앱을 띄우지 못했습니다({type(exc).__name__})") from None
         if self._job is not None:
-            if not _adopt_and_resume(self._job, self.process):
+            # 멈춘 채 만든 자식은 잡에 들어가 깨어날 때까지 아무 일도 하지 않는다. 그 사이 무엇이
+            # 실패하든 그 자식을 끈다 — 잡 밖에서 앱을 돌리지 않는다.
+            try:
+                adopted = _adopt_and_resume(self._job, self.process)
+            except BaseException:
                 self.process.kill()
                 self.stop()
-                raise AppStartError("멈춰 띄운 앱을 깨우지 못했습니다")
+                raise
+            if not adopted:
+                self.process.kill()
+                self.stop()
+                raise AppStartError("확인용 앱을 Job 에 넣지 못했습니다")
+            self.contained = True
+        elif self._contain and sys.platform.startswith("linux"):
+            # `_die_with_parent` 가 실패했으면 `Popen` 이 위에서 이미 끝났다.
             self.contained = True
         try:
             self._wait_ready(began)
@@ -713,6 +826,11 @@ class StreamlitApp:
                 raise AppStartError(f"앱이 {self._start_timeout:.0f}초 안에 답하지 않았습니다")
             self._sleep(1.0)
 
+    def _release_job(self) -> None:
+        if self._job is not None:
+            _close_job(self._job)
+            self._job = None
+
     def stop(self) -> None:
         process = self.process
         if process is not None and process.poll() is None:
@@ -729,10 +847,8 @@ class StreamlitApp:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=STOP_TIMEOUT_SECONDS)
-        if self._job is not None:
-            # 잡을 닫아 남은 자식(venv 런처가 띄운 본 해석기 등)까지 끝낸다.
-            _close_job(self._job)
-            self._job = None
+        # 잡을 닫아 남은 자식(venv 런처가 띄운 본 해석기 등)까지 끝낸다.
+        self._release_job()
         if process is None:
             return
         # 띄운 쪽이 끝나도 자식이 포트를 잠깐 더 쥘 수 있어, 포트가 비는 것까지 본다.
@@ -1134,7 +1250,7 @@ def run_items(
         started = clock()
         if item.writes and not allow_writes:
             outcome = Outcome(item, SKIPPED_NO_PERMISSION)
-        elif started > deadline:
+        elif started >= deadline:
             outcome = Outcome(item, OVER_BUDGET)
         else:
             try:
@@ -1154,6 +1270,11 @@ def run_items(
 
 # ---------------------------------------------------------------------------------- 결과 꼴
 
+BLOCK_COMMENT: Final = (
+    "<!-- check_deploy_screens.py — 아래 블록을 리뷰 문서 7장 화면 확인 절에 그대로 붙인다 -->"
+)
+BLOCK_TITLE: Final = "### 화면 확인 (에이전트 · `check_deploy_screens.py`)"
+
 
 @dataclass
 class RunFacts:
@@ -1170,6 +1291,8 @@ class RunFacts:
     applied_migrations: tuple[int, int] | None = None
     # 입장 뒤 앱이 오류 화면이면 그 꼴(「앱 오류 화면 있음」 등). 그때 항목은 돌지 않는다.
     app_problem: str | None = None
+    # 앱을 띄운 뒤 멈춘 까닭(고정 글자와 예외 종류만). 그때 남은 항목은 돌지 않았다.
+    stop_reason: str | None = None
     started_seconds: float = 0.0
     entered_seconds: float = 0.0
     elapsed_seconds: float = 0.0
@@ -1203,13 +1326,23 @@ def _migration_note(facts: RunFacts) -> str:
     return "마이그레이션 — 세지 못함"
 
 
+def over_budget_count(outcomes: Sequence[Outcome]) -> int:
+    return sum(outcome.result == OVER_BUDGET for outcome in outcomes)
+
+
 def render_block(outcomes: Sequence[Outcome], *, total: int, facts: RunFacts) -> str:
-    """리뷰 문서에 그대로 붙이는 블록. 끊긴 실행·앱 오류 화면이면 셋째 머리 줄이 그렇게 말한다."""
+    """리뷰 문서에 그대로 붙이는 블록. 사전 확인을 지난 실행에만 쓴다(머리의 「DB 잠금 없음」 등은
+    그 뒤에만 참이다). 앱 오류 화면·멈춤·예산 넘음·끊긴 실행이면 셋째 머리 줄이 그렇게 말한다."""
     recorded = sum(outcome.recorded for outcome in outcomes)
     skipped = sum(outcome.result == SKIPPED_NO_PERMISSION for outcome in outcomes)
     missing = len(outcomes) - recorded - skipped
+    over = over_budget_count(outcomes)
     if facts.app_problem is not None:
         state = f"**{facts.app_problem} — 항목 안 돎**"
+    elif facts.stop_reason is not None:
+        state = f"**{facts.stop_reason}**"
+    elif over:
+        state = f"**예산 넘어 {over} 항목 안 돎**"
     elif len(outcomes) == total:
         state = "끝까지 돎"
     else:
@@ -1217,9 +1350,9 @@ def render_block(outcomes: Sequence[Outcome], *, total: int, facts: RunFacts) ->
     scan = "프로세스 봄" if facts.process_scan == "봄" else "프로세스 무시(--ignore-other-apps)"
     width, height = VIEWPORT
     lines = [
-        "<!-- check_deploy_screens.py — 아래 블록을 리뷰 문서 7장 화면 확인 절에 그대로 붙인다 -->",
+        BLOCK_COMMENT,
         "",
-        "### 화면 확인 (에이전트 · `check_deploy_screens.py`)",
+        BLOCK_TITLE,
         "",
         f"- 헤드리스 {_browser_name(facts.channel)} {width}×{height} · 별도 포트에 띄운 앱"
         f"({APP_ADDRESS}) · {facts.stamp} · "
@@ -1238,6 +1371,12 @@ def render_block(outcomes: Sequence[Outcome], *, total: int, facts: RunFacts) ->
         cell = outcome.result.replace("|", "/").replace("\n", " ")
         lines.append(f"| {outcome.item.title} | {writes} | {cell} |")
     return "\n".join(lines) + "\n"
+
+
+def status_block(line: str) -> str:
+    """사전 확인 전·일찍 끝난 실행의 블록 — 머리와 고정 문구 한 줄뿐이다. 전체 머리(「DB 잠금 없음」
+    등)는 그 확인을 지난 뒤에만 참이라 여기서는 쓰지 않는다."""
+    return "\n".join([BLOCK_COMMENT, "", BLOCK_TITLE, "", f"- {line}"]) + "\n"
 
 
 def render_item_list(items: Sequence[Item]) -> str:
@@ -1606,8 +1745,9 @@ def _pending(snapshot: tuple[frozenset[int], ...]) -> tuple[int, int]:
     return counts[0], counts[1]
 
 
-def preflight(args: argparse.Namespace) -> int | None:
-    """띄우기 전 확인 — 사용자 앱(프로세스·DB 잠금)과 포트. 막히면 종료 코드, 아니면 None.
+def preflight(args: argparse.Namespace) -> tuple[int, str] | None:
+    """띄우기 전 확인 — 사용자 앱(프로세스·DB 잠금)과 포트. 막히면 (종료 코드, `--output` 한 줄),
+    아니면 None.
 
     사용자 앱은 끄지 않는다. 다른 사람이 쓰고 있을 수 있다(런북 7장). 프로세스를 살피지 못하면
     없다고 넘기지 않는다 — 가만히 떠 있는 앱은 DB 잠금에 안 잡힌다.
@@ -1616,21 +1756,21 @@ def preflight(args: argparse.Namespace) -> int | None:
         running = running_app_count()
         if running is None:
             print(SCAN_FAILED_MESSAGE)
-            return EXIT_DEFERRED
+            return EXIT_DEFERRED, "미룸 — 프로세스를 살피지 못했습니다"
         if running:
             print(DEFERRED_MESSAGE)
-            return EXIT_DEFERRED
+            return EXIT_DEFERRED, "미룸 — 사용자 앱이 떠 있습니다"
     try:
         locked = locked_databases((DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH))
     except duckdb.Error as exc:
         print(f"DB 를 열지 못했습니다 — {type(exc).__name__}")
-        return EXIT_NOT_READY
+        return EXIT_NOT_READY, f"멈춤 — DB 를 열지 못했습니다({type(exc).__name__})"
     if locked:
         print(DEFERRED_MESSAGE)
-        return EXIT_DEFERRED
+        return EXIT_DEFERRED, "미룸 — 사용자 앱이 떠 있습니다"
     if port_in_use(args.port):
         print(f"포트 {args.port} 를 이미 누가 쓰고 있습니다 — --port 로 빈 포트를 줍니다")
-        return EXIT_NOT_READY
+        return EXIT_NOT_READY, f"멈춤 — 포트 {args.port} 를 이미 누가 쓰고 있습니다"
     return None
 
 
@@ -1650,6 +1790,29 @@ def _prepare_folders(args: argparse.Namespace) -> bool:
     return True
 
 
+class OutputFile:
+    """`--output` 쓰기. 처음에 「확인 시작」으로 덮어써서 지난 실행의 블록이 남지 않게 하고, 일찍
+    끝나면 고정 한 줄로, 항목이 돌면 그때마다 전체 블록으로 바꾼다. 쓰지 못하면 stderr 한 줄만."""
+
+    def __init__(self, path: Path | None) -> None:
+        self.path = path
+        self.failed = False
+
+    def write_block(self, block: str) -> None:
+        if self.path is None or self.failed:
+            return
+        try:
+            self.path.write_bytes(block.encode("utf-8"))
+        except OSError as exc:
+            self.failed = True
+            _progress(
+                f"--output 에 쓰지 못했습니다 — {type(exc).__name__}(블록은 stdout 에 찍는다)"
+            )
+
+    def note(self, line: str) -> None:
+        self.write_block(status_block(line))
+
+
 def run(argv: Sequence[str] | None = None) -> int:
     began = time.monotonic()
     args = parse_args(argv)
@@ -1663,19 +1826,33 @@ def run(argv: Sequence[str] | None = None) -> int:
     refused = refused_paths(args)
     if refused:
         print(
-            f"저장소 안이거나 장치·UNC 경로(\\\\…)라 받지 않습니다 — {', '.join(refused)} 에 "
-            "저장소 밖 드라이브 경로를 줍니다"
+            "저장소 안이거나 장치·UNC·스트림·하드 링크 경로라 받지 않습니다 — "
+            f"{', '.join(refused)} 에 저장소 밖 드라이브 경로를 줍니다"
         )
         return EXIT_NOT_READY
     if not _prepare_folders(args):
         return EXIT_NOT_READY
+    output = OutputFile(args.output)
+    output.note("확인 시작 — 아직 항목 없음")
+    try:
+        return _check(args, items, began, output)
+    except Exception as exc:  # noqa: BLE001 — 문구 대신 종류만
+        print(f"예상 밖 오류로 멈췄습니다 — {type(exc).__name__}")
+        output.note(f"멈춤 — 예상 밖 오류({type(exc).__name__})")
+        return EXIT_NOT_READY
+
+
+def _check(args: argparse.Namespace, items: list[Item], began: float, output: OutputFile) -> int:
     sync_api = load_playwright(args.playwright_dir) if args.playwright_dir is not None else None
     if sync_api is None:
         print(INSTALL_HINT)
+        output.note("멈춤 — Playwright 없음")
         return EXIT_NOT_READY
     blocked = preflight(args)
     if blocked is not None:
-        return blocked
+        code, line = blocked
+        output.note(line)
+        return code
 
     deadline = began + args.budget_minutes * 60
     before = _migration_snapshot()
@@ -1687,21 +1864,12 @@ def run(argv: Sequence[str] | None = None) -> int:
         pending_migrations=None if before is None else _pending(before),
     )
     outcomes: list[Outcome] = []
-    output_failed = False
 
     def emit() -> str:
         """지금까지의 블록. `--output` 은 항목마다 다시 써서 중간에 끊겨도 돈 칸이 남는다."""
-        nonlocal output_failed
         facts.elapsed_seconds = time.monotonic() - began
         block = render_block(outcomes, total=len(items), facts=facts)
-        if args.output is not None and not output_failed:
-            try:
-                Path(args.output).write_bytes(block.encode("utf-8"))
-            except OSError as exc:
-                output_failed = True
-                _progress(
-                    f"--output 에 쓰지 못했습니다 — {type(exc).__name__}(블록은 아래에 찍는다)"
-                )
+        output.write_block(block)
         return block
 
     def record(outcome: Outcome) -> None:
@@ -1715,6 +1883,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         with StreamlitApp(args.port, start_timeout=args.start_timeout) as app:
             facts.started_seconds = app.started_seconds
             _progress(f"앱이 섰습니다({app.started_seconds:.1f}초). 브라우저로 들어갑니다 …")
+            emit()
             try:
                 with open_browser(sync_api, args.channel) as page:
                     screen = Screen(page, app.base_url, shots=args.shots)
@@ -1734,14 +1903,18 @@ def run(argv: Sequence[str] | None = None) -> int:
                         )
             except Exception as exc:  # noqa: BLE001 — 브라우저·입장 실패는 까닭 종류만 알린다
                 print(f"브라우저로 들어가지 못했습니다 — {type(exc).__name__}")
+                facts.stop_reason = f"멈춤 — 브라우저로 들어가지 못했습니다({type(exc).__name__})"
                 code = EXIT_NOT_READY
     except AppStartError as exc:
         print(f"앱이 뜨지 않았습니다 — {exc}")
+        output.note(f"멈춤 — 앱이 뜨지 않았습니다: {exc}")
         return EXIT_NOT_READY
     if not app.port_released:
         _progress(
             f"확인용 앱 프로세스가 남았을 수 있습니다 — 포트 {args.port} 가 아직 열려 있습니다"
         )
+    if over_budget_count(outcomes):
+        code = EXIT_NOT_READY
     after = _migration_snapshot()
     if before is not None and after is not None:
         applied = [len(now - then) for now, then in zip(after, before, strict=True)]
@@ -1751,9 +1924,10 @@ def run(argv: Sequence[str] | None = None) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """종료 코드 — 0 끝까지 돎 · 1 미룸(사용자 앱이 떠 있거나 살피지 못함) · 2 그 밖 모두.
+    """종료 코드 — 0 끝까지 돎 · 2 준비 안 됨·멈춤 · 3 미룸(사용자 앱이 떠 있거나 살피지 못함).
 
-    예상 밖 예외는 종류만 찍고 2 로 끝낸다(문구에는 식별값이 실릴 수 있다). 1 은 미룸에만 쓴다.
+    미룸을 1 로 두지 않는 것은 강제 종료(Windows `TerminateProcess`)와 파이썬의 처리 안 된 예외가
+    1 로 끝나기 때문이다. 예상 밖 예외는 종류만 찍고 2 로 끝낸다(문구에는 식별값이 실릴 수 있다).
     `Ctrl+C` 는 그대로 올린다 — 띄운 앱은 그 사이 `with` 가 끈다.
     """
     _use_utf8_stdout()
