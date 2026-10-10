@@ -583,6 +583,27 @@ def test_a_locked_database_stops_with_the_app_running_message(
     assert SENTINEL not in output
 
 
+def test_the_ref_data_copy_line_says_whether_0033_has_run(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`0033` 이 걸렸으면 남은 사본은 「리비전 1 과 달라 남긴 것」, 아직이면 「적용 전」이다.
+
+    적용 전 DB 에서 「0033 이 남긴 사본」이라고 찍으면 지울 사본을 결함 아닌 것으로 읽게 된다."""
+    code, applied = _run(capsys, "--only", "env", "--database", str(simulation_db))
+    assert code == 0
+    assert "리비전 1 과 달라 `0033` 이 남긴 사본" in applied
+
+    before = tmp_path / "capa_simulation.duckdb"
+    before.write_bytes(simulation_db.read_bytes())
+    with duckdb.connect(str(before)) as connection:
+        connection.execute("DELETE FROM app_meta.schema_migration WHERE version = 33")
+
+    code, pending = _run(capsys, "--only", "env", "--database", str(before))
+    assert code == 0
+    assert "`0033` 적용 전 — 앱을 띄우면 리비전 1 과 같은 사본은 지워진다" in pending
+    assert "이 남긴 사본" not in pending
+
+
 def test_unknown_block_names_are_refused(capsys: pytest.CaptureFixture[str]) -> None:
     code, output = _run(capsys, "--only", "env,nope")
 

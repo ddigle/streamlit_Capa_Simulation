@@ -518,11 +518,18 @@ def check_env(session: Session, *, now: datetime, root: Path = PROJECT_ROOT) -> 
             rows.append(["데이터셋 원천 종류", _failure(exc)])
         try:
             copied, copied_rows = _ref_data_copies(simulation)
+            cleaned = simulation.execute(
+                "SELECT count(*) FROM app_meta.schema_migration WHERE version = 33"
+            ).fetchall()[0][0]
+            meaning = (
+                "리비전 1 과 달라 `0033` 이 남긴 사본. 0 이 아니어도 결함 아님"
+                if cleaned
+                else "`0033` 적용 전 — 앱을 띄우면 리비전 1 과 같은 사본은 지워진다"
+            )
             rows.append(
                 [
                     "`ref_data` 에 리비전 표 사본이 남은 데이터셋",
-                    f"{copied:,} (사본 {copied_rows:,}행 — 리비전 1 과 달라 `0033` 이 남긴 사본. "
-                    "0 이 아니어도 결함 아님)",
+                    f"{copied:,} (사본 {copied_rows:,}행 — {meaning})",
                 ]
             )
         except duckdb.Error as exc:
