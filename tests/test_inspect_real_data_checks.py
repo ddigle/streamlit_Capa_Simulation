@@ -27,7 +27,7 @@ import pytest
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.bigdataquery_catalog import CATALOG_COLUMNS
-from capa_simulation.io.company_bigdataquery_adapter import BDQ_USER_NAME_ENV
+from capa_simulation.io.company_bigdataquery_adapter import BDQ_USER_NAME_ENV, QueryWindow
 from capa_simulation.io.core_data_source import load_core_data_contract
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -465,15 +465,25 @@ def test_value_shapes_keep_the_form_and_drop_the_letters() -> None:
 
 # ------------------------------------------------------------------------------- BigDataQuery
 
-# 가짜 원천 — 코드마다 원천 등록일과, 그 코드의 행이 적재된 날(등록일 기준 며칠 뒤)·행 수.
+# 가짜 원천 — 코드마다 원천 등록일과, 그 코드의 행이 적재된 날(등록일 기준 며칠 뒤)·행 수·내용 판.
+# 같은 판이면 같은 행이다(날마다 통째로 다시 적재한 사본). 판이 바뀌면 값이 바뀐 재적재다.
 VALID_A = f"{SENTINEL}OK-A"
 VALID_B = f"{SENTINEL}OK-B"
+VALID_C = f"{SENTINEL}OK-C"
 INVALID = f"{SENTINEL} BAD CODE"
-REGISTERED = {VALID_A: date(2026, 9, 1), VALID_B: date(2026, 9, 20), INVALID: date(2026, 9, 25)}
-LOADS = {
-    VALID_A: {0: 100, 5: 20},  # +5 일 적재분 20행은 기본 창(−7~+3) 밖이다
-    VALID_B: {0: 50},
-    INVALID: {0: 10},
+REGISTERED = {
+    VALID_A: date(2026, 9, 1),
+    VALID_B: date(2026, 9, 20),
+    VALID_C: date(2026, 8, 20),
+    INVALID: date(2026, 9, 25),
+}
+LOADS: dict[str, dict[int, tuple[int, int]]] = {
+    # +5 일 적재분 20행은 기본 창(−7~+3) 밖이고 값도 바뀌었다(판 1).
+    VALID_A: {0: (100, 0), 5: (20, 1)},
+    VALID_B: {0: (50, 0)},
+    # 사내 리뷰 202610081500 8-5 의 꼴 — 등록 하루 전부터 32일 동안 같은 내용을 매일 다시 적재했다.
+    VALID_C: {offset: (40, 0) for offset in range(-1, 31)},
+    INVALID: {0: (10, 0)},
 }
 
 
@@ -482,14 +492,33 @@ def _window_of(sql: str) -> tuple[date, date]:
     return date.fromisoformat(start), date.fromisoformat(end)
 
 
-def _loaded(code: str, sql: str) -> dict[date, int]:
+def _loaded(code: str, sql: str) -> dict[date, tuple[int, int]]:
     start, end = _window_of(sql)
-    days = {REGISTERED[code] + timedelta(days=offset): rows for offset, rows in LOADS[code].items()}
-    return {day: rows for day, rows in days.items() if start <= day < end}
+    days = {REGISTERED[code] + timedelta(days=offset): load for offset, load in LOADS[code].items()}
+    return {day: load for day, load in days.items() if start <= day < end}
+
+
+def _detail_rows(code: str, rows: int, version: int) -> list[dict[str, object]]:
+    """상세 SQL 이 돌려줄 행. 계획 줄 업무 키 넷과 경로마다 다른 값 — 이름은 표지값이다."""
+    return [
+        {
+            "시뮬레이션 ID": code,
+            "생산계획년월": 202610,
+            "CS": "MP",
+            "제품정보": f"{SENTINEL}P{index % 4}",
+            "Stack": "8H",
+            "Capa Code": f"{SENTINEL}CAPA",
+            "Customer": f"{SENTINEL}CUST",
+            "Pack Code": f"{SENTINEL}PK",
+            "공정": f"{SENTINEL}S{index}",
+            "WF수(매)": float(index * 10 + version),
+        }
+        for index in range(rows)
+    ]
 
 
 def _fake_bigdataquery(
-    *, fail_load_days: bool = False, need_user: bool = False
+    *, fail_load_days: bool = False, fail_code_days: bool = False, need_user: bool = False
 ) -> types.ModuleType:
     module = types.ModuleType("bigdataquery")
     module.__spec__ = importlib.machinery.ModuleSpec("bigdataquery", None)
@@ -513,19 +542,42 @@ def _fake_bigdataquery(
                 if start <= registered < end
             ]
             return pd.DataFrame(rows, columns=list(CATALOG_COLUMNS))
-        code = re.search(r"catb_sim_info_id = '([^']+)'", param)
-        assert code is not None
-        loaded = _loaded(code.group(1), param)
+        if "GROUP BY catb_sim_info_id" in param:
+            if fail_code_days:
+                raise RuntimeError(f"AnalysisException near {SENTINEL}")
+            spans: list[dict[str, object]] = []
+            for code in REGISTERED:
+                loaded = _loaded(code, param)
+                if loaded:
+                    spans.append(
+                        {
+                            "simulation_code": code,
+                            "load_days": len(loaded),
+                            "first_day": f"{min(loaded):%Y-%m-%d}",
+                            "last_day": f"{max(loaded):%Y-%m-%d}",
+                            "row_count": sum(rows for rows, _ in loaded.values()),
+                        }
+                    )
+            return pd.DataFrame(spans)
+        found = re.search(r"catb_sim_info_id = '([^']+)'", param)
+        assert found is not None
+        loaded = _loaded(found.group(1), param)
         if "load_day" in param:
             if fail_load_days:
                 raise RuntimeError(f"AnalysisException near {SENTINEL}")
             return pd.DataFrame(
                 {
                     "load_day": [f"{day:%Y-%m-%d}" for day in loaded],
-                    "row_count": list(loaded.values()),
+                    "row_count": [rows for rows, _ in loaded.values()],
                 }
             )
-        return pd.DataFrame({"시뮬레이션 ID": [code.group(1)] * sum(loaded.values())})
+        return pd.DataFrame(
+            [
+                row
+                for rows, version in loaded.values()
+                for row in _detail_rows(found.group(1), rows, version)
+            ]
+        )
 
     module.getData = getData  # type: ignore[attr-defined]
     return module
@@ -554,38 +606,172 @@ def test_bigdataquery_block_measures_windows_without_naming_codes(
     assert code == 0
     _assert_no_leak(output)
     assert "요청자 계정(`CAPA_BDQ_USER_NAME`) 있음" in output
-    # 기본 목록(오늘−30일 ~ 오늘, 화면과 같다)은 9-20·9-25 두 코드, 366일 목록은 셋.
+    # 기본 목록(오늘−30일 ~ 오늘, 화면과 같다)은 9-20·9-25 두 코드, 366일 목록은 넷.
     assert re.search(
         r"\| 기본\(오늘−30일 ~ 오늘\) \| 31일 \| 성공 \| [\d.]+ \| 2 \| 2 \| 2 \| 아니오 \|",
         output,
     )
     assert re.search(
-        r"\| 상한 366일 \| 366일 \| 성공 \| [\d.]+ \| 3 \| 3 \| 3 \| 아니오 \|", output
+        r"\| 상한 366일 \| 366일 \| 성공 \| [\d.]+ \| 4 \| 4 \| 4 \| 아니오 \|", output
     )
-    assert "- `reg_date` dtype `object` · 빈 값 0 / 3" in output
-    assert "`9999-99-99 99:99:99` 3" in output
-    assert "코드 3개 중 1개 (빈 값 0 · 가운데 공백 1" in output
-    # 규칙을 지키는 두 코드가 표본이고, A 는 +5 일 적재분 20행을 기본 창이 놓친다.
-    assert "| 기본 창(−7~+3일) 행 = 넓은 창(±30일) 행 | 1 / 2 |" in output
-    assert "| 기본 창이 놓친 행 | 전체의 11.76% · 코드별 최대 16.67% |" in output
-    assert "| 여러 날에 나눠 적재된 코드 | 1 / 2 |" in output
-    assert "| 기본 창(−7~+3일) 밖 적재일이 있는 코드 | 1 / 2 |" in output
-    assert "| 끝 적재일 − 끝 원천 등록일(일) | 최소 0 · 최대 5 |" in output
+    assert "- `reg_date` dtype `object` · 빈 값 0 / 4" in output
+    assert "`9999-99-99 99:99:99` 4" in output
+    assert "코드 4개 중 1개 (빈 값 0 · 가운데 공백 1" in output
+    # 전 코드 적재일 — 1일(B)·2일(A)·32일(C), 규칙 위반 코드는 수로만.
+    assert re.search(
+        r"\| 조회\(목록 창 366일 전체를 GROUP BY 한 번, 사외에서 돌려 보지 못한 SQL\) \| "
+        r"성공 · [\d.]+초 \|",
+        output,
+    )
+    assert (
+        "| 코드 | 규칙을 지키고 적재일을 읽은 코드 3 (결과 코드 4 · 규칙 위반 1 · "
+        "적재일을 읽지 못함 0) |"
+    ) in output
+    assert "| 적재일 1일 · 2–5일 · 6일 이상 | 1 · 1 · 1 |" in output
+    assert "| 적재일 폭 — 여러 날 코드 | 중앙 19 · p95 30.7 · 최대 32 |" in output
+    assert (
+        "| 여러 날 코드의 적재일 수 ÷ 폭(1 이면 하루도 빠짐없이 적재) | 중앙 0.6667 · 최소 0.3333 |"
+    ) in output
+    assert "| 여러 날 코드가 차지하는 행 | 전체의 96.55% |" in output
+    assert "| 여러 날 코드 가운데 끝 적재일이 목록 창 끝날(오늘)인 코드 | 0 / 2 |" in output
+    # 규칙을 지키는 세 코드가 표본이다. A 는 +5 일 적재분 20행을, C 는 32일 가운데 27일을 기본 창이
+    # 놓친다(84.38% = 1 − 5/32, 사내 리뷰 202610081500 8-5 와 같은 꼴).
+    assert "| 기본 창(−7~+3일) 행 = 넓은 창(±30일) 행 | 1 / 3 |" in output
+    assert "| 기본 창이 놓친 행 | 전체의 75.86% · 코드별 최대 84.38% |" in output
+    assert "| 여러 날에 나눠 적재된 코드 | 2 / 3 |" in output
+    assert "| 기본 창(−7~+3일) 밖 적재일이 있는 코드 | 2 / 3 |" in output
+    assert "| 끝 적재일 − 끝 원천 등록일(일) | 최소 0 · 최대 30 |" in output
+    # 사본 여부 — C 는 본 12일이 모두 마지막 날과 같고, A 는 앞 날의 값이 바뀌어 마지막 날에 없다.
+    assert "**여러 날 적재 — 날마다 사본인가**" in output
+    assert (
+        "| 1 | 표본 | 32 | 40 · 40 · 40 | 12 | 480 → 40 | 40 | 4 / 4 | 11 / 0 (0) | 0 |" in output
+    )
+    assert (
+        "| 2 | 표본 | 2 | 20 · 60 · 100 | 2 | 120 → 120 | 20 | 4 / 4 | 0 / 1 (0) | 100 |" in output
+    )
+    assert "여러 날 코드 더함" not in output
+
+
+def test_multi_day_codes_outside_the_sample_are_added_for_the_copy_check(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """표본 하나(A)만 골라도 전 코드 조회가 찾은 여러 날 코드(C)를 더해 사본을 본다."""
+    monkeypatch.setitem(sys.modules, "bigdataquery", _fake_bigdataquery())
+
+    code, output = _run(capsys, "--only", "bdq", "--bdq-sample", "1")
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "| 표본 | 1 코드 (" in output
+    assert (
+        "| 1 | 표본 | 2 | 20 · 60 · 100 | 2 | 120 → 120 | 20 | 4 / 4 | 0 / 1 (0) | 100 |" in output
+    )
+    # 더한 코드의 창은 등록일 ±30 이 아니라 전 코드 조회의 첫·끝 적재일이다 — 32일을 다 센다.
+    assert (
+        "| 2 | 여러 날 코드 더함 | 32 | 40 · 40 · 40 | 12 | 480 → 40 | 40 | 4 / 4 | "
+        "11 / 0 (0) | 0 |"
+    ) in output
 
 
 def test_bigdataquery_failures_are_named_by_kind_only(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """새 적재일 SQL 이 사내 엔진에서 돌지 않아도 나머지는 계속하고, 엔진 문구는 내보내지 않는다."""
-    monkeypatch.setitem(sys.modules, "bigdataquery", _fake_bigdataquery(fail_load_days=True))
+    monkeypatch.setitem(
+        sys.modules,
+        "bigdataquery",
+        _fake_bigdataquery(fail_load_days=True, fail_code_days=True),
+    )
 
     code, output = _run(capsys, "--only", "bdq", "--bdq-no-max-window")
 
     assert code == 0
     _assert_no_leak(output)
     assert "상한 366일" not in output
+    assert (
+        "| 조회(목록 창 31일 전체를 GROUP BY 한 번, 사외에서 돌려 보지 못한 SQL) | "
+        "조회 실패(RuntimeError) |"
+    ) in output
     assert "0 / 1 성공 · 조회 실패(RuntimeError)" in output
     assert "| 상세 조회(앱과 같은 SQL) | 1 / 1 성공 |" in output
+    assert "- 적재일 조회가 실패해 건너뛴다." in output
+
+
+class _DayProbe:
+    """`check_copies` 만 부르는 가짜 — 날마다 정해 둔 프레임을 돌려준다."""
+
+    def __init__(self, frames: dict[date, pd.DataFrame]) -> None:
+        self.frames = frames
+        self.asked: list[date] = []
+
+    def catalog(self, window: QueryWindow) -> pd.DataFrame:
+        raise AssertionError("부르지 않는다")
+
+    def detail_rows(self, code: str, window: QueryWindow) -> int:
+        raise AssertionError("부르지 않는다")
+
+    def code_load_days(self, window: QueryWindow) -> pd.DataFrame:
+        raise AssertionError("부르지 않는다")
+
+    def load_days(self, code: str, window: QueryWindow) -> pd.DataFrame:
+        days = [day for day in self.frames if window.start_date <= day <= window.end_date]
+        return pd.DataFrame(
+            {
+                "load_day": [f"{day:%Y-%m-%d}" for day in days],
+                "row_count": [len(self.frames[day]) for day in days],
+            }
+        )
+
+    def detail_frame(self, code: str, window: QueryWindow) -> pd.DataFrame:
+        assert window.start_date == window.end_date  # 하루씩 받는다
+        self.asked.append(window.start_date)
+        return self.frames[window.start_date]
+
+
+def _plan_frame(rows: int, *, pack_codes: int = 1, as_float: bool = False) -> pd.DataFrame:
+    frame = pd.DataFrame(_detail_rows(VALID_A, rows, 0))
+    # 네 행(제품정보 넷)마다 Pack Code 가 바뀐다 — 다른 Pack Code 는 다른 계획 줄이다.
+    frame["Pack Code"] = [f"PK{index // 4 % pack_codes}" for index in range(rows)]
+    if as_float:
+        # 빈 값이 낀 날에는 정수 칸이 실수로 읽힌다 — 같은 행이어야 한다.
+        frame["생산계획년월"] = frame["생산계획년월"].astype("float64")
+    return frame
+
+
+def test_copy_check_tells_a_partial_load_from_a_copy_and_ignores_dtype_drift() -> None:
+    day1, day2, day3 = date(2026, 9, 1), date(2026, 9, 2), date(2026, 9, 3)
+    probe = _DayProbe(
+        {
+            day1: _plan_frame(10),  # 마지막 날의 일부 — 부분 적재
+            day2: _plan_frame(30, as_float=True),  # 마지막 날과 같다(dtype 만 다름)
+            day3: _plan_frame(30),
+        }
+    )
+
+    result = checks.check_copies(
+        probe, VALID_A, QueryWindow(start_date=day1, end_date=day3), extra=False
+    )
+
+    assert result.failure is None
+    assert probe.asked == [day3, day1, day2]  # 마지막 날을 먼저 받는다
+    assert (result.load_days, result.examined, result.rows, result.distinct_rows) == (3, 3, 70, 30)
+    assert (result.same_days, result.differing_days, result.subset_days) == (1, 1, 1)
+    assert result.missing_from_last == 0
+    assert (result.plan_keys, result.last_plan_keys) == (4, 4)
+
+
+def test_copy_check_counts_plan_lines_that_only_older_loads_have() -> None:
+    """나눠 적재 — 앞 날에만 있는 계획 줄은 마지막 날만 받으면 빠진다. 키 수가 그것을 보인다."""
+    day1, day2 = date(2026, 9, 1), date(2026, 9, 2)
+    probe = _DayProbe({day1: _plan_frame(8, pack_codes=2), day2: _plan_frame(4)})
+
+    result = checks.check_copies(
+        probe, VALID_A, QueryWindow(start_date=day1, end_date=day2), extra=True
+    )
+
+    assert (result.plan_keys, result.last_plan_keys) == (8, 4)
+    assert result.missing_from_last == 4
+    assert (result.same_days, result.differing_days, result.subset_days) == (0, 1, 0)
 
 
 def test_bigdataquery_without_an_account_says_what_to_set(

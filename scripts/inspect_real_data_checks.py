@@ -15,7 +15,7 @@
 | 8-2 | `legacy` | 기존 결과 컬럼과 신규 계산의 차이율·비율 분포, 소요대수 ≈60 배 가르기 |
 | 8-3 | `reqb` | 원천 `RQ_REQB` 의 소요기준별 행·공정 수 |
 | 8-4 | `equipment` | 설비 DB 의 2262-04-11 Qual·환산비 0.2 모듈 행·일정 미정·사용기준 HBM·EDP |
-| 8-5 | `bdq` | 목록 조회 시간·`reg_date` 꼴·코드 규칙 위반·기간별 행 수·표본 적재일 |
+| 8-5 | `bdq` | 목록 조회 시간·`reg_date` 꼴·코드 규칙 위반·전 코드 적재일·표본 적재일·사본 여부 |
 
 **지키는 것 셋.**
 
@@ -39,12 +39,13 @@ import math
 import re
 import sys
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections import Counter
+from collections.abc import Callable, Hashable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from functools import partial
 from pathlib import Path
-from typing import Final, Protocol, cast
+from typing import Final, Protocol, TypeVar, cast
 
 import duckdb
 import numpy as np
@@ -62,6 +63,7 @@ from capa_simulation.io.company_bigdataquery_adapter import (  # noqa: E402
     DETAIL_WINDOW_DAYS_AFTER,
     DETAIL_WINDOW_DAYS_BEFORE,
     QUERY_TEMPLATE,
+    SOURCE_COLUMN_MAPPING,
     BigDataQueryModule,
     QueryWindow,
     build_query,
@@ -263,12 +265,36 @@ WHERE impala_insert_time >= '{start_date}'
 GROUP BY substr(cast(impala_insert_time AS string), 1, 10)
 """
 
+# 목록 창 안의 **모든 코드**의 적재일 수·첫·끝 적재일·행 수를 한 번에 센다(GROUP BY 한 번).
+# 이것도 사외에서 돌려 보지 못한 SQL 이다 — 테이블·컬럼·함수는 위 적재일 조회와 같고,
+# `count(DISTINCT …)` 는 쿼리에 하나뿐이다(Impala 는 한 쿼리에 여럿을 받지 않는다). 결과에
+# 코드가 실리지만 분포로만 접고 찍지 않는다.
+CODE_LOAD_DAYS_QUERY_TEMPLATE: Final = """
+SELECT
+    catb_sim_info_id AS simulation_code,
+    count(DISTINCT substr(cast(impala_insert_time AS string), 1, 10)) AS load_days,
+    min(substr(cast(impala_insert_time AS string), 1, 10)) AS first_day,
+    max(substr(cast(impala_insert_time AS string), 1, 10)) AS last_day,
+    count(*) AS row_count
+FROM camp_tsp.campavp_catb_sim_rslt_report
+WHERE impala_insert_time >= '{start_date}'
+  AND impala_insert_time <  '{end_date}'
+GROUP BY catb_sim_info_id
+"""
+# 여러 날 적재가 사본인지 보려고 표본 밖에서 더 고르는 여러 날 코드 수, 그리고 코드마다
+# 앱 SQL 로 다시 받아 견줄 적재일 수(마지막 적재일 포함). 하루씩 받는다 — 한 번에 받으면
+# 매일 다시 적재된 코드는 적재일 수만큼 부푼 프레임(사내 표본 하나가 32일)이 메모리에 오른다.
+EXTRA_COPY_CODES: Final = 2
+COPY_CHECK_DAYS: Final = 12
+
 # 다른 시나리오에서 만든 데이터셋의 원천 종류(`components/` 의 복제·월 병합·연도 이동이 적는 값).
 DERIVED_SOURCE_TYPES: Final[tuple[str, ...]] = (
     "DUCKDB_SCENARIO_CLONE",
     "SCENARIO_MONTH_MERGE",
     "SCENARIO_YEAR_SHIFT",
 )
+
+_Picked = TypeVar("_Picked", bound=Hashable)
 
 _CODE_RULE: Final = "^[A-Za-z0-9._-]+$"
 _DEFAULT_WINDOW: Final = f"−{DETAIL_WINDOW_DAYS_BEFORE}~+{DETAIL_WINDOW_DAYS_AFTER}일"
@@ -1517,13 +1543,17 @@ def _usage_basis_line(equipment: pd.DataFrame) -> str:
 
 
 class BigDataQueryProbe(Protocol):
-    """이 스크립트가 BigDataQuery 에 묻는 세 가지. 테스트는 가짜를 넘긴다."""
+    """이 스크립트가 BigDataQuery 에 묻는 다섯 가지. 테스트는 가짜를 넘긴다."""
 
     def catalog(self, window: QueryWindow) -> pd.DataFrame: ...
 
     def detail_rows(self, code: str, window: QueryWindow) -> int: ...
 
+    def detail_frame(self, code: str, window: QueryWindow) -> pd.DataFrame: ...
+
     def load_days(self, code: str, window: QueryWindow) -> pd.DataFrame: ...
+
+    def code_load_days(self, window: QueryWindow) -> pd.DataFrame: ...
 
 
 class CompanyProbe:
@@ -1532,24 +1562,31 @@ class CompanyProbe:
     def __init__(self) -> None:
         self._module = cast(BigDataQueryModule, load_bigdataquery_module())
 
+    def _frame(self, sql: str) -> pd.DataFrame:
+        frame = call_get_data(self._module, sql)
+        if not isinstance(frame, pd.DataFrame):
+            raise TypeError("getData 반환값이 DataFrame 이 아니다")
+        return frame
+
     def catalog(self, window: QueryWindow) -> pd.DataFrame:
         return fetch_simulation_catalog(window)
 
     def detail_rows(self, code: str, window: QueryWindow) -> int:
-        frame = call_get_data(self._module, build_query(QUERY_TEMPLATE, code, window=window))
-        if not isinstance(frame, pd.DataFrame):
-            raise TypeError("getData 반환값이 DataFrame 이 아니다")
-        return int(len(frame))
+        return int(len(self.detail_frame(code, window)))
+
+    def detail_frame(self, code: str, window: QueryWindow) -> pd.DataFrame:
+        return self._frame(build_query(QUERY_TEMPLATE, code, window=window))
 
     def load_days(self, code: str, window: QueryWindow) -> pd.DataFrame:
         if not is_valid_simulation_code(code):
             raise ValueError("시뮬레이션 코드 규칙 위반")
         start, end = window.sql_bounds()
         sql = LOAD_DAYS_QUERY_TEMPLATE.format(simulation_code=code, start_date=start, end_date=end)
-        frame = call_get_data(self._module, sql)
-        if not isinstance(frame, pd.DataFrame):
-            raise TypeError("getData 반환값이 DataFrame 이 아니다")
-        return frame
+        return self._frame(sql)
+
+    def code_load_days(self, window: QueryWindow) -> pd.DataFrame:
+        start, end = window.sql_bounds()
+        return self._frame(CODE_LOAD_DAYS_QUERY_TEMPLATE.format(start_date=start, end_date=end))
 
 
 def _bdq_failure(exc: BaseException) -> str:
@@ -1719,7 +1756,7 @@ class SampleResult:
     wide_window: QueryWindow | None = None
 
 
-def _pick_evenly(items: Sequence[str], count: int) -> list[str]:
+def _pick_evenly(items: Sequence[_Picked], count: int) -> list[_Picked]:
     if count <= 0 or not items:
         return []
     if count >= len(items):
@@ -1855,6 +1892,370 @@ def _load_day_stats(results: Sequence[SampleResult]) -> list[list[str]]:
     return rows
 
 
+# -------------------------------------------------------- 8-5 전 코드 적재일 · 여러 날 사본
+
+
+def _as_day(value: object) -> date | None:
+    """적재일 문자열(`YYYY-MM-DD…`)을 날짜로. 읽지 못하면 `None`."""
+    if value is None:
+        return None
+    try:
+        stamp = pd.Timestamp(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(stamp):
+        return None
+    return stamp.date()
+
+
+@dataclass(frozen=True)
+class LoadSpan:
+    """코드 하나의 적재 — 목록 창 안에서 서로 다른 적재일 수, 첫·끝 적재일, 행 수."""
+
+    days: int
+    first: date
+    last: date
+    rows: int
+
+    @property
+    def width(self) -> int:
+        return (self.last - self.first).days + 1
+
+
+@dataclass
+class CodeLoadDays:
+    """전 코드 적재일 조회. `spans` 는 규칙을 지키고 적재일을 읽은 코드뿐이며 코드는 찍지 않는다."""
+
+    window: QueryWindow
+    spans: dict[str, LoadSpan] = field(default_factory=dict)
+    codes: int = 0
+    invalid: int = 0
+    unreadable: int = 0
+    seconds: float | None = None
+    failure: str | None = None
+
+
+def parse_code_load_days(frame: pd.DataFrame, window: QueryWindow) -> CodeLoadDays:
+    """`CODE_LOAD_DAYS_QUERY_TEMPLATE` 결과를 코드별 `LoadSpan` 으로. 나머지는 수만 센다."""
+    result = CodeLoadDays(window=window)
+    codes = frame["simulation_code"].astype("string").str.strip().fillna("")
+    days = pd.to_numeric(frame["load_days"], errors="coerce")
+    rows = pd.to_numeric(frame["row_count"], errors="coerce")
+    result.codes = int(codes.nunique())
+    for code, count, first, last, size in zip(
+        codes, days, frame["first_day"], frame["last_day"], rows, strict=True
+    ):
+        text = str(code)
+        if not is_valid_simulation_code(text):
+            result.invalid += 1
+            continue
+        first_day, last_day = _as_day(first), _as_day(last)
+        if first_day is None or last_day is None or pd.isna(count) or pd.isna(size):
+            result.unreadable += 1
+            continue
+        result.spans.setdefault(
+            text, LoadSpan(days=int(count), first=first_day, last=last_day, rows=int(size))
+        )
+    return result
+
+
+def _run_code_load_days(probe: BigDataQueryProbe, window: QueryWindow) -> CodeLoadDays:
+    started = time.perf_counter()
+    try:
+        frame = probe.code_load_days(window)
+        result = parse_code_load_days(frame, window)
+    except Exception as exc:  # 새 SQL 이 사내 엔진에서 돌지 않을 수 있다
+        return CodeLoadDays(window=window, failure=_bdq_failure(exc))
+    result.seconds = time.perf_counter() - started
+    return result
+
+
+def _spread(values: Sequence[float]) -> str:
+    if not values:
+        return "-"
+    ordered = np.asarray(values, dtype="float64")
+    return (
+        f"중앙 {_ratio(float(np.median(ordered)))} · p95 "
+        f"{_ratio(float(np.quantile(ordered, 0.95)))} · 최대 {_ratio(float(ordered.max()))}"
+    )
+
+
+def _code_load_day_rows(loads: CodeLoadDays) -> list[list[str]]:
+    label = (
+        f"조회(목록 창 {loads.window.days}일 전체를 GROUP BY 한 번, 사외에서 돌려 보지 못한 SQL)"
+    )
+    if loads.failure is not None:
+        return [[label, loads.failure]]
+    spans = list(loads.spans.values())
+    multi = [span for span in spans if span.days > 1]
+    total_rows = sum(span.rows for span in spans)
+    multi_rows = sum(span.rows for span in multi)
+    coverage = [span.days / span.width for span in multi]
+    at_end = sum(1 for span in multi if span.last >= loads.window.end_date)
+    one = sum(1 for span in spans if span.days == 1)
+    few = sum(1 for span in spans if 2 <= span.days <= 5)
+    many = sum(1 for span in spans if span.days >= 6)
+    return [
+        [label, f"성공 · {_seconds(loads.seconds)}초"],
+        [
+            "코드",
+            f"규칙을 지키고 적재일을 읽은 코드 {len(spans):,} (결과 코드 {loads.codes:,} · "
+            f"규칙 위반 {loads.invalid:,} · 적재일을 읽지 못함 {loads.unreadable:,})",
+        ],
+        ["적재일 1일 · 2–5일 · 6일 이상", f"{one:,} · {few:,} · {many:,}"],
+        ["적재일 폭(첫 ~ 끝 적재일, 일) — 전체", _spread([span.width for span in spans])],
+        ["적재일 폭 — 여러 날 코드", _spread([span.width for span in multi])],
+        [
+            "여러 날 코드의 적재일 수 ÷ 폭(1 이면 하루도 빠짐없이 적재)",
+            "-"
+            if not coverage
+            else f"중앙 {_ratio(float(np.median(coverage)))} · 최소 {_ratio(min(coverage))}",
+        ],
+        [
+            "여러 날 코드가 차지하는 행",
+            f"전체의 {_percent(multi_rows / total_rows if total_rows else None, 2)}",
+        ],
+        [
+            "여러 날 코드 가운데 끝 적재일이 목록 창 끝날(오늘)인 코드",
+            f"{at_end:,} / {len(multi):,}",
+        ],
+    ]
+
+
+def _day_rows(frame: pd.DataFrame | None) -> dict[date, int]:
+    """적재일 조회 결과 → 날마다 행 수. 날짜로 읽지 못한 값은 뺀다."""
+    if frame is None or frame.empty or "load_day" not in frame.columns:
+        return {}
+    counts = (
+        pd.to_numeric(frame["row_count"], errors="coerce")
+        if "row_count" in frame.columns
+        else pd.Series(np.nan, index=frame.index)
+    )
+    result: dict[date, int] = {}
+    for value, count in zip(frame["load_day"], counts, strict=True):
+        day = _as_day(value)
+        if day is not None:
+            result[day] = result.get(day, 0) + (0 if pd.isna(count) else int(count))
+    return result
+
+
+def row_signatures(frame: pd.DataFrame) -> pd.Series:
+    """행마다 내용 해시 — 모든 칸이 같아야 같은 행이다(적재 시각은 상세 SQL 에 없다).
+
+    날마다 갈리는 dtype 추론에 기대지 않는다. 빈 값이 낀 날은 정수 칸이 실수로 읽히므로 숫자 칸은
+    실수로, 나머지는 글자로 바꾼 뒤 해시한다. 해시만 남기고 값은 버린다.
+    """
+    columns: dict[str, pd.Series] = {}
+    for name in sorted(frame.columns, key=str):
+        values = frame[name]
+        if pd.api.types.is_numeric_dtype(values) and not pd.api.types.is_bool_dtype(values):
+            text = values.astype("float64").astype("string")
+        else:
+            text = values.astype("string")
+        columns[str(name)] = text.fillna("\x00")
+    return pd.util.hash_pandas_object(pd.DataFrame(columns, index=frame.index), index=False)
+
+
+def plan_line_key_set(frame: pd.DataFrame) -> set[tuple[object, ...]] | None:
+    """상세 조회 결과의 계획 줄 업무 키(`RQ_PKG_PLAN` 업무 키). 칸이 모자라면 `None`.
+
+    `양산구분` 은 `CS` 에서 나오는 파생 칸이라 원천에 없고 빼도 키 수가 같다. 칸 이름은 앱처럼
+    `SOURCE_COLUMN_MAPPING` 으로 맞춘다.
+    """
+    renamed = frame.rename(columns=dict(SOURCE_COLUMN_MAPPING))
+    keys = [
+        key for key in load_core_data_contract().derived_keys["RQ_PKG_PLAN"] if key != "양산구분"
+    ]
+    if any(key not in renamed.columns for key in keys):
+        return None
+    return _key_set(renamed, keys)
+
+
+@dataclass
+class CopyCheck:
+    """여러 날 적재된 코드 하나 — 날마다 받은 행이 마지막 적재일의 사본인가. 코드는 없다."""
+
+    extra: bool
+    load_days: int = 0
+    day_rows: tuple[int, ...] = ()
+    examined: int = 0
+    rows: int = 0
+    distinct_rows: int = 0
+    last_rows: int = 0
+    plan_keys: int | None = None
+    last_plan_keys: int | None = None
+    same_days: int = 0
+    differing_days: int = 0
+    subset_days: int = 0
+    missing_from_last: int = 0
+    failure: str | None = None
+
+
+def check_copies(
+    probe: BigDataQueryProbe,
+    code: str,
+    window: QueryWindow,
+    *,
+    extra: bool,
+    max_days: int = COPY_CHECK_DAYS,
+) -> CopyCheck:
+    """`window` 안의 적재일을 세고 마지막 적재일과 그 앞 날들(첫 적재일부터 고르게)을 견준다.
+
+    하루치는 앱과 같은 상세 SQL 을 그날 하루 창으로 부른 것이다 — 상세 SQL 이 적재 시각으로만
+    거르므로 그 창이 곧 그날 적재분이다. 날마다의 행은 중복 수까지 같아야 「같은 날」이다.
+    """
+    result = CopyCheck(extra=extra)
+    try:
+        by_day = _day_rows(probe.load_days(code, window))
+    except Exception as exc:  # 사내 패키지 예외 종류를 모른다
+        result.failure = _bdq_failure(exc)
+        return result
+    days = sorted(by_day)
+    result.load_days = len(days)
+    result.day_rows = tuple(by_day[day] for day in days)
+    if len(days) < 2:
+        return result
+    last = days[-1]
+    others = _pick_evenly(days[:-1], max(max_days - 1, 1))
+    try:
+        frame = probe.detail_frame(code, QueryWindow(start_date=last, end_date=last))
+        last_counts = Counter(row_signatures(frame).tolist())
+        last_keys = plan_line_key_set(frame)
+        result.rows = result.last_rows = len(frame)
+        seen = set(last_counts)
+        keys = None if last_keys is None else set(last_keys)
+        for day in others:
+            frame = probe.detail_frame(code, QueryWindow(start_date=day, end_date=day))
+            counts = Counter(row_signatures(frame).tolist())
+            day_keys = plan_line_key_set(frame)
+            result.rows += len(frame)
+            if counts == last_counts:
+                result.same_days += 1
+            else:
+                result.differing_days += 1
+                result.subset_days += int(set(counts) <= set(last_counts))
+            seen |= set(counts)
+            keys = None if keys is None or day_keys is None else keys | day_keys
+    except Exception as exc:  # 사내 패키지 예외 종류를 모른다
+        result.failure = _bdq_failure(exc)
+        return result
+    result.examined = len(others) + 1
+    result.distinct_rows = len(seen)
+    result.missing_from_last = len(seen - set(last_counts))
+    result.plan_keys = None if keys is None else len(keys)
+    result.last_plan_keys = None if last_keys is None else len(last_keys)
+    return result
+
+
+def _copy_targets(
+    picked: Sequence[str],
+    results: dict[str, SampleResult],
+    loads: CodeLoadDays | None,
+) -> list[tuple[str, bool, QueryWindow]]:
+    """(코드, 표본 밖에서 더했나, 적재일을 셀 창). 표본 가운데 여러 날 코드와 더할 여러 날 코드.
+
+    창은 표본의 넓은 창에 전 코드 조회가 준 첫·끝 적재일을 더한 것이다 — 매일 다시 적재되는 코드는
+    등록일 ±30 일 창 밖에서도 적재가 이어져, 그 창의 끝날을 「마지막 적재일」로 잘못 보게 된다.
+    더할 코드는 여러 날 코드를 (적재일 수, 끝 적재일) 순으로 세워 고르게 고른다.
+    """
+    spans = loads.spans if loads is not None else {}
+    targets: list[tuple[str, bool, QueryWindow]] = []
+    for code in picked:
+        result = results[code]
+        span = spans.get(code)
+        days = span.days if span is not None else len(_day_rows(result.load_days))
+        if days < 2 or result.wide_window is None:
+            continue
+        window = result.wide_window
+        if span is not None:
+            window = QueryWindow(
+                start_date=min(window.start_date, span.first),
+                end_date=max(window.end_date, span.last),
+            )
+        targets.append((code, False, window))
+    sampled = set(picked)
+    candidates = sorted(
+        (code for code, span in spans.items() if span.days > 1 and code not in sampled),
+        key=lambda code: (spans[code].days, spans[code].last, code),
+    )
+    for code in _pick_evenly(candidates, EXTRA_COPY_CODES):
+        span = spans[code]
+        targets.append((code, True, QueryWindow(start_date=span.first, end_date=span.last)))
+    return targets
+
+
+_COPY_HEADERS: Final = (
+    "코드",
+    "고른 길",
+    "적재일",
+    "날별 행 최소 · 중앙 · 최대",
+    "본 날",
+    "본 날 행 → 고유 행",
+    "마지막 날 행",
+    "계획 줄 키 본 날 전체 / 마지막 날",
+    "마지막 날과 같은 날 / 다른 날(그 가운데 마지막 날에 다 든 날)",
+    "마지막 날에 없는 고유 행",
+)
+
+
+def _copy_row(index: int, check: CopyCheck) -> list[str]:
+    head = [str(index), "여러 날 코드 더함" if check.extra else "표본"]
+    if check.failure is not None:
+        return [*head, check.failure, *["-"] * (len(_COPY_HEADERS) - 3)]
+    day_rows = (
+        "-"
+        if not check.day_rows
+        else f"{min(check.day_rows):,} · {_ratio(float(np.median(check.day_rows)))} · "
+        f"{max(check.day_rows):,}"
+    )
+    if check.examined == 0:
+        return [*head, _count(check.load_days), day_rows, *["-"] * (len(_COPY_HEADERS) - 4)]
+    return [
+        *head,
+        _count(check.load_days),
+        day_rows,
+        _count(check.examined),
+        f"{check.rows:,} → {check.distinct_rows:,}",
+        _count(check.last_rows),
+        f"{_count(check.plan_keys)} / {_count(check.last_plan_keys)}",
+        f"{check.same_days:,} / {check.differing_days:,} ({check.subset_days:,})",
+        _count(check.missing_from_last),
+    ]
+
+
+def _copy_lines(
+    probe: BigDataQueryProbe,
+    picked: Sequence[str],
+    results: dict[str, SampleResult],
+    loads: CodeLoadDays | None,
+) -> list[str]:
+    title = (
+        "**여러 날 적재 — 날마다 사본인가** — 표본 가운데 여러 날 적재된 코드와, 전 코드 "
+        f"조회의 여러 날 코드에서 고르게 고른 최대 {EXTRA_COPY_CODES}개(코드는 찍지 않는다)를 "
+        "적재일마다 앱과 같은 상세 SQL 로 하루씩 다시 받아 마지막 적재일의 행과 견준다(마지막 "
+        f"날 포함 최대 {COPY_CHECK_DAYS}일, 첫 적재일부터 고르게). 모든 칸이 같아야 같은 행이다 "
+        "— 적재 시각은 그 SQL 에 없다."
+    )
+    if any(results[code].load_failure for code in picked):
+        return [title, "", "- 적재일 조회가 실패해 건너뛴다.", ""]
+    targets = _copy_targets(picked, results, loads)
+    if not targets:
+        return [title, "", "- 여러 날 적재된 코드가 표본에도 전 코드 조회에도 없다.", ""]
+    rows = [
+        _copy_row(index, check_copies(probe, code, window, extra=extra))
+        for index, (code, extra, window) in enumerate(targets, start=1)
+    ]
+    return [
+        title,
+        "",
+        *_table(_COPY_HEADERS, rows),
+        "",
+        "- `마지막 날과 같은 날` 이 `본 날` − 1 전부이고 `마지막 날에 없는 고유 행` 이 0 이면 "
+        "날마다 같은 내용을 통째로 다시 적재한 것이다 — 기본 창이 놓친 행은 사본이다(런북 8-5).",
+        "",
+    ]
+
+
 def check_bigdataquery(
     *,
     today: date,
@@ -1863,7 +2264,7 @@ def check_bigdataquery(
     max_window: bool = True,
     probe: BigDataQueryProbe | None = None,
 ) -> list[str]:
-    lines = _heading("8-5", "BigDataQuery — 목록·등록일·코드·적재일", "bdq")
+    lines = _heading("8-5", "BigDataQuery — 목록·등록일·코드·적재일·사본", "bdq")
     account = (
         "있음" if resolve_user_name() else "없음(Windows 는 없어도 된다 — 로그인 이름으로 묻는다)"
     )
@@ -1944,6 +2345,8 @@ def check_bigdataquery(
         )
     lines.append(describe_codes(frame["simulation_code"]))
     lines.append("")
+    loads = _run_code_load_days(probe, widest.window)
+    lines.extend([*_table(["전 코드 적재일", "값"], _code_load_day_rows(loads)), ""])
 
     if sample <= 0:
         return [*lines, "- 표본 적재일 확인은 `--bdq-sample 0` 이라 건너뛰었다.", ""]
@@ -2002,6 +2405,7 @@ def check_bigdataquery(
         *_load_day_stats(sampled),
     ]
     lines.extend([*_table(["표본 적재일", "값"], rows), ""])
+    lines.extend(_copy_lines(probe, picked, results, loads))
     return lines
 
 
