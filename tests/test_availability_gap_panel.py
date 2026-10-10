@@ -1,4 +1,4 @@
-# Purpose: 비교 패널의 결과 선택·공정 필터·숨은 탭 복귀와 기존 수치 및 누락 안내를 검사한다.
+# Purpose: 비교 패널의 결과 선택·공정 필터·숨은 탭 복귀·공정 표시명과 수치·누락 안내를 검사한다.
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from capa_simulation.components.availability_gap_panel import (
     RESULT_VIEW_KEY,
     matrix_table_key,
 )
+from capa_simulation.components.table_toolbar import CSV_DOWNLOAD_LABEL, render_csv_download
 from capa_simulation.services.availability_gap import (
     DYNAMIC_SUBTOTAL_ROW,
     DYNAMIC_WEIGHTED_ROW,
@@ -31,6 +32,7 @@ def _panel_app() -> None:
     import streamlit as st
 
     from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
+    from capa_simulation.components.process_labels import ProcessLabels
     from capa_simulation.services.process_cutoff import prepare_process_cutoff
 
     spans = pd.DataFrame(
@@ -130,6 +132,12 @@ def _panel_app() -> None:
             columns=EQUIPMENT_COLUMNS,
         )
 
+    # 공정 표시명. 켜면 `Die Attach`·`Wire Bond` 만 표시명이 있다 — `Etch`·`Probe` 는 원본이다.
+    labels = (
+        ProcessLabels(version=1, labels={"Die Attach": "표시-DA", "Wire Bond": "표시-WB"})
+        if st.session_state.get("labels", False)
+        else None
+    )
     is_open = st.toggle("비교 탭 열기", value=True, key="test_gap_panel_open")
     render_availability_gap_panel(
         spans=spans,
@@ -145,6 +153,7 @@ def _panel_app() -> None:
         required_equipment=None if st.session_state.get("missing_required", False) else required,
         owner_tab=SimpleNamespace(open=is_open),
         units=units,
+        process_labels=labels,
     )
 
 
@@ -529,3 +538,83 @@ def test_non_hbm_units_are_named_in_every_view_in_the_scope_the_counts_use() -> 
 
 def test_no_undated_line_without_undated_units() -> None:
     assert _undated_captions(_run()) == []
+
+
+# ------------------------------------------------------------------ 공정 표시명(Proc Rename)
+
+
+def test_process_display_names_label_the_screen_but_values_stay_original(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2026-10-10 사용자 결정 — 보이는 글자만 표시명이다.
+
+    `공정` 선택지·칸의 호기·호기 목록·확보율 교차검증 표는 표시명이고, 선택값(세션)·표 키·호기 목록
+    CSV 는 원본이다.
+    """
+    # 내려받는 바이트는 위젯 proto 에 실리지 않는다. 패널이 부르는 이름을 갈아 끼워 적어 둔다
+    # (AppTest 는 같은 프로세스에서 돈다).
+    exported: dict[str | None, bytes] = {}
+
+    def record_csv(
+        *, data: bytes, file_name: str, key: str | None = None, label: str = CSV_DOWNLOAD_LABEL
+    ) -> None:
+        exported[key] = data
+        render_csv_download(data=data, file_name=file_name, key=key, label=label)
+
+    monkeypatch.setattr(
+        "capa_simulation.components.availability_gap_panel.render_csv_download", record_csv
+    )
+    plain = _run()
+    assert plain.selectbox(key=PROCESS_FILTER_KEY).options == [
+        "전체 합계",
+        "Die Attach",
+        "Etch",
+        "Probe",
+    ]
+
+    app = _run(labels=True)
+    picker = app.selectbox(key=PROCESS_FILTER_KEY)
+    # 보이는 글자의 가나다순이다 — `표시-DA` 가 원본 이름 뒤로 간다. `전체 합계` 는 맨 앞이다.
+    assert picker.options == ["전체 합계", "Etch", "Probe", "표시-DA"]
+
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
+    assert not app.exception
+    assert app.selectbox(key=PROCESS_FILTER_KEY).value == "Die Attach"
+    assert app.session_state[PROCESS_FILTER_KEY] == "Die Attach"
+
+    _select_view(app, "분류별 내역")
+    rows = list(app.dataframe[0].value.index)
+    # 칸 선택이 남는 표 키는 원본 공정명으로 만든다 — 표시명을 고쳐도 누른 칸을 잃지 않는다.
+    key = matrix_table_key("Die Attach", [202610], rows)
+    app.session_state[key] = {
+        "selection": {"rows": [], "columns": [], "cells": [[rows.index("가용"), "26.10"]]}
+    }
+    app.run()
+    assert not app.exception
+    assert set(app.dataframe[1].value["공정"]) == {"표시-DA"}
+
+    app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
+    assert not app.exception
+    assert set(app.dataframe[0].value["공정"]) == {"표시-DA"}
+    text = exported["download_equipment_gap_unit_list_csv"].decode("utf-8-sig")
+    assert "Die Attach" in text and "표시-" not in text
+
+    _select_view(app, "확보율 교차검증")
+    assert set(app.dataframe[0].value["공정"]) == {"표시-DA"}
+    assert app.session_state[PROCESS_FILTER_KEY] == "Die Attach"
+
+
+def test_name_mismatch_notices_keep_the_original_process_names() -> None:
+    """공정명이 어긋난 자리를 알리는 문구는 설비 마스터·기준정보에서 고칠 **원본** 이름이다.
+
+    필요단축일정의 「맞대지 못한 공정」 과 같은 갈래다(AGENTS 8장 ③).
+    """
+    app = _run(wire_bond_units=True, labels=True)
+    warnings = " ".join(item.value for item in app.warning)
+    assert "Wire Bond" in warnings and "표시-WB" not in warnings
+    assert "표시-WB" in app.selectbox(key=PROCESS_FILTER_KEY).options
+
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Wire Bond").run()
+    assert not app.exception
+    infos = " ".join(item.value for item in app.info)
+    assert "「Wire Bond」 공정은 기준정보(Static)에 없어" in infos and "표시-WB" not in infos

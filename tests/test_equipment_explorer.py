@@ -1,5 +1,6 @@
-# Purpose: 설비 탐색기의 질문별 단일 결과와 선택일·필터·탭 왕복 동작을 검증한다.
+# Purpose: 설비 탐색기의 질문별 단일 결과와 선택일·필터·탭 왕복·공정 표시명 동작을 검증한다.
 
+import json
 from datetime import date
 
 from streamlit.testing.v1 import AppTest
@@ -22,6 +23,7 @@ def _render_fixture() -> None:
     import pandas as pd
 
     from capa_simulation.components.equipment_explorer import render_equipment_explorer
+    from capa_simulation.components.process_labels import ProcessLabels
     from capa_simulation.components.tab_state import stateful_tabs
     from capa_simulation.services.equipment_contract import (
         empty_downtime_schedule,
@@ -97,6 +99,10 @@ def _render_fixture() -> None:
             downtime=downtime,
             today=date(2026, 10, 6),
             owner_tab=main_tab,
+            # 공정 표시명. 켜면 `Die Attach` 만 표시명이 있다 — `Other` 는 원본 그대로다.
+            process_labels=ProcessLabels(version=1, labels={"Die Attach": "표시-DA"})
+            if st.session_state.get("labels", False)
+            else None,
         )
 
 
@@ -343,3 +349,58 @@ def test_no_undated_line_when_every_new_unit_has_dates() -> None:
     app = _app()
 
     assert _undated(app) == []
+
+
+# ------------------------------------------------------- 공정 표시명(Proc Rename)
+
+
+def test_process_display_names_label_the_main_tab_but_values_stay_original() -> None:
+    """2026-10-10 사용자 결정 — 보이는 글자만 표시명이다. 선택값(세션)·거르는 값은 원본이다."""
+    plain = _app()
+    assert plain.multiselect(SMALL_PROCESS_KEY).options == ["Die Attach", "Other"]
+
+    app = AppTest.from_function(_render_fixture, default_timeout=30)
+    app.session_state["labels"] = True
+    app.run()
+    assert not app.exception
+    picker = app.multiselect(SMALL_PROCESS_KEY)
+    # 선택지는 보이는 글자의 가나다순이다 — `표시-DA` 가 `Other` 뒤로 간다.
+    assert picker.options == ["Other", "표시-DA"]
+
+    app.multiselect(SMALL_PROCESS_KEY).set_value(["Die Attach"]).run()
+    assert not app.exception
+    assert app.multiselect(SMALL_PROCESS_KEY).value == ["Die Attach"]
+    assert app.session_state[SMALL_PROCESS_KEY] == ["Die Attach"]
+    assert any("공정소분류: 표시-DA" in item.value for item in app.caption)
+    assert not any("공정소분류: Die Attach" in item.value for item in app.caption)
+
+    def shown_processes() -> set[str]:
+        _assert_one_result(app)
+        return set(app.dataframe[0].value["공정소분류"])
+
+    app.selectbox("equipment_explorer_availability_view").set_value("공정별 내역").run()
+    assert shown_processes() == {"표시-DA"}
+
+    app.segmented_control(QUESTION_KEY).set_value("비가동 호기").run()
+    assert shown_processes() == {"표시-DA"}
+    app.selectbox(INACTIVE_VIEW_KEY).set_value("그 달 전체").run()
+    assert shown_processes() == {"표시-DA"}
+
+    app.segmented_control(QUESTION_KEY).set_value("호기 현황").run()
+    app.selectbox("equipment_explorer_unit_view").set_value("호기 목록").run()
+    assert shown_processes() == {"표시-DA"}
+
+    app.selectbox("equipment_explorer_unit_view").set_value("생애주기 일정").run()
+    _assert_one_result(app)
+    # 생애주기 그림은 풍선(`customdata`)에 공정을 싣는다.
+    spec = json.dumps(json.loads(app.get("plotly_chart")[0].proto.spec), ensure_ascii=False)
+    assert "표시-DA" in spec and "Die Attach" not in spec
+
+    app.segmented_control(QUESTION_KEY).set_value("Qual 일정").run()
+    assert shown_processes() == {"표시-DA"}
+
+    app.segmented_control(QUESTION_KEY).set_value("단계 전환").run()
+    app.selectbox(TRANSITION_VIEW_KEY).set_value("전환 일정 목록").run()
+    assert shown_processes() == {"표시-DA"}
+    # 끝까지 선택값은 원본이다.
+    assert app.session_state[SMALL_PROCESS_KEY] == ["Die Attach"]

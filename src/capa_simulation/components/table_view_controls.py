@@ -28,6 +28,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor
+from capa_simulation.components.process_labels import ProcessLabelFormatter
 
 FILTERED_NOTICE = (
     "필터가 걸려 있어 행 추가·삭제를 잠갔습니다. 보이지 않는 행도 저장에는 그대로 "
@@ -67,11 +68,15 @@ def render_table_view_controls(
     filter_columns: Sequence[str],
     locked_columns: Sequence[str] = (),
     label: str = "표 보기 설정",
+    value_labels: Mapping[str, Mapping[str, str]] | None = None,
 ) -> TableView:
     """컬럼 선택과 행 필터를 그리고 그 결과를 돌려준다.
 
     `locked_columns` 는 감출 수 없는 컬럼이다 — 키와 필수 입력이 화면에서 사라지면
     사용자가 무엇을 고치고 있는지 알 수 없고, 새 행을 만들 수도 없다.
+
+    `value_labels` 는 행 필터 선택지의 **보이는 글자**만 바꾼다(공정 표시명, `column_filter` 와
+    같은 모양). 옵션 값·세션 저장값·거르는 값은 원본이고 편집표의 칸은 건드리지 않는다.
     """
     if data.empty:
         return TableView(data)
@@ -99,9 +104,15 @@ def render_table_view_controls(
                     # 값이 수백 가지인 컬럼(호기 등)은 다중선택이 오히려 못 쓴다.
                     if not options or len(options) > MAX_FILTER_OPTIONS:
                         continue
+                    labels = (value_labels or {}).get(column)
+                    if labels:
+                        # 보이는 글자의 가나다순. 표시명이 없으면 지금처럼 원본 순서다.
+                        formatter = ProcessLabelFormatter(labels)
+                        options = sorted(options, key=lambda value: (formatter(value), value))
                     selections[column] = st.multiselect(
                         column,
                         options=options,
+                        format_func=ProcessLabelFormatter(labels) if labels else str,
                         placeholder="전체",
                         key=f"{key_prefix}_filter_{column}",
                         persist_state="session",

@@ -7,6 +7,8 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+# 테스트가 공정 표시명 조회를 모듈 속성으로 갈아 끼운다 — 이름을 직접 들이면 그 교체를 못 본다.
+import capa_simulation.components.process_labels as process_labels_module
 from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
 from capa_simulation.components.cutoff_management import render_cutoff_management
 from capa_simulation.components.equipment_data_workspace import (
@@ -163,6 +165,13 @@ baseline = st.session_state[BASELINE_DRAFT_KEY].copy()
 equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
 downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
 using_dashboard_sample = equipment.empty
+# 공정 표시명(Admin Area `Proc Rename`)은 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정 — Main·
+# Static/Dynamic·Preference·필요단축일정). 선택값·저장값·CSV·RawData 입력은 원본이다. 표시명은
+# 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 연다(앱에서는 부트스트랩이 이미 열어 둔 캐시다). 못
+# 읽으면 원본 공정명 그대로 그린다(`get_process_labels` 가 삼킨다) — 설비 화면을 표시명 때문에 막지
+# 않는다. 계산 캐시 결과의 복사본에만 입히므로 캐시 키에 넣지 않는다. Admin 에서 고치면 프로필
+# 캐시가 비워져 다음 회차에 그대로 보인다. 필요단축일정 패널은 스스로 읽는다.
+process_labels = process_labels_module.get_process_labels()
 
 first_action = st.empty()
 sample_notice = st.empty()
@@ -242,6 +251,7 @@ with main_tab:
                 today=today,
                 owner_tab=main_tab,
                 conditions=conditions_card,
+                process_labels=process_labels,
             )
 
 with preference_tab:
@@ -249,7 +259,9 @@ with preference_tab:
     # Static/Dynamic·필요단축일정이 그대로 쓴다 — 탭마다 다시 읽으면 rerun 마다 DB 를 세 번 열었다.
     # 저장은 그 자리에서 `st.rerun()` 하므로 이 회차에 낡은 값이 남지 않는다.
     stored_cutoff = render_cutoff_management(
-        repository, equipment_processes=processes_in(dashboard_equipment, dashboard_baseline)
+        repository,
+        equipment_processes=processes_in(dashboard_equipment, dashboard_baseline),
+        process_labels=process_labels,
     )
 
 with gap_tab:
@@ -331,6 +343,7 @@ with gap_tab:
                 conditions=conditions_card,
                 # 분류별 내역의 `호기 필터` 가 이 표의 컬럼으로 호기를 좁힌다. 구간과 같은 표다.
                 units=dashboard_equipment,
+                process_labels=process_labels,
             )
 
 

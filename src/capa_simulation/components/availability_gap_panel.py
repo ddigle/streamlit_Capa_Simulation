@@ -34,6 +34,7 @@ from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.availability_gap_figure import build_availability_gap_figure
 from capa_simulation.components.plotly_layout import hover_chart_config
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.services.availability_gap import (
@@ -145,6 +146,7 @@ def render_availability_gap_panel(
     owner_tab: OpenTab | None = None,
     conditions: DeltaGenerator | None = None,
     units: pd.DataFrame | None = None,
+    process_labels: ProcessLabels | None = None,
 ) -> None:
     """비교 탭 본문.
 
@@ -160,9 +162,16 @@ def render_availability_gap_panel(
     — 탭 안의 하위 탭과 같은 것이라 카드에 넣으면 지금 어느 결과를 보는지 본문에서 사라진다
     (2026-09-29 사용자 결정). 읽는 법(Static·Dynamic 의 뜻, 소계에 드는 분류)은 가용설비 현황
     Guide 다.
+
+    `process_labels` 는 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정) — `공정` 선택지, 호기 목록·
+    칸의 호기·확보율 교차검증 표의 `공정` 칸. 선택값(세션)·표 키·호기 목록 CSV 는 원본이다. 공정명이
+    맞지 않는 자리를 알리는 문구(두 쪽 공정명 경고, 한쪽에만 있는 공정의 까닭)도 원본이다 — 설비
+    마스터·기준정보에서 고칠 이름이다(AGENTS 8장 ③). 계산 캐시에는 닿지 않는다 — 캐시 결과의
+    복사본에만 입힌다.
     """
     if tab_is_hidden(owner_tab):
         return
+    labels = process_labels or ProcessLabels()
     controls = conditions if conditions is not None else nullcontext()
 
     st.markdown("#### :material/compare_arrows: Static · Dynamic 가용대수 비교")
@@ -217,7 +226,15 @@ def render_availability_gap_panel(
         key=RESULT_VIEW_KEY,
         persist_state="session",
     )
-    options = [_ALL_PROCESSES, *sorted(set(comparison.rows["공정"].dropna().astype(str)))]
+    # 값은 원본 공정명이고 글자만 표시명이다. 차례는 보이는 글자의 가나다순이다(표시명이 없으면
+    # 지금처럼 원본 순서). `전체 합계` 는 공정이 아니라 매핑에 걸리지 않는다.
+    options = [
+        _ALL_PROCESSES,
+        *sorted(
+            set(comparison.rows["공정"].dropna().astype(str)),
+            key=lambda name: (labels.label(name), name),
+        ),
+    ]
     if (
         PROCESS_FILTER_KEY in st.session_state
         and st.session_state[PROCESS_FILTER_KEY] not in options
@@ -227,6 +244,7 @@ def render_availability_gap_panel(
         selected = st.selectbox(
             "공정",
             options=options,
+            format_func=labels.format_func(),
             key=PROCESS_FILTER_KEY,
             persist_state="session",
         )
@@ -245,6 +263,7 @@ def render_availability_gap_panel(
             static_availability=static,
             required_equipment=required_equipment,
             process=process,
+            labels=labels,
         )
         return
 
@@ -322,6 +341,7 @@ def render_availability_gap_panel(
                 monthly_key, spans, baseline, cutoff, conversion_ratios, scope, chosen_units
             ),
             controls=controls,
+            labels=labels,
         )
         return
 
@@ -348,6 +368,7 @@ def render_availability_gap_panel(
                 contributions=_scoped_contributions(
                     monthly_key, spans, baseline, cutoff, conversion_ratios, scope, chosen_units
                 ),
+                labels=labels,
             )
 
 
@@ -602,7 +623,9 @@ def _unit_table(rows: pd.DataFrame, *, with_month: bool) -> pd.DataFrame:
     return table.loc[:, columns]
 
 
-def _render_cell_units(*, row: str, month: int, contributions: pd.DataFrame) -> None:
+def _render_cell_units(
+    *, row: str, month: int, contributions: pd.DataFrame, labels: ProcessLabels
+) -> None:
     """누른 칸 하나의 호기. 소계 행이면 소계에 드는 분류를 모아 보인다."""
     if row in _CATEGORY_NAMES:
         categories: tuple[str, ...] = (row,)
@@ -623,7 +646,7 @@ def _render_cell_units(*, row: str, month: int, contributions: pd.DataFrame) -> 
         st.caption("이 칸에 기여한 호기가 없습니다.")
         return
     st.dataframe(
-        _unit_table(rows, with_month=False),
+        labels.frame(_unit_table(rows, with_month=False)),
         hide_index=True,
         width="stretch",
         column_config=_UNIT_NUMBER_FORMAT,
@@ -631,9 +654,15 @@ def _render_cell_units(*, row: str, month: int, contributions: pd.DataFrame) -> 
 
 
 def _render_unit_list(
-    contributions: pd.DataFrame, *, controls: AbstractContextManager[object]
+    contributions: pd.DataFrame,
+    *,
+    controls: AbstractContextManager[object],
+    labels: ProcessLabels,
 ) -> None:
-    """같은 조건의 호기별 기여를 긴 표 하나로. 분류로 좁히고 CSV 로 내려받는다."""
+    """같은 조건의 호기별 기여를 긴 표 하나로. 분류로 좁히고 CSV 로 내려받는다.
+
+    화면 표의 `공정` 은 표시명이고 CSV 는 원본이다 — 화면 프레임과 CSV 프레임을 나눈다(AGENTS 8장).
+    """
     if contributions.empty:
         st.info("표시할 호기가 없습니다.")
         return
@@ -648,7 +677,9 @@ def _render_unit_list(
         )
     rows = contributions.loc[contributions["분류"].isin(chosen)] if chosen else contributions
     table = _unit_table(rows, with_month=True)
-    st.dataframe(table, hide_index=True, width="stretch", column_config=_UNIT_NUMBER_FORMAT)
+    st.dataframe(
+        labels.frame(table), hide_index=True, width="stretch", column_config=_UNIT_NUMBER_FORMAT
+    )
     months = sorted(int(month) for month in rows["생산계획년월"].unique())
     stamp = f"{months[0]}_{months[-1]}" if months else "empty"
     render_csv_download(
@@ -664,6 +695,7 @@ def _render_securement_cross_check(
     static_availability: pd.DataFrame,
     required_equipment: pd.DataFrame | None,
     process: str | None,
+    labels: ProcessLabels,
 ) -> None:
     """같은 소요대수에 두 가용대수를 각각 나눈 확보율.
 
@@ -743,7 +775,7 @@ def _render_securement_cross_check(
         ],
     ].copy()
     display["생산계획년월"] = display["생산계획년월"].map(lambda month: month_label(int(month)))
-    st.dataframe(display.round(3), hide_index=True, width="stretch")
+    st.dataframe(labels.frame(display.round(3)), hide_index=True, width="stretch")
 
 
 def _render_unmatched(dynamic_only: list[str], static_only: list[str]) -> None:

@@ -14,6 +14,7 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation.components.equipment_lifecycle_gantt import (
     render_equipment_lifecycle_gantt,
 )
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
@@ -67,9 +68,12 @@ TRANSITION_SCHEDULE_KEY = "equipment_transition_schedule_filter"
 TRANSITION_CONFIRMATION_KEY = "equipment_transition_confirmation_filter"
 QUESTIONS = ("가용대수", "호기 현황", "비가동 호기", "Qual 일정", "단계 전환")
 TRANSITION_STAGES = tuple(label for _, label in MILESTONES)
+# 공정 표시명(Proc Rename)을 입히는 칸. 설비 마스터의 `공정소분류` 는 시나리오 `공정` 과 같은
+# 이름으로 맞대는 원본 공정명이다(`공정대분류` 는 다른 축이라 입히지 않는다).
+PROCESS_COLUMN = "공정소분류"
 _INACTIVE_COLUMNS = (
     EQUIPMENT_ID_COLUMN,
-    "공정소분류",
+    PROCESS_COLUMN,
     "상태",
     ARRIVAL_DATE_COLUMN,
     "Qual일정",
@@ -152,9 +156,25 @@ def _with_parent(columns: Sequence[str], frame: pd.DataFrame) -> list[str]:
     return result
 
 
-def _table(frame: pd.DataFrame, *, columns: list[str] | None = None) -> None:
+def _shown_values(name: str, values: Sequence[str], labels: ProcessLabels) -> list[str]:
+    """걸린 조건 줄에 적을 값. 공정소분류만 표시명이고 다른 조건은 고른 값 그대로다."""
+    if name != PROCESS_COLUMN:
+        return list(values)
+    return [labels.label(value) for value in values]
+
+
+def _table(
+    frame: pd.DataFrame,
+    *,
+    columns: list[str] | None = None,
+    labels: ProcessLabels | None = None,
+) -> None:
+    """조회 표 하나. `공정소분류` 칸은 글자만 공정 표시명이다.
+
+    행 차례는 부르는 쪽이 원본 공정명으로 정한다.
+    """
     st.dataframe(
-        frame,
+        (labels or ProcessLabels()).frame(frame, PROCESS_COLUMN),
         hide_index=True,
         width="stretch",
         column_order=columns,
@@ -235,6 +255,7 @@ def _availability(
     expression: str,
     undated_notice: str | None = None,
     usage_notice: str | None = None,
+    labels: ProcessLabels | None = None,
 ) -> None:
     weekly = get_weekly_equipment_availability(
         baseline,
@@ -260,11 +281,13 @@ def _availability(
     _usage_caption(usage_notice)
     if view == "공정별 내역":
         st.markdown("#### 공정소분류별 현황")
+        # 차례는 원본 공정명으로 정하고 글자만 표시명이다 — 표시명을 고쳐도 행이 자리를 옮기지
+        # 않는다.
         _table(
             latest.loc[
                 :,
                 [
-                    "공정소분류",
+                    PROCESS_COLUMN,
                     "기존보유대수",
                     "추가설비대수",
                     "총대수",
@@ -272,7 +295,8 @@ def _availability(
                     "비가동대수",
                     *STATUS_COUNT_COLUMNS.values(),
                 ],
-            ].sort_values(["비가동대수", "공정소분류"], ascending=[False, True])
+            ].sort_values(["비가동대수", PROCESS_COLUMN], ascending=[False, True]),
+            labels=labels,
         )
         return
     st.markdown("#### 주차별 설비 현황")
@@ -327,6 +351,7 @@ def _transitions(
     stages: Sequence[str],
     schedule: str,
     confirmations: Sequence[str],
+    labels: ProcessLabels | None = None,
 ) -> None:
     """조회기간에 제진대·물류·입고·Qual·반출·이설 일정이 든 호기를 전환 한 건씩 편다.
 
@@ -351,7 +376,7 @@ def _transitions(
         # 설비키는 모듈 행이 있을 때만 보인다. 비모듈 행은 호기와 같은 값이라 칸만 는다.
         has_modules = bool(events[UNIT_KEY_COLUMN].ne(events[EQUIPMENT_ID_COLUMN]).any())
         st.dataframe(
-            events,
+            (labels or ProcessLabels()).frame(events, PROCESS_COLUMN),
             hide_index=True,
             width="stretch",
             column_config={
@@ -416,6 +441,7 @@ def render_equipment_explorer(
     today: date,
     owner_tab: OpenTab | None = None,
     conditions: DeltaGenerator | None = None,
+    process_labels: ProcessLabels | None = None,
 ) -> None:
     """Main 탭. 거르는 조건(공정·기간·기준일·추가 조건)은 `conditions`(사이드바 조건 카드)다.
 
@@ -423,9 +449,14 @@ def render_equipment_explorer(
     카드에 넣으면 지금 무엇을 보는지 본문에서 사라진다(2026-09-29 사용자 결정). `conditions` 를
     주지 않으면 조건도 본문 상자에 그린다 — 컴포넌트를 홀로 띄우는 테스트가 쓴다. 설명은 가용설비
     현황 Guide 다.
+
+    `process_labels` 는 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정) — `공정소분류` 선택지·
+    걸린 조건 줄·조회 표의 `공정소분류` 칸·생애주기 그림의 풍선. 선택값(세션)과 거르는 값은
+    원본이다. 주지 않으면 원본 그대로 그린다.
     """
     if tab_is_hidden(owner_tab):
         return
+    labels = process_labels or ProcessLabels()
     in_card = conditions is not None
     with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
         question = st.segmented_control(
@@ -493,12 +524,16 @@ def render_equipment_explorer(
     settings = conditions if conditions is not None else st.container(border=True)
     with settings:
         with st.container(horizontal=not in_card, gap="small"):
+            # 값은 원본 공정명이고 글자만 표시명이다. 차례는 보이는 글자의 가나다순이다(표시명이
+            # 없으면 지금처럼 원본 순서).
             process_options = sorted(
-                set(_options(equipment, "공정소분류")) | set(_options(baseline, "공정"))
+                set(_options(equipment, PROCESS_COLUMN)) | set(_options(baseline, "공정")),
+                key=lambda process: (labels.label(process), process),
             )
             selected = st.multiselect(
                 "공정소분류",
                 process_options,
+                format_func=labels.format_func(),
                 placeholder="전체 공정 · 검색 가능",
                 key=SMALL_PROCESS_KEY,
                 persist_state="session",
@@ -562,7 +597,7 @@ def render_equipment_explorer(
         )
         with extra:
             with st.container(horizontal=not in_card, gap="small"):
-                filters = [("공정소분류", selected)]
+                filters = [(PROCESS_COLUMN, selected)]
                 for column, key in (
                     ("공정구분", LINE_TYPE_KEY),
                     ("투자구분", UTILIZATION_TYPE_KEY),
@@ -578,7 +613,12 @@ def render_equipment_explorer(
                     )
                     filters.append((column, values))
     # 무엇으로 걸렀는지는 본문에도 한 줄 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
-    active_filters = [f"{name}: {', '.join(values)}" for name, values in filters if values]
+    # 공정은 고른 상자와 같은 글자(표시명)로 적는다.
+    active_filters = [
+        f"{name}: {', '.join(_shown_values(name, values, labels))}"
+        for name, values in filters
+        if values
+    ]
     if question == "단계 전환":
         active_filters += [
             f"{name}: {', '.join(values)}"
@@ -626,6 +666,7 @@ def render_equipment_explorer(
                     stages=transition_stages,
                     schedule=transition_schedule,
                     confirmations=transition_confirmations,
+                    labels=labels,
                 )
             elif question == "가용대수":
                 _availability(
@@ -638,6 +679,7 @@ def render_equipment_explorer(
                     expression=expression,
                     undated_notice=undated_notice,
                     usage_notice=usage_notice,
+                    labels=labels,
                 )
             elif question == "비가동 호기" and view == "그 달 전체":
                 # 기준일이 든 달을 본다. 기준 월을 따로 고르게 하면 축이 둘이 된다.
@@ -655,7 +697,11 @@ def render_equipment_explorer(
                 if inactive.empty:
                     st.success("기준일이 든 달과 조건에 비가동 호기가 없습니다.")
                 else:
-                    _table(inactive, columns=_with_parent(_INACTIVE_MONTH_COLUMNS, inactive))
+                    _table(
+                        inactive,
+                        columns=_with_parent(_INACTIVE_MONTH_COLUMNS, inactive),
+                        labels=labels,
+                    )
             elif question == "비가동 호기":
                 inactive = build_inactive_equipment(filtered, filtered_downtime, as_of=as_of)
                 st.markdown(
@@ -664,14 +710,20 @@ def render_equipment_explorer(
                 if inactive.empty:
                     st.success("선택한 기준일과 조건에 비가동 호기가 없습니다.")
                 else:
-                    _table(inactive, columns=_with_parent(_INACTIVE_COLUMNS, inactive))
+                    _table(
+                        inactive, columns=_with_parent(_INACTIVE_COLUMNS, inactive), labels=labels
+                    )
             elif view == "생애주기 일정":
                 st.markdown("#### 호기별 생애주기 일정")
                 spans = build_equipment_lifecycle_spans(
                     filtered, filtered_downtime, start_date=start, end_date=end
                 )
+                # 풍선의 공정만 표시명이다. 구간은 이 그림만 쓴다.
                 render_equipment_lifecycle_gantt(
-                    spans, key="equipment_lifecycle_gantt", today=today, owner_tab=owner_tab
+                    labels.frame(spans, PROCESS_COLUMN),
+                    key="equipment_lifecycle_gantt",
+                    today=today,
+                    owner_tab=owner_tab,
                 )
             else:
                 status = build_equipment_status_as_of(filtered, filtered_downtime, as_of=as_of)
@@ -694,9 +746,16 @@ def render_equipment_explorer(
                         _table(
                             status.sort_values(["Qual일정", EQUIPMENT_ID_COLUMN]),
                             columns=_with_parent(
-                                [EQUIPMENT_ID_COLUMN, "공정소분류", "Qual일정", "확정상태", "상태"],
+                                [
+                                    EQUIPMENT_ID_COLUMN,
+                                    PROCESS_COLUMN,
+                                    "Qual일정",
+                                    "확정상태",
+                                    "상태",
+                                ],
                                 status,
                             ),
+                            labels=labels,
                         )
                         return
                 else:
@@ -716,13 +775,14 @@ def render_equipment_explorer(
                             columns=_with_parent(
                                 [
                                     EQUIPMENT_ID_COLUMN,
-                                    "공정소분류",
+                                    PROCESS_COLUMN,
                                     "상태",
                                     ARRIVAL_DATE_COLUMN,
                                     "Qual일정",
                                 ],
                                 status,
                             ),
+                            labels=labels,
                         )
                         return
                 counts = (

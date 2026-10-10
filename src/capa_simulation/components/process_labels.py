@@ -74,6 +74,27 @@ class ProcessLabels:
             dtype="object",
         )
 
+    def frame(self, data: pd.DataFrame, column: str = PROCESS_COLUMN) -> pd.DataFrame:
+        """`column` 만 표시명으로 바꾼 **화면용 복사본**.
+
+        매핑이 없거나 그 컬럼이 없으면 받은 프레임을 그대로 돌려준다 — 그래서 돌려받은 프레임을
+        고치지 않는다. 캐시가 들고 있는 프레임을 넘겨도 된다(바꾸는 것은 복사본이다). 빈 칸은
+        빈 칸으로 둔다(`series` 는 `None` 을 빈 글자로 바꾼다). CSV 로 내보낼 프레임에는 쓰지
+        않는다 — 화면 프레임과 CSV 프레임을 나눈다(AGENTS 8장).
+        """
+        if not self.labels or column not in data.columns:
+            return data
+        shown = data.copy()
+        shown[column] = pd.Series(
+            [
+                apply_process_label(value, self.labels) if pd.notna(value) else value
+                for value in data[column]
+            ],
+            index=data.index,
+            dtype="object",
+        )
+        return shown
+
     def unmatched(self, available: Iterable[object]) -> list[str]:
         """보유하지 않은 원본에 지정된 표시명. 오류가 아니라 안내용이다."""
         owned = {normalize_process_text(value) for value in available}

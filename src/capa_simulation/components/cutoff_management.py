@@ -21,6 +21,7 @@ import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import (
     merge_edited_rows,
@@ -47,12 +48,20 @@ def render_cutoff_management(
     repository: DuckDBEquipmentRepository,
     *,
     equipment_processes: list[str],
+    process_labels: ProcessLabels | None = None,
 ) -> pd.DataFrame:
     """Cut-off 탭을 그리고 **현재 저장된 값**을 돌려준다.
 
     돌려주는 것이 편집 중인 값이 아니라 저장된 값인 것은, 옆 탭의 GAP 계산이 저장되지
     않은 초안으로 숫자를 내면 안 되기 때문이다. 화면에 보이는 수와 계산에 쓰인 수가
     달라지는 것이 가장 나쁜 종류의 어긋남이다.
+
+    **이 표는 원본 공정명을 적는 원장이다**(2026-10-10 사용자 결정 — 입력 칸의 값은 원본).
+    편집표의 `공정` 칸·「Cut-off 를 적지 않은 공정」 경고·`process_cutoff.csv` 는 원본 그대로다 —
+    경고의 이름을 그대로 새 행에 적어야 맞댄다. 공정 표시명(`process_labels`)은 `표 보기 설정` 의
+    `공정` 필터 선택지 글자에만 쓴다. 편집표에 표시명 보조 칸을 두지 않는다 — 편집 결과가 곧
+    저장값이라(필터가 없으면 `merge_edited_rows` 가 편집표를 통째로 돌려준다) 보조 칸을 저장 전에
+    매번 걸러야 하고, `볼 컬럼` 에도 끼어든다.
     """
     stored = repository.load_process_cutoff()
 
@@ -105,6 +114,7 @@ def render_cutoff_management(
         editor_key=_EDITOR_KEY,
         filter_columns=["공정"],
         locked_columns=["공정", "Cutoff일수"],
+        value_labels=process_labels.value_labels() if process_labels else None,
     )
 
     with st.form(_FORM_KEY, border=True):
