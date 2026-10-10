@@ -4,6 +4,7 @@ import ast
 import json
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -463,6 +464,11 @@ TWO_PROCESS_RESULT_SCRIPT = TWO_PROCESS_TEST_SCRIPT.replace(
     'PAGE_NAME = "calculation_result.py"',
 )
 RENAMED_TWO_PROCESS_RESULT_SCRIPT = _renamed(TWO_PROCESS_RESULT_SCRIPT)
+# Process-B 의 표시명이 원본 Process-A 와 같다 — 표시명이 겹치는 픽스처.
+COLLIDING_TWO_PROCESS_TEST_SCRIPT = RENAMED_TWO_PROCESS_TEST_SCRIPT.replace(
+    '[("Process-A", "가공")]', '[("Process-B", "Process-A")]', 1
+)
+assert COLLIDING_TWO_PROCESS_TEST_SCRIPT != RENAMED_TWO_PROCESS_TEST_SCRIPT
 
 STEP_VIEW = "STEP별"
 STEP_VIEW_HINT = (
@@ -1099,6 +1105,119 @@ def test_step_route_selection_still_edits_the_original_process() -> None:
     assert set(saved["공정"]) == {"Process-A"}
 
 
+STEP_ROUTE_KEY = "capacity_step_route"
+_ROUTE_TABLES = ("RQ_REQB", "RQ_UPEH", "RQ_LOT_RATIO", "RQ_WF_RATIO")
+
+
+def _with_second_step(script: str, token: str) -> str:
+    """모든 경로에 STEP 하나(9A/P900)를 더한 픽스처 — 경로의 마지막 STEP 은 지울 수 없어서다."""
+    anchor = "\nactive = {\n"
+    assert script.count(anchor) == 1
+    inject = (
+        "\nfor _table in " + repr(_ROUTE_TABLES) + ":\n"
+        "    _extra = tables[_table].copy()\n"
+        "    _extra['MCP_SEQ'] = '9A'\n"
+        "    _extra['STEP_SEQ'] = 'P900'\n"
+        "    tables[_table] = pd.concat([tables[_table], _extra], ignore_index=True)\n"
+    )
+    replaced = script.replace(anchor, inject + anchor, 1)
+    assert '"test-capacity-two-process-page"' in replaced
+    # 계산·목록 캐시는 프로세스 전역이다 — 픽스처마다 내용 토큰을 가른다.
+    return replaced.replace('"test-capacity-two-process-page"', f'"{token}"')
+
+
+# Process-B 의 표시명이 원본 Process-A 와 같다.
+COLLIDING_STEP_SCRIPT = _with_second_step(
+    COLLIDING_TWO_PROCESS_TEST_SCRIPT, "test-capacity-step-route-colliding"
+)
+# 표시명 없이 `양산구분` 만 다른 두 갈래(양산·ER) — 예전 글자에는 `양산구분` 이 없어 두 줄이 같았다.
+_ER_ANCHOR = '        second_row["공정"] = "Process-B"\n'
+assert TWO_PROCESS_TEST_SCRIPT.count(_ER_ANCHOR) == 1
+ER_STEP_SCRIPT = _with_second_step(
+    TWO_PROCESS_TEST_SCRIPT.replace(
+        _ER_ANCHOR,
+        '        second_row["양산구분"] = "ER"\n'
+        f"        if table_name not in {_ROUTE_TABLES!r}:\n"
+        "            continue\n",
+        1,
+    ),
+    "test-capacity-step-route-er",
+)
+# 첫 줄(목록 맨 위)의 경로. 목록은 경로 키 차례라 Process-A 양산이 먼저이고, 갈래는
+# 「ER」 < 「양산」 이다.
+FIRST_STEP_ROUTE = {
+    "colliding": {"공정": "Process-A", "양산구분": "양산"},
+    "er": {"공정": "Process-A", "양산구분": "ER"},
+}
+STEP_ROUTE_SCRIPTS = {"colliding": COLLIDING_STEP_SCRIPT, "er": ER_STEP_SCRIPT}
+
+
+def _step_route_browser(case: str) -> tuple[AppTest, Any]:
+    """STEP 팝업을 열고 경로 상자를 브라우저처럼 든다(글자를 들고 다니다 되보낸다)."""
+    from widget_browser import BrowserChoice
+
+    app = _open_step_dialog(AppTest.from_string(STEP_ROUTE_SCRIPTS[case], default_timeout=90).run())
+    browser = BrowserChoice(app, "selectbox", STEP_ROUTE_KEY)
+    browser.sync()
+    options = browser.options()
+    # 줄마다 글자가 다르다 — 같은 글자면 Streamlit 이 마지막 줄로 돌려준다.
+    assert len(options) == len(set(options)) == 4, options
+    return app, browser
+
+
+def _reqb_steps(app: AppTest) -> list[tuple[str, str, str, str]]:
+    saved = app.session_state["test_month_updates"]["RQ_REQB"]
+    return sorted(
+        (str(row["공정"]), str(row["양산구분"]), str(row["MCP_SEQ"]), str(row["STEP_SEQ"]))
+        for row in saved.to_dict("records")
+    )
+
+
+@pytest.mark.parametrize("case", ["colliding", "er"])
+@pytest.mark.parametrize("picked", [True, False], ids=["first-line", "untouched"])
+def test_step_route_add_clones_the_line_the_user_sees(case: str, picked: bool) -> None:
+    """첫 줄을 골라(또는 손대지 않고) STEP 을 추가하면 그 줄의 경로에 더해진다(2026-10-10 리뷰
+    재현 — 표시명이 겹치거나 `양산구분` 만 다른 두 줄이 같은 글자라 마지막 줄 경로에 더해졌고,
+    손대지 않은 기본값도 첫 왕복에서 마지막 줄로 바뀌었다)."""
+    app, browser = _step_route_browser(case)
+    if picked:
+        browser.pick(browser.options()[0])
+    browser.run()
+    next(widget for widget in app.text_input if widget.label == "신규 MCP_SEQ").set_value("2A")
+    next(widget for widget in app.text_input if widget.label == "신규 STEP_SEQ").set_value("P200")
+    next(button for button in app.button if button.label == "STEP 일괄 추가").click()
+    browser.run()
+
+    assert not app.exception
+    added = [step for step in _reqb_steps(app) if step[3] == "P200"]
+    first = FIRST_STEP_ROUTE[case]
+    assert added == [(first["공정"], first["양산구분"], "2A", "P200")]
+
+
+@pytest.mark.parametrize("case", ["colliding", "er"])
+def test_step_route_delete_removes_the_line_the_user_sees(case: str) -> None:
+    """첫 줄을 골라 지우면 그 줄의 STEP 만 지워진다 — 다른 공정·갈래의 STEP 은 남는다."""
+    app, browser = _step_route_browser(case)
+    app.segmented_control(key="capacity_step_mode").set_value("STEP 삭제")
+    browser.run()
+    browser.pick(browser.options()[0])
+    browser.run()
+    next(box for box in app.checkbox if box.key == "capacity_step_delete_confirm").check()
+    next(button for button in app.button if button.label == "STEP 일괄 삭제").click()
+    browser.run()
+
+    assert not app.exception
+    first = FIRST_STEP_ROUTE[case]
+    other = ("Process-B", "양산") if case == "colliding" else ("Process-A", "양산")
+    assert _reqb_steps(app) == sorted(
+        [
+            (first["공정"], first["양산구분"], "9A", "P900"),
+            (*other, "1A", "P100"),
+            (*other, "9A", "P900"),
+        ]
+    )
+
+
 def _equipment_sub_tab_app(sub_tab: str, script: str = RENAMED_TEST_SCRIPT) -> AppTest:
     """설비대수 탭의 안쪽 탭 하나를 연 화면."""
     app = AppTest.from_string(script, default_timeout=60)
@@ -1159,12 +1278,6 @@ def test_month_editor_shows_the_label_but_returns_the_original_process() -> None
         "Process-A": 20.0,
         "Process-B": 31.0,
     }
-
-
-COLLIDING_TWO_PROCESS_TEST_SCRIPT = RENAMED_TWO_PROCESS_TEST_SCRIPT.replace(
-    '[("Process-A", "가공")]', '[("Process-B", "Process-A")]', 1
-)
-assert COLLIDING_TWO_PROCESS_TEST_SCRIPT != RENAMED_TWO_PROCESS_TEST_SCRIPT
 
 
 @pytest.mark.parametrize(("row", "edited"), [(0, "Process-A"), (1, "Process-B")])

@@ -96,7 +96,7 @@ def render_process_rename_management(
         )
     collisions = labels.owned_name_collisions(available_processes)
     if collisions:
-        # 공정을 고르는 상자는 모든 화면에서 겹친 글자를 가른다(`ProcessLabels.unique_format_func`).
+        # 표시명을 쓰는 화면의 공정 선택 상자는 겹친 글자를 가른다(`unique_format_func`).
         # 표·그림·버튼은 가르지 않아 같은 글자로 보인다. 검사 범위는 시나리오 `RQ_MODULE` 공정
         # 뿐이다 — 설비 마스터까지 보려면 Admin 이 설비 DB 를 읽어야 해서 넓히지 않고 문구에 적는다.
         st.warning(

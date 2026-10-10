@@ -85,9 +85,10 @@ class ProcessLabels:
         — 조회 조건으로 선택지가 바뀌어도 글자가 덜 흔들린다. 그래도 선택지에 따라 글자가 바뀔 수
         있으므로 부르는 쪽은 위젯 앞에서 매 회차 잡은 값을 세션에 다시 적는다
         (`page_bootstrap.prune_choice`·`prune_list_selection`) — 그래야 브라우저가 바뀐 글자를
-        받는다(key 없는 상자는 글자가 바뀌면 새 위젯으로 서므로 그럴 칸이 없다). 공정을 고르는
-        상자는 모두 이것을 쓴다(AGENTS 8장 ②). 표·그림·버튼은 이 함수를 쓰지 않으므로 겹친 두
-        공정이 같은 글자로 보인다(Admin `Proc Rename` 이 겹침을 경고한다).
+        받는다(key 없는 상자는 글자가 바뀌면 새 위젯으로 서므로 그럴 칸이 없다). 표시명을 쓰는
+        화면의 공정 선택 상자는 모두 이것을 쓴다(AGENTS 8장 ② — Space 현황·RawData 는 원본 이름).
+        표·그림·버튼은 이 함수를 쓰지 않으므로 겹친 두 공정이 같은 글자로 보인다(Admin `Proc
+        Rename` 이 겹침을 경고한다).
         """
         values = list(dict.fromkeys(_option_text(option) for option in options))
         reserved_texts = {_option_text(item) for item in reserved}

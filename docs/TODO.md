@@ -809,6 +809,22 @@
   0.13 ms — 샘플 관측). Admin 겹침 경고 문구를 「공정 상자는 갈라 보이고 표·그림·버튼은 같은 글자」 로 고쳤다.
   테스트: `tests/test_column_filter.py`·`tests/test_process_choice_pages.py`(`BrowserChoice` — 겹친 글자 고르기,
   표시명이 바뀐 회차 뒤에도 원본 유지), `test_home_page` 프리셋 저장. 처방을 빼면 새 테스트 16개가 실패한다.
+  **병합 전 리뷰 후속(같은 날)**: 기준 정보 STEP 추가·삭제 대상 상자(`capacity_step_route`)도 같은 결함이었다 —
+  글자가 `process_labels.label()` 그대로이고 `양산구분` 이 빠져, 표시명이 겹치거나 양산·ER 두 갈래인 두 줄이
+  같은 글자가 되어 Streamlit 이 마지막 줄을 돌려줬다(다른 공정·갈래에 STEP 복사·삭제, 고르지 않아도 첫
+  왕복에서 기본값이 바뀜). 글자에 경로 키 전부·MCP/STEP 을 싣고 공정은 `unique_format_func`, 남는 겹침은
+  「 #n」, 값은 행 순번 대신 경로 키, 매 회차 `prune_choice(default=첫 줄)`. Space 현황·가용설비 RawData 는
+  원본 이름이라 이 규칙 밖이다.
+- [ ] **선택 상자를 새로 만들거나 리뷰할 때 `format_func` 안의 `.label()`·`format_func()` 직접 호출도 찾는다**
+  (2026-10-10 병합 전 리뷰) — 이번 후속은 `format_func=process_labels.format_func()` 자리를 grep 해 찾았는데,
+  STEP 대상 상자는 `format_func` 안에서 `process_labels.label()` 을 불러 목록에서 빠졌다. 글자가 여러 칸을
+  잇는 상자는 그 칸들이 줄의 키인지(같은 글자가 둘이면 다른 값이 돌아온다)도 함께 본다.
+- [ ] **(후보·우선순위 낮음) 월별 계층 표가 같은 글자인 공정 칸을 한 칸으로 합친다**(2026-10-10 브라우저 확인,
+  사용자 결정 「TODO 후보로만」) — 표시명이 다른 공정의 원본과 같으면(Packing → 「Pre B/D」) 산출 결과 대당
+  Capa·확보율 표에서 두 공정이 「Pre B/D」 한 칸 아래 두 행으로 보여 한 공정의 두 줄처럼 읽힌다(재현 스크린샷
+  `calc_6_both.png`·`calc_8_securement_both.png` — 공정 필터로 Packing·Pre B/D 를 함께 고른 화면). 값·CSV 는
+  원본이라 계산은 그대로다. Admin `Proc Rename` 이 겹침을 경고하므로 우선순위는 낮다. 고친다면 계층 표의 칸
+  합치기를 표시 글자가 아니라 원본 값으로 가르는 쪽이다.
 - [x] **필요단축일정 조회 조건 공용 프로필 · 공정 표시명(2026-10-08 사용자 요청)** — 「설비 조회 조건은
   공용프로필로 저장되게끔 해 조회기간과 공정」, 「공정명은 proc rename 기준으로 표기」. 시작 월·끝 월·공정을
   설비 DB `0019`(`equipment_ops.shortening_filter_profile` 한 행 + `shortening_filter_process`)에 두고, 세션에

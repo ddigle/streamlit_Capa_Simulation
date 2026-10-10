@@ -42,6 +42,7 @@ from capa_simulation.page_bootstrap import (
     PAGE_DIALOG_SUFFIX,
     bootstrap_error_message,
     load_page_context,
+    prune_choice,
     resolve_effective_months,
 )
 from capa_simulation.scenario_state import (
@@ -79,6 +80,7 @@ from capa_simulation.services.reference_consistency import (
 from capa_simulation.services.reference_csv import count_removed_values
 from capa_simulation.services.route_step_editor import (
     ROUTE_GROUP_COLUMNS,
+    STEP_PAIR_COLUMNS,
     clone_route_step,
     delete_route_step,
 )
@@ -335,9 +337,11 @@ editor_keys = (
     EDITOR_RUN_DAY,
     *(editor_key for _, _, _, editor_key in EQUIPMENT_EDITORS),
 )
+# STEP 복제·삭제 대상 상자. 값은 경로 키다(`_step_route_choices`).
+STEP_ROUTE_KEY = "capacity_step_route"
 step_widget_keys = (
     "capacity_step_mode",
-    "capacity_step_route",
+    STEP_ROUTE_KEY,
     "capacity_step_new_mcp",
     "capacity_step_new_step",
     "capacity_step_delete_confirm",
@@ -455,6 +459,42 @@ def _open_dialog(name: str) -> None:
     st.session_state[DIALOG_KEY] = name
 
 
+def _step_route_choices(catalog: pd.DataFrame) -> dict[str, str]:
+    """STEP 복제·삭제 상자의 선택지 — 경로 키 → 보이는 글자(목록 차례 그대로).
+
+    Streamlit 1.63 selectbox 는 값을 **보이는 글자**로 주고받아, 글자가 같은 줄이 둘이면 마지막
+    줄로 돌아온다(2026-10-10 병합 전 리뷰 재현 — 다른 공정에 STEP 이 복사되거나 다른 공정의 STEP
+    이 지워졌고, 고르지 않아도 첫 왕복에서 기본값이 다른 줄로 바뀌었다). 그래서 글자에 행의 **진짜
+    키**(`ROUTE_GROUP_COLUMNS` 전부 — `양산구분` 포함 — 와 MCP/STEP)를 다 싣는다. 공정은 표시명이
+    다른 공정의 원본과 겹치면 「표시명 (원본)」 으로 가르고(`unique_format_func`, 목록의 공정
+    전체로), 그래도 같은 글자가 남는 드문 경우(키 값의 공백만 다른 줄 등)는 뒤 줄에 「 #n」 을
+    붙인다. 값은 행 위치가 아니라 경로 키다 — STEP 을 더하거나 빼 목록이 밀려도 다른 줄을 가리키지
+    않는다.
+    """
+    key_columns = [*ROUTE_GROUP_COLUMNS, *STEP_PAIR_COLUMNS]
+    process_text = process_labels.unique_format_func(catalog["공정"].astype(str))
+    choices: dict[str, str] = {}
+    used: set[str] = set()
+    for row in catalog.to_dict("records"):
+        route_id = candidate_id = "\x1f".join(str(row[column]) for column in key_columns)
+        suffix = 2
+        while candidate_id in choices:
+            candidate_id = f"{route_id}\x1f#{suffix}"
+            suffix += 1
+        text = candidate = (
+            f"{process_text(row['공정'])} · {row['양산구분']} · {row['제품정보']} · "
+            f"{row['Stack']} · {row['WF 구분']} · {row['Area_Name']} · {row['소요기준']} · "
+            f"MCP {row['MCP_SEQ']} / STEP {row['STEP_SEQ']} · {row['적용월수']}개월"
+        )
+        suffix = 2
+        while candidate in used:
+            candidate = f"{text} #{suffix}"
+            suffix += 1
+        used.add(candidate)
+        choices[candidate_id] = candidate
+    return choices
+
+
 @st.dialog("STEP 추가·삭제", width="large", on_dismiss=_close_dialog)
 def _step_dialog() -> None:
     """고른 경로 STEP 을 복제하거나 지운다. 조회기간의 모든 연결 수요에 함께 반영한다."""
@@ -483,27 +523,23 @@ def _step_dialog() -> None:
         # 넘어간다.
         required=True,
     )
-    route_options = list(range(len(step_catalog)))
-
-    def route_label(index: int) -> str:
-        # 표시 문자열만 만든다. 선택값은 정수 인덱스이고 아래에서 다시 `step_catalog` 의
-        # 원본 행을 읽어 STEP 복제·삭제에 넘기므로 값 경로에는 표시명이 닿지 않는다.
-        row = step_catalog.iloc[index]
-        return (
-            f"{process_labels.label(row['공정'])} · {row['제품정보']} · "
-            f"{row['Stack']} · {row['WF 구분']} · "
-            f"{row['Area_Name']} · {row['소요기준']} · "
-            f"MCP {row['MCP_SEQ']} / STEP {row['STEP_SEQ']} · {row['적용월수']}개월"
-        )
-
-    selected_route_index = st.selectbox(
+    # 값은 경로 키이고 글자만 표시명이다. 아래에서 그 키의 원본 행을 읽어 STEP 복제·삭제에 넘기므로
+    # 값 경로에는 표시명이 닿지 않는다.
+    route_choices = _step_route_choices(step_catalog)
+    route_ids = list(route_choices)
+    # 잡은 값을 매 회차 세션에 다시 적는다(없거나 목록 밖이면 첫 줄). 적은 값만 브라우저에 가므로
+    # 글자가 바뀌는 회차(표시명 변경·적용월수 변화)에도 브라우저가 새 글자를 받는다. 기본값을 세션에
+    # 심으므로 위젯에 `index=` 를 주지 않는다.
+    prune_choice(STEP_ROUTE_KEY, route_ids, default=route_ids[0])
+    selected_route_id = st.selectbox(
         "복제 원본 또는 삭제 대상 STEP",
-        options=route_options,
-        format_func=route_label,
-        key="capacity_step_route",
+        options=route_ids,
+        # 목록 밖 값(옛 세션 값)은 키 글자 그대로 — 어떤 줄의 글자와도 겹치지 않는다.
+        format_func=lambda route_id: route_choices.get(str(route_id), str(route_id)),
+        key=STEP_ROUTE_KEY,
         persist_state="page",
     )
-    selected_route_row = step_catalog.iloc[int(selected_route_index)]
+    selected_route_row = step_catalog.iloc[route_ids.index(str(selected_route_id))]
     # 몇 개의 수요 변형이 함께 바뀌는지는 누르기 전에 보여야 하는 상태다.
     st.caption(
         f"함께 처리하는 수요 변형(Capa Code·Customer·CS) "

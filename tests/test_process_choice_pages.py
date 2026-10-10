@@ -263,16 +263,31 @@ def test_dynamic_capacity_process_keeps_its_value_when_the_display_name_changes(
 
 
 def test_dynamic_capacity_process_defaults_to_the_worst_process() -> None:
-    """기본값(가장 나쁜 공정)은 위젯 `index=` 가 아니라 세션에 심는다 — 둘을 함께 주면 Streamlit 이
-    경고한다. 표시명이 없으면 글자·차례가 예전 그대로다(원본 가나다순)."""
+    """기본값은 관리 우선순위 1위(실현률이 가장 낮은 공정)다. 위젯 `index=` 가 아니라 세션에
+    심는다 — 둘을 함께 주면 Streamlit 이 경고한다. 표시명이 없으면 글자·차례가 예전 그대로다(원본
+    가나다순)."""
     from test_reference_integrity_page import TEST_SCRIPT as PLAIN_SCRIPT
+    from test_reference_integrity_page import _priority_frame
 
     app = AppTest.from_string(PLAIN_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
+    # 표본 공정명은 리터럴로 고정하지 않는다 — 화면의 우선순위 표 첫 줄이 가장 나쁜 공정이다.
+    worst = str(_priority_frame(app).iloc[0]["공정"])
     picker = app.selectbox(key=INTEGRITY_FILTER_KEY)
     assert picker.options == sorted(picker.options)
-    assert app.session_state[INTEGRITY_FILTER_KEY] == picker.value
+    # 가장 나쁜 공정이 첫 선택지면 「첫 선택지가 기본」 과 가를 수 없다 — 표본이 그렇지 않은지 본다.
+    assert picker.options[0] != worst
+    assert picker.value == worst
+    assert app.session_state[INTEGRITY_FILTER_KEY] == worst
+
+    # 목록 밖의 옛 세션 값(다른 표본·다른 원천에서 남은 것)은 가장 나쁜 공정으로 돌아온다.
+    stale = AppTest.from_string(PLAIN_SCRIPT, default_timeout=60)
+    stale.session_state[INTEGRITY_FILTER_KEY] = "목록에 없는 공정"
+    stale.run()
+    assert not stale.exception
+    assert stale.selectbox(key=INTEGRITY_FILTER_KEY).value == worst
+    assert stale.session_state[INTEGRITY_FILTER_KEY] == worst
 
 
 # ------------------------------------------------------- 실적 화면(효율·UPEH·수율) · 공정
