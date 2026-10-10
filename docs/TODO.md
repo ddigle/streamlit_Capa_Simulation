@@ -786,17 +786,29 @@
   `test_equipment_explorer.py`·`test_availability_gap_panel.py`.
   (2) 당긴 날이 반입보다 이르면 엔진은 그날을 「입고 예정」으로 세지만 이 계산은 가용으로 센다(사용자 결정 —
   반입 무시). 실데이터에서 반입·Qual 차이 분포를 보고 다시 묻는다.
-- [ ] **다른 화면의 공정 선택 상자도 `ProcessLabels.unique_format_func` 로 옮긴다**(2026-10-10 병합 전 리뷰 후속) —
-  Streamlit 1.63 은 선택값을 보이는 글자로 주고받아, 표시명이 다른 공정의 원본 이름과 같으면 고른 것과 다른
-  공정이 세션에 든다(가용설비 현황 네 상자는 고쳤다). 아직 `format_func()`·`ProcessLabelFormatter` 그대로인
-  자리: `app_pages/home.py`(628), `app_pages/calculation_result.py`(268), `app_pages/standard_target_capa.py`
-  (245·671), `app_pages/wip_status.py`(195), `app_pages/reference_integrity.py`(278),
-  `components/column_filter.py`(77 — 공정별 확보율 필터), `components/home_preference.py`(1441·1631),
-  `components/performance_actual_screen.py`(211). `components/month_editor.py`(338)의 `SelectboxColumn` 은
-  편집 결과를 값으로 돌려주므로(AGENTS 8장 ⑤) 같은 문제인지 먼저 잰다. 상자마다 그 상자의 선택지로 부르고,
-  표지값이 있으면 `reserved` 로 넘기고, 위젯 앞에서 매 회차 `prune_choice`·`prune_list_selection` 으로 잡은 값을
-  다시 적는다. 위젯마다 겹치는 표시명을 골라 세션 값이 원본인지 보는 테스트를 `BrowserChoice`(브라우저처럼 글자를
-  들고 다니는 대역)로 더한다 — 일반 AppTest 는 글자가 바뀌는 회차의 결함을 못 본다.
+- [x] **다른 화면의 공정 선택 상자도 `ProcessLabels.unique_format_func` 로 옮긴다**(2026-10-10 병합 전 리뷰 후속,
+  사용자 결정 「권장대로」) — Streamlit 1.63 은 선택값을 보이는 글자로 주고받아, 표시명이 다른 공정의 원본
+  이름과 같으면 고른 것과 다른 공정이 세션에 들고 글자가 회차마다 바뀌면 브라우저가 옛 글자로 다른 값을
+  되살렸다. 가용설비 현황과 같은 처방(글자 가르기 + 위젯 앞에서 매 회차 잡은 값 다시 적기)을 넓혔다.
+  **바꾼 상자**: 산출 결과 대당 Capa 공정 필터, `components/column_filter.py` 의 공정 칸(산출 결과 소요대수·
+  확보율, 기준 정보 설비대수, 월별 편집기 필터 — 표시명이 없어도 글자 선택지 칸은 매 회차 다시 적어 표시명을
+  모두 지운 회차에도 선택이 빠지지 않는다), 표준 목표 공정 필터·로직 분석 `공정`(일곱 칸 모두 `prune_choice
+  (default=None)` 로 매 회차 다시 적고, 글자는 주차와 상관없는 공정 전체로 가른다), 표준 대비 재공 `공정`(폼
+  안), Dynamic Capa 상위 `공정`(기본값 = 가장 나쁜 공정을 `index=` 대신 세션에 심는다), 실적 세 화면
+  `공정`(`performance_actual_screen` — 다시 적기를 새로 더함), HOME Preference 주요공정 프리셋 `공정`(key 없는
+  상자라 위젯 id 에 글자가 들어가 글자가 바뀌면 새 위젯 — 글자만 가른다; 같은 글자면 다른 공정이 공용 프리셋에
+  저장되던 결함), HOME 실행 Capa 반영 편집표 `공정` 칸(값은 옵션 `value` 로 오가 섞이지 않지만 목록에서 둘을
+  가려 고를 수 있게 글자만 가른다). 표지값이 있는 상자는 없다(빈 선택은 자리 글자). 선택지 차례는 상자마다
+  예전 그대로다(보이는 글자순 규칙은 가용설비 현황 상자에만 있었다). **바꾸지 않은 곳**: HOME B/N 공정 선택
+  바둑판(`home.py` — 버튼이라 값은 key·`args` 의 원본, 글자로 주고받지 않는다), `month_editor.py` 의
+  `SelectboxColumn` — **결함 없음**: 분류 칸이 `disabled` 이고, 편집표는 칸을 옵션 `value` 로 찾아 `label` 을
+  그리며 고르기·붙여넣기·복사가 모두 `value` 로 오가고(Streamlit 1.63 프런트 번들 확인), 브라우저가 보내는
+  편집은 「행 위치·컬럼·값」이라 겹친 표시명(Process-B → 「Process-A」)에서도 편집이 제 행에 앉는다(AppTest
+  `test_month_editor_edit_lands_on_the_original_process_even_when_two_labels_collide`, 실제 브라우저). HOME 은
+  rerun 증가 없음(`scripts/benchmark_home.py` 중앙값 warm 0.240 → 0.236 s, `unique_format_func` 70공정 한 번
+  0.13 ms — 샘플 관측). Admin 겹침 경고 문구를 「공정 상자는 갈라 보이고 표·그림·버튼은 같은 글자」 로 고쳤다.
+  테스트: `tests/test_column_filter.py`·`tests/test_process_choice_pages.py`(`BrowserChoice` — 겹친 글자 고르기,
+  표시명이 바뀐 회차 뒤에도 원본 유지), `test_home_page` 프리셋 저장. 처방을 빼면 새 테스트 16개가 실패한다.
 - [x] **필요단축일정 조회 조건 공용 프로필 · 공정 표시명(2026-10-08 사용자 요청)** — 「설비 조회 조건은
   공용프로필로 저장되게끔 해 조회기간과 공정」, 「공정명은 proc rename 기준으로 표기」. 시작 월·끝 월·공정을
   설비 DB `0019`(`equipment_ops.shortening_filter_profile` 한 행 + `shortening_filter_process`)에 두고, 세션에

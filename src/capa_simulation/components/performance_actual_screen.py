@@ -31,6 +31,7 @@ from capa_simulation.components.sample_data import (
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, stateful_tabs, tab_is_hidden
 from capa_simulation.design import tokens
+from capa_simulation.page_bootstrap import prune_list_selection
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.performance_actuals import (
     MetricSpec,
@@ -191,6 +192,11 @@ def _render_detail(
 ) -> None:
     """조회 조건을 주고 월 × 공정 × 제품을 편다."""
     process_options = sorted(monthly["공정"].astype(str).unique().tolist())
+    process_key = f"{key_prefix}_process_filter"
+    # 잡은 값을 매 회차 세션에 다시 적는다(선택지에 없는 값은 뺀다). 적은 값만 브라우저에 가므로
+    # 보이는 글자가 바뀌는 회차(공정 표시명의 「표시명 (원본)」 가르기)에도 브라우저가 새 글자를
+    # 받는다 — 적지 않으면 옛 글자를 되보내 다른 공정으로 바뀌었다.
+    prune_list_selection(process_key, process_options)
     with st.container(border=True):
         st.markdown("#### :material/filter_alt: 조회 조건")
         with st.container(horizontal=True, gap="small"):
@@ -208,8 +214,10 @@ def _render_detail(
                 "공정",
                 options=process_options,
                 placeholder="전체 공정",
-                format_func=labels.format_func(),
-                key=f"{key_prefix}_process_filter",
+                # 값은 원본이고 글자만 표시명이다. 보이는 글자가 겹치면 「표시명 (원본)」 으로
+                # 가른다(`unique_format_func` — 같은 글자면 다른 공정이 돌아온다).
+                format_func=labels.unique_format_func(process_options),
+                key=process_key,
                 persist_state="session",
                 width=320,
             )

@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import cast
+from typing import cast, overload
 
 import duckdb
 import pandas as pd
@@ -198,12 +198,21 @@ def prune_list_selection(
     return pruned
 
 
-def prune_choice(key: str, options: Sequence[str], *, default: str) -> str:
+@overload
+def prune_choice(key: str, options: Sequence[str], *, default: str) -> str: ...
+
+
+@overload
+def prune_choice(key: str, options: Sequence[str], *, default: None) -> str | None: ...
+
+
+def prune_choice(key: str, options: Sequence[str], *, default: str | None) -> str | None:
     """`prune_list_selection` 의 단일 선택(`st.selectbox`) 짝.
 
     저장된 값이 지금 옵션에 있으면 그대로, 없거나 아직 없으면 `default` 를 세션에 **되쓴다** —
     지우지(`pop`) 않는다(AGENTS 9장 「pop 하지 말고 새 값을 적는다」). 위젯 앞에서 매 회차 부른다.
     적은 값만 브라우저에 가므로, 선택지 글자가 바뀌어도 브라우저가 새 글자를 받는다.
+    `default=None` 은 고른 것이 없는 상자(`index=None`)의 빈 선택이다.
     """
     saved = st.session_state.get(key)
     value = str(saved) if saved is not None and str(saved) in set(options) else default

@@ -156,7 +156,9 @@ def test_display_name_equal_to_another_owned_process_warns_but_still_saves(
         if "보유 공정의 원본명과 같은 표시명 1건" in warning.value
     )
     # 선택 상자·표에서 어떻게 보이는지와 검사 범위(설비 마스터는 보지 않는다)를 사실대로 적는다.
-    assert "「표시명 (원본)」" in collision and "표·그림에서는 같은 글자" in collision
+    assert "「표시명 (원본)」" in collision and "표·그림·버튼에서는 같은 글자" in collision
+    # 모든 화면의 공정 상자가 글자를 가른다 — 「다른 공정이 잡힐 수 있다」 는 이제 사실이 아니다.
+    assert "다른 공정이 잡힐" not in collision
     assert "설비 마스터에만 있는 공정은 여기서 검사하지 않습니다" in collision
 
 

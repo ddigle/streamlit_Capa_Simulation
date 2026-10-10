@@ -1438,7 +1438,12 @@ def _render_key_process_editor(
         # 저장이 그 공정을 공용 프리셋에서 조용히 지웠고, 공정이 모두 없는 프리셋은 이름조차 못
         # 바꿨다(2026-09-29 리뷰에서 재현). 빼려면 목록에서 직접 지운다.
         absent = [process for process in current if process not in known_options]
-        base_format = process_labels.format_func()
+        # 값은 원본이고 글자만 표시명이다. 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다
+        # (`unique_format_func`) — 같은 글자면 multiselect 가 첫 선택지로 돌아와 고른 것과 다른
+        # 공정이 공용 프리셋에 저장됐다. 이 상자는 key 가 없어 위젯 id 에 보이는 글자가 들어가므로,
+        # 글자가 바뀌면 새 위젯으로 서서 프리셋 값(`default`)을 다시 읽는다 — 매 회차 세션에 다시
+        # 적을 칸이 없고 적을 까닭도 없다.
+        base_format = process_labels.unique_format_func([*process_options, *absent])
         with st.form("home_key_process_form"):
             # 작업 줄(저장·이름)은 위다. 버튼이 왼쪽이다.
             with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
@@ -1627,8 +1632,11 @@ def _render_execution_editor(
                         "공정",
                         options=list(process_options),
                         # **값은 원본 공정명이고 보이는 글자만 표시명이다.** 표시명으로
-                        # 저장하면 Proc Rename 을 바꾸는 순간 매칭이 끊긴다.
-                        format_func=process_labels.label,  # 값은 원본, 글자만 표시명
+                        # 저장하면 Proc Rename 을 바꾸는 순간 매칭이 끊긴다. 편집표 칸은 값을
+                        # 글자가 아니라 옵션 `value` 로 주고받아(고르기·붙여넣기·복사 모두) 겹친
+                        # 글자로 다른 공정이 들지는 않는다. 다만 목록에서 둘을 가려 고를 수
+                        # 있도록 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다.
+                        format_func=process_labels.unique_format_func(process_options),
                         required=True,
                     ),
                     "증감 확보율": st.column_config.NumberColumn(

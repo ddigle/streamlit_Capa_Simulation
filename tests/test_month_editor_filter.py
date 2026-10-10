@@ -11,6 +11,7 @@ from io import BytesIO
 
 import pandas as pd
 from streamlit.testing.v1 import AppTest
+from widget_browser import BrowserChoice
 
 from capa_simulation.components.month_editor import (
     FILTER_LOCKED_NOTICE,
@@ -380,8 +381,12 @@ def test_filter_options_show_display_names_but_keep_original_values() -> None:
     process_filter = app.multiselect(key=f"{EDITOR_KEY}_filter_공정")
     assert process_filter.options == ["가공", "Process-B", "Process-C"]
 
-    process_filter.select("가공")
-    app.run()
+    # 사용자는 보이는 글자 「가공」 을 고르고 브라우저는 그 글자를 보낸다(Streamlit 1.63). AppTest
+    # 의 `select` 는 값을 받아 `format_func` 로 글자를 만들므로 글자를 직접 실어 보내는 대역을 쓴다.
+    browser = BrowserChoice(app, "multiselect", f"{EDITOR_KEY}_filter_공정")
+    browser.sync()
+    browser.pick(["가공"])
+    browser.run()
 
     assert not app.exception
     assert app.session_state[f"{EDITOR_KEY}_filter_공정"] == ["Process-A"]

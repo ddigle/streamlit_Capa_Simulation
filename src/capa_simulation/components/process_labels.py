@@ -52,10 +52,12 @@ class ProcessLabels:
         return apply_process_label(value, self.labels)
 
     def format_func(self) -> ProcessLabelFormatter:
-        """`st.multiselect`·`st.selectbox` 의 `format_func=` 에 넘길 함수.
+        """값을 글자로 주고받지 않는 자리(버튼 글자·읽기 전용 편집표 칸·Figure 라벨)의 글자 함수.
 
         **값은 절대 바꾸지 않는다.** 선택값·세션값·프리셋 저장값이 원본으로 남아야 한다.
         표시명으로 바꾸면 옵션에 없는 값이 조용히 걸러져 화면이 오류 없이 텅 빈다.
+        `st.multiselect`·`st.selectbox` 에는 쓰지 않는다 — 겹친 글자로 다른 공정이 돌아온다.
+        선택 상자는 `unique_format_func` 다.
         """
         return ProcessLabelFormatter(self.labels)
 
@@ -83,8 +85,9 @@ class ProcessLabels:
         — 조회 조건으로 선택지가 바뀌어도 글자가 덜 흔들린다. 그래도 선택지에 따라 글자가 바뀔 수
         있으므로 부르는 쪽은 위젯 앞에서 매 회차 잡은 값을 세션에 다시 적는다
         (`page_bootstrap.prune_choice`·`prune_list_selection`) — 그래야 브라우저가 바뀐 글자를
-        받는다. 표·그림은 이 함수를 쓰지 않으므로 겹친 두 공정이 같은 글자로 보인다(Admin
-        `Proc Rename` 이 겹침을 경고한다).
+        받는다(key 없는 상자는 글자가 바뀌면 새 위젯으로 서므로 그럴 칸이 없다). 공정을 고르는
+        상자는 모두 이것을 쓴다(AGENTS 8장 ②). 표·그림·버튼은 이 함수를 쓰지 않으므로 겹친 두
+        공정이 같은 글자로 보인다(Admin `Proc Rename` 이 겹침을 경고한다).
         """
         values = list(dict.fromkeys(_option_text(option) for option in options))
         reserved_texts = {_option_text(item) for item in reserved}

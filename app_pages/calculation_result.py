@@ -264,8 +264,10 @@ else:
                 ),
                 key=process_filter_key,
                 persist_state="session",
-                # 표시만 바꾼다. 선택값은 원본이어야 아래 `isin` 이 원본 컬럼과 맞는다.
-                format_func=process_labels.format_func(),
+                # 표시만 바꾼다. 선택값은 원본이어야 아래 `isin` 이 원본 컬럼과 맞는다. 보이는
+                # 글자가 겹치면 「표시명 (원본)」 으로 가른다(`unique_format_func` — 같은 글자면
+                # 다른 공정이 돌아온다). 잡은 값은 위 `prune_list_selection` 이 매 회차 다시 적는다.
+                format_func=process_labels.unique_format_func(process_options),
             )
         selected_level = next(
             level for level, label in CAPACITY_LEVEL_LABELS.items() if label == selected_level_label

@@ -44,6 +44,7 @@ from capa_simulation.components.status_metric import (
     shortage_tone,
 )
 from capa_simulation.components.tab_state import OpenTab, stateful_tabs, tab_is_hidden
+from capa_simulation.page_bootstrap import prune_choice
 from capa_simulation.services.dynamic_capacity import (
     aggregate_dynamic_capacity,
     build_dynamic_capacity_demo,
@@ -51,6 +52,7 @@ from capa_simulation.services.dynamic_capacity import (
 )
 
 _ALL = "전체"
+PROCESS_FILTER_KEY = "dynamic_capacity_process_filter"
 _CAPACITY_UNIT_LABELS = {"WF": "매", "CHIP": "Kea", "PKG": "Kea"}
 _SOURCE = "실적 DB"
 
@@ -243,7 +245,11 @@ def _render_detail(
         maximum_date = cast(pd.Timestamp, demo["일자"].max()).date()
         worst_process = str(process_summary.iloc[0]["공정"])
         process_options = sorted(demo["공정"].astype(str).unique().tolist())
-        default_process_index = process_options.index(worst_process)
+        # 잡은 값을 매 회차 세션에 다시 적는다(없거나 선택지 밖이면 가장 나쁜 공정). 적은 값만
+        # 브라우저에 가므로 보이는 글자가 바뀌는 회차에도 브라우저가 새 글자를 받는다 — 적지 않으면
+        # 옛 글자를 되보내 다른 공정으로 바뀌었다. 기본값을 세션에 심으므로 위젯에 `index=` 를
+        # 주지 않는다(함께 주면 Streamlit 이 경고한다).
+        prune_choice(PROCESS_FILTER_KEY, process_options, default=worst_process)
 
         with st.container(horizontal=True, gap="small"):
             start_date: date = st.date_input(
@@ -269,13 +275,13 @@ def _render_detail(
                 st.selectbox(
                     "공정",
                     process_options,
-                    index=default_process_index,
-                    key="dynamic_capacity_process_filter",
+                    key=PROCESS_FILTER_KEY,
                     persist_state="session",
                     width=210,
                     # 표시만 바꾼다. 선택값은 원본이라 아래 `eq`·`filter_dynamic_capacity` 가
-                    # 원본 컬럼과 그대로 대조한다.
-                    format_func=labels.format_func(),
+                    # 원본 컬럼과 그대로 대조한다. 보이는 글자가 겹치면 「표시명 (원본)」 으로
+                    # 가른다(`unique_format_func` — 같은 글자면 마지막 선택지로 돌아온다).
+                    format_func=labels.unique_format_func(process_options),
                 ),
             )
 

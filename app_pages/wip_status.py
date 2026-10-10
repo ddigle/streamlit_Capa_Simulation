@@ -191,8 +191,10 @@ with st.container(border=True):
                 help="옵션과 차트 열은 STEP의 P→T, 숫자 구간 오름차순을 따릅니다.",
                 persist_state="session",
                 width=420,
-                # 표시만 바꾼다. 선택값은 아래 `isin` 이 원본 컬럼과 대조한다.
-                format_func=process_labels.format_func(),
+                # 표시만 바꾼다. 선택값은 아래 `isin` 이 원본 컬럼과 대조한다. 보이는 글자가
+                # 겹치면 「표시명 (원본)」 으로 가른다(`unique_format_func`). 잡은 값은 위
+                # `prune_list_selection` 이 매 회차 다시 적어 브라우저가 바뀐 글자를 받는다.
+                format_func=process_labels.unique_format_func(process_options),
             )
             selected_products = st.multiselect(
                 "제품",

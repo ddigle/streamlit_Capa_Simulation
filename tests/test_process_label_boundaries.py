@@ -369,7 +369,14 @@ st.text(",".join(str(value) for value in filtered["공정"].tolist()))
     # 화면에는 표시명이 보인다.
     assert app.multiselect[0].options == ["절단", "MOLD"]
 
-    app.multiselect[0].select("절단").run(timeout=30)
+    # 사용자는 보이는 글자 「절단」 을 고르고 브라우저는 그 글자를 보낸다(Streamlit 1.63). AppTest
+    # 의 `select` 는 값을 받아 `format_func` 로 글자를 만들므로 글자를 직접 실어 보내는 대역을 쓴다.
+    from widget_browser import BrowserChoice
+
+    browser = BrowserChoice(app, "multiselect", "probe_공정")
+    browser.sync()
+    browser.pick(["절단"])
+    browser.run()
 
     assert not app.exception
     # **세션 저장값과 걸러진 프레임은 원본 공정명이다.** 값을 표시명으로 바꿨다면

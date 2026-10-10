@@ -13,12 +13,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.components.process_labels import ProcessLabelFormatter
+from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.page_bootstrap import prune_list_selection
 
 
 def column_filter_key(key_prefix: str, column: str) -> str:
@@ -68,13 +69,26 @@ def render_column_filter_controls(
     for column in columns:
         options = data[column].dropna().drop_duplicates().tolist()
         labels = (value_labels or {}).get(column)
+        # 값은 원본이고 글자만 표시명이다. 보이는 글자가 다른 선택지와 겹치면 「표시명 (원본)」 으로
+        # 가른다 — Streamlit 1.63 multiselect 는 같은 글자 둘 중 첫째로 돌아와 고른 것과 다른 공정이
+        # 걸렸다(`unique_format_func`). 차례는 그대로다.
+        option_text: Callable[[object], str] = (
+            ProcessLabels(labels=labels).unique_format_func(options) if labels else str
+        )
+        if all(isinstance(option, str) for option in options):
+            # 잡은 값을 매 회차 세션에 다시 적는다(선택지에 없는 값은 뺀다). 적은 값만 브라우저에
+            # 가므로 보이는 글자가 바뀌는 회차(겹침이 생기거나 표시명을 바꾸거나 모두 지운 회차)에도
+            # 새 글자를 받는다 — 적지 않으면 옛 글자를 되보내 다른 공정이 되거나 선택이 빠졌다.
+            # `prune_list_selection` 은 글자로 견주므로 글자가 아닌 선택지(숫자 칸)는 두지
+            # 않는다 — 그런 칸에는 표시명이 없다.
+            prune_list_selection(filter_keys[column], options)
         selections[column] = st.multiselect(
             (column_labels or {}).get(column, column),
             options=options,
             key=filter_keys[column],
             persist_state="session",
             placeholder="전체",
-            format_func=ProcessLabelFormatter(labels) if labels else str,
+            format_func=option_text,
             # 일괄선택은 이 화면에서 실제로 쓰는 기능이라 임계값에 맡기지 않고 켠다.
             # 두 가지로 쓴다: 쳐서 좁힌 뒤 `Select N matches` 로 일치분만 담기,
             # 그리고 전부 담은 뒤 몇 개를 빼서 "이것만 빼고 보기". 둘 다 결과가

@@ -392,7 +392,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     제각각이라 어느 항으로 되돌릴지 코드가 정할 수 없다. 가용·소요대수는 기준정보 값
     그대로 두고, 차이의 출처는 hover 의 「실행 반영 ±n%p · 비고」 줄이 밝힌다.
   - 입력의 `공정` 은 **원본 공정명**이다. 표시명(Proc Rename)으로 저장하면 표시명을 바꾸는
-    순간 매칭이 끊긴다. 입력 표는 값은 원본을 저장하고 보이는 글자만 표시명으로 바꾼다.
+    순간 매칭이 끊긴다. 입력 표는 값은 원본을 저장하고 보이는 글자만 표시명으로 바꾼다. 목록의 글자가
+    겹치면 「표시명 (원본)」 으로 가른다(`unique_format_func` — 편집표 칸은 값을 옵션 `value` 로 주고받아
+    값이 섞이지는 않지만 같은 글자 둘은 가려 고를 수 없다).
   - **비교 대상은 시나리오와 분리된 공용 프로필이다**(`app_meta.global_comparison_scenario`).
     세션에만 두면 브라우저를 새로 열 때마다 고른 대상이 사라진다. 고르는 순간 저장하고,
     세션에 값이 없을 때만 프로필에서 심는다 — 세션 값이 있으면 그쪽이 최신이다.
@@ -697,6 +699,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     화면은 각각 손실 한 조각을 보는데 그 조각이 무엇의 조각인지가 어디에도 없었다.
     링크는 공용 `components/page_link.py` 를 쓴다.
   - 현재 수치는 결정론적 데모이고 샘플 스위치로 끌 수 있다.
+  - 상세 조회 `공정` 의 기본값(가장 나쁜 공정)은 위젯 `index=` 가 아니라 위젯 앞 `prune_choice` 로
+    세션에 심고 매 회차 다시 적는다 — 겹친 표시명은 「표시명 (원본)」 으로 가른다(8장 ②). 제품·Stack·
+    WF 속성 상자는 공정 상자가 아니라 예전 그대로다.
 - `app_pages/available_equipment_status.py`
   - `Main`·`Static/Dynamic`·`Preference`·`RawData`·`필요단축일정` 다섯 탭이다
     (`stateful_tabs`, key·라벨은 `navigation.EQUIPMENT_*` 한 곳).
@@ -1161,6 +1166,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Weeknum·공정·소요기준·양산·제품·Stack·WF 속성을 모두 선택한 경우에만 공정·주차
     한 건을 계산하고 제품·WF 속성별 부하량 비중·소요대수 비중과 조화가중 근거를 표시한다. ER은 항상
     제외하고 상세 OFF는 제품 Mix를 반영한 공정 단일값, ON은 선택한 제품 분류를 표시한다.
+    일곱 칸(`_required_selectbox`)은 위젯 앞에서 매 회차 잡은 값을 다시 적는다(`prune_choice(...,
+    default=None)` — 선택지 밖이면 빈 선택). `공정` 칸과 공정 필터는 겹친 표시명을 「표시명 (원본)」 으로
+    가른다(로직 분석은 주차와 상관없는 공정 전체로 가른다, 8장 ②).
   - `일 표준 가능량`의 `PKG 기준` 토글은 동일 Mix의 중복 없는 PKG PLAN 합계와 원수요
     투입 Unit 부하량 비율로 결과를 PKG Kea로 역산하며 화면 표와 CSV에 함께 적용한다.
   - 공정 필터와 「조회·집계 설정」(시작일·종료일·상세 토글·제품 분류 수준·출력 지표)은
@@ -1408,6 +1416,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `stateful_tabs` 로 만든다. 조회 조건 위젯은 숨은 탭에서도 그리고 Plotly 만 건너뛴다.
   - 추이 축 눈금·풍선은 KPI 와 같은 형식(`_value_tick_format`)이고, 우선순위 막대는 바깥 라벨이 나갈
     자리를 x 범위 안에 남긴다(`_priority_range`) — 축 밖으로 내보내면 공정 이름 위에 겹쳤다.
+  - 상세 분석의 `공정` 상자는 겹친 표시명을 가르고 위젯 앞에서 매 회차 잡은 값을 다시 적는다(8장 ②).
 - `src/capa_simulation/components/decision_summary.py`
   - HOME 맨 위의 **결론 → 근거 → 다음 확인** 한 묶음. 가장 낮은 확보율 공정·월을 한 줄로
     말하고 판정 가능한 수와 구간별 미달 수를 근거로 단다. 문장은 `services/home_decision.py`
@@ -2286,8 +2295,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     계산 함수는 부를 때 `simulation_cache` 모듈에서 찾는다 — 페이지 테스트가 그 속성을 바꾼다.
   - `date_range_value` 로 범위 날짜 입력의 세 반환 형태(두 날짜·한 날짜·`date` 하나)를,
     `prune_list_selection` 으로 계산 결과가 옵션인 다중 선택의 옛 값을, `prune_choice` 로 단일 선택
-    (`st.selectbox`)의 옛 값을(없으면 `default` 를 **적는다** — `pop` 하지 않는다) 페이지 공통으로
-    정리한다. 둘 다 위젯 앞에서 **매 회차** 세션에 되쓴다 — 적은 값만 브라우저에 가므로(`set_value`)
+    (`st.selectbox`)의 옛 값을(없으면 `default` 를 **적는다** — `pop` 하지 않는다. `default=None` 은 고른
+    것이 없는 `index=None` 상자의 빈 선택이다) 페이지 공통으로 정리한다. 둘 다 위젯 앞에서 **매 회차** 세션에 되쓴다 — 적은 값만 브라우저에 가므로(`set_value`)
     선택지 글자가 바뀌는 상자에서 브라우저가 옛 글자로 다른 값을 되살리지 못한다(공정 표시명 가르기,
     2026-10-10 재검증). 키 리터럴은 페이지가 소유하고 헬퍼는 변수로 받는다.
   - `render_schema_ahead_warning` 은 저장소의 `schema_ahead`(DB 가 이 코드보다 새 버전)를 받아
@@ -2903,7 +2912,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     브라우저로 바닥 좌표를 다시 잰다.
 - `src/capa_simulation/components/column_filter.py`
   - 분류 컬럼별 다중선택 필터와 초기화 버튼. 선택값으로 거른 프레임을 돌려준다.
-    `value_labels` 는 `format_func` 로 표시만 바꾼다. 옵션 값과 세션 저장값은 원본이다.
+    `value_labels` 는 `format_func` 로 표시만 바꾼다. 옵션 값과 세션 저장값은 원본이다. 표시명이 있는
+    칸은 `ProcessLabels.unique_format_func` 로 겹친 글자를 가르고(차례는 데이터 차례 그대로), 선택지가
+    글자인 칸은 위젯 앞에서 매 회차 `prune_list_selection` 으로 잡은 값을 다시 적는다 — 공정 칸은 표시명이
+    생기거나 바뀌거나 모두 지워지는 회차에 글자가 바뀌어도 브라우저가 새 글자를 받는다(2026-10-10). 글자가
+    아닌 선택지(숫자 칸)는 `prune_list_selection` 이 글자로 견주므로 두지 않는다 — 그런 칸에는 표시명이 없다.
   - 사이드바 조건 카드 안에 세로로 쌓는 `render_column_filter_controls` 한 모양이다(`disabled`
     로 잠글 수 있다). 카드가 없는 회차(닫힌 탭)에는 `apply_column_filters` 가 세션에 남은
     선택만 읽어 거른다.
@@ -2933,12 +2946,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     된다) 이 함수를 쓰는 상자는 위젯 앞에서 매 회차 잡은 값을 세션에 다시 적는다(`page_bootstrap.
     prune_choice`·`prune_list_selection`) — 적지 않으면 브라우저가 옛 글자 `X` 를 되보내 다음 조작에
     원본 X 로 바뀌었다(2026-10-10 재검증, 실제 브라우저). `options` 에는 그 상자에 들어올 수 있는 값
-    전체를 넘겨도 된다 — Static/Dynamic 은 조회 달과 상관없는 탭의 공정 전체로 갈라 글자 흔들림을 줄인다.
-    지금 쓰는 곳은 가용설비 현황의 네 상자(Main 공정소분류·Static/Dynamic 공정·Preference 공정 필터·
-    필요단축일정 공정)다.
-    다른 화면의 `format_func()` 는 아직 그대로다(`docs/TODO.md` 후속). 표·그림은 겹친 두 공정이 같은
-    글자로 보인다 — Admin `Proc Rename` 이 겹침을 경고한다(`RQ_MODULE` 공정만 — 설비 마스터만의 공정은
-    검사하지 않는다고 문구에 적는다).
+    전체를 넘겨도 된다 — Static/Dynamic 은 조회 달과 상관없는 탭의 공정 전체로, 표준 목표 로직 분석은
+    주차와 상관없는 공정 전체로 갈라 글자 흔들림을 줄인다.
+    공정을 고르는 상자는 모두 이것을 쓴다(자리 목록은 8장 ②, 2026-10-10 다른 화면 후속). 표지값이 있는
+    상자는 Static/Dynamic(`전체 합계`) 하나다 — 다른 상자는 선택지가 공정뿐이다(빈 선택은 자리 글자다).
+    `ProcessLabelFormatter`(`format_func()`)는 이제 선택 상자에 쓰지 않는다 — 버튼 글자(HOME B/N 바둑판)·
+    월별 편집기의 읽기 전용 `SelectboxColumn`·Figure 라벨처럼 값을 글자로 주고받지 않는 자리의 것이다.
+    표·그림·버튼은 겹친 두 공정이 같은 글자로 보인다 — Admin `Proc Rename` 이 겹침을 경고한다(`RQ_MODULE`
+    공정만 — 설비 마스터만의 공정은 검사하지 않는다고 문구에 적는다).
 - `src/capa_simulation/components/process_rename_management.py`
   - Admin Area 의 `Proc Rename` 탭. 공용 공정 표시명의 CSV 다운로드·Excel 붙여넣기(작업 줄
     팝업)·직접 편집과 저장을 담당한다. 저장 버튼·변경 메모는 편집표 **위**다. 저장은 공용 프로필
@@ -3120,7 +3135,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 왕복 CSV·붙여넣기 팝업(`render_reference_clipboard_form`)에는 **필터 이전의 전체 표**를
     넘긴다. 양식이 부분 표가 되면 그 부분 표가 행 집합 검증을 통과해 나머지 공정을 지운다.
   - 공정 표시명은 페이지가 조회해 `value_labels=` 로 넘기고 필터 옵션 표기에만 쓴다. 이
-    모듈은 `process_labels` 를 import 하지 않는다.
+    모듈은 `process_labels` 를 import 하지 않는다. 분류 칸의 `SelectboxColumn` 은 `ProcessLabelFormatter`
+    그대로다 — 칸이 `disabled` 이고 편집표는 값을 글자로 주고받지 않아 겹친 표시명으로 다른 공정이 들
+    길이 없다(2026-10-10 잼, 8장 ⑤). 필터의 겹친 글자는 `column_filter` 가 가른다.
   - **분류 컬럼 회색 배경은 작은 표에만 입힌다**(2026-10-05 사용자 결정 N1 = B). 배경색은
     pandas Styler 로만 줄 수 있고(`column_config` 에 배경색이 없다) Streamlit 은 그 Styler 를
     rerun 마다 **표의 모든 칸**에 대해 번역한다 — 칸당 약 15 µs(샘플 관측). 그래서
@@ -3246,6 +3263,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     없음」으로 남겨 저장해도 그대로이고, 빼려면 목록에서 직접 지운다(선택지에서 빼 두었을 때는 이름만
     바꿔도 지워졌다). 사이드바 카드는 그런 공정을 세지 않고 따로 적으며, 프리셋의 공정이 하나도
     없으면 격자는 `KEY_PROCESS_ABSENT_NOTICE`(「고르세요」가 아니다)를 남긴다.
+  - 프리셋 편집기의 `공정` 선택지는 `unique_format_func([*화면 공정, *이 화면에 없는 공정])` 로 겹친
+    표시명을 가르고(그 위에 「 · 이 화면에 없음」), 저장값은 원본이다 — 같은 글자면 고른 것과 다른 공정이
+    공용 프리셋에 저장됐다(2026-10-10). key 없는 상자라 매 회차 다시 적지 않는다(9장).
   - 선행 B/O·선행 입고 실적 저장은 **표에 보이는 달만** 갈아 끼운다(`merge_advance_load_edits`·
     `merge_advance_shipment_edits` — 규칙은 `services/monthly_amount.py` 한 곳). 조회기간을 좁힌 채
     저장한 사람이 보이지 않는 달의 입력을 모르는 새 날리면 안 된다. 두 편집기는 같은 폼
@@ -4518,9 +4538,14 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - 공정 표시명(Proc Rename) 규칙은 한 문장이다 — **화면은 표시명, 파일은 원본.**
   화면에서 사람이 읽는 공정명은 빠짐없이 표시명이고, 적용 계층은 여섯이다.
   ① 월별 표의 분류 값(`value_labels=`, 치환은 `components/` 안에서만 한다),
-  ② `multiselect`·`selectbox` 의 `format_func=`(값은 절대 바꾸지 않는다 — 가용설비 현황의 Main
-  `공정소분류`·Static/Dynamic `공정`·필요단축일정 `공정`·Preference `표 보기 설정` 의 공정 필터는
-  `ProcessLabels.unique_format_func` 로 보이는 글자가 겹치지 않게 한다 — 같은 글자면 다른 값이 돌아온다),
+  ② `multiselect`·`selectbox` 의 `format_func=`(값은 절대 바꾸지 않는다). 공정을 고르는 상자는 모두
+  `ProcessLabels.unique_format_func` 로 보이는 글자가 겹치지 않게 하고 위젯 앞에서 매 회차 잡은 값을 다시
+  적는다 — 같은 글자면 다른 값이 돌아오고, 글자가 바뀌면 브라우저가 옛 글자로 다른 값을 되살린다(9장).
+  자리: 가용설비 현황 Main `공정소분류`·Static/Dynamic `공정`·필요단축일정 `공정`·Preference `표 보기 설정`
+  공정 필터, 산출 결과 대당 Capa 공정 필터, `column_filter` 의 공정 칸(산출 결과 소요대수·확보율, 기준
+  정보 설비대수, 월별 편집기 필터), 표준 목표 공정 필터·로직 분석 `공정`, 표준 대비 재공 `공정`, Dynamic
+  Capa 상위 `공정`, 실적 세 화면(효율·UPEH·수율) `공정`, HOME Preference 주요공정 프리셋 `공정`(key 없는
+  상자 — 아래 9장),
   ③ Figure 라벨(LOB 공정명 annotation·hover, 상세 B/N 이름·hover, 재공 격자 제목,
   Dynamic Capa 공정 비교 막대의 y축, 가용설비 현황 Main 생애주기 Gantt 의 hover),
   ④ `st.dataframe` 조회 표(제외·누락 안내 목록, STEP 구성 요약, 설비대수 표시 표,
@@ -4528,9 +4553,15 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   내역·비가동 호기·호기 목록·Qual 호기 목록·전환 일정 목록 — 과 Static/Dynamic 의 칸 호기·호기 목록·
   확보율 교차검증 표)와 화면용 안내 문구(Main 의 걸린 조건 줄),
   ⑤ `st.data_editor` 분류 컬럼의 `st.column_config.SelectboxColumn(format_func=)` 라벨.
-  월별 편집기의 분류 컬럼은 언제나 한 컬럼이고 표시용 컬럼을 따로 두지 않는다.
+  월별 편집기의 분류 컬럼은 언제나 한 컬럼이고 표시용 컬럼을 따로 두지 않는다. 편집표는 ② 의 「같은
+  글자면 다른 값」 결함이 없다 — 칸은 옵션 `value` 로 찾아 `label` 을 그리고, 고르기·붙여넣기·복사가 모두
+  `value` 로 오가며, 브라우저가 보내는 편집은 「행 위치·컬럼·새 값」이다(2026-10-10 Streamlit 1.63 프런트
+  번들·AppTest·실제 브라우저로 잼). 그래서 월별 편집기의 읽기 전용 분류 칸은 그대로 두고(표와 같은 갈래 —
+  겹친 두 공정이 같은 글자로 보인다), 사용자가 목록에서 고르는 칸(HOME 실행 Capa 반영의 `공정`)만 목록에서
+  가려 고르도록 `unique_format_func` 로 글자를 가른다.
   ⑥ 버튼 라벨·`help`(HOME 의 B/N 공정 선택 바둑판). 글자와 도움말만 표시명이고 콜백
-  인자(`args=`)·위젯 키·적용 때 되쓰는 값은 원본 `공정` 이다.
+  인자(`args=`)·위젯 키·적용 때 되쓰는 값은 원본 `공정` 이다. 버튼은 값을 글자로 주고받지 않아 ② 의
+  결함이 없고 글자를 가르지 않는다(겹친 두 공정은 같은 글자의 바둑판 두 칸으로 보인다).
 - ④ 에서 CSV 출구가 있는 표는 **화면 프레임과 CSV 프레임을 나눈다.** 화면 복사본에만
   표시명을 입히고 내보내는 프레임은 원본 그대로다(`components/exclusion_table.py`,
   `app_pages/static_capa.py`, 가용설비 현황 Static/Dynamic 의 호기 목록이 그 모양이다 —
@@ -4620,6 +4651,11 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   위젯 앞에서 매 회차 잡은 값을 세션에 다시 적어(`prune_choice`·`prune_list_selection`) 브라우저에
   새 글자를 보낸다. 일반 `AppTest.run()` 은 회차마다 세션 값으로 글자를 다시 만들어 이 결함을 보지
   못한다 — 브라우저처럼 글자를 들고 다니는 `tests/widget_browser.py` 의 `BrowserChoice` 로 잰다.
+  AppTest 의 `select`·`set_value` 는 **값**을 받아 `format_func` 로 글자를 만든다 — 보이는 글자(「가공」)를
+  넘기면 선택지 밖 값으로 걷힌다. 사용자가 보이는 글자를 고르는 것을 재려면 `BrowserChoice.pick` 을 쓴다.
+  **key 없는 상자**(HOME 주요공정 프리셋 `공정` — `default=` 로 프리셋 값을 받는다)는 위젯 id 에 보이는
+  글자가 들어가 글자가 바뀌면 새 위젯으로 선다. 옛 글자가 되돌아올 자리가 없어 다시 적을 칸도 까닭도
+  없고 글자만 가른다.
 - **세션에 값을 적는 위젯에는 `value=`(`default=`·`expanded=`) 기본값을 주지 않는다.** 둘을 함께
   주면 Streamlit 이 「기본값과 세션 API 를 함께 썼다」고 경고한다(기본값이 `False`·첫 항목이면
   조용하다). 기본값은 위젯 앞에서 칸이 없을 때만 세션에 심는다(HOME 토글 — `render_home_view_card`,

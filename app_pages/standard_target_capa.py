@@ -42,6 +42,7 @@ from capa_simulation.page_bootstrap import (
     PAGE_DIALOG_SUFFIX,
     bootstrap_error_message,
     load_page_context,
+    prune_choice,
     prune_list_selection,
     render_schema_ahead_warning,
     resolve_effective_months,
@@ -172,9 +173,11 @@ def _required_selectbox(
     disabled: bool = False,
     format_func: Callable[[object], str] = str,
 ) -> str | None:
-    saved = st.session_state.get(key)
-    if saved not in options:
-        st.session_state[key] = None
+    # 잡은 값을 매 회차 세션에 다시 적는다(선택지에 없으면 빈 선택). 적은 값만 브라우저에 가므로
+    # 보이는 글자가 바뀌는 회차(공정 표시명의 「표시명 (원본)」 가르기)에도 브라우저가 새 글자를
+    # 받는다 — 적지 않으면 옛 글자를 되보내 다른 공정으로 바뀌었다. `index=None` 이라 기본값
+    # 경고는 없다.
+    prune_choice(key, options, default=None)
     selected = st.selectbox(
         label,
         options=options,
@@ -242,7 +245,10 @@ def _render_logic_analysis(
             process_options,
             LOGIC_FILTER_KEYS["공정"],
             disabled=weeknum is None,
-            format_func=process_labels.format_func(),
+            # 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다(`unique_format_func` — 같은 글자면
+            # selectbox 는 마지막 선택지로 돌아온다). 겹침은 주차와 상관없는 공정 전체로 가른다 —
+            # Weeknum 을 바꿔 선택지가 줄어도 글자가 덜 흔들린다.
+            format_func=process_labels.unique_format_func(process_order),
         )
 
         process_source = month_source.iloc[0:0].copy()
@@ -667,8 +673,10 @@ with card:
         placeholder="미선택 시 전체 공정",
         key=PROCESS_FILTER_KEY,
         persist_state="session",
-        # 표시만 바꾼다. 이 선택값은 리비전 프리셋으로 저장되므로 원본이어야 한다.
-        format_func=process_labels.format_func(),
+        # 표시만 바꾼다. 이 선택값은 리비전 프리셋으로 저장되므로 원본이어야 한다. 보이는 글자가
+        # 겹치면 「표시명 (원본)」 으로 가른다(`unique_format_func`). 잡은 값은 위
+        # `prune_list_selection` 이 매 회차 다시 적어 브라우저가 바뀐 글자를 받는다.
+        format_func=process_labels.unique_format_func(process_options),
     )
     effective_public_default = set(public_default or process_options)
     effective_selection = set(selected_processes or process_options)

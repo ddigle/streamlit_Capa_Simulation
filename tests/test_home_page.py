@@ -1512,6 +1512,42 @@ def _save_preset_name_only(app: AppTest, name: str) -> None:
     assert not list(app.exception), [element.message for element in app.exception]
 
 
+def test_a_colliding_display_name_saves_the_chosen_process_in_a_preset(tmp_path: Path) -> None:
+    """DEMO_Final_Test 의 표시명이 다른 공정의 원본 DEMO_Chip_Attach 와 같다(2026-10-10 후속).
+
+    프리셋 편집 상자는 key 없는 multiselect 라 값을 보이는 글자로 주고받는다 — 같은 글자면 고른
+    것과 다른 공정이 공용 프리셋에 저장됐다. 「표시명 (원본)」 으로 갈라 보이고 저장값은 원본이다.
+    실행 Capa 편집표의 `공정` 칸은 값을 옵션 `value` 로 주고받아 값은 섞이지 않지만, 목록에서 둘을
+    가려 고를 수 있게 같은 글자로 가른다.
+    """
+    from capa_simulation.components.home_preference import EXECUTION_EDITOR_KEY
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database_path = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    # 프로필은 `st.cache_data` 경계 뒤에 있어 앱을 돌리기 **전에** 심는다.
+    repository.replace_global_process_rename(
+        pd.DataFrame({"공정": ["DEMO_Final_Test"], "표시명": ["DEMO_Chip_Attach"]}),
+        source="테스트",
+    )
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    picker = next(widget for widget in app.multiselect if widget.label == "공정")
+    assert "DEMO_Chip_Attach" in picker.options
+    assert "DEMO_Chip_Attach (DEMO_Final_Test)" in picker.options
+
+    _save_preset(app, "A 그룹", ["DEMO_Final_Test"])
+    assert repository.load_global_key_process().presets == (("A 그룹", ("DEMO_Final_Test",)),)
+
+    editor = next(frame for frame in app.dataframe if EXECUTION_EDITOR_KEY in frame.proto.id)
+    options = json.loads(editor.proto.columns)["공정"]["type_config"]["options"]
+    labels = {option["value"]: option["label"] for option in options}
+    assert labels["DEMO_Final_Test"] == "DEMO_Chip_Attach (DEMO_Final_Test)"
+    assert labels["DEMO_Chip_Attach"] == "DEMO_Chip_Attach"
+
+
 def test_renaming_the_viewed_preset_from_preference_carries_the_view_on_return(
     tmp_path: Path,
 ) -> None:

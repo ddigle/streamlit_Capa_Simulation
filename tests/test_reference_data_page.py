@@ -1,6 +1,7 @@
 # Purpose: capacity standards page 관련 정상·예외·회귀 동작을 검증한다.
 
 import ast
+import json
 from io import BytesIO
 from pathlib import Path
 
@@ -1126,9 +1127,14 @@ def test_equipment_count_table_shows_the_display_name_while_its_paste_form_stays
 
 def test_equipment_count_filter_keeps_the_original_selection_value() -> None:
     """필터 표기만 표시명이다. 선택값이 표시명이면 `isin` 이 원본과 맞지 않아 표가 빈다."""
+    from widget_browser import BrowserChoice
+
     app = _equipment_sub_tab_app("현황")
-    app.multiselect(key="equipment_count_filter_공정").select("가공")
-    app.run()
+    # 사용자는 보이는 글자 「가공」 을 고르고 브라우저는 그 글자를 보낸다(Streamlit 1.63).
+    browser = BrowserChoice(app, "multiselect", "equipment_count_filter_공정")
+    browser.sync()
+    browser.pick(["가공"])
+    browser.run()
 
     assert not app.exception
     assert app.session_state["equipment_count_filter_공정"] == ["Process-A"]
@@ -1153,6 +1159,53 @@ def test_month_editor_shows_the_label_but_returns_the_original_process() -> None
         "Process-A": 20.0,
         "Process-B": 31.0,
     }
+
+
+COLLIDING_TWO_PROCESS_TEST_SCRIPT = RENAMED_TWO_PROCESS_TEST_SCRIPT.replace(
+    '[("Process-A", "가공")]', '[("Process-B", "Process-A")]', 1
+)
+assert COLLIDING_TWO_PROCESS_TEST_SCRIPT != RENAMED_TWO_PROCESS_TEST_SCRIPT
+
+
+@pytest.mark.parametrize(("row", "edited"), [(0, "Process-A"), (1, "Process-B")])
+def test_month_editor_edit_lands_on_the_original_process_even_when_two_labels_collide(
+    row: int, edited: str
+) -> None:
+    """Process-B 의 표시명이 원본 Process-A 와 같아 두 행이 같은 글자로 보여도 편집은 그 행에 앉는다
+    (2026-10-10 다른 화면 후속 — 선택 상자의 「같은 글자면 다른 값」 결함이 편집표에도 있는지 잰다).
+
+    편집표는 값을 글자로 주고받지 않는다. 브라우저가 보내는 편집은 「보이는 표 안의 행 위치 · 컬럼
+    이름 · 새 값」이고, 분류 칸은 `disabled` 라 편집 대상이 아니며, 돌려받는 표의 분류 값은 서버가
+    가진 원본 프레임에서 온다. `SelectboxColumn` 옵션은 `value`(원본)와 `label`(표시명)을 나눠
+    갖고 셀은 `value` 로 찾아 `label` 을 그린다 — 그래서 바꾸지 않는다(가르지도 않는다: 칸이 읽기
+    전용이라 표와 같은 갈래다).
+    """
+    app = AppTest.from_string(COLLIDING_TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["일수"]
+    app.run()
+    assert not app.exception
+
+    editor = next(frame for frame in app.dataframe if "RUN_DAY" not in frame.value.columns)
+    config = json.loads(editor.proto.columns)
+    assert config["공정"]["type_config"]["options"] == [
+        {"value": "Process-A", "label": "Process-A"},
+        {"value": "Process-B", "label": "Process-A"},
+    ]
+    # 분류 칸은 읽기 전용이다 — 사용자가 이 칸의 글자를 골라 값을 바꿀 길이 없다.
+    assert config["공정"]["disabled"] is True
+
+    key = editor_widget_key_in(app, "capa_run_day_editor")
+    edit = {"edited_rows": {row: {"202608": 20.0}}, "added_rows": [], "deleted_rows": []}
+    app.session_state[key] = edit
+    app.run()
+    app.session_state[key] = edit
+    next(button for button in app.button if button.key == "capa_run_day_editor_apply").click()
+    app.run()
+
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_RUN_DAY"]
+    expected = {"Process-A": 31.0, "Process-B": 31.0, edited: 20.0}
+    assert dict(zip(saved["공정"], saved["RUN_DAY"], strict=True)) == expected
 
 
 def test_month_editor_paste_template_keeps_the_original_process_name() -> None:
