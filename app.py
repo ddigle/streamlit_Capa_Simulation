@@ -15,20 +15,26 @@ from capa_simulation.components.intro_summary import (
     summary_label_script,
     warm_intro_summary,
 )
-from capa_simulation.components.month_range_picker import render_month_range_picker
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
+from capa_simulation.components.period_field import (
+    close_period_dialog,
+    period_dialog_is_open,
+    render_period_field,
+    show_period_dialog,
+)
 from capa_simulation.components.print_button import print_toolbar_script
-from capa_simulation.components.scenario_edit_bar import pending_edit_labels
+from capa_simulation.components.scenario_edit_bar import pending_edit_labels, pending_edits_notice
 from capa_simulation.components.scenario_status import (
-    SCENARIO_BOX_KEY,
-    render_scenario_controls,
+    close_scenario_dialog,
+    render_scenario_field,
+    scenario_dialog_is_open,
+    show_scenario_dialog,
 )
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.components.theme_toggle import render_theme_toggle, unsaved_edits_marker
 from capa_simulation.components.typography import render_typography_style
 from capa_simulation.design import theme
-from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.navigation import CONDITIONS_SECTION, PageSpec, build_navigation_pages
 from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
@@ -41,41 +47,28 @@ from capa_simulation.scenario_activation import (
     bootstrap_latest_official_scenario,
     has_unsaved_scenario_changes,
 )
-from capa_simulation.scenario_preset_state import (
-    MONTH_PICKER_KEY,
-    MONTH_RANGE_KEY,
-    apply_pending_scenario_preset,
-)
-from capa_simulation.services.scenario_month_bounds import scenario_month_bounds
+from capa_simulation.scenario_preset_state import apply_pending_scenario_preset
 from capa_simulation.settings import (
     APP_NAME,
     DUCKDB_PATH,
     EQUIPMENT_DUCKDB_PATH,
     FAVICON_PATH,
-    MONTH_SELECTION_END,
-    MONTH_SELECTION_START,
-    format_month,
 )
 from capa_simulation.sidebar_status import (
-    BOTTLENECK_BOX_KEY,
+    CONDITIONS_BOX_KEY,
+    PAGE_CONDITION_SLOT_COUNT,
     SIDEBAR_TOGGLE_SINK_KEY,
     begin_app_run,
     forget_month_range_placeholder,
+    forget_page_condition_slots,
     on_box_toggle,
-    register_month_range_placeholder,
+    register_page_condition_slots,
     render_box_toggle_sink,
     render_sidebar_section,
-    show_selected_month_range,
     sidebar_expander,
 )
 from capa_simulation.sync_boot import enable_sync_state_if_managed, heartbeat_if_managed
 
-# 사이드바 박스 key 이자 CSS 훅. 확장 패널의 펼침 상태도 이 key 로 오가고, Admin 의
-# `order` 와 요약 줄 서식이 같은 이름을 읽는다.
-MONTH_BOX_KEY = "sidebar_month_box"
-# 조회기간 상자의 **요약 줄 위에 얹는** 적용 기간 한 줄. 상자 안이 아니라 바로 앞에 선
-# 빈 칸이고, 접히든 펴지든 자리가 흔들리지 않게 CSS 가 그 칸을 요약 줄로 민다.
-MONTH_APPLIED_BOX_KEY = "sidebar_month_applied_box"
 # 그룹 상자 **안**에서 그 그룹의 대표 페이지를 부르는 이름. 머리글이 이미 그룹 이름을
 # 말하므로 안에서까지 되풀이하지 않고 그 그룹 안에서의 자리로 부른다.
 GROUP_MAIN_LABEL = "현황 요약"
@@ -191,10 +184,6 @@ with pinned_connections(DUCKDB_PATH):
         build_sidebar_stylesheet(
             pages.groups,
             active_href,
-            scenario_box_key=SCENARIO_BOX_KEY,
-            month_box_key=MONTH_BOX_KEY,
-            month_applied_key=MONTH_APPLIED_BOX_KEY,
-            bottleneck_box_key=BOTTLENECK_BOX_KEY,
             admin_box_key=ADMIN_BOX_KEY,
         )
         # 테마 버튼은 새로고침으로 테마를 바꾼다(새 세션). 저장하지 않은 시나리오·설비 편집이
@@ -289,91 +278,62 @@ with pinned_connections(DUCKDB_PATH):
     # 그 밑으로 지나간다)은 CSS 가 이 카드의 key 로 지킨다.
     render_app_credits()
 
-    # 여기서부터 상자들은 다른 화면으로 가는 목록이 아니라 **지금 화면의 계산 조건**이다.
-    # 그 경계에 구역 제목 한 줄을 세운다. 시나리오 상자 **앞**이어야 한다 — 아래 적용 기간
-    # 자리표시자와 조회기간 상자 사이에 끼면 자리표시자가 제 상자의 요약 줄에 얹히지 못한다.
+    # 여기서부터는 다른 화면으로 가는 목록이 아니라 **지금 화면의 계산 조건**이다. 그 경계에 구역
+    # 제목 한 줄을 세우고, 바로 아래에 **늘 펼친 통합 패널 하나**를 세운다(2026-10-10 사용자 결정).
     #
     # **지금 화면이 읽는 공통 조건만 세운다**(2026-09-29 사용자 결정). 무엇을 읽는지는
-    # `navigation.PageSpec` 의 선언이 말한다. 세우지 않은 상자의 선택은 사라지지 않는다 —
-    # 시나리오 선택 상자는 `persist_state` 로, 조회기간은 위젯이 아닌 `MONTH_RANGE_KEY` 로
-    # 남아 그 조건을 읽는 화면으로 돌아오면 그대로 선다.
+    # `navigation.PageSpec` 의 선언이 말한다. 세우지 않은 줄의 값은 사라지지 않는다 — 시나리오는
+    # 세션의 활성 리비전, 조회기간은 위젯이 아닌 `MONTH_RANGE_KEY` 라 그 조건을 읽는 화면으로
+    # 돌아오면 그대로 선다.
     current_spec = pages.spec_for(navigation.url_path)
     active_tab = None if current_spec is None else active_condition_tab(current_spec)
     reads_common_here = current_spec is None or current_spec.reads_common_conditions_on(active_tab)
     shows_scenario = reads_common_here and (current_spec is None or current_spec.reads_scenario)
     shows_period = reads_common_here and (current_spec is None or current_spec.reads_period)
     has_cards = current_spec is not None and current_spec.has_cards_on(active_tab)
+    page_file = None if current_spec is None else Path(current_spec.path).name
     # 이 화면에 적용하지 않은 편집이 남았는가. 저장·불러오기·기간 변경은 그 편집을 버린다 —
     # 적용하지 않은 편집은 시나리오에 들어 있지 않다(`scenario_edit_bar.register_pending_edits`).
-    pending_edits = pending_edit_labels(
-        None if current_spec is None else Path(current_spec.path).name
-    )
+    pending_edits = pending_edit_labels(page_file)
     # 제목은 **늘 페이지보다 먼저, 같은 자리에** 세운다 — 회차마다 지웠다 다시 세우면 rerun 동안
     # 제목이 사라지고 아래 상자가 한 줄 올라갔다 내려온다. 카드만 세우는 화면이 카드 전에 멈추는
     # 드문 오류 경로(VOC·설비 DB 를 못 읽음)에서 제목만 남는 것은 사이드바 CSS 가 감춘다 — 제목
     # 아래에 설 상자가 사이드바에 하나도 없으면 제목을 숨긴다(`sidebar_style`, 홀로 남은 제목).
     if shows_scenario or shows_period or has_cards:
         render_sidebar_section(CONDITIONS_SECTION)
-    if shows_scenario:
-        render_scenario_controls(pending_edits=pending_edits)
-
-    # 적용 범위는 상자를 **접어도** 보여야 하는 한 조각이다. 그런데 그 값은 페이지가
-    # 계산을 끝낸 뒤(`navigation.run()` 안의 `resolve_effective_months`)에야 정해지고,
-    # 페이지가 `st.stop()` 하면 `navigation.run()` 뒤의 코드는 아예 돌지 않는다 — 그
-    # 뒤에 그리면 상자를 통째로 잃는다. 확장 패널의 제목은 문자열 하나라 나중에 다시
-    # 쓸 수도 없다. 그래서 자리표시자 기제는 그대로 두고 **자리만** 상자 바로 앞으로
-    # 옮기고, 요약 줄 위로 얹는 일은 CSS 가 한다. 접히든 펴지든 이 칸은 늘 같은 자리다.
-    if shows_period:
-        with st.sidebar.container(key=MONTH_APPLIED_BOX_KEY):
-            register_month_range_placeholder(st.empty())
-        # 다른 화면과 같은 낱말을 쓴다. 여기만 "조회 기간" 으로 띄어져 있었다.
-        with sidebar_expander("조회기간", key=MONTH_BOX_KEY, icon=":material/date_range:"):
-            default_month_range = (
-                format_month(MONTH_SELECTION_START),
-                format_month(MONTH_SELECTION_END),
-            )
-            current_month_range = st.session_state.get(MONTH_RANGE_KEY, default_month_range)
-            if not isinstance(current_month_range, (list, tuple)) or len(current_month_range) != 2:
-                current_month_range = default_month_range
-            try:
-                month_source_tables = get_effective_reference_tables()
-            except RuntimeError:
-                # 공식·활성 리비전이 없는 저장소에서도 관리 화면과 기본 조회기간은 연다.
-                month_source_tables = {}
-            minimum_month, maximum_month = scenario_month_bounds(
-                month_source_tables, MONTH_SELECTION_START, MONTH_SELECTION_END
-            )
-            if pending_edits:
-                # 편집표의 월 칸은 기간이 정한다. 기간을 바꾸면 적용하지 않은 편집이 버려진다.
-                st.caption(
-                    ":orange-badge[적용 전 편집] 기간을 바꾸면 "
-                    + ", ".join(pending_edits)
-                    + " 의 적용하지 않은 편집이 사라집니다."
-                )
-            # 현재 선택만 보면 기간을 좁힌 다음 바깥 월을 다시 고를 수 없다. 활성 표의 실제
-            # 월을 기준으로 넓혀 Shift 등으로 2031년 이후를 저장해도 계속 조회할 수 있게 한다.
-            selected_start_label, selected_end_label = render_month_range_picker(
-                start=str(current_month_range[0]),
-                end=str(current_month_range[1]),
-                min_month=format_month(minimum_month),
-                max_month=format_month(maximum_month),
-                key=MONTH_PICKER_KEY,
-            )
-            st.session_state[MONTH_RANGE_KEY] = (
-                selected_start_label,
-                selected_end_label,
-            )
-            # 여기서는 **고른 범위**만 중립으로 적는다. 조회기간을 실제로 읽는 화면이 그 뒤에
-            # 「✓ 적용」으로 덮는다(`resolve_effective_months`·HOME). 조회기간과 무관한 화면에서는
-            # 이 문구가 그대로 남는다.
-            show_selected_month_range(
-                int(selected_start_label.replace("-", "")),
-                int(selected_end_label.replace("-", "")),
-            )
+    if shows_scenario or shows_period:
+        # **패널은 늘 같은 순번에 선다.** 안의 줄은 한 모양(이름 줄 + 팝업을 여는 값 칸,
+        # `components/condition_field.py`)이고 값은 세션만 읽는다 — 저장소는 팝업을 연 동안에만
+        # 읽는다. 패널 안 차례: 적용 전 편집 한 줄 → 시나리오 → 조회기간 → 페이지 칸.
+        with st.sidebar.container(border=True, key=CONDITIONS_BOX_KEY):
+            # 적용 전 편집 경고는 시나리오·기간 두 줄이 함께 쓰는 한 줄이다(전에는 두 상자에 각각
+            # 적었다). 늘 서 있는 한 칸 안에 그려 생기고 사라질 때 아래 줄의 자리를 밀지 않는다.
+            with st.container():
+                if pending_edits:
+                    st.caption(pending_edits_notice(pending_edits))
+            if shows_scenario:
+                render_scenario_field()
+            if shows_period:
+                render_period_field()
+            # 페이지가 계산 뒤에 채우는 칸(HOME 의 공정 필터·주요공정 히트맵). 적용 기간처럼 그
+            # 값은 `navigation.run()` 안에서야 정해지고, 페이지가 `st.stop()` 하면 그 뒤 코드는
+            # 돌지 않는다 — 칸을 여기서 미리 세워 둔다. 쓰지 않은 칸은 높이가 없다.
+            register_page_condition_slots([st.empty() for _ in range(PAGE_CONDITION_SLOT_COUNT)])
     else:
+        forget_page_condition_slots()
+    if not shows_period:
         # 안 세운 회차에는 적용 기간 자리표시자도 없다. 앞 회차에 등록한 칸을 지워야 이 화면이
         # 사라진 칸에 「✓ 적용」을 쓰지 않는다.
         forget_month_range_placeholder()
+    # 열려 있는 팝업. 한 실행에 팝업은 하나뿐이고(여는 콜백이 다른 칸을 비운다), 이 화면에 그 줄이
+    # 서지 않으면(탭을 옮겨 공통 조건을 읽지 않게 된 회차) 칸을 버린다.
+    if shows_scenario and scenario_dialog_is_open():
+        show_scenario_dialog(page_file)
+    elif shows_period and period_dialog_is_open():
+        show_period_dialog(page_file)
+    else:
+        close_scenario_dialog()
+        close_period_dialog()
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
     # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명이 같다 — 페이지가 끝나거나

@@ -2,12 +2,15 @@
 
 """시나리오를 바꾸면 **값에 닿는 것만** 풀리고, 보던 자리는 그대로 남는다.
 
-이 검사가 실제 `app.py` 를 돌리는 이유는 결함의 원인이 **차례**였기 때문이다. 사이드바
+이 검사가 실제 `app.py` 를 돌리는 이유는 결함의 원인이 **차례**였기 때문이다. 시나리오
 「불러오기」는 `activate_persisted_snapshot` 을 부른 뒤 그 자리에서 `st.rerun()` 을 부르고,
-그 호출은 실행을 끊어 **페이지 본문이 그 회차에 아예 돌지 않는다.** Streamlit 은 한 회차에
-만들어지지 않은 위젯의 값을 버리므로, 사이드바만 도는 이 한 회차에서 페이지의 탭·필터가
-통째로 초기값으로 돌아갔다. 페이지를 따로 띄워 보는 검사로는 이 차례가 재현되지 않는다 —
-사이드바가 먼저 돌고 그 안에서 실행이 끊기는 것은 `app.py` 뿐이다.
+그 호출은 실행을 끊는다. 전에는 그 버튼이 사이드바 상자에 있어 앱 전체 실행 한가운데서 끊었고,
+**페이지 본문이 그 회차에 아예 돌지 않아** Streamlit 이 그 회차에 만들어지지 않은 페이지 위젯
+값(탭·필터)을 버렸다. 지금은 사이드바 시나리오 팝업 안이라(2026-10-10) 브라우저에서는 팝업만
+다시 도는 프래그먼트 실행이고 페이지 위젯을 건드리지 않는다. AppTest 는 프래그먼트를 흉내 내지
+못해 팝업 안 클릭도 앱 전체 실행으로 돌린다 — `app.py` 가 페이지보다 먼저 팝업을 부르고 그 안에서
+실행이 끊기므로, 이 검사는 **옛 차례(페이지 본문이 돌지 않는 회차)를 그대로 재현한 더 거친 조건**
+에서 같은 결과를 지킨다. 페이지를 따로 띄워 보는 검사로는 이 차례가 재현되지 않는다.
 
 고정하는 것은 셋이다.
 
@@ -52,7 +55,10 @@ from capa_simulation.components.home_preference import (
     PLAN_DETAIL_CUSTOMER_KEY,
 )
 from capa_simulation.components.scenario_status import (
+    SAVE_MODE,
     SAVE_REVISION_NAME_KEY,
+    SCENARIO_DIALOG_MODE_KEY,
+    SCENARIO_FIELD_KEY,
     SIDEBAR_REVISION_KEY,
 )
 from capa_simulation.components.tab_state import remembered_tab_key
@@ -69,6 +75,13 @@ from capa_simulation.settings import MONTH_SELECTION_END, MONTH_SELECTION_START,
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
 LOAD_BUTTON_KEY = "sidebar_load_revision"
+
+
+def _open_scenario_dialog(app: AppTest) -> AppTest:
+    """사이드바 시나리오 줄을 눌러 팝업을 연다. 팝업은 세션 키로 열려 다음 회차에도 남는다."""
+    return app.button(key=SCENARIO_FIELD_KEY).click().run()
+
+
 HOME_TAB_KEY = "home_active_tab"
 
 # 프리셋에 딸리지 않은 **페이지 국소** 조회 조건. HOME 의 조회 조건은 전부 리비전 프리셋
@@ -290,8 +303,11 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
         processes_before = _session_value(app, PROCESS_SELECTION_KEY)
         active_revision_before = _session_value(app, ACTIVE_PERSISTED_REVISION_ID_KEY)
 
-        # 3. 사이드바에서 다른 리비전을 골라 「불러오기」를 누른다. 이 한 번 안에서
-        #    `st.rerun()` 이 실행을 끊고, 사이드바만 돈 회차가 페이지 위젯 값을 버린다.
+        # 3. 사이드바 시나리오 팝업에서 다른 리비전을 골라 「불러오기」를 누른다. AppTest 에서는
+        #    이 한 번 안에서 `st.rerun()` 이 실행을 끊고, 페이지가 돌지 않은 회차가 페이지 위젯 값을
+        #    버린다(브라우저의 프래그먼트 실행보다 거친 조건이다).
+        _open_scenario_dialog(app)
+        failures.extend(f"팝업을 연 화면: {element.message}" for element in app.exception)
         app.session_state[SIDEBAR_REVISION_KEY] = other_revision_id
         _DRAWN_FIGURES.clear()
         app.button(LOAD_BUTTON_KEY).click().run()
@@ -319,7 +335,7 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
         drawn_toggle_keys = tuple(str(toggle.key) for toggle in app.toggle)
 
         # 5. 페이지 국소 조회 조건을 건드린 뒤 **그 페이지에서** 다시 불러온다. 프리셋이
-        #    되살려 주지 않는 값이라, 사이드바만 도는 회차를 견디는 것은 위젯에 준
+        #    되살려 주지 않는 값이라, 페이지가 돌지 않는 회차를 견디는 것은 위젯에 준
         #    `persist_state="session"` 뿐이다. 두 값이 다시 기본값으로 뜨면 사용자에게는
         #    「처음 열었을 때로 돌아갔다」로 보인다.
         app.switch_page(RESULT_PAGE)
@@ -336,6 +352,7 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
         failures.extend(f"조회 조건을 바꾼 화면: {element.message}" for element in app.exception)
         page_filters_chosen = {key: _session_value(app, key) for key in PAGE_FILTER_KEYS}
 
+        _open_scenario_dialog(app)
         app.session_state[SIDEBAR_REVISION_KEY] = baseline_revision_id
         app.button(LOAD_BUTTON_KEY).click().run()
         failures.extend(f"산출 결과에서 불러온 뒤: {element.message}" for element in app.exception)
@@ -549,6 +566,7 @@ def test_toggles_flipped_in_the_card_on_main_are_released_by_a_load(
     assert {toggle.key: toggle.value for toggle in app.sidebar.toggle} == flipped
     assert _shown_toggle_values(app, flipped) == flipped
 
+    _open_scenario_dialog(app)
     app.session_state[SIDEBAR_REVISION_KEY] = other
     app.button(LOAD_BUTTON_KEY).click().run()
     assert not app.exception, [element.message for element in app.exception]
@@ -600,6 +618,9 @@ def test_toggles_survive_saving_a_revision_of_the_same_scenario(
     flipped = {key: not default for key, default in TOGGLE_DEFAULTS.items()}
     revision_before = _session_value(app, ACTIVE_PERSISTED_REVISION_ID_KEY)
 
+    _open_scenario_dialog(app)
+    app.session_state[SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    app.run()
     app.text_input(key=SAVE_REVISION_NAME_KEY).set_value("토글 유지 확인")
     app.run()
     save_button = next(button for button in app.button if button.label == "신규 리비전 저장")

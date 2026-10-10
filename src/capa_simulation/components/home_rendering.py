@@ -125,7 +125,7 @@ class HomeFigureCacheKey(NamedTuple):
 #   원천·기간·표시순서·과거·월 축   O    O             O         O     (1)
 #   공정 표시명                    O    -             O         O     (2)
 #   판정 기준                      O    -             O         O
-#   B/N 집계 공정                  O    -             -         O     (3)
+#   공정 필터(B/N 판정 대상)      O    -             -         O     (3)
 #   EDP 포함                       O    O             △         O     (4)
 #   상세 계획(Customer)            -    O             -         -
 #   GAP(실제로 붙은 비교 리비전)    O    O             -         -     (5)
@@ -139,7 +139,7 @@ class HomeFigureCacheKey(NamedTuple):
 #
 #   (1) 모든 프레임과 월 축. 계획 세부수량 묶음에는 비교 덤벨이 함께 든다.
 #   (2) 세부수량·덤벨은 공정명을 쓰지 않는다.
-#   (3) 순위 집계 입력. 히트맵은 B/N 집계 공정이 아니라 주요공정 목록을 그린다.
+#   (3) 순위 집계 입력. 히트맵은 공정 필터가 아니라 주요공정 목록을 그린다.
 #   (4) 상세 B/N 의 Wafer Capa 는 Wafer 부하량 × 확보율이다. △ 는 선행 B/O 를 켰을 때만이다 —
 #       변동률을 화면 계획(EDP 를 뺀 화면이면 뺀 계획)으로 내어 확보율에 곱한다
 #       (`HomeFigureCacheKey.advance_ratio_includes_edp`).

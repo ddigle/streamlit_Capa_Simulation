@@ -1,10 +1,11 @@
-# Purpose: 편집 페이지가 보는 원본을 토큰으로 식별하고, 원본이 바뀌면 편집기 상태를 비운다.
+# Purpose: 편집 화면의 원본을 토큰으로 식별해 바뀌면 편집기를 비우고, 미적용 편집을 알린다.
 
 """편집 화면(생산 계획·기준 정보)이 함께 쓰는 원본 식별과 편집기 초기화.
 
 예전에는 본문 맨 위에 「활성 시나리오 · 수정본 N」 줄과 원본 초기화 버튼도 그렸다. 그 줄은
-사이드바 시나리오 상자의 미저장 배지와 같은 말을 했고, 초기화는 모든 화면의 편집을 버리는
-시나리오 단위 동작이라 사이드바 「편집 되돌리기」로 옮겼다(2026-09-29 사용자 결정).
+사이드바 시나리오 줄의 미저장 배지와 같은 말을 했고, 초기화는 모든 화면의 편집을 버리는
+시나리오 단위 동작이라 사이드바 시나리오 팝업의 「편집 되돌리기」로 옮겼다(2026-09-29 사용자 결정).
+적용하지 않은 편집이 남은 곳은 사이드바 조건 패널 맨 위 한 줄이 알린다(`pending_edits_notice`).
 """
 
 from __future__ import annotations
@@ -93,6 +94,17 @@ def pending_edit_labels(current_page: str | None) -> list[str]:
             if key not in skipped and st.session_state.get(key) is not None
         ]
     return labels
+
+
+def pending_edits_notice(labels: Sequence[str]) -> str:
+    """사이드바 조건 패널 맨 위 주황 한 줄. 시나리오·조회기간 두 줄이 함께 쓴다.
+
+    저장·불러오기·기간 변경 모두 원본을 바꿔 적용하지 않은 편집을 버린다. 무엇을 하면 사라지는지만
+    말하고, 확인은 각 팝업이 받는다.
+    """
+    return (
+        ":orange-badge[적용 전 편집] " + ", ".join(labels) + " — 시나리오·기간을 바꾸면 사라집니다"
+    )
 
 
 def mark_own_change(own_change_key: str, keys: Sequence[str]) -> None:

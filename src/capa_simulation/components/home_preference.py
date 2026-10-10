@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.monthly_table_base import text_width_units
 from capa_simulation.components.process_labels import ProcessLabels
@@ -58,7 +59,11 @@ from capa_simulation.home_state import (
 from capa_simulation.home_state import (
     PRODUCT_SHARE_BASIS_KEY as PRODUCT_SHARE_BASIS_KEY,
 )
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
+    forget_page_dialogs,
+)
 from capa_simulation.persistence.cache import (
     clear_global_advance_load_cache,
     clear_global_advance_shipment_cache,
@@ -103,6 +108,7 @@ from capa_simulation.services.key_process import (
     KEY_PROCESS_LIMIT,
     PRESET_NAME_LIMIT,
     normalize_preset_name,
+    resolve_preset_name,
 )
 from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.services.month_columns import month_label
@@ -133,11 +139,19 @@ THRESHOLD_CLEAR_OUTSIDE_KEY = "home_preference_threshold_clear_outside"
 # **앞 회차(사용자가 보고 고친 화면)** 의 version 을 대조해야 다른 세션의 먼저 저장을 잡는다.
 THRESHOLD_BASE_VERSION_KEY = "home_preference_threshold_base_version"
 THRESHOLD_FLASH_KEY = "home_threshold_flash"
-# 판정 기준 입력이 빠진 자리(HOME 사이드바·Static Capa)에 남기는 한 줄. 두 화면이 같은 글자를 쓴다.
+# 판정 기준 입력이 빠진 자리(HOME 공정 필터 팝업 머리·Static Capa)에 남기는 한 줄. 두 화면이 같은
+# 글자를 쓴다.
 THRESHOLD_POINTER = "판정 기준은 HOME → Preference 에서 정합니다."
 # 주요공정 히트맵 프리셋. 사이드바에서 고른 프리셋(세션의 보는 조건)과 Preference 에서 고치는
-# 프리셋은 다른 칸이다 — 고치려고 고른 것이 보는 화면을 바꾸면 안 된다.
+# 프리셋은 다른 칸이다 — 고치려고 고른 것이 보는 화면을 바꾸면 안 된다. **위젯이 아닌 세션 값**이다
+# (2026-10-10 — 사이드바 칸의 팝업이 적는다). 그래서 Preference 에서 이름을 바꿀 때도 곧바로 적는다.
 KEY_PROCESS_PRESET_KEY = "home_key_process_preset"
+# 팝업 안 라디오의 초안. 칸을 누를 때 지금 보는 프리셋으로 적는다.
+KEY_PROCESS_PICK_KEY = "home_key_process_preset_pick"
+KEY_PROCESS_FIELD_KEY = "home_key_process_field"
+KEY_PROCESS_FIELD_LABEL = "주요공정 히트맵"
+# `grid_view` 는 사이드바 `Space 현황` 링크 아이콘과 겹쳐 데이터 묶음을 뜻하는 `dataset` 이다.
+KEY_PROCESS_ICON = ":material/dataset:"
 KEY_PROCESS_EDIT_TARGET_KEY = "home_key_process_preset_edit"
 NEW_KEY_PROCESS_PRESET = "＋ 새 프리셋"
 DIMENSION_COLUMN = "구분"
@@ -1336,54 +1350,103 @@ def _queue_selection(key: str, value: str) -> None:
     st.session_state[f"{key}__pending"] = value
 
 
-def apply_pending_key_process_preset() -> None:
-    """이름을 바꿔 둔 보는 선택을 넣는다. HOME 이 볼 프리셋을 정하기 **전**, 카드보다 먼저 부른다.
-
-    카드는 Main 탭에서만 서므로 카드 안에서만 넣으면 Preference 탭에 있는 동안 쌓이기만 한다. 그러면
-    돌아온 첫 화면이 옛 이름으로 기본 프리셋을 그리고, 두 번 연달아 바꾸면 두 번째가 따라가지 못했다
-    (2026-09-29 리뷰에서 재현).
-    """
-    _apply_pending_selection(KEY_PROCESS_PRESET_KEY)
-
-
-def render_key_process_preset_card(
+def render_key_process_field(
     profile: GlobalKeyProcess,
     *,
     process_labels: ProcessLabels,
     process_options: Sequence[str],
 ) -> None:
-    """사이드바 조건 카드 `주요공정 히트맵` — 볼 프리셋을 고른다(2026-09-29 사용자 요청).
+    """사이드바 조건 패널의 `주요공정 히트맵` 줄 — 볼 프리셋을 고르는 팝업 칸(2026-10-10).
 
-    B/N 집계 공정과 **따로** 서는 카드다. B/N 집계는 판정에 넣을 공정이고, 이것은 히트맵이
-    **보여 줄** 행이다. 고른 값은 이 세션의 보는 조건이라 공용 프로필에 쓰지 않는다 — 프리셋
-    자체만 공용이다.
-    아직 고르지 않았거나 고른 프리셋이 지워졌으면 첫 프리셋(기본)이다.
+    B/N 판정 대상(공정 필터)과 **따로** 서는 줄이다. 공정 필터는 판정에 넣을 공정이고, 이것은
+    히트맵이 **보여 줄** 행이다. 고른 값은 이 세션의 보는 조건이라 공용 프로필에 쓰지 않는다 —
+    프리셋 자체만 공용이다. 아직 고르지 않았거나 고른 프리셋이 지워졌으면 첫 프리셋(기본)이다.
+    프리셋이 없으면 칸을 잠그고 어디서 만드는지 이름 줄에 적는다. 부르는 쪽이 페이지 칸 안으로
+    들어간 뒤에 부른다.
     """
-    with condition_card("주요공정 히트맵", name="home_key_process", icon=":material/grid_view:"):
-        names = list(profile.preset_names)
-        if not names:
-            st.caption(
-                "아직 프리셋이 없습니다. `Preference` 탭의 「주요공정 히트맵 프리셋」에서 만드세요."
-            )
-            return
-        _apply_pending_selection(KEY_PROCESS_PRESET_KEY)
-        if st.session_state.get(KEY_PROCESS_PRESET_KEY) not in names:
-            st.session_state.pop(KEY_PROCESS_PRESET_KEY, None)
-        chosen = st.selectbox(
-            "프리셋",
-            options=names,
-            key=KEY_PROCESS_PRESET_KEY,
-            persist_state="session",
+    names = list(profile.preset_names)
+    if not names:
+        condition_field(
+            KEY_PROCESS_FIELD_LABEL,
+            "프리셋 없음",
+            slug="key_process",
+            key=KEY_PROCESS_FIELD_KEY,
+            icon=KEY_PROCESS_ICON,
+            status="Preference 탭에서 만듭니다",
+            disabled=True,
         )
-        processes = profile.processes_of(chosen)
-        known = set(process_options)
-        shown = [process_labels.label(p) for p in processes if p in known]
-        absent = [process_labels.label(p) for p in processes if p not in known]
-        caption = f"{len(shown)}개 공정 · " + " · ".join(shown) if shown else "그릴 공정 없음"
-        if absent:
-            # 공용 프리셋이라 다른 시나리오에는 있는 공정이다. 세어 넣으면 격자와 수가 맞지 않는다.
-            caption += " · 이 화면에 없음: " + ", ".join(absent)
-        st.caption(caption)
+        return
+    applied = resolve_preset_name(names, st.session_state.get(KEY_PROCESS_PRESET_KEY))
+    previews = [
+        key_process_preview(profile.processes_of(name), process_labels, process_options)
+        for name in names
+    ]
+    shown_count = sum(
+        1 for process in profile.processes_of(applied) if process in set(process_options)
+    )
+    if condition_field(
+        KEY_PROCESS_FIELD_LABEL,
+        f"{applied} · {shown_count}공정",
+        slug="key_process",
+        key=KEY_PROCESS_FIELD_KEY,
+        icon=KEY_PROCESS_ICON,
+        on_click=_open_key_process_dialog,
+        args=(applied,),
+    ):
+        show_key_process_dialog(names, previews)
+
+
+def key_process_preview(
+    processes: Sequence[str], process_labels: ProcessLabels, process_options: Sequence[str]
+) -> str:
+    """프리셋 하나의 공정 미리보기 — 「2공정 · A · B」, 이 화면에 없는 공정은 따로 적는다.
+
+    공용 프리셋이라 다른 시나리오에는 있는 공정이다. 세어 넣으면 격자와 수가 맞지 않는다.
+    """
+    known = set(process_options)
+    shown = [process_labels.label(process) for process in processes if process in known]
+    absent = [process_labels.label(process) for process in processes if process not in known]
+    text = f"{len(shown)}공정 · " + " · ".join(shown) if shown else "그릴 공정 없음"
+    if absent:
+        text += " · 이 화면에 없음: " + ", ".join(absent)
+    return text
+
+
+def _open_key_process_dialog(applied: str | None) -> None:
+    """칸의 콜백. 다른 팝업 칸을 비우고 라디오 초안을 지금 보는 프리셋으로 적는다."""
+    forget_page_dialogs()
+    st.session_state[KEY_PROCESS_PICK_KEY] = applied
+
+
+@st.dialog(KEY_PROCESS_FIELD_LABEL, width="small", icon=KEY_PROCESS_ICON)
+def show_key_process_dialog(names: list[str], previews: list[str]) -> None:
+    """칸을 누른 회차에만 연다(버튼 반환값). 본문은 아래 함수다."""
+    render_key_process_dialog_body(names, previews)
+
+
+def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]) -> None:
+    """프리셋 라디오와 프리셋마다의 공정 미리보기. **고르면 곧바로 적용하고 닫힌다.**
+
+    라디오 조작은 팝업(프래그먼트)만 다시 돌리고, 위젯 콜백 안의 `st.rerun()` 은 아무 일도 하지
+    않는다. 그래서 돌려받은 값을 지금 보는 프리셋과 견주어 다르면 세션에 적고 앱 전체를 다시
+    돌린다 — 그 회차에는 칸이 눌리지 않아 팝업이 다시 불리지 않는다(닫힘). 견주는 값은 **세션의
+    지금 값**이다 — 적은 뒤 다시 도는 회차에 같아져 되풀이되지 않는다.
+    """
+    st.caption(
+        "히트맵이 보여 줄 공정 묶음입니다. 고르면 바로 바뀝니다. "
+        "프리셋은 Preference 탭에서 고칩니다."
+    )
+    choice = st.radio(
+        "프리셋",
+        options=list(names),
+        captions=list(previews),
+        key=KEY_PROCESS_PICK_KEY,
+        label_visibility="collapsed",
+    )
+    applied = resolve_preset_name(list(names), st.session_state.get(KEY_PROCESS_PRESET_KEY))
+    if choice is not None and choice != applied:
+        st.session_state[KEY_PROCESS_PRESET_KEY] = choice
+        st.rerun(scope="app")
 
 
 def _render_key_process_editor(
@@ -1400,7 +1463,7 @@ def _render_key_process_editor(
     기본**이다 — 새로 연 화면이 그것을 본다(`기본으로` 가 맨 앞으로 옮긴다).
 
     저장은 언제나 **묶음 전체**의 교체다(version+1). 이름을 바꾸면 사이드바에서 그 프리셋을
-    고르고 있던 선택도 새 이름으로 옮긴다.
+    보고 있던 선택도 새 이름으로 옮긴다 — 그 선택은 위젯이 아닌 세션 값이라 곧바로 적는다.
 
     **공정·이름 위젯에 `key` 를 두지 않는다.** `Preference` 탭은 숨어 있어도 그려지므로 `key` 를
     두면 첫 진입 값이 세션에 박혀 다른 사람이 저장한 프리셋을 영영 못 본다. 고칠 프리셋이 바뀌면
@@ -1408,7 +1471,7 @@ def _render_key_process_editor(
     """
     profile = key_process_profile
     with st.container(border=True):
-        st.markdown("#### :material/grid_view: 주요공정 히트맵 프리셋")
+        st.markdown("#### :material/dataset: 주요공정 히트맵 프리셋")
         st.caption(
             profile_version_caption(
                 profile,
@@ -1503,7 +1566,7 @@ def _render_key_process_editor(
         clear_global_key_process_cache()
         _queue_selection(KEY_PROCESS_EDIT_TARGET_KEY, new_name)
         if not is_new and st.session_state.get(KEY_PROCESS_PRESET_KEY) == target:
-            _queue_selection(KEY_PROCESS_PRESET_KEY, new_name)
+            st.session_state[KEY_PROCESS_PRESET_KEY] = new_name
         queue_flash(
             "home_key_process_flash",
             f"프리셋 「{new_name}」{object_particle(new_name)} 저장했습니다.",

@@ -160,8 +160,15 @@ def test_process_picker_buttons_show_aliases_but_only_apply_original_keys(tmp_pa
     )
     clear_global_process_rename_cache()
     app.run()
+    # 사이드바 공정 필터 줄 — 이름 줄 오른쪽 보조 글이 뜻(판정 대상)을 지킨다. 표의 행을 거르는
+    # 다른 화면의 「공정 필터」와 이름이 같다.
+    assert {"공정 필터", "B/N 판정 대상"} <= {item.value for item in app.sidebar.caption}
     app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
     assert not app.exception
+    # 팝업 머리 — 무엇을 고르는지와 판정 기준을 정하는 자리(전에는 사이드바 상자에 늘 섰다).
+    captions = [item.value for item in app.caption]
+    assert any(text.startswith("B/N·확보율 판정에 넣을 공정 · ") for text in captions), captions
+    assert THRESHOLD_POINTER in captions
     # 여는 첫 렌더만 페이지의 호출부 인자로 그려진다(이후는 하네스가 다시 부른다). 거기서
     # 옵션이 표시명으로 바뀌면 적용된 공정이 OFF 로 보이므로, 적용값이 모두 ON 인지 본다.
     assert {
@@ -200,7 +207,7 @@ def test_process_picker_buttons_show_aliases_but_only_apply_original_keys(tmp_pa
     assert app.session_state[PROCESS_SELECTION_KEY] == expected
     assert "dashboard_bottleneck_process_dialog_draft" not in app.session_state
     assert app.button(key="dashboard_bottleneck_process_dialog_open").label == (
-        f"공정 선택 · {len(expected)} / {len(original_selection)}"
+        f"{len(expected)} / {len(original_selection)} 공정"
     )
     assert alias not in app.session_state[PROCESS_SELECTION_KEY]
     assert len(app.session_state["spy_traces"]) == 8
@@ -232,7 +239,7 @@ def test_process_picker_bulk_actions_restore_applied_values_and_apply_empty_or_a
     assert app.session_state[PROCESS_SELECTION_KEY] == []
     assert (
         app.button(key="dashboard_bottleneck_process_dialog_open").label
-        == f"공정 선택 · 0 / {len(options)}"
+        == f"0 / {len(options)} 공정"
     )
 
     app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
@@ -244,7 +251,7 @@ def test_process_picker_bulk_actions_restore_applied_values_and_apply_empty_or_a
     assert not app.exception, [item.message for item in app.exception]
     assert app.session_state[PROCESS_SELECTION_KEY] == options
     assert app.button(key="dashboard_bottleneck_process_dialog_open").label == (
-        f"공정 선택 · {len(options)} / {len(options)}"
+        f"전체 {len(options)}공정"
     )
 
 
@@ -409,7 +416,9 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     # 공용 프로필이 정한다(2026-10-06 사용자 결정) — 저장 전에는 공식버전 프리셋 값을 쓴다.
     assert app.session_state["production_month_range_v2"] == ("2026-01", "2026-12")
     assert [widget.label for widget in app.sidebar.number_input] == []
-    assert THRESHOLD_POINTER in [element.value for element in app.sidebar.caption]
+    # 「판정 기준은 HOME → Preference 에서 정합니다」는 사이드바가 아니라 공정 필터 팝업 머리와
+    # Guide 에 있다(2026-10-10 사용자 결정 — 사이드바에 늘 한 줄을 차지하던 것을 걷었다).
+    assert THRESHOLD_POINTER not in [element.value for element in app.sidebar.caption]
     assert [
         (widget.label, widget.value)
         for widget in app.main.number_input
@@ -447,7 +456,8 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
             "Excel 붙여넣기",
             "Guide",
             "Summary 저장",
-            "공정 선택 · 3 / 3",
+            "전체 3공정",
+            "프리셋 없음",
             "과거 구간 저장",
             "선행 B/O 저장",
             "선행 입고 저장",
@@ -504,9 +514,8 @@ def test_home_reuses_cached_figures_on_an_unchanged_rerun(seeded_database: Path)
 
     assert not list(app.exception)
     assert _cache_state(app) == "적중"
-    # 고른 수는 캡션이 아니라 버튼 라벨에 있다 — 누를지 정하는 데 필요한 숫자라 버튼과
-    # 떨어져 있을 이유가 없다.
-    assert "공정 선택 · 3 / 3" in [button.label for button in app.button]
+    # 고른 수는 캡션이 아니라 공정 필터 값 칸에 있다 — 좁혀 놓은 수가 팝업을 열지 않아도 보인다.
+    assert "전체 3공정" in [button.label for button in app.button]
 
 
 def _cache_state(app: AppTest) -> str:
@@ -1366,11 +1375,11 @@ def test_a_past_data_paste_waiting_to_be_saved_puts_a_dot_on_its_tab(
 
 
 def test_the_sidebar_picks_a_key_process_preset_and_the_heatmap_follows(tmp_path: Path) -> None:
-    """주요공정 히트맵은 사이드바 `주요공정 히트맵` 카드에서 고른 프리셋의 공정을 그린다.
+    """주요공정 히트맵은 사이드바 `주요공정 히트맵` 줄에서 고른 프리셋의 공정을 그린다.
 
     2026-09-29 사용자 요청 — 「A 그룹은 A·B·C·D, B 그룹은 D·E·F·G」를 공용 프로필에 저장해 두고
-    B/N 집계 공정과 따로 골라 본다. 고르지 않은 세션은 첫 프리셋(기본)이다. 제목에 프리셋 이름이
-    붙어 카드가 접혀 있어도 무엇을 보는지 안다.
+    공정 필터와 따로 골라 본다. 고르지 않은 세션은 첫 프리셋(기본)이다. 줄은 팝업 칸이고(2026-10-10)
+    팝업의 라디오는 프리셋마다 그 공정을 미리 보여 준다. 제목에 프리셋 이름이 붙는다.
     """
     from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
@@ -1385,20 +1394,68 @@ def test_the_sidebar_picks_a_key_process_preset_and_the_heatmap_follows(tmp_path
     app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
     assert not list(app.exception), [element.message for element in app.exception]
 
-    preset = app.selectbox(key="home_key_process_preset")
-    assert preset.options == ["A 그룹", "B 그룹"]
-    assert preset.value == "A 그룹"
+    assert app.button(key="home_key_process_field").label == "A 그룹 · 1공정"
+    assert app.session_state["home_key_process_preset"] == "A 그룹"
     assert any('title="주요공정 - A 그룹"' in item.value for item in app.markdown)
     labels = app.session_state["spy_figures"]["key_process_heatmap_labels"]
     assert "DEMO_Chip_Attach" in json.dumps(labels.to_plotly_json(), ensure_ascii=False)
 
-    preset.set_value("B 그룹").run()
+    # 칸을 누른 회차에 팝업이 선다 — 라디오는 지금 보는 프리셋에서 시작하고 캡션이 공정을 보인다.
+    app.button(key="home_key_process_field").click().run()
     assert not list(app.exception), [element.message for element in app.exception]
+    picker = app.radio(key="home_key_process_preset_pick")
+    assert picker.options == ["A 그룹", "B 그룹"]
+    assert picker.value == "A 그룹"
+    assert list(picker.proto.captions) == [
+        "1공정 · DEMO_Chip_Attach",
+        "2공정 · DEMO_Final_Test · DEMO_Wafer_Inspect",
+    ]
+
+    # 팝업이 고른 값을 적는 칸(위젯이 아닌 세션 값)을 바꾸면 히트맵이 따라간다. 팝업 본문의 적용은
+    # 아래 테스트가 본다 — 칸을 누른 회차에만 서는 팝업이라 AppTest 의 다음 회차에는 없다.
+    app.session_state["home_key_process_preset"] = "B 그룹"
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.button(key="home_key_process_field").label == "B 그룹 · 2공정"
     assert any('title="주요공정 - B 그룹"' in item.value for item in app.markdown)
     labels = app.session_state["spy_figures"]["key_process_heatmap_labels"]
     text = json.dumps(labels.to_plotly_json(), ensure_ascii=False)
     assert "DEMO_Final_Test" in text and "DEMO_Wafer_Inspect" in text
     assert "DEMO_Chip_Attach" not in text
+
+
+def test_picking_a_preset_in_the_dialog_applies_it_once() -> None:
+    """팝업에서 고르면 곧바로 적용하고 앱을 다시 돌린다 — 다시 도는 회차에는 되풀이하지 않는다.
+
+    라디오 조작은 팝업만 다시 돌리고 위젯 콜백 안의 `st.rerun()` 은 아무 일도 하지 않는다. 그래서
+    본문이 돌려받은 값을 **세션의 지금 값**과 견준다 — 적은 뒤에는 같아져 멈춘다.
+    """
+
+    def script() -> None:
+        import streamlit as st
+
+        from capa_simulation.components.home_preference import render_key_process_dialog_body
+
+        st.session_state["test_body_runs"] = int(st.session_state.get("test_body_runs", 0)) + 1
+        render_key_process_dialog_body(["A 그룹", "B 그룹"], ["1공정 · a", "2공정 · b · c"])
+
+    from capa_simulation.components.home_preference import (
+        KEY_PROCESS_PICK_KEY,
+        KEY_PROCESS_PRESET_KEY,
+    )
+
+    app = AppTest.from_function(script)
+    app.session_state[KEY_PROCESS_PRESET_KEY] = "A 그룹"
+    app.session_state[KEY_PROCESS_PICK_KEY] = "A 그룹"
+    app.run()
+    assert not app.exception
+    assert app.session_state["test_body_runs"] == 1
+
+    app.radio(key=KEY_PROCESS_PICK_KEY).set_value("B 그룹").run()
+    assert not app.exception
+    assert app.session_state[KEY_PROCESS_PRESET_KEY] == "B 그룹"
+    # 적은 회차 + 다시 돈 회차. 다시 돈 회차는 같은 값이라 멈춘다.
+    assert app.session_state["test_body_runs"] == 3
 
 
 def _save_preset(app: AppTest, name: str, processes: list[str]) -> None:
@@ -1426,7 +1483,7 @@ def test_presets_are_made_renamed_promoted_and_deleted_from_preference(tmp_path:
     _save_preset(app, "A 그룹", ["DEMO_Chip_Attach"])
     assert repository.load_global_key_process().presets == (("A 그룹", ("DEMO_Chip_Attach",)),)
     assert app.selectbox(key=target).value == "A 그룹"
-    assert app.selectbox(key="home_key_process_preset").value == "A 그룹"
+    assert app.session_state["home_key_process_preset"] == "A 그룹"
 
     app.selectbox(key=target).set_value("＋ 새 프리셋").run()
     _save_preset(app, "B 그룹", ["DEMO_Final_Test"])
@@ -1439,7 +1496,7 @@ def test_presets_are_made_renamed_promoted_and_deleted_from_preference(tmp_path:
         "A 그룹(개정)",
         ("DEMO_Chip_Attach", "DEMO_Wafer_Inspect"),
     )
-    assert app.selectbox(key="home_key_process_preset").value == "A 그룹(개정)"
+    assert app.session_state["home_key_process_preset"] == "A 그룹(개정)"
 
     # B 를 기본으로 올린다.
     app.selectbox(key=target).set_value("B 그룹").run()
@@ -1559,7 +1616,8 @@ def test_renaming_the_viewed_preset_from_preference_carries_the_view_on_return(
     app, _ = _preset_app(
         tmp_path, [("A 그룹", ["DEMO_Chip_Attach"]), ("B 그룹", ["DEMO_Final_Test"])]
     )
-    app.selectbox(key="home_key_process_preset").set_value("B 그룹").run()
+    app.session_state["home_key_process_preset"] = "B 그룹"
+    app.run()
     app.session_state["home_active_tab"] = ":material/tune: Preference"
     app.run()
 
@@ -1570,7 +1628,8 @@ def test_renaming_the_viewed_preset_from_preference_carries_the_view_on_return(
     app.session_state["home_active_tab"] = ":material/dashboard: Main"
     app.run()
     assert not list(app.exception)
-    assert app.selectbox(key="home_key_process_preset").value == "B3"
+    assert app.session_state["home_key_process_preset"] == "B3"
+    assert app.button(key="home_key_process_field").label == "B3 · 1공정"
     assert any('title="주요공정 - B3"' in item.value for item in app.markdown)
 
 
@@ -1584,8 +1643,11 @@ def test_a_preset_absent_from_this_screen_says_so_instead_of_asking_to_choose(
 
     labels = app.session_state["spy_figures"]["key_process_heatmap_labels"]
     assert KEY_PROCESS_ABSENT_NOTICE in json.dumps(labels.to_plotly_json(), ensure_ascii=False)
-    card = " ".join(item.value for item in app.sidebar.caption)
-    assert "그릴 공정 없음" in card and "이 화면에 없음: ONLY_ELSEWHERE" in card
+    assert app.button(key="home_key_process_field").label == "다른 라인 · 0공정"
+    app.button(key="home_key_process_field").click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    (caption,) = app.radio(key="home_key_process_preset_pick").proto.captions
+    assert caption == "그릴 공정 없음 · 이 화면에 없음: ONLY_ELSEWHERE"
 
 
 def test_a_long_section_title_stays_on_one_line_and_is_escaped() -> None:

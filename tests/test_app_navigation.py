@@ -11,8 +11,13 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Caption, Expander, Status
 
+from capa_simulation.components.period_field import (
+    PERIOD_APPLY_KEY,
+    PERIOD_DIALOG_KEY,
+    PERIOD_FIELD_KEY,
+)
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
-from capa_simulation.components.scenario_status import SCENARIO_BOX_KEY
+from capa_simulation.components.scenario_status import SCENARIO_DIALOG_KEY, SCENARIO_FIELD_KEY
 from capa_simulation.navigation import (
     ADMIN_AREA,
     ADMIN_BOX_PAGES,
@@ -36,8 +41,8 @@ from capa_simulation.scenario_preset_state import (
 )
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.sidebar_status import (
-    BOTTLENECK_BOX_KEY,
     CONDITION_CARD_PREFIX,
+    CONDITIONS_BOX_KEY,
     remembered_box_key,
 )
 
@@ -208,9 +213,9 @@ _EXPANDER_ELEMENTS = (Status, Expander)
 def _expanded(app: AppTest) -> dict[str, bool]:
     """사이드바 **그룹 상자**의 펼침 상태. 상자가 없는 그룹은 여기 나오지 않는다.
 
-    조회 컨트롤 넷(시나리오·조회기간·B/N·Support)도 같은 확장 패널이 되면서 사이드바의
-    확장 패널이 여덟 개로 늘었다. 이 헬퍼가 말하는 것은 「지금 보는 페이지가 든 그룹만
-    편다」는 **그룹 규칙 하나**이므로, 그룹 제목을 단 것만 센다. 하위가 없는 그룹의
+    `Support` 와 조건 카드도 같은 확장 패널이라 사이드바에는 그룹 말고도 확장 패널이 선다.
+    이 헬퍼가 말하는 것은 「지금 보는 페이지가 든 그룹만 편다」는 **그룹 규칙 하나**이므로,
+    그룹 제목을 단 것만 센다. 하위가 없는 그룹의
     제목도 함께 본다 — 그쪽에 펼침 장치가 생기는 것도 이 헬퍼가 잡아야 한다.
     """
     group_titles = {group.main.title for group in SIDEBAR_GROUPS}
@@ -222,9 +227,9 @@ def _expanded(app: AppTest) -> dict[str, bool]:
 
 
 def _control_boxes(app: AppTest) -> dict[str, bool]:
-    """조회 컨트롤 상자의 펼침 상태를 `key` 로 찾아 돌려준다.
+    """`key` 를 단 확장 패널(`Support`·조건 카드)의 펼침 상태를 `key` 로 찾아 돌려준다.
 
-    라벨로는 가를 수 없다 — 시나리오 상자의 라벨에는 상태에 따라 바뀌는 배지가 붙는다.
+    라벨로는 가를 수 없다 — 라벨은 화면 글자라 바뀔 수 있다.
     `key` 와 `on_change="rerun"` 을 함께 준 확장 패널은 위젯이라 id 끝이 그 `key` 다.
     그렇지 않은 그룹 상자는 id 가 비어 있어 여기 나오지 않는다.
     """
@@ -298,15 +303,15 @@ def test_groups_without_subpages_are_boxed_but_not_expandable(_app: AppTest) -> 
     assert SCENARIO_MANAGEMENT.title not in expandable
 
 
-def test_the_scenario_box_opens_the_database_that_settings_points_to_at_run_time(
+def test_the_scenario_field_reads_no_database_until_its_dialog_opens(
     _app: AppTest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """사이드바 시나리오 상자는 **부르는 순간의** `settings.DUCKDB_PATH` 를 연다.
+    """사이드바 시나리오 줄은 회차마다 저장소를 읽지 않는다 — 팝업을 연 동안에만 읽는다.
 
-    기본 경로를 import 때 잡으면 픽스처가 `settings` 를 갈아끼워도 상자만 저장소의
-    `data/capa_simulation.duckdb` 를 만들고 마이그레이션하며 잠근다 — 앱 서버가 떠 있는
-    개발 PC 에서 잠금 충돌이 난다. 파일이 없는지로 보지 않는다: 작업 사본에는 그 파일이
-    정상적으로 있을 수 있어서다. 상자가 연 경로를 그대로 적어 둔다.
+    전에는 접히는 상자가 모든 화면의 회차마다 시나리오 목록·최신 공식버전·리비전 목록을 읽었다
+    (2026-10-10 통합 패널로 걷었다). 팝업을 열면 **부르는 순간의** `settings.DUCKDB_PATH` 를 연다 —
+    기본 경로를 import 때 잡으면 픽스처가 `settings` 를 갈아끼워도 팝업만 저장소의
+    `data/capa_simulation.duckdb` 를 만들고 잠근다(앱 서버가 떠 있는 개발 PC 에서 잠금 충돌).
     """
     import capa_simulation.components.scenario_status as scenario_status
     from capa_simulation.persistence.cache import get_scenario_repository
@@ -321,16 +326,21 @@ def test_the_scenario_box_opens_the_database_that_settings_points_to_at_run_time
     monkeypatch.setattr(scenario_status, "get_scenario_repository", _recording)
 
     app = _app.run()
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert opened == []
+
+    app.button(key=SCENARIO_FIELD_KEY).click().run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert opened
     assert set(opened) == {str((tmp_path / "scenario.duckdb").resolve())}
 
 
-# ------------------------------------------------------- 조회 컨트롤 상자 접기
+# ------------------------------------------------------- 조건 패널과 접히는 상자
 #
-# 페이지 그룹과 **같은 양식**으로 접는다. 넷 다 `st.expander` 이고 `key` 로 펼침 상태가
-# 세션에 남는다. 확인할 것은 셋이다 — 첫 화면에서 접혀 있는가, 세션 값으로 펼 수 있는가,
-# HOME 에만 있는 B/N 상자가 페이지를 왕복해도 제 상태를 기억하는가.
+# 「조회 조건」 아래는 늘 펼친 통합 패널 하나(2026-10-10 사용자 결정)와 그 밑의 접히는 조건 카드다.
+# 확인할 것은 셋이다 — 패널이 그 화면이 읽는 줄만 세우는가, 팝업이 세션 키로 열리고 닫히는가,
+# 탭에 딸린 카드가 페이지를 왕복해도 제 펼침을 기억하는가.
 
 
 def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
@@ -567,7 +577,7 @@ def test_the_bootstrap_error_screen_still_shows_the_app_name_in_the_header(
 
 
 def test_the_header_marks_unsaved_edits(_app: AppTest) -> None:
-    """미저장 판정은 사이드바 시나리오 상자의 「미저장 변경」과 같은
+    """미저장 판정은 사이드바 시나리오 줄의 「미저장 변경」과 같은
     함수다(`has_unsaved_scenario_changes`)."""
     from capa_simulation.scenario_activation import ACTIVE_PERSISTED_SESSION_REVISION_KEY
 
@@ -584,36 +594,119 @@ def test_the_header_marks_unsaved_edits(_app: AppTest) -> None:
     assert "공식 v1" not in style
 
 
-def test_the_control_boxes_open_collapsed_on_the_first_run(_app: AppTest) -> None:
-    """시나리오·조회기간·Support 는 **접힌 채로** 열린다.
+def _panel_fields(app: AppTest) -> list[str]:
+    """조건 패널 안 값 칸(버튼)의 key 를 화면 차례대로."""
+    keys = _sidebar_keys(app)
+    if CONDITIONS_BOX_KEY not in keys:
+        return []
+    panel = list(app.sidebar.children.values())[keys.index(CONDITIONS_BOX_KEY)]
+    return [str(button.key) for button in panel.button]
 
-    사이드바가 길어지는 것을 막는 것이 이 과제의 목적이라, 기본값이 펼침이면 고치기 전과
-    같아진다. 접어도 공식버전 배지와 적용 기간은 요약 줄에 남으므로 잃는 정보가 없다.
+
+@pytest.mark.parametrize(
+    "page_path,fields",
+    [
+        (
+            HOME.path,
+            [
+                SCENARIO_FIELD_KEY,
+                PERIOD_FIELD_KEY,
+                "dashboard_bottleneck_process_dialog_open",
+                "home_key_process_field",
+            ],
+        ),
+        (SCENARIO_MANAGEMENT.path, [SCENARIO_FIELD_KEY, PERIOD_FIELD_KEY]),
+        (STATIC_CAPA.path, [SCENARIO_FIELD_KEY, PERIOD_FIELD_KEY]),
+        (ADMIN_AREA.path, [SCENARIO_FIELD_KEY]),
+        (CAPA_CHATBOT.path, []),
+    ],
+)
+def test_the_conditions_panel_holds_only_the_rows_the_screen_reads(
+    _app: AppTest, page_path: str, fields: list[str]
+) -> None:
+    """패널은 **늘 펼친** 한 상자이고, 줄은 그 화면이 실제로 읽는 조건뿐이다(`PageSpec`).
+
+    HOME 은 공통 두 줄 뒤에 페이지 칸 둘(공정 필터 — 세 탭 모두, 주요공정 히트맵 — Main 탭)을
+    채운다. 접히는 상자가 아니므로 펼침 상태가 없다.
     """
     app = _app.run()
+    if page_path != HOME.path:
+        app.switch_page(page_path).run()
     assert not list(app.exception), [element.message for element in app.exception]
-
-    boxes = _control_boxes(app)
-    assert boxes[SCENARIO_BOX_KEY] is False
-    assert boxes[_app_constant("MONTH_BOX_KEY")] is False
-    assert boxes[_app_constant("ADMIN_BOX_KEY")] is False
-    # B/N 도 접힌다. 기준은 한 번 정해 두고 보는 값이라 들어오자마자 펴 둘 이유가 없다 —
-    # 넷이 다 접혀야 사이드바 첫 화면이 「어디로 갈까」만 말한다.
-    assert boxes[BOTTLENECK_BOX_KEY] is False
+    assert _panel_fields(app) == fields
+    assert CONDITIONS_BOX_KEY not in _control_boxes(app)
 
 
-def test_an_opened_control_box_stays_open_across_reruns(_app: AppTest) -> None:
-    """편 상태는 **세션 동안 남는다.** 매 rerun 마다 다시 펴야 하면 안 고치느니만 못하다."""
+def test_the_home_heatmap_row_follows_the_main_tab_and_the_filter_stays(_app: AppTest) -> None:
+    """주요공정 히트맵 줄은 Main 탭에서만, 공정 필터 줄은 세 탭 모두에서 선다.
+
+    「사이드바 = 이 화면이 실제로 읽는 조건」(2026-09-29). 히트맵은 Main 에만 그려지고, 판정
+    대상은 Preference·Past Data 탭에서도 입장 화면 Summary·결론이 함께 읽는다.
+    """
     app = _app.run()
-    app.session_state[SCENARIO_BOX_KEY] = True
+    app.session_state["home_active_tab"] = ":material/tune: Preference"
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
+    assert _panel_fields(app) == [
+        SCENARIO_FIELD_KEY,
+        PERIOD_FIELD_KEY,
+        "dashboard_bottleneck_process_dialog_open",
+    ]
 
-    assert _control_boxes(app)[SCENARIO_BOX_KEY] is True
 
-    # 페이지를 옮겨도 그대로다. 공통 상자는 그 조건을 읽는 페이지에서 `app.py` 가 그린다.
+def test_the_scenario_dialog_stays_open_across_reruns_and_closes_on_leaving(
+    _app: AppTest,
+) -> None:
+    """시나리오 팝업은 세션 키로 열린다 — 페이지가 다시 도는 회차에도 닫히지 않고, 페이지를
+    옮기면 `forget_page_dialogs` 가 버린다(닫지 않고 떠나면 돌아왔을 때 저절로 뜨지 않게)."""
+    app = _app.run()
+    app.button(key=SCENARIO_FIELD_KEY).click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[SCENARIO_DIALOG_KEY] is True
+    assert "sidebar_load_revision" in {button.key for button in app.button}
+
+    app.run()
+    assert "sidebar_load_revision" in {button.key for button in app.button}
+
     app.switch_page(SCENARIO_MANAGEMENT.path).run()
-    assert _control_boxes(app)[SCENARIO_BOX_KEY] is True
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert SCENARIO_DIALOG_KEY not in app.session_state
+    assert "sidebar_load_revision" not in {button.key for button in app.button}
+
+
+def test_the_period_changes_only_when_applied_in_its_dialog(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """조회기간은 팝업의 「적용」을 눌러야 바뀐다(2026-10-10 — 전에는 고르는 즉시 바뀌었다).
+
+    팝업 안에서 고른 범위는 초안이다. 여는 콜백이 다른 팝업 칸(시나리오)부터 비운다 — 한 실행에
+    팝업은 하나뿐이다.
+    """
+    import capa_simulation.components.month_range_picker as month_range_picker
+
+    app = _app.run()
+    before = app.session_state[MONTH_RANGE_KEY]
+    # 사용자가 팝업 안에서 다른 범위를 고른 것으로 친다(Components v2 는 AppTest 에 없다).
+    monkeypatch.setattr(
+        month_range_picker,
+        "render_month_range_picker",
+        lambda *, start, end, min_month, max_month, key: ("2026-02", "2026-04"),
+    )
+    app.button(key=SCENARIO_FIELD_KEY).click().run()
+    app.button(key=PERIOD_FIELD_KEY).click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert SCENARIO_DIALOG_KEY not in app.session_state
+    assert app.session_state[PERIOD_DIALOG_KEY] is True
+    # 고르기만 해서는 바뀌지 않는다.
+    app.run()
+    assert app.session_state[MONTH_RANGE_KEY] == before
+
+    app.button(key=PERIOD_APPLY_KEY).click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[MONTH_RANGE_KEY] == ("2026-02", "2026-04")
+    assert PERIOD_DIALOG_KEY not in app.session_state
+    assert _range_caption(app) == ":material/check_circle: 적용 · 26.02–26.04"
+    assert app.button(key=PERIOD_FIELD_KEY).label == "26.02 → 26.04"
 
 
 def test_the_shared_sample_switch_stays_on_across_sample_pages(_app: AppTest) -> None:
@@ -626,26 +719,27 @@ def test_the_shared_sample_switch_stays_on_across_sample_pages(_app: AppTest) ->
         assert (switch.proto.value, switch.proto.set_value) == (True, True), path
 
 
-def test_the_bottleneck_box_remembers_its_state_across_a_page_round_trip(_app: AppTest) -> None:
-    """HOME 에만 있는 상자라 **기억 칸**이 없으면 왕복할 때마다 펼침으로 되돌아간다.
+def test_a_tab_scoped_card_remembers_its_state_across_a_page_round_trip(_app: AppTest) -> None:
+    """HOME Main 탭에만 서는 `LOB 표시 조건` 카드는 **기억 칸**이 없으면 왕복할 때마다 접힌다.
 
     Streamlit 은 한 회차에 만들어지지 않은 위젯의 값을 버린다. 다른 페이지에 있는 동안
-    이 상자는 아예 그려지지 않으므로, 위젯 값만 믿으면 접어 둔 사람이 HOME 에 돌아올
-    때마다 다시 접어야 한다.
+    이 카드는 아예 그려지지 않으므로, 위젯 값만 믿으면 펴 둔 사람이 HOME 에 돌아올 때마다
+    다시 펴야 한다.
     """
+    card_key = f"{CONDITION_CARD_PREFIX}home"
     app = _app.run()
-    app.session_state[BOTTLENECK_BOX_KEY] = False
+    app.session_state[card_key] = True
     app.run()
-    assert _control_boxes(app)[BOTTLENECK_BOX_KEY] is False
+    assert _control_boxes(app)[card_key] is True
 
     app.switch_page(SCENARIO_MANAGEMENT.path).run()
-    assert BOTTLENECK_BOX_KEY not in _control_boxes(app)
+    assert card_key not in _control_boxes(app)
     # 위젯 값은 버려져도 기억 칸은 남는다.
-    assert app.session_state[remembered_box_key(BOTTLENECK_BOX_KEY)][0] is False
+    assert app.session_state[remembered_box_key(card_key)][0] is True
 
     app.switch_page(HOME.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
-    assert _control_boxes(app)[BOTTLENECK_BOX_KEY] is False
+    assert _control_boxes(app)[card_key] is True
 
 
 def test_group_boxes_follow_the_page_only_when_the_page_changes(_app: AppTest) -> None:
@@ -700,14 +794,13 @@ def _sidebar_keys(app: AppTest) -> list[str]:
 
 
 @pytest.mark.parametrize("page_path", [HOME.path, SCENARIO_MANAGEMENT.path])
-def test_the_conditions_heading_stands_right_before_the_scenario_box(
+def test_the_conditions_heading_stands_right_before_the_panel(
     _app: AppTest, page_path: str
 ) -> None:
-    """「조회 조건」 제목은 시나리오 상자 **바로 앞**이다.
+    """「조회 조건」 제목은 통합 조건 패널 **바로 앞**이다.
 
-    제목은 그 아래 세 상자(시나리오·리비전, 조회기간, B/N 집계 공정)가 다른 화면으로 가는
-    목록이 아니라 지금 화면의 계산 조건이라고 말한다. 뒤로 밀리면 시나리오 상자가 목록
-    쪽에 붙어 읽히고, 조회기간 앞으로 가면 적용 기간 자리표시자가 제 상자에서 떨어진다.
+    제목은 그 아래 패널(시나리오·조회기간과 화면 칸)과 조건 카드가 다른 화면으로 가는 목록이
+    아니라 지금 화면의 계산 조건이라고 말한다. 뒤로 밀리면 패널이 목록 쪽에 붙어 읽힌다.
     """
     app = _app.run()
     if page_path != HOME.path:
@@ -716,7 +809,7 @@ def test_the_conditions_heading_stands_right_before_the_scenario_box(
 
     keys = _sidebar_keys(app)
     heading = keys.index(CONDITIONS_SECTION.key)
-    assert keys[heading + 1] == SCENARIO_BOX_KEY, keys
+    assert keys[heading + 1] == CONDITIONS_BOX_KEY, keys
     # 선언한 두 글자가 실제로 들어 있다. 빈 컨테이너는 화면에 그려지지도 않는다.
     heading_block = list(app.sidebar.children.values())[heading]
     captions = [element.value for element in heading_block if isinstance(element, Caption)]
@@ -724,23 +817,18 @@ def test_the_conditions_heading_stands_right_before_the_scenario_box(
 
 
 @pytest.mark.parametrize("page_path", [HOME.path, SCENARIO_MANAGEMENT.path])
-def test_the_applied_range_placeholder_stands_right_before_the_month_box(
-    _app: AppTest, page_path: str
-) -> None:
-    """적용 기간 자리표시자는 조회기간 상자 **바로 앞** 형제다.
+def test_the_applied_range_stands_in_the_period_name_row(_app: AppTest, page_path: str) -> None:
+    """적용 기간은 조회기간 줄의 **이름 줄 오른쪽**이다 — 패널의 일반 흐름 안이다.
 
-    CSS 가 그 칸의 높이를 0 으로 눌러 바로 아래 요약 줄 위에 글자를 얹는다. 사이에 다른
-    칸이 끼면 글자가 그 칸 위에 앉는다. 상자 **뒤**로 옮기면 페이지가 `st.stop()` 한 회차에
-    자리표시자가 아예 그려지지 않는다(`app.py` 가 이유를 적었다).
+    전에는 접힌 상자의 요약 줄 위에 107px 절대좌표로 얹었다(2026-10-10 걷었다). 자리표시자는
+    여전히 `app.py` 가 페이지보다 먼저 세운다 — 그 값은 페이지 계산 뒤에야 정해지고, 페이지가
+    `st.stop()` 하면 그 뒤 코드는 돌지 않는다.
     """
     app = _app.run()
     if page_path != HOME.path:
         app.switch_page(page_path).run()
     assert not list(app.exception), [element.message for element in app.exception]
-
-    keys = _sidebar_keys(app)
-    placeholder = keys.index(_app_constant("MONTH_APPLIED_BOX_KEY"))
-    assert keys[placeholder + 1] == _app_constant("MONTH_BOX_KEY"), keys
+    assert _range_caption(app)
 
 
 def test_the_support_box_opens_on_entering_its_pages_and_never_forces_closed(
@@ -781,15 +869,26 @@ def test_the_support_box_opens_on_entering_its_pages_and_never_forces_closed(
 # 덮는다. 범위를 읽은 뒤 계산이 멈추면 「계산 멈춤」으로 거둔다.
 
 
+def _find_block(node: Any, suffix: str) -> Any:
+    """사이드바 트리에서 id 가 `suffix` 로 끝나는 칸(key 를 준 컨테이너)을 찾는다."""
+    for child in getattr(node, "children", {}).values():
+        identifier = str(getattr(getattr(child, "proto", None), "id", "") or "")
+        if identifier.endswith(suffix):
+            return child
+        found = _find_block(child, suffix)
+        if found is not None:
+            return found
+    return None
+
+
 def _range_caption(app: AppTest) -> str:
-    """조회기간 요약 줄 위에 얹히는 한 줄(적용 기간 자리표시자)의 글자."""
-    placeholder_key = _app_constant("MONTH_APPLIED_BOX_KEY")
-    (block,) = [
-        node
-        for node in app.sidebar.children.values()
-        if str(getattr(getattr(node, "proto", None), "id", "") or "").endswith(placeholder_key)
-    ]
-    (caption,) = [element.value for element in block if isinstance(element, Caption)]
+    """조회기간 이름 줄 오른쪽의 적용 기간 글자(자리표시자)."""
+    row = _find_block(app.sidebar, "condition_name_period")
+    assert row is not None, "조회기간 이름 줄이 없습니다"
+    captions = [element.value for element in row if isinstance(element, Caption)]
+    # 첫 캡션은 이름(「조회기간」), 둘째가 자리표시자다.
+    assert captions[0] == "조회기간", captions
+    (caption,) = captions[1:]
     return str(caption)
 
 
@@ -855,14 +954,15 @@ def test_a_stopped_calculation_withdraws_applied(
 
 def _common_boxes(app: AppTest) -> set[str]:
     keys = set(_sidebar_keys(app))
+    fields = set(_panel_fields(app))
     return {
         name
-        for name, key in (
-            ("heading", CONDITIONS_SECTION.key),
-            ("scenario", SCENARIO_BOX_KEY),
-            ("period", _app_constant("MONTH_BOX_KEY")),
+        for name, present in (
+            ("heading", CONDITIONS_SECTION.key in keys),
+            ("scenario", SCENARIO_FIELD_KEY in fields),
+            ("period", PERIOD_FIELD_KEY in fields),
         )
-        if key in keys
+        if present
     }
 
 
@@ -885,7 +985,7 @@ def test_a_screen_with_only_its_own_card_keeps_the_heading(_app: AppTest) -> Non
 
 
 def _heading_content_keys(app: AppTest) -> set[str]:
-    """「조회 조건」 제목 아래에 설 상자 가운데 사이드바 최상위에 있는 것의 key.
+    """「조회 조건」 제목 아래에 설 상자(조건 패널·카드) 가운데 사이드바 최상위에 있는 것의 key.
 
     사이드바 CSS(`sidebar_style.lone_conditions_heading_selector`)는 이것이 하나도 없을 때만 제목을
     감춘다. AppTest 는 CSS 를 계산하지 않으므로 그 조건이 되는 칸을 직접 본다.
@@ -893,8 +993,7 @@ def _heading_content_keys(app: AppTest) -> set[str]:
     return {
         key
         for key in _sidebar_keys(app)
-        if key in {SCENARIO_BOX_KEY, _app_constant("MONTH_BOX_KEY"), BOTTLENECK_BOX_KEY}
-        or key.startswith(CONDITION_CARD_PREFIX)
+        if key == CONDITIONS_BOX_KEY or key.startswith(CONDITION_CARD_PREFIX)
     }
 
 

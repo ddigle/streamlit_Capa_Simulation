@@ -20,10 +20,11 @@ import re
 
 import pytest
 
+from capa_simulation.components.condition_field import FIELD_KEY_PREFIX, PENDING_SUFFIX
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
 from capa_simulation.design import theme, tokens
 from capa_simulation.navigation import SIDEBAR_GROUPS
-from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
+from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, CONDITIONS_BOX_KEY
 
 # `<style>` 여는 태그와 닫는 태그만 허용한다. 그 밖의 `<...>` 는 살균기가 태그로 읽는다.
 ALLOWED = {"<style>", "</style>"}
@@ -31,15 +32,7 @@ TAG_LIKE = re.compile(r"<[^\s<>][^<>]*>")
 
 
 def _style_block(active_href: str = "") -> str:
-    return build_sidebar_stylesheet(
-        SIDEBAR_GROUPS,
-        active_href,
-        scenario_box_key="test_scenario",
-        month_box_key="test_month",
-        month_applied_key="test_month_applied",
-        bottleneck_box_key="test_bottleneck",
-        admin_box_key="test_admin",
-    ).strip()
+    return build_sidebar_stylesheet(SIDEBAR_GROUPS, active_href, admin_box_key="test_admin").strip()
 
 
 @pytest.mark.parametrize("mode", ["light", "dark"])
@@ -100,14 +93,15 @@ def test_box_markers_follow_the_declarations(active_href: str) -> None:
     """상자 오른쪽 끝 표식이 **선언에서 나온 상자 전부**에, 그리고 **그 상자에만** 걸린다.
 
     표식이 빠진 상자는 다시 「누르면 무슨 일이 일어나는지」를 말하지 못한다. 그룹을 더하거나
-    조회 컨트롤을 늘릴 때 한쪽만 고치면 예외 없이 표식만 사라지므로 선언과 대조한다.
+    조건 카드를 늘릴 때 한쪽만 고치면 예외 없이 표식만 사라지므로 선언과 대조한다. 조건 패널의
+    값 칸은 세 번째 표식(`unfold_more` — 이 자리에서 팝업이 뜬다)이다 — 아래 패널 테스트가 본다.
     `→` 규칙이 상자 key 밖으로 새면 HOME 링크의 `::after` 광택 띠를 덮거나(표식 규칙) 지운다
     (HOME 의 `href` 는 빈 문자열이라 「지금 보는 링크에서는 뺀다」 규칙이 HOME 에 걸린다).
     """
     block = _style_block(active_href)
     boxed = [f"{group.slug}_box" for group in SIDEBAR_GROUPS if group.subpages]
     solo = [f"{group.slug}_box" for group in SIDEBAR_GROUPS if not group.subpages]
-    expanding = [*boxed, "test_scenario", "test_month", "test_bottleneck", "test_admin"]
+    expanding = [*boxed, "test_admin"]
 
     (expand_rule,) = _rules_with(block, 'content: "expand_more" / "";')
     # 화면 조건 카드는 페이지마다 이름이 달라 key 대신 접두어 선택자 하나로 걸린다.
@@ -131,7 +125,7 @@ def test_box_markers_follow_the_declarations(active_href: str) -> None:
 
 
 def test_condition_cards_wear_the_condition_box_face() -> None:
-    """화면 조건 카드는 공통 조건 상자와 같은 청록 면·`ACCENT` 아이콘이다.
+    """화면 조건 카드는 통합 조건 패널과 같은 청록 면·`ACCENT` 아이콘이다.
 
     카드 key 가 페이지마다 달라 서식이 접두어 하나에 걸린다. 그 선택자가 빠지면 카드만 목록
     상자처럼 보여 「이 화면의 조건」이라는 구역의 뜻이 흐려진다.
@@ -139,8 +133,10 @@ def test_condition_cards_wear_the_condition_box_face() -> None:
     block = _style_block()
     card = f'[class*="st-key-{CONDITION_CARD_PREFIX}"]'
 
-    (face_rule,) = _rules_with(block, f"background-color: {tokens.NAV_CONTROL_TINT};")
-    assert f"{card} details" in face_rule
+    face_rules = _rules_with(block, f"background-color: {tokens.NAV_CONTROL_TINT};")
+    assert [f"{card} details"] in face_rules
+    assert [f'[data-testid="stSidebarContent"] .st-key-{CONDITIONS_BOX_KEY}'] in face_rules
+    assert len(face_rules) == 2, face_rules
     (icon_rule,) = [
         rule
         for rule in _rules_with(block, f"color: {tokens.ACCENT};")
@@ -167,8 +163,8 @@ def test_off_switches_on_the_condition_face_keep_a_visible_track() -> None:
 def test_the_support_box_sits_last_and_apart() -> None:
     """`Support` 상자는 **맨 아래**이고 **앞에 간격**을 둔다. 두 선언이 한 규칙에 있다.
 
-    파이썬 차례로는 HOME 의 B/N 상자가 이 상자 뒤에 그려진다(`navigation.run()` 안). 그래서
-    맨 아래를 지키는 것은 `order` 뿐이다. 간격은 계산 조건 구역을 닫는다 — 없으면 목록인
+    파이썬 차례로는 HOME 의 LOB 표시 조건 카드가 이 상자 뒤에 그려진다(`navigation.run()` 안).
+    그래서 맨 아래를 지키는 것은 `order` 뿐이다. 간격은 계산 조건 구역을 닫는다 — 없으면 목록인
     `Support` 가 조건 구역의 네 번째 상자로 읽힌다. flex 항목이 상자와 확장 패널에서 다르므로
     두 선택자를 함께 건다.
     """
@@ -203,7 +199,7 @@ def test_the_app_credits_card_is_pinned_to_the_sidebar_bottom(
     - 맨 아래: `order` 가 `Support`(99)보다 크다. 카드는 페이지보다 먼저 그려 파이썬 차례로는 조건
       카드 앞이라 `order` 만이 자리를 지킨다.
     - 고정: 스크롤 칸 바닥에 `sticky`. 목록이 길면 그 밑으로 지나가므로 면은 사이드바 면
-      (`SURFACE`)이고 윗선이 경계다. 적용 기간 글자(z 2)보다 위에 선다.
+      (`SURFACE`)이고 윗선이 경계다.
     - 짧을 때 바닥: `margin-top: auto` 가 남는 높이를 가져가도록 스크롤 칸에서 맨 위 세로 블록까지
       세로 flex 로 늘린다. 머리칸은 눌리지 않게, 사용자 칸 아래 여백은 걷는다.
     """
@@ -277,28 +273,76 @@ def test_a_lone_conditions_heading_is_hidden_by_css_only() -> None:
 
     제목은 페이지보다 먼저 늘 같은 자리에 선다 — 파이썬이 제목을 미뤘다 채우면 rerun 마다 제목이
     사라지고 카드가 위아래로 튀었다(2026-10-07 8543 실측). 카드를 그리기 전에 멈추는 오류 경로에서
-    제목만 남는 것은 이 규칙이 감춘다. 조건이 되는 상자는 공통 상자 셋과 조건 카드 전부다.
+    제목만 남는 것은 이 규칙이 감춘다. 조건이 되는 상자는 통합 조건 패널과 조건 카드 전부다.
     """
     from capa_simulation.components.sidebar_style import lone_conditions_heading_selector
     from capa_simulation.navigation import CONDITIONS_SECTION
 
     block = _style_block()
-    selector = lone_conditions_heading_selector(
-        scenario_box_key="test_scenario",
-        month_box_key="test_month",
-        bottleneck_box_key="test_bottleneck",
-    )
+    selector = lone_conditions_heading_selector()
     rule = re.search(re.escape(selector) + r"\s*\{\s*display: none;\s*\}", block)
     assert rule is not None
-    for content in (
-        ".st-key-test_scenario",
-        ".st-key-test_month",
-        ".st-key-test_bottleneck",
-        f'[class*="st-key-{CONDITION_CARD_PREFIX}"]',
-    ):
+    for content in (f".st-key-{CONDITIONS_BOX_KEY}", f'[class*="st-key-{CONDITION_CARD_PREFIX}"]'):
         assert content in selector
     # 겉 칸째 감춰 간격도 남기지 않는다. 제목 컨테이너 자신도 고른다.
     heading = f".st-key-{CONDITIONS_SECTION.key}"
     assert f'[data-testid="stLayoutWrapper"]:has(> {heading})' in selector
     assert selector.rstrip().endswith(heading)
     assert selector.startswith('[data-testid="stSidebarUserContent"]:not(:has(')
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_the_conditions_panel_fields_read_as_one_kind_of_picker(
+    mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """패널의 값 칸은 모두 같은 결이다 — 흰 필드, 오른쪽 끝 `⇕`, 그림자 없는 hover·focus.
+
+    2026-10-10 사용자 결정(통합 패널 A안). 오른쪽 끝 표식은 `→`(다른 화면)·`⌄`(이 자리에서 펼침)와
+    갈리는 세 번째 뜻(이 자리에서 팝업)이다. 저장하지 않은 편집이 있는 칸은 왼쪽 3px 주황 띠다.
+    색은 모두 그 회차 테마의 토큰이다.
+    """
+    monkeypatch.setattr(theme, "current_mode", lambda: mode)
+    block = _style_block()
+    panel = f".st-key-{CONDITIONS_BOX_KEY}"
+    field = f'[class*="st-key-{FIELD_KEY_PREFIX}"]'
+    button = f'{panel} {field} [data-testid="stButton"] button'
+
+    face = _declarations(block, [button])
+    for declaration in (
+        f"background-color: {tokens.SURFACE}",
+        f"border: 1px solid {tokens.BORDER}",
+        "border-radius: 8px",
+        "justify-content: flex-start",
+    ):
+        assert declaration in face, (declaration, face)
+    hover = _declarations(block, [f"{button}:hover", f"{button}:active"])
+    assert f"border-color: {tokens.ACCENT}" in hover
+    focus = _declarations(block, [f"{button}:focus-visible"])
+    assert f"outline: 3px solid {tokens.NAV_ACTIVE_RING}" in focus
+    assert "box-shadow: none" in focus
+    marker = _declarations(block, [f"{button}::after"])
+    assert 'content: "unfold_more" / ""' in marker
+    assert f"color: {tokens.TEXT_MUTED}" in marker
+    icon = _declarations(block, [f'{button} [data-testid="stIconMaterial"]'])
+    assert icon == [f"color: {tokens.ACCENT}"]
+    pending = _declarations(
+        block, [f'{panel} {field}[class*="{PENDING_SUFFIX}"] [data-testid="stButton"] button']
+    )
+    assert pending == [f"box-shadow: inset 3px 0 0 {tokens.PENDING_MARK}"]
+
+
+def test_alerts_in_the_conditions_panel_sit_on_the_surface() -> None:
+    """패널 안 알림(불러오기·저장 알림)도 밑에 `SURFACE` 를 깐다 — 청록 면과 섞이면 글자 대비가
+    4.5:1 아래로 떨어진다(조건 상자에서 실측한 까닭과 같다)."""
+    block = _style_block()
+    alerts = [
+        rule
+        for rule in _rules_with(block, f"background-color: {tokens.SURFACE};")
+        if any("stAlert" in selector for selector in rule)
+    ]
+    assert alerts == [
+        [
+            f'[class*="st-key-{CONDITION_CARD_PREFIX}"] details [data-testid="stAlert"]',
+            f'.st-key-{CONDITIONS_BOX_KEY} [data-testid="stAlert"]',
+        ]
+    ]

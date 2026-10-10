@@ -9,6 +9,7 @@ import streamlit as st
 from capa_simulation.components.capacity_assumption_notice import (
     render_capacity_assumption_notice,
 )
+from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.decision_summary import render_home_capacity_decision
 from capa_simulation.components.home_figures import (
     BOTTLENECK_DETAIL_RANK_LIMIT,
@@ -24,10 +25,9 @@ from capa_simulation.components.home_preference import (
     COMPARISON_SCENARIO_KEY,
     KEY_PROCESS_PRESET_KEY,
     THRESHOLD_POINTER,
-    apply_pending_key_process_preset,
     render_home_preference,
     render_home_view_card,
-    render_key_process_preset_card,
+    render_key_process_field,
     render_lob_title_row,
     seed_comparison_selection,
 )
@@ -86,6 +86,7 @@ from capa_simulation.io.reference_cache import (
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
+    forget_page_dialogs,
     selected_month_range,
 )
 from capa_simulation.performance import PerformanceTrace
@@ -173,13 +174,30 @@ from capa_simulation.services.simulation_cache import (
 )
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import (
-    BOTTLENECK_BOX_KEY,
+    page_condition_slot,
     show_applied_month_range,
     show_calculation_stopped,
     show_month_range_unavailable,
     show_past_months_outside_range,
-    sidebar_expander,
 )
+
+# 사이드바 조건 패널의 첫 페이지 칸 — B/N·확보율 판정에 넣을 공정(2026-10-10 사용자 결정: 「B/N
+# 집계 공정」 상자를 「공정 필터」 줄로). 표준 목표·산출 결과의 「공정 필터」(표의 행을 거른다)와
+# 이름이 같아 이름 줄 오른쪽 보조 글과 팝업 첫 캡션이 뜻(판정 대상)을 지킨다. 세션 키·프리셋 저장
+# 이름은 그대로다(`PROCESS_SELECTION_KEY`).
+PROCESS_FIELD_LABEL = "공정 필터"
+PROCESS_FIELD_HINT = "B/N 판정 대상"
+PROCESS_FIELD_KEY = "dashboard_bottleneck_process_dialog_open"
+PROCESS_FIELD_ICON = ":material/filter_alt:"
+
+
+def process_field_value(included: int, total: int) -> str:
+    """공정 필터 칸의 글자. 전부 켰으면 「전체 N공정」, 좁혔으면 「n / N 공정」."""
+    if total == 0:
+        return "집계할 공정 없음"
+    if included >= total:
+        return f"전체 {total}공정"
+    return f"{included} / {total} 공정"
 
 
 def _owned_comparison_revision(
@@ -511,6 +529,18 @@ try:
 except BOOTSTRAP_ERRORS as exc:
     # 막대를 남긴 채 멈추면 오류 문구 위에 멈춰 선 진행률이 함께 보인다.
     loading.close()
+    # 패널의 공정 필터 줄은 계산 뒤에야 채워진다. 멈춘 회차에도 잠긴 줄로 자리를 지켜 패널 높이가
+    # 회차마다 흔들리지 않게 한다 — 까닭은 본문 오류가 말한다.
+    with page_condition_slot(0).container():
+        condition_field(
+            PROCESS_FIELD_LABEL,
+            "계산 멈춤",
+            slug="process_filter",
+            key=PROCESS_FIELD_KEY,
+            icon=PROCESS_FIELD_ICON,
+            status=PROCESS_FIELD_HINT,
+            disabled=True,
+        )
     st.error(bootstrap_error_message(exc))
     st.stop()
 
@@ -518,14 +548,16 @@ except BOOTSTRAP_ERRORS as exc:
 # 프로필에서 지우지는 않는다 — 공용 설정이라 다른 시나리오에는 그 공정이 있다.
 # `resolve_included_processes` 를 쓰지 않는다. 그쪽의 「직전 옵션에 없던 공정은 새 공정
 # 이니 포함」 규칙은 B/N 집계용이고, 주요공정은 명시적 선택이라 자동으로 들어오면 안 된다.
-# 어느 프리셋을 그릴지는 사이드바 `주요공정 히트맵` 카드가 정한다(세션의 보는 조건). 카드는
-# 아래에서 그려지지만 값은 세션에 있으므로 여기서 읽는다 — 고르면 다시 돌아 이 줄부터 새 값이다.
-# Preference 에서 이름을 바꿔 둔 선택을 **여기서** 먼저 넣는다. 카드 안에서만 넣으면 카드가 서지
-# 않는 회차(Preference 탭)에는 쌓이기만 하고, 돌아온 첫 화면이 옛 이름을 읽어 기본 프리셋을 그렸다.
-apply_pending_key_process_preset()
+# 어느 프리셋을 그릴지는 사이드바 `주요공정 히트맵` 줄의 팝업이 정한다(세션의 보는 조건, 위젯이
+# 아닌 세션 값). 고르면 다시 돌아 이 줄부터 새 값이다. Preference 에서 보던 프리셋의 이름을 바꾸면
+# 그 저장이 이 칸을 곧바로 새 이름으로 적는다.
 key_process_preset = resolve_preset_name(
     key_process_profile.preset_names, st.session_state.get(KEY_PROCESS_PRESET_KEY)
 )
+# 실제로 보는 프리셋을 세션에도 남긴다 — 고른 프리셋이 지워졌으면 기본(첫 프리셋)으로 적어, 팝업과
+# 다음 회차가 같은 값을 본다.
+if key_process_preset is not None:
+    st.session_state[KEY_PROCESS_PRESET_KEY] = key_process_preset
 applied_key_processes = [
     process
     for process in key_process_profile.processes_of(key_process_preset)
@@ -566,9 +598,9 @@ def toggle_process_dialog_selection(process: str) -> None:
 
 
 @st.dialog(
-    "B/N 집계 공정 선택",
+    PROCESS_FIELD_LABEL,
     width="large",
-    icon=":material/filter_alt:",
+    icon=PROCESS_FIELD_ICON,
     on_dismiss="rerun",
 )
 def show_process_filter_dialog(
@@ -583,11 +615,19 @@ def show_process_filter_dialog(
         draft_selection = []
     selected_set = {str(process) for process in draft_selection if process in options}
 
+    # 첫 줄이 이 팝업이 무엇을 고르는지 말한다 — 표의 행을 거르는 다른 화면의 「공정 필터」와 달리
+    # B/N·확보율 **판정에 넣을** 공정이다. 기간·기준은 상태다. 판정 규칙(유효한 월 중 최저 확보율)과
+    # hover 는 Guide 가 말한다. 기준은 사사오입한 정수 퍼센트로 적고(`threshold_percent_label`),
+    # 기본값과 다른 달이 기간 안에 있으면 그 수를 덧붙인다. 공정을 가르는 판정은 달마다 정확한
+    # 값이다.
+    st.caption(
+        "B/N·확보율 판정에 넣을 공정 · "
+        f"{month_label(start_month)}–{month_label(end_month)} · {threshold_caption}"
+    )
+    # 판정 기준을 정하는 자리. 전에는 사이드바 B/N 상자에 늘 한 줄로 섰다(2026-10-10 — 팝업 머리와
+    # Guide 로 옮겼다).
+    st.caption(THRESHOLD_POINTER)
     st.markdown(f"**선택 {len(selected_set)} / {len(options)}** · 체크된 버튼이 ON입니다.")
-    # 기간·기준은 상태다. 판정 규칙(유효한 월 중 최저 확보율)과 hover 는 Guide 가 말한다.
-    # 기준은 사사오입한 정수 퍼센트로 적고(`threshold_percent_label`), 기본값과 다른 달이 기간
-    # 안에 있으면 그 수를 덧붙인다. 공정을 가르는 판정은 달마다 정확한 값이다.
-    st.caption(f"{month_label(start_month)}–{month_label(end_month)} · {threshold_caption}")
     # 적용은 타일 목록 **위** 작업 줄이다 — 공정이 많으면 목록 아래 버튼이 팝업 밖으로 밀린다.
     with st.container(horizontal=True, gap="small"):
         apply_selection = st.button(
@@ -641,43 +681,41 @@ included_processes = list(st.session_state[PROCESS_SELECTION_KEY])
 # (2026-10-06 사용자 결정). 기본값과 월별 예외를 한 값으로 들고 다니며, 판정하는 모든 곳이
 # 달마다 그 달의 실효 기준을 쓴다. 거꾸로 된 짝(경고 > 확보)은 저장 단계에서 막는다.
 thresholds = threshold_profile.thresholds
-# 다른 상자와 같이 **기본은 접힘**이다. 공정 선택은 한 번 정해 두고 보는 값이라, 들어오자마자
-# 펴 두면 사이드바만 길어지고 정작 볼 목록이 밀린다. 편 상태는 세션 동안 남는다 — 다른 페이지에
-# 갔다 오면 그 회차에 만들어지지 않은 위젯이라 값이 버려지므로 `sidebar_expander` 가 위젯이 아닌
-# 칸에 적어 둔 것을 되돌린다.
-with sidebar_expander(
-    "B/N 집계 공정",
-    key=BOTTLENECK_BOX_KEY,
-    icon=":material/filter_alt:",
-):
-    # 고른 수를 버튼 안에 넣어 캡션 한 줄을 없앤다. 버튼을 누를지 말지 정하는 데 필요한
-    # 숫자라 버튼과 떨어져 있을 이유가 없다.
-    if st.button(
-        f"공정 선택 · {len(included_processes)} / {len(process_options)}",
-        icon=":material/filter_list:",
-        width="stretch",
+# 사이드바 조건 패널의 공정 필터 줄. 세 탭 모두에서 선다 — 판정 대상은 Main 의 결론·Top5·상세 B/N
+# 과 입장 화면 Summary 가 함께 읽는다. 좁혀 놓은 수가 값 칸에 늘 보여, B/N 결론이 일부 공정으로만
+# 계산됐다는 것을 팝업을 열지 않아도 읽는다. 공정을 좁혀도 미저장이 아니다(리비전 프리셋이 저장
+# 때 담는다) — 주황을 쓰지 않는다. 팝업은 칸을 누른 회차에만 연다. 콜백이 다른 팝업 칸(사이드바의
+# 시나리오·조회기간 팝업)부터 비운다 — 한 실행에 팝업은 하나뿐이다.
+with page_condition_slot(0).container():
+    process_field_clicked = condition_field(
+        PROCESS_FIELD_LABEL,
+        process_field_value(
+            len(set(included_processes) & set(process_options)), len(process_options)
+        ),
+        slug="process_filter",
+        key=PROCESS_FIELD_KEY,
+        icon=PROCESS_FIELD_ICON,
+        status=PROCESS_FIELD_HINT,
         disabled=not process_options,
-        key="dashboard_bottleneck_process_dialog_open",
-    ):
-        set_process_dialog_selection(included_processes)
-        show_process_filter_dialog(
+        on_click=forget_page_dialogs,
+    )
+if process_field_clicked:
+    set_process_dialog_selection(included_processes)
+    show_process_filter_dialog(
+        process_options,
+        build_process_picker_summary(
+            securement_rate,
             process_options,
-            build_process_picker_summary(
-                securement_rate,
-                process_options,
-                start_month=effective_start,
-                end_month=effective_end,
-                thresholds=thresholds,
-            ),
-            securement_threshold_caption(
-                thresholds, start_month=effective_start, end_month=effective_end
-            ),
-            effective_start,
-            effective_end,
-        )
-    if not process_options:
-        st.caption("집계 가능한 공정이 없습니다.")
-    st.caption(THRESHOLD_POINTER)
+            start_month=effective_start,
+            end_month=effective_end,
+            thresholds=thresholds,
+        ),
+        securement_threshold_caption(
+            thresholds, start_month=effective_start, end_month=effective_end
+        ),
+        effective_start,
+        effective_end,
+    )
 # 월 축에 완전한 해의 연간 Total 칸을 끼운다. 표·차트·가로 스크롤 폭이 모두 이 축 하나를
 # 본다 — 축을 두 벌로 만들면 칸이 어긋난다.
 month_labels, year_total_labels = build_month_axis(
@@ -938,12 +976,14 @@ main_tab, preference_tab, past_tab = stateful_tabs(HOME_TAB_LABELS, key=HOME_TAB
 # 화면의 미적용 점과 같은 규칙이다(2026-10-01 브라우저 점검: 대기가 남아도 점이 없었다). 찍을
 # 것이 없어도 매 회차 부른다 — 저장한 다음 회차에 앞 회차의 점을 덮는다.
 mark_pending_tabs(HOME_TAB_KEY, HOME_TAB_LABELS, {PAST_TAB} if past_data_has_pending() else set())
-# 보는 조건은 사이드바 조건 카드다(2026-09-29 사용자 결정). 그 조건이 걸리는 Main 탭에서만 선다.
+# 보는 조건은 사이드바다(2026-09-29 사용자 결정). 그 조건이 걸리는 Main 탭에서만 선다 — 주요공정
+# 히트맵은 조건 패널의 둘째 칸, LOB 표시 조건은 패널 밑 카드다.
 if not tab_is_hidden(main_tab):
+    with page_condition_slot(1).container():
+        render_key_process_field(
+            key_process_profile, process_labels=process_labels, process_options=process_options
+        )
     render_home_view_card(comparison_ready=bool(comparison_scenario_id and comparison_revision_id))
-    render_key_process_preset_card(
-        key_process_profile, process_labels=process_labels, process_options=process_options
-    )
 with main_tab:
     # 공지는 대시보드 상자 **밖**, 화면 맨 위다. 상자 안에 두면 스크롤되는 월 영역과 폭을
     # 나눠 가져 문구가 월 칸 너비에 갇힌다.

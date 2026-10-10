@@ -1,6 +1,6 @@
-# Purpose: 사이드바 구역 제목·적용 월 범위 표시와, 펼침을 기억하는 상자(본문도)·조건 카드를 만든다.
+# Purpose: 사이드바 구역 제목·조건 패널 칸·적용 기간 표시와 펼침을 기억하는 상자·조건 카드를 만든다.
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
@@ -15,9 +15,19 @@ from capa_simulation.services.month_columns import month_label
 # 아무 데도 나타나지 않는다.
 PLACEHOLDER_STATE_KEY = "sidebar_month_range_placeholder"
 
-# HOME 이 그리는 B/N 집계 공정 상자. `app.py` 의 CSS 규칙이 이 key 를 읽는다 —
-# 상자를 그리는 쪽과 서식을 주는 쪽이 갈려 있어 이름을 한 곳에 둔다.
-BOTTLENECK_BOX_KEY = "sidebar_bottleneck_box"
+# 사이드바 「조회 조건」 **통합 패널**(2026-10-10 사용자 결정 — 늘 펼친 패널 하나). `app.py` 가 매
+# 회차 같은 순번에 세우는 테두리 상자이고, 안의 줄(시나리오·조회기간, 그리고 페이지가 채우는 칸)은
+# `components/condition_field.py` 의 필드 양식이다. 그리는 쪽(`app.py`)과 서식을 주는 쪽
+# (`sidebar_style.py`)과 테스트가 같은 이름을 보도록 여기 한 곳에 둔다.
+CONDITIONS_BOX_KEY = "sidebar_conditions_box"
+# 패널 안에서 **페이지가 나중에 채우는 칸**의 수. 시나리오·조회기간은 `app.py` 가 페이지보다 먼저
+# 그리지만, HOME 의 공정 필터·주요공정 히트맵은 계산 뒤에야 값이 정해져 페이지가 그린다. 그래서
+# `app.py` 가 빈 칸을 미리 세워 등록하고 페이지가 채운다(적용 기간 자리표시자와 같은 방식). 칸 수를
+# 화면마다 바꾸지 않는다 — 빈 칸은 높이가 0 으로 접히고(1.63 실측: `display: none`), 늘 같은 수라
+# 패널 안 순번도 화면마다 같다.
+PAGE_CONDITION_SLOT_COUNT = 2
+# 칸도 **세션 상태**에 둔다(아래 자리표시자와 같은 까닭 — 모듈 전역이면 세션끼리 칸을 나눠 쓴다).
+PAGE_SLOT_STATE_KEY = "sidebar_page_condition_slots"
 
 # 화면 조건 카드의 key 접두어. `sidebar_style.py` 가 이 접두어 하나로 모든 카드에 조건 상자
 # 서식을 건다 — 페이지가 카드를 더할 때 서식 쪽에 적을 것이 없다.
@@ -124,11 +134,11 @@ def sidebar_expander(
     아니라 `on_box_toggle` 콜백이다 — 여닫을 때 본문을 다시 돌리지 않는다(2026-09-30).
     `expanded=` 는 주지 않는다 — 세션 값과 둘을 같이 주면 Streamlit 이 경고를 남긴다.
 
-    **위젯 값만으로는 모자라는 자리가 둘이다.** 하나는 HOME 만 그리는 B/N 상자다.
-    다른 페이지에 갔다 오면 그 회차에 만들어지지 않은 위젯이라 값이 버려진다. 다른
-    하나는 라벨에 배지를 단 시나리오 상자다 — **라벨이 위젯 id 계산에 들어가서**
-    배지가 바뀌는 순간(미저장 편집이 생기거나 리비전을 불러올 때) 위젯이 통째로 새로
-    만들어지고 펼침 상태가 기본값으로 돌아간다. 둘 다 실측으로 확인했다.
+    **위젯 값만으로는 모자라는 자리가 둘이다.** 하나는 탭·페이지에 딸린 조건 카드다(HOME
+    `LOB 표시 조건` 은 Main 탭에서만 선다). 다른 탭·페이지에 갔다 오면 그 회차에 만들어지지 않은
+    위젯이라 값이 버려진다. 다른 하나는 라벨이 바뀌는 상자다 — **라벨이 위젯 id 계산에 들어가서**
+    라벨이 바뀌는 순간 위젯이 통째로 새로 만들어지고 펼침 상태가 기본값으로 돌아간다(본문 VOC 글의
+    「답변 N」). 둘 다 실측으로 확인했다.
 
     그래서 위젯이 아닌 칸에 `(펼침, 라벨)` 을 적어 두고 **값이 사라졌거나 라벨이 바뀐
     회차에만** 되돌려 놓는다. 매 회차 덮어쓰면 방금 누른 사용자의 클릭을 지운다.
@@ -214,12 +224,37 @@ def render_sidebar_section(section: SidebarSectionSpec) -> None:
         heading.caption(section.hint, width="content")
 
 
+def register_page_condition_slots(slots: Sequence[DeltaGenerator]) -> None:
+    """`app.py` 가 패널 안에 세운 빈 칸들을 이번 회차의 페이지 몫으로 등록한다."""
+    st.session_state[PAGE_SLOT_STATE_KEY] = tuple(slots)
+
+
+def forget_page_condition_slots() -> None:
+    """패널을 세우지 않은 회차에 부른다. 앞 회차의 칸에 페이지가 쓰지 않게 한다."""
+    st.session_state.pop(PAGE_SLOT_STATE_KEY, None)
+
+
+def page_condition_slot(index: int) -> DeltaGenerator:
+    """페이지가 채울 패널 칸 하나. `with page_condition_slot(0).container():` 로 쓴다.
+
+    등록된 칸이 없으면(패널이 서지 않은 회차, `app.py` 없이 페이지만 띄운 테스트 하네스) 사이드바
+    자체를 돌려준다 — 줄은 패널 밖 맨 아래에라도 선다. 한 칸은 한 회차에 **한 번만** 채운다
+    (`st.empty` 다 — 두 번 쓰면 앞의 것을 덮는다).
+    """
+    registered = st.session_state.get(PAGE_SLOT_STATE_KEY)
+    if isinstance(registered, tuple) and 0 <= index < len(registered):
+        slot = registered[index]
+        if isinstance(slot, DeltaGenerator):
+            return slot
+    return st.sidebar
+
+
 def register_month_range_placeholder(placeholder: DeltaGenerator) -> None:
     st.session_state[PLACEHOLDER_STATE_KEY] = placeholder
 
 
 def forget_month_range_placeholder() -> None:
-    """조회기간 상자를 세우지 않는 화면에서 앞 화면이 등록한 자리표시자를 지운다."""
+    """조회기간 줄을 세우지 않는 화면에서 앞 화면이 등록한 자리표시자를 지운다."""
     st.session_state.pop(PLACEHOLDER_STATE_KEY, None)
 
 
@@ -230,6 +265,19 @@ def _placeholder() -> DeltaGenerator | None:
     return None
 
 
+def _show_range_status(text: str) -> None:
+    """조회기간 이름 줄 오른쪽 칸에 적는다. 글자 폭만큼만 차지해 오른쪽 끝에 붙는다.
+
+    칸은 패널의 일반 흐름 안에 선다(전에는 접힌 상자 요약 줄 위에 107px 절대좌표로 얹었다).
+    이름 줄 폭(실측 약 150px)을 넘는 글은 CSS 가 한 줄로 말줄임한다(`sidebar_style`). 까닭이
+    긴 상태(어느 범위에 데이터가 있는지 등)는 본문 오류가 말하고 여기는 짧게 둔다.
+    """
+    placeholder = _placeholder()
+    if placeholder is None:
+        return
+    placeholder.caption(text, width="content")
+
+
 def show_selected_month_range(start_month: int, end_month: int) -> None:
     """고른 범위를 **중립 문구**로 알린다. 이 화면이 그 범위를 읽었다는 뜻이 아니다.
 
@@ -237,10 +285,7 @@ def show_selected_month_range(start_month: int, end_month: int) -> None:
     `show_applied_month_range` 로 「✓ 적용」을 덮는다. 전에는 여기서도 「✓ 적용」을 써서
     조회기간과 무관한 화면(Admin Area·VOC·Capa Chatbot 등)에서도 「적용」이 떴다.
     """
-    placeholder = _placeholder()
-    if placeholder is None:
-        return
-    placeholder.caption(f"선택 · {month_label(start_month)}–{month_label(end_month)}")
+    _show_range_status(f"선택 · {month_label(start_month)}–{month_label(end_month)}")
 
 
 def show_applied_month_range(start_month: int, end_month: int) -> None:
@@ -250,10 +295,7 @@ def show_applied_month_range(start_month: int, end_month: int) -> None:
     좁혀졌다는 사실을 알리지 않으면 화면 숫자가 왜 다른지 알 수 없다. 범위를 읽은 뒤
     계산이 멈추면 `show_calculation_stopped` 가 이 표시를 거둔다.
     """
-    placeholder = _placeholder()
-    if placeholder is None:
-        return
-    placeholder.caption(
+    _show_range_status(
         f":material/check_circle: 적용 · {month_label(start_month)}–{month_label(end_month)}"
     )
 
@@ -263,17 +305,10 @@ def show_past_months_outside_range(first_past_month: int) -> None:
 
     볼 수 있는 범위는 과거 구간만큼 자동으로 넓어지지만 **고른 범위는 그대로다**. 그래서
     과거를 저장해도 조회기간 시작월을 내리지 않으면 그 달이 표에 나타나지 않는데, 화면만
-    보면 넣은 값이 사라진 것처럼 보인다. 어디까지 내려야 하는지 함께 적는다.
-
-    **이 줄이 서는 자리는 상자 제목 줄 위 한 줄이다.** 폭이 제목과 펼침 표식 사이뿐(실측
-    107px)이라 긴 문장은 말줄임으로 잘린다. 화면에는 짧은 쪽만 낸다 — 이 글자 칸은 클릭을
-    요약 줄로 통과시키므로(`sidebar_style.py`) `help` 툴팁을 달아도 마우스가 닿지 못한다.
-    어디까지 내려야 하는지는 짧은 문구가 이미 말한다(실측 95px).
+    보면 넣은 값이 사라진 것처럼 보인다. 어디까지 내려야 하는지 함께 적는다 — 이름 줄 오른쪽
+    한 칸이라 짧은 쪽만 낸다(실측 95px).
     """
-    placeholder = _placeholder()
-    if placeholder is None:
-        return
-    placeholder.caption(f":material/info: 과거 밖 · {month_label(first_past_month)}부터")
+    _show_range_status(f":material/info: 과거 밖 · {month_label(first_past_month)}부터")
 
 
 def show_calculation_stopped() -> None:
@@ -282,23 +317,16 @@ def show_calculation_stopped() -> None:
     Capa 는 시나리오 전체 기간을 한 번에 계산하므로 **조회기간 밖의 달**의 기준정보
     오류로도 멈춘다(`simulation_cache.get_scenario_capacity_and_demand`). 그때 사이드바가
     「✓ 적용」인 채 본문이 「계산을 멈췄습니다」를 말하면 둘이 어긋난다. 까닭은 본문 오류가
-    말한다 — 자리가 107px 뿐이라 여기는 멈췄다는 사실만 적는다.
+    말한다 — 여기는 멈췄다는 사실만 적는다.
     """
-    placeholder = _placeholder()
-    if placeholder is None:
-        return
-    placeholder.caption(":material/block: 계산 멈춤")
+    _show_range_status(":material/block: 계산 멈춤")
 
 
 def show_month_range_unavailable() -> None:
     """선택 범위에 데이터가 없어 계산이 서지 않았음을 같은 자리에 알린다.
 
     자리표시자는 rerun 을 넘어 남는다. 실패한 rerun 에서 아무것도 쓰지 않으면 직전에 성공한
-    범위가 "적용" 으로 계속 보여 본문 오류와 어긋난다. 글자는 짧게 둔다 — 자리가 107px 뿐이라
-    전에 쓰던 「적용 안 됨 · 선택 범위에 데이터 없음」은 반도 보이지 않았다. 적용되지 않았다는
+    범위가 "적용" 으로 계속 보여 본문 오류와 어긋난다. 글자는 짧게 둔다 — 적용되지 않았다는
     것은 아이콘이, 어느 범위에 데이터가 있는지는 본문 오류가 말한다.
     """
-    placeholder = _placeholder()
-    if placeholder is None:
-        return
-    placeholder.caption(":material/block: 데이터 없음")
+    _show_range_status(":material/block: 데이터 없음")

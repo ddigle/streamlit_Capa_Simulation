@@ -368,11 +368,13 @@ def _render_scenario_actions(
             ),
             key=REVISION_SELECT_KEY,
         )
+        # 불러오는 입구가 둘이다 — 이 카드와 사이드바 시나리오 팝업. 확인 절차와 글자를 맞춘다
+        # (`components/scenario_status.py`): 미저장 변경이 있으면 버린다는 체크를 받는다.
         discard_changes = True
         if has_unsaved_scenario_changes():
             st.warning("현재 활성 시나리오에 저장하지 않은 편집값이 있습니다.")
             discard_changes = st.checkbox(
-                "저장하지 않은 변경을 버리고 불러오기",
+                "변경을 버리고 불러오기",
                 key="scenario_discard_unsaved_changes",
             )
         load_column, rename_column, official_column, delete_column = st.columns(4)

@@ -5,6 +5,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from capa_simulation.components.app_credits import APP_CREDITS_KEY
+from capa_simulation.components.condition_field import (
+    FIELD_KEY_PREFIX,
+    NAME_ROW_KEY_PREFIX,
+    PENDING_SUFFIX,
+)
 from capa_simulation.design import tokens
 from capa_simulation.navigation import (
     CONDITIONS_SECTION,
@@ -12,7 +17,11 @@ from capa_simulation.navigation import (
     SidebarGroup,
     SidebarGroupSpec,
 )
-from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, SIDEBAR_TOGGLE_SINK_KEY
+from capa_simulation.sidebar_status import (
+    CONDITION_CARD_PREFIX,
+    CONDITIONS_BOX_KEY,
+    SIDEBAR_TOGGLE_SINK_KEY,
+)
 
 # 규칙 안 들여쓰기도 선택자 사이에 유지한다.
 _SELECTOR_JOINER = ",\n        "
@@ -20,33 +29,25 @@ _SELECTOR_JOINER = ",\n        "
 # 고른다 — Streamlit 은 `key` 를 `st-key-<key>` 클래스로 단다.
 _CONDITION_CARDS = f'[class*="st-key-{CONDITION_CARD_PREFIX}"]'
 
-# 사이드바 세로 블록의 칸 사이. 적용 기간 오버레이가 이 값을 그대로 상쇄해야 요약 줄
-# 위에 올라앉으므로 두 곳이 같은 상수를 본다.
+# 사이드바 세로 블록의 칸 사이.
 _SIDEBAR_BLOCK_GAP = "0.42rem"
-# **상자 오른쪽 끝의 표식.** 상자가 모두 한 모양이라, 누르면 무슨 일이 일어나는지를
-# 오른쪽 끝 기호가 늘 보이게 말한다. 곧바로 다른 화면으로 가는 링크 상자는 `→`
-# (`arrow_forward`), 이 자리에서 펼쳐지는 확장 패널은 `⌄`(`expand_more`, 펴면 뒤집힌다).
-# 이 Streamlit 의 확장 패널은 제 아이콘을 **제목 왼쪽**에만 그리고 오른쪽은 비워 둔다(실측
+# 조건 패널(`CONDITIONS_BOX_KEY`)과 그 안의 필드. 패널 안 줄 사이는 칸 사이보다 한 뼘 넓고, 한 필드
+# 안(이름 줄 → 값 칸)은 바짝 붙인다 — 이름이 어느 칸의 것인지 자리로 읽힌다.
+_CONDITIONS_PANEL = f".st-key-{CONDITIONS_BOX_KEY}"
+_CONDITION_FIELDS = f'[class*="st-key-{FIELD_KEY_PREFIX}"]'
+_CONDITION_NAME_ROWS = f'[class*="st-key-{NAME_ROW_KEY_PREFIX}"]'
+_PANEL_ROW_GAP = "0.6rem"
+_FIELD_INNER_GAP = "0.2rem"
+# **상자 오른쪽 끝의 표식.** 누르면 무슨 일이 일어나는지를 오른쪽 끝 기호가 늘 보이게 말한다.
+# 곧바로 다른 화면으로 가는 링크 상자는 `→`(`arrow_forward`), 이 자리에서 펼쳐지는 확장 패널은
+# `⌄`(`expand_more`, 펴면 뒤집힌다), 이 자리에서 **팝업이 뜨는** 조건 칸은 `⇕`(`unfold_more`,
+# 고르는 칸의 관례 — 2026-10-10 사용자 결정). `›` 는 Streamlit 이 hover 때 쓰는 글리프라 쓰지
+# 않는다. 이 Streamlit 의 확장 패널은 제 아이콘을 **제목 왼쪽**에만 그리고 오른쪽은 비워 둔다(실측
 # `stExpanderIcon` 32–46). 기호는 Streamlit 이 이미 불러 둔 Material Symbols 합자로 그린다.
 _MARKER_FONT = '"Material Symbols Rounded"'
 _LINK_MARKER_SIZE = "16px"
 _SUMMARY_MARKER_SIZE = "18px"
-# 요약 줄 오른쪽 안쪽 여백(실측 10.5px = 0.75rem)과 표식 앞 틈. 적용 기간 오버레이의 오른쪽
-# 좌표가 이 셋을 더한 값이다.
-_SUMMARY_PADDING_RIGHT = "0.75rem"
 _SUMMARY_MARKER_GAP = "0.25rem"
-# **적용 기간 오버레이의 좌표 네 개를 여기 모아 둔다.** 요약 줄 위에 글자를 얹는 일이라
-# 브라우저에서 재서 고치게 되는데, 규칙 안에 흩어 두면 어디를 고쳐야 하는지 매번 찾는다.
-# 위: 요약 줄(약 2.4rem) 안에서 글줄을 세로 가운데로.
-# 오른쪽: **윗줄의 공식버전 배지와 오른쪽 끝이 맞아야** 한다. 배지는 요약 줄에서 펼침 표식
-# 바로 앞에 서므로 요약 줄 오른쪽 여백 + 표식 + 표식 앞 틈 만큼 들어와 있고, 상자 테두리와
-# 배지 칸 안쪽이 1px 씩 더 든다(실측 배지 끝이 상자 끝에서 34px). 표식을 바꾸면 따라온다.
-# 왼쪽: 「조회기간」 제목 뒤. 왼쪽이 있어야 긴 문구가 제목을 덮지 않고 말줄임이 된다.
-_APPLIED_OVERLAY_TOP = "0.62rem"
-_APPLIED_OVERLAY_RIGHT = (
-    f"calc({_SUMMARY_PADDING_RIGHT} + {_SUMMARY_MARKER_SIZE} + {_SUMMARY_MARKER_GAP} + 2px)"
-)
-_APPLIED_OVERLAY_LEFT = "7.5rem"
 # 실행이 시작된 뒤 본문을 흐리기까지 기다리는 시간. 사이드바 상자 여닫기(빈 프래그먼트만 도는
 # 실행)의 흐림 구간이 클릭 뒤 60~290ms 였다(실측) — 그보다 길게, 계산이 걸리는 재실행의 로딩
 # 표시는 늦지 않게.
@@ -58,9 +59,7 @@ APP_CREDITS_ORDER = 100
 _APP_CREDITS_BLEED = "3rem"
 
 
-def lone_conditions_heading_selector(
-    *, scenario_box_key: str, month_box_key: str, bottleneck_box_key: str
-) -> str:
+def lone_conditions_heading_selector() -> str:
     """「조회 조건」 제목 아래에 설 상자가 사이드바에 **하나도 없을 때만** 제목을 고르는 선택자.
 
     제목은 `app.py` 가 페이지보다 먼저, 늘 같은 자리에 세운다. 자기 조건 카드만 세우는 화면(VOC·
@@ -71,19 +70,12 @@ def lone_conditions_heading_selector(
     CSS 는 rerun 동안 지난 회차의 카드가 그대로 남아 있으므로 제목이 흔들리지 않고, 회차가 끝나
     카드가 정말 없을 때만 감춘다.
 
-    제목 아래 상자는 공통 상자 셋(시나리오·리비전, 조회기간, B/N 집계 공정)과 조건 카드 전부다.
-    Streamlit 은 `key` 를 `st-key-<key>` 클래스로 달고, 제목 컨테이너는 사이드바 세로 블록의
-    `stLayoutWrapper` 안에 서므로 그 겉 칸째 감춰 간격도 남기지 않는다(겉 칸 구조가 바뀌어도 글자는
-    감추도록 제목 컨테이너 자신도 함께 고른다).
+    제목 아래 상자는 통합 조건 패널(`CONDITIONS_BOX_KEY`)과 조건 카드 전부다. Streamlit 은 `key` 를
+    `st-key-<key>` 클래스로 달고, 제목 컨테이너는 사이드바 세로 블록의 `stLayoutWrapper` 안에 서므로
+    그 겉 칸째 감춰 간격도 남기지 않는다(겉 칸 구조가 바뀌어도 글자는 감추도록 제목 컨테이너 자신도
+    함께 고른다).
     """
-    content = ", ".join(
-        (
-            f".st-key-{scenario_box_key}",
-            f".st-key-{month_box_key}",
-            f".st-key-{bottleneck_box_key}",
-            _CONDITION_CARDS,
-        )
-    )
+    content = ", ".join((_CONDITIONS_PANEL, _CONDITION_CARDS))
     root = f'[data-testid="stSidebarUserContent"]:not(:has({content}))'
     heading = f".st-key-{CONDITIONS_SECTION.key}"
     return _SELECTOR_JOINER.join(
@@ -95,10 +87,6 @@ def build_sidebar_stylesheet(
     groups: Sequence[SidebarGroup | SidebarGroupSpec],
     active_href: str,
     *,
-    scenario_box_key: str,
-    month_box_key: str,
-    month_applied_key: str,
-    bottleneck_box_key: str,
     admin_box_key: str,
 ) -> str:
     """현재 실행의 테마를 읽어 CSS를 만든다. 위젯 생성·상태 변경·HTML 주입은 하지 않는다.
@@ -117,7 +105,7 @@ def build_sidebar_stylesheet(
         f".st-key-{group.slug}_box a p" for group in groups if not group.subpages
     )
     # 상자 머리글. 전에는 상자 안 첫 링크나 `h4` 제목이 이름을 달았고 지금은 **전부**
-    # 확장 패널의 요약 줄이 단다. 페이지 그룹과 조회 컨트롤 넷이 한 양식이라 같은 규칙
+    # 확장 패널의 요약 줄이 단다. 페이지 그룹·`Support`·조건 카드가 한 양식이라 같은 규칙
     # 하나를 본다 — 무게가 갈리면 통일한 뜻이 없어진다.
     #
     # **글자는 `summary` 가 아니라 그 안의 `p` 가 정한다.** 요약 줄에 크기를 줘 봐야
@@ -125,9 +113,6 @@ def build_sidebar_stylesheet(
     # 이름만 12.25px 로 작고 가늘게 남았다.
     summary_box_keys = (
         *(f"{group.slug}_box" for group in boxed_groups),
-        scenario_box_key,
-        month_box_key,
-        bottleneck_box_key,
         admin_box_key,
     )
     # 조건 카드도 같은 양식이다. key 대신 접두어 선택자 하나로 모든 카드를 부른다.
@@ -149,11 +134,7 @@ def build_sidebar_stylesheet(
         ' [data-testid="stCaptionContainer"] p'
         for section in SIDEBAR_SECTIONS
     )
-    lone_conditions_heading_selectors = lone_conditions_heading_selector(
-        scenario_box_key=scenario_box_key,
-        month_box_key=month_box_key,
-        bottleneck_box_key=bottleneck_box_key,
-    )
+    lone_conditions_heading_selectors = lone_conditions_heading_selector()
     # 곧바로 이동하는 링크 상자의 `→`. **그 상자 key 로 좁힌다** — 사이드바 링크 전체에 걸면
     # HOME 링크가 `::after` 로 그리는 광택 띠를 덮는다.
     solo_link_markers = [
@@ -177,12 +158,9 @@ def build_sidebar_stylesheet(
     summary_marker_open_selectors = _SELECTOR_JOINER.join(
         f"{root} details[open] > summary::after" for root in summary_roots
     )
-    # 지금 화면이 읽는 조건 상자들 — 공통 둘과 HOME 의 B/N, 그리고 화면마다의 조건 카드.
-    # 구역 제목 아래에 서고 아이콘을 `ACCENT` 로 칠한다.
-    condition_roots = (
-        *(f".st-key-{key}" for key in (scenario_box_key, month_box_key, bottleneck_box_key)),
-        _CONDITION_CARDS,
-    )
+    # 지금 화면이 읽는 조건 카드(접히는 상자). 구역 제목 아래, 통합 패널 밑에 서고 아이콘을
+    # `ACCENT` 로 칠한다. 통합 패널은 상자가 아니라 필드라 아래 따로 서식을 준다.
+    condition_roots = (_CONDITION_CARDS,)
     condition_icon_selectors = _SELECTOR_JOINER.join(
         f'{root} summary [data-testid="stExpanderIcon"]' for root in condition_roots
     )
@@ -193,7 +171,10 @@ def build_sidebar_stylesheet(
         f"{root} details > summary:not(:hover):not(:focus-visible)" for root in condition_roots
     )
     condition_alert_selectors = _SELECTOR_JOINER.join(
-        f'{root} details [data-testid="stAlert"]' for root in condition_roots
+        (
+            *(f'{root} details [data-testid="stAlert"]' for root in condition_roots),
+            f'{_CONDITIONS_PANEL} [data-testid="stAlert"]',
+        )
     )
     # 꺼진 스위치의 트랙. 숨긴 `input` 을 품은 `span` 바로 뒤의 `div` 다(1.63 DOM 실측).
     condition_switch_off_selectors = _SELECTOR_JOINER.join(
@@ -247,6 +228,7 @@ def build_sidebar_stylesheet(
         {HOME_LINK}::before {{
             content: none;
         }}"""
+    conditions_panel_style = _conditions_panel_style()
     return f"""
         <style>
         /* **위쪽 여백은 줄이지 않는다.** 장식이 아니라 겹쳐 있는 헤더 띠(실측 56px)를
@@ -497,11 +479,6 @@ def build_sidebar_stylesheet(
         {condition_switch_off_selectors} {{
             box-shadow: inset 0 0 0 1px {tokens.TEXT_MUTED};
         }}
-        /* 면 위에서는 공식버전 배지의 경계가 흐려진다. 1px 윤곽으로 배지를 세운다. */
-        .st-key-{scenario_box_key} summary .stMarkdownBadge {{
-            outline: 1px solid {tokens.BORDER};
-            outline-offset: -1px;
-        }}
         /* HOME 과 첫 그룹 박스 사이만 한 칸 더 띄운다. HOME 은 상자가 아니라 「돌아오는
            자리」라 아래 목록과 같은 간격으로 붙어 있으면 목록의 첫 항목처럼 읽힌다. */
         [data-testid="stLayoutWrapper"]:has(> .st-key-home_navigation) {{
@@ -518,73 +495,15 @@ def build_sidebar_stylesheet(
             padding-right: 0;
         }}
 
-        /* 공식버전 배지는 요약 줄의 **오른쪽 끝**이다. 제목은 다른 상자의 페이지명과 같은
-           왼쪽 끝에 남는다. 확장 패널의 제목은 문자열 하나라 그 안에서 좌우로 밀 수 없어
-           여기서 민다 — 요약 줄의 마크다운 문단을 flex 로 펴고 배지만 오른쪽으로 보낸다.
-           제목 길이가 달라져도 배지 자리는 흔들리지 않는다. */
-        /* 마크다운 컨테이너는 요약 줄에서 **글자 폭만큼만** 차지한다(실측 147px, 라벨
-           칸은 216px). 그 안의 문단을 flex 로 펴 봐야 오른쪽 끝이 글자 끝이라 배지가
-           제목에 붙은 채로 남는다 — 컨테이너를 먼저 라벨 칸 끝까지 늘린다. */
-        .st-key-{scenario_box_key} summary [data-testid="stMarkdownContainer"] {{
-            flex: 1 1 auto;
-            width: 100%;
-            min-width: 0;
-        }}
-        .st-key-{scenario_box_key} summary [data-testid="stMarkdownContainer"] p {{
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-        }}
-        /* 배지는 `stMarkdownBadge` **클래스**를 단 span 이다(테스트 id 가 아니다 — 실측). */
-        .st-key-{scenario_box_key} summary [data-testid="stMarkdownContainer"] p
-            > .stMarkdownBadge {{
-            margin-left: auto;
-        }}
-
-        /* 적용 기간을 조회기간 상자의 **요약 줄 위로 얹는다.** 그 값은 페이지가 계산을
-           끝낸 뒤에야 정해져 제목 문자열에 넣을 수 없다(`app.py` 가 이유를 적어 뒀다).
-           자리표시자는 상자 **바로 앞**에 서고, 이 규칙이 그 칸의 높이를 0 으로 눌러
-           세로 흐름에서 지운 뒤 글자만 요약 줄 위로 내린다. 접히든 펴지든 요약 줄은 늘
-           이 칸 바로 아래라 자리가 흔들리지 않는다. 칸 사이 간격만큼 도로 당겨야 글자가
-           요약 줄 한가운데에 선다. */
-        [data-testid="stLayoutWrapper"]:has(> .st-key-{month_applied_key}) {{
-            position: relative;
-            z-index: 2;
-            height: 0;
-            min-height: 0;
-            margin-bottom: -{_SIDEBAR_BLOCK_GAP};
-            overflow: visible;
-            /* 요약 줄을 누르는 일이 더 잦다. 글자 칸 말고는 클릭이 그대로 통과한다. */
-            pointer-events: none;
-        }}
-        [data-testid="stLayoutWrapper"]:has(> .st-key-{month_applied_key})
-            [data-testid="stCaptionContainer"] {{
-            position: absolute;
-            top: {_APPLIED_OVERLAY_TOP};
-            right: {_APPLIED_OVERLAY_RIGHT};
-            left: {_APPLIED_OVERLAY_LEFT};
-            /* Streamlit 이 캡션 칸에 폭 100% 를 준다. 그대로 두면 왼쪽 좌표에서 칸 전체
-               폭(실측 260px)이 다시 펼쳐져 오른쪽 좌표를 무시하고 사이드바 밖으로 넘친다.
-               폭을 풀어야 왼쪽·오른쪽 두 좌표가 칸을 정한다. */
-            width: auto !important;
-            max-width: none;
-            margin: 0;
-            text-align: right;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            /* 요약 줄을 누르는 일이 툴팁을 보는 일보다 잦다. 글자 칸도 클릭을 통과시켜
-               요약 줄 어디를 눌러도 상자가 열린다 — `help` 툴팁은 그 대가로 뜨지 않는다. */
-            pointer-events: none;
-        }}
+{conditions_panel_style}
 
         /* `Support` 상자에 서식 예외를 두지 않는다. 테두리도 요약 줄 글자도 다른
            상자와 같다 — 계산 흐름 밖이라는 것은 서식이 아니라 **맨 아래라는 자리와 앞
            간격**이 말한다(바로 아래 규칙). 면이나 글자를 달리하면 그 자리가 뜻을 잃는다. */
 
         /* `Support` 는 **언제나 맨 아래**다. 페이지가 자기 사이드바 요소를 그리는 것은
-           `navigation.run()` 안이라 파이썬 차례로는 뒤에 둘 수 없다 — HOME 의 「B/N 집계
-           공정」 상자가 그래서 이 상자 아래에 붙었다. 세로 흐름에서 자리만 마지막으로 민다.
+           `navigation.run()` 안이라 파이썬 차례로는 뒤에 둘 수 없다 — HOME 의 「LOB 표시
+           조건」 카드가 그래서 이 상자 아래에 붙었다. 세로 흐름에서 자리만 마지막으로 민다.
            `order` 는 **flex 항목**이 받아야 한다. 상자(`st.container`)였을 때는 `.st-key-*`
            가 그 한 겹 안쪽이라 바깥 래퍼에 줘야 했는데, **확장 패널은 `.st-key-*` 요소
            자신이 flex 항목**이다(프런트엔드가 확장 패널일 때만 래퍼에 그 클래스를 붙인다).
@@ -636,7 +555,7 @@ def build_sidebar_stylesheet(
            `Support` 뒤로 밀고, `sticky` 가 스크롤 칸 바닥에 붙인다. `fixed` 는 쓰지 않는다 — 접고
            펴는 동안의 `transform` 과 끌어서 바꾸는 폭을 따라가지 못한다.
            면은 사이드바 면(`SURFACE`)이라 밑으로 지나가는 목록을 가리고, 윗선이 경계를 말한다.
-           `z-index` 는 적용 기간 글자(2)보다 위, 사이드바 머리칸(Streamlit 11)보다 아래다.
+           `z-index` 는 사이드바 머리칸(Streamlit 11)보다 아래다.
            면을 좌우 여백까지 펴는 것은 **그림자**다. 폭을 늘리면 스크롤 칸에 가로 스크롤이 생기지만
            그림자는 스크롤 넓이에 들지 않는다. 위아래로 번지지 않게 `clip-path` 로 잘라 낸다. */
         [data-testid="stLayoutWrapper"]:has(> .st-key-{APP_CREDITS_KEY}) {{
@@ -687,3 +606,144 @@ def build_sidebar_stylesheet(
         }}
         </style>
         """
+
+
+def _conditions_panel_style() -> str:
+    """통합 조건 패널(`CONDITIONS_BOX_KEY`)과 그 안 필드의 서식. 색은 모두 토큰이다.
+
+    패널은 옅은 `ACCENT` 면(`NAV_CONTROL_TINT`) — 접히는 조건 카드와 같은 면이라 「지금 화면의 계산
+    조건」으로 한 무리로 읽힌다. 그 위의 값 칸은 흰 필드(`SURFACE`·`BORDER` 1px·모서리 8px)이고
+    모든 줄·화면에서 같은 결이다. 그림자는 쓰지 않는다(사이드바 내비 전용) — 마우스를 올리면
+    테두리가 `ACCENT` 로, 키보드로 닿으면 `NAV_ACTIVE_RING` 윤곽이 선다.
+
+    값 칸의 모양(왼쪽 정렬·오른쪽 끝 표식)은 1.63 `st.button` 의 DOM(버튼 안 마크다운 칸)에 기댄다.
+    Streamlit 을 올리면 브라우저에서 다시 본다.
+    """
+    panel = _CONDITIONS_PANEL
+    sidebar = '[data-testid="stSidebarContent"]'
+    field_button = f'{panel} {_CONDITION_FIELDS} [data-testid="stButton"] button'
+    pending_button = (
+        f'{panel} {_CONDITION_FIELDS}[class*="{PENDING_SUFFIX}"] [data-testid="stButton"] button'
+    )
+    name_row = f"{panel} {_CONDITION_NAME_ROWS}"
+    notice = (
+        f'{panel} > [data-testid="stLayoutWrapper"]:first-child'
+        ' [data-testid="stCaptionContainer"] p'
+    )
+    return f"""
+        /* 패널 면과 줄 사이. 사이드바 세로 블록의 촘촘한 간격(위 규칙)보다 뒤라야 이긴다 —
+           같은 특정도라 차례가 정한다. */
+        {sidebar} {panel} {{
+            background-color: {tokens.NAV_CONTROL_TINT};
+            border-radius: 10px;
+            gap: {_PANEL_ROW_GAP};
+            padding: 0.65rem 0.7rem 0.75rem;
+        }}
+        {sidebar} {panel} {_CONDITION_FIELDS} {{
+            gap: {_FIELD_INNER_GAP};
+        }}
+        /* 패널 맨 위 「적용 전 편집」 한 줄은 이름 줄과 같은 작은 글이다. */
+        {notice} {{
+            font-size: 0.75rem;
+            line-height: 1.35;
+        }}
+        /* 이름 줄 — 이름은 왼쪽, 상태는 오른쪽 끝. 상태가 길면 한 줄로 말줄임한다(이름은 줄지
+           않는다). Streamlit 이 캡션 칸에 거는 아래 음수 여백은 걷는다 — 남기면 값 칸이 이름 줄
+           위로 올라붙는다. */
+        {name_row} {{
+            min-height: 1.15rem;
+            flex-wrap: nowrap;
+        }}
+        {name_row} [data-testid="stCaptionContainer"] {{
+            margin-bottom: 0;
+        }}
+        {name_row} [data-testid="stCaptionContainer"] p {{
+            margin: 0;
+            font-size: 0.75rem;
+            line-height: 1.25;
+            color: {tokens.TEXT_MUTED};
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+        {name_row} > [data-testid="stElementContainer"]:first-child {{
+            flex: 0 0 auto;
+        }}
+        {name_row} > [data-testid="stElementContainer"]:first-child p {{
+            font-weight: 600;
+        }}
+        {name_row} > [data-testid="stElementContainer"]:not(:first-child) {{
+            flex: 0 1 auto;
+            min-width: 0;
+            overflow: hidden;
+        }}
+        /* 면 위에서는 배지의 경계가 흐려진다. 1px 윤곽으로 배지를 세운다. */
+        {name_row} .stMarkdownBadge {{
+            outline: 1px solid {tokens.BORDER};
+            outline-offset: -1px;
+        }}
+        /* 값 칸. 흰 필드, 글은 왼쪽 정렬, 오른쪽 끝에 고르는 칸 표식. */
+        {field_button} {{
+            justify-content: flex-start;
+            gap: 0.45rem;
+            min-height: 2.25rem;
+            padding: 0.25rem 0.55rem 0.25rem 0.6rem;
+            background-color: {tokens.SURFACE};
+            border: 1px solid {tokens.BORDER};
+            border-radius: 8px;
+            color: {tokens.TEXT};
+            text-align: left;
+        }}
+        {field_button}:hover,
+        {field_button}:active {{
+            background-color: {tokens.SURFACE};
+            border-color: {tokens.ACCENT};
+            color: {tokens.TEXT};
+        }}
+        {field_button}:focus-visible {{
+            border-color: {tokens.ACCENT};
+            outline: 3px solid {tokens.NAV_ACTIVE_RING};
+            outline-offset: 0;
+            box-shadow: none;
+        }}
+        {field_button} [data-testid="stIconMaterial"] {{
+            color: {tokens.ACCENT};
+        }}
+        /* 버튼 안 두 겹(제목 풍선을 단 칸 → 아이콘·글 묶음)이 가운데 정렬이다. 둘 다 왼쪽으로
+           붙이고 남는 폭을 채워 오른쪽 표식을 끝으로 민다(1.63 DOM 실측). */
+        {field_button} > div,
+        {field_button} > div > span {{
+            flex: 1 1 auto;
+            min-width: 0;
+            justify-content: flex-start;
+        }}
+        {field_button} [data-testid="stMarkdownContainer"] {{
+            flex: 1 1 auto;
+            min-width: 0;
+        }}
+        {field_button} [data-testid="stMarkdownContainer"] p {{
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-align: left;
+        }}
+        {field_button}::after {{
+            content: "unfold_more";
+            content: "unfold_more" / "";
+            flex: 0 0 auto;
+            margin-left: auto;
+            font-family: {_MARKER_FONT};
+            font-size: {_SUMMARY_MARKER_SIZE};
+            font-weight: 400;
+            line-height: 1;
+            color: {tokens.TEXT_MUTED};
+        }}
+        {field_button}:disabled {{
+            color: {tokens.TEXT_MUTED};
+        }}
+        {field_button}:disabled::after {{
+            content: none;
+        }}
+        /* 저장하지 않은 편집이 있는 칸 — 왼쪽 3px 주황 띠(`PENDING_MARK`, 미저장 전용 색). */
+        {pending_button} {{
+            box-shadow: inset 3px 0 0 {tokens.PENDING_MARK};
+        }}"""
