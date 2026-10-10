@@ -48,20 +48,20 @@ exec(
 def _isolated_custom_renderers() -> Iterator[None]:
     """사용자 조작의 callback과 모든 rerun 동안 대역을 유지하고 테스트 뒤 원본을 복원한다."""
     original_scrollbar = horizontal_scrollbar.render_horizontal_scrollbar
-    original_month_picker = month_range_picker.render_month_range_picker
+    original_month_picker = month_range_picker.render_month_range_apply
     try:
         with (
             patch.object(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None),
             patch.object(
                 month_range_picker,
-                "render_month_range_picker",
-                lambda *, start, end, min_month, max_month, key: (start, end),
+                "render_month_range_apply",
+                lambda *, start, end, min_month, max_month, key: None,
             ),
         ):
             yield
     finally:
         assert horizontal_scrollbar.render_horizontal_scrollbar is original_scrollbar
-        assert month_range_picker.render_month_range_picker is original_month_picker
+        assert month_range_picker.render_month_range_apply is original_month_picker
 
 
 @pytest.fixture(scope="module")

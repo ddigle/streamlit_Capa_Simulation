@@ -11,11 +11,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Caption, Expander, Status
 
-from capa_simulation.components.period_field import (
-    PERIOD_APPLY_KEY,
-    PERIOD_DIALOG_KEY,
-    PERIOD_FIELD_KEY,
-)
+from capa_simulation.components.period_field import PERIOD_DIALOG_KEY, PERIOD_FIELD_KEY
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.scenario_status import SCENARIO_DIALOG_KEY, SCENARIO_FIELD_KEY
 from capa_simulation.navigation import (
@@ -195,10 +191,11 @@ def _app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
     # 요약 계산은 그대로 돌리고 브라우저로 보내는 컴포넌트만 바꿔 끼운다.
     monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: SENT_SUMMARIES.append(kwargs))
+    # 조회기간 팝업의 월 선택(Components v2). 「적용」을 누르지 않은 회차처럼 `None` 을 돌려준다.
     monkeypatch.setattr(
         month_range_picker,
-        "render_month_range_picker",
-        lambda *, start, end, min_month, max_month, key: (start, end),
+        "render_month_range_apply",
+        lambda *, start, end, min_month, max_month, key: None,
     )
     return AppTest.from_file(str(APP_PATH), default_timeout=300)
 
@@ -641,7 +638,7 @@ def test_the_home_heatmap_row_follows_the_main_tab_and_the_filter_stays(_app: Ap
     """주요공정 히트맵 줄은 Main 탭에서만, 공정 필터 줄은 세 탭 모두에서 선다.
 
     「사이드바 = 이 화면이 실제로 읽는 조건」(2026-09-29). 히트맵은 Main 에만 그려지고, 판정
-    대상은 Preference·Past Data 탭에서도 입장 화면 Summary·결론이 함께 읽는다.
+    대상은 HOME 의 결론·Top5·상세 B/N 이 읽고 리비전 저장 때 프리셋에 담긴다.
     """
     app = _app.run()
     app.session_state["home_active_tab"] = ":material/tune: Preference"
@@ -652,6 +649,46 @@ def test_the_home_heatmap_row_follows_the_main_tab_and_the_filter_stays(_app: Ap
         PERIOD_FIELD_KEY,
         "dashboard_bottleneck_process_dialog_open",
     ]
+
+
+@pytest.mark.parametrize(
+    "opener,stale_key,opened_key",
+    [
+        # 시나리오·조회기간 칸: 페이지 팝업(HOME Past Data 붙여넣기)이 남은 채 연다.
+        (SCENARIO_FIELD_KEY, "home_open_dialog", SCENARIO_DIALOG_KEY),
+        (PERIOD_FIELD_KEY, "home_open_dialog", PERIOD_DIALOG_KEY),
+        # 공정 필터·주요공정 히트맵 칸: 사이드바 팝업 열림 키가 남은 채 연다(칸을 누른 회차에만
+        # 여는 팝업이라 열림 키가 없다).
+        ("dashboard_bottleneck_process_dialog_open", SCENARIO_DIALOG_KEY, None),
+        ("home_key_process_field", PERIOD_DIALOG_KEY, None),
+    ],
+)
+def test_every_popup_opener_clears_the_other_popup_keys_first(
+    _app: AppTest, tmp_path: Path, opener: str, stale_key: str, opened_key: str | None
+) -> None:
+    """팝업을 여는 칸 넷 모두 다른 팝업 열림 키부터 비운다(AGENTS 2장 — 여는 콜백의
+    `forget_page_dialogs`). 한 실행에 팝업이 둘 불리면 `StreamlitInvalidLayoutContextError` 로
+    화면이 멈춘다(2026-10-10 브라우저 실측). 2026-10-11 병합 전 리뷰가 넷 중 하나만 고정돼 있다고
+    짚었다.
+    """
+    from capa_simulation.persistence.cache import clear_global_key_process_cache
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    app = _app.run()
+    # 히트맵 칸은 프리셋이 있어야 눌린다. 프로필은 캐시 뒤라 심은 뒤 비운다.
+    DuckDBScenarioRepository(tmp_path / "scenario.duckdb").replace_global_key_process_presets(
+        [("A 그룹", ["DEMO_Chip_Attach"])], source="테스트"
+    )
+    clear_global_key_process_cache()
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    app.session_state[stale_key] = "월별" if stale_key == "home_open_dialog" else True
+    app.button(key=opener).click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert stale_key not in app.session_state
+    if opened_key is not None:
+        assert app.session_state[opened_key] is True
 
 
 def test_the_scenario_dialog_stays_open_across_reruns_and_closes_on_leaving(
@@ -674,6 +711,21 @@ def test_the_scenario_dialog_stays_open_across_reruns_and_closes_on_leaving(
     assert "sidebar_load_revision" not in {button.key for button in app.button}
 
 
+def _press_apply_with(monkeypatch: pytest.MonkeyPatch, applied: tuple[str, str] | None) -> None:
+    """팝업 월 선택 컴포넌트의 「적용」 트리거를 흉내 낸다(Components v2 는 AppTest 에 없다).
+
+    `applied` 가 있으면 다음 회차의 컴포넌트가 그 범위를 「적용」으로 돌려준다 — 실제 컴포넌트는
+    입력 칸 값과 누름을 한 트리거로 보낸다.
+    """
+    import capa_simulation.components.month_range_picker as month_range_picker
+
+    monkeypatch.setattr(
+        month_range_picker,
+        "render_month_range_apply",
+        lambda *, start, end, min_month, max_month, key: applied,
+    )
+
+
 def test_the_period_changes_only_when_applied_in_its_dialog(
     _app: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -682,31 +734,69 @@ def test_the_period_changes_only_when_applied_in_its_dialog(
     팝업 안에서 고른 범위는 초안이다. 여는 콜백이 다른 팝업 칸(시나리오)부터 비운다 — 한 실행에
     팝업은 하나뿐이다.
     """
-    import capa_simulation.components.month_range_picker as month_range_picker
-
     app = _app.run()
     before = app.session_state[MONTH_RANGE_KEY]
-    # 사용자가 팝업 안에서 다른 범위를 고른 것으로 친다(Components v2 는 AppTest 에 없다).
-    monkeypatch.setattr(
-        month_range_picker,
-        "render_month_range_picker",
-        lambda *, start, end, min_month, max_month, key: ("2026-02", "2026-04"),
-    )
     app.button(key=SCENARIO_FIELD_KEY).click().run()
     app.button(key=PERIOD_FIELD_KEY).click().run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert SCENARIO_DIALOG_KEY not in app.session_state
     assert app.session_state[PERIOD_DIALOG_KEY] is True
-    # 고르기만 해서는 바뀌지 않는다.
+    # 고르기만 해서는(「적용」 트리거가 없는 회차) 바뀌지 않는다.
     app.run()
     assert app.session_state[MONTH_RANGE_KEY] == before
 
-    app.button(key=PERIOD_APPLY_KEY).click().run()
+    _press_apply_with(monkeypatch, ("2026-02", "2026-04"))
+    app.run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert app.session_state[MONTH_RANGE_KEY] == ("2026-02", "2026-04")
     assert PERIOD_DIALOG_KEY not in app.session_state
     assert _range_caption(app) == ":material/check_circle: 적용 · 26.02–26.04"
     assert app.button(key=PERIOD_FIELD_KEY).label == "26.02 → 26.04"
+
+
+def test_applying_a_period_keeps_the_unapplied_edit_list(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """조회기간 「적용」은 적용하지 않은 편집 목록을 비우지 않는다(2026-10-11 병합 전 리뷰).
+
+    고른 범위가 바뀌어도 데이터가 있는 달이 그대로면 편집표의 원본도 그대로라 편집이 남는다. 목록을
+    비우면 그 회차에 패널 맨 위 「적용 전 편집」 줄과 저장 확인이 사라져 편집을 잃을 수 있다.
+    """
+    registry_key = "scenario_pending_edit_registry"
+    app = _app.run()
+    app.session_state["test_staged_paste"] = "붙여넣은 표"
+    app.session_state[registry_key] = {
+        "load_conversion.py": ("생산 계획", {}, {"test_staged_paste": "PKG PLAN 붙여넣기"}, None)
+    }
+    app.run()
+    notice = "생산 계획 · PKG PLAN 붙여넣기"
+    assert any(notice in caption.value for caption in app.sidebar.caption)
+
+    app.button(key=PERIOD_FIELD_KEY).click().run()
+    _press_apply_with(monkeypatch, ("2026-01", "2031-06"))
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert PERIOD_DIALOG_KEY not in app.session_state
+    assert registry_key in app.session_state
+    assert any(notice in caption.value for caption in app.sidebar.caption)
+
+
+def test_an_out_of_range_period_is_snapped_back_each_run(_app: AppTest) -> None:
+    """고를 수 있는 범위 밖의 조회기간은 매 회차 범위 끝으로 끼운다(2026-10-11 병합 전 리뷰).
+
+    전에는 사이드바 월 선택이 매 회차 그 일을 했다. 월 선택이 팝업으로 들어간 뒤에는 조회기간 줄이
+    한다 — 범위 밖 시작은 최소 월, 범위 밖 끝은 최대 월이다.
+    """
+    from capa_simulation.settings import MONTH_SELECTION_END, MONTH_SELECTION_START, format_month
+
+    app = _app.run()
+    app.session_state[MONTH_RANGE_KEY] = ("2040-01", "2040-12")
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[MONTH_RANGE_KEY] == (
+        format_month(MONTH_SELECTION_START),
+        format_month(MONTH_SELECTION_END),
+    )
 
 
 def test_the_shared_sample_switch_stays_on_across_sample_pages(_app: AppTest) -> None:

@@ -219,8 +219,8 @@ def main() -> int:
         )
         stack.enter_context(
             patch(
-                "capa_simulation.components.month_range_picker.render_month_range_picker",
-                side_effect=lambda *, start, end, **_: (start, end),
+                "capa_simulation.components.month_range_picker.render_month_range_apply",
+                side_effect=lambda **_: None,
             )
         )
         stack.enter_context(patch("capa_simulation.sync_boot.enable_sync_state_if_managed"))

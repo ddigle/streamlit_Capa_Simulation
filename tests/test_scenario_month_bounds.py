@@ -88,11 +88,12 @@ def test_shifted_months_remain_selectable_after_narrowing_and_page_roundtrip(
     monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
     monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
-    # JS 전송만 대신하고 범위 밖 값을 버리는 실제 Python 선택기 검증은 그대로 실행한다.
+    # JS 전송만 대신하고(「적용」을 누르지 않은 회차) 범위 밖 값을 끼우는 실제 Python 검증은
+    # 그대로 실행한다(`period_field.render_period_field` 가 매 회차 한다).
     monkeypatch.setattr(
         month_range_picker,
-        "_MONTH_RANGE_PICKER",
-        lambda **kwargs: SimpleNamespace(value=kwargs["data"]["value"]),
+        "_MONTH_RANGE_APPLY",
+        lambda **kwargs: SimpleNamespace(apply=None),
     )
     app = AppTest.from_file(str(APP_PATH), default_timeout=120).run()
     assert not list(app.exception), [item.message for item in app.exception]

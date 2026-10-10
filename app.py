@@ -317,8 +317,14 @@ with pinned_connections(DUCKDB_PATH):
                 render_period_field()
             # 페이지가 계산 뒤에 채우는 칸(HOME 의 공정 필터·주요공정 히트맵). 적용 기간처럼 그
             # 값은 `navigation.run()` 안에서야 정해지고, 페이지가 `st.stop()` 하면 그 뒤 코드는
-            # 돌지 않는다 — 칸을 여기서 미리 세워 둔다. 쓰지 않은 칸은 높이가 없다.
-            register_page_condition_slots([st.empty() for _ in range(PAGE_CONDITION_SLOT_COUNT)])
+            # 돌지 않는다 — 칸을 여기서 미리 세워 둔다. **칸은 `st.empty` 가 아니라 블록이다**
+            # (2026-10-11 병합 전 리뷰). 빈 요소는 회차가 시작되자마자 앞 회차의 줄을 지워, HOME
+            # 계산이 끝날 때까지(약 1초) 공정 필터·히트맵 줄이 사라지고 패널 아래 카드가 위로
+            # 튀었다. 블록은 프런트엔드가 같은 자리의 앞 회차 줄을 페이지가 다시 보낼 때까지 남긴다.
+            # 쓰지 않은 칸은 높이·간격이 없다(CSS, `sidebar_style`).
+            register_page_condition_slots(
+                [st.container(gap=None) for _ in range(PAGE_CONDITION_SLOT_COUNT)]
+            )
     else:
         forget_page_condition_slots()
     if not shows_period:

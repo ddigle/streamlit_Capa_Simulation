@@ -148,7 +148,7 @@ def test_condition_cards_wear_the_condition_box_face() -> None:
 def test_off_switches_on_the_condition_face_keep_a_visible_track() -> None:
     """꺼진 스위치 트랙(밝은 회색)이 청록 면 위에서 1.03:1 로 사라졌다(2026-10-05 E2E).
 
-    조건 상자·카드 안의 꺼진 스위치만 `TEXT_MUTED` 1px 윤곽을 두른다.
+    조건 카드 안의 꺼진 스위치만 `TEXT_MUTED` 1px 윤곽을 두른다.
     """
     block = _style_block()
     card = f'[class*="st-key-{CONDITION_CARD_PREFIX}"]'
@@ -318,7 +318,10 @@ def test_the_conditions_panel_fields_read_as_one_kind_of_picker(
     hover = _declarations(block, [f"{button}:hover", f"{button}:active"])
     assert f"border-color: {tokens.ACCENT}" in hover
     focus = _declarations(block, [f"{button}:focus-visible"])
-    assert f"outline: 3px solid {tokens.NAV_ACTIVE_RING}" in focus
+    # 키보드 포커스는 hover 와 달라 보여야 한다 — 2px 띄운 2px `ACCENT` 윤곽(패널 면 위에서 옅은
+    # 링은 거의 보이지 않았다, 2026-10-11 병합 전 리뷰).
+    assert f"outline: 2px solid {tokens.ACCENT}" in focus
+    assert "outline-offset: 2px" in focus
     assert "box-shadow: none" in focus
     marker = _declarations(block, [f"{button}::after"])
     assert 'content: "unfold_more" / ""' in marker
@@ -333,7 +336,7 @@ def test_the_conditions_panel_fields_read_as_one_kind_of_picker(
 
 def test_alerts_in_the_conditions_panel_sit_on_the_surface() -> None:
     """패널 안 알림(불러오기·저장 알림)도 밑에 `SURFACE` 를 깐다 — 청록 면과 섞이면 글자 대비가
-    4.5:1 아래로 떨어진다(조건 상자에서 실측한 까닭과 같다)."""
+    4.5:1 아래로 떨어진다(조건 카드에서 실측한 까닭과 같다)."""
     block = _style_block()
     alerts = [
         rule

@@ -450,12 +450,13 @@ def build_sidebar_stylesheet(
                 transition: none;
             }}
         }}
-        /* 계산에 걸리는 조건 상자는 왼쪽 아이콘이 `ACCENT` 다. 위 목록 상자와 같은 모양으로
-           서되, 눌러서 바꾸는 것이 화면이 아니라 **지금 화면의 계산 조건**이라는 표시다. */
+        /* 계산에 걸리는 조건 카드는 왼쪽 아이콘이 `ACCENT` 다. 위 목록 상자와 같은 모양으로
+           서되, 눌러서 바꾸는 것이 화면이 아니라 **지금 화면의 계산 조건**이라는 표시다. 통합 조건
+           패널의 면·아이콘은 따로 건다(`_conditions_panel_style`). */
         {condition_icon_selectors} {{
             color: {tokens.ACCENT};
         }}
-        /* 조건 상자 셋에 옅은 `ACCENT` 면을 깐다. 요약 줄과 펼친 몸이 **한 장의 면**으로
+        /* 조건 카드에 옅은 `ACCENT` 면을 깐다. 요약 줄과 펼친 몸이 **한 장의 면**으로
            읽히도록, Streamlit 이 펼친 요약 줄에 까는 제 면은 걷는다(덮이는 것을 실측했다 —
            위 「펼친 요약 줄의 면색은 덮을 수 있다」). 마우스를 올리거나 키보드로 닿았을 때는
            걷지 않는다 — 그 순간 면이 바뀌는 것이 「누를 수 있다」는 신호다. */
@@ -614,7 +615,7 @@ def _conditions_panel_style() -> str:
     패널은 옅은 `ACCENT` 면(`NAV_CONTROL_TINT`) — 접히는 조건 카드와 같은 면이라 「지금 화면의 계산
     조건」으로 한 무리로 읽힌다. 그 위의 값 칸은 흰 필드(`SURFACE`·`BORDER` 1px·모서리 8px)이고
     모든 줄·화면에서 같은 결이다. 그림자는 쓰지 않는다(사이드바 내비 전용) — 마우스를 올리면
-    테두리가 `ACCENT` 로, 키보드로 닿으면 `NAV_ACTIVE_RING` 윤곽이 선다.
+    테두리가 `ACCENT` 로, 키보드로 닿으면 2px 띄운 2px `ACCENT` 윤곽이 선다.
 
     값 칸의 모양(왼쪽 정렬·오른쪽 끝 표식)은 1.63 `st.button` 의 DOM(버튼 안 마크다운 칸)에 기댄다.
     Streamlit 을 올리면 브라우저에서 다시 본다.
@@ -700,10 +701,13 @@ def _conditions_panel_style() -> str:
             border-color: {tokens.ACCENT};
             color: {tokens.TEXT};
         }}
+        /* 키보드 포커스는 hover(테두리만 `ACCENT`)와 달라 보여야 한다. 옅은 `NAV_ACTIVE_RING`
+           윤곽은 같은 강조색 면 위에서 거의 보이지 않았다(2026-10-11 병합 전 리뷰) — 입장 화면
+           단추와 같은 2px `ACCENT` 윤곽을 2px 띄워 두른다. */
         {field_button}:focus-visible {{
             border-color: {tokens.ACCENT};
-            outline: 3px solid {tokens.NAV_ACTIVE_RING};
-            outline-offset: 0;
+            outline: 2px solid {tokens.ACCENT};
+            outline-offset: 2px;
             box-shadow: none;
         }}
         {field_button} [data-testid="stIconMaterial"] {{

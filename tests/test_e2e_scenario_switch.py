@@ -132,13 +132,13 @@ def _figure_fingerprint(figure: object) -> str:
 
 def _month_range_stub(
     *, start: str, end: str, min_month: str, max_month: str, key: str
-) -> tuple[str, str]:
-    """조회기간 피커는 Components v2 라 AppTest 인스턴스에 등록되어 있지 않다.
+) -> tuple[str, str] | None:
+    """조회기간 팝업의 월 선택은 Components v2 라 AppTest 인스턴스에 등록되어 있지 않다.
 
-    받은 구간을 그대로 돌려준다. 이 검사의 관심은 피커의 그림이 아니라 **세션에 남은
-    구간**이므로, 실제 위젯이 하는 일 중 여기서 필요한 것은 그것뿐이다.
+    「적용」을 누르지 않은 회차처럼 `None` 을 돌려준다. 이 검사의 관심은 피커의 그림이 아니라
+    **세션에 남은 구간**이다.
     """
-    return start, end
+    return None
 
 
 def _session_value(app: AppTest, key: str) -> Any:
@@ -276,7 +276,7 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(settings, "DUCKDB_PATH", database)
         patch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", database.parent / "equipment.duckdb")
-        patch.setattr(month_range_picker, "render_month_range_picker", _month_range_stub)
+        patch.setattr(month_range_picker, "render_month_range_apply", _month_range_stub)
         patch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
         patch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
         patch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
@@ -548,7 +548,7 @@ def test_toggles_flipped_in_the_card_on_main_are_released_by_a_load(
     _, other = _seed_two_revisions(database)
     monkeypatch.setattr(settings, "DUCKDB_PATH", database)
     monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", tmp_path / "equipment.duckdb")
-    monkeypatch.setattr(month_range_picker, "render_month_range_picker", _month_range_stub)
+    monkeypatch.setattr(month_range_picker, "render_month_range_apply", _month_range_stub)
     monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
     monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
@@ -604,7 +604,7 @@ def test_toggles_survive_saving_a_revision_of_the_same_scenario(
     _seed_two_revisions(database)
     monkeypatch.setattr(settings, "DUCKDB_PATH", database)
     monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", tmp_path / "equipment.duckdb")
-    monkeypatch.setattr(month_range_picker, "render_month_range_picker", _month_range_stub)
+    monkeypatch.setattr(month_range_picker, "render_month_range_apply", _month_range_stub)
     monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
     monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)

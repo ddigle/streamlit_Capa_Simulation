@@ -200,6 +200,8 @@ def sidebar_app() -> Iterator[AppTest]:
         "revision_save_verdict": lambda *_args: st.session_state.get(
             "test_save_verdict", GateVerdict(True)
         ),
+        # 옛 리비전 호환 검사는 따로 검증한다(`test_revision_compatibility.py`).
+        "revision_block_reason": lambda _tables: st.session_state.get("test_block_reason"),
     }
     originals = {name: getattr(target, name) for name in replacements}
     try:
@@ -241,7 +243,8 @@ def test_the_field_reads_only_the_session_until_the_dialog_opens(sidebar_app: Ap
     assert not app.exception
     assert "test_repository_reads" not in app.session_state
     assert app.button(key=SCENARIO_FIELD_KEY).label == "기준안 · r1"
-    assert [item.value for item in app.caption] == ["시나리오", ":gray-badge[저장된 리비전]"]
+    # 리비전 번호는 이름 줄에도 있다 — 이름이 길면 값 칸 끝의 「· rN」 이 말줄임에 잘린다.
+    assert [item.value for item in app.caption] == ["시나리오 · r1", ":gray-badge[저장된 리비전]"]
 
     app.session_state["test_official"] = ("revision-1", 4)
     app.run()
@@ -652,3 +655,19 @@ def test_the_database_path_is_read_from_settings_at_call_time(
     ):
         _open(sidebar_app.run())
     assert seen and set(seen) == {str((tmp_path / "scenario.duckdb").resolve())}
+
+
+def test_a_revision_the_compatibility_check_blocks_is_not_loaded(sidebar_app: AppTest) -> None:
+    """팝업의 불러오기도 활성화 **전에** 옛 리비전 호환을 본다 — 시나리오 관리 화면과 같은 검사.
+
+    활성화한 뒤에 계산이 죽으면 활성 시나리오가 이미 바뀐 뒤라 되돌릴 방법이 없다(2026-10-11 병합
+    전 리뷰 — 시나리오 관리가 막는 리비전을 사이드바가 올렸다).
+    """
+    app = _open(sidebar_app.run())
+    app.session_state["test_block_reason"] = "경로 키가 빈 옛 리비전입니다"
+    app = app.button(key="sidebar_load_revision").click().run()
+
+    assert not app.exception
+    assert "test_activated_revision" not in app.session_state
+    assert any("경로 키가 빈 옛 리비전" in item.value for item in app.error)
+    assert app.session_state[SCENARIO_DIALOG_KEY] is True

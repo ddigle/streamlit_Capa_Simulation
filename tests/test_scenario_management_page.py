@@ -709,3 +709,47 @@ def test_official_release_without_virtual_products_asks_nothing(tmp_path: Path) 
     assert latest is not None and latest.release_no == 2
     assert latest.revision_id == release.revision_id
     assert any(item.value.startswith("공식 v2 · ") for item in app.success)
+
+
+def test_the_card_follows_a_revision_loaded_from_the_sidebar_popup(tmp_path: Path) -> None:
+    """카드의 리비전 상자는 활성 리비전이 바뀌면 그 리비전으로 다시 선다(2026-10-11 병합 전 리뷰).
+
+    사이드바 시나리오 팝업의 불러오기는 프래그먼트 실행이라 이 페이지의 위젯 값이 버려지지 않는다.
+    칸이 없을 때만 넣던 씨앗이 옛 리비전을 고른 채 남아 「시나리오 불러오기」·「공식버전 지정」이
+    엉뚱한 리비전에 걸렸다. 활성이 그대로인 동안 사용자가 일부러 고른 리비전은 남는다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+    official = repository.load_revision(release.revision_id)
+    second = repository.save_revision(
+        official.scenario.scenario_id,
+        official.tables,
+        official.preset,
+        revision_name="두 번째",
+    )
+    # data_editor 위젯 상태는 편집한 셀만 담는다. 체크 한 번을 그 모양 그대로 첫 회차 전에 넣는다.
+    app = AppTest.from_string(script, default_timeout=120)
+    app.session_state[LIST_EDITOR_KEY] = {
+        "edited_rows": {0: {"선택": True}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    app.run()
+    assert not app.exception
+    assert app.selectbox(key=REVISION_SELECT_KEY).value == release.revision_id
+
+    # 사이드바 팝업에서 두 번째 리비전을 불러온 것과 같다 — 이 페이지의 위젯 값은 남아 있다.
+    app.session_state["active_persisted_revision_id"] = second.revision.revision_id
+    app.run()
+    assert not app.exception
+    assert app.selectbox(key=REVISION_SELECT_KEY).value == second.revision.revision_id
+
+    # 활성이 그대로인 동안 사용자가 고른 리비전은 다음 회차에도 남는다.
+    app.selectbox(key=REVISION_SELECT_KEY).set_value(release.revision_id).run()
+    app.run()
+    assert app.selectbox(key=REVISION_SELECT_KEY).value == release.revision_id

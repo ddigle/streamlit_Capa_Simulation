@@ -91,6 +91,11 @@ CLONE_FORM_GENERATION_KEY = "scenario_create_form_generation"
 # 「새 리비전 저장」 폼 두 칸의 key 세대. 저장에 성공할 때마다 오른다(`revision_field_key`).
 REVISION_FORM_GENERATION_KEY = "scenario_revision_form_generation"
 REVISION_SELECT_KEY = "scenario_list_revision_id"
+# 리비전 상자에 씨앗으로 넣은 활성 리비전 id. 활성 리비전이 이것과 달라지면(사이드바 시나리오 팝업의
+# 불러오기·저장) 상자를 새 활성 리비전으로 다시 적는다 — 팝업의 불러오기는 프래그먼트 실행이라 이
+# 페이지의 위젯 값이 버려지지 않아, 칸이 없을 때만 넣던 씨앗이 옛 리비전을 고른 채 남았다(2026-10-11
+# 병합 전 리뷰 — 「시나리오 불러오기」·「공식버전 지정」이 엉뚱한 리비전에 걸렸다).
+REVISION_SEED_KEY = "scenario_list_revision_seed"
 SELECT_COLUMN = "선택"
 ORDER_COLUMN = "순서"
 
@@ -346,20 +351,27 @@ def _render_scenario_actions(
         st.session_state.pop(DELETE_CONFIRM_KEY, None)
         st.session_state.pop(ARCHIVE_CONFIRM_KEY, None)
         st.session_state.pop(REVISION_SELECT_KEY, None)
+        st.session_state.pop(REVISION_SEED_KEY, None)
     with st.container(border=True):
         st.markdown(f"#### :material/check_box: {summary.scenario_name}")
         revisions = repository.list_revisions(summary.scenario_id)
         revision_by_id = {revision.revision_id: revision for revision in revisions}
         # 목록은 최신 리비전이 먼저 온다. 그러나 지금 보고 있는 시나리오라면 **활성
         # 리비전**이 미리 골라져 있어야 한다. 화면과 다른 것이 골라져 있으면 "같은 것을
-        # 다시 불러왔다" 고 여기면서 실은 다른 리비전을 올리게 된다.
+        # 다시 불러왔다" 고 여기면서 실은 다른 리비전을 올리게 된다. 활성 리비전이 바뀌면
+        # (`REVISION_SEED_KEY` 와 다르면) 다시 적는다 — 사용자가 일부러 고른 리비전은 활성이
+        # 그대로인 동안 남는다. 위젯을 만들기 **전**이라 적을 수 있고, 적은 값은 브라우저에 간다.
         active_revision_id = active_persisted_revision_id()
         if (
             summary.scenario_id == active_persisted_scenario_id()
             and active_revision_id in revision_by_id
-            and REVISION_SELECT_KEY not in st.session_state
+            and (
+                REVISION_SELECT_KEY not in st.session_state
+                or st.session_state.get(REVISION_SEED_KEY) != active_revision_id
+            )
         ):
             st.session_state[REVISION_SELECT_KEY] = active_revision_id
+            st.session_state[REVISION_SEED_KEY] = active_revision_id
         selected_revision_id = st.selectbox(
             "리비전",
             options=list(revision_by_id),

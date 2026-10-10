@@ -34,7 +34,7 @@ class ConditionTabs:
     """공통 조건(시나리오·조회기간)을 **탭 몇 개에서만** 읽는 화면의 선언.
 
     예: 가용설비 현황은 설비 DB 만 보는데, `Static/Dynamic` 탭만 활성 시나리오와 조회기간으로
-    확보율을 맞대어 본다. 그 탭이 열렸을 때만 공통 상자를 세운다.
+    확보율을 맞대어 본다. 그 탭이 열렸을 때만 조건 패널의 공통 줄을 세운다.
     """
 
     # 그 화면 `stateful_tabs` 의 key. 열린 탭 라벨이 세션의 이 칸에 있다.
@@ -57,8 +57,8 @@ class PageSpec:
     default: bool = False
     # 비워 두면 주소가 파일명에서 만들어진다. 파일명과 화면 이름이 다른 페이지에만 준다.
     url_path: str | None = None
-    # 사이드바 「조회 조건」의 공통 상자 가운데 **이 화면이 실제로 읽는 것**(2026-09-29 사용자
-    # 결정). 읽지 않는 상자는 그 화면에서 세우지 않는다 — 계산에 걸리지 않는 조건이 사이드바에
+    # 사이드바 「조회 조건」 패널의 공통 줄 가운데 **이 화면이 실제로 읽는 것**(2026-09-29 사용자
+    # 결정). 읽지 않는 줄은 그 화면에서 세우지 않는다 — 계산에 걸리지 않는 조건이 사이드바에
     # 남아 있으면 그 조건을 바꿔도 화면이 그대로라 무엇이 이 화면의 조건인지 흐려진다.
     reads_scenario: bool = True
     reads_period: bool = True
@@ -102,7 +102,7 @@ class PageSpec:
 HOME = PageSpec("app_pages/home.py", "HOME", default=True)
 # 공통 조건 선언(`reads_*`)은 **그 화면 코드가 실제로 읽는 것**이다(2026-09-29 전수 조사). 준비
 # 중인 화면도 사이드바는 앱 전체의 규칙이라 같이 적는다 — 데모 데이터만 그리는 화면에 시나리오·
-# 조회기간 상자가 서 있으면 그것을 바꿔도 아무것도 변하지 않는다.
+# 조회기간 줄이 서 있으면 그것을 바꿔도 아무것도 변하지 않는다.
 CAPA_CHATBOT = PageSpec(
     "app_pages/capa_chatbot.py",
     _implementing("Capa Chatbot"),
@@ -111,7 +111,7 @@ CAPA_CHATBOT = PageSpec(
     reads_period=False,
 )
 # 시나리오 관리는 활성 시나리오를 불러오고 저장하며, 복제·리비전 저장이 지금 조회기간을
-# 프리셋으로 함께 담는다 — 저장되는 값이 보여야 하므로 두 상자를 다 세운다.
+# 프리셋으로 함께 담는다 — 저장되는 값이 보여야 하므로 두 줄을 다 세운다.
 SCENARIO_MANAGEMENT = PageSpec(
     "app_pages/scenario_management.py", "시나리오 관리", ":material/database:"
 )

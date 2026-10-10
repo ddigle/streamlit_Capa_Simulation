@@ -72,6 +72,7 @@ from capa_simulation.scenario_activation import (
 from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.scenario_state import ensure_active_scenario
 from capa_simulation.services.korean_particle import object_particle
+from capa_simulation.services.revision_compatibility import revision_block_reason
 
 # 팝업 안 시나리오·리비전 **초안**. 팝업을 열 때마다 올라와 있는 값으로 다시 적는다 — 닫힌 뒤에
 # 「골랐지만 불러오지 않은 선택」이 남지 않는다. 그래서 `persist_state` 를 주지 않는다.
@@ -125,7 +126,7 @@ def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
         else "올라온 리비전 없음"
     )
     condition_field(
-        SCENARIO_FIELD_LABEL,
+        scenario_name_label(label.revision_no if label is not None else None),
         value,
         slug="scenario",
         key=SCENARIO_FIELD_KEY,
@@ -146,6 +147,19 @@ def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
             st.success(flash)
         if isinstance(warning, str):
             st.warning(warning, icon=":material/warning:")
+
+
+def scenario_name_label(revision_no: int | None) -> str:
+    """시나리오 이름 줄 왼쪽 글 — 「시나리오 · r12」.
+
+    값 칸은 「시나리오명 · rN」(2026-10-10 사용자 결정 D3)인데, 시나리오명이 길면 칸 끝의
+    「· rN」 이 늘 말줄임에 잘려 같은 시나리오 안에서 리비전을 바꿔도 칸으로는 갈리지 않았다
+    (2026-10-11 병합 전 리뷰). 값 칸 글자 차례는 그대로 두고 리비전 번호를 이름 줄에도 적어 늘
+    보이게 한다.
+    """
+    if revision_no is None:
+        return SCENARIO_FIELD_LABEL
+    return f"{SCENARIO_FIELD_LABEL} · r{revision_no}"
 
 
 def scenario_status_badge(
@@ -406,6 +420,12 @@ def _render_load(
             snapshot = load_scenario_snapshot(
                 database_path, str(st.session_state[SIDEBAR_REVISION_KEY])
             )
+            # 활성화 **전에** 본다(시나리오 관리 화면의 불러오기와 같은 검사). 활성화한 뒤에 계산이
+            # 죽으면 활성 시나리오가 이미 바뀐 뒤라 화면에서 되돌릴 방법이 없다.
+            blocked = revision_block_reason(snapshot.tables)
+            if blocked is not None:
+                st.error(blocked)
+                return
             activate_persisted_snapshot(snapshot)
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"리비전을 불러오지 못했습니다: {bootstrap_error_message(exc)}")

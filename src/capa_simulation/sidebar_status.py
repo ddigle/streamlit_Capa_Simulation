@@ -22,9 +22,9 @@ PLACEHOLDER_STATE_KEY = "sidebar_month_range_placeholder"
 CONDITIONS_BOX_KEY = "sidebar_conditions_box"
 # 패널 안에서 **페이지가 나중에 채우는 칸**의 수. 시나리오·조회기간은 `app.py` 가 페이지보다 먼저
 # 그리지만, HOME 의 공정 필터·주요공정 히트맵은 계산 뒤에야 값이 정해져 페이지가 그린다. 그래서
-# `app.py` 가 빈 칸을 미리 세워 등록하고 페이지가 채운다(적용 기간 자리표시자와 같은 방식). 칸 수를
-# 화면마다 바꾸지 않는다 — 빈 칸은 높이가 0 으로 접히고(1.63 실측: `display: none`), 늘 같은 수라
-# 패널 안 순번도 화면마다 같다.
+# `app.py` 가 빈 칸(블록 — `st.container`)을 미리 세워 등록하고 페이지가 채운다(적용 기간
+# 자리표시자와 같은 방식). 칸 수를 화면마다 바꾸지 않는다 — 빈 칸은 높이·간격이 없고
+# (`sidebar_style`), 늘 같은 수라 패널 안 순번도 화면마다 같다.
 PAGE_CONDITION_SLOT_COUNT = 2
 # 칸도 **세션 상태**에 둔다(아래 자리표시자와 같은 까닭 — 모듈 전역이면 세션끼리 칸을 나눠 쓴다).
 PAGE_SLOT_STATE_KEY = "sidebar_page_condition_slots"
@@ -238,8 +238,9 @@ def page_condition_slot(index: int) -> DeltaGenerator:
     """페이지가 채울 패널 칸 하나. `with page_condition_slot(0).container():` 로 쓴다.
 
     등록된 칸이 없으면(패널이 서지 않은 회차, `app.py` 없이 페이지만 띄운 테스트 하네스) 사이드바
-    자체를 돌려준다 — 줄은 패널 밖 맨 아래에라도 선다. 한 칸은 한 회차에 **한 번만** 채운다
-    (`st.empty` 다 — 두 번 쓰면 앞의 것을 덮는다).
+    자체를 돌려준다 — 줄은 패널 밖 맨 아래에라도 선다. 한 칸은 한 회차에 **한 번만** 채운다 —
+    칸은 블록이라 두 번 쓰면 두 줄이 쌓인다. 블록이라 다시 도는 동안 앞 회차의 줄이 그 자리에
+    남아 패널이 흔들리지 않는다(`st.empty` 는 회차 시작에 비웠다).
     """
     registered = st.session_state.get(PAGE_SLOT_STATE_KEY)
     if isinstance(registered, tuple) and 0 <= index < len(registered):
