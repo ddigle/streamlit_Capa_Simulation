@@ -43,6 +43,7 @@ from collections import Counter
 from collections.abc import Callable, Hashable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from functools import partial
 from pathlib import Path
 from typing import Final, Protocol, TypeVar, cast
@@ -2244,18 +2245,34 @@ def _day_rows(frame: pd.DataFrame | None) -> dict[date, int]:
 def row_signatures(frame: pd.DataFrame) -> pd.Series:
     """행마다 내용 해시 — 모든 칸이 같아야 같은 행이다(적재 시각은 상세 SQL 에 없다).
 
-    날마다 갈리는 dtype 추론에 기대지 않는다. 빈 값이 낀 날은 정수 칸이 실수로 읽히므로 숫자 칸은
-    실수로, 나머지는 글자로 바꾼 뒤 해시한다. 해시만 남기고 값은 버린다.
+    날마다 갈리는 dtype 추론에 기대지 않는다. 빈 값이 낀 날은 정수 칸이 실수로 읽히고, 어떤 날은
+    숫자 칸이 파이썬 정수·실수를 담은 `object` 로 온다. 그래서 숫자 칸과 숫자만 담은 `object` 칸은
+    실수로, 나머지는 글자로 바꾼 뒤 해시한다(숫자처럼 보이는 글자는 글자로 둔다). 해시만 남긴다.
     """
     columns: dict[str, pd.Series] = {}
     for name in sorted(frame.columns, key=str):
         values = frame[name]
-        if pd.api.types.is_numeric_dtype(values) and not pd.api.types.is_bool_dtype(values):
-            text = values.astype("float64").astype("string")
+        if _holds_numbers(values):
+            text = pd.to_numeric(values, errors="coerce").astype("float64").astype("string")
         else:
             text = values.astype("string")
         columns[str(name)] = text.fillna("\x00")
     return pd.util.hash_pandas_object(pd.DataFrame(columns, index=frame.index), index=False)
+
+
+def _holds_numbers(values: pd.Series) -> bool:
+    """숫자 dtype(참·거짓 제외)이거나, 빈 값을 뺀 값이 모두 파이썬·넘파이 숫자인 `object` 칸."""
+    if pd.api.types.is_bool_dtype(values):
+        return False
+    if pd.api.types.is_numeric_dtype(values):
+        return True
+    if values.dtype != object:
+        return False
+    present = [value for value in values.tolist() if not pd.isna(value)]
+    return bool(present) and all(
+        isinstance(value, (int, float, Decimal, np.number)) and not isinstance(value, bool)
+        for value in present
+    )
 
 
 def plan_line_key_set(frame: pd.DataFrame) -> set[tuple[object, ...]] | None:
@@ -2407,7 +2424,7 @@ def _copy_row(index: int, check: CopyCheck) -> list[str]:
     day_rows = (
         "-"
         if not check.day_rows
-        else f"{min(check.day_rows):,} · {_ratio(float(np.median(check.day_rows)))} · "
+        else f"{min(check.day_rows):,} · {float(np.median(check.day_rows)):,.0f} · "
         f"{max(check.day_rows):,}"
     )
     if check.examined == 0:

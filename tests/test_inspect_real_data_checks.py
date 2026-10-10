@@ -811,13 +811,20 @@ class _DayProbe:
         return self.frames[window.start_date]
 
 
-def _plan_frame(rows: int, *, pack_codes: int = 1, as_float: bool = False) -> pd.DataFrame:
+def _plan_frame(
+    rows: int, *, pack_codes: int = 1, as_float: bool = False, as_object: bool = False
+) -> pd.DataFrame:
     frame = pd.DataFrame(_detail_rows(VALID_A, rows, 0))
     # 네 행(제품정보 넷)마다 Pack Code 가 바뀐다 — 다른 Pack Code 는 다른 계획 줄이다.
     frame["Pack Code"] = [f"PK{index // 4 % pack_codes}" for index in range(rows)]
     if as_float:
         # 빈 값이 낀 날에는 정수 칸이 실수로 읽힌다 — 같은 행이어야 한다.
         frame["생산계획년월"] = frame["생산계획년월"].astype("float64")
+    if as_object:
+        # 어떤 날은 숫자 칸이 파이썬 정수를 담은 object 로 온다 — 실수 칸과 같은 행이어야 한다.
+        frame["WF수(매)"] = pd.Series(
+            [int(value) for value in frame["WF수(매)"]], index=frame.index, dtype=object
+        )
     return frame
 
 
@@ -826,7 +833,7 @@ def test_copy_check_tells_a_partial_load_from_a_copy_and_ignores_dtype_drift() -
     probe = _DayProbe(
         {
             day1: _plan_frame(10),  # 마지막 날의 일부 — 부분 적재
-            day2: _plan_frame(30, as_float=True),  # 마지막 날과 같다(dtype 만 다름)
+            day2: _plan_frame(30, as_float=True, as_object=True),  # 마지막 날과 같다(dtype 만 다름)
             day3: _plan_frame(30),
         }
     )
@@ -841,6 +848,13 @@ def test_copy_check_tells_a_partial_load_from_a_copy_and_ignores_dtype_drift() -
     assert (result.same_days, result.differing_days, result.subset_days) == (1, 1, 1)
     assert result.missing_from_last == 0
     assert (result.plan_keys, result.last_plan_keys) == (4, 4)
+
+
+def test_copy_table_prints_row_counts_as_counts() -> None:
+    """하루 행이 수만이어도 중앙을 지수 표기로 찍지 않는다."""
+    check = checks.CopyCheck(extra=False, load_days=3, day_rows=(29_460, 29_461, 29_470))
+
+    assert checks._copy_row(1, check)[3] == "29,460 · 29,461 · 29,470"
 
 
 def test_copy_check_counts_plan_lines_that_only_older_loads_have() -> None:
