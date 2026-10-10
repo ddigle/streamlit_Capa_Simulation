@@ -13,9 +13,11 @@ BigDataQuery 는 사내 전용 패키지라 가짜 `bigdataquery` 모듈을 `sys
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import importlib.machinery
 import re
+import runpy
 import sys
 import types
 from collections import Counter
@@ -662,6 +664,7 @@ def _detail_rows(
             "STEP_SEQ": f"{SENTINEL}T{index}",
             "MCP_SEQ": "1A",
             "소요기준": "WF",
+            "UPEH": float(index + version),
             "WF수(매)": float(index * 10 + version),
         }
         for index in range(first, first + rows)
@@ -812,19 +815,21 @@ def test_bigdataquery_block_measures_windows_without_naming_codes(
     assert "| 여러 날에 나눠 적재된 코드 | 2 / 3 |" in output
     assert "| 기본 창(−7~+3일) 밖 적재일이 있는 코드 | 2 / 3 |" in output
     assert "| 끝 적재일 − 끝 원천 등록일(일) | 최소 0 · 최대 30 |" in output
-    # 사본 여부 — 표본의 여러 날 코드 둘(적재일이 많은 C 먼저). C 는 본 넷이 모두 끝 날과 같고, A
-    # 는 앞
-    # 날의 같은 경로 값이 바뀌었다(경로가 더 많았다).
-    assert "**여러 날 적재 — 날마다 사본인가**" in output
+    # 사본 확인 — 표본의 여러 날 코드 둘(적재일이 많은 C 먼저). 판정 없이 날마다 사실만 찍는다.
+    # C 는 고른 넷이 모두 기준 날과 같고, A 의 앞 날은 경로 80개를 더 갖고 겹치는 20개의 값이
+    # 다르다.
+    assert "**여러 날 적재 — 날마다 무엇이 같고 다른가**" in output
     assert (
-        "| 1 | 표본 | 32 | 40 · 40 · 40 | 끝 적재일 | 3 (0) | 160 → 40 | 4 / 4 | 40 / 40 | 3 (3) "
-        "| 0 · 0 | 0 · 0 · 0 | 0 | 통째 사본 |"
+        "- 코드 1 · 표본 — 적재일 32일 · 날별 행 최소 · 중앙 · 최대 40 · 40 · 40 · "
+        "기준 날 = 끝 적재일"
     ) in output
-    assert (
-        "| 2 | 표본 | 2 | 20 · 60 · 100 | 끝 적재일 | 1 (0) | 120 → 120 | 4 / 4 | 100 / 20 | 0 (0) "
-        "| 0 · 0 | 1 · 0 · 0 | 100 | 같은 키 값 바뀜 |"
-    ) in output
+    assert "| 첫 적재일 (1/32) | 40 | 40 | 4 | 40 | 0 · 0 | 0 · 0 | 0 | 0 | 0 |" in output
+    assert "| 가운데 (16/32) | 40 |" in output and "| 끝 앞날 (31/32) | 40 |" in output
+    assert "| 기준 날 (32/32) | 40 | 40 | 4 | 40 | - | - | - | - | 0 |" in output
+    assert "- 코드 2 · 표본 — 적재일 2일 · 날별 행 최소 · 중앙 · 최대 20 · 60 · 100" in output
+    assert "| 첫 적재일 (1/2) | 100 | 100 | 4 | 100 | 0 · 80 | 0 · 0 | 20 | 0 | 0 |" in output
     assert "여러 날 코드 더함" not in output
+    assert "| 판정 |" not in output and "통째 사본" not in output
 
 
 def test_multi_day_codes_outside_the_sample_fill_the_copy_check(
@@ -838,9 +843,9 @@ def test_multi_day_codes_outside_the_sample_fill_the_copy_check(
     assert code == 0
     _assert_no_leak(output)
     assert "| 표본 | 1 코드 (" in output
-    assert "| 1 | 표본 | 2 | 20 · 60 · 100 | 끝 적재일 |" in output
+    assert "- 코드 1 · 표본 — 적재일 2일" in output
     # 더한 코드의 창은 등록일 ±30 이 아니라 전 코드 조회의 첫·끝 적재일이다 — 32일을 다 센다.
-    assert "| 2 | 여러 날 코드 더함 | 32 | 40 · 40 · 40 | 끝 적재일 | 3 (0) |" in output
+    assert "- 코드 2 · 여러 날 코드 더함 — 적재일 32일" in output
 
 
 def test_bigdataquery_failures_are_named_by_kind_only(
@@ -878,9 +883,7 @@ def test_without_the_all_code_query_a_last_load_on_the_window_edge_is_flagged(
 
     assert code == 0
     _assert_no_leak(output)
-    assert (
-        "| 1 | 표본 | 32 | 40 · 40 · 40 | 끝 적재일 — 창 끝날에 닿음(창 밖에도 있을 수 있다) |"
-    ) in output
+    assert "기준 날 = 끝 적재일 · 기준 날이 창 끝날에 닿음(창 밖에도 적재가 있을 수 있다)" in output
 
 
 def _many_daily_codes(count: int) -> tuple[dict[str, date], Loads]:
@@ -924,7 +927,7 @@ def test_the_copy_check_has_a_small_fixed_query_budget(
     assert code == 0
     _assert_no_leak(output)
     assert (calls["day_detail"], calls["group_by"]) == (day_details, group_by)
-    assert output.count("| 통째 사본 |") == codes
+    assert len(re.findall(r"^- 코드 \d+ · ", output, flags=re.MULTILINE)) == codes
 
 
 def test_a_stopped_run_keeps_the_parts_already_written(
@@ -941,9 +944,121 @@ def test_a_stopped_run_keeps_the_parts_already_written(
     assert "| 상한 366일 |" in written
     assert "| 적재일 1일 · 2–5일 · 6일 이상 |" in written
     assert "| 표본 적재일 | 값 |" in written
-    assert "**여러 날 적재 — 날마다 사본인가**" in written
+    assert "**여러 날 적재 — 날마다 무엇이 같고 다른가**" in written
+    assert written.rstrip().endswith("블록이 멈췄다 — 중단(KeyboardInterrupt)")
     assert SENTINEL not in written
     assert written.strip() in capsys.readouterr().out
+
+
+def test_the_script_runs_as_a_program_and_empties_a_stale_output_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사내는 `python scripts/inspect_real_data_checks.py` 로 부른다 — 파일 끝의 `__main__` 이
+    있어야
+    돈다. `--output` 은 시작할 때 비운다(지난 배포의 파일이 새것처럼 붙여지지 않게)."""
+    script = PROJECT_ROOT / "scripts" / "inspect_real_data_checks.py"
+    monkeypatch.setattr(sys, "argv", [str(script), "--help"])
+    with pytest.raises(SystemExit) as stopped:
+        runpy.run_path(str(script), run_name="__main__")
+    assert stopped.value.code == 0
+    assert "--bdq-copy-codes" in capsys.readouterr().out
+
+    target = tmp_path / "bdq.md"
+    target.write_text("STALE 지난 배포의 출력", encoding="utf-8")
+    monkeypatch.setitem(sys.modules, "bigdataquery", _fake_bigdataquery())
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [str(script), "--only", "bdq", "--bdq-sample", "0", "--today", TODAY.isoformat()]
+        + ["--output", str(target)],
+    )
+    with pytest.raises(SystemExit) as stopped:
+        runpy.run_path(str(script), run_name="__main__")
+    assert stopped.value.code == 0
+    written = target.read_text(encoding="utf-8")
+    assert "STALE" not in written
+    assert written.startswith("<!-- inspect_real_data_checks.py")
+    assert "| 상한 366일 | 366일 | 성공 |" in written
+    assert "사본 확인(전 코드 조회로 더하는 코드 포함)은 `--bdq-sample 0`" in written
+    assert "**여러 날 적재" not in written
+
+
+def test_an_early_stop_still_empties_the_output_file(
+    simulation_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def locked(*_args: object, **_kwargs: object) -> duckdb.DuckDBPyConnection:
+        raise duckdb.IOException("Could not set lock")
+
+    monkeypatch.setattr(duckdb, "connect", locked)
+    target = tmp_path / "real_data_check.md"
+    target.write_text("STALE 지난 배포의 출력", encoding="utf-8")
+
+    code, _ = _run(
+        capsys, "--only", "env", "--database", str(simulation_db), "--output", str(target)
+    )
+
+    assert code == 1
+    written = target.read_text(encoding="utf-8")
+    assert "STALE" not in written
+    assert "앱이 떠 있으면 먼저 끄세요" in written
+
+
+class _StopAtSecondCatalog:
+    """두 번째 목록 조회에서 멈춘다(시간 제한·Ctrl+C 를 흉내 낸다)."""
+
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+        self.calls = 0
+
+    def catalog(self, window: QueryWindow) -> pd.DataFrame:
+        self.calls += 1
+        if self.calls == 2:
+            raise self.error
+        return pd.DataFrame(columns=list(CATALOG_COLUMNS))
+
+    def detail_rows(self, code: str, window: QueryWindow) -> int:
+        raise AssertionError("부르지 않는다")
+
+    def detail_frame(self, code: str, window: QueryWindow) -> pd.DataFrame:
+        raise AssertionError("부르지 않는다")
+
+    def load_days(self, code: str, window: QueryWindow) -> pd.DataFrame:
+        raise AssertionError("부르지 않는다")
+
+    def code_load_days(self, window: QueryWindow) -> pd.DataFrame:
+        raise AssertionError("부르지 않는다")
+
+
+def test_a_stop_inside_the_catalog_keeps_the_heading_and_closes_the_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """머리말·준비 줄과 끝난 목록 행은 조회 전·직후에 찍힌다. 멈춤 줄은 열린 표에 붙지 않는다."""
+    target = tmp_path / "bdq.md"
+    argv = ["--only", "bdq", "--today", TODAY.isoformat(), "--output", str(target)]
+
+    with pytest.raises(KeyboardInterrupt):
+        checks.main(argv, probe=_StopAtSecondCatalog(KeyboardInterrupt()))
+
+    written = target.read_text(encoding="utf-8")
+    assert "### 8-5." in written
+    assert "- 준비 — 패키지 있음" in written
+    assert "| 기본(오늘−30일 ~ 오늘) | 31일 | 성공 |" in written
+    assert "아니오 |\n\n- `8-5` 블록이 멈췄다 — 중단(KeyboardInterrupt)" in written
+
+    def broken(*_args: object, **_kwargs: object) -> list[str]:
+        raise ValueError(f"{SENTINEL} 문구")
+
+    monkeypatch.setattr(checks, "describe_registered_at", broken)
+    assert checks.main(argv, probe=_StopAtSecondCatalog(RuntimeError())) == 0
+    written = target.read_text(encoding="utf-8")
+    assert "| 상한 366일 | 366일 | 조회 실패(RuntimeError) |" in written
+    assert (
+        "조회 실패(RuntimeError) | - | - | - | - | - |\n\n- `8-5` 블록이 멈췄다 — 실패(ValueError)"
+    ) in written
+    assert SENTINEL not in written
 
 
 class _DayProbe:
@@ -963,7 +1078,7 @@ class _DayProbe:
         raise AssertionError("부르지 않는다")
 
     def load_days(self, code: str, window: QueryWindow) -> pd.DataFrame:
-        days = [day for day in self.frames if window.start_date <= day <= window.end_date]
+        days = [day for day in sorted(self.frames) if window.start_date <= day <= window.end_date]
         return pd.DataFrame(
             {
                 "load_day": [f"{day:%Y-%m-%d}" for day in days],
@@ -974,133 +1089,297 @@ class _DayProbe:
     def detail_frame(self, code: str, window: QueryWindow) -> pd.DataFrame:
         assert window.start_date == window.end_date  # 하루씩 받는다
         self.asked.append(window.start_date)
-        return self.frames[window.start_date]
+        return self.frames[window.start_date].copy()
 
 
 def _day(
     lines: Sequence[int] = (0, 1, 2, 3),
     routes: Sequence[int] = (0, 1, 2),
     *,
-    version: int = 0,
+    bump: float = 0.0,
+    bumped: Sequence[int] | None = None,
+    legacy: float = 0.0,
+    pack: str = "PK",
     copies: int = 1,
+    **extra: object,
 ) -> pd.DataFrame:
-    """계획 줄 `lines` × 경로 `routes` 하루치. 경로 번호가 같으면 같은 경로 키다."""
+    """계획 줄 `lines` × 경로 `routes` 하루치. `bump` 는 업무 칸(`UPEH`)을, `legacy` 는 계산에 들지
+    않는 기존 결과 칸(`WF수(매)`)을 바꾼다. `bumped` 를 주면 그 계획 줄만 바꾼다. 이름은
+    표지값이다."""
     rows = [
-        {**row, "제품정보": f"{SENTINEL}P{line}", "공정": f"{SENTINEL}S{route}"}
+        {
+            "시뮬레이션 ID": f"{SENTINEL}SIM",
+            "기준정보년월": 202609,
+            "계획기초정보여부": "N",
+            "생산계획년월": 202610,
+            "CS": "MP",
+            "제품정보": f"{SENTINEL}P{line}",
+            "Stack": "8H",
+            "Capa Code": f"{SENTINEL}CAPA",
+            "Customer": f"{SENTINEL}CUST",
+            "Pack Code": f"{SENTINEL}{pack}",
+            "WF 구분": "Core",
+            "Area_Name": "Main",
+            "공정": f"{SENTINEL}S{route}",
+            "STEP_SEQ": f"T{route}",
+            "MCP_SEQ": "1A",
+            "소요기준": "WF",
+            "생산수량": 100.0 + line,
+            "UPEH": 10.0 + route + (bump if bumped is None or line in bumped else 0.0),
+            "WF수(매)": float(line * 100 + route) + legacy,
+            **extra,
+        }
         for line in lines
         for route in routes
-        for row in _detail_rows(VALID_A, 1, version, first=line * 10 + route)
     ]
     return pd.DataFrame(rows * copies)
 
 
-DAYS = [date(2026, 9, 1) + timedelta(days=offset) for offset in range(6)]
+DAYS = [date(2026, 9, 1) + timedelta(days=offset) for offset in range(32)]
 
 
-def _check(frames: list[pd.DataFrame], *, today: date | None = None) -> list[str]:
+def _facts(
+    frames: Sequence[pd.DataFrame], *, today: date | None = None, max_days: int = 4
+) -> list[checks.DayFacts]:
     probe = _DayProbe(dict(zip(DAYS, frames, strict=False)))
+    window = QueryWindow(start_date=DAYS[0], end_date=DAYS[len(frames) - 1])
     result = checks.check_copies(
-        probe, VALID_A, QueryWindow(start_date=DAYS[0], end_date=DAYS[-1]), extra=False, today=today
+        probe, VALID_A, window, extra=False, today=today, max_days=max_days
     )
     assert result.failure is None
-    return checks._copy_row(1, result)
+    return result.days
+
+
+def _compared(facts: checks.DayFacts) -> tuple[object, ...]:
+    """(그날에만 계획 줄·잘게, 기준 날에만 계획 줄·잘게, 행이 다른 키, 그 밖 칸만 다른 행)."""
+    return (
+        facts.only_day_plan,
+        facts.only_day_finest,
+        facts.only_reference_plan,
+        facts.only_reference_finest,
+        facts.changed,
+        facts.other_only,
+    )
 
 
 @pytest.mark.parametrize(
-    ("frames", "verdict", "cells"),
+    ("frames", "first", "reference_conflicts"),
     [
-        # 날마다 같은 내용을 통째로 다시 적재했다.
-        ([_day(), _day(), _day(), _day()], "통째 사본", {9: "3 (3)", 12: "0"}),
-        # 끝 날만 두 번 적재했다 — 행 집합은 같고 중복 수만 다르다(사본).
-        ([_day(), _day(), _day(copies=2)], "통째 사본", {9: "2 (0)"}),
-        # 앞 날은 끝 날의 일부다 — 적재가 쌓였다.
-        ([_day(lines=(0, 1)), _day()], "누적 적재", {10: "1 · 0"}),
-        # 뒤 적재에서 계획 줄이 지워졌다 — 앞 날이 끝 날을 감싼다.
-        ([_day(), _day(lines=(0, 1))], "뒤 적재에서 지워짐", {7: "4 / 2", 10: "0 · 1"}),
-        # 같은 경로의 값만 바뀌었다.
-        ([_day(), _day(version=1)], "같은 키 값 바뀜", {8: "12 / 12", 11: "1 · 0 · 0"}),
-        # 계획 줄은 같고 날마다 다른 경로를 실었다(사내 202610081500 꼴의 다른 갈래).
+        # 날마다 같은 내용을 통째로 다시 적재했다 — 모든 칸이 0 이다.
+        ([_day(), _day(), _day(), _day()], (0, 0, 0, 0, 0, 0), 0),
+        # 기준 날이 경로 S1·S2 를 잃었고 S0 의 값도 바뀌었다(재검증 VL-1) — 키 손실이 가려지지
+        # 않는다.
+        ([_day(), _day(routes=(0,), bump=5)], (0, 8, 0, 0, 4, 0), 0),
+        # 기준 날이 계획 줄 2·3 을 잃었고 남은 줄의 값도 바뀌었다(VL-3).
+        ([_day(), _day(lines=(0, 1), bump=5)], (2, 6, 0, 0, 6, 0), 0),
+        # 겹치는 계획 줄의 값이 바뀐 나눠 적재(7a) — 나눠진 줄과 바뀐 값이 둘 다 보인다.
         (
-            [_day(routes=(0,)), _day(routes=(1,)), _day(routes=(2,))],
-            "경로 나눠 적재",
-            {7: "4 / 4", 8: "12 / 4", 11: "0 · 2 · 0"},
+            [_day(lines=(0, 1, 2)), _day(lines=(1, 2, 3), bump=7, bumped=(1, 2))],
+            (1, 3, 1, 3, 6, 0),
+            0,
         ),
-        # 날마다 다른 계획 줄을 실었다.
-        ([_day(lines=(0, 1)), _day(lines=(2, 3))], "계획 줄 나눠 적재", {7: "4 / 2"}),
-        # 0행인 날은 따로 세고 견주지 않는다(칸이 없는 빈 결과도).
-        ([_day().iloc[:0], pd.DataFrame(), _day(), _day()], "통째 사본", {5: "1 (2)"}),
-        # 한 코드에 갈래가 둘이면 섞임이다.
-        (
-            [_day(lines=(0, 1)), _day(version=1), _day()],
-            "섞임: 누적 적재 · 같은 키 값 바뀜",
-            {10: "1 · 0", 11: "1 · 0 · 0"},
-        ),
+        # 날마다 다른 경로를 실었다 — 그날에만·기준 날에만 있는 키가 같이 나온다.
+        ([_day(routes=(0,)), _day(routes=(1,)), _day(routes=(2,))], (0, 4, 0, 4, 0, 0), 0),
+        # 앞 날은 기준 날의 일부다(누적).
+        ([_day(lines=(0, 1)), _day()], (0, 0, 2, 6, 0, 0), 0),
+        # 뒤 적재에서 계획 줄이 빠졌다.
+        ([_day(), _day(lines=(0, 1))], (2, 6, 0, 0, 0, 0), 0),
+        # 기준 날에 같은 키를 다른 값으로 두 번 적재했다(15b) — 하루 안 충돌로 보인다.
+        ([_day(), pd.concat([_day(), _day(bump=9)], ignore_index=True)], (0, 0, 0, 0, 12, 0), 12),
+        # 계산에 들지 않는 칸만 흔들렸다(기준정보년월·기존 결과 WF수) — 값 바뀜이 아니다.
+        ([_day(), _day(기준정보년월=202610)], (0, 0, 0, 0, 0, 12), 0),
+        ([_day(), _day(legacy=5)], (0, 0, 0, 0, 0, 12), 0),
     ],
 )
-def test_copy_check_tells_how_a_code_was_loaded(
-    frames: list[pd.DataFrame], verdict: str, cells: dict[int, str]
+def test_copy_facts_count_each_direction_without_a_verdict(
+    frames: list[pd.DataFrame], first: tuple[int, ...], reference_conflicts: int
 ) -> None:
-    row = _check(frames)
+    facts = _facts(frames)
 
-    assert row[-1] == verdict
-    for index, value in cells.items():
-        assert row[index] == value
-
-
-def test_a_last_load_today_is_left_out_as_possibly_in_progress() -> None:
-    """끝 적재일이 오늘이면 적재 중일 수 있다 — 그 앞날을 기준으로 견주고 오늘은 따로 적는다."""
-    row = _check([_day(), _day(), _day(lines=(0,))], today=DAYS[2])
-
-    assert row[4] == "끝 앞날 — 끝 날은 오늘이라 적재 중일 수 있어 뺐다(오늘은 기준 날의 일부(⊆))"
-    assert row[-1] == "통째 사본"
+    assert _compared(facts[0]) == first
+    assert facts[-1].label.startswith("기준 날")
+    assert not facts[-1].compared
+    assert facts[-1].conflicts == reference_conflicts
 
 
-def test_a_last_day_without_rows_falls_back_to_the_day_before() -> None:
-    row = _check([_day(), _day(), pd.DataFrame()])
+def test_the_reference_row_carries_its_own_counts() -> None:
+    reference = _facts([_day(), _day(lines=(0, 1))])[-1]
 
-    assert row[4] == "끝 앞날 — 끝 날이 0행"
-    assert row[5] == "1 (1)"
-
-
-def _drifted(frame: pd.DataFrame) -> pd.DataFrame:
-    """같은 행을 다른 dtype 으로 — 숫자 글자, object 정수, 참·거짓, Decimal, 빈 글자, 소문자 칸
-    이름."""
-    drifted = frame.copy()
-    drifted["생산계획년월"] = drifted["생산계획년월"].map(str)
-    drifted["WF수(매)"] = pd.Series(
-        [Decimal(str(value)) for value in frame["WF수(매)"]], index=frame.index, dtype=object
+    assert (reference.rows, reference.distinct, reference.plan_keys, reference.finest_keys) == (
+        6,
+        6,
+        2,
+        6,
     )
-    drifted["flag"] = True
-    drifted["Para"] = pd.Series([""] * len(frame), index=frame.index, dtype=object)
-    return drifted.rename(columns={"CS": "cs", "Stack": "stack", "Customer": "customer"})
+    assert checks.day_fact_row(reference) == [
+        "기준 날 (2/2)",
+        "6",
+        "6",
+        "2",
+        "6",
+        "-",
+        "-",
+        "-",
+        "-",
+        "0",
+    ]
 
 
-def test_dtype_drift_between_days_is_not_taken_for_changed_values() -> None:
+def test_long_numeric_looking_codes_stay_apart() -> None:
+    """글자 칸은 숫자로 읽지 않는다 — 끝자리만 다른 긴 코드가 한 계획 줄로 합쳐지지 않는다."""
+    facts = _facts(
+        [
+            _day().assign(**{"Capa Code": "12345678901234567"}),
+            _day().assign(**{"Capa Code": "12345678901234568"}),
+        ]
+    )
+
+    assert _compared(facts[0])[:4] == (4, 12, 4, 12)
+
+
+def test_numeric_business_columns_compare_as_numbers() -> None:
+    """숫자 칸은 숫자 글자·Decimal·정수·빈 글자·소문자 칸 이름이 날마다 갈려 와도 같은 값이다."""
     base = _day()
-    steady = base.assign(flag=1, Para=None)
-    drifted = _drifted(base)
+    drifted = base.assign(
+        생산수량=[str(int(value)) for value in base["생산수량"]],
+        UPEH=pd.Series([Decimal(str(value)) for value in base["UPEH"]], dtype=object),
+        ST="",
+    ).rename(columns={"CS": "cs", "Stack": "stack", "Customer": "customer"})
+    steady = base.assign(ST=None)
 
-    row = _check([drifted, steady.astype({"WF수(매)": "int64"}), steady])
+    facts = _facts([drifted, steady.astype({"UPEH": "float64"}), steady])
 
-    assert row[9] == "2 (2)"
-    assert row[-1] == "통째 사본"
-
-
-def test_copy_table_prints_row_counts_as_counts() -> None:
-    """하루 행이 수만이어도 중앙을 지수 표기로 찍지 않는다."""
-    check = checks.CopyCheck(extra=False, load_days=3, day_rows=(29_460, 29_461, 29_470))
-
-    assert checks._copy_row(1, check)[3] == "29,460 · 29,461 · 29,470"
+    assert [_compared(day) for day in facts[:-1]] == [(0, 0, 0, 0, 0, 0)] * 2
 
 
-def test_day_picks_are_first_middle_and_the_last_two() -> None:
-    probe = _DayProbe({day: _day() for day in DAYS})
+def test_a_missing_key_column_is_reported_not_replaced() -> None:
+    """키 칸이 하나라도 없으면 그 키로 세지 않는다 — 있는 칸만으로 대신 세지 않는다."""
+    facts = _facts([_day().drop(columns=["MCP_SEQ"]), _day()])
 
-    checks.check_copies(
-        probe, VALID_A, QueryWindow(start_date=DAYS[0], end_date=DAYS[-1]), extra=False
+    assert facts[0].finest_keys is None
+    assert _compared(facts[0]) == (0, None, 0, None, None, 0)
+    row = checks.day_fact_row(facts[0])
+    assert row[4] == "칸 없음" and row[5] == "0 · 칸 없음" and row[7] == "칸 없음"
+
+
+def test_a_day_without_rows_is_shown_as_it_is() -> None:
+    facts = _facts([_day().iloc[:0], pd.DataFrame(), _day()])
+
+    assert (facts[0].rows, facts[0].plan_keys, _compared(facts[0])) == (0, 0, (0, 0, 4, 12, 0, 0))
+    assert (facts[1].rows, facts[1].plan_keys) == (0, None)
+
+
+@pytest.mark.parametrize(
+    ("count", "today", "max_days", "picked", "reference", "labels"),
+    [
+        # 기본 넷 — 첫 적재일·가운데·끝 앞날·기준 날.
+        (
+            32,
+            None,
+            4,
+            [0, 15, 30, 31],
+            31,
+            ["첫 적재일 (1/32)", "가운데 (16/32)", "끝 앞날 (31/32)", "기준 날 (32/32)"],
+        ),
+        # 둘이면 끝 앞날과 기준 날 — 가운데를 고르지 않는다.
+        (32, None, 2, [30, 31], 31, ["끝 앞날 (31/32)", "기준 날 (32/32)"]),
+        # 끝 날이 오늘이면 오늘을 먼저 빼고 기준 날은 오늘 전 마지막 적재일이다.
+        (32, 31, 2, [29, 30], 30, ["끝 앞날 (30/32)", "기준 날 (31/32)"]),
+        # 셋 이상이면 오늘도 견주되 적재 중일 수 있다고 적는다.
+        (
+            32,
+            31,
+            3,
+            [29, 30, 31],
+            30,
+            ["끝 앞날 (30/32)", "기준 날 (31/32)", "오늘 — 적재 중일 수 있음 (32/32)"],
+        ),
+        (
+            32,
+            31,
+            4,
+            [0, 29, 30, 31],
+            30,
+            [
+                "첫 적재일 (1/32)",
+                "끝 앞날 (30/32)",
+                "기준 날 (31/32)",
+                "오늘 — 적재 중일 수 있음 (32/32)",
+            ],
+        ),
+        # 적재일 둘에 끝 날이 오늘 — 기준 날은 그 앞 하루다.
+        (2, 1, 4, [0, 1], 0, ["기준 날 (1/2)", "오늘 — 적재 중일 수 있음 (2/2)"]),
+    ],
+)
+def test_day_picks_keep_the_reference_and_name_real_positions(
+    count: int,
+    today: int | None,
+    max_days: int,
+    picked: list[int],
+    reference: int,
+    labels: list[str],
+) -> None:
+    probe = _DayProbe({day: _day() for day in DAYS[:count]})
+    window = QueryWindow(start_date=DAYS[0], end_date=DAYS[count - 1])
+
+    result = checks.check_copies(
+        probe,
+        VALID_A,
+        window,
+        extra=False,
+        today=None if today is None else DAYS[today],
+        max_days=max_days,
     )
 
-    assert sorted(probe.asked) == [DAYS[0], DAYS[2], DAYS[4], DAYS[5]]
+    assert sorted(probe.asked) == [DAYS[index] for index in picked]
+    assert [facts.label for facts in result.days] == labels
+    assert sum(1 for facts in result.days if not facts.compared) == 1
+    assert (
+        checks.pick_copy_days(
+            DAYS[:count], today=None if today is None else DAYS[today], max_days=max_days
+        ).reference
+        == DAYS[reference]
+    )
+
+
+def test_copy_lines_render_one_head_and_a_day_table_per_code() -> None:
+    check = checks.CopyCheck(
+        extra=True, load_days=3, day_rows=(29_460, 29_461, 29_470), note="기준 날 = 끝 적재일"
+    )
+    check.days = _facts([_day(), _day()])
+
+    lines = checks.copy_lines(2, check)
+
+    assert lines[0] == (
+        "- 코드 2 · 여러 날 코드 더함 — 적재일 3일 · 날별 행 최소 · 중앙 · 최대 "
+        "29,460 · 29,461 · 29,470 · 기준 날 = 끝 적재일"
+    )
+    assert lines[2].startswith("| 자리(적재일 차례) | 행 |")
+    assert lines[4] == "| 첫 적재일 (1/2) | 12 | 12 | 4 | 12 | 0 · 0 | 0 · 0 | 0 | 0 | 0 |"
+    assert checks.copy_lines(1, checks.CopyCheck(extra=False, failure="조회 실패(X)"))[0] == (
+        "- 코드 1 · 표본 — 조회 실패(X)"
+    )
+
+
+def test_rq_source_columns_are_the_columns_the_rq_tables_read() -> None:
+    """사본 확인의 업무 칸은 `reference_transformer` 가 읽는 칸과 같아야 한다(파생 둘은
+    원천으로)."""
+    source = (
+        PROJECT_ROOT / "src" / "capa_simulation" / "services" / "reference_transformer.py"
+    ).read_text(encoding="utf-8")
+    literals = {
+        node.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    columns = {column.name for column in load_core_data_contract().columns}
+    expected = literals & columns
+    if "양산구분" in literals:
+        expected.add("CS")
+    if "가용대수" in literals:
+        expected |= {"설비보유", "설비대여평가"}
+
+    assert set(checks.RQ_SOURCE_COLUMNS) == expected
 
 
 def test_bigdataquery_without_an_account_says_what_to_set(
