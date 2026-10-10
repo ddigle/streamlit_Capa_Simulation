@@ -31,12 +31,14 @@ from capa_simulation.services.legacy_comparison import (
     RATIO_COLUMN,
     SUSPECT_GROUP,
     WAFER_ROUTE_FACTORS,
-    AddendFold,
+    WAFER_ROUTE_RESULTS,
     FactorAgreement,
     FactorFold,
     FormulaInput,
     LegacyMetric,
     ProcessConsistency,
+    ResultFold,
+    RouteCells,
     RouteFactor,
     RouteLink,
     RouteValueSpread,
@@ -46,8 +48,8 @@ from capa_simulation.services.legacy_comparison import (
     describe_ratios,
     difference_distribution,
     factor_agreement,
-    fold_route_addend,
     fold_route_cells,
+    fold_route_result,
     folded_route_totals,
     group_spread,
     input_applies,
@@ -612,17 +614,76 @@ def test_dividing_by_the_carrying_column_folds_every_split_cell() -> None:
     assert fold("Shot수").testable == 0
 
 
-def test_a_same_unit_column_is_tried_by_subtraction() -> None:
+def _result(label: str) -> RouteFactor:
+    return next(factor for factor in WAFER_ROUTE_RESULTS if factor.label == label)
+
+
+def _split_cells(**columns: list[float]) -> RouteCells:
+    """경로 셋이 값 100·110·120 으로 갈리는 칸 하나 — 결과 칸 값은 `columns` 로 준다."""
     frame = pd.DataFrame(
         [
-            _route_row("A", f"P{index}", "Main", "WF", 100.0 + test, **{"TEST WF수(매)": test})
-            for index, test in enumerate((0.0, 10.0, 20.0))
+            _route_row(
+                "A",
+                f"P{index}",
+                "Main",
+                "WF",
+                value,
+                **{column: values[index] for column, values in columns.items()},
+            )
+            for index, value in enumerate((100.0, 110.0, 120.0))
         ]
     )
-    _, cells = route_cells(frame, "WF수(매)", legacy_grain(CONTRACT))
+    return route_cells(frame, "WF수(매)", legacy_grain(CONTRACT))[1]
 
-    assert fold_route_addend(cells) == AddendFold(testable=1, subtracted=1, added=0)
-    assert fold_route_addend(cells, "없는 칸") == AddendFold(testable=0, subtracted=0, added=0)
+
+def test_result_columns_are_kept_apart_from_the_candidates() -> None:
+    """`일 필요` 는 기존 시스템이 경로 값에서 만든 결과일 수 있다 — 설명 후보에 넣지 않는다."""
+    labels = {factor.label for factor in WAFER_ROUTE_FACTORS}
+
+    assert {factor.label for factor in WAFER_ROUTE_RESULTS} == {"일 필요", "TEST WF수(매)"}
+    assert labels.isdisjoint({"일 필요", "TEST WF수(매)"})
+
+
+def test_a_same_unit_result_column_is_tried_by_subtraction() -> None:
+    cells = _split_cells(**{"TEST WF수(매)": [0.0, 10.0, 20.0]})
+
+    assert fold_route_result(cells, _result("TEST WF수(매)")) == ResultFold(
+        "TEST WF수(매)", additive=True, testable=1, constant=0, equal=0, inverse=1, forward=0
+    )
+
+
+def test_a_result_column_equal_to_the_value_explains_nothing() -> None:
+    """결과 칸이 곧 경로 값이면 빼면 0 으로 「한 값」이 되지만 설명이 아니다 — 따로 센다."""
+    cells = _split_cells(**{"TEST WF수(매)": [100.0, 110.0, 120.0]})
+
+    assert fold_route_result(cells, _result("TEST WF수(매)")) == ResultFold(
+        "TEST WF수(매)", additive=True, testable=1, constant=0, equal=1, inverse=0, forward=0
+    )
+
+
+def test_a_daily_result_column_folds_by_division_but_stays_a_result() -> None:
+    """`일 필요` = 경로 값 ÷ 30 이면 나누면 한 값이 된다 — 원인이 아니라 결과라서 결과 칸 표에
+    든다."""
+    cells = _split_cells(**{"일 필요": [100.0 / 30, 110.0 / 30, 120.0 / 30]})
+
+    fold = fold_route_result(cells, _result("일 필요"))
+
+    assert (fold.additive, fold.testable, fold.equal, fold.inverse, fold.forward) == (
+        False,
+        1,
+        0,
+        1,
+        0,
+    )
+
+
+def test_route_cells_do_not_mix_rows_that_share_an_index() -> None:
+    frame = _wafer_routes()
+    frame.index = [0] * len(frame)
+
+    spread, _ = route_cells(frame, "WF수(매)", legacy_grain(CONTRACT))
+
+    assert spread == RouteValueSpread(cells=3, split=3, route_cells=3, route_split=2)
 
 
 def test_factor_agreement_tells_following_from_inverse_and_unrelated() -> None:

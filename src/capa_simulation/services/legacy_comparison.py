@@ -844,16 +844,18 @@ WAFER_ROUTE_ATTRIBUTES: tuple[str, ...] = (
     "Step수",
     "Para",
 )
-# 원천 경로 값과 같은 단위(매)라 곱·나눗셈이 아니라 더하기·빼기로 견주는 칸.
-WAFER_ROUTE_ADDEND = "TEST WF수(매)"
 
 
 @dataclass(frozen=True)
 class RouteFactor:
-    """경로 값을 가를 후보 하나 — 원천 경로 칸(여럿이면 곱)."""
+    """경로 값을 가를 후보 하나 — 원천 경로 칸(여럿이면 곱).
+
+    `additive` 면 경로 값과 같은 단위라 곱·나눗셈이 아니라 더하기·빼기로 견준다.
+    """
 
     label: str
     columns: tuple[str, ...]
+    additive: bool = False
 
 
 WAFER_ROUTE_FACTORS: tuple[RouteFactor, ...] = (
@@ -866,7 +868,13 @@ WAFER_ROUTE_FACTORS: tuple[RouteFactor, ...] = (
     RouteFactor("Step수", ("Step수",)),
     RouteFactor("Para", ("Para",)),
     RouteFactor("Shot수", ("Shot수",)),
+)
+# 기존 시스템이 경로마다 실어 보낸 **결과** 칸. 원천 경로 값에서 만들어졌을 수 있어(인과 방향을
+# 모른다) 설명 후보와 따로 센다 — 그 칸으로 갈림이 풀려도 원인이 아니라 같이 움직인다는 뜻이다.
+# `TEST WF수(매)` 는 경로 값과 같은 단위(매)라 빼기·더하기로 본다.
+WAFER_ROUTE_RESULTS: tuple[RouteFactor, ...] = (
     RouteFactor("일 필요", ("일 필요",)),
+    RouteFactor("TEST WF수(매)", ("TEST WF수(매)",), additive=True),
 )
 
 
@@ -928,7 +936,11 @@ def route_cells(
     *,
     tolerance: float = ROUTE_SPLIT_TOLERANCE,
 ) -> tuple[RouteValueSpread, RouteCells]:
-    """기존 값이 한 번만 실린다고 본 칸(`grain`, 보통 `legacy_grain`)이 경로마다 갈리는지 센다."""
+    """기존 값이 한 번만 실린다고 본 칸(`grain`, 보통 `legacy_grain`)이 경로마다 갈리는지 센다.
+
+    행 번호를 새로 매긴다 — 인덱스가 겹친 프레임이 와도 행끼리 섞이지 않는다.
+    """
+    core = core.reset_index(drop=True)
     values = pd.to_numeric(core[value_column], errors="coerce").astype("float64")
     present = core.loc[values.notna()]
     cell_all = _key_ids(present, grain)
@@ -1032,33 +1044,49 @@ def fold_route_cells(
 
 
 @dataclass(frozen=True)
-class AddendFold:
-    """같은 단위 칸(`TEST WF수(매)`)을 빼거나 더하면 갈리는 칸이 한 값이 되는가."""
+class ResultFold:
+    """결과 칸(`WAFER_ROUTE_RESULTS`) 하나로 갈리는 칸이 한 값이 되는가. 값은 담지 않는다.
 
+    `equal` — 모든 행에서 그 칸이 경로 값과 같은 칸. 그 칸이 곧 경로 값이라 아무것도 설명하지
+    않으므로 `inverse`(÷, 같은 단위면 −)·`forward`(×, 같은 단위면 +) 에서 뺀다.
+    """
+
+    label: str
+    additive: bool
     testable: int
-    subtracted: int
-    added: int
+    constant: int
+    equal: int
+    inverse: int
+    forward: int
 
 
-def fold_route_addend(
-    cells: RouteCells, column: str = WAFER_ROUTE_ADDEND, *, tolerance: float = ROUTE_SPLIT_TOLERANCE
-) -> AddendFold:
-    """모든 행에 그 칸 값(0 포함)이 있는 갈리는 칸만 본다. 칸이 없으면 모두 0 이다."""
-    if column not in cells.frame.columns:
-        return AddendFold(testable=0, subtracted=0, added=0)
+def fold_route_result(
+    cells: RouteCells, factor: RouteFactor, *, tolerance: float = ROUTE_SPLIT_TOLERANCE
+) -> ResultFold:
+    """모든 행에 그 칸 값이 있는 갈리는 칸만 본다(곱 칸은 양수, 같은 단위 칸은 0 도 된다)."""
     rows = cells.split_rows()
     cell = cells.cell.loc[rows]
     values = cells.values.loc[rows]
-    addend = pd.to_numeric(cells.frame.loc[rows, column], errors="coerce").astype("float64")
-    complete = addend.notna().groupby(cell).all()
-    testable = cell.isin(set(complete.index[complete]))
-    cell = cell.loc[testable]
-    return AddendFold(
+    candidate = route_factor_values(cells.frame.loc[rows], factor)
+    usable = candidate.notna() if factor.additive else candidate.gt(0)
+    complete = usable.groupby(cell).all()
+    keep = cell.isin(set(complete.index[complete]))
+    cell = cell.loc[keep]
+    values = values.loc[keep]
+    candidate = candidate.loc[keep]
+    equal = (values - candidate).abs().le(values.abs() * tolerance).groupby(cell).all()
+    if factor.additive:
+        inverse, forward = values - candidate, values + candidate
+    else:
+        inverse, forward = values / candidate, values * candidate
+    return ResultFold(
+        label=factor.label,
+        additive=factor.additive,
         testable=int(cell.nunique()),
-        subtracted=int(
-            (~_varies(values.loc[testable] - addend.loc[testable], cell, tolerance)).sum()
-        ),
-        added=int((~_varies(values.loc[testable] + addend.loc[testable], cell, tolerance)).sum()),
+        constant=int((~_varies(candidate, cell, tolerance)).sum()),
+        equal=int(equal.sum()),
+        inverse=int((~_varies(inverse, cell, tolerance) & ~equal).sum()),
+        forward=int((~_varies(forward, cell, tolerance) & ~equal).sum()),
     )
 
 

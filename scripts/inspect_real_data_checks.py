@@ -40,13 +40,12 @@ import re
 import sys
 import time
 from collections import Counter
-from collections.abc import Callable, Hashable, Iterable, Sequence
+from collections.abc import Callable, Hashable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from decimal import Decimal
 from functools import partial
 from pathlib import Path
-from typing import Final, Protocol, TypeVar, cast
+from typing import Final, Protocol, TextIO, TypeVar, cast
 
 import duckdb
 import numpy as np
@@ -130,8 +129,8 @@ from capa_simulation.services.legacy_comparison import (  # noqa: E402
     ROUTE_SPLIT_TOLERANCE,
     SUSPECT_GROUP,
     TIGHT_TOLERANCE,
-    WAFER_ROUTE_ADDEND,
     WAFER_ROUTE_FACTORS,
+    WAFER_ROUTE_RESULTS,
     DifferenceDistribution,
     FormulaInput,
     LegacyMetric,
@@ -145,8 +144,8 @@ from capa_simulation.services.legacy_comparison import (  # noqa: E402
     describe_ratios,
     difference_distribution,
     factor_agreement,
-    fold_route_addend,
     fold_route_cells,
+    fold_route_result,
     folded_route_totals,
     group_spread,
     hourly_rate,
@@ -295,11 +294,12 @@ WHERE impala_insert_time >= '{start_date}'
   AND impala_insert_time <  '{end_date}'
 GROUP BY catb_sim_info_id
 """
-# 여러 날 적재가 사본인지 보려고 표본 밖에서 더 고르는 여러 날 코드 수, 그리고 코드마다
-# 앱 SQL 로 다시 받아 견줄 적재일 수(마지막 적재일 포함). 하루씩 받는다 — 한 번에 받으면
-# 매일 다시 적재된 코드는 적재일 수만큼 부푼 프레임(사내 표본 하나가 32일)이 메모리에 오른다.
-EXTRA_COPY_CODES: Final = 2
-COPY_CHECK_DAYS: Final = 12
+# 사본 확인의 기본 — 여러 날 코드 둘(표본 것 먼저), 코드마다 적재일 넷(첫 적재일·가운데·
+# 끝 앞날·끝 날)을 앱 SQL 로 하루씩 다시 받는다 → 하루치 상세 조회 최대 8번. 사내 상세 한
+# 번이 3~26초라 그보다 많으면 8-5 가 수십 분으로 는다. 한 번에 받지 않는 것은 매일 다시
+# 적재된 코드가 적재일 수만큼 부푼 프레임(사내 표본 하나가 32일)으로 메모리에 오르기 때문이다.
+DEFAULT_COPY_CODES: Final = 2
+DEFAULT_COPY_DAYS: Final = 4
 
 # 다른 시나리오에서 만든 데이터셋의 원천 종류(`components/` 의 복제·월 병합·연도 이동이 적는 값).
 DERIVED_SOURCE_TYPES: Final[tuple[str, ...]] = (
@@ -1239,7 +1239,22 @@ def _wafer_route_tables(cells: RouteCells) -> list[str]:
                 _count(fold.multiplied),
             ]
         )
-    addend = fold_route_addend(cells)
+    result_rows: list[list[str]] = []
+    for factor in WAFER_ROUTE_RESULTS:
+        result = fold_route_result(cells, factor)
+        inverse, forward = _count(result.inverse), _count(result.forward)
+        result_rows.append(
+            [
+                f"`{result.label}`",
+                _count(result.testable),
+                _count(result.constant),
+                _count(result.equal),
+                "-" if result.additive else inverse,
+                "-" if result.additive else forward,
+                inverse if result.additive else "-",
+                forward if result.additive else "-",
+            ]
+        )
     return [
         "갈리는 칸을 무엇이 가르나 — 칸 안에서 그 칸 값마다 `WF수(매)` 가 한 값이면 "
         "「가름」, 칸 값이 행마다 달라 저절로 그렇게 된 것은 「자명」(증거가 못 된다).",
@@ -1249,7 +1264,7 @@ def _wafer_route_tables(cells: RouteCells) -> list[str]:
         "경로 칸으로 나누거나 곱하면 한 값이 되나 — 갈리는 칸 가운데 모든 행에 그 칸 "
         "값(양수)이 있는 칸만 본다. 「÷ 로 한 값」이 `값이 다 있는 칸` − `칸 안에서 한 값` 에 "
         "가까우면 원천 경로 값 = 계획 줄 값 × 그 칸이다(칸 안의 비만 보므로 그 칸의 "
-        "단위·배율과 무관하다).",
+        "단위·배율과 무관하다). 같이 움직인다는 뜻이지 원인이라는 뜻은 아니다.",
         "",
         *_table(
             [
@@ -1262,9 +1277,25 @@ def _wafer_route_tables(cells: RouteCells) -> list[str]:
             fold_rows,
         ),
         "",
-        f"- `{WAFER_ROUTE_ADDEND}`(같은 단위) — 모든 행에 값이 있는 갈리는 칸 "
-        f"{addend.testable:,} 가운데 빼면 한 값 {addend.subtracted:,} · 더하면 한 값 "
-        f"{addend.added:,}",
+        "결과 칸 — 기존 시스템이 경로마다 실어 보낸 결과라 원천 경로 값에서 만들어졌을 수 "
+        "있다(인과 "
+        "방향을 모른다). 한 값이 되어도 설명이 아니라 같이 움직인다는 뜻이다. `값과 같은 칸` 은 "
+        "그 칸이 곧 "
+        "경로 값인 칸이라 나머지 칸에서 뺐다. `TEST WF수(매)` 는 같은 단위라 빼기·더하기로 본다.",
+        "",
+        *_table(
+            [
+                "결과 칸",
+                "값이 다 있는 칸",
+                "칸 안에서 한 값",
+                "값과 같은 칸",
+                "÷ 로 한 값",
+                "× 로 한 값",
+                "− 로 한 값",
+                "+ 로 한 값",
+            ],
+            result_rows,
+        ),
         "",
     ]
 
@@ -1477,7 +1508,10 @@ def check_legacy(session: Session) -> list[str]:
     lines.extend([*_table(_DIFFERENCE_HEADERS, [_difference_row(r) for r in load_results]), ""])
 
     required = _calculate_required(tables)
-    lines.extend(_wafer_route_section(core, tables, required, grain, contract))
+    try:
+        lines.extend(_wafer_route_section(core, tables, required, grain, contract))
+    except Exception as exc:  # 이 절이 멈춰도 소요대수·PCB 절과 다음 블록은 잰다
+        lines.extend([f"- Wafer `WF수(매)` 경로 값 — {_failure(exc)}", ""])
     lines.extend(
         _requirement_section(_with_raw_columns(core, raw, ROUTE_CATEGORIES), tables, required)
     )
@@ -2242,72 +2276,225 @@ def _day_rows(frame: pd.DataFrame | None) -> dict[date, int]:
     return result
 
 
+_EMPTY: Final = "\x00"
+
+
+def canonical_values(values: pd.Series) -> pd.Series:
+    """한 칸의 값을 견주기 꼴로 — 숫자로 읽히면 실수 글자로, 아니면 앞뒤 공백을 뗀 글자로.
+
+    날마다 같은 칸이 정수·실수·숫자 글자·빈 글자 섞인 `object`·참거짓으로 갈려 와도 같은
+    값이 같은 꼴이 되게 한다(빈 글자는 빈 값, 참·거짓은 1·0). 값마다 따로 읽으므로 같은 칸의
+    다른 값에 기대지 않는다.
+    """
+    if pd.api.types.is_bool_dtype(values):
+        return values.astype("Float64").astype("string").fillna(_EMPTY)
+    text = values.astype("string").str.strip()
+    text = text.mask(text.eq("").fillna(False).astype(bool)).replace({"True": "1", "False": "0"})
+    numeric = pd.to_numeric(text, errors="coerce")
+    canonical = numeric.astype("Float64").astype("string")
+    return canonical.where(numeric.notna(), text).fillna(_EMPTY)
+
+
 def row_signatures(frame: pd.DataFrame) -> pd.Series:
     """행마다 내용 해시 — 모든 칸이 같아야 같은 행이다(적재 시각은 상세 SQL 에 없다).
 
-    날마다 갈리는 dtype 추론에 기대지 않는다. 빈 값이 낀 날은 정수 칸이 실수로 읽히고, 어떤 날은
-    숫자 칸이 파이썬 정수·실수를 담은 `object` 로 온다. 그래서 숫자 칸과 숫자만 담은 `object` 칸은
-    실수로, 나머지는 글자로 바꾼 뒤 해시한다(숫자처럼 보이는 글자는 글자로 둔다). 해시만 남긴다.
+    칸마다 `canonical_values` 를 거친 뒤 해시한다. 날마다 갈리는 dtype 추론으로 같은 행이
+    「값이 바뀐 행」으로 헛보이지 않게 한다. 해시만 남기고 값은 버린다.
     """
-    columns: dict[str, pd.Series] = {}
-    for name in sorted(frame.columns, key=str):
-        values = frame[name]
-        if _holds_numbers(values):
-            text = pd.to_numeric(values, errors="coerce").astype("float64").astype("string")
-        else:
-            text = values.astype("string")
-        columns[str(name)] = text.fillna("\x00")
+    names = sorted(dict.fromkeys(str(name) for name in frame.columns))
+    if not names:
+        return pd.Series(np.zeros(len(frame), dtype="uint64"), index=frame.index)
+    unique = frame.loc[:, ~frame.columns.duplicated()]
+    unique.columns = [str(name) for name in unique.columns]
+    columns = {name: canonical_values(unique[name]) for name in names}
     return pd.util.hash_pandas_object(pd.DataFrame(columns, index=frame.index), index=False)
 
 
-def _holds_numbers(values: pd.Series) -> bool:
-    """숫자 dtype(참·거짓 제외)이거나, 빈 값을 뺀 값이 모두 파이썬·넘파이 숫자인 `object` 칸."""
-    if pd.api.types.is_bool_dtype(values):
-        return False
-    if pd.api.types.is_numeric_dtype(values):
-        return True
-    if values.dtype != object:
-        return False
-    present = [value for value in values.tolist() if not pd.isna(value)]
-    return bool(present) and all(
-        isinstance(value, (int, float, Decimal, np.number)) and not isinstance(value, bool)
-        for value in present
-    )
+KeySet = frozenset[tuple[str, ...]]
+# 경로 키 13 — `RQ_REQB` 업무 키. `양산구분` 은 `CS` 에서 나오는 파생 칸이라 원천에 없고 빼도
+# 수가 같다.
+ROUTE_KEY_COLUMNS: Final[tuple[str, ...]] = tuple(key for key in REQB_COLUMNS if key != "양산구분")
 
 
-def plan_line_key_set(frame: pd.DataFrame) -> set[tuple[object, ...]] | None:
+def _key_tuples(frame: pd.DataFrame, keys: Sequence[str]) -> KeySet:
+    canonical = pd.DataFrame({key: canonical_values(frame[key]) for key in keys}, index=frame.index)
+    return frozenset(tuple(str(value) for value in row) for row in canonical.to_numpy().tolist())
+
+
+def _renamed(frame: pd.DataFrame) -> pd.DataFrame:
+    """칸 이름을 앱처럼 `SOURCE_COLUMN_MAPPING` 으로 맞춘다(엔진이 별칭을 소문자로 돌려줄 때)."""
+    renamed = frame.rename(columns=dict(SOURCE_COLUMN_MAPPING))
+    return renamed.loc[:, ~renamed.columns.duplicated()]
+
+
+def plan_line_key_set(frame: pd.DataFrame) -> KeySet | None:
     """상세 조회 결과의 계획 줄 업무 키(`RQ_PKG_PLAN` 업무 키). 칸이 모자라면 `None`.
 
-    `양산구분` 은 `CS` 에서 나오는 파생 칸이라 원천에 없고 빼도 키 수가 같다. 칸 이름은 앱처럼
-    `SOURCE_COLUMN_MAPPING` 으로 맞춘다.
+    `양산구분` 은 `CS` 에서 나오는 파생 칸이라 원천에 없고 빼도 키 수가 같다.
     """
-    renamed = frame.rename(columns=dict(SOURCE_COLUMN_MAPPING))
+    renamed = _renamed(frame)
     keys = [
         key for key in load_core_data_contract().derived_keys["RQ_PKG_PLAN"] if key != "양산구분"
     ]
     if any(key not in renamed.columns for key in keys):
         return None
-    return _key_set(renamed, keys)
+    return _key_tuples(renamed, keys)
+
+
+def route_key_set(frame: pd.DataFrame) -> KeySet | None:
+    """상세 조회 결과의 경로 키 13(`ROUTE_KEY_COLUMNS`). `공정` 이 없으면 `None`.
+
+    상세 SQL 은 열셋을 모두 돌려준다. 일부가 빠진 결과면 있는 칸만으로 센다(`공정` 은 꼭
+    있어야 한다).
+    """
+    renamed = _renamed(frame)
+    if "공정" not in renamed.columns:
+        return None
+    return _key_tuples(renamed, [key for key in ROUTE_KEY_COLUMNS if key in renamed.columns])
+
+
+@dataclass(frozen=True)
+class DayLoad:
+    """적재일 하루치 — 행 수, 행 서명의 중복 수, 계획 줄 키, 경로 키. 값은 담지 않는다."""
+
+    day: date
+    rows: int
+    counts: Counter[int]
+    plan_keys: KeySet | None
+    route_keys: KeySet | None
+
+    @property
+    def row_set(self) -> set[int]:
+        return set(self.counts)
+
+
+def day_load(day: date, frame: pd.DataFrame) -> DayLoad:
+    renamed = _renamed(frame)
+    counts = Counter(int(value) for value in row_signatures(renamed).tolist())
+    return DayLoad(
+        day=day,
+        rows=len(renamed),
+        counts=counts,
+        plan_keys=plan_line_key_set(renamed) if len(renamed) else None,
+        route_keys=route_key_set(renamed) if len(renamed) else None,
+    )
+
+
+# 앞 날이 기준 날(마지막 적재일)과 어떤 사이인가. 판정 칸과 런북 8-5 판정표가 이 이름을 쓴다.
+SAME_DAY: Final = "같음"
+SUBSET_DAY: Final = "⊆"
+SUPERSET_DAY: Final = "⊇"
+CHANGED_DAY: Final = "값 바뀜"
+ROUTE_SPLIT_DAY: Final = "경로 나눠"
+PLAN_SPLIT_DAY: Final = "계획 줄 나눠"
+UNDECIDED_DAY: Final = "가를 수 없음"
+
+
+def _nested(left: KeySet, right: KeySet) -> bool:
+    return left <= right or left >= right
+
+
+def day_relation(day: DayLoad, reference: DayLoad) -> str:
+    """하루치를 기준 날과 견준다 — 행 집합이 같다·안에 든다·감싼다, 아니면 키로 가른다.
+
+    행 집합이 서로 안에 들지 않으면 키로 가른다 — 계획 줄 키 집합도 서로 안에 들지 않으면
+    「계획 줄 나눠」(날마다 다른 계획 줄을 실었다), 경로 키 집합이 서로 안에 들면 「값 바뀜」
+    (같은 경로의 값이 바뀌었다), 그 밖은 「경로 나눠」(같은 계획 줄의 다른 경로를 실었다).
+    경로 키를 셀 수 없으면 「가를 수 없음」.
+    """
+    rows, base = day.row_set, reference.row_set
+    if rows == base:
+        return SAME_DAY
+    if rows < base:
+        return SUBSET_DAY
+    if rows > base:
+        return SUPERSET_DAY
+    if (
+        day.plan_keys is not None
+        and reference.plan_keys is not None
+        and not _nested(day.plan_keys, reference.plan_keys)
+    ):
+        return PLAN_SPLIT_DAY
+    if day.route_keys is None or reference.route_keys is None:
+        return UNDECIDED_DAY
+    if _nested(day.route_keys, reference.route_keys):
+        return CHANGED_DAY
+    return ROUTE_SPLIT_DAY
+
+
+# 판정 칸의 이름 — 런북 8-5 판정표의 줄과 같다.
+COPY_VERDICTS: Final[tuple[tuple[str, str], ...]] = (
+    (SUBSET_DAY, "누적 적재"),
+    (SUPERSET_DAY, "뒤 적재에서 지워짐"),
+    (CHANGED_DAY, "같은 키 값 바뀜"),
+    (ROUTE_SPLIT_DAY, "경로 나눠 적재"),
+    (PLAN_SPLIT_DAY, "계획 줄 나눠 적재"),
+    (UNDECIDED_DAY, "가를 수 없음"),
+)
 
 
 @dataclass
 class CopyCheck:
-    """여러 날 적재된 코드 하나 — 날마다 받은 행이 마지막 적재일의 사본인가. 코드는 없다."""
+    """여러 날 적재된 코드 하나 — 앞 날들이 기준 날(마지막 적재일)과 어떤 사이인가. 코드는 없다."""
 
     extra: bool
     load_days: int = 0
     day_rows: tuple[int, ...] = ()
     examined: int = 0
+    empty_days: int = 0
+    reference: str = ""
+    relations: Counter[str] = field(default_factory=Counter)
+    same_counts: int = 0
     rows: int = 0
     distinct_rows: int = 0
-    last_rows: int = 0
     plan_keys: int | None = None
-    last_plan_keys: int | None = None
-    same_days: int = 0
-    differing_days: int = 0
-    subset_days: int = 0
-    missing_from_last: int = 0
+    reference_plan_keys: int | None = None
+    route_keys: int | None = None
+    reference_route_keys: int | None = None
+    missing_from_reference: int = 0
     failure: str | None = None
+
+    @property
+    def compared(self) -> int:
+        return sum(self.relations.values())
+
+    def verdict(self) -> str:
+        if self.compared == 0:
+            return "견줄 날 없음"
+        kinds = [name for relation, name in COPY_VERDICTS if self.relations[relation]]
+        if not kinds:
+            return "통째 사본"
+        return kinds[0] if len(kinds) == 1 else "섞임: " + " · ".join(kinds)
+
+
+def _union_size(sets: Sequence[KeySet | None]) -> int | None:
+    if any(keys is None for keys in sets):
+        return None
+    return len(frozenset[tuple[str, ...]]().union(*cast(Sequence[KeySet], sets)))
+
+
+def _reference_label(
+    picked_last: date,
+    reference: DayLoad,
+    in_progress: DayLoad | None,
+    window: QueryWindow,
+    *,
+    bounded: bool,
+) -> str:
+    if in_progress is not None:
+        states = {
+            SAME_DAY: "기준 날과 같음",
+            SUBSET_DAY: "기준 날의 일부(⊆)",
+            SUPERSET_DAY: "기준 날을 감쌈(⊇)",
+        }
+        relation = day_relation(in_progress, reference) if in_progress.rows else ""
+        state = "0행" if not in_progress.rows else states.get(relation, relation)
+        return f"끝 앞날 — 끝 날은 오늘이라 적재 중일 수 있어 뺐다(오늘은 {state})"
+    if reference.day != picked_last:
+        return "끝 앞날 — 끝 날이 0행"
+    if not bounded and reference.day >= window.end_date:
+        return "끝 적재일 — 창 끝날에 닿음(창 밖에도 있을 수 있다)"
+    return "끝 적재일"
 
 
 def check_copies(
@@ -2316,12 +2503,16 @@ def check_copies(
     window: QueryWindow,
     *,
     extra: bool,
-    max_days: int = COPY_CHECK_DAYS,
+    today: date | None = None,
+    bounded: bool = True,
+    max_days: int = DEFAULT_COPY_DAYS,
 ) -> CopyCheck:
-    """`window` 안의 적재일을 세고 마지막 적재일과 그 앞 날들(첫 적재일부터 고르게)을 견준다.
+    """`window` 안의 적재일을 세고 첫 적재일·가운데·끝 앞날·끝 날을 하루씩 받아 견준다.
 
     하루치는 앱과 같은 상세 SQL 을 그날 하루 창으로 부른 것이다 — 상세 SQL 이 적재 시각으로만
-    거르므로 그 창이 곧 그날 적재분이다. 날마다의 행은 중복 수까지 같아야 「같은 날」이다.
+    거르므로 그 창이 곧 그날 적재분이다. 기준 날은 끝 적재일이다. 끝 날이 `today` 면 아직 적재
+    중일 수 있어 그 앞날을 기준으로 삼고, 0행인 날은 따로 세고 견주지 않는다. `bounded` 가
+    아니면(전 코드 조회가 없어 등록일 창으로 셌으면) 끝 적재일이 창 끝날에 닿을 때 그렇게 적는다.
     """
     result = CopyCheck(extra=extra)
     try:
@@ -2334,51 +2525,64 @@ def check_copies(
     result.day_rows = tuple(by_day[day] for day in days)
     if len(days) < 2:
         return result
-    last = days[-1]
-    others = _pick_evenly(days[:-1], max(max_days - 1, 1))
+    picked = [*_pick_evenly(days[:-1], max(max_days, 2) - 1), days[-1]]
+    loads: list[DayLoad] = []
     try:
-        frame = probe.detail_frame(code, QueryWindow(start_date=last, end_date=last))
-        last_counts = Counter(row_signatures(frame).tolist())
-        last_keys = plan_line_key_set(frame)
-        result.rows = result.last_rows = len(frame)
-        seen = set(last_counts)
-        keys = None if last_keys is None else set(last_keys)
-        for day in others:
+        for day in picked:
             frame = probe.detail_frame(code, QueryWindow(start_date=day, end_date=day))
-            counts = Counter(row_signatures(frame).tolist())
-            day_keys = plan_line_key_set(frame)
-            result.rows += len(frame)
-            if counts == last_counts:
-                result.same_days += 1
-            else:
-                result.differing_days += 1
-                result.subset_days += int(set(counts) <= set(last_counts))
-            seen |= set(counts)
-            keys = None if keys is None or day_keys is None else keys | day_keys
+            loads.append(day_load(day, frame))
     except Exception as exc:  # 사내 패키지 예외 종류를 모른다
         result.failure = _bdq_failure(exc)
         return result
-    result.examined = len(others) + 1
+    result.examined = len(loads)
+    result.empty_days = sum(1 for load in loads if load.rows == 0)
+    in_progress = loads[-1] if today is not None and picked[-1] >= today else None
+    candidates = [load for load in loads if load.rows > 0 and load is not in_progress]
+    if not candidates:
+        result.reference = "0행뿐"
+        return result
+    reference = candidates[-1]
+    compared = candidates[:-1]
+    result.reference = _reference_label(picked[-1], reference, in_progress, window, bounded=bounded)
+    result.relations = Counter(day_relation(load, reference) for load in compared)
+    result.same_counts = sum(1 for load in compared if load.counts == reference.counts)
+    seen = set[int]().union(*(load.row_set for load in candidates))
+    result.rows = sum(load.rows for load in candidates)
     result.distinct_rows = len(seen)
-    result.missing_from_last = len(seen - set(last_counts))
-    result.plan_keys = None if keys is None else len(keys)
-    result.last_plan_keys = None if last_keys is None else len(last_keys)
+    result.missing_from_reference = len(seen - reference.row_set)
+    result.plan_keys = _union_size([load.plan_keys for load in candidates])
+    result.route_keys = _union_size([load.route_keys for load in candidates])
+    result.reference_plan_keys = _union_size([reference.plan_keys])
+    result.reference_route_keys = _union_size([reference.route_keys])
     return result
+
+
+@dataclass(frozen=True)
+class CopyTarget:
+    code: str
+    extra: bool
+    window: QueryWindow
+    bounded: bool
 
 
 def _copy_targets(
     picked: Sequence[str],
     results: dict[str, SampleResult],
     loads: CodeLoadDays | None,
-) -> list[tuple[str, bool, QueryWindow]]:
-    """(코드, 표본 밖에서 더했나, 적재일을 셀 창). 표본 가운데 여러 날 코드와 더할 여러 날 코드.
+    *,
+    max_codes: int = DEFAULT_COPY_CODES,
+) -> list[CopyTarget]:
+    """사본을 볼 코드 — 표본의 여러 날 코드(적재일이 많은 순)를 먼저, 모자라면 전 코드 조회의
+    여러 날 코드에서 고르게 채워 모두 `max_codes` 개까지.
 
-    창은 표본의 넓은 창에 전 코드 조회가 준 첫·끝 적재일을 더한 것이다 — 매일 다시 적재되는 코드는
-    등록일 ±30 일 창 밖에서도 적재가 이어져, 그 창의 끝날을 「마지막 적재일」로 잘못 보게 된다.
-    더할 코드는 여러 날 코드를 (적재일 수, 끝 적재일) 순으로 세워 고르게 고른다.
+    창은 표본의 넓은 창에 전 코드 조회가 준 첫·끝 적재일을 더한 것이다 — 매일 다시 적재되는
+    코드는 등록일 ±30 일 창 밖에서도 적재가 이어져, 그 창의 끝날을 「끝 적재일」로 잘못 보게
+    된다. 전 코드 조회가 없으면 넓은 창만 쓰고 `bounded` 를 끈다.
     """
+    if max_codes <= 0:
+        return []
     spans = loads.spans if loads is not None else {}
-    targets: list[tuple[str, bool, QueryWindow]] = []
+    sampled: list[tuple[int, CopyTarget]] = []
     for code in picked:
         result = results[code]
         span = spans.get(code)
@@ -2391,15 +2595,19 @@ def _copy_targets(
                 start_date=min(window.start_date, span.first),
                 end_date=max(window.end_date, span.last),
             )
-        targets.append((code, False, window))
-    sampled = set(picked)
+        sampled.append((days, CopyTarget(code, False, window, span is not None)))
+    sampled.sort(key=lambda item: -item[0])
+    targets = [target for _, target in sampled[:max_codes]]
+    chosen = set(picked)
     candidates = sorted(
-        (code for code, span in spans.items() if span.days > 1 and code not in sampled),
+        (code for code, span in spans.items() if span.days > 1 and code not in chosen),
         key=lambda code: (spans[code].days, spans[code].last, code),
     )
-    for code in _pick_evenly(candidates, EXTRA_COPY_CODES):
+    for code in _pick_evenly(candidates, max_codes - len(targets)):
         span = spans[code]
-        targets.append((code, True, QueryWindow(start_date=span.first, end_date=span.last)))
+        targets.append(
+            CopyTarget(code, True, QueryWindow(start_date=span.first, end_date=span.last), True)
+        )
     return targets
 
 
@@ -2408,12 +2616,16 @@ _COPY_HEADERS: Final = (
     "고른 길",
     "적재일",
     "날별 행 최소 · 중앙 · 최대",
-    "본 날",
+    "기준 날",
+    "견준 날(0행 날)",
     "본 날 행 → 고유 행",
-    "마지막 날 행",
-    "계획 줄 키 본 날 전체 / 마지막 날",
-    "마지막 날과 같은 날 / 다른 날(그 가운데 마지막 날에 다 든 날)",
-    "마지막 날에 없는 고유 행",
+    "계획 줄 키 전체 / 기준 날",
+    "경로 키 전체 / 기준 날",
+    "기준 날과 같은 날(중복 수까지 같은 날)",
+    "⊆ 기준 · ⊇ 기준",
+    "그 밖 — 값 바뀜 · 경로 나눠 · 계획 줄 나눠",
+    "기준 날에 없는 고유 행",
+    "판정",
 )
 
 
@@ -2428,80 +2640,125 @@ def _copy_row(index: int, check: CopyCheck) -> list[str]:
         f"{max(check.day_rows):,}"
     )
     if check.examined == 0:
-        return [*head, _count(check.load_days), day_rows, *["-"] * (len(_COPY_HEADERS) - 4)]
+        return [
+            *head,
+            _count(check.load_days),
+            day_rows,
+            *["-"] * (len(_COPY_HEADERS) - 5),
+            "여러 날이 아님",
+        ]
+    relations = check.relations
+    undecided = relations[UNDECIDED_DAY]
     return [
         *head,
         _count(check.load_days),
         day_rows,
-        _count(check.examined),
+        check.reference or "-",
+        f"{check.compared:,} ({check.empty_days:,})",
         f"{check.rows:,} → {check.distinct_rows:,}",
-        _count(check.last_rows),
-        f"{_count(check.plan_keys)} / {_count(check.last_plan_keys)}",
-        f"{check.same_days:,} / {check.differing_days:,} ({check.subset_days:,})",
-        _count(check.missing_from_last),
+        f"{_count(check.plan_keys)} / {_count(check.reference_plan_keys)}",
+        f"{_count(check.route_keys)} / {_count(check.reference_route_keys)}",
+        f"{relations[SAME_DAY]:,} ({check.same_counts:,})",
+        f"{relations[SUBSET_DAY]:,} · {relations[SUPERSET_DAY]:,}",
+        f"{relations[CHANGED_DAY]:,} · {relations[ROUTE_SPLIT_DAY]:,} · "
+        f"{relations[PLAN_SPLIT_DAY]:,}" + (f" (가를 수 없음 {undecided:,})" if undecided else ""),
+        _count(check.missing_from_reference),
+        check.verdict(),
     ]
 
 
-def _copy_lines(
+def _copy_parts(
     probe: BigDataQueryProbe,
     picked: Sequence[str],
     results: dict[str, SampleResult],
     loads: CodeLoadDays | None,
-) -> list[str]:
+    *,
+    today: date,
+    max_codes: int,
+    max_days: int,
+) -> Iterator[list[str]]:
+    """사본 표를 머리·코드마다 한 줄·꼬리로 나눠 내준다 — 끝난 줄은 바로 찍힌다."""
+    days = max(max_days, 2)
     title = (
-        "**여러 날 적재 — 날마다 사본인가** — 표본 가운데 여러 날 적재된 코드와, 전 코드 "
-        f"조회의 여러 날 코드에서 고르게 고른 최대 {EXTRA_COPY_CODES}개(코드는 찍지 않는다)를 "
-        "적재일마다 앱과 같은 상세 SQL 로 하루씩 다시 받아 마지막 적재일의 행과 견준다(마지막 "
-        f"날 포함 최대 {COPY_CHECK_DAYS}일, 첫 적재일부터 고르게). 모든 칸이 같아야 같은 행이다 "
-        "— 적재 시각은 그 SQL 에 없다."
+        "**여러 날 적재 — 날마다 사본인가** — 표본의 여러 날 코드(적재일이 많은 순)를 먼저, "
+        "모자라면 "
+        f"전 코드 조회의 여러 날 코드에서 고르게 채워 최대 {max_codes}개(코드는 찍지 않는다)를, 첫 "
+        f"적재일·가운데·끝 앞날·끝 날 가운데 최대 {days}일을 앱과 같은 상세 SQL 로 하루씩 다시 "
+        "받아 "
+        "기준 날(끝 적재일)과 견준다. 모든 칸이 같아야 같은 행이다 — 적재 시각은 그 SQL 에 "
+        "없고, 숫자로 "
+        "읽히는 값은 숫자로 맞춘 뒤 견준다."
     )
+    if max_codes <= 0 or max_days <= 0:
+        yield [
+            title,
+            "",
+            "- 사본 확인은 `--bdq-copy-codes 0` 또는 `--bdq-copy-days 0` 이라 껐다.",
+            "",
+        ]
+        return
     if any(results[code].load_failure for code in picked):
-        return [title, "", "- 적재일 조회가 실패해 건너뛴다.", ""]
-    targets = _copy_targets(picked, results, loads)
+        yield [title, "", "- 적재일 조회가 실패해 건너뛴다.", ""]
+        return
+    targets = _copy_targets(picked, results, loads, max_codes=max_codes)
     if not targets:
-        return [title, "", "- 여러 날 적재된 코드가 표본에도 전 코드 조회에도 없다.", ""]
-    rows = [
-        _copy_row(index, check_copies(probe, code, window, extra=extra))
-        for index, (code, extra, window) in enumerate(targets, start=1)
-    ]
-    return [
-        title,
+        yield [title, "", "- 여러 날 적재된 코드가 표본에도 전 코드 조회에도 없다.", ""]
+        return
+    yield [title, "", *_table(_COPY_HEADERS, [])]
+    for index, target in enumerate(targets, start=1):
+        check = check_copies(
+            probe,
+            target.code,
+            target.window,
+            extra=target.extra,
+            today=today,
+            bounded=target.bounded,
+            max_days=days,
+        )
+        yield _table(_COPY_HEADERS, [_copy_row(index, check)])[2:]
+    yield [
         "",
-        *_table(_COPY_HEADERS, rows),
-        "",
-        "- `마지막 날과 같은 날` 이 `본 날` − 1 전부이고 `마지막 날에 없는 고유 행` 이 0 이면 "
-        "날마다 같은 내용을 통째로 다시 적재한 것이다 — 기본 창이 놓친 행은 사본이다(런북 8-5).",
+        "- 판정 칸은 런북 8-5 판정표의 이름이다. `기준 날과 같은 날` 이 `견준 날` 전부면 「통째 "
+        "사본」 — "
+        "기본 창이 놓친 행은 사본이다.",
         "",
     ]
 
 
-def check_bigdataquery(
+def iter_bigdataquery(
     *,
     today: date,
     sample: int = DEFAULT_SAMPLE,
     margin_days: int = DEFAULT_MARGIN_DAYS,
     max_window: bool = True,
+    code_days: bool = True,
+    copy_codes: int = DEFAULT_COPY_CODES,
+    copy_days: int = DEFAULT_COPY_DAYS,
     probe: BigDataQueryProbe | None = None,
-) -> list[str]:
+) -> Iterator[list[str]]:
+    """8-5 를 조각마다 내준다 — 부르는 쪽이 조각이 끝나는 대로 찍는다."""
     lines = _heading("8-5", "BigDataQuery — 목록·등록일·코드·적재일·사본", "bdq")
     account = (
         "있음" if resolve_user_name() else "없음(Windows 는 없어도 된다 — 로그인 이름으로 묻는다)"
     )
     if probe is None:
         if not is_bigdataquery_package_available():
-            return [
+            yield [
                 *lines,
                 "- `bigdataquery` 패키지가 없다 — 사외 PC 이거나 맨 `uv sync` 가 지웠다"
                 "(4-1 의 되돌리기). "
                 "이 절은 건너뛴다.",
                 "",
             ]
+            return
         if not (is_bigdataquery_catalog_configured() and is_bigdataquery_adapter_configured()):
-            return [*lines, "- 목록 또는 상세 SQL 이 설정되지 않았다 — 이 절은 건너뛴다.", ""]
+            yield [*lines, "- 목록 또는 상세 SQL 이 설정되지 않았다 — 이 절은 건너뛴다.", ""]
+            return
         try:
             probe = CompanyProbe()
         except Exception as exc:  # 패키지를 불러오다 실패
-            return [*lines, f"- 패키지를 불러오지 못함 — {_bdq_failure(exc)}", ""]
+            yield [*lines, f"- 패키지를 불러오지 못함 — {_bdq_failure(exc)}", ""]
+            return
     lines.extend(
         [f"- 준비 — 패키지 있음 · SQL 설정됨 · 요청자 계정(`{BDQ_USER_NAME_ENV}`) {account}", ""]
     )
@@ -2543,7 +2800,8 @@ def check_bigdataquery(
     )
     widest = next((run for run in reversed(runs) if run.frame is not None), None)
     if widest is None or widest.frame is None:
-        return [*lines, "- 목록 조회가 모두 실패해 나머지는 건너뛴다.", ""]
+        yield [*lines, "- 목록 조회가 모두 실패해 나머지는 건너뛴다.", ""]
+        return
     frame = widest.frame
     lines.append(f"- 아래는 `{widest.label}` 목록 기준")
     lines.extend(describe_registered_at(frame["regist_data"]))
@@ -2564,11 +2822,18 @@ def check_bigdataquery(
         )
     lines.append(describe_codes(frame["simulation_code"]))
     lines.append("")
-    loads = _run_code_load_days(probe, widest.window)
-    lines.extend([*_table(["전 코드 적재일", "값"], _code_load_day_rows(loads)), ""])
+    yield lines
+
+    loads: CodeLoadDays | None = None
+    if code_days:
+        loads = _run_code_load_days(probe, widest.window)
+        yield [*_table(["전 코드 적재일", "값"], _code_load_day_rows(loads)), ""]
+    else:
+        yield ["- 전 코드 적재일 조회는 `--bdq-no-code-days` 라 건너뛰었다.", ""]
 
     if sample <= 0:
-        return [*lines, "- 표본 적재일 확인은 `--bdq-sample 0` 이라 건너뛰었다.", ""]
+        yield ["- 표본 적재일 확인은 `--bdq-sample 0` 이라 건너뛰었다.", ""]
+        return
     picked, results, valid, readable = _sample_codes(
         probe, frame, sample=sample, margin_days=margin_days, today=today
     )
@@ -2623,9 +2888,16 @@ def check_bigdataquery(
         ],
         *_load_day_stats(sampled),
     ]
-    lines.extend([*_table(["표본 적재일", "값"], rows), ""])
-    lines.extend(_copy_lines(probe, picked, results, loads))
-    return lines
+    yield [*_table(["표본 적재일", "값"], rows), ""]
+    yield from _copy_parts(
+        probe,
+        picked,
+        results,
+        loads,
+        today=today,
+        max_codes=copy_codes,
+        max_days=copy_days,
+    )
 
 
 # ---------------------------------------------------------------------------------- 실행
@@ -2663,10 +2935,27 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=f"{CATALOG_MAX_DAYS}일 목록 조회를 건너뛴다(너무 오래 걸릴 때)",
     )
     parser.add_argument(
+        "--bdq-no-code-days",
+        action="store_true",
+        help="전 코드 적재일 조회(GROUP BY 한 번)를 건너뛴다",
+    )
+    parser.add_argument(
+        "--bdq-copy-codes",
+        type=int,
+        default=DEFAULT_COPY_CODES,
+        help="사본을 볼 여러 날 코드 수(0 이면 사본 확인을 끈다)",
+    )
+    parser.add_argument(
+        "--bdq-copy-days",
+        type=int,
+        default=DEFAULT_COPY_DAYS,
+        help="코드마다 다시 받을 적재일 수(끝 날 포함, 0 이면 끈다, 2 보다 작으면 2)",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=None,
-        help="같은 출력을 이 파일에도 쓴다(UTF-8). 저장소 밖 경로를 준다 — 런북 8-0",
+        help="같은 출력을 이 파일에도 블록마다 덧붙인다(UTF-8). 저장소 밖 경로를 준다 — 런북 8-0",
     )
     parser.add_argument("--today", type=date.fromisoformat, default=None, help=argparse.SUPPRESS)
     return parser.parse_args(argv)
@@ -2680,6 +2969,64 @@ def _use_utf8_stdout() -> None:
             reconfigure(encoding="utf-8")
         except (ValueError, OSError):
             pass
+
+
+class _Sink:
+    """조각이 끝나는 대로 화면과 `--output` 파일에 쓴다 — 중간에 멈춰도 앞 조각은 남는다."""
+
+    def __init__(self, path: Path | None) -> None:
+        self._file: TextIO | None = (
+            None if path is None else path.open("w", encoding="utf-8", newline="\n")
+        )
+
+    def emit(self, text: str) -> None:
+        print(text, flush=True)
+        if self._file is not None:
+            self._file.write(text + "\n")
+            self._file.flush()
+
+    def close(self) -> None:
+        if self._file is not None:
+            self._file.close()
+
+
+_BLOCK_TITLES: Final[dict[str, str]] = {
+    "env": "8-1",
+    "legacy": "8-2",
+    "reqb": "8-3",
+    "equipment": "8-4",
+    "bdq": "8-5",
+}
+
+
+def _block_parts(
+    name: str,
+    session: Session,
+    args: argparse.Namespace,
+    *,
+    now: datetime,
+    today: date,
+    probe: BigDataQueryProbe | None,
+) -> Iterator[list[str]]:
+    if name == "env":
+        yield check_env(session, now=now)
+    elif name == "legacy":
+        yield check_legacy(session)
+    elif name == "reqb":
+        yield check_reqb(session)
+    elif name == "equipment":
+        yield check_equipment(session)
+    else:
+        yield from iter_bigdataquery(
+            today=today,
+            sample=args.bdq_sample,
+            margin_days=args.bdq_margin_days,
+            max_window=not args.bdq_no_max_window,
+            code_days=not args.bdq_no_code_days,
+            copy_codes=args.bdq_copy_codes,
+            copy_days=args.bdq_copy_days,
+            probe=probe,
+        )
 
 
 def main(argv: Sequence[str] | None = None, *, probe: BigDataQueryProbe | None = None) -> int:
@@ -2714,39 +3061,21 @@ def main(argv: Sequence[str] | None = None, *, probe: BigDataQueryProbe | None =
         print(_LOCK_MESSAGE)
         return 1
 
-    chunks = [
-        "<!-- inspect_real_data_checks.py — 아래 블록을 리뷰 문서 "
-        "「실데이터 확인」 절에 그대로 붙인다 -->\n"
-    ]
-    print(chunks[0])
+    sink = _Sink(None if args.output is None else Path(args.output))
     try:
+        sink.emit(
+            "<!-- inspect_real_data_checks.py — 아래 블록을 리뷰 문서 "
+            "「실데이터 확인」 절에 그대로 붙인다 -->\n"
+        )
         for name in CHECKS:
             if name not in selected:
                 continue
-            if name == "env":
-                block = check_env(session, now=now)
-            elif name == "legacy":
-                block = check_legacy(session)
-            elif name == "reqb":
-                block = check_reqb(session)
-            elif name == "equipment":
-                block = check_equipment(session)
-            else:
-                block = check_bigdataquery(
-                    today=today,
-                    sample=args.bdq_sample,
-                    margin_days=args.bdq_margin_days,
-                    max_window=not args.bdq_no_max_window,
-                    probe=probe,
-                )
-            chunks.append("\n".join(block))
-            print(chunks[-1])
+            try:
+                for part in _block_parts(name, session, args, now=now, today=today, probe=probe):
+                    sink.emit("\n".join(part))
+            except Exception as exc:  # 한 블록이 멈춰도 다음 블록은 잰다. 문구는 찍지 않는다
+                sink.emit(f"- `{_BLOCK_TITLES[name]}` 블록이 멈췄다 — {_failure(exc)}\n")
     finally:
         session.close()
-    if args.output is not None:
-        Path(args.output).write_bytes(("\n".join(chunks) + "\n").encode("utf-8"))
+        sink.close()
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

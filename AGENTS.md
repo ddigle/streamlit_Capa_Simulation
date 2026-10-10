@@ -2990,10 +2990,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **Wafer 경로 값 가르기**(2026-10-10 사용자 결정). 사내에서 Wafer `WF수(매)` 가 계획 줄 × WF 구분 안에서도
     경로마다 갈렸다(296키 중 287키 `값 불일치`). 신규 계산에는 경로마다 갈리는 Wafer 값이 없으므로(WF 경로의
     `부하량` 은 계획 줄 Wafer 그대로, 측정률은 대당 Capa 의 분모) `route_cells`·`split_route_cells`(무엇이
-    가르나)·`fold_route_cells`·`fold_route_addend`(경로 칸으로 나누거나 빼면 칸이 한 값이 되나 — 칸 안의 비만
-    보아 단위와 무관)·`factor_agreement`·`route_factor_by_key`(경로 키의 기존÷신규가 그 칸을 따라가나)·
-    `measured_wafer_load`(측정률을 부하로 옮긴 값)가 개수로 가른다. 후보 칸은 `WAFER_ROUTE_FACTORS`·
-    `WAFER_ROUTE_ATTRIBUTES` 한 곳에 둔다. 계획 줄 대조(`COMPARISONS`)는 그대로다.
+    가르나)·`fold_route_cells`(경로 칸으로 나누거나 곱하면 칸이 한 값이 되나 — 칸 안의 비만 보아 단위와
+    무관)·`fold_route_result`(결과 칸 `일 필요`·`TEST WF수(매)` — 경로 값에서 만들어졌을 수 있어 후보와 따로,
+    그 칸이 곧 경로 값인 칸은 뺀다)·`factor_agreement`·`route_factor_by_key`(경로 키의 기존÷신규가 그 칸을
+    따라가나)·`measured_wafer_load`(측정률을 부하로 옮긴 값)가 개수로 가른다. 후보 칸은
+    `WAFER_ROUTE_FACTORS`·`WAFER_ROUTE_RESULTS`·`WAFER_ROUTE_ATTRIBUTES` 한 곳에 둔다. 계획 줄
+    대조(`COMPARISONS`)는 그대로다.
 - `src/capa_simulation/components/tab_state.py`
   - 열린 탭을 서버가 알게 하는 `stateful_tabs` 와 판정용 `tab_is_hidden`. 차트가 든 탭은
     반드시 이것으로 만든다. 숨겨진 탭 안에서 Plotly 표를 그리면 글자 폭 측정이 0 이라
