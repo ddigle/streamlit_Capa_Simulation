@@ -1749,6 +1749,18 @@ pytest **1,256 통과·예상 실패 2개**(493.90초), worktree 격리 검사 �
   는 스냅샷(`load_revision`)으로 왕복을 보므로 그대로다. 샘플 관측(내장 합성 시드 96행 새
   부트스트랩): `ref_data` 649 → 21행, `ref_data`+`rev_data` 1,277 → 649행, 파일 5,189,632 →
   4,714,496바이트(−9.2%). `tests/test_duckdb_repository.py` 가 표마다 저장 위치를 고정한다.
+  - [x] **2026-10-10 사용자 승인 — 0033 이 지운다**(사내 리뷰 `202610071831` 의 1,484,071행·21 데이터셋).
+    읽는 곳 재점검: 리비전 표 14개의 `ref_data` 행을 값으로 읽는 코드는 여전히 없다 — `load_revision`·
+    `display_order_store` 첫 이관·`inspect_real_data_checks.py` 원천 대조는 `DATASET_TABLES` 둘만,
+    `compare_legacy_results.py` 는 리비전 1, 진단 스크립트 넷은 개수만 센다(지운 뒤 0), 시나리오 삭제는
+    소유 열로 지우기만, 스냅샷 내보내기는 DB 통째. 규칙: (데이터셋, 표)마다 사본의 모든 행이 그 시나리오
+    리비전 1 에 행 단위로(소유 열만 빼고 `source_row_no`·값 열 전부, 이름으로 맞대고 NULL 은 같게) 들어
+    있을 때만 지운다 — 한 행이라도 다르거나 리비전 1 이 없으면 그 표 사본을 통째로 남긴다. DELETE 대신
+    0006 처럼 표를 다시 만든다(샘플 관측: 합성 데모 DB 를 1,685,790행으로 부풀린 사본에서 DELETE 약 20초 →
+    3초, 스키마 전후 동일). 세 진단 스크립트의 「사본이 있는 데이터셋 수」는 `rq_pkg_plan` 하나가 아니라
+    스크립트가 읽는 표 전부를 센다(0033 은 표마다 따로 지운다). 파일은 줄지 않는다 — 공간 회수(E8,
+    `scripts/compact_duckdb.py`)는 하지 않았다. `tests/test_migration_0033_ref_data_copies.py` 가 규칙·
+    스키마·두 번 적용·진단 개수를 고정한다.
 - [x] **B4 시나리오 관리 탭 본문 건너뛰기** — 세 탭을 `with tab:` 으로 항상 그리고
   `on_change="rerun"` 을 뺐다(탭 전환 rerun 없음). 표시순서 탭의 검증 47ms + CSV 46ms 는
   공용 버전 키 `_validated_display_order` 캐시로 상쇄. 기본 탭 warm rerun 508 → 508~521ms

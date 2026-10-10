@@ -29,8 +29,9 @@ NBSP·타입 갈림·빈 타입을 모두 태워 14개 표 전부 예측과 실�
 
 `ref_data` 는 데이터셋 단위, `rev_data` 는 리비전 단위다. 2026-10-06 사용자 결정(B3) 뒤 만든
 데이터셋은 리비전 표를 **`rev_data` 에만** 적고 `ref_data` 에는 사본이 없다 — 그 데이터셋은
-`ref_data` 줄에서 0 이고 3번 재고 출처의 데이터셋 목록에도 나오지 않는다. 출력 첫머리에 사본이
-있는 데이터셋 수를 함께 찍는다.
+`ref_data` 줄에서 0 이고 3번 재고 출처의 데이터셋 목록에도 나오지 않는다. 그 전 데이터셋의 사본도
+리비전 1 과 행 단위로 같으면 마이그레이션 `0033` 이 지웠다(2026-10-10 사용자 승인). 출력 첫머리에
+사본이 남은 데이터셋 수를 함께 찍는다.
 
 사용:
 
@@ -86,12 +87,19 @@ def _scalar(connection: duckdb.DuckDBPyConnection, sql: str) -> int:
 
 
 def _ref_data_coverage(connection: duckdb.DuckDBPyConnection) -> None:
-    """`ref_data` 에 리비전 표 사본이 있는 데이터셋 수. 결정 B3 뒤 만든 데이터셋은 사본이 없다."""
+    """`ref_data` 에 리비전 표 사본이 남은 데이터셋 수 — 이 스크립트가 읽는 표 가운데 하나라도.
+
+    결정 B3 뒤 만든 데이터셋은 사본이 없고, 그 전 것도 리비전 1 과 같은 사본은 `0033` 이 지웠다.
+    `0033` 은 표마다 따로 지우므로 한 표만 세면 남은 사본을 놓친다.
+    """
     total = _scalar(connection, "SELECT count(*) FROM app_meta.dataset")
-    covered = _scalar(connection, "SELECT count(DISTINCT dataset_id) FROM ref_data.rq_pkg_plan")
+    datasets = " UNION ".join(
+        f"SELECT dataset_id FROM ref_data.{table}" for table in ("rq_pkg_plan", *TABLES)
+    )
+    covered = _scalar(connection, f"SELECT count(*) FROM ({datasets})")
     print(
         f"ref_data 에 리비전 표 사본이 있는 데이터셋 {covered:,} / 전체 {total:,} — "
-        "나머지는 사본 없이 rev_data(리비전)에만 있다(2026-10-06 결정 B3 뒤 만든 데이터셋)"
+        "나머지는 사본 없이 rev_data(리비전)에만 있다(B3 뒤 만든 것·0033 이 사본을 지운 것)"
     )
     print()
 

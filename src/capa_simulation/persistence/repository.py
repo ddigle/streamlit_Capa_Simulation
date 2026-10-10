@@ -153,7 +153,8 @@ REVISION_TABLES: dict[str, str] = {
 # 데이터셋(`ref_data`)에만 사는 표 — 리비전 표가 아닌 나머지(`RQ_DISPLAY_ORDER`·`RQ_MODULE`).
 # 리비전 표 14개는 리비전(`rev_data`)에만 적는다. 스냅샷은 그 14개를 `rev_data` 에서만 읽고
 # 리비전은 불변이라, 데이터셋에 같은 사본을 두면 읽는 곳 없이 행만 늘었다(2026-10-06 사용자
-# 결정 B3). 이 결정 전에 만든 데이터셋의 `ref_data` 사본은 지우지 않고 둔다(마이그레이션 없음).
+# 결정 B3). 이 결정 전에 만든 데이터셋의 `ref_data` 사본은 리비전 1 과 행 단위로 같으면 마이그레이션
+# `0033` 이 지웠고(2026-10-10 사용자 승인), 리비전 1 과 다른 사본만 읽는 곳 없이 남는다.
 DATASET_TABLES: dict[str, str] = {
     name: table for name, table in REFERENCE_TABLES.items() if name not in REVISION_TABLES
 }

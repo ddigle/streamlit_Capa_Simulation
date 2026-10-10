@@ -1610,8 +1610,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     나머지 둘(`RQ_DISPLAY_ORDER`·`RQ_MODULE`, `repository.DATASET_TABLES`)은 데이터셋(`ref_data`)에만
     적는다(2026-10-06 사용자 결정 B3). 스냅샷이 14개를 `rev_data` 에서만 읽고 리비전이 불변이라
     데이터셋 사본은 읽는 곳 없이 행만 늘었다 — 내장 시드 새 부트스트랩에서 `ref_data` 649 → 21행,
-    파일 −9.2%(샘플 관측, `docs/data_model.md`). 이 결정 전 데이터셋의 사본은 지우지 않는다(마이그레이션
-    없음). `ref_data` 를 직접 읽는 곳은 리비전 표가 아닌 두 표뿐이다 — `load_revision` 과 공용 표시순서의
+    파일 −9.2%(샘플 관측, `docs/data_model.md`). 이 결정 전 데이터셋의 사본은 마이그레이션 `0033` 이
+    지운다(2026-10-10 사용자 승인) — (데이터셋, 표)마다 사본의 모든 행이 그 시나리오의 리비전 1 에 행
+    단위로 들어 있을 때만 지우고, 한 행이라도 다르면 그 표 사본을 통째로 남긴다(`docs/migration_catalog.md`).
+    `ref_data` 를 직접 읽는 곳은 리비전 표가 아닌 두 표뿐이다 — `load_revision` 과 공용 표시순서의
     첫 이관(`display_order_store.load_existing_display_order`, `rq_display_order`). 진단 스크립트는 두
     스키마를 따로 세고, `compare_legacy_results.py` 의 대조 기준은 리비전 1 이다.
   - `app_meta.global_display_order*`는 시나리오와 독립된 단일 공용 프로필이며 최초 생성 시
@@ -4025,7 +4027,8 @@ RQ_MODULE
 **저장 위치가 둘로 갈린다.** 위 수정 가능한 14개는 리비전(`rev_data`)에만, 이 두 표는
 데이터셋(`ref_data`)에만 산다(`repository.REVISION_TABLES`·`DATASET_TABLES`). 시나리오를 만들
 때 14개를 데이터셋에 한 번 더 적던 사본은 2026-10-06 사용자 결정(B3)으로 없앴다 — 그 전에 만든
-데이터셋의 사본은 남아 있지만 읽는 코드는 없다(`docs/data_model.md`).
+데이터셋의 사본은 리비전 1 과 행 단위로 같으면 마이그레이션 `0033` 이 지우고(2026-10-10 사용자 승인),
+리비전 1 과 다른 사본만 남는다. 남은 사본을 읽는 코드는 없다(`docs/data_model.md`).
 
 나머지 테이블을 웹에서 수정할 필요가 생기면 단순히 session state에 별도 복사하지 말고 활성
 시나리오의 editable table 계약과 저장 정책을 함께 변경한다.

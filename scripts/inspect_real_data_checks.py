@@ -482,7 +482,8 @@ def check_env(session: Session, *, now: datetime, root: Path = PROJECT_ROOT) -> 
             rows.append(
                 [
                     "`ref_data` 에 리비전 표 사본이 남은 데이터셋",
-                    f"{copied:,} (사본 {copied_rows:,}행 — 2026-10-06 결정 B3 전에 만든 것)",
+                    f"{copied:,} (사본 {copied_rows:,}행 — B3 전에 만든 것 가운데 리비전 1 과 "
+                    "달라 `0033` 이 남긴 것. 0 이 정상)",
                 ]
             )
         except duckdb.Error as exc:

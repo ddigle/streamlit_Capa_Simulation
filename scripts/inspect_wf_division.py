@@ -21,8 +21,9 @@ EDP-TSV 제품의 PKG 행이 어떤 WF 구분을 싣는지는 사외가 모른�
 
 `ref_data` 는 데이터셋 단위, `rev_data` 는 리비전 단위다. 2026-10-06 사용자 결정(B3) 뒤 만든
 데이터셋은 리비전 표(이 스크립트가 보는 표 전부)를 **`rev_data` 에만** 적고 `ref_data` 에는 사본이
-없다 — 그 데이터셋의 값은 `ref_data` 줄에 들어가지 않는다. 출력 첫머리에 사본이 있는 데이터셋 수를
-함께 찍는다.
+없다 — 그 데이터셋의 값은 `ref_data` 줄에 들어가지 않는다. 그 전 데이터셋의 사본도 리비전 1 과 행
+단위로 같으면 마이그레이션 `0033` 이 지웠다(2026-10-10 사용자 승인). 출력 첫머리에 사본이 남은
+데이터셋 수를 함께 찍는다.
 
 사용:
 
@@ -67,12 +68,17 @@ PRODUCT_TYPES: tuple[str, ...] = ("HBM", "EDP-TSV")
 
 
 def _ref_data_coverage(connection: duckdb.DuckDBPyConnection) -> None:
-    """`ref_data` 에 리비전 표 사본이 있는 데이터셋 수. 결정 B3 뒤 만든 데이터셋은 사본이 없다."""
+    """`ref_data` 에 리비전 표 사본이 남은 데이터셋 수 — 이 스크립트가 읽는 표 가운데 하나라도.
+
+    결정 B3 뒤 만든 데이터셋은 사본이 없고, 그 전 것도 리비전 1 과 같은 사본은 `0033` 이 지웠다.
+    `0033` 은 표마다 따로 지우므로 한 표만 세면 남은 사본을 놓친다.
+    """
+    datasets = " UNION ".join(
+        f"SELECT dataset_id FROM ref_data.{table}" for table in ("rq_pkg_plan", *TABLES)
+    )
     try:
         total = connection.execute("SELECT count(*) FROM app_meta.dataset").fetchone()
-        covered = connection.execute(
-            "SELECT count(DISTINCT dataset_id) FROM ref_data.rq_pkg_plan"
-        ).fetchone()
+        covered = connection.execute(f"SELECT count(*) FROM ({datasets})").fetchone()
     except duckdb.Error as exc:
         print(f"ref_data 사본 범위를 읽지 못함 — {str(exc).splitlines()[0]}\n")
         return
@@ -80,7 +86,7 @@ def _ref_data_coverage(connection: duckdb.DuckDBPyConnection) -> None:
     covered_count = int(covered[0]) if covered and covered[0] is not None else 0
     print(
         f"ref_data 에 리비전 표 사본이 있는 데이터셋 {covered_count:,} / 전체 {total_count:,} — "
-        "나머지는 사본 없이 rev_data(리비전)에만 있다(2026-10-06 결정 B3 뒤 만든 데이터셋)\n"
+        "나머지는 사본 없이 rev_data(리비전)에만 있다(B3 뒤 만든 것·0033 이 사본을 지운 것)\n"
     )
 
 
