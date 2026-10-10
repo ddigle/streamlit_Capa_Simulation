@@ -467,9 +467,11 @@ def _step_route_choices(catalog: pd.DataFrame) -> dict[str, str]:
     이 지워졌고, 고르지 않아도 첫 왕복에서 기본값이 다른 줄로 바뀌었다). 그래서 글자에 행의 **진짜
     키**(`ROUTE_GROUP_COLUMNS` 전부 — `양산구분` 포함 — 와 MCP/STEP)를 다 싣는다. 공정은 표시명이
     다른 공정의 원본과 겹치면 「표시명 (원본)」 으로 가르고(`unique_format_func`, 목록의 공정
-    전체로), 그래도 같은 글자가 남는 드문 경우(키 값의 공백만 다른 줄 등)는 뒤 줄에 「 #n」 을
-    붙인다. 값은 행 위치가 아니라 경로 키다 — STEP 을 더하거나 빼 목록이 밀려도 다른 줄을 가리키지
-    않는다.
+    전체로), 그래도 같은 글자가 남는 드문 경우(키 값 안에 구분자 「 · 」 가 든 줄 등)는 뒤 줄에
+    「 #n」 을 붙인다. 앞뒤 공백만 다른 값은 `_prepare` 가 이미 잘라 한 경로로 합치고, 안쪽 공백만
+    다른 값은 글자는 달라도 브라우저가 공백을 하나로 보여 같아 보인다 — 값(경로 키)은 맞으니 쓰기는
+    틀리지 않는다. 값은 행 위치가 아니라 경로 키다 — STEP 을 더하거나 빼 목록이 밀려도 다른 줄을
+    가리키지 않는다.
     """
     key_columns = [*ROUTE_GROUP_COLUMNS, *STEP_PAIR_COLUMNS]
     process_text = process_labels.unique_format_func(catalog["공정"].astype(str))
