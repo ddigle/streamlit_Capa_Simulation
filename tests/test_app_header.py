@@ -369,7 +369,7 @@ def test_the_header_names_the_official_version_with_its_source_registration() ->
 
 def test_a_saved_revision_shows_its_save_date_instead_of_the_registration() -> None:
     """공식버전이 아닌 저장 리비전은 등록일 대신 리비전 저장일이다. 최신 공식버전이 다른 리비전이면
-    공식이 아니다 — 사이드바 시나리오 상자의 배지와 같은 판정이다."""
+    공식이 아니다 — 사이드바 시나리오 줄의 배지와 같은 판정이다."""
     for official in (None, ("revision-other", 5)):
         top, bottom = header_lines(LABEL, official=official, unsaved=False)
         assert top == "DEMO 시나리오 · r4 월간 보정 · 저장된 리비전"

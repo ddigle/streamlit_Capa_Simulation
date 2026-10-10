@@ -260,7 +260,7 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
 
     DuckDB 는 프로세스 배타 잠금이라 반드시 `tmp_path` 에 만든 DB 를 쓴다. 운영 DB 를
     가리키는 기본값이 한 군데라도 남아 있으면 앱 서버가 떠 있는 개발 PC 에서 이 검사가
-    `duckdb.IOException` 으로 죽는다. 사이드바 시나리오 상자도 기본 경로를 부를 때
+    `duckdb.IOException` 으로 죽는다. 사이드바 시나리오 팝업도 기본 경로를 부를 때
     `settings` 에서 찾으므로 `settings.DUCKDB_PATH` 하나만 바꾸면 된다.
     """
     database = tmp_path_factory.mktemp("e2e_scenario_switch") / "scenario.duckdb"

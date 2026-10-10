@@ -786,7 +786,7 @@ def revision_field_key(field: str) -> str:
     """「새 리비전 저장」 폼 한 칸의 위젯 키. 저장에 성공할 때마다 세대가 바뀐다.
 
     key 가 없던 때는 저장에 성공해도 적은 리비전명·메모가 그대로 남아, 한 번 더 누르면 같은
-    이름의 리비전이 또 섰다. 사이드바 저장 팝업(`scenario_status.save_field_key`)·복제 폼
+    이름의 리비전이 또 섰다. 사이드바 시나리오 팝업(`scenario_status.save_field_key`)·복제 폼
     (`clone_field_key`)과 같은 방식으로 성공한 회차에만 key 를 바꿔 새 빈 칸으로 세운다 — 거절된
     저장(계산 검사·저장 오류)은 세대를 그대로 두어 적은 글이 남는다.
     """
@@ -816,7 +816,7 @@ def _render_revision_save(repository: DuckDBScenarioRepository) -> None:
     if not revision_submitted:
         return
     try:
-        # 사이드바 「저장」과 같은 일을 한다. 표가 크면 몇 초가 걸린다.
+        # 사이드바 시나리오 팝업의 「신규 리비전 저장」과 같은 일을 한다. 표가 크면 몇 초가 걸린다.
         with st.spinner("현재 편집본을 새 리비전으로 저장하는 중입니다..."):
             verdict = revision_save_verdict(
                 get_effective_reference_version(), active_scenario, reference_tables

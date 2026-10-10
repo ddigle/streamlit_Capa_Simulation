@@ -188,7 +188,7 @@ register_pending_edits(
 )
 
 # 본문은 제목 · 탭 · 탭 내용만이다. 「활성 시나리오 · 수정본 N」 줄은 없앴다 — 미저장 여부는
-# 사이드바 시나리오 상자의 배지가 이미 말하고, 편집을 버리는 「편집 되돌리기」도 그 상자에
+# 사이드바 시나리오 줄의 배지가 이미 말하고, 편집을 버리는 「편집 되돌리기」도 그 줄의 팝업에
 # 있다(모든 화면의 편집을 버리는 시나리오 단위 동작이다). 되돌리면 리비전 번호가 올라
 # 위 `source_token` 이 바뀌므로 이 화면의 편집표·붙여넣기 대기분도 다음 회차에 함께 비워진다.
 # 탭 이름 앞 아이콘은 탭이 하는 일이다 — 환산은 계산해 보는 곳, PKG PLAN·수율은 값을 고치는
@@ -322,7 +322,7 @@ def _apply_yield(table: pd.DataFrame, origin: str, *, note: str = "") -> None:
     queue_reference_import_flash(
         YIELD_PASTE_KEY,
         f"RQ_YLD {origin} 활성 시나리오에 적용했습니다.{note} "
-        "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요.",
+        "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
     )
     mark_own_change(OWN_CHANGE_KEY, (YIELD_EDITOR_KEY,))
 
@@ -689,7 +689,7 @@ if apply_plan:
             f"PKG PLAN을 전역 계획값에 반영했습니다. "
             f"{effective_start_month}~{effective_end_month} 구간의 환산·소요대수·확보율과 "
             f"홈 대시보드가 이 계획으로 다시 계산됩니다. "
-            "리비전으로 남기려면 사이드바 「저장」 → 「신규 리비전 저장」을 누르세요."
+            "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요."
         )
         mark_own_change(OWN_CHANGE_KEY, (PLAN_EDITOR_KEY, PLAN_STAGED_KEY))
         st.rerun()
