@@ -16,12 +16,22 @@ shadow root 안이라 `document.querySelector` 로 닿지 않는다(로케이터
         --output <저장소 밖>/screens.md
     uv run --no-sync python scripts/check_deploy_screens.py --list   # 항목 목록만(Playwright 없이)
 
+1분 넘게 걸린다(사외 합성 표본에서 앱 기동·입장 화면 포함 약 1분, 사내 실데이터는 더). 에이전트는
+앞단 호출 제한(10분)에 걸리지 않게 **백그라운드로** 돌리고 `--output` 파일을 읽는다.
+
+**종료 코드.** 0 끝까지 돎 · 1 미룸(사용자 앱이 떠 있거나, 떠 있는지 살피지 못함 — 앱을 끄지
+않는다. 이 뜻에만 쓴다) · 2 그 밖 모두(경로·Playwright·포트·DB 를 열지 못함·앱 기동·앱 오류 화면·
+브라우저·예상 밖 예외 — 예외는 종류만 찍는다).
+
 **하는 일.** 사용자 앱이 떠 있는지 먼저 본다 — `streamlit run … app.py` 프로세스, 그리고
 두 DuckDB 를 열 수 있는지. 있으면 「사용자 앱이 떠 있습니다 — 화면 확인은 미룹니다」 한 줄과
 코드 1 로 멈춘다(사용자 앱은 절대 끄지 않는다). 앱은 rerun 동안만 DB 를 쥐어 가만히 떠 있는
-앱은 잠금 확인을 지나치므로 프로세스를 함께 본다. 그다음 `--port` 에 이 저장소의 앱을 따로 띄우고
-`/_stcore/health` 를 기다린 뒤, 헤드리스 Chrome 으로 입장 화면을 넘겨 항목을 차례로 돌린다. 끝나면
-(예외로 끝나도) 띄운 앱을 끈다. 결과는 리뷰 문서에 그대로 붙이는 Markdown 블록이다.
+앱은 잠금 확인을 지나치므로 프로세스를 함께 본다(살피지 못하면 없다고 넘기지 않고 미룬다).
+그다음 `127.0.0.1:--port` 에 이 저장소의 앱을 따로 띄우고(자식의 `PYTHONPATH` 맨 앞에 이
+저장소의 `src` — 사전 확인과 같은 DB 를 여는지 띄우기 전에 견준다) `/_stcore/health` 를 기다린
+뒤, 헤드리스 Chrome 으로 입장 화면을 넘긴다. 앱이 오류 화면(부트스트랩 실패)이면 항목을 돌리지
+않는다. 끝나면(예외로 끝나도) 띄운 앱을 끄고, 띄우기 전과 뒤의 마이그레이션 번호를 견줘 이 확인이
+건 마이그레이션 수를 머리에 적는다. 결과는 리뷰 문서에 그대로 붙이는 Markdown 블록이다.
 
 **지키는 것.**
 
@@ -31,14 +41,16 @@ shadow root 안이라 `document.querySelector` 로 닿지 않는다(로케이터
 - **DB 에 쓰지 않는다.** 쓰는 항목은 `writes=True` 로 등록하고, `--allow-writes` 없이는 돌리지 않고
   「안 함(허락 없음)」으로 찍는다. 쓰는 항목은 저장한 것을 같은 항목 안에서 지워 원상 복구하는 것만
   둔다.
-- **경로는 저장소 밖만 받는다.** `--output`·`--shots`·`--playwright-dir` 가 저장소 안이면 거절한다.
-  스크린샷은 `--shots` 를 줄 때만 찍는다(화면에 이름이 보이므로 리뷰 커밋 전에 지운다).
+- **경로는 저장소 밖만 받는다.** `--output`·`--shots`·`--playwright-dir` 가 저장소 안이거나
+  장치·UNC 꼴(`\\\\?\\…`·`\\\\localhost\\C$\\…`)이면 거절한다. 스크린샷은 `--shots` 를 줄 때만
+  찍는다(화면에 이름이 보이므로 리뷰 커밋 전에 지운다).
 - **Playwright 는 이 저장소의 의존성이 아니다.** `--playwright-dir` 를 `sys.path` 끝에 붙여
   부를 때만 읽는다. 이 파일의 나머지(경로 검사·잠금 확인·앱 수명·결과 꼴)는 Playwright 없이
   돈다.
-- **30분 안에 끝난다.** 사내 백그라운드 실행은 30분이면 죽는다. `--budget-minutes`(기본 20)를
-  넘긴 뒤의 항목은 「미기록 — 시간 예산 넘음」으로 남기고, `--output` 은 항목마다 다시 써서
-  중간에 끊겨도 그때까지 돈 칸이 남는다.
+- **30분 안에 끝난다.** 사내 백그라운드 실행은 30분이면 죽는다. `--budget-minutes`(기본 15)는
+  스크립트 시작부터 재고, 넘긴 뒤의 항목은 「미기록 — 시간 예산 넘음」으로 남긴다. `--output` 은
+  항목마다 다시 써서 중간에 끊겨도 그때까지 돈 칸이 남는다. 스크립트가 강제로 끝나도 띄운 앱이
+  남지 않게 Windows 는 Job Object, Linux 는 `PR_SET_PDEATHSIG` 로 묶는다.
 
 **항목 더하는 법**(통합자가 배포마다 7장을 쓰며 더한다). 함수 하나를 쓰고 `ITEMS` 에 한 줄을 더한다.
 
@@ -70,8 +82,8 @@ import subprocess
 import sys
 import time
 import urllib.request
-from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -88,6 +100,11 @@ from capa_simulation.components.theme_toggle import (  # noqa: E402
     THEME_BUTTON_ID,
     TOOLBAR_BUTTON_ORDER,
 )
+from capa_simulation.persistence._sql_helpers import lock_holder_pid  # noqa: E402
+from capa_simulation.persistence.equipment_migration_runner import (  # noqa: E402
+    load_equipment_migrations,
+)
+from capa_simulation.persistence.migration_runner import load_migrations  # noqa: E402
 from capa_simulation.settings import (  # noqa: E402
     DEPLOY_STATE_PATH,
     DUCKDB_PATH,
@@ -95,13 +112,16 @@ from capa_simulation.settings import (  # noqa: E402
 )
 
 EXIT_OK: Final = 0
-# 사용자 앱이 떠 있다(프로세스 또는 DB 잠금) — 미룬다. 사내 런북이 이 코드를 「나중에 다시」로
-# 읽는다.
+# 미룬다 — 사용자 앱이 떠 있거나(프로세스·DB 잠금) 떠 있는지 살피지 못했다. 이 뜻에만 쓴다.
 EXIT_DEFERRED: Final = 1
-# 준비가 안 됐다 — 경로·Playwright·포트·앱 기동·브라우저.
+# 그 밖 모두 — 경로·Playwright·포트·DB 를 열지 못함·앱 기동·앱 오류 화면·브라우저·예상 밖 예외.
 EXIT_NOT_READY: Final = 2
 
 DEFERRED_MESSAGE: Final = "사용자 앱이 떠 있습니다 — 화면 확인은 미룹니다"
+SCAN_FAILED_MESSAGE: Final = (
+    "프로세스를 살피지 못했습니다 — 런북 1-1 로 사용자 앱이 없는 것을 손수 확인한 뒤 "
+    "--ignore-other-apps 로 다시 돌립니다"
+)
 INSTALL_HINT: Final = (
     "Playwright 가 없습니다 — 저장소 밖에 한 번 설치합니다"
     "(브라우저는 받지 않고 깔린 Chrome 을 씁니다):\n"
@@ -114,7 +134,10 @@ OVER_BUDGET: Final = f"{UNRECORDED} — 시간 예산 넘음"
 
 DEFAULT_PORT: Final = 8551
 DEFAULT_CHANNEL: Final = "chrome"
-DEFAULT_BUDGET_MINUTES: Final = 20.0
+# 스크립트 시작부터 잰다. 사내 백그라운드 제한 30분 안이다.
+DEFAULT_BUDGET_MINUTES: Final = 15.0
+# 확인용 앱은 이 PC 안에서만 듣는다.
+APP_ADDRESS: Final = "127.0.0.1"
 VIEWPORT: Final = (1600, 1000)
 # 앱이 health 에 답할 때까지, 입장 화면의 `Detail` 이 눌릴 수 있을 때까지(공식버전 요약을 다
 # 받은 뒤다 — 사외 합성 표본에서 18초). 사내 실데이터는 더 걸린다.
@@ -142,15 +165,46 @@ TOOLBAR_LABELS: Final[dict[str, str]] = {
 # ---------------------------------------------------------------------------------- 경로
 
 
+def _device_or_unc(text: str) -> bool:
+    """`\\\\?\\…`·`\\\\.\\…`·`\\\\localhost\\C$\\…` 같은 장치·UNC 꼴인가."""
+    return text.startswith(("\\\\", "//"))
+
+
 def inside_repository(path: Path, root: Path = PROJECT_ROOT) -> bool:
-    """저장소 안(루트 포함)인가. Windows 는 대소문자를 가리지 않으므로 `normcase` 로 견준다."""
-    target = os.path.normcase(os.path.abspath(path.expanduser().resolve()))
+    """거절할 경로인가 — 저장소 안(루트 포함)이거나 장치·UNC 꼴.
+
+    장치·UNC 꼴은 앞머리가 다른 드라이브처럼 보여 문자열 비교를 빠져나가므로
+    (`\\\\?\\C:\\<저장소>`, `\\\\localhost\\C$\\<저장소>`) 어디를 가리키든 거절한다 — 저장소 밖이면
+    드라이브 경로로 주면 된다.
+    그 밖에는 ① 정규화한 문자열로 견주고(아직 없는 경로) ② 가장 깊은 있는 조상과 그 위 조상들을
+    `os.path.samefile` 로 저장소 루트와 견준다(드라이브 별칭·연결 폴더). Windows 는 대소문자를
+    가리지 않으므로 `normcase` 로 견준다.
+    """
+    if _device_or_unc(str(path)):
+        return True
+    resolved = path.expanduser().resolve()
+    target = os.path.normcase(os.path.abspath(resolved))
     base = os.path.normcase(os.path.abspath(root.resolve()))
-    return target == base or target.startswith(base.rstrip("\\/") + os.sep)
+    if target == base or target.startswith(base.rstrip("\\/") + os.sep):
+        return True
+    try:
+        existing = resolved
+        while not existing.exists() and existing != existing.parent:
+            existing = existing.parent
+        candidates = (existing, *existing.parents)
+    except OSError:
+        return False
+    for candidate in candidates:
+        try:
+            if os.path.samefile(candidate, root):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def refused_paths(args: argparse.Namespace, root: Path = PROJECT_ROOT) -> list[str]:
-    """저장소 안을 가리키는 경로 옵션의 이름. 비어 있어야 돈다. 경로 자체는 찍지 않는다."""
+    """거절할 경로 옵션의 이름. 비어 있어야 돈다. 경로 자체는 찍지 않는다."""
     named = (
         ("--output", args.output),
         ("--shots", args.shots),
@@ -179,12 +233,23 @@ def load_playwright(directory: Path) -> Any | None:
         return None
 
 
+def is_lock_error(exc: BaseException) -> bool:
+    """DuckDB 의 잠금 오류인가 — 다른 프로세스가 파일을 쥐었다. 깨진 파일 같은 다른 IO 오류는
+    아니다. 잠금 문구는 쥔 프로세스(`(PID n)`)를 적고, Windows 는 가끔 그것 없이 공유 위반
+    (「Cannot open file」)만 준다(`_sql_helpers` 와 같은 판정)."""
+    if not isinstance(exc, duckdb.IOException):
+        return False
+    text = str(exc)
+    return lock_holder_pid(exc) is not None or "lock" in text.lower() or "Cannot open file" in text
+
+
 def locked_databases(
     paths: Sequence[Path], *, connect: Callable[..., Any] = duckdb.connect
 ) -> list[Path]:
     """다른 프로세스가 잡고 있는 DB. DuckDB 는 프로세스 배타 잠금이라 `read_only` 로도 못 연다.
 
     없는 파일은 건너뛴다(앱이 처음 열 때 만든다). 연 연결은 바로 닫는다 — 띄울 앱이 열어야 한다.
+    잠금이 아닌 오류(깨진 파일 등)는 그대로 올린다 — 사용자 앱 탓이 아니다.
     """
     locked: list[Path] = []
     for path in paths:
@@ -192,11 +257,37 @@ def locked_databases(
             continue
         try:
             connection = connect(str(path), read_only=True)
-        except duckdb.IOException:
+        except duckdb.IOException as exc:
+            if not is_lock_error(exc):
+                raise
             locked.append(path)
             continue
         connection.close()
     return locked
+
+
+def applied_versions(path: Path, table: str) -> frozenset[int]:
+    """그 DB 에 걸린 마이그레이션 번호. 파일·표가 없으면 빈 집합."""
+    if not path.exists():
+        return frozenset()
+    with closing(duckdb.connect(str(path), read_only=True)) as connection:
+        try:
+            rows = connection.execute(f"SELECT version FROM {table}").fetchall()
+        except duckdb.CatalogException:
+            return frozenset()
+    return frozenset(int(row[0]) for row in rows)
+
+
+# (DB, 적용 기록 표, 코드의 마이그레이션 번호)
+def migration_targets() -> tuple[tuple[Path, str, frozenset[int]], ...]:
+    return (
+        (DUCKDB_PATH, "app_meta.schema_migration", frozenset(m.version for m in load_migrations())),
+        (
+            EQUIPMENT_DUCKDB_PATH,
+            "equipment_meta.schema_migration",
+            frozenset(m.version for m in load_equipment_migrations()),
+        ),
+    )
 
 
 # `streamlit run … app.py` 꼴의 명령줄. 런북의 사람 규칙(「명령줄에 app.py 가 있으면 사용자
@@ -207,8 +298,10 @@ _APP_COMMAND = re.compile(r"streamlit.*\brun\b.*\bapp\.py\b", re.IGNORECASE)
 _APP_PROGRAM = re.compile(r"(python[\d.]*w?|streamlit)(\.exe)?", re.IGNORECASE)
 # Windows 는 다른 프로세스의 작업 폴더를 볼 수 없어 명령줄만 읽는다(venv 의 python.exe 는 본
 # 해석기를 자식으로 띄우므로 앱 하나가 두 줄로 나온다 — 하나라도 맞으면 된다). 여러 줄 명령줄은
-# 한 줄로 접는다.
+# 한 줄로 접는다. PowerShell 의 기본 출력은 콘솔 코드페이지(cp949)라 한글 경로가 깨지므로
+# UTF-8 로 내보내게 한다.
 _WINDOWS_PROCESS_QUERY = (
+    "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
     "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*streamlit*' } | "
     r"ForEach-Object { $_.CommandLine -replace '\s+', ' ' }"
 )
@@ -304,7 +397,7 @@ def running_app_count(
     )
 
 
-def port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+def port_in_use(port: int, host: str = APP_ADDRESS) -> bool:
     """그 포트에 누가 듣고 있는가. Windows 에서는 두 번째 Streamlit 이 오류 없이 먼저 뜬 쪽에 얹혀
     엉뚱한 앱을 재게 되므로 띄우기 전에 막는다."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
@@ -337,7 +430,7 @@ def applied_stamp(path: Path = DEPLOY_STATE_PATH) -> str:
 
 
 class AppStartError(RuntimeError):
-    """띄운 앱이 health 에 답하지 않았다. 문구에는 수와 고정 글자만 둔다."""
+    """띄운 앱이 서지 않았다. 문구에는 수와 고정 글자만 둔다."""
 
 
 class Process(Protocol):
@@ -355,12 +448,15 @@ class Process(Protocol):
 
 
 def app_command(port: int) -> list[str]:
+    """확인용 앱 명령. 이 PC 안에서만 듣는다(`--server.address`)."""
     return [
         sys.executable,
         "-m",
         "streamlit",
         "run",
         "app.py",
+        "--server.address",
+        APP_ADDRESS,
         "--server.port",
         str(port),
         "--server.headless",
@@ -372,12 +468,151 @@ def app_command(port: int) -> list[str]:
     ]
 
 
+def app_environment(root: Path, base: Mapping[str, str] | None = None) -> dict[str, str]:
+    """자식 앱의 환경 — `PYTHONPATH` 맨 앞에 이 저장소의 `src`.
+
+    editable 설치가 다른 작업 폴더(예: 본 저장소)를 가리켜도 자식이 이 저장소의 코드와 DB 를 쓴다
+    (설정의 DB 경로는 `settings.py` 가 놓인 저장소에서 나온다). 사내는 이미 그렇다.
+    """
+    env = dict(os.environ if base is None else base)
+    source = str(root / "src")
+    rest = [part for part in env.get("PYTHONPATH", "").split(os.pathsep) if part and part != source]
+    env["PYTHONPATH"] = os.pathsep.join([source, *rest])
+    return env
+
+
+_CHILD_PATHS_CODE = (
+    "import capa_simulation.settings as s; "
+    "print(s.DUCKDB_PATH.resolve()); print(s.EQUIPMENT_DUCKDB_PATH.resolve())"
+)
+
+
+def child_database_paths(env: Mapping[str, str], root: Path) -> tuple[Path, Path]:
+    """그 환경으로 띄운 파이썬이 여는 두 DB 경로. 확인용 앱이 같은 DB 를 볼지 띄우기 전에 견준다."""
+    completed = subprocess.run(
+        [sys.executable, "-c", _CHILD_PATHS_CODE],
+        cwd=str(root),
+        env=dict(env),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        check=True,
+    )
+    lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    return Path(lines[-2]), Path(lines[-1])
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(right))
+
+
+# Windows Job Object — 확인용 앱을 이 스크립트의 수명에 묶는다. 스크립트가 강제로 끝나면(30분 제한·
+# 작업 관리자) `finally` 가 돌지 못해 앱이 남고, 다음 실행이 그것을 사용자 앱으로 본다. 잡의 마지막
+# 핸들이 닫히면(스크립트가 어떻게 끝나든) 잡 안의 프로세스가 모두 끝난다. venv 의 python.exe 는 본
+# 해석기를 자식으로 띄우므로 그 자식까지 잡에 들게 앱을 멈춘 채 만들어 잡에 넣은 뒤 깨운다.
+_CREATE_SUSPENDED = 0x00000004
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+_JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+
+
+def _create_kill_on_close_job() -> int | None:
+    """닫히면 안의 프로세스를 끝내는 잡 핸들. Windows 가 아니거나 만들지 못하면 None."""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class _Basic(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_int64),
+            ("PerJobUserTimeLimit", ctypes.c_int64),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class _Io(ctypes.Structure):
+        _fields_ = [
+            (name, ctypes.c_uint64)
+            for name in ("Read", "Write", "Other", "ReadBytes", "WriteBytes", "OtherBytes")
+        ]
+
+    class _Extended(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", _Basic),
+            ("IoInfo", _Io),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        return None
+    info = _Extended()
+    info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not kernel32.SetInformationJobObject(
+        wintypes.HANDLE(job),
+        _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+        ctypes.byref(info),
+        ctypes.sizeof(info),
+    ):
+        kernel32.CloseHandle(wintypes.HANDLE(job))
+        return None
+    return int(job)
+
+
+def _adopt_and_resume(job: int, process: Any) -> bool:
+    """멈춘 채 만든 프로세스를 잡에 넣고 깨운다. 잡에 못 넣어도 깨운다(앱은 돈다). 깨우지 못하면
+    False — 부른 쪽이 그 프로세스를 끝낸다."""
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    handle = wintypes.HANDLE(int(process._handle))
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.AssignProcessToJobObject(wintypes.HANDLE(job), handle)
+    ntdll = ctypes.WinDLL("ntdll")
+    return int(ntdll.NtResumeProcess(handle)) == 0
+
+
+def _close_job(job: int) -> None:
+    """잡 핸들을 닫는다 — 안에 남은 프로세스(예: venv 런처의 자식)가 함께 끝난다."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    ctypes.WinDLL("kernel32").CloseHandle(wintypes.HANDLE(job))
+
+
+def _die_with_parent() -> None:
+    """Linux: 이 스크립트가 끝나면 자식 앱도 SIGTERM 을 받는다(`PR_SET_PDEATHSIG`)."""
+    try:
+        import ctypes
+
+        ctypes.CDLL(None).prctl(1, signal.SIGTERM)
+    except (OSError, AttributeError):
+        pass
+
+
 class StreamlitApp:
     """확인용 앱 한 벌. `with` 를 나가면(예외여도) 끈다.
 
-    끌 때는 먼저 Streamlit 이 받는 신호(Windows `CTRL_BREAK`, 그 밖 `SIGTERM`)로 서버를 멈춰
-    DuckDB 연결이 닫히게 하고, `STOP_TIMEOUT_SECONDS` 안에 안 끝나면 죽인다. 환경변수는 그대로
-    넘긴다 — 사외에서 워크트리 코드를 쓰게 하는 `PYTHONPATH` 가 자식에게도 가야 한다.
+    띄우기 전에 그 환경의 파이썬이 여는 DB 가 사전 확인이 본 DB 와 같은지 견준다. 끌 때는 먼저
+    Streamlit 이 받는 신호(Windows `CTRL_BREAK`, 그 밖 `SIGTERM`)로 서버를 멈춰 DuckDB 연결이 닫히게
+    하고, `STOP_TIMEOUT_SECONDS` 안에 안 끝나면 죽인다. 스크립트가 강제로 끝나도 앱이 남지 않게
+    Windows 는 Job Object, Linux 는 `PR_SET_PDEATHSIG` 로 묶는다(`contain`).
     """
 
     def __init__(
@@ -385,31 +620,48 @@ class StreamlitApp:
         port: int,
         *,
         root: Path = PROJECT_ROOT,
+        expected_paths: tuple[Path, Path] = (DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH),
         popen: Callable[..., Process] = subprocess.Popen,
         probe: Callable[[str], bool] = health_ok,
         port_probe: Callable[[int], bool] = port_in_use,
+        path_probe: Callable[[Mapping[str, str], Path], tuple[Path, Path]] = child_database_paths,
         start_timeout: float = START_TIMEOUT_SECONDS,
+        contain: bool = True,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.port = port
         self.root = root
-        self.base_url = f"http://127.0.0.1:{port}/"
+        self.base_url = f"http://{APP_ADDRESS}:{port}/"
         self.process: Process | None = None
         self.started_seconds = 0.0
+        self.port_released = True
+        self.contained = False
+        self._expected_paths = expected_paths
         self._popen = popen
         self._probe = probe
         self._port_probe = port_probe
-        self.port_released = True
+        self._path_probe = path_probe
         self._start_timeout = start_timeout
+        self._contain = contain
+        self._job: int | None = None
         self._clock = clock
         self._sleep = sleep
 
     def __enter__(self) -> StreamlitApp:
         began = self._clock()
+        env = app_environment(self.root)
+        try:
+            seen = self._path_probe(env, self.root)
+        except (OSError, subprocess.SubprocessError, IndexError) as exc:
+            raise AppStartError(
+                f"확인용 앱의 DB 경로를 읽지 못했습니다({type(exc).__name__})"
+            ) from None
+        if not all(_same_path(a, b) for a, b in zip(seen, self._expected_paths, strict=True)):
+            raise AppStartError("확인용 앱이 사전 확인과 다른 DB 를 엽니다 — PYTHONPATH 를 봅니다")
         options: dict[str, Any] = {
             "cwd": str(self.root),
-            "env": os.environ.copy(),
+            "env": env,
             "stdin": subprocess.DEVNULL,
             "stdout": subprocess.DEVNULL,
             "stderr": subprocess.DEVNULL,
@@ -418,7 +670,20 @@ class StreamlitApp:
             # `CTRL_BREAK` 는 프로세스 묶음 단위로 간다 — 자식을 따로 묶어야 이 스크립트가
             # 받지 않는다.
             options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            if self._contain:
+                self._job = _create_kill_on_close_job()
+                if self._job is not None:
+                    options["creationflags"] |= _CREATE_SUSPENDED
+        elif self._contain and sys.platform.startswith("linux"):
+            options["preexec_fn"] = _die_with_parent
+            self.contained = True
         self.process = self._popen(app_command(self.port), **options)
+        if self._job is not None:
+            if not _adopt_and_resume(self._job, self.process):
+                self.process.kill()
+                self.stop()
+                raise AppStartError("멈춰 띄운 앱을 깨우지 못했습니다")
+            self.contained = True
         try:
             self._wait_ready(began)
         except BaseException:
@@ -450,23 +715,27 @@ class StreamlitApp:
 
     def stop(self) -> None:
         process = self.process
-        if process is None or process.poll() is not None:
-            return
-        try:
-            if sys.platform == "win32":
-                process.send_signal(signal.CTRL_BREAK_EVENT)
-            else:
+        if process is not None and process.poll() is None:
+            try:
+                if sys.platform == "win32":
+                    process.send_signal(signal.CTRL_BREAK_EVENT)
+                else:
+                    process.terminate()
+            except OSError:
+                # 콘솔이 없는 셸에서는 `CTRL_BREAK` 를 보낼 수 없다 — 바로 끊는다.
                 process.terminate()
-        except OSError:
-            # 콘솔이 없는 셸에서는 `CTRL_BREAK` 를 보낼 수 없다 — 바로 끊는다.
-            process.terminate()
-        try:
-            process.wait(timeout=STOP_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=STOP_TIMEOUT_SECONDS)
-        # Windows 의 venv `python.exe` 는 본 해석기를 자식으로 띄운다. 띄운 쪽이 끝나도 자식이
-        # 포트를 잠깐 더 쥘 수 있어, 포트가 비는 것까지 본다.
+            try:
+                process.wait(timeout=STOP_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=STOP_TIMEOUT_SECONDS)
+        if self._job is not None:
+            # 잡을 닫아 남은 자식(venv 런처가 띄운 본 해석기 등)까지 끝낸다.
+            _close_job(self._job)
+            self._job = None
+        if process is None:
+            return
+        # 띄운 쪽이 끝나도 자식이 포트를 잠깐 더 쥘 수 있어, 포트가 비는 것까지 본다.
         began = self._clock()
         while self._port_probe(self.port):
             if self._clock() - began > STOP_TIMEOUT_SECONDS:
@@ -486,6 +755,12 @@ _INTRO_STATE_JS = """(id) => {
   return detail && !detail.disabled ? "ready" : "waiting";
 }"""
 _LISTBOX_OPEN_JS = """() => !!document.querySelector('[role="listbox"]')"""
+# 사이드바 메뉴 링크 수와 본문의 오류 상자(`st.error`) 유무 — 부트스트랩 실패 화면을 가른다.
+_APP_STATE_JS = """() => ({
+  nav: document.querySelectorAll('[data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"]')
+    .length,
+  error: !!document.querySelector('[data-testid="stMain"] [data-testid="stAlertContentError"]'),
+})"""
 # 펼친 목록의 선택지 수. 긴 목록은 그린 것만 DOM 에 있어(가상화) 굴리며 센다. 글자는 밖으로
 # 내지 않는다.
 _COUNT_OPTIONS_JS = """async () => {
@@ -692,6 +967,16 @@ class Screen:
             detail.first.click()
         self.wait_for(self.intro_state, timeout=15, accept=_overlay_closed)
 
+    def app_problem(self, timeout: float = 15.0) -> str | None:
+        """들어간 앱이 정상 화면인가. 부트스트랩이 실패하면(마이그레이션·DB 오류) 사이드바 메뉴 없이
+        오류 상자만 선다 — 그 화면에서 항목을 돌리면 화면 결함으로 거짓 보고한다. 정상이면 None."""
+        state = self.poll(
+            lambda: self.js(_APP_STATE_JS), timeout=timeout, accept=lambda value: value["nav"] > 0
+        )
+        if state["nav"] > 0:
+            return None
+        return "앱 오류 화면 있음" if state["error"] else "사이드바 메뉴 없음"
+
     def settle(self) -> None:
         """항목 사이 정리 — 덮개와 펼친 목록을 닫는다. 앞 항목이 중간에 끊겨도 다음 항목이 선다."""
         if self.js(_LISTBOX_OPEN_JS):
@@ -838,18 +1123,18 @@ def run_items(
     items: Sequence[Item],
     *,
     allow_writes: bool,
-    budget_seconds: float,
+    deadline: float,
     on_outcome: Callable[[Outcome], None] = lambda outcome: None,
     clock: Callable[[], float] = time.monotonic,
 ) -> list[Outcome]:
-    """항목을 차례로 돌린다. 하나가 예외로 끝나도 나머지는 돈다."""
-    began = clock()
+    """항목을 차례로 돌린다. 하나가 예외로 끝나도 나머지는 돈다. `deadline`(같은 `clock` 의 시각 —
+    스크립트 시작에서 잰 전체 예산의 끝)을 넘긴 뒤의 항목은 돌리지 않는다."""
     outcomes: list[Outcome] = []
     for number, item in enumerate(items, start=1):
         started = clock()
         if item.writes and not allow_writes:
             outcome = Outcome(item, SKIPPED_NO_PERMISSION)
-        elif started - began > budget_seconds:
+        elif started > deadline:
             outcome = Outcome(item, OVER_BUDGET)
         else:
             try:
@@ -872,12 +1157,19 @@ def run_items(
 
 @dataclass
 class RunFacts:
-    """블록 머리 두 줄의 재료. 모두 수와 고정 글자다. 실행하며 채운다."""
+    """블록 머리 세 줄의 재료. 모두 수와 고정 글자다. 실행하며 채운다."""
 
     channel: str
     stamp: str
     allow_writes: bool
-    ignored_other_apps: bool = False
+    # 사용자 앱 프로세스를 「봄」 또는 「무시」(--ignore-other-apps). 못 봤으면 여기까지 오지
+    # 않는다.
+    process_scan: str = "봄"
+    # (시뮬레이션, 설비) — 띄우기 전 대기 중이던 마이그레이션 수와, 끝난 뒤 센 이 확인이 건 수.
+    pending_migrations: tuple[int, int] | None = None
+    applied_migrations: tuple[int, int] | None = None
+    # 입장 뒤 앱이 오류 화면이면 그 꼴(「앱 오류 화면 있음」 등). 그때 항목은 돌지 않는다.
+    app_problem: str | None = None
     started_seconds: float = 0.0
     entered_seconds: float = 0.0
     elapsed_seconds: float = 0.0
@@ -892,25 +1184,47 @@ def _duration(seconds: float) -> str:
     return f"{whole // 60}분 {whole % 60}초" if whole >= 60 else f"{whole}초"
 
 
+def _migration_note(facts: RunFacts) -> str:
+    if facts.applied_migrations is not None:
+        simulation, equipment = facts.applied_migrations
+        if simulation + equipment == 0:
+            return "마이그레이션 — 이 확인이 건 것 없음"
+        return (
+            f"**마이그레이션 {simulation + equipment}개를 이 확인이 걸었다**"
+            f"(시뮬레이션 {simulation} · 설비 {equipment})"
+        )
+    if facts.pending_migrations is not None:
+        simulation, equipment = facts.pending_migrations
+        if simulation + equipment:
+            return (
+                f"대기 마이그레이션 시뮬레이션 {simulation} · 설비 {equipment} — 확인용 앱이 건다"
+            )
+        return "대기 마이그레이션 없음"
+    return "마이그레이션 — 세지 못함"
+
+
 def render_block(outcomes: Sequence[Outcome], *, total: int, facts: RunFacts) -> str:
-    """리뷰 문서에 그대로 붙이는 블록. 끊긴 실행이면 마지막 머리 줄이 그렇게 말한다."""
+    """리뷰 문서에 그대로 붙이는 블록. 끊긴 실행·앱 오류 화면이면 셋째 머리 줄이 그렇게 말한다."""
     recorded = sum(outcome.recorded for outcome in outcomes)
     skipped = sum(outcome.result == SKIPPED_NO_PERMISSION for outcome in outcomes)
     missing = len(outcomes) - recorded - skipped
-    state = (
-        "끝까지 돎"
-        if len(outcomes) == total
-        else f"**중간에 끊김 — {len(outcomes)}/{total} 항목까지**"
-    )
+    if facts.app_problem is not None:
+        state = f"**{facts.app_problem} — 항목 안 돎**"
+    elif len(outcomes) == total:
+        state = "끝까지 돎"
+    else:
+        state = f"**중간에 끊김 — {len(outcomes)}/{total} 항목까지**"
+    scan = "프로세스 봄" if facts.process_scan == "봄" else "프로세스 무시(--ignore-other-apps)"
     width, height = VIEWPORT
     lines = [
         "<!-- check_deploy_screens.py — 아래 블록을 리뷰 문서 7장 화면 확인 절에 그대로 붙인다 -->",
         "",
         "### 화면 확인 (에이전트 · `check_deploy_screens.py`)",
         "",
-        f"- 헤드리스 {_browser_name(facts.channel)} {width}×{height} · 별도 포트에 띄운 앱 · "
-        f"{facts.stamp} · {'쓰기 허락 있음' if facts.allow_writes else '쓰기 허락 없음'}"
-        f"{' · 다른 앱 무시' if facts.ignored_other_apps else ''}",
+        f"- 헤드리스 {_browser_name(facts.channel)} {width}×{height} · 별도 포트에 띄운 앱"
+        f"({APP_ADDRESS}) · {facts.stamp} · "
+        f"{'쓰기 허락 있음' if facts.allow_writes else '쓰기 허락 없음'}",
+        f"- 사용자 앱 확인 — {scan} · DB 잠금 없음 · {_migration_note(facts)}",
         f"- 앱 기동 {_duration(facts.started_seconds)} · "
         f"입장 화면 {_duration(facts.entered_seconds)} · "
         f"항목 {total} — 기록 {recorded} · 미기록 {missing} · 안 함 {skipped} · "
@@ -1209,7 +1523,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--budget-minutes",
         type=float,
         default=DEFAULT_BUDGET_MINUTES,
-        help="이 시간을 넘으면 남은 항목은 돌리지 않는다(사내 백그라운드 제한 30분)",
+        help="스크립트 시작부터 이 시간을 넘으면 남은 항목은 돌리지 않는다(사내 제한 30분)",
     )
     parser.add_argument(
         "--start-timeout", type=float, default=START_TIMEOUT_SECONDS, help="앱 기동을 기다릴 초"
@@ -1218,14 +1532,16 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--ignore-other-apps",
         action="store_true",
         help=(
-            "떠 있는 다른 `streamlit run app.py` 를 보지 않는다(DB 잠금은 그대로 본다). 다른 "
-            "저장소의 앱이 늘 떠 있는 사외 개발 PC 용 — 쓰면 블록 머리에 「다른 앱 무시」가 찍힌다"
+            "떠 있는 다른 `streamlit run app.py` 를 보지 않는다(DB 잠금은 그대로 본다). "
+            "사용자 앱이 없는 것을 손수 확인했을 때, 또는 다른 저장소의 앱이 늘 떠 있는 사외 "
+            "개발 PC 에서만 — "
+            "쓰면 블록 머리에 「프로세스 무시」가 찍힌다"
         ),
     )
     return parser.parse_args(argv)
 
 
-def select_items(spec: str | None, items: Sequence[Item] = ITEMS) -> list[Item] | None:
+def select_items(spec: str | None, items: Sequence[Item]) -> list[Item] | None:
     """`--items` 로 고른 항목(등록 차례). 모르는 키가 있으면 None."""
     if spec is None:
         return list(items)
@@ -1254,7 +1570,12 @@ def _progress(message: str) -> None:
 
 @contextmanager
 def open_browser(sync_api: Any, channel: str) -> Iterator[Any]:
-    """헤드리스 브라우저의 새 페이지. 나갈 때 브라우저를 닫는다."""
+    """헤드리스 브라우저의 새 페이지. 나갈 때 브라우저를 닫는다.
+
+    `Ctrl+C`(KeyboardInterrupt)가 Playwright 호출 안에서 나면 `browser.close()` 가 끝나지 않는
+    기다림에 빠져 뒤의 앱 끄기까지 막는다(사외 재현). 그때는 닫지 않고 `sync_playwright` 의 정리에
+    넘긴다 — 드라이버가 브라우저를 함께 끝낸다. 보통 예외와 정상 끝에서만 닫는다.
+    """
     with sync_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel=channel or None, headless=True)
         try:
@@ -1263,20 +1584,40 @@ def open_browser(sync_api: Any, channel: str) -> Iterator[Any]:
             )
             context.set_default_timeout(ACTION_TIMEOUT_MS)
             yield context.new_page()
-        finally:
+        except Exception:
             browser.close()
+            raise
+        browser.close()
+
+
+def _migration_snapshot() -> tuple[frozenset[int], ...] | None:
+    """두 DB 에 걸린 마이그레이션 번호. 읽지 못하면 None(머리 줄에 「세지 못함」)."""
+    try:
+        return tuple(applied_versions(path, table) for path, table, _ in migration_targets())
+    except duckdb.Error:
+        return None
+
+
+def _pending(snapshot: tuple[frozenset[int], ...]) -> tuple[int, int]:
+    counts = [
+        len(code - applied)
+        for (_, _, code), applied in zip(migration_targets(), snapshot, strict=True)
+    ]
+    return counts[0], counts[1]
 
 
 def preflight(args: argparse.Namespace) -> int | None:
     """띄우기 전 확인 — 사용자 앱(프로세스·DB 잠금)과 포트. 막히면 종료 코드, 아니면 None.
 
-    사용자 앱은 끄지 않는다. 다른 사람이 쓰고 있을 수 있다(런북 7장).
+    사용자 앱은 끄지 않는다. 다른 사람이 쓰고 있을 수 있다(런북 7장). 프로세스를 살피지 못하면
+    없다고 넘기지 않는다 — 가만히 떠 있는 앱은 DB 잠금에 안 잡힌다.
     """
     if not args.ignore_other_apps:
         running = running_app_count()
         if running is None:
-            _progress("프로세스를 살피지 못했습니다 — DB 잠금만 봅니다")
-        elif running:
+            print(SCAN_FAILED_MESSAGE)
+            return EXIT_DEFERRED
+        if running:
             print(DEFERRED_MESSAGE)
             return EXIT_DEFERRED
     try:
@@ -1293,19 +1634,40 @@ def preflight(args: argparse.Namespace) -> int | None:
     return None
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    _use_utf8_stdout()
+def _prepare_folders(args: argparse.Namespace) -> bool:
+    """`--output` 의 부모와 `--shots` 를 미리 만든다. 못 만들면 False."""
+    folders = []
+    if args.output is not None:
+        folders.append(Path(args.output).parent)
+    if args.shots is not None:
+        folders.append(Path(args.shots))
+    for folder in folders:
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            print(f"출력 폴더를 만들지 못했습니다 — {type(exc).__name__}")
+            return False
+    return True
+
+
+def run(argv: Sequence[str] | None = None) -> int:
+    began = time.monotonic()
     args = parse_args(argv)
     if args.list:
         print(render_item_list(ITEMS))
         return EXIT_OK
-    items = select_items(args.items)
+    items = select_items(args.items, ITEMS)
     if items is None:
         print(f"모르는 항목: {args.items} — 고를 수 있는 키: {', '.join(i.key for i in ITEMS)}")
         return EXIT_NOT_READY
     refused = refused_paths(args)
     if refused:
-        print(f"저장소 안 경로는 받지 않습니다 — {', '.join(refused)} 에 저장소 밖 경로를 줍니다")
+        print(
+            f"저장소 안이거나 장치·UNC 경로(\\\\…)라 받지 않습니다 — {', '.join(refused)} 에 "
+            "저장소 밖 드라이브 경로를 줍니다"
+        )
+        return EXIT_NOT_READY
+    if not _prepare_folders(args):
         return EXIT_NOT_READY
     sync_api = load_playwright(args.playwright_dir) if args.playwright_dir is not None else None
     if sync_api is None:
@@ -1314,24 +1676,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     blocked = preflight(args)
     if blocked is not None:
         return blocked
-    if args.shots is not None:
-        Path(args.shots).mkdir(parents=True, exist_ok=True)
 
-    began = time.monotonic()
+    deadline = began + args.budget_minutes * 60
+    before = _migration_snapshot()
     facts = RunFacts(
         channel=args.channel,
         stamp=applied_stamp(),
         allow_writes=args.allow_writes,
-        ignored_other_apps=args.ignore_other_apps,
+        process_scan="무시" if args.ignore_other_apps else "봄",
+        pending_migrations=None if before is None else _pending(before),
     )
     outcomes: list[Outcome] = []
+    output_failed = False
 
     def emit() -> str:
         """지금까지의 블록. `--output` 은 항목마다 다시 써서 중간에 끊겨도 돈 칸이 남는다."""
+        nonlocal output_failed
         facts.elapsed_seconds = time.monotonic() - began
         block = render_block(outcomes, total=len(items), facts=facts)
-        if args.output is not None:
-            Path(args.output).write_bytes(block.encode("utf-8"))
+        if args.output is not None and not output_failed:
+            try:
+                Path(args.output).write_bytes(block.encode("utf-8"))
+            except OSError as exc:
+                output_failed = True
+                _progress(
+                    f"--output 에 쓰지 못했습니다 — {type(exc).__name__}(블록은 아래에 찍는다)"
+                )
         return block
 
     def record(outcome: Outcome) -> None:
@@ -1339,7 +1709,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         _progress(f"· {outcome.item.title} — {outcome.seconds:.1f}초")
         emit()
 
-    _progress(f"확인용 앱을 포트 {args.port} 에 띄웁니다 …")
+    code = EXIT_OK
+    _progress(f"확인용 앱을 {APP_ADDRESS}:{args.port} 에 띄웁니다 …")
     try:
         with StreamlitApp(args.port, start_timeout=args.start_timeout) as app:
             facts.started_seconds = app.started_seconds
@@ -1348,17 +1719,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 with open_browser(sync_api, args.channel) as page:
                     screen = Screen(page, app.base_url, shots=args.shots)
                     facts.entered_seconds = screen.enter()
-                    run_items(
-                        screen,
-                        items,
-                        allow_writes=args.allow_writes,
-                        budget_seconds=args.budget_minutes * 60,
-                        on_outcome=record,
-                    )
+                    facts.app_problem = screen.app_problem()
+                    if facts.app_problem is not None:
+                        for item in items:
+                            record(Outcome(item, f"{UNRECORDED} — {facts.app_problem}"))
+                        code = EXIT_NOT_READY
+                    else:
+                        run_items(
+                            screen,
+                            items,
+                            allow_writes=args.allow_writes,
+                            deadline=deadline,
+                            on_outcome=record,
+                        )
             except Exception as exc:  # noqa: BLE001 — 브라우저·입장 실패는 까닭 종류만 알린다
                 print(f"브라우저로 들어가지 못했습니다 — {type(exc).__name__}")
-                emit()
-                return EXIT_NOT_READY
+                code = EXIT_NOT_READY
     except AppStartError as exc:
         print(f"앱이 뜨지 않았습니다 — {exc}")
         return EXIT_NOT_READY
@@ -1366,8 +1742,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         _progress(
             f"확인용 앱 프로세스가 남았을 수 있습니다 — 포트 {args.port} 가 아직 열려 있습니다"
         )
+    after = _migration_snapshot()
+    if before is not None and after is not None:
+        applied = [len(now - then) for now, then in zip(after, before, strict=True)]
+        facts.applied_migrations = (applied[0], applied[1])
     print(emit())
-    return EXIT_OK
+    return code
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """종료 코드 — 0 끝까지 돎 · 1 미룸(사용자 앱이 떠 있거나 살피지 못함) · 2 그 밖 모두.
+
+    예상 밖 예외는 종류만 찍고 2 로 끝낸다(문구에는 식별값이 실릴 수 있다). 1 은 미룸에만 쓴다.
+    `Ctrl+C` 는 그대로 올린다 — 띄운 앱은 그 사이 `with` 가 끈다.
+    """
+    _use_utf8_stdout()
+    try:
+        return run(argv)
+    except Exception as exc:  # noqa: BLE001 — 문구 대신 종류만
+        print(f"예상 밖 오류로 멈췄습니다 — {type(exc).__name__}")
+        return EXIT_NOT_READY
 
 
 if __name__ == "__main__":

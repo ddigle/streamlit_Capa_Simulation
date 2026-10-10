@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
+import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import duckdb
 import pytest
+
+from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -32,6 +38,8 @@ COMPONENTS = PROJECT_ROOT / "src" / "capa_simulation" / "components"
 SENTINEL = "ZZSENTINEL 설비호기 이름"
 # 자동 픽스처가 진짜 프로세스 살피기를 막기 전에 잡아 둔다 — 셈 규칙은 가짜 목록으로 시험한다.
 REAL_RUNNING_APP_COUNT = screens.running_app_count
+EXPECTED_PATHS = (DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
+BS = "\\"
 
 
 def _args(**overrides: Any) -> argparse.Namespace:
@@ -56,11 +64,58 @@ def test_a_case_varied_path_is_still_inside_on_windows() -> None:
     assert screens.inside_repository(Path(str(PROJECT_ROOT).upper()) / "review" / "x.md")
 
 
+def _device_forms() -> dict[str, str]:
+    root = str(PROJECT_ROOT)
+    no_drive = root[2:] if root[1:2] == ":" else root
+    return {
+        "extended": BS * 2 + "?" + BS + root + BS + "x.md",
+        "globalroot": BS * 2 + "?" + BS + "GLOBALROOT" + BS + "??" + BS + root + BS + "x.md",
+        "unc_localhost": BS * 2 + "localhost" + BS + "C$" + no_drive + BS + "x.md",
+        "unc_loopback": BS * 2 + "127.0.0.1" + BS + "C$" + no_drive + BS + "x.md",
+        "unc_extended": BS * 2 + "?" + BS + "UNC" + BS + "localhost" + BS + "C$" + no_drive,
+        "device": BS * 2 + "." + BS + root + BS + "x.md",
+        "slashes": "//localhost/C$" + no_drive.replace(BS, "/") + "/x.md",
+    }
+
+
+@pytest.mark.parametrize("form", sorted(_device_forms()))
+def test_device_and_unc_forms_are_refused_wherever_they_point(form: str) -> None:
+    # 앞머리가 다른 드라이브처럼 보여 문자열 비교를 빠져나가던 꼴이다(병합 전 리뷰 재현).
+    assert screens.inside_repository(Path(_device_forms()[form]))
+
+
+def test_a_device_form_outside_the_repository_is_still_refused(tmp_path: Path) -> None:
+    assert screens.inside_repository(Path(BS * 2 + "?" + BS + str(tmp_path / "x.md")))
+
+
+def test_an_alias_of_the_root_is_caught_by_samefile(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    (root / "data").mkdir(parents=True)
+    alias = tmp_path / "alias"
+    if sys.platform == "win32":
+        made = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(alias), str(root)], capture_output=True
+        )
+        if made.returncode != 0:
+            pytest.skip("연결 폴더를 만들 수 없다")
+    else:
+        alias.symlink_to(root, target_is_directory=True)
+    try:
+        assert screens.inside_repository(alias / "data" / "new" / "x.md", root)
+        assert not screens.inside_repository(tmp_path / "elsewhere" / "x.md", root)
+    finally:
+        # 연결만 지운다(대상은 그대로).
+        if sys.platform == "win32":
+            os.rmdir(alias)
+        else:
+            alias.unlink()
+
+
 def test_refused_paths_names_only_the_options(tmp_path: Path) -> None:
     args = _args(
         output=PROJECT_ROOT / "x.md",
         shots=tmp_path / "shots",
-        playwright_dir=PROJECT_ROOT / "pw",
+        playwright_dir=Path(_device_forms()["unc_localhost"]),
     )
 
     assert screens.refused_paths(args) == ["--output", "--playwright-dir"]
@@ -91,6 +146,18 @@ def test_main_refuses_shots_inside_the_repository(
 
     assert code == screens.EXIT_NOT_READY
     assert "--shots" in capsys.readouterr().out
+
+
+def test_an_output_folder_that_cannot_be_made_stops_with_2(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    blocker = tmp_path / "blocker"
+    blocker.write_text("", encoding="utf-8")
+
+    code = screens.main(["--output", str(blocker / "x.md"), "--playwright-dir", str(tmp_path)])
+
+    assert code == screens.EXIT_NOT_READY
+    assert "출력 폴더를 만들지 못했습니다" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------------- Playwright
@@ -130,6 +197,58 @@ def test_the_list_runs_without_playwright(capsys: pytest.CaptureFixture[str]) ->
     assert all(f"`{item.key}`" in out for item in ITEMS)
 
 
+class _FakeBrowser:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def new_context(self, **options: Any) -> SimpleNamespace:
+        return SimpleNamespace(set_default_timeout=lambda ms: None, new_page=lambda: "page")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeDriver:
+    def __init__(self, browser: _FakeBrowser) -> None:
+        self.browser = browser
+        self.exited = False
+
+    def __enter__(self) -> SimpleNamespace:
+        return SimpleNamespace(chromium=SimpleNamespace(launch=lambda **kw: self.browser))
+
+    def __exit__(self, *exc: object) -> None:
+        self.exited = True
+
+
+def _fake_sync_api() -> tuple[SimpleNamespace, _FakeBrowser, _FakeDriver]:
+    browser = _FakeBrowser()
+    driver = _FakeDriver(browser)
+    return SimpleNamespace(sync_playwright=lambda: driver), browser, driver
+
+
+def test_the_browser_is_closed_on_a_normal_end_and_on_an_error() -> None:
+    api, browser, _ = _fake_sync_api()
+    with screens.open_browser(api, "chrome") as page:
+        assert page == "page"
+    assert browser.closed
+
+    api, browser, _ = _fake_sync_api()
+    with pytest.raises(ValueError), screens.open_browser(api, "chrome"):
+        raise ValueError("항목 밖 실패")
+    assert browser.closed
+
+
+def test_ctrl_c_leaves_closing_to_the_driver() -> None:
+    # `browser.close()` 는 Playwright 호출 중 끊긴 뒤 끝나지 않는 기다림에 빠진다(리뷰 재현).
+    api, browser, driver = _fake_sync_api()
+
+    with pytest.raises(KeyboardInterrupt), screens.open_browser(api, "chrome"):
+        raise KeyboardInterrupt
+
+    assert not browser.closed
+    assert driver.exited
+
+
 # ---------------------------------------------------------------------------------- 사전 확인
 
 
@@ -158,11 +277,48 @@ def test_locked_databases_reports_only_the_locked_file(tmp_path: Path) -> None:
     assert len(opened) == 1 and opened[0].closed
 
 
+def test_an_io_error_that_is_not_a_lock_is_not_a_user_app(tmp_path: Path) -> None:
+    broken = tmp_path / "a.duckdb"
+    broken.write_bytes(b"")
+
+    def connect(path: str, read_only: bool) -> _FakeConnection:
+        raise duckdb.IOException("The file is not a valid DuckDB database file!")
+
+    with pytest.raises(duckdb.IOException):
+        screens.locked_databases([broken], connect=connect)
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ('IO Error: Could not set lock on file "x": Conflicting lock (PID 4412)', True),
+        ("IO Error: File is already open in python.exe (PID 12)", True),
+        ('IO Error: Cannot open file "x": 다른 프로세스가 파일을 사용 중', True),
+        ("IO Error: The file is not a valid DuckDB database file!", False),
+    ],
+)
+def test_lock_errors_are_told_apart(message: str, expected: bool) -> None:
+    assert screens.is_lock_error(duckdb.IOException(message)) is expected
+    assert screens.is_lock_error(ValueError(message)) is False
+
+
 def test_a_real_closed_database_is_not_locked(tmp_path: Path) -> None:
     path = tmp_path / "x.duckdb"
     duckdb.connect(str(path)).close()
 
     assert screens.locked_databases([path]) == []
+
+
+def test_applied_versions_reads_the_migration_table(tmp_path: Path) -> None:
+    path = tmp_path / "x.duckdb"
+    with duckdb.connect(str(path)) as connection:
+        connection.execute("CREATE SCHEMA app_meta")
+        connection.execute("CREATE TABLE app_meta.schema_migration (version INTEGER)")
+        connection.execute("INSERT INTO app_meta.schema_migration VALUES (1), (4)")
+
+    assert screens.applied_versions(path, "app_meta.schema_migration") == {1, 4}
+    assert screens.applied_versions(path, "equipment_meta.schema_migration") == frozenset()
+    assert screens.applied_versions(tmp_path / "none.duckdb", "x.y") == frozenset()
 
 
 @pytest.mark.parametrize(
@@ -207,6 +363,13 @@ def test_a_failed_process_scan_is_unknown_not_zero() -> None:
     assert REAL_RUNNING_APP_COUNT(list_commands=broken) is None
 
 
+def test_the_windows_process_query_asks_for_utf8() -> None:
+    # 콘솔 코드페이지(cp949) 그대로면 한글 경로의 명령줄이 깨져 앱을 놓친다.
+    assert screens._WINDOWS_PROCESS_QUERY.startswith(
+        "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"
+    )
+
+
 def _ready_for_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(screens, "load_playwright", lambda directory: object())
     monkeypatch.setattr(screens, "port_in_use", lambda port: False)
@@ -229,34 +392,83 @@ def test_a_running_user_app_defers_without_starting_anything(
     assert capsys.readouterr().out.strip() == screens.DEFERRED_MESSAGE
 
 
-def test_a_locked_database_defers_when_the_process_scan_fails(
+def test_a_failed_process_scan_defers_instead_of_trusting_the_lock_check(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
+    # 가만히 떠 있는 앱은 DB 를 쥐지 않는다 — 잠금이 없다고 사용자 앱이 없는 것이 아니다.
     _ready_for_preflight(monkeypatch)
     monkeypatch.setattr(screens, "running_app_count", lambda: None)
-    monkeypatch.setattr(screens, "locked_databases", lambda paths: [Path("x.duckdb")])
+
+    def no_lock_check(paths: object) -> list[Path]:
+        raise AssertionError("프로세스를 못 봤는데 DB 잠금만 보고 넘어가려 했다")
+
+    monkeypatch.setattr(screens, "locked_databases", no_lock_check)
 
     code = screens.main(["--playwright-dir", str(tmp_path)])
 
-    captured = capsys.readouterr()
     assert code == screens.EXIT_DEFERRED
-    assert captured.out.strip() == screens.DEFERRED_MESSAGE
-    assert "DB 잠금만" in captured.err
+    out = capsys.readouterr().out
+    assert screens.SCAN_FAILED_MESSAGE in out and "--ignore-other-apps" in out
 
 
-def test_ignore_other_apps_skips_only_the_process_scan(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_ignore_other_apps_still_defers_on_a_locked_database(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
+    _ready_for_preflight(monkeypatch)
+
     def scan() -> int:
         raise AssertionError("--ignore-other-apps 인데 프로세스를 살폈다")
 
     monkeypatch.setattr(screens, "running_app_count", scan)
+    monkeypatch.setattr(screens, "locked_databases", lambda paths: [Path("x.duckdb")])
+
+    code = screens.main(["--playwright-dir", str(tmp_path), "--ignore-other-apps"])
+
+    assert code == screens.EXIT_DEFERRED
+    assert capsys.readouterr().out.strip() == screens.DEFERRED_MESSAGE
+
+
+def test_a_database_that_cannot_be_opened_is_2_not_a_deferral(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    _ready_for_preflight(monkeypatch)
+
+    def broken(paths: object) -> list[Path]:
+        raise duckdb.IOException(f"not a valid database file {SENTINEL}")
+
+    monkeypatch.setattr(screens, "locked_databases", broken)
+
+    code = screens.main(["--playwright-dir", str(tmp_path)])
+
+    out = capsys.readouterr().out
+    assert code == screens.EXIT_NOT_READY
+    assert "DB 를 열지 못했습니다 — IOException" in out and SENTINEL not in out
+
+
+def test_a_busy_port_is_2(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(screens, "locked_databases", lambda paths: [])
     monkeypatch.setattr(screens, "port_in_use", lambda port: True)
 
-    args = screens.parse_args(["--ignore-other-apps", "--port", "8559"])
+    args = screens.parse_args(["--port", "8559"])
 
     assert screens.preflight(args) == screens.EXIT_NOT_READY
+
+
+def test_an_unexpected_exception_is_2_with_only_its_type(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    monkeypatch.setattr(screens, "load_playwright", lambda directory: object())
+
+    def boom(args: object) -> None:
+        raise ValueError(SENTINEL)
+
+    monkeypatch.setattr(screens, "preflight", boom)
+
+    code = screens.main(["--playwright-dir", str(tmp_path)])
+
+    out = capsys.readouterr().out
+    assert code == screens.EXIT_NOT_READY
+    assert "예상 밖 오류로 멈췄습니다 — ValueError" in out and SENTINEL not in out
 
 
 # ---------------------------------------------------------------------------------- 앱 수명
@@ -305,6 +517,7 @@ def _app(
     healthy: bool = True,
     port_open: bool = False,
     seen: dict[str, Any] | None = None,
+    child_paths: tuple[Path, Path] = EXPECTED_PATHS,
 ) -> StreamlitApp:
     clock = _Clock()
 
@@ -318,7 +531,9 @@ def _app(
         popen=popen,
         probe=lambda url: healthy,
         port_probe=lambda port: port_open,
+        path_probe=lambda env, root: child_paths,
         start_timeout=5,
+        contain=False,
         clock=clock,
         sleep=clock.sleep,
     )
@@ -328,7 +543,7 @@ def _stopped(process: _FakeProcess) -> bool:
     return ("signal" in process.calls or "terminate" in process.calls) and "wait" in process.calls
 
 
-def test_the_app_is_started_on_its_own_port_with_the_callers_environment(
+def test_the_app_listens_locally_with_this_repository_first_on_the_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("PYTHONPATH", "worktree-src")
@@ -341,9 +556,39 @@ def test_the_app_is_started_on_its_own_port_with_the_callers_environment(
     command = seen["command"]
     assert command[:5] == [sys.executable, "-m", "streamlit", "run", "app.py"]
     assert command[command.index("--server.port") + 1] == "8559"
+    assert command[command.index("--server.address") + 1] == "127.0.0.1"
     assert seen["cwd"] == str(PROJECT_ROOT)
-    assert seen["env"]["PYTHONPATH"] == "worktree-src"
+    assert seen["env"]["PYTHONPATH"] == os.pathsep.join([str(PROJECT_ROOT / "src"), "worktree-src"])
     assert _stopped(process)
+
+
+def test_the_app_environment_puts_this_repository_first_once() -> None:
+    source = str(PROJECT_ROOT / "src")
+
+    assert screens.app_environment(PROJECT_ROOT, {})["PYTHONPATH"] == source
+    twice = screens.app_environment(PROJECT_ROOT, {"PYTHONPATH": os.pathsep.join(["a", source])})
+    assert twice["PYTHONPATH"] == os.pathsep.join([source, "a"])
+
+
+def test_an_app_that_would_open_another_database_is_not_started(tmp_path: Path) -> None:
+    seen: dict[str, Any] = {}
+    other = (tmp_path / "a.duckdb", tmp_path / "b.duckdb")
+
+    with (
+        pytest.raises(AppStartError, match="다른 DB"),
+        _app(_FakeProcess(), seen=seen, child_paths=other),
+    ):
+        pass
+
+    assert seen == {}
+
+
+def test_the_child_database_paths_are_this_repositorys() -> None:
+    paths = screens.child_database_paths(screens.app_environment(PROJECT_ROOT), PROJECT_ROOT)
+
+    assert all(
+        screens._same_path(a, b.resolve()) for a, b in zip(paths, EXPECTED_PATHS, strict=True)
+    )
 
 
 def test_the_app_is_stopped_when_the_checks_raise() -> None:
@@ -405,6 +650,26 @@ def test_windows_falls_back_to_terminate_when_ctrl_break_cannot_be_sent() -> Non
     assert "terminate" in process.calls
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Job Object 는 Windows 만")
+def test_a_child_in_the_job_ends_when_the_job_closes() -> None:
+    # 스크립트가 강제로 끝나면 잡의 마지막 핸들이 닫힌다 — 그 일을 손으로 한다.
+    job = screens._create_kill_on_close_job()
+    assert job is not None
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        creationflags=screens._CREATE_SUSPENDED,
+    )
+    try:
+        assert screens._adopt_and_resume(job, child)
+        time.sleep(0.5)
+        assert child.poll() is None
+        screens._close_job(job)
+        child.wait(timeout=10)
+    finally:
+        if child.poll() is None:
+            child.kill()
+
+
 # ------------------------------------------------------------------------- 항목 실행·결과 꼴
 
 
@@ -446,13 +711,16 @@ def _items(called: list[str]) -> list[Item]:
     ]
 
 
+NO_DEADLINE = float("inf")
+
+
 def test_write_items_are_skipped_without_permission_and_failures_do_not_stop_the_rest() -> None:
     called: list[str] = []
     screen = _FakeScreen()
     seen: list[Outcome] = []
 
     outcomes = screens.run_items(
-        screen, _items(called), allow_writes=False, budget_seconds=600, on_outcome=seen.append
+        screen, _items(called), allow_writes=False, deadline=NO_DEADLINE, on_outcome=seen.append
     )
 
     assert called == ["ok", "broken", "after"]
@@ -470,12 +738,12 @@ def test_write_items_are_skipped_without_permission_and_failures_do_not_stop_the
 def test_write_items_run_only_with_permission() -> None:
     called: list[str] = []
 
-    screens.run_items(_FakeScreen(), _items(called), allow_writes=True, budget_seconds=600)
+    screens.run_items(_FakeScreen(), _items(called), allow_writes=True, deadline=NO_DEADLINE)
 
     assert "writes" in called
 
 
-def test_items_past_the_budget_are_not_run() -> None:
+def test_items_past_the_deadline_are_not_run() -> None:
     called: list[str] = []
     clock = _Clock()
 
@@ -484,15 +752,15 @@ def test_items_past_the_budget_are_not_run() -> None:
         return clock.now
 
     outcomes = screens.run_items(
-        _FakeScreen(), _items(called), allow_writes=True, budget_seconds=250, clock=tick
+        _FakeScreen(), _items(called), allow_writes=True, deadline=250, clock=tick
     )
 
     assert outcomes[-1].result == OVER_BUDGET
     assert "after" not in called
 
 
-def _facts() -> RunFacts:
-    return RunFacts(
+def _facts(**overrides: Any) -> RunFacts:
+    facts = RunFacts(
         channel="chrome",
         stamp="적용 배포 `202610081500`",
         allow_writes=False,
@@ -500,17 +768,27 @@ def _facts() -> RunFacts:
         entered_seconds=21.0,
         elapsed_seconds=64.0,
     )
+    for name, value in overrides.items():
+        setattr(facts, name, value)
+    return facts
 
 
 def test_the_block_is_a_paste_ready_table_without_exception_text() -> None:
-    outcomes = screens.run_items(_FakeScreen(), _items([]), allow_writes=False, budget_seconds=600)
+    outcomes = screens.run_items(
+        _FakeScreen(), _items([]), allow_writes=False, deadline=NO_DEADLINE
+    )
 
-    block = screens.render_block(outcomes, total=4, facts=_facts())
+    block = screens.render_block(outcomes, total=4, facts=_facts(applied_migrations=(0, 0)))
 
     assert SENTINEL not in block and "ZZSENTINEL" not in block
     assert "### 화면 확인" in block
-    assert "헤드리스 Chrome 1600×1000" in block
-    assert "적용 배포 `202610081500` · 쓰기 허락 없음" in block
+    assert (
+        "- 헤드리스 Chrome 1600×1000 · 별도 포트에 띄운 앱(127.0.0.1) · "
+        "적용 배포 `202610081500` · 쓰기 허락 없음\n"
+    ) in block
+    assert (
+        "- 사용자 앱 확인 — 프로세스 봄 · DB 잠금 없음 · 마이그레이션 — 이 확인이 건 것 없음\n"
+    ) in block
     assert "항목 4 — 기록 2 · 미기록 1 · 안 함 1 · 걸린 시간 1분 4초 · 끝까지 돎" in block
     assert "| 항목 | 쓰기 | 결과 |" in block
     assert "| 읽기 항목 | 없음 | 있음 · 3개 |" in block
@@ -520,15 +798,28 @@ def test_the_block_is_a_paste_ready_table_without_exception_text() -> None:
     assert "| 뒤 항목 | 없음 | 같음 / 다름 |" in block
 
 
-def test_a_partial_block_says_where_it_stopped() -> None:
+def test_a_partial_block_says_where_it_stopped_and_how_apps_were_checked() -> None:
     outcomes = [Outcome(Item("ok", "읽기 항목", lambda screen: "있음"), "있음")]
-    facts = _facts()
-    facts.ignored_other_apps = True
 
-    block = screens.render_block(outcomes, total=5, facts=facts)
+    block = screens.render_block(
+        outcomes, total=5, facts=_facts(process_scan="무시", pending_migrations=(2, 0))
+    )
 
     assert "중간에 끊김 — 1/5 항목까지" in block
-    assert "다른 앱 무시" in block
+    assert "프로세스 무시(--ignore-other-apps)" in block
+    assert "대기 마이그레이션 시뮬레이션 2 · 설비 0 — 확인용 앱이 건다" in block
+
+
+def test_migrations_the_check_applied_are_called_out() -> None:
+    block = screens.render_block([], total=0, facts=_facts(applied_migrations=(2, 1)))
+
+    assert "**마이그레이션 3개를 이 확인이 걸었다**(시뮬레이션 2 · 설비 1)" in block
+
+
+def test_an_app_error_screen_is_in_the_header() -> None:
+    block = screens.render_block([], total=5, facts=_facts(app_problem="앱 오류 화면 있음"))
+
+    assert "**앱 오류 화면 있음 — 항목 안 돎**" in block
 
 
 def test_the_applied_stamp_carries_only_the_deploy_number(tmp_path: Path) -> None:
@@ -543,13 +834,128 @@ def test_the_applied_stamp_carries_only_the_deploy_number(tmp_path: Path) -> Non
 def test_items_are_chosen_by_key_in_registry_order() -> None:
     keys = [item.key for item in ITEMS]
     assert len(keys) == len(set(keys))
-    assert screens.select_items(None) == list(ITEMS)
-    chosen = screens.select_items(f"{keys[-1]},{keys[0]}")
+    assert screens.select_items(None, ITEMS) == list(ITEMS)
+    chosen = screens.select_items(f"{keys[-1]},{keys[0]}", ITEMS)
     assert chosen is not None and [item.key for item in chosen] == [keys[0], keys[-1]]
-    assert screens.select_items("없는키") is None
+    assert screens.select_items("없는키", ITEMS) is None
+
+
+# ---------------------------------------------------------------------------------- main 전체
+
+
+class _Run:
+    """가짜 앱·브라우저로 main 을 끝까지 돌린다(Playwright·실제 앱 없이)."""
+
+    def __init__(
+        self, monkeypatch: pytest.MonkeyPatch, items: list[Item], *, problem: str | None = None
+    ) -> None:
+        self.calls: list[str] = []
+        calls = self.calls
+
+        class FakeApp:
+            def __init__(self, port: int, *, start_timeout: float) -> None:
+                self.base_url = "http://127.0.0.1:8559/"
+                self.started_seconds = 1.0
+                self.port_released = True
+
+            def __enter__(self) -> FakeApp:
+                calls.append("start")
+                return self
+
+            def __exit__(self, *exc: object) -> None:
+                calls.append("stop")
+
+        @contextmanager
+        def fake_browser(sync_api: object, channel: str) -> Iterator[object]:
+            yield object()
+
+        monkeypatch.setattr(screens, "ITEMS", tuple(items))
+        monkeypatch.setattr(screens, "load_playwright", lambda directory: object())
+        monkeypatch.setattr(screens, "preflight", lambda args: None)
+        monkeypatch.setattr(screens, "StreamlitApp", FakeApp)
+        monkeypatch.setattr(screens, "open_browser", fake_browser)
+        monkeypatch.setattr(screens, "_migration_snapshot", lambda: (frozenset(), frozenset()))
+        monkeypatch.setattr(Screen, "enter", lambda self, timeout=0.0: 2.0)
+        monkeypatch.setattr(Screen, "app_problem", lambda self, timeout=0.0: problem)
+        monkeypatch.setattr(Screen, "settle", lambda self: None)
+
+
+def test_main_runs_write_items_only_with_allow_writes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    called: list[str] = []
+    _Run(monkeypatch, _items(called))
+
+    assert screens.main(["--playwright-dir", str(tmp_path)]) == screens.EXIT_OK
+    assert "writes" not in called
+
+    called.clear()
+    code = screens.main(["--playwright-dir", str(tmp_path), "--allow-writes"])
+
+    assert code == screens.EXIT_OK
+    assert "writes" in called
+
+
+def test_main_rewrites_the_output_after_every_item(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    output = tmp_path / "made" / "on" / "demand" / "screens.md"
+    seen_by_second: list[str] = []
+
+    def first(screen: Screen) -> str:
+        return "있음"
+
+    def second(screen: Screen) -> str:
+        seen_by_second.append(output.read_text(encoding="utf-8"))
+        return "없음"
+
+    run = _Run(monkeypatch, [Item("first", "첫 항목", first), Item("second", "둘째 항목", second)])
+
+    code = screens.main(["--playwright-dir", str(tmp_path), "--output", str(output)])
+
+    assert code == screens.EXIT_OK
+    assert run.calls == ["start", "stop"]
+    assert "| 첫 항목 | 없음 | 있음 |" in seen_by_second[0]
+    assert "중간에 끊김 — 1/2 항목까지" in seen_by_second[0]
+    final = output.read_text(encoding="utf-8")
+    assert "| 둘째 항목 | 없음 | 없음 |" in final and "끝까지 돎" in final
+    assert final.strip() in capsys.readouterr().out
+
+
+def test_an_app_error_screen_runs_no_item_and_exits_2(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    called: list[str] = []
+    run = _Run(monkeypatch, _items(called), problem="앱 오류 화면 있음")
+
+    code = screens.main(["--playwright-dir", str(tmp_path)])
+
+    out = capsys.readouterr().out
+    assert code == screens.EXIT_NOT_READY
+    assert called == []
+    assert run.calls == ["start", "stop"]
+    assert "**앱 오류 화면 있음 — 항목 안 돎**" in out
+    assert out.count("| 미기록 — 앱 오류 화면 있음 |") == 4
+
+
+def test_ctrl_c_inside_an_item_still_stops_the_app(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def interrupted(screen: Screen) -> str:
+        raise KeyboardInterrupt
+
+    run = _Run(monkeypatch, [Item("ki", "끊기는 항목", interrupted)])
+
+    with pytest.raises(KeyboardInterrupt):
+        screens.main(["--playwright-dir", str(tmp_path)])
+
+    assert run.calls == ["start", "stop"]
 
 
 # ---------------------------------------------------------------------------------- 화면 계약
+#
+# 항목이 찾는 선택자·화면 글자가 앱 코드·자산에 그대로 있는지만 본다. 화면에서의 동작은 사외
+# 실측(브라우저)과 사내 실행이 본다.
 
 
 def _text(path: Path) -> str:
@@ -572,6 +978,12 @@ def test_the_toolbar_labels_cover_the_declared_order() -> None:
     from capa_simulation.components.theme_toggle import TOOLBAR_BUTTON_ORDER
 
     assert set(screens.TOOLBAR_LABELS) == set(TOOLBAR_BUTTON_ORDER)
+
+
+def test_the_app_error_screen_is_an_error_box_without_the_sidebar_menu() -> None:
+    app = _text(PROJECT_ROOT / "app.py")
+    assert "st.error(bootstrap_error_message(exc)" in app
+    assert "st.page_link(" in app
 
 
 @pytest.mark.parametrize(
@@ -627,6 +1039,6 @@ def test_the_pages_the_items_open_exist(page: str) -> None:
 
 @pytest.fixture(autouse=True)
 def _no_real_side_effects(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """어느 테스트도 진짜 프로세스를 살피거나 진짜 앱을 띄우지 않는다."""
+    """어느 테스트도 진짜 프로세스를 살피지 않는다."""
     monkeypatch.setattr(screens, "running_app_count", lambda: 0)
     yield
