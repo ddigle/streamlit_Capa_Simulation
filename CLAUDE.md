@@ -49,7 +49,9 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다(PowerShell
 개수만 보고한다), `scripts\audit_top_remigration.py`(`0026` 적용 뒤 이관 결과의 오염·누락을
 **읽기 전용**으로 점검), `scripts\inspect_real_data_checks.py`(실데이터로만 답이 나오는 확인 — 기존 결과
 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery 를 **읽기 전용**으로 재어 집계만 찍는다. 사내 런북
-8장이 배포마다 부른다), `scripts\benchmark_home.py`(HOME 단계별 성능), `scripts\validate_duckdb_persistence.py`
+8장이 배포마다 부른다), `scripts\check_deploy_screens.py`(사내 런북 7장 화면 확인 — 별도 포트에 앱을
+띄워 저장소 밖 Playwright·깔린 Chrome 으로 보고 개수·있음/없음만 찍는다. 항목은 함수 하나 + `ITEMS` 한 줄),
+`scripts\benchmark_home.py`(HOME 단계별 성능), `scripts\validate_duckdb_persistence.py`
 (영속성 통합 검증), `scripts\generate_sample_core_data.py`(합성 Core Data 생성).
 `scripts\build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖는다).
 

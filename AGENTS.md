@@ -4759,6 +4759,13 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   목록)만 찍고 그 밖은 종류 수로 센다. 사내 런북(`docs/internal_update_runbook.md`) 8장이 배포마다 부르고
   결과는 리뷰 문서로 돌아온다. 블록을 더할 때는 `tests/test_inspect_real_data_checks.py` 의
   표지값(`ZZSENTINEL…`) 검사를 함께 늘린다.
+- **배포마다 바뀌는 사내 화면 확인(런북 7장)은 `scripts/check_deploy_screens.py` 가 맡는다.** 별도 포트에 띄운
+  앱을 저장소 밖에 깐 Playwright(깔린 Chrome, headless)로 보고, 결과 칸에는 개수·있음/없음·같음/다름·px 만
+  둔다 — 화면에서 읽은 이름은 판정에만 쓰고 옮기지 않는다. 항목은 공통 뼈대(`Screen`)만 쓰는 함수 하나와
+  `ITEMS` 한 줄이고, DB 에 쓰는 항목은 `writes=True` 로 두어 `--allow-writes` 없이는 「안 함(허락 없음)」이다
+  (저장 뒤 지워 되돌리는 것만 둔다). 앱은 rerun 동안만 DB 를 쥐므로(`pinned_connections`) 떠 있는 사용자 앱은
+  DB 잠금이 아니라 프로세스 명령줄(`streamlit run … app.py`)로 먼저 가린다. 항목이 기대는 화면 글자·선택자는
+  `tests/test_check_deploy_screens.py` 가 앱 코드·자산과 대조한다 — 그 글자를 바꾸면 그 테스트가 알린다.
 
 실제로 이 규칙이 없어서, 표본의 `Mold` 소요기준이 `CHIP` 인 것을 근거로 사용자의 공정
 설명이 데이터와 충돌한다고 보고한 적이 있다. 충돌 상대는 실데이터가 아니라 생성기였다.
