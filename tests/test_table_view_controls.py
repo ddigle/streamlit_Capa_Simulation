@@ -1,4 +1,4 @@
-# Purpose: 편집표의 보기 설정이 저장 대상 행을 잃지 않는지 검사한다.
+# Purpose: 편집표의 보기 설정이 저장 대상 행을 잃지 않고 필터 표시명이 값을 바꾸지 않는지 검사한다.
 
 from __future__ import annotations
 
@@ -108,3 +108,38 @@ def test_changing_the_visible_rows_rebuilds_the_editor_but_the_first_render_does
     app.multiselect(key="view_test_filter_공정소분류").set_value(["가"]).run()
     assert not app.exception
     assert app.session_state["seen_editor_key"] == "view_test_editor__g1"
+
+
+def _labelled_filter_app() -> None:
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components.table_view_controls import render_table_view_controls
+
+    data = pd.DataFrame({"공정": ["DA", "DA2", "WB"], "Cutoff일수": [1.0, 2.0, 3.0]})
+    view = render_table_view_controls(
+        data,
+        key_prefix="labelled_view",
+        editor_key="labelled_view_editor",
+        filter_columns=["공정"],
+        locked_columns=["공정", "Cutoff일수"],
+        # `DA2` 의 표시명이 다른 공정의 원본 `DA` 와 같다.
+        value_labels={"공정": {"DA2": "DA"}},
+    )
+    st.session_state["visible_processes"] = list(view.frame["공정"])
+
+
+def test_a_colliding_filter_label_still_filters_the_chosen_process() -> None:
+    """Streamlit 1.63 multiselect 는 같은 글자 둘 중 첫째로 돌아온다 — `DA2` 를 골라도 `DA` 로
+    걸렀다(병합 전 리뷰 재현). 겹친 선택지는 「표시명 (원본)」 으로 갈라 보인다."""
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_function(_labelled_filter_app).run()
+    assert not app.exception
+    picker = app.multiselect(key="labelled_view_filter_공정")
+    assert picker.options == ["DA", "DA (DA2)", "WB"]
+
+    picker.set_value(["DA2"]).run()
+    assert not app.exception
+    assert app.session_state["labelled_view_filter_공정"] == ["DA2"]
+    assert app.session_state["visible_processes"] == ["DA2"]

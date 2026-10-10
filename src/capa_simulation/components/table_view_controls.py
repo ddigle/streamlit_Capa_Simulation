@@ -28,7 +28,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor
-from capa_simulation.components.process_labels import ProcessLabelFormatter
+from capa_simulation.components.process_labels import ProcessLabels
 
 FILTERED_NOTICE = (
     "필터가 걸려 있어 행 추가·삭제를 잠갔습니다. 보이지 않는 행도 저장에는 그대로 "
@@ -76,7 +76,8 @@ def render_table_view_controls(
     사용자가 무엇을 고치고 있는지 알 수 없고, 새 행을 만들 수도 없다.
 
     `value_labels` 는 행 필터 선택지의 **보이는 글자**만 바꾼다(공정 표시명, `column_filter` 와
-    같은 모양). 옵션 값·세션 저장값·거르는 값은 원본이고 편집표의 칸은 건드리지 않는다.
+    같은 모양 — 겹치는 글자는 `ProcessLabels.unique_format_func` 로 가른다). 옵션 값·세션
+    저장값·거르는 값은 원본이고 편집표의 칸은 건드리지 않는다.
     """
     if data.empty:
         return TableView(data)
@@ -105,14 +106,15 @@ def render_table_view_controls(
                     if not options or len(options) > MAX_FILTER_OPTIONS:
                         continue
                     labels = (value_labels or {}).get(column)
+                    # 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다 — 겹친 글자로는 고른 것과
+                    # 다른 값이 돌아온다. 차례는 보이는 글자순(표시명이 없으면 지금처럼 원본 순서).
+                    option_text = ProcessLabels(labels=labels or {}).unique_format_func(options)
                     if labels:
-                        # 보이는 글자의 가나다순. 표시명이 없으면 지금처럼 원본 순서다.
-                        formatter = ProcessLabelFormatter(labels)
-                        options = sorted(options, key=lambda value: (formatter(value), value))
+                        options = sorted(options, key=lambda value: (option_text(value), value))
                     selections[column] = st.multiselect(
                         column,
                         options=options,
-                        format_func=ProcessLabelFormatter(labels) if labels else str,
+                        format_func=option_text if labels else str,
                         placeholder="전체",
                         key=f"{key_prefix}_filter_{column}",
                         persist_state="session",

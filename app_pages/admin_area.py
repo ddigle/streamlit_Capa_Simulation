@@ -39,7 +39,8 @@ except BOOTSTRAP_ERRORS as exc:
     st.stop()
 
 # 공정 목록은 안내·편집 보조일 뿐이라 활성 시나리오가 없어도 화면을 멈추지 않는다.
-# 공용 표시명 저장 자체는 시나리오와 무관하다.
+# 공용 표시명 저장 자체는 시나리오와 무관하다. 시나리오 `RQ_MODULE` 공정만 본다 — 설비 마스터의
+# 공정소분류까지 보려면 이 화면이 설비 DB 를 읽어야 해서 넓히지 않는다(겹침 경고 문구에 적는다).
 try:
     reference_tables = get_effective_reference_tables()
     available_processes = sorted(

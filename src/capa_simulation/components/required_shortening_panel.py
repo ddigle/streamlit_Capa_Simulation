@@ -460,7 +460,9 @@ def _render_process_filter(
     selected = st.multiselect(
         "공정 (표시순서)",
         options=ordered,
-        format_func=labels.format_func(),
+        # 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다 — 겹친 글자로는 고른 것과 다른 공정이
+        # 세션·공용 프로필에 들어간다(`unique_format_func`).
+        format_func=labels.unique_format_func(ordered),
         placeholder="미선택 시 목표 미달 공정 전체",
         key=SHORTENING_PROCESS_KEY,
         persist_state="session",

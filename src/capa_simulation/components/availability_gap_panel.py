@@ -226,14 +226,17 @@ def render_availability_gap_panel(
         key=RESULT_VIEW_KEY,
         persist_state="session",
     )
-    # 값은 원본 공정명이고 글자만 표시명이다. 차례는 보이는 글자의 가나다순이다(표시명이 없으면
-    # 지금처럼 원본 순서). `전체 합계` 는 공정이 아니라 매핑에 걸리지 않는다.
+    # 값은 원본 공정명이고 글자만 표시명이다. 보이는 글자가 다른 공정이나 `전체 합계` 와 겹치면
+    # 「표시명 (원본)」 으로 가른다 — 겹친 글자로는 고른 것과 다른 공정이 돌아오고, `전체 합계` 와
+    # 겹치면 다음 회차의 기본값이 그 공정으로 바뀌었다(`unique_format_func`). 차례는 보이는 글자의
+    # 가나다순이다(표시명이 없으면 지금처럼 원본 순서). `전체 합계` 는 맨 앞 그대로다.
+    processes = set(comparison.rows["공정"].dropna().astype(str))
+    process_format = labels.unique_format_func(
+        [_ALL_PROCESSES, *processes], reserved=(_ALL_PROCESSES,)
+    )
     options = [
         _ALL_PROCESSES,
-        *sorted(
-            set(comparison.rows["공정"].dropna().astype(str)),
-            key=lambda name: (labels.label(name), name),
-        ),
+        *sorted(processes, key=lambda name: (process_format(name), name)),
     ]
     if (
         PROCESS_FILTER_KEY in st.session_state
@@ -244,7 +247,7 @@ def render_availability_gap_panel(
         selected = st.selectbox(
             "공정",
             options=options,
-            format_func=labels.format_func(),
+            format_func=process_format,
             key=PROCESS_FILTER_KEY,
             persist_state="session",
         )
@@ -276,7 +279,8 @@ def render_availability_gap_panel(
         if excluded:
             st.caption(
                 f"전체 합계에서 한쪽에만 있는 공정 {len(excluded)}개를 뺐습니다. "
-                "그 공정은 조회 조건의 `공정` 에서 이름을 골라 따로 봅니다."
+                "그 공정은 조회 조건의 `공정` 에서 골라 따로 봅니다(상자는 공정 표시명으로 "
+                "보입니다)."
             )
     else:
         scoped = comparison.rows
@@ -795,5 +799,6 @@ def _render_unmatched(dynamic_only: list[str], static_only: list[str]) -> None:
         )
     st.warning(
         "두 쪽의 공정명이 맞지 않는 자리가 있습니다. 설비 마스터의 `공정소분류` 와 "
-        "기준정보의 `공정` 이 같은 값이어야 맞댈 수 있습니다.\n" + "\n".join(lines)
+        "기준정보의 `공정` 이 같은 값이어야 맞댈 수 있습니다. 아래 이름은 공정 표시명이 아니라 "
+        "원본 공정명입니다 — 조회 조건의 `공정` 상자에는 표시명으로 보입니다.\n" + "\n".join(lines)
     )

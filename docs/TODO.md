@@ -770,7 +770,9 @@
   공용 프로필을 한 번 읽어 `process_labels=` 로 넘긴다. Main — `공정소분류` 선택지(차례는 보이는 글자순)·걸린
   조건 줄·조회 표의 `공정소분류` 칸(공정별 내역·비가동 호기·호기 목록·Qual 호기 목록·전환 일정 목록)·생애주기
   Gantt 풍선. Static/Dynamic — `공정` 선택지·칸의 호기·호기 목록·확보율 교차검증 표(비교 그림에는 공정 글자가
-  없다). Preference — `표 보기 설정` 의 공정 필터 선택지만. **원본으로 남긴 곳**: 선택값(세션)·표 키, 호기 목록
+  없다). Preference — `표 보기 설정` 의 공정 필터 선택지만. 네 선택 상자(필요단축일정 포함)는 보이는 글자가 겹치면
+  「표시명 (원본)」 으로 가른다(병합 전 리뷰 — 같은 글자면 다른 공정이 돌아왔다, `ProcessLabels.unique_format_func`).
+  **원본으로 남긴 곳**: 선택값(세션)·표 키, 호기 목록
   CSV·Cut-off CSV, Cut-off 편집표 `공정` 칸과 「Cut-off 를 적지 않은 공정」 경고(그 이름을 새 행에 적어야
   맞댄다), 「두 쪽의 공정명이 맞지 않는 자리」 경고와 한쪽에만 있는 공정의 까닭(설비 마스터·기준정보에서 고칠
   이름 — 「맞대지 못한 공정」과 같은 갈래), RawData 입력. **대신 정한 것(사용자 확인)**: Cut-off 편집표에 읽기
@@ -781,6 +783,15 @@
   `test_equipment_explorer.py`·`test_availability_gap_panel.py`.
   (2) 당긴 날이 반입보다 이르면 엔진은 그날을 「입고 예정」으로 세지만 이 계산은 가용으로 센다(사용자 결정 —
   반입 무시). 실데이터에서 반입·Qual 차이 분포를 보고 다시 묻는다.
+- [ ] **다른 화면의 공정 선택 상자도 `ProcessLabels.unique_format_func` 로 옮긴다**(2026-10-10 병합 전 리뷰 후속) —
+  Streamlit 1.63 은 선택값을 보이는 글자로 주고받아, 표시명이 다른 공정의 원본 이름과 같으면 고른 것과 다른
+  공정이 세션에 든다(가용설비 현황 네 상자는 고쳤다). 아직 `format_func()`·`ProcessLabelFormatter` 그대로인
+  자리: `app_pages/home.py`(628), `app_pages/calculation_result.py`(268), `app_pages/standard_target_capa.py`
+  (245·671), `app_pages/wip_status.py`(195), `app_pages/reference_integrity.py`(278),
+  `components/column_filter.py`(77 — 공정별 확보율 필터), `components/home_preference.py`(1441·1631),
+  `components/performance_actual_screen.py`(211). `components/month_editor.py`(338)의 `SelectboxColumn` 은
+  편집 결과를 값으로 돌려주므로(AGENTS 8장 ⑤) 같은 문제인지 먼저 잰다. 상자마다 그 상자의 선택지로 부르고, 표지값이 있으면 `reserved` 로 넘긴다. 위젯마다 겹치는 표시명을
+  골라 세션 값이 원본인지 보는 AppTest 를 더한다.
 - [x] **필요단축일정 조회 조건 공용 프로필 · 공정 표시명(2026-10-08 사용자 요청)** — 「설비 조회 조건은
   공용프로필로 저장되게끔 해 조회기간과 공정」, 「공정명은 proc rename 기준으로 표기」. 시작 월·끝 월·공정을
   설비 DB `0019`(`equipment_ops.shortening_filter_profile` 한 행 + `shortening_filter_process`)에 두고, 세션에

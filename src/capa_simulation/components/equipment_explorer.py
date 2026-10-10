@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date, timedelta
 from typing import Literal
 
@@ -156,11 +156,13 @@ def _with_parent(columns: Sequence[str], frame: pd.DataFrame) -> list[str]:
     return result
 
 
-def _shown_values(name: str, values: Sequence[str], labels: ProcessLabels) -> list[str]:
-    """걸린 조건 줄에 적을 값. 공정소분류만 표시명이고 다른 조건은 고른 값 그대로다."""
+def _shown_values(
+    name: str, values: Sequence[str], process_format: Callable[[object], str]
+) -> list[str]:
+    """걸린 조건 줄에 적을 값. 공정소분류만 고른 상자와 같은 글자이고 다른 조건은 그대로다."""
     if name != PROCESS_COLUMN:
         return list(values)
-    return [labels.label(value) for value in values]
+    return [process_format(value) for value in values]
 
 
 def _table(
@@ -524,16 +526,16 @@ def render_equipment_explorer(
     settings = conditions if conditions is not None else st.container(border=True)
     with settings:
         with st.container(horizontal=not in_card, gap="small"):
-            # 값은 원본 공정명이고 글자만 표시명이다. 차례는 보이는 글자의 가나다순이다(표시명이
-            # 없으면 지금처럼 원본 순서).
-            process_options = sorted(
-                set(_options(equipment, PROCESS_COLUMN)) | set(_options(baseline, "공정")),
-                key=lambda process: (labels.label(process), process),
-            )
+            # 값은 원본 공정명이고 글자만 표시명이다. 보이는 글자가 겹치면 「표시명 (원본)」 으로
+            # 가른다 — 겹친 글자로는 고른 것과 다른 공정이 돌아온다(`unique_format_func`). 차례는
+            # 보이는 글자의 가나다순이다(표시명이 없으면 지금처럼 원본 순서).
+            owned = set(_options(equipment, PROCESS_COLUMN)) | set(_options(baseline, "공정"))
+            process_format = labels.unique_format_func(owned)
+            process_options = sorted(owned, key=lambda process: (process_format(process), process))
             selected = st.multiselect(
                 "공정소분류",
                 process_options,
-                format_func=labels.format_func(),
+                format_func=process_format,
                 placeholder="전체 공정 · 검색 가능",
                 key=SMALL_PROCESS_KEY,
                 persist_state="session",
@@ -615,7 +617,7 @@ def render_equipment_explorer(
     # 무엇으로 걸렀는지는 본문에도 한 줄 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
     # 공정은 고른 상자와 같은 글자(표시명)로 적는다.
     active_filters = [
-        f"{name}: {', '.join(_shown_values(name, values, labels))}"
+        f"{name}: {', '.join(_shown_values(name, values, process_format))}"
         for name, values in filters
         if values
     ]

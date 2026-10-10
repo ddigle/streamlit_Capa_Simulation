@@ -170,6 +170,69 @@ def test_value_labels_only_target_the_named_column() -> None:
     assert "제품정보" not in labels.value_labels()
 
 
+# ---------------------------------------------------------------- 선택 상자 글자 가르기
+
+
+def _shown(labels: ProcessLabels, options: list[str], reserved: tuple[str, ...] = ()) -> list[str]:
+    formatter = labels.unique_format_func(options, reserved=reserved)
+    return [formatter(option) for option in options]
+
+
+def test_unique_format_func_keeps_every_text_without_display_names() -> None:
+    """표시명이 없으면 지금과 글자까지 같다 — 공백만 다른 원본도 서로 다른 글자 그대로다."""
+    options = ["DA", "DA ", "WB", "전체 합계"]
+
+    assert _shown(ProcessLabels(), options, ("전체 합계",)) == options
+
+
+def test_unique_format_func_splits_a_display_name_equal_to_another_original() -> None:
+    """Streamlit 1.63 은 서식 글자로 값을 주고받는다 — 같은 글자면 다른 공정이 돌아온다."""
+    labels = _labels([("DA2", "DA")])
+
+    assert _shown(labels, ["DA", "DA2", "WB"]) == ["DA", "DA (DA2)", "WB"]
+    # 겹치지 않으면 표시명 그대로다.
+    assert _shown(_labels([("DA2", "다이2")]), ["DA", "DA2"]) == ["DA", "다이2"]
+
+
+def test_unique_format_func_keeps_the_reserved_marker_apart() -> None:
+    labels = _labels([("Etch", "전체 합계")])
+
+    assert _shown(labels, ["전체 합계", "Etch", "Probe"], ("전체 합계",)) == [
+        "전체 합계",
+        "전체 합계 (Etch)",
+        "Probe",
+    ]
+
+
+def test_unique_format_func_splits_whitespace_variants_of_a_mapped_process() -> None:
+    """`DA`·`DA ` 는 같은 규칙으로 같은 표시명이 된다 — 원본 글자를 붙여 가른다."""
+    labels = _labels([("DA", "다이")])
+
+    assert _shown(labels, ["DA", "DA ", "WB"]) == ["다이 (DA)", "다이 (DA )", "WB"]
+
+
+def test_unique_format_func_keeps_every_text_distinct_even_after_splitting() -> None:
+    """가른 글자가 또 다른 선택지와 같으면 뒤의 것에 차례를 붙인다."""
+    labels = _labels([("X", "Y (Z)"), ("Z", "Y")])
+
+    shown = _shown(labels, ["X", "Y", "Z"])
+    assert len(set(shown)) == 3
+    assert shown[:2] == ["Y (Z)", "Y"]
+
+
+def test_frame_relabels_only_the_named_column_and_keeps_blanks() -> None:
+    labels = _labels([("DA2", "다이2")])
+    data = pd.DataFrame({"공정": ["DA", None, "DA2", "DA2"], "설비명": ["DA2"] * 4})
+
+    shown = labels.frame(data)
+
+    assert shown["공정"].tolist()[2:] == ["다이2", "다이2"]
+    assert shown["공정"].tolist()[0] == "DA" and pd.isna(shown["공정"].tolist()[1])
+    assert shown["설비명"].tolist() == ["DA2"] * 4
+    assert data["공정"].tolist()[2] == "DA2"
+    assert ProcessLabels().frame(data) is data
+
+
 # ---------------------------------------------------------------- 저장 왕복
 
 

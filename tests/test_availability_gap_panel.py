@@ -133,11 +133,11 @@ def _panel_app() -> None:
         )
 
     # 공정 표시명. 켜면 `Die Attach`·`Wire Bond` 만 표시명이 있다 — `Etch`·`Probe` 는 원본이다.
-    labels = (
-        ProcessLabels(version=1, labels={"Die Attach": "표시-DA", "Wire Bond": "표시-WB"})
-        if st.session_state.get("labels", False)
-        else None
-    )
+    # `label_map` 은 그 매핑을 갈아 낀다.
+    label_map = st.session_state.get("label_map")
+    if label_map is None and st.session_state.get("labels", False):
+        label_map = {"Die Attach": "표시-DA", "Wire Bond": "표시-WB"}
+    labels = ProcessLabels(version=1, labels=label_map) if label_map else None
     is_open = st.toggle("비교 탭 열기", value=True, key="test_gap_panel_open")
     render_availability_gap_panel(
         spans=spans,
@@ -618,3 +618,48 @@ def test_name_mismatch_notices_keep_the_original_process_names() -> None:
     assert not app.exception
     infos = " ".join(item.value for item in app.info)
     assert "「Wire Bond」 공정은 기준정보(Static)에 없어" in infos and "표시-WB" not in infos
+    # 경고는 그 이름이 원본이라고 밝힌다 — 상자에는 표시명만 보이므로.
+    assert "아래 이름은 공정 표시명이 아니라 원본 공정명입니다" in warnings
+
+
+def test_a_display_name_equal_to_another_process_still_picks_the_right_process() -> None:
+    """Streamlit 1.63 selectbox 는 같은 글자 둘 중 **마지막**으로 돌아온다.
+
+    `Etch` 의 표시명이 원본 `Probe` 와 같으면 Etch 를 골라도 Probe 를 계산했다(병합 전 리뷰
+    재현). 「표시명 (원본)」 으로 가른다.
+    """
+    app = _run()
+    app.session_state["label_map"] = {"Etch": "Probe"}
+    app.run()
+    picker = app.selectbox(key=PROCESS_FILTER_KEY)
+    assert picker.options == ["전체 합계", "Die Attach", "Probe", "Probe (Etch)"]
+
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Etch").run()
+    assert not app.exception
+    assert app.session_state[PROCESS_FILTER_KEY] == "Etch"
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
+    assert app.session_state[PROCESS_FILTER_KEY] == "Probe"
+
+
+def test_a_display_name_equal_to_the_total_marker_keeps_the_default() -> None:
+    """표시명이 `전체 합계` 와 같으면 다음 회차의 기본값이 그 공정으로 바뀌었다(리뷰 재현)."""
+    app = _run()
+    app.session_state["label_map"] = {"Etch": "전체 합계"}
+    for _ in range(3):
+        app.run()
+        assert not app.exception
+        assert app.session_state[PROCESS_FILTER_KEY] == "전체 합계"
+    assert "전체 합계 (Etch)" in app.selectbox(key=PROCESS_FILTER_KEY).options
+
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Etch").run()
+    assert app.session_state[PROCESS_FILTER_KEY] == "Etch"
+
+
+def test_a_held_process_survives_a_colliding_display_name() -> None:
+    app = _run()
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
+    app.session_state["label_map"] = {"Etch": "Probe"}
+    for _ in range(2):
+        app.run()
+        assert not app.exception
+        assert app.session_state[PROCESS_FILTER_KEY] == "Probe"

@@ -91,6 +91,14 @@ def _render_fixture() -> None:
     baseline = pd.DataFrame(
         {"공정": ["Die Attach"], "분류": ["기존"], "기존보유대수": [5.0], "비고": [""]}
     )
+    if st.session_state.get("spaced_baseline", False):
+        # 앞뒤 공백만 다른 원본 — 선택지로는 서로 다른 값이다.
+        spaced = {"공정": ["Die Attach "], "분류": ["기존"], "기존보유대수": [1.0], "비고": [""]}
+        baseline = pd.concat([baseline, pd.DataFrame(spaced)], ignore_index=True)
+    # 공정 표시명. `labels` 를 켜면 `Die Attach` 만 표시명이 있다. `label_map` 은 매핑을 갈아 낀다.
+    label_map = st.session_state.get("label_map")
+    if label_map is None and st.session_state.get("labels", False):
+        label_map = {"Die Attach": "표시-DA"}
     main_tab, _ = stateful_tabs(["Main", "Settings"], key="equipment_explorer_test_tab")
     with main_tab:
         render_equipment_explorer(
@@ -99,10 +107,7 @@ def _render_fixture() -> None:
             downtime=downtime,
             today=date(2026, 10, 6),
             owner_tab=main_tab,
-            # 공정 표시명. 켜면 `Die Attach` 만 표시명이 있다 — `Other` 는 원본 그대로다.
-            process_labels=ProcessLabels(version=1, labels={"Die Attach": "표시-DA"})
-            if st.session_state.get("labels", False)
-            else None,
+            process_labels=ProcessLabels(version=1, labels=label_map) if label_map else None,
         )
 
 
@@ -404,3 +409,47 @@ def test_process_display_names_label_the_main_tab_but_values_stay_original() -> 
     assert shown_processes() == {"표시-DA"}
     # 끝까지 선택값은 원본이다.
     assert app.session_state[SMALL_PROCESS_KEY] == ["Die Attach"]
+
+
+def _explorer(**state: object) -> AppTest:
+    app = AppTest.from_function(_render_fixture, default_timeout=30)
+    for key, value in state.items():
+        app.session_state[key] = value
+    app.run()
+    assert not app.exception
+    return app
+
+
+def test_a_display_name_equal_to_another_process_name_still_picks_the_right_process() -> None:
+    """Streamlit 1.63 은 선택값을 **보이는 글자**로 주고받는다. `Other` 의 표시명이 원본
+    `Die Attach` 와 같으면 같은 글자 둘 중 첫째로 돌아와 엉뚱한 공정으로 걸렀다(병합 전 리뷰 재현).
+    겹친 선택지는 「표시명 (원본)」 으로 갈라 보인다."""
+    app = _explorer(label_map={"Other": "Die Attach"})
+    assert app.multiselect(SMALL_PROCESS_KEY).options == ["Die Attach", "Die Attach (Other)"]
+
+    app.multiselect(SMALL_PROCESS_KEY).set_value(["Other"]).run()
+    assert app.session_state[SMALL_PROCESS_KEY] == ["Other"]
+    assert any("공정소분류: Die Attach (Other)" in item.value for item in app.caption)
+    app.multiselect(SMALL_PROCESS_KEY).set_value(["Die Attach"]).run()
+    assert app.session_state[SMALL_PROCESS_KEY] == ["Die Attach"]
+
+
+def test_a_held_selection_survives_a_colliding_display_name() -> None:
+    """고른 뒤에 겹치는 표시명이 생겨도 선택이 다른 공정으로 바뀌지 않는다."""
+    app = _explorer()
+    app.multiselect(SMALL_PROCESS_KEY).set_value(["Other"]).run()
+    app.session_state["label_map"] = {"Other": "Die Attach"}
+    for _ in range(2):
+        app.run()
+        assert not app.exception
+        assert app.session_state[SMALL_PROCESS_KEY] == ["Other"]
+
+
+def test_whitespace_variants_of_a_mapped_process_stay_apart() -> None:
+    """`Die Attach` 와 `Die Attach ` 는 같은 규칙으로 같은 표시명이 된다 — 원본 글자로 가른다."""
+    app = _explorer(spaced_baseline=True, labels=True)
+    options = app.multiselect(SMALL_PROCESS_KEY).options
+    assert "표시-DA (Die Attach)" in options and "표시-DA (Die Attach )" in options
+
+    app.multiselect(SMALL_PROCESS_KEY).set_value(["Die Attach "]).run()
+    assert app.session_state[SMALL_PROCESS_KEY] == ["Die Attach "]

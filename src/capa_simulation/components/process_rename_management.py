@@ -96,10 +96,17 @@ def render_process_rename_management(
         )
     collisions = labels.owned_name_collisions(available_processes)
     if collisions:
+        # 선택 상자는 가용설비 현황만 겹친 글자를 가른다(`ProcessLabels.unique_format_func`). 다른
+        # 화면의 선택 상자는 아직 `format_func` 그대로라 겹친 글자로 다른 공정이 돌아올 수 있다
+        # (docs/TODO.md 후속). 검사 범위는 시나리오 `RQ_MODULE` 공정뿐이다 — 설비 마스터까지 보려면
+        # Admin 이 설비 DB 를 읽어야 해서 넓히지 않고 문구에 적는다.
         st.warning(
             f"보유 공정의 원본명과 같은 표시명 {len(collisions):,}건이 있습니다: "
-            f"{', '.join(collisions[:10])}. 화면에서 서로 다른 두 공정이 같은 이름으로 "
-            "보입니다. 값은 원본이라 계산·조인은 그대로이며 저장은 막지 않습니다."
+            f"{', '.join(collisions[:10])}. 서로 다른 두 공정이 같은 글자로 보입니다 — "
+            "가용설비 현황의 선택 상자에서는 「표시명 (원본)」 으로 갈라 보이지만 표·그림에서는 "
+            "같은 글자로 보이고, 다른 화면의 선택 상자에서는 고른 것과 다른 공정이 잡힐 수 "
+            "있습니다. 값은 원본이라 계산·조인은 그대로이며 저장은 막지 않습니다. 설비 마스터에만 "
+            "있는 공정은 여기서 검사하지 않습니다."
         )
 
     if admin_dialog_is_open(PASTE_DIALOG):

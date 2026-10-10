@@ -725,6 +725,28 @@ def test_process_display_names_label_the_screen_but_values_stay_original(tmp_pat
     clear_equipment_repository()
 
 
+def test_a_display_name_equal_to_another_process_still_saves_the_chosen_process(
+    tmp_path: Path,
+) -> None:
+    """첫 공정의 표시명이 둘째 공정의 원본 이름과 같으면 multiselect 가 같은 글자 둘 중 첫째로
+    돌아와 다른 공정이 세션·공용 프로필에 들어갔다(병합 전 리뷰). 「표시명 (원본)」 으로 가른다."""
+    database_path = _database(tmp_path)
+    first, second = _processes()[:2]
+
+    app = _run(database_path, labels={first: second})
+
+    assert not app.exception, [element.message for element in app.exception]
+    picker = app.multiselect(key=SHORTENING_PROCESS_KEY)
+    assert f"{second} ({first})" in picker.options and second in picker.options
+    # 같은 글자 둘 중 어느 쪽이 먼저든 한쪽은 틀렸다 — 둘 다 골라 본다.
+    for chosen in (second, first):
+        app = app.multiselect(key=SHORTENING_PROCESS_KEY).set_value([chosen]).run()
+        assert not app.exception
+        assert app.session_state[SHORTENING_PROCESS_KEY] == [chosen]
+        assert _profile(database_path).processes == (chosen,)
+    clear_equipment_repository()
+
+
 def test_the_unmatched_list_keeps_the_original_names(tmp_path: Path) -> None:
     """「맞대지 못한 공정」은 마스터·Cut-off 이름을 맞추라는 안내라 원본 이름이다."""
     database_path = _database(tmp_path)

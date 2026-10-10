@@ -14,6 +14,7 @@ import 하지 않는다(`tests/test_process_rename.py` 가 검사한다). 그래
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
@@ -58,6 +59,53 @@ class ProcessLabels:
         """
         return ProcessLabelFormatter(self.labels)
 
+    def unique_format_func(
+        self, options: Iterable[object], *, reserved: Iterable[object] = ()
+    ) -> OptionLabelFormatter:
+        """선택 상자 **한 개**의 `format_func=`. 그 상자의 선택지마다 보이는 글자가 서로 다르다.
+
+        Streamlit 1.63 의 selectbox·multiselect 는 브라우저와 값을 **서식 글자**(`format_func`
+        의 결과)로 주고받는다. 같은 글자가 둘이면 selectbox 는 마지막 선택지, multiselect 는 첫
+        선택지로 돌아와, 표시명이 다른 공정의 원본 이름과 같을 때(DA2 → 「DA」, DA 는 원본) DA2 를
+        고르면 세션에 DA 가 들어간다. 잡아 둔 선택도 그 표시명이 생기는 회차에 저절로 바뀐다.
+
+        그래서 보이는 글자가 그 상자의 다른 선택지와 같거나 `reserved`(그 상자의 표지값 —
+        Static/Dynamic 의 `전체 합계` 등)와 같으면 표시명이 붙은 그 선택지만 「표시명 (원본)」 으로
+        보인다. 같은지는 앞뒤 공백·U+00A0 을 정리해 견준다(눈으로는 같은 글자다). 표시명이 없는
+        선택지와 표지값은 글자 그대로다 — 그래서 표시명이 하나도 없으면 지금과 글자까지 같다.
+        **값은 언제나 원본이다.** 바꾼 글자가 또 다른 선택지와 정확히 같은 드문 경우는 뒤의 것에
+        「 (2)」·「 (3)」 을 붙여 끝까지 가른다.
+
+        선택지마다 만든다 — 회차마다 그 상자의 선택지로 부른다. 표·그림은 이 함수를 쓰지 않으므로
+        겹친 두 공정이 같은 글자로 보인다(Admin `Proc Rename` 이 겹침을 경고한다).
+        """
+        values = list(dict.fromkeys(_option_text(option) for option in options))
+        reserved_texts = {_option_text(item) for item in reserved}
+        reserved_keys = {normalize_process_text(item) for item in reserved_texts}
+        base = {
+            value: value if value in reserved_texts else apply_process_label(value, self.labels)
+            for value in values
+        }
+        counts = Counter(normalize_process_text(text) for text in base.values())
+        shown: dict[str, str] = {}
+        for value in values:
+            text = base[value]
+            key = normalize_process_text(text)
+            clashes = counts[key] > 1 or (value not in reserved_texts and key in reserved_keys)
+            shown[value] = f"{text} ({value})" if clashes and text != value else text
+        # Streamlit 이 가르는 것은 정확한 글자다. 공백만 다른 원본(`DA`·`DA `)은 이미 서로 다른
+        # 글자라 그대로 둔다.
+        used: set[str] = set()
+        for value in values:
+            text = candidate = shown[value]
+            suffix = 2
+            while candidate in used:
+                candidate = f"{text} ({suffix})"
+                suffix += 1
+            used.add(candidate)
+            shown[value] = candidate
+        return OptionLabelFormatter(shown)
+
     def value_labels(self, *columns: str) -> dict[str, Mapping[str, str]]:
         """월별 표의 `value_labels=` 인자. 지정한 분류 컬럼에만 매핑을 건다."""
         if not self.labels:
@@ -84,15 +132,13 @@ class ProcessLabels:
         """
         if not self.labels or column not in data.columns:
             return data
+        values = data[column]
+        # 고유값마다 한 번만 바꾼다 — 호기 목록처럼 행이 많아도 공정 수만큼만 든다.
+        names = {
+            value: apply_process_label(value, self.labels) for value in values.dropna().unique()
+        }
         shown = data.copy()
-        shown[column] = pd.Series(
-            [
-                apply_process_label(value, self.labels) if pd.notna(value) else value
-                for value in data[column]
-            ],
-            index=data.index,
-            dtype="object",
-        )
+        shown[column] = values.astype("object").map(names, na_action="ignore")
         return shown
 
     def unmatched(self, available: Iterable[object]) -> list[str]:
@@ -134,6 +180,25 @@ class ProcessLabelFormatter:
 
     def __call__(self, value: object) -> str:
         return apply_process_label(value, self.labels)
+
+
+@dataclass(frozen=True)
+class OptionLabelFormatter:
+    """`ProcessLabels.unique_format_func` 가 돌려주는 `format_func`. 선택지 글자 그대로 찾는다.
+
+    `ProcessLabelFormatter` 와 달리 앞뒤 공백을 정리하지 않고 찾는다 — `DA` 와 `DA ` 가 서로 다른
+    선택지면 서로 다른 글자로 보여야 값이 섞이지 않는다. 선택지 밖의 값은 원본 글자 그대로다.
+    """
+
+    texts: Mapping[str, str]
+
+    def __call__(self, value: object) -> str:
+        text = _option_text(value)
+        return self.texts.get(text, text)
+
+
+def _option_text(value: object) -> str:
+    return "" if value is None else str(value)
 
 
 def apply_process_label(value: object, labels: Mapping[str, str]) -> str:
