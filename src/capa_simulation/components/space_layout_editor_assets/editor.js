@@ -1917,8 +1917,12 @@ export default function (component) {
     updateStatus()
   }
   svg.onlostpointercapture = () => { if (S.drag) svg.onpointerup({ pointerId: S.drag.pointerId }) }
-  // Ctrl+휠(터치패드 오므리기 포함)은 마우스 자리를 축으로 확대·축소. 확대 중에는 휠로 화면을 옮기고,
-  // 끝에 닿으면 페이지가 굴러가게 둔다. 전체 보기에서는 휠을 건드리지 않는다.
+  // Ctrl+휠(터치패드 오므리기 포함)은 마우스 자리를 축으로 확대·축소한다. 맨 휠은 확대 중에도 도면을
+  // 옮기지 않고 페이지로 보낸다 — 확대한 도면이 먼저 굴러가다 끝에 닿아야 페이지가 굴러가면, 도면
+  // 위아래의 단추로 가려던 스크롤이 도면부터 옮겨 놓는다(2026-10-10 사용자 요청). 화면 이동은 끌기
+  // (보기)·Space+끌기·가운데 버튼 끌기(편집)·방향키(보기)로 한다. 예외는 편집기에서 호기·요소를 끌어
+  // 옮기거나 크기를 바꾸는 동안이다 — 단추를 누른 채라 페이지로 갈 일이 없고, 화면 밖 자리로 끌고 가려면
+  // 휠로 도면을 옮겨야 한다.
   svg.onwheel = (event) => {
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1
     if (event.ctrlKey || event.metaKey) {
@@ -1926,7 +1930,8 @@ export default function (component) {
       zoomAt(S.view.z * Math.exp(-event.deltaY * unit * 0.002), toUser(event))
       return
     }
-    if (S.view.z <= 1) return
+    const placing = S.drag && (S.drag.mode === 'move' || S.drag.mode === 'resize')
+    if (!placing || S.view.z <= 1) return
     const upp = unitsPerPx()
     const dx = (event.shiftKey ? event.deltaY : event.deltaX) * unit * upp
     const dTop = (event.shiftKey ? 0 : event.deltaY) * unit * upp

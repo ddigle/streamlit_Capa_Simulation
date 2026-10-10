@@ -62,6 +62,26 @@ def test_resizing_stays_in_the_browser() -> None:
     assert "S.ro.disconnect()" in JS
 
 
+def test_a_plain_wheel_scrolls_the_page_even_when_zoomed() -> None:
+    """휠은 Ctrl/Cmd 와 함께일 때만 확대이고, 맨 휠은 확대 중에도 도면을 옮기지 않는다.
+
+    확대한 도면이 먼저 굴러가다 끝에 닿아야 페이지가 굴러가면 도면 위아래 단추로 가는 스크롤이
+    꼬였다(2026-10-10 사용자 요청). 맨 휠이 도면을 옮기는 것은 편집기에서 호기·요소를 끌어
+    옮기거나 크기를 바꾸는 동안뿐이다."""
+    assert JS.count("onwheel") == 1
+    start = JS.index("svg.onwheel = (event) => {")
+    body = JS[start : JS.index("\n  }\n", start)]
+    zoom = body.index("if (event.ctrlKey || event.metaKey) {")
+    guard = body.index(
+        "const placing = S.drag && (S.drag.mode === 'move' || S.drag.mode === 'resize')"
+    )
+    pan = body.index("panBy(")
+
+    assert zoom < guard < pan
+    assert "if (!placing || S.view.z <= 1) return" in body[guard:pan]
+    assert body.count("panBy(") == 1
+
+
 def test_every_browser_storage_access_is_guarded() -> None:
     """사생활 창·막힌 저장소에서는 localStorage 가 던진다. 모든 접근이 try 안이다."""
     lines = JS.splitlines()
