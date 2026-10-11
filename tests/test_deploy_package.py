@@ -15,6 +15,7 @@ from build_deploy_package import (  # noqa: E402
     build_archive,
     deploy_set,
     forbidden_entries,
+    leftover_placeholders,
 )
 
 
@@ -178,3 +179,12 @@ def test_the_archive_carries_the_manifest_beside_the_files(tmp_path: Path) -> No
     with zipfile.ZipFile(destination) as archive:
         assert sorted(archive.namelist()) == ["DEPLOY_MANIFEST.json", "app.py"]
         assert json.loads(archive.read(MANIFEST_NAME))["manifest_version"] == 1
+
+
+def test_runbook_placeholders_are_counted_until_filled() -> None:
+    """7장 초안의 자리표가 남으면 빌드가 막힌다 — stamp 선언 대조는 머리 한 곳만 본다."""
+    draft = "이 절은 stamp `<STAMP>` 배포용이다. `review/<STAMP>.md` · 추가 {APPLY_FACTS}"
+
+    assert leftover_placeholders(draft) == {"<STAMP>": 2, "{APPLY_FACTS}": 1}
+    assert leftover_placeholders("이 절은 stamp `202610121200` 배포용이다. 추가 13") == {}
+    assert leftover_placeholders("커밋 `deploy: <stamp>` 꼴") == {}

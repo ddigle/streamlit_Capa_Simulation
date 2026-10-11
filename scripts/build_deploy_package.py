@@ -289,6 +289,33 @@ def runbook_stamp_mismatch(stamp: str) -> bool:
     return True
 
 
+# 7장 초안의 자리표. 배포 때 stamp 와 사내 흉내 적용에서 잰 값으로 바꾼다.
+RUNBOOK_PLACEHOLDERS = ("<STAMP>", "{APPLY_FACTS}")
+
+
+def leftover_placeholders(text: str) -> dict[str, int]:
+    """런북 글에 남은 자리표와 그 수. 없으면 빈 사전이다."""
+    return {mark: text.count(mark) for mark in RUNBOOK_PLACEHOLDERS if mark in text}
+
+
+def runbook_placeholders_left() -> bool:
+    """7장 자리표가 하나라도 남았으면 막는다.
+
+    stamp 선언 대조는 머리의 한 곳만 본다. 리뷰 문서 이름·기준선 이름의 stamp 자리표와 적용 수치
+    자리표가 남은 채 나가면 사내 에이전트가 `review/<STAMP>.md` 같은 이름을 그대로 쓴다.
+    """
+    path = PROJECT_ROOT / RUNBOOK
+    if not path.exists():
+        return False
+    left = leftover_placeholders(path.read_text(encoding="utf-8"))
+    if not left:
+        return False
+    print(f"{RUNBOOK} 에 채우지 않은 자리표가 남았습니다.", file=sys.stderr)
+    for mark, count in left.items():
+        print(f"  {mark} {count}곳", file=sys.stderr)
+    return True
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="사내 배포 ZIP 을 만든다.")
     parser.add_argument(
@@ -340,7 +367,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.out is None:
         parser.error("ZIP 을 만들려면 --out 이 필요합니다(--list-only 는 예외).")
     stamp = args.stamp or datetime.now().strftime("%Y%m%d%H%M")
-    if runbook_stamp_mismatch(stamp):
+    if runbook_stamp_mismatch(stamp) or runbook_placeholders_left():
         return 1
     destination = args.out / f"{stamp}.zip"
     manifest = build_manifest(PROJECT_ROOT, paths, stamp=stamp)
