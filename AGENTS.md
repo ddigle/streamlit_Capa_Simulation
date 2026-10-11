@@ -158,7 +158,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     히트맵을 채우고 다른 화면은 비워 둔다). 페이지 칸은 `st.empty` 가 아니라 블록(`st.container`)이다 —
     빈 요소는 회차가 시작되자마자 앞 회차의 줄을 지워 HOME 계산 동안(약 1초) 패널이 줄고 밑 카드가
     튀었다(2026-10-11 병합 전 리뷰). 블록은 페이지가 다시 보낼 때까지 앞 회차 줄을 남기고, 빈 블록은
-    그려지지 않아 높이·간격이 없다(1.63 실측). 시나리오 이름 줄 왼쪽은 「시나리오 · rN」이다 — 이름이
+    그려지지 않아 높이·간격이 없다(1.63 `st.container()` 는 `allow_empty=False` — CSS 가 아니다. 칸에
+    `border`·`height` 를 주면 `allow_empty` 가 켜져 빈 칸이 그려지므로 주지 않는다). 시나리오 이름 줄 왼쪽은 「시나리오 · rN」이다 — 이름이
     길면 값 칸 끝의 「· rN」 이 말줄임에 잘려서다(값 칸 글자 차례는 D3 그대로). 조건 카드와 `Support`
     는 `sidebar_status.sidebar_expander` 로 만들어 펼침 상태를 세션 동안 기억하며 **기본이 접힘**이다.
     페이지 그룹도 `key` 로 만든다 — `expanded=` 는
@@ -1279,9 +1280,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     로만 그린다 — `st.sidebar.*` 는 `with` 를 따르지 않아 글자가 패널 밖으로 샌다.
 - `src/capa_simulation/components/period_field.py`
   - 패널의 조회기간 줄(값 「26.07 → 28.12」, 이름 줄 오른쪽 적용 기간 자리표시자)과 그 팝업(small,
-    세션 키 `sidebar_period_open_dialog`). 팝업 안 월 선택은 초안이고 「적용」을 눌러야
-    `MONTH_RANGE_KEY` 가 바뀐다. 고를 수 있는 범위(`scenario_month_bounds`)는 팝업을 연 동안에만
-    계산한다. 적용 전 편집이 있으면 팝업 안에 「기간을 바꾸면 … 사라집니다」 경고를 둔다.
+    세션 키 `sidebar_period_open_dialog`). 팝업 안 월 선택은 초안이고 컴포넌트 안 「적용」을 눌러야
+    `MONTH_RANGE_KEY` 가 바뀐다(범위가 실제로 바뀔 때만 쓴다 — 적용 전 편집 목록은 비우지 않는다).
+    고를 수 있는 범위는 줄이 **매 회차** `month_selection_bounds()` 로 읽는다 — `scenario_month_bounds`
+    를 기준정보 버전마다 한 번 계산해 `PERIOD_BOUNDS_KEY` 에 둔다. 그 범위 밖의 조회기간은
+    `month_range_picker.clamp_month_range` 로 범위 끝에 끼워 되적는다(전에는 사이드바 월 선택이 했다).
+    적용 전 편집이 있으면 팝업 안에 「기간을 바꿔 편집표의 달이 달라지면 … 사라집니다」 경고를 둔다.
 - `src/capa_simulation/components/scenario_status.py`
   - 사이드바 조건 패널의 시나리오 줄과 그 팝업(2026-10-10 사용자 결정). **줄은 세션만 읽는다** —
     활성 이름표(`active_scenario_label`)·최신 공식버전(`intro_summary.latest_official_revision`)·

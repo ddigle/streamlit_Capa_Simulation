@@ -4,6 +4,7 @@ import ast
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
@@ -191,11 +192,13 @@ def _app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
     # 요약 계산은 그대로 돌리고 브라우저로 보내는 컴포넌트만 바꿔 끼운다.
     monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: SENT_SUMMARIES.append(kwargs))
-    # 조회기간 팝업의 월 선택(Components v2). 「적용」을 누르지 않은 회차처럼 `None` 을 돌려준다.
+    # 조회기간 팝업의 월 선택(Components v2). **컴포넌트 한 겹만** 바꿔 끼워 「적용」 트리거가 없는
+    # 회차를 흉내 낸다 — 트리거를 읽고 검증하는 `render_month_range_apply` 와 `period_field` 는
+    # 실제로 돈다(`_press_apply_with`).
     monkeypatch.setattr(
         month_range_picker,
-        "render_month_range_apply",
-        lambda *, start, end, min_month, max_month, key: None,
+        "_MONTH_RANGE_APPLY",
+        lambda **kwargs: SimpleNamespace(apply=None),
     )
     return AppTest.from_file(str(APP_PATH), default_timeout=300)
 
@@ -714,15 +717,17 @@ def test_the_scenario_dialog_stays_open_across_reruns_and_closes_on_leaving(
 def _press_apply_with(monkeypatch: pytest.MonkeyPatch, applied: tuple[str, str] | None) -> None:
     """팝업 월 선택 컴포넌트의 「적용」 트리거를 흉내 낸다(Components v2 는 AppTest 에 없다).
 
-    `applied` 가 있으면 다음 회차의 컴포넌트가 그 범위를 「적용」으로 돌려준다 — 실제 컴포넌트는
-    입력 칸 값과 누름을 한 트리거로 보낸다.
+    `applied` 가 있으면 다음 회차의 컴포넌트가 `apply` 트리거로 `{start, end}` 를 돌려준다 — 실제
+    컴포넌트는 입력 칸 값과 누름을 한 트리거로 보낸다. 바꾸는 것은 컴포넌트 한 겹이라 그 트리거를
+    읽고 검증하는 `render_month_range_apply`(JS→파이썬 계약)와 `period_field` 는 실제로 돈다.
     """
     import capa_simulation.components.month_range_picker as month_range_picker
 
+    trigger = None if applied is None else {"start": applied[0], "end": applied[1]}
     monkeypatch.setattr(
         month_range_picker,
-        "render_month_range_apply",
-        lambda *, start, end, min_month, max_month, key: applied,
+        "_MONTH_RANGE_APPLY",
+        lambda **kwargs: SimpleNamespace(apply=trigger),
     )
 
 
@@ -744,6 +749,13 @@ def test_the_period_changes_only_when_applied_in_its_dialog(
     # 고르기만 해서는(「적용」 트리거가 없는 회차) 바뀌지 않는다.
     app.run()
     assert app.session_state[MONTH_RANGE_KEY] == before
+
+    # 컴포넌트가 거꾸로 된 범위를 보내 오면(JS 가 막지만) 파이썬도 받지 않는다 — 팝업은 열린 채다.
+    _press_apply_with(monkeypatch, ("2026-05", "2026-02"))
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[MONTH_RANGE_KEY] == before
+    assert app.session_state[PERIOD_DIALOG_KEY] is True
 
     _press_apply_with(monkeypatch, ("2026-02", "2026-04"))
     app.run()
@@ -773,7 +785,7 @@ def test_applying_a_period_keeps_the_unapplied_edit_list(
     assert any(notice in caption.value for caption in app.sidebar.caption)
 
     app.button(key=PERIOD_FIELD_KEY).click().run()
-    _press_apply_with(monkeypatch, ("2026-01", "2031-06"))
+    _press_apply_with(monkeypatch, ("2026-01", "2027-06"))
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert PERIOD_DIALOG_KEY not in app.session_state

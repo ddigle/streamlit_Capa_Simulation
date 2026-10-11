@@ -158,6 +158,27 @@ export default function(component) {
     (!maxMonth || text <= maxMonth)
   const isFocused = (input) => input.getRootNode().activeElement === input
 
+  // 네이티브 월 칸의 달력 아이콘은 `color-scheme` 을 따른다. 앱 테마는 OS 설정과 따로 바뀌므로
+  // 바탕색 밝기로 정해 매 렌더 넣는다 — 그러지 않으면 어두운 테마에서 아이콘이 바탕과 1.2:1 로
+  // 묻혔다.
+  const backdrop = getComputedStyle(parentElement).getPropertyValue('--st-background-color').trim()
+  const channels = (() => {
+    const hex = backdrop.match(/^#([0-9a-f]{6})$/i)
+    if (hex) {
+      const n = parseInt(hex[1], 16)
+      return [n >> 16, (n >> 8) & 255, n & 255]
+    }
+    const rgb = backdrop.match(/rgba?\\(([^)]+)\\)/)
+    return rgb ? rgb[1].split(',').map((part) => parseFloat(part)) : null
+  })()
+  const scheme =
+    channels && 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2] < 128
+      ? 'dark'
+      : 'light'
+  for (const input of [startInput, endInput]) {
+    if (input.style.colorScheme !== scheme) input.style.colorScheme = scheme
+  }
+
   const memo = startInput.__capaRange || (startInput.__capaRange = { seen: '' })
   const signature = startValue + '|' + endValue
   const refill = memo.seen !== signature

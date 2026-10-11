@@ -321,7 +321,9 @@ with pinned_connections(DUCKDB_PATH):
             # (2026-10-11 병합 전 리뷰). 빈 요소는 회차가 시작되자마자 앞 회차의 줄을 지워, HOME
             # 계산이 끝날 때까지(약 1초) 공정 필터·히트맵 줄이 사라지고 패널 아래 카드가 위로
             # 튀었다. 블록은 프런트엔드가 같은 자리의 앞 회차 줄을 페이지가 다시 보낼 때까지 남긴다.
-            # 쓰지 않은 칸은 높이·간격이 없다(CSS, `sidebar_style`).
+            # 쓰지 않은 칸은 그려지지 않아 높이·간격이 없다 — 1.63 `st.container()` 는
+            # `allow_empty=False` 라 빈 블록을 프런트엔드가 그리지 않는다(CSS 규칙이 아니다). 칸에
+            # `border`·`height` 를 주면 `allow_empty` 가 켜져 빈 칸이 그려지므로 주지 않는다.
             register_page_condition_slots(
                 [st.container(gap=None) for _ in range(PAGE_CONDITION_SLOT_COUNT)]
             )

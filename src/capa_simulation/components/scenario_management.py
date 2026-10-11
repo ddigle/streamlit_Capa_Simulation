@@ -372,6 +372,11 @@ def _render_scenario_actions(
         ):
             st.session_state[REVISION_SELECT_KEY] = active_revision_id
             st.session_state[REVISION_SEED_KEY] = active_revision_id
+        elif summary.scenario_id != active_persisted_scenario_id():
+            # 활성이 다른 시나리오로 옮겨 가면 씨앗 기록을 버린다. 남겨 두면 마지막으로 씨앗을
+            # 넣은 리비전으로 돌아왔을 때 「같은 씨앗」으로 읽혀 상자가 따라오지 않았다
+            # (2026-10-11 재검증).
+            st.session_state.pop(REVISION_SEED_KEY, None)
         selected_revision_id = st.selectbox(
             "리비전",
             options=list(revision_by_id),

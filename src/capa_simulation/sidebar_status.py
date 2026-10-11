@@ -23,8 +23,10 @@ CONDITIONS_BOX_KEY = "sidebar_conditions_box"
 # 패널 안에서 **페이지가 나중에 채우는 칸**의 수. 시나리오·조회기간은 `app.py` 가 페이지보다 먼저
 # 그리지만, HOME 의 공정 필터·주요공정 히트맵은 계산 뒤에야 값이 정해져 페이지가 그린다. 그래서
 # `app.py` 가 빈 칸(블록 — `st.container`)을 미리 세워 등록하고 페이지가 채운다(적용 기간
-# 자리표시자와 같은 방식). 칸 수를 화면마다 바꾸지 않는다 — 빈 칸은 높이·간격이 없고
-# (`sidebar_style`), 늘 같은 수라 패널 안 순번도 화면마다 같다.
+# 자리표시자와 같은 방식). 칸 수를 화면마다 바꾸지 않는다 — 빈 칸은 그려지지 않아 높이·간격이
+# 없고(1.63 `st.container()` 는 `allow_empty=False` 라 빈 블록을 프런트엔드가 그리지 않는다 — 칸에
+# `border`·`height` 를 주면 `allow_empty` 가 켜져 빈 칸이 그려진다), 늘 같은 수라 패널 안 순번도
+# 화면마다 같다.
 PAGE_CONDITION_SLOT_COUNT = 2
 # 칸도 **세션 상태**에 둔다(아래 자리표시자와 같은 까닭 — 모듈 전역이면 세션끼리 칸을 나눠 쓴다).
 PAGE_SLOT_STATE_KEY = "sidebar_page_condition_slots"

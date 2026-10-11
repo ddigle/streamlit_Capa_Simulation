@@ -753,3 +753,17 @@ def test_the_card_follows_a_revision_loaded_from_the_sidebar_popup(tmp_path: Pat
     app.selectbox(key=REVISION_SELECT_KEY).set_value(release.revision_id).run()
     app.run()
     assert app.selectbox(key=REVISION_SELECT_KEY).value == release.revision_id
+
+    # 활성이 다른 시나리오로 갔다가 마지막으로 씨앗을 넣은 리비전으로 돌아와도 상자가 따라온다 —
+    # 씨앗 기록이 남아 있으면 「같은 씨앗」으로 읽혀 사용자가 고른 옛 리비전에 머물렀다
+    # (2026-10-11 재검증).
+    # 목록에 시나리오를 더하면 체크한 행 번호가 다른 시나리오를 가리키게 되므로 활성 칸만 옮긴다.
+    app.session_state["active_persisted_scenario_id"] = "elsewhere-scenario"
+    app.session_state["active_persisted_revision_id"] = "elsewhere-revision"
+    app.run()
+    assert not app.exception
+    app.session_state["active_persisted_scenario_id"] = official.scenario.scenario_id
+    app.session_state["active_persisted_revision_id"] = second.revision.revision_id
+    app.run()
+    assert not app.exception
+    assert app.selectbox(key=REVISION_SELECT_KEY).value == second.revision.revision_id
