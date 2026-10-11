@@ -10,6 +10,8 @@
 사이드바 묶음을 펴는 동안 누른 링크는 이동하지 않는다(`Screen.open_page`), 컴포넌트(Space 편집기)는
 shadow root 안이라 `document.querySelector` 로 닿지 않는다(로케이터로 잡은 요소에서 `evaluate`), CSS
 선택자에 한글을 `json.dumps` 기본값(`\\uXXXX`)으로 넣으면 아무것도 못 찾는다(`_css_string`).
+팝업(`st.dialog`)은 `document` 에서 `[role=dialog]` 로 찾는다 — 입장 화면 무대(shadow root 안)도
+같은 역할이라 shadow 를 뚫는 로케이터는 그것까지 잡는다(`Screen.dialog_read`).
 
     uv pip install --target <저장소 밖>/pw playwright        # 처음 한 번. 브라우저는 받지 않는다
     uv run --no-sync python scripts/check_deploy_screens.py --playwright-dir <저장소 밖>/pw \\
@@ -64,10 +66,11 @@ shadow root 안이라 `document.querySelector` 로 닿지 않는다(로케이터
 
     ITEMS = (..., Item("new_thing", "새 확인", check_new_thing),)
 
-함수는 `Screen`(공통 뼈대 — 페이지 이동·탭·사이드바 상자·선택 상자·스위치·데이터 편집기 머리 칸·
-행 읽기)만 쓰고, 결과 문자열은 고정 글자와 수로만 만든다. 항목 하나가 예외로 끝나도 나머지는 돈다.
-돌기 전에 뼈대가 열린 덮개(Summary)·펼친 목록을 닫는다(`Screen.settle`). 화면을 바꾸는 토글은 항목
-안에서 `try/finally` 로 되돌린다.
+함수는 `Screen`(공통 뼈대 — 페이지 이동·탭·사이드바 상자·선택 상자·스위치·팝업·데이터 편집기
+머리 칸·행 읽기)만 쓰고, 결과 문자열은 고정 글자와 수로만 만든다. 항목 하나가 예외로 끝나도
+나머지는 돈다. 돌기 전에 뼈대가 펼친 목록·열린 팝업·덮개(Summary)를 닫는다(`Screen.settle`).
+화면을 바꾸는 토글은 항목 안에서 `try/finally` 로 되돌리고, 연 팝업은 `finally` 에서 `Esc` 로
+닫는다(`Screen.close_dialog`).
 
 사외에서 돈 수는 합성 표본의 `샘플 관측` 일 뿐이다(AGENTS.md 10-1).
 """
@@ -91,6 +94,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Final, Protocol
+from urllib.parse import urlsplit
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -170,6 +174,46 @@ TOOLBAR_LABELS: Final[dict[str, str]] = {
     PRINT_BUTTON_ID: "Print",
     THEME_BUTTON_ID: "테마",
 }
+SCENARIO_MANAGEMENT_PAGE: Final = "scenario_management"
+ADMIN_AREA_PAGE: Final = "admin_area"
+# HOME 링크를 감싼 사이드바 칸(`app.py`). HOME 은 기본 페이지라 주소 끝이 비어 `open_page` 로는
+# 못 고른다.
+HOME_LINK_KEY: Final = "home_navigation"
+HOME_MAIN_TAB: Final = "Main"
+# 사이드바 「조회 조건」 통합 패널. 앱 모듈(`sidebar_status`·`condition_field`·`scenario_status`·
+# `period_field`·`home_preference`)을 부르면 Streamlit 캐시 경고가 찍혀 값만 옮기고 테스트가 같은지
+# 본다.
+CONDITIONS_SECTION_KEY: Final = "sidebar_section_conditions"
+CONDITIONS_SECTION_TITLE: Final = "조회 조건"
+CONDITIONS_BOX_KEY: Final = "sidebar_conditions_box"
+CONDITION_NAME_ROW_PREFIX: Final = "condition_name_"
+CONDITION_CARD_PREFIX: Final = "condition_card_"
+LOB_CARD_LABEL: Final = "LOB 표시 조건"
+# 패널 줄 이름(정한 어휘)과 HOME Main 탭의 차례. 시나리오 줄 이름은 「시나리오 · rN」이다.
+PANEL_ROW_NAMES: Final = ("시나리오", "조회기간", "공정 필터", "주요공정 히트맵")
+UNKNOWN_ROW_NAME: Final = "그 밖"
+# 이번 배포에서 걷은 사이드바 상자 제목. 「시나리오·리비전」은 이제 팝업 제목이다(사이드바 밖).
+OLD_BOX_TITLES: Final = ("B/N 집계 공정", "시나리오·리비전")
+# 팝업을 여는 값 칸(위젯 key)과 팝업 제목·안의 글자.
+SCENARIO_FIELD_KEY: Final = "sidebar_scenario_field"
+PERIOD_FIELD_KEY: Final = "sidebar_period_field"
+PROCESS_FIELD_KEY: Final = "dashboard_bottleneck_process_dialog_open"
+SCENARIO_DIALOG_TITLE: Final = "시나리오·리비전"
+SCENARIO_DIALOG_MODES: Final = ("불러오기", "새 리비전 저장")
+REVISION_RADIO_LABEL: Final = "리비전"
+PERIOD_DIALOG_TITLE: Final = "조회기간"
+MONTH_INPUT_IDS: Final = ("capa-start-month", "capa-end-month")
+MONTH_APPLY_ID: Final = "capa-month-apply"
+MONTH_APPLY_LABEL: Final = "적용"
+PROCESS_DIALOG_TITLE: Final = "공정 필터"
+THRESHOLD_POINTER: Final = "판정 기준은 HOME → Preference 에서 정합니다."
+# 다른 화면의 패널 줄(`navigation.PageSpec.reads_*`) — (주소 끝, 결과에 찍는 화면 이름, 줄 이름).
+# 줄 이름이 None 이면 패널이 서지 않는다(Space 현황은 조건 카드만 있어 구역 제목만 선다).
+OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = (
+    (SCENARIO_MANAGEMENT_PAGE, "시나리오 관리", ("시나리오", "조회기간")),
+    (ADMIN_AREA_PAGE, "Admin Area", ("시나리오",)),
+    (SPACE_PAGE, "Space 현황", None),
+)
 
 
 # ---------------------------------------------------------------------------------- 경로
@@ -953,6 +997,18 @@ _GRID_ROWS_JS = """async (root, columns) => {
   }
   return [...rows.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]);
 }"""
+# 보이는 팝업(`st.dialog`). `document` 에서만 찾는다 — 입장 화면 무대(shadow root 안)도
+# `role="dialog"` 라 shadow 를 뚫는 Playwright 로케이터는 그것까지 잡는다.
+_FIND_DIALOGS = (
+    """[...document.querySelectorAll('[role="dialog"]')]"""
+    ".filter((d) => d.getBoundingClientRect().width > 0)"
+)
+_DIALOG_COUNT_JS = f"() => {_FIND_DIALOGS}.length"
+# 팝업 제목(`st.dialog` 의 첫 인자). 앞의 아이콘 글자를 빼고 마크다운 칸만 읽는다.
+_DIALOG_TITLE_JS = """(box) => {
+  const title = box.querySelector('h2 [data-testid="stMarkdownContainer"]');
+  return title ? title.innerText.trim() : "";
+}"""
 
 
 def _css_string(value: str) -> str:
@@ -1094,9 +1150,12 @@ class Screen:
         return "앱 오류 화면 있음" if state["error"] else "사이드바 메뉴 없음"
 
     def settle(self) -> None:
-        """항목 사이 정리 — 덮개와 펼친 목록을 닫는다. 앞 항목이 중간에 끊겨도 다음 항목이 선다."""
+        """항목 사이 정리 — 펼친 목록·팝업·덮개를 닫는다. 앞 항목이 중간에 끊겨도 다음 항목이 선다
+        (열린 팝업은 뒤의 누름을 모두 가로챈다)."""
         if self.js(_LISTBOX_OPEN_JS):
             self.page.keyboard.press("Escape")
+        if self.dialog_count():
+            self.close_dialog()
         self.close_overlay()
 
     def shot(self, name: str) -> None:
@@ -1123,6 +1182,22 @@ class Screen:
         self.wait_for(arrived, timeout=5)
         self.wait_idle()
 
+    def open_home(self) -> None:
+        """HOME 으로 간다. 기본 페이지라 링크 주소 끝이 비어 `open_page` 로는 고를 수 없다 — HOME
+        링크 칸(`HOME_LINK_KEY`)을 누른다. 이미 HOME 이면 누르지 않는다."""
+
+        def arrived() -> bool:
+            return urlsplit(str(self.page.url)).path in ("", "/")
+
+        if not arrived():
+            link = self.page.locator(f'[data-testid="stSidebar"] .st-key-{HOME_LINK_KEY} a').first
+            for _ in range(3):
+                link.click()
+                if self.poll(arrived, timeout=10, accept=bool):
+                    break
+            self.wait_for(arrived, timeout=5)
+        self.wait_idle()
+
     def open_tab(self, name: str) -> None:
         """탭을 누른다. 탭 이름 앞의 아이콘 글자(`table_rows`)는 부분 일치로 넘긴다."""
         self.page.get_by_role("tab", name=name).first.click()
@@ -1132,6 +1207,52 @@ class Screen:
         return str(
             self.js("""() => document.querySelector('[data-testid="stMain"]')?.innerText ?? "" """)
         )
+
+    def sidebar_text(self) -> str:
+        """사이드바의 보이는 글자. 판정에만 쓴다(팝업은 사이드바 밖에 그려진다)."""
+        return str(
+            self.js(
+                """() => document.querySelector('[data-testid="stSidebar"]')?.innerText ?? "" """
+            )
+        )
+
+    # -- 팝업(`st.dialog`)
+
+    def dialog_count(self) -> int:
+        return int(self.js(_DIALOG_COUNT_JS))
+
+    def dialog_read(self, script: str, arg: object = None) -> Any:
+        """보이는 팝업 요소에 `script`(`(box, arg) => …`)를 돌린 값. 팝업이 없으면 None."""
+        wrapper = (
+            f"(arg) => {{ const box = {_FIND_DIALOGS}[0]; "
+            f"return box ? ({script})(box, arg) : null; }}"
+        )
+        return self.js(wrapper, arg)
+
+    def dialog_title(self) -> str | None:
+        """보이는 팝업의 제목. 판정에만 쓴다. 팝업이 없으면 None."""
+        title = self.dialog_read(_DIALOG_TITLE_JS)
+        return None if title is None else str(title)
+
+    def open_dialog(self, selector: str, *, timeout: float = 30.0) -> None:
+        """그 단추를 눌러 팝업이 보일 때까지 기다린다. 본문은 그 뒤에 차므로 항목이 따로
+        기다린다."""
+        self.page.locator(selector).first.click()
+        self.wait_for(self.dialog_count, timeout=timeout, accept=lambda count: count > 0)
+
+    def close_dialog(self, timeout: float = 10.0) -> bool:
+        """열린 팝업을 `Esc` 로 닫는다 — 적용·불러오기·저장은 누르지 않는다. 닫혔으면 True.
+
+        닫기는 `on_dismiss` 로 앱을 다시 돌리므로 그 회차가 끝날 때까지 기다린다.
+        """
+        for _ in range(2):
+            if self.dialog_count() == 0:
+                break
+            self.page.keyboard.press("Escape")
+            self.poll(self.dialog_count, timeout=timeout, accept=lambda count: count == 0)
+        closed = self.dialog_count() == 0
+        self.wait_idle()
+        return closed
 
     # -- 위젯
 
@@ -1614,6 +1735,298 @@ def _close_drawer(screen: Screen) -> None:
         screen.switch("배치 편집", False)
 
 
+# 사이드바 「조회 조건」 구역 — 제목 글, 패널 줄의 이름 글(판정에만 쓴다), 그 이름의 조건 카드 수와
+# 그 카드가 패널 아래에 섰는지.
+_PANEL_JS = """(keys) => {
+  const side = document.querySelector('[data-testid="stSidebar"]');
+  if (!side) return null;
+  const heading = side.querySelector(`.st-key-${keys.section} [data-testid="stCaptionContainer"]`);
+  const panel = side.querySelector(`.st-key-${keys.box}`);
+  const rows = panel
+    ? [...panel.querySelectorAll(`[class*="st-key-${keys.row}"]`)].map((row) => {
+        const caption = row.querySelector('[data-testid="stCaptionContainer"]');
+        return caption ? caption.innerText.trim() : "";
+      })
+    : null;
+  const cards = [...side.querySelectorAll(`[class*="st-key-${keys.card}"]`)].filter(
+    (card) => (card.querySelector("summary") || card).innerText.includes(keys.label));
+  const bottom = panel ? panel.getBoundingClientRect().bottom : null;
+  return {
+    title: heading ? heading.innerText.trim() : null,
+    rows,
+    cards: cards.length,
+    below: cards.length > 0 && bottom !== null
+      && cards[0].getBoundingClientRect().top >= bottom - 0.5,
+  };
+}"""
+# 시나리오 팝업 — 구획 조절(`st.segmented_control`)의 선택지 글과 고른 것, 리비전 라디오 선택지 수.
+_SCENARIO_DIALOG_JS = """(box, radio) => {
+  const group = box.querySelector('[data-testid="stButtonGroup"] [role="radiogroup"]');
+  const chosen = group && group.querySelector('[role="radio"][aria-checked="true"]');
+  const list = [...box.querySelectorAll('[role="radiogroup"]')]
+    .find((g) => g.getAttribute("aria-label") === radio);
+  const modes = group ? [...group.querySelectorAll('[role="radio"]')] : [];
+  return {
+    modes: modes.map((button) => button.innerText.trim()),
+    selected: chosen ? chosen.innerText.trim() : null,
+    revisions: list ? list.querySelectorAll('input[type="radio"]').length : null,
+  };
+}"""
+# 조회기간 팝업 — 월 입력 칸 수와 「적용」 단추(월 선택 컴포넌트 안인가). 컴포넌트는 그림자 DOM 으로
+# 가두지 않아(`isolate_styles=False`) `querySelector` 로 닿는다.
+_PERIOD_DIALOG_JS = """(box, ids) => {
+  const months = ids.inputs
+    .map((id) => box.querySelector(`#${id}`))
+    .filter((input) => input && input.getAttribute("type") === "month");
+  const apply = box.querySelector(`#${ids.apply}`);
+  return {
+    months: months.length,
+    apply: apply ? apply.textContent.trim() : null,
+    inComponent: !!(apply && apply.closest('[data-testid^="stBidiComponent"]')),
+  };
+}"""
+# 공정 필터 팝업 — 판정 기준 안내 한 줄이 작업 줄(첫 단추)보다 위, 곧 머리에 섰는가.
+_PROCESS_DIALOG_JS = """(box, pointer) => {
+  const hit = [...box.querySelectorAll('[data-testid="stCaptionContainer"]')]
+    .find((caption) => caption.innerText.trim() === pointer);
+  if (!hit) return { pointer: "none" };
+  const first = box.querySelector('[data-testid="stButton"]');
+  if (!first) return { pointer: "head" };
+  const head = hit.getBoundingClientRect().top < first.getBoundingClientRect().top;
+  return { pointer: head ? "head" : "body" };
+}"""
+
+
+def _sidebar_button(widget_key: str) -> str:
+    """사이드바 위젯 key 의 단추 선택자(Streamlit 은 key 를 `st-key-<key>` 클래스로 단다)."""
+    return f'[data-testid="stSidebar"] .st-key-{widget_key} button'
+
+
+def panel_row_name(text: str) -> str:
+    """패널 줄 이름 글을 정한 어휘(`PANEL_ROW_NAMES`)로. 시나리오 줄은 「시나리오 · rN」이라
+    앞머리로 가른다 — 리비전 번호는 값이라 옮기지 않는다. 어휘에 없으면 「그 밖」."""
+    head = text.strip()
+    for name in PANEL_ROW_NAMES:
+        if head == name or head.startswith(f"{name} · "):
+            return name
+    return UNKNOWN_ROW_NAME
+
+
+def _row_names(rows: Sequence[object] | None) -> tuple[str, ...] | None:
+    return None if rows is None else tuple(panel_row_name(str(text)) for text in rows)
+
+
+def _rows_text(names: Sequence[str]) -> str:
+    return " · ".join(names) if names else "줄 없음"
+
+
+def _panel_facts(screen: Screen) -> Any:
+    return screen.js(
+        _PANEL_JS,
+        {
+            "section": CONDITIONS_SECTION_KEY,
+            "box": CONDITIONS_BOX_KEY,
+            "row": CONDITION_NAME_ROW_PREFIX,
+            "card": CONDITION_CARD_PREFIX,
+            "label": LOB_CARD_LABEL,
+        },
+    )
+
+
+def _closed_text(closed: bool) -> str:
+    return "Esc 닫힘" if closed else "Esc 안 닫힘"
+
+
+def _title_text(title: str | None, expected: str) -> str:
+    return f"팝업 제목 「{expected}」 {'같음' if title == expected else '다름'}"
+
+
+def summarize_panel(facts: Mapping[str, Any] | None, old_titles: int) -> str:
+    """HOME Main 탭의 패널 — 구역 제목·줄 이름 차례와 수·옛 상자 제목 수·LOB 카드 자리."""
+    if not facts or facts["rows"] is None:
+        return f"「{CONDITIONS_SECTION_TITLE}」 패널 없음 · 옛 상자 제목 {old_titles}곳"
+    names = _row_names(facts["rows"]) or ()
+    heading = "있음" if facts["title"] == CONDITIONS_SECTION_TITLE else "없음"
+    order = "같음" if names == PANEL_ROW_NAMES else "다름"
+    if not facts["cards"]:
+        card = "없음"
+    else:
+        card = "패널 아래 있음" if facts["below"] else "있음(패널 아래 아님)"
+    return (
+        f"「{CONDITIONS_SECTION_TITLE}」 제목 {heading} · 패널 {len(names)}줄({_rows_text(names)}) "
+        f"— 정한 차례와 {order} · 옛 상자 제목 {old_titles}곳 · {LOB_CARD_LABEL} 카드 {card}"
+    )
+
+
+def summarize_other_pages(
+    seen: Sequence[tuple[str, tuple[str, ...] | None, Sequence[object] | None]],
+) -> str:
+    """(화면 이름, 정한 줄 이름, 읽은 줄 이름 글) 마다 줄 수와 이름, 끝에 정한 대로인가."""
+    parts: list[str] = []
+    matched = True
+    for title, expected, rows in seen:
+        names = _row_names(rows)
+        matched = matched and names == expected
+        parts.append(
+            f"{title} 패널 없음"
+            if names is None
+            else f"{title} {len(names)}줄({_rows_text(names)})"
+        )
+    return f"{' · '.join(parts)} — 정한 대로 {'같음' if matched else '다름'}"
+
+
+def summarize_scenario_dialog(
+    title: str | None, facts: Mapping[str, Any] | None, closed: bool
+) -> str:
+    if title is None:
+        return "팝업 안 열림"
+    modes = tuple(facts["modes"]) if facts else ()
+    control = "있음" if modes == SCENARIO_DIALOG_MODES else "없음"
+    selected = facts["selected"] if facts else None
+    load, save = SCENARIO_DIALOG_MODES
+    if selected == load:
+        revisions = facts["revisions"] if facts else None
+        listed = "리비전 목록 없음" if revisions is None else f"리비전 {int(revisions)}개"
+    elif selected == save:
+        listed = "저장 구획으로 열림(리비전 목록 안 셈)"
+    else:
+        listed = "구획 모름"
+    # 구획 둘은 화면에서 「불러오기 | 새 리비전 저장」 한 조절이다. 결과 표는 `|` 를 `/` 로 바꾸므로
+    # 이름을 따로 묶어 적는다.
+    names = "·".join(f"「{mode}」" for mode in SCENARIO_DIALOG_MODES)
+    return (
+        f"{_title_text(title, SCENARIO_DIALOG_TITLE)} · 구획 {names} {control} · {listed} · "
+        f"{_closed_text(closed)}"
+    )
+
+
+def summarize_period_dialog(
+    title: str | None, facts: Mapping[str, Any] | None, closed: bool, same: bool
+) -> str:
+    if title is None:
+        return "팝업 안 열림"
+    months = int(facts["months"]) if facts else 0
+    if not facts or facts["apply"] != MONTH_APPLY_LABEL:
+        apply = "없음"
+    else:
+        apply = "컴포넌트 안 있음" if facts["inComponent"] else "있음(컴포넌트 밖)"
+    return (
+        f"{_title_text(title, PERIOD_DIALOG_TITLE)} · 월 칸 {months}개 · "
+        f"「{MONTH_APPLY_LABEL}」 단추 {apply} · {_closed_text(closed)}(적용 안 함) · "
+        f"값 칸 글자 {'같음' if same else '다름'}"
+    )
+
+
+def summarize_process_dialog(
+    title: str | None, facts: Mapping[str, Any] | None, closed: bool
+) -> str:
+    if title is None:
+        return "팝업 안 열림"
+    place = facts["pointer"] if facts else "none"
+    pointer = {"head": "머리에 있음", "body": "머리에 없음(아래에 있음)"}.get(place, "없음")
+    return (
+        f"{_title_text(title, PROCESS_DIALOG_TITLE)} · 판정 기준 안내 {pointer} · "
+        f"{_closed_text(closed)}"
+    )
+
+
+def check_sidebar_panel(screen: Screen) -> str:
+    """HOME Main 탭의 「조회 조건」 패널 — 줄 이름 차례·수, 옛 상자 제목, 아래 `LOB 표시 조건` 카드.
+
+    공정 필터·주요공정 히트맵 줄은 HOME 계산 뒤에 차므로 네 줄이 설 때까지 기다린다.
+    """
+    screen.open_home()
+    screen.open_tab(HOME_MAIN_TAB)
+    facts = screen.poll(
+        lambda: _panel_facts(screen),
+        timeout=60,
+        accept=lambda value: (
+            bool(value) and value["rows"] is not None and len(value["rows"]) >= len(PANEL_ROW_NAMES)
+        ),
+    )
+    old_titles = sum(screen.sidebar_text().count(title) for title in OLD_BOX_TITLES)
+    return summarize_panel(facts, old_titles)
+
+
+def check_panel_rows_other_pages(screen: Screen) -> str:
+    """시나리오 관리(시나리오·조회기간)·Admin Area(시나리오)·Space 현황(패널 없음)의 패널 줄."""
+    seen: list[tuple[str, tuple[str, ...] | None, Sequence[object] | None]] = []
+    for page, title, expected in OTHER_PAGE_PANELS:
+        screen.open_page(page)
+        facts = _panel_facts(screen)
+        seen.append((title, expected, facts["rows"] if facts else None))
+    return summarize_other_pages(seen)
+
+
+def check_scenario_popup(screen: Screen) -> str:
+    """HOME 시나리오 칸의 팝업 — 제목·구획 조절·리비전 수. 불러오기·저장은 누르지 않고 `Esc` 로
+    닫는다."""
+    screen.open_home()
+    screen.open_dialog(_sidebar_button(SCENARIO_FIELD_KEY))
+    load = SCENARIO_DIALOG_MODES[0]
+    try:
+        title = screen.dialog_title()
+        facts = screen.poll(
+            lambda: screen.dialog_read(_SCENARIO_DIALOG_JS, REVISION_RADIO_LABEL),
+            timeout=30,
+            accept=lambda value: (
+                bool(value)
+                and bool(value["modes"])
+                and (value["selected"] != load or value["revisions"] is not None)
+            ),
+        )
+    finally:
+        closed = screen.close_dialog()
+    return summarize_scenario_dialog(title, facts, closed)
+
+
+def check_period_popup(screen: Screen) -> str:
+    """HOME 조회기간 칸의 팝업 — 월 칸·컴포넌트 안 「적용」. 적용하지 않고 `Esc` 로 닫은 뒤 칸
+    글자를 견준다(글자는 기간 값이라 같음·다름만 찍는다)."""
+    screen.open_home()
+    selector = _sidebar_button(PERIOD_FIELD_KEY)
+    before = str(screen.page.locator(selector).first.inner_text())
+    screen.open_dialog(selector)
+    try:
+        title = screen.dialog_title()
+        # 팝업이 먼저 서고 월 선택 컴포넌트는 그 뒤에 붙는다.
+        facts = screen.poll(
+            lambda: screen.dialog_read(
+                _PERIOD_DIALOG_JS, {"inputs": list(MONTH_INPUT_IDS), "apply": MONTH_APPLY_ID}
+            ),
+            timeout=30,
+            accept=lambda value: (
+                bool(value) and value["months"] >= len(MONTH_INPUT_IDS) and bool(value["apply"])
+            ),
+        )
+    finally:
+        closed = screen.close_dialog()
+    after = str(screen.page.locator(selector).first.inner_text())
+    return summarize_period_dialog(title, facts, closed, before == after)
+
+
+def check_process_popup(screen: Screen) -> str:
+    """HOME 공정 필터 칸의 팝업 — 제목과 머리의 판정 기준 안내. 공정을 고르지 않고 `Esc` 로
+    닫는다."""
+    screen.open_home()
+    selector = _sidebar_button(PROCESS_FIELD_KEY)
+    field = screen.page.locator(selector).first
+    field.wait_for(state="visible", timeout=60_000)
+    if field.is_disabled():
+        return "공정 필터 칸 잠김 — 팝업 안 열어 봄"
+    screen.open_dialog(selector)
+    try:
+        title = screen.dialog_title()
+        facts = screen.poll(
+            lambda: screen.dialog_read(_PROCESS_DIALOG_JS, THRESHOLD_POINTER),
+            timeout=30,
+            accept=lambda value: bool(value) and value["pointer"] != "none",
+        )
+    finally:
+        closed = screen.close_dialog()
+    return summarize_process_dialog(title, facts, closed)
+
+
 # 배포마다 바뀌는 확인 목록 — 항목 하나에 한 줄. 차례대로 돈다.
 ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
@@ -1621,6 +2034,11 @@ ITEMS: tuple[Item, ...] = (
     Item("rawdata_target", "RawData 등록할 표", check_rawdata_target),
     Item("progress_box", "필요단축일정 진척 비교 상자", check_progress_box),
     Item("space_drawer", "Space 미배치 서랍", check_space_drawer),
+    Item("sidebar_panel", "HOME 조회 조건 패널", check_sidebar_panel),
+    Item("panel_rows_other_pages", "다른 화면 패널 줄", check_panel_rows_other_pages),
+    Item("scenario_popup", "시나리오 팝업", check_scenario_popup),
+    Item("period_popup", "조회기간 팝업", check_period_popup),
+    Item("process_popup", "공정 필터 팝업", check_process_popup),
 )
 
 

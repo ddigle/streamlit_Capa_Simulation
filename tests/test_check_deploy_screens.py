@@ -1329,9 +1329,325 @@ def test_the_labels_the_items_look_for_exist_in_the_app(path: str, label: str) -
     assert label in _text(PROJECT_ROOT / path)
 
 
-@pytest.mark.parametrize("page", [screens.EQUIPMENT_PAGE, screens.SPACE_PAGE])
+@pytest.mark.parametrize(
+    "page",
+    [
+        screens.EQUIPMENT_PAGE,
+        screens.SPACE_PAGE,
+        screens.SCENARIO_MANAGEMENT_PAGE,
+        screens.ADMIN_AREA_PAGE,
+    ],
+)
 def test_the_pages_the_items_open_exist(page: str) -> None:
     assert (PROJECT_ROOT / "app_pages" / f"{page}.py").is_file()
+
+
+# ------------------------------------------------------------------ 이번 배포 항목(통합 조건 패널)
+
+NEW_ITEM_KEYS = [
+    "sidebar_panel",
+    "panel_rows_other_pages",
+    "scenario_popup",
+    "period_popup",
+    "process_popup",
+]
+
+
+def test_this_deploys_items_follow_the_five_pilot_items_and_do_not_write() -> None:
+    keys = [item.key for item in ITEMS]
+
+    assert keys[:5] == ["toolbar", "symbol", "rawdata_target", "progress_box", "space_drawer"]
+    assert keys[5:] == NEW_ITEM_KEYS
+    assert not any(item.writes for item in ITEMS if item.key in NEW_ITEM_KEYS)
+
+
+def test_the_list_shows_this_deploys_items(capsys: pytest.CaptureFixture[str]) -> None:
+    assert screens.main(["--list"]) == screens.EXIT_OK
+    out = capsys.readouterr().out
+    for item in ITEMS[5:]:
+        assert f"| `{item.key}` | {item.title} | 없음 |" in out
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("시나리오", "시나리오"),
+        ("시나리오 · r12", "시나리오"),
+        (f"시나리오 · {SENTINEL}", "시나리오"),
+        ("조회기간", "조회기간"),
+        (" 공정 필터 ", "공정 필터"),
+        ("주요공정 히트맵", "주요공정 히트맵"),
+        ("B/N 집계 공정", "그 밖"),
+        ("시나리오관리", "그 밖"),
+        (SENTINEL, "그 밖"),
+        ("", "그 밖"),
+    ],
+)
+def test_panel_row_names_are_mapped_to_the_fixed_vocabulary(text: str, expected: str) -> None:
+    assert screens.panel_row_name(text) == expected
+
+
+def _panel(rows: list[str] | None, **overrides: Any) -> dict[str, Any]:
+    facts: dict[str, Any] = {"title": "조회 조건", "rows": rows, "cards": 1, "below": True}
+    facts.update(overrides)
+    return facts
+
+
+def test_the_home_panel_summary_reads_the_order_and_the_card() -> None:
+    rows = ["시나리오 · r7", "조회기간", "공정 필터", "주요공정 히트맵"]
+
+    assert screens.summarize_panel(_panel(rows), 0) == (
+        "「조회 조건」 제목 있음 · 패널 4줄(시나리오 · 조회기간 · 공정 필터 · 주요공정 히트맵) "
+        "— 정한 차례와 같음 · 옛 상자 제목 0곳 · LOB 표시 조건 카드 패널 아래 있음"
+    )
+    assert screens.summarize_panel(None, 2) == "「조회 조건」 패널 없음 · 옛 상자 제목 2곳"
+
+
+def test_the_home_panel_summary_never_carries_screen_text() -> None:
+    rows = [f"시나리오 · {SENTINEL}", "조회기간", SENTINEL]
+
+    result = screens.summarize_panel(_panel(rows, title=SENTINEL, cards=1, below=False), 1)
+
+    assert SENTINEL not in result and "ZZSENTINEL" not in result
+    assert "제목 없음" in result
+    assert "패널 3줄(시나리오 · 조회기간 · 그 밖) — 정한 차례와 다름" in result
+    assert "옛 상자 제목 1곳" in result
+    assert result.endswith("LOB 표시 조건 카드 있음(패널 아래 아님)")
+    assert screens.summarize_panel(_panel([], cards=0), 0).endswith(
+        "패널 0줄(줄 없음) — 정한 차례와 다름 · 옛 상자 제목 0곳 · LOB 표시 조건 카드 없음"
+    )
+
+
+def test_the_other_pages_summary_says_whether_the_rows_are_as_declared() -> None:
+    seen = [
+        ("시나리오 관리", ("시나리오", "조회기간"), ["시나리오 · r3", "조회기간"]),
+        ("Admin Area", ("시나리오",), ["시나리오 · r3"]),
+        ("Space 현황", None, None),
+    ]
+
+    assert screens.summarize_other_pages(seen) == (
+        "시나리오 관리 2줄(시나리오 · 조회기간) · Admin Area 1줄(시나리오) · Space 현황 패널 없음 "
+        "— 정한 대로 같음"
+    )
+    wrong = [
+        ("Admin Area", ("시나리오",), [f"시나리오 · {SENTINEL}", SENTINEL]),
+        ("Space 현황", None, []),
+    ]
+    result = screens.summarize_other_pages(wrong)
+    assert SENTINEL not in result
+    assert result == ("Admin Area 2줄(시나리오 · 그 밖) · Space 현황 0줄(줄 없음) — 정한 대로 다름")
+
+
+def test_the_scenario_popup_summary() -> None:
+    load = {"modes": ["불러오기", "새 리비전 저장"], "selected": "불러오기", "revisions": 3}
+
+    result = screens.summarize_scenario_dialog("시나리오·리비전", load, True)
+    assert result == (
+        "팝업 제목 「시나리오·리비전」 같음 · 구획 「불러오기」·「새 리비전 저장」 있음 · "
+        "리비전 3개 · Esc 닫힘"
+    )
+    # 결과 표는 `|` 를 `/` 로 바꾼다 — 그 글자를 쓰지 않는다.
+    assert "|" not in result
+    save = {**load, "selected": "새 리비전 저장", "revisions": None}
+    assert "저장 구획으로 열림(리비전 목록 안 셈)" in screens.summarize_scenario_dialog(
+        "시나리오·리비전", save, True
+    )
+    odd = {"modes": [SENTINEL], "selected": SENTINEL, "revisions": 9}
+    result = screens.summarize_scenario_dialog(SENTINEL, odd, False)
+    assert SENTINEL not in result
+    assert result == (
+        "팝업 제목 「시나리오·리비전」 다름 · 구획 「불러오기」·「새 리비전 저장」 없음 · "
+        "구획 모름 · Esc 안 닫힘"
+    )
+    assert screens.summarize_scenario_dialog(None, None, True) == "팝업 안 열림"
+
+
+def test_the_period_popup_summary() -> None:
+    facts = {"months": 2, "apply": "적용", "inComponent": True}
+
+    assert screens.summarize_period_dialog("조회기간", facts, True, True) == (
+        "팝업 제목 「조회기간」 같음 · 월 칸 2개 · 「적용」 단추 컴포넌트 안 있음 · "
+        "Esc 닫힘(적용 안 함) · 값 칸 글자 같음"
+    )
+    outside = screens.summarize_period_dialog(
+        "조회기간", {**facts, "inComponent": False}, True, False
+    )
+    assert "「적용」 단추 있음(컴포넌트 밖)" in outside and outside.endswith("값 칸 글자 다름")
+    odd = screens.summarize_period_dialog(SENTINEL, {**facts, "apply": SENTINEL}, False, True)
+    assert SENTINEL not in odd
+    assert "팝업 제목 「조회기간」 다름" in odd and "「적용」 단추 없음" in odd
+    assert "Esc 안 닫힘" in odd
+
+
+@pytest.mark.parametrize(
+    ("place", "expected"),
+    [
+        ("head", "판정 기준 안내 머리에 있음"),
+        ("body", "판정 기준 안내 머리에 없음(아래에 있음)"),
+        ("none", "판정 기준 안내 없음"),
+        (SENTINEL, "판정 기준 안내 없음"),
+    ],
+)
+def test_the_process_popup_summary(place: str, expected: str) -> None:
+    result = screens.summarize_process_dialog("공정 필터", {"pointer": place}, True)
+
+    assert result == f"팝업 제목 「공정 필터」 같음 · {expected} · Esc 닫힘"
+
+
+class _DialogScreen(Screen):
+    """팝업 항목의 뼈대 호출만 흉내 낸다 — 본문 읽기가 실패해도 팝업이 닫히는지 본다."""
+
+    def __init__(self, *, broken: bool) -> None:
+        super().__init__(page=None, base_url="http://127.0.0.1:8559/")
+        self.broken = broken
+        self.calls: list[str] = []
+        self.open = 0
+
+    def open_home(self) -> None:
+        self.calls.append("home")
+
+    def open_dialog(self, selector: str, *, timeout: float = 30.0) -> None:
+        self.calls.append("open")
+        self.open = 1
+
+    def dialog_title(self) -> str | None:
+        return "시나리오·리비전" if self.open else None
+
+    def dialog_read(self, script: str, arg: object = None) -> Any:
+        if self.broken:
+            raise RuntimeError(SENTINEL)
+        return {"modes": ["불러오기", "새 리비전 저장"], "selected": "불러오기", "revisions": 2}
+
+    def dialog_count(self) -> int:
+        return self.open
+
+    def close_dialog(self, timeout: float = 10.0) -> bool:
+        self.calls.append("close")
+        self.open = 0
+        return True
+
+    def js(self, script: str, arg: object = None) -> Any:
+        return False
+
+    def close_overlay(self) -> None:
+        self.calls.append("overlay")
+
+
+def test_a_popup_item_closes_its_popup_even_when_reading_fails() -> None:
+    item = next(item for item in ITEMS if item.key == "scenario_popup")
+    screen = _DialogScreen(broken=True)
+
+    outcomes = screens.run_items(screen, [item], allow_writes=False, deadline=NO_DEADLINE)
+
+    assert outcomes[0].result == "미기록 — RuntimeError"
+    assert screen.calls[-1] == "close" and screen.open == 0
+
+
+def test_the_scenario_popup_item_reads_then_closes() -> None:
+    screen = _DialogScreen(broken=False)
+
+    result = screens.check_scenario_popup(screen)
+
+    assert screen.calls == ["home", "open", "close"]
+    assert result.endswith("리비전 2개 · Esc 닫힘")
+
+
+def test_settle_closes_a_popup_left_open_by_an_earlier_item() -> None:
+    screen = _DialogScreen(broken=False)
+    screen.open = 1
+
+    screen.settle()
+
+    assert screen.calls == ["close", "overlay"]
+    assert screen.open == 0
+
+
+def test_the_condition_panel_contract_matches_the_app() -> None:
+    from capa_simulation import sidebar_status
+    from capa_simulation.components import condition_field, period_field, scenario_status
+    from capa_simulation.components.home_preference import (
+        KEY_PROCESS_FIELD_LABEL,
+        THRESHOLD_POINTER,
+    )
+    from capa_simulation.navigation import CONDITIONS_SECTION
+
+    assert screens.CONDITIONS_SECTION_KEY == CONDITIONS_SECTION.key
+    assert screens.CONDITIONS_SECTION_TITLE == CONDITIONS_SECTION.title
+    assert screens.CONDITIONS_BOX_KEY == sidebar_status.CONDITIONS_BOX_KEY
+    assert screens.CONDITION_CARD_PREFIX == sidebar_status.CONDITION_CARD_PREFIX
+    assert screens.CONDITION_NAME_ROW_PREFIX == condition_field.NAME_ROW_KEY_PREFIX
+    assert screens.SCENARIO_FIELD_KEY == scenario_status.SCENARIO_FIELD_KEY
+    assert screens.SCENARIO_DIALOG_TITLE == scenario_status.SCENARIO_DIALOG_TITLE
+    assert screens.SCENARIO_DIALOG_MODES == (scenario_status.LOAD_MODE, scenario_status.SAVE_MODE)
+    assert screens.PERIOD_FIELD_KEY == period_field.PERIOD_FIELD_KEY
+    assert screens.PERIOD_DIALOG_TITLE == period_field.PERIOD_FIELD_LABEL
+    assert screens.THRESHOLD_POINTER == THRESHOLD_POINTER
+    assert screens.PANEL_ROW_NAMES == (
+        scenario_status.SCENARIO_FIELD_LABEL,
+        period_field.PERIOD_FIELD_LABEL,
+        screens.PROCESS_DIALOG_TITLE,
+        KEY_PROCESS_FIELD_LABEL,
+    )
+    # 시나리오 줄 이름은 「시나리오 · rN」이다 — 앞머리로 어휘에 든다.
+    assert screens.panel_row_name(scenario_status.scenario_name_label(12)) == "시나리오"
+    assert screens.panel_row_name(scenario_status.scenario_name_label(None)) == "시나리오"
+
+
+@pytest.mark.parametrize(
+    ("path", "text"),
+    [
+        ("app.py", 'st.sidebar.container(key="home_navigation")'),
+        ("app_pages/home.py", 'PROCESS_FIELD_LABEL = "공정 필터"'),
+        ("app_pages/home.py", 'PROCESS_FIELD_KEY = "dashboard_bottleneck_process_dialog_open"'),
+        ("app_pages/home.py", "@st.dialog(\n    PROCESS_FIELD_LABEL,"),
+        ("app_pages/home.py", "st.caption(THRESHOLD_POINTER)"),
+        ("app_pages/home.py", 'HOME_TAB_LABELS = (":material/dashboard: Main"'),
+        (
+            "src/capa_simulation/components/home_preference.py",
+            'condition_card("LOB 표시 조건", name="home")',
+        ),
+        ("src/capa_simulation/components/scenario_status.py", '"리비전",'),
+        (
+            "src/capa_simulation/components/month_range_picker.py",
+            '<input id="capa-start-month" type="month"',
+        ),
+        (
+            "src/capa_simulation/components/month_range_picker.py",
+            '<input id="capa-end-month" type="month"',
+        ),
+        (
+            "src/capa_simulation/components/month_range_picker.py",
+            '<button id="capa-month-apply" type="button" class="capa-month-apply">적용</button>',
+        ),
+        ("src/capa_simulation/components/month_range_picker.py", "isolate_styles=False,"),
+    ],
+)
+def test_the_panel_texts_the_items_look_for_exist_in_the_app(path: str, text: str) -> None:
+    assert text in _text(PROJECT_ROOT / path)
+
+
+def test_the_month_picker_ids_are_the_ones_the_item_reads() -> None:
+    picker = _text(COMPONENTS / "month_range_picker.py")
+
+    assert all(f'id="{name}"' in picker for name in screens.MONTH_INPUT_IDS)
+    assert f'id="{screens.MONTH_APPLY_ID}"' in picker
+    assert f">{screens.MONTH_APPLY_LABEL}</button>" in picker
+
+
+def test_the_other_page_panels_follow_the_navigation_declarations() -> None:
+    from capa_simulation.navigation import ALL_SPECS
+
+    specs = {Path(spec.path).stem: spec for spec in ALL_SPECS}
+    for page, _title, expected in screens.OTHER_PAGE_PANELS:
+        spec = specs[page]
+        # 탭으로 가르지 않고, 주소 끝이 파일 이름이다(`open_page` 가 그 끝으로 찾는다).
+        assert spec.condition_tabs is None and spec.url_path is None
+        rows = tuple(
+            name
+            for name, shown in (("시나리오", spec.reads_scenario), ("조회기간", spec.reads_period))
+            if shown
+        )
+        assert (rows or None) == expected
 
 
 @pytest.fixture(autouse=True)
