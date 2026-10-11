@@ -59,7 +59,8 @@ XLSB를 읽지 않는다. `templates/structure_template.xlsb`는 초기 표시�
 운영 데이터는 시뮬레이션과 물리적으로 분리된
 `data/equipment_availability.duckdb`에 저장한다. `Core_Data` 78컬럼 계약·typed raw
 적재와 pandas 기반 16개 RQ 변환은 구현되었고, BigDataQuery 어댑터의 실제 SQL·컬럼
-매핑도 커밋을 마쳤다. 남은 것은 사내 환경에서의 접속·조회 검증이다.
+매핑도 커밋을 마쳤고 사내에서 약 3만 행 조회와 시나리오 저장까지 확인했다. 남은 것은 상세 조회 창의 결정과
+사내 런북 8장의 실데이터 대조 결과다.
 
 GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json`과 코드로 생성한
 비민감 `DEMO_*` Core Data를 공통 변환 파이프라인에 넣어 초기 시나리오·리비전·공식버전을
@@ -4972,8 +4973,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   모두 import 하는 한 벌이다 — 넣을 때 한 곳만 고치면 세 경로가 같은 행을 본다.
 - `MCP_Chip_Ratio` 보정식은 미확정이다.
 - BigDataQuery 실제 SQL과 컬럼 매핑은 `company_bigdataquery_adapter.py`에 커밋을 마쳤고
-  `is_bigdataquery_adapter_configured()`도 참이다. 남은 것은 사내 환경에서의 접속·조회
-  검증이며, 반환 DataFrame은 구현된 `CoreDataProvider` 공통 처리·DuckDB 저장 경로를
+  `is_bigdataquery_adapter_configured()`도 참이며 사내에서 약 3만 행 조회와 시나리오 저장까지
+  확인했다. 남은 것은 상세 조회 창의 결정과 사내 런북 8장의 실데이터 대조 결과이고, 반환 DataFrame은 구현된 `CoreDataProvider` 공통 처리·DuckDB 저장 경로를
   그대로 사용한다. DataLake·Impala를 별도 원천 어댑터로 붙이는 경로는 아직 없다.
 - `app_pages/home.py`는 UI 코드가 크다. 대시보드 기능을 추가할 때 계산 로직을 더 넣지
   말고 Figure 생성기 또는 서비스 모듈 분리를 우선 검토한다.
