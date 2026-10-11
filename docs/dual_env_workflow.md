@@ -244,7 +244,9 @@ uv run --no-sync python scripts/apply_deploy_package.py <ZIP> --reconcile-only
 
 ## 7-<x> 화면 확인 (<에이전트 · 헤드리스 Chrome / 사용자>)
 
-| 항목 | 결과 |
+    <check_deploy_screens.py 의 --output 블록(머리 세 줄 + 표)을 고치지 않고 붙인다 — 런북 6-2>
+
+| 손 확인 항목 | 결과 |
 |---|---|
 | 1) … | <값> |
 
