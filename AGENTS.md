@@ -5045,9 +5045,10 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 격리가 깨지면 폴더를 지우지 않고 멈춘다.
 
 ```powershell
-.\scripts
-ew_worktree.ps1 -Branch cand/<과제>/<에이전트> -Port 8502
+./scripts/new_worktree.ps1 -Branch cand/<과제>/<에이전트> -Port 8502
 ```
+
+이 스크립트는 Windows(PowerShell) 전용이다. 리눅스(데스크탑 WSL)에서의 병행 작업 폴더는 `docs/wsl_dev_environment.md` 6장.
 
 - **`.venv` 를 공유하지 않는다.** editable 설치가 `__editable__.capa_simulation-0.1.0.pth` 에
   **절대경로**를 박아 두어, 남의 `.venv` 를 쓰면 화면은 내 코드인데 `import capa_simulation`
@@ -5073,8 +5074,7 @@ ew_worktree.ps1 -Branch cand/<과제>/<에이전트> -Port 8502
   (`docs/TODO.md` 3-9절 실측) — 「띄웠는데 왜 내 수정이 안 보이지」가 되고 화면에 경고가 없다.
 
   **손으로 지키지 않는다.** `new_worktree.ps1` 이 브랜치 마지막 조각(= 에이전트 이름)에서
-  포트를 정해 `run.ps1` 에 박아 두므로, 그 폴더에서는 `.
-un.ps1` 한 줄이면 된다. 모르는
+  포트를 정해 `run.ps1` 에 박아 두므로, 그 폴더에서는 `./run.ps1` 한 줄이면 된다. 모르는
   이름이면 **아무것도 만들지 않고 멈춘다.** 이름을 늘리려면 스크립트의 `$AGENT_PORTS` 에
   더한다.
 

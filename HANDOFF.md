@@ -14,7 +14,7 @@
 | 마이그레이션 | 시뮬레이션 최신 `0033`, 설비 최신 `0021`. `202610081500` 뒤 새 것은 **시뮬레이션 `0033` 하나**(다음 배포에서 사내에 처음 걸린다) |
 | 8501 | 사용자 앱이 떠 있다(끄지 않는다). 10-11 에 사용자가 restart 스크립트로 두 번 다시 띄웠다(두 DB 백업 `data/temp/*.before_0033.20261011210257.duckdb`) — `febbdd2` 코드, 시뮬레이션 `0033` 걸림·`ref_copies 0`, 입장 화면 「준비 완료」와 새 패널을 스모크 확인. 그 뒤 main 에 든 것은 스크립트·테스트·문서뿐이라(`app.py`·`app_pages`·`src` 변화 없음) 다시 띄울 필요가 없다 |
 | 작업 폴더 | `main` 하나. 10-11 의 워크트리 셋(`docs-sync`·`runbook-next`·`screen-items`)은 main 에 병합하고 지웠다 |
-| 사용자 확인 대기 | ① 선행 B/O 를 FRONT 공정에만 거는 것 — 다음에 다시 묻는다 ② 개발을 Linux tmux Claude 샌드박스로 옮길지·어디로(5장 — 사용자가 확인해 알려 주기로 함, 10-12) |
+| 사용자 확인 대기 | ① 선행 B/O 를 FRONT 공정에만 거는 것 — 다음에 다시 묻는다 ② WSL 에서 병행 작업 폴더를 어디에 둘지(`claude -w` 의 저장소 안 / 저장소 옆 — `docs/wsl_dev_environment.md` 6장) |
 
 ## 2. 10-08 배포 뒤 main 에 들어간 것
 
@@ -70,13 +70,11 @@ D3(값 칸 글자 「시나리오명 · rN」 — 리뷰 뒤 이름 줄에도 �
 4. 선행 B/O 를 FRONT 공정에만 거는 것 — 다음에 다시 묻는다(`docs/TODO.md` 선행 B/O 항목).
 5. 후속 후보: 패널 값 칸을 누를 때 앱 전체가 한 번 도는 비용(HOME 약 0.4초)을 키 붙은 호스트 프래그먼트로 줄이기, D8, Streamlit
    판올림 때 필드 서식(1.63 `st.button` DOM 에 기댐) 브라우저 재확인.
-6. **개발을 Linux tmux Claude 샌드박스로 옮길지 검토 중 — 자리 미정**(이 ARM64 PC 의 WSL / 데스크탑 / 클라우드). 걸림돌:
-   - 배포 메일은 **이 PC 의 Chrome Profile 1** 에서만 보낼 수 있다(Outlook 웹) — 옮겨도 발송은 이 PC 에 남는다.
-   - `TZ=Asia/Seoul` 을 맞춘다 — 날짜·시각이 한국 시각 기준이어야 한다.
-   - Claude 자동 메모리는 작업 경로로 만든 폴더 이름(slug)에 묶여 있어 새 경로의 slug 로 복사해야 한다.
-   - `data/*.duckdb` 는 Git 밖이라 따로 복사한다.
-   - Windows 전용 코드 경로는 Windows 가드가 필요하다(예: `check_deploy_screens.py` 는 Windows Job Object·Linux PDEATHSIG 로
-     갈리는데 Linux 쪽은 사외에서 돌려 보지 못했다).
+6. **개발 자리를 데스크탑 WSL(Ubuntu x86_64) tmux 로 옮긴다(2026-10-12 사용자 지시)** — 정본은 `docs/wsl_dev_environment.md`.
+   서피스 쪽 준비는 끝났다: 문서·`CLAUDE.md` bash 명령, CI(ubuntu · 3.10.11)가 `f11f041` 를 통과, 로컬 데이터(DB 둘 — 마이그레이션
+   33·21 · CSV 둘)와 메모리·스킬을 묶어 데스크탑 Windows 홈으로 보냈다(`capa_wsl_bundle_20261012.tar.gz`, 안의 `setup.sh` 가
+   덮지 않고 넣는다). 남은 것은 사용자의 WSL 쪽 준비(clone · uv · Python 3.10.11 · `uv sync --frozen` · 묶음 풀기 · 푸시 인증)와
+   병행 작업 폴더 자리 결정. **사내 배포(빌드·메일)는 서피스에 남는다**(5장).
 
 ## 6. 이번에 배운 것
 

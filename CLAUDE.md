@@ -44,16 +44,27 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다(PowerShell
 
 단일 테스트: `.\.venv\Scripts\python.exe -m pytest tests/test_home_page.py::test_home_renders_summary_dashboard_from_the_builtin_seed`
 
-보조 스크립트: `scripts\inspect_wf_division.py`·`scripts\inspect_top_remigration.py`
+사외 개발 PC 가 리눅스(데스크탑 WSL)면 같은 명령을 bash 로 친다 — 환경 준비·앱 띄우기·배포 자리는
+`docs/wsl_dev_environment.md`.
+
+```bash
+.venv/bin/python -m ruff format --check .
+.venv/bin/python -m ruff check .
+.venv/bin/python -m mypy
+.venv/bin/python -m pytest
+```
+
+보조 스크립트: `scripts/inspect_wf_division.py`·`scripts/inspect_top_remigration.py`
 (사내 실데이터의 `WF 구분`·재이관 전제를 **읽기 전용**으로 재는 것. 값은 찍지 않고
-개수만 보고한다), `scripts\audit_top_remigration.py`(`0026` 적용 뒤 이관 결과의 오염·누락을
-**읽기 전용**으로 점검), `scripts\inspect_real_data_checks.py`(실데이터로만 답이 나오는 확인 — 기존 결과
+개수만 보고한다), `scripts/audit_top_remigration.py`(`0026` 적용 뒤 이관 결과의 오염·누락을
+**읽기 전용**으로 점검), `scripts/inspect_real_data_checks.py`(실데이터로만 답이 나오는 확인 — 기존 결과
 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery 를 **읽기 전용**으로 재어 집계만 찍는다. 사내 런북
-8장이 배포마다 부른다), `scripts\check_deploy_screens.py`(사내 런북 7장 화면 확인 — 별도 포트에 앱을
+8장이 배포마다 부른다), `scripts/check_deploy_screens.py`(사내 런북 7장 화면 확인 — 별도 포트에 앱을
 띄워 저장소 밖 Playwright·깔린 Chrome 으로 보고 개수·있음/없음만 찍는다. 항목은 함수 하나 + `ITEMS` 한 줄),
-`scripts\benchmark_home.py`(HOME 단계별 성능), `scripts\validate_duckdb_persistence.py`
-(영속성 통합 검증), `scripts\generate_sample_core_data.py`(합성 Core Data 생성).
-`scripts\build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖는다).
+`scripts/benchmark_home.py`(HOME 단계별 성능), `scripts/validate_duckdb_persistence.py`
+(영속성 통합 검증 — Windows·Excel·`templates/structure_template.xlsb` 가 있어야 돈다),
+`scripts/generate_sample_core_data.py`(합성 Core Data 생성).
+`scripts/build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖는다).
 
 `mypy`는 `tests/`·`scripts/`까지 같은 strict 로 검사한다. 테스트에서 끄는 것은 pandas 스칼라
 합집합 마찰인 `operator` 하나뿐이고 모듈 셋으로 좁혀 두었다(`pyproject.toml` 의 overrides).

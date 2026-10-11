@@ -836,6 +836,9 @@ Repository의 쓰기를 별도 잠금과 DB 트랜잭션으로 직렬화합니�
 
 ## 권장 실행 환경
 
+사외 개발은 2026-10-12 부터 데스크탑 WSL(Ubuntu x86_64)에서 합니다 — 준비·명령·배포 자리는
+[`docs/wsl_dev_environment.md`](docs/wsl_dev_environment.md). 아래는 Windows(서피스·사내) 기준입니다.
+
 - Windows 10/11
 - Microsoft Excel 2021 또는 Microsoft 365 Desktop (초기 이관·병행 검증 시에만 필요)
 - Python 3.10.11 64-bit
@@ -850,6 +853,8 @@ Repository의 쓰기를 별도 잠금과 DB 트랜잭션으로 직렬화합니�
 | 패키지 관리 | `uv` | `uv` |
 | 추가로 필요한 것 | 없음 | `bigdataquery` (사내 인덱스) |
 | 코드 수정 | 합니다 | **하지 않습니다** — `docs/dual_env_workflow.md` |
+
+사외가 리눅스(데스크탑 WSL)면 아래 사외 절 대신 `docs/wsl_dev_environment.md` 1장을 따릅니다.
 
 의존성 선언은 `pyproject.toml` 하나이고 **양쪽이 완전히 같습니다.** 개발 도구(mypy·ruff·
 pytest)는 extra 가 아니라 PEP 735 의존성 그룹 `[dependency-groups]` 의 `dev` 에 있어
@@ -1001,7 +1006,7 @@ DuckDB도 페이지 최초 접근 시 스키마가 생성되고, 실제 리비�
 .\.venv\Scripts\python.exe -m ruff format --check .
 .\.venv\Scripts\python.exe -m mypy
 .\.venv\Scripts\python.exe scripts\benchmark_home.py
-.\.venv\Scripts\python.exe scripts\validate_duckdb_persistence.py
+.\.venv\Scripts\python.exe scripts\validate_duckdb_persistence.py   # Windows + Excel + templates/structure_template.xlsb 가 있을 때만
 ```
 
 `mypy` 는 `app.py`·`app_pages/`·`src/`·`tests/`·`scripts/` 를 모두 strict 로 검사합니다
