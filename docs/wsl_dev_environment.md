@@ -55,6 +55,7 @@ cd ~/projects/streamlit_project && .venv/bin/python -m streamlit run app.py --se
 ```
 
 - 서피스에서 보려면 서피스 PowerShell 에 `ssh -N -L 8501:localhost:8501 desk` 를 열어 둔 채 `http://localhost:8501`.
+  서피스에 자기 8501 앱이 떠 있으면 로컬 포트가 겹쳐 실패한다 — 그때는 `-L 8601:localhost:8501` 로 열고 `http://localhost:8601`.
 - **포트는 늘 적는다.** 8501~8503 은 사용자 몫이고 에이전트의 시험 앱은 8510 이상이다(`AGENTS.md`). 포트를 빼면 Streamlit 이
   찬 포트를 피해 다음 번호로 조용히 옮겨 뜬다.
 
@@ -69,7 +70,8 @@ GitHub 인증이 있어야 한다. WSL 일반 셸에서 둘 중 하나.
 
 ## 5. 사내 배포는 서피스에서 한다
 
-배포 메일은 서피스 Chrome(Profile 1)의 Outlook 웹으로만 보낼 수 있다. WSL 에는 브라우저가 없다. 그래서
+배포 메일은 서피스 Chrome(Profile 1)의 Outlook 웹으로만 보낼 수 있다(확장 Claude in Chrome 과 Outlook 로그인이 거기 있다).
+Claude Code 의 Chrome 연동은 WSL 을 지원하지 않는다(공식 문서) — WSL 에 Chrome 을 깔아도 WSL Claude 는 메일을 보낼 수 없다. 그래서
 
 1. **WSL** — 개발·검증·런북 7장 작성까지 하고 `main` 을 푸시한다.
 2. **서피스** — 배포 지시가 오면 `git pull` → stamp 를 정해 런북 자리표(`<STAMP>`·`{APPLY_FACTS}`)를 흉내 저장소 적용 값으로 채운다
@@ -88,5 +90,11 @@ GitHub 인증이 있어야 한다. WSL 일반 셸에서 둘 중 하나.
 
 - `templates/structure_template.xlsb`(Excel, git 밖) — 옮기지 않았다. 필요하면 사용자가 따로 가져온다.
 - `data/temp/` 백업 DB, `data/output/` 옛 ZIP, `data/input/backup/` — 옮기지 않았다.
-- stash 하나(`bigdataquery user_name` — 사내 값 확인 뒤 반영하려던 BigDataQuery 사용자 이름 시험분)와 옛 후보 브랜치
-  `cand/*` 일곱(병행 개발 후보 — 기능은 고친 꼴로 `main` 에 들어갔다. `cand/설비UI개편/claude` 만 GitHub 에도 있다).
+- 옛 후보 브랜치 `cand/*` 일곱(병행 개발 후보 — 기능은 고친 꼴로 `main` 에 들어갔다. `cand/설비UI개편/claude` 만 GitHub 에도 있다).
+- 배포 ZIP 출력 자리 `C:\Dev\Streamlit_Project_Dummyfile`(빌더 `--out`) — 배포가 서피스에 남으니 그대로 둔다.
+
+10-13 에 따로 옮긴 것(저장소 밖):
+
+- 지난 사내 리뷰 13개와 버그 보고 2개 — 서피스 `C:\Dev\Review` → WSL `~/projects/Review/`(파일명 `<stamp>_review.md`). 새 리뷰도 여기에 둔다.
+- stash `bigdataquery user_name`(사내 값 확인 뒤 반영하려던 BigDataQuery 사용자 이름 시험분) — 패치로
+  `~/projects/stash/bigdataquery_user_name.patch`. 서피스 stash 는 그대로 있다.
