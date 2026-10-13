@@ -29,7 +29,11 @@ import streamlit as st
 # 테스트가 스크롤바를 갈아끼울 수 있도록 이름이 아니라 모듈을 잡는다. 이름을 직접
 # import 하면 여기서 잡은 바인딩이 교체를 무시한다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
-from capa_simulation.components.plotly_layout import append_layout_items, static_chart_config
+from capa_simulation.components.plotly_layout import (
+    append_layout_items,
+    figure_from_spec,
+    static_chart_config,
+)
 from capa_simulation.components.process_labels import apply_process_label
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
@@ -346,6 +350,13 @@ def build_split_table_figures(
     `table_height_px` 와 따로 한 번 더 적혀 있었다. 여기 한 곳에서 만든다.
 
     **색은 이 함수 안에서 읽는다.** 모듈 상수로 올리면 프로세스가 처음 읽은 테마에 굳는다.
+
+    Figure 는 평범한 dict spec 으로 조립해 `figure_from_spec` 이 Plotly 검증 없이 세운다 — 셀마다
+    값·면색을 다시 검사하던 비용이 표 크기에 비례해 컸다(2,660행 약 1초). 그래서 spec 은 **Plotly
+    정규형**으로 적는다: 면색·선색은 밑줄 줄임 키(`fill_color`)가 아니라 `{"fill": {"color": ...}}`
+    중첩 dict 다. 줄임 키는 검증 없이는 펼쳐지지 않아 헤더 배경이 말없이 사라진다.
+    `tests/test_plotly_fast_path.py` 가 예전 `go.Table(...)`+`update_layout` 경로와 JSON 이
+    같은지 본다.
     """
     common_layout: dict[str, Any] = {
         "height": table_height_px(row_count),
@@ -355,8 +366,8 @@ def build_split_table_figures(
     }
     header_style: dict[str, Any] = {
         "align": "center",
-        "fill_color": tokens.HEADER_BACKGROUND,
-        "line_color": TRANSPARENT_COLOR,
+        "fill": {"color": tokens.HEADER_BACKGROUND},
+        "line": {"color": TRANSPARENT_COLOR},
         "font": {"color": tokens.TEXT, "size": 14, "family": tokens.FONT_FAMILY},
         "height": HEADER_HEIGHT_PX,
     }
@@ -365,39 +376,49 @@ def build_split_table_figures(
         "size": 13,
         "family": tokens.FONT_FAMILY,
     }
-    label_figure = go.Figure(
-        go.Table(
-            columnwidth=column_widths,
-            header={"values": classification_headers, **header_style},
-            cells={
-                "values": classification_values,
-                "align": "center",
-                "fill_color": classification_fill_colors,
-                "line_color": TRANSPARENT_COLOR,
-                "font": cell_font,
-                "height": ROW_HEIGHT_PX,
-            },
-        )
+    label_figure = figure_from_spec(
+        {
+            "data": [
+                {
+                    "type": "table",
+                    "columnwidth": column_widths,
+                    "header": {"values": classification_headers, **header_style},
+                    "cells": {
+                        "values": classification_values,
+                        "align": "center",
+                        "fill": {"color": classification_fill_colors},
+                        "line": {"color": TRANSPARENT_COLOR},
+                        "font": cell_font,
+                        "height": ROW_HEIGHT_PX,
+                    },
+                }
+            ],
+            "layout": common_layout,
+        }
     )
-    month_figure = go.Figure(
-        go.Table(
-            columnwidth=[1.0] * len(month_headers),
-            header={"values": month_headers, **header_style},
-            cells={
-                "values": month_values,
-                "align": "center",
-                "fill_color": [month_row_colors for _ in month_headers],
-                "line_color": TRANSPARENT_COLOR,
-                "font": cell_font,
-                "height": ROW_HEIGHT_PX,
+    month_figure = figure_from_spec(
+        {
+            "data": [
+                {
+                    "type": "table",
+                    "columnwidth": [1.0] * len(month_headers),
+                    "header": {"values": month_headers, **header_style},
+                    "cells": {
+                        "values": month_values,
+                        "align": "center",
+                        "fill": {"color": [month_row_colors for _ in month_headers]},
+                        "line": {"color": TRANSPARENT_COLOR},
+                        "font": cell_font,
+                        "height": ROW_HEIGHT_PX,
+                    },
+                }
+            ],
+            "layout": {
+                **common_layout,
+                "width": len(month_headers) * MONTH_COLUMN_WIDTH_PX,
+                "autosize": False,
             },
-        )
-    )
-    label_figure.update_layout(**common_layout)
-    month_figure.update_layout(
-        **common_layout,
-        width=len(month_headers) * MONTH_COLUMN_WIDTH_PX,
-        autosize=False,
+        }
     )
     return label_figure, month_figure
 

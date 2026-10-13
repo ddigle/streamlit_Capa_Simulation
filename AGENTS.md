@@ -3304,6 +3304,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 두 월별 표가 공유하는 상수·텍스트 폭 계산과 고정 분류 + 스크롤 월 껍데기. 분류 컬럼
     폭(`classification_widths`)과 `go.Table` 두 벌 + 공통 layout 조립
     (`build_split_table_figures`)도 여기 있다. 행 모델과 면색 규칙만 표마다 다르다.
+  - `build_split_table_figures` 는 표를 평범한 dict spec 으로 조립해 `plotly_layout.figure_from_spec`
+    이 **검증 없이** 세운다(셀 검증이 2,660행 표에서 약 1초였다). 그래서 spec 은 Plotly 정규형이다 —
+    면색·선색은 `{"fill": {"color": ...}}` 중첩 dict 로 쓰고 밑줄 줄임 키(`fill_color`)를 쓰지 않는다.
+    줄임 키는 검증 없이는 펼쳐지지 않는다(키 이름 검사가 잡아 검증 생성자로 넘기므로 화면은 맞지만
+    느려진다). `tests/test_plotly_fast_path.py` 가 고치기 전 `go.Table(...)`+`update_layout` 경로와 JSON 이
+    같은지, 셀 검증을 정말 건너뛰는지 본다. 값은 매 회차 그대로 다시 만든다 — 캐시가 아니다.
   - 격자 도우미 넷(`add_outer_border`·`add_header_rule`·`add_classification_boundaries`·
     `add_month_boundaries`)은 `append_layout_items` 에 **모으기만** 한다. 반영은 표 모듈의
     `_add_table_grid` 끝 `flush_layout_items` 한 번이다. 도우미가 `add_shape` 로 바로 넣으면
@@ -4079,6 +4085,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기준 72초 대 0.12초이고, HOME 은 Figure 하나에 7.7초를 쓰고 있었다.
   - flush 를 잊으면 테두리·격자·라벨이 통째로 빠져 화면에서 바로 드러난다.
     `tests/test_plotly_layout.py` 가 그 계약을 고정한다.
+  - **반영은 Plotly 검증을 건너뛴다**(한 번에 넣어도 검증이 LOB 월 Figure 67ms 중 61ms 였다).
+    `flush_layout_items` 는 항목을 검증이 남기는 꼴(각도 -180~180, None·빈 하위 칸 빼기, `x1`→`x`)의
+    **새** dict 로 옮겨 `_validate` 를 끈 채 넣는다 — 호출부 dict 를 Figure 가 붙잡지 않는다. 옮길 수
+    없는 항목(모르는 속성·밑줄 줄임 키·범위 밖 숫자·정수 칸의 소수·빈 글자·모르는 색·규칙이 없는 검증기
+    종류)이 하나라도 있으면 그 Figure 는 예전처럼 검증해 넣어 오타는 지금처럼 예외다. 넣은 뒤 `_validate` 는
+    **원래 값**으로 돌린다(뒤의 `update_layout` 값 오류도 지금처럼 예외). 스위치 `plotly_validation()` 을 켜면
+    고치기 전 경로를 탄다 — `tests/test_plotly_fast_path.py` 가 HOME 네 묶음·덤벨·가용 GAP 그림을 두 경로로
+    그려 JSON 이 같은지, HOME 에서 검증 경로로 넘어간 Figure 가 없는지 본다. 비공개 `_validate` 라
+    `plotly>=5.24,<7` 고정에 기댄다.
+  - `figure_from_spec(spec)` 은 dict spec 을 `go.Figure(spec, _validate=False)` 로 세우고 검증을 다시 켠다
+    (그 뒤 고치는 코드는 값까지 검증을 거친다). 세우기 전에 키 이름만 Plotly 속성 목록에 대 보고(하위 dict
+    로 내려간다), 모르는 이름·줄임 키가 있으면 검증 생성자로 세운다. **dict 의 목록을 받는 속성**
+    (`layout.shapes`·`annotations` 등)은 원소를 보지 않으므로 spec 에 있기만 해도 검증 생성자로 세운다 —
+    도형·주석은 spec 에 넣지 말고 `append_layout_items`·`flush_layout_items` 로 넣는다. 하위 칸이 있는 속성에
+    dict 가 아닌 값(템플릿 이름 등)이 와도 검증 생성자다. 값(색·숫자 범위)은 보지 않으므로 spec 을 쓰는 곳은
+    두 경로 JSON 비교 테스트를 함께 둔다. 지금은 월별 표(`table` trace)만 쓴다.
   - 표 행의 면색이 모두 같으면 칸마다 사각형을 그리지 않는다. 도형 수가 그대로 비용이다.
 - `src/capa_simulation/components/home_figures.py`, `home_figure_common.py`, `home_lob_figures.py`,
   `home_plan_detail_figures.py`, `home_key_process_figures.py`, `home_bottleneck_figures.py`,
