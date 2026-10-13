@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any, NamedTuple
 
 import duckdb
@@ -482,6 +482,8 @@ def _build(
         "months": list(months),
         "included": list(preset.included_processes),
         "home_key": cache_key,
+        # `home_key` 의 표시순서 지문을 만든 바로 그 프레임. GAP 몫의 환산이 이것을 쓴다.
+        "display_order": display_order,
         "density": monthly_density,
         "wafer": monthly_wafer,
         "securement": securement_rate,
@@ -529,22 +531,59 @@ def _shipment_part(context: Mapping[str, Any], profile: GlobalAdvanceShipment) -
     return shipment_payload([text for text, _hover in advance_shipment_notes(profile.rows, labels)])
 
 
+class _OfficialTables(Mapping[str, pd.DataFrame]):
+    """공식 리비전의 표를 **처음 꺼낼 때만** 스냅샷에서 가져오는 Mapping.
+
+    리비전 id 는 만들 때 고정한다 — 환산이 빗나가 표를 꺼낼 때도 요약을 만든 그 공식 리비전을
+    읽는다. 꺼내다 난 실패(DB 잠금 등)는 그대로 올라가 GAP 몫이 「준비 중」으로 남는다.
+    """
+
+    def __init__(self, database_path: str, revision_id: str) -> None:
+        self._database_path = database_path
+        self._revision_id = revision_id
+        self._tables: Mapping[str, pd.DataFrame] | None = None
+
+    def _loaded(self) -> Mapping[str, pd.DataFrame]:
+        if self._tables is None:
+            self._tables = load_scenario_snapshot(self._database_path, self._revision_id).tables
+        return self._tables
+
+    def __getitem__(self, name: str) -> pd.DataFrame:
+        return self._loaded()[name]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._loaded())
+
+    def __len__(self) -> int:
+        return len(self._loaded())
+
+
 def _comparison_part(
     database_path: str,
     release: OfficialReleaseSummary,
     profile: GlobalComparisonScenario,
     context: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """GAP 몫. 비교 계획을 공식버전 기준정보로 환산하는 데에만 리비전 스냅샷이 든다(그때만 푼다)."""
+    """GAP 몫. 비교 계획을 공식버전 기준정보로 환산할 때만 공식 리비전 스냅샷을 꺼낸다.
+
+    환산(`get_home_comparison_plan`)이 적중하면 기준정보 표를 쓰지 않으므로 스냅샷을 꺼내지
+    않는다(`_OfficialTables`). 표시순서는 요약 키의 지문을 만든 그 프레임(재료 `display_order`)
+    이다 — 재료에 없으면(그 칸이 없는 요약이 서버 캐시에 남은 때) 공식 스냅샷의 것을 쓴다.
+    """
 
     def load_plan(revision_id: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-        tables = load_scenario_snapshot(database_path, release.revision_id).tables
+        tables = _OfficialTables(database_path, release.revision_id)
+        display_order = context.get("display_order")
         # HOME GAP 과 같은 함수다 — 비교 리비전의 계획만 가져와 공식버전의 기준정보로 환산한다.
         density, wafer, _detail = get_home_comparison_plan(
             cache_key=context["home_key"],
             _tables=tables,
             _comparison_plan=load_scenario_plan(database_path, revision_id),
-            _display_order=tables["RQ_DISPLAY_ORDER"],
+            _display_order=(
+                display_order
+                if isinstance(display_order, pd.DataFrame)
+                else tables["RQ_DISPLAY_ORDER"]
+            ),
             comparison_revision_id=revision_id,
             include_edp=False,
             detail_dimensions=tuple(PRODUCTION_DETAIL_DIMENSIONS),
