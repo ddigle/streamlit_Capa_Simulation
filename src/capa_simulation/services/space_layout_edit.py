@@ -1106,9 +1106,9 @@ def buffer_matches_saved(
 
     판정은 내용(`DataFrame.equals`)으로만 한다. 편집본 세대·리비전 번호로 판정하면 세대를 올리지
     않는 편집을 놓친다. `equals` 는 칸 형까지 보므로 값은 같고 형만 다르면 「다르다」로 보고 셀
-    비교로 넘어간다(안전한 쪽). 반대로 `equals` 가 같다고 보는데 셀 비교가 다르다고 하는 경우는
-    `0.0`↔`-0.0` 이나 object 칸의 Timestamp↔datetime64 처럼 셀 비교가 거짓 「다름」을 내는
-    경우뿐이다.
+    비교로 넘어간다(안전한 쪽). 반대로 `equals` 가 같다고 보는데 셀 비교가 다르다고 하는 경우도
+    있다 — 예: `0.0`↔`-0.0`, object 칸의 Timestamp↔datetime64·`True`↔`1`. 모두 셀 비교가 거짓
+    「다름」을 내는 쪽이라, 빠른 길이 빈 결과를 내도 실제 편집을 숨기지 않는다.
     """
     if renames or len(saved) != len(buffer):
         return False
