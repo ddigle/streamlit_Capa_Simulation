@@ -618,13 +618,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     배치에서 같다), 스크롤해도 같은 자리에서 읽힌다. 계산 단계마다 `advance()` 하고
     끝나면 `close()` 한다. **모든 종료 경로가 `close()` 를 지나야 한다** — 오류로 멈추면
     멈춰 선 막대가 오류 문구 위에 남는다. Figure 단계는 묶음이 몇 개 맞든 **같은 횟수**(순위
-    집계 뒤 한 번, 그림 뒤 한 번)만 `advance()` 해 모든 경로의 단계 수가 같다.
+    집계 뒤 한 번, 그림 뒤 한 번)만 `advance()` 해 모든 경로의 단계 수가 같다 — Main 이 숨어 그림
+    단계를 건너뛰는 회차도 두 번 넘긴다.
   - 판정 기준(확보·경고)은 사이드바에 입력이 없고 `Preference` 의 공용 프로필이 정한다
     (2026-10-06 사용자 결정 — 아래 `services/securement_threshold.py`). 「판정 기준은 HOME →
     Preference 에서 정합니다」는 공정 필터 팝업 머리 캡션과 Guide 에 둔다(2026-10-10 — 사이드바에 늘
     한 줄을 차지하던 것을 걷었다). 포함 공정은 팝업의 적용 버튼으로 확정한다. 성능 진단 토글은
     단계별 시간과 Figure 캐시 결과(네 묶음이 다 맞으면 「적중」, 아니면 「생성」과 새로 만든
-    묶음 이름)만 표시한다. 공정 필터·주요공정 히트맵 줄은 `app.py` 가 세운 패널 칸
+    묶음 이름, Main 이 숨어 캐시를 보지 않은 회차는 「건너뜀」)만 표시한다. 공정 필터·주요공정 히트맵 줄은 `app.py` 가 세운 패널 칸
     (`sidebar_status.page_condition_slot(0)`·`(1)`)을 HOME 이 채운다 — 칸이 없는 회차(페이지만 띄운
     테스트 하네스)에는 사이드바 맨 아래에 선다.
 - `app_pages/load_conversion.py` (화면 이름 `생산 계획`)
@@ -4001,6 +4002,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       단위·Top 5 구간은 LOB 에만, 상세 계획은 세부수량에만, 주요공정 프리셋은 히트맵에만 든다.
     - B/N 단일 순위 집계는 그것을 읽는 LOB·상세 B/N 중 하나라도 새로 만들 때만 돈다. 결론 요약
       (`build_capacity_decision`)은 지금처럼 캐시 밖이다.
+    - **Main 이 숨은 회차(`tab_is_hidden(main_tab)`)에는 네 묶음을 꺼내지도 만들지도 않는다.** 그래서
+      HOME 은 탭(`stateful_tabs`)을 Figure 단계 **앞**에서 만든다(그 사이에 본문 요소가 없어 배치는
+      같다). Preference·Past Data 에서 저장하면 프로필 version 이 바뀌어 묶음 키가 빗나가지만 그
+      회차에는 그리지 않고, Main 을 여는 회차(탭의 `on_change="rerun"` 이라 늘 앱 전체 회차)에 현재
+      조건(`figure_conditions` — 탭과 무관하게 늘 만든다)으로 한 번 만든다. 저장 비용이 Main 으로
+      돌아오는 회차로 옮겨 가고, 연속 저장 N번은 재생성 한 번으로 준다. 숨은 회차에도 진행 막대는
+      같은 단계를 넘기고 `render_home_figures` 는 `None` 을 받아 빈 칸만 세운다. 탭을 모르면(`None`)
+      지금처럼 만든다. `tests/test_home_hidden_main_figures.py` 가 「숨은 회차 생성 0회 · 돌아온 Main 의
+      그림 == 캐시 없이 새로 만든 그림 · 저장값이 키에 듦」을 지킨다.
     키에 조건을 더할 때는 `HomeFigureCacheKey` 에 칸을 더하고 그 조건을 읽는 묶음 키에 **같은
     이름**으로 넣은 뒤 `tests/test_home_figure_cache.py` 의 의존 표 사본(`EXPECTED_DEPENDENTS`)도
     고친다 — 어느 묶음에도 넣지 않은 칸은 그 시험이 잡는다. `tests/test_home_figure_cache_

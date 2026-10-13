@@ -473,16 +473,19 @@ def render_home_performance(
     *,
     rebuilt: Sequence[str],
     enabled: bool,
+    skipped: bool = False,
 ) -> None:
     """단계별 시간과 Figure 캐시 결과. `rebuilt` 는 이번 회차에 새로 만든 묶음의 표시 이름이다.
 
     한 줄 요약은 네 묶음이 모두 맞았을 때만 「적중」이고 하나라도 만들었으면 「생성」이다.
-    어느 묶음을 만들었는지는 다음 줄이 적는다.
+    어느 묶음을 만들었는지는 다음 줄이 적는다. Main 이 숨어 캐시를 보지도 않은 회차(`skipped`)는
+    「건너뜀」이다 — 「적중」으로 적으면 그림이 준비된 것처럼 읽힌다.
     """
     if not enabled:
         return
     with st.sidebar.expander("HOME 실행 시간", expanded=True):
-        st.caption(f"Figure 캐시: {'생성' if rebuilt else '적중'}")
+        state = "건너뜀" if skipped else ("생성" if rebuilt else "적중")
+        st.caption(f"Figure 캐시: {state}")
         if rebuilt:
             st.caption(f"새로 만든 묶음: {' · '.join(rebuilt)}")
         st.dataframe(
@@ -683,7 +686,7 @@ def home_dashboard_panel() -> Iterator[None]:
 
 @st.fragment
 def render_home_figures(
-    figures: HomeFigureSet,
+    figures: HomeFigureSet | None,
     month_labels: list[str],
     *,
     leading_past_month_count: int = 0,
@@ -696,10 +699,14 @@ def render_home_figures(
     놓지 못하고, 상세 세 Figure 는 `staticPlot` 이라 탭을 열어도 다시 그리지 않는다.
     어긋난 머리글이 그대로 남는다.
 
+    `figures` 가 None 인 것은 Main 이 숨은 회차다 — HOME 은 그 회차에 그림을 꺼내지도 만들지도
+    않는다(`app_pages/home.py`). 그래도 이 함수는 부른다. 프래그먼트가 감싸는 빈 칸이 늘 같은
+    자리에 서야 탭을 오갈 때 본문 배치가 흔들리지 않는다.
+
     이 안에는 위젯이 없다 — 보는 조건은 사이드바 `LOB 표시 조건` 카드다. 테두리 상자는
     `home_dashboard_panel()` 이 한 단계 위에서 열어 제목 줄까지 함께 감싼다.
     """
-    if tab_is_hidden(owner_tab):
+    if tab_is_hidden(owner_tab) or figures is None:
         return
     visible_month_count = min(max(len(month_labels), 1), tokens.DASHBOARD_MONTH_SCROLL_THRESHOLD)
 
