@@ -63,10 +63,12 @@ def figure_from_spec(spec: Mapping[str, Any]) -> go.Figure:
     한다** — 밑줄 줄임 키(`fill_color`)는 검증 없이는 펼쳐지지 않고 글자 그대로 남아 Plotly.js 가
     무시한다. `{"fill": {"color": ...}}` 처럼 중첩 dict 로 쓴다.
 
-    세우기 전에 spec 의 **키 이름**(값 배열은 보지 않는다)을 Plotly 속성 목록에 대 본다.
-    모르는 이름·밑줄 줄임 키가 하나라도 있으면 검증 생성자로 세운다 — 오타는 지금처럼 예외가
-    되고 줄임 키는 펼쳐진다. 값(색 글자·숫자 범위)은 보지 않는다. 같은지는 스위치를 켠 경로와
-    JSON 을 견주는 테스트가 본다.
+    세우기 전에 spec 의 **키 이름**을 Plotly 속성 목록에 대 본다(하위 dict 로는 내려가고, 값
+    배열은 보지 않는다). 모르는 이름·밑줄 줄임 키가 하나라도 있으면 검증 생성자로 세운다 —
+    오타는 지금처럼 예외가 되고 줄임 키는 펼쳐진다. **dict 의 목록을 받는 속성**
+    (`layout.shapes`·`annotations` 등)은 원소를 보지 않으므로 있기만 해도 검증 생성자로 세운다.
+    도형·주석은 spec 에 넣지 말고 `append_layout_items`·`flush_layout_items` 로 넣는다.
+    값(색 글자·숫자 범위)은 보지 않는다. 같은지는 스위치를 켠 경로와 JSON 을 견주는 테스트가 본다.
 
     세운 뒤에는 검증을 다시 켠다. 그 뒤에 이 Figure 를 고치는 코드는 지금처럼 검증을 거친다.
     `go.Figure` 가 spec 을 깊은 복사하므로 Figure 가 호출부 dict 를 붙잡지 않는다.
@@ -95,14 +97,22 @@ def _spec_keys_known(spec: Mapping[str, Any]) -> bool:
 
 
 def _keys_known(owner: Any, item: Mapping[str, Any]) -> bool:
-    """키 이름이 모두 Plotly 속성인지. 하위 dict 는 그 속성의 클래스로 내려가 본다."""
+    """키 이름이 모두 Plotly 속성인지. 하위 dict 는 그 속성의 클래스로 내려가 본다.
+
+    하위 칸이 있는 속성(`data_class` 를 가진 검증기)에 dict 가 아닌 값이 오면 False 다 — dict 의
+    **목록**을 받는 배열 속성(`layout.shapes`·`annotations`·`images`)도 여기 걸린다. 목록 속 원소는
+    보지 않기 때문이다. 템플릿 이름 글자처럼 검증 없이는 풀리지 않는 값도 같다. 하위 칸이 없는
+    속성에 dict 가 와도 False 다. 모두 검증 생성자로 세운다.
+    """
     for prop, value in item.items():
         if prop not in owner._valid_props:
             return False
-        if isinstance(value, Mapping):
-            child = getattr(ValidatorCache.get_validator(owner._path_str, prop), "data_class", None)
-            if child is None or not _keys_known(child, value):
+        child = getattr(ValidatorCache.get_validator(owner._path_str, prop), "data_class", None)
+        if child is None:
+            if isinstance(value, Mapping):
                 return False
+        elif not isinstance(value, Mapping) or not _keys_known(child, value):
+            return False
     return True
 
 

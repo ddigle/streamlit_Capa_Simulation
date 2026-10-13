@@ -3976,9 +3976,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그려 JSON 이 같은지, HOME 에서 검증 경로로 넘어간 Figure 가 없는지 본다. 비공개 `_validate` 라
     `plotly>=5.24,<7` 고정에 기댄다.
   - `figure_from_spec(spec)` 은 dict spec 을 `go.Figure(spec, _validate=False)` 로 세우고 검증을 다시 켠다
-    (그 뒤 고치는 코드는 검증을 거친다). 세우기 전에 키 이름만 Plotly 속성 목록에 대 보고, 모르는 이름·
-    줄임 키가 있으면 검증 생성자로 세운다. 값(색·숫자 범위)은 보지 않으므로 spec 을 쓰는 곳은 두 경로
-    JSON 비교 테스트를 함께 둔다. 지금은 월별 표(`table` trace)만 쓴다.
+    (그 뒤 고치는 코드는 값까지 검증을 거친다). 세우기 전에 키 이름만 Plotly 속성 목록에 대 보고(하위 dict
+    로 내려간다), 모르는 이름·줄임 키가 있으면 검증 생성자로 세운다. **dict 의 목록을 받는 속성**
+    (`layout.shapes`·`annotations` 등)은 원소를 보지 않으므로 spec 에 있기만 해도 검증 생성자로 세운다 —
+    도형·주석은 spec 에 넣지 말고 `append_layout_items`·`flush_layout_items` 로 넣는다. 하위 칸이 있는 속성에
+    dict 가 아닌 값(템플릿 이름 등)이 와도 검증 생성자다. 값(색·숫자 범위)은 보지 않으므로 spec 을 쓰는 곳은
+    두 경로 JSON 비교 테스트를 함께 둔다. 지금은 월별 표(`table` trace)만 쓴다.
   - 표 행의 면색이 모두 같으면 칸마다 사각형을 그리지 않는다. 도형 수가 그대로 비용이다.
 - `src/capa_simulation/components/home_figures.py`, `home_figure_common.py`, `home_lob_figures.py`,
   `home_plan_detail_figures.py`, `home_key_process_figures.py`, `home_bottleneck_figures.py`,

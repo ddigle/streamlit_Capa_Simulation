@@ -709,18 +709,52 @@ def test_a_spec_typo_or_shorthand_falls_back_to_the_validating_constructor() -> 
     assert _as_json(shorthand)["data"][0]["header"]["fill"] == {"color": "#FFFFFF"}
 
 
+def test_spec_layout_arrays_and_non_dict_compounds_go_to_the_validating_constructor() -> None:
+    """키 이름 검사는 dict 의 목록(`layout.shapes`·`annotations`) 속은 보지 않는다. 그런 속성이
+    있으면 검증 생성자로 세워야 줄임 키·각도·None 이 펼쳐지고 오타는 예외가 된다. 템플릿 이름
+    같은 dict 아닌 값도 검증 없이는 풀리지 않는다."""
+    table = {"type": "table", "cells": {"values": [["a"]]}}
+    with pytest.raises(ValueError):
+        figure_from_spec({"data": [table], "layout": {"shapes": [{"type": "line", "fil": 1}]}})
+    with pytest.raises(ValueError):
+        figure_from_spec({"data": [table], "layout": {"height": {"value": 10}}})
+
+    specs: list[dict[str, Any]] = [
+        {
+            "data": [table],
+            "layout": {
+                "shapes": [{"type": "line", "x0": 0, "x1": 1, "line_color": "red"}],
+                "annotations": [{"text": "a", "textangle": 270, "hovertext": None}],
+            },
+        },
+        {"data": [table], "layout": {"template": "plotly_white"}},
+    ]
+    for spec in specs:
+        with plotly_validation():
+            checked = _as_json(figure_from_spec(spec))
+        assert _as_json(figure_from_spec(spec)) == checked
+    assert checked["layout"]["template"]["layout"], "템플릿 이름이 풀려 있어야 비교가 무엇을 본다"
+
+
 def test_a_spec_figure_validates_later_edits_and_holds_no_caller_dicts() -> None:
-    """세운 뒤에는 검증이 다시 켜진다. `go.Figure` 가 spec 을 깊은 복사하므로 호출부 dict 를
-    고쳐도 그림은 그대로다."""
+    """세운 뒤에는 검증이 다시 켜진다 — 이름 오타만이 아니라 **값** 오류도 지금처럼 예외다(검증을
+    끈 채면 이름 오타는 잡혀도 `height="abc"` 같은 값은 말없이 남는다). `go.Figure` 가 spec 을 깊은
+    복사하므로 호출부 dict 를 고쳐도 그림은 그대로다."""
     header: dict[str, Any] = {"values": ["a"], "fill": {"color": "#FFFFFF"}}
     figure = figure_from_spec({"data": [{"type": "table", "header": header}], "layout": {}})
     header["fill"]["color"] = "#000000"
 
     assert figure.data[0].header.fill.color == "#FFFFFF"
+    assert figure._validate and figure.layout._validate
+    assert all(trace._validate for trace in figure.data)
     with pytest.raises(ValueError):
         figure.update_layout(heigth=10)
     with pytest.raises(ValueError):
         figure.data[0].update(header={"fil": {}})
+    with pytest.raises(ValueError):
+        figure.update_layout(height="abc")
+    with pytest.raises(ValueError):
+        figure.data[0].columnwidth = "abc"
 
 
 def test_the_spec_path_really_skips_cell_validation(monkeypatch: pytest.MonkeyPatch) -> None:
