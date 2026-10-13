@@ -498,6 +498,44 @@ def test_a_bad_month_shows_the_message_where_that_table_is_used() -> None:
     assert "capa_upeh_editor_apply" in {button.key for button in app.button}
 
 
+def _with_bad_month(table_name: str) -> str:
+    """`table_name` 의 생산계획년월이 모두 틀린 형식(7자리)인 픽스처."""
+    bad = f'tables["{table_name}"] = tables["{table_name}"].assign(생산계획년월=2026081)\n'
+    return TEST_SCRIPT.replace("\nactive = {", "\n" + bad + "active = {", 1)
+
+
+def _shows_bad_month(app: AppTest, table_name: str) -> bool:
+    message = f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다"
+    return any(message in error.value for error in app.error)
+
+
+def test_a_bad_equipment_month_shows_the_message_in_the_equipment_tabs() -> None:
+    """설비대수 양식·현황은 페이지 앞 `try` 밖에서 자른다(`get_or_stop`). 그래도 문구로 멈춘다."""
+    app = AppTest.from_string(
+        _probed(_with_bad_month("RQ_EQP_OWN"), "test-ref-perf-bad-eqp-month"), default_timeout=60
+    )
+    for sub_tab in ("보유", "현황"):
+        app = _open_equipment(app, sub_tab)
+        assert _shows_bad_month(app, "RQ_EQP_OWN"), sub_tab
+    # 그 표를 쓰지 않는 탭은 연다.
+    app = _open_tab(app, "UPEH")
+    assert [error.value for error in app.error] == []
+    assert "capa_upeh_editor_apply" in {button.key for button in app.button}
+
+
+def test_a_bad_ratio_month_stops_the_step_submit_with_the_message() -> None:
+    """STEP 제출은 측정률 조각을 팝업 안(`try` 밖)에서 자른다. 틀린 월은 traceback 이 아니다."""
+    app = AppTest.from_string(
+        _probed(_with_bad_month("RQ_LOT_RATIO"), "test-ref-perf-bad-ratio-month"),
+        default_timeout=60,
+    )
+    app = _open_tab(app, "STEP 구성")
+    assert [error.value for error in app.error] == []
+    app = _add_step(app, "2A", "P200")
+    assert _shows_bad_month(app, "RQ_LOT_RATIO")
+    assert "test_month_updates" not in app.session_state
+
+
 # ---------------------------------------------------------------- R3 설비대수 블록
 
 EQUIPMENT_EDITORS = {
