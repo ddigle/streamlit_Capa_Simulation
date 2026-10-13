@@ -4190,7 +4190,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`load_shortening_filter_profile`, 키 = DB 경로)은 그 탭의 저장 콜백이 쓴 뒤
   `clear_shortening_filter_cache` 로 비운다(설비 리비전과 무관하다). 필요단축일정 기준선은 목록
   (`load_shortening_baselines`, 키 = DB 경로)과 한 벌(`load_shortening_baseline`, 키 = 기준선 id — 고칠 수
-  없어 id 가 내용을 정한다)이고 저장·지우기 콜백이 `clear_shortening_baseline_cache` 로 둘 다 비운다
+  없어 id 가 내용을 정한다)이고 저장·지우기 콜백이 `clear_shortening_baseline_cache` 로 둘 다 비운다.
+  「지금 무엇이 저장돼 있나」 읽기 둘 — 최신 리비전 id(`latest_equipment_revision_id`,
+  `load_latest_equipment_snapshot` 이 쓴다)와 공정별 Cut-off(`load_process_cutoff`) — 는 키가 (DB 경로,
+  DB·WAL 의 inode·mtime_ns·크기)이고 TTL 15초다. **1차 장치는 비우기다** — 리비전 쓰기는 모두
+  `save_equipment_buffer` 뒤의 `clear_equipment_snapshot_cache`, Cut-off 저장은 `cutoff_management` 의
+  `clear_process_cutoff_cache` 가 비운다. stat 은 이 프로세스 밖의 쓰기를, TTL 은 stat 이 못 잡은 경우의
+  한도를 맡는다(같은 DB 를 두 앱 프로세스가 함께 여는 배치에서는 남의 저장을 TTL 만큼 늦게 볼 수 있다).
+  리비전·Cut-off 를 쓰는 새 길을 더하면 같은 비우기를 부른다
 - `persistence/equipment_repository.py`: 설비 운영 입력의 불변 전체 스냅샷 저장소
   - **필요단축일정 공용 조회 조건**(`0019`)은 리비전 없는 현행값이다 — `save_shortening_filter_months`
     (기간만)·`save_shortening_filter_processes`(공정만, 화면이 보여 주지 않은 저장 공정은 남긴다)가

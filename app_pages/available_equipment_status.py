@@ -48,6 +48,7 @@ from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
     load_floor_layout_canvases,
     load_latest_equipment_snapshot,
+    load_process_cutoff,
 )
 from capa_simulation.services.equipment_contract import (
     EQUIPMENT_ID_COLUMN,
@@ -195,7 +196,7 @@ if latest_snapshot is None and not tab_is_hidden(main_tab):
             st.button(
                 "설비 데이터 입력", icon=":material/add:", type="primary", on_click=_open_input
             )
-        cutoff = repository.load_process_cutoff()
+        cutoff = load_process_cutoff(equipment_database_path)
         # 이 안내는 저장본이 없을 때만 선다 — 저장된 호기·비가동은 0건이다.
         _render_first_data_checklist((0, 0, len(cutoff)))
 show_sample_fleet = bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))

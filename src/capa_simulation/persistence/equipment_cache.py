@@ -82,12 +82,76 @@ def load_equipment_snapshot(database_path: str, revision_id: str) -> EquipmentSn
     )
 
 
+# 설비 DB 파일과 WAL 의 (inode, mtime_ns, 크기). 파일이 없으면 None.
+DatabaseStamp = tuple[tuple[int, int, int] | None, tuple[int, int, int] | None]
+# 「지금 무엇이 저장돼 있나」 읽기(최신 리비전 id·Cut-off)를 stat 이 그대로여도 다시 읽는 간격(초).
+CURRENT_READ_TTL_SECONDS = 15
+
+
+def database_stamp(database_path: str) -> DatabaseStamp:
+    """DB 파일과 `.wal` 의 (inode, mtime_ns, 크기).
+
+    DuckDB 는 커밋마다 WAL 에 덧붙이고(크기가 는다) 마지막 연결이 닫힐 때 본 파일에 체크포인트한다
+    (본 파일 mtime 이 바뀌고 WAL 이 사라진다). 파일을 갈아 끼우면 inode 가 바뀐다. 읽기만 하는
+    열기·닫기는 셋 다 바꾸지 않는다(Linux 사본에서 확인).
+    """
+    stamps: list[tuple[int, int, int] | None] = []
+    for path in (Path(database_path), Path(f"{database_path}.wal")):
+        try:
+            stat = path.stat()
+        except OSError:
+            stamps.append(None)
+        else:
+            stamps.append((stat.st_ino, stat.st_mtime_ns, stat.st_size))
+    return stamps[0], stamps[1]
+
+
+@st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
+def _latest_revision_id(database_path: str, stamp: DatabaseStamp) -> str | None:
+    del stamp
+    return get_equipment_repository(database_path).latest_revision_id()
+
+
+def latest_equipment_revision_id(database_path: str) -> str | None:
+    """가장 최근 설비 리비전 id(없으면 None).
+
+    가용설비 현황·Space 는 위젯 하나에도 페이지 전체가 다시 돌고, 이 읽기 하나 때문에 회차마다 설비
+    DB 를 열었다. **비우는 것이 1차 장치다** — 이 앱의 모든 리비전 쓰기(RawData 저장·입력 저장·일괄
+    삭제 저장·Space 배치 저장)는 `save_equipment_buffer` 를 지나 `clear_equipment_snapshot_cache` 로
+    이 캐시를 비운다(같은 프로세스의 다른 세션 저장도 그렇다). 키의 DB·WAL stat 은 이 프로세스 밖의
+    쓰기를 알아채는 2차 장치이고, `CURRENT_READ_TTL_SECONDS` 가 stat 이 못 잡은 경우의 한도다
+    (같은 DB 를 두 앱 프로세스가 함께 여는 배치에서는 남의 저장을 그만큼 늦게 볼 수 있다). 저장 충돌
+    검사(`base_revision_id`)는 저장소가 쓰기 잠금 안에서 그대로 한다.
+    """
+    return _latest_revision_id(database_path, database_stamp(database_path))
+
+
 def load_latest_equipment_snapshot(database_path: str) -> EquipmentSnapshot | None:
     """Resolve the current id cheaply and cache only the immutable snapshot body."""
-    revision_id = get_equipment_repository(database_path).latest_revision_id()
+    revision_id = latest_equipment_revision_id(database_path)
     if revision_id is None:
         return None
     return load_equipment_snapshot(database_path, revision_id)
+
+
+@st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_process_cutoff(database_path: str, stamp: DatabaseStamp) -> pd.DataFrame:
+    del stamp
+    return get_equipment_repository(database_path).load_process_cutoff()
+
+
+def load_process_cutoff(database_path: str) -> pd.DataFrame:
+    """저장된 공정별 Cut-off(`0009`, 리비전 없는 현행값).
+
+    Preference 탭이 숨어 있어도 회차마다 읽어 Static/Dynamic·필요단축일정에 넘긴다. 최신 리비전 id
+    와 같은 방식이다 — 이 앱의 저장(`cutoff_management`)이 성공한 직후 `clear_process_cutoff_cache`
+    로 비우고, DB·WAL stat 과 TTL 이 프로세스 밖의 쓰기를 맡는다.
+    """
+    return _load_process_cutoff(database_path, database_stamp(database_path))
+
+
+def clear_process_cutoff_cache() -> None:
+    _load_process_cutoff.clear()
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
@@ -319,6 +383,8 @@ def clear_floor_layout_cache() -> None:
 
 
 def clear_equipment_snapshot_cache() -> None:
+    """리비전을 쓴 뒤 부른다 — 최신 리비전 id 도 함께 비워 다음 회차가 새 리비전을 읽는다."""
+    _latest_revision_id.clear()
     _load_equipment_snapshot_payload.clear()
     _load_revision_summaries_payload.clear()
     load_equipment_csv_payloads.clear()
@@ -326,6 +392,7 @@ def clear_equipment_snapshot_cache() -> None:
 
 def clear_equipment_repository() -> None:
     clear_equipment_snapshot_cache()
+    clear_process_cutoff_cache()
     clear_floor_layout_cache()
     clear_shortening_filter_cache()
     clear_shortening_baseline_cache()
