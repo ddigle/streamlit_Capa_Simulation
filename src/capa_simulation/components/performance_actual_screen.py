@@ -78,12 +78,21 @@ def render_performance_actual_screen(
         ["요약", "상세 분석", "개선과제"],
         key=f"{key_prefix}_active_tab",
     )
+    # 요약과 개선과제는 위젯이 없어 숨은 탭이면 통째로 건너뛴다(탭을 누르면 그 회차에 그린다).
+    # 둘이 함께 쓰는 공정 우선순위 표는 한 번만 만들고, 둘 다 숨었으면 만들지 않는다.
+    show_summary = not tab_is_hidden(summary_tab)
+    show_actions = not tab_is_hidden(action_tab)
+    priority = (
+        build_priority_table(monthly, metric, ["공정"]) if show_summary or show_actions else None
+    )
     with summary_tab:
-        _render_summary(metric, monthly, labels, key_prefix=key_prefix, owner_tab=summary_tab)
+        if priority is not None and show_summary:
+            _render_summary(metric, monthly, priority, labels, key_prefix=key_prefix)
     with detail_tab:
         _render_detail(metric, monthly, labels, key_prefix=key_prefix, owner_tab=detail_tab)
     with action_tab:
-        _render_actions(metric, monthly, labels)
+        if priority is not None and show_actions:
+            _render_actions(metric, priority, labels)
 
 
 def _render_pending_screen(metric: MetricSpec) -> None:
@@ -116,13 +125,13 @@ def _render_pending_screen(metric: MetricSpec) -> None:
 def _render_summary(
     metric: MetricSpec,
     monthly: pd.DataFrame,
+    priority: pd.DataFrame,
     labels: ProcessLabels,
     *,
     key_prefix: str,
-    owner_tab: OpenTab | None = None,
 ) -> None:
-    """보고 자리에서 읽히는 것만. 결론 한 문장이 맨 위다."""
-    priority = build_priority_table(monthly, metric, ["공정"])
+    """보고 자리에서 읽히는 것만. 결론 한 문장이 맨 위다. `priority` 는 공정 우선순위 표
+    (`build_priority_table(monthly, metric, ["공정"])`)이고 읽기만 한다."""
     overall = build_gap_table(monthly, metric, ["양산구분"]).iloc[0]
     trend = build_monthly_trend(monthly, metric)
     needs_action = priority.loc[priority["상태"].eq("개선 필요")]
@@ -159,8 +168,6 @@ def _render_summary(
         )
         st.metric("분석 공정", f"{priority['공정'].nunique():,}개", border=True)
 
-    if tab_is_hidden(owner_tab):
-        return
     trend_column, rank_column = st.columns([1.25, 1.0], gap="medium")
     with trend_column.container(border=True):
         st.markdown(f"#### :material/show_chart: 월별 {metric.name} 추이")
@@ -273,11 +280,11 @@ def _render_detail(
 
 def _render_actions(
     metric: MetricSpec,
-    monthly: pd.DataFrame,
+    priority: pd.DataFrame,
     labels: ProcessLabels,
 ) -> None:
-    """순위가 그대로 과제 목록이 된다는 흐름을 보여 준다."""
-    priority = build_priority_table(monthly, metric, ["공정"])
+    """순위가 그대로 과제 목록이 된다는 흐름을 보여 준다. `priority` 는 읽기만 한다(고칠 때는
+    사본)."""
     actions = build_improvement_actions(metric, priority)
 
     with st.container(border=True):

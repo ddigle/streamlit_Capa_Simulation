@@ -113,6 +113,7 @@ from capa_simulation.services.simulation_cache import get_space_equipment_status
 from capa_simulation.services.space_layout_edit import (
     apply_layout_edits,
     apply_name_changes,
+    buffer_matches_saved,
     compose_renames,
     downtime_with_renames,
     editor_inputs,
@@ -425,6 +426,12 @@ def _canvas_text(key: FloorKey) -> str:
 ALL_FLOORS: tuple[FloorKey, ...] = FLOOR_KEYS
 
 
+def _saved_frames() -> Frames:
+    """최신 저장본의 세 표 — 편집본(`Frames`)과 같은 차례(기존 보유대수·설비 마스터·비가동 일정)."""
+    assert latest_snapshot is not None
+    return (latest_snapshot.baseline, latest_snapshot.equipment, latest_snapshot.downtime)
+
+
 def _render_unsaved_layout_panel(frames: Frames | None) -> None:
     """저장 안 한 배치 변경(호기 배치·편집 영역·도면 요소·FAB 전체 배치)과 저장·버리기. 어느 단계
     화면에서나 뜬다.
@@ -437,13 +444,26 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
     # 회차에는 상자가 없다). 남겨 두면 나중의 상관없는 적용 옆에 다시 뜬다.
     error = st.session_state.pop(SAVE_ERROR_KEY, None)
     fab_pending = pending_fab_layout()
-    if frames is not None:
+    renames = pending_unit_renames()
+    # 편집본이 저장본과 내용까지 같고 이름 바꿈이 없으면 셀 비교(1,566행이면 회차마다 0.1초 넘게)를
+    # 건너뛴다 — 결과는 모두 빈 값이다. 판정은 내용으로만 한다(세대 번호는 일괄 삭제를 놓친다).
+    unchanged = frames is None or buffer_matches_saved(_saved_frames(), frames, renames)
+    if frames is not None and not unchanged:
         assert latest_snapshot is not None
-        renames = pending_unit_renames()
         changes = layout_changes(latest_snapshot.equipment, frames[1], renames)
         names = name_changes(latest_snapshot.equipment, frames[1], renames)
-        canvases = pending_floor_canvases()
-        marks = pending_floor_marks()
+    else:
+        changes, names = pd.DataFrame(), pd.DataFrame()
+    canvases = pending_floor_canvases() if frames is not None else {}
+    marks = pending_floor_marks() if frames is not None else {}
+    if changes.empty and names.empty and not canvases and not marks and fab_pending is None:
+        if isinstance(error, str):
+            st.error(f"배치를 저장하지 못했습니다: {error}")
+        return
+    # RawData 의 다른 편집 건수와 곁표 편집은 상자 안내에만 쓰인다 — 상자를 그릴 때만 센다.
+    others, side_tables = 0, []
+    if frames is not None and not unchanged:
+        assert latest_snapshot is not None
         others = other_change_count(latest_snapshot.equipment, frames[1], renames)
         # 저장은 세 표를 다 견준다. 설비 마스터 밖의 편집도 리비전을 만드니 따로 말한다.
         # 비가동 일정은 저장본에 이름 바꿈을 얹어 견준다 — 따라간 설비명은 RawData 편집이 아니다.
@@ -458,19 +478,6 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             )
             if table_changed(saved, buffer)
         ]
-    else:
-        changes, names, canvases, marks, others, side_tables = (
-            pd.DataFrame(),
-            pd.DataFrame(),
-            {},
-            {},
-            0,
-            [],
-        )
-    if changes.empty and names.empty and not canvases and not marks and fab_pending is None:
-        if isinstance(error, str):
-            st.error(f"배치를 저장하지 못했습니다: {error}")
-        return
     parts = [f"호기 배치 {len(changes)}건"] if not changes.empty else []
     if not names.empty:
         parts.append(f"이름 바꿈 {len(names)}건")
@@ -663,8 +670,11 @@ def _render_layout_editor(
             f"열 수 없습니다. RawData 에서 고치거나 버린 뒤 여세요: {exc}"
         )
         return
-    new_ids, arrived_ids = unsaved_unit_ids(
-        latest_snapshot.equipment, frames[1], key, pending_unit_renames()
+    renames = pending_unit_renames()
+    new_ids, arrived_ids = (
+        (set(), set())
+        if buffer_matches_saved(_saved_frames(), frames, renames)
+        else unsaved_unit_ids(latest_snapshot.equipment, frames[1], key, renames)
     )
     inputs = editor_inputs(status, floor=key, new_ids=new_ids, arrived_ids=arrived_ids)
     options = new_unit_options(frames[1])

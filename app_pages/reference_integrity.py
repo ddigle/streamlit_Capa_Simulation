@@ -55,6 +55,8 @@ _ALL = "전체"
 PROCESS_FILTER_KEY = "dynamic_capacity_process_filter"
 _CAPACITY_UNIT_LABELS = {"WF": "매", "CHIP": "Kea", "PKG": "Kea"}
 _SOURCE = "실적 DB"
+# 샘플 데모 행과 공정 요약(세션 칸). `_demo_frames`.
+DEMO_MEMO_KEY = "dynamic_capacity_demo_memo"
 
 # 손실 한 칸과 그 칸을 파고드는 화면. **워터폴에 서는 차례 그대로** 둔다 — 화면 목록이
 # 손실 순서와 다르면 목차 구실을 못 한다.
@@ -540,6 +542,25 @@ def _render_guide() -> None:
         )
 
 
+def _demo_frames() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """샘플 데모 행과 공정 요약(Capa 실현률 오름차순). 입력이 없는 결정적 상수라(시작일 고정,
+    오늘·세션을 읽지 않는다) 세션에 한 번만 만든다. 받은 쪽이 고쳐도 기억한 표가 바뀌지 않게
+    사본을 준다. 필터를 건 상세 집계·그림은 지금처럼 회차마다 다시 한다."""
+    memo = st.session_state.get(DEMO_MEMO_KEY)
+    if not (
+        isinstance(memo, tuple)
+        and len(memo) == 2
+        and all(isinstance(frame, pd.DataFrame) for frame in memo)
+    ):
+        demo = build_dynamic_capacity_demo()
+        summary = aggregate_dynamic_capacity(demo, ["공정"]).sort_values(
+            ["Capa 실현률", "공정"], kind="stable"
+        )
+        memo = (demo, summary)
+        st.session_state[DEMO_MEMO_KEY] = memo
+    return memo[0].copy(), memo[1].copy()
+
+
 # 공정 표시명은 화면 표기 전용 라벨이다. 선택값·집계 키·계산 입력은 원본 공정명을 쓴다.
 process_labels = get_process_labels()
 
@@ -572,10 +593,7 @@ if not render_sample_switch(key="dynamic_capa_sample_switch", source=_SOURCE):
     _render_pending_screen()
     st.stop()
 
-demo = build_dynamic_capacity_demo()
-process_summary = aggregate_dynamic_capacity(demo, ["공정"]).sort_values(
-    ["Capa 실현률", "공정"], kind="stable"
-)
+demo, process_summary = _demo_frames()
 
 summary_tab, detail_tab, guide_tab = stateful_tabs(
     ["요약", "공정 상세", "산식 가이드"],

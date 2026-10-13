@@ -782,7 +782,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     사용한 조건과 산식 · 한계 네 칸으로 답한다. 빈 대화창을 띄워 두면 그 네 칸을 합의할
     자리가 없으므로 추천 질문을 누르면 실제 데이터로 만든 대본이 네 칸에 들어찬다.
   - 대본은 `services/chatbot_samples.py` 가 갖는다. 연결할 때 바꾸는 것은 대본을 만드는
-    자리 하나뿐이고 화면은 그대로다.
+    자리 하나뿐이고 화면은 그대로다. 대본 답은 결정적 데모라 세션에 한 번만 만들고(근거 표는 사본)
+    연결 뒤 실제 질의로 바꾸면 그 세션 칸은 버린다.
+  - 추천 질문·`대화 비우기` 는 `on_click` 콜백이다 — 본문에서 덧붙이고 `st.rerun()` 하면 한 번 누를 때
+    화면이 두 번 돌았다.
   - LLM API·권한·대화 이력은 연결하지 않는다.
 - `app_pages/static_capa.py`
   - `Static Capa` 상위 페이지이며 경고·확보 기준별 월간 설비 부족대수 현황을 제공하고
@@ -810,7 +813,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그대로 효율 실적 → UPEH 실적 → 수율 실적 → 재공 현황 → 가용설비 현황을 잇는다. 하위
     화면은 각각 손실 한 조각을 보는데 그 조각이 무엇의 조각인지가 어디에도 없었다.
     링크는 공용 `components/page_link.py` 를 쓴다.
-  - 현재 수치는 결정론적 데모이고 샘플 스위치로 끌 수 있다.
+  - 현재 수치는 결정론적 데모이고 샘플 스위치로 끌 수 있다. 데모 행과 공정 요약은 입력이 없는
+    상수라(시작일 고정) 세션에 한 번만 만들고 사본을 쓴다(`_demo_frames`). 필터를 건 상세 집계·그림은
+    회차마다 다시 한다. 실DB 를 붙이면 이 세션 칸에 원천 적재 시각 같은 키가 있어야 한다.
   - 상세 조회 `공정` 의 기본값(가장 나쁜 공정)은 위젯 `index=` 가 아니라 위젯 앞 `prune_choice` 로
     세션에 심고 매 회차 다시 적는다 — 겹친 표시명은 「표시명 (원본)」 으로 가른다(8장 ②). 제품·Stack·
     WF 속성 상자는 공정 상자가 아니라 예전 그대로다.
@@ -1030,6 +1035,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가능량을 비교하며, 공정·제품 필터와 STEP 열·제품 행 Plotly 격자를 제공한다.
   - 재공 값은 결정론적 데모이고 실제 재공 실적 DB 조회·원천 컬럼 매핑은 아직 구현하지 않는다.
     샘플 스위치를 끄면 무엇이 붙어야 하는지만 남는다.
+  - 시나리오 소요대수에서만 나오는 준비물(표준 목표 규칙 적용 소요대수·경로 범위·공정·제품 선택지,
+    `services/wip_status.prepare_wip_route_choices`)은 세션에 한 벌 둔다. 키는 `scenario_cache_key`
+    (reference_version·content_token·조회 월)와 `display_order_digest(RQ_DISPLAY_ORDER)` 다. 가용대수는
+    다른 세션이 바꾸는 현행값이라 매 회차 읽는다.
 - `app_pages/space_status.py`
   - Dynamic Capa의 Space 현황 페이지다.
   - `S.PKG FAB 전체(C5 독립, C1~C4 연결) → 층 상세 배치`의 **2단** 탐색이다(2026-10-03 사용자 결정 — 동
@@ -1146,6 +1155,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     받는다(2026-10-08). 편집 중에는 한 회차에 저장본(조건 카드·요약)과 편집본(편집기·겹침 경고)을
     따로 판정하고 `적용` 은 `st.rerun()` 으로 두 회차를 도는데, 내용 지문 키라 같은 표는 한 번만
     판정한다 — 편집을 막 켠 편집본은 저장본과 내용이 같아 그 판정을 다시 쓴다.
+  - 저장 안 한 배치 상자와 편집기의 미저장 호기 판정은 먼저 `buffer_matches_saved`(편집본 세 표가
+    저장본과 `DataFrame.equals` 이고 이름 바꿈 지도가 비었는가)를 본다. 참이면 셀 비교를 건너뛰고 빈
+    결과를 쓴다 — 사내 규모(1,566행)에서 회차마다 0.1초 넘게 들던 비교다. 판정은 **내용으로만** 한다:
+    편집본 세대·리비전 번호로 판정하면 세대를 올리지 않는 편집(일괄 삭제 확정·되살리기)을 놓친다.
+    `other_change_count`·비가동 일정·기존 보유대수 비교는 상자 안내에만 쓰이므로 상자를 그리는 회차에만 센다.
   - 저장 안 한 배치 상자는 RawData 의 검증 실패 편집이 있어도 페이지를 죽이지 않는다(경고 계산만
     건너뛴다). 저장 콜백은 `BOOTSTRAP_ERRORS` 를 잡아 문구로 남기고, 그 오류는 상자를 안 그리는
     회차에도 한 번 보인 뒤 버린다. 경고용 도면 요소는 편집본에 호기가 선 층만 읽는다.
@@ -1601,7 +1615,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/performance_actual_screen.py`
   - 효율·UPEH·수율 실적 화면 **한 벌**. 세 화면이 같은 질문을 지표만 바꿔 묻기 때문에
     `MetricSpec` 만 갈아 끼운다. 요약(보고용)·상세 분석·개선과제 세 탭이고 탭은
-    `stateful_tabs` 로 만든다. 조회 조건 위젯은 숨은 탭에서도 그리고 Plotly 만 건너뛴다.
+    `stateful_tabs` 로 만든다. 조회 조건 위젯은 숨은 탭에서도 그리고 Plotly 만 건너뛴다. 위젯이
+    없는 요약·개선과제는 숨었으면 통째로 건너뛰고, 둘이 함께 쓰는 공정 우선순위 표는 회차마다 한 번만
+    만든다(둘 다 숨었으면 만들지 않는다).
   - 추이 축 눈금·풍선은 KPI 와 같은 형식(`_value_tick_format`)이고, 우선순위 막대는 바깥 라벨이 나갈
     자리를 x 범위 안에 남긴다(`_priority_range`) — 축 밖으로 내보내면 공정 이름 위에 겹쳤다.
   - 상세 분석의 `공정` 상자는 겹친 표시명을 가르고 위젯 앞에서 매 회차 잡은 값을 다시 적는다(8장 ②).
@@ -1714,6 +1730,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/wip_status_dashboard.py`
   - 제품을 행, `P → T`와 숫자 구간 오름차순 STEP·공정을 열로 두는 고정 셀 크기의
     Plotly 재공 격자를 생성한다. 보유 재공·유입·Flow 막대와 표준 가능량 기준선을 표시한다.
+  - 화면은 `remembered_wip_status_grid_figure` 로 부른다. 직전 회차 Figure 한 벌을 세션에 두고,
+    재공·경로 표가 직전 입력 사본과 `DataFrame.equals` 이고 제품 차례·조회 구간·공정 표시명
+    지도·테마가 같으면 그대로 쓴다(사이드바 팝업 열기·닫기마다 격자를 다시 만들지 않는다). 해시
+    지문은 쓰지 않는다 — object 칸의 `1`·`'1'` 을 같게 본다. Streamlit 캐시가 아니라 경계 밖이다.
 - `src/capa_simulation/components/grouped_monthly_table.py`
   - 환산 결과처럼 편집하지 않는 월별 표를 Plotly의 고정 분류 영역과 스크롤 월 영역으로 렌더링한다.
   - 정렬된 분류 컬럼을 계층적으로 그룹화하고 제품·양산구분별 Total을 그룹 하단에, 전체 합계를 첫 데이터 행에 삽입한다.
@@ -2099,7 +2119,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `dynamic_capacity.py`: 표준 Capa에 실적 효율·UPEH·Rundown·생산실적을 순차 반영하는
   Dynamic Capa 손실 분석, 시간 가중 집계, 필터와 미연결 화면용 결정론적 데모 데이터
 - `wip_status.py`: 재공 DB 연결용 일자·공정·STEP·제품·보유재공·유입·Flow 계약,
-  STEP 코드 정렬, 제품별 표준 가능량 일 전개와 미연결 화면용 결정론적 재공 샘플
+  STEP 코드 정렬, 제품별 표준 가능량 일 전개와 미연결 화면용 결정론적 재공 샘플, 소요대수·표시순서에서만
+  나오는 화면 준비물(`prepare_wip_route_choices` — 표준 목표 규칙 적용 소요대수·경로·공정·제품 선택지)
 - `display_order_scopes.py`: 표시순서 규칙이 **어느 페이지·어느 탭**에 걸리는지를 한 곳에서
   선언한다. 호출부는 리터럴 대신 이 상수만 쓴다.
   - 전에는 구분자가 `apply_display_order(...)` 일곱 곳에 리터럴로 흩어져 있었고, 화면
@@ -2421,7 +2442,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `space_layout_edit.py`: Space 배치 편집기의 순수 계산. `editor_inputs`(도면·트레이·영역 하한·
   기본 크기), `parse_editor_apply`(적용값 검증 — **하나라도 어긋나면 전체 거부**),
   `apply_layout_edits`(편집본 반영), `layout_warnings`·`layout_changes`·`other_change_count`·
-  `table_changed`(설비 마스터 밖 표의 미저장 차이)·`unsaved_unit_ids`. 숫자 읽기 `finite_or_none`(None·bool·NA·NaN·무한대 → None)은 편집기 컴포넌트도
+  `table_changed`(설비 마스터 밖 표의 미저장 차이)·`unsaved_unit_ids`, 그 비교를 건너뛰는 내용 판정
+  `buffer_matches_saved`. 숫자 읽기 `finite_or_none`(None·bool·NA·NaN·무한대 → None)은 편집기 컴포넌트도
   이것을 쓴다(`official_summary` 의 같은 이름 도우미는 None·bool 처리가 달라 따로 둔다).
   - 대상은 Space 가 그리는 호기와 같다(`레이아웃반영여부` — Y 이고 반출·이설 실행 전). 도면은 이
     층에 X·Y·크기가 다 있는 호기, 트레이는 X·Y 가 없고 이 층이거나 층 미정인 호기다(동까지 비면

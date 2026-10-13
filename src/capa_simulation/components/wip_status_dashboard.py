@@ -5,15 +5,16 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import cast
+from typing import Any, cast
 
 import pandas as pd
 import plotly.graph_objects as go
+import streamlit as st
 from plotly.subplots import make_subplots
 
 from capa_simulation.components.plotly_layout import chart_canvas_layout
 from capa_simulation.components.process_labels import ProcessLabels
-from capa_simulation.design import tokens
+from capa_simulation.design import theme, tokens
 from capa_simulation.services.wip_status import (
     WIP_HISTORY_COLUMNS,
     build_wip_route_scope,
@@ -21,6 +22,53 @@ from capa_simulation.services.wip_status import (
 
 WIP_GRID_CELL_WIDTH_PX = 340
 WIP_GRID_CELL_HEIGHT_PX = 330
+# 직전 회차에 만든 격자 Figure 한 벌과 그 입력 사본(세션 칸). `remembered_wip_status_grid_figure`.
+WIP_GRID_FIGURE_MEMO_KEY = "wip_status_grid_figure_memo"
+
+
+def remembered_wip_status_grid_figure(
+    data: pd.DataFrame,
+    routes: pd.DataFrame,
+    products: list[str],
+    start_date: date,
+    end_date: date,
+    process_labels: ProcessLabels | None = None,
+) -> go.Figure:
+    """`build_wip_status_grid_figure` 를 세션에 한 벌 기억한다. 입력이 같으면 직전 Figure 를 그대로
+    돌려준다 — 사이드바 팝업 열기·닫기처럼 그림과 무관한 rerun 마다 격자 전체를 다시 만들지 않는다.
+
+    「같다」는 그림이 읽는 것 **전부의 내용**이다. 재공·경로 표는 직전 입력 사본과
+    `DataFrame.equals`(칸 형까지)로 견주고 지문을 쓰지 않는다 — 해시 지문은 object 칸의 `1` 과
+    `'1'` 을 같게 본다. 나머지는 제품 차례·조회 구간·공정 표시명 지도·**테마**(토큰 색이 테마마다
+    다르다)다. 오늘 날짜는 재공 표의 일자·시점 칸으로 들어온다. 리비전 번호는 쓰지 않는다.
+    꺼낸 Figure 는 고치지 않는다(`st.plotly_chart` 도 고치지 않는다). 만들다 실패하면 기억하지
+    않는다.
+    """
+    labels = process_labels or ProcessLabels()
+    conditions: tuple[Any, ...] = (
+        theme.current_mode(),
+        tuple(products),
+        start_date,
+        end_date,
+        tuple(sorted(labels.labels.items())),
+    )
+    memo = st.session_state.get(WIP_GRID_FIGURE_MEMO_KEY)
+    if (
+        isinstance(memo, tuple)
+        and len(memo) == 4
+        and memo[0] == conditions
+        and isinstance(memo[1], pd.DataFrame)
+        and isinstance(memo[2], pd.DataFrame)
+        and isinstance(memo[3], go.Figure)
+        and memo[1].equals(data)
+        and memo[2].equals(routes)
+    ):
+        return memo[3]
+    figure = build_wip_status_grid_figure(
+        data, routes, products, start_date, end_date, process_labels=labels
+    )
+    st.session_state[WIP_GRID_FIGURE_MEMO_KEY] = (conditions, data.copy(), routes.copy(), figure)
+    return figure
 
 
 def build_wip_status_grid_figure(
@@ -73,6 +121,10 @@ def build_wip_status_grid_figure(
     legend_seen: set[str] = set()
     all_dates = [timestamp.date() for timestamp in pd.date_range(start_date, end_date, freq="D")]
     tick_text = [value.strftime("%m.%d") for value in all_dates]
+    # 칸마다 `update_xaxes(row=, col=)` 를 부르면 부를 때마다 모든 축을 훑어 칸 수의 제곱으로
+    # 느려진다. 칸의 축 이름(`get_subplot`)으로 설정을 모았다가 루프 뒤에 한 번에 준다 — 같은
+    # 병합(update)이라 결과 Figure 는 같다.
+    axis_layout: dict[str, dict[str, Any]] = {}
 
     for row_index, product in enumerate(ordered_products, start=1):
         for column_index, lane in enumerate(lanes.itertuples(index=False), start=1):
@@ -105,34 +157,32 @@ def build_wip_status_grid_figure(
                     legend_seen=legend_seen,
                 )
             unit = "매" if basis == "WF" else "Kea"
-            figure.update_xaxes(
-                row=row_index,
-                col=column_index,
-                range=[
+            subplot = figure.get_subplot(row_index, column_index)
+            axis_layout[subplot.xaxis.plotly_name] = {
+                "range": [
                     pd.Timestamp(start_date) - pd.Timedelta(hours=12),
                     pd.Timestamp(end_date) + pd.Timedelta(hours=12),
                 ],
-                tickmode="array",
-                tickvals=all_dates,
-                ticktext=tick_text,
-                tickangle=-45,
-                tickfont={"size": 9, "color": tokens.TEXT_MUTED},
-                title=None,
-                showgrid=False,
-                zeroline=False,
-                linecolor=tokens.HEADER_BACKGROUND,
-            )
-            figure.update_yaxes(
-                row=row_index,
-                col=column_index,
-                rangemode="tozero",
-                title={"text": unit, "font": {"size": 10, "color": tokens.TEXT_MUTED}},
-                tickfont={"size": 9, "color": tokens.TEXT_MUTED},
-                gridcolor=tokens.HEADER_BACKGROUND,
-                zeroline=False,
-                linecolor=tokens.HEADER_BACKGROUND,
-            )
+                "tickmode": "array",
+                "tickvals": all_dates,
+                "ticktext": tick_text,
+                "tickangle": -45,
+                "tickfont": {"size": 9, "color": tokens.TEXT_MUTED},
+                "title": None,
+                "showgrid": False,
+                "zeroline": False,
+                "linecolor": tokens.HEADER_BACKGROUND,
+            }
+            axis_layout[subplot.yaxis.plotly_name] = {
+                "rangemode": "tozero",
+                "title": {"text": unit, "font": {"size": 10, "color": tokens.TEXT_MUTED}},
+                "tickfont": {"size": 9, "color": tokens.TEXT_MUTED},
+                "gridcolor": tokens.HEADER_BACKGROUND,
+                "zeroline": False,
+                "linecolor": tokens.HEADER_BACKGROUND,
+            }
 
+    figure.update_layout(axis_layout)
     figure_width = max(430, cols * WIP_GRID_CELL_WIDTH_PX + 90)
     figure_height = max(420, rows * WIP_GRID_CELL_HEIGHT_PX + 110)
     figure.update_layout(

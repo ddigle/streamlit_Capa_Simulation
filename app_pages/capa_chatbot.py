@@ -12,6 +12,8 @@ LLM 을 붙이기 전에 정할 것은 모델이 아니라 **답변의 모양**�
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import streamlit as st
 
 from capa_simulation.components.page_header import (
@@ -30,6 +32,34 @@ SOURCE = "LLM API · Capa 데이터"
 TRANSCRIPT_KEY = "capa_chatbot_transcript"
 # 추천 질문 버튼은 개수만큼 생긴다. 접두를 상수로 두어야 겹침 검사가 기준 키를 본다.
 EXAMPLE_KEY = "capa_chatbot_example"
+# 대본 답(세션 칸). `_sample_answers`.
+ANSWERS_MEMO_KEY = "capa_chatbot_sample_answers"
+
+
+def _sample_answers() -> list[SampleAnswer]:
+    """대본 답 네 개. 날짜·난수를 읽지 않는 결정적 데모(`build_monthly_actual_demo`)에서 나오므로
+    세션에 한 번만 만든다. 근거 표는 사본을 준다 — 받은 쪽이 고쳐도 기억한 답이 바뀌지 않는다.
+    연결 뒤 실제 질의로 바꾸면 이 칸은 버린다."""
+    memo = st.session_state.get(ANSWERS_MEMO_KEY)
+    if not (
+        isinstance(memo, list) and memo and all(isinstance(answer, SampleAnswer) for answer in memo)
+    ):
+        memo = build_sample_answers()
+        st.session_state[ANSWERS_MEMO_KEY] = memo
+    return [replace(answer, evidence=answer.evidence.copy()) for answer in memo]
+
+
+def _ask(question: str) -> None:
+    """추천 질문 단추 콜백. 본문보다 먼저 돌아 그 회차에 답과 꺼진 단추가 함께 선다 — 본문에서
+    덧붙이고 `st.rerun()` 하면 한 번 누를 때 화면이 두 번 돈다."""
+    transcript = list(st.session_state.get(TRANSCRIPT_KEY) or [])
+    if question not in transcript:
+        st.session_state[TRANSCRIPT_KEY] = [*transcript, question]
+
+
+def _reset_transcript(first_question: str) -> None:
+    """`대화 비우기` 콜백. 첫 답 하나만 남긴다."""
+    st.session_state[TRANSCRIPT_KEY] = [first_question]
 
 
 def _render_answer(answer: SampleAnswer) -> None:
@@ -73,7 +103,7 @@ if not render_sample_switch(key="capa_chatbot_sample_switch", source=SOURCE):
     )
     st.stop()
 
-answers = build_sample_answers()
+answers = _sample_answers()
 questions = [answer.question for answer in answers]
 if TRANSCRIPT_KEY not in st.session_state:
     # 처음 들어온 사람에게 빈 대화창을 보이지 않는다. 첫 답이 이 화면의 설명이다.
@@ -101,18 +131,21 @@ with chat_column:
         st.caption("무엇이 나쁜가 → 왜 나쁜가 → 무엇부터 할까 → 더 내려가면 어디인가.")
         with st.container(horizontal=True, gap="small", horizontal_alignment="left"):
             for index, question in enumerate(questions):
-                if st.button(
+                st.button(
                     question,
                     key=f"{EXAMPLE_KEY}_{index}",
                     disabled=question in st.session_state[TRANSCRIPT_KEY],
-                ):
-                    st.session_state[TRANSCRIPT_KEY].append(question)
-                    st.rerun()
-        if len(st.session_state[TRANSCRIPT_KEY]) > 1 and st.button(
-            "대화 비우기", key="capa_chatbot_reset", icon=":material/restart_alt:"
-        ):
-            st.session_state[TRANSCRIPT_KEY] = [questions[0]]
-            st.rerun()
+                    on_click=_ask,
+                    args=(question,),
+                )
+        if len(st.session_state[TRANSCRIPT_KEY]) > 1:
+            st.button(
+                "대화 비우기",
+                key="capa_chatbot_reset",
+                icon=":material/restart_alt:",
+                on_click=_reset_transcript,
+                args=(questions[0],),
+            )
 
 with guide_column:
     with st.container(border=True):
