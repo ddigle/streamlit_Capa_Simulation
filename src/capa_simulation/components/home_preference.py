@@ -670,7 +670,7 @@ def _replace_comparison_profile(
 
     콜백은 `app.py` 의 실행 핀 밖(스크립트 본문 전)에서 돈다. 유효성 확인(`choose` 의 목록 읽기)·
     프로필 읽기·쓰기가 연결마다 DuckDB 인스턴스를 새로 만들지 않게 여기서 핀을 잡는다. 핀은 첫
-    연결 때 잡히고 이 블록이 끝나면 풀린다 — 목록은 지금처럼 캐시 없이 DB 에서 읽는다.
+    연결 때 잡히고 이 블록이 끝나면 풀린다 — 목록은 캐시 없이 DB 에서 읽는다.
     """
     with pinned_connections(Path(database_path)):
         try:

@@ -315,10 +315,15 @@ def test_a_comparison_callback_builds_the_database_instance_once(
     """콜백은 `app.py` 의 실행 핀 밖(스크립트 본문 전)에서 돈다. 유효성 확인·프로필 읽기·쓰기가
     연결마다 인스턴스를 새로 만들지 않게 콜백이 스스로 핀을 잡는다 — 「읽기 N + 핀 1」.
 
+    연결 수만 세면 핀이 콜백 일부(유효성 확인)만 감싸도 통과한다. 그래서 연결마다 그 순간 이
+    스레드의 핀이 인스턴스를 쥐고 있었는지도 적어, 첫 연결 뒤의 읽기·쓰기가 모두 핀 안에서
+    열렸는지 본다(콜백도 이 기록도 AppTest 스크립트 스레드에서 돈다).
+
     쓰는 값은 그대로다. 고른 짝이 저장되고 공용 프로필 `version` 이 하나 오른다.
     """
     import duckdb
 
+    import capa_simulation.persistence._sql_helpers as sql_helpers
     import capa_simulation.persistence.repository as repository
     from capa_simulation.persistence._sql_helpers import connect as original_read
 
@@ -332,6 +337,7 @@ def test_a_comparison_callback_builds_the_database_instance_once(
 
     opened: list[str] = []
     reads: list[str] = []
+    held: list[bool] = []
     real_connect = duckdb.connect
 
     def counted_open(*args: Any, **kwargs: Any) -> Any:
@@ -340,6 +346,8 @@ def test_a_comparison_callback_builds_the_database_instance_once(
 
     def counted_read(database_path: Path) -> Any:
         reads.append(str(database_path))
+        slot = sql_helpers._PIN_TARGETS.slots.get(sql_helpers._pin_key(database_path))
+        held.append(slot is not None and slot.connection is not None)
         return original_read(database_path)
 
     with monkeypatch.context() as patched:
@@ -349,6 +357,9 @@ def test_a_comparison_callback_builds_the_database_instance_once(
 
     assert len(reads) >= 2
     assert len(opened) == len(reads) + 1
+    # 첫 연결만 핀 없이 열고(그 직후 핀이 잡힌다), 나머지 읽기·쓰기는 모두 핀이 쥔 인스턴스에
+    # 붙는다.
+    assert held == [False] + [True] * (len(reads) - 1)
     assert _saved_profile(database) == expected
     assert _profile_version(database) == version + 1
 
