@@ -1653,6 +1653,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/wip_status_dashboard.py`
   - 제품을 행, `P → T`와 숫자 구간 오름차순 STEP·공정을 열로 두는 고정 셀 크기의
     Plotly 재공 격자를 생성한다. 보유 재공·유입·Flow 막대와 표준 가능량 기준선을 표시한다.
+  - 화면은 `remembered_wip_status_grid_figure` 로 부른다. 직전 회차 Figure 한 벌을 세션에 두고,
+    재공·경로 표가 직전 입력 사본과 `DataFrame.equals` 이고 제품 차례·조회 구간·공정 표시명
+    지도·테마가 같으면 그대로 쓴다(사이드바 팝업 열기·닫기마다 격자를 다시 만들지 않는다). 해시
+    지문은 쓰지 않는다 — object 칸의 `1`·`'1'` 을 같게 본다. Streamlit 캐시가 아니라 경계 밖이다.
 - `src/capa_simulation/components/grouped_monthly_table.py`
   - 환산 결과처럼 편집하지 않는 월별 표를 Plotly의 고정 분류 영역과 스크롤 월 영역으로 렌더링한다.
   - 정렬된 분류 컬럼을 계층적으로 그룹화하고 제품·양산구분별 Total을 그룹 하단에, 전체 합계를 첫 데이터 행에 삽입한다.

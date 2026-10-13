@@ -27,7 +27,7 @@ from capa_simulation.components.status_metric import (
 )
 from capa_simulation.components.wip_status_dashboard import (
     WIP_GRID_CELL_WIDTH_PX,
-    build_wip_status_grid_figure,
+    remembered_wip_status_grid_figure,
 )
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
@@ -252,7 +252,9 @@ try:
         end_date,
         today=today,
     )
-    figure = build_wip_status_grid_figure(
+    # 그림은 입력 내용이 같으면 직전 회차의 것을 다시 쓴다(세션 한 벌). 위 데이터 준비는 매 회차
+    # 돌아 그 입력을 만든다.
+    figure = remembered_wip_status_grid_figure(
         wip_history,
         selected_routes,
         selected_product_order,
