@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -45,7 +46,10 @@ def _panel_app() -> None:
             "종료일": [date(2030, 1, 1)] * 2,
         }
     )
-    baseline = pd.DataFrame({"공정": ["Die Attach", "Etch"], "기존보유대수": [3.0, 5.0]})
+    # `held_die_attach`·`demand_scale` 은 한쪽 입력만 바꾼다 — 앞은 Dynamic(비교 키)만, 뒤는
+    # 소요대수(시나리오 키)만.
+    held = float(st.session_state.get("held_die_attach", 3.0))
+    baseline = pd.DataFrame({"공정": ["Die Attach", "Etch"], "기존보유대수": [held, 5.0]})
     cutoff = prepare_process_cutoff(
         pd.DataFrame(
             {"공정": ["Die Attach", "Etch"], "Cutoff일수": [15.0, 15.0], "비고": [None, None]}
@@ -58,11 +62,12 @@ def _panel_app() -> None:
             "가용대수": [6.0, 8.0, 20.0],
         }
     )
+    scale = float(st.session_state.get("demand_scale", 1.0))
     required = pd.DataFrame(
         {
             "생산계획년월": [202610] * 3,
             "공정": ["Die Attach", "Etch", "Probe"],
-            "소요대수": [10.0, 20.0, 40.0],
+            "소요대수": [10.0 * scale, 20.0 * scale, 40.0 * scale],
         }
     )
     if st.session_state.get("wire_bond_units", False):
@@ -254,6 +259,65 @@ def test_the_keyed_cross_check_follows_the_inputs() -> None:
 
     assert set(full.dataframe[0].value["공정"]) == {"Die Attach", "Etch"}
     assert set(narrowed.dataframe[0].value["공정"]) == {"Die Attach"}
+
+
+def _cross_check_table(**state: object) -> str:
+    app = _run(**state)
+    _select_view(app, "확보율 교차검증")
+    return str(app.dataframe[0].value.to_json(force_ascii=False))
+
+
+@pytest.mark.parametrize(
+    ("changed", "first", "second"),
+    [
+        # 소요대수만 다르다 → 시나리오 키만 다르다(Dynamic·Static 은 같아 비교 키는 같다).
+        ("demand_scale", 1.0, 2.0),
+        # Dynamic(기존보유)만 다르다 → 비교 키만 다르다(소요대수·시나리오 키는 같다).
+        ("held_die_attach", 3.0, 9.0),
+    ],
+)
+def test_the_panel_key_carries_both_the_comparison_and_the_scenario(
+    changed: str, first: float, second: float
+) -> None:
+    """패널이 조립한 캐시 키가 두 성분을 다 싣는다 — 한쪽 입력만 바뀐 회차가 옛 표를 받지 않는다.
+
+    키의 한 성분을 상수로 바꾸면 그 성분만 바뀐 두 번째 회차가 첫 회차 표를 받는다.
+    """
+    from capa_simulation.services.simulation_cache import get_securement_cross_check
+
+    get_securement_cross_check.clear()
+    keyed_first = _cross_check_table(keyed_required=True, **{changed: first})
+    keyed_second = _cross_check_table(keyed_required=True, **{changed: second})
+
+    assert keyed_first != keyed_second
+    assert keyed_first == _cross_check_table(**{changed: first})
+    assert keyed_second == _cross_check_table(**{changed: second})
+
+
+def test_a_keyed_rerun_does_not_cross_check_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    """보기를 열어 둔 rerun(같은 조건)은 다시 맞대지 않는다 — 패널이 키를 받으면 캐시를 쓴다."""
+    from capa_simulation.components import availability_gap_panel
+    from capa_simulation.services import simulation_cache
+    from capa_simulation.services.securement_cross_check import build_securement_cross_check
+
+    simulation_cache.get_securement_cross_check.clear()
+    calls: list[int] = []
+    original = build_securement_cross_check
+
+    def counting(*args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    # 캐시 안(simulation_cache)과 캐시를 건너뛰는 길(패널) 둘 다 센다.
+    monkeypatch.setattr(simulation_cache, "build_securement_cross_check", counting)
+    monkeypatch.setattr(availability_gap_panel, "build_securement_cross_check", counting)
+    app = _run(keyed_required=True)
+    _select_view(app, "확보율 교차검증")
+    app.run()
+    app.run()
+
+    assert not app.exception
+    assert len(calls) == 1
 
 
 def test_unmatched_processes_stay_out_of_totals_and_fallback_rows() -> None:
