@@ -739,7 +739,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `get_scenario_securement_rate`)에서 꺼낸다 — 빗나갈 때만 그 캐시가 안에서 프레임을 받는다. 정렬이
     든 캐시의 키에는 표시순서 지문(`display_order_digest`)이 들어간다. 요약 캐시를
     `page_bootstrap.stop_calculation_on_error` 로 불러 계산 오류는 지금 자리·지금 문구로 먼저 드러난다.
-    STEP별 보기만 대당 Capa 를 푼다.
+    STEP별 보기만 대당 Capa 를 푼다. 소요대수 월 표·확보율 표는 **그 탭이 열린 회차에만** 꺼내고 그 표의
+    오류(표시순서 규칙 충돌 등)는 그 탭에만 뜬다. 대당 Capa 탭의 측정률 가정·제외 안내도 그 탭이 열린
+    회차에만 그리므로 `제외 기준정보 확인` 상자는 `remembered_expander`(key
+    `unit_capacity_exclusions_expander`)로 편 상태를 지킨다(`tests/test_calculation_result_tabs.py`).
   - 대당 Capa 제외 표는 `대당 Capa` 탭 하나가 그린다. 두 탭이 한 페이지에 오면서 같은 표를
     같은 파일명으로 두 번 내리게 돼 `소요대수` 쪽에서는 걷어냈다.
   - **표를 보는 조건은 사이드바 `표 조건` 카드**(`sidebar_status.table_card`, 이름
