@@ -80,6 +80,16 @@ def _probe_count_edit(data, category, value_column):
     return _probe_original_count_edit(data, category, value_column)
 
 
+_probe_original_change_count = _probe_month_editor.count_month_changes
+st.session_state["test_change_counts"] = []
+
+
+def _probe_change_count(default_table, merged, month_columns):
+    counted = _probe_original_change_count(default_table, merged, month_columns)
+    st.session_state["test_change_counts"].append(counted)
+    return counted
+
+
 def _probe_month_table(scenario, table_name, start, end):
     st.session_state["test_slice_log"][-1].append(table_name)
     return _probe_original_month_table(scenario, table_name, start, end)
@@ -121,6 +131,7 @@ simulation_cache.get_route_step_tables = _probe_route_tables
 _probe_month_editor.render_month_editor = _probe_render_month_editor
 _probe_equipment.build_equipment_count_table = _probe_count_table
 _probe_equipment.equipment_count_to_edit_table = _probe_count_edit
+_probe_month_editor.count_month_changes = _probe_change_count
 """
 _PROBE_RESTORE = (
     "    _probe_state.scenario_month_table = _probe_original_month_table\n"
@@ -128,6 +139,7 @@ _PROBE_RESTORE = (
     "    _probe_month_editor.render_month_editor = _probe_original_render_month_editor\n"
     "    _probe_equipment.build_equipment_count_table = _probe_original_count_table\n"
     "    _probe_equipment.equipment_count_to_edit_table = _probe_original_count_edit\n"
+    "    _probe_month_editor.count_month_changes = _probe_original_change_count\n"
 )
 _TRY_ANCHOR = "\ntry:\n    # `file_name`"
 _FINALLY_ANCHOR = "    st.download_button = original_download_button\n"
@@ -627,3 +639,46 @@ def test_the_overview_message_is_identical_across_reruns() -> None:
     # 두 꼴은 서로 다른 고정 uuid 다 — 같은 화면에 섞여도 CSS 이름이 겹치지 않는다.
     assert b"equipment_count_detail" in detailed
     assert b"equipment_count" in first and b"equipment_count_detail" not in first
+
+
+# ---------------------------------------------------------------- R8 변경 개수
+
+
+def _change_counts(app: AppTest) -> list[tuple[int, int]]:
+    counts: list[tuple[int, int]] = list(app.session_state["test_change_counts"])
+    return counts
+
+
+def _change_lines(app: AppTest) -> list[str]:
+    return [str(item.value) for item in app.markdown if "변경사항 확인" in str(item.value)]
+
+
+def test_the_change_count_runs_only_with_unapplied_edits() -> None:
+    """편집이 없으면 셀 수를 세지 않고(줄도 없다), 고치면 예전과 같은 줄이 선다."""
+    app = AppTest.from_string(
+        _probed(TWO_PROCESS_TEST_SCRIPT, "test-ref-perf-change-count"), default_timeout=60
+    )
+    app = _open_tab(app, "일수")
+    assert _change_counts(app) == []
+    assert _change_lines(app) == []
+
+    key = editor_widget_key_in(app, "capa_run_day_editor")
+    app.session_state[key] = {
+        "edited_rows": {0: {"202608": 20.0}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    app.run()
+    assert not app.exception
+    assert _change_counts(app) == [(1, 1)]
+    assert _change_lines(app) == ["**변경사항 확인** &nbsp;1개 값 · 1개 행"]
+
+    # 같은 값으로 고친 칸은 편집이 남아도 바뀐 것이 없다 — 세지만 줄은 서지 않는다.
+    app.session_state[key] = {
+        "edited_rows": {0: {"202608": 31.0}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    app.run()
+    assert _change_counts(app) == [(0, 0)]
+    assert _change_lines(app) == []

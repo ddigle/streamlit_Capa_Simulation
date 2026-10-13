@@ -201,7 +201,12 @@ def render_month_editor(
             },
         )
         merged = merge_edited_months(default_table, edited, dimensions, month_columns)
-        changed_cells, changed_rows = count_month_changes(default_table, merged, month_columns)
+        # 편집이 없던 회차(`pending` 은 표를 만들기 전 세션의 위젯 값이다 — 이 회차에 편집이 새로
+        # 생길 수는 없고 필터가 버릴 수만 있다)에는 표가 원본 그대로라 셀 수가 늘 0 이다. 셀 수
+        # 비교(표 전체 to_numeric)를 건너뛴다.
+        changed_cells, changed_rows = (
+            count_month_changes(default_table, merged, month_columns) if pending else (0, 0)
+        )
         if changed_cells:
             change_slot.markdown(
                 f"**변경사항 확인** &nbsp;{changed_cells:,}개 값 · {changed_rows:,}개 행"
