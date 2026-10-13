@@ -308,6 +308,51 @@ def test_a_label_sent_back_instead_of_an_id_is_not_written(tmp_path: Path) -> No
     assert _profile_version(database) == version
 
 
+@pytest.mark.parametrize("callback", ["_save_comparison_revision", "_save_comparison_scenario"])
+def test_a_comparison_callback_builds_the_database_instance_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, callback: str
+) -> None:
+    """콜백은 `app.py` 의 실행 핀 밖(스크립트 본문 전)에서 돈다. 유효성 확인·프로필 읽기·쓰기가
+    연결마다 인스턴스를 새로 만들지 않게 콜백이 스스로 핀을 잡는다 — 「읽기 N + 핀 1」.
+
+    쓰는 값은 그대로다. 고른 짝이 저장되고 공용 프로필 `version` 이 하나 오른다.
+    """
+    import duckdb
+
+    import capa_simulation.persistence.repository as repository
+    from capa_simulation.persistence._sql_helpers import connect as original_read
+
+    database = tmp_path / "scenario.duckdb"
+    s1, s1_revision, s2, _, s2_newer = _two_scenarios(database)
+    DuckDBScenarioRepository(database).replace_global_comparison_scenario(
+        s1, s1_revision, source="테스트"
+    )
+    version = _profile_version(database)
+    expected = (s2, s2_newer) if callback == "_save_comparison_revision" else (s2, None)
+
+    opened: list[str] = []
+    reads: list[str] = []
+    real_connect = duckdb.connect
+
+    def counted_open(*args: Any, **kwargs: Any) -> Any:
+        opened.append(str(args[0]))
+        return real_connect(*args, **kwargs)
+
+    def counted_read(database_path: Path) -> Any:
+        reads.append(str(database_path))
+        return original_read(database_path)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(duckdb, "connect", counted_open)
+        patched.setattr(repository, "connect", counted_read)
+        _save(database, s2, s2_newer, callback=callback)
+
+    assert len(reads) >= 2
+    assert len(opened) == len(reads) + 1
+    assert _saved_profile(database) == expected
+    assert _profile_version(database) == version + 1
+
+
 class _FakeRepository:
     """시나리오 S1·S2 와 각자의 리비전 둘. 두 콜백이 읽는 두 목록만 있다."""
 

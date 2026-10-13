@@ -1742,7 +1742,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     읽지 않는 화면은 인스턴스를 열지 않고(블록 시작에 열면 회차마다 약 20ms), 읽는 회차는
     「읽기 N + 핀 1」이다. 같은 파일의 블록이 겹치면(실행 핀 안의 시나리오 팝업 본문) **가장
     바깥 블록이 끝날 때만** 닫는다. 핀을 아예 빼면 읽는 화면이 연결마다 인스턴스를 다시 만들어
-    더 느려진다.
+    더 느려진다. 위젯 콜백은 실행 핀 밖(스크립트 본문 전)에서 돌므로 DB 를 여러 번 여는 콜백은
+    스스로 핀을 잡는다(HOME 비교 시나리오·리비전 저장 `home_preference._replace_comparison_profile`).
     설비 DB 는 **rerun 한 번에 여러 번 여는 화면에서만** 같은 수명의 핀을 더한다.
     `navigation.PageSpec.uses_equipment_db` 가 그 화면을 선언하고(지금은 가용설비 현황
     하나) `app.py` 가 그 회차의 `navigation.run()` 을 `pinned_connections(EQUIPMENT_DUCKDB_PATH)`

@@ -18,6 +18,7 @@ from __future__ import annotations
 import html
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -64,6 +65,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     forget_page_dialogs,
 )
+from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.cache import (
     clear_global_advance_load_cache,
     clear_global_advance_shipment_cache,
@@ -665,20 +667,25 @@ def _replace_comparison_profile(
     콜백은 Streamlit 이 「바뀌었다」고 본 회차마다 불리는데, 브라우저가 같은 항목을 다른 글자로
     되보낸 경우에도 그렇게 본다. 공용 프로필이라 쓸 때마다 `version` 이 오르고 DB 가 dirty 가
     되므로 같은 짝은 다시 쓰지 않는다.
+
+    콜백은 `app.py` 의 실행 핀 밖(스크립트 본문 전)에서 돈다. 유효성 확인(`choose` 의 목록 읽기)·
+    프로필 읽기·쓰기가 연결마다 DuckDB 인스턴스를 새로 만들지 않게 여기서 핀을 잡는다. 핀은 첫
+    연결 때 잡히고 이 블록이 끝나면 풀린다 — 목록은 지금처럼 캐시 없이 DB 에서 읽는다.
     """
-    try:
-        repository = get_scenario_repository(database_path)
-        chosen = choose(repository)
-        if chosen is None:
+    with pinned_connections(Path(database_path)):
+        try:
+            repository = get_scenario_repository(database_path)
+            chosen = choose(repository)
+            if chosen is None:
+                return
+            profile = load_global_comparison_scenario(database_path)
+            if (profile.scenario_id, profile.revision_id) == chosen:
+                return
+            repository.replace_global_comparison_scenario(
+                chosen[0], chosen[1], source="HOME 비교 대상 선택"
+            )
+        except (*BOOTSTRAP_ERRORS, ValueError):
             return
-        profile = load_global_comparison_scenario(database_path)
-        if (profile.scenario_id, profile.revision_id) == chosen:
-            return
-        repository.replace_global_comparison_scenario(
-            chosen[0], chosen[1], source="HOME 비교 대상 선택"
-        )
-    except (*BOOTSTRAP_ERRORS, ValueError):
-        return
     clear_global_comparison_scenario_cache()
     _recheck_intro_summary()
 
