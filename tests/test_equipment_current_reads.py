@@ -16,14 +16,30 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
+from test_equipment_bulk_delete_page import (
+    BUILDING_FILTER_KEY,
+    DELETE_SELECTED_KEY,
+    SELECT_MATCHING_KEY,
+)
+from test_equipment_bulk_delete_page import _page_script as _bulk_page_script
+from test_equipment_bulk_delete_page import _seeded as _bulk_seeded
 from test_equipment_pages import _open_tab, _page_script
 
+from capa_simulation.components import space_layout_editor
 from capa_simulation.components.cutoff_management import CUTOFF_DRAFT_KEY
+from capa_simulation.components.equipment_data_workspace import (
+    CONFIRM_DELETE_BUTTON_KEY,
+    DRAFT_REVISION_KEY,
+    EDIT_SAVE_BUTTON_KEY,
+    EQUIPMENT_DRAFT_KEY,
+)
 from capa_simulation.persistence import equipment_cache
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
@@ -178,4 +194,103 @@ def test_a_cutoff_saved_on_the_screen_is_what_the_next_run_counts_with(
     assert any("모두 채워졌습니다" in str(item.value) for item in app.caption)
     saved = DuckDBEquipmentRepository(database).load_process_cutoff()
     assert sorted(saved["공정"]) == sorted(processes)
+    clear_equipment_repository()
+
+
+def test_a_rawdata_save_on_the_screen_rebuilds_the_draft_from_the_new_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """화면: RawData 에서 리비전을 저장하면 다음 회차의 편집본은 **방금 저장한 리비전**에서 선다 —
+    stat 을 고정해도.
+
+    비우기가 빠지면 최신 id 캐시가 옛 리비전을 내 편집본이 옛 저장본으로 다시 세워진다(지운 호기가
+    되살아난다). 그 편집본에서 다시 저장하면 `base_revision_id` 충돌로 막힌다 — 그래서 두 번째
+    저장까지 돈다. 편집은 칸을 누르지 않는 길(동 필터 → 맞는 행 모두 선택 → 삭제 확정)로 한다.
+    """
+    seed = _bulk_seeded(tmp_path)
+    repository = DuckDBEquipmentRepository(seed.database)
+    first = repository.latest_revision_id()
+    clear_equipment_repository()
+    monkeypatch.setattr(equipment_cache, "database_stamp", lambda _path: (None, None))
+    app = AppTest.from_string(_bulk_page_script(seed.database), default_timeout=120).run()
+    assert not app.exception
+    assert app.session_state[DRAFT_REVISION_KEY] == first
+
+    app.multiselect(key=BUILDING_FILTER_KEY).set_value([seed.building])
+    app.button(key=SELECT_MATCHING_KEY).click().run()
+    app.button(key=DELETE_SELECTED_KEY).click().run()
+    app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()
+    app.button(key=EDIT_SAVE_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [item.value for item in app.error]
+    second = repository.latest_revision_id()
+    assert second is not None and second != first
+    kept = len(seed.machines) - len(seed.building_machines)
+
+    app.run()  # 저장 다음의 아무 회차(위젯 하나)
+    assert not app.exception
+    assert app.session_state[DRAFT_REVISION_KEY] == second
+    assert len(app.session_state[EQUIPMENT_DRAFT_KEY]) == kept
+
+    app.button(key=EDIT_SAVE_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [item.value for item in app.error]
+    latest = repository.list_revisions()[0]
+    assert latest.revision_no == 3
+    assert len(repository.load_snapshot(latest.revision_id).equipment) == kept
+    clear_equipment_repository()
+
+
+SPACE_PAGE = PROJECT_ROOT / "app_pages" / "space_status.py"
+_FAKE_APPLY_KEY = "test_current_reads_fake_editor_apply"
+
+
+@pytest.fixture
+def space_editor_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """브라우저 편집기(JS) 대역 — 받은 data 를 적고, 세션에 넣어 둔 적용값을 돌려준다."""
+    calls: list[dict[str, Any]] = []
+
+    def _stub(**kwargs: Any) -> SimpleNamespace:
+        import streamlit as st
+
+        calls.append(kwargs["data"])
+        return SimpleNamespace(apply=st.session_state.pop(_FAKE_APPLY_KEY, None))
+
+    monkeypatch.setattr(space_layout_editor, "_EDITOR", _stub)
+    return calls
+
+
+def test_a_space_layout_save_rebuilds_the_draft_from_the_new_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, space_editor_calls: list[dict[str, Any]]
+) -> None:
+    """화면: Space `배치 저장`(`save_space_layout` 경로)도 같다 — stat 을 고정해도 저장 뒤 편집본과
+    편집기가 새 리비전에서 선다."""
+    database, outsider = _seeded(tmp_path)
+    monkeypatch.setattr(equipment_cache, "database_stamp", lambda _path: (None, None))
+    app = AppTest.from_string(_page_script(SPACE_PAGE, Path(database)), default_timeout=120)
+    app.session_state["space_status_selected_building"] = "C1"
+    app.session_state["space_status_selected_floor"] = "1F"
+    app.run()
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    assert not app.exception
+    first = outsider.latest_revision_id()
+
+    app.session_state[_FAKE_APPLY_KEY] = {
+        "epoch": space_editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-01", "placed": True, "x": 40, "y": 20, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": [],
+    }
+    app.run()
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    second = outsider.latest_revision_id()
+    assert second is not None and second != first
+
+    app.run()
+    assert not app.exception
+    assert app.session_state[DRAFT_REVISION_KEY] == second
+    assert space_editor_calls[-1]["epoch"].split("|")[2] == second
+    moved = app.session_state[EQUIPMENT_DRAFT_KEY].set_index("설비명").loc["EQ-01", "X좌표"]
+    assert moved == 40.0
     clear_equipment_repository()
