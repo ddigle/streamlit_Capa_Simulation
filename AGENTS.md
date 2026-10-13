@@ -1544,7 +1544,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/performance_actual_screen.py`
   - 효율·UPEH·수율 실적 화면 **한 벌**. 세 화면이 같은 질문을 지표만 바꿔 묻기 때문에
     `MetricSpec` 만 갈아 끼운다. 요약(보고용)·상세 분석·개선과제 세 탭이고 탭은
-    `stateful_tabs` 로 만든다. 조회 조건 위젯은 숨은 탭에서도 그리고 Plotly 만 건너뛴다.
+    `stateful_tabs` 로 만든다. 조회 조건 위젯은 숨은 탭에서도 그리고 Plotly 만 건너뛴다. 위젯이
+    없는 요약·개선과제는 숨었으면 통째로 건너뛰고, 둘이 함께 쓰는 공정 우선순위 표는 회차마다 한 번만
+    만든다(둘 다 숨었으면 만들지 않는다).
   - 추이 축 눈금·풍선은 KPI 와 같은 형식(`_value_tick_format`)이고, 우선순위 막대는 바깥 라벨이 나갈
     자리를 x 범위 안에 남긴다(`_priority_range`) — 축 밖으로 내보내면 공정 이름 위에 겹쳤다.
   - 상세 분석의 `공정` 상자는 겹친 표시명을 가르고 위젯 앞에서 매 회차 잡은 값을 다시 적는다(8장 ②).
