@@ -4106,6 +4106,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `services/scenario_virtual_products.py`는 가상제품 복제 이력을 변환하고 같은 제품·Stack의
     복제 원본 충돌을 검사한다(새 리비전·복제가 부모 이력을 물려받는 규칙도 여기 있다). `create_scenario(virtual_products=...)`가 기존 이력 표에
     초기 리비전·16표와 같은 트랜잭션으로 기록하고 저장 폼은 보존할 이력을 미리 보여 준다.
+  - 고른 원본 리비전은 역할(베이스·덧붙일·이동할)마다 세션에 메모한다(`SOURCE_MEMO_KEY`) — 조작마다
+    스냅샷 피클을 다시 풀던 비용이다. 리비전 id 와 그 회차 목록의 시나리오·리비전 요약이 같을 때만
+    다시 쓰고(다른 세션의 이름 변경은 다시 읽는다), 표는 읽기만 하며 화면은 `copy_scenario_tables`
+    사본으로 일한다. 살아 있는 표가 리비전 하나에 합성 약 140MB 라 그 모드에서만 둔다 — 모드를 바꾸면,
+    시나리오를 지우·보관·되살리거나 이름을 바꾸면, 상자를 비우면 버리고, 키가 `PAGE_DIALOG_SUFFIX` 로
+    끝나 페이지를 떠나는 회차에 `forget_page_dialogs` 가 버린다. 가상제품 이력은 회차마다 다시 읽는다.
   - `components/scenario_month_merge.py`는 무월 표 비교와 머지 미리보기·저장을,
     `services/scenario_month_merge.py`는 월별 출처 계획·겹침 정책·결과 축 검증과 표 병합을 맡는다.
   - `components/scenario_year_shift.py`는 사용자 지정 연수와 전후 범위·저장을,

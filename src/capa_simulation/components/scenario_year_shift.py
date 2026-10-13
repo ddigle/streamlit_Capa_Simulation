@@ -18,6 +18,9 @@ from capa_simulation.services.scenario_transform import (
 from capa_simulation.services.scenario_virtual_products import virtual_product_records
 from capa_simulation.services.scenario_year_shift import shift_scenario_years
 
+# 원본을 고르는 상자의 역할(`render_source_selector` 의 `key` — 원본 메모의 칸 이름이다).
+SHIFT_SOURCE_ROLES = ("shift_source",)
+
 
 def render_scenario_year_shift(repository: DuckDBScenarioRepository, database_path: str) -> None:
     st.subheader("연도 Shift")
@@ -31,7 +34,9 @@ def render_scenario_year_shift(repository: DuckDBScenarioRepository, database_pa
 
 
 def _render_shift(repository: DuckDBScenarioRepository, database_path: str) -> None:
-    source = render_source_selector(repository, database_path, label="이동할", key="shift_source")
+    source = render_source_selector(
+        repository, database_path, label="이동할", key=SHIFT_SOURCE_ROLES[0]
+    )
     if source is None:
         return
     years = st.number_input(

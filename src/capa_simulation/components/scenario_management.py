@@ -20,8 +20,15 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.intro_summary import forget_intro_summary_check
-from capa_simulation.components.scenario_month_merge import render_scenario_month_merge
-from capa_simulation.components.scenario_year_shift import render_scenario_year_shift
+from capa_simulation.components.scenario_month_merge import (
+    MERGE_SOURCE_ROLES,
+    render_scenario_month_merge,
+)
+from capa_simulation.components.scenario_transform import forget_derived_sources
+from capa_simulation.components.scenario_year_shift import (
+    SHIFT_SOURCE_ROLES,
+    render_scenario_year_shift,
+)
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -74,6 +81,11 @@ MODES = (
     "월 머지",
     "연도 Shift",
 )
+# 원본 리비전을 메모해 두는 모드와 그 역할(`scenario_transform.SOURCE_MEMO_KEY`).
+DERIVED_SOURCE_ROLES: dict[str, tuple[str, ...]] = {
+    "월 머지": MERGE_SOURCE_ROLES,
+    "연도 Shift": SHIFT_SOURCE_ROLES,
+}
 LIST_EDITOR_KEY = "scenario_list_editor"
 ACTION_KEY = "scenario_list_action"
 ACTION_OWNER_KEY = "scenario_list_action_owner"
@@ -120,6 +132,8 @@ def render_scenario_management(
         # `리비전 저장`으로 떨어진다.
         required=True,
     )
+    # 월 머지·연도 Shift 가 메모한 원본(리비전 하나에 합성 약 140MB)은 그 모드에서만 둔다.
+    forget_derived_sources(keep=DERIVED_SOURCE_ROLES.get(str(mode), ()))
     if mode == "목록 관리":
         _render_list_management(repository, database_path, scenarios)
     elif mode == "현재 활성 RQ 복제":
@@ -455,6 +469,7 @@ def _render_rename(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     # 스냅샷 payload 는 시나리오명을 함께 담는다. 비우지 않으면 그 리비전에서 파생한 시나리오의
     # 원천명·출처 메모에 옛 이름이 남는다.
     clear_scenario_snapshot_cache()
+    forget_derived_sources()
     # 비교 대상이 이 시나리오면 저장소가 그 프로필 version 을 올렸다 — 입장 화면 Summary GAP 풍선의
     # 이름이 바뀐다. 캐시는 경로 키라 따로 비우고, 이 세션은 곧바로 다시 확인한다.
     clear_global_comparison_scenario_cache()
@@ -586,6 +601,7 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
         st.error(bootstrap_error_message(exc))
         return
     clear_scenario_snapshot_cache()
+    forget_derived_sources()
     # 저장소가 이 시나리오를 가리키던 공용 비교 대상을 비웠다. 캐시는 경로 키라 따로 비운다.
     clear_global_comparison_scenario_cache()
     # 입장 화면 Summary 의 GAP 도 그 비교 대상을 쓴다 — 이 세션은 곧바로 다시 확인한다.
@@ -653,6 +669,7 @@ def _restore_scenario(
         st.error(bootstrap_error_message(exc))
         return
     clear_scenario_snapshot_cache()
+    forget_derived_sources()
     st.session_state[FLASH_KEY] = (
         f"{summary.scenario_name}{object_particle(summary.scenario_name)} 목록으로 되돌렸습니다."
     )
@@ -684,6 +701,7 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
         st.error(bootstrap_error_message(exc))
         return
     clear_scenario_snapshot_cache()
+    forget_derived_sources()
     clear_global_comparison_scenario_cache()
     # 입장 화면 Summary 의 GAP 도 그 비교 대상을 쓴다 — 이 세션은 곧바로 다시 확인한다.
     forget_intro_summary_check()

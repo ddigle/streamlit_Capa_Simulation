@@ -1,14 +1,24 @@
 # Purpose: 파생 시나리오의 저장 리비전 선택과 원본을 유지하는 신규 저장 폼을 제공한다.
 
+from collections.abc import Collection
 from dataclasses import asdict, replace
 from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    PAGE_DIALOG_SUFFIX,
+    bootstrap_error_message,
+)
 from capa_simulation.persistence.cache import load_scenario_snapshot
-from capa_simulation.persistence.models import ScenarioCreate, ScenarioSnapshot
+from capa_simulation.persistence.models import (
+    RevisionSummary,
+    ScenarioCreate,
+    ScenarioSnapshot,
+    ScenarioSummary,
+)
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import (
     active_persisted_revision_id,
@@ -23,11 +33,66 @@ from capa_simulation.services.scenario_transform import (
 )
 from capa_simulation.services.virtual_product import VirtualProductRecord, records_to_frame
 
+# 고른 원본 리비전 스냅샷(저장된 원본 — 공용 표시순서 미적용)의 세션 메모. 역할(`key` — 베이스·
+# 덧붙일·이동할)마다 한 벌이다. 회차마다 `load_scenario_snapshot`(cache_data — 적중해도 피클을
+# 다시 푼다, 합성 리비전 하나 약 0.1초)을 부르던 것을 **원본을 바꿀 때만** 부른다. 리비전은
+# append-only 라 id 가 같으면 표가 같다. 시나리오·리비전 요약(이름·활성 리비전 등 — 출처 메모·
+# 기본 이름에 쓰인다)은 회차마다 목록에서 새로 읽어 메모와 다르면 다시 읽는다(다른 세션의 이름
+# 변경). 메모한 표는 읽기만 한다 — 화면은 `copy_scenario_tables` 사본으로 일한다.
+# 키 이름이 `PAGE_DIALOG_SUFFIX` 로 끝나 페이지를 떠나는 회차에 `app.py` 가 버린다
+# (`forget_page_dialogs`). 살아 있는 표가 리비전 하나에 합성 약 140MB 라 세션에 붙잡아 두지
+# 않는다 — 모드를 바꾸거나 시나리오를 지우·보관·되살릴 때도 버린다(`forget_derived_sources`).
+SOURCE_MEMO_KEY = f"scenario_transform_sources{PAGE_DIALOG_SUFFIX}"
+
+
+def _source_memo() -> dict[str, tuple[str, ScenarioSnapshot]]:
+    memo = st.session_state.get(SOURCE_MEMO_KEY)
+    if not isinstance(memo, dict):
+        memo = {}
+        st.session_state[SOURCE_MEMO_KEY] = memo
+    return memo
+
+
+def forget_derived_sources(*, keep: Collection[str] = ()) -> None:
+    """메모한 원본을 버린다. `keep` 에 든 역할만 남긴다."""
+    memo = st.session_state.get(SOURCE_MEMO_KEY)
+    if not isinstance(memo, dict):
+        return
+    kept = {role: entry for role, entry in memo.items() if role in keep}
+    if kept:
+        st.session_state[SOURCE_MEMO_KEY] = kept
+    else:
+        st.session_state.pop(SOURCE_MEMO_KEY, None)
+
+
+def _source_snapshot(
+    database_path: str,
+    role: str,
+    scenario: ScenarioSummary,
+    revision: RevisionSummary,
+) -> ScenarioSnapshot:
+    """이 역할에 고른 리비전의 원본. 같은 리비전·같은 요약이면 메모를, 아니면 새로 읽는다."""
+    memo = _source_memo()
+    entry = memo.get(role)
+    if entry is not None:
+        path, snapshot = entry
+        if path == database_path and (snapshot.scenario, snapshot.revision) == (scenario, revision):
+            return snapshot
+    snapshot = load_scenario_snapshot(
+        database_path, revision.revision_id, apply_global_display_order=False
+    )
+    memo[role] = (database_path, snapshot)
+    return snapshot
+
 
 def render_source_selector(
     repository: DuckDBScenarioRepository, database_path: str, *, label: str, key: str
 ) -> ScenarioSnapshot | None:
-    """미저장 편집본 대신 사용자가 고른 불변 리비전의 원본 16표를 읽는다."""
+    """미저장 편집본 대신 사용자가 고른 불변 리비전의 원본 16표를 읽는다.
+
+    `key` 는 화면 안의 역할(베이스·덧붙일·이동할)이고 메모(`SOURCE_MEMO_KEY`)의 칸 이름이다.
+    돌려준 스냅샷의 표는 읽기만 한다.
+    """
     scenarios = {item.scenario_id: item for item in repository.list_scenarios()}
     selected = st.selectbox(
         f"{label} 시나리오",
@@ -39,6 +104,7 @@ def render_source_selector(
         persist_state="session",
     )
     if selected is None:
+        forget_derived_sources(keep=set(_source_memo()) - {key})
         return None
     revisions = {item.revision_id: item for item in repository.list_revisions(selected)}
     revision_key = f"{key}_revision_{selected}"
@@ -63,9 +129,10 @@ def render_source_selector(
         ),
     )
     if revision_id is None:
+        forget_derived_sources(keep=set(_source_memo()) - {key})
         st.info("선택할 저장 리비전이 없습니다.")
         return None
-    return load_scenario_snapshot(database_path, revision_id, apply_global_display_order=False)
+    return _source_snapshot(database_path, key, scenarios[selected], revisions[revision_id])
 
 
 def source_description(snapshot: ScenarioSnapshot) -> str:
