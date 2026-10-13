@@ -14,6 +14,15 @@ from capa_simulation.services.chatbot_samples import SampleAnswer, build_sample_
 
 PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "capa_chatbot.py"
 TRANSCRIPT_KEY = "capa_chatbot_transcript"
+# 받은 답의 근거 표를 고치는 화면 — 페이지를 돌린 뒤 받은 답마다 근거 표의 행을 지운다(제자리 고침).
+EDITING_SCRIPT = f"""
+from pathlib import Path
+
+page = Path({str(PAGE)!r})
+exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))
+for answer in answers:
+    answer.evidence.drop(index=answer.evidence.index[:1], inplace=True)
+"""
 
 
 @pytest.fixture
@@ -101,3 +110,24 @@ def test_clearing_the_conversation_keeps_only_the_first_answer(runs: list[int]) 
     assert app.session_state[TRANSCRIPT_KEY] == [first.question]
     assert _shown_conclusions(app) == [first.conclusion]
     assert not [button for button in app.button if button.key == "capa_chatbot_reset"]
+
+
+def test_a_caller_that_edits_the_evidence_leaves_the_answers_intact(
+    answer_builds: list[int],
+) -> None:
+    """근거 표는 사본으로 나간다 — 받은 쪽이 제자리에서 고쳐도 다음 회차의 근거 표는 새로 만든
+    대본과 같다."""
+    app = AppTest.from_string(EDITING_SCRIPT, default_timeout=60).run()
+    assert not app.exception, [item.message for item in app.exception]
+    for index in (1, 2, 3):
+        app.button(key=f"capa_chatbot_example_{index}").click().run()
+        assert not app.exception, [item.message for item in app.exception]
+    answers = build_sample_answers()
+
+    assert len(answer_builds) == 1
+    shown = [frame.value for frame in app.dataframe]
+    assert len(shown) == len(answers)
+    for frame, answer in zip(shown, answers, strict=True):
+        pd.testing.assert_frame_equal(
+            frame.reset_index(drop=True), answer.evidence.reset_index(drop=True)
+        )
