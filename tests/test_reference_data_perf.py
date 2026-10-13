@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
     REAL_APPLY_TEST_SCRIPT,
@@ -20,8 +21,16 @@ from test_reference_data_page import (
     _edit_and_apply,
     _frame_with_column,
     _real_apply,
+    editor_widget_key_in,
 )
 
+from capa_simulation.services import display_order_scopes as scopes
+from capa_simulation.services.capacity_reference_editor import (
+    PERFORMANCE_EDITOR_DIMENSIONS,
+    build_reference_edit_table,
+)
+from capa_simulation.services.display_order import prepare_display_order
+from capa_simulation.services.month_filter import filter_month_range
 from capa_simulation.services.route_step_editor import route_step_tables
 
 DIALOG_KEY = "reference_data_open_dialog"
@@ -33,18 +42,26 @@ STEP_SUMMARY_COLUMNS = {
     "WF 구분": "속성",
 }
 
-# 회차마다 페이지가 자른 표 이름과 STEP 경로표를 부른 횟수·입력을 세션에 적는다. 페이지는 두
-# 함수를 exec 때 모듈에서 집으므로 모듈 속성을 갈아끼우면 탐침을 집는다.
+# 회차마다 페이지가 자른 표 이름, STEP 경로표를 부른 횟수와 실제로 쓴 입력, 편집기에 넘긴 양식을
+# 세션에 적는다. 페이지는 이 함수들을 exec 때 모듈에서 집으므로 모듈 속성을 갈아끼우면 탐침을
+# 집는다.
+# 활성 시나리오 표도 적어 두어, 테스트가 같은 표로 **직접** 계산한 값과 견준다.
 _PROBE = """
+import capa_simulation.components.month_editor as _probe_month_editor
 import capa_simulation.scenario_state as _probe_state
 
-st.session_state["test_sliced_tables"] = []
+st.session_state.setdefault("test_slice_log", []).append([])
+st.session_state["test_active_tables"] = {
+    _name: _frame.copy()
+    for _name, _frame in scenario_state.ensure_active_scenario(None, None)["tables"].items()
+}
 _probe_original_month_table = _probe_state.scenario_month_table
 _probe_original_route_tables = simulation_cache.get_route_step_tables
+_probe_original_render_month_editor = _probe_month_editor.render_month_editor
 
 
 def _probe_month_table(scenario, table_name, start, end):
-    st.session_state["test_sliced_tables"].append(table_name)
+    st.session_state["test_slice_log"][-1].append(table_name)
     return _probe_original_month_table(scenario, table_name, start, end)
 
 
@@ -52,16 +69,37 @@ def _probe_route_tables(cache_key, *, _upeh, _reqb):
     st.session_state["test_route_step_calls"] = (
         st.session_state.get("test_route_step_calls", 0) + 1
     )
-    st.session_state["test_route_step_inputs"] = (cache_key, _upeh.copy(), _reqb.copy())
-    return _probe_original_route_tables(cache_key, _upeh=_upeh, _reqb=_reqb)
+    st.session_state["test_route_step_key"] = cache_key
+    frames = st.session_state.setdefault("test_route_step_frames", {})
+
+    def _recording(name, source):
+        def load():
+            frame = source() if callable(source) else source
+            frames.setdefault(cache_key, {})[name] = frame.copy()
+            return frame
+
+        return load
+
+    return _probe_original_route_tables(
+        cache_key, _upeh=_recording("upeh", _upeh), _reqb=_recording("reqb", _reqb)
+    )
+
+
+def _probe_render_month_editor(tab, default_table, dimensions, editor_key, *args, **kwargs):
+    st.session_state.setdefault("test_editor_templates", {})[editor_key] = default_table.copy()
+    return _probe_original_render_month_editor(
+        tab, default_table, dimensions, editor_key, *args, **kwargs
+    )
 
 
 _probe_state.scenario_month_table = _probe_month_table
 simulation_cache.get_route_step_tables = _probe_route_tables
+_probe_month_editor.render_month_editor = _probe_render_month_editor
 """
 _PROBE_RESTORE = (
     "    _probe_state.scenario_month_table = _probe_original_month_table\n"
     "    simulation_cache.get_route_step_tables = _probe_original_route_tables\n"
+    "    _probe_month_editor.render_month_editor = _probe_original_render_month_editor\n"
 )
 _TRY_ANCHOR = "\ntry:\n    # `file_name`"
 _FINALLY_ANCHOR = "    st.download_button = original_download_button\n"
@@ -88,8 +126,9 @@ def _route_calls(app: AppTest) -> int:
     return int(app.session_state[key]) if key in app.session_state else 0
 
 
-def _sliced(app: AppTest) -> list[str]:
-    return list(app.session_state["test_sliced_tables"])
+def _sliced(app: AppTest, back: int = 1) -> list[str]:
+    """뒤에서 `back` 번째 회차(1 = 마지막)에 자른 표 이름."""
+    return list(app.session_state["test_slice_log"][-back])
 
 
 def _open_tab(app: AppTest, name: str) -> AppTest:
@@ -103,11 +142,56 @@ def _displayed_summary(app: AppTest) -> pd.DataFrame:
     return _frame_with_column(app, "STEP 수").reset_index(drop=True)
 
 
+def _route_key(app: AppTest) -> tuple[int, str, int, int]:
+    key: tuple[int, str, int, int] = app.session_state["test_route_step_key"]
+    return key
+
+
+def _route_inputs(app: AppTest) -> dict[str, pd.DataFrame]:
+    """이 회차 키로 경로표를 만들 때 실제로 넘어간 조각(캐시가 빗나간 회차에 적힌다)."""
+    inputs: dict[str, pd.DataFrame] = app.session_state["test_route_step_frames"][_route_key(app)]
+    return inputs
+
+
 def _expected_summary(app: AppTest) -> pd.DataFrame:
-    """페이지가 이 회차에 넘긴 조각으로 경로표를 **새로** 계산해 화면 표 꼴로 바꾼다."""
-    _key, upeh, reqb = app.session_state["test_route_step_inputs"]
-    summary, _catalog = route_step_tables(upeh, reqb)
+    """이 회차 키의 조각으로 경로표를 **새로** 계산해 화면 표 꼴로 바꾼다."""
+    inputs = _route_inputs(app)
+    summary, _catalog = route_step_tables(inputs["upeh"], inputs["reqb"])
     return summary.rename(columns=STEP_SUMMARY_COLUMNS).reset_index(drop=True)
+
+
+RATIO_DIMENSIONS = [
+    "공정",
+    "Area_Name",
+    "양산구분",
+    "제품정보",
+    "Stack",
+    "WF 구분",
+    "STEP_SEQ",
+    "MCP_SEQ",
+]
+
+
+def _empty_display_order() -> pd.DataFrame:
+    """픽스처(`TEST_SCRIPT`)의 빈 공용 표시순서와 같은 표."""
+    return pd.DataFrame(
+        columns=[
+            "페이지 구분",
+            "탭 구분",
+            "정렬우선순위",
+            "분류컬럼",
+            "정렬방식",
+            "분류값",
+            "값표시순서",
+            "활성여부",
+        ]
+    )
+
+
+def _month_slice(app: AppTest, table_name: str) -> pd.DataFrame:
+    """이 회차 활성 시나리오 표를 적용 기간(2026-08)으로 **직접** 자른 조각."""
+    table: pd.DataFrame = app.session_state["test_active_tables"][table_name]
+    return filter_month_range(table, 202608, 202608, table_name)
 
 
 def _route_processes(app: AppTest) -> list[str]:
@@ -158,10 +242,11 @@ def test_the_step_summary_is_the_route_table_of_this_runs_slices() -> None:
     displayed = _displayed_summary(app)
     pd.testing.assert_frame_equal(displayed, _expected_summary(app), check_dtype=False)
     assert displayed["STEP 수"].tolist() == [1]
-    # 조각은 적용 기간(2026-08)으로 자른 `RQ_REQB` 다.
-    key, _upeh, reqb = app.session_state["test_route_step_inputs"]
-    assert set(reqb["생산계획년월"]) == {202608}
-    assert key[1] == "test-ref-perf-step-same"
+    # 조각은 이 회차 활성 시나리오를 적용 기간(2026-08)으로 자른 것이다.
+    inputs = _route_inputs(app)
+    for name, table in (("reqb", "RQ_REQB"), ("upeh", "RQ_UPEH")):
+        pd.testing.assert_frame_equal(inputs[name], _month_slice(app, table))
+    assert _route_key(app)[1] == "test-ref-perf-step-same"
 
 
 def test_a_step_change_rebuilds_the_route_tables_with_the_new_token() -> None:
@@ -170,13 +255,13 @@ def test_a_step_change_rebuilds_the_route_tables_with_the_new_token() -> None:
         _probed(REAL_APPLY_TEST_SCRIPT, "test-ref-perf-step-rebuild"), default_timeout=60
     ).run()
     app = _open_tab(app, "STEP 구성")
-    first_key = app.session_state["test_route_step_inputs"][0]
+    first_key = _route_key(app)
     assert _displayed_summary(app)["STEP 수"].tolist() == [1]
 
     app = _add_step(app, "2A", "P200")
     app.run()
     assert not app.exception
-    new_key = app.session_state["test_route_step_inputs"][0]
+    new_key = _route_key(app)
     assert new_key != first_key
     displayed = _displayed_summary(app)
     assert displayed["STEP 수"].tolist() == [2]
@@ -226,3 +311,117 @@ def test_the_step_flash_shows_once_in_the_step_tab() -> None:
     assert any("STEP을 추가했습니다" in item.value for item in app.success)
     app.run()
     assert not any("STEP을 추가했습니다" in item.value for item in app.success)
+
+
+# ---------------------------------------------------------------- R2 편집 기간 조각
+
+# (RQ, 분류 컬럼, 값 컬럼, 표시순서 화면 범위) — 페이지의 편집표 여섯 개와 같은 인자다.
+EDIT_TABLES: dict[str, tuple[str, list[str], str | None, str]] = {
+    "UPEH": ("RQ_UPEH", PERFORMANCE_EDITOR_DIMENSIONS, None, scopes.TAB_UPEH),
+    "효율": ("RQ_RUN_RATE", ["공정", "양산구분"], "CAPA_RUN_RATE", scopes.TAB_RUN_RATE),
+    "여유율": ("RQ_VITAL", ["공정", "양산구분"], "편중률", scopes.TAB_VITAL),
+    "일수": ("RQ_RUN_DAY", ["공정"], "RUN_DAY", scopes.TAB_RUN_DAY),
+    "Lot측정률": ("RQ_LOT_RATIO", RATIO_DIMENSIONS, "Lot 측정률", scopes.TAB_LOT_RATIO),
+    "WF측정률": ("RQ_WF_RATIO", RATIO_DIMENSIONS, "WF측정률", scopes.TAB_WF_RATIO),
+}
+EDITOR_OF = {
+    "UPEH": "capa_upeh_editor",
+    "효율": "capa_run_rate_editor",
+    "여유율": "capa_vital_editor",
+    "일수": "capa_run_day_editor",
+    "Lot측정률": "capa_lot_ratio_editor",
+    "WF측정률": "capa_wf_ratio_editor",
+}
+UNUSED_HERE = {"RQ_PKG_PLAN", "RQ_YLD"}
+
+
+def test_only_the_slices_a_run_uses_are_cut() -> None:
+    """이 화면은 RQ_PKG_PLAN·RQ_YLD 를 쓰지 않는다. 편집표 조각은 열린 탭 것만 빗나갈 때 자른다."""
+    app = AppTest.from_string(_probed(TEST_SCRIPT, "test-ref-perf-slices"), default_timeout=60)
+    app.run()
+    assert not app.exception
+    first = set(_sliced(app))
+    assert "RQ_UPEH" in first
+    closed = {"RQ_RUN_RATE", "RQ_VITAL", "RQ_RUN_DAY", "RQ_LOT_RATIO", "RQ_WF_RATIO", "RQ_REQB"}
+    assert not first & (UNUSED_HERE | closed)
+
+    # 같은 토큰으로 다시 돌면 편집표가 캐시에서 나와 조각을 자르지 않는다.
+    app.run()
+    assert "RQ_UPEH" not in _sliced(app)
+
+    app = _open_tab(app, "효율")
+    assert "RQ_RUN_RATE" in _sliced(app)
+    assert not set(_sliced(app)) & (UNUSED_HERE | {"RQ_UPEH"})
+
+
+@pytest.mark.parametrize("tab_name", list(EDIT_TABLES))
+def test_each_edit_table_equals_the_direct_build_of_this_runs_slice(tab_name: str) -> None:
+    """편집표는 캐시가 빗나간 회차든 적중한 회차든, 이 회차 조각으로 직접 만든 표와 값이 같다."""
+    table_name, dimensions, value_column, scope_tab = EDIT_TABLES[tab_name]
+    editor_key = EDITOR_OF[tab_name]
+    app = AppTest.from_string(
+        _probed(TEST_SCRIPT, f"test-ref-perf-same-{table_name}"), default_timeout=60
+    )
+    for _ in range(2):  # 빗나간 회차, 적중한 회차
+        app = _open_tab(app, tab_name)
+        expected = build_reference_edit_table(
+            _month_slice(app, table_name),
+            table_name=table_name,
+            dimensions=dimensions,
+            value_column=value_column,
+            display_order=prepare_display_order(_empty_display_order()),
+            page=scopes.PAGE_REFERENCE,
+            tab=scope_tab,
+        )
+        template = app.session_state["test_editor_templates"][editor_key]
+        pd.testing.assert_frame_equal(template, expected)
+
+
+def test_an_unapplied_edit_left_in_a_closed_tab_applies_the_edited_row_only() -> None:
+    """효율 칸을 고친 채 다른 탭으로 갔다가 돌아와 적용해도, 그 칸만 바뀌고 나머지 행은 원본이다."""
+    app = AppTest.from_string(
+        _probed(TWO_PROCESS_TEST_SCRIPT, "test-ref-perf-closed-pending"), default_timeout=60
+    )
+    app = _open_tab(app, "효율")
+    key = editor_widget_key_in(app, "capa_run_rate_editor")
+    edit = {"edited_rows": {0: {"202608": 0.5}}, "added_rows": [], "deleted_rows": []}
+    app.session_state[key] = edit
+    app.session_state["reference_data_active_tab"] = REF_TAB["UPEH"]
+    app.run()
+    assert not app.exception
+    # 닫힌 탭이어도 적용하지 않은 편집이 남은 편집표는 그린다.
+    assert "capa_run_rate_editor_apply" in {button.key for button in app.button}
+
+    app.session_state[key] = edit
+    app = _open_tab(app, "효율")
+    app.session_state[key] = edit
+    next(button for button in app.button if button.key == "capa_run_rate_editor_apply").click()
+    app.run()
+
+    assert not app.exception
+    assert [error.value for error in app.error] == []
+    saved = app.session_state["test_month_updates"]["RQ_RUN_RATE"]
+    assert dict(zip(saved["공정"], saved["CAPA_RUN_RATE"], strict=True)) == {
+        "Process-A": 0.5,
+        "Process-B": 0.9,
+    }
+
+
+_BAD_RUN_RATE_MONTH = (
+    'tables["RQ_RUN_RATE"] = tables["RQ_RUN_RATE"].assign(생산계획년월=[2026081])\n'
+)
+
+
+def test_a_bad_month_shows_the_message_where_that_table_is_used() -> None:
+    """월 형식이 틀린 표는 그 표를 쓰는 탭에서 traceback 이 아니라 오류 문구로 멈춘다."""
+    script = TEST_SCRIPT.replace("\nactive = {", "\n" + _BAD_RUN_RATE_MONTH + "active = {", 1)
+    app = AppTest.from_string(_probed(script, "test-ref-perf-bad-month"), default_timeout=60)
+    app = _open_tab(app, "효율")
+    assert any(
+        "RQ_RUN_RATE의 생산계획년월은 YYYYMM 형식이어야 합니다" in error.value
+        for error in app.error
+    )
+    # 그 표를 쓰지 않는 탭은 연다.
+    app = _open_tab(app, "UPEH")
+    assert [error.value for error in app.error] == []
+    assert "capa_upeh_editor_apply" in {button.key for button in app.button}

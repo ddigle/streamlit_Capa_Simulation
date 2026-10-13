@@ -258,21 +258,31 @@ def get_effective_process_capacity_table(
     return effective_process_capacity_to_month_table(_required_equipment, detail_level)
 
 
+# 캐시가 빗나갈 때만 부르는 프레임 로더. 키가 내용을 정하는 래퍼는 프레임 대신 이것을 받아,
+# 적중한 회차에는 입력 조각을 자르지도 않는다.
+FrameSource = pd.DataFrame | Callable[[], pd.DataFrame]
+
+
+def _frame_from(source: FrameSource) -> pd.DataFrame:
+    return source() if callable(source) else source
+
+
 @st.cache_data(show_spinner=False, max_entries=16)
 def get_route_step_tables(
     cache_key: ScenarioCacheKey,
-    _upeh: pd.DataFrame,
-    _reqb: pd.DataFrame,
+    _upeh: FrameSource,
+    _reqb: FrameSource,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """공정별 Capa STEP 구성 탭의 (요약, 선택 목록).
 
     둘 다 순수 함수인데 rerun 마다 다시 만들고 있었다(721~963ms, 탭이 닫혀 있어도). 쓰는 곳은
     STEP 구성 탭 본문과 STEP 팝업뿐이라 페이지는 **그 탭이 보이거나 팝업이 열린 회차에만** 부른다.
     키는 (reference_version, content_token, start_month, end_month) — 프레임은 해시하지 않는다.
-    캐시가 빗나가면 `route_step_tables` 가 `RQ_REQB` 를 한 번만 전처리해 두 표에 나눠 준다.
+    두 입력은 프레임 또는 로더이고 로더는 빗나갈 때만 부른다. 캐시가 빗나가면
+    `route_step_tables` 가 `RQ_REQB` 를 한 번만 전처리해 두 표에 나눠 준다.
     """
     del cache_key
-    return route_step_tables(_upeh, _reqb)
+    return route_step_tables(_frame_from(_upeh), _frame_from(_reqb))
 
 
 # 기준 정보 편집표 칸 수. 편집표 여섯 개가 나눠 쓴다 — 한 시나리오·기간에 열린 탭 몇 개면
@@ -290,7 +300,7 @@ def get_reference_edit_table(
     value_column: str | None,
     page: str,
     tab: str,
-    _data: pd.DataFrame,
+    _data: FrameSource,
     _display_order: PreparedDisplayOrder | None,
 ) -> pd.DataFrame:
     """기준 정보의 열린 편집표(Wide 변환 → 표시순서 정렬 → 분류 컬럼 재배치).
@@ -301,13 +311,13 @@ def get_reference_edit_table(
     `reference_version` 을 바꾸지 않고 바뀐다.
 
     `_data` 는 키의 `content_token` 을 발급한 바로 그 활성 시나리오에서 키와 같은 기간으로
-    자른 표, `_display_order` 는 `display_order_key` 를 만든 `RQ_DISPLAY_ORDER` 를 준비한
-    것이어야 한다. 다른 것을 넘기면 키와 내용이 어긋난다. 검증 예외는 캐시되지 않고,
-    `st.cache_data` 는 꺼낼 때마다 사본을 준다.
+    자른 표(또는 그 표를 자르는 로더 — 빗나갈 때만 부른다), `_display_order` 는
+    `display_order_key` 를 만든 `RQ_DISPLAY_ORDER` 를 준비한 것이어야 한다. 다른 것을 넘기면
+    키와 내용이 어긋난다. 검증 예외는 캐시되지 않고, `st.cache_data` 는 꺼낼 때마다 사본을 준다.
     """
     del cache_key, display_order_key
     return build_reference_edit_table(
-        _data,
+        _frame_from(_data),
         table_name=table_name,
         dimensions=dimensions,
         value_column=value_column,
