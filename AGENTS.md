@@ -750,6 +750,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     오류(표시순서 규칙 충돌 등)는 그 탭에만 뜬다. 대당 Capa 탭의 측정률 가정·제외 안내도 그 탭이 열린
     회차에만 그리므로 `제외 기준정보 확인` 상자는 `remembered_expander`(key
     `unit_capacity_exclusions_expander`)로 편 상태를 지킨다(`tests/test_calculation_result_tabs.py`).
+    소요대수 CSV 바이트는 표 내용 지문 키 캐시(`simulation_cache.get_export_csv`)라 내려받기를 누르지 않은
+    회차마다 상세 2,660행 내보내기를 다시 만들지 않는다 — 필터·상세가 바뀌면 표가 바뀌어 키가 바뀐다.
   - 대당 Capa 제외 표는 `대당 Capa` 탭 하나가 그린다. 두 탭이 한 페이지에 오면서 같은 표를
     같은 파일명으로 두 번 내리게 돼 `소요대수` 쪽에서는 걷어냈다.
   - **표를 보는 조건은 사이드바 `표 조건` 카드**(`sidebar_status.table_card`, 이름
@@ -1300,6 +1302,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않는다, 공정을 안 고르면 같은 문구로 멈춘다), 원본 공정명의 앞뒤 공백(계산이 strip 한다), 거른 결과가
     빔. 재공 현황(제품 선택)은 옛 길만 쓴다. 비교 테스트가 분류 수준·PKG·오류·공백 공정명마다 옛 길과
     같은 프레임인지 본다.
+  - 내려받기 CSV 바이트는 매 회차 다시 만들지 않는다 — 주차별 가용설비 양식은
+    `simulation_cache.get_weekly_availability_template_csv`(공정 차례·기간·저장값 지문 키), 결과 CSV 는
+    `get_export_csv`(표 내용 지문 키, `csv_export_key`). 콜러블 지연 생성은 쓰지 않는다(TODO [결정]
+    2026-09-18). 빗나가면 그 회차에 바로 만들어 오류는 지금처럼 화면에 드러난다.
 - `src/capa_simulation/components/reference_csv_tools.py`
   - 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 다운로드·Excel 표 붙여넣기 폼과 적용 결과
     알림을 공통 제공한다. 붙여넣기는 모두 팝업이다 — `render_reference_clipboard_form` 이

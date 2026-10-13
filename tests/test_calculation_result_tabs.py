@@ -10,8 +10,10 @@
 """
 
 from collections.abc import Callable
+from io import BytesIO
 from typing import Any
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
@@ -108,3 +110,26 @@ def test_a_month_table_error_stays_in_its_own_tab(monkeypatch: pytest.MonkeyPatc
 
     _open_calc_tab(app, SECUREMENT_TAB)
     assert [element.value for element in app.error] == []
+
+
+def _required_csv(app: AppTest) -> pd.DataFrame:
+    downloads = app.session_state["captured_downloads"]
+    data = downloads["download_required_equipment_summary_csv"]["data"]
+    return pd.read_csv(BytesIO(bytes(data)), encoding="utf-8-sig", dtype="object")
+
+
+def test_the_required_csv_follows_the_table_filter() -> None:
+    """소요대수 CSV 바이트는 표 내용 지문 키 캐시다. 필터로 표가 바뀌면 파일도 그 표를 싣는다."""
+    app = _open_calc_tab(
+        AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60), REQUIRED_TAB
+    )
+    both = _required_csv(app)
+    assert set(both["공정"]) == {"Process-A", "Process-B"}
+
+    app.multiselect(key="required_equipment_filter_공정").set_value(["Process-B"]).run()
+    assert not app.exception
+    assert set(_required_csv(app)["공정"]) == {"Process-B"}
+
+    app.multiselect(key="required_equipment_filter_공정").set_value([]).run()
+    assert not app.exception
+    pd.testing.assert_frame_equal(_required_csv(app), both)

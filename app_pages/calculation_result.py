@@ -10,6 +10,9 @@
 (2026-10-06 사용자 결정). HOME 주요공정 프리셋과는 무관하다.
 """
 
+from functools import partial
+
+import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.capacity_assumption_notice import (
@@ -58,9 +61,11 @@ from capa_simulation.services.securement_rate import (
     securement_rate_to_month_table,
 )
 from capa_simulation.services.simulation_cache import (
+    csv_export_key,
     display_order_digest,
     get_display_ordered_values,
     get_effective_process_capacity_table,
+    get_export_csv,
     get_required_month_table,
     get_scenario_result_summary,
     get_scenario_securement_rate,
@@ -96,6 +101,17 @@ TAB_NAMES = (
     ":material/precision_manufacturing: 소요대수",
     ":material/monitoring: 확보율",
 )
+
+
+def _required_export_csv(table: pd.DataFrame, classification_columns: list[str]) -> bytes:
+    """소요대수 표의 내려받기 CSV 바이트(소수 둘째 자리). 화면 표와 같은 분류로 만든다."""
+    export = build_hierarchical_monthly_export(
+        table,
+        classification_columns=classification_columns,
+        column_labels=COLUMN_LABELS,
+        decimal_places=2,
+    )
+    return export.to_csv(index=False, float_format="%.2f").encode("utf-8-sig")
 
 
 render_page_header("산출 결과")
@@ -405,14 +421,13 @@ else:
                         ),
                         key="download_required_exclusions_csv",
                     )
-            required_export = build_hierarchical_monthly_export(
-                filtered_required_table,
-                classification_columns=table_dimensions,
-                column_labels=COLUMN_LABELS,
-                decimal_places=2,
-            )
-            required_csv = required_export.to_csv(index=False, float_format="%.2f").encode(
-                "utf-8-sig"
+            # 내보내기 표 조립·직렬화(상세 2,660행에서 약 70ms)는 표 내용 지문 키 캐시다 —
+            # 내려받기를 누르지 않은 회차마다 다시 만들지 않는다. 필터·상세가 바뀌면 키가 바뀐다.
+            required_csv = get_export_csv(
+                csv_export_key(
+                    "required_equipment", filtered_required_table, table_dimensions, "2"
+                ),
+                _build=partial(_required_export_csv, filtered_required_table, table_dimensions),
             )
             required_view_name = "Detail" if show_detail else "Summary"
             render_table_heading(

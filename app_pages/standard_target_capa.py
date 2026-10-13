@@ -13,6 +13,7 @@ from __future__ import annotations
 from calendar import monthrange
 from collections.abc import Callable
 from datetime import date
+from functools import partial
 from math import isfinite
 from typing import cast
 
@@ -73,11 +74,15 @@ from capa_simulation.services.display_order_scopes import (
 from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
+    csv_export_key,
     display_order_digest,
+    frame_digest,
     get_display_ordered_values,
+    get_export_csv,
     get_standard_target_split,
     get_standard_target_summary,
     get_standard_target_weekly_result,
+    get_weekly_availability_template_csv,
     scenario_cache_key,
     standard_target_weekly_cache_key,
 )
@@ -90,7 +95,6 @@ from capa_simulation.services.standard_target_logic import (
     build_standard_target_logic_analysis,
 )
 from capa_simulation.services.weekly_availability_input import (
-    build_weekly_availability_template,
     parse_weekly_availability_clipboard,
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
@@ -484,6 +488,19 @@ def _render_logic_analysis(
     )
 
 
+def _export_csv(
+    table: pd.DataFrame, classification_columns: list[str], decimal_places: int
+) -> bytes:
+    """결과 표의 내려받기 CSV 바이트. 화면 표와 같은 분류·소수 자리로 만든다."""
+    export = build_hierarchical_monthly_export(
+        table,
+        classification_columns=classification_columns,
+        column_labels=COLUMN_LABELS,
+        decimal_places=decimal_places,
+    )
+    return export.to_csv(index=False).encode("utf-8-sig")
+
+
 def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessLabels) -> None:
     # 순수 표시 상수를 그리는 안내 표다. CSV 출구가 없어 표시명을 바로 입힌다.
     with st.expander("예외 처리 공정", expanded=False):
@@ -731,10 +748,14 @@ target_processes = selected_processes or process_options
 # 양식은 저장된 값을 채워 내려 준다. 저장값이 없는 칸은 빈칸이고, 붙여넣기는 빈칸을 「그대로
 # 둠」으로 읽는다 — 0 으로 채워 내려 주면 일부만 고쳐 되붙일 때 다른 공정·주차가 0 대로
 # 덮인다(2026-09-29 버그 보고).
-template = build_weekly_availability_template(
-    target_processes, start_date, end_date, saved=availability
+# 바이트는 (공정 차례·기간·저장값 지문) 키 캐시다 — 결과와 무관한 조작마다 다시 만들지 않는다.
+template_csv = get_weekly_availability_template_csv(
+    tuple(target_processes),
+    start_date,
+    end_date,
+    frame_digest(availability),
+    _saved=availability,
 )
-template_csv = template.to_csv(index=False).encode("utf-8-sig")
 
 
 def _close_dialog() -> None:
@@ -985,13 +1006,13 @@ else:
             PAGE_STANDARD_TARGET,
             TAB_TARGET_CAPACITY,
         )
-        output_export = build_hierarchical_monthly_export(
-            output_table,
-            classification_columns=classification_columns,
-            column_labels=COLUMN_LABELS,
-            decimal_places=decimal_places,
+        # 내보내기 표 조립·직렬화는 표 내용 지문 키 캐시다(내려받기를 누르지 않은 회차의 비용).
+        output_csv = get_export_csv(
+            csv_export_key(
+                "standard_target", output_table, classification_columns, f"{decimal_places}"
+            ),
+            _build=partial(_export_csv, output_table, classification_columns, decimal_places),
         )
-        output_csv = output_export.to_csv(index=False).encode("utf-8-sig")
         render_table_heading(
             f"주차별 {output_title}",
             csv=output_csv,

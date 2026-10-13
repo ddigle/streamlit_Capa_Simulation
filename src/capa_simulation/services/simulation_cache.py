@@ -79,6 +79,9 @@ from capa_simulation.services.unit_capacity import (
     unit_capacity_to_month_table,
 )
 from capa_simulation.services.usage_basis import usage_excluded_equipment
+from capa_simulation.services.weekly_availability_input import (
+    build_weekly_availability_template,
+)
 from capa_simulation.services.weighted_unit_capacity import (
     effective_process_capacity_to_month_table,
 )
@@ -816,6 +819,61 @@ def get_standard_target_weekly_result(
         _reference_tables=_reference_tables,
         _weekly_availability=_weekly_availability,
     )
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_weekly_availability_template_csv(
+    processes: tuple[str, ...],
+    start_date: date,
+    end_date: date,
+    availability_key: str,
+    _saved: pd.DataFrame,
+) -> bytes:
+    """표준 목표 주차별 가용설비 CSV 양식의 바이트(BOM 이 붙은 UTF-8).
+
+    양식(공정 × 주차, 저장된 가용대수를 싣는다)과 그 직렬화를 매 회차 다시 했다(합성 표본
+    9,170행에서 약 12ms, 샘플 관측). 키는 입력 전부다 — 공정 **차례**(양식 행 차례가 그것을
+    따른다)·시작·종료일·저장된 가용대수의 내용 지문(`frame_digest`). `_saved` 는 그 지문을 만든
+    바로 그 프레임이어야 한다.
+    지연 생성(콜러블)은 쓰지 않는다(TODO [결정] 2026-09-18 — 콜러블의 예외는 삼켜지고 AppTest 가
+    바이트를 못 본다).
+    """
+    del availability_key
+    template = build_weekly_availability_template(
+        list(processes), start_date, end_date, saved=_saved
+    )
+    return template.to_csv(index=False).encode("utf-8-sig")
+
+
+# 내려받기 CSV 바이트의 키 — (용도, 표 내용 지문, 분류 컬럼, 서식). 서식은 소수 자리·값 서식처럼
+# 바이트를 정하는 나머지 인자를 글자로 적은 것이다.
+CsvExportKey = tuple[str, str, tuple[str, ...], str]
+
+
+def csv_export_key(
+    purpose: str,
+    table: pd.DataFrame,
+    classification_columns: Sequence[str],
+    format_text: str,
+) -> CsvExportKey:
+    """화면 표를 내보내는 CSV 의 키. 표는 내용 지문이라 필터·표시순서·조건이 무엇이든 같은 표면
+    같다."""
+    return (purpose, frame_digest(table), tuple(classification_columns), format_text)
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_export_csv(cache_key: CsvExportKey, _build: Callable[[], bytes]) -> bytes:
+    """화면 표의 내려받기 CSV 바이트. 키가 같으면 `_build` 를 부르지 않는다.
+
+    내려받기를 누르지 않아도 매 회차 내보내기 표 조립과 직렬화를 했다(소요대수 상세 2,660행에서
+    약 70ms, 합성 표본의 샘플 관측). 콜러블 지연 생성은 쓰지 않는다(TODO [결정] 2026-09-18) — 대신
+    표 내용 지문 키로 바이트를 둔다. `_build` 는 **키를 만든 바로 그 표와 키에 적은 서식으로만**
+    바이트를 만드는 함수여야 한다(`functools.partial` 로 인자를 박아 넘긴다). 빗나가면 이 회차에서
+    바로 부르므로 오류는 지금처럼 화면에 드러나고 캐시되지 않는다. 코드 상수(컬럼 라벨)는 키에
+    넣지 않는다(키 방침).
+    """
+    del cache_key
+    return _build()
 
 
 # 생산 계획 편집표 원본의 칸 수. 한 시나리오·조회기간에 표 하나라 세션·시나리오 몇 개를 오가도
