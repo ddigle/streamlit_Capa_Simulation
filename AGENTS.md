@@ -739,7 +739,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     안내만 남긴다 — 경로 하나하나가 행이라 전 공정을 그리면 표 생성·정렬·CSV 인코딩·Plotly
     조립이 모두 행 수에 비례해 커진다. 필터를 앞으로 당기는 것이 아니라 그 계산 자체를
     타지 않는다. 공정 필터 placeholder 도 뷰에 따라 달라진다.
-  - 대당 Capa·소요대수 **프레임(pickle 약 16MB)을 풀지 않는다.** 탭과 무관하게 쓰는 작은 값(제외
+  - 대당 Capa·소요대수 **프레임(pickle 약 16MB, 합성 표본의 샘플 관측)을 풀지 않는다.** 탭과 무관하게 쓰는 작은 값(제외
     목록·측정률 가정·대당 Capa 행 수·공정 고유값)은 `simulation_cache.get_scenario_result_summary`,
     표는 키 전용 캐시(`get_required_month_table`·`get_effective_process_capacity_table`·
     `get_scenario_securement_rate`)에서 꺼낸다 — 빗나갈 때만 그 캐시가 안에서 프레임을 받는다. 정렬이
@@ -751,7 +751,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     회차에만 그리므로 `제외 기준정보 확인` 상자는 `remembered_expander`(key
     `unit_capacity_exclusions_expander`)로 편 상태를 지킨다(`tests/test_calculation_result_tabs.py`).
     소요대수 CSV 바이트는 표 내용 지문 키 캐시(`simulation_cache.get_export_csv`)라 내려받기를 누르지 않은
-    회차마다 상세 2,660행 내보내기를 다시 만들지 않는다 — 필터·상세가 바뀌면 표가 바뀌어 키가 바뀐다.
+    회차마다 상세 내보내기(합성 표본 2,660행에서 약 70ms, 샘플 관측)를 다시 만들지 않는다 — 필터·상세가 바뀌면 표가 바뀌어 키가 바뀐다.
   - 대당 Capa 제외 표는 `대당 Capa` 탭 하나가 그린다. 두 탭이 한 페이지에 오면서 같은 표를
     같은 파일명으로 두 번 내리게 돼 `소요대수` 쪽에서는 걷어냈다.
   - **표를 보는 조건은 사이드바 `표 조건` 카드**(`sidebar_status.table_card`, 이름

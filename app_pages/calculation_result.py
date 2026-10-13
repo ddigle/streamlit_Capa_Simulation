@@ -150,9 +150,9 @@ try:
     capacity_cache_key = scenario_cache_key(
         reference_version, active_scenario, effective_start, effective_end
     )
-    # 대당 Capa·소요대수 프레임(pickle 약 16MB)은 풀지 않는다. 탭과 무관하게 쓰는 작은 값은 요약
-    # 캐시에서, 표는 키 전용 캐시에서 꺼낸다 — 빗나갈 때만 그 캐시가 안에서 프레임을 받는다.
-    # 계산 오류는 요약 캐시가 이 자리에서 「계산 멈춤」과 함께 먼저 드러낸다.
+    # 대당 Capa·소요대수 프레임(pickle 약 16MB, 합성 표본의 샘플 관측)은 풀지 않는다. 탭과 무관하게
+    # 쓰는 작은 값은 요약 캐시에서, 표는 키 전용 캐시에서 꺼낸다 — 빗나갈 때만 그 캐시가 안에서
+    # 프레임을 받는다. 계산 오류는 요약 캐시가 이 자리에서 「계산 멈춤」과 함께 먼저 드러낸다.
     display_order_key = display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])
     summary = stop_calculation_on_error(
         get_scenario_result_summary,
@@ -421,8 +421,9 @@ else:
                         ),
                         key="download_required_exclusions_csv",
                     )
-            # 내보내기 표 조립·직렬화(상세 2,660행에서 약 70ms)는 표 내용 지문 키 캐시다 —
-            # 내려받기를 누르지 않은 회차마다 다시 만들지 않는다. 필터·상세가 바뀌면 키가 바뀐다.
+            # 내보내기 표 조립·직렬화(합성 표본 상세 2,660행에서 약 70ms, 샘플 관측)는 표 내용
+            # 지문 키 캐시다 — 내려받기를 누르지 않은 회차마다 다시 만들지 않는다. 필터·상세가
+            # 바뀌면 키가 바뀐다.
             required_csv = get_export_csv(
                 csv_export_key(
                     "required_equipment", filtered_required_table, table_dimensions, "2"
