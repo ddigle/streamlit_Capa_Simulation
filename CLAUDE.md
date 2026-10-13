@@ -130,7 +130,8 @@ DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_sim
 
 - 편집 적용마다 `revision`을 올리고 `content_token`을 재발급한다. 편집 UI는 `revision`을,
   **계산·Figure 캐시 키는 반드시 `content_token`**을 본다 — `revision` 번호는 내용이 달라도
-  겹칠 수 있다.
+  겹칠 수 있다. 큰 DataFrame 을 `st.cache_data` 해시 인자로 넘기지 않는다 — Streamlit 1.63 은 5만 행 넘는
+  DataFrame 을 1만 행 표본으로만 해시해 한 행 편집을 놓친다(`_` 인자 + 키는 `content_token`·`frame_digest`).
 - 리비전은 append-only다. 과거 리비전을 갱신하지 않고 새 전체 리비전으로만 저장한다.
   공식버전 발행도 append-only.
 - 미저장 세션 편집과 저장 리비전을 구분한다. 미저장 편집은 세션 종료 시 사라진다.

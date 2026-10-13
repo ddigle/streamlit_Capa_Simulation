@@ -1310,8 +1310,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `get_pkg_equivalent_standard_target`)가 **키만 해시해** 캐시한다. 키는
     `standard_target_weekly_cache_key` — 시나리오 키(월은 달력 주차의 귀속 달)·가용대수 내용 지문·
     시작·종료일·분류 수준·공정 선택·제품 선택이고, 소요대수·`RQ_RUN_DAY`·`RQ_PKG_PLAN` 은 캐시가 제
-    안에서 키의 시나리오·월로 얻는다. 소요대수(5만 행 넘음)를 해시 인자로 넘기던 동안 Streamlit 이 1만 행
-    표본만 해시해 한 행 편집을 놓치고 옛 숫자를 냈다(`tests/test_standard_target_weekly_cache.py`).
+    안에서 키의 시나리오·월로 얻는다. 소요대수(5만 행 넘음)를 해시 인자로 넘기면 Streamlit 이 1만 행
+    표본만 해시해 한 행 편집을 놓치고 옛 숫자를 낸다(5장 3, `tests/test_standard_target_weekly_cache.py`).
     재공 현황도 같은 캐시를 제품 선택을 실어 부른다 — 제품 선택이 키에 없으면 그 결과가 표준 목표에 적중한다.
   - 표시 항목·PKG 기준·팝업처럼 결과와 무관한 조작이 소요대수를 다시 풀지 않는다. `예외 처리 공정` 의 행
     수와 공정 필터 선택지 재료(ER 을 뺀 `RQ_REQB` 공정)는 `simulation_cache.get_standard_target_summary`
@@ -4483,7 +4483,10 @@ RQ_MODULE
    — 리비전은 append-only 라 같은 리비전이면 내용이 같다. 모듈수(`RQ_MODULE`)는 리비전이
    아니라 시나리오 dataset 에서 오지만, dataset 은 시나리오를 만들 때 한 번 쓰이고 그 뒤로는
    앱 시작 때의 마이그레이션만 고치므로 같은 전제가 선다. 계산 캐시는 **시나리오 전체 기간**
-   단위이고 조회기간은 그 결과를 자른다.
+   단위이고 조회기간은 그 결과를 자른다. **큰 DataFrame 을 `st.cache_data` 의 해시 인자로 넘기지 않는다** —
+   Streamlit 1.63 은 5만 행 넘는 DataFrame 인자를 1만 행 표본(`df.sample(10_000)`)으로만 해시해, 표본 밖 한 행
+   편집이 옛 결과에 적중한다. 그런 프레임은 `_` 인자로 넘기고 키에는 그 내용을 정하는 `content_token`(시나리오
+   키)이나 `frame_digest` 를 싣는다.
 4. **계산 함수는 가능한 순수 함수로 유지한다.** 서비스 함수 내부에 UI 상태 접근을 넣지
    않는다. Streamlit 캐시는 정해진 경계 모듈에만 둔다 — `services/simulation_cache.py`,
    `persistence/cache.py`·`equipment_cache.py`(불변 리비전 스냅샷과 공용 표시순서·설비
