@@ -3075,9 +3075,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     바꿔 `map`, 빈 칸은 빈 칸, 매핑이 없으면 받은 프레임 그대로 — 그래서 돌려받은 것을 고치지 않는다).
     캐시가 들고 있는 프레임을 넘겨도 되고, CSV 로 내보낼 프레임에는 쓰지 않는다.
   - `ProcessLabels.series(values)` 는 행마다 `apply_process_label` 을 부른 것과 값·dtype(object)·인덱스가
-    **같다**. 값이 모두 글자면 고유값마다 한 번 바꿔 펼치고(STEP 구성 요약 39,060행 15ms → 1ms, 합성 표본의
-    샘플 관측), 빈 칸(`None`·NaN·`pd.NA` — 종류마다 글자가 다르다)은 행마다, 글자 아닌 값이 섞이면 예전처럼
-    행마다 바꾼다. `tests/test_process_label_series.py` 가 옛 식과 견준다.
+    **같다**. 값이 모두 글자면 고유값마다 한 번 바꿔 펼치고, 빈 칸(`None`·NaN·`pd.NA` — 종류마다 글자가
+    다르다)은 행마다, 글자 아닌 값이 섞이면 모두 행마다 바꾼다. `tests/test_process_label_series.py` 가
+    행마다 부른 결과와 견준다.
   - **`ProcessLabels.unique_format_func(options, reserved=…)`** 는 선택 상자 **한 개**의 `format_func` 다
     (2026-10-10 병합 전 리뷰). Streamlit 1.63 의 selectbox·multiselect 는 브라우저와 값을 **서식 글자**로
     주고받아, 같은 글자가 둘이면 selectbox 는 마지막·multiselect 는 첫 선택지로 돌아온다 — 표시명이
