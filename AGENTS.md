@@ -3960,6 +3960,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기준 72초 대 0.12초이고, HOME 은 Figure 하나에 7.7초를 쓰고 있었다.
   - flush 를 잊으면 테두리·격자·라벨이 통째로 빠져 화면에서 바로 드러난다.
     `tests/test_plotly_layout.py` 가 그 계약을 고정한다.
+  - **반영은 Plotly 검증을 건너뛴다**(한 번에 넣어도 검증이 LOB 월 Figure 67ms 중 61ms 였다).
+    `flush_layout_items` 는 항목을 검증이 남기는 꼴(각도 -180~180, None·빈 하위 칸 빼기, `x1`→`x`)의
+    **새** dict 로 옮겨 `_validate` 를 끈 채 넣는다 — 호출부 dict 를 Figure 가 붙잡지 않는다. 옮길 수
+    없는 항목(모르는 속성·밑줄 줄임 키·범위 밖 숫자·모르는 색)이 하나라도 있으면 그 Figure 는 예전처럼
+    검증해 넣어 오타는 지금처럼 예외다. 스위치 `plotly_validation()` 을 켜면 고치기 전 경로를 탄다 —
+    `tests/test_plotly_fast_path.py` 가 HOME 네 묶음·덤벨·가용 GAP 그림을 두 경로로 그려 JSON 이 같은지,
+    HOME 에서 검증 경로로 넘어간 Figure 가 없는지 본다. 비공개 `_validate` 라 `plotly>=5.24,<7` 고정에 기댄다.
   - 표 행의 면색이 모두 같으면 칸마다 사각형을 그리지 않는다. 도형 수가 그대로 비용이다.
 - `src/capa_simulation/components/home_figures.py`, `home_figure_common.py`, `home_lob_figures.py`,
   `home_plan_detail_figures.py`, `home_key_process_figures.py`, `home_bottleneck_figures.py`,

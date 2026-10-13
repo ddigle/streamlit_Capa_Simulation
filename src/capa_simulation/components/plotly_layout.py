@@ -5,10 +5,14 @@
 from __future__ import annotations
 
 import html
-from collections.abc import Sequence
-from typing import Any
+import numbers
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, cast
 
 import plotly.graph_objects as go
+from plotly.validator_cache import ValidatorCache
 
 from capa_simulation.components.home_dimensions import (
     CORNER_NOTE_RIGHT_PADDING_PX,
@@ -23,6 +27,28 @@ TRANSPARENT_COLOR = tokens.TRANSPARENT
 
 # Figure 에 붙여 두는 누적함. 이름은 Plotly 속성과 겹치지 않아야 한다.
 _PENDING_LAYOUT_ITEMS = "_capa_pending_layout_items"
+
+
+# 앱이 만든 레이아웃 항목을 Plotly 검증 없이 넣을지 정하는 **한 스위치**. 평소에는 꺼져
+# 있어(검증을 건너뛴다) 빠르고, 테스트가 `plotly_validation()` 으로 켜면 고치기 전 경로(전부 검증)를
+# 그대로 탄다. 두 경로의 Figure JSON 이 같다는 것을 테스트가 늘 두 경로를 다 돌려 확인한다
+# (`tests/test_plotly_fast_path.py`). 검증을 건너뛰는 길은 Plotly 의 비공개 인자 `_validate` 에
+# 기댄다 — `plotly>=5.24,<7` 고정이 지키고, 인자가 사라지면 그 테스트가 먼저 깨진다.
+_PLOTLY_VALIDATION: ContextVar[bool] = ContextVar("capa_plotly_validation", default=False)
+
+
+@contextmanager
+def plotly_validation() -> Iterator[None]:
+    """이 블록 안에서는 검증을 건너뛰지 않는다. 고치기 전 경로와 견주는 테스트용 스위치다."""
+    token = _PLOTLY_VALIDATION.set(True)
+    try:
+        yield
+    finally:
+        _PLOTLY_VALIDATION.reset(token)
+
+
+def plotly_validation_enabled() -> bool:
+    return _PLOTLY_VALIDATION.get()
 
 
 def static_chart_config() -> dict[str, Any]:
@@ -92,15 +118,179 @@ def append_layout_items(
 
 
 def flush_layout_items(*figures: go.Figure) -> None:
-    """모아 둔 항목을 Figure 마다 한 번에 반영한다. 여러 번 불러도 결과가 같다."""
+    """모아 둔 항목을 Figure 마다 한 번에 반영한다. 여러 번 불러도 결과가 같다.
+
+    반영할 때 Plotly 검증을 건너뛴다. 한 번에 넣어도 검증이 항목 수만큼 들어, LOB 월 Figure
+    (도형 156·주석 578)에서 67ms 중 61ms 가 검증이었다. 대신 항목을 **Plotly 가 검증 뒤에 남기는
+    꼴**(`_plain_layout_item`)로 새 dict 에 옮겨 담는다 — 각도 -180~180, None·빈 하위 칸 빼기,
+    `x1`→`x` 같은 축 이름 정리. 새로 담으므로 호출부의 dict 를 Figure 가 붙잡지 않는다(검증 없이
+    넣으면 Plotly 는 받은 dict 를 그대로 둔다 — 공용 dict 를 나중에 고치면 캐시 속 그림까지 바뀐다).
+
+    그 꼴로 옮길 수 없는 항목(모르는 속성 이름·밑줄 줄임 키·규칙을 갖추지 않은 속성 종류)이 하나라도
+    있으면 그 Figure 는 예전처럼 `update_layout` 으로 검증해 넣는다. 오타는 지금처럼 예외가 된다.
+    반영한 뒤에는 누적함을 버린다. 그 뒤의 `append_layout_items` 는 Figure 에 든 항목에서 다시 연다.
+    """
+    validate = plotly_validation_enabled()
     for figure in figures:
         pending = getattr(figure, _PENDING_LAYOUT_ITEMS, None)
         if pending is None:
             continue
-        figure.update_layout(
-            shapes=pending["shapes"],
-            annotations=pending["annotations"],
-        )
+        plain = None if validate else _plain_layout_items(pending)
+        if plain is None:
+            figure.update_layout(
+                shapes=pending["shapes"],
+                annotations=pending["annotations"],
+            )
+        else:
+            layout = figure.layout
+            previous = layout._validate
+            layout._validate = False
+            try:
+                for prop, items in plain.items():
+                    if items:
+                        layout[prop] = items
+            finally:
+                layout._validate = previous
+        delattr(figure, _PENDING_LAYOUT_ITEMS)
+
+
+class _NotPlain(Exception):
+    """검증 없이 옮길 수 없는 항목. 그 Figure 는 검증 경로로 넣는다."""
+
+
+# 레이아웃 항목의 Plotly 클래스. `_valid_props`·`_path_str` 로 속성 이름과 검증기를 찾는다.
+_LAYOUT_ITEM_CLASSES: dict[str, Any] = {
+    "shapes": go.layout.Shape,
+    "annotations": go.layout.Annotation,
+}
+
+# (클래스, 속성) → 옮기는 규칙. 검증기를 한 번만 찾아 둔다.
+_PROP_RULES: dict[tuple[Any, str], tuple[str, Any]] = {}
+
+# 글자 값이 몇 갈래뿐인 검증기(열거·색·점선·플래그·참/거짓)의 (경로, 속성, 값) → 검증한 값. 값마다
+# 한 번만 Plotly 로 검증하고 그 결과를 쓴다. 잘못된 값은 여기서 예외가 되어 검증 경로로 넘어간다.
+_COERCED_VALUES: dict[tuple[str, str, object], object] = {}
+_COERCED_VALUES_LIMIT = 4096
+_NOT_SEEN = object()
+
+_MEMO_VALIDATORS = frozenset(
+    {
+        "EnumeratedValidator",
+        "ColorValidator",
+        "DashValidator",
+        "FlaglistValidator",
+        "BooleanValidator",
+        "SubplotidValidator",
+    }
+)
+
+
+def _prop_rule(owner: Any, prop: str) -> tuple[str, Any]:
+    key = (owner, prop)
+    rule = _PROP_RULES.get(key)
+    if rule is not None:
+        return rule
+    if prop not in owner._valid_props:
+        raise _NotPlain(prop)
+    validator = ValidatorCache.get_validator(owner._path_str, prop)
+    kind = type(validator).__name__
+    if kind == "CompoundValidator":
+        rule = ("compound", validator.data_class)
+    elif kind == "AngleValidator":
+        rule = ("angle", None)
+    elif kind == "StringValidator":
+        rule = ("string", validator)
+    elif kind == "AnyValidator":
+        rule = ("any", None)
+    elif kind == "NumberValidator":
+        rule = ("number", validator)
+    elif kind == "IntegerValidator":
+        rule = ("integer", validator)
+    elif kind in _MEMO_VALIDATORS:
+        rule = ("memo", validator)
+    else:
+        raise _NotPlain(prop)
+    _PROP_RULES[key] = rule
+    return rule
+
+
+def _plain_value(owner: Any, prop: str, value: Any) -> Any:
+    kind, detail = _prop_rule(owner, prop)
+    if kind == "compound":
+        if not isinstance(value, Mapping):
+            raise _NotPlain(prop)
+        return _plain_layout_item(detail, value)
+    if kind == "any":
+        if isinstance(value, (str, numbers.Number)):
+            return value
+        raise _NotPlain(prop)
+    if kind in ("number", "integer"):
+        # 값은 그대로 둔다. 종류와 범위(NaN 은 범위 밖)만 Plotly 와 같게 본다.
+        numeric_type = numbers.Number if kind == "number" else int
+        if isinstance(value, numeric_type) and (
+            not detail.has_min_max or detail.min_val <= value <= detail.max_val
+        ):
+            return value
+        raise _NotPlain(prop)
+    if kind == "angle":
+        if isinstance(value, numbers.Real) and not isinstance(value, bool):
+            return (cast(float, value) + 180) % 360 - 180
+        raise _NotPlain(prop)
+    if kind == "string":
+        # Plotly 의 문자열 검증: 글자는 그대로, 숫자는 str 로(엄격하지 않을 때), 빈 글자 금지·
+        # 정해진 값은 따로 본다.
+        if isinstance(value, str):
+            if (detail.no_blank and not value) or (detail.values and value not in detail.values):
+                raise _NotPlain(prop)
+            return value
+        if isinstance(value, (int, float)) and not detail.strict:
+            return _plain_value(owner, prop, str(value))
+        raise _NotPlain(prop)
+    # memo: 글자·참거짓 값만 기억한다. 숫자는 갈래가 끝없어 기억하지 않는다.
+    if not isinstance(value, (str, bool)):
+        raise _NotPlain(prop)
+    memo_key = (owner._path_str, prop, value)
+    # 세션 스레드가 함께 쓰는 dict 다. `in` 뒤에 꺼내면 그 사이 다른 스레드가 비울 수 있어
+    # 한 번에 꺼낸다.
+    known = _COERCED_VALUES.get(memo_key, _NOT_SEEN)
+    if known is not _NOT_SEEN:
+        return known
+    try:
+        coerced = detail.validate_coerce(value)
+    except ValueError as error:
+        raise _NotPlain(prop) from error
+    if len(_COERCED_VALUES) >= _COERCED_VALUES_LIMIT:
+        _COERCED_VALUES.clear()
+    _COERCED_VALUES[memo_key] = coerced
+    return coerced
+
+
+def _plain_layout_item(owner: Any, item: Mapping[str, Any]) -> dict[str, Any]:
+    """항목 하나를 Plotly 가 검증 뒤에 남기는 꼴의 **새** dict 로 옮긴다."""
+    if not isinstance(item, Mapping):
+        raise _NotPlain(type(item).__name__)
+    plain: dict[str, Any] = {}
+    for prop, value in item.items():
+        if value is None:
+            continue
+        converted = _plain_value(owner, prop, value)
+        if converted is None or (isinstance(converted, dict) and not converted):
+            continue
+        plain[prop] = converted
+    return plain
+
+
+def _plain_layout_items(
+    pending: Mapping[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]] | None:
+    """누적함 전부를 옮긴다. 하나라도 옮길 수 없으면 None(그 Figure 는 검증 경로)."""
+    try:
+        return {
+            prop: [_plain_layout_item(_LAYOUT_ITEM_CLASSES[prop], item) for item in pending[prop]]
+            for prop in ("shapes", "annotations")
+        }
+    except _NotPlain:
+        return None
 
 
 def add_figure_outer_border(
