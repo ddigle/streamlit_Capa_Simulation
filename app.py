@@ -148,8 +148,9 @@ enable_sync_state_if_managed()
 # 10초에 한 번만 실제로 쓴다.
 heartbeat_if_managed()
 
-# rerun 한 번 동안 시나리오 DB 인스턴스를 잡아 둔다. 사이드바가 rerun 마다 여는 연결 3개가
-# 각자 인스턴스를 다시 만들지 않게 하는 것이 전부이고, rerun 이 끝나면 풀린다.
+# rerun 한 번 동안 시나리오 DB 인스턴스를 잡아 둔다. 그 회차의 연결들이 각자 인스턴스를 다시
+# 만들지 않게 하는 것이 전부이고, rerun 이 끝나면 풀린다. 핀은 그 회차의 **첫 연결 때** 잡히므로
+# DB 를 한 번도 읽지 않는 회차(캐시만 쓰는 화면의 재실행)는 인스턴스를 열지 않는다.
 with pinned_connections(DUCKDB_PATH):
     try:
         bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
@@ -344,8 +345,8 @@ with pinned_connections(DUCKDB_PATH):
         close_period_dialog()
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
-    # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명이 같다 — 페이지가 끝나거나
-    # `st.stop()`·`st.rerun()` 으로 빠져나가면 풀린다. 다른 화면에는 걸지 않는다.
+    # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명·게으름이 같다 — 첫 연결 때 잡히고,
+    # 페이지가 끝나거나 `st.stop()`·`st.rerun()` 으로 빠져나가면 풀린다. 다른 화면에는 걸지 않는다.
     equipment_pin: AbstractContextManager[None] = (
         pinned_connections(EQUIPMENT_DUCKDB_PATH)
         if current_spec is not None and current_spec.uses_equipment_db
