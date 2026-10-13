@@ -132,7 +132,7 @@ def render_scenario_management(
         # `리비전 저장`으로 떨어진다.
         required=True,
     )
-    # 월 머지·연도 Shift 가 메모한 원본(리비전 하나에 합성 약 140MB)은 그 모드에서만 둔다.
+    # 월 머지·연도 Shift 가 메모한 원본(리비전 하나 크기의 살아 있는 표)은 그 모드에서만 둔다.
     forget_derived_sources(keep=DERIVED_SOURCE_ROLES.get(str(mode), ()))
     if mode == "목록 관리":
         _render_list_management(repository, database_path, scenarios)

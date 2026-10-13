@@ -1,11 +1,11 @@
-# Purpose: 파생 시나리오 원본 메모의 미리보기 동일성과 원본·이름·모드 변경 때 다시 읽기를 검증한다.
+# Purpose: 파생 시나리오 원본 메모의 미리보기 동일성과 원본·요약·모드·페이지가 바뀔 때 처리를 본다.
 
 """파생 시나리오 화면의 원본 메모(`scenario_transform.SOURCE_MEMO_KEY`) 회귀 검사.
 
-원본 리비전을 고른 뒤 조작마다 cache_data 피클을 다시 풀던 것을, 원본을 바꿀 때만 읽게 했다. 메모한
-원본으로 그린 미리보기는 저장소에서 새로 읽은 원본으로 만든 것과 같아야 하고(같은 숫자), 다른
-리비전을 고르거나 다른 세션이 이름을 바꾸면 다시 읽어야 하며(무효화), 모드·페이지를 떠나면 버려야
-한다(메모리).
+원본 리비전은 원본을 바꿀 때만 읽는다. 메모한 원본으로 그린 미리보기는 저장소에서 새로 읽은 원본으로
+만든 것과 같아야 하고(같은 숫자), 다른 리비전을 고르거나 목록 요약(이름·활성 리비전)이 바뀌면 다시
+읽되 그 뒤로는 다시 쓰며(무효화), 출처 메모는 늘 그 회차 목록의 요약을 싣고, 모드·페이지를 떠나면
+버려야 한다(메모리).
 """
 
 from __future__ import annotations
@@ -15,12 +15,15 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
+from test_app_navigation import _app  # noqa: F401 — 아래 앱 전체 테스트의 픽스처
 from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.components.scenario_transform import SOURCE_MEMO_KEY, month_table_summary
+from capa_simulation.navigation import CAPA_CHATBOT, SCENARIO_MANAGEMENT
 from capa_simulation.persistence.cache import clear_scenario_snapshot_cache
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.scenario_activation import ACTIVE_PERSISTED_SCENARIO_ID_KEY
 from capa_simulation.services.scenario_month_merge import merge_scenario_months
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, copy_scenario_tables
 from capa_simulation.services.scenario_year_shift import shift_scenario_years
@@ -95,11 +98,15 @@ MERGE_BODY = """
 from capa_simulation.components.scenario_month_merge import render_scenario_month_merge
 render_scenario_month_merge(repository, database_path)
 """
+# `test_on_another_page` 회차는 다른 페이지에 있는 회차다 — 페이지가 바뀐 회차에 `app.py` 가 부르는
+# 정리(`forget_page_dialogs`)만 돌고 이 화면은 그리지 않는다. 모드는 건드리지 않으므로 모드 전환의
+# 정리(`forget_derived_sources`)가 대신 지우는 일이 없다.
 MODE_BODY = """
 from capa_simulation.components.scenario_management import render_scenario_management
 from capa_simulation.page_bootstrap import forget_page_dialogs
-if st.session_state.get("test_leave_page"):
+if st.session_state.get("test_on_another_page"):
     forget_page_dialogs()
+    st.stop()
 render_scenario_management(repository, database_path)
 """
 
@@ -209,7 +216,7 @@ def test_merge_reads_each_source_once_and_previews_like_a_fresh_read(stores: Sto
     pd.testing.assert_frame_equal(_table_with(app, "행 수 증감"), expected, check_dtype=False)
 
 
-def test_leaving_the_mode_or_the_page_drops_the_sources(tmp_path: Path, stores: Stores) -> None:
+def test_leaving_the_mode_drops_the_sources(stores: Stores) -> None:
     _repository, database, first, _second = stores
     app = AppTest.from_string(_script(database, MODE_BODY), default_timeout=60).run()
     app.session_state["scenario_page_mode"] = "연도 Shift"
@@ -225,8 +232,122 @@ def test_leaving_the_mode_or_the_page_drops_the_sources(tmp_path: Path, stores: 
     app.session_state["scenario_page_mode"] = "연도 Shift"
     app.run()
     assert SOURCE_MEMO_KEY in app.session_state
-    # 다른 페이지로 가는 회차에 `app.py` 가 부르는 정리가 메모를 버린다.
-    app.session_state["test_leave_page"] = True
-    app.session_state["scenario_page_mode"] = "목록 관리"
+    assert _loads(app) == [first.revision.revision_id, first.revision.revision_id]
+
+
+def test_leaving_the_page_drops_the_sources_and_coming_back_rereads(stores: Stores) -> None:
+    """모드를 「연도 Shift」로 둔 채 다른 페이지로 가면 페이지 정리가 메모를 버린다."""
+    _repository, database, first, _second = stores
+    app = AppTest.from_string(_script(database, MODE_BODY), default_timeout=60).run()
+    app.session_state["scenario_page_mode"] = "연도 Shift"
     app.run()
+    app.selectbox(key="shift_source_scenario").set_value(first.scenario.scenario_id).run()
+    assert not app.exception
+    assert SOURCE_MEMO_KEY in app.session_state
+
+    app.session_state["test_on_another_page"] = True
+    app.run()
+    assert not app.exception
+    assert app.session_state["scenario_page_mode"] == "연도 Shift"
     assert SOURCE_MEMO_KEY not in app.session_state
+
+    # 돌아오면 고른 원본을 한 번 다시 읽고, 미리보기는 그 원본으로 그린다.
+    app.session_state["test_on_another_page"] = False
+    app.run()
+    assert not app.exception
+    assert SOURCE_MEMO_KEY in app.session_state
+    assert _loads(app) == [first.revision.revision_id, first.revision.revision_id]
+    assert {item.label: item.value for item in app.metric}["이동 전 월 범위"] == "2027-01 ~ 2027-12"
+
+
+def test_a_new_revision_saved_elsewhere_rereads_once_then_reuses(stores: Stores) -> None:
+    """다른 세션이 원본 시나리오에 새 리비전을 저장해도(프로세스 캐시는 그대로) 한 번만 다시 읽는다.
+
+    새 리비전 저장은 프로세스 캐시를 비우지 않아 캐시의 시나리오 요약이 옛것으로 남는다. 메모를 그
+    요약으로 견주면 옛 리비전을 고른 동안 회차마다 다시 읽는다.
+    """
+    repository, database, first, _second = stores
+    app = AppTest.from_string(_script(database, SHIFT_BODY), default_timeout=60).run()
+    app.selectbox(key="shift_source_scenario").set_value(first.scenario.scenario_id).run()
+    revision_key = f"shift_source_revision_{first.scenario.scenario_id}"
+    assert app.selectbox(key=revision_key).value == first.revision.revision_id
+    assert _loads(app) == [first.revision.revision_id]
+
+    newer = repository.save_revision(
+        first.scenario.scenario_id,
+        _monthly_tables([202701, 202702]),
+        ScenarioPreset(202701, 202702, ("Process-A",)),
+        revision_name="r2",
+        parent_revision_id=first.revision.revision_id,
+    )
+    assert newer.scenario.active_revision_id != first.scenario.active_revision_id
+    app.run()
+    assert not app.exception
+    # 상자는 고른 옛 리비전을 그대로 든다. 목록 요약이 바뀌어 한 번 다시 읽는다.
+    assert app.selectbox(key=revision_key).value == first.revision.revision_id
+    assert _loads(app) == [first.revision.revision_id] * 2
+
+    for years in (1, 2, 3):
+        app.number_input(key="scenario_shift_years").set_value(years).run()
+        assert not app.exception
+        original = _fresh_tables(repository, first)
+        expected = month_table_summary(original, label="이동 전").merge(
+            month_table_summary(shift_scenario_years(original, years), label="이동 후"),
+            on="표",
+            validate="one_to_one",
+        )
+        pd.testing.assert_frame_equal(
+            _table_with(app, "이동 후 월 범위"), expected, check_dtype=False
+        )
+    assert _loads(app) == [first.revision.revision_id] * 2
+
+
+def test_the_provenance_names_this_runs_summary_even_with_a_stale_process_cache(
+    stores: Stores,
+) -> None:
+    """프로세스 캐시를 비우지 않은 이름 변경도 출처 메모는 새 이름이고, 다시 읽는 것은 한 번이다."""
+    repository, database, first, _second = stores
+    app = AppTest.from_string(_script(database, SHIFT_BODY), default_timeout=60).run()
+    app.selectbox(key="shift_source_scenario").set_value(first.scenario.scenario_id).run()
+    app.number_input(key="scenario_shift_years").set_value(1).run()
+    assert "원본 2027" in _provenance(app)
+
+    repository.rename_scenario(first.scenario.scenario_id, "새 이름 2027")
+    app.run()
+    assert not app.exception
+    assert "새 이름 2027" in _provenance(app)
+    assert "원본 2027" not in _provenance(app)
+    app.number_input(key="scenario_shift_years").set_value(2).run()
+    assert "새 이름 2027" in _provenance(app)
+    assert _loads(app) == [first.revision.revision_id] * 2
+
+
+# ---------------------------------------------------------------- 앱 전체에서 페이지 옮기기
+
+
+def test_switching_pages_in_the_app_drops_the_sources(request: pytest.FixtureRequest) -> None:
+    """`app.py` 를 그대로 띄워 시나리오 관리에서 원본을 고른 뒤 다른 페이지로 가면 메모가 없다.
+
+    빈 DB 를 내장 시드가 채운다(`test_app_navigation._app`). 지우는 것은 페이지가 바뀐 회차의
+    정리(`app.py` → `forget_page_dialogs`)다 — 다른 페이지에서는 시나리오 관리 화면이 돌지 않아
+    모드 전환 정리가 끼지 않는다.
+    """
+    app: AppTest = request.getfixturevalue("_app").run()
+    assert not app.exception
+    app.switch_page(SCENARIO_MANAGEMENT.path).run()
+    app.session_state["scenario_page_mode"] = "연도 Shift"
+    app.run()
+    assert not app.exception
+    scenario_id = app.session_state[ACTIVE_PERSISTED_SCENARIO_ID_KEY]
+    app.selectbox(key="shift_source_scenario").set_value(scenario_id).run()
+    assert not app.exception
+    assert SOURCE_MEMO_KEY in app.session_state
+
+    app.switch_page(CAPA_CHATBOT.path).run()
+    assert not app.exception
+    assert SOURCE_MEMO_KEY not in app.session_state
+
+    app.switch_page(SCENARIO_MANAGEMENT.path).run()
+    assert not app.exception
+    assert app.session_state["scenario_page_mode"] == "연도 Shift"
+    assert SOURCE_MEMO_KEY in app.session_state
