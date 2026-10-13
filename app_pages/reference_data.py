@@ -226,9 +226,6 @@ try:
     )
     filtered_plan = scenario_month_table(active_scenario, "RQ_PKG_PLAN", start_month, end_month)
     filtered_yield = scenario_month_table(active_scenario, "RQ_YLD", start_month, end_month)
-    filtered_reqb = scenario_month_table(
-        active_scenario, "RQ_REQB", effective_start_month, effective_end_month
-    )
 
     # 편집표 여섯 개는 자기 탭이 열려 있거나 **적용하지 않은 편집이 남았을 때만** 만든다.
     # 그 밖의 닫힌 탭에서는 month_editor 가 default_table 을 읽기 전에 돌아가므로 만들어 봐야
@@ -317,13 +314,25 @@ try:
         value_column="WF측정률",
         scope_tab=TAB_WF_RATIO,
     )
-    # STEP 구성 탭의 요약·목록. 목록은 작업·경로 선택 위젯의 options 라 탭이 닫혀 있어도
-    # 있어야 한다(숨은 탭에서는 그림만 건너뛴다). 그래서 건너뛰는 대신 내용 토큰으로 캐시한다.
-    step_summary, step_catalog = get_route_step_tables(
-        edit_cache_key,
-        _upeh=filtered_upeh,
-        _reqb=filtered_reqb,
-    )
+    # STEP 구성 탭의 요약·목록. 쓰는 곳은 그 탭 본문과 STEP 팝업(경로 선택 상자는 팝업 안이다)
+    # 뿐이라, **탭이 보이거나 팝업이 열린 회차에만** 만든다. 닫힌 탭에서도 만들면 적용마다(새
+    # 토큰) 경로표 전체를 다시 계산하고, 적중해도 RQ_REQB 를 회차마다 잘랐다. 만들 때는 이 회차
+    # 활성 시나리오·적용 기간으로 자르고 내용 토큰으로 캐시한다. 월 형식 오류는 여기 try 가
+    # 받는다 — 밖으로 옮기면 친절한 오류 대신 traceback 이 뜬다.
+    # (요약, 목록, RQ_REQB 조각) — 조각은 팝업의 STEP 추가·삭제가 쓴다.
+    step_tables: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None = None
+    if not tab_is_hidden(step_tab) or st.session_state.get(DIALOG_KEY) == STEP_DIALOG:
+        filtered_reqb = scenario_month_table(
+            active_scenario, "RQ_REQB", effective_start_month, effective_end_month
+        )
+        step_tables = (
+            *get_route_step_tables(
+                edit_cache_key,
+                _upeh=filtered_upeh,
+                _reqb=filtered_reqb,
+            ),
+            filtered_reqb,
+        )
 except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))
     st.stop()
@@ -498,8 +507,12 @@ def _step_route_choices(catalog: pd.DataFrame) -> dict[str, str]:
 
 
 @st.dialog("STEP 추가·삭제", width="large", on_dismiss=_close_dialog)
-def _step_dialog() -> None:
-    """고른 경로 STEP 을 복제하거나 지운다. 조회기간의 모든 연결 수요에 함께 반영한다."""
+def _step_dialog(step_catalog: pd.DataFrame, filtered_reqb: pd.DataFrame) -> None:
+    """고른 경로 STEP 을 복제하거나 지운다. 조회기간의 모든 연결 수요에 함께 반영한다.
+
+    목록과 `RQ_REQB` 조각은 팝업을 연 회차(full run)가 그 회차 활성 시나리오에서 만든 것이다 —
+    팝업 안 조작(fragment 재실행)도 같은 인자로 다시 불린다.
+    """
     # STEP 을 더하거나 빼면 UPEH·측정률 표의 행이 바뀌어 그 표의 적용하지 않은 편집이 버려진다.
     dropped_edits = [
         name
@@ -633,54 +646,58 @@ def _step_dialog() -> None:
     st.rerun()
 
 
-with step_tab:
-    if step_catalog.empty:
-        st.info(
-            "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다. "
-            "사이드바에서 조회기간을 넓혀 보세요."
-        )
-    else:
-        # 작업 줄은 표 위다. 추가·삭제는 가끔 하는 쓰기라 팝업으로 연다.
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.button(
-                "STEP 추가·삭제",
-                icon=":material/edit_road:",
-                key="open_capacity_step_dialog",
-                type="primary",
-                on_click=_open_dialog,
-                args=(STEP_DIALOG,),
+# STEP 추가·삭제 알림은 매 회차 꺼낸다 — 그리는 것은 탭 본문을 그리는 회차뿐이다. 꺼내기까지
+# 탭에 묶으면 탭 밖에서 리비전을 불러온 뒤 STEP 탭을 열 때 옛 문구가 남는다.
+flash_message = st.session_state.pop("capacity_step_flash", None)
+if step_tables is not None:
+    step_summary, step_catalog, filtered_reqb = step_tables
+    with step_tab:
+        if step_catalog.empty:
+            st.info(
+                "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다. "
+                "사이드바에서 조회기간을 넓혀 보세요."
             )
-    flash_message = st.session_state.pop("capacity_step_flash", None)
-    if isinstance(flash_message, str):
-        st.success(flash_message)
-    # 요약 표는 그림이라 숨은 탭에서는 건너뛴다.
-    if not tab_is_hidden(step_tab):
-        # `step_summary` 는 캐시된 프레임이다. 제자리에서 고치면 다음 rerun 이 표시명 프레임을
-        # 계산 입력으로 받으므로 화면 복사본에만 표시명을 입힌다.
-        displayed_step_summary = step_summary.rename(
-            columns={
-                "생산계획년월": "월",
-                "Area_Name": "Area",
-                "양산구분": "양산",
-                "제품정보": "제품",
-                "WF 구분": "속성",
-            }
-        ).copy()
-        displayed_step_summary["공정"] = process_labels.series(displayed_step_summary["공정"])
-        st.dataframe(
-            displayed_step_summary,
-            hide_index=True,
-            width="stretch",
-            height=260,
-            column_config={
-                "STEP 수": st.column_config.NumberColumn(format="%d"),
-                "수요 변형 수": st.column_config.NumberColumn(format="%d"),
-            },
-            key="capacity_step_summary",
-        )
+        else:
+            # 작업 줄은 표 위다. 추가·삭제는 가끔 하는 쓰기라 팝업으로 연다.
+            with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+                st.button(
+                    "STEP 추가·삭제",
+                    icon=":material/edit_road:",
+                    key="open_capacity_step_dialog",
+                    type="primary",
+                    on_click=_open_dialog,
+                    args=(STEP_DIALOG,),
+                )
+        if isinstance(flash_message, str):
+            st.success(flash_message)
+        # 요약 표는 그림이라 숨은 탭에서는 건너뛴다(팝업만 열린 회차).
+        if not tab_is_hidden(step_tab):
+            # `step_summary` 는 캐시된 프레임이다. 제자리에서 고치면 다음 rerun 이 표시명 프레임을
+            # 계산 입력으로 받으므로 화면 복사본에만 표시명을 입힌다.
+            displayed_step_summary = step_summary.rename(
+                columns={
+                    "생산계획년월": "월",
+                    "Area_Name": "Area",
+                    "양산구분": "양산",
+                    "제품정보": "제품",
+                    "WF 구분": "속성",
+                }
+            ).copy()
+            displayed_step_summary["공정"] = process_labels.series(displayed_step_summary["공정"])
+            st.dataframe(
+                displayed_step_summary,
+                hide_index=True,
+                width="stretch",
+                height=260,
+                column_config={
+                    "STEP 수": st.column_config.NumberColumn(format="%d"),
+                    "수요 변형 수": st.column_config.NumberColumn(format="%d"),
+                },
+                key="capacity_step_summary",
+            )
 
     if not step_catalog.empty and st.session_state.get(DIALOG_KEY) == STEP_DIALOG:
-        _step_dialog()
+        _step_dialog(step_catalog, filtered_reqb)
 
 with equipment_tab:
     # 세 RQ 를 한 탭에 세로로 쌓으면 편집표 하나가 500px 라 화면이 세 배로 길어진다.

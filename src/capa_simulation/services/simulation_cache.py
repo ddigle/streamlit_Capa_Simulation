@@ -266,8 +266,8 @@ def get_route_step_tables(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """공정별 Capa STEP 구성 탭의 (요약, 선택 목록).
 
-    둘 다 순수 함수인데 rerun 마다 다시 만들고 있었다(721~963ms, 탭이 닫혀 있어도). 목록은
-    작업·경로 선택 위젯의 options 라 숨은 탭에서도 있어야 하므로 건너뛰지 않고 캐시한다.
+    둘 다 순수 함수인데 rerun 마다 다시 만들고 있었다(721~963ms, 탭이 닫혀 있어도). 쓰는 곳은
+    STEP 구성 탭 본문과 STEP 팝업뿐이라 페이지는 **그 탭이 보이거나 팝업이 열린 회차에만** 부른다.
     키는 (reference_version, content_token, start_month, end_month) — 프레임은 해시하지 않는다.
     캐시가 빗나가면 `route_step_tables` 가 `RQ_REQB` 를 한 번만 전처리해 두 표에 나눠 준다.
     """
