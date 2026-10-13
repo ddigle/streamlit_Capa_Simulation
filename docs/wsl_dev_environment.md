@@ -223,8 +223,8 @@ ZIP 바이트를 쓴 뒤 재기 때문이다. **그래서 런북 7장 기대값�
 `[x]` 는 10-13 에 옮겨 끝난 것이다. **서피스에서 지우지 않는 것** — 배포 받는 자리(sshd·`C:\Dev\update_publishing`·배포 전용 키
 등록)와 메일을 보내는 Outlook 은 5장의 배포 길이라 남긴다. 접속 단말(Tailscale → SSH → tmux)도 그대로다.
 
-- [ ] **서피스 8501 앱의 DB** — WSL 의 두 DB 는 10-12 서피스 사본이다. 그 뒤 서피스 앱에서 저장한 시나리오·리비전·공식버전·설비는
-  WSL 에 없다. 합성 표본이라 버려도 되는지는 사용자가 정한다.
+- [x] **서피스 8501 앱의 DB** — WSL 의 두 DB 는 10-12 서피스 사본이다. 그 뒤 서피스 앱에서 저장한 시나리오·리비전·공식버전·설비는
+  WSL 에 없다. 10-13 사용자 결정 — 합성 표본이라 끌지 않고 버린다(서피스에서 사용자가 지운다. WSL 에서는 서피스의 그 자리에 닿지 않는다).
 - [ ] `templates/structure_template.xlsb`(Excel, git 밖) — 옮기지 않았다. 사외에서는 쓸 곳이 없어진다(6장).
 - [ ] `data/temp/` 백업 DB, `data/output/` 옛 ZIP, `data/input/backup/`, 옛 배포 ZIP 출력 자리 `C:\Dev\Streamlit_Project_Dummyfile` —
   옮기지 않았다. 이제 ZIP 은 WSL `~/projects/Deploy/` 에 만든다(5장). 지난 배포 ZIP 의 내용은 태그에서 다시 만들 수
