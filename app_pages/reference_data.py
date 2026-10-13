@@ -733,7 +733,13 @@ if not (tab_is_hidden(equipment_tab) or tab_is_hidden(equipment_overview_tab)):
         # 이 복사본이 붙여넣기 경로에 닿지 않는다.
         displayed_equipment_table["공정"] = process_labels.series(displayed_equipment_table["공정"])
         st.dataframe(
-            classification_styled(displayed_equipment_table, equipment_dimensions),
+            # 고정 uuid — 내용이 같으면 회차마다 같은 메시지라 브라우저가 표를 다시 받지 않는다.
+            # 「상세」 두 꼴은 다른 표라 값을 가른다.
+            classification_styled(
+                displayed_equipment_table,
+                equipment_dimensions,
+                uuid="equipment_count_detail" if show_equipment_detail else "equipment_count",
+            ),
             hide_index=True,
             width="content",
             height=500,

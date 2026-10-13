@@ -3300,6 +3300,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     좁히면 회색이 돌아오는 것은 의도다. 이 편집기와 생산 계획 PKG PLAN·수율 편집표
     (`load_conversion.py`), 기준 정보 설비대수 `현황` 조회표(`reference_data.py`, `st.dataframe`)가
     모두 이 도우미를 거친다 — 새 월별 표도 Styler 를 직접 만들지 말고 이것을 쓴다.
+    `st.dataframe` 으로 그리는 표는 `uuid=` 에 표마다 다른 고정값을 준다 — pandas Styler 의 uuid 는
+    무작위라 주지 않으면 내용이 같아도 회차마다 메시지가 달라 브라우저가 표를 통째로 다시 받는다
+    (설비대수 현황 합성 65KB). `st.data_editor` 는 Streamlit 이 위젯 키로 고정하므로 주지 않는다.
     `tests/test_classification_style.py` 가 경계(상한 = 칠함, 상한 + 1 = 안 칠함)와 바이트 동일을 본다.
 - `src/capa_simulation/services/revision_compatibility.py`
   - 저장된 리비전이 현재 계산 계약으로 쓸 수 있는지 **불러오기 전에** 판정한다. 리비전은

@@ -595,3 +595,35 @@ def test_an_equipment_apply_shows_in_the_overview() -> None:
     pd.testing.assert_frame_equal(
         after.reset_index(drop=True), _expected_overview(app, detailed=True), check_dtype=False
     )
+
+
+# ---------------------------------------------------------------- R7 현황 표 고정 uuid
+
+
+def _overview_proto(app: AppTest) -> bytes:
+    """설비대수 현황 표 메시지 바이트 — 브라우저가 다시 받을지는 이 바이트의 해시로 정해진다."""
+    for element in app.dataframe:
+        if "공정" in element.value.columns:
+            data: bytes = element.proto.SerializeToString()
+            return data
+    raise AssertionError("현황 표가 없습니다.")
+
+
+def test_the_overview_message_is_identical_across_reruns() -> None:
+    """내용이 같으면 회차가 바뀌어도 현황 표 메시지가 같다(무작위 Styler uuid 가 없다)."""
+    app = AppTest.from_string(
+        _probed(TWO_PROCESS_TEST_SCRIPT, "test-ref-perf-overview-uuid"), default_timeout=60
+    )
+    app = _open_equipment(app, "현황")
+    first = _overview_proto(app)
+    app.run()
+    assert _overview_proto(app) == first
+
+    app = app.sidebar.toggle(key="equipment_count_detail").set_value(True).run()
+    detailed = _overview_proto(app)
+    assert detailed != first
+    app.run()
+    assert _overview_proto(app) == detailed
+    # 두 꼴은 서로 다른 고정 uuid 다 — 같은 화면에 섞여도 CSS 이름이 겹치지 않는다.
+    assert b"equipment_count_detail" in detailed
+    assert b"equipment_count" in first and b"equipment_count_detail" not in first
