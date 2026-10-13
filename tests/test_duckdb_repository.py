@@ -644,7 +644,7 @@ def test_snapshot_cache_serializes_plain_payload_after_model_reload(
         "get_scenario_repository",
         lambda _database_path: FakeRepository(),
     )
-    scenario_cache._load_scenario_snapshot_payload.clear()
+    scenario_cache.clear_scenario_snapshot_cache()
     scenario_cache._load_global_display_order_payload.clear()
 
     restored_snapshot = scenario_cache.load_scenario_snapshot(
@@ -663,7 +663,7 @@ def test_snapshot_cache_serializes_plain_payload_after_model_reload(
         pd.testing.assert_frame_equal(restored_snapshot.tables[table_name], expected)
     assert restored_display_order.version == display_order.version
     pd.testing.assert_frame_equal(restored_display_order.rules, display_order.rules)
-    scenario_cache._load_scenario_snapshot_payload.clear()
+    scenario_cache.clear_scenario_snapshot_cache()
     scenario_cache._load_global_display_order_payload.clear()
 
 

@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -189,3 +190,194 @@ def test_a_deleted_revision_raises_instead_of_reading_an_empty_plan(seeded: _See
             scenario_cache.load_scenario_plan(database_path, revision_id)
     with pytest.raises(KeyError, match="리비전을 찾을 수 없습니다"):
         repository.load_revision_table("없는-리비전", "RQ_DISPLAY_ORDER")
+
+
+# --------------------------------------------------------------- 공유 스냅샷과 호출마다 깊은 사본
+
+
+def _object_column(frame: pd.DataFrame) -> str:
+    return next(
+        str(name) for name, dtype in frame.dtypes.items() if pd.api.types.is_object_dtype(dtype)
+    )
+
+
+def _numeric_column(frame: pd.DataFrame) -> str:
+    return next(
+        str(name) for name, dtype in frame.dtypes.items() if pd.api.types.is_float_dtype(dtype)
+    )
+
+
+@pytest.mark.parametrize("apply_global_display_order", [True, False])
+def test_the_cached_snapshot_is_the_repository_snapshot(
+    seeded: _Seeded, apply_global_display_order: bool
+) -> None:
+    """캐시를 거친 스냅샷(처음·적중 둘 다)이 저장소에서 바로 읽은 것과 표·메타데이터까지 같다."""
+    repository = DuckDBScenarioRepository(seeded.database_path)
+    for revision_id in (seeded.official_revision_id, seeded.halved_revision_id):
+        expected = repository.load_revision(
+            revision_id, apply_global_display_order=apply_global_display_order
+        )
+        for _ in range(2):
+            loaded = scenario_cache.load_scenario_snapshot(
+                str(seeded.database_path),
+                revision_id,
+                apply_global_display_order=apply_global_display_order,
+            )
+            assert loaded.scenario == expected.scenario
+            assert loaded.revision == expected.revision
+            assert loaded.preset == expected.preset
+            assert list(loaded.tables) == list(expected.tables)
+            for name, frame in expected.tables.items():
+                _assert_same_frame(loaded.tables[name], frame)
+
+
+def test_every_snapshot_call_hands_out_tables_of_its_own(seeded: _Seeded) -> None:
+    """두 번 부르면 서로 다른 프레임이고, 한쪽을 고쳐도 다른 쪽·캐시·다음 호출에 보이지 않는다.
+
+    공유 프레임을 그대로 넘기면 한 세션의 제자리 수정이 모든 세션의 숫자를 바꾼다.
+    """
+    database_path = str(seeded.database_path)
+    revision_id = seeded.official_revision_id
+    pristine = DuckDBScenarioRepository(seeded.database_path).load_revision(revision_id)
+    first = scenario_cache.load_scenario_snapshot(database_path, revision_id)
+    second = scenario_cache.load_scenario_snapshot(database_path, revision_id)
+    shared = scenario_cache._load_scenario_snapshot_resource(database_path, revision_id)
+
+    for name, frame in first.tables.items():
+        assert frame is not second.tables[name]
+        assert frame is not shared["tables"][name]
+        for column in frame.columns:
+            assert not np.shares_memory(
+                frame[column].to_numpy(), shared["tables"][name][column].to_numpy()
+            ), (name, column)
+
+    upeh = first.tables["RQ_UPEH"]
+    numeric = _numeric_column(upeh)
+    text = _object_column(upeh)
+    upeh.iloc[0, list(upeh.columns).index(numeric)] = -12345.0  # 같은 dtype 제자리 쓰기
+    upeh[text] = "바뀐 값"  # 열 대입
+    first.tables["RQ_REQB"].drop(first.tables["RQ_REQB"].index[:10], inplace=True)
+    first.tables["RQ_PKG_PLAN"]["생산수량"] *= 2
+
+    third = scenario_cache.load_scenario_snapshot(database_path, revision_id)
+    for snapshot in (second, third):
+        for name, frame in pristine.tables.items():
+            _assert_same_frame(snapshot.tables[name], frame)
+    for name, frame in pristine.tables.items():
+        _assert_same_frame(shared["tables"][name], frame)
+
+
+def test_the_copies_share_the_immutable_strings_of_the_shared_snapshot(seeded: _Seeded) -> None:
+    """세션 사본의 객체 칸은 공유 프레임과 같은 문자열 객체를 가리킨다(세션마다 새로 만들지 않는다).
+
+    세션마다 스냅샷을 언피클하면 같은 문자열을 세션 수만큼 따로 쥔다(합성 표본의 샘플 관측으로
+    세션 하나에 RSS 140MB 넘게). 깊은 복사는 포인터 배열만 새로 만든다.
+    """
+    database_path = str(seeded.database_path)
+    first = scenario_cache.load_scenario_snapshot(database_path, seeded.official_revision_id)
+    second = scenario_cache.load_scenario_snapshot(database_path, seeded.official_revision_id)
+    reqb_first = first.tables["RQ_REQB"]
+    reqb_second = second.tables["RQ_REQB"]
+    column = _object_column(reqb_first)
+    values_first = reqb_first[column].to_numpy()
+    values_second = reqb_second[column].to_numpy()
+    assert not np.shares_memory(values_first, values_second)
+    assert all(a is b for a, b in zip(values_first[:200], values_second[:200], strict=True))
+
+
+def test_the_shared_snapshot_rejects_in_place_writes(seeded: _Seeded) -> None:
+    """공유 프레임의 배열은 읽기 전용이다 — 사본 대신 그것을 고치면 조용히 퍼지지 않고 터진다."""
+    shared = scenario_cache._load_scenario_snapshot_resource(
+        str(seeded.database_path), seeded.official_revision_id
+    )
+    upeh = shared["tables"]["RQ_UPEH"]
+    numeric = _numeric_column(upeh)
+    before = float(upeh[numeric].iloc[0])
+    with pytest.raises(ValueError, match="read-only"):
+        upeh.iloc[0, list(upeh.columns).index(numeric)] = before + 1.0
+    assert float(upeh[numeric].iloc[0]) == before
+    for frame in shared["tables"].values():
+        copy = frame.copy(deep=True)
+        for column in copy.columns:
+            assert copy[column].to_numpy().flags.writeable, column
+
+
+def test_a_cache_hit_does_not_read_the_database(
+    seeded: _Seeded, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path = str(seeded.database_path)
+    expected = scenario_cache.load_scenario_snapshot(database_path, seeded.official_revision_id)
+
+    def no_reads(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("적중한 스냅샷이 DB 를 다시 읽었다")
+
+    monkeypatch.setattr(DuckDBScenarioRepository, "load_revision", no_reads)
+    again = scenario_cache.load_scenario_snapshot(database_path, seeded.official_revision_id)
+    for name, frame in expected.tables.items():
+        _assert_same_frame(again.tables[name], frame)
+
+
+# --------------------------------------------------------------- 무효화
+
+
+def test_clearing_the_display_order_cache_reloads_the_shared_snapshot(tmp_path: Path) -> None:
+    """공용 표시순서를 바꾸고 `clear_global_display_order_cache` 를 부르면 공유 스냅샷도 따른다."""
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    release = ensure_initial_scenario(repository).release
+    assert release is not None
+    before = scenario_cache.load_scenario_snapshot(str(database_path), release.revision_id)
+    rules = repository.load_global_display_order().rules
+    directions = rules["정렬방식"].astype("string").tolist()
+    directions[0] = "내림차순" if directions[0] != "내림차순" else "오름차순"
+    repository.replace_global_display_order(rules.assign(정렬방식=directions), source="테스트")
+
+    # 비우기 전에는 공유 칸이 그대로다(불변 리비전 키) — 비우는 것이 무효화 장치다.
+    cached = scenario_cache.load_scenario_snapshot(str(database_path), release.revision_id)
+    _assert_same_frame(cached.tables["RQ_DISPLAY_ORDER"], before.tables["RQ_DISPLAY_ORDER"])
+
+    scenario_cache.clear_global_display_order_cache()
+    after = scenario_cache.load_scenario_snapshot(str(database_path), release.revision_id)
+    _assert_same_frame(
+        after.tables["RQ_DISPLAY_ORDER"],
+        repository.load_revision(release.revision_id).tables["RQ_DISPLAY_ORDER"],
+    )
+    assert after.tables["RQ_DISPLAY_ORDER"]["정렬방식"].astype("string").tolist() == directions
+    assert not after.tables["RQ_DISPLAY_ORDER"]["정렬방식"].equals(
+        before.tables["RQ_DISPLAY_ORDER"]["정렬방식"]
+    )
+    # 표시순서 말고는 그대로다.
+    _assert_same_frame(after.tables["RQ_UPEH"], before.tables["RQ_UPEH"])
+
+
+def test_clearing_the_snapshot_cache_reloads_the_scenario_name(tmp_path: Path) -> None:
+    """이름을 바꾼 뒤 `clear_scenario_snapshot_cache`·`clear_scenario_repository` 가 칸을 비운다."""
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    release = ensure_initial_scenario(repository).release
+    assert release is not None
+    path = str(database_path)
+    original = scenario_cache.load_scenario_snapshot(
+        path, release.revision_id
+    ).scenario.scenario_name
+
+    repository.rename_scenario(release.scenario_id, "새 이름")
+    assert scenario_cache.load_scenario_snapshot(
+        path, release.revision_id
+    ).scenario.scenario_name == (original)
+    scenario_cache.clear_scenario_snapshot_cache()
+    assert (
+        scenario_cache.load_scenario_snapshot(path, release.revision_id).scenario.scenario_name
+        == "새 이름"
+    )
+
+    repository.rename_scenario(release.scenario_id, "또 새 이름")
+    scenario_cache.clear_scenario_repository()
+    assert (
+        scenario_cache.load_scenario_snapshot(path, release.revision_id).scenario.scenario_name
+        == "또 새 이름"
+    )

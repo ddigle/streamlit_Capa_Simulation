@@ -1835,8 +1835,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     하나) `app.py` 가 그 회차의 `navigation.run()` 을 `pinned_connections(EQUIPMENT_DUCKDB_PATH)`
     로 감싼다. 선언한 화면에만 건다.
     설비 DB 를 한 번만 여는 화면(Space 현황·표준 목표·재공)은 이득이 없어 선언하지 않는다.
-  - 불변 `revision_id`의 전체 스냅샷과 공용 표시순서 프로필을 `st.cache_data`로 여러 세션에
-    공유한다. 표시순서는 교체 시 `clear_global_display_order_cache()`로 명시 무효화한다
+  - 불변 `revision_id`의 전체 스냅샷과 공용 표시순서 프로필을 여러 세션에 공유한다. 표시순서를 얹은
+    스냅샷은 `st.cache_resource`(`_load_scenario_snapshot_resource`, 칸 4개·1시간)에 **살아 있는
+    프레임** 한 벌로 두고, `load_scenario_snapshot` 이 부를 때마다 표마다 `copy(deep=True)` 를 넘긴다 —
+    받은 쪽이 무엇을 고쳐도 다른 세션·캐시에 닿지 않고, 객체 칸은 같은 불변 문자열을 가리켜 세션마다
+    문자열을 새로 만들지 않는다(피클을 세션마다 풀면 세션 하나에 RSS 140MB 넘게 붙는다 — 합성 표본의
+    샘플 관측). 공유 프레임은 읽기만 하며 배열을 읽기 전용으로 잠가 둔다. 표시순서를 얹지 않은 저장
+    원본(`apply_global_display_order=False`, 파생 시나리오 입력)은 드물게 쓰여 `st.cache_data` 피클로만
+    둔다. 비교 GAP 의 계획은 스냅샷을 거치지 않는 따로 된 `st.cache_data`(`load_scenario_plan`, 표 한 장)다.
+    표시순서는 교체 시 `clear_global_display_order_cache()`로 명시 무효화한다
     (스냅샷 payload 에 현재 표시순서가 `RQ_DISPLAY_ORDER`로 들어가므로 두 캐시를 함께 비운다).
     공용 프로필 캐시는 DB 경로 키라 `version` 이 올라도 무효화되지 않는다 — DB 를 바꾼
     호출부가 해당 `clear_*_cache()` 를 부른다. 스냅샷 payload 에는 시나리오명도 들어가므로
@@ -1906,7 +1913,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     다른 경로처럼 푼다.
   - 활성화할 때 머리 띠 이름표(시나리오명·코드·원천 유형과 등록시점·리비전 번호·이름·저장 시각·
     생산계획 첫/끝 달)를 세션에 한 번 떠 둔다(`ACTIVE_SCENARIO_LABEL_KEY`, `active_scenario_label`).
-    회차마다 스냅샷 캐시(표 전체를 역직렬화한다)나 DB 를 보지 않으려는 것이다. 활성 리비전과 다르면
+    회차마다 스냅샷 캐시(표 전체를 깊은 복사한다)나 DB 를 보지 않으려는 것이다. 활성 리비전과 다르면
     믿지 않고, 시나리오명을 바꾸면 `rename_active_scenario_label` 로 같이 고친다.
 - `src/capa_simulation/shared_widget_state.py`
   - **여러 페이지가 같은 key 로 그리는 위젯**(샘플 데이터 스위치)의
