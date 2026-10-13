@@ -1,4 +1,4 @@
-# Purpose: 내려받기 CSV 바이트 캐시가 고치기 전과 같고 표·양식 입력이 바뀌면 다시 만드는지 본다.
+# Purpose: 내려받기 CSV 바이트 캐시가 캐시 없이 만든 바이트와 같고 입력이 바뀌면 다시 만드는지 본다.
 
 """내려받기를 누르지 않아도 매 회차 만들던 CSV 바이트를 키로 둔다(콜러블 지연 생성은 쓰지 않는다 —
 TODO [결정] 2026-09-18). 바이트가 화면 표와 어긋나면 사용자가 받은 파일이 틀리므로 키에 든 입력
@@ -64,6 +64,25 @@ def test_the_template_csv_matches_and_follows_every_input() -> None:
         changed = _template_csv(processes, saved, last)
         assert changed != base, name
         assert changed == _old_template_csv(processes, saved, last), name
+
+
+def test_the_template_csv_does_not_rebuild_on_a_hit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """같은 키면 양식을 다시 만들지 않는다 — 내려받기를 누르지 않은 회차마다 만들지 않으려고 둔
+    캐시다."""
+    calls: list[int] = []
+
+    def counting(*args: object, **kwargs: object) -> pd.DataFrame:
+        calls.append(1)
+        return build_weekly_availability_template(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(sc, "build_weekly_availability_template", counting)
+    end = date(2026, 8, 31)
+
+    first = _template_csv(("P-A", "P-B"), _saved(), end)
+    again = _template_csv(("P-A", "P-B"), _saved(), end)
+
+    assert first == again == _old_template_csv(("P-A", "P-B"), _saved(), end)
+    assert calls == [1]
 
 
 def _table(value: float = 1.25) -> pd.DataFrame:
