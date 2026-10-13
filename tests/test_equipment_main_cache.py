@@ -297,11 +297,12 @@ def test_cached_month_view_follows_every_input(
     elif change == "downtime_row":
         downtime = _without_downtime_of(downtime, "MOD-01C")
     else:
-        # 반출일을 한 달 늦추면 형제 모듈의 지분 경계(시점)가 그 달에서 빠진다.
+        # 마스터 칸 하나만 고친다(비가동은 그대로). 그 달에 비가동인 MOD-01C 를 전달 말일에 반출하면
+        # 그 달에는 보유하지 않아 비가동 호기 목록에서 빠진다 — 키에서 마스터 지문이 빠지면 옛 표가
+        # 나온다.
         equipment = equipment.copy()
-        moved = equipment[EQUIPMENT_ID_COLUMN].eq("MOD-01B")
-        equipment.loc[moved, "반출일정"] = equipment.loc[moved, "반출일정"] + pd.Timedelta(days=40)
-        downtime = _without_downtime_of(downtime, "MOD-01C")
+        moved = equipment[EQUIPMENT_ID_COLUMN].eq("MOD-01C")
+        equipment.loc[moved, "반출일정"] = pd.Timestamp(month.replace(day=1) - timedelta(days=1))
     built = _counting(
         monkeypatch,
         "build_inactive_equipment_month_view",
