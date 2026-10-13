@@ -54,6 +54,7 @@ from capa_simulation.services.simulation_cache import (
     get_scenario_capacity_and_demand,
     get_weekly_standard_target_capacity,
     scenario_cache_key,
+    standard_target_weekly_cache_key,
 )
 from capa_simulation.services.standard_target_capacity import (
     prepare_standard_target_required_equipment,
@@ -227,18 +228,22 @@ if selected_routes.empty:
     st.warning("선택한 공정과 제품 사이에 적용 가능한 STEP 경로가 없습니다.")
     st.stop()
 
-selected_required = required_equipment.loc[
-    required_equipment["공정"].isin(selected_processes)
-    & required_equipment["제품정보"].isin(selected_product_order)
-].reset_index(drop=True)
 try:
+    # 키만 해시한다(표준 목표와 같은 캐시). 공정·제품 선택이 키에 들어 표준 목표 결과와
+    # 섞이지 않는다.
     weekly_standard = get_weekly_standard_target_capacity(
-        required_equipment=selected_required,
-        run_day=filtered_tables["RQ_RUN_DAY"],
-        weekly_availability=availability,
-        start_date=start_date,
-        end_date=end_date,
-        detail_level="제품정보",
+        cache_key=standard_target_weekly_cache_key(
+            scenario_cache_key(reference_version, active_scenario, start_month, end_month),
+            availability=availability,
+            start_date=start_date,
+            end_date=end_date,
+            detail_level="제품정보",
+            processes=selected_processes,
+            products=selected_product_order,
+        ),
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
+        _weekly_availability=availability,
     )
     daily_standard = expand_weekly_product_standard_to_daily(
         weekly_standard,

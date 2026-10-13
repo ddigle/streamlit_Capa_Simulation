@@ -56,6 +56,7 @@ from capa_simulation.services.shortening_progress import compare_progress, progr
 from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
+    prepare_standard_target_required_equipment,
 )
 from capa_simulation.services.undated_equipment import undated_equipment
 from capa_simulation.services.unit_capacity import (
@@ -317,51 +318,129 @@ def get_reference_edit_table(
     )
 
 
-@st.cache_data(show_spinner=False, max_entries=16)
-def get_pkg_equivalent_standard_target(
-    required_equipment: pd.DataFrame,
-    run_day: pd.DataFrame,
-    weekly_availability: pd.DataFrame,
+# 표준 목표 주간 결과의 키 — (시나리오 키, 주차별 가용대수 내용 지문, 시작일, 종료일, 분류 수준,
+# 공정 선택, 제품 선택). 선택은 정렬한 튜플이고 빈 튜플은 「거르지 않음」이다.
+StandardTargetWeeklyKey = tuple[
+    ScenarioCacheKey, str, str, str, str, tuple[str, ...], tuple[str, ...]
+]
+
+
+def standard_target_weekly_cache_key(
+    scenario_key: ScenarioCacheKey,
+    *,
+    availability: pd.DataFrame,
     start_date: date,
     end_date: date,
     detail_level: str,
-    plan: pd.DataFrame,
-    *,
-    _weekly_target: pd.DataFrame,
-) -> pd.DataFrame:
-    """PKG Kea 환산 표준 목표 Capa.
+    processes: Sequence[str] = (),
+    products: Sequence[str] = (),
+) -> StandardTargetWeeklyKey:
+    """표준 목표 주간 결과의 키. **소요대수는 해시하지 않고 시나리오 키가 대신한다.**
 
-    키는 1차 입력이다. 파생 프레임(weekly_target)을 키로 쓰면 5만 행을 넘길 때 Streamlit 이
-    1만 행 표본만 해시해 가용대수 편집이 캐시에 묻힐 수 있다.
+    소요대수 상세는 사내·합성 모두 5만 행을 넘는다. Streamlit 1.63 은 5만 행 이상인 DataFrame
+    인자를 1만 행 표본으로만 해시해, 표본 밖 한 행만 바뀌는 편집(UPEH·REQB 한 칸)이 캐시에 묻혀
+    옛 결과가 나왔다. 소요대수는 `(reference_version, content_token, 월 범위)` 가 정하므로 그
+    키를 그대로 싣는다. 가용대수는 설비 DB 의 비버전 최신값이라 내용 지문이다.
 
-    `_weekly_target` 은 **키에 들어간 여섯 인자로 만든** 주간 표준 목표여야 한다. 다른
-    인자로 만든 프레임을 넘기면 키와 내용이 어긋나 틀린 값이 캐시에 남는다. 여기서 다시
-    부르면 호출자가 방금 만든 것을 한 번 더 해시하고 역직렬화한다.
+    키에는 그 호출이 소요대수에 건 **행 필터 전부**를 싣는다 — 공정 선택(빈 선택은 전체)과 제품
+    선택(재공 현황만 쓴다). 제품 선택을 빼면 재공 현황이 채운 일부 제품 결과가 같은 날짜·분류
+    수준의 표준 목표에 적중한다. 월은 조회일이 아니라 달력 주차의 귀속 달로 잡은 범위다.
     """
-    return add_pkg_equivalent_standard_target(
-        weekly_target=_weekly_target,
-        required_equipment=required_equipment,
-        plan=plan,
-        detail_level=detail_level,
+    return (
+        scenario_key,
+        frame_digest(availability),
+        start_date.isoformat(),
+        end_date.isoformat(),
+        detail_level,
+        _row_selection(processes),
+        _row_selection(products),
     )
+
+
+def _row_selection(values: Sequence[str]) -> tuple[str, ...]:
+    return tuple(sorted({str(value) for value in values}))
+
+
+def _scenario_month_slice(
+    scenario_tables: Mapping[str, pd.DataFrame], name: str, scenario_key: ScenarioCacheKey
+) -> pd.DataFrame:
+    """키의 월 범위로 자른 시나리오 표. 키와 내용이 한 객체에서 나오게 래퍼 안에서 자른다."""
+    _, _, start_month, end_month = scenario_key
+    return filter_month_range(scenario_tables[name], start_month, end_month, name)
+
+
+def _standard_target_demand(
+    cache_key: StandardTargetWeeklyKey,
+    scenario_tables: Mapping[str, pd.DataFrame],
+    reference_tables: Mapping[str, pd.DataFrame],
+) -> pd.DataFrame:
+    """표준 목표 제외(ER·Pre B/D Dummy)를 적용하고 키의 공정·제품 선택으로 거른 소요대수."""
+    scenario_key, _, _, _, _, processes, products = cache_key
+    _, required_equipment = get_scenario_capacity_and_demand(
+        scenario_key,
+        _scenario_tables=scenario_tables,
+        _reference_tables=reference_tables,
+    )
+    prepared = prepare_standard_target_required_equipment(required_equipment)
+    if not processes and not products:
+        return prepared
+    selected = pd.Series(True, index=prepared.index)
+    if processes:
+        selected &= prepared["공정"].isin(processes)
+    if products:
+        selected &= prepared["제품정보"].isin(products)
+    return prepared.loc[selected].reset_index(drop=True)
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
 def get_weekly_standard_target_capacity(
-    required_equipment: pd.DataFrame,
-    run_day: pd.DataFrame,
-    weekly_availability: pd.DataFrame,
-    start_date: date,
-    end_date: date,
-    detail_level: str,
+    cache_key: StandardTargetWeeklyKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _weekly_availability: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Cache the weekly standard target Capa for one active scenario and CSV input."""
+    """주차별 표준 목표 Capa. 키(`standard_target_weekly_cache_key`)만 해시한다.
+
+    소요대수·`RQ_RUN_DAY` 는 이 안에서 `_scenario_tables` 와 키의 월로 얻는다 — 페이지가 미리
+    잘라 넘기면 키와 내용이 갈라질 자리가 생긴다. `_scenario_tables` 는 키의 content_token 을
+    발급한 바로 그 활성 시나리오의 표, `_weekly_availability` 는 키의 지문을 만든 바로 그
+    가용대수여야 한다. 계산 오류(ValueError)는 캐시되지 않아 매번 다시 드러난다.
+    """
+    scenario_key, _, start_text, end_text, detail_level, _, _ = cache_key
     return build_weekly_standard_target_capacity(
-        required_equipment=required_equipment,
-        run_day=run_day,
-        weekly_availability=weekly_availability,
-        start_date=start_date,
-        end_date=end_date,
+        required_equipment=_standard_target_demand(cache_key, _scenario_tables, _reference_tables),
+        run_day=_scenario_month_slice(_scenario_tables, "RQ_RUN_DAY", scenario_key),
+        weekly_availability=_weekly_availability,
+        start_date=date.fromisoformat(start_text),
+        end_date=date.fromisoformat(end_text),
+        detail_level=detail_level,
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_pkg_equivalent_standard_target(
+    cache_key: StandardTargetWeeklyKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _weekly_availability: pd.DataFrame,
+) -> pd.DataFrame:
+    """PKG Kea 환산 표준 목표 Capa. 키와 `_` 인자 계약은 `get_weekly_standard_target_capacity`
+    와 같다. PKG 기준이 켜진 회차에만 부른다 — PKG 연결 오류는 그때만 드러난다.
+
+    주간 결과는 같은 키의 주간 캐시에서 받는다(적중이면 언피클만). `RQ_PKG_PLAN` 은 키의 월로
+    이 안에서 자른다.
+    """
+    scenario_key, _, _, _, detail_level, _, _ = cache_key
+    weekly_target = get_weekly_standard_target_capacity(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+        _weekly_availability=_weekly_availability,
+    )
+    return add_pkg_equivalent_standard_target(
+        weekly_target=weekly_target,
+        required_equipment=_standard_target_demand(cache_key, _scenario_tables, _reference_tables),
+        plan=_scenario_month_slice(_scenario_tables, "RQ_PKG_PLAN", scenario_key),
         detail_level=detail_level,
     )
 

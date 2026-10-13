@@ -1257,6 +1257,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     만들지 않으며, 향후 가용설비 현황 DuckDB 산출 조회로 입력 경계를 교체한다.
   - 결과 상자 아래 접힌 `예외 처리 공정`에는 표준 목표 Capa에만 적용되는 공정별 제외
     조건과 현재 조회범위에서 제외된 상세 행 수를 표시한다.
+  - 주차 계산은 `simulation_cache.get_weekly_standard_target_capacity`(PKG 는
+    `get_pkg_equivalent_standard_target`)가 **키만 해시해** 캐시한다. 키는
+    `standard_target_weekly_cache_key` — 시나리오 키(월은 달력 주차의 귀속 달)·가용대수 내용 지문·
+    시작·종료일·분류 수준·공정 선택·제품 선택이고, 소요대수·`RQ_RUN_DAY`·`RQ_PKG_PLAN` 은 캐시가 제
+    안에서 키의 시나리오·월로 얻는다. 소요대수(5만 행 넘음)를 해시 인자로 넘기던 동안 Streamlit 이 1만 행
+    표본만 해시해 한 행 편집을 놓치고 옛 숫자를 냈다(`tests/test_standard_target_weekly_cache.py`).
+    재공 현황도 같은 캐시를 제품 선택을 실어 부른다 — 제품 선택이 키에 없으면 그 결과가 표준 목표에 적중한다.
 - `src/capa_simulation/components/reference_csv_tools.py`
   - 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 다운로드·Excel 표 붙여넣기 폼과 적용 결과
     알림을 공통 제공한다. 붙여넣기는 모두 팝업이다 — `render_reference_clipboard_form` 이

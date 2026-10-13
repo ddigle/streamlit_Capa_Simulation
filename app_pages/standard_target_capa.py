@@ -76,6 +76,7 @@ from capa_simulation.services.simulation_cache import (
     get_pkg_equivalent_standard_target,
     get_weekly_standard_target_capacity,
     scenario_cache_key,
+    standard_target_weekly_cache_key,
 )
 from capa_simulation.services.standard_target_capacity import (
     PKG_EQUIVALENT_COLUMN,
@@ -613,13 +614,15 @@ start_month = int(page_calendar["생산계획년월"].min())
 end_month = int(page_calendar["생산계획년월"].max())
 
 try:
-    # 계산 입력의 월 슬라이스는 캐시 래퍼 안에서 한다. 뒤의 주차 계산이 쓰는 두 표만 자른다.
+    # 주차 계산 캐시는 이 두 표를 제 안에서 키의 월로 다시 자른다. 여기서 자르는 것은 로직
+    # 분석이 쓰는 RUN_DAY 와, 두 표의 월 형식 오류를 계산 전에 같은 자리에서 알리기 위해서다.
     filtered_tables = {
         name: scenario_month_table(active_scenario, name, start_month, end_month)
         for name in ("RQ_RUN_DAY", "RQ_PKG_PLAN")
     }
+    scenario_key = scenario_cache_key(reference_version, active_scenario, start_month, end_month)
     unit_capacity, required_equipment = scenario_capacity_and_demand(
-        scenario_cache_key(reference_version, active_scenario, start_month, end_month),
+        scenario_key,
         scenario_tables=active_scenario["tables"],
         reference_tables=reference_tables,
     )
@@ -885,14 +888,22 @@ if output_metric == "로직 분석":
             filters=logic_filters,
         )
 else:
+    # 키만 해시한다 — 소요대수(5만 행 넘음)를 해시 인자로 넘기면 Streamlit 이 1만 행 표본만 봐
+    # 한 행 편집을 놓친다. 소요대수·RUN_DAY 는 캐시가 키의 시나리오·월로 제 안에서 얻는다.
+    weekly_cache_key = standard_target_weekly_cache_key(
+        scenario_key,
+        availability=availability,
+        start_date=start_date,
+        end_date=end_date,
+        detail_level=detail_level,
+        processes=selected_processes,
+    )
     try:
         weekly_target = get_weekly_standard_target_capacity(
-            required_equipment=filtered_required_equipment,
-            run_day=filtered_tables["RQ_RUN_DAY"],
-            weekly_availability=availability,
-            start_date=start_date,
-            end_date=end_date,
-            detail_level=detail_level,
+            weekly_cache_key,
+            _scenario_tables=active_scenario["tables"],
+            _reference_tables=reference_tables,
+            _weekly_availability=availability,
         )
     except ValueError as exc:
         st.error(str(exc))
@@ -937,16 +948,10 @@ else:
     if pkg_basis:
         try:
             weekly_target = get_pkg_equivalent_standard_target(
-                required_equipment=filtered_required_equipment,
-                run_day=filtered_tables["RQ_RUN_DAY"],
-                weekly_availability=availability,
-                start_date=start_date,
-                end_date=end_date,
-                detail_level=detail_level,
-                plan=filtered_tables["RQ_PKG_PLAN"],
-                # 바로 위에서 같은 인자로 만든 것이다. 넘기지 않으면 한 실행에서 같은
-                # 프레임을 한 번 더 해시한다.
-                _weekly_target=weekly_target,
+                weekly_cache_key,
+                _scenario_tables=active_scenario["tables"],
+                _reference_tables=reference_tables,
+                _weekly_availability=availability,
             )
         except ValueError as exc:
             st.error(str(exc))
