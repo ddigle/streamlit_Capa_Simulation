@@ -100,43 +100,108 @@ GitHub 인증이 있어야 한다. WSL 일반 셸에서 둘 중 하나.
   `git remote set-url origin git@github.com:ddigle/streamlit_Capa_Simulation.git`.
 - gh: `sudo apt install gh` → `gh auth login`.
 
-## 5. 사내 배포 — WSL 에서 빌드하고 메일은 사용자가 보낸다
+## 5. 사내 배포 — WSL 에서 빌드해 서피스로 넘기고 메일은 사용자가 보낸다
 
-2026-10-13 사용자 결정. ZIP 빌드까지 WSL Claude 가 하고, 메일 발송만 사람 손에 남는다 — Claude Code 의 Chrome 연동은 WSL 을
-지원하지 않아(공식 문서) WSL Claude 는 메일을 보낼 수 없다. 받는 사람과 제목 꼴(제목 = ZIP 파일 이름)은 지난 배포 메일과 같다.
+2026-10-13 사용자 결정. ZIP 빌드·확인·태그·서피스 전달까지 WSL Claude 가 하고, 메일 발송만 사람 손에 남는다 — Claude Code 의
+Chrome 연동은 WSL 을 지원하지 않아(공식 문서) WSL Claude 는 메일을 보낼 수 없다. **서피스 Claude 세션은 배포에 쓰지 않는다** —
+서피스 Claude in Chrome 으로 Outlook 웹 메일을 보내던 절차는 예비로만 남는다. 메일 규격(보낸 사람·받는 사람·제목 = `<STAMP>.zip`·본문
+한 줄)은 지난 배포 메일과 같고, **주소는 이 공개 저장소에 적지 않는다** — WSL Claude 가 보고 끝에 적는다(에이전트 메모리).
 10-13 에 `bfe9a10` 을 WSL 에서 다시 빌드(뒤 태그를 지운 복제)해 직전 배포 상태 흉내 저장소에 적용하니 적용기 출력이
 `변경 추가 13 · 수정 143` · 해시 602/602 로 서피스에서 잰 런북 값과 같았다.
 
-1. **WSL Claude** — 배포 지시가 오면
+**두 자리.**
+
+- **ZIP 은 `~/projects/Deploy/` 에 만든다** — 저장소 밖, 사내 리뷰를 받는 `~/projects/Review/` 옆. 저장소 안 `data/output/` 은 무시
+  목록이지만 저장소를 다시 받으면 함께 사라지고 앱 산출물과 섞인다. 보낸 ZIP 은 여기 쌓아 둔다. 샌드박스는 저장소와 `$TMPDIR` 밖에
+  쓰지 못하므로 사용자 설정 `sandbox.filesystem.allowWrite` 에 이 폴더가 있어야 하고 폴더는 미리 만들어 둔다 — 없으면 빌더가
+  `Read-only file system` 으로 멈춘다. 그때는 우회하지 않고 사용자에게 알린다.
+- **서피스 받는 자리는 `C:\Dev\update_publishing`** 이다(10-13 서피스 세션이 세팅·시험). WSL `~/.ssh/config` 의 `Host surface` 가 배포
+  전용 키로 붙고, 서피스 sshd 는 키 로그인·Tailscale 대역만 받으며 이 키로는 그 폴더에 갇힌 sftp 만 된다(셸·포워딩 없음 — 도착·`whoami`
+  거부·`cd ..` 거부까지 시험). 그래서 `scp <STAMP>.zip surface:` 가 그 폴더에 바로 놓는다. `~/.ssh` 와 Tailscale 주소를 쓰므로 **샌드박스
+  밖에서만** 돈다 — 배포마다 승인 한 번.
+
+차례 — 사용자가 배포하라고 할 때.
+
+1. **런북 7장 값 채우기 → 4관문 → 커밋 → `main` 푸시** (WSL Claude)
    1. 이번에 실을 변경과 자리표(`<STAMP>`·`{APPLY_FACTS}`)가 든 런북 7장 초안을 먼저 커밋한다 — 송장의 변경 목록은 직전 태그에서
       HEAD 까지의 git diff 라 커밋하지 않은 수정은 세지 않는다.
-   2. stamp(`YYYYMMDDHHMM`, KST)를 정해 `<STAMP>` 를 채운다.
+   2. stamp(`YYYYMMDDHHMM`, KST — `date +%Y%m%d%H%M`)를 정해 `<STAMP>` 를 채운다.
    3. 흉내 저장소로 수치를 잰다. 자리는 `$TMPDIR` 아래이고(샌드박스 쓰기 범위, 세션끼리 공용이라 이름에 stamp 를 붙인다), 사내처럼
       적용 기록을 둔다.
 
       ```bash
-      M=$TMPDIR/mock-<STAMP>; git clone -q --no-hardlinks . $M && git -C $M checkout -q -B mock deploy/<직전 stamp>
+      P=<직전 stamp>; M=$TMPDIR/mock-<STAMP>
+      git clone -q --no-hardlinks . $M && git -C $M checkout -q -B mock deploy/$P && mkdir -p $M/.deploy
+      printf '{"stamp": "%s", "commit": "%s"}\n' $P $(git rev-parse deploy/$P) > $M/.deploy/applied.json
+      git -C $M add .deploy/applied.json && git -C $M commit -qm "적용 기록 $P"
       ```
 
-      `$M/.deploy/applied.json` 에 `{"stamp": "<직전 stamp>", "commit": "<git rev-parse deploy/<직전 stamp> 값>"}` 을 써서 커밋한다(적용기의
-      「건너뛴 배포」 검사가 돈다). 런북의 `{APPLY_FACTS}` 를 잠깐 다른 표식으로 바꿔 저장소 루트에서
+      적용 기록(`.deploy/applied.json` — 사내 전용 자리라 어느 태그에도 없어 폴더부터 만든다)을 커밋해 두면 적용기의 「건너뛴 배포」
+      검사가 사내처럼 돈다. 런북의 `{APPLY_FACTS}` 를 잠깐 다른 표식으로 바꿔 저장소 루트에서
       `.venv/bin/python scripts/build_deploy_package.py --out $TMPDIR/trial --stamp <STAMP> --no-tag` →
       `.venv/bin/python $M/scripts/apply_deploy_package.py $TMPDIR/trial/<STAMP>.zip`(흉내 저장소에는 `.venv` 가 없고 `uv run` 은
-      샌드박스에서 막힌다). 시험 ZIP 을 만든 뒤 표식은 `{APPLY_FACTS}` 로 되돌린다 — 빌더는 이 둘만 보므로 다른 표식이 남으면 막지 못한다.
+      샌드박스에서 막힌다). 시험 빌드는 커밋·푸시 전이라 빌더가 「시험 빌드(--no-tag)라 멈추지 않습니다」 와 수정·앞선 커밋을 찍는다 —
+      정상이다. 시험 ZIP 을 만든 뒤 표식은 `{APPLY_FACTS}` 로 되돌린다 — 빌더는 이 둘만 보므로 다른 표식이 남으면 막지 못한다.
    4. 런북 수치는 적용기 출력 그대로 옮긴다 — `변경` 줄·`지움`·대조 블록의 개수·`대조 N/N 해시 일치`. mypy 파일 수는 4관문 끝줄에서.
       흉내 저장소를 `git diff` 로 세면 송장과 기준이 달라진다(적용 기록이 없으면 `A .deploy/applied.json` 이 하나 더 나온다).
    5. 런북을 채우고 4관문 → `.venv/bin/python scripts/check_deploy_screens.py --list` 가 7-14 A 표와 같은 줄인지 → 커밋 →
-      `.venv/bin/python scripts/build_deploy_package.py --out data/output --stamp <STAMP>`(`data/output/` 은 무시 목록). 출력에
-      `태그 deploy/<STAMP>` 와 `직전 <직전 stamp> 대비` 가 찍혔는지 본다 — `남기지 못했습니다` 가 보이면 멈추고 남은 시험 태그를
-      `git tag -d` 로 지운 뒤 다시 만든다. 최종 ZIP 을 새 흉내 저장소에 다시 적용해 런북 값과 같은지 본다.
-   6. ZIP 경로·크기·제목을 사용자에게 넘긴다.
-2. **사용자** — ZIP 을 브라우저가 있는 PC 로 옮겨(예: WSL 창 `cp ~/projects/streamlit_project/data/output/<STAMP>.zip /mnt/c/Users/<이름>/`
-   → 서피스 PowerShell `scp desk:<STAMP>.zip .` — 첫 배포 때 길을 확인해 여기 고친다) Outlook 웹으로 보낸다.
-3. **WSL Claude** — 발송을 들으면 TODO·HANDOFF 에 기록을 커밋하고, 확인을 받아 `main` 과 태그를 푸시한다(4장).
+      확인을 받아 `git push origin main`(샌드박스 밖 — 4장).
+2. **깨끗한 트리에서 빌드 → 확인 → 태그 푸시** (WSL Claude)
 
-서피스에서 만든 ZIP 은 디스크의 CRLF 를 그대로 실었다(`202610081500` 은 63개 — `docs/TODO.md` 그 배포 기록). WSL 작업 트리는
-`.gitattributes` 의 `* text=auto eol=lf` 대로 LF 라(`*.ps1` 만 CRLF) 첫 WSL 빌드에서 `*.ps1` 을 뺀 그 파일들의 줄끝이 LF 로 바뀌어
-나간다. 내용과 git 이 보는 변경은 같다 — 송장의 `changes`·런북 수치는 git 기준이다.
+   ```bash
+   .venv/bin/python scripts/build_deploy_package.py --out ~/projects/Deploy --stamp <STAMP>
+   ```
+
+   빌더는 먼저 「추적 파일에 커밋하지 않은 수정이 없다」·「HEAD 가 `origin/main` 과 같다」를 보고 어기면 ZIP 도 태그도 만들지 않고
+   멈춘다 — 목록은 `git ls-files` 에서 오고 내용은 작업 트리에서 읽어, 어기면 송장의 커밋과 ZIP 내용이 어긋난다. `origin/main` 은
+   샌드박스가 fetch 하지 못해 마지막 푸시·pull 때 값이다. 출력에 `태그 deploy/<STAMP>` 와 `직전 <직전 stamp> 대비` 가 찍혔는지 본다 —
+   `남기지 못했습니다` 가 보이면 멈추고 남은 시험 태그를 `git tag -d` 로 지운 뒤 다시 만든다. 추적하지 않는 파일이 `알림` 으로 찍히면
+   실을 것이 빠졌는지 본다(ZIP 에 실리지 않는다). 그다음 셋을 본다.
+
+   1. ZIP 자체 — `Z=~/projects/Deploy/<STAMP>.zip; .venv/bin/python -m zipfile -t $Z; sha256sum $Z; stat -c %s $Z`. 첫 명령은 깨진 항목이
+      있어도 종료 코드 0 으로 「Done testing」을 찍으므로 **그 한 줄만** 나와야 한다(`corrupted` 줄이 없어야 한다). sha256 과 크기는
+      보고·발송 기록에 적는다.
+   2. 직전 배포와 목록 비교 — 이름으로 견준다. `>` 는 이번에 더한 것, `<` 는 지운 것이고, 런북 7장 「이 ZIP 이 싣는 것」·송장의 추가·삭제와
+      맞아야 한다.
+
+      ```bash
+      diff <(git ls-tree -r --name-only deploy/<직전 stamp>) <(.venv/bin/python -c "import sys,zipfile; print('\n'.join(sorted(n for n in zipfile.ZipFile(sys.argv[1]).namelist() if n != 'DEPLOY_MANIFEST.json')))" $Z)
+      ```
+
+      그다음 위 1단계 3) 과 같은 꼴로 **새** 흉내 저장소(`M=$TMPDIR/final-<STAMP>`)를 만들어 최종 ZIP 을 적용한다. 적용기의 `변경` 줄·
+      `지움`·대조 블록의 개수·`대조 N/N 해시 일치` 가 런북 값과 같아야 한다(적용기는 이름을 몇 개까지만 찍으므로 이름은 위 diff 로 본다).
+   3. ZIP 내용 = 푸시한 커밋 — 그 흉내 저장소에서 `git -C $M diff --stat <HEAD 커밋> -- . ':(exclude).deploy' 2>&1` 이 아무것도 찍지
+      않아야 한다(`<HEAD 커밋>` 은 저장소 루트의 `git rev-parse HEAD`). git 은 줄끝을 맞춘 뒤 견주므로 줄끝만 다르면 diff 가 아니라
+      `CRLF will be replaced` 경고로만 나온다 — 그래서 `2>&1` 로 함께 본다.
+
+   어긋나면 태그를 올리기 전이므로 `git tag -d deploy/<STAMP>` → 고쳐 커밋·푸시 → 다시 빌드한다. 맞으면 확인을 받아
+   `git push origin deploy/<STAMP>`(샌드박스 밖). `--tags` 는 쓰지 않는다 — 남은 시험 태그가 함께 올라간다.
+3. **서피스로 넘긴다** (WSL Claude, 샌드박스 밖 — 승인 한 번)
+
+   ```bash
+   scp ~/projects/Deploy/<STAMP>.zip surface: && sftp -b - surface <<< 'ls -l <STAMP>.zip'
+   ```
+
+   `ls -l` 의 크기가 위 2단계 1) 의 `stat` 값과 같은지 본다. 그다음 보고 끝에 ZIP 이름·크기·sha256 과 메일 규격(보낸 사람·받는 사람·제목
+   `<STAMP>.zip`·본문 한 줄)을 적어 넘긴다.
+4. **사용자** — 서피스 Outlook 에서 `C:\Dev\update_publishing\<STAMP>.zip` 을 붙여 보낸다.
+5. **WSL Claude** — 사용자가 「보냈다」고 하면 HANDOFF·TODO 에 발송(시각·stamp·커밋·크기)을 적어 커밋한다. 이 기록 커밋은 다음
+   푸시 때 함께 올린다(확인 뒤).
+
+**첫 WSL 빌드의 줄끝.** 서피스에서 만든 ZIP 은 디스크의 CRLF 를 그대로 실었다(`202610081500` 은 63개 — `docs/TODO.md` 그 배포
+기록, `202610120655` 는 서피스 세션 셈 56개). 블롭은 LF 이고 서피스 작업 트리만 CRLF 였다. WSL 작업 트리는 `.gitattributes` 의
+`* text=auto eol=lf` 대로 LF 라(`*.ps1` 만 CRLF) 첫 WSL ZIP 은 그 파일들을 내용은 같고 줄끝만 LF 로 싣는다. 10-13 에 흉내 저장소로
+쟀다 — `bfe9a10` 의 WSL 빌드를 `202610081500` 상태 흉내 저장소에 적용하되, 사내 작업 트리를 흉내 내 텍스트 파일 584개(상한)를
+CRLF 로 바꾸고 `git add` 로 인덱스를 새로 고쳐(사내 적용기가 서피스 ZIP 을 풀고 커밋한 뒤와 같은 상태) 두어도 적용기의 `변경`·`지움`·「사내에 없는 파일」·`대조 N/N` 이 LF 대조군과 같았고(추가 13 · 수정 143 · 지움 없음 ·
+13 · 602/602), `core.autocrlf true` 여도 같았다. 송장의 `changes` 는 사외 블롭끼리, 지움·대조 블록은 경로 목록끼리 견주고 해시는
+ZIP 바이트를 쓴 뒤 재기 때문이다. **그래서 런북 7장 기대값은 고치지 않는다.** 달라지는 경우는 하나다 — 사내 인덱스에 CRLF 가
+든 블롭이 있으면(`git ls-files --eol` 의 `i/crlf`·`i/mixed`) 그 파일들이 줄끝만 바뀐 채 `deploy:` 커밋에 함께 실린다(같은 실험에서
+그 584개와 `scripts/new_worktree.ps1` 까지 585개를 CRLF 블롭으로 커밋해 두니 커밋 파일이 157 → 598). `.gitattributes` 가 첫 커밋부터
+있어 처음 `git add` 때 모두 LF 로 들어갔을 것이라 사내는 0 이어야 하지만 — 명시 `text` 경로는 다시 add 하면 정규화되고 `text=auto`
+경로(`.sql` 등)는 인덱스에 CRLF 가 있으면 그대로 남는다 — 사외에서 볼 수 없으니, **첫 WSL ZIP 의 7장에 한 번** 적용 전
+`(git ls-files --eol | Select-String 'i/(crlf|mixed)').Count`(기대 0)와 적용 뒤 `deploy:` 커밋 파일 수(`git show --stat --format= HEAD`
+끝줄, 기대 = 흉내 저장소에서 같은 명령으로 잰 수)를 결과 꼴에 넣고, 「줄끝만 바뀐 파일이 커밋에 끼면 결함이 아니다 — 수만
+적는다」를 런북 3장(적용 뒤 읽는 법) 꼴의 한 줄로 그 7장에 단다.
 
 ## 6. Windows 에서만 되는 것 — WSL 에서는 하지 않는다
 
@@ -154,15 +219,17 @@ GitHub 인증이 있어야 한다. WSL 일반 셸에서 둘 중 하나.
 ## 7. 서피스 개발 환경을 지우기 전에 — 사용자가 챙길 것
 
 1장 머리의 결정대로 서피스 개발 환경을 지우면 아래 가운데 WSL·GitHub 에 없는 것은 사라진다.
-`[x]` 는 10-13 에 옮겨 끝난 것이다.
+`[x]` 는 10-13 에 옮겨 끝난 것이다. **서피스에서 지우지 않는 것** — 배포 받는 자리(sshd·`C:\Dev\update_publishing`·배포 전용 키
+등록)와 메일을 보내는 Outlook 은 5장의 배포 길이라 남긴다. 접속 단말(Tailscale → SSH → tmux)도 그대로다.
 
 - [ ] **서피스 8501 앱의 DB** — WSL 의 두 DB 는 10-12 서피스 사본이다. 그 뒤 서피스 앱에서 저장한 시나리오·리비전·공식버전·설비는
   WSL 에 없다. 합성 표본이라 버려도 되는지는 사용자가 정한다.
 - [ ] `templates/structure_template.xlsb`(Excel, git 밖) — 옮기지 않았다. 사외에서는 쓸 곳이 없어진다(6장).
 - [ ] `data/temp/` 백업 DB, `data/output/` 옛 ZIP, `data/input/backup/`, 옛 배포 ZIP 출력 자리 `C:\Dev\Streamlit_Project_Dummyfile` —
-  옮기지 않았다. 이제 ZIP 은 WSL `data/output/` 에 만든다(5장). 지난 배포 ZIP 의 내용은 태그에서 다시 만들 수
+  옮기지 않았다. 이제 ZIP 은 WSL `~/projects/Deploy/` 에 만든다(5장). 지난 배포 ZIP 의 내용은 태그에서 다시 만들 수
   있지만(그 태그와 뒤 태그를 지운 복제에서 `--no-tag`) 송장 시각과 줄끝이 달라 보낸 파일과 바이트는 같지 않다 — 보낸 그 파일은
-  보낸 메일함의 첨부다.
+  보낸 메일함의 첨부다. 남기려면 서피스에서 `C:\Dev\update_publishing` 에 넣어 두고 WSL 에서 `sftp surface` 의 `get` 으로 받아
+  `~/projects/Deploy/` 에 둔다(받는 쪽은 아직 해 보지 않았다).
 - [ ] 옛 후보 브랜치 `cand/*`(서피스에 일곱 — 기능은 고친 꼴로 `main` 에 들어갔다) 가운데 푸시 안 된 것. GitHub 에 있는 것은 둘이다 —
   `cand/설비CSV내보내기/claude`(`f3d2698`, `main` 에 다 들어 있다)·`cand/설비UI개편/claude`(`25af5c5`, `main` 에 없는 커밋 17).
 - [ ] 서피스 Claude 의 이 프로젝트 메모리 가운데 WSL 로 옮긴 묶음 뒤에 생기거나 바뀐 것 — WSL 메모리에 없으면 옮긴다.

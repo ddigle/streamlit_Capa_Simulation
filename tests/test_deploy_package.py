@@ -1,6 +1,7 @@
 # Purpose: 사내 배포 세트가 무엇을 담고 무엇을 빼는지 고정한다.
 
 import json
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -188,3 +189,155 @@ def test_runbook_placeholders_are_counted_until_filled() -> None:
     assert leftover_placeholders(draft) == {"<STAMP>": 2, "{APPLY_FACTS}": 1}
     assert leftover_placeholders("이 절은 stamp `202610121200` 배포용이다. 추가 13") == {}
     assert leftover_placeholders("커밋 `deploy: <stamp>` 꼴") == {}
+
+
+def _git(root: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", "-c", "user.name=test", "-c", "user.email=test@example.com", *args],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return completed.stdout.strip()
+
+
+@pytest.fixture
+def pushed_repo(tmp_path: Path) -> Path:
+    """`main` 을 원격(빈 저장소)에 올린 작은 저장소. 트리가 깨끗하고 HEAD == origin/main 이다."""
+    remote = tmp_path / "remote.git"
+    remote.mkdir()
+    _git(remote, "init", "--bare", "-q")
+    root = tmp_path / "work"
+    root.mkdir()
+    # 사내 Windows 4관문에서도 돈다 — 그쪽 git 판·전역 설정에 기대지 않는다. `init -b` 는
+    # git 2.28 부터라 HEAD 를 손으로 돌리고, 전역 서명·훅이 빌더의 `git tag` 와 커밋을
+    # 막지 않게 끈다.
+    _git(root, "init", "-q")
+    _git(root, "symbolic-ref", "HEAD", "refs/heads/main")
+    for key, value in (
+        ("commit.gpgsign", "false"),
+        ("tag.gpgsign", "false"),
+        ("core.hooksPath", str(tmp_path / "no-hooks")),
+        # 빌더는 작업 트리 바이트를 그대로 싣는다. 같은 바이트를 견주도록 `write_text`(Windows
+        # 에서 `\n` → `\r\n`) 대신 바이트로 쓰고 줄끝 변환도 끈다.
+        ("core.autocrlf", "false"),
+    ):
+        _git(root, "config", key, value)
+    (root / "app.py").write_bytes(b"x = 1\n")
+    _git(root, "add", "app.py")
+    _git(root, "commit", "-q", "-m", "첫 커밋")
+    _git(root, "remote", "add", "origin", str(remote))
+    _git(root, "push", "-q", "origin", "main")
+    return root
+
+
+def test_a_clean_pushed_tree_has_no_source_problems(pushed_repo: Path) -> None:
+    from build_deploy_package import source_problems
+
+    assert source_problems(pushed_repo) == []
+
+
+@pytest.mark.parametrize("staged", [False, True])
+def test_an_uncommitted_tracked_edit_is_a_source_problem(pushed_repo: Path, staged: bool) -> None:
+    """내용은 작업 트리에서 읽는다. 커밋하지 않은 수정은 ZIP 에 실리고 송장의 커밋과 어긋난다."""
+    from build_deploy_package import source_problems
+
+    (pushed_repo / "app.py").write_bytes(b"x = 2\n")
+    if staged:
+        _git(pushed_repo, "add", "app.py")
+
+    problems = source_problems(pushed_repo)
+
+    assert len(problems) == 1
+    assert "커밋하지 않은 수정이 1개" in problems[0]
+    assert "app.py" in problems[0]
+
+
+def test_an_unpushed_commit_is_a_source_problem(pushed_repo: Path) -> None:
+    """송장의 커밋이 원격에 없으면 사내 리뷰가 부르는 커밋을 사외가 다시 꺼낼 수 없다."""
+    from build_deploy_package import source_problems
+
+    (pushed_repo / "app.py").write_bytes(b"x = 2\n")
+    _git(pushed_repo, "commit", "-q", "-am", "푸시 전")
+
+    problems = source_problems(pushed_repo)
+
+    assert len(problems) == 1
+    assert "origin/main" in problems[0]
+    assert "앞선 커밋 1 · 뒤진 커밋 0" in problems[0]
+
+
+def test_a_missing_upstream_is_a_source_problem(pushed_repo: Path) -> None:
+    from build_deploy_package import source_problems
+
+    _git(pushed_repo, "remote", "remove", "origin")
+
+    problems = source_problems(pushed_repo)
+
+    assert len(problems) == 1
+    assert "origin/main 을 찾지 못했습니다" in problems[0]
+
+
+def test_untracked_files_are_reported_but_are_not_source_problems(pushed_repo: Path) -> None:
+    """추적하지 않는 파일은 ZIP 에 실리지 않는다 — 내용이 HEAD 와 어긋나게 만들지는 않는다."""
+    from build_deploy_package import source_problems, untracked_entries
+
+    (pushed_repo / "new_module.py").write_text("", encoding="utf-8")
+
+    assert source_problems(pushed_repo) == []
+    assert untracked_entries(pushed_repo) == ["new_module.py"]
+
+
+def test_the_build_stops_before_writing_when_the_tree_is_not_pushed(
+    pushed_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """보낼 ZIP(태그를 남기는 빌드)은 만들지도 태그를 달지도 않고 멈춘다."""
+    import build_deploy_package
+
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", pushed_repo)
+    (pushed_repo / "app.py").write_bytes(b"x = 2\n")
+    out = tmp_path / "out"
+
+    assert build_deploy_package.main(["--out", str(out), "--stamp", "202610131200"]) == 1
+    assert not (out / "202610131200.zip").exists()
+    assert _git(pushed_repo, "tag", "--list") == ""
+
+
+def test_a_trial_build_only_warns_about_an_unpushed_tree(
+    pushed_repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """런북 수치를 재는 시험 빌드는 커밋·푸시 전에 돈다. 알리고 만들되 태그는 남기지 않는다."""
+    import build_deploy_package
+
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", pushed_repo)
+    (pushed_repo / "app.py").write_bytes(b"x = 2\n")
+    out = tmp_path / "out"
+
+    code = build_deploy_package.main(["--out", str(out), "--stamp", "202610131200", "--no-tag"])
+
+    assert code == 0
+    assert "시험 빌드(--no-tag)라 멈추지 않습니다" in capsys.readouterr().out
+    with zipfile.ZipFile(out / "202610131200.zip") as archive:
+        assert archive.read("app.py") == b"x = 2\n"
+    assert _git(pushed_repo, "tag", "--list") == ""
+
+
+def test_a_clean_pushed_build_ships_head_and_tags_it(
+    pushed_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import build_deploy_package
+
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", pushed_repo)
+    out = tmp_path / "out"
+
+    assert build_deploy_package.main(["--out", str(out), "--stamp", "202610131200"]) == 0
+    with zipfile.ZipFile(out / "202610131200.zip") as archive:
+        manifest = json.loads(archive.read("DEPLOY_MANIFEST.json"))
+        assert archive.read("app.py") == b"x = 1\n"
+    assert manifest["commit"] == _git(pushed_repo, "rev-parse", "HEAD")
+    assert _git(pushed_repo, "tag", "--list") == "deploy/202610131200"

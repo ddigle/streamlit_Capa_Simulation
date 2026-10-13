@@ -63,7 +63,7 @@ git remote -v      # github.com 이면 사외, 사내 GitHub 주소면 사내
 | 단계 | 어디서 | 무엇을 | 사람이 하는 일 |
 |---|---|---|---|
 | 1 | 사외 | 개발 · 커밋 | — |
-| 2 | 사외 | 배포 ZIP 생성(WSL Claude) | **메일 발송** — ZIP 을 옮겨 보낸다 |
+| 2 | 사외 | 배포 ZIP 생성 · 서피스로 전달(WSL Claude) | **메일 발송** — 서피스 Outlook 에서 |
 | 3 | 사내 | ZIP 적용 → `deploy:` 커밋 | **ZIP 내려받기만** |
 | 3-1 | 사내 | 목록 대조 → 정체불명 파일 처리 | **정체불명 파일의 방향 결정** |
 | 4 | 사내 | 실데이터로 조사 | — |
@@ -82,24 +82,27 @@ git remote -v      # github.com 이면 사외, 사내 GitHub 주소면 사내
 
 ### 2-1. 배포 ZIP 만들기 (사외, 2단계)
 
-사외 빌드 자리는 데스크탑 WSL 이다. 메일은 WSL 에서 보낼 수 없어 사용자가 보낸다 — 흉내 저장소로 런북 수치를 재는 법과
-ZIP 을 옮기는 길까지 `docs/wsl_dev_environment.md` 5장.
+사외 빌드 자리는 데스크탑 WSL 이다. ZIP 은 WSL Claude 가 만들어 서피스의 받는 자리로 넘기고, 메일은 사용자가 서피스에서
+보낸다 — 흉내 저장소로 런북 수치를 재는 법, ZIP 자리(`~/projects/Deploy/`), 확인과 전달까지 `docs/wsl_dev_environment.md` 5장.
 
 ```bash
-.venv/bin/python scripts/build_deploy_package.py --out data/output --stamp <STAMP>
-git push origin main --tags
+git push origin main                                   # 런북 7장을 채워 커밋한 뒤
+.venv/bin/python scripts/build_deploy_package.py --out ~/projects/Deploy --stamp <STAMP>
+git push origin deploy/<STAMP>                         # ZIP 을 확인한 뒤
 ```
 
 `--out` 과 `--stamp` 를 준다 — `--stamp` 는 런북 7장 머리에 적은 stamp 와 같아야 하고, 다르거나 빠지면(빠지면 지금 분)
 빌더가 멈춘다. 파일 이름은 `<stamp>.zip` 이고, 스크립트가 같은 이름의 태그 `deploy/<stamp>` 를 HEAD 에 남긴다. **그 태그를
 올리지 않으면 다음 배포가 「직전 배포 이후 무엇이 바뀌었나」를 구하지 못한다** — 송장의 `changes` 가 빈 채로 나가고 사내는
-변경 규모를 알 수 없다. 그래서 태그 푸시가 배포의 일부다. 사외 WSL 에서는 메일 발송 뒤 확인을 받아 `main` 과 함께 올린다
-(`docs/wsl_dev_environment.md` 5장 3).
+변경 규모를 알 수 없다. 그래서 태그 푸시가 배포의 일부다. ZIP 을 확인한 뒤 서피스로 넘기기 전에 그 태그 하나만 올린다 —
+`--tags` 는 남은 시험 태그까지 올린다.
 
 다른 인자: `--list-only`(ZIP·태그 없이 목록만, `--out` 불필요), `--no-tag`(시험 삼아 만들 때만).
 
-빌드 전에 **커밋을 끝내 작업 트리를 깨끗이 한다.** 목록은 `git ls-files` 기준이라 추적하지 않은 새 파일은 빠지고,
-내용은 작업 트리에서 읽으므로 커밋하지 않은 수정은 실리되 태그·송장의 커밋(HEAD)과 어긋난다.
+**빌드 전에 커밋하고 `main` 을 푸시한다 — 빌더가 확인한다.** 목록은 `git ls-files` 에서 오고 내용은 작업 트리에서 읽으므로
+커밋하지 않은 수정은 실리되 송장의 커밋(HEAD)과 어긋나고, 푸시하지 않은 커밋은 사내 리뷰가 부를 때 원격에 없다. 그래서
+빌더는 추적 파일에 커밋하지 않은 수정이 있거나 HEAD 가 `origin/main` 과 다르면 ZIP 도 태그도 만들지 않고 멈춘다(`--no-tag`
+시험 빌드는 알리기만 한다). 추적하지 않는 새 파일은 ZIP 에서 빠지므로 막지 않고 `알림` 으로 찍는다 — 실을 파일이면 커밋한다.
 
 ---
 

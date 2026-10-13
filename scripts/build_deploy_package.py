@@ -15,9 +15,13 @@
 
 사용:
 
-    .venv/bin/python scripts/build_deploy_package.py --out data/output --stamp <STAMP>
+    .venv/bin/python scripts/build_deploy_package.py --out ~/projects/Deploy --stamp <STAMP>
 
-사외 빌드 자리는 데스크탑 WSL 이다 — 런북 수치 재기부터 메일까지는
+목록은 `git ls-files` 에서 오고 내용은 작업 트리에서 읽는다. 그래서 추적 파일에 커밋하지 않은
+수정이 있거나 HEAD 가 `origin/main` 과 다르면 멈춘다 — 송장의 커밋과 ZIP 내용이 어긋난 채로
+나가지 않게 한다(`--no-tag` 시험 빌드는 알리기만 한다).
+
+사외 빌드 자리는 데스크탑 WSL 이다 — 런북 수치 재기부터 ZIP 전달까지는
 `docs/wsl_dev_environment.md` 5장.
 """
 
@@ -132,6 +136,48 @@ def git_output(root: Path, *args: str) -> str:
         encoding="utf-8",
     )
     return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
+# 보낸 ZIP 이 가리키는 커밋은 원격에도 있어야 한다. 사내 리뷰가 그 커밋을 부르면 사외가
+# 언제든 다시 꺼내 볼 수 있어야 하고, 다음 배포의 변경 목록도 그 위에서 구한다.
+UPSTREAM_REF = "origin/main"
+
+
+def source_problems(root: Path, *, upstream: str = UPSTREAM_REF) -> list[str]:
+    """ZIP 내용이 HEAD(= 푸시한 커밋)와 같다고 말할 수 없게 만드는 것. 빈 목록이어야 보낸다.
+
+    목록은 `git ls-files` 에서 오지만 내용은 작업 트리에서 읽으므로(`file_digests`·
+    `build_archive`) 커밋하지 않은 수정은 ZIP 에 실리고, 송장의 `commit` 은 그 수정이 없는
+    HEAD 를 가리킨다. 사내 리뷰가 그 커밋으로 재현하려 하면 같은 코드가 아니다.
+    """
+    problems: list[str] = []
+    dirty = git_output(root, "status", "--porcelain", "--untracked-files=no").splitlines()
+    if dirty:
+        listed = ", ".join(line.strip() for line in dirty[:5])
+        more = f" 외 {len(dirty) - 5}개" if len(dirty) > 5 else ""
+        problems.append(f"추적 파일에 커밋하지 않은 수정이 {len(dirty)}개 있습니다: {listed}{more}")
+    head = git_output(root, "rev-parse", "--verify", "--quiet", "HEAD")
+    remote = git_output(root, "rev-parse", "--verify", "--quiet", f"{upstream}^{{commit}}")
+    if not remote:
+        problems.append(f"{upstream} 을 찾지 못했습니다 — 원격에 올린 커밋인지 가릴 수 없습니다.")
+    elif head != remote:
+        counts = git_output(root, "rev-list", "--left-right", "--count", f"{upstream}...HEAD")
+        behind, _, ahead = counts.partition("\t")
+        problems.append(
+            f"HEAD({head[:7]})가 {upstream}({remote[:7]})과 다릅니다 — "
+            f"앞선 커밋 {ahead or '?'} · 뒤진 커밋 {behind or '?'}. "
+            "main 을 푸시한 뒤 다시 만듭니다."
+        )
+    return problems
+
+
+def untracked_entries(root: Path) -> list[str]:
+    """추적도 무시도 되지 않는 파일. ZIP 에 실리지 않으므로 막지 않고 알리기만 한다.
+
+    새 모듈을 `git add` 하지 않은 채 빌드하면 이 목록에만 나타나고 ZIP 에서는 빠진다.
+    """
+    listed = git_output(root, "ls-files", "--others", "--exclude-standard")
+    return [line.strip() for line in listed.splitlines() if line.strip()]
 
 
 def previous_deploy_tag(root: Path) -> str:
@@ -340,7 +386,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--no-tag",
         action="store_true",
-        help="배포 태그를 남기지 않는다. 시험 삼아 만들어 볼 때만 쓴다.",
+        help=(
+            "배포 태그를 남기지 않는다. 시험 삼아 만들어 볼 때만 쓴다 — "
+            "커밋·푸시 검사는 알리기만 한다."
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -372,6 +421,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     stamp = args.stamp or datetime.now().strftime("%Y%m%d%H%M")
     if runbook_stamp_mismatch(stamp) or runbook_placeholders_left():
         return 1
+    # 시험 빌드(흉내 저장소로 런북 수치를 잴 때)는 커밋·푸시 전이라 늘 걸린다. 보내지 않는
+    # ZIP 이므로 알리기만 하고, 태그를 남기는 빌드 — 보낼 ZIP — 만 멈춘다.
+    problems = source_problems(PROJECT_ROOT)
+    if problems:
+        if not args.no_tag:
+            print(
+                "빌드를 멈춥니다 — 보낼 ZIP 은 푸시한 커밋과 내용이 같아야 합니다.", file=sys.stderr
+            )
+            for problem in problems:
+                print(f"  - {problem}", file=sys.stderr)
+            print("  커밋하고 main 을 푸시한 뒤 다시 만듭니다.", file=sys.stderr)
+            return 1
+        print("시험 빌드(--no-tag)라 멈추지 않습니다 — 이 ZIP 은 보내지 않습니다:")
+        for problem in problems:
+            print(f"  - {problem}")
+    untracked = untracked_entries(PROJECT_ROOT)
+    if untracked:
+        print(f"알림  추적하지 않는 파일 {len(untracked)}개는 ZIP 에 실리지 않습니다:")
+        for path in untracked[:10]:
+            print(f"  ? {path}")
+        if len(untracked) > 10:
+            print(f"  … 외 {len(untracked) - 10}개")
     destination = args.out / f"{stamp}.zip"
     manifest = build_manifest(PROJECT_ROOT, paths, stamp=stamp)
     count = build_archive(PROJECT_ROOT, paths, destination, manifest=manifest)
@@ -403,7 +474,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if tagged.returncode == 0:
             print(
                 f"태그 {tag} — 다음 배포가 여기서 변경 목록을 구합니다. "
-                "`git push --tags` 를 잊지 마세요."
+                f"확인을 마치면 `git push origin {tag}`."
             )
         else:
             print(f"태그 {tag} 를 남기지 못했습니다: {tagged.stderr.strip()}", file=sys.stderr)
