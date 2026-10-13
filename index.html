@@ -2425,6 +2425,11 @@ window.SAMPLE = {
 
 </script>
 <script>
+// build/build.py 가 앱 저장소의 기준 커밋에서 다시 센다. 직접 고치지 않는다 — S10 이 읽는다(null 이면 장면에 박힌 값).
+window.MEASURES = {"base": "c32b388", "commits": 681, "coauthored": 649, "tests": 2563, "from": "08-03", "to": "10-13", "days": 72, "active": ["08-03", "08-04", "08-05", "08-12", "08-18", "08-24", "08-27", "08-29", "09-01", "09-02", "09-03", "09-04", "09-05", "09-06", "09-08", "09-09", "09-10", "09-11", "09-12", "09-13", "09-14", "09-15", "09-16", "09-17", "09-18", "09-19", "09-20", "09-21", "09-22", "09-23", "09-24", "09-25", "09-27", "09-28", "09-29", "09-30", "10-01", "10-02", "10-03", "10-04", "10-05", "10-06", "10-07", "10-08", "10-10", "10-11", "10-12", "10-13"], "deploys": 18};
+
+</script>
+<script>
 // 혁신대회 발표 무대 엔진 — 장면 등록, beat 진행(→ 다음 · ← 즉시 되감기), 장면 전환, 발표자 창, 인쇄 모드.
 //
 // 장면 하나 = Deck.scene({ id, act, title, seconds, beats:[{say, print}], note?, lockEnter?, cut5?, build(root, ctx), exit?(root, ctx) }).
@@ -9292,10 +9297,13 @@ void main() {
       const T3 = tsk + 1.0;
       tl.addLabel("b3", T3);
 
-      // ------------------------------------------------------------ b4 — 판이 겹치고 표지가 덮여 지침서 → 9주 달력 · 39 / 62일
+      // ------------------------------------------------------------ b4 — 판이 겹치고 표지가 덮여 지침서 → 주 달력 · 활동일 / 기간
       const BOOK = { x: BX + 14, y: 340, w: 340, h: 320 };
       const TAB = { w: 34, h: 40, y0: 26, pitch: 46 };
-      const CAL = { y: 350, cell: 20, gap: 4 };
+      // 주 달력(월요일 시작, 줄 = 요일 · 열 = 주) — 기간을 담는 주 수만큼(10-03 은 9주 = 범위 안 62칸 + 밖 한 칸).
+      // 주가 늘면 칸을 줄여 달력 + 「48 / 72일」(약 136px)이 오른쪽 여백선 1800 을 넘지 않게 한다(9주까지는 20px 그대로).
+      const WEEKS = Math.ceil(M.days / 7), CW_MAX = 1800 - (BX + 14) - 22 - 136;
+      const CAL = { y: 350, cell: Math.min(20, Math.floor((CW_MAX + 4) / WEEKS) - 4), gap: 4 };
       const bk = pos(ctx.el("div", "s10-book"), BOOK.x, BOOK.y, 1800 - BOOK.x, CAL.y + 7 * (CAL.cell + CAL.gap) - CAL.gap);
       ctx.persist(bk, "guide-book");
       const tabs = [0, 1, 2, 3, 4, 5].map((k) => {
@@ -9307,17 +9315,17 @@ void main() {
       pos(ctx.el("div", "sp", null, cover), null, null, 26);
       const btt = pos(ctx.el("div", "tt", "지침서", cover), null, 104);
       const bb = [[150, 180], [104, 204]].map(([w, y]) => pos(ctx.el("span", "bar", null, cover), 26 + Math.round((BOOK.w - 4 - 26 - w) / 2), y, w, 12));
-      // 9주 달력(월요일 시작, 줄 = 요일 · 열 = 주) — 범위 안 62칸 + 범위 밖 한 칸, 활동일만 잉크로 켜진다
-      const CW = 9 * (CAL.cell + CAL.gap) - CAL.gap, CHh = 7 * (CAL.cell + CAL.gap) - CAL.gap;
+      // 활동일만 잉크로 켜진다
+      const CW = WEEKS * (CAL.cell + CAL.gap) - CAL.gap, CHh = 7 * (CAL.cell + CAL.gap) - CAL.gap;
       const cal = ctx.svg("svg", { class: "s10-cal", width: CW, height: CHh, viewBox: "0 0 " + CW + " " + CHh }, bk);
       cal.style.left = "0px"; cal.style.top = CAL.y + "px";
       const cpos = (i) => ({ x: Math.floor(i / 7) * (CAL.cell + CAL.gap), y: (i % 7) * (CAL.cell + CAL.gap) });
-      for (let i = 0; i < 63; i++) {
+      for (let i = 0; i < WEEKS * 7; i++) {
         const p = cpos(i), out = i >= M.days;
         ctx.svg("rect", { x: p.x + (out ? .5 : 0), y: p.y + (out ? .5 : 0), width: CAL.cell - (out ? 1 : 0), height: CAL.cell - (out ? 1 : 0), rx: 3, class: out ? "x" : "d" }, cal);
       }
       const lit = ACTIVE.map((i) => { const p = cpos(i); return ctx.svg("rect", { x: p.x, y: p.y, width: CAL.cell, height: CAL.cell, rx: 3, class: "a" }, cal); });
-      const cnt = pos(ctx.el("div", "s10-cnt", "<b>" + ACTIVE.length + "</b><span>/ " + M.days + "일</span>", bk), CW + 22, CAL.y + 58);
+      const cnt = pos(ctx.el("div", "s10-cnt", "<b>" + ACTIVE.length + "</b><span>/ " + M.days + "일</span>", bk), CW + 22, CAL.y + Math.round(CHh / 2) - 24);
 
       tl.set(bk, { autoAlpha: 0 }, 0);
       tl.set(cover, { scaleX: 0, transformOrigin: "0% 50%" }, 0);
