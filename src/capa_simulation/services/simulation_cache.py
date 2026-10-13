@@ -23,9 +23,12 @@ from capa_simulation.services.dashboard import (
 from capa_simulation.services.display_order import PreparedDisplayOrder
 from capa_simulation.services.equipment_availability import (
     build_equipment_lifecycle_spans,
+    build_equipment_status_as_of,
     build_inactive_equipment_month_view,
+    build_milestone_transition_events,
     build_space_equipment_status,
     build_weekly_equipment_availability,
+    inactive_equipment_rows,
 )
 from capa_simulation.services.load_calculator import (
     DemandBasis,
@@ -1270,3 +1273,71 @@ def get_securement_cross_check(
     return build_securement_cross_check(
         _static, dynamic_available_equipment(_monthly), _required_equipment
     )
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_equipment_status_as_of(
+    cache_key: EquipmentJudgementCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+) -> pd.DataFrame:
+    _, _, as_of = cache_key
+    return build_equipment_status_as_of(_equipment, _downtime, as_of=date.fromisoformat(as_of))
+
+
+def get_equipment_status_as_of(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, *, as_of: date
+) -> pd.DataFrame:
+    """Main 「호기 현황(상태 분포·호기 목록)」「Qual 일정」 의 기준일 상태.
+
+    `build_equipment_status_as_of` 의 캐시다. 키는 거른 두 표의 내용 지문 + 기준일이다 — 기준일을
+    옮기면(기본값이 오늘이라 날짜가 바뀌어도) 새로 판정한다. Qual 의 고정 지분·거르기와 표시명은
+    캐시 밖이다.
+    """
+    cache_key = (frame_digest(equipment), frame_digest(downtime), as_of.isoformat())
+    return _cached_equipment_status_as_of(cache_key, equipment, downtime)
+
+
+def get_inactive_equipment(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, *, as_of: date
+) -> pd.DataFrame:
+    """Main 「비가동 호기 › 기준일 시점」(`build_inactive_equipment` 와 같다).
+
+    같은 기준일 상태 캐시(`get_equipment_status_as_of`)에서 비가동 술어(보유 & ~가용)만 건다 —
+    `build_inactive_equipment` 가 바로 그 둘의 합이다.
+    """
+    return inactive_equipment_rows(get_equipment_status_as_of(equipment, downtime, as_of=as_of))
+
+
+# (거른 마스터 내용 지문, 시작, 끝, 기준일)
+TransitionEventsCacheKey = tuple[str, str, str, str]
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_milestone_transition_events(
+    cache_key: TransitionEventsCacheKey, _equipment: pd.DataFrame
+) -> pd.DataFrame:
+    _, start, end, as_of = cache_key
+    return build_milestone_transition_events(
+        _equipment,
+        start_date=date.fromisoformat(start),
+        end_date=date.fromisoformat(end),
+        as_of=date.fromisoformat(as_of),
+    )
+
+
+def get_milestone_transition_events(
+    equipment: pd.DataFrame, *, start_date: date, end_date: date, as_of: date
+) -> pd.DataFrame:
+    """Main 「단계 전환」 의 전환 일정(`build_milestone_transition_events`).
+
+    비가동을 보지 않는 판정이라 키는 거른 마스터 지문 + 기간 + 기준일(완료·예정을 가른다)이다.
+    전환단계·일정상태·확정상태 거르기와 집계·표시명은 캐시 밖이다.
+    """
+    cache_key = (
+        frame_digest(equipment),
+        start_date.isoformat(),
+        end_date.isoformat(),
+        as_of.isoformat(),
+    )
+    return _cached_milestone_transition_events(cache_key, equipment)

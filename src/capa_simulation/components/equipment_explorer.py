@@ -19,11 +19,6 @@ from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import prune_list_selection
-from capa_simulation.services.equipment_availability import (
-    build_equipment_status_as_of,
-    build_inactive_equipment,
-    build_milestone_transition_events,
-)
 from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
     DATE_COLUMNS,
@@ -44,8 +39,11 @@ from capa_simulation.services.equipment_units import (
     unit_transitions,
 )
 from capa_simulation.services.simulation_cache import (
+    get_equipment_status_as_of,
+    get_inactive_equipment,
     get_inactive_equipment_month,
     get_lifecycle_gantt_spans,
+    get_milestone_transition_events,
     get_undated_equipment,
     get_usage_excluded_equipment,
     get_weekly_equipment_availability,
@@ -361,9 +359,8 @@ def _transitions(
     건수는 설비 단위다 — 모듈 행이 같은 날 같은 단계로 넘어가면 1건(`unit_transitions`).
     동·층·좌표를 보지 않고 걸러진 설비 마스터 전체를 본다.
     """
-    events = build_milestone_transition_events(
-        equipment, start_date=start, end_date=end, as_of=as_of
-    )
+    # 키 = 거른 마스터 지문 + 기간 + 기준일. 아래 거르기·집계·표시명은 캐시 밖이다.
+    events = get_milestone_transition_events(equipment, start_date=start, end_date=end, as_of=as_of)
     if stages and not events.empty:
         events = events.loc[events["전환단계"].isin(stages)]
     if schedule != "전체" and not events.empty:
@@ -709,7 +706,7 @@ def render_equipment_explorer(
                         labels=labels,
                     )
             elif question == "비가동 호기":
-                inactive = build_inactive_equipment(filtered, filtered_downtime, as_of=as_of)
+                inactive = get_inactive_equipment(filtered, filtered_downtime, as_of=as_of)
                 st.markdown(
                     f"#### 비가동 호기 · {as_of:%Y-%m-%d} · {_rows_label(inactive, partial=True)}"
                 )
@@ -733,7 +730,7 @@ def render_equipment_explorer(
                     owner_tab=owner_tab,
                 )
             else:
-                status = build_equipment_status_as_of(filtered, filtered_downtime, as_of=as_of)
+                status = get_equipment_status_as_of(filtered, filtered_downtime, as_of=as_of)
                 states: Sequence[str]
                 # 분포는 행이 아니라 설비를 센다. 생애주기 상태는 그 시점 보유로 매긴 지분을,
                 # Qual 은 보유와 상관없는 계획이라 고정 지분(1 ÷ 모듈 수)을 쓴다. 고정 지분은

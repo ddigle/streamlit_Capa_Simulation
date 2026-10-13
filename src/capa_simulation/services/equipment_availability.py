@@ -433,10 +433,10 @@ def build_inactive_equipment(
     as_of: date,
 ) -> pd.DataFrame:
     """Return owned unit-level equipment that is not currently available."""
-    return _inactive_rows(build_equipment_status_as_of(equipment, downtime, as_of=as_of))
+    return inactive_equipment_rows(build_equipment_status_as_of(equipment, downtime, as_of=as_of))
 
 
-def _inactive_rows(status: pd.DataFrame) -> pd.DataFrame:
+def inactive_equipment_rows(status: pd.DataFrame) -> pd.DataFrame:
     """시점 표에서 비가동 호기(보유 & ~가용)만. 시점 보기와 「그 달 전체」가 같은 술어를 쓴다."""
     if status.empty:
         return status
@@ -576,7 +576,7 @@ def _inactive_in_month_from_prepared(
     sampled = sorted(set(moments)) or [_month_bounds(month)[0]]
     stacked = pd.concat(
         [
-            _inactive_rows(
+            inactive_equipment_rows(
                 _build_equipment_status_from_prepared(
                     prepared, prepared_downtime, as_of=pd.Timestamp(moment)
                 )

@@ -34,9 +34,11 @@ from capa_simulation.services.equipment_availability import (
     _lifecycle_breakpoints,
     _month_bounds,
     build_equipment_lifecycle_spans,
+    build_equipment_status_as_of,
     build_inactive_equipment,
     build_inactive_equipment_in_month,
     build_inactive_equipment_month_view,
+    build_milestone_transition_events,
     inactive_equipment_moments,
 )
 from capa_simulation.services.equipment_contract import (
@@ -492,3 +494,145 @@ def test_the_gantt_view_redraws_for_filter_period_and_master_changes(
     app.run()
     assert not app.exception
     assert "EQ-NODATE" in _gantt_units(app)
+
+
+# ------------------------------------------------------------------ 기준일 상태·비가동·단계 전환
+
+
+_AS_OF_DAYS = (ANCHOR - timedelta(days=40), ANCHOR, ANCHOR + timedelta(days=11))
+
+
+@pytest.mark.parametrize("processes", _FILTERS)
+@pytest.mark.parametrize("as_of", _AS_OF_DAYS)
+def test_cached_status_and_inactive_match_the_direct_calls(
+    as_of: date, processes: tuple[str, ...]
+) -> None:
+    """같은 숫자 — 기준일 상태·비가동(기준일 시점)·단계 전환은 캐시를 지나도 직접 부른 것과 같다."""
+    equipment, downtime = _filtered(*_fleet(), processes)
+
+    assert_frame_equal(
+        simulation_cache.get_equipment_status_as_of(equipment, downtime, as_of=as_of),
+        build_equipment_status_as_of(equipment, downtime, as_of=as_of),
+    )
+    assert_frame_equal(
+        simulation_cache.get_inactive_equipment(equipment, downtime, as_of=as_of),
+        build_inactive_equipment(equipment, downtime, as_of=as_of),
+    )
+    window = {"start_date": GANTT_START, "end_date": GANTT_END, "as_of": as_of}
+    assert_frame_equal(
+        simulation_cache.get_milestone_transition_events(equipment, **window),
+        build_milestone_transition_events(equipment, **window),
+    )
+
+
+@pytest.mark.parametrize("change", ["as_of", "process_filter", "downtime_row", "master_cell"])
+def test_cached_status_follows_every_input(change: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    simulation_cache._cached_equipment_status_as_of.clear()
+    equipment, downtime = _fleet()
+    as_of = ANCHOR
+    base = simulation_cache.get_equipment_status_as_of(equipment, downtime, as_of=as_of)
+    base_inactive = simulation_cache.get_inactive_equipment(equipment, downtime, as_of=as_of)
+
+    if change == "as_of":
+        as_of = ANCHOR + timedelta(days=11)  # MOD-01B 반출 뒤
+    elif change == "process_filter":
+        equipment, downtime = _filtered(equipment, downtime, ("Final Test", "Burn-In"))
+    elif change == "downtime_row":
+        downtime = _without_downtime_of(downtime, "MOD-01C")
+    else:
+        equipment = equipment.copy()
+        moved = equipment[EQUIPMENT_ID_COLUMN].eq("MOD-01C")
+        equipment.loc[moved, "반출일정"] = pd.Timestamp(ANCHOR - timedelta(days=1))
+    built = _counting(monkeypatch, "build_equipment_status_as_of", build_equipment_status_as_of)
+    status = simulation_cache.get_equipment_status_as_of(equipment, downtime, as_of=as_of)
+    inactive = simulation_cache.get_inactive_equipment(equipment, downtime, as_of=as_of)
+    fresh = build_equipment_status_as_of(equipment, downtime, as_of=as_of)
+
+    assert len(built) == 1  # 상태 분포와 비가동 시점이 한 판정을 나눈다
+    assert_frame_equal(status, fresh)
+    assert_frame_equal(inactive, build_inactive_equipment(equipment, downtime, as_of=as_of))
+    assert not fresh.equals(base)
+    assert not inactive.equals(base_inactive)
+
+    again = simulation_cache.get_equipment_status_as_of(equipment, downtime, as_of=as_of)
+    assert len(built) == 1
+    assert_frame_equal(again, fresh)
+
+
+@pytest.mark.parametrize("change", ["start", "end", "as_of", "master_cell"])
+def test_cached_transitions_follow_every_input(
+    change: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    simulation_cache._cached_milestone_transition_events.clear()
+    equipment, _ = _fleet()
+    window = {"start_date": GANTT_START, "end_date": GANTT_END, "as_of": ANCHOR}
+    base = simulation_cache.get_milestone_transition_events(equipment, **window)
+
+    if change == "start":
+        window["start_date"] = ANCHOR
+    elif change == "end":
+        window["end_date"] = ANCHOR + timedelta(days=20)
+    elif change == "as_of":
+        window["as_of"] = ANCHOR + timedelta(days=30)
+    else:
+        equipment = equipment.copy()
+        moved = equipment[EQUIPMENT_ID_COLUMN].eq("MOD-01B")
+        equipment.loc[moved, "반출일정"] = equipment.loc[moved, "반출일정"] + pd.Timedelta(days=3)
+    built = _counting(
+        monkeypatch, "build_milestone_transition_events", build_milestone_transition_events
+    )
+    events = simulation_cache.get_milestone_transition_events(equipment, **window)
+    fresh = build_milestone_transition_events(equipment, **window)
+
+    assert len(built) == 1
+    assert_frame_equal(events, fresh)
+    assert not fresh.equals(base)
+
+    again = simulation_cache.get_milestone_transition_events(equipment, **window)
+    assert len(built) == 1
+    assert_frame_equal(again, fresh)
+
+
+def _shown(app: AppTest) -> list[str]:
+    """화면에 그린 결과 — 표·차트·지표·글을 차례대로 직렬화한다."""
+    parts = [frame.value.to_json(force_ascii=False) for frame in app.dataframe]
+    parts += [str(chart.proto.spec) for chart in app.get("vega_lite_chart")]
+    parts += [f"{metric.label}={metric.value}" for metric in app.metric]
+    parts += [item.value for item in app.markdown] + [item.value for item in app.caption]
+    return parts
+
+
+@pytest.mark.parametrize(
+    ("question", "view_key", "view"),
+    [
+        ("호기 현황", "equipment_explorer_unit_view", "상태 분포"),
+        ("호기 현황", "equipment_explorer_unit_view", "호기 목록"),
+        ("비가동 호기", "equipment_explorer_inactive_view", "기준일 시점"),
+        ("비가동 호기", "equipment_explorer_inactive_view", "그 달 전체"),
+        ("Qual 일정", "equipment_explorer_qual_view", "호기 목록"),
+        ("Qual 일정", "equipment_explorer_qual_view", "확정상태 분포"),
+        ("단계 전환", "equipment_explorer_transition_view", "단계별 건수"),
+        ("단계 전환", "equipment_explorer_transition_view", "전환 일정 목록"),
+    ],
+)
+def test_a_warm_rerun_shows_exactly_what_a_cold_run_showed(
+    question: str, view_key: str, view: str
+) -> None:
+    """화면: 캐시를 비운 첫 회차와 캐시가 적중한 다음 회차가 같은 표·차트·지표·글을 그린다."""
+    for clear in (
+        simulation_cache._cached_equipment_status_as_of.clear,
+        simulation_cache._cached_inactive_equipment_month.clear,
+        simulation_cache._cached_milestone_transition_events.clear,
+    ):
+        clear()
+    app = AppTest.from_function(_render_fixture, default_timeout=30).run()
+    app.segmented_control(QUESTION_KEY).set_value(question).run()
+    app.selectbox(view_key).set_value(view).run()
+    assert not app.exception
+    cold = _shown(app)
+
+    app.run()
+
+    assert not app.exception
+    assert _shown(app) == cold
+    assert cold
