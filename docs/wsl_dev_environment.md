@@ -113,7 +113,7 @@ Chrome 연동은 WSL 을 지원하지 않아(공식 문서) WSL Claude 는 메�
 
 - **ZIP 은 `~/projects/Deploy/` 에 만든다** — 저장소 밖, 사내 리뷰를 받는 `~/projects/Review/` 옆. 저장소 안 `data/output/` 은 무시
   목록이지만 저장소를 다시 받으면 함께 사라지고 앱 산출물과 섞인다. 보낸 ZIP 은 여기 쌓아 둔다. 샌드박스는 저장소와 `$TMPDIR` 밖에
-  쓰지 못하므로 사용자 설정 `sandbox.filesystem.allowWrite` 에 이 폴더가 있어야 하고 폴더는 미리 만들어 둔다 — 없으면 빌더가
+  쓰지 못하므로 사용자 설정 `sandbox.filesystem.allowWrite` 에 이 폴더가 있어야 한다(폴더는 10-13 에 만들었다) — 없으면 빌더가
   `Read-only file system` 으로 멈춘다. 그때는 우회하지 않고 사용자에게 알린다.
 - **서피스 받는 자리는 `C:\Dev\update_publishing`** 이다(10-13 서피스 세션이 세팅·시험). WSL `~/.ssh/config` 의 `Host surface` 가 배포
   전용 키로 붙고, 서피스 sshd 는 키 로그인·Tailscale 대역만 받으며 이 키로는 그 폴더에 갇힌 sftp 만 된다(셸·포워딩 없음 — 도착·`whoami`
@@ -182,14 +182,15 @@ Chrome 연동은 WSL 을 지원하지 않아(공식 문서) WSL Claude 는 메�
    scp ~/projects/Deploy/<STAMP>.zip surface: && sftp -b - surface <<< 'ls -l <STAMP>.zip'
    ```
 
-   `ls -l` 의 크기가 위 2단계 1) 의 `stat` 값과 같은지 본다. 그다음 보고 끝에 ZIP 이름·크기·sha256 과 메일 규격(보낸 사람·받는 사람·제목
+   `ls -l` 의 크기가 위 2단계 1) 의 `stat` 값과 같은지 본다. 서피스 OpenSSH 가 양자 내성 키 교환을 몰라 접속마다
+   `** WARNING: connection is not using a post-quantum key exchange algorithm.` 석 줄이 찍힌다 — 실패가 아니다. 그다음 보고 끝에 ZIP 이름·크기·sha256 과 메일 규격(보낸 사람·받는 사람·제목
    `<STAMP>.zip`·본문 한 줄)을 적어 넘긴다.
 4. **사용자** — 서피스 Outlook 에서 `C:\Dev\update_publishing\<STAMP>.zip` 을 붙여 보낸다.
 5. **WSL Claude** — 사용자가 「보냈다」고 하면 HANDOFF·TODO 에 발송(시각·stamp·커밋·크기)을 적어 커밋한다. 이 기록 커밋은 다음
    푸시 때 함께 올린다(확인 뒤).
 
 **첫 WSL 빌드의 줄끝.** 서피스에서 만든 ZIP 은 디스크의 CRLF 를 그대로 실었다(`202610081500` 은 63개 — `docs/TODO.md` 그 배포
-기록, `202610120655` 는 서피스 세션 셈 56개). 블롭은 LF 이고 서피스 작업 트리만 CRLF 였다. WSL 작업 트리는 `.gitattributes` 의
+기록, `202610120655` 는 57개 — 10-13 서피스 받는 자리에서 받아 와 태그 블롭과 견준 수). 블롭은 LF 이고 서피스 작업 트리만 CRLF 였다. WSL 작업 트리는 `.gitattributes` 의
 `* text=auto eol=lf` 대로 LF 라(`*.ps1` 만 CRLF) 첫 WSL ZIP 은 그 파일들을 내용은 같고 줄끝만 LF 로 싣는다. 10-13 에 흉내 저장소로
 쟀다 — `bfe9a10` 의 WSL 빌드를 `202610081500` 상태 흉내 저장소에 적용하되, 사내 작업 트리를 흉내 내 텍스트 파일 584개(상한)를
 CRLF 로 바꾸고 `git add` 로 인덱스를 새로 고쳐(사내 적용기가 서피스 ZIP 을 풀고 커밋한 뒤와 같은 상태) 두어도 적용기의 `변경`·`지움`·「사내에 없는 파일」·`대조 N/N` 이 LF 대조군과 같았고(추가 13 · 수정 143 · 지움 없음 ·
@@ -228,8 +229,9 @@ ZIP 바이트를 쓴 뒤 재기 때문이다. **그래서 런북 7장 기대값�
 - [ ] `data/temp/` 백업 DB, `data/output/` 옛 ZIP, `data/input/backup/`, 옛 배포 ZIP 출력 자리 `C:\Dev\Streamlit_Project_Dummyfile` —
   옮기지 않았다. 이제 ZIP 은 WSL `~/projects/Deploy/` 에 만든다(5장). 지난 배포 ZIP 의 내용은 태그에서 다시 만들 수
   있지만(그 태그와 뒤 태그를 지운 복제에서 `--no-tag`) 송장 시각과 줄끝이 달라 보낸 파일과 바이트는 같지 않다 — 보낸 그 파일은
-  보낸 메일함의 첨부다. 남기려면 서피스에서 `C:\Dev\update_publishing` 에 넣어 두고 WSL 에서 `sftp surface` 의 `get` 으로 받아
-  `~/projects/Deploy/` 에 둔다(받는 쪽은 아직 해 보지 않았다).
+  보낸 메일함의 첨부다. 남기려면 서피스에서 `C:\Dev\update_publishing` 에 넣어 두고 WSL 에서 `scp surface:<STAMP>.zip
+  ~/projects/Deploy/`(샌드박스 밖)로 받는다. 10-13 에 `202610120655.zip`(3,651,419 바이트)을 이렇게 받아 두었다 — 송장 커밋
+  `bfe9a10`, 이름 602개가 태그와 같고 545개는 바이트까지, 57개는 줄끝만 다르며 내용이 다른 파일은 없다.
 - [ ] 옛 후보 브랜치 `cand/*`(서피스에 일곱 — 기능은 고친 꼴로 `main` 에 들어갔다) 가운데 푸시 안 된 것. GitHub 에 있는 것은 둘이다 —
   `cand/설비CSV내보내기/claude`(`f3d2698`, `main` 에 다 들어 있다)·`cand/설비UI개편/claude`(`25af5c5`, `main` 에 없는 커밋 17).
 - [ ] 서피스 Claude 의 이 프로젝트 메모리 가운데 WSL 로 옮긴 묶음 뒤에 생기거나 바뀐 것 — WSL 메모리에 없으면 옮긴다.
