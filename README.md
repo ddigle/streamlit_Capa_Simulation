@@ -230,8 +230,10 @@ docs/bigdataquery_webide_setup.md
 docs/parallel_agent_briefing.md
                                병행 개발 후보 에이전트의 시작 절차와 하루 흐름
 AGENTS.md                      개발 에이전트용 구조·규칙 문서
-index.html                     발표 자료(혁신대회 발표 덱 한 파일 — 사내 GitHub Pages 가 루트에서 읽는다.
-                               앱과 무관하고 숫자는 모두 합성 샘플)
+index.html                     대표 발표 자료(혁신대회 발표 덱 한 파일 — 사내 GitHub Pages 가 루트에서 읽는다.
+                               앱과 무관하고 숫자는 모두 합성 샘플). 원본은 저장소 밖 쇼케이스 폴더
+                               ~/projects/capa-simulation-showcase 의 contest/dist/capa-contest.html 이고,
+                               그 밖의 발표 자료는 이 저장소에 두지 않는다(AGENTS.md 3장 끝)
 ```
 
 사이드바 `조회 조건 · 이 화면에 적용` 구역에는 그 화면이 실제로 읽는 조건만 모읍니다. 구역 제목

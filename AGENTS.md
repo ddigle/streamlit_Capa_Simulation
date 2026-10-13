@@ -4211,6 +4211,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `require_fab_layout_fits` 한 곳, 편집기 `적용` 도 같은 검사로 미리 거부한다). 도면 용량 30MB 합계는 층과
     FAB 를 함께 센다(층 도면을 올릴 때 FAB 바이트를, FAB 를 올릴 때 층 합계를 더한다).
 
+### 저장소 루트의 발표 자료
+
+- `index.html`
+  - 이 저장소에 두는 **유일한** 발표 자료 — 대표 발표 자료 한 파일(지금은 혁신대회 덱)이다. 외부 요청이 없는 단일 HTML 이라
+    사내 GitHub Pages 가 루트에서 읽고 배포 ZIP 에도 실린다. 앱 코드와 무관하고 화면의 숫자는 모두 합성 샘플이다.
+  - 원본·빌드·조사 자료·원고·시안은 저장소 밖 `~/projects/capa-simulation-showcase` 가 맡는다 — 혁신대회 덱 `contest`·바이블
+    `bible`·중간 보고 덱 `build`·Learning Champion 초안. 그 폴더에는 자기 `CLAUDE.md` 와 메모리가 있고 그 폴더에서 연 Claude
+    세션이 일한다. 그 밖의 발표 파일은 이 저장소에 넣지 않는다(2026-10-13 사용자 결정).
+  - 원본은 쇼케이스의 `contest/dist/capa-contest.html` 이다. 같은 자리의 `capa-contest.artifact.html` 은 claude.ai 아티팩트용
+    변형이라 쓰지 않는다.
+  - 두 폴더는 서로 읽을 수 있지만 쓰지 않는다. `index.html` 을 바꿀 때만 이 저장소 세션이 그 dist 파일을 읽어 CR 을 빼고
+    (`tr -d '\r' < ~/projects/capa-simulation-showcase/contest/dist/capa-contest.html > index.html`) 커밋한다. 이 저장소는
+    `.gitattributes` 로 LF 저장이고 서피스에서 빌드한 dist 는 CRLF 라 sha256 이 다르게 나온다(10-13: 저장소 `5e2ab248…` / dist
+    `7112e317…`, CR 을 빼면 같았다) — 견줄 때도 CR 을 뺀 뒤 견준다.
+  - 발표자 실명은 그대로 둔다(2026-10-13 사용자 결정 — 다시 묻지 않는다).
+
 ## 4. 기준정보 테이블 계약
 
 Excel Table 이름, Power Query 결과명과 코드의 키는 `RQ_` 접두사를 사용한다.

@@ -173,3 +173,12 @@ DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_sim
 `.streamlit/secrets.toml`, `data/input`·`data/output`·`data/temp`의 실제 데이터는 커밋하지
 않는다. `config/bootstrap_display_order.json`과 `builtin_seed.py`에는 합성 `DEMO_*` 값만 두고
 실제 제품·고객·공정·설비 식별값을 넣지 않는다.
+
+## 발표 자료는 저장소 밖에서 운영한다
+
+발표 자료 원본(혁신대회 덱 `contest`·바이블 `bible`·중간 보고 덱 `build`·Learning Champion 초안)은 저장소 밖
+`~/projects/capa-simulation-showcase` 에서 그 폴더의 CLAUDE.md·메모리와 그 폴더에서 연 세션이 맡는다(2026-10-13 사용자
+결정). 이 저장소에는 대표 발표 자료 한 파일, 루트 `index.html` 만 두고 그 밖의 발표 파일은 넣지 않는다. 원본은 쇼케이스의
+`contest/dist/capa-contest.html` 이다(`capa-contest.artifact.html` 은 아티팩트용 변형이라 쓰지 않는다). 두 폴더는 서로 읽되
+쓰지 않는다 — `index.html` 을 바꿀 때만 이 저장소 세션이 그 파일을 읽어 CR 을 뺀 뒤(`tr -d '\r'`) 루트로 복사·커밋하고, 견줄
+때도 CR 을 뺀 뒤 견준다. 발표자 실명은 그대로 둔다(같은 날 사용자 결정 — 다시 묻지 않는다). 자세한 것은 `AGENTS.md` 3장 끝.
