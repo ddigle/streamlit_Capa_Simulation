@@ -1292,6 +1292,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (시나리오 키, 칸 4)이 한 벌 둔다. 로직 분석은 칸을 고를 때마다 이 프레임만 풀어 공정 필터로 거르고,
     주간 결과·요약 캐시도 빗나갈 때 여기서 받는다 — 날짜·분류 수준·가용대수는 이 프레임을 바꾸지 않아
     키에 넣지 않는다. 하위 선택지·로직 분석 결과·가용대수 읽기는 매 회차 한다.
+  - 공정 필터는 **전체 공정 결과를 거른다**(`simulation_cache.get_standard_target_weekly_result` →
+    `get_all_process_standard_target`, PKG 포함). 원수요 키·분류 그룹·RUN_DAY·가용대수·PKG 계획 연결이
+    모두 공정을 실어 공정끼리 섞이는 계산이 없다. 고치기 전과 결과가 다를 수 있는 세 자리는 고른
+    공정만 계산하는 옛 길로 되돌아간다 — 전체 계산 실패(고르지 않은 공정의 오류가 고른 공정을 막지
+    않는다, 공정을 안 고르면 같은 문구로 멈춘다), 원본 공정명의 앞뒤 공백(계산이 strip 한다), 거른 결과가
+    빔. 재공 현황(제품 선택)은 옛 길만 쓴다. 비교 테스트가 분류 수준·PKG·오류·공백 공정명마다 옛 길과
+    같은 프레임인지 본다.
 - `src/capa_simulation/components/reference_csv_tools.py`
   - 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 다운로드·Excel 표 붙여넣기 폼과 적용 결과
     알림을 공통 제공한다. 붙여넣기는 모두 팝업이다 — `render_reference_clipboard_form` 이

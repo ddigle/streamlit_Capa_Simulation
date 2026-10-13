@@ -644,3 +644,191 @@ def test_the_split_is_shared_so_new_weekly_keys_do_not_refetch_the_demand(
     _summary("shared-split")
 
     assert calls == ["shared-split"]
+
+
+# ------------------------------------------------- 공정 필터: 전체 공정 결과를 거른다(S10)
+
+
+def _result(
+    token: str,
+    *,
+    tables: dict[str, pd.DataFrame] | None = None,
+    availability: pd.DataFrame | None = None,
+    detail_level: str = "공정",
+    processes: tuple[str, ...] = (),
+    pkg: bool = False,
+) -> pd.DataFrame:
+    availability = _availability() if availability is None else availability
+    key = simulation_cache.standard_target_weekly_cache_key(
+        simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
+        availability=availability,
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 31),
+        detail_level=detail_level,
+        processes=processes,
+    )
+    return simulation_cache.get_standard_target_weekly_result(
+        key,
+        pkg=pkg,
+        _scenario_tables=_scenario_tables() if tables is None else tables,
+        _reference_tables={},
+        _weekly_availability=availability,
+    )
+
+
+@pytest.mark.parametrize("detail_level", ["공정", "양산구분", "제품정보", "Stack", "WF 구분"])
+@pytest.mark.parametrize(
+    "processes",
+    [(), ("P-A",), ("P-B", "Pre B/D"), ("P-A", "P-B", "Pre B/D"), ("없는 공정",)],
+)
+@pytest.mark.parametrize("pkg", [False, True])
+def test_filtering_the_all_process_result_equals_the_old_filtered_computation(
+    fake_scenario: dict[str, pd.DataFrame],
+    detail_level: str,
+    processes: tuple[str, ...],
+    pkg: bool,
+) -> None:
+    fake_scenario["all-process"] = _small_required()
+
+    result = _result("all-process", detail_level=detail_level, processes=processes, pkg=pkg)
+
+    expected = _old_path(_small_required(), detail_level=detail_level, processes=processes, pkg=pkg)
+    pd.testing.assert_frame_equal(result, expected)
+
+
+def _wide_tables(processes: list[str]) -> dict[str, pd.DataFrame]:
+    tables = _scenario_tables()
+    tables["RQ_RUN_DAY"] = pd.DataFrame(
+        {
+            "생산계획년월": [MONTH] * len(processes),
+            "공정": processes,
+            "RUN_DAY": [28.0 + index % 4 for index in range(len(processes))],
+        }
+    )
+    return tables
+
+
+def test_filtering_matches_on_a_large_frame_for_many_process_subsets(
+    fake_scenario: dict[str, pd.DataFrame],
+) -> None:
+    """6만 행·10공정 표본에서 여러 공정 조합이 고른 공정만 계산한 결과와 같다."""
+    required = required_frame()
+    fake_scenario["large"] = required
+    tables = _wide_tables(PROCESSES)
+    availability = pd.DataFrame(
+        {
+            "공정": [process for process in PROCESSES for _ in WEEKS],
+            "Weeknum": WEEKS * len(PROCESSES),
+            "가용대수": [1.0 + index % 3 for index in range(len(PROCESSES) * len(WEEKS))],
+        }
+    )
+    prepared, _ = split_standard_target_required_equipment(required)
+    for subset in (["P00"], ["P03", "P07"], ["P09", "P01", "P05"], PROCESSES[:9]):
+        for detail_level in ("공정", "제품정보"):
+            result = _result(
+                "large",
+                tables=tables,
+                availability=availability,
+                detail_level=detail_level,
+                processes=tuple(subset),
+            )
+            expected = build_weekly_standard_target_capacity(
+                required_equipment=prepared.loc[prepared["공정"].isin(subset)].reset_index(
+                    drop=True
+                ),
+                run_day=tables["RQ_RUN_DAY"],
+                weekly_availability=availability,
+                start_date=date(2026, 8, 1),
+                end_date=date(2026, 8, 31),
+                detail_level=detail_level,
+            )
+            pd.testing.assert_frame_equal(result, expected)
+
+
+def test_new_process_combinations_do_not_recompute(
+    fake_scenario: dict[str, pd.DataFrame], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_scenario["combos"] = _small_required()
+    calls: list[int] = []
+
+    def counting(**kwargs: object) -> pd.DataFrame:
+        calls.append(1)
+        return build_weekly_standard_target_capacity(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(simulation_cache, "build_weekly_standard_target_capacity", counting)
+
+    for processes in ((), ("P-A",), ("P-B",), ("P-A", "Pre B/D")):
+        _result("combos", processes=processes)
+
+    assert calls == [1]
+
+
+def test_an_error_in_an_unselected_process_does_not_stop_the_selected_one(
+    fake_scenario: dict[str, pd.DataFrame],
+) -> None:
+    """P-B 의 RUN_DAY 가 없다. 고르지 않은 공정의 오류는 고른 공정의 결과를 막지 않는다(고치기 전과
+    같다). 공정을 고르지 않으면 지금과 같은 문구로 멈춘다."""
+    fake_scenario["broken-b"] = _small_required()
+    tables = _scenario_tables()
+    tables["RQ_RUN_DAY"] = tables["RQ_RUN_DAY"].loc[lambda frame: frame["공정"].ne("P-B")]
+
+    def old(processes: tuple[str, ...]) -> pd.DataFrame:
+        prepared, _ = split_standard_target_required_equipment(_small_required())
+        if processes:
+            prepared = prepared.loc[prepared["공정"].isin(processes)].reset_index(drop=True)
+        return build_weekly_standard_target_capacity(
+            required_equipment=prepared,
+            run_day=tables["RQ_RUN_DAY"],
+            weekly_availability=_availability(),
+            start_date=date(2026, 8, 1),
+            end_date=date(2026, 8, 31),
+            detail_level="공정",
+        )
+
+    with pytest.raises(ValueError) as expected_error:
+        old(())
+    for _ in range(2):
+        with pytest.raises(ValueError) as raised:
+            _result("broken-b", tables=tables)
+        assert str(raised.value) == str(expected_error.value)
+
+    pd.testing.assert_frame_equal(
+        _result("broken-b", tables=tables, processes=("P-A",)), old(("P-A",))
+    )
+    with pytest.raises(ValueError, match="RQ_RUN_DAY"):
+        _result("broken-b", tables=tables, processes=("P-A", "P-B"))
+
+
+def test_a_pkg_link_missing_only_for_an_unselected_process_falls_back(
+    fake_scenario: dict[str, pd.DataFrame],
+) -> None:
+    """PKG 계획에 없는 제품이 P-B 에만 있다. 전체 PKG 환산은 실패하지만 P-A 는 지금처럼 나온다."""
+    required = _small_required()
+    extra = required.loc[required["공정"].eq("P-B")].head(1).assign(제품정보="Prod-3")
+    required = pd.concat([required, extra], ignore_index=True)
+    fake_scenario["pkg-missing"] = required
+
+    with pytest.raises(ValueError, match="RQ_PKG_PLAN"):
+        _result("pkg-missing", pkg=True)
+    pd.testing.assert_frame_equal(
+        _result("pkg-missing", processes=("P-A",), pkg=True),
+        _old_path(required, processes=("P-A",), pkg=True),
+    )
+
+
+def test_untrimmed_process_names_take_the_old_filtered_path(
+    fake_scenario: dict[str, pd.DataFrame],
+) -> None:
+    """원본 공정명에 공백이 있으면 계산(공백을 뗀다) 뒤 거르기가 다른 행을 고를 수 있다 — 「P-A」를
+    고르면 「P-A 」 행은 고치기 전처럼 빠져야 한다."""
+    required = _small_required()
+    spaced = required.loc[required["공정"].eq("P-A")].assign(공정="P-A ", 소요대수=9.0)
+    required = pd.concat([required, spaced], ignore_index=True)
+    fake_scenario["spaced"] = required
+
+    result = _result("spaced", processes=("P-A",))
+
+    pd.testing.assert_frame_equal(result, _old_path(required, processes=("P-A",)))
+    assert not result.equals(
+        _result("spaced").loc[lambda frame: frame["공정"].eq("P-A")].reset_index(drop=True)
+    )

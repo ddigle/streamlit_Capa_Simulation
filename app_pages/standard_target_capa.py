@@ -75,10 +75,9 @@ from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
     display_order_digest,
     get_display_ordered_values,
-    get_pkg_equivalent_standard_target,
     get_standard_target_split,
     get_standard_target_summary,
-    get_weekly_standard_target_capacity,
+    get_standard_target_weekly_result,
     scenario_cache_key,
     standard_target_weekly_cache_key,
 )
@@ -899,7 +898,8 @@ if output_metric == "로직 분석":
         )
 else:
     # 키만 해시한다 — 소요대수(5만 행 넘음)를 해시 인자로 넘기면 Streamlit 이 1만 행 표본만 봐
-    # 한 행 편집을 놓친다. 소요대수·RUN_DAY 는 캐시가 키의 시나리오·월로 제 안에서 얻는다.
+    # 한 행 편집을 놓친다. 소요대수·RUN_DAY 는 캐시가 키의 시나리오·월로 제 안에서 얻는다. 공정
+    # 필터는 전체 공정 결과를 거른다(결과가 달라질 수 있는 자리는 고른 공정만 계산한다).
     weekly_cache_key = standard_target_weekly_cache_key(
         scenario_key,
         availability=availability,
@@ -909,8 +909,9 @@ else:
         processes=selected_processes,
     )
     try:
-        weekly_target = get_weekly_standard_target_capacity(
+        weekly_target = get_standard_target_weekly_result(
             weekly_cache_key,
+            pkg=False,
             _scenario_tables=active_scenario["tables"],
             _reference_tables=reference_tables,
             _weekly_availability=availability,
@@ -957,8 +958,9 @@ else:
     output_file_metric = output_metric
     if pkg_basis:
         try:
-            weekly_target = get_pkg_equivalent_standard_target(
+            weekly_target = get_standard_target_weekly_result(
                 weekly_cache_key,
+                pkg=True,
                 _scenario_tables=active_scenario["tables"],
                 _reference_tables=reference_tables,
                 _weekly_availability=availability,
