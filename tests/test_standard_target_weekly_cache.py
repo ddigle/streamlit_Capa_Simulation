@@ -622,6 +622,38 @@ def test_a_failing_scenario_is_not_cached_by_the_summary(
     st.cache_data.clear()
 
 
+def test_a_summary_hit_does_not_split_again(
+    fake_scenario: dict[str, pd.DataFrame], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 키의 두 번째 요약은 분리·`RQ_REQB` ER 제외를 다시 하지 않는다 — 결과와 무관한 조작
+    (표시 항목·PKG 기준·팝업)마다 그 둘을 되풀이하지 않으려고 둔 캐시다."""
+    fake_scenario["summary-hit"] = _small_required()
+    calls: list[str] = []
+
+    def counting_split(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+        calls.append("split")
+        return split_standard_target_required_equipment(frame)
+
+    def counting_er(frame: pd.DataFrame) -> pd.DataFrame:
+        calls.append("er")
+        return exclude_er_required_equipment(frame)
+
+    monkeypatch.setattr(
+        simulation_cache, "split_standard_target_required_equipment", counting_split
+    )
+    monkeypatch.setattr(simulation_cache, "exclude_er_required_equipment", counting_er)
+
+    first = _summary("summary-hit")
+    assert calls == ["split", "er"]
+    calls.clear()
+
+    second = _summary("summary-hit")
+
+    assert calls == []
+    assert second.exception_rows == first.exception_rows
+    pd.testing.assert_frame_equal(second.processes, first.processes)
+
+
 # ------------------------------------------------- 분리 결과 캐시(로직 분석·주간 미스 경로)
 
 
