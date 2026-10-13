@@ -172,7 +172,6 @@ def render_required_shortening_tab(
     cutoff: pd.DataFrame,
     today: date,
     context: PageContext | None,
-    required_equipment: pd.DataFrame | None,
     scenario_error: str | None = None,
     owner_tab: OpenTab | None = None,
     conditions: DeltaGenerator | None = None,
@@ -185,8 +184,11 @@ def render_required_shortening_tab(
 
     조건 위젯 값은 숨은 동안 `persist_state` 가 지킨다.
 
-    `context`·`required_equipment` 는 페이지가 활성 시나리오에서 읽어 넘긴다. 못 읽었으면
-    `scenario_error` 에 까닭이 오고 **이 탭 안에서만** 알린다 — 다른 탭은 그대로 쓴다.
+    `context` 는 페이지가 읽어 넘긴 활성 시나리오다. 페이지는 그 시나리오의 계산이 서는지 먼저
+    보고(`simulation_cache.check_scenario_capacity`), 못 읽었거나 계산이 멈췄으면
+    `scenario_error` 에 까닭이 오고 **이 탭 안에서만** 알린다 — 다른 탭은 그대로 쓴다. 소요대수
+    프레임은 받지 않는다 — 고를 달은 그 범위(`get_required_month_span`)로 정하고, 프레임은
+    `get_required_shortening` 이 빗나갈 때만 같은 시나리오 키로 꺼낸다.
 
     `equipment_database_path` 는 공용 조회 조건 프로필과 진척 비교 기준선이 사는 설비 DB 다. 없으면
     (컴포넌트를 홀로 띄우는 자리) 조건은 세션 값뿐이고 진척 비교 상자·기준선 저장을 세우지 않는다.
@@ -202,7 +204,7 @@ def render_required_shortening_tab(
     level, compare_id = _render_header(today, baselines)
     render_baseline_notice()
 
-    if scenario_error is not None or context is None or required_equipment is None:
+    if scenario_error is not None or context is None:
         st.warning(
             "활성 시나리오의 소요대수를 읽지 못해 필요단축일정을 계산하지 않았습니다. "
             "다른 탭은 그대로 쓸 수 있습니다."
@@ -217,7 +219,21 @@ def render_required_shortening_tab(
         )
         return
 
-    month_options = _month_options(context, required_equipment)
+    scenario_key = simulation_cache.scenario_cache_key(
+        context.reference_version,
+        context.active_scenario,
+        context.selected_start_month,
+        context.selected_end_month,
+    )
+    scenario_tables = context.active_scenario["tables"]
+    month_options = _month_options(
+        context,
+        simulation_cache.get_required_month_span(
+            scenario_key,
+            _scenario_tables=scenario_tables,
+            _reference_tables=context.reference_tables,
+        ),
+    )
     if not month_options:
         st.info("조회기간에 월이 없습니다.")
         return
@@ -233,12 +249,7 @@ def render_required_shortening_tab(
         )
 
     key = simulation_cache.required_shortening_cache_key(
-        simulation_cache.scenario_cache_key(
-            context.reference_version,
-            context.active_scenario,
-            context.selected_start_month,
-            context.selected_end_month,
-        ),
+        scenario_key,
         equipment=equipment,
         downtime=downtime,
         baseline=baseline,
@@ -248,7 +259,13 @@ def render_required_shortening_tab(
     )
     try:
         plan = simulation_cache.get_required_shortening(
-            key, equipment, downtime, baseline, cutoff, required_equipment
+            key,
+            equipment,
+            downtime,
+            baseline,
+            cutoff,
+            _scenario_tables=scenario_tables,
+            _reference_tables=context.reference_tables,
         )
     except ValueError as exc:
         st.error(f"필요단축일정을 계산하지 못했습니다 — {exc}")
@@ -750,13 +767,15 @@ def _months_between(start: int, end: int) -> list[int]:
     return months
 
 
-def _month_options(context: PageContext, required_equipment: pd.DataFrame) -> list[int]:
-    """고를 수 있는 달 — 사이드바 조회기간 가운데 소요대수가 있는 범위(HOME 「적용」 범위)."""
+def _month_options(context: PageContext, demand_months: tuple[int, int] | None) -> list[int]:
+    """고를 수 있는 달 — 사이드바 조회기간 가운데 소요대수가 있는 범위(HOME 「적용」 범위).
+
+    `demand_months` 는 소요대수가 있는 첫 달·끝 달(`get_required_month_span`)이다. 없으면 조회기간
+    그대로다.
+    """
     start, end = context.selected_start_month, context.selected_end_month
-    if not required_equipment.empty and "생산계획년월" in required_equipment.columns:
-        present = pd.to_numeric(required_equipment["생산계획년월"], errors="coerce").dropna()
-        if not present.empty:
-            start, end = max(start, int(present.min())), min(end, int(present.max()))
+    if demand_months is not None:
+        start, end = max(start, demand_months[0]), min(end, demand_months[1])
     return _months_between(start, end)
 
 

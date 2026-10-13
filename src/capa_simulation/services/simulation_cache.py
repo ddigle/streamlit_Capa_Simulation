@@ -284,6 +284,10 @@ def check_scenario_capacity(
     캐시되지 않으므로 오류가 난 시나리오는 매번 `get_scenario_capacity_and_demand` 가 다시
     던진다(그쪽의 전체 기간 결과가 실패를 담아 두어 싸다). 부르는 쪽은
     `page_bootstrap.stop_calculation_on_error` 로 감싸 사이드바의 「✓ 적용」을 거둔다.
+
+    가용설비 현황(Static/Dynamic·필요단축일정)은 이것을 **오류 확인**으로 쓴다 — 소요대수 프레임이
+    필요 없는 보기에서도 기준정보 오류를 같은 문구로 알리되 프레임은 풀지 않는다. 그 화면은
+    「✓ 적용」을 쓰지 않으므로 감싸지 않는다.
     """
     get_scenario_capacity_and_demand(
         cache_key,
@@ -291,6 +295,57 @@ def check_scenario_capacity(
         _reference_tables=_reference_tables,
     )
     return True
+
+
+def scenario_required_equipment(
+    cache_key: ScenarioCacheKey,
+    *,
+    scenario_tables: Mapping[str, pd.DataFrame],
+    reference_tables: Mapping[str, pd.DataFrame],
+) -> Callable[[], pd.DataFrame]:
+    """이 키의 소요대수를 **부를 때만** 꺼내는 로더(`get_scenario_capacity_and_demand` 의 둘째 값).
+
+    키 전용 캐시(확보율 교차검증)가 빗나갈 때만 프레임이 필요하므로 프레임 대신 이것을 넘긴다 —
+    적중 회차에는 소요대수(합성 표본 30개월에 pickle 약 12MB, 샘플 관측)를 풀지 않는다. 두 표 묶음은
+    키의 content_token 을 발급한 바로 그 활성 시나리오·기준정보여야 한다. 계산 함수는 부를 때 이
+    모듈에서 찾는다 — 페이지 테스트가 그 속성을 바꾼다.
+    """
+
+    def load() -> pd.DataFrame:
+        _, required_equipment = get_scenario_capacity_and_demand(
+            cache_key,
+            _scenario_tables=scenario_tables,
+            _reference_tables=reference_tables,
+        )
+        return required_equipment
+
+    return load
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_required_month_span(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> tuple[int, int] | None:
+    """이 키의 소요대수가 있는 첫 달·끝 달(`생산계획년월` 의 숫자 최소·최대). 없으면 `None`.
+
+    필요단축일정이 고를 달(조회기간 ∩ 이 범위)을 정하는 데는 이 두 수만 든다. 적중이면 소요대수를
+    풀지 않고, 빗나가면 안에서 `get_scenario_capacity_and_demand` 를 한 번 부른다. 계산 오류는
+    캐시되지 않고 그대로 올라간다. `_scenario_tables` 는 키의 content_token 을 발급한 바로 그
+    active_scenario["tables"] 여야 한다.
+    """
+    _, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    if required_equipment.empty or MONTH_COLUMN not in required_equipment.columns:
+        return None
+    present = pd.to_numeric(required_equipment[MONTH_COLUMN], errors="coerce").dropna()
+    if present.empty:
+        return None
+    return int(present.min()), int(present.max())
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -1551,7 +1606,8 @@ def get_required_shortening(
     _downtime: pd.DataFrame,
     _baseline: pd.DataFrame,
     _cutoff: pd.DataFrame,
-    _required_equipment: pd.DataFrame,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
 ) -> ShorteningPlan:
     """다섯 목표의 필요단축일정. 목표·공정 선택은 이 결과를 고르기만 하므로 다시 계산하지 않는다.
 
@@ -1559,15 +1615,22 @@ def get_required_shortening(
     마스터에서만 나오므로 키의 마스터 내용 지문이 그것까지 덮는다.
 
     프레임은 해시하지 않는다 — 키(`required_shortening_cache_key`)가 내용 지문과 시나리오 키를
-    모두 싣는다. `_required_equipment` 는 키의 시나리오 키로 받은 바로 그 소요대수여야 한다.
-    설비 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
+    모두 싣는다. **소요대수는 빗나갈 때만 이 안에서** 키의 시나리오 키로 꺼낸다
+    (`get_scenario_capacity_and_demand`) — 적중 회차에는 그 프레임을 풀지 않는다. 두 표 묶음은 그
+    시나리오 키의 content_token 을 발급한 바로 그 활성 시나리오·기준정보여야 한다. 설비 마스터가
+    계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
 
     호기 구간은 Static/Dynamic 과 **같은 구간 캐시**(`get_equipment_lifecycle_spans`)에서 받는다.
     키의 마스터·비가동 지문을 그대로 쓰므로 다시 해시하지 않는다. 시나리오·기존보유·오늘만 바뀌어
     이 결과가 새로 돌 때도 구간(3천 행·32개월에 2초 남짓, 샘플 관측)은 다시 만들지 않고, 두 탭의
     구간 범위가 같으면 한 벌을 나눈다.
     """
-    _, equipment_digest, downtime_digest, _, _, months, today = cache_key
+    scenario_key, equipment_digest, downtime_digest, _, _, months, today = cache_key
+    _, required_equipment = get_scenario_capacity_and_demand(
+        scenario_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
     span = span_date_range(months, _cutoff) if months else None
     spans = (
         get_equipment_lifecycle_spans(
@@ -1583,7 +1646,7 @@ def get_required_shortening(
         downtime=_downtime,
         baseline=_baseline,
         cutoff=_cutoff,
-        required_equipment=_required_equipment,
+        required_equipment=required_equipment,
         months=months,
         today=date.fromisoformat(today),
         spans=spans,
@@ -1875,27 +1938,57 @@ def get_lifecycle_gantt_spans(
 SecurementCrossCheckCacheKey = tuple[AvailabilityComparisonCacheKey, ScenarioCacheKey]
 
 
+class SecurementCrossCheckResult(NamedTuple):
+    """확보율 교차검증 결과. 맞대지 않았으면 `check` 가 없다.
+
+    까닭은 차례대로 본다 — 소요대수가 비면 `has_demand` 가 거짓이고, 소요대수는 있는데 Static 이
+    비면 `has_demand` 만 참이다. 화면은 이 차례로 안내 문구를 고른다.
+    """
+
+    has_demand: bool
+    check: CrossCheck | None
+
+
+def securement_cross_check_result(
+    static: pd.DataFrame, monthly: pd.DataFrame, required_equipment: pd.DataFrame
+) -> SecurementCrossCheckResult:
+    """`build_securement_cross_check` 를 맞댈 것이 있을 때만 부른다(캐시 없음).
+
+    소요대수나 Static 이 비면 맞대지 않는다. 맞대지 못하면(`KeyError`·`ValueError`) 그대로 올라간다.
+    """
+    if required_equipment.empty:
+        return SecurementCrossCheckResult(has_demand=False, check=None)
+    if static.empty:
+        return SecurementCrossCheckResult(has_demand=True, check=None)
+    return SecurementCrossCheckResult(
+        has_demand=True,
+        check=build_securement_cross_check(
+            static, dynamic_available_equipment(monthly), required_equipment
+        ),
+    )
+
+
 @st.cache_data(show_spinner=False, max_entries=8)
 def get_securement_cross_check(
     cache_key: SecurementCrossCheckCacheKey,
     _monthly: pd.DataFrame,
     _static: pd.DataFrame,
-    _required_equipment: pd.DataFrame,
-) -> CrossCheck:
-    """Static/Dynamic 「확보율 교차검증」(`build_securement_cross_check`).
+    _required_equipment: Callable[[], pd.DataFrame],
+) -> SecurementCrossCheckResult:
+    """Static/Dynamic 「확보율 교차검증」(`securement_cross_check_result`).
 
     그 보기를 열어 둔 rerun(공정 바꾸기·다른 위젯·사이드바)마다 다시 맞대지 않게 캐시한다. 입력 셋은
     키가 모두 정한다 — 월별 Dynamic 은 비교 키 안의 월별 키(구간·기존보유·Cut-off·달·환산비 지문),
     Static 은 비교 키 안의 Static 지문, 소요대수는 시나리오 키(reference_version·content_token·
-    조회기간)다. 프레임은 해시하지 않는다: `_monthly`·`_static` 은 그 비교 키로 받은 월별·Static,
-    `_required_equipment` 는 그 시나리오 키로 받은(`get_scenario_capacity_and_demand`) 소요대수여야
-    한다. 공정 선택·표시명·반올림은 캐시 밖이다. 맞대지 못하면(`KeyError`·`ValueError`) 캐시에 남지
-    않고 그대로 올라간다.
+    조회기간)다. 프레임은 해시하지 않는다: `_monthly`·`_static` 은 그 비교 키로 받은 월별·
+    Static 이다.
+
+    **소요대수는 로더로 받아 빗나갈 때만 푼다** — 적중 회차에는 그 프레임을 풀지 않는다. 로더는 키의
+    시나리오 키로 소요대수를 꺼내는 것(`scenario_required_equipment`)이어야 한다. 공정 선택·표시명·
+    반올림은 캐시 밖이다. 맞대지 못하면(`KeyError`·`ValueError`) 캐시에 남지 않고 그대로 올라간다.
     """
     del cache_key
-    return build_securement_cross_check(
-        _static, dynamic_available_equipment(_monthly), _required_equipment
-    )
+    return securement_cross_check_result(_static, _monthly, _required_equipment())
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
