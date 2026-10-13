@@ -116,14 +116,18 @@ COUNTING_SCRIPT = (
 unshifted_first_month = int(calendar["생산계획년월"].min())
 
 
+def demand_for(scenario_key):
+    if scenario_key[2] != unshifted_first_month:
+        return required_equipment.loc[
+            required_equipment["제품정보"].ne("Product-A")
+        ].reset_index(drop=True)
+    return required_equipment.copy()
+
+
 def counting_capacity_and_demand(scenario_key, *_args, **_kwargs):
     st.session_state["demand_calls"] = st.session_state.get("demand_calls", 0) + 1
     st.session_state["demand_months"] = tuple(scenario_key[2:])
-    if scenario_key[2] != unshifted_first_month:
-        return pd.DataFrame(), required_equipment.loc[
-            required_equipment["제품정보"].ne("Product-A")
-        ].reset_index(drop=True)
-    return pd.DataFrame(), required_equipment.copy()
+    return pd.DataFrame(), demand_for(scenario_key)
 
 
 simulation_cache.get_scenario_capacity_and_demand = counting_capacity_and_demand""",
@@ -133,9 +137,18 @@ simulation_cache.get_scenario_capacity_and_demand = counting_capacity_and_demand
     lambda **_kwargs: weekly_standard.copy()
 )""",
         """def capturing_weekly_standard(**kwargs):
-    st.session_state["captured_required"] = kwargs["required_equipment"].copy()
-    st.session_state["captured_availability"] = kwargs["weekly_availability"].copy()
-    available = kwargs["weekly_availability"].rename(columns={"가용대수": "받은 가용대수"})
+    # 주간 래퍼는 키만 해시하고 소요대수를 키의 시나리오 키(조회 월 포함)·공정·제품 선택으로 얻는다.
+    # 대역도 키에서 같은 소요대수를 세운다 — 키에 옛 달이 실리면 옛 달의 소요대수가 잡힌다.
+    from capa_simulation.services.standard_target_capacity import (
+        prepare_standard_target_required_equipment,
+    )
+
+    scenario_key, _, _, _, _, processes, products = kwargs["cache_key"]
+    demand = prepare_standard_target_required_equipment(demand_for(scenario_key))
+    selected = demand["공정"].isin(processes) & demand["제품정보"].isin(products)
+    st.session_state["captured_required"] = demand.loc[selected].reset_index(drop=True)
+    st.session_state["captured_availability"] = kwargs["_weekly_availability"].copy()
+    available = kwargs["_weekly_availability"].rename(columns={"가용대수": "받은 가용대수"})
     weekly = weekly_standard.merge(available, on=["공정", "Weeknum"], how="left")
     weekly["가용대수"] = weekly.pop("받은 가용대수")
     weekly["일 표준 가능량"] = weekly["대당 일 Capa"] * weekly["가용대수"]

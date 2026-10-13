@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 import streamlit as st
 
+from capa_simulation.services import builtin_seed
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.display_order import prepare_display_order
@@ -31,8 +32,13 @@ START, END = 202602, 202606
 
 
 @pytest.fixture(scope="module")
-def tables() -> dict[str, pd.DataFrame]:
-    return dict(build_builtin_seed_dataset().reference_tables)
+def tables(tmp_path_factory: pytest.TempPathFactory) -> dict[str, pd.DataFrame]:
+    """Git 에 있는 내장 시드. 로컬 `data/input/RQ_DISPLAY_ORDER.csv` 가 있으면 시드가 그것을 읽어
+    표시순서 규칙이 PC 마다 달라지므로, 없는 자리를 가리켜 Git 의 시드 JSON 을 쓰게 한다."""
+    with pytest.MonkeyPatch.context() as patch:
+        missing = tmp_path_factory.mktemp("no_local_display_order") / "RQ_DISPLAY_ORDER.csv"
+        patch.setattr(builtin_seed, "LOCAL_DISPLAY_ORDER_CSV_PATH", missing)
+        return dict(build_builtin_seed_dataset().reference_tables)
 
 
 @pytest.fixture(autouse=True)
