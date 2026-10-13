@@ -716,3 +716,32 @@ def test_blank_cells_in_both_editors_show_as_blank_not_none(seeded_database: Pat
         proto = _editor_node(app, key).proto
         assert proto.HasField("placeholder"), key
         assert proto.placeholder == "", key
+
+
+def _plan_grid_total(app: AppTest) -> float:
+    """화면에 선 PKG PLAN 편집표(원본)의 월 칸 합계."""
+    from capa_simulation.services.load_calculator import PLAN_EDITOR_DIMENSIONS
+
+    grids = [
+        frame.value
+        for frame in app.dataframe
+        if set(PLAN_EDITOR_DIMENSIONS) <= set(frame.value.columns)
+        and "수율 구분" not in frame.value.columns
+    ]
+    assert len(grids) == 1, len(grids)
+    months = [column for column in grids[0].columns if str(column).isdigit()]
+    return float(grids[0][months].apply(pd.to_numeric).sum().sum())
+
+
+def test_the_plan_editor_shows_the_applied_plan_right_after_apply(seeded_database: Path) -> None:
+    """편집표 원본은 (시나리오 내용·편집 기간·표시순서) 키 캐시다. 적용이 새 토큰을 내므로 바로 다음
+    회차 편집표가 새 계획을 보인다 — 옛 원본이 남으면 다음 적용에서 값이 되돌아간다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    before = _plan_grid_total(app)
+
+    _paste(app, _clipboard_text(app, scale=0.5))
+    app.button(key="apply_pkg_plan_changes").click().run()
+    assert not list(app.exception)
+
+    assert _plan_grid_total(app) == pytest.approx(before * 0.5)

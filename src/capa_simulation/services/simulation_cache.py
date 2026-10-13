@@ -35,6 +35,9 @@ from capa_simulation.services.load_calculator import (
     build_monthly_volume,
     calculate_chip_and_wafer_loads,
     filter_edp_plan,
+    plan_to_edit_table,
+    split_editable_yield_rows,
+    yield_to_edit_table,
 )
 from capa_simulation.services.month_filter import MONTH_COLUMN, filter_month_range
 from capa_simulation.services.monthly_equipment_availability import (
@@ -626,6 +629,61 @@ def get_pkg_equivalent_standard_target(
         required_equipment=_standard_target_demand(cache_key, _scenario_tables, _reference_tables),
         plan=_scenario_month_slice(_scenario_tables, "RQ_PKG_PLAN", scenario_key),
         detail_level=detail_level,
+    )
+
+
+# 생산 계획 편집표 원본의 칸 수. 한 시나리오·조회기간에 표 하나라 세션·시나리오 몇 개를 오가도
+# 넉넉하다.
+PLAN_EDIT_TABLE_MAX_ENTRIES = 8
+
+
+@st.cache_data(show_spinner=False, max_entries=PLAN_EDIT_TABLE_MAX_ENTRIES)
+def get_plan_edit_table(
+    cache_key: ScenarioCacheKey,
+    display_order_key: str,
+    _plan: pd.DataFrame,
+    _display_order: PreparedDisplayOrder | None,
+) -> pd.DataFrame:
+    """생산 계획 PKG PLAN 편집표의 원본(월 Wide 피벗 → 표시순서 정렬).
+
+    편집표는 미적용 편집을 지키려고 닫힌 탭에서도 매 회차 그리므로 원본도 매 회차 필요한데, 환산
+    조건 토글·탭 전환마다 같은 입력으로 피벗을 다시 했다(합성 표본에서 약 20ms, 샘플 관측). 키는
+    `get_reference_edit_table` 과 같은 꼴 — 편집 기간의 `scenario_cache_key` + 표시순서 지문이다.
+    편집 적용·붙여넣기 적용·가상 제품 등록·되돌리기는 모두 새(또는 리비전 고정) content_token 을
+    낸다.
+
+    `_plan` 은 키의 content_token 을 발급한 바로 그 활성 시나리오에서 키와 같은 기간으로 자른
+    `RQ_PKG_PLAN`, `_display_order` 는 `display_order_key` 를 만든 `RQ_DISPLAY_ORDER` 를 준비한
+    것이어야 한다. 검증 예외는 캐시되지 않고, `st.cache_data` 는 꺼낼 때마다 사본을 준다.
+    """
+    del cache_key, display_order_key
+    return plan_to_edit_table(_plan, _display_order)
+
+
+class YieldEditTables(NamedTuple):
+    """수율 편집표 원본과 표에 실을 수 없어 잠근 행(값 결측·0 이하·100% 초과)."""
+
+    table: pd.DataFrame
+    locked: pd.DataFrame
+
+
+@st.cache_data(show_spinner=False, max_entries=PLAN_EDIT_TABLE_MAX_ENTRIES)
+def get_yield_edit_tables(
+    cache_key: ScenarioCacheKey,
+    display_order_key: str,
+    _yield_data: pd.DataFrame,
+    _display_order: PreparedDisplayOrder | None,
+) -> YieldEditTables:
+    """생산 계획 수율 편집표의 원본과 잠근 행. 키와 `_` 인자 계약은 `get_plan_edit_table` 과 같다.
+
+    잠근 행은 적용 때 원본 그대로 되붙이는 재료라(`restore_locked_yield_rows`) 표와 한 묶음으로
+    낸다 — 같은 입력의 결정적 출력이다. 표를 세울 수 없는 오류(연결 키 결측·중복)는 캐시되지 않아
+    매 회차 다시 나고, 화면은 지금처럼 수율 탭에만 알린다.
+    """
+    del cache_key, display_order_key
+    editable, locked = split_editable_yield_rows(_yield_data)
+    return YieldEditTables(
+        table=yield_to_edit_table(editable, _display_order, locked=locked), locked=locked
     )
 
 

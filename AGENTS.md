@@ -662,6 +662,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - PKG PLAN 붙여넣기는 탭에만 올리고 전역 반영은 `PKG PLAN 변경사항 적용` 한 곳이다. 수율
     붙여넣기는 바로 적용한다. 가상 제품 등록은 기존 제품의 기준정보 8표를 새 제품 키로
     복제하고 계획은 0 으로 시작한다(`services/virtual_product.py`).
+  - 두 편집표의 **원본**(Wide 피벗·표시순서 정렬, 수율은 잠근 행과 한 묶음)은
+    `simulation_cache.get_plan_edit_table`·`get_yield_edit_tables` 가 편집 기간의 `scenario_cache_key` +
+    표시순서 지문으로 캐시한다 — 편집표는 미적용 편집을 지키려고 매 회차 그리므로 원본도 매 회차
+    필요하지만 환산 조건 토글·탭 전환마다 같은 피벗을 다시 할 까닭은 없다. 적용·붙여넣기 적용·가상
+    제품 등록·되돌리기는 새 토큰을 내므로 바로 다음 회차 원본이 바뀐다(`tests/test_plan_edit_table_cache.py`,
+    `test_the_plan_editor_shows_the_applied_plan_right_after_apply`).
 - `app_pages/reference_data.py` (화면 이름 `기준 정보`)
   - **빈칸 규칙(2026-09-29 전수 감사 횡전개).** 편집표의 빈칸은 표마다 뜻이 다르다 — UPEH 는 「그 달
     경로 없음」(부하가 대당 Capa 없음으로 빠진다), Lot·WF 측정률은 「행 없음 = 1.0 가정」, 설비대수
