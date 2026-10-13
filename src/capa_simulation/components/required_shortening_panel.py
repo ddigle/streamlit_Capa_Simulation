@@ -761,12 +761,16 @@ def _month_options(context: PageContext, required_equipment: pd.DataFrame) -> li
 
 
 def _ordered_processes(plan: ShorteningPlan, context: PageContext) -> list[str]:
-    """맞댄 공정을 확보율 표와 같은 공용 표시순서로. 규칙이 깨져 있으면 이름순이다."""
+    """맞댄 공정을 확보율 표와 같은 공용 표시순서로. 규칙이 깨져 있으면 이름순이다.
+
+    규칙은 `load_page_context` 가 같은 `RQ_DISPLAY_ORDER` 로 이미 검증·파생해 둔 것
+    (`context.display_order`)을 쓴다 — 날표를 넘기면 회차마다 같은 규칙을 다시 준비한다.
+    """
     names = list(plan.processes)
     try:
         ordered = apply_display_order(
             pd.DataFrame({"공정": names}),
-            context.reference_tables["RQ_DISPLAY_ORDER"],
+            context.display_order,
             PAGE_CALCULATION,
             TAB_SECUREMENT,
         )
@@ -1012,13 +1016,35 @@ def _month_header(months: Sequence[int], first: str = "월") -> str:
     return head + "".join(f'<div class="shk-head">{month_label(month)}</div>' for month in months)
 
 
-def _bottleneck(frame: pd.DataFrame, month: int, column: str) -> tuple[float, str] | None:
-    rows = frame.loc[frame["생산계획년월"].eq(month) & frame["소요대수"].gt(0)]
+def _bottlenecks(
+    frame: pd.DataFrame, months: Sequence[int], column: str
+) -> dict[int, tuple[float, str]]:
+    """달마다 B/N — 소요대수가 있는 공정 가운데 `column ÷ 소요대수` 가 가장 낮은 공정과 그 값.
+
+    달마다 표를 거르던 것을 한 번에 한다. 고르는 규칙은 그대로다(numpy `argmin`): 값이 같으면 앞
+    행, 값이 NaN 인 행이 있으면 그 달의 첫 NaN 행이다. 소요대수가 0 이하인 행은 보지 않고, 그런
+    행만 있는 달은 결과에 없다.
+    """
+    rows = frame.loc[frame["생산계획년월"].isin(list(months)) & frame["소요대수"].gt(0)]
     if rows.empty:
-        return None
-    rates = rows[column] / rows["소요대수"]
-    position = int(rates.to_numpy().argmin())
-    return float(rates.iloc[position]), str(rows["공정"].iloc[position])
+        return {}
+    rates = (rows[column] / rows["소요대수"]).to_numpy(dtype="float64")
+    ranked = pd.DataFrame(
+        {
+            "month": rows["생산계획년월"].to_numpy(),
+            "unset": ~pd.isna(rates),  # NaN 이 먼저(False < True)
+            "rate": rates,
+            "position": range(len(rows)),
+            "process": rows["공정"].to_numpy(),
+        }
+    ).sort_values(["month", "unset", "rate", "position"], na_position="first")
+    first = ranked.drop_duplicates("month", keep="first")
+    return {
+        int(month): (float(rate), str(process))
+        for month, rate, process in zip(
+            first["month"], first["rate"], first["process"], strict=True
+        )
+    }
 
 
 def _lob_markup(
@@ -1051,8 +1077,9 @@ def _lob_markup(
         ("Dynamic B/N 확보율 단축 후", "단축후가용대수"),
     ):
         rows.append(f'<div class="shk-row-muted">{label}</div>')
+        bottlenecks = _bottlenecks(frame, months, column)
         for month in months:
-            found = _bottleneck(frame, month, column)
+            found = bottlenecks.get(int(month))
             if found is None:
                 rows.append('<div><span class="shk-muted">—</span></div>')
                 continue
