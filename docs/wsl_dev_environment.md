@@ -113,7 +113,7 @@ Chrome 연동은 WSL 을 지원하지 않아(공식 문서) WSL Claude 는 메�
 
 - **ZIP 은 `~/projects/Deploy/` 에 만든다** — 저장소 밖, 사내 리뷰를 받는 `~/projects/Review/` 옆. 저장소 안 `data/output/` 은 무시
   목록이지만 저장소를 다시 받으면 함께 사라지고 앱 산출물과 섞인다. 보낸 ZIP 은 여기 쌓아 둔다. 샌드박스는 저장소와 `$TMPDIR` 밖에
-  쓰지 못하므로 사용자 설정 `sandbox.filesystem.allowWrite` 에 이 폴더가 있어야 한다(폴더는 10-13 에 만들었다) — 없으면 빌더가
+  쓰지 못하므로 사용자 설정 `sandbox.filesystem.allowWrite` 에 이 폴더가 있어야 한다(10-13 에 폴더를 만들고 허용을 넣었다 — 실행 중인 세션에 바로 먹었다) — 없으면 빌더가
   `Read-only file system` 으로 멈춘다. 그때는 우회하지 않고 사용자에게 알린다.
 - **서피스 받는 자리는 `C:\Dev\update_publishing`** 이다(10-13 서피스 세션이 세팅·시험). WSL `~/.ssh/config` 의 `Host surface` 가 배포
   전용 키로 붙고, 서피스 sshd 는 키 로그인·Tailscale 대역만 받으며 이 키로는 그 폴더에 갇힌 sftp 만 된다(셸·포워딩 없음 — 도착·`whoami`

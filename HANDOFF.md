@@ -87,8 +87,8 @@ D3(값 칸 글자 「시나리오명 · rN」 — 리뷰 뒤 이름 줄에도 �
      `git push origin deploy/<stamp>` ③ `scp <stamp>.zip surface:` → `sftp surface` 의 `ls -l` 로 도착·크기 ④ 사용자가 서피스
      Outlook 으로 발송(규격은 보고 끝에 — 주소는 저장소에 적지 않는다) ⑤ 「보냈다」를 들으면 HANDOFF·TODO 기록 커밋. 푸시·scp 는
      샌드박스 밖이라 승인을 받는다. 10-13 에 `bfe9a10` 을 WSL 에서 다시 빌드·적용해 엔트리 602 · 추가 13 · 수정 143 · 해시
-     602/602 로 서피스 값과 같았다. **첫 WSL 빌드 전에 사용자가 할 것**: 샌드박스 쓰기 허용(`sandbox.filesystem.allowWrite` 에
-     `~/projects/Deploy` — 폴더는 10-13 에 만들었고 지난 배포 ZIP `202610120655.zip` 을 서피스 받는 자리에서 받아 두었다). 첫 WSL ZIP 은 서피스 ZIP 이 CRLF 로 실었던 파일을 LF 로 싣는다 — 안내 5장 끝.
+     602/602 로 서피스 값과 같았다. `~/projects/Deploy` 는 10-13 에 폴더·샌드박스 쓰기 허용(`sandbox.filesystem.allowWrite`)을 갖췄고 지난 배포 ZIP
+     `202610120655.zip` 을 서피스 받는 자리에서 받아 두었다. 첫 WSL ZIP 은 서피스 ZIP 이 CRLF 로 실었던 파일을 LF 로 싣는다 — 안내 5장 끝.
    - **사내 리뷰는 WSL 로 받는다** — `~/projects/Review/<stamp>_review.md`(저장소 밖). 지난 리뷰 13개와 버그 보고 2개는 옮겼다.
      `202609241444`·`202610070927` 리뷰는 사내에 푸시됐지만 사외로 온 적이 없다.
    - stash `bigdataquery user_name`(09-12 `b426b79` 기준 — 사내 계정을 환경변수 `CAPA_BDQ_USER_NAME` 으로 `getData(user_name=…)`
