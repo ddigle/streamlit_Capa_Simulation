@@ -75,6 +75,7 @@ from capa_simulation.persistence.cache import (
     clear_global_top5_band_cache,
     get_scenario_repository,
     load_global_comparison_scenario,
+    load_global_key_process,
 )
 from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
@@ -376,7 +377,6 @@ def render_home_preference(
     advance_shipment_profile: GlobalAdvanceShipment,
     execution_profile: GlobalExecutionCapacity,
     top5_band_profile: GlobalTop5Band,
-    key_process_profile: GlobalKeyProcess,
     summary_profile: GlobalSummaryNote,
     process_options: Sequence[str],
     process_labels: ProcessLabels,
@@ -388,6 +388,8 @@ def render_home_preference(
     Capa 입력 시트.
 
     보는 조건(EDP·Past Data 포함 등)은 사이드바 `LOB 표시 조건` 카드다(`render_home_view_card`).
+    주요공정 프리셋은 인자로 받지 않는다 — 그 카드는 프래그먼트라 회차마다 공용 프로필을 스스로
+    읽는다(`_render_key_process_editor`).
     """
     _render_comparison_picker(database_path)
     render_threshold_editor(
@@ -417,7 +419,6 @@ def render_home_preference(
         database_path=database_path,
     )
     _render_key_process_editor(
-        key_process_profile=key_process_profile,
         process_options=process_options,
         process_labels=process_labels,
         database_path=database_path,
@@ -1449,9 +1450,9 @@ def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]
         st.rerun(scope="app")
 
 
+@st.fragment
 def _render_key_process_editor(
     *,
-    key_process_profile: GlobalKeyProcess,
     process_options: Sequence[str],
     process_labels: ProcessLabels,
     database_path: str,
@@ -1468,8 +1469,24 @@ def _render_key_process_editor(
     **공정·이름 위젯에 `key` 를 두지 않는다.** `Preference` 탭은 숨어 있어도 그려지므로 `key` 를
     두면 첫 진입 값이 세션에 박혀 다른 사람이 저장한 프리셋을 영영 못 본다. 고칠 프리셋이 바뀌면
     기본값이 바뀌어 위젯이 새로 선다.
+
+    **프래그먼트다.** 「고칠 프리셋」 선택·삭제 확인·이름·공정 입력과 폼 제출은 이 카드만 다시
+    돌린다 — 앱 전체(HOME 계산·Figure 직렬화)를 돌릴 까닭이 없는 조작이다. 저장·기본으로·삭제는
+    지금처럼 `st.rerun(scope="app")` 으로 앱 전체를 다시 돌려 사이드바 `주요공정 히트맵` 줄과
+    히트맵 묶음 키가 새 프로필을 본다.
+
+    **프로필은 인자로 받지 않고 여기서 회차마다 다시 읽는다.** 프래그먼트 회차는 직전 앱 전체
+    회차의 인자를 그대로 쓰는데, 저장·기본으로·삭제는 늘 묶음 **전체의 교체**라 인자로 받은
+    묶음으로 만들면 그 사이 다른 세션이 저장한 프리셋을 낡은 묶음으로 덮는다(lost update —
+    `tests/test_home_key_process_fragment.py`). 공용 캐시라 적중이면 값싸고, 누가 저장하면
+    `clear_global_key_process_cache` 가 프로세스 전역으로 비운다. 공정 목록·표시명은 앱 전체
+    회차에서만 바뀌므로 인자 그대로 쓴다.
     """
-    profile = key_process_profile
+    try:
+        profile = load_global_key_process(database_path)
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
+        return
     with st.container(border=True):
         st.markdown("#### :material/dataset: 주요공정 히트맵 프리셋")
         st.caption(

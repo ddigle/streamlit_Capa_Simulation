@@ -1068,7 +1068,6 @@ with preference_tab:
         advance_shipment_profile=advance_shipment_profile,
         execution_profile=execution_profile,
         top5_band_profile=top5_band_profile,
-        key_process_profile=key_process_profile,
         summary_profile=summary_profile,
         # 실행 Capa 는 **원본 공정명** 기준이다. 표시명은 고르는 화면에서만 보인다.
         process_options=process_options,
