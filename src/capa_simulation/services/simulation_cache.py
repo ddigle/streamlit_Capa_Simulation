@@ -302,9 +302,9 @@ def get_scenario_securement_rate(
 ) -> pd.DataFrame:
     """확보율을 시나리오 키만으로 꺼낸다. **적중이면 소요대수를 풀지 않는다.**
 
-    `get_securement_rate` 도 키만 해시하지만 부르는 쪽이 소요대수를 넘겨야 해, 적중해도
+    `get_securement_rate` 도 키만 해시하지만 부르는 쪽이 소요대수를 넘겨야 해, 그것만 쓰면 적중해도
     `get_scenario_capacity_and_demand` 의 결과(대당 Capa 와 함께 pickle 약 16MB, 합성 표본의 샘플
-    관측)를 매 회차 언피클했다. 빗나가면 그 둘을 이 안에서 부르고, 확보율은 HOME 과 같은
+    관측)를 매 회차 언피클한다. 빗나가면 그 둘을 이 안에서 부르고, 확보율은 HOME 과 같은
     `get_securement_rate` 칸을 쓴다. `_available_equipment` 는 키의 시나리오·월 범위로 자른
     `RQ_EQP_AVBL` 이어야 한다(`get_securement_rate` 와 같은 계약).
     """
@@ -367,8 +367,8 @@ def get_display_ordered_values(
     """분류 한 컬럼의 고유값 표를 표시순서로 정렬해 글자 목록으로 낸다(필터 선택지).
 
     표가 작아(공정 수 행) 내용째 해시한다. `apply_display_order` 는 규칙 필터·충돌 검사 고정비가
-    있어 70행에도 수 ms 가 들었다. `_display_order` 는 `display_order_key` 를 만든
-    `RQ_DISPLAY_ORDER` 를 준비한 것이어야 한다 — 표시순서는 `reference_version` 을 바꾸지 않고
+    있어 70행에도 수 ms 가 든다(합성 표본의 샘플 관측). `_display_order` 는 `display_order_key` 를
+    만든 `RQ_DISPLAY_ORDER` 를 준비한 것이어야 한다 — 표시순서는 `reference_version` 을 바꾸지 않고
     바뀐다. 규칙 충돌 같은 검증 예외는 캐시되지 않고 그대로 난다.
     """
     del display_order_key
@@ -566,8 +566,8 @@ def get_standard_target_split(
 
     분리 결과는 소요대수 하나만의 함수라 시나리오 키가 정한다 — 날짜·분류 수준·가용대수는 이
     프레임을 바꾸지 않으므로 키에 넣지 않는다(넣으면 같은 프레임이 조건마다 따로 쌓인다). 로직
-    분석은 칸을 하나 고를 때마다 소요대수 언피클(대당 Capa 와 함께 약 16MB, 합성 표본의 샘플
-    관측)·분리를 처음부터 다시 했다. 이 프레임만 풀면 그 절반 아래다. 주간 결과·요약 캐시가
+    분석은 칸을 하나 고를 때마다 소요대수가 필요한데, 대당 Capa 와 함께 풀면 약 16MB(합성 표본의
+    샘플 관측)이고 이 프레임만 풀면 그 절반 아래다. 주간 결과·요약 캐시가
     빗나갈 때도 여기서 받는다.
     """
     _, required_equipment = get_scenario_capacity_and_demand(
@@ -586,8 +586,8 @@ def get_standard_target_summary(
 ) -> StandardTargetSummary:
     """표준 목표의 예외 행 수와 공정 필터 선택지 재료. 키는 시나리오 키 하나다.
 
-    표시 항목·PKG 기준·팝업 열기처럼 결과와 무관한 조작마다 소요대수 언피클·ER/예외 분리·
-    `RQ_REQB` 전체 ER 제외를 처음부터 다시 했다(합성 표본에서 회차당 약 0.13초, 샘플 관측).
+    표시 항목·PKG 기준·팝업 열기처럼 결과와 무관한 조작은 이 캐시에 적중해, 소요대수 언피클·ER/예외
+    분리·`RQ_REQB` 전체 ER 제외(합성 표본에서 회차당 약 0.13초, 샘플 관측)를 다시 하지 않는다.
     주차별 가용대수가 비어 화면이 멈추는 회차에도 예외 행 수는 그려야 하므로 가용대수와 무관한
     이 키에 둔다. 계산 오류는 캐시되지 않아 매 회차 다시 던진다 — 부르는 쪽은
     `stop_calculation_on_error` 로 감싼다.
@@ -898,7 +898,7 @@ def get_weekly_availability_template_csv(
 ) -> bytes:
     """표준 목표 주차별 가용설비 CSV 양식의 바이트(BOM 이 붙은 UTF-8).
 
-    양식(공정 × 주차, 저장된 가용대수를 싣는다)과 그 직렬화를 매 회차 다시 했다(합성 표본
+    양식(공정 × 주차, 저장된 가용대수를 싣는다)과 그 직렬화는 캐시가 없으면 매 회차 든다(합성 표본
     9,170행에서 약 12ms, 샘플 관측). 키는 입력 전부다 — 공정 **차례**(양식 행 차례가 그것을
     따른다)·시작·종료일·저장된 가용대수의 내용 지문(`frame_digest`). `_saved` 는 그 지문을 만든
     바로 그 프레임이어야 한다.
@@ -932,12 +932,12 @@ def csv_export_key(
 def get_export_csv(cache_key: CsvExportKey, _build: Callable[[], bytes]) -> bytes:
     """화면 표의 내려받기 CSV 바이트. 키가 같으면 `_build` 를 부르지 않는다.
 
-    내려받기를 누르지 않아도 매 회차 내보내기 표 조립과 직렬화를 했다(소요대수 상세 2,660행에서
-    약 70ms, 합성 표본의 샘플 관측). 콜러블 지연 생성은 쓰지 않는다(TODO [결정] 2026-09-18) — 대신
-    표 내용 지문 키로 바이트를 둔다. `_build` 는 **키를 만든 바로 그 표와 키에 적은 서식으로만**
-    바이트를 만드는 함수여야 한다(`functools.partial` 로 인자를 박아 넘긴다). 빗나가면 이 회차에서
-    바로 부르므로 오류는 지금처럼 화면에 드러나고 캐시되지 않는다. 코드 상수(컬럼 라벨)는 키에
-    넣지 않는다(키 방침).
+    캐시가 없으면 내려받기를 누르지 않아도 매 회차 내보내기 표 조립과 직렬화가 든다(소요대수 상세
+    2,660행에서 약 70ms, 합성 표본의 샘플 관측). 콜러블 지연 생성은 쓰지 않는다(TODO [결정]
+    2026-09-18) — 대신 표 내용 지문 키로 바이트를 둔다. `_build` 는 **키를 만든 바로 그 표와 키에
+    적은 서식으로만** 바이트를 만드는 함수여야 한다(`functools.partial` 로 인자를 박아 넘긴다).
+    빗나가면 이 회차에서 바로 부르므로 오류는 지금처럼 화면에 드러나고 캐시되지 않는다. 코드
+    상수(컬럼 라벨)는 키에 넣지 않는다(키 방침).
     """
     del cache_key
     return _build()
@@ -957,8 +957,8 @@ def get_plan_edit_table(
 ) -> pd.DataFrame:
     """생산 계획 PKG PLAN 편집표의 원본(월 Wide 피벗 → 표시순서 정렬).
 
-    편집표는 미적용 편집을 지키려고 닫힌 탭에서도 매 회차 그리므로 원본도 매 회차 필요한데, 환산
-    조건 토글·탭 전환마다 같은 입력으로 피벗을 다시 했다(합성 표본에서 약 20ms, 샘플 관측). 키는
+    편집표는 미적용 편집을 지키려고 닫힌 탭에서도 매 회차 그리므로 원본도 매 회차 필요하다. 환산
+    조건 토글·탭 전환은 입력이 같아 피벗(합성 표본에서 약 20ms, 샘플 관측)을 다시 하지 않는다. 키는
     `get_reference_edit_table` 과 같은 꼴 — 편집 기간의 `scenario_cache_key` + 표시순서 지문이다.
     편집 적용·붙여넣기 적용·가상 제품 등록·되돌리기는 모두 새(또는 리비전 고정) content_token 을
     낸다.
@@ -1797,11 +1797,11 @@ def get_monthly_equipment_contributions(
 
 
 # Main(호기 현황·비가동 호기·Qual 일정)의 판정. 페이지에 fragment 가 없어 같은 보기를 열어 둔 채
-# 다른 위젯·사이드바를 만져도 판정을 처음부터 다시 했다. 키는 **거른 뒤의** 마스터·비가동 내용
-# 지문과 그 판정의 날짜 인자다 — 공정·추가 조건 필터와 저장본·샘플 전환이 지문을 바꾼다. 거르기 전
-# 표나 리비전 id 로 키를 잡으면 필터를 바꿔도 옛 표가 남는다. 판정 함수들은 오늘 날짜·설정·세션을
-# 읽지 않는다. 공정 표시명·오늘 선은 캐시 밖에서 입힌다. 검증에 실패한 표의 `ValueError` 는 캐시에
-# 남지 않는다.
+# 다른 위젯·사이드바를 만져도 페이지 전체가 다시 돌므로 판정을 캐시한다. 키는 **거른 뒤의**
+# 마스터·비가동 내용 지문과 그 판정의 날짜 인자다 — 공정·추가 조건 필터와 저장본·샘플 전환이 지문을
+# 바꾼다. 거르기 전 표나 리비전 id 로 키를 잡으면 필터를 바꿔도 옛 표가 남는다. 판정 함수들은 오늘
+# 날짜·설정·세션을 읽지 않는다. 공정 표시명·오늘 선은 캐시 밖에서 입힌다. 검증에 실패한 표의
+# `ValueError` 는 캐시에 남지 않는다.
 
 # (거른 마스터 내용 지문, 거른 비가동 내용 지문, 날짜 인자 isoformat)
 EquipmentJudgementCacheKey = tuple[str, str, str]
@@ -1828,8 +1828,8 @@ def get_inactive_equipment_month(
     `build_inactive_equipment_month_view` 의 캐시다.
 
     시점(한 달 30여 개)마다 판정을 다시 하는 보기라 사내 규모(호기 1,566·비가동 300, 합성 사본)에서
-    회차마다 2초 남짓 들었다. 결과는 **그 달(년·월)**과 두 표로만 정해지므로 키의 날짜는 그 달
-    1일이다 — 같은 달 안에서 기준일만 옮기면 다시 계산하지 않고, 달이 바뀌면 새로 잰다.
+    한 번에 2초 남짓 든다(샘플 관측). 결과는 **그 달(년·월)**과 두 표로만 정해지므로 키의 날짜는 그
+    달 1일이다 — 같은 달 안에서 기준일만 옮기면 다시 계산하지 않고, 달이 바뀌면 새로 잰다.
     """
     cache_key = (
         frame_digest(equipment),
@@ -1861,9 +1861,9 @@ def get_lifecycle_gantt_spans(
     """Main 「호기 현황 › 생애주기 일정」 의 구간(`build_equipment_lifecycle_spans`, 지분 없이).
 
     그림은 40대만 그리지만 「나머지 N행」 을 세려면 거른 호기 전체의 구간이 든다 — 사내 규모 합성
-    사본에서 회차마다 1초 남짓이었다. 키는 `equipment_span_cache_key` 와 같은 꼴(거른 두 표의 내용
-    지문 + 범위)이지만 **세는 구간(`get_equipment_lifecycle_spans`, 지분·집계분류가 바뀌는 날에도
-    끊는다)과는 다른 캐시**다 — 끊는 자리가 달라 서로 대신할 수 없다.
+    사본에서 한 번에 1초 남짓이다(샘플 관측). 키는 `equipment_span_cache_key` 와 같은 꼴(거른 두
+    표의 내용 지문 + 범위)이지만 **세는 구간(`get_equipment_lifecycle_spans`, 지분·집계분류가 바뀌는
+    날에도 끊는다)과는 다른 캐시**다 — 끊는 자리가 달라 서로 대신할 수 없다.
     """
     cache_key = equipment_span_cache_key(
         equipment=equipment, downtime=downtime, start_date=start_date, end_date=end_date
@@ -1884,8 +1884,8 @@ def get_securement_cross_check(
 ) -> CrossCheck:
     """Static/Dynamic 「확보율 교차검증」(`build_securement_cross_check`).
 
-    그 보기를 열어 둔 rerun(공정 바꾸기·다른 위젯·사이드바)마다 다시 맞대고 있었다. 입력 셋은 키가
-    모두 정한다 — 월별 Dynamic 은 비교 키 안의 월별 키(구간·기존보유·Cut-off·달·환산비 지문),
+    그 보기를 열어 둔 rerun(공정 바꾸기·다른 위젯·사이드바)마다 다시 맞대지 않게 캐시한다. 입력 셋은
+    키가 모두 정한다 — 월별 Dynamic 은 비교 키 안의 월별 키(구간·기존보유·Cut-off·달·환산비 지문),
     Static 은 비교 키 안의 Static 지문, 소요대수는 시나리오 키(reference_version·content_token·
     조회기간)다. 프레임은 해시하지 않는다: `_monthly`·`_static` 은 그 비교 키로 받은 월별·Static,
     `_required_equipment` 는 그 시나리오 키로 받은(`get_scenario_capacity_and_demand`) 소요대수여야

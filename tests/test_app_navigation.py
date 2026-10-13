@@ -2,6 +2,7 @@
 
 import ast
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -1377,6 +1378,7 @@ def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
     import duckdb
 
     import capa_simulation.components.intro_summary as intro_summary
+    import capa_simulation.persistence.equipment_cache as equipment_cache
     import capa_simulation.persistence.equipment_repository as equipment_repository
     import capa_simulation.persistence.repository as repository
     import capa_simulation.settings as settings
@@ -1405,9 +1407,12 @@ def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
 
         monkeypatch.setattr(module, "connect", counted_read)
 
-    def warm_rerun(path: str) -> tuple[dict[str, int], dict[str, int]]:
+    def warm_rerun(
+        path: str, before: Callable[[], None] = lambda: None
+    ) -> tuple[dict[str, int], dict[str, int]]:
         app.switch_page(path).run()
         app.run()
+        before()
         opened.clear()
         reads.clear()
         app.run()
@@ -1431,10 +1436,20 @@ def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
     assert scenario_reads[CAPA_CHATBOT.path] == 0
     assert scenario_reads[SCENARIO_MANAGEMENT.path] >= 2
 
-    # 설비 DB 핀을 선언한 화면도 같은 꼴이다(설비 DB 는 그 화면에서 회차마다 읽힌다).
+    # 설비 DB 핀을 선언한 화면도 같은 꼴이다. 바뀐 것이 없는 회차는 최신 리비전 id·Cut-off 를
+    # 캐시에서 받아 설비 DB 를 읽지 않으므로 열지도 않는다.
     opens, read_counts = warm_rerun(DYNAMIC_CAPA_SUBPAGES[0].path)
-    assert read_counts[equipment_db] >= 1
-    assert opens[equipment_db] == read_counts[equipment_db] + 1
+    assert read_counts[equipment_db] == 0, (opens, read_counts)
+    assert opens[equipment_db] == 0, (opens, read_counts)
+
+    # 캐시가 빈 회차(저장 직후 꼴)는 설비 DB 를 여러 번 읽고, 핀 하나로 인스턴스를 나눠 쓴다.
+    def forget_equipment_reads() -> None:
+        equipment_cache.clear_equipment_snapshot_cache()
+        equipment_cache.clear_process_cutoff_cache()
+
+    opens, read_counts = warm_rerun(DYNAMIC_CAPA_SUBPAGES[0].path, forget_equipment_reads)
+    assert read_counts[equipment_db] >= 2, (opens, read_counts)
+    assert opens[equipment_db] == read_counts[equipment_db] + 1, (opens, read_counts)
 
 
 def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(

@@ -70,8 +70,8 @@ class PageSpec:
     condition_tabs: ConditionTabs | None = None
     # 이 화면이 rerun 한 번에 설비 DB 를 **여러 번** 연다. 참이면 `app.py` 가 그 회차 동안
     # 설비 DB 에도 핀(`pinned_connections`)을 건다 — 연결마다 인스턴스를 다시 만들지 않게.
-    # 설비 DB 를 한 번만 여는 화면은 핀 비용이 이득과 같아 두지 않고, 앱 전역으로 걸면 설비
-    # DB 를 안 보는 화면마다 rerun 이 그 비용만큼 늘어나 화면 단위로 선언한다.
+    # 핀은 그 파일의 첫 연결 때 잡히므로 설비 DB 를 읽지 않는 회차에는 비용이 없다. 이 선언은
+    # 설비 DB 를 한 회차에 여러 번 여는 화면을 적는 자리다.
     uses_equipment_db: bool = False
 
     def reads_common_conditions_on(self, active_tab: str | None) -> bool:

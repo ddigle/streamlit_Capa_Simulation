@@ -1021,9 +1021,9 @@ def _bottlenecks(
 ) -> dict[int, tuple[float, str]]:
     """달마다 B/N — 소요대수가 있는 공정 가운데 `column ÷ 소요대수` 가 가장 낮은 공정과 그 값.
 
-    달마다 표를 거르던 것을 한 번에 한다. 고르는 규칙은 그대로다(numpy `argmin`): 값이 같으면 앞
-    행, 값이 NaN 인 행이 있으면 그 달의 첫 NaN 행이다. 소요대수가 0 이하인 행은 보지 않고, 그런
-    행만 있는 달은 결과에 없다.
+    모든 달을 한 번에 고른다(달마다 표를 거르지 않는다). 고르는 규칙은 numpy `argmin` 이다: 값이
+    같으면 앞 행, 값이 NaN 인 행이 있으면 그 달의 첫 NaN 행이다. 소요대수가 0 이하인 행은 보지
+    않고, 그런 행만 있는 달은 결과에 없다.
     """
     rows = frame.loc[frame["생산계획년월"].isin(list(months)) & frame["소요대수"].gt(0)]
     if rows.empty:

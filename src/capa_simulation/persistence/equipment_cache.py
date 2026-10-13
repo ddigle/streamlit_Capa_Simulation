@@ -138,15 +138,15 @@ def _latest_revision_id(
 def latest_equipment_revision_id(database_path: str) -> str | None:
     """가장 최근 설비 리비전 id(없으면 None).
 
-    가용설비 현황·Space 는 위젯 하나에도 페이지 전체가 다시 돌고, 이 읽기 하나 때문에 회차마다 설비
-    DB 를 열었다. **비우는 것이 1차 장치다** — 이 앱의 모든 리비전 쓰기(RawData 저장·입력 저장·일괄
-    삭제 저장·Space 배치 저장)는 `save_equipment_buffer` 를 지나 `clear_equipment_snapshot_cache` 로
-    이 캐시를 비우고 쓰기 세대를 올린다(같은 프로세스의 다른 세션 저장도 그렇다). 세대가 키에 있어
-    저장 직전에 시작된 다른 세션의 읽기가 비운 뒤에 옛 id 를 심어도 비운 뒤의 읽기에는 닿지 않는다.
-    키의 DB·WAL stat 은 이 프로세스 밖의 쓰기를 알아채는 2차 장치이고, `CURRENT_READ_TTL_SECONDS`
-    가 stat 이 못 잡은 경우의 한도다(같은 DB 를 두 앱 프로세스가 함께 여는 배치에서는 남의 저장을
-    그만큼 늦게 볼 수 있다). 저장 충돌 검사(`base_revision_id`)는 저장소가 쓰기 잠금 안에서 그대로
-    한다.
+    가용설비 현황·Space 는 위젯 하나에도 페이지 전체가 다시 돌아, 캐시가 없으면 이 읽기 하나 때문에
+    회차마다 설비 DB 를 연다. **비우는 것이 1차 장치다** — 이 앱의 모든 리비전 쓰기(RawData
+    저장·입력 저장·일괄 삭제 저장·Space 배치 저장)는 `save_equipment_buffer` 를 지나
+    `clear_equipment_snapshot_cache` 로 이 캐시를 비우고 쓰기 세대를 올린다(같은 프로세스의 다른
+    세션 저장도 그렇다). 세대가 키에 있어 저장 직전에 시작된 다른 세션의 읽기가 비운 뒤에 옛 id 를
+    심어도 비운 뒤의 읽기에는 닿지 않는다. 키의 DB·WAL stat 은 이 프로세스 밖의 쓰기를 알아채는 2차
+    장치이고, `CURRENT_READ_TTL_SECONDS` 가 stat 이 못 잡은 경우의 한도다(같은 DB 를 두 앱
+    프로세스가 함께 여는 배치에서는 남의 저장을 그만큼 늦게 볼 수 있다). 저장 충돌
+    검사(`base_revision_id`)는 저장소가 쓰기 잠금 안에서 그대로 한다.
     """
     return _latest_revision_id(
         database_path, database_stamp(database_path), _write_generation("revision")

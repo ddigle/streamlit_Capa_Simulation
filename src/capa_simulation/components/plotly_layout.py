@@ -30,7 +30,7 @@ _PENDING_LAYOUT_ITEMS = "_capa_pending_layout_items"
 
 
 # 앱이 만든 레이아웃 항목·표 spec 을 Plotly 검증 없이 넣을지 정하는 **한 스위치**. 평소에는 꺼져
-# 있어(검증을 건너뛴다) 빠르고, 테스트가 `plotly_validation()` 으로 켜면 고치기 전 경로(전부 검증)를
+# 있어(검증을 건너뛴다) 빠르고, 테스트가 `plotly_validation()` 으로 켜면 전부 검증하는 경로를
 # 그대로 탄다. 두 경로의 Figure JSON 이 같다는 것을 테스트가 늘 두 경로를 다 돌려 확인한다
 # (`tests/test_plotly_fast_path.py`). 검증을 건너뛰는 길은 Plotly 의 비공개 인자 `_validate` 에
 # 기댄다 — `plotly>=5.24,<7` 고정이 지키고, 인자가 사라지면 그 테스트가 먼저 깨진다.
@@ -39,7 +39,7 @@ _PLOTLY_VALIDATION: ContextVar[bool] = ContextVar("capa_plotly_validation", defa
 
 @contextmanager
 def plotly_validation() -> Iterator[None]:
-    """이 블록 안에서는 검증을 건너뛰지 않는다. 고치기 전 경로와 견주는 테스트용 스위치다."""
+    """이 블록 안에서는 검증을 건너뛰지 않는다. 전부 검증하는 경로와 견주는 테스트용 스위치다."""
     token = _PLOTLY_VALIDATION.set(True)
     try:
         yield
@@ -58,10 +58,10 @@ _SPEC_TRACE_CLASSES: dict[str, Any] = {"table": go.Table}
 def figure_from_spec(spec: Mapping[str, Any]) -> go.Figure:
     """평범한 dict(`{"data": [...], "layout": {...}}`) 로 조립한 Figure 를 세운다.
 
-    평소에는 `go.Figure(spec, _validate=False)` 로 검증 생성자를 건너뛴다. 표 하나에 셀 수만 개를
-    다시 검사하던 비용(2,660행 월별 표 약 1초)이 사라진다. 그래서 **spec 은 Plotly 정규형으로 적어야
-    한다** — 밑줄 줄임 키(`fill_color`)는 검증 없이는 펼쳐지지 않고 글자 그대로 남아 Plotly.js 가
-    무시한다. `{"fill": {"color": ...}}` 처럼 중첩 dict 로 쓴다.
+    평소에는 `go.Figure(spec, _validate=False)` 로 검증 생성자를 건너뛴다. 검증 생성자는 표 하나에
+    셀 수만 개를 다시 검사한다(합성 표본 2,660행 월별 표에서 약 1초, 샘플 관측). 그래서 **spec 은
+    Plotly 정규형으로 적어야 한다** — 밑줄 줄임 키(`fill_color`)는 검증 없이는 펼쳐지지 않고 글자
+    그대로 남아 Plotly.js 가 무시한다. `{"fill": {"color": ...}}` 처럼 중첩 dict 로 쓴다.
 
     세우기 전에 spec 의 **키 이름**을 Plotly 속성 목록에 대 본다(하위 dict 로는 내려가고, 값
     배열은 보지 않는다). 모르는 이름·밑줄 줄임 키가 하나라도 있으면 검증 생성자로 세운다 —
@@ -185,14 +185,14 @@ def append_layout_items(
 def flush_layout_items(*figures: go.Figure) -> None:
     """모아 둔 항목을 Figure 마다 한 번에 반영한다. 여러 번 불러도 결과가 같다.
 
-    반영할 때 Plotly 검증을 건너뛴다. 한 번에 넣어도 검증이 항목 수만큼 들어, LOB 월 Figure
-    (도형 156·주석 578)에서 67ms 중 61ms 가 검증이었다. 대신 항목을 **Plotly 가 검증 뒤에 남기는
+    반영할 때 Plotly 검증을 건너뛴다. 한 번에 넣어도 검증이 항목 수만큼 든다(합성 표본 LOB 월
+    Figure 도형 156·주석 578 에서 67ms 중 61ms, 샘플 관측). 대신 항목을 **Plotly 가 검증 뒤에 남기는
     꼴**(`_plain_layout_item`)로 새 dict 에 옮겨 담는다 — 각도 -180~180, None·빈 하위 칸 빼기,
     `x1`→`x` 같은 축 이름 정리. 새로 담으므로 호출부의 dict 를 Figure 가 붙잡지 않는다(검증 없이
     넣으면 Plotly 는 받은 dict 를 그대로 둔다 — 공용 dict 를 나중에 고치면 캐시 속 그림까지 바뀐다).
 
     그 꼴로 옮길 수 없는 항목(모르는 속성 이름·밑줄 줄임 키·규칙을 갖추지 않은 속성 종류)이 하나라도
-    있으면 그 Figure 는 예전처럼 `update_layout` 으로 검증해 넣는다. 오타는 지금처럼 예외가 된다.
+    있으면 그 Figure 는 `update_layout` 으로 검증해 넣는다. 오타는 예외가 된다.
     반영한 뒤에는 누적함을 버린다. 그 뒤의 `append_layout_items` 는 Figure 에 든 항목에서 다시 연다.
     """
     validate = plotly_validation_enabled()

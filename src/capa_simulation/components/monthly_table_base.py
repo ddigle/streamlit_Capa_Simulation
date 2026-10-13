@@ -351,12 +351,12 @@ def build_split_table_figures(
 
     **색은 이 함수 안에서 읽는다.** 모듈 상수로 올리면 프로세스가 처음 읽은 테마에 굳는다.
 
-    Figure 는 평범한 dict spec 으로 조립해 `figure_from_spec` 이 Plotly 검증 없이 세운다 — 셀마다
-    값·면색을 다시 검사하던 비용이 표 크기에 비례해 컸다(2,660행 약 1초). 그래서 spec 은 **Plotly
-    정규형**으로 적는다: 면색·선색은 밑줄 줄임 키(`fill_color`)가 아니라 `{"fill": {"color": ...}}`
-    중첩 dict 다. 줄임 키는 검증 없이는 펼쳐지지 않아 헤더 배경이 말없이 사라진다.
-    `tests/test_plotly_fast_path.py` 가 예전 `go.Table(...)`+`update_layout` 경로와 JSON 이
-    같은지 본다.
+    Figure 는 평범한 dict spec 으로 조립해 `figure_from_spec` 이 Plotly 검증 없이 세운다 — 검증은
+    셀마다 값·면색을 다시 검사해 비용이 표 크기에 비례한다(합성 표본 2,660행에서 약 1초, 샘플 관측).
+    그래서 spec 은 **Plotly 정규형**으로 적는다: 면색·선색은 밑줄 줄임 키(`fill_color`)가 아니라
+    `{"fill": {"color": ...}}` 중첩 dict 다. 줄임 키는 검증 없이는 펼쳐지지 않아 헤더 배경이 말없이
+    사라진다. `tests/test_plotly_fast_path.py` 가 검증하는 `go.Table(...)`+`update_layout` 경로와
+    JSON 이 같은지 본다.
     """
     common_layout: dict[str, Any] = {
         "height": table_height_px(row_count),

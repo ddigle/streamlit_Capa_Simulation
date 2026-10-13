@@ -3330,7 +3330,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이 **검증 없이** 세운다(셀 검증이 2,660행 표에서 약 1초였다). 그래서 spec 은 Plotly 정규형이다 —
     면색·선색은 `{"fill": {"color": ...}}` 중첩 dict 로 쓰고 밑줄 줄임 키(`fill_color`)를 쓰지 않는다.
     줄임 키는 검증 없이는 펼쳐지지 않는다(키 이름 검사가 잡아 검증 생성자로 넘기므로 화면은 맞지만
-    느려진다). `tests/test_plotly_fast_path.py` 가 고치기 전 `go.Table(...)`+`update_layout` 경로와 JSON 이
+    느려진다). `tests/test_plotly_fast_path.py` 가 검증하는 `go.Table(...)`+`update_layout` 경로와 JSON 이
     같은지, 셀 검증을 정말 건너뛰는지 본다. 값은 매 회차 그대로 다시 만든다 — 캐시가 아니다.
   - 격자 도우미 넷(`add_outer_border`·`add_header_rule`·`add_classification_boundaries`·
     `add_month_boundaries`)은 `append_layout_items` 에 **모으기만** 한다. 반영은 표 모듈의
@@ -3517,8 +3517,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     보는 선택도 새 이름으로 곧바로 적는다(위젯이 아니어서 예전 `__pending` 우회가 필요 없다). 격자
     제목에 프리셋 이름이 붙는다.
   - **Preference 의 프리셋 편집 카드(`_render_key_process_editor`)는 프래그먼트다.** 「고칠 프리셋」
-    선택·삭제 확인·이름·공정 입력과 폼 제출은 그 카드만 다시 돌고(전에는 HOME 전체 약 0.1초),
-    저장·`기본으로`·삭제 뒤에는 지금처럼 `st.rerun(scope="app")` 으로 앱 전체를 다시 돌린다. **카드는
+    선택·삭제 확인·이름·공정 입력과 폼 제출은 그 카드만 다시 돌고(HOME 전체를 다시 돌리지 않는다),
+    저장·`기본으로`·삭제 뒤에는 `st.rerun(scope="app")` 으로 앱 전체를 다시 돌린다. **카드는
     프로필을 인자로 받지 않고 회차마다 공용 캐시(`load_global_key_process`)에서 다시 읽는다** —
     프래그먼트 회차는 직전 앱 전체 회차의 인자를 쓰는데, 저장은 늘 묶음 전체의 교체라 그 낡은
     묶음으로 만들면 그 사이 다른 세션이 저장한 프리셋을 덮는다. 공정 목록·표시명은 앱 전체 회차에서만
@@ -4111,9 +4111,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `flush_layout_items` 는 항목을 검증이 남기는 꼴(각도 -180~180, None·빈 하위 칸 빼기, `x1`→`x`)의
     **새** dict 로 옮겨 `_validate` 를 끈 채 넣는다 — 호출부 dict 를 Figure 가 붙잡지 않는다. 옮길 수
     없는 항목(모르는 속성·밑줄 줄임 키·범위 밖 숫자·정수 칸의 소수·빈 글자·모르는 색·규칙이 없는 검증기
-    종류)이 하나라도 있으면 그 Figure 는 예전처럼 검증해 넣어 오타는 지금처럼 예외다. 넣은 뒤 `_validate` 는
-    **원래 값**으로 돌린다(뒤의 `update_layout` 값 오류도 지금처럼 예외). 스위치 `plotly_validation()` 을 켜면
-    고치기 전 경로를 탄다 — `tests/test_plotly_fast_path.py` 가 HOME 네 묶음·덤벨·가용 GAP 그림을 두 경로로
+    종류)이 하나라도 있으면 그 Figure 는 검증해 넣어 오타는 예외다. 넣은 뒤 `_validate` 는
+    **원래 값**으로 돌린다(뒤의 `update_layout` 값 오류도 예외). 스위치 `plotly_validation()` 을 켜면
+    전부 검증하는 경로를 탄다 — `tests/test_plotly_fast_path.py` 가 HOME 네 묶음·덤벨·가용 GAP 그림을 두 경로로
     그려 JSON 이 같은지, HOME 에서 검증 경로로 넘어간 Figure 가 없는지 본다. 비공개 `_validate` 라
     `plotly>=5.24,<7` 고정에 기댄다.
   - `figure_from_spec(spec)` 은 dict spec 을 `go.Figure(spec, _validate=False)` 로 세우고 검증을 다시 켠다
