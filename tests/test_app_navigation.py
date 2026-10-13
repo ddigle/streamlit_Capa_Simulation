@@ -1339,10 +1339,15 @@ def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
     """
     import duckdb
 
+    import capa_simulation.components.intro_summary as intro_summary
     import capa_simulation.persistence.equipment_repository as equipment_repository
     import capa_simulation.persistence.repository as repository
     import capa_simulation.settings as settings
 
+    # 입장 화면 요약의 공식버전 재확인(`RECHECK_SECONDS`)은 첫 회차 한 번으로 고정한다. 측정 회차
+    # 전에 그 주기가 지나면 어느 화면이든 DB 를 한 번 더 읽어, 느린 환경에서 Chatbot 의 「읽기 0」이
+    # 시각에 따라 흔들린다.
+    monkeypatch.setattr(intro_summary, "RECHECK_SECONDS", float("inf"))
     scenario_db = str(settings.DUCKDB_PATH.resolve())
     equipment_db = str(settings.EQUIPMENT_DUCKDB_PATH.resolve())
     opened: list[str] = []
