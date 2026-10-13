@@ -1038,9 +1038,9 @@ def _selection_flags(frame: pd.DataFrame, target: str, selection: frozenset[RowK
 
     **선택이 비면 키를 만들지 않는다.** 빈 선택에는 어떤 키도 들지 않으니 답은 모두 거짓이고,
     키를 만들려면 행마다 값을 글자로 맞추며 비가동 `시작일` 은 날짜 형식을 추정해 읽는다(사내 규모
-    비가동 300건에 40ms 남짓, 행 수에 비례). RawData 는 어느 탭에서나 그려지므로 그 비용이 가용설비
-    현황의 모든 rerun 에 붙었다. dtype 은 못박는다 — 빈 표에서 목록으로 넣으면 float 칸이 되어
-    체크박스와 맞지 않는다.
+    합성 사본 비가동 300건에서 40ms 남짓 — 샘플 관측, 행 수에 비례). RawData 는 어느 탭에서나
+    그려지므로 그 비용이 가용설비 현황의 모든 rerun 에 붙었다. dtype 은 못박는다 — 빈 표에서
+    목록으로 넣으면 float 칸이 되어 체크박스와 맞지 않는다.
     """
     if selection:
         chosen = [row in selection for row in row_keys(frame, target)] or [False] * len(frame)
