@@ -9,11 +9,11 @@ Static Capa 하위 5개 페이지가 같은 40여 줄을 각자 재구현하면�
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import cast, overload
+from typing import ParamSpec, TypeVar, cast, overload
 
 import duckdb
 import pandas as pd
@@ -53,6 +53,9 @@ from capa_simulation.sidebar_status import (
 # 열어 둔 DB)이나 스키마 오류가 원문 트레이스백으로, Windows 에서는 한글까지 깨진 채
 # 그대로 노출됐다. 페이지·컴포넌트는 각자 튜플을 만들지 말고 이것을 쓴다.
 BOOTSTRAP_ERRORS = (KeyError, OSError, RuntimeError, TypeError, ValueError, duckdb.Error)
+
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
 
 # 페이지가 연 팝업(`st.dialog`)의 열림 상태 키는 이 접미어로 끝난다. 팝업은 열림 상태가 세션에
 # 있는 동안 매 회차 다시 그리는데, 닫지 않은 채(브라우저 뒤로 가기 등) 페이지를 떠나면
@@ -276,12 +279,27 @@ def scenario_capacity_and_demand(
 
     계산 함수는 **부를 때** 모듈에서 찾는다. 페이지 테스트가 그 속성을 바꿔 계산을 흉내 낸다.
     """
+    return stop_calculation_on_error(
+        simulation_cache.get_scenario_capacity_and_demand,
+        cache_key,
+        _scenario_tables=scenario_tables,
+        _reference_tables=reference_tables,
+    )
+
+
+def stop_calculation_on_error(
+    function: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs
+) -> _T:
+    """시나리오 계산을 거치는 캐시 호출. 계산이 멈추면(ValueError) 사이드바의 「✓ 적용」을 거둔다.
+
+    `scenario_capacity_and_demand` 와 같은 처리를 키 전용 파생 캐시(`check_scenario_capacity`·
+    `get_scenario_result_summary` 등)에 건다 — 그 캐시들은 적중하면 큰 프레임을 풀지 않고,
+    빗나가면 안에서 `get_scenario_capacity_and_demand` 를 불러 같은 오류를 던진다(실패는
+    캐시되지 않는다). 시나리오 수준의 오류만 나는 호출에만 쓴다 — 입력 표 하나의 검증 오류까지
+    「계산 멈춤」으로 바꾸지 않도록. 예외는 그대로 다시 던진다.
+    """
     try:
-        return simulation_cache.get_scenario_capacity_and_demand(
-            cache_key,
-            _scenario_tables=scenario_tables,
-            _reference_tables=reference_tables,
-        )
+        return function(*args, **kwargs)
     except ValueError:
         show_calculation_stopped()
         raise

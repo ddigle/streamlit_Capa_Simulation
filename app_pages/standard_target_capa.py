@@ -13,6 +13,7 @@ from __future__ import annotations
 from calendar import monthrange
 from collections.abc import Callable
 from datetime import date
+from functools import partial
 from math import isfinite
 from typing import cast
 
@@ -46,7 +47,7 @@ from capa_simulation.page_bootstrap import (
     prune_list_selection,
     render_schema_ahead_warning,
     resolve_effective_months,
-    scenario_capacity_and_demand,
+    stop_calculation_on_error,
 )
 from capa_simulation.persistence.equipment_cache import get_equipment_repository
 from capa_simulation.persistence.models import (
@@ -73,22 +74,27 @@ from capa_simulation.services.display_order_scopes import (
 from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
-    get_pkg_equivalent_standard_target,
-    get_weekly_standard_target_capacity,
+    csv_export_key,
+    display_order_digest,
+    frame_digest,
+    get_display_ordered_values,
+    get_export_csv,
+    get_standard_target_split,
+    get_standard_target_summary,
+    get_standard_target_weekly_result,
+    get_weekly_availability_template_csv,
     scenario_cache_key,
+    standard_target_weekly_cache_key,
 )
 from capa_simulation.services.standard_target_capacity import (
     PKG_EQUIVALENT_COLUMN,
     STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES,
-    exclude_er_required_equipment,
-    split_standard_target_required_equipment,
     weekly_standard_target_to_wide,
 )
 from capa_simulation.services.standard_target_logic import (
     build_standard_target_logic_analysis,
 )
 from capa_simulation.services.weekly_availability_input import (
-    build_weekly_availability_template,
     parse_weekly_availability_clipboard,
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
@@ -482,6 +488,19 @@ def _render_logic_analysis(
     )
 
 
+def _export_csv(
+    table: pd.DataFrame, classification_columns: list[str], decimal_places: int
+) -> bytes:
+    """결과 표의 내려받기 CSV 바이트. 화면 표와 같은 분류·소수 자리로 만든다."""
+    export = build_hierarchical_monthly_export(
+        table,
+        classification_columns=classification_columns,
+        column_labels=COLUMN_LABELS,
+        decimal_places=decimal_places,
+    )
+    return export.to_csv(index=False).encode("utf-8-sig")
+
+
 def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessLabels) -> None:
     # 순수 표시 상수를 그리는 안내 표다. CSV 출구가 없어 표시명을 바로 입힌다.
     with st.expander("예외 처리 공정", expanded=False):
@@ -613,32 +632,33 @@ start_month = int(page_calendar["생산계획년월"].min())
 end_month = int(page_calendar["생산계획년월"].max())
 
 try:
-    # 계산 입력의 월 슬라이스는 캐시 래퍼 안에서 한다. 뒤의 주차 계산이 쓰는 두 표만 자른다.
+    # 주차 계산 캐시는 이 두 표를 제 안에서 키의 월로 다시 자른다. 여기서 자르는 것은 로직
+    # 분석이 쓰는 RUN_DAY 와, 두 표의 월 형식 오류를 계산 전에 같은 자리에서 알리기 위해서다.
     filtered_tables = {
         name: scenario_month_table(active_scenario, name, start_month, end_month)
         for name in ("RQ_RUN_DAY", "RQ_PKG_PLAN")
     }
-    unit_capacity, required_equipment = scenario_capacity_and_demand(
-        scenario_cache_key(reference_version, active_scenario, start_month, end_month),
-        scenario_tables=active_scenario["tables"],
-        reference_tables=reference_tables,
+    scenario_key = scenario_cache_key(reference_version, active_scenario, start_month, end_month)
+    # 소요대수 프레임은 풀지 않는다 — 예외 행 수와 공정 선택지 재료만 시나리오 키로 꺼낸다. 계산
+    # 오류는 여기서 「계산 멈춤」과 함께 먼저 드러난다(실패는 캐시되지 않는다).
+    standard_target_summary = stop_calculation_on_error(
+        get_standard_target_summary,
+        scenario_key,
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
     )
-    required_equipment, standard_target_exception_rows = split_standard_target_required_equipment(
-        required_equipment
-    )
-    production_reqb = exclude_er_required_equipment(active_scenario["tables"]["RQ_REQB"])
+    standard_target_exception_rows = standard_target_summary.exception_rows
 except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))
     st.stop()
 
-process_order = production_reqb[["공정"]].drop_duplicates()
-process_order = apply_display_order(
-    process_order,
-    display_order,
+process_options = get_display_ordered_values(
+    standard_target_summary.processes,
+    display_order_digest(reference_tables["RQ_DISPLAY_ORDER"]),
     PAGE_STANDARD_TARGET,
     TAB_TARGET_CAPACITY,
+    _display_order=display_order,
 )
-process_options = process_order["공정"].astype(str).tolist()
 public_default = prune_list_selection(STANDARD_TARGET_PROCESS_DEFAULT_KEY, process_options)
 prune_list_selection(PROCESS_FILTER_KEY, process_options, default=public_default)
 
@@ -728,10 +748,14 @@ target_processes = selected_processes or process_options
 # 양식은 저장된 값을 채워 내려 준다. 저장값이 없는 칸은 빈칸이고, 붙여넣기는 빈칸을 「그대로
 # 둠」으로 읽는다 — 0 으로 채워 내려 주면 일부만 고쳐 되붙일 때 다른 공정·주차가 0 대로
 # 덮인다(2026-09-29 버그 보고).
-template = build_weekly_availability_template(
-    target_processes, start_date, end_date, saved=availability
+# 바이트는 (공정 차례·기간·저장값 지문) 키 캐시다 — 결과와 무관한 조작마다 다시 만들지 않는다.
+template_csv = get_weekly_availability_template_csv(
+    tuple(target_processes),
+    start_date,
+    end_date,
+    frame_digest(availability),
+    _saved=availability,
 )
-template_csv = template.to_csv(index=False).encode("utf-8-sig")
 
 
 def _close_dialog() -> None:
@@ -866,13 +890,22 @@ if availability.empty:
         st.info("주차별 일 표준 가능량을 보려면 위 「가용설비 붙여넣기」로 가용설비를 입력하세요.")
     st.stop()
 
-filtered_required_equipment = required_equipment
-if selected_processes:
-    filtered_required_equipment = required_equipment.loc[
-        required_equipment["공정"].isin(selected_processes)
-    ].reset_index(drop=True)
-
 if output_metric == "로직 분석":
+    # 로직 분석만 소요대수 행이 필요하다. 표준 목표 제외를 거친 프레임(시나리오 키 캐시 — 칸을
+    # 고를 때마다 소요대수 언피클·분리를 다시 하지 않는다)을 공정 필터로 거른다.
+    try:
+        filtered_required_equipment = get_standard_target_split(
+            scenario_key,
+            _scenario_tables=active_scenario["tables"],
+            _reference_tables=reference_tables,
+        )[0]
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
+        st.stop()
+    if selected_processes:
+        filtered_required_equipment = filtered_required_equipment.loc[
+            filtered_required_equipment["공정"].isin(selected_processes)
+        ].reset_index(drop=True)
     with weekly_output_container:
         _render_logic_analysis(
             required_equipment=filtered_required_equipment,
@@ -885,14 +918,24 @@ if output_metric == "로직 분석":
             filters=logic_filters,
         )
 else:
+    # 키만 해시한다 — 소요대수(5만 행 넘음)를 해시 인자로 넘기면 Streamlit 이 1만 행 표본만 봐
+    # 한 행 편집을 놓친다. 소요대수·RUN_DAY 는 캐시가 키의 시나리오·월로 제 안에서 얻는다. 공정
+    # 필터는 전체 공정 결과를 거른다(결과가 달라질 수 있는 자리는 고른 공정만 계산한다).
+    weekly_cache_key = standard_target_weekly_cache_key(
+        scenario_key,
+        availability=availability,
+        start_date=start_date,
+        end_date=end_date,
+        detail_level=detail_level,
+        processes=selected_processes,
+    )
     try:
-        weekly_target = get_weekly_standard_target_capacity(
-            required_equipment=filtered_required_equipment,
-            run_day=filtered_tables["RQ_RUN_DAY"],
-            weekly_availability=availability,
-            start_date=start_date,
-            end_date=end_date,
-            detail_level=detail_level,
+        weekly_target = get_standard_target_weekly_result(
+            weekly_cache_key,
+            pkg=False,
+            _scenario_tables=active_scenario["tables"],
+            _reference_tables=reference_tables,
+            _weekly_availability=availability,
         )
     except ValueError as exc:
         st.error(str(exc))
@@ -936,17 +979,12 @@ else:
     output_file_metric = output_metric
     if pkg_basis:
         try:
-            weekly_target = get_pkg_equivalent_standard_target(
-                required_equipment=filtered_required_equipment,
-                run_day=filtered_tables["RQ_RUN_DAY"],
-                weekly_availability=availability,
-                start_date=start_date,
-                end_date=end_date,
-                detail_level=detail_level,
-                plan=filtered_tables["RQ_PKG_PLAN"],
-                # 바로 위에서 같은 인자로 만든 것이다. 넘기지 않으면 한 실행에서 같은
-                # 프레임을 한 번 더 해시한다.
-                _weekly_target=weekly_target,
+            weekly_target = get_standard_target_weekly_result(
+                weekly_cache_key,
+                pkg=True,
+                _scenario_tables=active_scenario["tables"],
+                _reference_tables=reference_tables,
+                _weekly_availability=availability,
             )
         except ValueError as exc:
             st.error(str(exc))
@@ -968,13 +1006,13 @@ else:
             PAGE_STANDARD_TARGET,
             TAB_TARGET_CAPACITY,
         )
-        output_export = build_hierarchical_monthly_export(
-            output_table,
-            classification_columns=classification_columns,
-            column_labels=COLUMN_LABELS,
-            decimal_places=decimal_places,
+        # 내보내기 표 조립·직렬화는 표 내용 지문 키 캐시다(내려받기를 누르지 않은 회차의 비용).
+        output_csv = get_export_csv(
+            csv_export_key(
+                "standard_target", output_table, classification_columns, f"{decimal_places}"
+            ),
+            _build=partial(_export_csv, output_table, classification_columns, decimal_places),
         )
-        output_csv = output_export.to_csv(index=False).encode("utf-8-sig")
         render_table_heading(
             f"주차별 {output_title}",
             csv=output_csv,

@@ -76,14 +76,17 @@ from capa_simulation.services.load_calculator import (
     filter_edp_plan,
     load_exclusions,
     plan_from_edit_table,
-    plan_to_edit_table,
     restore_locked_yield_rows,
-    split_editable_yield_rows,
     yield_from_edit_table,
-    yield_to_edit_table,
 )
 from capa_simulation.services.reference_csv import count_removed_values
-from capa_simulation.services.simulation_cache import get_monthly_volume
+from capa_simulation.services.simulation_cache import (
+    display_order_digest,
+    get_monthly_volume,
+    get_plan_edit_table,
+    get_yield_edit_tables,
+    scenario_cache_key,
+)
 from capa_simulation.services.virtual_product import (
     VirtualProductRecord,
     VirtualProductRequest,
@@ -131,7 +134,18 @@ try:
         effective_start_month,
         effective_end_month,
     )
-    default_plan_table = plan_to_edit_table(filtered_plan, prepared_display_order)
+    # 편집표 원본은 (시나리오 내용·편집 기간·표시순서)의 순수 함수라 그 키로 캐시한다. 환산 조건
+    # 토글·탭 전환마다 같은 피벗을 다시 하지 않는다.
+    edit_table_key = scenario_cache_key(
+        reference_version, active_scenario, effective_start_month, effective_end_month
+    )
+    display_order_key = display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])
+    default_plan_table = get_plan_edit_table(
+        edit_table_key,
+        display_order_key,
+        _plan=filtered_plan,
+        _display_order=prepared_display_order,
+    )
 except ValueError as exc:
     st.error(str(exc))
     st.stop()
@@ -145,9 +159,11 @@ yield_build_error: str | None = None
 default_yield_table: pd.DataFrame | None = None
 locked_yield_rows = pd.DataFrame(columns=[*YIELD_KEYS, *YIELD_VALUE_COLUMNS])
 try:
-    editable_yield, locked_yield_rows = split_editable_yield_rows(filtered_yield)
-    default_yield_table = yield_to_edit_table(
-        editable_yield, prepared_display_order, locked=locked_yield_rows
+    default_yield_table, locked_yield_rows = get_yield_edit_tables(
+        edit_table_key,
+        display_order_key,
+        _yield_data=filtered_yield,
+        _display_order=prepared_display_order,
     )
 except ValueError as exc:
     yield_build_error = str(exc)

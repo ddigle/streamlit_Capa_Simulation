@@ -662,6 +662,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - PKG PLAN 붙여넣기는 탭에만 올리고 전역 반영은 `PKG PLAN 변경사항 적용` 한 곳이다. 수율
     붙여넣기는 바로 적용한다. 가상 제품 등록은 기존 제품의 기준정보 8표를 새 제품 키로
     복제하고 계획은 0 으로 시작한다(`services/virtual_product.py`).
+  - 두 편집표의 **원본**(Wide 피벗·표시순서 정렬, 수율은 잠근 행과 한 묶음)은
+    `simulation_cache.get_plan_edit_table`·`get_yield_edit_tables` 가 편집 기간의 `scenario_cache_key` +
+    표시순서 지문으로 캐시한다 — 편집표는 미적용 편집을 지키려고 매 회차 그리므로 원본도 매 회차
+    필요하지만 환산 조건 토글·탭 전환마다 같은 피벗을 다시 할 까닭은 없다. 적용·붙여넣기 적용·가상
+    제품 등록·되돌리기는 새 토큰을 내므로 바로 다음 회차 원본이 바뀐다(`tests/test_plan_edit_table_cache.py`,
+    `test_the_plan_editor_shows_the_applied_plan_right_after_apply`).
 - `app_pages/reference_data.py` (화면 이름 `기준 정보`)
   - **빈칸 규칙(2026-09-29 전수 감사 횡전개).** 편집표의 빈칸은 표마다 뜻이 다르다 — UPEH 는 「그 달
     경로 없음」(부하가 대당 Capa 없음으로 빠진다), Lot·WF 측정률은 「행 없음 = 1.0 가정」, 설비대수
@@ -733,8 +739,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     안내만 남긴다 — 경로 하나하나가 행이라 전 공정을 그리면 표 생성·정렬·CSV 인코딩·Plotly
     조립이 모두 행 수에 비례해 커진다. 필터를 앞으로 당기는 것이 아니라 그 계산 자체를
     타지 않는다. 공정 필터 placeholder 도 뷰에 따라 달라진다.
-  - 대당 Capa **계산**은 탭 가시성으로 막지 않는다 — 소요대수·확보율이 같은 프레임을 쓰므로
-    어차피 돈다. 막는 것은 월별 표로 펼치는 두 함수와 그 뒤의 CSV·Plotly 뿐이다.
+  - 대당 Capa·소요대수 **프레임(pickle 약 16MB, 합성 표본의 샘플 관측)을 풀지 않는다.** 탭과 무관하게 쓰는 작은 값(제외
+    목록·측정률 가정·대당 Capa 행 수·공정 고유값)은 `simulation_cache.get_scenario_result_summary`,
+    표는 키 전용 캐시(`get_required_month_table`·`get_effective_process_capacity_table`·
+    `get_scenario_securement_rate`)에서 꺼낸다 — 빗나갈 때만 그 캐시가 안에서 프레임을 받는다. 정렬이
+    든 캐시의 키에는 표시순서 지문(`display_order_digest`)이 들어간다. 요약 캐시를
+    `page_bootstrap.stop_calculation_on_error` 로 불러 계산 오류는 지금 자리·지금 문구로 먼저 드러난다.
+    STEP별 보기의 전 공정 STEP 월표(피벗·정렬·재배치)도 `get_step_unit_capacity_table`(시나리오 키 +
+    표시순서 지문)이 두고 공정 필터만 그 뒤에서 건다. 소요대수 월 표·확보율 표는 **그 탭이 열린 회차에만** 꺼내고 그 표의
+    오류(표시순서 규칙 충돌 등)는 그 탭에만 뜬다. 대당 Capa 탭의 측정률 가정·제외 안내도 그 탭이 열린
+    회차에만 그리므로 `제외 기준정보 확인` 상자는 `remembered_expander`(key
+    `unit_capacity_exclusions_expander`)로 편 상태를 지킨다(`tests/test_calculation_result_tabs.py`).
+    소요대수 CSV 바이트는 표 내용 지문 키 캐시(`simulation_cache.get_export_csv`)라 내려받기를 누르지 않은
+    회차마다 상세 내보내기(합성 표본 2,660행에서 약 70ms, 샘플 관측)를 다시 만들지 않는다 — 필터·상세가 바뀌면 표가 바뀌어 키가 바뀐다.
   - 대당 Capa 제외 표는 `대당 Capa` 탭 하나가 그린다. 두 탭이 한 페이지에 오면서 같은 표를
     같은 파일명으로 두 번 내리게 돼 `소요대수` 쪽에서는 걷어냈다.
   - **표를 보는 조건은 사이드바 `표 조건` 카드**(`sidebar_status.table_card`, 이름
@@ -763,6 +780,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 판정 기준(확보·경고)은 HOME → Preference 의 공용 프로필이다(2026-10-06 사용자 결정). 사이드바
     조건 카드 `판정 기준` 은 지금 기준을 읽기 전용으로 적고 정하는 곳을 가리킬 뿐이다. 업무 로드맵(GO팀 투자 판단·기술팀 실행 개선)과 추가 필요대수 계산식은
     Guide(`guides/static_capa.md`)로 옮겼고 본문에는 두 결과 상자만 남는다.
+  - 확보율은 `simulation_cache.get_scenario_securement_rate`(키 전용)로 꺼내 소요대수 프레임을 풀지
+    않는다(빗나가면 그 안에서 한 번만 받는다). 그 호출이 오류를 내면 `check_scenario_capacity`
+    (`stop_calculation_on_error` 로 감싼다)로 갈라, 대당 Capa·소요대수 계산이 멈춘 것이면 그 오류를
+    「계산 멈춤」과 함께, 가용대수·확보율 검증 오류면 그 오류를 「✓ 적용」 그대로 낸다. 판정 기준 적용(`build_securement_shortfall_tables`)은 공용 프로필이 다른
+    화면에서 바뀌므로 캐시하지 않고 매 회차 한다.
 - `app_pages/reference_integrity.py`
   - `Dynamic Capa` 상위 페이지(사이드바 그룹 머리, 표기 없음 — 성숙도는 본문 배지)이며 전체 공정 실현률·관리 우선순위를 요약하고 공정·제품·
     Stack·WF 속성 필터로 표준/실효/실적 Capa와 손실 원인을 비교하는 프로토타입을 제공한다.
@@ -1257,6 +1279,37 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     만들지 않으며, 향후 가용설비 현황 DuckDB 산출 조회로 입력 경계를 교체한다.
   - 결과 상자 아래 접힌 `예외 처리 공정`에는 표준 목표 Capa에만 적용되는 공정별 제외
     조건과 현재 조회범위에서 제외된 상세 행 수를 표시한다.
+  - 주차 계산은 `simulation_cache.get_weekly_standard_target_capacity`(PKG 는
+    `get_pkg_equivalent_standard_target`)가 **키만 해시해** 캐시한다. 키는
+    `standard_target_weekly_cache_key` — 시나리오 키(월은 달력 주차의 귀속 달)·가용대수 내용 지문·
+    시작·종료일·분류 수준·공정 선택·제품 선택이고, 소요대수·`RQ_RUN_DAY`·`RQ_PKG_PLAN` 은 캐시가 제
+    안에서 키의 시나리오·월로 얻는다. 소요대수(5만 행 넘음)를 해시 인자로 넘기던 동안 Streamlit 이 1만 행
+    표본만 해시해 한 행 편집을 놓치고 옛 숫자를 냈다(`tests/test_standard_target_weekly_cache.py`).
+    재공 현황도 같은 캐시를 제품 선택을 실어 부른다 — 제품 선택이 키에 없으면 그 결과가 표준 목표에 적중한다.
+  - 표시 항목·PKG 기준·팝업처럼 결과와 무관한 조작이 소요대수를 다시 풀지 않는다. `예외 처리 공정` 의 행
+    수와 공정 필터 선택지 재료(ER 을 뺀 `RQ_REQB` 공정)는 `simulation_cache.get_standard_target_summary`
+    (시나리오 키, 가용대수와 무관 — 가용대수가 비어 멈추는 회차에도 그린다)에서, 선택지 정렬은
+    `get_display_ordered_values`(표시순서 지문 키)에서 꺼낸다. 요약 캐시를 `stop_calculation_on_error` 로
+    불러 계산 오류는 지금 자리·지금 문구로 먼저 드러난다. 화면 테스트는 이 캐시들이 프로세스 전역이라
+    테스트마다 비운다(`tests/test_standard_target_capa_page.py`).
+  - 표준 목표 제외(ER·Pre B/D Dummy)를 거친 소요대수(공정 필터 전)는 `get_standard_target_split`
+    (시나리오 키, 칸 4)이 한 벌 둔다. 로직 분석은 칸을 고를 때마다 이 프레임만 풀어 공정 필터로 거르고,
+    주간 결과·요약 캐시도 빗나갈 때 여기서 받는다 — 날짜·분류 수준·가용대수는 이 프레임을 바꾸지 않아
+    키에 넣지 않는다. 하위 선택지·로직 분석 결과·가용대수 읽기는 매 회차 한다.
+  - 공정 필터는 **전체 공정 결과를 거른다**(`simulation_cache.get_standard_target_weekly_result` →
+    `get_all_process_standard_target`, PKG 는 그것을 받는 `get_all_process_pkg_standard_target` — 캐시
+    함수가 제 자신을 부르지 않게 둘로 나눈다). 원수요 키·분류 그룹·RUN_DAY·가용대수·PKG 계획 연결이
+    모두 공정을 실어 공정끼리 섞이는 계산이 없다. 거른 결과가 고른 공정만 계산한 결과와 다를 수 있는
+    세 자리는 고른 공정만 계산하는 길(`get_weekly_standard_target_capacity`·
+    `get_pkg_equivalent_standard_target`)로 간다 — 전체 계산 실패(고르지 않은 공정의 오류가 고른 공정을
+    막지 않는다, 공정을 안 고르면 같은 문구로 멈춘다), 원본 공정명의 앞뒤 공백(계산이 strip 한다), 거른
+    결과가 빔. 재공 현황(제품 선택)은 고른 공정·제품만 계산하는 길만 쓴다. 비교 테스트가 분류 수준·PKG·
+    오류·공백 공정명마다 고른 공정만 계산한 프레임과 같은지, 키 성분(토큰·가용대수·분류 수준·날짜)마다
+    두 길 모두 다시 계산하는지 본다.
+  - 내려받기 CSV 바이트는 매 회차 다시 만들지 않는다 — 주차별 가용설비 양식은
+    `simulation_cache.get_weekly_availability_template_csv`(공정 차례·기간·저장값 지문 키), 결과 CSV 는
+    `get_export_csv`(표 내용 지문 키, `csv_export_key`). 콜러블 지연 생성은 쓰지 않는다(TODO [결정]
+    2026-09-18). 빗나가면 그 회차에 바로 만들어 오류는 지금처럼 화면에 드러난다.
 - `src/capa_simulation/components/reference_csv_tools.py`
   - 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 다운로드·Excel 표 붙여넣기 폼과 적용 결과
     알림을 공통 제공한다. 붙여넣기는 모두 팝업이다 — `render_reference_clipboard_form` 이
@@ -2415,6 +2468,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `scenario_capacity_and_demand` 는 `resolve_effective_months` 뒤에 부르는 Capa 계산이다.
     계산이 멈추면(ValueError) 사이드바를 「계산 멈춤」으로 바꾸고 예외를 그대로 다시 던진다.
     계산 함수는 부를 때 `simulation_cache` 모듈에서 찾는다 — 페이지 테스트가 그 속성을 바꾼다.
+  - `stop_calculation_on_error(함수, ...)` 는 같은 처리를 키 전용 파생 캐시(`check_scenario_capacity`·
+    `get_scenario_result_summary`·표준 목표 요약)에 건다. 시나리오 수준 오류만 나는 호출에만 쓴다 —
+    입력 표 하나의 검증 오류(확보율의 가용대수 등)까지 「계산 멈춤」으로 바꾸지 않는다.
   - `date_range_value` 로 범위 날짜 입력의 세 반환 형태(두 날짜·한 날짜·`date` 하나)를,
     `prune_list_selection` 으로 계산 결과가 옵션인 다중 선택의 옛 값을, `prune_choice` 로 단일 선택
     (`st.selectbox`)의 옛 값을(없으면 `default` 를 **적는다** — `pop` 하지 않는다. `default=None` 은 고른

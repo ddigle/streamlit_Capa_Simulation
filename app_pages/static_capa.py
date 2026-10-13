@@ -29,7 +29,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     load_page_context,
     resolve_effective_months,
-    scenario_capacity_and_demand,
+    stop_calculation_on_error,
 )
 from capa_simulation.persistence.cache import load_global_securement_threshold
 from capa_simulation.scenario_state import (
@@ -39,7 +39,8 @@ from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.securement_rate import build_securement_shortfall_tables
 from capa_simulation.services.securement_threshold import securement_threshold_caption
 from capa_simulation.services.simulation_cache import (
-    get_securement_rate,
+    check_scenario_capacity,
+    get_scenario_securement_rate,
     scenario_cache_key,
 )
 from capa_simulation.settings import DUCKDB_PATH
@@ -179,21 +180,30 @@ try:
     capacity_cache_key = scenario_cache_key(
         reference_version, active_scenario, effective_start, effective_end
     )
-    unit_capacity, required_equipment = scenario_capacity_and_demand(
-        capacity_cache_key,
-        scenario_tables=active_scenario["tables"],
-        reference_tables=reference_tables,
-    )
-    securement_rate = get_securement_rate(
-        capacity_cache_key,
-        scenario_month_table(
-            active_scenario,
-            "RQ_EQP_AVBL",
-            effective_start,
-            effective_end,
-        ),
-        required_equipment,
-    )
+    # 이 화면은 대당 Capa·소요대수 프레임을 쓰지 않는다 — 확보율만 키로 꺼낸다(적중이면 소요대수를
+    # 풀지 않고, 빗나가면 그 안에서 한 번만 받는다).
+    try:
+        securement_rate = get_scenario_securement_rate(
+            capacity_cache_key,
+            _scenario_tables=active_scenario["tables"],
+            _reference_tables=reference_tables,
+            _available_equipment=scenario_month_table(
+                active_scenario,
+                "RQ_EQP_AVBL",
+                effective_start,
+                effective_end,
+            ),
+        )
+    except BOOTSTRAP_ERRORS:
+        # 대당 Capa·소요대수 계산이 멈춘 것이면 그 오류를 「계산 멈춤」과 함께 먼저 낸다. 계산은
+        # 섰는데 가용대수 자르기·확보율에서 난 오류면 그 오류를 그대로 낸다(「✓ 적용」은 둔다).
+        stop_calculation_on_error(
+            check_scenario_capacity,
+            capacity_cache_key,
+            _scenario_tables=active_scenario["tables"],
+            _reference_tables=reference_tables,
+        )
+        raise
     warning_shortfalls, secure_shortfalls = build_securement_shortfall_tables(
         securement_rate, thresholds=thresholds
     )

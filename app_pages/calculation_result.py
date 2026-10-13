@@ -10,6 +10,8 @@
 (2026-10-06 사용자 결정). HOME 주요공정 프리셋과는 무관하다.
 """
 
+from functools import partial
+
 import pandas as pd
 import streamlit as st
 
@@ -36,7 +38,7 @@ from capa_simulation.page_bootstrap import (
     load_page_context,
     prune_list_selection,
     resolve_effective_months,
-    scenario_capacity_and_demand,
+    stop_calculation_on_error,
 )
 from capa_simulation.persistence.cache import load_global_securement_threshold
 from capa_simulation.scenario_state import scenario_month_table
@@ -52,30 +54,31 @@ from capa_simulation.services.display_order_scopes import (
 )
 from capa_simulation.services.required_equipment import (
     PKG_UNCOUNTED_REASON,
-    REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
-    required_equipment_to_month_table,
 )
 from capa_simulation.services.securement_rate import (
     SECUREMENT_DIMENSIONS,
     securement_rate_to_month_table,
 )
 from capa_simulation.services.simulation_cache import (
+    csv_export_key,
+    display_order_digest,
+    get_display_ordered_values,
     get_effective_process_capacity_table,
-    get_securement_rate,
+    get_export_csv,
+    get_required_month_table,
+    get_scenario_result_summary,
+    get_scenario_securement_rate,
+    get_step_unit_capacity_table,
     scenario_cache_key,
 )
-from capa_simulation.services.unit_capacity import (
-    CAPACITY_EXCLUSIONS_ATTR,
-    UNIT_CAPACITY_DIMENSIONS,
-    capacity_assumptions,
-    unit_capacity_to_month_table,
-)
+from capa_simulation.services.unit_capacity import UNIT_CAPACITY_DIMENSIONS
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import remembered_expander, table_card
 
 HEATMAP_EXPANDER_KEY = "securement_heatmap_expander"
+CAPACITY_EXCLUSIONS_EXPANDER_KEY = "unit_capacity_exclusions_expander"
 # 사이드바 `표 조건` 카드 이름. 세 탭이 한 카드를 쓴다.
 CARD_NAME = "calculation_result"
 # STEP 뷰에서 공정을 고르지 않았을 때. 필터가 사이드바 카드에 있으므로 자리를 말한다.
@@ -98,6 +101,17 @@ TAB_NAMES = (
     ":material/precision_manufacturing: 소요대수",
     ":material/monitoring: 확보율",
 )
+
+
+def _required_export_csv(table: pd.DataFrame, classification_columns: list[str]) -> bytes:
+    """소요대수 표의 내려받기 CSV 바이트(소수 둘째 자리). 화면 표와 같은 분류로 만든다."""
+    export = build_hierarchical_monthly_export(
+        table,
+        classification_columns=classification_columns,
+        column_labels=COLUMN_LABELS,
+        decimal_places=2,
+    )
+    return export.to_csv(index=False, float_format="%.2f").encode("utf-8-sig")
 
 
 render_page_header("산출 결과")
@@ -136,42 +150,19 @@ try:
     capacity_cache_key = scenario_cache_key(
         reference_version, active_scenario, effective_start, effective_end
     )
-    unit_capacity, required_equipment = scenario_capacity_and_demand(
+    # 대당 Capa·소요대수 프레임(pickle 약 16MB, 합성 표본의 샘플 관측)은 풀지 않는다. 탭과 무관하게
+    # 쓰는 작은 값은 요약 캐시에서, 표는 키 전용 캐시에서 꺼낸다 — 빗나갈 때만 그 캐시가 안에서
+    # 프레임을 받는다. 계산 오류는 요약 캐시가 이 자리에서 「계산 멈춤」과 함께 먼저 드러낸다.
+    display_order_key = display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])
+    summary = stop_calculation_on_error(
+        get_scenario_result_summary,
         capacity_cache_key,
-        scenario_tables=active_scenario["tables"],
-        reference_tables=reference_tables,
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
     )
-    capacity_exclusions = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
-    assumptions = capacity_assumptions(unit_capacity)
-    required_exclusions = required_equipment.attrs.get(
-        REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR, pd.DataFrame()
-    )
-    required_table = required_equipment_to_month_table(required_equipment)
-    required_table = apply_display_order(
-        required_table,
-        display_order,
-        PAGE_CALCULATION,
-        TAB_REQUIRED,
-    )
-    required_table, required_detail_dimensions = reorder_display_columns(
-        required_table,
-        RESULT_DIMENSIONS,
-        display_order,
-        PAGE_CALCULATION,
-        TAB_REQUIRED,
-    )
-    securement_rate = get_securement_rate(
-        capacity_cache_key,
-        available_equipment,
-        required_equipment,
-    )
-    securement_table = securement_rate_to_month_table(securement_rate)
-    securement_table = apply_display_order(
-        securement_table,
-        display_order,
-        PAGE_CALCULATION,
-        TAB_SECUREMENT,
-    )
+    capacity_exclusions = summary.capacity_exclusions
+    assumptions = summary.capacity_assumptions
+    required_exclusions = summary.required_exclusions
     # 판정 기준은 HOME → Preference 의 **공용 프로필**이다. 이 페이지는 위젯을 두지 않고
     # HOME·Static Capa 와 같은 기준을 읽는다 — 같은 확보율이 화면마다 다른 색으로 보이면 안 된다.
     threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
@@ -182,9 +173,9 @@ except BOOTSTRAP_ERRORS as exc:
         with error_tab:
             st.error(bootstrap_message)
 else:
-    # 대당 Capa **계산**은 게이트하지 않는다 — 소요대수·확보율 두 탭이 같은 `unit_capacity`
-    # 를 쓰므로 이 페이지에서는 어차피 돈다. 탭마다의 몫은 월별 표로 펼치는 일과 그 뒤의 CSV
-    # 인코딩·Plotly 조립이고, 그것만 열린 탭에서 한다.
+    # 탭마다의 몫(월별 표·제외 안내·CSV·Plotly)은 **열린 탭에서만** 만든다. 소요대수 월 표와
+    # 확보율 표도 그 탭이 열린 회차에만 캐시에서 꺼낸다 — 다른 탭을 보는 동안에는 쓰지 않는다.
+    # 그 표의 오류는 그 탭에만 뜬다(시나리오 계산 오류는 위 요약 캐시가 세 탭에 낸다).
     #
     # 조건 카드는 **열린 탭 하나의 것만** 선다. 세 탭이 같은 카드 key 를 쓰므로 한 회차에 둘을
     # 세우면 위젯 id 가 겹친다. 닫힌 탭의 선택은 `persist_state` 가 지킨다.
@@ -197,46 +188,48 @@ else:
         unit_capacity_tab,
     )
     process_filter_key = "unit_capacity_process_filter"
-    process_order = required_equipment[["공정"]].drop_duplicates()
     # 표시순서 스코프 문자열은 DB 공용 프로필의 행 키다. 페이지 이름이 바뀌어도 **이 인자는
     # 그대로 둔다** — 안 맞으면 예외가 아니라 정렬이 조용히 사라진다.
-    process_order = apply_display_order(
-        process_order,
-        display_order,
+    process_options = get_display_ordered_values(
+        summary.processes,
+        display_order_key,
         PAGE_CALCULATION,
         TAB_UNIT_CAPACITY,
+        _display_order=display_order,
     )
-    process_options = process_order["공정"].astype(str).tolist()
     prune_list_selection(process_filter_key, process_options)
-
-    with unit_capacity_tab:
-        render_capacity_assumption_notice(assumptions)
-        if not capacity_exclusions.empty:
-            st.warning(f"대당 Capa 산출에서 {len(capacity_exclusions):,}개 기준을 제외했습니다.")
-            # 표는 「무엇이 빠졌나」를 답하고 워터폴은 「얼마나·어디서 빠졌나」를 답한다.
-            # 확보율이 낮을 때 설비 부족인지 기준정보 결손인지를 가르는 것이 이 그림이다.
-            render_exclusion_waterfall(
-                capacity_exclusions,
-                remaining_rows=len(unit_capacity),
-                key="unit_capacity_exclusion_waterfall",
-                owner_tab=unit_capacity_tab,
-            )
-            with st.expander("제외 기준정보 확인", expanded=False):
-                render_exclusion_table(
-                    capacity_exclusions,
-                    dimensions=UNIT_CAPACITY_DIMENSIONS,
-                    display_order=display_order,
-                    page=PAGE_CALCULATION,
-                    tab=TAB_UNIT_CAPACITY,
-                    labels=process_labels,
-                    file_name=(
-                        f"Capa_Unit_Capacity_Exclusions_{effective_start}_{effective_end}.csv"
-                    ),
-                    key="download_unit_capacity_exclusions_csv",
-                )
 
     if open_tab is unit_capacity_tab:
         with unit_capacity_tab:
+            render_capacity_assumption_notice(assumptions)
+            if not capacity_exclusions.empty:
+                st.warning(
+                    f"대당 Capa 산출에서 {len(capacity_exclusions):,}개 기준을 제외했습니다."
+                )
+                # 표는 「무엇이 빠졌나」를 답하고 워터폴은 「얼마나·어디서 빠졌나」를 답한다.
+                # 확보율이 낮을 때 설비 부족인지 기준정보 결손인지를 가르는 것이 이 그림이다.
+                render_exclusion_waterfall(
+                    capacity_exclusions,
+                    remaining_rows=summary.unit_capacity_rows,
+                    key="unit_capacity_exclusion_waterfall",
+                    owner_tab=unit_capacity_tab,
+                )
+                # 닫힌 탭에서는 그리지 않으므로 편 상태는 기억 칸이 지킨다(히트맵 상자와 같다).
+                with remembered_expander(
+                    "제외 기준정보 확인", key=CAPACITY_EXCLUSIONS_EXPANDER_KEY
+                ):
+                    render_exclusion_table(
+                        capacity_exclusions,
+                        dimensions=UNIT_CAPACITY_DIMENSIONS,
+                        display_order=display_order,
+                        page=PAGE_CALCULATION,
+                        tab=TAB_UNIT_CAPACITY,
+                        labels=process_labels,
+                        file_name=(
+                            f"Capa_Unit_Capacity_Exclusions_{effective_start}_{effective_end}.csv"
+                        ),
+                        key="download_unit_capacity_exclusions_csv",
+                    )
             # 표시 방식은 이 탭 안의 하위 보기라 카드가 아니라 본문 표 위다(2026-09-29 사용자
             # 결정). 탭 이름이 이미 `대당 Capa` 라 선택지에서는 그 낱말을 뺀다. 두 값은 집계
             # 단위가 다른 것이지 다른 지표가 아니다.
@@ -280,36 +273,45 @@ else:
                 st.info(STEP_VIEW_HINT)
             else:
                 if capacity_view == "STEP별":
-                    unit_capacity_table = unit_capacity_to_month_table(unit_capacity)
-                    classification_columns = list(UNIT_CAPACITY_DIMENSIONS)
+                    # 전 공정 STEP 월표(피벗·정렬·재배치)는 키 캐시다 — 공정 필터만 아래에서 건다.
+                    unit_capacity_table, classification_columns = get_step_unit_capacity_table(
+                        capacity_cache_key,
+                        display_order_key,
+                        PAGE_CALCULATION,
+                        TAB_UNIT_CAPACITY,
+                        _scenario_tables=active_scenario["tables"],
+                        _reference_tables=reference_tables,
+                        _display_order=display_order,
+                    )
                     output_title = "STEP별 대당 Capa"
                     file_prefix = "Capa_Step_Unit_Capacity"
                 else:
                     unit_capacity_table = get_effective_process_capacity_table(
                         capacity_cache_key,
-                        required_equipment,
-                        selected_level,
+                        _scenario_tables=active_scenario["tables"],
+                        _reference_tables=reference_tables,
+                        detail_level=selected_level,
                     )
                     classification_columns = [
                         column
                         for column in ["공정", "소요기준", *WEIGHTED_CAPACITY_HIERARCHY[1:]]
                         if column in unit_capacity_table.columns
                     ]
+                    unit_capacity_table = apply_display_order(
+                        unit_capacity_table,
+                        display_order,
+                        PAGE_CALCULATION,
+                        TAB_UNIT_CAPACITY,
+                    )
+                    unit_capacity_table, classification_columns = reorder_display_columns(
+                        unit_capacity_table,
+                        classification_columns,
+                        display_order,
+                        PAGE_CALCULATION,
+                        TAB_UNIT_CAPACITY,
+                    )
                     output_title = "공정별 대당 Capa"
                     file_prefix = "Capa_Effective_Process_Capacity"
-                unit_capacity_table = apply_display_order(
-                    unit_capacity_table,
-                    display_order,
-                    PAGE_CALCULATION,
-                    TAB_UNIT_CAPACITY,
-                )
-                unit_capacity_table, classification_columns = reorder_display_columns(
-                    unit_capacity_table,
-                    classification_columns,
-                    display_order,
-                    PAGE_CALCULATION,
-                    TAB_UNIT_CAPACITY,
-                )
                 if selected_processes:
                     unit_capacity_table = unit_capacity_table.loc[
                         unit_capacity_table["공정"].isin(selected_processes)
@@ -343,6 +345,20 @@ else:
                 )
 
     if open_tab is required_tab:
+        try:
+            required_table, required_detail_dimensions = get_required_month_table(
+                capacity_cache_key,
+                display_order_key,
+                PAGE_CALCULATION,
+                TAB_REQUIRED,
+                _scenario_tables=active_scenario["tables"],
+                _reference_tables=reference_tables,
+                _display_order=display_order,
+            )
+        except BOOTSTRAP_ERRORS as exc:
+            with required_tab:
+                st.error(bootstrap_error_message(exc))
+            st.stop()
         all_month_columns = [
             column for column in required_table.columns if column not in RESULT_DIMENSIONS
         ]
@@ -405,14 +421,14 @@ else:
                         ),
                         key="download_required_exclusions_csv",
                     )
-            required_export = build_hierarchical_monthly_export(
-                filtered_required_table,
-                classification_columns=table_dimensions,
-                column_labels=COLUMN_LABELS,
-                decimal_places=2,
-            )
-            required_csv = required_export.to_csv(index=False, float_format="%.2f").encode(
-                "utf-8-sig"
+            # 내보내기 표 조립·직렬화(합성 표본 상세 2,660행에서 약 70ms, 샘플 관측)는 표 내용
+            # 지문 키 캐시다 — 내려받기를 누르지 않은 회차마다 다시 만들지 않는다. 필터·상세가
+            # 바뀌면 키가 바뀐다.
+            required_csv = get_export_csv(
+                csv_export_key(
+                    "required_equipment", filtered_required_table, table_dimensions, "2"
+                ),
+                _build=partial(_required_export_csv, filtered_required_table, table_dimensions),
             )
             required_view_name = "Detail" if show_detail else "Summary"
             render_table_heading(
@@ -444,6 +460,23 @@ else:
             )
 
     if open_tab is availability_tab:
+        try:
+            securement_rate = get_scenario_securement_rate(
+                capacity_cache_key,
+                _scenario_tables=active_scenario["tables"],
+                _reference_tables=reference_tables,
+                _available_equipment=available_equipment,
+            )
+            securement_table = apply_display_order(
+                securement_rate_to_month_table(securement_rate),
+                display_order,
+                PAGE_CALCULATION,
+                TAB_SECUREMENT,
+            )
+        except BOOTSTRAP_ERRORS as exc:
+            with availability_tab:
+                st.error(bootstrap_error_message(exc))
+            st.stop()
         # 히트맵은 칸마다 **그 달의** 실효 기준으로 판정한다(월별 예외가 없으면 기본값).
         thresholds = threshold_profile.thresholds
         with table_card(CARD_NAME):

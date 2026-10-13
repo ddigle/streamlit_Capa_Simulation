@@ -20,7 +20,11 @@ from capa_simulation.services.dashboard import (
     build_monthly_wafer_load_from_load,
     build_production_dashboard,
 )
-from capa_simulation.services.display_order import PreparedDisplayOrder
+from capa_simulation.services.display_order import (
+    PreparedDisplayOrder,
+    apply_display_order,
+    reorder_display_columns,
+)
 from capa_simulation.services.equipment_availability import (
     build_equipment_lifecycle_spans,
     build_space_equipment_status,
@@ -31,6 +35,9 @@ from capa_simulation.services.load_calculator import (
     build_monthly_volume,
     calculate_chip_and_wafer_loads,
     filter_edp_plan,
+    plan_to_edit_table,
+    split_editable_yield_rows,
+    yield_to_edit_table,
 )
 from capa_simulation.services.month_filter import MONTH_COLUMN, filter_month_range
 from capa_simulation.services.monthly_equipment_availability import (
@@ -40,7 +47,10 @@ from capa_simulation.services.monthly_equipment_availability import (
 )
 from capa_simulation.services.product_share import build_product_volume
 from capa_simulation.services.required_equipment import (
+    REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
+    RESULT_DIMENSIONS,
     calculate_required_equipment,
+    required_equipment_to_month_table,
 )
 from capa_simulation.services.required_shortening import (
     TARGET_LEVELS,
@@ -56,14 +66,22 @@ from capa_simulation.services.shortening_progress import compare_progress, progr
 from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
+    exclude_er_required_equipment,
+    split_standard_target_required_equipment,
 )
 from capa_simulation.services.undated_equipment import undated_equipment
 from capa_simulation.services.unit_capacity import (
+    CAPACITY_EXCLUSIONS_ATTR,
+    UNIT_CAPACITY_DIMENSIONS,
     CapacityAssumptions,
     calculate_unit_capacity,
     capacity_assumptions,
+    unit_capacity_to_month_table,
 )
 from capa_simulation.services.usage_basis import usage_excluded_equipment
+from capa_simulation.services.weekly_availability_input import (
+    build_weekly_availability_template,
+)
 from capa_simulation.services.weighted_unit_capacity import (
     effective_process_capacity_to_month_table,
 )
@@ -243,19 +261,186 @@ def get_securement_rate(
     return calculate_securement_rate(_available_equipment, _required_equipment)
 
 
+@st.cache_data(show_spinner=False, max_entries=16)
+def check_scenario_capacity(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> bool:
+    """이 키의 대당 Capa·소요대수 계산이 서는지만 본다. 적중이면 프레임을 풀지 않는다.
+
+    키 전용 파생 캐시(확보율 등)가 오류를 냈을 때, 그 오류가 시나리오 계산이 멈춘 것인지 그 뒤
+    단계(가용대수·확보율 검증)의 것인지 가르는 데 쓴다 — 앞의 것만 「계산 멈춤」이다. 실패는
+    캐시되지 않으므로 오류가 난 시나리오는 매번 `get_scenario_capacity_and_demand` 가 다시
+    던진다(그쪽의 전체 기간 결과가 실패를 담아 두어 싸다). 부르는 쪽은
+    `page_bootstrap.stop_calculation_on_error` 로 감싸 사이드바의 「✓ 적용」을 거둔다.
+    """
+    get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    return True
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_scenario_securement_rate(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _available_equipment: pd.DataFrame,
+) -> pd.DataFrame:
+    """확보율을 시나리오 키만으로 꺼낸다. **적중이면 소요대수를 풀지 않는다.**
+
+    `get_securement_rate` 도 키만 해시하지만 부르는 쪽이 소요대수를 넘겨야 해, 적중해도
+    `get_scenario_capacity_and_demand` 의 결과(대당 Capa 와 함께 pickle 약 16MB, 합성 표본의 샘플
+    관측)를 매 회차 언피클했다. 빗나가면 그 둘을 이 안에서 부르고, 확보율은 HOME 과 같은
+    `get_securement_rate` 칸을 쓴다. `_available_equipment` 는 키의 시나리오·월 범위로 자른
+    `RQ_EQP_AVBL` 이어야 한다(`get_securement_rate` 와 같은 계약).
+    """
+    _, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    return get_securement_rate(cache_key, _available_equipment, required_equipment)
+
+
+class ScenarioResultSummary(NamedTuple):
+    """산출 결과가 열린 탭과 무관하게 매 회차 쓰는 작은 파생값. 큰 프레임 대신 이것만 푼다."""
+
+    capacity_exclusions: pd.DataFrame
+    capacity_assumptions: CapacityAssumptions
+    unit_capacity_rows: int
+    required_exclusions: pd.DataFrame
+    # 소요대수의 공정 고유값(원본 값·원본 차례). 표시순서 정렬은 부르는 쪽이 한다.
+    processes: pd.DataFrame
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_scenario_result_summary(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> ScenarioResultSummary:
+    """대당 Capa·소요대수 결과의 제외 목록·측정률 가정·행 수·공정 고유값.
+
+    `attrs` 는 병합·슬라이스를 지나며 사라지므로 프레임째가 아니라 값을 꺼내 담는다. 계산 오류는
+    캐시되지 않아 매 회차 다시 던진다 — 부르는 쪽은 `stop_calculation_on_error` 로 감싼다.
+    """
+    unit_capacity, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    processes = required_equipment[["공정"]].drop_duplicates()
+    processes.attrs = {}
+    return ScenarioResultSummary(
+        capacity_exclusions=unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame()),
+        capacity_assumptions=capacity_assumptions(unit_capacity),
+        unit_capacity_rows=len(unit_capacity),
+        required_exclusions=required_equipment.attrs.get(
+            REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR, pd.DataFrame()
+        ),
+        processes=processes,
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
+def get_display_ordered_values(
+    values: pd.DataFrame,
+    display_order_key: str,
+    page: str,
+    tab: str,
+    _display_order: PreparedDisplayOrder | None,
+) -> list[str]:
+    """분류 한 컬럼의 고유값 표를 표시순서로 정렬해 글자 목록으로 낸다(필터 선택지).
+
+    표가 작아(공정 수 행) 내용째 해시한다. `apply_display_order` 는 규칙 필터·충돌 검사 고정비가
+    있어 70행에도 수 ms 가 들었다. `_display_order` 는 `display_order_key` 를 만든
+    `RQ_DISPLAY_ORDER` 를 준비한 것이어야 한다 — 표시순서는 `reference_version` 을 바꾸지 않고
+    바뀐다. 규칙 충돌 같은 검증 예외는 캐시되지 않고 그대로 난다.
+    """
+    del display_order_key
+    column = str(values.columns[0])
+    return apply_display_order(values, _display_order, page, tab)[column].astype(str).tolist()
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_required_month_table(
+    cache_key: ScenarioCacheKey,
+    display_order_key: str,
+    page: str,
+    tab: str,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _display_order: PreparedDisplayOrder | None,
+) -> tuple[pd.DataFrame, list[str]]:
+    """소요대수 월 표(표시순서 정렬·분류 컬럼 재배치)와 그 분류 컬럼 차례.
+
+    키는 시나리오 키 + 표시순서 지문(`display_order_digest`) + 화면 범위다. 상세 토글·컬럼
+    필터는 이 뒤에서 매 회차 건다. `_display_order` 는 `display_order_key` 를 만든
+    `RQ_DISPLAY_ORDER` 를 준비한 것이어야 한다.
+    """
+    del display_order_key
+    _, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    table = apply_display_order(
+        required_equipment_to_month_table(required_equipment), _display_order, page, tab
+    )
+    return reorder_display_columns(table, RESULT_DIMENSIONS, _display_order, page, tab)
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_step_unit_capacity_table(
+    cache_key: ScenarioCacheKey,
+    display_order_key: str,
+    page: str,
+    tab: str,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _display_order: PreparedDisplayOrder | None,
+) -> tuple[pd.DataFrame, list[str]]:
+    """STEP별 대당 Capa 월 표(전 공정 피벗 → 표시순서 정렬 → 분류 컬럼 재배치)와 그 분류 컬럼 차례.
+
+    공정 필터는 이 뒤에서 매 회차 건다(지금도 정렬 뒤에 걸렸다) — 공정을 바꿀 때마다 전 공정 STEP
+    월표를 다시 피벗·정렬하지 않는다. 키는 시나리오 키 + 표시순서 지문 + 화면 범위다. 대당 Capa 는
+    빗나갈 때만 이 안에서 받는다.
+    """
+    del display_order_key
+    unit_capacity, _ = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    table = apply_display_order(
+        unit_capacity_to_month_table(unit_capacity), _display_order, page, tab
+    )
+    return reorder_display_columns(table, list(UNIT_CAPACITY_DIMENSIONS), _display_order, page, tab)
+
+
 @st.cache_data(show_spinner=False, max_entries=32)
 def get_effective_process_capacity_table(
     cache_key: ScenarioCacheKey,
-    _required_equipment: pd.DataFrame,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
     detail_level: str,
 ) -> pd.DataFrame:
     """공정 유효 Capa 월 표. 공정 필터는 이 뒤에 걸리므로 필터마다 같은 계산을 반복하고 있었다.
 
-    소요대수는 같은 키로 계산한 결과라 키가 내용을 이미 결정한다. 넘겨받아 해시하면 적중할
-    때도 19MB 프레임을 다시 훑는다 — `get_securement_rate` 와 같은 계약이다.
+    소요대수는 키가 정하므로 빗나갈 때만 이 안에서 받는다 — 넘겨받으면 적중할 때도 부르는 쪽이
+    소요대수를 언피클해야 한다. `_scenario_tables` 는 키의 content_token 을 발급한 활성 시나리오의
+    표여야 한다(`get_scenario_capacity_and_demand` 와 같은 계약).
     """
-    del cache_key
-    return effective_process_capacity_to_month_table(_required_equipment, detail_level)
+    _, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    return effective_process_capacity_to_month_table(required_equipment, detail_level)
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -317,52 +502,459 @@ def get_reference_edit_table(
     )
 
 
+class StandardTargetSummary(NamedTuple):
+    """표준 목표가 매 회차 쓰는 시나리오 수준의 작은 값. 큰 프레임 대신 이것만 푼다."""
+
+    # 표준 목표 예외(Pre B/D 의 Dummy)로 뺀 소요대수 상세 행 수. 공정 선택과 무관하다.
+    exception_rows: int
+    # ER 을 뺀 `RQ_REQB` 의 공정 고유값(원본 값·원본 차례). 표시순서 정렬은 부르는 쪽이 한다.
+    processes: pd.DataFrame
+
+
+# 표준 목표 제외를 거친 소요대수의 칸 수. 한 칸이 pickle 로 약 9.5MB 다(69,081행 합성 표본의 샘플
+# 관측). 키가 시나리오 하나라 몇 칸이면 된다.
+STANDARD_TARGET_SPLIT_MAX_ENTRIES = 4
+
+
+@st.cache_data(show_spinner=False, max_entries=STANDARD_TARGET_SPLIT_MAX_ENTRIES)
+def get_standard_target_split(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> tuple[pd.DataFrame, int]:
+    """표준 목표 제외(ER·Pre B/D Dummy)를 거친 소요대수(공정 필터 전)와 예외로 뺀 행 수.
+
+    분리 결과는 소요대수 하나만의 함수라 시나리오 키가 정한다 — 날짜·분류 수준·가용대수는 이
+    프레임을 바꾸지 않으므로 키에 넣지 않는다(넣으면 같은 프레임이 조건마다 따로 쌓인다). 로직
+    분석은 칸을 하나 고를 때마다 소요대수 언피클(대당 Capa 와 함께 약 16MB, 합성 표본의 샘플
+    관측)·분리를 처음부터 다시 했다. 이 프레임만 풀면 그 절반 아래다. 주간 결과·요약 캐시가
+    빗나갈 때도 여기서 받는다.
+    """
+    _, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    return split_standard_target_required_equipment(required_equipment)
+
+
 @st.cache_data(show_spinner=False, max_entries=16)
-def get_pkg_equivalent_standard_target(
-    required_equipment: pd.DataFrame,
-    run_day: pd.DataFrame,
-    weekly_availability: pd.DataFrame,
+def get_standard_target_summary(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> StandardTargetSummary:
+    """표준 목표의 예외 행 수와 공정 필터 선택지 재료. 키는 시나리오 키 하나다.
+
+    표시 항목·PKG 기준·팝업 열기처럼 결과와 무관한 조작마다 소요대수 언피클·ER/예외 분리·
+    `RQ_REQB` 전체 ER 제외를 처음부터 다시 했다(합성 표본에서 회차당 약 0.13초, 샘플 관측).
+    주차별 가용대수가 비어 화면이 멈추는 회차에도 예외 행 수는 그려야 하므로 가용대수와 무관한
+    이 키에 둔다. 계산 오류는 캐시되지 않아 매 회차 다시 던진다 — 부르는 쪽은
+    `stop_calculation_on_error` 로 감싼다.
+    """
+    _, exception_rows = get_standard_target_split(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    processes = exclude_er_required_equipment(_scenario_tables["RQ_REQB"])[["공정"]]
+    processes = processes.drop_duplicates()
+    processes.attrs = {}
+    return StandardTargetSummary(exception_rows=exception_rows, processes=processes)
+
+
+# 표준 목표 주간 결과의 키 — (시나리오 키, 주차별 가용대수 내용 지문, 시작일, 종료일, 분류 수준,
+# 공정 선택, 제품 선택). 선택은 정렬한 튜플이고 빈 튜플은 「거르지 않음」이다.
+StandardTargetWeeklyKey = tuple[
+    ScenarioCacheKey, str, str, str, str, tuple[str, ...], tuple[str, ...]
+]
+
+
+def standard_target_weekly_cache_key(
+    scenario_key: ScenarioCacheKey,
+    *,
+    availability: pd.DataFrame,
     start_date: date,
     end_date: date,
     detail_level: str,
-    plan: pd.DataFrame,
-    *,
-    _weekly_target: pd.DataFrame,
-) -> pd.DataFrame:
-    """PKG Kea 환산 표준 목표 Capa.
+    processes: Sequence[str] = (),
+    products: Sequence[str] = (),
+) -> StandardTargetWeeklyKey:
+    """표준 목표 주간 결과의 키. **소요대수는 해시하지 않고 시나리오 키가 대신한다.**
 
-    키는 1차 입력이다. 파생 프레임(weekly_target)을 키로 쓰면 5만 행을 넘길 때 Streamlit 이
-    1만 행 표본만 해시해 가용대수 편집이 캐시에 묻힐 수 있다.
+    소요대수 상세는 사내·합성 모두 5만 행을 넘는다. Streamlit 1.63 은 5만 행 이상인 DataFrame
+    인자를 1만 행 표본으로만 해시해, 표본 밖 한 행만 바뀌는 편집(UPEH·REQB 한 칸)이 캐시에 묻혀
+    옛 결과가 나왔다. 소요대수는 `(reference_version, content_token, 월 범위)` 가 정하므로 그
+    키를 그대로 싣는다. 가용대수는 설비 DB 의 비버전 최신값이라 내용 지문이다.
 
-    `_weekly_target` 은 **키에 들어간 여섯 인자로 만든** 주간 표준 목표여야 한다. 다른
-    인자로 만든 프레임을 넘기면 키와 내용이 어긋나 틀린 값이 캐시에 남는다. 여기서 다시
-    부르면 호출자가 방금 만든 것을 한 번 더 해시하고 역직렬화한다.
+    키에는 그 호출이 소요대수에 건 **행 필터 전부**를 싣는다 — 공정 선택(빈 선택은 전체)과 제품
+    선택(재공 현황만 쓴다). 제품 선택을 빼면 재공 현황이 채운 일부 제품 결과가 같은 날짜·분류
+    수준의 표준 목표에 적중한다. 월은 조회일이 아니라 달력 주차의 귀속 달로 잡은 범위다.
     """
-    return add_pkg_equivalent_standard_target(
-        weekly_target=_weekly_target,
-        required_equipment=required_equipment,
-        plan=plan,
-        detail_level=detail_level,
+    return (
+        scenario_key,
+        frame_digest(availability),
+        start_date.isoformat(),
+        end_date.isoformat(),
+        detail_level,
+        _row_selection(processes),
+        _row_selection(products),
     )
+
+
+def _row_selection(values: Sequence[str]) -> tuple[str, ...]:
+    return tuple(sorted({str(value) for value in values}))
+
+
+def _scenario_month_slice(
+    scenario_tables: Mapping[str, pd.DataFrame], name: str, scenario_key: ScenarioCacheKey
+) -> pd.DataFrame:
+    """키의 월 범위로 자른 시나리오 표. 키와 내용이 한 객체에서 나오게 래퍼 안에서 자른다."""
+    _, _, start_month, end_month = scenario_key
+    return filter_month_range(scenario_tables[name], start_month, end_month, name)
+
+
+def _standard_target_demand(
+    cache_key: StandardTargetWeeklyKey,
+    scenario_tables: Mapping[str, pd.DataFrame],
+    reference_tables: Mapping[str, pd.DataFrame],
+) -> pd.DataFrame:
+    """표준 목표 제외(ER·Pre B/D Dummy)를 적용하고 키의 공정·제품 선택으로 거른 소요대수."""
+    scenario_key, _, _, _, _, processes, products = cache_key
+    prepared, _ = get_standard_target_split(
+        scenario_key,
+        _scenario_tables=scenario_tables,
+        _reference_tables=reference_tables,
+    )
+    if not processes and not products:
+        return prepared
+    selected = pd.Series(True, index=prepared.index)
+    if processes:
+        selected &= prepared["공정"].isin(processes)
+    if products:
+        selected &= prepared["제품정보"].isin(products)
+    return prepared.loc[selected].reset_index(drop=True)
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
 def get_weekly_standard_target_capacity(
-    required_equipment: pd.DataFrame,
-    run_day: pd.DataFrame,
-    weekly_availability: pd.DataFrame,
+    cache_key: StandardTargetWeeklyKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _weekly_availability: pd.DataFrame,
+) -> pd.DataFrame:
+    """주차별 표준 목표 Capa. 키(`standard_target_weekly_cache_key`)만 해시한다.
+
+    소요대수·`RQ_RUN_DAY` 는 이 안에서 `_scenario_tables` 와 키의 월로 얻는다 — 페이지가 미리
+    잘라 넘기면 키와 내용이 갈라질 자리가 생긴다. `_scenario_tables` 는 키의 content_token 을
+    발급한 바로 그 활성 시나리오의 표, `_weekly_availability` 는 키의 지문을 만든 바로 그
+    가용대수여야 한다. 계산 오류(ValueError)는 캐시되지 않아 매번 다시 드러난다.
+    """
+    scenario_key, _, start_text, end_text, detail_level, _, _ = cache_key
+    return build_weekly_standard_target_capacity(
+        required_equipment=_standard_target_demand(cache_key, _scenario_tables, _reference_tables),
+        run_day=_scenario_month_slice(_scenario_tables, "RQ_RUN_DAY", scenario_key),
+        weekly_availability=_weekly_availability,
+        start_date=date.fromisoformat(start_text),
+        end_date=date.fromisoformat(end_text),
+        detail_level=detail_level,
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_pkg_equivalent_standard_target(
+    cache_key: StandardTargetWeeklyKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _weekly_availability: pd.DataFrame,
+) -> pd.DataFrame:
+    """PKG Kea 환산 표준 목표 Capa. 키와 `_` 인자 계약은 `get_weekly_standard_target_capacity`
+    와 같다. PKG 기준이 켜진 회차에만 부른다 — PKG 연결 오류는 그때만 드러난다.
+
+    주간 결과는 같은 키의 주간 캐시에서 받는다(적중이면 언피클만). `RQ_PKG_PLAN` 은 키의 월로
+    이 안에서 자른다.
+    """
+    scenario_key, _, _, _, detail_level, _, _ = cache_key
+    weekly_target = get_weekly_standard_target_capacity(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+        _weekly_availability=_weekly_availability,
+    )
+    return add_pkg_equivalent_standard_target(
+        weekly_target=weekly_target,
+        required_equipment=_standard_target_demand(cache_key, _scenario_tables, _reference_tables),
+        plan=_scenario_month_slice(_scenario_tables, "RQ_PKG_PLAN", scenario_key),
+        detail_level=detail_level,
+    )
+
+
+class StandardTargetOutcome(NamedTuple):
+    """전체 공정으로 계산한 주간 결과 또는 실패와, 계산 뒤 공정 거르기가 계산 전 거르기와 같은지.
+
+    **실패도 담는다.** 고르지 않은 공정의 데이터 오류(소요기준 둘·원수요 부하량 불일치·RUN_DAY 누락·
+    PKG 연결 누락)로 전체 계산이 실패해도, 공정을 고른 화면은 그 공정만으로 다시 계산해야 한다.
+    예외를 캐시하지 않으면 그 화면이 매 회차 전체 계산을 다시 돌린다.
+    """
+
+    weekly_target: pd.DataFrame | None
+    error: str | None
+    # 원본 공정명이 이미 다듬어져 있다(앞뒤 공백 없음). 계산은 공정명을 strip 하므로, 아니면 계산 뒤
+    # 거르기가 계산 전(원본 이름) 거르기와 다른 행을 고를 수 있다.
+    exact_process_filter: bool
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_all_process_standard_target(
+    cache_key: StandardTargetWeeklyKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _weekly_availability: pd.DataFrame,
+) -> StandardTargetOutcome:
+    """공정 선택 없이(전체 공정) 계산한 주간 결과. 부르는 쪽은 `get_standard_target_weekly_result`
+    와 PKG 환산(`get_all_process_pkg_standard_target`)이다 — 키의 공정·제품 선택은 비어 있다.
+
+    공정끼리 섞이는 계산이 없어(원수요 키·분류 그룹·RUN_DAY·가용대수·PKG 계획 연결이 모두 공정을
+    싣는다) 전체 결과를 공정으로 거른 것이 고른 공정만 계산한 것과 같다. 그래서 공정 조합마다 따로
+    계산·캐시하지 않는다.
+    """
+    scenario_key, _, start_text, end_text, detail_level, _, _ = cache_key
+    prepared, _ = get_standard_target_split(
+        scenario_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    raw_processes = prepared["공정"].astype("string")
+    exact = bool(raw_processes.str.strip().eq(raw_processes).fillna(False).all())
+    try:
+        weekly_target = build_weekly_standard_target_capacity(
+            required_equipment=prepared,
+            run_day=_scenario_month_slice(_scenario_tables, "RQ_RUN_DAY", scenario_key),
+            weekly_availability=_weekly_availability,
+            start_date=date.fromisoformat(start_text),
+            end_date=date.fromisoformat(end_text),
+            detail_level=detail_level,
+        )
+    except ValueError as exc:
+        return StandardTargetOutcome(None, str(exc), exact)
+    return StandardTargetOutcome(weekly_target, None, exact)
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_all_process_pkg_standard_target(
+    cache_key: StandardTargetWeeklyKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _weekly_availability: pd.DataFrame,
+) -> StandardTargetOutcome:
+    """전체 공정 결과의 PKG Kea 환산. 키와 `_` 인자 계약은 `get_all_process_standard_target` 과
+    같다.
+
+    주간 결과는 같은 키의 `get_all_process_standard_target` 에서 받는다(적중이면 언피클만). 그쪽이
+    실패했으면 그 실패를 그대로 낸다. **비PKG 결과와 캐시 함수를 나눈다** — 한 캐시 함수가 제
+    자신을 부르면 Streamlit 1.63 의 계산 잠금(`threading.Lock`, 재진입 불가)이 같은 칸에서 교착할
+    수 있다.
+    """
+    base = get_all_process_standard_target(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+        _weekly_availability=_weekly_availability,
+    )
+    if base.weekly_target is None:
+        return base
+    scenario_key, _, _, _, detail_level, _, _ = cache_key
+    prepared, _ = get_standard_target_split(
+        scenario_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    try:
+        weekly_target = add_pkg_equivalent_standard_target(
+            weekly_target=base.weekly_target,
+            required_equipment=prepared,
+            plan=_scenario_month_slice(_scenario_tables, "RQ_PKG_PLAN", scenario_key),
+            detail_level=detail_level,
+        )
+    except ValueError as exc:
+        return StandardTargetOutcome(None, str(exc), base.exact_process_filter)
+    return StandardTargetOutcome(weekly_target, None, base.exact_process_filter)
+
+
+def get_standard_target_weekly_result(
+    cache_key: StandardTargetWeeklyKey,
+    *,
+    pkg: bool,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _weekly_availability: pd.DataFrame,
+) -> pd.DataFrame:
+    """표준 목표 화면의 주간 결과(`pkg` 면 PKG 환산). 공정 선택은 전체 공정 결과를 거른다.
+
+    전체 공정 결과(`get_all_process_standard_target`, PKG 는
+    `get_all_process_pkg_standard_target`)를 한 번 두고 고른 공정으로 거른다 — 공정 조합마다 주간
+    계산을 다시 돌리지 않는다. **거른 결과가 고른 공정만 계산한 결과와 다를 수 있는 자리는 고른
+    공정만 계산하는 길(`get_weekly_standard_target_capacity`·`get_pkg_equivalent_standard_target`)로
+    간다** — 셋이다.
+
+    - 전체 계산이 실패했다: 고르지 않은 공정의 오류가 고른 공정의 결과를 막지 않는다(고른 공정에도
+      오류가 있으면 그 길의 문구로 멈춘다). 공정을 고르지 않았으면 그 오류를 그대로 던진다.
+    - 원본 공정명에 앞뒤 공백이 있다: 계산은 공정명을 다듬으므로 계산 뒤 거르기가 다른 행을 고를
+      수 있다.
+    - 거른 결과가 비었다: 고른 공정만 계산하는 길의 빈 결과(컬럼만 있는 표)를 그대로 낸다.
+
+    제품 선택이 있는 호출(재공 현황)은 거르지 않고 고른 공정·제품만 계산하는 길로 간다. 키와 `_`
+    인자 계약은 `get_weekly_standard_target_capacity` 와 같다.
+    """
+    scenario_key, availability_digest, start_text, end_text, detail_level, processes, products = (
+        cache_key
+    )
+    if not products:
+        all_processes: StandardTargetWeeklyKey = (
+            scenario_key,
+            availability_digest,
+            start_text,
+            end_text,
+            detail_level,
+            (),
+            (),
+        )
+        all_process_result = (
+            get_all_process_pkg_standard_target if pkg else get_all_process_standard_target
+        )
+        outcome = all_process_result(
+            all_processes,
+            _scenario_tables=_scenario_tables,
+            _reference_tables=_reference_tables,
+            _weekly_availability=_weekly_availability,
+        )
+        if outcome.weekly_target is None:
+            if not processes:
+                raise ValueError(outcome.error)
+        elif not processes:
+            return outcome.weekly_target
+        elif outcome.exact_process_filter:
+            selected = outcome.weekly_target.loc[
+                outcome.weekly_target["공정"].isin(processes)
+            ].reset_index(drop=True)
+            if not selected.empty:
+                return selected
+    filtered = get_pkg_equivalent_standard_target if pkg else get_weekly_standard_target_capacity
+    return filtered(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+        _weekly_availability=_weekly_availability,
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_weekly_availability_template_csv(
+    processes: tuple[str, ...],
     start_date: date,
     end_date: date,
-    detail_level: str,
+    availability_key: str,
+    _saved: pd.DataFrame,
+) -> bytes:
+    """표준 목표 주차별 가용설비 CSV 양식의 바이트(BOM 이 붙은 UTF-8).
+
+    양식(공정 × 주차, 저장된 가용대수를 싣는다)과 그 직렬화를 매 회차 다시 했다(합성 표본
+    9,170행에서 약 12ms, 샘플 관측). 키는 입력 전부다 — 공정 **차례**(양식 행 차례가 그것을
+    따른다)·시작·종료일·저장된 가용대수의 내용 지문(`frame_digest`). `_saved` 는 그 지문을 만든
+    바로 그 프레임이어야 한다.
+    지연 생성(콜러블)은 쓰지 않는다(TODO [결정] 2026-09-18 — 콜러블의 예외는 삼켜지고 AppTest 가
+    바이트를 못 본다).
+    """
+    del availability_key
+    template = build_weekly_availability_template(
+        list(processes), start_date, end_date, saved=_saved
+    )
+    return template.to_csv(index=False).encode("utf-8-sig")
+
+
+# 내려받기 CSV 바이트의 키 — (용도, 표 내용 지문, 분류 컬럼, 서식). 서식은 소수 자리·값 서식처럼
+# 바이트를 정하는 나머지 인자를 글자로 적은 것이다.
+CsvExportKey = tuple[str, str, tuple[str, ...], str]
+
+
+def csv_export_key(
+    purpose: str,
+    table: pd.DataFrame,
+    classification_columns: Sequence[str],
+    format_text: str,
+) -> CsvExportKey:
+    """화면 표를 내보내는 CSV 의 키. 표는 내용 지문이라 필터·표시순서·조건이 무엇이든 같은 표면
+    같다."""
+    return (purpose, frame_digest(table), tuple(classification_columns), format_text)
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_export_csv(cache_key: CsvExportKey, _build: Callable[[], bytes]) -> bytes:
+    """화면 표의 내려받기 CSV 바이트. 키가 같으면 `_build` 를 부르지 않는다.
+
+    내려받기를 누르지 않아도 매 회차 내보내기 표 조립과 직렬화를 했다(소요대수 상세 2,660행에서
+    약 70ms, 합성 표본의 샘플 관측). 콜러블 지연 생성은 쓰지 않는다(TODO [결정] 2026-09-18) — 대신
+    표 내용 지문 키로 바이트를 둔다. `_build` 는 **키를 만든 바로 그 표와 키에 적은 서식으로만**
+    바이트를 만드는 함수여야 한다(`functools.partial` 로 인자를 박아 넘긴다). 빗나가면 이 회차에서
+    바로 부르므로 오류는 지금처럼 화면에 드러나고 캐시되지 않는다. 코드 상수(컬럼 라벨)는 키에
+    넣지 않는다(키 방침).
+    """
+    del cache_key
+    return _build()
+
+
+# 생산 계획 편집표 원본의 칸 수. 한 시나리오·조회기간에 표 하나라 세션·시나리오 몇 개를 오가도
+# 넉넉하다.
+PLAN_EDIT_TABLE_MAX_ENTRIES = 8
+
+
+@st.cache_data(show_spinner=False, max_entries=PLAN_EDIT_TABLE_MAX_ENTRIES)
+def get_plan_edit_table(
+    cache_key: ScenarioCacheKey,
+    display_order_key: str,
+    _plan: pd.DataFrame,
+    _display_order: PreparedDisplayOrder | None,
 ) -> pd.DataFrame:
-    """Cache the weekly standard target Capa for one active scenario and CSV input."""
-    return build_weekly_standard_target_capacity(
-        required_equipment=required_equipment,
-        run_day=run_day,
-        weekly_availability=weekly_availability,
-        start_date=start_date,
-        end_date=end_date,
-        detail_level=detail_level,
+    """생산 계획 PKG PLAN 편집표의 원본(월 Wide 피벗 → 표시순서 정렬).
+
+    편집표는 미적용 편집을 지키려고 닫힌 탭에서도 매 회차 그리므로 원본도 매 회차 필요한데, 환산
+    조건 토글·탭 전환마다 같은 입력으로 피벗을 다시 했다(합성 표본에서 약 20ms, 샘플 관측). 키는
+    `get_reference_edit_table` 과 같은 꼴 — 편집 기간의 `scenario_cache_key` + 표시순서 지문이다.
+    편집 적용·붙여넣기 적용·가상 제품 등록·되돌리기는 모두 새(또는 리비전 고정) content_token 을
+    낸다.
+
+    `_plan` 은 키의 content_token 을 발급한 바로 그 활성 시나리오에서 키와 같은 기간으로 자른
+    `RQ_PKG_PLAN`, `_display_order` 는 `display_order_key` 를 만든 `RQ_DISPLAY_ORDER` 를 준비한
+    것이어야 한다. 검증 예외는 캐시되지 않고, `st.cache_data` 는 꺼낼 때마다 사본을 준다.
+    """
+    del cache_key, display_order_key
+    return plan_to_edit_table(_plan, _display_order)
+
+
+class YieldEditTables(NamedTuple):
+    """수율 편집표 원본과 표에 실을 수 없어 잠근 행(값 결측·0 이하·100% 초과)."""
+
+    table: pd.DataFrame
+    locked: pd.DataFrame
+
+
+@st.cache_data(show_spinner=False, max_entries=PLAN_EDIT_TABLE_MAX_ENTRIES)
+def get_yield_edit_tables(
+    cache_key: ScenarioCacheKey,
+    display_order_key: str,
+    _yield_data: pd.DataFrame,
+    _display_order: PreparedDisplayOrder | None,
+) -> YieldEditTables:
+    """생산 계획 수율 편집표의 원본과 잠근 행. 키와 `_` 인자 계약은 `get_plan_edit_table` 과 같다.
+
+    잠근 행은 적용 때 원본 그대로 되붙이는 재료라(`restore_locked_yield_rows`) 표와 한 묶음으로
+    낸다 — 같은 입력의 결정적 출력이다. 표를 세울 수 없는 오류(연결 키 결측·중복)는 캐시되지 않아
+    매 회차 다시 나고, 화면은 지금처럼 수율 탭에만 알린다.
+    """
+    del cache_key, display_order_key
+    editable, locked = split_editable_yield_rows(_yield_data)
+    return YieldEditTables(
+        table=yield_to_edit_table(editable, _display_order, locked=locked), locked=locked
     )
 
 

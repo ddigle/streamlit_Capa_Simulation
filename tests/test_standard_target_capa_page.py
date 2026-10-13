@@ -1,17 +1,32 @@
 # Purpose: standard target capa page 관련 정상·예외·회귀 동작을 검증한다.
 
+from collections.abc import Iterator
 from datetime import date
 from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
 import pytest
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.scenario_preset_state import (
     STANDARD_TARGET_PROCESS_SELECTION_KEY,
     STANDARD_TARGET_SHOW_DETAIL_KEY,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fresh_calculation_caches() -> Iterator[None]:
+    """화면의 키 전용 캐시(예외 행 수·주간 결과)는 프로세스 전역이고 이 파일은 토큰 하나를 쓴다.
+
+    앞 테스트의 성공이 적중하면 계산 오류를 주입한 테스트에서 오류가 나지 않는다. 테스트마다
+    비운다.
+    """
+    st.cache_data.clear()
+    yield
+    st.cache_data.clear()
+
 
 TEST_SCRIPT = r"""
 from pathlib import Path
@@ -606,3 +621,24 @@ def test_standard_target_guide_carries_what_left_the_body() -> None:
         assert text in guide, text
     # 예전 권고 — 따라 하면 필터·기간 밖 저장값이 되돌릴 수 없게 사라졌다.
     assert "입력 초기화** 뒤 다시 붙여넣" not in guide
+
+
+EMPTY_AVAILABILITY_SCRIPT = TEST_SCRIPT.replace(
+    "        return availability.copy()\n",
+    '        return pd.DataFrame(columns=["공정", "Weeknum", "가용대수"])\n',
+)
+assert EMPTY_AVAILABILITY_SCRIPT != TEST_SCRIPT
+
+
+def test_exception_rows_are_shown_even_when_the_availability_is_empty() -> None:
+    """가용대수가 비어 결과 계산 전에 멈추는 회차에도 `예외 처리 공정` 표가 선다.
+
+    예외 행 수는 가용대수와 무관한 시나리오 키 캐시에서 온다 — 주간 결과 캐시에 묶으면 이
+    회차에 값을 얻을 길이 없다.
+    """
+    app = AppTest.from_string(EMPTY_AVAILABILITY_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert any("가용설비 붙여넣기" in element.value for element in app.info)
+    notice = _frame_with_value(app, "공정", "Pre B/D")
+    assert notice["현재 조회범위 제외 행"].tolist() == [0]
