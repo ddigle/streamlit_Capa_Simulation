@@ -23,6 +23,7 @@ from capa_simulation.services.dashboard import (
 from capa_simulation.services.display_order import PreparedDisplayOrder
 from capa_simulation.services.equipment_availability import (
     build_equipment_lifecycle_spans,
+    build_inactive_equipment_month_view,
     build_space_equipment_status,
     build_weekly_equipment_availability,
 )
@@ -1162,3 +1163,47 @@ def get_monthly_equipment_contributions(
     return build_monthly_equipment_contributions(
         _spans, _baseline, _cutoff, months, conversion_ratios=_conversion_ratios
     )
+
+
+# Main(호기 현황·비가동 호기·Qual 일정)의 판정. 페이지에 fragment 가 없어 같은 보기를 열어 둔 채
+# 다른 위젯·사이드바를 만져도 판정을 처음부터 다시 했다. 키는 **거른 뒤의** 마스터·비가동 내용
+# 지문과 그 판정의 날짜 인자다 — 공정·추가 조건 필터와 저장본·샘플 전환이 지문을 바꾼다. 거르기 전
+# 표나 리비전 id 로 키를 잡으면 필터를 바꿔도 옛 표가 남는다. 판정 함수들은 오늘 날짜·설정·세션을
+# 읽지 않는다. 공정 표시명·오늘 선은 캐시 밖에서 입힌다. 검증에 실패한 표의 `ValueError` 는 캐시에
+# 남지 않는다.
+
+# (거른 마스터 내용 지문, 거른 비가동 내용 지문, 날짜 인자 isoformat)
+EquipmentJudgementCacheKey = tuple[str, str, str]
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_inactive_equipment_month(
+    cache_key: EquipmentJudgementCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+) -> tuple[tuple[date, ...], pd.DataFrame]:
+    _, _, month = cache_key
+    moments, inactive = build_inactive_equipment_month_view(
+        _equipment, _downtime, month=date.fromisoformat(month)
+    )
+    return tuple(moments), inactive
+
+
+def get_inactive_equipment_month(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, *, month: date
+) -> tuple[list[date], pd.DataFrame]:
+    """Main 「비가동 호기 › 그 달 전체」 — (잰 시점, 그 달 비가동 호기).
+
+    `build_inactive_equipment_month_view` 의 캐시다.
+
+    시점(한 달 30여 개)마다 판정을 다시 하는 보기라 사내 규모(호기 1,566·비가동 300, 합성 사본)에서
+    회차마다 2초 남짓 들었다. 결과는 **그 달(년·월)**과 두 표로만 정해지므로 키의 날짜는 그 달
+    1일이다 — 같은 달 안에서 기준일만 옮기면 다시 계산하지 않고, 달이 바뀌면 새로 잰다.
+    """
+    cache_key = (
+        frame_digest(equipment),
+        frame_digest(downtime),
+        date(month.year, month.month, 1).isoformat(),
+    )
+    moments, inactive = _cached_inactive_equipment_month(cache_key, equipment, downtime)
+    return list(moments), inactive

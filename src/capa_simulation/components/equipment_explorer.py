@@ -23,9 +23,7 @@ from capa_simulation.services.equipment_availability import (
     build_equipment_lifecycle_spans,
     build_equipment_status_as_of,
     build_inactive_equipment,
-    build_inactive_equipment_in_month,
     build_milestone_transition_events,
-    inactive_equipment_moments,
 )
 from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
@@ -47,6 +45,7 @@ from capa_simulation.services.equipment_units import (
     unit_transitions,
 )
 from capa_simulation.services.simulation_cache import (
+    get_inactive_equipment_month,
     get_undated_equipment,
     get_usage_excluded_equipment,
     get_weekly_equipment_availability,
@@ -689,10 +688,10 @@ def render_equipment_explorer(
                     labels=labels,
                 )
             elif question == "비가동 호기" and view == "그 달 전체":
-                # 기준일이 든 달을 본다. 기준 월을 따로 고르게 하면 축이 둘이 된다.
-                moments = inactive_equipment_moments(filtered, filtered_downtime, month=as_of)
-                inactive = build_inactive_equipment_in_month(
-                    filtered, filtered_downtime, month=as_of, moments=moments
+                # 기준일이 든 달을 본다. 기준 월을 따로 고르게 하면 축이 둘이 된다. 시점과 결과는
+                # 한 벌로 캐시한다(키 = 거른 두 표의 내용 지문 + 그 달).
+                moments, inactive = get_inactive_equipment_month(
+                    filtered, filtered_downtime, month=as_of
                 )
                 label = _rows_label(inactive, partial=True)
                 st.markdown(f"#### 비가동 호기 · {as_of:%Y-%m} 달 전체 · {label}")
