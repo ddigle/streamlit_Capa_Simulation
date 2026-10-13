@@ -303,12 +303,17 @@ def test_profiles_saved_elsewhere_and_unsaved_edits_reach_main_on_return(tmp_pat
     # 시드에는 주요공정 프리셋이 없어 히트맵은 비어 있다 — 판정 색은 상세 B/N 에서 본다.
     assert after_threshold["bottleneck_detail_months"] != base["bottleneck_detail_months"]
 
-    # 과거 구간 — 네 묶음 모두의 월 축에 닿는다.
-    _open_tab(app, PAST)
-    repository.replace_global_past_data(
-        {
+    # 과거 구간 — 네 묶음이 함께 읽는 기본 키의 과거 구간 version 에 닿는다. 숨은 동안 조회기간까지
+    # 바꾸면 월 축이 어차피 네 묶음 키를 가르므로, 먼저 Main 에서 기간을 넓히고 과거 구간 한 달을 둔
+    # 뒤 숨은 동안에는 **같은 달의 값만** 바꾼다 — 그래야 version 이 키에 드는지가 따로 드러난다.
+    def past(density: float, quantity: float, rate: float) -> dict[str, pd.DataFrame]:
+        return {
             "월별": pd.DataFrame(
-                {"생산계획년월": [202510], "Density": [9.0], "Wafer Total": [120_000.0]}
+                {
+                    "생산계획년월": [202510],
+                    "Density": [density],
+                    "Wafer Total": [density * 13_000.0],
+                }
             ),
             "계획": pd.DataFrame(
                 {
@@ -316,23 +321,36 @@ def test_profiles_saved_elsewhere_and_unsaved_edits_reach_main_on_return(tmp_pat
                     "제품정보": ["DEMO PRODUCT A"],
                     "Stack": ["8H"],
                     "Customer": ["DEMO_CUSTOMER_A"],
-                    "생산수량": [110.0],
+                    "생산수량": [quantity],
                 }
             ),
             "확보율": pd.DataFrame(
-                {"생산계획년월": [202510], "공정": [processes[0]], "확보율": [1.05]}
+                {"생산계획년월": [202510], "공정": [processes[0]], "확보율": [rate]}
             ),
-        },
-        source="시험",
-    )
+        }
+
+    repository.replace_global_past_data(past(9.0, 110.0, 1.05), source="시험")
+    _clear_profile_caches()
+    app.session_state["production_month_range_v2"] = ("2025-10", "2026-12")
+    _step(app)
+    assert set(_builds(app)) == set(BUILDERS)
+    before_past = _figures(app)
+    before_past_key = _lob_key(app).base
+    assert '"25.10"' in json.dumps(before_past["production_lob_months"])
+
+    _open_tab(app, PAST)
+    repository.replace_global_past_data(past(12.0, 200.0, 0.8), source="시험")
     _clear_profile_caches()
     _step(app)
     assert _builds(app) == []
-    app.session_state["production_month_range_v2"] = ("2025-10", "2026-12")
     _open_tab(app, MAIN)
     assert set(_builds(app)) == set(BUILDERS)
+    after_past_key = _lob_key(app).base
+    # 월 축은 그대로다 — 네 묶음을 다시 만든 까닭은 과거 구간 version 하나다.
+    assert after_past_key.month_labels == before_past_key.month_labels
+    assert after_past_key.past_profile_version != before_past_key.past_profile_version
     after_past = _assert_same_as_fresh(app, "과거 구간 저장 뒤 Main")
-    assert '"25.10"' in json.dumps(after_past["production_lob_months"])
+    assert after_past["production_lob_months"] != before_past["production_lob_months"]
 
     # 미저장 편집 — 이 세션의 계획을 바꾸고 내용 토큰을 새로 낸다(편집 적용이 하는 일).
     _open_tab(app, PREFERENCE)
@@ -391,7 +409,16 @@ def test_a_comparison_picked_on_preference_is_drawn_when_main_opens(tmp_path: Pa
     app.session_state[COMPARISON_TOGGLE_KEY] = True
     app.selectbox(key=COMPARISON_SCENARIO_KEY).set_value(scenario_id)
     _step(app)
+    # 고른 회차에는 리비전이 피커 본문(회차 끝)에서야 채워져 비교가 아직 붙지 않는다 — 그 회차는
+    # 숨기지 않아도 만들 것이 없다. 비교가 **붙은** 첫 회차는 다음 회차다.
     assert app.session_state[COMPARISON_REVISION_KEY] == str(created.revision.revision_id)
+    assert _builds(app) == []
+    assert app.session_state["spy_figures"] == {}
+    # Preference 에 머문 채 한 번 더 — 토글·시나리오·리비전이 모두 차 있어 이 회차 맨 위에서 비교가
+    # 켜진다(`show_comparison`). 숨기지 않던 코드는 바로 이 회차에 LOB·계획 세부수량을 만들었다.
+    assert app.session_state[COMPARISON_TOGGLE_KEY] is True
+    assert app.session_state[COMPARISON_SCENARIO_KEY] == scenario_id
+    _step(app)
     assert _builds(app) == []
     assert app.session_state["spy_figures"] == {}
 

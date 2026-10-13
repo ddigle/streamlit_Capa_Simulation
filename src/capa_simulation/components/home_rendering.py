@@ -372,7 +372,9 @@ def latest_home_figure_key(cache_root: object, bundle: HomeFigureBundle[KeyT, An
     """세션 칸(`st.session_state[HOME_FIGURE_CACHE_KEY]`)에서 그 묶음이 가장 최근에 쓴 키.
 
     벤치마크가 「켠 토글이 그림에 실제로 적용됐나」를 보는 창구다. 꺼내 쓴 칸도 맨 뒤로 옮기므로
-    (`take_home_figures`) 맨 뒤가 이번 회차에 화면에 나간 그림의 키다.
+    (`take_home_figures`) 맨 뒤가 이번 회차에 화면에 나간 그림의 키다. **Main 이 숨은 회차에는
+    갱신되지 않는다** — 그 회차는 칸을 꺼내지도 쓰지도 않으므로(`app_pages/home.py`) 그때 읽으면
+    직전 Main 회차의 키다. 숨은 탭에서 저장한 값이 적용됐는지는 Main 을 연 회차 뒤에 본다.
     """
     if not isinstance(cache_root, dict):
         return None
