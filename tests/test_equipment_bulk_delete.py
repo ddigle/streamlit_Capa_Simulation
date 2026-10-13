@@ -11,17 +11,23 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
+import pytest
+from pandas.testing import assert_series_equal
 
+from capa_simulation.components import equipment_data_workspace as workspace
+from capa_simulation.components.equipment_data_workspace import _selection_flags
 from capa_simulation.services.equipment_bulk_delete import (
     BASELINE_TARGET,
     DOWNTIME_TARGET,
     EQUIPMENT_TARGET,
+    RowKey,
     apply_deletion,
     checked_keys,
     matching_keys,
     normalize_key_value,
     plan_deletion,
     restore_rows,
+    row_keys,
 )
 
 
@@ -143,3 +149,49 @@ def test_undo_puts_rows_back_where_they_were() -> None:
     assert skipped == 0
     assert equipment.equals(frames[1].reset_index(drop=True))
     assert downtime.equals(frames[2].reset_index(drop=True))
+
+
+# ------------------------------------------------------------------ 편집표 선택 칸
+
+
+def _old_flags(frame: pd.DataFrame, target: str, selection: frozenset[RowKey]) -> pd.Series:
+    """고치기 전 식 그대로 — 선택이 비어도 모든 행의 키를 만들었다."""
+    chosen = [row in selection for row in row_keys(frame, target)] or [False] * len(frame)
+    return pd.Series(chosen, index=frame.index, dtype="bool")
+
+
+@pytest.mark.parametrize(
+    ("target", "position"),
+    [(BASELINE_TARGET, 0), (EQUIPMENT_TARGET, 1), (DOWNTIME_TARGET, 2)],
+)
+def test_selection_flags_match_the_old_expression(target: str, position: int) -> None:
+    """빈 선택·키 일부·없는 키·빈 표·키 컬럼 없는 표 모두 옛 식과 값·dtype·index 가 같다.
+
+    비가동 `시작일` 은 Timestamp·date·글자가 섞여 온다(편집표를 지난 꼴).
+    """
+    frame = _frames()[position].copy()
+    frame.index = pd.RangeIndex(10, 10 + len(frame))  # 보기로 거른 표는 번호가 0 부터가 아니다
+    some = frozenset(row_keys(frame, target)[1:3])
+    for case in (frame, frame.iloc[0:0], frame.drop(columns=frame.columns[0])):
+        for selection in (frozenset(), some, frozenset({("없는 키",)})):
+            assert_series_equal(
+                _selection_flags(case, target, selection), _old_flags(case, target, selection)
+            )
+    assert _selection_flags(frame, target, some).tolist() == [False, True, True] + [False] * (
+        len(frame) - 3
+    )
+
+
+def test_an_empty_selection_never_builds_row_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """빈 선택에는 어떤 키도 들지 않는다 — 행마다 날짜를 추정해 읽는 키를 만들지 않는다."""
+    _, _, downtime = _frames()
+
+    def refuse(frame: pd.DataFrame, target: str) -> list[RowKey]:
+        raise AssertionError("빈 선택인데 업무 키를 만들었다")
+
+    monkeypatch.setattr(workspace, "row_keys", refuse)
+
+    flags = _selection_flags(downtime, DOWNTIME_TARGET, frozenset())
+
+    assert flags.tolist() == [False] * len(downtime)
+    assert flags.dtype == "bool"
