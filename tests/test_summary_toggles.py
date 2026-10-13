@@ -372,6 +372,52 @@ def test_gap_is_off_when_there_is_nothing_to_compare(monkeypatch: pytest.MonkeyP
     assert ready["available"] is True and ready["name"] == "DEMO 비교 r2"
 
 
+class _VanishingRepo(_Repo):
+    """처음 확인할 때는 리비전이 있고, 그 뒤 다시 보면 다른 세션이 지워 없다."""
+
+    def list_revisions(self, scenario_id: str) -> list[SimpleNamespace]:
+        listed = super().list_revisions(scenario_id)
+        self.revisions = []
+        return listed
+
+
+def test_a_comparison_revision_deleted_before_its_plan_is_read_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """확인과 계획 읽기 사이에 지운 리비전은 처음부터 없던 리비전과 같은 까닭으로 GAP 만 끈다.
+
+    계획 읽기는 지운 리비전에서 `KeyError` 를 낸다(빈 계획이 아니다). 일시적 실패가 아니라 서버에
+    남아도 되지만, 「만들지 못함」 이 아니라 「찾을 수 없음」 이어야 다시 고르라는 안내가 맞다.
+    리비전이 그대로 있는데 난 `KeyError`(데이터 모양 오류)는 그 토글의 「만들지 못함」 으로 남는다.
+    """
+
+    def read_deleted(revision_id: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+        raise KeyError(f"리비전을 찾을 수 없습니다: {revision_id}")
+
+    def build(repo: _Repo) -> dict[str, Any]:
+        monkeypatch.setattr(intro_summary, "get_scenario_repository", lambda path: repo)
+        return intro_summary._guarded(
+            "GAP",
+            lambda: intro_summary.comparison_part(
+                "db",
+                SimpleNamespace(revision_id="R-OFFICIAL"),  # type: ignore[arg-type]
+                _profile("S-CMP", "R-1"),  # type: ignore[arg-type]
+                months=MONTHS,
+                monthly_density=_density(),
+                monthly_wafer=_wafer(),
+                load_plan=read_deleted,
+            ),
+        )
+
+    assert build(_VanishingRepo(["R-1"])) == {
+        "available": False,
+        "reason": intro_summary.COMPARISON_OFF_MISSING,
+    }
+    kept = build(_Repo(["R-1"]))
+    assert kept["available"] is False
+    assert kept["reason"].startswith("GAP 값을 만들지 못했습니다: KeyError")
+
+
 def test_a_db_failure_while_checking_the_comparison_is_not_kept(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

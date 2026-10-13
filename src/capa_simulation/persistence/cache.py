@@ -105,13 +105,13 @@ def load_scenario_snapshot(
 
 @st.cache_data(show_spinner=False, max_entries=8)
 def load_scenario_plan(database_path: str, revision_id: str) -> pd.DataFrame:
-    """비교 GAP 이 쓰는 것은 계획 한 장뿐이다. 16표 전체를 rerun 마다 풀지 않는다.
+    """비교 GAP 이 쓰는 것은 계획 한 장뿐이다. 리비전 16표를 읽지도, 캐시에 올리지도 않는다.
 
-    `st.cache_data` 는 적중해도 저장된 피클을 매번 역직렬화한다. 샘플 관측으로 스냅샷
-    전체는 5.1MB·64.6ms 인데 그중 계획은 0.04MB·0.4ms 다.
+    DB 에서는 그 리비전의 `RQ_PKG_PLAN` 만 읽고(`load_revision_table` — 스냅샷과 같은 경로),
+    캐시에도 그 한 장만 둔다. 비교 리비전은 고를 때마다 바뀌므로 스냅샷 캐시에 올리면 계획 한
+    장을 얻으려고 16표를 쥐게 된다. 지운 리비전은 `KeyError` 로 올라와 캐시에 남지 않는다.
     """
-    payload = _load_scenario_snapshot_payload(database_path, revision_id, True)
-    return payload["tables"]["RQ_PKG_PLAN"]
+    return get_scenario_repository(database_path).load_revision_table(revision_id, "RQ_PKG_PLAN")
 
 
 @st.cache_data(show_spinner=False, max_entries=4)

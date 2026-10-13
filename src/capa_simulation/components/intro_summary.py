@@ -87,6 +87,7 @@ from capa_simulation.persistence.models import (
     GlobalAdvanceShipment,
     GlobalComparisonScenario,
     OfficialReleaseSummary,
+    RevisionSummary,
 )
 from capa_simulation.scenario_state import pristine_content_token
 from capa_simulation.services.advance_shipment import advance_shipment_notes
@@ -383,14 +384,19 @@ def comparison_part(
     if profile.revision_id == release.revision_id:
         return _unavailable(COMPARISON_OFF_SELF)
     repository = get_scenario_repository(database_path)
-    revision = next(
-        (
-            item
-            for item in repository.list_revisions(profile.scenario_id)
-            if item.revision_id == profile.revision_id
-        ),
-        None,
-    )
+    scenario_id, revision_id = profile.scenario_id, profile.revision_id
+
+    def listed_revision() -> RevisionSummary | None:
+        return next(
+            (
+                item
+                for item in repository.list_revisions(scenario_id)
+                if item.revision_id == revision_id
+            ),
+            None,
+        )
+
+    revision = listed_revision()
     if revision is None:
         return _unavailable(COMPARISON_OFF_MISSING)
     scenario_name = next(
@@ -401,7 +407,14 @@ def comparison_part(
         ),
         "",
     )
-    comparison_density, comparison_wafer = load_plan(revision.revision_id)
+    try:
+        comparison_density, comparison_wafer = load_plan(revision.revision_id)
+    except KeyError:
+        # 확인 뒤 다른 세션이 그 리비전을 지웠으면 계획 읽기가 `KeyError` 를 낸다 — 처음부터 없던
+        # 것과 같다. 리비전이 그대로 있으면 데이터 오류라 그대로 올린다(그 토글만 「만들지 못함」).
+        if listed_revision() is None:
+            return _unavailable(COMPARISON_OFF_MISSING)
+        raise
     comparison = build_comparison_summary(
         months=months,
         monthly_density=monthly_density,

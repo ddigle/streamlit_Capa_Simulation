@@ -4296,6 +4296,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   경로 식별 컬럼 보강은 매번 확인하고 실제로 바뀔 때만 교체한다.
   `load_revision(..., apply_global_display_order=False)`는 파생 입력용 저장 원본을 읽는다.
   기본 조회는 계속 공용 표시순서를 적용하며, 캐시도 이 플래그로 두 결과를 구분한다.
+  `load_revision_table(revision_id, 표)` 는 그 리비전의 표 한 장을 `load_revision` 과 같은 경로로
+  읽는다(비교 GAP 의 계획 `cache.load_scenario_plan`). 리비전이 있는지 같은 연결에서 먼저 보고 없으면
+  같은 `KeyError` 를 낸다 — 리비전 표를 `revision_id` 로 바로 읽으면 지운 리비전에서 빈 프레임이 온다.
 - `persistence/models.py`: Repository 가 주고받는 타입
 - `persistence/display_order_store.py`: 공용 표시순서 프로필의 검증·이관·저장
 - `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·교체 SQL
