@@ -733,8 +733,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     안내만 남긴다 — 경로 하나하나가 행이라 전 공정을 그리면 표 생성·정렬·CSV 인코딩·Plotly
     조립이 모두 행 수에 비례해 커진다. 필터를 앞으로 당기는 것이 아니라 그 계산 자체를
     타지 않는다. 공정 필터 placeholder 도 뷰에 따라 달라진다.
-  - 대당 Capa **계산**은 탭 가시성으로 막지 않는다 — 소요대수·확보율이 같은 프레임을 쓰므로
-    어차피 돈다. 막는 것은 월별 표로 펼치는 두 함수와 그 뒤의 CSV·Plotly 뿐이다.
+  - 대당 Capa·소요대수 **프레임(pickle 약 16MB)을 풀지 않는다.** 탭과 무관하게 쓰는 작은 값(제외
+    목록·측정률 가정·대당 Capa 행 수·공정 고유값)은 `simulation_cache.get_scenario_result_summary`,
+    표는 키 전용 캐시(`get_required_month_table`·`get_effective_process_capacity_table`·
+    `get_scenario_securement_rate`)에서 꺼낸다 — 빗나갈 때만 그 캐시가 안에서 프레임을 받는다. 정렬이
+    든 캐시의 키에는 표시순서 지문(`display_order_digest`)이 들어간다. 요약 캐시를
+    `page_bootstrap.stop_calculation_on_error` 로 불러 계산 오류는 지금 자리·지금 문구로 먼저 드러난다.
+    STEP별 보기만 대당 Capa 를 푼다.
   - 대당 Capa 제외 표는 `대당 Capa` 탭 하나가 그린다. 두 탭이 한 페이지에 오면서 같은 표를
     같은 파일명으로 두 번 내리게 돼 `소요대수` 쪽에서는 걷어냈다.
   - **표를 보는 조건은 사이드바 `표 조건` 카드**(`sidebar_status.table_card`, 이름
@@ -763,6 +768,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 판정 기준(확보·경고)은 HOME → Preference 의 공용 프로필이다(2026-10-06 사용자 결정). 사이드바
     조건 카드 `판정 기준` 은 지금 기준을 읽기 전용으로 적고 정하는 곳을 가리킬 뿐이다. 업무 로드맵(GO팀 투자 판단·기술팀 실행 개선)과 추가 필요대수 계산식은
     Guide(`guides/static_capa.md`)로 옮겼고 본문에는 두 결과 상자만 남는다.
+  - 확보율은 `simulation_cache.get_scenario_securement_rate`(키 전용)로 꺼내 소요대수 프레임을 풀지
+    않는다. 계산 오류는 그 앞의 `check_scenario_capacity`(`stop_calculation_on_error` 로 감싼다)가
+    「계산 멈춤」과 함께 낸다. 판정 기준 적용(`build_securement_shortfall_tables`)은 공용 프로필이 다른
+    화면에서 바뀌므로 캐시하지 않고 매 회차 한다.
 - `app_pages/reference_integrity.py`
   - `Dynamic Capa` 상위 페이지(사이드바 그룹 머리, 표기 없음 — 성숙도는 본문 배지)이며 전체 공정 실현률·관리 우선순위를 요약하고 공정·제품·
     Stack·WF 속성 필터로 표준/실효/실적 Capa와 손실 원인을 비교하는 프로토타입을 제공한다.
@@ -2422,6 +2431,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `scenario_capacity_and_demand` 는 `resolve_effective_months` 뒤에 부르는 Capa 계산이다.
     계산이 멈추면(ValueError) 사이드바를 「계산 멈춤」으로 바꾸고 예외를 그대로 다시 던진다.
     계산 함수는 부를 때 `simulation_cache` 모듈에서 찾는다 — 페이지 테스트가 그 속성을 바꾼다.
+  - `stop_calculation_on_error(함수, ...)` 는 같은 처리를 키 전용 파생 캐시(`check_scenario_capacity`·
+    `get_scenario_result_summary`·표준 목표 요약)에 건다. 시나리오 수준 오류만 나는 호출에만 쓴다 —
+    입력 표 하나의 검증 오류(확보율의 가용대수 등)까지 「계산 멈춤」으로 바꾸지 않는다.
   - `date_range_value` 로 범위 날짜 입력의 세 반환 형태(두 날짜·한 날짜·`date` 하나)를,
     `prune_list_selection` 으로 계산 결과가 옵션인 다중 선택의 옛 값을, `prune_choice` 로 단일 선택
     (`st.selectbox`)의 옛 값을(없으면 `default` 를 **적는다** — `pop` 하지 않는다. `default=None` 은 고른

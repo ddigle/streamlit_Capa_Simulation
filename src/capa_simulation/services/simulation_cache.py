@@ -20,7 +20,11 @@ from capa_simulation.services.dashboard import (
     build_monthly_wafer_load_from_load,
     build_production_dashboard,
 )
-from capa_simulation.services.display_order import PreparedDisplayOrder
+from capa_simulation.services.display_order import (
+    PreparedDisplayOrder,
+    apply_display_order,
+    reorder_display_columns,
+)
 from capa_simulation.services.equipment_availability import (
     build_equipment_lifecycle_spans,
     build_space_equipment_status,
@@ -40,7 +44,10 @@ from capa_simulation.services.monthly_equipment_availability import (
 )
 from capa_simulation.services.product_share import build_product_volume
 from capa_simulation.services.required_equipment import (
+    REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
+    RESULT_DIMENSIONS,
     calculate_required_equipment,
+    required_equipment_to_month_table,
 )
 from capa_simulation.services.required_shortening import (
     TARGET_LEVELS,
@@ -60,6 +67,7 @@ from capa_simulation.services.standard_target_capacity import (
 )
 from capa_simulation.services.undated_equipment import undated_equipment
 from capa_simulation.services.unit_capacity import (
+    CAPACITY_EXCLUSIONS_ATTR,
     CapacityAssumptions,
     calculate_unit_capacity,
     capacity_assumptions,
@@ -244,19 +252,158 @@ def get_securement_rate(
     return calculate_securement_rate(_available_equipment, _required_equipment)
 
 
+@st.cache_data(show_spinner=False, max_entries=16)
+def check_scenario_capacity(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> bool:
+    """이 키의 대당 Capa·소요대수 계산이 서는지만 본다. 적중이면 프레임을 풀지 않는다.
+
+    키 전용 파생 캐시(확보율·월 표)만 쓰는 화면은 소요대수를 받을 일이 없는데, 계산 오류는
+    그 화면의 맨 위에서 지금 자리·지금 문구로 먼저 드러나야 한다. 실패는 캐시되지 않으므로
+    오류가 난 시나리오는 매 회차 `get_scenario_capacity_and_demand` 가 다시 던진다(그쪽의 전체
+    기간 결과가 실패를 담아 두어 싸다). 부르는 쪽은 `page_bootstrap.stop_calculation_on_error`
+    로 감싸 사이드바의 「✓ 적용」을 거둔다.
+    """
+    get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    return True
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_scenario_securement_rate(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _available_equipment: pd.DataFrame,
+) -> pd.DataFrame:
+    """확보율을 시나리오 키만으로 꺼낸다. **적중이면 소요대수를 풀지 않는다.**
+
+    `get_securement_rate` 도 키만 해시하지만 부르는 쪽이 소요대수를 넘겨야 해, 적중해도
+    `get_scenario_capacity_and_demand` 의 결과(대당 Capa 와 함께 pickle 약 16MB, 합성 표본의 샘플
+    관측)를 매 회차 언피클했다. 빗나가면 그 둘을 이 안에서 부르고, 확보율은 HOME 과 같은
+    `get_securement_rate` 칸을 쓴다. `_available_equipment` 는 키의 시나리오·월 범위로 자른
+    `RQ_EQP_AVBL` 이어야 한다(`get_securement_rate` 와 같은 계약).
+    """
+    _, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    return get_securement_rate(cache_key, _available_equipment, required_equipment)
+
+
+class ScenarioResultSummary(NamedTuple):
+    """산출 결과가 열린 탭과 무관하게 매 회차 쓰는 작은 파생값. 큰 프레임 대신 이것만 푼다."""
+
+    capacity_exclusions: pd.DataFrame
+    capacity_assumptions: CapacityAssumptions
+    unit_capacity_rows: int
+    required_exclusions: pd.DataFrame
+    # 소요대수의 공정 고유값(원본 값·원본 차례). 표시순서 정렬은 부르는 쪽이 한다.
+    processes: pd.DataFrame
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_scenario_result_summary(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> ScenarioResultSummary:
+    """대당 Capa·소요대수 결과의 제외 목록·측정률 가정·행 수·공정 고유값.
+
+    `attrs` 는 병합·슬라이스를 지나며 사라지므로 프레임째가 아니라 값을 꺼내 담는다. 계산 오류는
+    캐시되지 않아 매 회차 다시 던진다 — 부르는 쪽은 `stop_calculation_on_error` 로 감싼다.
+    """
+    unit_capacity, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    processes = required_equipment[["공정"]].drop_duplicates()
+    processes.attrs = {}
+    return ScenarioResultSummary(
+        capacity_exclusions=unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame()),
+        capacity_assumptions=capacity_assumptions(unit_capacity),
+        unit_capacity_rows=len(unit_capacity),
+        required_exclusions=required_equipment.attrs.get(
+            REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR, pd.DataFrame()
+        ),
+        processes=processes,
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
+def get_display_ordered_values(
+    values: pd.DataFrame,
+    display_order_key: str,
+    page: str,
+    tab: str,
+    _display_order: PreparedDisplayOrder | None,
+) -> list[str]:
+    """분류 한 컬럼의 고유값 표를 표시순서로 정렬해 글자 목록으로 낸다(필터 선택지).
+
+    표가 작아(공정 수 행) 내용째 해시한다. `apply_display_order` 는 규칙 필터·충돌 검사 고정비가
+    있어 70행에도 수 ms 가 들었다. `_display_order` 는 `display_order_key` 를 만든
+    `RQ_DISPLAY_ORDER` 를 준비한 것이어야 한다 — 표시순서는 `reference_version` 을 바꾸지 않고
+    바뀐다. 규칙 충돌 같은 검증 예외는 캐시되지 않고 그대로 난다.
+    """
+    del display_order_key
+    column = str(values.columns[0])
+    return apply_display_order(values, _display_order, page, tab)[column].astype(str).tolist()
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_required_month_table(
+    cache_key: ScenarioCacheKey,
+    display_order_key: str,
+    page: str,
+    tab: str,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _display_order: PreparedDisplayOrder | None,
+) -> tuple[pd.DataFrame, list[str]]:
+    """소요대수 월 표(표시순서 정렬·분류 컬럼 재배치)와 그 분류 컬럼 차례.
+
+    키는 시나리오 키 + 표시순서 지문(`display_order_digest`) + 화면 범위다. 상세 토글·컬럼
+    필터는 이 뒤에서 매 회차 건다. `_display_order` 는 `display_order_key` 를 만든
+    `RQ_DISPLAY_ORDER` 를 준비한 것이어야 한다.
+    """
+    del display_order_key
+    _, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    table = apply_display_order(
+        required_equipment_to_month_table(required_equipment), _display_order, page, tab
+    )
+    return reorder_display_columns(table, RESULT_DIMENSIONS, _display_order, page, tab)
+
+
 @st.cache_data(show_spinner=False, max_entries=32)
 def get_effective_process_capacity_table(
     cache_key: ScenarioCacheKey,
-    _required_equipment: pd.DataFrame,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
     detail_level: str,
 ) -> pd.DataFrame:
     """공정 유효 Capa 월 표. 공정 필터는 이 뒤에 걸리므로 필터마다 같은 계산을 반복하고 있었다.
 
-    소요대수는 같은 키로 계산한 결과라 키가 내용을 이미 결정한다. 넘겨받아 해시하면 적중할
-    때도 19MB 프레임을 다시 훑는다 — `get_securement_rate` 와 같은 계약이다.
+    소요대수는 키가 정하므로 빗나갈 때만 이 안에서 받는다 — 넘겨받으면 적중할 때도 부르는 쪽이
+    소요대수를 언피클해야 한다. `_scenario_tables` 는 키의 content_token 을 발급한 활성 시나리오의
+    표여야 한다(`get_scenario_capacity_and_demand` 와 같은 계약).
     """
-    del cache_key
-    return effective_process_capacity_to_month_table(_required_equipment, detail_level)
+    _, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    return effective_process_capacity_to_month_table(required_equipment, detail_level)
 
 
 @st.cache_data(show_spinner=False, max_entries=16)

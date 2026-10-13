@@ -1036,7 +1036,14 @@ def test_a_stopped_calculation_withdraws_applied(
     monkeypatch.setattr(application_bootstrap, "build_builtin_seed_dataset", lambda: broken_seed)
 
     app = _run_with_range(_app, "2026-01", "2026-03")
-    for page_path in (HOME.path, STATIC_CAPA.path):
+    # 산출 결과·표준 목표는 대당 Capa·소요대수 프레임을 풀지 않는 키 전용 캐시로 오류를 낸다.
+    # 그 길로도 같은 자리·같은 문구로 멈추는지 함께 본다.
+    for page_path in (
+        HOME.path,
+        STATIC_CAPA.path,
+        "app_pages/calculation_result.py",
+        "app_pages/standard_target_capa.py",
+    ):
         if page_path != HOME.path:
             app.switch_page(page_path).run()
         assert not list(app.exception), [element.message for element in app.exception]

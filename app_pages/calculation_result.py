@@ -10,7 +10,6 @@
 (2026-10-06 사용자 결정). HOME 주요공정 프리셋과는 무관하다.
 """
 
-import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.capacity_assumption_notice import (
@@ -37,6 +36,7 @@ from capa_simulation.page_bootstrap import (
     prune_list_selection,
     resolve_effective_months,
     scenario_capacity_and_demand,
+    stop_calculation_on_error,
 )
 from capa_simulation.persistence.cache import load_global_securement_threshold
 from capa_simulation.scenario_state import scenario_month_table
@@ -52,23 +52,23 @@ from capa_simulation.services.display_order_scopes import (
 )
 from capa_simulation.services.required_equipment import (
     PKG_UNCOUNTED_REASON,
-    REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
-    required_equipment_to_month_table,
 )
 from capa_simulation.services.securement_rate import (
     SECUREMENT_DIMENSIONS,
     securement_rate_to_month_table,
 )
 from capa_simulation.services.simulation_cache import (
+    display_order_digest,
+    get_display_ordered_values,
     get_effective_process_capacity_table,
-    get_securement_rate,
+    get_required_month_table,
+    get_scenario_result_summary,
+    get_scenario_securement_rate,
     scenario_cache_key,
 )
 from capa_simulation.services.unit_capacity import (
-    CAPACITY_EXCLUSIONS_ATTR,
     UNIT_CAPACITY_DIMENSIONS,
-    capacity_assumptions,
     unit_capacity_to_month_table,
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
@@ -136,34 +136,33 @@ try:
     capacity_cache_key = scenario_cache_key(
         reference_version, active_scenario, effective_start, effective_end
     )
-    unit_capacity, required_equipment = scenario_capacity_and_demand(
+    # 대당 Capa·소요대수 프레임(pickle 약 16MB)은 풀지 않는다. 탭과 무관하게 쓰는 작은 값은 요약
+    # 캐시에서, 표는 키 전용 캐시에서 꺼낸다 — 빗나갈 때만 그 캐시가 안에서 프레임을 받는다.
+    # 계산 오류는 요약 캐시가 이 자리에서 「계산 멈춤」과 함께 먼저 드러낸다.
+    display_order_key = display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])
+    summary = stop_calculation_on_error(
+        get_scenario_result_summary,
         capacity_cache_key,
-        scenario_tables=active_scenario["tables"],
-        reference_tables=reference_tables,
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
     )
-    capacity_exclusions = unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame())
-    assumptions = capacity_assumptions(unit_capacity)
-    required_exclusions = required_equipment.attrs.get(
-        REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR, pd.DataFrame()
-    )
-    required_table = required_equipment_to_month_table(required_equipment)
-    required_table = apply_display_order(
-        required_table,
-        display_order,
+    capacity_exclusions = summary.capacity_exclusions
+    assumptions = summary.capacity_assumptions
+    required_exclusions = summary.required_exclusions
+    required_table, required_detail_dimensions = get_required_month_table(
+        capacity_cache_key,
+        display_order_key,
         PAGE_CALCULATION,
         TAB_REQUIRED,
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
+        _display_order=display_order,
     )
-    required_table, required_detail_dimensions = reorder_display_columns(
-        required_table,
-        RESULT_DIMENSIONS,
-        display_order,
-        PAGE_CALCULATION,
-        TAB_REQUIRED,
-    )
-    securement_rate = get_securement_rate(
+    securement_rate = get_scenario_securement_rate(
         capacity_cache_key,
-        available_equipment,
-        required_equipment,
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
+        _available_equipment=available_equipment,
     )
     securement_table = securement_rate_to_month_table(securement_rate)
     securement_table = apply_display_order(
@@ -197,16 +196,15 @@ else:
         unit_capacity_tab,
     )
     process_filter_key = "unit_capacity_process_filter"
-    process_order = required_equipment[["공정"]].drop_duplicates()
     # 표시순서 스코프 문자열은 DB 공용 프로필의 행 키다. 페이지 이름이 바뀌어도 **이 인자는
     # 그대로 둔다** — 안 맞으면 예외가 아니라 정렬이 조용히 사라진다.
-    process_order = apply_display_order(
-        process_order,
-        display_order,
+    process_options = get_display_ordered_values(
+        summary.processes,
+        display_order_key,
         PAGE_CALCULATION,
         TAB_UNIT_CAPACITY,
+        _display_order=display_order,
     )
-    process_options = process_order["공정"].astype(str).tolist()
     prune_list_selection(process_filter_key, process_options)
 
     with unit_capacity_tab:
@@ -217,7 +215,7 @@ else:
             # 확보율이 낮을 때 설비 부족인지 기준정보 결손인지를 가르는 것이 이 그림이다.
             render_exclusion_waterfall(
                 capacity_exclusions,
-                remaining_rows=len(unit_capacity),
+                remaining_rows=summary.unit_capacity_rows,
                 key="unit_capacity_exclusion_waterfall",
                 owner_tab=unit_capacity_tab,
             )
@@ -280,6 +278,12 @@ else:
                 st.info(STEP_VIEW_HINT)
             else:
                 if capacity_view == "STEP별":
+                    # STEP 경로 행이 필요한 보기는 이것 하나라 여기서만 대당 Capa 를 푼다.
+                    unit_capacity, _ = scenario_capacity_and_demand(
+                        capacity_cache_key,
+                        scenario_tables=active_scenario["tables"],
+                        reference_tables=reference_tables,
+                    )
                     unit_capacity_table = unit_capacity_to_month_table(unit_capacity)
                     classification_columns = list(UNIT_CAPACITY_DIMENSIONS)
                     output_title = "STEP별 대당 Capa"
@@ -287,8 +291,9 @@ else:
                 else:
                     unit_capacity_table = get_effective_process_capacity_table(
                         capacity_cache_key,
-                        required_equipment,
-                        selected_level,
+                        _scenario_tables=active_scenario["tables"],
+                        _reference_tables=reference_tables,
+                        detail_level=selected_level,
                     )
                     classification_columns = [
                         column
