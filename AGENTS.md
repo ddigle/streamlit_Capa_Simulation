@@ -704,9 +704,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     모든 Capa Code·Customer·CS 변형을 `RQ_REQB`·UPEH·Lot/WF 측정률에 함께 반영한다. 작업은
     요약 표 위 작업 줄의 `STEP 추가·삭제` **팝업**이다(가끔 하는 쓰기). 팝업은 fragment 라
     적용·알림·rerun 을 팝업 안에서 끝낸다. 요약·목록(`get_route_step_tables`)과 `RQ_REQB` 조각은
-    **STEP 탭이 보이거나 STEP 팝업이 열린 회차에만** 만든다 — 다른 탭의 적용마다(새 토큰) 경로표 전체를
-    다시 계산하던 비용이다. 계산은 페이지 앞 `try`(BOOTSTRAP_ERRORS) 안에 두고, 팝업에는 그 회차 목록·조각을
-    인자로 넘긴다. 성공 알림(`capacity_step_flash`)은 매 회차 꺼내고 그 탭을 그릴 때만 보인다.
+    **STEP 탭이 보이거나 STEP 팝업이 열린 회차에만** 만든다 — 닫힌 탭에서도 만들면 다른 탭의 적용마다
+    (새 토큰) 경로표 전체를 다시 계산한다. 계산은 페이지 앞 `try`(BOOTSTRAP_ERRORS) 안에 두고, 팝업에는 그
+    회차 목록·조각을 인자로 넘긴다. 성공 알림(`capacity_step_flash`)은 매 회차 꺼내고 그 탭을 그릴 때만
+    보인다. 두 안전장치(팝업만 열린 회차의 경로표, 숨은 탭 회차의 알림 버림)는
+    `tests/test_reference_data_perf.py` 가 지킨다.
   - 팝업의 대상 상자(`capacity_step_route`, `_step_route_choices`)는 줄마다 글자가 다르다 — 글자에 경로
     키 전부(`ROUTE_GROUP_COLUMNS`, `양산구분` 포함)와 MCP/STEP 을 싣고(「공정 · 양산 · 제품 · Stack ·
     속성 · Area · 소요기준 · MCP 1A / STEP P100 · N개월」), 공정은 `unique_format_func`(목록의 공정 전체)로

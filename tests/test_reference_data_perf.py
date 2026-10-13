@@ -353,6 +353,37 @@ def test_the_step_flash_shows_once_in_the_step_tab() -> None:
     assert not any("STEP을 추가했습니다" in item.value for item in app.success)
 
 
+def test_an_open_step_popup_builds_the_route_tables_while_its_tab_is_hidden() -> None:
+    """STEP 팝업이 열린 회차는 STEP 탭이 숨어 있어도 경로표를 만들어 팝업의 경로 상자를 채운다."""
+    app = AppTest.from_string(
+        _probed(TEST_SCRIPT, "test-ref-perf-step-popup-hidden"), default_timeout=60
+    )
+    app = _open_tab(app, "UPEH")
+    assert _route_calls(app) == 0
+
+    app.session_state[DIALOG_KEY] = "step"
+    app.run()
+    assert not app.exception
+    assert _route_calls(app) == 1
+    assert "RQ_REQB" in _sliced(app)
+    assert _route_processes(app) == ["Process-A"]
+
+
+def test_a_step_flash_left_while_the_step_tab_is_hidden_is_not_shown_later() -> None:
+    """알림은 매 회차 꺼낸다 — STEP 탭이 숨은 회차에 남은 알림이 나중에 STEP 탭에서 뜨지 않는다."""
+    app = AppTest.from_string(
+        _probed(TEST_SCRIPT, "test-ref-perf-step-stale-flash"), default_timeout=60
+    )
+    app = _open_tab(app, "UPEH")
+    app.session_state["capacity_step_flash"] = "STEP을 추가했습니다: 옛 알림"
+    app.run()
+    assert not app.exception
+    assert "capacity_step_flash" not in app.session_state
+
+    app = _open_tab(app, "STEP 구성")
+    assert not any("STEP을 추가했습니다" in item.value for item in app.success)
+
+
 # ---------------------------------------------------------------- R2 편집 기간 조각
 
 # (RQ, 분류 컬럼, 값 컬럼, 표시순서 화면 범위) — 페이지의 편집표 여섯 개와 같은 인자다.
