@@ -1296,12 +1296,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     주간 결과·요약 캐시도 빗나갈 때 여기서 받는다 — 날짜·분류 수준·가용대수는 이 프레임을 바꾸지 않아
     키에 넣지 않는다. 하위 선택지·로직 분석 결과·가용대수 읽기는 매 회차 한다.
   - 공정 필터는 **전체 공정 결과를 거른다**(`simulation_cache.get_standard_target_weekly_result` →
-    `get_all_process_standard_target`, PKG 포함). 원수요 키·분류 그룹·RUN_DAY·가용대수·PKG 계획 연결이
-    모두 공정을 실어 공정끼리 섞이는 계산이 없다. 고치기 전과 결과가 다를 수 있는 세 자리는 고른
-    공정만 계산하는 옛 길로 되돌아간다 — 전체 계산 실패(고르지 않은 공정의 오류가 고른 공정을 막지
-    않는다, 공정을 안 고르면 같은 문구로 멈춘다), 원본 공정명의 앞뒤 공백(계산이 strip 한다), 거른 결과가
-    빔. 재공 현황(제품 선택)은 옛 길만 쓴다. 비교 테스트가 분류 수준·PKG·오류·공백 공정명마다 옛 길과
-    같은 프레임인지 본다.
+    `get_all_process_standard_target`, PKG 는 그것을 받는 `get_all_process_pkg_standard_target` — 캐시
+    함수가 제 자신을 부르지 않게 둘로 나눈다). 원수요 키·분류 그룹·RUN_DAY·가용대수·PKG 계획 연결이
+    모두 공정을 실어 공정끼리 섞이는 계산이 없다. 거른 결과가 고른 공정만 계산한 결과와 다를 수 있는
+    세 자리는 고른 공정만 계산하는 길(`get_weekly_standard_target_capacity`·
+    `get_pkg_equivalent_standard_target`)로 간다 — 전체 계산 실패(고르지 않은 공정의 오류가 고른 공정을
+    막지 않는다, 공정을 안 고르면 같은 문구로 멈춘다), 원본 공정명의 앞뒤 공백(계산이 strip 한다), 거른
+    결과가 빔. 재공 현황(제품 선택)은 고른 공정·제품만 계산하는 길만 쓴다. 비교 테스트가 분류 수준·PKG·
+    오류·공백 공정명마다 고른 공정만 계산한 프레임과 같은지, 키 성분(토큰·가용대수·분류 수준·날짜)마다
+    두 길 모두 다시 계산하는지 본다.
   - 내려받기 CSV 바이트는 매 회차 다시 만들지 않는다 — 주차별 가용설비 양식은
     `simulation_cache.get_weekly_availability_template_csv`(공정 차례·기간·저장값 지문 키), 결과 CSV 는
     `get_export_csv`(표 내용 지문 키, `csv_export_key`). 콜러블 지연 생성은 쓰지 않는다(TODO [결정]

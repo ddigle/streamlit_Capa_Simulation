@@ -337,6 +337,9 @@ def fake_scenario(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, pd.Data
     st.cache_data.clear()
 
 
+START_DATE, END_DATE = date(2026, 8, 1), date(2026, 8, 31)
+
+
 def _weekly(
     token: str,
     *,
@@ -345,13 +348,17 @@ def _weekly(
     processes: tuple[str, ...] = (),
     products: tuple[str, ...] = (),
     pkg: bool = False,
+    start: date = START_DATE,
+    end: date = END_DATE,
 ) -> pd.DataFrame:
+    """고른 공정·제품만 계산하는 길(`get_weekly_standard_target_capacity`·
+    `get_pkg_equivalent_standard_target`). 재공 현황과 화면의 되돌림이 이 길을 탄다."""
     availability = _availability() if availability is None else availability
     key = simulation_cache.standard_target_weekly_cache_key(
         simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
         availability=availability,
-        start_date=date(2026, 8, 1),
-        end_date=date(2026, 8, 31),
+        start_date=start,
+        end_date=end,
         detail_level=detail_level,
         processes=processes,
         products=products,
@@ -377,8 +384,11 @@ def _old_path(
     processes: tuple[str, ...] = (),
     products: tuple[str, ...] = (),
     pkg: bool = False,
+    start: date = START_DATE,
+    end: date = END_DATE,
 ) -> pd.DataFrame:
-    """고치기 전 화면의 계산 경로 — 분리 → 페이지 필터 → 주간 계산(→ PKG 환산)."""
+    """캐시 없이 프레임에서 바로 계산하는 기준 경로 — 분리 → 공정·제품 거르기 → 주간 계산
+    (→ PKG 환산)."""
     availability = _availability() if availability is None else availability
     prepared, _ = split_standard_target_required_equipment(required)
     if processes or products:
@@ -393,8 +403,8 @@ def _old_path(
         required_equipment=prepared,
         run_day=tables["RQ_RUN_DAY"],
         weekly_availability=availability,
-        start_date=date(2026, 8, 1),
-        end_date=date(2026, 8, 31),
+        start_date=start,
+        end_date=end,
         detail_level=detail_level,
     )
     if not pkg:
@@ -439,38 +449,56 @@ def test_the_wip_product_filter_matches_the_old_wip_path(
     pd.testing.assert_frame_equal(cached, expected)
 
 
+@pytest.mark.parametrize("pkg", [False, True])
+@pytest.mark.parametrize("path", ["result", "filtered"])
 def test_every_key_part_invalidates_the_weekly_result(
-    fake_scenario: dict[str, pd.DataFrame],
+    fake_scenario: dict[str, pd.DataFrame], path: str, pkg: bool
 ) -> None:
-    """키에 든 입력 하나만 바꿔도 결과가 바뀐다 — 그리고 바뀐 결과는 새로 계산한 값이다."""
+    """키에 든 입력 하나만 바꿔도 결과가 바뀐다 — 그리고 바뀐 결과는 새로 계산한 값이다.
+
+    두 길을 다 본다. `result` 는 화면이 타는 길로, 화면 키에서 공정 선택만 비운 **전체 공정 결과의
+    키**를 다시 세운다 — 그 키에서 성분 하나(가용대수 지문·분류 수준·날짜)가 빠지면 붙여넣기·조건
+    변경 뒤에도 옛 숫자가 남는다. `filtered` 는 고른 공정만 계산하는 길(재공 현황·되돌림)이다.
+    """
     base = _small_required()
     edited = base.copy()
     edited.loc[edited["공정"].eq("P-A") & edited["제품정보"].eq("Prod-2"), "소요대수"] = 4.0
     fake_scenario["before"] = base
     fake_scenario["after"] = edited
+    call = _result if path == "result" else _weekly
 
-    reference = _weekly("before")
+    reference = call("before", pkg=pkg)
+    pd.testing.assert_frame_equal(reference, _old_path(base, pkg=pkg))
 
     # 미저장 편집 적용(새 content_token)
-    after_edit = _weekly("after")
+    after_edit = call("after", pkg=pkg)
     assert not after_edit.equals(reference)
-    pd.testing.assert_frame_equal(after_edit, _old_path(edited))
+    pd.testing.assert_frame_equal(after_edit, _old_path(edited, pkg=pkg))
 
-    # 가용대수 한 칸
+    # 가용대수 한 칸(붙여넣기·초기화는 설비 DB 의 비버전 최신값을 바꾼다 — 토큰은 그대로다)
     availability = _availability()
     availability.loc[0, "가용대수"] = 7.0
-    with_one_cell = _weekly("before", availability=availability)
+    with_one_cell = call("before", availability=availability, pkg=pkg)
     assert not with_one_cell.equals(reference)
-    pd.testing.assert_frame_equal(with_one_cell, _old_path(base, availability=availability))
+    pd.testing.assert_frame_equal(
+        with_one_cell, _old_path(base, availability=availability, pkg=pkg)
+    )
 
     # 공정 선택
-    only_b = _weekly("before", processes=("P-B",))
+    only_b = call("before", processes=("P-B",), pkg=pkg)
     assert set(only_b["공정"]) == {"P-B"}
-    pd.testing.assert_frame_equal(only_b, _old_path(base, processes=("P-B",)))
+    pd.testing.assert_frame_equal(only_b, _old_path(base, processes=("P-B",), pkg=pkg))
 
     # 분류 수준
-    by_product = _weekly("before", detail_level="제품정보")
+    by_product = call("before", detail_level="제품정보", pkg=pkg)
     assert "제품정보" in by_product.columns and "제품정보" not in reference.columns
+    pd.testing.assert_frame_equal(by_product, _old_path(base, detail_level="제품정보", pkg=pkg))
+
+    # 시작일·종료일
+    for start, end in ((date(2026, 8, 10), END_DATE), (START_DATE, date(2026, 8, 20))):
+        dated = call("before", start=start, end=end, pkg=pkg)
+        assert not dated.equals(reference), (start, end)
+        pd.testing.assert_frame_equal(dated, _old_path(base, start=start, end=end, pkg=pkg))
 
 
 def test_a_wip_call_does_not_leak_into_the_standard_target_result(
@@ -657,13 +685,16 @@ def _result(
     detail_level: str = "공정",
     processes: tuple[str, ...] = (),
     pkg: bool = False,
+    start: date = START_DATE,
+    end: date = END_DATE,
 ) -> pd.DataFrame:
+    """표준 목표 화면이 타는 길(`get_standard_target_weekly_result` — 전체 공정 결과를 거른다)."""
     availability = _availability() if availability is None else availability
     key = simulation_cache.standard_target_weekly_cache_key(
         simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
         availability=availability,
-        start_date=date(2026, 8, 1),
-        end_date=date(2026, 8, 31),
+        start_date=start,
+        end_date=end,
         detail_level=detail_level,
         processes=processes,
     )
@@ -745,29 +776,35 @@ def test_filtering_matches_on_a_large_frame_for_many_process_subsets(
             pd.testing.assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize("pkg", [False, True])
 def test_new_process_combinations_do_not_recompute(
-    fake_scenario: dict[str, pd.DataFrame], monkeypatch: pytest.MonkeyPatch
+    fake_scenario: dict[str, pd.DataFrame], monkeypatch: pytest.MonkeyPatch, pkg: bool
 ) -> None:
     fake_scenario["combos"] = _small_required()
-    calls: list[int] = []
+    calls: list[str] = []
 
-    def counting(**kwargs: object) -> pd.DataFrame:
-        calls.append(1)
+    def counting_weekly(**kwargs: object) -> pd.DataFrame:
+        calls.append("weekly")
         return build_weekly_standard_target_capacity(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(simulation_cache, "build_weekly_standard_target_capacity", counting)
+    def counting_pkg(**kwargs: object) -> pd.DataFrame:
+        calls.append("pkg")
+        return add_pkg_equivalent_standard_target(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(simulation_cache, "build_weekly_standard_target_capacity", counting_weekly)
+    monkeypatch.setattr(simulation_cache, "add_pkg_equivalent_standard_target", counting_pkg)
 
     for processes in ((), ("P-A",), ("P-B",), ("P-A", "Pre B/D")):
-        _result("combos", processes=processes)
+        _result("combos", processes=processes, pkg=pkg)
 
-    assert calls == [1]
+    assert calls == (["weekly", "pkg"] if pkg else ["weekly"])
 
 
 def test_an_error_in_an_unselected_process_does_not_stop_the_selected_one(
     fake_scenario: dict[str, pd.DataFrame],
 ) -> None:
-    """P-B 의 RUN_DAY 가 없다. 고르지 않은 공정의 오류는 고른 공정의 결과를 막지 않는다(고치기 전과
-    같다). 공정을 고르지 않으면 지금과 같은 문구로 멈춘다."""
+    """P-B 의 RUN_DAY 가 없다. 고르지 않은 공정의 오류는 고른 공정의 결과를 막지 않는다(고른 공정만
+    계산한 것과 같다). 공정을 고르지 않으면 전체 계산의 문구로 멈춘다."""
     fake_scenario["broken-b"] = _small_required()
     tables = _scenario_tables()
     tables["RQ_RUN_DAY"] = tables["RQ_RUN_DAY"].loc[lambda frame: frame["공정"].ne("P-B")]
@@ -820,7 +857,7 @@ def test_untrimmed_process_names_take_the_old_filtered_path(
     fake_scenario: dict[str, pd.DataFrame],
 ) -> None:
     """원본 공정명에 공백이 있으면 계산(공백을 뗀다) 뒤 거르기가 다른 행을 고를 수 있다 — 「P-A」를
-    고르면 「P-A 」 행은 고치기 전처럼 빠져야 한다."""
+    고르면 「P-A 」 행은 고른 공정만 계산할 때처럼 빠져야 한다."""
     required = _small_required()
     spaced = required.loc[required["공정"].eq("P-A")].assign(공정="P-A ", 소요대수=9.0)
     required = pd.concat([required, spaced], ignore_index=True)

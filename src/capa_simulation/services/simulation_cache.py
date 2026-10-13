@@ -692,8 +692,8 @@ class StandardTargetOutcome(NamedTuple):
     """전체 공정으로 계산한 주간 결과 또는 실패와, 계산 뒤 공정 거르기가 계산 전 거르기와 같은지.
 
     **실패도 담는다.** 고르지 않은 공정의 데이터 오류(소요기준 둘·원수요 부하량 불일치·RUN_DAY 누락·
-    PKG 연결 누락)로 전체 계산이 실패해도, 공정을 고른 화면은 지금처럼 그 공정만으로 다시 계산해야
-    한다. 예외를 캐시하지 않으면 그 화면이 매 회차 전체 계산을 다시 돌린다.
+    PKG 연결 누락)로 전체 계산이 실패해도, 공정을 고른 화면은 그 공정만으로 다시 계산해야 한다.
+    예외를 캐시하지 않으면 그 화면이 매 회차 전체 계산을 다시 돌린다.
     """
 
     weekly_target: pd.DataFrame | None
@@ -706,13 +706,12 @@ class StandardTargetOutcome(NamedTuple):
 @st.cache_data(show_spinner=False, max_entries=16)
 def get_all_process_standard_target(
     cache_key: StandardTargetWeeklyKey,
-    pkg: bool,
     _scenario_tables: Mapping[str, pd.DataFrame],
     _reference_tables: Mapping[str, pd.DataFrame],
     _weekly_availability: pd.DataFrame,
 ) -> StandardTargetOutcome:
-    """공정 선택 없이(전체 공정) 계산한 주간 결과(`pkg` 면 PKG 환산까지). 부르는 쪽은
-    `get_standard_target_weekly_result` 하나다 — 키의 공정·제품 선택은 비어 있다.
+    """공정 선택 없이(전체 공정) 계산한 주간 결과. 부르는 쪽은 `get_standard_target_weekly_result`
+    와 PKG 환산(`get_all_process_pkg_standard_target`)이다 — 키의 공정·제품 선택은 비어 있다.
 
     공정끼리 섞이는 계산이 없어(원수요 키·분류 그룹·RUN_DAY·가용대수·PKG 계획 연결이 모두 공정을
     싣는다) 전체 결과를 공정으로 거른 것이 고른 공정만 계산한 것과 같다. 그래서 공정 조합마다 따로
@@ -727,34 +726,58 @@ def get_all_process_standard_target(
     raw_processes = prepared["공정"].astype("string")
     exact = bool(raw_processes.str.strip().eq(raw_processes).fillna(False).all())
     try:
-        if pkg:
-            base = get_all_process_standard_target(
-                cache_key,
-                False,
-                _scenario_tables=_scenario_tables,
-                _reference_tables=_reference_tables,
-                _weekly_availability=_weekly_availability,
-            )
-            if base.weekly_target is None:
-                return base
-            weekly_target = add_pkg_equivalent_standard_target(
-                weekly_target=base.weekly_target,
-                required_equipment=prepared,
-                plan=_scenario_month_slice(_scenario_tables, "RQ_PKG_PLAN", scenario_key),
-                detail_level=detail_level,
-            )
-        else:
-            weekly_target = build_weekly_standard_target_capacity(
-                required_equipment=prepared,
-                run_day=_scenario_month_slice(_scenario_tables, "RQ_RUN_DAY", scenario_key),
-                weekly_availability=_weekly_availability,
-                start_date=date.fromisoformat(start_text),
-                end_date=date.fromisoformat(end_text),
-                detail_level=detail_level,
-            )
+        weekly_target = build_weekly_standard_target_capacity(
+            required_equipment=prepared,
+            run_day=_scenario_month_slice(_scenario_tables, "RQ_RUN_DAY", scenario_key),
+            weekly_availability=_weekly_availability,
+            start_date=date.fromisoformat(start_text),
+            end_date=date.fromisoformat(end_text),
+            detail_level=detail_level,
+        )
     except ValueError as exc:
         return StandardTargetOutcome(None, str(exc), exact)
     return StandardTargetOutcome(weekly_target, None, exact)
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_all_process_pkg_standard_target(
+    cache_key: StandardTargetWeeklyKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _weekly_availability: pd.DataFrame,
+) -> StandardTargetOutcome:
+    """전체 공정 결과의 PKG Kea 환산. 키와 `_` 인자 계약은 `get_all_process_standard_target` 과
+    같다.
+
+    주간 결과는 같은 키의 `get_all_process_standard_target` 에서 받는다(적중이면 언피클만). 그쪽이
+    실패했으면 그 실패를 그대로 낸다. **비PKG 결과와 캐시 함수를 나눈다** — 한 캐시 함수가 제
+    자신을 부르면 Streamlit 1.63 의 계산 잠금(`threading.Lock`, 재진입 불가)이 같은 칸에서 교착할
+    수 있다.
+    """
+    base = get_all_process_standard_target(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+        _weekly_availability=_weekly_availability,
+    )
+    if base.weekly_target is None:
+        return base
+    scenario_key, _, _, _, detail_level, _, _ = cache_key
+    prepared, _ = get_standard_target_split(
+        scenario_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    try:
+        weekly_target = add_pkg_equivalent_standard_target(
+            weekly_target=base.weekly_target,
+            required_equipment=prepared,
+            plan=_scenario_month_slice(_scenario_tables, "RQ_PKG_PLAN", scenario_key),
+            detail_level=detail_level,
+        )
+    except ValueError as exc:
+        return StandardTargetOutcome(None, str(exc), base.exact_process_filter)
+    return StandardTargetOutcome(weekly_target, None, base.exact_process_filter)
 
 
 def get_standard_target_weekly_result(
@@ -767,19 +790,20 @@ def get_standard_target_weekly_result(
 ) -> pd.DataFrame:
     """표준 목표 화면의 주간 결과(`pkg` 면 PKG 환산). 공정 선택은 전체 공정 결과를 거른다.
 
-    새 공정 조합마다 주간 계산을 처음부터 돌리고 칸을 하나씩 썼다. 전체 공정 결과
-    (`get_all_process_standard_target`)를 한 번 두고 고른 공정으로 거른다. **고치기 전과 결과가 다를
-    수 있는 자리는 고치기 전 길(고른 공정만 계산 — `get_weekly_standard_target_capacity`·
-    `get_pkg_equivalent_standard_target`)로 되돌아간다** — 셋이다.
+    전체 공정 결과(`get_all_process_standard_target`, PKG 는
+    `get_all_process_pkg_standard_target`)를 한 번 두고 고른 공정으로 거른다 — 공정 조합마다 주간
+    계산을 다시 돌리지 않는다. **거른 결과가 고른 공정만 계산한 결과와 다를 수 있는 자리는 고른
+    공정만 계산하는 길(`get_weekly_standard_target_capacity`·`get_pkg_equivalent_standard_target`)로
+    간다** — 셋이다.
 
     - 전체 계산이 실패했다: 고르지 않은 공정의 오류가 고른 공정의 결과를 막지 않는다(고른 공정에도
-      오류가 있으면 지금과 같은 문구로 멈춘다). 공정을 고르지 않았으면 그 오류를 그대로 던진다.
+      오류가 있으면 그 길의 문구로 멈춘다). 공정을 고르지 않았으면 그 오류를 그대로 던진다.
     - 원본 공정명에 앞뒤 공백이 있다: 계산은 공정명을 다듬으므로 계산 뒤 거르기가 다른 행을 고를
       수 있다.
-    - 거른 결과가 비었다: 고치기 전 길의 빈 결과(컬럼만 있는 표)를 그대로 낸다.
+    - 거른 결과가 비었다: 고른 공정만 계산하는 길의 빈 결과(컬럼만 있는 표)를 그대로 낸다.
 
-    제품 선택이 있는 호출(재공 현황)은 이 길을 쓰지 않고 고치기 전 길로 간다. 키와 `_` 인자 계약은
-    `get_weekly_standard_target_capacity` 와 같다.
+    제품 선택이 있는 호출(재공 현황)은 거르지 않고 고른 공정·제품만 계산하는 길로 간다. 키와 `_`
+    인자 계약은 `get_weekly_standard_target_capacity` 와 같다.
     """
     scenario_key, availability_digest, start_text, end_text, detail_level, processes, products = (
         cache_key
@@ -794,9 +818,11 @@ def get_standard_target_weekly_result(
             (),
             (),
         )
-        outcome = get_all_process_standard_target(
+        all_process_result = (
+            get_all_process_pkg_standard_target if pkg else get_all_process_standard_target
+        )
+        outcome = all_process_result(
             all_processes,
-            pkg,
             _scenario_tables=_scenario_tables,
             _reference_tables=_reference_tables,
             _weekly_availability=_weekly_availability,
