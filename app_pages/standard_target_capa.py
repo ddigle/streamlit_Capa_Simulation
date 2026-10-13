@@ -46,7 +46,6 @@ from capa_simulation.page_bootstrap import (
     prune_list_selection,
     render_schema_ahead_warning,
     resolve_effective_months,
-    scenario_capacity_and_demand,
     stop_calculation_on_error,
 )
 from capa_simulation.persistence.equipment_cache import get_equipment_repository
@@ -77,6 +76,7 @@ from capa_simulation.services.simulation_cache import (
     display_order_digest,
     get_display_ordered_values,
     get_pkg_equivalent_standard_target,
+    get_standard_target_split,
     get_standard_target_summary,
     get_weekly_standard_target_capacity,
     scenario_cache_key,
@@ -85,7 +85,6 @@ from capa_simulation.services.simulation_cache import (
 from capa_simulation.services.standard_target_capacity import (
     PKG_EQUIVALENT_COLUMN,
     STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES,
-    split_standard_target_required_equipment,
     weekly_standard_target_to_wide,
 )
 from capa_simulation.services.standard_target_logic import (
@@ -872,17 +871,17 @@ if availability.empty:
     st.stop()
 
 if output_metric == "로직 분석":
-    # 로직 분석만 소요대수 행이 필요하다. 표준 목표 제외를 거친 프레임을 공정 필터로 거른다.
+    # 로직 분석만 소요대수 행이 필요하다. 표준 목표 제외를 거친 프레임(시나리오 키 캐시 — 칸을
+    # 고를 때마다 소요대수 언피클·분리를 다시 하지 않는다)을 공정 필터로 거른다.
     try:
-        required_equipment = scenario_capacity_and_demand(
+        filtered_required_equipment = get_standard_target_split(
             scenario_key,
-            scenario_tables=active_scenario["tables"],
-            reference_tables=reference_tables,
-        )[1]
+            _scenario_tables=active_scenario["tables"],
+            _reference_tables=reference_tables,
+        )[0]
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         st.stop()
-    filtered_required_equipment = split_standard_target_required_equipment(required_equipment)[0]
     if selected_processes:
         filtered_required_equipment = filtered_required_equipment.loc[
             filtered_required_equipment["공정"].isin(selected_processes)

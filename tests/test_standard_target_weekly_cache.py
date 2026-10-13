@@ -592,3 +592,55 @@ def test_a_failing_scenario_is_not_cached_by_the_summary(
             _summary("summary-broken")
     assert calls == ["summary-broken", "summary-broken"]
     st.cache_data.clear()
+
+
+# ------------------------------------------------- 분리 결과 캐시(로직 분석·주간 미스 경로)
+
+
+def _split(token: str) -> tuple[pd.DataFrame, int]:
+    return simulation_cache.get_standard_target_split(
+        simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
+        _scenario_tables=_scenario_tables(),
+        _reference_tables={},
+    )
+
+
+def test_the_split_cache_matches_the_old_split_and_follows_the_token(
+    fake_scenario: dict[str, pd.DataFrame],
+) -> None:
+    fake_scenario["split-before"] = _small_required()
+    edited = _small_required()
+    edited.loc[edited["공정"].eq("P-B"), "소요대수"] = 3.0
+    fake_scenario["split-after"] = edited
+
+    before, before_rows = _split("split-before")
+    after, after_rows = _split("split-after")
+
+    expected_before, expected_rows = split_standard_target_required_equipment(_small_required())
+    pd.testing.assert_frame_equal(before, expected_before)
+    assert before_rows == expected_rows == 1
+    pd.testing.assert_frame_equal(after, split_standard_target_required_equipment(edited)[0])
+    assert after_rows == 1
+    assert not before.equals(after)
+
+
+def test_the_split_is_shared_so_new_weekly_keys_do_not_refetch_the_demand(
+    fake_scenario: dict[str, pd.DataFrame], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공정 조합·분류 수준이 바뀐 주간 미스와 요약 미스는 분리 결과 캐시에서 받는다."""
+    fake_scenario["shared-split"] = _small_required()
+    calls: list[str] = []
+    fake = simulation_cache.get_scenario_capacity_and_demand
+
+    def counting(cache_key: tuple[int, str, int, int], **kwargs: object) -> object:
+        calls.append(cache_key[1])
+        return fake(cache_key, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(simulation_cache, "get_scenario_capacity_and_demand", counting)
+
+    _weekly("shared-split")
+    _weekly("shared-split", processes=("P-A",))
+    _weekly("shared-split", detail_level="제품정보", processes=("P-B",))
+    _summary("shared-split")
+
+    assert calls == ["shared-split"]

@@ -67,7 +67,6 @@ from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
     exclude_er_required_equipment,
-    prepare_standard_target_required_equipment,
     split_standard_target_required_equipment,
 )
 from capa_simulation.services.undated_equipment import undated_equipment
@@ -479,6 +478,32 @@ class StandardTargetSummary(NamedTuple):
     processes: pd.DataFrame
 
 
+# 표준 목표 제외를 거친 소요대수의 칸 수. 한 칸이 pickle 로 약 9.5MB 다(69,081행 합성 표본의 샘플
+# 관측). 키가 시나리오 하나라 몇 칸이면 된다.
+STANDARD_TARGET_SPLIT_MAX_ENTRIES = 4
+
+
+@st.cache_data(show_spinner=False, max_entries=STANDARD_TARGET_SPLIT_MAX_ENTRIES)
+def get_standard_target_split(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> tuple[pd.DataFrame, int]:
+    """표준 목표 제외(ER·Pre B/D Dummy)를 거친 소요대수(공정 필터 전)와 예외로 뺀 행 수.
+
+    분리 결과는 소요대수 하나만의 함수라 시나리오 키가 정한다 — 날짜·분류 수준·가용대수는 이
+    프레임을 바꾸지 않으므로 키에 넣지 않는다(넣으면 같은 프레임이 조건마다 따로 쌓인다). 로직
+    분석은 칸을 하나 고를 때마다 소요대수 언피클(대당 Capa 와 함께 약 16MB)·분리를 처음부터 다시
+    했다. 이 프레임만 풀면 그 절반 아래다. 주간 결과·요약 캐시가 빗나갈 때도 여기서 받는다.
+    """
+    _, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    return split_standard_target_required_equipment(required_equipment)
+
+
 @st.cache_data(show_spinner=False, max_entries=16)
 def get_standard_target_summary(
     cache_key: ScenarioCacheKey,
@@ -493,12 +518,11 @@ def get_standard_target_summary(
     이 키에 둔다. 계산 오류는 캐시되지 않아 매 회차 다시 던진다 — 부르는 쪽은
     `stop_calculation_on_error` 로 감싼다.
     """
-    _, required_equipment = get_scenario_capacity_and_demand(
+    _, exception_rows = get_standard_target_split(
         cache_key,
         _scenario_tables=_scenario_tables,
         _reference_tables=_reference_tables,
     )
-    _, exception_rows = split_standard_target_required_equipment(required_equipment)
     processes = exclude_er_required_equipment(_scenario_tables["RQ_REQB"])[["공정"]]
     processes = processes.drop_duplicates()
     processes.attrs = {}
@@ -563,12 +587,11 @@ def _standard_target_demand(
 ) -> pd.DataFrame:
     """표준 목표 제외(ER·Pre B/D Dummy)를 적용하고 키의 공정·제품 선택으로 거른 소요대수."""
     scenario_key, _, _, _, _, processes, products = cache_key
-    _, required_equipment = get_scenario_capacity_and_demand(
+    prepared, _ = get_standard_target_split(
         scenario_key,
         _scenario_tables=scenario_tables,
         _reference_tables=reference_tables,
     )
-    prepared = prepare_standard_target_required_equipment(required_equipment)
     if not processes and not products:
         return prepared
     selected = pd.Series(True, index=prepared.index)

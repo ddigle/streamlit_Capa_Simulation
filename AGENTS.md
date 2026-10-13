@@ -1288,6 +1288,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `get_display_ordered_values`(표시순서 지문 키)에서 꺼낸다. 요약 캐시를 `stop_calculation_on_error` 로
     불러 계산 오류는 지금 자리·지금 문구로 먼저 드러난다. 화면 테스트는 이 캐시들이 프로세스 전역이라
     테스트마다 비운다(`tests/test_standard_target_capa_page.py`).
+  - 표준 목표 제외(ER·Pre B/D Dummy)를 거친 소요대수(공정 필터 전)는 `get_standard_target_split`
+    (시나리오 키, 칸 4)이 한 벌 둔다. 로직 분석은 칸을 고를 때마다 이 프레임만 풀어 공정 필터로 거르고,
+    주간 결과·요약 캐시도 빗나갈 때 여기서 받는다 — 날짜·분류 수준·가용대수는 이 프레임을 바꾸지 않아
+    키에 넣지 않는다. 하위 선택지·로직 분석 결과·가용대수 읽기는 매 회차 한다.
 - `src/capa_simulation/components/reference_csv_tools.py`
   - 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 다운로드·Excel 표 붙여넣기 폼과 적용 결과
     알림을 공통 제공한다. 붙여넣기는 모두 팝업이다 — `render_reference_clipboard_form` 이
