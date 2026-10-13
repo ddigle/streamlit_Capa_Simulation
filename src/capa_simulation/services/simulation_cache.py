@@ -20,7 +20,7 @@ from capa_simulation.services.dashboard import (
     build_monthly_wafer_load_from_load,
     build_production_dashboard,
 )
-from capa_simulation.services.display_order import PreparedDisplayOrder
+from capa_simulation.services.display_order import PreparedDisplayOrder, prepare_display_order
 from capa_simulation.services.equipment_availability import (
     build_equipment_lifecycle_spans,
     build_space_equipment_status,
@@ -283,6 +283,25 @@ def get_route_step_tables(
     """
     del cache_key
     return route_step_tables(_frame_from(_upeh), _frame_from(_reqb))
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _prepared_display_order(
+    display_order_key: str, _display_order: pd.DataFrame
+) -> PreparedDisplayOrder | None:
+    del display_order_key
+    return prepare_display_order(_display_order)
+
+
+def get_prepared_display_order(display_order: pd.DataFrame) -> PreparedDisplayOrder | None:
+    """공용 표시순서 표를 검증·파생한 것(`prepare_display_order`). 키는 **내용 지문**이다.
+
+    계산 화면은 회차마다 같은 규칙(합성 표본 658행)을 다시 검증·파생하고 있었다(약 6ms, 지문은
+    약 0.5ms). 표시순서는 `reference_version` 을 바꾸지 않고 바뀌므로(Admin 교체·리비전 불러오기)
+    버전이 아니라 `display_order_digest` 로 가른다. `st.cache_data` 는 꺼낼 때마다 사본을 주므로
+    호출부가 규칙을 고쳐도 다른 회차가 오염되지 않고, 검증 예외는 캐시되지 않아 매번 다시 난다.
+    """
+    return _prepared_display_order(display_order_digest(display_order), display_order)
 
 
 # 기준 정보 편집표 칸 수. 편집표 여섯 개가 나눠 쓴다 — 한 시나리오·기간에 열린 탭 몇 개면

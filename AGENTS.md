@@ -2047,7 +2047,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     규칙이 갈 곳을 잃는다. `tests/test_display_order_scopes.py` 가 셋을 함께 본다.
 - `display_order.py`: `RQ_DISPLAY_ORDER` 기반 동적 행 정렬. `prepare_display_order` 가 한
   회차에 한 번 검증해 `PreparedDisplayOrder` 를 만든다 — `rules` 는 검증한 입력 그대로,
-  `derived_rules` 는 앱 파생 규칙(`Top_e`)을 더한 것이고 정렬 도우미는 `derived_rules` 를 읽는다
+  `derived_rules` 는 앱 파생 규칙(`Top_e`)을 더한 것이고 정렬 도우미는 `derived_rules` 를 읽는다.
+  회차를 넘겨 다시 쓰는 자리는 `simulation_cache.get_prepared_display_order`(키는 내용 지문
+  `display_order_digest` — `reference_version` 이 아니다)이고, 계산 화면 공통 진입
+  `page_bootstrap.load_page_context` 가 이것을 쓴다. 이 모듈에는 캐시를 두지 않는다
 - `month_filter.py`: YYYYMM 검증과 조회기간 필터. 원천·SQL 적재·계산 계층의 월 정규화가
   같은 달력 검증을 공유한다(정수, 연도 1~9999, 월 1~12). 조회 UI의 2025~2030 범위와는
   별개이며, 정수 변환 전에 검사해 잘못된 값이나 넘치는 수가 저장되지 않게 한다.
