@@ -1055,6 +1055,36 @@ def test_a_stopped_calculation_withdraws_applied(
         assert _range_caption(app) == ":material/block: 계산 멈춤", page_path
 
 
+def test_a_securement_error_on_static_capa_keeps_applied(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """대당 Capa·소요대수 계산은 섰고 확보율 단계에서 난 오류는 「계산 멈춤」이 아니다.
+
+    Static Capa 는 확보율을 키 전용 캐시 하나로 꺼내고, 그 호출이 오류를 낼 때만 시나리오 계산이
+    멈춘 것인지 가른다. 확보율 오류(가용대수 없는 공정 등)는 본문에 그 문구로 뜨고 사이드바는
+    「✓ 적용」 그대로다.
+    """
+    import streamlit as st
+
+    import capa_simulation.services.simulation_cache as simulation_cache
+
+    app = _run_with_range(_app, "2026-01", "2026-03")
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    def failing(*_args: object, **_kwargs: object) -> pd.DataFrame:
+        raise ValueError("시험용 확보율 오류")
+
+    monkeypatch.setattr(simulation_cache, "calculate_securement_rate", failing)
+    # 확보율 칸이 HOME 회차에 이미 찼다. 비워야 이 화면이 확보율을 다시 계산한다.
+    st.cache_data.clear()
+    app.switch_page(STATIC_CAPA.path).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    errors = [str(element.value) for element in app.error]
+    assert any("시험용 확보율 오류" in error for error in errors), errors
+    assert _range_caption(app) == ":material/check_circle: 적용 · 26.01–26.03"
+
+
 # ------------------------------------------------ 화면이 읽는 공통 조건만 세운다
 #
 # 사이드바 「조회 조건」은 지금 화면이 **실제로 읽는** 조건만 모은다(2026-09-29 사용자 결정).

@@ -269,11 +269,11 @@ def check_scenario_capacity(
 ) -> bool:
     """이 키의 대당 Capa·소요대수 계산이 서는지만 본다. 적중이면 프레임을 풀지 않는다.
 
-    키 전용 파생 캐시(확보율·월 표)만 쓰는 화면은 소요대수를 받을 일이 없는데, 계산 오류는
-    그 화면의 맨 위에서 지금 자리·지금 문구로 먼저 드러나야 한다. 실패는 캐시되지 않으므로
-    오류가 난 시나리오는 매 회차 `get_scenario_capacity_and_demand` 가 다시 던진다(그쪽의 전체
-    기간 결과가 실패를 담아 두어 싸다). 부르는 쪽은 `page_bootstrap.stop_calculation_on_error`
-    로 감싸 사이드바의 「✓ 적용」을 거둔다.
+    키 전용 파생 캐시(확보율 등)가 오류를 냈을 때, 그 오류가 시나리오 계산이 멈춘 것인지 그 뒤
+    단계(가용대수·확보율 검증)의 것인지 가르는 데 쓴다 — 앞의 것만 「계산 멈춤」이다. 실패는
+    캐시되지 않으므로 오류가 난 시나리오는 매번 `get_scenario_capacity_and_demand` 가 다시
+    던진다(그쪽의 전체 기간 결과가 실패를 담아 두어 싸다). 부르는 쪽은
+    `page_bootstrap.stop_calculation_on_error` 로 감싸 사이드바의 「✓ 적용」을 거둔다.
     """
     get_scenario_capacity_and_demand(
         cache_key,

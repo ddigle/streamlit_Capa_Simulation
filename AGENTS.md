@@ -781,8 +781,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     조건 카드 `판정 기준` 은 지금 기준을 읽기 전용으로 적고 정하는 곳을 가리킬 뿐이다. 업무 로드맵(GO팀 투자 판단·기술팀 실행 개선)과 추가 필요대수 계산식은
     Guide(`guides/static_capa.md`)로 옮겼고 본문에는 두 결과 상자만 남는다.
   - 확보율은 `simulation_cache.get_scenario_securement_rate`(키 전용)로 꺼내 소요대수 프레임을 풀지
-    않는다. 계산 오류는 그 앞의 `check_scenario_capacity`(`stop_calculation_on_error` 로 감싼다)가
-    「계산 멈춤」과 함께 낸다. 판정 기준 적용(`build_securement_shortfall_tables`)은 공용 프로필이 다른
+    않는다(빗나가면 그 안에서 한 번만 받는다). 그 호출이 오류를 내면 `check_scenario_capacity`
+    (`stop_calculation_on_error` 로 감싼다)로 갈라, 대당 Capa·소요대수 계산이 멈춘 것이면 그 오류를
+    「계산 멈춤」과 함께, 가용대수·확보율 검증 오류면 그 오류를 「✓ 적용」 그대로 낸다. 판정 기준 적용(`build_securement_shortfall_tables`)은 공용 프로필이 다른
     화면에서 바뀌므로 캐시하지 않고 매 회차 한다.
 - `app_pages/reference_integrity.py`
   - `Dynamic Capa` 상위 페이지(사이드바 그룹 머리, 표기 없음 — 성숙도는 본문 배지)이며 전체 공정 실현률·관리 우선순위를 요약하고 공정·제품·

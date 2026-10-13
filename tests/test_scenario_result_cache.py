@@ -5,7 +5,7 @@
 적중 경로에서 큰 프레임(pickle 약 16MB, 합성 표본의 샘플 관측)을 풀지 않으려고 파생값을 키로
 캐시했다. 지키는 것은 셋이다.
 
-- **같은 숫자** — 고치기 전 페이지가 프레임에서 바로 만들던 값과 같다.
+- **같은 숫자** — 캐시 없이 프레임에서 바로 만든 값과 같다.
 - **무효화** — 키의 시나리오 내용(content_token)·표시순서 지문이 바뀌면 다시 만든다.
 - **적중이면 프레임을 받지 않는다** — 그래야 이 캐시를 둔 까닭이 선다.
 """
@@ -222,17 +222,33 @@ def test_a_hit_does_not_unpickle_the_capacity_frames(
     assert counted == []
 
 
+def _edited_upeh(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """UPEH 를 반으로 줄이고, 조회기간 안 한 경로는 0 으로 둬 대당 Capa 에서 뺀 시나리오 표.
+
+    반으로 줄이면 대당 Capa·소요대수·확보율이 바뀌고, 0 인 경로는 제외 목록·대당 Capa 행 수를
+    바꾼다 — 요약 캐시가 낡으면 드러난다.
+    """
+    edited = dict(tables)
+    upeh = tables["RQ_UPEH"].copy()
+    upeh["UPEH"] = pd.to_numeric(upeh["UPEH"]) * 0.5
+    in_range = pd.to_numeric(upeh["생산계획년월"]).between(START, END) & upeh["UPEH"].notna()
+    upeh.loc[upeh.index[in_range][0], "UPEH"] = 0.0
+    edited["RQ_UPEH"] = upeh
+    return edited
+
+
 def test_a_new_content_token_recomputes(tables: dict[str, pd.DataFrame]) -> None:
-    """편집 적용은 새 content_token 을 낸다. 같은 기간이라도 새 내용으로 다시 만든다."""
+    """편집 적용은 새 content_token 을 낸다. 같은 기간·같은 표시순서라도 새 내용으로 다시 만든다.
+
+    산출 결과·Static Capa 가 쓰는 키 전용 캐시를 모두 본다 — 시나리오 키가 어느 하나의 키에서
+    빠지면 편집 적용 뒤 그 표만 옛 숫자로 남는다.
+    """
     before_key: sc.ScenarioCacheKey = (1, f"test-result-before-{uuid4().hex}", START, END)
     after_key: sc.ScenarioCacheKey = (1, f"test-result-after-{uuid4().hex}", START, END)
-    edited = dict(tables)
+    edited = _edited_upeh(tables)
     available = tables["RQ_EQP_AVBL"].copy()
     available["가용대수"] = pd.to_numeric(available["가용대수"]) * 2
     edited["RQ_EQP_AVBL"] = available
-    upeh = tables["RQ_UPEH"].copy()
-    upeh["UPEH"] = pd.to_numeric(upeh["UPEH"]) * 0.5
-    edited["RQ_UPEH"] = upeh
 
     before = sc.get_scenario_securement_rate(
         before_key,
@@ -261,6 +277,60 @@ def test_a_new_content_token_recomputes(tables: dict[str, pd.DataFrame]) -> None
     assert not before_table.equals(after_table)
     pd.testing.assert_frame_equal(
         after_table, effective_process_capacity_to_month_table(edited_required, "공정")
+    )
+
+    # 소요대수 월 표 — 표시순서 지문·화면 범위가 같아도 시나리오 키가 다르면 다시 만든다.
+    display_order = prepare_display_order(tables["RQ_DISPLAY_ORDER"])
+    digest = sc.display_order_digest(tables["RQ_DISPLAY_ORDER"])
+
+    def month_table(
+        key: sc.ScenarioCacheKey, source: dict[str, pd.DataFrame]
+    ) -> tuple[pd.DataFrame, list[str]]:
+        return sc.get_required_month_table(
+            key,
+            digest,
+            PAGE_CALCULATION,
+            TAB_REQUIRED,
+            _scenario_tables=source,
+            _reference_tables=source,
+            _display_order=display_order,
+        )
+
+    before_month, _ = month_table(before_key, tables)
+    after_month, after_dimensions = month_table(after_key, edited)
+    expected_month, expected_dimensions = reorder_display_columns(
+        apply_display_order(
+            required_equipment_to_month_table(edited_required),
+            display_order,
+            PAGE_CALCULATION,
+            TAB_REQUIRED,
+        ),
+        RESULT_DIMENSIONS,
+        display_order,
+        PAGE_CALCULATION,
+        TAB_REQUIRED,
+    )
+    assert not before_month.equals(after_month)
+    pd.testing.assert_frame_equal(after_month, expected_month)
+    assert after_dimensions == expected_dimensions
+
+    # 요약(제외 목록·대당 Capa 행 수) — 0 으로 둔 UPEH 경로가 새 요약에만 든다.
+    before_summary = sc.get_scenario_result_summary(
+        before_key, _scenario_tables=tables, _reference_tables=tables
+    )
+    after_summary = sc.get_scenario_result_summary(
+        after_key, _scenario_tables=edited, _reference_tables=edited
+    )
+    edited_unit, _ = _frames(after_key, edited)
+    assert after_summary.unit_capacity_rows == len(edited_unit)
+    assert after_summary.unit_capacity_rows == before_summary.unit_capacity_rows - 1
+    pd.testing.assert_frame_equal(
+        after_summary.capacity_exclusions, edited_unit.attrs[CAPACITY_EXCLUSIONS_ATTR]
+    )
+    assert len(after_summary.capacity_exclusions) == len(before_summary.capacity_exclusions) + 1
+    pd.testing.assert_frame_equal(
+        after_summary.required_exclusions,
+        edited_required.attrs[REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR],
     )
 
 
@@ -322,6 +392,22 @@ def test_a_failing_scenario_is_raised_every_time_and_never_cached(
             sc.get_scenario_result_summary(
                 broken_key, _scenario_tables=broken, _reference_tables=broken
             )
+
+
+def test_the_capacity_check_follows_a_new_content_token(tables: dict[str, pd.DataFrame]) -> None:
+    """서는 시나리오의 확인(True)이 캐시된 뒤에도, 편집 적용(새 토큰)으로 계산이 멈추는 시나리오는
+    확인에서 다시 멈춘다 — 키가 낡으면 Static Capa 가 「계산 멈춤」 없이 「✓ 적용」을 남긴다."""
+    good_key: sc.ScenarioCacheKey = (1, f"test-check-good-{uuid4().hex}", START, END)
+    broken_key: sc.ScenarioCacheKey = (1, f"test-check-broken-{uuid4().hex}", START, END)
+    broken = dict(tables)
+    run_rate = tables["RQ_RUN_RATE"]
+    broken["RQ_RUN_RATE"] = run_rate.loc[
+        pd.to_numeric(run_rate["생산계획년월"]).ne(START)
+    ].reset_index(drop=True)
+
+    assert sc.check_scenario_capacity(good_key, _scenario_tables=tables, _reference_tables=tables)
+    with pytest.raises(ValueError):
+        sc.check_scenario_capacity(broken_key, _scenario_tables=broken, _reference_tables=broken)
 
 
 @pytest.fixture(autouse=True)

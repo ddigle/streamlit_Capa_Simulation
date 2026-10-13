@@ -181,24 +181,29 @@ try:
         reference_version, active_scenario, effective_start, effective_end
     )
     # 이 화면은 대당 Capa·소요대수 프레임을 쓰지 않는다 — 확보율만 키로 꺼낸다(적중이면 소요대수를
-    # 풀지 않는다). 계산 오류는 먼저 이 자리에서 「계산 멈춤」과 함께 드러난다.
-    stop_calculation_on_error(
-        check_scenario_capacity,
-        capacity_cache_key,
-        _scenario_tables=active_scenario["tables"],
-        _reference_tables=reference_tables,
-    )
-    securement_rate = get_scenario_securement_rate(
-        capacity_cache_key,
-        _scenario_tables=active_scenario["tables"],
-        _reference_tables=reference_tables,
-        _available_equipment=scenario_month_table(
-            active_scenario,
-            "RQ_EQP_AVBL",
-            effective_start,
-            effective_end,
-        ),
-    )
+    # 풀지 않고, 빗나가면 그 안에서 한 번만 받는다).
+    try:
+        securement_rate = get_scenario_securement_rate(
+            capacity_cache_key,
+            _scenario_tables=active_scenario["tables"],
+            _reference_tables=reference_tables,
+            _available_equipment=scenario_month_table(
+                active_scenario,
+                "RQ_EQP_AVBL",
+                effective_start,
+                effective_end,
+            ),
+        )
+    except BOOTSTRAP_ERRORS:
+        # 대당 Capa·소요대수 계산이 멈춘 것이면 그 오류를 「계산 멈춤」과 함께 먼저 낸다. 계산은
+        # 섰는데 가용대수 자르기·확보율에서 난 오류면 그 오류를 그대로 낸다(「✓ 적용」은 둔다).
+        stop_calculation_on_error(
+            check_scenario_capacity,
+            capacity_cache_key,
+            _scenario_tables=active_scenario["tables"],
+            _reference_tables=reference_tables,
+        )
+        raise
     warning_shortfalls, secure_shortfalls = build_securement_shortfall_tables(
         securement_rate, thresholds=thresholds
     )
