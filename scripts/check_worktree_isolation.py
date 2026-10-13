@@ -15,7 +15,8 @@
 검사하려는 바로 그 상황을 못 본다. 설치된 패키지가 실제로 어디서 오는지 보려면 앱이 뜨는
 것과 같은 방식으로 맨 인터프리터에서 import 해야 한다.
 
-    .\.venv\Scripts\python.exe scripts\check_worktree_isolation.py
+    .\.venv\Scripts\python.exe scripts\check_worktree_isolation.py     # 사내·Windows
+    .venv/bin/python scripts/check_worktree_isolation.py               # 사외·WSL
 
 어긋나면 0 이 아닌 값으로 끝난다.
 """

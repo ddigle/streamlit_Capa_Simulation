@@ -409,6 +409,11 @@ Git commit history를 단일 근거로 합니다. 적용 후 체크섬이 불변
 
 ## 입력 데이터
 
+> 이 절의 명령은 PowerShell(Windows) 꼴입니다. 사외 개발 자리인 데스크탑 WSL 에서는 `.venv/bin/python` 과 `/`
+> 경로로 칩니다 — 예: `.venv/bin/python scripts/bootstrap_builtin_seed.py`. `\` 는 bash 에서 이스케이프라
+> `data\input\Core_Data.csv` 가 `datainputCore_Data.csv` 로 깨지므로 `data/input/Core_Data.csv` 로 적습니다.
+> 준비와 나머지 명령은 [`docs/wsl_dev_environment.md`](docs/wsl_dev_environment.md).
+
 앱 런타임의 고정 입력은 `data/capa_simulation.duckdb`입니다. 이 파일이 없는 GitHub
 체크아웃에서는 앱 시작 시 마이그레이션을 적용한 뒤 `config/bootstrap_display_order.json`과
 코드로 생성한 2026년 `DEMO_*` 합성 Core Data를 공통 78컬럼 파이프라인에 통과시켜
@@ -500,6 +505,11 @@ STEP·MCP 키 도입 전에 첫 행 선택 방식으로 저장한 사내 검증 
 .\.venv\Scripts\python.exe scripts\generate_sample_core_data.py data\input\Core_Data.csv
 .\.venv\Scripts\python.exe scripts\bootstrap_initial_duckdb_scenario.py --source-code <새 원천 코드> --scenario-name <시나리오 이름>
 ```
+
+xlsb·Excel 이 필요한 것은 **새 원천 코드로 처음 적재할 때뿐**입니다 — 같은 원천 코드의 시나리오가 없으면 표시순서를
+`templates/structure_template.xlsb`(`--workbook`)에서 Excel(xlwings)로 읽습니다. 이미 있으면
+기존 리비전의 표시순서를 쓰므로 둘 다 필요 없습니다. 사외 WSL 에는 Excel 도 `templates/` 도 없어 위 둘째 줄을 돌릴
+수 없습니다.
 
 `--replace-existing` 없이 돌렸는데 같은 원천 코드의 시나리오가 이미 있으면, 스크립트는 그
 시나리오의 활성 리비전을 공식버전으로 지정합니다. 그 리비전에 가상 제품이 들어 있으면
@@ -836,8 +846,9 @@ Repository의 쓰기를 별도 잠금과 DB 트랜잭션으로 직렬화합니�
 
 ## 권장 실행 환경
 
-사외 개발은 2026-10-12 부터 데스크탑 WSL(Ubuntu x86_64)에서 합니다 — 준비·명령·배포 자리는
-[`docs/wsl_dev_environment.md`](docs/wsl_dev_environment.md). 아래는 Windows(서피스·사내) 기준입니다.
+사외 개발·배포 빌드는 데스크탑 WSL(Ubuntu x86_64) 한 곳에서 합니다. 2026-10-12 에 옮기기로 하고 10-13 에 준비를
+끝냈으며, 같은 날 사용자 결정으로 서피스 개발 환경은 지웁니다 — 준비·명령·앱 실행 줄·배포 절차는 [`docs/wsl_dev_environment.md`](docs/wsl_dev_environment.md).
+아래는 Windows(사내) 기준입니다.
 
 - Windows 10/11
 - Microsoft Excel 2021 또는 Microsoft 365 Desktop (초기 이관·병행 검증 시에만 필요)
@@ -854,7 +865,8 @@ Repository의 쓰기를 별도 잠금과 DB 트랜잭션으로 직렬화합니�
 | 추가로 필요한 것 | 없음 | `bigdataquery` (사내 인덱스) |
 | 코드 수정 | 합니다 | **하지 않습니다** — `docs/dual_env_workflow.md` |
 
-사외가 리눅스(데스크탑 WSL)면 아래 사외 절 대신 `docs/wsl_dev_environment.md` 1장을 따릅니다.
+사외는 데스크탑 WSL 하나이므로 아래 사외 절 대신 `docs/wsl_dev_environment.md` 1장을 따릅니다. 아래 사외 절의
+Windows 1~3단계는 사내가 「사외와 동일」로 그대로 따르므로 남겨 둡니다.
 
 의존성 선언은 `pyproject.toml` 하나이고 **양쪽이 완전히 같습니다.** 개발 도구(mypy·ruff·
 pytest)는 extra 가 아니라 PEP 735 의존성 그룹 `[dependency-groups]` 의 `dev` 에 있어

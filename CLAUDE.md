@@ -32,7 +32,8 @@ Streamlit 구현 규칙, 변경 체크리스트) 이 파일은 그 요약과 진
 
 ## 명령
 
-Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다(PowerShell 기준).
+Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 PowerShell 블록은 Windows 꼴이다(사내가 배포 확인 때
+치는 꼴은 런북 4-3 의 `uv run --no-sync python -m …`).
 
 ```powershell
 .\.venv\Scripts\python.exe -m streamlit run app.py     # 앱 실행
@@ -44,7 +45,7 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다(PowerShell
 
 단일 테스트: `.\.venv\Scripts\python.exe -m pytest tests/test_home_page.py::test_home_renders_summary_dashboard_from_the_builtin_seed`
 
-사외 개발 PC 가 리눅스(데스크탑 WSL)면 같은 명령을 bash 로 친다 — 환경 준비·앱 띄우기·배포 자리는
+사외 개발 자리는 데스크탑 WSL 하나다(2026-10-13) — 같은 명령을 bash 로 친다. 환경 준비·앱 띄우기·배포 절차는
 `docs/wsl_dev_environment.md`.
 
 ```bash
@@ -52,7 +53,10 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다(PowerShell
 .venv/bin/python -m ruff check .
 .venv/bin/python -m mypy
 .venv/bin/python -m pytest
+.venv/bin/python -m pytest tests/test_home_page.py::test_home_renders_summary_dashboard_from_the_builtin_seed
 ```
+
+사외 앱은 사용자가 Claude 밖 tmux 창에서 `docs/wsl_dev_environment.md` 3장의 실행 줄로 띄운다 — 포트는 늘 적는다.
 
 보조 스크립트: `scripts/inspect_wf_division.py`·`scripts/inspect_top_remigration.py`
 (사내 실데이터의 `WF 구분`·재이관 전제를 **읽기 전용**으로 재는 것. 값은 찍지 않고

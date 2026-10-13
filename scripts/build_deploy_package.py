@@ -15,7 +15,10 @@
 
 사용:
 
-    .\\.venv\\Scripts\\python.exe scripts\\build_deploy_package.py --out C:\\Dev\\배포
+    .venv/bin/python scripts/build_deploy_package.py --out data/output --stamp <STAMP>
+
+사외 빌드 자리는 데스크탑 WSL 이다 — 런북 수치 재기부터 메일까지는
+`docs/wsl_dev_environment.md` 5장.
 """
 
 from __future__ import annotations

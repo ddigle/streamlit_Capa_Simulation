@@ -79,7 +79,10 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
 - 린트/포맷: Ruff, target Python 3.10
 - 테스트: pytest
 
-변경 후 기본 검증 명령:
+변경 후 기본 검증 명령 — Windows 는 PowerShell, 사외(데스크탑 WSL)는 bash 로 같은 네 관문을 돈다. 사내가 배포 확인 때 치는
+꼴은 `docs/internal_update_runbook.md` 4-3 의 `uv run --no-sync python -m …` 이다.
+
+Windows(PowerShell):
 
 ```powershell
 .\.venv\Scripts\python.exe -m ruff format --check .
@@ -87,6 +90,18 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
 .\.venv\Scripts\python.exe -m mypy
 .\.venv\Scripts\python.exe -m pytest
 ```
+
+사외(데스크탑 WSL, bash):
+
+```bash
+.venv/bin/python -m ruff format --check .
+.venv/bin/python -m ruff check .
+.venv/bin/python -m mypy
+.venv/bin/python -m pytest
+```
+
+사외 개발 자리는 데스크탑 WSL 하나다(2026-10-13 사용자 결정 — 서피스와 병행하지 않는다). 환경 준비와
+샌드박스에서 걸리는 것은 `docs/wsl_dev_environment.md`.
 
 `mypy`는 `pyproject.toml`의 `files` 설정에 따라 `app.py`·`app_pages/`·
 `src/capa_simulation/`·`tests/`·`scripts/`를 모두 strict 로 검사한다.
@@ -106,7 +121,7 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
   `isinstance(node, Caption)`, `.loc[r, c]` 를 숫자로 볼 때는 변환 없이 비교(숫자인지까지 본다).
 - 계약을 **일부러** 어기는 입력(검증 경로 시험)만 그 줄에 `# type: ignore[코드]` 를 단다.
 
-Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는
+(Windows 기준 — WSL 샌드박스 사정은 `docs/wsl_dev_environment.md` 2장.) Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는
 사용자 프로필의 Python 3.10 실행 파일 접근이 차단되어 `Unable to create process` 또는
 `Access is denied`가 발생할 수 있다. 이는 가상환경 손상이 아니므로 `.venv`를 재생성하지
 말고 동일한 명령을 `require_escalated`로 다시 실행한다. Streamlit 버전별 스킬 탐색기도
@@ -5048,7 +5063,10 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 ./scripts/new_worktree.ps1 -Branch cand/<과제>/<에이전트> -Port 8502
 ```
 
-이 스크립트는 Windows(PowerShell) 전용이다. 리눅스(데스크탑 WSL)에서의 병행 작업 폴더는 `docs/wsl_dev_environment.md` 6장.
+이 스크립트와 아래 `run.ps1` 은 Windows(PowerShell) 전용이다. 사외 개발이 데스크탑 WSL 하나가 된
+뒤(2026-10-13) **WSL 에서 병행 작업 폴더를 어디에 둘지(사용자 결정 대기, `docs/wsl_dev_environment.md`
+6장)와 `run.ps1` 없이 포트를 어떻게 고정할지는 아직 정하지 않았다** — 그때까지 이 장의 폴더·포트
+절차는 Windows 기준이다.
 
 - **`.venv` 를 공유하지 않는다.** editable 설치가 `__editable__.capa_simulation-0.1.0.pth` 에
   **절대경로**를 박아 두어, 남의 `.venv` 를 쓰면 화면은 내 코드인데 `import capa_simulation`
@@ -5060,8 +5078,16 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   경로·실제 import 되는 패키지·DuckDB 경로 넷을 보고 하나라도 폴더 밖이면 0 이 아닌 값으로
   끝난다. 일을 시작하기 전과 올리기 전에 한 번씩 돌린다.
 
+  Windows(PowerShell):
+
   ```powershell
   .\.venv\Scripts\python.exe scripts\check_worktree_isolation.py
+  ```
+
+  WSL(bash):
+
+  ```bash
+  .venv/bin/python scripts/check_worktree_isolation.py
   ```
 
   **`pytest` 로 만들지 않은 이유**가 이 규칙의 핵심이다. 남의 `.venv` 를 쓴 상태에서 실제로
@@ -5194,6 +5220,6 @@ f-string 키는 넘겨받은 기준 키에서 파생되므로 그 기준 키가 
   표시가 근거이고, 없으면 통합하는 쪽이 직접 돌린 결과가 근거다.
 
 `.github/workflows/ci.yml` 이 **후보 브랜치(`cand/**`) 푸시**·PR·`main` 푸시에서 검증 4종을
-돌린다. 후보를 올리는 즉시 도므로 PR 을 열기 전에도 초록·빨강이 보인다. **저장소가
-private + Free 라 「통과해야만 병합」은 강제되지 않는다** — 빨간 것은 합치지 않는다는 규칙을
-사람이 지킨다.
+돌린다. 후보를 올리는 즉시 도므로 PR 을 열기 전에도 초록·빨강이 보인다. **저장소는
+public 이고(2026-10-03 유지 결정) `main` 에 브랜치 보호를 걸지 않아 「통과해야만 병합」은 강제되지
+않는다** — 빨간 것은 합치지 않는다는 규칙을 사람이 지킨다.
