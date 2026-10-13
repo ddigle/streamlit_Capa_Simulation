@@ -125,14 +125,34 @@ class ProcessLabels:
         return {column: self.labels for column in (columns or (PROCESS_COLUMN,))}
 
     def series(self, values: pd.Series) -> pd.Series:
-        """표시용 Series. 원본 Series 를 제자리에서 바꾸지 않는다."""
+        """표시용 Series. 원본 Series 를 제자리에서 바꾸지 않는다.
+
+        결과는 행마다 `apply_process_label` 을 부른 것과 **같다**. 값이 모두 글자(빈 칸 제외)면
+        고유값마다 한 번만 바꿔 행에 펼친다 — STEP 구성 요약처럼 같은 공정이 많은 행에 되풀이되는
+        표에서 바꾸는 횟수가 행 수가 아니라 공정 수다. 글자끼리는 같으면 같은 표시명이라 펼쳐도
+        값이 같다. 빈 칸(`None`·NaN·`pd.NA`)은 행마다 원래 함수로 바꾼다 — 종류마다 글자가 달라
+        (`""`·`"nan"`) 하나로 묶으면 달라진다. 글자가 아닌 값이 섞이면(1 과 1.0 이 한 고유값으로
+        묶일 수 있다) 행마다 바꾼다.
+        """
         if not self.labels:
             return values.astype("object")
-        return pd.Series(
-            [apply_process_label(value, self.labels) for value in values],
-            index=values.index,
-            dtype="object",
-        )
+        if pd.api.types.infer_dtype(values, skipna=True) not in {"string", "empty"}:
+            return pd.Series(
+                [apply_process_label(value, self.labels) for value in values],
+                index=values.index,
+                dtype="object",
+            )
+        objects = values.astype("object")
+        codes, uniques = pd.factorize(objects)
+        shown = [apply_process_label(value, self.labels) for value in uniques]
+        # factorize 는 빈 칸을 -1 로 준다. 그 자리는 아래에서 행마다 다시 채운다.
+        result = pd.Series(shown + [""], dtype="object").to_numpy()[codes]
+        missing = codes == -1
+        if missing.any():
+            result[missing] = [
+                apply_process_label(value, self.labels) for value in objects.to_numpy()[missing]
+            ]
+        return pd.Series(result, index=values.index, dtype="object")
 
     def frame(self, data: pd.DataFrame, column: str = PROCESS_COLUMN) -> pd.DataFrame:
         """`column` 만 표시명으로 바꾼 **화면용 복사본**.

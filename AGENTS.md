@@ -684,6 +684,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 모든 편집표·STEP 추가는 **적용 기간**(선택기간 ∩ 활성 리비전 UPEH 범위)으로 자른다. 편집표만
     선택기간이면 UPEH 에 없는 달이 섞여 적용이 「선택 범위 밖의 년월」로 막혔다. STEP 추가는 원본
     경로에 측정률 행이 없는 달을 건너뛴다(복제본도 1.0 가정을 물려받는다).
+  - 조각은 **쓰는 순간에만** 자른다(`_EditSlices` — 그 회차 활성 시나리오·적용 기간에 묶인 회차 안
+    메모). 편집표·STEP 경로표 캐시 래퍼에는 로더를 넘겨 빗나갈 때만 자르고, 적용·붙여넣기 검증의 원본,
+    STEP 제출, 측정률 빈 표 안내, 설비대수 양식·현황은 `get_or_stop`(앞 `try` 와 같은 오류 문구로 멈춤)으로
+    자른다. 그래서 월 형식이 틀린 표는 그 표를 쓰는 탭에서만 멈춘다(이 화면이 쓰지 않는 RQ_PKG_PLAN·RQ_YLD 는
+    자르지 않는다). `try` 밖 자리의 문구는 `tests/test_reference_data_perf.py` 가 설비대수·STEP 제출로 본다.
   - **검사는 계산이 멈추는 조건과 같게 둔다**(2026-09-29 리뷰). UPEH 빈 달을 채워 새 경로를 만들면
     측정률뿐 아니라 그 (월, 키)의 효율·여유율·일수 행도 활성 시나리오에 있어야 한다
     (`missing_required_rows` — 여유율·일수 0 이하는 없음과 같고, 효율 0 은 그 경로만 빠지므로
@@ -704,7 +709,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `STEP 구성`은 선택한 경로를 실제 MCP·STEP 식별값으로 복제하거나 삭제하고 연결된
     모든 Capa Code·Customer·CS 변형을 `RQ_REQB`·UPEH·Lot/WF 측정률에 함께 반영한다. 작업은
     요약 표 위 작업 줄의 `STEP 추가·삭제` **팝업**이다(가끔 하는 쓰기). 팝업은 fragment 라
-    적용·알림·rerun 을 팝업 안에서 끝낸다.
+    적용·알림·rerun 을 팝업 안에서 끝낸다. 요약·목록(`get_route_step_tables`)과 `RQ_REQB` 조각은
+    **STEP 탭이 보이거나 STEP 팝업이 열린 회차에만** 만든다 — 닫힌 탭에서도 만들면 다른 탭의 적용마다
+    (새 토큰) 경로표 전체를 다시 계산한다. 계산은 페이지 앞 `try`(BOOTSTRAP_ERRORS) 안에 두고, 팝업에는 그
+    회차 목록·조각을 인자로 넘긴다. 성공 알림(`capacity_step_flash`)은 매 회차 꺼내고 그 탭을 그릴 때만
+    보인다. 두 안전장치(팝업만 열린 회차의 경로표, 숨은 탭 회차의 알림 버림)는
+    `tests/test_reference_data_perf.py` 가 지킨다.
   - 팝업의 대상 상자(`capacity_step_route`, `_step_route_choices`)는 줄마다 글자가 다르다 — 글자에 경로
     키 전부(`ROUTE_GROUP_COLUMNS`, `양산구분` 포함)와 MCP/STEP 을 싣고(「공정 · 양산 · 제품 · Stack ·
     속성 · Area · 소요기준 · MCP 1A / STEP P100 · N개월」), 공정은 `unique_format_func`(목록의 공정 전체)로
@@ -715,7 +725,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `설비대수` 탭에서 보유·대여·가용 RQ를 각각 월별 Wide CSV로 내려받고 활성 시나리오에
     일괄 적용한다. **슬라이스와 적용이 같은 창**(`effective_*_month`)이어야 한다 — 갈라 두면
     `apply_month_updates` 가 화면에 없던 월을 지운다. `현황` 조회 표의 「상세」와 필터는
-    사이드바 `표 조건` 카드이고 바깥·안쪽 탭이 둘 다 열렸을 때만 선다.
+    사이드바 `표 조건` 카드이고 바깥·안쪽 탭이 둘 다 열렸을 때만 선다. 세 편집 양식은
+    `editor_will_render`(편집기의 조기 반환과 같은 함수 — 안쪽 탭을 양식보다 먼저 만든다)가 참인 회차에만,
+    현황 표는 바깥·현황이 모두 열린 회차에 「상세」 값에 맞는 한 벌만 만든다.
   - 편집 탭의 분류 컬럼 필터는 사이드바 조건 카드 `표 조건`(카드 이름 `reference_data`, 모든
     탭이 한 카드)이다. **필터는 보기만 좁히고 적용은 표 전체를 저장한다** — 자세한 계약은
     `components/month_editor.py` 항목에 있다. 설명(UPEH 의 MI=ST 규칙, STEP 수 정의, 필터·
@@ -2093,7 +2105,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     규칙이 갈 곳을 잃는다. `tests/test_display_order_scopes.py` 가 셋을 함께 본다.
 - `display_order.py`: `RQ_DISPLAY_ORDER` 기반 동적 행 정렬. `prepare_display_order` 가 한
   회차에 한 번 검증해 `PreparedDisplayOrder` 를 만든다 — `rules` 는 검증한 입력 그대로,
-  `derived_rules` 는 앱 파생 규칙(`Top_e`)을 더한 것이고 정렬 도우미는 `derived_rules` 를 읽는다
+  `derived_rules` 는 앱 파생 규칙(`Top_e`)을 더한 것이고 정렬 도우미는 `derived_rules` 를 읽는다.
+  회차를 넘겨 다시 쓰는 자리는 `simulation_cache.get_prepared_display_order`(키는 내용 지문
+  `display_order_digest` — `reference_version` 이 아니다)이고, 계산 화면 공통 진입
+  `page_bootstrap.load_page_context` 가 이것을 쓴다. 이 모듈에는 캐시를 두지 않는다
 - `month_filter.py`: YYYYMM 검증과 조회기간 필터. 원천·SQL 적재·계산 계층의 월 정규화가
   같은 달력 검증을 공유한다(정수, 연도 1~9999, 월 1~12). 조회 UI의 2025~2030 범위와는
   별개이며, 정수 변환 전에 검사해 잘못된 값이나 넘치는 수가 저장되지 않게 한다.
@@ -3118,6 +3133,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `ProcessLabels.frame(data, column)` 은 그 칸만 표시명으로 바꾼 **화면용 복사본**이다(고유값마다 한 번
     바꿔 `map`, 빈 칸은 빈 칸, 매핑이 없으면 받은 프레임 그대로 — 그래서 돌려받은 것을 고치지 않는다).
     캐시가 들고 있는 프레임을 넘겨도 되고, CSV 로 내보낼 프레임에는 쓰지 않는다.
+  - `ProcessLabels.series(values)` 는 행마다 `apply_process_label` 을 부른 것과 값·dtype(object)·인덱스가
+    **같다**. 값이 모두 글자면 고유값마다 한 번 바꿔 펼치고, 빈 칸(`None`·NaN·`pd.NA` — 종류마다 글자가
+    다르다)은 행마다, 글자 아닌 값이 섞이면 모두 행마다 바꾼다. `tests/test_process_label_series.py` 가
+    행마다 부른 결과와 견준다.
   - **`ProcessLabels.unique_format_func(options, reserved=…)`** 는 선택 상자 **한 개**의 `format_func` 다
     (2026-10-10 병합 전 리뷰). Streamlit 1.63 의 selectbox·multiselect 는 브라우저와 값을 **서식 글자**로
     주고받아, 같은 글자가 둘이면 selectbox 는 마지막·multiselect 는 첫 선택지로 돌아온다 — 표시명이
@@ -3299,7 +3318,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     결과(「지워진 칸 N개」 경고 포함)도 같은 자리다 — 팝업은 적용하면 닫힌다. 숨은 탭에서는
     자리를 버린다 — 지난 회차의 자리에 쓰면 오류가 사라진다.
   - **작업 줄**: `변경사항 적용`(툴팁 `APPLY_NOTICE`) · `Excel 붙여넣기`(팝업) · `편집 취소`(고친
-    것이 있을 때만, 그 표의 편집 상태만 버린다) · 변경 개수. 붙여넣기 팝업은 **fragment** 라
+    것이 있을 때만, 그 표의 편집 상태만 버린다) · 변경 개수(적용하지 않은 편집이 있는 회차에만 센다 —
+    없으면 표가 원본 그대로라 늘 0 이다). 붙여넣기 팝업은 **fragment** 라
     결과를 페이지로 돌려줄 수 없다 — 페이지가 준 `on_paste` 가 팝업 안에서 검증·적용하고,
     막히면 `KeyError`/`ValueError` 를 던져 팝업 안에 오류를 쓴다. 팝업은 페이지 한 칸
     (`dialog_key`, `PAGE_DIALOG_SUFFIX`)으로 열고 콜백으로 연다. 적용하지 않은 편집이 있으면
@@ -3307,7 +3327,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **적용하지 않은 편집이 남은 표는 탭이 닫혀도 그린다**(2026-09-29). `st.data_editor` 는
     그리지 않은 회차에 편집 상태를 잃는다 — 전에는 닫힌 탭을 건너뛰어, 고친 뒤 다른 탭을
     누르면 편집이 조용히 사라졌다(브라우저에서 재현·수정 확인). 편집이 없는 닫힌 탭은 여전히
-    건너뛴다. `outer_tab` 은 탭 안의 탭의 바깥 탭이다.
+    건너뛴다. `outer_tab` 은 탭 안의 탭의 바깥 탭이다. 그릴지는 `editor_will_render(tab, key,
+    outer_tab)` 하나가 정한다 — 페이지가 양식(`default_table`)을 만들지도 **같은 함수**로 정한다
+    (거짓인 회차에는 빈 표를 넘겨도 읽지 않는다). 둘이 갈리면 그리는 회차에 양식이 빈 표라 편집이
+    행 위치로 다른 행에 붙거나 사라진다.
   - **필터는 사이드바 조건 카드**(`TABLE_CARD_LABEL` = `표 조건`, 이름은 페이지가 준다)다. 열린
     탭만 카드를 세우고, 닫힌 탭의 표는 세션 선택으로 거른다. **적용하지 않은 편집이 있으면
     필터를 잠근다**(`FILTER_LOCKED_NOTICE`) — 보이는 행이 바뀌면 편집이 다른 행에 붙기 때문이다.
@@ -3339,6 +3362,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     좁히면 회색이 돌아오는 것은 의도다. 이 편집기와 생산 계획 PKG PLAN·수율 편집표
     (`load_conversion.py`), 기준 정보 설비대수 `현황` 조회표(`reference_data.py`, `st.dataframe`)가
     모두 이 도우미를 거친다 — 새 월별 표도 Styler 를 직접 만들지 말고 이것을 쓴다.
+    `st.dataframe` 으로 그리는 표는 `uuid=` 에 표마다 다른 고정값을 준다 — pandas Styler 의 uuid 는
+    무작위라 주지 않으면 내용이 같아도 회차마다 메시지가 달라 브라우저가 표를 통째로 다시 받는다.
+    `st.data_editor` 는 Streamlit 이 위젯 키로 고정하므로 주지 않는다.
     `tests/test_classification_style.py` 가 경계(상한 = 칠함, 상한 + 1 = 안 칠함)와 바이트 동일을 본다.
 - `src/capa_simulation/services/revision_compatibility.py`
   - 저장된 리비전이 현재 계산 계약으로 쓸 수 있는지 **불러오기 전에** 판정한다. 리비전은
@@ -4156,6 +4182,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `services/scenario_virtual_products.py`는 가상제품 복제 이력을 변환하고 같은 제품·Stack의
     복제 원본 충돌을 검사한다(새 리비전·복제가 부모 이력을 물려받는 규칙도 여기 있다). `create_scenario(virtual_products=...)`가 기존 이력 표에
     초기 리비전·16표와 같은 트랜잭션으로 기록하고 저장 폼은 보존할 이력을 미리 보여 준다.
+  - 고른 원본 리비전은 역할(베이스·덧붙일·이동할)마다 세션에 메모해(`SOURCE_MEMO_KEY`) 원본을 바꿀
+    때만 읽는다. 메모는 DB 경로와 **그 회차 목록에서 읽은** 시나리오·리비전 요약이 같을 때만 다시
+    쓰고, 돌려주는 스냅샷의 요약도 그 목록 요약으로 갈아 끼운다 — 프로세스 캐시
+    (`load_scenario_snapshot`)는 새 리비전 저장 때 비워지지 않아 옛 요약을 줄 수 있다. 표·프리셋은
+    리비전 id 에 묶여 바뀌지 않으므로 읽기만 하고, 화면은 `copy_scenario_tables` 사본으로 일한다.
+    메모는 리비전 하나 크기의 살아 있는 표라 그 모드에서만 둔다 — 모드를 바꾸면, 시나리오를
+    지우·보관·되살리거나 이름을 바꾸면, 상자를 비우면 버린다. 키가 `PAGE_DIALOG_SUFFIX` 로 끝나
+    `forget_page_dialogs` 가 불리는 회차(페이지를 떠날 때, 사이드바 조회기간·시나리오 팝업과 Guide 를
+    열 때)에도 버리고 다음 회차에 한 번 다시 읽는다. 가상제품 이력은 회차마다 다시 읽는다.
   - `components/scenario_month_merge.py`는 무월 표 비교와 머지 미리보기·저장을,
     `services/scenario_month_merge.py`는 월별 출처 계획·겹침 정책·결과 축 검증과 표 병합을 맡는다.
   - `components/scenario_year_shift.py`는 사용자 지정 연수와 전후 범위·저장을,

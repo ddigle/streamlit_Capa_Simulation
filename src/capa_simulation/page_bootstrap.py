@@ -28,10 +28,7 @@ from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_h
 from capa_simulation.persistence.migration_runner import SchemaAheadOfCode
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_state import ActiveScenario
-from capa_simulation.services.display_order import (
-    PreparedDisplayOrder,
-    prepare_display_order,
-)
+from capa_simulation.services.display_order import PreparedDisplayOrder
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.settings import (
@@ -227,7 +224,9 @@ def load_page_context() -> PageContext:
     """활성 리비전·표시순서·활성 시나리오와 선택 조회기간을 한 번에 준비한다."""
     reference_version = reference_cache.get_effective_reference_version()
     reference_tables = reference_cache.get_effective_reference_tables()
-    display_order = prepare_display_order(reference_tables["RQ_DISPLAY_ORDER"])
+    display_order = simulation_cache.get_prepared_display_order(
+        reference_tables["RQ_DISPLAY_ORDER"]
+    )
     active_scenario = scenario_state.ensure_active_scenario(reference_tables, reference_version)
     selected_start_month, selected_end_month = selected_month_range()
     return PageContext(

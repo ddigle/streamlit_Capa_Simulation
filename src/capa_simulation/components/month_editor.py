@@ -113,7 +113,7 @@ def render_month_editor(
     """
     open_now = not (tab_is_hidden(tab) or tab_is_hidden(outer_tab))
     pending = editor_has_edits(editor_key)
-    if not open_now and not pending:
+    if not editor_will_render(tab, editor_key, outer_tab):
         # 지난 회차의 알림 자리는 이번 화면에 없다. 남겨 두면 거기 쓴 오류가 사라진다.
         st.session_state.pop(_notice_key(editor_key), None)
         return pd.DataFrame(), False
@@ -201,7 +201,12 @@ def render_month_editor(
             },
         )
         merged = merge_edited_months(default_table, edited, dimensions, month_columns)
-        changed_cells, changed_rows = count_month_changes(default_table, merged, month_columns)
+        # 편집이 없던 회차(`pending` 은 표를 만들기 전 세션의 위젯 값이다 — 이 회차에 편집이 새로
+        # 생길 수는 없고 필터가 버릴 수만 있다)에는 표가 원본 그대로라 셀 수가 늘 0 이다. 셀 수
+        # 비교(표 전체 to_numeric)를 건너뛴다.
+        changed_cells, changed_rows = (
+            count_month_changes(default_table, merged, month_columns) if pending else (0, 0)
+        )
         if changed_cells:
             change_slot.markdown(
                 f"**변경사항 확인** &nbsp;{changed_cells:,}개 값 · {changed_rows:,}개 행"
@@ -222,18 +227,39 @@ def render_month_editor(
     return merged, submitted
 
 
-def classification_styled(table: pd.DataFrame, dimensions: Sequence[str]) -> pd.DataFrame | Styler:
+def editor_will_render(tab: OpenTab, editor_key: str, outer_tab: OpenTab | None = None) -> bool:
+    """이 편집표를 이번 회차에 그리는가 — 탭(과 바깥 탭)이 보이거나, 적용하지 않은 편집이 남았다.
+
+    `render_month_editor` 의 조기 반환과, 페이지가 양식(`default_table`)을 만들지 정하는 자리가
+    **이 함수 하나**를 쓴다. 둘이 갈리면 그리는 회차에 양식이 빈 표라 편집이 행 위치로 다른 행에
+    붙거나 사라진다. 거짓인 회차에는 `render_month_editor` 가 양식을 읽지 않는다.
+    """
+    open_now = not (tab_is_hidden(tab) or tab_is_hidden(outer_tab))
+    return open_now or editor_has_edits(editor_key)
+
+
+def classification_styled(
+    table: pd.DataFrame, dimensions: Sequence[str], *, uuid: str | None = None
+) -> pd.DataFrame | Styler:
     """분류 컬럼에 배경색을 입힌 Styler 다. 칸 수가 상한을 넘으면 표를 그대로 돌려준다.
 
     판정은 **실제로 그리는 표**(필터를 건 뒤의 표)의 칸 수로 한다 — 비용이 그 표를 번역하는
     데서 나오기 때문이다. 그래서 큰 표도 필터로 상한 아래까지 좁히면 배경색이 돌아온다.
+
+    `uuid` 는 `st.dataframe` 으로 그리는 표에 준다(표마다 다른 고정값). pandas Styler 는 만들 때마다
+    무작위 uuid 를 갖고 Streamlit 은 그것을 CSS 이름에 그대로 쓰므로, 주지 않으면 내용이 같아도
+    회차마다 메시지가 달라 브라우저가 표를 통째로 다시 받는다. `st.data_editor` 는 Streamlit 이
+    위젯 키로 uuid 를 고정하므로 주지 않아도 된다.
     """
     if table.size > CLASSIFICATION_STYLE_MAX_CELLS:
         return table
-    return table.style.set_properties(
+    styler = table.style.set_properties(
         subset=pd.Index(dimensions),
         **{"background-color": tokens.SURFACE_CLASSIFICATION},
     )
+    if uuid is not None:
+        styler.set_uuid(uuid)
+    return styler
 
 
 def _open_paste(dialog_key: str, editor_key: str) -> None:

@@ -22,6 +22,7 @@ from capa_simulation.components.editor_state import editor_has_edits
 from capa_simulation.components.month_editor import (
     classification_styled,
     editor_notice,
+    editor_will_render,
     render_month_editor,
 )
 from capa_simulation.components.page_guide import render_page_guide
@@ -146,6 +147,8 @@ RATIO_DIMENSIONS = [
     "STEP_SEQ",
     "MCP_SEQ",
 ]
+# 행이 없으면 1.0 으로 가정하는 표 — 통째로 비어도 화면을 세우지 않는다(`_ratio_month_table`).
+RATIO_TABLES = ("RQ_LOT_RATIO", "RQ_WF_RATIO")
 render_page_header("기준 정보")
 render_page_guide("reference_data", title="기준 정보")
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
@@ -163,11 +166,6 @@ process_labels = get_process_labels()
     wf_ratio_tab,
     step_tab,
 ) = stateful_tabs(TAB_NAMES, key=TAB_KEY)
-
-
-def _editor_needed(tab: OpenTab, editor_key: str) -> bool:
-    """편집표를 그릴 회차인가 — 탭이 열렸거나, 닫혔어도 적용하지 않은 편집이 남았다."""
-    return not tab_is_hidden(tab) or editor_has_edits(editor_key)
 
 
 def _ratio_month_table(
@@ -188,14 +186,50 @@ def _ratio_month_table(
     return scenario_month_table(scenario, table_name, start_month, end_month)
 
 
+class _EditSlices:
+    """이 회차 적용 기간 조각 — **쓰는 순간에만** 자르고, 같은 회차 안에서는 다시 쓴다.
+
+    편집표는 탭이 닫혔거나 캐시가 적중하면 조각을 읽지 않고, STEP 경로표는 그 탭에서만 쓴다. 이
+    화면이 쓰지 않는 RQ_PKG_PLAN·RQ_YLD 는 자르지 않는다. 조각은 만든 회차의 활성 시나리오·적용
+    기간에 묶인다 — 팝업(fragment) 재실행도 그 회차 객체를 쓴다. 측정률 두 표는
+    `_ratio_month_table` 특례(통째로 빈 표)를 지킨다.
+    """
+
+    def __init__(self, scenario: ActiveScenario, start_month: int, end_month: int) -> None:
+        self._scenario = scenario
+        self._start_month = start_month
+        self._end_month = end_month
+        self._memo: dict[str, pd.DataFrame] = {}
+
+    def get(self, table_name: str) -> pd.DataFrame:
+        """조각. 자르다 난 오류(월 형식·빈 표)는 그대로 던진다 — 페이지 앞 `try` 안에서 부른다."""
+        if table_name not in self._memo:
+            slicer = _ratio_month_table if table_name in RATIO_TABLES else scenario_month_table
+            self._memo[table_name] = slicer(
+                self._scenario, table_name, self._start_month, self._end_month
+            )
+        return self._memo[table_name]
+
+    def loader(self, table_name: str) -> Callable[[], pd.DataFrame]:
+        """캐시 래퍼에 넘기는 조각 — 캐시가 빗나갈 때만 자른다."""
+        return lambda: self.get(table_name)
+
+    def get_or_stop(self, table_name: str) -> pd.DataFrame:
+        """페이지 앞 `try` 밖(적용·붙여넣기·STEP 제출·안내)에서 부르는 조각. 오류는 그 `try` 와 같은
+        문구로 멈춘다 — 잡지 않으면 친절한 오류 대신 traceback 이 뜬다."""
+        try:
+            return self.get(table_name)
+        except BOOTSTRAP_ERRORS as exc:
+            st.error(bootstrap_error_message(exc))
+            st.stop()
+
+
 try:
     context = load_page_context()
     reference_version = context.reference_version
     reference_tables = context.reference_tables
     display_order = context.display_order
     active_scenario = context.active_scenario
-    start_month = context.selected_start_month
-    end_month = context.selected_end_month
     effective_start_month, effective_end_month = resolve_effective_months(
         context,
         reference_tables["RQ_UPEH"],
@@ -206,29 +240,8 @@ try:
     # 그 기간만 갈아끼우므로(`apply_month_updates`), 편집표를 선택기간으로 자르면 UPEH 에 없는
     # 달이 선택기간에 드는 순간 모든 적용이 「편집값에 선택 범위 밖의 년월이 있습니다」로
     # 막혔다(2026-09-29 버그 보고 횡전개). 설비대수 세 표·부하량 환산 화면과 같은 규칙이다.
-    filtered_upeh = scenario_month_table(
-        active_scenario, "RQ_UPEH", effective_start_month, effective_end_month
-    )
-    filtered_run_rate = scenario_month_table(
-        active_scenario, "RQ_RUN_RATE", effective_start_month, effective_end_month
-    )
-    filtered_vital = scenario_month_table(
-        active_scenario, "RQ_VITAL", effective_start_month, effective_end_month
-    )
-    filtered_run_day = scenario_month_table(
-        active_scenario, "RQ_RUN_DAY", effective_start_month, effective_end_month
-    )
-    filtered_lot_ratio = _ratio_month_table(
-        active_scenario, "RQ_LOT_RATIO", effective_start_month, effective_end_month
-    )
-    filtered_wf_ratio = _ratio_month_table(
-        active_scenario, "RQ_WF_RATIO", effective_start_month, effective_end_month
-    )
-    filtered_plan = scenario_month_table(active_scenario, "RQ_PKG_PLAN", start_month, end_month)
-    filtered_yield = scenario_month_table(active_scenario, "RQ_YLD", start_month, end_month)
-    filtered_reqb = scenario_month_table(
-        active_scenario, "RQ_REQB", effective_start_month, effective_end_month
-    )
+    # 조각은 쓰는 자리에서만 자른다(`_EditSlices`).
+    edit_slices = _EditSlices(active_scenario, effective_start_month, effective_end_month)
 
     # 편집표 여섯 개는 자기 탭이 열려 있거나 **적용하지 않은 편집이 남았을 때만** 만든다.
     # 그 밖의 닫힌 탭에서는 month_editor 가 default_table 을 읽기 전에 돌아가므로 만들어 봐야
@@ -242,14 +255,14 @@ try:
     def _edit_table(
         tab: OpenTab,
         editor_key: str,
-        data: pd.DataFrame,
         *,
         table_name: str,
         dimensions: list[str],
         value_column: str | None,
         scope_tab: str,
     ) -> pd.DataFrame:
-        if not _editor_needed(tab, editor_key):
+        # 그리지 않는 회차(닫힌 탭, 편집 없음)에는 편집기가 양식을 읽지 않는다.
+        if not editor_will_render(tab, editor_key):
             return pd.DataFrame()
         return get_reference_edit_table(
             edit_cache_key,
@@ -259,14 +272,13 @@ try:
             value_column=value_column,
             page=PAGE_REFERENCE,
             tab=scope_tab,
-            _data=data,
+            _data=edit_slices.loader(table_name),
             _display_order=display_order,
         )
 
     default_upeh_table = _edit_table(
         upeh_tab,
         EDITOR_UPEH,
-        filtered_upeh,
         table_name="RQ_UPEH",
         dimensions=PERFORMANCE_EDITOR_DIMENSIONS,
         value_column=None,
@@ -275,7 +287,6 @@ try:
     default_run_rate_table = _edit_table(
         run_rate_tab,
         EDITOR_RUN_RATE,
-        filtered_run_rate,
         table_name="RQ_RUN_RATE",
         dimensions=RUN_RATE_DIMENSIONS,
         value_column="CAPA_RUN_RATE",
@@ -284,7 +295,6 @@ try:
     default_vital_table = _edit_table(
         vital_tab,
         EDITOR_VITAL,
-        filtered_vital,
         table_name="RQ_VITAL",
         dimensions=VITAL_DIMENSIONS,
         value_column="편중률",
@@ -293,7 +303,6 @@ try:
     default_run_day_table = _edit_table(
         run_day_tab,
         EDITOR_RUN_DAY,
-        filtered_run_day,
         table_name="RQ_RUN_DAY",
         dimensions=RUN_DAY_DIMENSIONS,
         value_column="RUN_DAY",
@@ -302,7 +311,6 @@ try:
     default_lot_ratio_table = _edit_table(
         lot_ratio_tab,
         EDITOR_LOT_RATIO,
-        filtered_lot_ratio,
         table_name="RQ_LOT_RATIO",
         dimensions=RATIO_DIMENSIONS,
         value_column="Lot 측정률",
@@ -311,19 +319,23 @@ try:
     default_wf_ratio_table = _edit_table(
         wf_ratio_tab,
         EDITOR_WF_RATIO,
-        filtered_wf_ratio,
         table_name="RQ_WF_RATIO",
         dimensions=RATIO_DIMENSIONS,
         value_column="WF측정률",
         scope_tab=TAB_WF_RATIO,
     )
-    # STEP 구성 탭의 요약·목록. 목록은 작업·경로 선택 위젯의 options 라 탭이 닫혀 있어도
-    # 있어야 한다(숨은 탭에서는 그림만 건너뛴다). 그래서 건너뛰는 대신 내용 토큰으로 캐시한다.
-    step_summary, step_catalog = get_route_step_tables(
-        edit_cache_key,
-        _upeh=filtered_upeh,
-        _reqb=filtered_reqb,
-    )
+    # STEP 구성 탭의 요약·목록. 쓰는 곳은 그 탭 본문과 STEP 팝업(경로 선택 상자는 팝업 안이다)
+    # 뿐이라, **탭이 보이거나 팝업이 열린 회차에만** 만든다. 닫힌 탭에서도 만들면 적용마다(새
+    # 토큰) 경로표 전체를 다시 계산하고, 적중해도 RQ_REQB 를 회차마다 자르게 된다. 만들 때는 이 회차
+    # 활성 시나리오·적용 기간 조각(캐시가 빗나갈 때만 자른다)을 내용 토큰으로 캐시한다. 월 형식
+    # 오류는 여기 try 가 받는다 — 밖으로 옮기면 친절한 오류 대신 traceback 이 뜬다.
+    step_tables: tuple[pd.DataFrame, pd.DataFrame] | None = None
+    if not tab_is_hidden(step_tab) or st.session_state.get(DIALOG_KEY) == STEP_DIALOG:
+        step_tables = get_route_step_tables(
+            edit_cache_key,
+            _upeh=edit_slices.loader("RQ_UPEH"),
+            _reqb=edit_slices.loader("RQ_REQB"),
+        )
 except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))
     st.stop()
@@ -406,48 +418,34 @@ mark_pending_tabs(
     },
 )
 
+with equipment_tab:
+    # 세 RQ 를 한 탭에 세로로 쌓으면 편집표 하나가 500px 라 화면이 세 배로 길어진다.
+    # 다른 기준정보 탭과 **같은 편집기**를 쓰되 탭을 한 겹 더 둔다. `현황` 은 세 RQ 를
+    # 합친 조회 표라 편집 대상이 아니다 — 보유·대여를 합친 값에 숫자를 쓸 자리가 없다.
+    # 안쪽 탭을 설비대수 양식보다 먼저 만든다 — 양식은 안쪽 탭마다 그 편집표를 그리는지 보고 만든다.
+    (
+        equipment_own_tab,
+        equipment_lent_tab,
+        equipment_available_tab,
+        equipment_overview_tab,
+    ) = stateful_tabs(EQUIPMENT_TAB_NAMES, key=EQUIPMENT_TAB_KEY)
+
 # 설비대수 세 표는 편집 왕복과 조회 표가 같은 슬라이스를 본다. 창을 갈라 두면
-# `apply_month_updates` 가 화면에 없던 월을 지운다.
-equipment_month_tables = {
-    table_name: scenario_month_table(
-        active_scenario,
-        table_name,
-        effective_start_month,
-        effective_end_month,
-    )
-    for table_name in ("RQ_EQP_OWN", "RQ_EQP_LENT", "RQ_EQP_AVBL")
-}
-available_equipment_table = build_equipment_count_table(
-    equipment_month_tables["RQ_EQP_OWN"],
-    equipment_month_tables["RQ_EQP_LENT"],
-    equipment_month_tables["RQ_EQP_AVBL"],
-    detailed=False,
-)
-detailed_equipment_table = build_equipment_count_table(
-    equipment_month_tables["RQ_EQP_OWN"],
-    equipment_month_tables["RQ_EQP_LENT"],
-    equipment_month_tables["RQ_EQP_AVBL"],
-    detailed=True,
-)
-# 표시순서 스코프 문자열은 DB 공용 프로필의 행 키다. 페이지 이름이 바뀌어도 **이 두 인자는
-# 그대로 둔다** — 안 맞으면 예외가 아니라 정렬이 조용히 사라진다.
-available_equipment_table = apply_display_order(
-    available_equipment_table,
-    display_order,
-    PAGE_REFERENCE,
-    TAB_EQUIPMENT_COUNT,
-)
-detailed_equipment_table = apply_display_order(
-    detailed_equipment_table,
-    display_order,
-    PAGE_REFERENCE,
-    TAB_EQUIPMENT_COUNT,
-)
+# `apply_month_updates` 가 화면에 없던 월을 지운다. 양식은 **그 편집표를 그리는 회차에만**
+# 만든다(`editor_will_render` — `render_month_editor` 의 조기 반환과 같은 함수: 바깥·안쪽 탭이
+# 모두 보이거나 적용하지 않은 편집이 남았다). 그리지 않는 회차에는 편집기가 양식을 읽지 않고,
+# 붙여넣기·적용도 그 편집기를 그린 회차에만 일어난다.
 equipment_edit_tables = {
-    table_name: equipment_count_to_edit_table(
-        equipment_month_tables[table_name], category, value_column
+    table_name: (
+        equipment_count_to_edit_table(edit_slices.get_or_stop(table_name), category, value_column)
+        if editor_will_render(equipment_sub_tab, editor_key, equipment_tab)
+        else pd.DataFrame()
     )
-    for table_name, category, value_column, _ in EQUIPMENT_EDITORS
+    for equipment_sub_tab, (table_name, category, value_column, editor_key) in zip(
+        (equipment_own_tab, equipment_lent_tab, equipment_available_tab),
+        EQUIPMENT_EDITORS,
+        strict=True,
+    )
 }
 
 
@@ -498,8 +496,12 @@ def _step_route_choices(catalog: pd.DataFrame) -> dict[str, str]:
 
 
 @st.dialog("STEP 추가·삭제", width="large", on_dismiss=_close_dialog)
-def _step_dialog() -> None:
-    """고른 경로 STEP 을 복제하거나 지운다. 조회기간의 모든 연결 수요에 함께 반영한다."""
+def _step_dialog(step_catalog: pd.DataFrame) -> None:
+    """고른 경로 STEP 을 복제하거나 지운다. 조회기간의 모든 연결 수요에 함께 반영한다.
+
+    목록과 네 경로 표 조각은 팝업을 연 회차(full run)가 그 회차 활성 시나리오에서 만든 것이다 —
+    팝업 안 조작(fragment 재실행)도 같은 목록 인자와 그 회차 `edit_slices` 로 다시 불린다.
+    """
     # STEP 을 더하거나 빼면 UPEH·측정률 표의 행이 바뀌어 그 표의 적용하지 않은 편집이 버려진다.
     dropped_edits = [
         name
@@ -583,10 +585,8 @@ def _step_dialog() -> None:
         return
     route = {column: selected_route_row[column] for column in ROUTE_GROUP_COLUMNS}
     route_tables = {
-        "RQ_REQB": filtered_reqb,
-        "RQ_UPEH": filtered_upeh,
-        "RQ_LOT_RATIO": filtered_lot_ratio,
-        "RQ_WF_RATIO": filtered_wf_ratio,
+        table_name: edit_slices.get_or_stop(table_name)
+        for table_name in ("RQ_REQB", "RQ_UPEH", "RQ_LOT_RATIO", "RQ_WF_RATIO")
     }
     try:
         if step_mode == "STEP 추가":
@@ -633,82 +633,86 @@ def _step_dialog() -> None:
     st.rerun()
 
 
-with step_tab:
-    if step_catalog.empty:
-        st.info(
-            "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다. "
-            "사이드바에서 조회기간을 넓혀 보세요."
-        )
-    else:
-        # 작업 줄은 표 위다. 추가·삭제는 가끔 하는 쓰기라 팝업으로 연다.
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.button(
-                "STEP 추가·삭제",
-                icon=":material/edit_road:",
-                key="open_capacity_step_dialog",
-                type="primary",
-                on_click=_open_dialog,
-                args=(STEP_DIALOG,),
+# STEP 추가·삭제 알림은 매 회차 꺼낸다 — 그리는 것은 탭 본문을 그리는 회차뿐이다. 꺼내기까지
+# 탭에 묶으면 탭 밖에서 리비전을 불러온 뒤 STEP 탭을 열 때 옛 문구가 남는다.
+flash_message = st.session_state.pop("capacity_step_flash", None)
+if step_tables is not None:
+    step_summary, step_catalog = step_tables
+    with step_tab:
+        if step_catalog.empty:
+            st.info(
+                "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다. "
+                "사이드바에서 조회기간을 넓혀 보세요."
             )
-    flash_message = st.session_state.pop("capacity_step_flash", None)
-    if isinstance(flash_message, str):
-        st.success(flash_message)
-    # 요약 표는 그림이라 숨은 탭에서는 건너뛴다.
-    if not tab_is_hidden(step_tab):
-        # `step_summary` 는 캐시된 프레임이다. 제자리에서 고치면 다음 rerun 이 표시명 프레임을
-        # 계산 입력으로 받으므로 화면 복사본에만 표시명을 입힌다.
-        displayed_step_summary = step_summary.rename(
-            columns={
-                "생산계획년월": "월",
-                "Area_Name": "Area",
-                "양산구분": "양산",
-                "제품정보": "제품",
-                "WF 구분": "속성",
-            }
-        ).copy()
-        displayed_step_summary["공정"] = process_labels.series(displayed_step_summary["공정"])
-        st.dataframe(
-            displayed_step_summary,
-            hide_index=True,
-            width="stretch",
-            height=260,
-            column_config={
-                "STEP 수": st.column_config.NumberColumn(format="%d"),
-                "수요 변형 수": st.column_config.NumberColumn(format="%d"),
-            },
-            key="capacity_step_summary",
-        )
+        else:
+            # 작업 줄은 표 위다. 추가·삭제는 가끔 하는 쓰기라 팝업으로 연다.
+            with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+                st.button(
+                    "STEP 추가·삭제",
+                    icon=":material/edit_road:",
+                    key="open_capacity_step_dialog",
+                    type="primary",
+                    on_click=_open_dialog,
+                    args=(STEP_DIALOG,),
+                )
+        if isinstance(flash_message, str):
+            st.success(flash_message)
+        # 요약 표는 그림이라 숨은 탭에서는 건너뛴다(팝업만 열린 회차).
+        if not tab_is_hidden(step_tab):
+            # `step_summary` 는 캐시된 프레임이다. 제자리에서 고치면 다음 rerun 이 표시명 프레임을
+            # 계산 입력으로 받으므로 화면 복사본에만 표시명을 입힌다.
+            displayed_step_summary = step_summary.rename(
+                columns={
+                    "생산계획년월": "월",
+                    "Area_Name": "Area",
+                    "양산구분": "양산",
+                    "제품정보": "제품",
+                    "WF 구분": "속성",
+                }
+            ).copy()
+            displayed_step_summary["공정"] = process_labels.series(displayed_step_summary["공정"])
+            st.dataframe(
+                displayed_step_summary,
+                hide_index=True,
+                width="stretch",
+                height=260,
+                column_config={
+                    "STEP 수": st.column_config.NumberColumn(format="%d"),
+                    "수요 변형 수": st.column_config.NumberColumn(format="%d"),
+                },
+                key="capacity_step_summary",
+            )
 
     if not step_catalog.empty and st.session_state.get(DIALOG_KEY) == STEP_DIALOG:
-        _step_dialog()
-
-with equipment_tab:
-    # 세 RQ 를 한 탭에 세로로 쌓으면 편집표 하나가 500px 라 화면이 세 배로 길어진다.
-    # 다른 기준정보 탭과 **같은 편집기**를 쓰되 탭을 한 겹 더 둔다. `현황` 은 세 RQ 를
-    # 합친 조회 표라 편집 대상이 아니다 — 보유·대여를 합친 값에 숫자를 쓸 자리가 없다.
-    (
-        equipment_own_tab,
-        equipment_lent_tab,
-        equipment_available_tab,
-        equipment_overview_tab,
-    ) = stateful_tabs(EQUIPMENT_TAB_NAMES, key=EQUIPMENT_TAB_KEY)
+        _step_dialog(step_catalog)
 
 # `현황` 은 보는 표다. 「상세」와 필터는 사이드바 `표 조건` 카드이고, 바깥·안쪽 탭이 **둘 다**
 # 열렸을 때만 선다 — 안쪽 탭은 바깥이 닫혀 있어도 자기 선택만 알기 때문이다. 선택은
-# `persist_state` 로 남는다.
+# `persist_state` 로 남는다. 표도 그 회차에만, 「상세」 값에 맞는 한 벌만 만든다.
 if not (tab_is_hidden(equipment_tab) or tab_is_hidden(equipment_overview_tab)):
+    # 조각은 카드 밖에서 자른다 — 자르다 난 오류 문구가 사이드바 카드가 아니라 본문에 선다.
+    own_count, lent_count, available_count = (
+        edit_slices.get_or_stop(table_name) for table_name, _, _, _ in EQUIPMENT_EDITORS
+    )
     with table_card(CARD_NAME):
         show_equipment_detail = st.toggle(
             "상세",
             key="equipment_count_detail",
             persist_state="session",
         )
-        if show_equipment_detail:
-            equipment_table = detailed_equipment_table.copy()
-            equipment_dimensions = DETAILED_EQUIPMENT_DIMENSIONS
-        else:
-            equipment_table = available_equipment_table.copy()
-            equipment_dimensions = EQUIPMENT_DIMENSIONS
+        equipment_dimensions = (
+            DETAILED_EQUIPMENT_DIMENSIONS if show_equipment_detail else EQUIPMENT_DIMENSIONS
+        )
+        # 표시순서 스코프 문자열은 DB 공용 프로필의 행 키다. 페이지 이름이 바뀌어도 **이 두 인자는
+        # 그대로 둔다** — 안 맞으면 예외가 아니라 정렬이 조용히 사라진다.
+        equipment_table = apply_display_order(
+            build_equipment_count_table(
+                own_count, lent_count, available_count, detailed=show_equipment_detail
+            ),
+            display_order,
+            PAGE_REFERENCE,
+            TAB_EQUIPMENT_COUNT,
+        )
         equipment_table = render_column_filter_controls(
             equipment_table,
             equipment_dimensions,
@@ -728,7 +732,13 @@ if not (tab_is_hidden(equipment_tab) or tab_is_hidden(equipment_overview_tab)):
         # 이 복사본이 붙여넣기 경로에 닿지 않는다.
         displayed_equipment_table["공정"] = process_labels.series(displayed_equipment_table["공정"])
         st.dataframe(
-            classification_styled(displayed_equipment_table, equipment_dimensions),
+            # 고정 uuid — 내용이 같으면 회차마다 같은 메시지라 브라우저가 표를 다시 받지 않는다.
+            # 「상세」 두 꼴은 다른 표라 값을 가른다.
+            classification_styled(
+                displayed_equipment_table,
+                equipment_dimensions,
+                uuid="equipment_count_detail" if show_equipment_detail else "equipment_count",
+            ),
             hide_index=True,
             width="content",
             height=500,
@@ -844,8 +854,9 @@ def _upeh_rows(table: pd.DataFrame) -> pd.DataFrame:
     """UPEH 의 적용 행. 새로 만든 경로의 결손 검사는 `validate_upeh_edit` 가 한다."""
     # 원본(편집표를 만든 같은 기간의 시나리오 `RQ_UPEH`)을 넘겨 **고치지 않은 것은 원본 그대로**
     # 돌려받는다 — Main 행의 ST·MI 행의 UPEH, 값이 빈 실재 행, `Area_Name` 표기(2026-09-29).
-    rows = performance_from_edit_table(table, filtered_upeh)
-    validate_upeh_edit(filtered_upeh, rows, active_scenario["tables"])
+    source = edit_slices.get_or_stop("RQ_UPEH")
+    rows = performance_from_edit_table(table, source)
+    validate_upeh_edit(source, rows, active_scenario["tables"])
     return rows
 
 
@@ -854,16 +865,16 @@ def _required_rows(
     label: str,
     dimensions: list[str],
     value_column: str,
-    source: pd.DataFrame,
 ) -> Callable[[pd.DataFrame], pd.DataFrame]:
     """효율·여유율·일수의 적용 행. **UPEH 경로가 쓰는 칸을 비우거나 0 이하로 하면 막는다.**
 
-    막는 규칙은 `validate_required_edit` 에 있다. `source` 는 편집표를 만든 같은 기간의 원본이다.
-    격자 적용과 붙여넣기가 모두 이 함수를 지난다.
+    막는 규칙은 `validate_required_edit` 에 있다. `source` 는 편집표를 만든 같은 기간의 원본
+    (이 회차 조각)이다. 격자 적용과 붙여넣기가 모두 이 함수를 지난다.
     """
 
     def to_rows(table: pd.DataFrame) -> pd.DataFrame:
         rows = reference_from_edit_table(table, dimensions, value_column, f"{label} 편집값")
+        source = edit_slices.get_or_stop(table_name)
         upeh = active_scenario["tables"]["RQ_UPEH"]
         validate_required_edit(table_name, label, source, rows, value_column, upeh)
         return rows
@@ -920,9 +931,7 @@ EDITORS = (
         run_rate_tab,
         RUN_RATE_DIMENSIONS,
         default_run_rate_table,
-        _required_rows(
-            "RQ_RUN_RATE", "효율", RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE", filtered_run_rate
-        ),
+        _required_rows("RQ_RUN_RATE", "효율", RUN_RATE_DIMENSIONS, "CAPA_RUN_RATE"),
         REMOVED_UNUSED,
     ),
     _Editor(
@@ -931,7 +940,7 @@ EDITORS = (
         vital_tab,
         VITAL_DIMENSIONS,
         default_vital_table,
-        _required_rows("RQ_VITAL", "여유율", VITAL_DIMENSIONS, "편중률", filtered_vital),
+        _required_rows("RQ_VITAL", "여유율", VITAL_DIMENSIONS, "편중률"),
         REMOVED_UNUSED,
     ),
     _Editor(
@@ -962,7 +971,7 @@ EDITORS = (
         run_day_tab,
         RUN_DAY_DIMENSIONS,
         default_run_day_table,
-        _required_rows("RQ_RUN_DAY", "일수", RUN_DAY_DIMENSIONS, "RUN_DAY", filtered_run_day),
+        _required_rows("RQ_RUN_DAY", "일수", RUN_DAY_DIMENSIONS, "RUN_DAY"),
         REMOVED_UNUSED,
     ),
 )
@@ -1014,11 +1023,12 @@ RATIO_EMPTY_NOTICE = (
     "이 기간에 {label} 행이 없어 모든 경로를 측정률 1.0 으로 계산합니다. 이 표에서는 행을 더할 수 "
     "없습니다."
 )
-for ratio_tab, ratio_rows, ratio_label in (
-    (lot_ratio_tab, filtered_lot_ratio, "Lot측정률"),
-    (wf_ratio_tab, filtered_wf_ratio, "WF측정률"),
+for ratio_tab, ratio_table, ratio_label in (
+    (lot_ratio_tab, "RQ_LOT_RATIO", "Lot측정률"),
+    (wf_ratio_tab, "RQ_WF_RATIO", "WF측정률"),
 ):
-    if ratio_rows.empty and not tab_is_hidden(ratio_tab):
+    # 탭이 보일 때만 조각을 본다 — 닫힌 탭 때문에 자르지 않는다.
+    if not tab_is_hidden(ratio_tab) and edit_slices.get_or_stop(ratio_table).empty:
         with ratio_tab:
             st.info(RATIO_EMPTY_NOTICE.format(label=ratio_label))
 

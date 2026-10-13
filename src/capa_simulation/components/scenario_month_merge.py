@@ -31,6 +31,8 @@ from capa_simulation.services.scenario_virtual_products import (
 )
 from capa_simulation.settings import format_month
 
+# 원본을 고르는 두 상자의 역할(`render_source_selector` 의 `key` — 원본 메모의 칸 이름이다).
+MERGE_SOURCE_ROLES = ("merge_base", "merge_donor")
 OVERLAP_LABELS: dict[OverlapPolicy, str] = {
     "reject": "겹치면 저장 차단",
     "base": "겹치는 월은 베이스 사용",
@@ -50,9 +52,13 @@ def render_scenario_month_merge(repository: DuckDBScenarioRepository, database_p
 def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> None:
     left, right = st.columns(2)
     with left:
-        base = render_source_selector(repository, database_path, label="베이스", key="merge_base")
+        base = render_source_selector(
+            repository, database_path, label="베이스", key=MERGE_SOURCE_ROLES[0]
+        )
     with right:
-        donor = render_source_selector(repository, database_path, label="덧붙일", key="merge_donor")
+        donor = render_source_selector(
+            repository, database_path, label="덧붙일", key=MERGE_SOURCE_ROLES[1]
+        )
     if base is None or donor is None:
         return
     base_tables = copy_scenario_tables(base.tables)
