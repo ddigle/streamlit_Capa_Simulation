@@ -21,20 +21,36 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 import pytest
+from plotly.validator_cache import ValidatorCache
 from streamlit.testing.v1 import AppTest
 from test_home_figure_cache_equivalence import PRESETS, _prepare_database
 
-from capa_simulation.components import plotly_layout
+from capa_simulation.components import (
+    grouped_monthly_table,
+    hierarchical_monthly_table,
+    plotly_layout,
+)
 from capa_simulation.components.availability_gap_figure import build_availability_gap_figure
+from capa_simulation.components.monthly_table_base import (
+    COLUMN_LABELS,
+    HEADER_HEIGHT_PX,
+    MONTH_COLUMN_WIDTH_PX,
+    ROW_HEIGHT_PX,
+    build_split_table_figures,
+    header_label,
+    table_height_px,
+)
 from capa_simulation.components.plotly_layout import (
     add_figure_outer_border,
     add_fixed_table_row,
     add_quarter_boundaries,
     append_layout_items,
+    figure_from_spec,
     flush_layout_items,
     plotly_validation,
     plotly_validation_enabled,
 )
+from capa_simulation.design import theme, tokens
 from capa_simulation.home_state import (
     ADVANCE_SHIPMENT_TOGGLE_KEY,
     ADVANCE_TOGGLE_KEY,
@@ -400,3 +416,289 @@ def test_home_figures_match_the_validated_path(
     # 레이아웃 항목이 실제로 있는 그림이어야 이 비교가 무엇을 본다.
     assert any(spec["layout"].get("annotations") for spec in fast.values())
     assert any(spec["layout"].get("shapes") for spec in fast.values())
+
+
+# ---------------------------------------------------------------- 월별 표 두 종류
+
+
+def _legacy_split_table_figures(
+    *,
+    classification_headers: list[str],
+    classification_values: list[list[str]],
+    classification_fill_colors: list[list[str]],
+    column_widths: list[int],
+    month_headers: list[str],
+    month_values: list[list[str]],
+    month_row_colors: list[str],
+    row_count: int,
+) -> tuple[go.Figure, go.Figure]:
+    """고치기 전 `build_split_table_figures` 그대로(줄임 키 + 검증 생성자 + `update_layout`)."""
+    common_layout: dict[str, Any] = {
+        "height": table_height_px(row_count),
+        "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
+        "paper_bgcolor": tokens.CHART_CANVAS,
+        "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
+    }
+    header_style: dict[str, Any] = {
+        "align": "center",
+        "fill_color": tokens.HEADER_BACKGROUND,
+        "line_color": tokens.TRANSPARENT,
+        "font": {"color": tokens.TEXT, "size": 14, "family": tokens.FONT_FAMILY},
+        "height": HEADER_HEIGHT_PX,
+    }
+    cell_font: dict[str, Any] = {"color": tokens.TEXT, "size": 13, "family": tokens.FONT_FAMILY}
+    label_figure = go.Figure(
+        go.Table(
+            columnwidth=column_widths,
+            header={"values": classification_headers, **header_style},
+            cells={
+                "values": classification_values,
+                "align": "center",
+                "fill_color": classification_fill_colors,
+                "line_color": tokens.TRANSPARENT,
+                "font": cell_font,
+                "height": ROW_HEIGHT_PX,
+            },
+        )
+    )
+    month_figure = go.Figure(
+        go.Table(
+            columnwidth=[1.0] * len(month_headers),
+            header={"values": month_headers, **header_style},
+            cells={
+                "values": month_values,
+                "align": "center",
+                "fill_color": [month_row_colors for _ in month_headers],
+                "line_color": tokens.TRANSPARENT,
+                "font": cell_font,
+                "height": ROW_HEIGHT_PX,
+            },
+        )
+    )
+    label_figure.update_layout(**common_layout)
+    month_figure.update_layout(
+        **common_layout,
+        width=len(month_headers) * MONTH_COLUMN_WIDTH_PX,
+        autosize=False,
+    )
+    return label_figure, month_figure
+
+
+def _split_table_input(rows: int, months: int) -> dict[str, Any]:
+    return {
+        "classification_headers": [header_label("공정"), header_label("WF 구분")],
+        "classification_values": [
+            [f"P{index // 3}" if index % 3 == 0 else "" for index in range(rows)],
+            [f"W {index}" for index in range(rows)],
+        ],
+        "classification_fill_colors": [
+            [tokens.SURFACE_CLASSIFICATION if index % 2 else "#EEF2F6" for index in range(rows)]
+        ]
+        * 2,
+        "column_widths": [120, 90],
+        "month_headers": [header_label(f"26.{index + 1:02d}") for index in range(months)],
+        "month_values": [
+            ["" if (row + month) % 5 == 0 else f"{row * 1.5 + month:,.1f}" for row in range(rows)]
+            for month in range(months)
+        ],
+        "month_row_colors": [
+            tokens.SURFACE if row % 2 else tokens.SURFACE_SUBTLE for row in range(rows)
+        ],
+        "row_count": rows,
+    }
+
+
+SPLIT_TABLE_INPUTS = {
+    "작은 표": _split_table_input(4, 3),
+    "표준 목표 Weeknum": _split_table_input(70, 131),
+    "빈 표": _split_table_input(0, 2),
+}
+
+
+@pytest.mark.parametrize("label", list(SPLIT_TABLE_INPUTS))
+@pytest.mark.parametrize("theme_mode", ["light", "dark"])
+def test_split_table_figures_match_the_old_validated_builder(label: str, theme_mode: str) -> None:
+    """spec 으로 세운 표 한 쌍 == 고치기 전 `go.Table(fill_color=...)` + `update_layout` 경로.
+
+    spec 에 밑줄 줄임 키가 남으면 검증 없이는 펼쳐지지 않아 헤더 배경이 사라진다 — 여기서 걸린다.
+    """
+    theme._LOCAL.mode = theme_mode
+    try:
+        kwargs = SPLIT_TABLE_INPUTS[label]
+        legacy = [_as_json(figure) for figure in _legacy_split_table_figures(**kwargs)]
+        fast = [_as_json(figure) for figure in build_split_table_figures(**kwargs)]
+        with plotly_validation():
+            checked = [_as_json(figure) for figure in build_split_table_figures(**kwargs)]
+    finally:
+        theme._LOCAL.mode = None
+
+    assert fast == legacy
+    assert checked == legacy
+    header_fill = legacy[0]["data"][0]["header"]["fill"]
+    assert fast[0]["data"][0]["header"]["fill"] == header_fill == {"color": header_fill["color"]}
+
+
+def _hierarchical_frame(rows: int, months: list[str], *, percent: bool = False) -> pd.DataFrame:
+    data: dict[str, list[Any]] = {
+        "공정": [f"P&<{index // 40}>" for index in range(rows)],
+        "제품정보": [f"DEMO {index // 7}" for index in range(rows)],
+        "WF 구분": ["Core" if index % 2 else "Top" for index in range(rows)],
+    }
+    for position, month in enumerate(months):
+        scale = 100 if percent else 0.3
+        data[month] = [
+            None if (row + position) % 11 == 0 else ((row * 7 + position) % 97) / scale
+            for row in range(rows)
+        ]
+    return pd.DataFrame(data)
+
+
+def _months(count: int) -> list[str]:
+    return [str(202501 + (index // 12) * 100 + index % 12) for index in range(count)]
+
+
+def _weeks(count: int) -> list[str]:
+    return [f"W{index:03d}" for index in range(count)]
+
+
+def _drawn_tables(render: Any, **kwargs: Any) -> list[Any]:
+    """렌더 함수가 `render_split_scroll_table` 에 넘기는 두 Figure 를 JSON 으로 모은다."""
+    drawn: list[Any] = []
+
+    def capture(**captured: Any) -> None:
+        drawn.extend(_as_json(captured[name]) for name in ("label_figure", "month_figure"))
+
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(hierarchical_monthly_table, "render_split_scroll_table", capture)
+        patcher.setattr(grouped_monthly_table, "render_split_scroll_table", capture)
+        render(**kwargs)
+    return drawn
+
+
+_WEEKS = _weeks(131)
+
+TABLE_CASES: dict[str, tuple[Any, dict[str, Any]]] = {
+    "계층 표 · 표준 목표 Weeknum": (
+        hierarchical_monthly_table.render_hierarchical_monthly_table,
+        {
+            "data": _hierarchical_frame(70, _WEEKS)[["공정", "제품정보", *_WEEKS]],
+            "classification_columns": ["공정", "제품정보"],
+            "column_labels": COLUMN_LABELS,
+            "decimal_places": 1,
+            "key": "fast_path_weeks",
+        },
+    ),
+    "계층 표 · WF 속성 2,660행": (
+        hierarchical_monthly_table.render_hierarchical_monthly_table,
+        {
+            "data": _hierarchical_frame(2660, _months(30)),
+            "classification_columns": ["공정", "제품정보", "WF 구분"],
+            "column_labels": COLUMN_LABELS,
+            "decimal_places": 2,
+            "key": "fast_path_wf",
+            "value_labels": {"공정": {"P&<0>": "공정 & 영(0)"}},
+        },
+    ),
+    "계층 표 · 퍼센트": (
+        hierarchical_monthly_table.render_hierarchical_monthly_table,
+        {
+            "data": _hierarchical_frame(30, _months(14), percent=True),
+            "classification_columns": ["공정", "제품정보", "WF 구분"],
+            "column_labels": COLUMN_LABELS,
+            "decimal_places": 1,
+            "key": "fast_path_percent",
+            "value_format": "percent",
+        },
+    ),
+    "계층 표 · 한 행": (
+        hierarchical_monthly_table.render_hierarchical_monthly_table,
+        {
+            "data": _hierarchical_frame(1, _months(2)),
+            "classification_columns": ["공정", "제품정보", "WF 구분"],
+            "column_labels": COLUMN_LABELS,
+            "decimal_places": 0,
+            "key": "fast_path_one",
+        },
+    ),
+    "그룹 표 · 부분합": (
+        grouped_monthly_table.render_grouped_monthly_table,
+        {
+            "data": pd.DataFrame(
+                {
+                    "양산구분": ["양산"] * 6 + ["ER"] * 3,
+                    "제품정보": ["A", "A", "B", "B", "B", "C", "D", "D", "E"],
+                    "Stack": ["8H", "12H", "8H", "12H", "16H", "8H", "8H", "12H", "8H"],
+                    **{
+                        month: [float((row + index) % 4) * 12.5 for row in range(9)]
+                        for index, month in enumerate(_months(15))
+                    },
+                }
+            ),
+            "classification_columns": ["양산구분", "제품정보", "Stack"],
+            "column_labels": COLUMN_LABELS,
+            "decimal_places": 0,
+            "key": "fast_path_grouped",
+        },
+    ),
+}
+
+
+@pytest.mark.parametrize("label", list(TABLE_CASES))
+def test_monthly_tables_match_the_validated_path(label: str) -> None:
+    """표 렌더 함수 전체(spec Figure + 격자 flush)를 두 경로로 돌려 두 Figure 의 JSON 을 견준다."""
+    render, kwargs = TABLE_CASES[label]
+    with plotly_validation():
+        checked = _drawn_tables(render, **kwargs)
+    fast = _drawn_tables(render, **kwargs)
+
+    assert len(checked) == 2
+    assert fast == checked
+    assert fast[1]["layout"]["shapes"], "격자선이 그려진 표여야 비교가 무엇을 본다"
+
+
+def test_a_spec_typo_or_shorthand_falls_back_to_the_validating_constructor() -> None:
+    """spec 키 이름이 Plotly 속성이 아니면 검증 생성자로 세운다. 오타는 예외, 줄임 키는 펼친다."""
+    with pytest.raises(ValueError):
+        figure_from_spec({"data": [{"type": "table", "header": {"fil": {"color": "#FFFFFF"}}}]})
+    with pytest.raises(ValueError):
+        figure_from_spec({"data": [], "layout": {"heigth": 10}})
+
+    shorthand = figure_from_spec(
+        {"data": [{"type": "table", "header": {"values": ["a"], "fill_color": "#FFFFFF"}}]}
+    )
+    assert _as_json(shorthand)["data"][0]["header"]["fill"] == {"color": "#FFFFFF"}
+
+
+def test_a_spec_figure_validates_later_edits_and_holds_no_caller_dicts() -> None:
+    """세운 뒤에는 검증이 다시 켜진다. `go.Figure` 가 spec 을 깊은 복사하므로 호출부 dict 를
+    고쳐도 그림은 그대로다."""
+    header: dict[str, Any] = {"values": ["a"], "fill": {"color": "#FFFFFF"}}
+    figure = figure_from_spec({"data": [{"type": "table", "header": header}], "layout": {}})
+    header["fill"]["color"] = "#000000"
+
+    assert figure.data[0].header.fill.color == "#FFFFFF"
+    with pytest.raises(ValueError):
+        figure.update_layout(heigth=10)
+    with pytest.raises(ValueError):
+        figure.data[0].update(header={"fil": {}})
+
+
+def test_the_spec_path_really_skips_cell_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """빠른 길이 정말 셀 값 검증을 건너뛰는지. 검증 경로는 `cells.values` 검증기를 부른다."""
+    validator = ValidatorCache.get_validator("table.cells", "values")
+    calls: list[int] = []
+    original = validator.validate_coerce
+
+    def counting(value: Any, *args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        return original(value, *args, **kwargs)
+
+    monkeypatch.setattr(validator, "validate_coerce", counting)
+    kwargs = SPLIT_TABLE_INPUTS["작은 표"]
+
+    build_split_table_figures(**kwargs)
+    assert calls == []
+
+    with plotly_validation():
+        build_split_table_figures(**kwargs)
+    assert calls  # 검증 경로는 부른다 — 위 단언이 헛돌지 않는다는 증거.

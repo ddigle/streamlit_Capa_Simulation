@@ -29,7 +29,7 @@ TRANSPARENT_COLOR = tokens.TRANSPARENT
 _PENDING_LAYOUT_ITEMS = "_capa_pending_layout_items"
 
 
-# 앱이 만든 레이아웃 항목을 Plotly 검증 없이 넣을지 정하는 **한 스위치**. 평소에는 꺼져
+# 앱이 만든 레이아웃 항목·표 spec 을 Plotly 검증 없이 넣을지 정하는 **한 스위치**. 평소에는 꺼져
 # 있어(검증을 건너뛴다) 빠르고, 테스트가 `plotly_validation()` 으로 켜면 고치기 전 경로(전부 검증)를
 # 그대로 탄다. 두 경로의 Figure JSON 이 같다는 것을 테스트가 늘 두 경로를 다 돌려 확인한다
 # (`tests/test_plotly_fast_path.py`). 검증을 건너뛰는 길은 Plotly 의 비공개 인자 `_validate` 에
@@ -49,6 +49,61 @@ def plotly_validation() -> Iterator[None]:
 
 def plotly_validation_enabled() -> bool:
     return _PLOTLY_VALIDATION.get()
+
+
+# spec 으로 세울 수 있는 trace 종류. 여기 없는 종류는 검증 생성자로 세운다.
+_SPEC_TRACE_CLASSES: dict[str, Any] = {"table": go.Table}
+
+
+def figure_from_spec(spec: Mapping[str, Any]) -> go.Figure:
+    """평범한 dict(`{"data": [...], "layout": {...}}`) 로 조립한 Figure 를 세운다.
+
+    평소에는 `go.Figure(spec, _validate=False)` 로 검증 생성자를 건너뛴다. 표 하나에 셀 수만 개를
+    다시 검사하던 비용(2,660행 월별 표 약 1초)이 사라진다. 그래서 **spec 은 Plotly 정규형으로 적어야
+    한다** — 밑줄 줄임 키(`fill_color`)는 검증 없이는 펼쳐지지 않고 글자 그대로 남아 Plotly.js 가
+    무시한다. `{"fill": {"color": ...}}` 처럼 중첩 dict 로 쓴다.
+
+    세우기 전에 spec 의 **키 이름**(값 배열은 보지 않는다)을 Plotly 속성 목록에 대 본다.
+    모르는 이름·밑줄 줄임 키가 하나라도 있으면 검증 생성자로 세운다 — 오타는 지금처럼 예외가
+    되고 줄임 키는 펼쳐진다. 값(색 글자·숫자 범위)은 보지 않는다. 같은지는 스위치를 켠 경로와
+    JSON 을 견주는 테스트가 본다.
+
+    세운 뒤에는 검증을 다시 켠다. 그 뒤에 이 Figure 를 고치는 코드는 지금처럼 검증을 거친다.
+    `go.Figure` 가 spec 을 깊은 복사하므로 Figure 가 호출부 dict 를 붙잡지 않는다.
+    """
+    if plotly_validation_enabled() or not _spec_keys_known(spec):
+        return go.Figure(spec)
+    figure = go.Figure(spec, _validate=False)
+    figure._validate = True
+    figure.layout._validate = True
+    for trace in figure.data:
+        trace._validate = True
+    return figure
+
+
+def _spec_keys_known(spec: Mapping[str, Any]) -> bool:
+    if set(spec) - {"data", "layout"}:
+        return False
+    for trace in spec.get("data", ()):
+        if not isinstance(trace, Mapping):
+            return False
+        trace_class = _SPEC_TRACE_CLASSES.get(trace.get("type", ""))
+        if trace_class is None or not _keys_known(trace_class, trace):
+            return False
+    layout = spec.get("layout", {})
+    return isinstance(layout, Mapping) and _keys_known(go.Layout, layout)
+
+
+def _keys_known(owner: Any, item: Mapping[str, Any]) -> bool:
+    """키 이름이 모두 Plotly 속성인지. 하위 dict 는 그 속성의 클래스로 내려가 본다."""
+    for prop, value in item.items():
+        if prop not in owner._valid_props:
+            return False
+        if isinstance(value, Mapping):
+            child = getattr(ValidatorCache.get_validator(owner._path_str, prop), "data_class", None)
+            if child is None or not _keys_known(child, value):
+                return False
+    return True
 
 
 def static_chart_config() -> dict[str, Any]:
