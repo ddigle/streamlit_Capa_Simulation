@@ -253,7 +253,8 @@ def _prop_rule(owner: Any, prop: str) -> tuple[str, Any]:
         rule = ("compound", validator.data_class)
     elif kind == "AngleValidator":
         rule = ("angle", None)
-    elif kind == "StringValidator":
+    elif kind == "StringValidator" and not validator.values:
+        # 정해진 값 목록이 있는 문자열 속성은 도형·주석에 없다. 생기면 아래 else 로 검증 경로다.
         rule = ("string", validator)
     elif kind == "AnyValidator":
         rule = ("any", None)
@@ -292,10 +293,10 @@ def _plain_value(owner: Any, prop: str, value: Any) -> Any:
             return (cast(float, value) + 180) % 360 - 180
         raise _NotPlain(prop)
     if kind == "string":
-        # Plotly 의 문자열 검증: 글자는 그대로, 숫자는 str 로(엄격하지 않을 때), 빈 글자 금지·
-        # 정해진 값은 따로 본다.
+        # Plotly 의 문자열 검증: 글자는 그대로, 숫자는 str 로(엄격하지 않을 때), 빈 글자 금지는
+        # 따로 본다.
         if isinstance(value, str):
-            if (detail.no_blank and not value) or (detail.values and value not in detail.values):
+            if detail.no_blank and not value:
                 raise _NotPlain(prop)
             return value
         if isinstance(value, (int, float)) and not detail.strict:

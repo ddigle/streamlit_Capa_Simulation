@@ -3969,10 +3969,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **반영은 Plotly 검증을 건너뛴다**(한 번에 넣어도 검증이 LOB 월 Figure 67ms 중 61ms 였다).
     `flush_layout_items` 는 항목을 검증이 남기는 꼴(각도 -180~180, None·빈 하위 칸 빼기, `x1`→`x`)의
     **새** dict 로 옮겨 `_validate` 를 끈 채 넣는다 — 호출부 dict 를 Figure 가 붙잡지 않는다. 옮길 수
-    없는 항목(모르는 속성·밑줄 줄임 키·범위 밖 숫자·모르는 색)이 하나라도 있으면 그 Figure 는 예전처럼
-    검증해 넣어 오타는 지금처럼 예외다. 스위치 `plotly_validation()` 을 켜면 고치기 전 경로를 탄다 —
-    `tests/test_plotly_fast_path.py` 가 HOME 네 묶음·덤벨·가용 GAP 그림을 두 경로로 그려 JSON 이 같은지,
-    HOME 에서 검증 경로로 넘어간 Figure 가 없는지 본다. 비공개 `_validate` 라 `plotly>=5.24,<7` 고정에 기댄다.
+    없는 항목(모르는 속성·밑줄 줄임 키·범위 밖 숫자·정수 칸의 소수·빈 글자·모르는 색·규칙이 없는 검증기
+    종류)이 하나라도 있으면 그 Figure 는 예전처럼 검증해 넣어 오타는 지금처럼 예외다. 넣은 뒤 `_validate` 는
+    **원래 값**으로 돌린다(뒤의 `update_layout` 값 오류도 지금처럼 예외). 스위치 `plotly_validation()` 을 켜면
+    고치기 전 경로를 탄다 — `tests/test_plotly_fast_path.py` 가 HOME 네 묶음·덤벨·가용 GAP 그림을 두 경로로
+    그려 JSON 이 같은지, HOME 에서 검증 경로로 넘어간 Figure 가 없는지 본다. 비공개 `_validate` 라
+    `plotly>=5.24,<7` 고정에 기댄다.
   - `figure_from_spec(spec)` 은 dict spec 을 `go.Figure(spec, _validate=False)` 로 세우고 검증을 다시 켠다
     (그 뒤 고치는 코드는 검증을 거친다). 세우기 전에 키 이름만 Plotly 속성 목록에 대 보고, 모르는 이름·
     줄임 키가 있으면 검증 생성자로 세운다. 값(색·숫자 범위)은 보지 않으므로 spec 을 쓰는 곳은 두 경로

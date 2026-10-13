@@ -150,6 +150,14 @@ def test_the_figure_does_not_hold_the_callers_dicts() -> None:
 
     assert figure.layout.shapes[0].line.color == "#000000"
 
+    # 값이 목록인 칸도 그렇다(빠른 길은 목록을 옮기지 않고 검증 경로로 넘긴다).
+    shared_x = [0, 1]
+    figure = _flushed([{"type": "line", "x0": shared_x}], [])
+
+    shared_x[0] = 9
+
+    assert list(figure.layout.shapes[0].x0) == [0, 1]
+
 
 def test_a_misspelled_property_still_raises() -> None:
     """오타가 조용히 통과하면 테두리·라벨이 말없이 사라진 채 캐시에 남는다. 지금처럼 예외다."""
@@ -159,12 +167,42 @@ def test_a_misspelled_property_still_raises() -> None:
         _flushed([], [{"text": "a", "xanchor": "middle"}])
 
 
-def test_values_plotly_would_reject_still_raise() -> None:
-    """범위를 벗어난 숫자(NaN 굵기)와 모르는 색도 검증 경로로 넘어가 지금처럼 예외가 된다."""
+@pytest.mark.parametrize(
+    ("shapes", "annotations"),
+    [
+        pytest.param([{"type": "line", "line": {"width": math.nan}}], [], id="NaN 굵기"),
+        pytest.param([{"type": "rect", "fillcolor": "not-a-color"}], [], id="모르는 색"),
+        pytest.param([], [{"text": "a", "arrowhead": 1.5}], id="정수 칸에 소수"),
+        pytest.param([], [{"text": "a", "font": {"weight": 700.0}}], id="정수 칸에 float"),
+        pytest.param([], [{"text": "a", "font": {"family": ""}}], id="빈 글자 금지"),
+        pytest.param([], [{"text": "a", "font": {"family": 5}}], id="엄격한 글자 칸에 숫자"),
+        pytest.param([{"type": "line", "xrefsrc": 5}], [], id="규칙이 없는 검증기 종류"),
+    ],
+)
+def test_values_plotly_would_reject_still_raise(
+    shapes: list[dict[str, Any]], annotations: list[dict[str, Any]]
+) -> None:
+    """Plotly 가 거절하는 값은 빠른 길도 받지 않고 검증 경로로 넘겨 지금처럼 예외가 된다."""
     with pytest.raises(ValueError):
-        _flushed([{"type": "line", "line": {"width": math.nan}}], [])
+        _flushed(shapes, annotations)
+
+
+def test_a_fast_flush_puts_validation_back_as_it_was() -> None:
+    """빠른 반영은 검증을 잠시 끈다. 끝나면 **원래 값**으로 돌린다 — 켜져 있던 Figure 는 뒤의
+    `update_layout` 값 오류가 지금처럼 예외이고(말없이 캐시에 남지 않는다), 꺼진 채 시작한 Figure 는
+    꺼진 채로 남는다."""
+    figure = _flushed([{"type": "line", "x0": 0, "x1": 1}], [{"text": "a"}])
+
+    assert figure.layout._validate is True
     with pytest.raises(ValueError):
-        _flushed([{"type": "rect", "fillcolor": "not-a-color"}], [])
+        figure.update_layout(height="abc")
+
+    unchecked = go.Figure(_validate=False)
+    append_layout_items(unchecked, shapes=[{"type": "line", "x0": 0, "x1": 1}])
+    flush_layout_items(unchecked)
+
+    assert unchecked.layout._validate is False
+    assert [shape.x1 for shape in unchecked.layout.shapes] == [1]
 
 
 def test_underscore_shorthand_falls_back_to_validation() -> None:
@@ -176,15 +214,17 @@ def test_underscore_shorthand_falls_back_to_validation() -> None:
 
 
 def test_append_after_a_flush_keeps_every_item() -> None:
-    """반영한 뒤 누적함을 버린다. 다시 모을 때는 Figure 에 든 항목에서 연다."""
+    """반영한 뒤 누적함을 버린다. 다시 모을 때는 Figure 에 든 항목에서 연다 — 그 사이 `add_shape`
+    로 바로 넣은 항목도 남는다."""
     figure = go.Figure()
     append_layout_items(figure, shapes=[{"type": "line", "x0": 0, "x1": 1}])
     flush_layout_items(figure)
+    figure.add_shape(type="line", x0=1, x1=2)
     append_layout_items(figure, shapes=[{"type": "line", "x0": 2, "x1": 3}])
     flush_layout_items(figure)
     flush_layout_items(figure)
 
-    assert [shape.x0 for shape in figure.layout.shapes] == [0, 2]
+    assert [shape.x0 for shape in figure.layout.shapes] == [0, 1, 2]
 
 
 def test_the_fast_flush_really_skips_plotly_validation(monkeypatch: pytest.MonkeyPatch) -> None:
