@@ -17,6 +17,7 @@ import pandas as pd
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.equipment_data_workspace import (
+    BUFFER_GENERATION_KEY,
     BUFFER_KEY,
     CONFIRM_DELETE_BUTTON_KEY,
     EDIT_SAVE_BUTTON_KEY,
@@ -180,3 +181,65 @@ def test_deleting_with_nothing_selected_says_so_and_changes_nothing(tmp_path: Pa
     assert not app.exception, [item.message for item in app.exception]
     assert any("선택한 행이 없습니다" in item.value for item in app.info)
     assert _machines(app) == sorted(seed.machines)
+
+
+_SEEDED_GENERATION_KEY = "equipment_workspace_seeded_generation_v1"
+
+
+def _has_unsaved_edits(app: AppTest) -> bool:
+    """`has_unsaved_equipment_edits()` 와 같은 판정(편집본 세대 > 세운 세대)을 세션 값으로 본다."""
+    return int(app.session_state[BUFFER_GENERATION_KEY]) > int(
+        app.session_state[_SEEDED_GENERATION_KEY]
+    )
+
+
+def test_a_confirmed_deletion_alone_counts_as_an_unsaved_edit(tmp_path: Path) -> None:
+    """다른 칸은 고치지 않고 삭제 확정만 한 편집본도 「저장하지 않은 편집」이다.
+
+    세대가 오르지 않으면 테마 단추가 묻지 않고 새로고침하고, 다른 사람이 저장했을 때 삭제가
+    말없이 사라진다(버렸다는 알림이 서지 않는다).
+    """
+    seed = _seeded(tmp_path)
+    app = AppTest.from_string(_page_script(seed.database), default_timeout=120).run()
+    assert not _has_unsaved_edits(app)
+    app.multiselect(key=BUILDING_FILTER_KEY).set_value([seed.building])
+    app.button(key=SELECT_MATCHING_KEY).click().run()
+    app.button(key=DELETE_SELECTED_KEY).click().run()
+    assert not _has_unsaved_edits(app)  # 확정 전에는 편집본이 그대로다
+
+    app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert len(_machines(app)) == len(seed.machines) - len(seed.building_machines)
+    assert _has_unsaved_edits(app)
+
+    # 다른 사람이 새 리비전을 저장하면 이 삭제를 버렸다고 알린다.
+    repository = DuckDBEquipmentRepository(seed.database)
+    latest = repository.load_snapshot(repository.list_revisions()[0].revision_id)
+    repository.save_snapshot(
+        latest.baseline, latest.equipment, latest.downtime, note="다른 사용자 저장"
+    )
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    warning = " ".join(item.value for item in app.warning)
+    assert "다른 사용자가 r2" in warning and "버리고" in warning
+    assert _machines(app) == sorted(seed.machines)
+
+
+def test_undoing_a_deletion_raises_the_buffer_generation_again(tmp_path: Path) -> None:
+    """되살리기도 편집본을 바꾼다 — 세대가 올라야 그 세대를 보는 쪽이 새 편집본을 본다."""
+    seed = _seeded(tmp_path)
+    app = AppTest.from_string(_page_script(seed.database), default_timeout=120).run()
+    app.multiselect(key=BUILDING_FILTER_KEY).set_value([seed.building])
+    app.button(key=SELECT_MATCHING_KEY).click().run()
+    app.button(key=DELETE_SELECTED_KEY).click().run()
+    app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()
+    after_delete = int(app.session_state[BUFFER_GENERATION_KEY])
+
+    app.button(key=UNDO_DELETE_BUTTON_KEY).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert _machines(app) == sorted(seed.machines)
+    assert int(app.session_state[BUFFER_GENERATION_KEY]) > after_delete
+    assert _has_unsaved_edits(app)

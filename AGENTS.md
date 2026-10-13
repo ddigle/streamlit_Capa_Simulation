@@ -3702,7 +3702,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     버퍼·토큰을 세우고, 바깥에서 버퍼를 바꿀 때는 `replace_equipment_buffer` 만 쓴다 — 버퍼만
     갈면 편집표가 옛 `{key}_applied_view` 프레임을 그리다 다음 제출에 그 편집을 되돌린다.
     편집본이 바뀔 때마다 `BUFFER_GENERATION_KEY` 세대가 올라 Space 편집기 epoch 에 실린다.
-    Space 의 미저장 층 캔버스·도면 요소는 `stage_floor_canvas`·`stage_floor_marks` 로 쌓고,
+    일괄 삭제 확정·되살리기처럼 편집표 칸은 그대로이고 행만 바뀌는 쓰기도 `_store_changed_buffer` 로
+    세대를 올린다 — 안 올리면 「저장하지 않은 편집 없음」으로 보여 테마 단추·남의 저장이 그 삭제를
+    알림 없이 버린다. Space 의 미저장 층 캔버스·도면 요소는 `stage_floor_canvas`·`stage_floor_marks` 로 쌓고,
     **저장은 `save_equipment_buffer` 한 곳**이다(RawData 의 두 저장 단추도 이것을 탄다). 세 표와
     대기 중인 캔버스·요소를 한 트랜잭션에 쓰고 두 캐시·편집본을 비운 뒤 알림 문구를 돌려준다.
     `revision_optional` 이면 세 표가 최신 리비전과 같을 때 리비전 없이 캔버스·요소만 쓴다.
