@@ -10,6 +10,8 @@ from typing import Any
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
+from streamlit.testing.v1 import AppTest
+from test_wip_status_page import TEST_SCRIPT
 
 from capa_simulation.components import wip_status_dashboard as dashboard
 from capa_simulation.components.process_labels import ProcessLabels
@@ -137,6 +139,8 @@ CHANGES: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "dtype-only": lambda inputs: {**inputs, "data": inputs["data"].astype({"Flow량": "object"})},
     "routes": _drop_route,
     "product-order": _with(products=list(reversed(PRODUCTS))),
+    # 재공 표는 그대로 두고 조회 구간만 바꾼다 — 축 눈금(날짜)이 달라진다.
+    "start-date": _with(start_date=date(2026, 8, 31)),
     "end-date": _with(end_date=date(2026, 9, 5)),
     "process-label": _with(process_labels=ProcessLabels(labels={"P-Process": "새 이름"})),
     "no-labels": _with(process_labels=None),
@@ -180,3 +184,32 @@ def test_a_failed_build_is_not_remembered(session: dict[str, Any], builds: list[
         dashboard.remembered_wip_status_grid_figure(**{**_inputs(), "products": []})
 
     assert session[dashboard.WIP_GRID_FIGURE_MEMO_KEY] is remembered
+
+
+def test_the_page_leaves_the_remembered_figure_as_built(monkeypatch: pytest.MonkeyPatch) -> None:
+    """화면은 기억한 Figure 를 그리기만 한다. 실제 격자로 두 번 그린 뒤에도 메모의 Figure 는 같은
+    객체이고 그 입력으로 새로 만든 것과 JSON 이 같다 — 받은 쪽이 고치면 다음 회차가 낡은 그림을
+    다시 쓴다."""
+    script = TEST_SCRIPT.replace("dashboard.build_wip_status_grid_figure = capture_figure\n", "")
+    assert script != TEST_SCRIPT
+    app = AppTest.from_string(script, default_timeout=60).run()
+    assert not app.exception, [item.message for item in app.exception]
+    conditions, data, routes, figure = app.session_state[dashboard.WIP_GRID_FIGURE_MEMO_KEY]
+    built = figure.to_json()
+
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[dashboard.WIP_GRID_FIGURE_MEMO_KEY][3] is figure
+    assert figure.to_json() == built
+    mode, products, start_date, end_date, labels = conditions
+    monkeypatch.setattr(theme, "current_mode", lambda: mode)
+    fresh = dashboard.build_wip_status_grid_figure(
+        data,
+        routes,
+        list(products),
+        start_date,
+        end_date,
+        process_labels=ProcessLabels(labels=dict(labels)),
+    )
+    assert fresh.to_json() == built

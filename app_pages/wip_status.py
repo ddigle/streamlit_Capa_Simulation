@@ -261,7 +261,8 @@ try:
         today=today,
     )
     # 그림은 입력 내용이 같으면 직전 회차의 것을 다시 쓴다(세션 한 벌). 위 데이터 준비는 매 회차
-    # 돌아 그 입력을 만든다.
+    # 돌아 그 입력을 만든다. 받은 Figure 는 고치지 않는다 — 다음 회차가 이 객체를 그대로
+    # 다시 그린다.
     figure = remembered_wip_status_grid_figure(
         wip_history,
         selected_routes,
