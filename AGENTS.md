@@ -3806,7 +3806,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 월별 Dynamic·비교·호기별 기여는 `simulation_cache` 의 내용 지문 키 래퍼로 받는다
     (`get_availability_comparison`·`get_monthly_equipment_contributions`) — 조회 결과·공정·표시·분류를
     바꾸는 rerun 은 결과를 고르기만 한다. 호기 필터를 건 행렬(`_unit_filtered_matrix`)은 필터를 건
-    회차에만 돌아 캐시하지 않았다.
+    회차에만 돌아 캐시하지 않았다. 확보율 교차검증은 `get_securement_cross_check`(키 = 비교 키 +
+    소요대수를 낸 시나리오 키)다 — 페이지가 그 시나리오 키를 `required_equipment_key=` 로 넘기고,
+    주지 않으면(홀로 띄우는 테스트) 회차마다 새로 맞댄다.
   - 세 결과 모두 일정 미정 줄 아래에 사용기준 제외 줄을 같은 범위(공정·호기 필터)로 둔다. 호기가
     모두 HBM·EDP 가 아닌 공정은 Dynamic 이 기존보유뿐이거나 없어, 없으면 「기준정보에만 있는 공정」으로
     뜬다 — 그 까닭은 이 줄이 말한다(그 경고 문구는 고치지 않았다).

@@ -51,6 +51,11 @@ from capa_simulation.services.required_shortening import (
     unit_export_frame,
 )
 from capa_simulation.services.route_step_editor import route_step_tables
+from capa_simulation.services.securement_cross_check import (
+    CrossCheck,
+    build_securement_cross_check,
+    dynamic_available_equipment,
+)
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.shortening_baseline import ShorteningBaseline
 from capa_simulation.services.shortening_progress import compare_progress, progress_export_frame
@@ -1238,3 +1243,30 @@ def get_lifecycle_gantt_spans(
         equipment=equipment, downtime=downtime, start_date=start_date, end_date=end_date
     )
     return _cached_lifecycle_gantt_spans(cache_key, equipment, downtime)
+
+
+# (Static/Dynamic 비교 키, 소요대수를 낸 시나리오 키)
+SecurementCrossCheckCacheKey = tuple[AvailabilityComparisonCacheKey, ScenarioCacheKey]
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_securement_cross_check(
+    cache_key: SecurementCrossCheckCacheKey,
+    _monthly: pd.DataFrame,
+    _static: pd.DataFrame,
+    _required_equipment: pd.DataFrame,
+) -> CrossCheck:
+    """Static/Dynamic 「확보율 교차검증」(`build_securement_cross_check`).
+
+    그 보기를 열어 둔 rerun(공정 바꾸기·다른 위젯·사이드바)마다 다시 맞대고 있었다. 입력 셋은 키가
+    모두 정한다 — 월별 Dynamic 은 비교 키 안의 월별 키(구간·기존보유·Cut-off·달·환산비 지문),
+    Static 은 비교 키 안의 Static 지문, 소요대수는 시나리오 키(reference_version·content_token·
+    조회기간)다. 프레임은 해시하지 않는다: `_monthly`·`_static` 은 그 비교 키로 받은 월별·Static,
+    `_required_equipment` 는 그 시나리오 키로 받은(`get_scenario_capacity_and_demand`) 소요대수여야
+    한다. 공정 선택·표시명·반올림은 캐시 밖이다. 맞대지 못하면(`KeyError`·`ValueError`) 캐시에 남지
+    않고 그대로 올라간다.
+    """
+    del cache_key
+    return build_securement_cross_check(
+        _static, dynamic_available_equipment(_monthly), _required_equipment
+    )

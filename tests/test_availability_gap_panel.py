@@ -34,6 +34,7 @@ def _panel_app() -> None:
     from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
     from capa_simulation.components.process_labels import ProcessLabels
     from capa_simulation.services.process_cutoff import prepare_process_cutoff
+    from capa_simulation.services.simulation_cache import frame_digest
 
     spans = pd.DataFrame(
         {
@@ -151,6 +152,11 @@ def _panel_app() -> None:
         else (date(2026, 9, 1), date(2026, 10, 31)),
         conversion_ratios={"EQ-1": 1.5},
         required_equipment=None if st.session_state.get("missing_required", False) else required,
+        # 페이지처럼 소요대수를 낸 시나리오 키를 주면 교차검증을 캐시한다. 여기서는 그 키를 소요대수
+        # 내용 지문으로 만든다 — 키가 내용을 정한다는 페이지의 약속과 같다.
+        required_equipment_key=(0, "panel-" + frame_digest(required), 202610, 202610)
+        if st.session_state.get("keyed_required", False)
+        else None,
         owner_tab=SimpleNamespace(open=is_open),
         units=units,
         process_labels=labels,
@@ -211,6 +217,43 @@ def test_only_the_selected_result_is_drawn_and_counts_keep_their_axes() -> None:
     assert len(app.get("plotly_chart")) == 1
     assert not app.dataframe
     assert app.selectbox(key=PROCESS_FILTER_KEY).value == "Die Attach"
+
+
+@pytest.mark.parametrize("omit_etch", [False, True])
+def test_the_keyed_cross_check_shows_what_the_uncached_one_shows(omit_etch: bool) -> None:
+    """시나리오 키를 주면 교차검증이 캐시를 지나지만 화면은 캐시 없이 맞댄 것과 글자까지 같다.
+    입력(공정 하나 빠짐)이 바뀌면 키도 바뀌어 새로 맞댄 표가 나온다."""
+    from capa_simulation.services.simulation_cache import get_securement_cross_check
+
+    get_securement_cross_check.clear()
+
+    def shown(**state: object) -> tuple[list[str], list[str]]:
+        app = _run(omit_etch=omit_etch, **state)
+        _select_view(app, "확보율 교차검증")
+        table = app.dataframe[0].value.to_json(force_ascii=False)
+        notes = [item.value for item in app.caption] + [item.value for item in app.warning]
+        return [table], notes
+
+    uncached = shown()
+    keyed = shown(keyed_required=True)
+    again = shown(keyed_required=True)
+
+    assert keyed == uncached
+    assert again == uncached
+
+
+def test_the_keyed_cross_check_follows_the_inputs() -> None:
+    """같은 키 꼴이라도 입력이 다르면 다른 표 — 공정 하나를 뺀 입력이 옛 표를 받지 않는다."""
+    from capa_simulation.services.simulation_cache import get_securement_cross_check
+
+    get_securement_cross_check.clear()
+    full = _run(keyed_required=True)
+    _select_view(full, "확보율 교차검증")
+    narrowed = _run(keyed_required=True, omit_etch=True)
+    _select_view(narrowed, "확보율 교차검증")
+
+    assert set(full.dataframe[0].value["공정"]) == {"Die Attach", "Etch"}
+    assert set(narrowed.dataframe[0].value["공정"]) == {"Die Attach"}
 
 
 def test_unmatched_processes_stay_out_of_totals_and_fallback_rows() -> None:

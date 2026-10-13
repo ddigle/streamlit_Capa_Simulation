@@ -67,10 +67,13 @@ from capa_simulation.services.securement_cross_check import (
 )
 from capa_simulation.services.simulation_cache import (
     DynamicMonthlyCacheKey,
+    ScenarioCacheKey,
+    SecurementCrossCheckCacheKey,
     availability_comparison_cache_key,
     dynamic_monthly_cache_key,
     get_availability_comparison,
     get_monthly_equipment_contributions,
+    get_securement_cross_check,
     get_undated_equipment,
     get_usage_excluded_equipment,
 )
@@ -144,6 +147,7 @@ def render_availability_gap_panel(
     span_bounds: tuple[date, date] | None = None,
     conversion_ratios: Mapping[str, float] | None = None,
     required_equipment: pd.DataFrame | None = None,
+    required_equipment_key: ScenarioCacheKey | None = None,
     owner_tab: OpenTab | None = None,
     conditions: DeltaGenerator | None = None,
     units: pd.DataFrame | None = None,
@@ -169,6 +173,10 @@ def render_availability_gap_panel(
     맞지 않는 자리를 알리는 문구(두 쪽 공정명 경고, 한쪽에만 있는 공정의 까닭)도 원본이다 — 설비
     마스터·기준정보에서 고칠 이름이다(AGENTS 8장 ③). 계산 캐시에는 닿지 않는다 — 캐시 결과의
     복사본에만 입힌다.
+
+    `required_equipment_key` 는 `required_equipment` 를 낸 시나리오 키다. 주면 확보율 교차검증을
+    (비교 키, 이 키)로 캐시한다(`get_securement_cross_check`). 주지 않으면 회차마다 새로 맞댄다 —
+    홀로 띄우는 테스트처럼 소요대수가 시나리오 키에서 나오지 않은 경우다.
     """
     if tab_is_hidden(owner_tab):
         return
@@ -205,8 +213,9 @@ def render_availability_gap_panel(
         months=months,
         conversion_ratios=conversion_ratios,
     )
+    comparison_key = availability_comparison_cache_key(monthly_key, static=static)
     monthly, comparison = get_availability_comparison(
-        availability_comparison_cache_key(monthly_key, static=static),
+        comparison_key,
         _spans=spans,
         _baseline=baseline,
         _cutoff=cutoff,
@@ -269,6 +278,9 @@ def render_availability_gap_panel(
             monthly=monthly,
             static_availability=static,
             required_equipment=required_equipment,
+            cache_key=(
+                None if required_equipment_key is None else (comparison_key, required_equipment_key)
+            ),
             process=process,
             labels=labels,
         )
@@ -704,6 +716,7 @@ def _render_securement_cross_check(
     monthly: pd.DataFrame,
     static_availability: pd.DataFrame,
     required_equipment: pd.DataFrame | None,
+    cache_key: SecurementCrossCheckCacheKey | None,
     process: str | None,
     labels: ProcessLabels,
 ) -> None:
@@ -721,10 +734,19 @@ def _render_securement_cross_check(
         return
 
     try:
-        check = build_securement_cross_check(
-            static_availability,
-            dynamic_available_equipment(monthly),
-            required_equipment,
+        check = (
+            build_securement_cross_check(
+                static_availability,
+                dynamic_available_equipment(monthly),
+                required_equipment,
+            )
+            if cache_key is None
+            else get_securement_cross_check(
+                cache_key,
+                _monthly=monthly,
+                _static=static_availability,
+                _required_equipment=required_equipment,
+            )
         )
     except (KeyError, ValueError) as exc:
         st.warning(f"확보율을 맞대지 못했습니다 — {exc}")
