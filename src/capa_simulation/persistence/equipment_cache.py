@@ -2,9 +2,11 @@
 
 """Streamlit cache boundary for the standalone equipment repository."""
 
+import threading
 from dataclasses import fields
 from pathlib import Path
 from typing import Any, TypedDict
+from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
@@ -86,6 +88,25 @@ def load_equipment_snapshot(database_path: str, revision_id: str) -> EquipmentSn
 DatabaseStamp = tuple[tuple[int, int, int] | None, tuple[int, int, int] | None]
 # 「지금 무엇이 저장돼 있나」 읽기(최신 리비전 id·Cut-off)를 stat 이 그대로여도 다시 읽는 간격(초).
 CURRENT_READ_TTL_SECONDS = 15
+# 이 프로세스의 쓰기 세대 — (모듈을 읽은 회차, 비운 횟수). 비울 때마다 오른다.
+WriteGeneration = tuple[str, int]
+_MODULE_EPOCH = uuid4().hex
+_GENERATION_LOCK = threading.Lock()
+_write_generations = {"revision": 0, "cutoff": 0}
+
+
+def _write_generation(kind: str) -> WriteGeneration:
+    with _GENERATION_LOCK:
+        return _MODULE_EPOCH, _write_generations[kind]
+
+
+def _bump_write_generation(kind: str) -> None:
+    """비울 때 부른다. `.clear()` 는 **이미 진행 중인 캐시 미스**를 막지 못한다 — 저장 직전에 옛
+    값을 읽기 시작한 다른 세션의 계산이 비운 뒤에 옛 값을 다시 심는다. 세대를 키에 넣고 비울 때
+    올리면 그 계산은 옛 세대 키 아래에만 값을 남기고, 비운 뒤의 읽기는 새 세대 키로 다시 읽는다.
+    모듈을 다시 읽으면(핫리로드) 회차 값이 바뀌어 옛 세대 키와 겹치지 않는다."""
+    with _GENERATION_LOCK:
+        _write_generations[kind] += 1
 
 
 def database_stamp(database_path: str) -> DatabaseStamp:
@@ -107,8 +128,10 @@ def database_stamp(database_path: str) -> DatabaseStamp:
 
 
 @st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
-def _latest_revision_id(database_path: str, stamp: DatabaseStamp) -> str | None:
-    del stamp
+def _latest_revision_id(
+    database_path: str, stamp: DatabaseStamp, generation: WriteGeneration
+) -> str | None:
+    del stamp, generation
     return get_equipment_repository(database_path).latest_revision_id()
 
 
@@ -118,12 +141,16 @@ def latest_equipment_revision_id(database_path: str) -> str | None:
     가용설비 현황·Space 는 위젯 하나에도 페이지 전체가 다시 돌고, 이 읽기 하나 때문에 회차마다 설비
     DB 를 열었다. **비우는 것이 1차 장치다** — 이 앱의 모든 리비전 쓰기(RawData 저장·입력 저장·일괄
     삭제 저장·Space 배치 저장)는 `save_equipment_buffer` 를 지나 `clear_equipment_snapshot_cache` 로
-    이 캐시를 비운다(같은 프로세스의 다른 세션 저장도 그렇다). 키의 DB·WAL stat 은 이 프로세스 밖의
-    쓰기를 알아채는 2차 장치이고, `CURRENT_READ_TTL_SECONDS` 가 stat 이 못 잡은 경우의 한도다
-    (같은 DB 를 두 앱 프로세스가 함께 여는 배치에서는 남의 저장을 그만큼 늦게 볼 수 있다). 저장 충돌
-    검사(`base_revision_id`)는 저장소가 쓰기 잠금 안에서 그대로 한다.
+    이 캐시를 비우고 쓰기 세대를 올린다(같은 프로세스의 다른 세션 저장도 그렇다). 세대가 키에 있어
+    저장 직전에 시작된 다른 세션의 읽기가 비운 뒤에 옛 id 를 심어도 비운 뒤의 읽기에는 닿지 않는다.
+    키의 DB·WAL stat 은 이 프로세스 밖의 쓰기를 알아채는 2차 장치이고, `CURRENT_READ_TTL_SECONDS`
+    가 stat 이 못 잡은 경우의 한도다(같은 DB 를 두 앱 프로세스가 함께 여는 배치에서는 남의 저장을
+    그만큼 늦게 볼 수 있다). 저장 충돌 검사(`base_revision_id`)는 저장소가 쓰기 잠금 안에서 그대로
+    한다.
     """
-    return _latest_revision_id(database_path, database_stamp(database_path))
+    return _latest_revision_id(
+        database_path, database_stamp(database_path), _write_generation("revision")
+    )
 
 
 def load_latest_equipment_snapshot(database_path: str) -> EquipmentSnapshot | None:
@@ -135,8 +162,10 @@ def load_latest_equipment_snapshot(database_path: str) -> EquipmentSnapshot | No
 
 
 @st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
-def _load_process_cutoff(database_path: str, stamp: DatabaseStamp) -> pd.DataFrame:
-    del stamp
+def _load_process_cutoff(
+    database_path: str, stamp: DatabaseStamp, generation: WriteGeneration
+) -> pd.DataFrame:
+    del stamp, generation
     return get_equipment_repository(database_path).load_process_cutoff()
 
 
@@ -145,12 +174,15 @@ def load_process_cutoff(database_path: str) -> pd.DataFrame:
 
     Preference 탭이 숨어 있어도 회차마다 읽어 Static/Dynamic·필요단축일정에 넘긴다. 최신 리비전 id
     와 같은 방식이다 — 이 앱의 저장(`cutoff_management`)이 성공한 직후 `clear_process_cutoff_cache`
-    로 비우고, DB·WAL stat 과 TTL 이 프로세스 밖의 쓰기를 맡는다.
+    로 비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스 밖의 쓰기를 맡는다.
     """
-    return _load_process_cutoff(database_path, database_stamp(database_path))
+    return _load_process_cutoff(
+        database_path, database_stamp(database_path), _write_generation("cutoff")
+    )
 
 
 def clear_process_cutoff_cache() -> None:
+    _bump_write_generation("cutoff")
     _load_process_cutoff.clear()
 
 
@@ -383,7 +415,9 @@ def clear_floor_layout_cache() -> None:
 
 
 def clear_equipment_snapshot_cache() -> None:
-    """리비전을 쓴 뒤 부른다 — 최신 리비전 id 도 함께 비워 다음 회차가 새 리비전을 읽는다."""
+    """리비전을 쓴 뒤 부른다 — 최신 리비전 id 도 함께 비우고(쓰기 세대도 올린다) 다음 회차가 새
+    리비전을 읽는다."""
+    _bump_write_generation("revision")
     _latest_revision_id.clear()
     _load_equipment_snapshot_payload.clear()
     _load_revision_summaries_payload.clear()

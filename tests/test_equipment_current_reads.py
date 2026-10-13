@@ -6,19 +6,23 @@
 DB·WAL stat 으로 둔 캐시에서 받는다. 놓치면 옛 리비전·옛 Cut-off 로 센 숫자가 나오므로 두 장치를
 따로 본다.
 
-1. **비우기(1차)** — 이 앱의 저장은 저장 직후 캐시를 비운다. stat 을 일부러 고정해도 저장한 값이
-   다음 읽기에 나와야 한다.
+1. **비우기(1차)** — 이 앱의 저장은 저장 직후 캐시를 비우고 쓰기 세대를 올린다. stat 을 일부러
+   고정해도 저장한 값이 다음 읽기에 나와야 한다 — 화면의 저장 경로(RawData·Space·Cut-off)와, 저장
+   직전에 시작된 다른 세션의 읽기가 겹친 경우까지.
 2. **stat(2차)** — 이 앱을 지나지 않은 쓰기(다른 Repository 객체 = 다른 프로세스 흉내)는 파일
-   stat 이 바뀌어 다시 읽는다.
+   stat(본 파일, 연결을 열어 둔 쓰기면 WAL)이 바뀌어 다시 읽는다.
 """
 
 from __future__ import annotations
 
+import threading
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
+import duckdb
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -41,6 +45,7 @@ from capa_simulation.components.equipment_data_workspace import (
     EQUIPMENT_DRAFT_KEY,
 )
 from capa_simulation.persistence import equipment_cache
+from capa_simulation.persistence._sql_helpers import DUCKDB_CONNECT_CONFIG
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_equipment_snapshot_cache,
@@ -156,7 +161,9 @@ def test_clearing_is_enough_even_when_the_stat_looks_the_same(
     clear_equipment_repository()
 
 
-def test_the_stamp_follows_the_database_and_its_wal(tmp_path: Path) -> None:
+def test_the_stamp_follows_the_database_file(tmp_path: Path) -> None:
+    """쓰기마다 연결을 닫는 Repository 는 닫을 때 체크포인트한다 — 본 파일 stat 이 바뀌고 WAL 은
+    남지 않는다."""
     database, outsider = _seeded(tmp_path)
     before = equipment_cache.database_stamp(database)
     assert before[0] is not None
@@ -165,6 +172,86 @@ def test_the_stamp_follows_the_database_and_its_wal(tmp_path: Path) -> None:
 
     assert equipment_cache.database_stamp(database) != before
     assert equipment_cache.database_stamp(str(tmp_path / "없는.duckdb")) == (None, None)
+    clear_equipment_repository()
+
+
+def test_a_commit_that_only_grows_the_wal_is_seen(tmp_path: Path) -> None:
+    """연결 하나를 열어 둔 채 커밋하면(체크포인트 없음) 본 파일은 그대로이고 WAL 만 는다 — stat 의
+    WAL 성분이 그 쓰기를 알아채 비우지 않아도 새 값을 읽는다."""
+    database, outsider = _seeded(tmp_path)
+    assert load_process_cutoff(database)["Cutoff일수"].tolist() == [10.0]
+    first = latest_equipment_revision_id(database)
+    before = equipment_cache.database_stamp(database)
+    keeper = duckdb.connect(database, config=DUCKDB_CONNECT_CONFIG)
+    try:
+        outsider.save_process_cutoff(_cutoff(30.0))
+        saved = outsider.save_snapshot(
+            _baseline(), _equipment().assign(담당자="담당B"), _downtime()
+        )
+        after = equipment_cache.database_stamp(database)
+
+        assert after[0] == before[0]  # 본 파일은 그대로다 — 이 경우는 WAL 만 말해 준다
+        assert before[1] is None and after[1] is not None
+        assert load_process_cutoff(database)["Cutoff일수"].tolist() == [30.0]
+        assert saved is not None
+        assert latest_equipment_revision_id(database) == saved.revision.revision_id != first
+    finally:
+        keeper.close()
+    clear_equipment_repository()
+
+
+def _in_flight_read(
+    monkeypatch: pytest.MonkeyPatch, method: str, read: Callable[[], object]
+) -> tuple[threading.Thread, threading.Event, dict[str, object]]:
+    """다른 세션의 캐시 미스 — DB 에서 값을 읽은 뒤, 캐시에 심기 전에 멈춘다."""
+    original = getattr(DuckDBEquipmentRepository, method)
+    read_done = threading.Event()
+    release = threading.Event()
+
+    def paused(self: DuckDBEquipmentRepository) -> object:
+        value = original(self)
+        read_done.set()
+        release.wait(30)
+        return value
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, method, paused)
+    result: dict[str, object] = {}
+    reader = threading.Thread(target=lambda: result.setdefault("value", read()))
+    reader.start()
+    assert read_done.wait(30)
+    monkeypatch.setattr(DuckDBEquipmentRepository, method, original)
+    return reader, release, result
+
+
+def test_a_read_in_flight_during_a_save_does_not_bring_the_old_value_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장 직전에 시작된 다른 세션의 읽기가 비운 뒤에 옛 값을 심어도, 비운 뒤의 읽기는 새 값이다 —
+    stat 을 고정해도. `.clear()` 만으로는 그 옛 값이 TTL 동안 남았다(쓰기 세대가 막는다)."""
+    database, outsider = _seeded(tmp_path)
+    monkeypatch.setattr(equipment_cache, "database_stamp", lambda _path: (None, None))
+    first = outsider.latest_revision_id()
+
+    reader, release, result = _in_flight_read(
+        monkeypatch, "latest_revision_id", lambda: latest_equipment_revision_id(database)
+    )
+    saved = outsider.save_snapshot(_baseline(), _equipment().assign(담당자="담당B"), _downtime())
+    clear_equipment_snapshot_cache()  # 앱의 저장 경로가 부르는 비우기
+    release.set()
+    reader.join(30)
+    assert result["value"] == first  # 진행 중이던 읽기는 옛 값을 돌려준다(그 회차는 그렇다)
+    assert saved is not None
+    assert latest_equipment_revision_id(database) == saved.revision.revision_id
+
+    reader, release, result = _in_flight_read(
+        monkeypatch, "load_process_cutoff", lambda: load_process_cutoff(database)
+    )
+    outsider.save_process_cutoff(_cutoff(20.0))
+    clear_process_cutoff_cache()
+    release.set()
+    reader.join(30)
+    assert cast(pd.DataFrame, result["value"])["Cutoff일수"].tolist() == [10.0]
+    assert load_process_cutoff(database)["Cutoff일수"].tolist() == [20.0]
     clear_equipment_repository()
 
 
