@@ -434,8 +434,7 @@ with equipment_tab:
 # `apply_month_updates` 가 화면에 없던 월을 지운다. 양식은 **그 편집표를 그리는 회차에만**
 # 만든다(`editor_will_render` — `render_month_editor` 의 조기 반환과 같은 함수: 바깥·안쪽 탭이
 # 모두 보이거나 적용하지 않은 편집이 남았다). 그리지 않는 회차에는 편집기가 양식을 읽지 않고,
-# 붙여넣기·적용도 그 편집기를 그린 회차에만 일어난다. 전에는 설비대수 탭이 닫혀도 세 양식과
-# 현황 두 벌을 매번 만들었다.
+# 붙여넣기·적용도 그 편집기를 그린 회차에만 일어난다.
 equipment_edit_tables = {
     table_name: (
         equipment_count_to_edit_table(edit_slices.get_or_stop(table_name), category, value_column)

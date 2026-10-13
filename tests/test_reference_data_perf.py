@@ -558,14 +558,19 @@ def _open_equipment(app: AppTest, sub_tab: str) -> AppTest:
     return app
 
 
-def _expected_overview(app: AppTest, *, detailed: bool) -> pd.DataFrame:
-    """현황 표를 이 회차 활성 시나리오 조각으로 **직접** 만든다(0 은 빈칸, 표시순서는 빈 프로필)."""
+def _expected_overview(
+    app: AppTest, *, detailed: bool, display_order: pd.DataFrame | None = None
+) -> pd.DataFrame:
+    """현황 표를 이 회차 활성 시나리오 조각으로 **직접** 만든다(0 은 빈칸으로 둔다).
+
+    표시순서는 기본이 빈 프로필이고, `display_order` 를 주면 그 공용 표시순서로 정렬한다.
+    """
     own, lent, available = (
         _month_slice(app, table_name) for table_name, _, _ in EQUIPMENT_EDITORS.values()
     )
     table = apply_display_order(
         build_equipment_count_table(own, lent, available, detailed=detailed),
-        prepare_display_order(_empty_display_order()),
+        prepare_display_order(_empty_display_order() if display_order is None else display_order),
         scopes.PAGE_REFERENCE,
         scopes.TAB_EQUIPMENT_COUNT,
     )
@@ -607,6 +612,58 @@ def test_the_equipment_overview_equals_the_direct_build(detailed: bool) -> None:
     displayed = _frame_with_column(app, "공정").reset_index(drop=True)
     pd.testing.assert_frame_equal(
         displayed, _expected_overview(app, detailed=detailed), check_dtype=False
+    )
+
+
+# 설비대수 현황 범위에 `공정` 내림차순 규칙 하나 — 빈 프로필로는 정렬이 빠지거나 다른 범위로
+# 정렬돼도 차례가 같아 보인다. 픽스처와 기대값이 같은 표를 쓴다.
+EQUIPMENT_DESCENDING_ORDER = pd.DataFrame(
+    [
+        {
+            "페이지 구분": scopes.PAGE_REFERENCE,
+            "탭 구분": scopes.TAB_EQUIPMENT_COUNT,
+            "정렬우선순위": 1,
+            "분류컬럼": "공정",
+            "정렬방식": "내림차순",
+            "분류값": "",
+            "값표시순서": None,
+            "활성여부": "Y",
+        }
+    ]
+)
+_EQUIPMENT_DESCENDING = (
+    "\nfrom capa_simulation.services import display_order_scopes as _scopes\n"
+    'tables["RQ_DISPLAY_ORDER"] = pd.DataFrame([{\n'
+    '    "페이지 구분": _scopes.PAGE_REFERENCE,\n'
+    '    "탭 구분": _scopes.TAB_EQUIPMENT_COUNT,\n'
+    '    "정렬우선순위": 1,\n'
+    '    "분류컬럼": "공정",\n'
+    '    "정렬방식": "내림차순",\n'
+    '    "분류값": "",\n'
+    '    "값표시순서": None,\n'
+    '    "활성여부": "Y",\n'
+    "}])\n"
+)
+
+
+@pytest.mark.parametrize("detailed", [False, True], ids=["summary", "detailed"])
+def test_the_equipment_overview_follows_a_non_empty_display_order(detailed: bool) -> None:
+    """현황 표는 공용 표시순서의 설비대수 현황 범위 규칙으로 정렬한 표와 값·차례가 같다."""
+    script = TWO_PROCESS_TEST_SCRIPT.replace(
+        "\nactive = {", _EQUIPMENT_DESCENDING + "\nactive = {", 1
+    )
+    app = AppTest.from_string(
+        _probed(script, f"test-ref-perf-overview-order-{detailed}"), default_timeout=60
+    )
+    app.session_state["equipment_count_detail"] = detailed
+    app = _open_equipment(app, "현황")
+    displayed = _frame_with_column(app, "공정").reset_index(drop=True)
+    assert displayed["공정"].iloc[0] == "Process-B"
+    assert displayed["공정"].iloc[-1] == "Process-A"
+    pd.testing.assert_frame_equal(
+        displayed,
+        _expected_overview(app, detailed=detailed, display_order=EQUIPMENT_DESCENDING_ORDER),
+        check_dtype=False,
     )
 
 
