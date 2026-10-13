@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import threading
 import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
@@ -75,12 +76,40 @@ def _may_be_unnamed_own_lock(exc: BaseException, database_path: Path) -> bool:
     )
 
 
+class _PinSlot:
+    """핀 대상 경로 하나의 상태 — 겹친 블록 수와, 첫 연결 때 잡은 유휴 연결."""
+
+    __slots__ = ("connection", "depth")
+
+    def __init__(self) -> None:
+        self.depth = 0
+        self.connection: duckdb.DuckDBPyConnection | None = None
+
+
+class _PinTargets(threading.local):
+    """스레드(=세션의 스크립트 실행)마다 따로인 핀 대상. 세션끼리 핀이 섞이지 않는다."""
+
+    def __init__(self) -> None:
+        self.slots: dict[str, _PinSlot] = {}
+
+
+_PIN_TARGETS = _PinTargets()
+
+
+def _pin_key(database_path: Path | str) -> str:
+    """핀 대상을 견주는 열쇠. 상대·절대 경로가 섞여도 같은 파일이면 같다."""
+    return str(Path(database_path).resolve())
+
+
 def connect(database_path: Path) -> duckdb.DuckDBPyConnection:
     """같은 파일에 붙는 모든 연결이 동일한 configuration 을 쓰도록 한 곳에서 연다.
 
     이 프로세스 자신이 쥔 잠금으로 실패하면 `OWN_LOCK_WAIT_SECONDS` 까지 다시 연다(위 상수의
     설명). 쥔 프로세스를 적지 않은 공유 위반은 `UNNAMED_LOCK_WAIT_SECONDS` 까지만 다시 연다.
     **다른** 프로세스가 적힌 잠금과 그 밖의 실패(없는 폴더 등)는 곧바로 올린다.
+
+    이 스레드에서 그 파일을 대상으로 한 `pinned_connections` 블록이 돌고 있고 아직 핀이 없으면,
+    연결에 성공한 직후 같은 인스턴스에 유휴 연결 하나를 더 잡아 그 블록의 핀으로 둔다.
     """
     # configuration 이 다른 연결이 하나라도 섞이면 DuckDB 가 "Can't open a connection to
     # same database file with a different configuration" 로 연결 자체를 거부한다.
@@ -88,7 +117,8 @@ def connect(database_path: Path) -> duckdb.DuckDBPyConnection:
     started = time.monotonic()
     while True:
         try:
-            return duckdb.connect(str(database_path), config=DUCKDB_CONNECT_CONFIG)
+            connection = duckdb.connect(str(database_path), config=DUCKDB_CONNECT_CONFIG)
+            break
         except duckdb.IOException as exc:
             if is_own_process_lock(exc):
                 budget = OWN_LOCK_WAIT_SECONDS
@@ -99,35 +129,78 @@ def connect(database_path: Path) -> duckdb.DuckDBPyConnection:
             if time.monotonic() - started >= budget:
                 raise
             time.sleep(OWN_LOCK_POLL_SECONDS)
+    try:
+        _take_pin(database_path)
+    except BaseException:
+        connection.close()
+        raise
+    return connection
+
+
+def _take_pin(database_path: Path) -> None:
+    """방금 연 파일이 이 스레드의 핀 대상이고 핀이 아직 없으면 유휴 연결 하나를 잡는다.
+
+    방금 연 연결이 인스턴스를 쥐고 있으므로 같은 인스턴스에 붙어 곧바로 끝난다. `connect()` 를
+    다시 부르지 않는다(되부름). 실패하면 건너뛴다 — 핀은 덤이고, 실제 연결은 이미 열렸다.
+    """
+    slots = _PIN_TARGETS.slots
+    if not slots:
+        return
+    slot = slots.get(_pin_key(database_path))
+    if slot is None or slot.connection is not None:
+        return
+    with suppress(duckdb.Error):
+        slot.connection = duckdb.connect(str(database_path), config=DUCKDB_CONNECT_CONFIG)
 
 
 @contextmanager
 def pinned_connections(*database_paths: Path) -> Iterator[None]:
-    """블록이 도는 동안 DB 파일마다 유휴 연결 하나를 잡아 둔다.
+    """블록이 도는 동안, 그 DB 파일을 **처음 여는 순간부터** 유휴 연결 하나를 잡아 둔다.
 
     DuckDB 는 한 프로세스 안에서 같은 파일의 인스턴스를 공유한다. 연결이 하나라도 열려
     있으면 다음 `connect()` 는 인스턴스를 새로 만들지 않아 0.2ms 로 끝나고, 없으면 48ms 다.
     작업별 연결을 여닫는 설계는 그대로 두고, app.py 가 rerun 한 번을 이 블록으로 감싸
     사이드바 3콜이 인스턴스를 세 번 만들던 것(161ms)을 한 번(핀 48ms + 10ms)으로 줄인다.
 
+    핀은 게으르다. 블록에 들어설 때는 「이 스레드에서 이 파일은 핀 대상」만 적고, 블록 안에서
+    그 파일의 첫 `connect()` 가 성공한 직후에 핀을 잡는다. 그 rerun 에 DB 를 한 번도 읽지 않는
+    화면은 인스턴스를 만들지 않는다(블록 시작에 열면 읽지 않는 화면도 회차마다 인스턴스 생성
+    20ms 안팎을 낸다). 읽는 회차는 첫 읽기부터 블록 끝까지 인스턴스를 쥐어 하나를 나눠 쓴다.
+    그 앞에는 읽은 것이 없으므로 그 사이에 파일이 바뀌어도 섞인 상태가 나오지 않는다.
+
+    같은 파일의 블록이 겹치면(실행 핀 안에서 시나리오 팝업 본문이 다시 잡는 경우) 안쪽은 겹친
+    수만 올리고 내린다. 핀은 **가장 바깥 블록이 끝날 때만** 닫는다 — 안쪽이 닫으면 그 뒤 읽기마다
+    인스턴스를 다시 만든다. 대상은 스레드마다 따로라 다른 세션·다른 스레드(내려받기 콜러블 등)의
+    연결은 핀을 걸지 않고, 블록 밖의 연결(핀을 스스로 잡지 않는 콜백, 프래그먼트만 도는 실행)은
+    각자 연다.
+
     rerun 이 끝나면 풀린다. 상시 앵커를 두지 않는 이유: 배치가 같은 파일을 갱신하는
     환경에서는 rerun 사이 틈이 있어야 하고(Windows 는 교체 실패, Linux 는 옛 inode 를 계속
     읽는다), 핀이 닫히며 인스턴스가 내려갈 때 WAL 체크포인트가 돈다.
 
-    열지 못하는 파일(다른 프로세스의 잠금, 없는 폴더)은 건너뛴다. 뒤의 실제 연결이 같은
-    오류를 내고 그 자리의 안내가 처리하므로 여기서 판단하지 않는다. 다른 세션의 핀이 닫히며
-    인스턴스가 내려가는 중이면 `connect()` 가 그 체크포인트를 기다렸다 연다.
+    열지 못하는 파일(다른 프로세스의 잠금, 없는 폴더)은 실제 연결이 그 오류를 내고 그 자리의
+    안내가 처리한다. 핀은 실제 연결이 성공한 뒤에만 잡으므로 핀 자체가 잠금으로 실패하지 않는다.
+    다른 세션의 핀이 닫히며 인스턴스가 내려가는 중이면 `connect()` 가 그 체크포인트를 기다렸다 연다.
     """
-    pins: list[duckdb.DuckDBPyConnection] = []
-    for database_path in database_paths:
-        try:
-            pins.append(connect(database_path))
-        except duckdb.Error:
-            continue
+    slots = _PIN_TARGETS.slots
+    keys = [_pin_key(database_path) for database_path in database_paths]
+    for key in keys:
+        slot = slots.get(key)
+        if slot is None:
+            slot = slots[key] = _PinSlot()
+        slot.depth += 1
     try:
         yield
     finally:
-        for pin in reversed(pins):
+        released: list[duckdb.DuckDBPyConnection] = []
+        for key in reversed(keys):
+            slot = slots[key]
+            slot.depth -= 1
+            if slot.depth == 0:
+                del slots[key]
+                if slot.connection is not None:
+                    released.append(slot.connection)
+        for pin in released:
             pin.close()
 
 

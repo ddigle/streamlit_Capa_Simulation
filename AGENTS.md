@@ -1802,10 +1802,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `app.py` 는 rerun 한 번을 `pinned_connections(DUCKDB_PATH)` 로 감싸 작업별 연결이
     인스턴스를 다시 만들지 않게 한다(연결당 48ms → 0.2ms). rerun 이 끝나면 풀리는 핀이지
     상시 앵커가 아니다 — 배치가 DB 파일을 갱신하는 환경을 위해 일부러 그렇게 둔다.
+    핀은 **게으르다**: 블록에 들어설 때는 스레드 로컬에 대상(`resolve()` 한 경로)만 적고, 블록
+    안에서 그 파일의 첫 `connect()` 가 성공한 직후 유휴 연결 하나를 잡는다. 그 회차에 DB 를
+    읽지 않는 화면은 인스턴스를 열지 않고(블록 시작에 열면 회차마다 약 20ms), 읽는 회차는
+    「읽기 N + 핀 1」이다. 같은 파일의 블록이 겹치면(실행 핀 안의 시나리오 팝업 본문) **가장
+    바깥 블록이 끝날 때만** 닫는다. 핀을 아예 빼면 읽는 화면이 연결마다 인스턴스를 다시 만들어
+    더 느려진다. 위젯 콜백은 실행 핀 밖(스크립트 본문 전)에서 돌므로 DB 를 여러 번 여는 콜백은
+    스스로 핀을 잡는다(HOME 비교 시나리오·리비전 저장 `home_preference._replace_comparison_profile`).
     설비 DB 는 **rerun 한 번에 여러 번 여는 화면에서만** 같은 수명의 핀을 더한다.
     `navigation.PageSpec.uses_equipment_db` 가 그 화면을 선언하고(지금은 가용설비 현황
     하나) `app.py` 가 그 회차의 `navigation.run()` 을 `pinned_connections(EQUIPMENT_DUCKDB_PATH)`
-    로 감싼다. 전역으로 걸지 않는다 — 설비 DB 를 안 보는 화면마다 핀을 여는 비용이 붙는다.
+    로 감싼다. 선언한 화면에만 건다.
     설비 DB 를 한 번만 여는 화면(Space 현황·표준 목표·재공)은 이득이 없어 선언하지 않는다.
   - 불변 `revision_id`의 전체 스냅샷과 공용 표시순서 프로필을 `st.cache_data`로 여러 세션에
     공유한다. 표시순서는 교체 시 `clear_global_display_order_cache()`로 명시 무효화한다

@@ -1321,8 +1321,8 @@ def test_every_declared_condition_tab_is_a_real_label() -> None:
 
 # ----------------------------------------------------------------- 설비 DB 핀
 #
-# 설비 DB 핀은 rerun 한 번만 사는 **화면 한정** 핀이다. 전역으로 걸면 설비 DB 를 안 보는
-# 화면마다 인스턴스 생성 비용이 붙고, 선언과 어긋나면 이득이 조용히 사라진다.
+# 설비 DB 핀은 rerun 한 번만 사는 **화면 한정** 핀이다. 선언과 어긋나면 이득이 조용히
+# 사라진다. 핀은 첫 연결 때 잡히는 게으른 핀이라, 대상으로 적는 것과 실제로 여는 것을 따로 본다.
 
 
 def test_only_the_equipment_status_screen_declares_the_equipment_db_pin() -> None:
@@ -1362,6 +1362,79 @@ def test_the_equipment_db_is_pinned_only_on_the_screen_that_declares_it(
         app.switch_page(path).run()
         assert not list(app.exception), [element.message for element in app.exception]
         assert pinned == [(settings.DUCKDB_PATH,)], path
+
+
+def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """실행 핀은 게으르다 — 그 회차에 DB 를 읽는 저장소 연결이 있을 때만 핀 하나를 더한다.
+
+    같은 화면 재실행에서 시나리오 DB 를 읽지 않는 화면(Chatbot)은 그 DB 를 한 번도 열지 않고,
+    읽는 화면은 「읽기 N + 핀 1」로 인스턴스 하나를 나눠 쓴다. 핀을 블록 시작에 열면 읽지 않는
+    화면도 회차마다 인스턴스 생성(20ms 안팎)을 내고, 핀을 아예 빼면 읽는 화면이 읽기마다
+    인스턴스를 다시 만든다 — 둘 다 이 테스트가 잡는다.
+    """
+    import duckdb
+
+    import capa_simulation.components.intro_summary as intro_summary
+    import capa_simulation.persistence.equipment_repository as equipment_repository
+    import capa_simulation.persistence.repository as repository
+    import capa_simulation.settings as settings
+
+    # 입장 화면 요약의 공식버전 재확인(`RECHECK_SECONDS`)은 첫 회차 한 번으로 고정한다. 측정 회차
+    # 전에 그 주기가 지나면 어느 화면이든 DB 를 한 번 더 읽어, 느린 환경에서 Chatbot 의 「읽기 0」이
+    # 시각에 따라 흔들린다.
+    monkeypatch.setattr(intro_summary, "RECHECK_SECONDS", float("inf"))
+    scenario_db = str(settings.DUCKDB_PATH.resolve())
+    equipment_db = str(settings.EQUIPMENT_DUCKDB_PATH.resolve())
+    opened: list[str] = []
+    reads: list[str] = []
+    real_connect = duckdb.connect
+
+    def counted_open(*args: Any, **kwargs: Any) -> Any:
+        opened.append(str(Path(str(args[0])).resolve()))
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(duckdb, "connect", counted_open)
+    for module in (repository, equipment_repository):
+        original = module.connect
+
+        def counted_read(database_path: Path, __original: Any = original) -> Any:
+            reads.append(str(Path(database_path).resolve()))
+            return __original(database_path)
+
+        monkeypatch.setattr(module, "connect", counted_read)
+
+    def warm_rerun(path: str) -> tuple[dict[str, int], dict[str, int]]:
+        app.switch_page(path).run()
+        app.run()
+        opened.clear()
+        reads.clear()
+        app.run()
+        assert not list(app.exception), [element.message for element in app.exception]
+        return (
+            {db: opened.count(db) for db in (scenario_db, equipment_db)},
+            {db: reads.count(db) for db in (scenario_db, equipment_db)},
+        )
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    scenario_reads: dict[str, int] = {}
+    for path in (CAPA_CHATBOT.path, HOME.path, SCENARIO_MANAGEMENT.path):
+        opens, read_counts = warm_rerun(path)
+        scenario_reads[path] = read_counts[scenario_db]
+        expected = read_counts[scenario_db] + (1 if read_counts[scenario_db] else 0)
+        assert opens[scenario_db] == expected, (path, opens, read_counts)
+    # Chatbot 은 시나리오 DB 를 읽지 않아 열지도 않는다. 시나리오 관리는 회차마다 목록을 읽으므로
+    # 핀이 실제로 잡히는 길도 지난다.
+    assert scenario_reads[CAPA_CHATBOT.path] == 0
+    assert scenario_reads[SCENARIO_MANAGEMENT.path] >= 2
+
+    # 설비 DB 핀을 선언한 화면도 같은 꼴이다(설비 DB 는 그 화면에서 회차마다 읽힌다).
+    opens, read_counts = warm_rerun(DYNAMIC_CAPA_SUBPAGES[0].path)
+    assert read_counts[equipment_db] >= 1
+    assert opens[equipment_db] == read_counts[equipment_db] + 1
 
 
 def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
