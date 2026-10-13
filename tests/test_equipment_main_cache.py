@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from datetime import date, timedelta
 from typing import cast
@@ -20,11 +21,19 @@ from typing import cast
 import pandas as pd
 import pytest
 from pandas.testing import assert_frame_equal
+from streamlit.testing.v1 import AppTest
+from test_equipment_explorer import _render_fixture
 
+from capa_simulation.components.equipment_explorer import (
+    QUESTION_KEY,
+    SMALL_PROCESS_KEY,
+    START_DATE_KEY,
+)
 from capa_simulation.services import simulation_cache
 from capa_simulation.services.equipment_availability import (
     _lifecycle_breakpoints,
     _month_bounds,
+    build_equipment_lifecycle_spans,
     build_inactive_equipment,
     build_inactive_equipment_in_month,
     build_inactive_equipment_month_view,
@@ -348,3 +357,138 @@ def test_a_caller_editing_the_cached_frame_does_not_change_the_next_read() -> No
     _, again = simulation_cache.get_inactive_equipment_month(equipment, downtime, month=ANCHOR)
 
     assert_frame_equal(again, expected)
+
+
+# ------------------------------------------------------------------ 생애주기 일정(Gantt) 구간
+
+GANTT_START = ANCHOR - timedelta(days=30)
+GANTT_END = ANCHOR + timedelta(days=90)
+
+
+def _fresh_gantt(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, start: date, end: date
+) -> pd.DataFrame:
+    """고치기 전 경로 — 화면이 캐시 없이 부르던 그대로(지분 없이)."""
+    return build_equipment_lifecycle_spans(equipment, downtime, start_date=start, end_date=end)
+
+
+@pytest.mark.parametrize(
+    "change", ["process_filter", "downtime_row", "master_cell", "start", "end"]
+)
+def test_cached_gantt_spans_follow_every_input(
+    change: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    simulation_cache._cached_lifecycle_gantt_spans.clear()
+    equipment, downtime = _fleet()
+    start, end = GANTT_START, GANTT_END
+    base = simulation_cache.get_lifecycle_gantt_spans(
+        equipment, downtime, start_date=start, end_date=end
+    )
+    assert_frame_equal(base, _fresh_gantt(equipment, downtime, start, end))
+
+    if change == "process_filter":
+        equipment, downtime = _filtered(equipment, downtime, ("Final Test", "Burn-In"))
+    elif change == "downtime_row":
+        downtime = _without_downtime_of(downtime, "MOD-01C")
+    elif change == "master_cell":
+        equipment = equipment.copy()
+        moved = equipment[EQUIPMENT_ID_COLUMN].eq("MOD-01B")
+        equipment.loc[moved, "반출일정"] = equipment.loc[moved, "반출일정"] + pd.Timedelta(days=40)
+    elif change == "start":
+        start = start + timedelta(days=20)
+    else:
+        end = end - timedelta(days=45)
+    built = _counting(
+        monkeypatch, "build_equipment_lifecycle_spans", build_equipment_lifecycle_spans
+    )
+    cached = simulation_cache.get_lifecycle_gantt_spans(
+        equipment, downtime, start_date=start, end_date=end
+    )
+    fresh = _fresh_gantt(equipment, downtime, start, end)
+
+    assert len(built) == 1
+    assert_frame_equal(cached, fresh)
+    assert not fresh.equals(base)
+
+    again = simulation_cache.get_lifecycle_gantt_spans(
+        equipment, downtime, start_date=start, end_date=end
+    )
+    assert len(built) == 1
+    assert_frame_equal(again, fresh)
+
+
+def test_gantt_spans_and_counting_spans_do_not_stand_in_for_each_other() -> None:
+    """같은 키 꼴이지만 다른 캐시다 — 세는 구간(지분·집계분류로도 끊는다)이 그림에 나오면
+    안 된다."""
+    simulation_cache._cached_lifecycle_gantt_spans.clear()
+    simulation_cache.get_equipment_lifecycle_spans.clear()
+    equipment, downtime = _fleet()
+    key = simulation_cache.equipment_span_cache_key(
+        equipment=equipment, downtime=downtime, start_date=GANTT_START, end_date=GANTT_END
+    )
+    counting = simulation_cache.get_equipment_lifecycle_spans(
+        key, _equipment=equipment, _downtime=downtime
+    )
+
+    gantt = simulation_cache.get_lifecycle_gantt_spans(
+        equipment, downtime, start_date=GANTT_START, end_date=GANTT_END
+    )
+
+    assert_frame_equal(gantt, _fresh_gantt(equipment, downtime, GANTT_START, GANTT_END))
+    assert_frame_equal(
+        counting,
+        build_equipment_lifecycle_spans(
+            equipment,
+            downtime,
+            start_date=GANTT_START,
+            end_date=GANTT_END,
+            with_unit_share=True,
+        ),
+    )
+    # 모듈 반출로 형제의 지분이 바뀌는 날, 세는 구간만 끊긴다.
+    assert len(counting) > len(gantt)
+
+
+def _gantt_units(app: AppTest) -> set[str]:
+    spec = json.loads(app.get("plotly_chart")[0].proto.spec)
+    return {str(unit) for trace in spec["data"] for unit in trace.get("y", [])}
+
+
+def _gantt_spec(app: AppTest) -> str:
+    return str(app.get("plotly_chart")[0].proto.spec)
+
+
+def test_the_gantt_view_redraws_for_filter_period_and_master_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """화면: 같은 조건의 rerun 은 구간을 다시 만들지 않고 같은 그림이다. 필터·기간·마스터를
+    바꾸면 새 그림이다."""
+    simulation_cache._cached_lifecycle_gantt_spans.clear()
+    built = _counting(
+        monkeypatch, "build_equipment_lifecycle_spans", build_equipment_lifecycle_spans
+    )
+    app = AppTest.from_function(_render_fixture, default_timeout=30).run()
+    app.segmented_control(QUESTION_KEY).set_value("호기 현황").run()
+    app.selectbox("equipment_explorer_unit_view").set_value("생애주기 일정").run()
+    assert not app.exception
+    base = _gantt_spec(app)
+    assert _gantt_units(app) == {"EQ-REPAIR", "EQ-READY", "EQ-QUAL", "EQ-OTHER"}
+    count = len(built)
+
+    app.run()
+    assert len(built) == count
+    assert _gantt_spec(app) == base
+
+    app.multiselect(SMALL_PROCESS_KEY).set_value(["Other"]).run()
+    assert _gantt_units(app) == {"EQ-OTHER"}
+    app.multiselect(SMALL_PROCESS_KEY).set_value([]).run()
+    assert _gantt_spec(app) == base
+
+    app.date_input(START_DATE_KEY).set_value(date(2026, 10, 3)).run()
+    assert not app.exception
+    assert _gantt_spec(app) != base
+
+    app.session_state["undated_unit"] = True
+    app.run()
+    assert not app.exception
+    assert "EQ-NODATE" in _gantt_units(app)

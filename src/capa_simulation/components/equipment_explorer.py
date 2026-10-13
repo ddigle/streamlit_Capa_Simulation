@@ -20,7 +20,6 @@ from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import prune_list_selection
 from capa_simulation.services.equipment_availability import (
-    build_equipment_lifecycle_spans,
     build_equipment_status_as_of,
     build_inactive_equipment,
     build_milestone_transition_events,
@@ -46,6 +45,7 @@ from capa_simulation.services.equipment_units import (
 )
 from capa_simulation.services.simulation_cache import (
     get_inactive_equipment_month,
+    get_lifecycle_gantt_spans,
     get_undated_equipment,
     get_usage_excluded_equipment,
     get_weekly_equipment_availability,
@@ -721,7 +721,8 @@ def render_equipment_explorer(
                     )
             elif view == "생애주기 일정":
                 st.markdown("#### 호기별 생애주기 일정")
-                spans = build_equipment_lifecycle_spans(
+                # 키 = 거른 두 표의 내용 지문 + 기간. 공정 표시명·오늘 선은 캐시 밖에서 입힌다.
+                spans = get_lifecycle_gantt_spans(
                     filtered, filtered_downtime, start_date=start, end_date=end
                 )
                 # 풍선의 공정만 표시명이다. 구간은 이 그림만 쓴다.

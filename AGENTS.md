@@ -3676,6 +3676,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/equipment_explorer.py`
   - Main의 질문·표현·공정·날짜 선택과 결과 하나를 렌더링한다. 주차 집계·기준일 상태·
     비가동 목록·생애주기 구간은 기존 서비스를 호출하고 산식을 화면에 복제하지 않는다.
+  - 판정·구간은 `simulation_cache` 의 내용 지문 키 래퍼로 받는다 — 키는 **거른 뒤의** 마스터·비가동
+    `frame_digest` 와 그 판정의 날짜 인자다(필터·저장본·샘플 전환이 지문을 바꾼다). 생애주기 일정은
+    `get_lifecycle_gantt_spans`(지분 없이 끊는 구간 — 세는 구간 캐시 `get_equipment_lifecycle_spans` 와
+    따로다). 공정 표시명·오늘 선은 캐시 결과의 복사본에 입힌다.
   - `가용대수` 결과 아래에 일정 미정 줄과 사용기준 제외 줄(`usage_basis`)을 둔다 — 같은 범위(Main 조건으로
     거른 호기)다. 사용기준 제외 줄은 `가용대수` 에만 선다. 호기 현황은 이름을 보이는 자리라 HBM·EDP 가
     아닌 호기도 그대로 센다.

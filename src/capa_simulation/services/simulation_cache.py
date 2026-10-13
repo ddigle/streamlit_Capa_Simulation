@@ -1207,3 +1207,34 @@ def get_inactive_equipment_month(
     )
     moments, inactive = _cached_inactive_equipment_month(cache_key, equipment, downtime)
     return list(moments), inactive
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_lifecycle_gantt_spans(
+    cache_key: EquipmentSpanCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+) -> pd.DataFrame:
+    _, _, start, end = cache_key
+    return build_equipment_lifecycle_spans(
+        _equipment,
+        _downtime,
+        start_date=date.fromisoformat(start),
+        end_date=date.fromisoformat(end),
+    )
+
+
+def get_lifecycle_gantt_spans(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, *, start_date: date, end_date: date
+) -> pd.DataFrame:
+    """Main 「호기 현황 › 생애주기 일정」 의 구간(`build_equipment_lifecycle_spans`, 지분 없이).
+
+    그림은 40대만 그리지만 「나머지 N행」 을 세려면 거른 호기 전체의 구간이 든다 — 사내 규모 합성
+    사본에서 회차마다 1초 남짓이었다. 키는 `equipment_span_cache_key` 와 같은 꼴(거른 두 표의 내용
+    지문 + 범위)이지만 **세는 구간(`get_equipment_lifecycle_spans`, 지분·집계분류가 바뀌는 날에도
+    끊는다)과는 다른 캐시**다 — 끊는 자리가 달라 서로 대신할 수 없다.
+    """
+    cache_key = equipment_span_cache_key(
+        equipment=equipment, downtime=downtime, start_date=start_date, end_date=end_date
+    )
+    return _cached_lifecycle_gantt_spans(cache_key, equipment, downtime)
