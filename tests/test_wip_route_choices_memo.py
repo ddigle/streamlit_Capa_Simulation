@@ -80,7 +80,12 @@ def test_a_copy_does_not_share_tables() -> None:
     assert "고친 값" not in set(choices.required_equipment["공정"])
 
 
-# 화면: 소요대수 조회 횟수를 세고, 세션 칸으로 content_token·표시순서를 바꿀 수 있게 한 대본.
+# 화면 대본: 소요대수 조회 횟수를 센다. 세션 칸으로 메모 키의 성분(content_token·reference_version·
+# 조회 월·표시순서)과 메모 밖에서 매 회차 읽는 가용대수를 하나씩 바꿀 수 있다.
+# - 조회 월: 페이지의 주차 달력을 `test_day_shift` 일만큼 민다(오늘이 다음 달로 넘어간 회차).
+#   소요대수 대역은 키의 첫 달이 기본과 다르면 Product-A 수요가 없는 표를 준다(월로 자른 소요대수).
+# - 가용대수: `test_missing_availability` 의 공정 행을 뺀다. 주 표준 대역은 받은 가용대수로 일 표준
+#   가능량을 다시 셈해, 가용대수가 빠진 공정은 「표준 미설정」이 된다.
 COUNTING_SCRIPT = (
     TEST_SCRIPT.replace(
         '"content_token": "test-wip-status-page",',
@@ -91,25 +96,92 @@ COUNTING_SCRIPT = (
         '"분류값": st.session_state.get("test_order", ["Product-B", "Product-A"]),',
     )
     .replace(
+        "reference_cache.get_effective_reference_version = lambda: 1",
+        "reference_cache.get_effective_reference_version = lambda: st.session_state.get(\n"
+        '    "test_reference_version", 1\n'
+        ")",
+    )
+    .replace(
+        "return availability.copy()",
+        "missing = st.session_state.get('test_missing_availability', [])\n"
+        '        kept = availability.loc[~availability["공정"].isin(missing)]\n'
+        "        return kept.reset_index(drop=True)",
+    )
+    .replace(
         """simulation_cache.get_scenario_capacity_and_demand = lambda *_args, **_kwargs: (
     pd.DataFrame(),
     required_equipment.copy(),
 )""",
-        """def counting_capacity_and_demand(*_args, **_kwargs):
+        """# 페이지가 같은 이름공간에서 `calendar` 를 다시 묶으므로 기본 첫 달은 미리 적어 둔다.
+unshifted_first_month = int(calendar["생산계획년월"].min())
+
+
+def counting_capacity_and_demand(scenario_key, *_args, **_kwargs):
     st.session_state["demand_calls"] = st.session_state.get("demand_calls", 0) + 1
+    st.session_state["demand_months"] = tuple(scenario_key[2:])
+    if scenario_key[2] != unshifted_first_month:
+        return pd.DataFrame(), required_equipment.loc[
+            required_equipment["제품정보"].ne("Product-A")
+        ].reset_index(drop=True)
     return pd.DataFrame(), required_equipment.copy()
 
 
 simulation_cache.get_scenario_capacity_and_demand = counting_capacity_and_demand""",
     )
+    .replace(
+        """simulation_cache.get_weekly_standard_target_capacity = (
+    lambda **_kwargs: weekly_standard.copy()
+)""",
+        """def capturing_weekly_standard(**kwargs):
+    st.session_state["captured_required"] = kwargs["required_equipment"].copy()
+    st.session_state["captured_availability"] = kwargs["weekly_availability"].copy()
+    available = kwargs["weekly_availability"].rename(columns={"가용대수": "받은 가용대수"})
+    weekly = weekly_standard.merge(available, on=["공정", "Weeknum"], how="left")
+    weekly["가용대수"] = weekly.pop("받은 가용대수")
+    weekly["일 표준 가능량"] = weekly["대당 일 Capa"] * weekly["가용대수"]
+    return weekly
+
+
+simulation_cache.get_weekly_standard_target_capacity = capturing_weekly_standard""",
+    )
+    .replace(
+        "dashboard.build_wip_status_grid_figure = capture_figure\n",
+        """dashboard.build_wip_status_grid_figure = capture_figure
+import capa_simulation.services.iso_week_calendar as iso_week_calendar_module
+
+original_calendar = iso_week_calendar_module.build_iso_week_calendar
+
+
+def shifted_calendar(start, end):
+    shift = timedelta(days=st.session_state.get("test_day_shift", 0))
+    return original_calendar(start + shift, end + shift)
+
+
+iso_week_calendar_module.build_iso_week_calendar = shifted_calendar
+""",
+    )
+    .replace(
+        "    process_labels_module.get_process_labels = original_get_process_labels\n",
+        "    process_labels_module.get_process_labels = original_get_process_labels\n"
+        "    iso_week_calendar_module.build_iso_week_calendar = original_calendar\n",
+    )
+)
+SESSION_KNOBS = (
+    "test_token",
+    "test_order",
+    "test_reference_version",
+    "test_missing_availability",
+    "counting_capacity_and_demand",
+    "capturing_weekly_standard",
+    "test_day_shift",
+    "iso_week_calendar_module.build_iso_week_calendar = original_calendar",
 )
 
 
 @pytest.fixture
 def app(monkeypatch: pytest.MonkeyPatch) -> AppTest:
-    assert COUNTING_SCRIPT.count("test_token") == 1
-    assert COUNTING_SCRIPT.count("test_order") == 1
-    assert "counting_capacity_and_demand" in COUNTING_SCRIPT
+    for knob in SESSION_KNOBS:
+        assert knob in COUNTING_SCRIPT, knob
     monkeypatch.setattr(
         process_labels_module,
         "load_global_process_rename",
@@ -118,6 +190,10 @@ def app(monkeypatch: pytest.MonkeyPatch) -> AppTest:
     started = AppTest.from_string(COUNTING_SCRIPT, default_timeout=60).run()
     assert not started.exception, [item.message for item in started.exception]
     return started
+
+
+def _metric(app: AppTest, label: str) -> str:
+    return str(next(metric.value for metric in app.metric if metric.label == label))
 
 
 def test_a_rerun_reuses_the_choices_without_reloading_demand(app: AppTest) -> None:
@@ -150,3 +226,44 @@ def test_a_new_display_order_reorders_the_products(app: AppTest) -> None:
     assert app.session_state["demand_calls"] == 2
     assert app.multiselect[1].options == ["Product-A", "Product-B"]
     assert app.session_state["captured_wip_products"] == ["Product-A", "Product-B"]
+
+
+def test_a_new_reference_version_reloads_the_demand(app: AppTest) -> None:
+    """reference_version 도 키다 — 기준정보가 바뀌면 같은 content_token 이어도 다시 꺼낸다."""
+    app.session_state["test_reference_version"] = 2
+    app.run()
+
+    assert not app.exception
+    assert app.session_state["demand_calls"] == 2
+
+
+def test_a_new_query_month_uses_the_demand_cut_to_that_month(app: AppTest) -> None:
+    """조회 월은 오늘에서 나온다. 날짜가 달 경계를 넘은 회차에는 그 달로 자른 소요대수를 다시 꺼내
+    선택지와 표준 기준선 입력(`selected_required`)에 쓴다 — 옛 달의 묶음이 남으면 안 된다."""
+    first_months = app.session_state["demand_months"]
+    assert set(app.session_state["captured_required"]["제품정보"]) == {"Product-A", "Product-B"}
+
+    app.session_state["test_day_shift"] = 42
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state["demand_calls"] == 2
+    assert app.session_state["demand_months"] != first_months
+    assert app.multiselect[1].options == ["Product-B"]
+    assert set(app.session_state["captured_required"]["제품정보"]) == {"Product-B"}
+    assert app.session_state["captured_wip_products"] == ["Product-B"]
+
+
+def test_an_availability_change_reaches_the_baseline_on_a_memo_hit(app: AppTest) -> None:
+    """가용대수는 메모 밖에서 매 회차 읽는다. 경로 메모가 적중한 회차에도(소요대수를 다시 꺼내지
+    않음) 바뀐 가용대수가 표준 기준선과 「표준 미설정」 지표에 그 회차에 들어간다."""
+    assert _metric(app, "표준 미설정") == "0개"
+    assert set(app.session_state["captured_availability"]["공정"]) == {"P-Process", "T-Process"}
+
+    app.session_state["test_missing_availability"] = ["T-Process"]
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state["demand_calls"] == 1
+    assert set(app.session_state["captured_availability"]["공정"]) == {"P-Process"}
+    assert _metric(app, "표준 미설정") != "0개"
