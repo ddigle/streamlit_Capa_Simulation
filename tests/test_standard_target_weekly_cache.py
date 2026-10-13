@@ -19,9 +19,15 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.services.display_order import apply_display_order, prepare_display_order
+from capa_simulation.services.display_order_scopes import (
+    PAGE_STANDARD_TARGET,
+    TAB_TARGET_CAPACITY,
+)
 from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
+    exclude_er_required_equipment,
     split_standard_target_required_equipment,
     weekly_standard_target_to_wide,
 )
@@ -295,6 +301,13 @@ def _scenario_tables() -> dict[str, pd.DataFrame]:
                 "생산수량": [60.0, 40.0],
             }
         ),
+        # 공정 필터 선택지의 재료. ER 만 있는 공정은 빠지고 차례는 처음 나온 차례다.
+        "RQ_REQB": pd.DataFrame(
+            {
+                "공정": ["P-B", "ER-only", "P-A", "Pre B/D", "P-A"],
+                "양산구분": ["양산", "ER", "양산", "양산", "ER"],
+            }
+        ),
     }
 
 
@@ -491,3 +504,91 @@ def test_the_selection_order_does_not_split_the_key() -> None:
         for processes in (["P-B", "P-A"], ["P-A", "P-B"], ("P-A", "P-B", "P-A"))
     }
     assert len(keys) == 1
+
+
+# ------------------------------------------------- 표준 목표 요약: 예외 행 수 · 공정 선택지
+
+
+def _summary(token: str) -> simulation_cache.StandardTargetSummary:
+    return simulation_cache.get_standard_target_summary(
+        simulation_cache.scenario_cache_key(1, {"content_token": token}, 202607, 202609),
+        _scenario_tables=_scenario_tables(),
+        _reference_tables={},
+    )
+
+
+def _process_display_order(mode: str) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "페이지 구분": [PAGE_STANDARD_TARGET],
+            "탭 구분": [TAB_TARGET_CAPACITY],
+            "정렬우선순위": [1],
+            "분류컬럼": ["공정"],
+            "정렬방식": [mode],
+            "분류값": [pd.NA],
+            "값표시순서": [pd.NA],
+            "활성여부": ["Y"],
+        }
+    )
+
+
+def test_the_standard_target_summary_matches_the_old_page_path(
+    fake_scenario: dict[str, pd.DataFrame],
+) -> None:
+    fake_scenario["summary"] = _small_required()
+
+    summary = _summary("summary")
+
+    _, expected_rows = split_standard_target_required_equipment(_small_required())
+    assert summary.exception_rows == expected_rows == 1
+    expected_processes = exclude_er_required_equipment(_scenario_tables()["RQ_REQB"])[["공정"]]
+    pd.testing.assert_frame_equal(summary.processes, expected_processes.drop_duplicates())
+    for mode in ("오름차순", "내림차순"):
+        rules = _process_display_order(mode)
+        prepared = prepare_display_order(rules)
+        old = apply_display_order(
+            expected_processes.drop_duplicates(),
+            prepared,
+            PAGE_STANDARD_TARGET,
+            TAB_TARGET_CAPACITY,
+        )
+        assert (
+            simulation_cache.get_display_ordered_values(
+                summary.processes,
+                simulation_cache.display_order_digest(rules),
+                PAGE_STANDARD_TARGET,
+                TAB_TARGET_CAPACITY,
+                _display_order=prepared,
+            )
+            == old["공정"].astype(str).tolist()
+        )
+
+
+def test_the_standard_target_summary_follows_a_new_content_token(
+    fake_scenario: dict[str, pd.DataFrame],
+) -> None:
+    fake_scenario["summary-before"] = _small_required()
+    edited = _small_required()
+    dummy = edited.loc[edited["WF 구분"].eq("Dummy")].assign(제품정보="Prod-2")
+    fake_scenario["summary-after"] = pd.concat([edited, dummy], ignore_index=True)
+
+    assert _summary("summary-before").exception_rows == 1
+    assert _summary("summary-after").exception_rows == 2
+
+
+def test_a_failing_scenario_is_not_cached_by_the_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def broken(cache_key: tuple[int, str, int, int], **_kwargs: object) -> None:
+        calls.append(cache_key[1])
+        raise ValueError("계산 실패")
+
+    monkeypatch.setattr(simulation_cache, "get_scenario_capacity_and_demand", broken)
+    st.cache_data.clear()
+    for _ in range(2):
+        with pytest.raises(ValueError, match="계산 실패"):
+            _summary("summary-broken")
+    assert calls == ["summary-broken", "summary-broken"]
+    st.cache_data.clear()

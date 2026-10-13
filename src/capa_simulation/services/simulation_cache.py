@@ -63,7 +63,9 @@ from capa_simulation.services.shortening_progress import compare_progress, progr
 from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
+    exclude_er_required_equipment,
     prepare_standard_target_required_equipment,
+    split_standard_target_required_equipment,
 )
 from capa_simulation.services.undated_equipment import undated_equipment
 from capa_simulation.services.unit_capacity import (
@@ -463,6 +465,41 @@ def get_reference_edit_table(
         page=page,
         tab=tab,
     )
+
+
+class StandardTargetSummary(NamedTuple):
+    """표준 목표가 매 회차 쓰는 시나리오 수준의 작은 값. 큰 프레임 대신 이것만 푼다."""
+
+    # 표준 목표 예외(Pre B/D 의 Dummy)로 뺀 소요대수 상세 행 수. 공정 선택과 무관하다.
+    exception_rows: int
+    # ER 을 뺀 `RQ_REQB` 의 공정 고유값(원본 값·원본 차례). 표시순서 정렬은 부르는 쪽이 한다.
+    processes: pd.DataFrame
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_standard_target_summary(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> StandardTargetSummary:
+    """표준 목표의 예외 행 수와 공정 필터 선택지 재료. 키는 시나리오 키 하나다.
+
+    표시 항목·PKG 기준·팝업 열기처럼 결과와 무관한 조작마다 소요대수 언피클·ER/예외 분리·
+    `RQ_REQB` 전체 ER 제외를 처음부터 다시 했다(합성 표본에서 회차당 약 0.13초, 샘플 관측).
+    주차별 가용대수가 비어 화면이 멈추는 회차에도 예외 행 수는 그려야 하므로 가용대수와 무관한
+    이 키에 둔다. 계산 오류는 캐시되지 않아 매 회차 다시 던진다 — 부르는 쪽은
+    `stop_calculation_on_error` 로 감싼다.
+    """
+    _, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    _, exception_rows = split_standard_target_required_equipment(required_equipment)
+    processes = exclude_er_required_equipment(_scenario_tables["RQ_REQB"])[["공정"]]
+    processes = processes.drop_duplicates()
+    processes.attrs = {}
+    return StandardTargetSummary(exception_rows=exception_rows, processes=processes)
 
 
 # 표준 목표 주간 결과의 키 — (시나리오 키, 주차별 가용대수 내용 지문, 시작일, 종료일, 분류 수준,

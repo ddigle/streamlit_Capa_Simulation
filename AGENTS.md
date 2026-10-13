@@ -1273,6 +1273,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     안에서 키의 시나리오·월로 얻는다. 소요대수(5만 행 넘음)를 해시 인자로 넘기던 동안 Streamlit 이 1만 행
     표본만 해시해 한 행 편집을 놓치고 옛 숫자를 냈다(`tests/test_standard_target_weekly_cache.py`).
     재공 현황도 같은 캐시를 제품 선택을 실어 부른다 — 제품 선택이 키에 없으면 그 결과가 표준 목표에 적중한다.
+  - 표시 항목·PKG 기준·팝업처럼 결과와 무관한 조작이 소요대수를 다시 풀지 않는다. `예외 처리 공정` 의 행
+    수와 공정 필터 선택지 재료(ER 을 뺀 `RQ_REQB` 공정)는 `simulation_cache.get_standard_target_summary`
+    (시나리오 키, 가용대수와 무관 — 가용대수가 비어 멈추는 회차에도 그린다)에서, 선택지 정렬은
+    `get_display_ordered_values`(표시순서 지문 키)에서 꺼낸다. 요약 캐시를 `stop_calculation_on_error` 로
+    불러 계산 오류는 지금 자리·지금 문구로 먼저 드러난다. 화면 테스트는 이 캐시들이 프로세스 전역이라
+    테스트마다 비운다(`tests/test_standard_target_capa_page.py`).
 - `src/capa_simulation/components/reference_csv_tools.py`
   - 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 다운로드·Excel 표 붙여넣기 폼과 적용 결과
     알림을 공통 제공한다. 붙여넣기는 모두 팝업이다 — `render_reference_clipboard_form` 이

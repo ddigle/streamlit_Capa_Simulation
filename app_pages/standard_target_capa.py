@@ -47,6 +47,7 @@ from capa_simulation.page_bootstrap import (
     render_schema_ahead_warning,
     resolve_effective_months,
     scenario_capacity_and_demand,
+    stop_calculation_on_error,
 )
 from capa_simulation.persistence.equipment_cache import get_equipment_repository
 from capa_simulation.persistence.models import (
@@ -73,7 +74,10 @@ from capa_simulation.services.display_order_scopes import (
 from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
+    display_order_digest,
+    get_display_ordered_values,
     get_pkg_equivalent_standard_target,
+    get_standard_target_summary,
     get_weekly_standard_target_capacity,
     scenario_cache_key,
     standard_target_weekly_cache_key,
@@ -81,7 +85,6 @@ from capa_simulation.services.simulation_cache import (
 from capa_simulation.services.standard_target_capacity import (
     PKG_EQUIVALENT_COLUMN,
     STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES,
-    exclude_er_required_equipment,
     split_standard_target_required_equipment,
     weekly_standard_target_to_wide,
 )
@@ -621,27 +624,26 @@ try:
         for name in ("RQ_RUN_DAY", "RQ_PKG_PLAN")
     }
     scenario_key = scenario_cache_key(reference_version, active_scenario, start_month, end_month)
-    unit_capacity, required_equipment = scenario_capacity_and_demand(
+    # 소요대수 프레임은 풀지 않는다 — 예외 행 수와 공정 선택지 재료만 시나리오 키로 꺼낸다. 계산
+    # 오류는 여기서 「계산 멈춤」과 함께 먼저 드러난다(실패는 캐시되지 않는다).
+    standard_target_summary = stop_calculation_on_error(
+        get_standard_target_summary,
         scenario_key,
-        scenario_tables=active_scenario["tables"],
-        reference_tables=reference_tables,
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
     )
-    required_equipment, standard_target_exception_rows = split_standard_target_required_equipment(
-        required_equipment
-    )
-    production_reqb = exclude_er_required_equipment(active_scenario["tables"]["RQ_REQB"])
+    standard_target_exception_rows = standard_target_summary.exception_rows
 except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))
     st.stop()
 
-process_order = production_reqb[["공정"]].drop_duplicates()
-process_order = apply_display_order(
-    process_order,
-    display_order,
+process_options = get_display_ordered_values(
+    standard_target_summary.processes,
+    display_order_digest(reference_tables["RQ_DISPLAY_ORDER"]),
     PAGE_STANDARD_TARGET,
     TAB_TARGET_CAPACITY,
+    _display_order=display_order,
 )
-process_options = process_order["공정"].astype(str).tolist()
 public_default = prune_list_selection(STANDARD_TARGET_PROCESS_DEFAULT_KEY, process_options)
 prune_list_selection(PROCESS_FILTER_KEY, process_options, default=public_default)
 
@@ -869,13 +871,22 @@ if availability.empty:
         st.info("주차별 일 표준 가능량을 보려면 위 「가용설비 붙여넣기」로 가용설비를 입력하세요.")
     st.stop()
 
-filtered_required_equipment = required_equipment
-if selected_processes:
-    filtered_required_equipment = required_equipment.loc[
-        required_equipment["공정"].isin(selected_processes)
-    ].reset_index(drop=True)
-
 if output_metric == "로직 분석":
+    # 로직 분석만 소요대수 행이 필요하다. 표준 목표 제외를 거친 프레임을 공정 필터로 거른다.
+    try:
+        required_equipment = scenario_capacity_and_demand(
+            scenario_key,
+            scenario_tables=active_scenario["tables"],
+            reference_tables=reference_tables,
+        )[1]
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
+        st.stop()
+    filtered_required_equipment = split_standard_target_required_equipment(required_equipment)[0]
+    if selected_processes:
+        filtered_required_equipment = filtered_required_equipment.loc[
+            filtered_required_equipment["공정"].isin(selected_processes)
+        ].reset_index(drop=True)
     with weekly_output_container:
         _render_logic_analysis(
             required_equipment=filtered_required_equipment,
