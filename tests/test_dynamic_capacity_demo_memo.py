@@ -33,6 +33,16 @@ finally:
     process_labels_module.get_process_labels = original_get_process_labels
 """
 
+# 받은 표를 고치는 화면 — 페이지를 돌린 뒤 받은 두 표에서 행을 지운다(제자리 고침).
+EDITING_SCRIPT = SCRIPT.replace(
+    """    exec(compile(source.read_text(encoding="utf-8"), str(source), "exec"))
+""",
+    """    exec(compile(source.read_text(encoding="utf-8"), str(source), "exec"))
+    demo.drop(index=demo.index[:1], inplace=True)
+    process_summary.drop(index=process_summary.index[:1], inplace=True)
+""",
+)
+
 
 @pytest.fixture
 def demo_builds(monkeypatch: pytest.MonkeyPatch) -> list[int]:
@@ -70,7 +80,7 @@ def test_the_demo_is_built_once_per_session_and_keeps_its_values(demo_builds: li
     _run(app)
 
     assert len(demo_builds) == 1
-    # 화면을 여러 번 그린 뒤에도 기억한 표는 새로 만든 표와 같다(받은 쪽이 고쳐도 사본이다).
+    # 화면을 여러 번 그린 뒤에도 기억한 표는 새로 만든 표와 같다.
     demo, summary = app.session_state[DEMO_MEMO_KEY]
     expected_demo, expected_summary = _fresh()
     pd.testing.assert_frame_equal(demo, expected_demo)
@@ -98,3 +108,19 @@ def test_the_detail_tab_still_follows_its_filters(demo_builds: list[int]) -> Non
     after: dict[str, Any] = {metric.label: metric.value for metric in app.metric}
     assert after != before
     assert len(demo_builds) == 1
+
+
+def test_a_caller_that_edits_the_frames_leaves_the_memo_intact(demo_builds: list[int]) -> None:
+    """기억한 표는 사본으로 나간다 — 받은 쪽이 제자리에서 고쳐도 다음 회차의 데모·요약은
+    그대로다."""
+    assert EDITING_SCRIPT != SCRIPT
+    app = _run(AppTest.from_string(EDITING_SCRIPT, default_timeout=60))
+    first_priority = _priority_frame(app)
+    _run(app)
+
+    assert len(demo_builds) == 1
+    demo, summary = app.session_state[DEMO_MEMO_KEY]
+    expected_demo, expected_summary = _fresh()
+    pd.testing.assert_frame_equal(demo, expected_demo)
+    pd.testing.assert_frame_equal(summary, expected_summary)
+    pd.testing.assert_frame_equal(_priority_frame(app), first_priority)
