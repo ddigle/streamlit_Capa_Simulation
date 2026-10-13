@@ -121,6 +121,10 @@ def build_wip_status_grid_figure(
     legend_seen: set[str] = set()
     all_dates = [timestamp.date() for timestamp in pd.date_range(start_date, end_date, freq="D")]
     tick_text = [value.strftime("%m.%d") for value in all_dates]
+    # 칸마다 `update_xaxes(row=, col=)` 를 부르면 부를 때마다 모든 축을 훑어 칸 수의 제곱으로
+    # 느려진다. 칸의 축 이름(`get_subplot`)으로 설정을 모았다가 루프 뒤에 한 번에 준다 — 같은
+    # 병합(update)이라 결과 Figure 는 같다.
+    axis_layout: dict[str, dict[str, Any]] = {}
 
     for row_index, product in enumerate(ordered_products, start=1):
         for column_index, lane in enumerate(lanes.itertuples(index=False), start=1):
@@ -153,34 +157,32 @@ def build_wip_status_grid_figure(
                     legend_seen=legend_seen,
                 )
             unit = "매" if basis == "WF" else "Kea"
-            figure.update_xaxes(
-                row=row_index,
-                col=column_index,
-                range=[
+            subplot = figure.get_subplot(row_index, column_index)
+            axis_layout[subplot.xaxis.plotly_name] = {
+                "range": [
                     pd.Timestamp(start_date) - pd.Timedelta(hours=12),
                     pd.Timestamp(end_date) + pd.Timedelta(hours=12),
                 ],
-                tickmode="array",
-                tickvals=all_dates,
-                ticktext=tick_text,
-                tickangle=-45,
-                tickfont={"size": 9, "color": tokens.TEXT_MUTED},
-                title=None,
-                showgrid=False,
-                zeroline=False,
-                linecolor=tokens.HEADER_BACKGROUND,
-            )
-            figure.update_yaxes(
-                row=row_index,
-                col=column_index,
-                rangemode="tozero",
-                title={"text": unit, "font": {"size": 10, "color": tokens.TEXT_MUTED}},
-                tickfont={"size": 9, "color": tokens.TEXT_MUTED},
-                gridcolor=tokens.HEADER_BACKGROUND,
-                zeroline=False,
-                linecolor=tokens.HEADER_BACKGROUND,
-            )
+                "tickmode": "array",
+                "tickvals": all_dates,
+                "ticktext": tick_text,
+                "tickangle": -45,
+                "tickfont": {"size": 9, "color": tokens.TEXT_MUTED},
+                "title": None,
+                "showgrid": False,
+                "zeroline": False,
+                "linecolor": tokens.HEADER_BACKGROUND,
+            }
+            axis_layout[subplot.yaxis.plotly_name] = {
+                "rangemode": "tozero",
+                "title": {"text": unit, "font": {"size": 10, "color": tokens.TEXT_MUTED}},
+                "tickfont": {"size": 9, "color": tokens.TEXT_MUTED},
+                "gridcolor": tokens.HEADER_BACKGROUND,
+                "zeroline": False,
+                "linecolor": tokens.HEADER_BACKGROUND,
+            }
 
+    figure.update_layout(axis_layout)
     figure_width = max(430, cols * WIP_GRID_CELL_WIDTH_PX + 90)
     figure_height = max(420, rows * WIP_GRID_CELL_HEIGHT_PX + 110)
     figure.update_layout(
