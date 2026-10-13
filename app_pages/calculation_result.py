@@ -35,7 +35,6 @@ from capa_simulation.page_bootstrap import (
     load_page_context,
     prune_list_selection,
     resolve_effective_months,
-    scenario_capacity_and_demand,
     stop_calculation_on_error,
 )
 from capa_simulation.persistence.cache import load_global_securement_threshold
@@ -65,12 +64,10 @@ from capa_simulation.services.simulation_cache import (
     get_required_month_table,
     get_scenario_result_summary,
     get_scenario_securement_rate,
+    get_step_unit_capacity_table,
     scenario_cache_key,
 )
-from capa_simulation.services.unit_capacity import (
-    UNIT_CAPACITY_DIMENSIONS,
-    unit_capacity_to_month_table,
-)
+from capa_simulation.services.unit_capacity import UNIT_CAPACITY_DIMENSIONS
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import remembered_expander, table_card
@@ -260,14 +257,16 @@ else:
                 st.info(STEP_VIEW_HINT)
             else:
                 if capacity_view == "STEP별":
-                    # STEP 경로 행이 필요한 보기는 이것 하나라 여기서만 대당 Capa 를 푼다.
-                    unit_capacity, _ = scenario_capacity_and_demand(
+                    # 전 공정 STEP 월표(피벗·정렬·재배치)는 키 캐시다 — 공정 필터만 아래에서 건다.
+                    unit_capacity_table, classification_columns = get_step_unit_capacity_table(
                         capacity_cache_key,
-                        scenario_tables=active_scenario["tables"],
-                        reference_tables=reference_tables,
+                        display_order_key,
+                        PAGE_CALCULATION,
+                        TAB_UNIT_CAPACITY,
+                        _scenario_tables=active_scenario["tables"],
+                        _reference_tables=reference_tables,
+                        _display_order=display_order,
                     )
-                    unit_capacity_table = unit_capacity_to_month_table(unit_capacity)
-                    classification_columns = list(UNIT_CAPACITY_DIMENSIONS)
                     output_title = "STEP별 대당 Capa"
                     file_prefix = "Capa_Step_Unit_Capacity"
                 else:
@@ -282,21 +281,21 @@ else:
                         for column in ["공정", "소요기준", *WEIGHTED_CAPACITY_HIERARCHY[1:]]
                         if column in unit_capacity_table.columns
                     ]
+                    unit_capacity_table = apply_display_order(
+                        unit_capacity_table,
+                        display_order,
+                        PAGE_CALCULATION,
+                        TAB_UNIT_CAPACITY,
+                    )
+                    unit_capacity_table, classification_columns = reorder_display_columns(
+                        unit_capacity_table,
+                        classification_columns,
+                        display_order,
+                        PAGE_CALCULATION,
+                        TAB_UNIT_CAPACITY,
+                    )
                     output_title = "공정별 대당 Capa"
                     file_prefix = "Capa_Effective_Process_Capacity"
-                unit_capacity_table = apply_display_order(
-                    unit_capacity_table,
-                    display_order,
-                    PAGE_CALCULATION,
-                    TAB_UNIT_CAPACITY,
-                )
-                unit_capacity_table, classification_columns = reorder_display_columns(
-                    unit_capacity_table,
-                    classification_columns,
-                    display_order,
-                    PAGE_CALCULATION,
-                    TAB_UNIT_CAPACITY,
-                )
                 if selected_processes:
                     unit_capacity_table = unit_capacity_table.loc[
                         unit_capacity_table["공정"].isin(selected_processes)

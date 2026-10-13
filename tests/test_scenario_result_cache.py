@@ -38,7 +38,12 @@ from capa_simulation.services.required_equipment import (
     required_equipment_to_month_table,
 )
 from capa_simulation.services.securement_rate import calculate_securement_rate
-from capa_simulation.services.unit_capacity import CAPACITY_EXCLUSIONS_ATTR, capacity_assumptions
+from capa_simulation.services.unit_capacity import (
+    CAPACITY_EXCLUSIONS_ATTR,
+    UNIT_CAPACITY_DIMENSIONS,
+    capacity_assumptions,
+    unit_capacity_to_month_table,
+)
 from capa_simulation.services.weighted_unit_capacity import (
     effective_process_capacity_to_month_table,
 )
@@ -323,3 +328,81 @@ def test_a_failing_scenario_is_raised_every_time_and_never_cached(
 def _quiet_cache() -> Iterator[None]:
     yield
     st.cache_data.clear()
+
+
+# ------------------------------------------------- STEP별 대당 Capa 월표(S8)
+
+
+def _step_table(
+    key: sc.ScenarioCacheKey, tables: dict[str, pd.DataFrame], display_order: pd.DataFrame
+) -> tuple[pd.DataFrame, list[str]]:
+    return sc.get_step_unit_capacity_table(
+        key,
+        sc.display_order_digest(display_order),
+        PAGE_CALCULATION,
+        TAB_UNIT_CAPACITY,
+        _scenario_tables=tables,
+        _reference_tables=tables,
+        _display_order=prepare_display_order(display_order),
+    )
+
+
+def _old_step_table(
+    unit: pd.DataFrame, display_order: pd.DataFrame, processes: list[str]
+) -> pd.DataFrame:
+    """고치기 전 화면 — 전 공정 피벗 → 정렬 → 재배치 → 공정 거르기."""
+    prepared = prepare_display_order(display_order)
+    table = apply_display_order(
+        unit_capacity_to_month_table(unit), prepared, PAGE_CALCULATION, TAB_UNIT_CAPACITY
+    )
+    table, _ = reorder_display_columns(
+        table, list(UNIT_CAPACITY_DIMENSIONS), prepared, PAGE_CALCULATION, TAB_UNIT_CAPACITY
+    )
+    return table.loc[table["공정"].isin(processes)].reset_index(drop=True)
+
+
+def test_the_step_table_matches_the_old_page_path(
+    key: sc.ScenarioCacheKey, tables: dict[str, pd.DataFrame]
+) -> None:
+    unit, _ = _frames(key, tables)
+    display_order = tables["RQ_DISPLAY_ORDER"]
+    processes = sorted(set(unit["공정"].astype(str)))
+
+    table, dimensions = _step_table(key, tables, display_order)
+
+    _, expected_dimensions = reorder_display_columns(
+        unit_capacity_to_month_table(unit),
+        list(UNIT_CAPACITY_DIMENSIONS),
+        prepare_display_order(display_order),
+        PAGE_CALCULATION,
+        TAB_UNIT_CAPACITY,
+    )
+    assert dimensions == expected_dimensions
+    for selected in ([processes[0]], processes[1:], processes):
+        filtered = table.loc[table["공정"].isin(selected)].reset_index(drop=True)
+        pd.testing.assert_frame_equal(filtered, _old_step_table(unit, display_order, selected))
+
+
+def test_the_step_table_follows_the_display_order(
+    key: sc.ScenarioCacheKey, tables: dict[str, pd.DataFrame]
+) -> None:
+    ascending, _ = _step_table(key, tables, tables["RQ_DISPLAY_ORDER"])
+    descending, _ = _step_table(key, tables, _descending(tables)["RQ_DISPLAY_ORDER"])
+
+    order = list(dict.fromkeys(ascending["공정"].astype(str)))
+    assert order == sorted(order)
+    assert list(dict.fromkeys(descending["공정"].astype(str))) == sorted(order, reverse=True)
+
+
+def test_a_step_table_hit_does_not_unpickle_the_capacity_frames(
+    key: sc.ScenarioCacheKey,
+    tables: dict[str, pd.DataFrame],
+    counted: list[sc.ScenarioCacheKey],
+) -> None:
+    _step_table(key, tables, tables["RQ_DISPLAY_ORDER"])
+    assert counted == [key]
+    counted.clear()
+
+    _step_table(key, tables, tables["RQ_DISPLAY_ORDER"])
+
+    assert counted == []

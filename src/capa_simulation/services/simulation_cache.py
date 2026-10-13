@@ -72,9 +72,11 @@ from capa_simulation.services.standard_target_capacity import (
 from capa_simulation.services.undated_equipment import undated_equipment
 from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
+    UNIT_CAPACITY_DIMENSIONS,
     CapacityAssumptions,
     calculate_unit_capacity,
     capacity_assumptions,
+    unit_capacity_to_month_table,
 )
 from capa_simulation.services.usage_basis import usage_excluded_equipment
 from capa_simulation.services.weighted_unit_capacity import (
@@ -387,6 +389,34 @@ def get_required_month_table(
         required_equipment_to_month_table(required_equipment), _display_order, page, tab
     )
     return reorder_display_columns(table, RESULT_DIMENSIONS, _display_order, page, tab)
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_step_unit_capacity_table(
+    cache_key: ScenarioCacheKey,
+    display_order_key: str,
+    page: str,
+    tab: str,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _display_order: PreparedDisplayOrder | None,
+) -> tuple[pd.DataFrame, list[str]]:
+    """STEP별 대당 Capa 월 표(전 공정 피벗 → 표시순서 정렬 → 분류 컬럼 재배치)와 그 분류 컬럼 차례.
+
+    공정 필터는 이 뒤에서 매 회차 건다(지금도 정렬 뒤에 걸렸다) — 공정을 바꿀 때마다 전 공정 STEP
+    월표를 다시 피벗·정렬하지 않는다. 키는 시나리오 키 + 표시순서 지문 + 화면 범위다. 대당 Capa 는
+    빗나갈 때만 이 안에서 받는다.
+    """
+    del display_order_key
+    unit_capacity, _ = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    table = apply_display_order(
+        unit_capacity_to_month_table(unit_capacity), _display_order, page, tab
+    )
+    return reorder_display_columns(table, list(UNIT_CAPACITY_DIMENSIONS), _display_order, page, tab)
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
