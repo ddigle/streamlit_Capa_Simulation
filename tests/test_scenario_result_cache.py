@@ -436,7 +436,7 @@ def _step_table(
 def _old_step_table(
     unit: pd.DataFrame, display_order: pd.DataFrame, processes: list[str]
 ) -> pd.DataFrame:
-    """고치기 전 화면 — 전 공정 피벗 → 정렬 → 재배치 → 공정 거르기."""
+    """캐시 없이 프레임에서 바로 만드는 기준 경로 — 전 공정 피벗 → 정렬 → 재배치 → 공정 거르기."""
     prepared = prepare_display_order(display_order)
     table = apply_display_order(
         unit_capacity_to_month_table(unit), prepared, PAGE_CALCULATION, TAB_UNIT_CAPACITY
@@ -492,3 +492,20 @@ def test_a_step_table_hit_does_not_unpickle_the_capacity_frames(
     _step_table(key, tables, tables["RQ_DISPLAY_ORDER"])
 
     assert counted == []
+
+
+def test_the_step_table_follows_a_new_content_token(tables: dict[str, pd.DataFrame]) -> None:
+    """UPEH 편집 적용(새 토큰) 뒤 STEP별 보기는 새 대당 Capa 로 다시 만든다 — 표시순서 지문·화면
+    범위가 같아도 시나리오 키가 다르면 다른 칸이다."""
+    before_key: sc.ScenarioCacheKey = (1, f"test-step-before-{uuid4().hex}", START, END)
+    after_key: sc.ScenarioCacheKey = (1, f"test-step-after-{uuid4().hex}", START, END)
+    edited = _edited_upeh(tables)
+    display_order = tables["RQ_DISPLAY_ORDER"]
+
+    before, _ = _step_table(before_key, tables, display_order)
+    after, _ = _step_table(after_key, edited, display_order)
+
+    edited_unit, _ = _frames(after_key, edited)
+    processes = sorted(set(edited_unit["공정"].astype(str)))
+    assert not before.equals(after)
+    pd.testing.assert_frame_equal(after, _old_step_table(edited_unit, display_order, processes))
