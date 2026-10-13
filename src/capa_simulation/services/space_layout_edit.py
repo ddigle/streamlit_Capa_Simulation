@@ -1094,6 +1094,27 @@ def _where(row: Mapping[Any, Any]) -> str:
     return f"{floor} · {x:g}, {y:g} · {size}"
 
 
+def buffer_matches_saved(
+    saved: Sequence[pd.DataFrame],
+    buffer: Sequence[pd.DataFrame],
+    renames: PendingRenames | None = None,
+) -> bool:
+    """편집본 표들이 저장본과 내용·형까지 같고 저장 안 한 이름 바꿈이 없는가. 참이면
+    `layout_changes`·`name_changes` 는 빈 표, `other_change_count` 는 0, `table_changed` 는 거짓,
+    `unsaved_unit_ids` 는 빈 묶음이다(저장본 설비명은 검증으로 겹치지 않는다) — 셀마다 견주는
+    비교를 건너뛰는 빠른 길이다.
+
+    판정은 내용(`DataFrame.equals`)으로만 한다. 편집본 세대·리비전 번호로 판정하면 세대를 올리지
+    않는 편집을 놓친다. `equals` 는 칸 형까지 보므로 값은 같고 형만 다르면 「다르다」로 보고 셀
+    비교로 넘어간다(안전한 쪽). 반대로 `equals` 가 같다고 보는데 셀 비교가 다르다고 하는 경우는
+    `0.0`↔`-0.0` 이나 object 칸의 Timestamp↔datetime64 처럼 셀 비교가 거짓 「다름」을 내는
+    경우뿐이다.
+    """
+    if renames or len(saved) != len(buffer):
+        return False
+    return all(left.equals(right) for left, right in zip(saved, buffer, strict=True))
+
+
 def _comparable(value: object) -> str:
     if not _present(value):
         return ""

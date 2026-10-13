@@ -1111,6 +1111,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     받는다(2026-10-08). 편집 중에는 한 회차에 저장본(조건 카드·요약)과 편집본(편집기·겹침 경고)을
     따로 판정하고 `적용` 은 `st.rerun()` 으로 두 회차를 도는데, 내용 지문 키라 같은 표는 한 번만
     판정한다 — 편집을 막 켠 편집본은 저장본과 내용이 같아 그 판정을 다시 쓴다.
+  - 저장 안 한 배치 상자와 편집기의 미저장 호기 판정은 먼저 `buffer_matches_saved`(편집본 세 표가
+    저장본과 `DataFrame.equals` 이고 이름 바꿈 지도가 비었는가)를 본다. 참이면 셀 비교를 건너뛰고 빈
+    결과를 쓴다 — 사내 규모(1,566행)에서 회차마다 0.1초 넘게 들던 비교다. 판정은 **내용으로만** 한다:
+    편집본 세대·리비전 번호로 판정하면 세대를 올리지 않는 편집(일괄 삭제 확정·되살리기)을 놓친다.
+    `other_change_count`·비가동 일정·기존 보유대수 비교는 상자 안내에만 쓰이므로 상자를 그리는 회차에만 센다.
   - 저장 안 한 배치 상자는 RawData 의 검증 실패 편집이 있어도 페이지를 죽이지 않는다(경고 계산만
     건너뛴다). 저장 콜백은 `BOOTSTRAP_ERRORS` 를 잡아 문구로 남기고, 그 오류는 상자를 안 그리는
     회차에도 한 번 보인 뒤 버린다. 경고용 도면 요소는 편집본에 호기가 선 층만 읽는다.
@@ -2342,7 +2347,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `space_layout_edit.py`: Space 배치 편집기의 순수 계산. `editor_inputs`(도면·트레이·영역 하한·
   기본 크기), `parse_editor_apply`(적용값 검증 — **하나라도 어긋나면 전체 거부**),
   `apply_layout_edits`(편집본 반영), `layout_warnings`·`layout_changes`·`other_change_count`·
-  `table_changed`(설비 마스터 밖 표의 미저장 차이)·`unsaved_unit_ids`. 숫자 읽기 `finite_or_none`(None·bool·NA·NaN·무한대 → None)은 편집기 컴포넌트도
+  `table_changed`(설비 마스터 밖 표의 미저장 차이)·`unsaved_unit_ids`, 그 비교를 건너뛰는 내용 판정
+  `buffer_matches_saved`. 숫자 읽기 `finite_or_none`(None·bool·NA·NaN·무한대 → None)은 편집기 컴포넌트도
   이것을 쓴다(`official_summary` 의 같은 이름 도우미는 None·bool 처리가 달라 따로 둔다).
   - 대상은 Space 가 그리는 호기와 같다(`레이아웃반영여부` — Y 이고 반출·이설 실행 전). 도면은 이
     층에 X·Y·크기가 다 있는 호기, 트레이는 X·Y 가 없고 이 층이거나 층 미정인 호기다(동까지 비면
