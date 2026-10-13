@@ -296,10 +296,11 @@ def _prepared_display_order(
 def get_prepared_display_order(display_order: pd.DataFrame) -> PreparedDisplayOrder | None:
     """공용 표시순서 표를 검증·파생한 것(`prepare_display_order`). 키는 **내용 지문**이다.
 
-    계산 화면은 회차마다 같은 규칙(합성 표본 658행)을 다시 검증·파생하고 있었다(약 6ms, 지문은
-    약 0.5ms). 표시순서는 `reference_version` 을 바꾸지 않고 바뀌므로(Admin 교체·리비전 불러오기)
-    버전이 아니라 `display_order_digest` 로 가른다. `st.cache_data` 는 꺼낼 때마다 사본을 주므로
-    호출부가 규칙을 고쳐도 다른 회차가 오염되지 않고, 검증 예외는 캐시되지 않아 매번 다시 난다.
+    계산 화면 공통 진입(`load_page_context`)이 회차마다 부른다. 지문 계산이 검증·파생보다 싸서
+    내용이 같으면 검증·파생을 다시 하지 않는다. 표시순서는 `reference_version` 을 바꾸지 않고
+    바뀌므로(Admin 교체·리비전 불러오기) 버전이 아니라 `display_order_digest` 로 가른다.
+    `st.cache_data` 는 꺼낼 때마다 사본을 주므로 호출부가 규칙을 고쳐도 다른 회차가 오염되지
+    않고, 검증 예외는 캐시되지 않아 매번 다시 난다.
     """
     return _prepared_display_order(display_order_digest(display_order), display_order)
 
