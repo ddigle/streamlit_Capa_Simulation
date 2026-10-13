@@ -6,16 +6,25 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import cast
 
 import pandas as pd
 
+from capa_simulation.services.display_order import apply_display_order
+from capa_simulation.services.display_order_scopes import (
+    PAGE_STANDARD_TARGET,
+    TAB_TARGET_CAPACITY,
+)
 from capa_simulation.services.frame_checks import assert_unique_keys
 from capa_simulation.services.frame_contracts import (
     assert_one_demand_basis_per_process,
     normalize_demand_basis,
     require_columns,
+)
+from capa_simulation.services.standard_target_capacity import (
+    prepare_standard_target_required_equipment,
 )
 
 WIP_ROUTE_COLUMNS = ["공정", "STEP_SEQ", "제품정보", "소요기준"]
@@ -88,6 +97,49 @@ def processes_in_step_order(routes: pd.DataFrame) -> list[str]:
     """Return process filter options ordered by their earliest route STEP."""
     prepared = build_wip_route_scope(routes)
     return prepared["공정"].drop_duplicates().astype(str).tolist()
+
+
+def products_in_display_order(routes: pd.DataFrame, display_order: pd.DataFrame) -> list[str]:
+    """경로의 제품을 표준 목표와 같은 공용 표시순서(`표준 목표 › 목표 Capa`)로 늘어놓는다."""
+    products = routes[["제품정보"]].drop_duplicates().reset_index(drop=True)
+    ordered = apply_display_order(
+        products, display_order, PAGE_STANDARD_TARGET, TAB_TARGET_CAPACITY
+    )
+    return ordered["제품정보"].astype(str).tolist()
+
+
+@dataclass(frozen=True)
+class WipRouteChoices:
+    """시나리오 소요대수에서만 나오는 재공 화면 준비물 — 표준 목표 규칙을 적용한 소요대수, 경로
+    범위, 공정·제품 선택지(경로가 없으면 둘 다 빈 값)."""
+
+    required_equipment: pd.DataFrame
+    routes: pd.DataFrame
+    processes: tuple[str, ...]
+    products: tuple[str, ...]
+
+    def copy(self) -> WipRouteChoices:
+        """표 사본을 든 새 묶음. 기억해 둔 묶음을 받은 쪽이 고쳐도 다음 회차가 오염되지 않는다."""
+        return replace(
+            self, required_equipment=self.required_equipment.copy(), routes=self.routes.copy()
+        )
+
+
+def prepare_wip_route_choices(
+    required_equipment: pd.DataFrame, display_order: pd.DataFrame
+) -> WipRouteChoices:
+    """재공 화면이 시나리오 소요대수와 공용 표시순서에서만 만드는 준비물. 입력 둘이 같으면 결과도
+    같다(오늘 날짜·가용대수·재공 실적은 읽지 않는다)."""
+    prepared = prepare_standard_target_required_equipment(required_equipment)
+    routes = build_wip_route_scope(prepared)
+    if routes.empty:
+        return WipRouteChoices(prepared, routes, (), ())
+    return WipRouteChoices(
+        prepared,
+        routes,
+        tuple(processes_in_step_order(routes)),
+        tuple(products_in_display_order(routes, display_order)),
+    )
 
 
 def aggregate_weekly_product_standard(weekly_target: pd.DataFrame) -> pd.DataFrame:

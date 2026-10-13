@@ -995,6 +995,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가능량을 비교하며, 공정·제품 필터와 STEP 열·제품 행 Plotly 격자를 제공한다.
   - 재공 값은 결정론적 데모이고 실제 재공 실적 DB 조회·원천 컬럼 매핑은 아직 구현하지 않는다.
     샘플 스위치를 끄면 무엇이 붙어야 하는지만 남는다.
+  - 시나리오 소요대수에서만 나오는 준비물(표준 목표 규칙 적용 소요대수·경로 범위·공정·제품 선택지,
+    `services/wip_status.prepare_wip_route_choices`)은 세션에 한 벌 둔다. 키는 `scenario_cache_key`
+    (reference_version·content_token·조회 월)와 `display_order_digest(RQ_DISPLAY_ORDER)` 다. 가용대수는
+    다른 세션이 바꾸는 현행값이라 매 회차 읽는다.
 - `app_pages/space_status.py`
   - Dynamic Capa의 Space 현황 페이지다.
   - `S.PKG FAB 전체(C5 독립, C1~C4 연결) → 층 상세 배치`의 **2단** 탐색이다(2026-10-03 사용자 결정 — 동
@@ -2032,7 +2036,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `dynamic_capacity.py`: 표준 Capa에 실적 효율·UPEH·Rundown·생산실적을 순차 반영하는
   Dynamic Capa 손실 분석, 시간 가중 집계, 필터와 미연결 화면용 결정론적 데모 데이터
 - `wip_status.py`: 재공 DB 연결용 일자·공정·STEP·제품·보유재공·유입·Flow 계약,
-  STEP 코드 정렬, 제품별 표준 가능량 일 전개와 미연결 화면용 결정론적 재공 샘플
+  STEP 코드 정렬, 제품별 표준 가능량 일 전개와 미연결 화면용 결정론적 재공 샘플, 소요대수·표시순서에서만
+  나오는 화면 준비물(`prepare_wip_route_choices` — 표준 목표 규칙 적용 소요대수·경로·공정·제품 선택지)
 - `display_order_scopes.py`: 표시순서 규칙이 **어느 페이지·어느 탭**에 걸리는지를 한 곳에서
   선언한다. 호출부는 리터럴 대신 이 상수만 쓴다.
   - 전에는 구분자가 `apply_display_order(...)` 일곱 곳에 리터럴로 흩어져 있었고, 화면

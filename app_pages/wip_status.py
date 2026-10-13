@@ -44,25 +44,19 @@ from capa_simulation.scenario_state import (
     ensure_active_scenario,
     scenario_month_table,
 )
-from capa_simulation.services.display_order import apply_display_order
-from capa_simulation.services.display_order_scopes import (
-    PAGE_STANDARD_TARGET,
-    TAB_TARGET_CAPACITY,
-)
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
 from capa_simulation.services.simulation_cache import (
+    ScenarioCacheKey,
+    display_order_digest,
     get_scenario_capacity_and_demand,
     get_weekly_standard_target_capacity,
     scenario_cache_key,
 )
-from capa_simulation.services.standard_target_capacity import (
-    prepare_standard_target_required_equipment,
-)
 from capa_simulation.services.wip_status import (
+    WipRouteChoices,
     build_wip_history_demo,
-    build_wip_route_scope,
     expand_weekly_product_standard_to_daily,
-    processes_in_step_order,
+    prepare_wip_route_choices,
 )
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
@@ -72,20 +66,37 @@ PROCESS_FILTER_KEY = "wip_status_process_filter"
 PRODUCT_FILTER_KEY = "wip_status_product_filter"
 DEFAULT_PROCESS_COUNT = 5
 DEFAULT_PRODUCT_COUNT = 4
+# 시나리오 소요대수에서만 나오는 준비물(경로·선택지) 한 벌과 그 키(세션 칸).
+ROUTE_CHOICES_MEMO_KEY = "wip_status_route_choices_memo"
 
 
-def _products_in_display_order(
-    routes: pd.DataFrame,
-    display_order: pd.DataFrame,
-) -> list[str]:
-    products = routes[["제품정보"]].drop_duplicates().reset_index(drop=True)
-    ordered = apply_display_order(
-        products,
-        display_order,
-        PAGE_STANDARD_TARGET,
-        TAB_TARGET_CAPACITY,
+def _route_choices(
+    scenario_key: ScenarioCacheKey,
+    scenario_tables: dict[str, pd.DataFrame],
+    reference_tables: dict[str, pd.DataFrame],
+) -> WipRouteChoices:
+    """표준 목표 규칙을 적용한 소요대수·경로 범위·공정·제품 선택지. 키는 시나리오 키
+    (reference_version·**content_token**·조회 월)와 공용 표시순서 내용 지문이다 — 표시순서는
+    reference_version 을 바꾸지 않고 바뀐다. 둘이 같으면 직전 회차의 묶음(사본)을 쓰고 소요대수도
+    다시 꺼내지 않는다. 가용대수는 여기 들지 않는다(남이 바꾸는 현행값이라 매 회차 읽는다)."""
+    display_order = reference_tables["RQ_DISPLAY_ORDER"]
+    key = (scenario_key, display_order_digest(display_order))
+    memo = st.session_state.get(ROUTE_CHOICES_MEMO_KEY)
+    if (
+        isinstance(memo, tuple)
+        and len(memo) == 2
+        and memo[0] == key
+        and isinstance(memo[1], WipRouteChoices)
+    ):
+        return memo[1].copy()
+    _, required_equipment = get_scenario_capacity_and_demand(
+        scenario_key,
+        _scenario_tables=scenario_tables,
+        _reference_tables=reference_tables,
     )
-    return ordered["제품정보"].astype(str).tolist()
+    choices = prepare_wip_route_choices(required_equipment, display_order)
+    st.session_state[ROUTE_CHOICES_MEMO_KEY] = (key, choices)
+    return choices.copy()
 
 
 render_page_header(
@@ -127,13 +138,13 @@ try:
     filtered_tables = {
         "RQ_RUN_DAY": scenario_month_table(active_scenario, "RQ_RUN_DAY", start_month, end_month)
     }
-    unit_capacity, required_equipment = get_scenario_capacity_and_demand(
+    choices = _route_choices(
         scenario_cache_key(reference_version, active_scenario, start_month, end_month),
-        _scenario_tables=active_scenario["tables"],
-        _reference_tables=reference_tables,
+        active_scenario["tables"],
+        reference_tables,
     )
-    required_equipment = prepare_standard_target_required_equipment(required_equipment)
-    route_scope = build_wip_route_scope(required_equipment)
+    required_equipment = choices.required_equipment
+    route_scope = choices.routes
     equipment_repository = get_equipment_repository(str(EQUIPMENT_DUCKDB_PATH.resolve()))
     availability = equipment_repository.load_standard_target_availability()
 except BOOTSTRAP_ERRORS as exc:
@@ -162,11 +173,8 @@ if availability.empty:
     )
     st.stop()
 
-process_options = processes_in_step_order(route_scope)
-product_options = _products_in_display_order(
-    route_scope,
-    reference_tables["RQ_DISPLAY_ORDER"],
-)
+process_options = list(choices.processes)
+product_options = list(choices.products)
 prune_list_selection(
     PROCESS_FILTER_KEY, process_options, default=process_options[:DEFAULT_PROCESS_COUNT]
 )
