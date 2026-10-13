@@ -38,6 +38,11 @@ from capa_simulation.services.required_shortening import (
     process_month_export_frame,
     unit_export_frame,
 )
+from capa_simulation.services.securement_cross_check import (
+    CrossCheck,
+    build_securement_cross_check,
+    dynamic_available_equipment,
+)
 
 
 def _csv(frame: pd.DataFrame) -> bytes:
@@ -393,3 +398,88 @@ def test_shortening_shares_the_span_cache_and_matches_a_fresh_plan(
     _, shared = _cached_spans(equipment, downtime, start, end)
     assert built == [end]
     assert_frame_equal(shared, _fresh_spans(equipment, downtime, start, end))
+
+
+# ------------------------------------------------------------------ 확보율 교차검증(EQ-6)
+
+
+def _same_check(cached: CrossCheck, fresh: CrossCheck) -> None:
+    assert_frame_equal(cached.rows, fresh.rows)
+    assert cached.months == fresh.months
+    assert cached.fallback_processes == fresh.fallback_processes
+    assert cached.dynamic_only_processes == fresh.dynamic_only_processes
+    assert cached.compared_processes == fresh.compared_processes
+
+
+@pytest.mark.parametrize("change", ["cutoff", "months", "static", "required", "spans"])
+def test_cached_cross_check_follows_every_input(
+    change: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """교차검증 캐시는 월별(Cut-off·달·구간)·Static·소요대수(시나리오 키) 어느 것이 바뀌어도 다시
+    맞댄다. 소요대수는 해시하지 않으므로 시나리오 키가 갈려야 한다 — 페이지는 그 키로 소요대수를
+    받는다(`get_scenario_capacity_and_demand`)."""
+    _clear_equipment_caches()
+    simulation_cache.get_securement_cross_check.clear()
+    equipment, downtime, baseline, cutoff = _fleet()
+    start, end = _span_range(cutoff, MONTHS)
+    spans = _fresh_spans(equipment, downtime, start, end)
+    processes = sorted(set(equipment["공정소분류"].astype(str)))
+    static = _static(processes, MONTHS)
+    required = _required(processes, MONTHS)
+    ratios = _ratios(equipment)
+    months: Sequence[int] = MONTHS
+    scenario_key: simulation_cache.ScenarioCacheKey = (1, "cross-a", MONTHS[0], MONTHS[-1])
+
+    def checked(
+        spans: pd.DataFrame,
+        cutoff: pd.DataFrame,
+        static: pd.DataFrame,
+        months: Sequence[int],
+        required: pd.DataFrame,
+        scenario_key: simulation_cache.ScenarioCacheKey,
+    ) -> tuple[simulation_cache.SecurementCrossCheckCacheKey, CrossCheck, CrossCheck]:
+        comparison_key, monthly, _ = _comparison(spans, baseline, cutoff, static, months, ratios)
+        key = (comparison_key, scenario_key)
+        cached = simulation_cache.get_securement_cross_check(
+            key, _monthly=monthly, _static=static, _required_equipment=required
+        )
+        fresh_monthly = build_monthly_equipment_availability(
+            spans, baseline, cutoff, months, conversion_ratios=ratios
+        )
+        fresh = build_securement_cross_check(
+            static, dynamic_available_equipment(fresh_monthly), required
+        )
+        return key, cached, fresh
+
+    base_key, base, _ = checked(spans, cutoff, static, months, required, scenario_key)
+
+    if change == "cutoff":
+        cutoff = cutoff.copy()
+        cutoff.loc[cutoff["공정"].eq("Die Attach"), "Cutoff일수"] = 20.0
+    elif change == "months":
+        months = MONTHS[:2]
+    elif change == "static":
+        static = _static(processes, MONTHS, count=4.0)
+    elif change == "required":
+        required = required.assign(소요대수=9.0)
+        scenario_key = (1, "cross-b", MONTHS[0], MONTHS[-1])
+    else:
+        spans = _fresh_spans(_later_qual(equipment), downtime, start, end)
+    built: list[object] = []
+
+    def counting(*args: object, **kwargs: object) -> CrossCheck:
+        built.append(args)
+        return build_securement_cross_check(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(simulation_cache, "build_securement_cross_check", counting)
+    key, cached, fresh = checked(spans, cutoff, static, months, required, scenario_key)
+
+    assert key != base_key
+    assert len(built) == 1
+    _same_check(cached, fresh)
+    assert not fresh.rows.equals(base.rows)
+
+    # 같은 키로 다시 부르면 맞대지 않는다 — 그 보기를 열어 둔 rerun 이 이 경로다.
+    _, again, _ = checked(spans, cutoff, static, months, required, scenario_key)
+    assert len(built) == 1
+    _same_check(again, fresh)

@@ -185,7 +185,10 @@ DYNAMIC_CAPA_SUBPAGES = (
             ),
         ),
         has_condition_cards=True,
-        # 스냅샷·도면·컷오프를 따로 읽어 rerun 마다 설비 DB 를 서너 번 연다.
+        # 바뀐 것이 없는 회차는 최신 리비전 id·Cut-off 를 캐시(키 = DB·WAL stat)에서 받아 설비 DB 를
+        # 읽지 않는다. 캐시가 빈 회차(첫 진입·저장 직후·DB 파일이 바뀐 뒤)는 최신 id·Cut-off·스냅샷·
+        # 리비전 목록·도면·조회 조건 프로필·기준선을 따로 읽어 한 회차에 여러 번 연다 — 그 회차를
+        # 위한 핀이다.
         uses_equipment_db=True,
     ),
     # 설비 DB 와 자기 기준일만 본다. 기준일·필터는 자기 조건 카드(`Space 조건`)다.

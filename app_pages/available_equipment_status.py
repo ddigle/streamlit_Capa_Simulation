@@ -48,6 +48,7 @@ from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
     load_floor_layout_canvases,
     load_latest_equipment_snapshot,
+    load_process_cutoff,
 )
 from capa_simulation.services.equipment_contract import (
     EQUIPMENT_ID_COLUMN,
@@ -60,6 +61,7 @@ from capa_simulation.services.equipment_samples import (
 from capa_simulation.services.floor_layout_profile import max_canvas_extent
 from capa_simulation.services.monthly_equipment_availability import processes_in, span_date_range
 from capa_simulation.services.simulation_cache import (
+    ScenarioCacheKey,
     equipment_span_cache_key,
     get_equipment_lifecycle_spans,
     get_scenario_capacity_and_demand,
@@ -194,7 +196,7 @@ if latest_snapshot is None and not tab_is_hidden(main_tab):
             st.button(
                 "설비 데이터 입력", icon=":material/add:", type="primary", on_click=_open_input
             )
-        cutoff = repository.load_process_cutoff()
+        cutoff = load_process_cutoff(equipment_database_path)
         # 이 안내는 저장본이 없을 때만 선다 — 저장된 호기·비가동은 0건이다.
         _render_first_data_checklist((0, 0, len(cutoff)))
 show_sample_fleet = bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
@@ -274,22 +276,26 @@ with gap_tab:
         # 탭을 막지 않는다 — 페이지가 통째로 죽으면 Cut-off 를 적으러 들어올 수도 없다.
         static_availability: pd.DataFrame | None = None
         gap_required_equipment: pd.DataFrame | None = None
+        # 소요대수를 낸 시나리오 키. 확보율 교차검증 캐시 키에 실린다(소요대수를 받은 회차에만).
+        gap_required_key: ScenarioCacheKey | None = None
         static_error: str | None = None
         try:
             gap_context = load_page_context()
             static_availability = gap_context.reference_tables["RQ_EQP_AVBL"]
             # 소요대수는 확보율을 맞대려고 받는다. 다섯 페이지가 같은 키로 한 번만 계산하므로
             # 여기서 다시 계산되지 않는다.
+            gap_scenario_key = scenario_cache_key(
+                gap_context.reference_version,
+                gap_context.active_scenario,
+                gap_context.selected_start_month,
+                gap_context.selected_end_month,
+            )
             _, gap_required_equipment = get_scenario_capacity_and_demand(
-                scenario_cache_key(
-                    gap_context.reference_version,
-                    gap_context.active_scenario,
-                    gap_context.selected_start_month,
-                    gap_context.selected_end_month,
-                ),
+                gap_scenario_key,
                 _scenario_tables=gap_context.active_scenario["tables"],
                 _reference_tables=gap_context.reference_tables,
             )
+            gap_required_key = gap_scenario_key
         except BOOTSTRAP_ERRORS as exc:
             static_error = bootstrap_error_message(
                 exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
@@ -339,6 +345,7 @@ with gap_tab:
                 span_bounds=(span_start, span_end),
                 conversion_ratios=gap_ratios,
                 required_equipment=gap_required_equipment,
+                required_equipment_key=gap_required_key,
                 owner_tab=gap_tab,
                 conditions=conditions_card,
                 # 분류별 내역의 `호기 필터` 가 이 표의 컬럼으로 호기를 좁힌다. 구간과 같은 표다.

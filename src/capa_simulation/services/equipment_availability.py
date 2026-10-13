@@ -433,7 +433,11 @@ def build_inactive_equipment(
     as_of: date,
 ) -> pd.DataFrame:
     """Return owned unit-level equipment that is not currently available."""
-    status = build_equipment_status_as_of(equipment, downtime, as_of=as_of)
+    return inactive_equipment_rows(build_equipment_status_as_of(equipment, downtime, as_of=as_of))
+
+
+def inactive_equipment_rows(status: pd.DataFrame) -> pd.DataFrame:
+    """시점 표에서 비가동 호기(보유 & ~가용)만. 시점 보기와 「그 달 전체」가 같은 술어를 쓴다."""
     if status.empty:
         return status
     return status.loc[status["보유여부"] & ~status["가용여부"]].reset_index(drop=True)
@@ -469,11 +473,24 @@ def inactive_equipment_moments(
     설비 마스터가 비면 월초와 일요일만 남는다. 그 시점들로 재도 결과는 빈 표라 화면이
     답을 못 내는 일은 없다.
     """
+    prepared = prepare_equipment_master(equipment)
+    prepared_downtime = (
+        None if prepared.empty else prepare_downtime_for_prepared_equipment(downtime, prepared)
+    )
+    return _inactive_moments_from_prepared(prepared, prepared_downtime, month=month)
+
+
+def _inactive_moments_from_prepared(
+    prepared: pd.DataFrame,
+    prepared_downtime: pd.DataFrame | None,
+    *,
+    month: date,
+) -> list[date]:
+    """`inactive_equipment_moments` 의 본문. 검증을 마친 두 표를 받는다(마스터가 비면 비가동은
+    보지 않는다 — `None` 이어도 된다)."""
     month_start, month_end = _month_bounds(month)
     moments = {month_start}
-    prepared = prepare_equipment_master(equipment)
-    if not prepared.empty:
-        prepared_downtime = prepare_downtime_for_prepared_equipment(downtime, prepared)
+    if not prepared.empty and prepared_downtime is not None:
         moments.update(
             breakpoint.date()
             for breakpoint in _lifecycle_breakpoints(
@@ -512,15 +529,58 @@ def build_inactive_equipment_in_month(
 
     결과는 시점 표와 같은 컬럼의 `설비명` 바로 뒤에 `비가동 시작`·`비가동 종료`를 붙인 것이다.
     이 둘은 구간의 실제 시작·끝이 아니라 **그 호기가 비가동으로 잡힌 시점의 최소·최대**다.
+
+    마스터·비가동 검증(`prepare_*`)은 **한 번만** 하고 시점마다 판정만 다시 한다 — 시점마다
+    `build_inactive_equipment` 를 부르면 같은 검증을 시점 수(한 달 30여 개)만큼 되풀이한다.
+    판정 함수는 받은 표를 고치지 않으므로(`prepared.copy()` 로 시작) 결과가 같다.
     """
+    prepared = prepare_equipment_master(equipment)
+    prepared_downtime = prepare_downtime_for_prepared_equipment(downtime, prepared)
     if moments is None:
-        moments = inactive_equipment_moments(equipment, downtime, month=month)
+        moments = _inactive_moments_from_prepared(prepared, prepared_downtime, month=month)
+    return _inactive_in_month_from_prepared(
+        prepared, prepared_downtime, month=month, moments=moments
+    )
+
+
+def build_inactive_equipment_month_view(
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    *,
+    month: date,
+) -> tuple[list[date], pd.DataFrame]:
+    """Main 「비가동 호기 › 그 달 전체」 한 벌 — (잰 시점, 그 달 비가동 호기).
+
+    `inactive_equipment_moments` 와 `build_inactive_equipment_in_month(moments=)` 를 차례로 부른
+    것과 같다. 검증을 한 번만 하고 두 결과가 같은 시점 집합을 쓴다(캡션의 시점 개수와 실제로 잰
+    시점이 어긋나지 않게). 결과는 그 달(년·월)과 두 표로만 정해진다 — 같은 달의 다른 날을 넘겨도
+    같다.
+    """
+    prepared = prepare_equipment_master(equipment)
+    prepared_downtime = prepare_downtime_for_prepared_equipment(downtime, prepared)
+    moments = _inactive_moments_from_prepared(prepared, prepared_downtime, month=month)
+    inactive = _inactive_in_month_from_prepared(
+        prepared, prepared_downtime, month=month, moments=moments
+    )
+    return moments, inactive
+
+
+def _inactive_in_month_from_prepared(
+    prepared: pd.DataFrame,
+    prepared_downtime: pd.DataFrame,
+    *,
+    month: date,
+    moments: Sequence[date],
+) -> pd.DataFrame:
+    """`build_inactive_equipment_in_month` 의 본문. 검증을 마친 두 표를 받는다."""
     sampled = sorted(set(moments)) or [_month_bounds(month)[0]]
     stacked = pd.concat(
         [
-            build_inactive_equipment(equipment, downtime, as_of=moment).assign(
-                **{_MOMENT_COLUMN: moment}
-            )
+            inactive_equipment_rows(
+                _build_equipment_status_from_prepared(
+                    prepared, prepared_downtime, as_of=pd.Timestamp(moment)
+                )
+            ).assign(**{_MOMENT_COLUMN: moment})
             for moment in sampled
         ],
         ignore_index=True,

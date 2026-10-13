@@ -27,8 +27,12 @@ from capa_simulation.services.display_order import (
 )
 from capa_simulation.services.equipment_availability import (
     build_equipment_lifecycle_spans,
+    build_equipment_status_as_of,
+    build_inactive_equipment_month_view,
+    build_milestone_transition_events,
     build_space_equipment_status,
     build_weekly_equipment_availability,
+    inactive_equipment_rows,
 )
 from capa_simulation.services.load_calculator import (
     DemandBasis,
@@ -60,6 +64,11 @@ from capa_simulation.services.required_shortening import (
     unit_export_frame,
 )
 from capa_simulation.services.route_step_editor import route_step_tables
+from capa_simulation.services.securement_cross_check import (
+    CrossCheck,
+    build_securement_cross_check,
+    dynamic_available_equipment,
+)
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.shortening_baseline import ShorteningBaseline
 from capa_simulation.services.shortening_progress import compare_progress, progress_export_frame
@@ -1754,3 +1763,173 @@ def get_monthly_equipment_contributions(
     return build_monthly_equipment_contributions(
         _spans, _baseline, _cutoff, months, conversion_ratios=_conversion_ratios
     )
+
+
+# Main(호기 현황·비가동 호기·Qual 일정)의 판정. 페이지에 fragment 가 없어 같은 보기를 열어 둔 채
+# 다른 위젯·사이드바를 만져도 판정을 처음부터 다시 했다. 키는 **거른 뒤의** 마스터·비가동 내용
+# 지문과 그 판정의 날짜 인자다 — 공정·추가 조건 필터와 저장본·샘플 전환이 지문을 바꾼다. 거르기 전
+# 표나 리비전 id 로 키를 잡으면 필터를 바꿔도 옛 표가 남는다. 판정 함수들은 오늘 날짜·설정·세션을
+# 읽지 않는다. 공정 표시명·오늘 선은 캐시 밖에서 입힌다. 검증에 실패한 표의 `ValueError` 는 캐시에
+# 남지 않는다.
+
+# (거른 마스터 내용 지문, 거른 비가동 내용 지문, 날짜 인자 isoformat)
+EquipmentJudgementCacheKey = tuple[str, str, str]
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_inactive_equipment_month(
+    cache_key: EquipmentJudgementCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+) -> tuple[tuple[date, ...], pd.DataFrame]:
+    _, _, month = cache_key
+    moments, inactive = build_inactive_equipment_month_view(
+        _equipment, _downtime, month=date.fromisoformat(month)
+    )
+    return tuple(moments), inactive
+
+
+def get_inactive_equipment_month(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, *, month: date
+) -> tuple[list[date], pd.DataFrame]:
+    """Main 「비가동 호기 › 그 달 전체」 — (잰 시점, 그 달 비가동 호기).
+
+    `build_inactive_equipment_month_view` 의 캐시다.
+
+    시점(한 달 30여 개)마다 판정을 다시 하는 보기라 사내 규모(호기 1,566·비가동 300, 합성 사본)에서
+    회차마다 2초 남짓 들었다. 결과는 **그 달(년·월)**과 두 표로만 정해지므로 키의 날짜는 그 달
+    1일이다 — 같은 달 안에서 기준일만 옮기면 다시 계산하지 않고, 달이 바뀌면 새로 잰다.
+    """
+    cache_key = (
+        frame_digest(equipment),
+        frame_digest(downtime),
+        date(month.year, month.month, 1).isoformat(),
+    )
+    moments, inactive = _cached_inactive_equipment_month(cache_key, equipment, downtime)
+    return list(moments), inactive
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_lifecycle_gantt_spans(
+    cache_key: EquipmentSpanCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+) -> pd.DataFrame:
+    _, _, start, end = cache_key
+    return build_equipment_lifecycle_spans(
+        _equipment,
+        _downtime,
+        start_date=date.fromisoformat(start),
+        end_date=date.fromisoformat(end),
+    )
+
+
+def get_lifecycle_gantt_spans(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, *, start_date: date, end_date: date
+) -> pd.DataFrame:
+    """Main 「호기 현황 › 생애주기 일정」 의 구간(`build_equipment_lifecycle_spans`, 지분 없이).
+
+    그림은 40대만 그리지만 「나머지 N행」 을 세려면 거른 호기 전체의 구간이 든다 — 사내 규모 합성
+    사본에서 회차마다 1초 남짓이었다. 키는 `equipment_span_cache_key` 와 같은 꼴(거른 두 표의 내용
+    지문 + 범위)이지만 **세는 구간(`get_equipment_lifecycle_spans`, 지분·집계분류가 바뀌는 날에도
+    끊는다)과는 다른 캐시**다 — 끊는 자리가 달라 서로 대신할 수 없다.
+    """
+    cache_key = equipment_span_cache_key(
+        equipment=equipment, downtime=downtime, start_date=start_date, end_date=end_date
+    )
+    return _cached_lifecycle_gantt_spans(cache_key, equipment, downtime)
+
+
+# (Static/Dynamic 비교 키, 소요대수를 낸 시나리오 키)
+SecurementCrossCheckCacheKey = tuple[AvailabilityComparisonCacheKey, ScenarioCacheKey]
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_securement_cross_check(
+    cache_key: SecurementCrossCheckCacheKey,
+    _monthly: pd.DataFrame,
+    _static: pd.DataFrame,
+    _required_equipment: pd.DataFrame,
+) -> CrossCheck:
+    """Static/Dynamic 「확보율 교차검증」(`build_securement_cross_check`).
+
+    그 보기를 열어 둔 rerun(공정 바꾸기·다른 위젯·사이드바)마다 다시 맞대고 있었다. 입력 셋은 키가
+    모두 정한다 — 월별 Dynamic 은 비교 키 안의 월별 키(구간·기존보유·Cut-off·달·환산비 지문),
+    Static 은 비교 키 안의 Static 지문, 소요대수는 시나리오 키(reference_version·content_token·
+    조회기간)다. 프레임은 해시하지 않는다: `_monthly`·`_static` 은 그 비교 키로 받은 월별·Static,
+    `_required_equipment` 는 그 시나리오 키로 받은(`get_scenario_capacity_and_demand`) 소요대수여야
+    한다. 공정 선택·표시명·반올림은 캐시 밖이다. 맞대지 못하면(`KeyError`·`ValueError`) 캐시에 남지
+    않고 그대로 올라간다.
+    """
+    del cache_key
+    return build_securement_cross_check(
+        _static, dynamic_available_equipment(_monthly), _required_equipment
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_equipment_status_as_of(
+    cache_key: EquipmentJudgementCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+) -> pd.DataFrame:
+    _, _, as_of = cache_key
+    return build_equipment_status_as_of(_equipment, _downtime, as_of=date.fromisoformat(as_of))
+
+
+def get_equipment_status_as_of(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, *, as_of: date
+) -> pd.DataFrame:
+    """Main 「호기 현황(상태 분포·호기 목록)」「Qual 일정」 의 기준일 상태.
+
+    `build_equipment_status_as_of` 의 캐시다. 키는 거른 두 표의 내용 지문 + 기준일이다 — 기준일을
+    옮기면(기본값이 오늘이라 날짜가 바뀌어도) 새로 판정한다. Qual 의 고정 지분·거르기와 표시명은
+    캐시 밖이다.
+    """
+    cache_key = (frame_digest(equipment), frame_digest(downtime), as_of.isoformat())
+    return _cached_equipment_status_as_of(cache_key, equipment, downtime)
+
+
+def get_inactive_equipment(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, *, as_of: date
+) -> pd.DataFrame:
+    """Main 「비가동 호기 › 기준일 시점」(`build_inactive_equipment` 와 같다).
+
+    같은 기준일 상태 캐시(`get_equipment_status_as_of`)에서 비가동 술어(보유 & ~가용)만 건다 —
+    `build_inactive_equipment` 가 바로 그 둘의 합이다.
+    """
+    return inactive_equipment_rows(get_equipment_status_as_of(equipment, downtime, as_of=as_of))
+
+
+# (거른 마스터 내용 지문, 시작, 끝, 기준일)
+TransitionEventsCacheKey = tuple[str, str, str, str]
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_milestone_transition_events(
+    cache_key: TransitionEventsCacheKey, _equipment: pd.DataFrame
+) -> pd.DataFrame:
+    _, start, end, as_of = cache_key
+    return build_milestone_transition_events(
+        _equipment,
+        start_date=date.fromisoformat(start),
+        end_date=date.fromisoformat(end),
+        as_of=date.fromisoformat(as_of),
+    )
+
+
+def get_milestone_transition_events(
+    equipment: pd.DataFrame, *, start_date: date, end_date: date, as_of: date
+) -> pd.DataFrame:
+    """Main 「단계 전환」 의 전환 일정(`build_milestone_transition_events`).
+
+    비가동을 보지 않는 판정이라 키는 거른 마스터 지문 + 기간 + 기준일(완료·예정을 가른다)이다.
+    전환단계·일정상태·확정상태 거르기와 집계·표시명은 캐시 밖이다.
+    """
+    cache_key = (
+        frame_digest(equipment),
+        start_date.isoformat(),
+        end_date.isoformat(),
+        as_of.isoformat(),
+    )
+    return _cached_milestone_transition_events(cache_key, equipment)

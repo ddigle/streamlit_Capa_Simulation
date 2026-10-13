@@ -2029,7 +2029,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   월 단위 비가동은 `inactive_equipment_moments`(월초 ∪ 판정이 달라질 수 있는 날 ∪ 일요일)로
   시점을 내고 `build_inactive_equipment_in_month` 이 시점마다 시점 표와 **같은 술어**를 다시
   물어 호기로 union 한다. 생애주기 구간의 시작일도 상태 이름 목록도 쓰지 않는다 — 둘 다
-  이름으로 묶은 것이라 이름이 그대로인 채 판정만 바뀌는 날을 잃는다.
+  이름으로 묶은 것이라 이름이 그대로인 채 판정만 바뀌는 날을 잃는다. 마스터·비가동 검증
+  (`prepare_*`)은 한 번만 하고 시점마다 `_build_equipment_status_from_prepared` 만 다시 부른다(판정
+  함수는 받은 표를 고치지 않는다). 화면은 시점과 결과를 한 번에 내는 `build_inactive_equipment_month_view`
+  를 캐시 너머로 부른다.
 - `equipment_csv.py`: 기존 보유대수·설비 마스터·비가동 일정 **세 표 모두**의 CSV 양식
   생성, Excel 붙여넣기 표 검증·자연키 기준 병합. 설비 마스터 양식은 두 양식이 공유하는
   설비명으로 2행에 전체 입력 예시를 채우고, 3행부터는 설비명을 비운 채 투자구분·확정상태의
@@ -3729,12 +3732,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/equipment_explorer.py`
   - Main의 질문·표현·공정·날짜 선택과 결과 하나를 렌더링한다. 주차 집계·기준일 상태·
     비가동 목록·생애주기 구간은 기존 서비스를 호출하고 산식을 화면에 복제하지 않는다.
+  - 판정·구간은 `simulation_cache` 의 내용 지문 키 래퍼로 받는다 — 키는 **거른 뒤의** 마스터·비가동
+    `frame_digest` 와 그 판정의 날짜 인자다(필터·저장본·샘플 전환이 지문을 바꾼다). 기준일 상태(호기
+    현황·Qual)는 `get_equipment_status_as_of`, 기준일 비가동은 같은 상태 캐시에 술어만 거는
+    `get_inactive_equipment`, 단계 전환은 `get_milestone_transition_events`(마스터 지문 + 기간 + 기준일),
+    생애주기 일정은 `get_lifecycle_gantt_spans`(지분 없이 끊는 구간 — 세는 구간 캐시
+    `get_equipment_lifecycle_spans` 와 따로다). 공정 표시명·오늘 선·거르기·집계는 캐시 결과의 복사본
+    위에서 한다.
   - `가용대수` 결과 아래에 일정 미정 줄과 사용기준 제외 줄(`usage_basis`)을 둔다 — 같은 범위(Main 조건으로
     거른 호기)다. 사용기준 제외 줄은 `가용대수` 에만 선다. 호기 현황은 이름을 보이는 자리라 HBM·EDP 가
     아닌 호기도 그대로 센다.
   - `비가동 호기`는 `기준일 시점`·`그 달 전체` 두 `보기`를 갖고 기본은 기준일 시점이다.
-    달 전체도 계산은 서비스가 하고 화면은 몇 개 시점을 쟀는지만 캡션에 적는다 — 그 수를
-    적으려고 시점 목록을 먼저 받아 같은 값을 서비스에 그대로 넘긴다.
+    달 전체도 계산은 서비스가 하고 화면은 몇 개 시점을 쟀는지만 캡션에 적는다 — 시점과 결과를
+    한 벌로 `simulation_cache.get_inactive_equipment_month`(키 = 거른 마스터·비가동 내용 지문 + 그 달
+    1일)에서 받아 캡션의 시점 수와 실제로 잰 시점이 같다.
   - **공정 표시명은 보이는 글자에만**(`process_labels=`, 2026-10-10 사용자 결정) — `공정소분류` 선택지
     (`unique_format_func`, 차례는 보이는 글자순), 걸린 조건 줄(상자와 같은 글자), 조회 표의 `공정소분류` 칸(공정별 내역·비가동
     호기 두 보기·호기 목록·Qual 호기 목록·전환 일정 목록 — `_table` 과 `ProcessLabels.frame`), 생애주기
@@ -3758,7 +3769,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     버퍼·토큰을 세우고, 바깥에서 버퍼를 바꿀 때는 `replace_equipment_buffer` 만 쓴다 — 버퍼만
     갈면 편집표가 옛 `{key}_applied_view` 프레임을 그리다 다음 제출에 그 편집을 되돌린다.
     편집본이 바뀔 때마다 `BUFFER_GENERATION_KEY` 세대가 올라 Space 편집기 epoch 에 실린다.
-    Space 의 미저장 층 캔버스·도면 요소는 `stage_floor_canvas`·`stage_floor_marks` 로 쌓고,
+    일괄 삭제 확정·되살리기처럼 편집표 칸은 그대로이고 행만 바뀌는 쓰기도 `_store_changed_buffer` 로
+    세대를 올린다 — 안 올리면 「저장하지 않은 편집 없음」으로 보여 테마 단추·남의 저장이 그 삭제를
+    알림 없이 버린다. Space 의 미저장 층 캔버스·도면 요소는 `stage_floor_canvas`·`stage_floor_marks` 로 쌓고,
     **저장은 `save_equipment_buffer` 한 곳**이다(RawData 의 두 저장 단추도 이것을 탄다). 세 표와
     대기 중인 캔버스·요소를 한 트랜잭션에 쓰고 두 캐시·편집본을 비운 뒤 알림 문구를 돌려준다.
     `revision_optional` 이면 세 표가 최신 리비전과 같을 때 리비전 없이 캔버스·요소만 쓴다.
@@ -3852,7 +3865,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 월별 Dynamic·비교·호기별 기여는 `simulation_cache` 의 내용 지문 키 래퍼로 받는다
     (`get_availability_comparison`·`get_monthly_equipment_contributions`) — 조회 결과·공정·표시·분류를
     바꾸는 rerun 은 결과를 고르기만 한다. 호기 필터를 건 행렬(`_unit_filtered_matrix`)은 필터를 건
-    회차에만 돌아 캐시하지 않았다.
+    회차에만 돌아 캐시하지 않았다. 확보율 교차검증은 `get_securement_cross_check`(키 = 비교 키 +
+    소요대수를 낸 시나리오 키)다 — 페이지가 그 시나리오 키를 `required_equipment_key=` 로 넘기고,
+    주지 않으면(홀로 띄우는 테스트) 회차마다 새로 맞댄다.
   - 세 결과 모두 일정 미정 줄 아래에 사용기준 제외 줄을 같은 범위(공정·호기 필터)로 둔다. 호기가
     모두 HBM·EDP 가 아닌 공정은 Dynamic 이 기존보유뿐이거나 없어, 없으면 「기준정보에만 있는 공정」으로
     뜬다 — 그 까닭은 이 줄이 말한다(그 경고 문구는 고치지 않았다).
@@ -3929,6 +3944,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `past_data.display_month_range`(조회기간 ∩ 과거 구간 달까지 넓힌 계획 범위, 과거 구간은 HOME 의
     `Past Data 포함` 토글을 따른다)가 낸다 — 계획 범위만 보면 과거 구간이 있을 때 키가 갈린다. `Dynamic B/N 확보율 현재 /
     단축 후` 는 범위 공정 가운데 가용 ÷ 소요가 가장 낮은 값이고, 칩 색은 HOME 공용 판정 기준이다.
+    달마다 표를 거르지 않고 고른 달 전체에서 한 번에 고른다(`_bottlenecks` — 동점은 앞 행, NaN 이 있으면
+    첫 NaN 행, 소요 0 이하는 보지 않는다). 공정 차례는 `load_page_context` 가 준비해 둔
+    `context.display_order` 로 매긴다 — 날표를 넘기면 회차마다 규칙을 다시 준비한다.
   - 카드: 머리(이름·Cut-off·배지 「최대 부족 x대 · 단축 n대 · 신규 m대」/「목표 충족」), 월 표(가용·
     소요·확보율 칩·과부족, 「→ 단축 후」), 호기 줄(● 기존 Qual ◀ 목표 Qual, 사이 선, 달 격자·오늘 점선,
     가상 호기는 점선 원). 축은 고른 달의 달력 범위이고 밖의 날짜는 끝에 붙인다.
@@ -4228,7 +4246,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`load_shortening_filter_profile`, 키 = DB 경로)은 그 탭의 저장 콜백이 쓴 뒤
   `clear_shortening_filter_cache` 로 비운다(설비 리비전과 무관하다). 필요단축일정 기준선은 목록
   (`load_shortening_baselines`, 키 = DB 경로)과 한 벌(`load_shortening_baseline`, 키 = 기준선 id — 고칠 수
-  없어 id 가 내용을 정한다)이고 저장·지우기 콜백이 `clear_shortening_baseline_cache` 로 둘 다 비운다
+  없어 id 가 내용을 정한다)이고 저장·지우기 콜백이 `clear_shortening_baseline_cache` 로 둘 다 비운다.
+  「지금 무엇이 저장돼 있나」 읽기 둘 — 최신 리비전 id(`latest_equipment_revision_id`,
+  `load_latest_equipment_snapshot` 이 쓴다)와 공정별 Cut-off(`load_process_cutoff`) — 는 키가 (DB 경로,
+  DB·WAL 의 inode·mtime_ns·크기, 이 프로세스의 쓰기 세대)이고 TTL 15초다. **1차 장치는 비우기다** —
+  리비전 쓰기는 모두 `save_equipment_buffer` 뒤의 `clear_equipment_snapshot_cache`, Cut-off 저장은
+  `cutoff_management` 의 `clear_process_cutoff_cache` 가 비우고 쓰기 세대를 올린다. 세대가 키에 있어
+  저장 직전에 시작된 다른 세션의 읽기가 비운 뒤에 옛 값을 심어도 비운 뒤의 읽기에 닿지 않는다(`.clear()`
+  만으로는 진행 중인 캐시 미스를 막지 못한다). stat 은 이 프로세스 밖의 쓰기를(연결을 열어 둔 쓰기는 WAL
+  만 늘린다), TTL 은 stat 이 못 잡은 경우의 한도를 맡는다(같은 DB 를 두 앱 프로세스가 함께 여는 배치에서는
+  남의 저장을 TTL 만큼 늦게 볼 수 있다). 리비전·Cut-off 를 쓰는 새 길을 더하면 같은 비우기를 부른다
 - `persistence/equipment_repository.py`: 설비 운영 입력의 불변 전체 스냅샷 저장소
   - **필요단축일정 공용 조회 조건**(`0019`)은 리비전 없는 현행값이다 — `save_shortening_filter_months`
     (기간만)·`save_shortening_filter_processes`(공정만, 화면이 보여 주지 않은 저장 공정은 남긴다)가

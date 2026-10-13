@@ -27,6 +27,10 @@ from capa_simulation.components.table_view_controls import (
     merge_edited_rows,
     render_table_view_controls,
 )
+from capa_simulation.persistence.equipment_cache import (
+    clear_process_cutoff_cache,
+    load_process_cutoff,
+)
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.process_cutoff import (
     PROCESS_CUTOFF_EDIT_COLUMNS,
@@ -63,7 +67,8 @@ def render_cutoff_management(
     저장값이라(필터가 없으면 `merge_edited_rows` 가 편집표를 통째로 돌려준다) 보조 칸을 저장 전에
     매번 걸러야 하고, `볼 컬럼` 에도 끼어든다.
     """
-    stored = repository.load_process_cutoff()
+    # 회차마다 DB 를 열지 않는다 — 저장이 성공하면 아래에서 비운다(`equipment_cache`).
+    stored = load_process_cutoff(str(repository.database_path))
 
     # Cut-off 의 뜻(표준 납기 일수, 소수는 내림)은 가용설비 현황 Guide 가 말한다.
     st.markdown("#### :material/schedule: 공정별 Cut-off")
@@ -153,6 +158,8 @@ def render_cutoff_management(
         except ValueError as exc:
             st.error(str(exc))
         else:
+            # 다음 회차가 저장된 값을 읽는다 — Static/Dynamic·필요단축일정이 이 값으로 센다.
+            clear_process_cutoff_cache()
             st.session_state[CUTOFF_DRAFT_KEY] = (
                 saved.loc[:, PROCESS_CUTOFF_EDIT_COLUMNS].copy()
                 if not saved.empty

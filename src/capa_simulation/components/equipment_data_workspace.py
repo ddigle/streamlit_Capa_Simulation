@@ -249,6 +249,17 @@ def _bump_buffer_generation() -> None:
     st.session_state[BUFFER_GENERATION_KEY] = equipment_buffer_generation() + 1
 
 
+def _store_changed_buffer(frames: Frames) -> None:
+    """내용이 바뀐 편집본을 넣고 세대를 올린다. 일괄 삭제 확정·되살리기가 이 길로만 쓴다.
+
+    세대가 「저장하지 않은 편집」의 유일한 근거다(`has_unsaved_equipment_edits`). 편집표 칸은
+    그대로이고 행만 빠진 제출에서 세대가 그대로면, 테마 단추가 묻지 않고 새로고침하고 다른 사람의
+    저장이 이 삭제를 알림 없이 버린다.
+    """
+    st.session_state[BUFFER_KEY] = frames
+    _bump_buffer_generation()
+
+
 def equipment_buffer_generation() -> int:
     """편집본 세대. 편집본이 바뀔 때마다(RawData 제출·Space 적용·새 리비전) 오른다."""
     value = st.session_state.get(BUFFER_GENERATION_KEY, 0)
@@ -1022,6 +1033,22 @@ class EditorResult:
     action: tuple[str, str] | None
 
 
+def _selection_flags(frame: pd.DataFrame, target: str, selection: frozenset[RowKey]) -> pd.Series:
+    """편집표 맨 앞 선택 칸의 값 — 행의 업무 키가 고른 키 안에 드는가.
+
+    **선택이 비면 키를 만들지 않는다.** 빈 선택에는 어떤 키도 들지 않으니 답은 모두 거짓이고,
+    키를 만들려면 행마다 값을 글자로 맞추며 비가동 `시작일` 은 날짜 형식을 추정해 읽는다(사내 규모
+    합성 사본 비가동 300건에서 40ms 남짓 — 샘플 관측, 행 수에 비례). RawData 는 어느 탭에서나
+    그려지므로 그 비용이 가용설비 현황의 모든 rerun 에 붙었다. dtype 은 못박는다 — 빈 표에서
+    목록으로 넣으면 float 칸이 되어 체크박스와 맞지 않는다.
+    """
+    if selection:
+        chosen = [row in selection for row in row_keys(frame, target)] or [False] * len(frame)
+    else:
+        chosen = [False] * len(frame)
+    return pd.Series(chosen, index=frame.index, dtype="bool")
+
+
 def _selectable_editor(
     original: pd.DataFrame,
     view: TableView,
@@ -1033,9 +1060,7 @@ def _selectable_editor(
 ) -> tuple[pd.DataFrame, frozenset[RowKey]]:
     """맨 앞에 선택 칸을 붙여 편집표를 그리고, 선택 칸을 뗀 편집 결과와 고른 키를 돌려준다."""
     display = view.frame.copy()
-    # dtype 을 못박는다. 빈 표에서 목록으로 넣으면 float 칸이 되어 체크박스와 맞지 않는다.
-    chosen = [row in selection for row in row_keys(view.frame, target)] or [False] * len(display)
-    display.insert(0, SELECT_COLUMN, pd.Series(chosen, index=display.index, dtype="bool"))
+    display.insert(0, SELECT_COLUMN, _selection_flags(display, target, selection))
     result = st.data_editor(
         display,
         key=editor_widget_key(key),
@@ -1182,7 +1207,7 @@ def _apply_bulk_actions(
     elif confirm and isinstance(pending, tuple):
         target, keys = pending
         plan = plan_deletion(frames, target, keys)
-        st.session_state[BUFFER_KEY] = apply_deletion(frames, plan)
+        _store_changed_buffer(apply_deletion(frames, plan))
         st.session_state[LAST_REMOVED_KEY] = plan.removed
         selection[target] = frozenset()
         st.session_state[_NOTICE_KEY] = _deletion_message(plan).replace("지웁니다", "지웠습니다", 1)
@@ -1190,7 +1215,7 @@ def _apply_bulk_actions(
         removed = st.session_state.pop(LAST_REMOVED_KEY, None)
         if isinstance(removed, tuple):
             restored, skipped = restore_rows(frames, removed)
-            st.session_state[BUFFER_KEY] = restored
+            _store_changed_buffer(restored)
             message = "방금 지운 행을 편집본에 되살렸습니다."
             if skipped:
                 message += f" 그 사이 같은 키가 다시 생긴 {skipped:,}행은 건너뛰었습니다."
