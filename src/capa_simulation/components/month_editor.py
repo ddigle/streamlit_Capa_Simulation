@@ -113,7 +113,7 @@ def render_month_editor(
     """
     open_now = not (tab_is_hidden(tab) or tab_is_hidden(outer_tab))
     pending = editor_has_edits(editor_key)
-    if not open_now and not pending:
+    if not editor_will_render(tab, editor_key, outer_tab):
         # 지난 회차의 알림 자리는 이번 화면에 없다. 남겨 두면 거기 쓴 오류가 사라진다.
         st.session_state.pop(_notice_key(editor_key), None)
         return pd.DataFrame(), False
@@ -220,6 +220,17 @@ def render_month_editor(
             rename_notice=_has_display_labels(dimensions, value_labels),
         )
     return merged, submitted
+
+
+def editor_will_render(tab: OpenTab, editor_key: str, outer_tab: OpenTab | None = None) -> bool:
+    """이 편집표를 이번 회차에 그리는가 — 탭(과 바깥 탭)이 보이거나, 적용하지 않은 편집이 남았다.
+
+    `render_month_editor` 의 조기 반환과, 페이지가 양식(`default_table`)을 만들지 정하는 자리가
+    **이 함수 하나**를 쓴다. 둘이 갈리면 그리는 회차에 양식이 빈 표라 편집이 행 위치로 다른 행에
+    붙거나 사라진다. 거짓인 회차에는 `render_month_editor` 가 양식을 읽지 않는다.
+    """
+    open_now = not (tab_is_hidden(tab) or tab_is_hidden(outer_tab))
+    return open_now or editor_has_edits(editor_key)
 
 
 def classification_styled(table: pd.DataFrame, dimensions: Sequence[str]) -> pd.DataFrame | Styler:

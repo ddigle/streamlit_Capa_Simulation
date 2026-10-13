@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
+    EQP_TAB,
     REAL_APPLY_TEST_SCRIPT,
     REF_TAB,
     TEST_SCRIPT,
@@ -29,7 +30,11 @@ from capa_simulation.services.capacity_reference_editor import (
     PERFORMANCE_EDITOR_DIMENSIONS,
     build_reference_edit_table,
 )
-from capa_simulation.services.display_order import prepare_display_order
+from capa_simulation.services.display_order import apply_display_order, prepare_display_order
+from capa_simulation.services.equipment_count import (
+    build_equipment_count_table,
+    equipment_count_to_edit_table,
+)
 from capa_simulation.services.month_filter import filter_month_range
 from capa_simulation.services.route_step_editor import route_step_tables
 
@@ -49,8 +54,11 @@ STEP_SUMMARY_COLUMNS = {
 _PROBE = """
 import capa_simulation.components.month_editor as _probe_month_editor
 import capa_simulation.scenario_state as _probe_state
+import capa_simulation.services.equipment_count as _probe_equipment
 
 st.session_state.setdefault("test_slice_log", []).append([])
+st.session_state["test_editor_templates"] = {}
+st.session_state["test_equipment_builds"] = []
 st.session_state["test_active_tables"] = {
     _name: _frame.copy()
     for _name, _frame in scenario_state.ensure_active_scenario(None, None)["tables"].items()
@@ -58,6 +66,18 @@ st.session_state["test_active_tables"] = {
 _probe_original_month_table = _probe_state.scenario_month_table
 _probe_original_route_tables = simulation_cache.get_route_step_tables
 _probe_original_render_month_editor = _probe_month_editor.render_month_editor
+_probe_original_count_table = _probe_equipment.build_equipment_count_table
+_probe_original_count_edit = _probe_equipment.equipment_count_to_edit_table
+
+
+def _probe_count_table(own, lent, available, *, detailed):
+    st.session_state["test_equipment_builds"].append(("현황", detailed))
+    return _probe_original_count_table(own, lent, available, detailed=detailed)
+
+
+def _probe_count_edit(data, category, value_column):
+    st.session_state["test_equipment_builds"].append(("양식", category))
+    return _probe_original_count_edit(data, category, value_column)
 
 
 def _probe_month_table(scenario, table_name, start, end):
@@ -73,8 +93,12 @@ def _probe_route_tables(cache_key, *, _upeh, _reqb):
     frames = st.session_state.setdefault("test_route_step_frames", {})
 
     def _recording(name, source):
+        if not callable(source):
+            frames.setdefault(cache_key, {})[name] = source.copy()
+            return source
+
         def load():
-            frame = source() if callable(source) else source
+            frame = source()
             frames.setdefault(cache_key, {})[name] = frame.copy()
             return frame
 
@@ -86,7 +110,7 @@ def _probe_route_tables(cache_key, *, _upeh, _reqb):
 
 
 def _probe_render_month_editor(tab, default_table, dimensions, editor_key, *args, **kwargs):
-    st.session_state.setdefault("test_editor_templates", {})[editor_key] = default_table.copy()
+    st.session_state["test_editor_templates"][editor_key] = default_table.copy()
     return _probe_original_render_month_editor(
         tab, default_table, dimensions, editor_key, *args, **kwargs
     )
@@ -95,11 +119,15 @@ def _probe_render_month_editor(tab, default_table, dimensions, editor_key, *args
 _probe_state.scenario_month_table = _probe_month_table
 simulation_cache.get_route_step_tables = _probe_route_tables
 _probe_month_editor.render_month_editor = _probe_render_month_editor
+_probe_equipment.build_equipment_count_table = _probe_count_table
+_probe_equipment.equipment_count_to_edit_table = _probe_count_edit
 """
 _PROBE_RESTORE = (
     "    _probe_state.scenario_month_table = _probe_original_month_table\n"
     "    simulation_cache.get_route_step_tables = _probe_original_route_tables\n"
     "    _probe_month_editor.render_month_editor = _probe_original_render_month_editor\n"
+    "    _probe_equipment.build_equipment_count_table = _probe_original_count_table\n"
+    "    _probe_equipment.equipment_count_to_edit_table = _probe_original_count_edit\n"
 )
 _TRY_ANCHOR = "\ntry:\n    # `file_name`"
 _FINALLY_ANCHOR = "    st.download_button = original_download_button\n"
@@ -425,3 +453,145 @@ def test_a_bad_month_shows_the_message_where_that_table_is_used() -> None:
     app = _open_tab(app, "UPEH")
     assert [error.value for error in app.error] == []
     assert "capa_upeh_editor_apply" in {button.key for button in app.button}
+
+
+# ---------------------------------------------------------------- R3 설비대수 블록
+
+EQUIPMENT_EDITORS = {
+    "보유": ("RQ_EQP_OWN", "설비보유", "capa_eqp_own_editor"),
+    "대여": ("RQ_EQP_LENT", "설비대여평가", "capa_eqp_lent_editor"),
+    "가용": ("RQ_EQP_AVBL", "가용대수", "capa_eqp_avbl_editor"),
+}
+
+
+def _builds(app: AppTest) -> list[tuple[str, object]]:
+    """이 회차에 만든 설비대수 표 — ("양식", 구분) 또는 ("현황", 상세)."""
+    return list(app.session_state["test_equipment_builds"])
+
+
+def _open_equipment(app: AppTest, sub_tab: str) -> AppTest:
+    app.session_state["reference_data_active_tab"] = REF_TAB["설비대수"]
+    app.session_state["equipment_count_active_tab"] = EQP_TAB[sub_tab]
+    app.run()
+    assert not app.exception
+    return app
+
+
+def _expected_overview(app: AppTest, *, detailed: bool) -> pd.DataFrame:
+    """현황 표를 이 회차 활성 시나리오 조각으로 **직접** 만든다(0 은 빈칸, 표시순서는 빈 프로필)."""
+    own, lent, available = (
+        _month_slice(app, table_name) for table_name, _, _ in EQUIPMENT_EDITORS.values()
+    )
+    table = apply_display_order(
+        build_equipment_count_table(own, lent, available, detailed=detailed),
+        prepare_display_order(_empty_display_order()),
+        scopes.PAGE_REFERENCE,
+        scopes.TAB_EQUIPMENT_COUNT,
+    )
+    months = [column for column in table.columns if column not in ("공정", "구분")]
+    table[months] = table[months].mask(table[months].eq(0))
+    return table.reset_index(drop=True)
+
+
+def test_the_equipment_block_builds_only_what_the_open_tabs_draw() -> None:
+    """설비대수 탭이 닫히면 아무것도 만들지 않고, 열리면 보이는 안쪽 탭 하나의 표만 만든다."""
+    app = AppTest.from_string(_probed(TEST_SCRIPT, "test-ref-perf-equipment"), default_timeout=60)
+    app.run()
+    assert not app.exception
+    assert _builds(app) == []
+    assert not {name for name in _sliced(app) if name.startswith("RQ_EQP")}
+
+    for sub_tab in ("보유", "대여", "가용"):
+        app = _open_equipment(app, sub_tab)
+        assert _builds(app) == [("양식", sub_tab)]
+        assert {name for name in _sliced(app) if name.startswith("RQ_EQP")} == {
+            EQUIPMENT_EDITORS[sub_tab][0]
+        }
+
+    app = _open_equipment(app, "현황")
+    assert _builds(app) == [("현황", False)]
+    app = app.sidebar.toggle(key="equipment_count_detail").set_value(True).run()
+    assert not app.exception
+    assert _builds(app) == [("현황", True)]
+
+
+@pytest.mark.parametrize("detailed", [False, True], ids=["summary", "detailed"])
+def test_the_equipment_overview_equals_the_direct_build(detailed: bool) -> None:
+    """현황 표는 「상세」 값에 맞는 한 벌만 만들어도 직접 만든 표와 값이 같다."""
+    app = AppTest.from_string(
+        _probed(TWO_PROCESS_TEST_SCRIPT, f"test-ref-perf-overview-{detailed}"), default_timeout=60
+    )
+    app.session_state["equipment_count_detail"] = detailed
+    app = _open_equipment(app, "현황")
+    displayed = _frame_with_column(app, "공정").reset_index(drop=True)
+    pd.testing.assert_frame_equal(
+        displayed, _expected_overview(app, detailed=detailed), check_dtype=False
+    )
+
+
+@pytest.mark.parametrize("sub_tab", list(EQUIPMENT_EDITORS))
+def test_each_equipment_form_equals_the_direct_build(sub_tab: str) -> None:
+    table_name, value_column, editor_key = EQUIPMENT_EDITORS[sub_tab]
+    app = AppTest.from_string(
+        _probed(TWO_PROCESS_TEST_SCRIPT, f"test-ref-perf-form-{table_name}"), default_timeout=60
+    )
+    app = _open_equipment(app, sub_tab)
+    expected = equipment_count_to_edit_table(_month_slice(app, table_name), sub_tab, value_column)
+    pd.testing.assert_frame_equal(app.session_state["test_editor_templates"][editor_key], expected)
+
+
+def test_a_pending_equipment_edit_keeps_its_form_and_lands_on_its_row() -> None:
+    """보유 칸을 고친 채 다른 탭으로 옮겨도 보유 양식을 만들고, 돌아와 적용하면 그 행에 든다."""
+    app = AppTest.from_string(
+        _probed(TWO_PROCESS_TEST_SCRIPT, "test-ref-perf-equipment-pending"), default_timeout=60
+    )
+    app = _open_equipment(app, "보유")
+    key = editor_widget_key_in(app, "capa_eqp_own_editor")
+    edit = {"edited_rows": {1: {"202608": 7.0}}, "added_rows": [], "deleted_rows": []}
+
+    app.session_state[key] = edit
+    app = _open_equipment(app, "대여")
+    assert sorted(_builds(app)) == [("양식", "대여"), ("양식", "보유")]
+
+    app.session_state[key] = edit
+    app = _open_tab(app, "UPEH")
+    assert _builds(app) == [("양식", "보유")]
+    assert "capa_eqp_own_editor_apply" in {button.key for button in app.button}
+
+    app.session_state[key] = edit
+    app = _open_equipment(app, "보유")
+    app.session_state[key] = edit
+    next(button for button in app.button if button.key == "capa_eqp_own_editor_apply").click()
+    app.run()
+
+    assert not app.exception
+    assert [error.value for error in app.error] == []
+    saved = app.session_state["test_month_updates"]["RQ_EQP_OWN"]
+    assert dict(zip(saved["공정"], saved["설비보유"], strict=True)) == {
+        "Process-A": 2.0,
+        "Process-B": 7.0,
+    }
+
+
+def test_an_equipment_apply_shows_in_the_overview() -> None:
+    """보유를 적용하면(새 토큰) 현황 상세가 그 값으로 다시 만들어진다."""
+    script = _real_apply(
+        TWO_PROCESS_TEST_SCRIPT, "test-capacity-two-process-page", "test-capacity-two-process-page"
+    )
+    app = AppTest.from_string(_probed(script, "test-ref-perf-equipment-apply"), default_timeout=60)
+    app.session_state["equipment_count_detail"] = True
+    app = _open_equipment(app, "현황")
+    before = _frame_with_column(app, "공정")
+    own_a = before.loc[(before["공정"] == "Process-A") & (before["구분"] == "보유"), "202608"]
+    assert own_a.tolist() == [2.0]
+
+    app = _open_equipment(app, "보유")
+    app = _edit_and_apply(app, "capa_eqp_own_editor", "202608", 7.0)
+    assert not app.exception
+    app = _open_equipment(app, "현황")
+    after = _frame_with_column(app, "공정")
+    own_a = after.loc[(after["공정"] == "Process-A") & (after["구분"] == "보유"), "202608"]
+    assert own_a.tolist() == [7.0]
+    pd.testing.assert_frame_equal(
+        after.reset_index(drop=True), _expected_overview(app, detailed=True), check_dtype=False
+    )

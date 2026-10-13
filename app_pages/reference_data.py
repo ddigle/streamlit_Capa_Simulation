@@ -22,6 +22,7 @@ from capa_simulation.components.editor_state import editor_has_edits
 from capa_simulation.components.month_editor import (
     classification_styled,
     editor_notice,
+    editor_will_render,
     render_month_editor,
 )
 from capa_simulation.components.page_guide import render_page_guide
@@ -167,11 +168,6 @@ process_labels = get_process_labels()
 ) = stateful_tabs(TAB_NAMES, key=TAB_KEY)
 
 
-def _editor_needed(tab: OpenTab, editor_key: str) -> bool:
-    """편집표를 그릴 회차인가 — 탭이 열렸거나, 닫혔어도 적용하지 않은 편집이 남았다."""
-    return not tab_is_hidden(tab) or editor_has_edits(editor_key)
-
-
 def _ratio_month_table(
     scenario: ActiveScenario, table_name: str, start_month: int, end_month: int
 ) -> pd.DataFrame:
@@ -265,7 +261,8 @@ try:
         value_column: str | None,
         scope_tab: str,
     ) -> pd.DataFrame:
-        if not _editor_needed(tab, editor_key):
+        # 그리지 않는 회차(닫힌 탭, 편집 없음)에는 편집기가 양식을 읽지 않는다.
+        if not editor_will_render(tab, editor_key):
             return pd.DataFrame()
         return get_reference_edit_table(
             edit_cache_key,
@@ -421,48 +418,35 @@ mark_pending_tabs(
     },
 )
 
+with equipment_tab:
+    # 세 RQ 를 한 탭에 세로로 쌓으면 편집표 하나가 500px 라 화면이 세 배로 길어진다.
+    # 다른 기준정보 탭과 **같은 편집기**를 쓰되 탭을 한 겹 더 둔다. `현황` 은 세 RQ 를
+    # 합친 조회 표라 편집 대상이 아니다 — 보유·대여를 합친 값에 숫자를 쓸 자리가 없다.
+    # 안쪽 탭을 설비대수 양식보다 먼저 만든다 — 양식은 안쪽 탭마다 그 편집표를 그리는지 보고 만든다.
+    (
+        equipment_own_tab,
+        equipment_lent_tab,
+        equipment_available_tab,
+        equipment_overview_tab,
+    ) = stateful_tabs(EQUIPMENT_TAB_NAMES, key=EQUIPMENT_TAB_KEY)
+
 # 설비대수 세 표는 편집 왕복과 조회 표가 같은 슬라이스를 본다. 창을 갈라 두면
-# `apply_month_updates` 가 화면에 없던 월을 지운다.
-equipment_month_tables = {
-    table_name: scenario_month_table(
-        active_scenario,
-        table_name,
-        effective_start_month,
-        effective_end_month,
-    )
-    for table_name in ("RQ_EQP_OWN", "RQ_EQP_LENT", "RQ_EQP_AVBL")
-}
-available_equipment_table = build_equipment_count_table(
-    equipment_month_tables["RQ_EQP_OWN"],
-    equipment_month_tables["RQ_EQP_LENT"],
-    equipment_month_tables["RQ_EQP_AVBL"],
-    detailed=False,
-)
-detailed_equipment_table = build_equipment_count_table(
-    equipment_month_tables["RQ_EQP_OWN"],
-    equipment_month_tables["RQ_EQP_LENT"],
-    equipment_month_tables["RQ_EQP_AVBL"],
-    detailed=True,
-)
-# 표시순서 스코프 문자열은 DB 공용 프로필의 행 키다. 페이지 이름이 바뀌어도 **이 두 인자는
-# 그대로 둔다** — 안 맞으면 예외가 아니라 정렬이 조용히 사라진다.
-available_equipment_table = apply_display_order(
-    available_equipment_table,
-    display_order,
-    PAGE_REFERENCE,
-    TAB_EQUIPMENT_COUNT,
-)
-detailed_equipment_table = apply_display_order(
-    detailed_equipment_table,
-    display_order,
-    PAGE_REFERENCE,
-    TAB_EQUIPMENT_COUNT,
-)
+# `apply_month_updates` 가 화면에 없던 월을 지운다. 양식은 **그 편집표를 그리는 회차에만**
+# 만든다(`editor_will_render` — `render_month_editor` 의 조기 반환과 같은 함수: 바깥·안쪽 탭이
+# 모두 보이거나 적용하지 않은 편집이 남았다). 그리지 않는 회차에는 편집기가 양식을 읽지 않고,
+# 붙여넣기·적용도 그 편집기를 그린 회차에만 일어난다. 전에는 설비대수 탭이 닫혀도 세 양식과
+# 현황 두 벌을 매번 만들었다.
 equipment_edit_tables = {
-    table_name: equipment_count_to_edit_table(
-        equipment_month_tables[table_name], category, value_column
+    table_name: (
+        equipment_count_to_edit_table(edit_slices.get_or_stop(table_name), category, value_column)
+        if editor_will_render(equipment_sub_tab, editor_key, equipment_tab)
+        else pd.DataFrame()
     )
-    for table_name, category, value_column, _ in EQUIPMENT_EDITORS
+    for equipment_sub_tab, (table_name, category, value_column, editor_key) in zip(
+        (equipment_own_tab, equipment_lent_tab, equipment_available_tab),
+        EQUIPMENT_EDITORS,
+        strict=True,
+    )
 }
 
 
@@ -703,33 +687,33 @@ if step_tables is not None:
     if not step_catalog.empty and st.session_state.get(DIALOG_KEY) == STEP_DIALOG:
         _step_dialog(step_catalog)
 
-with equipment_tab:
-    # 세 RQ 를 한 탭에 세로로 쌓으면 편집표 하나가 500px 라 화면이 세 배로 길어진다.
-    # 다른 기준정보 탭과 **같은 편집기**를 쓰되 탭을 한 겹 더 둔다. `현황` 은 세 RQ 를
-    # 합친 조회 표라 편집 대상이 아니다 — 보유·대여를 합친 값에 숫자를 쓸 자리가 없다.
-    (
-        equipment_own_tab,
-        equipment_lent_tab,
-        equipment_available_tab,
-        equipment_overview_tab,
-    ) = stateful_tabs(EQUIPMENT_TAB_NAMES, key=EQUIPMENT_TAB_KEY)
-
 # `현황` 은 보는 표다. 「상세」와 필터는 사이드바 `표 조건` 카드이고, 바깥·안쪽 탭이 **둘 다**
 # 열렸을 때만 선다 — 안쪽 탭은 바깥이 닫혀 있어도 자기 선택만 알기 때문이다. 선택은
-# `persist_state` 로 남는다.
+# `persist_state` 로 남는다. 표도 그 회차에만, 「상세」 값에 맞는 한 벌만 만든다.
 if not (tab_is_hidden(equipment_tab) or tab_is_hidden(equipment_overview_tab)):
+    # 조각은 카드 밖에서 자른다 — 자르다 난 오류 문구가 사이드바 카드가 아니라 본문에 선다.
+    own_count, lent_count, available_count = (
+        edit_slices.get_or_stop(table_name) for table_name, _, _, _ in EQUIPMENT_EDITORS
+    )
     with table_card(CARD_NAME):
         show_equipment_detail = st.toggle(
             "상세",
             key="equipment_count_detail",
             persist_state="session",
         )
-        if show_equipment_detail:
-            equipment_table = detailed_equipment_table.copy()
-            equipment_dimensions = DETAILED_EQUIPMENT_DIMENSIONS
-        else:
-            equipment_table = available_equipment_table.copy()
-            equipment_dimensions = EQUIPMENT_DIMENSIONS
+        equipment_dimensions = (
+            DETAILED_EQUIPMENT_DIMENSIONS if show_equipment_detail else EQUIPMENT_DIMENSIONS
+        )
+        # 표시순서 스코프 문자열은 DB 공용 프로필의 행 키다. 페이지 이름이 바뀌어도 **이 두 인자는
+        # 그대로 둔다** — 안 맞으면 예외가 아니라 정렬이 조용히 사라진다.
+        equipment_table = apply_display_order(
+            build_equipment_count_table(
+                own_count, lent_count, available_count, detailed=show_equipment_detail
+            ),
+            display_order,
+            PAGE_REFERENCE,
+            TAB_EQUIPMENT_COUNT,
+        )
         equipment_table = render_column_filter_controls(
             equipment_table,
             equipment_dimensions,
