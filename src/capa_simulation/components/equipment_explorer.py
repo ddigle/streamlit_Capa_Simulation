@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
 
@@ -65,6 +66,9 @@ TRANSITION_STAGE_KEY = "equipment_transition_stage_filter"
 TRANSITION_SCHEDULE_KEY = "equipment_transition_schedule_filter"
 TRANSITION_CONFIRMATION_KEY = "equipment_transition_confirmation_filter"
 QUESTIONS = ("가용대수", "호기 현황", "비가동 호기", "Qual 일정", "단계 전환")
+# 차트와 표 중 하나를 고르는(`표현`) 보기. 이 보기의 결과는 프래그먼트다
+# (`_render_expressed_result`).
+EXPRESSION_VIEWS = ("주차별 추이", "상태 분포", "확정상태 분포", "단계별 건수")
 TRANSITION_STAGES = tuple(label for _, label in MILESTONES)
 # 공정 표시명(Proc Rename)을 입히는 칸. 설비 마스터의 `공정소분류` 는 시나리오 `공정` 과 같은
 # 이름으로 맞대는 원본 공정명이다(`공정대분류` 는 다른 축이라 입히지 않는다).
@@ -457,7 +461,10 @@ def render_equipment_explorer(
         return
     labels = process_labels or ProcessLabels()
     in_card = conditions is not None
-    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+    # 머리 줄(볼 내용·보기·표현). `표현` 은 결과 프래그먼트가 이 줄 끝에 쓴다
+    # (`_render_expressed_result`).
+    row = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
+    with row:
         question = st.segmented_control(
             "볼 내용",
             QUESTIONS,
@@ -506,19 +513,6 @@ def render_equipment_explorer(
                 key=TRANSITION_VIEW_KEY,
                 persist_state="session",
                 width=200,
-            )
-        expression = "표"
-        if view in ("주차별 추이", "상태 분포", "확정상태 분포", "단계별 건수"):
-            expression = (
-                st.segmented_control(
-                    "표현",
-                    ["차트", "표"],
-                    default="차트",
-                    required=True,
-                    key=f"equipment_explorer_expression_{view}",
-                    persist_state="session",
-                )
-                or "차트"
             )
     settings = conditions if conditions is not None else st.container(border=True)
     with settings:
@@ -653,6 +647,93 @@ def render_equipment_explorer(
     # 사용기준 제외는 대수를 세는 `가용대수` 에서만 알린다. 호기 현황(상태 분포·호기 목록)은 이름을
     # 보이는 자리라 HBM·EDP 가 아닌 호기도 그대로 센다.
     usage_notice = _usage_notice(equipment, filtered) if question == "가용대수" else None
+    shown = _Shown(
+        question=str(question),
+        view=view,
+        filtered=filtered,
+        downtime=filtered_downtime,
+        baseline=filtered_baseline,
+        start=start,
+        end=end,
+        as_of=as_of,
+        uses_period=uses_period,
+        transition_stages=tuple(transition_stages),
+        transition_schedule=transition_schedule,
+        transition_confirmations=tuple(transition_confirmations),
+        undated_notice=undated_notice,
+        usage_notice=usage_notice,
+        labels=labels,
+        today=today,
+        owner_tab=owner_tab,
+    )
+    if view in EXPRESSION_VIEWS:
+        _render_expressed_result(row, shown)
+    else:
+        _render_result(shown, expression="표")
+
+
+@dataclass(frozen=True, eq=False)
+class _Shown:
+    """조건 카드까지 고른 뒤의 결과 입력 — 거른 세 표, 날짜, 단계 전환 조건, 알림 줄.
+
+    `_render_expressed_result` 프래그먼트 회차는 직전 앱 전체 회차의 이 값을 그대로 쓴다.
+    """
+
+    question: str
+    view: str
+    filtered: pd.DataFrame
+    downtime: pd.DataFrame
+    baseline: pd.DataFrame
+    start: date
+    end: date
+    as_of: date
+    uses_period: bool
+    transition_stages: tuple[str, ...]
+    transition_schedule: str
+    transition_confirmations: tuple[str, ...]
+    undated_notice: str | None
+    usage_notice: str | None
+    labels: ProcessLabels
+    today: date
+    owner_tab: OpenTab | None
+
+
+@st.fragment
+def _render_expressed_result(row: DeltaGenerator, shown: _Shown) -> None:
+    """`표현`(차트·표)과 결과 상자 — 프래그먼트다.
+
+    `표현` 은 머리 줄(`row`, 앱 전체 회차가 볼 내용·보기를 그린 줄) 끝에 쓴다 — Streamlit 1.63
+    은 프래그먼트가 바깥 컨테이너에 쓰면 그 자리를 투명한 감싸개로 잡아 프래그먼트 회차마다 그
+    자리에 다시 그린다. 그래서 `표현` 을 바꾸면 이것만 다시 돈다. 조건 카드에 설 위젯을 바꾸지
+    않는 조작이고 결과의 숫자는 표현과 상관없다(같은 집계를 차트나 표로 그린다). 입력(`shown`)은
+    직전 앱 전체 회차의 것이다 — 볼 내용·보기·조건 카드·탭을 바꾸면 앱 전체 회차라 새 입력으로
+    다시 부른다.
+    """
+    with row:
+        expression = (
+            st.segmented_control(
+                "표현",
+                ["차트", "표"],
+                default="차트",
+                required=True,
+                key=f"equipment_explorer_expression_{shown.view}",
+                persist_state="session",
+            )
+            or "차트"
+        )
+    _render_result(shown, expression=str(expression))
+
+
+def _render_result(shown: _Shown, *, expression: str) -> None:
+    """고른 볼 내용·보기의 결과 하나를 테두리 상자에 그린다."""
+    question, view = shown.question, shown.view
+    filtered, filtered_downtime, filtered_baseline = shown.filtered, shown.downtime, shown.baseline
+    start, end, as_of, uses_period = shown.start, shown.end, shown.as_of, shown.uses_period
+    transition_stages = list(shown.transition_stages)
+    transition_schedule = shown.transition_schedule
+    transition_confirmations = list(shown.transition_confirmations)
+    undated_notice, usage_notice = shown.undated_notice, shown.usage_notice
+    labels, today, owner_tab = shown.labels, shown.today, shown.owner_tab
     with st.container(border=True):
         if uses_period and start > end:
             st.error("시작일은 종료일보다 늦을 수 없습니다.")
