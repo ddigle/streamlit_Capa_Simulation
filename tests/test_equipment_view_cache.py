@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date, timedelta
 
 import pandas as pd
@@ -366,6 +366,13 @@ def _fake_demand(
     return calls
 
 
+def _loader(scenario_key: simulation_cache.ScenarioCacheKey) -> Callable[[], pd.DataFrame]:
+    """페이지가 넘기는 것과 같은 소요대수 로더(표 묶음은 대역이 보지 않는 빈 묶음)."""
+    return simulation_cache.scenario_required_equipment(
+        scenario_key, scenario_tables=_NO_TABLES, reference_tables=_NO_TABLES
+    )
+
+
 @pytest.mark.parametrize("today", [ANCHOR, ANCHOR + timedelta(days=9)])
 def test_shortening_shares_the_span_cache_and_matches_a_fresh_plan(
     today: date, monkeypatch: pytest.MonkeyPatch
@@ -406,8 +413,7 @@ def test_shortening_shares_the_span_cache_and_matches_a_fresh_plan(
             downtime,
             baseline,
             cutoff,
-            _scenario_tables=_NO_TABLES,
-            _reference_tables=_NO_TABLES,
+            _required_equipment=_loader(scenario_key),
         )
         return key, plan
 
@@ -467,8 +473,7 @@ def test_shortening_reads_the_demand_only_on_a_miss_and_follows_the_scenario_key
             downtime,
             baseline,
             cutoff,
-            _scenario_tables=_NO_TABLES,
-            _reference_tables=_NO_TABLES,
+            _required_equipment=_loader(scenario_key),
         )
 
     def fresh(required: pd.DataFrame) -> ShorteningPlan:
@@ -541,9 +546,7 @@ def test_required_month_span_matches_the_frame(
     monkeypatch.setattr(simulation_cache, "get_scenario_capacity_and_demand", fake)
     key: simulation_cache.ScenarioCacheKey = (1, "span-shape", 0, 999999)
 
-    span = simulation_cache.get_required_month_span(
-        key, _scenario_tables=_NO_TABLES, _reference_tables=_NO_TABLES
-    )
+    span = simulation_cache.get_required_month_span(key, _required_equipment=_loader(key))
 
     assert span == _frame_month_bounds(required)
 
@@ -559,9 +562,8 @@ def test_required_month_span_reads_the_demand_only_on_a_miss(
     )
 
     def span(token: str, start: int, end: int) -> tuple[int, int] | None:
-        return simulation_cache.get_required_month_span(
-            (1, token, start, end), _scenario_tables=_NO_TABLES, _reference_tables=_NO_TABLES
-        )
+        key: simulation_cache.ScenarioCacheKey = (1, token, start, end)
+        return simulation_cache.get_required_month_span(key, _required_equipment=_loader(key))
 
     assert span("span-a", 202601, 202712) == (MONTHS[0], MONTHS[-1])
     assert span("span-a", 202601, 202712) == (MONTHS[0], MONTHS[-1])
@@ -600,12 +602,74 @@ def test_a_failed_demand_check_is_not_cached(monkeypatch: pytest.MonkeyPatch) ->
 
     failures.append(RuntimeError("일시 오류"))
     with pytest.raises(RuntimeError):
-        simulation_cache.get_required_month_span(
-            key, _scenario_tables=_NO_TABLES, _reference_tables=_NO_TABLES
+        simulation_cache.get_required_month_span(key, _required_equipment=_loader(key))
+    assert simulation_cache.get_required_month_span(key, _required_equipment=_loader(key)) == (
+        MONTHS[0],
+        MONTHS[-1],
+    )
+
+    # 로더로 확인해도 같다 — 실패한 로더를 다시 불러도 기억된 실패가 아니라 새로 꺼낸다.
+    simulation_cache.check_scenario_capacity.clear()
+    failures.append(RuntimeError("일시 오류"))
+    load = _loader(key)
+    with pytest.raises(RuntimeError):
+        simulation_cache.check_scenario_capacity(
+            key, _scenario_tables=_NO_TABLES, _reference_tables=_NO_TABLES, _required_equipment=load
         )
-    assert simulation_cache.get_required_month_span(
-        key, _scenario_tables=_NO_TABLES, _reference_tables=_NO_TABLES
-    ) == (MONTHS[0], MONTHS[-1])
+    assert simulation_cache.check_scenario_capacity(
+        key, _scenario_tables=_NO_TABLES, _reference_tables=_NO_TABLES, _required_equipment=load
+    )
+
+
+def test_one_loader_reads_the_demand_once_with_the_tables_it_was_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """로더 하나는 소요대수를 한 번만 꺼내고, 키를 낸 바로 그 표 묶음을 넘긴다.
+
+    한 회차에 오류 확인·달 범위·계획이 함께 빗나가도(첫 진입, 조회기간·토큰이 바뀐 회차) 언피클은
+    한 번이다. 로더가 다르면(다음 회차) 다시 꺼낸다.
+    """
+    simulation_cache.check_scenario_capacity.clear()
+    simulation_cache.get_required_month_span.clear()
+    required = _required(["Die Attach"], MONTHS)
+    scenario_tables: dict[str, pd.DataFrame] = {"RQ_PKG_PLAN": pd.DataFrame()}
+    reference_tables: dict[str, pd.DataFrame] = {"RQ_EQP_AVBL": pd.DataFrame()}
+    given: list[tuple[object, object]] = []
+
+    def fake(
+        cache_key: simulation_cache.ScenarioCacheKey,
+        *,
+        _scenario_tables: object,
+        _reference_tables: object,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        given.append((_scenario_tables, _reference_tables))
+        return pd.DataFrame(), required
+
+    monkeypatch.setattr(simulation_cache, "get_scenario_capacity_and_demand", fake)
+    key: simulation_cache.ScenarioCacheKey = (1, "one-loader", MONTHS[0], MONTHS[-1])
+    load = simulation_cache.scenario_required_equipment(
+        key, scenario_tables=scenario_tables, reference_tables=reference_tables
+    )
+
+    assert simulation_cache.check_scenario_capacity(
+        key,
+        _scenario_tables=scenario_tables,
+        _reference_tables=reference_tables,
+        _required_equipment=load,
+    )
+    assert simulation_cache.get_required_month_span(key, _required_equipment=load) == (
+        MONTHS[0],
+        MONTHS[-1],
+    )
+    assert load() is load()
+    assert len(given) == 1
+    assert given[0][0] is scenario_tables and given[0][1] is reference_tables
+
+    again = simulation_cache.scenario_required_equipment(
+        key, scenario_tables=scenario_tables, reference_tables=reference_tables
+    )
+    assert_frame_equal(again(), required)
+    assert len(given) == 2
 
 
 # ------------------------------------------------------------------ 확보율 교차검증(EQ-6)

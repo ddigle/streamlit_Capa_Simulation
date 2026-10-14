@@ -291,6 +291,13 @@ with gap_tab:
                 gap_context.selected_start_month,
                 gap_context.selected_end_month,
             )
+            # 로더는 키를 낸 바로 그 표 묶음으로 만든다. 오류 확인과 교차검증이 이 로더 하나를
+            # 나눠, 두 캐시가 함께 빗나가는 회차에도 소요대수를 한 번만 푼다.
+            gap_demand = scenario_required_equipment(
+                gap_scenario_key,
+                scenario_tables=gap_context.active_scenario["tables"],
+                reference_tables=gap_context.reference_tables,
+            )
             # 계산이 서는지는 모든 보기에서 본다 — 기준정보 오류(조회기간 안이든 밖이든)를 어느
             # 보기에서나 같은 문구로 알린다. 적중이면 프레임을 풀지 않고, 실패는 캐시되지 않아
             # 고치거나 DB 가 돌아오면 다음 회차에 풀린다.
@@ -298,12 +305,9 @@ with gap_tab:
                 gap_scenario_key,
                 _scenario_tables=gap_context.active_scenario["tables"],
                 _reference_tables=gap_context.reference_tables,
+                _required_equipment=gap_demand,
             )
-            gap_required_equipment = scenario_required_equipment(
-                gap_scenario_key,
-                scenario_tables=gap_context.active_scenario["tables"],
-                reference_tables=gap_context.reference_tables,
-            )
+            gap_required_equipment = gap_demand
             gap_required_key = gap_scenario_key
         except BOOTSTRAP_ERRORS as exc:
             # 계산이 멈춘 오류도 이 문구로 알린다. 그때도 이미 읽은 Static 은 비교에 그대로 쓴다 —
@@ -390,25 +394,35 @@ with shortening_tab:
         else:
             # Static/Dynamic 과 같은 입력을 같은 길로 모은다. 소요대수는 활성 시나리오에 있으므로
             # **이 탭 안에서만** 예외를 잡아 알린다 — 다른 탭과 Cut-off 입력은 막지 않는다.
-            # 여기서는 계산이 서는지만 본다(적중이면 프레임을 풀지 않는다). 달 범위와 소요대수는
-            # 패널이 같은 시나리오 키로 꺼낸다 — 소요대수는 `get_required_shortening` 이 빗나갈
-            # 때만 푼다.
+            # 여기서는 계산이 서는지만 본다(적중이면 프레임을 풀지 않는다). 패널은 같은 시나리오
+            # 키와 로더로 달 범위·계획을 꺼낸다 — 소요대수는 그 캐시가 빗나갈 때만, 한 회차에 한
+            # 번만 푼다.
             # 호기 구간(`span_date_range` 로 넓힌 `build_equipment_lifecycle_spans`)과 환산비는
             # 고른 달이 정해진 뒤 `get_required_shortening` 이 같은 함수로 만든다.
             shortening_context: PageContext | None = None
+            shortening_key: ScenarioCacheKey | None = None
+            shortening_demand: Callable[[], pd.DataFrame] | None = None
             shortening_error: str | None = None
             try:
                 shortening_context = load_page_context()
+                candidate_key = scenario_cache_key(
+                    shortening_context.reference_version,
+                    shortening_context.active_scenario,
+                    shortening_context.selected_start_month,
+                    shortening_context.selected_end_month,
+                )
+                candidate_demand = scenario_required_equipment(
+                    candidate_key,
+                    scenario_tables=shortening_context.active_scenario["tables"],
+                    reference_tables=shortening_context.reference_tables,
+                )
                 check_scenario_capacity(
-                    scenario_cache_key(
-                        shortening_context.reference_version,
-                        shortening_context.active_scenario,
-                        shortening_context.selected_start_month,
-                        shortening_context.selected_end_month,
-                    ),
+                    candidate_key,
                     _scenario_tables=shortening_context.active_scenario["tables"],
                     _reference_tables=shortening_context.reference_tables,
+                    _required_equipment=candidate_demand,
                 )
+                shortening_key, shortening_demand = candidate_key, candidate_demand
             except BOOTSTRAP_ERRORS as exc:
                 shortening_error = bootstrap_error_message(
                     exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
@@ -420,6 +434,8 @@ with shortening_tab:
                 cutoff=stored_cutoff,
                 today=today,
                 context=shortening_context,
+                required_equipment=shortening_demand,
+                required_equipment_key=shortening_key,
                 scenario_error=shortening_error,
                 owner_tab=shortening_tab,
                 conditions=conditions_card,

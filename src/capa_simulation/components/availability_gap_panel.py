@@ -37,7 +37,7 @@ from capa_simulation.components.plotly_layout import hover_chart_config
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
-from capa_simulation.page_bootstrap import prune_choice
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message, prune_choice
 from capa_simulation.services.availability_gap import (
     DYNAMIC_SUBTOTAL_ROW,
     DYNAMIC_WEIGHTED_ROW,
@@ -726,7 +726,8 @@ def _render_securement_cross_check(
     값이 믿을 만해지고 Cut-off 가 채워진 뒤에 전역 전환을 정한다.
 
     소요대수가 로더면 캐시가 빗나갈 때만 부른다. 소요대수가 비었는지·Static 이 비었는지도 그
-    결과(`SecurementCrossCheckResult`)가 말한다 — 프레임을 풀지 않고 같은 차례로 안내한다.
+    결과(`SecurementCrossCheckResult`)가 말한다 — 프레임을 풀지 않고 같은 차례로 안내한다. 맞대지
+    못했거나 로더가 멈추면(`BOOTSTRAP_ERRORS`) 이 보기 안에서 경고로 알린다.
     """
     st.markdown("##### :material/fact_check: 확보율 교차검증")
     if required_equipment is None:
@@ -745,8 +746,10 @@ def _render_securement_cross_check(
                 _required_equipment=load,
             )
         )
-    except (KeyError, ValueError) as exc:
-        st.warning(f"확보율을 맞대지 못했습니다 — {exc}")
+    except BOOTSTRAP_ERRORS as exc:
+        # 맞대기(`KeyError`·`ValueError`)뿐 아니라 로더의 실패도 받는다 — 페이지의 오류 확인이
+        # 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춘 자리다.
+        st.warning(f"확보율을 맞대지 못했습니다 — {bootstrap_error_message(exc)}")
         return
     if not result.has_demand:
         st.info("소요대수를 읽지 못해 확보율을 맞댈 수 없습니다.")

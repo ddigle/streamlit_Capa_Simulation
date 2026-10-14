@@ -2,6 +2,7 @@
 
 """Shared content-addressed caches for simulation calculations."""
 
+import functools
 import hashlib
 import threading
 from collections import OrderedDict
@@ -276,6 +277,7 @@ def check_scenario_capacity(
     cache_key: ScenarioCacheKey,
     _scenario_tables: Mapping[str, pd.DataFrame],
     _reference_tables: Mapping[str, pd.DataFrame],
+    _required_equipment: Callable[[], pd.DataFrame] | None = None,
 ) -> bool:
     """이 키의 대당 Capa·소요대수 계산이 서는지만 본다. 적중이면 프레임을 풀지 않는다.
 
@@ -287,8 +289,14 @@ def check_scenario_capacity(
 
     가용설비 현황(Static/Dynamic·필요단축일정)은 이것을 **오류 확인**으로 쓴다 — 소요대수 프레임이
     필요 없는 보기에서도 기준정보 오류를 같은 문구로 알리되 프레임은 풀지 않는다. 그 화면은
-    「✓ 적용」을 쓰지 않으므로 감싸지 않는다.
+    「✓ 적용」을 쓰지 않으므로 감싸지 않고, 같은 키·같은 표 묶음의 로더
+    (`scenario_required_equipment`)를 `_required_equipment` 로 준다. 빗나간 회차에는 그 로더로
+    계산을 확인한다 — 같은 회차에 소요대수를 쓰는 곳(달 범위·계획·교차검증)이 그 로더를 나눠
+    프레임을 다시 풀지 않는다.
     """
+    if _required_equipment is not None:
+        _required_equipment()
+        return True
     get_scenario_capacity_and_demand(
         cache_key,
         _scenario_tables=_scenario_tables,
@@ -305,12 +313,18 @@ def scenario_required_equipment(
 ) -> Callable[[], pd.DataFrame]:
     """이 키의 소요대수를 **부를 때만** 꺼내는 로더(`get_scenario_capacity_and_demand` 의 둘째 값).
 
-    키 전용 캐시(확보율 교차검증)가 빗나갈 때만 프레임이 필요하므로 프레임 대신 이것을 넘긴다 —
-    적중 회차에는 소요대수(합성 표본 30개월에 pickle 약 12MB, 샘플 관측)를 풀지 않는다. 두 표 묶음은
-    키의 content_token 을 발급한 바로 그 활성 시나리오·기준정보여야 한다. 계산 함수는 부를 때 이
-    모듈에서 찾는다 — 페이지 테스트가 그 속성을 바꾼다.
+    키 전용 캐시(오류 확인·달 범위·필요단축일정·확보율 교차검증)가 빗나갈 때만 프레임이 필요하므로
+    프레임 대신 이것을 넘긴다 — 적중 회차에는 소요대수(합성 표본 30개월에 pickle 약 12MB, 샘플
+    관측)를 풀지 않는다. 한 로더는 프레임을 **한 번만** 푼다 — 한 회차에 여러 캐시가 함께 빗나가도
+    (첫 진입, 조회기간·토큰이 바뀐 회차) 언피클은 한 번이다. 실패는 기억하지 않아 다음에 부르면 다시
+    꺼낸다. 로더는 그 회차에서만 쓰고 세션·캐시에 두지 않는다 — 키가 바뀐 회차는 새 로더다.
+
+    두 표 묶음은 키의 content_token 을 발급한 바로 그 활성 시나리오·기준정보여야 한다. 계산 함수는
+    부를 때 이 모듈에서 찾는다 — 페이지 테스트가 그 속성을 바꾼다. 받은 프레임은 읽기만 한다(같은
+    회차의 다른 쓰임이 같은 객체를 받는다).
     """
 
+    @functools.cache
     def load() -> pd.DataFrame:
         _, required_equipment = get_scenario_capacity_and_demand(
             cache_key,
@@ -325,21 +339,15 @@ def scenario_required_equipment(
 @st.cache_data(show_spinner=False, max_entries=16)
 def get_required_month_span(
     cache_key: ScenarioCacheKey,
-    _scenario_tables: Mapping[str, pd.DataFrame],
-    _reference_tables: Mapping[str, pd.DataFrame],
+    _required_equipment: Callable[[], pd.DataFrame],
 ) -> tuple[int, int] | None:
     """이 키의 소요대수가 있는 첫 달·끝 달(`생산계획년월` 의 숫자 최소·최대). 없으면 `None`.
 
     필요단축일정이 고를 달(조회기간 ∩ 이 범위)을 정하는 데는 이 두 수만 든다. 적중이면 소요대수를
-    풀지 않고, 빗나가면 안에서 `get_scenario_capacity_and_demand` 를 한 번 부른다. 계산 오류는
-    캐시되지 않고 그대로 올라간다. `_scenario_tables` 는 키의 content_token 을 발급한 바로 그
-    active_scenario["tables"] 여야 한다.
+    풀지 않고, 빗나가면 로더를 부른다. 로더는 이 키로 소요대수를 꺼내는 것
+    (`scenario_required_equipment`)이어야 한다. 계산 오류는 캐시되지 않고 그대로 올라간다.
     """
-    _, required_equipment = get_scenario_capacity_and_demand(
-        cache_key,
-        _scenario_tables=_scenario_tables,
-        _reference_tables=_reference_tables,
-    )
+    required_equipment = _required_equipment()
     if required_equipment.empty or MONTH_COLUMN not in required_equipment.columns:
         return None
     present = pd.to_numeric(required_equipment[MONTH_COLUMN], errors="coerce").dropna()
@@ -1606,8 +1614,7 @@ def get_required_shortening(
     _downtime: pd.DataFrame,
     _baseline: pd.DataFrame,
     _cutoff: pd.DataFrame,
-    _scenario_tables: Mapping[str, pd.DataFrame],
-    _reference_tables: Mapping[str, pd.DataFrame],
+    _required_equipment: Callable[[], pd.DataFrame],
 ) -> ShorteningPlan:
     """다섯 목표의 필요단축일정. 목표·공정 선택은 이 결과를 고르기만 하므로 다시 계산하지 않는다.
 
@@ -1615,22 +1622,17 @@ def get_required_shortening(
     마스터에서만 나오므로 키의 마스터 내용 지문이 그것까지 덮는다.
 
     프레임은 해시하지 않는다 — 키(`required_shortening_cache_key`)가 내용 지문과 시나리오 키를
-    모두 싣는다. **소요대수는 빗나갈 때만 이 안에서** 키의 시나리오 키로 꺼낸다
-    (`get_scenario_capacity_and_demand`) — 적중 회차에는 그 프레임을 풀지 않는다. 두 표 묶음은 그
-    시나리오 키의 content_token 을 발급한 바로 그 활성 시나리오·기준정보여야 한다. 설비 마스터가
-    계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
+    모두 싣는다. **소요대수는 빗나갈 때만 이 안에서** 로더로 꺼낸다 — 적중 회차에는 그 프레임을
+    풀지 않는다. 로더는 키의 시나리오 키로 소요대수를 꺼내는 것(`scenario_required_equipment`)이어야
+    한다. 설비 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
 
     호기 구간은 Static/Dynamic 과 **같은 구간 캐시**(`get_equipment_lifecycle_spans`)에서 받는다.
     키의 마스터·비가동 지문을 그대로 쓰므로 다시 해시하지 않는다. 시나리오·기존보유·오늘만 바뀌어
     이 결과가 새로 돌 때도 구간(3천 행·32개월에 2초 남짓, 샘플 관측)은 다시 만들지 않고, 두 탭의
     구간 범위가 같으면 한 벌을 나눈다.
     """
-    scenario_key, equipment_digest, downtime_digest, _, _, months, today = cache_key
-    _, required_equipment = get_scenario_capacity_and_demand(
-        scenario_key,
-        _scenario_tables=_scenario_tables,
-        _reference_tables=_reference_tables,
-    )
+    _, equipment_digest, downtime_digest, _, _, months, today = cache_key
+    required_equipment = _required_equipment()
     span = span_date_range(months, _cutoff) if months else None
     spans = (
         get_equipment_lifecycle_spans(
