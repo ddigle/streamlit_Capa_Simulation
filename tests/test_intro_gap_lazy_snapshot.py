@@ -18,6 +18,7 @@ import duckdb
 import pandas as pd
 import pytest
 
+from capa_simulation import settings
 from capa_simulation.components import intro_summary
 from capa_simulation.persistence import cache as scenario_cache
 from capa_simulation.persistence.models import (
@@ -95,6 +96,15 @@ def seeded(tmp_path_factory: pytest.TempPathFactory) -> _Seeded:
         quarter.scenario.scenario_id,
         quarter.revision.revision_id,
     )
+
+
+@pytest.fixture(autouse=True)
+def _settings_point_at_the_seeded_database(
+    seeded: _Seeded, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """요약 만들기의 공정 표시명(`get_process_labels`)은 `settings.DUCKDB_PATH` 를 연다 — 저장소
+    DB 가 아니라 이 시험의 DB 를 보게 한다."""
+    monkeypatch.setattr(settings, "DUCKDB_PATH", seeded.database_path)
 
 
 @pytest.fixture(autouse=True)
