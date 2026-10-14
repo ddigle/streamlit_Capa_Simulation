@@ -12,7 +12,8 @@
 **분류별 내역은 대수 뒤의 호기를 보인다.** `표시` 를 `호기 목록` 으로 바꾸면 같은 조건의
 호기별 기여가 긴 표로 펼쳐지고(CSV), `대수` 표에서 칸 하나를 누르면 그 칸의 호기만 아래에
 뜬다. 목록은 대수 표와 **같은 기여 줄**(`build_monthly_equipment_contributions`)에서 나와
-같은 칸을 더하면 표의 값이다.
+같은 칸을 더하면 표의 값이다. 대수 표와 칸의 호기는 프래그먼트라(`_render_count_table`) 칸을
+누르면 페이지 전체가 아니라 그 둘만 다시 그린다.
 
 **분류별 내역은 설비 마스터의 컬럼으로 호기를 좁혀 더할 수 있다**(`호기 필터`, 2026-09-29 사용자
 요청). 공정처럼 조건 카드에서 컬럼(공정구분·Model·동 …)과 값을 고르면 **그 호기만** 분류대로
@@ -370,12 +371,43 @@ def render_availability_gap_panel(
     display = matrix.copy()
     month_by_label = {month_label(int(column)): int(column) for column in display.columns}
     display.columns = pd.Index(list(month_by_label), name="월")
-    # 칸 하나를 누르면 그 칸의 호기를 아래에 보인다. 선택은 (행 위치, 열 이름)으로 남으므로
-    # 공정·기간이 바뀌면 같은 위치가 다른 분류를 가리킨다 — 키에 범위를 넣어 표를 새로 만든다.
+
+    def contributions() -> pd.DataFrame:
+        return _scoped_contributions(
+            monthly_key, spans, baseline, cutoff, conversion_ratios, scope, chosen_units
+        )
+
+    # 선택은 (행 위치, 열 이름)으로 남으므로 공정·기간이 바뀌면 같은 위치가 다른 분류를 가리킨다 —
+    # 키에 범위를 넣어 표를 새로 만든다.
+    _render_count_table(
+        display,
+        month_by_label=month_by_label,
+        key=matrix_table_key(process, months, list(display.index)),
+        contributions=contributions,
+        labels=labels,
+    )
+
+
+@st.fragment
+def _render_count_table(
+    display: pd.DataFrame,
+    *,
+    month_by_label: Mapping[str, int],
+    key: str,
+    contributions: Callable[[], pd.DataFrame],
+    labels: ProcessLabels,
+) -> None:
+    """분류별 대수 표와 누른 칸 하나의 호기 — 프래그먼트다.
+
+    칸을 누르는 조작은 이것만 다시 돌린다 — 조건 카드에 설 위젯을 바꾸지 않는 본문 조작이다. 표·
+    호기별 기여(`contributions`, 누른 칸이 있을 때만 부른다)는 직전 앱 전체 회차의 입력(구간·
+    기존보유·Cut-off·환산비·공정·호기 필터)에서 나오므로 표와 목록이 늘 같은 입력을 본다. 그
+    입력을 바꾸는 조작(조건 카드·조회 결과·표시·탭·저장)은 앱 전체 회차라 새 인자로 다시 부른다.
+    """
     event = st.dataframe(
         display.round(2),
         width="stretch",
-        key=matrix_table_key(process, months, list(display.index)),
+        key=key,
         on_select="rerun",
         selection_mode="single-cell",
     )
@@ -387,9 +419,7 @@ def render_availability_gap_panel(
             _render_cell_units(
                 row=str(display.index[int(position)]),
                 month=month_by_label[column],
-                contributions=_scoped_contributions(
-                    monthly_key, spans, baseline, cutoff, conversion_ratios, scope, chosen_units
-                ),
+                contributions=contributions(),
                 labels=labels,
             )
 
