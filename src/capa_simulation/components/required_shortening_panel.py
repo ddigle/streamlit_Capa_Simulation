@@ -4,7 +4,8 @@
 
 계산은 `services/required_shortening.py` 가 하고 결과는 `simulation_cache.get_required_shortening`
 이 다섯 목표를 한 번에 캐시한다. 이 화면은 **고르기만** 한다 — 목표 확보율(본문 머리 줄)·공정
-(조건 카드)을 바꾸는 rerun 은 계산을 다시 돌리지 않는다.
+(조건 카드)을 바꾸는 rerun 은 계산을 다시 돌리지 않는다. 머리·본문은 프래그먼트라(`_render_view`)
+목표 확보율·진척 비교·기준선 팝오버 조작은 페이지 전체가 아니라 그것만 다시 돈다.
 
 거르는 조건(시작 월·끝 월·공정)은 사이드바 `설비 조회 조건` 카드에, 무엇을 볼지(목표 확보율)는
 본문 머리 줄에 둔다(2026-09-29 사용자 결정의 규칙 그대로). 공정을 고르지 않으면 **고른 목표에서
@@ -49,6 +50,7 @@ from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
     BaselineSaveContext,
+    consume_baseline_write,
     load_baseline_options,
     load_selected_baseline,
     progress_card_markup,
@@ -165,6 +167,35 @@ class _LobRows:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class _Plan:
+    """앱 전체 회차가 조건 카드까지 그리고 세운 계획 — 머리·본문 프래그먼트가 받는다.
+
+    프래그먼트 회차는 직전 앱 전체 회차의 이 값을 그대로 쓴다. 계산 입력(조건 카드·탭·설비·
+    Cut-off·시나리오)을 바꾸는 조작은 모두 앱 전체 회차라 이 값도 새로 선다. `selected` 는 조건
+    카드에서 고른 공정(원본), `labels` 는 그 회차의 공정 표시명이다(공정 선택지의 글자와 같은 판).
+    """
+
+    key: simulation_cache.RequiredShorteningCacheKey
+    plan: ShorteningPlan
+    context: PageContext
+    months: tuple[int, ...]
+    ordered: tuple[str, ...]
+    selected: tuple[str, ...]
+    labels: ProcessLabels
+
+
+@dataclass(frozen=True)
+class _Stop:
+    """계획을 세우지 못한 회차 — 머리 아래에 한 줄 알리고 멈춘다.
+
+    `kind` 는 `scenario`(활성 시나리오 경고 — `message` 는 덧붙일 까닭), `info`, `error` 다.
+    """
+
+    kind: str
+    message: str | None = None
+
+
 def render_required_shortening_tab(
     *,
     equipment: pd.DataFrame,
@@ -199,31 +230,79 @@ def render_required_shortening_tab(
     (컴포넌트를 홀로 띄우는 자리) 조건은 세션 값뿐이고 진척 비교 상자·기준선 저장을 세우지 않는다.
     `equipment_revision_id`·`equipment_revision_no` 는 화면의 호기가 나온 저장 리비전(기준선 머리에
     남긴다), `baseline_refusal` 은 기준선을 저장하지 않을 까닭(샘플 fleet)이다.
+
+    **둘로 나눠 그린다.** 조건 카드(시작 월·끝 월·공정)와 계획(`get_required_shortening`)은 이
+    함수가 앱 전체 회차에서 먼저 끝내고(`_prepare`), 머리(`진척 비교`·`목표 확보율`)와 본문(KPI·LOB·
+    공정 카드·CSV·기준선 저장/지우기)은 그 결과를 인자로 받는 프래그먼트(`_render_view`)다 — 목표
+    확보율·진척 비교를 바꾸는 조작은 페이지 전체(설비 DB·시나리오·다른 탭 준비)를 다시 돌리지 않고
+    이 탭의 머리·본문만 다시 그린다. 계획은 다섯 목표를 한 번에 세우므로 목표는 계산 입력이 아니다.
     """
     if tab_is_hidden(owner_tab):
         return
+    # 기준선을 쓴 뒤 앱 전체를 다시 돌리라는 표지는 앱 전체 회차가 거둔다 — 이 회차가 곧 그것이다.
+    consume_baseline_write()
     controls: AbstractContextManager[object] = (
         conditions if conditions is not None else nullcontext()
     )
-    baselines = load_baseline_options(equipment_database_path)
-    level, compare_id = _render_header(today, baselines)
-    render_baseline_notice()
+    # 머리·본문 자리를 먼저 잡는다 — 조건 카드가 본문 제자리에 서는 자리(카드를 주지 않을 때)에서도
+    # 머리가 카드 위에 선다.
+    view = st.container()
+    prepared = _prepare(
+        equipment=equipment,
+        downtime=downtime,
+        baseline=baseline,
+        cutoff=cutoff,
+        today=today,
+        context=context,
+        required_equipment=required_equipment,
+        required_equipment_key=required_equipment_key,
+        scenario_error=scenario_error,
+        controls=controls,
+        database_path=equipment_database_path,
+    )
+    with view:
+        _render_view(
+            prepared,
+            equipment=equipment,
+            today=today,
+            database_path=equipment_database_path,
+            revision=(equipment_revision_id, equipment_revision_no),
+            refusal=baseline_refusal,
+        )
 
+
+def _prepare(
+    *,
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    today: date,
+    context: PageContext | None,
+    required_equipment: Callable[[], pd.DataFrame] | None,
+    required_equipment_key: simulation_cache.ScenarioCacheKey | None,
+    scenario_error: str | None,
+    controls: AbstractContextManager[object],
+    database_path: str | None,
+) -> _Plan | _Stop:
+    """조건 카드(시작 월·끝 월·공정)를 그리고 계획을 세운다 — 앱 전체 회차에서만 돈다.
+
+    본문 자리에는 아무것도 쓰지 않는다(카드 안에만 쓴다). 멈출 까닭은 `_Stop` 으로 돌려주고 머리
+    아래에서 알린다.
+    """
     if (
         scenario_error is not None
         or context is None
         or required_equipment is None
         or required_equipment_key is None
     ):
-        _render_scenario_error(scenario_error)
-        return
+        return _Stop("scenario", scenario_error)
     if cutoff.empty:
-        st.info(
+        return _Stop(
+            "info",
             "공정별 Cut-off 를 먼저 적어야 Dynamic 가용대수와 필요단축일정을 낼 수 있습니다 "
-            "(Preference › Cut-off)."
+            "(Preference › Cut-off).",
         )
-        return
-
     try:
         demand_months = simulation_cache.get_required_month_span(
             required_equipment_key, _required_equipment=required_equipment
@@ -231,22 +310,18 @@ def render_required_shortening_tab(
     except BOOTSTRAP_ERRORS as exc:
         # 페이지의 오류 확인이 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춘 자리다 — 페이지가 잡은
         # 것과 같은 경고로 알린다.
-        _render_scenario_error(bootstrap_error_message(exc))
-        return
+        return _Stop("scenario", bootstrap_error_message(exc))
     month_options = _month_options(context, demand_months)
     if not month_options:
-        st.info("조회기간에 월이 없습니다.")
-        return
-    profile = _filter_profile(equipment_database_path)
+        return _Stop("info", "조회기간에 월이 없습니다.")
+    profile = _filter_profile(database_path)
     with controls:
-        if equipment_database_path is not None:
+        if database_path is not None:
             st.caption(
                 ":material/groups: 공용 설정 — 기간·공정을 바꾸면 모든 사용자의 기본 조회 조건이 "
                 "됩니다."
             )
-        months = _render_month_range(
-            month_options, profile=profile, database_path=equipment_database_path
-        )
+        months = _render_month_range(month_options, profile=profile, database_path=database_path)
 
     key = simulation_cache.required_shortening_cache_key(
         required_equipment_key,
@@ -267,8 +342,7 @@ def render_required_shortening_tab(
             _required_equipment=required_equipment,
         )
     except ValueError as exc:
-        st.error(f"필요단축일정을 계산하지 못했습니다 — {exc}")
-        return
+        return _Stop("error", f"필요단축일정을 계산하지 못했습니다 — {exc}")
 
     ordered = _ordered_processes(plan, context)
     # 화면에서만 갈아 끼운다 — 계산·CSV 캐시 키에는 닿지 않으므로 표시명을 고치면 다음 회차에 그대로
@@ -276,8 +350,81 @@ def render_required_shortening_tab(
     labels = process_labels_module.get_process_labels()
     with controls:
         selected = _render_process_filter(
-            ordered, profile=profile, labels=labels, database_path=equipment_database_path
+            ordered, profile=profile, labels=labels, database_path=database_path
         )
+    return _Plan(
+        key=key,
+        plan=plan,
+        context=context,
+        months=tuple(months),
+        ordered=tuple(ordered),
+        selected=tuple(selected),
+        labels=labels,
+    )
+
+
+@st.fragment
+def _render_view(
+    prepared: _Plan | _Stop,
+    *,
+    equipment: pd.DataFrame,
+    today: date,
+    database_path: str | None,
+    revision: tuple[str | None, int | None],
+    refusal: str | None,
+) -> None:
+    """머리(`진척 비교`·`목표 확보율`)와 본문 — 프래그먼트다.
+
+    머리 두 상자, CSV, 기준선 저장·지우기 팝오버의 조작은 이것만 다시 돌린다. 인자(계획·고른 달·
+    공정·표시명·오늘·설비 마스터)는 직전 앱 전체 회차의 것이다 — 조건 카드·탭·저장처럼 계산 입력을
+    바꾸는 조작은 앱 전체 회차라 새 인자로 다시 부른다. **회차마다 다시 읽는 것**: 기준선 목록·
+    고른 기준선(다른 세션이 저장·지운 것이 다음 조작에 보인다), 공용 판정 기준(`_thresholds`),
+    미저장 시나리오 편집 여부(`_save_context`). 기준선을 저장·지운 콜백이 표지를 남기면 앱 전체를
+    다시 돌린다 — 쓰기 뒤에는 앱 전체 회차다.
+    """
+    if consume_baseline_write():
+        st.rerun(scope="app")
+    baselines = load_baseline_options(database_path)
+    level, compare_id = _render_header(today, baselines)
+    render_baseline_notice()
+    if isinstance(prepared, _Stop):
+        _render_stop(prepared)
+        return
+    _render_body(
+        prepared,
+        level=level,
+        compare_id=compare_id,
+        equipment=equipment,
+        today=today,
+        database_path=database_path,
+        revision=revision,
+        refusal=refusal,
+    )
+
+
+def _render_stop(stop: _Stop) -> None:
+    if stop.kind == "scenario":
+        _render_scenario_error(stop.message)
+    elif stop.kind == "error":
+        st.error(stop.message or "")
+    else:
+        st.info(stop.message or "")
+
+
+def _render_body(
+    prepared: _Plan,
+    *,
+    level: float,
+    compare_id: str,
+    equipment: pd.DataFrame,
+    today: date,
+    database_path: str | None,
+    revision: tuple[str | None, int | None],
+    refusal: str | None,
+) -> None:
+    """고른 목표의 KPI·LOB 요약·공정 카드, 또는 고른 기준선과의 진척 비교."""
+    plan, months, labels = prepared.plan, list(prepared.months), prepared.labels
+    ordered, selected = list(prepared.ordered), list(prepared.selected)
     level_plan = plan.at(level)
     scope = [process for process in ordered if process in set(selected)] if selected else ordered
     short = _short_processes(level_plan)
@@ -296,15 +443,15 @@ def render_required_shortening_tab(
     save = _save_context(
         plan,
         today=today,
-        context=context,
-        database_path=equipment_database_path,
-        revision=(equipment_revision_id, equipment_revision_no),
-        refusal=baseline_refusal,
+        context=prepared.context,
+        database_path=database_path,
+        revision=revision,
+        refusal=refusal,
     )
-    compared = load_selected_baseline(equipment_database_path, compare_id)
+    compared = load_selected_baseline(database_path, compare_id)
     if compared is not None:
         _render_progress(
-            key,
+            prepared.key,
             plan,
             compared,
             level=level,
@@ -321,12 +468,17 @@ def render_required_shortening_tab(
     st.html(_style())
     st.html(_kpi_markup(level_plan, level, scope, short, selected=bool(selected)))
     _render_downloads(
-        key, plan, scope, level, months, extra=lambda: render_baseline_controls(save, None)
+        prepared.key,
+        plan,
+        scope,
+        level,
+        months,
+        extra=lambda: render_baseline_controls(save, None),
     )
     st.html(
         _lob_markup(
             months,
-            _lob_rows(context, months),
+            _lob_rows(prepared.context, months),
             level_plan,
             scope,
             thresholds,
