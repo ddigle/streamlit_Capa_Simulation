@@ -109,6 +109,14 @@ def render_condition_dialogs(
     닫기(`on_dismiss`)도 이 프래그먼트만 다시 돌린다 — 둘 다 페이지를 다시 계산하지 않는다.
     프래그먼트만 도는 회차의 인자는 직전 전체 실행의 값이다. 화면·탭이 바뀌는 조작은 모두 전체
     실행이라 그 값이 낡지 않는다.
+
+    **어느 갈래든 이벤트 칸(본문 밖 최상위 칸)에 정확히 한 자리를 쓴다** — 팝업이면 팝업 블록,
+    아니면 빈 스타일 자리표시자다. 프래그먼트만 다시 돌 때 Streamlit 은 이벤트 칸의 쓰기 위치를
+    전체 실행에서 이 프래그먼트를 부른 자리로 되돌리고, 브라우저는 그 자리의 요소를 갈아 끼운다.
+    전체 실행에서 아무것도 쓰지 않으면 그 자리는 페이지의 첫 이벤트 요소(스타일만 든 `st.html` —
+    툴바 Guide 단추를 보이게 하는 규칙, 재공 현황 지표 줄 폭 등)가 차지하고, 팝업을 여는 회차가
+    그것을 덮어 다음 전체 실행까지 돌아오지 않는다. 팝업 본문도 이벤트 칸에 따로 쓰지 않는다
+    (스타일만 든 `st.html`·`st.toast` 를 두지 않는다).
     """
     if shows_scenario and scenario_dialog_is_open():
         show_scenario_dialog(page_file)
@@ -117,6 +125,8 @@ def render_condition_dialogs(
     else:
         close_scenario_dialog()
         close_period_dialog()
+        # 스타일만 든 `st.html` 은 이벤트 칸으로 간다 — 본문 자리를 차지하지 않는다.
+        st.html("<style></style>")
 
 
 # 이번 실행이 끝까지 돌았는지의 표지(`sidebar_status.begin_app_run`). **메시지를 보내는 첫
@@ -363,8 +373,9 @@ with pinned_connections(DUCKDB_PATH):
         forget_month_range_placeholder()
     # 열려 있는 팝업의 호스트 프래그먼트. 두 줄이 다 서지 않는 화면에서도 **매 전체 실행
     # 빠짐없이**, 페이지(`st.stop()` 이 걸릴 수 있는 곳)보다 앞에서 부른다 — 이번 실행에 등록되지
-    # 않은 프래그먼트는 여는 콜백(`st.rerun(<key>)`)도 팝업 닫기도 겨눌 수 없다. 팝업은 본문
-    # 밖(이벤트 칸)에 서고 이 칸은 늘 비어 있어 CSS 가 숨긴다(상자 여닫기 칸과 같다).
+    # 않은 프래그먼트는 여는 콜백(`st.rerun(<key>)`)도 팝업 닫기도 겨눌 수 없다. 팝업과 그
+    # 자리표시자는 본문 밖(이벤트 칸)에 서고 이 칸은 늘 비어 있어 CSS 가 숨긴다(상자 여닫기 칸과
+    # 같다).
     with st.container(key=CONDITION_DIALOG_SINK_KEY):
         render_condition_dialogs(page_file, shows_scenario, shows_period)
 

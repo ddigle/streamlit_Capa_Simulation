@@ -2,7 +2,7 @@
 
 import ast
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,12 +10,22 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from fragment_browser import install_fragment_browser
+from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Caption, Expander, Status
 
 from capa_simulation.components.period_field import PERIOD_DIALOG_KEY, PERIOD_FIELD_KEY
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
-from capa_simulation.components.scenario_status import SCENARIO_DIALOG_KEY, SCENARIO_FIELD_KEY
+from capa_simulation.components.scenario_status import (
+    SAVE_MODE,
+    SAVE_REVISION_NAME_KEY,
+    SCENARIO_DIALOG_KEY,
+    SCENARIO_DIALOG_MODE_KEY,
+    SCENARIO_FIELD_KEY,
+    save_field_key,
+)
 from capa_simulation.navigation import (
     ADMIN_AREA,
     ADMIN_BOX_PAGES,
@@ -40,6 +50,7 @@ from capa_simulation.scenario_preset_state import (
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.sidebar_status import (
     CONDITION_CARD_PREFIX,
+    CONDITION_DIALOG_FRAGMENT_KEY,
     CONDITIONS_BOX_KEY,
     remembered_box_key,
 )
@@ -771,6 +782,120 @@ def test_the_dialog_host_runs_on_every_full_run_even_where_no_field_stands(
     assert not list(app.exception), [element.message for element in app.exception]
     assert SCENARIO_DIALOG_KEY not in app.session_state
     assert PERIOD_DIALOG_KEY not in app.session_state
+
+
+def _event_slots(messages: Sequence[ForwardMsg]) -> dict[int, tuple[str, str, str]]:
+    """메시지가 이벤트 칸(본문 밖 최상위 칸)의 몇째 자리에 무엇을 썼나.
+
+    값은 `(종류, html 본문, 프래그먼트 id)` 다.
+
+    브라우저는 프래그먼트 회차에 받은 자리의 요소만 갈아 끼우고 나머지는 그대로 둔다.
+    """
+    slots: dict[int, tuple[str, str, str]] = {}
+    for message in messages:
+        if message.WhichOneof("type") != "delta":
+            continue
+        path = list(message.metadata.delta_path)
+        if len(path) != 2 or path[0] != RootContainer.EVENT:
+            continue
+        delta = message.delta
+        if delta.WhichOneof("type") == "add_block":
+            kind, body = str(delta.add_block.WhichOneof("type")), ""
+        else:
+            kind = str(delta.new_element.WhichOneof("type"))
+            body = delta.new_element.html.body if kind == "html" else ""
+        slots[path[1]] = (kind, body, delta.fragment_id)
+    return slots
+
+
+def _open_home_for_fragment_runs(app: AppTest) -> AppTest:
+    """HOME 을 앱 전체로 그린다.
+
+    브라우저는 회차마다 지금 페이지의 표를 보내는데 AppTest 는 `switch_page` 뒤에야 그렇게 한다 —
+    그래야 여는 콜백이 끝까지 돈 실행과 같은 페이지로 판정한다.
+    """
+    app.run()
+    app.switch_page(HOME.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    return app
+
+
+@pytest.mark.parametrize(
+    ("field_key", "dialog_key"),
+    [
+        pytest.param(SCENARIO_FIELD_KEY, SCENARIO_DIALOG_KEY, id="scenario"),
+        pytest.param(PERIOD_FIELD_KEY, PERIOD_DIALOG_KEY, id="period"),
+    ],
+)
+def test_the_dialog_host_opens_and_closes_in_its_own_event_slot(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch, field_key: str, dialog_key: str
+) -> None:
+    """진짜 프래그먼트 회차로 본다 — 값 칸을 누르면 콜백만 도는 회차와 호스트만 도는 회차가 돌고
+    페이지는 돌지 않는다. 닫기도 호스트만 돈다.
+
+    호스트는 어느 갈래든 이벤트 칸에 **정확히 한 자리**를 쓴다(팝업이 아니면 빈 스타일
+    자리표시자). 프래그먼트 회차는 이벤트 칸 쓰기 위치를 전체 실행에서 호스트를 부른 자리로 되돌리고
+    브라우저는 그 자리만 갈아 끼우므로, 전체 실행에서 그 자리를 비워 두면 페이지의 첫 이벤트
+    요소(툴바 Guide 단추를 보이게 하는 규칙)를 팝업이 덮어 다음 전체 실행까지 돌아오지 않는다.
+    열고 닫는 회차가 쓰는 이벤트 칸 자리는 호스트 자리 하나뿐이어야 한다.
+    """
+    browser = install_fragment_browser(monkeypatch)
+    app = _open_home_for_fragment_runs(_app)
+    page_slots = _event_slots(browser.messages)
+    host = browser.fragment_keyed(CONDITION_DIALOG_FRAGMENT_KEY)
+    host_slots = [index for index, slot in page_slots.items() if slot[2] == host]
+    assert len(host_slots) == 1, f"호스트가 전체 실행에서 쓴 이벤트 칸 자리: {host_slots}"
+    (host_slot,) = host_slots
+    assert page_slots[host_slot][:2] == ("html", "<style></style>")
+    # 덮이면 안 되는 페이지 쪽 이벤트 요소가 실제로 그 뒤에 선다.
+    assert any(
+        index > host_slot and "#capa-guide-button" in body and "inline-block" in body
+        for index, (_, body, _) in page_slots.items()
+    )
+
+    app.button(key=field_key).click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert browser.started == [[], [host]]
+    # 페이지는 돌지 않았다 — 이 `run()` 의 델타는 모두 호스트(와 그 안 팝업)의 것이다.
+    assert all(
+        message.delta.fragment_id
+        for message in browser.messages
+        if message.WhichOneof("type") == "delta"
+    )
+    opened = _event_slots(browser.messages)
+    assert list(opened) == [host_slot]
+    assert opened[host_slot][0] == "dialog"
+
+    # 닫기(X·바깥·Esc). AppTest 는 닫기를 흉내 내지 못해 `on_dismiss` 콜백의 일(열림 키 지우기)을
+    # 하고 호스트만 다시 돌린다.
+    browser.fragment_queue = [host]
+    del app.session_state[dialog_key]
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert browser.started == [[host]]
+    assert _event_slots(browser.messages) == {host_slot: page_slots[host_slot]}
+
+
+def test_the_scenario_dialog_writes_nothing_outside_itself_when_switching_to_save(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """팝업 안 조작(구획을 「새 리비전 저장」으로)은 팝업 프래그먼트만 돌고 이벤트 칸 최상위에
+    아무것도 쓰지 않는다 — 팝업 본문이 스타일만 든 `st.html`·`st.toast` 를 쓰면 페이지의 이벤트
+    요소를 덮는다."""
+    browser = install_fragment_browser(monkeypatch)
+    app = _open_home_for_fragment_runs(_app)
+    app.button(key=SCENARIO_FIELD_KEY).click().run()
+    assert browser.started[-1] == [browser.fragment_keyed(CONDITION_DIALOG_FRAGMENT_KEY)]
+
+    dialog_body = browser.fragment_of(SCENARIO_DIALOG_MODE_KEY)
+    browser.fragment_queue = [dialog_body]
+    app.segmented_control(key=SCENARIO_DIALOG_MODE_KEY).set_value(SAVE_MODE).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert browser.started == [[dialog_body]]
+    assert _event_slots(browser.messages) == {}
+    # 저장 구획이 실제로 섰다(리비전명 칸).
+    assert any(widget.key == save_field_key(SAVE_REVISION_NAME_KEY) for widget in app.text_input)
 
 
 def _calculation_snapshot(app: AppTest) -> dict[str, Any]:
