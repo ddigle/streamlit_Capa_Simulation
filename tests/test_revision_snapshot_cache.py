@@ -70,10 +70,15 @@ def _create_clone(
 def seeded(tmp_path_factory: pytest.TempPathFactory) -> _Seeded:
     from capa_simulation.application_bootstrap import ensure_initial_scenario
     from capa_simulation.persistence.repository import REVISION_TABLES
+    from capa_simulation.services import builtin_seed
 
     database_path = tmp_path_factory.mktemp("revision-snapshot") / "scenario.duckdb"
-    repository = _repository(database_path)
-    release = ensure_initial_scenario(repository).release
+    # 시드 표시순서를 로컬 CSV 와 떼어 놓는다 — 아래 뒤집기는 내장 합성 규칙의 꼴을 전제로 한다.
+    with pytest.MonkeyPatch.context() as patch:
+        missing = tmp_path_factory.mktemp("no_local_display_order") / "RQ_DISPLAY_ORDER.csv"
+        patch.setattr(builtin_seed, "LOCAL_DISPLAY_ORDER_CSV_PATH", missing)
+        repository = _repository(database_path)
+        release = ensure_initial_scenario(repository).release
     assert release is not None
     base = repository.load_revision(release.revision_id)
     halved = repository.save_revision(
@@ -95,6 +100,15 @@ def _flipped_first_direction(repository: DuckDBScenarioRepository) -> pd.DataFra
     directions = rules["정렬방식"].astype("string").tolist()
     directions[0] = "내림차순" if directions[0] != "내림차순" else "오름차순"
     return rules.assign(정렬방식=directions)
+
+
+@pytest.fixture(autouse=True)
+def _no_local_display_order(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """시험마다 만드는 저장소도 내장 합성 표시순서로 시작한다(`seeded` 와 같은 까닭)."""
+    from capa_simulation.services import builtin_seed
+
+    missing = tmp_path / "no_local_display_order" / "RQ_DISPLAY_ORDER.csv"
+    monkeypatch.setattr(builtin_seed, "LOCAL_DISPLAY_ORDER_CSV_PATH", missing)
 
 
 @pytest.fixture(autouse=True)
