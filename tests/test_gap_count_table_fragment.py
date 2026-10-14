@@ -2,7 +2,7 @@
 
 """분류별 대수 표와 누른 칸의 호기는 프래그먼트다(`availability_gap_panel._render_count_table`).
 
-`test_shortening_view_fragment` 처럼 브라우저 대역(`test_home_key_process_fragment.browser`)으로
+`test_shortening_view_fragment` 처럼 브라우저 대역(`tests/fragment_browser.py`)으로
 **진짜 프래그먼트 회차**를 돌린다. 패널은 `test_availability_gap_unit_filter` 의 호스트(호기 셋·두
 라인, 조건은 사이드바)를 쓴다.
 
@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
+from fragment_browser import FragmentBrowser
 from streamlit.testing.v1 import AppTest
 from test_availability_gap_unit_filter import _filter_app
-from test_home_key_process_fragment import _Browser, browser  # noqa: F401 — 아래 시험의 픽스처
 from test_shortening_view_fragment import _fragment_of, _runner
 
 from capa_simulation.components.availability_gap_panel import (
@@ -34,7 +34,7 @@ from capa_simulation.components.availability_gap_panel import (
 from capa_simulation.services.availability_gap import DYNAMIC_SUBTOTAL_ROW
 
 
-def _open(runner: _Browser) -> AppTest:
+def _open(runner: FragmentBrowser) -> AppTest:
     app = AppTest.from_function(_filter_app, default_timeout=60).run()
     assert not app.exception
     app.segmented_control(key=RESULT_VIEW_KEY).set_value("분류별 내역").run()

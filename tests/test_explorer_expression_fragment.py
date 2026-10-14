@@ -3,7 +3,7 @@
 """Main 의 `표현` 과 결과 상자는 프래그먼트다(`equipment_explorer._render_expressed_result`).
 
 `표현` 은 머리 줄(볼 내용·보기를 앱 전체 회차가 그린 줄) 끝에 프래그먼트가 쓴다 — Streamlit 1.63 의
-바깥 컨테이너 쓰기. 브라우저 대역(`test_home_key_process_fragment.browser`)으로 **진짜 프래그먼트
+바깥 컨테이너 쓰기. 브라우저 대역(`tests/fragment_browser.py`)으로 **진짜 프래그먼트
 회차**를 돌려 본다(호스트는 `test_equipment_explorer._render_fixture`).
 
 - 같은 숫자: `표현` 을 바꾼 프래그먼트 회차의 표·차트가 같은 표현의 앱 전체 회차와
@@ -17,9 +17,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from fragment_browser import FragmentBrowser
 from streamlit.testing.v1 import AppTest
 from test_equipment_explorer import _render_fixture
-from test_home_key_process_fragment import _Browser, browser  # noqa: F401 — 아래 시험의 픽스처
 from test_shortening_view_fragment import _fragment_of, _runner
 
 from capa_simulation.components.equipment_explorer import (
@@ -51,7 +51,7 @@ def _result(app: AppTest) -> list[Any]:
     return [frames, charts]
 
 
-def _open(runner: _Browser, view: str) -> AppTest:
+def _open(runner: FragmentBrowser, view: str) -> AppTest:
     app = AppTest.from_function(_render_fixture, default_timeout=60).run()
     assert not app.exception
     question, view_key = _VIEWS[view]

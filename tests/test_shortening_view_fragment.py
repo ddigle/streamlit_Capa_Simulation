@@ -4,7 +4,7 @@
 
 조건 카드(시작 월·끝 월·공정)와 계획은 앱 전체 회차가 먼저 끝내고 인자로 넘긴다. 시험은 AppTest 의
 러너가 프래그먼트 저장소를 회차 사이에 쥐고 브라우저처럼 `fragment_id_queue` 로 프래그먼트만 돌리는
-대역(`test_home_key_process_fragment` 의 `browser`)으로 **진짜 프래그먼트 회차**를 돌린다.
+대역(`tests/fragment_browser.py`)으로 **진짜 프래그먼트 회차**를 돌린다.
 
 - 같은 숫자: 목표를 바꾼 프래그먼트 회차의 KPI·LOB·공정 카드·CSV 세 벌이, 같은 목표의 앱 전체
   회차와 바이트까지 같다.
@@ -27,8 +27,8 @@ from typing import Any
 import pandas as pd
 import pytest
 import streamlit as st
+from fragment_browser import FragmentBrowser, install_fragment_browser
 from streamlit.testing.v1 import AppTest
-from test_home_key_process_fragment import _Browser, browser  # noqa: F401 — 아래 시험의 픽스처
 from test_required_shortening_tab import _cards, _database, _months
 from test_shortening_progress_tab import _name_input, _save_button, _saved_database, _toasts
 
@@ -166,7 +166,7 @@ exec(compile(page_source, {str(PAGE)!r}, "exec"), {{"__name__": "__main__"}})
 """
 
 
-def _open(runner: _Browser) -> AppTest:
+def _open(runner: FragmentBrowser) -> AppTest:
     app = AppTest.from_string(_script(), default_timeout=180)
     app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SHORTENING_TAB
     app.run()
@@ -175,11 +175,11 @@ def _open(runner: _Browser) -> AppTest:
     return app
 
 
-def _runner(request: pytest.FixtureRequest) -> _Browser:
-    """브라우저 대역(`test_home_key_process_fragment.browser`) — 이 시험 안에서만 러너를 바꾼다."""
-    runner = request.getfixturevalue("browser")
-    assert isinstance(runner, _Browser)
-    return runner
+def _runner(request: pytest.FixtureRequest) -> FragmentBrowser:
+    """브라우저 대역(`fragment_browser`) — 이 시험 안에서만 러너를 바꾼다."""
+    monkeypatch = request.getfixturevalue("monkeypatch")
+    assert isinstance(monkeypatch, pytest.MonkeyPatch)
+    return install_fragment_browser(monkeypatch)
 
 
 def _assert_clean(app: AppTest) -> None:
@@ -187,7 +187,7 @@ def _assert_clean(app: AppTest) -> None:
     assert not list(app.error), [element.value for element in app.error]
 
 
-def _fragment_of(runner: _Browser, widget_key: str) -> str:
+def _fragment_of(runner: FragmentBrowser, widget_key: str) -> str:
     """그 키의 위젯을 그린 델타의 프래그먼트 id(앱 전체 회차의 바깥 위젯이면 빈 글자)."""
     for message in runner.messages:
         if message.WhichOneof("type") != "delta":

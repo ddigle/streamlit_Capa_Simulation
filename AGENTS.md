@@ -4171,7 +4171,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     콜백은 쓰기에 성공하면 표지를 남기고(`shortening_progress_panel.consume_baseline_write`), 프래그먼트가 그
     표지를 보면 `st.rerun(scope="app")` 으로 앱 전체를 다시 돌린다 — 콜백 안의 `st.rerun` 은 아무 일도 하지
     않는다. 앱 전체 회차는 탭 함수가 표지를 먼저 거둬 두 번 돌지 않는다. `tests/test_shortening_view_fragment.py`
-    가 진짜 프래그먼트 회차(`test_home_key_process_fragment` 의 러너 대역)로 지킨다 — 목표를 바꾼 프래그먼트
+    가 진짜 프래그먼트 회차(`tests/fragment_browser.py` 의 러너 대역)로 지킨다 — 목표를 바꾼 프래그먼트
     회차의 HTML·CSV 세 벌이 같은 목표의 앱 전체 회차와 바이트까지 같음, 카드 위젯이 프래그먼트 밖임, 카드
     공정 선택은 앱 전체 회차이고 다음 프래그먼트 회차가 그 선택을 씀, 기준선 저장이 앱 전체 회차로 바뀜,
     다른 세션이 지운 기준선·바꾼 판정 기준이 다음 프래그먼트 회차에 보임.
