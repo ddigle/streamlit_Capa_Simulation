@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date, timedelta
 
 import pandas as pd
@@ -339,6 +339,40 @@ def _plan_frames(plan: ShorteningPlan) -> tuple[pd.DataFrame, pd.DataFrame]:
     )
 
 
+# 시나리오 표 자리에 넘기는 빈 묶음 — 아래 테스트는 소요대수를 내는 함수를 대역으로 바꾼다.
+_NO_TABLES: dict[str, pd.DataFrame] = {}
+
+
+def _fake_demand(
+    monkeypatch: pytest.MonkeyPatch, by_token: dict[str, pd.DataFrame]
+) -> list[simulation_cache.ScenarioCacheKey]:
+    """`get_scenario_capacity_and_demand` 를 content_token 별 소요대수를 내는 대역으로 바꾼다.
+
+    키 전용 캐시가 소요대수를 **언제** 꺼내는지 보려고 부른 키를 적어 돌려준다(빗나갈 때만 늘어야
+    한다). 소요대수는 조회기간으로 자른다 — 진짜 함수와 같은 약속이다.
+    """
+    calls: list[simulation_cache.ScenarioCacheKey] = []
+
+    def fake(
+        cache_key: simulation_cache.ScenarioCacheKey, **_kwargs: object
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        calls.append(cache_key)
+        _, token, start, end = cache_key
+        required = by_token[token]
+        months = pd.to_numeric(required["생산계획년월"], errors="coerce")
+        return pd.DataFrame(), required.loc[months.between(start, end)].reset_index(drop=True)
+
+    monkeypatch.setattr(simulation_cache, "get_scenario_capacity_and_demand", fake)
+    return calls
+
+
+def _loader(scenario_key: simulation_cache.ScenarioCacheKey) -> Callable[[], pd.DataFrame]:
+    """페이지가 넘기는 것과 같은 소요대수 로더(표 묶음은 대역이 보지 않는 빈 묶음)."""
+    return simulation_cache.scenario_required_equipment(
+        scenario_key, scenario_tables=_NO_TABLES, reference_tables=_NO_TABLES
+    )
+
+
 @pytest.mark.parametrize("today", [ANCHOR, ANCHOR + timedelta(days=9)])
 def test_shortening_shares_the_span_cache_and_matches_a_fresh_plan(
     today: date, monkeypatch: pytest.MonkeyPatch
@@ -353,6 +387,7 @@ def test_shortening_shares_the_span_cache_and_matches_a_fresh_plan(
     processes = sorted(set(equipment["공정소분류"].astype(str)))
     required = _required(processes, MONTHS)
     scenario_key: simulation_cache.ScenarioCacheKey = (1, "shortening", MONTHS[0], MONTHS[-1])
+    _fake_demand(monkeypatch, {"shortening": required})
     start, end = _span_range(cutoff, MONTHS)
     built: list[object] = []
 
@@ -373,7 +408,12 @@ def test_shortening_shares_the_span_cache_and_matches_a_fresh_plan(
             today=day,
         )
         plan = simulation_cache.get_required_shortening(
-            key, equipment, downtime, baseline, cutoff, required
+            key,
+            equipment,
+            downtime,
+            baseline,
+            cutoff,
+            _required_equipment=_loader(scenario_key),
         )
         return key, plan
 
@@ -398,6 +438,238 @@ def test_shortening_shares_the_span_cache_and_matches_a_fresh_plan(
     _, shared = _cached_spans(equipment, downtime, start, end)
     assert built == [end]
     assert_frame_equal(shared, _fresh_spans(equipment, downtime, start, end))
+
+
+def test_shortening_reads_the_demand_only_on_a_miss_and_follows_the_scenario_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """계획 캐시는 빗나갈 때만 키의 시나리오 키로 소요대수를 꺼낸다 — 적중 회차는 풀지 않는다.
+
+    시나리오 키만 다른 계획(미저장 편집·리비전 전환이 content_token 을 바꾼 경우)은 새 소요대수로
+    다시 세우고, 그 결과는 그 소요대수로 캐시 없이 낸 계획과 같다.
+    """
+    _clear_equipment_caches()
+    equipment, downtime, baseline, cutoff = _fleet()
+    processes = sorted(set(equipment["공정소분류"].astype(str)))
+    first = _required(processes, MONTHS)
+    edited = first.assign(소요대수=9.0)
+    calls = _fake_demand(monkeypatch, {"before-edit": first, "after-edit": edited})
+    today = ANCHOR
+
+    def planned(token: str) -> ShorteningPlan:
+        scenario_key: simulation_cache.ScenarioCacheKey = (1, token, MONTHS[0], MONTHS[-1])
+        key = simulation_cache.required_shortening_cache_key(
+            scenario_key,
+            equipment=equipment,
+            downtime=downtime,
+            baseline=baseline,
+            cutoff=cutoff,
+            months=MONTHS,
+            today=today,
+        )
+        return simulation_cache.get_required_shortening(
+            key,
+            equipment,
+            downtime,
+            baseline,
+            cutoff,
+            _required_equipment=_loader(scenario_key),
+        )
+
+    def fresh(required: pd.DataFrame) -> ShorteningPlan:
+        return plan_required_shortening(
+            equipment=equipment,
+            downtime=downtime,
+            baseline=baseline,
+            cutoff=cutoff,
+            required_equipment=required,
+            months=MONTHS,
+            today=today,
+        )
+
+    before = planned("before-edit")
+    assert [key[1] for key in calls] == ["before-edit"]
+    again = planned("before-edit")
+    assert [key[1] for key in calls] == ["before-edit"]
+    after = planned("after-edit")
+    assert [key[1] for key in calls] == ["before-edit", "after-edit"]
+
+    for cached, expected in (
+        (before, fresh(first)),
+        (again, fresh(first)),
+        (after, fresh(edited)),
+    ):
+        for cached_frame, fresh_frame in zip(
+            _plan_frames(cached), _plan_frames(expected), strict=True
+        ):
+            assert_frame_equal(cached_frame, fresh_frame)
+    # 소요대수가 달라 계획이 달라야 이 경우가 무엇을 증명한다.
+    assert not _plan_frames(after)[1].equals(_plan_frames(before)[1])
+
+
+# ------------------------------------------------------------------ 필요단축일정 달 범위(EQ-2)
+
+
+def _frame_month_bounds(required: pd.DataFrame) -> tuple[int, int] | None:
+    """소요대수 프레임에서 바로 잰 달 범위 — 필요단축일정이 고를 달을 정하는 식."""
+    if not required.empty and "생산계획년월" in required.columns:
+        present = pd.to_numeric(required["생산계획년월"], errors="coerce").dropna()
+        if not present.empty:
+            return int(present.min()), int(present.max())
+    return None
+
+
+@pytest.mark.parametrize(
+    "required",
+    [
+        _required(["Die Attach", "Etch"], MONTHS),
+        # 달이 빈 행·문자열 달이 섞여도 프레임에서 바로 잰 범위와 같다.
+        pd.DataFrame(
+            {"생산계획년월": ["202611", None, 202612], "공정": ["A", "A", "A"], "소요대수": 1.0}
+        ),
+        pd.DataFrame({"생산계획년월": [], "공정": [], "소요대수": []}),
+        pd.DataFrame({"생산계획년월": [None], "공정": ["A"], "소요대수": [1.0]}),
+    ],
+    ids=["months", "mixed", "empty", "no-month"],
+)
+def test_required_month_span_matches_the_frame(
+    required: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """달 범위 캐시는 소요대수 프레임에서 바로 잰 범위와 같다(달이 없으면 `None`)."""
+    simulation_cache.get_required_month_span.clear()
+
+    def fake(
+        cache_key: simulation_cache.ScenarioCacheKey, **_kwargs: object
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        return pd.DataFrame(), required
+
+    monkeypatch.setattr(simulation_cache, "get_scenario_capacity_and_demand", fake)
+    key: simulation_cache.ScenarioCacheKey = (1, "span-shape", 0, 999999)
+
+    span = simulation_cache.get_required_month_span(key, _required_equipment=_loader(key))
+
+    assert span == _frame_month_bounds(required)
+
+
+def test_required_month_span_reads_the_demand_only_on_a_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """적중이면 소요대수를 풀지 않는다. content_token·조회기간이 바뀌면 새로 잰다."""
+    simulation_cache.get_required_month_span.clear()
+    later = _required(["Die Attach"], (202612, 202701, 202702))
+    calls = _fake_demand(
+        monkeypatch, {"span-a": _required(["Die Attach"], MONTHS), "span-b": later}
+    )
+
+    def span(token: str, start: int, end: int) -> tuple[int, int] | None:
+        key: simulation_cache.ScenarioCacheKey = (1, token, start, end)
+        return simulation_cache.get_required_month_span(key, _required_equipment=_loader(key))
+
+    assert span("span-a", 202601, 202712) == (MONTHS[0], MONTHS[-1])
+    assert span("span-a", 202601, 202712) == (MONTHS[0], MONTHS[-1])
+    assert len(calls) == 1
+    # 미저장 편집·리비전 전환은 새 content_token 이다.
+    assert span("span-b", 202601, 202712) == (202612, 202702)
+    # 조회기간이 바뀌면 그 기간으로 자른 소요대수의 범위다.
+    assert span("span-b", 202701, 202712) == (202701, 202702)
+    assert len(calls) == 3
+
+
+def test_a_failed_demand_check_is_not_cached(monkeypatch: pytest.MonkeyPatch) -> None:
+    """오류 확인(`check_scenario_capacity`)·달 범위는 실패를 캐시하지 않는다 — 같은 키라도 다음
+    회차에 다시 계산해, DB 가 돌아오거나 일시 오류가 걷히면 풀린다."""
+    simulation_cache.check_scenario_capacity.clear()
+    simulation_cache.get_required_month_span.clear()
+    required = _required(["Die Attach"], MONTHS)
+    failures = [RuntimeError("일시 오류")]
+
+    def flaky(
+        cache_key: simulation_cache.ScenarioCacheKey, **_kwargs: object
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        if failures:
+            raise failures.pop()
+        return pd.DataFrame(), required
+
+    monkeypatch.setattr(simulation_cache, "get_scenario_capacity_and_demand", flaky)
+    key: simulation_cache.ScenarioCacheKey = (1, "flaky", MONTHS[0], MONTHS[-1])
+    with pytest.raises(RuntimeError):
+        simulation_cache.check_scenario_capacity(
+            key, _scenario_tables=_NO_TABLES, _reference_tables=_NO_TABLES
+        )
+    assert simulation_cache.check_scenario_capacity(
+        key, _scenario_tables=_NO_TABLES, _reference_tables=_NO_TABLES
+    )
+
+    failures.append(RuntimeError("일시 오류"))
+    with pytest.raises(RuntimeError):
+        simulation_cache.get_required_month_span(key, _required_equipment=_loader(key))
+    assert simulation_cache.get_required_month_span(key, _required_equipment=_loader(key)) == (
+        MONTHS[0],
+        MONTHS[-1],
+    )
+
+    # 로더로 확인해도 같다 — 실패한 로더를 다시 불러도 기억된 실패가 아니라 새로 꺼낸다.
+    simulation_cache.check_scenario_capacity.clear()
+    failures.append(RuntimeError("일시 오류"))
+    load = _loader(key)
+    with pytest.raises(RuntimeError):
+        simulation_cache.check_scenario_capacity(
+            key, _scenario_tables=_NO_TABLES, _reference_tables=_NO_TABLES, _required_equipment=load
+        )
+    assert simulation_cache.check_scenario_capacity(
+        key, _scenario_tables=_NO_TABLES, _reference_tables=_NO_TABLES, _required_equipment=load
+    )
+
+
+def test_one_loader_reads_the_demand_once_with_the_tables_it_was_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """로더 하나는 소요대수를 한 번만 꺼내고, 키를 낸 바로 그 표 묶음을 넘긴다.
+
+    한 회차에 오류 확인·달 범위·계획이 함께 빗나가도(첫 진입, 조회기간·토큰이 바뀐 회차) 언피클은
+    한 번이다. 로더가 다르면(다음 회차) 다시 꺼낸다.
+    """
+    simulation_cache.check_scenario_capacity.clear()
+    simulation_cache.get_required_month_span.clear()
+    required = _required(["Die Attach"], MONTHS)
+    scenario_tables: dict[str, pd.DataFrame] = {"RQ_PKG_PLAN": pd.DataFrame()}
+    reference_tables: dict[str, pd.DataFrame] = {"RQ_EQP_AVBL": pd.DataFrame()}
+    given: list[tuple[object, object]] = []
+
+    def fake(
+        cache_key: simulation_cache.ScenarioCacheKey,
+        *,
+        _scenario_tables: object,
+        _reference_tables: object,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        given.append((_scenario_tables, _reference_tables))
+        return pd.DataFrame(), required
+
+    monkeypatch.setattr(simulation_cache, "get_scenario_capacity_and_demand", fake)
+    key: simulation_cache.ScenarioCacheKey = (1, "one-loader", MONTHS[0], MONTHS[-1])
+    load = simulation_cache.scenario_required_equipment(
+        key, scenario_tables=scenario_tables, reference_tables=reference_tables
+    )
+
+    assert simulation_cache.check_scenario_capacity(
+        key,
+        _scenario_tables=scenario_tables,
+        _reference_tables=reference_tables,
+        _required_equipment=load,
+    )
+    assert simulation_cache.get_required_month_span(key, _required_equipment=load) == (
+        MONTHS[0],
+        MONTHS[-1],
+    )
+    assert load() is load()
+    assert len(given) == 1
+    assert given[0][0] is scenario_tables and given[0][1] is reference_tables
+
+    again = simulation_cache.scenario_required_equipment(
+        key, scenario_tables=scenario_tables, reference_tables=reference_tables
+    )
+    assert_frame_equal(again(), required)
+    assert len(given) == 2
 
 
 # ------------------------------------------------------------------ 확보율 교차검증(EQ-6)
@@ -440,8 +712,13 @@ def test_cached_cross_check_follows_every_input(
     ) -> tuple[simulation_cache.SecurementCrossCheckCacheKey, CrossCheck, CrossCheck]:
         comparison_key, monthly, _ = _comparison(spans, baseline, cutoff, static, months, ratios)
         key = (comparison_key, scenario_key)
+
+        def load() -> pd.DataFrame:
+            loaded.append(scenario_key)
+            return required
+
         cached = simulation_cache.get_securement_cross_check(
-            key, _monthly=monthly, _static=static, _required_equipment=required
+            key, _monthly=monthly, _static=static, _required_equipment=load
         )
         fresh_monthly = build_monthly_equipment_availability(
             spans, baseline, cutoff, months, conversion_ratios=ratios
@@ -449,7 +726,11 @@ def test_cached_cross_check_follows_every_input(
         fresh = build_securement_cross_check(
             static, dynamic_available_equipment(fresh_monthly), required
         )
-        return key, cached, fresh
+        assert cached.has_demand and cached.check is not None
+        return key, cached.check, fresh
+
+    # 소요대수 로더를 부른 차례 — 캐시가 빗나간 회차에만 늘어야 한다.
+    loaded: list[simulation_cache.ScenarioCacheKey] = []
 
     base_key, base, _ = checked(spans, cutoff, static, months, required, scenario_key)
 
@@ -476,10 +757,13 @@ def test_cached_cross_check_follows_every_input(
 
     assert key != base_key
     assert len(built) == 1
+    assert len(loaded) == 2
     _same_check(cached, fresh)
     assert not fresh.rows.equals(base.rows)
 
-    # 같은 키로 다시 부르면 맞대지 않는다 — 그 보기를 열어 둔 rerun 이 이 경로다.
+    # 같은 키로 다시 부르면 맞대지 않고 소요대수도 풀지 않는다 — 그 보기를 열어 둔 rerun 이 이
+    # 경로다.
     _, again, _ = checked(spans, cutoff, static, months, required, scenario_key)
     assert len(built) == 1
+    assert len(loaded) == 2
     _same_check(again, fresh)

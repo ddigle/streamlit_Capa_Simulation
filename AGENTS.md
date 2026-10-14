@@ -914,9 +914,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     범위가 같으면 한 벌을 나눈다.
   - **`필요단축일정`**(2026-10-07 사용자 결정, 시안 B 「공정 카드형」)은 Dynamic 가용(환산 소계)이
     시나리오 소요대수 x 목표 확보율에 모자란 공정·월을 채우려면 신규 호기 Qual 을 며칠 당겨야 하는지
-    보인다. 페이지는 GAP 탭과 같은 입력(활성 시나리오 소요대수 `get_scenario_capacity_and_demand`,
-    저장된 Cut-off(Preference 가 한 번 읽어 돌려준 값), `dashboard_*` 세 표)을 모아 `components/required_shortening_panel.py` 에
-    넘기고, 시나리오를 못 읽으면 그 탭 안에서만 경고한다. 넓힌 생애주기 구간·환산비는 고른 달이
+    보인다. 페이지는 GAP 탭과 같은 입력(활성 시나리오, 저장된 Cut-off(Preference 가 한 번 읽어 돌려준
+    값), `dashboard_*` 세 표)을 모아 `components/required_shortening_panel.py` 에 넘기고, 시나리오를 못
+    읽거나 계산이 멈추면(`simulation_cache.check_scenario_capacity` — 성공만 캐시, 적중이면 소요대수를
+    풀지 않는다) 그 탭 안에서만 경고한다. 소요대수 프레임은 넘기지 않는다 — 페이지가 시나리오 키와
+    로더(`scenario_required_equipment`, 키를 낸 바로 그 표 묶음)를 넘기고, 패널이 고를 달을
+    `get_required_month_span`(같은 시나리오 키의 첫·끝 달)으로 정하며, 프레임은 그 캐시나
+    `get_required_shortening` 이 빗나갈 때만 로더로 꺼낸다. 오류 확인도 같은 로더를 받아, 셋이 한 회차에
+    함께 빗나가도(첫 진입, 조회기간·토큰이 바뀐 회차) 언피클은 한 번이다. 달 범위를 꺼내다 멈추면(오류
+    확인이 적중한 뒤 밀려난 소요대수를 다시 계산하는 자리) 같은 경고로 멈춘다. Static/Dynamic 도 오류
+    확인은 같은 함수·같은 로더로 모든 보기에서 하고, 소요대수는 그 로더로 확보율 교차검증 캐시가 빗나갈
+    때만 푼다(로더가 멈추면 「확보율을 맞대지 못했습니다」 경고). 계산
+    오류도 `static_error` 로 알려 「Static 가용대수를 읽지 못해 Dynamic 만 표시합니다」 경고가 뜨지만 이미
+    읽은 Static 은 비교에 그대로 쓴다 — 문구와 맞지 않는 이 동작은 `tests/test_equipment_scenario_demand.py`
+    가 고정한다(고칠지는 결정 대기). 넓힌 생애주기 구간·환산비는 고른 달이
     정해진 뒤 `simulation_cache.get_required_shortening` 이 같은 함수로 만든다. 다섯 목표(90~130%)를 한
     번에 캐시하고 목표·공정 선택은 고르기만 한다. 계산 규칙은 `services/required_shortening.py` 항목이다.
     **계산은 DB 에 쓰지 않는다** — 쓰는 것은 거르는 조건(시작 월·끝 월·공정)의 **공용 프로필**
@@ -1990,6 +2001,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     덮는다) + 달 + 오늘이다. 목표·공정을 바꾸는 rerun 은 이 결과를 고르기만 한다. 결과에는 CSV 가
     호기 줄에 붙일 마스터 속성(`ShorteningPlan.unit_master`)도 실린다 — 설비 마스터에서만 나오므로
     키의 마스터 내용 지문이 그것까지 덮고, 화면은 rerun 마다 마스터를 다시 검증하지 않는다.
+    소요대수는 **빗나갈 때만** 이 안에서 로더(`scenario_required_equipment` — 키의 시나리오 키와 그 키의
+    content_token 을 발급한 바로 그 표 묶음으로 만든다)로 꺼낸다. 고를 달은 `get_required_month_span`
+    (시나리오 키 → 소요대수의 첫·끝 달, 작은 값)이 정한다. 확보율 교차검증(`get_securement_cross_check`)
+    과 오류 확인(`check_scenario_capacity` 의 `_required_equipment=`)도 같은 로더를 받는다 — 로더 하나는
+    프레임을 한 번만 풀고(실패는 기억하지 않는다) 그 회차에서만 쓴다. 「소요대수만」 돌려주는 캐시
+    래퍼는 두지 않는다(같은 프레임이 캐시에 한 벌 더 쌓인다).
   - Static/Dynamic 은 `get_equipment_lifecycle_spans`(구간, 키 `equipment_span_cache_key` = 마스터·
     비가동 지문 + 범위) → `get_availability_comparison`(월별 Dynamic + Static 비교, 키
     `dynamic_monthly_cache_key` = 구간·기존보유·Cut-off 지문 + 달 + **환산비 지문** — 구간 표에
@@ -3952,7 +3969,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     바꾸는 rerun 은 결과를 고르기만 한다. 호기 필터를 건 행렬(`_unit_filtered_matrix`)은 필터를 건
     회차에만 돌아 캐시하지 않았다. 확보율 교차검증은 `get_securement_cross_check`(키 = 비교 키 +
     소요대수를 낸 시나리오 키)다 — 페이지가 그 시나리오 키를 `required_equipment_key=` 로 넘기고,
-    주지 않으면(홀로 띄우는 테스트) 회차마다 새로 맞댄다.
+    주지 않으면(홀로 띄우는 테스트) 회차마다 새로 맞댄다. 페이지는 `required_equipment=` 에 프레임
+    대신 로더(`simulation_cache.scenario_required_equipment`)를 넘겨 그 캐시가 빗나갈 때만 소요대수를
+    푼다. 결과(`SecurementCrossCheckResult`)가 소요대수·Static 이 비었는지도 실어, 안내는 프레임을 풀지
+    않고 「소요대수 → Static」 차례 그대로 고른다.
   - 세 결과 모두 일정 미정 줄 아래에 사용기준 제외 줄을 같은 범위(공정·호기 필터)로 둔다. 호기가
     모두 HBM·EDP 가 아닌 공정은 Dynamic 이 기존보유뿐이거나 없어, 없으면 「기준정보에만 있는 공정」으로
     뜬다 — 그 까닭은 이 줄이 말한다(그 경고 문구는 고치지 않았다).

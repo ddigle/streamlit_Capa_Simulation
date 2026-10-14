@@ -24,7 +24,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from datetime import date
 
@@ -37,7 +37,7 @@ from capa_simulation.components.plotly_layout import hover_chart_config
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
-from capa_simulation.page_bootstrap import prune_choice
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message, prune_choice
 from capa_simulation.services.availability_gap import (
     DYNAMIC_SUBTOTAL_ROW,
     DYNAMIC_WEIGHTED_ROW,
@@ -61,10 +61,6 @@ from capa_simulation.services.monthly_equipment_availability import (
     processes_in,
     span_date_range,
 )
-from capa_simulation.services.securement_cross_check import (
-    build_securement_cross_check,
-    dynamic_available_equipment,
-)
 from capa_simulation.services.simulation_cache import (
     DynamicMonthlyCacheKey,
     ScenarioCacheKey,
@@ -76,6 +72,7 @@ from capa_simulation.services.simulation_cache import (
     get_securement_cross_check,
     get_undated_equipment,
     get_usage_excluded_equipment,
+    securement_cross_check_result,
 )
 from capa_simulation.services.undated_equipment import undated_equipment_notice
 from capa_simulation.services.usage_basis import usage_exclusion_notice
@@ -146,7 +143,7 @@ def render_availability_gap_panel(
     static_error: str | None = None,
     span_bounds: tuple[date, date] | None = None,
     conversion_ratios: Mapping[str, float] | None = None,
-    required_equipment: pd.DataFrame | None = None,
+    required_equipment: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
     required_equipment_key: ScenarioCacheKey | None = None,
     owner_tab: OpenTab | None = None,
     conditions: DeltaGenerator | None = None,
@@ -174,9 +171,12 @@ def render_availability_gap_panel(
     마스터·기준정보에서 고칠 이름이다(AGENTS 8장 ③). 계산 캐시에는 닿지 않는다 — 캐시 결과의
     복사본에만 입힌다.
 
-    `required_equipment_key` 는 `required_equipment` 를 낸 시나리오 키다. 주면 확보율 교차검증을
-    (비교 키, 이 키)로 캐시한다(`get_securement_cross_check`). 주지 않으면 회차마다 새로 맞댄다 —
-    홀로 띄우는 테스트처럼 소요대수가 시나리오 키에서 나오지 않은 경우다.
+    `required_equipment` 는 소요대수 프레임이거나 그것을 꺼내는 로더(인자 없는 함수)다. 페이지는
+    로더(`simulation_cache.scenario_required_equipment`)를 넘긴다 — 소요대수는 확보율 교차검증에만
+    들고, 그 보기에서도 캐시가 빗나갈 때만 푼다. `required_equipment_key` 는 그 소요대수를 낸
+    시나리오 키다. 주면 확보율 교차검증을 (비교 키, 이 키)로 캐시한다(`get_securement_cross_check`).
+    주지 않으면 회차마다 새로 맞댄다 — 홀로 띄우는 테스트처럼 소요대수가 시나리오 키에서 나오지
+    않은 경우다.
     """
     if tab_is_hidden(owner_tab):
         return
@@ -715,7 +715,7 @@ def _render_securement_cross_check(
     *,
     monthly: pd.DataFrame,
     static_availability: pd.DataFrame,
-    required_equipment: pd.DataFrame | None,
+    required_equipment: pd.DataFrame | Callable[[], pd.DataFrame] | None,
     cache_key: SecurementCrossCheckCacheKey | None,
     process: str | None,
     labels: ProcessLabels,
@@ -724,32 +724,39 @@ def _render_securement_cross_check(
 
     **HOME·B/N 은 그대로 Static 을 본다.** 여기는 기준정보 값을 교차검증하는 자리이고,
     값이 믿을 만해지고 Cut-off 가 채워진 뒤에 전역 전환을 정한다.
+
+    소요대수가 로더면 캐시가 빗나갈 때만 부른다. 소요대수가 비었는지·Static 이 비었는지도 그
+    결과(`SecurementCrossCheckResult`)가 말한다 — 프레임을 풀지 않고 같은 차례로 안내한다. 맞대지
+    못했거나 로더가 멈추면(`BOOTSTRAP_ERRORS`) 이 보기 안에서 경고로 알린다.
     """
     st.markdown("##### :material/fact_check: 확보율 교차검증")
-    if required_equipment is None or required_equipment.empty:
+    if required_equipment is None:
         st.info("소요대수를 읽지 못해 확보율을 맞댈 수 없습니다.")
         return
-    if static_availability.empty:
-        st.info("Static 가용대수가 없어 맞댈 대상이 없습니다.")
-        return
+    load = required_equipment if callable(required_equipment) else _frame_loader(required_equipment)
 
     try:
-        check = (
-            build_securement_cross_check(
-                static_availability,
-                dynamic_available_equipment(monthly),
-                required_equipment,
-            )
+        result = (
+            securement_cross_check_result(static_availability, monthly, load())
             if cache_key is None
             else get_securement_cross_check(
                 cache_key,
                 _monthly=monthly,
                 _static=static_availability,
-                _required_equipment=required_equipment,
+                _required_equipment=load,
             )
         )
-    except (KeyError, ValueError) as exc:
-        st.warning(f"확보율을 맞대지 못했습니다 — {exc}")
+    except BOOTSTRAP_ERRORS as exc:
+        # 맞대기(`KeyError`·`ValueError`)뿐 아니라 로더의 실패도 받는다 — 페이지의 오류 확인이
+        # 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춘 자리다.
+        st.warning(f"확보율을 맞대지 못했습니다 — {bootstrap_error_message(exc)}")
+        return
+    if not result.has_demand:
+        st.info("소요대수를 읽지 못해 확보율을 맞댈 수 없습니다.")
+        return
+    check = result.check
+    if check is None:
+        st.info("Static 가용대수가 없어 맞댈 대상이 없습니다.")
         return
 
     if check.months:
@@ -808,6 +815,11 @@ def _render_securement_cross_check(
     ].copy()
     display["생산계획년월"] = display["생산계획년월"].map(lambda month: month_label(int(month)))
     st.dataframe(labels.frame(display.round(3)), hide_index=True, width="stretch")
+
+
+def _frame_loader(frame: pd.DataFrame) -> Callable[[], pd.DataFrame]:
+    """이미 있는 소요대수 프레임을 로더 꼴로 감싼다(홀로 띄우는 자리)."""
+    return lambda: frame
 
 
 def _render_unmatched(

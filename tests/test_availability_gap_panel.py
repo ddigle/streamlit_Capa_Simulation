@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -96,6 +97,8 @@ def _panel_app() -> None:
                 }
             )
         )
+    if st.session_state.get("empty_required", False):
+        required = required.iloc[:0]
     if st.session_state.get("omit_etch", False):
         spans = spans.loc[spans["공정소분류"] != "Etch"]
         baseline = baseline.loc[baseline["공정"] != "Etch"]
@@ -145,6 +148,17 @@ def _panel_app() -> None:
         label_map = {"Die Attach": "표시-DA", "Wire Bond": "표시-WB"}
     labels = ProcessLabels(version=1, labels=label_map) if label_map else None
     is_open = st.toggle("비교 탭 열기", value=True, key="test_gap_panel_open")
+
+    st.session_state.setdefault("required_loads", 0)
+
+    def load_required() -> pd.DataFrame:
+        # 페이지처럼 로더로 넘긴다 — 부른 횟수를 세션에 적어 캐시가 빗나갈 때만 푸는지 본다.
+        st.session_state["required_loads"] += 1
+        return required
+
+    required_source: pd.DataFrame | Callable[[], pd.DataFrame] = required
+    if st.session_state.get("lazy_required", False):
+        required_source = load_required
     render_availability_gap_panel(
         spans=spans,
         baseline=baseline,
@@ -156,7 +170,9 @@ def _panel_app() -> None:
         if st.session_state.get("short_span", False)
         else (date(2026, 9, 1), date(2026, 10, 31)),
         conversion_ratios={"EQ-1": 1.5},
-        required_equipment=None if st.session_state.get("missing_required", False) else required,
+        required_equipment=None
+        if st.session_state.get("missing_required", False)
+        else required_source,
         # 페이지처럼 소요대수를 낸 시나리오 키를 주면 교차검증을 캐시한다. 여기서는 그 키를 소요대수
         # 내용 지문으로 만든다 — 키가 내용을 정한다는 페이지의 약속과 같다.
         required_equipment_key=(0, "panel-" + frame_digest(required), 202610, 202610)
@@ -296,7 +312,6 @@ def test_the_panel_key_carries_both_the_comparison_and_the_scenario(
 
 def test_a_keyed_rerun_does_not_cross_check_again(monkeypatch: pytest.MonkeyPatch) -> None:
     """보기를 열어 둔 rerun(같은 조건)은 다시 맞대지 않는다 — 패널이 키를 받으면 캐시를 쓴다."""
-    from capa_simulation.components import availability_gap_panel
     from capa_simulation.services import simulation_cache
     from capa_simulation.services.securement_cross_check import build_securement_cross_check
 
@@ -308,9 +323,8 @@ def test_a_keyed_rerun_does_not_cross_check_again(monkeypatch: pytest.MonkeyPatc
         calls.append(1)
         return original(*args, **kwargs)
 
-    # 캐시 안(simulation_cache)과 캐시를 건너뛰는 길(패널) 둘 다 센다.
+    # 캐시 안과 캐시를 건너뛰는 길이 같은 함수(`securement_cross_check_result`)를 지난다.
     monkeypatch.setattr(simulation_cache, "build_securement_cross_check", counting)
-    monkeypatch.setattr(availability_gap_panel, "build_securement_cross_check", counting)
     app = _run(keyed_required=True)
     _select_view(app, "확보율 교차검증")
     app.run()
@@ -318,6 +332,61 @@ def test_a_keyed_rerun_does_not_cross_check_again(monkeypatch: pytest.MonkeyPatc
 
     assert not app.exception
     assert len(calls) == 1
+
+
+def test_a_lazy_demand_is_read_only_when_the_cross_check_misses() -> None:
+    """페이지처럼 소요대수를 로더로 넘기면 다른 보기는 풀지 않고, 교차검증도 빗나갈 때만 푼다.
+
+    화면은 프레임을 넘긴 회차와 글자까지 같다.
+    """
+    from capa_simulation.services.simulation_cache import get_securement_cross_check
+
+    get_securement_cross_check.clear()
+    app = _run(keyed_required=True, lazy_required=True)
+    _select_view(app, "분류별 내역")
+    _select_view(app, "가용대수 비교")
+    assert app.session_state["required_loads"] == 0
+
+    _select_view(app, "확보율 교차검증")
+    app.run()
+    app.run()
+    assert app.session_state["required_loads"] == 1
+    lazy_table = app.dataframe[0].value.to_json(force_ascii=False)
+    lazy_notes = [item.value for item in app.caption] + [item.value for item in app.warning]
+
+    framed = _run(keyed_required=True)
+    _select_view(framed, "확보율 교차검증")
+    assert framed.dataframe[0].value.to_json(force_ascii=False) == lazy_table
+    assert [item.value for item in framed.caption] + [
+        item.value for item in framed.warning
+    ] == lazy_notes
+
+
+@pytest.mark.parametrize("keyed", [False, True])
+@pytest.mark.parametrize(
+    ("state", "notice"),
+    [
+        # 소요대수가 비면 Static 이 비었어도 소요대수 문구가 먼저다.
+        ({"empty_required": True, "missing_static": True}, "소요대수를 읽지 못해"),
+        ({"empty_required": True}, "소요대수를 읽지 못해"),
+        ({"missing_static": True}, "Static 가용대수가 없어"),
+        ({"missing_required": True}, "소요대수를 읽지 못해"),
+    ],
+)
+def test_the_cross_check_explains_what_is_missing_in_the_same_order(
+    state: dict[str, bool], notice: str, keyed: bool
+) -> None:
+    """맞대지 못하는 까닭은 소요대수 → Static 차례로 하나만 알린다 — 캐시를 지나도(로더) 같다."""
+    from capa_simulation.services.simulation_cache import get_securement_cross_check
+
+    get_securement_cross_check.clear()
+    lazy = {"keyed_required": True, "lazy_required": True} if keyed else {}
+    app = _run(**state, **lazy)
+    _select_view(app, "확보율 교차검증")
+
+    infos = [str(item.value) for item in app.info]
+    assert len(infos) == 1 and infos[0].startswith(notice), infos
+    assert not app.dataframe
 
 
 def test_unmatched_processes_stay_out_of_totals_and_fallback_rows() -> None:
