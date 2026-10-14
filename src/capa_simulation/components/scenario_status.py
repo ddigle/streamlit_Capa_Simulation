@@ -76,7 +76,11 @@ from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.scenario_state import ensure_active_scenario
 from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
-from capa_simulation.sidebar_status import CONDITION_DIALOG_FRAGMENT_KEY, rerun_fragment_if_alone
+from capa_simulation.sidebar_status import (
+    CONDITION_DIALOG_FRAGMENT_KEY,
+    keeps_app_run_open,
+    rerun_fragment_if_alone,
+)
 
 # 팝업 안 시나리오·리비전 **초안**. 팝업을 열 때마다 올라와 있는 값으로 다시 적는다 — 닫힌 뒤에
 # 「골랐지만 불러오지 않은 선택」이 남지 않는다. 그래서 `persist_state` 를 주지 않는다.
@@ -245,6 +249,7 @@ def show_scenario_dialog(page_file: str | None) -> None:
     render_scenario_dialog_body(page_file=page_file)
 
 
+@keeps_app_run_open
 def render_scenario_dialog_body(
     database_path: Path | None = None, *, page_file: str | None
 ) -> None:
@@ -252,6 +257,9 @@ def render_scenario_dialog_body(
 
     `database_path` 를 주지 않으면 **부를 때의** `settings.DUCKDB_PATH` 를 쓴다. 팝업 안 조작은
     `app.py` 의 실행 핀(`pinned_connections`) 밖에서 도는 프래그먼트라 여기서 다시 잡는다.
+
+    본문이 도는 동안은 실행 표지를 「끝나지 않음」으로 내려 둔다(`keeps_app_run_open`) — 불러오기·
+    저장·되돌리기가 앱 전체 재실행 전에 끊겨도 그 사이 누른 사이드바 클릭이 앱 전체를 다시 돌린다.
 
     적용하지 않은 편집은 **이 회차에** 센다(`page_file` 은 지금 화면의 파일 이름). 그 편집은
     시나리오에 들어 있지 않아 저장에 실리지 않고, 저장·불러오기가 원본을 바꾸는 순간 사라진다 —

@@ -123,8 +123,30 @@ def test_the_opener_reruns_only_the_dialog_host_after_doing_all_its_work(
 def test_the_opener_falls_back_after_a_run_that_did_not_finish(
     rerun_calls: list[dict[str, Any]], field_key: str, dialog_key: str, other_dialog_key: str
 ) -> None:
-    """직전 실행이 끝까지 돌지 않았으면(끊겼거나 아직 도는 실행) 호스트만 돌리지 않는다 — 앱 전체가
-    돌아 페이지를 끝까지 그린다. 팝업은 그 전체 실행이 연다(열림 키는 그대로 적힌다)."""
+    """같은 페이지에서 끝까지 돈 실행 뒤에 시작한 실행이 끝나지 않았으면(새 상호작용이 끊었거나
+    아직 도는 실행) 호스트만 돌리지 않는다 — 앱 전체가 돌아 페이지를 끝까지 그린다. 팝업은 그 전체
+    실행이 연다(열림 키는 그대로 적힌다). 페이지는 같으므로 「끝나지 않음」 판정 하나만 이 경우를
+    막는다."""
+    app = AppTest.from_function(_fields_script).run()
+    state = dict(app.session_state[APP_RUN_STATE_KEY])
+    assert state["complete"] is True
+    app.session_state[APP_RUN_STATE_KEY] = {**state, "complete": False}
+    _seed_stale_dialogs(app, other_dialog_key)
+
+    app.button(key=field_key).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert rerun_calls == []
+    assert app.session_state[dialog_key] is True
+    assert other_dialog_key not in app.session_state
+    assert PAGE_DIALOG_KEY not in app.session_state
+
+
+@pytest.mark.parametrize(("field_key", "dialog_key", "other_dialog_key"), FIELDS)
+def test_the_opener_falls_back_before_any_run_finished(
+    rerun_calls: list[dict[str, Any]], field_key: str, dialog_key: str, other_dialog_key: str
+) -> None:
+    """끝까지 돈 실행이 아직 하나도 없으면(첫 실행이 도는 도중) 호스트만 돌리지 않는다."""
     app = AppTest.from_function(_fields_script)
     app.session_state[END_KEY] = "open"
     app.run()

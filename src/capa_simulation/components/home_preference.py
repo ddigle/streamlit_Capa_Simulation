@@ -124,7 +124,7 @@ from capa_simulation.services.securement_threshold import (
     merge_securement_threshold_edits,
     reversed_threshold_months,
 )
-from capa_simulation.sidebar_status import condition_card
+from capa_simulation.sidebar_status import condition_card, keeps_app_run_open
 
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
 EXECUTION_NOTE_KEY = "home_preference_execution_note"
@@ -1458,6 +1458,7 @@ def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]
 
 
 @st.fragment
+@keeps_app_run_open
 def _render_key_process_editor(
     *,
     process_options: Sequence[str],
@@ -1480,7 +1481,9 @@ def _render_key_process_editor(
     **프래그먼트다.** 「고칠 프리셋」 선택·삭제 확인·이름·공정 입력과 폼 제출은 이 카드만 다시
     돌린다 — 앱 전체(HOME 계산·Figure 직렬화)를 돌릴 까닭이 없는 조작이다. 저장·기본으로·삭제는
     지금처럼 `st.rerun(scope="app")` 으로 앱 전체를 다시 돌려 사이드바 `주요공정 히트맵` 줄과
-    히트맵 묶음 키가 새 프로필을 본다.
+    히트맵 묶음 키가 새 프로필을 본다. 카드가 도는 동안은 실행 표지를 「끝나지 않음」으로 내려
+    둔다(`keeps_app_run_open`) — 저장 도중 사이드바 값 칸·상자를 눌러 이 실행이 끊겨도 그 클릭은
+    앱 전체를 다시 돌린다.
 
     **프로필은 인자로 받지 않고 여기서 회차마다 다시 읽는다.** 프래그먼트 회차는 직전 앱 전체
     회차의 인자를 그대로 쓰는데, 저장·기본으로·삭제는 늘 묶음 **전체의 교체**라 인자로 받은

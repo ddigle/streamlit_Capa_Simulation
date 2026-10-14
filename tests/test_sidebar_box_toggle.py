@@ -14,9 +14,14 @@ AppTest 는 실행마다 프래그먼트 저장소가 새로 생겨 실제 프�
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import pytest
 from streamlit.testing.v1 import AppTest
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = PROJECT_ROOT / "src" / "capa_simulation"
 BOX_KEY = "sidebar_box_toggle_test_box"
 OTHER_KEY = "sidebar_box_toggle_test_other"
 PROBE_KEY = "sidebar_box_toggle_test_probe"
@@ -66,6 +71,39 @@ def _callback_script() -> None:
         except StopException as stop:
             run.finish_stopped(stop)
             raise
+
+
+def _fragment_body_script() -> None:
+    """전체 실행 뒤에 `keeps_app_run_open` 으로 감싼 프래그먼트 본문만 도는 회차를 흉내 낸다.
+
+    프래그먼트 회차는 `app.py` 맨 위(`begin_app_run`)를 지나지 않는다. `sidebar_box_toggle_test_end`
+    가 회차를 고른다 — `finish`(앱 전체 실행, 기본), `fragment_done`(본문이 끝까지 돎),
+    `fragment_cut`(새 상호작용이 본문을 끊음 — 멈춤 예외), `fragment_overtaken`(본문이 도는 사이 새
+    전체 실행이 시작함).
+    """
+    import streamlit as st
+    from streamlit.runtime.scriptrunner_utils.exceptions import StopException
+
+    from capa_simulation.sidebar_status import begin_app_run, keeps_app_run_open, on_box_toggle
+
+    end = st.session_state.get("sidebar_box_toggle_test_end", "finish")
+
+    @keeps_app_run_open
+    def body() -> None:
+        if end == "fragment_cut":
+            raise StopException()
+        if end == "fragment_overtaken":
+            begin_app_run()
+
+    run = begin_app_run() if end == "finish" else None
+    box_key = "sidebar_box_toggle_test_box"
+    st.checkbox("상자", key=box_key, on_change=on_box_toggle, args=(box_key, "상자"))
+    try:
+        body()
+    except StopException:
+        pass
+    if run is not None:
+        run.finish()
 
 
 @pytest.fixture
@@ -223,3 +261,106 @@ def test_the_callback_falls_back_when_the_page_differs_from_the_completed_run(
 
     assert not app.exception, [item.message for item in app.exception]
     assert rerun_calls == []
+
+
+@pytest.mark.parametrize(
+    ("end", "reruns_fragment"), [("fragment_done", True), ("fragment_cut", False)]
+)
+def test_a_fragment_body_that_reruns_the_app_holds_the_run_open_until_it_finishes(
+    rerun_calls: list[tuple[object, ...]], end: str, reruns_fragment: bool
+) -> None:
+    """앱 전체 재실행으로 끝날 수 있는 프래그먼트 본문(주요공정 프리셋 카드·조건 패널 팝업 본문)이
+    새 상호작용에 끊기면 그 뒤의 상자 클릭은 앱 전체로 물러난다 — 저장 뒤의 `st.rerun(scope="app")`
+    이 나가지 못했을 수 있어 본문이 저장 전 묶음을 보여 준다. 끝까지 돌았으면 앞 표지(끝남)로 돌아가
+    프래그먼트만 돈다(양성 대조)."""
+    from capa_simulation.sidebar_status import APP_RUN_STATE_KEY, SIDEBAR_TOGGLE_FRAGMENT_KEY
+
+    app = AppTest.from_function(_fragment_body_script).run()
+    assert app.session_state[APP_RUN_STATE_KEY]["complete"] is True
+    app.session_state[END_KEY] = end
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[APP_RUN_STATE_KEY]["complete"] is reruns_fragment
+
+    app.checkbox(key=BOX_KEY).check().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert rerun_calls == ([(SIDEBAR_TOGGLE_FRAGMENT_KEY,)] if reruns_fragment else [])
+
+
+def test_a_fragment_body_does_not_restore_over_a_run_that_began_meanwhile() -> None:
+    """본문이 도는 사이 새 전체 실행이 시작했으면 본문이 끝나도 그 실행의 「아직 안 끝남」을 덮지
+    않는다."""
+    from capa_simulation.sidebar_status import APP_RUN_STATE_KEY
+
+    app = AppTest.from_function(_fragment_body_script).run()
+    before = app.session_state[APP_RUN_STATE_KEY]["run"]
+    app.session_state[END_KEY] = "fragment_overtaken"
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    state = app.session_state[APP_RUN_STATE_KEY]
+    assert state["run"] is not before
+    assert state["complete"] is False
+
+
+def _decorators(path: Path, function: str) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    (node,) = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == function
+    ]
+    return [ast.unparse(decorator) for decorator in node.decorator_list]
+
+
+@pytest.mark.parametrize(
+    ("path", "function", "decorator"),
+    [
+        (
+            PROJECT_ROOT / "app.py",
+            "render_condition_dialogs",
+            "st.fragment(key=CONDITION_DIALOG_FRAGMENT_KEY)",
+        ),
+        (
+            SOURCE_ROOT / "sidebar_status.py",
+            "render_box_toggle_sink",
+            "st.fragment(key=SIDEBAR_TOGGLE_FRAGMENT_KEY)",
+        ),
+    ],
+)
+def test_the_rerun_targets_are_fragments_with_their_keys(
+    path: Path, function: str, decorator: str
+) -> None:
+    """콜백이 `st.rerun(<key>)` 로 겨누는 두 함수가 그 키를 단 프래그먼트다. 데코레이터가 빠지거나
+    키가 어긋나면 `st.rerun` 이 모르는 키로 예외를 내고 콜백이 앱 전체 재실행으로 물러난다 — 숫자는
+    맞으니 다른 시험은 다 통과하지만 여닫을 때마다 페이지 계산이 다시 돈다. 그래서 선언을 읽는다."""
+    assert decorator in _decorators(path, function)
+
+
+@pytest.mark.parametrize(
+    ("path", "function", "decorators"),
+    [
+        (
+            SOURCE_ROOT / "components" / "home_preference.py",
+            "_render_key_process_editor",
+            ["st.fragment", "keeps_app_run_open"],
+        ),
+        (
+            SOURCE_ROOT / "components" / "scenario_status.py",
+            "render_scenario_dialog_body",
+            ["keeps_app_run_open"],
+        ),
+        (
+            SOURCE_ROOT / "components" / "period_field.py",
+            "render_period_dialog_body",
+            ["keeps_app_run_open"],
+        ),
+    ],
+)
+def test_fragment_bodies_that_rerun_the_app_hold_the_run_open(
+    path: Path, function: str, decorators: list[str]
+) -> None:
+    """앱 전체 재실행으로 끝날 수 있는 프래그먼트 본문은 `keeps_app_run_open` 으로 감싼다.
+    프래그먼트 안쪽이어야 한다 — 바깥에 두면 프래그먼트만 도는 회차에는 감싸지 않은 본문이 돈다."""
+    assert _decorators(path, function) == decorators

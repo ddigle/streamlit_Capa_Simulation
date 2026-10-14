@@ -1,8 +1,10 @@
 # Purpose: 사이드바 구역 제목·조건 패널 칸·적용 기간 표시와 펼침을 기억하는 상자·조건 카드를 만든다.
 
+import functools
 import inspect
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import ParamSpec, TypeVar
 
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
@@ -11,6 +13,9 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from capa_simulation.navigation import SidebarSectionSpec
 from capa_simulation.services.month_columns import month_label
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 # 자리표시자는 **세션 상태**에 둔다. 모듈 전역에 두면 같은 서버 프로세스의 모든 세션이
 # 하나를 공유해, 두 번째 사용자가 접속하는 순간 첫 사용자의 자리표시자가 교체된다.
@@ -116,6 +121,36 @@ def begin_app_run() -> AppRun:
     state["run"] = token
     state["complete"] = False
     return AppRun(state, token)
+
+
+def keeps_app_run_open(func: Callable[P, R]) -> Callable[P, R]:
+    """앱 전체 재실행(`st.rerun()`)으로 끝날 수 있는 프래그먼트 본문을 감싼다. 본문이 도는 동안은
+    직전 전체 실행의 「끝났다」를 내려 둔다.
+
+    프래그먼트만 도는 회차에는 `app.py` 맨 위(`begin_app_run`)가 돌지 않아 표지가 앞 전체 실행의
+    「끝났다」로 남는다. 그동안 사이드바 값 칸·상자를 누르면 새 요청이 이 실행을 끊고(프래그먼트가
+    아닌 요청은 돌던 실행을 멈춘다), 저장·불러오기 뒤에 나갈 앱 전체 재실행이 나가지 못할 수 있다.
+    그때 콜백이 프래그먼트만 돌리면 본문이 바뀌기 전 상태를 다음 전체 실행까지 보여 준다. 그래서
+    본문이 도는 동안 「끝나지 않음」으로 내리고, **본문이 끝까지 돌았을 때만** 앞 값으로 되돌린다 —
+    멈춤·재실행 예외로 끝나면 내린 채 둬서 다음 클릭이 앱 전체로 물러난다(`finally` 로 되돌리지
+    않는다).
+    그 사이 새 전체 실행이 시작했으면 그 실행의 표지를 건드리지 않는다. 전체 실행 안에서 불리면 앞
+    값도 「끝나지 않음」이라 바뀌는 것이 없다.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        state = st.session_state.get(APP_RUN_STATE_KEY)
+        if not isinstance(state, dict):
+            return func(*args, **kwargs)
+        run, complete = state.get("run"), state.get("complete")
+        state["complete"] = False
+        result = func(*args, **kwargs)
+        if state.get("run") is run:
+            state["complete"] = complete
+        return result
+
+    return wrapper
 
 
 def _current_page_hash() -> str | None:
