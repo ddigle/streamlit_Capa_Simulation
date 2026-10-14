@@ -95,6 +95,10 @@ def active_condition_tab(spec: PageSpec) -> str | None:
     return spec.condition_tabs.first
 
 
+# 이번 실행이 끝까지 돌았는지의 표지(`sidebar_status.begin_app_run`). **첫 Streamlit 호출보다
+# 앞이다** — 메시지를 보내는 호출은 다른 요청이 이 실행을 끊는 자리라, 그 앞에서 끊긴 실행이 앞
+# 실행의 「끝났다」를 남겨 두면 상자 여닫기·조건 패널 값 칸이 페이지 없이 프래그먼트만 돌린다.
+app_run = begin_app_run()
 st.set_page_config(
     page_title=APP_NAME,
     # 문자열 경로여야 한다 — Streamlit 은 `.svg` 로 끝나는 **파일**만 읽어 data URI 로 싣는다.
@@ -103,10 +107,8 @@ st.set_page_config(
     # `menu_items` 는 적지 않는다. ⋮ 메뉴는 통째로 감추고(`render_shell_style`), 앱 버전·개발 정보는
     # 모든 화면 사이드바 맨 아래의 앱 정보 카드(`components/app_credits.py`)가 보여 준다.
 )
-# 사이드바 상자를 여닫을 때 앱 전체 대신 다시 도는 빈 프래그먼트와, 이번 실행이 끝까지
-# 돌았는지의 표지(`sidebar_status.on_box_toggle`). 프래그먼트는 `st.stop()` 이 걸릴 수 있는
-# 어떤 곳보다도 앞에서 등록한다.
-app_run = begin_app_run()
+# 사이드바 상자를 여닫을 때 앱 전체 대신 다시 도는 빈 프래그먼트(`sidebar_status.on_box_toggle`).
+# `st.stop()` 이 걸릴 수 있는 어떤 곳보다도 앞에서 등록한다.
 with st.container(key=SIDEBAR_TOGGLE_SINK_KEY):
     render_box_toggle_sink()
 # 이 실행이 쓸 테마를 먼저 정한다. **토큰을 하나라도 읽기 전**이어야 한다 — 색을 읽는
@@ -358,16 +360,17 @@ with pinned_connections(DUCKDB_PATH):
     # 설비 DB 를 안 보는 화면(HOME 등)까지 그 DB 의 마이그레이션·잠금에 묶인다.
     render_schema_ahead_warning(get_scenario_repository(str(DUCKDB_PATH.resolve())).schema_ahead)
     # 끝까지 돈 실행 뒤에만 상자 여닫기가 본문을 건너뛴다. 페이지가 `st.stop()` 으로 멈춘 것도
-    # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다.
+    # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다. 새 상호작용이 끊은 실행은 같은 멈춤
+    # 예외로 끝나도 끝까지 돈 것이 아니다(`AppRun.finish_stopped`).
     # 입장 화면 Summary 의 GAP 몫이 「준비 중」으로 나갔으면 페이지를 다 그린 **뒤**에 만들어 둔다 —
     # 비교 대상을 바꾼 회차에 HOME 보다 먼저 비교 계획을 환산하지 않게(다음 회차에 싣는다). 페이지가
     # `st.stop()` 해도 한다. rerun 으로 끊긴 회차에서는 하지 않는다.
     try:
         with equipment_pin:
             navigation.run()
-    except StopException:
-        app_run["complete"] = True
+    except StopException as stop:
+        app_run.finish_stopped(stop)
         warm_intro_summary(str(DUCKDB_PATH.resolve()))
         raise
-    app_run["complete"] = True
+    app_run.finish()
     warm_intro_summary(str(DUCKDB_PATH.resolve()))

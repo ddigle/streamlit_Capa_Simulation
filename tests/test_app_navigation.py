@@ -443,6 +443,44 @@ def test_the_summary_gap_is_warmed_after_a_page_that_stops(
     assert order == ["summary", "page", "warm"]
 
 
+@pytest.mark.parametrize(("stopped_by_page", "complete"), [(True, True), (False, False)])
+def test_only_a_page_that_stops_itself_counts_as_a_completed_run(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch, stopped_by_page: bool, complete: bool
+) -> None:
+    """페이지가 `st.stop()` 으로 멈춘 실행은 끝까지 돈 실행이고, 다른 요청이 끊은 실행은 아니다.
+
+    Streamlit 은 새 상호작용이 들어오면(`runner.fastReruns`, 기본값) 돌던 실행에 멈춤을 걸고 새
+    실행을 따로 띄운다. 끊긴 실행은 다음 양보 지점에서 `st.stop()` 과 같은 멈춤 예외로 끝나 본문이
+    반쯤 그려진 채다. 그 실행을 「끝났다」로 적으면 같은 때 도는 새 실행의 콜백(상자 여닫기·조건
+    패널 값 칸)이 프래그먼트만 다시 돌려 본문이 반쯤 그려진 채 남는다 — 조회기간 「적용」 직후
+    시나리오 칸을 누른 브라우저 확인에서 실제로 그렇게 됐다(2026-10-14). 끊긴 실행은 같은 예외를
+    `st.stop()` 밖에서 던지는 것으로 흉내 낸다.
+    """
+    import streamlit as st
+    from streamlit.runtime.scriptrunner_utils.exceptions import StopException
+
+    from capa_simulation.sidebar_status import APP_RUN_STATE_KEY
+
+    real_navigation = st.navigation
+
+    def _stopping_navigation(*args: Any, **kwargs: Any) -> Any:
+        page = real_navigation(*args, **kwargs)
+
+        def _run() -> None:
+            if stopped_by_page:
+                st.stop()
+            raise StopException()
+
+        monkeypatch.setattr(page, "run", _run)
+        return page
+
+    monkeypatch.setattr(st, "navigation", _stopping_navigation)
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[APP_RUN_STATE_KEY]["complete"] is complete
+
+
 def test_the_intro_summary_sends_the_official_six_months_once_per_value(_app: AppTest) -> None:
     """내장 시드(공식버전 하나)에서 요약이 실제로 계산되어 나간다. 값은 회차마다 같다.
 
