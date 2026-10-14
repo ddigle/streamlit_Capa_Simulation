@@ -91,6 +91,7 @@ __all__ = [
     "SHORTENING_COMPARE_KEY",
     "BaselineSaveContext",
     "ProgressView",
+    "consume_baseline_write",
     "load_baseline_options",
     "load_selected_baseline",
     "progress_card_markup",
@@ -115,6 +116,7 @@ _BASELINE_FORM_GENERATION_KEY = "equipment_shortening_baseline_form_generation"
 _BASELINE_DELETE_CONFIRM_KEY = "equipment_shortening_baseline_delete_confirm"
 _BASELINE_DELETE_KEY = "equipment_shortening_baseline_delete"
 _BASELINE_NOTICE_KEY = "equipment_shortening_baseline_notice"
+_BASELINE_WRITTEN_KEY = "equipment_shortening_baseline_written"
 _PROGRESS_CSV_KEY = "equipment_shortening_progress_csv"
 
 # 호기 줄: 이름·배지 · 「과거/현재」 · 두 줄 타임라인 · 줄마다 「기존 → 필요 −N일」.
@@ -311,6 +313,16 @@ def _notice(kind: str, message: str) -> None:
     st.session_state[_BASELINE_NOTICE_KEY] = (kind, message)
 
 
+def consume_baseline_write() -> bool:
+    """저장·지우기 콜백이 남긴 「기준선을 썼다」 표지를 거둔다. 있었으면 True.
+
+    단추는 필요단축일정 머리·본문 프래그먼트 안에 있어 누르면 그 프래그먼트만 다시 돈다. 쓰기 뒤에는
+    앱 전체를 다시 돌린다 — 프래그먼트가 표지를 보면 `st.rerun(scope="app")` 을 부르고(콜백 안의
+    `st.rerun` 은 아무 일도 하지 않는다), 앱 전체 회차는 탭 함수가 먼저 거둬 다시 돌지 않는다.
+    """
+    return bool(st.session_state.pop(_BASELINE_WRITTEN_KEY, False))
+
+
 def _save_baseline(save: BaselineSaveContext, name_key: str) -> None:
     """「기준선 저장」 콜백. 위젯보다 먼저 돌아 새 기준선이 그 회차의 「진척 비교」 목록에 바로
     선다.
@@ -331,6 +343,7 @@ def _save_baseline(save: BaselineSaveContext, name_key: str) -> None:
         _notice("warning", f"기준선을 저장하지 않았습니다 — {exc}")
         return
     clear_shortening_baseline_cache()
+    st.session_state[_BASELINE_WRITTEN_KEY] = True
     st.session_state[_BASELINE_FORM_GENERATION_KEY] = _generation() + 1
     _notice(
         "success",
@@ -350,6 +363,7 @@ def _delete_baseline(database_path: str, baseline_id: str, name: str) -> None:
         _notice("warning", f"기준선을 지우지 못했습니다 — {exc}")
         return
     clear_shortening_baseline_cache()
+    st.session_state[_BASELINE_WRITTEN_KEY] = True
     st.session_state[SHORTENING_COMPARE_KEY] = NO_COMPARISON
     _notice(
         "success",
