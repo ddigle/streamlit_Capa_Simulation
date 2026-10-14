@@ -123,3 +123,49 @@ def test_the_unit_filter_is_a_full_run_and_the_next_click_lists_only_its_units(
     app.run()
     assert not app.exception
     _assert_same(_frames(app), in_fragment)
+
+
+def test_a_process_card_change_is_a_full_run_and_the_next_click_lists_only_that_process(
+    request: pytest.FixtureRequest,
+) -> None:
+    runner = _runner(request)
+    app = _open(runner)
+    rows_all = [str(row) for row in app.dataframe[0].value.index]
+    key_all = matrix_table_key(None, [202610], rows_all)
+    table_all = _fragment_of(runner, key_all)
+
+    # 공정 전체에서 칸을 누른 뒤(프래그먼트 회차) 공정 카드를 바꾼다(앱 전체 회차).
+    runner.fragment_queue = [table_all]
+    _click(app, key_all, rows_all, "가용")
+    app.run()
+    assert sorted(_frames(app)[1]["설비명"]) == ["EQ-1", "EQ-2", "EQ-3"]
+    # 프래그먼트 회차의 요소 트리는 그 회차 델타뿐이다 — 카드를 누르려면 앱 전체 회차를 돈다.
+    runner.fragment_queue = []
+    _click(app, key_all, rows_all, "가용")
+    app.run()
+    assert len(_frames(app)) == 2
+    app.selectbox(key=PROCESS_FILTER_KEY).set_value("Etch").run()
+    assert not app.exception
+    assert runner.started == [[]]
+    # 표 키에 공정이 들어 있어 새 표다 — 앞에서 누른 칸이 따라오지 않는다.
+    assert len(_frames(app)) == 1
+    rows = [str(row) for row in app.dataframe[0].value.index]
+    key = matrix_table_key("Etch", [202610], rows)
+    assert key != key_all
+
+    # 다음 칸 누름 프래그먼트 회차는 그 공정의 호기만 보이고, 합계가 표의 칸 값과 같다.
+    table = _fragment_of(runner, key)
+    runner.fragment_queue = [table]
+    _click(app, key, rows, "가용")
+    app.run()
+    assert not app.exception
+    assert runner.started == [[table]]
+    in_fragment = _frames(app)
+    assert sorted(in_fragment[1]["설비명"]) == ["EQ-3"]
+    assert in_fragment[1]["대수"].sum() == pytest.approx(in_fragment[0].loc["가용", "26.10"])
+
+    runner.fragment_queue = []
+    _click(app, key, rows, "가용")
+    app.run()
+    assert not app.exception
+    _assert_same(_frames(app), in_fragment)

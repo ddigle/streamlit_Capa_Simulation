@@ -30,7 +30,7 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 from test_home_key_process_fragment import _Browser, browser  # noqa: F401 — 아래 시험의 픽스처
 from test_required_shortening_tab import _cards, _database, _months
-from test_shortening_progress_tab import _save_button, _saved_database, _toasts
+from test_shortening_progress_tab import _name_input, _save_button, _saved_database, _toasts
 
 import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.components.required_shortening_panel as panel
@@ -323,6 +323,52 @@ def test_saving_a_baseline_in_the_view_reruns_the_whole_app_and_lists_it(
     picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
     assert picker.value == NO_COMPARISON and list(picker.options) == ["비교 안 함"]
     assert not any("진척 비교 요약" in body for body in _screen(app, world)[0])
+    clear_equipment_repository()
+
+
+def test_deleting_this_sessions_baseline_reruns_the_whole_app_and_a_failed_save_does_not(
+    tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _runner(request)
+    database_path, _ = _saved_database(tmp_path)
+    world = _install(monkeypatch, database_path)
+    app = _open(runner)
+    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
+    runner.fragment_queue = [view]
+    _run(app, world, lambda app: _save_button(app).click())
+    assert runner.started == [[view], []]
+    (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
+
+    # 같은 이름으로 다시 저장하면 쓰지 않는다 — 프래그먼트 회차만 돌고 알림이 뜬다.
+    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
+    full_runs = app.session_state[FULL_RUNS_KEY]
+    runner.fragment_queue = [view]
+    _run(app, world, lambda app: _name_input(app).set_value(stored.name))
+    runner.fragment_queue = [view]
+    _run(app, world, lambda app: _save_button(app).click())
+    assert runner.started == [[view]]
+    assert app.session_state[FULL_RUNS_KEY] == full_runs
+    assert "같은 이름" in _toasts(app)
+
+    # 고르고 확인한 뒤 지우면 쓴 회차라 앱 전체 회차로 바뀐다 — 목록이 「비교 안 함」 하나로 선다.
+    runner.fragment_queue = [view]
+    _run(
+        app,
+        world,
+        lambda app: app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id),
+    )
+    confirm = next(box for box in app.checkbox if box.label == "정말 지웁니다")
+    runner.fragment_queue = [view]
+    _run(app, world, lambda app: confirm.check())
+    assert runner.started == [[view]]
+    runner.fragment_queue = [view]
+    _run(app, world, lambda app: app.button(key="equipment_shortening_baseline_delete").click())
+    assert runner.started == [[view], []]
+    assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
+    assert DuckDBEquipmentRepository(database_path).list_shortening_baselines() == ()
+    assert "기준선을 지웠습니다" in _toasts(app)
+    picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
+    assert picker.value == NO_COMPARISON and list(picker.options) == ["비교 안 함"]
     clear_equipment_repository()
 
 
