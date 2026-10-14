@@ -889,6 +889,44 @@ def test_a_comparison_revision_from_another_scenario_is_ignored(tmp_path: Path) 
     assert _gap_annotations(app) == []
 
 
+def test_a_comparison_revision_deleted_after_the_check_draws_without_gap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """리비전을 확인한 뒤 계획을 읽기 전에 다른 세션이 그 시나리오를 지워도 HOME 은 GAP 없이 선다.
+
+    계획 읽기는 지운 리비전에서 `KeyError` 를 낸다(빈 계획이 아니다). 확인에서 걸린 것과 같이
+    조용히 비교를 끈다 — 화면 전체가 오류로 멈추면 안 된다.
+    """
+    import capa_simulation.persistence.cache as scenario_cache
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+
+    comparison_id, comparison_revision_id = _create_comparison_scenario(database_path, 0.5)
+    original_load_plan = scenario_cache.load_scenario_plan
+    deleted: list[str] = []
+
+    def delete_then_load(path: str, revision_id: str) -> pd.DataFrame:
+        if revision_id == comparison_revision_id and not deleted:
+            DuckDBScenarioRepository(database_path).delete_scenario(comparison_id)
+            # 삭제 경로가 부르는 비우기와 같다(모듈 속성을 이 대역으로 바꿔 두어 직접 비운다).
+            original_load_plan.clear()
+            deleted.append(revision_id)
+        return original_load_plan(path, revision_id)
+
+    monkeypatch.setattr(scenario_cache, "load_scenario_plan", delete_then_load)
+    _pick_comparison(app, comparison_id, comparison_revision_id)
+    app.run()
+
+    assert deleted == [comparison_revision_id]
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not list(app.error), [element.value for element in app.error]
+    assert "production_lob_months" in app.session_state["spy_figures"]
+    assert _gap_annotations(app) == []
+
+
 def test_comparison_can_target_another_revision_of_the_same_scenario(tmp_path: Path) -> None:
     """리비전이 달라지며 계획이 얼마나 바뀌었는지가 비교의 중요한 쓰임이다.
 

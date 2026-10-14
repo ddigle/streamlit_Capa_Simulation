@@ -173,6 +173,40 @@ _GLOBAL_PROFILE_TABLES = frozenset({"global_comparison_scenario"})
 _OWNER_COLUMNS = ("scenario_id", "dataset_id", "revision_id")
 
 
+def _load_reference_frame(
+    connection: duckdb.DuckDBPyConnection,
+    logical_name: str,
+    *,
+    revision_id: str,
+    dataset_id: str,
+) -> pd.DataFrame:
+    """리비전 하나가 보는 표 한 장 — 리비전 표는 `rev_data`, 나머지는 데이터셋의 `ref_data` 다."""
+    if logical_name in REVISION_TABLES:
+        return load_frame(
+            connection,
+            schema="rev_data",
+            table_name=REVISION_TABLES[logical_name],
+            owner_column="revision_id",
+            owner_id=revision_id,
+        )
+    return load_frame(
+        connection,
+        schema="ref_data",
+        table_name=REFERENCE_TABLES[logical_name],
+        owner_column="dataset_id",
+        owner_id=dataset_id,
+    )
+
+
+def _has_global_display_order(connection: duckdb.DuckDBPyConnection) -> bool:
+    return (
+        connection.execute(
+            "SELECT profile_id FROM app_meta.global_display_order WHERE profile_id = 1"
+        ).fetchone()
+        is not None
+    )
+
+
 def _owned_tables(connection: duckdb.DuckDBPyConnection) -> list[tuple[str, str, str]]:
     """(스키마, 표, 소유 컬럼) 목록. 시나리오 뿌리 행은 마지막에 따로 지우므로 뺀다."""
     rows = connection.execute(
@@ -1197,8 +1231,12 @@ class DuckDBScenarioRepository:
     def load_revision(
         self, revision_id: str, *, apply_global_display_order: bool = True
     ) -> ScenarioSnapshot:
-        """일반 조회는 공용 표시순서를, 파생 시나리오 입력은 저장된 원본을 읽는다."""
-        with self._connect() as connection:
+        """일반 조회는 공용 표시순서를, 파생 시나리오 입력은 저장된 원본을 읽는다.
+
+        리비전 확인과 표 16장·공용 표시순서를 한 읽기 트랜잭션에서 읽는다 — 그 사이 다른 세션이
+        지우거나 표시순서를 바꿔도 한 시점의 것만 모인다.
+        """
+        with self._connect() as connection, transaction(connection):
             scenario_row = connection.execute(
                 SCENARIO_SUMMARY_SELECT
                 + """
@@ -1220,28 +1258,16 @@ class DuckDBScenarioRepository:
             revision = revision_summary(revision_row)
             preset = load_preset(connection, revision_id)
 
-            tables: dict[str, pd.DataFrame] = {}
-            for logical_name, table_name in REFERENCE_TABLES.items():
-                if logical_name in REVISION_TABLES:
-                    tables[logical_name] = load_frame(
-                        connection,
-                        schema="rev_data",
-                        table_name=table_name,
-                        owner_column="revision_id",
-                        owner_id=revision_id,
-                    )
-                else:
-                    tables[logical_name] = load_frame(
-                        connection,
-                        schema="ref_data",
-                        table_name=table_name,
-                        owner_column="dataset_id",
-                        owner_id=scenario.dataset_id,
-                    )
-            global_profile = connection.execute(
-                "SELECT profile_id FROM app_meta.global_display_order WHERE profile_id = 1"
-            ).fetchone()
-            if apply_global_display_order and global_profile is not None:
+            tables: dict[str, pd.DataFrame] = {
+                logical_name: _load_reference_frame(
+                    connection,
+                    logical_name,
+                    revision_id=revision_id,
+                    dataset_id=scenario.dataset_id,
+                )
+                for logical_name in REFERENCE_TABLES
+            }
+            if apply_global_display_order and _has_global_display_order(connection):
                 tables["RQ_DISPLAY_ORDER"] = load_global_display_order_rules(connection)
         return ScenarioSnapshot(
             scenario=scenario,
@@ -1249,6 +1275,48 @@ class DuckDBScenarioRepository:
             preset=preset,
             tables=tables,
         )
+
+    def load_revision_table(
+        self,
+        revision_id: str,
+        logical_name: str,
+        *,
+        apply_global_display_order: bool = True,
+    ) -> pd.DataFrame:
+        """리비전의 표 한 장. `load_revision(...).tables[logical_name]` 과 같은 경로·프레임이다.
+
+        리비전이 있는지 먼저 확인하고 없으면 `load_revision` 과 같은 `KeyError` 를 낸다. 리비전 표를
+        `revision_id` 로 바로 읽으면 지운 리비전에서 행 0개 프레임이 예외 없이 돌아와, 비교 계획이면
+        GAP 이 전부 감소로 그려진다. 확인과 읽기는 한 읽기 트랜잭션이다 — 확인 뒤 다른 세션이 지워도
+        확인한 시점의 표를 읽는다(따로 된 두 문이면 그 틈에 지운 리비전의 행 0개가 돌아온다).
+        """
+        if logical_name not in REFERENCE_TABLES:
+            raise ValueError(f"리비전 표가 아닙니다: {logical_name}")
+        with self._connect() as connection, transaction(connection):
+            owner_row = connection.execute(
+                """
+                SELECT d.dataset_id
+                FROM app_meta.scenario_revision selected_revision
+                JOIN app_meta.scenario s ON s.scenario_id = selected_revision.scenario_id
+                JOIN app_meta.dataset d ON d.scenario_id = s.scenario_id
+                WHERE selected_revision.revision_id = ?
+                """,
+                [revision_id],
+            ).fetchone()
+            if owner_row is None:
+                raise KeyError(f"리비전을 찾을 수 없습니다: {revision_id}")
+            if (
+                logical_name == "RQ_DISPLAY_ORDER"
+                and apply_global_display_order
+                and _has_global_display_order(connection)
+            ):
+                return load_global_display_order_rules(connection)
+            return _load_reference_frame(
+                connection,
+                logical_name,
+                revision_id=revision_id,
+                dataset_id=str(owner_row[0]),
+            )
 
     def delete_scenario(self, scenario_id: str) -> None:
         """시나리오와 그것이 소유한 모든 행을 물리 삭제한다.

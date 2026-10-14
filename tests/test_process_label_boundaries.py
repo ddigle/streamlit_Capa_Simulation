@@ -471,7 +471,7 @@ def test_saving_a_rename_does_not_clear_the_revision_snapshot_cache() -> None:
     body = source.split("def clear_global_process_rename_cache()")[1].split("def clear_scenario")[0]
 
     assert "_load_global_process_rename_payload.clear()" in body
-    assert "_load_scenario_snapshot_payload" not in body
+    assert "snapshot" not in body
 
 
 # ------------------------------------------- 편집기는 값은 원본, 표시만 표시명

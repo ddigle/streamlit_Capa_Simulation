@@ -396,10 +396,15 @@ try:
             str(comparison_scenario_id),
             str(comparison_revision_id),
         )
+        comparison_plan: pd.DataFrame | None = None
         if owned_revision_id is not None:
-            # 비교는 계획 한 장만 쓴다. 16표 스냅샷을 풀면 적중하는 실행마다 그 값을
-            # 다시 역직렬화한다.
-            comparison_plan = load_scenario_plan(str(DUCKDB_PATH.resolve()), owned_revision_id)
+            # 비교는 계획 한 장만 쓴다. 확인 뒤 다른 세션이 그 리비전을 지웠으면(`KeyError`)
+            # 확인에서 걸린 것과 같이 조용히 비교를 끈다.
+            try:
+                comparison_plan = load_scenario_plan(str(DUCKDB_PATH.resolve()), owned_revision_id)
+            except BOOTSTRAP_ERRORS:
+                owned_revision_id = None
+        if owned_revision_id is not None and comparison_plan is not None:
             (
                 comparison_density,
                 comparison_wafer,

@@ -39,7 +39,7 @@ ACTIVE_PERSISTED_SESSION_REVISION_KEY = "active_persisted_session_revision"
 OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY = "official_scenario_bootstrap_attempted"
 # 머리 띠가 「지금 이 세션에 적용 중인 시나리오」를 적을 값. 활성화할 때 한 번 스냅샷에서 떠 두고
 # 회차마다는 이것만 읽는다 — HOME 의 회차가 DB 를 다시 보거나 캐시된 스냅샷(표 전체를 매번
-# 역직렬화한다)을 꺼내지 않게 한다(2026-10-03 사용자 원칙). 핫리로드 뒤에도 읽히게 클래스가
+# 깊은 복사한다)을 꺼내지 않게 한다(2026-10-03 사용자 원칙). 핫리로드 뒤에도 읽히게 클래스가
 # 아니라 평범한 dict 로 둔다.
 ACTIVE_SCENARIO_LABEL_KEY = "active_scenario_label"
 

@@ -1835,8 +1835,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     하나) `app.py` 가 그 회차의 `navigation.run()` 을 `pinned_connections(EQUIPMENT_DUCKDB_PATH)`
     로 감싼다. 선언한 화면에만 건다.
     설비 DB 를 한 번만 여는 화면(Space 현황·표준 목표·재공)은 이득이 없어 선언하지 않는다.
-  - 불변 `revision_id`의 전체 스냅샷과 공용 표시순서 프로필을 `st.cache_data`로 여러 세션에
-    공유한다. 표시순서는 교체 시 `clear_global_display_order_cache()`로 명시 무효화한다
+  - 불변 `revision_id`의 전체 스냅샷과 공용 표시순서 프로필을 여러 세션에 공유한다. 표시순서를 얹은
+    스냅샷은 `st.cache_resource`(`_load_scenario_snapshot_resource`, 칸 4개·1시간)에 **살아 있는
+    프레임** 한 벌로 두고, `load_scenario_snapshot` 이 부를 때마다 표마다 데이터와 축(열 이름·행
+    Index)까지 새로 만든 깊은 사본(`_private_copy`)을 넘긴다 — `copy(deep=True)` 만으로는 열 이름 배열을
+    공유 프레임과 함께 쓴다. 받은 쪽이 무엇을 고쳐도 다른 세션·캐시에 닿지 않고, 객체 칸은 같은 불변
+    문자열을 가리켜 세션마다 문자열을 새로 만들지 않는다(피클을 세션마다 풀면 세션 하나에 RSS 140MB
+    넘게 붙는다 — 합성 표본의 샘플 관측). 공유 프레임은 읽기만 하며 데이터·축 배열을 읽기 전용으로 잠가
+    둔다. 표시순서를 얹지 않은 저장 원본(`apply_global_display_order=False`, 파생 시나리오 입력)은
+    드물게 쓰여 `st.cache_data` 피클로만 둔다. 비교 GAP 의 계획은 스냅샷을 거치지 않는 따로 된 `st.cache_data`(`load_scenario_plan`, 표 한 장)다.
+    표시순서는 교체 시 `clear_global_display_order_cache()`로 명시 무효화한다
     (스냅샷 payload 에 현재 표시순서가 `RQ_DISPLAY_ORDER`로 들어가므로 두 캐시를 함께 비운다).
     공용 프로필 캐시는 DB 경로 키라 `version` 이 올라도 무효화되지 않는다 — DB 를 바꾼
     호출부가 해당 `clear_*_cache()` 를 부른다. 스냅샷 payload 에는 시나리오명도 들어가므로
@@ -1906,7 +1914,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     다른 경로처럼 푼다.
   - 활성화할 때 머리 띠 이름표(시나리오명·코드·원천 유형과 등록시점·리비전 번호·이름·저장 시각·
     생산계획 첫/끝 달)를 세션에 한 번 떠 둔다(`ACTIVE_SCENARIO_LABEL_KEY`, `active_scenario_label`).
-    회차마다 스냅샷 캐시(표 전체를 역직렬화한다)나 DB 를 보지 않으려는 것이다. 활성 리비전과 다르면
+    회차마다 스냅샷 캐시(표 전체를 깊은 복사한다)나 DB 를 보지 않으려는 것이다. 활성 리비전과 다르면
     믿지 않고, 시나리오명을 바꾸면 `rename_active_scenario_label` 로 같이 고친다.
 - `src/capa_simulation/shared_widget_state.py`
   - **여러 페이지가 같은 key 로 그리는 위젯**(샘플 데이터 스위치)의
@@ -2911,7 +2919,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       아직 요약을 받은 적이 없을 때뿐**이다(`_SEEN_KEY` — 입장 화면이 로딩을 덮는다. 공식버전 지정으로
       확인을 비워도 표지는 남는다) — 판정 기준·표시순서 저장이나 공식버전 교체로 요약을 다시 만드는 회차도
       이미 요약을 든 세션이면 GAP 은 페이지 뒤다. 비교 대상이 없거나 공식버전 자신이면 까닭만 내면 되므로
-      (DB·환산 없음) 미루지 않는다. 일시적 실패로 못 만든 몫도 「준비 중」으로 두고 서버에 남기지 않으며,
+      (DB·환산 없음) 미루지 않는다. GAP 몫은 비교 계획 한 장(`load_scenario_plan`)과 요약 재료의 표시순서
+      (`_context["display_order"]` — 요약 키의 표시순서 지문을 만든 그 프레임)로 환산을 부르고, 공식 리비전
+      표는 환산 캐시가 빗나갈 때만 꺼낸다(`_OfficialTables` — 리비전 id 를 고정한 늦은 Mapping). 이미 본
+      비교 리비전으로 되돌린 회차는 스냅샷을 꺼내지 않는다.
+      일시적 실패로 못 만든 몫도 「준비 중」으로 두고 서버에 남기지 않으며,
       페이지 뒤 재시도는 실패했을 때만 한 확인 주기를 쉰다(중간에 끊긴 데우기는 다음 회차에 다시). 브라우저는
       「준비 중」·요약 없음 때 켜 둔 토글을 끄지 않는다(`intro.js` `syncToggles`). 페이지 뒤 데우기(약
       1.5초) 동안 스크립트가 아직 `running` 이라 그 사이 누른 것은 기다린다 — 이미 요약을 든 세션에서 비교
@@ -4296,6 +4308,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   경로 식별 컬럼 보강은 매번 확인하고 실제로 바뀔 때만 교체한다.
   `load_revision(..., apply_global_display_order=False)`는 파생 입력용 저장 원본을 읽는다.
   기본 조회는 계속 공용 표시순서를 적용하며, 캐시도 이 플래그로 두 결과를 구분한다.
+  `load_revision_table(revision_id, 표)` 는 그 리비전의 표 한 장을 `load_revision` 과 같은 경로로
+  읽는다(비교 GAP 의 계획 `cache.load_scenario_plan`). 리비전이 있는지 먼저 보고 없으면 같은 `KeyError`
+  를 낸다 — 리비전 표를 `revision_id` 로 바로 읽으면 지운 리비전에서 빈 프레임이 온다. 둘 다 확인과 표
+  읽기를 한 읽기 트랜잭션에서 한다 — 확인 뒤 다른 세션이 지워도 확인한 시점의 표를 읽는다.
 - `persistence/models.py`: Repository 가 주고받는 타입
 - `persistence/display_order_store.py`: 공용 표시순서 프로필의 검증·이관·저장
 - `persistence/process_rename_store.py`: 공용 공정 표시명 프로필의 조회·교체 SQL

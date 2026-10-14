@@ -9,8 +9,9 @@
 
 from dataclasses import fields
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -82,14 +83,87 @@ def _snapshot_from_payload(payload: _ScenarioSnapshotPayload) -> ScenarioSnapsho
     )
 
 
-@st.cache_data(show_spinner=False, max_entries=32)
-def _load_scenario_snapshot_payload(
-    database_path: str,
-    revision_id: str,
-    apply_global_display_order: bool = True,
+# 살아 있는 프레임으로 쥐는 스냅샷 칸 수와 수명. 한 칸이 같은 스냅샷의 피클(합성 표본의 샘플 관측
+# 20MB)보다 몇 배 크다 — 칸을 적게 두고, 쓰지 않는 리비전은 시간이 지나면 내려놓는다.
+# 들어오는 것은 사실상 최신 공식 리비전(새 세션 부트스트랩·입장 Summary)과 방금 불러온 리비전이다.
+SNAPSHOT_RESOURCE_MAX_ENTRIES = 4
+SNAPSHOT_RESOURCE_TTL_SECONDS = 3600
+# pandas 확장 배열이 데이터를 담는 numpy 배열 자리(날짜·nullable 정수·범주).
+_ARRAY_SLOTS = ("_ndarray", "_data", "_mask", "_codes")
+
+
+def _lock_arrays(values: object) -> None:
+    """numpy 배열이나 확장 배열이 담은 numpy 배열을 읽기 전용으로 둔다."""
+    arrays = [values] + [getattr(values, name, None) for name in _ARRAY_SLOTS]
+    for array in arrays:
+        if isinstance(array, np.ndarray):
+            array.flags.writeable = False
+
+
+def _lock_in_place_writes(frame: pd.DataFrame) -> None:
+    """공유 프레임의 데이터·축 배열을 읽기 전용으로 잠근다 — 같은 dtype 제자리 쓰기가 바로 터진다.
+
+    공유 프레임은 `load_scenario_snapshot` 이 깊은 복사만 하고 밖으로 내보내지 않는다. 잠금은 그
+    약속이 깨졌을 때 다른 세션의 숫자가 조용히 바뀌는 대신 오류가 나게 하는 안전장치다(깊은 복사가
+    만드는 새 배열은 쓸 수 있다). 열 대입·dtype 이 바뀌는 대입은 배열이 아니라 프레임 객체를 갈아
+    끼우므로 이것으로 막지 못한다 — 그래서 공유 프레임은 아예 내보내지 않는다. 축(열 이름·행
+    Index)도 잠근다 — `columns.values[i] = …` 같은 제자리 쓰기도 같은 길이다.
+    """
+    blocks: tuple[Any, ...] = cast(Any, frame)._mgr.blocks
+    for block in blocks:
+        _lock_arrays(block.values)
+    for axis in (frame.columns, frame.index):
+        if not isinstance(axis, pd.RangeIndex):
+            _lock_arrays(cast(Any, axis)._values)
+
+
+def _private_copy(frame: pd.DataFrame) -> pd.DataFrame:
+    """공유 프레임과 배열을 하나도 함께 쓰지 않는 사본. 데이터와 축을 모두 새로 만든다.
+
+    `copy(deep=True)` 는 데이터 배열만 새로 만들고 축은 view 로 넘겨 열 이름 배열을 공유 프레임과
+    함께 쓴다. 축까지 새로 만들어 사본은 어디를 고쳐도 공유 칸·다른 세션에 닿지 않고, 잠긴 배열도
+    물려받지 않는다(열 이름 배열은 표마다 수십 칸이다). `RangeIndex` 는 배열이 없어 그대로 둔다.
+    """
+    copied = frame.copy(deep=True)
+    copied.columns = frame.columns.copy(deep=True)
+    if not isinstance(frame.index, pd.RangeIndex):
+        copied.index = frame.index.copy(deep=True)
+    return copied
+
+
+@st.cache_resource(
+    show_spinner=False,
+    max_entries=SNAPSHOT_RESOURCE_MAX_ENTRIES,
+    ttl=SNAPSHOT_RESOURCE_TTL_SECONDS,
+)
+def _load_scenario_snapshot_resource(
+    database_path: str, revision_id: str
 ) -> _ScenarioSnapshotPayload:
+    """공용 표시순서를 얹은 리비전 스냅샷 한 벌을 프로세스에 둔다. **읽기만 한다.**
+
+    `st.cache_data` 는 적중해도 저장된 피클을 매번 역직렬화하므로 새 세션·불러오기마다 그 비용을
+    내고, 세션마다 같은 문자열을 새로 만들어 따로 쥔다. 여기 둔 프레임은 `load_scenario_snapshot` 이
+    부를 때마다 깊은 복사해 넘긴다 — 숫자 배열은 새로 만들고 객체 칸은 같은 불변 문자열을 가리킨다.
+    """
+    snapshot = get_scenario_repository(database_path).load_revision(revision_id)
+    payload = _snapshot_to_payload(snapshot)
+    for frame in payload["tables"].values():
+        _lock_in_place_writes(frame)
+    return payload
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _load_stored_order_snapshot_payload(
+    database_path: str, revision_id: str
+) -> _ScenarioSnapshotPayload:
+    """공용 표시순서를 얹지 않은 저장 원본(파생 시나리오 입력). 드물게 쓰여 피클로만 둔다.
+
+    시나리오 관리의 월 머지·연도 Shift 가 원본을 고를 때만 부르고, 그 화면은 고른 원본을 세션에
+    따로 둔다. 공유 칸(`_load_scenario_snapshot_resource`)에 올리면 칸 하나를 차지해 공식 리비전을
+    밀어낼 수 있다.
+    """
     snapshot = get_scenario_repository(database_path).load_revision(
-        revision_id, apply_global_display_order=apply_global_display_order
+        revision_id, apply_global_display_order=False
     )
     return _snapshot_to_payload(snapshot)
 
@@ -97,21 +171,35 @@ def _load_scenario_snapshot_payload(
 def load_scenario_snapshot(
     database_path: str, revision_id: str, *, apply_global_display_order: bool = True
 ) -> ScenarioSnapshot:
-    """Share an immutable revision without caching its reload-sensitive model class."""
+    """불변 리비전 스냅샷. 부를 때마다 표마다 따로 된 깊은 사본을 받는다.
+
+    받은 표는 마음대로 고쳐도 다른 호출·다른 세션·캐시에 보이지 않는다. 모델 인스턴스는 캐시에
+    넣지 않고 기본형 dict 에서 지금 클래스로 다시 만든다(핫리로드 뒤 옛 클래스가 실리지 않게).
+    """
+    if not apply_global_display_order:
+        return _snapshot_from_payload(
+            _load_stored_order_snapshot_payload(database_path, revision_id)
+        )
+    shared = _load_scenario_snapshot_resource(database_path, revision_id)
     return _snapshot_from_payload(
-        _load_scenario_snapshot_payload(database_path, revision_id, apply_global_display_order)
+        {
+            "scenario": shared["scenario"],
+            "revision": shared["revision"],
+            "preset": shared["preset"],
+            "tables": {name: _private_copy(frame) for name, frame in shared["tables"].items()},
+        }
     )
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
 def load_scenario_plan(database_path: str, revision_id: str) -> pd.DataFrame:
-    """비교 GAP 이 쓰는 것은 계획 한 장뿐이다. 16표 전체를 rerun 마다 풀지 않는다.
+    """비교 GAP 이 쓰는 것은 계획 한 장뿐이다. 리비전 16표를 읽지도, 캐시에 올리지도 않는다.
 
-    `st.cache_data` 는 적중해도 저장된 피클을 매번 역직렬화한다. 샘플 관측으로 스냅샷
-    전체는 5.1MB·64.6ms 인데 그중 계획은 0.04MB·0.4ms 다.
+    DB 에서는 그 리비전의 `RQ_PKG_PLAN` 만 읽고(`load_revision_table` — 스냅샷과 같은 경로),
+    캐시에도 그 한 장만 둔다. 비교 리비전은 고를 때마다 바뀌므로 스냅샷 캐시에 올리면 계획 한
+    장을 얻으려고 16표를 쥐게 된다. 지운 리비전은 `KeyError` 로 올라와 캐시에 남지 않는다.
     """
-    payload = _load_scenario_snapshot_payload(database_path, revision_id, True)
-    return payload["tables"]["RQ_PKG_PLAN"]
+    return get_scenario_repository(database_path).load_revision_table(revision_id, "RQ_PKG_PLAN")
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -127,12 +215,17 @@ def load_global_display_order(database_path: str) -> GlobalDisplayOrder:
 
 def clear_global_display_order_cache() -> None:
     _load_global_display_order_payload.clear()
-    _load_scenario_snapshot_payload.clear()
+    _clear_snapshot_payloads()
+
+
+def _clear_snapshot_payloads() -> None:
+    _load_scenario_snapshot_resource.clear()
+    _load_stored_order_snapshot_payload.clear()
 
 
 def clear_scenario_snapshot_cache() -> None:
     """지운 리비전의 스냅샷이 캐시에 남아 되살아나지 않게 한다."""
-    _load_scenario_snapshot_payload.clear()
+    _clear_snapshot_payloads()
     load_scenario_plan.clear()
 
 
@@ -365,6 +458,6 @@ def clear_scenario_repository() -> None:
     past_table_csv.clear()
     _load_global_display_order_payload.clear()
     _load_global_process_rename_payload.clear()
-    _load_scenario_snapshot_payload.clear()
+    _clear_snapshot_payloads()
     load_scenario_plan.clear()
     get_scenario_repository.clear()
