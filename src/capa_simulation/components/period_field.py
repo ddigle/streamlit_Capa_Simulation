@@ -11,8 +11,9 @@
 「적용」은 월 선택 컴포넌트 안의 단추라 입력 칸 값과 누름이 한 트리거로 한 회차에 온다. 조회기간의
 정본은 위젯이 아닌 `MONTH_RANGE_KEY` 하나다 — 리비전 프리셋이 그 칸을 저장·복원한다.
 
-팝업은 시나리오 팝업처럼 세션 키로 연다(`PERIOD_DIALOG_KEY`). Components v2 월 선택이 팝업 안에서
-마운트되고 트리거가 팝업(프래그먼트) 재실행으로 돌아오는 것을 1.63 브라우저에서 확인했다.
+팝업은 시나리오 팝업처럼 세션 키로 열고, 여닫을 때는 `app.py` 의 호스트 프래그먼트만 다시 돈다
+(`PERIOD_DIALOG_KEY`, `sidebar_status.CONDITION_DIALOG_FRAGMENT_KEY`). Components v2 월 선택이 팝업
+안에서 마운트되고 트리거가 팝업(프래그먼트) 재실행으로 돌아오는 것을 1.63 브라우저에서 확인했다.
 """
 
 from __future__ import annotations
@@ -37,7 +38,10 @@ from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.scenario_month_bounds import scenario_month_bounds
 from capa_simulation.settings import MONTH_SELECTION_END, MONTH_SELECTION_START, format_month
 from capa_simulation.sidebar_status import (
+    CONDITION_DIALOG_FRAGMENT_KEY,
+    keeps_app_run_open,
     register_month_range_placeholder,
+    rerun_fragment_if_alone,
     show_selected_month_range,
 )
 
@@ -134,12 +138,17 @@ def _register_status_slot(row: DeltaGenerator) -> None:
 
 
 def open_period_dialog() -> None:
-    """값 칸의 콜백. 다른 팝업 칸을 비우고, 앞서 고르다 만 초안을 버리고, 팝업을 연다."""
+    """값 칸의 콜백. 다른 팝업 칸을 비우고, 앞서 고르다 만 초안을 버리고, 팝업을 연다.
+
+    **마지막 줄**에서 팝업 호스트 프래그먼트만 다시 돌린다(시나리오 칸과 같다 —
+    `scenario_status.open_scenario_dialog`). 조회기간은 「적용」에서만 바뀌고 그때는 앱 전체가 돈다.
+    """
     forget_page_dialogs()
     # 닫힌 팝업 안 컴포넌트는 브라우저에 없으니 지워도 되돌아올 옛 값이 없다. 다시 열면 지금
     # 조회기간에서 시작한다.
     st.session_state.pop(MONTH_PICKER_KEY, None)
     st.session_state[PERIOD_DIALOG_KEY] = True
+    rerun_fragment_if_alone(CONDITION_DIALOG_FRAGMENT_KEY, PERIOD_FIELD_KEY)
 
 
 def close_period_dialog() -> None:
@@ -157,10 +166,11 @@ def period_dialog_is_open() -> bool:
     on_dismiss=close_period_dialog,
 )
 def show_period_dialog(page_file: str | None) -> None:
-    """팝업 껍데기. 열림 키가 있는 동안 `app.py` 가 매 회차 부른다."""
+    """팝업 껍데기. 열림 키가 있는 동안 `app.py` 의 호스트 프래그먼트가 매 회차 부른다."""
     render_period_dialog_body(page_file=page_file)
 
 
+@keeps_app_run_open
 def render_period_dialog_body(*, page_file: str | None) -> None:
     """월 선택과 「적용」(한 컴포넌트 — `month_range_picker.render_month_range_apply`).
 
@@ -171,6 +181,9 @@ def render_period_dialog_body(*, page_file: str | None) -> None:
     **적용 전 편집 목록을 비우지 않는다**(같은 리뷰). 고른 범위가 바뀌어도 데이터가 있는 달(화면이
     실제로 쓰는 기간)이 그대로면 편집표의 원본도 그대로라 편집이 남는다 — 목록을 비우면 그 회차에
     패널 경고와 저장 확인이 사라진다. 정말 버려지는 경우 경고가 한 회차 더 남는 편이 낫다.
+
+    본문이 도는 동안은 실행 표지를 「끝나지 않음」으로 내려 둔다(`keeps_app_run_open`) — 「적용」이
+    앱 전체 재실행 전에 끊겨도 그 사이 누른 사이드바 클릭이 앱 전체를 다시 돌린다.
     """
     pending_edits = pending_edit_labels(page_file)
     start, end = current_month_range()

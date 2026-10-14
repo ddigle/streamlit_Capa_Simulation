@@ -19,6 +19,7 @@ from capa_simulation.navigation import (
 )
 from capa_simulation.sidebar_status import (
     CONDITION_CARD_PREFIX,
+    CONDITION_DIALOG_SINK_KEY,
     CONDITIONS_BOX_KEY,
     SIDEBAR_TOGGLE_SINK_KEY,
 )
@@ -590,10 +591,13 @@ def build_sidebar_stylesheet(
         .st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] a {{
             color: {tokens.ACCENT};
         }}
-        /* 상자 여닫기 콜백이 다시 돌리는 빈 프래그먼트의 본문 칸. 아무것도 그리지 않지만 칸이
-           서면 본문 맨 위에 간격이 하나 생긴다(`sidebar_status.SIDEBAR_TOGGLE_SINK_KEY`). */
+        /* 상자 여닫기 콜백이 다시 돌리는 빈 프래그먼트와 조건 패널 팝업 호스트 프래그먼트의
+           본문 칸. 아무것도 그리지 않지만(팝업은 본문 밖에 선다) 칸이 서면 본문에 간격이 하나
+           생긴다(`sidebar_status.SIDEBAR_TOGGLE_SINK_KEY`·`CONDITION_DIALOG_SINK_KEY`). */
         [data-testid="stLayoutWrapper"]:has(> .st-key-{SIDEBAR_TOGGLE_SINK_KEY}),
-        .st-key-{SIDEBAR_TOGGLE_SINK_KEY} {{
+        .st-key-{SIDEBAR_TOGGLE_SINK_KEY},
+        [data-testid="stLayoutWrapper"]:has(> .st-key-{CONDITION_DIALOG_SINK_KEY}),
+        .st-key-{CONDITION_DIALOG_SINK_KEY} {{
             display: none !important;
         }}
         /* **짧은 실행은 본문을 흐리지 않는다.** Streamlit 은 실행이 시작되면 본문 요소에

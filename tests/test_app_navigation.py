@@ -2,7 +2,7 @@
 
 import ast
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,12 +10,22 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from fragment_browser import install_fragment_browser
+from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Caption, Expander, Status
 
 from capa_simulation.components.period_field import PERIOD_DIALOG_KEY, PERIOD_FIELD_KEY
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
-from capa_simulation.components.scenario_status import SCENARIO_DIALOG_KEY, SCENARIO_FIELD_KEY
+from capa_simulation.components.scenario_status import (
+    SAVE_MODE,
+    SAVE_REVISION_NAME_KEY,
+    SCENARIO_DIALOG_KEY,
+    SCENARIO_DIALOG_MODE_KEY,
+    SCENARIO_FIELD_KEY,
+    save_field_key,
+)
 from capa_simulation.navigation import (
     ADMIN_AREA,
     ADMIN_BOX_PAGES,
@@ -40,6 +50,7 @@ from capa_simulation.scenario_preset_state import (
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.sidebar_status import (
     CONDITION_CARD_PREFIX,
+    CONDITION_DIALOG_FRAGMENT_KEY,
     CONDITIONS_BOX_KEY,
     remembered_box_key,
 )
@@ -443,6 +454,44 @@ def test_the_summary_gap_is_warmed_after_a_page_that_stops(
     assert order == ["summary", "page", "warm"]
 
 
+@pytest.mark.parametrize(("stopped_by_page", "complete"), [(True, True), (False, False)])
+def test_only_a_page_that_stops_itself_counts_as_a_completed_run(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch, stopped_by_page: bool, complete: bool
+) -> None:
+    """페이지가 `st.stop()` 으로 멈춘 실행은 끝까지 돈 실행이고, 다른 요청이 끊은 실행은 아니다.
+
+    Streamlit 은 새 상호작용이 들어오면(`runner.fastReruns`, 기본값) 돌던 실행에 멈춤을 걸고 새
+    실행을 따로 띄운다. 끊긴 실행은 다음 양보 지점에서 `st.stop()` 과 같은 멈춤 예외로 끝나 본문이
+    반쯤 그려진 채다. 그 실행을 「끝났다」로 적으면 같은 때 도는 새 실행의 콜백(상자 여닫기·조건
+    패널 값 칸)이 프래그먼트만 다시 돌려 본문이 반쯤 그려진 채 남는다 — 조회기간 「적용」 직후
+    시나리오 칸을 누른 브라우저 확인에서 실제로 그렇게 됐다(2026-10-14). 끊긴 실행은 같은 예외를
+    `st.stop()` 밖에서 던지는 것으로 흉내 낸다.
+    """
+    import streamlit as st
+    from streamlit.runtime.scriptrunner_utils.exceptions import StopException
+
+    from capa_simulation.sidebar_status import APP_RUN_STATE_KEY
+
+    real_navigation = st.navigation
+
+    def _stopping_navigation(*args: Any, **kwargs: Any) -> Any:
+        page = real_navigation(*args, **kwargs)
+
+        def _run() -> None:
+            if stopped_by_page:
+                st.stop()
+            raise StopException()
+
+        monkeypatch.setattr(page, "run", _run)
+        return page
+
+    monkeypatch.setattr(st, "navigation", _stopping_navigation)
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[APP_RUN_STATE_KEY]["complete"] is complete
+
+
 def test_the_intro_summary_sends_the_official_six_months_once_per_value(_app: AppTest) -> None:
     """내장 시드(공식버전 하나)에서 요약이 실제로 계산되어 나간다. 값은 회차마다 같다.
 
@@ -713,6 +762,175 @@ def test_the_scenario_dialog_stays_open_across_reruns_and_closes_on_leaving(
     assert not list(app.exception), [element.message for element in app.exception]
     assert SCENARIO_DIALOG_KEY not in app.session_state
     assert "sidebar_load_revision" not in {button.key for button in app.button}
+
+
+def test_the_dialog_host_runs_on_every_full_run_even_where_no_field_stands(
+    _app: AppTest,
+) -> None:
+    """팝업 호스트 프래그먼트는 두 줄이 다 서지 않는 화면에서도 매 전체 실행 불린다 — 이번
+    실행에 등록되지 않은 프래그먼트는 여는 콜백도 팝업 닫기도 겨눌 수 없다. 그런 화면에서는 열림
+    키를 버리는 갈래만 돈다(같은 페이지 회차라 `forget_page_dialogs` 가 아니라 호스트가 지운다)."""
+    app = _app.run()
+    app.switch_page(CAPA_CHATBOT.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert SCENARIO_FIELD_KEY not in {button.key for button in app.button}
+
+    app.session_state[SCENARIO_DIALOG_KEY] = True
+    app.session_state[PERIOD_DIALOG_KEY] = True
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert SCENARIO_DIALOG_KEY not in app.session_state
+    assert PERIOD_DIALOG_KEY not in app.session_state
+
+
+def _event_slots(messages: Sequence[ForwardMsg]) -> dict[int, tuple[str, str, str]]:
+    """메시지가 이벤트 칸(본문 밖 최상위 칸)의 몇째 자리에 무엇을 썼나.
+
+    값은 `(종류, html 본문, 프래그먼트 id)` 다.
+
+    브라우저는 프래그먼트 회차에 받은 자리의 요소만 갈아 끼우고 나머지는 그대로 둔다.
+    """
+    slots: dict[int, tuple[str, str, str]] = {}
+    for message in messages:
+        if message.WhichOneof("type") != "delta":
+            continue
+        path = list(message.metadata.delta_path)
+        if len(path) != 2 or path[0] != RootContainer.EVENT:
+            continue
+        delta = message.delta
+        if delta.WhichOneof("type") == "add_block":
+            kind, body = str(delta.add_block.WhichOneof("type")), ""
+        else:
+            kind = str(delta.new_element.WhichOneof("type"))
+            body = delta.new_element.html.body if kind == "html" else ""
+        slots[path[1]] = (kind, body, delta.fragment_id)
+    return slots
+
+
+def _open_home_for_fragment_runs(app: AppTest) -> AppTest:
+    """HOME 을 앱 전체로 그린다.
+
+    브라우저는 회차마다 지금 페이지의 표를 보내는데 AppTest 는 `switch_page` 뒤에야 그렇게 한다 —
+    그래야 여는 콜백이 끝까지 돈 실행과 같은 페이지로 판정한다.
+    """
+    app.run()
+    app.switch_page(HOME.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    return app
+
+
+@pytest.mark.parametrize(
+    ("field_key", "dialog_key"),
+    [
+        pytest.param(SCENARIO_FIELD_KEY, SCENARIO_DIALOG_KEY, id="scenario"),
+        pytest.param(PERIOD_FIELD_KEY, PERIOD_DIALOG_KEY, id="period"),
+    ],
+)
+def test_the_dialog_host_opens_and_closes_in_its_own_event_slot(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch, field_key: str, dialog_key: str
+) -> None:
+    """진짜 프래그먼트 회차로 본다 — 값 칸을 누르면 콜백만 도는 회차와 호스트만 도는 회차가 돌고
+    페이지는 돌지 않는다. 닫기도 호스트만 돈다.
+
+    호스트는 어느 갈래든 이벤트 칸에 **정확히 한 자리**를 쓴다(팝업이 아니면 빈 스타일
+    자리표시자). 프래그먼트 회차는 이벤트 칸 쓰기 위치를 전체 실행에서 호스트를 부른 자리로 되돌리고
+    브라우저는 그 자리만 갈아 끼우므로, 전체 실행에서 그 자리를 비워 두면 페이지의 첫 이벤트
+    요소(툴바 Guide 단추를 보이게 하는 규칙)를 팝업이 덮어 다음 전체 실행까지 돌아오지 않는다.
+    열고 닫는 회차가 쓰는 이벤트 칸 자리는 호스트 자리 하나뿐이어야 한다.
+    """
+    browser = install_fragment_browser(monkeypatch)
+    app = _open_home_for_fragment_runs(_app)
+    page_slots = _event_slots(browser.messages)
+    host = browser.fragment_keyed(CONDITION_DIALOG_FRAGMENT_KEY)
+    host_slots = [index for index, slot in page_slots.items() if slot[2] == host]
+    assert len(host_slots) == 1, f"호스트가 전체 실행에서 쓴 이벤트 칸 자리: {host_slots}"
+    (host_slot,) = host_slots
+    assert page_slots[host_slot][:2] == ("html", "<style></style>")
+    # 덮이면 안 되는 페이지 쪽 이벤트 요소가 실제로 그 뒤에 선다.
+    assert any(
+        index > host_slot and "#capa-guide-button" in body and "inline-block" in body
+        for index, (_, body, _) in page_slots.items()
+    )
+
+    app.button(key=field_key).click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert browser.started == [[], [host]]
+    # 페이지는 돌지 않았다 — 이 `run()` 의 델타는 모두 호스트(와 그 안 팝업)의 것이다.
+    assert all(
+        message.delta.fragment_id
+        for message in browser.messages
+        if message.WhichOneof("type") == "delta"
+    )
+    opened = _event_slots(browser.messages)
+    assert list(opened) == [host_slot]
+    assert opened[host_slot][0] == "dialog"
+
+    # 닫기(X·바깥·Esc). AppTest 는 닫기를 흉내 내지 못해 `on_dismiss` 콜백의 일(열림 키 지우기)을
+    # 하고 호스트만 다시 돌린다.
+    browser.fragment_queue = [host]
+    del app.session_state[dialog_key]
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert browser.started == [[host]]
+    assert _event_slots(browser.messages) == {host_slot: page_slots[host_slot]}
+
+
+def test_the_scenario_dialog_writes_nothing_outside_itself_when_switching_to_save(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """팝업 안 조작(구획을 「새 리비전 저장」으로)은 팝업 프래그먼트만 돌고 이벤트 칸 최상위에
+    아무것도 쓰지 않는다 — 팝업 본문이 스타일만 든 `st.html`·`st.toast` 를 쓰면 페이지의 이벤트
+    요소를 덮는다."""
+    browser = install_fragment_browser(monkeypatch)
+    app = _open_home_for_fragment_runs(_app)
+    app.button(key=SCENARIO_FIELD_KEY).click().run()
+    assert browser.started[-1] == [browser.fragment_keyed(CONDITION_DIALOG_FRAGMENT_KEY)]
+
+    dialog_body = browser.fragment_of(SCENARIO_DIALOG_MODE_KEY)
+    browser.fragment_queue = [dialog_body]
+    app.segmented_control(key=SCENARIO_DIALOG_MODE_KEY).set_value(SAVE_MODE).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert browser.started == [[dialog_body]]
+    assert _event_slots(browser.messages) == {}
+    # 저장 구획이 실제로 섰다(리비전명 칸).
+    assert any(widget.key == save_field_key(SAVE_REVISION_NAME_KEY) for widget in app.text_input)
+
+
+def _calculation_snapshot(app: AppTest) -> dict[str, Any]:
+    """계산 입력(활성 리비전·`content_token`·조회기간)과 본문 Figure·글."""
+    active = app.session_state["active_scenario"]
+    return {
+        "content_token": active["content_token"],
+        "revision": active["revision"],
+        "period": app.session_state[MONTH_RANGE_KEY],
+        "figures": [chart.proto.spec for chart in app.get("plotly_chart")],
+        "markdown": [element.value for element in app.main.markdown],
+    }
+
+
+def test_opening_and_closing_a_condition_dialog_leaves_the_numbers_alone(_app: AppTest) -> None:
+    """같은 숫자 — 값 칸으로 팝업을 열고 닫는 것은 열림 키와 초안만 바꾼다. 활성 리비전·
+    `content_token`·조회기간과 HOME 의 Figure·글이 열기 전과 같다. AppTest 는 여는 콜백이 물러나는
+    길(앱 전체 재실행)을 탄다 — 프래그먼트 회차는 페이지를 아예 다시 그리지 않는다."""
+    app = _app.run()
+    app.run()
+    before = _calculation_snapshot(app)
+    assert before["figures"]
+
+    for field_key, dialog_key in (
+        (SCENARIO_FIELD_KEY, SCENARIO_DIALOG_KEY),
+        (PERIOD_FIELD_KEY, PERIOD_DIALOG_KEY),
+    ):
+        app.button(key=field_key).click().run()
+        assert not list(app.exception), [element.message for element in app.exception]
+        assert app.session_state[dialog_key] is True
+        assert _calculation_snapshot(app) == before
+        # 닫기(X·바깥·Esc). AppTest 는 닫기를 흉내 내지 못해 `on_dismiss` 콜백의 일을 한다.
+        del app.session_state[dialog_key]
+        app.run()
+        assert _calculation_snapshot(app) == before
 
 
 def _press_apply_with(monkeypatch: pytest.MonkeyPatch, applied: tuple[str, str] | None) -> None:

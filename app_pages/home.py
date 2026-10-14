@@ -602,11 +602,13 @@ def toggle_process_dialog_selection(process: str) -> None:
     set_process_dialog_selection(selected)
 
 
+# 닫기(X·바깥·Esc)는 HOME 을 다시 돌리지 않는다(`on_dismiss` 기본값). 닫는 회차에 서버가 할 일이
+# 없다 — 초안은 팝업 안에서만 읽히고 열 때마다 `set_process_dialog_selection` 이 다시 적으며, 판정
+# 대상을 바꾸는 것은 「선택 공정 적용」(앱 전체 재실행) 하나다. 주요공정 히트맵 팝업도 같다.
 @st.dialog(
     PROCESS_FIELD_LABEL,
     width="large",
     icon=PROCESS_FIELD_ICON,
-    on_dismiss="rerun",
 )
 def show_process_filter_dialog(
     options: list[str],

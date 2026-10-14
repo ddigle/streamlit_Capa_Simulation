@@ -7,12 +7,15 @@
 활성 이름표(`active_scenario_label`)·최신 공식버전(`latest_official_revision`)·미저장 여부.
 저장소는 **팝업을 연 동안에만** 읽는다.
 
-**팝업은 세션 키로 연다**(`SCENARIO_DIALOG_KEY`). 열림 키가 있는 동안 `app.py` 가 매 회차 팝업을
-부른다 — 팝업 안 조작은 팝업(프래그먼트)만 다시 돌리고, 페이지가 다시 도는 회차에도 팝업이 닫히지
-않는다. 키는 `PAGE_DIALOG_SUFFIX` 로 끝나 페이지를 옮기면 `forget_page_dialogs` 가 버린다. 한 실행에
-팝업은 하나뿐이라 여는 콜백이 다른 팝업 칸부터 비운다. 닫기(X·바깥 클릭·Esc)는 `on_dismiss` 콜백이,
-성공한 불러오기·저장·되돌리기는 `st.rerun()` 앞에서 직접 키를 지운다(`st.rerun()` 은 `on_dismiss` 를
-거치지 않는다).
+**팝업은 세션 키로 연다**(`SCENARIO_DIALOG_KEY`). 열림 키가 있는 동안 `app.py` 의 호스트 프래그먼트
+(`sidebar_status.CONDITION_DIALOG_FRAGMENT_KEY`)가 매 회차 팝업을 부른다 — 팝업 안 조작은 팝업
+(프래그먼트)만 다시 돌리고, 페이지가 다시 도는 회차에도 팝업이 닫히지 않는다. 값 칸을 누를 때와
+닫을 때는 그 호스트만 다시 돌아 페이지를 다시 계산하지 않는다(여는 콜백의 마지막 줄 · 팝업이 호스트
+안에서 만들어져 `on_dismiss` 가 호스트를 겨눈다). 키는 `PAGE_DIALOG_SUFFIX` 로 끝나 페이지를 옮기면
+`forget_page_dialogs` 가 버린다. 한 실행에 팝업은 하나뿐이라 여는 콜백이 다른 팝업 칸부터 비운다.
+닫기(X·바깥 클릭·Esc)는 `on_dismiss` 콜백이, 성공한 불러오기·저장·되돌리기는 `st.rerun()` 앞에서
+직접 키를 지운다(`st.rerun()` 은 `on_dismiss` 를 거치지 않는다) — 이 셋은 원본을 바꾸므로 앱 전체를
+다시 돌린다.
 
 **팝업 안의 「불러오기」는 프래그먼트 실행이다.** 전에는 사이드바 버튼이 앱 전체 실행 한가운데서
 `st.rerun()` 을 불러 그 회차에 그리지 않은 페이지 위젯 값(필터·탭)이 버려졌다. 프래그먼트 실행은
@@ -73,6 +76,11 @@ from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.scenario_state import ensure_active_scenario
 from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
+from capa_simulation.sidebar_status import (
+    CONDITION_DIALOG_FRAGMENT_KEY,
+    keeps_app_run_open,
+    rerun_fragment_if_alone,
+)
 
 # 팝업 안 시나리오·리비전 **초안**. 팝업을 열 때마다 올라와 있는 값으로 다시 적는다 — 닫힌 뒤에
 # 「골랐지만 불러오지 않은 선택」이 남지 않는다. 그래서 `persist_state` 를 주지 않는다.
@@ -187,6 +195,10 @@ def open_scenario_dialog() -> None:
 
     콜백은 스크립트보다 먼저 돌아 팝업 안 위젯이 만들어지기 **전**에 초안을 적는다. 미저장
     편집이 있으면 저장 구획으로 연다 — 그 편집을 남기려는 사람이 먼저 할 일이 저장이다.
+
+    **마지막 줄**에서 팝업 호스트 프래그먼트만 다시 돌린다 — 여는 회차에 바뀌는 것은 열림 키와
+    초안뿐이라 페이지를 다시 계산할 까닭이 없다. 판정을 못 넘으면(직전 실행이 끝나지 않음·다른
+    위젯도 바뀜) 앱 전체를 다시 돌린다(`sidebar_status.rerun_fragment_if_alone`).
     """
     forget_page_dialogs()
     scenario_id = active_persisted_scenario_id()
@@ -201,6 +213,7 @@ def open_scenario_dialog() -> None:
         SAVE_MODE if has_unsaved_scenario_changes() else LOAD_MODE
     )
     st.session_state[SCENARIO_DIALOG_KEY] = True
+    rerun_fragment_if_alone(CONDITION_DIALOG_FRAGMENT_KEY, SCENARIO_FIELD_KEY)
 
 
 def close_scenario_dialog() -> None:
@@ -231,10 +244,12 @@ def scenario_dialog_is_open() -> bool:
     on_dismiss=close_scenario_dialog,
 )
 def show_scenario_dialog(page_file: str | None) -> None:
-    """팝업 껍데기. 열림 키가 있는 동안 `app.py` 가 매 회차 부른다. 본문은 아래 함수다."""
+    """팝업 껍데기. 열림 키가 있는 동안 `app.py` 의 호스트 프래그먼트가 매 회차 부른다. 본문은 아래
+    함수다."""
     render_scenario_dialog_body(page_file=page_file)
 
 
+@keeps_app_run_open
 def render_scenario_dialog_body(
     database_path: Path | None = None, *, page_file: str | None
 ) -> None:
@@ -242,6 +257,9 @@ def render_scenario_dialog_body(
 
     `database_path` 를 주지 않으면 **부를 때의** `settings.DUCKDB_PATH` 를 쓴다. 팝업 안 조작은
     `app.py` 의 실행 핀(`pinned_connections`) 밖에서 도는 프래그먼트라 여기서 다시 잡는다.
+
+    본문이 도는 동안은 실행 표지를 「끝나지 않음」으로 내려 둔다(`keeps_app_run_open`) — 불러오기·
+    저장·되돌리기가 앱 전체 재실행 전에 끊겨도 그 사이 누른 사이드바 클릭이 앱 전체를 다시 돌린다.
 
     적용하지 않은 편집은 **이 회차에** 센다(`page_file` 은 지금 화면의 파일 이름). 그 편집은
     시나리오에 들어 있지 않아 저장에 실리지 않고, 저장·불러오기가 원본을 바꾸는 순간 사라진다 —

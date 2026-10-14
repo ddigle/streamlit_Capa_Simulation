@@ -1,13 +1,21 @@
 # Purpose: 사이드바 구역 제목·조건 패널 칸·적용 기간 표시와 펼침을 기억하는 상자·조건 카드를 만든다.
 
+import functools
+import inspect
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import ParamSpec, TypeVar
 
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 from streamlit.errors import StreamlitAPIException
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from capa_simulation.navigation import SidebarSectionSpec
 from capa_simulation.services.month_columns import month_label
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 # 자리표시자는 **세션 상태**에 둔다. 모듈 전역에 두면 같은 서버 프로세스의 모든 세션이
 # 하나를 공유해, 두 번째 사용자가 접속하는 순간 첫 사용자의 자리표시자가 교체된다.
@@ -53,18 +61,120 @@ SIDEBAR_TOGGLE_SINK_KEY = "sidebar_box_toggle_sink"
 # 이번 전체 실행이 끝까지 돌았는가. 실행 도중에 상자를 누르면 그 요청이 진행 중인 실행을 끊고
 # 프래그먼트 재실행으로 바뀌어 본문이 반쯤 그려진 채 남는다(실측). 끝나지 않은 실행 뒤에는
 # 콜백이 물러나 평소처럼 앱 전체를 다시 돌린다. **세션 대입이 아니라 이 dict 를 고친다** —
-# `st.stop()` 이 걸린 동안의 세션 대입은 다시 멈춤 예외를 낸다(실측).
+# `st.stop()` 이 걸린 동안의 세션 대입은 다시 멈춤 예외를 낸다(실측). 칸은 셋이다 — `complete`
+# (끝까지 돌았나), `run`(가장 늦게 시작한 실행의 표지), `page`(끝까지 돈 실행의 페이지).
 APP_RUN_STATE_KEY = "sidebar_app_run_state"
 
+# 조건 패널의 시나리오·조회기간 팝업을 여닫는 **키 붙은 호스트 프래그먼트**(`app.py`). 값 칸을
+# 누르거나 팝업을 닫을 때(X·바깥·Esc) 페이지 계산까지 앱 전체를 다시 돌리지 않고 이 프래그먼트만
+# 돈다 — 여닫는 회차에 바뀌는 것은 열림 키와 팝업 초안뿐이고 계산 입력(활성 리비전·`content_token`·
+# 조회기간·미저장 편집)은 그대로다. 원본을 바꾸는 동작(불러오기·저장·되돌리기·조회기간 「적용」)은
+# 팝업 본문이 `st.rerun()` 으로 앱 전체를 다시 돌린다. 여는 콜백은 상자 여닫기와 같은 판정
+# (`rerun_fragment_if_alone`)을 거치고, 못 넘으면 앱 전체 재실행으로 물러난다.
+CONDITION_DIALOG_FRAGMENT_KEY = "sidebar_condition_dialog_host"
+# 그 프래그먼트를 담는 본문 컨테이너. 팝업은 본문 밖(이벤트 칸)에 서므로 이 칸은 늘 비어 있고, 빈
+# 칸이 본문 간격을 먹지 않게 상자 여닫기 칸과 같이 CSS 가 숨긴다.
+CONDITION_DIALOG_SINK_KEY = "sidebar_condition_dialog_sink"
 
-def begin_app_run() -> dict[str, bool]:
-    """앱 실행 맨 앞에서 「이번 실행은 아직 끝나지 않았다」로 표시하고 그 표지를 돌려준다."""
+
+@dataclass(frozen=True, eq=False)
+class AppRun:
+    """전체 실행 하나의 표지. `begin_app_run` 이 만들고 `finish`·`finish_stopped` 가 닫는다.
+
+    `state` 는 세션의 `APP_RUN_STATE_KEY` 칸(dict)이고 `token` 은 이 실행만의 표다. 같은 세션의
+    실행은 겹칠 수 있다 — 새 상호작용이 들어오면 Streamlit 은 돌던 실행에 멈춤만 걸고 새 실행을 따로
+    띄운다(`runner.fastReruns`, 기본값). 그래서 닫을 때 이 실행이 아직 가장 늦게 시작한 실행인지
+    본다.
+    """
+
+    state: dict[str, object]
+    token: object
+
+    def finish(self) -> None:
+        """끝까지 돈 실행. 뒤에 시작한 실행이 없을 때만 「끝났다」와 이 실행의 페이지를 적는다."""
+        if self.state.get("run") is not self.token:
+            return
+        self.state["page"] = _current_page_hash()
+        self.state["complete"] = True
+
+    def finish_stopped(self, stop: BaseException) -> None:
+        """멈춤 예외로 끝난 실행. 페이지가 스스로 멈춘 것(`st.stop()`)만 끝까지 돈 것이다.
+
+        페이지가 `st.stop()` 으로 멈춘 화면은 멈춘 자리까지가 전부다. 새 상호작용이 끊은 실행도 같은
+        멈춤 예외로 끝나지만 본문이 반쯤 그려진 채라 끝나지 않은 실행으로 둔다.
+        """
+        if _raised_by_st_stop(stop):
+            self.finish()
+
+
+def begin_app_run() -> AppRun:
+    """앱 실행 맨 앞에서 「이번 실행은 아직 끝나지 않았다」로 표시하고 그 표지를 돌려준다.
+
+    **메시지를 보내는 첫 Streamlit 호출보다 앞에서** 부른다. 그런 호출은 다른 요청이 이 실행을
+    끊는 자리라, 그 앞에서 끊긴 실행이 앞 실행의 「끝났다」를 남겨 두지 않게 한다.
+    """
     state = st.session_state.get(APP_RUN_STATE_KEY)
     if not isinstance(state, dict):
         state = {}
         st.session_state[APP_RUN_STATE_KEY] = state
+    token = object()
+    state["run"] = token
     state["complete"] = False
-    return state
+    return AppRun(state, token)
+
+
+def keeps_app_run_open(func: Callable[P, R]) -> Callable[P, R]:
+    """앱 전체 재실행(`st.rerun()`)으로 끝날 수 있는 프래그먼트 본문을 감싼다. 본문이 도는 동안은
+    직전 전체 실행의 「끝났다」를 내려 둔다.
+
+    프래그먼트만 도는 회차에는 `app.py` 맨 위(`begin_app_run`)가 돌지 않아 표지가 앞 전체 실행의
+    「끝났다」로 남는다. 그동안 사이드바 값 칸·상자를 누르면 새 요청이 이 실행을 끊고(프래그먼트가
+    아닌 요청은 돌던 실행을 멈춘다), 저장·불러오기 뒤에 나갈 앱 전체 재실행이 나가지 못할 수 있다.
+    그때 콜백이 프래그먼트만 돌리면 본문이 바뀌기 전 상태를 다음 전체 실행까지 보여 준다. 그래서
+    본문이 도는 동안 「끝나지 않음」으로 내리고, **본문이 끝까지 돌았을 때만** 앞 값으로 되돌린다 —
+    멈춤·재실행 예외로 끝나면 내린 채 둬서 다음 클릭이 앱 전체로 물러난다(`finally` 로 되돌리지
+    않는다).
+    그 사이 새 전체 실행이 시작했으면 그 실행의 표지를 건드리지 않는다. 전체 실행 안에서 불리면 앞
+    값도 「끝나지 않음」이라 바뀌는 것이 없다.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        state = st.session_state.get(APP_RUN_STATE_KEY)
+        if not isinstance(state, dict):
+            return func(*args, **kwargs)
+        run, complete = state.get("run"), state.get("complete")
+        state["complete"] = False
+        result = func(*args, **kwargs)
+        if state.get("run") is run:
+            state["complete"] = complete
+        return result
+
+    return wrapper
+
+
+def _current_page_hash() -> str | None:
+    """지금 실행의 페이지 표(`page_script_hash`). 실행 문맥이 없으면 None 이다."""
+    ctx = get_script_run_ctx(suppress_warning=True)
+    return None if ctx is None else ctx.page_script_hash
+
+
+def _raised_by_st_stop(stop: BaseException) -> bool:
+    """멈춤 예외가 `st.stop()` 안에서 났는가. 판정하지 못하면 False(끝나지 않은 실행 쪽)다.
+
+    `st.stop()` 과 Streamlit 이 새 상호작용 때문에 실행을 끊는 멈춤은 같은 예외(`StopException`)라,
+    예외가 `st.stop()` 함수 안을 지나왔는지로만 갈린다(버전은 `streamlit==1.63.0` 고정).
+    """
+    try:
+        stop_code = inspect.unwrap(st.stop).__code__
+    except (AttributeError, ValueError):
+        return False
+    frame = stop.__traceback__
+    while frame is not None:
+        if frame.tb_frame.f_code is stop_code:
+            return True
+        frame = frame.tb_next
+    return False
 
 
 @st.fragment(key=SIDEBAR_TOGGLE_FRAGMENT_KEY)
@@ -78,20 +188,37 @@ def on_box_toggle(key: str, label: str | None = None) -> None:
 
     프래그먼트만 도는 회차에는 `sidebar_expander` 본체가 돌지 않으므로 `(펼침, 라벨)` 기억 칸을
     여기서 적는다 — 적지 않으면 여닫은 뒤 페이지를 옮기거나 배지가 바뀔 때 옛 상태로 돌아간다
-    (라벨이 없는 페이지 그룹은 기억 칸을 쓰지 않는다). 아래 경우에는 그냥 돌아가 앱 전체 재실행으로
-    둔다: 직전 실행이 끝나지 않았을 때, **이번 상호작용에서 이 상자 말고 다른 위젯도 바뀌었을 때**,
-    프래그먼트를 찾지 못할 때(AppTest 는 실행마다 프래그먼트 저장소가 새로 생긴다). `st.rerun` 이
-    던지는 재실행 예외는 잡지 않는다.
+    (라벨이 없는 페이지 그룹은 기억 칸을 쓰지 않는다). 앱 전체 재실행으로 물러나는 경우는
+    `rerun_fragment_if_alone` 이 가른다.
     """
     if label is not None:
         st.session_state[remembered_box_key(key)] = (bool(st.session_state.get(key)), label)
+    rerun_fragment_if_alone(SIDEBAR_TOGGLE_FRAGMENT_KEY, key)
+
+
+def rerun_fragment_if_alone(fragment_key: str, widget_key: str) -> None:
+    """위젯 콜백의 **마지막 줄**에서 부른다. 할 수 있으면 `fragment_key` 프래그먼트만 다시 돌린다.
+
+    `st.rerun(<key>)` 는 재실행 예외로 콜백을 그 자리에서 끊으므로 콜백이 할 일을 다 한 뒤에 부른다.
+    아래 경우에는 그냥 돌아가 앱 전체 재실행(콜백 위젯의 기본 동작)으로 둔다.
+
+    - 직전 전체 실행이 끝까지 돌지 않았을 때(`AppRun` — 끊긴 실행·아직 도는 실행).
+    - 이번 실행의 페이지가 끝까지 돈 실행의 페이지와 다를 때(페이지를 옮기는 실행이 본문 전에
+      끊긴 경우).
+    - **이번 상호작용에서 `widget_key` 말고 다른 위젯도 바뀌었을 때**.
+    - 프래그먼트를 찾지 못할 때(이번 실행에 등록되지 않았거나, AppTest 처럼 실행마다 프래그먼트
+      저장소가 새로 생길 때). `st.rerun` 이 던지는 재실행 예외는 잡지 않는다.
+    """
     state = st.session_state.get(APP_RUN_STATE_KEY)
     if not isinstance(state, dict) or not state.get("complete"):
         return
-    if not _only_this_widget_changed(key):
+    page = _current_page_hash()
+    if page is None or state.get("page") != page:
+        return
+    if not _only_this_widget_changed(widget_key):
         return
     try:
-        st.rerun(SIDEBAR_TOGGLE_FRAGMENT_KEY)
+        st.rerun(fragment_key)
     except StreamlitAPIException:
         return
 

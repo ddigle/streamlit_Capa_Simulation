@@ -55,6 +55,8 @@ from capa_simulation.settings import (
     FAVICON_PATH,
 )
 from capa_simulation.sidebar_status import (
+    CONDITION_DIALOG_FRAGMENT_KEY,
+    CONDITION_DIALOG_SINK_KEY,
     CONDITIONS_BOX_KEY,
     PAGE_CONDITION_SLOT_COUNT,
     SIDEBAR_TOGGLE_SINK_KEY,
@@ -95,6 +97,43 @@ def active_condition_tab(spec: PageSpec) -> str | None:
     return spec.condition_tabs.first
 
 
+@st.fragment(key=CONDITION_DIALOG_FRAGMENT_KEY)
+def render_condition_dialogs(
+    page_file: str | None, shows_scenario: bool, shows_period: bool
+) -> None:
+    """조건 패널의 시나리오·조회기간 팝업을 여닫는 호스트 프래그먼트.
+
+    키는 `sidebar_status.CONDITION_DIALOG_FRAGMENT_KEY` 다. 한 실행에 팝업은 하나뿐이고(여는 콜백이
+    다른 칸을 비운다), 이 화면에 그 줄이 서지 않으면(탭을 옮겨 공통 조건을 읽지 않게 된 회차) 칸을
+    버린다. 값 칸의 여는 콜백이 이 프래그먼트만 다시 돌리고, 팝업이 이 안에서 만들어지므로
+    닫기(`on_dismiss`)도 이 프래그먼트만 다시 돌린다 — 둘 다 페이지를 다시 계산하지 않는다.
+    프래그먼트만 도는 회차의 인자는 직전 전체 실행의 값이다. 화면·탭이 바뀌는 조작은 모두 전체
+    실행이라 그 값이 낡지 않는다.
+
+    **어느 갈래든 이벤트 칸(본문 밖 최상위 칸)에 정확히 한 자리를 쓴다** — 팝업이면 팝업 블록,
+    아니면 빈 스타일 자리표시자다. 프래그먼트만 다시 돌 때 Streamlit 은 이벤트 칸의 쓰기 위치를
+    전체 실행에서 이 프래그먼트를 부른 자리로 되돌리고, 브라우저는 그 자리의 요소를 갈아 끼운다.
+    전체 실행에서 아무것도 쓰지 않으면 그 자리는 페이지의 첫 이벤트 요소(스타일만 든 `st.html` —
+    툴바 Guide 단추를 보이게 하는 규칙, 재공 현황 지표 줄 폭 등)가 차지하고, 팝업을 여는 회차가
+    그것을 덮어 다음 전체 실행까지 돌아오지 않는다. 팝업 본문도 이벤트 칸에 따로 쓰지 않는다
+    (스타일만 든 `st.html`·`st.toast` 를 두지 않는다).
+    """
+    if shows_scenario and scenario_dialog_is_open():
+        show_scenario_dialog(page_file)
+    elif shows_period and period_dialog_is_open():
+        show_period_dialog(page_file)
+    else:
+        close_scenario_dialog()
+        close_period_dialog()
+        # 스타일만 든 `st.html` 은 이벤트 칸으로 간다 — 본문 자리를 차지하지 않는다.
+        st.html("<style></style>")
+
+
+# 이번 실행이 끝까지 돌았는지의 표지(`sidebar_status.begin_app_run`). **메시지를 보내는 첫
+# Streamlit 호출보다 앞이다** — 그런 호출은 다른 요청이 이 실행을 끊는 자리라, 그 앞에서 끊긴
+# 실행이 앞 실행의 「끝났다」를 남겨 두면 상자 여닫기·조건 패널 값 칸이 페이지 없이 프래그먼트만
+# 돌린다.
+app_run = begin_app_run()
 st.set_page_config(
     page_title=APP_NAME,
     # 문자열 경로여야 한다 — Streamlit 은 `.svg` 로 끝나는 **파일**만 읽어 data URI 로 싣는다.
@@ -103,10 +142,8 @@ st.set_page_config(
     # `menu_items` 는 적지 않는다. ⋮ 메뉴는 통째로 감추고(`render_shell_style`), 앱 버전·개발 정보는
     # 모든 화면 사이드바 맨 아래의 앱 정보 카드(`components/app_credits.py`)가 보여 준다.
 )
-# 사이드바 상자를 여닫을 때 앱 전체 대신 다시 도는 빈 프래그먼트와, 이번 실행이 끝까지
-# 돌았는지의 표지(`sidebar_status.on_box_toggle`). 프래그먼트는 `st.stop()` 이 걸릴 수 있는
-# 어떤 곳보다도 앞에서 등록한다.
-app_run = begin_app_run()
+# 사이드바 상자를 여닫을 때 앱 전체 대신 다시 도는 빈 프래그먼트(`sidebar_status.on_box_toggle`).
+# `st.stop()` 이 걸릴 수 있는 어떤 곳보다도 앞에서 등록한다.
 with st.container(key=SIDEBAR_TOGGLE_SINK_KEY):
     render_box_toggle_sink()
 # 이 실행이 쓸 테마를 먼저 정한다. **토큰을 하나라도 읽기 전**이어야 한다 — 색을 읽는
@@ -334,15 +371,13 @@ with pinned_connections(DUCKDB_PATH):
         # 안 세운 회차에는 적용 기간 자리표시자도 없다. 앞 회차에 등록한 칸을 지워야 이 화면이
         # 사라진 칸에 「✓ 적용」을 쓰지 않는다.
         forget_month_range_placeholder()
-    # 열려 있는 팝업. 한 실행에 팝업은 하나뿐이고(여는 콜백이 다른 칸을 비운다), 이 화면에 그 줄이
-    # 서지 않으면(탭을 옮겨 공통 조건을 읽지 않게 된 회차) 칸을 버린다.
-    if shows_scenario and scenario_dialog_is_open():
-        show_scenario_dialog(page_file)
-    elif shows_period and period_dialog_is_open():
-        show_period_dialog(page_file)
-    else:
-        close_scenario_dialog()
-        close_period_dialog()
+    # 열려 있는 팝업의 호스트 프래그먼트. 두 줄이 다 서지 않는 화면에서도 **매 전체 실행
+    # 빠짐없이**, 페이지(`st.stop()` 이 걸릴 수 있는 곳)보다 앞에서 부른다 — 이번 실행에 등록되지
+    # 않은 프래그먼트는 여는 콜백(`st.rerun(<key>)`)도 팝업 닫기도 겨눌 수 없다. 팝업과 그
+    # 자리표시자는 본문 밖(이벤트 칸)에 서고 이 칸은 늘 비어 있어 CSS 가 숨긴다(상자 여닫기 칸과
+    # 같다).
+    with st.container(key=CONDITION_DIALOG_SINK_KEY):
+        render_condition_dialogs(page_file, shows_scenario, shows_period)
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
     # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명·게으름이 같다 — 첫 연결 때 잡히고,
@@ -358,16 +393,17 @@ with pinned_connections(DUCKDB_PATH):
     # 설비 DB 를 안 보는 화면(HOME 등)까지 그 DB 의 마이그레이션·잠금에 묶인다.
     render_schema_ahead_warning(get_scenario_repository(str(DUCKDB_PATH.resolve())).schema_ahead)
     # 끝까지 돈 실행 뒤에만 상자 여닫기가 본문을 건너뛴다. 페이지가 `st.stop()` 으로 멈춘 것도
-    # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다.
+    # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다. 새 상호작용이 끊은 실행은 같은 멈춤
+    # 예외로 끝나도 끝까지 돈 것이 아니다(`AppRun.finish_stopped`).
     # 입장 화면 Summary 의 GAP 몫이 「준비 중」으로 나갔으면 페이지를 다 그린 **뒤**에 만들어 둔다 —
     # 비교 대상을 바꾼 회차에 HOME 보다 먼저 비교 계획을 환산하지 않게(다음 회차에 싣는다). 페이지가
     # `st.stop()` 해도 한다. rerun 으로 끊긴 회차에서는 하지 않는다.
     try:
         with equipment_pin:
             navigation.run()
-    except StopException:
-        app_run["complete"] = True
+    except StopException as stop:
+        app_run.finish_stopped(stop)
         warm_intro_summary(str(DUCKDB_PATH.resolve()))
         raise
-    app_run["complete"] = True
+    app_run.finish()
     warm_intro_summary(str(DUCKDB_PATH.resolve()))

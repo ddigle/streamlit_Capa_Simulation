@@ -255,6 +255,61 @@ def test_process_picker_bulk_actions_restore_applied_values_and_apply_empty_or_a
     )
 
 
+def test_closing_the_process_filter_dialog_does_not_rerun_home() -> None:
+    """공정 필터 팝업은 닫아도(X·바깥·Esc) HOME 을 다시 돌리지 않는다 — `on_dismiss` 기본값(ignore).
+
+    닫는 회차에 서버가 할 일이 없다. 초안은 팝업 안에서만 읽히고 열 때마다
+    `set_process_dialog_selection` 이 다시 적으며, 「선택 공정 적용」은 `st.rerun(scope="app")`
+    이다. 주요공정 히트맵 팝업도 같은 기본값이다. AppTest 는 닫기를 흉내 내지 못해 선언을 읽는다.
+    """
+    import ast
+
+    tree = ast.parse(HOME_PAGE.read_text(encoding="utf-8"))
+    (dialog,) = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "show_process_filter_dialog"
+    ]
+    (decorator,) = dialog.decorator_list
+    assert isinstance(decorator, ast.Call)
+    assert ast.unparse(decorator.func) == "st.dialog"
+    assert "on_dismiss" not in {keyword.arg for keyword in decorator.keywords}
+
+
+def test_a_closed_process_filter_draft_neither_leaks_nor_survives_reopening(
+    seeded_database: Path,
+) -> None:
+    """닫은 팝업의 초안은 대시보드에 새지 않고, 다시 열면 지금 적용된 선택으로 돌아간다(같은 숫자).
+
+    닫기가 HOME 을 다시 돌리지 않으므로 고르다 만 초안이 세션에 남는다. 그 초안은 팝업 안에서만
+    읽힌다 — 뒤따르는 HOME 회차의 판정 대상·칸 글자·Figure 는 열기 전과 같고, 다시 열면 초안을 지금
+    선택으로 덮는다. 「선택 공정 적용」만 판정 대상을 바꾼다(무효화).
+    """
+    app = _run(seeded_database)
+    selection = list(app.session_state[PROCESS_SELECTION_KEY])
+    field_label = app.button(key="dashboard_bottleneck_process_dialog_open").label
+    figures = {key: figure.to_json() for key, figure in app.session_state["spy_figures"].items()}
+
+    app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state["dashboard_bottleneck_process_dialog_draft"] == selection
+    # 타일 몇 개를 끄고 적용하지 않은 채 닫는다(닫기는 서버로 오지 않는다).
+    app.session_state["dashboard_bottleneck_process_dialog_draft"] = selection[1:]
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert "dashboard_bottleneck_process_apply" not in {button.key for button in app.button}
+    assert app.session_state[PROCESS_SELECTION_KEY] == selection
+    assert app.button(key="dashboard_bottleneck_process_dialog_open").label == field_label
+    assert {
+        key: figure.to_json() for key, figure in app.session_state["spy_figures"].items()
+    } == figures
+
+    app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state["dashboard_bottleneck_process_dialog_draft"] == selection
+
+
 @pytest.mark.parametrize(
     "group_rate,other_rate,rest_rate,group_title,group_first",
     [
