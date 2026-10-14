@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+import duckdb
 import numpy as np
 import pandas as pd
 import pytest
@@ -83,7 +84,17 @@ def seeded(tmp_path_factory: pytest.TempPathFactory) -> _Seeded:
         base.preset,
         revision_name="계획 절반",
     )
+    # 공용 표시순서를 리비전에 저장된 원본과 다르게 둔다 — 같으면 공용 프로필을 얹는 경로와 얹지
+    # 않는 경로가 같은 프레임을 내 어느 쪽을 읽었는지 시험이 가르지 못한다.
+    repository.replace_global_display_order(_flipped_first_direction(repository), source="테스트")
     return _Seeded(database_path, release.revision_id, halved.revision.revision_id)
+
+
+def _flipped_first_direction(repository: DuckDBScenarioRepository) -> pd.DataFrame:
+    rules = repository.load_global_display_order().rules
+    directions = rules["정렬방식"].astype("string").tolist()
+    directions[0] = "내림차순" if directions[0] != "내림차순" else "오름차순"
+    return rules.assign(정렬방식=directions)
 
 
 @pytest.fixture(autouse=True)
@@ -117,6 +128,18 @@ def test_one_revision_table_is_the_same_frame_as_in_the_whole_snapshot(
             revision_id, logical_name, apply_global_display_order=apply_global_display_order
         )
         _assert_same_frame(one, whole.tables[logical_name])
+
+
+def test_the_display_order_table_follows_the_global_profile_flag(seeded: _Seeded) -> None:
+    """표시순서 한 장은 플래그대로 공용 프로필 또는 리비전에 저장된 원본이다 — 둘은 다르다."""
+    repository = DuckDBScenarioRepository(seeded.database_path)
+    revision_id = seeded.official_revision_id
+    global_order = repository.load_revision_table(revision_id, "RQ_DISPLAY_ORDER")
+    stored_order = repository.load_revision_table(
+        revision_id, "RQ_DISPLAY_ORDER", apply_global_display_order=False
+    )
+    assert not global_order["정렬방식"].equals(stored_order["정렬방식"])
+    _assert_same_frame(global_order, repository.load_global_display_order().rules)
 
 
 def test_an_unknown_table_name_is_not_mistaken_for_a_missing_revision(seeded: _Seeded) -> None:
@@ -190,6 +213,49 @@ def test_a_deleted_revision_raises_instead_of_reading_an_empty_plan(seeded: _See
             scenario_cache.load_scenario_plan(database_path, revision_id)
     with pytest.raises(KeyError, match="리비전을 찾을 수 없습니다"):
         repository.load_revision_table("없는-리비전", "RQ_DISPLAY_ORDER")
+
+
+@pytest.mark.parametrize("whole_snapshot", [False, True])
+def test_a_revision_deleted_between_the_check_and_the_read_is_read_as_checked(
+    seeded: _Seeded, monkeypatch: pytest.MonkeyPatch, whole_snapshot: bool
+) -> None:
+    """확인 뒤 표를 읽기 전에 다른 세션이 지워도 확인한 시점의 표가 나온다 — 행 0개 계획이 아니다.
+
+    확인과 읽기가 따로 된 두 문이면 그 틈에 커밋된 삭제가 보여 지운 리비전의 표가 예외 없이 행
+    0개로 돌아온다. 그것이 비교 계획 캐시에 들면 그 회차 GAP 이 전부 감소로 그려진다.
+    """
+    import capa_simulation.persistence.repository as repository_module
+
+    repository = DuckDBScenarioRepository(seeded.database_path)
+    scenario_id, revision_id = _create_clone(
+        repository, seeded.official_revision_id, "읽는 중 지울 비교", 0.25
+    )
+    expected = repository.load_revision(revision_id).tables
+    original = repository_module._load_reference_frame
+    deleted: list[str] = []
+
+    def delete_then_read(
+        connection: duckdb.DuckDBPyConnection, logical_name: str, **owners: str
+    ) -> pd.DataFrame:
+        if not deleted:
+            DuckDBScenarioRepository(seeded.database_path).delete_scenario(scenario_id)
+            deleted.append(logical_name)
+        return original(connection, logical_name, **owners)
+
+    monkeypatch.setattr(repository_module, "_load_reference_frame", delete_then_read)
+    if whole_snapshot:
+        loaded = repository.load_revision(revision_id).tables
+    else:
+        loaded = {"RQ_PKG_PLAN": repository.load_revision_table(revision_id, "RQ_PKG_PLAN")}
+    monkeypatch.undo()
+
+    assert len(deleted) == 1
+    assert not loaded["RQ_PKG_PLAN"].empty
+    for name, frame in loaded.items():
+        _assert_same_frame(frame, expected[name])
+    # 삭제는 커밋됐다 — 다음 읽기는 지운 리비전으로 본다.
+    with pytest.raises(KeyError, match="리비전을 찾을 수 없습니다"):
+        repository.load_revision_table(revision_id, "RQ_PKG_PLAN")
 
 
 # --------------------------------------------------------------- 공유 스냅샷과 호출마다 깊은 사본

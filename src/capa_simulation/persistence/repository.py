@@ -1231,8 +1231,12 @@ class DuckDBScenarioRepository:
     def load_revision(
         self, revision_id: str, *, apply_global_display_order: bool = True
     ) -> ScenarioSnapshot:
-        """일반 조회는 공용 표시순서를, 파생 시나리오 입력은 저장된 원본을 읽는다."""
-        with self._connect() as connection:
+        """일반 조회는 공용 표시순서를, 파생 시나리오 입력은 저장된 원본을 읽는다.
+
+        리비전 확인과 표 16장·공용 표시순서를 한 읽기 트랜잭션에서 읽는다 — 그 사이 다른 세션이
+        지우거나 표시순서를 바꿔도 한 시점의 것만 모인다.
+        """
+        with self._connect() as connection, transaction(connection):
             scenario_row = connection.execute(
                 SCENARIO_SUMMARY_SELECT
                 + """
@@ -1281,13 +1285,14 @@ class DuckDBScenarioRepository:
     ) -> pd.DataFrame:
         """리비전의 표 한 장. `load_revision(...).tables[logical_name]` 과 같은 경로·프레임이다.
 
-        리비전이 있는지 같은 연결에서 먼저 확인하고 없으면 `load_revision` 과 같은 `KeyError` 를
-        낸다. 리비전 표를 `revision_id` 로 바로 읽으면 지운 리비전에서 행 0개 프레임이 예외 없이
-        돌아와, 비교 계획이면 GAP 이 전부 감소로 그려진다.
+        리비전이 있는지 먼저 확인하고 없으면 `load_revision` 과 같은 `KeyError` 를 낸다. 리비전 표를
+        `revision_id` 로 바로 읽으면 지운 리비전에서 행 0개 프레임이 예외 없이 돌아와, 비교 계획이면
+        GAP 이 전부 감소로 그려진다. 확인과 읽기는 한 읽기 트랜잭션이다 — 확인 뒤 다른 세션이 지워도
+        확인한 시점의 표를 읽는다(따로 된 두 문이면 그 틈에 지운 리비전의 행 0개가 돌아온다).
         """
         if logical_name not in REFERENCE_TABLES:
             raise ValueError(f"리비전 표가 아닙니다: {logical_name}")
-        with self._connect() as connection:
+        with self._connect() as connection, transaction(connection):
             owner_row = connection.execute(
                 """
                 SELECT d.dataset_id
