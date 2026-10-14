@@ -753,6 +753,61 @@ def test_the_scenario_dialog_stays_open_across_reruns_and_closes_on_leaving(
     assert "sidebar_load_revision" not in {button.key for button in app.button}
 
 
+def test_the_dialog_host_runs_on_every_full_run_even_where_no_field_stands(
+    _app: AppTest,
+) -> None:
+    """팝업 호스트 프래그먼트는 두 줄이 다 서지 않는 화면에서도 매 전체 실행 불린다 — 이번
+    실행에 등록되지 않은 프래그먼트는 여는 콜백도 팝업 닫기도 겨눌 수 없다. 그런 화면에서는 열림
+    키를 버리는 갈래만 돈다(같은 페이지 회차라 `forget_page_dialogs` 가 아니라 호스트가 지운다)."""
+    app = _app.run()
+    app.switch_page(CAPA_CHATBOT.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert SCENARIO_FIELD_KEY not in {button.key for button in app.button}
+
+    app.session_state[SCENARIO_DIALOG_KEY] = True
+    app.session_state[PERIOD_DIALOG_KEY] = True
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert SCENARIO_DIALOG_KEY not in app.session_state
+    assert PERIOD_DIALOG_KEY not in app.session_state
+
+
+def _calculation_snapshot(app: AppTest) -> dict[str, Any]:
+    """계산 입력(활성 리비전·`content_token`·조회기간)과 본문 Figure·글."""
+    active = app.session_state["active_scenario"]
+    return {
+        "content_token": active["content_token"],
+        "revision": active["revision"],
+        "period": app.session_state[MONTH_RANGE_KEY],
+        "figures": [chart.proto.spec for chart in app.get("plotly_chart")],
+        "markdown": [element.value for element in app.main.markdown],
+    }
+
+
+def test_opening_and_closing_a_condition_dialog_leaves_the_numbers_alone(_app: AppTest) -> None:
+    """같은 숫자 — 값 칸으로 팝업을 열고 닫는 것은 열림 키와 초안만 바꾼다. 활성 리비전·
+    `content_token`·조회기간과 HOME 의 Figure·글이 열기 전과 같다. AppTest 는 여는 콜백이 물러나는
+    길(앱 전체 재실행)을 탄다 — 프래그먼트 회차는 페이지를 아예 다시 그리지 않는다."""
+    app = _app.run()
+    app.run()
+    before = _calculation_snapshot(app)
+    assert before["figures"]
+
+    for field_key, dialog_key in (
+        (SCENARIO_FIELD_KEY, SCENARIO_DIALOG_KEY),
+        (PERIOD_FIELD_KEY, PERIOD_DIALOG_KEY),
+    ):
+        app.button(key=field_key).click().run()
+        assert not list(app.exception), [element.message for element in app.exception]
+        assert app.session_state[dialog_key] is True
+        assert _calculation_snapshot(app) == before
+        # 닫기(X·바깥·Esc). AppTest 는 닫기를 흉내 내지 못해 `on_dismiss` 콜백의 일을 한다.
+        del app.session_state[dialog_key]
+        app.run()
+        assert _calculation_snapshot(app) == before
+
+
 def _press_apply_with(monkeypatch: pytest.MonkeyPatch, applied: tuple[str, str] | None) -> None:
     """팝업 월 선택 컴포넌트의 「적용」 트리거를 흉내 낸다(Components v2 는 AppTest 에 없다).
 

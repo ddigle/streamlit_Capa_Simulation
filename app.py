@@ -55,6 +55,8 @@ from capa_simulation.settings import (
     FAVICON_PATH,
 )
 from capa_simulation.sidebar_status import (
+    CONDITION_DIALOG_FRAGMENT_KEY,
+    CONDITION_DIALOG_SINK_KEY,
     CONDITIONS_BOX_KEY,
     PAGE_CONDITION_SLOT_COUNT,
     SIDEBAR_TOGGLE_SINK_KEY,
@@ -95,9 +97,32 @@ def active_condition_tab(spec: PageSpec) -> str | None:
     return spec.condition_tabs.first
 
 
-# 이번 실행이 끝까지 돌았는지의 표지(`sidebar_status.begin_app_run`). **첫 Streamlit 호출보다
-# 앞이다** — 메시지를 보내는 호출은 다른 요청이 이 실행을 끊는 자리라, 그 앞에서 끊긴 실행이 앞
-# 실행의 「끝났다」를 남겨 두면 상자 여닫기·조건 패널 값 칸이 페이지 없이 프래그먼트만 돌린다.
+@st.fragment(key=CONDITION_DIALOG_FRAGMENT_KEY)
+def render_condition_dialogs(
+    page_file: str | None, shows_scenario: bool, shows_period: bool
+) -> None:
+    """조건 패널의 시나리오·조회기간 팝업을 여닫는 호스트 프래그먼트.
+
+    키는 `sidebar_status.CONDITION_DIALOG_FRAGMENT_KEY` 다. 한 실행에 팝업은 하나뿐이고(여는 콜백이
+    다른 칸을 비운다), 이 화면에 그 줄이 서지 않으면(탭을 옮겨 공통 조건을 읽지 않게 된 회차) 칸을
+    버린다. 값 칸의 여는 콜백이 이 프래그먼트만 다시 돌리고, 팝업이 이 안에서 만들어지므로
+    닫기(`on_dismiss`)도 이 프래그먼트만 다시 돌린다 — 둘 다 페이지를 다시 계산하지 않는다.
+    프래그먼트만 도는 회차의 인자는 직전 전체 실행의 값이다. 화면·탭이 바뀌는 조작은 모두 전체
+    실행이라 그 값이 낡지 않는다.
+    """
+    if shows_scenario and scenario_dialog_is_open():
+        show_scenario_dialog(page_file)
+    elif shows_period and period_dialog_is_open():
+        show_period_dialog(page_file)
+    else:
+        close_scenario_dialog()
+        close_period_dialog()
+
+
+# 이번 실행이 끝까지 돌았는지의 표지(`sidebar_status.begin_app_run`). **메시지를 보내는 첫
+# Streamlit 호출보다 앞이다** — 그런 호출은 다른 요청이 이 실행을 끊는 자리라, 그 앞에서 끊긴
+# 실행이 앞 실행의 「끝났다」를 남겨 두면 상자 여닫기·조건 패널 값 칸이 페이지 없이 프래그먼트만
+# 돌린다.
 app_run = begin_app_run()
 st.set_page_config(
     page_title=APP_NAME,
@@ -336,15 +361,12 @@ with pinned_connections(DUCKDB_PATH):
         # 안 세운 회차에는 적용 기간 자리표시자도 없다. 앞 회차에 등록한 칸을 지워야 이 화면이
         # 사라진 칸에 「✓ 적용」을 쓰지 않는다.
         forget_month_range_placeholder()
-    # 열려 있는 팝업. 한 실행에 팝업은 하나뿐이고(여는 콜백이 다른 칸을 비운다), 이 화면에 그 줄이
-    # 서지 않으면(탭을 옮겨 공통 조건을 읽지 않게 된 회차) 칸을 버린다.
-    if shows_scenario and scenario_dialog_is_open():
-        show_scenario_dialog(page_file)
-    elif shows_period and period_dialog_is_open():
-        show_period_dialog(page_file)
-    else:
-        close_scenario_dialog()
-        close_period_dialog()
+    # 열려 있는 팝업의 호스트 프래그먼트. 두 줄이 다 서지 않는 화면에서도 **매 전체 실행
+    # 빠짐없이**, 페이지(`st.stop()` 이 걸릴 수 있는 곳)보다 앞에서 부른다 — 이번 실행에 등록되지
+    # 않은 프래그먼트는 여는 콜백(`st.rerun(<key>)`)도 팝업 닫기도 겨눌 수 없다. 팝업은 본문
+    # 밖(이벤트 칸)에 서고 이 칸은 늘 비어 있어 CSS 가 숨긴다(상자 여닫기 칸과 같다).
+    with st.container(key=CONDITION_DIALOG_SINK_KEY):
+        render_condition_dialogs(page_file, shows_scenario, shows_period)
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
     # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명·게으름이 같다 — 첫 연결 때 잡히고,

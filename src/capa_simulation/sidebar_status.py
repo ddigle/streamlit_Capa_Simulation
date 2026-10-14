@@ -60,6 +60,17 @@ SIDEBAR_TOGGLE_SINK_KEY = "sidebar_box_toggle_sink"
 # (끝까지 돌았나), `run`(가장 늦게 시작한 실행의 표지), `page`(끝까지 돈 실행의 페이지).
 APP_RUN_STATE_KEY = "sidebar_app_run_state"
 
+# 조건 패널의 시나리오·조회기간 팝업을 여닫는 **키 붙은 호스트 프래그먼트**(`app.py`). 값 칸을
+# 누르거나 팝업을 닫을 때(X·바깥·Esc) 페이지 계산까지 앱 전체를 다시 돌리지 않고 이 프래그먼트만
+# 돈다 — 여닫는 회차에 바뀌는 것은 열림 키와 팝업 초안뿐이고 계산 입력(활성 리비전·`content_token`·
+# 조회기간·미저장 편집)은 그대로다. 원본을 바꾸는 동작(불러오기·저장·되돌리기·조회기간 「적용」)은
+# 팝업 본문이 `st.rerun()` 으로 앱 전체를 다시 돌린다. 여는 콜백은 상자 여닫기와 같은 판정
+# (`rerun_fragment_if_alone`)을 거치고, 못 넘으면 앱 전체 재실행으로 물러난다.
+CONDITION_DIALOG_FRAGMENT_KEY = "sidebar_condition_dialog_host"
+# 그 프래그먼트를 담는 본문 컨테이너. 팝업은 본문 밖(이벤트 칸)에 서므로 이 칸은 늘 비어 있고, 빈
+# 칸이 본문 간격을 먹지 않게 상자 여닫기 칸과 같이 CSS 가 숨긴다.
+CONDITION_DIALOG_SINK_KEY = "sidebar_condition_dialog_sink"
+
 
 @dataclass(frozen=True, eq=False)
 class AppRun:
@@ -94,7 +105,7 @@ class AppRun:
 def begin_app_run() -> AppRun:
     """앱 실행 맨 앞에서 「이번 실행은 아직 끝나지 않았다」로 표시하고 그 표지를 돌려준다.
 
-    **스크립트의 첫 Streamlit 호출보다 앞에서** 부른다. 메시지를 보내는 호출은 다른 요청이 이 실행을
+    **메시지를 보내는 첫 Streamlit 호출보다 앞에서** 부른다. 그런 호출은 다른 요청이 이 실행을
     끊는 자리라, 그 앞에서 끊긴 실행이 앞 실행의 「끝났다」를 남겨 두지 않게 한다.
     """
     state = st.session_state.get(APP_RUN_STATE_KEY)

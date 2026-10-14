@@ -182,12 +182,28 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     처음 그릴 때만 읽혀 링크로 페이지를 옮겨도 여닫힘이 따라오지 않으므로(실측), **페이지가
     바뀐 회차에만**(`SIDEBAR_PAGE_KEY`) 「지금 보는 페이지가 든 그룹」으로 세션 값을 되돌리고
     같은 페이지 안에서는 사용자가 여닫은 대로 둔다. 여닫기는 본문을 다시 돌리지 않는다
-    (`on_box_toggle`, 아래 `sidebar_status.py` 항목). 패널의 값 칸을 누르면 앱 전체가 한 번 다시 돈다
-    (팝업을 열기 위해 — HOME 약 0.4초). 키 붙은 호스트 프래그먼트로 여는 최적화는 후속 과제다.
+    (`on_box_toggle`, 아래 `sidebar_status.py` 항목). 패널의 시나리오·조회기간 값 칸을 누를 때와 그
+    팝업을 닫을 때(X·바깥·Esc)도 페이지를 다시 돌리지 않는다 — **키 붙은 호스트 프래그먼트**
+    (`app.py` 의 `render_condition_dialogs`, 키 `sidebar_status.CONDITION_DIALOG_FRAGMENT_KEY`)만
+    다시 돈다(합성 표본 샘플 관측, 브라우저·서버 실행 기록 3회 최솟값: 열기 HOME 163 → 36ms·표준 목표
+    133 → 40ms·산출 결과 98 → 38ms·Static 84 → 38ms — 시나리오 팝업 본문의 저장소 읽기가 남는다,
+    조회기간 열기는 3ms 안팎, 닫기는 페이지 실행 52~169ms → 2ms 안팎).
   - **패널의 팝업 셋**(2026-10-10). 시나리오(`components/scenario_status.py`, medium)·조회기간
     (`components/period_field.py`, small)은 **세션 키로 연다** — 열림 키(`sidebar_scenario_open_dialog`·
-    `sidebar_period_open_dialog`, `PAGE_DIALOG_SUFFIX`)가 있는 동안 `app.py` 가 페이지보다 먼저 매 회차
-    부른다. 공정 필터(large)·주요공정 히트맵(small)은 HOME 이 **값 칸을 누른 회차에만** 부른다. 한
+    `sidebar_period_open_dialog`, `PAGE_DIALOG_SUFFIX`)가 있는 동안 `app.py` 의 호스트 프래그먼트가
+    페이지보다 먼저 매 회차 부른다. 호스트는 두 줄이 다 서지 않는 화면에서도 **매 전체 실행 빠짐없이**
+    부른다(이번 실행에 등록되지 않은 프래그먼트는 여는 콜백도 팝업 닫기도 겨눌 수 없다 — 그런 화면에서는
+    열림 키를 버리는 갈래만 돈다). 본문 칸(`CONDITION_DIALOG_SINK_KEY`)은 늘 비어 있어 CSS 가 숨긴다.
+    여는 콜백은 다른 팝업 칸 비우기·초안·열림 키를 다 적은 **뒤 마지막 줄**에서만
+    `sidebar_status.rerun_fragment_if_alone` 을 거쳐 호스트만 다시 돌린다(재실행 예외가 콜백을 그
+    자리에서 끊는다). 판정을 못 넘으면(직전 실행이 끝나지 않음·페이지가 다름·다른 위젯도 바뀜·
+    프래그먼트 없음) 앱 전체가 돌아 지금처럼 그 실행이 팝업을 연다. 팝업이 호스트 안에서 만들어지므로
+    닫기 요청도 호스트만 다시 돌리고, 열림 키가 없으니 아무것도 그리지 않는다. 호스트 회차의 인자
+    (`page_file`·두 줄이 서는지)는 직전 전체 실행의 값이다 — 화면·탭을 바꾸는 조작은 모두 전체
+    실행이다. 원본을 바꾸는 「불러오기」·「신규 리비전 저장」·「편집 되돌리기」와 조회기간 「적용」은
+    팝업 본문이 `st.rerun()` 으로 앱 전체를 다시 돌린다(범위가 같아도 — 「적용」은 콜백이 아니라 본문
+    반환값이라 키 붙은 재실행을 쓸 수 없다). 공정 필터(large)·주요공정 히트맵(small)은 HOME 이
+    **값 칸을 누른 회차에만** 부른다. 한
     실행에 팝업은 하나뿐이라(둘이면 `StreamlitInvalidLayoutContextError` — 브라우저 실측) **여는
     콜백마다 `forget_page_dialogs()` 로 다른 팝업 칸부터 비운다.** 닫기(X·바깥·Esc)는 `on_dismiss`
     콜백이 열림 키를 지우고, 성공한 동작은 `st.rerun()` 앞에서 직접 지운다(`st.rerun()` 은
@@ -2534,6 +2550,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `page_condition_slot(i)`·`forget_page_condition_slots` 가 패널 안 페이지 칸(고정 2칸)을 세션에
     둔다(자리표시자처럼 모듈 전역에 두지 않는다 — 세션끼리 칸을 나눠 쓰게 된다). 한 칸은 한 회차에
     한 번만 채운다(`st.empty`).
+  - `sidebar_status.CONDITION_DIALOG_FRAGMENT_KEY`·`CONDITION_DIALOG_SINK_KEY` 는 조건 패널의
+    시나리오·조회기간 팝업 호스트 프래그먼트(`app.py` 의 `render_condition_dialogs`)의 키와 그 숨긴
+    본문 칸이다(위 `app.py` 항목 「패널의 팝업 셋」). 값 칸의 여는 콜백과 상자 여닫기가 같은 판정
+    `rerun_fragment_if_alone` 을 쓴다 — 아래 「여닫을 때 본문을 다시 돌리지 않는다」.
   - 조회기간·시나리오 월 표기 `YYYY-MM` 은 `settings.format_month` 한 벌이다. 파생 시나리오의
     월 표기(`scenario_transform.format_month_range`·월 머지 검증 문구)도 이것을 쓴다.
   - `sidebar_status.render_sidebar_section` 이 구역 제목 한 줄을 그린다. 가로 컨테이너가

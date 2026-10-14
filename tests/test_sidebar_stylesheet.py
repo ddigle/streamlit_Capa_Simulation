@@ -249,19 +249,23 @@ def test_the_app_credits_card_is_pinned_to_the_sidebar_bottom(
 
 
 def test_the_toggle_sink_is_hidden_and_short_runs_do_not_dim_the_body() -> None:
-    """사이드바 상자를 여닫을 때 도는 빈 프래그먼트의 칸은 숨기고, 짧은 실행은 본문을 흐리지 않는다.
+    """사이드바 상자를 여닫을 때 도는 빈 프래그먼트와 조건 패널 팝업 호스트의 칸은 숨기고, 짧은
+    실행은 본문을 흐리지 않는다.
 
     여닫기는 본문을 다시 돌리지 않지만 콜백이 프래그먼트로 바꾸기 전에 앱 실행이 잠깐 시작돼,
-    Streamlit 이 본문을 40~120ms 즉시 흐렸다(2026-09-30 실측). 흐림에 지연을 둔다.
+    Streamlit 이 본문을 40~120ms 즉시 흐렸다(2026-09-30 실측). 흐림에 지연을 둔다. 팝업 호스트는
+    팝업을 본문 밖(이벤트 칸)에 세워 제 칸이 늘 비어 있다 — 칸이 서면 본문에 간격이 하나 생긴다.
     """
     from capa_simulation.components.sidebar_style import STALE_DIM_DELAY
-    from capa_simulation.sidebar_status import SIDEBAR_TOGGLE_SINK_KEY
+    from capa_simulation.sidebar_status import CONDITION_DIALOG_SINK_KEY, SIDEBAR_TOGGLE_SINK_KEY
 
     block = _style_block()
     (sink_rule,) = _rules_with(block, "display: none !important;")
     assert sink_rule == [
         f'[data-testid="stLayoutWrapper"]:has(> .st-key-{SIDEBAR_TOGGLE_SINK_KEY})',
         f".st-key-{SIDEBAR_TOGGLE_SINK_KEY}",
+        f'[data-testid="stLayoutWrapper"]:has(> .st-key-{CONDITION_DIALOG_SINK_KEY})',
+        f".st-key-{CONDITION_DIALOG_SINK_KEY}",
     ]
     assert _rules_with(block, f"transition: opacity 0s linear {STALE_DIM_DELAY} !important;") == [
         ['[data-stale="true"]']
