@@ -7,7 +7,7 @@
 대역(`test_home_key_process_fragment` 의 `browser`)으로 **진짜 프래그먼트 회차**를 돌린다.
 
 - 같은 숫자: 목표를 바꾼 프래그먼트 회차의 KPI·LOB·공정 카드·CSV 세 벌이, 같은 목표의 앱 전체
-  회차(고치기 전의 길)와 바이트까지 같다.
+  회차와 바이트까지 같다.
 - 무효화: 조건 카드는 프래그먼트 밖이라 바꾸면 앱 전체 회차로 다시 계산하고, 프래그먼트 회차는 그
   회차의 공정 선택을 쓴다. 기준선 저장은 앱 전체 회차로 바뀌고, 다른 세션이 지운 기준선·바꾼 공용
   판정 기준은 다음 프래그먼트 회차에 보인다.
@@ -244,7 +244,7 @@ def test_switching_the_target_reruns_only_the_view_with_the_full_run_numbers(
         in_fragment = _screen(app, world)
         assert f"목표 {round(level * 100)}% 기준" in " ".join(in_fragment[0])
 
-        # 같은 목표를 앱 전체 회차(고치기 전의 길)로 — 숫자가 바이트까지 같다.
+        # 같은 목표를 앱 전체 회차로 — 숫자가 바이트까지 같다.
         runner.fragment_queue = []
         _run(app, world)
         assert runner.started == [[]]
@@ -329,8 +329,8 @@ def test_saving_a_baseline_in_the_view_reruns_the_whole_app_and_lists_it(
 def test_the_view_reads_the_shared_thresholds_on_every_run(
     tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    runner = _runner(request)
     """공용 판정 기준(HOME Preference)은 프래그먼트 회차마다 다시 읽는다 — 칩 색이 따라 바뀐다."""
+    runner = _runner(request)
     world = _install(monkeypatch, _database(tmp_path))
     app = _open(runner)
     view = _fragment_of(runner, SHORTENING_LEVEL_KEY)

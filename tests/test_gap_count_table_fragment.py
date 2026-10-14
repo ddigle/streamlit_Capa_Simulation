@@ -6,7 +6,7 @@
 **진짜 프래그먼트 회차**를 돌린다. 패널은 `test_availability_gap_unit_filter` 의 호스트(호기 셋·두
 라인, 조건은 사이드바)를 쓴다.
 
-- 같은 숫자: 칸을 누른 프래그먼트 회차의 표·칸의 호기가, 같은 선택의 앱 전체 회차(고치기 전의 길)와
+- 같은 숫자: 칸을 누른 프래그먼트 회차의 표·칸의 호기가, 같은 선택의 앱 전체 회차와
   같다.
 - 무효화: 호기 필터(조건 카드)는 프래그먼트 밖이라 앱 전체 회차로 표를 다시 더하고, 그다음
   프래그먼트 회차의 칸 호기는 걸러진 호기만이다.
@@ -83,7 +83,7 @@ def test_a_clicked_cell_reruns_only_the_table_with_the_full_run_units(
         assert len(in_fragment) == 2, row
         assert in_fragment[1]["대수"].sum() == pytest.approx(in_fragment[0].loc[row, "26.10"])
 
-        # 같은 선택의 앱 전체 회차(고치기 전의 길) — 표와 호기가 같다.
+        # 같은 선택의 앱 전체 회차 — 표와 호기가 같다.
         runner.fragment_queue = []
         _click(app, key, rows, row)
         app.run()

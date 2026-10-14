@@ -3875,7 +3875,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     프래그먼트가 머리 줄(`row`) 끝에 쓴다** — Streamlit 1.63 은 프래그먼트가 바깥 컨테이너에 쓰면 그
     자리를 투명한 감싸개(`Block.transparent`, DOM 없음)로 잡아 프래그먼트 회차마다 그 자리에 다시 그리고,
     앱 전체 회차마다 감싸개를 새로 잡는다(`delta_generator._get_or_create_outside_wrapper`). 그래서 상자는
-    예전처럼 볼 내용·보기 오른쪽에 선다. 표현이 없는 보기(공정별 내역·호기 목록·생애주기 일정·비가동
+    볼 내용·보기 오른쪽에 선다. 표현이 없는 보기(공정별 내역·호기 목록·생애주기 일정·비가동
     호기·Qual 호기 목록·전환 일정 목록)는 프래그먼트 없이 그대로 그린다. Streamlit 판을 올리면 이 바깥
     쓰기 동작부터 다시 본다. `tests/test_explorer_expression_fragment.py` 가 진짜 프래그먼트 회차로 지킨다 —
     네 보기에서 표현을 바꾼 프래그먼트 회차의 표 값·차트 명세가 같은 표현의 앱 전체 회차와 같음, 볼
