@@ -92,21 +92,43 @@ SNAPSHOT_RESOURCE_TTL_SECONDS = 3600
 _ARRAY_SLOTS = ("_ndarray", "_data", "_mask", "_codes")
 
 
+def _lock_arrays(values: object) -> None:
+    """numpy 배열이나 확장 배열이 담은 numpy 배열을 읽기 전용으로 둔다."""
+    arrays = [values] + [getattr(values, name, None) for name in _ARRAY_SLOTS]
+    for array in arrays:
+        if isinstance(array, np.ndarray):
+            array.flags.writeable = False
+
+
 def _lock_in_place_writes(frame: pd.DataFrame) -> None:
-    """공유 프레임의 데이터 배열을 읽기 전용으로 잠근다 — 같은 dtype 의 제자리 쓰기가 곧바로 터진다.
+    """공유 프레임의 데이터·축 배열을 읽기 전용으로 잠근다 — 같은 dtype 제자리 쓰기가 바로 터진다.
 
     공유 프레임은 `load_scenario_snapshot` 이 깊은 복사만 하고 밖으로 내보내지 않는다. 잠금은 그
     약속이 깨졌을 때 다른 세션의 숫자가 조용히 바뀌는 대신 오류가 나게 하는 안전장치다(깊은 복사가
     만드는 새 배열은 쓸 수 있다). 열 대입·dtype 이 바뀌는 대입은 배열이 아니라 프레임 객체를 갈아
-    끼우므로 이것으로 막지 못한다 — 그래서 공유 프레임은 아예 내보내지 않는다.
+    끼우므로 이것으로 막지 못한다 — 그래서 공유 프레임은 아예 내보내지 않는다. 축(열 이름·행
+    Index)도 잠근다 — `columns.values[i] = …` 같은 제자리 쓰기도 같은 길이다.
     """
     blocks: tuple[Any, ...] = cast(Any, frame)._mgr.blocks
     for block in blocks:
-        values = block.values
-        arrays = [values] + [getattr(values, name, None) for name in _ARRAY_SLOTS]
-        for array in arrays:
-            if isinstance(array, np.ndarray):
-                array.flags.writeable = False
+        _lock_arrays(block.values)
+    for axis in (frame.columns, frame.index):
+        if not isinstance(axis, pd.RangeIndex):
+            _lock_arrays(cast(Any, axis)._values)
+
+
+def _private_copy(frame: pd.DataFrame) -> pd.DataFrame:
+    """공유 프레임과 배열을 하나도 함께 쓰지 않는 사본. 데이터와 축을 모두 새로 만든다.
+
+    `copy(deep=True)` 는 데이터 배열만 새로 만들고 축은 view 로 넘겨 열 이름 배열을 공유 프레임과
+    함께 쓴다. 축까지 새로 만들어 사본은 어디를 고쳐도 공유 칸·다른 세션에 닿지 않고, 잠긴 배열도
+    물려받지 않는다(열 이름 배열은 표마다 수십 칸이다). `RangeIndex` 는 배열이 없어 그대로 둔다.
+    """
+    copied = frame.copy(deep=True)
+    copied.columns = frame.columns.copy(deep=True)
+    if not isinstance(frame.index, pd.RangeIndex):
+        copied.index = frame.index.copy(deep=True)
+    return copied
 
 
 @st.cache_resource(
@@ -164,7 +186,7 @@ def load_scenario_snapshot(
             "scenario": shared["scenario"],
             "revision": shared["revision"],
             "preset": shared["preset"],
-            "tables": {name: frame.copy(deep=True) for name, frame in shared["tables"].items()},
+            "tables": {name: _private_copy(frame) for name, frame in shared["tables"].items()},
         }
     )
 

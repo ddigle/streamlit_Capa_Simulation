@@ -312,6 +312,9 @@ def test_every_snapshot_call_hands_out_tables_of_its_own(seeded: _Seeded) -> Non
     for name, frame in first.tables.items():
         assert frame is not second.tables[name]
         assert frame is not shared["tables"][name]
+        assert not np.shares_memory(
+            frame.columns.to_numpy(), shared["tables"][name].columns.to_numpy()
+        ), name
         for column in frame.columns:
             assert not np.shares_memory(
                 frame[column].to_numpy(), shared["tables"][name][column].to_numpy()
@@ -324,6 +327,8 @@ def test_every_snapshot_call_hands_out_tables_of_its_own(seeded: _Seeded) -> Non
     upeh[text] = "바뀐 값"  # 열 대입
     first.tables["RQ_REQB"].drop(first.tables["RQ_REQB"].index[:10], inplace=True)
     first.tables["RQ_PKG_PLAN"]["생산수량"] *= 2
+    first.tables["RQ_YLD"].columns.values[0] = "오염된_컬럼"  # 열 이름 배열 제자리 쓰기
+    assert first.tables["RQ_YLD"].columns[0] == "오염된_컬럼"
 
     third = scenario_cache.load_scenario_snapshot(database_path, revision_id)
     for snapshot in (second, third):
@@ -362,8 +367,14 @@ def test_the_shared_snapshot_rejects_in_place_writes(seeded: _Seeded) -> None:
     with pytest.raises(ValueError, match="read-only"):
         upeh.iloc[0, list(upeh.columns).index(numeric)] = before + 1.0
     assert float(upeh[numeric].iloc[0]) == before
-    for frame in shared["tables"].values():
-        copy = frame.copy(deep=True)
+    first_column = upeh.columns[0]
+    with pytest.raises(ValueError, match="read-only"):
+        upeh.columns.values[0] = "오염된_컬럼"
+    assert upeh.columns[0] == first_column
+    for name, frame in shared["tables"].items():
+        assert not frame.columns.to_numpy().flags.writeable, name
+        copy = scenario_cache._private_copy(frame)
+        assert copy.columns.to_numpy().flags.writeable, name
         for column in copy.columns:
             assert copy[column].to_numpy().flags.writeable, column
 
@@ -418,8 +429,14 @@ def test_clearing_the_display_order_cache_reloads_the_shared_snapshot(tmp_path: 
     _assert_same_frame(after.tables["RQ_UPEH"], before.tables["RQ_UPEH"])
 
 
-def test_clearing_the_snapshot_cache_reloads_the_scenario_name(tmp_path: Path) -> None:
-    """이름을 바꾼 뒤 `clear_scenario_snapshot_cache`·`clear_scenario_repository` 가 칸을 비운다."""
+@pytest.mark.parametrize("apply_global_display_order", [True, False])
+def test_clearing_the_snapshot_cache_reloads_the_scenario_name(
+    tmp_path: Path, apply_global_display_order: bool
+) -> None:
+    """이름을 바꾼 뒤 `clear_scenario_snapshot_cache`·`clear_scenario_repository` 가 칸을 비운다.
+
+    공유 칸(공용 표시순서를 얹은 스냅샷)과 저장 원본 칸(`apply_global_display_order=False`) 둘 다다.
+    """
     from capa_simulation.application_bootstrap import ensure_initial_scenario
 
     database_path = tmp_path / "scenario.duckdb"
@@ -427,23 +444,23 @@ def test_clearing_the_snapshot_cache_reloads_the_scenario_name(tmp_path: Path) -
     release = ensure_initial_scenario(repository).release
     assert release is not None
     path = str(database_path)
-    original = scenario_cache.load_scenario_snapshot(
-        path, release.revision_id
-    ).scenario.scenario_name
+
+    def scenario_name() -> str:
+        return scenario_cache.load_scenario_snapshot(
+            path, release.revision_id, apply_global_display_order=apply_global_display_order
+        ).scenario.scenario_name
+
+    original = scenario_name()
 
     repository.rename_scenario(release.scenario_id, "새 이름")
-    assert scenario_cache.load_scenario_snapshot(
-        path, release.revision_id
-    ).scenario.scenario_name == (original)
+    assert scenario_name() == original
     scenario_cache.clear_scenario_snapshot_cache()
-    assert (
-        scenario_cache.load_scenario_snapshot(path, release.revision_id).scenario.scenario_name
-        == "새 이름"
-    )
+    assert scenario_name() == "새 이름"
 
     repository.rename_scenario(release.scenario_id, "또 새 이름")
     scenario_cache.clear_scenario_repository()
-    assert (
-        scenario_cache.load_scenario_snapshot(path, release.revision_id).scenario.scenario_name
-        == "또 새 이름"
-    )
+    assert scenario_name() == "또 새 이름"
+
+    repository.rename_scenario(release.scenario_id, "세 번째 이름")
+    scenario_cache.clear_global_display_order_cache()
+    assert scenario_name() == "세 번째 이름"
