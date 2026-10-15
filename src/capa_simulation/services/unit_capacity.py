@@ -318,7 +318,9 @@ def _join_reference(
     **값 검사는 붙인 뒤, 실제로 붙은 행에만 한다.** 표 전체를 먼저 숫자로 검사하면 BOX·PCB 공정이나
     UPEH 가 없는 달처럼 어느 경로에도 붙지 않는 행의 빈 칸 하나가 계산 전체를 멈추고, 그 값을
     고칠 편집기조차 못 연다. 붙은 행이 걸리면 빈 값과 숫자가 아닌 값을 갈라 건수·키 예시와 함께
-    알린다. 행 자체가 없는 것(연결값 없음)과도 다른 문장이다.
+    알린다. 행 자체가 없는 것(연결값 없음)과도 다른 문장이다. 이 검사는 계산 대상 행을 확정하기
+    **전**이라, 뒤에서 제외될 경로(UPEH·`CAPA_RUN_RATE` 0 이하, 측정률 음수)에만 붙은 행도 행 없음과
+    같이 멈춘다 — 0 이하 검사(`_assert_positive`)는 제외 뒤에 돈다.
     """
     require_columns(reference, [*keys, value_column], table_name)
     prepared = reference[[*keys, value_column]].copy()
@@ -330,7 +332,10 @@ def _join_reference(
         prepared["Area_Name"] = normalize_area_name(prepared["Area_Name"], table_name)
     assert_unique_keys(prepared, keys, f"{table_name}의 연결 키가")
     raw_values = prepared[value_column]
-    blank = raw_values.isna() | raw_values.astype("string").str.strip().eq("").fillna(False)
+    blank = raw_values.isna()
+    if not pd.api.types.is_numeric_dtype(raw_values):
+        # 빈 글자는 글자 컬럼에만 있다. 숫자 컬럼까지 글자로 바꿔 보면 계산마다 그 비용을 낸다.
+        blank |= raw_values.astype("string").str.strip().eq("").fillna(False)
     if missing_value_default is not None:
         raw_values = raw_values.mask(blank, missing_value_default)
         blank = pd.Series(False, index=prepared.index)

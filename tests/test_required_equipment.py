@@ -555,6 +555,50 @@ def test_reqb_rows_that_differ_only_in_spelling_are_one_route() -> None:
     assert table["202608"].tolist() == pytest.approx([20.0])
 
 
+def test_registration_and_calculation_fold_the_same_route_rows() -> None:
+    """등록의 경로 접기(`duplicate_route_rows`)와 계산의 접기(`_prepare_reqb`)는 같은 행을 남긴다.
+
+    계산은 이미 정규화한 표를 `duplicated` 로 접어 정규화를 두 번 하지 않는다. 두 접기가 갈리면
+    등록이 남긴 행을 계산이 또 접거나 서로 다른 행을 남긴다 — 등록 표의 행 수와 소요대수 행 수가
+    어긋난다.
+    """
+    from capa_simulation.services.frame_contracts import duplicate_route_rows
+    from capa_simulation.services.required_equipment import REQB_COLUMNS, _prepare_reqb
+
+    route = {
+        "생산계획년월": 202608,
+        "Area_Name": "Main",
+        "공정": "Process-A",
+        "양산구분": "양산",
+        "제품정보": "Product-A",
+        "Stack": "12H",
+        "Capa Code": "CAPA-A",
+        "Customer": "Customer-A",
+        "CS": "MP",
+        "WF 구분": "Core",
+        "STEP_SEQ": "10",
+        "MCP_SEQ": "1",
+        "소요기준": "WF",
+    }
+    routes = pd.DataFrame(
+        [
+            route,
+            {**route, "소요기준": "Wafer"},
+            {**route, "Area_Name": "MAIN", "공정": " Process-A "},
+            {**route, "소요기준": " wf ", "생산계획년월": "202608"},
+            {**route, "공정": "Process-B"},
+            {**route, "STEP_SEQ": "20", "Area_Name": "mi"},
+            {**route, "STEP_SEQ": "20", "Area_Name": "MI "},
+        ]
+    )
+
+    registered = routes.loc[~duplicate_route_rows(routes, REQB_COLUMNS)]
+    calculated = _prepare_reqb(routes)
+
+    assert len(registered) == 3
+    pd.testing.assert_frame_equal(_prepare_reqb(registered), calculated)
+
+
 # ------------------------------------------------------------------ 소요기준 PKG
 # 사내 버그 보고(2026-09-28): 실제 `RQ_REQB` 의 PKG 행은 WF 구분에 `BUFFER` 같은 실제 분류값을
 # 싣는다. 예전 픽스처는 REQB·대당 Capa 모두 `"PKG"` 로 맞춰 코드의 잘못된 가정을 가렸다.

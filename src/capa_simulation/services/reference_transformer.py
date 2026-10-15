@@ -17,11 +17,11 @@ from capa_simulation.services.core_data_derivation import (
     reject_unmapped_cs_codes,
 )
 from capa_simulation.services.display_order_editor import transform_display_order
+from capa_simulation.services.frame_contracts import duplicate_route_rows
 from capa_simulation.services.reference_conflicts import (
     conflict_report,
     validated_distinct,
 )
-from capa_simulation.services.required_equipment import duplicate_route_rows
 
 
 @dataclass(frozen=True)
@@ -119,7 +119,7 @@ def build_reference_tables_with_conflicts(
         ),
         "RQ_REQB": _rq_reqb(core, selected_contract, conflict_records),
     }
-    tables["RQ_EQP_LENT"], tables["RQ_EQP_AVBL"] = _blank_lent_as_zero(
+    tables["RQ_EQP_LENT"], tables["RQ_EQP_AVBL"] = blank_lent_as_zero(
         tables["RQ_EQP_OWN"], tables["RQ_EQP_LENT"], tables["RQ_EQP_AVBL"]
     )
     business_key_columns = list(
@@ -206,7 +206,7 @@ def _monthly_process_table(
     return validated_distinct(result, table_name, contract, conflict_records)
 
 
-def _blank_lent_as_zero(
+def blank_lent_as_zero(
     own: pd.DataFrame,
     lent: pd.DataFrame,
     available: pd.DataFrame,
@@ -320,9 +320,9 @@ def _rq_reqb(
     원천에 완전 중복 행이 하나 들어오면 그 경로의 소요대수가 조용히 두 배가 된다.
     13개 컬럼 전부가 키인 경로 표라 값 충돌은 생길 수 없고, 중복은 그대로 접힌다.
 
-    원래 글자로 접은 뒤 **계산과 같은 정규화**로 한 번 더 접는다(`duplicate_route_rows`).
-    `WF`·`Wafer` 처럼 표기만 다른 두 행은 계산에서 같은 경로라 접지 않으면 두 번 세어진다. 남는
-    것은 첫 행이고 그 표기는 원천 그대로다.
+    원래 글자로 접은 뒤 **계산과 같은 정규화**로 한 번 더 접는다
+    (`frame_contracts.duplicate_route_rows`). `WF`·`Wafer` 처럼 표기만 다른 두 행은 계산에서 같은
+    경로라 접지 않으면 두 번 세어진다. 남는 것은 첫 행이고 그 표기는 원천 그대로다.
     """
     columns = [
         "생산계획년월",
@@ -342,7 +342,7 @@ def _rq_reqb(
     result = _nonblank_rows(core.loc[:, columns].copy(), "Area_Name")
     # 13컬럼 전부가 업무 키라 `validated_distinct` 가 같은 null·빈값 검사를 같은 메시지로 한다.
     result = validated_distinct(result, "RQ_REQB", contract, conflict_records)
-    return result.loc[~duplicate_route_rows(result)].reset_index(drop=True)
+    return result.loc[~duplicate_route_rows(result, columns)].reset_index(drop=True)
 
 
 def _nonblank_rows(frame: pd.DataFrame, column: str) -> pd.DataFrame:
