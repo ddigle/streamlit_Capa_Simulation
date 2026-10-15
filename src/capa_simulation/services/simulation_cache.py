@@ -51,6 +51,14 @@ from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_contributions,
     span_date_range,
 )
+from capa_simulation.services.process_capa_detail import (
+    PRODUCT_ROW_LIMIT,
+    ProcessCalculationRows,
+    ProcessMonthTrace,
+    build_process_month_trace,
+    build_process_product_demand,
+    process_calculation_rows,
+)
 from capa_simulation.services.product_share import build_product_volume
 from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
@@ -2059,3 +2067,103 @@ def get_milestone_transition_events(
         as_of.isoformat(),
     )
     return _cached_milestone_transition_events(cache_key, equipment)
+
+
+# ------------------------------------------------------------------ 공정 Capa 상세 (공식 기준)
+# 공정 하나 · 분류 하나 · 달 하나짜리 작은 결과라 칸을 넉넉히 둔다. 판정 기준에 닿는 값(과부족·
+# 판정)은 여기 두지 않는다 — 기준을 바꿔도 캐시가 갈릴 일이 없게 화면이 회차마다 만든다
+# (`process_capa_detail.build_process_capa_summary`).
+PROCESS_DETAIL_ROWS_MAX_ENTRIES = 16
+PROCESS_DETAIL_VIEW_MAX_ENTRIES = 32
+
+
+@st.cache_data(show_spinner=False, max_entries=PROCESS_DETAIL_ROWS_MAX_ENTRIES)
+def get_process_calculation_rows(
+    cache_key: ScenarioCacheKey,
+    process: str,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> ProcessCalculationRows:
+    """이 키의 대당 Capa·소요대수 결과와 두 제외 목록을 공정 하나로 거른 조각.
+
+    아래 두 래퍼가 빗나갈 때 이것을 받는다 — 분류·거르기·달을 바꿔도 시나리오 전체 프레임
+    (`get_scenario_capacity_and_demand`, pickle 수십 MB)을 다시 풀지 않고 이 작은 조각만 푼다.
+    이것이 빗나갈 때만 전체 프레임을 푼다. 두 표 묶음은 키의 content_token 을 발급한 활성
+    시나리오·기준정보여야 한다(`get_scenario_capacity_and_demand` 와 같은 계약). 계산 오류는
+    캐시되지 않고 그대로 난다.
+    """
+    unit_capacity, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    return process_calculation_rows(unit_capacity, required_equipment, process=process)
+
+
+@st.cache_data(show_spinner=False, max_entries=PROCESS_DETAIL_VIEW_MAX_ENTRIES)
+def get_process_product_demand(
+    cache_key: ScenarioCacheKey,
+    display_order_key: str,
+    process: str,
+    split: str,
+    months: tuple[int, ...],
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+    _display_order: PreparedDisplayOrder | None,
+    products: tuple[str, ...] = (),
+    production_classes: tuple[str, ...] = (),
+    limit: int = PRODUCT_ROW_LIMIT,
+) -> pd.DataFrame:
+    """공정 하나의 제품별 소요대수 월 표(`build_process_product_demand`).
+
+    키는 시나리오 키 + 표시순서 지문(`display_order_digest`) + 공정·분류·달·거르기·상한이다 — 행
+    차례가 표시순서(산출 결과 · 소요대수)를 따르므로 지문이 키에 든다. `_display_order` 는
+    `display_order_key` 를 만든 `RQ_DISPLAY_ORDER` 를 준비한 것이어야 한다. 빗나가면 공정 조각
+    (`get_process_calculation_rows`)만 받는다.
+    """
+    del display_order_key
+    rows = get_process_calculation_rows(
+        cache_key,
+        process,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    return build_process_product_demand(
+        rows.required_equipment,
+        process=process,
+        split=split,
+        months=months,
+        display_order=_display_order,
+        products=products,
+        production_classes=production_classes,
+        limit=limit,
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=PROCESS_DETAIL_VIEW_MAX_ENTRIES)
+def get_process_month_trace(
+    cache_key: ScenarioCacheKey,
+    process: str,
+    month: int,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> ProcessMonthTrace:
+    """고른 달 한 공정의 경로 인자·공통 인자·제외 경로·근거 요약(`build_process_month_trace`).
+
+    인자 표는 대당 Capa 계산과 같은 조합이다 — `RQ_MODULE` 은 기준정보에서, 나머지는 시나리오
+    표에서 읽는다(`_capacity_tables`). 표는 빗나갈 때만 공정·달로 거른다. 키는 시나리오 키 + 공정·
+    달이다 — 인자 표 내용은 키의 content_token·reference_version 이 정한다.
+    """
+    rows = get_process_calculation_rows(
+        cache_key,
+        process,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    capacity_tables = {
+        name: (
+            _reference_tables[name] if name in REFERENCE_INPUT_TABLES else _scenario_tables[name]
+        )
+        for name in CAPACITY_INPUT_TABLES
+    }
+    return build_process_month_trace(rows, capacity_tables, process=process, month=month)

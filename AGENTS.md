@@ -2066,6 +2066,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     rerun 은 다시 짝짓지 않고, `비교 안 함` 회차는 이 함수까지 오지 않는다. `get_shortening_progress_csv` 는
     그 행의 「진척 비교 CSV」 바이트를 같은 키 + 화면의 카드 차례로 캐시한다(지연 생성 아님). `_plan`·
     `_baseline`·`_rows` 는 그 키로 받은 바로 그것이어야 한다(해시하지 않는다).
+  - 공정 Capa 상세(공식 기준)는 파일 끝의 세 래퍼를 쓴다. `get_process_calculation_rows`(시나리오 키 +
+    공정 → 대당 Capa·소요대수·두 제외 목록을 공정 하나로 거른 조각)가 빗나갈 때만 전체 프레임을 풀고,
+    `get_process_product_demand`(+ 표시순서 지문·분류·달·거르기·상한)와 `get_process_month_trace`(+ 달)는
+    그 조각만 받는다 — 같은 공정에서 분류·달을 바꿔도 시나리오 프레임을 다시 풀지 않는다. 판정 기준에
+    닿는 값(과부족·판정)은 캐시하지 않고 화면이 회차마다 만든다(`build_process_capa_summary`).
 
 ### 계산 서비스
 
@@ -2088,7 +2093,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   CSV·붙여넣기 직렬화. **치환은 여기 없다** — 표시명을 실제로 갈아 끼우는 헬퍼는
   `components/process_labels.py` 에만 둔다.
 - `required_equipment.py`: RQ_REQB 경로 연결과 소요대수
-- `securement_rate.py`: 공정별 확보율과 경고·확보 기준별 최소 정수 추가 필요대수
+- `securement_rate.py`: 공정별 확보율과 경고·확보 기준별 최소 정수 추가 필요대수. `securement_balance` 는
+  행마다 그 달 확보기준에 대한 부호 있는 정수 과부족·판정(`thresholds.status` 한 길)·부족 원인(보유로도
+  부족 / 대여 영향)을 낸다(6장 「소요대수와 확보율」)
+- `process_capa_detail.py`: 공정 Capa 상세의 순수 계산 — 공정 하나의 월별 공식 요약(총보유·대여·가용·
+  소요·확보율·확보기준·판정·과부족·부족 원인·`가용 불일치`), 제품별 소요대수(분류 `PRODUCT_DEMAND_SPLITS`,
+  산출 결과·소요대수 표시순서, 12행 넘으면 「그 밖 k개」 — 자식 합 = 부모), 고른 달의 경로 추적(경로마다
+  부하량·UPEH/ST·환산 UPEH·효율·여유율·모듈수·일수·측정률과 그 근거·대당 Capa·소요대수, 공정 공통 인자,
+  제외 경로, 원수요 부하량을 한 번만 센 근거 요약). 새 계산은 없다 — 계산 결과와 기준정보 표를 공정으로
+  거르고 대당 Capa 와 **같은 키**로 붙일 뿐이라 `unit_capacity.py` 를 고치지 않는다. 그래서 대당 Capa 식을
+  바꾸면 `route_factor_product` 도 같이 고친다(`tests/test_process_capa_detail.py` 의 「경로 인자의 곱 =
+  대당 Capa」가 어긋남을 잡는다). 측정률 1.0 은 「행 없음 → 1.0 가정」과 「빈칸·0 → 1.0」을 가른다
 - `securement_threshold.py`: 공용 확보율 판정 기준(2026-10-06 사용자 결정). 기본 확보·경고 한 짝과
   월별 예외(빈칸 = 기본값)를 정규화·검증하고, 해시 가능한 `SecurementThresholds`(`for_month`·
   `status`·`digest`)와 달마다의 실효 기준 표(`effective_securement_thresholds`)를 만든다. 확보·경고·부족
@@ -4860,6 +4875,21 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 경고 기준 미달 행의 두 단계 추가대수 합은 확보 기준을 충족하기 위한 최소 대수와 같아야
 한다. 월별 부족대수는 동일 설비의 기간 중복을 피하기 위해 전체 기간을 단순 합산하지 않고
 월별 상세와 월 최대치로 표시한다.
+
+**확보기준 과부족은 부호 있는 정수다**(2026-10-15 사용자 결정, `securement_rate.securement_balance`).
+
+```text
+판정 = thresholds.status(가용대수 ÷ 소요대수, 달)        (소요 0 이면 판정 없음)
+판정이 확보가 아니면  과부족 = −확보목표 총 필요대수       (위 식 그대로 — 같은 _ceil_positive)
+그 밖이면            과부족 = +floor(round(가용대수 − 소요대수 × 확보 기준, 9))
+부족 원인 = 소요대수 × 확보 기준 > 총보유대수 이면 「보유로도 부족」, 아니면 「대여 영향」
+            (판정이 확보가 아닌 달만, 9자리 반올림 비교)
+```
+
+칠하기는 판정 한 길(확보율 칸과 과부족 칸이 같은 판정)이고 숫자는 Static Capa 와 같은 올림이다.
+판정은 반올림하지 않은 확보율을 보므로 부동소수 잡음 경계(차이 1e-9 안)에서는 경고·부족으로 칠한
+칸에 0 이 찍힐 수 있다 — 소요 10.000000000000002 · 가용 10.95 · 확보 기준 1.095 가 그렇다
+(`tests/test_securement_balance.py` 가 고정한다).
 
 ### Dynamic Capa 프로토타입
 
