@@ -223,6 +223,9 @@ def render_month_editor(
             dialog_key=dialog_key,
             on_paste=on_paste,
             rename_notice=_has_display_labels(dimensions, value_labels),
+            # 붙여넣기도 격자와 같은 범위를 지난다(격자만 막으면 붙여넣은 85·1.2·음수가 들어온다).
+            min_value=min_value,
+            max_value=max_value,
         )
     return merged, submitted
 
@@ -280,6 +283,8 @@ def _paste_dialog(
     dialog_key: str,
     on_paste: Callable[[pd.DataFrame], None],
     rename_notice: bool,
+    min_value: float | None,
+    max_value: float | None,
 ) -> None:
     def _close() -> None:
         st.session_state.pop(dialog_key, None)
@@ -297,6 +302,8 @@ def _paste_dialog(
             key_columns=dimensions,
             file_name=file_name,
             key=f"{editor_key}_csv",
+            min_value=min_value,
+            max_value=max_value,
         )
         if imported is None:
             return
