@@ -12,14 +12,17 @@
 - **리비전 저장:** 편집본이 계산되지 않는데 편집 전 리비전은 계산되면 → 이 편집이 깨뜨린
   것이므로 막는다. 편집 전부터 계산되지 않았으면 → 저장은 허락하고 경고한다. 막으면 오류가
   여럿일 때 하나씩 고쳐 가며 저장할 길이 없어진다. 경고는 **편집 전후 오류를 견줘** 가른다 —
-  같으면 「편집 전부터 있던 오류」, 다르면 「편집 전과 다른 오류」다. 계산은 첫 오류에서 멈춰
-  다른 오류가 곧 새로 깬 것은 아니므로(앞 오류를 고쳐 뒤 오류가 드러날 수 있다) 막지는 않는다.
+  같으면 「편집 전부터 있던 오류」, 오류문 머리(건수·예시 앞, `_error_kind`)만 같으면 「같은 종류의
+  오류가 걸린 칸만 달라진 것」, 그 밖은 「편집 전과 다른 오류」다. 계산은 첫 오류에서 멈춰 다른
+  오류가 곧 새로 깬 것은 아니므로(앞 오류를 고쳐 뒤 오류가 드러날 수 있다) 막지는 않는다.
 - **공식 발행:** 계산되지 않으면 막는다. 공식버전은 모든 사용자의 첫 화면이라, 지정하는 순간
   모두의 HOME 이 멈춘다.
 
 「계산」은 대당 Capa·소요대수에 더해 **HOME 의 Density 환산**(`RQ_PKG_PLAN` × `RQ_CHIP_EQ`)이다.
 계획이 있는 제품의 `구분_EQ` 가 0 이하면 HOME 이 멈추는데 대당 Capa·소요대수는 그 값을 쓰지 않아,
-Capa 계산만 보면 그 리비전이 통과한다. Density 도 시나리오 전체 기간으로 돌린다.
+Capa 계산만 보면 그 리비전이 통과한다. Density 도 시나리오 전체 기간으로 돌린다. Capa 계산을
+검사하는 **모든 판정과 발행 경로**가 `density_error` 도 부른다 — 세션 없이 캐시 밖에서 계산하는
+경로도 같다(`tests/test_gate_density_coverage.py` 가 지킨다).
 
 BigDataQuery 등록과 내장 시드 부트스트랩은 검사하지 않는다 — 들어온 원천을 앱 안에서 고칠
 길을 막지 않기 위해서다. 등록한 원천의 오류는 계산 페이지와 발행 검사가 드러낸다.
@@ -62,16 +65,19 @@ def _gate_error(
     ).error
     if error is not None:
         return error
-    return _density_error(scenario_tables)
+    return density_error(scenario_tables)
 
 
-def _density_error(tables: Mapping[str, pd.DataFrame]) -> str | None:
+def density_error(tables: Mapping[str, pd.DataFrame]) -> str | None:
     """HOME 의 Density 환산을 시나리오 전체 기간으로 돌려 기준정보 오류를 돌려준다.
 
     HOME 은 조회기간의 계획으로 `build_production_dashboard` → `calculate_density_load` 를 부르고,
-    거기서 나는 `ValueError` 가 화면을 멈춘다. 검사는 Capa 계산과 같이 전체 기간이다 — 보지 않는
-    달의 오류를 그 달을 열 때까지 미루지 않는다(2026-09-28 사용자 결정). 저장·발행 순간에만 돌아
-    캐시하지 않는다.
+    거기서 나는 `ValueError` 가 화면을 멈춘다. 검사는 Capa 계산과 같이 전체 기간이고 EDP 계획도
+    넣는다 — 보지 않는 달의 오류를 그 달을 열 때까지 미루지 않고(2026-09-28 사용자 결정), HOME 기본
+    화면(`get_home_simulation`)이 EDP 계획까지 환산한다. 저장·발행 순간에만 돌아 캐시하지 않는다.
+
+    Capa 계산 검사(`get_full_capacity_outcome` 이든 캐시 없는 같은 계산이든)가 통과하면 **늘
+    이어서** 부른다. Streamlit 캐시·세션을 쓰지 않으므로 세션 없는 경로도 그대로 부를 수 있다.
     """
     try:
         calculate_density_load(tables["RQ_PKG_PLAN"], tables["RQ_CHIP_EQ"])
@@ -107,6 +113,14 @@ def revision_save_verdict(
             "이 편집으로 Capa 계산이 실패해 저장하지 않았습니다. 편집 전 리비전은 계산되므로 "
             f"이번 편집이 깨뜨린 것입니다 — 고친 뒤 다시 저장하세요. 오류: {edited}",
         )
+    if base != edited and _error_kind(base) == _error_kind(edited):
+        return GateVerdict(
+            True,
+            "편집 전과 같은 종류의 Capa 계산 오류가 걸린 칸의 건수·예시만 달라진 채 남아 "
+            "있습니다 — 일부를 고쳤거나 이번 편집이 같은 오류를 더 만든 것입니다. 이 리비전은 "
+            "공식버전으로 지정할 수 없습니다 — 남은 오류를 고쳐 다시 저장하세요. "
+            f"편집 뒤 오류: {edited} / 편집 전 오류: {base}",
+        )
     if base != edited:
         return GateVerdict(
             True,
@@ -120,6 +134,16 @@ def revision_save_verdict(
         "편집 전부터 있던 Capa 계산 오류가 아직 남아 있습니다. 이 리비전은 공식버전으로 "
         f"지정할 수 없습니다 — 남은 오류를 고쳐 다시 저장하세요. 오류: {edited}",
     )
+
+
+def _error_kind(error: str) -> str:
+    """오류문의 머리 — 첫 `": "` 앞. 계산 오류문은 그 뒤에 건수·예시 키를 싣는다.
+
+    `「RQ_VITAL의 편중률 값이 빈 대당 Capa 기준이 있습니다: 2건, 예시 [...]」` 의 머리는 표·컬럼·
+    문제를 말하고 꼬리는 걸린 칸을 센다. 머리가 같으면 같은 오류가 걸린 칸만 달라진 것이다. `": "`
+    가 없으면 문장 전체가 머리다.
+    """
+    return error.split(": ", 1)[0]
 
 
 def official_publish_verdict(database_path: str, revision_id: str) -> GateVerdict:

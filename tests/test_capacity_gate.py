@@ -147,6 +147,36 @@ def test_a_different_error_after_the_edit_is_not_called_the_old_one(
     assert "공식버전으로 지정할 수 없습니다" in verdict.message
 
 
+def _vital_blank(tables: dict[str, pd.DataFrame], count: int) -> dict[str, pd.DataFrame]:
+    """여유율 앞 `count` 행을 비운다. 건수만 다른 같은 오류(「… 값이 빈 …: N건」)를 만든다."""
+    vital = tables["RQ_VITAL"].copy()
+    vital["편중률"] = vital["편중률"].astype("object")
+    vital.loc[vital.index[:count], "편중률"] = None
+    return {**tables, "RQ_VITAL": vital}
+
+
+def test_the_same_error_with_another_count_is_not_called_a_different_one(
+    tables: dict[str, pd.DataFrame],
+) -> None:
+    """같은 오류의 건수·예시만 달라지면 「편집 전과 다른 오류」라 부르지 않는다.
+
+    오류문은 건수와 예시 키를 싣는다. 빈 칸 둘 가운데 하나를 고친 편집을 문자열로만 견주면 「새로
+    깨뜨렸거나 가려져 있던 오류가 드러난 것」이 되는데, 둘 다 아니다 — 같은 오류가 덜 남았다.
+    """
+    version = _version()
+
+    verdict = revision_save_verdict(
+        version, _edited(version, _vital_blank(tables, 1)), _vital_blank(tables, 2)
+    )
+
+    assert verdict.allowed
+    assert verdict.message is not None
+    assert "편집 전과 다른" not in verdict.message
+    assert "같은 종류" in verdict.message
+    assert "1건" in verdict.message and "2건" in verdict.message
+    assert "공식버전으로 지정할 수 없습니다" in verdict.message
+
+
 def _density_broken(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """계획이 있는 제품 하나의 `구분_EQ` 를 0 으로. 대당 Capa·소요대수는 이 값을 쓰지 않는다."""
     plan = tables["RQ_PKG_PLAN"]
