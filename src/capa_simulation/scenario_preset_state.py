@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
 from datetime import date, datetime
 
 import pandas as pd
@@ -23,6 +22,10 @@ PENDING_PRESET_KEY = "pending_scenario_preset"
 MONTH_RANGE_KEY = "production_month_range_v2"
 MONTH_PICKER_KEY = "production_month_picker"
 PROCESS_SELECTION_KEY = "dashboard_bottleneck_process_selection"
+# HOME 이 지금까지 안 공정(`services/process_selection.resolve_included_processes` 의 `seen`).
+# 거기 없던 공정만 「처음 보는 공정」으로 포함한다. 프리셋을 걸 때 지운다
+# (`apply_pending_scenario_preset`) — 다음 HOME 이 새 리비전의 `RQ_REQB` 공정에서 다시 쌓는다.
+PROCESS_SEEN_KEY = "dashboard_bottleneck_process_seen"
 SECURE_THRESHOLD_KEY = "dashboard_secure_threshold_percent"
 WARNING_THRESHOLD_KEY = "dashboard_warning_threshold_percent"
 # 위 두 키는 **레거시**다(2026-10-06 사용자 결정). 판정 기준은 이제 HOME → Preference 의 공용
@@ -46,8 +49,13 @@ def capture_scenario_preset(reference_tables: Mapping[str, pd.DataFrame]) -> Sce
     start_month, end_month = _current_month_range()
     process_options = _available_processes(reference_tables)
     saved_processes = st.session_state.get(PROCESS_SELECTION_KEY)
+    # 세션의 포함 목록에는 HOME 조회기간 밖이라 보이지 않던 공정도 남아 있다(지우지 않는다).
+    # 프리셋은 저장할 표의 `RQ_REQB` 공정만 받으므로 그 밖(편집으로 사라진 공정 등)은 여기서 뺀다.
+    available = set(process_options)
     included_processes = (
-        tuple(str(process) for process in saved_processes)
+        tuple(
+            dict.fromkeys(str(process) for process in saved_processes if str(process) in available)
+        )
         if isinstance(saved_processes, list)
         else tuple(process_options)
     )
@@ -84,14 +92,37 @@ def capture_scenario_preset(reference_tables: Mapping[str, pd.DataFrame]) -> Sce
 def capture_full_data_scenario_preset(
     reference_tables: Mapping[str, pd.DataFrame],
 ) -> ScenarioPreset:
-    """Use every available month and process for a newly downloaded dataset."""
+    """Use every available month and process for a newly downloaded dataset.
+
+    세션에서 가져오는 것은 레거시 확보·경고 값뿐이다(다음 리비전으로 실어 나르기만 한다). 나머지는
+    세션을 읽지 않는 `full_data_scenario_preset` 이 정한다.
+    """
     preset = capture_scenario_preset(reference_tables)
+    return full_data_scenario_preset(
+        reference_tables,
+        secure_threshold=preset.secure_threshold,
+        warning_threshold=preset.warning_threshold,
+    )
+
+
+def full_data_scenario_preset(
+    reference_tables: Mapping[str, pd.DataFrame],
+    *,
+    secure_threshold: float = DEFAULT_SECURE_THRESHOLD_PERCENT / 100.0,
+    warning_threshold: float = DEFAULT_WARNING_THRESHOLD_PERCENT / 100.0,
+) -> ScenarioPreset:
+    """새로 받은 데이터셋의 프리셋 — 원천 전 기간·`RQ_REQB` 전 공정, 표준 목표 Capa 설정은 비움.
+
+    **세션을 읽지 않는다.** 세션이 없는 배경 작업(공식버전 자동 갱신)도 화면 등록과 같은 프리셋을
+    만든다. 레거시 확보·경고 값(판정에 쓰지 않는다)은 부르는 쪽이 실어 준다.
+    """
     start_month, end_month = _full_data_month_range(reference_tables)
-    return replace(
-        preset,
+    return ScenarioPreset(
         start_month=start_month,
         end_month=end_month,
         included_processes=tuple(_available_processes(reference_tables)),
+        secure_threshold=secure_threshold,
+        warning_threshold=warning_threshold,
         standard_target_processes=(),
         standard_target_start_date=None,
         standard_target_end_date=None,
@@ -117,6 +148,13 @@ def apply_pending_scenario_preset() -> bool:
     )
     st.session_state.pop(MONTH_PICKER_KEY, None)
     st.session_state[PROCESS_SELECTION_KEY] = list(value.included_processes)
+    # 아는 공정 기억은 **앞 리비전**의 것이다. 남겨 두면 HOME 이 새 리비전의 공정 가운데 앞
+    # 리비전에 없던 것을 「처음 보는 공정」으로 되살린다 — 프리셋이 뺀 공정(공식버전 자동 갱신의
+    # 자동 off 등)이 이미 HOME 을 본 세션에서만 다시 켜지고, 그 세션이 리비전을 저장하면 off 가
+    # 풀린 프리셋이 저장된다(2026-10-15 자동 갱신 조사). 지우면 새 세션의 첫 화면처럼 프리셋의
+    # 포함 목록을 그대로 믿고, HOME 이 새 리비전의 `RQ_REQB` 공정에서 기억을 다시 쌓는다. 위젯 칸이
+    # 아니라 지워도 브라우저와 어긋날 것이 없다.
+    st.session_state.pop(PROCESS_SEEN_KEY, None)
     st.session_state[SECURE_THRESHOLD_KEY] = value.secure_threshold * 100.0
     st.session_state[WARNING_THRESHOLD_KEY] = value.warning_threshold * 100.0
     standard_target_processes = list(value.standard_target_processes)

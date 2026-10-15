@@ -66,7 +66,11 @@ def test_every_tab_form_is_rendered_in_one_run(seeded_databases: tuple[Path, Pat
     assert [tab.label for tab in app.main.tabs] == [
         ":material/database: 시나리오 관리",
         ":material/cloud_download: BigDataQuery 등록",
+        ":material/autorenew: 자동 갱신",
     ]
+    # 자동 갱신 설정 폼도 같은 rerun 에 선다.
+    assert "시뮬레이션명 키워드" in labels
+    assert "설정 저장" in {button.label for button in app.button}
     # 1단계 조회 폼과 2단계 등록 폼이 한 rerun 에 함께 있어야 탭을 오갈 때 값이 남는다.
     assert {"시작일", "종료일"} <= {widget.label for widget in app.date_input}
     assert "시뮬레이션 코드 조회" in {button.label for button in app.button}

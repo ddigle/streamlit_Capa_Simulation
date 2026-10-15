@@ -39,6 +39,11 @@ def script_stopped_with_its_data(self: LocalScriptRunner) -> bool:
 LocalScriptRunner.script_stopped = script_stopped_with_its_data  # type: ignore[method-assign]
 
 
+# 공식버전 자동 갱신 예약의 실행 줄 허락(`auto_update_scheduler.ENV_VAR`). 그 모듈을 여기서 읽으면
+# 모든 시험이 수집 단계에서 러너·저장소까지 불러오므로 이름만 적는다 —
+# `tests/test_auto_update_scheduler.py` 가 같은 이름인지 본다.
+AUTO_UPDATE_ENV_VAR = "CAPA_AUTO_OFFICIAL_UPDATE"
+
 # 저장소의 실제 DB 자리. 테스트가 경로를 갈아끼우기 **전** 값을 잡아 둔다.
 _REPOSITORY_DATABASES = (settings.DUCKDB_PATH, settings.EQUIPMENT_DUCKDB_PATH)
 _EXISTED_AT_START: dict[str, bool] = {}
@@ -72,6 +77,17 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         names = ", ".join(str(path) for path in created)
         reporter.write_line(f"테스트가 저장소 DB 를 만들었습니다(지웠음): {names}", red=True)
     session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+@pytest.fixture(autouse=True)
+def _without_auto_update_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """공식버전 자동 갱신 예약의 실행 줄 허락(`CAPA_AUTO_OFFICIAL_UPDATE`)을 뺀다.
+
+    사내 런북은 앱을 띄운 창에 이 환경변수를 넣는다. 같은 창에서 pytest 를 돌리면 `app.py` 를 도는
+    AppTest 가 tmp DB 로 예약 스레드를 세우고(시험이 끝나도 남는다), 「꺼짐」 안내를 보는 시험이
+    실패한다. 허락이 필요한 시험은 `environ=` 를 따로 넘긴다.
+    """
+    monkeypatch.delenv(AUTO_UPDATE_ENV_VAR, raising=False)
 
 
 @pytest.fixture(autouse=True)

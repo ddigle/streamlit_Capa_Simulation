@@ -42,6 +42,7 @@ is not registered.」로 멈추고 Figure 가 4개만 남는다(사내 실데이
 import argparse
 import json
 import logging
+import os
 import platform
 import subprocess
 import sys
@@ -375,6 +376,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             # 잡히지 않은 HOME 예외는 Streamlit 로거가 문구째 표준 오류에 찍는다(모듈 설명).
             logging.disable(logging.CRITICAL)
             stack.callback(logging.disable, logging.NOTSET)
+        # 공식버전 자동 갱신 예약의 실행 줄 허락을 뺀다. 앱을 띄운 창에서 이 스크립트를 돌려도
+        # AppTest 의 app.py 가 임시 DB 로 예약 스레드를 세우지 않는다.
+        stack.enter_context(patch.dict(os.environ))
+        os.environ.pop("CAPA_AUTO_OFFICIAL_UPDATE", None)
         started_at = perf_counter()
         # 사본은 이름·경로·행 수를 찍지 않는다 — 출력이 리뷰 문서로 나간다.
         sample = (

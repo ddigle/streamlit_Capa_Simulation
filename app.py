@@ -6,6 +6,7 @@ from pathlib import Path
 import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
+from capa_simulation.auto_update_scheduler import ensure_auto_update_scheduler
 from capa_simulation.components.app_credits import render_app_credits
 from capa_simulation.components.app_header import render_app_header, render_shell_style
 from capa_simulation.components.equipment_data_workspace import has_unsaved_equipment_edits
@@ -211,6 +212,10 @@ with pinned_connections(DUCKDB_PATH):
             st.code(f"{type(exc).__name__}: {exc}")
         st.stop()
     apply_pending_scenario_preset()
+    # 공식버전 자동 갱신 예약 — 이 프로세스에 배경 스레드 하나(`auto_update_scheduler`). 실행 줄
+    # 허락 (`CAPA_AUTO_OFFICIAL_UPDATE=1`)이 없으면 환경변수만 보고 돌아가고, 있으면 첫 회차에 한 번
+    # 세운다. 부트스트랩 **뒤**다 — 마이그레이션이 끝난 DB 에서 돈다. 실패해도 화면은 막지 않는다.
+    ensure_auto_update_scheduler(str(DUCKDB_PATH.resolve()))
     # 입장 화면 Summary 가 그릴 최신 공식버전 요약. 로딩에 포함되도록 페이지보다 **먼저**
     # 보낸다 — 페이지가 `st.stop()` 하면 그 뒤로는 아무것도 브라우저에 닿지 않는다. 회차마다
     # 같은 값이라 한 번만 실제로 오가고, 시나리오 전체 Capa 계산은 HOME 과 한 칸을 나눠 쓴다.

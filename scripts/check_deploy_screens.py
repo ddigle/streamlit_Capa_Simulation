@@ -606,13 +606,21 @@ def app_command(port: int) -> list[str]:
     ]
 
 
+# 공식버전 자동 갱신 예약의 실행 줄 허락(`capa_simulation.auto_update_scheduler.ENV_VAR`). 확인용
+# 자식 앱에는 넘기지 않는다 — 사용자 앱과 같은 DB 로 예약 회차를 돌려 시나리오를 등록·발행하면 안
+# 된다.
+AUTO_UPDATE_ENV_VAR: Final = "CAPA_AUTO_OFFICIAL_UPDATE"
+
+
 def app_environment(root: Path, base: Mapping[str, str] | None = None) -> dict[str, str]:
-    """자식 앱의 환경 — `PYTHONPATH` 맨 앞에 이 저장소의 `src`.
+    """자식 앱의 환경 — `PYTHONPATH` 맨 앞에 이 저장소의 `src`, 자동 갱신 예약 허락은 뺀다.
 
     editable 설치가 다른 작업 폴더(예: 본 저장소)를 가리켜도 자식이 이 저장소의 코드와 DB 를 쓴다
-    (설정의 DB 경로는 `settings.py` 가 놓인 저장소에서 나온다). 사내는 이미 그렇다.
+    (설정의 DB 경로는 `settings.py` 가 놓인 저장소에서 나온다). 사내는 이미 그렇다. 사용자 앱을 띄운
+    창에서 이 스크립트를 돌려도 자식은 예약 스레드를 세우지 않는다(`AUTO_UPDATE_ENV_VAR`).
     """
     env = dict(os.environ if base is None else base)
+    env.pop(AUTO_UPDATE_ENV_VAR, None)
     source = str(root / "src")
     rest = [part for part in env.get("PYTHONPATH", "").split(os.pathsep) if part and part != source]
     env["PYTHONPATH"] = os.pathsep.join([source, *rest])

@@ -29,6 +29,10 @@ from capa_simulation.scenario_state import ActiveScenario, pristine_content_toke
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.scenario_month_merge import merge_scenario_months
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
+from capa_simulation.services.simulation_cache import (
+    full_capacity_outcome,
+    get_full_capacity_outcome,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -95,6 +99,23 @@ def test_an_error_that_was_already_there_does_not_block_the_save(
     for verdict in (edited, untouched):
         assert verdict.allowed
         assert verdict.message is not None and "공식버전으로 지정할 수 없습니다" in verdict.message
+
+
+def test_the_uncached_core_judges_like_the_cached_check(tables: dict[str, pd.DataFrame]) -> None:
+    """배경 회차(공식버전 자동 갱신)가 쓰는 순수 코어는 화면 검사와 같은 결과를 낸다."""
+    for candidate in (tables, _broken(tables)):
+        version = _version()
+        cached = get_full_capacity_outcome(
+            (version, pristine_content_token(version)),
+            _scenario_tables=candidate,
+            _reference_tables=candidate,
+        )
+        uncached = full_capacity_outcome(candidate, candidate)
+
+        assert uncached.error == cached.error
+        if cached.required_equipment is not None:
+            assert uncached.required_equipment is not None
+            pd.testing.assert_frame_equal(uncached.required_equipment, cached.required_equipment)
 
 
 def test_only_a_calculating_revision_can_become_official(tmp_path: Path) -> None:
@@ -370,6 +391,13 @@ def test_publishing_a_revision_with_demand_outside_the_requirement_warns(tmp_pat
             "create_scenario",
             "derived_save_verdict",
         ),
+        # 공식버전 자동 갱신은 세션 없는 배경 회차라 캐시 래퍼 대신 같은 계산의 순수 코어를 쓴다.
+        (
+            "src/capa_simulation/auto_official_update_runner.py",
+            "_publish_filtered_revision",
+            "publish_official_revision",
+            "full_capacity_outcome",
+        ),
     ],
 )
 def test_every_write_path_checks_before_it_writes(
@@ -488,3 +516,40 @@ def test_a_merge_left_without_a_module_points_to_a_new_merge(tmp_path: Path) -> 
         merge_scenario_months(base_tables, donor_tables, second[0], second[-1]),
     )
     assert official_publish_verdict(str(database), remerged.revision.revision_id).allowed
+
+
+# 공식버전 발행(`publish_official_revision`)을 부르는 자리. 앞의 둘은 위 쓰기 경로 목록이 검사
+# 차례를 보고, 내장 시드 부트스트랩은 검사하지 않는 길이다(빈 저장소의 합성 시드). 시나리오 관리
+# 「자동 갱신」 탭의 「지금 실행」과 예약 스레드는 발행을 직접 부르지 않고 회차 함수
+# (`run_auto_official_update` → `_publish_filtered_revision`)를 지난다.
+PUBLISH_CALLERS = {
+    ("src/capa_simulation/components/scenario_management.py", "_render_official"),
+    ("src/capa_simulation/auto_official_update_runner.py", "_publish_filtered_revision"),
+    ("src/capa_simulation/application_bootstrap.py", "ensure_initial_scenario"),
+}
+
+
+def test_no_new_path_publishes_an_official_version_around_the_check() -> None:
+    """발행을 부르는 함수가 늘면 이 목록과 위 쓰기 경로 목록에 함께 더한다."""
+    found: set[tuple[str, str]] = set()
+    sources = [
+        *sorted((PROJECT_ROOT / "src" / "capa_simulation").rglob("*.py")),
+        *sorted((PROJECT_ROOT / "app_pages").glob("*.py")),
+        PROJECT_ROOT / "app.py",
+    ]
+    for path in sources:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            if node.name == "publish_official_revision":
+                continue
+            if any(
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "publish_official_revision"
+                for call in ast.walk(node)
+            ):
+                found.add((path.relative_to(PROJECT_ROOT).as_posix(), node.name))
+
+    assert found == PUBLISH_CALLERS

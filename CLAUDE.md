@@ -116,6 +116,12 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   예외로, 공용 프로필 `version`만 키로 쓰고 DB를 읽지 않는 CSV 직렬화다(항상 그리는 탭이라
   그 비용이 모든 rerun에 실린다). 그 밖의 모듈에 `@st.cache_data`·`@st.cache_resource`를
   새로 두지 않으며, 이 예외를 늘리려면 여기 목록을 같이 고친다.
+- `src/capa_simulation/auto_update_scheduler.py` — 공식버전 자동 갱신 예약. 앱 프로세스의 **유일한
+  배경 스레드**이고 실행 줄 환경변수 `CAPA_AUTO_OFFICIAL_UPDATE=1` 이 있을 때만 `app.py` 부트스트랩
+  뒤 첫 회차에 선다(스레드 이름으로 프로세스에 하나 — `st.cache_resource` 를 쓰지 않아 캐시 경계가
+  아니다). 스레드 안에서는 실행 문맥이 없으므로 `st.*`·`st.session_state`·`st.cache_data` 래퍼를
+  부르지 않고 순수 코어만 쓰며, 캐시 정리는 전역 범위 `st.cache_data` 의 `.clear()` 만 부른다
+  (AGENTS.md 5장 4·9장 「배경 스레드」). 새 배경 스레드를 따로 세우지 않는다.
 - `src/capa_simulation/services/frame_contracts.py` — 서비스 공용 컬럼 계약과 업무 키 정규화.
 - `src/capa_simulation/io/reference_cache.py` — 활성 기준정보 경계. 계산 페이지는 기준정보를
   직접 읽지 말고 `get_effective_reference_tables()`만 쓴다.

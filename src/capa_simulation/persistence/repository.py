@@ -8,6 +8,7 @@ import threading
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
+from datetime import date, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -24,6 +25,7 @@ from capa_simulation.io.core_data_source import (
 from capa_simulation.persistence import (
     advance_load_store,
     advance_shipment_store,
+    auto_official_update_store,
     display_order_store,
     execution_capacity_store,
     home_profile_store,
@@ -51,6 +53,10 @@ from capa_simulation.persistence.display_order_store import (
 )
 from capa_simulation.persistence.migration_runner import SchemaAheadOfCode, apply_migrations
 from capa_simulation.persistence.models import (
+    AutoOfficialUpdateExclusion,
+    AutoOfficialUpdateRun,
+    AutoOfficialUpdateSettingChange,
+    AutoOfficialUpdateSettings,
     GlobalAdvanceLoad,
     GlobalAdvanceShipment,
     GlobalComparisonScenario,
@@ -99,6 +105,11 @@ from capa_simulation.persistence.voc_store import (
 )
 from capa_simulation.services.advance_load import prepare_advance_load
 from capa_simulation.services.advance_shipment import prepare_advance_shipment
+from capa_simulation.services.auto_official_update import (
+    AutoUpdateConfig,
+    TriggerKind,
+    describe_config_change,
+)
 from capa_simulation.services.display_order_editor import ClashKey, DisplayOrderValueClashError
 from capa_simulation.services.execution_capacity import prepare_execution_capacity
 from capa_simulation.services.key_process import normalize_key_process_presets
@@ -287,6 +298,25 @@ def _require_unique_scenario_name(
 
 
 _WRITE_LOCK = threading.RLock()
+
+
+class _RunKeyTaken(Exception):
+    """쓰기 트랜잭션 안에서 회차 키가 이미 잡혀 있었다. 아무것도 쓰지 않고 되돌리는 신호다."""
+
+
+class OfficialReleaseMoved(ValueError):
+    """발행하려는 사이 최신 공식버전이 바뀌었다(다른 사람이 먼저 지정). 아무것도 쓰지 않았다.
+
+    `expected` 는 부르는 쪽이 보고 출발한 최신 번호(없었으면 0), `current` 는 쓰기 트랜잭션 안에서
+    읽은 지금 번호다.
+    """
+
+    def __init__(self, expected: int, current: int) -> None:
+        super().__init__(
+            f"회차 도중 공식버전이 바뀌어(공식 v{expected} → v{current}) 발행하지 않았습니다."
+        )
+        self.expected = expected
+        self.current = current
 
 
 class DuckDBScenarioRepository:
@@ -766,6 +796,160 @@ class DuckDBScenarioRepository:
             past_data_store.replace_global_past_data(connection, prepared, source=source_label)
         return self.load_global_past_data()
 
+    def load_auto_official_update_settings(self) -> AutoOfficialUpdateSettings:
+        """공식버전 자동 갱신 설정. 한 번도 저장하지 않았으면 version 0 의 코드 기본값이다."""
+        with self._connect() as connection:
+            return auto_official_update_store.load_settings(connection)
+
+    def replace_auto_official_update_settings(
+        self,
+        config: AutoUpdateConfig,
+        *,
+        expected_version: int,
+        changed_by: str | None = None,
+        source: str = "시나리오 관리 · 자동 갱신",
+    ) -> AutoOfficialUpdateSettings:
+        """버전을 대조해 설정을 교체하고 무엇을 바꿨는지 변경 기록에 남긴다.
+
+        `expected_version` 은 편집을 시작할 때 본 version 이다. 저장본과 다르면
+        `AutoOfficialUpdateSettingsConflict`(ValueError)로 거부한다. 바꾼 사람 이름은 선택이다
+        (빈 글은 이름 없음). 비교 대상은 트랜잭션 안에서 읽은 저장본이다 — 화면이 본 값이 아니다.
+        """
+        source_label = required_text(source, "자동 갱신 설정 변경 출처")
+        author = (changed_by or "").strip() or None
+        with self._write_transaction() as connection:
+            before = auto_official_update_store.load_settings(connection).config
+            auto_official_update_store.replace_settings(
+                connection,
+                config=config,
+                source=source_label,
+                changed_by=author,
+                change_text=describe_config_change(before, config),
+                expected_version=expected_version,
+            )
+        return self.load_auto_official_update_settings()
+
+    def list_auto_official_update_setting_changes(
+        self, *, limit: int | None = None
+    ) -> list[AutoOfficialUpdateSettingChange]:
+        with self._connect() as connection:
+            return auto_official_update_store.load_setting_changes(connection, limit=limit)
+
+    def claim_auto_official_update_run(
+        self,
+        *,
+        run_key: str,
+        trigger_kind: TriggerKind,
+        run_date: date,
+        started_at: datetime,
+        keyword: str,
+        threshold: float,
+        settings_version: int,
+    ) -> str | None:
+        """회차를 선점한다. 잡았으면 실행 id, 이미 잡힌 회차면 None.
+
+        키 확인과 삽입을 한 쓰기 트랜잭션에서 한다 — 같은 프로세스의 다른 스레드는 쓰기 잠금으로
+        차례를 기다리고, 유일 제약이 마지막 방어선이다. 이미 잡힌 회차는 아무것도 쓰지 않는다(변경
+        신호도 내지 않는다).
+        """
+        run_id = str(uuid4())
+        with self._connect() as connection:
+            if auto_official_update_store.run_key_exists(connection, run_key):
+                return None
+        try:
+            with self._write_transaction() as connection:
+                if auto_official_update_store.run_key_exists(connection, run_key):
+                    raise _RunKeyTaken
+                auto_official_update_store.insert_run(
+                    connection,
+                    run_id=run_id,
+                    run_key=run_key,
+                    trigger_kind=trigger_kind,
+                    run_date=run_date,
+                    started_at=started_at,
+                    keyword=keyword,
+                    threshold=threshold,
+                    settings_version=settings_version,
+                )
+        except (_RunKeyTaken, duckdb.ConstraintException):
+            return None
+        return run_id
+
+    def update_auto_official_update_run(self, run_id: str, values: Mapping[str, object]) -> None:
+        """회차 행의 진행 칸을 고쳐 쓴다(`auto_official_update_store.RUN_UPDATABLE_COLUMNS`)."""
+        with self._write_transaction() as connection:
+            auto_official_update_store.update_run(connection, run_id, values)
+
+    def list_auto_official_update_runs(
+        self, *, limit: int | None = None
+    ) -> list[AutoOfficialUpdateRun]:
+        """실행 기록. 최근에 시작한 것이 위다."""
+        with self._connect() as connection:
+            return auto_official_update_store.load_runs(connection, limit=limit)
+
+    def auto_official_update_run_key_exists(self, run_key: str) -> bool:
+        """그 회차 키가 이미 잡혔는가(예약 회차는 날짜마다 키 하나)."""
+        with self._connect() as connection:
+            return auto_official_update_store.run_key_exists(connection, run_key)
+
+    def find_manual_auto_official_update_run(self, token: str) -> AutoOfficialUpdateRun | None:
+        """「지금 실행」 회차를 부른 쪽의 표(`manual_run_key` 의 끝)로 찾는다. 없으면 None."""
+        with self._connect() as connection:
+            return auto_official_update_store.load_manual_run(connection, token)
+
+    def load_auto_official_update_run(self, run_id: str) -> AutoOfficialUpdateRun:
+        with self._connect() as connection:
+            runs = auto_official_update_store.load_runs(connection, run_id=run_id)
+        if not runs:
+            raise KeyError(f"자동 갱신 실행 기록을 찾을 수 없습니다: {run_id}")
+        return runs[0]
+
+    def abandon_running_auto_official_update_runs(
+        self,
+        *,
+        started_before: datetime,
+        finished_at: datetime,
+        reason: str,
+    ) -> int:
+        """도중에 앱이 꺼져 「실행 중」으로 남은 회차를 오류로 닫는다. 닫은 건수를 돌려준다."""
+        with self._connect() as connection:
+            pending = connection.execute(
+                "SELECT count(*) FROM app_meta.auto_official_update_run "
+                "WHERE status = 'RUNNING' AND started_at < ?",
+                [started_before],
+            ).fetchone()
+        if pending is None or int(pending[0]) == 0:
+            return 0
+        with self._write_transaction() as connection:
+            return auto_official_update_store.abandon_running_runs(
+                connection,
+                started_before=started_before,
+                finished_at=finished_at,
+                reason=required_text(reason, "중단 사유"),
+            )
+
+    def record_auto_official_update_exclusions(
+        self, exclusions: Sequence[AutoOfficialUpdateExclusion]
+    ) -> None:
+        """한 회차가 공정 필터에서 뺀 공정을 남긴다. 빈 목록이면 아무것도 쓰지 않는다."""
+        if not exclusions:
+            return
+        with self._write_transaction() as connection:
+            auto_official_update_store.insert_exclusions(connection, exclusions)
+
+    def list_auto_official_update_exclusions(
+        self,
+        *,
+        run_ids: Collection[str] | None = None,
+        filtered_revision_ids: Collection[str] | None = None,
+    ) -> list[AutoOfficialUpdateExclusion]:
+        with self._connect() as connection:
+            return auto_official_update_store.load_exclusions(
+                connection,
+                run_ids=run_ids,
+                filtered_revision_ids=filtered_revision_ids,
+            )
+
     def create_scenario(
         self,
         metadata: ScenarioCreate,
@@ -1168,8 +1352,14 @@ class DuckDBScenarioRepository:
         *,
         release_name: str,
         note: str | None = None,
+        expected_latest_release_no: int | None = None,
     ) -> OfficialReleaseSummary:
-        """Append an official release pointer to one immutable revision."""
+        """Append an official release pointer to one immutable revision.
+
+        `expected_latest_release_no` 를 주면 쓰기 트랜잭션 안에서 지금 최신 공식버전 번호가 그것과
+        같을 때만 발행한다. 다르면 `OfficialReleaseMoved` 로 거부하고 아무것도 쓰지 않는다 — 오래
+        걸리는 배경 회차(공식버전 자동 갱신)가 출발할 때 본 공식버전 위에서만 발행하게 한다.
+        """
         release_label = required_text(release_name, "공식버전명")
         official_release_id = str(uuid4())
         with self._write_transaction() as connection:
@@ -1192,6 +1382,11 @@ class DuckDBScenarioRepository:
             if release_no_row is None:
                 raise RuntimeError("다음 공식버전 번호를 계산하지 못했습니다.")
             release_no = int(release_no_row[0])
+            if (
+                expected_latest_release_no is not None
+                and release_no - 1 != expected_latest_release_no
+            ):
+                raise OfficialReleaseMoved(expected_latest_release_no, release_no - 1)
             connection.execute(
                 """
                 INSERT INTO app_meta.official_release (
@@ -1286,6 +1481,11 @@ class DuckDBScenarioRepository:
             preset=preset,
             tables=tables,
         )
+
+    def load_revision_preset(self, revision_id: str) -> ScenarioPreset:
+        """리비전의 프리셋 하나. 표를 읽지 않는다 — 공정 필터·레거시 기준만 필요한 쪽이 쓴다."""
+        with self._connect() as connection:
+            return load_preset(connection, revision_id)
 
     def load_revision_table(
         self,
