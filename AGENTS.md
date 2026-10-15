@@ -1731,6 +1731,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     깨뜨렸다). 편집 전부터 계산되지 않았으면 저장은 허락하고 「공식버전으로 지정할 수
     없다」고 경고한다 — 막으면 오류가 여럿일 때 하나씩 고쳐 가며 저장할 길이 없다.
   - **발행:** 계산되지 않는 리비전은 막는다. 공식버전은 모두의 첫 화면이다.
+  - 「계산」은 대당 Capa·소요대수에 **HOME 의 Density 환산**(`calculate_density_load`, 전체 기간)을
+    더한 것이다 — 계획이 있는 제품의 `구분_EQ` 0 이하는 Capa 계산을 통과하고 HOME 만 멈춘다.
+    저장 경고는 편집 전후 오류를 견줘, 같으면 「편집 전부터 있던 오류」, 다르면 「편집 전과 다른
+    오류」라 적는다(계산은 첫 오류에서 멈춰 다른 오류가 곧 새로 깬 것은 아니라 막지는 않는다).
   - 계산 페이지와 **같은 캐시 칸**을 쓴다(`reference_version_for_revision` +
     `pristine_content_token`). 발행이 통과하면 그 리비전의 HOME 계산이 이미 데워져 있다.
   - BigDataQuery 등록·내장 시드 부트스트랩·기간 병합·연도 이동은 검사하지 않는다 — 들어온
@@ -2218,6 +2222,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   **값 칸도 본다** — 숫자로 못 읽는 값은 위 `dropna` 가 행을 지우므로 막고(천 단위 쉼표도
   지역 설정에 따라 뜻이 갈려 받지 않는다), 빈 칸은 정당한 편집이라 막지 않고 개수만 세어
   적용 문구로 알린다. 격자 편집기는 `NumberColumn` 과 변경 수 표시가 이미 그 일을 한다.
+  격자의 하한·상한(`reference_data.EDITOR_FORMATS`)도 붙여넣기가 지난다(`assert_edit_value_range`,
+  `month_editor` 가 격자와 같은 값을 넘긴다) — 양식과 같은 값(원천에 이미 있던 값)은 보지 않는다.
 - `reference_consistency.py`: 기준정보 편집이 **다른 표의 행을 빠뜨렸는지** 저장 전에
   가린다. `RQ_UPEH` 에 새로 생긴 (경로 + 월) 조합 중 `RQ_LOT_RATIO`·`RQ_WF_RATIO` 에
   짝이 없는 것을 찾아 두 표를 **함께** 보고한다 — Lot 만 채우면 다음 조인에서 WF 로 같은
@@ -2226,11 +2232,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `unit_capacity._join_reference` 와 같아야 한다 — 다르면 없는 결손을 만든다.
   적용 경계의 검증 조합 `validate_upeh_edit`·`validate_required_edit` 도 여기 있다 — 판정과
   문구를 정해진 순서로 묶어 `ValueError` 하나로 낸다(기준 정보 화면의 격자 적용·붙여넣기가 부른다).
+  UPEH 는 이번 편집이 MI 행 ST 를 0 이하로 만든 칸도 막는다(`nonpositive_mi_st_rows` — 계산이 쓰는
+  MI 행만, 원래부터 0 이하이던 칸은 그대로).
 - `reference_transformer.py`: XLSB의 `Q_Core_Data`와 15개 Core 파생 Power Query를
   pandas로 대체한다. 수동 입력 `RQ_DISPLAY_ORDER` 는 `display_order_editor` 의
   `transform_display_order` 로 넘긴다. Core 파생 RQ의 동일 업무 키 값 충돌은 **값이 있는
   첫 행**을 임시 적용해 전체 변환을 계속하며 테이블·업무 키·후보값·선택값·원천행 번호가
   포함된 충돌 보고서를 함께 반환한다.
+  `RQ_REQB` 는 원래 글자로 접은 뒤 계산과 같은 정규화로 한 번 더 접는다
+  (`required_equipment.duplicate_route_rows`). 빈 `설비대여평가` 는 표를 접은 **뒤** 0 대로 메우고 그
+  때문에 빈 가용대수는 `보유 − 0` 으로 채운다(`_blank_lent_as_zero` — 원천 행에서 먼저 메우면 형제 행
+  선택이 세 표에서 갈린다). 빈 보유대수는 0 으로 보지 않는다.
   `제품정보`의 원천값은 raw에 보존하고 RQ 파생 전 모든 언더바를 공백으로 바꾼 뒤 연속
   공백을 하나로 축약하여 BigDataQuery와 기존 화면 분류 키를 통일한다.
 - `core_data_pipeline.py`: CSV·BigDataQuery 공급자 결과를 동일한 정규화·RQ 변환
@@ -4761,6 +4773,9 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
 - 계산 대상 행을 먼저 확정한 뒤 편중률·모듈수·`RUN_DAY`의 0 이하 검증을 남은 행에만 돌린다.
   어차피 제외될 행의 기준값이 화면 전체를 멈추면 그 값을 고칠 편집기조차 열 수 없다.
   이 세 검증은 실패 시 위반 건수와 문제 업무 키·값 예시 5건을 메시지에 싣는다.
+  기준정보 값의 빈 값·숫자 아님 검사도 같은 까닭으로 **붙인 뒤 붙은 행에만** 한다
+  (`_join_reference`). BOX·PCB 공정이나 UPEH 가 없는 달의 행은 어느 경로에도 붙지 않아 비어 있어도
+  계산을 멈추지 않는다. 붙은 행이 걸리면 빈 값과 숫자가 아닌 값을 갈라 건수·키 예시를 싣는다.
 - 제외 행은 사유 컬럼과 함께 `CAPACITY_EXCLUSIONS_ATTR`로 전달되고 산출 결과의 대당 Capa·
   확보율 화면이 건수·상세 표·CSV 내려받기로 보여 준다
 - BOX·PCB는 산식 확정 전까지 계산에서 제외한다(제외가 아니라 `추가 예정` 이다 — 11장 참조)
@@ -4783,6 +4798,11 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
 대당 일 Capa = 월간 공정별 대당 Capa ÷ RUN_DAY
 주차별 일 표준 가능량 = 대당 일 Capa × 주차별 가용대수
 ```
+
+- `RQ_RUN_DAY` 는 소요대수가 있는 (월, 공정)에 붙인 **뒤** 붙은 칸만 검사한다
+  (`standard_target_capacity._attach_run_day`). 기준 정보 적용 검사는 UPEH 경로가 쓰지 않는 칸의 0 을
+  허락하므로 그 0 이 표준 목표·재공 현황을 멈추면 안 된다. 붙은 칸의 행 없음·빈 값·숫자 아님·0 이하는
+  각각 다른 문장에 (월, 공정) 예시를 실어 멈춘다.
 
 - 제품 Mix 가중은 공정별 대당 Capa와 동일하게 중복되지 않은 원수요 부하량을 분자로,
   STEP별 소요대수 합을 분모로 사용한다.
@@ -4820,7 +4840,9 @@ STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를
 확보율과 HOME은 공정 수준으로 합산한다.
 
 소요기준은 대소문자를 정규화하며 `WAFER`는 `WF`로 통일한다. 현재 지원 값은 `PKG`,
-`CHIP`, `WF`다.
+`CHIP`, `WF`다. 정규화하면 같아지는 `RQ_REQB` 경로 행(`WF`·`Wafer`, `Main`·`MAIN`, 앞뒤 공백)은
+한 행으로 접는다 — 접지 않으면 같은 부하량·대당 Capa 를 두 번 받아 소요대수가 두 배다. 등록과 계산이
+같은 함수(`required_equipment.duplicate_route_rows`)로 접는다.
 
 **소요기준 `PKG` 는 Buffer 로만 센다**(2026-09-28 사용자 설명). PKG 공정은 Buffer 위에
 Core·Top·Dummy 를 쌓고(스택) Mold·MPGA Saw 로 PKG Chip 단위까지 자른 **뒤의** 공정이라
