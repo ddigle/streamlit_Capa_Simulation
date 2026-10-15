@@ -14,12 +14,29 @@
 
 수치는 이 PC 의 합성 표본 기준이고 실데이터 크기에 따라 달라진다. 절대값이 아니라
 **단계 사이의 차이**를 본다.
+
+**실 DB 사본(`--data-dir <사본 폴더>`).** 사내 런북 6-3 이 실 DB 사본으로 HOME 을 잴 때
+쓴다. 합성 표본을 만들지 않고 그 폴더의 두 DB 를 그대로 쓰며, 비교·선행·실행 프로필이 없어
+잠긴 토글은 `skipped` 로 적고 건너뛴다. 저장소의 `data/`(사용자 앱의 운영 DB)는 받지 않는다 —
+앱이 마이그레이션을 걸 수 있어 사본에만 돌린다. 출력에는 사본의 이름·경로·행 수가 없다.
+
+**화면 모듈은 첫 `AppTest.run()` 안에서 처음 불러온다.** Components v2(가로 스크롤바
+등)는 모듈을 처음 불러올 때 등록되고 등록은 프로세스당 한 번이다. 첫 실행 전에 그런
+모듈을 불러오면 — 키 상수를 꺼내려고 `home_preference` 를 불러와도 스크롤바가 딸려
+온다 — 등록이 AppTest 실행 밖에서 일어나 HOME 이 「Component 'capa_horizontal_scrollbar'
+is not registered.」로 멈추고 Figure 가 4개만 남는다(사내 실데이터 E2E, 202610120655
+리뷰 3장). 그래서 키 상수는 첫 단계를 잰 뒤에 꺼내고, 스크롤바는 대역 없이 실제로
+부른다 — 대역을 걸려면 그 모듈을 먼저 불러와야 해 같은 함정이 된다. 월 범위 「적용」
+단추만 대역이다(AppTest 가 누를 수 없어 늘 「안 누름」이다). `tests/test_benchmark_home.py`
+가 첫 실행 직전에 올라온 모듈과 단계별 Figure 수를 본다.
 """
 
+import argparse
 import json
 import platform
 import subprocess
 import sys
+from collections.abc import Sequence
 from contextlib import ExitStack
 from importlib.metadata import version
 from pathlib import Path
@@ -136,7 +153,15 @@ def run_phase(app: AppTest, phase: str) -> dict[str, object]:
     }
 
 
-def measure_phases(app: AppTest) -> list[dict[str, object]]:
+def measure_phases(app: AppTest, *, skip_unavailable: bool = False) -> list[dict[str, object]]:
+    """단계별로 잰다. `skip_unavailable` 이면 입력이 없어 잠긴 토글은 건너뛰고 그렇다고 적는다.
+
+    합성 표본은 모든 토글의 입력(비교·선행·실행 프로필)을 갖춰 두므로 잠긴 토글은 결함이다.
+    실 DB 사본(`--data-dir`)은 그 프로필이 없을 수 있다 — 그때만 건너뛴다.
+    """
+    results = [run_phase(app, "cold_summary"), run_phase(app, "warm_summary")]
+
+    # 첫 실행이 화면 모듈을 불러온 **뒤에** 꺼낸다(모듈 설명 — 먼저 꺼내면 스크롤바가 미등록이다).
     from capa_simulation.components.home_preference import (
         ADVANCE_SHIPMENT_TOGGLE_KEY,
         ADVANCE_TOGGLE_KEY,
@@ -146,8 +171,6 @@ def measure_phases(app: AppTest) -> list[dict[str, object]]:
         EXECUTION_TOGGLE_KEY,
         PLAN_DETAIL_CUSTOMER_KEY,
     )
-
-    results = [run_phase(app, "cold_summary"), run_phase(app, "warm_summary")]
 
     # 토글을 하나씩 켠다. 끄지 않고 쌓는 것은 실제 사용이 그렇기 때문이다 — 켜 둔 채로
     # 다음 것을 켠다. 각 줄의 차이가 그 토글 하나가 더하는 몫이다.
@@ -160,6 +183,9 @@ def measure_phases(app: AppTest) -> list[dict[str, object]]:
         ("edp", EDP_TOGGLE_KEY),
     ):
         toggle = app.toggle(key=key)
+        if toggle.disabled and skip_unavailable:
+            results.append({"phase": f"on_{phase}", "skipped": "입력 없음(토글 잠김)"})
+            continue
         if toggle.disabled:
             raise RuntimeError(f"{phase} 토글을 적용할 입력 조건이 없습니다.")
         toggle.set_value(True)
@@ -167,23 +193,29 @@ def measure_phases(app: AppTest) -> list[dict[str, object]]:
         if app.session_state[key] is not True:
             raise RuntimeError(f"{phase} 토글이 적용되지 않았습니다.")
         applied = applied_lob_key(app)
+        problem = None
         if phase == "advance" and not (
             applied.show_advance and applied.advance_profile_version > 0
         ):
-            raise RuntimeError("선행 프로필이 Figure에 적용되지 않았습니다.")
+            problem = "선행 프로필이 Figure에 적용되지 않았습니다."
         if phase == "advance_shipment" and not (
             applied.show_advance_shipment and applied.advance_shipment_profile_version > 0
         ):
-            raise RuntimeError("선행 입고 프로필이 Figure에 적용되지 않았습니다.")
+            problem = "선행 입고 프로필이 Figure에 적용되지 않았습니다."
         if phase == "execution" and not (
             applied.show_execution and applied.execution_profile_version > 0
         ):
-            raise RuntimeError("실행 프로필이 Figure에 적용되지 않았습니다.")
+            problem = "실행 프로필이 Figure에 적용되지 않았습니다."
         if (
             phase == "comparison"
             and applied.comparison_revision_id != app.session_state[COMPARISON_REVISION_KEY]
         ):
-            raise RuntimeError("비교 리비전이 Figure에 적용되지 않았습니다.")
+            problem = "비교 리비전이 Figure에 적용되지 않았습니다."
+        if problem is not None and not skip_unavailable:
+            raise RuntimeError(problem)
+        if problem is not None:
+            # 사본에 그 프로필이 없으면 토글은 켜지지만 그림에 더할 것이 없다 — 켠 비용만 잰 것이다.
+            result["note"] = "프로필 없음 — 켠 비용만 잼"
         results.append(result)
 
     # 켠 상태 그대로 한 번 더. 캐시가 흡수하는 몫을 가른다.
@@ -195,17 +227,58 @@ def measure_phases(app: AppTest) -> list[dict[str, object]]:
     return results
 
 
-def main() -> int:
+def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="HOME 단계별 Python rerun 시간. 기본은 임시 DB 의 합성 표본이다."
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help=(
+            "실 DB 사본 폴더(capa_simulation.duckdb 가 있는 곳 — 사내 런북 6-3). 저장소의 "
+            "data/ 는 받지 않는다. 입력이 없는 토글은 건너뛴다"
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def copy_folder_problem(data_dir: Path) -> str | None:
+    """`--data-dir` 로 쓸 수 없는 까닭. 쓸 수 있으면 None.
+
+    저장소의 `data/` 는 사용자 앱이 쓰는 운영 DB 다 — 벤치마크는 마이그레이션을 걸고 세션
+    상태를 만들므로 사본에만 돌린다.
+    """
+    folder = data_dir.expanduser().resolve()
+    if folder == (PROJECT_ROOT / "data").resolve():
+        return "저장소의 data/ 는 쓰지 않는다 — 사본 폴더를 준다(런북 6-3)"
+    if not (folder / "capa_simulation.duckdb").is_file():
+        return "그 폴더에 capa_simulation.duckdb 가 없다"
+    return None
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    data_dir: Path | None = args.data_dir
+    if data_dir is not None:
+        problem = copy_folder_problem(data_dir)
+        if problem is not None:
+            print(problem)
+            return 2
     # UI/캐시 모듈이 settings 경로를 잡기 전에 임시 경로를 설정한다.
     import capa_simulation.settings as settings
 
     with TemporaryDirectory(prefix="capa-home-benchmark-") as temporary, ExitStack() as stack:
         root = Path(temporary)
-        database_path = root / "scenario.duckdb"
-        stack.enter_context(patch.object(settings, "DUCKDB_PATH", database_path))
-        stack.enter_context(
-            patch.object(settings, "EQUIPMENT_DUCKDB_PATH", root / "equipment.duckdb")
+        data_root = root if data_dir is None else data_dir.expanduser().resolve()
+        database_path = data_root / (
+            "scenario.duckdb" if data_dir is None else "capa_simulation.duckdb"
         )
+        equipment_path = data_root / (
+            "equipment.duckdb" if data_dir is None else "equipment_availability.duckdb"
+        )
+        stack.enter_context(patch.object(settings, "DUCKDB_PATH", database_path))
+        stack.enter_context(patch.object(settings, "EQUIPMENT_DUCKDB_PATH", equipment_path))
         stack.enter_context(patch.object(settings, "CORE_DATA_CSV_PATH", root / "unused.csv"))
         stack.enter_context(
             patch(
@@ -213,10 +286,8 @@ def main() -> int:
                 root / "unused_display_order.csv",
             )
         )
-        # AppTest는 브라우저의 custom-component JavaScript를 실행하지 않는다.
-        stack.enter_context(
-            patch("capa_simulation.components.horizontal_scrollbar.render_horizontal_scrollbar")
-        )
+        # 「적용」 단추만 대역이다 — AppTest 는 컴포넌트 JavaScript 를 돌리지 않아 누를 수 없다.
+        # 스크롤바는 대역을 걸지 않는다(모듈 설명).
         stack.enter_context(
             patch(
                 "capa_simulation.components.month_range_picker.render_month_range_apply",
@@ -226,10 +297,15 @@ def main() -> int:
         stack.enter_context(patch("capa_simulation.sync_boot.enable_sync_state_if_managed"))
         stack.enter_context(patch("capa_simulation.sync_boot.heartbeat_if_managed"))
         started_at = perf_counter()
-        sample = prepare_sample(database_path)
+        # 사본은 이름·경로·행 수를 찍지 않는다 — 출력이 리뷰 문서로 나간다.
+        sample = (
+            prepare_sample(database_path)
+            if data_dir is None
+            else {"source": "--data-dir 사본(이름·경로·행 수는 찍지 않는다)"}
+        )
         setup_seconds = round(perf_counter() - started_at, 3)
         app = AppTest.from_file(str(PROJECT_ROOT / "app.py"), default_timeout=300)
-        results = measure_phases(app)
+        results = measure_phases(app, skip_unavailable=data_dir is not None)
 
     revision = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, capture_output=True, text=True, check=True
@@ -253,8 +329,12 @@ def main() -> int:
                 "sample": sample,
                 "setup_seconds": setup_seconds,
                 "measurement": (
-                    "합성 표본의 Python rerun; 브라우저 렌더링 제외; "
-                    "edp_plan_rows=0이면 EDP 데이터 증감은 미측정"
+                    (
+                        "합성 표본의 Python rerun; 브라우저 렌더링 제외; "
+                        "edp_plan_rows=0이면 EDP 데이터 증감은 미측정"
+                    )
+                    if data_dir is None
+                    else "실 DB 사본의 Python rerun; 브라우저 렌더링 제외; 잠긴 토글은 skipped"
                 ),
                 "phases": results,
             },
