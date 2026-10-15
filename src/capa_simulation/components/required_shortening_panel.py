@@ -887,7 +887,9 @@ def _render_progress(
         render_baseline_controls(save, baseline.summary)
 
     _render_downloads(key, plan, scope, level, months, extra=controls)
-    note = scope_note(baseline, plan, months, labels, lapsed=view.summary.lapsed)
+    note = scope_note(
+        baseline, plan, months, labels, lapsed=view.summary.lapsed, renamed=view.renamed
+    )
     if note is not None:
         st.caption(note)
     if not view.cards and not view.outside:

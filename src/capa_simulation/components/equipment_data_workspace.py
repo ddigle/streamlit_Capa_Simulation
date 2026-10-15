@@ -69,6 +69,7 @@ from capa_simulation.services.equipment_csv import (
     build_baseline_import_preview,
     build_downtime_import_preview,
     build_equipment_import_preview,
+    describe_case_variants,
     downtime_csv_bytes,
     downtime_csv_template,
     equipment_csv_bytes,
@@ -917,6 +918,13 @@ def build_import_review(
                 f"붙여넣은 빈칸이 기존 값 {paste.cleared_cells:,}칸을 지웁니다 — 「변경내용」의 "
                 "(빈 값)을 확인하세요. 지우지 않으려면 그 칸을 채우거나 그 열을 빼고 다시 "
                 "붙여넣으세요."
+            )
+        if paste.case_variants:
+            cautions.append(
+                f"대소문자만 다른 기존 호기가 있는데 새 호기로 더합니다: "
+                f"{describe_case_variants(paste.case_variants)}. 같은 설비면 설비명을 기존 표기 "
+                "그대로 적어 다시 붙여넣으세요 — Space 이름 바꾸기는 대소문자·앞뒤 공백을 무시하고 "
+                "겹친 이름을 막습니다."
             )
     elif target == "기존 보유대수":
         incoming = (

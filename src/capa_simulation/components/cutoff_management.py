@@ -31,21 +31,28 @@ from capa_simulation.persistence.equipment_cache import (
     clear_process_cutoff_cache,
     load_process_cutoff,
 )
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.persistence.equipment_repository import (
+    DuckDBEquipmentRepository,
+    ProcessCutoffConflict,
+)
 from capa_simulation.services.process_cutoff import (
     PROCESS_CUTOFF_EDIT_COLUMNS,
     add_missing_cutoff_rows,
     build_process_cutoff_template,
     missing_cutoff_processes,
+    process_cutoff_fingerprint,
 )
 
-__all__ = ["CUTOFF_DRAFT_KEY", "render_cutoff_management"]
+__all__ = ["CUTOFF_BASE_KEY", "CUTOFF_DRAFT_KEY", "render_cutoff_management"]
 
 CUTOFF_DRAFT_KEY = "equipment_cutoff_draft_v1"
+# 초안이 출발한 저장본의 지문(`process_cutoff_fingerprint`). 저장 회차에 저장소가 대조한다.
+CUTOFF_BASE_KEY = "equipment_cutoff_base_v1"
 _EDITOR_KEY = "equipment_cutoff_editor_v1"
 _FORM_KEY = "equipment_cutoff_form_v1"
 _VIEW_PREFIX = "equipment_cutoff_view_v1"
 _FLASH_KEY = "equipment_cutoff_flash_v1"
+_CONFLICT_KEY = "equipment_cutoff_conflict_v1"
 
 
 def render_cutoff_management(
@@ -84,6 +91,11 @@ def render_cutoff_management(
         st.caption(f"설비가 있는 공정 {len(equipment_processes)}개가 모두 채워졌습니다.")
 
     draft = st.session_state.get(CUTOFF_DRAFT_KEY)
+    if not isinstance(draft, pd.DataFrame) or CUTOFF_BASE_KEY not in st.session_state:
+        # 초안이 출발한 저장본의 지문. 저장은 표 전체 교체라, 저장 회차에 저장본이 이 지문과 다르면
+        # 다른 사람이 그 사이 저장한 것이다 — 옛 초안으로 덮지 않는다(`ProcessCutoffConflict`).
+        # 초안만 있고 지문이 없는 세션(이 키가 생기기 전 세션)은 지금 저장본을 출발점으로 본다.
+        st.session_state[CUTOFF_BASE_KEY] = process_cutoff_fingerprint(stored)
     if not isinstance(draft, pd.DataFrame):
         draft = stored.loc[:, PROCESS_CUTOFF_EDIT_COLUMNS].copy() if not stored.empty else None
     if draft is None:
@@ -129,6 +141,9 @@ def render_cutoff_management(
         # 저장 결과는 누른 버튼 바로 아래다. 저장 뒤 rerun 을 건너 살아남게 flash 로 남긴다 —
         # `st.success` 뒤에 곧바로 `st.rerun()` 을 부르면 한 번도 보이지 않는다.
         render_flash(_FLASH_KEY)
+        conflict = st.session_state.pop(_CONFLICT_KEY, None)
+        if isinstance(conflict, str) and conflict:
+            st.warning(conflict, icon=":material/sync_problem:")
         edited = st.data_editor(
             view.frame,
             key=editor_widget_key(_EDITOR_KEY),
@@ -154,19 +169,37 @@ def render_cutoff_management(
 
     if submitted:
         try:
-            saved = repository.save_process_cutoff(merged)
+            saved = repository.save_process_cutoff(
+                merged, expected_fingerprint=str(st.session_state[CUTOFF_BASE_KEY])
+            )
+        except ProcessCutoffConflict as exc:
+            # 최신 저장본으로 다시 연다. 옛 초안을 남기면 다음 저장도 같은 충돌이거나(지문 그대로),
+            # 지문만 고치면 그 사람이 넣은 행을 지운다.
+            clear_process_cutoff_cache()
+            _reset_draft(load_process_cutoff(str(repository.database_path)))
+            st.session_state[_CONFLICT_KEY] = (
+                f"{exc} 최신 저장본으로 다시 열었으니 확인한 뒤 다시 고치세요."
+            )
+            st.rerun()
         except ValueError as exc:
             st.error(str(exc))
         else:
             # 다음 회차가 저장된 값을 읽는다 — Static/Dynamic·필요단축일정이 이 값으로 센다.
             clear_process_cutoff_cache()
-            st.session_state[CUTOFF_DRAFT_KEY] = (
-                saved.loc[:, PROCESS_CUTOFF_EDIT_COLUMNS].copy()
-                if not saved.empty
-                else build_process_cutoff_template([]).loc[:, PROCESS_CUTOFF_EDIT_COLUMNS]
-            )
-            discard_editor(_EDITOR_KEY)
+            _reset_draft(saved)
             queue_flash(_FLASH_KEY, f"공정별 Cut-off {len(saved)}건을 저장했습니다.")
             st.rerun()
 
     return stored
+
+
+def _reset_draft(stored: pd.DataFrame) -> None:
+    """초안을 저장본으로 다시 세우고 그 지문을 출발점으로 둔다. 편집표는 새 위젯으로 선다(행 위치
+    델타가 다른 공정에 붙지 않게)."""
+    st.session_state[CUTOFF_DRAFT_KEY] = (
+        stored.loc[:, PROCESS_CUTOFF_EDIT_COLUMNS].copy()
+        if not stored.empty
+        else build_process_cutoff_template([]).loc[:, PROCESS_CUTOFF_EDIT_COLUMNS]
+    )
+    st.session_state[CUTOFF_BASE_KEY] = process_cutoff_fingerprint(stored)
+    discard_editor(_EDITOR_KEY)

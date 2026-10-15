@@ -12,6 +12,7 @@ from capa_simulation.persistence._sql_helpers import (
     insert_profile_header,
     load_profile_header,
     quote,
+    require_profile_version,
     reset_profile,
 )
 from capa_simulation.persistence.models import GlobalProcessRename
@@ -82,9 +83,20 @@ def load_global_process_rename(connection: duckdb.DuckDBPyConnection) -> GlobalP
 
 
 def replace_global_process_rename(
-    connection: duckdb.DuckDBPyConnection, prepared_rules: pd.DataFrame, *, source: str
+    connection: duckdb.DuckDBPyConnection,
+    prepared_rules: pd.DataFrame,
+    *,
+    source: str,
+    expected_version: int | None = None,
 ) -> None:
-    """검증된 프로필을 교체한다. 호출자가 잠금과 트랜잭션을 소유한다."""
+    """검증된 프로필을 교체한다. 호출자가 잠금과 트랜잭션을 소유한다.
+
+    `expected_version`(편집을 시작할 때 본 version)이 지금 저장본과 다르면 아무것도 쓰지 않고
+    `ProfileVersionConflict` 를 올린다. None 이면 대조하지 않는다.
+    """
+    require_profile_version(
+        connection, "global_process_rename", expected_version, label="공정 표시명"
+    )
     version = reset_profile(connection, "global_process_rename", "global_process_rename_rule")
     insert_global_process_rename(
         connection,

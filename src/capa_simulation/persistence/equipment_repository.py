@@ -90,6 +90,7 @@ from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.process_cutoff import (
     empty_process_cutoff,
     prepare_process_cutoff,
+    process_cutoff_fingerprint,
 )
 from capa_simulation.services.shortening_baseline import (
     ShorteningBaseline,
@@ -109,6 +110,10 @@ _WRITE_LOCK = threading.RLock()
 EMPTY_REVISION_TOKEN = "empty"
 # 한 층 편집을 시작할 때 본 저장값: (저장된 캔버스 — 없으면 None, 저장된 도면 요소의 지문).
 FloorLayoutBase = tuple[CanvasSize | None, str]
+
+
+class ProcessCutoffConflict(ValueError):
+    """Cut-off 편집을 시작한 뒤 다른 세션이 먼저 저장했다. 저장하지 않고 알린다."""
 
 
 @dataclass
@@ -520,13 +525,20 @@ class DuckDBEquipmentRepository:
         with self._write_transaction() as connection:
             connection.execute("DELETE FROM equipment_ops.standard_target_weekly_availability")
 
-    def save_process_cutoff(self, data: pd.DataFrame) -> pd.DataFrame:
+    def save_process_cutoff(
+        self, data: pd.DataFrame, *, expected_fingerprint: str | None = None
+    ) -> pd.DataFrame:
         """공정별 Cut-off 를 **통째로 갈아 끼운다.** 리비전을 만들지 않는다.
 
         0005 의 주차별 가용대수는 들어온 키만 지우고 다시 넣는 부분 upsert 인데, 여기는
         전체 삭제 후 삽입이다. **이 표는 목록 자체가 계약**이기 때문이다 — 행을 지우는
         것이 「그 공정을 산출에서 빼라」는 뜻이라 부분 upsert 로는 그 편집을 표현할
         방법이 없다.
+
+        전체 교체라 옛 초안으로 덮으면 그 사이 다른 사람이 저장한 행이 지워진다. 그래서 화면은
+        편집을 시작할 때 본 표의 지문(`process_cutoff_fingerprint`)을 `expected_fingerprint` 로
+        넘기고, 쓰기 잠금 안에서 지금 저장본의 지문과 다르면 아무것도 쓰지 않고
+        `ProcessCutoffConflict` 를 올린다. None 이면 대조하지 않는다(시드·스크립트).
         """
         prepared = prepare_process_cutoff(data)
         incoming = prepared.rename(
@@ -538,6 +550,14 @@ class DuckDBEquipmentRepository:
             }
         )
         with self._write_transaction() as connection:
+            if expected_fingerprint is not None and expected_fingerprint != (
+                process_cutoff_fingerprint(_stored_process_cutoff(connection))
+            ):
+                raise ProcessCutoffConflict(
+                    "다른 사용자가 먼저 공정별 Cut-off 를 저장해 이번 저장은 반영하지 않았습니다 — "
+                    "저장은 표 전체를 갈아 끼우므로 옛 초안으로 쓰면 그 사이 저장된 행이 "
+                    "지워집니다."
+                )
             connection.execute("DELETE FROM equipment_ops.process_cutoff")
             if not incoming.empty:
                 insert_by_name(
@@ -551,17 +571,7 @@ class DuckDBEquipmentRepository:
     def load_process_cutoff(self) -> pd.DataFrame:
         """저장된 공정별 Cut-off. 한 번도 저장하지 않았으면 빈 계약 프레임."""
         with self._connect() as connection:
-            result = connection.execute(
-                """
-                SELECT process_name AS "공정", product_scope AS "제품구분",
-                       cutoff_days AS "Cutoff일수", note AS "비고"
-                FROM equipment_ops.process_cutoff
-                ORDER BY process_name, product_scope
-                """
-            ).fetchdf()
-        if result.empty:
-            return empty_process_cutoff()
-        return prepare_process_cutoff(result)
+            return _stored_process_cutoff(connection)
 
     def load_shortening_filter_profile(self) -> ShorteningFilterProfile:
         """필요단축일정 공용 조회 조건(0019). 한 번도 저장하지 않았으면 `version` 0 의 빈 값."""
@@ -1166,6 +1176,21 @@ def _require_floor_layout_bases(
                 f"{key[0]} {key[1]} 의 캔버스·도면 요소를 다른 사용자가 먼저 바꿔 저장하지 "
                 "않았습니다. 저장 안 한 배치를 버리고 다시 고치세요."
             )
+
+
+def _stored_process_cutoff(connection: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """열린 연결에서 저장된 공정별 Cut-off. 한 번도 저장하지 않았으면 빈 계약 프레임."""
+    result = connection.execute(
+        """
+        SELECT process_name AS "공정", product_scope AS "제품구분",
+               cutoff_days AS "Cutoff일수", note AS "비고"
+        FROM equipment_ops.process_cutoff
+        ORDER BY process_name, product_scope
+        """
+    ).fetchdf()
+    if result.empty:
+        return empty_process_cutoff()
+    return prepare_process_cutoff(result)
 
 
 def _require_marks_fit(

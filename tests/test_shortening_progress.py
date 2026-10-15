@@ -30,6 +30,7 @@ from capa_simulation.services.shortening_progress import (
     ProgressSummary,
     compare_progress,
     progress_export_frame,
+    rename_suspects,
     scope_difference,
     summarize_progress,
 )
@@ -148,6 +149,37 @@ def test_a_unit_only_now_is_new_and_only_then_is_resolved() -> None:
     summary = summarize_progress(rows, [DA])
     assert (summary.past_days, summary.current_days, summary.change) == (36, 26, -10)
     assert (summary.new, summary.resolved) == (1, 1)
+
+
+def test_a_resolved_and_a_new_unit_in_one_process_are_flagged_as_a_possible_rename() -> None:
+    """기준선은 저장할 때의 설비명으로 굳어 있다. 그 뒤 이름을 바꾼 호기는 옛 이름 「해소」·새 이름
+    「신규 필요」 두 줄로 갈린다 — 이름으로만 짝지으므로 둘을 잇지 않고, 그 공정을 알린다. 가상
+    호기(추가N)·범위 밖·다른 공정만의 해소나 신규는 알리지 않는다."""
+    past = _frame(
+        [
+            _real(DA, "SMP-DAF-11", date(2027, 5, 20), date(2027, 6, 15)),
+            _real(LG, "SMP-LG-11", date(2027, 1, 5), date(2027, 3, 10)),
+            _virtual(LG, "추가1", date(2027, 4, 1)),
+            _real("Out", "SMP-OUT-1", date(2027, 1, 5), date(2027, 3, 10)),
+        ]
+    )
+    current = _frame(
+        [
+            _real(DA, "SMP-DAF-11R", date(2027, 5, 20), date(2027, 6, 15)),
+            _real(LG, "SMP-LG-11", date(2027, 1, 5), date(2027, 3, 10)),
+            _virtual(LG, "추가1", date(2027, 4, 1)),
+            _virtual(LG, "추가2", date(2027, 4, 1)),
+        ]
+    )
+
+    rows = compare_progress(past, current, current_processes=[LG, DA], today=TODAY)
+
+    assert rename_suspects(rows) == (DA,)
+    assert rename_suspects(rows, [LG]) == ()
+    one_side = compare_progress(
+        past.iloc[:1], current.iloc[0:0], current_processes=[DA], today=TODAY
+    )
+    assert rename_suspects(one_side) == ()
 
 
 def test_a_module_bundle_pairs_by_its_unit_key() -> None:

@@ -1,10 +1,16 @@
-# Purpose: 실행 Capa 반영의 값 정규화와 퍼센트포인트 차감 적용을 검증한다.
+# Purpose: 실행 Capa 반영의 값 정규화·퍼센트포인트 차감과 공용 프로필 저장의 버전 대조를 검증한다.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
+from streamlit.testing.v1 import AppTest
 
+from capa_simulation.persistence import DuckDBScenarioRepository
+from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
+from capa_simulation.persistence.cache import clear_global_execution_capacity_cache
 from capa_simulation.services.execution_capacity import (
     EXECUTION_CAPACITY_COLUMNS,
     apply_execution_adjustment,
@@ -127,3 +133,85 @@ def test_rows_without_a_match_are_reported_not_rejected() -> None:
 def test_column_contract_is_enforced() -> None:
     with pytest.raises(ValueError, match="컬럼 계약"):
         prepare_execution_capacity(pd.DataFrame({"생산계획년월": [202607]}))
+
+
+# ------------------------------------------------------------------- 공용 프로필 버전 대조
+
+
+def _scenario_repository(path: Path) -> DuckDBScenarioRepository:
+    repository = DuckDBScenarioRepository(path)
+    repository.initialize()
+    return repository
+
+
+def test_a_save_started_from_an_older_version_is_refused(tmp_path: Path) -> None:
+    """편집을 시작한 뒤 다른 사람이 저장했으면 덮지 않는다 — 판정 기준과 같은 버전 대조다."""
+    repository = _scenario_repository(tmp_path / "scenario.duckdb")
+    repository.replace_global_execution_capacity(
+        _rows([(202607, "DEMO_A", -10.0, "")]), source="A 가 본 것"
+    )
+    repository.replace_global_execution_capacity(
+        _rows([(202607, "DEMO_A", -10.0, ""), (202608, "DEMO_B", -5.0, "B")]), source="B 의 저장"
+    )
+
+    with pytest.raises(ProfileVersionConflict, match="다른 사용자가 먼저"):
+        repository.replace_global_execution_capacity(
+            _rows([(202607, "DEMO_A", -20.0, "")]), source="A 의 저장", expected_version=1
+        )
+
+    profile = repository.load_global_execution_capacity()
+    assert (profile.version, profile.source) == (2, "B 의 저장")
+    assert profile.rows["공정"].tolist() == ["DEMO_A", "DEMO_B"]
+    saved = repository.replace_global_execution_capacity(
+        _rows([(202607, "DEMO_A", -20.0, "")]), source="A 의 저장", expected_version=2
+    )
+    assert saved.version == 3
+
+
+def test_the_execution_editor_refuses_to_overwrite_a_newer_save(tmp_path: Path) -> None:
+    """화면: A 가 편집기를 연 뒤 B 가 저장했다. A 의 저장은 막히고 B 의 저장본이 남는다. 그 회차가
+    그린 최신 저장본에서 다시 누르면 저장된다."""
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _scenario_repository(database_path)
+    repository.replace_global_execution_capacity(
+        _rows([(202607, "DEMO_A", -10.0, "")]), source="A 가 본 것"
+    )
+    script = f"""
+import pandas as pd
+
+from capa_simulation.components.home_preference import _render_execution_editor
+from capa_simulation.components.process_labels import process_labels_from_rules
+from capa_simulation.persistence.cache import load_global_execution_capacity
+
+database_path = {str(database_path)!r}
+_render_execution_editor(
+    months=[202607, 202608],
+    execution_profile=load_global_execution_capacity(database_path),
+    process_options=["DEMO_A", "DEMO_B"],
+    process_labels=process_labels_from_rules(pd.DataFrame()),
+    unmatched=pd.DataFrame(),
+    clamped=pd.DataFrame(),
+    database_path=database_path,
+)
+"""
+    clear_global_execution_capacity_cache()
+    app = AppTest.from_string(script, default_timeout=60).run()
+    assert not app.exception
+
+    repository.replace_global_execution_capacity(
+        _rows([(202607, "DEMO_A", -10.0, ""), (202608, "DEMO_B", -5.0, "B")]), source="B 의 저장"
+    )
+    clear_global_execution_capacity_cache()
+    next(button for button in app.button if button.label == "실행 Capa 저장").click().run()
+
+    assert not app.exception
+    errors = [str(item.value) for item in app.error]
+    assert any("다른 사용자가 먼저" in text for text in errors), errors
+    profile = repository.load_global_execution_capacity()
+    assert (profile.version, profile.source) == (2, "B 의 저장")
+
+    next(button for button in app.button if button.label == "실행 Capa 저장").click().run()
+    assert not app.exception
+    assert not app.error, [str(item.value) for item in app.error]
+    assert repository.load_global_execution_capacity().version == 3
+    clear_global_execution_capacity_cache()

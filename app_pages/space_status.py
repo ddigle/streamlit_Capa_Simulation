@@ -1052,11 +1052,17 @@ else:
                 f"#### :material/map: {selected_building} {selected_floor} 상세 레이아웃",
                 width="content",
             )
+            # 캔버스 이탈 검사는 그린 호기(`floor_equipment`, 필터·레이아웃표시를 지난 것)가 아니라
+            # 저장된 마스터 전체로 한다 — 저장 검증이 보는 행이 그것이다.
             render_floor_layout_editor(
                 database_path=equipment_database_path,
                 building=selected_building,
                 floor=selected_floor,
-                floor_equipment=floor_equipment,
+                saved_equipment=(
+                    latest_snapshot.equipment
+                    if editable and latest_snapshot is not None
+                    else empty_equipment_master()
+                ),
             )
             editing = editable and st.toggle(
                 "배치 편집",

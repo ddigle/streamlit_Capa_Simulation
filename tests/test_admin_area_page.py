@@ -2,7 +2,11 @@
 
 from pathlib import Path
 
+import pandas as pd
 from streamlit.testing.v1 import AppTest
+
+from capa_simulation.persistence.cache import clear_global_process_rename_cache
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages/admin_area.py"
@@ -160,6 +164,39 @@ def test_display_name_equal_to_another_owned_process_warns_but_still_saves(
     # 모든 화면의 공정 상자가 글자를 가른다 — 「다른 공정이 잡힐 수 있다」 는 이제 사실이 아니다.
     assert "다른 공정이 잡힐" not in collision
     assert "설비 마스터에만 있는 공정은 여기서 검사하지 않습니다" in collision
+
+
+def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(tmp_path: Path) -> None:
+    """A 가 직접 편집 표를 연 뒤 B 가 표시명을 저장했다. A 의 저장은 막히고 B 의 저장본이 남는다
+    (판정 기준과 같은 버전 대조). 그 회차가 그린 최신 저장본에서 다시 누르면 저장된다."""
+    database_path = tmp_path / "rename-conflict.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단")], columns=["공정", "표시명"]), source="A 가 본 것"
+    )
+    clear_global_process_rename_cache()
+    app = AppTest.from_string(_rename_component_script(database_path)).run(timeout=60)
+    assert app.text[-1].value == "v1|SAW>절단"
+
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단"), ("MOLD", "성형")], columns=["공정", "표시명"]),
+        source="B 의 저장",
+    )
+    clear_global_process_rename_cache()
+    next(button for button in app.button if button.label == "공용 공정 표시명 저장").click()
+    app.run(timeout=60)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    errors = [str(error.value) for error in app.error]
+    assert any("다른 사용자가 먼저" in text for text in errors), errors
+    assert app.text[-1].value == "v2|SAW>절단;MOLD>성형"
+
+    next(button for button in app.button if button.label == "공용 공정 표시명 저장").click()
+    app.run(timeout=60)
+    assert not list(app.error), [str(error.value) for error in app.error]
+    assert app.text[-1].value == "v3|SAW>절단;MOLD>성형"
+    clear_global_process_rename_cache()
 
 
 def test_proc_rename_tab_shows_the_saved_shared_profile(tmp_path: Path) -> None:

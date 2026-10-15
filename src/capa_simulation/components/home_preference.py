@@ -65,7 +65,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     forget_page_dialogs,
 )
-from capa_simulation.persistence._sql_helpers import pinned_connections
+from capa_simulation.persistence._sql_helpers import ProfileVersionConflict, pinned_connections
 from capa_simulation.persistence.cache import (
     clear_global_advance_load_cache,
     clear_global_advance_shipment_cache,
@@ -128,6 +128,8 @@ from capa_simulation.sidebar_status import condition_card, keeps_app_run_open
 
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
 EXECUTION_NOTE_KEY = "home_preference_execution_note"
+# 실행 Capa 편집을 시작한 회차가 본 공용 version. 저장 회차에 저장소가 대조한다(판정 기준과 같다).
+EXECUTION_BASE_VERSION_KEY = "home_preference_execution_base_version"
 COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
 COMPARISON_REVISION_KEY = "home_preference_comparison_revision"
 ADVANCE_EDITOR_KEY = "home_preference_advance_editor"
@@ -1675,7 +1677,12 @@ def _render_execution_editor(
     clamped: pd.DataFrame,
     database_path: str,
 ) -> None:
-    """기준정보 밖에서 생긴 변수를 확보율에 퍼센트포인트로 얹는 입력 표."""
+    """기준정보 밖에서 생긴 변수를 확보율에 퍼센트포인트로 얹는 입력 표.
+
+    저장은 **버전 대조**다 — 편집을 시작한 회차의 version 을 세션(`EXECUTION_BASE_VERSION_KEY`)에
+    두고 저장 회차에 넘긴다. 그 사이 다른 사람이 저장했으면 저장소가 거부한다.
+    """
+    submitted_base = st.session_state.get(EXECUTION_BASE_VERSION_KEY)
     with st.container(border=True):
         st.markdown("#### :material/bolt: 실행 Capa 반영")
         st.caption(
@@ -1739,14 +1746,28 @@ def _render_execution_editor(
                 },
             )
         if not submitted:
+            st.session_state[EXECUTION_BASE_VERSION_KEY] = execution_profile.version
             _render_execution_notices(unmatched, clamped, process_labels)
             return
+        expected_version = (
+            submitted_base if isinstance(submitted_base, int) else execution_profile.version
+        )
+        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
+        st.session_state[EXECUTION_BASE_VERSION_KEY] = execution_profile.version
         try:
             _save_execution_capacity(
                 database_path,
                 edited=edited,
                 source=note.strip() or "웹 직접 편집",
+                expected_version=expected_version,
             )
+        except ProfileVersionConflict as exc:
+            notice.error(str(exc))
+            # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
+            # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
+            clear_global_execution_capacity_cache()
+            st.session_state.pop(EXECUTION_BASE_VERSION_KEY, None)
+            return
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
             return
@@ -1775,11 +1796,13 @@ def _save_execution_capacity(
     *,
     edited: pd.DataFrame,
     source: str,
+    expected_version: int,
 ) -> None:
     frame = edited.loc[:, list(EXECUTION_CAPACITY_COLUMNS)].copy()
     get_scenario_repository(database_path).replace_global_execution_capacity(
         prepare_execution_capacity(frame),
         source=source,
+        expected_version=expected_version,
     )
     clear_global_execution_capacity_cache()
 

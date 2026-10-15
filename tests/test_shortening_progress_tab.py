@@ -37,6 +37,8 @@ from capa_simulation.services.required_shortening import KIND_SHORTENED
 from capa_simulation.services.shortening_progress import (
     PROGRESS_EXPORT_COLUMNS,
     PROGRESS_IMPROVED,
+    PROGRESS_NEW,
+    PROGRESS_RESOLVED,
     PROGRESS_WORSENED,
 )
 
@@ -205,6 +207,38 @@ def test_a_duplicate_name_is_refused_and_a_baseline_is_deleted_only_when_confirm
     picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
     assert picker.value == NO_COMPARISON and list(picker.options) == ["비교 안 함"]
     assert "shk-prog" not in _html(app)
+    clear_equipment_repository()
+
+
+def test_a_unit_renamed_after_the_baseline_is_flagged_as_a_possible_rename(
+    tmp_path: Path,
+) -> None:
+    """기준선을 저장한 뒤 당긴 호기 하나의 설비명을 바꿨다. 짝짓기는 이름으로만 하므로 옛 이름 줄은
+    「해소」, 새 이름 줄은 「신규 필요」로 갈린다 — 진척 비교가 그 가능성을 한 줄로 알려야 한다
+    (근본 처리인 이름 이력 매핑은 사용자 결정)."""
+    database_path, master = _saved_database(tmp_path)
+    app = _run(database_path)
+    _, units = _csv(app, "equipment_shortening_units_csv")
+    singles = units.loc[units["구분"].eq(KIND_SHORTENED) & units["모듈 수"].eq("1")]
+    old_name = str(singles["호기"].iloc[0])
+    process = str(singles["공정"].iloc[0])
+    app = _save_button(app).click().run()
+    (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
+
+    renamed = master.copy()
+    renamed.loc[renamed["설비명"].eq(old_name), "설비명"] = f"{old_name}-NEW"
+    DuckDBEquipmentRepository(database_path).save_snapshot(
+        empty_equipment_baseline(), renamed, empty_downtime_schedule(), note="이름 바꿈"
+    )
+    app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    rows = _progress_csv(app).set_index("호기")
+    assert rows.at[old_name, "상태"] == PROGRESS_RESOLVED
+    assert rows.at[f"{old_name}-NEW", "상태"] == PROGRESS_NEW
+    captions = [str(item.value) for item in app.caption]
+    flagged = [text for text in captions if "이름을 바꿨다면" in text]
+    assert flagged and process in flagged[0], captions
     clear_equipment_repository()
 
 

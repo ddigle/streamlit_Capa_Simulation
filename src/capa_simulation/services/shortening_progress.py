@@ -77,6 +77,7 @@ __all__ = [
     "ScopeDifference",
     "compare_progress",
     "progress_export_frame",
+    "rename_suspects",
     "scope_difference",
     "summarize_progress",
 ]
@@ -233,6 +234,27 @@ def summarize_progress(
         current_virtual=int((virtual & rows["현재 필요 시점"].notna()).sum()),
         lapsed=int(lapsed.sum()),
         lapsed_current_days=_total(rows.loc[lapsed, "현재 단축일수"]),
+    )
+
+
+def rename_suspects(rows: pd.DataFrame, processes: Iterable[str] | None = None) -> tuple[str, ...]:
+    """한 공정 안에 당긴 호기의 `해소` 와 `신규 필요` 가 함께 있는 공정(행 차례).
+
+    기준선은 저장할 때의 설비명으로 굳어 있고 짝짓기는 이름으로만 한다. 그래서 기준선을 저장한 뒤
+    호기 이름을 바꾸면(Space 이름 바꾸기·RawData) 같은 설비가 옛 이름 `해소`·새 이름 `신규 필요` 두
+    줄로 갈린다. 둘을 이어 붙이지는 않는다 — 실제로 다른 호기가 빠지고 들어온 것과 가를 근거가 없다
+    (이름 이력 매핑은 사용자 결정). 화면이 그 가능성을 알리게 공정만 돌려준다. 가상 호기(추가N)는
+    이름이 차례라 보지 않는다. `processes` 를 주면 그 공정만 본다(화면 범위).
+    """
+    if rows.empty:
+        return ()
+    if processes is not None:
+        rows = rows.loc[rows["공정"].isin(list(processes))]
+    shortened = rows.loc[rows["구분"].eq(KIND_SHORTENED)]
+    resolved = set(shortened.loc[shortened["상태"].eq(PROGRESS_RESOLVED), "공정"])
+    new = set(shortened.loc[shortened["상태"].eq(PROGRESS_NEW), "공정"])
+    return tuple(
+        str(process) for process in dict.fromkeys(rows["공정"]) if process in resolved & new
     )
 
 

@@ -12,7 +12,10 @@ from test_equipment_availability import _baseline, _downtime, _equipment
 
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services import floor_layout_profile
-from capa_simulation.services.equipment_validation import prepare_equipment_master
+from capa_simulation.services.equipment_validation import (
+    floor_equipment_outside_canvas,
+    prepare_equipment_master,
+)
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
     DEFAULT_CANVAS_WIDTH,
@@ -204,6 +207,32 @@ def test_wide_canvas_allows_coordinates_beyond_the_default_range(tmp_path: Path)
         saved.equipment["층"].reset_index(drop=True),
         pd.Series(["1F", "1F"], name="층", dtype=saved.equipment["층"].dtype),
     )
+
+
+def test_canvas_shrink_check_sees_every_saved_unit_of_the_floor() -> None:
+    """도면 팝업의 줄이기·지우기 검사는 저장 검증과 같은 행을 본다 — 레이아웃표시 N·화면 필터와
+    무관하게 그 동·층에서 좌표·크기가 다 있는 호기 전부다. 다른 층·좌표 없는 행은 보지 않는다."""
+    equipment = _equipment()
+    rows = [
+        {**equipment.iloc[0].to_dict(), "설비명": "DEMO-EQ01", "X좌표": 150, "레이아웃표시": "N"},
+        {**equipment.iloc[0].to_dict(), "설비명": "DEMO-EQ02", "X좌표": 88.7, "Xsize": 11.3},
+        {**equipment.iloc[0].to_dict(), "설비명": "DEMO-EQ03", "X좌표": 150, "층": "2F"},
+        {
+            **equipment.iloc[0].to_dict(),
+            "설비명": "DEMO-EQ04",
+            "X좌표": None,
+            "Y좌표": None,
+            "Xsize": 300,
+            "Ysize": 300,
+            "레이아웃표시": "N",
+        },
+    ]
+    saved = prepare_equipment_master(pd.concat([equipment, pd.DataFrame(rows)], ignore_index=True))
+
+    assert floor_equipment_outside_canvas(saved, ("C1", "1F"), (100.0, 60.0)) == ["DEMO-EQ01"]
+    assert floor_equipment_outside_canvas(saved, ("C1", "1F"), (162.0, 60.0)) == []
+    assert floor_equipment_outside_canvas(saved, ("C1", "2F"), (100.0, 60.0)) == ["DEMO-EQ03"]
+    assert floor_equipment_outside_canvas(saved.iloc[0:0], ("C1", "1F"), (10.0, 10.0)) == []
 
 
 def test_jpeg_parsing_stops_when_the_marker_chain_breaks() -> None:
