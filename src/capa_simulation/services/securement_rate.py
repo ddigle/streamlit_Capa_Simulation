@@ -188,10 +188,13 @@ def securement_balance(
       경계(차이가 1e-9 안)에서는 **경고·부족으로 칠한 칸에 0 이 찍힐 수 있다** — 소요
       10.000000000000002·가용 10.95·확보기준 1.095 가 그렇다. 칠하기는 판정을, 숫자는 Static
       Capa 와 같은 올림을 따른다.
-    - **부족 원인**(`부족 원인`)은 판정이 확보가 아닌 행에만 적는다. 총보유로도 소요 × 확보기준에
-      못 미치면 「보유로도 부족」(대여를 거둬도 못 메운다 — 투자 검토), 총보유로는 닿지만 가용
-      (보유 − 대여)이 못 미치면 「대여 영향」이다. 확보인 행은 빈 글자다. 총보유 비교도 같은 9자리
-      반올림을 본다.
+    - **부족 원인**(`부족 원인`)은 판정이 확보가 아닌 행에만 적는다. 총보유로 판정해도
+      (`thresholds.status(총보유 ÷ 소요, 달)`) 확보가 아니면 「보유로도 부족」(대여를 거둬도 못
+      메운다 — 투자 검토), 총보유로는 확보인데 가용이 못 미치면 「대여 영향」이다. 확보인 행은 빈
+      글자다. 원인도 판정과 **같은 길**(반올림하지 않은 비율)로 가른다 — 그래서 총보유 = 가용인 달은
+      칠한 판정이 곧 「보유로도 부족」이고, 잡음 경계에서도 대여 없이 「대여 영향」이 나오지 않는다.
+      이 함수는 대여대수를 모르므로 「대여 영향」은 가용 = 총보유 − 대여를 전제한 이름이다. 대여를
+      아는 쪽(`process_capa_detail.build_process_capa_summary`)이 그 전제가 깨진 달을 다시 가른다.
     - `경고기준 필요대수` 는 `_ceil_positive(소요 × 경고기준 − 가용)` 이다(소요 0 이면 0).
     """
     required = ["생산계획년월", "공정", OWNED_COLUMN, "가용대수", "소요대수"]
@@ -222,7 +225,6 @@ def securement_balance(
 
     secure_gap = demand.mul(result["확보기준"]).sub(available)
     warning_gap = demand.mul(result["경고기준"]).sub(available)
-    owned_gap = demand.mul(result["확보기준"]).sub(result[OWNED_COLUMN])
     short = [status is not None and status != "secure" for status in statuses]
     result[BALANCE_COLUMN] = pd.Series(
         [
@@ -242,13 +244,27 @@ def securement_balance(
     )
     result[CAUSE_COLUMN] = pd.Series(
         [
-            "" if not is_short else CAUSE_OWNED_SHORT if round(float(gap), 9) > 0 else CAUSE_RENTAL
-            for gap, is_short in zip(owned_gap, short, strict=True)
+            _shortage_cause(float(owned_count), float(demand_count), month, thresholds)
+            if is_short
+            else ""
+            for owned_count, demand_count, month, is_short in zip(
+                result[OWNED_COLUMN], demand, months, short, strict=True
+            )
         ],
         index=result.index,
         dtype="object",
     )
     return result[BALANCE_COLUMNS]
+
+
+def _shortage_cause(
+    owned: float, demand: float, month: int, thresholds: SecurementThresholds
+) -> str:
+    """확보가 아닌 행의 원인. 총보유를 가용 자리에 넣어 **같은 판정**(`thresholds.status`)을
+    다시 본다."""
+    if thresholds.status(owned / demand, month) != "secure":
+        return CAUSE_OWNED_SHORT
+    return CAUSE_RENTAL
 
 
 def _prepare_keys_and_value(data: pd.DataFrame, value_column: str, table_name: str) -> None:

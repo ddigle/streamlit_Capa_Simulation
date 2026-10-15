@@ -79,6 +79,20 @@ def test_the_noise_boundary_paints_warning_but_counts_zero() -> None:
     assert balance[STATUS_COLUMN].tolist() == ["warning"]
     assert balance[BALANCE_COLUMN].tolist() == [0]
     assert secure_rows["확보목표 총 필요대수"].tolist() == [0]
+    # 총보유 = 가용(대여 0)이라 원인은 칠한 판정과 같은 길로 「보유로도 부족」이다(대여 영향 아님).
+    assert balance[CAUSE_COLUMN].tolist() == [CAUSE_OWNED_SHORT]
+
+
+def test_the_cause_follows_the_status_on_the_noise_boundary() -> None:
+    """총보유 = 가용인 달은 원인이 늘 「보유로도 부족」이다. 원인도 판정과 같은 비율로 가른다."""
+    balance = securement_balance(
+        _frame([(202601, "Edge", 55.0, 55.0, 50.00000000000001)]),
+        thresholds=SecurementThresholds(1.1, 0.9),
+    )
+
+    assert balance[STATUS_COLUMN].tolist() == ["warning"]
+    assert balance[BALANCE_COLUMN].tolist() == [0]
+    assert balance[CAUSE_COLUMN].tolist() == [CAUSE_OWNED_SHORT]
 
 
 def test_cause_separates_owned_shortage_from_rental() -> None:
@@ -94,6 +108,7 @@ def test_cause_separates_owned_shortage_from_rental() -> None:
         thresholds=SecurementThresholds(1.1, 0.9),
     )
 
+    # 총보유율이 확보기준과 딱 같은 달(OwnedExact, 11 ÷ 10 = 1.1)은 총보유로 확보 → 「대여 영향」.
     assert balance[CAUSE_COLUMN].tolist() == [CAUSE_OWNED_SHORT, CAUSE_RENTAL, CAUSE_RENTAL, ""]
 
 

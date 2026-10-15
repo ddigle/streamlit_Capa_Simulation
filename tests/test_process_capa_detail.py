@@ -27,6 +27,8 @@ from capa_simulation.services.builtin_seed import build_builtin_seed_dataset, bu
 from capa_simulation.services.display_order import prepare_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_REQUIRED
 from capa_simulation.services.process_capa_detail import (
+    CAUSE_AVAILABILITY_MISMATCH,
+    FILTERED_OUT_LABEL,
     GROUPED_COUNT_COLUMN,
     MISMATCH_COLUMN,
     OTHER_ROW_COLUMN,
@@ -35,6 +37,7 @@ from capa_simulation.services.process_capa_detail import (
     RATIO_ASSUMED_MISSING_ROW,
     RATIO_BLANK_OR_ZERO,
     ROUTE_COLUMNS,
+    RULE_EXCLUDED_COLUMN,
     ProcessMonthTrace,
     build_process_capa_summary,
     build_process_month_trace,
@@ -44,7 +47,12 @@ from capa_simulation.services.process_capa_detail import (
     process_capa_kpis,
     route_factor_product,
 )
-from capa_simulation.services.securement_rate import calculate_securement_rate
+from capa_simulation.services.required_equipment import PKG_UNCOUNTED_REASON
+from capa_simulation.services.securement_rate import (
+    CAUSE_OWNED_SHORT,
+    CAUSE_RENTAL,
+    calculate_securement_rate,
+)
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import CAPACITY_INPUT_TABLES, get_capacity_and_demand
 
@@ -212,7 +220,55 @@ def test_kpis_read_the_lowest_rate_shortages_and_causes() -> None:
     assert kpis.lowest_rate_month == 202602
     assert kpis.shortage_months == 2
     assert kpis.max_shortage == 3
-    assert (kpis.owned_short_months, kpis.rental_months) == (1, 1)
+    assert (kpis.owned_short_months, kpis.rental_months, kpis.mismatch_months) == (1, 1, 0)
+
+
+def test_a_shortage_from_an_edited_available_count_is_not_called_rental() -> None:
+    """가용만 따로 낮춘 달(대여 0)은 「대여 영향」이 아니라 「가용 불일치」다.
+
+    - 202601: 총보유 12 · 대여 0 · 가용 8 — 총보유 − 대여로는 확보(1.2)라 대여 탓이 아니다.
+    - 202602: 총보유 12 · 대여 3 · 가용 8 — 어긋나지만(12 − 3 ≠ 8) 총보유 − 대여(0.9)로도 미달이라
+      대여가 부족에 들어간다 → 「대여 영향」 그대로.
+    - 202603: 총보유 12 · 대여 4 · 가용 8 — 어긋남 없음 → 「대여 영향」.
+    - 202604: 총보유 9 · 대여 0 · 가용 8 — 총보유로도 미달 → 「보유로도 부족」.
+    """
+    months = [202601, 202602, 202603, 202604]
+    securement = pd.DataFrame(
+        {
+            "생산계획년월": months,
+            "공정": ["P"] * 4,
+            "가용대수": [8.0] * 4,
+            "소요대수": [10.0] * 4,
+        }
+    )
+    owned = pd.DataFrame(
+        {"생산계획년월": months, "공정": ["P"] * 4, "설비보유": [12.0, 12.0, 12.0, 9.0]}
+    )
+    lent = pd.DataFrame(
+        {"생산계획년월": months, "공정": ["P"] * 4, "설비대여평가": [0.0, 3.0, 4.0, 0.0]}
+    )
+
+    summary = build_process_capa_summary(
+        securement,
+        owned,
+        lent,
+        process="P",
+        months=months,
+        thresholds=SecurementThresholds(1.1, 0.9),
+    )
+    kpis = process_capa_kpis(summary)
+
+    assert summary[MISMATCH_COLUMN].tolist() == [True, True, False, True]
+    assert summary["부족 원인"].tolist() == [
+        CAUSE_AVAILABILITY_MISMATCH,
+        CAUSE_RENTAL,
+        CAUSE_RENTAL,
+        CAUSE_OWNED_SHORT,
+    ]
+    assert (kpis.owned_short_months, kpis.rental_months, kpis.mismatch_months) == (1, 2, 1)
+    assert kpis.owned_short_months + kpis.rental_months + kpis.mismatch_months == (
+        kpis.shortage_months
+    )
 
 
 # ------------------------------------------------------------------ 제품별 소요대수
@@ -329,8 +385,36 @@ def test_filtered_out_products_land_in_the_other_row() -> None:
         products=["P01", "P04"],
     )
 
-    assert demand[PRODUCT_LABEL_COLUMN].tolist() == ["P01", "P04", "그 밖 2개"]
+    assert demand[PRODUCT_LABEL_COLUMN].tolist() == ["P01", "P04", "그 밖 2개 (거르기 밖 포함)"]
     assert demand["202601"].tolist() == pytest.approx([1.0, 4.0, 5.0])
+    assert demand[GROUPED_COUNT_COLUMN].tolist() == [1, 1, 2]
+
+
+def test_the_other_row_does_not_recount_values_shown_above() -> None:
+    """제품으로 거르고 Stack 으로 나누면 거르기 밖 제품이 위에 보이는 Stack 값을 실을 수 있다.
+
+    「그 밖」의 수는 위에 안 보이는 분류값만 센다. 안 보이는 값이 없으면 이름이 「거르기 밖」이다.
+    """
+    frame = _many_products(3)
+    frame["Stack"] = frame["제품정보"].map({"P01": "8H", "P02": "8H", "P03": "12H"})
+
+    split_by_stack = build_process_product_demand(
+        frame, process="Proc", split="Stack", months=[202601], products=["P01"]
+    )
+    only_shared = build_process_product_demand(
+        frame.loc[frame["제품정보"].ne("P03")],
+        process="Proc",
+        split="Stack",
+        months=[202601],
+        products=["P01"],
+    )
+
+    assert split_by_stack[PRODUCT_LABEL_COLUMN].tolist() == ["8H", "그 밖 1개 (거르기 밖 포함)"]
+    assert split_by_stack[GROUPED_COUNT_COLUMN].tolist() == [1, 1]
+    assert split_by_stack["202601"].tolist() == pytest.approx([1.0, 2.0 + 3.0])
+    assert only_shared[PRODUCT_LABEL_COLUMN].tolist() == ["8H", FILTERED_OUT_LABEL]
+    assert only_shared[GROUPED_COUNT_COLUMN].tolist() == [1, 0]
+    assert only_shared["202601"].tolist() == pytest.approx([1.0, 2.0])
 
 
 def test_two_level_split_labels_and_zero_rows() -> None:
@@ -487,7 +571,66 @@ def test_excluded_routes_carry_the_unit_capacity_reason(tables: dict[str, pd.Dat
     assert trace.routes["제품정보"].tolist() == ["DEMO PRODUCT B"]
     assert trace.excluded["제품정보"].tolist() == ["DEMO PRODUCT A"]
     assert trace.excluded["제외사유"].tolist() == ["대당 Capa 없음 (UPEH 0 이하)"]
+    assert trace.excluded[RULE_EXCLUDED_COLUMN].tolist() == [False]
     assert trace.evidence.excluded_route_count == 1
+    assert trace.evidence.rule_excluded_route_count == 0
+
+
+def _month_rows_of(rows: pd.DataFrame, process: str, month: int) -> pd.DataFrame:
+    here = _process_rows_of(rows, process) & pd.to_numeric(rows["생산계획년월"]).eq(month)
+    return rows.loc[here].reset_index(drop=True)
+
+
+def test_rule_exclusions_are_counted_apart_from_errors(tables: dict[str, pd.DataFrame]) -> None:
+    """PKG 의 Buffer 아닌 행(규칙상 제외)은 오류 제외 수에 들지 않는다 — 정상 공정이 늘 「제외 경로
+    n」을 띄우지 않게."""
+    unit, required = get_capacity_and_demand(tables)
+    rows = process_calculation_rows(unit, required, process=WAFER_PROCESS)
+    base = _month_rows_of(rows.required_equipment, WAFER_PROCESS, TRACE_MONTH)
+    pkg = base.copy()
+    pkg["소요기준"] = "PKG"
+    pkg["WF 구분"] = "Top"
+    pkg["제외사유"] = PKG_UNCOUNTED_REASON
+    pkg["부하량"] = 0.0
+    broken = base.head(1).assign(STEP_SEQ="DEMO-P999", 제외사유="대당 Capa 없음")
+    exclusions = pd.concat([pkg, broken], ignore_index=True)
+
+    trace = build_process_month_trace(
+        rows._replace(required_exclusions=exclusions),
+        _capacity_tables(tables),
+        process=WAFER_PROCESS,
+        month=TRACE_MONTH,
+    )
+
+    assert trace.evidence.rule_excluded_route_count == len(base)
+    assert trace.evidence.excluded_route_count == 1
+    assert trace.excluded[RULE_EXCLUDED_COLUMN].sum() == len(base)
+    assert set(trace.excluded.loc[trace.excluded[RULE_EXCLUDED_COLUMN], "제외사유"]) == {
+        PKG_UNCOUNTED_REASON
+    }
+
+
+def test_a_process_with_two_demand_bases_still_gives_its_evidence(
+    tables: dict[str, pd.DataFrame],
+) -> None:
+    """공정당 소요기준 하나는 본 계산이 강제하지 않는다. 그 데이터에서도 근거 요약은 멈추지 않고
+    원수요 키로 중복을 뺀 부하량을 낸다."""
+    unit, required = get_capacity_and_demand(tables)
+    rows = process_calculation_rows(unit, required, process=WAFER_PROCESS)
+    base = _month_rows_of(rows.required_equipment, WAFER_PROCESS, TRACE_MONTH)
+    second_step = base.assign(STEP_SEQ="DEMO-P201")
+    other_basis = base.head(1).assign(소요기준="CHIP", 부하량=7.0, STEP_SEQ="DEMO-P202")
+    edited = pd.concat([base, second_step, other_basis], ignore_index=True)
+
+    trace = build_process_month_trace(
+        rows._replace(required_equipment=edited),
+        _capacity_tables(tables),
+        process=WAFER_PROCESS,
+        month=TRACE_MONTH,
+    )
+
+    single_load = float(pd.to_numeric(base["부하량"]).sum())
+    assert trace.evidence.unique_demand_load == pytest.approx(single_load + 7.0)
 
 
 def test_a_month_without_rows_gives_an_empty_trace(tables: dict[str, pd.DataFrame]) -> None:
@@ -575,9 +718,11 @@ def test_wrappers_match_the_pure_functions(
     pd.testing.assert_frame_equal(
         cached_trace.evidence.top_products, expected_trace.evidence.top_products
     )
-    # 근거 요약의 숫자 칸(상위 제품 표 앞뒤).
-    assert cached_trace.evidence[:6] == expected_trace.evidence[:6]
-    assert cached_trace.evidence[7:] == expected_trace.evidence[7:]
+    # 근거 요약의 숫자 칸(상위 제품 표 밖).
+    blank = pd.DataFrame()
+    assert cached_trace.evidence._replace(top_products=blank) == expected_trace.evidence._replace(
+        top_products=blank
+    )
 
 
 def test_changing_split_filter_or_month_does_not_unpickle_the_scenario_frames(

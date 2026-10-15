@@ -31,7 +31,10 @@ from capa_simulation.services.frame_contracts import (
     normalize_demand_basis,
     require_columns,
 )
-from capa_simulation.services.required_equipment import REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR
+from capa_simulation.services.required_equipment import (
+    PKG_UNCOUNTED_REASON,
+    REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
+)
 from capa_simulation.services.securement_rate import (
     BALANCE_COLUMN,
     CAUSE_COLUMN,
@@ -48,7 +51,7 @@ from capa_simulation.services.unit_capacity import (
     MEASUREMENT_RATIO_ZERO_DEFAULT,
     PERFORMANCE_KEYS,
 )
-from capa_simulation.services.weighted_unit_capacity import effective_process_capacity_long
+from capa_simulation.services.weighted_unit_capacity import DEMAND_ID_COLUMNS
 
 MONTH = "생산계획년월"
 
@@ -58,6 +61,9 @@ LENT_COLUMN: Final = "대여대수"
 # 어긋나면 표를 손으로 고쳤거나 파생이 바뀐 것이다 — 화면이 ⚠ 로 알린다.
 MISMATCH_COLUMN: Final = "가용 불일치"
 AVAILABILITY_TOLERANCE: Final = 1e-9
+# 부족 원인의 셋째 값. 가용이 `총보유 − 대여` 와 어긋난 달에서, 총보유 − 대여로는 확보인데 가용이
+# 모자라면 대여 탓이 아니다 — 표가 따로 고쳐진 탓이다(기준정보 화면이 셋을 따로 편집한다).
+CAUSE_AVAILABILITY_MISMATCH: Final = "가용 불일치"
 SUMMARY_COLUMNS: Final = [
     MONTH,
     "공정",
@@ -90,6 +96,9 @@ PRODUCT_LABEL_COLUMN: Final = "분류"
 OTHER_ROW_COLUMN: Final = "그 밖"
 GROUPED_COUNT_COLUMN: Final = "묶은 수"
 OTHER_LABEL_SEPARATOR: Final = " · "
+# 거르기 밖 소요가 든 「그 밖」 행의 꼬리말과, 위에 안 보이는 분류값이 없을 때의 이름.
+OTHER_FILTERED_SUFFIX: Final = " (거르기 밖 포함)"
+FILTERED_OUT_LABEL: Final = "거르기 밖"
 
 # ------------------------------------------------------------------ 경로 추적
 ROUTE_KEYS: Final = [
@@ -130,6 +139,10 @@ ROUTE_COLUMNS: Final = [
     "소요대수",
 ]
 EXCLUSION_REASON_COLUMN: Final = "제외사유"
+# 규칙상 빠진 경로(계산 규칙이 일부러 세지 않는 행). 오류 제외와 섞어 세면 정상 공정도 늘 「제외
+# 경로 n」을 띄운다 — 근거 요약은 둘을 따로 센다.
+RULE_EXCLUSION_REASONS: Final = (PKG_UNCOUNTED_REASON,)
+RULE_EXCLUDED_COLUMN: Final = "규칙상 제외"
 MISSING_CAPACITY_REASON: Final = "대당 Capa 없음"
 TOP_PRODUCT_LIMIT: Final = 5
 SHARE_COLUMN: Final = "비중"
@@ -163,6 +176,9 @@ def build_process_capa_summary(
     - 확보율·가용 행이 없는 달은 가용·소요 0 이다(확보율 없음, 판정 없음). 소요가 있는데 가용 행이
       없으면 `calculate_securement_rate` 가 이미 멈췄다.
     - 판정·과부족·부족 원인은 `securement_balance` 한 길이다(그 달 확보기준 = `for_month`).
+    - 다만 `가용 불일치` 인 달에서 「대여 영향」은 다시 가른다. 총보유 − 대여로 판정해도 확보면
+      대여는 부족의 까닭이 아니므로 「가용 불일치」(`CAUSE_AVAILABILITY_MISMATCH`)로 둔다 — 대여
+      0 인데 가용만 낮춘 달이 그렇다. 총보유 − 대여로도 확보가 아니면 「대여 영향」 그대로다.
     """
     require_columns(securement_rate, [MONTH, "공정", "가용대수", "소요대수"], "확보율")
     key = process.strip()
@@ -188,6 +204,22 @@ def build_process_capa_summary(
     result[LENT_COLUMN] = pd.Series([lent.get(m, 0.0) for m in ordered], dtype="float64")
     residual = result[OWNED_COLUMN].sub(result[LENT_COLUMN]).sub(result["가용대수"])
     result[MISMATCH_COLUMN] = residual.abs().gt(AVAILABILITY_TOLERANCE)
+    result[CAUSE_COLUMN] = [
+        CAUSE_AVAILABILITY_MISMATCH
+        if cause == CAUSE_RENTAL
+        and mismatch
+        and thresholds.status((owned_count - lent_count) / demand_count, int(month)) == "secure"
+        else cause
+        for cause, mismatch, owned_count, lent_count, demand_count, month in zip(
+            result[CAUSE_COLUMN],
+            result[MISMATCH_COLUMN],
+            result[OWNED_COLUMN],
+            result[LENT_COLUMN],
+            result["소요대수"],
+            result[MONTH],
+            strict=True,
+        )
+    ]
     return result[SUMMARY_COLUMNS]
 
 
@@ -200,10 +232,13 @@ class ProcessCapaKpis(NamedTuple):
     max_shortage: int
     owned_short_months: int
     rental_months: int
+    mismatch_months: int
 
 
 def process_capa_kpis(summary: pd.DataFrame) -> ProcessCapaKpis:
     """최저 확보율과 그 달, 확보기준 미달 달 수·월 최대 부족 대수, 부족 원인별 달 수.
+
+    원인별 달 수(보유로도 부족·대여 영향·가용 불일치)를 더하면 미달 달 수다.
 
     미달 달은 판정이 확보가 아닌 달이다(Static Capa 와 같은 정의). 월 최대 부족은 과부족 음수 크기의
     최댓값이다 — 잡음 경계 달은 미달로 세되 크기는 0 이다.
@@ -225,6 +260,7 @@ def process_capa_kpis(summary: pd.DataFrame) -> ProcessCapaKpis:
         max_shortage=int(max(0, -int(balances.min()))) if not balances.empty else 0,
         owned_short_months=int(summary[CAUSE_COLUMN].eq(CAUSE_OWNED_SHORT).sum()),
         rental_months=int(summary[CAUSE_COLUMN].eq(CAUSE_RENTAL).sum()),
+        mismatch_months=int(summary[CAUSE_COLUMN].eq(CAUSE_AVAILABILITY_MISMATCH).sum()),
     )
 
 
@@ -315,10 +351,13 @@ def build_process_product_demand(
       오름차순이다.
     - 기간 안 소요가 0 인 분류는 행을 두지 않는다(더해도 0 이라 합은 그대로다).
     - `products`·`production_classes` 로 거르면(비면 거르지 않음) 거른 밖의 소요는 「그 밖」에
-      합친다.
+      합친다. 거르기와 분류 컬럼이 다르면(제품으로 거르고 Stack 으로 나누면) 거르기 밖 소요가 위에
+      보이는 분류값과 같은 값을 실을 수 있다 — 그래서 그때 「그 밖」 이름은 꼬리말
+      「(거르기 밖 포함)」을 달고, 위에 안 보이는 분류값이 하나도 없으면 「거르기 밖」이다.
     - 분류가 `limit` 개를 넘으면 기간 소요가 큰 `limit` 개를 남기고(같으면 표시순서 앞쪽) 나머지는
       「그 밖」에 합친다. 남긴 행은 표시순서 그대로다.
-    - 「그 밖」 행의 분류 컬럼은 빈 글자, `분류` 는 「그 밖 k개」, `묶은 수` 는 묶인 분류값 수 k 다.
+    - 「그 밖」 행의 분류 컬럼은 빈 글자, `분류` 는 「그 밖 k개」, `묶은 수` 는 그 행에 묶인 분류값
+      가운데 **위에 보이지 않는 것**의 수 k 다(위 행과 겹치는 값은 세지 않는다).
     """
     if split not in PRODUCT_DEMAND_SPLITS:
         raise ValueError(f"지원하지 않는 제품별 소요대수 분류입니다: {split}")
@@ -368,11 +407,13 @@ def build_process_product_demand(
     merged = [frame for frame in (overflow, filtered_out) if not frame.empty]
     if merged:
         bucket = pd.concat(merged, ignore_index=True)
-        count = len(bucket[dimensions].drop_duplicates())
+        visible = set(shown[dimensions].itertuples(index=False, name=None))
+        bucket_values = set(bucket[dimensions].itertuples(index=False, name=None))
+        count = len(bucket_values - visible)
         other: dict[str, object] = {column: "" for column in dimensions}
         other.update(
             {
-                PRODUCT_LABEL_COLUMN: f"그 밖 {count}개",
+                PRODUCT_LABEL_COLUMN: _other_label(count, filtered=not filtered_out.empty),
                 OTHER_ROW_COLUMN: True,
                 GROUPED_COUNT_COLUMN: count,
             }
@@ -388,6 +429,16 @@ def build_process_product_demand(
     for column in month_columns:
         result[column] = result[column].astype("float64")
     return result
+
+
+def _other_label(count: int, *, filtered: bool) -> str:
+    """「그 밖」 행 이름. 거르기 밖 소요가 들었으면 꼬리말을 달고, 안 보이는 분류값이 없으면
+    「거르기 밖」이다."""
+    if not filtered:
+        return f"그 밖 {count}개"
+    if count == 0:
+        return FILTERED_OUT_LABEL
+    return f"그 밖 {count}개{OTHER_FILTERED_SUFFIX}"
 
 
 def _selected(values: pd.Series, allowed: Collection[str]) -> pd.Series:
@@ -434,10 +485,15 @@ class CommonFactors(NamedTuple):
 
 
 class MonthEvidence(NamedTuple):
-    """근거 패널이 숫자로 적는 짧은 요약."""
+    """근거 패널이 숫자로 적는 짧은 요약.
+
+    `excluded_route_count` 는 오류로 빠진 경로(대당 Capa 없음 등)만, `rule_excluded_route_count` 는
+    계산 규칙이 일부러 세지 않은 경로(`RULE_EXCLUSION_REASONS` — PKG 의 Buffer 아닌 행)만 센다.
+    """
 
     route_count: int
     excluded_route_count: int
+    rule_excluded_route_count: int
     unique_demand_load: float
     required: float
     effective_capacity: float | None
@@ -474,7 +530,10 @@ def build_process_month_trace(
       기준정보 쪽)를 공정·달로 거른 뒤 대당 Capa 계산과 같은 키로 붙인다. 환산 UPEH 는 대당 Capa
       결과에서 받는다.
     - 측정률이 1.0 인 경로는 `… 근거` 칸에 「행 없음 → 1.0 가정」 또는 「빈칸·0 → 1.0」을 적는다.
-    - 원수요 부하량은 STEP 이 여럿이어도 한 번만 센다(`effective_process_capacity_long`).
+    - 원수요 부하량은 STEP 이 여럿이어도 한 번만 센다(원수요 키 `DEMAND_ID_COLUMNS` 로 중복을 뺀
+      합 — `effective_process_capacity_long` 과 같은 값이되 그 검증을 다시 하지 않는다. 본 계산이
+      강제하지 않는 규칙 위반 데이터에서 근거 패널만 멈추지 않게 한다).
+    - 제외 경로(`excluded`)에는 오류 제외와 규칙상 제외를 함께 싣고 `규칙상 제외` 칸으로 가른다.
     """
     key = process.strip()
     target = int(month)
@@ -657,6 +716,7 @@ def _excluded_routes(
                 **{column: pd.Series(dtype="string") for column in ROUTE_KEYS},
                 "부하량": pd.Series(dtype="float64"),
                 EXCLUSION_REASON_COLUMN: pd.Series(dtype="object"),
+                RULE_EXCLUDED_COLUMN: pd.Series(dtype="bool"),
             }
         )
     detail_columns = [
@@ -687,6 +747,12 @@ def _excluded_routes(
             for reason in excluded.loc[detailed, "_capacity_reason"]
         ]
         excluded = excluded.drop(columns="_capacity_reason")
+    exclusion_reasons = (
+        excluded[EXCLUSION_REASON_COLUMN]
+        if EXCLUSION_REASON_COLUMN in excluded.columns
+        else pd.Series("", index=excluded.index, dtype="object")
+    )
+    excluded[RULE_EXCLUDED_COLUMN] = exclusion_reasons.isin(RULE_EXCLUSION_REASONS).astype("bool")
     return excluded.sort_values(ROUTE_KEYS, kind="stable", ignore_index=True)
 
 
@@ -698,16 +764,15 @@ def _evidence(
         if not required_rows.empty
         else 0.0
     )
-    unique_load = 0.0
-    if not required_rows.empty:
-        effective = effective_process_capacity_long(required_rows, "공정")
-        unique_load = float(effective["원수요_부하량"].sum())
+    unique_load = _unique_demand_load(required_rows)
     top_products = _top_products(required_rows, required_total)
     basis_columns = [f"{column}{RATIO_BASIS_SUFFIX}" for column, _ in RATIO_COLUMNS]
     bases = routes[basis_columns] if not routes.empty else pd.DataFrame(columns=basis_columns)
+    rule_excluded = excluded[RULE_EXCLUDED_COLUMN].eq(True)
     return MonthEvidence(
         route_count=len(routes),
-        excluded_route_count=len(excluded[ROUTE_KEYS].drop_duplicates()),
+        excluded_route_count=len(excluded.loc[~rule_excluded, ROUTE_KEYS].drop_duplicates()),
+        rule_excluded_route_count=len(excluded.loc[rule_excluded, ROUTE_KEYS].drop_duplicates()),
         unique_demand_load=unique_load,
         required=required_total,
         effective_capacity=unique_load / required_total if required_total > 0 else None,
@@ -716,6 +781,22 @@ def _evidence(
         assumed_ratio_routes=int(bases.isin([RATIO_ASSUMED_MISSING_ROW]).any(axis=1).sum()),
         blank_ratio_routes=int(bases.isin([RATIO_BLANK_OR_ZERO]).any(axis=1).sum()),
     )
+
+
+def _unique_demand_load(required_rows: pd.DataFrame) -> float:
+    """그 달 공정의 원수요 부하량 — STEP 마다 같은 부하량이 실리므로 원수요 키로 중복을 뺀 합이다.
+
+    키는 `effective_process_capacity_long` 과 같은 정규화(글자 앞뒤 공백, 소요기준 대문자·
+    `WAFER → WF`)를 지난다. 그 함수와 달리 공정당 소요기준 하나·키 완전성·부하량 일치를 검사하지
+    않는다 — 본 계산(대당 Capa·소요대수·확보율)이 강제하지 않는 규칙이라, 그 데이터에서 요약 표는
+    서는데 근거 패널만 예외로 멈추면 안 된다. 같은 원수요 키의 부하량이 다르면 첫 행을 쓴다.
+    """
+    if required_rows.empty:
+        return 0.0
+    keys = [column for column in DEMAND_ID_COLUMNS if column != MONTH]
+    prepared = _key_frame(required_rows, keys)
+    loads = pd.to_numeric(prepared.drop_duplicates(keys)["부하량"], errors="coerce").fillna(0.0)
+    return float(loads.sum())
 
 
 def _top_products(required_rows: pd.DataFrame, required_total: float) -> pd.DataFrame:
