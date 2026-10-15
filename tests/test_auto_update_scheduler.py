@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import threading
 import time as wall_time
 from collections.abc import Iterator
@@ -133,6 +135,15 @@ def _scheduler(
 )
 def test_only_an_explicit_opt_in_value_allows_the_schedule(value: str, expected: bool) -> None:
     assert scheduler_opted_in({ENV_VAR: value}) is expected
+
+
+def test_the_test_session_strips_the_opt_in() -> None:
+    """conftest 가 실행 줄 허락을 뺀다 — 앱을 띄운 창에서 pytest 를 돌려도 예약이 서지 않는다."""
+    from conftest import AUTO_UPDATE_ENV_VAR
+
+    assert AUTO_UPDATE_ENV_VAR == ENV_VAR
+    assert ENV_VAR not in os.environ
+    assert not scheduler_opted_in()
 
 
 def test_without_the_opt_in_no_thread_is_started(tmp_path: Path) -> None:
@@ -350,6 +361,55 @@ def test_settings_that_cannot_be_read_keep_the_previous_check_for_the_next_one(
     assert run.days == [DAY]
 
 
+def test_settings_failures_are_logged_once_and_the_recovery_once(
+    repository: DuckDBScenarioRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """30초마다 같은 경고가 쌓이지 않는다 — 처음 한 번, 회복 때 한 번."""
+    _enable(repository)
+    clock = Clock(_at(6, 0))
+    scheduler = _scheduler(repository, clock, RecordingRun())
+    real_load = repository.load_auto_official_update_settings
+
+    def locked() -> Any:
+        raise duckdb.IOException("Conflicting lock is held")
+
+    caplog.set_level(logging.WARNING, logger=scheduler_module.__name__)
+    monkeypatch.setattr(repository, "load_auto_official_update_settings", locked)
+    for second in (10, 40, 70):
+        clock.to(_at(6, 0) + timedelta(seconds=second))
+        assert scheduler.tick().kind == "settings_error"
+    monkeypatch.setattr(repository, "load_auto_official_update_settings", real_load)
+    clock.to(_at(6, 2))
+    scheduler.tick()
+    scheduler.tick()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert sum("읽지 못했습니다" in message for message in messages) == 1
+    assert sum("다시 읽었습니다" in message for message in messages) == 1
+
+
+def test_a_round_in_progress_shows_as_running(repository: DuckDBScenarioRepository) -> None:
+    """회차가 끝날 때까지 확인은 돌아오지 않는다 — 그 사이 상태는 「회차 진행 중」과 시작 시각."""
+    _enable(repository)
+    clock = Clock(_at(6, 59, 40))
+    seen: list[str] = []
+    holder: list[AutoUpdateScheduler] = []
+
+    def watching_run(repository: DuckDBScenarioRepository, **kwargs: Any) -> AutoUpdateRunResult:
+        outcome = holder[0].status().last_outcome
+        seen.append("" if outcome is None else outcome.kind)
+        return AutoUpdateRunResult(None, "가짜 회차")
+
+    scheduler = AutoUpdateScheduler(repository, clock=clock, run=watching_run, after_publish=None)
+    holder.append(scheduler)
+    clock.to(_at(7, 0, 10))
+
+    assert scheduler.tick().kind == "not_run"
+    assert seen == ["running"]
+
+
 # ---------------------------------------------------------------------------
 # 실제 회차와 함께
 # ---------------------------------------------------------------------------
@@ -486,3 +546,32 @@ def test_the_thread_starts_once_per_process_and_ticks_on_its_own(
 
     made[0].stop(timeout=5)
     assert running_scheduler() is None
+
+
+def test_a_system_exit_inside_a_round_does_not_kill_the_thread(
+    repository: DuckDBScenarioRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    stopped_threads: list[AutoUpdateScheduler],
+) -> None:
+    """사내 패키지가 `SystemExit` 을 올려도 스레드는 다음 확인을 이어 간다."""
+    _enable(repository, check_time=SLOT)
+    ticks: list[int] = []
+    original_tick = AutoUpdateScheduler.tick
+
+    def exiting_tick(self: AutoUpdateScheduler) -> Any:
+        ticks.append(1)
+        if len(ticks) == 1:
+            raise SystemExit("사내 패키지가 끝냈다")
+        return original_tick(self)
+
+    monkeypatch.setattr(AutoUpdateScheduler, "tick", exiting_tick)
+    scheduler = AutoUpdateScheduler(repository, run=RecordingRun(), tick_seconds=0.05)
+    stopped_threads.append(scheduler)
+    scheduler.start()
+
+    deadline = wall_time.monotonic() + 5
+    while len(ticks) < 3 and wall_time.monotonic() < deadline:
+        wall_time.sleep(0.02)
+
+    assert len(ticks) >= 3
+    assert scheduler.status().alive

@@ -13,9 +13,11 @@
   초에 등록된 `W52` 는 전해, 12월 말에 등록된 `W01` 은 다음 해다. 그래서 연말 W52 → W01 이
   거꾸로 보이지 않는다.
 - **후보**: 시뮬레이션명에 키워드(기본 `PSM`, 대소문자 무시)와 주차가 있고, 아직 등록되지
-  않았고(보관본 포함), 저장할 수 있는 코드이며, 원천 등록시각이 있는 것. 그 가운데 현재
-  공식버전보다 **주차가 크거나**, **같은 주차인데 더 늦게 등록된** 것만 받는다. 여럿이면 가장
-  큰 주차, 그 안에서 가장 늦게 등록된 1건.
+  않았고(보관본 포함 — 자동 갱신이 한 번 받은 코드도 포함), 저장할 수 있는 코드이며, 원천
+  등록시각이 있는 것. 그 가운데 현재 공식버전보다 **주차가 크거나**, **같은 주차인데 더 늦게
+  생긴** 것만 받는다. 여럿이면 가장 큰 주차, 그 안에서 가장 늦게 생긴 1건. 「생긴 시각」은 그
+  코드의 **가장 이른** 원천 등록시각이다 — 옛 코드에 나중에 적재된 줄(재적재·PLAN 추가)이 있어도
+  그 코드가 새 코드로 둔갑하지 않는다.
 - **판정**: 리비전 전체 기간의 원 확보율(가용 ÷ 소요). 소요가 0 인 달은 확보율이 없어 보지
   않는다. 한 달이라도 기준 확보율 **미만**이면 그 공정은 공정 필터 off 다(같으면 남는다).
 - **포함 공정**: `RQ_REQB` 공정 − 자동 off − 이어받은 수동 off. 수동 off 는 직전 공식버전
@@ -31,7 +33,7 @@ import re
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal
 from typing import Final, Literal
 
 import pandas as pd
@@ -42,6 +44,7 @@ from capa_simulation.services.bigdataquery_catalog_view import (
     catalog_rows,
     code_registration_span,
     first_registration_dates,
+    format_registered_at,
     normalize_catalog,
 )
 from capa_simulation.services.month_columns import month_label
@@ -245,9 +248,13 @@ class OfficialBaseline:
     week: int
     week_year: int
     # 같은 주차의 새 코드를 가리는 기준 시각. 원천 등록시각이 없으면(내장 시드·CSV) 공식
-    # 지정시각이다.
+    # 지정시각이다. 공식 코드가 지금 목록에 보이면 후보 고르기는 그 코드의 가장 이른 원천
+    # 등록시각으로 바꿔 견준다(`select_candidate`).
     anchor_at: datetime
     week_source: str
+    # 공식버전이 가리키는 시나리오의 원천 코드와 출처 종류(`DUCKDB_SCENARIO_CLONE` 등).
+    simulation_code: str = ""
+    source_type: str = ""
 
     @property
     def key(self) -> tuple[int, int]:
@@ -268,17 +275,23 @@ def resolve_official_baseline(
     source_simulation_name: str,
     source_registered_at: datetime | None,
     published_at: datetime,
+    source_simulation_code: str = "",
+    source_type: str = "",
 ) -> OfficialBaseline:
     """공식버전의 주차를 정한다. 없으면 `MissingOfficialWeek`.
 
     시나리오명 → 원천 시뮬레이션명 → 공식버전명 차례로 보고 **주차가 적힌 첫 이름**이 정한다.
     사람이 고칠 수 있는 이름(시나리오명)이 먼저다 — 원천 이름에 주차가 없으면 시나리오명을 고쳐
     풀 수 있어야 한다. 그 이름에 서로 다른 주차가 둘 이상이면 하나로 정할 수 없어 오류다.
+
+    등록이 붙인 이름 끝의 「 (원천 코드)」(`원천명 (코드)`)와 공식버전명 끝의 「 공식안」 앞
+    코드는 주차를 읽기 전에 뗀다 — 코드 안의 `W##` 꼴이 원천명의 주차와 겹쳐 「주차 둘 이상」이
+    되지 않게 한다.
     """
     names = (
-        ("시나리오명", scenario_name),
+        ("시나리오명", strip_code_suffix(scenario_name, source_simulation_code)),
         ("원천 시뮬레이션명", source_simulation_name),
-        ("공식버전명", release_name),
+        ("공식버전명", strip_code_suffix(release_name, source_simulation_code)),
     )
     for source, name in names:
         weeks = week_numbers(name)
@@ -301,12 +314,26 @@ def resolve_official_baseline(
             week_year=anchor_week_year(weeks[0], anchor_at.date()),
             anchor_at=anchor_at,
             week_source=source,
+            simulation_code=source_simulation_code,
+            source_type=source_type,
         )
     raise MissingOfficialWeek(
         f"{MISSING_WEEK_MESSAGE} — 공식 v{release_no} 「{release_name}」의 시나리오명·원천 "
         "시뮬레이션명·공식버전명 어디에도 W## 이 없습니다. 시나리오명에 주차를 넣거나"
         "(예: W41) 주차가 적힌 공식버전을 지정하세요."
     )
+
+
+def strip_code_suffix(name: str, simulation_code: str) -> str:
+    """이름에서 등록이 붙인 「 (코드)」를 뗀다(`PSM W41 (SIM_W40_A)` → `PSM W41`).
+
+    공식버전명(`… (코드) 공식안`)처럼 그 뒤에 글이 더 붙어 있어도 그 꼬리 하나만 뗀다. 코드가
+    없거나 이름에 그 꼬리가 없으면 그대로 돌려준다.
+    """
+    code = simulation_code.strip()
+    if not code:
+        return name
+    return name.replace(f" ({code})", "", 1)
 
 
 def missing_official_message() -> str:
@@ -323,7 +350,12 @@ def missing_official_message() -> str:
 
 @dataclass(frozen=True)
 class CatalogCandidate:
-    """받을 수 있는 코드 하나. 같은 코드의 PLAN 줄 가운데 가장 늦게 등록된 줄이 대표다."""
+    """받을 수 있는 코드 하나. 같은 코드의 PLAN 줄 가운데 가장 늦게 등록된 줄이 대표다.
+
+    `registered_at` 은 그 대표 줄의 원천 등록시각이다 — 화면 등록이 폼에 싣는 값과 같아 상세
+    조회·저장에 그대로 쓴다. 「더 새 코드」를 가리는 차례는 `first_registered_at`(그 코드의 가장
+    이른 원천 등록시각)이 정한다.
+    """
 
     row: CatalogRow
     registered_at: datetime
@@ -332,6 +364,8 @@ class CatalogCandidate:
     # 상세 조회 기본 창의 근거 — 그 코드가 목록에 보인 (가장 이른, 가장 늦은) 원천 등록일.
     first_registered_on: date
     last_registered_on: date
+    # 그 코드가 처음 생긴 시각 — 목록(정리 전)에 보인 가장 이른 원천 등록시각.
+    first_registered_at: datetime
 
     @property
     def key(self) -> tuple[int, int]:
@@ -367,10 +401,19 @@ def select_candidate(
     registered_codes: Collection[str],
     baseline: OfficialBaseline,
 ) -> CandidateSelection:
-    """목록 조회 결과(계약 5컬럼, 정리 전)에서 받을 코드 1건을 고른다. 없으면 `chosen=None`."""
+    """목록 조회 결과(계약 5컬럼, 정리 전)에서 받을 코드 1건을 고른다. 없으면 `chosen=None`.
+
+    같은 주차끼리는 코드가 **처음 생긴 시각**(가장 이른 원천 등록시각)으로 견준다. 공식 코드가
+    목록에 보이면 기준 시각도 그 코드의 가장 이른 원천 등록시각(저장된 시각보다 늦으면 저장된
+    시각)이다 — 저장된 등록시각은 등록할 때 고른 줄(그 PLAN 의 최신 줄)의 값이라 같은 잣대가 아니다.
+    """
     normalized = normalize_catalog(catalog)
     first_dates = first_registration_dates(catalog)
+    earliest = earliest_registration_times(catalog)
     known = set(registered_codes)
+    # 저장된 시각과 목록에 보인 가장 이른 시각 가운데 이른 것 — 목록 창(30일) 밖으로 밀려난 첫 줄이
+    # 있어도 기준이 늦춰지지 않는다.
+    anchor_at = min(earliest.get(baseline.simulation_code, baseline.anchor_at), baseline.anchor_at)
     best_by_code: dict[str, tuple[CatalogRow, datetime, int]] = {}
     matched_codes: set[str] = set()
     for row in catalog_rows(normalized):
@@ -391,19 +434,21 @@ def select_candidate(
     for code, (row, registered_at, week) in best_by_code.items():
         span = code_registration_span(normalized, first_dates, code)
         first_on, last_on = span if span is not None else (registered_at.date(),) * 2
+        first_at = min(earliest.get(code, registered_at), registered_at)
         candidate = CatalogCandidate(
             row=row,
             registered_at=registered_at,
             week=week,
-            week_year=anchor_week_year(week, registered_at.date()),
+            week_year=anchor_week_year(week, first_at.date()),
             first_registered_on=first_on,
             last_registered_on=last_on,
+            first_registered_at=first_at,
         )
-        if is_newer_than(candidate, baseline):
+        if is_newer_than(candidate, baseline, anchor_at=anchor_at):
             newer.append(candidate)
     chosen = max(
         newer,
-        key=lambda item: (item.key, item.registered_at, item.simulation_code),
+        key=lambda item: (item.key, item.first_registered_at, item.simulation_code),
         default=None,
     )
     return CandidateSelection(
@@ -415,11 +460,40 @@ def select_candidate(
     )
 
 
-def is_newer_than(candidate: CatalogCandidate, baseline: OfficialBaseline) -> bool:
-    """현재 공식버전보다 새 것인가 — 더 큰 주차, 또는 같은 주차에서 더 늦은 원천 등록시각."""
+def is_newer_than(
+    candidate: CatalogCandidate,
+    baseline: OfficialBaseline,
+    *,
+    anchor_at: datetime | None = None,
+) -> bool:
+    """현재 공식버전보다 새 것인가 — 더 큰 주차, 또는 같은 주차에서 더 늦게 생긴 코드.
+
+    `anchor_at` 은 같은 주차를 견줄 기준 시각이다. 없으면 `baseline.anchor_at` 이다.
+    """
     if candidate.key != baseline.key:
         return candidate.key > baseline.key
-    return candidate.registered_at > baseline.anchor_at
+    return candidate.first_registered_at > (baseline.anchor_at if anchor_at is None else anchor_at)
+
+
+def earliest_registration_times(catalog: pd.DataFrame) -> dict[str, datetime]:
+    """시뮬레이션 코드마다 목록(정리 전)에 보인 **가장 이른** 원천 등록시각(PLAN 을 가리지 않는다).
+
+    `normalize_catalog` 는 코드·PLAN 마다 최신 1행만 남기므로 정리 전 프레임에서 구한다. 읽지 못하는
+    등록시각은 건너뛴다(`first_registration_dates` 와 같은 규칙, 시각 정밀도).
+    """
+    earliest: dict[str, datetime] = {}
+    if catalog.empty or not {"simulation_code", "regist_data"} <= set(catalog.columns):
+        return earliest
+    codes = catalog["simulation_code"].astype("string").fillna("").str.strip()
+    for code, value in zip(codes, catalog["regist_data"], strict=True):
+        text = format_registered_at(value)
+        if not text:
+            continue
+        moment = datetime.strptime(text, REGISTERED_AT_FORMAT)
+        key = str(code)
+        if key not in earliest or moment < earliest[key]:
+            earliest[key] = moment
+    return earliest
 
 
 # ---------------------------------------------------------------------------
@@ -442,7 +516,16 @@ class ProcessMinimum:
 
 
 def _rate_percent(rate: float) -> str:
-    return f"{rate * 100:.0f}%"
+    """표지의 퍼센트 — 소수 한 자리에서 **내린다**(`0.796` → `79.6%`, `0.72` → `72%`).
+
+    판정은 원값 「미만」이다. 반올림하면 기준 80% 에서 79.96% 로 꺼진 공정이 「80%」로 보여
+    「같으면 남는다」는 규칙이 틀린 것처럼 읽힌다. 내리면 보이는 값이 원값을 넘지 않는다.
+    """
+    value = float(rate)
+    if not math.isfinite(value):
+        return "—"
+    percent = (Decimal(repr(value)) * 100).quantize(Decimal("0.1"), rounding=ROUND_FLOOR)
+    return f"{format(percent.normalize(), 'f')}%"
 
 
 AUTO_OFF_MARK: Final = "자동 off"

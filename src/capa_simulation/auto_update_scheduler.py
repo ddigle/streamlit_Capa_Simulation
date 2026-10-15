@@ -21,7 +21,10 @@ DuckDB 는 프로세스 배타 잠금이라 앱 밖 프로그램(OS 작업 스�
 
 **스레드는 첫 접속 때 선다.** Streamlit 은 브라우저 세션이 붙어야 `app.py` 를 돌린다. 그래서 앱을
 띄운 뒤 누군가 한 번 들어와야 예약이 시작된다(`app.py` 가 부트스트랩 뒤에
-`ensure_auto_update_scheduler` 를 부른다 — 허락이 없으면 환경변수만 보고 돌아간다).
+`ensure_auto_update_scheduler` 를 부른다 — 허락이 없으면 환경변수만 보고 돌아간다). 앱을 다시 띄운
+날 지정 시각 전에 아무도 들어오지 않으면 그날은 돌지 않는다 — 사내 런북 4-4 가 「띄운 뒤 브라우저
+탭 하나를 열어 두고 『이 실행에서 예약이 켜져 있습니다』를 확인」을 확인 항목으로 둔다(열어 둔 탭은
+서버가 다시 떠도 스스로 다시 붙어 `app.py` 를 돌린다).
 
 **프로세스에 하나.** `st.cache_resource` 를 쓰지 않는다 — 그 키는 함수 소스에서 나와 개발 중 코드를
 고치면 새 스레드가 하나 더 선다. 스레드 이름(`THREAD_NAME`)으로 살아 있는 것을 찾고, 있으면 새로
@@ -32,8 +35,15 @@ DuckDB 는 프로세스 배타 잠금이라 앱 밖 프로그램(OS 작업 스�
 래퍼를 부르지 않는다. 회차는 세션 없는 `auto_official_update_runner` 가 돈다. 발행 뒤 정리는 전역
 범위 `st.cache_data` 함수의 `.clear()` 하나다
 (`persistence.cache.clear_global_securement_threshold_cache`) — 전역 범위 캐시는 지우는 데 실행
-문맥이 필요 없다. 어떤 예외도 스레드를 죽이지 않는다 — 회차 안의 실패는 실행 기록에, 그 밖(설정
-읽기·선점 전 DB 잠금)은 로그와 `SchedulerStatus` 에 남는다.
+문맥이 필요 없다. `Exception` 계열과 `SystemExit` 은 스레드를 죽이지 않는다 — 회차 안의 실패는 실행
+기록에(실제 사유 그대로), 그 밖(설정 읽기·선점 전 DB 잠금)은 로그와 `SchedulerStatus` 에 남는다.
+
+**사내 조회에는 시간 제한이 없다.** 조회가 응답하지 않으면 그 회차 안에서 스레드가 기다린다. 회차를
+부르기 직전에 「회차 진행 중」을 상태에 남겨, 화면이 그 시작 시각과 경과로 멈춤을 드러낸다.
+
+**로그.** 앱은 로깅을 설정하지 않아 INFO 는 어디에도 나오지 않는다. 그래서 드문 사건(예약 시작,
+중단된 회차 정리)은 WARNING 으로 남긴다. 설정을 계속 못 읽는 상태는 처음과 회복 때만 남긴다 —
+30초마다 같은 경고가 쌓이지 않게 한다.
 """
 
 from __future__ import annotations
@@ -72,11 +82,14 @@ _TRUE_VALUES: Final = frozenset({"1", "true", "yes", "on"})
 TICK_SECONDS: Final = 30.0
 THREAD_NAME: Final = "capa-auto-official-update"
 
-TickKind = Literal["settings_error", "disabled", "waiting", "ran", "not_run", "run_error"]
+TickKind = Literal[
+    "settings_error", "disabled", "waiting", "running", "ran", "not_run", "run_error"
+]
 TICK_LABELS: Final[dict[str, str]] = {
     "settings_error": "설정을 읽지 못함",
     "disabled": "꺼져 있음",
     "waiting": "지정 시각 기다림",
+    "running": "회차 진행 중",
     "ran": "회차 돎",
     "not_run": "회차를 잡지 못함",
     "run_error": "회차 시작 실패",
@@ -151,6 +164,8 @@ class AutoUpdateScheduler:
         self._abandoned = False
         self._last_tick_at: datetime | None = None
         self._last_outcome: TickOutcome | None = None
+        # 설정 읽기 실패를 처음 한 번만 경고로 남기려는 표시. 회복하면 다시 내린다.
+        self._settings_failing = False
         self._state_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -168,8 +183,13 @@ class AutoUpdateScheduler:
             config = self._repository.load_auto_official_update_settings().config
         except Exception as exc:  # 다른 프로세스의 DB 잠금 등. 직전 확인 시각을 그대로 둔다 —
             # 그 사이 지정 시각이 지났어도 잠깐이면 다음 확인이 그 시각을 본다.
-            _LOGGER.warning("자동 갱신 설정을 읽지 못했습니다: %s", exc)
+            if not self._settings_failing:
+                _LOGGER.warning("자동 갱신 설정을 읽지 못했습니다(회복하면 다시 알립니다): %s", exc)
+            self._settings_failing = True
             return self._remember(TickOutcome("settings_error", now, message=_error_text(exc)))
+        if self._settings_failing:
+            _LOGGER.warning("자동 갱신 설정을 다시 읽었습니다.")
+            self._settings_failing = False
         previous, self._previous = self._previous, now
         if self._pending_day is not None and self._pending_day != now.date():
             self._pending_day = None
@@ -179,6 +199,9 @@ class AutoUpdateScheduler:
         day = crossed_slot(previous, now, config.check_time) or self._pending_day
         if day is None:
             return self._remember(TickOutcome("waiting", now))
+        # 회차가 끝날 때까지 이 확인은 돌아오지 않는다(사내 조회는 시간 제한이 없다). 화면이 「진행
+        # 중」과 그 시작 시각을 보게 먼저 남긴다.
+        self._remember(TickOutcome("running", now, run_day=day))
         try:
             result = self._run(
                 self._repository,
@@ -236,7 +259,8 @@ class AutoUpdateScheduler:
         while not self._stop.wait(self._tick_seconds):
             try:
                 self.tick()
-            except Exception:  # 스레드는 죽지 않는다. `tick` 이 이미 잡는 것 밖의 실패만 온다.
+            except (Exception, SystemExit):  # 스레드는 죽지 않는다. `tick` 이 잡는 것 밖의
+                # 실패만 온다 — 회차 안의 `SystemExit` 은 러너가 실행 기록에 남긴 뒤 다시 올린다.
                 _LOGGER.exception("자동 갱신 예약 확인이 실패했습니다.")
 
     def _abandon_interrupted(self, now: datetime) -> None:
@@ -250,7 +274,7 @@ class AutoUpdateScheduler:
             return
         self._abandoned = True
         if closed:
-            _LOGGER.info("중단된 자동 갱신 회차 %d건을 오류로 닫았습니다.", closed)
+            _LOGGER.warning("중단된 자동 갱신 회차 %d건을 오류로 닫았습니다.", closed)
 
     def _remember(self, outcome: TickOutcome) -> TickOutcome:
         with self._state_lock:
@@ -299,7 +323,7 @@ def ensure_auto_update_scheduler(
                 return existing
             scheduler = AutoUpdateScheduler(DuckDBScenarioRepository(Path(database_path)))
             scheduler.start()
-            _LOGGER.info("공식버전 자동 갱신 예약을 시작했습니다(%s).", database_path)
+            _LOGGER.warning("공식버전 자동 갱신 예약을 시작했습니다(%s).", database_path)
             return scheduler
     except Exception:
         _LOGGER.exception("공식버전 자동 갱신 예약을 시작하지 못했습니다.")

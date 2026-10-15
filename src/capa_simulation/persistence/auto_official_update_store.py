@@ -251,6 +251,23 @@ def load_runs(
     return [_run_from_row(row) for row in rows]
 
 
+def load_manual_run(
+    connection: duckdb.DuckDBPyConnection, token: str
+) -> AutoOfficialUpdateRun | None:
+    """「지금 실행」 회차 하나를 키 끝의 표(`manual:<시각>:<표>`)로 찾는다. 없으면 None."""
+    text = str(token).strip()
+    if not text or any(mark in text for mark in "%_:"):
+        return None
+    projection = ", ".join(quote(column) for column in RUN_COLUMNS)
+    row = connection.execute(
+        f"SELECT {projection} FROM app_meta.{_RUN_TABLE} "
+        "WHERE trigger_kind = 'MANUAL' AND run_key LIKE ? "
+        "ORDER BY started_at DESC LIMIT 1",
+        [f"manual:%:{text}"],
+    ).fetchone()
+    return None if row is None else _run_from_row(row)
+
+
 def _run_from_row(row: Sequence[object]) -> AutoOfficialUpdateRun:
     record = dict(zip(RUN_COLUMNS, row, strict=True))
     record["trigger_kind"] = cast(TriggerKind, str(record["trigger_kind"]))

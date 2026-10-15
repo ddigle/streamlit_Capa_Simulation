@@ -9,8 +9,9 @@
 설정을 바꾼다.
 
 - **지금 상태**: 이 실행(앱 프로세스)에서 예약이 서 있는가 — 실행 줄 허락
-  (`CAPA_AUTO_OFFICIAL_UPDATE=1`)이 없으면 「이 실행에서는 꺼짐」 안내, 다음 실행 시각, 현재
-  공식버전의 주차(또는 오류).
+  (`CAPA_AUTO_OFFICIAL_UPDATE=1`)이 없으면 「이 실행에서는 꺼짐」 안내, 다음 실행 시각(오늘 회차를
+  이미 잡았으면 내일), 현재 공식버전의 주차(또는 오류). 회차가 오래 돌거나 배경 확인이 멈춘 것
+  같으면 경고한다(사내 조회에는 시간 제한이 없다).
 - **설정**: 켜기·확인 시각·시뮬레이션명 키워드·기준 확보율. 공용 프로필이라 저장은 편집을 시작할
   때 본 version 과 대조하고, 바꾼 칸을 설정 변경 기록에 남긴다. **켤 때** 현재 공식버전에 주차가
   없으면 저장하지 않고 오류로 알린다.
@@ -18,7 +19,8 @@
   상관없이 돈다. 회차 선점 키가 누를 때마다 달라 **같은 날 예약 회차를 막지도, 그것에 막히지도
   않는다** — 이미 받은 코드는 다시 받지 않으므로 같은 코드가 두 번 발행되지 않는다. 같은
   프로세스에서 다른 회차가 도는 중이면 돌지 않고 알린다. 현재 공식버전에 주차가 없으면 아무것도
-  하지 않고 오류로 알린다(기록도 남기지 않는다).
+  하지 않고 오류로 알린다(기록도 남기지 않는다). 회차 전에 세션에 표를 적어 두므로, 도는 사이
+  다른 칸을 눌러 결과 알림이 끊겨도 다음 회차에 실행 기록에서 찾아 보인다.
 - **실행 기록·off 공정·설정 변경 기록** 표.
 
 설정 칸에는 `key` 를 두지 않는다(HOME 판정 기준 편집기와 같은 까닭) — 키가 붙은 칸은 한 번 그려진
@@ -29,8 +31,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Final
+from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
@@ -44,6 +47,7 @@ from capa_simulation.auto_official_update_runner import (
 )
 from capa_simulation.auto_update_scheduler import (
     ENV_VAR,
+    SchedulerStatus,
     running_scheduler,
     scheduler_opted_in,
 )
@@ -88,6 +92,7 @@ from capa_simulation.services.auto_official_update import (
     describe_config_change,
     next_scheduled_run,
     percent_text,
+    scheduled_run_key,
     time_text,
     week_label,
 )
@@ -97,11 +102,19 @@ SETTINGS_FLASH_KEY = "auto_official_update_settings_flash"
 SETTINGS_BASE_VERSION_KEY = "auto_official_update_settings_base_version"
 # 「지금 실행」 결과(상태, 글). rerun 을 건너 그 자리에 한 번 그린다.
 RUN_RESULT_KEY = "auto_official_update_run_result"
+# 「지금 실행」 회차의 표(회차 키 끝). 회차 전에 적고 결과를 보이면 지운다 — 도는 사이 rerun 이
+# 결과 알림을 끊어도 다음 회차가 이 표로 실행 기록을 찾는다.
+PENDING_RUN_TOKEN_KEY = "auto_official_update_pending_run_token"
 RUN_NOW_BUTTON_KEY = "auto_official_update_run_now"
 OFF_LIST_EXPANDER_KEY = "auto_official_update_off_list_expander"
 RUN_HISTORY_LIMIT: Final = 30
 SETTING_HISTORY_LIMIT: Final = 20
 DATETIME_FORMAT: Final = "%Y-%m-%d %H:%M"
+# 회차가 이보다 오래 「진행 중」이면 멈춘 것으로 보고 경고한다(사내 조회·전체 기간 계산은 보통
+# 몇 분이다).
+LONG_RUN_WARNING: Final = timedelta(minutes=30)
+# 배경 확인이 이 횟수만큼 건너뛰었으면 스레드가 멈춘 것으로 보고 경고한다.
+STALE_TICK_FACTOR: Final = 4
 EMPTY: Final = "—"
 SETTINGS_SOURCE: Final = "시나리오 관리 · 자동 갱신"
 
@@ -162,11 +175,15 @@ def _render_status(
                 last = status.last_outcome
                 detail = f" — {last.message}" if last.message else ""
                 parts.append(
-                    f"마지막 확인 {format(status.last_tick_at, '%H:%M:%S')} {last.label}{detail}"
+                    f"마지막 확인 {format(status.last_tick_at, '%Y-%m-%d %H:%M:%S')} "
+                    f"{last.label}{detail}"
                 )
             if status.pending_day is not None:
                 parts.append(f"{status.pending_day.isoformat()} 회차를 다시 시도하는 중")
             st.caption(" · ".join(parts))
+            stall = scheduler_stall_message(status, now)
+            if stall is not None:
+                st.warning(stall, icon=":material/hourglass_top:")
         elif scheduler_opted_in():
             st.warning(
                 f"실행 줄은 예약을 허락했지만(`{ENV_VAR}=1`) 예약 스레드가 서 있지 않습니다. 앱 "
@@ -180,7 +197,16 @@ def _render_status(
                 icon=":material/info:",
             )
         st.markdown(f"**설정** · {_config_line(config)}")
-        st.markdown(f"**다음 실행** · {_next_run_line(config, scheduler is not None, now)}")
+        try:
+            claimed_today = repository.auto_official_update_run_key_exists(
+                scheduled_run_key(now.date())
+            )
+        except BOOTSTRAP_ERRORS:
+            claimed_today = False
+        st.markdown(
+            f"**다음 실행** · "
+            f"{next_run_line(config, scheduler is not None, now, claimed_today=claimed_today)}"
+        )
         try:
             baseline = current_official_baseline(repository)
         except MissingOfficialWeek as exc:
@@ -207,12 +233,51 @@ def _config_line(config: AutoUpdateConfig) -> str:
     )
 
 
-def _next_run_line(config: AutoUpdateConfig, scheduled_here: bool, now: datetime) -> str:
+def next_run_line(
+    config: AutoUpdateConfig,
+    scheduled_here: bool,
+    now: datetime,
+    *,
+    claimed_today: bool = False,
+) -> str:
+    """「다음 실행」 한 줄. 오늘 예약 회차를 이미 잡았으면 오늘 남은 지정 시각이 아니라 내일이다."""
     if not config.enabled:
         return "꺼져 있어 돌지 않습니다."
     if not scheduled_here:
         return "이 실행에서는 돌지 않습니다(실행 줄 허락 없음)."
-    return format(next_scheduled_run(now, config.check_time), DATETIME_FORMAT)
+    upcoming = next_scheduled_run(now, config.check_time)
+    if claimed_today and upcoming.date() == now.date():
+        upcoming += timedelta(days=1)
+        return f"{format(upcoming, DATETIME_FORMAT)} (오늘 회차는 이미 돌았습니다)"
+    return format(upcoming, DATETIME_FORMAT)
+
+
+def scheduler_stall_message(status: SchedulerStatus, now: datetime) -> str | None:
+    """배경 예약이 멈춘 것 같으면 그 경고 글. 아니면 None.
+
+    - 회차가 `LONG_RUN_WARNING` 보다 오래 「진행 중」 — 사내 조회가 응답하지 않을 수 있다(시간
+      제한이 없다). 그동안 「지금 실행」도 막히고 다음 날 예약도 돌지 않는다.
+    - 회차 밖인데 마지막 확인이 확인 간격의 `STALE_TICK_FACTOR` 배보다 오래됐다 — 스레드가 멈췄다.
+    """
+    last = status.last_outcome
+    if status.last_tick_at is None or last is None:
+        return None
+    elapsed = now - status.last_tick_at
+    if last.kind == "running":
+        if elapsed < LONG_RUN_WARNING:
+            return None
+        return (
+            f"예약 회차가 {format(status.last_tick_at, DATETIME_FORMAT)}부터 "
+            f"{int(elapsed.total_seconds() // 60)}분째 도는 중입니다 — 사내 조회가 응답하지 "
+            "않을 수 있습니다. 그동안 「지금 실행」과 다음 예약도 돌지 않습니다. 오래 이어지면 "
+            "앱을 다시 띄우세요(실행 기록의 「실행 중」 줄은 다시 띄울 때 오류로 닫힙니다)."
+        )
+    if elapsed.total_seconds() <= status.tick_seconds * STALE_TICK_FACTOR:
+        return None
+    return (
+        f"배경 확인이 {format(status.last_tick_at, DATETIME_FORMAT)} 뒤로 멈춰 있습니다 — 앱 "
+        "로그를 확인하고 앱을 다시 띄우세요."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -358,7 +423,7 @@ def _render_run_now(
         )
         notice = st.container()
         with notice:
-            _render_run_result()
+            _render_run_result(repository)
     if not clicked:
         return
     try:
@@ -370,6 +435,10 @@ def _render_run_now(
     except BOOTSTRAP_ERRORS as exc:
         notice.error(bootstrap_error_message(exc))
         return
+    token = uuid4().hex[:12]
+    # 회차 **전에** 적는다. 도는 사이 다른 칸을 누르면 회차가 끝난 뒤 첫 세션 접근에서 rerun 이
+    # 끼어들어 아래 결과 알림이 사라진다 — 다음 회차가 이 표로 기록을 찾아 대신 보인다.
+    st.session_state[PENDING_RUN_TOKEN_KEY] = token
     try:
         with notice, st.spinner("자동 갱신 회차를 돌리는 중입니다..."):
             result = run_auto_official_update(
@@ -378,19 +447,46 @@ def _render_run_now(
                 sources=sources,
                 clock=clock,
                 after_publish=clear_global_securement_threshold_cache,
+                manual_token=token,
             )
     except BOOTSTRAP_ERRORS as exc:
+        st.session_state.pop(PENDING_RUN_TOKEN_KEY, None)
         notice.error(bootstrap_error_message(exc))
         return
+    st.session_state.pop(PENDING_RUN_TOKEN_KEY, None)
     run = result.run
     if run is None:
         notice.warning(result.not_run_reason or "회차를 잡지 못했습니다.")
         return
+    _hold_run_result(run)
+    st.rerun()
+
+
+def _hold_run_result(run: AutoOfficialUpdateRun) -> None:
+    """끝난 「지금 실행」 회차의 결과를 다음 회차 알림 자리에 맡긴다."""
     if run.status == STATUS_PUBLISHED:
         # 이 세션의 입장 화면 Summary 가 새 공식버전을 다음 회차에 곧바로 싣는다.
         forget_intro_summary_check()
     st.session_state[RUN_RESULT_KEY] = {"status": run.status, "message": _run_result_text(run)}
-    st.rerun()
+
+
+def _recover_run_result(repository: DuckDBScenarioRepository) -> dict[str, str] | None:
+    """결과 알림이 rerun 에 끊긴 「지금 실행」 회차를 표로 찾아 결과를 돌려준다. 없으면 None."""
+    token = st.session_state.get(PENDING_RUN_TOKEN_KEY)
+    if not isinstance(token, str):
+        return None
+    try:
+        run = repository.find_manual_auto_official_update_run(token)
+    except BOOTSTRAP_ERRORS:
+        return None
+    if run is not None and run.status == STATUS_RUNNING:
+        return {"status": STATUS_RUNNING, "message": "「지금 실행」 회차가 아직 도는 중입니다."}
+    st.session_state.pop(PENDING_RUN_TOKEN_KEY, None)
+    if run is None:
+        return None
+    _hold_run_result(run)
+    held = st.session_state.pop(RUN_RESULT_KEY, None)
+    return held if isinstance(held, dict) else None
 
 
 def _run_result_text(run: AutoOfficialUpdateRun) -> str:
@@ -399,8 +495,10 @@ def _run_result_text(run: AutoOfficialUpdateRun) -> str:
     return f"{TRIGGER_LABELS.get(run.trigger_kind, run.trigger_kind)} 회차 — {label}. {reason}"
 
 
-def _render_run_result() -> None:
+def _render_run_result(repository: DuckDBScenarioRepository) -> None:
     held = st.session_state.pop(RUN_RESULT_KEY, None)
+    if not isinstance(held, dict):
+        held = _recover_run_result(repository)
     if not isinstance(held, dict):
         return
     status = held.get("status")

@@ -143,3 +143,28 @@ def test_applying_a_preset_forgets_the_previous_options() -> None:
     assert app.session_state["applied"] is True
     assert PROCESS_SEEN_KEY not in app.session_state
     assert app.session_state[PROCESS_SELECTION_KEY] == ["A"]
+
+
+def test_home_keeps_a_selected_process_it_cannot_show(tmp_path: Path) -> None:
+    """이번 조회기간에 보이지 않는 포함 공정은 HOME 이 지우지 않는다 — 저장하면 프리셋에 실린다.
+
+    조회기간 안에 가용 행이 없는 공정을 흉내 낸다(내장 시드는 모든 달에 세 공정이 다 있다). 화면의
+    판정 대상 수는 보이는 공정만 센다.
+    """
+    _seeded(tmp_path / "scenario.duckdb")
+    script = SCRIPT.format(
+        database=str(tmp_path / "scenario.duckdb"),
+        activate_key=ACTIVATE_KEY,
+        home=str(HOME_PAGE),
+    )
+    app = AppTest.from_string(script, default_timeout=300).run()
+    assert not app.exception, [element.message for element in app.exception]
+
+    app.session_state[PROCESS_SELECTION_KEY] = [CHIP, FINAL, "숨은공정"]
+    app = app.run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    selection = list(app.session_state[PROCESS_SELECTION_KEY])
+    assert set(selection) == {CHIP, FINAL, "숨은공정"} and selection[-1] == "숨은공정"
+    labels = [str(button.label) for button in app.button]
+    assert any("2 / 3 공정" in label for label in labels), labels

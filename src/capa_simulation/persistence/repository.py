@@ -304,6 +304,21 @@ class _RunKeyTaken(Exception):
     """쓰기 트랜잭션 안에서 회차 키가 이미 잡혀 있었다. 아무것도 쓰지 않고 되돌리는 신호다."""
 
 
+class OfficialReleaseMoved(ValueError):
+    """발행하려는 사이 최신 공식버전이 바뀌었다(다른 사람이 먼저 지정). 아무것도 쓰지 않았다.
+
+    `expected` 는 부르는 쪽이 보고 출발한 최신 번호(없었으면 0), `current` 는 쓰기 트랜잭션 안에서
+    읽은 지금 번호다.
+    """
+
+    def __init__(self, expected: int, current: int) -> None:
+        super().__init__(
+            f"회차 도중 공식버전이 바뀌어(공식 v{expected} → v{current}) 발행하지 않았습니다."
+        )
+        self.expected = expected
+        self.current = current
+
+
 class DuckDBScenarioRepository:
     """Persist immutable datasets and full editable-table revision snapshots."""
 
@@ -861,6 +876,16 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return auto_official_update_store.load_runs(connection, limit=limit)
 
+    def auto_official_update_run_key_exists(self, run_key: str) -> bool:
+        """그 회차 키가 이미 잡혔는가(예약 회차는 날짜마다 키 하나)."""
+        with self._connect() as connection:
+            return auto_official_update_store.run_key_exists(connection, run_key)
+
+    def find_manual_auto_official_update_run(self, token: str) -> AutoOfficialUpdateRun | None:
+        """「지금 실행」 회차를 부른 쪽의 표(`manual_run_key` 의 끝)로 찾는다. 없으면 None."""
+        with self._connect() as connection:
+            return auto_official_update_store.load_manual_run(connection, token)
+
     def load_auto_official_update_run(self, run_id: str) -> AutoOfficialUpdateRun:
         with self._connect() as connection:
             runs = auto_official_update_store.load_runs(connection, run_id=run_id)
@@ -1316,8 +1341,14 @@ class DuckDBScenarioRepository:
         *,
         release_name: str,
         note: str | None = None,
+        expected_latest_release_no: int | None = None,
     ) -> OfficialReleaseSummary:
-        """Append an official release pointer to one immutable revision."""
+        """Append an official release pointer to one immutable revision.
+
+        `expected_latest_release_no` 를 주면 쓰기 트랜잭션 안에서 지금 최신 공식버전 번호가 그것과
+        같을 때만 발행한다. 다르면 `OfficialReleaseMoved` 로 거부하고 아무것도 쓰지 않는다 — 오래
+        걸리는 배경 회차(공식버전 자동 갱신)가 출발할 때 본 공식버전 위에서만 발행하게 한다.
+        """
         release_label = required_text(release_name, "공식버전명")
         official_release_id = str(uuid4())
         with self._write_transaction() as connection:
@@ -1340,6 +1371,11 @@ class DuckDBScenarioRepository:
             if release_no_row is None:
                 raise RuntimeError("다음 공식버전 번호를 계산하지 못했습니다.")
             release_no = int(release_no_row[0])
+            if (
+                expected_latest_release_no is not None
+                and release_no - 1 != expected_latest_release_no
+            ):
+                raise OfficialReleaseMoved(expected_latest_release_no, release_no - 1)
             connection.execute(
                 """
                 INSERT INTO app_meta.official_release (

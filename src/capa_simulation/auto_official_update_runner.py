@@ -12,14 +12,25 @@
 1. **회차 선점** — 예약은 날짜 키, 「지금 실행」은 누를 때마다 새 키. 같은 날 예약은 한 번만
    돈다. 같은 프로세스에서 회차가 겹치면(예약과 「지금 실행」) 뒤의 것은 선점하지 않고 돌아간다.
 2. **현재 공식버전 확인** — 주차(W##)가 없으면 오류로 끝낸다(아무것도 하지 않는다).
-3. **목록 조회 → 후보 고르기** — 새 코드가 없으면 「건너뜀」.
+3. **목록 조회 → 후보 고르기** — 새 코드가 없으면 「건너뜀」. 지금 남은 시나리오(보관본 포함)의
+   원천 코드와 **자동 갱신이 한 번 받은 코드**(실행 기록)는 다시 받지 않는다 — 사람이 자동
+   발행본을 지워 되돌려도 다음 날 같은 코드가 되살아나지 않는다. 다시 쓰려면 BigDataQuery 등록
+   으로 손으로 받는다.
 4. **상세 조회·등록** — 화면 등록과 같은 이름·창·메모로 리비전 1(원천 그대로, 전 공정)을 저장한다.
 5. **확보율 판정** — 계산이 깨졌으면(Capa 계산 실패, 가용 행 없음 등) 발행하지 않는다.
-6. **리비전 2 저장** — 포함 공정 = `RQ_REQB` 공정 − 자동 off − 이어받은 수동 off. 0 개면
-   발행하지 않는다.
-7. **공식버전 발행** — 발행 검사(`full_capacity_outcome`)를 지나야 발행한다.
+6. **리비전 2 저장** — 포함 공정 = `RQ_REQB` 공정 − 자동 off − 이어받은 수동 off. 판정할 수 있는
+   (확보율이 있는) 포함 공정이 0 개면 발행하지 않는다.
+7. **공식버전 발행** — 발행 검사(`full_capacity_outcome`)를 지나야 발행한다. 회차를 시작할 때 본
+   공식버전이 그 사이 바뀌었으면(사람이 다른 공식버전을 지정) 발행하지 않는다 — 옛 기준으로 고른
+   코드가 더 새 공식버전을 덮지 않게 한다.
 
 어느 단계에서 멈춰도 이미 만든 시나리오·리비전은 남기고 그 단계와 사유를 기록한다.
+
+**자동 off 와 수동 off 의 구분.** 직전 공식버전 프리셋에서 빠진 공정 가운데 자동 갱신이 뺀 것
+(`AUTO` 기록)은 매번 다시 판정하고, 나머지는 사람이 뺀 것으로 이어받는다. `AUTO` 기록은 그
+리비전과 조상(부모 사슬)에서 찾는다. 「현재 활성 편집본 복제」로 만든 시나리오는 부모가 없이
+세션 프리셋을 그대로 싣기 때문에, 그 시나리오에서는 가장 최근 자동 회차(리비전 2 를 저장한
+회차)의 `AUTO` 기록을 함께 본다.
 """
 
 from __future__ import annotations
@@ -49,7 +60,11 @@ from capa_simulation.persistence.models import (
     ScenarioPreset,
     ScenarioSnapshot,
 )
-from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
+from capa_simulation.persistence.repository import (
+    REVISION_TABLES,
+    DuckDBScenarioRepository,
+    OfficialReleaseMoved,
+)
 from capa_simulation.scenario_preset_state import full_data_scenario_preset
 from capa_simulation.scenario_registration import registration_note, save_bigdataquery_scenario
 from capa_simulation.services.auto_official_update import (
@@ -94,6 +109,13 @@ _LOGGER = logging.getLogger(__name__)
 BUSY_MESSAGE: Final = "다른 자동 갱신 회차가 아직 돌고 있습니다. 끝난 뒤 다시 실행하세요."
 ALREADY_CLAIMED_MESSAGE: Final = "이 회차는 이미 돌았습니다 — 같은 날 예약 회차는 한 번만 돕니다."
 INTERRUPTED_REASON: Final = "앱이 이 회차를 끝내기 전에 꺼져 중단됐습니다."
+# 등록한 뒤 발행까지 가지 못한 회차의 사유 끝에 붙인다. 그 코드는 다시 받지 않는다.
+REGISTERED_NOT_PUBLISHED_NOTE: Final = (
+    "등록한 시나리오 「{name}」는 남겼습니다 — 같은 코드는 다시 받지 않으니 확인한 뒤 손으로 "
+    "발행하세요."
+)
+# 「현재 활성 편집본 복제」가 만든 시나리오의 출처 종류. 부모 리비전이 없다.
+CLONE_SOURCE_TYPE: Final = "DUCKDB_SCENARIO_CLONE"
 
 # 같은 프로세스 안에서 회차가 겹치지 않게 한다. 기다리지 않는다 — 겹친 쪽은 선점하지 않고 돌아간다.
 _RUN_LOCK = threading.Lock()
@@ -164,6 +186,8 @@ def current_official_baseline(repository: DuckDBScenarioRepository) -> OfficialB
         source_simulation_name="" if scenario is None else scenario.source_simulation_name,
         source_registered_at=None if scenario is None else scenario.source_registered_at,
         published_at=release.published_at,
+        source_simulation_code=release.source_simulation_code,
+        source_type="" if scenario is None else scenario.source_type,
     )
 
 
@@ -180,6 +204,7 @@ def run_auto_official_update(
     sources: AutoUpdateSources | None = None,
     clock: Clock = datetime.now,
     after_publish: Callable[[], None] | None = None,
+    manual_token: str | None = None,
 ) -> AutoUpdateRunResult:
     """자동 갱신 한 회차를 돌리고 그 기록을 돌려준다.
 
@@ -189,6 +214,8 @@ def run_auto_official_update(
     - `clock`: 지금 시각(OS 시계). 실행 기록의 시각과 상세 조회 창의 「오늘」이 이것을 따른다.
     - `after_publish`: 발행한 뒤 한 번 부른다(수동 발행과 같은 캐시 정리). 실패해도 회차는
       발행으로 남는다.
+    - `manual_token`: 「지금 실행」 회차 키의 끝에 붙일 표. 화면이 회차 전에 세션에 적어 두고, 결과
+      알림이 rerun 에 끊겨도 다음 회차에 그 표로 기록을 찾는다. 없으면 새로 만든다.
 
     설정(키워드·기준 확보율)은 회차를 잡을 때 DB 에서 읽고 그 값을 기록에 남긴다. 켜짐 여부와
     실행 줄 허락은 부르는 쪽(예약·화면)이 본다 — 이 함수는 부르면 돈다.
@@ -202,7 +229,7 @@ def run_auto_official_update(
         run_key = (
             scheduled_run_key(day)
             if trigger == TRIGGER_SCHEDULED
-            else manual_run_key(started_at, uuid4().hex[:12])
+            else manual_run_key(started_at, manual_token or uuid4().hex[:12])
         )
         run_id = repository.claim_auto_official_update_run(
             run_key=run_key,
@@ -225,11 +252,16 @@ def run_auto_official_update(
                 clock,
                 after_publish,
             )
-        except Exception as exc:  # 배경 회차다. 기록 없이 죽으면 아무도 모른다.
+        except BaseException as exc:  # 배경 회차다. 기록 없이 죽으면 아무도 모른다.
+            # `SystemExit` 처럼 Exception 밖의 것도 실제 사유로 남긴 뒤 다시 올린다 — 실행 흐름
+            # 신호(KeyboardInterrupt·Streamlit 의 rerun/stop)를 삼키지 않는다. 배경 스레드는
+            # 예약 쪽이 받아 스레드를 지킨다(`auto_update_scheduler`).
             _LOGGER.exception(
                 "공식버전 자동 갱신 회차 %s 가 %s 단계에서 멈췄습니다.", run_id, log.stage
             )
             log.fail(exc)
+            if not isinstance(exc, Exception):
+                raise
         return AutoUpdateRunResult(repository.load_auto_official_update_run(run_id))
     finally:
         _RUN_LOCK.release()
@@ -252,6 +284,8 @@ class _RunLog:
         self._clock = clock
         self.run_id = run_id
         self.stage = "claim"
+        # 리비전 1 을 저장했으면 그 시나리오명. 발행까지 가지 못하고 끝나면 사유 끝에 적는다.
+        self.registered_name: str | None = None
 
     def advance(self, stage: str, **values: object) -> None:
         self.stage = stage
@@ -261,6 +295,9 @@ class _RunLog:
         self._repository.update_auto_official_update_run(self.run_id, values)
 
     def finish(self, status: RunStatus, reason: str, **values: object) -> None:
+        if status != STATUS_PUBLISHED and self.registered_name is not None:
+            note = REGISTERED_NOT_PUBLISHED_NOTE.format(name=self.registered_name)
+            reason = f"{reason.rstrip().rstrip('.')}. {note}"
         payload: dict[str, object] = {
             "status": status,
             "reason": reason,
@@ -311,20 +348,29 @@ def _execute(
     catalog = sources.fetch_catalog(window)
 
     log.advance("select")
-    registered_codes = {
+    existing_codes = {
         summary.source_simulation_code
         for summary in repository.list_scenarios(include_archived=True)
     }
+    received = received_codes(repository)
     selection = select_candidate(
         catalog,
         keyword=config.keyword,
-        registered_codes=registered_codes,
+        registered_codes=existing_codes | received,
         baseline=baseline,
     )
     log.note(candidate_count=selection.newer)
     candidate = selection.chosen
     if candidate is None:
-        log.finish(STATUS_SKIPPED, selection.skip_reason(config.keyword, baseline))
+        reason = selection.skip_reason(config.keyword, baseline)
+        listed_codes = set(catalog["simulation_code"].astype("string").str.strip().dropna())
+        held_back = (received - existing_codes) & listed_codes
+        if held_back:
+            reason += (
+                f" · 목록의 {len(held_back):,}건은 자동 갱신이 이미 받았다가 시나리오가 지워진 "
+                "코드라 다시 받지 않았습니다(다시 쓰려면 BigDataQuery 등록으로 받으세요)"
+            )
+        log.finish(STATUS_SKIPPED, reason)
         return
     log.note(
         simulation_code=candidate.simulation_code,
@@ -371,6 +417,7 @@ def _execute(
         created_scenario_name=base.scenario.scenario_name,
         base_revision_id=base.revision.revision_id,
     )
+    log.registered_name = base.scenario.scenario_name
 
     log.advance("judge")
     outcome = full_capacity_outcome(base.tables, base.tables)
@@ -409,11 +456,20 @@ def _execute(
         inherited_off_count=len(inherited),
     )
     log.note(auto_off_count=len(auto_off), inherited_off_count=len(inherited))
-    if not included:
+    # 확보율이 있어 판정할 수 있는 포함 공정. `RQ_REQB` 에만 있고 확보율 행이 없는 공정은 B/N 에
+    # 나오지 않으므로, 그것만 남으면 B/N 이 빈 공식버전이 된다.
+    judged_included = [process for process in included if process in minimums]
+    if not judged_included:
         repository.record_auto_official_update_exclusions(exclusions)
+        cause = (
+            "공정 필터에 남는 공정이 없어"
+            if not included
+            else f"공정 필터에 남는 공정 {len(included)}개가 모두 확보율로 판정할 수 없는 "
+            "공정(확보율 행 없음)이라"
+        )
         log.finish(
             STATUS_PUBLISH_SKIPPED,
-            f"공정 필터에 남는 공정이 없어 리비전 2 를 저장하지 않고 발행하지 않았습니다 — {memo}",
+            f"{cause} 리비전 2 를 저장하지 않고 발행하지 않았습니다 — {memo}",
         )
         return
 
@@ -433,12 +489,17 @@ def _execute(
     log.note(filtered_revision_id=filtered_revision_id)
 
     log.advance("publish")
-    published = _publish_filtered_revision(
-        repository,
-        filtered,
-        release_name=official_release_name(filtered.scenario.scenario_name),
-        note=memo,
-    )
+    try:
+        published = _publish_filtered_revision(
+            repository,
+            filtered,
+            release_name=official_release_name(filtered.scenario.scenario_name),
+            note=memo,
+            expected_latest_release_no=baseline.release_no,
+        )
+    except OfficialReleaseMoved as exc:
+        log.finish(STATUS_PUBLISH_SKIPPED, str(exc))
+        return
     if isinstance(published, str):
         log.finish(
             STATUS_PUBLISH_SKIPPED,
@@ -465,10 +526,14 @@ def _publish_filtered_revision(
     *,
     release_name: str,
     note: str,
+    expected_latest_release_no: int,
 ) -> OfficialReleaseSummary | str:
     """발행 검사(공식 발행 화면과 같은 전체 기간 Capa 계산)를 지나면 발행한다. 실패하면 그 오류 글.
 
-    검사를 쓰기 **앞에** 부른다(`tests/test_capacity_gate.py` 가 이 차례를 지킨다).
+    검사를 쓰기 **앞에** 부른다(`tests/test_capacity_gate.py` 가 이 차례를 지킨다). 판정 단계와 같은
+    표를 한 번 더 계산한다 — 발행 검사를 판정 결과에 기대지 않고 수동 발행과 같은 문으로 지나게
+    하려는 것이고, 배경 회차라 그 몇 초를 받아들인다. 최신 공식버전이 `expected_latest_release_no`
+    에서 바뀌었으면 `OfficialReleaseMoved` 다(아무것도 쓰지 않는다).
     """
     error = full_capacity_outcome(snapshot.tables, snapshot.tables).error
     if error is not None:
@@ -478,6 +543,7 @@ def _publish_filtered_revision(
         snapshot.revision.revision_id,
         release_name=release_name,
         note=note,
+        expected_latest_release_no=expected_latest_release_no,
     )
 
 
@@ -489,19 +555,16 @@ def _inherited_manual_off(
 ) -> tuple[str, ...]:
     """직전 공식버전에서 사람이 손으로 뺀 공정(새 데이터에도 있는 것).
 
-    자동 갱신이 뺀 공정은 직전 공식 리비전과 **그 조상**의 `AUTO` 기록에서 찾는다 — 자동
-    리비전 2 에서 사람이 리비전 3 을 저장해 발행했어도 리비전 2 의 자동 off 는 자동으로 남는다.
+    자동 갱신이 뺀 공정은 `_auto_exclusions` 가 찾는다 — 직전 공식 리비전과 **그 조상**의 `AUTO`
+    기록(자동 리비전 2 에서 사람이 리비전 3 을 저장해 발행했어도 리비전 2 의 자동 off 는 자동으로
+    남는다), 복제 시나리오면 가장 최근 자동 회차의 `AUTO` 기록까지.
     """
     previous_processes = reqb_process_names(
         repository.load_revision_table(baseline.revision_id, "RQ_REQB")
     )
-    lineage = _revision_lineage(repository, baseline.scenario_id, baseline.revision_id)
     previous_auto = {
         exclusion.process
-        for exclusion in repository.list_auto_official_update_exclusions(
-            filtered_revision_ids=lineage
-        )
-        if exclusion.kind == EXCLUSION_AUTO
+        for exclusion in _auto_exclusions(repository, baseline.scenario_id, baseline.revision_id)
     }
     return inherited_manual_off(
         previous_processes=previous_processes,
@@ -516,13 +579,45 @@ def auto_off_marks(
 ) -> dict[str, str]:
     """리비전(과 그 조상)에서 자동 갱신이 확보율로 뺀 공정 → 표지(`자동 off(확보율 72%, 26.11)`).
 
-    HOME 공정 필터 팝업이 연 회차에 한 번 부른다. 조상까지 보는 것은 이어받은 수동 off 와 같은
-    까닭이다 — 자동 리비전 2 에서 사람이 리비전 3 을 저장해도 리비전 2 의 자동 off 근거는 남는다.
-    가까운 리비전의 기록이 먼저다.
+    HOME 공정 필터 팝업이 연 회차에 한 번 부른다. 근거는 이어받은 수동 off 를 가를 때와 같은
+    `_auto_exclusions` 다 — 조상까지, 복제 시나리오면 가장 최근 자동 회차까지. 가까운 리비전의
+    기록이 먼저다.
+    """
+    marks: dict[str, str] = {}
+    for exclusion in _auto_exclusions(repository, scenario_id, revision_id):
+        marks.setdefault(exclusion.process, auto_off_mark(exclusion.min_rate, exclusion.min_month))
+    return marks
+
+
+def received_codes(repository: DuckDBScenarioRepository) -> set[str]:
+    """자동 갱신이 한 번이라도 받아 시나리오로 등록한 원천 코드(실행 기록 기준).
+
+    실행 기록은 시나리오를 지워도 남는다. 그래서 사람이 자동 발행본을 되돌리고 그 시나리오를 지워도
+    다음 회차가 같은 코드를 다시 받지 않는다.
+    """
+    return {
+        str(run.simulation_code)
+        for run in repository.list_auto_official_update_runs()
+        if run.created_scenario_id is not None and run.simulation_code
+    }
+
+
+def _auto_exclusions(
+    repository: DuckDBScenarioRepository,
+    scenario_id: str,
+    revision_id: str,
+) -> list[AutoOfficialUpdateExclusion]:
+    """그 리비전의 공정 필터에서 자동 갱신이 뺀 공정의 `AUTO` 기록. 가까운 근거가 먼저다.
+
+    1. 리비전과 그 조상(부모 사슬)의 기록 — 가까운 리비전 차례.
+    2. 「현재 활성 편집본 복제」로 만든 시나리오(`CLONE_SOURCE_TYPE`)면 그 복제 **전에** 마지막으로
+       저장된 자동 리비전 2 의 기록(`_auto_revision_before`). 복제는 부모 없이 세션 프리셋을 그대로
+       실어, 자동 off 가 조상 기록 밖으로 빠진다 — 그대로 두면 다음 회차가 그 공정을 사람이 끈
+       것으로 보고 영영 이어받는다.
     """
     lineage = _revision_lineage(repository, scenario_id, revision_id)
     order = {revision: index for index, revision in enumerate(lineage)}
-    exclusions = sorted(
+    found = sorted(
         (
             exclusion
             for exclusion in repository.list_auto_official_update_exclusions(
@@ -532,10 +627,54 @@ def auto_off_marks(
         ),
         key=lambda exclusion: order.get(str(exclusion.filtered_revision_id), len(order)),
     )
-    marks: dict[str, str] = {}
-    for exclusion in exclusions:
-        marks.setdefault(exclusion.process, auto_off_mark(exclusion.min_rate, exclusion.min_month))
-    return marks
+    scenario = next(
+        (
+            summary
+            for summary in repository.list_scenarios(include_archived=True)
+            if summary.scenario_id == scenario_id
+        ),
+        None,
+    )
+    if scenario is None or scenario.source_type != CLONE_SOURCE_TYPE:
+        return found
+    source_run = _auto_revision_before(repository, scenario.created_at)
+    if source_run is None:
+        return found
+    return found + [
+        exclusion
+        for exclusion in repository.list_auto_official_update_exclusions(
+            run_ids=[source_run.run_id]
+        )
+        if exclusion.kind == EXCLUSION_AUTO
+    ]
+
+
+def _auto_revision_before(
+    repository: DuckDBScenarioRepository, moment: datetime
+) -> AutoOfficialUpdateRun | None:
+    """`moment`(복제 시나리오를 만든 시각) 전에 마지막으로 저장된 자동 리비전 2 의 회차.
+
+    시각은 두 쪽 모두 DB 가 적은 저장 시각(시나리오·리비전의 `created_at`)으로 견준다 — 회차의 시작
+    시각은 주입한 시계를 따를 수 있다. 리비전이 이미 지워진 회차는 건너뛴다(복제의 출처일 수
+    있었어도 근거를 읽을 수 없다).
+    """
+    best: tuple[datetime, AutoOfficialUpdateRun] | None = None
+    for run in repository.list_auto_official_update_runs():
+        if run.filtered_revision_id is None or run.created_scenario_id is None:
+            continue
+        saved_at = next(
+            (
+                revision.created_at
+                for revision in repository.list_revisions(run.created_scenario_id)
+                if revision.revision_id == run.filtered_revision_id
+            ),
+            None,
+        )
+        if saved_at is None or saved_at > moment:
+            continue
+        if best is None or saved_at > best[0]:
+            best = (saved_at, run)
+    return None if best is None else best[1]
 
 
 def _revision_lineage(

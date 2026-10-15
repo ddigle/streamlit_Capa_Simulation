@@ -323,7 +323,10 @@ def test_marks_follow_the_filtered_revision_and_its_children(tmp_path: Path) -> 
 
 
 def test_the_mark_text_and_the_picker_line() -> None:
-    assert auto_off_mark(0.724, 202611) == "자동 off(확보율 72%, 26.11)"
+    assert auto_off_mark(0.724, 202611) == "자동 off(확보율 72.4%, 26.11)"
+    assert auto_off_mark(0.72, 202611) == "자동 off(확보율 72%, 26.11)"
+    # 판정은 원값 「미만」이다 — 기준 80% 에서 꺼진 79.96% 가 「80%」로 보이지 않게 내린다.
+    assert auto_off_mark(0.7996, 202611) == "자동 off(확보율 79.9%, 26.11)"
     assert auto_off_mark(None, None) == "자동 off"
     item = ProcessPickerItem(
         process=WAFER,
@@ -338,6 +341,8 @@ def test_the_mark_text_and_the_picker_line() -> None:
         f"공식버전 자동 갱신이 뺀 공정 1개 · {WAFER} 자동 off(확보율 50%, 26.03)"
     )
     assert auto_off_mark_line([item], {}, str) is None
+    # 사람이 다시 켠 공정은 지금 빠져 있지 않다 — 줄에서 세지 않는다.
+    assert auto_off_mark_line([item], marks, str, {WAFER}) is None
     tooltip = tile_tooltip_text(item, WAFER, enabled=False, mark=marks[WAFER])
     assert tooltip.endswith("공식버전 자동 갱신: 자동 off(확보율 50%, 26.03)")
 
@@ -389,3 +394,67 @@ def test_the_tab_frames_have_the_documented_columns() -> None:
         "리비전 2 저장",
     ]
     assert list(setting_history_frame([]).columns) == ["시각", "바꾼 사람", "바꾼 내용", "판"]
+
+
+# ---------------------------------------------------------------------------
+# 지금 상태의 다음 실행·멈춤 경고·끊긴 결과 알림
+# ---------------------------------------------------------------------------
+
+
+def test_the_next_run_skips_to_tomorrow_once_today_is_claimed() -> None:
+    from capa_simulation.components.auto_official_update_tab import next_run_line
+
+    config = AutoUpdateConfig(enabled=True, check_time=time(9, 0), keyword="PSM", threshold=0.8)
+
+    assert next_run_line(config, True, NOW) == "2026-10-15 09:00"
+    assert next_run_line(config, True, NOW, claimed_today=True) == (
+        "2026-10-16 09:00 (오늘 회차는 이미 돌았습니다)"
+    )
+    later = AutoUpdateConfig(enabled=True, check_time=time(6, 0), keyword="PSM", threshold=0.8)
+    assert next_run_line(later, True, NOW, claimed_today=True) == "2026-10-16 06:00"
+
+
+def test_a_long_round_or_a_silent_thread_is_warned() -> None:
+    from datetime import timedelta
+
+    from capa_simulation.auto_update_scheduler import SchedulerStatus, TickOutcome
+    from capa_simulation.components.auto_official_update_tab import scheduler_stall_message
+
+    def status(kind: str, at: object) -> SchedulerStatus:
+        return SchedulerStatus(
+            started_at=NOW,
+            last_tick_at=at,  # type: ignore[arg-type]
+            last_outcome=TickOutcome(kind, at),  # type: ignore[arg-type]
+            pending_day=None,
+            alive=True,
+            tick_seconds=30.0,
+        )
+
+    assert scheduler_stall_message(status("running", NOW), NOW + timedelta(minutes=5)) is None
+    long_run = scheduler_stall_message(status("running", NOW), NOW + timedelta(minutes=45))
+    assert long_run is not None and "45분째 도는 중" in long_run
+    assert scheduler_stall_message(status("waiting", NOW), NOW + timedelta(seconds=90)) is None
+    silent = scheduler_stall_message(status("waiting", NOW), NOW + timedelta(minutes=5))
+    assert silent is not None and "멈춰 있습니다" in silent
+
+
+def test_a_run_result_cut_off_by_a_rerun_is_found_by_its_token(database: Path) -> None:
+    """「지금 실행」 도중 다른 칸을 눌러 결과 알림이 끊겨도 다음 회차가 기록에서 찾아 보인다."""
+    from capa_simulation.components.auto_official_update_tab import PENDING_RUN_TOKEN_KEY
+
+    repository = _with_w40(database)
+    run_auto_official_update(
+        repository,
+        trigger=TRIGGER_MANUAL,
+        sources=FakeBigDataQuery(catalog_frame()).sources,
+        clock=fixed_clock,
+        manual_token="cut0ff",
+    )
+    app = AppTest.from_string(TAB_SCRIPT.format(path=str(database)), default_timeout=180)
+    app.session_state[PENDING_RUN_TOKEN_KEY] = "cut0ff"
+
+    app = app.run()
+
+    assert not app.exception
+    assert any("지금 실행 회차 — 건너뜀" in str(element.value) for element in app.info)
+    assert PENDING_RUN_TOKEN_KEY not in app.session_state

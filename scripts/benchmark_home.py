@@ -17,6 +17,7 @@
 """
 
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -225,6 +226,10 @@ def main() -> int:
         )
         stack.enter_context(patch("capa_simulation.sync_boot.enable_sync_state_if_managed"))
         stack.enter_context(patch("capa_simulation.sync_boot.heartbeat_if_managed"))
+        # 공식버전 자동 갱신 예약의 실행 줄 허락을 뺀다. 앱을 띄운 창에서 이 스크립트를 돌려도
+        # AppTest 의 app.py 가 임시 DB 로 예약 스레드를 세우지 않는다.
+        stack.enter_context(patch.dict(os.environ))
+        os.environ.pop("CAPA_AUTO_OFFICIAL_UPDATE", None)
         started_at = perf_counter()
         sample = prepare_sample(database_path)
         setup_seconds = round(perf_counter() - started_at, 3)

@@ -34,6 +34,7 @@ from auto_update_fakes import register_code as _register
 from auto_update_fakes import source_frame as _source
 
 import capa_simulation.auto_official_update_runner as runner
+import capa_simulation.services.auto_official_update as rules
 from capa_simulation.auto_official_update_runner import (
     ALREADY_CLAIMED_MESSAGE,
     BUSY_MESSAGE,
@@ -47,10 +48,15 @@ from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
 from capa_simulation.io.core_data_source import CoreDataProvider
 from capa_simulation.persistence.models import (
     AutoOfficialUpdateRun,
+    ScenarioCreate,
     ScenarioPreset,
     ScenarioSnapshot,
 )
-from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
+from capa_simulation.persistence.repository import (
+    REVISION_TABLES,
+    DuckDBScenarioRepository,
+    OfficialReleaseMoved,
+)
 from capa_simulation.scenario_registration import BIGDATAQUERY_PIPELINE_VERSION
 from capa_simulation.services.auto_official_update import (
     FILTERED_REVISION_NAME,
@@ -63,6 +69,7 @@ from capa_simulation.services.auto_official_update import (
     TRIGGER_SCHEDULED,
     AutoUpdateConfig,
     MissingOfficialWeek,
+    ProcessMinimum,
 )
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
 
@@ -615,3 +622,235 @@ def test_runs_cut_off_by_a_stopped_app_are_closed(repository: DuckDBScenarioRepo
     run = repository.load_auto_official_update_run(run_id)
     assert closed == 1 and run.status == STATUS_ERROR
     assert run.reason == runner.INTERRUPTED_REASON
+
+
+# ---------------------------------------------------------------------------
+# 리뷰에서 재현한 잘못된 발행(2026-10-15)
+# ---------------------------------------------------------------------------
+
+
+def _clone(repository: DuckDBScenarioRepository, snapshot: ScenarioSnapshot) -> ScenarioSnapshot:
+    """「현재 활성 편집본 복제」와 같은 꼴 — 부모 없는 새 시나리오, 세션 프리셋 그대로."""
+    return repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="PSM W41 사람 수정본",
+            source_simulation_code="CLONE-1",
+            source_simulation_name="PSM W41 사람 수정본",
+            source_type=runner.CLONE_SOURCE_TYPE,
+            pipeline_version="duckdb-rq-snapshot-v3",
+            source_registered_at=datetime(2026, 10, 12, 9, 0),
+        ),
+        snapshot.tables,
+        snapshot.preset,
+        source_data=None,
+        revision_tables={name: snapshot.tables[name] for name in REVISION_TABLES},
+        revision_name="복제",
+    )
+
+
+def test_an_auto_off_carried_into_a_clone_is_judged_again(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """자동 리비전 2 를 복제해 공식으로 지정해도 그 자동 off 는 사람이 끈 공정이 되지 않는다."""
+    _official_w40(repository)
+    first = _run(
+        repository,
+        FakeBigDataQuery(
+            _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")),
+            frames={"SIM-W41": _source(zero_available=[(WAFER, 202603)])},
+        ),
+    )
+    clone = _clone(repository, repository.load_revision(str(first.filtered_revision_id)))
+    assert WAFER not in clone.preset.included_processes
+    _publish(repository, clone)
+
+    second = _run(
+        repository,
+        FakeBigDataQuery(_catalog(("PSM W42", "SIM-W42", "2026-10-14 09:00:00"))),
+    )
+
+    assert second.status == STATUS_PUBLISHED
+    assert (second.auto_off_count, second.inherited_off_count) == (0, 0)
+    filtered = repository.load_revision(str(second.filtered_revision_id))
+    assert filtered.preset.included_processes == ALL_PROCESSES
+    # HOME 표지도 복제본에서 같은 근거를 읽는다.
+    marks = runner.auto_off_marks(
+        repository, clone.scenario.scenario_id, clone.revision.revision_id
+    )
+    assert marks == {WAFER: "자동 off(확보율 0%, 26.03)"}
+
+
+def test_a_manual_off_in_a_clone_is_still_inherited(repository: DuckDBScenarioRepository) -> None:
+    """복제본에서 사람이 더 뺀 공정(가장 최근 자동 회차가 빼지 않은 것)은 그대로 이어받는다."""
+    _official_w40(repository)
+    first = _run(
+        repository,
+        FakeBigDataQuery(
+            _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")),
+            frames={"SIM-W41": _source(zero_available=[(WAFER, 202603)])},
+        ),
+    )
+    auto_revision = repository.load_revision(str(first.filtered_revision_id))
+    narrowed = _save_filtered(repository, auto_revision, (FINAL,))
+    _publish(repository, _clone(repository, narrowed))
+
+    second = _run(
+        repository,
+        FakeBigDataQuery(_catalog(("PSM W42", "SIM-W42", "2026-10-14 09:00:00"))),
+    )
+
+    assert (second.auto_off_count, second.inherited_off_count) == (0, 1)
+    filtered = repository.load_revision(str(second.filtered_revision_id))
+    assert filtered.preset.included_processes == (FINAL, WAFER)
+
+
+def test_a_received_code_is_not_received_again_after_its_scenario_is_deleted(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """사람이 자동 발행을 되돌리고 그 시나리오를 지워도 다음 회차가 같은 코드를 되살리지 않는다."""
+    w40 = _official_w40(repository)
+    fake = FakeBigDataQuery(_catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")))
+    first = _run(repository, fake)
+    assert first.status == STATUS_PUBLISHED
+    _publish(repository, w40)
+    repository.archive_scenario(str(first.created_scenario_id))
+    repository.delete_scenario(str(first.created_scenario_id))
+
+    second = _run(repository, fake)
+
+    assert second.status == STATUS_SKIPPED
+    assert second.reason is not None
+    assert "1건은 자동 갱신이 이미 받았다가 시나리오가 지워진 코드" in second.reason
+    assert len(fake.requests) == 1
+    latest = repository.latest_official_release()
+    assert latest is not None and latest.scenario_id == w40.scenario.scenario_id
+    assert runner.received_codes(repository) == {"SIM-W41"}
+
+
+def test_a_newer_official_version_set_during_the_round_is_not_overwritten(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """회차 도중 사람이 더 새 주차를 공식 지정하면 옛 기준으로 고른 코드를 그 위에 덮지 않는다."""
+    _official_w40(repository)
+    fake = FakeBigDataQuery(_catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")))
+
+    def provider_meanwhile_published(request: DetailRequest) -> CoreDataProvider:
+        newer = _register(
+            repository, code="SIM-W42", name="PSM W42", registered_at=datetime(2026, 10, 14, 9, 0)
+        )
+        _publish(repository, newer)
+        return fake.provider(request)
+
+    run = run_auto_official_update(
+        repository,
+        trigger=TRIGGER_MANUAL,
+        sources=AutoUpdateSources(
+            fetch_catalog=fake.fetch_catalog, detail_provider=provider_meanwhile_published
+        ),
+        clock=_clock,
+    ).run
+
+    assert run is not None
+    assert (run.status, run.stage) == (STATUS_PUBLISH_SKIPPED, "publish")
+    assert run.reason is not None and "회차 도중 공식버전이 바뀌어(공식 v1 → v2)" in run.reason
+    assert run.filtered_revision_id is not None and run.official_release_no is None
+    latest = repository.latest_official_release()
+    assert latest is not None and latest.release_no == 2
+    assert latest.source_simulation_code == "SIM-W42"
+
+
+def test_a_guarded_publish_refuses_when_the_latest_official_moved(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    w40 = _official_w40(repository)
+
+    with pytest.raises(OfficialReleaseMoved, match="공식 v0 → v1"):
+        repository.publish_official_revision(
+            w40.scenario.scenario_id,
+            w40.revision.revision_id,
+            release_name="다시",
+            expected_latest_release_no=0,
+        )
+
+    release = repository.publish_official_revision(
+        w40.scenario.scenario_id,
+        w40.revision.revision_id,
+        release_name="다시",
+        expected_latest_release_no=1,
+    )
+    assert release.release_no == 2
+
+
+def test_only_processes_without_a_rate_left_is_not_published(
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남는 공정이 모두 확보율 행이 없는 공정이면 B/N 이 빈 공식버전이 된다 — 발행하지 않는다."""
+    _official_w40(repository)
+    real = rules.process_minimum_rates
+
+    def without_final(securement: pd.DataFrame) -> tuple[ProcessMinimum, ...]:
+        # FINAL 은 `RQ_REQB` 에만 있고 확보율 행이 없는 공정인 셈이다.
+        return tuple(minimum for minimum in real(securement) if minimum.process != FINAL)
+
+    monkeypatch.setattr(runner, "process_minimum_rates", without_final)
+    fake = FakeBigDataQuery(
+        _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")),
+        frames={"SIM-W41": _source(zero_available=[(CHIP, 202603), (WAFER, 202603)])},
+    )
+
+    run = _run(repository, fake)
+
+    assert (run.status, run.stage) == (STATUS_PUBLISH_SKIPPED, "judge")
+    assert run.reason is not None
+    assert "남는 공정 1개가 모두 확보율로 판정할 수 없는 공정" in run.reason
+    assert "등록한 시나리오 「PSM W41 (SIM-W41)」는 남겼습니다" in run.reason
+    assert run.filtered_revision_id is None
+    assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
+
+
+def test_a_system_exit_in_a_round_is_recorded_and_raised_again(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """Exception 밖의 예외도 실제 사유로 남긴다. 실행 흐름은 삼키지 않고, 잠금은 풀린다."""
+    _official_w40(repository)
+
+    def exiting_provider(request: DetailRequest) -> CoreDataProvider:
+        raise SystemExit("사내 패키지가 끝냈다")
+
+    with pytest.raises(SystemExit):
+        run_auto_official_update(
+            repository,
+            trigger=TRIGGER_MANUAL,
+            sources=AutoUpdateSources(
+                fetch_catalog=FakeBigDataQuery(
+                    _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00"))
+                ).fetch_catalog,
+                detail_provider=exiting_provider,
+            ),
+            clock=_clock,
+        )
+
+    [run] = repository.list_auto_official_update_runs()
+    assert (run.status, run.stage) == (STATUS_ERROR, "register")
+    assert run.reason == "상세 조회·등록 단계에서 멈췄습니다 — SystemExit: 사내 패키지가 끝냈다"
+    again = run_auto_official_update(
+        repository,
+        trigger=TRIGGER_MANUAL,
+        sources=FakeBigDataQuery(_catalog()).sources,
+        clock=_clock,
+    )
+    assert again.run is not None
+
+
+def test_a_manual_token_names_the_round_so_the_screen_can_find_it(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    _official_w40(repository)
+
+    run = _run(repository, FakeBigDataQuery(_catalog()), manual_token="abc123")
+
+    assert run.run_key.endswith(":abc123")
+    found = repository.find_manual_auto_official_update_run("abc123")
+    assert found is not None and found.run_id == run.run_id
+    assert repository.find_manual_auto_official_update_run("zzz") is None
+    assert repository.find_manual_auto_official_update_run("%") is None

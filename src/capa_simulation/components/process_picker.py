@@ -17,7 +17,7 @@
 적는다. 버튼 글자는 그대로 공정 표시명이다 — 고정 폭이라 표지를 붙이면 공정명이 잘린다.
 """
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 
 import streamlit as st
 
@@ -110,12 +110,18 @@ def auto_off_mark_line(
     items: Sequence[ProcessPickerItem],
     marks: Mapping[str, str],
     format_func: Callable[[str], str],
+    selected: Collection[str] = (),
 ) -> str | None:
-    """목록 위 한 줄 — 자동 갱신이 뺀 공정과 그 표지. 이 화면의 공정에 표지가 없으면 None."""
+    """목록 위 한 줄 — 자동 갱신이 뺀 공정 가운데 **지금 꺼져 있는 것**과 그 표지. 없으면 None.
+
+    사람이 다시 켠 공정(`selected` 안)은 세지 않는다 — 그 공정은 지금 빠져 있지 않다. 버튼 풍선의
+    표지는 켜져 있어도 근거로 남는다.
+    """
+    chosen = set(selected)
     marked = [
         f"{format_func(item.process)} {marks[item.process]}"
         for item in items
-        if item.process in marks
+        if item.process in marks and item.process not in chosen
     ]
     if not marked:
         return None
@@ -132,7 +138,7 @@ def render_process_picker(
 ) -> None:
     """버튼에만 표시명을 쓰고 콜백에는 언제나 원본 공정 키를 넘긴다."""
     marks = marks or {}
-    mark_line = auto_off_mark_line(items, marks, format_func)
+    mark_line = auto_off_mark_line(items, marks, format_func, selected)
     if mark_line is not None:
         st.caption(mark_line)
     groups = (

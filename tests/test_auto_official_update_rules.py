@@ -169,6 +169,18 @@ def test_an_official_name_with_two_weeks_is_an_error() -> None:
         _resolve(scenario_name="PSM W40→W41")
 
 
+def test_the_code_tail_added_by_registration_is_not_read_as_a_week() -> None:
+    """등록이 붙인 「 (코드)」 안의 `W##` 꼴은 주차가 아니다 — 원천명의 주차만 읽는다."""
+    baseline = _resolve(
+        scenario_name="PSM W41 (SIM_W40_A)",
+        release_name="PSM W41 (SIM_W40_A) 공식안",
+        source_simulation_code="SIM_W40_A",
+    )
+
+    assert (baseline.week, baseline.week_source) == (41, "시나리오명")
+    assert baseline.simulation_code == "SIM_W40_A"
+
+
 def _catalog(*rows: tuple[str, str, str, str]) -> pd.DataFrame:
     """(시뮬레이션명, 코드, PLAN 코드, 원천 등록시각) 행으로 목록 조회 결과(계약 5컬럼)."""
     return pd.DataFrame(
@@ -289,10 +301,72 @@ def test_a_code_with_several_plans_spans_every_registration_day() -> None:
 
     assert chosen is not None
     assert chosen.registered_at == datetime(2026, 10, 13, 9, 0)
+    assert chosen.first_registered_at == datetime(2026, 10, 9, 9, 0)
     assert (chosen.first_registered_on, chosen.last_registered_on) == (
         date(2026, 10, 9),
         date(2026, 10, 13),
     )
+
+
+def _w41_official(*, anchor: datetime, code: str) -> OfficialBaseline:
+    return OfficialBaseline(
+        release_no=2,
+        release_name=f"PSM W41 ({code}) 공식안",
+        scenario_id="scenario",
+        revision_id="revision",
+        scenario_name=f"PSM W41 ({code})",
+        week=41,
+        week_year=2026,
+        anchor_at=anchor,
+        week_source="시나리오명",
+        simulation_code=code,
+    )
+
+
+def test_an_old_code_loaded_again_later_is_not_a_newer_code() -> None:
+    """같은 주차 옛 코드에 나중 적재 줄이 있어도 새 코드가 아니다 — 처음 생긴 시각이 잣대다."""
+    official = _w41_official(anchor=datetime(2026, 10, 8, 9, 0), code="SIM-A")
+    catalog = _catalog(
+        ("PSM W41", "SIM-A", "P1", "2026-10-08 09:00:00"),
+        ("PSM W41", "SIM-B", "P1", "2026-10-06 03:00:00"),
+        ("PSM W41", "SIM-B", "P1", "2026-10-15 03:00:00"),
+    )
+
+    selection = select_candidate(
+        catalog, keyword="PSM", registered_codes={"SIM-A"}, baseline=official
+    )
+
+    assert selection.chosen is None and selection.newer == 0
+
+
+def test_a_visible_official_code_is_compared_by_its_first_registration() -> None:
+    """공식 코드가 목록에 보이면 저장된 등록시각(그 PLAN 최신 줄) 대신 처음 생긴 시각으로 견준다."""
+    official = _w41_official(anchor=datetime(2026, 10, 10, 9, 0), code="SIM-A")
+    catalog = _catalog(
+        ("PSM W41", "SIM-A", "P1", "2026-10-07 09:00:00"),
+        ("PSM W41", "SIM-A", "P1", "2026-10-10 09:00:00"),
+        ("PSM W41 수정", "SIM-C", "P1", "2026-10-08 09:00:00"),
+    )
+
+    selection = select_candidate(
+        catalog, keyword="PSM", registered_codes={"SIM-A"}, baseline=official
+    )
+
+    assert selection.chosen is not None and selection.chosen.simulation_code == "SIM-C"
+
+
+def test_within_a_week_the_code_that_appeared_last_wins_not_the_last_reload() -> None:
+    catalog = _catalog(
+        ("PSM W42", "SIM-X", "P1", "2026-10-09 09:00:00"),
+        ("PSM W42", "SIM-X", "P1", "2026-10-14 09:00:00"),
+        ("PSM W42", "SIM-Y", "P1", "2026-10-11 09:00:00"),
+    )
+
+    selection = select_candidate(
+        catalog, keyword="PSM", registered_codes=(), baseline=_baseline(40)
+    )
+
+    assert selection.chosen is not None and selection.chosen.simulation_code == "SIM-Y"
 
 
 def _rates(*rows: tuple[int, str, float | None]) -> pd.DataFrame:

@@ -78,6 +78,32 @@ st.session_state["captured_preset"] = capture_scenario_preset(
     assert app.session_state["captured_preset"].standard_target_processes == ("Process-B",)
 
 
+def test_hidden_processes_are_saved_and_unknown_ones_dropped() -> None:
+    """HOME 조회기간 밖이라 보이지 않던 포함 공정도 프리셋에 실린다. `RQ_REQB` 밖 공정은 뺀다.
+
+    세션의 포함 목록은 보이지 않는 공정을 지우지 않는다(`services/process_selection`). 저장할 표에
+    없는 공정(편집으로 사라진 공정 등)은 프리셋 검사가 거부하므로 여기서 거른다.
+    """
+    test_script = """
+import pandas as pd
+import streamlit as st
+
+from capa_simulation.scenario_preset_state import capture_scenario_preset
+
+st.session_state["captured_preset"] = capture_scenario_preset(
+    {"RQ_REQB": pd.DataFrame({"공정": ["Process-A", "Process-B", "Process-C"]})}
+)
+"""
+    app = AppTest.from_string(test_script)
+    app.session_state[MONTH_RANGE_KEY] = ("2026-08", "2026-09")
+    app.session_state[PROCESS_SELECTION_KEY] = ["Process-A", "사라진공정", "Process-C"]
+
+    app.run()
+
+    assert not app.exception
+    assert app.session_state["captured_preset"].included_processes == ("Process-A", "Process-C")
+
+
 def test_new_dataset_preset_activates_every_month_and_process() -> None:
     test_script = """
 import pandas as pd

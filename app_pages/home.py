@@ -158,7 +158,13 @@ from capa_simulation.services.process_picker import (
     ProcessPickerItem,
     build_process_picker_summary,
 )
-from capa_simulation.services.process_selection import resolve_included_processes
+from capa_simulation.services.process_selection import (
+    apply_dialog_selection,
+    remember_known_processes,
+    resolve_included_processes,
+    revision_processes,
+    visible_processes,
+)
 from capa_simulation.services.product_share import (
     PRODUCT_SHARE_BASES,
     assign_product_slots,
@@ -571,23 +577,32 @@ applied_key_processes = [
     if process in set(process_options)
 ]
 PROCESS_DIALOG_DRAFT_KEY = "dashboard_bottleneck_process_dialog_draft"
+known_processes = st.session_state.get(PROCESS_SEEN_KEY)
+# 리비전의 `RQ_REQB` 공정은 기준이 없는 회차(프리셋을 건 직후·새 세션)에만 읽는다 — 그때 아는 공정의
+# 출발점이다. 다른 회차는 표를 더 훑지 않는다.
+revision_universe = revision_processes(active_scenario["tables"]) if known_processes is None else []
 if PROCESS_SELECTION_KEY not in st.session_state:
     # 예전 사이드바 토글 키(dashboard_bottleneck_process_{공정})를 읽던 이관 코드였다.
     # 그 토글은 70ad6d0 에서 지워져 항상 기본값 True — 곧 전체 목록이다.
-    st.session_state[PROCESS_SELECTION_KEY] = list(process_options)
+    st.session_state[PROCESS_SELECTION_KEY] = remember_known_processes(
+        None, process_options, revision_universe
+    )
 else:
     saved_processes = st.session_state[PROCESS_SELECTION_KEY]
     if isinstance(saved_processes, list):
         # 저장된 것은 **포함 목록**이라 "사용자가 끈 공정" 과 "처음 보는 공정" 이 구분되지
-        # 않는다. 직전 실행의 옵션 집합을 함께 들고 있다가, 그때 없던 공정만 새 공정으로
+        # 않는다. 이 세션이 이미 아는 공정을 함께 들고 있다가, 거기 없던 공정만 새 공정으로
         # 보아 포함한다. 시나리오를 바꾸거나 과거 구간을 넣어 공정이 늘었을 때 그것들이
-        # 조용히 빠지면 B/N 이 틀린다.
+        # 조용히 빠지면 B/N 이 틀린다. 이번 조회기간에 보이지 않는 공정은 지우지 않는다 —
+        # 그대로 리비전 프리셋에 실려야 한다(`services/process_selection`).
         st.session_state[PROCESS_SELECTION_KEY] = resolve_included_processes(
             saved_processes,
             process_options,
-            st.session_state.get(PROCESS_SEEN_KEY),
+            known_processes,
         )
-st.session_state[PROCESS_SEEN_KEY] = list(process_options)
+st.session_state[PROCESS_SEEN_KEY] = remember_known_processes(
+    known_processes, process_options, revision_universe
+)
 
 
 def set_process_dialog_selection(processes: list[str]) -> None:
@@ -679,14 +694,17 @@ def show_process_filter_dialog(
         marks=auto_off_marks,
     )
     if apply_selection:
-        st.session_state[PROCESS_SELECTION_KEY] = [
-            process for process in options if process in selected_set
-        ]
+        # 이번 조회기간에 보이지 않던 공정은 팝업이 건드리지 않았다 — 그대로 둔다.
+        st.session_state[PROCESS_SELECTION_KEY] = apply_dialog_selection(
+            selected_set, options, st.session_state[PROCESS_SELECTION_KEY]
+        )
         st.session_state.pop(PROCESS_DIALOG_DRAFT_KEY, None)
         st.rerun(scope="app")
 
 
-included_processes = list(st.session_state[PROCESS_SELECTION_KEY])
+# 화면이 읽는 것은 이번 선택지 안의 포함 공정이다. 보이지 않는 공정은 세션 값에만 남아 리비전을
+# 저장할 때 프리셋에 실린다.
+included_processes = visible_processes(st.session_state[PROCESS_SELECTION_KEY], process_options)
 # 판정 기준은 사이드바 입력이 아니라 HOME → Preference 의 공용 프로필 한 곳에서 정한다
 # (2026-10-06 사용자 결정). 기본값과 월별 예외를 한 값으로 들고 다니며, 판정하는 모든 곳이
 # 달마다 그 달의 실효 기준을 쓴다. 거꾸로 된 짝(경고 > 확보)은 저장 단계에서 막는다.
