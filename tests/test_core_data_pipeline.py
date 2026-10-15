@@ -298,6 +298,60 @@ def test_route_sequences_distinguish_step_specific_capacity_references() -> None
     assert len(tables["RQ_WF_RATIO"]) == 2
 
 
+def test_reqb_rows_that_differ_only_in_spelling_are_registered_once() -> None:
+    """등록도 계산과 같은 정규화로 경로를 접는다(사내 감사 P4).
+
+    원래 글자 그대로만 접으면 `WF`·`Wafer`, 앞뒤 공백만 다른 행이 둘로 남고, 계산이 그 둘을 같은
+    경로로 세어 소요대수가 두 배가 된다. 남는 행은 첫 행의 원래 표기다.
+    """
+    source = pd.concat([_core_data_row()] * 3, ignore_index=True)
+    source["소요기준"] = pd.array(["WF", "Wafer", "WF"], dtype="string")
+    source["공정"] = pd.array(["Process-A", "Process-A", " Process-A "], dtype="string")
+
+    reqb = build_reference_tables(source, _display_order())["RQ_REQB"]
+
+    assert reqb[["공정", "소요기준"]].to_dict("records") == [
+        {"공정": "Process-A", "소요기준": "WF"}
+    ]
+
+
+def test_a_blank_lent_evaluation_counts_as_zero_lent_equipment() -> None:
+    """대여평가가 비면 0 대로 본다 — 가용대수가 보유대수 그대로다(사내 감사 P7).
+
+    `가용대수 = 설비보유 − 설비대여평가` 가 빈 값을 그대로 옮겨 가용대수가 비면 확보율 계산이
+    멈추고 설비대수 편집기도 열리지 않는다. 설비대수 편집기는 「빈칸은 0 대」로 읽는다
+    (`equipment_count`) — 등록도 같은 규칙이다. 보유대수가 빈 것은 0 으로 보지 않는다.
+    """
+    source = pd.concat([_core_data_row()] * 2, ignore_index=True)
+    source["생산계획년월"] = [202608, 202609]
+    source["설비보유"] = [12.0, 12.0]
+    source["설비대여평가"] = [2.0, None]
+
+    tables = build_reference_tables(source, _display_order())
+
+    lent = tables["RQ_EQP_LENT"].sort_values("생산계획년월")
+    available = tables["RQ_EQP_AVBL"].sort_values("생산계획년월")
+    assert lent["설비대여평가"].astype("float64").tolist() == pytest.approx([2.0, 0.0])
+    assert available["가용대수"].astype("float64").tolist() == pytest.approx([10.0, 12.0])
+
+
+def test_a_blank_lent_sibling_does_not_split_own_lent_and_available() -> None:
+    """같은 (월, 공정)에 대여평가가 빈 형제 행과 값이 있는 형제 행이 섞이면 값이 있는 행을 쓴다.
+
+    빈 칸을 원천 행에서 먼저 0 으로 메우면 가용대수 형제가 둘 다 값이 되어 보유 12 · 대여 2 인데
+    가용 12 를 고를 수 있다. 접은 뒤에 메우므로 세 표가 `보유 − 대여 = 가용` 으로 맞는다.
+    """
+    source = pd.concat([_core_data_row()] * 2, ignore_index=True)
+    source["STEP_SEQ"] = ["P100", "P200"]
+    source["설비보유"] = [12.0, 12.0]
+    source["설비대여평가"] = [None, 2.0]
+
+    tables = build_reference_tables(source, _display_order())
+
+    assert tables["RQ_EQP_LENT"]["설비대여평가"].astype("float64").tolist() == [2.0]
+    assert tables["RQ_EQP_AVBL"]["가용대수"].astype("float64").tolist() == [10.0]
+
+
 def test_invalid_month_is_rejected_at_source_boundary() -> None:
     source = _core_data_row()
     source.loc[0, "생산계획년월"] = 202613

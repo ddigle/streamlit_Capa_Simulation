@@ -150,6 +150,31 @@ def normalize_demand_basis(values: pd.Series) -> pd.Series:
     return values.astype("string").str.strip().str.upper().replace({"WAFER": "WF"})
 
 
+def duplicate_route_rows(routes: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
+    """앞 행과 **계산이 맞대는 꼴로** 같은 경로 행. 첫 행만 남기려고 쓴다.
+
+    `columns` 전부가 키인 경로 표(`RQ_REQB` 13컬럼)를 계산이 붙이는 꼴로 줄여 견준다 — 월은 숫자,
+    나머지는 앞뒤 공백을 떼고, 소요기준은 `normalize_demand_basis`, `Area_Name` 은 대소문자를
+    무시한다. 원래 글자로만 접으면 `WF`·`Wafer` 처럼 표기만 다른 두 행이 같은 경로로 두 번 세어져
+    그 경로의 소요대수가 두 배가 된다. 전부가 키인 표라 접어도 잃는 값이 없다.
+
+    등록(`reference_transformer._rq_reqb`)이 원천 표를 이것으로 접는다. 계산
+    (`required_equipment._prepare_reqb`)은 같은 정규화를 이미 거친 표를 `duplicated` 로 접는다 —
+    정규화를 두 번 하지 않으려는 것이고, 남는 행은 같다(`tests/test_required_equipment.py` 가 대조).
+    """
+    keys = routes[list(columns)].copy()
+    for column in keys.columns:
+        if column == "생산계획년월":
+            keys[column] = pd.to_numeric(keys[column], errors="coerce")
+        else:
+            keys[column] = keys[column].astype("string").str.strip()
+    if "소요기준" in keys.columns:
+        keys["소요기준"] = normalize_demand_basis(keys["소요기준"])
+    if "Area_Name" in keys.columns:
+        keys["Area_Name"] = keys["Area_Name"].str.casefold()
+    return keys.duplicated(keep="first")
+
+
 def normalize_demand_basis_value(value: object) -> str:
     """스칼라 소요기준 한 건을 `normalize_demand_basis`와 같은 규칙으로 정규화한다."""
     normalized = str(value).strip().upper()

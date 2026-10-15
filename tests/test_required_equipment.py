@@ -493,6 +493,147 @@ def test_required_equipment_recognizes_wf_as_wafer_basis() -> None:
     assert result.loc[0, "소요대수"] == pytest.approx(20.0)
 
 
+def test_reqb_rows_that_differ_only_in_spelling_are_one_route() -> None:
+    """표기만 다른 경로 행은 정규화하면 같은 경로다 — 한 번만 센다(사내 감사 P4).
+
+    `WF`·`Wafer`, `Main`·`MAIN`, 앞뒤 공백처럼 표기만 다른 행은 원래 글자로 접으면 따로 남는다.
+    계산은 그 행들을 같은 키로 정규화한 뒤 같은 부하량과 대당 Capa 를 붙이므로, 접지 않으면 그
+    경로의 소요대수가 행 수만큼 곱해진다. 이미 그렇게 저장된 리비전도 있어 계산에서도 접는다.
+    """
+    route = {
+        "생산계획년월": 202608,
+        "Area_Name": "Main",
+        "공정": "Process-A",
+        "양산구분": "양산",
+        "제품정보": "Product-A",
+        "Stack": "12H",
+        "Capa Code": "CAPA-A",
+        "Customer": "Customer-A",
+        "CS": "MP",
+        "WF 구분": "Core",
+        "STEP_SEQ": "10",
+        "MCP_SEQ": "1",
+        "소요기준": "WF",
+    }
+    reqb = pd.DataFrame(
+        [
+            route,
+            {**route, "소요기준": "Wafer"},
+            {**route, "Area_Name": "MAIN", "공정": " Process-A "},
+        ]
+    )
+    plan_keys = ("생산계획년월", "양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS")
+    plan = pd.DataFrame([{**{key: route[key] for key in plan_keys}, "생산수량": 100.0}])
+    yield_data = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "EDS_수율": [0.8],
+            "BE_수율": [1.0],
+        }
+    )
+    chip_qty = pd.DataFrame(
+        {
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "구분_Chip": [2.0],
+            "Net Die": [500.0],
+        }
+    )
+    unit_capacity = pd.DataFrame([{key: route[key] for key in CAPACITY_KEYS}]).assign(
+        **{"대당 Capa": 25.0}
+    )
+
+    result = calculate_required_equipment(reqb, plan, yield_data, chip_qty, unit_capacity)
+    table = required_equipment_to_month_table(result)
+
+    assert len(result) == 1
+    assert result["소요대수"].tolist() == pytest.approx([20.0])
+    assert table["202608"].tolist() == pytest.approx([20.0])
+
+
+def test_registration_and_calculation_fold_the_same_route_rows() -> None:
+    """등록의 경로 접기(`duplicate_route_rows`)와 계산의 접기는 같은 행을 남긴다.
+
+    계산(`_prepare_reqb`)은 이미 정규화한 표를 `duplicated` 로 접어 정규화를 두 번 하지 않는다.
+    두 접기가 갈리면 등록이 남긴 행을 계산이 또 접거나 서로 다른 행을 남긴다 — 등록한 표로 계산한
+    결과와 원천 그대로 계산한 결과가 어긋난다.
+    """
+    from capa_simulation.services.frame_contracts import duplicate_route_rows
+    from capa_simulation.services.required_equipment import REQB_COLUMNS
+
+    route = {
+        "생산계획년월": 202608,
+        "Area_Name": "Main",
+        "공정": "Process-A",
+        "양산구분": "양산",
+        "제품정보": "Product-A",
+        "Stack": "12H",
+        "Capa Code": "CAPA-A",
+        "Customer": "Customer-A",
+        "CS": "MP",
+        "WF 구분": "Core",
+        "STEP_SEQ": "10",
+        "MCP_SEQ": "1",
+        "소요기준": "WF",
+    }
+    routes = pd.DataFrame(
+        [
+            route,
+            {**route, "소요기준": "Wafer"},
+            {**route, "Area_Name": "MAIN", "공정": " Process-A "},
+            {**route, "소요기준": " wf ", "생산계획년월": "202608"},
+            {**route, "공정": "Process-B"},
+            {**route, "STEP_SEQ": "20", "Area_Name": "mi"},
+            {**route, "STEP_SEQ": "20", "Area_Name": "MI "},
+        ]
+    )
+
+    canonical = [
+        route,
+        {**route, "공정": "Process-B"},
+        {**route, "STEP_SEQ": "20", "Area_Name": "MI"},
+    ]
+    plan_keys = ("생산계획년월", "양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS")
+    plan = pd.DataFrame([{**{key: route[key] for key in plan_keys}, "생산수량": 100.0}])
+    yield_data = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "EDS_수율": [0.8],
+            "BE_수율": [1.0],
+        }
+    )
+    chip_qty = pd.DataFrame(
+        {
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "구분_Chip": [2.0],
+            "Net Die": [500.0],
+        }
+    )
+    unit_capacity = pd.DataFrame(
+        [{key: row[key] for key in CAPACITY_KEYS} for row in canonical]
+    ).assign(**{"대당 Capa": 25.0})
+
+    registered = routes.loc[~duplicate_route_rows(routes, REQB_COLUMNS)]
+    from_source = calculate_required_equipment(routes, plan, yield_data, chip_qty, unit_capacity)
+    from_registered = calculate_required_equipment(
+        registered, plan, yield_data, chip_qty, unit_capacity
+    )
+
+    assert len(registered) == 3
+    assert len(from_source) == 3
+    assert from_source["소요대수"].tolist() == pytest.approx([20.0, 20.0, 20.0])
+    pd.testing.assert_frame_equal(from_registered, from_source)
+
+
 # ------------------------------------------------------------------ 소요기준 PKG
 # 사내 버그 보고(2026-09-28): 실제 `RQ_REQB` 의 PKG 행은 WF 구분에 `BUFFER` 같은 실제 분류값을
 # 싣는다. 예전 픽스처는 REQB·대당 Capa 모두 `"PKG"` 로 맞춰 코드의 잘못된 가정을 가렸다.

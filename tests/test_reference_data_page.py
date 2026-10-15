@@ -1666,6 +1666,27 @@ def test_the_paste_notice_says_what_happened_to_the_cleared_cells() -> None:
     assert notices and not any("빈칸" in item or "지워진 칸" in item for item in notices), notices
 
 
+def test_a_pasted_ratio_outside_the_grid_range_is_refused_in_the_dialog() -> None:
+    """붙여넣기도 격자와 같은 하한·상한(`EDITOR_FORMATS`)을 지난다(사내 감사 E5).
+
+    측정률 85% 를 `85` 로 붙여넣은 것이 적용되면 그 경로 대당 Capa 가 85 분의 1 이 된다.
+    """
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["Lot측정률"]
+    app.run()
+    app = _paste(
+        app,
+        "capa_lot_ratio_editor",
+        RATIO_PASTE_HEADER
+        + _ratio_paste_row("Process-A", "85")
+        + _ratio_paste_row("Process-B", "1"),
+    )
+
+    errors = [str(error.value) for error in app.error]
+    assert any("0 ~ 1" in error and "'85'" in error for error in errors), errors
+    assert "test_month_updates" not in app.session_state
+
+
 # ---------------------------- 2026-09-29 2차 리뷰: 새 경로의 효율, 쓰는 칸의 0, 빈 측정률 표
 
 # 픽스처의 `tables` 에 행을 더하는 도우미. 첫 행을 복제해 일부 컬럼만 바꾼다.

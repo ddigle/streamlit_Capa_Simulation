@@ -26,6 +26,10 @@ from capa_simulation.services.weighted_unit_capacity import (
 
 STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES = ("Pre B/D",)
 PKG_EQUIVALENT_COLUMN = "PKG 환산 일 표준 가능량"
+# `RQ_RUN_DAY` 를 붙이는 동안만 들고 가는 칸. 빈 칸 여부·원래 적힌 값·붙었는지.
+_RUN_DAY_BLANK = "_RUN_DAY_빈값"
+_RUN_DAY_RAW = "_RUN_DAY_원래값"
+_RUN_DAY_JOINED = "_RUN_DAY_연결"
 # 소요대수 상세와 계획을 잇는 키. `Pack Code` 는 **넣지 않는다** — 연결 상대인
 # `DEMAND_ID_COLUMNS` 에 그 컬럼이 없어 `KeyError` 가 난다. Pack Code 별 계획 줄은
 # `_prepare_pkg_plan_for_equivalent` 가 이 7키 합계로 접어서 넘긴다.
@@ -77,22 +81,7 @@ def build_weekly_standard_target_capacity(
     if monthly_capacity.empty:
         return pd.DataFrame(columns=result_columns)
 
-    prepared_run_day = _prepare_run_day(run_day)
-    monthly_capacity = monthly_capacity.merge(
-        prepared_run_day,
-        on=["생산계획년월", "공정"],
-        how="left",
-        validate="many_to_one",
-    )
-    missing_run_day = monthly_capacity["RUN_DAY"].isna()
-    if missing_run_day.any():
-        examples = (
-            monthly_capacity.loc[missing_run_day, ["생산계획년월", "공정"]]
-            .drop_duplicates()
-            .head(5)
-            .to_dict("records")
-        )
-        raise ValueError(f"RQ_RUN_DAY 연결값이 없는 표준 목표 Capa 기준이 있습니다: {examples}")
+    monthly_capacity = _attach_run_day(monthly_capacity, _prepare_run_day(run_day))
     monthly_capacity["대당 일 Capa"] = monthly_capacity["공정 유효 Capa"].div(
         monthly_capacity["RUN_DAY"]
     )
@@ -253,6 +242,12 @@ def _standard_target_exception_mask(data: pd.DataFrame) -> pd.Series:
 
 
 def _prepare_run_day(data: pd.DataFrame) -> pd.DataFrame:
+    """키를 맞추고 값을 숫자로 읽는다. **값 검사는 붙인 뒤에 한다**(`_attach_run_day`).
+
+    표 전체를 여기서 검사하면 소요대수가 없는 (월, 공정)의 0 하나가 표준 목표와 재공 현황을
+    멈춘다. 기준 정보 적용 검사는 UPEH 경로가 쓰지 않는 칸의 0 을 허락하므로(대당 Capa 가 멈추지
+    않는다, `reference_consistency.nonpositive_keys_in_use`) 그 0 은 정상 상태다.
+    """
     required = ["생산계획년월", "공정", "RUN_DAY"]
     require_columns(data, required, "RQ_RUN_DAY")
     result = data[required].copy()
@@ -260,12 +255,59 @@ def _prepare_run_day(data: pd.DataFrame) -> pd.DataFrame:
     result["공정"] = result["공정"].astype("string").str.strip()
     if result["공정"].isna().any() or result["공정"].eq("").any():
         raise ValueError("RQ_RUN_DAY의 공정에는 누락값이 없어야 합니다.")
-    run_day = pd.to_numeric(result["RUN_DAY"], errors="coerce")
-    if run_day.isna().any() or run_day.le(0).any():
-        raise ValueError("RQ_RUN_DAY의 RUN_DAY는 0보다 큰 숫자여야 합니다.")
-    result["RUN_DAY"] = run_day.astype("float64")
+    raw = result["RUN_DAY"]
+    result[_RUN_DAY_BLANK] = raw.isna() | raw.astype("string").str.strip().eq("").fillna(False)
+    result[_RUN_DAY_RAW] = raw
+    result["RUN_DAY"] = pd.to_numeric(raw, errors="coerce").astype("float64")
     assert_unique_keys(result, ["생산계획년월", "공정"], "RQ_RUN_DAY의 생산계획년월·공정이")
     return result
+
+
+def _attach_run_day(monthly_capacity: pd.DataFrame, run_day: pd.DataFrame) -> pd.DataFrame:
+    """(월, 공정)마다 RUN_DAY 를 붙이고 **붙은 칸만** 검사한다. 걸리면 그 (월, 공정)을 적는다.
+
+    대당 일 Capa 는 RUN_DAY 로 나누므로 붙은 칸은 0보다 큰 숫자여야 한다. 행이 없는 것·빈 값·숫자가
+    아닌 값·0 이하를 각각 다른 문장으로 알린다.
+    """
+    keys = ["생산계획년월", "공정"]
+    joined = monthly_capacity.merge(
+        run_day,
+        on=keys,
+        how="left",
+        validate="many_to_one",
+        indicator=_RUN_DAY_JOINED,
+    )
+    attached = joined[_RUN_DAY_JOINED].eq("both")
+    blank = attached & joined[_RUN_DAY_BLANK].eq(True)
+    checks = (
+        (
+            ~attached,
+            "RQ_RUN_DAY 연결값이 없는 표준 목표 Capa 기준이 있습니다: ",
+            keys,
+        ),
+        (
+            blank,
+            "RQ_RUN_DAY의 RUN_DAY 값이 빈 표준 목표 Capa 기준이 있습니다: ",
+            keys,
+        ),
+        (
+            attached & ~blank & joined["RUN_DAY"].isna(),
+            "RQ_RUN_DAY의 RUN_DAY에 숫자가 아닌 값이 있습니다: ",
+            [*keys, _RUN_DAY_RAW],
+        ),
+        (
+            attached & joined["RUN_DAY"].le(0),
+            "RQ_RUN_DAY의 RUN_DAY는 0보다 커야 합니다: ",
+            [*keys, "RUN_DAY"],
+        ),
+    )
+    for mask, message, columns in checks:
+        if not bool(mask.any()):
+            continue
+        found = joined.loc[mask, columns].drop_duplicates(subset=keys)
+        examples = found.rename(columns={_RUN_DAY_RAW: "RUN_DAY"}).head(5).to_dict("records")
+        raise ValueError(f"{message}{len(found):,}건, 예시 {examples}")
+    return joined.drop(columns=[_RUN_DAY_JOINED, _RUN_DAY_BLANK, _RUN_DAY_RAW])
 
 
 def _prepare_pkg_plan_for_equivalent(data: pd.DataFrame) -> pd.DataFrame:

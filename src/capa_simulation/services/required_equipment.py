@@ -134,7 +134,10 @@ def _prepare_reqb(reqb: pd.DataFrame) -> pd.DataFrame:
     prepared_reqb["소요기준"] = validate_demand_basis(prepared_reqb["소요기준"], "RQ_REQB")
     assert_complete(prepared_reqb, REQB_REQUIRED_KEYS, "RQ_REQB")
     prepared_reqb["Area_Name"] = normalize_area_name(prepared_reqb["Area_Name"], "RQ_REQB")
-    return prepared_reqb
+    # 표기만 다른 경로 행(`WF`·`Wafer`, `Main`·`MAIN`, 앞뒤 공백)을 접는다. 접지 않으면 같은 부하량·
+    # 대당 Capa 를 두 번 받아 소요대수가 두 배다. 위에서 이미 계산 꼴로 정규화했으므로 그대로
+    # `duplicated` 로 접는다 — 등록의 `frame_contracts.duplicate_route_rows` 와 같은 행이 남는다.
+    return prepared_reqb.loc[~prepared_reqb.duplicated(subset=REQB_COLUMNS)].reset_index(drop=True)
 
 
 def _empty_required_equipment_result() -> pd.DataFrame:

@@ -315,3 +315,60 @@ def test_removed_values_are_counted_so_the_apply_message_can_say_it() -> None:
     filled = template.copy()
     filled.loc[0, "202608"] = 0.99
     assert count_removed_values(template, filled, ["공정", "양산구분"]) == 0
+
+
+# ------------------------------- 값 칸 범위 (격자의 min/max 를 붙여넣기도 지난다)
+# 편집 격자는 `EDITOR_FORMATS` 의 하한·상한으로 값을 받는다. 붙여넣기가 그 범위를 지나지 않으면
+# 측정률에 `85`(= 85% 를 백분율로 적은 것)·`1.2`·음수가 그대로 들어가 대당 Capa 가 조용히 틀린다
+# (사내 감사 E5).
+
+
+def _ranged_paste(modified: pd.DataFrame, template: pd.DataFrame | None = None) -> pd.DataFrame:
+    base = _template() if template is None else template
+    return parse_reference_edit_clipboard(
+        modified.to_csv(index=False, sep="\t"),
+        base,
+        ["공정", "양산구분"],
+        "RQ_WF_RATIO",
+        min_value=0.0,
+        max_value=1.0,
+    )
+
+
+@pytest.mark.parametrize("value", ["85", "1.2", "-0.1"])
+def test_a_pasted_value_outside_the_grid_range_is_refused_with_its_cell(value: str) -> None:
+    modified = _template().astype({"202608": "object"})
+    modified.loc[1, "202608"] = value
+
+    with pytest.raises(ValueError) as error:
+        _ranged_paste(modified)
+
+    message = str(error.value)
+    assert "0 ~ 1" in message
+    assert f"202608 칸 '{value}'" in message
+    assert "공정=Process-A" in message
+
+
+def test_the_range_bounds_themselves_are_allowed() -> None:
+    modified = _template().astype({"202608": "object"})
+    modified.loc[0, "202608"] = "1"
+    modified.loc[1, "202608"] = "0"
+
+    result = _ranged_paste(modified)
+
+    assert result["202608"].astype(float).tolist() == [1.0, 0.0]
+
+
+def test_a_value_already_outside_the_range_in_the_template_passes_unchanged() -> None:
+    """양식에 이미 있던 값은 이번 붙여넣기가 만든 것이 아니다.
+
+    막으면 다른 칸을 고치려던 사람이 자기가 만들지 않은 값에 걸린다.
+    """
+    template = _template()
+    template.loc[0, "202609"] = 1.05
+    modified = template.copy()
+    modified.loc[1, "202608"] = 0.7
+
+    result = _ranged_paste(modified, template)
+
+    assert result["202609"].astype(float).tolist() == pytest.approx([1.05, 0.81])

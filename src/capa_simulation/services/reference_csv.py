@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 
 import pandas as pd
@@ -90,10 +91,20 @@ def parse_reference_edit_clipboard(
     template: pd.DataFrame,
     key_columns: list[str],
     table_name: str,
+    *,
+    min_value: float | None = None,
+    max_value: float | None = None,
 ) -> pd.DataFrame:
     """Read a header-inclusive Excel clipboard block using the existing table contract."""
     source = parse_clipboard_table(content, table_name)
-    return validate_reference_edit_table(source, template, key_columns, table_name)
+    return validate_reference_edit_table(
+        source,
+        template,
+        key_columns,
+        table_name,
+        min_value=min_value,
+        max_value=max_value,
+    )
 
 
 def validate_reference_edit_table(
@@ -101,8 +112,14 @@ def validate_reference_edit_table(
     template: pd.DataFrame,
     key_columns: list[str],
     table_name: str,
+    *,
+    min_value: float | None = None,
+    max_value: float | None = None,
 ) -> pd.DataFrame:
-    """Require the same columns and classification rows as the current edit template."""
+    """Require the same columns and classification rows as the current edit template.
+
+    `min_value`·`max_value` 는 그 표 편집 격자의 하한·상한이다(`assert_edit_value_range`).
+    """
     source = source.dropna(how="all").reset_index(drop=True)
     expected_columns = [str(column) for column in template.columns]
     source.columns = [str(column).strip() for column in source.columns]
@@ -156,6 +173,14 @@ def validate_reference_edit_table(
         .reset_index(drop=True)
     )
     assert_numeric_edit_values(result, key_columns, table_name)
+    assert_edit_value_range(
+        result,
+        template,
+        key_columns,
+        table_name,
+        min_value=min_value,
+        max_value=max_value,
+    )
     return result
 
 
@@ -210,6 +235,79 @@ def assert_numeric_edit_values(
         "Excel 에서 천 단위 쉼표(`1,200`)·지수 표기(`1.2E+03`)·`-`·`N/A` 를 지우고 "
         "숫자만 남기세요. 그 달에 값이 없어야 하면 칸을 **비워** 두세요."
     )
+
+
+def assert_edit_value_range(
+    table: pd.DataFrame,
+    template: pd.DataFrame,
+    key_columns: list[str],
+    table_name: str,
+    *,
+    min_value: float | None,
+    max_value: float | None,
+) -> None:
+    """붙여넣은 값 칸이 편집 격자와 **같은 범위** 안인지 본다. 둘 다 `None` 이면 보지 않는다.
+
+    격자는 `NumberColumn` 의 하한·상한(`reference_data.EDITOR_FORMATS`)으로 값을 받는다. 붙여넣기가
+    그 범위를 지나지 않으면 측정률 85% 를 `85` 로 적거나 `1.2`·음수를 붙여넣은 것이 그대로 적용돼
+    대당 Capa 가 조용히 85 분의 1·1.2 분의 1 로 틀린다.
+
+    `table` 은 `validate_reference_edit_table` 이 양식 행 차례로 다시 세운 표라 같은 자리의 양식
+    칸과 맞댄다. **양식과 같은 값은 보지 않는다** — 원천에 이미 있던 값까지 막으면 다른 칸을
+    고치려던 사람이 자기가 만들지 않은 값에 걸린다(격자도 고치지 않은 칸은 검사하지 않는다).
+    """
+    if min_value is None and max_value is None:
+        return
+    value_columns = [column for column in table.columns if column not in key_columns]
+    key_rows = table[key_columns].to_numpy()
+    offenders: list[str] = []
+    for column in value_columns:
+        before = template[column].to_numpy() if column in template.columns else None
+        for position, value in enumerate(table[column].to_numpy()):
+            if _is_blank(value):
+                continue
+            number = float(str(value).strip())
+            if (min_value is None or number >= min_value) and (
+                max_value is None or number <= max_value
+            ):
+                continue
+            if before is not None and _same_number(before[position], number):
+                continue
+            keys = " / ".join(
+                f"{key}={key_value}"
+                for key, key_value in zip(key_columns, key_rows[position], strict=True)
+            )
+            offenders.append(f"{column} 칸 '{value}' ({keys})")
+            if len(offenders) >= 5:
+                break
+        if len(offenders) >= 5:
+            break
+    if not offenders:
+        return
+    bounds = _range_text(min_value, max_value)
+    ratio_hint = " 비율 칸은 85% 를 `85` 가 아니라 `0.85` 로 적습니다." if max_value == 1.0 else ""
+    raise ValueError(
+        f"{table_name} 입력 표에 편집 표가 받는 범위({bounds}) 밖의 값이 있습니다: "
+        f"{'; '.join(offenders)}.{ratio_hint} 그 칸을 범위 안의 값으로 고쳐 다시 붙여넣으세요."
+    )
+
+
+def _same_number(before: object, number: float) -> bool:
+    """양식 칸이 같은 수인가. 빈 칸이면 다르다(새로 채운 칸)."""
+    if _is_blank(before):
+        return False
+    try:
+        return math.isclose(float(str(before).strip()), number, rel_tol=1e-9, abs_tol=1e-12)
+    except ValueError:
+        return False
+
+
+def _range_text(min_value: float | None, max_value: float | None) -> str:
+    if max_value is None:
+        return f"{min_value:g} 이상"
+    if min_value is None:
+        return f"{max_value:g} 이하"
+    return f"{min_value:g} ~ {max_value:g}"
 
 
 def count_removed_values(
