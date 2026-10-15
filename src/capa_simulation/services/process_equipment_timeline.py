@@ -21,6 +21,8 @@
 행이고(세지 않는 모듈은 묶음에 넣지 않는다 — 단축 후보와 같다), 확정 「완료」와 반출·이설일정이
 적힌 호기도 든다. 묶음의 반입·Qual 은 가장 늦은 모듈의 날, 반출·이설은 가장 이른 날이다. 줄에
 서는 것은 기여 시작(Qual 다음 날)이 축 안인 호기와 단축 계획에 든 호기다(`unit_events`).
+신규 줄이 없는 호기(기존설비 Y, 축 앞에 Qual 을 마친 호기)가 축 안에서 반출·이설되면 따로
+모은다(`exiting_unit_rows`) — 전월 대비의 `반출이설` 이 어느 호기에서 왔는지 보이는 재료다.
 
 ## 비가동 손실 — 반사실로 잰다
 
@@ -29,8 +31,9 @@
 (실제 비가동 / 비가동 비움, `build_equipment_lifecycle_spans(with_unit_share=True)`). 둘을 같은
 월별 기여(`build_monthly_equipment_contributions`)에 넣어 「가용」 환산대수 차이가 호기 x 월의
 손실이다(`downtime_loss`). 비가동 한 행의 몫은 비가동 없는 쪽의 가용 구간을 그 행의
-`[시작일, 종료일]` 로 잘라 같은 월별 기여에 넣은 값이다(`downtime_arrows`) — 한 호기의 비가동
-행이 겹치지 않으면 행들의 합이 그 호기의 손실과 같다.
+`[시작일, 종료일]` 로 잘라 같은 월별 기여에 넣은 값이다(`downtime_arrows`). 한 호기의 비가동 행이
+겹치면 겹친 날은 시작일이 이른 행에 한 번만 매긴다 — 엔진도 그날을 한 번 비가동으로 본다. 그래서
+행들의 합이 늘 그 호기의 손실과 같다.
 
 ## 전월 대비
 
@@ -41,9 +44,12 @@
 
 ## Dynamic 판정
 
-설비 일정 구획은 저장본 → Cut-off → 공정 이름(설비 마스터 `공정소분류`·기존보유 `공정` 이 시뮬레이션
-공정과 **완전히 같은 이름**) → 사용기준 HBM·EDP 호기 차례로 보고, 처음 걸린 까닭 하나를 돌려준다
-(`dynamic_readiness`). 기존보유만 있는 공정은 통과하되 호기 줄이 없다.
+설비 일정 구획은 저장본 → 공정 이름(설비 마스터 `공정소분류`·기존보유 `공정` 이 시뮬레이션
+공정과 **완전히 같은 이름**) → Cut-off → 사용기준 HBM·EDP 호기 차례로 보고, 처음 걸린 까닭 하나를
+돌려준다(`dynamic_readiness`). 이름을 Cut-off 보다 먼저 보는 것은 필요단축일정 계획과 같은 까닭을
+내려는 것이다 — 「Cut-off 미기재」는 `ShorteningPlan.missing_cutoff`(설비는 있고 Cut-off 가 없는
+공정), 「설비 없음」은 그 밖의 `required_only` 와 맞는다. 기존보유만 있는 공정은 통과하되 호기 줄이
+없다.
 """
 
 from __future__ import annotations
@@ -87,6 +93,7 @@ from capa_simulation.services.wd_window import WdWindow, wd_window
 __all__ = [
     "ARROW_COLUMNS",
     "BRIDGE_COLUMNS",
+    "EXIT_UNIT_COLUMNS",
     "MISSING_CUTOFF",
     "NEW_UNIT_COLUMNS",
     "NO_COUNTED_UNITS",
@@ -106,6 +113,7 @@ __all__ = [
     "downtime_arrows",
     "downtime_loss",
     "dynamic_readiness",
+    "exiting_unit_rows",
     "new_unit_rows",
     "production_position",
     "unit_events",
@@ -203,9 +211,32 @@ UNIT_EVENT_COLUMNS = (
 - `줄` — `ROW_SHORTENED`·`ROW_NEW`·`ROW_VIRTUAL`.
 - 단축 칸(`목표 Qual`~`해소 기여 월`)은 계획(`LevelPlan.units`)의 값이다. `반입 전` 은 목표 Qual 이
   반입일정보다 이른가, `해소 기여 월` 은 `YYYYMM` 정수 튜플이다.
+- 단축 줄의 `Qual일정`(곧 `기여 시작` = 그 다음 날)과 `모듈 수` 는 계획의 `기존 Qual`·`모듈 수` 다 —
+  ●→◀ 길이가 `단축일수` 와 맞게 하려는 것이다. 계획은 반출·이설 예정이나 확정 「완료」 모듈을
+  묶음에서 빼므로(단축 후보) 묶음의 가장 늦은 Qual 과 다를 수 있다. 그때 갈린 모듈은 `모듈별 Qual`
+  (묶음 전체)이 보인다. 반입·확정상태·반출이설·설비명·Model 은 묶음의 값이다.
 - `… 위치` 는 생산월 좌표(`production_position.x`, 축 밖은 0 또는 달 수로 자른다)이고 날짜가 없으면
-  NaN 이다. 기여 시작·목표 기여는 그날, 반출·이설은 실행일 당일의 좌표다. `기여 시작 축 밖` 은 기여
-  시작이 축 밖이라 잘렸는가(축 뒤의 호기를 축 안으로 당긴 단축 줄).
+  NaN 이다. 날짜의 뜻은 엔진과 같다 — 반입은 다음 날(x(반입일 + 1)), 기여 시작·목표 기여는 그날(이미
+  Qual 다음 날이다), 반출·이설은 실행일 당일의 좌표다. `기여 시작 축 밖` 은 기여 시작이 축 밖이라
+  잘렸는가(축 뒤의 호기를 축 안으로 당긴 단축 줄).
+"""
+
+EXIT_UNIT_COLUMNS = (
+    "호기",
+    EQUIPMENT_ID_COLUMN,
+    "Model",
+    "모듈 수",
+    "기존설비여부",
+    "반출이설일",
+    "반출이설구분",
+    "반출이설 위치",
+)
+"""축 안에서 반출·이설되는 호기(설비키) 한 줄 — ③ 신규 줄에 서지 않는 것(`exiting_unit_rows`).
+
+② 전월 대비의 `반출이설` 이 어느 호기에서 왔는지 보이려는 재료다. 기존설비 Y 호기나 축 앞에 Qual 을
+마친 호기는 ③ 에 줄이 없어 그림 어디에도 ▼ 가 서지 않기 때문이다. `반출이설일` 은 묶음에서 가장
+이른 반출·이설일정, `반출이설 위치` 는 그 당일의 생산월 좌표다. `기존설비여부` 는 모듈의 값을
+「, 」로 잇는다.
 """
 
 UNIT_MONTH_COLUMNS = (
@@ -263,9 +294,11 @@ ARROW_COLUMNS = (
 - 손실 기여일은 `[시작일 + 1, 종료일 + 1]` 이라 꼬리는 x(시작일 + 1), 촉은 x(종료일 + 2) 다.
   종료일이 빈 열린 구간은 촉이 축 끝(달 수)이고, 축 앞에서 시작한 것은 꼬리가 0 이다(`이전부터`).
 - `덮는 날 수` 는 손실 기여일 구간이 축 안에서 덮는 날 수, `손실 기여일수`·`손실 환산대수` 는 그
-  가운데 비가동이 없었으면 가용이었던 몫이다. `달별 손실` 은 덮는 달마다
-  `(YYYYMM, 손실 환산대수)` 튜플이다.
-- `가용 감소` 가 거짓이면 깎은 가용이 없다(셋업 중·보관·입고 전·사용기준 제외 호기).
+  가운데 비가동이 없었으면 가용이었던 몫이다. 같은 설비명의 앞선(시작일이 이른) 행과 겹친 날은 그
+  행의 몫이라 여기서 빼므로, 한 호기의 행들을 더하면 그 호기의 손실과 같다. `달별 손실` 은 덮는
+  달마다 `(YYYYMM, 손실 환산대수)` 튜플이다.
+- `가용 감소` 가 거짓이면 깎은 가용이 없다(셋업 중·보관·입고 전·사용기준 제외 호기, 또는 앞선 행이
+  이미 깎은 날뿐인 겹친 행).
 - 차례: 가용을 깎은 호기가 앞이고, 호기마다 첫 손실 비가동의 시작일 → 호기 번호다. 같은 `설비키` 는
   붙어 있고 그 안은 시작일 차례다.
 """
@@ -325,13 +358,16 @@ class DynamicReadiness:
     """`READY`·`NO_SNAPSHOT`·`MISSING_CUTOFF`·`NO_EQUIPMENT`·`NO_COUNTED_UNITS`."""
 
     cutoff_days: int | None = None
-    """그 공정의 Cut-off(내림 일수). Cut-off 를 지나기 전에 멈추면 None 이다."""
+    """그 공정의 Cut-off(내림 일수). Cut-off 가 없거나 저장본이 없어 멈추면 None 이다."""
 
     has_units: bool = False
-    """설비 마스터에 사용기준 HBM·EDP 호기가 있는가. 기존보유만 있는 공정은 거짓이다(② 만 선다)."""
+    """설비 마스터에 사용기준 HBM·EDP 호기가 있는가. 기존보유만 있는 공정은 거짓이다(② 만 선다).
+
+    이름 확인을 지난 판정(`MISSING_CUTOFF`·`NO_COUNTED_UNITS`·`READY`)에서만 채운다.
+    """
 
     has_baseline: bool = False
-    """기존보유에 이 공정 행이 있는가."""
+    """기존보유에 이 공정 행이 있는가. `has_units` 와 같이 이름 확인을 지난 판정에서만 채운다."""
 
     @property
     def ready(self) -> bool:
@@ -360,7 +396,12 @@ def dynamic_readiness(
     *,
     process: str,
 ) -> DynamicReadiness:
-    """저장본 → Cut-off → 공정 이름 완전 일치 → HBM·EDP 호기 차례로 보고 처음 걸린 까닭을 낸다.
+    """저장본 → 공정 이름 완전 일치 → Cut-off → HBM·EDP 호기 차례로 보고 처음 걸린 까닭을 낸다.
+
+    이름을 Cut-off 보다 먼저 본다 — 필요단축일정 계획의 갈래와 같은 까닭을 내려는 것이다. 계획은
+    설비(마스터 `공정소분류`·기존보유 `공정`)가 있는 공정만 `missing_cutoff` 로 두고, 설비가 없는
+    공정은 `required_only` 에만 둔다. 설비도 Cut-off 도 없는 공정에 「Cut-off 미기재」를 내면
+    Cut-off 를 적어도 다음 판정이 「설비 없음」이라 구획이 열리지 않는다.
 
     `equipment` 가 None 이면 설비 DB 에 저장본이 없는 것이다(샘플 fleet 을 넘기지 않는다).
     이름은 앞뒤 공백만 떼고 견준다 — 필요단축일정이 맞대는 규칙과 같다. 회차마다 불러도 되게
@@ -371,8 +412,6 @@ def dynamic_readiness(
         return DynamicReadiness(NO_SNAPSHOT)
     name = str(process).strip()
     days = _cutoff_days(cutoff, name)
-    if days is None:
-        return DynamicReadiness(MISSING_CUTOFF)
     rows = equipment
     if EQUIPMENT_ID_COLUMN in rows.columns:
         ids = rows[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
@@ -384,8 +423,10 @@ def dynamic_readiness(
     )
     has_baseline = baseline is not None and bool(_baseline_rows(baseline, name).shape[0])
     if not in_process.any() and not has_baseline:
-        return DynamicReadiness(NO_EQUIPMENT, cutoff_days=days, has_baseline=has_baseline)
+        return DynamicReadiness(NO_EQUIPMENT, cutoff_days=days)
     has_units = bool(counts_for_capacity(rows.loc[in_process.to_numpy()]).any())
+    if days is None:
+        return DynamicReadiness(MISSING_CUTOFF, has_units=has_units, has_baseline=has_baseline)
     if not has_units and not has_baseline:
         return DynamicReadiness(NO_COUNTED_UNITS, cutoff_days=days)
     return DynamicReadiness(READY, cutoff_days=days, has_units=has_units, has_baseline=has_baseline)
@@ -440,6 +481,13 @@ class ProcessEquipmentTimeline:
 
     steady_units: int = 0
     """축 내내 모든 날 가용이고 신규 줄에도 없는 호기(설비키) 수 — ④ 의 「k대」 한 줄."""
+
+    exits: pd.DataFrame = field(default_factory=lambda: _empty(EXIT_UNIT_COLUMNS))
+    """`EXIT_UNIT_COLUMNS` — 축 안에서 반출·이설되고 `new_units` 의 `축 안` 줄이 아닌 호기.
+
+    어디에 그릴지(④ 의 ▼ 줄, 「반출·이설 k대」 한 줄)는 화면이 정한다. 단축 계획이 축 밖에서
+    당겨 ③ 에 세운 호기(`unit_events` 의 단축 줄)와 겹칠 수 있으므로 화면은 ③ 에 선 `호기` 를 뺀다.
+    """
 
 
 def build_process_equipment_timeline(
@@ -525,6 +573,9 @@ def build_process_equipment_timeline(
             pd.to_numeric(own_baseline.get("기존보유대수", pd.Series(dtype="float64"))).sum()
         ),
         steady_units=_steady_units(chosen, unit_months, windows, excluded=in_axis),
+        exits=exiting_unit_rows(
+            chosen, process=name, cutoff_days=days, months=ordered, excluded=in_axis
+        ),
     )
 
 
@@ -654,6 +705,78 @@ def new_unit_rows(
     return frame
 
 
+def exiting_unit_rows(
+    equipment: pd.DataFrame,
+    *,
+    process: str,
+    cutoff_days: float,
+    months: Sequence[int],
+    excluded: Iterable[str] = (),
+) -> pd.DataFrame:
+    """축 안에서 반출·이설되는 호기를 설비키마다 한 줄로(`EXIT_UNIT_COLUMNS`).
+
+    대상은 그 공정의 보관 N·사용기준 HBM·EDP 행이다(기존설비 Y·N 모두). 묶음의 가장 이른
+    반출·이설일정(③ 의 ▼ 와 같은 규칙)이 축 안의 생산월에 들어야 한다. `excluded` 의 설비키(③ 에
+    줄이 서는 신규 호기)는 뺀다. 차례는 반출이설일 → 호기 번호다.
+    """
+    prepared = prepare_equipment_master(equipment)
+    if prepared.empty:
+        return _empty(EXIT_UNIT_COLUMNS)
+    name = str(process).strip()
+    eligible = (
+        (
+            _process_mask(prepared["공정소분류"], name)
+            & prepared[STORAGE_FLAG_COLUMN].eq("N")
+            & counts_for_capacity(prepared)
+            & (prepared["반출일정"].notna() | prepared[RELOCATION_DATE_COLUMN].notna())
+        )
+        .fillna(False)
+        .astype("bool")
+        .to_numpy()
+    )
+    chosen = prepared.loc[eligible]
+    if chosen.empty:
+        return _empty(EXIT_UNIT_COLUMNS)
+    skip = {str(key) for key in excluded}
+    keys = unit_keys(prepared).loc[chosen.index].astype(str)
+    groups: dict[str, list[dict[str, object]]] = {}
+    for key, record in zip(keys, chosen.to_dict("records"), strict=True):
+        if key not in skip:
+            groups.setdefault(key, []).append(
+                {str(column): value for column, value in record.items()}
+            )
+    rows: list[dict[str, object]] = []
+    for key, members in groups.items():
+        members.sort(key=lambda member: str(member[EQUIPMENT_ID_COLUMN]))
+        exit_day, exit_kind = _earliest_exit(members)
+        if exit_day is None:
+            continue
+        position = production_position(exit_day, cutoff_days, months)
+        if position.before or position.after:
+            continue
+        rows.append(
+            {
+                "호기": key,
+                EQUIPMENT_ID_COLUMN: ", ".join(
+                    str(member[EQUIPMENT_ID_COLUMN]).strip() for member in members
+                ),
+                "Model": _distinct_text(member["Model"] for member in members),
+                "모듈 수": len(members),
+                "기존설비여부": _distinct_text(member["기존설비여부"] for member in members),
+                "반출이설일": exit_day,
+                "반출이설구분": exit_kind,
+                "반출이설 위치": position.x,
+            }
+        )
+    if not rows:
+        return _empty(EXIT_UNIT_COLUMNS)
+    rows.sort(key=lambda row: (row["반출이설일"], *_unit_order(str(row["호기"]))))
+    frame = pd.DataFrame(rows, columns=list(EXIT_UNIT_COLUMNS))
+    frame["모듈 수"] = frame["모듈 수"].astype("int64")
+    frame["반출이설 위치"] = frame["반출이설 위치"].astype("float64")
+    return frame
+
+
 def _earliest_exit(members: Sequence[Mapping[str, object]]) -> tuple[date | None, str | None]:
     found: list[tuple[date, str]] = []
     for member in members:
@@ -732,9 +855,14 @@ def _event(
     def x(day: date | None) -> float:
         return math.nan if day is None else production_position(day, days, months).x
 
-    qual = _as_date(base["Qual일정"]) if base is not None else None
-    if qual is None and plan is not None:
-        qual = _as_date(plan.get("기존 Qual"))
+    # 계획이 있는 줄은 계획의 기존 Qual·모듈 수를 쓴다 — 계획이 묶음에서 뺀 모듈(반출·이설 예정,
+    # 확정 「완료」)이 있으면 묶음의 가장 늦은 Qual 과 갈려 ●→◀ 길이가 단축일수와 어긋난다.
+    qual = _as_date(plan.get("기존 Qual")) if plan is not None else None
+    if qual is None and base is not None:
+        qual = _as_date(base["Qual일정"])
+    modules = _whole(plan.get("모듈 수")) if plan is not None else None
+    if modules is None and base is not None:
+        modules = _whole(base["모듈 수"])
     start = qual + _ONE_DAY if qual is not None else None
     arrival = _as_date(base[ARRIVAL_DATE_COLUMN]) if base is not None else None
     exit_day = _as_date(base["반출이설일"]) if base is not None else None
@@ -746,11 +874,7 @@ def _event(
         "호기": unit,
         EQUIPMENT_ID_COLUMN: base[EQUIPMENT_ID_COLUMN] if base is not None else None,
         "Model": base["Model"] if base is not None else None,
-        "모듈 수": (
-            base["모듈 수"]
-            if base is not None
-            else (None if plan is None else _whole(plan.get("모듈 수")))
-        ),
+        "모듈 수": modules,
         ARRIVAL_DATE_COLUMN: arrival,
         "Qual일정": qual,
         "기여 시작": start,
@@ -772,7 +896,7 @@ def _event(
         ),
         "대상 월": None if plan is None else _whole(plan.get("대상 월")),
         "해소 기여 월": () if plan is None else _month_tuple(plan.get("해소 기여 월")),
-        "반입 위치": x(arrival),
+        "반입 위치": x(None if arrival is None else arrival + _ONE_DAY),
         "기여 시작 위치": math.nan if start_position is None else start_position.x,
         "기여 시작 축 밖": bool(
             start_position is not None and (start_position.before or start_position.after)
@@ -944,7 +1068,8 @@ def downtime_arrows(
     `downtime`·`equipment` 는 그 공정으로 거른(검증된) 비가동·마스터, `counterfactual_spans` 는 같은
     마스터로 **비가동을 비우고** 만든 세는 구간(`with_unit_share=True`)이다. 한 행의 손실은 반사실의
     가용 구간을 그 행의 `[시작일, 종료일]` 로 잘라 월별 기여에 넣은 값이다 — 경계 규칙(다음 날·반출
-    당일)이 엔진 그대로 걸린다.
+    당일)이 엔진 그대로 걸린다. 같은 설비명의 행이 겹치면 겹친 날은 시작일이 이른 행(같은 날이면 표
+    차례)에 한 번만 매긴다 — 그래서 행들의 손실 합이 늘 그 호기의 손실(`downtime_loss`)과 같다.
     """
     name = str(process).strip()
     days = _cutoff_days(cutoff, name)
@@ -972,48 +1097,58 @@ def downtime_arrows(
     )
     available = _available_spans(counterfactual_spans)
 
+    # 같은 설비명의 비가동 행이 겹치면 겹친 날은 시작일이 이른 행에 한 번만 매긴다 — 엔진은 그날을
+    # 한 번 비가동으로 보므로, 행마다 따로 세면 행들의 합이 그 호기의 손실보다 커진다.
+    entries: list[tuple[date, int, str, object, date | None]] = []
+    for index, (unit_value, kind, began, finished) in enumerate(
+        zip(
+            downtime[EQUIPMENT_ID_COLUMN],
+            downtime["비가동유형"],
+            downtime["시작일"],
+            downtime["종료일"],
+            strict=True,
+        )
+    ):
+        start = _as_date(began)
+        if start is not None:
+            entries.append((start, index, str(unit_value).strip(), kind, _as_date(finished)))
+    entries.sort(key=lambda entry: (entry[0], entry[1]))
+
     records: list[dict[str, object]] = []
     covered_months: list[list[int]] = []
     clipped: list[dict[str, object]] = []
     clipped_ratios: dict[str, float] = {}
-    for unit_value, kind, began, finished in zip(
-        downtime[EQUIPMENT_ID_COLUMN],
-        downtime["비가동유형"],
-        downtime["시작일"],
-        downtime["종료일"],
-        strict=True,
-    ):
-        unit = str(unit_value).strip()
-        start = _as_date(began)
-        if start is None:
-            continue
-        end = _as_date(finished)
+    claimed: dict[str, list[tuple[date, date]]] = {}
+    for start, _, unit, kind, end in entries:
         loss_start = start + _ONE_DAY
         loss_end = last_day if end is None else min(end + _ONE_DAY, last_day)
         if loss_start > last_day or (end is not None and end + _ONE_DAY < first_day):
             continue
         row_id = str(len(records))
+        taken = claimed.setdefault(unit, [])
         for piece in available.get(unit, ()):
             low = max(piece.start, start)
             high = piece.end if end is None else min(piece.end, end)
             if low > high:
                 continue
-            clipped.append(
-                {
-                    EQUIPMENT_ID_COLUMN: row_id,
-                    "공정소분류": name,
-                    "공정대분류": None,
-                    "상태": _AVAILABLE,
-                    "시작일": low,
-                    "종료일": high,
-                    "설비지분": piece.share,
-                    COUNT_CATEGORY_COLUMN: _AVAILABLE,
-                    UNIT_KEY_COLUMN: row_id,
-                    COUNTED_COLUMN: True,
-                    EXIT_STARTS_COLUMN: piece.exit_starts and low == piece.start,
-                    EXIT_FOLLOWS_COLUMN: piece.exit_follows and high == piece.end,
-                }
-            )
+            for part_low, part_high in _unclaimed(low, high, taken):
+                clipped.append(
+                    {
+                        EQUIPMENT_ID_COLUMN: row_id,
+                        "공정소분류": name,
+                        "공정대분류": None,
+                        "상태": _AVAILABLE,
+                        "시작일": part_low,
+                        "종료일": part_high,
+                        "설비지분": piece.share,
+                        COUNT_CATEGORY_COLUMN: _AVAILABLE,
+                        UNIT_KEY_COLUMN: row_id,
+                        COUNTED_COLUMN: True,
+                        EXIT_STARTS_COLUMN: piece.exit_starts and part_low == piece.start,
+                        EXIT_FOLLOWS_COLUMN: piece.exit_follows and part_high == piece.end,
+                    }
+                )
+            taken.append((low, high))
         clipped_ratios[row_id] = float(conversion_ratios.get(unit, 1.0))
         tail = production_position(loss_start, days, ordered)
         head = (
@@ -1097,6 +1232,25 @@ def _available_spans(spans: pd.DataFrame) -> dict[str, tuple[_Piece, ...]]:
             _Piece(start, end, float(share), bool(starts), bool(follows))
         )
     return {unit: tuple(found) for unit, found in pieces.items()}
+
+
+def _unclaimed(
+    low: date, high: date, claimed: Sequence[tuple[date, date]]
+) -> list[tuple[date, date]]:
+    """`[low, high]` 에서 이미 앞선 행이 매긴 날(`claimed`, 양 끝 포함)을 뺀 조각들(날짜 차례)."""
+    parts = [(low, high)]
+    for taken_low, taken_high in claimed:
+        remaining: list[tuple[date, date]] = []
+        for part_low, part_high in parts:
+            if taken_high < part_low or part_high < taken_low:
+                remaining.append((part_low, part_high))
+                continue
+            if part_low < taken_low:
+                remaining.append((part_low, taken_low - _ONE_DAY))
+            if taken_high < part_high:
+                remaining.append((taken_high + _ONE_DAY, part_high))
+        parts = remaining
+    return sorted(parts)
 
 
 def _clipped_losses(
