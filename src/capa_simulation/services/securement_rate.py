@@ -1,13 +1,36 @@
-# Purpose: 공정별 가용대수와 소요대수에서 확보율 및 기준별 추가 필요대수를 계산한다.
+# Purpose: 공정별 가용대수와 소요대수에서 확보율과 기준별 추가 필요대수·부호 있는 과부족을 계산한다.
 
-from math import ceil
+from math import ceil, floor
 
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import normalize_month_column, require_columns
-from capa_simulation.services.securement_threshold import SecurementThresholds
+from capa_simulation.services.securement_threshold import CapacityStatus, SecurementThresholds
 
 SECUREMENT_DIMENSIONS = ["공정"]
+
+# 확보기준 과부족(`securement_balance`)의 컬럼과 부족 원인 값.
+OWNED_COLUMN = "총보유대수"
+STATUS_COLUMN = "판정"
+BALANCE_COLUMN = "확보기준 과부족"
+WARNING_NEED_COLUMN = "경고기준 필요대수"
+CAUSE_COLUMN = "부족 원인"
+CAUSE_OWNED_SHORT = "보유로도 부족"
+CAUSE_RENTAL = "대여 영향"
+BALANCE_COLUMNS = [
+    "생산계획년월",
+    "공정",
+    OWNED_COLUMN,
+    "가용대수",
+    "소요대수",
+    "확보율",
+    "확보기준",
+    "경고기준",
+    STATUS_COLUMN,
+    BALANCE_COLUMN,
+    WARNING_NEED_COLUMN,
+    CAUSE_COLUMN,
+]
 SHORTFALL_COLUMNS = [
     "생산계획년월",
     "공정",
@@ -145,6 +168,105 @@ def build_securement_shortfall_tables(
     )
 
 
+def securement_balance(
+    securement_rate: pd.DataFrame,
+    *,
+    thresholds: SecurementThresholds,
+) -> pd.DataFrame:
+    """행마다 그 달 확보기준에 대한 **부호 있는 정수 과부족**·판정·부족 원인을 붙인다.
+
+    입력은 `생산계획년월`·`공정`·`총보유대수`·`가용대수`·`소요대수` 다(행 차례 그대로 돌려준다).
+    기준은 행의 달마다 그 달의 실효 기준(`thresholds.for_month`)이다.
+
+    - **판정**(`판정`)은 `thresholds.status(가용 ÷ 소요, 달)` 한 길이다. 확보율 칸과 과부족 칸이 이
+      한 값으로 칠해진다. 소요가 0 인 행은 확보율이 없어 판정도 없다(`None`).
+    - **과부족**(`확보기준 과부족`)은 판정이 확보가 아니면
+      `−_ceil_positive(소요 × 확보기준 − 가용)`, 아니면
+      `+floor(round(가용 − 소요 × 확보기준, 9))` 다. 모자란 쪽 크기는 Static Capa 의
+      「확보목표 총 필요대수」(`build_securement_shortfall_tables`)와 같은 정수다.
+    - 판정은 반올림하지 않은 확보율을, 과부족은 9자리 반올림을 본다. 그래서 부동소수 잡음
+      경계(차이가 1e-9 안)에서는 **경고·부족으로 칠한 칸에 0 이 찍힐 수 있다** — 소요
+      10.000000000000002·가용 10.95·확보기준 1.095 가 그렇다. 칠하기는 판정을, 숫자는 Static
+      Capa 와 같은 올림을 따른다.
+    - **부족 원인**(`부족 원인`)은 판정이 확보가 아닌 행에만 적는다. 총보유로 판정해도
+      (`thresholds.status(총보유 ÷ 소요, 달)`) 확보가 아니면 「보유로도 부족」(대여를 거둬도 못
+      메운다 — 투자 검토), 총보유로는 확보인데 가용이 못 미치면 「대여 영향」이다. 확보인 행은 빈
+      글자다. 원인도 판정과 **같은 길**(반올림하지 않은 비율)로 가른다 — 그래서 총보유 = 가용인 달은
+      칠한 판정이 곧 「보유로도 부족」이고, 잡음 경계에서도 대여 없이 「대여 영향」이 나오지 않는다.
+      이 함수는 대여대수를 모르므로 「대여 영향」은 가용 = 총보유 − 대여를 전제한 이름이다. 대여를
+      아는 쪽(`process_capa_detail.build_process_capa_summary`)이 그 전제가 깨진 달을 다시 가른다.
+    - `경고기준 필요대수` 는 `_ceil_positive(소요 × 경고기준 − 가용)` 이다(소요 0 이면 0).
+    """
+    required = ["생산계획년월", "공정", OWNED_COLUMN, "가용대수", "소요대수"]
+    require_columns(securement_rate, required, "확보율")
+    result = securement_rate[required].copy().reset_index(drop=True)
+    _prepare_shortfall_input(result)
+    owned = pd.to_numeric(result[OWNED_COLUMN], errors="coerce")
+    if owned.isna().any():
+        raise ValueError(f"확보율.{OWNED_COLUMN}에 숫자가 아닌 값이 있습니다.")
+    result[OWNED_COLUMN] = owned.astype("float64")
+
+    months = [int(month) for month in result["생산계획년월"]]
+    pairs = [thresholds.for_month(month) for month in months]
+    result["확보기준"] = pd.Series([pair[0] for pair in pairs], index=result.index, dtype="float64")
+    result["경고기준"] = pd.Series([pair[1] for pair in pairs], index=result.index, dtype="float64")
+
+    demand = result["소요대수"].astype("float64")
+    available = result["가용대수"].astype("float64")
+    has_demand = demand.gt(0)
+    result["확보율"] = available / demand.where(has_demand)
+    statuses: list[CapacityStatus | None] = [
+        thresholds.status(float(available_count) / float(demand_count), month)
+        if demand_count > 0
+        else None
+        for available_count, demand_count, month in zip(available, demand, months, strict=True)
+    ]
+    result[STATUS_COLUMN] = pd.Series(statuses, index=result.index, dtype="object")
+
+    secure_gap = demand.mul(result["확보기준"]).sub(available)
+    warning_gap = demand.mul(result["경고기준"]).sub(available)
+    short = [status is not None and status != "secure" for status in statuses]
+    result[BALANCE_COLUMN] = pd.Series(
+        [
+            -_ceil_positive(gap) if is_short else _floor_surplus(-gap)
+            for gap, is_short in zip(secure_gap, short, strict=True)
+        ],
+        index=result.index,
+        dtype="int64",
+    )
+    result[WARNING_NEED_COLUMN] = pd.Series(
+        [
+            _ceil_positive(gap) if demand_count > 0 else 0
+            for gap, demand_count in zip(warning_gap, demand, strict=True)
+        ],
+        index=result.index,
+        dtype="int64",
+    )
+    result[CAUSE_COLUMN] = pd.Series(
+        [
+            _shortage_cause(float(owned_count), float(demand_count), month, thresholds)
+            if is_short
+            else ""
+            for owned_count, demand_count, month, is_short in zip(
+                result[OWNED_COLUMN], demand, months, short, strict=True
+            )
+        ],
+        index=result.index,
+        dtype="object",
+    )
+    return result[BALANCE_COLUMNS]
+
+
+def _shortage_cause(
+    owned: float, demand: float, month: int, thresholds: SecurementThresholds
+) -> str:
+    """확보가 아닌 행의 원인. 총보유를 가용 자리에 넣어 **같은 판정**(`thresholds.status`)을
+    다시 본다."""
+    if thresholds.status(owned / demand, month) != "secure":
+        return CAUSE_OWNED_SHORT
+    return CAUSE_RENTAL
+
+
 def _prepare_keys_and_value(data: pd.DataFrame, value_column: str, table_name: str) -> None:
     normalize_month_column(data, table_name)
     data["공정"] = data["공정"].astype("string").str.strip()
@@ -182,3 +304,8 @@ def _ceil_positive(value: float) -> int:
     대수는 보통 1e2 이하라 1e-9 는 업무상 의미 있는 차이를 삼키지 않는다.
     """
     return max(0, ceil(round(float(value), 9)))
+
+
+def _floor_surplus(value: float) -> int:
+    """여유 대수. `_ceil_positive` 의 짝 — 같은 9자리 반올림 뒤 내림하고 음수는 0 이다."""
+    return max(0, floor(round(float(value), 9)))
