@@ -9,6 +9,7 @@ from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 from capa_simulation.components.app_credits import render_app_credits
 from capa_simulation.components.app_header import render_app_header, render_shell_style
 from capa_simulation.components.equipment_data_workspace import has_unsaved_equipment_edits
+from capa_simulation.components.home_rendering import HOME_CELL_CHART_KEYS
 from capa_simulation.components.intro_overlay import render_intro_overlay
 from capa_simulation.components.intro_summary import (
     render_intro_summary,
@@ -22,6 +23,7 @@ from capa_simulation.components.period_field import (
     render_period_field,
     show_period_dialog,
 )
+from capa_simulation.components.plotly_touch_scroll import plotly_touch_scroll_script
 from capa_simulation.components.print_button import print_toolbar_script
 from capa_simulation.components.scenario_edit_bar import pending_edit_labels, pending_edits_notice
 from capa_simulation.components.scenario_status import (
@@ -160,7 +162,8 @@ render_intro_overlay()
 # (`theme_toggle.TOOLBAR_BUTTON_ORDER`). Guide 는 기본은 감춰 두고 가이드를 단 페이지만 보이게
 # 한다. `Print` 는 감춘 메뉴의 인쇄를 대신한다. 사이드바
 # 머리칸의 `S.PKG CAPA` 라벨도 같은 iframe 이 세운다 — 원래 화면에서 공식버전 요약(Summary)으로
-# 돌아오는 길이고, 요약이 준비돼야 입장 화면 JS 가 누를 수 있게 한다.
+# 돌아오는 길이고, 요약이 준비돼야 입장 화면 JS 가 누를 수 있게 한다. 칸 선택을 켠 HOME 그림
+# 위에서 시작한 터치가 화면을 스크롤하게 하는 막이(`plotly_touch_scroll`)도 여기 싣는다.
 #
 # **입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
 # 스크립트가 새로고침하고 그 세션은 버려진다. 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기
@@ -174,7 +177,12 @@ render_shell_style()
 render_typography_style()
 render_guide_base_style()
 render_theme_toggle(
-    extra_scripts=(guide_toolbar_script(), summary_label_script(), print_toolbar_script())
+    extra_scripts=(
+        guide_toolbar_script(),
+        summary_label_script(),
+        print_toolbar_script(),
+        plotly_touch_scroll_script(HOME_CELL_CHART_KEYS),
+    )
 )
 
 # managed 모드에서만 동기화 표시를 켠다. local 모드(개발 PC·기본값)에서는 아무 일도 하지

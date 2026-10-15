@@ -8,10 +8,12 @@
    `RQ_REQB` 원천에서 정한다. 확보율은 키 전용 캐시(`get_scenario_securement_rate`)로 꺼낸다.
 2. 공정·달 정하기(`process_detail_state.resolve_process_and_month`) — HOME 전달 칸 → 주소 인자 →
    세션 → 기본값(기간 최저 확보율 공정, 그 공정의 첫 확보기준 미달 달) 차례다. **공정 선택 상자보다
-   먼저** 정해 세션에 적는다.
+   먼저** 정해 세션에 적는다. 전달 칸은 그보다도 앞, 부트스트랩 전에 꺼낸다 — 오류로 멈춘 회차가
+   칸을 남기지 않게. 기본 공정 요약은 기본값이 필요한 회차에만 만든다.
 3. 사이드바 `공정 상세 조건` 카드의 공정 선택(원본 공정명, 표시만 표시명).
 4. HOME 에서 왔으면 출처 띠 — HOME 확보율에는 실행 Capa·선행 B/O 가 얹혀 있어 이 화면의 원 확보율과
-   다를 수 있으므로 그 차이를 먼저 밝힌다.
+   다를 수 있으므로 그 차이를 먼저 밝힌다. 알림 상자가 아니라 중립 캡션 한 줄이다(알림 상자 세 색은
+   뜻으로 가른다 — `docs/design_system.md` 2-3).
 
 월별 요약 표·산출 근거 패널·설비 일정 구획은 그 아래 자리에 선다.
 """
@@ -31,11 +33,13 @@ from capa_simulation.page_bootstrap import (
 )
 from capa_simulation.persistence.cache import load_global_securement_threshold
 from capa_simulation.process_detail_state import (
+    ORIGIN_BAND_ICON,
     PROCESS_DETAIL_PROCESS_KEY,
     first_shortfall_month,
     lowest_rate_process,
     origin_band_text,
     resolve_process_and_month,
+    take_process_detail_request,
 )
 from capa_simulation.scenario_state import scenario_month_table
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
@@ -58,6 +62,11 @@ CARD_NAME = "process_capa_detail"
 CARD_ICON = ":material/troubleshoot:"
 # 화면 조립이 끝나기 전, 요약 표·근거 패널이 설 자리를 알리는 한 줄.
 ASSEMBLY_NOTICE = "화면 조립 중 — 월별 요약 표·산출 근거·설비 일정이 이 자리에 섭니다."
+
+# HOME 이 남긴 전달 칸은 **무엇보다 먼저** 꺼낸다. 아래 부트스트랩·계산이 오류로 멈추면 그 회차는
+# 공정·달을 정하는 자리에 닿지 못한다 — 그때 칸이 남으면 나중에 사이드바로 들어온 방문이 이 칸을
+# 「HOME 에서 온 것」으로 읽는다.
+home_request = take_process_detail_request()
 
 render_page_header("공정 Capa 상세")
 render_page_guide("process_capa_detail", title="공정 Capa 상세")
@@ -109,13 +118,6 @@ try:
         TAB_SECUREMENT,
         _display_order=context.display_order,
     )
-    picker_items = build_process_picker_summary(
-        securement_rate,
-        process_options,
-        start_month=effective_start,
-        end_month=effective_end,
-        thresholds=thresholds,
-    )
 except BOOTSTRAP_ERRORS as exc:
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
@@ -130,6 +132,20 @@ months = sorted(
         if effective_start <= int(month) <= effective_end
     }
 )
+
+
+def default_process_choice() -> str | None:
+    """기본 공정 — 조회기간 최저 확보율 공정. 세션·전달 칸·주소로 공정이 정해지지 않은 회차에만
+    불린다(공정별 요약과 달마다 판정을 매 회차 만들지 않는다)."""
+    return lowest_rate_process(
+        build_process_picker_summary(
+            securement_rate,
+            process_options,
+            start_month=effective_start,
+            end_month=effective_end,
+            thresholds=thresholds,
+        )
+    )
 
 
 def default_month_for(process: str | None) -> int | None:
@@ -147,7 +163,8 @@ def default_month_for(process: str | None) -> int | None:
 entry = resolve_process_and_month(
     process_options,
     months,
-    default_process=lowest_rate_process(picker_items),
+    request=home_request,
+    default_process=default_process_choice,
     default_month=default_month_for,
 )
 
@@ -180,13 +197,11 @@ if entry.month_outside is not None and entry.month is not None:
     )
 if entry.origin is not None:
     origin_month = entry.origin.month
-    st.info(
-        origin_band_text(
-            entry.origin,
-            month_text=month_label(origin_month) if origin_month is not None else "-",
-        ),
-        icon=":material/call_received:",
+    band = origin_band_text(
+        entry.origin,
+        month_text=month_label(origin_month) if origin_month is not None else "-",
     )
+    st.caption(f"{ORIGIN_BAND_ICON} {band}")
 
 if selected_process is None or entry.month is None:
     st.info("조회기간에 확보율을 낼 공정이 없습니다.", icon=":material/info:")

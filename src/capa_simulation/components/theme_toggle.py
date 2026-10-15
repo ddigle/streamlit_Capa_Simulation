@@ -392,7 +392,8 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
     """헤더에 전환 버튼을 얹는다. `app.py` 가 한 번만 부른다.
 
     `extra_scripts` 는 툴바·사이드바 머리칸에 단추를 얹는 **다른 스크립트**다(Guide·Print 버튼과
-    사이드바 S.PKG CAPA 라벨).
+    사이드바 S.PKG CAPA 라벨). 부모 문서에 듣개를 다는 스크립트(칸 선택 그림의 터치 스크롤 막이
+    `plotly_touch_scroll`)도 같은 iframe 에 싣는다.
     iframe 을 따로 두지 않고 여기에 함께 싣는다 — 높이 0 iframe 도 본문 맨 위에 요소 간격 한
     칸을 먹어서, 하나 더 두면 모든 화면이 그만큼 내려간다. 맨 앞에는 키 규칙(`capaTheme`)과 툴바
     차례 규칙(`capaToolbar`)이 실려 뒤의 스크립트가 모두 그것을 부른다.

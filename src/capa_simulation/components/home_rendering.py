@@ -697,6 +697,9 @@ def home_dashboard_panel() -> Iterator[None]:
 # 칸을 누르면 공정 Capa 상세로 가는 두 월 그림의 key. 선택 상태가 이 key 의 세션 칸에 들어온다.
 KEY_PROCESS_MONTHS_CHART_KEY = "key_process_heatmap_months"
 BOTTLENECK_MONTHS_CHART_KEY = "bottleneck_detail_months"
+# 칸 선택을 켠 HOME 그림 전부. 선택을 켜면 그림 위 터치 스크롤이 막히므로 `app.py` 가 이 묶음을
+# 터치 스크롤 막이(`plotly_touch_scroll`)에 넘긴다 — 선택을 켠 그림을 더하면 여기에도 더한다.
+HOME_CELL_CHART_KEYS = (KEY_PROCESS_MONTHS_CHART_KEY, BOTTLENECK_MONTHS_CHART_KEY)
 
 
 def open_clicked_home_cell(chart_key: str, section: str) -> None:

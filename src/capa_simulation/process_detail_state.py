@@ -9,7 +9,10 @@ HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·
   이 상세 화면의 **위젯 키**에 바로 적으면 페이지를 옮긴 첫 회차에 `persist_state` 경로와 엇갈린다
   (`shared_widget_state`). 상세 화면이 위젯을 만들기 전에 이 칸을 꺼내 위젯 키에 적는다. 누른 칸의
   HOME 표시값·원 확보율·실행 증감과 그때의 HOME 보기 조건(선행 B/O·실행 Capa·EDP)을 함께 싣는다
-  — 상세 화면의 출처 띠가 「HOME 표시값 = 원 확보율 + …」를 이것으로 적는다.
+  — 상세 화면의 출처 띠가 「HOME 표시값 = 원 확보율 + …」를 이것으로 적는다. 칸은 상세 화면이
+  **맨 앞에서**(부트스트랩보다 먼저) 꺼낸다(`take_process_detail_request`) — 그 회차가 오류로 멈춰도
+  칸이 남아 나중에 사이드바로 들어온 방문을 「HOME 에서 온 것」으로 읽지 않는다. 옮기지 못한
+  클릭(`StreamlitPageNotFoundError`)도 칸을 남기지 않는다.
 - **주소 인자**(`process`·`month`·`from`) — 링크를 나눌 때의 보조 길. `st.switch_page` 는 주소를
   **통째로** 바꾸므로 테마 인자(`theme`)는 지금 값을 함께 싣는다. 받는 쪽은 읽은 키만 지운다 —
   `st.query_params.clear()` 는 테마 인자까지 지워 테마 스크립트가 첫 방문으로 보고 다시 새로고침한다
@@ -278,8 +281,9 @@ def open_process_detail(request: ProcessDetailRequest) -> None:
     """전달 칸을 적고 공정 Capa 상세로 옮긴다. **위젯 콜백 안에서** 부른다.
 
     콜백 안의 `st.switch_page` 는 Streamlit 1.63 이 지원하는 길이다 — 지금 회차(HOME 프래그먼트)의
-    본문을 돌리지 않고 상세 화면이 앱 전체 회차로 돈다. 내비게이션이 없는 단독 실행(페이지만 띄운
-    시험)에서는 갈 곳이 없어 전달 칸만 남기고 돌아간다(`components/page_link.py` 와 같은 물러서기).
+    본문을 돌리지 않고 상세 화면이 앱 전체 회차로 돈다. 갈 곳이 없으면(내비게이션이 없는 단독 실행 —
+    AppTest 는 실행마다 페이지 목록을 새로 만들어 콜백 시점에는 등록된 페이지가 없다) 옮기지 않고
+    적은 전달 칸도 거둔다. 남겨 두면 나중에 사이드바로 들어온 방문이 이 클릭의 출처 띠를 단다.
     """
     st.session_state[PROCESS_DETAIL_REQUEST_KEY] = request
     theme = st.query_params.get(THEME_QUERY_PARAM)
@@ -289,7 +293,7 @@ def open_process_detail(request: ProcessDetailRequest) -> None:
             query_params=request_query_params(request, theme=theme),
         )
     except StreamlitPageNotFoundError:
-        return
+        st.session_state.pop(PROCESS_DETAIL_REQUEST_KEY, None)
 
 
 def open_home_cell(selection_state: object, *, section: str) -> bool:
@@ -332,6 +336,19 @@ def first_shortfall_month(
     return None
 
 
+def take_process_detail_request() -> ProcessDetailRequest | None:
+    """전달 칸을 꺼낸다(`pop`). 상세 화면이 **맨 앞에서**, 부트스트랩·계산보다 먼저 부른다.
+
+    꺼낸 값은 지역 변수로 들고 있다가 `resolve_process_and_month(request=…)` 에 넘긴다. 칸을
+    공정·달을 정하는 자리에서야 꺼내면, 그 앞에서 부트스트랩·계산 오류로 멈춘 회차가 칸을 남기고 —
+    나중에 사이드바로 들어온 방문이 그 칸을 「HOME 에서 온 것」으로 읽는다. 꺼낸 뒤 사용자 조작으로
+    끊긴 회차는 출처 띠만 잃는다 — 주소 인자(`process`·`month`)는 정하는 자리에서야 지우므로 다음
+    회차가 같은 공정·달을 연다.
+    """
+    request = st.session_state.pop(PROCESS_DETAIL_REQUEST_KEY, None)
+    return request if isinstance(request, ProcessDetailRequest) else None
+
+
 def _read_detail_query() -> tuple[tuple[str, str], ...]:
     """주소에 있는 이 화면의 인자만 (이름, 값) 차례로. 다른 인자(`theme` 등)는 보지 않는다."""
     found: list[tuple[str, str]] = []
@@ -357,18 +374,22 @@ def resolve_process_and_month(
     processes: Sequence[str],
     months: Sequence[int],
     *,
-    default_process: str | None,
+    request: ProcessDetailRequest | None,
+    default_process: Callable[[], str | None] | str | None,
     default_month: Callable[[str | None], int | None] | int | None = None,
 ) -> ProcessDetailEntry:
     """페이지 첫머리, **공정 선택 상자를 만들기 전에** 부른다. 공정·달을 정해 세션에 적는다.
 
     차례:
-    1. 전달 칸을 꺼낸다(`pop`). HOME 이 적은 값이 있으면 그것이 답이다.
+    1. 페이지가 맨 앞에서 꺼낸 전달 칸(`request` — `take_process_detail_request`). HOME 이 적은 값이
+       있으면 그것이 답이다.
     2. 없으면 주소 인자가 마지막으로 적용한 묶음(`PROCESS_DETAIL_QUERY_SEEN_KEY`)과 다를 때만
        적용한다. 읽은 인자는 그 키만 지운다.
-    3. 둘 다 없으면 세션 값(지난번에 보던 공정·달)이다.
-    4. 세션도 비었으면 기본값 — 공정은 `default_process`, 달은 `default_month`(공정을 받아 달을 내는
-       함수일 수 있다 — 그 공정의 첫 확보기준 미달 달 같은 것).
+    3. 둘 다 없으면 세션 값(지난번에 보던 공정·달)이다. 공정을 바꿔도 보던 달은 그대로다.
+    4. 세션도 비었으면 기본값 — 공정은 `default_process`, 달은 `default_month`. 둘 다 함수일 수
+       있고(공정은 인자 없이, 달은 공정을 받아 — 그 공정의 첫 확보기준 미달 달 같은 것), 함수는
+       **기본값이 필요한 회차에만** 부른다. 세션·전달 칸·주소로 공정이 정해진 회차는 기본 공정
+       요약을 만들지 않는다.
     5. 지금 목록에 맞춘다(`prune_choice`). 넘겨받은 공정이 목록에 없으면 기본 공정을 열고
        `missing_process` 로, 달이 축 밖이면 기본 달을 열고 `month_outside` 로 알린다.
 
@@ -377,9 +398,6 @@ def resolve_process_and_month(
     options = [str(process) for process in processes]
     month_options = [int(month) for month in months]
 
-    request = st.session_state.pop(PROCESS_DETAIL_REQUEST_KEY, None)
-    if not isinstance(request, ProcessDetailRequest):
-        request = None
     query = _read_detail_query()
     wanted_process: str | None = None
     wanted_month: int | None = None
@@ -399,15 +417,29 @@ def resolve_process_and_month(
         # 주소에서 인자가 걷힌 뒤의 회차다. 같은 링크로 다시 들어오면 그때는 다시 적용한다.
         st.session_state.pop(PROCESS_DETAIL_QUERY_SEEN_KEY, None)
 
-    fallback = default_process if default_process in options else (options[0] if options else None)
+    fallback_memo: list[str | None] = []
+
+    def fallback_process() -> str | None:
+        # 기본 공정은 비쌀 수 있다(공정별 요약). 필요한 회차에 한 번만 낸다.
+        if not fallback_memo:
+            chosen = default_process() if callable(default_process) else default_process
+            fallback_memo.append(chosen if chosen in options else (options[0] if options else None))
+        return fallback_memo[0]
+
     missing_process: str | None = None
     if wanted_process is not None:
         if wanted_process in options:
             st.session_state[PROCESS_DETAIL_PROCESS_KEY] = wanted_process
         else:
             missing_process = wanted_process
-            st.session_state[PROCESS_DETAIL_PROCESS_KEY] = fallback
-    process = prune_choice(PROCESS_DETAIL_PROCESS_KEY, options, default=fallback)
+            st.session_state[PROCESS_DETAIL_PROCESS_KEY] = fallback_process()
+    saved_process = st.session_state.get(PROCESS_DETAIL_PROCESS_KEY)
+    keeps_saved = saved_process is not None and str(saved_process) in set(options)
+    process = prune_choice(
+        PROCESS_DETAIL_PROCESS_KEY,
+        options,
+        default=None if keeps_saved else fallback_process(),
+    )
 
     def default_month_of(chosen: str | None) -> int | None:
         value = default_month(chosen) if callable(default_month) else default_month
@@ -443,6 +475,11 @@ def resolve_process_and_month(
         missing_process=missing_process,
         month_outside=month_outside,
     )
+
+
+# 출처 띠 앞 아이콘. 띠는 알림 상자가 아니라 캡션 한 줄이다 — 알림 상자 세 색은 뜻으로 가르고
+# (`docs/design_system.md` 2-3) 출처는 그 어느 뜻도 아니다.
+ORIGIN_BAND_ICON = ":material/call_received:"
 
 
 def _percent(rate: float) -> str:

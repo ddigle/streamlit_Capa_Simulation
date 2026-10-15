@@ -303,11 +303,34 @@ def test_an_empty_or_past_cell_selection_does_nothing(
     assert PROCESS_DETAIL_REQUEST_KEY not in app.session_state
 
 
-def test_without_navigation_the_click_only_leaves_the_transfer_slot() -> None:
-    """페이지만 띄운 실행에는 갈 곳이 없다. 화면을 오류로 멈추지 않고 전달 칸만 남긴다."""
+def test_a_click_that_cannot_switch_leaves_no_transfer_slot() -> None:
+    """갈 곳이 없으면(내비게이션 없는 실행) 화면을 오류로 멈추지 않고, 적은 전달 칸도 거둔다 —
+    남기면 나중에 사이드바로 들어온 방문이 이 클릭의 출처 띠를 단다."""
     app = _clicked({"selection": {"points": [{"customdata": _link_row()}]}})
 
-    assert isinstance(app.session_state[PROCESS_DETAIL_REQUEST_KEY], ProcessDetailRequest)
+    assert PROCESS_DETAIL_REQUEST_KEY not in app.session_state
+
+
+def _take_app() -> None:
+    import streamlit as st
+
+    from capa_simulation.process_detail_state import take_process_detail_request
+
+    st.session_state["test_taken"] = take_process_detail_request()
+
+
+def test_taking_the_transfer_slot_empties_it_and_drops_a_foreign_value() -> None:
+    app = AppTest.from_function(_take_app)
+    request = ProcessDetailRequest(process="DEMO-A", month=202603)
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = request
+    app.run()
+    assert app.session_state["test_taken"] == request
+    assert PROCESS_DETAIL_REQUEST_KEY not in app.session_state
+
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = {"process": "DEMO-A"}
+    app.run()
+    assert app.session_state["test_taken"] is None
+    assert PROCESS_DETAIL_REQUEST_KEY not in app.session_state
 
 
 # ------------------------------------------------------------------ 받는 쪽
@@ -320,12 +343,19 @@ def _detail_entry_app() -> None:
     from capa_simulation.process_detail_state import (
         PROCESS_DETAIL_PROCESS_KEY,
         resolve_process_and_month,
+        take_process_detail_request,
     )
+
+    def default_process() -> str:
+        # 기본 공정 요약은 비싸다 — 필요한 회차에만 불리는지 센다.
+        st.session_state["test_default_calls"] = st.session_state.get("test_default_calls", 0) + 1
+        return "DEMO-B"
 
     entry = resolve_process_and_month(
         ["DEMO-A", "DEMO-B", "DEMO-C"],
         [202601, 202602, 202603],
-        default_process="DEMO-B",
+        request=take_process_detail_request(),
+        default_process=default_process,
         default_month=lambda process: {"DEMO-A": 202602, "DEMO-C": 202603}.get(process or ""),
     )
     st.session_state["test_entry"] = entry
@@ -355,6 +385,28 @@ def test_a_fresh_visit_opens_the_default_process_and_its_default_month() -> None
     assert not app.exception
     assert (_entry(app).process, _entry(app).month) == ("DEMO-B", 202601)
     assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == "DEMO-B"
+
+
+def test_the_default_process_is_computed_only_when_nothing_else_chose_one() -> None:
+    """기본 공정(공정별 요약·달마다 판정)은 세션·전달 칸·주소로 공정이 정해진 회차에 만들지
+    않는다."""
+    app = AppTest.from_function(_detail_entry_app).run()
+    assert app.session_state["test_default_calls"] == 1
+
+    app.run()
+    app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).set_value("DEMO-A").run()
+    app.query_params.update({"process": "DEMO-C"})
+    app.run()
+    assert _entry(app).process == "DEMO-C"
+    assert app.session_state["test_default_calls"] == 1
+
+    # 넘겨받은 공정이 목록에 없으면 그때 기본 공정을 낸다.
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process="DEMO-GONE", month=None
+    )
+    app.run()
+    assert _entry(app).process == "DEMO-B"
+    assert app.session_state["test_default_calls"] == 2
 
 
 def test_the_address_opens_its_process_and_month_once_and_only_its_keys_are_removed() -> None:
@@ -477,3 +529,13 @@ def test_the_session_month_survives_a_rerun() -> None:
     app.run()
 
     assert _entry(app).month == 202603
+
+
+def test_changing_the_process_keeps_the_month_being_viewed() -> None:
+    """공정을 바꿔도 보던 달은 그대로다 — 새 공정의 첫 미달 달로 옮기지 않는다(Guide 와 같은 말)."""
+    app = AppTest.from_function(_detail_entry_app).run()
+    app.session_state[PROCESS_DETAIL_MONTH_KEY] = 202603
+    app.run()
+    app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).set_value("DEMO-A").run()
+
+    assert (_entry(app).process, _entry(app).month) == ("DEMO-A", 202603)

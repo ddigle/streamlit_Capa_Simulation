@@ -813,8 +813,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     — HOME 전달 칸 → 주소 인자 → 세션 → 기본값(기간 최저 확보율 공정 `lowest_rate_process`, 그
     공정의 첫 확보기준 미달 달 `first_shortfall_month` — 판정은 `thresholds.status` 한 길). 공정
     선택은 사이드바 조건 카드 `공정 상세 조건`(`persist_state="session"`, `unique_format_func`)이다.
-    HOME 에서 왔으면 출처 띠(`origin_band_text`)가 HOME 표시값과 원 확보율의 차이를 먼저 적는다.
-    설명은 Guide(`guides/process_capa_detail.md`)다.
+    공정을 바꿔도 보던 달은 그대로다(세션 달이 축 안에 있는 동안). HOME 전달 칸은 그보다 앞, 부트스트랩
+    전에 꺼낸다. HOME 에서 왔으면 출처 띠(`origin_band_text`)가 HOME 표시값과 원 확보율의 차이를 먼저
+    적는다 — 알림 상자가 아니라 아이콘 붙은 캡션 한 줄이다(`docs/design_system.md` 2-3, `st.info` 는
+    「조건에 맞는 것이 없다」 뜻). 설명은 Guide(`guides/process_capa_detail.md`)다.
 - `app_pages/capa_chatbot.py`
   - 활성 시나리오의 Capa 데이터 조회와 부족 공정 분석을 위한 대화형 화면이다.
   - **LLM 을 붙이기 전에 정할 것은 모델이 아니라 답변의 모양이다.** 결론 · 근거 표 ·
@@ -1956,8 +1958,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     지금 테마 인자를 함께 싣는다. 내비게이션 없는 단독 실행(`StreamlitPageNotFoundError`)이면 전달
     칸만 남긴다. AppTest 는 실행마다 페이지 목록을 새로 만들어 콜백 안 이동을 재현하지 못한다 —
     시험은 `st.switch_page` 대역과 주입한 선택 상태로 본다.
-  - 받는 쪽 `resolve_process_and_month` 는 전달 칸을 `pop` 하고, 주소 인자는 마지막으로 적용한 묶음과
-    다를 때만 적용한 뒤 **그 키만** `del` 한다(`clear()` 는 테마 인자까지 지운다). 인자가 걷힌 회차에
+  - 받는 쪽은 전달 칸을 **페이지 맨 앞에서**(부트스트랩보다 먼저) 꺼낸다(`take_process_detail_request`)
+    — 오류로 멈춘 회차가 칸을 남겨 나중의 사이드바 방문에 거짓 출처 띠가 서지 않게 한다. 옮기지 못한
+    클릭(`StreamlitPageNotFoundError`)도 칸을 거둔다. `resolve_process_and_month(request=…)` 는 주소
+    인자를 마지막으로 적용한 묶음과 다를 때만 적용한 뒤 **그 키만** `del` 한다(`clear()` 는 테마 인자까지
+    지운다). 기본 공정(공정별 요약)은 함수로 받아 기본값이 필요한 회차에만 만든다. 인자가 걷힌 회차에
     그 묶음을 비워 같은 링크로 다시 들어오면 다시 적용한다. 출처 띠의 근거는
     같은 화면에서 다시 도는 동안·그 공정을 보는 동안만 남는다 — 새 방문은 `app.py` 실행 표지
     (`sidebar_status.APP_RUN_STATE_KEY` 의 직전 페이지)로 가른다.
@@ -2818,6 +2823,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     두 테마 값 중에서 고른다 — iframe 내용은 회차마다 같아야 한다. 자리는 `theme_toggle` 의 차례
     규칙(`capaToolbar.place`)이 정하므로 테마 버튼을 기다리지 않는다 — 먼저 서면 끝에 섰다가 뒤에 오는
     테마 버튼이 그 뒤에 붙는다.
+- `src/capa_simulation/components/plotly_touch_scroll.py`
+  - 칸 선택(`on_select`)을 켠 Plotly 그림 위에서 시작한 터치가 화면을 스크롤하게 하는 스크립트. 선택을
+    켜면 Streamlit 이 `dragmode` 를 `pan` 으로 덮고 Plotly 끌기 층이 `touchstart` 에서 `preventDefault`
+    를 불러 스크롤이 막힌다. 부모 문서의 **캡처 단계** `touchstart` 듣개(`passive`)가 `st-key-<key>` 칸
+    안 `.js-plotly-plot` 에서 시작한 터치를 Plotly 까지 내려보내지 않는다(`stopPropagation`) — 스와이프는
+    브라우저가 스크롤하고, 탭은 호환 마우스 사건(`mousedown`·`mouseup`)으로 Plotly 클릭이 된다.
+  - 테마 버튼 iframe 에 함께 싣는다(`extra_scripts`, 고정 문자열). iframe 이 다시 만들어지면 옛 듣개를
+    떼고 새로 단다(`HANDLER_NAME`). key 묶음은 `app.py` 가 넘긴다(지금은 HOME 두 월 그림
+    `HOME_CELL_CHART_KEYS`). 비공식 경로라 판올림 뒤 터치 화면에서 그 그림 위 스와이프·탭을 한 번 본다.
 - `src/capa_simulation/components/intro_overlay.py`
   - **탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면**(2026-10-02 사용자 결정 — 4시안 중 B안
     수정본). 메인 심볼과 `S.PKG CAPA` 워드마크가 원형으로 화면 전체로 펼쳐지고, 입장 화면의
@@ -4361,11 +4375,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     정수 월·숫자 표시 확보율·원 확보율·가용·소요·실행 증감 일곱 칸을 싣는다(`process_detail_state.
     HOME_CELL_LINK_FIELDS`, hover 칸 차례는 그대로). 과거 실적 칸은 그 일곱 칸이 `None` 이라 콜백이
     무시하고, 연간 Total 칸에는 칸이 없다 — 둘 다 상세 화면의 달 축(조회기간 ∩ 소요 달)에 없다.
-    콜백은 빈 선택(같은 칸 다시 누르기·더블클릭)도 무시한다. 옮길 때는 콜백 안 `st.switch_page` 라
-    HOME 프래그먼트 본문이 다시 돌지 않는다. 선택을 켜면 Plotly 가 고르지 않은 점을 0.2 배로 흐리므로
-    두 월 그림의 모든 trace 에 `unselected` 불투명도 1(글자 trace 는 글자색 그대로)을 준다
-    (`home_figure_common.keep_unselected_opaque`). 선택을 켠 그림의 `dragmode=False` 는 Streamlit 이
-    `pan` 으로 덮는다 — 축이 `fixedrange` 라 움직이지는 않는다. 이 위젯 둘이 `render_home_figures`
+    콜백은 빈 선택(같은 칸 다시 누르기·더블클릭)도 무시한다. 무시한 클릭은 이 프래그먼트만 다시
+    돈다 — 그 회차도 전체 실행 때와 같은 이벤트 칸 자리에 같은 스타일(구분 컬럼 폭·라벨 칸 내림·월
+    캔버스 폭)만 다시 쓰므로 페이지의 다른 이벤트 요소(툴바 Guide 규칙 등)를 덮지 않는다(`tests/test_app_navigation.py`
+    가 진짜 프래그먼트 회차로 지킨다). 옮길 때는 콜백 안 `st.switch_page` 라 HOME 프래그먼트 본문이
+    다시 돌지 않는다. 선택을 켜면 Plotly 가 고르지 않은 점을 0.2 배로 흐리므로 두 월 그림의 모든 trace 에
+    `unselected` 불투명도 1(글자 trace 는 글자색 그대로)을 준다(`home_figure_common.keep_unselected_opaque`).
+    **선택을 켠 그림의 `dragmode=False` 는 Streamlit 이 `pan` 으로 덮는다**(거짓값일 때만 덮는다 — 참값은
+    무엇이든 같다). 축이 `fixedrange` 라 그림은 움직이지 않지만 Plotly 끌기 층이 `touchstart` 에서
+    `preventDefault` 를 불러, 그 그림 위에서 시작한 터치 스크롤(본문 세로·월 캔버스 가로)이 막힌다
+    (2026-10-15 검토, 터치 Chrome 실측). 그래서 `app.py` 가 두 그림 key(`home_rendering.HOME_CELL_CHART_KEYS`)
+    를 터치 스크롤 막이(`components/plotly_touch_scroll.py`)에 넘긴다 — 스와이프는 브라우저가 스크롤하고
+    탭은 호환 마우스 사건으로 칸 클릭이 된다. **칸 선택을 켠 그림을 더하면 그 key 도 막이에 더한다**
+    (`test_home_page` 가 선택을 켠 그림과 그 묶음을 대조한다). 이 위젯 둘이 `render_home_figures`
     안의 유일한 위젯이고, 숨은 Main 회차에는 그리지 않으므로 위젯도 없다. 이 꼬리를 바꾸면
     `HOME_FIGURE_SCHEMA_VERSION` 을 올린다(51).
   - **화면에 그리는 Figure 는 정확히 여덟 개다**(요약 2 + 계획 세부수량 2 + 주요공정 히트맵 2 +
