@@ -149,16 +149,22 @@ def _install(monkeypatch: pytest.MonkeyPatch, database_path: Path) -> _World:
     return world
 
 
-def _script() -> str:
-    """페이지를 그대로 돌리되 **앱 전체 회차**만 센다(프래그먼트 회차는 머리를 안 지난다)."""
+def _script(*, begins_theme: bool = False) -> str:
+    """페이지를 그대로 돌리되 **앱 전체 회차**만 센다(프래그먼트 회차는 머리를 안 지난다).
+
+    `begins_theme` 이면 `app.py` 처럼 머리에서 테마를 정한다 — 그것도 앱 전체 회차만 지난다.
+    """
     months = _months()
     first, last = months[0], months[-1]
+    theme_lines = (
+        "from capa_simulation.design import theme\ntheme.begin_run()\n" if begins_theme else ""
+    )
     return f"""
 from pathlib import Path
 
 import streamlit as st
 
-st.session_state[{FULL_RUNS_KEY!r}] = st.session_state.get({FULL_RUNS_KEY!r}, 0) + 1
+{theme_lines}st.session_state[{FULL_RUNS_KEY!r}] = st.session_state.get({FULL_RUNS_KEY!r}, 0) + 1
 st.session_state["production_month_range_v2"] = ("{first // 100}-{first % 100:02d}",
                                                   "{last // 100}-{last % 100:02d}")
 page_source = Path({str(PAGE)!r}).read_text(encoding="utf-8")
@@ -253,6 +259,45 @@ def test_switching_the_target_reruns_only_the_view_with_the_full_run_numbers(
         assert _screen(app, world) == in_fragment, level
     # 처음 목표로 돌아오면 처음 화면 그대로다.
     assert _screen(app, world) == default
+    clear_equipment_repository()
+
+
+def test_a_dark_session_draws_the_view_run_in_dark_colors_like_the_full_run(
+    tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """어둡게 쓰는 세션의 프래그먼트 회차도 어두운 색이다 — 같은 목표의 앱 전체 회차와 바이트까지
+    같다.
+
+    프래그먼트 회차는 머리의 `theme.begin_run()` 을 지나지 않고, AppTest 도 서버처럼 회차마다 새
+    스레드에서 돈다. 테마는 조회 인자로 앱 전체 회차에만 싣는다(프래그먼트 회차에는 인자가 없다) —
+    프래그먼트 회차가 어둡게를 알 길은 세션에 남은 값뿐이다.
+    """
+    from capa_simulation.design import tokens
+
+    runner = _runner(request)
+    world = _install(monkeypatch, _database(tmp_path))
+    app = AppTest.from_string(_script(begins_theme=True), default_timeout=180)
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SHORTENING_TAB
+    app.query_params["theme"] = "dark"
+    app.run()
+    _assert_clean(app)
+    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
+    dark_card = f"background:{tokens.palette_value('dark', 'SURFACE')}"
+    assert dark_card in " ".join(_screen(app, world)[0])
+
+    runner.fragment_queue = [view]
+    _choose_level(app, world, 1.3)
+    assert runner.started == [[view]]
+    in_fragment = _screen(app, world)
+    assert dark_card in " ".join(in_fragment[0])
+
+    # 브라우저는 주소의 인자를 회차마다 싣는다. 대역의 프래그먼트 회차는 인자 없이 돌아 AppTest 가
+    # 쥔 인자도 비우므로, 앱 전체 회차 앞에 다시 싣는다.
+    runner.fragment_queue = []
+    app.query_params["theme"] = "dark"
+    _run(app, world)
+    assert runner.started == [[]]
+    assert _screen(app, world) == in_fragment
     clear_equipment_repository()
 
 

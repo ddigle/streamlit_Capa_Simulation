@@ -10,6 +10,13 @@
 다른 스레드에서 돌린다. 전역에 두면 한 사용자가 어둡게 쓰는 동안 동시에 도는 다른 세션의
 화면까지 어두워진다. 이 앱은 실제로 여러 사람이 같이 쓴다.
 
+**프래그먼트만 도는 회차는 직전 앱 전체 회차의 테마를 잇는다.** 그 회차는 `app.py` 를 지나지 않아
+`begin_run()` 이 불리지 않는다. 게다가 Streamlit 은 앞 회차가 끝났으면 새 스레드에서 돌리므로 스레드
+칸도 비어 있다 — 그대로 두면 어둡게 쓰는 사람의 프래그먼트(필요단축일정 머리·본문, Main 표현, 팝업
+본문)만 밝은 색으로 그려진다. 그래서 `begin_run()` 이 정한 값을 세션에도 적어 두고, 스레드 칸이 빈
+실행은 첫 토큰을 읽을 때 그 값을 한 번 꺼내 스레드에 담는다. 테마를 바꾸는 길(툴바 단추)은
+새로고침이라 세션 값은 늘 그 세션의 마지막 앱 전체 회차와 같다.
+
 `st.context.theme` 이 없거나 읽히지 않는 자리(테스트·스크립트·런타임 밖)에서는 밝게로
 둔다. 색을 정하지 못해 화면이 못 뜨는 일은 없어야 한다.
 """
@@ -20,10 +27,13 @@ import threading
 from typing import Literal
 
 import streamlit as st
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 Mode = Literal["light", "dark"]
 
 _LOCAL = threading.local()
+# 앱 전체 회차가 정한 테마. 프래그먼트만 도는 회차가 이어받는다(모듈 설명).
+_SESSION_MODE_KEY = "_capa_theme_mode"
 
 
 def begin_run() -> Mode:
@@ -36,13 +46,35 @@ def begin_run() -> Mode:
     """
     resolved = _read_client_mode()
     _LOCAL.mode = resolved
+    if get_script_run_ctx(suppress_warning=True) is not None:
+        st.session_state[_SESSION_MODE_KEY] = resolved
     return resolved
 
 
 def current_mode() -> Mode:
-    """지금 실행이 쓰는 테마. `begin_run()` 이 아직 안 불렸으면 밝게."""
+    """지금 실행이 쓰는 테마. 이 스레드에서 `begin_run()` 이 안 불렸으면 세션이 적어 둔 값."""
     mode: Mode | None = getattr(_LOCAL, "mode", None)
-    return mode or "light"
+    return mode or _resume_session_mode()
+
+
+def _resume_session_mode() -> Mode:
+    """스레드 칸이 빈 실행(프래그먼트만 도는 회차)의 테마 — 세션의 직전 앱 전체 회차 값.
+
+    한 번 꺼내 스레드에 담는다. 같은 스레드의 다음 앱 전체 회차는 `begin_run()` 이 덮어쓴다. 실행
+    문맥이 없으면(테스트·스크립트) 담지 않고 밝게다.
+    """
+    if get_script_run_ctx(suppress_warning=True) is None:
+        return "light"
+    stored = st.session_state.get(_SESSION_MODE_KEY)
+    mode: Mode
+    if stored == "dark":
+        mode = "dark"
+    elif stored == "light":
+        mode = "light"
+    else:
+        mode = _read_client_mode()
+    _LOCAL.mode = mode
+    return mode
 
 
 # 테마 선택을 싣는 조회 인자. **`st.context.theme.type` 을 믿지 않는 이유가 여기 있다.**

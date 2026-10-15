@@ -2686,6 +2686,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     _themed_key`). 비우는 방식은 `st.context.theme.type` 이 틀리는 순간(첫 로드·전환 직후)에
     잘못 읽은 테마의 그림을 눌러앉힌다(`begin_run` 설명).
   - `app.py` 가 **토큰을 하나라도 읽기 전에** `begin_run()` 을 부른다.
+  - **프래그먼트만 도는 회차는 직전 앱 전체 회차의 테마를 잇는다.** 그 회차는 `app.py` 를 지나지
+    않고, Streamlit 은 앞 회차가 끝났으면 새 스레드에서 돌리므로 스레드 칸이 비어 있다. 그래서
+    `begin_run()` 이 정한 값을 세션(`_capa_theme_mode`)에도 적고, `current_mode()` 는 스레드 칸이
+    비면 그 값을 한 번 꺼내 담는다. 이것이 없으면 어둡게 쓰는 사람의 프래그먼트(필요단축일정
+    머리·본문, Main 표현, 팝업 안 조작)만 밝은 색으로 그려졌다(2026-10-15 브라우저 확인). 프래그먼트
+    본문에서 `begin_run()` 을 따로 부르지 않는다. `tests/test_shortening_view_fragment.py` 가 어둡게
+    세션의 프래그먼트 회차를 앱 전체 회차와 바이트까지 견준다.
 - `src/capa_simulation/components/page_header.py`
   - 모든 페이지의 제목·설명·상태 배지. 두 상태 접미(`(구현중)`·`(Data확보중)`)는 제목에서
     떼어 배지로 보여준다. 사이드바 라벨과 같은 문자열을 써야 하며 어긋나면 테스트가 잡는다.
