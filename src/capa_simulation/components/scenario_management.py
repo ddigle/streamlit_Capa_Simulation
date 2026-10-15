@@ -535,6 +535,9 @@ def _render_official(
                 f"공식 v{release.release_no} · {release.release_name}"
                 f"{object_particle(release.release_name)} 지정했습니다."
             )
+            # 허락하면서 하는 경고(소요대수에 들지 않은 수요 건수)는 지정한 사람이 그 자리에서 본다.
+            if verdict.message:
+                st.session_state[FLASH_WARNING_KEY] = verdict.message
             st.session_state.pop(ACTION_KEY, None)
             st.session_state.pop(official_confirm_key(revision_id), None)
             # 입장 화면 Summary 가 새 공식버전을 다음 회차에 곧바로 싣게 한다

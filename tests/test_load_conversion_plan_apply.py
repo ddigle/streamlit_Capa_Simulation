@@ -393,6 +393,36 @@ def test_a_yield_paste_that_blanks_nothing_adds_no_removal_note(seeded_database:
     assert not any("지웠습니다" in message for message in messages)
 
 
+def test_blanking_a_month_in_the_yield_grid_says_the_row_was_removed(
+    seeded_database: Path,
+) -> None:
+    """E3 — 격자에서 한 (제품, 월)의 EDS·BE 를 둘 다 비워 적용해도 붙여넣기처럼 지운 칸 수를 말한다.
+
+    그 달 수율 행이 지워져 그 계획은 환산·소요대수에서 빠진다. 붙여넣기만 알리고 격자는 말없이
+    지나가면 같은 일이 길에 따라 다르게 보인다.
+    """
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    before = len(_yield_rows(app))
+    grid = _yield_grid(app)
+    month = next(column for column in grid.columns if str(column).isdigit())
+    target = grid.loc[grid["제품정보"].eq("DEMO PRODUCT A")]
+    assert sorted(target["수율 구분"]) == ["BE", "EDS"]
+    edit = {
+        "edited_rows": {int(index): {month: None} for index in target.index},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    app.session_state[_widget_key(app, "yield_editor")] = edit
+    app.run()
+    app.session_state[_widget_key(app, "yield_editor")] = edit
+    app.button(key="apply_yield_changes").click().run()
+
+    assert not list(app.exception)
+    assert len(_yield_rows(app)) == before - 1
+    messages = [item.value for item in app.success]
+    assert any("2칸을 비워 그 달 수율 행을 지웠습니다" in message for message in messages), messages
+
+
 def test_a_yield_paste_keeps_the_locked_rows_and_does_not_count_them_as_removed(
     seeded_database: Path,
 ) -> None:

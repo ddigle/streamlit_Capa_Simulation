@@ -67,6 +67,7 @@ from capa_simulation.scenario_state import (
 from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
+    PLAN_QUANTITY_BLANK_REASON,
     YIELD_EDITOR_DIMENSIONS,
     YIELD_KEYS,
     YIELD_LOCK_REASON_COLUMN,
@@ -343,6 +344,23 @@ def _apply_yield(table: pd.DataFrame, origin: str, *, note: str = "") -> None:
     mark_own_change(OWN_CHANGE_KEY, (YIELD_EDITOR_KEY,))
 
 
+def _removed_yield_note(source: pd.DataFrame, applied: pd.DataFrame) -> str:
+    """양식에는 값이 있는데 적용하는 표에서는 빈 칸 수를 완료 문구 꼬리로. 없으면 빈 문자열.
+
+    한 (키, 월)의 EDS·BE 를 둘 다 비우면 그 달 수율 행이 지워지고 그 계획은 환산·소요대수에서
+    빠진다. 붙여넣기는 적용 전에 변경 수를 보여 주지 않고, 격자는 적용 전 변경 수가 「지운 칸」을
+    따로 세지 않는다. 그래서 두 길이 같은 문구로 적용 뒤에 말한다 — 한쪽만 알리면 같은 일이 길에
+    따라 말없이 지나간다.
+    """
+    removed = count_removed_values(source, applied, YIELD_EDITOR_DIMENSIONS)
+    if not removed:
+        return ""
+    return (
+        f" {removed:,}칸을 비워 그 달 수율 행을 지웠습니다 — 해당 계획은 환산에서 빠집니다"
+        "(소요대수에서도 빠져 산출 결과 → 소요대수 탭과 HOME 이 건수를 알립니다)."
+    )
+
+
 @st.dialog("Excel 붙여넣기 · 수율", width="large", on_dismiss=_close_dialog)
 def _yield_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     # 붙여넣기는 곧바로 적용되어 수율 표를 새로 세운다 — 표의 편집은 버려진다.
@@ -357,16 +375,8 @@ def _yield_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     )
     if imported is None:
         return
-    # 한 (키, 월)의 EDS·BE 를 둘 다 비우면 그 달 수율 행이 지워지고 그 계획은 환산에서 빠진다.
-    # 붙여넣기는 적용 전에 변경 수를 보여 주지 않아 말없이 지나갔다(2026-09-29 횡전개 감사).
-    removed = count_removed_values(source, imported, YIELD_EDITOR_DIMENSIONS)
-    note = (
-        f" {removed:,}칸을 비워 그 달 수율 행을 지웠습니다 — 해당 계획은 환산에서 빠집니다."
-        if removed
-        else ""
-    )
     try:
-        _apply_yield(imported, "붙여넣기 데이터를", note=note)
+        _apply_yield(imported, "붙여넣기 데이터를", note=_removed_yield_note(source, imported))
     except ValueError as exc:
         st.error(str(exc))
         return
@@ -674,7 +684,11 @@ with yield_tab:
         )
         if apply_yield:
             try:
-                _apply_yield(edited_yield_table, "편집값을")
+                _apply_yield(
+                    edited_yield_table,
+                    "편집값을",
+                    note=_removed_yield_note(default_yield_table, edited_yield_table),
+                )
             except ValueError as exc:
                 yield_notice.error(str(exc))
             else:
@@ -757,11 +771,23 @@ if not tab_is_hidden(conversion_tab):
         # 예외를 던져 페이지 전체가 멈췄고, 지금은 해당 제품만 빼고 목록으로 알린다.
         excluded_load_rows = load_exclusions(monthly_volume)
         if not excluded_load_rows.empty:
-            st.warning(
-                f"기준정보가 없어 계산에서 제외한 계획이 {len(excluded_load_rows):,}건 있습니다. "
-                "아래 목록의 기준정보를 채우면 환산과 소요대수에 반영됩니다.",
-                icon=":material/link_off:",
+            # 생산수량이 빈 행은 기준정보 문제가 아니라 계획 없음(0)으로 본 것이다. 한 문장에 섞으면
+            # 채울 기준정보가 없는데 찾으러 간다.
+            blank_plans = int(
+                excluded_load_rows["누락 기준정보"].eq(PLAN_QUANTITY_BLANK_REASON).sum()
             )
+            missing_plans = len(excluded_load_rows) - blank_plans
+            sentences = []
+            if missing_plans:
+                sentences.append(
+                    f"기준정보가 없어 계산에서 제외한 계획이 {missing_plans:,}건 있습니다. "
+                    "아래 목록의 기준정보를 채우면 환산과 소요대수에 반영됩니다."
+                )
+            if blank_plans:
+                sentences.append(
+                    f"생산수량이 빈 계획 {blank_plans:,}건은 계획 없음(0)으로 봤습니다."
+                )
+            st.warning(" ".join(sentences), icon=":material/link_off:")
             with st.expander("제외한 계획 확인", icon=":material/rule:"):
                 st.dataframe(excluded_load_rows, hide_index=True, width="stretch")
 

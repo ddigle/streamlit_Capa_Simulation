@@ -711,6 +711,46 @@ def test_official_release_without_virtual_products_asks_nothing(tmp_path: Path) 
     assert any(item.value.startswith("공식 v2 · ") for item in app.success)
 
 
+def test_official_release_with_demand_left_out_of_the_requirement_warns_after_publishing(
+    tmp_path: Path,
+) -> None:
+    """P1·P3 — 소요대수에 들지 않은 수요가 있는 리비전도 지정은 되지만, 지정한 자리에서 건수를 본다.
+
+    발행 검사가 경고를 돌려줘도 화면이 성공 문구만 띄우면 지정한 사람은 확보율이 높게 나온
+    리비전을 모두의 첫 화면으로 올린 줄 모른다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+    official = repository.load_revision(release.revision_id)
+    tables = dict(official.tables)
+    chip = tables["RQ_CHIP_QTY"]
+    tables["RQ_CHIP_QTY"] = chip.loc[chip["제품정보"].ne(chip["제품정보"].iloc[-1])]
+    saved = repository.save_revision(
+        official.scenario.scenario_id,
+        tables,
+        official.preset,
+        revision_name="Chip 구성 한 제품 누락",
+        parent_revision_id=release.revision_id,
+    )
+
+    app = AppTest.from_string(script, default_timeout=120)
+    _open_official(app, database_path, saved.scenario.scenario_id, saved.revision.revision_id)
+    _official_button(app).click()
+    app.run()
+    assert not app.exception
+
+    latest = repository.latest_official_release()
+    assert latest is not None and latest.revision_id == saved.revision.revision_id
+    assert any(item.value.startswith("공식 v2 · ") for item in app.success)
+    assert any("부하량에서 빠진 계획" in item.value for item in app.warning), [
+        item.value for item in app.warning
+    ]
+
+
 def test_the_card_follows_a_revision_loaded_from_the_sidebar_popup(tmp_path: Path) -> None:
     """카드의 리비전 상자는 활성 리비전이 바뀌면 그 리비전으로 다시 선다(2026-10-11 병합 전 리뷰).
 

@@ -65,6 +65,9 @@ from capa_simulation.components.plan_comparison_dumbbell import (
 )
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.process_picker import render_process_picker
+from capa_simulation.components.required_exclusion_notice import (
+    render_required_exclusion_notice,
+)
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.home_state import (
@@ -171,6 +174,7 @@ from capa_simulation.services.simulation_cache import (
     get_home_lob_without_edp,
     get_home_plan_detail,
     get_home_simulation,
+    get_scenario_exclusion_counts,
 )
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import (
@@ -357,6 +361,13 @@ try:
         # 「계산을 멈췄습니다」와 어긋나지 않는다. 본문 안내는 아래 `except` 가 그대로 한다.
         show_calculation_stopped()
         raise
+    # 소요대수에 들지 않은 수요 건수. 위 계산과 같은 시나리오 키(앞 네 칸)라 그 소요대수에서 센다 —
+    # 정수 넷짜리 캐시라 적중 회차에 큰 프레임을 풀지 않는다.
+    required_exclusions = get_scenario_exclusion_counts(
+        home_simulation_cache_key[:4],
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
+    )
     # 제품별 비중이 그리는 수량. 색 칸은 EDP 를 **포함한** 쪽(`product_volume_with_edp`)에서
     # 정한다 — EDP 를 꺼도 남은 제품의 색이 바뀌지 않는다.
     product_volume = product_volume_with_edp
@@ -1018,6 +1029,9 @@ with main_tab:
     # 가정을 결론보다 **먼저** 말한다. 측정률을 1.0 으로 메운 경로가 있으면 확보율이
     # 실제와 다르게 나오므로(측정률이 1 보다 작으면 낮게), 아래 결론을 읽기 전에 알아야 한다.
     render_capacity_assumption_notice(assumed_capacity_defaults)
+    # 소요대수에 들지 않은 수요도 결론보다 먼저다. 그만큼 확보율이 높게 나오므로 아래 결론을 읽기
+    # 전에 알아야 한다.
+    render_required_exclusion_notice(required_exclusions)
     # 결론이 표보다 **먼저** 온다. 아래 Figure 와 같은 `securement_rate`·`included_processes`
     # 를 읽으므로 공정 필터를 바꾸면 요약도 같이 따라온다.
     render_home_capacity_decision(

@@ -14,6 +14,9 @@
   여럿일 때 하나씩 고쳐 가며 저장할 길이 없어진다.
 - **공식 발행:** 계산되지 않으면 막는다. 공식버전은 모든 사용자의 첫 화면이라, 지정하는 순간
   모두의 HOME 이 멈춘다.
+- **계산은 되지만 소요대수에 들지 않은 수요가 있으면**(부하량에서 빠진 계획·경로 없는 계획·대당
+  Capa 없는 부하 경로) 저장·발행 모두 허락하고 건수를 경고한다. 막을 오류는 아니지만 확보율이 그만큼
+  높게 나온 리비전이 아무 표시 없이 저장·발행되면 안 된다(`required_exclusion_notice`).
 
 BigDataQuery 등록과 내장 시드 부트스트랩은 검사하지 않는다 — 들어온 원천을 앱 안에서 고칠
 길을 막지 않기 위해서다. 등록한 원천의 오류는 계산 페이지와 발행 검사가 드러낸다.
@@ -29,10 +32,15 @@ from typing import NamedTuple
 
 import pandas as pd
 
+from capa_simulation.components.required_exclusion_notice import (
+    FULL_SCOPE,
+    required_exclusion_message,
+)
 from capa_simulation.io.reference_cache import reference_version_for_revision
 from capa_simulation.persistence.cache import load_scenario_snapshot
 from capa_simulation.scenario_state import ActiveScenario, pristine_content_token
-from capa_simulation.services.simulation_cache import get_full_capacity_outcome
+from capa_simulation.services.required_equipment import required_exclusion_counts
+from capa_simulation.services.simulation_cache import CapacityOutcome, get_full_capacity_outcome
 
 
 class GateVerdict(NamedTuple):
@@ -42,19 +50,29 @@ class GateVerdict(NamedTuple):
     message: str | None = None
 
 
+def _calculated_verdict(outcome: CapacityOutcome) -> GateVerdict:
+    """계산된 결과의 판정 — 허락하되, 소요대수에 들지 않은 수요가 있으면 그 건수를 경고한다."""
+    assert outcome.required_equipment is not None
+    message = required_exclusion_message(
+        required_exclusion_counts(outcome.required_equipment), scope=FULL_SCOPE
+    )
+    return GateVerdict(True, message or None)
+
+
 def revision_save_verdict(
     reference_version: int,
     active_scenario: ActiveScenario,
     reference_tables: Mapping[str, pd.DataFrame],
 ) -> GateVerdict:
     """편집본을 새 리비전으로 저장해도 되는지."""
-    edited = get_full_capacity_outcome(
+    edited_outcome = get_full_capacity_outcome(
         (reference_version, active_scenario["content_token"]),
         _scenario_tables=active_scenario["tables"],
         _reference_tables=reference_tables,
-    ).error
+    )
+    edited = edited_outcome.error
     if edited is None:
-        return GateVerdict(True)
+        return _calculated_verdict(edited_outcome)
     base_token = pristine_content_token(reference_version)
     # 편집 전 상태는 세션 기준정보(= 활성 리비전 스냅샷)다. 계산 페이지가 같은 키로 이미
     # 계산해 두었으면 캐시에서 바로 나온다.
@@ -84,13 +102,14 @@ def official_publish_verdict(database_path: str, revision_id: str) -> GateVerdic
     """저장된 리비전을 공식버전으로 지정해도 되는지."""
     snapshot = load_scenario_snapshot(database_path, revision_id)
     reference_version = reference_version_for_revision(revision_id)
-    error = get_full_capacity_outcome(
+    outcome = get_full_capacity_outcome(
         (reference_version, pristine_content_token(reference_version)),
         _scenario_tables=snapshot.tables,
         _reference_tables=snapshot.tables,
-    ).error
+    )
+    error = outcome.error
     if error is None:
-        return GateVerdict(True)
+        return _calculated_verdict(outcome)
     return GateVerdict(
         False,
         "이 리비전은 Capa 계산이 실패해 공식버전으로 지정할 수 없습니다. 공식버전은 모든 "

@@ -581,3 +581,45 @@ def test_pkg_equivalent_sums_plan_rows_that_differ_only_by_pack_code() -> None:
 
     # 20 + 10 + 20 = 50. 7키가 같은 두 줄이 접히지 않고 더해진다.
     assert result.loc[0, PKG_EQUIVALENT_COLUMN] == pytest.approx(5.0)
+
+
+def test_pkg_equivalent_reads_a_blank_plan_quantity_as_no_plan() -> None:
+    """P5 — 생산수량 빈 값은 PKG 환산에서도 「계획 없음(0)」이다(환산·소요대수와 한 규칙).
+
+    소요대수가 빈 값을 계획 없음으로 이어 가는데 이 환산만 키 없는 「숫자가 아닌 값 또는
+    누락값」으로 멈추면 표준 목표 Capa 의 PKG 토글만 선다.
+    """
+    required_equipment = _required_equipment()
+    weekly_target = build_weekly_standard_target_capacity(
+        required_equipment=required_equipment,
+        run_day=pd.DataFrame({"생산계획년월": [202608], "공정": ["Process-A"], "RUN_DAY": [10.0]}),
+        weekly_availability=pd.DataFrame(
+            {"공정": ["Process-A"], "Weeknum": ["26-W32"], "가용대수": [2.0]}
+        ),
+        start_date=date(2026, 8, 3),
+        end_date=date(2026, 8, 9),
+        detail_level="공정",
+    )
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608, 202608],
+            "양산구분": ["양산", "양산", "양산"],
+            "제품정보": ["Product-A", "Product-A", "Product-A"],
+            "Stack": ["8H", "8H", "8H"],
+            "Capa Code": ["C1", "C1", "C2"],
+            "Customer": ["Customer-A", "Customer-A", "Customer-B"],
+            "CS": ["MP", "MP", "ER"],
+            "Pack Code": ["PK-1", "PK-2", "PK-1"],
+            "생산수량": [30.0, None, 20.0],
+        }
+    )
+
+    result = add_pkg_equivalent_standard_target(
+        weekly_target=weekly_target,
+        required_equipment=required_equipment,
+        plan=plan,
+        detail_level="공정",
+    )
+
+    # 30 + (빈 값 = 0) + 20 = 50.
+    assert result.loc[0, PKG_EQUIVALENT_COLUMN] == pytest.approx(5.0)

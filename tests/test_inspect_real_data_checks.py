@@ -210,6 +210,8 @@ def test_db_checks_print_aggregates_and_never_the_planted_names(
     assert "`capa_simulation.duckdb`" in output
     # 소요대수는 원천에 값이 차면 대조까지 간다.
     assert "신규 경로 키 72 중 원천 경로에 있는 키 72 (100.00%)" in output
+    # HOME·발행 검사가 알리는 「소요대수에 들지 않은 수요」를 같은 셈으로 센다.
+    assert "- 소요대수에 들지 않은 수요(리비전 1 전체 기간) — " in output
     assert "| 경로 키 13 · 같은 경로 반복을 접음 | 72 |" in output
     # 기존 값이 표지값 하나라 60 배 무리가 없다 — 가르기는 한 줄로 끝난다.
     assert "- ≈60 배 가르기 — 비율이 정의된 경로 키 72 가운데 ≈60 이 없어 건너뛴다" in output
@@ -258,6 +260,29 @@ def test_an_error_message_carrying_names_is_reported_by_kind_only(
     _assert_no_leak(output)
     assert "- 신규 소요대수 계산 실패(ValueError) — 대조하지 않았다" in output
     assert "- 일정 미정 — 실패(ValueError)" in output
+
+
+def test_unrouted_load_branches_name_only_the_contract_vocabulary() -> None:
+    """경로 없는 부하의 갈래는 계약 어휘만 이름으로 찍는다. 그 밖의 WF 구분은 「그 밖」으로
+    묶는다."""
+    required = pd.DataFrame()
+    required.attrs["unrouted_required_loads"] = pd.DataFrame(
+        {
+            **{key: ["X"] * 3 for key in LOAD_KEYS},
+            "소요기준": ["CHIP", "CHIP", "PKG"],
+            "WF 구분": ["BUFFER", SENTINEL, ""],
+            "부하량": [1.0, 2.0, 3.0],
+        }
+    )
+
+    lines = checks._left_out_lines(required)
+    text = "\n".join(lines)
+
+    assert "경로에 닿지 않은 계획 부하 3" in lines[0]
+    assert "CHIP · BUFFER 1" in text
+    assert "CHIP · 그 밖 1" in text
+    assert "PKG · (PKG) 1" in text
+    assert SENTINEL not in text
 
 
 def test_an_unknown_demand_basis_is_counted_not_named(

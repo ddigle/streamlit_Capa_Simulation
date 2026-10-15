@@ -277,7 +277,12 @@ def _prepare_pkg_plan_for_equivalent(data: pd.DataFrame) -> pd.DataFrame:
     text_columns = [column for column in PKG_PLAN_KEYS if column != "생산계획년월"]
     _normalize_text_values(result, text_columns, "RQ_PKG_PLAN")
     assert_complete(result, PKG_PLAN_KEYS, "RQ_PKG_PLAN")
-    result["생산수량"] = to_numeric_strict(result["생산수량"], "RQ_PKG_PLAN.생산수량")
+    # 빈 생산수량은 「계획 없음(0)」이다 — 환산·소요대수와 한 규칙(소요대수 결과가 그 행을 목록으로
+    # 알린다). 숫자가 아닌 글자만 막는다.
+    quantities = pd.to_numeric(result["생산수량"], errors="coerce")
+    if bool((result["생산수량"].notna() & quantities.isna()).any()):
+        raise ValueError("RQ_PKG_PLAN.생산수량에 숫자가 아닌 값이 있습니다.")
+    result["생산수량"] = quantities.fillna(0.0).astype("float64")
     if result["생산수량"].lt(0).any():
         raise ValueError("RQ_PKG_PLAN의 생산수량은 0 이상이어야 합니다.")
     # `Pack Code` 가 업무 키로 올라가 같은 7키에 계획 줄이 여럿 있을 수 있다. 연결 상대인
