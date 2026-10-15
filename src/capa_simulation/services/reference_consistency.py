@@ -20,6 +20,8 @@ reference_from_edit_table` 가 빈 칸을 `dropna` 로 버린다). 그래서 칸
   이 셋을 보지 않아, 효율 행이 없는 달을 채우면 적용은 성공하고 계산 전체가 멈췄다(2026-09-29
   2차 리뷰). `missing_required_rows` — 측정률 결손과 **한 오류문**으로 알린다
   (`describe_missing_path_rows`).
+- **UPEH 의 MI 행 ST** — 0 이하면 계산 전체가 멈추는데 편집기 하한은 0 이다.
+  `nonpositive_mi_st_rows`.
 
 **이번 편집이 만든 것만 본다.** 이미 어긋나 있던 것까지 막으면, 상관없는 칸 하나를
 고치려던 사람이 자기가 만들지 않은 문제에 걸려 아무것도 못 하게 된다.
@@ -433,6 +435,57 @@ def describe_missing_path_rows(
     )
 
 
+def _mi_st_values(upeh: pd.DataFrame) -> pd.DataFrame:
+    """계산이 쓰는 MI 행의 경로 키(조인과 같은 규칙으로 줄인 것)와 ST 숫자값."""
+    calculated = _calculated_upeh(upeh)
+    columns = [*PERFORMANCE_KEYS, "ST"]
+    if calculated.empty:
+        return pd.DataFrame(columns=columns)
+    result = calculated[PERFORMANCE_KEYS].copy()
+    normalize_month_column(result, "RQ_UPEH")
+    strip_text_columns(result, [key for key in PERFORMANCE_KEYS if key != "생산계획년월"])
+    result["Area_Name"] = normalize_area_name(result["Area_Name"], "RQ_UPEH")
+    result["ST"] = pd.to_numeric(calculated["ST"], errors="coerce").to_numpy()
+    return result.loc[result["Area_Name"].eq("MI"), columns].reset_index(drop=True)
+
+
+def nonpositive_mi_st_rows(before: pd.DataFrame, after: pd.DataFrame) -> pd.DataFrame:
+    """이번 UPEH 편집이 0 이하로 만든 MI 행 ST. (월 + 경로)와 넣은 값을 돌려준다.
+
+    MI 행은 ST 로 환산 UPEH(`3600 ÷ ST`)를 만든다. 계산이 쓰는 MI 행(`UNIMPLEMENTED_BASES` 제외)의
+    ST 가 0 이하면 대당 Capa 전체가 「RQ_UPEH의 MI 행 ST 값은 0보다 커야 합니다」로 멈추는데
+    (`unit_capacity._prepare_performance`), 편집기는 하한이 0 이라 0 을 받는다. Main 행 UPEH 0 은 그
+    경로만 제외 목록으로 빠지므로 여기 없다.
+    `cleared_keys_in_use` 와 같이 **원본에서 이미 0 이하이던 칸은 세지 않는다.**
+    """
+    columns = [*PERFORMANCE_KEYS, "ST"]
+    new = _mi_st_values(after)
+    new = new.loc[new["ST"].le(0)]
+    if new.empty:
+        return pd.DataFrame(columns=columns)
+    old = _mi_st_values(before)
+    old = old.loc[old["ST"].le(0), PERFORMANCE_KEYS].drop_duplicates()
+    if not old.empty:
+        marked = new.merge(old, on=PERFORMANCE_KEYS, how="left", indicator=True)
+        new = marked.loc[marked["_merge"].eq("left_only"), columns]
+    return new.sort_values(PERFORMANCE_KEYS, kind="stable").reset_index(drop=True)
+
+
+def describe_nonpositive_mi_st_rows(found: pd.DataFrame, limit: int = 3) -> str:
+    """어느 (월, 경로)에 무슨 ST 를 넣었는지, 왜 막는지, 어떻게 풀지를 적는다."""
+    examples = []
+    for _, row in found.head(limit).iterrows():
+        path = " / ".join(f"{key}={row[key]}" for key in PERFORMANCE_KEYS if key != "생산계획년월")
+        examples.append(f"{row['생산계획년월']} · {path}{_value_note(row['ST'], '넣은 값')}")
+    more = f" 외 {len(found) - limit:,}건" if len(found) > limit else ""
+    return (
+        f"「UPEH」 표에서 MI 행 ST 를 0 이하로 넣은 칸 {len(found):,}개 — "
+        f"{'; '.join(examples)}{more}. MI 행은 ST 로 환산 UPEH(3600 ÷ ST)를 만들어 0 이하이면 "
+        "계산 전체가 「RQ_UPEH의 MI 행 ST 값은 0보다 커야 합니다」로 멈춥니다. 그 칸에 0보다 큰 "
+        "ST 를 넣거나, 그 달 경로를 쓰지 않으려면 칸을 비우세요."
+    )
+
+
 def validate_upeh_edit(
     before_upeh: pd.DataFrame,
     rows: pd.DataFrame,
@@ -455,6 +508,9 @@ def validate_upeh_edit(
     달을 채우면 적용은 성공하고 계산 전체가 「RQ_RUN_RATE 연결값이 없는 …」로 멈췄다
     (2026-09-29 2차 리뷰). 측정률 결손과 **한 오류문**으로 알린다 — 따로 알리면 하나를 채운 뒤
     다음 적용에서 다른 표로 같은 일을 또 겪는다.
+
+    MI 행 ST 를 0 이하로 넣은 칸도 본다(`nonpositive_mi_st_rows`). 경로 결손과 함께 있으면 그
+    뒤에 이어 한 오류문으로 낸다.
     """
     missing_ratio = missing_ratio_rows(
         added_performance_keys(before_upeh, rows),
@@ -465,8 +521,14 @@ def validate_upeh_edit(
         rows,
         {name: scenario_tables[name] for name in REQUIRED_TABLE_KEYS},
     )
+    problems: list[str] = []
     if missing_ratio or missing_required:
-        raise ValueError(describe_missing_path_rows(missing_ratio, missing_required))
+        problems.append(describe_missing_path_rows(missing_ratio, missing_required))
+    nonpositive_st = nonpositive_mi_st_rows(before_upeh, rows)
+    if not nonpositive_st.empty:
+        problems.append(describe_nonpositive_mi_st_rows(nonpositive_st))
+    if problems:
+        raise ValueError(" ".join(problems))
 
 
 def validate_required_edit(

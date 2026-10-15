@@ -469,6 +469,53 @@ def test_upeh_edit_validation_needs_every_table_it_checks() -> None:
         validate_upeh_edit(before, before.copy(), _tables([_row(202608)], [_row(202608)]))
 
 
+def _mi_upeh(st_values: list[float], bases: list[str] | None = None) -> pd.DataFrame:
+    """Process-A·MI 경로 한 줄씩(달마다). MI 행은 ST 를 편집하고 UPEH 는 비어 있다."""
+    months = [202608 + index for index in range(len(st_values))]
+    frame = _upeh([{**_row(month), "Area_Name": "MI"} for month in months])
+    return frame.assign(UPEH=None, ST=st_values, 소요기준=bases or ["WF"] * len(st_values))
+
+
+def _mi_scenario_tables(months: list[int]) -> dict[str, pd.DataFrame]:
+    rows = [{**_row(month), "Area_Name": "MI"} for month in months]
+    return {
+        **_tables(rows, rows),
+        **_required_tables(
+            run_rate=dict.fromkeys(months, 0.9),
+            vital=dict.fromkeys(months, 1.0),
+            run_day=dict.fromkeys(months, 30.0),
+        ),
+    }
+
+
+@pytest.mark.parametrize("st_value", [0.0, -5.0])
+def test_upeh_edit_validation_blocks_a_mi_st_that_becomes_zero_or_less(st_value: float) -> None:
+    """MI 행 ST 0·음수는 대당 Capa 전체를 「MI 행 ST 값은 0보다 커야」로 멈춘다(사내 감사 E4).
+
+    편집기 하한이 0 이라 0 을 받는다. 적용 경계에서 어느 (월, 경로)에 무슨 값을 넣었는지 적어
+    막는다.
+    """
+    before = _mi_upeh([36.0, 36.0])
+    after = _mi_upeh([36.0, st_value])
+
+    with pytest.raises(ValueError) as raised:
+        validate_upeh_edit(before, after, _mi_scenario_tables([202608, 202609]))
+
+    message = str(raised.value)
+    assert "MI 행 ST" in message and "0보다 커야" in message
+    assert "202609" in message and "공정=Process-A" in message
+    assert f"넣은 값 {st_value:g}" in message
+    assert "202608 ·" not in message
+
+
+def test_upeh_edit_validation_leaves_a_pre_existing_or_unused_mi_st_alone() -> None:
+    """원래 0 이던 칸과 계산이 쓰지 않는 BOX 경로의 0 은 이번 편집이 만든 문제가 아니다."""
+    before = _mi_upeh([0.0, 36.0, 36.0], bases=["WF", "WF", "BOX"])
+    after = _mi_upeh([0.0, 40.0, 0.0], bases=["WF", "WF", "BOX"])
+
+    validate_upeh_edit(before, after, _mi_scenario_tables([202608, 202609, 202610]))
+
+
 def test_required_edit_validation_joins_cleared_then_nonpositive() -> None:
     """여유율의 쓰는 칸 하나를 비우고 하나를 0 으로 하면 두 문구를 그 순서로 한 오류문에 잇는다."""
     before = _vital({(202608, "Process-A"): 1.0, (202609, "Process-A"): 1.0})
