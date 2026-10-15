@@ -176,6 +176,20 @@ TOOLBAR_LABELS: Final[dict[str, str]] = {
 }
 SCENARIO_MANAGEMENT_PAGE: Final = "scenario_management"
 ADMIN_AREA_PAGE: Final = "admin_area"
+# 공정 Capa 상세(`app_pages/process_capa_detail.py`)와 그 화면의 컨테이너 key(`process_capa_view`·
+# `process_detail_state`). 앱 모듈을 부르면 Streamlit 캐시 경고가 찍혀 값만 옮기고 테스트가 같은지
+# 본다.
+PROCESS_DETAIL_PAGE: Final = "process_capa_detail"
+PROCESS_DETAIL_KEYS: Final[dict[str, str]] = {
+    "kpi": "process_detail_kpis",
+    "canvas": "process_detail_summary_months",
+    "scroll": "process_detail_canvas_scroll",
+    "evidence": "process_detail_evidence",
+    "absent": "process_detail_dynamic_absent",
+}
+# 월 그림에서 누를 칸의 세로 자리(px, 그림 위 끝부터) — 머리 36 + ① 제목 28 + 값 27 × 3 + 반 줄.
+# 확보율 줄의 가운데다(제품 행을 펼치지 않은 그림).
+PROCESS_DETAIL_RATE_ROW_PX: Final = 36 + 28 + 27 * 3 + 13
 # HOME 링크를 감싼 사이드바 칸(`app.py`). HOME 은 기본 페이지라 주소 끝이 비어 `open_page` 로는
 # 못 고른다.
 HOME_LINK_KEY: Final = "home_navigation"
@@ -2027,6 +2041,67 @@ def check_process_popup(screen: Screen) -> str:
     return summarize_process_dialog(title, facts, closed)
 
 
+_PROCESS_DETAIL_JS = """(keys) => {
+  const q = (selector) => document.querySelector(selector);
+  const panel = q(`.st-key-${keys.evidence}`);
+  const head = panel ? (panel.innerText.match(/산출 근거 · (\\d\\d\\.\\d\\d)/) || [])[1] : null;
+  const scroll = q(`.st-key-${keys.scroll}`);
+  const plot = q(`.st-key-${keys.canvas} .js-plotly-plot`);
+  let point = null;
+  if (scroll && plot) {
+    const box = scroll.getBoundingClientRect();
+    point = {x: box.left + 250, y: plot.getBoundingClientRect().top + keys.rowPx};
+  }
+  return {
+    kpis: document.querySelectorAll(`.st-key-${keys.kpi} [data-testid="stMetric"]`).length,
+    canvas: !!plot,
+    month: head || null,
+    cards: panel ? panel.querySelectorAll('.pcd-card').length : 0,
+    absent: !!q(`.st-key-${keys.absent}`),
+    point,
+  };
+}"""
+
+
+def summarize_process_detail(before: Mapping[str, Any], after: Mapping[str, Any] | None) -> str:
+    """공정 Capa 상세 한 줄 — 개수와 있음/없음, 칸을 누른 뒤 근거 패널의 달이 바뀌었는가."""
+    schedule = "없음(까닭 카드)" if before.get("absent") else "있음"
+    canvas = "있음" if before.get("canvas") else "없음"
+    if after is None:
+        clicked = "못 누름"
+    else:
+        clicked = "바뀜" if after.get("month") != before.get("month") else "그대로"
+    return (
+        f"KPI {before.get('kpis', 0)}개 · 결합 캔버스 {canvas} · "
+        f"근거 카드 {before.get('cards', 0)}개 · 설비 일정 구획 {schedule} · "
+        f"칸 누름 뒤 근거 달 {clicked}"
+    )
+
+
+def check_process_detail(screen: Screen) -> str:
+    """`공정 Capa 상세` — 기본 공정으로 열어 KPI·결합 캔버스·근거 카드·설비 일정 구획을 세고, 월
+    그림의 보이는 셋째 칸(확보율 줄)을 한 번 눌러 근거 패널의 달이 바뀌는지 본다. 공정·제품 이름은
+    찍지 않는다(판정에만 쓰고 버린다). 칸 누름은 보는 조건이라 DB 에 쓰지 않는다."""
+    screen.open_page(PROCESS_DETAIL_PAGE)
+    keys = {**PROCESS_DETAIL_KEYS, "rowPx": PROCESS_DETAIL_RATE_ROW_PX}
+    before = screen.wait_for(
+        lambda: screen.js(_PROCESS_DETAIL_JS, keys),
+        timeout=120,
+        accept=lambda value: bool(value) and bool(value["canvas"]) and value["month"] is not None,
+    )
+    point = before.get("point")
+    after: Mapping[str, Any] | None = None
+    if point is not None:
+        screen.page.mouse.click(float(point["x"]), float(point["y"]))
+        screen.wait_idle()
+        after = screen.poll(
+            lambda: screen.js(_PROCESS_DETAIL_JS, keys),
+            timeout=30,
+            accept=lambda value: bool(value) and value["month"] != before["month"],
+        )
+    return summarize_process_detail(before, after)
+
+
 # 배포마다 바뀌는 확인 목록 — 항목 하나에 한 줄. 차례대로 돈다.
 ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
@@ -2039,6 +2114,7 @@ ITEMS: tuple[Item, ...] = (
     Item("scenario_popup", "시나리오 팝업", check_scenario_popup),
     Item("period_popup", "조회기간 팝업", check_period_popup),
     Item("process_popup", "공정 필터 팝업", check_process_popup),
+    Item("process_detail", "공정 Capa 상세", check_process_detail),
 )
 
 

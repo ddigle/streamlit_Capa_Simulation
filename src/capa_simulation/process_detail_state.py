@@ -59,6 +59,12 @@ PROCESS_DETAIL_MONTH_KEY = "process_detail_month"
 PROCESS_DETAIL_EXPAND_KEY = "process_detail_expand_products"
 PROCESS_DETAIL_SPLIT_KEY = "process_detail_product_split"
 PROCESS_DETAIL_PRODUCT_FILTER_KEY = "process_detail_product_filter"
+# 본문 프래그먼트(표 도구 줄·결합 캔버스·근거 패널)의 key 와 칸 선택을 켠 월 그림의 key. 칸을 누르면
+# 콜백이 지금 보는 달을 적고 이 프래그먼트만 다시 돌린다(`rerun_fragment_if_alone`). 선택을 켠
+# 그림은 그 위 터치 스크롤이 막히므로 `app.py` 가 이 그림 key 를 터치 스크롤
+# 막이(`plotly_touch_scroll`)에 넘긴다.
+PROCESS_DETAIL_VIEW_FRAGMENT_KEY = "process_detail_view"
+PROCESS_DETAIL_CANVAS_CHART_KEY = "process_detail_summary_months"
 # HOME 이 적고 상세 화면이 첫 회차에 꺼내(`pop`) 쓰는 전달 칸.
 PROCESS_DETAIL_REQUEST_KEY = "process_detail_request"
 # 출처 띠가 읽는 HOME 칸 스냅숏. 전달 칸을 꺼낸 회차에 옮겨 두고, 공정을 바꾸거나 다른 화면에

@@ -23,6 +23,7 @@ from capa_simulation.components.home_rendering import (
 )
 from capa_simulation.components.period_field import PERIOD_DIALOG_KEY, PERIOD_FIELD_KEY
 from capa_simulation.components.plotly_touch_scroll import plotly_touch_scroll_script
+from capa_simulation.components.process_capa_view import NEXT_MONTH_KEY
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.scenario_status import (
     SAVE_MODE,
@@ -51,7 +52,12 @@ from capa_simulation.navigation import (
     STATIC_CAPA,
     STATIC_CAPA_SUBPAGES,
 )
-from capa_simulation.process_detail_state import PROCESS_DETAIL_PROCESS_KEY
+from capa_simulation.process_detail_state import (
+    PROCESS_DETAIL_CANVAS_CHART_KEY,
+    PROCESS_DETAIL_MONTH_KEY,
+    PROCESS_DETAIL_PROCESS_KEY,
+    PROCESS_DETAIL_VIEW_FRAGMENT_KEY,
+)
 from capa_simulation.scenario_preset_state import (
     MONTH_RANGE_KEY,
 )
@@ -933,13 +939,14 @@ def test_an_ignored_home_cell_click_reruns_the_figures_in_their_own_event_slots(
 def test_the_toolbar_iframe_carries_the_touch_scroll_guard_for_home_cell_charts(
     _app: AppTest,
 ) -> None:
-    """칸 선택을 켠 HOME 그림 위에서 시작한 터치가 화면을 스크롤하게 하는 막이는 테마 버튼
-    iframe 에 한 번 실린다(`components/plotly_touch_scroll.py`). 빠지면 그 그림 위 터치 스크롤이
-    다시 막힌다."""
+    """칸 선택을 켠 그림(HOME 두 월 그림과 공정 Capa 상세 결합 캔버스) 위에서 시작한 터치가 화면을
+    스크롤하게 하는 막이는 테마 버튼 iframe 에 한 번 실린다(`components/plotly_touch_scroll.py`).
+    빠지면 그 그림 위 터치 스크롤이 다시 막힌다."""
     app = _app.run()
     assert not list(app.exception), [element.message for element in app.exception]
 
-    guard = plotly_touch_scroll_script(HOME_CELL_CHART_KEYS)
+    guard = plotly_touch_scroll_script((*HOME_CELL_CHART_KEYS, PROCESS_DETAIL_CANVAS_CHART_KEY))
+    assert f".st-key-{PROCESS_DETAIL_CANVAS_CHART_KEY} .js-plotly-plot" in guard
     frames = [str(element.proto.srcdoc) for element in app.get("iframe")]
     assert sum(frame.count(guard) for frame in frames) == 1
 
@@ -1638,6 +1645,36 @@ def test_the_process_detail_page_opens_from_its_address_inside_the_app(_app: App
     assert "process" not in app.query_params
     assert "from" not in app.query_params
     assert app.query_params.get("theme") == ["dark"]
+
+
+def test_a_month_step_on_the_process_detail_reruns_only_its_view_inside_the_app(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공정 Capa 상세의 ◀▶·칸 누름은 본문 프래그먼트(`process_detail_view`)만 **한 번** 다시
+    돌린다 — `app.py` 가 끝까지 돈 실행 표지를 세운 실제 앱에서 본다. 콜백이 `st.rerun(<key>)` 를
+    부르면 콜백만 도는 회차가 하나 더 돈다(그래서 `rerun_app_unless_alone`). 그 회차는 이벤트
+    칸에 앱 전체 회차의 그 프래그먼트와 같은 자리만 쓴다."""
+    browser = install_fragment_browser(monkeypatch)
+    app = _app.run()
+    app.switch_page(PROCESS_CAPA_DETAIL.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    view = browser.fragment_keyed(PROCESS_DETAIL_VIEW_FRAGMENT_KEY)
+    own = {
+        slot: (kind, body)
+        for slot, (kind, body, owner) in _event_slots(browser.messages).items()
+        if owner == view
+    }
+    before = app.session_state[PROCESS_DETAIL_MONTH_KEY]
+
+    browser.fragment_queue = [view]
+    app.button(key=NEXT_MONTH_KEY).click().run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert browser.started == [[view]]
+    assert app.session_state[PROCESS_DETAIL_MONTH_KEY] > before
+    assert {
+        slot: (kind, body) for slot, (kind, body, _) in _event_slots(browser.messages).items()
+    } == own
 
 
 def test_the_equipment_db_is_pinned_only_on_the_screen_that_declares_it(
